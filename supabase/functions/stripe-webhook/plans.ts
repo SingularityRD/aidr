@@ -22,10 +22,10 @@
 //            earlier grant keeps its fixed term, which ends at the paid period.
 
 export const PAID_CATALOG_PLANS = ["team", "business"] as const;
-export type PaidCatalogPlan = (typeof PAID_CATALOG_PLANS)[number];
-export type BillingInterval = "monthly" | "yearly";
+type PaidCatalogPlan = (typeof PAID_CATALOG_PLANS)[number];
+type BillingInterval = "monthly" | "yearly";
 
-export interface PlanPrice {
+interface PlanPrice {
 	planId: PaidCatalogPlan;
 	interval: BillingInterval;
 }
@@ -86,7 +86,7 @@ export function priceForPlan(
 	return null;
 }
 
-export type PlanSubscriptionAction = "grant" | "revoke" | "hold";
+type PlanSubscriptionAction = "grant" | "revoke" | "hold";
 
 export interface PlanSubscriptionEvaluation {
 	action: PlanSubscriptionAction;

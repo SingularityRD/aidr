@@ -54,6 +54,8 @@
 		"catalog:render": "node scripts/render-catalog.mjs",
 		"feature-guide:render": "node scripts/render-feature-guide.mjs",
 		"package:browser-guard": "pnpm --filter @singularityrd/aidr-browser-guard run build:release",
+		"ci:local": "node scripts/ci-local.mjs",
+		"ci:local:quick": "node scripts/ci-local.mjs --quick",
 		"quality:gate": "pnpm quality:static && pnpm audit:prod && pnpm audit:build && pnpm check && pnpm test && pnpm test:coverage && pnpm test:coverage:core && pnpm build:release",
 		"test": "pnpm test:investor-metrics && vitest run",
 		"test:ci": "pnpm test:investor-metrics && node scripts/run-tests-ci.mjs",

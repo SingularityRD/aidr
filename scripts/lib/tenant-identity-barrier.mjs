@@ -21,7 +21,7 @@
 // block is recognised as a sweep by its raw body.
 import { maskNonExecutableSql } from "./migration-contract.mjs";
 
-export const IDENTITY_BARRIER_POLICY = "tenant_identity_access_restrict";
+const IDENTITY_BARRIER_POLICY = "tenant_identity_access_restrict";
 
 /**
  * Tenant RLS tables that intentionally carry no identity barrier. Every entry
@@ -34,7 +34,7 @@ export const IDENTITY_BARRIER_EXCEPTIONS = Object.freeze({});
  * Tables that are keyed by the tenant id itself rather than a `tenant_id`
  * column, mapped to that key column. They need the same barrier on it.
  */
-export const TENANT_ROOT_TABLES = Object.freeze({ tenants: "id" });
+const TENANT_ROOT_TABLES = Object.freeze({ tenants: "id" });
 
 const SWEEP_SIGNATURE = [
 	/pc\.relrowsecurity/i,

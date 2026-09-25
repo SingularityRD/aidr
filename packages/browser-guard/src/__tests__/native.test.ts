@@ -198,8 +198,8 @@ describe("createNativeBridge: availability", () => {
 		const bridge = createNativeBridge(true, { chrome });
 		expect(chrome.sent).toEqual([]);
 		expect(bridge.status()).toBe("unavailable");
-		await flush();
-		expect(bridge.status()).toBe("connected");
+		// The hello round trip is asynchronous; wait for it instead of a fixed tick.
+		await vi.waitFor(() => expect(bridge.status()).toBe("connected"), { timeout: 10_000 });
 		expect(chrome.sent).toHaveLength(1);
 		expect(Object.keys(chrome.sent[0] ?? {}).sort()).toEqual(["id", "op", "v"]);
 		expect(chrome.sent[0]?.op).toBe("hello");
@@ -210,8 +210,8 @@ describe("createNativeBridge: availability", () => {
 		const runtime = { ...chrome.runtime, sendNativeMessage: undefined };
 		const bridge = createNativeBridge(true, { chrome: { ...chrome, runtime } });
 		bridge.status();
-		await flush();
-		expect(bridge.status()).toBe("connected");
+		// The hello round trip is asynchronous; wait for it instead of a fixed tick.
+		await vi.waitFor(() => expect(bridge.status()).toBe("connected"), { timeout: 10_000 });
 		expect(chrome.connects).toBe(1);
 		expect(chrome.disconnects).toBeGreaterThanOrEqual(1);
 	});
@@ -298,9 +298,11 @@ describe("createNativeBridge: scanning over the privacy host protocol", () => {
 	});
 
 	it("chunks large inputs and outputs within the host frame limits", async () => {
-		const chrome = fakeChrome();
-		// Generous deadline (production default NATIVE_TIMEOUT_MS stays 2 s): the ~650 KB
-		// round trip through the in-process fake host is slow on a heavily loaded CI machine.
+		// Generous deadlines (production defaults stay NATIVE_TIMEOUT_MS = 2 s and the
+		// engine's 1 s scan budget): the ~650 KB round trip through the in-process fake
+		// host is slow on a heavily loaded CI machine, and a blown host scan budget
+		// returns null here instead of exercising the chunking this test is about.
+		const chrome = fakeChrome({ engine: { maxScanMs: 30_000 } });
 		const bridge = createNativeBridge(true, { chrome, timeoutMs: 30_000 });
 		const filler = "lorem ipsum dolor sit amet ".repeat(12_000);
 		const text = `${filler}Ayşe Yılmaz ${filler}Jane Doe`;

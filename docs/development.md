@@ -20,6 +20,7 @@ Requires Node.js >= 22.12.0 and pnpm >= 9.
 |---------|-------------|
 | `pnpm build` | Build all packages (tsc + esbuild) |
 | `pnpm build:release` | Release build (no sourcemaps in `dist/`) |
+| `pnpm ci:local` | Run every `ci.yml` gate locally with a summary table (see [Running CI locally](#running-ci-locally)); `pnpm ci:local:quick` for the fast subset |
 | `pnpm test` | Run unit + integration tests (builds automatically) |
 | `pnpm test -- --reporter=verbose` | Verbose test output |
 | `pnpm test -- <file>` | Run a single test file |
@@ -231,6 +232,90 @@ write under the runner's real home (`~/.claude/settings.json`, `~/.cursor/hooks.
 `~/.codex/*`, ...) before the tests and fails if any of them changed afterwards
 (`scripts/verify-real-home-untouched.mjs`). Tests must stub `HOME` and
 `USERPROFILE` to a temporary directory, as the hook-installer suites do.
+
+## Running CI locally
+
+GitHub Actions is disabled for this organisation, so `.github/workflows/ci.yml` is
+not the gate: `pnpm ci:local` is. It runs every gate `ci.yml` runs on your
+machine, in one command, and ends with a summary table.
+
+```bash
+pnpm ci:local                      # everything; stops at the first failing required step
+pnpm ci:local --keep-going         # run everything, then summarise (use before pushing)
+pnpm ci:local:quick                # fast subset: lint, tsc, static/contract/readiness/drift gates
+pnpm ci:local --list               # groups, steps, commands, timeouts, prerequisites
+pnpm ci:local --only helm,privacy  # groups or step ids (repeatable); --skip works the same way
+pnpm ci:local --fetch-tools        # provision missing pinned tools into .ci-local/tools first
+```
+
+| Option | Effect |
+|--------|--------|
+| `--only <group\|id>[,...]` | Run only these groups/steps. The only way to select the opt-in `real-host-e2e` group, which CI also runs only on manual dispatch. |
+| `--skip <group\|id>[,...]` | Leave these out (listed under "Not selected" in the summary). |
+| `--quick` | Keep steps marked quick: no builds, full suites, coverage, Docker or network. |
+| `--keep-going` | Do not stop after the first failing required step. |
+| `--fetch-tools` | Download or build missing pinned tools into `.ci-local/tools`, verified exactly as `ci.yml` verifies them: gitleaks, promtool and actionlint from the URL and sha256 pinned in `ci.yml`; Helm through the `ci.yml` install step (GPG signature + checksum), falling back to `go install helm.sh/helm/v3/cmd/helm@<pinned>` (module checksum database) when get.helm.sh is unreachable; Node 24 from nodejs.org checked against `SHASUMS256.txt`. Nothing is committed. |
+| `--allow-dirty` | Report the clean-checkout step as SKIPPED instead of failing it when the tree has uncommitted changes. |
+| `--strict` | Exit non-zero when any selected step is SKIPPED (full-parity machines). |
+| `--json [file]` | Also write the machine-readable report to `file`; it is always written to `.ci-local/report.json`. |
+
+**Groups**, in execution order: `guards` (real-HOME record/verify and a working-tree
+mutation check, wrapped around the whole run), `install`, `hygiene` (clean checkout +
+vendored AIG source, repo hygiene, gitleaks secret scan), `lint` (Biome with 0 errors,
+knip, jscpd), `check` (tsc), `static` (the `quality:static` node gates, AIG freshness,
+Cloudflare Worker contract), `readiness` (validate-backlog, verify-feature-acceptance,
+check-generator-determinism, investor metrics), `commercial` (commercial surface,
+compliance, claim inventory and evidence freshness), `docs-facts` (brochure and
+feature-guide fact tests), `workflows` (ci-workflows contract, actionlint, this runner's
+drift test), `supabase` (migration contract, pinned Deno Edge typecheck, the Postgres
+container suites), `audit`, `build`, `test` (`pnpm test`), `coverage`, `core-matrix`,
+`privacy` (`pnpm test:privacy`, `verify:privacy-rules`), `mcp-gateway`, `browser-guard`
+(pin check, build, unit, real-browser E2E, release zips), `onprem` (deployment/air-gap/
+customer-kit/license/offline-pack/onprem-* suites, bootstrap/upgrade/backup/config
+reference, promtool, compose models, image builds), `helm`, `aig-bridge` (pip-audit +
+pytest in `.ci-local/venv/aig-bridge`), `release` (release build, fleet lifecycles,
+packed-artifact install, dashboard route smoke, evidence boundary) and the opt-in
+`real-host-e2e`.
+
+**How it stays equal to `ci.yml`.** The plan (`scripts/lib/ci-local-plan.mjs`) is an
+explicit step catalog with a drift test rather than a mechanical translation, because
+a third of the CI steps download tools into `$RUNNER_TEMP`, need a Docker daemon or
+assert runner specifics, and would fail or silently no-op on a workstation; an
+explicit catalog can say why a step did not run. Where a CI step is self-contained
+shell, the local step *is* that step: `ci: [job, step]` executes the literal `run:`
+block read from `ci.yml` at run time, with its `env:` and `working-directory:`
+(`$RUNNER_TEMP` points into `.ci-local/runner-temp/`). The remaining steps are explicit
+commands that name the CI steps they cover, and `pnpm quality:gate` is run as its
+individual components so a failure names the gate. `scripts/ci-local.test.mjs` (run by
+`ci:local` itself, step `ci-local-drift`) fails when `ci.yml` gains a job or `run:`
+step with no local step, when a reference goes stale, when an explicitly covered CI
+step starts calling a root script or repo file the local command does not, or when
+`quality:gate`/`quality:static` gain a component. When you add a CI step, add or
+extend a step in the catalog (or list it in `CI_ONLY_STEPS` with a reason).
+
+**Prerequisites and SKIPPED.** A step whose prerequisite is missing is reported as
+`SKIPPED` with the exact prerequisite and the fix, in the table and in a separate
+SKIPPED section - never as PASS and never silently. Only required failures make the
+exit code non-zero (`--strict` also fails on skips).
+
+| Prerequisite | Steps | Without it |
+|--------------|-------|------------|
+| Docker CLI + compose v2 | `onprem-compose` | SKIPPED |
+| Docker daemon | `supabase-postgres`, `postgres-gates`, `onprem-dashboard-image`, `onprem-aig-bridge-image` | SKIPPED (the static Supabase checks still run) |
+| Network (registry.npmjs.org) | audits, Deno Edge typecheck, Postgres suites, image builds, aig-bridge | SKIPPED |
+| gitleaks 8.30.1, promtool, actionlint, Helm 3 | `secret-scan`, `onprem-promtool`, `actionlint`, `helm` | SKIPPED; `--fetch-tools` provisions them |
+| Node 24 | `core-node24`; preferred by the `onprem` steps | the Node 24 leg is SKIPPED with a warning; on-prem steps run on the current Node with a WARNING note |
+| Python 3.12 | `aig-bridge-*` | SKIPPED |
+| PowerShell 7 (`pwsh`) | `fleet-windows` (GitHub's Ubuntu runners ship it) | SKIPPED; `fleet-unix` still runs |
+| A non-root user | `fleet-unix` (the installer refuses its test-root mode for uid 0) | SKIPPED |
+| Playwright Chromium for the pinned `playwright-core` | `bg-playwright-pin`, `bg-e2e` | SKIPPED; set `PLAYWRIGHT_BROWSERS_PATH` or populate `/opt/pw-browsers` |
+
+Everything else runs on the current Node (the `core-node22` leg records which version
+it used; CI pins 22.12.0). Differences from hosted CI that remain: steps run
+sequentially in one checkout, `CI` is not set (so artifact manifests do not claim a CI
+build host; `AIDR_CI_LOCAL=1` is set instead), and artifacts are not uploaded. Each
+step's full output is in `.ci-local/logs/`, and `.ci-local/` is gitignored. The runner
+needs bash (Linux, macOS, WSL or Git Bash).
 
 ## Conventions
 
