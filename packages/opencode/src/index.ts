@@ -19,12 +19,14 @@ import {
 	getLogger,
 	initFailureCode,
 	initSentry,
+	nullLogger,
 	removeFromAllowlist,
 	verifyArtifactIntegrityAndLog,
 } from "@singularityrd/aidr-core";
 import { getBundledDataDirs } from "./bundled-dirs.js";
 import { AidrVerdictBlockError } from "./error.js";
 import { createOutputHandlers, reportOpenCodeOutputCoverage } from "./output-handler.js";
+import { createToastNotifier, OpenCodePromptProtection } from "./prompt-handler.js";
 import { createSessionScanHandler } from "./startup-scan.js";
 import { createToolHandlers } from "./tool-handler.js";
 
@@ -37,21 +39,27 @@ type OpenCodeLogger = ReturnType<typeof createChildLogger>;
  * SECURITY: OpenCode loads this plugin in-process. If initialisation throws, OpenCode never
  * registers the hooks and every tool call runs uninspected (fail-open). Any initialisation
  * failure — a failed integrity check, an unreadable bundle, a logger/Sentry crash — therefore
- * still registers `tool.execute.before`, which denies every tool call until fixed.
+ * still registers `tool.execute.before`, which denies every tool call until fixed, and
+ * `chat.message`, which applies the uninspected-prompt policy (block unless
+ * `prompt_protection.secrets` is not `block`).
  */
-export const AidrPlugin: Plugin = async () => {
+export const AidrPlugin: Plugin = async (input) => {
 	let logger: OpenCodeLogger | undefined;
 	try {
 		// Initialize Sentry
 		initSentry({ name: "aidr-opencode" });
 		logger = createChildLogger(getLogger(), "opencode");
-		return await initialisePlugin(logger);
+		return await initialisePlugin(logger, input?.client);
 	} catch (error) {
-		return createInitFailureHooks(error, logger);
+		return createInitFailureHooks(error, logger, input?.client);
 	}
 };
 
-function createInitFailureHooks(error: unknown, logger: OpenCodeLogger | undefined): PluginHooks {
+function createInitFailureHooks(
+	error: unknown,
+	logger: OpenCodeLogger | undefined,
+	client: unknown,
+): PluginHooks {
 	const code = initFailureCode(error);
 	const message = formatInitFailureMessage(code);
 	try {
@@ -62,14 +70,27 @@ function createInitFailureHooks(error: unknown, logger: OpenCodeLogger | undefin
 	} catch {
 		// Logging must never undo the fail-closed registration below.
 	}
-	return {
+	const hooks: PluginHooks = {
 		"tool.execute.before": async () => {
 			throw new AidrVerdictBlockError(message);
 		},
 	};
+	try {
+		hooks["chat.message"] = new OpenCodePromptProtection({
+			logger: logger ?? nullLogger,
+			notify: createToastNotifier(client),
+			inspectionUnavailable: true,
+		}).chatMessage;
+	} catch {
+		// Never let the prompt hook undo the tool-call registration above.
+		hooks["chat.message"] = async () => {
+			throw new AidrVerdictBlockError(message);
+		};
+	}
+	return hooks;
 }
 
-async function initialisePlugin(logger: OpenCodeLogger): Promise<PluginHooks> {
+async function initialisePlugin(logger: OpenCodeLogger, client: unknown): Promise<PluginHooks> {
 	await verifyArtifactIntegrityAndLog({
 		artifactDir: dirname(fileURLToPath(import.meta.url)),
 		artifactId: "opencode/dist",
@@ -96,12 +117,15 @@ async function initialisePlugin(logger: OpenCodeLogger): Promise<PluginHooks> {
 
 	const toolHandlers = createToolHandlers(logger, approvalStore, threatsDir, allowlistsDir);
 	const outputHandlers = createOutputHandlers(logger);
+	const prompts = new OpenCodePromptProtection({ logger, notify: createToastNotifier(client) });
 	reportOpenCodeOutputCoverage(logger);
 	await createSessionScanHandler(logger, undefined)();
 
 	return {
 		"tool.execute.before": toolHandlers["tool.execute.before"],
 		"tool.execute.after": outputHandlers["tool.execute.after"],
+		// Prompt protection: inspects the user's message before it is stored or sent.
+		"chat.message": prompts.chatMessage,
 
 		/**
 		 * Inject plugin scan findings into first user message as <system-reminder>.
@@ -111,6 +135,8 @@ async function initialisePlugin(logger: OpenCodeLogger): Promise<PluginHooks> {
 		 * to assistant messages or system prompts was less effective.
 		 */
 		"experimental.chat.messages.transform": async (_input, output) => {
+			// Prompt-protection warn notices ride on the message they concern.
+			prompts.transformMessages(output.messages);
 			if (pendingFindingsBySession.size === 0) return;
 
 			const userMessage = output.messages.filter((m) => m.info.role === "user");

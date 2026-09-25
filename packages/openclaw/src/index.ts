@@ -1,7 +1,8 @@
 /**
  * Singularity AIDR OpenClaw plugin entry point.
  * Registers tool-input enforcement, bounded post-execution/output protection,
- * allowlist tools, startup/session scan hooks, and before_prompt_build handler.
+ * allowlist tools, startup/session scan hooks, the before_prompt_build handler
+ * and the before_agent_run prompt-protection gate (see prompt-protection.ts).
  *
  * SECURITY: this plugin deliberately registers NO approval tool. An approval
  * tool callable by the model would let a prompt-injected agent approve its own
@@ -15,12 +16,19 @@ import {
 	formatInitFailureMessage,
 	initFailureCode,
 	initSentry,
+	nullLogger,
 	verifyArtifactIntegrityAndLog,
 } from "@singularityrd/aidr-core";
 import { createAllowlistAddTool, createAllowlistRemoveTool } from "./allowlist-tools.js";
 import { getBundledDataDirs } from "./bundled-dirs.js";
 import { createLogger, type PluginLogger } from "./logger-adapter.js";
 import { OpenClawOutputProtection } from "./output-protection.js";
+import {
+	type BeforeAgentRunEvent,
+	type BeforePromptBuildEvent,
+	OpenClawPromptProtection,
+	type PromptHookContext,
+} from "./prompt-protection.js";
 import {
 	createBeforePromptBuildHandler,
 	createSessionScanHandler,
@@ -104,6 +112,19 @@ function registerInitFailure(api: PluginApi, error: unknown): void {
 		// Logging must never undo the fail-closed registration below.
 	}
 	api.on("before_tool_call", async () => block, { priority: 100 });
+	// Prompts cannot be inspected either: apply the uninspected-prompt policy
+	// (block unless `prompt_protection.secrets` is not `block`). The host fails
+	// closed if this handler itself throws.
+	try {
+		api.on(
+			"before_agent_run",
+			async (_event: unknown, ctx?: PromptHookContext) =>
+				OpenClawPromptProtection.uninspectedDecision(nullLogger, ctx),
+			{ priority: 100 },
+		);
+	} catch {
+		// A host without this gate has no prompt boundary to close.
+	}
 }
 
 function registerGuarded(api: PluginApi): void {
@@ -196,17 +217,50 @@ function registerGuarded(api: PluginApi): void {
 		"session_start",
 		afterIntegrity(requireIntegrity, createSessionScanHandler(logger, onFindings)),
 	);
+	// Prompt protection gate: blocks a prompt carrying secrets (or, per policy,
+	// personal data) before the model reads it. The host fails closed on a throw.
+	const prompts = new OpenClawPromptProtection(logger);
+	try {
+		api.on(
+			"before_agent_run",
+			async (event: BeforeAgentRunEvent, ctx?: PromptHookContext) => {
+				try {
+					await integrityReady;
+				} catch {
+					return OpenClawPromptProtection.uninspectedDecision(logger, ctx);
+				}
+				return prompts.beforeAgentRun(event, ctx);
+			},
+			{ priority: 100 },
+		);
+	} catch (error) {
+		logger.warn("Singularity AIDR prompt protection unavailable: before_agent_run not registered", {
+			error: error instanceof Error ? error.name : typeof error,
+		});
+	}
+	const surfaceScanFindings = createBeforePromptBuildHandler(
+		() => pendingFindings,
+		() => {
+			pendingFindings = null;
+		},
+		logger,
+	);
 	api.on(
 		"before_prompt_build",
 		afterIntegrity(
 			requireIntegrity,
-			createBeforePromptBuildHandler(
-				() => pendingFindings,
-				() => {
-					pendingFindings = null;
-				},
-				logger,
-			),
+			async (event?: BeforePromptBuildEvent, ctx?: PromptHookContext) => {
+				const findings = surfaceScanFindings()?.prependContext;
+				// The prompt-protection warn notice; a block is left to the gate above.
+				let warning: string | undefined;
+				try {
+					warning = await prompts.warningContext(event ?? {}, ctx);
+				} catch {
+					warning = undefined;
+				}
+				const context = [findings, warning].filter((part): part is string => Boolean(part));
+				return context.length > 0 ? { prependContext: context.join("\n\n") } : undefined;
+			},
 		),
 	);
 }

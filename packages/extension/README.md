@@ -23,6 +23,27 @@ For a forwarded shell command, file operation, or URL fetch, Singularity AIDR ch
 Cursor's `preToolUse` response does not provide an enforceable approval prompt,
 so an `ask` verdict is returned as an explicit deny.
 
+### Prompt protection
+
+The managed hooks also inspect the user's prompt before it is sent to the model
+(`prompt_protection` in `~/.singularity-aidr/config.json`: secrets `block`,
+personal data such as TC Kimlik, IBAN, email and phone numbers `warn` by default).
+
+| Host | Event | Block | Warn |
+|------|-------|-------|------|
+| Cursor | `beforeSubmitPrompt` | `{"continue": false, "user_message": "…"}` | Prompt sent with the notice in `user_message` and the audit log; the event has no model-context field |
+| VS Code (Local agent hooks) | `UserPromptSubmit` | `{"continue": false, "stopReason": "…"}` | `systemMessage` to the user; no documented model-context field |
+
+The reason names the kind of data found, never the value. A prompt that cannot be
+inspected (over the 1 MiB hook input limit, unreadable, or an internal error) is
+blocked while secrets are in `block` mode and otherwise sent with a "not inspected"
+notice; an inspection still running after 20 s is handled the same way
+(`AIDR_PROMPT_INSPECTION_DEADLINE_MS`, 100–28000). A provisioned tenant DLP policy
+applies to the prompt and blocks on any action other than `allow`. Audit entries use
+`tool_name` `beforeSubmitPrompt` / `UserPromptSubmit` and record kinds and counts
+only. Cursor attachments are not inspected. Host-side enforcement of these responses
+has not been accepted on a real Cursor or VS Code host.
+
 ## Getting started
 
 For VS Code Local agent hooks, enable `chat.useClaudeHooks` in VS Code User

@@ -778,19 +778,6 @@ export {
 	redactPII,
 	validateNoPII,
 } from "./pii-detector.js";
-// Prompt protection (UserPromptSubmit-style inspection of the user's prompt)
-export {
-	DEFAULT_PROMPT_PROTECTION,
-	type PromptFindingCategory,
-	type PromptFindingSummary,
-	type PromptIncompleteInspection,
-	type PromptProtectionDecision,
-	type PromptProtectionResult,
-	PromptScanDeadlineError,
-	type PromptScanOptions,
-	type PromptTenantDlp,
-	scanPrompt,
-} from "./prompt-protection.js";
 // Plugin scan cache
 export {
 	cacheKey,
@@ -844,6 +831,30 @@ export {
 	type PostureUploadResult,
 	uploadPostureEvents,
 } from "./posture-upload.js";
+// Connector-side prompt inspection runner (config, tenant DLP, deadline, audit, failure policy)
+export {
+	inspectUserPrompt,
+	MIN_PROMPT_INSPECTION_DEADLINE_MS,
+	PROMPT_INSPECTION_DEADLINE_ENV,
+	type PromptInspectionOutcome,
+	type PromptInspectionReason,
+	type PromptInspectionRequest,
+	resolvePromptInspectionDeadlineMs,
+	uninspectedPromptOutcome,
+} from "./prompt-inspection.js";
+// Prompt protection (UserPromptSubmit-style inspection of the user's prompt)
+export {
+	DEFAULT_PROMPT_PROTECTION,
+	type PromptFindingCategory,
+	type PromptFindingSummary,
+	type PromptIncompleteInspection,
+	type PromptProtectionDecision,
+	type PromptProtectionResult,
+	PromptScanDeadlineError,
+	type PromptScanOptions,
+	type PromptTenantDlp,
+	scanPrompt,
+} from "./prompt-protection.js";
 // Quarantine
 export {
 	AutoQuarantine,

@@ -2,7 +2,7 @@
 
 Singularity AIDR (AI Agent Detection & Response), bir yapay zekâ kodlama ajanı ile ajanın
 dokunduğu kaynaklar arasına bir politika denetimi yerleştirir: shell komutları, dosyalar,
-web istekleri, paketler, MCP araçları ve Claude Code'da doğrudan kullanıcının prompt'u.
+web istekleri, paketler, MCP araçları ve doğrudan kullanıcının prompt'u.
 Desteklenen her ajan ortamı (host) için bir **connector** bulunur. Connector, araç
 çağrısını (tool call) tek ve paylaşılan yerel karar motoruna (`@singularityrd/aidr-core`)
 iletir. Motor `allow`, `ask` ya da `deny` kararı döndürür; connector da bu kararı host'un
@@ -45,7 +45,7 @@ doğrudan kod deposundan alınmıştır. Ürünün kullanıcıya gösterdiği me
    - [Oturum başında eklenti ve skill taraması](#oturum-başında-eklenti-ve-skill-taraması)
    - [Araç çıktısı taraması ve karantina](#araç-çıktısı-taraması-ve-karantina)
    - [Veri kaybı önleme (DLP)](#veri-kaybı-önleme-dlp)
-   - [Prompt koruması (Claude Code)](#prompt-koruması-claude-code)
+   - [Prompt koruması](#prompt-koruması)
 4. [Operasyon ve yönetişim](#4-operasyon-ve-yönetişim)
    - [Operatör onayları](#operatör-onayları)
    - [Connector bazında fail-closed davranışı](#connector-bazında-fail-closed-davranışı)
@@ -66,11 +66,14 @@ doğrudan kod deposundan alınmıştır. Ürünün kullanıcıya gösterdiği me
 | Connector | Paket | Bağlandığı nokta | Çalışmadan önce denetlenen araç çağrıları | Araç çıktısı | `ask` için host onay arayüzü |
 | --- | --- | --- | --- | --- | --- |
 | Claude Code | `@singularityrd/aidr-claude-code` (plugin) | `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `SessionStart` hook'ları | Tüm araçlar (`matcher: "*"`) | `PostToolUse` ile değiştirme (çalıştıktan sonra) | Var (yerel diyalog) |
-| Cursor | `aidr-cursor` eklentisi | `beforeShellExecution`, `preToolUse`, `beforeMCPExecution`, `beforeReadFile` | Shell, `Write`/`Delete`/`Edit`/`WebFetch`, MCP çağrıları, dosya okuma | `postToolUse`, `afterAgentResponse` (tavsiye/gözlem) | `preToolUse`: yok, `ask` → `deny` |
-| VS Code | aynı eklenti paketi | `PreToolUse`, `PostToolUse` (Claude tarzı hook'lar) | `Bash`, `WebFetch`, `Write`, `Edit`, `Read`, `Delete`, `editFiles` | `PostToolUse` (çalıştıktan sonra, içerik değiştirmez) | Host'a bağlı |
-| OpenClaw | `@singularityrd/aidr-openclaw` | Süreç içi `before_tool_call` plugin'i | `exec`, `web_fetch`, `write`, `edit`, `read`, `apply_patch` | Transkript ve giden mesaj değiştirme | Yok, `aidr approve` ile operatör onayı |
-| OpenCode | `@singularityrd/aidr-opencode` | `tool.execute.before` plugin'i | `bash`, `webfetch`, `read`, `write`, `edit`, `apply_patch`, `ls`, `glob`, `grep` | `tool.execute.after` ile değiştirme | Yok, `aidr approve` ile operatör onayı |
-| Codex CLI | `@singularityrd/aidr-codex` | Yerel `PreToolUse` komut hook'u | `Bash`, `apply_patch` (matcher `^(Bash|apply_patch)$`) | Denetlenmez | Yok, `ask` → `deny`, `aidr approve` ile operatör onayı |
+| Cursor | `aidr-cursor` eklentisi | `beforeSubmitPrompt`, `beforeShellExecution`, `preToolUse`, `beforeMCPExecution`, `beforeReadFile` | Shell, `Write`/`Delete`/`Edit`/`WebFetch`, MCP çağrıları, dosya okuma | `postToolUse`, `afterAgentResponse` (tavsiye/gözlem) | `preToolUse`: yok, `ask` → `deny` |
+| VS Code | aynı eklenti paketi | `UserPromptSubmit`, `PreToolUse`, `PostToolUse` (Claude tarzı hook'lar) | `Bash`, `WebFetch`, `Write`, `Edit`, `Read`, `Delete`, `editFiles` | `PostToolUse` (çalıştıktan sonra, içerik değiştirmez) | Host'a bağlı |
+| OpenClaw | `@singularityrd/aidr-openclaw` | Süreç içi `before_tool_call` ve `before_agent_run` plugin hook'ları | `exec`, `web_fetch`, `write`, `edit`, `read`, `apply_patch` | Transkript ve giden mesaj değiştirme | Yok, `aidr approve` ile operatör onayı |
+| OpenCode | `@singularityrd/aidr-opencode` | `tool.execute.before` ve `chat.message` plugin hook'ları | `bash`, `webfetch`, `read`, `write`, `edit`, `apply_patch`, `ls`, `glob`, `grep` | `tool.execute.after` ile değiştirme | Yok, `aidr approve` ile operatör onayı |
+| Codex CLI | `@singularityrd/aidr-codex` | Yerel `PreToolUse` ve `UserPromptSubmit` komut hook'ları | `Bash`, `apply_patch` (matcher `^(Bash|apply_patch)$`) | Denetlenmez | Yok, `ask` → `deny`, `aidr approve` ile operatör onayı |
+
+Her connector ayrıca kullanıcının prompt'unu modele ulaşmadan önce denetler; bkz.
+[Prompt koruması](#prompt-koruması).
 
 Bilinen biçimlerin dışındaki araç çağrıları (Claude Code'daki `mcp__*` araçları dahil)
 genel bir metin tarama çıkarıcısına düşer; böylece sezgisel kurallar bu çağrılarda da
@@ -251,7 +254,9 @@ dışarıya giden bir mesaja taşınabilir; bu connector her iki sınırı da iz
   gelmeden önce değiştirir; `message_sending` ve `reply_payload_sending` riskli bir giden
   yanıtı içeriği tekrar etmeyen bir bildirimle değiştirir. Metin taraması 256 KiB ile
   sınırlıdır.
-- `before_prompt_build`, plugin tarama bulgularını tavsiye niteliğinde bağlam olarak ekler.
+- `before_agent_run`, kullanıcının prompt'unu model okumadan önce denetler (prompt koruması;
+  gömülü ve CLI çalıştırıcılar); `before_prompt_build`, plugin tarama bulgularını ve prompt
+  koruması uyarılarını modele bağlam olarak ekler.
 - Her `ask` operatör onay deposuna kaydedilir; ajanın çağırabileceği bir onay aracı
   **yoktur**. `aidr_allowlist_add` / `aidr_allowlist_remove` kayıtlıdır; operatör
   `--permit-allowlist` izni vermedikçe `aidr_allowlist_add` reddeder.
@@ -990,7 +995,8 @@ Code'da model özgün metin yerine
 ### Veri kaybı önleme (DLP)
 
 **Ne yapar**
-DLP, serileştirilmiş araç girdisini (Claude Code'da ayrıca prompt'u) etiketler ve
+DLP, serileştirilmiş araç girdisini (prompt koruması olan her connector'da ayrıca
+kullanıcının prompt'unu) etiketler ve
 kurallardan oluşan bir politikaya göre değerlendirir. Kurallar anahtar kelime, düzenli ifade
 (regex) veya yerleşik Türkçe/İngilizce dedektörler kullanır ve `block`, `ask` ya da `redact`
 eylemi uygular.
@@ -1106,12 +1112,14 @@ Denetim kaydı değeri değil, kuralı ve etiketi kaydeder (maskelemelerde
 - KVKK ve GDPR kapsamındaki yükümlülükleri desteklemek üzere tasarlanmıştır; tek başına bir
   uyum belgesi veya sertifikası değildir.
 
-### Prompt koruması (Claude Code)
+### Prompt koruması
 
 **Ne yapar**
-`UserPromptSubmit` hook'u, kullanıcının prompt'unu Claude Code modele göndermeden önce
-gizli bilgiler ve kişisel veriler açısından denetler; tanımlı bir kiracı DLP politikası
-varsa onu da uygular.
+Kullanıcının prompt'unu ajan modele göndermeden önce gizli bilgiler ve kişisel veriler
+(TR ve EN) açısından denetler; tanımlı bir kiracı DLP politikası varsa onu da uygular.
+Host'u model öncesi bir prompt hook'u sunan her connector'da çalışır: Claude Code ve Codex
+(`UserPromptSubmit`), Cursor (`beforeSubmitPrompt`), VS Code Local ajan hook'ları
+(`UserPromptSubmit`), OpenCode (`chat.message`) ve OpenClaw (`before_agent_run`).
 
 **Neden önemli**
 Geliştiriciler prompt'lara log, yapılandırma dosyası ve hata yığını (stack trace) yapıştırır.
@@ -1122,21 +1130,32 @@ Bunlar çoğu zaman uç noktadan çıkmaması gereken aktif token'lar veya müş
 | Ayar | Varsayılan | Tespit ettikleri | Modlar |
 | --- | --- | --- | --- |
 | `prompt_protection.secrets` | `block` | Token'lar, API anahtarları, AWS anahtarları, özel anahtarlar, parola atamaları | `block`, `warn`, `off` |
-| `prompt_protection.pii` | `warn` | E-posta adresleri, biçimli telefon numaraları ve SSN'ler, Luhn doğrulamalı kart numaraları | `block`, `warn`, `off` |
+| `prompt_protection.pii` | `warn` | E-posta adresleri, biçimli telefon numaraları ve SSN'ler, Luhn doğrulamalı kart numaraları, T.C. kimlik numaraları (TC Kimlik), IBAN'lar, TR/uluslararası telefon numaraları | `block`, `warn`, `off` |
+
+| Connector | Hook | Engelleme | Uyarı |
+| --- | --- | --- | --- |
+| Claude Code | `UserPromptSubmit` | `decision: "block"`, gerekçe kullanıcıya gösterilir | Kullanıcı bildirimi + model bağlamı |
+| Cursor | `beforeSubmitPrompt` | `continue: false` + `user_message` | Prompt gönderilir; bildirim `user_message` alanında ve denetim kaydında (model bağlamı alanı yok) |
+| VS Code (Local ajan hook'ları) | `UserPromptSubmit` | `continue: false` + `stopReason` | Kullanıcıya `systemMessage` (model bağlamı alanı yok) |
+| Codex CLI | `UserPromptSubmit` | `decision: "block"` + gerekçe | `systemMessage` + `additionalContext` |
+| OpenCode | `chat.message` | Metin bildirimle değiştirilir ve hook hata fırlatır; hiçbir şey saklanmaz veya gönderilmez | TUI bildirimi + o mesaja modele yönelik not |
+| OpenClaw | `before_agent_run` (gömülü/CLI çalıştırıcılar) | `outcome: "block"`; yalnızca yerine konan metin saklanır | `before_prompt_build` ile modele not |
 
 - `block` prompt'u durdurur ve kullanıcıya bulunan verinin **türünü** söyler (değerini asla
   göstermez). `warn` prompt'u gönderir, bir bildirim gösterir ve modele veriyi tekrar
-  etmemesini veya kopyalamamasını söyler.
+  etmemesini veya kopyalamamasını söyler; host'un iletebildiği ölçüde (bkz. tablo).
 - Kiracı DLP politikası her zaman uygulanır; bir prompt yeniden yazılamadığı için `allow`
   dışındaki her kiracı eylemi engeller.
-- **Süre sınırı.** Claude Code hook'u 10 sn sonra sonlandırır; bu yüzden hook 7 sn sonunda
-  kendisi yanıt verir (`AIDR_USER_PROMPT_SUBMIT_DEADLINE_MS`, 100–9000). O ana kadar tam
+- **Süre sınırı.** Her connector, host'un hook zaman aşımından önce yanıt verir: Claude Code
+  7 sn (`AIDR_USER_PROMPT_SUBMIT_DEADLINE_MS`), Codex 7 sn, Cursor ve VS Code 20 sn,
+  OpenClaw ve OpenCode 10 sn (`AIDR_PROMPT_INSPECTION_DEADLINE_MS`). O ana kadar tam
   incelenemeyen bir prompt, `secrets` `block` ise veya bir kiracı politikası tanımlıysa
   engellenir; aksi hâlde görünür bir "tam incelenmedi" bildirimiyle gönderilir.
-- 2 MiB'ı aşan girdi veya iç hata: `secrets` `block` ise engellenir; aksi hâlde "incelenmedi"
-  bildirimiyle gönderilir.
-- Denetim kayıtları (`tool_name: "UserPromptSubmit"`) prompt'u değil, bulunan türleri ve
+- Okunamayan veya boyut sınırını aşan girdi ya da iç hata: `secrets` `block` ise engellenir;
+  aksi hâlde "incelenmedi" bildirimiyle gönderilir.
+- Denetim kayıtları (`tool_name` = host hook adı) prompt'u değil, bulunan türleri ve
   sayılarını kaydeder.
+- Connector bazında ayrıntı: [configuration.md](../../../configuration.md#prompt_protection).
 
 **Nasıl kullanılır**
 
@@ -1145,7 +1164,8 @@ Bunlar çoğu zaman uç noktadan çıkmaması gereken aktif token'lar veya müş
 ```
 
 **Örnek**
-Bir geliştirici prompt'a bir GitHub token'ı yapıştırır. Claude Code şunu gösterir:
+Bir geliştirici prompt'a bir GitHub token'ı yapıştırır. Claude Code, Cursor, VS Code,
+Codex, OpenCode ve OpenClaw aynı gerekçeyi gösterir:
 "🛡️ Singularity AIDR blocked this prompt before it reached the model: it appears to
 contain sensitive data (GitHub token). Remove the sensitive value and resubmit. If it was
 a live credential that has been shared anywhere else, rotate it."
@@ -1154,11 +1174,24 @@ a live credential that has been shared anywhere else, rotate it."
 
 | Plan | Dağıtım | Platform / işletim sistemi |
 | --- | --- | --- |
-| Free, Team, Business, Enterprise | Yerel; Cloud, On-prem, Air-gapped | Yalnızca Claude Code; Windows, Linux, macOS |
+| Free, Team, Business, Enterprise | Yerel; Cloud, On-prem, Air-gapped | Claude Code, Cursor, VS Code (Local ajan hook'ları), Codex CLI, OpenCode, OpenClaw (gömülü/CLI çalıştırıcılar); Windows, Linux, macOS |
 
 **Sınırlamalar**
-- Yalnızca Claude Code; diğer connector'larda AIDR'nin bir prompt hook'u yoktur.
-- Yanıt vermeden sonlandırılan bir hook süreci engelleme yapamaz (host sınırlaması).
+- Yalnızca prompt metni denetlenir: Cursor ekleri ve OpenCode `synthetic` parçaları (örneğin
+  eklenen dosya içerikleri) denetlenmez.
+- Cursor ve VS Code'un prompt olaylarında model bağlamı alanı yoktur; bu yüzden `warn`
+  kullanıcıya (VS Code) veya denetim kaydına (Cursor) ulaşır, modele ulaşmaz.
+- OpenClaw'ın `before_agent_run` hook'u, Codex veya Copilot harness'ları için bir girdi
+  kapısı değildir; paketle gelmeyen (non-bundled) bir kurulum
+  `hooks.allowConversationAccess: true` gerektirir.
+- Codex'te `UserPromptSubmit` işleyicisi kaydedilmeli ve güvenilir olarak onaylanmalıdır;
+  güvenilmeyen, çöken veya zaman aşımına uğrayan bir hook prompt'un geçmesine izin verir
+  (host davranışı).
+- Yanıt vermeden sonlandırılan bir hook süreci Claude Code, VS Code ve Codex'te engelleme
+  yapamaz (host sınırlaması).
+- Cursor, VS Code, Codex, OpenCode ve OpenClaw prompt yolları için henüz adı belirli bir
+  gerçek host kabul kaydı yoktur; host'ların yayımlanmış hook sözleşmelerine göre ve
+  derlenmiş connector paketlerini çalıştıran testlerle doğrulanmıştır.
 - `block` modunda tarama ilk gizli bilgide durur; mesaj tam bir sayım yerine ilk bulunanı
   bildirir.
 
