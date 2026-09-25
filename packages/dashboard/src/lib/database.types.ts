@@ -677,6 +677,33 @@ export interface Database {
 				Insert: Record<string, never>;
 				Update: Record<string, never>;
 			};
+			// Read-only for the browser (column grants exclude token material);
+			// written only by the approval-requests Edge Function RPCs.
+			approval_requests: {
+				Row: {
+					id: string;
+					tenant_id: string;
+					iid: string;
+					agent_id: string | null;
+					agent_runtime: string | null;
+					action_id: string;
+					artifact_digest: string;
+					tool: string;
+					threat_ids: string[];
+					summary: string;
+					status: "pending" | "approved" | "denied" | "expired";
+					decided_by: string | null;
+					decided_at: string | null;
+					reason: string | null;
+					key_id: string | null;
+					token_expires_at: string | null;
+					token_delivered_at: string | null;
+					expires_at: string;
+					created_at: string;
+				};
+				Insert: Record<string, never>;
+				Update: Record<string, never>;
+			};
 		}>;
 		Views: AddRelationships<{
 			user_subscription_summary: {
@@ -737,6 +764,11 @@ export interface Database {
 			};
 			/** Browser Guard privacy telemetry aggregates (migration 20260925000001). */
 			privacy_guard_summary: {
+				Args: { p_tenant_id: string; p_days: number };
+				Returns: Record<string, unknown>;
+			};
+			/** Browser Guard Shadow AI aggregates (20260926000010). */
+			shadow_ai_summary: {
 				Args: { p_tenant_id: string; p_days: number };
 				Returns: Record<string, unknown>;
 			};

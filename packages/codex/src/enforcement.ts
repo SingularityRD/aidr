@@ -151,6 +151,7 @@ function resultForGuard(guard: GuardResult, artifacts: Artifact[]): CodexEnforce
 				artifacts,
 				responseActions,
 				guard.pendingRecorded,
+				guard.dashboardApproval,
 			),
 		),
 	};

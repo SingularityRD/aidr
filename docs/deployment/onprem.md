@@ -42,7 +42,7 @@ locked, atomic migrations), `deployment-bootstrap` (first tenant and entitlement
 unhealthy until signing, the durable telemetry queue, offsite backup and TLS evidence
 are configured; a passing `/livez` alone is not acceptance.
 
-The AIG scanning stack (`docker-compose.aig.yml`: AIG server, agent and bridge) is a
+The AI Security Posture scanner (`docker-compose.posture-scanner.yml`: scanner server, worker and bridge) is a
 separate, optional stack.
 
 ## Kubernetes (Helm)

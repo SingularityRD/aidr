@@ -4,7 +4,14 @@ set -eu
 if [ "$(id -u)" -ne 0 ]; then echo "run as root" >&2; exit 1; fi
 deployment=/srv/aidr
 with_backup=false
-if [ "${1:-}" = "--with-backup" ]; then with_backup=true; elif [ "$#" -ne 0 ]; then echo "usage: install-systemd.sh [--with-backup]" >&2; exit 1; fi
+with_notifications=false
+for arg in "$@"; do
+	case "$arg" in
+		--with-backup) with_backup=true ;;
+		--with-notifications) with_notifications=true ;;
+		*) echo "usage: install-systemd.sh [--with-backup] [--with-notifications]" >&2; exit 1 ;;
+	esac
+done
 
 readiness_env="$deployment/.env.readiness"
 function_env="$deployment/.env.functions"
@@ -56,11 +63,26 @@ if [ "$with_backup" = true ]; then
 	[ -f "$deployment/backup/aidr-backup-offsite.service" ] && [ -f "$deployment/backup/aidr-backup-offsite.timer" ] && [ -f "$deployment/backup/aidr-backup-recover.service" ] && [ -f "$deployment/backup/aidr-backup-health-failed.service" ] && [ -f "$deployment/backup/deployment-backup-health-failed.mjs" ] && [ -f "$deployment/backup/deployment-backup-offsite.mjs" ] && [ -f "$deployment/backup/deployment-backup.mjs" ] || { echo "prepared backup units or runtime are missing" >&2; exit 1; }
 fi
 
+if [ "$with_notifications" = true ]; then
+	[ -f "$deployment/maintenance/aidr-notification-dispatch.service" ] && [ -f "$deployment/maintenance/aidr-notification-dispatch.timer" ] && [ -f "$deployment/maintenance/notification-dispatch.mjs" ] || { echo "prepared notification dispatcher units or runtime are missing" >&2; exit 1; }
+	grep -Eq '^AIDR_NOTIFICATION_DISPATCH_TOKEN=.{32,}$' "$function_env" || { echo "AIDR_NOTIFICATION_DISPATCH_TOKEN (32+ characters) is missing from .env.functions" >&2; exit 1; }
+	grep -Eq '^AIDR_NOTIFICATION_ENCRYPTION_KEYS=[a-z0-9][a-z0-9_-]*:' "$function_env" || { echo "AIDR_NOTIFICATION_ENCRYPTION_KEYS is missing from .env.functions" >&2; exit 1; }
+fi
+
 install -m 0644 "$deployment/maintenance/aidr-siem-delivery.service" /etc/systemd/system/aidr-siem-delivery.service
 install -m 0644 "$deployment/maintenance/aidr-siem-delivery.timer" /etc/systemd/system/aidr-siem-delivery.timer
 systemctl daemon-reload
 systemctl start aidr-siem-delivery.service
 systemctl enable --now aidr-siem-delivery.timer
+
+if [ "$with_notifications" = true ]; then
+	install -m 0644 "$deployment/maintenance/aidr-notification-dispatch.service" /etc/systemd/system/aidr-notification-dispatch.service
+	install -m 0644 "$deployment/maintenance/aidr-notification-dispatch.timer" /etc/systemd/system/aidr-notification-dispatch.timer
+	systemctl daemon-reload
+	# One supervised run first: a missing function, token or key fails here.
+	systemctl start aidr-notification-dispatch.service
+	systemctl enable --now aidr-notification-dispatch.timer
+fi
 
 if [ "$with_backup" = true ]; then
 	install -m 0644 "$deployment/backup/aidr-backup-offsite.service" /etc/systemd/system/aidr-backup-offsite.service

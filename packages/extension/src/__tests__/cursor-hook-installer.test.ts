@@ -58,6 +58,7 @@ describe("Cursor managed hook configuration", () => {
 		expect(health.configPath).toBe(path.join(cursorDir, "hooks.json"));
 		// Documented registration order, even though the customer's file lists preToolUse first.
 		const documentedOrder = [
+			"beforeSubmitPrompt",
 			"beforeShellExecution",
 			"preToolUse",
 			"postToolUse",
@@ -70,12 +71,47 @@ describe("Cursor managed hook configuration", () => {
 		expect(
 			(await getHookHealth({ context: context as never, scope: "user" })).installedEvents,
 		).toEqual(documentedOrder);
-		expect(managed).toHaveLength(6);
+		expect(managed).toHaveLength(7);
 		expect(managed.every((entry) => entry.failClosed === true)).toBe(true);
+		// Prompt protection: one unmatched managed entry, the same runner as the tool hooks.
+		const promptEntries = hooksFile.hooks.beforeSubmitPrompt ?? [];
+		expect(promptEntries).toHaveLength(1);
+		expect(promptEntries[0]).not.toHaveProperty("matcher");
+		expect(promptEntries[0]?.command).toBe(hooksFile.hooks.beforeShellExecution?.[0]?.command);
+		expect(String(promptEntries[0]?.command)).toMatch(/ cursor --managed-by aidr-cursor$/);
 		expect(hooksFile.hooks.preToolUse).toContainEqual({
 			command: "customer-hook",
 			failClosed: false,
 		});
+	});
+
+	it("keeps a customer beforeSubmitPrompt hook ahead of the managed one and removes only ours", async () => {
+		const configPath = path.join(home, ".cursor", "hooks.json");
+		await mkdir(path.dirname(configPath), { recursive: true });
+		await writeFile(
+			configPath,
+			JSON.stringify({
+				version: 1,
+				hooks: { beforeSubmitPrompt: [{ command: "customer-audit" }] },
+			}),
+		);
+		const context = { asAbsolutePath: (relativePath: string) => relativePath };
+
+		await installManagedHooks({ context: context as never, scope: "user" });
+		await installManagedHooks({ context: context as never, scope: "user" });
+		const installed = JSON.parse(await readFile(configPath, "utf8")) as {
+			hooks: Record<string, Array<{ command: string }>>;
+		};
+		expect(installed.hooks.beforeSubmitPrompt?.map((entry) => entry.command)).toEqual([
+			"customer-audit",
+			expect.stringContaining("--managed-by aidr-cursor"),
+		]);
+
+		await removeManagedHooks("user");
+		const removed = JSON.parse(await readFile(configPath, "utf8")) as {
+			hooks: Record<string, unknown>;
+		};
+		expect(removed.hooks).toEqual({ beforeSubmitPrompt: [{ command: "customer-audit" }] });
 	});
 
 	it("refuses malformed customer hooks on install and removal without overwriting them", async () => {

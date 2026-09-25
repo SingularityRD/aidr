@@ -43,6 +43,7 @@ const FUNCTION_ENV: Record<string, readonly string[]> = {
 	"team-invite": ["AIDR_DASHBOARD_URL"],
 	"packs-download": ["AIDR_PACK_DOWNLOAD_GRANT_SECRET"],
 	"packs-manifest": ["AIDR_PACK_DOWNLOAD_GRANT_SECRET"],
+	"approval-requests": ["AIDR_APPROVAL_SIGNING_WRAP_KEY_B64"],
 };
 
 function functionNames(): string[] {

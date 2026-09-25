@@ -72,6 +72,14 @@
         "type": "REG_SZ",
         "value": "[]"
       },
+      "customSites": {
+        "type": "REG_SZ",
+        "value": "[{\"id\":\"acme-gpt\",\"label\":\"ACME GPT\",\"hosts\":[\"gpt.acme.example\"],\"editorSelectors\":[\"textarea#prompt\"],\"sendButtonSelectors\":[\"button.send\"],\"responseSelectors\":[\".answer\"]}]"
+      },
+      "shadowAi": {
+        "type": "REG_SZ",
+        "value": "{\"mode\":\"block-unsanctioned\",\"sanctioned\":[\"chatgpt\",\"copilot\",\"gemini\"],\"blocked\":[\"deepseek\"]}"
+      },
       "allowUserPause": {
         "type": "REG_DWORD",
         "value": 0

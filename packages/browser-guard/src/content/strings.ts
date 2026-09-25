@@ -39,6 +39,10 @@ export interface Strings {
 	readonly fileBlockedTitle: string;
 	fileBlockedBody(name: string, reasons: string): string;
 	readonly fileBlockedByPolicy: string;
+	/** documentHandling "block": Office/PDF uploads are not allowed. */
+	readonly documentBlockedByPolicy: string;
+	/** Appended when a PDF was blocked for sensitive data (PDFs cannot be masked in place). */
+	readonly pdfPasteHint: string;
 	readonly fileScanFailed: string;
 	readonly fileReplaceUnsupported: string;
 	/** Native NER was enabled but gave no usable answer: this check was rules-only. */
@@ -84,6 +88,10 @@ const EN: Strings = {
 	fileBlockedTitle: "Upload blocked",
 	fileBlockedBody: (name, reasons) => `"${name}" was not uploaded (${reasons}).`,
 	fileBlockedByPolicy: "Your organisation does not allow file uploads to AI services.",
+	documentBlockedByPolicy:
+		"Your organisation does not allow Office or PDF documents to be uploaded to AI services.",
+	pdfPasteHint:
+		"PDFs cannot be masked. Copy the text you need and paste it instead: AIDR masks pasted text.",
 	fileScanFailed: "AIDR could not check the file, so it was not uploaded.",
 	fileReplaceUnsupported:
 		"This browser cannot replace the file with a sanitized copy, so it was not uploaded.",
@@ -128,6 +136,10 @@ const TR: Strings = {
 	fileBlockedTitle: "Yükleme engellendi",
 	fileBlockedBody: (name, reasons) => `"${name}" yüklenmedi (${reasons}).`,
 	fileBlockedByPolicy: "Kurumunuz yapay zekâ hizmetlerine dosya yüklenmesine izin vermiyor.",
+	documentBlockedByPolicy:
+		"Kurumunuz yapay zekâ hizmetlerine Office veya PDF belgesi yüklenmesine izin vermiyor.",
+	pdfPasteHint:
+		"PDF dosyaları maskelenemez. Gereken metni kopyalayıp yapıştırın: AIDR yapıştırılan metni maskeler.",
 	fileScanFailed: "AIDR dosyayı kontrol edemedi; dosya yüklenmedi.",
 	fileReplaceUnsupported:
 		"Bu tarayıcı dosyayı temizlenmiş kopyasıyla değiştiremiyor; dosya yüklenmedi.",

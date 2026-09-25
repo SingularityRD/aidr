@@ -33,7 +33,8 @@ Singularity AIDR uses OpenCode plugin hooks:
 
 - `tool.execute.before` - extracts artifacts and runs the Singularity AIDR evaluator before tool execution
 - `tool.execute.after` - inspects completed tool output and replaces risky, oversized, or unsupported output with a quarantine notice before model consumption; it runs after the tool action, so it cannot undo that action
-- `experimental.chat.messages.transform` - adds queued plugin-scan findings to the first user message; this is advisory context, not prompt inspection or a provider-stream gate
+- `chat.message` - prompt protection: inspects the user's message before it is stored or sent; secrets block (text replaced, hook throws), personal data warns (see [configuration](../configuration.md#prompt_protection))
+- `experimental.chat.messages.transform` - adds queued plugin-scan findings to the first user message and prompt-protection warning notices to the message they concern; this is advisory context, not a provider-stream gate
 - `tool` - registers the allowlist tools (`aidr_allowlist_add`, `aidr_allowlist_remove`)
 
 OpenCode exposes no pre-consumption hook for arbitrary provider streams or

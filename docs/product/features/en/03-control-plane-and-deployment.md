@@ -50,6 +50,10 @@ Compose or Kubernetes, and air-gapped.
    - [Operator administration (operator-admin)](#operator-administration-operator-admin)
 7. [Telemetry and its privacy](#7-telemetry-and-its-privacy)
 8. [Audit export and SIEM delivery](#8-audit-export-and-siem-delivery)
+   - [Audit export (CSV and JSON)](#audit-export-csv-and-json)
+   - [SIEM delivery](#siem-delivery)
+   - [Compliance evidence report](#compliance-evidence-report)
+   - [Alert integrations: Slack, Teams, signed webhooks and e-mail](#alert-integrations-slack-teams-signed-webhooks-and-e-mail)
 9. [Retention, legal hold and offboarding](#9-retention-legal-hold-and-offboarding)
 10. [Backups and restore drills](#10-backups-and-restore-drills)
 11. [Monitoring and alerts](#11-monitoring-and-alerts)
@@ -128,10 +132,11 @@ locally after an inactivity timeout. The routes are declared in
 | `/incidents` | Incidents | Blocked and approval-required verdicts, evidence chain | [Incidents](#incidents-and-evidence-chain) |
 | `/privacy-guard` | Browser Privacy | Browser Guard counts and browser enrollment | [Browser Privacy](#browser-privacy) |
 | `/autosecops` | AutoSecOps | Runtime fleet view from the AutoSecOps integration | [AutoSecOps](#autosecops-view-and-response-playbooks) |
-| `/settings` | Settings | Workspace name, retention, closure, MFA status, theme | [Workspace settings](#workspace-settings-name-retention-closure) |
+| `/settings` | Settings | Workspace name, retention, closure, alert notifications, MFA status, theme | [Workspace settings](#workspace-settings-name-retention-closure), [Alert integrations](#alert-integrations-slack-teams-signed-webhooks-and-e-mail) |
 | `/team` | Team | Members, roles, invitations, team audit and export | [Team](#team-roles-and-invitations) |
 | `/scim` | Directory provisioning (owners only) | SCIM credentials and group-to-role mappings | [SCIM](#scim-directory-provisioning) |
 | `/policies` | Policies (roles that can edit policy) | Team policy, runtime policy, rollout, DLP editor | [Policies](#team-policy-and-runtime-policy) |
+| `/compliance` | Compliance (owners and admins) | Compliance evidence report (hash-sealed, optionally signed): JSON, CSV bundle, printable EN/TR | [Compliance evidence report](#compliance-evidence-report) |
 | `/enterprise` | none (link in the invitation) | Invitation acceptance | [Team](#team-roles-and-invitations) |
 | `/auth/dlp-step-up` | none | MFA step-up before DLP and workspace changes | [MFA](#multi-factor-authentication-recovery-and-session-revocation) |
 | `/auth/recover` | none | Password recovery and break-glass recovery codes | [MFA](#multi-factor-authentication-recovery-and-session-revocation) |
@@ -1244,6 +1249,117 @@ retry after a crash produces a duplicate that the SOC rule deduplicates on `even
 point an unauthenticated webhook at an internet-reachable receiver. There is no mTLS or
 request signing. "Delivered" does not prove indexing or alerting downstream.
 
+### Compliance evidence report
+
+**What it does.** Owners and admins generate a tenant-scoped JSON report for a chosen
+period (up to 366 days) from **Compliance** (`/compliance`) or the `compliance-report`
+API. It gathers the evidence security and DPO teams are usually asked for: tenant
+profile and retention settings, protection coverage by runtime, Browser Guard
+masked/warned/blocked counts by entity type, AI site and day, agent DLP decisions,
+policy versions and digests, MFA/SSO/SCIM state with the owner/admin list, incidents,
+AI security posture (CVE severities, MCP risks), the data-flow and subprocessor
+inventory, and retention, legal-hold, offboarding and export clean-up evidence.
+
+**Why it matters.** KVKK and GDPR accountability work needs the same facts every
+quarter. The report is designed to support that work with one verifiable document. It is
+not a certification and does not state that anyone is compliant.
+
+**How it works.** A service-role SQL function aggregates counts, enums, identifiers,
+timestamps and SHA-256 digests only; the Edge Function projects the result through a
+declarative schema that drops anything else and refuses malformed evidence. The report
+carries the SHA-256 of its canonical JSON and, when the deployment has a compliance
+signing key, an Ed25519 signature. Each issued report is written to the admin audit log
+(`compliance_report.generated`) before it is returned. Generation requires an AAL2
+session, passes the identity barrier, is rate limited (3 per minute per user) and fails
+closed at every step.
+
+**How to use.** Open **Compliance**, pick a period and press **Generate report**. Then
+download the JSON (the authoritative artifact), a ZIP of CSV files (one per section
+table), or a printable report in English or Turkish (**Print / save as PDF**). Auditors
+verify the JSON offline:
+
+```bash
+aidr compliance verify report.json --public-key issuer.pem --require-signature
+```
+
+**Example.** A DPO generates the last 90 days, attaches the PDF to the quarterly access
+review and gives the auditor the JSON and the operator's public key. The auditor's
+`aidr compliance verify` prints `VERIFIED`; changing a single count makes it exit 2.
+
+**Availability.**
+
+| Plan | Deployment | Platforms / OS |
+| --- | --- | --- |
+| All plans (dashboard) | Cloud, On-prem, Air-gapped (signing key set by hand on-prem) | Web console; `aidr` CLI on Linux, macOS, Windows for verification |
+
+**Limitations.** Counts cover only telemetry that reached the control plane and is still
+within retention. Policy bodies, prompt text and hold reasons are deliberately excluded.
+The data-flow matrix is the product's engineering inventory with open `unknown` values.
+CSV and printable editions are derived and unsigned. Without a signing key the report is
+hash-only. See [docs/compliance-report.md](../../../compliance-report.md) for what each
+section proves and does not prove.
+
+### Alert integrations: Slack, Teams, signed webhooks and e-mail
+
+**What it does.** Under **Settings → Notifications**, workspace owners and administrators
+send real-time alerts to **Slack** (incoming webhook, Block Kit message), **Microsoft
+Teams** (workflow webhook, Adaptive Card), a **signed HTTPS webhook** (JSON schema
+`aidr.notification.v1`) or **e-mail** (1 to 10 recipients). Each channel chooses its
+events: new incidents at or above a minimum severity, critical runtime denies, actions
+awaiting out-of-band approval, and spikes of blocked Browser Guard prompts (for example 10
+blocked sends within 15 minutes).
+
+**Why it matters.** A blocked exfiltration attempt or an approval request is useful only
+if someone sees it in time. Teams without a SIEM, or with a SIEM that nobody watches at
+night, still get the alert where they already work.
+
+**How it works.** The event and its alert are written in the **same database
+transaction**: an `AFTER INSERT` trigger on the telemetry table queues one delivery per
+matching channel (transactional outbox), so an alert exists if and only if the event was
+stored. A dispatcher runs every minute, leases due deliveries, and sends them with a 10 s
+timeout, **exponential backoff** (8 attempts from 30 s up to 1 h) and a stable
+**idempotency key** (the delivery id). Generic webhooks are signed with
+`X-AIDR-Signature: t=<ts>,v1=<HMAC-SHA256>`; a Node.js and a Python verification snippet
+are in [the notification contract](../../../contracts/notifications.md). Alerts carry
+**identifiers, severity, category and counts only**, plus a deep link into the console;
+never prompts, commands, paths or matched values. Destinations are **write-only**: they
+are encrypted at rest (AES-256-GCM, bound to the tenant and channel) and never shown
+again; the console shows only the host and a short digest. Before every send the
+webhook host is resolved and any private, link-local or cloud-metadata address is
+refused (**SSRF protection**); Slack and Teams URLs must be on the provider's webhook
+hosts, and redirects are never followed. Every change and test send needs MFA (AAL2), is
+rate limited and is audited.
+
+**How to use.** Settings → Notifications → **Add a channel**: pick the type, paste the
+webhook URL (for a signed webhook press **Generate**, copy the secret into your receiver),
+choose the events and save. Press **Send test** to see the receiver's real answer, and
+use **Disable**, **Edit events** or **Delete** later. **Recent deliveries** lists each
+attempt with its status and error code. Operators schedule the dispatcher once: pg_cron
+on Supabase Cloud, `install-systemd.sh --with-notifications` on Compose,
+`notifications.dispatcher.enabled=true` on Helm (see
+[control plane](../../../control-plane.md#alert-integrations-slack-teams-webhooks-e-mail)).
+
+**Example.** A Claude Code agent tries to upload `~/.aws/credentials`; the connector
+denies it with a critical rule. Within a minute the SOC Slack channel shows "Critical
+agent action blocked" with the rule id, agent id and an **Open in AIDR** button; the
+on-call webhook receives the same alert, verifies the signature and opens a ticket keyed
+on the delivery id.
+
+**Availability.**
+
+| Plan | Deployment | Platforms / OS |
+| --- | --- | --- |
+| All plans (dashboard) | Cloud (pg_cron + pg_net), On-prem Compose (systemd timer), Kubernetes (CronJob), Air-gapped (internal webhook or mail relay only) | Web console; receivers must be reachable from the functions runtime |
+
+**Limitations.** Delivery is at-least-once, not exactly-once; receivers should
+deduplicate on the delivery id. The latency is up to about one minute (the dispatcher
+schedule); a console test send is immediate. Each channel is capped at 30 queued alerts
+per minute. There is no `agent.offline` alert, no digest/batching, no per-user
+preference and no mTLS to webhook receivers. E-mail needs a configured mail provider.
+The DNS check and the connection resolve separately; on-prem, pair it with an egress
+allow-list or proxy. Destinations are write-only, so rotating the encryption key means
+re-entering them.
+
 ---
 
 ## 9. Retention, legal hold and offboarding
@@ -1453,10 +1569,11 @@ and resource limits), `.env`, `.env.functions`, `.env.readiness` and `.env.ingre
 `0600`), migrations, functions, `agent-config.json` and `deployment.json`. Ports bind to
 loopback, so your TLS proxy fronts them. Three **resource profiles** set per-service CPU,
 memory and PID limits (see [sizing](#resource-sizing)). The optional **deep-scan
-sidecar** (`--with-aig`) adds the deep-scan server, agent and bridge under Compose profile
-`aig`. The bridge is published on `127.0.0.1:8099` only. Remote scans leave only through
-**`aig-egress`**, a pinned Squid gateway that denies everything by default. You list
-authorized domains in `/srv/aidr/aig/egress/allowlist.txt`. Loopback, private, CGNAT and
+sidecar** (`--with-posture-scanner`) adds the deep-scan server, agent and bridge under
+Compose profile `posture-scanner`. The bridge is published on `127.0.0.1:8099` only. Remote
+scans leave only through a pinned **Squid egress gateway** that denies everything by
+default. You list authorized domains in `/srv/aidr/posture-scanner/egress/allowlist.txt`.
+Loopback, private, CGNAT and
 reserved destinations are refused even if listed.
 
 **How to use.**
@@ -1470,8 +1587,8 @@ docker compose --project-directory /srv/aidr -f /srv/aidr/compose.yml up -d --bu
 node scripts/deployment-migrate.mjs /srv/aidr
 node scripts/deployment-doctor.mjs --deployment /srv/aidr --online
 ```
-Add `--with-aig --aig-signing-public-key-file <pem> --aig-signing-key-id <id>` for the
-scanning sidecar. Every setting is listed in the
+Add `--with-posture-scanner --posture-scanner-signing-public-key-file <pem>
+--posture-scanner-signing-key-id <id>` for the scanning sidecar. Every setting is listed in the
 [on-prem configuration reference](../../../operations/onprem-config-reference.md)
 (`pnpm onprem:config-reference`).
 
@@ -1494,7 +1611,7 @@ not-ready until a release-signed manifest is deployed.
 **What it does.** The chart `deploy/helm/aidr` installs the same control plane on
 Kubernetes 1.25+. It runs the dashboard, an Envoy API gateway, auth, REST, storage,
 functions, an optional in-cluster Postgres, a migrations hook Job, an optional backup
-CronJob and the optional deep-scan stack (`aig.enabled`).
+CronJob and the optional deep-scan stack (`postureScanner.enabled`).
 
 **Why it matters.** Teams that run Kubernetes get chart-managed upgrades, replicas,
 PodDisruptionBudgets and autoscaling, with their own HA Postgres.
@@ -1734,7 +1851,7 @@ validate with your own load and soak tests.
 | Compose host | `small` (default): pilot, up to about 100 endpoints | 4 vCPU, 8 GiB RAM, 100 GiB SSD | +4 vCPU, 6 GiB, 40 GiB |
 | Compose host | `medium`: load-test start for about 1,000 endpoints | 8 vCPU, 16 GiB RAM, 250 GiB SSD | +6 vCPU, 8 GiB, 60 GiB |
 | Compose host | `large`: dedicated host for multi-thousand endpoint tests | 16 vCPU, 32 GiB RAM, 500 GiB SSD | +8 vCPU, 12 GiB, 100 GiB |
-| Kubernetes | `resourcesPreset: small` (evaluation, under 250 seats), `medium` (x2, under 2,500 seats), `large` (x4) | Requests and limits per component | `aig.*` components |
+| Kubernetes | `resourcesPreset: small` (evaluation, under 250 seats), `medium` (x2, under 2,500 seats), `large` (x4) | Requests and limits per component | `postureScanner.*` components |
 | Endpoint | per protected device | Reserve 512 MiB disk (packages, 64 MiB default event queue, feed, logs) | n/a |
 
 Planning model for telemetry, assuming 2 KiB events, 90-day retention and a peak of 10x
@@ -1760,7 +1877,7 @@ the daily average. Replace these assumptions with real customer data:
 | Runtime policy, rollout, DLP editor | Local policy file only | Yes | Yes | Yes | Yes |
 | Browser Privacy reporting | Extension masks locally, no report | Yes | Yes | Yes | Yes |
 | AI Security Posture page | Scanners run locally, no page | Yes | Yes | Yes | Yes (internal targets) |
-| Deep-scan sidecar | Optional loopback bridge | Not listed for the hosted service | Optional `--with-aig` | Optional `aig.enabled` | Optional; remote scans only via egress allowlist |
+| Deep-scan sidecar | Optional loopback bridge | Not listed for the hosted service | Optional `--with-posture-scanner` | Optional `postureScanner.enabled` | Optional; remote scans only via egress allowlist |
 | Entra ID SSO | - | Yes | Yes | Yes | Only if the IdP is reachable internally |
 | SAML 2.0 | - | Yes | Yes (Auth configured for SAML) | Yes (`dashboard.saml.*`) | With an internal IdP |
 | SCIM | - | Yes | Yes | Yes | Yes (IdP must reach the API) |
@@ -1768,6 +1885,7 @@ the daily average. Replace these assumptions with real customer data:
 | Invitation email | - | When a mail provider is configured | Needs egress to the provider; otherwise manual link | Same as Compose | Manual link |
 | Audit export (CSV/JSON) | Local JSONL audit log | Yes | Yes | Yes | Yes |
 | SIEM delivery | - | Listed for the hosted service | Yes (systemd timer) | Not yet a CronJob | Yes (internal SIEM) |
+| Alert integrations (Slack, Teams, webhooks, e-mail) | - | Yes (pg_cron dispatcher) | Yes (systemd timer) | Yes (CronJob, opt-in) | Internal webhooks or mail relay only |
 | Card billing (Stripe) | - | Only when self-service is enabled | - | - | - |
 | Invoice and operator licence | - | Yes | Yes | Yes | Yes |
 | Signed offline licence | - | - | Yes | Yes | Yes |
@@ -1789,6 +1907,6 @@ the daily average. Replace these assumptions with real customer data:
 - [Licensing](../../../operations/licensing.md), [operator administration](../../../operations/operator-admin.md), [admission operators](../../../operations/admission-operators.md)
 - [Upgrade runbook](../../../../deploy/UPGRADE.md), [backup runbook](../../../../deploy/backup/README.md), [monitoring](../../../../deploy/monitoring/README.md), [scheduled maintenance](../../../../deploy/maintenance/README.md), [ingress and TLS](../../../../deploy/ingress/README.md)
 - [AI Security Posture](../../../ai-security-posture.md), [threat-intelligence sync and air-gapped updates](../../../operations/threat-sync.md)
-- [Privacy and telemetry data flow](../../../privacy.md), [privacy telemetry contract](../../../contracts/privacy-telemetry.md), [device authorization](../../../device-auth.md)
+- [Privacy and telemetry data flow](../../../privacy.md), [privacy telemetry contract](../../../contracts/privacy-telemetry.md), [alert notification contract](../../../contracts/notifications.md), [device authorization](../../../device-auth.md)
 - [Response playbooks](../../../operations/response-playbooks.md), [recovery codes](../../../security/recovery-codes.md)
 - [Product overview](../../overview.md)

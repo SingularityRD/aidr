@@ -88,6 +88,7 @@ import { syncRemoteRuntimePolicy } from "./remote-policy.js";
 import type { ReputationFeedLoadOptions } from "./reputation-feed.js";
 import { loadThreatsFromDirs } from "./threat-loader.js";
 import { normalizeToolEvaluationRequest, readFileEditPayload } from "./tool-normalization.js";
+import { applyToxicFlow } from "./toxic-flow.js";
 import { loadTrustedDomains } from "./trusted-domains.js";
 import type {
 	AgentRuntime,
@@ -793,6 +794,27 @@ async function recordEarlyVerdict(
 	}
 }
 
+/**
+ * Session toxic-flow detection (docs/toxic-flow.md), applied after every other
+ * layer so it sees their decision: a deny is left alone and not recorded, an
+ * allow or ask is recorded into the session and may be escalated when this
+ * call completes a dangerous chain. It never throws; state failures come back
+ * as a marked, non-clean verdict.
+ */
+function applySessionFlow(
+	request: ToolEvaluationRequest,
+	context: ToolEvaluationContext,
+	config: Config,
+	verdict: Verdict,
+	allowlisted = false,
+): Promise<Verdict> {
+	return applyToxicFlow(request, verdict, config, {
+		agentRuntime: context.agentRuntime,
+		logger: context.logger ?? nullLogger,
+		allowlisted,
+	});
+}
+
 export function allowVerdict(source = "none"): Verdict {
 	return {
 		decision: "allow",
@@ -1097,11 +1119,25 @@ async function runEvaluationPipeline(
 		return profileVerdict;
 	}
 	// Every exit below routes its verdict through here: tenant runtime
-	// detectors first, then the profile restriction, then host promotion.
-	const finalize = async (verdict: Verdict): Promise<Verdict> =>
+	// detectors, then session (toxic) flow, then the profile restriction,
+	// then host promotion.
+	const finalize = async (verdict: Verdict, allowlisted = false): Promise<Verdict> =>
 		hostEffectiveVerdict(
 			mergeAgentProfileVerdict(
-				await applyRuntimeDetectors(request, context, config, verdict, managedState, rewriteSource),
+				await applySessionFlow(
+					request,
+					context,
+					config,
+					await applyRuntimeDetectors(
+						request,
+						context,
+						config,
+						verdict,
+						managedState,
+						rewriteSource,
+					),
+					allowlisted,
+				),
 				profileVerdict,
 			),
 			config,
@@ -1424,6 +1460,7 @@ async function runEvaluationPipeline(
 			if (
 				verdict.decision !== "allow" ||
 				verdict.category === "behavioral_unavailable" ||
+				verdict.category.startsWith("toxic_flow") ||
 				verdict.transformedInput
 			) {
 				await recordEarlyVerdict(request, context, config, verdict, logger, startTime);
@@ -1451,7 +1488,7 @@ async function runEvaluationPipeline(
 	}
 
 	if (allowlisted) {
-		const finalVerdict = await finalize(allowlisted);
+		const finalVerdict = await finalize(allowlisted, true);
 		await recordEarlyVerdict(
 			request,
 			context,

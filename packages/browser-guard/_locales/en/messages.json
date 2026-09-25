@@ -683,6 +683,124 @@
 		"message": "This decision was made by a policy set by your organization, not by the website.",
 		"description": "Blocked footer."
 	},
+	"blocked_detail_shadow_ai": {
+		"message": "Your organization has not approved this AI service for work, so Browser Guard stopped the page from loading.",
+		"description": "Blocked body for a Shadow AI block."
+	},
+	"site_custom_label": {
+		"message": "your organization's AI site",
+		"description": "Popup: name used for an administrator-configured internal AI site."
+	},
+	"section_ai_access": {
+		"message": "AI services",
+		"description": "Section title (Shadow AI and internal AI sites)."
+	},
+	"ai_access_intro": {
+		"message": "Your organization manages which AI services can be used in this browser and on which internal AI sites Browser Guard masks your messages.",
+		"description": "AI services intro."
+	},
+	"shadow_title": {
+		"message": "AI service use",
+		"description": "Shadow AI subsection title."
+	},
+	"shadow_mode_off": {
+		"message": "Visits to AI services are not counted. Services your organization blocks do not open.",
+		"description": "Shadow AI mode off."
+	},
+	"shadow_mode_monitor": {
+		"message": "Browser Guard counts visits to known AI services per day (the service name only, never the page address) so your organization can see which ones are used.",
+		"description": "Shadow AI mode monitor."
+	},
+	"shadow_mode_block": {
+		"message": "Only AI services your organization approved open in this browser. Visits are counted per service and day (never the page address).",
+		"description": "Shadow AI mode block-unsanctioned."
+	},
+	"shadow_sanctioned": {
+		"message": "Approved: $LIST$",
+		"description": "Approved AI services.",
+		"placeholders": {
+			"list": {
+				"content": "$1",
+				"example": "ChatGPT, Claude"
+			}
+		}
+	},
+	"shadow_blocked_count": {
+		"message": "AI services blocked by your organization: $COUNT$",
+		"description": "Blocked AI service count.",
+		"placeholders": {
+			"count": {
+				"content": "$1",
+				"example": "12"
+			}
+		}
+	},
+	"shadow_access_missing": {
+		"message": "Browser Guard needs your permission to access $COUNT$ AI service addresses to count visits and enforce blocks. It only learns which service a tab opened.",
+		"description": "Shadow AI host access missing.",
+		"placeholders": {
+			"count": {
+				"content": "$1",
+				"example": "140"
+			}
+		}
+	},
+	"shadow_access_granted": {
+		"message": "Access granted: counting and blocking are active.",
+		"description": "Shadow AI host access granted."
+	},
+	"access_grant_button": {
+		"message": "Allow access",
+		"description": "Button requesting host access."
+	},
+	"access_unknown": {
+		"message": "The access status is unavailable right now.",
+		"description": "Host access status unavailable."
+	},
+	"shadow_usage_title": {
+		"message": "Visits in this browser (last 7 days)",
+		"description": "Shadow AI usage table caption."
+	},
+	"shadow_usage_service": {
+		"message": "AI service",
+		"description": "Column header."
+	},
+	"shadow_usage_visits": {
+		"message": "Visits",
+		"description": "Column header."
+	},
+	"shadow_usage_blocked": {
+		"message": "Blocked",
+		"description": "Column header."
+	},
+	"shadow_usage_empty": {
+		"message": "No visits recorded yet.",
+		"description": "Empty usage table."
+	},
+	"custom_title": {
+		"message": "Internal AI sites",
+		"description": "Custom sites subsection title."
+	},
+	"custom_intro": {
+		"message": "Browser Guard masks your messages on these sites once you allow it to access them. Reload open tabs of a site after allowing access.",
+		"description": "Custom sites intro."
+	},
+	"custom_status_active": {
+		"message": "Protected",
+		"description": "Custom site status."
+	},
+	"custom_status_missing": {
+		"message": "Needs access",
+		"description": "Custom site status."
+	},
+	"notice_access_granted": {
+		"message": "Access granted.",
+		"description": "Notice."
+	},
+	"notice_access_denied": {
+		"message": "Access was not granted.",
+		"description": "Notice."
+	},
 	"entity_PERSON": {
 		"message": "Person name",
 		"description": "Entity type PERSON."

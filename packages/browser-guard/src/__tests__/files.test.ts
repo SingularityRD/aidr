@@ -288,8 +288,19 @@ describe("sanitizeFile binary handling", () => {
 	]);
 
 	it("blocks unscannable binaries in block mode", async () => {
-		const d = await run("report.pdf", pdf, { type: "application/pdf", policy: { mode: "block" } });
+		const d = await run("photo.png", new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0, 1]), {
+			policy: { mode: "block" },
+		});
 		expect(d).toEqual({ action: "block", counts: {}, reasons: ["BINARY_FILE_UNSCANNABLE"] });
+	});
+
+	it("blocks a PDF that cannot be parsed in block mode (truncated header only)", async () => {
+		const d = await run("report.pdf", pdf, { type: "application/pdf", policy: { mode: "block" } });
+		expect(d).toEqual({
+			action: "block",
+			counts: {},
+			reasons: ["BINARY_FILE_UNSCANNABLE", "PDF_UNPARSEABLE"],
+		});
 	});
 
 	it.each(["auto", "confirm", "monitor"] as const)(
@@ -304,7 +315,9 @@ describe("sanitizeFile binary handling", () => {
 
 	it("treats a known binary extension as binary even if it decodes as text", async () => {
 		const d = await run("fake.docx", "plain a@b.com", { policy: { mode: "block" } });
-		expect(d.reasons).toEqual(["BINARY_FILE_UNSCANNABLE"]);
+		expect(d.reasons).toEqual(["BINARY_FILE_UNSCANNABLE", "DOCUMENT_UNPARSEABLE"]);
+		const image = await run("fake.png", "plain a@b.com", { policy: { mode: "block" } });
+		expect(image.reasons).toEqual(["BINARY_FILE_UNSCANNABLE"]);
 	});
 
 	it("still treats undeclared, non-UTF-8 content as binary", async () => {

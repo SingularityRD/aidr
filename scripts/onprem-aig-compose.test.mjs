@@ -9,12 +9,12 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const { parse } = createRequire(join(root, "packages/core/package.json"))("yaml");
-const compose = parse(readFileSync(join(root, "docker-compose.aig.yml"), "utf8"));
+const compose = parse(readFileSync(join(root, "docker-compose.posture-scanner.yml"), "utf8"));
 const environment = (service) => Object.fromEntries(compose.services[service].environment.map((entry) => [entry.slice(0, entry.indexOf("=")), entry.slice(entry.indexOf("=") + 1)]));
 const docker = spawnSync("docker", ["compose", "version"], { encoding: "utf8", timeout: 30_000 });
 const dockerComposeAvailable = !docker.error && docker.status === 0;
 
-test("AIG compose defaults to a single-host bridge that needs no external database or proxy", () => {
+test("posture scanner compose defaults to a single-host bridge that needs no external database or proxy", () => {
 	const bridge = environment("aig-bridge");
 	assert.equal(bridge.BRIDGE_TASK_BACKEND, "${BRIDGE_TASK_BACKEND:-sqlite}");
 	assert.equal(bridge.BRIDGE_HA_REQUIRED, "${BRIDGE_HA_REQUIRED:-false}");
@@ -27,7 +27,7 @@ test("AIG compose defaults to a single-host bridge that needs no external databa
 	assert.equal(agent.HTTPS_PROXY, "${BRIDGE_EGRESS_PROXY_URL:-http://aig-egress:3128}");
 	assert.equal(compose.services["aig-agent"].depends_on["aig-egress"].condition, "service_healthy");
 
-	const example = readFileSync(join(root, ".env.aig.example"), "utf8");
+	const example = readFileSync(join(root, ".env.posture-scanner.example"), "utf8");
 	assert.match(example, /^BRIDGE_TASK_BACKEND=sqlite$/m);
 	assert.match(example, /^BRIDGE_HA_REQUIRED=false$/m);
 	assert.match(example, /^BRIDGE_EGRESS_PROXY_URL=http:\/\/aig-egress:3128$/m);
@@ -48,7 +48,7 @@ test("only the pinned egress gateway reaches the Internet and only the bridge pu
 	assert.deepEqual(attached("aig-bridge"), ["aidr-aig-network", "aidr-aig-edge"]);
 	assert.deepEqual(attached("aig-egress"), ["aidr-aig-network", "aidr-aig-egress"]);
 	for (const [name, service] of Object.entries(compose.services)) {
-		if (name === "aig-bridge") assert.deepEqual(service.ports, ["${AIG_BIND_ADDRESS:-127.0.0.1}:${AIG_BRIDGE_PORT:-8099}:8099"]);
+		if (name === "aig-bridge") assert.deepEqual(service.ports, ["${POSTURE_SCANNER_BIND_ADDRESS:-${AIG_BIND_ADDRESS:-127.0.0.1}}:${POSTURE_SCANNER_BRIDGE_PORT:-${AIG_BRIDGE_PORT:-8099}}:8099"]);
 		else assert.equal(Object.hasOwn(service, "ports"), false, `${name} must not publish a port`);
 	}
 
@@ -81,32 +81,45 @@ test("the shipped egress policy denies by default and refuses non-public destina
 	assert.deepEqual(allowlist, [], "the shipped allowlist must not pre-authorize any scan destination");
 });
 
-test("docker compose accepts the standalone AIG stack with the example environment", { skip: !dockerComposeAvailable && "docker compose is not installed" }, (t) => {
-	const directory = mkdtempSync(join(tmpdir(), "aidr-aig-compose-"));
+test("docker compose accepts the standalone posture scanner stack with the example environment", { skip: !dockerComposeAvailable && "docker compose is not installed" }, (t) => {
+	const directory = mkdtempSync(join(tmpdir(), "aidr-posture-scanner-compose-"));
 	t.after(() => rmSync(directory, { recursive: true, force: true }));
-	const envFile = join(directory, ".env.aig");
+	const envFile = join(directory, ".env.posture-scanner");
 	const filled = {
-		AIG_AGENT_SHARED_SECRET: "a".repeat(64),
-		AIG_SIGNING_PUBLIC_KEY_HOST_PATH: join(directory, "aig-release-public.pem"),
-		AIG_TRUSTED_SIGNING_KEY_ID: "fixture-key",
-		AIG_TRUSTED_SIGNING_PUBLIC_KEY_SHA256: "b".repeat(64),
-		AIG_EXPECTED_DATA_BUNDLE_ID: "c".repeat(64),
-		AIG_EXPECTED_SOURCE_COMMIT: "d".repeat(40),
+		POSTURE_SCANNER_AGENT_SHARED_SECRET: "a".repeat(64),
+		POSTURE_SCANNER_SIGNING_PUBLIC_KEY_HOST_PATH: join(directory, "scanner-release-public.pem"),
+		POSTURE_SCANNER_TRUSTED_SIGNING_KEY_ID: "fixture-key",
+		POSTURE_SCANNER_TRUSTED_SIGNING_PUBLIC_KEY_SHA256: "b".repeat(64),
+		POSTURE_SCANNER_EXPECTED_DATA_BUNDLE_ID: "c".repeat(64),
+		POSTURE_SCANNER_EXPECTED_SOURCE_COMMIT: "d".repeat(40),
 		BRIDGE_API_KEY: "e".repeat(64),
 	};
-	const example = readFileSync(join(root, ".env.aig.example"), "utf8").replace(/^([A-Z][A-Z0-9_]*)=$/gm, (line, name) => (filled[name] ? `${name}=${filled[name]}` : line));
+	const example = readFileSync(join(root, ".env.posture-scanner.example"), "utf8").replace(/^([A-Z][A-Z0-9_]*)=$/gm, (line, name) => (filled[name] ? `${name}=${filled[name]}` : line));
 	writeFileSync(envFile, example);
-	const args = ["compose", "--env-file", envFile, "-f", join(root, "docker-compose.aig.yml")];
+	const args = ["compose", "--env-file", envFile, "-f", join(root, "docker-compose.posture-scanner.yml")];
 	const quiet = spawnSync("docker", [...args, "config", "--quiet"], { encoding: "utf8", timeout: 60_000 });
 	assert.equal(quiet.status, 0, quiet.stderr);
 	const resolved = parse(spawnSync("docker", [...args, "config"], { encoding: "utf8", timeout: 60_000 }).stdout);
 	assert.equal(resolved.services["aig-bridge"].environment.BRIDGE_TASK_BACKEND, "sqlite");
 	assert.equal(resolved.services["aig-bridge"].environment.BRIDGE_HA_REQUIRED, "false");
 	assert.equal(resolved.services["aig-agent"].environment.HTTPS_PROXY, "http://aig-egress:3128");
+	// Operator names map onto the variables the scanner containers read.
+	assert.equal(resolved.services["aig-bridge"].environment.AIG_AGENT_SHARED_SECRET, filled.POSTURE_SCANNER_AGENT_SHARED_SECRET);
+	assert.equal(resolved.services["aig-server"].environment.AIG_TRUSTED_SIGNING_KEY_ID, "fixture-key");
+	assert.equal(resolved.services["aig-agent"].environment.AIG_AGENT_VERSION, "v4.6.1-aidr.1");
 
-	// Missing trust material still fails closed at configuration time.
-	writeFileSync(envFile, example.replace(/^AIG_AGENT_SHARED_SECRET=.*$/m, "AIG_AGENT_SHARED_SECRET="));
+	// Missing trust material still fails closed at configuration time and names the new setting.
+	writeFileSync(envFile, example.replace(/^POSTURE_SCANNER_AGENT_SHARED_SECRET=.*$/m, "POSTURE_SCANNER_AGENT_SHARED_SECRET="));
 	const missing = spawnSync("docker", [...args, "config", "--quiet"], { encoding: "utf8", timeout: 60_000 });
 	assert.notEqual(missing.status, 0);
-	assert.match(missing.stderr, /AIG_AGENT_SHARED_SECRET/);
+	assert.match(missing.stderr, /set POSTURE_SCANNER_AGENT_SHARED_SECRET/);
+
+	// An .env written by an earlier release (AIG_* names only) still resolves.
+	const legacy = Object.entries(filled).map(([name, value]) => `${name.replace(/^POSTURE_SCANNER_/, "AIG_")}=${value}`).join("\n");
+	writeFileSync(envFile, `${legacy}\nAIG_SOURCE_VERSION=v0.0.0-legacy\nBRIDGE_AUTH_MODE=api_key\n`);
+	const legacyResolved = spawnSync("docker", [...args, "config"], { encoding: "utf8", timeout: 60_000 });
+	assert.equal(legacyResolved.status, 0, legacyResolved.stderr);
+	const legacyCompose = parse(legacyResolved.stdout);
+	assert.equal(legacyCompose.services["aig-bridge"].environment.AIG_AGENT_SHARED_SECRET, filled.POSTURE_SCANNER_AGENT_SHARED_SECRET);
+	assert.equal(legacyCompose.services["aig-agent"].environment.AIG_AGENT_VERSION, "v0.0.0-legacy");
 });

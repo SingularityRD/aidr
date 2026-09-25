@@ -12,9 +12,11 @@ import {
 	createHostObservation,
 	evaluateToolCall,
 	extractFromToolCall,
+	formatDashboardApprovalNotice,
 	initSentry,
 	type Logger,
 	recordHostObservation,
+	resolveAskWithDashboardApproval,
 	type Verdict,
 	verifyArtifactIntegrityAndLog,
 } from "@singularityrd/aidr-core";
@@ -58,12 +60,37 @@ function redactedResponse(verdict: Verdict, updatedInput: Record<string, unknown
 	};
 }
 
-function makeResponse(verdict: Verdict): Record<string, unknown> {
+/** Managed-mode dashboard approval details for an `ask` (see `resolveAskWithDashboardApproval`). */
+interface DashboardNote {
+	/** User-facing request id / outcome line, or null when there is nothing to say. */
+	notice: string | null;
+	/** Only a dashboard approval may release the call: block instead of asking. */
+	dashboardOnly: boolean;
+}
+
+function makeResponse(
+	verdict: Verdict,
+	dashboard: DashboardNote = { notice: null, dashboardOnly: false },
+): Record<string, unknown> {
 	if (verdict.decision === "allow") {
 		return verdict.transformedInput ? redactedResponse(verdict, verdict.transformedInput) : {};
 	}
 
 	const banner = formatBlockReason(verdict);
+
+	if (verdict.decision === "ask" && dashboard.dashboardOnly) {
+		// operator_approvals.dashboard_only: the native dialog would let the local
+		// user approve, so the call is blocked and only the dashboard can release it.
+		const notice = dashboard.notice ?? "Only an AIDR dashboard approval can release this action.";
+		return {
+			systemMessage: `${banner}\n${notice}`,
+			hookSpecificOutput: {
+				hookEventName: "PreToolUse",
+				permissionDecision: "deny",
+				permissionDecisionReason: `🛡️ Singularity AIDR: approval required in the AIDR dashboard\n${notice}`,
+			},
+		};
+	}
 
 	if (verdict.decision === "deny") {
 		// For deny: short reason avoids Claude Code duplicating the banner.
@@ -86,7 +113,7 @@ function makeResponse(verdict: Verdict): Record<string, unknown> {
 		hookSpecificOutput: {
 			hookEventName: "PreToolUse",
 			permissionDecision: verdict.decision,
-			permissionDecisionReason: banner,
+			permissionDecisionReason: dashboard.notice ? `${banner}\n${dashboard.notice}` : banner,
 		},
 	};
 }
@@ -187,7 +214,7 @@ async function main(): Promise<void> {
 	// the raw tool input for configured runtime inspection and MCP policy.
 	const artifacts: Artifact[] = extractFromToolCall(toolName, toolInput);
 	const provisionedDetectors = await loadProvisionedDetectorContext();
-	const verdict = await evaluateToolCall(
+	const evaluated = await evaluateToolCall(
 		{ sessionId, toolName, toolInput, artifacts },
 		{
 			threatsDir: resolveAssetDir("threats"),
@@ -203,8 +230,25 @@ async function main(): Promise<void> {
 	// The deadline already denied this call; do not record approvals for it.
 	if (responded) return;
 
-	// Only track approvals for allowlistable types (content varies per call, not meaningful to allowlist)
-	if (verdict.decision === "ask" && toolUseId) {
+	// Managed mode: submit the ask to the AIDR dashboard, or release it with a
+	// verified single-use approval token (this hook is one process per call, so
+	// the request id and the spent nonce are persisted by core). Bounded, and a
+	// failure leaves the verdict unchanged.
+	const resolution = await resolveAskWithDashboardApproval(
+		{ sessionId, toolName, toolInput, artifacts },
+		evaluated,
+		{ agentRuntime: "claude-code", logger },
+	);
+	if (responded) return;
+	const verdict = resolution.verdict;
+	const dashboard: DashboardNote = {
+		notice: formatDashboardApprovalNotice(resolution.dashboardApproval),
+		dashboardOnly: resolution.dashboardOnly,
+	};
+
+	// Only track approvals for allowlistable types (content varies per call, not meaningful to allowlist).
+	// Under dashboard_only the native dialog is never shown, so there is nothing to track.
+	if (verdict.decision === "ask" && toolUseId && !dashboard.dashboardOnly) {
 		const matched = artifacts
 			.filter((a) => a.type !== "content" && verdict.artifacts.includes(a.value))
 			.map((a) => ({ value: a.value, type: a.type }));
@@ -226,7 +270,7 @@ async function main(): Promise<void> {
 		}
 	}
 
-	if (!respond(makeResponse(verdict))) return;
+	if (!respond(makeResponse(verdict, dashboard))) return;
 
 	// Native-host acceptance observation. Outside a gate run this is a no-op:
 	// the gate's environment contract is absent, so nothing is written. Inside

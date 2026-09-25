@@ -22,8 +22,11 @@ covers operation.
 - One Helm release per installation and namespace. The chart creates no cluster-scoped
   resources.
 - `migrations` is a Helm hook Job; `backup` is an optional CronJob.
-- `aig.enabled` adds `aig-server`, `aig-agent` and `aig-bridge` (the
-  `docker-compose.aig.yml` stack) with the bridge reachable only from labelled pods.
+- `postureScanner.enabled` adds the AI Security Posture scanner (`posture-scanner-server`,
+  `posture-scanner-agent` and `posture-scanner-bridge`, the
+  `docker-compose.posture-scanner.yml` stack) with the bridge reachable only from
+  labelled pods. The former `aig` values key is refused with a pointer to
+  `postureScanner`; see the chart README for the upgrade steps.
 
 ## Prerequisites
 
@@ -50,8 +53,8 @@ Upstream images are used unchanged. Three AIDR images are built from this reposi
 pnpm -C packages/dashboard build
 git submodule update --init deploy/upstream
 node deploy/helm/build-images.mjs --output .aidr-images --registry registry.example.internal --build --push
-# optional AIG stack:
-node deploy/helm/build-images.mjs --output .aidr-images-aig --only aig-server,aig-agent,aig-bridge \
+# optional AI Security Posture scanner:
+node deploy/helm/build-images.mjs --output .aidr-images-posture-scanner --only posture-scanner-server,posture-scanner-agent,posture-scanner-bridge \
   --registry registry.example.internal --build --push
 ```
 
@@ -194,13 +197,13 @@ pnpm verify:helm
 
 runs `deploy/helm/chart.test.mjs` and `deploy/helm/tools.test.mjs` with `node --test`.
 Static checks always run. The rendered checks (`helm lint --strict` and `helm template`
-for `ci/default-values.yaml`, `ci/prod-values.yaml` and `ci/aig-values.yaml`) need Helm 3
+for `ci/default-values.yaml`, `ci/prod-values.yaml` and `ci/posture-scanner-values.yaml`) need Helm 3
 on `PATH` or in `HELM_BIN`; without it they are reported as skipped. They assert that
 every container has CPU/memory requests and limits, runs non-root with all capabilities
 dropped and no privilege escalation, uses a pinned non-`latest` image, takes credentials
 only from Secrets, that a default-deny NetworkPolicy and a per-component allow-list
 exist, and that rendering fails on missing secrets, non-HTTPS URLs, `latest` tags,
-missing TLS and incomplete AIG inputs. With `kubeconform` on `PATH` or in
+missing TLS, incomplete posture scanner inputs and the retired `aig` values key. With `kubeconform` on `PATH` or in
 `KUBECONFORM_BIN`, the rendered manifests are also validated against the Kubernetes
 1.25 and 1.30 OpenAPI schemas.
 

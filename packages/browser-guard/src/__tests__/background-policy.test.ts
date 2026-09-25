@@ -32,6 +32,7 @@ describe("DEFAULT_POLICY", () => {
 			signalAction: "warn",
 			maskPaste: true,
 			fileHandling: "scan",
+			documentHandling: "mask",
 			maxFileBytes: 5 * 1024 * 1024,
 			restoreResponses: true,
 			allowUserPause: true,
@@ -53,6 +54,20 @@ describe("DEFAULT_POLICY", () => {
 
 	it("mergePolicy with nothing returns the defaults", () => {
 		expect(mergePolicy(undefined, undefined)).toEqual(DEFAULT_POLICY);
+	});
+});
+
+describe("documentHandling", () => {
+	it("is a managed-only key validated against mask/block/allow", () => {
+		const managed = evaluatePolicy({ documentHandling: "block" }, undefined);
+		expect(managed.policy.documentHandling).toBe("block");
+		expect(managed.policy.managedKeys).toContain("documentHandling");
+		const invalid = evaluatePolicy({ documentHandling: "scan" }, undefined);
+		expect(invalid.policy.documentHandling).toBe("mask");
+		expect(invalid.warnings).toContain('managed: invalid value for "documentHandling" ignored');
+		const user = evaluatePolicy(undefined, { documentHandling: "allow" });
+		expect(user.policy.documentHandling).toBe("mask");
+		expect(user.warnings).toContain('user: unknown key "documentHandling" ignored');
 	});
 });
 
@@ -395,6 +410,7 @@ describe("static/managed_schema.json", () => {
 		expect((props.disabledSites?.items as { enum: string[] }).enum).toEqual([...SITE_ID_LIST]);
 		expect(props.signalAction?.enum).toEqual(["off", "warn", "block"]);
 		expect(props.fileHandling?.enum).toEqual(["scan", "block", "allow"]);
+		expect(props.documentHandling?.enum).toEqual(["mask", "block", "allow"]);
 		expect(props.language?.enum).toEqual(["auto", "en", "tr"]);
 		expect(props.maxFileBytes).toMatchObject({ type: "integer", minimum: 1, maximum: 52428800 });
 		for (const key of [

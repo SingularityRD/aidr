@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { join } from "node:path";
 import { resolvePath } from "./config.js";
 import { getFileContent } from "./file-utils.js";
 import { parseJsonc } from "./jsonc.js";
@@ -271,24 +272,37 @@ function coverageStatus(
 	return readSources > 0 ? "read" : "missing";
 }
 
+/**
+ * Agent MCP configuration files inspected when no explicit paths are given.
+ * Home-relative entries (`~/…`) are per user; the others are project-relative
+ * and resolve against `projectDir` (the current directory when omitted).
+ */
+const DEFAULT_MCP_CONFIG_PATHS = [
+	"~/.claude.json",
+	".mcp.json",
+	"~/.claude/claude_desktop_config.json",
+	"~/.config/claude/claude_desktop_config.json",
+	"~/.cursor/mcp.json",
+	"~/.cursor/config.json",
+	".cursor/mcp.json",
+	".cursor/config.json",
+	".vscode/mcp.json",
+	"~/.config/opencode/opencode.json",
+	".opencode/opencode.json",
+	"~/.openclaw/openclaw.json",
+	".openclaw/openclaw.json",
+] as const;
+
+export function defaultMcpConfigPaths(projectDir?: string): string[] {
+	return DEFAULT_MCP_CONFIG_PATHS.map((path) =>
+		projectDir && !path.startsWith("~") ? join(projectDir, path) : path,
+	);
+}
+
 export async function inspectMcpServerInventory(
 	configPaths?: string[],
 ): Promise<McpInventoryReport> {
-	const defaultPaths = [
-		"~/.claude.json",
-		".mcp.json",
-		"~/.claude/claude_desktop_config.json",
-		"~/.config/claude/claude_desktop_config.json",
-		"~/.cursor/mcp.json",
-		"~/.cursor/config.json",
-		".cursor/mcp.json",
-		".cursor/config.json",
-		".vscode/mcp.json",
-		"~/.config/opencode/opencode.json",
-		".opencode/opencode.json",
-		"~/.openclaw/openclaw.json",
-		".openclaw/openclaw.json",
-	];
+	const defaultPaths = defaultMcpConfigPaths();
 	const paths = (configPaths && configPaths.length > 0 ? configPaths : defaultPaths).map(
 		resolvePath,
 	);

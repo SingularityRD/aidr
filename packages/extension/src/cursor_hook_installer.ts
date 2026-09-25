@@ -165,9 +165,11 @@ function assertSafePathForShim(pathValue: string, label: string): void {
  * Managed Cursor hook events in their documented registration order
  * (docs/how-it-works.md, deploy/native/interception-matrix.json). `installedEvents` is
  * always reported in this order, independent of the key order already present in the
- * customer's hooks.json.
+ * customer's hooks.json. `beforeSubmitPrompt` comes first because it fires first: it
+ * inspects the user's prompt (prompt protection) before any tool call can happen.
  */
 const MANAGED_HOOK_EVENTS: ReadonlyArray<{ event: string; matcher?: string }> = [
+	{ event: "beforeSubmitPrompt" },
 	{ event: "beforeShellExecution" },
 	{ event: "preToolUse", matcher: "Write|Delete|Edit|WebFetch" },
 	{ event: "postToolUse" },

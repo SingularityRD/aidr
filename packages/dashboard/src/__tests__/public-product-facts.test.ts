@@ -59,9 +59,13 @@ describe("public product facts", () => {
 		expect(codes).toEqual([...POSTURE_SKILL_RISK_CODES]);
 	});
 
+	// Shared site modules that are not a dedicated adapter for one AI product:
+	// the registry, the generic fallback, the Shadow AI catalog and admin-defined internal sites.
+	const NON_ADAPTER_SITE_FILES = new Set(["index.ts", "generic.ts", "catalog.ts", "custom.ts"]);
+
 	it("lists exactly the Browser Guard sites that have a dedicated adapter", () => {
 		const adapters = readdirSync(join(repoRoot, "packages/browser-guard/src/sites"))
-			.filter((name) => name.endsWith(".ts") && name !== "index.ts" && name !== "generic.ts")
+			.filter((name) => name.endsWith(".ts") && !NON_ADAPTER_SITE_FILES.has(name))
 			.map((name) => name.replace(/\.ts$/, ""))
 			.sort();
 		expect(BROWSER_GUARD_SITES.map((site) => site.toLowerCase()).sort()).toEqual(adapters);

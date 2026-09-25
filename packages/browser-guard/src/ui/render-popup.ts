@@ -8,9 +8,9 @@ import { entityLabel, formatClock, formatNumber, MODE_KEYS, msg, type Translate 
 import {
 	GUARD_MODES,
 	isLocked,
+	type ProtectedSiteId,
 	type ProtectionStatus,
 	protectionStatus,
-	type SupportedSiteId,
 	siteLabel,
 	topEntityTypes,
 } from "./model.js";
@@ -25,7 +25,7 @@ export type PopupState =
 			readonly phase: "ready";
 			readonly policy: GuardPolicy;
 			readonly stats: GuardStats;
-			readonly urlSite: SupportedSiteId | null;
+			readonly urlSite: ProtectedSiteId | null;
 			readonly restoreVisible: boolean;
 			readonly now: number;
 			readonly busy: boolean;
@@ -36,6 +36,11 @@ interface StatusView {
 	readonly icon: IconName;
 	readonly title: string;
 	readonly detail: string;
+}
+
+/** Display name of the tab's site; custom sites use a localized generic name. */
+function statusSiteLabel(site: ProtectedSiteId, t: Translate): string {
+	return siteLabel(site) ?? (site === "custom" ? t("site_custom_label") : site);
 }
 
 function statusView(status: ProtectionStatus, t: Translate, locale: string): StatusView {
@@ -54,42 +59,42 @@ function statusView(status: ProtectionStatus, t: Translate, locale: string): Sta
 				tone: "danger",
 				icon: "block",
 				title: t("status_blocked"),
-				detail: t("status_blocked_detail", siteLabel(status.site) ?? status.site),
+				detail: t("status_blocked_detail", statusSiteLabel(status.site, t)),
 			};
 		case "disabled-policy":
 			return {
 				tone: "off",
 				icon: "shieldOff",
 				title: t("status_disabled_policy"),
-				detail: t("status_disabled_policy_detail", siteLabel(status.site) ?? status.site),
+				detail: t("status_disabled_policy_detail", statusSiteLabel(status.site, t)),
 			};
 		case "disabled-user":
 			return {
 				tone: "off",
 				icon: "shieldOff",
 				title: t("status_disabled_user"),
-				detail: t("status_disabled_user_detail", siteLabel(status.site) ?? status.site),
+				detail: t("status_disabled_user_detail", statusSiteLabel(status.site, t)),
 			};
 		case "paused":
 			return {
 				tone: "warn",
 				icon: "pause",
 				title: t("status_paused", formatClock(locale, status.until)),
-				detail: t("status_paused_detail", siteLabel(status.site) ?? status.site),
+				detail: t("status_paused_detail", statusSiteLabel(status.site, t)),
 			};
 		case "monitoring":
 			return {
 				tone: "warn",
 				icon: "eye",
 				title: t("status_monitoring"),
-				detail: t("status_monitoring_detail", siteLabel(status.site) ?? status.site),
+				detail: t("status_monitoring_detail", statusSiteLabel(status.site, t)),
 			};
 		case "protected":
 			return {
 				tone: "ok",
 				icon: "shield",
 				title: t("status_protected"),
-				detail: t("status_protected_detail", siteLabel(status.site) ?? status.site),
+				detail: t("status_protected_detail", statusSiteLabel(status.site, t)),
 			};
 	}
 }

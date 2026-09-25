@@ -85,6 +85,12 @@ export async function installHooks(env: Environment): Promise<HookInstallResult>
 				'                type = "command"',
 				'                command = "aidr-codex-hook"',
 				"                timeout = 10",
+				"                # Prompt protection (secrets block, personal data warns):",
+				"                [[hooks.UserPromptSubmit]]",
+				"                [[hooks.UserPromptSubmit.hooks]]",
+				'                type = "command"',
+				'                command = "aidr-codex-hook"',
+				"                timeout = 10",
 				`                ${VERSION} matches this CLI; confirm it against the approved release record,`,
 				"                trust the hook, then run a host-side deny canary.",
 			);

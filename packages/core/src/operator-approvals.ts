@@ -1279,6 +1279,46 @@ export async function consumeOperatorApproval(
 	}
 }
 
+// ── External single-use tokens ─────────────────────────────────────────
+
+export type ExternalSpendResult = "spent" | "already_used" | "unavailable";
+
+/**
+ * Spend a single-use token issued OUTSIDE this store (for example the nonce of a
+ * dashboard approval token) in the same consumption ledger that makes operator
+ * approvals single use.
+ *
+ * The spend runs under the store lock, is recorded in the ledger anchor (the OS
+ * vault by default) and is read back, so it survives a rollback of any file the
+ * agent can write and holds across connector processes. `domain` separates the
+ * id spaces of different token kinds; `id` is the token's own unique value.
+ * `expiresAtMs` is how long the spend must be remembered: after that the token is
+ * rejected on its own expiry.
+ *
+ * Never throws: a missing, corrupt, full or non-persisting ledger is reported as
+ * `unavailable`, which the caller must treat as "not approved" (fail closed).
+ */
+export async function spendExternalApprovalToken(
+	domain: string,
+	id: string,
+	expiresAtMs: number,
+	options: OperatorApprovalStoreOptions = {},
+): Promise<ExternalSpendResult> {
+	if (!domain || !id || !Number.isFinite(expiresAtMs)) return "unavailable";
+	const ledgerId = sha256(`external\n${domain}\n${id}`).slice(0, 32);
+	try {
+		return await withStoreLock(operatorApprovalStorePath(options), async () =>
+			spendInLedger(requireAnchor(options), ledgerId, expiresAtMs, nowMs(options)),
+		);
+	} catch (error) {
+		(options.logger ?? nullLogger).warn(
+			"Approval consumption ledger unavailable; external approval not applied",
+			{ error: error instanceof Error ? error.message : String(error) },
+		);
+		return "unavailable";
+	}
+}
+
 // ── Allowlist grant ───────────────────────────────────────────────────
 
 /**

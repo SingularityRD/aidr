@@ -149,7 +149,10 @@ export function main(argv = process.argv.slice(2)) {
 		AIDR_DELEGATION_SIGNING_PUBLIC_KEY_SPKI_B64: delegation.publicKey.export({ type: "spki", format: "der" }).toString("base64"),
 		AIDR_PACK_MASTER_KEY_B64: randomBytes(32).toString("base64"),
 		AIDR_PACK_DOWNLOAD_GRANT_SECRET: randomBytes(32).toString("base64url"),
+		AIDR_APPROVAL_SIGNING_WRAP_KEY_B64: randomBytes(32).toString("base64"),
 		AIDR_DEVICE_START_INGRESS_SECRET: hex(32),
+		AIDR_NOTIFICATION_ENCRYPTION_KEYS: `k1:${randomBytes(32).toString("base64")}`,
+		AIDR_NOTIFICATION_DISPATCH_TOKEN: randomBytes(32).toString("base64url"),
 	}, "functions-credentials"));
 	write(".env", `ANON_KEY=${anonKey}\nSERVICE_ROLE_KEY=${serviceRoleKey}\n`);
 	write("deployment.json", `${JSON.stringify({

@@ -529,7 +529,7 @@ new bypass techniques:
 ### 5.1 Service Architecture
 
 ```
-docker-compose.aig.yml
+docker-compose.posture-scanner.yml
 ├── aig-server      (Go backend, port 8088)
 ├── aig-bridge      (Python/FastAPI, port 8099)
 └── aig-agent       (Go agent, WebSocket connection to aig-server)
@@ -541,9 +541,9 @@ AIG server has no host port.
 
 ### 5.2 Environment Configuration
 
-Copy `.env.aig.example` to a local `.env.aig`, then supply the required values.
+Copy `.env.posture-scanner.example` to a local `.env.posture-scanner`, then supply the required values.
 Keep credentials and signing material out of version control. Configuration is
-defined in the local `.env.aig`:
+defined in the local `.env.posture-scanner`:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
@@ -620,9 +620,9 @@ aidr/
 │       │       └── aig_client.py
 │       └── README.md
 │
-├── docker-compose.aig.yml    # NEW: Docker compose for AIG stack
-├── .env.aig.example          # Safe template for local AIG configuration
-├── .env.aig                  # Local AIG configuration; do not commit
+├── docker-compose.posture-scanner.yml    # NEW: Docker compose for AIG stack
+├── .env.posture-scanner.example          # Safe template for local AIG configuration
+├── .env.posture-scanner      # Local AIG configuration; do not commit
 │
 └── docs/
     └── architecture/
@@ -691,9 +691,9 @@ pnpm compile:aig
 pnpm aig:verify
 
 # Start the AIG sidecar stack
-# Create .env.aig from .env.aig.example if no local file exists, then fill it.
+# Create .env.posture-scanner from .env.posture-scanner.example if no local file exists, then fill it.
 $env:BRIDGE_API_KEY='generate-a-long-random-secret'
-docker compose --env-file .env.aig -f docker-compose.aig.yml up -d --build
+docker compose --env-file .env.posture-scanner -f docker-compose.posture-scanner.yml up -d --build
 
 # Verify connectivity
 curl -H 'Authorization: Bearer ...' -H 'X-AIDR-Tenant-ID: demo-tenant' http://127.0.0.1:8099/api/v1/health

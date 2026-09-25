@@ -12,6 +12,10 @@
       "owner": "Identity Engineering",
       "tests": ["supabase/functions/__tests__/api-key-auth.test.ts"]
     },
+    "approval-requests": {
+      "owner": "Identity Engineering",
+      "tests": ["supabase/functions/__tests__/approval-requests-contract.test.ts"]
+    },
     "audit-export": {
       "owner": "Platform Engineering",
       "tests": ["supabase/functions/__tests__/audit-export.test.ts", "supabase/functions/__tests__/audit-export-legal-hold.test.ts", "supabase/functions/__tests__/export-cursor.test.ts"]
@@ -31,6 +35,10 @@
     "billing-portal": {
       "owner": "Billing Engineering",
       "tests": ["supabase/functions/__tests__/billing-portal.test.ts"]
+    },
+    "compliance-report": {
+      "owner": "Platform Engineering",
+      "tests": ["supabase/functions/__tests__/compliance-report-contract.test.ts"]
     },
     "device-poll": {
       "owner": "Identity Engineering",
@@ -67,6 +75,10 @@
     "pilot-apply": {
       "owner": "Product Engineering",
       "tests": ["supabase/functions/__tests__/pilot-intake-contract.test.ts"]
+    },
+    "notification-channels": {
+      "owner": "Platform Engineering",
+      "tests": ["supabase/functions/__tests__/notification-channels-contract.test.ts", "supabase/functions/__tests__/notification-delivery.test.ts"]
     },
     "pilot-status": {
       "owner": "Product Engineering",
