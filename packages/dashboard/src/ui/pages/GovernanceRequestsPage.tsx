@@ -17,7 +17,7 @@ import {
 	REASON_MAX,
 	STATUS_LABEL,
 	TEXT_MAX,
-} from "../../lib/governance";
+} from "../../lib/ai-governance";
 import { supabase } from "../../lib/supabase";
 import {
 	formatDate,

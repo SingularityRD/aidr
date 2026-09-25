@@ -13,6 +13,7 @@ type Route =
 	| "tenant-settings"
 	| "approval-requests"
 	| "compliance-report"
+	| "governance-digest"
 	| "ai-governance";
 
 const TENANT = "22222222-2222-4222-8222-222222222222";
@@ -76,6 +77,7 @@ async function loadHandler(route: Route) {
 		case "tenant-settings": await import("../tenant-settings/index.ts"); break;
 		case "approval-requests": await import("../approval-requests/index.ts"); break;
 		case "compliance-report": await import("../compliance-report/index.ts"); break;
+		case "governance-digest": await import("../governance-digest/index.ts"); break;
 		case "ai-governance": await import("../ai-governance/index.ts"); break;
 	}
 	const handler = served[0];
@@ -113,6 +115,7 @@ function request(route: Route, token?: string): Request {
 			reason: "Auth regression fixture",
 		},
 		"compliance-report": { tenant_id: TENANT, from: "2026-09-01T00:00:00.000Z", to: "2026-09-02T00:00:00.000Z" },
+		"governance-digest": { action: "send_test", tenant_id: TENANT },
 		"ai-governance": { action: "enforcement_preview", tenant_id: TENANT },
 	};
 	const method = route === "azure-ad-groups" ? "GET" : route === "tenant-settings" ? "PATCH" : "POST";
@@ -143,6 +146,7 @@ describe("manual session guards when the self-host gateway JWT check is disabled
 		"tenant-settings",
 		"approval-requests",
 		"compliance-report",
+		"governance-digest",
 		"ai-governance",
 	] satisfies Route[])("%s rejects a missing bearer before privileged access", async (route) => {
 		const { handler, getUser, privilegedCalls } = await loadHandler(route);
@@ -166,6 +170,7 @@ describe("manual session guards when the self-host gateway JWT check is disabled
 		"tenant-settings",
 		"approval-requests",
 		"compliance-report",
+		"governance-digest",
 		"ai-governance",
 	] satisfies Route[])("%s rejects an Auth-rejected bearer before privileged access", async (route) => {
 		const { handler, getUser, privilegedCalls } = await loadHandler(route);

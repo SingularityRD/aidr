@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 
+import { frameworkRefsFromJson, frameworkRefsToJson } from "../framework-mappings.js";
+import type { FrameworkRefsJson } from "../types.js";
 import type { IncidentSeverity, NormalizedSignal, SignalType } from "./types.js";
 
 function sha256Hex(input: string): string {
@@ -19,6 +21,12 @@ function getString(o: Record<string, unknown>, key: string): string | undefined 
 	const v = o[key];
 	if (typeof v === "string" && v.trim()) return v;
 	return undefined;
+}
+
+/** Validated framework IDs from an audit entry; only official IDs survive. */
+function frameworksField(o: Record<string, unknown>): { frameworks?: FrameworkRefsJson } {
+	const refs = frameworkRefsFromJson(o.frameworks);
+	return refs ? { frameworks: frameworkRefsToJson(refs) } : {};
 }
 
 function severityFromRuntimePayload(payload: Record<string, unknown>): IncidentSeverity {
@@ -128,6 +136,7 @@ export function normalizeAuditEntryToSignals(entry: unknown): NormalizedSignal[]
 				severity,
 				user_override: userOverride,
 				threat_id: matchedThreatId,
+				...frameworksField(e),
 				artifact: artifact0,
 				domain,
 				package_name: pkg,
@@ -235,6 +244,7 @@ export function normalizeAuditEntryToSignals(entry: unknown): NormalizedSignal[]
 				decision,
 				severity: sev,
 				threat_id: matchedThreatId,
+				...frameworksField(e),
 				reasons,
 				source: source ?? "incident",
 				raw: entry,

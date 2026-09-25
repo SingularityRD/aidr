@@ -1,5 +1,14 @@
 // @singularityrd/aidr-core public API
 
+// AI model supply chain: trusted model sources (hubs and publisher organisations)
+export {
+	isTrustedModelSourceMatch,
+	loadTrustedModelSources,
+	MODEL_SOURCES_SUBDIR,
+	modelRepoOrgs,
+	NO_TRUSTED_MODEL_SOURCES,
+	type TrustedModelSources,
+} from "./ai-supply-chain.js";
 // AI-BOM (AI Bill of Materials): redacted AI inventory and its CycloneDX 1.6 rendering.
 export {
 	type BuildCycloneDxOptions,
@@ -158,6 +167,8 @@ export {
 export { isCommercialBuild } from "./build-flavor.js";
 // Cache
 export { VerdictCache } from "./cache.js";
+// Canary credentials (honeytokens): deploy decoys, detect any agent touching them
+export * from "./canary/index.js";
 // Causal agent chain (message -> retrieval -> tool -> authorization -> action ->
 // side effect -> intervention), ordered by position and logical clock, with a
 // missing link reported as `chain_gap` and tamper-evident binding through the
@@ -191,6 +202,31 @@ export { FileCheckClient } from "./clients/file-check.js";
 export type { PackageMetadata } from "./clients/package-registry.js";
 export { RegistryClient, resolveDistDigest } from "./clients/package-registry.js";
 export { UrlCheckClient } from "./clients/url-check.js";
+// Code guard: AI supply-chain and secure-code rules over code an agent writes or runs
+export {
+	applySecureCodeWarnings,
+	CODE_MATCH_PREFIX,
+	type CodeBlock,
+	type CodeFinding,
+	type CodeGuardResult,
+	CodeRuleSet,
+	codeBlocksForToolCall,
+	codeLanguageForPath,
+	describeSecureCodeWarnings,
+	inspectToolCallCode,
+	isReportableFinding,
+	isSecureCodeRule,
+	matchCodeBlock,
+	SECRET_RULE_ID,
+	SECURE_CODE_WARNING_CATEGORY,
+} from "./code-guard.js";
+// Project code scan (`aidr scan --code`)
+export {
+	type CodeScanFinding,
+	type CodeScanOptions,
+	type CodeScanReport,
+	scanCodePath,
+} from "./code-scanner.js";
 // Shell argv normalization (argv arrays -> inspected command text)
 export {
 	type CommandValueResult,
@@ -303,6 +339,54 @@ export {
 } from "./delegated-credential.js";
 export type { DetectionLeg } from "./detection-leg.js";
 export { DetectionLegUnavailableError, describeHttpFailure } from "./detection-leg.js";
+// Agent permission profiles: least-privilege restrictions per connector and
+// repository, evaluated by the shared evaluator on top of threat detection.
+export {
+	AGENT_PROFILE_ACTIONS,
+	AGENT_PROFILE_CONNECTORS,
+	AGENT_PROFILE_TOOL_CLASSES,
+	type AgentProfile,
+	type AgentProfileAction,
+	type AgentProfileCall,
+	type AgentProfileConnector,
+	type AgentProfileContext,
+	type AgentProfileDiagnostic,
+	type AgentProfileDocument,
+	AgentProfileDocumentSchema,
+	type AgentProfileEnvironment,
+	type AgentProfileEvaluation,
+	type AgentProfileLayer,
+	type AgentProfileOutcome,
+	type AgentProfileSource,
+	type AgentProfileValidation,
+	agentProfileVerdict,
+	classifyAgentTool,
+	evaluateAgentProfile,
+	evaluateAgentProfiles,
+	mcpCallIdentity,
+	mergeAgentProfileVerdict,
+	parseAgentProfileSource,
+	selectAgentProfiles,
+	validateAgentProfileDocument,
+	validateAgentProfileSource,
+	WORKSPACE_PLACEHOLDER,
+} from "./agent-profile.js";
+export {
+	buildAgentProfileContext,
+	DEFAULT_LOCAL_AGENT_PROFILES_PATH,
+	evaluateAgentProfilesForToolCall,
+	inspectLocalAgentProfiles,
+	LOCAL_AGENT_PROFILES_ENV,
+	type LocalAgentProfilesState,
+	localAgentProfileLayer,
+	localAgentProfilesPath,
+	managedAgentProfileLayer,
+} from "./agent-profile-loader.js";
+export {
+	AGENT_PROFILE_TEMPLATE_NAMES,
+	AGENT_PROFILE_TEMPLATES,
+	agentProfileTemplateDocument,
+} from "./agent-profile-templates.js";
 // Signed tenant detector policy: the single provisioning implementation every
 // connector uses to build a `ToolEvaluationContext`. The policy file is fixed
 // per agent runtime under `~/.singularity-aidr/detectors/`, so an operator
@@ -411,6 +495,7 @@ export { CONFIDENCE_THRESHOLD, DecisionEngine } from "./engine.js";
 export {
 	allowVerdict,
 	evaluateToolCall,
+	recordCanaryTrigger,
 	type ToolDelegationContext,
 	type ToolEvaluationContext,
 	type ToolEvaluationRequest,
@@ -562,6 +647,50 @@ export {
 	separatorLine,
 	severityEmoji,
 } from "./format.js";
+// Security framework mapping (OWASP LLM 2025, OWASP Agentic 2026, MITRE ATLAS)
+export {
+	type AtlasTechnique,
+	FRAMEWORK_IDS,
+	FRAMEWORKS,
+	type FrameworkDefinition,
+	type FrameworkId,
+	type FrameworkItemDefinition,
+	frameworkItemLabel,
+	frameworkItemTitle,
+	frameworkOfItem,
+	MITRE_ATLAS_TACTICS,
+	MITRE_ATLAS_TECHNIQUES,
+	OWASP_AGENTIC_2026,
+	OWASP_LLM_2025,
+} from "./framework-catalog.js";
+export {
+	buildCoverageMatrix,
+	buildDashboardCoverageArtifact,
+	type CoverageItem,
+	type CoverageMatrix,
+	type CoverageRule,
+	type CoverageStatus,
+	type CoverageTacticSummary,
+	coverageMatrixToJson,
+	FRAMEWORK_MAPPINGS_RELATIVE_PATH,
+	type FrameworkAssessment,
+	type FrameworkCoverage,
+	type FrameworkMappings,
+	type FrameworkMappingsParseResult,
+	type FrameworkRuleRef,
+	frameworkRefLabels,
+	frameworkRefsFromJson,
+	frameworkRefsToJson,
+	loadFrameworkMappings,
+	parseFrameworkMappings,
+	parseFrameworkMappingsYaml,
+	renderCoverageDocument,
+	renderCoverageMarkdown,
+	renderCoverageTable,
+	resolveRuleFrameworks,
+	toCoverageRules,
+	validateFrameworkMappingsAgainstRules,
+} from "./framework-mappings.js";
 // Guard (soft-gated connector orchestrator)
 //
 // `executeWithRollback` is the connector-facing shape of a response: the guard
@@ -917,6 +1046,7 @@ export {
 // Prompt protection (UserPromptSubmit-style inspection of the user's prompt)
 export {
 	DEFAULT_PROMPT_PROTECTION,
+	locateSecrets,
 	type PromptFindingCategory,
 	type PromptFindingSummary,
 	type PromptIncompleteInspection,
@@ -925,6 +1055,7 @@ export {
 	PromptScanDeadlineError,
 	type PromptScanOptions,
 	type PromptTenantDlp,
+	type SecretLocation,
 	scanPrompt,
 } from "./prompt-protection.js";
 // Quarantine
@@ -1210,7 +1341,9 @@ export {
 	loadTrustedDomains,
 } from "./trusted-domains.js";
 export type {
+	AgentProfileVerdictRef,
 	AgentRuntime,
+	AiSupplyChainConfig,
 	Allowlist,
 	AllowlistConfig,
 	AllowlistEntry,
@@ -1228,6 +1361,8 @@ export type {
 	Decision,
 	DelegationLineage,
 	FileCheckConfig,
+	FrameworkRefs,
+	FrameworkRefsJson,
 	HeuristicMatch,
 	IncidentConfig,
 	IntegrityConfig,
@@ -1244,6 +1379,7 @@ export type {
 	PluginScanResult,
 	PromptProtectionConfig,
 	PromptProtectionMode,
+	SecureCodeConfig,
 	SignalSources,
 	Threat,
 	ThreatData,
@@ -1254,10 +1390,12 @@ export type {
 	UrlCheckResult,
 	Verdict,
 	VerdictSeverity,
+	VerdictWarning,
 } from "./types.js";
 // Types
 export {
 	ActionSchema,
+	AiSupplyChainConfigSchema,
 	AllowlistConfigSchema,
 	ArtifactSchema,
 	ArtifactTypeSchema,
@@ -1276,6 +1414,7 @@ export {
 	PackageCheckConfigSchema,
 	PromptProtectionConfigSchema,
 	PromptProtectionModeSchema,
+	SecureCodeConfigSchema,
 	SensitivitySchema,
 	SeveritySchema,
 	ThreatSchema,

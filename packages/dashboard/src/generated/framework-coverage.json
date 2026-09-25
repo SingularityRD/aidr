@@ -1,0 +1,5866 @@
+{
+  "schema_version": 1,
+  "matrix": {
+    "rule_count": 386,
+    "rule_files": 24,
+    "frameworks": [
+      {
+        "id": "owasp_llm",
+        "name": "OWASP Top 10 for LLM Applications",
+        "version": "2025",
+        "url": "https://genai.owasp.org/llm-top-10/",
+        "items_total": 10,
+        "status_counts": {
+          "covered": 3,
+          "partial": 4,
+          "not_covered": 0,
+          "not_applicable": 3
+        },
+        "items": [
+          {
+            "id": "LLM01",
+            "label": "LLM01:2025",
+            "title": "Prompt Injection",
+            "status": "partial",
+            "rationale": "Pattern rules catch known direct and indirect injection phrasing, chat-template special tokens, jailbreak personas and instruction-hijack text inside skill files. They are regular expressions over tool inputs and plugin content: paraphrased, translated or novel injections are not reliably detected, and model-side input is not inspected by these rules.",
+            "rule_count": 16,
+            "example_rules": [
+              "LLM-IIN-001",
+              "LLM-IIN-002",
+              "LLM-IIN-003"
+            ]
+          },
+          {
+            "id": "LLM02",
+            "label": "LLM02:2025",
+            "title": "Sensitive Information Disclosure",
+            "status": "covered",
+            "rationale": "For an agent's tool calls the rules cover the main disclosure paths: reading credential, key, cloud, keychain and browser stores, known API-key formats in commands or content, and exfiltration over HTTP, DNS, archives and cloud or code repositories. Personal data inside model responses is out of scope for these rules and is handled by the separate DLP/privacy engine.",
+            "rule_count": 82,
+            "example_rules": [
+              "CLT-CMD-013",
+              "CLT-CMD-020",
+              "CLT-CMD-021"
+            ]
+          },
+          {
+            "id": "LLM03",
+            "label": "LLM03:2025",
+            "title": "Supply Chain",
+            "status": "partial",
+            "rationale": "Rules flag install-script piping, unpinned or unsigned package installs, miner packages, insecure dependency sources and malicious skill/plugin content. Model and dataset provenance are not checked, and package reputation needs the separately deployed package-check endpoint (inert when none is configured).",
+            "rule_count": 36,
+            "example_rules": [
+              "CLT-MAC-CMD-011",
+              "CLT-MAC-CMD-012",
+              "CLT-MAC-SUPPLY-001"
+            ]
+          },
+          {
+            "id": "LLM04",
+            "label": "LLM04:2025",
+            "title": "Data and Model Poisoning",
+            "status": "not_applicable",
+            "rationale": "AIDR sits at the agent's tool-call boundary and never sees training, fine-tuning or embedding data, so no rule can observe data or model poisoning. Runtime memory and context poisoning of an agent is tracked under ASI06.",
+            "rule_count": 0,
+            "example_rules": []
+          },
+          {
+            "id": "LLM05",
+            "label": "LLM05:2025",
+            "title": "Improper Output Handling",
+            "status": "covered",
+            "rationale": "Model-generated commands and code are validated before they execute: pipe-to-shell, reverse shells, eval of decoded payloads, LOLBin and script-host execution and obfuscated command lines are denied or held for approval at the tool boundary. Output rendered in a UI (XSS, markdown links) is not covered by these rules.",
+            "rule_count": 67,
+            "example_rules": [
+              "CLT-CMD-001",
+              "CLT-CMD-002",
+              "CLT-CMD-003"
+            ]
+          },
+          {
+            "id": "LLM06",
+            "label": "LLM06:2025",
+            "title": "Excessive Agency",
+            "status": "covered",
+            "rationale": "The rule set is primarily an excessive-agency control: destructive deletion, persistence, privilege changes, security-control tampering, credential access and discovery performed through the agent's tools are denied or require out-of-band human approval.",
+            "rule_count": 305,
+            "example_rules": [
+              "CLT-CMD-001",
+              "CLT-CMD-002",
+              "CLT-CMD-003"
+            ]
+          },
+          {
+            "id": "LLM07",
+            "label": "LLM07:2025",
+            "title": "System Prompt Leakage",
+            "status": "partial",
+            "rationale": "Three rules flag system-prompt extraction requests (direct, repetition and translation tricks) in tool inputs. Leakage through model output and indirect extraction phrasing outside those patterns are not detected.",
+            "rule_count": 3,
+            "example_rules": [
+              "LLM-SPE-001",
+              "LLM-SPE-002",
+              "LLM-SPE-003"
+            ]
+          },
+          {
+            "id": "LLM08",
+            "label": "LLM08:2025",
+            "title": "Vector and Embedding Weaknesses",
+            "status": "not_applicable",
+            "rationale": "AIDR does not operate a retrieval pipeline, vector store or embedding service, so there is nothing for a tool-call rule to inspect for this risk.",
+            "rule_count": 0,
+            "example_rules": []
+          },
+          {
+            "id": "LLM09",
+            "label": "LLM09:2025",
+            "title": "Misinformation",
+            "status": "not_applicable",
+            "rationale": "Detection rules judge what an agent does, not whether model output is true. Hallucinated-package risk is partly addressed by the separate package-reputation check, not by these rules.",
+            "rule_count": 0,
+            "example_rules": []
+          },
+          {
+            "id": "LLM10",
+            "label": "LLM10:2025",
+            "title": "Unbounded Consumption",
+            "status": "partial",
+            "rationale": "Cryptominer binaries, pools, wallets and miner flags launched through an agent are blocked (compute hijacking). Token, request-rate and cost exhaustion of the model API itself are outside what these rules observe.",
+            "rule_count": 17,
+            "example_rules": [
+              "CLT-MINE-001",
+              "CLT-MINE-002",
+              "CLT-MINE-003"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "owasp_agentic",
+        "name": "OWASP Top 10 for Agentic Applications",
+        "version": "2026",
+        "url": "https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/",
+        "items_total": 10,
+        "status_counts": {
+          "covered": 3,
+          "partial": 5,
+          "not_covered": 2,
+          "not_applicable": 0
+        },
+        "items": [
+          {
+            "id": "ASI01",
+            "label": "ASI01:2026",
+            "title": "Agent Goal Hijack",
+            "status": "partial",
+            "rationale": "Injection, triggered-instruction and hidden-instruction patterns in tool inputs and skill files are detected. Goal hijack that uses ordinary wording, or that only shows up as a changed plan, is not visible to pattern rules; the resulting harmful tool calls are still caught by the ASI02/ASI05 rules.",
+            "rule_count": 14,
+            "example_rules": [
+              "LLM-IIN-001",
+              "LLM-IIN-002",
+              "LLM-IIN-003"
+            ]
+          },
+          {
+            "id": "ASI02",
+            "label": "ASI02:2026",
+            "title": "Tool Misuse and Exploitation",
+            "status": "covered",
+            "rationale": "This is the enforcement point of the product: every rule evaluates a tool call (shell command, file path, URL or tool input) before it runs, and dangerous uses of legitimate tools are denied or held for out-of-band approval.",
+            "rule_count": 310,
+            "example_rules": [
+              "CLT-CMD-001",
+              "CLT-CMD-002",
+              "CLT-CMD-003"
+            ]
+          },
+          {
+            "id": "ASI03",
+            "label": "ASI03:2026",
+            "title": "Identity and Privilege Abuse",
+            "status": "covered",
+            "rationale": "Credential dumping, credential-store and key access, alternate-credential execution, sudo/UAC abuse, account creation and group changes, and access to AIDR's own approval key are detected. Delegated agent identity (tokens issued to the agent) is verified by the delegated-credential feature, not by these rules.",
+            "rule_count": 101,
+            "example_rules": [
+              "CLT-CMD-012",
+              "CLT-CMD-014",
+              "CLT-CRED-001"
+            ]
+          },
+          {
+            "id": "ASI04",
+            "label": "ASI04:2026",
+            "title": "Agentic Supply Chain Vulnerabilities",
+            "status": "partial",
+            "rationale": "Skill and plugin packages are scanned for injected instructions, remote payloads, embedded code, credential exfiltration and insecure dependencies, and risky install commands are flagged. MCP server identity and signed manifests are enforced by the MCP gateway rather than these rules; model and dataset provenance are not covered.",
+            "rule_count": 35,
+            "example_rules": [
+              "CLT-MAC-CMD-011",
+              "CLT-MAC-CMD-012",
+              "CLT-MAC-SUPPLY-001"
+            ]
+          },
+          {
+            "id": "ASI05",
+            "label": "ASI05:2026",
+            "title": "Unexpected Code Execution (RCE)",
+            "status": "covered",
+            "rationale": "Download-and-execute chains, pipe-to-shell, reverse shells, encoded or obfuscated execution, script hosts and LOLBins on Linux, macOS and Windows are denied before the command runs.",
+            "rule_count": 101,
+            "example_rules": [
+              "CLT-CMD-001",
+              "CLT-CMD-002",
+              "CLT-CMD-003"
+            ]
+          },
+          {
+            "id": "ASI06",
+            "label": "ASI06:2026",
+            "title": "Memory & Context Poisoning",
+            "status": "partial",
+            "rationale": "Content that asks the agent to persist instructions in memory, and skill files that write into agent memory or instruction files, are flagged. Poisoning through ordinary-looking stored content or retrieval data is not detected.",
+            "rule_count": 4,
+            "example_rules": [
+              "LLM-MEM-001",
+              "LLM-MEM-002",
+              "SKILL-T02-001"
+            ]
+          },
+          {
+            "id": "ASI07",
+            "label": "ASI07:2026",
+            "title": "Insecure Inter-Agent Communication",
+            "status": "not_covered",
+            "rationale": "No rule inspects agent-to-agent messages or protocols (A2A, shared task queues). MCP traffic is inspected by the MCP gateway, which is a separate component.",
+            "rule_count": 0,
+            "example_rules": []
+          },
+          {
+            "id": "ASI08",
+            "label": "ASI08:2026",
+            "title": "Cascading Failures",
+            "status": "not_covered",
+            "rationale": "Rules act on single tool calls on one host; they do not model failure propagation across agents or workflows. Blocking a harmful call limits blast radius but is not claimed as coverage of this risk.",
+            "rule_count": 0,
+            "example_rules": []
+          },
+          {
+            "id": "ASI09",
+            "label": "ASI09:2026",
+            "title": "Human-Agent Trust Exploitation",
+            "status": "partial",
+            "rationale": "Rules flag skills that tell the agent to hide actions from the user and agent attempts to forge or self-issue the human approval AIDR requires. Persuasive or misleading agent output shown to a human is not analysed.",
+            "rule_count": 4,
+            "example_rules": [
+              "CLT-SELF-005",
+              "CLT-SELF-007",
+              "SKILL-T01-002"
+            ]
+          },
+          {
+            "id": "ASI10",
+            "label": "ASI10:2026",
+            "title": "Rogue Agents",
+            "status": "partial",
+            "rationale": "Behaviour typical of a compromised or rogue agent is detected: tampering with or disabling AIDR itself, disabling OS security controls, clearing logs and hiding artifacts. Slow behavioural drift within allowed actions is not something a per-call rule can see (the behavioural analyzer is a separate, optional detector).",
+            "rule_count": 59,
+            "example_rules": [
+              "CLT-MAC-CMD-013",
+              "CLT-MAC-CMD-015",
+              "CLT-MAC-CMD-016"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "mitre_atlas",
+        "name": "MITRE ATLAS",
+        "version": "2026.09",
+        "url": "https://atlas.mitre.org/",
+        "items_total": 208,
+        "status_counts": {
+          "covered": 9,
+          "partial": 22,
+          "not_covered": 177,
+          "not_applicable": 0
+        },
+        "items": [
+          {
+            "id": "AML.T0010.005",
+            "label": "AML.T0010.005",
+            "title": "AI Agent Tool",
+            "status": "partial",
+            "rationale": "Skill and plugin packages are scanned before use against the T01-T09 skill risk taxonomy. Compromise of a remotely hosted tool that changes after the scan is not visible.",
+            "rule_count": 26,
+            "example_rules": [
+              "SKILL-T01-001",
+              "SKILL-T01-002",
+              "SKILL-T01-003"
+            ],
+            "tactics": [
+              "AML.TA0004"
+            ]
+          },
+          {
+            "id": "AML.T0011.001",
+            "label": "AML.T0011.001",
+            "title": "Malicious Package",
+            "status": "partial",
+            "rationale": "Installs of known miner packages and unsigned remote installer packages are flagged.",
+            "rule_count": 3,
+            "example_rules": [
+              "CLT-MAC-SUPPLY-002",
+              "CLT-MINE-015",
+              "CLT-MINE-016"
+            ],
+            "tactics": [
+              "AML.TA0005"
+            ]
+          },
+          {
+            "id": "AML.T0012",
+            "label": "AML.T0012",
+            "title": "Valid Accounts",
+            "status": "partial",
+            "rationale": "Running commands under alternate user credentials (runas) is held for approval.",
+            "rule_count": 1,
+            "example_rules": [
+              "CLT-WIN-CMD-025"
+            ],
+            "tactics": [
+              "AML.TA0004",
+              "AML.TA0012",
+              "AML.TA0015"
+            ]
+          },
+          {
+            "id": "AML.T0025",
+            "label": "AML.T0025",
+            "title": "Exfiltration via Cyber Means",
+            "status": "covered",
+            "rationale": "Sensitive-file upload, DNS-label exfiltration, alternative protocols, automated exfiltration tooling and transfers to code repositories or cloud storage are detected.",
+            "rule_count": 8,
+            "example_rules": [
+              "CLT-CMD-013",
+              "CLT-CMD-020",
+              "CLT-CMD-021"
+            ],
+            "tactics": [
+              "AML.TA0010"
+            ]
+          },
+          {
+            "id": "AML.T0048.000",
+            "label": "AML.T0048.000",
+            "title": "Financial Harm",
+            "status": "partial",
+            "rationale": "Cryptomining through an agent (a direct financial harm to the victim) is blocked; other financial harms are out of scope.",
+            "rule_count": 17,
+            "example_rules": [
+              "CLT-MINE-001",
+              "CLT-MINE-002",
+              "CLT-MINE-003"
+            ],
+            "tactics": [
+              "AML.TA0011"
+            ]
+          },
+          {
+            "id": "AML.T0050",
+            "label": "AML.T0050",
+            "title": "Command and Scripting Interpreter",
+            "status": "covered",
+            "rationale": "Shell, PowerShell, AppleScript/JXA, Python and script-host execution patterns used for remote payloads, obfuscation and proxy execution are detected across all three OSes.",
+            "rule_count": 85,
+            "example_rules": [
+              "CLT-CMD-001",
+              "CLT-CMD-002",
+              "CLT-CMD-003"
+            ],
+            "tactics": [
+              "AML.TA0005"
+            ]
+          },
+          {
+            "id": "AML.T0051",
+            "label": "AML.T0051",
+            "title": "LLM Prompt Injection",
+            "status": "partial",
+            "rationale": "Known injection and jailbreak phrasing only; see OWASP LLM01.",
+            "rule_count": 5,
+            "example_rules": [
+              "LLM-INJ-001",
+              "LLM-INJ-002",
+              "LLM-INJ-003"
+            ],
+            "tactics": [
+              "AML.TA0005"
+            ]
+          },
+          {
+            "id": "AML.T0051.001",
+            "label": "AML.T0051.001",
+            "title": "Indirect",
+            "status": "partial",
+            "rationale": "Indirect-injection phrasing in tool content and instruction-hijack text in skills is detected; unseen wording is not.",
+            "rule_count": 5,
+            "example_rules": [
+              "LLM-IIN-001",
+              "LLM-IIN-002",
+              "LLM-IIN-003"
+            ],
+            "tactics": [
+              "AML.TA0005"
+            ]
+          },
+          {
+            "id": "AML.T0053",
+            "label": "AML.T0053",
+            "title": "AI Agent Tool Invocation",
+            "status": "covered",
+            "rationale": "Every tool call the agent makes is evaluated against the rules before it executes; a hijacked agent's tool invocations are the input AIDR inspects.",
+            "rule_count": 345,
+            "example_rules": [
+              "CLT-CMD-001",
+              "CLT-CMD-002",
+              "CLT-CMD-003"
+            ],
+            "tactics": [
+              "AML.TA0005",
+              "AML.TA0012",
+              "AML.TA0015"
+            ]
+          },
+          {
+            "id": "AML.T0054",
+            "label": "AML.T0054",
+            "title": "LLM Jailbreak",
+            "status": "partial",
+            "rationale": "Known jailbreak personas and tokens (DAN, developer mode) are detected.",
+            "rule_count": 2,
+            "example_rules": [
+              "LLM-INJ-002",
+              "LLM-INJ-003"
+            ],
+            "tactics": [
+              "AML.TA0007",
+              "AML.TA0012"
+            ]
+          },
+          {
+            "id": "AML.T0055",
+            "label": "AML.T0055",
+            "title": "Unsecured Credentials",
+            "status": "covered",
+            "rationale": "Reads, copies and archives of credential files, SSH and cloud keys, keychains, browser stores, registry credentials, cloud metadata credentials and plaintext secrets are detected.",
+            "rule_count": 56,
+            "example_rules": [
+              "CLT-CRED-001",
+              "CLT-CRED-002",
+              "CLT-CRED-003"
+            ],
+            "tactics": [
+              "AML.TA0013"
+            ]
+          },
+          {
+            "id": "AML.T0056",
+            "label": "AML.T0056",
+            "title": "Extract LLM System Prompt",
+            "status": "partial",
+            "rationale": "Three system-prompt extraction patterns; see OWASP LLM07.",
+            "rule_count": 3,
+            "example_rules": [
+              "LLM-SPE-001",
+              "LLM-SPE-002",
+              "LLM-SPE-003"
+            ],
+            "tactics": [
+              "AML.TA0010"
+            ]
+          },
+          {
+            "id": "AML.T0068",
+            "label": "AML.T0068",
+            "title": "LLM Prompt Obfuscation",
+            "status": "partial",
+            "rationale": "Hidden or encoded instructions, zero-width and Unicode tag characters, bidi controls and hidden HTML comments are detected.",
+            "rule_count": 4,
+            "example_rules": [
+              "LLM-IIN-003",
+              "SKILL-T01-003",
+              "SKILL-T01-004"
+            ],
+            "tactics": [
+              "AML.TA0007"
+            ]
+          },
+          {
+            "id": "AML.T0072",
+            "label": "AML.T0072",
+            "title": "Cyber Communication Channel",
+            "status": "covered",
+            "rationale": "Reverse shells over /dev/tcp, netcat, Python, Ruby, zsh and .NET sockets and C2-style paste-site or raw-IP URLs are detected.",
+            "rule_count": 14,
+            "example_rules": [
+              "CLT-CMD-003",
+              "CLT-CMD-004",
+              "CLT-CMD-005"
+            ],
+            "tactics": [
+              "AML.TA0014"
+            ]
+          },
+          {
+            "id": "AML.T0074",
+            "label": "AML.T0074",
+            "title": "Masquerading",
+            "status": "partial",
+            "rationale": "Shadowing security-relevant commands with aliases, functions or PATH prefixes is flagged.",
+            "rule_count": 3,
+            "example_rules": [
+              "CLT-OBFUS-006",
+              "CLT-OBFUS-007",
+              "SKILL-T07-001"
+            ],
+            "tactics": [
+              "AML.TA0007"
+            ]
+          },
+          {
+            "id": "AML.T0075",
+            "label": "AML.T0075",
+            "title": "Enterprise Resource Discovery",
+            "status": "partial",
+            "rationale": "Account, group, peripheral, software and network-service enumeration commands are held for approval.",
+            "rule_count": 6,
+            "example_rules": [
+              "CLT-MITRE-022",
+              "CLT-MITRE-032",
+              "CLT-MITRE-037"
+            ],
+            "tactics": [
+              "AML.TA0008"
+            ]
+          },
+          {
+            "id": "AML.T0079",
+            "label": "AML.T0079",
+            "title": "Stage Capabilities",
+            "status": "partial",
+            "rationale": "Fetching payloads from known staging locations (raw GitHub malware paths, paste sites, executable URLs) is flagged.",
+            "rule_count": 4,
+            "example_rules": [
+              "CLT-URL-001",
+              "CLT-URL-002",
+              "CLT-URL-003"
+            ],
+            "tactics": [
+              "AML.TA0003"
+            ]
+          },
+          {
+            "id": "AML.T0080",
+            "label": "AML.T0080",
+            "title": "AI Agent Context Poisoning",
+            "status": "partial",
+            "rationale": "Requests to persist instructions in agent memory are detected; see OWASP ASI06.",
+            "rule_count": 2,
+            "example_rules": [
+              "LLM-MEM-001",
+              "LLM-MEM-002"
+            ],
+            "tactics": [
+              "AML.TA0006"
+            ]
+          },
+          {
+            "id": "AML.T0080.000",
+            "label": "AML.T0080.000",
+            "title": "Memory",
+            "status": "partial",
+            "rationale": "Memory-persistence instructions in content and in skill files are detected.",
+            "rule_count": 4,
+            "example_rules": [
+              "LLM-MEM-001",
+              "LLM-MEM-002",
+              "SKILL-T02-001"
+            ],
+            "tactics": [
+              "AML.TA0006"
+            ]
+          },
+          {
+            "id": "AML.T0081",
+            "label": "AML.T0081",
+            "title": "Modify AI Agent Configuration",
+            "status": "covered",
+            "rationale": "Edits that remove agent hooks, disable AIDR, rewrite hook/MCP/permission configuration or disable permission prompts are held or denied, and AIDR's own state is protected.",
+            "rule_count": 6,
+            "example_rules": [
+              "CLT-SELF-003",
+              "CLT-SELF-004",
+              "SKILL-T02-001"
+            ],
+            "tactics": [
+              "AML.TA0006",
+              "AML.TA0007"
+            ]
+          },
+          {
+            "id": "AML.T0086",
+            "label": "AML.T0086",
+            "title": "Exfiltration via AI Agent Tool Invocation",
+            "status": "partial",
+            "rationale": "Tool inputs that send data to webhooks or external collection services are held for approval.",
+            "rule_count": 1,
+            "example_rules": [
+              "LLM-TOOL-004"
+            ],
+            "tactics": [
+              "AML.TA0010"
+            ]
+          },
+          {
+            "id": "AML.T0089",
+            "label": "AML.T0089",
+            "title": "Enterprise Environment Discovery",
+            "status": "partial",
+            "rationale": "Password-policy, domain-trust, security-software and host-configuration discovery commands are held for approval.",
+            "rule_count": 5,
+            "example_rules": [
+              "CLT-MITRE-050",
+              "CLT-MITRE-066",
+              "CLT-MITRE-071"
+            ],
+            "tactics": [
+              "AML.TA0008"
+            ]
+          },
+          {
+            "id": "AML.T0090",
+            "label": "AML.T0090",
+            "title": "OS Credential Dumping",
+            "status": "covered",
+            "rationale": "LSASS, SAM, NTDS, LSA secrets, cached credentials, DCSync, /etc/shadow and Mimikatz dumping are denied.",
+            "rule_count": 13,
+            "example_rules": [
+              "CLT-FILE-001",
+              "CLT-MITRE-001",
+              "CLT-MITRE-002"
+            ],
+            "tactics": [
+              "AML.TA0013"
+            ]
+          },
+          {
+            "id": "AML.T0094",
+            "label": "AML.T0094",
+            "title": "Delay Execution of LLM Instructions",
+            "status": "partial",
+            "rationale": "Content that defers instructions until a later user request (\"when the user asks ... ignore\") is detected.",
+            "rule_count": 1,
+            "example_rules": [
+              "LLM-IIN-001"
+            ],
+            "tactics": [
+              "AML.TA0007"
+            ]
+          },
+          {
+            "id": "AML.T0101",
+            "label": "AML.T0101",
+            "title": "Data Destruction via AI Agent Tool Invocation",
+            "status": "covered",
+            "rationale": "Recursive root/home/system deletion, disk formatting and wiping, backup and shadow-copy deletion and deletion of .env, database and .git data are denied or held.",
+            "rule_count": 23,
+            "example_rules": [
+              "CLT-CMD-006",
+              "CLT-CMD-007",
+              "CLT-CMD-008"
+            ],
+            "tactics": [
+              "AML.TA0011"
+            ]
+          },
+          {
+            "id": "AML.T0110.000",
+            "label": "AML.T0110.000",
+            "title": "Definition and Instructions",
+            "status": "partial",
+            "rationale": "Instruction-hijack and hidden-instruction text in skill instruction files is flagged before use.",
+            "rule_count": 5,
+            "example_rules": [
+              "SKILL-T01-001",
+              "SKILL-T01-002",
+              "SKILL-T01-003"
+            ],
+            "tactics": [
+              "AML.TA0006"
+            ]
+          },
+          {
+            "id": "AML.T0110.001",
+            "label": "AML.T0110.001",
+            "title": "Implementation",
+            "status": "partial",
+            "rationale": "Skill code with remote payloads, encoded execution, reverse shells, credential exfiltration, persistence or privilege escalation is flagged.",
+            "rule_count": 11,
+            "example_rules": [
+              "SKILL-T03-001",
+              "SKILL-T03-002",
+              "SKILL-T03-003"
+            ],
+            "tactics": [
+              "AML.TA0006"
+            ]
+          },
+          {
+            "id": "AML.T0113",
+            "label": "AML.T0113",
+            "title": "Steal Web Session Cookie",
+            "status": "partial",
+            "rationale": "Access to Safari and Windows browser cookie/credential stores is detected.",
+            "rule_count": 2,
+            "example_rules": [
+              "CLT-MAC-FILE-008",
+              "CLT-WIN-FILE-010"
+            ],
+            "tactics": [
+              "AML.TA0013"
+            ]
+          },
+          {
+            "id": "AML.T0123",
+            "label": "AML.T0123",
+            "title": "Obfuscated Files or Information",
+            "status": "covered",
+            "rationale": "Base64/hex/char-code/XOR payloads, caret and backtick obfuscation, encoded PowerShell, steganography tooling and unreviewable bytecode are detected.",
+            "rule_count": 29,
+            "example_rules": [
+              "CLT-MAC-OBFUS-001",
+              "CLT-MAC-OBFUS-002",
+              "CLT-MAC-OBFUS-003"
+            ],
+            "tactics": [
+              "AML.TA0007"
+            ]
+          },
+          {
+            "id": "AML.T0125",
+            "label": "AML.T0125",
+            "title": "Create Account",
+            "status": "partial",
+            "rationale": "Local and domain account creation commands are held for approval.",
+            "rule_count": 2,
+            "example_rules": [
+              "CLT-MITRE-048",
+              "CLT-MITRE-049"
+            ],
+            "tactics": [
+              "AML.TA0006"
+            ]
+          },
+          {
+            "id": "AML.T0127",
+            "label": "AML.T0127",
+            "title": "Data Staged",
+            "status": "partial",
+            "rationale": "Archiving of credential files, password-protected archives and bulk document archiving are held for approval.",
+            "rule_count": 4,
+            "example_rules": [
+              "CLT-CRED-008",
+              "CLT-MITRE-092",
+              "CLT-WIN-CMD-040"
+            ],
+            "tactics": [
+              "AML.TA0009"
+            ]
+          }
+        ],
+        "tactics": [
+          {
+            "id": "AML.TA0000",
+            "name": "AI Model Access",
+            "techniques_mapped": 0,
+            "techniques_total": 4
+          },
+          {
+            "id": "AML.TA0001",
+            "name": "AI Attack Adaptation",
+            "techniques_mapped": 0,
+            "techniques_total": 25
+          },
+          {
+            "id": "AML.TA0002",
+            "name": "Reconnaissance",
+            "techniques_mapped": 0,
+            "techniques_total": 18
+          },
+          {
+            "id": "AML.TA0003",
+            "name": "Resource Development",
+            "techniques_mapped": 1,
+            "techniques_total": 29
+          },
+          {
+            "id": "AML.TA0004",
+            "name": "Initial Access",
+            "techniques_mapped": 2,
+            "techniques_total": 18
+          },
+          {
+            "id": "AML.TA0005",
+            "name": "Execution",
+            "techniques_mapped": 5,
+            "techniques_total": 13
+          },
+          {
+            "id": "AML.TA0006",
+            "name": "Persistence",
+            "techniques_mapped": 6,
+            "techniques_total": 20
+          },
+          {
+            "id": "AML.TA0007",
+            "name": "Defense Evasion",
+            "techniques_mapped": 6,
+            "techniques_total": 19
+          },
+          {
+            "id": "AML.TA0008",
+            "name": "Discovery",
+            "techniques_mapped": 2,
+            "techniques_total": 17
+          },
+          {
+            "id": "AML.TA0009",
+            "name": "Collection",
+            "techniques_mapped": 1,
+            "techniques_total": 8
+          },
+          {
+            "id": "AML.TA0010",
+            "name": "Exfiltration",
+            "techniques_mapped": 3,
+            "techniques_total": 9
+          },
+          {
+            "id": "AML.TA0011",
+            "name": "Impact",
+            "techniques_mapped": 2,
+            "techniques_total": 20
+          },
+          {
+            "id": "AML.TA0012",
+            "name": "Privilege Escalation",
+            "techniques_mapped": 3,
+            "techniques_total": 4
+          },
+          {
+            "id": "AML.TA0013",
+            "name": "Credential Access",
+            "techniques_mapped": 3,
+            "techniques_total": 7
+          },
+          {
+            "id": "AML.TA0014",
+            "name": "Command and Control",
+            "techniques_mapped": 1,
+            "techniques_total": 5
+          },
+          {
+            "id": "AML.TA0015",
+            "name": "Lateral Movement",
+            "techniques_mapped": 2,
+            "techniques_total": 9
+          }
+        ]
+      }
+    ]
+  },
+  "rules": {
+    "CLT-CMD-001": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-CMD-002": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-CMD-003": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053",
+        "AML.T0072"
+      ]
+    },
+    "CLT-CMD-004": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053",
+        "AML.T0072"
+      ]
+    },
+    "CLT-CMD-005": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053",
+        "AML.T0072"
+      ]
+    },
+    "CLT-CMD-006": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0101"
+      ]
+    },
+    "CLT-CMD-007": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0101"
+      ]
+    },
+    "CLT-CMD-008": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0101"
+      ]
+    },
+    "CLT-CMD-009": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0101"
+      ]
+    },
+    "CLT-CMD-010": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-CMD-011": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-CMD-012": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-CMD-013": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0025",
+        "AML.T0053"
+      ]
+    },
+    "CLT-CMD-014": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-CMD-015": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-CMD-016": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-CMD-017": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-CMD-018": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-CMD-019": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-CMD-020": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0025",
+        "AML.T0053"
+      ]
+    },
+    "CLT-CMD-021": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0025",
+        "AML.T0053"
+      ]
+    },
+    "CLT-CMD-022": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-CMD-023": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053",
+        "AML.T0072"
+      ]
+    },
+    "CLT-CMD-024": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053",
+        "AML.T0072"
+      ]
+    },
+    "CLT-CMD-025": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053",
+        "AML.T0072"
+      ]
+    },
+    "CLT-CMD-026": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0101"
+      ]
+    },
+    "CLT-CMD-027": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0101"
+      ]
+    },
+    "CLT-CMD-028": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0101"
+      ]
+    },
+    "CLT-CMD-029": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0101"
+      ]
+    },
+    "CLT-CMD-030": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053",
+        "AML.T0072"
+      ]
+    },
+    "CLT-CMD-031": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0101"
+      ]
+    },
+    "CLT-CRED-001": {
+      "owasp_llm": [
+        "LLM02"
+      ],
+      "owasp_agentic": [
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055"
+      ]
+    },
+    "CLT-CRED-002": {
+      "owasp_llm": [
+        "LLM02"
+      ],
+      "owasp_agentic": [
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055"
+      ]
+    },
+    "CLT-CRED-003": {
+      "owasp_llm": [
+        "LLM02"
+      ],
+      "owasp_agentic": [
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055"
+      ]
+    },
+    "CLT-CRED-004": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055"
+      ]
+    },
+    "CLT-CRED-005": {
+      "owasp_llm": [
+        "LLM02"
+      ],
+      "owasp_agentic": [
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055"
+      ]
+    },
+    "CLT-CRED-006": {
+      "owasp_llm": [
+        "LLM02"
+      ],
+      "owasp_agentic": [
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055"
+      ]
+    },
+    "CLT-CRED-007": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055"
+      ]
+    },
+    "CLT-CRED-008": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055",
+        "AML.T0127"
+      ]
+    },
+    "CLT-FILE-001": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0090"
+      ]
+    },
+    "CLT-FILE-002": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-FILE-003": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055"
+      ]
+    },
+    "CLT-FILE-004": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-FILE-006": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-FILE-007": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-FILE-008": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055"
+      ]
+    },
+    "CLT-FILE-009": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-FILE-010": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055"
+      ]
+    },
+    "CLT-FILE-011": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055"
+      ]
+    },
+    "CLT-FILE-012": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055"
+      ]
+    },
+    "CLT-FILE-013": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055"
+      ]
+    },
+    "CLT-FILE-014": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055"
+      ]
+    },
+    "CLT-FILE-015": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055"
+      ]
+    },
+    "CLT-FILE-016": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055"
+      ]
+    },
+    "CLT-FILE-017": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055"
+      ]
+    },
+    "CLT-FILE-018": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055"
+      ]
+    },
+    "CLT-FILE-019": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055"
+      ]
+    },
+    "CLT-FILE-020": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055"
+      ]
+    },
+    "CLT-MAC-CMD-001": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-MAC-CMD-002": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-MAC-CMD-003": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-MAC-CMD-004": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-MAC-CMD-005": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MAC-CMD-006": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MAC-CMD-007": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MAC-CMD-008": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MAC-CMD-009": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MAC-CMD-010": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MAC-CMD-011": {
+      "owasp_llm": [
+        "LLM03",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI04"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MAC-CMD-012": {
+      "owasp_llm": [
+        "LLM03",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI04"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MAC-CMD-013": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MAC-CMD-014": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0101"
+      ]
+    },
+    "CLT-MAC-CMD-015": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0101"
+      ]
+    },
+    "CLT-MAC-CMD-016": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MAC-CMD-017": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MAC-CMD-018": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MAC-CMD-019": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MAC-CMD-020": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MAC-CMD-021": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MAC-CMD-022": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MAC-CMD-023": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MAC-CMD-024": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MAC-CMD-025": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MAC-CMD-026": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MAC-CMD-027": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MAC-CRED-001": {
+      "owasp_llm": [
+        "LLM02"
+      ],
+      "owasp_agentic": [
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055"
+      ]
+    },
+    "CLT-MAC-CRED-002": {
+      "owasp_llm": [
+        "LLM02"
+      ],
+      "owasp_agentic": [
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055"
+      ]
+    },
+    "CLT-MAC-CRED-003": {
+      "owasp_llm": [
+        "LLM02"
+      ],
+      "owasp_agentic": [
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055"
+      ]
+    },
+    "CLT-MAC-CRED-004": {
+      "owasp_llm": [
+        "LLM02"
+      ],
+      "owasp_agentic": [
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055"
+      ]
+    },
+    "CLT-MAC-CRED-005": {
+      "owasp_llm": [
+        "LLM02"
+      ],
+      "owasp_agentic": [
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055"
+      ]
+    },
+    "CLT-MAC-CRED-006": {
+      "owasp_llm": [
+        "LLM02"
+      ],
+      "owasp_agentic": [
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055",
+        "AML.T0101"
+      ]
+    },
+    "CLT-MAC-CRED-007": {
+      "owasp_llm": [
+        "LLM02"
+      ],
+      "owasp_agentic": [
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055"
+      ]
+    },
+    "CLT-MAC-CRED-008": {
+      "owasp_llm": [
+        "LLM02"
+      ],
+      "owasp_agentic": [
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055"
+      ]
+    },
+    "CLT-MAC-FILE-001": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MAC-FILE-002": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MAC-FILE-003": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MAC-FILE-004": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MAC-FILE-005": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MAC-FILE-006": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MAC-FILE-007": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MAC-FILE-008": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055",
+        "AML.T0113"
+      ]
+    },
+    "CLT-MAC-FILE-009": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MAC-FILE-010": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055"
+      ]
+    },
+    "CLT-MAC-OBFUS-001": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053",
+        "AML.T0123"
+      ]
+    },
+    "CLT-MAC-OBFUS-002": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053",
+        "AML.T0123"
+      ]
+    },
+    "CLT-MAC-OBFUS-003": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053",
+        "AML.T0123"
+      ]
+    },
+    "CLT-MAC-OBFUS-004": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MAC-OBFUS-005": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MAC-OBFUS-006": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0123"
+      ]
+    },
+    "CLT-MAC-OBFUS-007": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-MAC-PERSIST-001": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MAC-PERSIST-002": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-MAC-PERSIST-003": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MAC-PERSIST-004": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MAC-PERSIST-005": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MAC-PERSIST-006": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MAC-PERSIST-007": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MAC-PERSIST-008": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-MAC-PERSIST-009": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MAC-SUPPLY-001": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MAC-SUPPLY-002": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04"
+      ],
+      "mitre_atlas": [
+        "AML.T0011.001",
+        "AML.T0053"
+      ]
+    },
+    "CLT-MAC-SUPPLY-003": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MINE-001": {
+      "owasp_llm": [
+        "LLM10"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0048.000",
+        "AML.T0053"
+      ]
+    },
+    "CLT-MINE-002": {
+      "owasp_llm": [
+        "LLM10"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0048.000",
+        "AML.T0053"
+      ]
+    },
+    "CLT-MINE-003": {
+      "owasp_llm": [
+        "LLM10"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0048.000",
+        "AML.T0053"
+      ]
+    },
+    "CLT-MINE-004": {
+      "owasp_llm": [
+        "LLM10"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0048.000",
+        "AML.T0053"
+      ]
+    },
+    "CLT-MINE-005": {
+      "owasp_llm": [
+        "LLM10"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0048.000",
+        "AML.T0053"
+      ]
+    },
+    "CLT-MINE-006": {
+      "owasp_llm": [
+        "LLM10"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0048.000",
+        "AML.T0053"
+      ]
+    },
+    "CLT-MINE-007": {
+      "owasp_llm": [
+        "LLM10"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0048.000",
+        "AML.T0053"
+      ]
+    },
+    "CLT-MINE-008": {
+      "owasp_llm": [
+        "LLM10"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0048.000",
+        "AML.T0053"
+      ]
+    },
+    "CLT-MINE-009": {
+      "owasp_llm": [
+        "LLM10"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0048.000",
+        "AML.T0053"
+      ]
+    },
+    "CLT-MINE-010": {
+      "owasp_llm": [
+        "LLM10"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0048.000",
+        "AML.T0053"
+      ]
+    },
+    "CLT-MINE-011": {
+      "owasp_llm": [
+        "LLM10"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0048.000",
+        "AML.T0053"
+      ]
+    },
+    "CLT-MINE-012": {
+      "owasp_llm": [
+        "LLM10"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0048.000",
+        "AML.T0053"
+      ]
+    },
+    "CLT-MINE-013": {
+      "owasp_llm": [
+        "LLM10"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0048.000",
+        "AML.T0053"
+      ]
+    },
+    "CLT-MINE-014": {
+      "owasp_llm": [
+        "LLM10"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0048.000",
+        "AML.T0053"
+      ]
+    },
+    "CLT-MINE-015": {
+      "owasp_llm": [
+        "LLM03",
+        "LLM10"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI04"
+      ],
+      "mitre_atlas": [
+        "AML.T0011.001",
+        "AML.T0048.000",
+        "AML.T0053"
+      ]
+    },
+    "CLT-MINE-016": {
+      "owasp_llm": [
+        "LLM03",
+        "LLM10"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI04"
+      ],
+      "mitre_atlas": [
+        "AML.T0011.001",
+        "AML.T0048.000",
+        "AML.T0053"
+      ]
+    },
+    "CLT-MINE-017": {
+      "owasp_llm": [
+        "LLM10"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0048.000",
+        "AML.T0053"
+      ]
+    },
+    "CLT-MITRE-001": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0090"
+      ]
+    },
+    "CLT-MITRE-002": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0090"
+      ]
+    },
+    "CLT-MITRE-003": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0090"
+      ]
+    },
+    "CLT-MITRE-004": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0090"
+      ]
+    },
+    "CLT-MITRE-005": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0090"
+      ]
+    },
+    "CLT-MITRE-006": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0090"
+      ]
+    },
+    "CLT-MITRE-007": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0090"
+      ]
+    },
+    "CLT-MITRE-012": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0025",
+        "AML.T0053"
+      ]
+    },
+    "CLT-MITRE-014": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MITRE-016": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0123"
+      ]
+    },
+    "CLT-MITRE-017": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0123"
+      ]
+    },
+    "CLT-MITRE-020": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MITRE-022": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0075"
+      ]
+    },
+    "CLT-MITRE-023": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0025",
+        "AML.T0053"
+      ]
+    },
+    "CLT-MITRE-026": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MITRE-027": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MITRE-032": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0075"
+      ]
+    },
+    "CLT-MITRE-033": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MITRE-034": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MITRE-037": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0075"
+      ]
+    },
+    "CLT-MITRE-038": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0075"
+      ]
+    },
+    "CLT-MITRE-039": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MITRE-040": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MITRE-041": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MITRE-042": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MITRE-043": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0075"
+      ]
+    },
+    "CLT-MITRE-048": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0125"
+      ]
+    },
+    "CLT-MITRE-049": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0125"
+      ]
+    },
+    "CLT-MITRE-050": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0089"
+      ]
+    },
+    "CLT-MITRE-051": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-MITRE-052": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0123"
+      ]
+    },
+    "CLT-MITRE-053": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-MITRE-064": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-MITRE-065": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-MITRE-066": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0089"
+      ]
+    },
+    "CLT-MITRE-067": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MITRE-071": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0089"
+      ]
+    },
+    "CLT-MITRE-072": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0075"
+      ]
+    },
+    "CLT-MITRE-075": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MITRE-076": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MITRE-077": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MITRE-078": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MITRE-081": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MITRE-082": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MITRE-083": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055"
+      ]
+    },
+    "CLT-MITRE-085": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MITRE-086": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055"
+      ]
+    },
+    "CLT-MITRE-087": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055"
+      ]
+    },
+    "CLT-MITRE-088": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MITRE-089": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MITRE-090": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MITRE-091": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MITRE-092": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0127"
+      ]
+    },
+    "CLT-MITRE-093": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MITRE-094": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MITRE-095": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MITRE-096": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-MITRE-099": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0025",
+        "AML.T0053"
+      ]
+    },
+    "CLT-MITRE-100": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0025",
+        "AML.T0053"
+      ]
+    },
+    "CLT-MITRE-102": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-MITRE-104": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0089"
+      ]
+    },
+    "CLT-MITRE-105": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0089"
+      ]
+    },
+    "CLT-MITRE-106": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055"
+      ]
+    },
+    "CLT-MITRE-107": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055"
+      ]
+    },
+    "CLT-OBFUS-001": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053",
+        "AML.T0123"
+      ]
+    },
+    "CLT-OBFUS-002": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0123"
+      ]
+    },
+    "CLT-OBFUS-003": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053",
+        "AML.T0123"
+      ]
+    },
+    "CLT-OBFUS-004": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053",
+        "AML.T0123"
+      ]
+    },
+    "CLT-OBFUS-005": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053",
+        "AML.T0123"
+      ]
+    },
+    "CLT-OBFUS-006": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0074",
+        "AML.T0123"
+      ]
+    },
+    "CLT-OBFUS-007": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0074",
+        "AML.T0123"
+      ]
+    },
+    "CLT-OBFUS-008": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053",
+        "AML.T0123"
+      ]
+    },
+    "CLT-PERSIST-001": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-PERSIST-002": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-PERSIST-003": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-PERSIST-005": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-PERSIST-006": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-PERSIST-007": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-PERSIST-008": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-SELF-001": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-SELF-002": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-SELF-003": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0081"
+      ]
+    },
+    "CLT-SELF-004": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0081"
+      ]
+    },
+    "CLT-SELF-005": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI03",
+        "ASI09",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-SELF-006": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-SELF-007": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI03",
+        "ASI09",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-SELF-008": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-SELF-009": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI03",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055"
+      ]
+    },
+    "CLT-SUPPLY-001": {
+      "owasp_llm": [
+        "LLM03",
+        "LLM05"
+      ],
+      "owasp_agentic": [
+        "ASI04",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-URL-001": {
+      "owasp_llm": [
+        "LLM03",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0079"
+      ]
+    },
+    "CLT-URL-002": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0072",
+        "AML.T0079"
+      ]
+    },
+    "CLT-URL-003": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0072",
+        "AML.T0079"
+      ]
+    },
+    "CLT-URL-004": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0072"
+      ]
+    },
+    "CLT-URL-005": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0079"
+      ]
+    },
+    "CLT-WIN-CMD-001": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-CMD-002": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-CMD-003": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-CMD-004": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-CMD-005": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-CMD-006": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-CMD-007": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0123"
+      ]
+    },
+    "CLT-WIN-CMD-008": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-CMD-009": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-CMD-010": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-CMD-011": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-CMD-012": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-CMD-013": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-CMD-014": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-CMD-015": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-CMD-016": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-CMD-017": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-CMD-018": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-CMD-019": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0101"
+      ]
+    },
+    "CLT-WIN-CMD-020": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0101"
+      ]
+    },
+    "CLT-WIN-CMD-021": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0101"
+      ]
+    },
+    "CLT-WIN-CMD-022": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0101"
+      ]
+    },
+    "CLT-WIN-CMD-023": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053",
+        "AML.T0072"
+      ]
+    },
+    "CLT-WIN-CMD-024": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053",
+        "AML.T0072"
+      ]
+    },
+    "CLT-WIN-CMD-025": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0012",
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-CMD-026": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-CMD-027": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-CMD-028": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0101"
+      ]
+    },
+    "CLT-WIN-CMD-029": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0101"
+      ]
+    },
+    "CLT-WIN-CMD-030": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053",
+        "AML.T0072"
+      ]
+    },
+    "CLT-WIN-CMD-031": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0101"
+      ]
+    },
+    "CLT-WIN-CMD-032": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0101"
+      ]
+    },
+    "CLT-WIN-CMD-033": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0101"
+      ]
+    },
+    "CLT-WIN-CMD-034": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0101"
+      ]
+    },
+    "CLT-WIN-CMD-035": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-CMD-036": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-CMD-037": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-CMD-038": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-CMD-039": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-CMD-040": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0127"
+      ]
+    },
+    "CLT-WIN-CMD-041": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0127"
+      ]
+    },
+    "CLT-WIN-CMD-042": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-CMD-043": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-CMD-044": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-CMD-045": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-CMD-046": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-CMD-047": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0101"
+      ]
+    },
+    "CLT-WIN-CMD-048": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-CMD-049": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-CMD-050": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-CMD-051": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-CMD-052": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-CMD-053": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-CMD-054": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-CMD-055": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-CMD-056": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-CMD-057": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-CMD-058": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-CMD-059": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-CMD-060": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-CMD-061": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-CRED-001": {
+      "owasp_llm": [
+        "LLM02"
+      ],
+      "owasp_agentic": [
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055"
+      ]
+    },
+    "CLT-WIN-CRED-002": {
+      "owasp_llm": [
+        "LLM02"
+      ],
+      "owasp_agentic": [
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055"
+      ]
+    },
+    "CLT-WIN-CRED-003": {
+      "owasp_llm": [
+        "LLM02"
+      ],
+      "owasp_agentic": [
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055"
+      ]
+    },
+    "CLT-WIN-CRED-004": {
+      "owasp_llm": [
+        "LLM02"
+      ],
+      "owasp_agentic": [
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055"
+      ]
+    },
+    "CLT-WIN-CRED-005": {
+      "owasp_llm": [
+        "LLM02"
+      ],
+      "owasp_agentic": [
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055"
+      ]
+    },
+    "CLT-WIN-CRED-006": {
+      "owasp_llm": [
+        "LLM02"
+      ],
+      "owasp_agentic": [
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055",
+        "AML.T0090"
+      ]
+    },
+    "CLT-WIN-CRED-007": {
+      "owasp_llm": [
+        "LLM02"
+      ],
+      "owasp_agentic": [
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055",
+        "AML.T0090"
+      ]
+    },
+    "CLT-WIN-CRED-008": {
+      "owasp_llm": [
+        "LLM02"
+      ],
+      "owasp_agentic": [
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055",
+        "AML.T0090"
+      ]
+    },
+    "CLT-WIN-CRED-009": {
+      "owasp_llm": [
+        "LLM02"
+      ],
+      "owasp_agentic": [
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055"
+      ]
+    },
+    "CLT-WIN-CRED-010": {
+      "owasp_llm": [
+        "LLM02"
+      ],
+      "owasp_agentic": [
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055"
+      ]
+    },
+    "CLT-WIN-FILE-001": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0090"
+      ]
+    },
+    "CLT-WIN-FILE-002": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0090"
+      ]
+    },
+    "CLT-WIN-FILE-003": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-FILE-004": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-FILE-005": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-FILE-006": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-FILE-007": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-FILE-008": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055"
+      ]
+    },
+    "CLT-WIN-FILE-009": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055"
+      ]
+    },
+    "CLT-WIN-FILE-010": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055",
+        "AML.T0113"
+      ]
+    },
+    "CLT-WIN-OBFUS-001": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053",
+        "AML.T0123"
+      ]
+    },
+    "CLT-WIN-OBFUS-002": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0123"
+      ]
+    },
+    "CLT-WIN-OBFUS-003": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-OBFUS-004": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-OBFUS-005": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053",
+        "AML.T0123"
+      ]
+    },
+    "CLT-WIN-OBFUS-006": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-OBFUS-007": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053",
+        "AML.T0123"
+      ]
+    },
+    "CLT-WIN-OBFUS-008": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053",
+        "AML.T0123"
+      ]
+    },
+    "CLT-WIN-OBFUS-009": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053",
+        "AML.T0123"
+      ]
+    },
+    "CLT-WIN-OBFUS-010": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-OBFUS-011": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-OBFUS-012": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-OBFUS-013": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053",
+        "AML.T0123"
+      ]
+    },
+    "CLT-WIN-OBFUS-014": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053",
+        "AML.T0123"
+      ]
+    },
+    "CLT-WIN-OBFUS-015": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053",
+        "AML.T0123"
+      ]
+    },
+    "CLT-WIN-OBFUS-016": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053",
+        "AML.T0123"
+      ]
+    },
+    "CLT-WIN-PERSIST-001": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-PERSIST-002": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-PERSIST-003": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-PERSIST-004": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-PERSIST-005": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-PERSIST-006": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-PERSIST-007": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-PERSIST-008": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-SUPPLY-001": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "LLM-FILE-001": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055"
+      ]
+    },
+    "LLM-FILE-002": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "LLM-IIN-001": {
+      "owasp_llm": [
+        "LLM01"
+      ],
+      "owasp_agentic": [
+        "ASI01"
+      ],
+      "mitre_atlas": [
+        "AML.T0051.001",
+        "AML.T0094"
+      ]
+    },
+    "LLM-IIN-002": {
+      "owasp_llm": [
+        "LLM01"
+      ],
+      "owasp_agentic": [
+        "ASI01"
+      ],
+      "mitre_atlas": [
+        "AML.T0051.001"
+      ]
+    },
+    "LLM-IIN-003": {
+      "owasp_llm": [
+        "LLM01"
+      ],
+      "owasp_agentic": [
+        "ASI01"
+      ],
+      "mitre_atlas": [
+        "AML.T0051.001",
+        "AML.T0068"
+      ]
+    },
+    "LLM-INFO-001": {
+      "owasp_llm": [
+        "LLM02"
+      ],
+      "owasp_agentic": [],
+      "mitre_atlas": [
+        "AML.T0055"
+      ]
+    },
+    "LLM-INFO-002": {
+      "owasp_llm": [
+        "LLM02"
+      ],
+      "owasp_agentic": [],
+      "mitre_atlas": [
+        "AML.T0055"
+      ]
+    },
+    "LLM-INJ-001": {
+      "owasp_llm": [
+        "LLM01"
+      ],
+      "owasp_agentic": [
+        "ASI01"
+      ],
+      "mitre_atlas": [
+        "AML.T0051"
+      ]
+    },
+    "LLM-INJ-002": {
+      "owasp_llm": [
+        "LLM01"
+      ],
+      "owasp_agentic": [
+        "ASI01"
+      ],
+      "mitre_atlas": [
+        "AML.T0051",
+        "AML.T0054"
+      ]
+    },
+    "LLM-INJ-003": {
+      "owasp_llm": [
+        "LLM01"
+      ],
+      "owasp_agentic": [
+        "ASI01"
+      ],
+      "mitre_atlas": [
+        "AML.T0051",
+        "AML.T0054"
+      ]
+    },
+    "LLM-INJ-004": {
+      "owasp_llm": [
+        "LLM01"
+      ],
+      "owasp_agentic": [
+        "ASI01"
+      ],
+      "mitre_atlas": [
+        "AML.T0051"
+      ]
+    },
+    "LLM-INJ-005": {
+      "owasp_llm": [
+        "LLM01"
+      ],
+      "owasp_agentic": [
+        "ASI01"
+      ],
+      "mitre_atlas": [
+        "AML.T0051"
+      ]
+    },
+    "LLM-MEM-001": {
+      "owasp_llm": [
+        "LLM01"
+      ],
+      "owasp_agentic": [
+        "ASI06"
+      ],
+      "mitre_atlas": [
+        "AML.T0080",
+        "AML.T0080.000"
+      ]
+    },
+    "LLM-MEM-002": {
+      "owasp_llm": [
+        "LLM01"
+      ],
+      "owasp_agentic": [
+        "ASI06"
+      ],
+      "mitre_atlas": [
+        "AML.T0080",
+        "AML.T0080.000"
+      ]
+    },
+    "LLM-SPE-001": {
+      "owasp_llm": [
+        "LLM07"
+      ],
+      "owasp_agentic": [],
+      "mitre_atlas": [
+        "AML.T0056"
+      ]
+    },
+    "LLM-SPE-002": {
+      "owasp_llm": [
+        "LLM07"
+      ],
+      "owasp_agentic": [],
+      "mitre_atlas": [
+        "AML.T0056"
+      ]
+    },
+    "LLM-SPE-003": {
+      "owasp_llm": [
+        "LLM07"
+      ],
+      "owasp_agentic": [],
+      "mitre_atlas": [
+        "AML.T0056"
+      ]
+    },
+    "LLM-TOOL-001": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "LLM-TOOL-002": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "LLM-TOOL-003": {
+      "owasp_llm": [
+        "LLM01",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI01",
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0051.001",
+        "AML.T0053"
+      ]
+    },
+    "LLM-TOOL-004": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0086"
+      ]
+    },
+    "SKILL-T01-001": {
+      "owasp_llm": [
+        "LLM01",
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI01",
+        "ASI04"
+      ],
+      "mitre_atlas": [
+        "AML.T0010.005",
+        "AML.T0051.001",
+        "AML.T0110.000"
+      ]
+    },
+    "SKILL-T01-002": {
+      "owasp_llm": [
+        "LLM01",
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI01",
+        "ASI04",
+        "ASI09"
+      ],
+      "mitre_atlas": [
+        "AML.T0010.005",
+        "AML.T0110.000"
+      ]
+    },
+    "SKILL-T01-003": {
+      "owasp_llm": [
+        "LLM01",
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI01",
+        "ASI04"
+      ],
+      "mitre_atlas": [
+        "AML.T0010.005",
+        "AML.T0068",
+        "AML.T0110.000"
+      ]
+    },
+    "SKILL-T01-004": {
+      "owasp_llm": [
+        "LLM01",
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI01",
+        "ASI04"
+      ],
+      "mitre_atlas": [
+        "AML.T0010.005",
+        "AML.T0068",
+        "AML.T0110.000"
+      ]
+    },
+    "SKILL-T01-005": {
+      "owasp_llm": [
+        "LLM01",
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI01",
+        "ASI04"
+      ],
+      "mitre_atlas": [
+        "AML.T0010.005",
+        "AML.T0068",
+        "AML.T0110.000",
+        "AML.T0123"
+      ]
+    },
+    "SKILL-T02-001": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04",
+        "ASI06"
+      ],
+      "mitre_atlas": [
+        "AML.T0010.005",
+        "AML.T0080.000",
+        "AML.T0081"
+      ]
+    },
+    "SKILL-T02-002": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04",
+        "ASI06"
+      ],
+      "mitre_atlas": [
+        "AML.T0010.005",
+        "AML.T0080.000"
+      ]
+    },
+    "SKILL-T03-001": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0010.005",
+        "AML.T0050",
+        "AML.T0110.001"
+      ]
+    },
+    "SKILL-T03-002": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0010.005",
+        "AML.T0050",
+        "AML.T0110.001"
+      ]
+    },
+    "SKILL-T03-003": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0010.005",
+        "AML.T0050",
+        "AML.T0110.001"
+      ]
+    },
+    "SKILL-T04-001": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04"
+      ],
+      "mitre_atlas": [
+        "AML.T0010.005",
+        "AML.T0110.001",
+        "AML.T0123"
+      ]
+    },
+    "SKILL-T04-002": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0010.005",
+        "AML.T0050",
+        "AML.T0110.001",
+        "AML.T0123"
+      ]
+    },
+    "SKILL-T04-003": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0010.005",
+        "AML.T0072",
+        "AML.T0110.001"
+      ]
+    },
+    "SKILL-T04-004": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04"
+      ],
+      "mitre_atlas": [
+        "AML.T0010.005",
+        "AML.T0025",
+        "AML.T0055",
+        "AML.T0110.001"
+      ]
+    },
+    "SKILL-T05-001": {
+      "owasp_llm": [
+        "LLM03",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI03",
+        "ASI04",
+        "ASI09"
+      ],
+      "mitre_atlas": [
+        "AML.T0010.005",
+        "AML.T0081"
+      ]
+    },
+    "SKILL-T05-002": {
+      "owasp_llm": [
+        "LLM03",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI03",
+        "ASI04"
+      ],
+      "mitre_atlas": [
+        "AML.T0010.005",
+        "AML.T0081"
+      ]
+    },
+    "SKILL-T05-003": {
+      "owasp_llm": [
+        "LLM03",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI03",
+        "ASI04"
+      ],
+      "mitre_atlas": [
+        "AML.T0010.005",
+        "AML.T0110.001"
+      ]
+    },
+    "SKILL-T05-004": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI03",
+        "ASI04"
+      ],
+      "mitre_atlas": [
+        "AML.T0010.005",
+        "AML.T0055",
+        "AML.T0110.001"
+      ]
+    },
+    "SKILL-T06-001": {
+      "owasp_llm": [
+        "LLM03",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI04"
+      ],
+      "mitre_atlas": [
+        "AML.T0010.005",
+        "AML.T0110.001"
+      ]
+    },
+    "SKILL-T06-002": {
+      "owasp_llm": [
+        "LLM03",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI04"
+      ],
+      "mitre_atlas": [
+        "AML.T0010.005",
+        "AML.T0110.001"
+      ]
+    },
+    "SKILL-T07-001": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI04"
+      ],
+      "mitre_atlas": [
+        "AML.T0010.005",
+        "AML.T0074"
+      ]
+    },
+    "SKILL-T07-002": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI04"
+      ],
+      "mitre_atlas": [
+        "AML.T0010.005",
+        "AML.T0081"
+      ]
+    },
+    "SKILL-T08-001": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04"
+      ],
+      "mitre_atlas": [
+        "AML.T0010.005"
+      ]
+    },
+    "SKILL-T08-002": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04"
+      ],
+      "mitre_atlas": [
+        "AML.T0010.005"
+      ]
+    },
+    "SKILL-T09-001": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04"
+      ],
+      "mitre_atlas": [
+        "AML.T0010.005",
+        "AML.T0055"
+      ]
+    },
+    "SKILL-T09-002": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0010.005"
+      ]
+    }
+  },
+  "titles": {
+    "AML.T0010.005": "AI Agent Tool",
+    "AML.T0011.001": "Malicious Package",
+    "AML.T0012": "Valid Accounts",
+    "AML.T0025": "Exfiltration via Cyber Means",
+    "AML.T0048.000": "Financial Harm",
+    "AML.T0050": "Command and Scripting Interpreter",
+    "AML.T0051": "LLM Prompt Injection",
+    "AML.T0051.001": "Indirect",
+    "AML.T0053": "AI Agent Tool Invocation",
+    "AML.T0054": "LLM Jailbreak",
+    "AML.T0055": "Unsecured Credentials",
+    "AML.T0056": "Extract LLM System Prompt",
+    "AML.T0068": "LLM Prompt Obfuscation",
+    "AML.T0072": "Cyber Communication Channel",
+    "AML.T0074": "Masquerading",
+    "AML.T0075": "Enterprise Resource Discovery",
+    "AML.T0079": "Stage Capabilities",
+    "AML.T0080": "AI Agent Context Poisoning",
+    "AML.T0080.000": "Memory",
+    "AML.T0081": "Modify AI Agent Configuration",
+    "AML.T0086": "Exfiltration via AI Agent Tool Invocation",
+    "AML.T0089": "Enterprise Environment Discovery",
+    "AML.T0090": "OS Credential Dumping",
+    "AML.T0094": "Delay Execution of LLM Instructions",
+    "AML.T0101": "Data Destruction via AI Agent Tool Invocation",
+    "AML.T0110.000": "Definition and Instructions",
+    "AML.T0110.001": "Implementation",
+    "AML.T0113": "Steal Web Session Cookie",
+    "AML.T0123": "Obfuscated Files or Information",
+    "AML.T0125": "Create Account",
+    "AML.T0127": "Data Staged",
+    "ASI01": "Agent Goal Hijack",
+    "ASI02": "Tool Misuse and Exploitation",
+    "ASI03": "Identity and Privilege Abuse",
+    "ASI04": "Agentic Supply Chain Vulnerabilities",
+    "ASI05": "Unexpected Code Execution (RCE)",
+    "ASI06": "Memory & Context Poisoning",
+    "ASI09": "Human-Agent Trust Exploitation",
+    "ASI10": "Rogue Agents",
+    "LLM01": "Prompt Injection",
+    "LLM02": "Sensitive Information Disclosure",
+    "LLM03": "Supply Chain",
+    "LLM05": "Improper Output Handling",
+    "LLM06": "Excessive Agency",
+    "LLM07": "System Prompt Leakage",
+    "LLM10": "Unbounded Consumption"
+  }
+}

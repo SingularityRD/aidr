@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, NavLink } from "react-router-dom";
 import type { TeamMember } from "../../enterprise/team-provider";
-import { type GovernanceData, loadGovernance, stepUpPath } from "../../lib/governance";
+import { type GovernanceData, loadGovernance, stepUpPath } from "../../lib/ai-governance";
 import type { DiffLine } from "../../lib/json-diff";
 
 export interface Notice {

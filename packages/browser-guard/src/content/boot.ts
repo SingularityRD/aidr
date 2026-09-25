@@ -16,6 +16,9 @@
  *
  * Until a valid policy arrives the guard fails closed (sends are blocked with a
  * message); policy fetches are retried with capped backoff for as long as the page lives.
+ *
+ * Once a policy is applied, the administrator's acceptable-use notice (if any) is shown
+ * unless this browser already acknowledged its version (./acceptable-use.ts).
  */
 import type {
 	CustomSiteConfig,
@@ -28,7 +31,9 @@ import type {
 	SiteAdapter,
 	VaultSnapshot,
 } from "../types.js";
+import { createAcceptableUseNotice } from "./acceptable-use.js";
 import { type ContentGuard, type ContentGuardDeps, createContentGuard } from "./guard.js";
+import { resolveLanguage, STRINGS } from "./strings.js";
 
 /** Engine limits: prompts larger than this are reported incomplete and fail closed. */
 const MAX_INPUT_CHARS = 200_000;
@@ -56,7 +61,7 @@ const ARRAY_KEYS = [
 const POLICY_RETRY_BASE_MS = 200;
 const POLICY_RETRY_MAX_MS = 10_000;
 /** How long boot waits for the persisted vault before starting with an empty one. */
-export const VAULT_LOAD_TIMEOUT_MS = 1_500;
+const VAULT_LOAD_TIMEOUT_MS = 1_500;
 
 /** The persisted vault from a VAULT_LOAD reply, or null (nothing saved / malformed). */
 export function extractVault(
@@ -212,6 +217,12 @@ export function bootContentGuard(deps: BootDeps): BootedGuard {
 		onSent: () => saveVault(),
 	});
 
+	const notice = createAcceptableUseNotice({
+		ui: guard.ui,
+		send: (message) => runtime.sendMessage(message),
+		strings: () => STRINGS[resolveLanguage(policy?.language, deps.window.navigator?.language)],
+	});
+
 	// ---- vault persistence (see the module comment) ----------------------------------
 
 	let saving = false;
@@ -313,6 +324,7 @@ export function bootContentGuard(deps: BootDeps): BootedGuard {
 		policy = next;
 		guard.policyChanged();
 		markReady();
+		notice.policyChanged(next);
 	};
 
 	const load = async (): Promise<void> => {

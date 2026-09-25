@@ -1,0 +1,187 @@
+# AI model supply-chain rules for Singularity AIDR
+# Author: SingularityRD
+# License: DRL-1.1 (see threats/LICENSE)
+#
+# Unsafe model loading and unvetted model sources in code and commands an
+# agent writes or runs. Most model formats in the Python ecosystem (.pt, .pth,
+# .ckpt, .pkl, .joblib, pickled .bin, Keras Lambda layers, numpy object
+# arrays) are *programs*: loading one can execute code chosen by whoever
+# produced the file. The safe default for weights is .safetensors.
+#
+# match_on values:
+#   command         - the Bash command an agent runs (runtime engine)
+#   code:<language> - text an agent writes or runs as code in that language,
+#                     gated by file extension (packages/core/src/code-guard.ts):
+#                     Write/Edit/MultiEdit/apply_patch/NotebookEdit added lines,
+#                     `python -c` / Python heredocs, and `aidr scan --code`.
+#                     Python rules are deliberately NOT applied to `command`, so
+#                     `grep "torch.load(" -r .` is not mistaken for loading a model.
+#
+# Trusted sources: AISC-007, AISC-008 and AISC-012 are suppressed when every
+# repository they name belongs to a trusted organisation, AISC-013 when every
+# URL is HTTPS on a trusted host (allowlists/model-sources/*.yaml plus
+# ai_supply_chain.trusted_model_orgs / trusted_model_hosts). Unsafe *loading*
+# is flagged whatever the source.
+#
+# Every gap is bounded ({0,N}); "must not contain" spans are tempered so they
+# cannot run into the next call of the same function.
+
+# ── Unsafe deserialization of model files ─────────────────────────────────
+
+- id: "AISC-001"
+  category: ai_supply_chain
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "\\btorch\\.load\\s{0,4}\\((?!(?:(?!\\btorch\\.load\\b)[\\s\\S]){0,400}?\\bweights_only\\s{0,4}=\\s{0,4}True\\b)"
+  match_on: ["code:python"]
+  title: "torch.load() without weights_only=True unpickles the checkpoint and can run code hidden in it; pass weights_only=True or load .safetensors weights"
+  expires_at: null
+  revoked: false
+
+- id: "AISC-002"
+  category: ai_supply_chain
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "\\b(?:(?:c?pickle|_pickle|dill|cloudpickle|joblib)\\.loads?|(?:pd|pandas)\\.read_pickle)\\s{0,4}\\([^\\n;]{0,300}?(?:\\b(?:hf_hub_download|snapshot_download|cached_download|urlretrieve|download_url_to_file|get_file)\\s{0,4}\\(|\\bwget\\.download\\b|[\"']https?://|\\b(?:response|resp|r)\\.(?:content|raw)\\b|\\w{0,40}[Dd]ownload\\w{0,40}\\b)"
+  match_on: ["code:python"]
+  title: "Pickle-based loader (pickle, joblib, dill, cloudpickle, read_pickle) on a downloaded or remote file can run arbitrary code; ship weights as .safetensors or another data-only format"
+  expires_at: null
+  revoked: false
+
+- id: "AISC-003"
+  category: ai_supply_chain
+  severity: critical
+  confidence: 0.95
+  action: block
+  pattern: "\\b(?:c?pickle|_pickle|dill|cloudpickle|joblib)\\.loads?\\s{0,4}\\([^\\n;]{0,200}?(?:\\b(?:requests|httpx|urllib3|session|client)\\.(?:get|post|request)\\s{0,4}\\(|\\b(?:urllib\\.request\\.)?urlopen\\s{0,4}\\()|\\btorch\\.load\\s{0,4}\\((?![^\\n;]{0,300}?\\bweights_only\\s{0,4}=\\s{0,4}True\\b)[^\\n;]{0,200}?(?:\\b(?:requests|httpx|urllib3|session|client)\\.(?:get|post|request)\\s{0,4}\\(|\\b(?:urllib\\.request\\.)?urlopen\\s{0,4}\\()|\\b(?:pd|pandas)\\.read_pickle\\s{0,4}\\(\\s{0,4}(?:filepath_or_buffer\\s{0,4}=\\s{0,4})?[\"']https?://"
+  match_on: ["code:python"]
+  title: "Model or data bytes are unpickled straight from a network response (remote code execution); download, verify and load .safetensors instead"
+  expires_at: null
+  revoked: false
+
+- id: "AISC-004"
+  category: ai_supply_chain
+  severity: critical
+  confidence: 0.95
+  action: block
+  pattern: "\\b(?:curl|wget)\\b[^\\n]{0,300}?(?:\\||&&|;)[^\\n]{0,300}?(?:\\b(?:c?pickle|_pickle|dill|cloudpickle|joblib)\\.loads?\\s{0,4}\\(|\\btorch\\.load\\s{0,4}\\((?![^\\n]{0,300}?\\bweights_only\\s{0,4}=\\s{0,4}True\\b))"
+  match_on: ["command", "code:shell", "code:dockerfile", "code:makefile", "code:yaml"]
+  title: "Command downloads a file and unpickles it in the same step (remote code execution); verify the file first and load .safetensors weights"
+  expires_at: null
+  revoked: false
+
+# ── Remote code in model repositories ─────────────────────────────────────
+
+- id: "AISC-005"
+  category: ai_supply_chain
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "\\btrust_remote_code\\s{0,4}=\\s{0,4}True\\b|[\"']trust_remote_code[\"']\\s{0,4}:\\s{0,4}True\\b"
+  match_on: ["code:python"]
+  title: "trust_remote_code=True runs Python code shipped in the model repository; pin a reviewed revision or use a model that needs no remote code (safetensors weights)"
+  expires_at: null
+  revoked: false
+
+- id: "AISC-006"
+  category: ai_supply_chain
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "(?:^|[\\s;&|])--trust[-_]remote[-_]code(?=\\s|$|=\\s{0,4}(?:true|True|1)\\b)|--model[-_]args[= ]\\s{0,4}[\"']?[^\\s\"']{0,300}?\\btrust_remote_code=(?:True|true)\\b"
+  match_on: ["command", "code:shell", "code:dockerfile", "code:makefile", "code:yaml"]
+  title: "--trust-remote-code runs Python code shipped in the model repository; pin a reviewed revision or use a model that needs no remote code"
+  expires_at: null
+  revoked: false
+
+- id: "AISC-007"
+  category: ai_supply_chain
+  severity: critical
+  confidence: 0.9
+  action: block
+  pattern: "\\bfrom_pretrained\\s{0,4}\\(\\s{0,20}(?:pretrained_model_name_or_path\\s{0,4}=\\s{0,4})?[\"'][A-Za-z0-9][\\w.-]{0,95}/[\\w.-]{1,96}[\"'](?:(?!\\bfrom_pretrained\\b)[\\s\\S]){0,400}?(?:\\btrust_remote_code\\s{0,4}=\\s{0,4}True\\b|[\"']trust_remote_code[\"']\\s{0,4}:\\s{0,4}True\\b)|\\bpipeline\\s{0,4}\\((?:(?!\\bpipeline\\b)[\\s\\S]){0,300}?\\bmodel\\s{0,4}=\\s{0,4}[\"'][A-Za-z0-9][\\w.-]{0,95}/[\\w.-]{1,96}[\"'](?:(?!\\bpipeline\\b)[\\s\\S]){0,300}?\\btrust_remote_code\\s{0,4}=\\s{0,4}True\\b|\\bpipeline\\s{0,4}\\((?:(?!\\bpipeline\\b)[\\s\\S]){0,300}?\\btrust_remote_code\\s{0,4}=\\s{0,4}True\\b(?:(?!\\bpipeline\\b)[\\s\\S]){0,300}?\\bmodel\\s{0,4}=\\s{0,4}[\"'][A-Za-z0-9][\\w.-]{0,95}/[\\w.-]{1,96}[\"']"
+  match_on: ["code:python"]
+  title: "trust_remote_code=True on a repository from a publisher outside the trusted model sources runs unvetted code; review the repository or add its organisation to ai_supply_chain.trusted_model_orgs"
+  expires_at: null
+  revoked: false
+
+- id: "AISC-008"
+  category: ai_supply_chain
+  severity: critical
+  confidence: 0.9
+  action: block
+  pattern: "\\bvllm\\s{1,4}serve\\s{1,4}[\"']?[A-Za-z0-9][\\w.-]{0,95}/[\\w.-]{1,96}[^\\n]{0,300}?--trust[-_]remote[-_]code\\b|--model(?:[-_]id)?[= ]\\s{0,4}[\"']?[A-Za-z0-9][\\w.-]{0,95}/[\\w.-]{1,96}[^\\n]{0,300}?--trust[-_]remote[-_]code\\b|--trust[-_]remote[-_]code\\b[^\\n]{0,300}?--model(?:[-_]id)?[= ]\\s{0,4}[\"']?[A-Za-z0-9][\\w.-]{0,95}/[\\w.-]{1,96}|\\bpretrained=[A-Za-z0-9][\\w.-]{0,95}/[\\w.-]{1,96}[^\\s\"']{0,300}?\\btrust_remote_code=(?:True|true)\\b|\\btrust_remote_code=(?:True|true),[^\\s\"']{0,300}?\\bpretrained=[A-Za-z0-9][\\w.-]{0,95}/[\\w.-]{1,96}"
+  match_on: ["command", "code:shell", "code:dockerfile", "code:makefile", "code:yaml"]
+  title: "Model served with --trust-remote-code from a publisher outside the trusted model sources runs unvetted code; review the repository or add its organisation to ai_supply_chain.trusted_model_orgs"
+  expires_at: null
+  revoked: false
+
+- id: "AISC-009"
+  category: ai_supply_chain
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "\\b(?:load_model|from_config|deserialize_keras_object|model_from_json)\\s{0,4}\\((?:(?!\\bload_model\\b)[\\s\\S]){0,400}?\\bsafe_mode\\s{0,4}=\\s{0,4}False\\b|\\benable_unsafe_deserialization\\s{0,4}\\(\\s{0,4}\\)"
+  match_on: ["code:python"]
+  title: "Keras model loaded with safe_mode=False (or unsafe deserialization enabled) can run embedded Lambda code; keep safe_mode on or load .safetensors weights"
+  expires_at: null
+  revoked: false
+
+- id: "AISC-010"
+  category: ai_supply_chain
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "\\b(?:np|numpy)\\.load\\s{0,4}\\((?:(?!\\b(?:np|numpy)\\.load\\b)[\\s\\S]){0,300}?\\ballow_pickle\\s{0,4}=\\s{0,4}True\\b"
+  match_on: ["code:python"]
+  title: "numpy.load(allow_pickle=True) unpickles object arrays and can run code; keep allow_pickle=False and store tensors as .safetensors or plain .npy/.npz"
+  expires_at: null
+  revoked: false
+
+- id: "AISC-011"
+  category: ai_supply_chain
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "\\byaml\\.unsafe_load(?:_all)?\\s{0,4}\\(|\\byaml\\.load(?:_all)?\\s{0,4}\\((?:(?!\\byaml\\.)[\\s\\S]){0,300}?(?:\\bLoader\\s{0,4}=\\s{0,4}|,\\s{0,4})(?:yaml\\.)?C?(?:Unsafe)?Loader\\b(?!\\s{0,4}=)"
+  match_on: ["code:python"]
+  title: "YAML loaded with an unsafe Loader (yaml.Loader, UnsafeLoader, unsafe_load) can construct arbitrary Python objects; use yaml.safe_load for model and training configs"
+  expires_at: null
+  revoked: false
+
+# ── Unvetted model sources ────────────────────────────────────────────────
+
+- id: "AISC-012"
+  category: ai_supply_chain
+  severity: medium
+  confidence: 0.8
+  action: require_approval
+  pattern: "\\b(?:huggingface-cli|hf)\\s{1,4}download\\s{1,4}(?:--[\\w-]{1,30}(?:=[^\\s]{1,100}|\\s{1,4}(?!-)[^\\s]{1,100})?\\s{1,4}){0,4}[\"']?[A-Za-z0-9][\\w.-]{0,95}/[\\w.-]{1,96}|\\b(?:hf_hub_download|snapshot_download)\\s{0,4}\\(\\s{0,20}(?:repo_id\\s{0,4}=\\s{0,4})?[\"'][A-Za-z0-9][\\w.-]{0,95}/[\\w.-]{1,96}[\"']|\\b(?:hf_hub_download|snapshot_download)\\s{0,4}\\([^)]{0,200}?\\brepo_id\\s{0,4}=\\s{0,4}[\"'][A-Za-z0-9][\\w.-]{0,95}/[\\w.-]{1,96}[\"']"
+  match_on: ["command", "code:python", "code:shell", "code:dockerfile", "code:makefile", "code:yaml"]
+  title: "Model downloaded from a Hugging Face organisation outside the trusted model sources; verify the publisher, pin a revision and prefer .safetensors files"
+  expires_at: null
+  revoked: false
+
+- id: "AISC-013"
+  category: ai_supply_chain
+  severity: medium
+  confidence: 0.8
+  action: require_approval
+  pattern: "(?:\\b(?:curl|wget|aria2c)\\b[^\\n|;&]{0,300}?|\\b(?:urlretrieve|requests\\.get|httpx\\.get|wget\\.download|download_url_to_file|load_state_dict_from_url)\\s{0,4}\\(\\s{0,4}(?:url\\s{0,4}=\\s{0,4})?[\"'])https://[^\\s\"'|;&<>()]{1,300}?(?:\\.(?:pt|pth|pkl|pickle|ckpt|joblib|h5|keras|sav|dill)|(?:model|weights?|checkpoint|adapter|lora)[\\w.-]{0,80}\\.bin)(?=[\\s\"'?#|;&)]|$)"
+  match_on: ["command", "code:python", "code:shell", "code:dockerfile", "code:makefile", "code:yaml"]
+  title: "Model-weight file downloaded from a host outside the trusted model hubs; fetch it from a trusted hub, verify its checksum and prefer .safetensors"
+  expires_at: null
+  revoked: false
+
+- id: "AISC-014"
+  category: ai_supply_chain
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "(?:\\b(?:curl|wget|aria2c)\\b[^\\n|;&]{0,300}?|\\b(?:urlretrieve|requests\\.get|httpx\\.get|wget\\.download|download_url_to_file|load_state_dict_from_url)\\s{0,4}\\(\\s{0,4}(?:url\\s{0,4}=\\s{0,4})?[\"'])http://[^\\s\"'|;&<>()]{1,300}?(?:\\.(?:pt|pth|pkl|pickle|ckpt|joblib|h5|keras|sav|dill)|(?:model|weights?|checkpoint|adapter|lora)[\\w.-]{0,80}\\.bin)(?=[\\s\"'?#|;&)]|$)"
+  match_on: ["command", "code:python", "code:shell", "code:dockerfile", "code:makefile", "code:yaml"]
+  title: "Model-weight file downloaded over plain HTTP can be swapped in transit; use HTTPS from a trusted hub, verify the checksum and prefer .safetensors"
+  expires_at: null
+  revoked: false

@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { webcrypto } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -153,7 +153,7 @@ describe("fingerprint-dataset", () => {
 	});
 
 	const exactDataModule = join(PACKAGE_ROOT, "src", "engine", "exact-data.ts");
-	it.skipIf(!existsSync(exactDataModule))("matches the engine's fingerprintValue()", async () => {
+	it("matches the engine's fingerprintValue()", async () => {
 		const engine = (await import(/* @vite-ignore */ exactDataModule)) as {
 			fingerprintValue(keyB64: string, value: string): Promise<string>;
 		};
@@ -195,6 +195,7 @@ describe("zip writer", () => {
 	});
 
 	const unzip = spawnSync("unzip", ["-v"], { encoding: "utf8" });
+	// AIDR-SKIP: AIDR-063 qa-owner - cross-checks the ZIP writer against Info-ZIP unzip, an optional host tool
 	it.skipIf(unzip.status !== 0)("is accepted by Info-ZIP unzip", () => {
 		const dir = tempDir();
 		const file = join(dir, "t.zip");
@@ -489,11 +490,8 @@ describe("deployment examples", () => {
 	});
 
 	const schemaFile = join(PACKAGE_ROOT, "static", "managed_schema.json");
-	it.skipIf(!existsSync(schemaFile))(
-		"every example key is declared in static/managed_schema.json",
-		() => {
-			const schema = JSON.parse(readFileSync(schemaFile, "utf8"));
-			for (const key of Object.keys(canonical)) expect(schema.properties).toHaveProperty(key);
-		},
-	);
+	it("every example key is declared in static/managed_schema.json", () => {
+		const schema = JSON.parse(readFileSync(schemaFile, "utf8"));
+		for (const key of Object.keys(canonical)) expect(schema.properties).toHaveProperty(key);
+	});
 });

@@ -36,14 +36,14 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
-export const FUNCTION_PATH = "/functions/v1/operator-admin";
+const FUNCTION_PATH = "/functions/v1/operator-admin";
 const REQUEST_TIMEOUT_MS = 30_000;
 const MAX_LIST_PAGES = 1_000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SHA256 = /^[a-f0-9]{64}$/i;
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
-export class UsageError extends Error {}
+class UsageError extends Error {}
 
 const OPTIONS = {
 	"dry-run": { type: "boolean", default: false },
@@ -253,7 +253,7 @@ export async function obtainAccessToken(env, base, fetchImpl) {
 }
 
 /** Fetch each legal document and require its bytes to match the declared digest. */
-export async function verifyRemoteDocuments(body, fetchImpl) {
+async function verifyRemoteDocuments(body, fetchImpl) {
 	for (const key of ["terms", "privacy"]) {
 		const document = body[key];
 		const response = await fetchImpl(document.url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
@@ -265,7 +265,7 @@ export async function verifyRemoteDocuments(body, fetchImpl) {
 	}
 }
 
-export async function invokeOperatorAdmin(base, token, anonKey, body, fetchImpl) {
+async function invokeOperatorAdmin(base, token, anonKey, body, fetchImpl) {
 	const headers = { Authorization: `Bearer ${token}` };
 	if (anonKey) headers.apikey = anonKey;
 	return postJson(fetchImpl, endpoint(base, FUNCTION_PATH), body, headers);

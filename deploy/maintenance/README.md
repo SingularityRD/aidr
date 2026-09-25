@@ -87,3 +87,12 @@ only after `/etc/aidr/backup-offsite.env` and
 `/etc/aidr/aidr-recovery.key` are installed; the same command then enables the
 backup timer. The installer fails instead of claiming activation when required
 queue or backup inputs are missing.
+
+## Governance summaries
+
+`aidr-export-retention.timer` runs `scripts/deployment-maintenance.mjs --apply` hourly.
+After the retention steps it calls the `governance-digest` Edge Function with the
+deployment service credential, which sends due weekly/monthly governance summaries
+(counts only) to each workspace's owners/admins through the configured mailer and
+records a receipt. The dispatch counts are written to `maintenance-evidence.json`
+under `governance_digest`. See `docs/ai-governance-frameworks.md`.

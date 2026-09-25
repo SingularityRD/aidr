@@ -456,6 +456,53 @@ describe("AI inventory", () => {
 		]);
 	});
 
+	it("has no MCP gap for a ~/.claude.json without MCP servers under default paths", async () => {
+		await writeFile(join(home, ".claude.json"), JSON.stringify({ numStartups: 1, projects: {} }));
+		const inventory = await collectAiInventory({
+			projectDir: project,
+			pluginRegistryPath: join(home, "none.json"),
+			pluginScanCachePath: join(home, "none.json"),
+			now: NOW,
+		});
+		expect(inventory.coverage.mcp.sources_invalid).toBe(0);
+		expect(aiInventoryGaps(inventory).filter((gap) => gap.includes("MCP"))).toEqual([]);
+	});
+
+	it("exports ~/.claude.json project servers with a home-relative project label", async () => {
+		await writeFile(
+			join(home, ".claude.json"),
+			JSON.stringify({
+				projects: {
+					[project]: {
+						mcpServers: {
+							tracker: { command: "npx", args: ["tracker-mcp", "--api-key", "sk-private-123"] },
+						},
+					},
+				},
+			}),
+		);
+		const inventory = await collectAiInventory({
+			projectDir: project,
+			mcpConfigPaths: [join(home, ".claude.json")],
+			pluginRegistryPath: join(home, "none.json"),
+			pluginScanCachePath: join(home, "none.json"),
+			now: NOW,
+		});
+		const tracker = inventory.mcp_servers.find((server) => server.name === "tracker");
+		expect(tracker).toMatchObject({
+			config_source: "~/.claude.json",
+			project: "~/work/support-agent",
+			agent: "claude-code",
+			args: ["tracker-mcp", "--api-key", "[Redacted]"],
+		});
+		const bom = buildCycloneDxBom(inventory, { serialNumber: SERIAL });
+		const service = bom.services.find((s) => s["bom-ref"] === tracker?.ref);
+		expect(propertyValues(service ?? {}, "aidr:mcp:project")).toEqual(["~/work/support-agent"]);
+		const text = `${JSON.stringify(inventory)}\n${JSON.stringify(bom)}`;
+		expect(text).not.toContain("sk-private-123");
+		expect(text).not.toContain(home);
+	});
+
 	it("shows the home directory as ~ and builds npm/PyPI purls", () => {
 		expect(displayPath(join(home, "a", "b"))).toBe("~/a/b");
 		expect(displayPath("/opt/elsewhere")).toBe("/opt/elsewhere");

@@ -33,7 +33,7 @@ import {
 	parseChange,
 	parseException,
 	pendingPolicyChangeNotice,
-} from "../lib/governance";
+} from "../lib/ai-governance";
 import { diffDocuments, diffStats } from "../lib/json-diff";
 import { GovernanceChangeControlPage } from "../ui/pages/GovernanceChangeControlPage";
 import { GovernanceRegisterPage } from "../ui/pages/GovernanceRegisterPage";

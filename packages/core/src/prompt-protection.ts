@@ -403,6 +403,34 @@ function detectSecretKinds(prompt: string, stopAtFirst: boolean, checkpoint: Che
 	return kinds;
 }
 
+/** Where a credential sits in a text. Deliberately carries no matched value. */
+export interface SecretLocation {
+	/** Detector kind, e.g. `github_token`. */
+	kind: string;
+	/** Human-readable kind, e.g. "GitHub token". */
+	label: string;
+	start: number;
+	end: number;
+}
+
+/**
+ * Every credential in `text`, located with the same detector passes (and the
+ * same overlap resolution) the prompt check uses, so other surfaces such as the
+ * secure-code guardrail share one definition of "a secret" instead of keeping
+ * a second list of patterns.
+ */
+export function locateSecrets(text: string): SecretLocation[] {
+	const kept = new DisjointFindings();
+	const noDeadline: Checkpoint = () => {};
+	for (const pass of secretPasses(text)) kept.addPass(collect(pass(), noDeadline));
+	return kept.all.map((finding) => ({
+		kind: finding.kind,
+		label: SECRET_KIND_LABELS[finding.kind] ?? finding.kind,
+		start: finding.start,
+		end: finding.end,
+	}));
+}
+
 /** A phone-shaped fragment of a longer digit run (e.g. an invalid card number). */
 function isInsideLongerNumber(prompt: string, start: number, end: number): boolean {
 	return (

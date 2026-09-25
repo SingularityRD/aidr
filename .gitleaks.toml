@@ -40,3 +40,86 @@ condition = "AND"
 regexTarget = "match"
 regexes = ['''YWJjZGVm''']
 paths = ['''^packages/privacy/tests/fixtures/cases\.mjs$''']
+
+# Synthetic credentials the detection suites feed to the scanners under test.
+# Each entry is scoped to the rule, the file and the exact fixture value, so a
+# real credential added to the same file is still reported.
+[[allowlists]]
+description = "Browser Guard unit-test fixtures: synthetic managed-policy API keys and HMAC keys"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''aidr_test_key_123456|aidr_12345678|aidr_other_key_987654|aidr_live_0123456789|"key-12345678"|"saved-key-1234"|c2VjcmV0LWtleS0xMjM0NTY3OA==|secret-key-12345678''']
+paths = ['''^packages/browser-guard/src/__tests__/(background-worker|background-telemetry|background-policy|ui-pages|ui-model)\.test\.ts$''']
+
+[[allowlists]]
+description = "Browser Guard E2E fixture: synthetic OpenAI-style key typed into the hermetic chat fixtures"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''sk-proj-Q7vX2mN9pL4kR8tW1yB6cD3fG5hJ0sAaZe''']
+paths = ['''^packages/browser-guard/e2e/lib/data\.mjs$''']
+
+[[allowlists]]
+description = "Browser Guard managed-policy examples: documented exact-data HMAC key for the example dataset"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''o6J5dv/ZMVjrraODjOrMuCsIQzqswQczrGPSl/aB6bU=''']
+paths = ['''^deploy/browser-guard/(chrome-managed-policy|firefox-policies)\.example\.json$''']
+
+[[allowlists]]
+description = "Documented AWS example-shaped access key IDs in scanner tests"
+targetRules = ["aws-access-token"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''AKIAQWERTYUIOPASDFGH|AKIAABCDEFGHIJKLMNOP''']
+paths = ['''^packages/core/src/__tests__/output-scanner\.test\.ts$''', '''^packages/browser-guard/src/__tests__/vault\.test\.ts$''']
+
+[[allowlists]]
+description = "Synthetic GitLab PAT and truncated PEM fixtures in the privacy detector suites"
+targetRules = ["gitlab-pat", "private-key"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''glpat-abcdefghijklmnop1234|MIIBVQIBADANBgkq''']
+paths = ['''^packages/core/src/__tests__/dlp/privacy-detectors\.test\.ts$''', '''^packages/privacy/tests/rules\.test\.mjs$''']
+
+[[allowlists]]
+description = "Prompt-protection tests list PEM header lines only (no key material)"
+targetRules = ["private-key"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''PRIVATE KEY-----",\s+"-----BEGIN''', '''PRIVATE KEY BLOCK-----",\s+\]''']
+paths = ['''^packages/core/src/__tests__/prompt-protection\.test\.ts$''']
+
+[[allowlists]]
+description = "CLI privacy-scan tests: synthetic RSA key body assembled from a template"
+targetRules = ["generic-api-key", "private-key"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''7Qx3Fv0rX9yJ2cZkqLpM4nB8sT1uV6wH0aR5eD2gK9jF3lN7oP1qW4xY8zA2bC5dE6fG7|\$\{KEY_BODY\}''']
+paths = ['''^packages/cli/src/__tests__/privacy-scan\.test\.ts$''']
+
+[[allowlists]]
+description = "Output-scanner precision tests: synthetic key-shaped strings"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''Zq8Xw7Vu6Ts5Rq4Po3Nm2Lk1Ji0Hg|qwertyuiopasdfghjkl''']
+paths = ['''^packages/core/src/__tests__/output-scanner-precision\.test\.ts$''']
+
+[[allowlists]]
+description = "Privacy telemetry contract test: synthetic Stripe-shaped secret proving it is never stored"
+targetRules = ["stripe-access-token"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''sk_live_abcdefghijklmnop''']
+paths = ['''^supabase/functions/__tests__/privacy-telemetry-contract\.test\.ts$''']
+
+[[allowlists]]
+description = "Feature inventory prose ('keys, RE2-compatible ...'), not a credential"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''keys, RE2-compatible''']
+paths = ['''^scripts/generate-feature-inventory\.mjs$''', '''^FEATURE_INVENTORY\.json$''', '''^PRODUCTION_SALES_GAPS\.json$''']

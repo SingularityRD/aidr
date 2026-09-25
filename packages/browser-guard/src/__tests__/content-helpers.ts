@@ -60,6 +60,14 @@ export const BASE_POLICY: GuardPolicy = {
 	policyId: "test-policy",
 };
 
+/**
+ * E-mail addresses. A match may only start where a local part starts: without the lookbehind the
+ * regex retries (and backtracks over) a long run of word characters from every offset in it, which
+ * is quadratic — on a loaded 4-CPU machine 200 000 "a"s took 105 s (vs 2 ms with it), so a test
+ * feeding NATIVE_MAX_CHARS + 1 characters ran into the test timeout.
+ */
+const FAKE_EMAIL = /(?<![\w.+-])[\w.+-]+@[\w-]+\.[\w.]+/g;
+
 /** Scans for e-mail addresses; `signals` are reported when the text contains "ignore previous". */
 export function fakeEngine(
 	options: { signals?: SignalCode[]; fail?: "throw" | "incomplete" } = {},
@@ -67,7 +75,7 @@ export function fakeEngine(
 	const scan = vi.fn(async (text: string): Promise<ScanResult> => {
 		if (options.fail === "throw") throw new Error("ENGINE_DOWN");
 		const findings: Finding[] = [];
-		for (const m of text.matchAll(/[\w.+-]+@[\w-]+\.[\w.]+/g)) {
+		for (const m of text.matchAll(FAKE_EMAIL)) {
 			findings.push({
 				type: "EMAIL",
 				start: m.index,

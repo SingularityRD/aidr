@@ -50,6 +50,8 @@ async function fixture(t, failure) {
       { tenant: freeTenant, due: false },
     ],
     pending: new Map(),
+    digestsDue: 1,
+    digestCalls: [],
   };
   const heldPath = state.exports[0].path, freePath = state.exports[1].path, currentPath = state.exports[2].path;
   state.stored = new Set(state.exports.map(row => row.path));
@@ -169,6 +171,18 @@ async function fixture(t, failure) {
         remaining: state.rateLimits.some(row => row.expired) ? 1 : 0,
         applied: body.p_apply, cutoff: new Date(Date.now() - 15 * 60_000).toISOString(),
         contended_tenants: 0, held_tenants_present: 0, inactive_tenant_rows_present: 0 });
+    }
+    if (req.url === "/functions/v1/governance-digest" && req.method === "POST") {
+      assert.equal(req.headers.authorization, "Bearer private-fixture-key", "dispatch uses the deployment credential");
+      assert.deepEqual(Object.keys(body).sort(), ["action", "apply", "limit"]);
+      assert.equal(body.action, "dispatch");
+      state.digestCalls.push(body);
+      if (failure === "digest-down") return reply(503, { error: "governance_digest_unavailable" });
+      if (failure === "digest-invalid") return reply(200, { ok: true, applied: body.apply, due: 1, processed: 1, sent: 0 });
+      const due = state.digestsDue;
+      if (body.apply) state.digestsDue = 0;
+      return reply(200, { ok: true, applied: body.apply, due, processed: body.apply ? due : 0, mail_transport: "resend",
+        sent: body.apply ? due : 0, partial: 0, failed: 0, no_transport: 0, no_recipients: 0, errors: 0 });
     }
     reply(500, { error: `unsupported route ${req.method} ${req.url}; direct ledger access is forbidden` });
   });
@@ -296,6 +310,38 @@ test("AI governance maintenance expires lapsed requests and prunes only unheld c
   assert.equal(f.state.governance.length, 2);
   assert.equal(f.state.governance.some(row => row.tenant === f.heldTenant && row.due), true, "held tenant records are retained");
 });
+
+test("due governance summaries are dispatched after retention and recorded in the evidence", async t => {
+  const f = await fixture(t);
+  let result = await f.run(false);
+  assert.equal(result.code, 0, result.stderr);
+  assert.deepEqual(f.state.digestCalls, [{ action: "dispatch", apply: false, limit: 50 }]);
+  assert.equal(f.evidence().governance_digest.due, 1);
+  assert.equal(f.evidence().governance_digest.sent, 0, "a dry run never sends");
+  assert.equal(f.evidence().governance_digest.complete, true);
+  assert.equal(f.state.digestsDue, 1);
+  result = await f.run();
+  assert.equal(f.evidence().governance_digest.sent, 1);
+  assert.equal(f.evidence().governance_digest.mail_transport, "resend");
+  assert.equal(f.evidence().governance_digest.error, null);
+  result = await f.run();
+  assert.equal(f.evidence().governance_digest.due, 0, "a delivered summary is not sent again");
+});
+
+for (const [failure, error] of [["digest-down", "dispatch_unavailable"], ["digest-invalid", "invalid_dispatch_response"]]) {
+  test(`${failure}: a governance dispatch failure keeps the retention receipts but marks the run incomplete`, async t => {
+    const f = await fixture(t, failure);
+    const result = await f.run();
+    assert.equal(result.code, 2, result.stderr);
+    const evidence = f.evidence();
+    assert.equal(evidence.governance_digest.error, error);
+    assert.equal(evidence.governance_digest.complete, false);
+    assert.equal(evidence.status, "incomplete");
+    assert.equal(evidence.complete, false);
+    assert.equal(evidence.telemetry_retention.events_deleted, 1, "retention results are still recorded");
+    assert.equal(evidence.removed, 1);
+  });
+}
 
 test("invalid approval-request deletion receipt cannot complete maintenance", async t => {
   const f = await fixture(t, "approval-prune-invalid");

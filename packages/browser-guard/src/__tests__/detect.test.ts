@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { COACHING_TR } from "../../../privacy/src/enterprise/signals.js";
 import { coachingFor } from "../engine/coaching.js";
 import { createDetectionEngine, DetectionConfigError } from "../engine/detect.js";
+import { createVault } from "../engine/vault.js";
 import {
 	type DetectionOptions,
 	ENTITY_TYPES,
@@ -286,6 +287,66 @@ describe("detection engine: options and limits", () => {
 		const text = "E-posta: jane at example dot com\nok";
 		const result = await scan(text);
 		expect(spans(text, result)).toEqual([["EMAIL", "jane at example dot com"]]);
+	});
+
+	it.each([
+		["Full name: Ayşe Yılmaz, TCKN 10000000146 please", "TC_KIMLIK", "10000000146"],
+		["Ad Soyad: Ayşe Yılmaz, TCKN 10000000146", "TC_KIMLIK", "10000000146"],
+		["Ad Soyad: Ayşe Yılmaz, T.C. Kimlik No 10000000146", "TC_KIMLIK", "10000000146"],
+		["Adı Soyadı: Ayşe Yılmaz (TCKN 10000000146)", "TC_KIMLIK", "10000000146"],
+		["Full name: Ayşe Yılmaz TCKN 10000000146", "TC_KIMLIK", "10000000146"],
+		[
+			"Full name: Ayşe Yılmaz, IBAN TR33 0006 1005 1978 6457 8413 26",
+			"IBAN",
+			"TR33 0006 1005 1978 6457 8413 26",
+		],
+		[
+			"Sayın Ayşe Yılmaz IBAN TR33 0006 1005 1978 6457 8413 26",
+			"IBAN",
+			"TR33 0006 1005 1978 6457 8413 26",
+		],
+		["Full name: Ayşe Yılmaz ayse@example.com", "EMAIL", "ayse@example.com"],
+		["Full name: Ayşe Yılmaz, e-posta ayse@example.com", "EMAIL", "ayse@example.com"],
+		["Full name: Ayşe Yılmaz +90 532 123 45 67", "PHONE", "+90 532 123 45 67"],
+		["Ad Soyad: Ayşe Yılmaz 0532 123 45 67", "PHONE", "0532 123 45 67"],
+		["Ad Soyad: Ayşe Yılmaz (0212) 555 12 34", "PHONE", "(0212) 555 12 34"],
+		["Name: Ayşe Yılmaz, credit card 4111 1111 1111 1111", "CREDIT_CARD", "4111 1111 1111 1111"],
+	] as const)("keeps the name in %j a PERSON next to a %s", async (text, type, value) => {
+		const result = await scan(text);
+		expect(result.incomplete).toBe(false);
+		expect(spans(text, result)).toEqual([
+			["PERSON", "Ayşe Yılmaz"],
+			[type, value],
+		]);
+	});
+
+	it("keeps a lowercase name field whole when it runs into another value", async () => {
+		// The capitalised-name heuristic only reads "ayşe"; the labelled field still covers "yılmaz".
+		const text = "name: ayşe yılmaz 10000000146 teşekkürler";
+		const result = await scan(text);
+		expect(spans(text, result)).toEqual([
+			["PERSON", "ayşe yılmaz"],
+			["TC_KIMLIK", "10000000146"],
+		]);
+	});
+
+	it("drops a name field that holds only another value's label", async () => {
+		const text = "Name: TCKN 10000000146";
+		expect(spans(text, await scan(text))).toEqual([["TC_KIMLIK", "10000000146"]]);
+	});
+
+	it("still covers the whole name field when the other value's type is disabled", async () => {
+		const text = "Full name: Ayşe Yılmaz, TCKN 10000000146 please";
+		const result = await scan(text, { enabledEntities: ["PERSON"] });
+		expect(spans(text, result)).toEqual([["PERSON", "Ayşe Yılmaz, TCKN 10000000146 please"]]);
+	});
+
+	it("masks the name and the identifier with their own placeholders", async () => {
+		const text = "Full name: Ayşe Yılmaz, TCKN 10000000146 please";
+		const vault = createVault({ neverRestore: [] });
+		const { masked } = vault.mask(text, (await scan(text)).findings);
+		expect(masked).toBe("Full name: [PERSON_1], TCKN [TCKN_1] please");
+		expect(vault.unmask(masked)).toBe(text);
 	});
 
 	it("returns sorted, non-overlapping findings and per-type counts", async () => {

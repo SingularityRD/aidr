@@ -155,6 +155,12 @@ verify_jwt = true
 # membership/role, AAL2 for decisions and a tenant rate limit, and every RPC
 # re-checks under row locks.
 verify_jwt = true
+[functions.governance-digest]
+# Scheduled governance summary. The dispatch path requires the deployment
+# service credential (compared in constant time); the test-send path repeats
+# session, identity barrier, owner/admin role and a tenant rate limit, and the
+# SQL re-checks under locks.
+verify_jwt = true
 
 [functions.notification-channels]
 # Tenant alert channels (Settings -> Notifications). The handler repeats session,

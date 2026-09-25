@@ -916,6 +916,24 @@ export interface Database {
 				Args: { p_tenant_id: string; p_days: number };
 				Returns: Record<string, unknown>;
 			};
+			/** Owner/admin AI governance scorecard, counts only (20260927000060). */
+			governance_scorecard: {
+				Args: { p_tenant_id: string; p_days: number };
+				Returns: unknown;
+			};
+			/** Owner/admin governance summary schedule and oversight thresholds (20260927000060). */
+			set_governance_settings: {
+				Args: {
+					p_tenant_id: string;
+					p_digest_enabled: boolean;
+					p_digest_cadence: string;
+					p_digest_recipients: string;
+					p_oversight_fast_seconds: number;
+					p_oversight_min_decisions: number;
+					p_oversight_fast_share: number;
+				};
+				Returns: unknown;
+			};
 			/** Member-only plan/admission/usage projection (20260925000012). */
 			get_tenant_plan: {
 				Args: { p_tenant_id: string };

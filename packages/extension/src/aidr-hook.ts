@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import {
 	type Artifact,
 	createHostObservation,
+	describeSecureCodeWarnings,
 	evaluateToolCall,
 	extractFromBash,
 	extractFromDelete,
@@ -86,6 +87,17 @@ interface NormalizedHookCall {
 	toolName: string;
 	toolInput: Record<string, unknown>;
 	artifacts: Artifact[];
+	/** Host-reported session directory; selects repository-scoped agent profiles. */
+	workingDirectory?: string;
+}
+
+/** The session directory the host reports (`cwd`, else the first workspace root). */
+function hostWorkingDirectory(payload: unknown): string | undefined {
+	if (!payload || typeof payload !== "object" || Array.isArray(payload)) return undefined;
+	const input = payload as Record<string, unknown>;
+	if (typeof input.cwd === "string" && input.cwd) return input.cwd;
+	const roots = input.workspace_roots;
+	return Array.isArray(roots) && typeof roots[0] === "string" ? roots[0] : undefined;
 }
 
 let integrityChecked = false;
@@ -158,7 +170,10 @@ async function handleCursor(payload: unknown): Promise<void> {
 	}
 
 	try {
-		const evaluation = await evaluateNormalizedCall(normalized, "cursor");
+		const evaluation = await evaluateNormalizedCall(
+			{ ...normalized, workingDirectory: hostWorkingDirectory(payload) },
+			"cursor",
+		);
 		writeJson(toCursorResponse(evaluation, eventName));
 		recordHostObservation(hostObservation, {
 			connector: "cursor",
@@ -201,7 +216,10 @@ async function handleVsCode(payload: unknown): Promise<void> {
 	}
 
 	try {
-		const evaluation = await evaluateNormalizedCall(normalized, "vscode");
+		const evaluation = await evaluateNormalizedCall(
+			{ ...normalized, workingDirectory: hostWorkingDirectory(payload) },
+			"vscode",
+		);
 		writeJson(toVsCodeResponse(evaluation));
 		recordHostObservation(hostObservation, {
 			connector: "vscode",
@@ -571,6 +589,7 @@ async function evaluateNormalizedCall(
 		threatsDir,
 		allowlistsDir,
 		agentRuntime: mode,
+		workingDirectory: call.workingDirectory,
 		...provisioned,
 	});
 	// Managed mode: submit the ask to the AIDR dashboard or release it with a
@@ -900,6 +919,16 @@ function toCursorResponse(
 ): Record<string, unknown> {
 	const { verdict } = evaluation;
 	if (verdict.decision === "allow") {
+		// Secure-code findings on an allowed write: notice to the user and the agent.
+		if (verdict.warnings?.length) {
+			const notice = describeSecureCodeWarnings(verdict.warnings);
+			return {
+				decision: "allow",
+				permission: "allow",
+				user_message: notice.userMessage,
+				agent_message: notice.modelContext,
+			};
+		}
 		return { decision: "allow", permission: "allow" };
 	}
 
@@ -926,7 +955,11 @@ function toCursorResponse(
 function toVsCodeResponse(evaluation: HookEvaluation): Record<string, unknown> {
 	const { verdict } = evaluation;
 	if (verdict.decision === "allow") {
-		return {};
+		// Secure-code findings on an allowed write: `systemMessage` is the warning
+		// channel these hooks already use; there is no documented model-context field.
+		return verdict.warnings?.length
+			? { systemMessage: describeSecureCodeWarnings(verdict.warnings).userMessage }
+			: {};
 	}
 
 	return {

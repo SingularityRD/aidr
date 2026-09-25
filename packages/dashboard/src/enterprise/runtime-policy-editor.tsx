@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { readErrorMessage } from "../lib/errors";
-import { pendingPolicyChangeNotice } from "../lib/governance";
+import { pendingPolicyChangeNotice } from "../lib/ai-governance";
 import { supabase } from "../lib/supabase";
 import { PolicyRollout } from "./policy-rollout";
 import { useTeam } from "./team-provider";

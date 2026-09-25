@@ -34,6 +34,11 @@
  *    happened; a truncated evaluation must never be read as a full clean one.
  */
 
+import {
+	isTrustedModelSourceMatch,
+	NO_TRUSTED_MODEL_SOURCES,
+	type TrustedModelSources,
+} from "./ai-supply-chain.js";
 import { boundArtifact, extractUrls, MAX_ARTIFACT_SIZE } from "./extractors.js";
 import { normalizeShellText } from "./shell-normalize.js";
 import { extractDomain, isTrustedDomain } from "./trusted-domains.js";
@@ -53,12 +58,19 @@ const MAX_MATCH_INPUT = MAX_ARTIFACT_SIZE;
  */
 const NORMALIZED_SUFFIX = "_normalized";
 
+/**
+ * Occurrences of one model-source rule examined per artifact before the match
+ * is kept as-is (fail towards reporting, never towards suppression).
+ */
+const MAX_SOURCE_OCCURRENCES = 50;
+
 /** Threat IDs where trusted installer domains suppress matches. */
 const TRUSTED_DOMAIN_SUPPRESSIBLE = new Set(["CLT-CMD-001", "CLT-CMD-002", "CLT-SUPPLY-001"]);
 
 export class HeuristicsEngine {
 	private readonly threatMap: Map<string, Threat[]> = new Map();
 	private readonly trustedDomains: TrustedDomain[];
+	private readonly trustedModelSources: TrustedModelSources;
 	/** Regex failures are deliberate signal skips, never a clean evaluation. */
 	private _unavailableThreats: Array<{ threatId: string; reason: string }> = [];
 
@@ -66,8 +78,13 @@ export class HeuristicsEngine {
 		return this._unavailableThreats;
 	}
 
-	constructor(threats: Threat[], trustedDomains?: TrustedDomain[]) {
+	constructor(
+		threats: Threat[],
+		trustedDomains?: TrustedDomain[],
+		trustedModelSources: TrustedModelSources = NO_TRUSTED_MODEL_SOURCES,
+	) {
 		this.trustedDomains = trustedDomains ?? [];
+		this.trustedModelSources = trustedModelSources;
 
 		for (const threat of threats) {
 			for (const matchType of threat.matchOn) {
@@ -99,6 +116,30 @@ export class HeuristicsEngine {
 			if (!isTrustedDomain(domain, this.trustedDomains)) return false;
 		}
 		return true;
+	}
+
+	/**
+	 * A model-source match (AISC rules) is dropped only when EVERY occurrence of
+	 * the rule in the artifact names trusted sources. `exec` reports the first
+	 * occurrence only, so a trusted download listed first would otherwise hide
+	 * an untrusted one after it. Returns the first untrusted occurrence, the
+	 * match itself for non-source rules, or null when all occurrences are trusted.
+	 */
+	private untrustedModelSourceMatch(match: HeuristicMatch): HeuristicMatch | null {
+		if (!isTrustedModelSourceMatch(match.threat.id, match.matchValue, this.trustedModelSources)) {
+			return match;
+		}
+		const { source, flags } = match.threat.compiledPattern;
+		const pattern = new RegExp(source, `${flags.replace(/[gy]/g, "")}g`);
+		let occurrences = 0;
+		for (let m = pattern.exec(match.artifact); m !== null; m = pattern.exec(match.artifact)) {
+			if (m[0] === "") pattern.lastIndex++;
+			if (!isTrustedModelSourceMatch(match.threat.id, m[0], this.trustedModelSources)) {
+				return { ...match, matchValue: m[0] };
+			}
+			if (++occurrences >= MAX_SOURCE_OCCURRENCES) return match;
+		}
+		return null;
 	}
 
 	/** Run one threat against one value; a regex failure is a recorded skip. */
@@ -161,11 +202,12 @@ export class HeuristicsEngine {
 			this.matchNormalized(artifact.type, value, matched, matches);
 		}
 
-		// Post-filter: suppress matches for trusted installer domains
-		if (this.trustedDomains.length > 0) {
-			return matches.filter((m) => !this.isSuppressedByTrustedDomain(m));
-		}
-
-		return matches;
+		// Post-filter: suppress matches for trusted installer domains, and
+		// model-source rules whose publisher or host is on the trusted list.
+		return matches.flatMap((m) => {
+			if (this.isSuppressedByTrustedDomain(m)) return [];
+			const kept = this.untrustedModelSourceMatch(m);
+			return kept ? [kept] : [];
+		});
 	}
 }

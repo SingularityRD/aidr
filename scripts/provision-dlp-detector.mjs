@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 
 /** Sign one MFA-verified, saved tenant DLP revision for an installed agent. */
-import { createPrivateKey, randomUUID, sign } from "node:crypto";
+import { createPrivateKey, createPublicKey, randomUUID, sign } from "node:crypto";
 import { lstat, mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DlpPolicySchema, canonicalDetectorPolicyPayload } from "../packages/core/dist/index.js";
+import { carriedSections, readInstalledBundle } from "./provision-agent-profiles.mjs";
 
 const RUNTIMES = new Set(["claude-code", "cursor", "vscode", "openclaw", "opencode", "codex"]);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -70,7 +71,7 @@ export async function readSavedDlpRevision({ endpoint, token, tenant, version, f
 	return parsed.data;
 }
 
-export function signSavedDlpRevision({ policy, tenant, expiresAt, privateKey, now = new Date() }) {
+export function signSavedDlpRevision({ policy, tenant, expiresAt, privateKey, carried = {}, now = new Date() }) {
 	const parsed = DlpPolicySchema.parse(policy);
 	assert(parsed.tenantId === tenant, "DLP policy tenant mismatch");
 	assert(privateKey.asymmetricKeyType === "ed25519", "DLP signing key must be Ed25519");
@@ -81,6 +82,8 @@ export function signSavedDlpRevision({ policy, tenant, expiresAt, privateKey, no
 		issued_at: now.toISOString(),
 		expires_at: expiresAt,
 		dlp: { enabled: true, policy: parsed },
+		// Agent permission profiles share this signed bundle; keep a verified section.
+		...(carried.agent_profiles !== undefined ? { agent_profiles: carried.agent_profiles } : {}),
 	};
 	return {
 		alg: "ed25519",
@@ -156,7 +159,19 @@ export async function main(argv, { fetcher = fetch } = {}) {
 	assert(token && !/\s/.test(token), "Invalid AAL2 access token file");
 	const key = createPrivateKey(await readSmallRegularFile(args["--private-key"], 32768, "DLP signing key"));
 	const policy = await readSavedDlpRevision({ ...request, token, fetcher });
-	const bundle = signSavedDlpRevision({ policy, tenant: request.tenant, expiresAt: request.expiresAt, privateKey: key });
+	// Publishing DLP must not silently drop agent permission profiles already
+	// signed into this runtime's bundle. Only a same-tenant section that verifies
+	// against this signing key is carried over; anything else is left behind.
+	let carried = {};
+	try {
+		const { sections } = carriedSections(await readInstalledBundle(args["--output-dir"], request.runtime), {
+			tenant: request.tenant, publicKey: createPublicKey(key), replace: "dlp",
+		});
+		if (sections.agent_profiles !== undefined) carried = { agent_profiles: sections.agent_profiles };
+	} catch {
+		carried = {};
+	}
+	const bundle = signSavedDlpRevision({ policy, tenant: request.tenant, expiresAt: request.expiresAt, privateKey: key, carried });
 	const output = await installSignedDlpBundle(args["--output-dir"], request.runtime, bundle);
 	return { output, tenant: request.tenant, version: request.version, runtime: request.runtime,
 		status: "signed_bundle_written_not_agent_verified" };

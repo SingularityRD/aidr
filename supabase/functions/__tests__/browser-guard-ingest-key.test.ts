@@ -228,6 +228,32 @@ describe("ingest with an ingest:browser_guard key", () => {
 		}
 	});
 
+	it("delivers acceptable-use acknowledgements (notice id and version only) with the same key", async () => {
+		const runtime = await ingestHandler();
+		const ack = {
+			event_id: "bg:6f2c1d9a-3b4e-4c5d-8e7f-0a1b2c3d4e5f",
+			event_type: "aup_acknowledgement",
+			timestamp: "2026-09-24T10:16:00Z",
+			site: "gemini",
+			notice_id: "acme-aup",
+			notice_version: 3,
+			notice_text: "Do not paste customer data",
+		};
+		const response = await runtime.handler(ingestRequest({ events: [scan(), ack] }));
+		expect(response.status).toBe(200);
+		const [rows] = runtime.insertedEvents.mock.calls[0] as unknown as [Array<Record<string, unknown>>];
+		const stored = rows.find((row) => row.type === "aup_acknowledgement");
+		expect(stored?.payload).toEqual({
+			event_id: "bg:6f2c1d9a-3b4e-4c5d-8e7f-0a1b2c3d4e5f",
+			type: "aup_acknowledgement",
+			timestamp: "2026-09-24T10:16:00.000Z",
+			site: "gemini",
+			notice_id: "acme-aup",
+			notice_version: 3,
+		});
+		expect(JSON.stringify(rows)).not.toContain("customer data");
+	});
+
 	it("also delivers counts-only shadow_ai_usage events", async () => {
 		const runtime = await ingestHandler();
 		const usage = {

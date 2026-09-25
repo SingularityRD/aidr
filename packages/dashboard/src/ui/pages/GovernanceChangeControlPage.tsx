@@ -7,7 +7,7 @@ import {
 	type PolicyChangeRequest,
 	pendingPolicyChangeNotice,
 	REASON_MAX,
-} from "../../lib/governance";
+} from "../../lib/ai-governance";
 import { diffDocuments, diffStats } from "../../lib/json-diff";
 import { supabase } from "../../lib/supabase";
 import {

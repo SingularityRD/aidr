@@ -33,7 +33,7 @@ const ADDRESS = /^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/;
 const SENDER = /^(?:[^<>\p{Cc}]{1,120} <[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+>|[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+)$/u;
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9._:/-]{1,256}$/;
 
-export type MailProvider = "resend" | "none";
+type MailProvider = "resend" | "none";
 
 export interface MailMessage {
 	to: string;

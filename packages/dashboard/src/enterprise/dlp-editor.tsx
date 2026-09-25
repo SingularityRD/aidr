@@ -45,7 +45,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { readErrorMessage } from "../lib/errors";
-import { pendingPolicyChangeNotice } from "../lib/governance";
+import { pendingPolicyChangeNotice } from "../lib/ai-governance";
 import { supabase } from "../lib/supabase";
 import { EnterpriseAuth } from "./auth";
 import { useTeam } from "./team-provider";

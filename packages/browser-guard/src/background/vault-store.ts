@@ -18,11 +18,11 @@ import { createVault, DEFAULT_VAULT_TTL_MS, MAX_VAULT_ENTRIES } from "../engine/
 import type { VaultSnapshot } from "../types.js";
 import type { GuardStorage } from "./storage.js";
 
-export const VAULT_KEY_PREFIX = "vault:";
+const VAULT_KEY_PREFIX = "vault:";
 /** A record not saved for this long is forgotten (same as the vault's own idle TTL). */
-export const VAULT_TTL_MS = DEFAULT_VAULT_TTL_MS;
+const VAULT_TTL_MS = DEFAULT_VAULT_TTL_MS;
 /** Upper bound on one serialised record (storage.session has a ~10 MB quota in total). */
-export const VAULT_MAX_CHARS = 1_048_576;
+const VAULT_MAX_CHARS = 1_048_576;
 
 export interface StoredVault {
 	readonly snapshot: VaultSnapshot;
@@ -36,7 +36,7 @@ interface VaultRecord extends StoredVault {
 
 export type VaultSaveResult = "ok" | "invalid" | "too-large";
 
-export function vaultStorageKey(tabId: number, origin: string): string {
+function vaultStorageKey(tabId: number, origin: string): string {
 	return `${VAULT_KEY_PREFIX}${tabId}:${origin}`;
 }
 

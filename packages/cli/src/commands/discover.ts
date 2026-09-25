@@ -28,7 +28,7 @@ function printReport(report: DiscoveryReport): void {
 	console.log(`MCP discovery: ${report.servers.length} configured server(s)`);
 	for (const server of report.servers)
 		console.log(
-			`  ${server.name}  ${server.transport}  ${server.endpoint ?? "local process"}\n    ${server.source}\n    ${server.risk_hints.join(", ") || "No configured risk indicator; trust is not verified"}`,
+			`  ${server.name}  ${server.transport}  ${server.endpoint ?? "local process"}\n    ${server.source}${server.project === undefined ? "" : ` (project ${server.project})`}\n    ${server.risk_hints.join(", ") || "No configured risk indicator; trust is not verified"}`,
 		);
 	for (const source of report.sources.filter((s) => s.status === "invalid"))
 		console.error(`Unreadable or unsupported configuration: ${source.path}`);
