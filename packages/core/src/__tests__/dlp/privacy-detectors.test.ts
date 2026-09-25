@@ -311,6 +311,57 @@ describe("DLP detectors fail closed when inspection is incomplete", () => {
 	});
 });
 
+describe("DLP detectors on a labelled field that runs into other values", () => {
+	// The rules union a field that runs to the end of its line with every value inside it, under
+	// the highest-priority type; the shape check must not then drop all of those values.
+	it.each([
+		[
+			"a labelled phone field that runs into an IBAN",
+			`Tel: 0532 123 45 67 IBAN ${VALID_IBAN}`,
+			[
+				["phone", "0532 123 45 67"],
+				["iban", VALID_IBAN],
+			],
+		],
+		[
+			"a labelled TCKN field that runs into an IBAN",
+			`TCKN: ${VALID_TCKN} IBAN ${VALID_IBAN}`,
+			[
+				["tc_kimlik", VALID_TCKN],
+				["iban", VALID_IBAN],
+			],
+		],
+		[
+			"a labelled phone field holding two numbers",
+			"Tel: 0532 123 45 67 / 0212 555 12 34",
+			[
+				["phone", "0532 123 45 67"],
+				["phone", "0212 555 12 34"],
+			],
+		],
+	])("keeps the values of %s instead of dropping the whole field", (_name, text, expected) => {
+		const scan = scanPrivacyDetectors(text, ["tc_kimlik", "iban", "phone"]);
+		expect(scan.incomplete).toBe(false);
+		expect(scan.matches.map((m) => [m.detector, text.slice(m.start, m.end)])).toEqual(expected);
+	});
+
+	it("still rejects a label with no value after re-scanning it", () => {
+		const text = "interface Account { iban: IbanType; phone: string; tc: TcknString }";
+		expect(scanPrivacyDetectors(text, ["tc_kimlik", "iban", "phone"])).toEqual({
+			matches: [],
+			incomplete: false,
+			reasons: [],
+		});
+	});
+
+	it("redacts every value of such a field through the DLP scanner", () => {
+		const content = `TCKN: ${VALID_TCKN} IBAN ${VALID_IBAN}`;
+		const result = inspected(scan(content, ["tc_kimlik", "iban"]));
+		expect(result.transformedContent).toBe("TCKN: [TC_KIMLIK] IBAN [IBAN]");
+		expect(result.findings.map((finding) => finding.detector)).toEqual(["tc_kimlik", "iban"]);
+	});
+});
+
 describe("PiiDetectorImpl with AIDR Privacy detectors", () => {
 	it("reports TC Kimlik, IBAN and private keys by default and credentials on opt-in", () => {
 		const detector = new PiiDetectorImpl();

@@ -11,7 +11,7 @@
 
 import type { DlpDetector } from "./policy.js";
 import { keyType } from "./privacy-rules/detectors.js";
-import { scanText } from "./privacy-rules/rules.js";
+import { type RuleFinding, scanText } from "./privacy-rules/rules.js";
 import type { EntityType } from "./privacy-rules/types.js";
 
 /** Core detector name (snake_case policy data) → privacy entity type. */
@@ -109,28 +109,56 @@ export interface PrivacyDetectorScan {
 	readonly reasons: readonly string[];
 }
 
+/** `finding` (found in the text starting at `base`) as a match, if its value is plausible. */
+function plausibleMatch(
+	text: string,
+	base: number,
+	finding: RuleFinding,
+): PrivacyDetectorMatch | undefined {
+	const detector = ENTITY_DETECTORS.get(finding.type);
+	const start = base + finding.start;
+	const end = base + finding.end;
+	if (!detector || !isPlausibleDetectorValue(detector, text.slice(start, end))) return undefined;
+	return { detector, start, end, score: finding.score };
+}
+
 /**
  * Scan `text` with the vendored TR/EN privacy rules, reporting only `detectors`.
  * Overlapping findings of the enabled types are unioned (never partially exposed).
+ *
+ * The rules protect a labelled field to the end of its line and give a union the type of its
+ * highest-priority member, so `Tel: 0532 123 45 67 IBAN TR33 …` comes back as one IBAN finding
+ * that starts with a phone number. The shape check is for a single value; a union that fails it
+ * is re-scanned without its label and the plausible values inside it are kept, instead of
+ * dropping every value the field ran into.
  */
 export function scanPrivacyDetectors(
 	text: string,
 	detectors: readonly DlpDetector[],
 	maxChars: number = PRIVACY_DETECTOR_MAX_CHARS,
 ): PrivacyDetectorScan {
-	const result = scanText(text, {
+	const options = {
 		enabled: detectors.map((detector) => DLP_DETECTOR_ENTITY_TYPES[detector]),
 		maxChars: Math.min(Math.max(1, maxChars), PRIVACY_DETECTOR_MAX_CHARS),
-	});
+	};
+	const result = scanText(text, options);
+	const reasons = new Set(result.reasons);
 	const matches: PrivacyDetectorMatch[] = [];
 	for (const finding of result.findings) {
-		const detector = ENTITY_DETECTORS.get(finding.type);
-		if (!detector || !isPlausibleDetectorValue(detector, text.slice(finding.start, finding.end))) {
+		const match = plausibleMatch(text, 0, finding);
+		if (match) {
+			matches.push(match);
 			continue;
 		}
-		matches.push({ detector, start: finding.start, end: finding.end, score: finding.score });
+		// Values inside a union lie within it, so matches stay sorted and disjoint.
+		const inner = scanText(text.slice(finding.start, finding.end), options);
+		for (const reason of inner.reasons) reasons.add(reason);
+		for (const value of inner.findings) {
+			const valueMatch = plausibleMatch(text, finding.start, value);
+			if (valueMatch) matches.push(valueMatch);
+		}
 	}
-	return { matches, incomplete: result.incomplete, reasons: result.reasons };
+	return { matches, incomplete: reasons.size > 0, reasons: [...reasons].sort() };
 }
 
 /** Constant, type-only placeholder for a redacted detector match, e.g. `[TC_KIMLIK]`. */
