@@ -91,19 +91,35 @@ function helpers(lang, content, plans) {
 		const no = String(numberOf.get(feature.key)).padStart(2, "0");
 		return `<li id="f-${feature.key}" data-feature="${feature.key}"><span class="no">${no}</span><span><b>${withFacts(name)}</b><span class="d"> — ${withFacts(description)}</span></span></li>`;
 	};
-	/** Numbered list of a stage's features; `groups` splits it under small sub-headings. */
+	/**
+	 * Numbered list of a stage's features; `groups` splits it under small sub-headings.
+	 * A group without a label (`tr`/`en`) lists the stage's ungrouped features.
+	 */
 	const featureList = (stageKey, { cols = false, groups = null } = {}) => {
 		const features = content.FEATURES.filter((f) => f.stage === stageKey);
 		if (features.length === 0) throw new Error(`stage ${stageKey} has no features`);
 		const list = (items) => `<ol class="flist${cols ? " cols" : ""}">\n${items.map((f) => `\t\t${featureItem(f)}`).join("\n")}\n\t</ol>`;
 		if (!groups) return list(features);
-		return groups
+		const listed = new Set();
+		const html = groups
 			.map((group) => {
-				const items = features.filter((f) => f.group === group.key);
+				const items = features.filter((f) => (f.group ?? null) === (group.key ?? null));
+				if (items.length === 0) throw new Error(`stage ${stageKey}: group ${group.key} has no features`);
+				for (const item of items) listed.add(item.key);
+				if (!group.tr) return list(items);
+				const cls = group.cls ? `lsub ${group.cls}` : "lsub";
 				const lang = group.lang ? ` lang="${group.lang}"` : "";
-				return `<p class="lsub"${lang}>${t(group.tr, group.en)}</p>\n\t${list(items)}`;
+				return `<p class="${cls}"${lang}>${t(group.tr, group.en)}</p>\n\t${list(items)}`;
 			})
 			.join("\n\t");
+		const missing = features.filter((f) => !listed.has(f.key)).map((f) => f.key);
+		if (missing.length > 0) throw new Error(`stage ${stageKey}: features outside every group: ${missing.join(", ")}`);
+		return html;
+	};
+	/** A cross-reference to a numbered feature, e.g. the "Also covered" line of a group. */
+	const ref = (key) => {
+		if (!numberOf.has(key)) throw new Error(`unknown feature ${key}`);
+		return `<span class="ref" data-ref="${key}">${String(numberOf.get(key)).padStart(2, "0")}</span>`;
 	};
 	const header = (section) =>
 		`<header class="hdr"><span class="brand"><span class="badge" aria-hidden="true"></span><b>Singularity AIDR</b>${t("Ürün Kataloğu 2026", "Product Catalog 2026")}</span><span class="sec">${section}</span></header>`;
@@ -120,7 +136,7 @@ function helpers(lang, content, plans) {
 		const s = stage(key);
 		return `<p class="gain inline"><span class="k">${t("Bu aşamada ne kazanırsınız", "What you get")}</span><span>${s.gain}</span></p>`;
 	};
-	return { lang, t, fact, withFacts, icon, stage, featureList, header, footer, page, stageIntro, gain, plans, numberOf, escapeHtml };
+	return { lang, t, fact, withFacts, icon, stage, featureList, ref, header, footer, page, stageIntro, gain, plans, numberOf, escapeHtml };
 }
 
 export async function buildCatalog(lang) {

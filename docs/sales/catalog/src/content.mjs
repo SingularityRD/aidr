@@ -183,7 +183,7 @@ export const FEATURES = [
 	{ key: "guard-modes", stage: "protect", group: "browser", evidence: ["packages/browser-guard/src/background/policy.ts"], tr: ["Dört koruma modu", "Otomatik maskele, Onayla, Engelle, İzle; ölçümden tam korumaya."], en: ["Four protection modes", "Auto-mask, Confirm, Block, Monitor; from measuring to full protection."] },
 	{ key: "paste-protection", stage: "protect", group: "browser", evidence: ["packages/browser-guard/src/content"], tr: ["Yapıştırma koruması", "panodaki metin istem kutusuna girmeden maskelenir."], en: ["Paste protection", "clipboard text is masked before it enters the prompt box."] },
 	{ key: "file-protection", stage: "protect", group: "browser", evidence: ["packages/browser-guard/src/engine/files.ts"], tr: ["Dosya koruması", "CSV, JSON, .env ve kodun temiz kopyası yüklenir; formül enjeksiyonu önlenir."], en: ["File protection", "clean copies of CSV, JSON, .env and code are uploaded; formula injection is defused."] },
-	{ key: "office-pdf-masking", stage: "protect", group: "browser", pending: true, evidence: ["packages/browser-guard/src/engine/documents.ts"], tr: ["Office ve PDF maskeleme", "DOCX, XLSX, PPTX ve PDF yüklemeleri site almadan taranır ve maskelenir."], en: ["Office and PDF masking", "DOCX, XLSX, PPTX and PDF uploads are scanned and masked first."] },
+	{ key: "office-pdf-protection", stage: "protect", group: "browser", evidence: ["packages/browser-guard/src/engine/office/ooxml.ts", "packages/browser-guard/src/engine/pdf"], tr: ["Office ve PDF koruması", "Word, Excel, PowerPoint maskeli kopyayla yüklenir; hassas veri içeren PDF durdurulur."], en: ["Office &amp; PDF protection", "Word, Excel, PowerPoint upload as a masked copy; PDFs with sensitive data are stopped."] },
 	{ key: "custom-terms", stage: "protect", group: "browser", evidence: ["packages/browser-guard/src/engine/detect.ts"], tr: ["Kuruma özel terimler", "proje kod adları, iç sunucu adları gibi sözcükler maskelenir."], en: ["Company terms", "project code names, internal hostnames and similar words are masked."] },
 	{ key: "exact-data-match", stage: "protect", group: "browser", evidence: ["packages/browser-guard/src/engine/exact-data.ts", "packages/browser-guard/scripts/fingerprint-dataset.mjs"], tr: ["Tam veri eşleştirme", "kendi müşteri kayıtlarınız yalnızca parmak iziyle tanınır."], en: ["Exact data match", "your own customer records are recognised by fingerprint only."] },
 	{ key: "injection-coaching", stage: "protect", group: "browser", evidence: ["packages/browser-guard/src/engine/coaching.ts"], tr: ["Prompt injection uyarısı", "riskli metin gönderilmeden kullanıcıya Türkçe ya da İngilizce açıklanır."], en: ["Prompt-injection coaching", "risky text is explained to the user, in Turkish or English, before sending."] },
@@ -219,6 +219,16 @@ export const FEATURES = [
 	{ key: "lethal-trifecta", stage: "control", pending: true, evidence: ["packages/core/src/lethal-trifecta.ts"], tr: ["Zehirli akış ve saldırı zinciri tespiti", "zinciri tamamlayacak adım durdurulur."], en: ["Lethal trifecta and attack chains", "the step that would complete the chain is stopped."] },
 	{ key: "canary-tokens", stage: "control", pending: true, evidence: ["packages/core/src/canary-tokens.ts"], tr: ["Tuzak kimlik bilgileri", "ele geçirilmiş bir ajanı sahte anahtarlara dokunduğu anda yakalar."], en: ["Canary credentials", "catch a compromised agent the moment it touches a decoy key."] },
 	{ key: "permission-profiles", stage: "control", pending: true, evidence: ["packages/core/src/permission-profiles.ts"], tr: ["Ajan yetki profilleri", "ajan ya da depo başına izinli araç, MCP, yol, alan adı ve komut; şablonlar."], en: ["Agent permission profiles", "allowed tools, MCP, paths, domains, commands per agent or repo; templates."] },
+	// 4 Control actions: AI safety (risks from the agent's own behaviour)
+	{ key: "runaway-guardrails", stage: "control", group: "safety", pending: true, evidence: ["threats/agent-safety.yaml", "docs/agent-safety.md"], tr: ["Kaçak ajan ve bütçe sınırları", "döngü, hata tekrarı, çağrı patlaması ya da bütçe aşımında ajan insanı bekler."], en: ["Runaway and budget guardrails", "loops, failure streaks, call spikes and budgets pause the agent for a person."] },
+	{ key: "sabotage-detection", stage: "control", group: "safety", pending: true, evidence: ["threats/agent-safety.yaml", "docs/agent-safety.md"], tr: ["Ödül istismarı ve sabotaj tespiti", "test silme, kanca atlama, CI kapatma ya da force-push onay ister."], en: ["Reward hacking and sabotage", "deleting tests, skipping hooks, disabling CI or force-pushing needs approval."] },
+	{ key: "autonomy-escalation", stage: "control", group: "safety", pending: true, evidence: ["threats/agent-safety.yaml"], tr: ["Özerklik yükseltme engeli", "ajanın başka bir ajanı izinsiz, YOLO ya da tam otomatik modda başlatması durur."], en: ["Autonomy-escalation blocking", "agents launching agents in skip-permissions, YOLO or full-auto mode are blocked."] },
+	{ key: "irreversible-actions", stage: "control", group: "safety", pending: true, evidence: ["threats/agent-safety.yaml"], tr: ["Geri alınamaz eylem koruması", "veritabanı ve bulut silme, terraform destroy, yayımlama ve adınıza mesaj onay ister."], en: ["Irreversible actions", "DB drops, cloud deletions, terraform destroy, publishing and messaging need approval."] },
+	{ key: "safe-model-loading", stage: "control", group: "safety", pending: true, evidence: ["threats/ai-supply-chain.yaml"], tr: ["Güvenli model yükleme", "güvensiz pickle/torch.load, trust_remote_code ve güvenilmeyen model indirme işaretlenir."], en: ["Safe model loading", "unsafe pickle/torch.load, trust_remote_code and untrusted model downloads are flagged."] },
+	{ key: "secure-code-guardrails", stage: "control", group: "safety", pending: true, evidence: ["threats/secure-code.yaml"], tr: ["Güvenli kod korkulukları", "TLS kapatma, SQL birleştirme, girdide eval ve zayıf şifreleme yazılırken işaretlenir."], en: ["Secure-code guardrails", "TLS checks off, SQL concatenation, eval on input and weak crypto are flagged as written."] },
+	{ key: "agent-env-posture", stage: "control", group: "safety", pending: true, evidence: ["packages/core/src/agent-environment-posture.ts", "docs/agent-environment-posture.md"], tr: ["Ajan ortamı güvenlik duruşu", "YOLO modu, root, Docker soketi, yönetici anahtarı, sandbox yokluğu; çözümüyle."], en: ["Agent environment posture", "YOLO mode, missing hooks, root, Docker socket, admin keys, no sandbox; with fixes."] },
+	{ key: "content-safety-policy", stage: "control", group: "safety", pending: true, evidence: ["threats/llm-threats.yaml", "docs/agent-safety.md"], tr: ["Jailbreak ve içerik güvenliği politikası", "jailbreak ve yasak içerik istekleri kategoriye göre uyarılır ya da durdurulur."], en: ["Jailbreak and content-safety policy", "jailbreaks and prohibited requests are warned or blocked by category."] },
+	{ key: "oversight-metrics", stage: "control", group: "safety", pending: true, evidence: ["supabase/functions/governance-report", "docs/agent-safety.md"], tr: ["İnsan gözetimi ölçümleri", "onay oranı, karar süresi ve sorgusuz onay işaretleri yönetişim skor kartında."], en: ["Human-oversight metrics", "approval rates, decision time and rubber-stamp signals on the governance scorecard."] },
 	// 5 Inspect output
 	{ key: "output-scanning", stage: "inspect", evidence: ["packages/core/src/output-scanner.ts"], tr: ["Araç çıktısı taraması", "sızan anahtar, prompt injection yükü ve sistem istemi sızıntısı bulunur."], en: ["Tool-output scanning", "finds leaked keys, prompt-injection payloads and system-prompt leaks."] },
 	{ key: "output-quarantine", stage: "inspect", evidence: ["packages/core/src/output-sensitive-data.ts"], tr: ["Karantina bildirimi", "riskli sonuç modele ulaşmadan değiştirilir; giden mesajlar da denetlenir."], en: ["Quarantine notice", "a risky result is replaced before the model sees it; outbound messages too."] },
@@ -270,6 +280,21 @@ export const FEATURES = [
 	{ key: "monitoring", stage: "platform", evidence: ["deploy/monitoring"], tr: ["İzleme ve uyarılar", "hazırlık denetimleri, Prometheus kuralları."], en: ["Monitoring and alerting", "readiness checks, Prometheus rules."] },
 	{ key: "operator-admin", stage: "platform", evidence: ["scripts/operator-admin.mjs", "supabase/functions/operator-admin"], tr: ["Operatör yönetimi", "lisans ve kullanım, MFA ile."], en: ["Operator administration", "licences and usage, behind MFA."] },
 	{ key: "version-check", stage: "platform", evidence: ["packages/core/src/version-check.ts"], tr: ["Sürüm bildirimi", "yeni sürüm çıktığında bilgilendirir."], en: ["Update notices", "tells you when a new version is out."] },
+];
+
+/**
+ * Shipped safety controls that are already numbered elsewhere in the list. The safety group
+ * cross-references them (`refs`) instead of listing them twice. `evidence` pairs a path with
+ * a pattern its content must match (checked by the facts test).
+ */
+export const SAFETY_ALSO = [
+	{ key: "human-approval", refs: ["verdicts", "operator-approval"], evidence: [["packages/core/src/operator-approvals.ts", "approv"]], tr: "Riskli eylemde insan onayı", en: "Human approval for risky actions" },
+	{ key: "destructive-commands", refs: ["threat-rules"], evidence: [["threats/commands.yaml", "Destructive operations"]], tr: "Yıkıcı komut engelleme", en: "Destructive-command blocking" },
+	{ key: "self-defense", refs: ["self-defense"], evidence: [["threats/self-defense.yaml", "- id:"]], tr: "Öz-savunma", en: "Self-defence" },
+	{ key: "cryptomining", refs: ["threat-rules"], evidence: [["threats/mining.yaml", "- id:"]], tr: "Kripto madenciliği tespiti", en: "Cryptomining detection" },
+	{ key: "injection-jailbreak", refs: ["threat-rules"], evidence: [["threats/llm-threats.yaml", "category: prompt_injection"], ["threats/llm-threats.yaml", "jailbreak"]], tr: "Prompt injection ve jailbreak kuralları", en: "Prompt-injection and jailbreak rules" },
+	{ key: "memory-poisoning", refs: ["threat-rules"], evidence: [["threats/llm-threats.yaml", "category: memory_poisoning"]], tr: "Bellek zehirleme kuralları", en: "Memory-poisoning rules" },
+	{ key: "excessive-agency", refs: ["threat-rules"], evidence: [["threats/llm-threats.yaml", "Excessive Agency"]], tr: "Aşırı yetki sınırları", en: "Excessive-agency limits" },
 ];
 
 /* ------------------------------------------------------------------------------------ */
@@ -365,7 +390,7 @@ function lifecycle(h) {
 		[1, t("Keşfet", "Discover"), t("Filo envanteri · MCP keşfi · Sürekli envanter · Gölge yapay zekâ", "Fleet inventory · MCP discovery · Continuous inventory · Shadow AI")],
 		[2, t("Değerlendir", "Assess"), t("CVE taraması · Taramadan politikaya · Skill taraması · Duruş paneli", "CVE scan · Scan-to-policy · Skill scan · Posture dashboard")],
 		[3, t("Veriyi koru", "Protect data"), t("Browser Guard maskeleme · İstem koruması · DLP · Tam veri eşleştirme", "Browser Guard masking · Prompt protection · DLP · Exact data match")],
-		[4, t("Eylemi denetle", "Control actions"), t("allow/ask/deny · MCP Gateway · Zehirli akış · Yetki profilleri", "allow/ask/deny · MCP Gateway · Lethal trifecta · Permission profiles")],
+		[4, t("Eylemi denetle", "Control actions"), t("allow/ask/deny · MCP Gateway · Zehirli akış · Yapay zekâ güvenliği (safety)", "allow/ask/deny · MCP Gateway · Lethal trifecta · AI safety")],
 		[5, t("Çıktıyı incele", "Inspect output"), t("Çıktı taraması · Karantina · Zehirlenme koruması", "Output scanning · Quarantine · Poisoning protection")],
 		[6, t("Onayla ve müdahale et", "Approve and respond"), t("Operatör onayı · Panelden onay · Uyarılar · Müdahale", "Operator approval · Dashboard approvals · Alerts · Response")],
 		[7, t("Kanıtla ve iyileştir", "Prove and improve"), t("Denetim kaydı · SIEM · Simülasyon, politikaya geri döner", "Audit log · SIEM · Simulation feeds back into policy")],
@@ -402,6 +427,7 @@ function coverage(h) {
 		[5, t("Çıktıyı incele", "Inspect output"), [Y(t("çıktı taraması, zehirlenme", "output scan, poisoning")), Y(t("sonuç denetimi", "result inspection")), N, N, N]],
 		[6, t("Onayla ve müdahale et", "Approve and respond"), [Y(t("operatör onayı", "operator approval")), Y(t("araç seti onayı", "toolset approval")), Y(t("Onayla modu", "Confirm mode")), N, Y(t("panelden onay, uyarılar", "dashboard approval, alerts"))]],
 		[7, t("Kanıtla ve iyileştir", "Prove and improve"), [Y(t("denetim kaydı, simülasyon", "audit log, simulation")), Y(t("bulgu kaydı", "findings record")), Y(t("sayım paneli", "counts dashboard")), Y(t("CVE bulguları", "CVE findings")), Y(t("KVKK/GDPR raporu", "KVKK/GDPR report"))]],
+		["S", t('Yapay zekâ güvenliği<br>(<span lang="en">safety</span>)', "AI safety"), [Y(t("insan onayı, kaçak ajan, sabotaj", "human approval, runaway, sabotage")), Y(t("geri alınamaz eylem onayı", "irreversible-action approval")), N, Y(t("güvenli model yükleme", "safe model loading")), Y(t("insan gözetimi ölçümleri", "human-oversight metrics"))]],
 	];
 	const why = [
 		["laptop", t("Önce yerel işleme", "Local-first processing"), t("Tespit ve karar cihazda verilir; ajanlar ve Browser Guard hesap ya da ağ olmadan korur.", "Detection and decisions happen on the device; agents and Browser Guard are protected with no account or network.")],
@@ -412,17 +438,18 @@ function coverage(h) {
 		["server", t("Kurulum seçeneği sizin", "Your choice of deployment"), t("Bulut, kurum içi ya da ağdan yalıtılmış; lisans bitse de yerel koruma sürer.", "Cloud, on-premises or air-gapped; local protection continues even if a licence lapses.")],
 	];
 	const body = `	<h2 class="title">${t("Kapsam: <em>her aşama, her yüzey</em>", "Coverage: <em>every stage, every surface</em>")}</h2>
-	<p class="lead">${t("Tablo, her aşamanın hangi yüzeyde ve hangi özellikle karşılandığını gösterir. Boş hücreler kapsam dışıdır.", "The table shows which feature covers each stage on each surface. Empty cells are out of scope.")}</p>
+	<p class="lead">${t("Tablo, her aşamanın hangi yüzeyde ve hangi özellikle karşılandığını gösterir; son satır ajanın kendi davranışından doğan riskleri kapsar. Boş hücreler kapsam dışıdır.", "The table shows which feature covers each stage on each surface; the last row covers risks from the agent's own behaviour. Empty cells are out of scope.")}</p>
 	<table class="t cov">
 		<thead><tr><th style="width:21%">${t("Aşama", "Stage")}</th><th>${t("Kodlama ajanları", "Coding agents")}</th><th>${t("MCP araçları", "MCP tools")}</th><th>${t("Yapay zekâ sohbet siteleri", "AI chat sites")}</th><th>${t("Yapay zekâ altyapısı", "AI infrastructure")}</th><th>${t("Yönetişim", "Governance")}</th></tr></thead>
 		<tbody>
-${rows.map(([n, name, cells]) => `\t\t\t<tr><td class="st"><span>${n}</span>${name}</td>${cells.join("")}</tr>`).join("\n")}
+${rows.map(([n, name, cells]) => `\t\t\t<tr><td class="st"><span class="sn">${n}</span><span class="nm">${name}</span></td>${cells.join("")}</tr>`).join("\n")}
 		</tbody>
 	</table>
 	<h3 class="mt4">${t("Neden Singularity AIDR?", "Why Singularity AIDR?")}</h3>
 	<div class="g3 mt1">
 ${why.map(([icon, name, text]) => `\t\t<div class="block"><div class="head"><span class="ic k">${h.icon(icon)}</span><h4>${name}</h4></div><p class="mb0">${text}</p></div>`).join("\n")}
-	</div>`;
+	</div>
+	${trifectaHighlight(h)}`;
 	return page("p-coverage", t("Kapsam ve farklar", "Coverage and differentiators"), t("Kapsam", "Coverage"), body);
 }
 
@@ -496,8 +523,9 @@ function protect(h) {
 	return page("p-protect", t("Veriyi koru", "Protect data"), t("Aşama 3", "Stage 3"), body);
 }
 
-function control(h) {
-	const { t, page, stageIntro, featureList, gain } = h;
+/** Flagship callout for the lethal-trifecta detection (feature listed under Control actions). */
+function trifectaHighlight(h) {
+	const { t, ref } = h;
 	const venn = `<figure class="diagram" style="margin:0">
 			<svg viewBox="0 0 300 214" role="img" aria-label="${t("Özel veri, güvenilmeyen içerik ve dış kanal kesiştiğinde adım durur", "Where private data, untrusted content and an external channel meet, the step is stopped")}">
 				<g fill="#ffffff" fill-opacity="0.05" stroke="#ffffff" stroke-opacity="0.55" stroke-width="1.2">
@@ -512,16 +540,22 @@ function control(h) {
 				<text x="150" y="109" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">${t("adım durur", "step blocked")}</text>
 			</svg>
 		</figure>`;
-	const body = `	${stageIntro("control")}
-	${featureList("control")}
-	<div class="highlight">
+	return `<div class="highlight mt4">
 		<div>
-			<p class="lbl">${t("Öne çıkan", "Highlight")}</p>
+			<p class="lbl">${t("Öne çıkan · Eylemi denetle", "Highlight · Control actions")} ${ref("lethal-trifecta")}</p>
 			<h3>${t("Zehirli akış (lethal trifecta) ve saldırı zinciri tespiti", "Lethal trifecta and attack-chain detection")}</h3>
 			<p class="mb0">${t("Bir ajan aynı oturumda özel veriye dokunur, güvenilmeyen içerik okur ve dış bir kanala erişebilirse veri sızdırmak için gereken her şey bir aradadır. AIDR oturum boyunca bu üç koşulu izler ve zinciri tamamlayacak adımı durdurur; veri sızdırma ve injection'dan eyleme giden zincirler de yakalanır.", "If one session lets an agent touch private data, read untrusted content and reach an external channel, everything needed to exfiltrate data is in place. AIDR tracks these three conditions across the session and stops the step that would complete the chain; exfiltration and injection-to-action chains are caught as well.")}</p>
 		</div>
 		${venn}
-	</div>
+	</div>`;
+}
+
+function control(h) {
+	const { t, page, stageIntro, featureList, gain, ref } = h;
+	const also = SAFETY_ALSO.map((item) => `<span class="also" data-safety="${item.key}">${t(item.tr, item.en)} ${item.refs.map(ref).join(" ")}</span>`).join(" · ");
+	const body = `	${stageIntro("control")}
+	${featureList("control", { groups: [{ key: null }, { key: "safety", cls: "acc", tr: 'Yapay zekâ güvenliği (<span lang="en">safety</span>) · ajanın kendi davranışından doğan riskler', en: "AI safety · risks from the agent's own behaviour" }] })}
+	<p class="xref"><span class="k">${t("Ayrıca kapsanır", "Also covered")}</span>${also}</p>
 	${gain("control")}`;
 	return page("p-control", t("Eylemi denetle", "Control actions"), t("Aşama 4", "Stage 4"), body);
 }

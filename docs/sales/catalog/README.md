@@ -13,10 +13,12 @@ It carries no prices.
 | `preview/catalog-<lang>-p<nn>.png` | Page previews (1.5x). |
 
 Pages: 1 cover, 2 end-to-end lifecycle (seven stages and the governance layer, product
-lines), 3 coverage matrix and differentiators, 4 Discover and Assess, 5 Protect data
-(Browser Guard before/after strip), 6 Control actions, 7 Inspect output and Approve and
-respond, 8 Prove and improve and Govern and comply, 9 platform and editions, 10 next
-steps and contact.
+lines), 3 coverage matrix (with an AI safety row), differentiators and the lethal-trifecta
+callout, 4 Discover and Assess, 5 Protect data (Browser Guard before/after strip),
+6 Control actions with the AI safety group (risks from the agent's own behaviour; shipped
+safety controls listed elsewhere are cross-referenced by number, not repeated), 7 Inspect
+output and Approve and respond, 8 Prove and improve and Govern and comply, 9 platform and
+editions, 10 next steps and contact.
 
 ## Editing
 
@@ -31,7 +33,11 @@ steps and contact.
   catalog, trial length).
 - Every feature lists `evidence`: repository paths that implement it. A feature whose
   code is still being merged is `pending: true`; the test reports it as skipped. Remove
-  the flag once the code has landed.
+  the flag once the code has landed, and correct the paths and the one-liner to match
+  what was merged.
+- `SAFETY_ALSO` lists shipped safety controls the AI safety group cross-references
+  (`h.ref("feature-key")` renders the feature's number); the test checks each rule file
+  and that every referenced feature exists and is not pending.
 - The logo is `images/singularity-logo.png`, embedded unchanged. Edition membership,
   deployment options and retention come from `packages/dashboard/src/billing/plans.ts`.
 - Fonts come from the system stack (Inter, Segoe UI, Helvetica Neue, then Liberation

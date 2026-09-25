@@ -157,6 +157,11 @@ body { font-size: 9pt; }
 .flist.cols { display: grid; grid-template-columns: 1fr 1fr; column-gap: 7mm; }
 .flist.cols li:nth-child(2) { border-top: 0.6pt solid var(--ink); }
 .lsub { margin: 3mm 0 1.2mm; font-size: 6.9pt; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); font-weight: 650; }
+.lsub.acc { margin-top: 4mm; color: var(--accent-ink); }
+.xref { margin: 1.6mm 0 0; font-size: 7.8pt; line-height: 1.5; color: var(--body); }
+.xref .k { margin-right: 2mm; font-size: 6.7pt; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+.xref .also { white-space: nowrap; }
+.ref { color: var(--accent-ink); font-weight: 650; font-variant-numeric: tabular-nums; }
 .stage-intro { display: flex; align-items: flex-start; gap: 3mm; margin: 0 0 2.6mm; }
 .stage-intro .num { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 7mm; height: 7mm; border-radius: 50%; background: var(--ink); color: #fff; font-size: 8.5pt; font-weight: 700; }
 .stage-intro h2 { margin: 0; font-size: 15pt; line-height: 1.2; font-weight: 650; color: var(--ink); }
@@ -165,6 +170,7 @@ body { font-size: 9pt; }
 .gain.inline { margin-top: 3mm; }
 .highlight { display: grid; grid-template-columns: 1.5fr 1fr; gap: 5mm; align-items: center; margin-top: 3.5mm; padding: 4mm 5mm; border-radius: 2.4mm; background: #000; color: #cfcfcf; font-size: 8.8pt; line-height: 1.45; }
 .highlight .lbl { color: #8fa9f5; }
+.highlight .ref { color: #fff; }
 .highlight h3 { color: #fff; font-size: 10.5pt; margin-bottom: 1.4mm; }
 .highlight b { color: #fff; }
 .highlight ul.b li::before { background: #8fa9f5; }
@@ -179,7 +185,8 @@ body { font-size: 9pt; }
 .cov td.y svg { width: 3.2mm; height: 3.2mm; margin-right: 1mm; vertical-align: -0.5mm; fill: none; stroke: var(--accent); stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
 .cov td.n { color: var(--faint); }
 .cov td.st { font-weight: 650; color: var(--ink); white-space: nowrap; }
-.cov td.st span { display: inline-flex; align-items: center; justify-content: center; width: 4.4mm; height: 4.4mm; margin-right: 1.6mm; border-radius: 50%; background: var(--ink); color: #fff; font-size: 6.6pt; }
+.cov td.st .nm { display: inline-block; vertical-align: top; }
+.cov td.st .sn { vertical-align: top; display: inline-flex; align-items: center; justify-content: center; width: 4.4mm; height: 4.4mm; margin-right: 1.6mm; border-radius: 50%; background: var(--ink); color: #fff; font-size: 6.6pt; }
 .cov { font-size: 8.2pt; }
 .ba { display: grid; grid-template-columns: 30mm 1fr; border: 0.6pt solid var(--rule-strong); border-radius: 2mm; overflow: hidden; font-size: 8.6pt; line-height: 1.55; }
 .ba > div { padding: 2mm 3.2mm; border-top: 0.5pt solid var(--rule); }
@@ -305,7 +312,7 @@ h2.title.mt4 { margin-top: 7mm; }
 		<div class="it"><b><span>1</span>Discover</b>Fleet inventory · MCP discovery · Continuous inventory · Shadow AI</div>
 		<div class="it"><b><span>2</span>Assess</b>CVE scan · Scan-to-policy · Skill scan · Posture dashboard</div>
 		<div class="it"><b><span>3</span>Protect data</b>Browser Guard masking · Prompt protection · DLP · Exact data match</div>
-		<div class="it"><b><span>4</span>Control actions</b>allow/ask/deny · MCP Gateway · Lethal trifecta · Permission profiles</div>
+		<div class="it"><b><span>4</span>Control actions</b>allow/ask/deny · MCP Gateway · Lethal trifecta · AI safety</div>
 		<div class="it"><b><span>5</span>Inspect output</b>Output scanning · Quarantine · Poisoning protection</div>
 		<div class="it"><b><span>6</span>Approve and respond</b>Operator approval · Dashboard approvals · Alerts · Response</div>
 		<div class="it"><b><span>7</span>Prove and improve</b>Audit log · SIEM · Simulation feeds back into policy</div>
@@ -324,17 +331,18 @@ h2.title.mt4 { margin-top: 7mm; }
 <section class="page" id="p-coverage" aria-label="Coverage and differentiators">
 	<header class="hdr"><span class="brand"><span class="badge" aria-hidden="true"></span><b>Singularity AIDR</b>Product Catalog 2026</span><span class="sec">Coverage</span></header>
 	<h2 class="title">Coverage: <em>every stage, every surface</em></h2>
-	<p class="lead">The table shows which feature covers each stage on each surface. Empty cells are out of scope.</p>
+	<p class="lead">The table shows which feature covers each stage on each surface; the last row covers risks from the agent's own behaviour. Empty cells are out of scope.</p>
 	<table class="t cov">
 		<thead><tr><th style="width:21%">Stage</th><th>Coding agents</th><th>MCP tools</th><th>AI chat sites</th><th>AI infrastructure</th><th>Governance</th></tr></thead>
 		<tbody>
-			<tr><td class="st"><span>1</span>Discover</td><td class="y"><svg class=""><use href="#i-check"/></svg>fleet inventory</td><td class="y"><svg class=""><use href="#i-check"/></svg>MCP discovery</td><td class="y"><svg class=""><use href="#i-check"/></svg>shadow AI</td><td class="y"><svg class=""><use href="#i-check"/></svg>continuous inventory</td><td class="y"><svg class=""><use href="#i-check"/></svg>asset register</td></tr>
-			<tr><td class="st"><span>2</span>Assess</td><td class="y"><svg class=""><use href="#i-check"/></svg>skill scanning</td><td class="y"><svg class=""><use href="#i-check"/></svg><span data-fact="mcp-categories">14</span> risk categories</td><td class="y"><svg class=""><use href="#i-check"/></svg>Monitor-mode baseline</td><td class="y"><svg class=""><use href="#i-check"/></svg>CVE scan</td><td class="y"><svg class=""><use href="#i-check"/></svg>posture dashboard</td></tr>
-			<tr><td class="st"><span>3</span>Protect data</td><td class="y"><svg class=""><use href="#i-check"/></svg>prompt protection, DLP</td><td class="y"><svg class=""><use href="#i-check"/></svg>DLP on arguments</td><td class="y"><svg class=""><use href="#i-check"/></svg>reversible masking</td><td class="n">—</td><td class="y"><svg class=""><use href="#i-check"/></svg>managed policy</td></tr>
-			<tr><td class="st"><span>4</span>Control actions</td><td class="y"><svg class=""><use href="#i-check"/></svg>allow · ask · deny</td><td class="y"><svg class=""><use href="#i-check"/></svg>MCP policy, Gateway</td><td class="y"><svg class=""><use href="#i-check"/></svg>site blocking</td><td class="y"><svg class=""><use href="#i-check"/></svg>scan-to-policy</td><td class="y"><svg class=""><use href="#i-check"/></svg>four-eyes policy</td></tr>
-			<tr><td class="st"><span>5</span>Inspect output</td><td class="y"><svg class=""><use href="#i-check"/></svg>output scan, poisoning</td><td class="y"><svg class=""><use href="#i-check"/></svg>result inspection</td><td class="n">—</td><td class="n">—</td><td class="n">—</td></tr>
-			<tr><td class="st"><span>6</span>Approve and respond</td><td class="y"><svg class=""><use href="#i-check"/></svg>operator approval</td><td class="y"><svg class=""><use href="#i-check"/></svg>toolset approval</td><td class="y"><svg class=""><use href="#i-check"/></svg>Confirm mode</td><td class="n">—</td><td class="y"><svg class=""><use href="#i-check"/></svg>dashboard approval, alerts</td></tr>
-			<tr><td class="st"><span>7</span>Prove and improve</td><td class="y"><svg class=""><use href="#i-check"/></svg>audit log, simulation</td><td class="y"><svg class=""><use href="#i-check"/></svg>findings record</td><td class="y"><svg class=""><use href="#i-check"/></svg>counts dashboard</td><td class="y"><svg class=""><use href="#i-check"/></svg>CVE findings</td><td class="y"><svg class=""><use href="#i-check"/></svg>KVKK/GDPR report</td></tr>
+			<tr><td class="st"><span class="sn">1</span><span class="nm">Discover</span></td><td class="y"><svg class=""><use href="#i-check"/></svg>fleet inventory</td><td class="y"><svg class=""><use href="#i-check"/></svg>MCP discovery</td><td class="y"><svg class=""><use href="#i-check"/></svg>shadow AI</td><td class="y"><svg class=""><use href="#i-check"/></svg>continuous inventory</td><td class="y"><svg class=""><use href="#i-check"/></svg>asset register</td></tr>
+			<tr><td class="st"><span class="sn">2</span><span class="nm">Assess</span></td><td class="y"><svg class=""><use href="#i-check"/></svg>skill scanning</td><td class="y"><svg class=""><use href="#i-check"/></svg><span data-fact="mcp-categories">14</span> risk categories</td><td class="y"><svg class=""><use href="#i-check"/></svg>Monitor-mode baseline</td><td class="y"><svg class=""><use href="#i-check"/></svg>CVE scan</td><td class="y"><svg class=""><use href="#i-check"/></svg>posture dashboard</td></tr>
+			<tr><td class="st"><span class="sn">3</span><span class="nm">Protect data</span></td><td class="y"><svg class=""><use href="#i-check"/></svg>prompt protection, DLP</td><td class="y"><svg class=""><use href="#i-check"/></svg>DLP on arguments</td><td class="y"><svg class=""><use href="#i-check"/></svg>reversible masking</td><td class="n">—</td><td class="y"><svg class=""><use href="#i-check"/></svg>managed policy</td></tr>
+			<tr><td class="st"><span class="sn">4</span><span class="nm">Control actions</span></td><td class="y"><svg class=""><use href="#i-check"/></svg>allow · ask · deny</td><td class="y"><svg class=""><use href="#i-check"/></svg>MCP policy, Gateway</td><td class="y"><svg class=""><use href="#i-check"/></svg>site blocking</td><td class="y"><svg class=""><use href="#i-check"/></svg>scan-to-policy</td><td class="y"><svg class=""><use href="#i-check"/></svg>four-eyes policy</td></tr>
+			<tr><td class="st"><span class="sn">5</span><span class="nm">Inspect output</span></td><td class="y"><svg class=""><use href="#i-check"/></svg>output scan, poisoning</td><td class="y"><svg class=""><use href="#i-check"/></svg>result inspection</td><td class="n">—</td><td class="n">—</td><td class="n">—</td></tr>
+			<tr><td class="st"><span class="sn">6</span><span class="nm">Approve and respond</span></td><td class="y"><svg class=""><use href="#i-check"/></svg>operator approval</td><td class="y"><svg class=""><use href="#i-check"/></svg>toolset approval</td><td class="y"><svg class=""><use href="#i-check"/></svg>Confirm mode</td><td class="n">—</td><td class="y"><svg class=""><use href="#i-check"/></svg>dashboard approval, alerts</td></tr>
+			<tr><td class="st"><span class="sn">7</span><span class="nm">Prove and improve</span></td><td class="y"><svg class=""><use href="#i-check"/></svg>audit log, simulation</td><td class="y"><svg class=""><use href="#i-check"/></svg>findings record</td><td class="y"><svg class=""><use href="#i-check"/></svg>counts dashboard</td><td class="y"><svg class=""><use href="#i-check"/></svg>CVE findings</td><td class="y"><svg class=""><use href="#i-check"/></svg>KVKK/GDPR report</td></tr>
+			<tr><td class="st"><span class="sn">S</span><span class="nm">AI safety</span></td><td class="y"><svg class=""><use href="#i-check"/></svg>human approval, runaway, sabotage</td><td class="y"><svg class=""><use href="#i-check"/></svg>irreversible-action approval</td><td class="n">—</td><td class="y"><svg class=""><use href="#i-check"/></svg>safe model loading</td><td class="y"><svg class=""><use href="#i-check"/></svg>human-oversight metrics</td></tr>
 		</tbody>
 	</table>
 	<h3 class="mt4">Why Singularity AIDR?</h3>
@@ -345,6 +353,27 @@ h2.title.mt4 { margin-top: 7mm; }
 		<div class="block"><div class="head"><span class="ic k"><svg class="i"><use href="#i-loop"/></svg></span><h4>One engine for agents and chat</h4></div><p class="mb0">The same TR/EN rules run in the browser, in agent DLP and on the command line.</p></div>
 		<div class="block"><div class="head"><span class="ic k"><svg class="i"><use href="#i-usercheck"/></svg></span><h4>Auditable decisions</h4></div><p class="mb0">Rules are readable data, and a person, not the agent, gives approval.</p></div>
 		<div class="block"><div class="head"><span class="ic k"><svg class="i"><use href="#i-server"/></svg></span><h4>Your choice of deployment</h4></div><p class="mb0">Cloud, on-premises or air-gapped; local protection continues even if a licence lapses.</p></div>
+	</div>
+	<div class="highlight mt4">
+		<div>
+			<p class="lbl">Highlight · Control actions <span class="ref" data-ref="lethal-trifecta">47</span></p>
+			<h3>Lethal trifecta and attack-chain detection</h3>
+			<p class="mb0">If one session lets an agent touch private data, read untrusted content and reach an external channel, everything needed to exfiltrate data is in place. AIDR tracks these three conditions across the session and stops the step that would complete the chain; exfiltration and injection-to-action chains are caught as well.</p>
+		</div>
+		<figure class="diagram" style="margin:0">
+			<svg viewBox="0 0 300 214" role="img" aria-label="Where private data, untrusted content and an external channel meet, the step is stopped">
+				<g fill="#ffffff" fill-opacity="0.05" stroke="#ffffff" stroke-opacity="0.55" stroke-width="1.2">
+					<circle cx="112" cy="80" r="64"/><circle cx="188" cy="80" r="64"/><circle cx="150" cy="144" r="64"/>
+				</g>
+				<g font-size="12.5" fill="#ffffff" text-anchor="middle" font-weight="700">
+					<text x="86" y="62">Private data</text>
+					<text x="206" y="56">Untrusted</text><text x="206" y="71">content</text>
+					<text x="150" y="186">External channel</text>
+				</g>
+				<rect x="101" y="94" width="98" height="22" rx="11" fill="#3862e8"/>
+				<text x="150" y="109" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">step blocked</text>
+			</svg>
+		</figure>
 	</div>
 	<footer class="foot"><span>Singularity AIDR · Product Catalog 2026</span><span>singularityrd.com</span><span class="pn"></span></footer>
 </section>
@@ -400,7 +429,7 @@ h2.title.mt4 { margin-top: 7mm; }
 		<li id="f-guard-modes" data-feature="guard-modes"><span class="no">13</span><span><b>Four protection modes</b><span class="d"> — Auto-mask, Confirm, Block, Monitor; from measuring to full protection.</span></span></li>
 		<li id="f-paste-protection" data-feature="paste-protection"><span class="no">14</span><span><b>Paste protection</b><span class="d"> — clipboard text is masked before it enters the prompt box.</span></span></li>
 		<li id="f-file-protection" data-feature="file-protection"><span class="no">15</span><span><b>File protection</b><span class="d"> — clean copies of CSV, JSON, .env and code are uploaded; formula injection is defused.</span></span></li>
-		<li id="f-office-pdf-masking" data-feature="office-pdf-masking"><span class="no">16</span><span><b>Office and PDF masking</b><span class="d"> — DOCX, XLSX, PPTX and PDF uploads are scanned and masked first.</span></span></li>
+		<li id="f-office-pdf-protection" data-feature="office-pdf-protection"><span class="no">16</span><span><b>Office &amp; PDF protection</b><span class="d"> — Word, Excel, PowerPoint upload as a masked copy; PDFs with sensitive data are stopped.</span></span></li>
 		<li id="f-custom-terms" data-feature="custom-terms"><span class="no">17</span><span><b>Company terms</b><span class="d"> — project code names, internal hostnames and similar words are masked.</span></span></li>
 		<li id="f-exact-data-match" data-feature="exact-data-match"><span class="no">18</span><span><b>Exact data match</b><span class="d"> — your own customer records are recognised by fingerprint only.</span></span></li>
 		<li id="f-injection-coaching" data-feature="injection-coaching"><span class="no">19</span><span><b>Prompt-injection coaching</b><span class="d"> — risky text is explained to the user, in Turkish or English, before sending.</span></span></li>
@@ -447,27 +476,19 @@ h2.title.mt4 { margin-top: 7mm; }
 		<li id="f-canary-tokens" data-feature="canary-tokens"><span class="no">48</span><span><b>Canary credentials</b><span class="d"> — catch a compromised agent the moment it touches a decoy key.</span></span></li>
 		<li id="f-permission-profiles" data-feature="permission-profiles"><span class="no">49</span><span><b>Agent permission profiles</b><span class="d"> — allowed tools, MCP, paths, domains, commands per agent or repo; templates.</span></span></li>
 	</ol>
-	<div class="highlight">
-		<div>
-			<p class="lbl">Highlight</p>
-			<h3>Lethal trifecta and attack-chain detection</h3>
-			<p class="mb0">If one session lets an agent touch private data, read untrusted content and reach an external channel, everything needed to exfiltrate data is in place. AIDR tracks these three conditions across the session and stops the step that would complete the chain; exfiltration and injection-to-action chains are caught as well.</p>
-		</div>
-		<figure class="diagram" style="margin:0">
-			<svg viewBox="0 0 300 214" role="img" aria-label="Where private data, untrusted content and an external channel meet, the step is stopped">
-				<g fill="#ffffff" fill-opacity="0.05" stroke="#ffffff" stroke-opacity="0.55" stroke-width="1.2">
-					<circle cx="112" cy="80" r="64"/><circle cx="188" cy="80" r="64"/><circle cx="150" cy="144" r="64"/>
-				</g>
-				<g font-size="12.5" fill="#ffffff" text-anchor="middle" font-weight="700">
-					<text x="86" y="62">Private data</text>
-					<text x="206" y="56">Untrusted</text><text x="206" y="71">content</text>
-					<text x="150" y="186">External channel</text>
-				</g>
-				<rect x="101" y="94" width="98" height="22" rx="11" fill="#3862e8"/>
-				<text x="150" y="109" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">step blocked</text>
-			</svg>
-		</figure>
-	</div>
+	<p class="lsub acc">AI safety · risks from the agent's own behaviour</p>
+	<ol class="flist">
+		<li id="f-runaway-guardrails" data-feature="runaway-guardrails"><span class="no">50</span><span><b>Runaway and budget guardrails</b><span class="d"> — loops, failure streaks, call spikes and budgets pause the agent for a person.</span></span></li>
+		<li id="f-sabotage-detection" data-feature="sabotage-detection"><span class="no">51</span><span><b>Reward hacking and sabotage</b><span class="d"> — deleting tests, skipping hooks, disabling CI or force-pushing needs approval.</span></span></li>
+		<li id="f-autonomy-escalation" data-feature="autonomy-escalation"><span class="no">52</span><span><b>Autonomy-escalation blocking</b><span class="d"> — agents launching agents in skip-permissions, YOLO or full-auto mode are blocked.</span></span></li>
+		<li id="f-irreversible-actions" data-feature="irreversible-actions"><span class="no">53</span><span><b>Irreversible actions</b><span class="d"> — DB drops, cloud deletions, terraform destroy, publishing and messaging need approval.</span></span></li>
+		<li id="f-safe-model-loading" data-feature="safe-model-loading"><span class="no">54</span><span><b>Safe model loading</b><span class="d"> — unsafe pickle/torch.load, trust_remote_code and untrusted model downloads are flagged.</span></span></li>
+		<li id="f-secure-code-guardrails" data-feature="secure-code-guardrails"><span class="no">55</span><span><b>Secure-code guardrails</b><span class="d"> — TLS checks off, SQL concatenation, eval on input and weak crypto are flagged as written.</span></span></li>
+		<li id="f-agent-env-posture" data-feature="agent-env-posture"><span class="no">56</span><span><b>Agent environment posture</b><span class="d"> — YOLO mode, missing hooks, root, Docker socket, admin keys, no sandbox; with fixes.</span></span></li>
+		<li id="f-content-safety-policy" data-feature="content-safety-policy"><span class="no">57</span><span><b>Jailbreak and content-safety policy</b><span class="d"> — jailbreaks and prohibited requests are warned or blocked by category.</span></span></li>
+		<li id="f-oversight-metrics" data-feature="oversight-metrics"><span class="no">58</span><span><b>Human-oversight metrics</b><span class="d"> — approval rates, decision time and rubber-stamp signals on the governance scorecard.</span></span></li>
+	</ol>
+	<p class="xref"><span class="k">Also covered</span><span class="also" data-safety="human-approval">Human approval for risky actions <span class="ref" data-ref="verdicts">33</span> <span class="ref" data-ref="operator-approval">63</span></span> · <span class="also" data-safety="destructive-commands">Destructive-command blocking <span class="ref" data-ref="threat-rules">34</span></span> · <span class="also" data-safety="self-defense">Self-defence <span class="ref" data-ref="self-defense">45</span></span> · <span class="also" data-safety="cryptomining">Cryptomining detection <span class="ref" data-ref="threat-rules">34</span></span> · <span class="also" data-safety="injection-jailbreak">Prompt-injection and jailbreak rules <span class="ref" data-ref="threat-rules">34</span></span> · <span class="also" data-safety="memory-poisoning">Memory-poisoning rules <span class="ref" data-ref="threat-rules">34</span></span> · <span class="also" data-safety="excessive-agency">Excessive-agency limits <span class="ref" data-ref="threat-rules">34</span></span></p>
 	<p class="gain inline"><span class="k">What you get</span><span>Destructive commands, credential reads and exfiltration attempts stop before they run.</span></p>
 	<footer class="foot"><span>Singularity AIDR · Product Catalog 2026</span><span>singularityrd.com</span><span class="pn"></span></footer>
 </section>
@@ -477,10 +498,10 @@ h2.title.mt4 { margin-top: 7mm; }
 	<div class="stage-block">
 	<div class="stage-intro"><span class="num">5</span><div><h2>Inspect output</h2><p>What the agent reads back is inspected before it can steer the next step.</p></div></div>
 	<ol class="flist">
-		<li id="f-output-scanning" data-feature="output-scanning"><span class="no">50</span><span><b>Tool-output scanning</b><span class="d"> — finds leaked keys, prompt-injection payloads and system-prompt leaks.</span></span></li>
-		<li id="f-output-quarantine" data-feature="output-quarantine"><span class="no">51</span><span><b>Quarantine notice</b><span class="d"> — a risky result is replaced before the model sees it; outbound messages too.</span></span></li>
-		<li id="f-mcp-output" data-feature="mcp-output"><span class="no">52</span><span><b>MCP output inspection</b><span class="d"> — the MCP Gateway scans each result in full before the model gets it.</span></span></li>
-		<li id="f-poisoning-protection" data-feature="poisoning-protection"><span class="no">53</span><span><b>Data and context poisoning protection</b><span class="d"> — instruction files, content read, tool definitions and memory are guarded.</span></span></li>
+		<li id="f-output-scanning" data-feature="output-scanning"><span class="no">59</span><span><b>Tool-output scanning</b><span class="d"> — finds leaked keys, prompt-injection payloads and system-prompt leaks.</span></span></li>
+		<li id="f-output-quarantine" data-feature="output-quarantine"><span class="no">60</span><span><b>Quarantine notice</b><span class="d"> — a risky result is replaced before the model sees it; outbound messages too.</span></span></li>
+		<li id="f-mcp-output" data-feature="mcp-output"><span class="no">61</span><span><b>MCP output inspection</b><span class="d"> — the MCP Gateway scans each result in full before the model gets it.</span></span></li>
+		<li id="f-poisoning-protection" data-feature="poisoning-protection"><span class="no">62</span><span><b>Data and context poisoning protection</b><span class="d"> — instruction files, content read, tool definitions and memory are guarded.</span></span></li>
 	</ol>
 	<div class="highlight solo">
 		<div>
@@ -499,14 +520,14 @@ h2.title.mt4 { margin-top: 7mm; }
 	<div class="stage-block">
 	<div class="stage-intro"><span class="num">6</span><div><h2>Approve and respond</h2><p>When something is suspicious a person decides, and incidents get a recorded, controlled response.</p></div></div>
 	<ol class="flist">
-		<li id="f-operator-approval" data-feature="operator-approval"><span class="no">54</span><span><b>Out-of-band operator approval</b><span class="d"> — a one-time approval from the terminal; the agent cannot approve itself.</span></span></li>
-		<li id="f-dashboard-approvals" data-feature="dashboard-approvals"><span class="no">55</span><span><b>Dashboard approvals</b><span class="d"> — a second person approves in the console: signed, single-use, short-lived.</span></span></li>
-		<li id="f-alerts" data-feature="alerts"><span class="no">56</span><span><b>Slack, Teams, webhook and email alerts</b><span class="d"> — blocks, approval requests and incidents reach your team's channel.</span></span></li>
-		<li id="f-incidents" data-feature="incidents"><span class="no">57</span><span><b>Incidents and evidence chain</b><span class="d"> — blocked decisions in one view, in order, per device.</span></span></li>
-		<li id="f-response-playbook" data-feature="response-playbook"><span class="no">58</span><span><b>Response playbook</b><span class="d"> — the agent is paused, then network-isolated; every step is recorded.</span></span></li>
-		<li id="f-policy-rollout" data-feature="policy-rollout"><span class="no">59</span><span><b>Staged policy rollout</b><span class="d"> — canary agents first, then the fleet; roll back to a previous version.</span></span></li>
-		<li id="f-file-quarantine-snapshot" data-feature="file-quarantine-snapshot"><span class="no">60</span><span><b>File quarantine and snapshots</b><span class="d"> — risky files set aside; protected paths restorable (optional).</span></span></li>
-		<li id="f-operator-cli" data-feature="operator-cli"><span class="no">61</span><span><b>Operator tools</b><span class="d"> — <code>aidr pending</code>, <code>allowlist</code>, <code>audit</code>, <code>doctor</code>.</span></span></li>
+		<li id="f-operator-approval" data-feature="operator-approval"><span class="no">63</span><span><b>Out-of-band operator approval</b><span class="d"> — a one-time approval from the terminal; the agent cannot approve itself.</span></span></li>
+		<li id="f-dashboard-approvals" data-feature="dashboard-approvals"><span class="no">64</span><span><b>Dashboard approvals</b><span class="d"> — a second person approves in the console: signed, single-use, short-lived.</span></span></li>
+		<li id="f-alerts" data-feature="alerts"><span class="no">65</span><span><b>Slack, Teams, webhook and email alerts</b><span class="d"> — blocks, approval requests and incidents reach your team's channel.</span></span></li>
+		<li id="f-incidents" data-feature="incidents"><span class="no">66</span><span><b>Incidents and evidence chain</b><span class="d"> — blocked decisions in one view, in order, per device.</span></span></li>
+		<li id="f-response-playbook" data-feature="response-playbook"><span class="no">67</span><span><b>Response playbook</b><span class="d"> — the agent is paused, then network-isolated; every step is recorded.</span></span></li>
+		<li id="f-policy-rollout" data-feature="policy-rollout"><span class="no">68</span><span><b>Staged policy rollout</b><span class="d"> — canary agents first, then the fleet; roll back to a previous version.</span></span></li>
+		<li id="f-file-quarantine-snapshot" data-feature="file-quarantine-snapshot"><span class="no">69</span><span><b>File quarantine and snapshots</b><span class="d"> — risky files set aside; protected paths restorable (optional).</span></span></li>
+		<li id="f-operator-cli" data-feature="operator-cli"><span class="no">70</span><span><b>Operator tools</b><span class="d"> — <code>aidr pending</code>, <code>allowlist</code>, <code>audit</code>, <code>doctor</code>.</span></span></li>
 	</ol>
 	<p class="gain inline"><span class="k">What you get</span><span>A hijacked agent cannot lift its own block, and the team sees the incident in its own channel.</span></p>
 	</div>
@@ -518,30 +539,30 @@ h2.title.mt4 { margin-top: 7mm; }
 	<div class="stage-block">
 	<div class="stage-intro"><span class="num">7</span><div><h2>Prove and improve</h2><p>Every decision becomes evidence, and simulation results strengthen the policy to close the loop.</p></div></div>
 	<ol class="flist">
-		<li id="f-audit-export" data-feature="audit-export"><span class="no">62</span><span><b>Audit log and export</b><span class="d"> — rule and summary of every decision; no values (JSONL, CSV).</span></span></li>
-		<li id="f-signed-audit-chain" data-feature="signed-audit-chain"><span class="no">63</span><span><b>Signed record chain</b><span class="d"> — Ed25519-signed records for tamper-evident proof.</span></span></li>
-		<li id="f-siem" data-feature="siem"><span class="no">64</span><span><b>SIEM delivery</b><span class="d"> — events to Splunk, Microsoft Sentinel, Elastic and webhooks.</span></span></li>
-		<li id="f-privacy-dashboard" data-feature="privacy-dashboard"><span class="no">65</span><span><b>Browser Privacy dashboard</b><span class="d"> — counts of masked, warned and blocked sends; no content.</span></span></li>
-		<li id="f-attack-simulation" data-feature="attack-simulation"><span class="no">66</span><span><b>Attack simulation and scorecard</b><span class="d"> — <code>aidr simulate</code> tests built-in attacks against your policy, executing nothing.</span></span></li>
+		<li id="f-audit-export" data-feature="audit-export"><span class="no">71</span><span><b>Audit log and export</b><span class="d"> — rule and summary of every decision; no values (JSONL, CSV).</span></span></li>
+		<li id="f-signed-audit-chain" data-feature="signed-audit-chain"><span class="no">72</span><span><b>Signed record chain</b><span class="d"> — Ed25519-signed records for tamper-evident proof.</span></span></li>
+		<li id="f-siem" data-feature="siem"><span class="no">73</span><span><b>SIEM delivery</b><span class="d"> — events to Splunk, Microsoft Sentinel, Elastic and webhooks.</span></span></li>
+		<li id="f-privacy-dashboard" data-feature="privacy-dashboard"><span class="no">74</span><span><b>Browser Privacy dashboard</b><span class="d"> — counts of masked, warned and blocked sends; no content.</span></span></li>
+		<li id="f-attack-simulation" data-feature="attack-simulation"><span class="no">75</span><span><b>Attack simulation and scorecard</b><span class="d"> — <code>aidr simulate</code> tests built-in attacks against your policy, executing nothing.</span></span></li>
 	</ol>
 	<p class="gain inline"><span class="k">What you get</span><span>You can show auditors what happened and improve policy by measuring it.</span></p>
 	</div>
 	<div class="stage-block">
 	<div class="stage-intro"><span class="num">G</span><div><h2>Govern and comply</h2><p>The governance layer spans every stage: which AI is used, who owns it and under which rules.</p></div></div>
 	<ol class="flist">
-		<li id="f-asset-register" data-feature="asset-register"><span class="no">67</span><span><b>AI asset register</b><span class="d"> — agents, MCP, sites and models with owner, purpose, data and risk tier.</span></span></li>
-		<li id="f-ai-bom" data-feature="ai-bom"><span class="no">68</span><span><b>AI-BOM</b><span class="d"> — agents, MCP, models, plugins and known flaws as CycloneDX 1.6.</span></span></li>
-		<li id="f-intake-workflow" data-feature="intake-workflow"><span class="no">69</span><span><b>AI intake and approval workflow</b><span class="d"> — approved or banned status flows straight into enforcement.</span></span></li>
-		<li id="f-policy-change-control" data-feature="policy-change-control"><span class="no">70</span><span><b>Four-eyes policy change</b><span class="d"> — second approval, version history and rollback.</span></span></li>
-		<li id="f-timeboxed-exceptions" data-feature="timeboxed-exceptions"><span class="no">71</span><span><b>Time-boxed exceptions</b><span class="d"> — an exception expires on its own.</span></span></li>
-		<li id="f-framework-mapping" data-feature="framework-mapping"><span class="no">72</span><span><b>Security framework mapping</b><span class="d"> — rules mapped to OWASP LLM, OWASP Agentic and MITRE ATLAS.</span></span></li>
-		<li id="f-governance-frameworks" data-feature="governance-frameworks"><span class="no">73</span><span><b>Governance frameworks</b><span class="d"> — mapping to NIST AI RMF, ISO/IEC 42001 and the EU AI Act.</span></span></li>
-		<li id="f-compliance-report" data-feature="compliance-report"><span class="no">74</span><span><b>KVKK and GDPR evidence report</b><span class="d"> — protection coverage and counts-only evidence in a signable report.</span></span></li>
-		<li id="f-governance-scorecard" data-feature="governance-scorecard"><span class="no">75</span><span><b>Governance scorecard</b><span class="d"> — a scheduled report for executives.</span></span></li>
-		<li id="f-acceptable-use" data-feature="acceptable-use"><span class="no">76</span><span><b>Acceptable-use acknowledgement</b><span class="d"> — in Browser Guard; supports EU AI Act Article 4 literacy.</span></span></li>
-		<li id="f-team-roles" data-feature="team-roles"><span class="no">77</span><span><b>Teams and roles</b><span class="d"> — owner, admin, member, viewer; email invitations.</span></span></li>
-		<li id="f-team-audit" data-feature="team-audit"><span class="no">78</span><span><b>Team audit log</b><span class="d"> — every administrative action, with who did it.</span></span></li>
-		<li id="f-retention" data-feature="retention"><span class="no">79</span><span><b>Retention, legal hold, deletion</b><span class="d"> — per data class; receipted deletion.</span></span></li>
+		<li id="f-asset-register" data-feature="asset-register"><span class="no">76</span><span><b>AI asset register</b><span class="d"> — agents, MCP, sites and models with owner, purpose, data and risk tier.</span></span></li>
+		<li id="f-ai-bom" data-feature="ai-bom"><span class="no">77</span><span><b>AI-BOM</b><span class="d"> — agents, MCP, models, plugins and known flaws as CycloneDX 1.6.</span></span></li>
+		<li id="f-intake-workflow" data-feature="intake-workflow"><span class="no">78</span><span><b>AI intake and approval workflow</b><span class="d"> — approved or banned status flows straight into enforcement.</span></span></li>
+		<li id="f-policy-change-control" data-feature="policy-change-control"><span class="no">79</span><span><b>Four-eyes policy change</b><span class="d"> — second approval, version history and rollback.</span></span></li>
+		<li id="f-timeboxed-exceptions" data-feature="timeboxed-exceptions"><span class="no">80</span><span><b>Time-boxed exceptions</b><span class="d"> — an exception expires on its own.</span></span></li>
+		<li id="f-framework-mapping" data-feature="framework-mapping"><span class="no">81</span><span><b>Security framework mapping</b><span class="d"> — rules mapped to OWASP LLM, OWASP Agentic and MITRE ATLAS.</span></span></li>
+		<li id="f-governance-frameworks" data-feature="governance-frameworks"><span class="no">82</span><span><b>Governance frameworks</b><span class="d"> — mapping to NIST AI RMF, ISO/IEC 42001 and the EU AI Act.</span></span></li>
+		<li id="f-compliance-report" data-feature="compliance-report"><span class="no">83</span><span><b>KVKK and GDPR evidence report</b><span class="d"> — protection coverage and counts-only evidence in a signable report.</span></span></li>
+		<li id="f-governance-scorecard" data-feature="governance-scorecard"><span class="no">84</span><span><b>Governance scorecard</b><span class="d"> — a scheduled report for executives.</span></span></li>
+		<li id="f-acceptable-use" data-feature="acceptable-use"><span class="no">85</span><span><b>Acceptable-use acknowledgement</b><span class="d"> — in Browser Guard; supports EU AI Act Article 4 literacy.</span></span></li>
+		<li id="f-team-roles" data-feature="team-roles"><span class="no">86</span><span><b>Teams and roles</b><span class="d"> — owner, admin, member, viewer; email invitations.</span></span></li>
+		<li id="f-team-audit" data-feature="team-audit"><span class="no">87</span><span><b>Team audit log</b><span class="d"> — every administrative action, with who did it.</span></span></li>
+		<li id="f-retention" data-feature="retention"><span class="no">88</span><span><b>Retention, legal hold, deletion</b><span class="d"> — per data class; receipted deletion.</span></span></li>
 	</ol>
 	<p class="lbl mt3">Frameworks mapped</p>
 	<div><span class="chip">OWASP LLM Top 10 (2025)</span><span class="chip">OWASP Agentic Top 10 (2026)</span><span class="chip">MITRE ATLAS</span><span class="chip">NIST AI RMF</span><span class="chip">ISO/IEC 42001</span><span class="chip">EU AI Act</span><span class="chip">KVKK</span><span class="chip">GDPR</span></div>
@@ -555,22 +576,22 @@ h2.title.mt4 { margin-top: 7mm; }
 	<header class="hdr"><span class="brand"><span class="badge" aria-hidden="true"></span><b>Singularity AIDR</b>Product Catalog 2026</span><span class="sec">Platform · Editions</span></header>
 	<div class="stage-intro"><span class="num">+</span><div><h2>Platform and deployment</h2><p>Every stage runs on one platform: in the cloud, on-premises or air-gapped.</p></div></div>
 	<ol class="flist cols">
-		<li id="f-tenancy" data-feature="tenancy"><span class="no">80</span><span><b>Tenant isolation</b><span class="d"> — row-level security in the database.</span></span></li>
-		<li id="f-identity" data-feature="identity"><span class="no">81</span><span><b>Identity</b><span class="d"> — Entra ID, SAML, SCIM, MFA, session revocation.</span></span></li>
-		<li id="f-enrollment" data-feature="enrollment"><span class="no">82</span><span><b>Device enrollment</b><span class="d"> — short-code approval; one-time tokens for CI.</span></span></li>
-		<li id="f-download-center" data-feature="download-center"><span class="no">83</span><span><b>Download center</b><span class="d"> — every package verified by SHA&#8209;256.</span></span></li>
-		<li id="f-aidr-cli" data-feature="aidr-cli"><span class="no">84</span><span><b><code>aidr</code> command line</b><span class="d"> — setup, status, configuration, key rotation.</span></span></li>
-		<li id="f-endpoint-installers" data-feature="endpoint-installers"><span class="no">85</span><span><b>Endpoint rollout</b><span class="d"> — local installer; Windows, macOS, Linux scripts.</span></span></li>
-		<li id="f-local-mode" data-feature="local-mode"><span class="no">86</span><span><b>Local mode</b><span class="d"> — protection from install, no account or network.</span></span></li>
-		<li id="f-integrity" data-feature="integrity"><span class="no">87</span><span><b>Signed integrity</b><span class="d"> — signed packages, rules and intel.</span></span></li>
-		<li id="f-compose" data-feature="compose"><span class="no">88</span><span><b>Docker Compose</b><span class="d"> — one on-prem host; three resource profiles.</span></span></li>
-		<li id="f-helm" data-feature="helm"><span class="no">89</span><span><b>Kubernetes Helm</b><span class="d"> — refuses to install with a weak configuration.</span></span></li>
-		<li id="f-air-gapped" data-feature="air-gapped"><span class="no">90</span><span><b>Air-gapped install</b><span class="d"> — signed offline licence and packs.</span></span></li>
-		<li id="f-tls" data-feature="tls"><span class="no">91</span><span><b>TLS</b><span class="d"> — ACME renewal or your own certificate.</span></span></li>
-		<li id="f-upgrade-backup" data-feature="upgrade-backup"><span class="no">92</span><span><b>Upgrades and backups</b><span class="d"> — interruption-safe upgrades, encrypted backups.</span></span></li>
-		<li id="f-monitoring" data-feature="monitoring"><span class="no">93</span><span><b>Monitoring and alerting</b><span class="d"> — readiness checks, Prometheus rules.</span></span></li>
-		<li id="f-operator-admin" data-feature="operator-admin"><span class="no">94</span><span><b>Operator administration</b><span class="d"> — licences and usage, behind MFA.</span></span></li>
-		<li id="f-version-check" data-feature="version-check"><span class="no">95</span><span><b>Update notices</b><span class="d"> — tells you when a new version is out.</span></span></li>
+		<li id="f-tenancy" data-feature="tenancy"><span class="no">89</span><span><b>Tenant isolation</b><span class="d"> — row-level security in the database.</span></span></li>
+		<li id="f-identity" data-feature="identity"><span class="no">90</span><span><b>Identity</b><span class="d"> — Entra ID, SAML, SCIM, MFA, session revocation.</span></span></li>
+		<li id="f-enrollment" data-feature="enrollment"><span class="no">91</span><span><b>Device enrollment</b><span class="d"> — short-code approval; one-time tokens for CI.</span></span></li>
+		<li id="f-download-center" data-feature="download-center"><span class="no">92</span><span><b>Download center</b><span class="d"> — every package verified by SHA&#8209;256.</span></span></li>
+		<li id="f-aidr-cli" data-feature="aidr-cli"><span class="no">93</span><span><b><code>aidr</code> command line</b><span class="d"> — setup, status, configuration, key rotation.</span></span></li>
+		<li id="f-endpoint-installers" data-feature="endpoint-installers"><span class="no">94</span><span><b>Endpoint rollout</b><span class="d"> — local installer; Windows, macOS, Linux scripts.</span></span></li>
+		<li id="f-local-mode" data-feature="local-mode"><span class="no">95</span><span><b>Local mode</b><span class="d"> — protection from install, no account or network.</span></span></li>
+		<li id="f-integrity" data-feature="integrity"><span class="no">96</span><span><b>Signed integrity</b><span class="d"> — signed packages, rules and intel.</span></span></li>
+		<li id="f-compose" data-feature="compose"><span class="no">97</span><span><b>Docker Compose</b><span class="d"> — one on-prem host; three resource profiles.</span></span></li>
+		<li id="f-helm" data-feature="helm"><span class="no">98</span><span><b>Kubernetes Helm</b><span class="d"> — refuses to install with a weak configuration.</span></span></li>
+		<li id="f-air-gapped" data-feature="air-gapped"><span class="no">99</span><span><b>Air-gapped install</b><span class="d"> — signed offline licence and packs.</span></span></li>
+		<li id="f-tls" data-feature="tls"><span class="no">100</span><span><b>TLS</b><span class="d"> — ACME renewal or your own certificate.</span></span></li>
+		<li id="f-upgrade-backup" data-feature="upgrade-backup"><span class="no">101</span><span><b>Upgrades and backups</b><span class="d"> — interruption-safe upgrades, encrypted backups.</span></span></li>
+		<li id="f-monitoring" data-feature="monitoring"><span class="no">102</span><span><b>Monitoring and alerting</b><span class="d"> — readiness checks, Prometheus rules.</span></span></li>
+		<li id="f-operator-admin" data-feature="operator-admin"><span class="no">103</span><span><b>Operator administration</b><span class="d"> — licences and usage, behind MFA.</span></span></li>
+		<li id="f-version-check" data-feature="version-check"><span class="no">104</span><span><b>Update notices</b><span class="d"> — tells you when a new version is out.</span></span></li>
 	</ol>
 	<h2 class="title mt4" id="p-editions">Editions</h2>
 	<table class="t matrix">

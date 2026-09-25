@@ -157,6 +157,11 @@ body { font-size: 9pt; }
 .flist.cols { display: grid; grid-template-columns: 1fr 1fr; column-gap: 7mm; }
 .flist.cols li:nth-child(2) { border-top: 0.6pt solid var(--ink); }
 .lsub { margin: 3mm 0 1.2mm; font-size: 6.9pt; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); font-weight: 650; }
+.lsub.acc { margin-top: 4mm; color: var(--accent-ink); }
+.xref { margin: 1.6mm 0 0; font-size: 7.8pt; line-height: 1.5; color: var(--body); }
+.xref .k { margin-right: 2mm; font-size: 6.7pt; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+.xref .also { white-space: nowrap; }
+.ref { color: var(--accent-ink); font-weight: 650; font-variant-numeric: tabular-nums; }
 .stage-intro { display: flex; align-items: flex-start; gap: 3mm; margin: 0 0 2.6mm; }
 .stage-intro .num { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 7mm; height: 7mm; border-radius: 50%; background: var(--ink); color: #fff; font-size: 8.5pt; font-weight: 700; }
 .stage-intro h2 { margin: 0; font-size: 15pt; line-height: 1.2; font-weight: 650; color: var(--ink); }
@@ -165,6 +170,7 @@ body { font-size: 9pt; }
 .gain.inline { margin-top: 3mm; }
 .highlight { display: grid; grid-template-columns: 1.5fr 1fr; gap: 5mm; align-items: center; margin-top: 3.5mm; padding: 4mm 5mm; border-radius: 2.4mm; background: #000; color: #cfcfcf; font-size: 8.8pt; line-height: 1.45; }
 .highlight .lbl { color: #8fa9f5; }
+.highlight .ref { color: #fff; }
 .highlight h3 { color: #fff; font-size: 10.5pt; margin-bottom: 1.4mm; }
 .highlight b { color: #fff; }
 .highlight ul.b li::before { background: #8fa9f5; }
@@ -179,7 +185,8 @@ body { font-size: 9pt; }
 .cov td.y svg { width: 3.2mm; height: 3.2mm; margin-right: 1mm; vertical-align: -0.5mm; fill: none; stroke: var(--accent); stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
 .cov td.n { color: var(--faint); }
 .cov td.st { font-weight: 650; color: var(--ink); white-space: nowrap; }
-.cov td.st span { display: inline-flex; align-items: center; justify-content: center; width: 4.4mm; height: 4.4mm; margin-right: 1.6mm; border-radius: 50%; background: var(--ink); color: #fff; font-size: 6.6pt; }
+.cov td.st .nm { display: inline-block; vertical-align: top; }
+.cov td.st .sn { vertical-align: top; display: inline-flex; align-items: center; justify-content: center; width: 4.4mm; height: 4.4mm; margin-right: 1.6mm; border-radius: 50%; background: var(--ink); color: #fff; font-size: 6.6pt; }
 .cov { font-size: 8.2pt; }
 .ba { display: grid; grid-template-columns: 30mm 1fr; border: 0.6pt solid var(--rule-strong); border-radius: 2mm; overflow: hidden; font-size: 8.6pt; line-height: 1.55; }
 .ba > div { padding: 2mm 3.2mm; border-top: 0.5pt solid var(--rule); }
@@ -305,7 +312,7 @@ h2.title.mt4 { margin-top: 7mm; }
 		<div class="it"><b><span>1</span>Keşfet</b>Filo envanteri · MCP keşfi · Sürekli envanter · Gölge yapay zekâ</div>
 		<div class="it"><b><span>2</span>Değerlendir</b>CVE taraması · Taramadan politikaya · Skill taraması · Duruş paneli</div>
 		<div class="it"><b><span>3</span>Veriyi koru</b>Browser Guard maskeleme · İstem koruması · DLP · Tam veri eşleştirme</div>
-		<div class="it"><b><span>4</span>Eylemi denetle</b>allow/ask/deny · MCP Gateway · Zehirli akış · Yetki profilleri</div>
+		<div class="it"><b><span>4</span>Eylemi denetle</b>allow/ask/deny · MCP Gateway · Zehirli akış · Yapay zekâ güvenliği (safety)</div>
 		<div class="it"><b><span>5</span>Çıktıyı incele</b>Çıktı taraması · Karantina · Zehirlenme koruması</div>
 		<div class="it"><b><span>6</span>Onayla ve müdahale et</b>Operatör onayı · Panelden onay · Uyarılar · Müdahale</div>
 		<div class="it"><b><span>7</span>Kanıtla ve iyileştir</b>Denetim kaydı · SIEM · Simülasyon, politikaya geri döner</div>
@@ -324,17 +331,18 @@ h2.title.mt4 { margin-top: 7mm; }
 <section class="page" id="p-coverage" aria-label="Kapsam ve farklar">
 	<header class="hdr"><span class="brand"><span class="badge" aria-hidden="true"></span><b>Singularity AIDR</b>Ürün Kataloğu 2026</span><span class="sec">Kapsam</span></header>
 	<h2 class="title">Kapsam: <em>her aşama, her yüzey</em></h2>
-	<p class="lead">Tablo, her aşamanın hangi yüzeyde ve hangi özellikle karşılandığını gösterir. Boş hücreler kapsam dışıdır.</p>
+	<p class="lead">Tablo, her aşamanın hangi yüzeyde ve hangi özellikle karşılandığını gösterir; son satır ajanın kendi davranışından doğan riskleri kapsar. Boş hücreler kapsam dışıdır.</p>
 	<table class="t cov">
 		<thead><tr><th style="width:21%">Aşama</th><th>Kodlama ajanları</th><th>MCP araçları</th><th>Yapay zekâ sohbet siteleri</th><th>Yapay zekâ altyapısı</th><th>Yönetişim</th></tr></thead>
 		<tbody>
-			<tr><td class="st"><span>1</span>Keşfet</td><td class="y"><svg class=""><use href="#i-check"/></svg>filo envanteri</td><td class="y"><svg class=""><use href="#i-check"/></svg>MCP keşfi</td><td class="y"><svg class=""><use href="#i-check"/></svg>gölge yapay zekâ</td><td class="y"><svg class=""><use href="#i-check"/></svg>sürekli envanter</td><td class="y"><svg class=""><use href="#i-check"/></svg>varlık envanteri</td></tr>
-			<tr><td class="st"><span>2</span>Değerlendir</td><td class="y"><svg class=""><use href="#i-check"/></svg>skill taraması</td><td class="y"><svg class=""><use href="#i-check"/></svg><span data-fact="mcp-categories">14</span> risk kategorisi</td><td class="y"><svg class=""><use href="#i-check"/></svg>İzle modu ölçümü</td><td class="y"><svg class=""><use href="#i-check"/></svg>CVE taraması</td><td class="y"><svg class=""><use href="#i-check"/></svg>duruş paneli</td></tr>
-			<tr><td class="st"><span>3</span>Veriyi koru</td><td class="y"><svg class=""><use href="#i-check"/></svg>istem koruması, DLP</td><td class="y"><svg class=""><use href="#i-check"/></svg>argümanlarda DLP</td><td class="y"><svg class=""><use href="#i-check"/></svg>geri alınabilir maskeleme</td><td class="n">—</td><td class="y"><svg class=""><use href="#i-check"/></svg>kurumsal politika</td></tr>
-			<tr><td class="st"><span>4</span>Eylemi denetle</td><td class="y"><svg class=""><use href="#i-check"/></svg>allow · ask · deny</td><td class="y"><svg class=""><use href="#i-check"/></svg>MCP politikası, Gateway</td><td class="y"><svg class=""><use href="#i-check"/></svg>site engelleme</td><td class="y"><svg class=""><use href="#i-check"/></svg>taramadan politikaya</td><td class="y"><svg class=""><use href="#i-check"/></svg>dört göz politika</td></tr>
-			<tr><td class="st"><span>5</span>Çıktıyı incele</td><td class="y"><svg class=""><use href="#i-check"/></svg>çıktı taraması, zehirlenme</td><td class="y"><svg class=""><use href="#i-check"/></svg>sonuç denetimi</td><td class="n">—</td><td class="n">—</td><td class="n">—</td></tr>
-			<tr><td class="st"><span>6</span>Onayla ve müdahale et</td><td class="y"><svg class=""><use href="#i-check"/></svg>operatör onayı</td><td class="y"><svg class=""><use href="#i-check"/></svg>araç seti onayı</td><td class="y"><svg class=""><use href="#i-check"/></svg>Onayla modu</td><td class="n">—</td><td class="y"><svg class=""><use href="#i-check"/></svg>panelden onay, uyarılar</td></tr>
-			<tr><td class="st"><span>7</span>Kanıtla ve iyileştir</td><td class="y"><svg class=""><use href="#i-check"/></svg>denetim kaydı, simülasyon</td><td class="y"><svg class=""><use href="#i-check"/></svg>bulgu kaydı</td><td class="y"><svg class=""><use href="#i-check"/></svg>sayım paneli</td><td class="y"><svg class=""><use href="#i-check"/></svg>CVE bulguları</td><td class="y"><svg class=""><use href="#i-check"/></svg>KVKK/GDPR raporu</td></tr>
+			<tr><td class="st"><span class="sn">1</span><span class="nm">Keşfet</span></td><td class="y"><svg class=""><use href="#i-check"/></svg>filo envanteri</td><td class="y"><svg class=""><use href="#i-check"/></svg>MCP keşfi</td><td class="y"><svg class=""><use href="#i-check"/></svg>gölge yapay zekâ</td><td class="y"><svg class=""><use href="#i-check"/></svg>sürekli envanter</td><td class="y"><svg class=""><use href="#i-check"/></svg>varlık envanteri</td></tr>
+			<tr><td class="st"><span class="sn">2</span><span class="nm">Değerlendir</span></td><td class="y"><svg class=""><use href="#i-check"/></svg>skill taraması</td><td class="y"><svg class=""><use href="#i-check"/></svg><span data-fact="mcp-categories">14</span> risk kategorisi</td><td class="y"><svg class=""><use href="#i-check"/></svg>İzle modu ölçümü</td><td class="y"><svg class=""><use href="#i-check"/></svg>CVE taraması</td><td class="y"><svg class=""><use href="#i-check"/></svg>duruş paneli</td></tr>
+			<tr><td class="st"><span class="sn">3</span><span class="nm">Veriyi koru</span></td><td class="y"><svg class=""><use href="#i-check"/></svg>istem koruması, DLP</td><td class="y"><svg class=""><use href="#i-check"/></svg>argümanlarda DLP</td><td class="y"><svg class=""><use href="#i-check"/></svg>geri alınabilir maskeleme</td><td class="n">—</td><td class="y"><svg class=""><use href="#i-check"/></svg>kurumsal politika</td></tr>
+			<tr><td class="st"><span class="sn">4</span><span class="nm">Eylemi denetle</span></td><td class="y"><svg class=""><use href="#i-check"/></svg>allow · ask · deny</td><td class="y"><svg class=""><use href="#i-check"/></svg>MCP politikası, Gateway</td><td class="y"><svg class=""><use href="#i-check"/></svg>site engelleme</td><td class="y"><svg class=""><use href="#i-check"/></svg>taramadan politikaya</td><td class="y"><svg class=""><use href="#i-check"/></svg>dört göz politika</td></tr>
+			<tr><td class="st"><span class="sn">5</span><span class="nm">Çıktıyı incele</span></td><td class="y"><svg class=""><use href="#i-check"/></svg>çıktı taraması, zehirlenme</td><td class="y"><svg class=""><use href="#i-check"/></svg>sonuç denetimi</td><td class="n">—</td><td class="n">—</td><td class="n">—</td></tr>
+			<tr><td class="st"><span class="sn">6</span><span class="nm">Onayla ve müdahale et</span></td><td class="y"><svg class=""><use href="#i-check"/></svg>operatör onayı</td><td class="y"><svg class=""><use href="#i-check"/></svg>araç seti onayı</td><td class="y"><svg class=""><use href="#i-check"/></svg>Onayla modu</td><td class="n">—</td><td class="y"><svg class=""><use href="#i-check"/></svg>panelden onay, uyarılar</td></tr>
+			<tr><td class="st"><span class="sn">7</span><span class="nm">Kanıtla ve iyileştir</span></td><td class="y"><svg class=""><use href="#i-check"/></svg>denetim kaydı, simülasyon</td><td class="y"><svg class=""><use href="#i-check"/></svg>bulgu kaydı</td><td class="y"><svg class=""><use href="#i-check"/></svg>sayım paneli</td><td class="y"><svg class=""><use href="#i-check"/></svg>CVE bulguları</td><td class="y"><svg class=""><use href="#i-check"/></svg>KVKK/GDPR raporu</td></tr>
+			<tr><td class="st"><span class="sn">S</span><span class="nm">Yapay zekâ güvenliği<br>(<span lang="en">safety</span>)</span></td><td class="y"><svg class=""><use href="#i-check"/></svg>insan onayı, kaçak ajan, sabotaj</td><td class="y"><svg class=""><use href="#i-check"/></svg>geri alınamaz eylem onayı</td><td class="n">—</td><td class="y"><svg class=""><use href="#i-check"/></svg>güvenli model yükleme</td><td class="y"><svg class=""><use href="#i-check"/></svg>insan gözetimi ölçümleri</td></tr>
 		</tbody>
 	</table>
 	<h3 class="mt4">Neden Singularity AIDR?</h3>
@@ -345,6 +353,27 @@ h2.title.mt4 { margin-top: 7mm; }
 		<div class="block"><div class="head"><span class="ic k"><svg class="i"><use href="#i-loop"/></svg></span><h4>Ajanlar ve sohbet için aynı motor</h4></div><p class="mb0">Aynı TR/EN kurallar tarayıcıda, ajanların DLP'sinde ve komut satırında çalışır.</p></div>
 		<div class="block"><div class="head"><span class="ic k"><svg class="i"><use href="#i-usercheck"/></svg></span><h4>Denetlenebilir kararlar</h4></div><p class="mb0">Kurallar okunabilir veridir; onayı ajan değil, bir insan verir.</p></div>
 		<div class="block"><div class="head"><span class="ic k"><svg class="i"><use href="#i-server"/></svg></span><h4>Kurulum seçeneği sizin</h4></div><p class="mb0">Bulut, kurum içi ya da ağdan yalıtılmış; lisans bitse de yerel koruma sürer.</p></div>
+	</div>
+	<div class="highlight mt4">
+		<div>
+			<p class="lbl">Öne çıkan · Eylemi denetle <span class="ref" data-ref="lethal-trifecta">47</span></p>
+			<h3>Zehirli akış (lethal trifecta) ve saldırı zinciri tespiti</h3>
+			<p class="mb0">Bir ajan aynı oturumda özel veriye dokunur, güvenilmeyen içerik okur ve dış bir kanala erişebilirse veri sızdırmak için gereken her şey bir aradadır. AIDR oturum boyunca bu üç koşulu izler ve zinciri tamamlayacak adımı durdurur; veri sızdırma ve injection'dan eyleme giden zincirler de yakalanır.</p>
+		</div>
+		<figure class="diagram" style="margin:0">
+			<svg viewBox="0 0 300 214" role="img" aria-label="Özel veri, güvenilmeyen içerik ve dış kanal kesiştiğinde adım durur">
+				<g fill="#ffffff" fill-opacity="0.05" stroke="#ffffff" stroke-opacity="0.55" stroke-width="1.2">
+					<circle cx="112" cy="80" r="64"/><circle cx="188" cy="80" r="64"/><circle cx="150" cy="144" r="64"/>
+				</g>
+				<g font-size="12.5" fill="#ffffff" text-anchor="middle" font-weight="700">
+					<text x="86" y="62">Özel veri</text>
+					<text x="206" y="56">Güvenilmeyen</text><text x="206" y="71">içerik</text>
+					<text x="150" y="186">Dış kanal</text>
+				</g>
+				<rect x="106" y="94" width="88" height="22" rx="11" fill="#3862e8"/>
+				<text x="150" y="109" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">adım durur</text>
+			</svg>
+		</figure>
 	</div>
 	<footer class="foot"><span>Singularity AIDR · Ürün Kataloğu 2026</span><span>singularityrd.com</span><span class="pn"></span></footer>
 </section>
@@ -400,7 +429,7 @@ h2.title.mt4 { margin-top: 7mm; }
 		<li id="f-guard-modes" data-feature="guard-modes"><span class="no">13</span><span><b>Dört koruma modu</b><span class="d"> — Otomatik maskele, Onayla, Engelle, İzle; ölçümden tam korumaya.</span></span></li>
 		<li id="f-paste-protection" data-feature="paste-protection"><span class="no">14</span><span><b>Yapıştırma koruması</b><span class="d"> — panodaki metin istem kutusuna girmeden maskelenir.</span></span></li>
 		<li id="f-file-protection" data-feature="file-protection"><span class="no">15</span><span><b>Dosya koruması</b><span class="d"> — CSV, JSON, .env ve kodun temiz kopyası yüklenir; formül enjeksiyonu önlenir.</span></span></li>
-		<li id="f-office-pdf-masking" data-feature="office-pdf-masking"><span class="no">16</span><span><b>Office ve PDF maskeleme</b><span class="d"> — DOCX, XLSX, PPTX ve PDF yüklemeleri site almadan taranır ve maskelenir.</span></span></li>
+		<li id="f-office-pdf-protection" data-feature="office-pdf-protection"><span class="no">16</span><span><b>Office ve PDF koruması</b><span class="d"> — Word, Excel, PowerPoint maskeli kopyayla yüklenir; hassas veri içeren PDF durdurulur.</span></span></li>
 		<li id="f-custom-terms" data-feature="custom-terms"><span class="no">17</span><span><b>Kuruma özel terimler</b><span class="d"> — proje kod adları, iç sunucu adları gibi sözcükler maskelenir.</span></span></li>
 		<li id="f-exact-data-match" data-feature="exact-data-match"><span class="no">18</span><span><b>Tam veri eşleştirme</b><span class="d"> — kendi müşteri kayıtlarınız yalnızca parmak iziyle tanınır.</span></span></li>
 		<li id="f-injection-coaching" data-feature="injection-coaching"><span class="no">19</span><span><b>Prompt injection uyarısı</b><span class="d"> — riskli metin gönderilmeden kullanıcıya Türkçe ya da İngilizce açıklanır.</span></span></li>
@@ -447,27 +476,19 @@ h2.title.mt4 { margin-top: 7mm; }
 		<li id="f-canary-tokens" data-feature="canary-tokens"><span class="no">48</span><span><b>Tuzak kimlik bilgileri</b><span class="d"> — ele geçirilmiş bir ajanı sahte anahtarlara dokunduğu anda yakalar.</span></span></li>
 		<li id="f-permission-profiles" data-feature="permission-profiles"><span class="no">49</span><span><b>Ajan yetki profilleri</b><span class="d"> — ajan ya da depo başına izinli araç, MCP, yol, alan adı ve komut; şablonlar.</span></span></li>
 	</ol>
-	<div class="highlight">
-		<div>
-			<p class="lbl">Öne çıkan</p>
-			<h3>Zehirli akış (lethal trifecta) ve saldırı zinciri tespiti</h3>
-			<p class="mb0">Bir ajan aynı oturumda özel veriye dokunur, güvenilmeyen içerik okur ve dış bir kanala erişebilirse veri sızdırmak için gereken her şey bir aradadır. AIDR oturum boyunca bu üç koşulu izler ve zinciri tamamlayacak adımı durdurur; veri sızdırma ve injection'dan eyleme giden zincirler de yakalanır.</p>
-		</div>
-		<figure class="diagram" style="margin:0">
-			<svg viewBox="0 0 300 214" role="img" aria-label="Özel veri, güvenilmeyen içerik ve dış kanal kesiştiğinde adım durur">
-				<g fill="#ffffff" fill-opacity="0.05" stroke="#ffffff" stroke-opacity="0.55" stroke-width="1.2">
-					<circle cx="112" cy="80" r="64"/><circle cx="188" cy="80" r="64"/><circle cx="150" cy="144" r="64"/>
-				</g>
-				<g font-size="12.5" fill="#ffffff" text-anchor="middle" font-weight="700">
-					<text x="86" y="62">Özel veri</text>
-					<text x="206" y="56">Güvenilmeyen</text><text x="206" y="71">içerik</text>
-					<text x="150" y="186">Dış kanal</text>
-				</g>
-				<rect x="106" y="94" width="88" height="22" rx="11" fill="#3862e8"/>
-				<text x="150" y="109" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">adım durur</text>
-			</svg>
-		</figure>
-	</div>
+	<p class="lsub acc">Yapay zekâ güvenliği (<span lang="en">safety</span>) · ajanın kendi davranışından doğan riskler</p>
+	<ol class="flist">
+		<li id="f-runaway-guardrails" data-feature="runaway-guardrails"><span class="no">50</span><span><b>Kaçak ajan ve bütçe sınırları</b><span class="d"> — döngü, hata tekrarı, çağrı patlaması ya da bütçe aşımında ajan insanı bekler.</span></span></li>
+		<li id="f-sabotage-detection" data-feature="sabotage-detection"><span class="no">51</span><span><b>Ödül istismarı ve sabotaj tespiti</b><span class="d"> — test silme, kanca atlama, CI kapatma ya da force-push onay ister.</span></span></li>
+		<li id="f-autonomy-escalation" data-feature="autonomy-escalation"><span class="no">52</span><span><b>Özerklik yükseltme engeli</b><span class="d"> — ajanın başka bir ajanı izinsiz, YOLO ya da tam otomatik modda başlatması durur.</span></span></li>
+		<li id="f-irreversible-actions" data-feature="irreversible-actions"><span class="no">53</span><span><b>Geri alınamaz eylem koruması</b><span class="d"> — veritabanı ve bulut silme, terraform destroy, yayımlama ve adınıza mesaj onay ister.</span></span></li>
+		<li id="f-safe-model-loading" data-feature="safe-model-loading"><span class="no">54</span><span><b>Güvenli model yükleme</b><span class="d"> — güvensiz pickle/torch.load, trust_remote_code ve güvenilmeyen model indirme işaretlenir.</span></span></li>
+		<li id="f-secure-code-guardrails" data-feature="secure-code-guardrails"><span class="no">55</span><span><b>Güvenli kod korkulukları</b><span class="d"> — TLS kapatma, SQL birleştirme, girdide eval ve zayıf şifreleme yazılırken işaretlenir.</span></span></li>
+		<li id="f-agent-env-posture" data-feature="agent-env-posture"><span class="no">56</span><span><b>Ajan ortamı güvenlik duruşu</b><span class="d"> — YOLO modu, root, Docker soketi, yönetici anahtarı, sandbox yokluğu; çözümüyle.</span></span></li>
+		<li id="f-content-safety-policy" data-feature="content-safety-policy"><span class="no">57</span><span><b>Jailbreak ve içerik güvenliği politikası</b><span class="d"> — jailbreak ve yasak içerik istekleri kategoriye göre uyarılır ya da durdurulur.</span></span></li>
+		<li id="f-oversight-metrics" data-feature="oversight-metrics"><span class="no">58</span><span><b>İnsan gözetimi ölçümleri</b><span class="d"> — onay oranı, karar süresi ve sorgusuz onay işaretleri yönetişim skor kartında.</span></span></li>
+	</ol>
+	<p class="xref"><span class="k">Ayrıca kapsanır</span><span class="also" data-safety="human-approval">Riskli eylemde insan onayı <span class="ref" data-ref="verdicts">33</span> <span class="ref" data-ref="operator-approval">63</span></span> · <span class="also" data-safety="destructive-commands">Yıkıcı komut engelleme <span class="ref" data-ref="threat-rules">34</span></span> · <span class="also" data-safety="self-defense">Öz-savunma <span class="ref" data-ref="self-defense">45</span></span> · <span class="also" data-safety="cryptomining">Kripto madenciliği tespiti <span class="ref" data-ref="threat-rules">34</span></span> · <span class="also" data-safety="injection-jailbreak">Prompt injection ve jailbreak kuralları <span class="ref" data-ref="threat-rules">34</span></span> · <span class="also" data-safety="memory-poisoning">Bellek zehirleme kuralları <span class="ref" data-ref="threat-rules">34</span></span> · <span class="also" data-safety="excessive-agency">Aşırı yetki sınırları <span class="ref" data-ref="threat-rules">34</span></span></p>
 	<p class="gain inline"><span class="k">Bu aşamada ne kazanırsınız</span><span>Yıkıcı komutlar, kimlik bilgisi okuma ve veri sızdırma girişimleri çalışmadan durur.</span></p>
 	<footer class="foot"><span>Singularity AIDR · Ürün Kataloğu 2026</span><span>singularityrd.com</span><span class="pn"></span></footer>
 </section>
@@ -477,10 +498,10 @@ h2.title.mt4 { margin-top: 7mm; }
 	<div class="stage-block">
 	<div class="stage-intro"><span class="num">5</span><div><h2>Çıktıyı incele</h2><p>Ajanın geri okuduğu sonuçlar, bir sonraki adımı yönlendirmeden önce taranır.</p></div></div>
 	<ol class="flist">
-		<li id="f-output-scanning" data-feature="output-scanning"><span class="no">50</span><span><b>Araç çıktısı taraması</b><span class="d"> — sızan anahtar, prompt injection yükü ve sistem istemi sızıntısı bulunur.</span></span></li>
-		<li id="f-output-quarantine" data-feature="output-quarantine"><span class="no">51</span><span><b>Karantina bildirimi</b><span class="d"> — riskli sonuç modele ulaşmadan değiştirilir; giden mesajlar da denetlenir.</span></span></li>
-		<li id="f-mcp-output" data-feature="mcp-output"><span class="no">52</span><span><b>MCP çıktı denetimi</b><span class="d"> — MCP Gateway sonucu modele vermeden tam olarak tarar.</span></span></li>
-		<li id="f-poisoning-protection" data-feature="poisoning-protection"><span class="no">53</span><span><b>Veri ve bağlam zehirlenmesi koruması</b><span class="d"> — talimat dosyaları, okunan içerik, araç tanımları ve bellek korunur.</span></span></li>
+		<li id="f-output-scanning" data-feature="output-scanning"><span class="no">59</span><span><b>Araç çıktısı taraması</b><span class="d"> — sızan anahtar, prompt injection yükü ve sistem istemi sızıntısı bulunur.</span></span></li>
+		<li id="f-output-quarantine" data-feature="output-quarantine"><span class="no">60</span><span><b>Karantina bildirimi</b><span class="d"> — riskli sonuç modele ulaşmadan değiştirilir; giden mesajlar da denetlenir.</span></span></li>
+		<li id="f-mcp-output" data-feature="mcp-output"><span class="no">61</span><span><b>MCP çıktı denetimi</b><span class="d"> — MCP Gateway sonucu modele vermeden tam olarak tarar.</span></span></li>
+		<li id="f-poisoning-protection" data-feature="poisoning-protection"><span class="no">62</span><span><b>Veri ve bağlam zehirlenmesi koruması</b><span class="d"> — talimat dosyaları, okunan içerik, araç tanımları ve bellek korunur.</span></span></li>
 	</ol>
 	<div class="highlight solo">
 		<div>
@@ -499,14 +520,14 @@ h2.title.mt4 { margin-top: 7mm; }
 	<div class="stage-block">
 	<div class="stage-intro"><span class="num">6</span><div><h2>Onayla ve müdahale et</h2><p>Şüpheli durumda karar insana kalır; olaylara kayıtlı ve kontrollü yanıt verilir.</p></div></div>
 	<ol class="flist">
-		<li id="f-operator-approval" data-feature="operator-approval"><span class="no">54</span><span><b>Bant dışı operatör onayı</b><span class="d"> — terminalden tek seferlik onay; ajan kendi engelini kaldıramaz.</span></span></li>
-		<li id="f-dashboard-approvals" data-feature="dashboard-approvals"><span class="no">55</span><span><b>Panelden onay</b><span class="d"> — başka bir kişi panelden imzalı, tek kullanımlık ve süreli onay verir.</span></span></li>
-		<li id="f-alerts" data-feature="alerts"><span class="no">56</span><span><b>Slack, Teams, webhook ve e-posta uyarıları</b><span class="d"> — engelleme, onay isteği ve olaylar ekibin kanalına düşer.</span></span></li>
-		<li id="f-incidents" data-feature="incidents"><span class="no">57</span><span><b>Olaylar ve kanıt zinciri</b><span class="d"> — engellenen kararlar, cihaz bazında sırasıyla tek görünümde.</span></span></li>
-		<li id="f-response-playbook" data-feature="response-playbook"><span class="no">58</span><span><b>Müdahale senaryosu</b><span class="d"> — ajan önce duraklatılır, sonra ağdan yalıtılır; her adım kayıtlı.</span></span></li>
-		<li id="f-policy-rollout" data-feature="policy-rollout"><span class="no">59</span><span><b>Aşamalı politika dağıtımı</b><span class="d"> — önce kanarya ajanlar, sonra filo; önceki sürüme dönüş.</span></span></li>
-		<li id="f-file-quarantine-snapshot" data-feature="file-quarantine-snapshot"><span class="no">60</span><span><b>Dosya karantinası ve anlık görüntü</b><span class="d"> — riskli dosya ayrılır; korunan yol geri yüklenir (isteğe bağlı).</span></span></li>
-		<li id="f-operator-cli" data-feature="operator-cli"><span class="no">61</span><span><b>Operatör araçları</b><span class="d"> — <code>aidr pending</code>, <code>allowlist</code>, <code>audit</code>, <code>doctor</code>.</span></span></li>
+		<li id="f-operator-approval" data-feature="operator-approval"><span class="no">63</span><span><b>Bant dışı operatör onayı</b><span class="d"> — terminalden tek seferlik onay; ajan kendi engelini kaldıramaz.</span></span></li>
+		<li id="f-dashboard-approvals" data-feature="dashboard-approvals"><span class="no">64</span><span><b>Panelden onay</b><span class="d"> — başka bir kişi panelden imzalı, tek kullanımlık ve süreli onay verir.</span></span></li>
+		<li id="f-alerts" data-feature="alerts"><span class="no">65</span><span><b>Slack, Teams, webhook ve e-posta uyarıları</b><span class="d"> — engelleme, onay isteği ve olaylar ekibin kanalına düşer.</span></span></li>
+		<li id="f-incidents" data-feature="incidents"><span class="no">66</span><span><b>Olaylar ve kanıt zinciri</b><span class="d"> — engellenen kararlar, cihaz bazında sırasıyla tek görünümde.</span></span></li>
+		<li id="f-response-playbook" data-feature="response-playbook"><span class="no">67</span><span><b>Müdahale senaryosu</b><span class="d"> — ajan önce duraklatılır, sonra ağdan yalıtılır; her adım kayıtlı.</span></span></li>
+		<li id="f-policy-rollout" data-feature="policy-rollout"><span class="no">68</span><span><b>Aşamalı politika dağıtımı</b><span class="d"> — önce kanarya ajanlar, sonra filo; önceki sürüme dönüş.</span></span></li>
+		<li id="f-file-quarantine-snapshot" data-feature="file-quarantine-snapshot"><span class="no">69</span><span><b>Dosya karantinası ve anlık görüntü</b><span class="d"> — riskli dosya ayrılır; korunan yol geri yüklenir (isteğe bağlı).</span></span></li>
+		<li id="f-operator-cli" data-feature="operator-cli"><span class="no">70</span><span><b>Operatör araçları</b><span class="d"> — <code>aidr pending</code>, <code>allowlist</code>, <code>audit</code>, <code>doctor</code>.</span></span></li>
 	</ol>
 	<p class="gain inline"><span class="k">Bu aşamada ne kazanırsınız</span><span>Ele geçirilmiş bir ajan kendi engelini kaldıramaz; ekip olayı kendi kanalında görür.</span></p>
 	</div>
@@ -518,30 +539,30 @@ h2.title.mt4 { margin-top: 7mm; }
 	<div class="stage-block">
 	<div class="stage-intro"><span class="num">7</span><div><h2>Kanıtla ve iyileştir</h2><p>Her karar kanıta dönüşür; simülasyon sonuçları politikayı güçlendirerek döngüyü kapatır.</p></div></div>
 	<ol class="flist">
-		<li id="f-audit-export" data-feature="audit-export"><span class="no">62</span><span><b>Denetim kaydı ve dışa aktarım</b><span class="d"> — her kararın kuralı ve özeti; değer yazılmaz (JSONL, CSV).</span></span></li>
-		<li id="f-signed-audit-chain" data-feature="signed-audit-chain"><span class="no">63</span><span><b>İmzalı kayıt zinciri</b><span class="d"> — değiştirilemez kanıt için Ed25519 imzalı kayıtlar.</span></span></li>
-		<li id="f-siem" data-feature="siem"><span class="no">64</span><span><b>SIEM teslimi</b><span class="d"> — Splunk, Microsoft Sentinel, Elastic ve webhook'a olaylar.</span></span></li>
-		<li id="f-privacy-dashboard" data-feature="privacy-dashboard"><span class="no">65</span><span><b>Browser Privacy paneli</b><span class="d"> — maskelenen, uyarılan, engellenen gönderim sayıları; içerik yok.</span></span></li>
-		<li id="f-attack-simulation" data-feature="attack-simulation"><span class="no">66</span><span><b>Saldırı simülasyonu ve skor kartı</b><span class="d"> — <code>aidr simulate</code> yerleşik saldırıları politikanıza karşı, çalıştırmadan dener.</span></span></li>
+		<li id="f-audit-export" data-feature="audit-export"><span class="no">71</span><span><b>Denetim kaydı ve dışa aktarım</b><span class="d"> — her kararın kuralı ve özeti; değer yazılmaz (JSONL, CSV).</span></span></li>
+		<li id="f-signed-audit-chain" data-feature="signed-audit-chain"><span class="no">72</span><span><b>İmzalı kayıt zinciri</b><span class="d"> — değiştirilemez kanıt için Ed25519 imzalı kayıtlar.</span></span></li>
+		<li id="f-siem" data-feature="siem"><span class="no">73</span><span><b>SIEM teslimi</b><span class="d"> — Splunk, Microsoft Sentinel, Elastic ve webhook'a olaylar.</span></span></li>
+		<li id="f-privacy-dashboard" data-feature="privacy-dashboard"><span class="no">74</span><span><b>Browser Privacy paneli</b><span class="d"> — maskelenen, uyarılan, engellenen gönderim sayıları; içerik yok.</span></span></li>
+		<li id="f-attack-simulation" data-feature="attack-simulation"><span class="no">75</span><span><b>Saldırı simülasyonu ve skor kartı</b><span class="d"> — <code>aidr simulate</code> yerleşik saldırıları politikanıza karşı, çalıştırmadan dener.</span></span></li>
 	</ol>
 	<p class="gain inline"><span class="k">Bu aşamada ne kazanırsınız</span><span>Ne olduğunu denetçiye gösterir, politikayı ölçerek iyileştirirsiniz.</span></p>
 	</div>
 	<div class="stage-block">
 	<div class="stage-intro"><span class="num">G</span><div><h2>Yönet ve uyumla</h2><p>Yönetişim katmanı tüm aşamaları kapsar: hangi yapay zekânın, kimin sorumluluğunda, hangi kurallarla kullanıldığı.</p></div></div>
 	<ol class="flist">
-		<li id="f-asset-register" data-feature="asset-register"><span class="no">67</span><span><b>Yapay zekâ varlık envanteri</b><span class="d"> — ajan, MCP, site ve model; sahibi, amacı, veri kategorisi, risk seviyesi.</span></span></li>
-		<li id="f-ai-bom" data-feature="ai-bom"><span class="no">68</span><span><b>AI-BOM</b><span class="d"> — ajan, MCP, model, eklenti ve bilinen açıklar CycloneDX 1.6 olarak.</span></span></li>
-		<li id="f-intake-workflow" data-feature="intake-workflow"><span class="no">69</span><span><b>Yeni araç talep ve onay akışı</b><span class="d"> — onaylı ya da yasak durumu doğrudan denetime yansır.</span></span></li>
-		<li id="f-policy-change-control" data-feature="policy-change-control"><span class="no">70</span><span><b>Dört göz politika değişikliği</b><span class="d"> — ikinci onay, sürüm geçmişi ve geri alma.</span></span></li>
-		<li id="f-timeboxed-exceptions" data-feature="timeboxed-exceptions"><span class="no">71</span><span><b>Süreli istisnalar</b><span class="d"> — istisna, süresi dolunca kendiliğinden kalkar.</span></span></li>
-		<li id="f-framework-mapping" data-feature="framework-mapping"><span class="no">72</span><span><b>Güvenlik çerçevesi eşlemesi</b><span class="d"> — kurallar OWASP LLM, OWASP Agentic ve MITRE ATLAS ile eşlenir.</span></span></li>
-		<li id="f-governance-frameworks" data-feature="governance-frameworks"><span class="no">73</span><span><b>Yönetişim çerçeveleri</b><span class="d"> — NIST AI RMF, ISO/IEC 42001 ve AB Yapay Zekâ Yasası eşlemesi.</span></span></li>
-		<li id="f-compliance-report" data-feature="compliance-report"><span class="no">74</span><span><b>KVKK ve GDPR uyum raporu</b><span class="d"> — koruma kapsamı ve sayım kanıtları, imzalanabilir raporda.</span></span></li>
-		<li id="f-governance-scorecard" data-feature="governance-scorecard"><span class="no">75</span><span><b>Yönetişim skor kartı</b><span class="d"> — yöneticiler için periyodik rapor.</span></span></li>
-		<li id="f-acceptable-use" data-feature="acceptable-use"><span class="no">76</span><span><b>Kabul edilebilir kullanım onayı</b><span class="d"> — Browser Guard'da; AB Yapay Zekâ Yasası Madde 4 okuryazarlığı için.</span></span></li>
-		<li id="f-team-roles" data-feature="team-roles"><span class="no">77</span><span><b>Ekip ve roller</b><span class="d"> — sahip, yönetici, üye, izleyici; e-posta davetleri.</span></span></li>
-		<li id="f-team-audit" data-feature="team-audit"><span class="no">78</span><span><b>Ekip denetim kaydı</b><span class="d"> — konsoldaki her yönetim işlemi, yapan kişiyle.</span></span></li>
-		<li id="f-retention" data-feature="retention"><span class="no">79</span><span><b>Saklama, yasal saklama, silme</b><span class="d"> — veri sınıfı başına süre; kayıtlı silme.</span></span></li>
+		<li id="f-asset-register" data-feature="asset-register"><span class="no">76</span><span><b>Yapay zekâ varlık envanteri</b><span class="d"> — ajan, MCP, site ve model; sahibi, amacı, veri kategorisi, risk seviyesi.</span></span></li>
+		<li id="f-ai-bom" data-feature="ai-bom"><span class="no">77</span><span><b>AI-BOM</b><span class="d"> — ajan, MCP, model, eklenti ve bilinen açıklar CycloneDX 1.6 olarak.</span></span></li>
+		<li id="f-intake-workflow" data-feature="intake-workflow"><span class="no">78</span><span><b>Yeni araç talep ve onay akışı</b><span class="d"> — onaylı ya da yasak durumu doğrudan denetime yansır.</span></span></li>
+		<li id="f-policy-change-control" data-feature="policy-change-control"><span class="no">79</span><span><b>Dört göz politika değişikliği</b><span class="d"> — ikinci onay, sürüm geçmişi ve geri alma.</span></span></li>
+		<li id="f-timeboxed-exceptions" data-feature="timeboxed-exceptions"><span class="no">80</span><span><b>Süreli istisnalar</b><span class="d"> — istisna, süresi dolunca kendiliğinden kalkar.</span></span></li>
+		<li id="f-framework-mapping" data-feature="framework-mapping"><span class="no">81</span><span><b>Güvenlik çerçevesi eşlemesi</b><span class="d"> — kurallar OWASP LLM, OWASP Agentic ve MITRE ATLAS ile eşlenir.</span></span></li>
+		<li id="f-governance-frameworks" data-feature="governance-frameworks"><span class="no">82</span><span><b>Yönetişim çerçeveleri</b><span class="d"> — NIST AI RMF, ISO/IEC 42001 ve AB Yapay Zekâ Yasası eşlemesi.</span></span></li>
+		<li id="f-compliance-report" data-feature="compliance-report"><span class="no">83</span><span><b>KVKK ve GDPR uyum raporu</b><span class="d"> — koruma kapsamı ve sayım kanıtları, imzalanabilir raporda.</span></span></li>
+		<li id="f-governance-scorecard" data-feature="governance-scorecard"><span class="no">84</span><span><b>Yönetişim skor kartı</b><span class="d"> — yöneticiler için periyodik rapor.</span></span></li>
+		<li id="f-acceptable-use" data-feature="acceptable-use"><span class="no">85</span><span><b>Kabul edilebilir kullanım onayı</b><span class="d"> — Browser Guard'da; AB Yapay Zekâ Yasası Madde 4 okuryazarlığı için.</span></span></li>
+		<li id="f-team-roles" data-feature="team-roles"><span class="no">86</span><span><b>Ekip ve roller</b><span class="d"> — sahip, yönetici, üye, izleyici; e-posta davetleri.</span></span></li>
+		<li id="f-team-audit" data-feature="team-audit"><span class="no">87</span><span><b>Ekip denetim kaydı</b><span class="d"> — konsoldaki her yönetim işlemi, yapan kişiyle.</span></span></li>
+		<li id="f-retention" data-feature="retention"><span class="no">88</span><span><b>Saklama, yasal saklama, silme</b><span class="d"> — veri sınıfı başına süre; kayıtlı silme.</span></span></li>
 	</ol>
 	<p class="lbl mt3">Eşlenen çerçeveler</p>
 	<div><span class="chip">OWASP LLM Top 10 (2025)</span><span class="chip">OWASP Agentic Top 10 (2026)</span><span class="chip">MITRE ATLAS</span><span class="chip">NIST AI RMF</span><span class="chip">ISO/IEC 42001</span><span class="chip">AB Yapay Zekâ Yasası</span><span class="chip">KVKK</span><span class="chip">GDPR</span></div>
@@ -555,22 +576,22 @@ h2.title.mt4 { margin-top: 7mm; }
 	<header class="hdr"><span class="brand"><span class="badge" aria-hidden="true"></span><b>Singularity AIDR</b>Ürün Kataloğu 2026</span><span class="sec">Platform · Paketler</span></header>
 	<div class="stage-intro"><span class="num">+</span><div><h2>Platform ve kurulum</h2><p>Tüm aşamalar aynı platformda çalışır: bulutta, kurum içinde ya da ağdan yalıtılmış ortamda.</p></div></div>
 	<ol class="flist cols">
-		<li id="f-tenancy" data-feature="tenancy"><span class="no">80</span><span><b>Kiracı yalıtımı</b><span class="d"> — veritabanında satır düzeyinde güvenlik.</span></span></li>
-		<li id="f-identity" data-feature="identity"><span class="no">81</span><span><b>Kimlik</b><span class="d"> — Entra ID, SAML, SCIM, MFA, oturum iptali.</span></span></li>
-		<li id="f-enrollment" data-feature="enrollment"><span class="no">82</span><span><b>Cihaz kaydı</b><span class="d"> — kısa kodla onay; CI için tek kullanımlık belirteç.</span></span></li>
-		<li id="f-download-center" data-feature="download-center"><span class="no">83</span><span><b>İndirme merkezi</b><span class="d"> — her paket SHA&#8209;256 özetiyle doğrulanır.</span></span></li>
-		<li id="f-aidr-cli" data-feature="aidr-cli"><span class="no">84</span><span><b><code>aidr</code> komut satırı</b><span class="d"> — kurulum, durum, yapılandırma, anahtar yenileme.</span></span></li>
-		<li id="f-endpoint-installers" data-feature="endpoint-installers"><span class="no">85</span><span><b>Uç nokta dağıtımı</b><span class="d"> — yerel yükleyici; Windows, macOS, Linux betikleri.</span></span></li>
-		<li id="f-local-mode" data-feature="local-mode"><span class="no">86</span><span><b>Yerel mod</b><span class="d"> — hesap ve ağ olmadan, kurulumla başlayan koruma.</span></span></li>
-		<li id="f-integrity" data-feature="integrity"><span class="no">87</span><span><b>İmzalı bütünlük</b><span class="d"> — imzalı paket, kural ve istihbarat.</span></span></li>
-		<li id="f-compose" data-feature="compose"><span class="no">88</span><span><b>Docker Compose</b><span class="d"> — kurum içi tek sunucu; üç kaynak profili.</span></span></li>
-		<li id="f-helm" data-feature="helm"><span class="no">89</span><span><b>Kubernetes Helm</b><span class="d"> — zayıf yapılandırmayla kurulmayı reddeder.</span></span></li>
-		<li id="f-air-gapped" data-feature="air-gapped"><span class="no">90</span><span><b>Ağdan yalıtılmış kurulum</b><span class="d"> — imzalı çevrim dışı lisans ve paketler.</span></span></li>
-		<li id="f-tls" data-feature="tls"><span class="no">91</span><span><b>TLS</b><span class="d"> — ACME ile yenileme ya da kurumun sertifikası.</span></span></li>
-		<li id="f-upgrade-backup" data-feature="upgrade-backup"><span class="no">92</span><span><b>Yükseltme ve yedekleme</b><span class="d"> — kesintiye dayanıklı yükseltme, şifreli yedek.</span></span></li>
-		<li id="f-monitoring" data-feature="monitoring"><span class="no">93</span><span><b>İzleme ve uyarılar</b><span class="d"> — hazırlık denetimleri, Prometheus kuralları.</span></span></li>
-		<li id="f-operator-admin" data-feature="operator-admin"><span class="no">94</span><span><b>Operatör yönetimi</b><span class="d"> — lisans ve kullanım, MFA ile.</span></span></li>
-		<li id="f-version-check" data-feature="version-check"><span class="no">95</span><span><b>Sürüm bildirimi</b><span class="d"> — yeni sürüm çıktığında bilgilendirir.</span></span></li>
+		<li id="f-tenancy" data-feature="tenancy"><span class="no">89</span><span><b>Kiracı yalıtımı</b><span class="d"> — veritabanında satır düzeyinde güvenlik.</span></span></li>
+		<li id="f-identity" data-feature="identity"><span class="no">90</span><span><b>Kimlik</b><span class="d"> — Entra ID, SAML, SCIM, MFA, oturum iptali.</span></span></li>
+		<li id="f-enrollment" data-feature="enrollment"><span class="no">91</span><span><b>Cihaz kaydı</b><span class="d"> — kısa kodla onay; CI için tek kullanımlık belirteç.</span></span></li>
+		<li id="f-download-center" data-feature="download-center"><span class="no">92</span><span><b>İndirme merkezi</b><span class="d"> — her paket SHA&#8209;256 özetiyle doğrulanır.</span></span></li>
+		<li id="f-aidr-cli" data-feature="aidr-cli"><span class="no">93</span><span><b><code>aidr</code> komut satırı</b><span class="d"> — kurulum, durum, yapılandırma, anahtar yenileme.</span></span></li>
+		<li id="f-endpoint-installers" data-feature="endpoint-installers"><span class="no">94</span><span><b>Uç nokta dağıtımı</b><span class="d"> — yerel yükleyici; Windows, macOS, Linux betikleri.</span></span></li>
+		<li id="f-local-mode" data-feature="local-mode"><span class="no">95</span><span><b>Yerel mod</b><span class="d"> — hesap ve ağ olmadan, kurulumla başlayan koruma.</span></span></li>
+		<li id="f-integrity" data-feature="integrity"><span class="no">96</span><span><b>İmzalı bütünlük</b><span class="d"> — imzalı paket, kural ve istihbarat.</span></span></li>
+		<li id="f-compose" data-feature="compose"><span class="no">97</span><span><b>Docker Compose</b><span class="d"> — kurum içi tek sunucu; üç kaynak profili.</span></span></li>
+		<li id="f-helm" data-feature="helm"><span class="no">98</span><span><b>Kubernetes Helm</b><span class="d"> — zayıf yapılandırmayla kurulmayı reddeder.</span></span></li>
+		<li id="f-air-gapped" data-feature="air-gapped"><span class="no">99</span><span><b>Ağdan yalıtılmış kurulum</b><span class="d"> — imzalı çevrim dışı lisans ve paketler.</span></span></li>
+		<li id="f-tls" data-feature="tls"><span class="no">100</span><span><b>TLS</b><span class="d"> — ACME ile yenileme ya da kurumun sertifikası.</span></span></li>
+		<li id="f-upgrade-backup" data-feature="upgrade-backup"><span class="no">101</span><span><b>Yükseltme ve yedekleme</b><span class="d"> — kesintiye dayanıklı yükseltme, şifreli yedek.</span></span></li>
+		<li id="f-monitoring" data-feature="monitoring"><span class="no">102</span><span><b>İzleme ve uyarılar</b><span class="d"> — hazırlık denetimleri, Prometheus kuralları.</span></span></li>
+		<li id="f-operator-admin" data-feature="operator-admin"><span class="no">103</span><span><b>Operatör yönetimi</b><span class="d"> — lisans ve kullanım, MFA ile.</span></span></li>
+		<li id="f-version-check" data-feature="version-check"><span class="no">104</span><span><b>Sürüm bildirimi</b><span class="d"> — yeni sürüm çıktığında bilgilendirir.</span></span></li>
 	</ol>
 	<h2 class="title mt4" id="p-editions">Paketler</h2>
 	<table class="t matrix">

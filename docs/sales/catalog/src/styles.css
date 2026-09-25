@@ -149,6 +149,11 @@ body { font-size: 9pt; }
 .flist.cols { display: grid; grid-template-columns: 1fr 1fr; column-gap: 7mm; }
 .flist.cols li:nth-child(2) { border-top: 0.6pt solid var(--ink); }
 .lsub { margin: 3mm 0 1.2mm; font-size: 6.9pt; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); font-weight: 650; }
+.lsub.acc { margin-top: 4mm; color: var(--accent-ink); }
+.xref { margin: 1.6mm 0 0; font-size: 7.8pt; line-height: 1.5; color: var(--body); }
+.xref .k { margin-right: 2mm; font-size: 6.7pt; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+.xref .also { white-space: nowrap; }
+.ref { color: var(--accent-ink); font-weight: 650; font-variant-numeric: tabular-nums; }
 .stage-intro { display: flex; align-items: flex-start; gap: 3mm; margin: 0 0 2.6mm; }
 .stage-intro .num { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 7mm; height: 7mm; border-radius: 50%; background: var(--ink); color: #fff; font-size: 8.5pt; font-weight: 700; }
 .stage-intro h2 { margin: 0; font-size: 15pt; line-height: 1.2; font-weight: 650; color: var(--ink); }
@@ -157,6 +162,7 @@ body { font-size: 9pt; }
 .gain.inline { margin-top: 3mm; }
 .highlight { display: grid; grid-template-columns: 1.5fr 1fr; gap: 5mm; align-items: center; margin-top: 3.5mm; padding: 4mm 5mm; border-radius: 2.4mm; background: #000; color: #cfcfcf; font-size: 8.8pt; line-height: 1.45; }
 .highlight .lbl { color: #8fa9f5; }
+.highlight .ref { color: #fff; }
 .highlight h3 { color: #fff; font-size: 10.5pt; margin-bottom: 1.4mm; }
 .highlight b { color: #fff; }
 .highlight ul.b li::before { background: #8fa9f5; }
@@ -171,7 +177,8 @@ body { font-size: 9pt; }
 .cov td.y svg { width: 3.2mm; height: 3.2mm; margin-right: 1mm; vertical-align: -0.5mm; fill: none; stroke: var(--accent); stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
 .cov td.n { color: var(--faint); }
 .cov td.st { font-weight: 650; color: var(--ink); white-space: nowrap; }
-.cov td.st span { display: inline-flex; align-items: center; justify-content: center; width: 4.4mm; height: 4.4mm; margin-right: 1.6mm; border-radius: 50%; background: var(--ink); color: #fff; font-size: 6.6pt; }
+.cov td.st .nm { display: inline-block; vertical-align: top; }
+.cov td.st .sn { vertical-align: top; display: inline-flex; align-items: center; justify-content: center; width: 4.4mm; height: 4.4mm; margin-right: 1.6mm; border-radius: 50%; background: var(--ink); color: #fff; font-size: 6.6pt; }
 .cov { font-size: 8.2pt; }
 .ba { display: grid; grid-template-columns: 30mm 1fr; border: 0.6pt solid var(--rule-strong); border-radius: 2mm; overflow: hidden; font-size: 8.6pt; line-height: 1.55; }
 .ba > div { padding: 2mm 3.2mm; border-top: 0.5pt solid var(--rule); }

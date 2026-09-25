@@ -157,6 +157,25 @@ test("every feature is backed by code in this repository", async (t) => {
 	}
 });
 
+test("the AI safety group lists its features and cross-references shipped controls", () => {
+	const safety = content.FEATURES.filter((f) => f.group === "safety");
+	assert.ok(safety.length >= 9, "the AI safety group lists at least nine features");
+	const index = new Map(content.FEATURES.map((feature, i) => [feature.key, i + 1]));
+	for (const item of content.SAFETY_ALSO) {
+		for (const [file, pattern] of item.evidence) assert.ok(read(file).includes(pattern), `${item.key}: ${file} does not contain "${pattern}"`);
+		for (const key of item.refs) {
+			assert.ok(index.has(key), `${item.key}: unknown feature ${key}`);
+			assert.ok(!content.FEATURES[index.get(key) - 1].pending, `${item.key}: ${key} is still pending, so it is not a shipped control`);
+		}
+	}
+	for (const lang of LANGUAGES) {
+		assert.ok(visibleText(html[lang]).includes(lang === "tr" ? "Yapay zekâ güvenliği" : "AI safety"), `catalog.${lang}.html has no AI safety label`);
+		const shown = [...html[lang].matchAll(/data-safety="([a-z-]+)"/g)].map((m) => m[1]);
+		assert.deepEqual(shown, content.SAFETY_ALSO.map((item) => item.key), `catalog.${lang}.html: safety cross-references differ from content.mjs`);
+		for (const [, key, number] of html[lang].matchAll(/data-ref="([a-z0-9-]+)">(\d+)</g)) assert.equal(Number(number), index.get(key), `catalog.${lang}.html: reference to ${key} shows ${number}`);
+	}
+});
+
 test("every connector, Browser Guard site and browser from product-facts.ts is named", () => {
 	const names = [...listConst("AGENT_CONNECTORS"), ...listConst("BROWSER_GUARD_SITES"), ...listConst("BROWSER_GUARD_BROWSERS")];
 	assert.ok(names.length >= 17);
