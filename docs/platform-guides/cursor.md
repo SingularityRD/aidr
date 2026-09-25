@@ -78,3 +78,10 @@ Extension hooks always exit with code `0`. The host reads the JSON response to d
 The extension bundles `threats/` and `allowlists/` from the repo root into `packages/extension/resources/` during build (via `sync-assets.mjs`). These are not checked into git.
 
 See [Building the Extension](../../doc/build_extension.md) for platform-specific build instructions.
+
+## Real-host acceptance
+
+Cursor and VS Code are **not** covered by `pnpm test:e2e:real-host`: their installers
+could not be downloaded in the environment that produced the real-host records, so
+every Cursor and VS Code row in `deploy/native/interception-matrix.json` stays
+`declared-not-proven`.

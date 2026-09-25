@@ -194,7 +194,7 @@ test("default selection runs everything except opt-in steps, guards first and la
 	assert.equal(selected[0].id, "guard-home-record");
 	assert.deepEqual(ids(selected.slice(-2)), ["guard-home-verify", "guard-tree-unchanged"]);
 	assert.ok(!selected.some((entry) => entry.optIn));
-	assert.deepEqual(notSelected.map((entry) => entry.id).sort(), ["real-e2e", "real-e2e-deps", "real-e2e-evidence"]);
+	assert.deepEqual(notSelected.map((entry) => entry.id).sort(), ["real-e2e", "real-e2e-deps", "real-e2e-evidence", "real-host-mock-model"]);
 	assert.ok(notSelected.every((entry) => entry.reason.startsWith("opt-in")));
 	assert.equal(selected.length + notSelected.length, STEPS.length);
 });
@@ -203,7 +203,7 @@ test("--only restricts to groups or ids (and selects opt-in groups), guards are 
 	const { selected } = selectSteps(STEPS, { only: ["helm", "lint"] });
 	assert.deepEqual(ids(selected), ["guard-home-record", "lint", "knip", "duplicates", "helm", "guard-home-verify", "guard-tree-unchanged"]);
 	const optIn = selectSteps(STEPS, { only: ["real-host-e2e"], skip: ["guards"] });
-	assert.deepEqual(ids(optIn.selected), ["real-e2e-deps", "real-e2e", "real-e2e-evidence"]);
+	assert.deepEqual(ids(optIn.selected), ["real-e2e-deps", "real-e2e", "real-e2e-evidence", "real-host-mock-model"]);
 });
 
 test("--skip removes groups and ids; skipping guards removes them", () => {

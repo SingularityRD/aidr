@@ -617,6 +617,18 @@ export const STEPS = Object.freeze([
 		optIn: true,
 		timeoutMs: 3 * MIN,
 	}),
+	// Local-only (no ci.yml counterpart): real Claude Code / Codex / OpenCode /
+	// OpenClaw binaries against a scripted loopback mock model. Needs no secrets,
+	// but installs the pinned hosts (and Node.js 24 for OpenClaw) on first run.
+	step({
+		id: "real-host-mock-model",
+		group: "real-host-e2e",
+		name: "Real host binaries with a scripted mock model (local-only)",
+		run: "pnpm test:e2e:real-host",
+		optIn: true,
+		requires: ["network"],
+		timeoutMs: 45 * MIN,
+	}),
 
 	// ── guards (post) ───────────────────────────────────────────────────────
 	step({

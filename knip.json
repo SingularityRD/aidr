@@ -37,6 +37,7 @@
 				"scripts/resource-profile.mjs",
 				"scripts/run-evidence-gates.mjs",
 				"scripts/run-ide-host-e2e.mjs",
+				"scripts/real-host-e2e/crash-hook.mjs",
 				"scripts/sign-artifact-manifest.mjs",
 				"scripts/sync-governance-frameworks.mjs",
 				"scripts/verify-customer-kit.mjs",

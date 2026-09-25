@@ -634,7 +634,8 @@ export const GATES = Object.freeze([
 		evidence_level: "source_inspection",
 		evidence_level_ceiling: "source_inspection",
 		limitations: [
-			"Validity PASS with readiness NO-GO: every declared interception point is `declared-not-proven` or `unsupported` until a named real-host acceptance record exists, and the gate refuses an `enforced` row without one.",
+			"Validity PASS with readiness NO-GO: a row is `enforced` only when it cites a real-host acceptance record under docs/evidence/real-host/ that proves that point (the gate parses the record), and every other declared point stays `declared-not-proven` or `unsupported`.",
+			"The acceptance records come from `pnpm test:e2e:real-host`: real host binaries on linux/x64 driven by a scripted mock model with the development build installed; Cursor and VS Code have none.",
 			"Cross-checks each row against the connector's own source tree, so a row cannot claim a point the source does not implement or borrow another connector's module.",
 		],
 	}),

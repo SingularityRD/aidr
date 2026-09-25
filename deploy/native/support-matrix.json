@@ -2,7 +2,7 @@
   "$schema": "./support-matrix.schema.json",
   "schemaVersion": 1,
   "kind": "aidr-native-support-matrix",
-  "reviewedAt": "2026-09-24",
+  "reviewedAt": "2026-09-25",
   "decision": "NO-GO",
   "decisionMeaning": "This manifest records intended connector/platform scope separately from what has actually been accepted on a real host. Platform and architecture arrays are target scope, not tested support. It is not a claim that any row has passed. Every row carries `acceptanceEvidence`; a row whose evidence is empty is an open sales gate, and deploy/native/run-support-matrix.mjs fails closed on it.",
   "soldConnectorScope": ["claude-code", "cursor", "vscode", "openclaw", "opencode", "codex"],
@@ -29,7 +29,7 @@
       "hostBinaryEnvOverride": null,
       "interceptionPoint": "pre-tool-call",
       "outputInterceptionPoint": "post-tool-output",
-      "tamperResistance": "host-mediated hook; in-process errors emit an explicit deny, but a disabled hook is fail-open and host behavior when the hook process crashes before a verdict is unverified",
+      "tamperResistance": "host-mediated hook; in-process errors emit an explicit deny, but a disabled hook is fail-open and a hook process killed before it writes a verdict is fail-open (observed on Claude Code 2.1.282)",
       "supportedPlatforms": ["windows", "linux", "macos"],
       "supportedArchitectures": ["x64", "arm64"],
       "supportedContexts": ["user", "service"],
@@ -41,10 +41,15 @@
         "Direct network access that never constructs a tool call"
       ],
       "unobservedActions": [
-        "Same-turn model blocking on a real Claude host",
+        "Same-turn blocking with a real (non-scripted) model; the real-host record uses a scripted mock model",
         "Behaviour when the host vendor ships a new hook schema"
       ],
-      "acceptanceEvidence": []
+      "acceptanceEvidence": [
+        {
+          "path": "docs/evidence/real-host/claude-code.json",
+          "sha256": "8d629e80c16b2583904878d33e29021a8c06221e7bc523317b69d0cc4503efb3"
+        }
+      ]
     },
     {
       "connector": "cursor",
@@ -111,10 +116,15 @@
         "after_tool_call cannot prove same-turn model blocking"
       ],
       "unobservedActions": [
-        "Same-turn model blocking on a real gateway",
+        "Same-turn model blocking through a running gateway (only the embedded `agent --local` runner is recorded)",
         "Gateway version matrix"
       ],
-      "acceptanceEvidence": []
+      "acceptanceEvidence": [
+        {
+          "path": "docs/evidence/real-host/openclaw.json",
+          "sha256": "064c71fbd935fc16185e4029593320235b818e87009f7611b7ab1036cce63150"
+        }
+      ]
     },
     {
       "connector": "opencode",
@@ -134,10 +144,15 @@
         "Provider streams that bypass the plugin's tool boundary"
       ],
       "unobservedActions": [
-        "Cases that require a live model provider credential",
-        "Same-turn output blocking on a real host"
+        "Cases that require a live model provider credential (the real-host record uses a scripted mock model)",
+        "Interactive TUI presentation of a blocked prompt"
       ],
-      "acceptanceEvidence": []
+      "acceptanceEvidence": [
+        {
+          "path": "docs/evidence/real-host/opencode.json",
+          "sha256": "d9ade040a8fecb48bfba246236028dc0906587bfd6e471f07472a6ea16c48fb5"
+        }
+      ]
     },
     {
       "connector": "codex",
@@ -162,7 +177,12 @@
         "Verification against a Codex release newer than 0.141.0",
         "Host-level tamper resistance (for example a patched host binary)"
       ],
-      "acceptanceEvidence": []
+      "acceptanceEvidence": [
+        {
+          "path": "docs/evidence/real-host/codex.json",
+          "sha256": "8be47daad6ef30176d3ff240a18b8cd377a5e389cedf326812359df336ce4c11"
+        }
+      ]
     }
   ],
   "residual": [
