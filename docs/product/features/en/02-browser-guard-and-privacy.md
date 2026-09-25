@@ -475,9 +475,11 @@ Covered by the real-browser `paste-*` scenarios.
 ### 7. File and upload protection
 
 **What it does** — Reads files the user selects, drops or pastes into a supported AI site,
-before the site gets them. Text files and Word/Excel/PowerPoint documents with sensitive data
-are replaced with a sanitised copy (same name, same type). PDFs are scanned and blocked when
-they contain sensitive data. Files that cannot be checked are flagged or blocked by policy.
+before the site gets them. Text files, Word/Excel/PowerPoint and OpenDocument documents with
+sensitive data are replaced with a sanitised copy (same name, same type). PDFs are scanned and
+blocked when they contain sensitive data. With the optional native host's OCR, screenshots and
+pictures inside documents that show sensitive data are blocked. Files that cannot be checked
+are flagged or blocked by policy, never passed off as clean.
 
 **Why it matters** — A single CSV export can hold thousands of customer records. `.env` files
 and JSON configs are made of credentials. Uploads are a larger leak channel than typing.
@@ -487,16 +489,19 @@ and JSON configs are made of credentials. Uploads are a larger leak channel than
 1. `fileHandling: "allow"` → passed through unread. `fileHandling: "block"` → blocked in
    every mode (reason `FILE_BLOCKED_BY_POLICY`).
 2. Larger than `maxFileBytes` (default 5 MiB, maximum 50 MiB) → blocked (`FILE_TOO_LARGE`).
-   **Office documents and PDFs** go to the document handlers next (see "Office documents
-   and PDFs" below). They are recognised by extension; a file with an unknown or missing
-   extension is recognised by MIME type or content, so renaming a document does not skip it.
+   **Office, OpenDocument, legacy Office and PDF documents** go to the document handlers next
+   (see "Office documents and PDFs" below). They are recognised by extension; a file with an
+   unknown or missing extension is recognised by MIME type or content, so renaming a document
+   does not skip it. **Images** (PNG/JPEG/WebP, recognised by content) go to OCR when the
+   native host offers it (see "Images" below).
 3. **Text or binary?** A file is text when it decodes as strict UTF-8 (BOM allowed) or as
    UTF-16 with a byte-order mark, contains no NUL byte, and either has a known text/source
    extension or an unknown extension without a binary MIME type. Known binary extensions
-   (images, archives, legacy `.doc`/`.xls`/`.ppt`, OpenDocument, media, databases,
-   executables…) are always binary.
+   (images, archives, media, databases, executables…) are always binary.
 4. **Binary files** cannot be inspected in the browser. In `block` mode they are blocked
-   (`BINARY_FILE_UNSCANNABLE`). In the other modes they are allowed with a warning toast.
+   (`BINARY_FILE_UNSCANNABLE`). In the other modes they are allowed with a warning toast
+   (`BINARY_FILE_UNSCANNED`, plus a detail such as `IMAGE_NOT_INSPECTED` or
+   `LEGACY_OFFICE_FORMAT`).
 5. **Text formats**
    - **CSV/TSV**: parsed properly (quoted fields, escaped quotes, CRLF/LF/CR). Cells are
      masked one by one with the column header as context, and a column whose header names
@@ -535,8 +540,26 @@ and a PDF text extractor. There is no remote code, no WebAssembly and no new dep
   field is masked wholesale, as for CSV. In PowerPoint: slides, speaker notes, layouts,
   masters and comments. In every format: charts, diagrams (SmartArt), drawings, alternative
   text, document properties, and the targets of `mailto:` and other external hyperlinks.
-  Styles, images, fonts and every other part are copied byte for byte.
+  Styles, fonts and every other part are copied byte for byte (pictures: see below).
   Result: `mask` with `SENSITIVE_DATA`, or `allow` when nothing was found.
+- **ODT, ODS, ODP, ODG** (OpenDocument, e.g. LibreOffice, and their templates) use the same
+  ZIP reader/writer, XML scanner and limits and are masked in place the same way: paragraphs
+  over their spans, links and fields; footnotes, annotations and text boxes; headers and
+  footers, document metadata, hyperlink targets, cell values and formulas. Tables use their
+  first row as column headers (a sensitive header masks the column); a cell is masked as a
+  unit and a masked number/date cell becomes a text cell. Embedded objects (charts) are masked
+  inside the package. Refused as for Office: encryption, Basic/script libraries and script
+  event listeners, DDE and linked sections, sheets or objects, plugins/applets/frames, OLE
+  objects and other binary parts such as embedded media.
+- **Legacy `.doc`, `.xls`, `.ppt`** (OLE compound files, also recognised by content or MIME
+  type) are not parsed and never reported as checked: they are uploaded with a warning that
+  tells the user to save them as `.docx`/`.xlsx`/`.pptx` (`LEGACY_OFFICE_FORMAT`), blocked in
+  `block` mode, and refused with the other documents under `documentHandling: "block"`.
+- **Pictures inside Office and OpenDocument files**: the first-page thumbnail shows the text
+  before masking, so a rewritten package gets a blank thumbnail. With the native host's OCR,
+  PNG/JPEG/WebP pictures are inspected and a picture with sensitive text blocks the document
+  (`SENSITIVE_DATA_IN_IMAGE`). Pictures that were not inspected (no OCR, other formats, more
+  than 16 pictures, a 90-second OCR budget) add `DOCUMENT_IMAGES_NOT_INSPECTED` and a warning.
 - **Refused** (blocked; `monitor` only records): macros or ActiveX (`DOCUMENT_MACROS`),
   password protection (`DOCUMENT_ENCRYPTED`), external workbook links, data connections,
   remote templates, linked objects or mail-merge sources (`DOCUMENT_EXTERNAL_LINKS`; ordinary
@@ -557,7 +580,13 @@ and a PDF text extractor. There is no remote code, no WebAssembly and no new dep
   (`PDF_NO_TEXT`, `PDF_PARTIAL`), encrypted (`PDF_ENCRYPTED`) or unparseable
   (`PDF_UNPARSEABLE`) follows the binary rule: uploaded with a warning, blocked in `block`
   mode. Findings in the readable part still block it.
-- `documentHandling: "block"` refuses every Office/PDF upload in every mode
+- **Images** (screenshots, photos): with `useNativeHost` and a native host configured with
+  OCR, the image is OCR'd on the endpoint (counts only; the host returns no pixels or text).
+  Sensitive text blocks the upload (`SENSITIVE_DATA_IN_IMAGE`; pixels are never masked); a
+  clean result lets it through. Without the host or its OCR, or when OCR could not read the
+  whole image (no text, uncertain words, a barcode, limits), the image is not inspected
+  (`IMAGE_NOT_INSPECTED`): uploaded with a warning, blocked in `block` mode.
+- `documentHandling: "block"` refuses every Office/OpenDocument/PDF upload in every mode
   (`DOCUMENT_BLOCKED_BY_POLICY`). `documentHandling: "allow"` skips document parsing: the
   file follows the binary rule (step 4). A document whose scan takes longer than 30 seconds
   is blocked (`SCAN_INCOMPLETE`).
@@ -571,6 +600,10 @@ while paused) files pass unchanged and are only counted. Blocked sites and
 |---|---|
 | Sanitised | "1 file sanitized before upload: 2 EMAIL" / "1 dosya yüklenmeden önce temizlendi: 2 EMAIL" |
 | Binary, not blocked | `"report.pdf" could not be scanned (binary file). Check it before sending.` / `"report.pdf" taranamadı (ikili dosya). Göndermeden önce kontrol edin.` |
+| Legacy Office, not blocked | `"old.doc" is a legacy Office file (.doc/.xls/.ppt) that AIDR cannot check. Save it as .docx/.xlsx/.pptx to have it masked, or check it before sending.` / `"old.doc" eski bir Office dosyası (.doc/.xls/.ppt); AIDR bu biçimi denetleyemez. Maskelenmesi için .docx/.xlsx/.pptx olarak kaydedin ya da göndermeden önce kontrol edin.` |
+| Image not inspected | `"screen.png" is an image and its content was not inspected (the local OCR helper is not available or could not read it). Check it before sending.` / `"screen.png" bir görsel ve içeriği denetlenmedi (yerel OCR yardımcısı yok ya da görseli okuyamadı). Göndermeden önce kontrol edin.` |
+| Pictures in a document not inspected | `Pictures inside "report.docx" were not inspected. Check them before sending.` / `"report.docx" içindeki görseller denetlenmedi. Göndermeden önce kontrol edin.` |
+| Image with sensitive data | `"screen.png" was not uploaded (SENSITIVE_DATA_IN_IMAGE, 1 EMAIL). The image shows sensitive data and images cannot be masked. Crop or redact it before uploading.` / `"screen.png" yüklenmedi (SENSITIVE_DATA_IN_IMAGE, 1 EMAIL). Görselde hassas veri görünüyor ve görseller maskelenemez. Yüklemeden önce kırpın ya da karartın.` |
 | Blocked | **Upload blocked** / **Yükleme engellendi**: `"big.csv" was not uploaded (FILE_TOO_LARGE).` / `"big.csv" yüklenmedi (FILE_TOO_LARGE).` |
 | Uploads disabled by policy | "Your organisation does not allow file uploads to AI services." / "Kurumunuz yapay zekâ hizmetlerine dosya yüklenmesine izin vermiyor." |
 | Documents disabled by policy | "Your organisation does not allow Office or PDF documents to be uploaded to AI services." / "Kurumunuz yapay zekâ hizmetlerine Office veya PDF belgesi yüklenmesine izin vermiyor." |
@@ -608,7 +641,10 @@ in which that paragraph reads `Müşteri e-postası: [EMAIL_1]` (the bold run no
 placeholder, the other run is empty). The scenario `file-upload-docx` uploads such a file on
 the ChatGPT fixture and re-opens the uploaded bytes to check `word/document.xml`;
 `file-upload-pdf-blocked` checks that a PDF with an email address never reaches the page and
-that the bubble suggests pasting the text instead.
+that the bubble suggests pasting the text instead. `file-upload-odt` does the same for an ODT
+whose values are split across spans, `file-upload-pptx-thumbnail` checks that a masked
+presentation's thumbnail is replaced by a blank image Chromium decodes, and
+`file-upload-legacy-doc` checks the legacy-format warning.
 
 **Availability**
 
@@ -619,10 +655,12 @@ that the bubble suggests pasting the text instead.
 | Platforms | Chrome, Edge, Firefox (desktop) |
 
 **Limitations**
-- Images are **not** inspected (no OCR in the browser): pictures inside Office documents,
-  scanned PDFs and image-only PDF pages. Scanned PDFs are reported as unscanned, not as
-  clean. Set `fileHandling: "block"` or `documentHandling: "block"` if such uploads must never
-  reach AI sites.
+- There is no OCR in the browser itself. Images and pictures inside Office/OpenDocument
+  files are OCR'd only through the optional native host with OCR configured, and are blocked
+  (never masked) when they show sensitive data; OCR can miss small, handwritten or low-contrast
+  text. Without the host they are reported as not inspected, not as clean. Scanned PDFs and
+  image-only PDF pages are not OCR'd (reported as unscanned). Set `fileHandling: "block"` or
+  `documentHandling: "block"` if such uploads must never reach AI sites.
 - PDFs are scanned but never rewritten, so a PDF with findings is blocked rather than
   masked. Encrypted PDFs are not decrypted; Type0 fonts without a ToUnicode map and
   predefined CJK CMaps are not decoded (reported as `PDF_PARTIAL`); word and line breaks
@@ -630,8 +668,8 @@ that the bubble suggests pasting the text instead.
   layouts.
 - Office masking covers text. Sheet names, defined names, table column names and numeric
   pivot-cache values are not rewritten (a masked header cell can make Excel repair a table's
-  column name). Legacy `.doc`/`.xls`/`.ppt` and OpenDocument files are not parsed and follow
-  the binary rule.
+  column name); the same applies to OpenDocument sheet and table names. Legacy
+  `.doc`/`.xls`/`.ppt` files are not parsed: they pass only with a warning or are blocked.
 - Text files that are not UTF-8 are decoded as Windows-1254 (Turkish), or Windows-1252 when
   that fits better, then scanned, and a masked copy is uploaded as UTF-8 (CSV/TSV with a
   BOM). Files in other single-byte encodings (for example Cyrillic Windows-1251) are decoded
@@ -1116,10 +1154,10 @@ All managed keys (from `static/managed_schema.json` and `src/background/policy.t
 | `allowSendAnyway` | boolean | `true` | Users may send unmasked after a warning |
 | `maskPaste` | boolean | `true` | Mask pasted text (feature 6) |
 | `fileHandling` | `scan` \| `block` \| `allow` | `scan` | Upload handling (feature 7) |
-| `documentHandling` | `mask` \| `block` \| `allow` | `mask` | Office/PDF uploads when `fileHandling` is `scan` (feature 7) |
+| `documentHandling` | `mask` \| `block` \| `allow` | `mask` | Office, OpenDocument, legacy Office and PDF uploads when `fileHandling` is `scan` (feature 7) |
 | `maxFileBytes` | integer, 1 to 52,428,800 | 5,242,880 (5 MiB) | Largest file scanned; larger files are blocked |
 | `restoreResponses` | boolean | `true` | Restore originals in answers locally |
-| `useNativeHost` | boolean | `false` | Use the AIDR Privacy native host for NER (feature 16). Users can also turn it on in the options page unless it is managed |
+| `useNativeHost` | boolean | `false` | Use the AIDR Privacy native host for NER, and for image OCR when the host has it (feature 16). Users can also turn it on in the options page unless it is managed |
 | `telemetry` | `{ controlPlaneUrl, apiKey }` | none (no telemetry) | Counts-only reporting. `https://` required; plain `http://` only for `localhost`/`127.0.0.1`; no credentials, query or fragment; API key 8–512 printable characters |
 | `language` | `auto` \| `en` \| `tr` | `auto` | Interface language |
 | `policyId` | string, `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$` | `aidr-browser-guard-default` | Identifier reported with telemetry |
@@ -1236,7 +1274,8 @@ two items.
 
 **What it does** — Connects the extension to the AIDR Privacy native messaging host
 (`com.singularity.aidr_privacy`) on the same machine. The host is intended to add learned
-named-entity recognition (NER) for names, addresses and locations that have no fixed shape.
+named-entity recognition (NER) for names, addresses and locations that have no fixed shape,
+and, when configured with local OCR, to read the text in uploaded images.
 
 **Why it matters** — Rules cannot recognise "Ahmet Kaya" in a sentence. A local NER model can,
 without sending text off the machine.
@@ -1254,6 +1293,10 @@ checked with the rules only, and the in-page toast or bubble says "Advanced name
 address detection (native host) is unavailable: checked with built-in rules only." (once
 per page for prompts that turn out clean). Nothing is persisted, and only the text itself
 is sent (no URL, site, tab or user data).
+Uploaded images (and pictures inside Office/OpenDocument files) are sent the same way as an
+`image-scan` (`NATIVE_IMAGE_SCAN`) when the host reports OCR: the host OCRs them and returns a
+decision with counts only, and a sensitive image is blocked (feature 7). The page waits at
+most 65 seconds per image.
 
 **How to use** (see [native-host.md](../../../../packages/browser-guard/docs/native-host.md)):
 1. Install and register the host from `packages/privacy` (`docs/BROWSER.md` §4,
@@ -1282,15 +1325,18 @@ check was rules-only.
 | Platforms | Chrome and Edge only (the host accepts only `chrome-extension://` callers; Firefox reports unavailable) |
 
 **Limitations — read before relying on it**
-- NER is applied to prompts and pasted text only. Uploaded files are scanned with the rules.
+- NER is applied to prompts and pasted text only. Uploaded files are scanned with the rules;
+  only images go to the host, for OCR.
 - The host returns a sanitised copy rather than spans. The bridge maps it back to the
   input and widens ambiguous spans (over-masking rather than leaking); output it cannot map
   counts as "no NER result" for that prompt.
 - A prompt that is still being scanned by the host takes up to 2.5 seconds longer to send.
 - `packages/privacy` ships the host protocol but **no NER model weights and no accuracy
   evidence**. Measure precision and recall on your own data.
-- OCR is part of the privacy package's visual layer (feature 20). Browser Guard does not OCR
-  images or PDFs.
+- OCR comes from the privacy package's visual layer (feature 20), used decision-only: an
+  image with sensitive text is blocked, never masked. Scanned PDFs are not OCR'd. OCR needs
+  the host's optional Python/Tesseract stack; the protocol is tested with fake OCR workers,
+  and real OCR accuracy must be measured on your own images.
 - A heavy model plus a large prompt can exceed the 2-second budget, and the bridge then
   backs off to rules only.
 
@@ -1312,7 +1358,7 @@ obligations by keeping content on the endpoint.
 | Settings, custom terms, telemetry API key | `chrome.storage.local` of the browser profile (managed values come from browser policy) |
 | Session statistics | `chrome.storage.session` (cleared when the browser closes) |
 | Telemetry, only when `telemetry` is configured | Counts per entity type, site id, action, channel, policy id, per-install random ID, browser family and major version, extension version, sent to the configured control plane |
-| Native host, only when enabled | Text sent to the local host process over stdio; nothing leaves the machine through this channel |
+| Native host, only when enabled | Text, and uploaded images for OCR, sent to the local host process over stdio; only counts come back; nothing leaves the machine through this channel |
 
 With no `telemetry` configured, the extension makes **no network requests of its own**. The
 options page says so: "Not connected. Nothing leaves this browser."
@@ -1481,7 +1527,8 @@ lines blacked out (whole-line masking by default; `granularity: 'word'` masks le
 - Tested in this repository with fake OCR workers. Real OCR accuracy depends on the installed
   stack and has not been independently validated.
 - No PDF, SVG, TIFF, GIF, HEIC or video. Text that OCR misses cannot be masked.
-- Not connected to Browser Guard: images uploaded in the browser are not OCR'd.
+- Browser Guard uses this engine decision-only through the native host (`inspect`, feature 16):
+  an uploaded image with sensitive text is blocked; the redacted PNG is not used there.
 
 ### 21. Document content disarm and reconstruction (CDR)
 

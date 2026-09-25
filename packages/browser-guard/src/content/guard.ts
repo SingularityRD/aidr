@@ -15,7 +15,9 @@
  * NER (NATIVE_SCAN, bounded to NATIVE_MAX_CHARS and NATIVE_REPLY_TIMEOUT_MS) in parallel
  * with the rule engine and merges its PERSON/ADDRESS/LOCATION findings before masking.
  * When the host gives no usable answer the scan proceeds rules-only and the user is told
- * so (never a silent "NER checked" claim).
+ * so (never a silent "NER checked" claim). Uploaded images (and pictures inside documents)
+ * are OCR'd through the same host (NATIVE_IMAGE_SCAN, NATIVE_IMAGE_REPLY_TIMEOUT_MS); without
+ * a usable answer they are reported as not inspected, never as clean.
  *
  * Sites in `policy.disabledSites` get monitor semantics: nothing is masked or blocked by
  * the guard, but prompts/pastes/files are still scanned and counted (RECORD "allowed").
@@ -27,14 +29,17 @@
  * carries counts only - never prompt text, originals or file content.
  */
 
+import { toBase64 } from "../../../privacy/src/browser/transport.js";
 import { type Counts, countFindings } from "../engine/counts.js";
 import {
 	type DetectionEngine,
 	type EditorAccess,
+	ENTITY_TYPES,
 	type EntityType,
 	type Finding,
 	type GuardMessage,
 	type GuardPolicy,
+	type ImageInspection,
 	type PlaceholderVault,
 	type PrivacyScanEvent,
 	type ScanResult,
@@ -91,6 +96,8 @@ export interface ContentGuardDeps {
 	onSent?(): void;
 	/** Upper bound for waiting on NATIVE_SCAN (ms); defaults to NATIVE_REPLY_TIMEOUT_MS. */
 	readonly nativeTimeoutMs?: number;
+	/** Upper bound for waiting on NATIVE_IMAGE_SCAN (ms); defaults to NATIVE_IMAGE_REPLY_TIMEOUT_MS. */
+	readonly nativeImageTimeoutMs?: number;
 }
 
 export interface ContentGuard {
@@ -122,16 +129,39 @@ const BUTTON_RETRY_MS = 50;
 const BUTTON_RETRIES = 6;
 
 /** Entity types the native host's NER contributes on top of the rule layer. */
-const NATIVE_NER_TYPES: readonly EntityType[] = Object.freeze([
-	"PERSON",
-	"ADDRESS",
-	"LOCATION",
-]);
+const NATIVE_NER_TYPES: readonly EntityType[] = Object.freeze(["PERSON", "ADDRESS", "LOCATION"]);
 /**
  * How long a scan waits for NATIVE_SCAN: the worker's bridge gives up after 2 s
  * (background/native.ts NATIVE_TIMEOUT_MS); the rest is messaging slack.
  */
 export const NATIVE_REPLY_TIMEOUT_MS = 2_500;
+/** How long an image OCR waits: the worker's bridge gives up after 60 s, plus messaging slack. */
+export const NATIVE_IMAGE_REPLY_TIMEOUT_MS = 65_000;
+/** Largest image sent for OCR (the host's `image-scan` limit). */
+export const NATIVE_IMAGE_MAX_BYTES = 8_388_608;
+const INSPECTION_RESULTS: readonly ImageInspection["result"][] = [
+	"clean",
+	"sensitive",
+	"incomplete",
+];
+
+/** A NATIVE_IMAGE_SCAN reply's inspection, validated; null for anything else. */
+export function parseImageInspection(reply: unknown): ImageInspection | null {
+	const r = reply as { ok?: unknown; inspection?: unknown } | null | undefined;
+	if (r?.ok !== true || typeof r.inspection !== "object" || r.inspection === null) return null;
+	const { result, counts, reasons } = r.inspection as Record<string, unknown>;
+	if (!INSPECTION_RESULTS.includes(result as ImageInspection["result"])) return null;
+	if (!Array.isArray(reasons) || !reasons.every((x) => typeof x === "string")) return null;
+	if (typeof counts !== "object" || counts === null) return null;
+	const safe: Partial<Record<EntityType, number>> = {};
+	for (const [type, n] of Object.entries(counts)) {
+		if (!ENTITY_TYPES.includes(type as EntityType) || !Number.isSafeInteger(n) || (n as number) < 0)
+			return null;
+		safe[type as EntityType] = n as number;
+	}
+	return { result: result as ImageInspection["result"], counts: safe, reasons: [...reasons] };
+}
+
 /** Longest text sent to the native host (the rule engine's own input limit). */
 export const NATIVE_MAX_CHARS = 200_000;
 
@@ -204,6 +234,7 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 	const strings = (): Strings => STRINGS[lang()];
 
 	const nativeTimeout = deps.nativeTimeoutMs ?? NATIVE_REPLY_TIMEOUT_MS;
+	const nativeImageTimeout = deps.nativeImageTimeoutMs ?? NATIVE_IMAGE_REPLY_TIMEOUT_MS;
 
 	const ui = createGuardUi({ document: doc, window: win, strings });
 	const cache = new Map<string, { policy: GuardPolicy; result: GuardScan; at: number }>();
@@ -960,6 +991,25 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 		exportSession: () => vault.exportSession(),
 	};
 
+	/** OCR of an uploaded image through the worker's native bridge; null: not inspected. */
+	const inspectImage = async (bytes: Uint8Array): Promise<ImageInspection | null> => {
+		if (!deps.getPolicy()?.useNativeHost || bytes.length > NATIVE_IMAGE_MAX_BYTES) return null;
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		try {
+			const reply = await Promise.race([
+				Promise.resolve(deps.send({ type: "NATIVE_IMAGE_SCAN", data: toBase64(bytes) })),
+				new Promise<undefined>((resolve) => {
+					timer = win.setTimeout(() => resolve(undefined), nativeImageTimeout);
+				}),
+			]);
+			return parseImageInspection(reply);
+		} catch {
+			return null;
+		} finally {
+			if (timer !== undefined) win.clearTimeout(timer);
+		}
+	};
+
 	const fileGuard = createFileGuard({
 		window: win,
 		adapter,
@@ -971,6 +1021,7 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 		strings,
 		record,
 		maskText,
+		inspectImage,
 	});
 
 	const unmasker = createUnmasker({

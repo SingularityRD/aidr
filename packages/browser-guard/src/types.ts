@@ -266,10 +266,12 @@ export interface GuardPolicy {
 	readonly maskPaste: boolean;
 	readonly fileHandling: "scan" | "block" | "allow";
 	/**
-	 * Office (DOCX/XLSX/PPTX) and PDF uploads when `fileHandling` is "scan" (managed-only):
-	 * "mask" masks Office text in place and scans PDFs (blocking PDFs with findings);
-	 * "block" rejects every such document; "allow" skips parsing and treats them like other
-	 * binary files (unscanned warning; blocked in block mode). Absent means "mask".
+	 * Office (DOCX/XLSX/PPTX), OpenDocument (ODT/ODS/ODP/ODG), legacy Office (DOC/XLS/PPT) and
+	 * PDF uploads when `fileHandling` is "scan" (managed-only): "mask" masks OOXML/OpenDocument
+	 * text in place and scans PDFs (blocking PDFs with findings); legacy Office files cannot be
+	 * parsed and pass only as unscanned (warning; blocked in block mode); "block" rejects every
+	 * such document; "allow" skips parsing and treats them like other binary files (unscanned
+	 * warning; blocked in block mode). Absent means "mask".
 	 */
 	readonly documentHandling: "mask" | "block" | "allow";
 	readonly maxFileBytes: number;
@@ -523,7 +525,11 @@ export interface FileDecision {
 	/** Present when action === "mask": sanitized replacement file content. */
 	readonly masked?: { readonly name: string; readonly type: string; readonly bytes: Uint8Array };
 	readonly counts: Readonly<Partial<Record<EntityType, number>>>;
-	/** Stable reason codes, e.g. BINARY_FILE, FILE_TOO_LARGE, FORMULA_CELL, SENSITIVE_DATA. */
+	/**
+	 * Stable reason codes, e.g. BINARY_FILE_UNSCANNED, FILE_TOO_LARGE, FORMULA_CELL, SENSITIVE_DATA,
+	 * SENSITIVE_DATA_IN_PDF, SENSITIVE_DATA_IN_IMAGE, IMAGE_NOT_INSPECTED, LEGACY_OFFICE_FORMAT,
+	 * DOCUMENT_IMAGES_NOT_INSPECTED.
+	 */
 	readonly reasons: readonly string[];
 }
 
@@ -556,7 +562,7 @@ export interface NativeBridge {
  *   engine/detect.ts   export function createDetectionEngine(options: DetectionOptions): DetectionEngine
  *   engine/coaching.ts export function coachingFor(code: SignalCode, lang: "en" | "tr"): string
  *   engine/vault.ts    export function createVault(options: { neverRestore: readonly EntityType[]; ttlMs?: number; snapshot?: VaultSnapshot }): PlaceholderVault
- *   engine/files.ts    export function sanitizeFile(file: { name: string; type: string; bytes: Uint8Array }, deps: { engine: DetectionEngine; vault: PlaceholderVault; policy: GuardPolicy }): Promise<FileDecision>
+ *   engine/files.ts    export function sanitizeFile(file: { name: string; type: string; bytes: Uint8Array }, deps: { engine: DetectionEngine; vault: PlaceholderVault; policy: GuardPolicy; inspectImage?: (bytes: Uint8Array) => Promise<ImageInspection | null> }): Promise<FileDecision>
  *   sites/index.ts     export const ADAPTERS: readonly SiteAdapter[]; export function adapterForUrl(url: string, customSites?: readonly CustomSiteConfig[]): SiteAdapter  // custom host -> id "custom"; unknown host -> generic adapter with id "other"
  *   sites/catalog.ts   export const AI_SERVICES: readonly AiService[]; export function serviceForUrl(url: unknown): AiService | null
  *   dom/editor.ts      export function findEditor(adapter: SiteAdapter, root: Document, lastFocused?: Element | null): EditorAccess | null

@@ -8,7 +8,13 @@ import { type GuardFile, sanitizeFile } from "../../engine/files.js";
 import { walkXml } from "../../engine/office/xml.js";
 import { createZip, readEntry, readZip } from "../../engine/office/zip.js";
 import { createVault } from "../../engine/vault.js";
-import type { DetectionEngine, FileDecision, GuardPolicy, PlaceholderVault } from "../../types.js";
+import type {
+	DetectionEngine,
+	FileDecision,
+	GuardPolicy,
+	ImageInspection,
+	PlaceholderVault,
+} from "../../types.js";
 
 export const W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships";
@@ -285,6 +291,7 @@ export function sanitize(
 		policy?: Partial<GuardPolicy>;
 		engine?: DetectionEngine;
 		vault?: PlaceholderVault;
+		inspectImage?: (bytes: Uint8Array) => Promise<ImageInspection | null>;
 	} = {},
 ): Promise<FileDecision> {
 	const file: GuardFile = { name, type: opts.type ?? "", bytes };
@@ -292,5 +299,44 @@ export function sanitize(
 		engine: opts.engine ?? realEngine(),
 		vault: opts.vault ?? realVault(),
 		policy: { ...DEFAULT_POLICY, maxFileBytes: 50 * 1024 * 1024, ...opts.policy },
+		...(opts.inspectImage ? { inspectImage: opts.inspectImage } : {}),
 	});
+}
+
+// ---------------------------------------------------------------------------------------------
+// OpenDocument
+// ---------------------------------------------------------------------------------------------
+
+const ODF_NS =
+	'xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:meta="urn:oasis:names:tc:opendocument:xmlns:meta:1.0" xmlns:script="urn:oasis:names:tc:opendocument:xmlns:script:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" xmlns:presentation="urn:oasis:names:tc:opendocument:xmlns:presentation:1.0" xmlns:calcext="urn:org:documentfoundation:names:experimental:calc:xmlns:calcext:1.0" office:version="1.3"';
+
+export type OdfKind = "text" | "spreadsheet" | "presentation";
+
+export const ODF_MIME_TYPES: Record<OdfKind, string> = {
+	text: "application/vnd.oasis.opendocument.text",
+	spreadsheet: "application/vnd.oasis.opendocument.spreadsheet",
+	presentation: "application/vnd.oasis.opendocument.presentation",
+};
+
+/**
+ * An OpenDocument package: `mimetype` first (stored), `content.xml` with `bodyXml` inside
+ * `<office:{kind}>`, `styles.xml` (footer `footer`), `meta.xml` (author `creator`), a manifest.
+ */
+export function odf(
+	kind: OdfKind,
+	bodyXml: string,
+	opts: { extra?: Files; footer?: string; creator?: string; manifestExtra?: string } = {},
+): Promise<Uint8Array> {
+	const footer = opts.footer ?? "Sayfa";
+	return createZip(
+		Object.entries({
+			mimetype: ODF_MIME_TYPES[kind],
+			"META-INF/manifest.xml": `${XML_DECL}<manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0" manifest:version="1.3"><manifest:file-entry manifest:full-path="/" manifest:media-type="${ODF_MIME_TYPES[kind]}"/><manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"/>${opts.manifestExtra ?? ""}</manifest:manifest>`,
+			"content.xml": `${XML_DECL}<office:document-content ${ODF_NS}><office:body><office:${kind}>${bodyXml}</office:${kind}></office:body></office:document-content>`,
+			"styles.xml": `${XML_DECL}<office:document-styles ${ODF_NS}><office:master-styles><style:master-page style:name="Standard"><style:footer><text:p>${footer}</text:p></style:footer></style:master-page></office:master-styles></office:document-styles>`,
+			"meta.xml": `${XML_DECL}<office:document-meta ${ODF_NS}><office:meta><dc:creator>${opts.creator ?? "Editor"}</dc:creator><meta:generator>LibreOffice</meta:generator></office:meta></office:document-meta>`,
+			"settings.xml": `${XML_DECL}<office:document-settings ${ODF_NS}><office:settings/></office:document-settings>`,
+			...opts.extra,
+		}).map(([name, data]) => ({ name, data })),
+	);
 }

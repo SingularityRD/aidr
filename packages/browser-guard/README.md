@@ -79,7 +79,7 @@ administrator and end-user guide is [`docs/platform-guides/browser-guard.md`](..
    masked copy is written as UTF-8 (CSV/TSV with a BOM). A text-named file that
    contains NUL bytes cannot be decoded safely and is blocked
    (`TEXT_FILE_NOT_DECODABLE`) in every mode except `monitor`.
-6. **Office documents and PDFs** (`documentHandling`, default `mask`). Everything
+6. **Office documents, OpenDocument and PDFs** (`documentHandling`, default `mask`). Everything
    runs in the content script: a small ZIP reader/writer on the browser's
    `DecompressionStream`/`CompressionStream`, a strict XML scanner and a PDF text
    extractor - no remote code, no WebAssembly, no new dependencies.
@@ -98,6 +98,29 @@ administrator and end-user guide is [`docs/platform-guides/browser-guard.md`](..
      comments; charts/diagrams/drawings, document properties and `mailto:` and
      other external hyperlink targets in every format. Other parts (styles, media,
      fonts...) are copied byte for byte.
+   - **ODT / ODS / ODP / ODG** (and templates) go through the same ZIP reader/writer,
+     XML scanner and limits and are masked in place the same way: paragraphs are
+     scanned over their spans, links and fields; notes, annotations and text boxes;
+     headers/footers (`styles.xml`), document metadata, hyperlink targets, and cell
+     values and formulas. Tables use their first row as column headers (a sensitive
+     header masks the column); a cell is masked as a unit, and a masked numeric/date
+     cell becomes a text cell. Embedded objects (`Object 1/`) are masked in place.
+     Refused as for OOXML: encryption, Basic/script libraries and script event
+     listeners, DDE and linked sections/sheets/objects, plugins/applets/frames, OLE
+     objects and other binary entries such as embedded media.
+   - **Legacy `.doc` / `.xls` / `.ppt`** (OLE compound files, also recognised by
+     content or MIME type) are never parsed and never reported as checked: they
+     pass with a "legacy Office file, save as .docx/.xlsx/.pptx" warning
+     (`LEGACY_OFFICE_FORMAT`), are blocked in `block` mode, and `documentHandling:
+     block` rejects them with the other documents.
+   - **Pictures inside Office/OpenDocument files.** A document's first-page
+     thumbnail (`docProps/thumbnail.*`, `Thumbnails/thumbnail.png`) shows the text
+     before masking, so a rewritten package gets a blank PNG/JPEG thumbnail. With
+     the native host's OCR (below) PNG/JPEG/WebP pictures are inspected: sensitive
+     text blocks the upload (`SENSITIVE_DATA_IN_IMAGE`); otherwise, and for formats
+     OCR cannot read (EMF/WMF/GIF/SVG...), more than 16 pictures or a 90 s OCR
+     budget, the decision carries `DOCUMENT_IMAGES_NOT_INSPECTED` and the user is
+     warned that the pictures were not inspected.
    - Blocked with a reason (recorded only in `monitor` mode): macros or ActiveX
      (`DOCUMENT_MACROS`), password protection (`DOCUMENT_ENCRYPTED`), external
      workbook links, data connections, remote templates or linked objects
@@ -119,7 +142,15 @@ administrator and end-user guide is [`docs/platform-guides/browser-guard.md`](..
      unparseable (`PDF_UNPARSEABLE`) is treated like other binaries: uploaded with
      an "unscanned" warning, blocked in `block` mode. Findings in the readable
      part still block.
-   - `documentHandling: block` rejects every Office/PDF upload in every mode;
+   - **Screenshots and photos** (PNG/JPEG/WebP): with `useNativeHost` and a host
+     configured with OCR, the image is sent to the local host (`image-scan`, counts
+     only; the host never returns pixels or text) and blocked when its text holds
+     sensitive data (`SENSITIVE_DATA_IN_IMAGE`; pixels are not masked). A clean OCR
+     result lets it through. Without the host, without OCR on it, or when OCR could
+     not read the image fully (no text, uncertain words, barcodes, limits), the
+     image is reported as not inspected (`IMAGE_NOT_INSPECTED`): uploaded with a
+     warning, blocked in `block` mode, never treated as clean.
+   - `documentHandling: block` rejects every Office/OpenDocument/PDF upload in every mode;
      `allow` skips document parsing (the previous behaviour: unscanned warning,
      blocked in `block` mode). A document whose scan exceeds 30 s is blocked
      (`SCAN_INCOMPLETE`).
@@ -242,7 +273,7 @@ the policy sets `allowUserOverrides: true` (see `deploy/browser-guard/README.md`
 | `allowUserPause` / `allowSendAnyway` | boolean | `true` / `true` |
 | `maskPaste` | boolean | `true` |
 | `fileHandling` / `maxFileBytes` | `scan` \| `block` \| `allow` / bytes (max 50 MiB) | `scan` / 5 MiB |
-| `documentHandling` | `mask` \| `block` \| `allow` (managed only; Office/PDF when `fileHandling` is `scan`) | `mask` |
+| `documentHandling` | `mask` \| `block` \| `allow` (managed only; Office/OpenDocument/legacy Office/PDF when `fileHandling` is `scan`) | `mask` |
 | `restoreResponses` | boolean | `true` |
 | `useNativeHost` | boolean | `false` (also a user setting unless managed) |
 | `telemetry` | `{ controlPlaneUrl, apiKey }` | none (no telemetry) |
@@ -371,9 +402,11 @@ to regenerate the dataset with stable fingerprints.
 - The restore mapping survives a reload of the same tab, but not a browser
   restart, another tab, or 4 hours without a save; if the worker does not answer
   within 1.5 s while the page loads, earlier placeholders stay placeholders.
-- Images are not OCR'd in the browser: pictures inside Office documents, scanned
-  PDFs and image-only PDF pages are not inspected (scanned PDFs are reported as
-  unscanned, not as clean). Set `fileHandling: block` or
+- Images are not OCR'd in the browser itself. Uploaded images and pictures inside
+  Office/OpenDocument files are OCR'd only through the optional native host with OCR
+  configured, and blocked (never masked) when they show sensitive data; without it
+  they are reported as not inspected, not as clean. Scanned PDFs and image-only PDF
+  pages are not OCR'd (reported as unscanned). Set `fileHandling: block` or
   `documentHandling: block` if such uploads must not reach AI sites at all.
 - PDFs are scanned but never rewritten, so a PDF with findings is blocked rather
   than masked. PDF text extraction does not decrypt encrypted files, does not
@@ -383,8 +416,9 @@ to regenerate the dataset with stable fingerprints.
 - Office masking covers text; sheet names, defined names, table column names and
   numeric pivot-cache values are not rewritten (a masked header cell can make
   Excel repair a table's column name).
-  Legacy binary formats (`.doc`, `.xls`, `.ppt`) and OpenDocument files are not
-  parsed and follow the binary-file rule.
+  OpenDocument masking has the same scope (sheet and table names, named ranges
+  and chart caches are not rewritten). Legacy binary formats (`.doc`, `.xls`,
+  `.ppt`) are not parsed: they pass only with a warning, or are blocked (see above).
 - Restoring works on text the site renders in the page. Content the site
   exports, copies to the clipboard itself, or shares by link contains the
   placeholders, not the originals.
@@ -403,11 +437,14 @@ manifests, the CSP, permissions, locale copying, zips and `SHA256SUMS`,
 reproducibility, and every fail-closed path. `build-tools.test.ts` covers the
 fingerprint tool (against WebCrypto), the zip writer, the icons, and checks that
 all deployment examples carry the same valid policy.
-`files-office.test.ts`, `files-office-zip.test.ts` and `files-pdf.test.ts` build
-DOCX/XLSX/PPTX packages and PDFs in memory (no binary fixtures), sanitise them with
+`files-office.test.ts`, `files-office-zip.test.ts`, `files-odf.test.ts`,
+`files-images.test.ts` and `files-pdf.test.ts` build DOCX/XLSX/PPTX, ODT/ODS/ODP
+packages, images and PDFs in memory (no binary fixtures), sanitise them with
 the real detection engine and vault, and re-open the output to check that
 placeholders are present and originals are gone; they also cover macro, encryption
 and external-link refusals, zip-bomb, ZIP64 and path-traversal refusals, PDF font
-encodings and filters, and time bounds. The `file-upload-docx` and
-`file-upload-pdf-blocked` E2E scenarios upload a DOCX and a PDF on the ChatGPT
-fixture in a real browser.
+encodings and filters, legacy-format and OCR decisions, and time bounds. The
+`file-upload-docx`, `file-upload-odt`, `file-upload-pptx-thumbnail`,
+`file-upload-legacy-doc` and `file-upload-pdf-blocked` E2E scenarios upload those
+files on the ChatGPT fixture in a real browser (the blank thumbnails are decoded by
+Chromium itself).

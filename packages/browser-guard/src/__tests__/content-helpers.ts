@@ -15,6 +15,7 @@ import type {
 	Finding,
 	GuardMessage,
 	GuardPolicy,
+	ImageInspection,
 	PlaceholderVault,
 	ScanResult,
 	SignalCode,
@@ -125,13 +126,17 @@ export interface HarnessOptions {
 			type: string;
 			bytes: Uint8Array;
 		},
-		deps: { vault: PlaceholderVault },
+		deps: {
+			vault: PlaceholderVault;
+			inspectImage?: (bytes: Uint8Array) => Promise<ImageInspection | null>;
+		},
 	) => Promise<FileDecision>;
 	readonly prescanDelayMs?: number;
 	readonly navigatorLanguage?: string;
 	/** Worker reply for a message (e.g. a fake native bridge answering NATIVE_SCAN). */
 	readonly respond?: (message: GuardMessage) => unknown;
 	readonly nativeTimeoutMs?: number;
+	readonly nativeImageTimeoutMs?: number;
 }
 
 export function setupGuard(options: HarnessOptions = {}): Harness {
@@ -202,6 +207,7 @@ export function setupGuard(options: HarnessOptions = {}): Harness {
 		schedule: (callback) => queueMicrotask(callback),
 		prescanDelayMs: options.prescanDelayMs ?? 60_000,
 		nativeTimeoutMs: options.nativeTimeoutMs,
+		nativeImageTimeoutMs: options.nativeImageTimeoutMs,
 	});
 	guard.start();
 

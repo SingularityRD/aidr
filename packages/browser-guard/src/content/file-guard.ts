@@ -14,6 +14,7 @@ import type {
 	DetectionEngine,
 	FileDecision,
 	GuardPolicy,
+	ImageInspection,
 	PlaceholderVault,
 	PrivacyScanEvent,
 	SiteAdapter,
@@ -21,9 +22,16 @@ import type {
 import { formatCounts, type Strings } from "./strings.js";
 import type { GuardUi } from "./ui.js";
 
+export type InspectImageFn = (bytes: Uint8Array) => Promise<ImageInspection | null>;
+
 export type SanitizeFileFn = (
 	file: { name: string; type: string; bytes: Uint8Array },
-	deps: { engine: DetectionEngine; vault: PlaceholderVault; policy: GuardPolicy },
+	deps: {
+		engine: DetectionEngine;
+		vault: PlaceholderVault;
+		policy: GuardPolicy;
+		inspectImage?: InspectImageFn;
+	},
 ) => Promise<FileDecision>;
 
 export interface FileGuardDeps {
@@ -42,6 +50,8 @@ export interface FileGuardDeps {
 	): void;
 	/** Masks clipboard text that accompanies pasted files; null means it could not be checked. */
 	maskText(text: string): Promise<{ text: string; counts: Counts } | null>;
+	/** OCR through the native host (policy.useNativeHost); absent or null: not inspected. */
+	inspectImage?: InspectImageFn;
 }
 
 export interface FileGuard {
@@ -62,7 +72,8 @@ interface OkOutcome {
 	readonly kind: "ok";
 	readonly files: File[];
 	masked: number;
-	readonly unscanned: string[];
+	/** Warnings for files that pass without a complete check (binary, legacy, images...). */
+	readonly warnings: string[];
 	readonly counts: Counts;
 }
 
@@ -76,15 +87,29 @@ type Outcome =
 	  }
 	| { readonly kind: "error" };
 
-/** Bubble text for a blocked upload: reason codes, counts, and a hint for PDFs. */
+/** Bubble text for a blocked upload: reason codes, counts, and a hint for what to do instead. */
 function blockedMessage(
 	s: Strings,
 	outcome: { readonly name: string; readonly reasons: readonly string[]; readonly counts: Counts },
 ): string {
 	const summary = formatCounts(outcome.counts);
 	const reasons = [...outcome.reasons, ...(summary ? [summary] : [])].join(", ");
-	const hint = outcome.reasons.includes("SENSITIVE_DATA_IN_PDF") ? ` ${s.pdfPasteHint}` : "";
-	return s.fileBlockedBody(outcome.name, reasons) + hint;
+	const has = (code: string) => outcome.reasons.includes(code);
+	const hints = [
+		...(has("SENSITIVE_DATA_IN_PDF") ? [s.pdfPasteHint] : []),
+		...(has("SENSITIVE_DATA_IN_IMAGE") ? [s.imageBlockedHint] : []),
+		...(has("LEGACY_OFFICE_FORMAT") ? [s.legacyOfficeHint] : []),
+	];
+	return [s.fileBlockedBody(outcome.name, reasons), ...hints].join(" ");
+}
+
+/** Why an allowed/masked file was not fully checked, as a user message (null: fully checked). */
+function passWarning(s: Strings, name: string, reasons: readonly string[]): string | null {
+	if (reasons.includes("LEGACY_OFFICE_FORMAT")) return s.legacyOfficeToast(name);
+	if (reasons.includes("IMAGE_NOT_INSPECTED")) return s.imageUnscannedToast(name);
+	if (reasons.some((r) => r.startsWith("BINARY_FILE"))) return s.fileUnscannedToast(name);
+	if (reasons.includes("DOCUMENT_IMAGES_NOT_INSPECTED")) return s.documentImagesToast(name);
+	return null;
 }
 
 async function readFileBytes(file: Blob, win: Window): Promise<Uint8Array> {
@@ -189,12 +214,19 @@ export function createFileGuard(deps: FileGuardDeps): FileGuard {
 		const bytes = await readFileBytes(file, win);
 		const decision = await deps.sanitizeFile(
 			{ name: file.name, type: file.type, bytes },
-			{ engine: deps.engine, vault: deps.vault, policy },
+			{
+				engine: deps.engine,
+				vault: deps.vault,
+				policy,
+				...(deps.inspectImage ? { inspectImage: deps.inspectImage } : {}),
+			},
 		);
 		mergeCounts(counts, decision.counts);
 		if (decision.action === "block") {
 			return { kind: "blocked", name: file.name, reasons: decision.reasons, counts };
 		}
+		const warning = passWarning(deps.strings(), file.name, decision.reasons);
+		if (warning) batch.warnings.push(warning);
 		if (decision.action === "mask") {
 			if (!decision.masked) return { kind: "error" };
 			const { name, type, bytes: cleaned } = decision.masked;
@@ -204,13 +236,12 @@ export function createFileGuard(deps: FileGuardDeps): FileGuard {
 			batch.masked++;
 			return null;
 		}
-		if (decision.reasons.some((r) => r.startsWith("BINARY_FILE"))) batch.unscanned.push(file.name);
 		batch.files.push(file);
 		return null;
 	};
 
 	const sanitizeAll = async (files: readonly File[], policy: GuardPolicy): Promise<Outcome> => {
-		const batch: OkOutcome = { kind: "ok", files: [], masked: 0, unscanned: [], counts: {} };
+		const batch: OkOutcome = { kind: "ok", files: [], masked: 0, warnings: [], counts: {} };
 		try {
 			for (const file of files) {
 				const stopped = await sanitizeInto(batch, file, policy);
@@ -235,11 +266,12 @@ export function createFileGuard(deps: FileGuardDeps): FileGuard {
 			deps.record("blocked", "file", outcome.counts);
 			return null;
 		}
-		if (outcome.masked > 0) {
-			deps.ui.toast(s.fileMaskedToast(outcome.masked, formatCounts(outcome.counts)), "info");
-		} else if (outcome.unscanned.length > 0) {
-			deps.ui.toast(s.fileUnscannedToast(outcome.unscanned.join(", ")), "warn");
-		}
+		const masked =
+			outcome.masked > 0 ? [s.fileMaskedToast(outcome.masked, formatCounts(outcome.counts))] : [];
+		// Anything that passed without a complete check is a warning, never a silent pass.
+		if (outcome.warnings.length > 0)
+			deps.ui.toast([...masked, ...outcome.warnings].join(" "), "warn");
+		else if (masked.length > 0) deps.ui.toast(masked[0] as string, "info");
 		deps.record(outcome.masked > 0 ? "masked" : "allowed", "file", outcome.counts);
 		return outcome.files;
 	};
