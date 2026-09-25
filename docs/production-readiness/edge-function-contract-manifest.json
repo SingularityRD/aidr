@@ -12,6 +12,10 @@
       "owner": "Identity Engineering",
       "tests": ["supabase/functions/__tests__/api-key-auth.test.ts"]
     },
+    "approval-requests": {
+      "owner": "Identity Engineering",
+      "tests": ["supabase/functions/__tests__/approval-requests-contract.test.ts"]
+    },
     "audit-export": {
       "owner": "Platform Engineering",
       "tests": ["supabase/functions/__tests__/audit-export.test.ts", "supabase/functions/__tests__/audit-export-legal-hold.test.ts", "supabase/functions/__tests__/export-cursor.test.ts"]
