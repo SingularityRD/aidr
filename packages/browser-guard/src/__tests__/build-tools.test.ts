@@ -481,11 +481,8 @@ describe("deployment examples", () => {
 	});
 
 	const schemaFile = join(PACKAGE_ROOT, "static", "managed_schema.json");
-	it(
-		"every example key is declared in static/managed_schema.json",
-		() => {
-			const schema = JSON.parse(readFileSync(schemaFile, "utf8"));
-			for (const key of Object.keys(canonical)) expect(schema.properties).toHaveProperty(key);
-		},
-	);
+	it("every example key is declared in static/managed_schema.json", () => {
+		const schema = JSON.parse(readFileSync(schemaFile, "utf8"));
+		for (const key of Object.keys(canonical)) expect(schema.properties).toHaveProperty(key);
+	});
 });
