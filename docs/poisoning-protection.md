@@ -144,6 +144,12 @@ arguments are scanned before the write:
 
 Ordinary facts ("the user prefers tabs over spaces") are allowed.
 
+Written content (instruction files, memory writes, MCP tool metadata) is matched
+both as written and as the model reads it: compatibility forms are folded
+(`ｉｇｎｏｒｅ` → `ignore`), invisible fillers such as soft hyphens are dropped,
+and Cyrillic/Greek letters drawn like Latin ones are mapped to Latin, so an
+instruction spelled with them is still recognised.
+
 ## Slopsquatting
 
 AI assistants sometimes invent plausible package names, and attackers register

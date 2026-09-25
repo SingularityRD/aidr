@@ -107,10 +107,13 @@ const JAILBREAK_RULES: readonly Rule[] = [
 			/\b(?:you (?:have|are) (?:now )?(?:no|free of|without)\b[^.!?\n]{0,40}(?:restrictions|rules|filters|guidelines|limits)|you are (?:not|no longer) (?:bound|restricted|limited|constrained)\b|enter(?:ing)? (?:dan|developer|god|jailbreak|do anything now) mode)\b/i,
 	},
 	{
-		// many-shot framing: repeated "sure, here" jailbreak priming or long fake dialogue turns
+		// many-shot framing: repeated "sure, here" jailbreak priming or long fake dialogue turns.
+		// Indentation is `[ \t]*`, never `\s*`: a `\s*` after `\n` spans every following
+		// blank line, which made a prompt of blank lines cost O(n²) (150k newlines ≈ 10 s,
+		// past the host's hook timeout, which sends the prompt uninspected).
 		rule: "jailbreak.many_shot",
 		pattern:
-			/(?:^|\n)\s*(?:user|human|assistant|ai)\s*:[^\n]*(?:\n[^\n]*){0,4}?\n\s*(?:user|human|assistant|ai)\s*:[^\n]*(?:\n[^\n]*){0,4}?\n\s*(?:user|human|assistant|ai)\s*:/i,
+			/(?:^|\n)[ \t]*(?:user|human|assistant|ai)[ \t]*:[^\n]*(?:\n[^\n]*){0,4}?\n[ \t]*(?:user|human|assistant|ai)[ \t]*:[^\n]*(?:\n[^\n]*){0,4}?\n[ \t]*(?:user|human|assistant|ai)[ \t]*:/i,
 	},
 	{
 		// request to run / execute a decoded (base64/hex/rot13) payload
@@ -234,7 +237,8 @@ function contentSafetyMode(
 
 /**
  * Scan one prompt for jailbreak and content-safety patterns. `deadlineCheck`, if
- * supplied, is called between rule groups so a caller's scan deadline is honored.
+ * supplied, is called before every rule so a caller's scan deadline is honored:
+ * the scan is synchronous, so a timer cannot interrupt it between checks.
  */
 export function scanPromptSafety(
 	prompt: string,
@@ -246,8 +250,8 @@ export function scanPromptSafety(
 
 	const jailbreak = jailbreakMode(config);
 	if (jailbreak !== "off") {
-		deadlineCheck?.();
 		for (const { rule, pattern } of JAILBREAK_RULES) {
+			deadlineCheck?.();
 			const count = countMatches(prompt, pattern);
 			if (count > 0) {
 				findings.push({ category: "jailbreak", rule, count, action: jailbreak });
@@ -259,8 +263,8 @@ export function scanPromptSafety(
 	for (const category of CONTENT_SAFETY_CATEGORIES) {
 		const mode = contentSafetyMode(config, category);
 		if (mode === "off") continue;
-		deadlineCheck?.();
 		for (const { rule, pattern } of CONTENT_SAFETY_RULES[category]) {
+			deadlineCheck?.();
 			const count = countMatches(prompt, pattern);
 			if (count > 0) {
 				findings.push({ category, rule, count, action: mode });

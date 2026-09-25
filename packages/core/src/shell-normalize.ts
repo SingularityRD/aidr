@@ -203,7 +203,7 @@ function tokenMatches(token: GlobToken, character: string): boolean {
  * O(glob × name) whatever the glob looks like: a regular expression built from
  * an agent-supplied glob (`.*?*?*?…`) could backtrack exponentially.
  */
-function globMatches(glob: string, name: string): boolean {
+export function globMatches(glob: string, name: string): boolean {
 	const tokens = tokenizeGlob(glob);
 	const subject = name.toLowerCase();
 	// reachable[j]: the tokens consumed so far can match subject[0, j).
@@ -259,25 +259,133 @@ function resolveStateDirGlobs(text: string): string {
 	});
 }
 
+// ── Recursive traversal from an ancestor of the state directory ─────────
+
+/**
+ * A word that names a directory the AIDR state directory lives under: the
+ * filesystem root, a home directory, or the directory holding home directories.
+ * Only these exact spellings count (not `~/project`), so ordinary recursive work
+ * inside a project is unaffected.
+ */
+const STATE_DIR_ANCESTOR =
+	/^(?:~|\$HOME|\$\{HOME\}|\$env:USERPROFILE|%USERPROFILE%|\/|\/home(?:\/[^/\s]{1,64})?|\/Users(?:\/[^/\s]{1,64})?|\/root|[A-Za-z]:\\?(?:Users(?:\\[^\\/\s]{1,64})?)?)[\\/]?$/;
+
+/** `find` predicates that act on (delete, run a command on, write out) every match. */
+const FIND_ACTION = /^-(?:exec|execdir|ok|okdir|delete|fprint0?|fprintf|fls)$/;
+const COMMAND_WRAPPERS = new Set([
+	"sudo",
+	"doas",
+	"env",
+	"command",
+	"exec",
+	"nice",
+	"nohup",
+	"time",
+]);
+/** Tools that read or change a whole tree when given a directory and a recursive flag. */
+const RECURSIVE_FLAG_TOOLS = new Set([
+	"grep",
+	"egrep",
+	"fgrep",
+	"cp",
+	"scp",
+	"chmod",
+	"chown",
+	"rm",
+]);
+/** Tools that walk a directory operand by default. */
+const ALWAYS_RECURSIVE_TOOLS = new Set(["tar", "bsdtar", "rsync", "7z", "7za", "zip", "ditto"]);
+/** Cheap pre-check: the view names at least one tool {@link walksStateDirAncestor} knows. */
+const TRAVERSAL_TOOL =
+	/\b(?:find|grep|egrep|fgrep|rg|ag|cp|scp|chmod|chown|rm|tar|bsdtar|rsync|7za?|zip|ditto)\b/i;
+
+function hasRecursiveFlag(args: readonly string[]): boolean {
+	return args.some((arg) => /^-[A-Za-z]*[rRa]/.test(arg) || /^--(?:recursive|archive)$/.test(arg));
+}
+
+/**
+ * Whether one simple command walks a tree that contains the AIDR state
+ * directory: `find ~ -name session-flow -exec rm -rf {} +`, `find / … -delete`,
+ * `find ~ -name '*.key' | xargs cat`, `grep -r . ~`, `tar czf h.tgz ~`,
+ * `cp -r ~ /tmp/h`. The state directory is never named, so the literal rules
+ * cannot see the access; this is what lets them.
+ */
+function commandBasename(word: string | undefined): string {
+	return (word ?? "").split(/[\\/]/).pop()?.toLowerCase() ?? "";
+}
+
+/** `find <roots> …` acting on, or piping out, every match under an ancestor root. */
+function findWalksStateDirAncestor(args: readonly string[], piped: boolean): boolean {
+	const roots: string[] = [];
+	for (const arg of args) {
+		if (/^-[HLP]$/.test(arg)) continue;
+		if (arg.startsWith("-") || arg === "(" || arg === "!") break;
+		roots.push(arg);
+	}
+	if (!roots.some((root) => STATE_DIR_ANCESTOR.test(root))) return false;
+	const depth = args.indexOf("-maxdepth");
+	if (depth >= 0 && args[depth + 1] === "0") return false;
+	return piped || args.some((arg) => FIND_ACTION.test(arg));
+}
+
+function walksStateDirAncestor(words: readonly string[], piped: boolean): boolean {
+	let index = 0;
+	while (
+		index < words.length &&
+		(/^[A-Za-z_][A-Za-z0-9_]*=/.test(words[index] as string) ||
+			COMMAND_WRAPPERS.has(commandBasename(words[index])))
+	) {
+		index += 1;
+	}
+	const executable = commandBasename(words[index]);
+	const args = words.slice(index + 1);
+	if (executable === "find") return findWalksStateDirAncestor(args, piped);
+	const ancestor = args.some((arg) => !arg.startsWith("-") && STATE_DIR_ANCESTOR.test(arg));
+	if (executable === "rg" || executable === "ag") {
+		return ancestor && args.some((arg) => /^(?:--hidden|-u{1,3}|--unrestricted)$/.test(arg));
+	}
+	if (RECURSIVE_FLAG_TOOLS.has(executable)) return ancestor && hasRecursiveFlag(args);
+	if (ALWAYS_RECURSIVE_TOOLS.has(executable)) return ancestor;
+	return false;
+}
+
+/** True when any simple command in the (unquoted) view walks an ancestor of the state directory. */
+function traversesStateDir(view: string): boolean {
+	if (!TRAVERSAL_TOOL.test(view)) return false;
+	for (const pipeline of view.split(/;|&&|\|\||\n|&(?!>)|\$\(|`|\(|\)/)) {
+		const stages = pipeline.split("|");
+		for (const [stageIndex, stage] of stages.entries()) {
+			const words = stage.trim().split(/\s+/).filter(Boolean).slice(0, 256);
+			if (words.length > 0 && walksStateDirAncestor(words, stageIndex < stages.length - 1)) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
 /**
  * The shell-normalized view of `text`: literal concatenations joined, ANSI-C
  * strings decoded, quotes and backslash escapes removed, executable lookups
  * (`$(which aidr)`) replaced by the executable name, variables assigned in the
  * same text substituted, and globs that would expand to the AIDR state
- * directory replaced by its name. Returns `text` unchanged when there is
+ * directory replaced by its name. A command that recursively walks (deletes,
+ * reads, archives, copies, re-permissions) a directory the state directory
+ * lives under gets the state directory's name appended, since it reaches the
+ * state directory without naming it. Returns `text` unchanged when there is
  * nothing to peel off.
  */
 export function normalizeShellText(text: string): string {
 	const decoded = text
 		.replace(LITERAL_CONCATENATION, "")
 		.replace(ANSI_C_QUOTED, (_whole, body: string) => decodeAnsiC(body));
-	const view = peel(stripQuoting(decoded));
+	let view = peel(stripQuoting(decoded));
 	// A backslash is an escape to a POSIX shell but a path separator to cmd and
 	// PowerShell. When there is one, add the view with backslashes kept, so a
 	// Windows path (`C:\Users\<name>\.s*\x`) keeps its separators for the glob step.
 	// (A literal user name here ships in dist/ and trips check-no-leaky-paths.)
-	if (!decoded.includes("\\")) return view;
-	return `${view}\n;\n${peel(stripQuoting(decoded, true))}`;
+	if (decoded.includes("\\")) view = `${view}\n;\n${peel(stripQuoting(decoded, true))}`;
+	return traversesStateDir(view) ? `${view}\n;\n~/${AIDR_STATE_DIR_NAME}` : view;
 }
 
 function peel(unquoted: string): string {

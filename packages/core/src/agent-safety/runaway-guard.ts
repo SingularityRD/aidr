@@ -397,7 +397,7 @@ export async function checkRunaway(
 		const disabled = new Set(config.disabled_threats);
 		const now = options.now ?? Date.now;
 		const { result, recovered } = await runawayStore(settings, options).update(
-			resolveFlowSessionKey(request.sessionId, options.agentRuntime, request.toolInput),
+			resolveFlowSessionKey(request.sessionId, options.agentRuntime),
 			(current) => {
 				const { next, signals } = evaluateRunawayCall(
 					current,
@@ -500,11 +500,7 @@ export async function recordToolOutcome(
 		const { exact } = toolCallFingerprints(normalized.toolName, normalized.toolInput);
 		const now = options.now ?? Date.now;
 		const windowMs = settings.window_seconds * 1000;
-		const sessionKey = resolveFlowSessionKey(
-			event.sessionId,
-			options.agentRuntime,
-			normalized.toolInput,
-		);
+		const sessionKey = resolveFlowSessionKey(event.sessionId, options.agentRuntime);
 		await runawayStore(settings, options).update(sessionKey, (current) => {
 			const at = now();
 			const state = current ?? freshState(at);

@@ -1138,7 +1138,12 @@ function handleGit(ctx: StageContext): boolean {
 		arg.startsWith("-") || all[i - 1] === "-C" || all[i - 1] === "-c";
 	if (pushIndex >= 0 && args.slice(0, pushIndex).every(globalOptionsOnly)) {
 		const remote = gitRemoteName(args, pushIndex);
-		if (remote && !options.trustedGitRemotes.includes(remote)) {
+		// `git -c remote.origin.pushurl=https://elsewhere push origin` keeps the
+		// trusted remote's name but sends to wherever the override points.
+		const redirected = args
+			.slice(0, pushIndex)
+			.some((arg, i, all) => all[i - 1] === "-c" && /^remote\.[^=]+\.(?:push)?url=/i.test(arg));
+		if (remote && (redirected || !options.trustedGitRemotes.includes(remote))) {
 			set.add({
 				cap: "external_comm",
 				kind: "git_push_remote",
@@ -1169,7 +1174,7 @@ function handleGh(ctx: StageContext): boolean {
 }
 
 const NETWORK_API =
-	/(?:requests\.|urllib|http\.client|urlopen|fetch\(|axios|XMLHttpRequest|net\.connect|socket\.|Net::HTTP|LWP|HTTP::Tiny|curl_exec|file_get_contents\(\s*['"]https?)/;
+	/(?:requests\.|urllib|http\.client|urlopen|fetch\(|axios|XMLHttpRequest|net\.connect|socket\.|Net::HTTP|LWP|HTTP::Tiny|curl_exec|file_get_contents\(\s*['"]https?|require\(\s*['"](?:node:)?(?:https?|http2|net|tls|dgram)['"]\s*\)|\bhttps?\.(?:get|request)\s*\()/;
 
 function handleInterpreter(ctx: StageContext): boolean {
 	const { exe, args } = ctx;

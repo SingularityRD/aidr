@@ -825,7 +825,8 @@ The approval channel is protected by hard-deny rules (never `ask`, which would
 hand the agent an actionId to have approved):
 
 - `CLT-SELF-007` — an agent command that runs `aidr approve`, `aidr pending`,
-  `aidr allowlist add`, or sets `AIDR_OPERATOR_NONINTERACTIVE`.
+  `aidr allowlist add`, the MCP gateway's toolset approval `aidr-mcp-approve`, or
+  sets `AIDR_OPERATOR_NONINTERACTIVE`.
 - `CLT-SELF-008` — any agent reference to the AIDR state directory
   `.singularity-aidr`, in a shell command, a file-tool path, a Write/Edit body or
   an MCP argument.

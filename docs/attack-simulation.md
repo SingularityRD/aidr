@@ -101,7 +101,7 @@ aidr simulate [--suite <names>] [--sensitivity <level>]
 | `--format` | `table` (default), `json`, or a self-contained, shareable `html` report. |
 | `--output` | Write the report to a file instead of stdout. |
 | `--min-score` | Exit non-zero when the detection score is below this value (0–100). |
-| `--connector` | Drive a **built connector entry point** instead of the in-process evaluator: `claude-code`, `codex`, `cursor`, or `vscode`. Tool-call fixtures run through the connector's real `dist` binary; prompt and output fixtures fall back to the in-process scanners because those are separate connector surfaces. |
+| `--connector` | Drive a **built connector entry point** instead of the in-process evaluator: `claude-code`, `codex`, `cursor`, or `vscode`. Tool-call fixtures run through the connector's real `dist` binary; prompt and output fixtures fall back to the in-process scanners because those are separate connector surfaces. The entry points are located from the CLI's own source checkout (`<repo>/packages/cli`), never from the current directory; an installed CLI refuses connector mode. |
 
 ### Connector mode
 

@@ -25,7 +25,12 @@ import { REDACTED_TELEMETRY_VALUE, redactTelemetryString } from "./telemetry-red
 export const REDACTED_LAUNCH_VALUE = REDACTED_TELEMETRY_VALUE;
 
 const CREDENTIAL_NAME =
-	"(?:api[_-]?key|apikey|access[_-]?key|key|token|secret|password|passwd|pwd|credential|auth|bearer|cookie|signature|dsn|connection[_-]?string)";
+	"(?:api[_-]?key|apikey|access[_-]?key|key|token|secret|pass(?:word|wd|phrase)?|pwd|credential|auth|bearer|cookie|signature|dsn|connection[_-]?string)";
+/** `"apiKey": "…"` / `'token':'…'` inside a JSON (or JSON-like) argument. */
+const QUOTED_CREDENTIAL_PAIR_RE = new RegExp(
+	`(["'])([a-z0-9_.-]*${CREDENTIAL_NAME}[a-z0-9_.-]*)\\1(\\s*:\\s*)(["'])(?:(?!\\4)[^\\n]){1,512}\\4`,
+	"gi",
+);
 const CREDENTIAL_FLAG_RE = new RegExp(`^--?[a-z0-9_.-]*${CREDENTIAL_NAME}[a-z0-9_.-]*$`, "i");
 const CREDENTIAL_ASSIGNMENT_RE = new RegExp(
 	`^(-{0,2}[a-z0-9_.-]*${CREDENTIAL_NAME}[a-z0-9_.-]*=).+$`,
@@ -56,7 +61,13 @@ export function redactLaunchToken(value: string): string {
 	const assignment = CREDENTIAL_ASSIGNMENT_RE.exec(value);
 	if (assignment) return `${assignment[1]}${REDACTED_LAUNCH_VALUE}`;
 	const safe = redactTelemetryString(
-		value.replace(URL_IN_TEXT_RE, (match) => stripUrl(match)),
+		value
+			.replace(URL_IN_TEXT_RE, (match) => stripUrl(match))
+			.replace(
+				QUOTED_CREDENTIAL_PAIR_RE,
+				(_match, quote: string, name: string, colon: string, valueQuote: string) =>
+					`${quote}${name}${quote}${colon}${valueQuote}${REDACTED_LAUNCH_VALUE}${valueQuote}`,
+			),
 		MAX_TOKEN_LENGTH,
 	);
 	return safe
@@ -79,7 +90,9 @@ export function redactMcpLaunch(
 		const arg = args[index] as string;
 		safeArgs.push(redactLaunchToken(arg));
 		const next = args[index + 1];
-		if (next === undefined || next.startsWith("-")) continue;
+		// A value may itself start with `-` (random tokens do); only something that
+		// is plainly the next option (`--verbose`, `-v`) is not taken as the value.
+		if (next === undefined || next.startsWith("--") || /^-[A-Za-z]$/.test(next)) continue;
 		if (CREDENTIAL_FLAG_RE.test(arg) || HEADER_FLAG_RE.test(arg)) {
 			safeArgs.push(REDACTED_LAUNCH_VALUE);
 			index++;

@@ -157,7 +157,22 @@ const HUGGING_FACE_HOSTS: ReadonlySet<string> = new Set([
 	"huggingface.co",
 	"www.huggingface.co",
 	"hf.co",
+	"www.hf.co",
 ]);
+
+/** Any host of the Hugging Face family, including its LFS/CDN download hosts. */
+function isHuggingFaceFamilyHost(hostname: string): boolean {
+	const host = hostname.toLowerCase();
+	return ["huggingface.co", "hf.co"].some((base) => host === base || host.endsWith(`.${base}`));
+}
+
+/**
+ * A hub endpoint override (`HF_ENDPOINT=…`, `endpoint="…"`, `--endpoint …`): the
+ * repository id then names nothing on the real hub, the bytes come from wherever
+ * the endpoint points, so a trusted organisation in the id proves nothing.
+ */
+const HUB_ENDPOINT_OVERRIDE =
+	/\bHF_(?:HUB_)?ENDPOINT\b|(?:^|[\s,(])--?endpoint\b|\bendpoint\s{0,4}=/i;
 const HUGGING_FACE_REPO_KINDS: ReadonlySet<string> = new Set(["datasets", "spaces", "models"]);
 
 /**
@@ -201,9 +216,12 @@ export function isTrustedModelSourceMatch(
 	threatId: string,
 	matchValue: string,
 	sources: TrustedModelSources,
+	/** The whole code block or command the match came from, for context the match omits. */
+	context = matchValue,
 ): boolean {
 	if (ORG_SUPPRESSIBLE.has(threatId)) {
 		if (sources.orgs.size === 0) return false;
+		if (HUB_ENDPOINT_OVERRIDE.test(context) || HUB_ENDPOINT_OVERRIDE.test(matchValue)) return false;
 		const orgs = modelRepoOrgs(matchValue);
 		return orgs.length > 0 && orgs.every((org) => sources.orgs.has(org));
 	}
@@ -219,9 +237,12 @@ export function isTrustedModelSourceMatch(
 				return false;
 			}
 			if (url.protocol !== "https:" || !isTrustedHost(url.hostname, sources)) return false;
-			// A hub host is only as trustworthy as the repository on it.
+			// A hub host is only as trustworthy as the repository on it. Anyone can
+			// upload to the hub, so a Hugging Face URL that names no repository (an
+			// LFS/CDN object URL) is not trusted either.
 			const org = huggingFaceOrgFromUrl(url);
-			return org === null || sources.orgs.has(org);
+			if (org === null) return !isHuggingFaceFamilyHost(url.hostname);
+			return sources.orgs.has(org);
 		});
 	}
 	return false;

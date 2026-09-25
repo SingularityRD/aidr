@@ -116,6 +116,12 @@ The working directory is the one the host reports with the call (Claude Code
 and Codex `cwd`, Cursor/VS Code `cwd` or the first workspace root). OpenClaw and
 OpenCode use the plugin process's working directory.
 
+A repository-scoped profile also applies to a call that names an absolute or
+`~/` path inside its repository (a file tool path, an MCP path argument, a word
+of a shell command), wherever the agent stands: `cat ~/work/payments/.env` from
+`/tmp` is judged by the payments profile too. Such profiles are added to the
+selection above, never substituted for it, so the stricter outcome still wins.
+
 ### How one profile decides
 
 Each call is checked in two layers and the strictest result wins:
@@ -258,8 +264,11 @@ a verified managed entitlement for the same tenant; confirm with
   program does; threat detection still inspects every command.
 - Shell words are checked against `files.deny` lexically (symlinks are not
   resolved for them); file tool paths are resolved.
-- Repository selection follows the working directory the host reports. Where an
-  agent can change that directory, prefer connector-scoped profiles for strict
-  controls, or make every profile that could match restrictive.
+- Repository selection follows the working directory the host reports and the
+  absolute paths a call names. A path the call reaches only indirectly (a
+  relative path after `cd`, a path built at run time, a script that opens it)
+  is not seen. Where an agent can change its working directory, prefer
+  connector-scoped profiles for strict controls, or make every profile that
+  could match restrictive.
 - The dashboard shows templates and reported decisions; it does not store or
   sign profiles.
