@@ -323,7 +323,7 @@ export function decodePart(bytes: Uint8Array): { xml: string; encoding: PartEnco
 	}
 }
 
-export function encodePart(xml: string, encoding: PartEncoding): Uint8Array {
+function encodePart(xml: string, encoding: PartEncoding): Uint8Array {
 	if (encoding === "utf-8") return new TextEncoder().encode(xml);
 	if (encoding === "utf-8-bom") return new TextEncoder().encode(`﻿${xml}`);
 	const out = new Uint8Array(2 + xml.length * 2);
