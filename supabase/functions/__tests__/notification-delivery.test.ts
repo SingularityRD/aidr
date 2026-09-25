@@ -2,7 +2,7 @@
 // encryption at rest, webhook signatures, message formats (no sensitive
 // fields), backoff and the dispatcher loop against a fake fetch and database.
 
-import { createHmac } from "node:crypto";
+import { createHmac, randomBytes } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import type { Mailer, MailMessage } from "../_shared/mailer.ts";
 import {
@@ -40,7 +40,8 @@ const KEY_A = Buffer.alloc(32, 7).toString("base64");
 const KEY_B = Buffer.alloc(32, 9).toString("base64");
 const SLACK_URL = "https://hooks.slack.com/services/T000/B000/abcdefghijklmnopqrstuvwx";
 const WEBHOOK_URL = "https://alerts.example.com/aidr/hook?token=supersecret";
-const WEBHOOK_SECRET = "whsec_0123456789abcdef0123456789abcdef";
+// Generated per run so no fixed signing secret is committed.
+const WEBHOOK_SECRET = `whsec_${randomBytes(16).toString("hex")}`;
 const NOW = Date.parse("2026-09-25T10:00:00.000Z");
 
 const publicDns = async () => ["93.184.216.34"];

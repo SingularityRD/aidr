@@ -74,7 +74,7 @@ targetRules = ["aws-access-token"]
 condition = "AND"
 regexTarget = "match"
 regexes = ['''AKIAQWERTYUIOPASDFGH|AKIAABCDEFGHIJKLMNOP''']
-paths = ['''^packages/core/src/__tests__/output-scanner\.test\.ts$''', '''^packages/browser-guard/src/__tests__/vault\.test\.ts$''']
+paths = ['''^packages/core/src/__tests__/(output-scanner|toxic-flow)\.test\.ts$''', '''^packages/browser-guard/src/__tests__/vault\.test\.ts$''']
 
 [[allowlists]]
 description = "Synthetic GitLab PAT and truncated PEM fixtures in the privacy detector suites"
@@ -123,3 +123,37 @@ condition = "AND"
 regexTarget = "match"
 regexes = ['''keys, RE2-compatible''']
 paths = ['''^scripts/generate-feature-inventory\.mjs$''', '''^FEATURE_INVENTORY\.json$''', '''^PRODUCTION_SALES_GAPS\.json$''']
+
+[[allowlists]]
+description = "AI-BOM and MCP-discovery redaction tests: synthetic credentials proving they never reach the inventory"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''querytoken987|sk-live1234567890abcdefgh|sk-private-123|hunter2-private''']
+paths = ['''^packages/core/src/__tests__/(aibom|mcp-discovery)\.test\.ts$''']
+
+[[allowlists]]
+description = "Compliance-report tests: the public signing key ID 'compliance-2026-09' and the 'attacker.pkcs8B64' variable reference (a key generated at runtime)"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''compliance-2026-09''', '''privateKeyPkcs8B64: attacker\.pkcs8B64''']
+paths = ['''^scripts/compliance-report-postgres\.test\.mjs$''', '''^supabase/functions/__tests__/compliance-report-contract\.test\.ts$''']
+
+# Names of environment variables and SQL parameters that carry key material at
+# runtime; the matched text is the identifier, never a value.
+[[allowlists]]
+description = "Edge Function environment-variable names for the approval and compliance signing keys"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''"AIDR_COMPLIANCE_SIGNING_PRIVATE_KEY_PKCS8_B64"''', '''"AIDR_APPROVAL_SIGNING_WRAP_KEY_B64"''']
+paths = ['''^supabase/functions/(compliance-report|approval-requests)/index\.ts$''']
+
+[[allowlists]]
+description = "Approval signing-key migration: the p_private_key_ciphertext_b64 parameter name"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''p_private_key_ciphertext_b64 text''']
+paths = ['''^supabase/migrations/20260926000001_dashboard_approval_requests\.sql$''']

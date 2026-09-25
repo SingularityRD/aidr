@@ -4,6 +4,7 @@
 // the SQL contract of the migrations (RLS, column grants, identity barrier,
 // service-only RPCs, transactional enqueue, offboarding purge).
 
+import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -34,7 +35,8 @@ const KEYS = `k1:${Buffer.alloc(32, 3).toString("base64")}`;
 const DISPATCH_TOKEN = "dispatch-token-0123456789abcdef0123456789";
 const SLACK_URL = "https://hooks.slack.com/services/T000/B000/abcdefghijklmnopqrstuvwx";
 const WEBHOOK_URL = "https://alerts.example.com/aidr?token=supersecret";
-const WEBHOOK_SECRET = "whsec_0123456789abcdef0123456789abcdef";
+// Generated per run so no fixed signing secret is committed.
+const WEBHOOK_SECRET = `whsec_${randomBytes(16).toString("hex")}`;
 const FILTERS = {
 	incident_created: true,
 	incident_min_severity: "high",

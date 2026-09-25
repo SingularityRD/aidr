@@ -12,7 +12,8 @@ import { join } from "node:path";
 import { canonicalDetectorPolicyPayload } from "../detector-provisioning.js";
 
 export const DASHBOARD_TEST_TENANT = "tenant-dashboard";
-export const DASHBOARD_TEST_API_KEY = "aidr_test_api_key_0123456789";
+/** Generated per run: the fake control plane only compares it for equality. */
+export const DASHBOARD_TEST_API_KEY = `aidr_test_${randomBytes(12).toString("hex")}`;
 export const DASHBOARD_TEST_IID = "11111111-2222-4333-8444-555555555555";
 export const APPROVAL_KEY_ID = "approval-key-1";
 

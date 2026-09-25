@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { CUSTOM_SCRIPT_ID, customSiteForUrl } from "../background/custom-sites.js";
@@ -36,7 +37,11 @@ const INTERNAL = {
 	responseSelectors: [".corp-answer"],
 };
 const INTERNAL_ORIGIN = "https://ai.internal.example/*";
-const TELEMETRY = { controlPlaneUrl: "https://cp.example.com", apiKey: "aidr_test_key_123456" };
+// Generated per run: the telemetry key is opaque to the code under test.
+const TELEMETRY = {
+	controlPlaneUrl: "https://cp.example.com",
+	apiKey: `aidr_test_${randomBytes(8).toString("hex")}`,
+};
 
 const managedPolicy = (managed: Record<string, unknown>) => evaluatePolicy(managed, undefined);
 

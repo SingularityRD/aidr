@@ -4,6 +4,7 @@
  * AUP_STATUS / AUP_ACKNOWLEDGE handling and counts-only telemetry, and the in-page
  * dialog (closed shadow root, accessible, plain-text rendering, once per version).
  */
+import { randomBytes } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { startBackground } from "../background/index.js";
 import {
@@ -35,7 +36,11 @@ const NOTICE: AcceptableUseNotice = {
 	text: "Do not paste customer records.\n\nCheck AI answers before you rely on them.",
 	url: "https://intranet.acme.example/ai-policy",
 };
-const TELEMETRY = { controlPlaneUrl: "https://cp.example.com", apiKey: "aidr_ingest_test_123456" };
+// Generated per run: the telemetry key is opaque to the code under test.
+const TELEMETRY = {
+	controlPlaneUrl: "https://cp.example.com",
+	apiKey: `aidr_test_${randomBytes(8).toString("hex")}`,
+};
 const CHATGPT = "https://chatgpt.com/c/1";
 
 describe("acceptableUse managed policy", () => {
