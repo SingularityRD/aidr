@@ -1041,6 +1041,47 @@ email to the user.
 - Each user grants host access once; tabs already open need a reload afterwards.
 - Selectors follow the portal's markup; a redesign can require an update of the policy.
 
+### 13c. AI acceptable-use notice
+
+**What it does** — Shows your organisation's AI acceptable-use notice the first time a user
+opens a protected AI site after a notice version is published, and counts the
+acknowledgements.
+
+**Why it matters** — People need to know the rules before they paste work into an AI tool.
+The notice and its acknowledgement counts support AI literacy work, for example under
+Article 4 of the EU AI Act (awareness, not training).
+
+**How it works** — Administrators publish the notice in the managed policy key
+`acceptableUse` (id, version, title, plain text up to 4,000 characters, optional `https://`
+link); the **Browser Privacy** page builds the JSON. Browser Guard shows it in its own dialog
+with **I understand** and **Remind me later**. The text is rendered as plain text, never as
+markup, and the notice informs: it never blocks sending. **I understand** is remembered per
+browser profile; raising `version` shows the notice again to everyone. Each acknowledgement
+is reported once per install and version as a counts-only `aup_acknowledgement` event (site,
+notice id, version; never the text or the user). A notice with any field out of range is
+ignored as a whole.
+
+**How to use** — Example entry:
+`{"acceptableUse": {"id": "acme-ai-use", "version": 2, "title": "Using AI at Acme", "text":
+"Do not paste customer records.", "url": "https://intranet.example.com/ai-policy"}}`.
+Coverage per notice version appears on the dashboard **Governance** scorecard.
+
+**Example** — After version 2 is published, a user opening ChatGPT sees "Using AI at Acme"
+once, clicks **I understand**, and the scorecard counts one more acknowledging browser
+install for version 2.
+
+**Availability**
+
+| | |
+|---|---|
+| Plan | Team, Business, Enterprise (catalog) |
+| Deployment | Local / Cloud / On-prem / Air-gapped (counts need a control plane) |
+| Platforms | Chrome, Edge, Firefox (desktop) |
+
+**Limitations**
+- Coding-agent connectors do not show the notice; it is a Browser Guard feature.
+- An acknowledgement made while telemetry is not configured is not reported later.
+
 ### 14. Enterprise managed policy and deployment
 
 **What it does** — Lets administrators force-install the extension and lock its

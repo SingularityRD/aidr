@@ -8,9 +8,11 @@ A four-page A4 brochure for Singularity AIDR, in Turkish (primary) and English.
 | `singularity-aidr-brochure-tr.pdf`, `singularity-aidr-brochure-en.pdf` | Rendered PDFs, 4 pages each. |
 | `preview/brochure-<lang>-p<n>.png` | Page previews (1.5x). |
 
-Pages: 1 cover, 2 problem and the four product lines, 3 how it works (flow diagram,
-capabilities, Browser Guard example), 4 deployment options, security and privacy, editions
-(Free, Team, Business, Enterprise; no prices) and contact.
+Pages: 1 cover (connectors, Browser Guard sites, the end-to-end lifecycle), 2 problem and
+the four product lines, 3 how it works (flow diagram, capabilities including toxic flow,
+agent safety, AI governance and attack simulation, Browser Guard example), 4 deployment
+options, security and privacy, editions (Free, Team, Business, Enterprise; no prices) and
+contact.
 
 ## Editing
 
@@ -51,7 +53,7 @@ exactly 4 pages. Look at the PNG previews before committing.
 
 | Claim | Source |
 | --- | --- |
-| 451 YAML rules in 28 files | `grep -h '^- id:' threats/*.yaml \| wc -l`; `ls threats/*.yaml \| wc -l` |
+| 494 YAML rules in 29 files | `grep -h '^- id:' threats/*.yaml \| wc -l`; `ls threats/*.yaml \| wc -l` |
 | 2,000+ CVE rules, 146 AI components | files under `vendor/ai-infra-guard/data/vuln` and `data/fingerprints`; floor in `packages/dashboard/src/ui/pages/public/product-facts.ts` |
 | Connectors, Browser Guard sites and browsers | `product-facts.ts` (`AGENT_CONNECTORS`, `BROWSER_GUARD_SITES`, `BROWSER_GUARD_BROWSERS`) |
 | 14 MCP risk categories, T01–T09 skill/plugin categories, posture dashboard | `packages/core/src/mcp-aig-categories.ts` (`mcp-01`…`mcp-14`), `threats/skill-scan.yaml`, `docs/ai-security-posture.md` |
@@ -61,6 +63,8 @@ exactly 4 pages. Look at the PNG previews before committing.
 | GPO / Intune / Jamf policy | `deploy/browser-guard/` |
 | Failure behaviour, telemetry, tenancy, SSO/SCIM, audit, signing, KVKK/GDPR wording | `docs/sales/security-faq.md`, `docs/product/overview.md` |
 | On-prem, Helm and air-gapped | `deploy/onprem/README.md`, `docs/deployment/onprem.md` |
+| Toxic flow, agent safety, model loading | `docs/toxic-flow.md`, `docs/agent-safety.md`, `docs/ai-supply-chain-safety.md` |
+| AI governance, AI-BOM, attack simulation | `docs/ai-governance.md`, `docs/ai-governance-frameworks.md`, `docs/ai-bom.md`, `docs/attack-simulation.md` |
 
 ## Honesty rules
 

@@ -298,6 +298,7 @@ h3.sub::after { content: ""; flex: 1; height: 0.3mm; background: var(--line); ma
 		<dl class="reach">
 			<dt>Ajan bağlayıcıları</dt><dd>Claude Code · Cursor · VS Code · OpenClaw · OpenCode · Codex CLI</dd>
 			<dt>Browser Guard siteleri</dt><dd>ChatGPT · Gemini · Claude · Copilot · Perplexity · DeepSeek · Mistral · Grok</dd>
+			<dt>Yaşam döngüsü</dt><dd>Keşfet · Değerlendir · Koru · Denetle · İncele · Onayla · Kanıtla; uçtan uca yönetişimle</dd>
 		</dl>
 	</div>
 	<div class="pillars">
@@ -358,10 +359,10 @@ h3.sub::after { content: ""; flex: 1; height: 0.3mm; background: var(--line); ma
 			</div>
 			<p class="what">Her araç çağrısı, ajan uygulamadan önce yerel karar motoruna gelir ve <span class="v-allow">allow</span> <span class="v-ask">ask</span> <span class="v-deny">deny</span> kararıyla döner.</p>
 			<ul class="bul">
-				<li><b><span data-fact="threat-rules">451</span> YAML tespit kuralı</b> (<span data-fact="threat-files">28</span> dosya): tehlikeli komut, kimlik bilgisi erişimi, kalıcılık, gizleme, tedarik zinciri; Linux, macOS, Windows.</li>
+				<li><b><span data-fact="threat-rules">494</span> YAML tespit kuralı</b> (<span data-fact="threat-files">29</span> dosya): tehlikeli komut, kimlik bilgisi erişimi, kalıcılık, gizleme, tedarik zinciri; Linux, macOS, Windows.</li>
 				<li><b>Hata durumunda kapalı:</b> bağlayıcı giriş noktaları iç hatada çağrıyı reddeder.</li>
-				<li><b>Bant dışı onay:</b> <code>ask</code>, operatör <code>aidr approve</code> diyene kadar engeller; ajana onay aracı verilmez.</li>
 				<li><b>MCP Gateway</b> araç sonuçlarını modele ulaşmadan tarar; <b>SDK</b> ve <b>CLI</b> aynı motoru kullanır.</li>
+				<li><b>Zehirli akış ve ajan güvenliği:</b> saldırı zinciri, kaçak döngü, test sabotajı ve geri alınamaz eylem onaya kalır.</li>
 			</ul>
 			<div class="chips"><span class="chip">Claude Code</span><span class="chip">Cursor</span><span class="chip">VS Code</span><span class="chip">OpenClaw</span><span class="chip">OpenCode</span><span class="chip">Codex CLI</span></div>
 		</article>
@@ -404,6 +405,7 @@ h3.sub::after { content: ""; flex: 1; height: 0.3mm; background: var(--line); ma
 				<li><b>MCP risk analizi:</b> aktarım, manifest doğrulaması ve <span data-fact="mcp-risk-categories">14</span> risk kategorisiyle MCP sunucu envanteri.</li>
 				<li><b>Skill ve eklenti taraması:</b> <span data-fact="skill-scan-codes">T01–T09</span> kategorileri; kurulu eklentiler oturum başında taranır.</li>
 				<li><b>Duruş paneli:</b> önem derecesi ve CVSS'e göre bulgular, 30 günlük eğilim; boş görünüm temiz diye sunulmaz.</li>
+				<li><b>AI-BOM:</b> ajan, MCP sunucusu, model, eklenti ve bilinen açıklar CycloneDX 1.6 olarak dışa aktarılır.</li>
 			</ul>
 			<div class="chips"><span class="chip">aidr scan</span><span class="chip">aidr discover</span><span class="chip">MCP</span><span class="chip">Skill · Plugin</span></div>
 		</article>
@@ -457,7 +459,7 @@ h3.sub::after { content: ""; flex: 1; height: 0.3mm; background: var(--line); ma
 				<text x="228" y="56" class="dg-b dg-w" font-size="12">Yerel motor</text>
 				<text x="228" y="69" class="dg-w" font-size="9.3" fill-opacity="0.78">bulut gerektirmez</text>
 				<rect x="202" y="82" width="146" height="36" rx="7" fill="#fff" fill-opacity="0.12" stroke="#fff" stroke-opacity="0.25"/>
-				<text x="212" y="97" class="dg-b dg-w" font-size="10"><tspan data-fact="threat-rules">451</tspan> YAML kuralı</text>
+				<text x="212" y="97" class="dg-b dg-w" font-size="10"><tspan data-fact="threat-rules">494</tspan> YAML kuralı</text>
 				<text x="212" y="110" class="dg-w" font-size="8.8" fill-opacity="0.8">komut zinciri · gizleme</text>
 				<rect x="202" y="124" width="146" height="36" rx="7" fill="#fff" fill-opacity="0.12" stroke="#fff" stroke-opacity="0.25"/>
 				<text x="212" y="139" class="dg-b dg-w" font-size="10">DLP + gizlilik</text>
@@ -525,15 +527,15 @@ h3.sub::after { content: ""; flex: 1; height: 0.3mm; background: var(--line); ma
 	<h3 class="sub">Öne çıkan yetenekler</h3>
 	<div class="features">
 		<div class="feat"><div class="t"><span class="ic"><svg class="i"><use href="#i-check"/></svg></span>Satır içi karar</div><p>Her araç çağrısında allow, ask veya deny; eşleşen kural ve bulgu adıyla.</p></div>
-		<div class="feat"><div class="t"><span class="ic"><svg class="i"><use href="#i-file"/></svg></span>Veri olarak kurallar</div><p><span data-fact="threat-rules">451</span> YAML kuralı; kendi kurallarınızı ekleyin, kimliğe göre geçersiz kılın.</p></div>
-		<div class="feat"><div class="t"><span class="ic"><svg class="i"><use href="#i-link"/></svg></span>Zincir ve gizleme</div><p>Zincirlenmiş ve gizlenmiş komutlar çözümlenerek değerlendirilir.</p></div>
-		<div class="feat"><div class="t"><span class="ic"><svg class="i"><use href="#i-box"/></svg></span>Paket ve eklenti</div><p>npm/PyPI tedarik zinciri kontrolleri; kurulu eklentiler oturum başında taranır.</p></div>
+		<div class="feat"><div class="t"><span class="ic"><svg class="i"><use href="#i-file"/></svg></span>Veri olarak kurallar</div><p><span data-fact="threat-rules">494</span> YAML kuralı, gizlenmiş komutlar dahil; kendi kuralınızı ekleyin.</p></div>
+		<div class="feat"><div class="t"><span class="ic"><svg class="i"><use href="#i-link"/></svg></span>Zehirli akış</div><p>Özel veri, güvenilmeyen içerik ve dış kanal aynı oturumda birleşince son adım onaya kalır.</p></div>
+		<div class="feat"><div class="t"><span class="ic"><svg class="i"><use href="#i-box"/></svg></span>Paket ve model</div><p>npm/PyPI kontrolleri, oturum başında eklenti taraması ve güvenli model yükleme.</p></div>
 		<div class="feat"><div class="t"><span class="ic"><svg class="i"><use href="#i-plug"/></svg></span>MCP Gateway</div><p>Araç sonuçları modele ulaşmadan taranır; imzalı sunucu bildirimi.</p></div>
-		<div class="feat"><div class="t"><span class="ic"><svg class="i"><use href="#i-usercheck"/></svg></span>Bant dışı onay</div><p><code>ask</code> operatör <code>aidr approve</code> diyene kadar engeller; ajan kendini onaylayamaz.</p></div>
-		<div class="feat"><div class="t"><span class="ic"><svg class="i"><use href="#i-mask"/></svg></span>TR/EN kişisel veri</div><p>T.C. kimlik, IBAN, telefon, e-posta ve kart; sağlama doğrulamasıyla.</p></div>
-		<div class="feat"><div class="t"><span class="ic"><svg class="i"><use href="#i-key"/></svg></span>Gizli anahtarlar</div><p>Bulut, Git ve yapay zekâ sağlayıcı anahtarları, JWT'ler, özel anahtarlar.</p></div>
-		<div class="feat"><div class="t"><span class="ic"><svg class="i"><use href="#i-finger"/></svg></span>Exact-data-match</div><p>Kayıtlarınızın HMAC-SHA256 parmak izleri; düz metin veri seti dağıtılmaz.</p></div>
-		<div class="feat"><div class="t"><span class="ic"><svg class="i"><use href="#i-file"/></svg></span>Yapıştırma ve dosya</div><p>Yapıştırılan metin ve metin tabanlı dosyalar gönderilmeden maskelenir.</p></div>
+		<div class="feat"><div class="t"><span class="ic"><svg class="i"><use href="#i-usercheck"/></svg></span>İnsan onayı</div><p><code>ask</code> terminal ya da panelden onaya kadar bekler; ajan kendini onaylayamaz.</p></div>
+		<div class="feat"><div class="t"><span class="ic"><svg class="i"><use href="#i-mask"/></svg></span>Veri ve anahtarlar</div><p>T.C. kimlik, IBAN, telefon ve kart sağlamayla; bulut, Git ve yapay zekâ anahtarları.</p></div>
+		<div class="feat"><div class="t"><span class="ic"><svg class="i"><use href="#i-shield"/></svg></span>Ajan güvenliği</div><p>Döngü, test sabotajı, özerklik yükseltme, geri alınamaz eylem: onay ya da engel.</p></div>
+		<div class="feat"><div class="t"><span class="ic"><svg class="i"><use href="#i-layers"/></svg></span>Yönetişim</div><p>Varlık envanteri, talep akışı, süreli istisna, dört göz politika değişikliği ve skor kartı.</p></div>
+		<div class="feat"><div class="t"><span class="ic"><svg class="i"><use href="#i-play"/></svg></span>Saldırı simülasyonu</div><p><code>aidr simulate</code> zararsız saldırıları ayarlarınıza karşı puanlar; hiçbir şey çalışmaz.</p></div>
 		<div class="feat"><div class="t"><span class="ic"><svg class="i"><use href="#i-sliders"/></svg></span>Yönetilen politika</div><p>GPO, Intune ve Jamf ile tarayıcı politikası; ajanlar için merkezî politika.</p></div>
 		<div class="feat"><div class="t"><span class="ic"><svg class="i"><use href="#i-audit"/></svg></span>Denetim ve SIEM</div><p>JSONL/CSV dışa aktarım; Splunk, Sentinel ve Elastic biçimleri.</p></div>
 	</div>

@@ -31,10 +31,10 @@ editions, 10 next steps and contact.
   from the repository (threat rules, AI component fingerprints and CVE rules, MCP risk
   taxonomy, Browser Guard entity types and sites, DLP detectors, connectors, plan
   catalog, trial length).
-- Every feature lists `evidence`: repository paths that implement it. A feature whose
-  code is still being merged is `pending: true`; the test reports it as skipped. Remove
-  the flag once the code has landed, and correct the paths and the one-liner to match
-  what was merged.
+- Every feature lists `evidence`: repository paths that implement it. The catalog lists
+  shipped capabilities only: the test fails on a missing path or a feature marked
+  `pending`. Add a feature once its code has landed, with a one-liner that matches the
+  merged behaviour (and its documented limits).
 - `SAFETY_ALSO` lists shipped safety controls the AI safety group cross-references
   (`h.ref("feature-key")` renders the feature's number); the test checks each rule file
   and that every referenced feature exists and is not pending.

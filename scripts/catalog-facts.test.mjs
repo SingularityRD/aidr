@@ -7,8 +7,8 @@
  *   repository (threat rules, AI component and CVE data, MCP risk taxonomy, Browser Guard
  *   entity types and sites, DLP detectors, connectors, plan catalog, trial length).
  * - Every numbered feature carries evidence paths (docs/sales/catalog/src/content.mjs).
- *   Paths must exist; features whose code is still being merged are `pending: true` and are
- *   reported as skipped rather than failed.
+ *   Paths must exist, and no feature may be marked `pending`: the catalog lists shipped
+ *   capabilities only.
  * - Turkish and English list the same features in the same order, with the same numbers.
  * - The copy follows the sales honesty rules: no prices, no certification, efficacy or
  *   superlative claims, no upstream vendor names, no internal codes or repository paths.
@@ -147,10 +147,7 @@ test("Turkish and English list the same numbered features", () => {
 test("every feature is backed by code in this repository", async (t) => {
 	for (const feature of content.FEATURES) {
 		assert.ok(Array.isArray(feature.evidence) && feature.evidence.length > 0, `${feature.key}: evidence paths are required`);
-		if (feature.pending) {
-			await t.test(`${feature.key} (pending: ${feature.evidence.join(", ")})`, { skip: "evidence is being merged" }, () => {});
-			continue;
-		}
+		assert.ok(!("pending" in feature), `${feature.key}: the published catalog lists shipped features only; remove "pending" and point evidence at the merged code`);
 		await t.test(feature.key, () => {
 			for (const evidence of feature.evidence) assert.ok(existsSync(path.join(root, evidence)), `${feature.key}: ${evidence} does not exist`);
 		});
