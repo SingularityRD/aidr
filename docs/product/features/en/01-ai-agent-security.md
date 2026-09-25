@@ -449,7 +449,7 @@ session is released once.
 **What it does**
 The engine extracts artifacts (commands, URLs, file paths, content, packages) from each
 tool call and matches them against YAML threat rules. The rules are data, not code:
-**384 rules in 24 files** under [`threats/`](../../../../threats/), covering Linux,
+**386 rules in 24 files** under [`threats/`](../../../../threats/), covering Linux,
 macOS and Windows.
 
 **Why it matters**
@@ -466,8 +466,8 @@ reputation legs → decision engine (deny > ask > allow) → cache → audit log
 
 Each rule has `id`, `category`, `severity`, `confidence` (0–1), `action` (`block` →
 `deny`, `require_approval` → `ask`, `log` → `allow`), a regex `pattern`, `match_on`,
-`title`, `expires_at` and `revoked`. Of the 384 rules, 183 block, 200 require approval
-and 1 logs; 146 are critical, 215 high and 23 medium.
+`title`, `expires_at` and `revoked`. Of the 386 rules, 186 block, 199 require approval
+and 1 logs; 148 are critical, 215 high and 23 medium.
 
 Rule files:
 
@@ -481,13 +481,13 @@ Rule files:
 | `supply_chain.yaml` | Supply-chain patterns | 1 |
 | `urls.yaml` | Malicious URL and domain patterns | 5 |
 | `mining.yaml` | Crypto-mining / resource hijacking (ATT&CK T1496) | 17 |
-| `self-defense.yaml` | Attempts to disable or bypass AIDR | 7 |
+| `self-defense.yaml` | Attempts to disable or bypass AIDR | 9 |
 | `mitre.yaml` | MITRE ATT&CK technique mappings | 64 |
 | `llm-threats.yaml` | LLM-specific threats | 21 |
 | `skill-scan.yaml` | Skill/plugin package rules T01–T09 | 26 |
 | `mac-commands.yaml`, `mac-credentials.yaml`, `mac-files.yaml`, `mac-obfuscation.yaml`, `mac-persistence.yaml`, `mac-supply-chain.yaml` | macOS variants | 27 + 8 + 10 + 7 + 9 + 3 = 64 |
 | `win-commands.yaml`, `win-credentials.yaml`, `win-files.yaml`, `win-obfuscation.yaml`, `win-persistence.yaml`, `win-supply-chain.yaml` | Windows variants | 61 + 10 + 10 + 16 + 8 + 1 = 106 |
-| **Total** | 24 files | **384** |
+| **Total** | 24 files | **386** |
 
 Rules by category:
 
@@ -500,9 +500,9 @@ Rules by category:
 | LLM threats | `prompt_injection` (5), `tool_misuse` (4), `indirect_prompt_injection` (3), `prompt_extraction` (3), `information_disclosure` (2), `memory_poisoning` (2), `content_safety` (2) | 21 |
 | Resource hijacking | `resource_hijacking` | 17 |
 | Network egress | `network_egress` | 9 |
-| Self-defence | `self_defense` | 7 |
+| Self-defence | `self_defense` | 9 |
 | Supply chain | `supply_chain` | 5 |
-| **Total** | | **384** |
+| **Total** | | **386** |
 
 Customers can add their own rules under `~/.singularity-aidr/threats/*.yaml`; a custom
 rule with the same `id` overrides the built-in one.
@@ -602,7 +602,7 @@ suspicion blocked; a build farm may want only high-confidence malware blocked.
 
 When the highest confidence among matched signals is below the threshold, a `deny` is
 downgraded to `ask`, and a matched signal that would otherwise allow is raised to `ask`. For a single matching
-rule, all 183 block rules deny under `paranoid`, 178 under `balanced` and 49 under
+rule, all 186 block rules deny under `paranoid`, 181 under `balanced` and 52 under
 `relaxed`.
 
 **How to use**

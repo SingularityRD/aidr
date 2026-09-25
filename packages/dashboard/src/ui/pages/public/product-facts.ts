@@ -8,7 +8,7 @@
 import { LIST_PRICE_NOTICE, PLAN_CATALOG, type PlanDefinition } from "../../../billing/plans";
 
 /** `- id:` entries across `threats/*.yaml`. */
-export const SHIPPED_THREAT_RULES = 384;
+export const SHIPPED_THREAT_RULES = 386;
 /** YAML files under `threats/`. */
 export const THREAT_RULE_FILES = 24;
 /** AIG CVE rule files (`vendor/ai-infra-guard/data/vuln`, recursive), shown as a lower bound. */

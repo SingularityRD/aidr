@@ -464,7 +464,7 @@ serbest bırakılır.
 **Ne yapar**
 Motor her araç çağrısından artifact'ları (komutlar, URL'ler, dosya yolları, içerik,
 paketler) çıkarır ve bunları YAML tehdit kurallarıyla eşleştirir. Kurallar kod değil,
-veridir: [`threats/`](../../../../threats/) altında **24 dosyada 384 kural** bulunur ve
+veridir: [`threats/`](../../../../threats/) altında **24 dosyada 386 kural** bulunur ve
 Linux, macOS ile Windows'u kapsar.
 
 **Neden önemli**
@@ -483,8 +483,8 @@ denetim kaydı → karar
 
 Her kuralda `id`, `category`, `severity`, `confidence` (0–1), `action` (`block` → `deny`,
 `require_approval` → `ask`, `log` → `allow`), regex `pattern`, `match_on`, `title`,
-`expires_at` ve `revoked` alanları bulunur. 384 kuralın 183'ü engeller, 200'ü onay ister,
-1'i yalnızca kayıt tutar; 146'sı critical, 215'i high, 23'ü medium önem derecesindedir.
+`expires_at` ve `revoked` alanları bulunur. 386 kuralın 186'sı engeller, 199'u onay ister,
+1'i yalnızca kayıt tutar; 148'i critical, 215'i high, 23'ü medium önem derecesindedir.
 
 Kural dosyaları:
 
@@ -498,13 +498,13 @@ Kural dosyaları:
 | `supply_chain.yaml` | Tedarik zinciri kalıpları | 1 |
 | `urls.yaml` | Kötü amaçlı URL ve alan adı kalıpları | 5 |
 | `mining.yaml` | Kripto madenciliği / kaynak gaspı (ATT&CK T1496) | 17 |
-| `self-defense.yaml` | AIDR'yi devre dışı bırakma veya atlatma girişimleri | 7 |
+| `self-defense.yaml` | AIDR'yi devre dışı bırakma veya atlatma girişimleri | 9 |
 | `mitre.yaml` | MITRE ATT&CK teknik eşlemeleri | 64 |
 | `llm-threats.yaml` | LLM'e özgü tehditler | 21 |
 | `skill-scan.yaml` | Skill/plugin paketi kuralları T01–T09 | 26 |
 | `mac-commands.yaml`, `mac-credentials.yaml`, `mac-files.yaml`, `mac-obfuscation.yaml`, `mac-persistence.yaml`, `mac-supply-chain.yaml` | macOS varyantları | 27 + 8 + 10 + 7 + 9 + 3 = 64 |
 | `win-commands.yaml`, `win-credentials.yaml`, `win-files.yaml`, `win-obfuscation.yaml`, `win-persistence.yaml`, `win-supply-chain.yaml` | Windows varyantları | 61 + 10 + 10 + 16 + 8 + 1 = 106 |
-| **Toplam** | 24 dosya | **384** |
+| **Toplam** | 24 dosya | **386** |
 
 Kategoriye göre kurallar:
 
@@ -517,9 +517,9 @@ Kategoriye göre kurallar:
 | LLM tehditleri | `prompt_injection` (5), `tool_misuse` (4), `indirect_prompt_injection` (3), `prompt_extraction` (3), `information_disclosure` (2), `memory_poisoning` (2), `content_safety` (2) | 21 |
 | Kaynak gaspı | `resource_hijacking` | 17 |
 | Ağ çıkışı | `network_egress` | 9 |
-| Öz savunma | `self_defense` | 7 |
+| Öz savunma | `self_defense` | 9 |
 | Tedarik zinciri | `supply_chain` | 5 |
-| **Toplam** | | **384** |
+| **Toplam** | | **386** |
 
 Müşteriler kendi kurallarını `~/.singularity-aidr/threats/*.yaml` altına ekleyebilir; aynı
 `id`'ye sahip özel bir kural yerleşik kuralın yerine geçer.
@@ -621,8 +621,8 @@ amaçlı yazılımın engellenmesini tercih edebilir.
 
 Eşleşen sinyaller arasındaki en yüksek güven değeri eşiğin altında kalırsa `deny` kararı
 `ask`'e düşürülür; aksi hâlde izin verilecek eşleşmiş bir sinyal de `ask`'e yükseltilir.
-Tek bir kural eşleştiğinde 183 engelleme kuralının tamamı `paranoid`'de, 178'i
-`balanced`'da, 49'u `relaxed`'de `deny` üretir.
+Tek bir kural eşleştiğinde 186 engelleme kuralının tamamı `paranoid`'de, 181'i
+`balanced`'da, 52'si `relaxed`'de `deny` üretir.
 
 **Nasıl kullanılır**
 `~/.singularity-aidr/config.json` içinde ayarlayın:
