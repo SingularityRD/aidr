@@ -233,30 +233,30 @@ spec:
         {{- range $client := list "auth" "rest" "storage" "functions" "migrations" "backup" }}
         {{- include "aidr.np.peer" (dict "root" $root "component" $client) | nindent 8 }}
         {{- end }}
-        {{- if .Values.aig.enabled }}
-        {{- include "aidr.np.peer" (dict "root" . "component" "aig-bridge") | nindent 8 }}
+        {{- if .Values.postureScanner.enabled }}
+        {{- include "aidr.np.peer" (dict "root" . "component" "posture-scanner-bridge") | nindent 8 }}
         {{- end }}
       ports:
         - port: 5432
           protocol: TCP
 {{- end }}
-{{- if .Values.aig.enabled }}
+{{- if .Values.postureScanner.enabled }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: {{ include "aidr.component" (dict "root" . "component" "aig-server") }}
+  name: {{ include "aidr.component" (dict "root" . "component" "posture-scanner-server") }}
   labels:
     {{- include "aidr.labels" (dict "root" . "component" "network-policy") | nindent 4 }}
 spec:
   podSelector:
     matchLabels:
-      {{- include "aidr.selectorLabels" (dict "root" . "component" "aig-server") | nindent 6 }}
+      {{- include "aidr.selectorLabels" (dict "root" . "component" "posture-scanner-server") | nindent 6 }}
   policyTypes: ["Ingress", "Egress"]
   ingress:
     - from:
-        {{- include "aidr.np.peer" (dict "root" . "component" "aig-bridge") | nindent 8 }}
-        {{- include "aidr.np.peer" (dict "root" . "component" "aig-agent") | nindent 8 }}
+        {{- include "aidr.np.peer" (dict "root" . "component" "posture-scanner-bridge") | nindent 8 }}
+        {{- include "aidr.np.peer" (dict "root" . "component" "posture-scanner-agent") | nindent 8 }}
       ports:
         - port: 8088
           protocol: TCP
@@ -264,39 +264,39 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: {{ include "aidr.component" (dict "root" . "component" "aig-agent") }}
+  name: {{ include "aidr.component" (dict "root" . "component" "posture-scanner-agent") }}
   labels:
     {{- include "aidr.labels" (dict "root" . "component" "network-policy") | nindent 4 }}
 spec:
   podSelector:
     matchLabels:
-      {{- include "aidr.selectorLabels" (dict "root" . "component" "aig-agent") | nindent 6 }}
+      {{- include "aidr.selectorLabels" (dict "root" . "component" "posture-scanner-agent") | nindent 6 }}
   policyTypes: ["Ingress", "Egress"]
   egress:
     - to:
-        {{- include "aidr.np.peer" (dict "root" . "component" "aig-server") | nindent 8 }}
+        {{- include "aidr.np.peer" (dict "root" . "component" "posture-scanner-server") | nindent 8 }}
       ports:
         - port: 8088
           protocol: TCP
-    {{- include "aidr.np.cidrs" (dict "cidrs" .Values.aig.egressProxy.cidrs "port" .Values.aig.egressProxy.port) | nindent 4 }}
+    {{- include "aidr.np.cidrs" (dict "cidrs" .Values.postureScanner.egressProxy.cidrs "port" .Values.postureScanner.egressProxy.port) | nindent 4 }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: {{ include "aidr.component" (dict "root" . "component" "aig-bridge") }}
+  name: {{ include "aidr.component" (dict "root" . "component" "posture-scanner-bridge") }}
   labels:
     {{- include "aidr.labels" (dict "root" . "component" "network-policy") | nindent 4 }}
 spec:
   podSelector:
     matchLabels:
-      {{- include "aidr.selectorLabels" (dict "root" . "component" "aig-bridge") | nindent 6 }}
+      {{- include "aidr.selectorLabels" (dict "root" . "component" "posture-scanner-bridge") | nindent 6 }}
   policyTypes: ["Ingress", "Egress"]
   ingress:
     - from:
         - podSelector:
             matchLabels:
-              {{- toYaml .Values.aig.bridge.clientPodLabel | nindent 14 }}
-          {{- with .Values.aig.bridge.clientNamespaceSelector }}
+              {{- toYaml .Values.postureScanner.bridge.clientPodLabel | nindent 14 }}
+          {{- with .Values.postureScanner.bridge.clientNamespaceSelector }}
           namespaceSelector:
             {{- toYaml . | nindent 12 }}
           {{- end }}
@@ -305,11 +305,11 @@ spec:
           protocol: TCP
   egress:
     - to:
-        {{- include "aidr.np.peer" (dict "root" . "component" "aig-server") | nindent 8 }}
+        {{- include "aidr.np.peer" (dict "root" . "component" "posture-scanner-server") | nindent 8 }}
       ports:
         - port: 8088
           protocol: TCP
     {{- include "aidr.np.db" . | nindent 4 }}
-    {{- include "aidr.np.cidrs" (dict "cidrs" .Values.aig.egressProxy.cidrs "port" .Values.aig.egressProxy.port) | nindent 4 }}
+    {{- include "aidr.np.cidrs" (dict "cidrs" .Values.postureScanner.egressProxy.cidrs "port" .Values.postureScanner.egressProxy.port) | nindent 4 }}
 {{- end }}
 {{- end }}

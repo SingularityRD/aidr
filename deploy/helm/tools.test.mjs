@@ -108,13 +108,14 @@ test("build-images refuses an unreviewed upstream, unsafe tags and existing outp
 test("build-images stages the dashboard context the Dockerfile expects", { skip: existsSync(join(root, "packages/dashboard/dist/index.html")) ? false : "dashboard dist not built" }, (t) => {
 	const dir = scratch(t);
 	const output = join(dir, "images");
-	const result = node("build-images.mjs", ["--output", output, "--only", "dashboard,aig-agent"]);
+	const result = node("build-images.mjs", ["--output", output, "--only", "dashboard,posture-scanner-agent"]);
 	assert.equal(result.status, 0, result.stderr);
 	for (const file of ["Dockerfile", "server.mjs", "monitoring.mjs", "saml-config.mjs", "auth-templates/recovery.html", "public/index.html"]) {
 		assert.ok(existsSync(join(output, "dashboard", file)), file);
 	}
-	assert.ok(existsSync(join(output, "aig-agent/aig_compat")));
-	assert.match(result.stdout, /--build-arg AIG_AGENT_BASE=<registry>\/aidr\/aig-agent-base:0\.6\.0/);
+	assert.ok(existsSync(join(output, "posture-scanner-agent/aig_compat")));
+	assert.match(result.stdout, /--build-arg AIG_AGENT_BASE=<registry>\/aidr\/posture-scanner-agent-base:0\.6\.0/);
+	assert.doesNotMatch(result.stderr, /deprecated/);
 });
 
 function generate(t, extra = []) {
@@ -196,4 +197,14 @@ test("generate-secrets refuses insecure or ambiguous input", (t) => {
 	const { output, keyFile } = generate(t);
 	const again = node("generate-secrets.mjs", ["--output", output, "--dashboard-url", "https://a.example.com", "--api-url", "https://b.example.com", "--artifact-verification-public-key-file", keyFile]);
 	assert.match(again.stderr, /generated exactly once/);
+});
+
+test("build-images accepts the pre-rename posture scanner component names with a note", (t) => {
+	const dir = scratch(t);
+	const output = join(dir, "legacy");
+	const result = node("build-images.mjs", ["--output", output, "--only", "aig-agent"]);
+	assert.equal(result.status, 0, result.stderr);
+	assert.match(result.stderr, /NOTE: component "aig-agent" is deprecated; use "posture-scanner-agent"\./);
+	assert.ok(existsSync(join(output, "posture-scanner-agent/Dockerfile")));
+	assert.match(result.stdout, /<registry>\/aidr\/posture-scanner-agent:0\.6\.0/);
 });

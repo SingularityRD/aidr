@@ -101,7 +101,7 @@ const docRewrites = {
 	"INSTALLATION.md": [
 		["[first-customer guide](FIRST_CUSTOMER.md)", "[first-customer guide](START-HERE.md)"],
 		["[on-prem guide](onprem/README.md)", "[on-prem guide](deploy/onprem/README.md)"],
-		["[on-prem sizing and AIG guide](onprem/README.md)", "[on-prem sizing and AIG guide](deploy/onprem/README.md)"],
+		["[on-prem sizing and posture scanner guide](onprem/README.md)", "[on-prem sizing and posture scanner guide](deploy/onprem/README.md)"],
 		["For a limited Cloudflare Free pilot, see [the Cloudflare deployment path](cloudflare/README.md).", "The Cloudflare Free pilot requires a separate reviewed source release; it is not deployable from this extracted customer kit."],
 		["[FEATURE_INVENTORY.md](../FEATURE_INVENTORY.md)", "[FEATURE_INVENTORY.md](FEATURE_INVENTORY.md)"],
 		["[secret management](../docs/runbooks/secrets-management.md)", "[secret management](SECRETS-RUNBOOK.md)"],

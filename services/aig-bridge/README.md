@@ -103,12 +103,12 @@ in: the manifest is unsigned and the example paths/secrets below are
 placeholders. The Compose defaults are single-host: a durable SQLite task
 registry with `BRIDGE_HA_REQUIRED=false`, and the shipped deny-by-default
 `aig-egress` gateway (`deploy/onprem/egress/`). Multi-replica HA switches to the
-migrated PostgreSQL registry (see `.env.aig.example`). Never use a placeholder
+migrated PostgreSQL registry (see `.env.posture-scanner.example`). Never use a placeholder
 signing key or public-key fingerprint to force readiness. For a prepared
-on-prem installation use `scripts/deployment-prepare.mjs --with-aig`
+on-prem installation use `scripts/deployment-prepare.mjs --with-posture-scanner`
 ([on-prem guide](../../deploy/onprem/README.md)) instead of this file.
 
-Create a local `.env.aig` from `.env.aig.example` if one does not already
+Create a local `.env.posture-scanner` from `.env.posture-scanner.example` if one does not already
 exist, and fill its required values. Keep the local file and credentials out
 of version control.
 
@@ -140,7 +140,7 @@ $env:BRIDGE_AUTH_MODE='api_key'
 $env:BRIDGE_API_KEY='replace-with-a-long-random-secret'
 $env:AIG_AGENT_SHARED_SECRET='replace-with-at-least-32-random-characters'
 # Remote scans reach only domains listed in deploy/onprem/egress/allowlist.txt.
-docker compose --env-file .env.aig -f docker-compose.aig.yml up -d --build
+docker compose --env-file .env.posture-scanner -f docker-compose.posture-scanner.yml up -d --build
 
 # Synthetic benign scan (do not use a customer target without written scope)
 $headers=@{Authorization="Bearer $env:BRIDGE_API_KEY";'X-AIDR-Tenant-ID'='demo-tenant';'Idempotency-Key'='demo-1'}

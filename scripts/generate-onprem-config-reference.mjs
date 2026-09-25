@@ -9,7 +9,7 @@
  * `.env.ingress` files, plus the optional Compose interpolation overrides an
  * operator may add. `--check` fails when either generated file drifts from the
  * catalog, or when the catalog no longer matches the preparation script, the
- * AIG Compose file or `.env.aig.example`.
+ * posture scanner Compose file or `.env.posture-scanner.example`.
  *
  * Usage: node scripts/generate-onprem-config-reference.mjs [--check]
  */
@@ -22,13 +22,13 @@ export const REFERENCE_PATH = "docs/operations/onprem-config-reference.md";
 export const EXAMPLE_PATH = "deploy/onprem/.env.onprem.example";
 
 export const FILES = {
-	".env": "Compose interpolation for the whole stack (Supabase, dashboard and, with --with-aig, AIG). Read by `docker compose` from the installation directory.",
+	".env": "Compose interpolation for the whole stack (Supabase, dashboard and, with --with-posture-scanner, the AI Security Posture scanner). Read by `docker compose` from the installation directory.",
 	".env.functions": "Edge Functions runtime (`functions` service `env_file`). Holds the control-plane signing keys.",
 	".env.readiness": "Host readiness-evidence and SIEM maintenance worker (systemd units under `maintenance/`).",
 	".env.ingress": "Host device-start ingress signer (`ingress/device-start.mjs`) behind the TLS reverse proxy.",
 };
 
-// written: always | self-hosted | cloud | with-aig | override (never written; optional operator override)
+// written: always | self-hosted | cloud | with-posture-scanner | override (never written; optional operator override)
 // source: generated | generated-secret | derived | fixed | operator
 const v = (file, name, written, source, value, description) => ({ file, name, written, source, value, description });
 
@@ -70,19 +70,19 @@ export const CATALOG = [
 	v(".env", "SENTRY_ENVIRONMENT", "override", "operator", "production", "Sentry environment label (development installations default to `development`)."),
 	v(".env", "SENTRY_TRACES_SAMPLE_RATE", "override", "operator", "0", "Sentry trace sampling rate."),
 	v(".env", "AIDR_AUTH_METHODS", "override", "operator", "password", "Dashboard sign-in methods offered to users."),
-	v(".env", "COMPOSE_PROFILES", "with-aig", "fixed", "aig", "Starts the AIG services with the stack; remove `aig` to keep them stopped."),
-	v(".env", "AIG_SOURCE_VERSION", "with-aig", "derived", "v4.6.1-aidr.1", "Pinned AIG source tag; also the aig-server/aig-agent image tag."),
-	v(".env", "AIG_TZ", "with-aig", "fixed", "UTC", "Time zone inside the AIG containers."),
-	v(".env", "AIG_AGENT_SHARED_SECRET", "with-aig", "generated-secret", "", "Authenticates worker registration and the internal AIG readiness route."),
-	v(".env", "AIG_TRUSTED_SIGNING_KEY_ID", "with-aig", "operator", "--aig-signing-key-id", "Key id of the AIG release data-signing key."),
-	v(".env", "AIG_TRUSTED_SIGNING_PUBLIC_KEY_SHA256", "with-aig", "derived", "SHA-256 of the SPKI DER key", "Pinned fingerprint of `aig/aig-signing-public.pem`."),
-	v(".env", "AIG_EXPECTED_DATA_BUNDLE_ID", "with-aig", "derived", "aig-data-manifest.json bundle_id", "Signed AIG data bundle the runtime must attest."),
-	v(".env", "AIG_EXPECTED_SOURCE_COMMIT", "with-aig", "derived", "aig-data-manifest.json source.commit", "AIG source commit the runtime must attest."),
-	v(".env", "BRIDGE_AUTH_MODE", "with-aig", "fixed", "api_key", "Bridge authentication: `api_key` (isolated local sidecar) or `broker` (JWT)."),
-	v(".env", "BRIDGE_API_KEY", "with-aig", "generated-secret", "", "Bearer key for bridge callers in `api_key` mode."),
-	v(".env", "BRIDGE_TASK_BACKEND", "with-aig", "fixed", "sqlite", "Task registry: `sqlite` (single host) or `postgres` (HA)."),
-	v(".env", "BRIDGE_HA_REQUIRED", "with-aig", "fixed", "false", "`true` makes readiness refuse SQLite; set with the PostgreSQL backend."),
-	v(".env", "BRIDGE_EGRESS_PROXY_URL", "with-aig", "fixed", "http://aig-egress:3128", "Deny-by-default egress gateway for remote scan traffic."),
+	v(".env", "COMPOSE_PROFILES", "with-posture-scanner", "fixed", "posture-scanner", "Starts the posture scanner services with the stack; remove `posture-scanner` to keep them stopped."),
+	v(".env", "POSTURE_SCANNER_SOURCE_VERSION", "with-posture-scanner", "derived", "v4.6.1-aidr.1", "Pinned scanner source tag; also the scanner server and worker image tag."),
+	v(".env", "POSTURE_SCANNER_TZ", "with-posture-scanner", "fixed", "UTC", "Time zone inside the posture scanner containers."),
+	v(".env", "POSTURE_SCANNER_AGENT_SHARED_SECRET", "with-posture-scanner", "generated-secret", "", "Authenticates worker registration and the internal scanner readiness route."),
+	v(".env", "POSTURE_SCANNER_TRUSTED_SIGNING_KEY_ID", "with-posture-scanner", "operator", "--posture-scanner-signing-key-id", "Key id of the posture scanner release data-signing key."),
+	v(".env", "POSTURE_SCANNER_TRUSTED_SIGNING_PUBLIC_KEY_SHA256", "with-posture-scanner", "derived", "SHA-256 of the SPKI DER key", "Pinned fingerprint of `posture-scanner/signing-public.pem`."),
+	v(".env", "POSTURE_SCANNER_EXPECTED_DATA_BUNDLE_ID", "with-posture-scanner", "derived", "aig-data-manifest.json bundle_id", "Signed scanner data bundle the runtime must attest."),
+	v(".env", "POSTURE_SCANNER_EXPECTED_SOURCE_COMMIT", "with-posture-scanner", "derived", "aig-data-manifest.json source.commit", "Scanner source commit the runtime must attest."),
+	v(".env", "BRIDGE_AUTH_MODE", "with-posture-scanner", "fixed", "api_key", "Bridge authentication: `api_key` (isolated local sidecar) or `broker` (JWT)."),
+	v(".env", "BRIDGE_API_KEY", "with-posture-scanner", "generated-secret", "", "Bearer key for bridge callers in `api_key` mode."),
+	v(".env", "BRIDGE_TASK_BACKEND", "with-posture-scanner", "fixed", "sqlite", "Task registry: `sqlite` (single host) or `postgres` (HA)."),
+	v(".env", "BRIDGE_HA_REQUIRED", "with-posture-scanner", "fixed", "false", "`true` makes readiness refuse SQLite; set with the PostgreSQL backend."),
+	v(".env", "BRIDGE_EGRESS_PROXY_URL", "with-posture-scanner", "fixed", "http://aig-egress:3128", "Deny-by-default egress gateway for remote scan traffic."),
 	v(".env", "BRIDGE_TASK_POSTGRES_DSN", "override", "operator", "", "PostgreSQL DSN for the HA task registry (secret); requires migrations 001 and 002."),
 	v(".env", "BRIDGE_JWT_SECRET", "override", "operator", "", "Broker-mode HS256 secret, at least 32 bytes (secret)."),
 	v(".env", "BRIDGE_JWT_ISSUER", "override", "operator", "", "Broker-mode expected JWT issuer."),
@@ -102,14 +102,14 @@ export const CATALOG = [
 	v(".env", "BRIDGE_ALLOW_PRIVATE_TARGETS", "override", "operator", "false", "Allow private scan targets at submission (the egress gateway still refuses them)."),
 	v(".env", "BRIDGE_VALIDATE_DNS", "override", "operator", "true", "Resolve and vet target hosts at submission; never disable for customers."),
 	v(".env", "BRIDGE_LOG_LEVEL", "override", "operator", "INFO", "Bridge log level."),
-	v(".env", "AIG_BIND_ADDRESS", "override", "operator", "127.0.0.1", "Host address the bridge port is published on."),
-	v(".env", "AIG_BRIDGE_PORT", "override", "operator", "8099", "Host port for the authenticated bridge."),
-	v(".env", "AIG_MIN_WORKERS", "override", "operator", "1", "Live workers required before the bridge reports ready."),
-	v(".env", "AIG_AGENT_COUNT", "override", "operator", "1", "AIG worker replicas; keep 1 until workers expose unique identities."),
-	v(".env", "AIG_NO_PROXY", "override", "operator", "aig-server,localhost,127.0.0.1", "Destinations the worker reaches without the egress gateway."),
-	v(".env", "AIG_SIGNING_PUBLIC_KEY_HOST_PATH", "override", "operator", "", "Standalone docker-compose.aig.yml only: host path of the AIG signing public key (prepared installs use `aig/aig-signing-public.pem`)."),
-	v(".env", "AIG_EGRESS_ALLOWLIST_PATH", "override", "operator", "./deploy/onprem/egress/allowlist.txt", "Standalone docker-compose.aig.yml only: egress allowlist path (prepared installs use `aig/egress/allowlist.txt`)."),
-	v(".env", "AIG_BRIDGE_IMAGE_TAG", "override", "operator", "local", "Standalone docker-compose.aig.yml only: bridge image tag (prepared installs use the AIDR version)."),
+	v(".env", "POSTURE_SCANNER_BIND_ADDRESS", "override", "operator", "127.0.0.1", "Host address the bridge port is published on."),
+	v(".env", "POSTURE_SCANNER_BRIDGE_PORT", "override", "operator", "8099", "Host port for the authenticated bridge."),
+	v(".env", "POSTURE_SCANNER_MIN_WORKERS", "override", "operator", "1", "Live workers required before the bridge reports ready."),
+	v(".env", "POSTURE_SCANNER_AGENT_COUNT", "override", "operator", "1", "Scanner worker replicas; keep 1 until workers expose unique identities."),
+	v(".env", "POSTURE_SCANNER_NO_PROXY", "override", "operator", "aig-server,localhost,127.0.0.1", "Destinations the worker reaches without the egress gateway."),
+	v(".env", "POSTURE_SCANNER_SIGNING_PUBLIC_KEY_HOST_PATH", "override", "operator", "", "Standalone docker-compose.posture-scanner.yml only: host path of the scanner signing public key (prepared installs use `posture-scanner/signing-public.pem`)."),
+	v(".env", "POSTURE_SCANNER_EGRESS_ALLOWLIST_PATH", "override", "operator", "./deploy/onprem/egress/allowlist.txt", "Standalone docker-compose.posture-scanner.yml only: egress allowlist path (prepared installs use `posture-scanner/egress/allowlist.txt`)."),
+	v(".env", "POSTURE_SCANNER_BRIDGE_IMAGE_TAG", "override", "operator", "local", "Standalone docker-compose.posture-scanner.yml only: bridge image tag (prepared installs use the AIDR version)."),
 
 	v(".env.functions", "AIDR_ALLOWED_ORIGINS", "always", "derived", "--dashboard-url", "Browser origins allowed by Edge Function CORS."),
 	v(".env.functions", "AIDR_DASHBOARD_URL", "always", "derived", "--dashboard-url", "Dashboard origin used in links."),
@@ -158,7 +158,7 @@ const WRITTEN_LABEL = {
 	always: "always",
 	"self-hosted": "self-hosted only",
 	cloud: "cloud only",
-	"with-aig": "`--with-aig` only",
+	"with-posture-scanner": "`--with-posture-scanner` only",
 	override: "not written; optional override",
 };
 
@@ -198,7 +198,8 @@ export function renderReference(catalog = CATALOG) {
 		"",
 		"- Resource budgets: `--profile small|medium|large` from `deploy/onprem/resource-profile.json`.",
 		"- Restart, log rotation and extra health checks: `deploy/onprem/compose.onprem.overlay.yml`.",
-		"- AIG egress allowlist: `aig/egress/allowlist.txt` in a `--with-aig` installation.",
+		"- Posture scanner egress allowlist: `posture-scanner/egress/allowlist.txt` in a `--with-posture-scanner` installation.",
+		"- Installations prepared before the posture scanner rename keep working: every `POSTURE_SCANNER_*` Compose setting falls back to the name earlier releases wrote to `.env`.",
 		"",
 	);
 	return lines.join("\n");
@@ -242,13 +243,18 @@ export function catalogProblems(catalog = CATALOG) {
 		if (!new RegExp(`\\b${entry.name}\\b`).test(prepare)) problems.push(`${entry.file} ${entry.name} is catalogued but scripts/deployment-prepare.mjs no longer writes it`);
 	}
 	const documented = new Set(catalog.filter((item) => item.file === ".env").map((item) => item.name));
-	const aigCompose = readFileSync(join(root, "docker-compose.aig.yml"), "utf8");
-	for (const [, name] of aigCompose.matchAll(/\$\{([A-Z][A-Z0-9_]*)/g)) {
-		if (!documented.has(name)) problems.push(`docker-compose.aig.yml interpolates ${name}, which the reference does not document`);
+	// A legacy AIG_<X> name is accepted in Compose only as the fallback of a documented POSTURE_SCANNER_<X>.
+	const legacyFallback = (name) => name.startsWith("AIG_") && documented.has(`POSTURE_SCANNER_${name.slice(4)}`);
+	const scannerCompose = readFileSync(join(root, "docker-compose.posture-scanner.yml"), "utf8");
+	for (const [, name] of scannerCompose.matchAll(/\$\{([A-Z][A-Z0-9_]*)/g)) {
+		if (!documented.has(name) && !legacyFallback(name)) problems.push(`docker-compose.posture-scanner.yml interpolates ${name}, which the reference does not document`);
 	}
-	const aigExample = readFileSync(join(root, ".env.aig.example"), "utf8");
-	for (const [, name] of aigExample.matchAll(/^#?\s*([A-Z][A-Z0-9_]*)=/gm)) {
-		if (!documented.has(name)) problems.push(`.env.aig.example names ${name}, which the reference does not document`);
+	for (const [, name, fallback] of scannerCompose.matchAll(/\$\{POSTURE_SCANNER_([A-Z0-9_]+):-(\$\{AIG_[A-Z0-9_]+)?/g)) {
+		if (fallback !== `\${AIG_${name}`) problems.push(`docker-compose.posture-scanner.yml: POSTURE_SCANNER_${name} must fall back to AIG_${name} so existing installations keep working`);
+	}
+	const scannerExample = readFileSync(join(root, ".env.posture-scanner.example"), "utf8");
+	for (const [, name] of scannerExample.matchAll(/^#?\s*([A-Z][A-Z0-9_]*)=/gm)) {
+		if (!documented.has(name)) problems.push(`.env.posture-scanner.example names ${name}, which the reference does not document`);
 	}
 	return problems;
 }

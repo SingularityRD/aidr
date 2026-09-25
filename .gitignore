@@ -27,6 +27,7 @@ session_start_backup.ts
 # Environments
 .env
 .env.aig
+.env.posture-scanner
 .envrc
 
 # Logs

@@ -15,7 +15,7 @@ services AIDR uses:
 | `db` | `supabase/postgres:17.6.1.136` | Optional single instance; use `externalDatabase` in production |
 | `migrations` | `aidr/migrations` (built here) | Helm hook Job |
 | `backup` | `aidr/migrations` | Optional `pg_dump` CronJob |
-| `aig-*` | `aidr/aig-server`, `aidr/aig-agent`, `aidr/aig-bridge` (built here) | Optional AI-Infra-Guard stack (`aig.enabled`) |
+| `posture-scanner-*` | `aidr/posture-scanner-server`, `aidr/posture-scanner-agent`, `aidr/posture-scanner-bridge` (built here) | Optional AI Security Posture scanner (`postureScanner.enabled`) |
 
 Supabase Studio, pg-meta, Realtime, imgproxy, analytics and the pooler are **not**
 deployed. The gateway answers 404 for their routes.
@@ -75,7 +75,8 @@ Rendering fails, rather than producing a weaker install, when:
 - `postgresql.enabled=false` with `networkPolicy.enabled` and no
   `externalDatabase.networkPolicyCIDRs`.
 - `storage.replicaCount > 1` on a `ReadWriteOnce` file volume.
-- `aig.enabled` without its Secret, signing key, data ConfigMap, trust anchors or egress proxy.
+- `postureScanner.enabled` without its Secret, signing key, data ConfigMap, trust anchors or egress proxy.
+- Any value under the former `aig` key; see [AI Security Posture scanner](#ai-security-posture-scanner).
 
 ## Secrets
 
@@ -112,9 +113,26 @@ Vault, sealed-secrets) as long as the Secret names match.
 | `networkPolicy.enabled` | `true` | Default-deny plus per-component allows |
 | `networkPolicy.*EgressCIDRs` | `[]` | Opt-in egress: functions (npm mirror/IdP/billing), SMTP, dashboard certificate probe, S3 |
 | `functions.npmRegistry` | `""` | npm mirror for the functions' `npm:` imports |
-| `aig.enabled` | `false` | AI-Infra-Guard scanning stack |
+| `postureScanner.enabled` | `false` | AI Security Posture scanner |
 
 `values.schema.json` validates types, enums and patterns at install time.
+
+## AI Security Posture scanner
+
+`postureScanner.enabled=true` adds the `posture-scanner-server`, `posture-scanner-agent`
+and `posture-scanner-bridge` Deployments, their Services, PersistentVolumeClaims and
+NetworkPolicies. The bridge is reachable only from pods carrying
+`postureScanner.bridge.clientPodLabel` (default `aidr.singularity/posture-scanner-client: "true"`).
+
+Chart versions before the rename used the values key `aig`. Rendering now stops with
+``values key `aig` was renamed to `postureScanner` `` whenever that key is present:
+move every `aig.*` setting under `postureScanner.*` (for example `aig.enabled` becomes
+`postureScanner.enabled`), rebuild the images under their new repository names
+(`node deploy/helm/build-images.mjs --only posture-scanner-server,posture-scanner-agent,posture-scanner-bridge`)
+and relabel bridge clients with the new pod label. The Kubernetes objects are renamed
+too, so an upgrade creates new `posture-scanner-*` PersistentVolumeClaims; the old
+`*-aig-*` claims are kept (`helm.sh/resource-policy: keep`) and can be copied or
+deleted once the scanner is verified.
 
 ## Security posture
 

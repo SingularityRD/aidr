@@ -172,9 +172,9 @@ functions:      {req: {cpu: 250, mem: 512}, lim: {cpu: 2000, mem: 1024}}
 postgresql:     {req: {cpu: 250, mem: 1024}, lim: {cpu: 2000, mem: 2048}}
 migrations:     {req: {cpu: 100, mem: 128}, lim: {cpu: 500,  mem: 256}}
 backup:         {req: {cpu: 100, mem: 128}, lim: {cpu: 1000, mem: 512}}
-aigServer:      {req: {cpu: 500, mem: 512}, lim: {cpu: 2000, mem: 2048}}
-aigAgent:       {req: {cpu: 1000, mem: 1024}, lim: {cpu: 4000, mem: 4096}}
-aigBridge:      {req: {cpu: 250, mem: 128}, lim: {cpu: 1000, mem: 512}}
+postureScannerServer: {req: {cpu: 500, mem: 512}, lim: {cpu: 2000, mem: 2048}}
+postureScannerAgent:  {req: {cpu: 1000, mem: 1024}, lim: {cpu: 4000, mem: 4096}}
+postureScannerBridge: {req: {cpu: 250, mem: 128}, lim: {cpu: 1000, mem: 512}}
 {{- end -}}
 
 {{/* aidr.resources (dict "root" $ "component" "auth" "override" .Values.auth.resources) */}}

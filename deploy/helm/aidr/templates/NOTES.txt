@@ -33,8 +33,8 @@ NOTE: backup.enabled=false. Configure database backups before storing production
 
 WARNING: networkPolicy.enabled=false. Pods are reachable from every namespace.
 {{- end }}
-{{- if .Values.aig.enabled }}
+{{- if .Values.postureScanner.enabled }}
 
-AIG bridge (in-cluster only): http://{{ include "aidr.component" (dict "root" . "component" "aig-bridge") }}:8099
-Clients need the pod label(s): {{ toJson .Values.aig.bridge.clientPodLabel }}
+Posture scanner bridge (in-cluster only): http://{{ include "aidr.component" (dict "root" . "component" "posture-scanner-bridge") }}:8099
+Clients need the pod label(s): {{ toJson .Values.postureScanner.bridge.clientPodLabel }}
 {{- end }}

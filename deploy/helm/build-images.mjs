@@ -8,7 +8,8 @@
  *   dashboard       deploy/dashboard + packages/dashboard/dist
  *   edge-functions  supabase/edge-runtime + reviewed upstream router + supabase/functions
  *   migrations      postgres client + the atomic plan rendered from supabase/migrations
- *   aig-server, aig-agent, aig-bridge   (optional AI-Infra-Guard stack)
+ *   posture-scanner-server, posture-scanner-agent, posture-scanner-bridge
+ *                   (optional AI Security Posture scanner)
  *
  * Usage:
  *   node deploy/helm/build-images.mjs --output <new-dir> [--only dashboard,edge-functions,migrations]
@@ -36,15 +37,17 @@ const { parse } = requireCore("yaml");
 
 /** Reviewed Supabase self-hosted release (same commit deployment-prepare verifies). */
 export const UPSTREAM_SHA = "8c7a4d9dbbaf8b552893822e89d7bf06f33f9220";
-export const COMPONENTS = ["dashboard", "edge-functions", "migrations", "aig-server", "aig-agent", "aig-bridge"];
+export const COMPONENTS = ["dashboard", "edge-functions", "migrations", "posture-scanner-server", "posture-scanner-agent", "posture-scanner-bridge"];
+/** Component names used before the posture scanner rename; accepted with a note. */
+const LEGACY_COMPONENTS = { "aig-server": "posture-scanner-server", "aig-agent": "posture-scanner-agent", "aig-bridge": "posture-scanner-bridge" };
 const DEFAULT_COMPONENTS = ["dashboard", "edge-functions", "migrations"];
 const REPOSITORIES = {
 	dashboard: "aidr/dashboard",
 	"edge-functions": "aidr/edge-functions",
 	migrations: "aidr/migrations",
-	"aig-server": "aidr/aig-server",
-	"aig-agent": "aidr/aig-agent",
-	"aig-bridge": "aidr/aig-bridge",
+	"posture-scanner-server": "aidr/posture-scanner-server",
+	"posture-scanner-agent": "aidr/posture-scanner-agent",
+	"posture-scanner-bridge": "aidr/posture-scanner-bridge",
 };
 
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -129,9 +132,9 @@ export function stageMigrations(context, migrationsDir = join(root, "supabase/mi
 	return { context, dockerfile: join(context, "Dockerfile") };
 }
 
-export function stageAigAgent(context) {
+export function stagePostureScannerAgent(context) {
 	copyTree(join(root, "services/aig-bridge/aig_compat"), join(context, "aig_compat"), (path) => path.includes("__pycache__"));
-	copyTree(join(here, "images/aig-agent.Dockerfile"), join(context, "Dockerfile"));
+	copyTree(join(here, "images/posture-scanner-agent.Dockerfile"), join(context, "Dockerfile"));
 	return { context, dockerfile: join(context, "Dockerfile") };
 }
 
@@ -143,14 +146,14 @@ function buildPlan({ components, output, upstreamDir, registry, tag }) {
 		if (component === "dashboard") steps.push({ component, ref: ref(component), ...stageDashboard(context) });
 		else if (component === "edge-functions") steps.push({ component, ref: ref(component), ...stageEdgeFunctions(context, upstreamDir) });
 		else if (component === "migrations") steps.push({ component, ref: ref(component), ...stageMigrations(context) });
-		else if (component === "aig-server") {
+		else if (component === "posture-scanner-server") {
 			steps.push({ component, ref: ref(component), context: join(root, "vendor/ai-infra-guard"), dockerfile: join(root, "vendor/ai-infra-guard/Dockerfile") });
-		} else if (component === "aig-bridge") {
+		} else if (component === "posture-scanner-bridge") {
 			steps.push({ component, ref: ref(component), context: join(root, "services/aig-bridge"), dockerfile: join(root, "services/aig-bridge/Dockerfile") });
-		} else if (component === "aig-agent") {
+		} else if (component === "posture-scanner-agent") {
 			const base = `${ref(component).replace(/:[^:/]+$/, "")}-base:${tag}`;
-			steps.push({ component: "aig-agent-base", ref: base, context: join(root, "vendor/ai-infra-guard"), dockerfile: join(root, "vendor/ai-infra-guard/Dockerfile_Agent"), internal: true });
-			steps.push({ component, ref: ref(component), ...stageAigAgent(context), buildArgs: { AIG_AGENT_BASE: base } });
+			steps.push({ component: "posture-scanner-agent-base", ref: base, context: join(root, "vendor/ai-infra-guard"), dockerfile: join(root, "vendor/ai-infra-guard/Dockerfile_Agent"), internal: true });
+			steps.push({ component, ref: ref(component), ...stagePostureScannerAgent(context), buildArgs: { AIG_AGENT_BASE: base } });
 		}
 	}
 	return steps;
@@ -181,7 +184,11 @@ export function main(argv = process.argv.slice(2)) {
 			push: { type: "boolean", default: false },
 		},
 	});
-	const components = values.only ? values.only.split(",").map((value) => value.trim()).filter(Boolean) : DEFAULT_COMPONENTS;
+	const components = values.only ? values.only.split(",").map((value) => value.trim()).filter(Boolean).map((value) => {
+		if (!LEGACY_COMPONENTS[value]) return value;
+		console.error(`NOTE: component "${value}" is deprecated; use "${LEGACY_COMPONENTS[value]}".`);
+		return LEGACY_COMPONENTS[value];
+	}) : DEFAULT_COMPONENTS;
 	const unknown = components.find((component) => !COMPONENTS.includes(component));
 	if (unknown) throw new Error(`Unknown component "${unknown}"; choose from ${COMPONENTS.join(", ")}`);
 	const tag = values.tag ?? chartAppVersion();

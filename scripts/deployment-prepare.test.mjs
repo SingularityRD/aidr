@@ -446,8 +446,10 @@ test("on-prem profile applies resource budgets, runtime policy and a versioned d
 		const deployment = JSON.parse(readFileSync(join(output, "deployment.json"), "utf8"));
 		assert.equal(deployment.resource_profile, "medium");
 		assert.equal(deployment.dashboard_image, `aidr-dashboard:${dashboardVersion}`);
-		assert.deepEqual(deployment.aig, { enabled: false });
-		assert.doesNotMatch(readFileSync(join(output, ".env"), "utf8"), /^(COMPOSE_PROFILES|AIG_|BRIDGE_)/m);
+		assert.deepEqual(deployment.posture_scanner, { enabled: false });
+		assert.equal(Object.hasOwn(deployment, "aig"), false);
+		assert.doesNotMatch(readFileSync(join(output, ".env"), "utf8"), /^(COMPOSE_PROFILES|POSTURE_SCANNER_|AIG_|BRIDGE_)/m);
+		assert.equal(existsSync(join(output, "posture-scanner")), false);
 		assert.equal(existsSync(join(output, "aig")), false);
 		// Every variable the configuration reference promises for a self-hosted install is written.
 		for (const entry of CATALOG.filter((item) => ["always", "self-hosted"].includes(item.written))) {
@@ -467,46 +469,47 @@ test("an unknown resource profile is refused before anything is written", () => 
 	});
 });
 
-test("--with-aig merges the single-host AIG stack with an isolated deny-by-default egress gateway", (t) => {
+test("--with-posture-scanner merges the single-host posture scanner stack with an isolated deny-by-default egress gateway", (t) => {
 	if (!dockerComposeAvailable) t.diagnostic("docker compose is not installed; the compose config check is skipped");
 	inTemporaryDirectory((directory) => {
-		const output = join(directory, "onprem-aig");
-		const aigKey = generateKeyPairSync("rsa", { modulusLength: 2048 }).publicKey;
-		const aigKeyFile = join(directory, "aig-release-public.pem");
-		writeFileSync(aigKeyFile, aigKey.export({ type: "spki", format: "pem" }));
-		const result = prepare(output, "--mode", "self-hosted", "--profile", "large", "--with-aig", "--aig-signing-public-key-file", aigKeyFile, "--aig-signing-key-id", "aig-release-2026");
+		const output = join(directory, "onprem-posture-scanner");
+		const releaseKey = generateKeyPairSync("rsa", { modulusLength: 2048 }).publicKey;
+		const releaseKeyFile = join(directory, "posture-scanner-release-public.pem");
+		writeFileSync(releaseKeyFile, releaseKey.export({ type: "spki", format: "pem" }));
+		const result = prepare(output, "--mode", "self-hosted", "--profile", "large", "--with-posture-scanner", "--posture-scanner-signing-public-key-file", releaseKeyFile, "--posture-scanner-signing-key-id", "scanner-release-2026");
 		assert.equal(result.status, 0, result.stderr);
+		assert.doesNotMatch(result.stderr, /deprecated/);
 		const compose = parse(readFileSync(join(output, "compose.yml"), "utf8"));
 		const aigServices = ["aig-agent", "aig-bridge", "aig-egress", "aig-server"];
 		for (const name of aigServices) {
 			const service = compose.services[name];
-			assert.deepEqual(service.profiles, ["aig"], `${name} profile`);
+			assert.deepEqual(service.profiles, ["posture-scanner"], `${name} profile`);
 			assert.equal(Object.hasOwn(service, "container_name"), false, `${name} must be project-scoped`);
 			assertBudget(service, resourceProfiles.profiles.large.services[name], name);
 			assert.equal(service.restart, "unless-stopped");
 			assert.equal(service.read_only, true);
 			assert.deepEqual(service.cap_drop, ["ALL"]);
 		}
-		assert.equal(compose.services["aig-agent"].deploy.replicas, "${AIG_AGENT_COUNT:-1}", "the single-worker replica pin must survive the resource merge");
+		assert.equal(compose.services["aig-agent"].deploy.replicas, "${POSTURE_SCANNER_AGENT_COUNT:-${AIG_AGENT_COUNT:-1}}", "the single-worker replica pin must survive the resource merge");
 		const aigManifest = JSON.parse(readFileSync(join(root, "packages/core/src/generated/aig-data-manifest.json"), "utf8"));
 		assert.equal(compose.services["aig-server"].image, "aidr-aig-server:v4.6.1-aidr.1");
 		assert.equal(compose.services["aig-agent"].image, "aidr-aig-agent:v4.6.1-aidr.1");
 		assert.equal(compose.services["aig-bridge"].image, `aidr-aig-bridge:${dashboardVersion}`);
 		assert.match(compose.services["aig-egress"].image, /^ubuntu\/squid:[^@]+@sha256:[a-f0-9]{64}$/);
-		assert.equal(compose.services["aig-server"].build.context, "./aig/vendor/ai-infra-guard");
-		assert.equal(compose.services["aig-bridge"].build.context, "./aig/bridge");
+		assert.equal(compose.services["aig-server"].build.context, "./posture-scanner/vendor/ai-infra-guard");
+		assert.equal(compose.services["aig-bridge"].build.context, "./posture-scanner/bridge");
 
 		// Only the egress gateway has an Internet route; the bridge publishes on
 		// loopback through a non-masquerading edge network.
 		assert.equal(compose.networks["aidr-aig-network"].internal, true);
 		assert.equal(compose.networks["aidr-aig-edge"].driver_opts["com.docker.network.bridge.enable_ip_masquerade"], "false");
-		for (const network of Object.values(compose.networks)) assert.equal(Object.hasOwn(network ?? {}, "name"), false, "AIG networks must be project-scoped");
+		for (const network of Object.values(compose.networks)) assert.equal(Object.hasOwn(network ?? {}, "name"), false, "posture scanner networks must be project-scoped");
 		for (const volume of ["aig-db", "aig-logs", "aig-uploads", "aig-checker-data", "aig-bridge-state"]) assert.equal(Object.hasOwn(compose.volumes[volume] ?? {}, "name"), false);
 		assert.deepEqual(compose.services["aig-egress"].networks, ["aidr-aig-network", "aidr-aig-egress"]);
 		assert.deepEqual(compose.services["aig-agent"].networks, ["aidr-aig-network"]);
 		assert.deepEqual(compose.services["aig-server"].networks, ["aidr-aig-network"]);
 		assert.deepEqual(compose.services["aig-bridge"].networks, ["aidr-aig-network", "aidr-aig-edge"]);
-		assert.deepEqual(compose.services["aig-bridge"].ports, ["${AIG_BIND_ADDRESS:-127.0.0.1}:${AIG_BRIDGE_PORT:-8099}:8099"]);
+		assert.deepEqual(compose.services["aig-bridge"].ports, ["${POSTURE_SCANNER_BIND_ADDRESS:-${AIG_BIND_ADDRESS:-127.0.0.1}}:${POSTURE_SCANNER_BRIDGE_PORT:-${AIG_BRIDGE_PORT:-8099}}:8099"]);
 		for (const name of ["aig-server", "aig-agent", "aig-egress"]) assert.equal(Object.hasOwn(compose.services[name], "ports"), false, `${name} must not publish a port`);
 
 		const bindSources = aigServices
@@ -514,44 +517,48 @@ test("--with-aig merges the single-host AIG stack with an isolated deny-by-defau
 			.filter((source) => source?.startsWith("."));
 		assert.ok(bindSources.length >= 5);
 		for (const source of bindSources) assert.ok(existsSync(join(output, source)), `bind mount source ${source} was not staged`);
-		assert.ok(existsSync(join(output, "aig/vendor/ai-infra-guard/Dockerfile_Agent")));
-		assert.ok(existsSync(join(output, "aig/bridge/Dockerfile")));
-		assert.equal(existsSync(join(output, "aig/bridge/tests")), false, "bridge tests are not part of the build context");
-		assert.equal(existsSync(join(output, "aig/vendor/ai-infra-guard/.github")), false);
-		assert.equal(readFileSync(join(output, "aig/egress/squid.conf"), "utf8"), readFileSync(join(root, "deploy/onprem/egress/squid.conf"), "utf8"));
-		assert.match(readFileSync(join(output, "aig/egress/squid.conf"), "utf8"), /^http_access deny all$/m);
+		assert.equal(existsSync(join(output, "aig")), false, "the legacy staging directory is not created");
+		assert.ok(existsSync(join(output, "posture-scanner/vendor/ai-infra-guard/Dockerfile_Agent")));
+		assert.ok(existsSync(join(output, "posture-scanner/bridge/Dockerfile")));
+		assert.ok(existsSync(join(output, "posture-scanner/signing-public.pem")));
+		assert.equal(existsSync(join(output, "posture-scanner/bridge/tests")), false, "bridge tests are not part of the build context");
+		assert.equal(existsSync(join(output, "posture-scanner/vendor/ai-infra-guard/.github")), false);
+		assert.equal(readFileSync(join(output, "posture-scanner/egress/squid.conf"), "utf8"), readFileSync(join(root, "deploy/onprem/egress/squid.conf"), "utf8"));
+		assert.match(readFileSync(join(output, "posture-scanner/egress/squid.conf"), "utf8"), /^http_access deny all$/m);
 
 		const envText = readFileSync(join(output, ".env"), "utf8");
 		const envValue = (name) => envText.match(new RegExp(`^${name}=(.*)$`, "m"))?.[1];
-		assert.equal(envValue("COMPOSE_PROFILES"), "aig");
-		assert.match(envValue("AIG_AGENT_SHARED_SECRET"), /^[a-f0-9]{64}$/);
+		assert.equal(envValue("COMPOSE_PROFILES"), "posture-scanner");
+		assert.match(envValue("POSTURE_SCANNER_AGENT_SHARED_SECRET"), /^[a-f0-9]{64}$/);
 		assert.match(envValue("BRIDGE_API_KEY"), /^[a-f0-9]{64}$/);
-		assert.notEqual(envValue("AIG_AGENT_SHARED_SECRET"), envValue("BRIDGE_API_KEY"));
+		assert.notEqual(envValue("POSTURE_SCANNER_AGENT_SHARED_SECRET"), envValue("BRIDGE_API_KEY"));
 		assert.equal(envValue("BRIDGE_AUTH_MODE"), "api_key");
 		assert.equal(envValue("BRIDGE_TASK_BACKEND"), "sqlite");
 		assert.equal(envValue("BRIDGE_HA_REQUIRED"), "false");
 		assert.equal(envValue("BRIDGE_EGRESS_PROXY_URL"), "http://aig-egress:3128");
-		assert.equal(envValue("AIG_TRUSTED_SIGNING_KEY_ID"), "aig-release-2026");
-		const fingerprint = createHash("sha256").update(aigKey.export({ type: "spki", format: "der" })).digest("hex");
-		assert.equal(envValue("AIG_TRUSTED_SIGNING_PUBLIC_KEY_SHA256"), fingerprint);
-		assert.equal(envValue("AIG_EXPECTED_DATA_BUNDLE_ID"), aigManifest.bundle_id);
-		assert.equal(envValue("AIG_EXPECTED_SOURCE_COMMIT"), aigManifest.source.commit);
-		const aigKeys = envText.split(/\r?\n/).map((line) => line.split("=")[0]).filter((name) => /^(AIG_|BRIDGE_|COMPOSE_PROFILES$)/.test(name)).sort();
-		assert.deepEqual(aigKeys, CATALOG.filter((entry) => entry.written === "with-aig").map((entry) => entry.name).sort(), "the configuration reference must list exactly the AIG variables preparation writes");
+		assert.equal(envValue("POSTURE_SCANNER_TRUSTED_SIGNING_KEY_ID"), "scanner-release-2026");
+		const fingerprint = createHash("sha256").update(releaseKey.export({ type: "spki", format: "der" })).digest("hex");
+		assert.equal(envValue("POSTURE_SCANNER_TRUSTED_SIGNING_PUBLIC_KEY_SHA256"), fingerprint);
+		assert.equal(envValue("POSTURE_SCANNER_EXPECTED_DATA_BUNDLE_ID"), aigManifest.bundle_id);
+		assert.equal(envValue("POSTURE_SCANNER_EXPECTED_SOURCE_COMMIT"), aigManifest.source.commit);
+		assert.doesNotMatch(envText, /^AIG_/m, "preparation writes only the POSTURE_SCANNER_* operator names");
+		const scannerKeys = envText.split(/\r?\n/).map((line) => line.split("=")[0]).filter((name) => /^(POSTURE_SCANNER_|BRIDGE_|COMPOSE_PROFILES$)/.test(name)).sort();
+		assert.deepEqual(scannerKeys, CATALOG.filter((entry) => entry.written === "with-posture-scanner").map((entry) => entry.name).sort(), "the configuration reference must list exactly the posture scanner variables preparation writes");
 		const composeText = readFileSync(join(output, "compose.yml"), "utf8");
-		for (const name of ["AIG_AGENT_SHARED_SECRET", "BRIDGE_API_KEY"]) assert.equal(composeText.includes(envValue(name)), false, `${name} was embedded in Compose`);
+		for (const name of ["POSTURE_SCANNER_AGENT_SHARED_SECRET", "BRIDGE_API_KEY"]) assert.equal(composeText.includes(envValue(name)), false, `${name} was embedded in Compose`);
 
 		const deployment = JSON.parse(readFileSync(join(output, "deployment.json"), "utf8"));
-		assert.equal(deployment.aig.enabled, true);
-		assert.equal(deployment.aig.signing_public_key_sha256, fingerprint);
-		assert.equal(deployment.aig.data_manifest_signed, aigManifest.signature !== null);
-		assert.ok(deployment.artifacts.some((entry) => entry.path === "aig/egress/allowlist.txt"));
-		assert.ok(deployment.artifacts.some((entry) => entry.path === "aig/generated/aig-data-manifest.json"));
+		assert.equal(Object.hasOwn(deployment, "aig"), false);
+		assert.equal(deployment.posture_scanner.enabled, true);
+		assert.equal(deployment.posture_scanner.signing_public_key_sha256, fingerprint);
+		assert.equal(deployment.posture_scanner.data_manifest_signed, aigManifest.signature !== null);
+		assert.ok(deployment.artifacts.some((entry) => entry.path === "posture-scanner/egress/allowlist.txt"));
+		assert.ok(deployment.artifacts.some((entry) => entry.path === "posture-scanner/generated/aig-data-manifest.json"));
 		if (dockerComposeAvailable) assertComposeConfigResolves(output);
 	});
 });
 
-test("--with-aig refuses missing, private or non-RSA release keys and cloud mode", () => {
+test("--with-posture-scanner refuses missing, private or non-RSA release keys and cloud mode", () => {
 	inTemporaryDirectory((directory) => {
 		const ed25519 = join(directory, "ed25519.pem");
 		writeFileSync(ed25519, artifactVerificationPublicKeyPem);
@@ -560,18 +567,40 @@ test("--with-aig refuses missing, private or non-RSA release keys and cloud mode
 		const rsa = join(directory, "rsa.pem");
 		writeFileSync(rsa, generateKeyPairSync("rsa", { modulusLength: 2048 }).publicKey.export({ type: "spki", format: "pem" }));
 		const cases = [
-			[["--mode", "self-hosted", "--with-aig", "--aig-signing-key-id", "k1"], /requires --aig-signing-public-key-file and --aig-signing-key-id/],
-			[["--mode", "self-hosted", "--with-aig", "--aig-signing-public-key-file", ed25519, "--aig-signing-key-id", "k1"], /must be a readable RSA/],
-			[["--mode", "self-hosted", "--with-aig", "--aig-signing-public-key-file", privateKey, "--aig-signing-key-id", "k1"], /must be a readable RSA/],
-			[["--mode", "self-hosted", "--with-aig", "--aig-signing-public-key-file", rsa, "--aig-signing-key-id", "../k1"], /must be a short identifier/],
-			[["--mode", "cloud", "--with-aig", "--aig-signing-public-key-file", rsa, "--aig-signing-key-id", "k1"], /only supported for self-hosted/],
+			[["--mode", "self-hosted", "--with-posture-scanner", "--posture-scanner-signing-key-id", "k1"], /requires --posture-scanner-signing-public-key-file and --posture-scanner-signing-key-id/],
+			[["--mode", "self-hosted", "--with-posture-scanner", "--posture-scanner-signing-public-key-file", ed25519, "--posture-scanner-signing-key-id", "k1"], /must be a readable RSA/],
+			[["--mode", "self-hosted", "--with-posture-scanner", "--posture-scanner-signing-public-key-file", privateKey, "--posture-scanner-signing-key-id", "k1"], /must be a readable RSA/],
+			[["--mode", "self-hosted", "--with-posture-scanner", "--posture-scanner-signing-public-key-file", rsa, "--posture-scanner-signing-key-id", "../k1"], /must be a short identifier/],
+			[["--mode", "cloud", "--with-posture-scanner", "--posture-scanner-signing-public-key-file", rsa, "--posture-scanner-signing-key-id", "k1"], /only supported for self-hosted/],
 		];
 		for (const [index, [options, expected]] of cases.entries()) {
-			const output = join(directory, `aig-case-${index}`);
+			const output = join(directory, `scanner-case-${index}`);
 			const result = prepare(output, ...options);
-			assert.notEqual(result.status, 0, `AIG case ${index} unexpectedly succeeded`);
+			assert.notEqual(result.status, 0, `posture scanner case ${index} unexpectedly succeeded`);
 			assert.match(result.stderr, expected);
-			assert.equal(existsSync(output), false, `AIG case ${index} left a partial installation`);
+			assert.equal(existsSync(output), false, `posture scanner case ${index} left a partial installation`);
+		}
+	});
+});
+
+test("the deprecated --with-aig spellings still select the posture scanner and say so", () => {
+	inTemporaryDirectory((directory) => {
+		const rsa = join(directory, "rsa.pem");
+		writeFileSync(rsa, generateKeyPairSync("rsa", { modulusLength: 2048 }).publicKey.export({ type: "spki", format: "pem" }));
+		const cases = [
+			// The legacy flags map onto the new ones: the new validation runs and names the new flags.
+			[["--mode", "self-hosted", "--with-aig", "--aig-signing-key-id", "k1"], /requires --posture-scanner-signing-public-key-file/, ["with-aig", "aig-signing-key-id"]],
+			[["--mode", "cloud", "--with-aig", "--aig-signing-public-key-file", rsa, "--aig-signing-key-id", "k1"], /--with-posture-scanner is only supported for self-hosted/, ["with-aig", "aig-signing-public-key-file", "aig-signing-key-id"]],
+			// Conflicting old and new values are refused rather than silently picking one.
+			[["--mode", "self-hosted", "--with-posture-scanner", "--posture-scanner-signing-key-id", "k1", "--aig-signing-key-id", "k2"], /--aig-signing-key-id and --posture-scanner-signing-key-id disagree/, ["aig-signing-key-id"]],
+		];
+		for (const [index, [options, expected, deprecated]] of cases.entries()) {
+			const output = join(directory, `legacy-case-${index}`);
+			const result = prepare(output, ...options);
+			assert.notEqual(result.status, 0, `legacy case ${index} unexpectedly succeeded`);
+			assert.match(result.stderr, expected);
+			for (const flag of deprecated) assert.match(result.stderr, new RegExp(`NOTE: --${flag} is deprecated; use --`), `legacy case ${index} did not flag --${flag}`);
+			assert.equal(existsSync(output), false, `legacy case ${index} left a partial installation`);
 		}
 	});
 });

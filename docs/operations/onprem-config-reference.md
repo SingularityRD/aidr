@@ -18,7 +18,7 @@ unchanged from the pinned Supabase `self-hosted/v0.8.1` `docker/.env.example`
 
 ## `.env`
 
-Compose interpolation for the whole stack (Supabase, dashboard and, with --with-aig, AIG). Read by `docker compose` from the installation directory.
+Compose interpolation for the whole stack (Supabase, dashboard and, with --with-posture-scanner, the AI Security Posture scanner). Read by `docker compose` from the installation directory.
 
 | Variable | Written | Source | Value / default | Purpose |
 | --- | --- | --- | --- | --- |
@@ -59,19 +59,19 @@ Compose interpolation for the whole stack (Supabase, dashboard and, with --with-
 | `SENTRY_ENVIRONMENT` | not written; optional override | operator | `production` | Sentry environment label (development installations default to `development`). |
 | `SENTRY_TRACES_SAMPLE_RATE` | not written; optional override | operator | `0` | Sentry trace sampling rate. |
 | `AIDR_AUTH_METHODS` | not written; optional override | operator | `password` | Dashboard sign-in methods offered to users. |
-| `COMPOSE_PROFILES` | `--with-aig` only | fixed by preparation | `aig` | Starts the AIG services with the stack; remove `aig` to keep them stopped. |
-| `AIG_SOURCE_VERSION` | `--with-aig` only | derived from options | `v4.6.1-aidr.1` | Pinned AIG source tag; also the aig-server/aig-agent image tag. |
-| `AIG_TZ` | `--with-aig` only | fixed by preparation | `UTC` | Time zone inside the AIG containers. |
-| `AIG_AGENT_SHARED_SECRET` | `--with-aig` only | generated secret | *(secret)* | Authenticates worker registration and the internal AIG readiness route. |
-| `AIG_TRUSTED_SIGNING_KEY_ID` | `--with-aig` only | operator | `--aig-signing-key-id` | Key id of the AIG release data-signing key. |
-| `AIG_TRUSTED_SIGNING_PUBLIC_KEY_SHA256` | `--with-aig` only | derived from options | `SHA-256 of the SPKI DER key` | Pinned fingerprint of `aig/aig-signing-public.pem`. |
-| `AIG_EXPECTED_DATA_BUNDLE_ID` | `--with-aig` only | derived from options | `aig-data-manifest.json bundle_id` | Signed AIG data bundle the runtime must attest. |
-| `AIG_EXPECTED_SOURCE_COMMIT` | `--with-aig` only | derived from options | `aig-data-manifest.json source.commit` | AIG source commit the runtime must attest. |
-| `BRIDGE_AUTH_MODE` | `--with-aig` only | fixed by preparation | `api_key` | Bridge authentication: `api_key` (isolated local sidecar) or `broker` (JWT). |
-| `BRIDGE_API_KEY` | `--with-aig` only | generated secret | *(secret)* | Bearer key for bridge callers in `api_key` mode. |
-| `BRIDGE_TASK_BACKEND` | `--with-aig` only | fixed by preparation | `sqlite` | Task registry: `sqlite` (single host) or `postgres` (HA). |
-| `BRIDGE_HA_REQUIRED` | `--with-aig` only | fixed by preparation | `false` | `true` makes readiness refuse SQLite; set with the PostgreSQL backend. |
-| `BRIDGE_EGRESS_PROXY_URL` | `--with-aig` only | fixed by preparation | `http://aig-egress:3128` | Deny-by-default egress gateway for remote scan traffic. |
+| `COMPOSE_PROFILES` | `--with-posture-scanner` only | fixed by preparation | `posture-scanner` | Starts the posture scanner services with the stack; remove `posture-scanner` to keep them stopped. |
+| `POSTURE_SCANNER_SOURCE_VERSION` | `--with-posture-scanner` only | derived from options | `v4.6.1-aidr.1` | Pinned scanner source tag; also the scanner server and worker image tag. |
+| `POSTURE_SCANNER_TZ` | `--with-posture-scanner` only | fixed by preparation | `UTC` | Time zone inside the posture scanner containers. |
+| `POSTURE_SCANNER_AGENT_SHARED_SECRET` | `--with-posture-scanner` only | generated secret | *(secret)* | Authenticates worker registration and the internal scanner readiness route. |
+| `POSTURE_SCANNER_TRUSTED_SIGNING_KEY_ID` | `--with-posture-scanner` only | operator | `--posture-scanner-signing-key-id` | Key id of the posture scanner release data-signing key. |
+| `POSTURE_SCANNER_TRUSTED_SIGNING_PUBLIC_KEY_SHA256` | `--with-posture-scanner` only | derived from options | `SHA-256 of the SPKI DER key` | Pinned fingerprint of `posture-scanner/signing-public.pem`. |
+| `POSTURE_SCANNER_EXPECTED_DATA_BUNDLE_ID` | `--with-posture-scanner` only | derived from options | `aig-data-manifest.json bundle_id` | Signed scanner data bundle the runtime must attest. |
+| `POSTURE_SCANNER_EXPECTED_SOURCE_COMMIT` | `--with-posture-scanner` only | derived from options | `aig-data-manifest.json source.commit` | Scanner source commit the runtime must attest. |
+| `BRIDGE_AUTH_MODE` | `--with-posture-scanner` only | fixed by preparation | `api_key` | Bridge authentication: `api_key` (isolated local sidecar) or `broker` (JWT). |
+| `BRIDGE_API_KEY` | `--with-posture-scanner` only | generated secret | *(secret)* | Bearer key for bridge callers in `api_key` mode. |
+| `BRIDGE_TASK_BACKEND` | `--with-posture-scanner` only | fixed by preparation | `sqlite` | Task registry: `sqlite` (single host) or `postgres` (HA). |
+| `BRIDGE_HA_REQUIRED` | `--with-posture-scanner` only | fixed by preparation | `false` | `true` makes readiness refuse SQLite; set with the PostgreSQL backend. |
+| `BRIDGE_EGRESS_PROXY_URL` | `--with-posture-scanner` only | fixed by preparation | `http://aig-egress:3128` | Deny-by-default egress gateway for remote scan traffic. |
 | `BRIDGE_TASK_POSTGRES_DSN` | not written; optional override | operator | *(blank)* | PostgreSQL DSN for the HA task registry (secret); requires migrations 001 and 002. |
 | `BRIDGE_JWT_SECRET` | not written; optional override | operator | *(blank)* | Broker-mode HS256 secret, at least 32 bytes (secret). |
 | `BRIDGE_JWT_ISSUER` | not written; optional override | operator | *(blank)* | Broker-mode expected JWT issuer. |
@@ -91,14 +91,14 @@ Compose interpolation for the whole stack (Supabase, dashboard and, with --with-
 | `BRIDGE_ALLOW_PRIVATE_TARGETS` | not written; optional override | operator | `false` | Allow private scan targets at submission (the egress gateway still refuses them). |
 | `BRIDGE_VALIDATE_DNS` | not written; optional override | operator | `true` | Resolve and vet target hosts at submission; never disable for customers. |
 | `BRIDGE_LOG_LEVEL` | not written; optional override | operator | `INFO` | Bridge log level. |
-| `AIG_BIND_ADDRESS` | not written; optional override | operator | `127.0.0.1` | Host address the bridge port is published on. |
-| `AIG_BRIDGE_PORT` | not written; optional override | operator | `8099` | Host port for the authenticated bridge. |
-| `AIG_MIN_WORKERS` | not written; optional override | operator | `1` | Live workers required before the bridge reports ready. |
-| `AIG_AGENT_COUNT` | not written; optional override | operator | `1` | AIG worker replicas; keep 1 until workers expose unique identities. |
-| `AIG_NO_PROXY` | not written; optional override | operator | `aig-server,localhost,127.0.0.1` | Destinations the worker reaches without the egress gateway. |
-| `AIG_SIGNING_PUBLIC_KEY_HOST_PATH` | not written; optional override | operator | *(blank)* | Standalone docker-compose.aig.yml only: host path of the AIG signing public key (prepared installs use `aig/aig-signing-public.pem`). |
-| `AIG_EGRESS_ALLOWLIST_PATH` | not written; optional override | operator | `./deploy/onprem/egress/allowlist.txt` | Standalone docker-compose.aig.yml only: egress allowlist path (prepared installs use `aig/egress/allowlist.txt`). |
-| `AIG_BRIDGE_IMAGE_TAG` | not written; optional override | operator | `local` | Standalone docker-compose.aig.yml only: bridge image tag (prepared installs use the AIDR version). |
+| `POSTURE_SCANNER_BIND_ADDRESS` | not written; optional override | operator | `127.0.0.1` | Host address the bridge port is published on. |
+| `POSTURE_SCANNER_BRIDGE_PORT` | not written; optional override | operator | `8099` | Host port for the authenticated bridge. |
+| `POSTURE_SCANNER_MIN_WORKERS` | not written; optional override | operator | `1` | Live workers required before the bridge reports ready. |
+| `POSTURE_SCANNER_AGENT_COUNT` | not written; optional override | operator | `1` | Scanner worker replicas; keep 1 until workers expose unique identities. |
+| `POSTURE_SCANNER_NO_PROXY` | not written; optional override | operator | `aig-server,localhost,127.0.0.1` | Destinations the worker reaches without the egress gateway. |
+| `POSTURE_SCANNER_SIGNING_PUBLIC_KEY_HOST_PATH` | not written; optional override | operator | *(blank)* | Standalone docker-compose.posture-scanner.yml only: host path of the scanner signing public key (prepared installs use `posture-scanner/signing-public.pem`). |
+| `POSTURE_SCANNER_EGRESS_ALLOWLIST_PATH` | not written; optional override | operator | `./deploy/onprem/egress/allowlist.txt` | Standalone docker-compose.posture-scanner.yml only: egress allowlist path (prepared installs use `posture-scanner/egress/allowlist.txt`). |
+| `POSTURE_SCANNER_BRIDGE_IMAGE_TAG` | not written; optional override | operator | `local` | Standalone docker-compose.posture-scanner.yml only: bridge image tag (prepared installs use the AIDR version). |
 
 ## `.env.functions`
 
@@ -157,4 +157,5 @@ Host device-start ingress signer (`ingress/device-start.mjs`) behind the TLS rev
 
 - Resource budgets: `--profile small|medium|large` from `deploy/onprem/resource-profile.json`.
 - Restart, log rotation and extra health checks: `deploy/onprem/compose.onprem.overlay.yml`.
-- AIG egress allowlist: `aig/egress/allowlist.txt` in a `--with-aig` installation.
+- Posture scanner egress allowlist: `posture-scanner/egress/allowlist.txt` in a `--with-posture-scanner` installation.
+- Installations prepared before the posture scanner rename keep working: every `POSTURE_SCANNER_*` Compose setting falls back to the name earlier releases wrote to `.env`.

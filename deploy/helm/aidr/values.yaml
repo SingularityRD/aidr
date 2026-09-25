@@ -371,9 +371,10 @@ networkPolicy:
   storageEgressCIDRs: []
 
 # ---------------------------------------------------------------------------
-# Optional AI-Infra-Guard scanning stack (docker-compose.aig.yml equivalent)
+# Optional AI Security Posture scanner (docker-compose.posture-scanner.yml
+# equivalent). The pre-rename `aig` key is refused with a pointer here.
 # ---------------------------------------------------------------------------
-aig:
+postureScanner:
   enabled: false
   sourceVersion: v4.6.1-aidr.1
   timezone: UTC
@@ -396,7 +397,7 @@ aig:
   server:
     image:
       registry: ""
-      repository: aidr/aig-server
+      repository: aidr/posture-scanner-server
       tag: ""
       digest: ""
       pullPolicy: IfNotPresent
@@ -407,7 +408,7 @@ aig:
   agent:
     image:
       registry: ""
-      repository: aidr/aig-agent
+      repository: aidr/posture-scanner-agent
       tag: ""
       digest: ""
       pullPolicy: IfNotPresent
@@ -418,7 +419,7 @@ aig:
   bridge:
     image:
       registry: ""
-      repository: aidr/aig-bridge
+      repository: aidr/posture-scanner-bridge
       tag: ""
       digest: ""
       pullPolicy: IfNotPresent
@@ -430,11 +431,11 @@ aig:
     minWorkers: 1
     # Pods with this label (any namespace in clientNamespaceSelector) may call the bridge.
     clientPodLabel:
-      aidr.singularity/aig-client: "true"
+      aidr.singularity/posture-scanner-client: "true"
     clientNamespaceSelector: {}
     stateSize: 1Gi
   # Shared upload volume (bridge writes, server writes, agent reads). Needs
-  # ReadWriteMany unless all AIG pods are scheduled on one node.
+  # ReadWriteMany unless all posture scanner pods are scheduled on one node.
   uploads:
     size: 10Gi
     accessModes: ["ReadWriteMany"]

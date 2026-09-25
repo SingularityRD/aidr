@@ -306,7 +306,7 @@
         "storageEgressCIDRs": { "$ref": "#/definitions/cidrList" }
       }
     },
-    "aig": {
+    "postureScanner": {
       "type": "object",
       "properties": {
         "enabled": { "type": "boolean" },
