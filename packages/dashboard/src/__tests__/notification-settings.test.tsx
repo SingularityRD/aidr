@@ -29,6 +29,19 @@ const FILTERS = {
 	privacy_spike_window_minutes: 15,
 };
 
+/** What the console sends: the original filters plus agent/governance defaults. */
+const SENT = {
+	...FILTERS,
+	agent_offline: false,
+	agent_offline_minutes: 240,
+	governance_review_overdue: false,
+	governance_intake_requested: false,
+	governance_change_pending: false,
+	governance_exception_expiring: false,
+	governance_exception_days: 14,
+	governance_digest: false,
+};
+
 function channel(overrides: Record<string, unknown> = {}) {
 	return {
 		id: CHANNEL,
@@ -201,11 +214,65 @@ describe("Settings → Notifications", () => {
 				type: "slack",
 				name: "SOC on-call",
 				target: { url: SLACK_URL },
-				filters: { ...FILTERS, incident_min_severity: "critical", approval_requested: true },
+				filters: { ...SENT, incident_min_severity: "critical", approval_requested: true },
 			},
 		]);
 		expect(within(form).getByLabelText("Slack incoming-webhook URL")).toHaveValue("");
 		expect(document.body.textContent).not.toContain("abcdefghijklmnop");
+	});
+
+	it("creates a channel for agent-offline and governance events only, with bounded settings", async () => {
+		install();
+		renderSection();
+		const form = await screen.findByRole("form", { name: "Add alert channel" });
+		fireEvent.change(within(form).getByLabelText("Channel name"), {
+			target: { value: "Fleet health" },
+		});
+		fireEvent.change(within(form).getByLabelText("Slack incoming-webhook URL"), {
+			target: { value: SLACK_URL },
+		});
+		// Drop the default incident/deny events; keep only fleet and governance.
+		const incidents = within(form)
+			.getByText("New incidents with severity at least")
+			.closest("label");
+		fireEvent.click(incidents?.querySelector("input[type=checkbox]") as HTMLInputElement);
+		fireEvent.click(within(form).getByLabelText("Critical runtime denies"));
+		const add = within(form).getByRole("button", { name: "Add channel" });
+		expect(add).toBeDisabled();
+		fireEvent.click(within(form).getByLabelText("Enrolled agent not seen for"));
+		const minutes = within(form).getByLabelText("Agent offline threshold in minutes");
+		fireEvent.change(minutes, { target: { value: "2" } });
+		expect(add).toBeDisabled();
+		fireEvent.change(minutes, { target: { value: "30" } });
+		fireEvent.click(within(form).getByLabelText("Four-eyes policy changes awaiting approval"));
+		fireEvent.click(within(form).getByLabelText("Approved exceptions expiring within"));
+		fireEvent.change(within(form).getByLabelText("Exception expiry window in days"), {
+			target: { value: "7" },
+		});
+		fireEvent.click(within(form).getByLabelText(/Scheduled governance digest/));
+		fireEvent.click(add);
+		expect(
+			await screen.findByText("Added Fleet health. Send a test to confirm delivery."),
+		).toBeInTheDocument();
+		expect(posts()[0]).toMatchObject({
+			action: "create",
+			filters: {
+				...SENT,
+				incident_created: false,
+				runtime_deny_critical: false,
+				agent_offline: true,
+				agent_offline_minutes: 30,
+				governance_change_pending: true,
+				governance_exception_expiring: true,
+				governance_exception_days: 7,
+				governance_digest: true,
+			},
+		});
+		expect(
+			screen.getByText(
+				"Agents offline ≥ 30 min · Policy changes awaiting approval · Exceptions expiring ≤ 7 d · Governance digest",
+			),
+		).toBeInTheDocument();
 	});
 
 	it("generates a webhook signing secret and requires one before saving", async () => {
@@ -262,7 +329,7 @@ describe("Settings → Notifications", () => {
 				tenant_id: TENANT,
 				action: "update",
 				channel_id: CHANNEL,
-				filters: { ...FILTERS, runtime_deny_critical: false },
+				filters: { ...SENT, runtime_deny_critical: false },
 			},
 			{ tenant_id: TENANT, action: "delete", channel_id: CHANNEL },
 		]);

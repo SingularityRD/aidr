@@ -4,7 +4,7 @@
 // change request instead of publishing. A second owner/admin approves it from
 // the dashboard (ai-governance `decide_policy_change`), which runs the same
 // publication RPC with the author as publisher. The database refuses any new
-// runtime or DLP revision while four-eyes is on unless it is being applied by
+// runtime, DLP or agent-profile revision while four-eyes is on unless it is being applied by
 // such an approval, so this module is the friendly path, not the control.
 
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.116.0";
@@ -16,7 +16,8 @@ export type PolicyChangeKind =
 	| "runtime_restore"
 	| "runtime_stage"
 	| "runtime_rollout"
-	| "dlp_publish";
+	| "dlp_publish"
+	| "agent_profiles_stage";
 
 export type FourEyesState = { ok: true; enabled: boolean } | { ok: false };
 

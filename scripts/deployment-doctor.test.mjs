@@ -82,6 +82,9 @@ function readyDeploymentDirectory(t) {
 		"AIDR_DELEGATION_SIGNING_KEY_ID=aidr-delegation-abcdef123456",
 		`AIDR_DELEGATION_SIGNING_PRIVATE_KEY_PKCS8_B64=${delegationKeys.privateKey.export({ type: "pkcs8", format: "der" }).toString("base64")}`,
 		`AIDR_DELEGATION_SIGNING_PUBLIC_KEY_SPKI_B64=${delegationKeys.publicKey.export({ type: "spki", format: "der" }).toString("base64")}`,
+		`AIDR_APPROVAL_SIGNING_WRAP_KEY_B64=${Buffer.alloc(32, 7).toString("base64")}`,
+		`AIDR_NOTIFICATION_ENCRYPTION_KEYS=k1:${Buffer.alloc(32, 9).toString("base64")}`,
+		`AIDR_NOTIFICATION_DISPATCH_TOKEN=${"d".repeat(43)}`,
 	].join("\n") + "\n");
 	mkdirSync(join(directory, "ingress"), { recursive: true });
 	writeFileSync(join(directory, "ingress", "device-start.mjs"), "// fixture\n");

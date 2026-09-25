@@ -6,7 +6,9 @@
 //   * Compose on-prem: aidr-notification-dispatch.timer (deploy/maintenance)
 //   * Kubernetes: the chart's notification-dispatch CronJob (deploy/helm/aidr)
 //
-// Each run claims due deliveries under a lease (SKIP LOCKED, so overlapping
+// Each run first enqueues the scheduled alerts (agent offline/recovered,
+// overdue AI register reviews, expiring governance exceptions) through
+// enqueue_scheduled_notifications, then claims due deliveries under a lease (SKIP LOCKED, so overlapping
 // runs never send the same row twice unless a lease expires), delivers them
 // with SSRF checks, signatures and a 10 s timeout, records the outcome with
 // exponential backoff, and prunes terminal deliveries past retention.
@@ -71,6 +73,41 @@ async function sameSecret(presented: string, expected: string): Promise<boolean>
 	return diff === 0;
 }
 
+const SCHEDULED_KEYS = [
+	"agent_offline",
+	"agent_recovered",
+	"governance_review_overdue",
+	"governance_exception_expiring",
+	"capped",
+] as const;
+export const SCHEDULED_SCAN_LIMIT = 500;
+
+/**
+ * Enqueue the time-based alerts. This is a detection internal: a failure is
+ * logged and reported as `scheduled: null` (never as "nothing due") and the
+ * run still drains the outbox, so event alerts are never held hostage by it.
+ */
+export async function enqueueScheduledNotifications(db: {
+	rpc(name: string, args: Record<string, unknown>): PromiseLike<{ data: unknown; error: unknown }>;
+}): Promise<Record<string, number> | { skipped: true } | null> {
+	try {
+		const { data, error } = await db.rpc("enqueue_scheduled_notifications", { p_limit: SCHEDULED_SCAN_LIMIT });
+		const row = data as Record<string, unknown> | null;
+		if (error || !row || typeof row !== "object") throw new Error("scheduled_scan_failed");
+		if (row.skipped === true) return { skipped: true };
+		const counts: Record<string, number> = {};
+		for (const key of SCHEDULED_KEYS) {
+			const value = row[key];
+			if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) throw new Error("scheduled_scan_failed");
+			counts[key] = value;
+		}
+		return counts;
+	} catch {
+		console.error("[notification-dispatch] scheduled scan failed", JSON.stringify({ code: "scheduled_scan_failed" }));
+		return null;
+	}
+}
+
 export function createNotificationDispatchHandler(deps: NotificationDispatchDeps = {}) {
 	const runtimeEnv = deps.env ?? readRuntimeEnv;
 	const now = deps.now ?? Date.now;
@@ -106,6 +143,7 @@ export function createNotificationDispatchHandler(deps: NotificationDispatchDeps
 
 		try {
 			const db = makeClient(config.values.SUPABASE_URL, config.values.SUPABASE_SERVICE_ROLE_KEY);
+			const scheduled = await enqueueScheduledNotifications(db as never);
 			const summary = await runNotificationDispatch(db as never, {
 				keyring,
 				dashboardUrl: readConfigValue(runtimeEnv, "AIDR_DASHBOARD_URL"),
@@ -125,6 +163,7 @@ export function createNotificationDispatchHandler(deps: NotificationDispatchDeps
 				dead: summary.dead,
 				lease_lost: summary.leaseLost,
 				pruned: !pruneError && Number.isSafeInteger(prunedCount) ? prunedCount : null,
+				scheduled,
 			});
 		} catch (error) {
 			const code = error instanceof DispatchError ? error.code : "dispatch_failed";

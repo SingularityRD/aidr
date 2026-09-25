@@ -28,6 +28,13 @@ export const NOTIFICATION_EVENT_TYPES = [
 	"approval.requested",
 	"privacy.blocked_spike",
 	"notification.test",
+	"agent.offline",
+	"agent.recovered",
+	"governance.review_overdue",
+	"governance.intake_requested",
+	"governance.change_pending",
+	"governance.exception_expiring",
+	"governance.digest",
 ] as const;
 export type NotificationEventType = (typeof NOTIFICATION_EVENT_TYPES)[number];
 export const SEVERITIES = ["info", "warning", "high", "critical"] as const;
@@ -42,6 +49,46 @@ export const BACKOFF_CAP_SECONDS = 3600;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+
+/** Counts a governance digest may carry (migration 20260928000001); anything else is dropped. */
+export const DIGEST_COUNT_KEYS = [
+	"agents_enrolled",
+	"agents_active",
+	"decisions_allow",
+	"decisions_ask",
+	"decisions_deny",
+	"approvals_requested",
+	"approvals_pending",
+	"incidents_reported",
+	"incidents_open",
+	"incidents_open_critical",
+	"browser_blocked",
+	"browser_masked",
+	"mcp_not_approved",
+	"reviews_overdue",
+	"intake_pending",
+	"policy_changes_pending",
+] as const;
+export type DigestCountKey = (typeof DIGEST_COUNT_KEYS)[number];
+
+const DIGEST_LABELS: Record<DigestCountKey, string> = {
+	agents_enrolled: "Agents enrolled",
+	agents_active: "Agents active",
+	decisions_allow: "Allowed actions",
+	decisions_ask: "Held for approval",
+	decisions_deny: "Blocked actions",
+	approvals_requested: "Approvals requested",
+	approvals_pending: "Approvals pending",
+	incidents_reported: "Incidents reported",
+	incidents_open: "Incidents open",
+	incidents_open_critical: "Critical incidents open",
+	browser_blocked: "Browser prompts blocked",
+	browser_masked: "Browser prompts masked",
+	mcp_not_approved: "Unapproved MCP servers",
+	reviews_overdue: "AI reviews overdue",
+	intake_pending: "AI intake requests pending",
+	policy_changes_pending: "Policy changes awaiting approval",
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -63,9 +110,30 @@ export interface NotificationMessage {
 	tenant_id: string;
 	severity: Severity | null;
 	category: string | null;
-	subject: { event_id: string | null; agent_id: string | null; incident_id: string | null };
-	counts: { findings: number | null; blocked: number | null; window_minutes: number | null };
+	// The keys marked optional are present (possibly null) on agent.* and
+	// governance.* events only, so the body of every original event is
+	// unchanged for receivers that validate the published v1 schema strictly.
+	subject: { event_id: string | null; agent_id: string | null; incident_id: string | null; request_id?: string | null };
+	counts: {
+		findings: number | null;
+		blocked: number | null;
+		window_minutes: number | null;
+		/** Items in a governance count (overdue reviews, expiring exceptions). */
+		items?: number | null;
+		window_days?: number | null;
+		/** Offline threshold (agent.offline) or outage length (agent.recovered). */
+		offline_minutes?: number | null;
+	};
+	/** Covered period of a governance digest. */
+	period?: { from: string; to: string } | null;
+	/** Counts-only governance digest (governance.digest), allow-listed keys. */
+	digest?: Partial<Record<DigestCountKey, number>> | null;
 	links: { dashboard: string | null };
+}
+
+/** Event types that carry the extended subject/counts/period/digest fields. */
+export function isExtendedEvent(event: NotificationEventType): boolean {
+	return event.startsWith("agent.") || event.startsWith("governance.");
 }
 
 export interface DeliveryRecord {
@@ -82,6 +150,13 @@ const DEEP_LINK_PATHS: Record<NotificationEventType, string> = {
 	"approval.requested": "/incidents",
 	"privacy.blocked_spike": "/privacy-guard",
 	"notification.test": "/settings",
+	"agent.offline": "/agents",
+	"agent.recovered": "/agents",
+	"governance.review_overdue": "/governance/register",
+	"governance.intake_requested": "/governance/requests",
+	"governance.change_pending": "/governance/change-control",
+	"governance.exception_expiring": "/governance/requests",
+	"governance.digest": "/governance",
 };
 
 /** The dashboard origin for deep links, or null when not a usable URL. */
@@ -105,12 +180,31 @@ function isoTime(value: unknown, fallback: string): string {
 	return Number.isFinite(fallbackParsed) ? new Date(fallbackParsed).toISOString() : new Date(0).toISOString();
 }
 
+function optionalIso(value: unknown): string | null {
+	if (typeof value !== "string" || value.length > 64) return null;
+	const parsed = Date.parse(value);
+	return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null;
+}
+
+function digestCounts(value: unknown): NotificationMessage["digest"] {
+	if (!isRecord(value)) return null;
+	const counts: Partial<Record<DigestCountKey, number>> = {};
+	for (const key of DIGEST_COUNT_KEYS) {
+		const count = boundedInt(value[key], 10_000_000);
+		if (count !== null) counts[key] = count;
+	}
+	return Object.keys(counts).length > 0 ? counts : null;
+}
+
 /** Allow-list projection of an outbox row into the public message. */
 export function buildNotification(delivery: DeliveryRecord, dashboardUrl: string | null): NotificationMessage {
 	const p = delivery.payload;
 	const origin = dashboardOrigin(dashboardUrl);
 	const severity = SEVERITIES.includes(p.severity as Severity) ? (p.severity as Severity) : null;
-	return {
+	const periodFrom = optionalIso(p.period_from);
+	const periodTo = optionalIso(p.period_to);
+	const extended = isExtendedEvent(delivery.eventType);
+	const message: NotificationMessage = {
 		schema: NOTIFICATION_SCHEMA,
 		id: delivery.deliveryId,
 		event: delivery.eventType,
@@ -131,6 +225,16 @@ export function buildNotification(delivery: DeliveryRecord, dashboardUrl: string
 		},
 		links: { dashboard: origin ? `${origin}${DEEP_LINK_PATHS[delivery.eventType]}` : null },
 	};
+	if (!extended) return message;
+	message.subject.request_id = typeof p.request_id === "string" && UUID.test(p.request_id) ? p.request_id.toLowerCase() : null;
+	message.counts.items = boundedInt(p.items_count, 10_000_000);
+	message.counts.window_days = boundedInt(p.window_days, 90);
+	message.counts.offline_minutes = boundedInt(p.offline_minutes, 10_000_000);
+	message.period = delivery.eventType === "governance.digest" && periodFrom && periodTo ? { from: periodFrom, to: periodTo } : null;
+	message.digest = delivery.eventType === "governance.digest" ? digestCounts(p.digest) : null;
+	// Keep the key order stable: links last, as in the original events.
+	const { links, ...rest } = message;
+	return { ...rest, links };
 }
 
 export function notificationTitle(message: NotificationMessage): string {
@@ -147,6 +251,28 @@ export function notificationTitle(message: NotificationMessage): string {
 				: "Spike in blocked AI prompts";
 		case "notification.test":
 			return "Test notification from Singularity AIDR";
+		case "agent.offline":
+			return message.counts.offline_minutes != null
+				? `Agent not seen for ${message.counts.offline_minutes} min`
+				: "Agent offline";
+		case "agent.recovered":
+			return message.counts.offline_minutes != null
+				? `Agent back online after ${message.counts.offline_minutes} min`
+				: "Agent back online";
+		case "governance.review_overdue":
+			return message.counts.items != null
+				? `${message.counts.items} AI register ${message.counts.items === 1 ? "item is" : "items are"} past the review date`
+				: "AI register items past the review date";
+		case "governance.intake_requested":
+			return "New AI intake request awaiting review";
+		case "governance.change_pending":
+			return "Policy change awaiting four-eyes approval";
+		case "governance.exception_expiring":
+			return message.counts.items != null && message.counts.window_days != null
+				? `${message.counts.items} AI governance ${message.counts.items === 1 ? "exception expires" : "exceptions expire"} within ${message.counts.window_days} days`
+				: "AI governance exceptions expiring soon";
+		case "governance.digest":
+			return message.category === "monthly" ? "Monthly AI governance summary" : "Weekly AI governance summary";
 	}
 }
 
@@ -157,11 +283,24 @@ export function notificationFacts(message: NotificationMessage): Array<[string, 
 	if (message.category) facts.push(["Category", message.category]);
 	if (message.subject.incident_id) facts.push(["Incident", message.subject.incident_id]);
 	if (message.subject.agent_id) facts.push(["Agent", message.subject.agent_id]);
+	if (message.subject.request_id) facts.push(["Request", message.subject.request_id]);
 	if (message.subject.event_id) facts.push(["Event ID", message.subject.event_id]);
 	if (message.counts.findings !== null) facts.push(["Findings", String(message.counts.findings)]);
 	if (message.counts.blocked !== null) facts.push(["Blocked sends", String(message.counts.blocked)]);
 	if (message.counts.window_minutes !== null) facts.push(["Window", `${message.counts.window_minutes} min`]);
-	facts.push(["Occurred", message.occurred_at]);
+	if (message.counts.items != null) facts.push(["Items", String(message.counts.items)]);
+	if (message.counts.window_days != null) facts.push(["Within", `${message.counts.window_days} days`]);
+	if (message.counts.offline_minutes != null) {
+		facts.push([message.event === "agent.recovered" ? "Offline for" : "Threshold", `${message.counts.offline_minutes} min`]);
+	}
+	if (message.period) facts.push(["Period", `${message.period.from} – ${message.period.to}`]);
+	if (message.digest) {
+		for (const key of DIGEST_COUNT_KEYS) {
+			const value = message.digest[key];
+			if (value !== undefined) facts.push([DIGEST_LABELS[key], String(value)]);
+		}
+	}
+	facts.push([message.event === "agent.offline" ? "Last seen" : "Occurred", message.occurred_at]);
 	return facts;
 }
 
@@ -174,14 +313,18 @@ export function slackPayload(message: NotificationMessage): Record<string, unkno
 	const title = notificationTitle(message);
 	const blocks: Array<Record<string, unknown>> = [
 		{ type: "header", text: { type: "plain_text", text: title.slice(0, 150), emoji: false } },
-		{
+	];
+	// A section holds at most 10 fields; a digest spills into further sections.
+	const facts = notificationFacts(message).slice(0, 30);
+	for (let start = 0; start < facts.length; start += 10) {
+		blocks.push({
 			type: "section",
-			fields: notificationFacts(message).slice(0, 10).map(([label, value]) => ({
+			fields: facts.slice(start, start + 10).map(([label, value]) => ({
 				type: "mrkdwn",
 				text: `*${label}*\n${slackEscape(value)}`,
 			})),
-		},
-	];
+		});
+	}
 	if (message.links.dashboard) {
 		blocks.push({
 			type: "actions",

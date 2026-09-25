@@ -163,6 +163,7 @@
 	"ignoreIssues": {
 		"packages/opencode/src/index.ts": ["duplicates"],
 		"scripts/sync-dlp-edge-schema.mjs": ["unlisted"],
+		"scripts/sync-agent-profile-edge-schema.mjs": ["unlisted"],
 		"packages/core/src/dlp/privacy-rules/**": ["exports", "types"]
 	}
 }

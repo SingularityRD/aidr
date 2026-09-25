@@ -127,6 +127,10 @@ export function main(argv = process.argv.slice(2)) {
 	const serviceRoleKey = supabaseApiKey("service_role", jwtSecret, now);
 	const signing = generateKeyPairSync("ed25519");
 	const delegation = generateKeyPairSync("ed25519");
+	// Compliance evidence packs get their own Ed25519 key; its public half is
+	// written for auditors (compliance-signing-public.pem).
+	const compliance = generateKeyPairSync("ed25519");
+	const complianceKeyId = `aidr-compliance-${hex(6)}`;
 	const signingPkcs8 = signing.privateKey.export({ type: "pkcs8", format: "der" }).toString("base64");
 	const keyId = `aidr-${hex(6)}`;
 	const keysExpireAt = new Date((now + KEY_LIFETIME_SECONDS) * 1000).toISOString();
@@ -150,6 +154,8 @@ export function main(argv = process.argv.slice(2)) {
 		AIDR_PACK_MASTER_KEY_B64: randomBytes(32).toString("base64"),
 		AIDR_PACK_DOWNLOAD_GRANT_SECRET: randomBytes(32).toString("base64url"),
 		AIDR_APPROVAL_SIGNING_WRAP_KEY_B64: randomBytes(32).toString("base64"),
+		AIDR_COMPLIANCE_SIGNING_KEY_ID: complianceKeyId,
+		AIDR_COMPLIANCE_SIGNING_PRIVATE_KEY_PKCS8_B64: compliance.privateKey.export({ type: "pkcs8", format: "der" }).toString("base64"),
 		AIDR_DEVICE_START_INGRESS_SECRET: hex(32),
 		AIDR_NOTIFICATION_ENCRYPTION_KEYS: `k1:${randomBytes(32).toString("base64")}`,
 		AIDR_NOTIFICATION_DISPATCH_TOKEN: randomBytes(32).toString("base64url"),
@@ -165,6 +171,7 @@ export function main(argv = process.argv.slice(2)) {
 		supabase_url: apiUrl,
 		prepared_at: new Date(now * 1000).toISOString(),
 		secrets: { platform: platformName, functions: functionsName },
+		compliance_signing: { key_id: complianceKeyId, public_key_file: "compliance-signing-public.pem" },
 		note: "Kubernetes credential record for scripts/deployment-bootstrap.mjs. Not a deployment acceptance record.",
 	}, null, 2)}\n`);
 	write("agent-config.json", `${JSON.stringify({
@@ -173,6 +180,7 @@ export function main(argv = process.argv.slice(2)) {
 		integrity: { enabled: true, verify_on_start: true, public_keys_pem: [artifactKeyPem] },
 		licensing: { require_signed_entitlements: true, public_keys_pem: [signing.publicKey.export({ type: "spki", format: "pem" })] },
 	}, null, 2)}\n`);
+	writeFileSync(join(output, "compliance-signing-public.pem"), compliance.publicKey.export({ type: "spki", format: "pem" }), { mode: 0o644, flag: "wx" });
 	write("readiness.env", `AIDR_SIGNING_KEY_EXPIRES_AT=${keysExpireAt}\nAIDR_DELEGATION_SIGNING_KEY_EXPIRES_AT=${keysExpireAt}\n`);
 	console.log([
 		`Generated credentials in ${output} (0600 files; no secret was printed).`,

@@ -80,6 +80,31 @@ try {
   delegationKeyPairValid = verify(null, challenge, publicKey, sign(null, challenge, privateKey));
 } catch { /* recorded below without exposing key material */ }
 check(delegationKeyPairValid, "delegated credential signing and verification keys match");
+const base64Bytes = (value) => typeof value === "string" && /^[A-Za-z0-9+/]+={0,2}$/.test(value) ? Buffer.from(value, "base64").length : 0;
+check(base64Bytes(functionEnv.AIDR_APPROVAL_SIGNING_WRAP_KEY_B64) === 32, "dashboard approval signing key wrap key configured (32 bytes)");
+check(typeof functionEnv.AIDR_NOTIFICATION_ENCRYPTION_KEYS === "string" && functionEnv.AIDR_NOTIFICATION_ENCRYPTION_KEYS.split(",").length > 0 &&
+  functionEnv.AIDR_NOTIFICATION_ENCRYPTION_KEYS.split(",").every((entry) => /^[a-z0-9][a-z0-9_-]{0,31}:/.test(entry) && base64Bytes(entry.slice(entry.indexOf(":") + 1)) === 32),
+"alert channel encryption keyring configured");
+check(typeof functionEnv.AIDR_NOTIFICATION_DISPATCH_TOKEN === "string" && functionEnv.AIDR_NOTIFICATION_DISPATCH_TOKEN.trim().length >= 32, "alert dispatcher token configured (drives agent-offline and governance alerts)");
+// Compliance report signing is optional (reports then carry a sha256 digest
+// only); when configured it must be a real Ed25519 key matching the public key
+// recorded for auditors.
+if (functionEnv.AIDR_COMPLIANCE_SIGNING_KEY_ID || functionEnv.AIDR_COMPLIANCE_SIGNING_PRIVATE_KEY_PKCS8_B64) {
+  let complianceKeyValid = false;
+  try {
+    const privateKey = createPrivateKey({ key: Buffer.from(functionEnv.AIDR_COMPLIANCE_SIGNING_PRIVATE_KEY_PKCS8_B64 ?? "", "base64"), format: "der", type: "pkcs8" });
+    const recorded = manifest.compliance_signing?.public_key_pem;
+    const challenge = Buffer.from("aidr-compliance-key-health-v1", "utf8");
+    complianceKeyValid = privateKey.asymmetricKeyType === "ed25519" &&
+      /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(functionEnv.AIDR_COMPLIANCE_SIGNING_KEY_ID ?? "") &&
+      (!recorded || (manifest.compliance_signing?.key_id === functionEnv.AIDR_COMPLIANCE_SIGNING_KEY_ID &&
+        verify(null, challenge, createPublicKey(recorded), sign(null, challenge, privateKey))));
+  } catch { /* recorded below without exposing key material */ }
+  check(complianceKeyValid, "compliance report signing key is Ed25519 and matches the auditor public key");
+} else {
+  // Optional control, so not a failure; said out loud rather than passed.
+  console.log("INFO compliance report signing key not configured: reports carry a sha256 digest but no Ed25519 signature");
+}
 const signupMode = manifest.mode === "cloud" ? env.AIDR_SIGNUP_MODE : "closed";
 check(manifest.mode === "cloud" ? ["closed", "cloud"].includes(signupMode) : env.DISABLE_SIGNUP === "true", manifest.mode === "cloud" ? "cloud signup mode is explicit and valid" : "public signup disabled");
 const demoS3SecretHash = ["7f59edafa4d502ca0156b8fddf283946", "34d77b1843838b5783a7c9c95fcbd32f"].join("");

@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
+	AGENT_OFFLINE_BOUNDS,
+	anyEventSelected,
 	type ChannelTarget,
 	type ChannelType,
 	createNotificationChannel,
 	DEFAULT_FILTERS,
 	deleteNotificationChannel,
+	EXCEPTION_DAYS_BOUNDS,
 	generateWebhookSecret,
 	loadNotificationSettings,
 	type NotificationChannel,
@@ -34,6 +37,13 @@ const EVENT_LABELS: Record<string, string> = {
 	"approval.requested": "Approval requested",
 	"privacy.blocked_spike": "Privacy block spike",
 	"notification.test": "Test",
+	"agent.offline": "Agent offline",
+	"agent.recovered": "Agent back online",
+	"governance.review_overdue": "AI reviews overdue",
+	"governance.intake_requested": "AI intake request",
+	"governance.change_pending": "Policy change awaiting approval",
+	"governance.exception_expiring": "Exceptions expiring",
+	"governance.digest": "Governance digest",
 };
 
 /** Operator copy for the service's machine-readable errors. */
@@ -54,7 +64,7 @@ export function notificationErrorMessage(code: string): string {
 		case "invalid_channel_name":
 			return "Enter a channel name of 1 to 80 characters.";
 		case "invalid_filters":
-			return "Select at least one event, with spike settings inside the allowed range.";
+			return "Select at least one event, with spike, offline and expiry settings inside the allowed ranges.";
 		case "url_not_https":
 			return "The destination must be an https:// URL.";
 		case "url_credentials_forbidden":
@@ -104,6 +114,14 @@ function eventSummary(filters: NotificationFilters): string {
 			`Privacy blocks ≥ ${filters.privacySpikeThreshold}/${filters.privacySpikeWindowMinutes} min`,
 		);
 	}
+	if (filters.agentOffline) events.push(`Agents offline ≥ ${filters.agentOfflineMinutes} min`);
+	if (filters.governanceReviewOverdue) events.push("Overdue AI reviews");
+	if (filters.governanceIntakeRequested) events.push("AI intake requests");
+	if (filters.governanceChangePending) events.push("Policy changes awaiting approval");
+	if (filters.governanceExceptionExpiring) {
+		events.push(`Exceptions expiring ≤ ${filters.governanceExceptionDays} d`);
+	}
+	if (filters.governanceDigest) events.push("Governance digest");
 	return events.join(" · ");
 }
 
@@ -111,13 +129,16 @@ function stepUpPath(tenantId: string): string {
 	return `/auth/dlp-step-up?tenant=${encodeURIComponent(tenantId)}&return=settings`;
 }
 
-function filtersValid(filters: NotificationFilters): boolean {
+function within(value: number, bounds: { min: number; max: number }): boolean {
+	return Number.isInteger(value) && value >= bounds.min && value <= bounds.max;
+}
+
+export function filtersValid(filters: NotificationFilters): boolean {
 	const { threshold, windowMinutes } = SPIKE_BOUNDS;
 	return (
-		(filters.incidentCreated ||
-			filters.runtimeDenyCritical ||
-			filters.approvalRequested ||
-			filters.privacyBlockedSpike) &&
+		anyEventSelected(filters) &&
+		within(filters.agentOfflineMinutes, AGENT_OFFLINE_BOUNDS) &&
+		within(filters.governanceExceptionDays, EXCEPTION_DAYS_BOUNDS) &&
 		Number.isInteger(filters.privacySpikeThreshold) &&
 		filters.privacySpikeThreshold >= threshold.min &&
 		filters.privacySpikeThreshold <= threshold.max &&
@@ -213,6 +234,86 @@ function FilterFields({
 				/>
 				<span>minutes</span>
 			</div>
+			<div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+				<label className="row" style={{ gap: 8 }}>
+					<input
+						type="checkbox"
+						checked={value.agentOffline}
+						onChange={(event) => set({ agentOffline: event.target.checked })}
+					/>
+					<span>Enrolled agent not seen for</span>
+				</label>
+				<input
+					id={`${idPrefix}-offline-minutes`}
+					className="input"
+					aria-label="Agent offline threshold in minutes"
+					type="number"
+					min={AGENT_OFFLINE_BOUNDS.min}
+					max={AGENT_OFFLINE_BOUNDS.max}
+					style={{ width: 100 }}
+					value={value.agentOfflineMinutes}
+					disabled={!value.agentOffline}
+					onChange={(event) => set({ agentOfflineMinutes: Number(event.target.value) })}
+				/>
+				<span>minutes (one alert per outage, plus a notice when it reports again)</span>
+			</div>
+			<span className="label" style={{ marginTop: 4 }}>
+				AI governance
+			</span>
+			<label className="row" style={{ gap: 8 }}>
+				<input
+					type="checkbox"
+					checked={value.governanceReviewOverdue}
+					onChange={(event) => set({ governanceReviewOverdue: event.target.checked })}
+				/>
+				<span>AI register items past their review date (daily count)</span>
+			</label>
+			<label className="row" style={{ gap: 8 }}>
+				<input
+					type="checkbox"
+					checked={value.governanceIntakeRequested}
+					onChange={(event) => set({ governanceIntakeRequested: event.target.checked })}
+				/>
+				<span>New AI intake requests</span>
+			</label>
+			<label className="row" style={{ gap: 8 }}>
+				<input
+					type="checkbox"
+					checked={value.governanceChangePending}
+					onChange={(event) => set({ governanceChangePending: event.target.checked })}
+				/>
+				<span>Four-eyes policy changes awaiting approval</span>
+			</label>
+			<div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+				<label className="row" style={{ gap: 8 }}>
+					<input
+						type="checkbox"
+						checked={value.governanceExceptionExpiring}
+						onChange={(event) => set({ governanceExceptionExpiring: event.target.checked })}
+					/>
+					<span>Approved exceptions expiring within</span>
+				</label>
+				<input
+					className="input"
+					aria-label="Exception expiry window in days"
+					type="number"
+					min={EXCEPTION_DAYS_BOUNDS.min}
+					max={EXCEPTION_DAYS_BOUNDS.max}
+					style={{ width: 80 }}
+					value={value.governanceExceptionDays}
+					disabled={!value.governanceExceptionExpiring}
+					onChange={(event) => set({ governanceExceptionDays: Number(event.target.value) })}
+				/>
+				<span>days (daily count)</span>
+			</div>
+			<label className="row" style={{ gap: 8 }}>
+				<input
+					type="checkbox"
+					checked={value.governanceDigest}
+					onChange={(event) => set({ governanceDigest: event.target.checked })}
+				/>
+				<span>Scheduled governance digest (counts only; sent when the digest schedule runs)</span>
+			</label>
 		</fieldset>
 	);
 }

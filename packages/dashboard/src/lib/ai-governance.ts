@@ -169,6 +169,7 @@ export type ChangeKind =
 	| "runtime_stage"
 	| "runtime_rollout"
 	| "dlp_publish"
+	| "agent_profiles_stage"
 	| "disable_four_eyes";
 
 export type ChangeStatus =
@@ -404,6 +405,7 @@ const CHANGE_KINDS: readonly ChangeKind[] = [
 	"runtime_stage",
 	"runtime_rollout",
 	"dlp_publish",
+	"agent_profiles_stage",
 	"disable_four_eyes",
 ];
 

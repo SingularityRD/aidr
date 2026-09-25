@@ -136,7 +136,8 @@ async function policyChangeDetail(
 	const kind = String(data.change_kind);
 	let current: { version: number; policy: unknown } | null = null;
 	if (kind !== "disable_four_eyes") {
-		const table = kind === "dlp_publish" ? "tenant_dlp_policies" : "tenant_runtime_policies";
+		const table = kind === "dlp_publish" ? "tenant_dlp_policies"
+			: kind === "agent_profiles_stage" ? "tenant_agent_profiles" : "tenant_runtime_policies";
 		const read = await db.from(table).select("version,policy").eq("tenant_id", tenantId).maybeSingle();
 		if (read.error) return corsJson(req, 503, { error: "governance_unavailable" }, headers);
 		const row = read.data as { version?: unknown; policy?: unknown } | null;
@@ -154,6 +155,7 @@ async function policyChangeDetail(
 			...(Array.isArray(payload.agent_ids) ? { agent_ids: payload.agent_ids } : {}),
 			...(Array.isArray(payload.rings) ? { rings: payload.rings } : {}),
 			...(isRecord(payload.expected_document) ? { expected_document: payload.expected_document } : {}),
+			...(Number.isSafeInteger(payload.restored_from) ? { restored_from: payload.restored_from } : {}),
 		},
 		current,
 	}, headers);

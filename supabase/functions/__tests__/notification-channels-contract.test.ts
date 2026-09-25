@@ -21,6 +21,10 @@ vi.mock("npm:@supabase/supabase-js@2.116.0", () => ({
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const channelsSql = readFileSync(join(ROOT, "supabase", "migrations", "20260926000020_notification_channels.sql"), "utf8");
 const outboxSql = readFileSync(join(ROOT, "supabase", "migrations", "20260926000021_notification_outbox.sql"), "utf8");
+const alertsSql = readFileSync(
+	join(ROOT, "supabase", "migrations", "20260928000001_agent_offline_governance_alerts.sql"),
+	"utf8",
+);
 const config = readFileSync(join(ROOT, "supabase", "config.toml"), "utf8");
 const manifest = JSON.parse(
 	readFileSync(join(ROOT, "docs", "production-readiness", "edge-function-contract-manifest.json"), "utf8"),
@@ -55,6 +59,8 @@ interface Options {
 	rpcError?: Record<string, { code: string }>;
 	existingType?: string | null;
 	storedCiphertext?: string;
+	scheduled?: unknown;
+	scheduledError?: boolean;
 }
 
 function channelView(overrides: Record<string, unknown> = {}) {
@@ -158,6 +164,15 @@ function database(options: Options = {}) {
 					return { data: { status: args.p_outcome === "delivered" ? "delivered" : "dead" }, error: null };
 				case "prune_notification_deliveries":
 					return { data: { deleted: 0 }, error: null };
+				case "enqueue_scheduled_notifications":
+					if (options.scheduledError) return { data: null, error: { message: "down" } };
+					return {
+						data: options.scheduled ?? {
+							skipped: false, agent_offline: 2, agent_recovered: 1, governance_review_overdue: 0,
+							governance_exception_expiring: 1, capped: 0,
+						},
+						error: null,
+					};
 				default:
 					throw new Error(`unexpected rpc ${name}`);
 			}
@@ -437,8 +452,8 @@ describe("notification-channels test send", () => {
 });
 
 describe("notification-dispatch", () => {
-	async function dispatchHandler(env: Record<string, string> = {}) {
-		const fake = database();
+	async function dispatchHandler(env: Record<string, string> = {}, options: Options = {}) {
+		const fake = database(options);
 		const mod = await import("../notification-dispatch/index.ts");
 		const handle = mod.createNotificationDispatchHandler({
 			env: (name) => ({
@@ -494,13 +509,175 @@ describe("notification-dispatch", () => {
 		expect(response.status).toBe(200);
 		expect(await response.json()).toEqual({
 			ok: true, claimed: 1, delivered: 0, retrying: 0, dead: 1, lease_lost: 0, pruned: 0,
+			scheduled: {
+				agent_offline: 2, agent_recovered: 1, governance_review_overdue: 0, governance_exception_expiring: 1, capped: 0,
+			},
 		});
 		expect(rpcCalls.map((entry) => entry.name)).toEqual([
+			"enqueue_scheduled_notifications",
 			"claim_notification_deliveries",
 			"complete_notification_delivery",
 			"prune_notification_deliveries",
 		]);
 		expect(state.completed[0]).toMatchObject({ p_outcome: "failed", p_error: "decrypt_failed" });
+	});
+});
+
+describe("notification-dispatch scheduled alerts", () => {
+	async function run(options: Options) {
+		const fake = database(options);
+		const mod = await import("../notification-dispatch/index.ts");
+		const handle = mod.createNotificationDispatchHandler({
+			env: (name) => ({
+				SUPABASE_URL: "https://project.supabase.co",
+				SUPABASE_SERVICE_ROLE_KEY: "service-role-key",
+				AIDR_NOTIFICATION_DISPATCH_TOKEN: DISPATCH_TOKEN,
+				AIDR_NOTIFICATION_ENCRYPTION_KEYS: KEYS,
+			} as Record<string, string>)[name],
+			client: () => fake.db as never,
+			now: () => Date.parse("2026-09-25T10:00:00.000Z"),
+			random: () => 0.5,
+			fetch: vi.fn(async () => new Response(null, { status: 204 })) as unknown as typeof fetch,
+			resolveDns: async () => ["93.184.216.34"],
+			mailer: quietMailer,
+		});
+		const response = await handle(new Request("https://project.supabase.co/functions/v1/notification-dispatch", {
+			method: "POST",
+			headers: { Authorization: `Bearer ${DISPATCH_TOKEN}` },
+		}));
+		return { response, rpcCalls: fake.rpcCalls };
+	}
+
+	it("still drains the outbox when the scheduled scan fails, and says the scan did not run", async () => {
+		const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+		try {
+			for (const options of [{ scheduledError: true }, { scheduled: { skipped: false, agent_offline: "2" } }]) {
+				const { response, rpcCalls } = await run(options);
+				expect(response.status).toBe(200);
+				const body = await response.json();
+				expect(body.scheduled).toBeNull();
+				expect(body.claimed).toBe(1);
+				expect(rpcCalls.map((entry) => entry.name)).toContain("claim_notification_deliveries");
+			}
+		} finally {
+			errors.mockRestore();
+		}
+	});
+
+	it("reports an overlapping scan as skipped and bounds the scan", async () => {
+		const { response, rpcCalls } = await run({ scheduled: { skipped: true } });
+		expect((await response.json()).scheduled).toEqual({ skipped: true });
+		expect(rpcCalls[0]).toEqual({ name: "enqueue_scheduled_notifications", args: { p_limit: 500 } });
+	});
+});
+
+describe("agent offline and governance filters", () => {
+	const EXTENDED = {
+		agent_offline: true,
+		agent_offline_minutes: 60,
+		governance_review_overdue: true,
+		governance_intake_requested: false,
+		governance_change_pending: true,
+		governance_exception_expiring: true,
+		governance_exception_days: 30,
+		governance_digest: true,
+	};
+
+	it("accepts the extended filters, bounded, alongside the original ones", async () => {
+		const { parseFilters } = await import("../notification-channels/index.ts");
+		expect(parseFilters({ ...FILTERS, ...EXTENDED })).toEqual({ ...FILTERS, ...EXTENDED });
+		// Older consoles send only the original keys.
+		expect(parseFilters(FILTERS)).toEqual(FILTERS);
+		// A channel may select only agent/governance events.
+		const governanceOnly = {
+			...FILTERS, incident_created: false, runtime_deny_critical: false, privacy_blocked_spike: false,
+			governance_digest: true,
+		};
+		expect(parseFilters(governanceOnly)).toEqual(governanceOnly);
+		for (const bad of [
+			{ ...FILTERS, agent_offline_minutes: 4 },
+			{ ...FILTERS, agent_offline_minutes: 10_081 },
+			{ ...FILTERS, agent_offline_minutes: 60.5 },
+			{ ...FILTERS, governance_exception_days: 0 },
+			{ ...FILTERS, governance_exception_days: 91 },
+			{ ...FILTERS, agent_offline: "yes" },
+			{ ...FILTERS, governance_everything: true },
+			{ ...governanceOnly, governance_digest: false },
+		]) {
+			expect(parseFilters(bad), JSON.stringify(bad)).toBeNull();
+		}
+	});
+
+	it("passes the extended filters to the channel RPCs unchanged", async () => {
+		const { handle, rpcCalls } = await channelsHandler();
+		const response = await handle(post({
+			tenant_id: TENANT,
+			action: "create",
+			type: "slack",
+			name: "Fleet",
+			target: { url: SLACK_URL },
+			filters: { ...FILTERS, ...EXTENDED },
+		}));
+		expect(response.status).toBe(200);
+		const create = rpcCalls.find((entry) => entry.name === "create_notification_channel");
+		expect(create?.args.p_filters).toEqual({ ...FILTERS, ...EXTENDED });
+	});
+
+	it("keeps outages service-written, barrier-protected and enqueued without content", () => {
+		expect(alertsSql).toContain("alter table public.notification_agent_outages enable row level security;");
+		expect(alertsSql).toContain("revoke all on public.notification_agent_outages from public, anon, authenticated;");
+		expect(alertsSql).toMatch(/create policy notification_agent_outages_no_client_writes[\s\S]*?with check \(false\)/);
+		expect(alertsSql).not.toMatch(/grant (insert|update|delete)[^;]*to (anon|authenticated)/i);
+		const files = [
+			"20260926000020_notification_channels.sql",
+			"20260926000021_notification_outbox.sql",
+			"20260928000001_agent_offline_governance_alerts.sql",
+		];
+		const analysis = analyzeIdentityBarrier(
+			files.map((name, index) => ({ name, sql: [channelsSql, outboxSql, alertsSql][index] })),
+		);
+		expect(analysis.missing).toEqual([]);
+		for (const signature of ["enqueue_scheduled_notifications\\(integer\\)"]) {
+			expect(alertsSql).toMatch(new RegExp(`revoke all on function public\\.${signature} from public, anon, authenticated;`));
+			expect(alertsSql).toMatch(new RegExp(`grant execute on function public\\.${signature} to service_role;`));
+		}
+		for (const helper of [
+			"enqueue_channel_notification", "enqueue_governance_request_notifications",
+			"enqueue_governance_request_trigger", "enqueue_governance_digest_notifications", "arm_notification_agent_offline",
+		]) {
+			expect(alertsSql).toMatch(new RegExp(`revoke all on function app\\.${helper}\\([^)]*\\)\\s+from public, anon, authenticated;`));
+		}
+		// Request triggers never fail the request over an alerting fault.
+		expect(alertsSql).toMatch(/exception when others then[\s\S]*raise warning 'notification_enqueue_failed'/);
+		expect(alertsSql).toMatch(/after insert on public\.ai_intake_requests/);
+		expect(alertsSql).toMatch(/after insert on public\.policy_change_requests/);
+		// Payload keys are identifiers, enums, times and counts only.
+		const scan = alertsSql.slice(alertsSql.indexOf("create or replace function public.enqueue_scheduled_notifications"));
+		const payloadKeys = new Set(
+			[...scan.matchAll(/'([a-z_]+)', /g)].map((match) => match[1]),
+		);
+		payloadKeys.delete("utc"); // `at time zone 'utc'`, not a payload key
+		for (const key of payloadKeys) {
+			expect([
+				"agent_id", "occurred_at", "category", "offline_minutes", "items_count", "window_days", "request_id",
+				"period_from", "period_to", "digest", "skipped", "agent_offline", "agent_recovered",
+				"governance_review_overdue", "governance_exception_expiring", "capped", "agents_enrolled", "agents_active",
+				"decisions_allow", "decisions_ask", "decisions_deny", "approvals_requested", "approvals_pending",
+				"incidents_reported", "incidents_open", "incidents_open_critical", "browser_blocked", "browser_masked",
+				"mcp_not_approved", "reviews_overdue", "intake_pending", "policy_changes_pending", "retry", "next_at",
+				"attempts", "channels_queued",
+				// Enum values (categories, cadences, digest statuses), not keys.
+				"ai_register", "ai_exception", "weekly", "failed", "no_transport", "partial", "schedule", "sent",
+			], key).toContain(key);
+		}
+		expect(alertsSql).not.toMatch(/'(justification|business_purpose|display_name|identifier|decision_reason)',/);
+		// Every new event type is known to the delivery allow-list.
+		for (const event of [
+			"agent.offline", "agent.recovered", "governance.review_overdue", "governance.intake_requested",
+			"governance.change_pending", "governance.exception_expiring", "governance.digest",
+		]) {
+			expect(alertsSql).toContain(`'${event}'`);
+		}
 	});
 });
 
