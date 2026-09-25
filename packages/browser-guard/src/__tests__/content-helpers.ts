@@ -65,7 +65,10 @@ export function fakeEngine(
 	const scan = vi.fn(async (text: string): Promise<ScanResult> => {
 		if (options.fail === "throw") throw new Error("ENGINE_DOWN");
 		const findings: Finding[] = [];
-		for (const m of text.matchAll(/[\w.+-]+@[\w-]+\.[\w.]+/g)) {
+		// The lookbehind pins each attempt to the start of a local-part run. Without it
+		// the regex is quadratic on long runs without "@" (the 200 001-char over-limit
+		// prompt took minutes and timed the suite out).
+		for (const m of text.matchAll(/(?<![\w.+-])[\w.+-]+@[\w-]+\.[\w.]+/g)) {
 			findings.push({
 				type: "EMAIL",
 				start: m.index,
