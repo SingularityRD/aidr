@@ -62,10 +62,52 @@ function validRequiredPolicy(body: Record<string, unknown>): boolean {
 	return validRuntimePolicy(body) && verifiedPolicySha256(body) !== null;
 }
 
+const GOVERNANCE_OVERLAY_MAX_ENTRIES = 500;
+
+type GovernanceOverlay = {
+	mcp_deny_servers: string[];
+	mcp_require_approval_servers: string[];
+};
+
+function governanceServerList(value: unknown): string[] | null {
+	return Array.isArray(value) &&
+		value.length <= GOVERNANCE_OVERLAY_MAX_ENTRIES &&
+		value.every((item) => typeof item === "string" && MCP_ID.test(item))
+		? (value as string[])
+		: null;
+}
+
+/**
+ * The AI governance overlay the control plane sends next to `runtime_policy`
+ * (docs/ai-governance.md): register bans/restrictions for this caller. Absent
+ * means none. Present but malformed, or not matching `governance_sha256`,
+ * makes the whole policy response unusable, exactly like a bad runtime
+ * policy, because silently dropping it would relax enforcement.
+ */
+function getGovernanceOverlay(
+	body: Record<string, unknown> | undefined,
+): { ok: true; overlay: GovernanceOverlay | null } | { ok: false } {
+	if (body?.governance === undefined && body?.governance_sha256 === undefined) {
+		return { ok: true, overlay: null };
+	}
+	const raw = body?.governance;
+	const digest = body?.governance_sha256;
+	if (!isRecord(raw) || typeof digest !== "string" || !/^[a-f0-9]{64}$/.test(digest)) return { ok: false };
+	if (!Object.keys(raw).every((key) => key === "mcp_deny_servers" || key === "mcp_require_approval_servers")) {
+		return { ok: false };
+	}
+	const deny = governanceServerList(raw.mcp_deny_servers);
+	const approval = governanceServerList(raw.mcp_require_approval_servers);
+	if (!deny || !approval) return { ok: false };
+	if (createHash("sha256").update(canonicalPolicy(raw)).digest("hex") !== digest) return { ok: false };
+	return { ok: true, overlay: { mcp_deny_servers: deny, mcp_require_approval_servers: approval } };
+}
+
 /** Keep client parsing aligned with the Edge policy contract in required and optional modes. */
 function validRuntimePolicy(body: Record<string, unknown> | undefined): boolean {
 	const policy = getRuntimePolicy(body);
 	if (!policy) return false;
+	if (!getGovernanceOverlay(body).ok) return false;
 	const modes = new Set([
 		"command_default", "file_default", "url_default", "package_default", "output_default",
 		"mcp_default", "mcp_unknown", "mcp_risky",
@@ -176,6 +218,9 @@ function getPersistablePolicyBody(
 			? { cache_seconds: body.cache_seconds }
 			: {}),
 		...(getRuntimePolicy(body) ? { runtime_policy: getRuntimePolicy(body) } : {}),
+		...(body?.governance !== undefined
+			? { governance: body.governance, governance_sha256: body.governance_sha256 }
+			: {}),
 	};
 }
 
@@ -372,9 +417,19 @@ export function applyRemoteRuntimePolicy(
 	const urlAction = modeToRuntimeAction(policy.url_default);
 	const packageAction = modeToRuntimeAction(policy.package_default);
 	const outputAction = modeToRuntimeAction(policy.output_default);
+	const governance = getGovernanceOverlay(body);
+	if (!governance.ok) return config;
 	const allowServers = parseServerList(policy.mcp_allow_servers);
-	const approvalServers = parseServerList(policy.mcp_require_approval_servers);
-	const denyServers = parseServerList(policy.mcp_deny_servers);
+	// Governance entries only add restrictions; deny takes precedence over
+	// require-approval and allow in the MCP evaluation order.
+	const approvalServers = parseServerList([
+		...parseServerList(policy.mcp_require_approval_servers),
+		...(governance.overlay?.mcp_require_approval_servers ?? []),
+	]);
+	const denyServers = parseServerList([
+		...parseServerList(policy.mcp_deny_servers),
+		...(governance.overlay?.mcp_deny_servers ?? []),
+	]);
 	const allowTools = parsePolicyStringList(policy.mcp_allow_tools);
 	const approvalTools = parsePolicyStringList(policy.mcp_require_approval_tools);
 	const denyTools = parsePolicyStringList(policy.mcp_deny_tools);
