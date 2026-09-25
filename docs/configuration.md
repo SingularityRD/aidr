@@ -308,7 +308,9 @@ When enabled, Singularity AIDR scans tool inputs (commands, file content, edits)
 Inspects the user's prompt before the agent sends it to the model, on every connector whose
 host exposes a pre-model prompt hook. All connectors share one engine (`scanPrompt` and the
 `inspectUserPrompt` runner in `@singularityrd/aidr-core`), so the same prompt gets the same
-decision everywhere.
+decision everywhere. A prompt that carries a canary credential value (`aidr canary deploy`)
+is blocked on every connector before these settings apply and recorded as a canary incident
+(see [canary credentials](canary-tokens.md)).
 
 | Field | Default | Description |
 |-------|---------|-------------|

@@ -463,8 +463,8 @@ describe("Dashboard integration", () => {
 		);
 	});
 
-	it("renders the public landing and pricing routes", () => {
-		render(
+	it("renders the public landing and editions (/pricing) routes without prices", () => {
+		const { container } = render(
 			<MemoryRouter initialEntries={["/pricing"]}>
 				<Routes>
 					<Route path="/" element={<PublicLayout />}>
@@ -475,17 +475,17 @@ describe("Dashboard integration", () => {
 			</MemoryRouter>,
 		);
 
-		expect(screen.getByRole("heading", { name: "Pricing" })).toBeInTheDocument();
+		expect(screen.getByRole("heading", { name: "Editions" })).toBeInTheDocument();
 		for (const plan of ["Free", "Team", "Business", "Enterprise"]) {
 			expect(screen.getByRole("heading", { name: plan })).toBeInTheDocument();
 		}
-		expect(screen.getByText("$24")).toBeInTheDocument();
-		expect(screen.getByText(/\$20 per developer \/ month billed annually/)).toBeInTheDocument();
-		expect(screen.getByText("$45")).toBeInTheDocument();
 		expect(screen.getByText("Minimum 25 developers")).toBeInTheDocument();
-		expect(screen.getByRole("note")).toHaveTextContent(
-			/List prices, subject to COM-001 approval\./,
+		expect(screen.getByRole("note")).toHaveTextContent(/Prices are not published\./);
+		expect(screen.getByRole("link", { name: "Contact sales about Team" })).toHaveAttribute(
+			"href",
+			expect.stringMatching(/^mailto:anil@singularityrd\.com\?/),
 		);
+		expect(container.textContent ?? "").not.toMatch(/[$€₺]|\bUSD\b|list price/i);
 		expect(screen.getByText(/self-service checkout is not offered/)).toBeInTheDocument();
 		expect(screen.getByRole("link", { name: "Request pilot review" })).toHaveAttribute(
 			"href",

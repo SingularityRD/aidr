@@ -5,6 +5,12 @@
  * `chat.message`, OpenClaw `before_agent_run`). Claude Code keeps its own
  * `UserPromptSubmit` entry point with the same policy.
  *
+ * Canary credentials (`aidr canary deploy`) are checked first: a prompt that
+ * carries a decoy token value is blocked and recorded as a `user_prompt` canary
+ * trigger (audit entry and, in managed mode, an incident; canary ids only). A
+ * canary registry that cannot be read is logged and skipped, and the regular
+ * scan still decides.
+ *
  * The runner loads the local `prompt_protection` config and the operator-provisioned
  * tenant DLP policy for the connector's runtime, scans the prompt under a deadline,
  * audits the outcome (kinds and counts only, never the prompt) and applies the
@@ -24,6 +30,7 @@
  */
 
 import { logVerdict } from "./audit-log.js";
+import { CANARY_PROMPT_BLOCK_MESSAGE, checkPromptForCanaries } from "./canary-triggers.js";
 import { loadConfig } from "./config.js";
 import { loadProvisionedDetectorContext } from "./detector-provisioning.js";
 import {
@@ -47,6 +54,7 @@ import {
 export type PromptInspectionReason =
 	| "clean"
 	| "findings"
+	| "canary"
 	| "not_inspected"
 	| "deadline"
 	| "tenant_policy_unverified";
@@ -150,6 +158,12 @@ function deadlineOutcome(
 			};
 }
 
+const CANARY_OUTCOME: PromptInspectionOutcome = {
+	decision: "block",
+	reason: "canary",
+	userMessage: CANARY_PROMPT_BLOCK_MESSAGE,
+};
+
 function tenantPolicyOutcome(): PromptInspectionOutcome {
 	return {
 		decision: "block",
@@ -248,7 +262,11 @@ export async function inspectUserPrompt(
 	const fallback = {
 		secretsMode: DEFAULT_PROMPT_PROTECTION.secrets as PromptProtectionConfig["secrets"],
 		tenantPolicy: false,
+		// A detected canary blocks whatever happens afterwards (deadline, error).
+		canary: false,
 	};
+	const unfinished = (outcome: PromptInspectionOutcome) =>
+		fallback.canary ? CANARY_OUTCOME : outcome;
 	let config: Config | undefined = request.config;
 	let result: PromptProtectionResult | undefined;
 
@@ -257,6 +275,20 @@ export async function inspectUserPrompt(
 		const policy = config.prompt_protection ?? DEFAULT_PROMPT_PROTECTION;
 		fallback.secretsMode = policy.secrets;
 		if (typeof request.prompt !== "string") return uninspectedPromptOutcome(policy.secrets);
+
+		// Canary values first: no tenant policy or scan result can release a decoy.
+		const canary = await checkPromptForCanaries({
+			sessionId: request.sessionId,
+			hookEvent: request.hookEvent,
+			prompt: request.prompt,
+			agentRuntime: request.runtime,
+			config,
+			logger,
+		});
+		if (canary === "triggered") {
+			fallback.canary = true;
+			return CANARY_OUTCOME;
+		}
 
 		let tenant: PromptTenantDlp | undefined;
 		let tenantPromptSafety: TenantPromptSafetyPolicy | undefined;
@@ -284,7 +316,7 @@ export async function inspectUserPrompt(
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	const deadline = new Promise<PromptInspectionOutcome>((resolve) => {
 		timer = setTimeout(
-			() => resolve(deadlineOutcome(fallback.secretsMode, fallback.tenantPolicy)),
+			() => resolve(unfinished(deadlineOutcome(fallback.secretsMode, fallback.tenantPolicy))),
 			Math.max(0, request.deadlineAt - Date.now()),
 		);
 		timer.unref?.();
@@ -293,14 +325,15 @@ export async function inspectUserPrompt(
 	let outcome: PromptInspectionOutcome;
 	try {
 		outcome = await Promise.race([
-			work().catch(() => uninspectedPromptOutcome(fallback.secretsMode)),
+			work().catch(() => unfinished(uninspectedPromptOutcome(fallback.secretsMode))),
 			deadline,
 		]);
 	} finally {
 		clearTimeout(timer);
 	}
 
-	if (outcome.decision !== "allow" && config) {
+	// A canary block is already audited (and reported) by the canary recorder.
+	if (outcome.decision !== "allow" && outcome.reason !== "canary" && config) {
 		try {
 			await logVerdict(
 				config.logging,

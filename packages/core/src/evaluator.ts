@@ -798,6 +798,8 @@ export async function recordCanaryTrigger(params: {
 	hits: readonly CanaryHit[];
 	stage: Exclude<CanaryStage, "tool_input">;
 	configPath?: string;
+	/** Preloaded configuration; loaded from `configPath` (or the default location) when omitted. */
+	config?: Config;
 	logger?: Logger;
 	agentRuntime?: AgentRuntime;
 	agentRuntimeVersion?: string;
@@ -805,7 +807,7 @@ export async function recordCanaryTrigger(params: {
 	const verdict = canaryTriggeredVerdict(params.hits, params.stage);
 	const logger = params.logger ?? nullLogger;
 	try {
-		const config = await loadConfig(params.configPath, logger);
+		const config = params.config ?? (await loadConfig(params.configPath, logger));
 		if (isInvalidConfig(config)) return verdict;
 		await recordEarlyVerdict(
 			{
@@ -981,6 +983,8 @@ function applySessionFlow(
 		agentRuntime: context.agentRuntime,
 		logger: context.logger ?? nullLogger,
 		allowlisted,
+		// The connector's bundled threats directory supplies flow/capabilities.yaml.
+		threatsDir: context.threatsDir || undefined,
 	});
 }
 

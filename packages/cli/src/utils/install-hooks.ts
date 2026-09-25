@@ -91,6 +91,13 @@ export async function installHooks(env: Environment): Promise<HookInstallResult>
 				'                type = "command"',
 				'                command = "aidr-codex-hook"',
 				"                timeout = 10",
+				"                # Tool-output inspection (poisoned or injected output, canaries):",
+				"                [[hooks.PostToolUse]]",
+				'                matcher = "^(Bash|mcp__.+)$"',
+				"                [[hooks.PostToolUse.hooks]]",
+				'                type = "command"',
+				'                command = "aidr-codex-hook"',
+				"                timeout = 10",
 				`                ${VERSION} matches this CLI; confirm it against the approved release record,`,
 				"                trust the hook, then run a host-side deny canary.",
 			);

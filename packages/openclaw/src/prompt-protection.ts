@@ -173,7 +173,8 @@ export class OpenClawPromptProtection {
 			// Only a completed inspection is reused; a retry after a deadline or
 			// load failure is inspected afresh.
 			void outcome.then((result) => {
-				const complete = result.reason === "clean" || result.reason === "findings";
+				const complete =
+					result.reason === "clean" || result.reason === "findings" || result.reason === "canary";
 				if (!complete && this.memo.get(key) === entry) this.memo.delete(key);
 			});
 		}

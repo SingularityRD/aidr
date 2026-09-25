@@ -313,7 +313,8 @@ export function BillingPage() {
 				<h1>Billing</h1>
 				<p className="muted">
 					Seat allowances come from the tenant's admitted plan: a verified card subscription or an
-					approved enterprise order. Catalog prices are list prices; a quote or order governs.
+					approved enterprise order. Prices are not published; every order is quoted, and a card
+					checkout shows its amount on the payment provider's page.
 				</p>
 				{error ? (
 					<div className="notice notice-danger" role="alert" aria-live="assertive">

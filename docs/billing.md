@@ -12,7 +12,7 @@ The implementation boundaries and acceptance scenarios are recorded in [billing-
 
 ## Plan catalog and plan admission
 
-Plans, list prices and seat minimums live in `public.plans` (see [pricing.md](pricing.md)); final SKU approval is COM-001. A catalog row never grants anything.
+Plans, seat minimums and the offered billing intervals live in `public.plans` (see [pricing.md](pricing.md)); final SKU approval is COM-001. A catalog row never grants anything. Prices are not published: every paid edition is quoted (anil@singularityrd.com). The catalog's price columns are server-side reference data only; the dashboard mirror carries no amount, the public Editions page and the Billing plan picker show no price, and a card checkout's amount is the Stripe price named by `AIDR_STRIPE_PRICE_MAP`, shown on Stripe's checkout page.
 
 **Card subscription path (self-service builds only).** When `AIDR_ENABLE_LEGACY_SELF_SERVICE_BILLING=true`, `AIDR_BILLING_PROVIDER=stripe` and `AIDR_STRIPE_PRICE_MAP` is set, the `stripe-webhook` function maps a signed subscription's line item to a catalog plan. `AIDR_STRIPE_PRICE_MAP` is a JSON object of Stripe price id to `plan:interval`, for example `{"price_team_m":"team:monthly","price_team_y":"team:yearly","price_business_y":"business:yearly"}`; only `team` and `business` may appear, one price per plan and interval. The webhook then calls the service-role-only `public.apply_stripe_plan_subscription` RPC, which:
 

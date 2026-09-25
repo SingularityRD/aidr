@@ -1,17 +1,21 @@
 /**
  * Static mirror of the public.plans catalog seed
- * (supabase/migrations/20260925000010_plan_catalog.sql).
+ * (supabase/migrations/20260925000010_plan_catalog.sql), without prices.
  *
- * The public /pricing page renders from this mirror so it needs no database
- * access; plan-catalog-drift.test.ts parses the migration seed and fails when
- * the two disagree. These are LIST PRICES: final SKU approval is COM-001, and
- * nothing here grants a plan. The tenant's actual plan comes from the
- * member-only get_tenant_plan RPC.
+ * Prices are not published: every paid edition is sold by written quote. The
+ * seed's price columns stay server-side reference data and are deliberately
+ * absent from this browser bundle; only whether a billing interval is offered
+ * is mirrored. The public /pricing (Editions) page renders from this mirror so
+ * it needs no database access; plan-catalog-drift.test.ts parses the migration
+ * seed and fails when the two disagree. Nothing here grants a plan. The
+ * tenant's actual plan comes from the member-only get_tenant_plan RPC, and a
+ * card checkout's amount comes from the payment provider's price at checkout.
  */
 import { supabase } from "../lib/supabase";
 
 export type PlanId = "free" | "team" | "business" | "enterprise";
 export type PlanDeployment = "cloud" | "onprem" | "air-gapped";
+export type BillingInterval = "monthly" | "yearly";
 export type PlanFeature =
 	| "local_detection"
 	| "dashboard"
@@ -29,11 +33,8 @@ export interface PlanDefinition {
 	/** Protected agents admitted per purchased seat. */
 	includedAgents: number;
 	minSeats: number;
-	/** Per-seat price for one month on monthly billing; null = not offered. */
-	priceMonthlyCents: number | null;
-	/** Per-seat price for one year on annual billing; null = custom quote. */
-	priceYearlyCents: number | null;
-	currency: "USD";
+	/** Billing intervals the catalog offers (seed price column is non-null); empty = quote only. */
+	billingIntervals: readonly BillingInterval[];
 	features: PlanFeature[];
 	selfServe: boolean;
 	deployment: PlanDeployment[];
@@ -49,9 +50,7 @@ export const PLAN_CATALOG: readonly PlanDefinition[] = [
 		displayName: "Free",
 		includedAgents: 1,
 		minSeats: 1,
-		priceMonthlyCents: 0,
-		priceYearlyCents: 0,
-		currency: "USD",
+		billingIntervals: ["monthly", "yearly"],
 		features: ["local_detection", "dashboard"],
 		selfServe: true,
 		deployment: ["cloud"],
@@ -64,9 +63,7 @@ export const PLAN_CATALOG: readonly PlanDefinition[] = [
 		displayName: "Team",
 		includedAgents: 1,
 		minSeats: 3,
-		priceMonthlyCents: 2400,
-		priceYearlyCents: 24000,
-		currency: "USD",
+		billingIntervals: ["monthly", "yearly"],
 		features: ["local_detection", "dashboard", "browser_privacy_guard", "entra_sso"],
 		selfServe: true,
 		deployment: ["cloud"],
@@ -79,9 +76,7 @@ export const PLAN_CATALOG: readonly PlanDefinition[] = [
 		displayName: "Business",
 		includedAgents: 1,
 		minSeats: 25,
-		priceMonthlyCents: null,
-		priceYearlyCents: 54000,
-		currency: "USD",
+		billingIntervals: ["yearly"],
 		features: [
 			"local_detection",
 			"dashboard",
@@ -102,9 +97,7 @@ export const PLAN_CATALOG: readonly PlanDefinition[] = [
 		displayName: "Enterprise",
 		includedAgents: 1,
 		minSeats: 1,
-		priceMonthlyCents: null,
-		priceYearlyCents: null,
-		currency: "USD",
+		billingIntervals: [],
 		features: [
 			"local_detection",
 			"dashboard",
@@ -142,38 +135,12 @@ export const DEPLOYMENT_LABELS: Record<PlanDeployment, string> = {
 	"air-gapped": "Air-gapped",
 };
 
-export const LIST_PRICE_NOTICE =
-	"List prices, subject to COM-001 approval. Prices are in USD, per developer seat, before tax; a written quote or order governs.";
+/** Shown wherever a price slot used to be. Prices are never published. */
+export const QUOTE_NOTICE =
+	"Prices are not published. Paid editions are quoted for your seats and deployment; a written quote or order governs.";
 
 export function planById(id: string): PlanDefinition | null {
 	return PLAN_CATALOG.find((plan) => plan.id === id) ?? null;
-}
-
-function dollars(cents: number): string {
-	return cents % 100 === 0 ? `$${cents / 100}` : `$${(cents / 100).toFixed(2)}`;
-}
-
-/** Headline price, e.g. "$24", "$0", or "Custom". */
-export function headlinePrice(plan: PlanDefinition): string {
-	if (plan.priceMonthlyCents !== null) return dollars(plan.priceMonthlyCents);
-	if (plan.priceYearlyCents !== null) return dollars(Math.round(plan.priceYearlyCents / 12));
-	return "Custom";
-}
-
-/** Billing terms line under the headline price. */
-export function priceTerms(plan: PlanDefinition): string {
-	if (plan.priceMonthlyCents === 0 && plan.priceYearlyCents === 0) return "No charge";
-	const parts: string[] = [];
-	if (plan.priceMonthlyCents !== null) parts.push("per developer / month, billed monthly");
-	if (plan.priceYearlyCents !== null) {
-		const monthly = dollars(Math.round(plan.priceYearlyCents / 12));
-		parts.push(
-			plan.priceMonthlyCents !== null
-				? `${monthly} per developer / month billed annually`
-				: "per developer / month, billed annually",
-		);
-	}
-	return parts.length > 0 ? parts.join(" · ") : "Quoted per deployment";
 }
 
 export function seatTerms(plan: PlanDefinition): string {

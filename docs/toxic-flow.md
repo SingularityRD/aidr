@@ -89,9 +89,9 @@ payload still is.
 - **After each call.** Where a connector inspects tool output after execution, the
   findings are added to the session: secrets become private data, and prompt-injection
   payloads become untrusted content. This happens in Claude Code (`PostToolUse`), OpenClaw
-  (`after_tool_call`), OpenCode (`tool.execute.after`) and the Cursor / VS Code tool-output
-  hooks. Codex's `PostToolUse` path only publishes an observation and does not inspect
-  output. The MCP gateway blocks flagged results before they reach the model.
+  (`after_tool_call`), OpenCode (`tool.execute.after`), the Cursor / VS Code tool-output
+  hooks and Codex (`PostToolUse`, registered by the shipped configuration for `Bash` and
+  MCP tools). The MCP gateway blocks flagged results before they reach the model.
 - **Session identity.** Each connector passes its host's session or conversation id. If a
   host sends none, a stable key is built from the connector, the parent process and the
   working directory. The MCP gateway uses one session per MCP session (`Mcp-Session-Id`), or
@@ -133,8 +133,15 @@ performance test in `packages/core/src/__tests__/toxic-flow.test.ts` checks both
 - Classification is heuristic. It follows `bash -c`, `eval`, argv arrays and common
   command prefixes one level deep. It does not model every way a program can reach the
   network. A custom binary that uploads data is not recognised as external communication.
-- The capability patterns are built into `packages/core/src/toxic-flow-classify.ts`. They
-  are not threat-rule YAML. Tune them with the `toxic_flow` settings above.
+- The capability patterns (sensitive paths, credential and destructive commands, HTTP,
+  mail and copy clients, paste and webhook hosts, send and fetch tool names, trusted
+  domains) are data in `threats/flow/capabilities.yaml`. They are not single-call threat
+  rules and are not counted with `threats/*.yaml`. Connectors read the file from their
+  bundled threats directory; a file that does not validate is rejected as a whole, logged,
+  and the shipped copy embedded in the core is used instead. The embedded copy also serves
+  a threats directory without `flow/capabilities.yaml`, such as the MCP gateway's embedded
+  rule set; a drift test keeps it identical to the YAML. Per-install tuning is still the
+  `toxic_flow` settings above.
 - Taint is tracked per session. It does not follow data from one agent session to another.
 - Downloads are matched by path. A downloaded file that is moved or renamed is no longer
   tracked.

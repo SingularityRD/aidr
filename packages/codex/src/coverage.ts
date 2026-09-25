@@ -9,6 +9,7 @@ export type CodexCoverageHealthStatus = "degraded" | "unhealthy";
 export const CODEX_SHIPPED_EVENTS: readonly CodexHookEventName[] = [
 	"PreToolUse",
 	"UserPromptSubmit",
+	"PostToolUse",
 ];
 
 export interface CodexEventInspectionCoverage {

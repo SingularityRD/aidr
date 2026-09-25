@@ -1,13 +1,18 @@
-# Singularity AIDR — Plans and list prices
+# Singularity AIDR — Editions and quote-based pricing (internal)
 
-**Status:** list prices, subject to COM-001 approval. This page is the sales reference
-for plan names, list prices and proposed packaging. It is not a quote, licence or
-entitlement schedule. The list prices are recorded in the plan catalog
-(`public.plans`, seeded by `supabase/migrations/20260925000010_plan_catalog.sql`,
-mirrored on the public `/pricing` page and documented in [docs/pricing.md](../pricing.md)).
-Orders go through an approved written quote and invoice; self-service checkout stays
-disabled until the payment provider, entitlement reconciliation and Finance approval
-are accepted (COM-001, COM-004). The
+**INTERNAL — not customer-facing.** Prices are **not published**. Product-owner decision
+(2026-09-25, "Fiyat lanse etmeyelim"): no price, currency or per-seat / per-month figure
+appears on the dashboard, the public Editions page (`/pricing`), the README, product
+docs, the catalog, the brochure or any other customer-facing material. Every paid
+edition is sold by a written quote; customers request one from
+**anil@singularityrd.com**. This page is the internal sales reference for edition names,
+packaging and quoting. It is not a quote, licence or entitlement schedule. Edition terms
+are recorded in the plan catalog (`public.plans`, seeded by
+`supabase/migrations/20260925000010_plan_catalog.sql`, mirrored without prices on the
+public Editions page and documented in [docs/pricing.md](../pricing.md)). Orders go
+through an approved written quote and invoice; self-service checkout stays disabled
+until the payment provider, entitlement reconciliation and Finance approval are accepted
+(COM-001, COM-004). The
 [Commercial Release Manifest](../production-readiness/commercial-release-manifest-template.md)
 is the approval template.
 **Last updated:** 2026-09-25
@@ -52,20 +57,21 @@ COM-001.
 
 ## 3. Plans
 
-These list prices match the plan catalog. Prices are USD per developer seat, and each
-seat admits one protected agent installation (`iid`); the control plane enforces the
-admitted count.
+Edition terms match the plan catalog. Paid editions are quoted per developer seat, and
+each seat admits one protected agent installation (`iid`); the control plane enforces
+the admitted count. This table is safe to share with a customer; the internal quote
+reference in §4 is not.
 
 | | **Free** | **Team** | **Business** | **Enterprise** |
 | --- | --- | --- | --- | --- |
-| List price | $0 | **$20** per developer / month billed annually; **$24** monthly | **$45** per developer / month, billed annually | Custom |
+| Price | Free | By quote | By quote | By quote |
 | Minimum | 1 protected agent | 3 developers | 25 developers | By agreement |
 | Deployment | Local mode; cloud dashboard | Cloud | Cloud or on-prem (Docker Compose) | On-prem (Docker Compose or Helm) or air-gapped |
 | Event retention | 7 days | 90 days | 365 days | Contractual |
 | Catalog features | Local detection, dashboard | + Browser Privacy Guard, Entra ID SSO | + SIEM export, SCIM, AI security posture | + air-gapped deployment, dedicated support |
 | Motion | Download | Quote now; self-serve once checkout is accepted | Founder-led | Founder-led |
 
-### Free — $0, one protected agent
+### Free — one protected agent
 
 - Agent connectors with the full local engine: 494 threat rules, obfuscation and
   command-chain analysis, package and plugin checks, local allowlist and JSONL audit log.
@@ -117,10 +123,23 @@ Everything in Business, plus:
 **Lapsed subscription:** local enforcement keeps working; cloud features stop. Turning
 off detection because an invoice is late would be a safety regression.
 
-## 4. How the numbers were chosen
+## 4. Internal quote reference (do not publish)
 
-Anchored on public list pricing for adjacent developer-security products (fetched
-2026-09-13):
+Quotes start from the internal per-seat reference below. It is **not** a published
+price: never put it on a website, deck, brochure, catalog, public page or email
+signature, and never describe it to a customer as a list price. The per-seat
+reference is held in the `public.plans` seed (server-side only) and in the Stripe
+prices named by `AIDR_STRIPE_PRICE_MAP`; a card checkout shows its amount only on the
+Stripe page. Adjusting a quote does not change this reference.
+
+| Edition | Internal annual reference | Monthly option |
+| --- | --- | --- |
+| Team | USD 20 per developer / month, billed annually | USD 24 per developer / month |
+| Business | USD 45 per developer / month, billed annually | Not offered |
+| Enterprise | Scoped per deployment | Not offered |
+
+The reference was anchored on public list pricing for adjacent developer-security
+products (fetched 2026-09-13):
 
 | Product | Free tier | Entry paid | Scale tier | Source |
 | --- | --- | --- | --- | --- |
@@ -157,6 +176,8 @@ No efficacy statistics, conversion rates, churn or LTV/CAC are assumed.
 
 Binding on any quote, deck or email:
 
+- **No published prices.** Prices go only into a written quote addressed to one
+  customer. Public copy says "pricing by quote" and points to anil@singularityrd.com.
 - **No certification or audit claims.** No SOC 2, ISO 27001, penetration test or
   third-party assessment has been completed. Say so plainly and give no date.
 - **No customer names, logos, testimonials or case studies.** There are none.
@@ -176,7 +197,7 @@ Binding on any quote, deck or email:
 The release decision is **NO-GO** ([first-customer-ready.md](../production-readiness/first-customer-ready.md)).
 Before any plan is sold: a signed customer candidate, real-host acceptance for each
 offered connector and browser, an accepted cloud and on-prem deployment, legal terms
-and DPA (COM-002/003), Finance approval of these prices (COM-001), live billing and
+and DPA (COM-002/003), Finance approval of the internal quote reference (COM-001), live billing and
 entitlement (COM-004), and an independent security review (SEC-EXT-001).
 
 Open questions for the founder:
@@ -184,4 +205,4 @@ Open questions for the founder:
 1. Separate Browser Guard-only seat for non-developer users (support, finance, HR)?
 2. Annual-only Team for the first ten customers, or a 90-day paid pilot credited to
    annual?
-3. Currency: USD only at launch, or TRY for Turkish customers?
+3. Quote currency: USD only at launch, or TRY for Turkish customers?

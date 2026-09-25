@@ -9,6 +9,10 @@
  *   - `untrusted_content`  web pages, search results, MCP output, downloads
  *   - `external_comm`      sending anything to a destination the user does not own
  *
+ * Which paths, commands, executables, hosts and tool names count is data, not
+ * code: `threats/flow/capabilities.yaml` (see `toxic-flow-capabilities.ts`),
+ * passed in as `options.patterns` or taken from the core's embedded copy.
+ *
  * This module is pure: it only looks at the call (tool name, input, artifacts)
  * and the options it is handed. It never touches the filesystem, so it can run
  * on every call without cost, and the state layer is only consulted when a call
@@ -22,6 +26,11 @@
  */
 
 import { redactTelemetryString } from "./telemetry-redaction.js";
+import {
+	DEFAULT_FLOW_CAPABILITIES,
+	type FlowCapabilityPatterns,
+	type SensitivePathPattern,
+} from "./toxic-flow-capabilities.js";
 import type { Artifact } from "./types.js";
 
 export type FlowCapability = "private_data" | "untrusted_content" | "external_comm";
@@ -79,6 +88,11 @@ export interface FlowClassifierOptions {
 	trustedMcpServers: readonly string[];
 	/** Git remote names a push to is not external communication. */
 	trustedGitRemotes: readonly string[];
+	/**
+	 * Capability patterns (`threats/flow/capabilities.yaml`); the embedded copy of
+	 * the shipped file when omitted.
+	 */
+	patterns?: FlowCapabilityPatterns;
 }
 
 export interface FlowToolCall {
@@ -92,384 +106,15 @@ const MAX_OBSERVATIONS = 24;
 const MAX_DOWNLOADS_PER_CALL = 8;
 
 /**
- * Package registries, language docs and source hosts. A plain request to one of
- * them is not external communication; a request that carries a payload still is
- * (an issue or gist body is readable by whoever owns the target).
+ * Package registries, language docs and source hosts (`trusted_domains` in
+ * `threats/flow/capabilities.yaml`). A plain request to one of them is not
+ * external communication; a request that carries a payload still is.
  */
-export const DEFAULT_TOXIC_FLOW_TRUSTED_DOMAINS: readonly string[] = [
-	"registry.npmjs.org",
-	"npmjs.com",
-	"registry.yarnpkg.com",
-	"yarnpkg.com",
-	"pypi.org",
-	"files.pythonhosted.org",
-	"pythonhosted.org",
-	"crates.io",
-	"docs.rs",
-	"rust-lang.org",
-	"proxy.golang.org",
-	"sum.golang.org",
-	"pkg.go.dev",
-	"go.dev",
-	"golang.org",
-	"rubygems.org",
-	"repo.maven.apache.org",
-	"repo1.maven.org",
-	"plugins.gradle.org",
-	"services.gradle.org",
-	"nuget.org",
-	"packagist.org",
-	"jsr.io",
-	"deno.land",
-	"nodejs.org",
-	"python.org",
-	"developer.mozilla.org",
-	"conda.anaconda.org",
-	"repo.anaconda.com",
-	"deb.debian.org",
-	"archive.ubuntu.com",
-	"security.ubuntu.com",
-	"dl-cdn.alpinelinux.org",
-	"registry-1.docker.io",
-	"registry.hub.docker.com",
-	"ghcr.io",
-	"github.com",
-	"codeload.github.com",
-	"objects.githubusercontent.com",
-	"gitlab.com",
-	"bitbucket.org",
-];
+export const DEFAULT_TOXIC_FLOW_TRUSTED_DOMAINS: readonly string[] =
+	DEFAULT_FLOW_CAPABILITIES.trustedDomains;
 
-/**
- * Paste, file-drop, request-capture and chat-webhook services: an egress to one
- * of these is always external communication that carries data, whatever the
- * method, because the owner of the bin reads every request.
- */
-const EXFIL_SINK_DOMAINS: readonly string[] = [
-	"pastebin.com",
-	"paste.ee",
-	"pastes.io",
-	"paste.rs",
-	"paste.debian.net",
-	"hastebin.com",
-	"hastebin.skyra.pw",
-	"ghostbin.co",
-	"dpaste.org",
-	"dpaste.com",
-	"bpa.st",
-	"ix.io",
-	"sprunge.us",
-	"termbin.com",
-	"0x0.st",
-	"transfer.sh",
-	"file.io",
-	"tmpfiles.org",
-	"catbox.moe",
-	"gofile.io",
-	"anonfiles.com",
-	"rentry.co",
-	"privatebin.net",
-	"justpaste.it",
-	"controlc.com",
-	"gist.github.com",
-	"gist.githubusercontent.com",
-	"webhook.site",
-	"requestbin.net",
-	"requestcatcher.com",
-	"pipedream.net",
-	"beeceptor.com",
-	"hookbin.com",
-	"ngrok.io",
-	"ngrok-free.app",
-	"ngrok.app",
-	"trycloudflare.com",
-	"interact.sh",
-	"oast.fun",
-	"oast.pro",
-	"oast.live",
-	"oast.site",
-	"oast.online",
-	"oast.me",
-	"burpcollaborator.net",
-	"hooks.slack.com",
-	"api.telegram.org",
-	"discord.com/api/webhooks",
-	"discordapp.com/api/webhooks",
-];
-
-// ── Sensitive material ─────────────────────────────────────────────
-
-interface SensitivePathRule {
-	pattern: RegExp;
-	label: string;
-	kind: "sensitive_file" | "database_dump";
-	secret: boolean;
-}
-
-const SEP = String.raw`[\\/]`;
-const START = String.raw`(?:^|[\\/])`;
-
-/** Credential stores, key material and data dumps, matched on a path or path-like token. */
-const SENSITIVE_PATH_RULES: readonly SensitivePathRule[] = [
-	{
-		pattern: new RegExp(`${START}\\.ssh${SEP}(?:id_[a-z0-9_-]+|identity)(?!\\.pub)$`, "i"),
-		label: "SSH private key",
-		kind: "sensitive_file",
-		secret: true,
-	},
-	{
-		pattern: new RegExp(`${START}\\.aws${SEP}(?:credentials|config|sso${SEP}cache${SEP}.+)$`, "i"),
-		label: "cloud credentials",
-		kind: "sensitive_file",
-		secret: true,
-	},
-	{
-		pattern: new RegExp(
-			`${START}\\.config${SEP}gcloud${SEP}.*(?:credential|token|\\.json$|\\.db$)`,
-			"i",
-		),
-		label: "cloud credentials",
-		kind: "sensitive_file",
-		secret: true,
-	},
-	{
-		pattern: new RegExp(
-			`${START}\\.azure${SEP}(?:accessTokens\\.json|msal_token_cache.*|azureProfile\\.json)$`,
-			"i",
-		),
-		label: "cloud credentials",
-		kind: "sensitive_file",
-		secret: true,
-	},
-	{
-		pattern: new RegExp(
-			`${START}\\.env(?:\\.(?!example$|sample$|template$|dist$|defaults?$)[\\w-]{1,40})?$`,
-			"i",
-		),
-		label: "environment secrets file",
-		kind: "sensitive_file",
-		secret: true,
-	},
-	{
-		pattern: new RegExp(
-			`${START}\\.(?:netrc|pgpass|npmrc|pypirc|git-credentials|my\\.cnf|vault-token|boto)$`,
-			"i",
-		),
-		label: "credential file",
-		kind: "sensitive_file",
-		secret: true,
-	},
-	{
-		pattern: new RegExp(`${START}\\.docker${SEP}config\\.json$`, "i"),
-		label: "registry credentials",
-		kind: "sensitive_file",
-		secret: true,
-	},
-	{
-		pattern: new RegExp(`(?:${START}\\.kube${SEP}config|${START}kubeconfig(?:\\.ya?ml)?)$`, "i"),
-		label: "cluster credentials",
-		kind: "sensitive_file",
-		secret: true,
-	},
-	{
-		pattern: new RegExp(`${START}\\.config${SEP}gh${SEP}hosts\\.ya?ml$`, "i"),
-		label: "GitHub CLI token",
-		kind: "sensitive_file",
-		secret: true,
-	},
-	{
-		pattern: new RegExp(`${START}\\.gnupg${SEP}(?:private-keys-v1\\.d|secring\\.gpg)`, "i"),
-		label: "private keyring",
-		kind: "sensitive_file",
-		secret: true,
-	},
-	{
-		pattern: /\.(?:pem|key|p12|pfx|jks|keystore|ppk|kdbx|ovpn)$/i,
-		label: "key material",
-		kind: "sensitive_file",
-		secret: true,
-	},
-	{
-		pattern: new RegExp(
-			`${START}(?:credentials|secrets?|service[-_]?account(?:[-_][\\w-]{0,40})?)\\.(?:json|ya?ml|toml|ini|txt)$`,
-			"i",
-		),
-		label: "credential file",
-		kind: "sensitive_file",
-		secret: true,
-	},
-	{
-		pattern: new RegExp(
-			`${START}(?:master\\.key|credentials\\.yml\\.enc|terraform\\.tfstate(?:\\.backup)?)$`,
-			"i",
-		),
-		label: "secret store",
-		kind: "sensitive_file",
-		secret: true,
-	},
-	{
-		pattern: new RegExp(`${START}etc${SEP}(?:shadow|gshadow|sudoers|master\\.passwd)$`, "i"),
-		label: "system password store",
-		kind: "sensitive_file",
-		secret: true,
-	},
-	{
-		pattern: new RegExp(
-			`${START}(?:Login Data|Cookies|Local State|key[34]\\.db|logins\\.json|cookies\\.sqlite)$`,
-			"i",
-		),
-		label: "browser credential store",
-		kind: "sensitive_file",
-		secret: true,
-	},
-	{
-		pattern: new RegExp(
-			`${START}(?:Library${SEP}Keychains|\\.local${SEP}share${SEP}keyrings)(?:${SEP}|$)`,
-			"i",
-		),
-		label: "OS keychain",
-		kind: "sensitive_file",
-		secret: true,
-	},
-	{
-		pattern: new RegExp(
-			`(?:${START}wallet\\.dat|${START}\\.(?:bitcoin|ethereum)${SEP}keystore)`,
-			"i",
-		),
-		label: "crypto wallet",
-		kind: "sensitive_file",
-		secret: true,
-	},
-	{
-		pattern: new RegExp(`${START}\\.(?:bash|zsh|sh|psql|mysql|python)_history$`, "i"),
-		label: "shell history",
-		kind: "sensitive_file",
-		secret: false,
-	},
-	{
-		pattern: new RegExp(
-			`${START}[^\\\\/]*(?:dump|backup)[^\\\\/]*\\.(?:sql|dump|bak|gz|tar|zip)$|\\.dump$`,
-			"i",
-		),
-		label: "database dump",
-		kind: "database_dump",
-		secret: true,
-	},
-];
-
-interface CommandRule {
-	pattern: RegExp;
-	label: string;
-	kind: "credential_command" | "database_dump";
-}
-
-/** Commands that print credentials or dump a database. */
-const CREDENTIAL_COMMAND_RULES: readonly CommandRule[] = [
-	{
-		pattern: /(?:^|[;&|(]\s*)(?:printenv|env|set)\s*(?:$|[;&|>)])/,
-		label: "environment dump",
-		kind: "credential_command",
-	},
-	{
-		pattern: /\/proc\/(?:self|\d+)\/environ\b/,
-		label: "process environment",
-		kind: "credential_command",
-	},
-	{
-		pattern: /\bsecurity\s+(?:find-(?:generic|internet)-password|dump-keychain)\b/,
-		label: "keychain read",
-		kind: "credential_command",
-	},
-	{
-		pattern: /\bgpg2?\b[^\n]{0,200}--export-secret-(?:sub)?keys\b/,
-		label: "private key export",
-		kind: "credential_command",
-	},
-	{
-		pattern:
-			/\baws\s+(?:configure\s+(?:get|export-credentials)|sts\s+get-session-token|secretsmanager\s+get-secret-value|ssm\s+get-parameters?\b[^\n]{0,200}--with-decryption)/,
-		label: "cloud secret read",
-		kind: "credential_command",
-	},
-	{
-		pattern: /\bgcloud\s+auth\s+(?:application-default\s+)?print-(?:access|identity)-token\b/,
-		label: "cloud token read",
-		kind: "credential_command",
-	},
-	{
-		pattern: /\baz\s+account\s+get-access-token\b/,
-		label: "cloud token read",
-		kind: "credential_command",
-	},
-	{
-		pattern: /\bgh\s+auth\s+(?:token|status\s+[^\n]{0,40}--show-token)\b/,
-		label: "GitHub token read",
-		kind: "credential_command",
-	},
-	{
-		pattern: /\bgit\s+credential\s+fill\b/,
-		label: "git credential read",
-		kind: "credential_command",
-	},
-	{
-		pattern: /\bkubectl\s+get\s+secrets?\b/,
-		label: "cluster secret read",
-		kind: "credential_command",
-	},
-	{
-		pattern: /\bvault\s+(?:kv\s+get|read)\b/,
-		label: "vault secret read",
-		kind: "credential_command",
-	},
-	{
-		pattern: /\bop\s+(?:read|item\s+get)\b/,
-		label: "password manager read",
-		kind: "credential_command",
-	},
-	{
-		pattern:
-			/\b(?:pg_dump|pg_dumpall|mysqldump|mariadb-dump|mongodump|mongoexport)\b|\bsqlite3\b[^\n]{0,200}\.dump\b/,
-		label: "database dump",
-		kind: "database_dump",
-	},
-];
-
-// ── Destructive commands ───────────────────────────────────────────
-
-const DESTRUCTIVE_COMMAND_RULES: ReadonlyArray<{ pattern: RegExp; label: string }> = [
-	{
-		pattern:
-			/\bgit\s+(?:-[Cc]\s+\S+\s+)*push\b[^\n;&|]{0,300}?(?:\s--force(?:-with-lease)?\b|\s-f\b|\s--mirror\b|\s\+\S)/,
-		label: "git force push",
-	},
-	{ pattern: /\bgit\s+reset\s+[^\n;&|]{0,100}--hard\b/, label: "git reset --hard" },
-	{ pattern: /\bgit\s+clean\s+-[a-zA-Z]*f/, label: "git clean -f" },
-	{ pattern: /\bfind\b[^\n;&|]{0,300}\s(?:-delete\b|-exec\s+rm\b)/, label: "find -delete" },
-	{ pattern: /\b(?:mkfs(?:\.\w+)?|wipefs|shred)\b/, label: "disk/file wipe" },
-	{ pattern: /\bdd\b[^\n;&|]{0,200}\bof=\/dev\//, label: "raw device write" },
-	{
-		pattern: /\bch(?:mod|own)\s+-R\b[^\n;&|]{0,200}\s(?:\/|~|\$HOME|\$\{HOME\})(?:\s|$)/,
-		label: "recursive permission change on home or root",
-	},
-	{
-		pattern: /\b(?:drop\s+(?:table|database|schema)|truncate\s+table)\b/i,
-		label: "SQL drop/truncate",
-	},
-	{ pattern: /\bdelete\s+from\s+[\w."`]+\s*(?:;|$|["'])/i, label: "SQL delete without WHERE" },
-	{
-		pattern: /\bterraform\s+(?:destroy\b|apply\b[^\n;&|]{0,200}-destroy\b)/,
-		label: "terraform destroy",
-	},
-	{ pattern: /\bpulumi\s+destroy\b/, label: "pulumi destroy" },
-	{ pattern: /\bkubectl\s+delete\b/, label: "kubectl delete" },
-	{ pattern: /\bhelm\s+(?:uninstall|delete)\b/, label: "helm uninstall" },
-	{ pattern: /\baws\s+s3\s+(?:rm\b[^\n;&|]{0,300}--recursive|rb\b)/, label: "S3 recursive delete" },
-	{ pattern: /\bgsutil\s+(?:-m\s+)?rm\s+-r\b/, label: "bucket recursive delete" },
-	{ pattern: /\bdocker\s+(?:system\s+prune\b|volume\s+(?:rm|prune)\b)/, label: "docker prune" },
-	{ pattern: /\bcrontab\s+-r\b/, label: "crontab removal" },
-	{ pattern: /\bRemove-Item\b[^\n;&|]{0,300}-Recurse\b/i, label: "recursive delete" },
-	{ pattern: /\b(?:rd|rmdir)\s+\/s\b/i, label: "recursive delete" },
-];
+/** Options with the capability patterns resolved (the file's, or the embedded defaults). */
+type ResolvedOptions = FlowClassifierOptions & { patterns: FlowCapabilityPatterns };
 
 // ── Helpers ────────────────────────────────────────────────────────
 
@@ -491,10 +136,13 @@ export function normalizeFlowPath(raw: string): string {
 	return path;
 }
 
-function sensitivePathRule(path: string): SensitivePathRule | null {
+function sensitivePathRule(
+	path: string,
+	patterns: FlowCapabilityPatterns,
+): SensitivePathPattern | null {
 	const normalized = normalizeFlowPath(path);
 	if (!normalized || normalized.length > 1024) return null;
-	for (const rule of SENSITIVE_PATH_RULES) {
+	for (const rule of patterns.sensitivePaths) {
 		if (rule.pattern.test(normalized)) return rule;
 	}
 	return null;
@@ -544,9 +192,9 @@ function isLocalHost(host: string): boolean {
 	return /^f[cd][0-9a-f]{2}:/i.test(host) || /^fe80:/i.test(host);
 }
 
-function isExfilSink(url: string, host: string): boolean {
+function isExfilSink(url: string, host: string, patterns: FlowCapabilityPatterns): boolean {
 	const lowered = url.toLowerCase();
-	for (const sink of EXFIL_SINK_DOMAINS) {
+	for (const sink of patterns.exfilSinks) {
 		const slash = sink.indexOf("/");
 		if (slash === -1) {
 			if (domainMatches(host, sink)) return true;
@@ -579,13 +227,13 @@ interface Destination {
 	trusted: boolean;
 }
 
-function classifyDestination(url: string, options: FlowClassifierOptions): Destination | null {
+function classifyDestination(url: string, options: ResolvedOptions): Destination | null {
 	const host = hostOf(url);
 	if (!host) return null;
 	return {
 		host,
 		local: isLocalHost(host),
-		sink: isExfilSink(url, host),
+		sink: isExfilSink(url, host, options.patterns),
 		trusted: options.trustedDomains.some((domain) => domainMatches(host, domain)),
 	};
 }
@@ -730,23 +378,8 @@ function shellWords(stage: string): {
 	return { words, redirectTargets, inputRedirect };
 }
 
-const COMMAND_PREFIXES = new Set([
-	"sudo",
-	"doas",
-	"command",
-	"exec",
-	"time",
-	"nohup",
-	"nice",
-	"ionice",
-	"stdbuf",
-	"timeout",
-	"env",
-	"builtin",
-]);
-
 /** Index of the executable word, skipping `sudo`, `env A=B`, `timeout 5` and the like. */
-function commandIndex(words: string[]): number {
+function commandIndex(words: string[], prefixes: ReadonlySet<string>): number {
 	let i = 0;
 	while (i < words.length) {
 		const word = words[i] as string;
@@ -755,7 +388,7 @@ function commandIndex(words: string[]): number {
 			continue;
 		}
 		const base = basename(word);
-		if (COMMAND_PREFIXES.has(base)) {
+		if (prefixes.has(base)) {
 			i += 1;
 			// Skip the prefix's own flags and a numeric argument (`timeout 5`).
 			while (
@@ -805,8 +438,13 @@ class ObservationSet {
 	}
 }
 
-function addSensitivePath(set: ObservationSet, path: string, verb: string): void {
-	const rule = sensitivePathRule(path);
+function addSensitivePath(
+	set: ObservationSet,
+	path: string,
+	verb: string,
+	patterns: FlowCapabilityPatterns,
+): void {
+	const rule = sensitivePathRule(path, patterns);
 	if (!rule) return;
 	const normalized = normalizeFlowPath(path);
 	set.add({
@@ -821,7 +459,7 @@ function addSensitivePath(set: ObservationSet, path: string, verb: string): void
 function addEgress(
 	set: ObservationSet,
 	url: string,
-	options: FlowClassifierOptions,
+	options: ResolvedOptions,
 	via: string,
 	carriesData: boolean,
 ): void {
@@ -851,7 +489,7 @@ function addUntrustedFetch(
 	set: ObservationSet,
 	url: string,
 	via: string,
-	options: FlowClassifierOptions,
+	options: ResolvedOptions,
 ): void {
 	const destination = classifyDestination(url, options);
 	if (!destination || destination.local) return;
@@ -862,40 +500,6 @@ function addUntrustedFetch(
 		target: `host:${destination.host}`,
 	});
 }
-
-const HTTP_CLIENTS = new Set([
-	"curl",
-	"wget",
-	"http",
-	"https",
-	"xh",
-	"xhs",
-	"httpie",
-	"aria2c",
-	"invoke-webrequest",
-	"iwr",
-	"invoke-restmethod",
-	"irm",
-	"lwp-request",
-	"fetch",
-]);
-const RAW_SOCKET_CLIENTS = new Set(["nc", "ncat", "netcat", "socat", "telnet"]);
-const COPY_CLIENTS = new Set(["scp", "rsync", "sftp"]);
-const MAIL_CLIENTS = new Set(["sendmail", "mail", "mailx", "mutt", "swaks", "msmtp", "s-nail"]);
-const DNS_CLIENTS = new Set(["dig", "nslookup", "host", "drill"]);
-const INTERPRETERS = new Set([
-	"python",
-	"python3",
-	"python2",
-	"node",
-	"nodejs",
-	"ruby",
-	"perl",
-	"php",
-	"deno",
-	"bun",
-]);
-const SHELLS = new Set(["sh", "bash", "zsh", "dash", "ksh", "fish"]);
 
 function curlCarriesData(words: string[]): boolean {
 	for (let i = 0; i < words.length; i += 1) {
@@ -1015,7 +619,7 @@ interface StageContext {
 	set: ObservationSet;
 	downloads: string[];
 	reads: string[];
-	options: FlowClassifierOptions;
+	options: ResolvedOptions;
 	depth: number;
 }
 
@@ -1095,7 +699,8 @@ function handleCopyClient(ctx: StageContext): boolean {
 	if (!last) return true;
 	if (isRemoteCopyOperand(last)) {
 		addRemoteUpload(ctx.set, ctx.exe, last, "copies files out");
-		for (const source of operands.slice(0, -1)) addSensitivePath(ctx.set, source, ctx.exe);
+		for (const source of operands.slice(0, -1))
+			addSensitivePath(ctx.set, source, ctx.exe, ctx.options.patterns);
 	} else if (operands.slice(0, -1).some(isRemoteCopyOperand)) {
 		ctx.downloads.push(last);
 	}
@@ -1168,9 +773,6 @@ function handleGh(ctx: StageContext): boolean {
 	return false;
 }
 
-const NETWORK_API =
-	/(?:requests\.|urllib|http\.client|urlopen|fetch\(|axios|XMLHttpRequest|net\.connect|socket\.|Net::HTTP|LWP|HTTP::Tiny|curl_exec|file_get_contents\(\s*['"]https?)/;
-
 function handleInterpreter(ctx: StageContext): boolean {
 	const { exe, args } = ctx;
 	const flagIndex = args.findIndex(
@@ -1182,9 +784,8 @@ function handleInterpreter(ctx: StageContext): boolean {
 		return false;
 	}
 	const code = args[flagIndex + 1] ?? "";
-	if (!NETWORK_API.test(code)) return false;
-	const carries =
-		/(?:post|put|patch|body|data=|json=|send|write|sendall)/i.test(code) || ctx.stage.hasInput;
+	if (!ctx.options.patterns.interpreterNetworkApi.test(code)) return false;
+	const carries = ctx.options.patterns.interpreterPayloadHint.test(code) || ctx.stage.hasInput;
 	for (const url of urlsIn(code)) {
 		addEgress(ctx.set, url, ctx.options, `${exe} one-liner`, carries || urlCarriesData(url));
 		addUntrustedFetch(ctx.set, url, `${exe} one-liner`, ctx.options);
@@ -1192,14 +793,19 @@ function handleInterpreter(ctx: StageContext): boolean {
 	return false;
 }
 
-function stageHandler(exe: string, depth: number): ((ctx: StageContext) => boolean) | null {
-	if ((SHELLS.has(exe) || exe === "eval") && depth < 2) return handleNestedShell;
-	if (HTTP_CLIENTS.has(exe)) return handleHttpClient;
-	if (RAW_SOCKET_CLIENTS.has(exe)) return handleRawSocket;
-	if (COPY_CLIENTS.has(exe)) return handleCopyClient;
-	if (MAIL_CLIENTS.has(exe)) return handleMail;
-	if (DNS_CLIENTS.has(exe)) return handleDns;
-	if (INTERPRETERS.has(exe)) return handleInterpreter;
+function stageHandler(
+	exe: string,
+	depth: number,
+	patterns: FlowCapabilityPatterns,
+): ((ctx: StageContext) => boolean) | null {
+	const executables = patterns.executables;
+	if ((executables.shells.has(exe) || exe === "eval") && depth < 2) return handleNestedShell;
+	if (executables.httpClients.has(exe)) return handleHttpClient;
+	if (executables.rawSocketClients.has(exe)) return handleRawSocket;
+	if (executables.copyClients.has(exe)) return handleCopyClient;
+	if (executables.mailClients.has(exe)) return handleMail;
+	if (executables.dnsClients.has(exe)) return handleDns;
+	if (executables.interpreters.has(exe)) return handleInterpreter;
 	if (exe === "ssh") return handleSsh;
 	if (exe === "git") return handleGit;
 	if (exe === "gh") return handleGh;
@@ -1212,16 +818,16 @@ function classifyStage(
 	set: ObservationSet,
 	downloads: string[],
 	reads: string[],
-	options: FlowClassifierOptions,
+	options: ResolvedOptions,
 	depth: number,
 ): boolean {
-	const index = commandIndex(stage.words);
+	const index = commandIndex(stage.words, options.patterns.commandPrefixes);
 	if (index < 0) return false;
 	const executable = stage.words[index] as string;
 	const exe = basename(executable);
 	// Executing a local file (`./x.sh`) reads it.
 	if (/^\.{0,2}\//.test(executable)) reads.push(executable);
-	const handler = stageHandler(exe, depth);
+	const handler = stageHandler(exe, depth, options.patterns);
 	if (!handler) return false;
 	return handler({
 		stage,
@@ -1240,7 +846,7 @@ function classifyShellCommand(
 	set: ObservationSet,
 	downloads: string[],
 	reads: string[],
-	options: FlowClassifierOptions,
+	options: ResolvedOptions,
 	depth: number,
 ): void {
 	for (const pipeline of parseStages(command)) {
@@ -1253,13 +859,13 @@ function classifyShellCommand(
 				for (const piece of word.split(/[=,]/)) {
 					const candidate = piece.replace(/^@/, "");
 					if (candidate.length < 2) continue;
-					addSensitivePath(set, candidate, "shell access to");
+					addSensitivePath(set, candidate, "shell access to", options.patterns);
 					if (!transfer && !candidate.startsWith("-")) reads.push(candidate);
 				}
 			});
 		}
 	}
-	for (const rule of CREDENTIAL_COMMAND_RULES) {
+	for (const rule of options.patterns.credentialCommands) {
 		if (rule.pattern.test(command)) {
 			set.add({
 				cap: "private_data",
@@ -1277,55 +883,31 @@ function classifyShellCommand(
 	}
 }
 
-function isBroadDeleteTarget(target: string): boolean {
+function isBroadDeleteTarget(target: string, patterns: FlowCapabilityPatterns): boolean {
 	const t = target.replace(/^["']|["']$/g, "");
-	if (
-		[
-			"/",
-			"/*",
-			"~",
-			"~/",
-			"~/*",
-			"$HOME",
-			"${HOME}",
-			"$HOME/",
-			"$HOME/*",
-			"*",
-			".",
-			"./",
-			"./*",
-			"..",
-			"../",
-			".*",
-			".git",
-			"./.git",
-		].includes(t)
-	) {
-		return true;
-	}
 	return (
-		/^\/[^/]+\/?\*?$/.test(t) ||
-		/^\/(?:home|Users)\/[^/]+\/?\*?$/.test(t) ||
-		/^(?:~|\$HOME|\$\{HOME\})\/[^/]+\/?\*?$/.test(t) ||
-		/^[A-Za-z]:[\\/]?$/.test(t)
+		patterns.broadDeleteTargets.has(t) ||
+		patterns.broadDeletePatterns.some((pattern) => pattern.test(t))
 	);
 }
 
-function destructiveSummary(command: string): string | null {
+function destructiveSummary(command: string, patterns: FlowCapabilityPatterns): string | null {
 	for (const pipeline of parseStages(command)) {
 		for (const stage of pipeline) {
-			const index = commandIndex(stage.words);
+			const index = commandIndex(stage.words, patterns.commandPrefixes);
 			if (index < 0) continue;
 			const exe = basename(stage.words[index] as string);
 			if (exe === "rm") {
 				const args = stage.words.slice(index + 1);
 				const recursive = args.some((arg) => /^-[a-zA-Z]*[rR]/.test(arg) || arg === "--recursive");
-				const broad = args.filter((arg) => !arg.startsWith("-")).find(isBroadDeleteTarget);
+				const broad = args
+					.filter((arg) => !arg.startsWith("-"))
+					.find((arg) => isBroadDeleteTarget(arg, patterns));
 				if (recursive && broad) return `rm -r ${normalizeFlowPath(broad) || broad}`;
 			}
 		}
 	}
-	for (const rule of DESTRUCTIVE_COMMAND_RULES) {
+	for (const rule of patterns.destructiveCommands) {
 		if (rule.pattern.test(command)) return rule.label;
 	}
 	return null;
@@ -1375,15 +957,6 @@ export function mcpToolIdentity(
 	return null;
 }
 
-const SEND_TOOL =
-	/(?:^|[_\-.])(?:send|post|publish|upload|e?mail|message|notify|tweet|webhook|share|reply|comment|dm|chat_?post|create_(?:issue|comment|gist|pull_request|pr|message|post|note|page|message))(?:$|[_\-.])/i;
-const WEB_READ_TOOL =
-	/(?:browser|browse|navigate|playwright|puppeteer|scrape|crawl|firecrawl|web_?search|search_?web|web_?fetch|fetch_?url|http_?get|read_?url|open_?url|google_?search|brave_?search|tavily|exa_?search)/i;
-const WEB_SEARCH_TOOL =
-	/^(?:web_?search|search_?web|google_?search|brave_?search|tavily_?search|exa_?search)$/i;
-/** Tool names that read a file (`read_file`, `get_file_contents`, `view`); writes are not reads. */
-const FILE_READ_TOOL = /(?:^|_)(?:read|get|cat|view|open|download|load|show|head|tail)(?:_|$)/i;
-
 function artifactValues(artifacts: readonly Artifact[], type: Artifact["type"]): string[] {
 	return artifacts.filter((artifact) => artifact.type === type).map((artifact) => artifact.value);
 }
@@ -1396,8 +969,10 @@ function artifactValues(artifacts: readonly Artifact[], type: Artifact["type"]):
  */
 export function classifyToolCallFlow(
 	call: FlowToolCall,
-	options: FlowClassifierOptions,
+	classifierOptions: FlowClassifierOptions,
 ): FlowClassification {
+	const patterns = classifierOptions.patterns ?? DEFAULT_FLOW_CAPABILITIES;
+	const options: ResolvedOptions = { ...classifierOptions, patterns };
 	const set = new ObservationSet();
 	const downloads: string[] = [];
 	const reads: string[] = [];
@@ -1408,14 +983,14 @@ export function classifyToolCallFlow(
 		const command = commandText(toolInput, artifacts);
 		if (command) {
 			classifyShellCommand(command, set, downloads, reads, options, 0);
-			destructive = destructiveSummary(command);
+			destructive = destructiveSummary(command, patterns);
 		}
 	} else if (toolName === "Read" || toolName === "Grep" || toolName === "NotebookRead") {
 		const paths = new Set<string>(artifactValues(artifacts, "file_path"));
 		const direct = stringField(toolInput, ["file_path", "path", "notebook_path"]);
 		if (direct) paths.add(direct);
 		for (const path of paths) {
-			addSensitivePath(set, path, toolName);
+			addSensitivePath(set, path, toolName, patterns);
 			reads.push(path);
 		}
 	} else if (toolName === "WebFetch") {
@@ -1424,7 +999,7 @@ export function classifyToolCallFlow(
 			addUntrustedFetch(set, url, "WebFetch", options);
 			addEgress(set, url, options, "WebFetch", urlCarriesData(url));
 		}
-	} else if (WEB_SEARCH_TOOL.test(toolName)) {
+	} else if (patterns.toolNames.webSearch.test(toolName)) {
 		set.add({
 			cap: "untrusted_content",
 			kind: "web_search",
@@ -1442,7 +1017,7 @@ export function classifyToolCallFlow(
 				target: `mcp:${mcp.server}`,
 			});
 		}
-		if (WEB_READ_TOOL.test(leaf)) {
+		if (patterns.toolNames.webRead.test(leaf)) {
 			const url = artifactValues(artifacts, "url")[0];
 			const destination = url ? classifyDestination(url, options) : null;
 			set.add({
@@ -1452,7 +1027,7 @@ export function classifyToolCallFlow(
 				target: destination ? `host:${destination.host}` : `tool:${leaf.toLowerCase()}`,
 			});
 		}
-		if (SEND_TOOL.test(leaf)) {
+		if (patterns.toolNames.send.test(leaf)) {
 			set.add({
 				cap: "external_comm",
 				kind: mcp ? "mcp_send" : "data_upload",
@@ -1461,9 +1036,9 @@ export function classifyToolCallFlow(
 				carriesData: true,
 			});
 		}
-		if (FILE_READ_TOOL.test(leaf)) {
+		if (patterns.toolNames.fileRead.test(leaf)) {
 			for (const path of artifactValues(artifacts, "file_path")) {
-				addSensitivePath(set, path, leaf);
+				addSensitivePath(set, path, leaf, patterns);
 				reads.push(path);
 			}
 		}
@@ -1504,5 +1079,5 @@ export function capabilityLabel(cap: FlowCapability): string {
 	return "external communication";
 }
 
-/** Exposed for tests and docs: the built-in exfiltration sink list. */
-export const TOXIC_FLOW_EXFIL_SINKS: readonly string[] = EXFIL_SINK_DOMAINS;
+/** Exposed for tests and docs: the shipped exfiltration sink list. */
+export const TOXIC_FLOW_EXFIL_SINKS: readonly string[] = DEFAULT_FLOW_CAPABILITIES.exfilSinks;
