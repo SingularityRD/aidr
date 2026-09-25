@@ -12,7 +12,7 @@
 //    options page are added to the copy's manifest host_permissions instead: for the
 //    browser a granted optional host permission and a manifest host permission are the
 //    same active permission (permissions.contains() is true for both, and
-//    declarativeNetRequestWithHostAccess and chrome.scripting act on either).
+//    tabs.onUpdated URL visibility and chrome.scripting act on either).
 //
 // Nothing else changes: every other file is the product build byte for byte.
 

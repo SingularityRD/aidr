@@ -36,9 +36,14 @@ re-validates each field against a fixed allow-list before it renders a message
 the alert carries no approval link, token or action id, so a forwarded message cannot
 approve anything.
 
-Each channel is capped at 30 queued alerts per minute; an event flood beyond the cap is
-not turned into a message flood (the events themselves are still stored and visible in the
-console).
+Each channel is capped at 30 queued alerts per minute per event kind; an event flood beyond
+the cap is not turned into a message flood (the events themselves are still stored and
+visible in the console), and a flood of one kind (for example `approval.requested`) never
+suppresses another kind's alert (for example `runtime.deny_critical`).
+
+The dispatcher claims fairly across tenants: each claim first takes up to five due alerts
+of every tenant with something due (oldest first), then tops the batch up in due order, so
+one tenant's backlog or slow receivers cannot delay other tenants' alerts.
 
 ## Generic webhook
 

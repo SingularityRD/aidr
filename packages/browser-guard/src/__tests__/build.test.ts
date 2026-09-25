@@ -209,9 +209,13 @@ describe("release build with --zip (stub entries)", () => {
 		expect(manifest.permissions).toEqual([
 			"storage",
 			"alarms",
-			"declarativeNetRequestWithHostAccess",
+			"declarativeNetRequest",
 			"scripting",
 		]);
+		// Administrator blocks must not depend on the policed user's host-access grant:
+		// `declarativeNetRequest` applies block rules without host permissions, the
+		// host-access variant only where the user granted the site AND the initiator.
+		expect(manifest.permissions).not.toContain("declarativeNetRequestWithHostAccess");
 		// No browsing-history-class permission: Shadow AI visibility and custom sites use
 		// per-origin grants from the optional host permissions.
 		for (const broad of ["tabs", "webNavigation", "history", "declarativeNetRequestFeedback"])
@@ -249,7 +253,7 @@ describe("release build with --zip (stub entries)", () => {
 		expect(manifest.permissions).toEqual([
 			"storage",
 			"alarms",
-			"declarativeNetRequestWithHostAccess",
+			"declarativeNetRequest",
 			"scripting",
 		]);
 		expect(manifest.optional_permissions).toEqual(["nativeMessaging"]);

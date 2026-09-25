@@ -201,7 +201,7 @@ node scripts/icons.mjs --check   # exit 1 if the committed icons are stale
 
 | Key | Value | Why |
 |---|---|---|
-| `permissions` | `storage`, `alarms`, `declarativeNetRequestWithHostAccess`, `scripting` | settings and the in-memory vault; telemetry batching; blocking sites an admin lists in `blockedSites` or blocks with `shadowAi`; registering the content script for administrator-configured `customSites` (no install warning, and no access by itself: injection still needs host access to the page) |
+| `permissions` | `storage`, `alarms`, `declarativeNetRequest`, `scripting` | settings and the in-memory vault; telemetry batching; blocking sites an admin lists in `blockedSites` or blocks with `shadowAi` (block rules only; `declarativeNetRequest` applies them without host permissions, so an administrator's block never depends on the user's host-access grant; install warning "Block content on any page"); registering the content script for administrator-configured `customSites` (no install warning, and no access by itself: injection still needs host access to the page) |
 | `host_permissions` | the ten HTTPS hosts above | content script injection on supported sites only |
 | `optional_permissions` | `nativeMessaging` | requested on the options page (from the click that turns the native NER host on, or the **Grant permission** button when an administrator enabled it); never at install |
 | `optional_host_permissions` | `https://*/*` | never requested at install. The options page requests exact `https://<host>/*` origins, from a click, only for what the managed policy configures: the hosts of `customSites`, and the Shadow AI catalog origins when `shadowAi` is on (or the origins of explicitly blocked services). No `tabs`, `webNavigation`, `history` or `<all_urls>` permission is requested: the extension sees a tab's URL only on origins it was granted |
@@ -355,11 +355,10 @@ to regenerate the dataset with stable fingerprints.
 - Only the listed sites are protected out of the box; internal portals need a
   `customSites` entry and each user's host-access grant. Other AI tools, desktop
   apps and API clients are not covered by this extension.
-- Shadow AI counting and blocking act only on origins the user granted. Under
-  `declarativeNetRequestWithHostAccess` Chrome may also require host access to the
-  initiating page for a navigation started by a link on another site; the worker's
-  `tabs.onUpdated` redirect to `blocked.html` still applies once the tab reaches the
-  service. Tab state is kept in memory, so a worker restart can count one visit twice.
+- Shadow AI counting, and the `blocked.html` explanation page, act only on origins
+  the user granted; the block itself applies without a grant (the user then sees the
+  browser's own "blocked by an extension" page). Tab state is kept in memory, so a
+  worker restart can count one visit twice.
 - Site adapters depend on each product's DOM. A site redesign can break
   interception until the adapter is updated; the real-browser suite in `e2e/`
   guards against regressions on recorded page structures.

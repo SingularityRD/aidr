@@ -5,9 +5,13 @@
  * top-level navigations and framed embeds; the worker then shows blocked.html in the tab
  * (`?service=<id>`), exactly like the built-in blocked-site flow in ./dnr.ts.
  *
+ * The block itself needs no host access (`declarativeNetRequest` block rules apply
+ * everywhere), so it never depends on a grant the policed user could decline or revoke;
+ * without a grant the user sees the browser's own "blocked" page instead of blocked.html.
+ *
  * Visibility: tabs.onUpdated reports a tab's URL only for hosts the extension has host
- * access to, so counting (and, under `declarativeNetRequestWithHostAccess`, blocking) a
- * catalogued service needs access to its origin. That access is requested from the
+ * access to, so counting a catalogued service (and showing blocked.html for it) needs
+ * access to its origin. That access is requested from the
  * options page (optional host permissions, one grant for the catalog origins) instead of
  * the `tabs` or `webNavigation` permissions, which would expose every URL the user visits.
  * Only the catalog id of a matched host is ever kept: never the URL, path or title.
