@@ -36,24 +36,22 @@
  * Pictures: see ./images.ts (thumbnail blanked when the package is rewritten; OCR or reported).
  */
 import type { EntityType, Finding } from "../../types.js";
-import { countFindings, mergeCounts } from "../counts.js";
 import { isImageEntry } from "./images.js";
 import {
+	asDocumentRefusal,
 	type DocumentOutcome,
 	DocumentRefused,
 	DocumentUnreadable,
 	decodePart,
-	encodePart,
 	handleImages,
 	isCompoundFile,
 	newTotals,
 	type PartEncoding,
+	rewritePart,
 	type Totals,
 } from "./ooxml.js";
 import type { DocScanner } from "./scanner.js";
 import {
-	applyReplacements,
-	assertWellFormed,
 	attributeSegment,
 	decodeXmlText,
 	type Edit,
@@ -414,25 +412,13 @@ async function maskPart(
 		})),
 	);
 	for (const signal of scan.signals) totals.signals.add(signal);
-	const perSegment = linkCells(part.segments, scan.perSegment);
-	const replacements: RawReplacement[] = [];
-	part.segments.forEach(({ segment }, i) => {
-		const findings = perSegment[i] ?? [];
-		if (!findings.length) return;
-		totals.findings += findings.length;
-		mergeCounts(totals.findingCounts, countFindings(findings));
-		const edits = findings.map((f) => ({
-			start: f.start,
-			end: f.end,
-			text: scanner.replace(segment.text.slice(f.start, f.end), f),
-		}));
-		replacements.push(...segment.apply(edits));
-	});
-	if (!replacements.length) return null;
-	const xml = applyReplacements(part.xml, replacements);
-	if (xml === part.xml) return null;
-	assertWellFormed(xml);
-	return encodePart(xml, part.encoding);
+	return rewritePart(
+		part,
+		part.segments.map(({ segment }) => segment),
+		linkCells(part.segments, scan.perSegment),
+		scanner,
+		totals,
+	);
 }
 
 /** Entry-level refusals: macros, encryption, and binary entries that are not pictures. */
@@ -532,8 +518,6 @@ export async function sanitizeOdf(
 		readZip(out, archive.limits); // structural self-check of what is handed to the page
 		return { bytes: out, ...totals };
 	} catch (error) {
-		if (error instanceof ArchiveError) throw new DocumentRefused([`ARCHIVE_${error.code}`]);
-		if (error instanceof XmlError) throw new DocumentRefused(["DOCUMENT_MALFORMED"]);
-		throw error;
+		throw asDocumentRefusal(error);
 	}
 }

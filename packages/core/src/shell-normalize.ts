@@ -303,13 +303,7 @@ function hasRecursiveFlag(args: readonly string[]): boolean {
 	return args.some((arg) => /^-[A-Za-z]*[rRa]/.test(arg) || /^--(?:recursive|archive)$/.test(arg));
 }
 
-/**
- * Whether one simple command walks a tree that contains the AIDR state
- * directory: `find ~ -name session-flow -exec rm -rf {} +`, `find / … -delete`,
- * `find ~ -name '*.key' | xargs cat`, `grep -r . ~`, `tar czf h.tgz ~`,
- * `cp -r ~ /tmp/h`. The state directory is never named, so the literal rules
- * cannot see the access; this is what lets them.
- */
+/** Lower-cased last path segment of a command word (`/usr/bin/FIND` → `find`). */
 function commandBasename(word: string | undefined): string {
 	return (word ?? "").split(/[\\/]/).pop()?.toLowerCase() ?? "";
 }
@@ -328,6 +322,13 @@ function findWalksStateDirAncestor(args: readonly string[], piped: boolean): boo
 	return piped || args.some((arg) => FIND_ACTION.test(arg));
 }
 
+/**
+ * Whether one simple command walks a tree that contains the AIDR state
+ * directory: `find ~ -name session-flow -exec rm -rf {} +`, `find / … -delete`,
+ * `find ~ -name '*.key' | xargs cat`, `grep -r . ~`, `tar czf h.tgz ~`,
+ * `cp -r ~ /tmp/h`. The state directory is never named, so the literal rules
+ * cannot see the access; this is what lets them.
+ */
 function walksStateDirAncestor(words: readonly string[], piped: boolean): boolean {
 	let index = 0;
 	while (

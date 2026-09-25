@@ -112,6 +112,180 @@ function diagnosticsList(value: unknown): string[] {
 		: [];
 }
 
+/** The `read_agent_profiles` answer, or null when it does not verify. */
+function parseStagedProfiles(data: Record<string, unknown>): StagedProfiles | null {
+	if (!Number.isSafeInteger(data.version) || (data.policy !== null && !isRecord(data.policy))) {
+		return null;
+	}
+	return {
+		version: data.version as number,
+		policy: (data.policy as Record<string, unknown> | null) ?? null,
+		sha256: typeof data.policy_sha256 === "string" ? data.policy_sha256 : null,
+		updatedAt: typeof data.updated_at === "string" ? data.updated_at : null,
+	};
+}
+
+/** Every revision of an `agent_profile_history` answer, or null when any row is malformed. */
+function parseRevisionList(revisions: unknown): ProfileRevision[] | null {
+	if (!Array.isArray(revisions)) return null;
+	const rows = revisions.map(parseProfileRevision);
+	return rows.every((row) => row !== null) ? (rows as ProfileRevision[]) : null;
+}
+
+function ValidationResult({ validation }: { validation: Validation }) {
+	if (validation.kind === "valid") {
+		return (
+			<div className="notice notice-success" role="status">
+				Valid: {validation.profiles.join(", ")}.
+				{validation.diagnostics.length > 0 ? (
+					<ul className="small" style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+						{validation.diagnostics.map((item) => (
+							<li key={item}>{item}</li>
+						))}
+					</ul>
+				) : null}
+			</div>
+		);
+	}
+	if (validation.kind === "invalid") {
+		return (
+			<div className="notice notice-danger" role="alert">
+				<b>The profile document is not valid.</b>
+				<ul className="small" style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+					{validation.errors.map((item) => (
+						<li key={item}>{item}</li>
+					))}
+				</ul>
+			</div>
+		);
+	}
+	return null;
+}
+
+interface RevisionActions {
+	canManage: boolean;
+	busy: boolean;
+	onDiff: (version: number) => void;
+	onRestore: (version: number) => void;
+}
+
+function RevisionTable({
+	revisions,
+	currentVersion,
+	...actions
+}: RevisionActions & { revisions: ProfileRevision[] | null; currentVersion: number }) {
+	if (revisions === null)
+		return <p className="muted small">The revision history is unavailable.</p>;
+	if (revisions.length === 0)
+		return <p className="muted small">No revision has been staged yet.</p>;
+	return (
+		<div className="table-wrap">
+			<table className="table" aria-label="Staged agent profile revisions">
+				<thead>
+					<tr>
+						<th>Revision</th>
+						<th>Staged</th>
+						<th>Profiles</th>
+						<th>Digest</th>
+						<th>Actions</th>
+					</tr>
+				</thead>
+				<tbody>
+					{revisions.map((revision) => (
+						<RevisionRow
+							key={revision.version}
+							revision={revision}
+							current={revision.version === currentVersion}
+							{...actions}
+						/>
+					))}
+				</tbody>
+			</table>
+		</div>
+	);
+}
+
+function PublishInstructions({ command }: { command: string | null }) {
+	if (!command) {
+		return (
+			<p className="muted small" aria-label="Signed profile publishing commands">
+				Stage a document first; the operator then signs that exact revision with
+				provision-agent-profiles.mjs and the publisher key.
+			</p>
+		);
+	}
+	return (
+		<>
+			<pre
+				className="mono small"
+				aria-label="Signed profile publishing commands"
+				style={{ overflowX: "auto" }}
+			>
+				{command}
+			</pre>
+			<p className="muted small">
+				Run on the publishing host for each connector runtime, with an owner or administrator access
+				token verified at AAL2. The command refuses anything but the current staged revision and
+				checks its digest before signing; the bundle keeps any DLP policy already signed for this
+				tenant. Confirm adoption on the agent with <code>aidr doctor</code>.
+			</p>
+		</>
+	);
+}
+
+function RevisionRow({
+	revision,
+	current,
+	canManage,
+	busy,
+	onDiff,
+	onRestore,
+}: RevisionActions & { revision: ProfileRevision; current: boolean }) {
+	return (
+		<tr>
+			<td>
+				r{revision.version}
+				{current ? (
+					<span className="pill" style={{ marginLeft: 6 }}>
+						current
+					</span>
+				) : null}
+				{revision.restoredFrom ? (
+					<div className="muted small">restored from r{revision.restoredFrom}</div>
+				) : null}
+			</td>
+			<td className="small">{new Date(revision.createdAt).toLocaleString()}</td>
+			<td>{revision.profileCount}</td>
+			<td className="mono small">{revision.sha256.slice(0, 12)}…</td>
+			<td>
+				{!current ? (
+					<div className="row" style={{ gap: 6 }}>
+						<button
+							type="button"
+							className="btn btn-secondary btn-sm"
+							aria-label={`Compare revision ${revision.version} with current`}
+							onClick={() => onDiff(revision.version)}
+						>
+							Diff vs current
+						</button>
+						{canManage ? (
+							<button
+								type="button"
+								className="btn btn-secondary btn-sm"
+								disabled={busy}
+								aria-label={`Roll back profiles to revision ${revision.version}`}
+								onClick={() => onRestore(revision.version)}
+							>
+								Roll back
+							</button>
+						) : null}
+					</div>
+				) : null}
+			</td>
+		</tr>
+	);
+}
+
 export function AgentProfileEditor({
 	tenantId,
 	canManage,
@@ -149,17 +323,11 @@ export function AgentProfileEditor({
 			);
 			return;
 		}
-		const data = current.data;
-		if (!Number.isSafeInteger(data.version) || (data.policy !== null && !isRecord(data.policy))) {
+		const staged = parseStagedProfiles(current.data);
+		if (!staged) {
 			setLoad({ kind: "error", message: "The staged profiles could not be verified." });
 			return;
 		}
-		const staged: StagedProfiles = {
-			version: data.version as number,
-			policy: (data.policy as Record<string, unknown> | null) ?? null,
-			sha256: typeof data.policy_sha256 === "string" ? data.policy_sha256 : null,
-			updatedAt: typeof data.updated_at === "string" ? data.updated_at : null,
-		};
 		setLoad({ kind: "ready", staged });
 		setSource(
 			staged.policy
@@ -167,11 +335,7 @@ export function AgentProfileEditor({
 				: templateDocument("standard-developer"),
 		);
 		setValidation({ kind: "idle" });
-		const rows =
-			history.ok && Array.isArray(history.data.revisions)
-				? history.data.revisions.map(parseProfileRevision)
-				: null;
-		setRevisions(rows && rows.every((row) => row !== null) ? (rows as ProfileRevision[]) : null);
+		setRevisions(history.ok ? parseRevisionList(history.data.revisions) : null);
 	}, [tenantId]);
 
 	useEffect(() => {
@@ -379,27 +543,7 @@ export function AgentProfileEditor({
 					</button>
 				) : null}
 			</div>
-			{validation.kind === "valid" ? (
-				<div className="notice notice-success" role="status">
-					Valid: {validation.profiles.join(", ")}.
-					{validation.diagnostics.length > 0 ? (
-						<ul className="small" style={{ margin: "6px 0 0", paddingLeft: 18 }}>
-							{validation.diagnostics.map((item) => (
-								<li key={item}>{item}</li>
-							))}
-						</ul>
-					) : null}
-				</div>
-			) : validation.kind === "invalid" ? (
-				<div className="notice notice-danger" role="alert">
-					<b>The profile document is not valid.</b>
-					<ul className="small" style={{ margin: "6px 0 0", paddingLeft: 18 }}>
-						{validation.errors.map((item) => (
-							<li key={item}>{item}</li>
-						))}
-					</ul>
-				</div>
-			) : null}
+			<ValidationResult validation={validation} />
 			{notice ? (
 				<div
 					className={`notice ${notice.tone === "error" ? "notice-danger" : "notice-success"}`}
@@ -411,99 +555,19 @@ export function AgentProfileEditor({
 
 			<div>
 				<h3>Publish the staged revision</h3>
-				{stagedCommand ? (
-					<>
-						<pre
-							className="mono small"
-							aria-label="Signed profile publishing commands"
-							style={{ overflowX: "auto" }}
-						>
-							{stagedCommand}
-						</pre>
-						<p className="muted small">
-							Run on the publishing host for each connector runtime, with an owner or administrator
-							access token verified at AAL2. The command refuses anything but the current staged
-							revision and checks its digest before signing; the bundle keeps any DLP policy already
-							signed for this tenant. Confirm adoption on the agent with <code>aidr doctor</code>.
-						</p>
-					</>
-				) : (
-					<p className="muted small" aria-label="Signed profile publishing commands">
-						Stage a document first; the operator then signs that exact revision with
-						provision-agent-profiles.mjs and the publisher key.
-					</p>
-				)}
+				<PublishInstructions command={stagedCommand} />
 			</div>
 
 			<div>
 				<h3>Staged revisions</h3>
-				{revisions === null ? (
-					<p className="muted small">The revision history is unavailable.</p>
-				) : revisions.length === 0 ? (
-					<p className="muted small">No revision has been staged yet.</p>
-				) : (
-					<div className="table-wrap">
-						<table className="table" aria-label="Staged agent profile revisions">
-							<thead>
-								<tr>
-									<th>Revision</th>
-									<th>Staged</th>
-									<th>Profiles</th>
-									<th>Digest</th>
-									<th>Actions</th>
-								</tr>
-							</thead>
-							<tbody>
-								{revisions.map((revision) => {
-									const current = revision.version === load.staged.version;
-									return (
-										<tr key={revision.version}>
-											<td>
-												r{revision.version}
-												{current ? (
-													<span className="pill" style={{ marginLeft: 6 }}>
-														current
-													</span>
-												) : null}
-												{revision.restoredFrom ? (
-													<div className="muted small">restored from r{revision.restoredFrom}</div>
-												) : null}
-											</td>
-											<td className="small">{new Date(revision.createdAt).toLocaleString()}</td>
-											<td>{revision.profileCount}</td>
-											<td className="mono small">{revision.sha256.slice(0, 12)}…</td>
-											<td>
-												{!current ? (
-													<div className="row" style={{ gap: 6 }}>
-														<button
-															type="button"
-															className="btn btn-secondary btn-sm"
-															aria-label={`Compare revision ${revision.version} with current`}
-															onClick={() => void showDiff(revision.version)}
-														>
-															Diff vs current
-														</button>
-														{canManage ? (
-															<button
-																type="button"
-																className="btn btn-secondary btn-sm"
-																disabled={busy}
-																aria-label={`Roll back profiles to revision ${revision.version}`}
-																onClick={() => void restore(revision.version)}
-															>
-																Roll back
-															</button>
-														) : null}
-													</div>
-												) : null}
-											</td>
-										</tr>
-									);
-								})}
-							</tbody>
-						</table>
-					</div>
-				)}
+				<RevisionTable
+					revisions={revisions}
+					currentVersion={load.staged.version}
+					canManage={canManage}
+					busy={busy}
+					onDiff={(version) => void showDiff(version)}
+					onRestore={(version) => void restore(version)}
+				/>
 				{diff ? (
 					<div className="stack" style={{ gap: 6 }}>
 						<b>{diff.title}</b>

@@ -118,6 +118,22 @@ function revisionRow(value: unknown) {
 
 const REVISION_COLUMNS = "version,policy,policy_sha256,profile_count,restored_from,updated_by,created_at";
 
+/** One stored revision of this tenant, or the error response to return instead. */
+async function readRevision(
+	req: Request,
+	db: SupabaseClient,
+	tenant: string,
+	version: number,
+): Promise<{ revision: NonNullable<ReturnType<typeof revisionRow>> } | { response: Response }> {
+	const { data, error } = await db.from("agent_profile_revisions").select(REVISION_COLUMNS)
+		.eq("tenant_id", tenant).eq("version", version).maybeSingle();
+	if (error || data === undefined) return { response: corsJson(req, 503, { error: "agent_profile_history_unavailable" }) };
+	if (data === null) return { response: corsJson(req, 404, { error: "revision_not_found" }) };
+	const revision = revisionRow(data);
+	if (!revision) return { response: corsJson(req, 503, { error: "agent_profile_history_unavailable" }) };
+	return { revision };
+}
+
 async function currentVersion(db: SupabaseClient, tenant: string): Promise<number | null> {
 	const { data, error } = await db.from("tenant_agent_profiles").select("version").eq("tenant_id", tenant).maybeSingle();
 	if (error || data === undefined) return null;
@@ -247,23 +263,18 @@ export async function handleAgentProfileAction(
 
 	if (action === "read_agent_profile_revision") {
 		if (!positiveVersion(body.version)) return corsJson(req, 400, { error: "invalid_version" });
-		const [revision, current] = await Promise.all([
-			db.from("agent_profile_revisions").select(REVISION_COLUMNS)
-				.eq("tenant_id", tenant).eq("version", Number(body.version)).maybeSingle(),
+		const [read, current] = await Promise.all([
+			readRevision(req, db, tenant, Number(body.version)),
 			currentVersion(db, tenant),
 		]);
-		if (revision.error || revision.data === undefined || current === null) {
-			return corsJson(req, 503, { error: "agent_profile_history_unavailable" });
-		}
-		if (revision.data === null) return corsJson(req, 404, { error: "revision_not_found" });
-		const row = revisionRow(revision.data);
-		if (!row) return corsJson(req, 503, { error: "agent_profile_history_unavailable" });
+		if (current === null) return corsJson(req, 503, { error: "agent_profile_history_unavailable" });
+		if ("response" in read) return read.response;
 		return corsJson(req, 200, {
 			ok: true,
 			tenant_id: tenant,
-			current: row.version === current,
+			current: read.revision.version === current,
 			current_version: current,
-			revision: row,
+			revision: read.revision,
 			...PROFILE_DELIVERY,
 		});
 	}
@@ -274,17 +285,14 @@ export async function handleAgentProfileAction(
 	if (action === "restore_agent_profiles") {
 		if (!positiveVersion(body.version)) return corsJson(req, 400, { error: "invalid_version" });
 		if (Number(body.version) >= Number(expected)) return corsJson(req, 400, { error: "restore_target_not_older" });
-		const { data, error } = await db.from("agent_profile_revisions").select(REVISION_COLUMNS)
-			.eq("tenant_id", tenant).eq("version", Number(body.version)).maybeSingle();
-		if (error || data === undefined) return corsJson(req, 503, { error: "agent_profile_history_unavailable" });
-		if (data === null) return corsJson(req, 404, { error: "revision_not_found" });
-		const row = revisionRow(data);
-		if (!row) return corsJson(req, 503, { error: "agent_profile_history_unavailable" });
+		const read = await readRevision(req, db, tenant, Number(body.version));
+		if ("response" in read) return read.response;
+		const { revision } = read;
 		// Re-validate with today's schema; the stored document is restored verbatim.
-		const validated = validateProfileDocument(row.policy);
+		const validated = validateProfileDocument(revision.policy);
 		if (!validated.ok) return corsJson(req, 400, { error: "invalid_agent_profiles", errors: validated.errors });
 		return await stageDocument(req, db, context, Number(expected),
-			{ ...validated, document: row.policy }, row.version);
+			{ ...validated, document: revision.policy }, revision.version);
 	}
 
 	if (action === "stage_agent_profiles") {

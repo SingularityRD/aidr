@@ -86,6 +86,105 @@ async function readRevision(
 	return { ok: true, policy: revision.policy };
 }
 
+/** Up to five `path: message` validation issues from a refused rollback. */
+function validationIssues(body: Record<string, unknown> | null): string[] {
+	if (!Array.isArray(body?.issues)) return [];
+	return body.issues
+		.filter(isRecord)
+		.slice(0, 5)
+		.map((issue) =>
+			`${Array.isArray(issue.path) ? issue.path.join(".") : "policy"}: ${String(issue.message ?? "")}`.slice(
+				0,
+				200,
+			),
+		);
+}
+
+function RevisionRow({
+	revision,
+	currentVersion,
+	canManage,
+	busy,
+	confirming,
+	onCompare,
+	onConfirm,
+	onRestore,
+}: {
+	revision: DlpRevisionSummary;
+	currentVersion: number;
+	canManage: boolean;
+	busy: boolean;
+	confirming: boolean;
+	onCompare: (base: number, target: number) => void;
+	onConfirm: (version: number) => void;
+	onRestore: (version: number) => void;
+}) {
+	const current = revision.version === currentVersion;
+	return (
+		<tr>
+			<td>
+				v{revision.version}
+				{current ? (
+					<span className="pill" style={{ marginLeft: 6 }}>
+						current
+					</span>
+				) : null}
+			</td>
+			<td className="small">{new Date(revision.createdAt).toLocaleString()}</td>
+			<td>{revision.counts.labels}</td>
+			<td>{revision.counts.rules}</td>
+			<td>{revision.counts.exceptions}</td>
+			<td>
+				<div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+					{!current ? (
+						<button
+							type="button"
+							className="btn btn-secondary btn-sm"
+							aria-label={`Compare version ${revision.version} with current`}
+							onClick={() => onCompare(revision.version, currentVersion)}
+						>
+							Diff vs current
+						</button>
+					) : null}
+					{revision.version > 1 ? (
+						<button
+							type="button"
+							className="btn btn-secondary btn-sm"
+							aria-label={`Show changes in version ${revision.version}`}
+							onClick={() => onCompare(revision.version - 1, revision.version)}
+						>
+							Changes
+						</button>
+					) : null}
+					{canManage && !current ? (
+						confirming ? (
+							<button
+								type="button"
+								className="btn btn-danger btn-sm"
+								disabled={busy}
+								aria-label={`Confirm rollback to version ${revision.version}`}
+								onClick={() => onRestore(revision.version)}
+							>
+								Confirm rollback
+							</button>
+						) : (
+							<button
+								type="button"
+								className="btn btn-secondary btn-sm"
+								disabled={busy}
+								aria-label={`Roll back to version ${revision.version}`}
+								onClick={() => onConfirm(revision.version)}
+							>
+								Roll back
+							</button>
+						)
+					) : null}
+				</div>
+			</td>
+		</tr>
+	);
+}
+
 export function DlpPolicyHistory({
 	tenantId,
 	currentVersion,
@@ -187,20 +286,9 @@ export function DlpPolicyHistory({
 		);
 		setBusy(false);
 		if (!result.ok) {
-			const issues = Array.isArray(result.body?.issues)
-				? result.body.issues
-						.filter(isRecord)
-						.slice(0, 5)
-						.map((issue) =>
-							`${Array.isArray(issue.path) ? issue.path.join(".") : "policy"}: ${String(issue.message ?? "")}`.slice(
-								0,
-								200,
-							),
-						)
-				: [];
 			setNotice({
 				tone: "error",
-				message: [policyManagementMessage(result.code), ...issues].join(" "),
+				message: [policyManagementMessage(result.code), ...validationIssues(result.body)].join(" "),
 			});
 			return;
 		}
@@ -223,11 +311,6 @@ export function DlpPolicyHistory({
 		});
 		onRestored(saved, result.data.policy);
 	}
-
-	const stats = useMemo(
-		() => (comparison?.lines ? diffStats(comparison.lines) : null),
-		[comparison],
-	);
 
 	if (!open) {
 		return (
@@ -286,72 +369,19 @@ export function DlpPolicyHistory({
 								</tr>
 							</thead>
 							<tbody>
-								{history.revisions.map((revision) => {
-									const current = revision.version === currentVersion;
-									return (
-										<tr key={revision.version}>
-											<td>
-												v{revision.version}
-												{current ? (
-													<span className="pill" style={{ marginLeft: 6 }}>
-														current
-													</span>
-												) : null}
-											</td>
-											<td className="small">{new Date(revision.createdAt).toLocaleString()}</td>
-											<td>{revision.counts.labels}</td>
-											<td>{revision.counts.rules}</td>
-											<td>{revision.counts.exceptions}</td>
-											<td>
-												<div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
-													{!current ? (
-														<button
-															type="button"
-															className="btn btn-secondary btn-sm"
-															aria-label={`Compare version ${revision.version} with current`}
-															onClick={() => void compare(revision.version, currentVersion)}
-														>
-															Diff vs current
-														</button>
-													) : null}
-													{revision.version > 1 ? (
-														<button
-															type="button"
-															className="btn btn-secondary btn-sm"
-															aria-label={`Show changes in version ${revision.version}`}
-															onClick={() => void compare(revision.version - 1, revision.version)}
-														>
-															Changes
-														</button>
-													) : null}
-													{canManage && !current ? (
-														confirming === revision.version ? (
-															<button
-																type="button"
-																className="btn btn-danger btn-sm"
-																disabled={busy}
-																aria-label={`Confirm rollback to version ${revision.version}`}
-																onClick={() => void restore(revision.version)}
-															>
-																Confirm rollback
-															</button>
-														) : (
-															<button
-																type="button"
-																className="btn btn-secondary btn-sm"
-																disabled={busy}
-																aria-label={`Roll back to version ${revision.version}`}
-																onClick={() => setConfirming(revision.version)}
-															>
-																Roll back
-															</button>
-														)
-													) : null}
-												</div>
-											</td>
-										</tr>
-									);
-								})}
+								{history.revisions.map((revision) => (
+									<RevisionRow
+										key={revision.version}
+										revision={revision}
+										currentVersion={currentVersion}
+										canManage={canManage}
+										busy={busy}
+										confirming={confirming === revision.version}
+										onCompare={(base, target) => void compare(base, target)}
+										onConfirm={setConfirming}
+										onRestore={(version) => void restore(version)}
+									/>
+								))}
 							</tbody>
 						</table>
 					</div>
@@ -366,24 +396,32 @@ export function DlpPolicyHistory({
 					) : null}
 				</>
 			)}
-			{comparison ? (
-				<div className="stack" style={{ gap: 6 }}>
-					<b>
-						Version {comparison.base} → version {comparison.target}
-						{stats ? ` (+${stats.added} / −${stats.removed} lines)` : ""}
-					</b>
-					{comparison.error ? (
-						<p role="alert">{comparison.error}</p>
-					) : comparison.lines ? (
-						<DiffView
-							lines={comparison.lines}
-							label={`DLP diff from version ${comparison.base} to version ${comparison.target}`}
-						/>
-					) : (
-						<p role="status">Loading diff…</p>
-					)}
-				</div>
-			) : null}
+			{comparison ? <ComparisonView comparison={comparison} /> : null}
 		</section>
+	);
+}
+
+function ComparisonView({ comparison }: { comparison: Comparison }) {
+	const stats = useMemo(
+		() => (comparison.lines ? diffStats(comparison.lines) : null),
+		[comparison],
+	);
+	return (
+		<div className="stack" style={{ gap: 6 }}>
+			<b>
+				Version {comparison.base} → version {comparison.target}
+				{stats ? ` (+${stats.added} / −${stats.removed} lines)` : ""}
+			</b>
+			{comparison.error ? (
+				<p role="alert">{comparison.error}</p>
+			) : comparison.lines ? (
+				<DiffView
+					lines={comparison.lines}
+					label={`DLP diff from version ${comparison.base} to version ${comparison.target}`}
+				/>
+			) : (
+				<p role="status">Loading diff…</p>
+			)}
+		</div>
 	);
 }

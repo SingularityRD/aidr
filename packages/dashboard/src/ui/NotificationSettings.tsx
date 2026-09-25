@@ -134,17 +134,12 @@ function within(value: number, bounds: { min: number; max: number }): boolean {
 }
 
 function filtersValid(filters: NotificationFilters): boolean {
-	const { threshold, windowMinutes } = SPIKE_BOUNDS;
 	return (
 		anyEventSelected(filters) &&
 		within(filters.agentOfflineMinutes, AGENT_OFFLINE_BOUNDS) &&
 		within(filters.governanceExceptionDays, EXCEPTION_DAYS_BOUNDS) &&
-		Number.isInteger(filters.privacySpikeThreshold) &&
-		filters.privacySpikeThreshold >= threshold.min &&
-		filters.privacySpikeThreshold <= threshold.max &&
-		Number.isInteger(filters.privacySpikeWindowMinutes) &&
-		filters.privacySpikeWindowMinutes >= windowMinutes.min &&
-		filters.privacySpikeWindowMinutes <= windowMinutes.max
+		within(filters.privacySpikeThreshold, SPIKE_BOUNDS.threshold) &&
+		within(filters.privacySpikeWindowMinutes, SPIKE_BOUNDS.windowMinutes)
 	);
 }
 
