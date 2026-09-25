@@ -8,9 +8,9 @@
 import { LIST_PRICE_NOTICE, PLAN_CATALOG, type PlanDefinition } from "../../../billing/plans";
 
 /** `- id:` entries across `threats/*.yaml`. */
-export const SHIPPED_THREAT_RULES = 451;
+export const SHIPPED_THREAT_RULES = 494;
 /** YAML files under `threats/`. */
-export const THREAT_RULE_FILES = 28;
+export const THREAT_RULE_FILES = 29;
 /** AI Security Posture CVE rule files in the bundled vulnerability dataset, shown as a lower bound. */
 export const AIG_CVE_RULES_FLOOR = 2000;
 /** AI Security Posture AI component fingerprint files in the bundled dataset. */
