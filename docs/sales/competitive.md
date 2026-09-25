@@ -48,7 +48,7 @@ builds itself.
   fingerprints of sensitive records; the plaintext dataset is never shipped to browsers.
 - **Deployment choice.** Free local mode, cloud, on-prem Docker Compose or Helm, and
   air-gapped with a signed offline license.
-- **Rules as data.** 386 YAML threat rules the customer can read and extend.
+- **Rules as data.** 428 YAML threat rules the customer can read and extend.
 - **Counts-only telemetry.** Browser Guard reports per-type counts, not content.
 
 ## Where competitors are ahead (say so if asked)
