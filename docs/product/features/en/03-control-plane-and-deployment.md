@@ -50,7 +50,10 @@ Compose or Kubernetes, and air-gapped.
    - [Operator administration (operator-admin)](#operator-administration-operator-admin)
 7. [Telemetry and its privacy](#7-telemetry-and-its-privacy)
 8. [Audit export and SIEM delivery](#8-audit-export-and-siem-delivery)
+   - [Audit export (CSV and JSON)](#audit-export-csv-and-json)
+   - [SIEM delivery](#siem-delivery)
    - [Compliance evidence report](#compliance-evidence-report)
+   - [Alert integrations: Slack, Teams, signed webhooks and e-mail](#alert-integrations-slack-teams-signed-webhooks-and-e-mail)
 9. [Retention, legal hold and offboarding](#9-retention-legal-hold-and-offboarding)
 10. [Backups and restore drills](#10-backups-and-restore-drills)
 11. [Monitoring and alerts](#11-monitoring-and-alerts)
@@ -129,7 +132,7 @@ locally after an inactivity timeout. The routes are declared in
 | `/incidents` | Incidents | Blocked and approval-required verdicts, evidence chain | [Incidents](#incidents-and-evidence-chain) |
 | `/privacy-guard` | Browser Privacy | Browser Guard counts and browser enrollment | [Browser Privacy](#browser-privacy) |
 | `/autosecops` | AutoSecOps | Runtime fleet view from the AutoSecOps integration | [AutoSecOps](#autosecops-view-and-response-playbooks) |
-| `/settings` | Settings | Workspace name, retention, closure, MFA status, theme | [Workspace settings](#workspace-settings-name-retention-closure) |
+| `/settings` | Settings | Workspace name, retention, closure, alert notifications, MFA status, theme | [Workspace settings](#workspace-settings-name-retention-closure), [Alert integrations](#alert-integrations-slack-teams-signed-webhooks-and-e-mail) |
 | `/team` | Team | Members, roles, invitations, team audit and export | [Team](#team-roles-and-invitations) |
 | `/scim` | Directory provisioning (owners only) | SCIM credentials and group-to-role mappings | [SCIM](#scim-directory-provisioning) |
 | `/policies` | Policies (roles that can edit policy) | Team policy, runtime policy, rollout, DLP editor | [Policies](#team-policy-and-runtime-policy) |
@@ -1296,6 +1299,67 @@ CSV and printable editions are derived and unsigned. Without a signing key the r
 hash-only. See [docs/compliance-report.md](../../../compliance-report.md) for what each
 section proves and does not prove.
 
+### Alert integrations: Slack, Teams, signed webhooks and e-mail
+
+**What it does.** Under **Settings → Notifications**, workspace owners and administrators
+send real-time alerts to **Slack** (incoming webhook, Block Kit message), **Microsoft
+Teams** (workflow webhook, Adaptive Card), a **signed HTTPS webhook** (JSON schema
+`aidr.notification.v1`) or **e-mail** (1 to 10 recipients). Each channel chooses its
+events: new incidents at or above a minimum severity, critical runtime denies, actions
+awaiting out-of-band approval, and spikes of blocked Browser Guard prompts (for example 10
+blocked sends within 15 minutes).
+
+**Why it matters.** A blocked exfiltration attempt or an approval request is useful only
+if someone sees it in time. Teams without a SIEM, or with a SIEM that nobody watches at
+night, still get the alert where they already work.
+
+**How it works.** The event and its alert are written in the **same database
+transaction**: an `AFTER INSERT` trigger on the telemetry table queues one delivery per
+matching channel (transactional outbox), so an alert exists if and only if the event was
+stored. A dispatcher runs every minute, leases due deliveries, and sends them with a 10 s
+timeout, **exponential backoff** (8 attempts from 30 s up to 1 h) and a stable
+**idempotency key** (the delivery id). Generic webhooks are signed with
+`X-AIDR-Signature: t=<ts>,v1=<HMAC-SHA256>`; a Node.js and a Python verification snippet
+are in [the notification contract](../../../contracts/notifications.md). Alerts carry
+**identifiers, severity, category and counts only**, plus a deep link into the console;
+never prompts, commands, paths or matched values. Destinations are **write-only**: they
+are encrypted at rest (AES-256-GCM, bound to the tenant and channel) and never shown
+again; the console shows only the host and a short digest. Before every send the
+webhook host is resolved and any private, link-local or cloud-metadata address is
+refused (**SSRF protection**); Slack and Teams URLs must be on the provider's webhook
+hosts, and redirects are never followed. Every change and test send needs MFA (AAL2), is
+rate limited and is audited.
+
+**How to use.** Settings → Notifications → **Add a channel**: pick the type, paste the
+webhook URL (for a signed webhook press **Generate**, copy the secret into your receiver),
+choose the events and save. Press **Send test** to see the receiver's real answer, and
+use **Disable**, **Edit events** or **Delete** later. **Recent deliveries** lists each
+attempt with its status and error code. Operators schedule the dispatcher once: pg_cron
+on Supabase Cloud, `install-systemd.sh --with-notifications` on Compose,
+`notifications.dispatcher.enabled=true` on Helm (see
+[control plane](../../../control-plane.md#alert-integrations-slack-teams-webhooks-e-mail)).
+
+**Example.** A Claude Code agent tries to upload `~/.aws/credentials`; the connector
+denies it with a critical rule. Within a minute the SOC Slack channel shows "Critical
+agent action blocked" with the rule id, agent id and an **Open in AIDR** button; the
+on-call webhook receives the same alert, verifies the signature and opens a ticket keyed
+on the delivery id.
+
+**Availability.**
+
+| Plan | Deployment | Platforms / OS |
+| --- | --- | --- |
+| All plans (dashboard) | Cloud (pg_cron + pg_net), On-prem Compose (systemd timer), Kubernetes (CronJob), Air-gapped (internal webhook or mail relay only) | Web console; receivers must be reachable from the functions runtime |
+
+**Limitations.** Delivery is at-least-once, not exactly-once; receivers should
+deduplicate on the delivery id. The latency is up to about one minute (the dispatcher
+schedule); a console test send is immediate. Each channel is capped at 30 queued alerts
+per minute. There is no `agent.offline` alert, no digest/batching, no per-user
+preference and no mTLS to webhook receivers. E-mail needs a configured mail provider.
+The DNS check and the connection resolve separately; on-prem, pair it with an egress
+allow-list or proxy. Destinations are write-only, so rotating the encryption key means
+re-entering them.
+
 ---
 
 ## 9. Retention, legal hold and offboarding
@@ -1821,6 +1885,7 @@ the daily average. Replace these assumptions with real customer data:
 | Invitation email | - | When a mail provider is configured | Needs egress to the provider; otherwise manual link | Same as Compose | Manual link |
 | Audit export (CSV/JSON) | Local JSONL audit log | Yes | Yes | Yes | Yes |
 | SIEM delivery | - | Listed for the hosted service | Yes (systemd timer) | Not yet a CronJob | Yes (internal SIEM) |
+| Alert integrations (Slack, Teams, webhooks, e-mail) | - | Yes (pg_cron dispatcher) | Yes (systemd timer) | Yes (CronJob, opt-in) | Internal webhooks or mail relay only |
 | Card billing (Stripe) | - | Only when self-service is enabled | - | - | - |
 | Invoice and operator licence | - | Yes | Yes | Yes | Yes |
 | Signed offline licence | - | - | Yes | Yes | Yes |
@@ -1842,6 +1907,6 @@ the daily average. Replace these assumptions with real customer data:
 - [Licensing](../../../operations/licensing.md), [operator administration](../../../operations/operator-admin.md), [admission operators](../../../operations/admission-operators.md)
 - [Upgrade runbook](../../../../deploy/UPGRADE.md), [backup runbook](../../../../deploy/backup/README.md), [monitoring](../../../../deploy/monitoring/README.md), [scheduled maintenance](../../../../deploy/maintenance/README.md), [ingress and TLS](../../../../deploy/ingress/README.md)
 - [AI Security Posture](../../../ai-security-posture.md), [threat-intelligence sync and air-gapped updates](../../../operations/threat-sync.md)
-- [Privacy and telemetry data flow](../../../privacy.md), [privacy telemetry contract](../../../contracts/privacy-telemetry.md), [device authorization](../../../device-auth.md)
+- [Privacy and telemetry data flow](../../../privacy.md), [privacy telemetry contract](../../../contracts/privacy-telemetry.md), [alert notification contract](../../../contracts/notifications.md), [device authorization](../../../device-auth.md)
 - [Response playbooks](../../../operations/response-playbooks.md), [recovery codes](../../../security/recovery-codes.md)
 - [Product overview](../../overview.md)

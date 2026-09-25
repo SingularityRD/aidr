@@ -904,6 +904,11 @@ export interface Database {
 				Args: { p_tenant_id: string; p_days: number };
 				Returns: Record<string, unknown>;
 			};
+			/** Browser Guard Shadow AI aggregates (20260926000010). */
+			shadow_ai_summary: {
+				Args: { p_tenant_id: string; p_days: number };
+				Returns: Record<string, unknown>;
+			};
 			/** Member-only plan/admission/usage projection (20260925000012). */
 			get_tenant_plan: {
 				Args: { p_tenant_id: string };

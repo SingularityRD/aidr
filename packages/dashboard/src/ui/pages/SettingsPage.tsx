@@ -12,6 +12,7 @@ import {
 	type WorkspaceClosure,
 	type WorkspaceSettings,
 } from "../../lib/workspace-settings";
+import { NotificationSettings } from "../NotificationSettings";
 import { getSession, signOut } from "../session";
 import { useTheme } from "../ThemeProvider";
 
@@ -529,7 +530,7 @@ export function SettingsPage() {
 			<div className="card">
 				<h1>Settings</h1>
 				<p className="muted">
-					Workspace, profile, appearance, and privacy controls for this console.
+					Workspace, notifications, profile, appearance, and privacy controls for this console.
 				</p>
 				{error ? (
 					<div className="notice notice-danger" role="alert" aria-live="assertive">
@@ -539,6 +540,10 @@ export function SettingsPage() {
 			</div>
 
 			{tenantId ? <WorkspaceSection key={tenantId} tenantId={tenantId} /> : null}
+
+			{tenantId ? (
+				<NotificationSettings key={`notifications-${tenantId}`} tenantId={tenantId} />
+			) : null}
 
 			<ProfileSection email={email} tenantId={tenantId} onSignOut={() => void endSession()} />
 

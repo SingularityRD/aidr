@@ -213,6 +213,7 @@
 					"deepseek",
 					"mistral",
 					"grok",
+					"custom",
 					"other"
 				]
 			}
@@ -232,9 +233,93 @@
 					"deepseek",
 					"mistral",
 					"grok",
+					"custom",
 					"other"
 				]
 			}
+		},
+		"customSites": {
+			"title": "Custom internal AI sites",
+			"description": "Company-internal AI chat portals where Browser Guard also masks prompts (at most 20). Hosts are exact HTTPS hostnames (no port, path or wildcard). Each user grants the extension access to these hosts once on the options page; the content script is then registered for them. Selectors are CSS selectors for the prompt editor, the send button and the assistant responses; generic fallbacks are always added.",
+			"type": "array",
+			"items": {
+				"type": "object",
+				"properties": {
+					"id": {
+						"type": "string",
+						"pattern": "^[a-z0-9][a-z0-9-]{0,31}$"
+					},
+					"label": {
+						"type": "string",
+						"pattern": "^[^\\x00-\\x1f]{1,64}$"
+					},
+					"hosts": {
+						"type": "array",
+						"items": {
+							"type": "string",
+							"pattern": "^(https://)?[a-z0-9][a-z0-9.-]{0,252}/?$"
+						}
+					},
+					"editorSelectors": {
+						"type": "array",
+						"items": {
+							"type": "string",
+							"pattern": "^[^{};<]{1,256}$"
+						}
+					},
+					"sendButtonSelectors": {
+						"type": "array",
+						"items": {
+							"type": "string",
+							"pattern": "^[^{};<]{1,256}$"
+						}
+					},
+					"responseSelectors": {
+						"type": "array",
+						"items": {
+							"type": "string",
+							"pattern": "^[^{};<]{1,256}$"
+						}
+					}
+				},
+				"required": [
+					"id",
+					"label",
+					"hosts"
+				]
+			}
+		},
+		"shadowAi": {
+			"title": "Shadow AI discovery and control",
+			"description": "mode: off (default), monitor (count visits to catalogued AI services per day; counts only, no URLs) or block-unsanctioned (also block every catalogued service not listed in sanctioned). Service ids in blocked are blocked in every mode. Ids are the Browser Guard catalog ids (for example chatgpt, gemini, poe, midjourney). Visibility and blocking need host access to the catalogued services, which each user grants once on the options page.",
+			"type": "object",
+			"properties": {
+				"mode": {
+					"type": "string",
+					"enum": [
+						"off",
+						"monitor",
+						"block-unsanctioned"
+					]
+				},
+				"sanctioned": {
+					"type": "array",
+					"items": {
+						"type": "string",
+						"pattern": "^[a-z0-9][a-z0-9-]{0,31}$"
+					}
+				},
+				"blocked": {
+					"type": "array",
+					"items": {
+						"type": "string",
+						"pattern": "^[a-z0-9][a-z0-9-]{0,31}$"
+					}
+				}
+			},
+			"required": [
+				"mode"
+			]
 		},
 		"allowUserPause": {
 			"title": "Allow user pause",
@@ -257,6 +342,16 @@
 			"type": "string",
 			"enum": [
 				"scan",
+				"block",
+				"allow"
+			]
+		},
+		"documentHandling": {
+			"title": "Document handling",
+			"description": "Office (DOCX/XLSX/PPTX) and PDF uploads when fileHandling is scan. mask (default) masks Office text in place and scans PDFs, blocking PDFs that contain sensitive data; block rejects every Office/PDF upload; allow skips document parsing and treats them like other binary files (uploaded with an unscanned warning, blocked in block mode). Macro-enabled, encrypted or externally linked Office files are always blocked under mask.",
+			"type": "string",
+			"enum": [
+				"mask",
 				"block",
 				"allow"
 			]

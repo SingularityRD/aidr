@@ -92,6 +92,10 @@ placeholders it received (`I will follow up with [EMAIL_1] and [IBAN_1] ...`).
 | `copilot.html` | `textarea#userInput` | `button[data-testid=submit-button]` | `[data-content=ai-message]` |
 | `perplexity.html` | `textarea[placeholder]` | `button[data-testid=submit-button]` | `div[id^=markdown-content-]` |
 | `generic.html` | `form textarea` (form submit) | `button[type=submit]` | `#log article` |
+| `internal.html` (`https://ai.internal.example`) | `textarea#corp-composer` | `button.corp-send` (no submit type, no "send" label) | `.corp-answer` |
+
+`generic.html` is also served at `https://poe.com` (a catalogued Shadow AI service),
+so that a page would load there if the product's block rule did not act.
 
 ## Scenarios
 
@@ -111,6 +115,19 @@ placeholders it received (`I will follow up with [EMAIL_1] and [IBAN_1] ...`).
 | `restore-side-channels` | a hostile page cannot read restored values back: per-character `@font-face` fonts (page family and shadowed system font names, forced with `!important`) are never fetched for restored values while page text in the same fonts is (control); every restored value has the same box while the same values as page text differ in width (control); `window.find()` and select-all do not see them while page text is found (control); a sent placeholder written into a container created before the send, and a placeholder of a deleted masked paste in a new container, are not restored. With the previous inherited-font text-node rendering the font, width and find checks fail |
 | `reload-restore` | after a masked send the tab's vault is in `chrome.storage.session` under `vault:<tab>:<origin>` (never in `storage.local`) and the content script's own world cannot read that area; after `page.reload()` the fixture re-renders the conversation (kept in the page's `sessionStorage`, like an SPA refetching history) and the reply shows the original email again while page `innerText` still reads the placeholder; another tab with the same placeholder does not restore it; closing the tab removes its vault |
 | `blocked-site` | a navigation to a site with the navigation block rule `src/background/dnr.ts` installs for `blockedSites: ["gemini"]` is refused (`ERR_BLOCKED_BY_CLIENT`, nothing reaches the site) and the worker opens `blocked.html` in the tab, which loads its `ui.css` and `popup.js` and names the site. `blocked.html` is not web accessible: a web page cannot load it by the extension id while the extension's own page can (control). The rule is installed from the worker (managed storage cannot be written from a test) after the worker's start-up policy load; the policy-to-rule mapping is unit-tested |
+| `custom-site` | in a managed deployment (below) with `customSites` for `https://ai.internal.example` and access granted to that host: the worker registers `content.js` for exactly that origin (`chrome.scripting`), the options-page status reports it granted and active, a click on the portal's own button (recognised only through the policy's `sendButtonSelectors`) sends placeholders only, and the reply in its `.corp-answer` block (only the policy's `responseSelectors`) shows the original email to the user while page `innerText` keeps the placeholder. With the policy's send/response selectors removed the scenario fails (checked when it was written) |
+| `shadow-ai` | in the same managed deployment with `shadowAi: block-unsanctioned` (the eight built-in sites sanctioned) and access granted to `https://poe.com`: the worker installs a navigation block rule for poe.com and none for sanctioned services; a sanctioned site (Perplexity) opens; a navigation to `https://poe.com/chat/...` is refused (`ERR_BLOCKED_BY_CLIENT`, nothing reaches the fixture served there) and lands on `blocked.html?service=poe` naming "Poe"; the counts show poe blocked and perplexity visited; origins still missing for other catalogued services are reported; `storage.local` holds ids and counts only (no URL, host or path) |
+
+**Managed deployment (`lib/managed-deployment.mjs`).** Two things cannot be done from
+a test in Chromium: writing `chrome.storage.managed` (the CDP Extensions domain refuses
+it as a read-only store) and accepting `chrome.permissions.request`'s native prompt
+(browser UI with no automation switch). The `custom-site` and `shadow-ai` scenarios
+therefore launch a second browser with a copy of the build in which `background.js`
+starts with a prelude answering `chrome.storage.managed.get` with the scenario's policy,
+and the origins a user would grant are listed in `host_permissions` (for the browser a
+granted optional host permission and a manifest host permission are the same active
+permission). Everything else is the product build byte for byte; the options-page grant
+flow itself is covered by `ui-ai-access.test.ts`.
 
 Test data (`lib/data.mjs`) is synthetic and checksum-valid; TCKN and IBAN are
 re-verified at import time. Scenarios whose site is not in the manifest's
@@ -134,7 +151,9 @@ assertions can both pass and fail — independent of the product build.
 
 - `chrome.storage.managed` cannot be written from a test; managed-policy locking
   is covered by the background unit tests, the popup scenario only checks that
-  nothing is locked without a managed policy.
+  nothing is locked without a managed policy. The `custom-site` and `shadow-ai`
+  scenarios use the managed-deployment copy described above for their policy and
+  host-access grant.
 - Chromium only; the Firefox build is not driven here.
 - Fixtures model the product DOM targeted by `src/sites/*.ts`; they do not track
   live product markup changes.

@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Corp GPT (E2E fixture: company-internal AI portal)</title>
+<style>
+	body { font-family: sans-serif; margin: 0; }
+	#corp-thread { min-height: 200px; padding: 16px; }
+	.corp-bar { display: flex; gap: 8px; padding: 16px; }
+	#corp-composer { flex: 1; min-height: 40px; }
+</style>
+</head>
+<body>
+<!--
+	Markup no built-in or generic Browser Guard selector recognises as a send button or an
+	assistant response: the send control is a plain button with no submit type or "send"
+	label, and replies are .corp-answer blocks. Masking on click and local restore therefore
+	work only through the administrator's customSites selectors.
+-->
+<div id="corp-thread"></div>
+<div class="corp-bar">
+	<textarea id="corp-composer" placeholder="Ask Corp GPT" aria-label="Question"></textarea>
+	<button type="button" class="corp-send" title="Ask">Go</button>
+</div>
+<script src="/__fixture__/kit.js"></script>
+<script>
+	FixtureChat.init({
+		site: "custom",
+		kind: "textarea",
+		editor: "#corp-composer",
+		send: ".corp-send",
+		thread: "#corp-thread",
+		endpoint: "/api/v1/generate",
+		renderUser(text) {
+			const q = document.createElement("div");
+			q.className = "corp-question";
+			q.textContent = text;
+			return q;
+		},
+		renderAssistant() {
+			const root = document.createElement("div");
+			root.className = "corp-answer";
+			const body = document.createElement("div");
+			root.appendChild(body);
+			return { root, body };
+		},
+	});
+</script>
+</body>
+</html>

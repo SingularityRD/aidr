@@ -51,7 +51,10 @@ Compose veya Kubernetes kurulumu ve air-gapped (internetten yalıtılmış) kuru
    - [Operatör yönetimi (operator-admin)](#operatör-yönetimi-operator-admin)
 7. [Telemetri ve telemetrinin gizliliği](#7-telemetri-ve-telemetrinin-gizliliği)
 8. [Denetim dışa aktarımı ve SIEM teslimatı](#8-denetim-dışa-aktarımı-ve-siem-teslimatı)
+   - [Denetim dışa aktarımı (CSV ve JSON)](#denetim-dışa-aktarımı-csv-ve-json)
+   - [SIEM teslimatı](#siem-teslimatı)
    - [Uyum kanıt raporu](#uyum-kanıt-raporu)
+   - [Alarm entegrasyonları: Slack, Teams, imzalı webhook ve e-posta](#alarm-entegrasyonları-slack-teams-imzalı-webhook-ve-e-posta)
 9. [Saklama, yasal saklama ve offboarding](#9-saklama-yasal-saklama-ve-offboarding)
 10. [Yedekleme ve geri yükleme tatbikatları](#10-yedekleme-ve-geri-yükleme-tatbikatları)
 11. [Sistem gözlemi ve alarmlar](#11-sistem-gözlemi-ve-alarmlar)
@@ -131,7 +134,7 @@ belirli bir hareketsizlik süresinden sonra tarayıcıda sonlanır. Rotalar
 | `/incidents` | Incidents | Engellenen ve onay bekleyen kararlar, kanıt zinciri | [Olası olaylar](#olası-olaylar-ve-kanıt-zinciri) |
 | `/privacy-guard` | Browser Privacy | Browser Guard sayımları ve tarayıcı kaydı | [Tarayıcı gizliliği](#tarayıcı-gizliliği-browser-privacy) |
 | `/autosecops` | AutoSecOps | AutoSecOps entegrasyonundan çalışma zamanı filo görünümü | [AutoSecOps](#autosecops-görünümü-ve-müdahale-playbookları) |
-| `/settings` | Settings | Çalışma alanı adı, saklama süresi, kapatma, MFA durumu, tema | [Ayarlar](#çalışma-alanı-ayarları-ad-saklama-süresi-kapatma) |
+| `/settings` | Settings | Çalışma alanı adı, saklama süresi, kapatma, alarm bildirimleri, MFA durumu, tema | [Ayarlar](#çalışma-alanı-ayarları-ad-saklama-süresi-kapatma), [Alarm entegrasyonları](#alarm-entegrasyonları-slack-teams-imzalı-webhook-ve-e-posta) |
 | `/team` | Team | Üyeler, roller, davetler, ekip denetimi ve dışa aktarım | [Ekip](#ekip-roller-ve-davetler) |
 | `/scim` | Directory provisioning (yalnızca sahipler) | SCIM kimlik bilgileri ve grup-rol eşlemeleri | [SCIM](#scim-dizin-senkronizasyonu) |
 | `/policies` | Policies (politika düzenleyebilen roller) | Ekip politikası, çalışma zamanı politikası, dağıtım, DLP düzenleyicisi | [Politikalar](#ekip-politikası-ve-çalışma-zamanı-politikası) |
@@ -1338,6 +1341,68 @@ bilinçli olarak dışarıda bırakılır. Veri akışı matrisi, açık `unknow
 kanıtlamadığı için [docs/compliance-report.md](../../../compliance-report.md) belgesine
 bakın.
 
+### Alarm entegrasyonları: Slack, Teams, imzalı webhook ve e-posta
+
+**Ne yapar.** **Ayarlar → Bildirimler** (Settings → Notifications) altında çalışma alanı
+sahipleri ve yöneticileri gerçek zamanlı alarmları **Slack**'e (incoming webhook, Block Kit
+mesajı), **Microsoft Teams**'e (workflow webhook, Adaptive Card), **imzalı bir HTTPS
+webhook**'a (JSON şeması `aidr.notification.v1`) veya **e-posta** ile (1–10 alıcı)
+gönderir. Her kanal kendi olaylarını seçer: en az belirli bir önem derecesindeki yeni
+olaylar (incident), kritik çalışma zamanı engellemeleri (deny), bant dışı onay bekleyen
+eylemler ve Browser Guard'ın engellediği istemlerdeki ani artışlar (örneğin 15 dakikada
+10 engellenen gönderim).
+
+**Neden önemli.** Engellenen bir veri sızdırma girişimi veya bir onay talebi ancak zamanında
+görülürse işe yarar. SIEM'i olmayan ya da gece kimsenin izlemediği bir SIEM kullanan ekipler
+de alarmı zaten çalıştıkları yerde alır.
+
+**Nasıl çalışır.** Olay ve alarmı **aynı veritabanı işleminde** (transaction) yazılır:
+telemetri tablosundaki bir `AFTER INSERT` tetikleyicisi, eşleşen her kanal için bir teslimat
+kaydını kuyruğa alır (transactional outbox); böylece alarm yalnızca olay saklandıysa oluşur.
+Her dakika çalışan bir dağıtıcı (dispatcher) zamanı gelen teslimatları kiralar ve 10 sn
+zaman aşımı, **üstel geri çekilme** (30 sn'den 1 saate kadar 8 deneme) ve sabit bir
+**idempotency anahtarı** (teslimat kimliği) ile gönderir. Genel webhook'lar
+`X-AIDR-Signature: t=<ts>,v1=<HMAC-SHA256>` başlığıyla imzalanır; Node.js ve Python doğrulama
+örnekleri [bildirim sözleşmesinde](../../../contracts/notifications.md) yer alır. Alarmlar
+yalnızca **kimlikler, önem derecesi, kategori ve sayılar** ile konsola bir derin bağlantı
+taşır; istem, komut, dosya yolu veya eşleşen değer asla içermez. Hedefler **yalnızca
+yazılabilir**dir: bekleyen veride şifrelenir (AES-256-GCM, tenant ve kanala bağlı) ve bir
+daha gösterilmez; konsol yalnızca ana makine adını ve kısa bir özeti gösterir. Her
+gönderimden önce webhook ana makinesi çözümlenir; özel, link-local veya bulut metadata
+adresleri reddedilir (**SSRF koruması**). Slack ve Teams URL'leri sağlayıcının webhook
+ana makinelerinde olmalıdır ve yönlendirmeler asla izlenmez. Her değişiklik ve test
+gönderimi MFA (AAL2) gerektirir, hız sınırına tabidir ve denetim kaydına yazılır.
+
+**Nasıl kullanılır.** Ayarlar → Bildirimler → **Add a channel**: türü seçin, webhook
+URL'sini yapıştırın (imzalı webhook için **Generate** ile gizli anahtar üretip alıcınıza
+kopyalayın), olayları seçin ve kaydedin. **Send test** alıcının gerçek yanıtını gösterir;
+daha sonra **Disable**, **Edit events** veya **Delete** kullanılabilir. **Recent
+deliveries** her denemeyi durum ve hata koduyla listeler. Operatör dağıtıcıyı bir kez
+zamanlar: Supabase Cloud'da pg_cron, Compose'da `install-systemd.sh --with-notifications`,
+Helm'de `notifications.dispatcher.enabled=true` (bkz.
+[kontrol düzlemi](../../../control-plane.md#alert-integrations-slack-teams-webhooks-e-mail)).
+
+**Örnek.** Bir Claude Code ajanı `~/.aws/credentials` dosyasını yüklemeye çalışır; bağlayıcı
+kritik bir kuralla engeller. Bir dakika içinde SOC Slack kanalında kural kimliği, ajan
+kimliği ve **Open in AIDR** düğmesiyle "Critical agent action blocked" görünür; nöbetçi
+webhook aynı alarmı alır, imzayı doğrular ve teslimat kimliğine göre bir kayıt açar.
+
+**Kapsam.**
+
+| Plan | Dağıtım | Platform / işletim sistemi |
+| --- | --- | --- |
+| Tüm planlar (panel) | Bulut (pg_cron + pg_net), On-prem Compose (systemd zamanlayıcı), Kubernetes (CronJob), Air-gapped (yalnızca iç webhook veya posta aktarıcısı) | Web konsolu; alıcılar functions çalışma ortamından erişilebilir olmalıdır |
+
+**Sınırlamalar.** Teslimat tam olarak bir kez değil, en az bir kezdir; alıcılar teslimat
+kimliğine göre yinelenenleri ayıklamalıdır. Gecikme dağıtıcı zamanlamasına bağlı olarak en
+fazla yaklaşık bir dakikadır; konsoldaki test gönderimi anında yapılır. Her kanal dakikada
+en fazla 30 kuyruğa alınmış alarmla sınırlıdır. `agent.offline` alarmı, özet/toplu
+gönderim, kullanıcı bazlı tercih ve webhook alıcılarına mTLS yoktur. E-posta için bir posta
+sağlayıcısı yapılandırılmış olmalıdır. DNS denetimi ile bağlantı ayrı ayrı çözümlenir;
+on-prem'de bir çıkış (egress) izin listesi veya proxy ile birlikte kullanın. Hedefler
+yalnızca yazılabilir olduğundan şifreleme anahtarını döndürmek hedeflerin yeniden
+girilmesini gerektirir.
+
 ---
 
 ## 9. Saklama, yasal saklama ve offboarding
@@ -1874,6 +1939,7 @@ telemetri planlama modeli. Bu varsayımları gerçek müşteri verisiyle değiş
 | Davet e-postası | - | E-posta sağlayıcısı yapılandırılmışsa | Sağlayıcıya çıkış gerekir; yoksa manuel bağlantı | Compose ile aynı | Manuel bağlantı |
 | Denetim dışa aktarımı (CSV/JSON) | Yerel JSONL denetim günlüğü | Evet | Evet | Evet | Evet |
 | SIEM teslimatı | - | Barındırılan hizmette listelenmiş | Evet (systemd zamanlayıcı) | Henüz CronJob yok | Evet (iç SIEM) |
+| Alarm entegrasyonları (Slack, Teams, webhook, e-posta) | - | Evet (pg_cron dağıtıcı) | Evet (systemd zamanlayıcı) | Evet (CronJob, isteğe bağlı) | Yalnızca iç webhook veya posta aktarıcısı |
 | Kartla ödeme (Stripe) | - | Yalnızca self-service açıksa | - | - | - |
 | Fatura ve operatör lisansı | - | Evet | Evet | Evet | Evet |
 | İmzalı çevrimdışı lisans | - | - | Evet | Evet | Evet |
@@ -1895,6 +1961,6 @@ telemetri planlama modeli. Bu varsayımları gerçek müşteri verisiyle değiş
 - [Lisanslama](../../../operations/licensing.md), [operatör yönetimi](../../../operations/operator-admin.md), [kabul operatörleri](../../../operations/admission-operators.md)
 - [Yükseltme runbook'u](../../../../deploy/UPGRADE.md), [yedekleme runbook'u](../../../../deploy/backup/README.md), [izleme](../../../../deploy/monitoring/README.md), [zamanlanmış bakım](../../../../deploy/maintenance/README.md), [giriş ve TLS](../../../../deploy/ingress/README.md)
 - [Yapay Zekâ Güvenlik Duruşu](../../../ai-security-posture.md), [tehdit istihbaratı senkronizasyonu ve air-gapped güncellemeler](../../../operations/threat-sync.md)
-- [Gizlilik ve telemetri veri akışı](../../../privacy.md), [gizlilik telemetrisi sözleşmesi](../../../contracts/privacy-telemetry.md), [cihaz yetkilendirmesi](../../../device-auth.md)
+- [Gizlilik ve telemetri veri akışı](../../../privacy.md), [gizlilik telemetrisi sözleşmesi](../../../contracts/privacy-telemetry.md), [alarm bildirimi sözleşmesi](../../../contracts/notifications.md), [cihaz yetkilendirmesi](../../../device-auth.md)
 - [Müdahale playbook'ları](../../../operations/response-playbooks.md), [kurtarma kodları](../../../security/recovery-codes.md)
 - [Ürün genel bakışı](../../overview.md)

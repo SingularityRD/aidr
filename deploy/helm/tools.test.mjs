@@ -162,6 +162,9 @@ test("generate-secrets writes strong, private Kubernetes Secrets without printin
 	assert.equal(signingKey.asymmetricKeyType, "ed25519");
 	assert.equal(Buffer.from(env.AIDR_PACK_MASTER_KEY_B64, "base64").length, 32);
 	assert.ok(Buffer.byteLength(env.AIDR_DEVICE_START_INGRESS_SECRET) >= 32);
+	assert.match(env.AIDR_NOTIFICATION_ENCRYPTION_KEYS, /^k1:[A-Za-z0-9+/]{43}=$/);
+	assert.equal(Buffer.from(env.AIDR_NOTIFICATION_ENCRYPTION_KEYS.slice(3), "base64").length, 32);
+	assert.match(env.AIDR_NOTIFICATION_DISPATCH_TOKEN, /^[A-Za-z0-9_-]{43}$/);
 	const delegation = createPrivateKey({ key: Buffer.from(env.AIDR_DELEGATION_SIGNING_PRIVATE_KEY_PKCS8_B64, "base64"), format: "der", type: "pkcs8" });
 	const delegationPublic = createPublicKey({ key: Buffer.from(env.AIDR_DELEGATION_SIGNING_PUBLIC_KEY_SPKI_B64, "base64"), format: "der", type: "spki" });
 	assert.ok(verify(null, Buffer.from("probe"), delegationPublic, sign(null, Buffer.from("probe"), delegation)));

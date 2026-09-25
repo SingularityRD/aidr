@@ -1,4 +1,4 @@
-import { scanModelOutput } from "@singularityrd/aidr-core";
+import { recordToolOutputFlow, scanModelOutput } from "@singularityrd/aidr-core";
 
 export const MAX_TOOL_OUTPUT_BYTES = 256 * 1024;
 
@@ -527,6 +527,37 @@ export function reportOpenCodeOutputCoverage(logger: StructuredLogger): void {
 	);
 }
 
+/**
+ * Record what a flagged tool output carried (secrets, injection payloads) in the
+ * session's toxic-flow record, so the session's next calls are judged with it.
+ * The output itself is still quarantined; this never throws.
+ */
+async function feedSessionFlow(
+	input: OpenCodeAfterToolInput,
+	findings: ReturnType<typeof scanModelOutput>,
+	logger: StructuredLogger,
+): Promise<void> {
+	const args = input.args;
+	const result = await recordToolOutputFlow(
+		{
+			sessionId: input.sessionID,
+			toolName: input.tool,
+			toolInput:
+				args && typeof args === "object" && !Array.isArray(args)
+					? (args as Record<string, unknown>)
+					: undefined,
+			findings,
+		},
+		{ agentRuntime: "opencode" },
+	);
+	if (result === "unavailable") {
+		logger.warn(
+			{ event: "aidr.toxic_flow.feed_unavailable", connector: "opencode", tool: input.tool },
+			"Singularity AIDR could not record tool-output taint for session toxic-flow detection",
+		);
+	}
+}
+
 export function createOutputHandlers(logger: StructuredLogger) {
 	const afterToolUse = async (
 		input: OpenCodeAfterToolInput,
@@ -627,6 +658,7 @@ export function createOutputHandlers(logger: StructuredLogger) {
 				).values(),
 			];
 			if (findings.length > 0) {
+				await feedSessionFlow(input, findings, logger);
 				const ruleIds = findings.map((finding) => finding.ruleId).sort();
 				quarantineInspectedOutput(
 					output,

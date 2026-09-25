@@ -66,6 +66,35 @@
             "deepseek"
           ],
           "disabledSites": [],
+          "customSites": [
+            {
+              "id": "acme-gpt",
+              "label": "ACME GPT",
+              "hosts": [
+                "gpt.acme.example"
+              ],
+              "editorSelectors": [
+                "textarea#prompt"
+              ],
+              "sendButtonSelectors": [
+                "button.send"
+              ],
+              "responseSelectors": [
+                ".answer"
+              ]
+            }
+          ],
+          "shadowAi": {
+            "mode": "block-unsanctioned",
+            "sanctioned": [
+              "chatgpt",
+              "copilot",
+              "gemini"
+            ],
+            "blocked": [
+              "deepseek"
+            ]
+          },
           "allowUserPause": false,
           "allowSendAnyway": false,
           "maskPaste": true,

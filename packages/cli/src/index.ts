@@ -2,6 +2,7 @@
 
 import { VERSION } from "@singularityrd/aidr-core";
 import { Command } from "commander";
+import aibomCommand from "./commands/aibom.js";
 import {
 	allowlistAddCommand,
 	allowlistListCommand,
@@ -22,6 +23,7 @@ import doctorCommand from "./commands/doctor.js";
 import privacyScanCommand from "./commands/privacy.js";
 import scanCommand from "./commands/scan.js";
 import setupCommand from "./commands/setup.js";
+import simulateCommand from "./commands/simulate.js";
 import statusCommand from "./commands/status.js";
 import uninstallCommand from "./commands/uninstall.js";
 
@@ -115,6 +117,25 @@ privacyProgram
 	.action(privacyScanCommand);
 
 program
+	.command("simulate")
+	.description(
+		"Defensive self-test: feed defanged detection fixtures to the local evaluator and report what AIDR detects (never executes anything)",
+	)
+	.option(
+		"--suite <names>",
+		"Comma-separated categories to run (injection, exfiltration, destructive, encoding, supply-chain, mcp, self-defense, privacy)",
+	)
+	.option("--sensitivity <level>", "Override sensitivity: paranoid, balanced or relaxed")
+	.option("--format <format>", "Output format: table, json or html", "table")
+	.option("--output <file>", "Write the report to a file instead of stdout")
+	.option("--min-score <n>", "Exit non-zero when the overall detection score is below N (0-100)")
+	.option(
+		"--connector <name>",
+		"Drive a built connector entry point instead of the in-process evaluator (claude-code, codex, cursor, vscode)",
+	)
+	.action(simulateCommand);
+
+program
 	.command("collect")
 	.description("Continuously collect tenant-scoped AI infrastructure inventory")
 	.requiredOption("--tenant <id>", "Tenant identifier recorded in the inventory")
@@ -152,6 +173,21 @@ program
 		"Send server names, risk categories and digests (no paths, endpoints or arguments) to the managed control plane",
 	)
 	.action(discoverCommand);
+
+program
+	.command("aibom")
+	.description(
+		"Export an AI Bill of Materials (CycloneDX 1.6): agents, MCP servers, AI packages, models, plugins and known vulnerabilities; secrets are redacted",
+	)
+	.option("--format <format>", "cyclonedx-json or json (AIDR inventory)", "cyclonedx-json")
+	.option("-o, --output <file>", "Write to a new file (0600) instead of stdout")
+	.option("--path <project>", "Project directory whose manifests and MCP configs are read", ".")
+	.option("--config <paths...>", "Inspect explicit MCP configuration paths instead of the defaults")
+	.option(
+		"--scan-report <path>",
+		"Include a saved `aidr scan --save-report` result (defaults to the configured AI infrastructure report)",
+	)
+	.action(aibomCommand);
 
 program
 	.command("uninstall")

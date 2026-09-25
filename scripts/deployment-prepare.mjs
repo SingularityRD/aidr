@@ -396,6 +396,11 @@ const functionEnv = {
 	AIDR_APPROVAL_SIGNING_WRAP_KEY_B64: randomBytes(32).toString("base64"),
 	AIDR_BILLING_PROVIDER: "",
 	AIDR_DEVICE_START_INGRESS_SECRET: deviceIngressSecret,
+	// Alert integrations: channel destinations are encrypted with this keyring
+	// (`<key id>:<base64 32 bytes>`, first entry encrypts) and the dispatcher
+	// timer authenticates with the dedicated token (docs/control-plane.md).
+	AIDR_NOTIFICATION_ENCRYPTION_KEYS: `k1:${randomBytes(32).toString("base64")}`,
+	AIDR_NOTIFICATION_DISPATCH_TOKEN: randomBytes(32).toString("base64url"),
 };
 for (const service of Object.values(compose.services)) {
 	delete service.container_name; delete service.ports;

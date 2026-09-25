@@ -6,7 +6,8 @@
  * whole surface the worker touches, which also keeps the in-memory test fake honest.
  *
  * Storage layout:
- *   local   userSettings, installationId, telemetryQueue, telemetryState
+ *   local   userSettings, installationId, telemetryQueue, telemetryState,
+ *           shadowAiUsage (per-day visit/block counts per catalog service id; no URLs)
  *   session guardStats, pausedUntil, `vault:<tabId>:<origin>` (per-tab placeholder vault,
  *           see ./vault-store.ts; TRUSTED_CONTEXTS only, so page scripts cannot read it)
  *   managed administrator policy keys (static/managed_schema.json)
@@ -98,11 +99,36 @@ export interface ChromeApi {
 		updateDynamicRules(options: { addRules?: DnrRule[]; removeRuleIds?: number[] }): Promise<void>;
 		getDynamicRules?(): Promise<DnrRule[]>;
 	};
-	/** Optional-permission grants (the options page requests `nativeMessaging`). */
+	/**
+	 * Optional-permission grants: the options page requests `nativeMessaging` and host
+	 * access (`origins`) for Shadow AI and administrator-configured custom sites.
+	 */
 	permissions?: {
-		onAdded?: ChromeEvent<(permissions: { permissions?: string[] }) => void>;
-		onRemoved?: ChromeEvent<(permissions: { permissions?: string[] }) => void>;
+		contains?(permissions: { permissions?: string[]; origins?: string[] }): Promise<boolean>;
+		onAdded?: ChromeEvent<PermissionsListener>;
+		onRemoved?: ChromeEvent<PermissionsListener>;
 	};
+	/** Dynamic content scripts for custom sites (`scripting` permission). */
+	scripting?: {
+		registerContentScripts(scripts: RegisteredContentScript[]): Promise<void>;
+		unregisterContentScripts(filter?: { ids?: string[] }): Promise<void>;
+		getRegisteredContentScripts(filter?: { ids?: string[] }): Promise<RegisteredContentScript[]>;
+	};
+}
+
+export type PermissionsListener = (permissions: {
+	permissions?: string[];
+	origins?: string[];
+}) => void;
+
+export interface RegisteredContentScript {
+	id: string;
+	matches?: string[];
+	js?: string[];
+	css?: string[];
+	runAt?: "document_start" | "document_end" | "document_idle";
+	allFrames?: boolean;
+	persistAcrossSessions?: boolean;
 }
 
 /** The global `chrome` namespace, when running inside an extension. */
@@ -118,6 +144,7 @@ export const STORAGE_KEYS = Object.freeze({
 	telemetryState: "telemetryState",
 	stats: "guardStats",
 	pausedUntil: "pausedUntil",
+	shadowAiUsage: "shadowAiUsage",
 });
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;

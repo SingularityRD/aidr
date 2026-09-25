@@ -2,11 +2,13 @@
  * Options page renderer: a pure function from OptionsState to a DOM subtree.
  * Interactive elements carry `data-action` attributes; options-app.ts wires them.
  */
+import { serviceById } from "../sites/catalog.js";
 import {
 	ENTITY_TYPES,
 	type EntityType,
 	type GuardPolicy,
 	type NativeHostStatus,
+	type SiteAccessStatus,
 } from "../types.js";
 import { h, icon } from "./dom.js";
 import { entityLabel, formatNumber, msg, type Translate } from "./i18n.js";
@@ -52,6 +54,10 @@ export type OptionsState =
 			readonly version: string;
 			readonly draft: OptionsDraft;
 			readonly native: NativeState;
+			/** Host access for Shadow AI / custom sites (null: not loaded or unavailable). */
+			readonly access?: SiteAccessStatus | null;
+			/** Clock for the usage window (defaults to the render time). */
+			readonly now?: number;
 	  };
 
 export function emptyDraft(policy: GuardPolicy | null): OptionsDraft {
@@ -69,6 +75,7 @@ const OPTIONS_SECTIONS = [
 	{ id: "protection", titleKey: msg("section_protection") },
 	{ id: "terms", titleKey: msg("section_terms") },
 	{ id: "sites", titleKey: msg("section_sites") },
+	{ id: "ai-access", titleKey: msg("section_ai_access") },
 	{ id: "organization", titleKey: msg("section_organization") },
 	{ id: "language", titleKey: msg("section_language") },
 	{ id: "about", titleKey: msg("section_about") },
@@ -410,6 +417,194 @@ function renderSites(doc: Document, policy: GuardPolicy, t: Translate): HTMLElem
 	]);
 }
 
+/** Whether the organisation configured Shadow AI control or custom sites (section shown). */
+export function hasAiAccessPolicy(policy: GuardPolicy): boolean {
+	const shadow = policy.shadowAi;
+	return (
+		(shadow !== undefined && (shadow.mode !== "off" || shadow.blocked.length > 0)) ||
+		(policy.customSites?.length ?? 0) > 0
+	);
+}
+
+const SHADOW_MODE_KEYS = {
+	off: msg("shadow_mode_off"),
+	monitor: msg("shadow_mode_monitor"),
+	"block-unsanctioned": msg("shadow_mode_block"),
+} as const;
+
+/** Visits per service over the last `days` UTC days, busiest first. */
+export function usageTotals(
+	usage: SiteAccessStatus["shadowAi"]["usage"],
+	now: number,
+	days = 7,
+): Array<{ serviceId: string; visited: number; blocked: number }> {
+	const oldest = new Date(now - (days - 1) * 86_400_000).toISOString().slice(0, 10);
+	const totals = new Map<string, { serviceId: string; visited: number; blocked: number }>();
+	for (const row of usage) {
+		if (row.day < oldest) continue;
+		const entry = totals.get(row.serviceId) ?? { serviceId: row.serviceId, visited: 0, blocked: 0 };
+		entry.visited += row.visited;
+		entry.blocked += row.blocked;
+		totals.set(row.serviceId, entry);
+	}
+	return [...totals.values()].sort(
+		(a, b) =>
+			b.visited + b.blocked - (a.visited + a.blocked) || a.serviceId.localeCompare(b.serviceId),
+	);
+}
+
+function renderShadowAi(
+	doc: Document,
+	policy: GuardPolicy,
+	access: SiteAccessStatus | null,
+	t: Translate,
+	locale: string,
+	now: number,
+): HTMLElement {
+	const shadow = policy.shadowAi;
+	const sanctioned = shadow.sanctioned.map((id) => serviceById(id)?.name).filter(Boolean);
+	const status = access?.shadowAi ?? null;
+	const missing = status?.missingOrigins.length ?? 0;
+	const totals = status ? usageTotals(status.usage, now).slice(0, 10) : [];
+	return h(doc, "div", { className: "shadow-ai", id: "shadow-ai" }, [
+		h(doc, "div", { className: "subsection__header" }, [
+			h(doc, "h3", { className: "subsection__title" }, [t("shadow_title")]),
+		]),
+		h(doc, "p", { className: "section__intro", id: "shadow-mode" }, [
+			t(SHADOW_MODE_KEYS[shadow.mode]),
+		]),
+		sanctioned.length > 0
+			? h(doc, "p", { className: "field__hint", id: "shadow-sanctioned" }, [
+					t("shadow_sanctioned", sanctioned.join(", ")),
+				])
+			: null,
+		status && status.blocked.length > 0
+			? h(doc, "p", { className: "field__hint", id: "shadow-blocked" }, [
+					t("shadow_blocked_count", formatNumber(locale, status.blocked.length)),
+				])
+			: null,
+		status === null
+			? h(doc, "p", { className: "field__hint", id: "shadow-access" }, [t("access_unknown")])
+			: missing > 0
+				? h(doc, "div", { className: "access access--missing", id: "shadow-access" }, [
+						h(doc, "p", { className: "field__hint" }, [
+							t("shadow_access_missing", formatNumber(locale, status.origins.length)),
+						]),
+						h(
+							doc,
+							"button",
+							{
+								type: "button",
+								className: "btn btn--secondary",
+								id: "shadow-grant",
+								"data-action": "grant-shadow-access",
+							},
+							[t("access_grant_button")],
+						),
+					])
+				: h(doc, "p", { className: "field__hint", id: "shadow-access" }, [
+						t("shadow_access_granted"),
+					]),
+		shadow.mode === "off"
+			? null
+			: h(doc, "div", { className: "table-wrap" }, [
+					h(doc, "table", { className: "terms", id: "shadow-usage" }, [
+						h(doc, "caption", {}, [t("shadow_usage_title")]),
+						h(doc, "thead", {}, [
+							h(doc, "tr", {}, [
+								h(doc, "th", { scope: "col" }, [t("shadow_usage_service")]),
+								h(doc, "th", { scope: "col" }, [t("shadow_usage_visits")]),
+								h(doc, "th", { scope: "col" }, [t("shadow_usage_blocked")]),
+							]),
+						]),
+						h(
+							doc,
+							"tbody",
+							{},
+							totals.length > 0
+								? totals.map((row) =>
+										h(doc, "tr", {}, [
+											h(doc, "td", {}, [serviceById(row.serviceId)?.name ?? row.serviceId]),
+											h(doc, "td", {}, [formatNumber(locale, row.visited)]),
+											h(doc, "td", {}, [formatNumber(locale, row.blocked)]),
+										]),
+									)
+								: [
+										h(doc, "tr", {}, [
+											h(doc, "td", { colspan: 3, className: "terms__empty" }, [
+												t("shadow_usage_empty"),
+											]),
+										]),
+									],
+						),
+					]),
+				]),
+	]);
+}
+
+function renderCustomSites(
+	doc: Document,
+	policy: GuardPolicy,
+	access: SiteAccessStatus | null,
+	t: Translate,
+): HTMLElement {
+	return h(doc, "div", { className: "custom-sites", id: "custom-sites" }, [
+		h(doc, "div", { className: "subsection__header" }, [
+			h(doc, "h3", { className: "subsection__title" }, [t("custom_title")]),
+		]),
+		h(doc, "p", { className: "section__intro" }, [t("custom_intro")]),
+		h(
+			doc,
+			"ul",
+			{ className: "custom-sites__list" },
+			policy.customSites.map((site) => {
+				const status = access?.customSites.find((entry) => entry.id === site.id);
+				const granted = status?.granted === true;
+				return h(doc, "li", { className: "custom-site", id: `custom-site-${site.id}` }, [
+					h(doc, "div", { className: "custom-site__text" }, [
+						h(doc, "strong", {}, [site.label]),
+						h(doc, "span", { className: "field__hint" }, [site.hosts.join(", ")]),
+					]),
+					h(doc, "span", { className: granted ? "tag" : "tag tag--danger" }, [
+						t(granted ? msg("custom_status_active") : msg("custom_status_missing")),
+					]),
+					!granted && status
+						? h(
+								doc,
+								"button",
+								{
+									type: "button",
+									className: "btn btn--secondary",
+									id: `custom-grant-${site.id}`,
+									"data-action": "grant-custom-access",
+									"data-site-id": site.id,
+								},
+								[t("access_grant_button")],
+							)
+						: null,
+				]);
+			}),
+		),
+	]);
+}
+
+/** Administrator-managed Shadow AI control and internal AI sites (read-only + access grants). */
+function renderAiAccess(
+	doc: Document,
+	policy: GuardPolicy,
+	access: SiteAccessStatus | null,
+	t: Translate,
+	locale: string,
+	now: number,
+): HTMLElement {
+	const shadow = policy.shadowAi;
+	const showShadow = shadow.mode !== "off" || shadow.blocked.length > 0;
+	return section(doc, "ai-access", t, { intro: t("ai_access_intro"), locked: true }, [
+		showShadow ? renderShadowAi(doc, policy, access, t, locale, now) : null,
+		policy.customSites.length > 0 ? renderCustomSites(doc, policy, access, t) : null,
+	]);
+}
+
 function sentFieldsList(doc: Document, t: Translate): HTMLElement {
 	return h(doc, "div", { className: "disclosure" }, [
 		h(doc, "h3", { className: "subsection__title" }, [t("telemetry_sent_title")]),
@@ -636,13 +831,14 @@ export function renderOptions(
 	}
 	const { policy, draft, native } = state;
 	const managed = managedKeysPresent(policy).length > 0;
+	const aiAccess = hasAiAccessPolicy(policy);
 	return h(doc, "div", { className: "options" }, [
 		h(doc, "nav", { className: "toc", "aria-label": t("toc_label") }, [
 			h(
 				doc,
 				"ul",
 				{},
-				OPTIONS_SECTIONS.map((entry) =>
+				OPTIONS_SECTIONS.filter((entry) => entry.id !== "ai-access" || aiAccess).map((entry) =>
 					h(doc, "li", {}, [h(doc, "a", { href: `#${entry.id}` }, [t(entry.titleKey)])]),
 				),
 			),
@@ -656,6 +852,9 @@ export function renderOptions(
 		renderProtection(doc, policy, native, t),
 		renderTerms(doc, policy, draft, t, locale),
 		renderSites(doc, policy, t),
+		aiAccess
+			? renderAiAccess(doc, policy, state.access ?? null, t, locale, state.now ?? Date.now())
+			: null,
 		renderOrganization(doc, policy, draft, t),
 		renderLanguage(doc, policy, t),
 		renderAbout(doc, policy, state.version, t),
