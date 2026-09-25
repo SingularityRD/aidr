@@ -1,6 +1,6 @@
 # Singularity AIDR — Release Readiness Report
 
-> **SUPERSEDED (reviewed 2026-09-24).** This report is a historical narrative of the
+> **SUPERSEDED (reviewed 2026-09-25).** This report is a historical narrative of the
 > 2026-09-10 assessment and the v4 candidate recorded on 2026-09-11/12. Its counts,
 > test results and blocker list are **not** the current state. The current records are:
 >
@@ -15,70 +15,117 @@
 > gates (COM-001..COM-005, COM-010..COM-013, SEC-EXT-001, POV-001, INV-001, CLM-001) are
 > closed with named, candidate-bound evidence.
 
-## Branch delta recorded on 2026-09-24 (`claude/cool-dirac-e44iku`)
+## Branch delta recorded on 2026-09-25 (`claude/cool-dirac-e44iku`)
 
 This section summarises what the branch added and how the records changed. It lists
 local implementation and local test evidence only; no candidate was built, signed or
 installed on a customer host for this review.
 
-**Records after this review.** 88 inventoried capabilities (50 wired, 36 partial,
-0 missing, 2 external), up from 71; every one is `production_accepted: false`. The gap
+**Records after this review.** 90 inventoried capabilities (51 wired, 37 partial,
+0 missing, 2 external), up from 88 on 2026-09-24 with CLI-05 (`aidr privacy scan`) and
+DEP-12 (Kubernetes Helm chart); every one is `production_accepted: false`. The gap
 audit has 60 work packages: 47 technical (45 with local implementation and field
 acceptance still open, 2 still open: T05 behavioural learning and T18 SAML policy
-administration) and 13 commercial/external gates, all open. The backlog has 70 findings:
-62 verified closed locally, 7 blocked on external systems or approvers, 1 in progress
-(AIDR-019 live acceptance). The shipped rule set is 384 rules in 24 files.
+administration) and 13 commercial/external gates, all open. The backlog has 75 findings:
+67 verified closed locally, 7 blocked on external systems or approvers, 1 in progress
+(AIDR-019 live acceptance). The five new findings, AIDR-071 to AIDR-075, record the
+security review fixes below. The shipped rule set is 386 rules in 24 files, and there are
+131 canonical migrations.
 
 **Added on this branch (local implementation; field acceptance open).**
 
 - **Browser Guard** (PRV-01..PRV-06, T47): Chrome/Edge/Firefox MV3 extension with
   reversible masking on 8 AI chat sites plus a generic adapter, paste and file-upload
   sanitisation, exact-data matching, managed policy with deployment examples, counts-only
-  privacy telemetry and a `/privacy-guard` dashboard page. The recorded hermetic Chromium
-  E2E run against simulated site fixtures passed 18 of 19 scenarios. That run used fixtures,
-  so it says nothing about the live sites. Store publication and real MDM rollout have not
-  happened.
+  privacy telemetry and a `/privacy-guard` dashboard page. Since 2026-09-24 the optional
+  native NER host is wired into scans (the options page requests the `nativeMessaging`
+  permission from a user gesture; an unavailable host visibly degrades to rules-only), the
+  per-tab vault survives a reload in `chrome.storage.session`, and `disabledSites` has
+  monitor semantics. The recorded hermetic Chromium E2E run against simulated site
+  fixtures ran 22 scenarios: 21 passed and 1 was an intentional skip. That run used
+  fixtures, so it says nothing about the live sites. Store publication and real MDM
+  rollout have not happened.
 - **AIDR Privacy** `@singularityrd/aidr-privacy` 0.6.0 is shipped as a signed release
   artifact root (`pnpm test:privacy`), and its TR/EN detectors (TC Kimlik, IBAN, TR phone,
-  keys; address/person opt-in) are synced into core DLP with a drift check (DET-13).
-- **DLP and prompt protection** (DET-06, DET-07, DET-14): the output scanner now
+  keys; address/person opt-in) are synced into core DLP with a drift check (DET-13). The
+  new `aidr privacy scan` CLI command (CLI-05) scans a file or stdin with the same
+  detectors and reports types and offsets only, never matched values.
+- **DLP and prompt protection** (DET-06, DET-07, DET-14): the output scanner
   quarantines only on high-precision findings, there is a local-mode DLP policy file,
   Claude Code has `UserPromptSubmit` prompt protection, and DLP redaction goes through
   `updatedInput` (Claude Code) or args rewrite (OpenCode). Other connectors still deny
   instead of redacting.
+- **Security review fixes** (review of 2026-09-24, findings H1–H4, M1–M4 and L1–L6;
+  backlog AIDR-071..AIDR-075). These are local fixes with targeted tests. No independent
+  retest has been done (SEC-EXT-001).
+  - *Operator approval channel* (H1, M3, M4): the approval HMAC key is kept only in the OS
+    vault by default. With no vault, approvals are disabled and asks stay blocked. Single
+    use is anchored in a vault-held consumption ledger, so restoring an old
+    `approvals.json` does not replay an approval. The self-defense rules CLT-SELF-007/008/009
+    are hard denies over a shell-normalised command view. Stored and displayed records
+    escape control and bidi characters. The agent still runs as the same OS user, so this
+    separation relies on vault policy and pattern rules, not process isolation.
+  - *Uninspected input* (H2, L1): tool input past the extractor limits is denied as
+    `input_not_fully_inspected` in the evaluator and the MCP gateway. The gateway also
+    inflates PNG text chunks and PDF FlateDecode streams within bounds.
+  - *Prompt protection* (M1, L3): overlap resolution is now linear. A 7 s internal deadline
+    blocks an unfinished scan when blocking applies, TR PII is scanned, and an incomplete
+    personal-data scan is signalled instead of being treated as clean. DLP-rewritten tool
+    input uses shell-inert tokens and is rechecked by the threat heuristics.
+  - *Tenant and keys* (M2, L4, L5): `posture_findings` and the later tenant tables carry the
+    tenant identity barrier, and a static migration replay enforces it in CI. Browser Guard
+    telemetry can use an ingest-only `browser_guard` API key. A custom licence key registry
+    needs `--allow-custom-license-keys`, and retired keys are time-bounded. Licence
+    enforcement stays operator-side.
+  - *Browser Guard* (H3, H4, L2, L6): restored values are drawn as CSS generated content
+    that page CSS, fonts and `window.find` cannot observe. A placeholder is restored only
+    after the send from this tab that carried it. Non-UTF-8 text uploads are decoded as
+    windows-1254/1252 and scanned. Any managed policy locks the settings that reduce
+    protection, and the block page is no longer web-accessible.
 - **Operator approvals** (RSP-08): an out-of-band, HMAC-signed, single-use approval store
-  and `aidr pending/approve/allowlist/audit/doctor`. No agent-callable approval tool
-  exists. Approval is local to one host and OS user.
+  and `aidr pending/approve/allowlist/audit/doctor`, hardened as described above. No
+  agent-callable approval tool exists. Approval is local to one host and OS user.
 - **Connector parity and hardening** (CON-07, T02): a built-entry-point parity suite
-  across six connectors, new rules CLT-CMD-031, CLT-SELF-007 and 26 skill-scan rules,
-  fail-closed plugin initialisation and argv normalisation. On 2026-09-24 two expectations
-  were not reconciled. The parity DLP redact row still expects a block (25 of 26 cases
-  passed). The OpenClaw integrity-failure test blocks but reports `init_error` (1 of 2
-  cases passed).
+  across six connectors, rules CLT-CMD-031, CLT-SELF-007..009 and 26 skill-scan rules,
+  fail-closed plugin initialisation and argv normalisation. The two expectations left
+  unreconciled on 2026-09-24 are fixed. On 2026-09-25, against rebuilt bundles, the parity
+  suite passed 27 of 27 cases and the OpenClaw and OpenCode init fail-closed suites passed
+  2 of 2 and 3 of 3.
 - **MCP gateway** (MCP-07, T10): tool-call argument evaluation, bounded binary inspection
-  and a deny-by-default policy for server-initiated requests. Forced routing of direct
-  upstream access is still open.
-- **SaaS control plane**: privacy telemetry ingest, plan catalog, pricing and audited
-  Stripe plan admission (BIL-04; list prices are not an approved SKU manifest, COM-001),
-  an operator-admin function (TEN-08), invitation email via an injectable mailer (TEN-03,
-  T20), workspace settings and a closure request (TEN-09), device-poll, waitlist and pack
-  rate limits, a download center and release manifest (DEP-11), and AI security posture
-  with a `/posture` page (INF-04). There are now 129 canonical migrations.
-- **On-prem** (DEP-09, DEP-10, T28/T29): an on-prem bundle with resource profiles, an AIG
-  sidecar behind an egress proxy, air-gap base-image planning, a configuration reference,
-  nginx BYO-certificate TLS with static renewal, vendor-signed offline licences (the public
-  key registry ships empty and fails closed) and offline pack import. **No Helm chart
-  exists in this source tree.** The CI `helm` job calls `pnpm verify:helm`, which is not
-  defined yet.
-- **CI**: new workflow-lint, Node 22/24 core matrix, onprem-deploy, privacy,
-  privacy-rules-drift and browser-guard jobs, plus a `release-browser-guard` workflow.
-  `pnpm lint` exits 0 with 593 warnings (T35).
+  including compressed PNG/PDF text, and a deny-by-default policy for server-initiated
+  requests. Forced routing of direct upstream access is still open.
+- **SaaS control plane**: privacy telemetry ingest with ingest-only keys, plan catalog,
+  pricing and audited Stripe plan admission (BIL-04; list prices are not an approved SKU
+  manifest, COM-001), an operator-admin function (TEN-08), invitation email via an
+  injectable mailer (TEN-03, T20), workspace settings and a closure request (TEN-09),
+  device-poll, waitlist and pack rate limits, a download center and release manifest
+  (DEP-11), and AI security posture with a `/posture` page (INF-04).
+- **On-prem** (DEP-03, DEP-09, DEP-10, DEP-12, T28/T29/T31): an on-prem Compose bundle with
+  resource profiles, an AIG sidecar behind an egress proxy, air-gap base-image planning, a
+  configuration reference, nginx BYO-certificate TLS with static renewal, vendor-signed
+  offline licences (the public key registry ships empty and fails closed) and offline
+  pack import. A **Kubernetes Helm chart** now exists at `deploy/helm/aidr`.
+  `pnpm verify:helm` runs `helm lint --strict`, `helm template` and kubeconform when those
+  tools are installed. The CI `helm` job installs a signature-verified Helm 3.19.0 but not
+  kubeconform, so schema validation is skipped in CI. In this review's local run, 10 of
+  20 checks were skipped because Helm was absent. The chart has not been installed on a
+  live cluster. The self-hosted upgrade is signal-safe. `pnpm verify:upgrade` (43 checks)
+  passes and runs in the onprem-deploy CI job.
+- **CI and code health**: workflow-lint, Node 22/24 core matrix, onprem-deploy, privacy,
+  privacy-rules-drift, browser-guard and helm jobs, plus a `release-browser-guard`
+  workflow. After a code simplification pass, `pnpm lint` exits 0 with 547 warnings, down
+  from 593 (T35).
+- **Product documentation**: a TR/EN product feature guide (`docs/product/features`,
+  rendered to HTML and PDF) and a TR/EN brochure (`docs/sales/brochure`, whose numeric
+  claims are recomputed by `scripts/brochure-facts.test.mjs`). Neither is approved sales
+  material: claim approval (CLM-001) and pricing approval (COM-001) are open.
 
 **Still external (unchanged by this branch).** Real host/OS matrix, IdP/SMTP/MDM, cloud
-and self-hosted production installs, publisher key custody and private registry, SLA
-measurement, independent penetration test (SEC-EXT-001), legal/privacy/pricing approvals
-(COM-001..COM-003), regions (COM-011), private registry (COM-012), named customer PoV
-(POV-001) and claim approval (CLM-001).
+and self-hosted production installs (including a live Kubernetes cluster), publisher key
+custody and signed distribution, SLA measurement, independent
+penetration test (SEC-EXT-001), legal/privacy/pricing approvals (COM-001..COM-003),
+regions (COM-011), private registry (COM-012), named customer PoV (POV-001) and claim
+approval (CLM-001). The decision stays **NO-GO** until these close.
 
 ---
 

@@ -1345,22 +1345,34 @@
           "verifiedBy": "Claude Code integration 30/30 passed; package TypeScript check passed"
         },
         {
-          "claim": "The cross-connector parity suite drives the built entry points of Claude Code, Codex, OpenCode, OpenClaw, Cursor and VS Code with one payload matrix and asserts the same blocked class and threat id; the signed tenant DLP bundle block/ask rows and the untrusted/edited/missing-bundle fail-closed rows pass. The DLP redact row still expects a block and fails because Claude Code now rewrites redacted input, so the suite is not fully green and this is built-bundle evidence, not native host acceptance.",
+          "claim": "The cross-connector parity suite drives the built entry points of Claude Code, Codex, OpenCode, OpenClaw, Cursor and VS Code with one payload matrix and asserts the same blocked class and threat id; the signed tenant DLP bundle block/ask rows and the untrusted/edited/missing-bundle fail-closed rows pass, and the DLP redact row now expects the input-rewriting connectors (Claude Code, OpenCode) to run the redacted input and the others to block. This is built-bundle evidence, not native host acceptance.",
           "evidencePath": "packages/core/src/__tests__/connector-parity.test.ts",
           "command": "pnpm test -- packages/core/src/__tests__/connector-parity.test.ts",
-          "verifiedBy": "2026-09-24 records review: 25/26 passed, 1 failed (dlp-redact-rule via claude-code)"
+          "verifiedBy": "2026-09-25 records review: 27/27 passed against bundles rebuilt from this tree (the 2026-09-24 redact-row failure is reconciled)"
         },
         {
-          "claim": "OpenCode and OpenClaw register a deny-all tool gate when plugin initialisation fails instead of registering no hooks. OpenCode's suite passes; OpenClaw still blocks every call on an integrity failure but reports init_error instead of the expected integrity_bad_signature code, so its suite has one failing case.",
+          "claim": "OpenCode and OpenClaw register a deny-all tool gate when plugin initialisation fails instead of registering no hooks; on an integrity failure OpenClaw blocks every call with the expected reason code.",
           "evidencePath": "packages/opencode/src/__tests__/init-fail-closed.test.ts",
           "command": "pnpm test -- packages/opencode/src/__tests__/init-fail-closed.test.ts packages/openclaw/src/__tests__/init-fail-closed.test.ts",
-          "verifiedBy": "2026-09-24 records review: OpenCode 3/3 passed; OpenClaw 1/2 passed (reason-code mismatch; the gate still blocked)"
+          "verifiedBy": "2026-09-25 records review: OpenCode 3/3 and OpenClaw 2/2 passed (the 2026-09-24 reason-code mismatch is reconciled)"
         },
         {
-          "claim": "The on-prem bundle (resource profiles, restart/log-rotation overlay, AIG sidecar behind a digest-pinned deny-by-default egress proxy) renders a fail-closed AIG compose and a drift-checked configuration reference. No Kubernetes/Helm chart exists in this source tree.",
+          "claim": "The on-prem Compose bundle (resource profiles, restart/log-rotation overlay, AIG sidecar behind a digest-pinned deny-by-default egress proxy) renders a fail-closed AIG compose and a drift-checked configuration reference. It is a single-host bundle; the Kubernetes Helm chart is recorded separately.",
           "evidencePath": "deploy/onprem/README.md",
           "command": "node --test scripts/onprem-aig-compose.test.mjs scripts/onprem-config-reference.test.mjs",
-          "verifiedBy": "2026-09-24 records review: 8/8 node tests passed; no customer-host install"
+          "verifiedBy": "2026-09-25 records review: 8/8 node tests passed; no customer-host install"
+        },
+        {
+          "claim": "A Kubernetes Helm chart (deploy/helm/aidr) deploys the self-hosted control plane with operator-created Secrets only, fails rendering on missing secrets, non-HTTPS origins, missing TLS, latest tags and incomplete AIG input, and runs hardened pods behind a default-deny NetworkPolicy. pnpm verify:helm runs helm lint --strict and helm template on three value sets and kubeconform against the Kubernetes 1.25/1.30 schemas when those binaries are present; the CI helm job installs signature-verified Helm 3.19.0 but not kubeconform. The chart has not been installed on a live cluster.",
+          "evidencePath": "deploy/helm/aidr/Chart.yaml",
+          "command": "pnpm verify:helm",
+          "verifiedBy": "2026-09-25 records review: 20 checks, 10 passed and 10 skipped because Helm/kubeconform are not installed in this workspace; rendered and schema checks are recorded from development and the CI helm job, not re-run here"
+        },
+        {
+          "claim": "The self-hosted upgrade is signal-safe: steps run in their own process group, read-only steps stop on SIGINT/SIGTERM, state-changing steps finish, recorded writers are restarted before the schema commit, the interruption and resumable phase are recorded and the process exits 130/143. The verifier runs in the onprem-deploy CI job. No upgrade from a real previous customer version has been performed.",
+          "evidencePath": "scripts/verify-deployment-upgrade.mjs",
+          "command": "pnpm verify:upgrade",
+          "verifiedBy": "2026-09-25 records review: 43 deployment-upgrade checks passed, including signal-during-backup-verify and signal-during-migration scenarios"
         }
       ],
       "remainingExternal": "Repository-side connector observation instrumentation is complete. Closure still requires a clean candidate-bound persisted probe plus licensed installs on the real host/OS/architecture matrix, an agreed OS build list, customer/cloud HTTPS onboarding, SMTP/IdP, failover evidence and named acceptance per row (T01). Those systems, licenses and accountable approvers are outside this workspace, so the status is BLOCKED_EXTERNAL."
@@ -1391,16 +1403,16 @@
           "verifiedBy": "this session, exit 0 (25 checks, passed: true)"
         },
         {
-          "claim": "Browser Guard ships one managed policy as Chrome/Linux JSON, a Windows .reg (Chrome + Edge), an Edge Intune profile, Firefox policies.json and a macOS Jamf profile; the build-tools suite checks those examples for consistency and covers the deterministic zip writer and dataset fingerprinting, and the policy suite checks managed-over-user precedence and locked keys.",
+          "claim": "Browser Guard ships one managed policy as Chrome/Linux JSON, a Windows .reg (Chrome + Edge), an Edge Intune profile, Firefox policies.json and a macOS Jamf profile; any managed policy locks the protection-reducing user settings unless it sets allowUserOverrides: true. The build-tools suite checks those examples for consistency and covers the deterministic zip writer and dataset fingerprinting, and the policy suite covers managed-over-user precedence and the locks.",
           "evidencePath": "deploy/browser-guard/README.md",
           "command": "pnpm test -- packages/browser-guard/src/__tests__/build-tools.test.ts packages/browser-guard/src/__tests__/background-policy.test.ts",
-          "verifiedBy": "2026-09-24 records review: 40/40 focused tests; no real GPO/Intune/Jamf rollout"
+          "verifiedBy": "2026-09-25 records review: 46/46 focused tests; no real GPO/Intune/Jamf rollout"
         },
         {
-          "claim": "Vendor-signed aidr-license-v1 licences and signed offline intel packs are verified offline (signature, key id, expiry, hashes, rollback/equivocation, unsafe paths) before bootstrap admission or pack install; the shipped public-key registry is empty and fails closed until a vendor key is custodied.",
+          "claim": "Vendor-signed aidr-license-v1 licences and signed offline intel packs are verified offline (signature, key id, expiry, hashes, rollback/equivocation, unsafe paths) before bootstrap admission or pack install; retired keys verify only licences issued before retirement and within bounded terms; the shipped public-key registry is empty and fails closed until a vendor key is custodied, and deployment-bootstrap accepts a custom registry only with --allow-custom-license-keys and records its digest.",
           "evidencePath": "scripts/license-verify.mjs",
           "command": "node --test scripts/license.test.mjs scripts/import-offline-pack.test.mjs",
-          "verifiedBy": "2026-09-24 records review: 12/12 node tests passed; no vendor key custody or customer air-gap drill"
+          "verifiedBy": "2026-09-25 records review: 14/14 node tests passed; no vendor key custody or customer air-gap drill"
         }
       ],
       "remainingExternal": "A real MDM test tenant (Intune/Jamf/SCCM) to distribute and drive the packages, an official publisher signing identity, and per-host execution acceptance on the supported OS matrix. The local verifiers cover templates and local lifecycle only and say so; the finding therefore moves from IN_PROGRESS to BLOCKED_EXTERNAL."
@@ -1443,7 +1455,7 @@
           "verifiedBy": "this session, targeted Vitest run (14/14 passed)"
         },
         {
-          "claim": "Posture findings (infra CVEs, MCP inventory risks, skill/plugin scan results) are built as ids/enums/CVSS/digests only, uploaded with the enrolled key, strictly projected by ingest and rendered on /posture with explicit empty and error states.",
+          "claim": "Posture findings (infra CVEs, MCP inventory risks, skill/plugin scan results) are built as ids/enums/CVSS/digests only, uploaded with the enrolled key, strictly projected by ingest and rendered on /posture with explicit empty and error states. The posture_findings table carries the restrictive tenant identity barrier (migration 20260925000060), which the supabase:check migration replay enforces.",
           "evidencePath": "packages/core/src/posture-upload.ts",
           "command": "pnpm test -- packages/core/src/__tests__/posture-events.test.ts supabase/functions/__tests__/ingest-posture-events.test.ts packages/dashboard/src/__tests__/posture-page.test.tsx",
           "verifiedBy": "2026-09-24 records review: 20/20 focused tests; the PostgreSQL posture_findings RLS test was not run here"
@@ -1800,6 +1812,185 @@
         }
       ],
       "remainingExternal": "A named Security owner must classify the 296 redacted historical findings, identify whether any value was ever live, revoke and rotate live credentials, and approve only exact false-positive fingerprints. Rewriting published Git history, if chosen, requires repository-owner coordination and is not performed automatically."
+    },
+    {
+      "id": "AIDR-071",
+      "priority": "P0",
+      "feature": "Operator approval channel reachable by a prompt-injected agent",
+      "inventoryRef": "RSP-08",
+      "status": "VERIFIED_CLOSED",
+      "component": "packages/core/src/operator-approvals.ts, packages/core/src/shell-normalize.ts, threats/self-defense.yaml, packages/cli/src/commands/approvals.ts",
+      "impact": "The ask verdict is a block pending out-of-band operator approval. An agent running as the same OS user could read the plain-file HMAC key and forge its own approval, reach aidr approve through quoting, globbing or a pty wrapper, replay a spent single-use approval by restoring an older approvals.json, and spoof the operator's terminal with control characters in a pending summary. Each defeats the approval control that ask depends on.",
+      "observedBehavior": "Security review 2026-09-24 (H1, M3, M4): cat of the key and approvals files, cd plus cp of approvals.json, quoted aidr 'approve' <id>, and paths assembled in node -e were allowed; a script -qc pty wrapper defeated the TTY check; whole-file rollback of approvals.json replayed a consumed approval 4 of 4 times; ESC/CR in stored summaries reached the operator terminal.",
+      "expectedBehavior": "No agent-issued command can read the approval key or store, run aidr approve/pending/allowlist add, or replay a spent approval, and operator-facing records cannot carry terminal control sequences.",
+      "rootCause": "The key lived in a plain file readable by the agent's OS user, single use was recorded only in the agent-writable store, self-defense rules matched raw command text, and records were stored and printed without escaping.",
+      "acceptanceCriteria": "The approval key is held in the OS vault by default and approvals are disabled without one; single use is anchored in a vault-held consumption ledger; self-defense rules deny every agent reference to the state directory, vault entries and approval commands over a shell-normalised view; stored and displayed records escape C0/C1, bidi and format controls; the review's reproductions are denied in tests.",
+      "verificationMethod": "Targeted Vitest suites for the approval store, guard integration, operator CLI and the self-defense approval-channel matrix.",
+      "evidence": [
+        "Security review REPORT H1/M3/M4 (2026-09-24), fixed on branch claude/cool-dirac-e44iku in commit 5b0badbe.",
+        "CLT-SELF-007/008/009 are hard blocks (deny, never ask) matched on the shell-normalised command view."
+      ],
+      "localEvidence": [
+        {
+          "claim": "The approval store keeps the HMAC key in the OS vault by default (no vault: approvals disabled, asks stay blocked; key_storage=file needs explicit opt-in and aidr doctor warns), anchors single use in a vault-held consumption ledger so a restored approvals.json yields already_used, and stores/displays records with control characters escaped and a truncation marker.",
+          "evidencePath": "packages/core/src/operator-approvals.ts",
+          "command": "pnpm test -- packages/core/src/__tests__/operator-approvals.test.ts packages/core/src/__tests__/guard-operator-approval.test.ts packages/cli/src/__tests__/operator-commands.test.ts",
+          "verifiedBy": "2026-09-25 records review: 64/64 passed (31 store, 10 guard, 23 operator CLI)"
+        },
+        {
+          "claim": "The self-defense approval-channel matrix denies the review's bypasses (quoted and escaped aidr approve, ANSI-C strings, variables, concatenation, globs expanding to .singularity-aidr, pty wrappers, direct key/store reads) while read-only diagnostics stay allowed.",
+          "evidencePath": "packages/core/src/shell-normalize.ts",
+          "command": "pnpm test -- packages/core/src/__tests__/self-defense-approval-channel.test.ts packages/core/src/__tests__/self-defense-threats.test.ts",
+          "verifiedBy": "2026-09-25 records review: 70/70 passed (51 approval-channel, 19 self-defense threats)"
+        }
+      ],
+      "residualRisk": "The agent still runs as the same OS user. Separation rests on the OS vault's own access policy and on pattern-based self-defense rules, not on process isolation: a shell construct the normaliser does not model, or a vault that releases secrets to any process of that user without prompting, can still expose the channel. Real vault behaviour on macOS, Windows and Linux hosts has not been accepted."
+    },
+    {
+      "id": "AIDR-072",
+      "priority": "P0",
+      "feature": "Tool input beyond extractor limits and compressed MCP binary text passed uninspected",
+      "inventoryRef": "MCP-07",
+      "status": "VERIFIED_CLOSED",
+      "component": "packages/core/src/extractors.ts, packages/core/src/evaluator.ts, packages/mcp-gateway/src/detection.mjs, packages/mcp-gateway/src/output-inspection.mjs",
+      "impact": "A malicious command nested past the extractor's depth, string-count or per-string limits was allowed without inspection in every connector and forwarded in full by the MCP gateway; text hidden in compressed PNG chunks, PDF Flate streams or UTF-16 runs of MCP binary output reached the model uninspected.",
+      "observedBehavior": "Security review 2026-09-24 (H2, L1): curl ... | bash nested 5 levels deep, after 200 filler strings or after 70 KB of padding was allowed; PNG zTXt/iTXt, PDF FlateDecode and UTF-16 text escaped the printable-run scan.",
+      "expectedBehavior": "Input that cannot be fully inspected is denied, and compressed text in binary MCP output is inflated within bounds and scanned, or the output is refused.",
+      "rootCause": "extractFromUnknownTool stopped silently at its limits and the binary inspector scanned only raw bytes.",
+      "acceptanceCriteria": "Raised limits with windowed scanning of large text; any residual limit yields input_not_fully_inspected and a deny (POL-INPUT-003) in the evaluator and the gateway; PNG text chunks and PDF FlateDecode streams are inflated under ratio/size/count bounds with UTF-16 decoding, and over-bound output is refused.",
+      "verificationMethod": "Targeted Vitest suites for the extractor and evaluator input limits plus the MCP gateway hardening suite.",
+      "evidence": [
+        "Security review REPORT H2/L1 (2026-09-24), fixed in commit 02088a06."
+      ],
+      "localEvidence": [
+        {
+          "claim": "Unknown and MCP tool input is walked to depth 16, 1024 strings, 2048 artifacts and 4 MiB, free text over 64 KiB is scanned in overlapping windows, and a residual limit marks the call input_not_fully_inspected, which the evaluator denies.",
+          "evidencePath": "packages/core/src/extractors.ts",
+          "command": "pnpm test -- packages/core/src/__tests__/evaluator-input-limits.test.ts packages/core/src/__tests__/extractors.test.ts",
+          "verifiedBy": "2026-09-25 records review: 72/72 passed (10 input limits, 62 extractors)"
+        },
+        {
+          "claim": "The MCP gateway refuses tool-call input that was not fully inspected and inflates PNG zTXt/iTXt/iCCP chunks and PDF FlateDecode streams within ratio, per-item and stream-count bounds (decompression bombs never materialise), decodes UTF-16 runs and refuses over-bound or undecodable output.",
+          "evidencePath": "packages/mcp-gateway/src/output-inspection.mjs",
+          "command": "node --test packages/mcp-gateway/src/__tests__/hardening.test.mjs",
+          "verifiedBy": "2026-09-25 records review: 25/25 passed"
+        }
+      ],
+      "residualRisk": "Compressed or encoded formats other than PNG text chunks, PDF FlateDecode and UTF-16 are refused or scanned as raw bytes only; a very large benign tool input is now denied and the limits need calibration against customer workloads."
+    },
+    {
+      "id": "AIDR-073",
+      "priority": "P1",
+      "feature": "Browser Guard restore side channels, legacy-encoded uploads, partial managed locks and blocked-page fingerprinting",
+      "inventoryRef": "PRV-01",
+      "status": "VERIFIED_CLOSED",
+      "component": "packages/browser-guard/src/content/unmask.ts, packages/browser-guard/src/engine/files.ts, packages/browser-guard/src/background/policy.ts, packages/browser-guard/src/background/dnr.ts",
+      "impact": "The AI site could recover restored personal data through inherited per-character web fonts, element width, window.find or by planting placeholders for the extension to restore; Excel-default cp1252/cp1254 CSV and text files with a NUL byte were uploaded unmasked in auto mode; a managed mode did not stop users from disabling entities, literals, paste masking or response restoration; and a web-accessible block page let any site fingerprint the extension.",
+      "observedBehavior": "Security review 2026-09-24 (H3, H4, L2, L6): per-character @font-face unicode-range requests leaked restored characters, span width leaked length, planted [EMAIL_1] tokens were restored from the vault; non-UTF-8 text files were treated as binary and allowed with BINARY_FILE_UNSCANNED; SET_USER_SETTINGS {enabledEntities: []} succeeded under a managed policy; blocked.html loaded from web pages.",
+      "expectedBehavior": "Restored originals are not observable by page script or CSS and only placeholders this tab sent are restored; legacy-encoded text files are decoded and scanned or blocked; managed policies lock protection-reducing settings; extension pages are not web accessible.",
+      "rootCause": "Restored values were text nodes inheriting page styles in a shadow root, non-UTF-8 text fell into the binary path, the managed lock covered only mode and disabledSites, and the block page was declared web-accessible for the DNR redirect.",
+      "acceptanceCriteria": "Restored values are CSS generated content with reset inheritance, generic fonts and fixed width, restored only after the send that carried them; non-UTF-8 text is decoded as windows-1254/1252 (NUL blocks); any managed policy locks mode, enabledEntities, literals, maskPaste, restoreResponses and disabledSites unless allowUserOverrides is set; blocked.html is not web accessible.",
+      "verificationMethod": "Targeted Vitest suites (jsdom) for unmasking, vault persistence, file sanitisation, managed policy and build output, plus the hermetic Chromium E2E scenarios restore-side-channels and blocked-site.",
+      "evidence": [
+        "Security review REPORT H3/H4/L2/L6 (2026-09-24), fixed in commit 7a32a908; the oracle restriction is kept across reloads in commit 6e6f541d."
+      ],
+      "localEvidence": [
+        {
+          "claim": "Restored values render as CSS generated content in a closed shadow root with reset inheritance, generic fonts and a fixed-width box, and a placeholder is restored only in content inserted after the send from this tab that carried it, including after a reload.",
+          "evidencePath": "packages/browser-guard/src/content/unmask.ts",
+          "command": "pnpm test -- packages/browser-guard/src/__tests__/content-unmask.test.ts packages/browser-guard/src/__tests__/content-vault-persist.test.ts",
+          "verifiedBy": "2026-09-25 records review: 26/26 passed (21 unmask, 5 vault persistence)"
+        },
+        {
+          "claim": "Text-named or text-MIME uploads that are not UTF-8 are decoded as windows-1254 or windows-1252 and scanned, masked copies are re-encoded as UTF-8, and a NUL byte blocks with TEXT_FILE_NOT_DECODABLE outside monitor mode.",
+          "evidencePath": "packages/browser-guard/src/engine/files.ts",
+          "command": "pnpm test -- packages/browser-guard/src/__tests__/files.test.ts packages/browser-guard/src/__tests__/content-paste-files.test.ts",
+          "verifiedBy": "2026-09-25 records review: 76/76 passed (59 files, 17 paste/files)"
+        },
+        {
+          "claim": "Any managed policy locks the protection-reducing user settings unless allowUserOverrides is true (SET_USER_SETTINGS answers LOCKED_KEYS), and the built manifest declares no web_accessible_resources; the DNR rule blocks the navigation and the worker opens the block page.",
+          "evidencePath": "packages/browser-guard/src/background/policy.ts",
+          "command": "pnpm test -- packages/browser-guard/src/__tests__/background-policy.test.ts packages/browser-guard/src/__tests__/background-worker.test.ts packages/browser-guard/src/__tests__/build.test.ts",
+          "verifiedBy": "2026-09-25 records review: 97/97 passed (26 policy, 42 worker, 29 build)"
+        },
+        {
+          "claim": "The hermetic Chromium E2E scenario restore-side-channels probes hostile per-character fonts, box width, window.find/select-all and planted placeholders, each with a live control; blocked-site proves the redirect and that a web page cannot load blocked.html by extension id. The runs use simulated site fixtures, not the live AI sites.",
+          "evidencePath": "packages/browser-guard/e2e/scenarios/restore-side-channels.mjs",
+          "command": "pnpm test:e2e:browser-guard",
+          "verifiedBy": "recorded branch run: 22 scenarios, 21 passed and 1 intentional skip; not re-run in this records review"
+        }
+      ],
+      "residualRisk": "Fixture pages are not the live sites; office/PDF/image uploads are still not inspected; live-site DOM drift and customer browser acceptance remain open (T47)."
+    },
+    {
+      "id": "AIDR-074",
+      "priority": "P1",
+      "feature": "Prompt protection host-timeout bypass and unchecked DLP-redacted tool input",
+      "inventoryRef": "DET-14",
+      "status": "VERIFIED_CLOSED",
+      "component": "packages/core/src/prompt-protection.ts, packages/claude-code/src/user-prompt-submit.ts, packages/core/src/evaluator.ts",
+      "impact": "A large prompt made the quadratic scan outlast the host's 10 s hook timeout, after which Claude Code sent the prompt, so secret blocking could be bypassed by padding; a DLP-rewritten tool input was not re-run through the threat heuristics and the default [REDACTED] token was a shell glob.",
+      "observedBehavior": "Security review 2026-09-24 (M1, L3): a 1.47 MB prompt with 88k emails and a GitHub token took about 30 s; rm ./tmp/[REDACTED] would glob-expand after redaction.",
+      "expectedBehavior": "Prompt scanning is bounded and fails closed at an internal deadline when blocking applies; rewritten tool input uses inert tokens and is rechecked.",
+      "rootCause": "Overlap resolution compared every candidate with every kept span, several patterns were super-linear, and the redaction path trusted the rewrite.",
+      "acceptanceCriteria": "Linear overlap resolution, early stop on a confirmed blocking secret, an internal deadline (default 7 s) that blocks when secrets=block or tenant DLP applies, incomplete personal-data scans never reported clean; REDACTED/REDACTED_<TYPE> tokens and a heuristics recheck that denies as dlp_redaction_unsafe.",
+      "verificationMethod": "Targeted Vitest suites for prompt protection (core and bundled hook), the evaluator's runtime detectors and connector parity.",
+      "evidence": [
+        "Security review REPORT M1/L3 (2026-09-24), fixed in commits 1d573e21, 84c7eba1 and 02088a06. Core scan of the M1 input: 33.7 s to 13 ms (block)."
+      ],
+      "localEvidence": [
+        {
+          "claim": "Prompt scanning is linear with an early stop and an internal deadline; an unfinished scan blocks when secrets=block or tenant DLP applies and otherwise sends with a notice; TC Kimlik, IBAN and TR phones from the AIDR Privacy rules are scanned and an incomplete personal-data scan is signalled, never reported clean.",
+          "evidencePath": "packages/core/src/prompt-protection.ts",
+          "command": "pnpm test -- packages/core/src/__tests__/prompt-protection.test.ts packages/claude-code/src/__tests__/prompt-protection-bundle.test.ts",
+          "verifiedBy": "2026-09-25 records review: 67/67 passed (41 core, 26 bundled hook)"
+        },
+        {
+          "claim": "DLP tool-input rewriting uses shell-inert REDACTED tokens and re-runs the rewritten input through the threat heuristics; a newly introduced match denies as dlp_redaction_unsafe.",
+          "evidencePath": "packages/core/src/evaluator.ts",
+          "command": "pnpm test -- packages/core/src/__tests__/evaluator-runtime-detectors.test.ts packages/core/src/__tests__/connector-parity.test.ts",
+          "verifiedBy": "2026-09-25 records review: 56/56 passed (29 runtime detectors, 27 parity)"
+        }
+      ],
+      "residualRisk": "Prompt protection exists only for Claude Code; with PII in the default warn mode a prompt that could not be fully inspected is still sent with a notice; host timeout behaviour is verified against one Claude Code version."
+    },
+    {
+      "id": "AIDR-075",
+      "priority": "P1",
+      "feature": "Tenant identity barrier gap, full-privilege Browser Guard telemetry keys and operator-side licence trust root",
+      "inventoryRef": "TEN-06",
+      "status": "VERIFIED_CLOSED",
+      "component": "supabase/migrations/20260925000060_tenant_identity_barrier_coverage.sql, supabase/migrations/20260925000061_browser_guard_ingest_keys.sql, supabase/functions/_shared/api-key-auth.ts, scripts/deployment-bootstrap.mjs, docs/operations/licensing.md",
+      "impact": "posture_findings and several later tenant tables lacked the restrictive tenant identity barrier; Browser Guard telemetry needed a full tenant API key that any local user could read from browser policy and use to forge events or burn seats; the licence trust root could be silently replaced by the operator and retired keys were unbounded.",
+      "observedBehavior": "Security review 2026-09-24 (M2, L4, L5): the barrier policy was missing on posture_findings; browser telemetry used a tenant-scoped key; deployment-bootstrap accepted any --license-public-keys registry and retired keys accepted signer-chosen issued_at.",
+      "expectedBehavior": "Every tenant RLS table carries the barrier and CI enforces it; Browser Guard uses an ingest-only key no other endpoint accepts; a custom licence registry needs an explicit flag and is recorded, and retired keys are time-bounded.",
+      "rootCause": "The barrier sweep predated the new tables with no static check; API keys had no scope; the licence registry path was a plain option.",
+      "acceptanceCriteria": "A static migration replay reports any RLS table with a tenant_id lacking a restrictive all-command barrier (reasoned, stale-checked exceptions); ingest:browser_guard keys are accepted only by /v1/ingest for privacy_scan events, rate limited and install-capped, and refused elsewhere; --allow-custom-license-keys is required and the registry digest recorded; retired keys verify only licences issued before retirement and within bounded terms.",
+      "verificationMethod": "node --test for the barrier replay and licence/bootstrap scripts plus targeted Vitest suites for API-key scope and the ingest-key endpoint.",
+      "evidence": [
+        "Security review REPORT M2/L4/L5 (2026-09-24), fixed in commit 460846e3 with fake/refusal coverage in 8be40976."
+      ],
+      "localEvidence": [
+        {
+          "claim": "scripts/lib/tenant-identity-barrier.mjs statically replays every migration and fails when an RLS table with a tenant_id lacks the restrictive barrier; migration 20260925000060 adds it to posture_findings and re-runs the sweep. The replay runs in supabase:check (CI).",
+          "evidencePath": "scripts/lib/tenant-identity-barrier.mjs",
+          "command": "node --test scripts/tenant-identity-barrier.test.mjs",
+          "verifiedBy": "2026-09-25 records review: 8/8 passed; node scripts/check-supabase-migrations.mjs passed (131 migrations). Migrations not applied to a live database here"
+        },
+        {
+          "claim": "ingest:browser_guard API keys are accepted only by /v1/ingest for Browser Guard privacy_scan events, rate limited per key, capped by install_limit and never given the signed entitlement; packs, fleet commands, revocations and every other key-authenticated path refuse them with api_key_scope_denied.",
+          "evidencePath": "supabase/functions/_shared/api-key-auth.ts",
+          "command": "pnpm test -- supabase/functions/__tests__/browser-guard-ingest-key.test.ts supabase/functions/__tests__/api-key-auth.test.ts",
+          "verifiedBy": "2026-09-25 records review: 52/52 passed (25 ingest key, 27 key auth)"
+        },
+        {
+          "claim": "deployment-bootstrap refuses --license-public-keys unless --allow-custom-license-keys is passed and records the registry path and SHA-256 in its receipt; retired keys require retired_at and bounded terms. licensing.md states that licence enforcement is operator-side and the database does not re-verify signatures.",
+          "evidencePath": "docs/operations/licensing.md",
+          "command": "node --test scripts/license.test.mjs scripts/deployment-bootstrap.test.mjs",
+          "verifiedBy": "2026-09-25 records review: 26/26 passed"
+        }
+      ],
+      "residualRisk": "A policy-distributed ingest key is still visible to the local user and can send forged counts up to its limits; licence enforcement remains operator-side (the database does not re-verify signatures); the barrier check is static and has not been proven against a live database or by an independent penetration test (SEC-EXT-001)."
     }
   ],
   "closedWithoutLocalEvidence": {
@@ -1872,7 +2063,7 @@
     "note": "The hard commercial/legal/privacy/independent gates recorded in docs/production-readiness/commercial-go-evidence-registry.json (COM-001..COM-013, SEC-EXT-001, POV-001, INV-001, CLM-001) remain open and are NOT closeable from this workspace: they require counsel approval, customer credentials, deployed regional infrastructure, signing keys, and an independent assessor. No repository change can close them and none is claimed to.",
     "count": 13
   },
-  "lastReviewed": "2026-09-24",
+  "lastReviewed": "2026-09-25",
   "currentFeatureInventory": "FEATURE_INVENTORY.json",
   "latestVerification": {
     "date": "2026-09-12",
