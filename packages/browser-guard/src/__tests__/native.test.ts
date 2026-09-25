@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { performance as hostClock } from "node:perf_hooks";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DocumentScanner } from "../../../privacy/src/browser/documents.js";
 import { PrivacyEngine } from "../../../privacy/src/engine.js";
 import { NativeSession } from "../../../privacy/src/native/session.js";
@@ -113,9 +114,9 @@ function fakeChrome(options: HostOptions & { granted?: boolean; installed?: bool
 					if (!alive) return;
 					alive = false;
 					session.close();
-					setTimeout(() => {
+					setImmediate(() => {
 						for (const l of onDisconnect) l();
-					}, 0);
+					});
 				};
 				if (name !== NATIVE_HOST_NAME || options.installed === false) drop();
 				return {
@@ -136,17 +137,17 @@ function fakeChrome(options: HostOptions & { granted?: boolean; installed?: bool
 								const out = options.tamper ? options.tamper(response, request) : response;
 								if (!alive || out === null) return;
 								const frame = JSON.parse(JSON.stringify(out));
-								setTimeout(() => {
+								setImmediate(() => {
 									if (alive) for (const l of onMessage) l(frame);
-								}, 0);
+								});
 							},
 							() => {
 								// host.ts: failure frame without id, then exit.
 								const frame = { v: 1, ok: false, code: "NATIVE_HOST_FAILURE" };
-								setTimeout(() => {
+								setImmediate(() => {
 									if (alive) for (const l of onMessage) l(frame);
 									drop();
-								}, 0);
+								});
 							},
 						);
 					},
@@ -159,9 +160,47 @@ function fakeChrome(options: HostOptions & { granted?: boolean; installed?: bool
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 5));
 const slice = (text: string, f: { start: number; end: number }) => text.slice(f.start, f.end);
+const nextTurn = () => new Promise((resolve) => setImmediate(resolve));
+
+/**
+ * Yields to the event loop until `done()` holds. The fake port delivers each host reply on a later
+ * event-loop turn, scheduled only after the request went through async work, so a fixed sleep such
+ * as `flush()` can expire first on a loaded machine.
+ */
+async function until(done: () => boolean): Promise<void> {
+	while (!done()) await nextTurn();
+}
+
+/**
+ * Runs `task` with `setTimeout` frozen and never advanced. With the host's clock already stopped
+ * (see `beforeEach`), neither the bridge's deadline nor the host's NER timeout can expire however
+ * slow the machine is, while the fake port's deliveries (`setImmediate`) and real async work
+ * (SHA-256 digests) still run.
+ */
+async function withFrozenClock<T>(task: () => Promise<T>): Promise<T> {
+	vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+	let settled = false;
+	const result = task().finally(() => {
+		settled = true;
+	});
+	await until(() => settled);
+	return result;
+}
+
+/**
+ * The fake host is the real privacy engine, whose scan budget (`maxScanMs`, default 1 s) is read
+ * from `node:perf_hooks` `performance.now()`. On a loaded machine it runs out and the host answers
+ * `block` / SCAN_BUDGET, which the bridge rightly reports as `null`. That budget is host behaviour,
+ * not bridge behaviour under test here, so the host's clock stands still in this file.
+ * (`vi.useFakeTimers({ toFake: ["performance"] })` swaps only the global, not this import.)
+ */
+beforeEach(() => {
+	vi.spyOn(hostClock, "now").mockReturnValue(0);
+});
 
 afterEach(() => {
 	vi.useRealTimers();
+	vi.restoreAllMocks();
 });
 
 describe("createNativeBridge: availability", () => {
@@ -210,7 +249,8 @@ describe("createNativeBridge: availability", () => {
 		const runtime = { ...chrome.runtime, sendNativeMessage: undefined };
 		const bridge = createNativeBridge(true, { chrome: { ...chrome, runtime } });
 		bridge.status();
-		await flush();
+		// The probe closes its port once the hello round trip settled, successfully or not.
+		await until(() => chrome.disconnects > 0);
 		expect(bridge.status()).toBe("connected");
 		expect(chrome.connects).toBe(1);
 		expect(chrome.disconnects).toBeGreaterThanOrEqual(1);
@@ -241,7 +281,7 @@ describe("createNativeBridge: scanning over the privacy host protocol", () => {
 		const bridge = createNativeBridge(true, { chrome });
 		const text =
 			"🚀 Merhaba, ben Ayşe Yılmaz.\nAdresim Moda Caddesi No 12\nSemt: Kadıköy\nMail: ayse@example.com";
-		const findings = await bridge.scanText(text);
+		const findings = await withFrozenClock(() => bridge.scanText(text));
 		expect(findings).not.toBeNull();
 		const got = (findings ?? []).map((f) => [f.type, slice(text, f), f.source]);
 		expect(got).toEqual([
@@ -260,7 +300,7 @@ describe("createNativeBridge: scanning over the privacy host protocol", () => {
 		const chrome = fakeChrome();
 		const bridge = createNativeBridge(true, { chrome });
 		const text = "Toplantıya Jane Doe katılacak.";
-		await bridge.scanText(text);
+		await withFrozenClock(() => bridge.scanText(text));
 		expect(chrome.sent.map((m) => m.op)).toEqual(["hello", "begin", "write", "commit", "read"]);
 		const begin = chrome.sent[1] ?? {};
 		expect(begin).toMatchObject({ v: 1, kind: "text", policyDigest: POLICY_DIGEST });
@@ -285,26 +325,26 @@ describe("createNativeBridge: scanning over the privacy host protocol", () => {
 	it("returns [] for clean text without reading the output back", async () => {
 		const chrome = fakeChrome();
 		const bridge = createNativeBridge(true, { chrome });
-		expect(await bridge.scanText("Yarın saat üçte buluşalım.")).toEqual([]);
+		expect(await withFrozenClock(() => bridge.scanText("Yarın saat üçte buluşalım."))).toEqual([]);
 		expect(chrome.sent.map((m) => m.op)).toEqual(["hello", "begin", "write", "commit"]);
-		expect(await bridge.scanText("")).toEqual([]);
+		expect(await withFrozenClock(() => bridge.scanText(""))).toEqual([]);
 	});
 
 	it("keeps offsets aligned when the text starts with a BOM the host strips", async () => {
 		const bridge = createNativeBridge(true, { chrome: fakeChrome() });
 		const text = "﻿Jane Doe aradı";
-		const findings = await bridge.scanText(text);
+		const findings = await withFrozenClock(() => bridge.scanText(text));
 		expect(findings?.map((f) => slice(text, f))).toEqual(["Jane Doe"]);
 	});
 
 	it("chunks large inputs and outputs within the host frame limits", async () => {
 		const chrome = fakeChrome();
-		// Generous deadline (production default NATIVE_TIMEOUT_MS stays 2 s): the ~650 KB
-		// round trip through the in-process fake host is slow on a heavily loaded CI machine.
-		const bridge = createNativeBridge(true, { chrome, timeoutMs: 30_000 });
+		const bridge = createNativeBridge(true, { chrome });
 		const filler = "lorem ipsum dolor sit amet ".repeat(12_000);
 		const text = `${filler}Ayşe Yılmaz ${filler}Jane Doe`;
-		const findings = await bridge.scanText(text);
+		// The ~650 KB round trip is slow on a loaded machine. Timing is not under test here:
+		// freeze the timers too, so the bridge's production 2 s bound cannot decide the result.
+		const findings = await withFrozenClock(() => bridge.scanText(text));
 		expect(findings?.map((f) => [f.type, slice(text, f)])).toEqual([
 			["PERSON", "Ayşe Yılmaz"],
 			["PERSON", "Jane Doe"],
@@ -328,7 +368,7 @@ describe("createNativeBridge: scanning over the privacy host protocol", () => {
 		const chrome = fakeChrome({ engine: { actions: { PERSON: "block" } } });
 		const bridge = createNativeBridge(true, { chrome });
 		for (let i = 0; i < NATIVE_MAX_FAILURES + 1; i++) {
-			expect(await bridge.scanText("Jane Doe")).toBeNull();
+			expect(await withFrozenClock(() => bridge.scanText("Jane Doe"))).toBeNull();
 		}
 		expect(chrome.connects).toBe(NATIVE_MAX_FAILURES + 1);
 		expect(bridge.status()).toBe("connected");
@@ -358,10 +398,7 @@ describe("createNativeBridge: timeout and backoff", () => {
 		// advancing fake timers takes no real time. Let the exchange reach the hanging
 		// commit with the fake clock held at 0, so a loaded machine cannot let the 2 s
 		// bound fire before the host was ever asked to commit.
-		for (let i = 0; i < 5_000 && !chrome.sent.some((m) => m.op === "commit"); i++) {
-			await vi.advanceTimersByTimeAsync(0);
-			await new Promise((resolve) => setImmediate(resolve));
-		}
+		await until(() => chrome.sent.some((m) => m.op === "commit"));
 		await vi.advanceTimersByTimeAsync(NATIVE_TIMEOUT_MS - 1);
 		expect(settled).toBe("pending");
 		expect(chrome.sent.map((m) => m.op)).toContain("commit");
@@ -395,7 +432,7 @@ describe("createNativeBridge: timeout and backoff", () => {
 
 		broken = false;
 		clock += 1;
-		const findings = await bridge.scanText("Jane Doe");
+		const findings = await withFrozenClock(() => bridge.scanText("Jane Doe"));
 		expect(findings?.map((f) => f.type)).toEqual(["PERSON"]);
 		expect(bridge.status()).toBe("connected");
 	});
