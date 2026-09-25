@@ -240,7 +240,7 @@ td code, th code { font-size: 0.92em; overflow-wrap: break-word; }
 <path d="M1075.25 1145.71C1069.76 1132.32 1054.76 1118.65 1053.09 1112.43C970.702 806.051 1385.49 725.273 1495.03 987.176C1499.21 997.047 1502.97 1007.1 1506.28 1017.3C1474.77 1040.92 1451.68 1057.8 1434.01 1093.1C1363.43 1234.11 1509.32 1402.58 1657.98 1327.44C1675.75 1318.46 1682.57 1314.68 1701 1320.61C1576.49 1487.18 1273.52 1317.28 1397.85 1093.78C1389.47 1054.31 1380.32 1026.53 1350.84 995.906C1321.03 964.855 1279.78 947.406 1236.74 947.636C1171.72 947.73 1114.55 987.383 1088.81 1046.5C1073.94 1080.64 1074.94 1109.62 1075.25 1145.71Z" fill="#C1D9F4"/>
 <path d="M1541.75 1096.42C1595.6 1085.32 1648.24 1120.04 1659.25 1173.92C1670.26 1227.8 1635.46 1280.38 1581.56 1291.3C1527.79 1302.2 1475.35 1267.49 1464.37 1213.74C1453.38 1159.98 1488.01 1107.49 1541.75 1096.42Z" fill="#0052CC"/>
 </symbol></svg>
-<div class="cover-top"><span class="co" lang="en"><svg aria-hidden="true"><use href="#aidr-logo"/></svg>SingularityRD</span><span>Feature guide · Edition 2026-09-24</span></div>
+<div class="cover-top"><span class="co" lang="en"><svg aria-hidden="true"><use href="#aidr-logo"/></svg>SingularityRD</span><span>Feature guide · Edition 2026-09-25</span></div>
 <div class="cover-hero">
 <svg class="cover-logo" role="img" aria-label="Singularity AIDR logo"><use href="#aidr-logo"/></svg>
 <div class="eyebrow" lang="en">AI Agent Detection &amp; Response</div>
@@ -706,7 +706,7 @@ configuration file directly. Repeat host acceptance for every Codex version.</p>
 <p class="label"><strong>What it does</strong></p>
 <p>The engine extracts artifacts (commands, URLs, file paths, content, packages) from each
 tool call and matches them against YAML threat rules. The rules are data, not code:
-<strong>384 rules in 24 files</strong> under <code class="path">threats</code>, covering Linux,
+<strong>386 rules in 24 files</strong> under <code class="path">threats</code>, covering Linux,
 macOS and Windows.</p>
 <p class="label"><strong>Why it matters</strong></p>
 <p>Most damaging agent actions follow known shapes: download-and-execute chains, reverse
@@ -717,8 +717,8 @@ locally stops the call without sending anything off the machine.</p>
 reputation legs → decision engine (deny &gt; ask &gt; allow) → cache → audit log → verdict</code></pre>
 <p>Each rule has <code>id</code>, <code>category</code>, <code>severity</code>, <code>confidence</code> (0–1), <code>action</code> (<code>block</code> →
 <code>deny</code>, <code>require_approval</code> → <code>ask</code>, <code>log</code> → <code>allow</code>), a regex <code>pattern</code>, <code>match_on</code>,
-<code>title</code>, <code>expires_at</code> and <code>revoked</code>. Of the 384 rules, 183 block, 200 require approval
-and 1 logs; 146 are critical, 215 high and 23 medium.</p>
+<code>title</code>, <code>expires_at</code> and <code>revoked</code>. Of the 386 rules, 186 block, 199 require approval
+and 1 logs; 148 are critical, 215 high and 23 medium.</p>
 <p>Rule files:</p>
 <div class="table"><table><thead><tr><th>File</th><th>Scope</th><th>Rules</th></tr></thead><tbody><tr><td><code>commands.yaml</code></td><td>Dangerous commands: pipe-to-shell, reverse shells, destructive operations</td><td>31</td></tr>
 <tr><td><code>credentials.yaml</code></td><td>Credential exposure</td><td>8</td></tr>
@@ -728,13 +728,13 @@ and 1 logs; 146 are critical, 215 high and 23 medium.</p>
 <tr><td><code>supply_chain.yaml</code></td><td>Supply-chain patterns</td><td>1</td></tr>
 <tr><td><code>urls.yaml</code></td><td>Malicious URL and domain patterns</td><td>5</td></tr>
 <tr><td><code>mining.yaml</code></td><td>Crypto-mining / resource hijacking (ATT&amp;CK T1496)</td><td>17</td></tr>
-<tr><td><code>self-defense.yaml</code></td><td>Attempts to disable or bypass AIDR</td><td>7</td></tr>
+<tr><td><code>self-defense.yaml</code></td><td>Attempts to disable or bypass AIDR</td><td>9</td></tr>
 <tr><td><code>mitre.yaml</code></td><td>MITRE ATT&amp;CK technique mappings</td><td>64</td></tr>
 <tr><td><code>llm-threats.yaml</code></td><td>LLM-specific threats</td><td>21</td></tr>
 <tr><td><code>skill-scan.yaml</code></td><td>Skill/plugin package rules T01–T09</td><td>26</td></tr>
 <tr><td><code>mac-commands.yaml</code>, <code>mac-credentials.<wbr>yaml</code>, <code>mac-files.yaml</code>, <code>mac-obfuscation.<wbr>yaml</code>, <code>mac-persistence.<wbr>yaml</code>, <code>mac-supply-chain.<wbr>yaml</code></td><td>macOS variants</td><td>27 + 8 + 10 + 7 + 9 + 3 = 64</td></tr>
 <tr><td><code>win-commands.yaml</code>, <code>win-credentials.<wbr>yaml</code>, <code>win-files.yaml</code>, <code>win-obfuscation.<wbr>yaml</code>, <code>win-persistence.<wbr>yaml</code>, <code>win-supply-chain.<wbr>yaml</code></td><td>Windows variants</td><td>61 + 10 + 10 + 16 + 8 + 1 = 106</td></tr>
-<tr><td><strong>Total</strong></td><td>24 files</td><td><strong>384</strong></td></tr></tbody></table></div>
+<tr><td><strong>Total</strong></td><td>24 files</td><td><strong>386</strong></td></tr></tbody></table></div>
 <p>Rules by category:</p>
 <div class="table"><table><thead><tr><th>Category group</th><th>Categories (rule count)</th><th>Rules</th></tr></thead><tbody><tr><td>Tool abuse</td><td><code>tool</code></td><td>185</td></tr>
 <tr><td>Secrets and credentials</td><td><code>secrets</code></td><td>50</td></tr>
@@ -743,9 +743,9 @@ and 1 logs; 146 are critical, 215 high and 23 medium.</p>
 <tr><td>LLM threats</td><td><code>prompt_injection</code> (5), <code>tool_misuse</code> (4), <code>indirect_<wbr>prompt_<wbr>injection</code> (3), <code>prompt_extraction</code> (3), <code>information_<wbr>disclosure</code> (2), <code>memory_poisoning</code> (2), <code>content_safety</code> (2)</td><td>21</td></tr>
 <tr><td>Resource hijacking</td><td><code>resource_hijacking</code></td><td>17</td></tr>
 <tr><td>Network egress</td><td><code>network_egress</code></td><td>9</td></tr>
-<tr><td>Self-defence</td><td><code>self_defense</code></td><td>7</td></tr>
+<tr><td>Self-defence</td><td><code>self_defense</code></td><td>9</td></tr>
 <tr><td>Supply chain</td><td><code>supply_chain</code></td><td>5</td></tr>
-<tr><td><strong>Total</strong></td><td></td><td><strong>384</strong></td></tr></tbody></table></div>
+<tr><td><strong>Total</strong></td><td></td><td><strong>386</strong></td></tr></tbody></table></div>
 <p>Customers can add their own rules under <code>~/<wbr>.<wbr>singularity-aidr/<wbr>threats/<wbr>*.<wbr>yaml</code>; a custom
 rule with the same <code>id</code> overrides the built-in one.</p>
 <p class="label"><strong>How to use</strong></p>
@@ -817,7 +817,7 @@ suspicion blocked; a build farm may want only high-confidence malware blocked.</
 <tr><td><code>relaxed</code></td><td>0.95</td><td>Blocks only high-confidence threats.</td></tr></tbody></table></div>
 <p>When the highest confidence among matched signals is below the threshold, a <code>deny</code> is
 downgraded to <code>ask</code>, and a matched signal that would otherwise allow is raised to <code>ask</code>. For a single matching
-rule, all 183 block rules deny under <code>paranoid</code>, 178 under <code>balanced</code> and 49 under
+rule, all 186 block rules deny under <code>paranoid</code>, 181 under <code>balanced</code> and 52 under
 <code>relaxed</code>.</p>
 <p class="label"><strong>How to use</strong></p>
 <p>Set it in <code>~/<wbr>.<wbr>singularity-aidr/<wbr>config.<wbr>json</code>:</p>
