@@ -498,8 +498,8 @@ export const STEPS = Object.freeze([
 	step({
 		id: "onprem-compose",
 		group: "onprem",
-		name: "AIG compose model fails closed and validates with placeholders",
-		ci: ["onprem-deploy", "AIG compose model fails closed and validates with placeholders"],
+		name: "Posture scanner compose model fails closed and validates with placeholders",
+		ci: ["onprem-deploy", "Posture scanner compose model fails closed and validates with placeholders"],
 		requires: ["docker-cli"],
 		quick: true,
 		timeoutMs: 3 * MIN,
