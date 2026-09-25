@@ -21,7 +21,7 @@ export function PublicLayout() {
 					<span className="sr-only">Singularity AIDR</span>
 				</Link>
 				<nav className="nav" aria-label="Public">
-					<NavLink to="/pricing">Pricing</NavLink>
+					<NavLink to="/pricing">Editions</NavLink>
 					<NavLink to="/pilot">Pilot</NavLink>
 					<NavLink to="/login">Dashboard</NavLink>
 				</nav>

@@ -141,7 +141,7 @@ than the exclusion.
 | **Individual hobbyist developers / students** | They will use the free tier (good!) but will never pay. Do not spend sales time; optimize the docs and install path for them instead. |
 | **Enterprises demanding on-prem / air-gapped today** | Self-hosted deployment exists but has no real-host acceptance and no signed artifacts. Selling it now creates a support obligation we cannot meet. |
 | **Companies whose blocker is "we just need a checkbox for the audit"** | They want a PDF, not enforcement. We cannot provide attestation, and pretending otherwise is the exact dishonesty this package forbids. |
-| **Very early startups (<10 devs, pre-seed)** | Not enough seats to matter; a $60/month floor is real money to them; churn risk is high. Let them use free. |
+| **Very early startups (<10 devs, pre-seed)** | Not enough seats to matter; a three-seat paid minimum is real money to them; churn risk is high. Let them use free. |
 | **Anyone requiring 24/7 support or an SLA today** | One person. `pricing.md` §7 lists this as a gating gap. |
 | **Windows-heavy fleets right now** | Builds are unsigned, so SmartScreen will warn on install. Sellable with disclosure, but expect friction and support load — treat as a second-wave segment until signing is in place. |
 

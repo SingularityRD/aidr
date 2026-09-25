@@ -25,6 +25,7 @@ import { PlanCard } from "../billing/plan-card";
 import { readTenantPlan } from "../billing/plans";
 import { createCheckout } from "../billing/stripe-client";
 import { supabase } from "../lib/supabase";
+import { CURRENCY_OR_PRICE } from "./helpers/public-price-patterns";
 
 const TENANT = "11111111-1111-4111-8111-111111111111";
 const rpc = supabase.rpc as unknown as ReturnType<typeof vi.fn>;
@@ -206,6 +207,50 @@ describe("billing plan card", () => {
 		// A sales-assisted plan never goes to card checkout, even in self-service builds.
 		fireEvent.click(screen.getByRole("radio", { name: /Business/ }));
 		expect(screen.getByRole("button", { name: "Request upgrade" })).toBeInTheDocument();
+	});
+
+	it.each([false, true])(
+		"shows plan names and terms but never a list price in the picker (self-service %s)",
+		async (selfService) => {
+			commercial.selfService = selfService;
+			render(<PlanCard tenantId={TENANT} canManageBilling />);
+			const picker = await screen.findByRole("group", { name: "Plan picker" });
+			await screen.findByText("1 / 1");
+			expect(
+				within(picker).getByText(/Minimum 3 developers · 90-day event retention/),
+			).toBeTruthy();
+			for (const name of ["Team", "Business", "Enterprise"]) {
+				expect(within(picker).getByRole("radio", { name: new RegExp(name) })).toBeInTheDocument();
+			}
+			const card = screen.getByLabelText("Current plan");
+			expect(card.textContent ?? "").not.toMatch(CURRENCY_OR_PRICE);
+			expect(card).toHaveTextContent("Prices are not published.");
+			expect(within(card).getByRole("link", { name: "anil@singularityrd.com" })).toHaveAttribute(
+				"href",
+				expect.stringMatching(/^mailto:anil@singularityrd\.com\?/),
+			);
+			if (selfService) {
+				expect(card).toHaveTextContent(/shows the amount on the payment provider's page/);
+			}
+		},
+	);
+
+	it("offers only the billing intervals the catalog carries", async () => {
+		render(<PlanCard tenantId={TENANT} canManageBilling />);
+		const billing = await screen.findByLabelText("Billing");
+		expect(
+			within(billing)
+				.getAllByRole("option")
+				.map((option) => option.textContent),
+		).toEqual(["Monthly", "Annual"]);
+		fireEvent.click(screen.getByRole("radio", { name: /Business/ }));
+		expect(
+			within(screen.getByLabelText("Billing"))
+				.getAllByRole("option")
+				.map((option) => option.textContent),
+		).toEqual(["Annual"]);
+		fireEvent.click(screen.getByRole("radio", { name: /Enterprise/ }));
+		expect(screen.queryByLabelText("Billing")).not.toBeInTheDocument();
 	});
 
 	it("keeps checkout off for a tenant outside the cloud admission mode", async () => {
