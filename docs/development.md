@@ -307,6 +307,7 @@ exit code non-zero (`--strict` also fails on skips).
 | Node 24 | `core-node24`; preferred by the `onprem` steps | the Node 24 leg is SKIPPED with a warning; on-prem steps run on the current Node with a WARNING note |
 | Python 3.12 | `aig-bridge-*` | SKIPPED |
 | PowerShell 7 (`pwsh`) | `fleet-windows` (GitHub's Ubuntu runners ship it) | SKIPPED; `fleet-unix` still runs |
+| A non-root user | `fleet-unix` (the installer refuses its test-root mode for uid 0) | SKIPPED |
 | Playwright Chromium for the pinned `playwright-core` | `bg-playwright-pin`, `bg-e2e` | SKIPPED; set `PLAYWRIGHT_BROWSERS_PATH` or populate `/opt/pw-browsers` |
 
 Everything else runs on the current Node (the `core-node22` leg records which version

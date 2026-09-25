@@ -101,6 +101,10 @@ export const REQUIREMENTS = Object.freeze({
 		label: "Node.js at or above the privacy engine floor (ci.yml PRIVACY_NODE_VERSION)",
 		fix: "Run ci:local on a newer Node.js 22 or 24 release.",
 	},
+	"non-root": {
+		label: "a non-root user (GitHub runners run as the unprivileged runner user)",
+		fix: "Run ci:local as an ordinary user; the Unix fleet installer refuses its test-root mode for uid 0 on purpose.",
+	},
 	pwsh: {
 		label: "PowerShell 7 (pwsh), preinstalled on GitHub's Ubuntu runners",
 		fix: "Install PowerShell 7 so `pwsh` is on PATH (https://learn.microsoft.com/powershell/scripting/install/installing-powershell-on-linux).",
@@ -572,6 +576,8 @@ export const STEPS = Object.freeze([
 		name: "Unix fleet lifecycle",
 		run: "pnpm verify:fleet:unix",
 		covers: [["quality-gate", "Verify Windows and Unix fleet lifecycles"]],
+		// deploy/fleet/unix/aidr-fleet.sh refuses its test-root mode for uid 0 by design.
+		requires: ["non-root"],
 		timeoutMs: 10 * MIN,
 	}),
 	step({ id: "package-install", group: "release", name: "Install every packed consumer artifact", ci: ["quality-gate", "Install every packed consumer artifact"], timeoutMs: 20 * MIN }),

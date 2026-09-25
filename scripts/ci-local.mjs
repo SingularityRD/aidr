@@ -228,6 +228,11 @@ function probeFacts(selected, workflow) {
 		available["node-privacy-floor"] = versionAtLeast(process.versions.node, String(workflow.env.PRIVACY_NODE_VERSION));
 		detail["node-privacy-floor"] = `current v${process.versions.node}, floor ${workflow.env.PRIVACY_NODE_VERSION}`;
 	}
+	if (needed.has("non-root")) {
+		const uid = process.getuid?.();
+		available["non-root"] = uid !== 0;
+		detail["non-root"] = uid === undefined ? "no POSIX uid" : `uid ${uid}`;
+	}
 	if (needed.has("pwsh")) {
 		const pwsh = onPath("pwsh");
 		record("pwsh", pwsh ? { path: pwsh } : { detail: "pwsh not on PATH" });
