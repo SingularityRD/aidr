@@ -216,6 +216,13 @@ export interface GuardPolicy {
 	readonly allowSendAnyway: boolean;
 	readonly maskPaste: boolean;
 	readonly fileHandling: "scan" | "block" | "allow";
+	/**
+	 * Office (DOCX/XLSX/PPTX) and PDF uploads when `fileHandling` is "scan" (managed-only):
+	 * "mask" masks Office text in place and scans PDFs (blocking PDFs with findings);
+	 * "block" rejects every such document; "allow" skips parsing and treats them like other
+	 * binary files (unscanned warning; blocked in block mode). Absent means "mask".
+	 */
+	readonly documentHandling: "mask" | "block" | "allow";
 	readonly maxFileBytes: number;
 	readonly restoreResponses: boolean;
 	readonly useNativeHost: boolean;

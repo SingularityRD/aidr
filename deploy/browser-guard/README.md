@@ -57,6 +57,7 @@ apart or use a key the extension does not accept.
 | `allowSendAnyway` | boolean | users may send unmasked after a warning |
 | `maskPaste` | boolean | mask sensitive data as it is pasted |
 | `fileHandling` | string | `scan`, `block`, `allow` |
+| `documentHandling` | string | `mask` (default), `block`, `allow`: Office/PDF uploads when `fileHandling` is `scan`; optional, not set in the examples below |
 | `maxFileBytes` | integer | at most 52428800 (50 MiB) |
 | `restoreResponses` | boolean | restore original values in responses locally |
 | `useNativeHost` | boolean | use the AIDR Privacy native host for NER (install it separately) |

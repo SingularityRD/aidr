@@ -9,7 +9,8 @@
 //   `input` events (so a rewrite that skips input events leaves it disabled);
 // - paste is handled by the page (insert clipboard text) unless already handled;
 // - the assistant reply streams in over several DOM updates, as SSE renderers do;
-// - file inputs upload the selected file's bytes as soon as `change` fires;
+// - file inputs upload the selected file's bytes as soon as `change` fires (as text and
+//   as base64, so binary uploads such as DOCX can be inspected byte for byte);
 // - the conversation survives a reload: it is kept in the tab's sessionStorage and
 //   re-rendered shortly after load, like an SPA fetching the conversation history.
 //
@@ -124,13 +125,23 @@
 		}
 	}
 
+	/** Base64 of the file's exact bytes (binary uploads such as DOCX cannot go through text()). */
+	async function base64(file) {
+		const bytes = new Uint8Array(await file.arrayBuffer());
+		let binary = "";
+		for (let i = 0; i < bytes.length; i += 0x8000)
+			binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+		return btoa(binary);
+	}
+
 	async function upload(file) {
 		const content = await file.text();
+		const bytesB64 = await base64(file);
 		state.uploads.push({ name: file.name, size: file.size });
 		await fetch("/__fixture__/upload", {
 			method: "POST",
 			headers: { "content-type": "application/json" },
-			body: JSON.stringify({ name: file.name, type: file.type, content }),
+			body: JSON.stringify({ name: file.name, type: file.type, content, bytesB64 }),
 		});
 	}
 

@@ -79,6 +79,50 @@ administrator and end-user guide is [`docs/platform-guides/browser-guard.md`](..
    masked copy is written as UTF-8 (CSV/TSV with a BOM). A text-named file that
    contains NUL bytes cannot be decoded safely and is blocked
    (`TEXT_FILE_NOT_DECODABLE`) in every mode except `monitor`.
+6. **Office documents and PDFs** (`documentHandling`, default `mask`). Everything
+   runs in the content script: a small ZIP reader/writer on the browser's
+   `DecompressionStream`/`CompressionStream`, a strict XML scanner and a PDF text
+   extractor - no remote code, no WebAssembly, no new dependencies.
+   - **DOCX / XLSX / PPTX** (and `docm`/`xlsm`/`pptm`, templates, shows) are opened,
+     their text is masked in place and the package is re-zipped under the same
+     name and type (`mask`, reason `SENSITIVE_DATA`). Word paragraphs are scanned
+     as a whole, so an e-mail or TCKN split across differently formatted runs is
+     found; the placeholder goes into the first run and the rest of the value is
+     removed from the others, so only the runs that held it change. Covered: body,
+     headers, footers, footnotes/endnotes, comments and their authors, tracked
+     changes, field codes, text boxes, tables; Excel shared strings (rich text),
+     inline strings, formula string results and numeric/date cells (a masked
+     number becomes a text cell; a formula keeps its formula), comments, pivot
+     cache strings, header/footer text, with sensitive column headers masking the
+     whole column as for CSV; PowerPoint slides, notes, layouts, masters and
+     comments; charts/diagrams/drawings, document properties and `mailto:` and
+     other external hyperlink targets in every format. Other parts (styles, media,
+     fonts...) are copied byte for byte.
+   - Blocked with a reason (recorded only in `monitor` mode): macros or ActiveX
+     (`DOCUMENT_MACROS`), password protection (`DOCUMENT_ENCRYPTED`), external
+     workbook links, data connections, remote templates or linked objects
+     (`DOCUMENT_EXTERNAL_LINKS`), embedded objects that are not themselves
+     DOCX/XLSX/PPTX (`DOCUMENT_EMBEDDED_OBJECT`; embedded workbooks such as chart
+     data are sanitised recursively), malformed XML or DOCTYPE declarations
+     (`DOCUMENT_MALFORMED`) and unsafe archives (`ARCHIVE_*`: ZIP64, more than 4096
+     entries, declared compression ratio over 200:1 for entries above 1 MiB, more
+     than 48 MiB per entry or 64 MiB inflated in total, path traversal, duplicate or
+     overlapping entries, CRC mismatch).
+   - **PDF** text is extracted (object and cross-reference streams, Flate/LZW/
+     ASCIIHex/ASCII85/RunLength, WinAnsi/MacRoman/Standard encodings with
+     `/Differences`, ToUnicode CMaps for Identity-H fonts, Form XObjects,
+     annotations, form fields, document info) and scanned. PDFs are not rewritten:
+     one with findings is blocked (`SENSITIVE_DATA_IN_PDF`) and the user is told to
+     paste the text instead, where it is masked; `monitor` records it. A PDF
+     without extractable text (scanned), with image-only pages or undecodable
+     parts (`PDF_NO_TEXT`, `PDF_PARTIAL`), encrypted (`PDF_ENCRYPTED`) or
+     unparseable (`PDF_UNPARSEABLE`) is treated like other binaries: uploaded with
+     an "unscanned" warning, blocked in `block` mode. Findings in the readable
+     part still block.
+   - `documentHandling: block` rejects every Office/PDF upload in every mode;
+     `allow` skips document parsing (the previous behaviour: unscanned warning,
+     blocked in `block` mode). A document whose scan exceeds 30 s is blocked
+     (`SCAN_INCOMPLETE`).
 
 If a scan cannot finish (input over the size limit, or the time budget runs out)
 the result is marked incomplete and the guard does not report it as clean: the
@@ -196,6 +240,7 @@ the policy sets `allowUserOverrides: true` (see `deploy/browser-guard/README.md`
 | `allowUserPause` / `allowSendAnyway` | boolean | `true` / `true` |
 | `maskPaste` | boolean | `true` |
 | `fileHandling` / `maxFileBytes` | `scan` \| `block` \| `allow` / bytes (max 50 MiB) | `scan` / 5 MiB |
+| `documentHandling` | `mask` \| `block` \| `allow` (managed only; Office/PDF when `fileHandling` is `scan`) | `mask` |
 | `restoreResponses` | boolean | `true` |
 | `useNativeHost` | boolean | `false` (also a user setting unless managed) |
 | `telemetry` | `{ controlPlaneUrl, apiKey }` | none (no telemetry) |
@@ -268,8 +313,20 @@ to regenerate the dataset with stable fingerprints.
 - The restore mapping survives a reload of the same tab, but not a browser
   restart, another tab, or 4 hours without a save; if the worker does not answer
   within 1.5 s while the page loads, earlier placeholders stay placeholders.
-- Images and PDFs are not OCR'd in the browser. Set `fileHandling: block` if
-  such uploads must not reach AI sites at all.
+- Images are not OCR'd in the browser: pictures inside Office documents, scanned
+  PDFs and image-only PDF pages are not inspected (scanned PDFs are reported as
+  unscanned, not as clean). Set `fileHandling: block` or
+  `documentHandling: block` if such uploads must not reach AI sites at all.
+- PDFs are scanned but never rewritten, so a PDF with findings is blocked rather
+  than masked. PDF text extraction does not decrypt encrypted files, does not
+  handle Type0 fonts without a ToUnicode map or predefined CJK CMaps, and uses
+  glyph positions to rebuild word and line breaks, which can differ from the
+  visual reading order in multi-column layouts.
+- Office masking covers text; sheet names, defined names, table column names and
+  numeric pivot-cache values are not rewritten (a masked header cell can make
+  Excel repair a table's column name).
+  Legacy binary formats (`.doc`, `.xls`, `.ppt`) and OpenDocument files are not
+  parsed and follow the binary-file rule.
 - Restoring works on text the site renders in the page. Content the site
   exports, copies to the clipboard itself, or shares by link contains the
   placeholders, not the originals.
@@ -288,3 +345,11 @@ manifests, the CSP, permissions, locale copying, zips and `SHA256SUMS`,
 reproducibility, and every fail-closed path. `build-tools.test.ts` covers the
 fingerprint tool (against WebCrypto), the zip writer, the icons, and checks that
 all deployment examples carry the same valid policy.
+`files-office.test.ts`, `files-office-zip.test.ts` and `files-pdf.test.ts` build
+DOCX/XLSX/PPTX packages and PDFs in memory (no binary fixtures), sanitise them with
+the real detection engine and vault, and re-open the output to check that
+placeholders are present and originals are gone; they also cover macro, encryption
+and external-link refusals, zip-bomb, ZIP64 and path-traversal refusals, PDF font
+encodings and filters, and time bounds. The `file-upload-docx` and
+`file-upload-pdf-blocked` E2E scenarios upload a DOCX and a PDF on the ChatGPT
+fixture in a real browser.

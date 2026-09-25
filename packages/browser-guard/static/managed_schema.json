@@ -261,6 +261,16 @@
 				"allow"
 			]
 		},
+		"documentHandling": {
+			"title": "Document handling",
+			"description": "Office (DOCX/XLSX/PPTX) and PDF uploads when fileHandling is scan. mask (default) masks Office text in place and scans PDFs, blocking PDFs that contain sensitive data; block rejects every Office/PDF upload; allow skips document parsing and treats them like other binary files (uploaded with an unscanned warning, blocked in block mode). Macro-enabled, encrypted or externally linked Office files are always blocked under mask.",
+			"type": "string",
+			"enum": [
+				"mask",
+				"block",
+				"allow"
+			]
+		},
 		"maxFileBytes": {
 			"title": "Maximum file size",
 			"description": "Largest file (bytes) that is scanned; at most 52428800 (50 MiB).",

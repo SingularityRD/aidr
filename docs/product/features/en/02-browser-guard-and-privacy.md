@@ -473,8 +473,9 @@ Covered by the real-browser `paste-*` scenarios.
 ### 7. File and upload protection
 
 **What it does** — Reads files the user selects, drops or pastes into a supported AI site,
-before the site gets them. Text files with sensitive data are replaced with a sanitised
-copy (same name, same type). Files that cannot be checked are flagged or blocked by policy.
+before the site gets them. Text files and Word/Excel/PowerPoint documents with sensitive data
+are replaced with a sanitised copy (same name, same type). PDFs are scanned and blocked when
+they contain sensitive data. Files that cannot be checked are flagged or blocked by policy.
 
 **Why it matters** — A single CSV export can hold thousands of customer records. `.env` files
 and JSON configs are made of credentials. Uploads are a larger leak channel than typing.
@@ -484,10 +485,14 @@ and JSON configs are made of credentials. Uploads are a larger leak channel than
 1. `fileHandling: "allow"` → passed through unread. `fileHandling: "block"` → blocked in
    every mode (reason `FILE_BLOCKED_BY_POLICY`).
 2. Larger than `maxFileBytes` (default 5 MiB, maximum 50 MiB) → blocked (`FILE_TOO_LARGE`).
+   **Office documents and PDFs** go to the document handlers next (see "Office documents
+   and PDFs" below). They are recognised by extension; a file with an unknown or missing
+   extension is recognised by MIME type or content, so renaming a document does not skip it.
 3. **Text or binary?** A file is text when it decodes as strict UTF-8 (BOM allowed) or as
    UTF-16 with a byte-order mark, contains no NUL byte, and either has a known text/source
    extension or an unknown extension without a binary MIME type. Known binary extensions
-   (PDF, Office, images, archives, media, databases, executables…) are always binary.
+   (images, archives, legacy `.doc`/`.xls`/`.ppt`, OpenDocument, media, databases,
+   executables…) are always binary.
 4. **Binary files** cannot be inspected in the browser. In `block` mode they are blocked
    (`BINARY_FILE_UNSCANNABLE`). In the other modes they are allowed with a warning toast.
 5. **Text formats**
@@ -510,6 +515,51 @@ and JSON configs are made of credentials. Uploads are a larger leak channel than
    complete, the file is blocked (`SCAN_INCOMPLETE`). Any internal error blocks it
    (`FILE_SCAN_ERROR`).
 
+**Office documents and PDFs** (`src/engine/office/`, `src/engine/pdf/`, managed key
+`documentHandling`, default `mask`). Everything runs in the content script: a small ZIP
+reader/writer on the browser's `DecompressionStream`/`CompressionStream`, a strict XML scanner
+and a PDF text extractor. There is no remote code, no WebAssembly and no new dependency.
+
+- **DOCX, XLSX, PPTX** (also `docm`/`xlsm`/`pptm`, templates and shows): the text is masked
+  in place and the package is re-zipped. Word paragraphs are scanned as a whole, so an email
+  address or TCKN that Word split across differently formatted runs is still found. The
+  placeholder goes into the first run and the rest of the value is removed from the others.
+  Only the runs that held the value change, and their formatting is kept. Covered: body,
+  headers, footers, footnotes and endnotes, comments and their authors, tracked changes,
+  field codes, text boxes and tables. In Excel: shared strings (including rich text), inline
+  strings, formula string results and number/date cells. A masked number becomes a text
+  cell; a formula cell keeps its formula and gets a text result. Comments, pivot-cache
+  strings and header/footer text are covered, and a column whose header names a sensitive
+  field is masked wholesale, as for CSV. In PowerPoint: slides, speaker notes, layouts,
+  masters and comments. In every format: charts, diagrams (SmartArt), drawings, alternative
+  text, document properties, and the targets of `mailto:` and other external hyperlinks.
+  Styles, images, fonts and every other part are copied byte for byte.
+  Result: `mask` with `SENSITIVE_DATA`, or `allow` when nothing was found.
+- **Refused** (blocked; `monitor` only records): macros or ActiveX (`DOCUMENT_MACROS`),
+  password protection (`DOCUMENT_ENCRYPTED`), external workbook links, data connections,
+  remote templates, linked objects or mail-merge sources (`DOCUMENT_EXTERNAL_LINKS`; ordinary
+  hyperlinks are allowed and their targets are scanned), embedded objects that are not
+  DOCX/XLSX/PPTX (`DOCUMENT_EMBEDDED_OBJECT`; embedded workbooks, such as chart data, are
+  sanitised the same way), malformed XML or a DOCTYPE declaration (`DOCUMENT_MALFORMED`), and
+  unsafe archives (`ARCHIVE_*`): ZIP64, more than 4,096 entries, a declared compression ratio
+  above 200:1 for an entry over 1 MiB, an entry over 48 MiB or more than 64 MiB inflated in
+  total, path traversal, duplicate or overlapping entries, or a CRC mismatch. Inflation stops
+  as soon as an entry exceeds its declared size, so a zip bomb is never expanded.
+- **PDF**: text is extracted (object and cross-reference streams; Flate, LZW, ASCIIHex,
+  ASCII85 and RunLength filters; WinAnsi, MacRoman and Standard encodings with
+  `/Differences`, including Turkish letters; ToUnicode maps for Identity-H fonts; Form
+  XObjects; annotations, form-field values and document info) and scanned. PDFs are **not**
+  rewritten. A PDF with findings is blocked (`SENSITIVE_DATA_IN_PDF`) and the bubble tells the
+  user to paste the text instead, where it is masked. `monitor` records it. A PDF without
+  extractable text (scanned), with image-only pages or parts that cannot be decoded
+  (`PDF_NO_TEXT`, `PDF_PARTIAL`), encrypted (`PDF_ENCRYPTED`) or unparseable
+  (`PDF_UNPARSEABLE`) follows the binary rule: uploaded with a warning, blocked in `block`
+  mode. Findings in the readable part still block it.
+- `documentHandling: "block"` refuses every Office/PDF upload in every mode
+  (`DOCUMENT_BLOCKED_BY_POLICY`). `documentHandling: "allow"` skips document parsing: the
+  file follows the binary rule (step 4). A document whose scan takes longer than 30 seconds
+  is blocked (`SCAN_INCOMPLETE`).
+
 The sanitised file is written as UTF-8 (the UTF-8 BOM is kept if the original had one) and
 handed to the site's own upload handler through a replayed event. In `monitor` mode (and
 while paused) files pass unchanged and are only counted. Blocked sites and
@@ -521,12 +571,15 @@ while paused) files pass unchanged and are only counted. Blocked sites and
 | Binary, not blocked | `"report.pdf" could not be scanned (binary file). Check it before sending.` / `"report.pdf" taranamadı (ikili dosya). Göndermeden önce kontrol edin.` |
 | Blocked | **Upload blocked** / **Yükleme engellendi**: `"big.csv" was not uploaded (FILE_TOO_LARGE).` / `"big.csv" yüklenmedi (FILE_TOO_LARGE).` |
 | Uploads disabled by policy | "Your organisation does not allow file uploads to AI services." / "Kurumunuz yapay zekâ hizmetlerine dosya yüklenmesine izin vermiyor." |
+| Documents disabled by policy | "Your organisation does not allow Office or PDF documents to be uploaded to AI services." / "Kurumunuz yapay zekâ hizmetlerine Office veya PDF belgesi yüklenmesine izin vermiyor." |
+| PDF with sensitive data | `"contract.pdf" was not uploaded (SENSITIVE_DATA_IN_PDF, 1 EMAIL). PDFs cannot be masked. Copy the text you need and paste it instead: AIDR masks pasted text.` / `"contract.pdf" yüklenmedi (SENSITIVE_DATA_IN_PDF, 1 EMAIL). PDF dosyaları maskelenemez. Gereken metni kopyalayıp yapıştırın: AIDR yapıştırılan metni maskeler.` |
 | File could not be checked | "AIDR could not check the file, so it was not uploaded." / "AIDR dosyayı kontrol edemedi; dosya yüklenmedi." |
 | Browser cannot swap the file | "This browser cannot replace the file with a sanitized copy, so it was not uploaded." / "Bu tarayıcı dosyayı temizlenmiş kopyasıyla değiştiremiyor; dosya yüklenmedi." |
 
-**How to use** — Managed keys `fileHandling` (`scan` | `block` | `allow`, default `scan`) and
-`maxFileBytes` (bytes, 1 to 52,428,800; default 5,242,880). There is no user setting for
-files.
+**How to use** — Managed keys `fileHandling` (`scan` | `block` | `allow`, default `scan`),
+`documentHandling` (`mask` | `block` | `allow`, default `mask`; applies when `fileHandling` is
+`scan`) and `maxFileBytes` (bytes, 1 to 52,428,800; default 5,242,880). There is no user
+setting for files.
 
 **Example** — Uploading `customers.csv`:
 
@@ -547,6 +600,14 @@ name,email,formula
 The real-browser scenario `file-upload-csv` checks that exactly one upload reaches the page,
 that it contains no original email and that the header row is preserved.
 
+A Word file whose paragraph reads `Müşteri e-postası: ayse.yilmaz@example.com`, with
+`ayse.yilmaz@` in bold and `example.com` in a normal run, reaches the site as the same `.docx`
+in which that paragraph reads `Müşteri e-postası: [EMAIL_1]` (the bold run now holds the
+placeholder, the other run is empty). The scenario `file-upload-docx` uploads such a file on
+the ChatGPT fixture and re-opens the uploaded bytes to check `word/document.xml`;
+`file-upload-pdf-blocked` checks that a PDF with an email address never reaches the page and
+that the bubble suggests pasting the text instead.
+
 **Availability**
 
 | | |
@@ -556,9 +617,19 @@ that it contains no original email and that the header row is preserved.
 | Platforms | Chrome, Edge, Firefox (desktop) |
 
 **Limitations**
-- PDFs, Office documents and images are **not** inspected in the browser (no OCR, no
-  document parsing). Outside `block` mode they pass with a warning. Set
-  `fileHandling: "block"` if such uploads must never reach AI sites.
+- Images are **not** inspected (no OCR in the browser): pictures inside Office documents,
+  scanned PDFs and image-only PDF pages. Scanned PDFs are reported as unscanned, not as
+  clean. Set `fileHandling: "block"` or `documentHandling: "block"` if such uploads must never
+  reach AI sites.
+- PDFs are scanned but never rewritten, so a PDF with findings is blocked rather than
+  masked. Encrypted PDFs are not decrypted; Type0 fonts without a ToUnicode map and
+  predefined CJK CMaps are not decoded (reported as `PDF_PARTIAL`); word and line breaks
+  are rebuilt from glyph positions and can differ from the reading order in multi-column
+  layouts.
+- Office masking covers text. Sheet names, defined names, table column names and numeric
+  pivot-cache values are not rewritten (a masked header cell can make Excel repair a table's
+  column name). Legacy `.doc`/`.xls`/`.ppt` and OpenDocument files are not parsed and follow
+  the binary rule.
 - Text files that are not UTF-8 are decoded as Windows-1254 (Turkish), or Windows-1252 when
   that fits better, then scanned, and a masked copy is uploaded as UTF-8 (CSV/TSV with a
   BOM). Files in other single-byte encodings (for example Cyrillic Windows-1251) are decoded
@@ -902,6 +973,7 @@ All managed keys (from `static/managed_schema.json` and `src/background/policy.t
 | `allowSendAnyway` | boolean | `true` | Users may send unmasked after a warning |
 | `maskPaste` | boolean | `true` | Mask pasted text (feature 6) |
 | `fileHandling` | `scan` \| `block` \| `allow` | `scan` | Upload handling (feature 7) |
+| `documentHandling` | `mask` \| `block` \| `allow` | `mask` | Office/PDF uploads when `fileHandling` is `scan` (feature 7) |
 | `maxFileBytes` | integer, 1 to 52,428,800 | 5,242,880 (5 MiB) | Largest file scanned; larger files are blocked |
 | `restoreResponses` | boolean | `true` | Restore originals in answers locally |
 | `useNativeHost` | boolean | `false` | Use the AIDR Privacy native host for NER (feature 16). Users can also turn it on in the options page unless it is managed |
@@ -1298,7 +1370,8 @@ packages and libseccomp. See
 
 **Limitations** — Scanned or image PDFs, Office files with media, legacy Office,
 password-protected files and customXML content are blocked. There is no format-preserving
-PDF/Office redaction: output is text only. Not wired into Browser Guard uploads.
+PDF/Office redaction: output is text only. Not wired into Browser Guard uploads; Browser
+Guard has its own in-browser Office masking and PDF scanning (feature 7).
 
 ### 22. Enterprise gateway and platform layer
 
