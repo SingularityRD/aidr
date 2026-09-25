@@ -152,8 +152,10 @@ class BoundedTextCollector {
 			if (!Object.hasOwn(current, key)) continue;
 			// Keep field boundaries visible to token scanners. Concatenating a key
 			// directly with its value turns `{ stdout: "Ignore ..." }` into
-			// `stdoutIgnore ...`, defeating word-boundary patterns.
-			if (!this.append(`${key}:`)) return;
+			// `stdoutIgnore ...`, defeating word-boundary patterns. The leading
+			// newline does the same for the previous value's end: `{ a: "<token>",
+			// b: "" }` must not read as `<token>b:`, which hides a canary token.
+			if (!this.append(`\n${key}:`)) return;
 			const descriptor = Object.getOwnPropertyDescriptor(current, key);
 			if (!descriptor || !("value" in descriptor)) {
 				this.incomplete = true;

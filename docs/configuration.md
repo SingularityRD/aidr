@@ -657,7 +657,8 @@ sent to the AIDR dashboard for an administrator to approve — see
 | `aidr allowlist list\|add\|remove` | Manage permanent exceptions (`add` is operator only) |
 | `aidr audit tail [-n N] [--json]` | Show recent audit entries, re-redacted |
 | `aidr audit export [--since 24h\|ISO] [--format jsonl\|csv] [-o file]` | Export redacted entries, including rotated files; the session id is replaced by a digest and CSV cells are neutralised against spreadsheet formulas |
-| `aidr doctor [--json]` | Check hosts, hook registration, rule count, core version, mode, DLP policy, the approval store and key custody, and the last verdict; exits non-zero on problems |
+| `aidr doctor [--json]` | Check hosts, hook registration, rule count, core version, mode, DLP policy, agent permission profiles, the approval store and key custody, and the last verdict; exits non-zero on problems |
+| `aidr profile list\|show\|validate\|test` | Inspect, validate and dry-run agent permission profiles (see [Agent permission profiles](agent-profiles.md)) |
 
 ### Key custody
 
@@ -860,4 +861,5 @@ unreachable) the call stays blocked with the reason in the message.
 | `~/.singularity-aidr/consumed-approvals.json` | Consumed approvals for MCP allowlist flow (10-min TTL entries) |
 | `~/.singularity-aidr/intel/` | Optional offline intel packs |
 | `~/.singularity-aidr/dlp-policy.json` | Optional unsigned DLP policy (local mode only; override with `AIDR_DLP_POLICY_PATH`) |
-| `~/.singularity-aidr/detectors/<runtime>.json` | Signed tenant detector bundle (managed mode) |
+| `~/.singularity-aidr/detectors/<runtime>.json` | Signed tenant detector bundle (managed mode); may carry signed agent permission profiles |
+| `~/.singularity-aidr/agent-profiles.json` | Optional local agent permission profiles, any mode (override with `AIDR_AGENT_PROFILES_PATH`); see [Agent permission profiles](agent-profiles.md) |

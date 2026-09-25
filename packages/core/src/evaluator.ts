@@ -3,6 +3,14 @@
  * Hooks should normalize transport-specific payloads, then call this function.
  */
 
+import { isAbsolute } from "node:path";
+import {
+	type AgentProfileContext,
+	agentProfileFailureVerdict,
+	agentProfileVerdict,
+	evaluateAgentProfiles,
+	mergeAgentProfileVerdict,
+} from "./agent-profile.js";
 import { isAllowlisted, loadAllowlist } from "./allowlist.js";
 import {
 	buildIncidentEntry,
@@ -14,6 +22,15 @@ import {
 import { BehavioralDetectionOrchestrator } from "./behavioral-orchestrator.js";
 import { isCommercialBuild } from "./build-flavor.js";
 import { VerdictCache } from "./cache.js";
+import {
+	CANARY_TRIGGERED_CATEGORY,
+	CANARY_UNAVAILABLE_CATEGORY,
+	type CanaryHit,
+	type CanaryStage,
+	canaryTriggeredVerdict,
+	canaryUnavailableVerdict,
+	inspectToolInputForCanaries,
+} from "./canary/detect.js";
 import { AmsiClient, isAmsiSupported } from "./clients/amsi.js";
 import { ControlPlaneClient } from "./clients/control-plane.js";
 import { UrlCheckClient } from "./clients/url-check.js";
@@ -234,6 +251,18 @@ export interface ToolEvaluationContext {
 	 * vector-store write tools whose names alone do not say so.
 	 */
 	mcpToolDescription?: string;
+	/**
+	 * Trusted agent permission profiles for this connector (local document and,
+	 * in managed mode, the signed tenant section). Absent means no profile
+	 * restricts the call. Profiles only ever make a verdict stricter.
+	 */
+	agentProfiles?: AgentProfileContext;
+	/**
+	 * Host-reported absolute working directory of the agent session. Selects
+	 * repository-scoped profiles and anchors `${workspace}` and relative paths.
+	 * Defaults to the process working directory.
+	 */
+	workingDirectory?: string;
 }
 
 const DETECTOR_DECISION_RANK = { allow: 0, ask: 1, deny: 2 } as const;
@@ -290,6 +319,9 @@ function auditToolInputForVerdict(
 	// credential redactor does not know. Never copy their raw payload into an
 	// audit summary or remote event when the configured detector determined the
 	// outcome (including unavailable inspection).
+	// A canary trigger may carry the decoy token value itself; it never enters a
+	// log or remote event (the verdict names the canary id instead).
+	if (verdict.category === CANARY_TRIGGERED_CATEGORY) return { content_omitted: "canary trigger" };
 	return context.runtimeDetectors?.dlp?.enabled === true ||
 		verdict.source === "dlp" ||
 		verdict.category === "behavioral_unavailable" ||
@@ -642,7 +674,7 @@ async function applyRuntimeDetectors(
 		};
 	}
 
-	const verdict = mergeContextPoisoningVerdict(
+	const checked = mergeContextPoisoningVerdict(
 		await recheckRedactedInput(
 			await applyConfiguredDetectors(request, context, baseVerdict, managedState, rewriteSource),
 			request,
@@ -651,6 +683,8 @@ async function applyRuntimeDetectors(
 		),
 		await contextPoisoningVerdict(request, context, config, baseVerdict),
 	);
+	const canaryGap = canaryUnavailableByRequest.get(request);
+	const verdict = canaryGap ? canaryUnavailableVerdict(checked, canaryGap) : checked;
 	return delegationOutcome ? { ...verdict, delegation: delegationOutcome.lineage } : verdict;
 }
 
@@ -698,6 +732,78 @@ function mergeContextPoisoningVerdict(current: Verdict, poisoning: Verdict | nul
 	return DETECTOR_DECISION_RANK[poisoning.decision] > DETECTOR_DECISION_RANK[current.decision]
 		? poisoning
 		: current;
+}
+
+/**
+ * Requests whose canary check could not run, with the reason. Set by the early
+ * canary check and read where every pipeline path settles its verdict
+ * (`applyRuntimeDetectors`), so a skipped check is never reported as clean.
+ */
+const canaryUnavailableByRequest = new WeakMap<ToolEvaluationRequest, string>();
+
+/**
+ * Canary check, run before any other leg: a call that touches a decoy is
+ * denied outright (no allowlist, approval or cached verdict applies), and no
+ * reputation lookup ever receives the decoy value. Detection-internal failures
+ * are skipped, logged and remembered for the final verdict.
+ */
+function checkToolCallCanaries(request: ToolEvaluationRequest, logger: Logger): Verdict | null {
+	const inspection = inspectToolInputForCanaries(request.toolInput);
+	if (inspection.status === "triggered") return canaryTriggeredVerdict(inspection.hits);
+	if (inspection.status === "unavailable") {
+		canaryUnavailableByRequest.set(request, inspection.reason);
+		logger.warn("Canary credential check unavailable; signal skipped", {
+			reason: inspection.reason,
+		});
+	}
+	return null;
+}
+
+/**
+ * Record a canary trigger seen outside the pre-execution tool check (tool
+ * output after execution, a user prompt): audit entry, and in managed mode an
+ * incident through the same path as a blocked tool call. Never throws; the
+ * returned deny verdict is what the caller enforces.
+ */
+export async function recordCanaryTrigger(params: {
+	sessionId: string;
+	toolName: string;
+	hits: readonly CanaryHit[];
+	stage: Exclude<CanaryStage, "tool_input">;
+	configPath?: string;
+	logger?: Logger;
+	agentRuntime?: AgentRuntime;
+	agentRuntimeVersion?: string;
+}): Promise<Verdict> {
+	const verdict = canaryTriggeredVerdict(params.hits, params.stage);
+	const logger = params.logger ?? nullLogger;
+	try {
+		const config = await loadConfig(params.configPath, logger);
+		if (isInvalidConfig(config)) return verdict;
+		await recordEarlyVerdict(
+			{
+				sessionId: params.sessionId,
+				toolName: params.toolName,
+				toolInput: { content_omitted: params.stage },
+				artifacts: [],
+			},
+			{
+				threatsDir: "",
+				allowlistsDir: "",
+				configPath: params.configPath,
+				agentRuntime: params.agentRuntime,
+				agentRuntimeVersion: params.agentRuntimeVersion,
+				logger,
+			},
+			config,
+			verdict,
+			logger,
+			performance.now(),
+		);
+	} catch {
+		// Recording cannot change the enforced decision.
+	}
+	return verdict;
 }
 
 async function applyConfiguredDetectors(
@@ -1038,6 +1144,31 @@ async function recheckRedactedInput(
 	}
 }
 
+/**
+ * The agent permission profile outcome for this call, or null when no profile
+ * restricts it. An unexpected evaluation failure is a deny: the profile is a
+ * security control and must not silently disappear.
+ */
+async function evaluateAgentProfileVerdict(
+	request: ToolEvaluationRequest,
+	context: ToolEvaluationContext,
+): Promise<Verdict | null> {
+	const profiles = context.agentProfiles;
+	if (!profiles || profiles.layers.length === 0) return null;
+	const reported = context.workingDirectory?.trim();
+	const workingDirectory = reported && isAbsolute(reported) ? reported : process.cwd();
+	try {
+		const evaluation = await evaluateAgentProfiles(
+			profiles,
+			{ toolName: request.toolName, toolInput: request.toolInput, artifacts: request.artifacts },
+			{ workingDirectory },
+		);
+		return agentProfileVerdict(evaluation);
+	} catch {
+		return agentProfileFailureVerdict();
+	}
+}
+
 /** MCP calls reach the evaluator as `mcp__<server>__<tool>` or the host's generic `MCP` tool. */
 function isMcpToolName(toolName: string): boolean {
 	return toolName === "MCP" || toolName.startsWith("mcp__");
@@ -1090,6 +1221,11 @@ async function runEvaluationPipeline(
 		await recordEarlyVerdict(request, context, config, verdict, logger, startTime);
 		return verdict;
 	}
+	const canaryVerdict = checkToolCallCanaries(request, logger);
+	if (canaryVerdict) {
+		await recordEarlyVerdict(request, context, config, canaryVerdict, logger, startTime);
+		return canaryVerdict;
+	}
 	if (request.toolInput.__aidr_input_normalization_failed === true) {
 		const verdict = ambiguousToolInputVerdict();
 		await recordEarlyVerdict(request, context, config, verdict, logger, startTime);
@@ -1122,6 +1258,38 @@ async function runEvaluationPipeline(
 		await recordEarlyVerdict(request, context, config, verdict, logger, startTime);
 		return verdict;
 	}
+	// A profile deny is final: nothing downstream can soften it. An ask (or an
+	// allow) is merged into whatever detection decides, deny > ask > allow.
+	const profileVerdict = await evaluateAgentProfileVerdict(request, context);
+	if (profileVerdict?.decision === "deny") {
+		await recordEarlyVerdict(request, context, config, profileVerdict, logger, startTime);
+		return profileVerdict;
+	}
+	// Every exit below routes its verdict through here: tenant runtime
+	// detectors, then session (toxic) flow, then the profile restriction,
+	// then host promotion.
+	const finalize = async (verdict: Verdict, allowlisted = false): Promise<Verdict> =>
+		hostEffectiveVerdict(
+			mergeAgentProfileVerdict(
+				await applySessionFlow(
+					request,
+					context,
+					config,
+					await applyRuntimeDetectors(
+						request,
+						context,
+						config,
+						verdict,
+						managedState,
+						rewriteSource,
+					),
+					allowlisted,
+				),
+				profileVerdict,
+			),
+			config,
+			context,
+		);
 	const commercial = isCommercialBuild();
 	// Computed once: the same manifest edits decide whether this request has
 	// anything for the package leg to inspect at all (see the empty-artifact
@@ -1130,7 +1298,9 @@ async function runEvaluationPipeline(
 
 	// Managed-only commercial behavior: without a valid auth token + signed entitlement (or offline grace),
 	// the runtime does not enforce and becomes inert (allow-only).
-	const disabled = (reason: string): Verdict => {
+	const disabled = (reason: string): Verdict =>
+		mergeAgentProfileVerdict(disabledVerdict(reason), profileVerdict);
+	const disabledVerdict = (reason: string): Verdict => {
 		if (commercial) {
 			return {
 				decision: "ask",
@@ -1433,26 +1603,11 @@ async function runEvaluationPipeline(
 		// A manifest edit is inspectable input even when the connector extracted
 		// no artifacts for the tool name, so it may not take this fast path.
 		if (!isMcpTool && manifestEdits.length === 0) {
-			const verdict = hostEffectiveVerdict(
-				await applySessionFlow(
-					request,
-					context,
-					config,
-					await applyRuntimeDetectors(
-						request,
-						context,
-						config,
-						allowVerdict("no_artifacts"),
-						managedState,
-						rewriteSource,
-					),
-				),
-				config,
-				context,
-			);
+			const verdict = await finalize(allowVerdict("no_artifacts"));
 			if (
 				verdict.decision !== "allow" ||
 				verdict.category === "behavioral_unavailable" ||
+				verdict.category === CANARY_UNAVAILABLE_CATEGORY ||
 				verdict.category.startsWith("toxic_flow") ||
 				verdict.transformedInput
 			) {
@@ -1481,24 +1636,7 @@ async function runEvaluationPipeline(
 	}
 
 	if (allowlisted) {
-		const finalVerdict = hostEffectiveVerdict(
-			await applySessionFlow(
-				request,
-				context,
-				config,
-				await applyRuntimeDetectors(
-					request,
-					context,
-					config,
-					allowlisted,
-					managedState,
-					rewriteSource,
-				),
-				true,
-			),
-			config,
-			context,
-		);
+		const finalVerdict = await finalize(allowlisted, true);
 		await recordEarlyVerdict(
 			request,
 			context,
@@ -1512,23 +1650,7 @@ async function runEvaluationPipeline(
 	}
 
 	if (policyVerdict) {
-		const finalVerdict = hostEffectiveVerdict(
-			await applySessionFlow(
-				request,
-				context,
-				config,
-				await applyRuntimeDetectors(
-					request,
-					context,
-					config,
-					policyVerdict,
-					managedState,
-					rewriteSource,
-				),
-			),
-			config,
-			context,
-		);
+		const finalVerdict = await finalize(policyVerdict);
 		const durationMs = performance.now() - startTime;
 		const auditInput = auditToolInputForVerdict(request.toolInput, finalVerdict, context);
 		let incidentEntry: Record<string, unknown> | null = null;
@@ -1834,16 +1956,7 @@ async function runEvaluationPipeline(
 			`URL reputation lookup was unavailable (${urlLegUnavailableReason}), so the URLs in this call were NOT verified clean and require review.`,
 		);
 	}
-	verdict = hostEffectiveVerdict(
-		await applySessionFlow(
-			request,
-			context,
-			config,
-			await applyRuntimeDetectors(request, context, config, verdict, managedState, rewriteSource),
-		),
-		config,
-		context,
-	);
+	verdict = await finalize(verdict);
 	const durationMs = performance.now() - startTime;
 	const auditInput = auditToolInputForVerdict(request.toolInput, verdict, context);
 

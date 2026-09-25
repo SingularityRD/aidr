@@ -17,6 +17,7 @@ and the **AIDR Privacy** engine that Browser Guard's detection reuses. See
 
 ```bash
 pnpm install                               # Install all dependencies
+pnpm ci:local --keep-going                   # Run every .github/workflows/ci.yml gate locally (CI is disabled); ci:local:quick for the fast subset, --list for steps
 pnpm test                                    # Run all tests (builds automatically, E2E excluded)
 pnpm test -- --reporter=verbose              # Verbose test output
 pnpm test -- packages/core/src/__tests__/extractors.test.ts  # Single test file
@@ -74,7 +75,7 @@ TypeScript monorepo. Connector packages and their shared core:
   gateway (`/platform`). Tests run with `node --test` via `pnpm test:privacy`, not vitest.
 - `services/aig-bridge/` — Python/FastAPI bridge for the SingularityRD-owned AI Infra Guard source, tracked directly under `vendor/ai-infra-guard/` (not a submodule)
 - `supabase/` — canonical migrations + Edge Functions; `packages/dashboard/supabase/functions/` contains dashboard-specific shared function code, not migration copies
-- `threats/` — YAML threat definitions (data, not code); 409 rules across 25 files (`grep -h '^- id:' threats/*.yaml | wc -l`)
+- `threats/` — YAML threat definitions (data, not code); 410 rules across 26 files (`grep -h '^- id:' threats/*.yaml | wc -l`)
 - `allowlists/` — Trusted domain allowlists
 - `hooks/` — `hooks.json` registering hooks with Claude Code
 - `skills/` — `security-awareness/SKILL.md`, synced into connector `resources/`

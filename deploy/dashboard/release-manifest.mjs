@@ -22,7 +22,7 @@ export const RELEASE_ARTIFACT_IDS = Object.freeze([
 	"mcp-gateway",
 ]);
 
-export const RELEASE_MANIFEST_MAX_BYTES = 1024 * 1024;
+const RELEASE_MANIFEST_MAX_BYTES = 1024 * 1024;
 const MAX_ARTIFACTS = 200;
 const SEMVER_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 const RFC3339_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/;

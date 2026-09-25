@@ -200,6 +200,8 @@ export async function enforceCodexPreToolUse(
 				allowlistsDir: options.allowlistsDir ?? resolveAssetDir("allowlists"),
 				logger,
 				agentRuntime: "codex",
+				// Codex reports the session directory; it selects repository-scoped profiles.
+				workingDirectory: typeof input.cwd === "string" ? input.cwd : undefined,
 				...provisioned,
 			},
 			options.approvalStore ?? EPHEMERAL_APPROVALS,

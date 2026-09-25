@@ -10,6 +10,12 @@ import {
 } from "./commands/allowlist.js";
 import { approveCommand, pendingCommand } from "./commands/approvals.js";
 import { auditExportCommand, auditTailCommand } from "./commands/audit.js";
+import {
+	canaryDeployCommand,
+	canaryListCommand,
+	canaryRemoveCommand,
+	canaryStatusCommand,
+} from "./commands/canary.js";
 import collectCommand from "./commands/collect.js";
 import complianceVerifyCommand from "./commands/compliance.js";
 import configCommand from "./commands/config.js";
@@ -21,6 +27,12 @@ import {
 import discoverCommand from "./commands/discover.js";
 import doctorCommand from "./commands/doctor.js";
 import privacyScanCommand from "./commands/privacy.js";
+import {
+	profileListCommand,
+	profileShowCommand,
+	profileTestCommand,
+	profileValidateCommand,
+} from "./commands/profile.js";
 import scanCommand from "./commands/scan.js";
 import setupCommand from "./commands/setup.js";
 import simulateCommand from "./commands/simulate.js";
@@ -204,7 +216,7 @@ program
 program
 	.command("doctor")
 	.description(
-		"Check hosts, hook registration, rules, mode, DLP policy, approvals and the last verdict; exits non-zero on problems",
+		"Check hosts, hook registration, rules, mode, DLP policy, agent profiles, approvals and the last verdict; exits non-zero on problems",
 	)
 	.option("--json", "Emit a machine-readable report")
 	.action((options) => doctorCommand(options));
@@ -280,5 +292,76 @@ auditProgram
 	.option("--format <format>", "jsonl or csv", "jsonl")
 	.option("-o, --output <file>", "Write to a new file (0600) instead of stdout")
 	.action((options) => auditExportCommand(options));
+
+const profileProgram = program
+	.command("profile")
+	.description("Inspect, validate and dry-run agent permission profiles (least privilege)");
+
+profileProgram
+	.command("list")
+	.description("List local and managed agent permission profiles and the shipped templates")
+	.option("--json", "Emit machine-readable JSON")
+	.action((options) => profileListCommand(options));
+
+profileProgram
+	.command("show <name>")
+	.description("Print one profile (local or managed), or a shipped template with --template")
+	.option(
+		"--template",
+		"Show a shipped template: read-only-reviewer, standard-developer, ci-agent, locked-down",
+	)
+	.action((name, options) => profileShowCommand(name, options));
+
+profileProgram
+	.command("validate [file]")
+	.description("Validate a profile document (default: ~/.singularity-aidr/agent-profiles.json)")
+	.option("--json", "Emit machine-readable JSON")
+	.action((file, options) => profileValidateCommand(file, options));
+
+profileProgram
+	.command("test <tool-call-json>")
+	.description(
+		'Dry-run a tool call (JSON or @file, e.g. \'{"tool_name":"Bash","tool_input":{"command":"ls"}}\') against the effective profiles',
+	)
+	.option("--connector <name>", "Connector whose profiles apply", "claude-code")
+	.option("--cwd <dir>", "Working directory of the agent session (selects repository profiles)")
+	.option("--file <path>", "Test against this profile document instead of the installed ones")
+	.option("--json", "Emit machine-readable JSON")
+	.action((toolCall, options) => profileTestCommand(toolCall, options));
+
+const canaryProgram = program
+	.command("canary")
+	.description(
+		"Operator only: plant and manage decoy credentials that expose an agent hunting for secrets",
+	);
+
+canaryProgram
+	.command("deploy")
+	.description(
+		"Create new decoy credential files (never overwrites a file); the registry stores only digests",
+	)
+	.option("--path <dir>", "Directory for project decoys (env, db-url); defaults to the current one")
+	.option("--kinds <list>", "Comma-separated kinds: aws, github, openai, env, ssh-config, db-url")
+	.option("--json", "Emit machine-readable JSON")
+	.action((options) => canaryDeployCommand(options));
+
+canaryProgram
+	.command("list")
+	.description("List deployed canary credentials and whether each decoy file is intact")
+	.option("--json", "Emit machine-readable JSON")
+	.action((options) => canaryListCommand(options));
+
+canaryProgram
+	.command("remove [id]")
+	.description("Delete one decoy (by id) or all of them, and drop them from the registry")
+	.option("--all", "Remove every deployed canary credential")
+	.option("--json", "Emit machine-readable JSON")
+	.action((id, options) => canaryRemoveCommand(id, options));
+
+canaryProgram
+	.command("status")
+	.description("Check the registry, the decoy files and triggers recorded in the audit log")
+	.option("--json", "Emit machine-readable JSON")
+	.action((options) => canaryStatusCommand(options));
 
 await program.parseAsync(process.argv);

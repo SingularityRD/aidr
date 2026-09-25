@@ -358,7 +358,7 @@ h3.sub::after { content: ""; flex: 1; height: 0.3mm; background: var(--line); ma
 			</div>
 			<p class="what">Every tool call reaches the local decision engine before the host acts, and comes back as <span class="v-allow">allow</span> <span class="v-ask">ask</span> <span class="v-deny">deny</span>.</p>
 			<ul class="bul">
-				<li><b><span data-fact="threat-rules">409</span> YAML detection rules</b> in <span data-fact="threat-files">25</span> files: dangerous commands, credential access, persistence, obfuscation, supply chain; Linux, macOS, Windows.</li>
+				<li><b><span data-fact="threat-rules">410</span> YAML detection rules</b> in <span data-fact="threat-files">26</span> files: dangerous commands, credential access, persistence, obfuscation, supply chain; Linux, macOS, Windows.</li>
 				<li><b>Fail-closed entry points:</b> on an internal error a connector denies the call instead of letting it through.</li>
 				<li><b>Out-of-band approval:</b> <code>ask</code> blocks until an operator runs <code>aidr approve</code>. The agent is never given an approval tool.</li>
 				<li><b>MCP Gateway</b> scans tool results before the model reads them; the <b>SDK</b> and <b>CLI</b> use the same engine.</li>
@@ -457,7 +457,7 @@ h3.sub::after { content: ""; flex: 1; height: 0.3mm; background: var(--line); ma
 				<text x="228" y="56" class="dg-b dg-w" font-size="12">Local engine</text>
 				<text x="228" y="69" class="dg-w" font-size="9.3" fill-opacity="0.78">no cloud required</text>
 				<rect x="202" y="82" width="146" height="36" rx="7" fill="#fff" fill-opacity="0.12" stroke="#fff" stroke-opacity="0.25"/>
-				<text x="212" y="97" class="dg-b dg-w" font-size="10"><tspan data-fact="threat-rules">409</tspan> YAML rules</text>
+				<text x="212" y="97" class="dg-b dg-w" font-size="10"><tspan data-fact="threat-rules">410</tspan> YAML rules</text>
 				<text x="212" y="110" class="dg-w" font-size="8.8" fill-opacity="0.8">chains · obfuscation</text>
 				<rect x="202" y="124" width="146" height="36" rx="7" fill="#fff" fill-opacity="0.12" stroke="#fff" stroke-opacity="0.25"/>
 				<text x="212" y="139" class="dg-b dg-w" font-size="10">DLP + privacy</text>
@@ -525,7 +525,7 @@ h3.sub::after { content: ""; flex: 1; height: 0.3mm; background: var(--line); ma
 	<h3 class="sub">Capabilities at a glance</h3>
 	<div class="features">
 		<div class="feat"><div class="t"><span class="ic"><svg class="i"><use href="#i-check"/></svg></span>Inline verdicts</div><p>Allow, ask or deny on every tool call, naming the matched rule and artifact.</p></div>
-		<div class="feat"><div class="t"><span class="ic"><svg class="i"><use href="#i-file"/></svg></span>Rules as data</div><p><span data-fact="threat-rules">409</span> YAML rules; add your own and override any rule by id.</p></div>
+		<div class="feat"><div class="t"><span class="ic"><svg class="i"><use href="#i-file"/></svg></span>Rules as data</div><p><span data-fact="threat-rules">410</span> YAML rules; add your own and override any rule by id.</p></div>
 		<div class="feat"><div class="t"><span class="ic"><svg class="i"><use href="#i-link"/></svg></span>Obfuscation</div><p>Chained and obfuscated commands are unpacked before they are judged.</p></div>
 		<div class="feat"><div class="t"><span class="ic"><svg class="i"><use href="#i-box"/></svg></span>Supply chain</div><p>npm/PyPI supply-chain checks; installed plugins scanned at session start.</p></div>
 		<div class="feat"><div class="t"><span class="ic"><svg class="i"><use href="#i-plug"/></svg></span>MCP Gateway</div><p>Tool results scanned before the model reads them; signed server manifests.</p></div>

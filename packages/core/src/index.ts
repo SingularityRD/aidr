@@ -158,6 +158,8 @@ export {
 export { isCommercialBuild } from "./build-flavor.js";
 // Cache
 export { VerdictCache } from "./cache.js";
+// Canary credentials (honeytokens): deploy decoys, detect any agent touching them
+export * from "./canary/index.js";
 // Causal agent chain (message -> retrieval -> tool -> authorization -> action ->
 // side effect -> intervention), ordered by position and logical clock, with a
 // missing link reported as `chain_gap` and tamper-evident binding through the
@@ -321,6 +323,54 @@ export {
 } from "./delegated-credential.js";
 export type { DetectionLeg } from "./detection-leg.js";
 export { DetectionLegUnavailableError, describeHttpFailure } from "./detection-leg.js";
+// Agent permission profiles: least-privilege restrictions per connector and
+// repository, evaluated by the shared evaluator on top of threat detection.
+export {
+	AGENT_PROFILE_ACTIONS,
+	AGENT_PROFILE_CONNECTORS,
+	AGENT_PROFILE_TOOL_CLASSES,
+	type AgentProfile,
+	type AgentProfileAction,
+	type AgentProfileCall,
+	type AgentProfileConnector,
+	type AgentProfileContext,
+	type AgentProfileDiagnostic,
+	type AgentProfileDocument,
+	AgentProfileDocumentSchema,
+	type AgentProfileEnvironment,
+	type AgentProfileEvaluation,
+	type AgentProfileLayer,
+	type AgentProfileOutcome,
+	type AgentProfileSource,
+	type AgentProfileValidation,
+	agentProfileVerdict,
+	classifyAgentTool,
+	evaluateAgentProfile,
+	evaluateAgentProfiles,
+	mcpCallIdentity,
+	mergeAgentProfileVerdict,
+	parseAgentProfileSource,
+	selectAgentProfiles,
+	validateAgentProfileDocument,
+	validateAgentProfileSource,
+	WORKSPACE_PLACEHOLDER,
+} from "./agent-profile.js";
+export {
+	buildAgentProfileContext,
+	DEFAULT_LOCAL_AGENT_PROFILES_PATH,
+	evaluateAgentProfilesForToolCall,
+	inspectLocalAgentProfiles,
+	LOCAL_AGENT_PROFILES_ENV,
+	type LocalAgentProfilesState,
+	localAgentProfileLayer,
+	localAgentProfilesPath,
+	managedAgentProfileLayer,
+} from "./agent-profile-loader.js";
+export {
+	AGENT_PROFILE_TEMPLATE_NAMES,
+	AGENT_PROFILE_TEMPLATES,
+	agentProfileTemplateDocument,
+} from "./agent-profile-templates.js";
 // Signed tenant detector policy: the single provisioning implementation every
 // connector uses to build a `ToolEvaluationContext`. The policy file is fixed
 // per agent runtime under `~/.singularity-aidr/detectors/`, so an operator
@@ -429,6 +479,7 @@ export { CONFIDENCE_THRESHOLD, DecisionEngine } from "./engine.js";
 export {
 	allowVerdict,
 	evaluateToolCall,
+	recordCanaryTrigger,
 	type ToolDelegationContext,
 	type ToolEvaluationContext,
 	type ToolEvaluationRequest,
@@ -1233,6 +1284,7 @@ export {
 	loadTrustedDomains,
 } from "./trusted-domains.js";
 export type {
+	AgentProfileVerdictRef,
 	AgentRuntime,
 	Allowlist,
 	AllowlistConfig,

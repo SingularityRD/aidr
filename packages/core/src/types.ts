@@ -150,6 +150,18 @@ export interface Verdict {
 	 * values.
 	 */
 	transformedInput?: Record<string, unknown>;
+	/**
+	 * The agent permission profile rule that restricted this call. Present only
+	 * when a profile made the decision stricter than threat detection alone.
+	 */
+	agentProfile?: AgentProfileVerdictRef;
+}
+
+/** Which profile rule restricted a call (names only, never tool input). */
+export interface AgentProfileVerdictRef {
+	profile: string;
+	source: "managed" | "local";
+	rule: string;
 }
 
 // ── Package check ──────────────────────────────────────────────────

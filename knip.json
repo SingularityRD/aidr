@@ -9,6 +9,8 @@
 				"deploy/fleet/unix/aidr-remediate.mjs",
 				"deploy/fleet/unix/fleet-health.mjs",
 				"deploy/fleet/unix/remove-managed-hooks.mjs",
+				"deploy/helm/build-images.mjs",
+				"deploy/helm/generate-secrets.mjs",
 				"docs/scripts/claim-check.mjs",
 				"scripts/benchmarks/generate-corpus.mjs",
 				"scripts/benchmarks/split-corpus.mjs",
@@ -63,7 +65,7 @@
 				"*.{js,cjs,mjs,ts}"
 			],
 			"ignore": ["deploy/upstream/**", "vendor/**"],
-			"ignoreDependencies": ["npm"],
+			"ignoreDependencies": ["npm", "playwright-core"],
 			"ignoreBinaries": ["bash", "docker", "gh", "gitleaks", "go", "icacls.exe", "where.exe", "wrangler"]
 		},
 		"packages/core": {
@@ -160,6 +162,7 @@
 	},
 	"ignoreIssues": {
 		"packages/opencode/src/index.ts": ["duplicates"],
-		"scripts/sync-dlp-edge-schema.mjs": ["unlisted"]
+		"scripts/sync-dlp-edge-schema.mjs": ["unlisted"],
+		"packages/core/src/dlp/privacy-rules/**": ["exports", "types"]
 	}
 }

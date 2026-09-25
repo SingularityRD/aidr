@@ -71,7 +71,8 @@ export async function verifyDashboardAssets(bundle, version, manifest, rawManife
 	if (!expectedArchive || createHash("sha256").update(archive).digest("hex") !== expectedArchive.sha256) {
 		throw new Error("Signed dashboard archive digest is missing or invalid");
 	}
-	const extracted = spawnSync("tar", ["-xOf", "-", "packages/dashboard/dist/aidr-artifact.manifest.json"], {
+	// GNU tar cannot detect compression on a pipe, so name it: -z works for GNU and bsdtar.
+	const extracted = spawnSync("tar", ["-xzOf", "-", "packages/dashboard/dist/aidr-artifact.manifest.json"], {
 		input: archive, maxBuffer: 2 * 1024 * 1024,
 	});
 	if (extracted.error || extracted.status !== 0 || !extracted.stdout.equals(rawManifest)) {
