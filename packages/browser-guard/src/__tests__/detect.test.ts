@@ -335,6 +335,18 @@ describe("detection engine: options and limits", () => {
 		expect(spans(text, await scan(text))).toEqual([["TC_KIMLIK", "10000000146"]]);
 	});
 
+	it("keeps a digit run after a name covered when the card check drops it", async () => {
+		// Luhn-valid but no card-network first digit: not reported as a card, so the privacy
+		// layer's cut of the name field at it must not expose it.
+		const text = "Ad Soyad: Ayşe Yılmaz 1000000000000008";
+		const result = await scan(text);
+		const covered = result.findings.some(
+			(f) => text.slice(f.start, f.end).includes("1000000000000008") && f.start >= 22,
+		);
+		expect(spans(text, result)[0]).toEqual(["PERSON", "Ayşe Yılmaz"]);
+		expect(covered).toBe(true);
+	});
+
 	it("still covers the whole name field when the other value's type is disabled", async () => {
 		const text = "Full name: Ayşe Yılmaz, TCKN 10000000146 please";
 		const result = await scan(text, { enabledEntities: ["PERSON"] });

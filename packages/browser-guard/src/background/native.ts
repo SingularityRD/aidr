@@ -15,6 +15,13 @@
  * The host returns a sanitised copy of the text, not spans, so findings are recovered
  * by aligning the host output (literal text + `[TYPE]` markers) against the input.
  *
+ * Images (`scanImage`, only when hello reports `ocr: true`):
+ *   begin  {kind:"image-scan", size, sha256, policyDigest} -> {}
+ *   write  ... as above
+ *   commit -> {decision: allow|block|review, reasons, counts, coverage, outputBytes: 0}
+ * The host OCRs the image and runs the text engine over it; nothing is read back (no pixels,
+ * no OCR text): the reply is a decision plus per-type counts.
+ *
  * Privacy: only the text passed to `scanText` is sent, nothing is persisted, and
  * transfer buffers are zeroed after use. The host is local stdio (no network).
  */
@@ -24,7 +31,13 @@ import {
 	sha256,
 	toBase64,
 } from "../../../privacy/src/browser/transport.js";
-import { ENTITY_TYPES, type EntityType, type Finding, type NativeBridge } from "../types.js";
+import {
+	ENTITY_TYPES,
+	type EntityType,
+	type Finding,
+	type ImageInspection,
+	type NativeBridge,
+} from "../types.js";
 
 export const NATIVE_HOST_NAME = "com.singularity.aidr_privacy";
 /** Upper bound for one complete scan exchange (connect, handshake, upload, commit, read). */
@@ -33,6 +46,10 @@ export const NATIVE_TIMEOUT_MS = 2_000;
 export const NATIVE_RETRY_AFTER_MS = 60_000;
 /** Consecutive scan failures that mark the host unavailable. */
 export const NATIVE_MAX_FAILURES = 3;
+/** Host `begin` limit for kind "image-scan" (NativeSession). */
+export const NATIVE_MAX_IMAGE_BYTES = 8_388_608;
+/** Upper bound for one OCR exchange (upload, OCR - the host's own OCR timeout is 45 s - commit). */
+export const NATIVE_IMAGE_TIMEOUT_MS = 60_000;
 /** Host `begin` limit for kind "text" (NativeSession). */
 const NATIVE_MAX_TEXT_BYTES = 1_048_576;
 /** protectDocument refuses to emit more than twice its input limit. */
@@ -77,6 +94,7 @@ export interface NativeBridgeOptions {
 	/** Defaults to `globalThis.chrome`, resolved on each use. */
 	readonly chrome?: NativeChromeApi;
 	readonly timeoutMs?: number;
+	readonly imageTimeoutMs?: number;
 	readonly retryAfterMs?: number;
 	readonly now?: () => number;
 }
@@ -85,6 +103,7 @@ type Json = Record<string, unknown>;
 
 interface Hello {
 	readonly policyDigest: string;
+	readonly ocr: boolean;
 }
 
 interface Commit {
@@ -100,6 +119,14 @@ type Outcome =
 	| { readonly kind: "findings"; readonly findings: readonly Finding[] }
 	| { readonly kind: "unmapped" }
 	| { readonly kind: "failure" };
+
+/** `unavailable`: a healthy host without OCR. */
+type ImageOutcome =
+	| { readonly kind: "inspection"; readonly inspection: ImageInspection }
+	| { readonly kind: "unavailable" }
+	| { readonly kind: "failure" };
+
+const FAILURE = Object.freeze({ kind: "failure" as const });
 
 class ProtocolError extends Error {
 	constructor() {
@@ -145,7 +172,7 @@ function parseHello(m: Json): Hello {
 	if (m.protocol !== 1 || m.local !== true || typeof m.ocr !== "boolean") invalid();
 	if (typeof m.policyId !== "string" || !/^[A-Za-z0-9_.-]{1,64}$/.test(m.policyId)) invalid();
 	if (typeof m.policyDigest !== "string" || !HEX64.test(m.policyDigest)) invalid();
-	return { policyDigest: m.policyDigest };
+	return { policyDigest: m.policyDigest, ocr: m.ocr };
 }
 
 function parseCounts(value: unknown): Partial<Record<EntityType, number>> {
@@ -204,6 +231,37 @@ function parseCommit(m: Json, hello: Hello): Commit {
 		counts: parseCounts(m.counts),
 		...parseOutput(m, decision),
 	};
+}
+
+const IMAGE_RESULTS: Readonly<Record<string, ImageInspection["result"]>> = {
+	allow: "clean",
+	block: "sensitive",
+	review: "incomplete",
+};
+
+/** An `image-scan` commit: a decision and counts, never output bytes. */
+function parseImageCommit(m: Json, hello: Hello): ImageInspection {
+	onlyKeys(m, [
+		"decision",
+		"reasons",
+		"coverage",
+		"counts",
+		"policyId",
+		"policyDigest",
+		"outputBytes",
+	]);
+	const result = (typeof m.decision === "string" && IMAGE_RESULTS[m.decision]) || invalid();
+	if (m.policyDigest !== hello.policyDigest || m.outputBytes !== 0) invalid();
+	if (
+		m.coverage !== undefined &&
+		m.coverage !== "unknown" &&
+		m.coverage !== "rules-only" &&
+		m.coverage !== "rules-and-ner"
+	)
+		invalid();
+	const counts = parseCounts(m.counts);
+	if (result === "clean" && Object.values(counts).some((n) => (n ?? 0) > 0)) invalid();
+	return { result, counts, reasons: parseReasons(m.reasons) };
 }
 
 interface Marker {
@@ -432,7 +490,7 @@ async function runScan(
 		const meta = parseCommit(await session.rpc("commit"), hello);
 		if (meta.decision === "block" || meta.decision === "review") {
 			return meta.reasons.some((r) => ENGINE_FAILURE_REASON.test(r))
-				? { kind: "failure" }
+				? FAILURE
 				: { kind: "unmapped" };
 		}
 		if (meta.decision === "allow") {
@@ -443,7 +501,7 @@ async function runScan(
 		output = new Uint8Array(meta.outputBytes);
 		await download(session, output);
 		if ((await sha256(output)) !== meta.sha256) invalid();
-		if (!isOpen()) return { kind: "failure" };
+		if (!isOpen()) return FAILURE;
 		const sanitized = new TextDecoder("utf-8", { fatal: true }).decode(output);
 		const spans = recoverNativeFindings(text, sanitized, meta.counts);
 		if (!spans) return { kind: "unmapped" };
@@ -452,10 +510,33 @@ async function runScan(
 			findings: spans.map((f) => ({ ...f, start: f.start + offset, end: f.end + offset })),
 		};
 	} catch {
-		return { kind: "failure" };
+		return FAILURE;
 	} finally {
 		bytes.fill(0);
 		output?.fill(0);
+	}
+}
+
+async function runImageScan(
+	session: Session,
+	bytes: Uint8Array,
+	isOpen: () => boolean,
+): Promise<ImageOutcome> {
+	try {
+		const hello = parseHello(await session.rpc("hello"));
+		if (!hello.ocr) return { kind: "unavailable" };
+		const begun = await session.rpc("begin", {
+			kind: "image-scan",
+			size: bytes.length,
+			sha256: await sha256(bytes),
+			policyDigest: hello.policyDigest,
+		});
+		onlyKeys(begun, []);
+		await upload(session, bytes);
+		const inspection = parseImageCommit(await session.rpc("commit"), hello);
+		return isOpen() ? { kind: "inspection", inspection } : FAILURE;
+	} catch {
+		return FAILURE;
 	}
 }
 
@@ -493,6 +574,7 @@ export function createNativeBridge(
 	options: NativeBridgeOptions = {},
 ): NativeBridge {
 	const timeoutMs = options.timeoutMs ?? NATIVE_TIMEOUT_MS;
+	const imageTimeoutMs = options.imageTimeoutMs ?? NATIVE_IMAGE_TIMEOUT_MS;
 	const retryAfterMs = options.retryAfterMs ?? NATIVE_RETRY_AFTER_MS;
 	const now = options.now ?? (() => Date.now());
 	const api = (): NativeChromeApi | undefined => options.chrome ?? defaultChrome();
@@ -518,13 +600,17 @@ export function createNativeBridge(
 	const inBackoff = () => state === "unavailable" && now() < retryAt;
 
 	/** Bounds a promise; the timer is always cleared. */
-	const bounded = <T>(task: Promise<T>, onTimeout: () => void): Promise<T | "timeout"> => {
+	const bounded = <T>(
+		task: Promise<T>,
+		onTimeout: () => void,
+		limitMs = timeoutMs,
+	): Promise<T | "timeout"> => {
 		let timer: ReturnType<typeof setTimeout> | undefined;
 		const timeout = new Promise<"timeout">((resolve) => {
 			timer = setTimeout(() => {
 				onTimeout();
 				resolve("timeout");
-			}, timeoutMs);
+			}, limitMs);
 		});
 		return Promise.race([task, timeout]).finally(() => clearTimeout(timer));
 	};
@@ -582,23 +668,48 @@ export function createNativeBridge(
 		}
 	};
 
-	const attempt = async (input: HostInput, run: RunState): Promise<Outcome | "denied"> => {
+	/** Permission check, a fresh host process and `exchange` on it. */
+	const attempt = async <T>(
+		run: RunState,
+		exchange: (session: Session, isOpen: () => boolean) => Promise<T | typeof FAILURE>,
+	): Promise<T | typeof FAILURE | "denied"> => {
 		const chrome = api();
 		if (!(await permitted(chrome))) return "denied";
 		const runtime = chrome?.runtime;
 		const connect = runtime?.connectNative;
 		if (!chrome || !connect) return "denied";
-		if (!run.open) return { kind: "failure" };
+		if (!run.open) return FAILURE;
 		try {
 			run.session = openSession(chrome, (name) => connect.call(runtime, name));
 		} catch {
-			return { kind: "failure" };
+			return FAILURE;
 		}
-		return runScan(run.session, input.body, input.offset, () => run.open);
+		return exchange(run.session, () => run.open);
 	};
 
-	/** Applies an attempt's outcome to the health state and maps it to the caller's result. */
-	const settle = (outcome: Outcome | "denied" | "timeout"): readonly Finding[] | null => {
+	/** One bounded host exchange (one deadline covers the permission check too). */
+	const guarded = async <T>(
+		limitMs: number,
+		exchange: (session: Session, isOpen: () => boolean) => Promise<T | typeof FAILURE>,
+	): Promise<T | typeof FAILURE | "denied" | "timeout"> => {
+		inFlight++;
+		const run: RunState = { open: true, session: undefined };
+		const stop = () => {
+			run.open = false;
+			run.session?.close();
+		};
+		try {
+			return await bounded(attempt(run, exchange), stop, limitMs);
+		} finally {
+			stop();
+			inFlight--;
+		}
+	};
+
+	/** Applies an exchange's outcome to the health state; the outcome when the host answered. */
+	const settle = <T extends { readonly kind: string }>(
+		outcome: T | "denied" | "timeout",
+	): T | null => {
 		if (outcome === "denied") {
 			backOff();
 			return null;
@@ -608,7 +719,7 @@ export function createNativeBridge(
 			return null;
 		}
 		healthy();
-		return outcome.kind === "findings" ? outcome.findings : null;
+		return outcome;
 	};
 
 	return {
@@ -629,21 +740,32 @@ export function createNativeBridge(
 			if (!input) return null;
 			if (!input.body.length) return [];
 			if (inFlight >= MAX_IN_FLIGHT) return null;
-			inFlight++;
-			const run: RunState = { open: true, session: undefined };
-			const stop = () => {
-				run.open = false;
-				run.session?.close();
-			};
 			try {
-				// One deadline covers the permission check and the whole host exchange.
-				return settle(await bounded(attempt(input, run), stop));
+				const outcome = settle<Outcome>(
+					await guarded(timeoutMs, (session, isOpen) =>
+						runScan(session, input.body, input.offset, isOpen),
+					),
+				);
+				return outcome?.kind === "findings" ? outcome.findings : null;
 			} catch {
 				failed();
 				return null;
-			} finally {
-				stop();
-				inFlight--;
+			}
+		},
+
+		async scanImage(bytes: Uint8Array): Promise<ImageInspection | null> {
+			if (!enabled || inBackoff()) return null;
+			if (!(bytes instanceof Uint8Array) || !bytes.length || bytes.length > NATIVE_MAX_IMAGE_BYTES)
+				return null;
+			if (inFlight >= MAX_IN_FLIGHT) return null;
+			try {
+				const outcome = settle<ImageOutcome>(
+					await guarded(imageTimeoutMs, (session, isOpen) => runImageScan(session, bytes, isOpen)),
+				);
+				return outcome?.kind === "inspection" ? outcome.inspection : null;
+			} catch {
+				failed();
+				return null;
 			}
 		},
 	};

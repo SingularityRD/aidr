@@ -22,7 +22,7 @@
  * `enabledEntities` gates the built-in rules. Administrator literals and exact-data datasets
  * are explicit configuration and always report their configured type.
  */
-import { detectRules, keyType } from "../../../privacy/src/detectors.js";
+import { detectRules } from "../../../privacy/src/detectors.js";
 import { LiteralMatcher } from "../../../privacy/src/dictionary.js";
 import { inspectSignals } from "../../../privacy/src/enterprise/signals.js";
 import { PrivacyError } from "../../../privacy/src/errors.js";
@@ -307,75 +307,20 @@ function isUrlHostEmail(f: RawFinding, urlCredentials: readonly RawFinding[]): b
 	);
 }
 
-/** Punctuation and whitespace between a name and the value that follows it. */
-const NAME_SEPARATOR = /[\s,;:.!?/|(\-–—]/u;
-/** Longest separator run still read as "right after" a name (`Ayşe Yılmaz, (` then the value). */
-const MAX_NAME_GAP = 4;
-/** A label word; multi-word labels (`T.C. Kimlik No`) are separated by spaces only. */
-const LABEL_CHAR = /[^\s,;:()]/u;
-const MAX_LABEL_WORDS = 3;
-
-function trimSeparators(text: string, start: number, end: number): number {
-	while (end > start && NAME_SEPARATOR.test(text[end - 1] as string)) end--;
-	return end;
-}
-
-/** Start of the label of `type` (`TCKN`, `IBAN`, `T.C. Kimlik No`) that ends at `end`, else `end`. */
-function labelStart(text: string, start: number, end: number, type: EntityType): number {
-	let at = end;
-	for (let words = 0; words < MAX_LABEL_WORDS; words++) {
-		const wordEnd = at;
-		while (at > start && LABEL_CHAR.test(text[at - 1] as string)) at--;
-		if (at === wordEnd) break;
-		if (keyType(text.slice(at, end)) === type) return at;
-		const wordStart = at;
-		while (at > start && (text[at - 1] === " " || text[at - 1] === "\t")) at--;
-		if (at === wordStart) break;
-	}
-	return end;
-}
-
-/**
- * End of a contextual PERSON span. The privacy layer protects a labelled `Full name:` field to the
- * end of its line (and reads any capitalised word after `Sayın` as part of the name), so in
- * `Full name: Ayşe Yılmaz, TCKN 10000000146` the PERSON span covers the TCKN; `mergeFindings` then
- * unions both under the higher-priority type and the name is masked as `[TCKN_1]`. A name never
- * contains a validated/pattern value, so it ends before the first one that starts inside or right
- * after it, less the separators and that value's own label (`, TCKN`, `e-posta`) in between.
- * Only PERSON is narrowed: an address may continue after an embedded number and a secret must
- * never be split, so those keep the privacy layer's conservative span.
- */
-function personEnd(text: string, f: RawFinding, values: readonly RawFinding[]): number {
-	let next: RawFinding | undefined;
-	for (const v of values) {
-		if (v.start <= f.start || (next && v.start >= next.start)) continue;
-		if (v.start > f.end) {
-			const gap = text.slice(f.end, v.start);
-			if (gap.length > MAX_NAME_GAP || trimSeparators(gap, 0, gap.length) > 0) continue;
-		}
-		next = v;
-	}
-	if (!next) return f.end;
-	const end = trimSeparators(text, f.start, Math.min(f.end, next.start));
-	return trimSeparators(text, f.start, labelStart(text, f.start, end, next.type));
-}
-
 /**
  * Tightens rule spans (source offsets) so a reversible placeholder replaces only the value:
  * - a labelled field (`Email: a@b.com, card ...`) runs to the end of the line in the privacy
- *   layer; when a validated/pattern value of the same type starts the field, clip the field to it;
- * - a contextual name stops before a validated value of another type (see `personEnd`);
+ *   layer; when a validated/pattern value of the same type starts the field, clip the field to it
+ *   (the privacy layer already ends a field before a validated value of another type, so a name
+ *   next to a TCKN/IBAN/email is its own PERSON span);
  * - the host part of `scheme://user:pass@host` is not an email address;
  * - a phone number written `(0212) 555 12 34` includes its opening parenthesis.
- * A span left empty (a name field holding only the next value's label) is dropped.
+ * A span left empty is dropped.
  */
 function refineSpans(text: string, raw: readonly RawFinding[]): RawFinding[] {
 	const rules = raw.filter((f) => f.source === "rule");
 	const urlCredentials = rules.filter(
 		(f) => f.type === "SECRET" && f.evidence === "context" && text[f.end - 1] === "@",
-	);
-	const values = rules.filter(
-		(p) => p.type !== "PERSON" && isPrecise(p) && !isUrlHostEmail(p, urlCredentials),
 	);
 	const refine = (f: RawFinding): RawFinding[] => {
 		let { start, end } = f;
@@ -383,7 +328,6 @@ function refineSpans(text: string, raw: readonly RawFinding[]): RawFinding[] {
 			f.evidence === "context" &&
 			rules.find((p) => p.type === f.type && isPrecise(p) && p.start === start && p.end < end);
 		if (value) end = value.end;
-		if (f.type === "PERSON" && f.evidence === "context") end = personEnd(text, f, values);
 		if (f.type === "PHONE" && text[start - 1] === "(" && /^[^(]*\)/.test(text.slice(start, end))) {
 			start--;
 		}
@@ -485,12 +429,16 @@ class Scan {
 			this.pushView(view, [a, b], type, 0.95, "context", "rule");
 		}
 		try {
-			detectRules(patched.text, (a, b, type, score, evidence) => {
-				if (!enabled.has(type)) return;
-				const card = type === "CREDIT_CARD" && evidence === "checksum";
-				if (card && !plausibleCard(view.text.slice(a, b))) return;
-				this.pushView(view, [a, b], type, score, evidence, "rule");
-			});
+			detectRules(
+				patched.text,
+				(a, b, type, score, evidence) => {
+					if (!enabled.has(type)) return;
+					const card = type === "CREDIT_CARD" && evidence === "checksum";
+					if (card && !plausibleCard(view.text.slice(a, b))) return;
+					this.pushView(view, [a, b], type, score, evidence, "rule");
+				},
+				(type) => enabled.has(type),
+			);
 		} catch (error) {
 			if (error instanceof FindingLimit) throw error;
 			// A rule aborted on this view; keep what was found and report the gap.

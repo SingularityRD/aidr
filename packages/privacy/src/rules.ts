@@ -112,7 +112,7 @@ export function scanText(text: string, options: ScanTextOptions = {}): ScanTextR
   try { views = detectionViews(text); } catch (error) { reasons.add(reasonCode(error)); }
   for (const view of views) {
     // Each stage is isolated: a malformed field must not silence the remaining detectors.
-    try { detectRules(view.text, (a, b, type, score, evidence) => push(view, a, b, type, score, evidence)); }
+    try { detectRules(view.text, (a, b, type, score, evidence) => push(view, a, b, type, score, evidence), type => enabled.has(type)); }
     catch (error) { reasons.add(reasonCode(error)); }
     try { if (enabled.has('IBAN')) detectRegistryIbans(view.text, (a, b) => push(view, a, b, 'IBAN', 0.99, 'checksum')); }
     catch (error) { reasons.add(reasonCode(error)); }

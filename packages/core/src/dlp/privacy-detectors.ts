@@ -126,11 +126,13 @@ function plausibleMatch(
  * Scan `text` with the vendored TR/EN privacy rules, reporting only `detectors`.
  * Overlapping findings of the enabled types are unioned (never partially exposed).
  *
- * The rules protect a labelled field to the end of its line and give a union the type of its
- * highest-priority member, so `Tel: 0532 123 45 67 IBAN TR33 …` comes back as one IBAN finding
- * that starts with a phone number. The shape check is for a single value; a union that fails it
- * is re-scanned without its label and the plausible values inside it are kept, instead of
- * dropping every value the field ran into.
+ * The rules end a labelled field before the next validated value of another type that follows it
+ * (a name before any such value, other fields before a value with its own label, so
+ * `Tel: 0532 123 45 67 IBAN TR33 …` is a phone and an IBAN). Overlapping findings are still
+ * unioned under the highest-priority type, e.g. a field holding two values of its own type
+ * (`Tel: 0532 … / 0212 …`) or an unlabelled value. The shape check is for a single value; a union
+ * that fails it is re-scanned without its label and the plausible values inside it are kept,
+ * instead of dropping every value the field ran into.
  */
 export function scanPrivacyDetectors(
 	text: string,

@@ -1,18 +1,22 @@
 import { createHash } from 'node:crypto';
 import { CHUNK_BYTES, fromBase64 } from '../browser/transport.js';
 import { protectDocument, type DocumentKind, type DocumentScanner } from '../browser/documents.js';
-import type { VisualResult } from '../visual/types.js';
+import type { VisualInspection, VisualResult } from '../visual/types.js';
 import type { EntityType } from '../types.js';
 export interface NativeServices {
   text:DocumentScanner;
-  visual?:{protect(bytes:Uint8Array,signal?:AbortSignal):Promise<VisualResult>};
+  visual?:{protect(bytes:Uint8Array,signal?:AbortSignal):Promise<VisualResult>;inspect(bytes:Uint8Array,signal?:AbortSignal):Promise<VisualInspection>};
   policyId:string;policyDigest:string;
 }
+/** `image`: OCR + pixel redaction (a sanitised PNG may be read back). `image-scan`: OCR inspection only;
+ * the reply carries a decision and per-type counts, never bytes (see VisualPrivacyEngine.inspect). */
+type ImageKind='image'|'image-scan';
+const IMAGE_KINDS:readonly string[]=['image','image-scan'];
 function reject():never{throw new Error('NATIVE_PROTOCOL_INVALID');}
 function keys(v:Record<string,unknown>,allowed:string[]):void{if(Object.keys(v).some(k=>!['v','id','op',...allowed].includes(k)))reject();}
 function digest(b:Uint8Array):string{return createHash('sha256').update(b).digest('hex');}
 export class NativeSession {
-  #services:NativeServices;#input:Buffer|undefined;#received=0;#expectedHash='';#kind:'image'|DocumentKind='text';
+  #services:NativeServices;#input:Buffer|undefined;#received=0;#expectedHash='';#kind:ImageKind|DocumentKind='text';
   #state:'new'|'input'|'processing'|'output'|'done'='new';#output:Buffer|undefined;#readOffset=0;#abort=new AbortController();
   #ids=new Set<string>();
   constructor(services:NativeServices){this.#services=services;}
@@ -22,9 +26,9 @@ export class NativeSession {
     this.#ids.add(q.id);const base={v:1,id:q.id};
     if(q.op==='hello'){keys(q,[]);if(this.#state!=='new')reject();return {...base,ok:true,protocol:1,local:true,ocr:!!this.#services.visual,policyId:this.#services.policyId,policyDigest:this.#services.policyDigest};}
     if(q.op==='begin'){
-      keys(q,['kind','size','sha256','policyDigest']);if(q.policyDigest!==this.#services.policyDigest||this.#state!=='new'||!['image','text','json','csv','tsv'].includes(q.kind as string)
-        ||!Number.isSafeInteger(q.size)||(q.size as number)<1||(q.size as number)>(q.kind==='image'?8388608:1048576)||typeof q.sha256!=='string'||!/^[a-f0-9]{64}$/.test(q.sha256))reject();
-      this.#input=Buffer.alloc(q.size as number);this.#kind=q.kind as 'image'|DocumentKind;this.#expectedHash=q.sha256;this.#state='input';return {...base,ok:true};
+      keys(q,['kind','size','sha256','policyDigest']);if(q.policyDigest!==this.#services.policyDigest||this.#state!=='new'||![...IMAGE_KINDS,'text','json','csv','tsv'].includes(q.kind as string)
+        ||!Number.isSafeInteger(q.size)||(q.size as number)<1||(q.size as number)>(IMAGE_KINDS.includes(q.kind as string)?8388608:1048576)||typeof q.sha256!=='string'||!/^[a-f0-9]{64}$/.test(q.sha256))reject();
+      this.#input=Buffer.alloc(q.size as number);this.#kind=q.kind as ImageKind|DocumentKind;this.#expectedHash=q.sha256;this.#state='input';return {...base,ok:true};
     }
     if(q.op==='write'){
       keys(q,['offset','data']);if(this.#state!=='input'||!this.#input||q.offset!==this.#received)reject();
@@ -35,6 +39,14 @@ export class NativeSession {
       keys(q,[]);if(this.#state!=='input'||!this.#input||this.#received!==this.#input.length||digest(this.#input)!==this.#expectedHash)reject();
       this.#state='processing';let metadata:Record<string,unknown>;
       try{
+        if(this.#kind==='image-scan'){
+          // Decision only: nothing is released, so the session ends here (no `read`).
+          this.#state='done';
+          if(!this.#services.visual)return {...base,ok:true,decision:'review',reasons:['NATIVE_OCR_UNAVAILABLE'],counts:{},outputBytes:0};
+          const r=await this.#services.visual.inspect(this.#input,this.#abort.signal);
+          if(this.#abort.signal.aborted)reject();
+          return {...base,ok:true,decision:r.decision,reasons:r.reasons,coverage:r.audit.textCoverage,counts:r.counts,policyId:this.#services.policyId,policyDigest:this.#services.policyDigest,outputBytes:0};
+        }
         if(this.#kind==='image'){
           if(!this.#services.visual){this.#state='done';return {...base,ok:true,decision:'block',reasons:['NATIVE_OCR_UNAVAILABLE'],outputBytes:0};}
           const r=await this.#services.visual.protect(this.#input,this.#abort.signal);

@@ -409,6 +409,11 @@ export type GuardMessage =
 	/** minutes 1..60 pauses (only when policy.allowUserPause); 0 resumes. */
 	| { readonly type: "PAUSE"; readonly minutes: number }
 	| { readonly type: "NATIVE_SCAN"; readonly text: string }
+	/**
+	 * OCR of an uploaded image (or an image inside an uploaded document) by the native host:
+	 * `data` is the image, base64 (at most NATIVE_IMAGE_MAX_BYTES decoded). Counts-only reply.
+	 */
+	| { readonly type: "NATIVE_IMAGE_SCAN"; readonly data: string }
 	| { readonly type: "SET_RESTORE_VISIBLE"; readonly visible: boolean }
 	/**
 	 * Content script -> worker: persist this tab's vault (restorable entries only) and the
@@ -459,6 +464,12 @@ export interface GuardResponses {
 	readonly NATIVE_SCAN: {
 		readonly ok: true;
 		readonly findings: readonly Finding[] | null;
+		readonly status?: NativeHostStatus;
+	};
+	/** `inspection` is null when the host or its OCR is unavailable (the image is then not inspected). */
+	readonly NATIVE_IMAGE_SCAN: {
+		readonly ok: true;
+		readonly inspection: ImageInspection | null;
 		readonly status?: NativeHostStatus;
 	};
 	readonly SET_RESTORE_VISIBLE: { readonly ok: true };
@@ -516,11 +527,28 @@ export interface FileDecision {
 	readonly reasons: readonly string[];
 }
 
+/**
+ * Native-host OCR verdict for one image (packages/privacy `image-scan`): whether its text shows
+ * sensitive data. Pixels are never masked; a "sensitive" image is blocked.
+ *   clean       every OCR word was inspected and nothing sensitive was found;
+ *   sensitive   sensitive text (per-type `counts`) or a host policy that blocks images;
+ *   incomplete  not fully inspected (no text read, uncertain OCR, barcode, limits, OCR failure);
+ *               callers treat it like an image that was not inspected - never as clean.
+ */
+export interface ImageInspection {
+	readonly result: "clean" | "sensitive" | "incomplete";
+	readonly counts: Readonly<Partial<Record<EntityType, number>>>;
+	/** Stable host reason codes (`IMAGE_*`, `NATIVE_*`), never OCR text. */
+	readonly reasons: readonly string[];
+}
+
 /** Optional native messaging bridge to the AIDR Privacy native host (NER + OCR). */
 export interface NativeBridge {
 	status(): NativeHostStatus;
 	/** NER findings for PERSON/ADDRESS etc.; null when the host is unavailable. */
 	scanText(text: string): Promise<readonly Finding[] | null>;
+	/** OCR inspection of an image; null when the host, or OCR on the host, is unavailable. */
+	scanImage?(bytes: Uint8Array): Promise<ImageInspection | null>;
 }
 
 /*
