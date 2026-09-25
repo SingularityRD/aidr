@@ -1,6 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { isAbsolute, resolve } from "node:path";
-import { DlpPolicySchema } from "@singularityrd/aidr-core";
+import { DlpPolicySchema, validateAgentProfileDocument } from "@singularityrd/aidr-core";
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
 const HEX = /^[0-9a-f]{64}$/;
@@ -77,7 +77,9 @@ function requireKeys(value, allowed, label) {
 }
 
 function validateClient(client, clientKeys, tokenHashes) {
-	requireKeys(client, ["id", "tenantId", "tokenSha256", "allowedTools"], "client");
+	requireKeys(client, ["id", "tenantId", "tokenSha256", "allowedTools", "profile"], "client");
+	if (client.profile !== undefined && !/^[a-z0-9][a-z0-9._-]{0,63}$/.test(client.profile))
+		throw new GatewayConfigError("invalid client profile name");
 	if (!validId(client.id) || !validId(client.tenantId) || !HEX.test(client.tokenSha256)) {
 		throw new GatewayConfigError("invalid client identity or token hash");
 	}
@@ -172,6 +174,25 @@ function validateDetection(input) {
 	return detection;
 }
 
+/**
+ * Optional agent permission profiles for MCP clients. An invalid document or a
+ * client naming a missing profile refuses startup: a profile is a restriction,
+ * so the gateway never runs without one it was configured to enforce.
+ */
+function validateAgentProfiles(input, clients) {
+	if (input === undefined) {
+		if (clients.some((client) => client.profile !== undefined))
+			throw new GatewayConfigError("client profile requires agentProfiles");
+		return undefined;
+	}
+	const result = validateAgentProfileDocument(input);
+	if (!result.ok) throw new GatewayConfigError("invalid agent profiles");
+	const names = new Set(result.document.profiles.map((profile) => profile.name));
+	if (clients.some((client) => client.profile !== undefined && !names.has(client.profile)))
+		throw new GatewayConfigError("client profile is not defined in agentProfiles");
+	return result.document;
+}
+
 function validateBinaryOutput(input, maxBodyBytes) {
 	if (input === undefined)
 		return {
@@ -241,6 +262,7 @@ export function validateGatewayConfig(input) {
 			"detection",
 			"binaryOutput",
 			"serverInitiated",
+			"agentProfiles",
 		],
 		"gateway config",
 	);
@@ -271,6 +293,7 @@ export function validateGatewayConfig(input) {
 		detection: validateDetection(input.detection),
 		binaryOutput: validateBinaryOutput(input.binaryOutput, maxBodyBytes),
 		serverInitiated: validateServerInitiated(input.serverInitiated),
+		agentProfiles: validateAgentProfiles(input.agentProfiles, clients),
 	});
 }
 

@@ -101,6 +101,17 @@ its `tenantId` must match the server's tenant. Without a DLP policy, arguments
 still go through threat evaluation, but tenant keyword and regex DLP rules do
 not apply.
 
+Agent permission profiles restrict which servers and tools a client may call,
+on top of the signed manifest and `allowedTools`. Put a profile document in
+`agentProfiles` (the same format as `agent-profiles.json`, see
+[Agent permission profiles](../agent-profiles.md)); profiles that name the
+`mcp-gateway` connector apply to every client, and a client may be bound to
+one profile with `"profile": "<name>"`. An invalid document, or a client bound
+to a profile that does not exist, refuses startup. A profile deny returns
+`profile_denied` (category `agent_profile`); a profile `ask` returns
+`approval_required`. A profile never lets through a call that threat or DLP
+evaluation blocks.
+
 ## Binary and resource output
 
 By default, `image` and `audio` content and `resource` blobs are accepted only

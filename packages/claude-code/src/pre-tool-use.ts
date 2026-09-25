@@ -73,7 +73,10 @@ function makeResponse(verdict: Verdict): Record<string, unknown> {
 			hookSpecificOutput: {
 				hookEventName: "PreToolUse",
 				permissionDecision: "deny",
-				permissionDecisionReason: "🛡️ Singularity AIDR: Threat Blocked",
+				permissionDecisionReason:
+					verdict.source === "agent_profile"
+						? "🛡️ Singularity AIDR: Blocked by agent permission profile"
+						: "🛡️ Singularity AIDR: Threat Blocked",
 			},
 		};
 	}
@@ -178,6 +181,8 @@ async function main(): Promise<void> {
 	const toolInput = (toolCall.tool_input ?? {}) as Record<string, unknown>;
 	const sessionId = typeof toolCall.session_id === "string" ? toolCall.session_id : "unknown";
 	const toolUseId = typeof toolCall.tool_use_id === "string" ? toolCall.tool_use_id : "";
+	// Host-reported session directory: selects repository-scoped agent profiles.
+	const workingDirectory = typeof toolCall.cwd === "string" ? toolCall.cwd : undefined;
 	// Extraction is best-effort. Even without artifacts, the evaluator must see
 	// the raw tool input for configured runtime inspection and MCP policy.
 	const artifacts: Artifact[] = extractFromToolCall(toolName, toolInput);
@@ -188,6 +193,7 @@ async function main(): Promise<void> {
 			threatsDir: resolveAssetDir("threats"),
 			allowlistsDir: resolveAssetDir("allowlists"),
 			agentRuntime: "claude-code",
+			workingDirectory,
 			logger,
 			// Claude Code applies PreToolUse `updatedInput` (see redactedResponse).
 			supportsInputRewrite: true,

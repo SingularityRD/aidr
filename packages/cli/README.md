@@ -28,7 +28,7 @@ procedure.
 |---------|--------------|
 | `aidr setup` | Write local configuration and print connector setup guidance |
 | `aidr status [--json]` | Measured installation state (detection self-test, connectors, data loss) |
-| `aidr doctor [--json]` | Hosts detected, hooks registered, rule count, core version, mode, DLP policy status, approval store and last verdict; exits `1` when any check fails |
+| `aidr doctor [--json]` | Hosts detected, hooks registered, rule count, core version, mode, DLP policy status, agent permission profiles, approval store and last verdict; exits `1` when any check fails |
 | `aidr pending [--json]` | Blocked agent actions (`ask` verdicts) waiting for an operator decision |
 | `aidr approve <actionId>` | **Operator only.** Approve one retry of exactly that call; 15-minute default (`--ttl <minutes>`), single-use, `--permit-allowlist` to also let the agent allowlist it once |
 | `aidr allowlist list [--json]` | Show allowlist entries (commands appear as hashes) |
@@ -37,6 +37,7 @@ procedure.
 | `aidr audit tail [-n N] [--json]` | Most recent audit entries, re-redacted |
 | `aidr audit export [--since 24h\|ISO] [--format jsonl\|csv] [-o file]` | Redacted export across rotated log files |
 | `aidr privacy scan [file] [--json] [--mask] [--types <list>] [--fail-on none\|any\|secret]` | Local TR/EN personal-data and secret scan of a file or stdin; see [Privacy scan](#privacy-scan) |
+| `aidr profile list\|show\|validate\|test` | Inspect, validate and dry-run agent permission profiles; `aidr profile show <template> --template` prints a shipped template. See `docs/agent-profiles.md` |
 | `aidr config`, `aidr scan`, `aidr collect`, `aidr discover`, `aidr uninstall` | See `aidr <command> --help` |
 
 ### Operator-only commands
