@@ -49,6 +49,7 @@
 		"build": "node scripts/build-workspace.mjs",
 		"build:release": "node scripts/build-workspace.mjs --release",
 		"build:browser-guard": "pnpm --filter @singularityrd/aidr-browser-guard run build",
+		"simulate": "node packages/cli/dist/index.js simulate",
 		"brochure:render": "node scripts/render-brochure.mjs",
 		"feature-guide:render": "node scripts/render-feature-guide.mjs",
 		"package:browser-guard": "pnpm --filter @singularityrd/aidr-browser-guard run build:release",

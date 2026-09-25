@@ -21,6 +21,7 @@ import doctorCommand from "./commands/doctor.js";
 import privacyScanCommand from "./commands/privacy.js";
 import scanCommand from "./commands/scan.js";
 import setupCommand from "./commands/setup.js";
+import simulateCommand from "./commands/simulate.js";
 import statusCommand from "./commands/status.js";
 import uninstallCommand from "./commands/uninstall.js";
 
@@ -112,6 +113,25 @@ privacyProgram
 		"any",
 	)
 	.action(privacyScanCommand);
+
+program
+	.command("simulate")
+	.description(
+		"Defensive self-test: feed defanged detection fixtures to the local evaluator and report what AIDR detects (never executes anything)",
+	)
+	.option(
+		"--suite <names>",
+		"Comma-separated categories to run (injection, exfiltration, destructive, encoding, supply-chain, mcp, self-defense, privacy)",
+	)
+	.option("--sensitivity <level>", "Override sensitivity: paranoid, balanced or relaxed")
+	.option("--format <format>", "Output format: table, json or html", "table")
+	.option("--output <file>", "Write the report to a file instead of stdout")
+	.option("--min-score <n>", "Exit non-zero when the overall detection score is below N (0-100)")
+	.option(
+		"--connector <name>",
+		"Drive a built connector entry point instead of the in-process evaluator (claude-code, codex, cursor, vscode)",
+	)
+	.action(simulateCommand);
 
 program
 	.command("collect")
