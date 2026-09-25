@@ -158,12 +158,45 @@ async function resolveRuleDirs(config, embedded) {
 	return dirs;
 }
 
+function digest(text) {
+	return createHash("sha256").update(text, "utf8").digest("hex").slice(0, 32);
+}
+
+/**
+ * The session id the core session-level layers (runaway guardrails, toxic-flow
+ * chains) key their per-session record by. It names one MCP conversation, never
+ * a client credential on its own, so two agents behind one gateway, or two
+ * sessions of one client, never share loop counters or chain history:
+ *
+ * - an upstream-issued `Mcp-Session-Id` (already bound to this tenant, client
+ *   and server by the gateway): one record per MCP session, keyed by a digest so
+ *   the raw session id is never stored or logged;
+ * - no session (a stateless server): the only stable identity is the
+ *   authenticated client talking to this server through this gateway process.
+ *   Each stdio bridge runs its own gateway, so there it is one MCP client
+ *   connection; a shared HTTP gateway pools one client's stateless calls to one
+ *   server until it restarts (issue one client credential per agent to keep
+ *   agents apart).
+ *
+ * Every key carries the detector's random per-process instance id, so no record
+ * carries over into a later gateway run or another bridge process.
+ */
+export function detectionSessionId(instanceId, { client, server, mcpSessionId }) {
+	const conversation =
+		typeof mcpSessionId === "string" && mcpSessionId.length > 0
+			? `session:${digest(`${instanceId}\0${server.id}\0${mcpSessionId}`)}`
+			: `connection:${instanceId}`;
+	return `mcp-gateway:${client.tenantId}:${client.id}:${server.id}:${conversation}`;
+}
+
 /** Create the per-gateway tool-call evaluator. `evaluate` is injectable for tests. */
 export function createToolCallDetector(
 	config,
 	{ evaluate = evaluateToolCall, embedded = EMBEDDED_RULE_SETS } = {},
 ) {
 	let dirsPromise;
+	// One detector per gateway process, and so per stdio bridge.
+	const instanceId = randomBytes(16).toString("hex");
 
 	async function ruleDirs() {
 		dirsPromise ??= resolveRuleDirs(config, embedded);
@@ -175,14 +208,21 @@ export function createToolCallDetector(
 		}
 	}
 
-	return async function evaluateMcpToolCall({ server, client, toolName, args, description }) {
+	return async function evaluateMcpToolCall({
+		server,
+		client,
+		toolName,
+		args,
+		description,
+		mcpSessionId,
+	}) {
 		const qualifiedName = `mcp__${server.id}__${toolName}`;
 		let verdict;
 		try {
 			const dirs = await ruleDirs();
 			verdict = await evaluate(
 				{
-					sessionId: `mcp-gateway:${client.tenantId}:${client.id}`,
+					sessionId: detectionSessionId(instanceId, { client, server, mcpSessionId }),
 					toolName: qualifiedName,
 					toolInput: args,
 					artifacts: extractFromToolCall(qualifiedName, args),
