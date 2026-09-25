@@ -478,6 +478,35 @@ MCP gateway) gets it. See [Toxic-flow detection](toxic-flow.md) for the model.
   tampering: the session is assumed to have exercised all three capabilities for the rest of
   the window, so its next egress needs approval.
 
+### `agent_safety`
+
+AI safety guardrails for autonomous agents. See [Agent safety guardrails](agent-safety.md).
+The rule-based guardrails (reward hacking and sabotage, autonomy escalation, irreversible
+actions) are threat rules in `threats/agent-safety.yaml` and are switched off per rule with
+`disabled_threats`. `agent_safety.runaway` configures the session-level runaway guard:
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `runaway.enabled` | `true` | Track each agent session's calls and pause it (`ask`) when a threshold below is exceeded. |
+| `runaway.window_seconds` | `600` | Sliding window for loop and repeated-failure detection (10-86400). |
+| `runaway.max_consecutive_identical_calls` | `8` | The same tool call back-to-back with nothing in between. |
+| `runaway.max_identical_calls` | `25` | The same tool call anywhere in the window. |
+| `runaway.max_similar_calls` | `50` | Near-identical calls (numbers, ids and spacing ignored) in the window. |
+| `runaway.max_repeated_failures` | `3` | Reported failures of the same call with no file edited in between; the next retry pauses. |
+| `runaway.max_calls_per_minute` | `120` | Tool calls in any rolling 60 seconds. |
+| `runaway.max_tool_calls` | `0` | Optional session budget: total tool calls (`0` = unlimited). |
+| `runaway.max_session_minutes` | `0` | Optional session budget: wall-clock minutes since the session's first call. |
+| `runaway.max_files_written` | `0` | Optional session budget: distinct files written (at most 2000). |
+| `runaway.state_ttl_hours` | `24` | Idle session state older than this is discarded. |
+| `runaway.max_sessions` | `512` | Most session state files kept; the oldest are pruned first. |
+
+- Every `max_*` value is the most allowed before the session pauses; `0` switches that check off.
+- Signal ids (usable in `disabled_threats`): `CLT-AGENT-RUN-001` consecutive identical,
+  `-002` identical in window, `-003` near-identical, `-004` repeated failures, `-005` rate spike,
+  `-006` tool-call budget, `-007` session-time budget, `-008` files-written budget.
+- Failure policy: when the session state cannot be read, written or trusted, the signal is
+  skipped and logged, and an `allow` is recorded in the audit log as `runaway_guard_unavailable`
+  (never a clean result). Connector entry points stay fail-closed.
 ### `secure_code`
 
 Advisory checks on the code an agent writes (TLS verification disabled, SQL/command
@@ -930,6 +959,7 @@ unreachable) the call stays blocked with the reason in the message.
 | `~/.singularity-aidr/operator-approval-key.json` | Informational record of where the approval key lives; never makes AIDR read a key file |
 | `~/.singularity-aidr/dashboard-approval-requests.json` | Managed mode: which dashboard approval request to poll for which pending ask (`0600`); grants nothing by itself |
 | `~/.singularity-aidr/session-flow/` | Per-session toxic-flow records (`<digest>.json`, HMAC-protected, `0600`, pruned after `toxic_flow.window_minutes`) and their per-install key `.flow-key` (`0600`) |
+| `~/.singularity-aidr/agent-safety/` | Runaway-guard session state (`runaway-<digest>.json`, HMAC-protected, `0600`, bounded by `agent_safety.runaway.max_sessions` and `state_ttl_hours`) and its per-install key `session-state.key` (`0600`). Kept next to the active `config.json`. |
 | `~/.singularity-aidr/installation-id` | Random UUID identifying this installation |
 | `~/.singularity-aidr/managed.json` | Managed-mode state (seat status, backoff windows) |
 | `~/.singularity-aidr/pending-approvals.json` | Pending approval state (transient, managed by PreToolUse hook) |

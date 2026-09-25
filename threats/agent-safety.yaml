@@ -1,0 +1,540 @@
+# Agent-safety guardrails for autonomous coding agents
+# Author: SingularityRD
+# License: DRL-1.1 (see threats/LICENSE)
+# Schema: id, category, severity, confidence, action, pattern, match_on, title,
+#         expires_at, revoked; file-edit view rules add diff and min_matches.
+# Runaway guardrails (loops, rate spikes, budgets) are session-level and live in
+# packages/core/src/agent-safety/runaway-guard.ts (ids CLT-AGENT-RUN-001..008).
+# Every gap is bounded (see regex-performance.test.ts).
+
+# ── 2a. Reward hacking / sabotage — shell commands ─────────────────────
+# An agent weakening the checks it is graded by (skipping git hooks,
+# deleting tests) or destroying the record of what it did (history, logs,
+# force-pushed branches). Always `ask`: a human decides.
+
+- id: "CLT-AGENT-RH-001"
+  category: reward_hacking
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "\\bgit\\s(?:[^\\n;&|]{0,200}?\\s)?(?:commit|push|merge|rebase|cherry-pick|am|revert|pull)\\s(?:[^\\n;&|]{0,300}?\\s)?--no-verify\\b|\\bgit\\s(?:-[Cc]\\s{1,4}\\S{1,200}\\s{1,4}){0,4}commit\\s(?:[^\\n;&|]{0,300}?\\s)?-[aqsSvez]{0,4}n[aqsSvezm]{0,4}(?=\\s|$)|\\bgit\\s(?:[^\\n;&|]{0,200}?\\s)?(?:-c\\s{1,4}|config\\s{1,4}(?:--[\\w-]{1,20}\\s{1,4}){0,2})core\\.hooksPath(?:=|\\s{1,4})[\"']?(?:/dev/null|NUL\\b|[\"']{2})"
+  match_on:
+    - command
+    - command_normalized
+  title: "Agent bypasses git pre-commit / pre-push checks (--no-verify, commit -n, hooksPath=/dev/null)"
+  expires_at: null
+  revoked: false
+
+- id: "CLT-AGENT-RH-002"
+  category: reward_hacking
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "(?:^|[\\s;&|(:])(?:export\\s{1,4}|set\\s{1,4})?(?:HUSKY\\s{0,2}=\\s{0,2}[\"']?0\\b|HUSKY_SKIP_HOOKS\\s{0,2}=\\s{0,2}[\"']?(?:1|true)\\b|LEFTHOOK\\s{0,2}=\\s{0,2}[\"']?(?:0|false)\\b|SKIP_PRE_COMMIT\\s{0,2}=|PRE_COMMIT_ALLOW_NO_CONFIG\\s{0,2}=\\s{0,2}[\"']?1\\b)|\\bSKIP\\s{0,2}=\\s{0,2}\\S{1,200}\\s{1,4}(?:[^\\n;&|]{0,100}?\\s)?git\\s(?:[^\\n;&|]{0,100}?\\s)?(?:commit|push)\\b"
+  match_on: command
+  title: "Agent switches off git hook managers to skip checks (HUSKY=0 / LEFTHOOK=0 / SKIP=... git commit)"
+  expires_at: null
+  revoked: false
+
+- id: "CLT-AGENT-RH-003"
+  category: agent_sabotage
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "\\bgit\\s(?:[^\\n;&|]{0,200}?\\s)?push(?=[^\\n;&|]{0,300}?(?:\\s--force(?:-with-lease|-if-includes)?(?:=\\S{0,200})?(?=\\s|$)|\\s-[a-zA-Z]{0,5}f[a-zA-Z]{0,5}(?=\\s|$)|[\\s:]\\+[\\w./-]{1,200}))\\s[^\\n;&|]{0,300}?[\\s:+/](?:main|master|trunk|prod|production|release(?:[/-][\\w.-]{1,100})?|develop|stable)(?=\\s|$|[\"';&|)])"
+  match_on:
+    - command
+    - command_normalized
+  title: "Force-push rewrites the history of a protected branch (main / master / release)"
+  expires_at: null
+  revoked: false
+
+- id: "CLT-AGENT-RH-004"
+  category: agent_sabotage
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "\\bhistory\\s{1,4}-[a-z]{0,3}c\\b|\\bhistory\\s{1,4}-w\\s{1,4}/dev/null\\b|\\bunset\\s{1,4}(?:-v\\s{1,4})?HISTFILE\\b|\\bHISTFILE\\s{0,2}=\\s{0,2}[\"']?/dev/null\\b|\\bHIST(?:FILE)?SIZE\\s{0,2}=\\s{0,2}[\"']?0\\b|\\bset\\s{1,4}\\+o\\s{1,4}history\\b|\\bClear-History\\b|\\b(?:rm|shred|truncate|unlink|del|Remove-Item)\\s(?:[^\\n;&|]{0,300}?[\\s/\\\\])?(?:\\.bash_history|\\.zsh_history|\\.sh_history|fish_history|\\.psql_history|\\.mysql_history|ConsoleHost_history\\.txt)\\b|(?:^|[;&|(]\\s{0,4}|:\\s{0,4}|\\bcat\\s{1,4}/dev/null\\s{0,4})>(?!>)\\s{0,4}[\"']?[^\\s\"';&|<>]{0,200}?(?:\\.bash_history|\\.zsh_history|fish_history)\\b"
+  match_on: command
+  title: "Agent erases shell command history (history -c / unset HISTFILE / deleting ~/.bash_history)"
+  expires_at: null
+  revoked: false
+
+- id: "CLT-AGENT-RH-005"
+  category: agent_sabotage
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "\\bgit\\s(?:[^\\n;&|]{0,200}?\\s)?(?:reflog\\s(?:[^\\n;&|]{0,100}?\\s)?(?:expire|delete)\\b|filter-branch\\b|filter-repo\\b|update-ref\\s{1,4}-d\\s{1,4}refs/heads/(?:main|master|trunk|release)\\b|push\\s[^\\n;&|]{0,300}?(?:--delete\\s{1,4}|\\s:)(?:refs/heads/)?(?:main|master|trunk|production|release(?:[/-][\\w.-]{1,100})?)(?=\\s|$|[\"';&|)]))|\\bbfg(?:\\.jar)?\\s[^\\n;&|]{0,300}?--(?:delete-files|delete-folders|replace-text|strip-blobs-bigger-than)\\b"
+  match_on:
+    - command
+    - command_normalized
+  title: "Agent rewrites git history or deletes a protected branch (reflog expire / filter-branch / push --delete main)"
+  expires_at: null
+  revoked: false
+
+- id: "CLT-AGENT-RH-006"
+  category: agent_sabotage
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "\\btruncate\\s(?:[^\\n;&|]{0,100}?\\s)?(?:-s\\s{0,2}0\\b|--size[= ]0\\b)[^\\n;&|]{0,300}?(?:\\.log\\b|/var/log/|audit|\\.jsonl\\b)|(?:^|[;&|(]\\s{0,4}|\\btrue\\s{0,4}|:\\s{0,4}|\\bcat\\s{1,4}/dev/null\\s{0,4}|\\becho\\s{1,4}(?:-n\\s{1,4})?(?:\"\"|'')?\\s{0,4}|\\bprintf\\s{1,4}(?:\"\"|'')\\s{0,4})>(?!>)\\s{0,4}[\"']?[^\\s\"';&|<>]{0,200}?(?:\\.log(?:\\.\\d{1,3})?|audit[\\w.-]{0,50}\\.(?:log|jsonl?)|/var/log/[^\\s\"';&|<>]{1,200})[\"']?(?=\\s|$|[;&|)])|\\b(?:rm|shred|unlink|del|Remove-Item)\\s(?:[^\\n;&|]{0,300}?\\s)?[\"']?(?:/var/log/[^\\s\"';&|]{0,200}|[^\\s\"';&|]{0,200}audit[\\w.-]{0,50}\\.(?:log|jsonl?))[\"']?(?=\\s|$|[;&|)])"
+  match_on: command
+  title: "Agent truncates or deletes log / audit files (truncate -s 0, : > app.log, rm /var/log/...)"
+  expires_at: null
+  revoked: false
+
+- id: "CLT-AGENT-RH-007"
+  category: agent_sabotage
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "\\bjournalctl\\s(?:[^\\n;&|]{0,100}?\\s)?--vacuum-(?:time|size|files)\\b|\\bauditctl\\s{1,4}(?:-D\\b|-e\\s{0,2}0\\b)|\\b(?:systemctl|service)\\s(?:[^\\n;&|]{0,100}?\\s)?(?:stop|disable|mask)\\s(?:[^\\n;&|]{0,100}?\\s)?auditd\\b|\\bservice\\s{1,4}auditd\\s{1,4}stop\\b|\\b(?:Clear|Remove)-EventLog\\b"
+  match_on: command
+  title: "Agent disables system audit logging or purges the journal (auditctl -e 0 / journalctl --vacuum)"
+  expires_at: null
+  revoked: false
+
+- id: "CLT-AGENT-RH-008"
+  category: reward_hacking
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "\\b(?:rm|git\\s{1,4}rm|unlink|del|Remove-Item|shred|trash)\\s(?:[^\\n;&|]{0,300}?\\s)?[\"']?(?![/~$])(?:[^\\s\"';&|]{0,200}/)?(?:[^\\s\"';&|/]{1,200}[._-](?:test|spec)\\.(?:[cm]?[jt]sx?|py|rb|go|exs?)|test_[^\\s\"';&|/]{1,200}\\.py|[^\\s\"';&|/]{1,200}_test\\.(?:py|go|rb|exs)|[^\\s\"';&|/]{1,200}_spec\\.rb|[^\\s\"';&|/]{1,200}(?:Test|Tests|Spec)\\.(?:java|kt|cs|php|swift)|__tests?__|tests?|specs?|e2e)/?[\"']?(?=\\s|$|[;&|)])|\\bfind\\s[^\\n;&|]{0,300}?-i?name\\s{1,4}[\"']?[^\\s\"']{0,60}(?:[._-](?:test|spec)\\.|test_|_test\\.|__tests__)[^\\s\"']{0,60}[\"']?[^\\n;&|]{0,300}?(?:-delete\\b|-exec\\s{1,4}rm\\b)|(?:^|[;&|(]\\s{0,4}|:\\s{0,4}|\\btrue\\s{0,4}|\\bcat\\s{1,4}/dev/null\\s{0,4}|\\becho\\s{1,4}(?:-n\\s{1,4})?(?:\"\"|'')?\\s{0,4})>(?!>)\\s{0,4}[\"']?[^\\s\"';&|<>]{0,200}?(?:[._-](?:test|spec)\\.[cm]?[jt]sx?|(?:^|/)test_[^\\s\"';&|<>/]{1,200}\\.py|_test\\.(?:py|go))[\"']?(?=\\s|$|[;&|)])|\\btruncate\\s[^\\n;&|]{0,100}?-s\\s{0,2}0\\b[^\\n;&|]{0,300}?(?:[._-](?:test|spec)\\.|test_[^\\s]{1,100}\\.py|_test\\.)"
+  match_on: command
+  title: "Agent deletes or empties test files from the shell"
+  expires_at: null
+  revoked: false
+
+- id: "CLT-AGENT-RH-009"
+  category: reward_hacking
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "\\b(?:sed|perl)\\s(?:[^\\n;&|]{0,100}?\\s)?-[a-zA-Z]{0,4}i[^\\n;&|]{0,300}?(?:\\b(?:it|test|describe)\\.(?:skip|todo|only)\\b|\\bx(?:it|describe|test)\\b|@pytest\\.mark\\.(?:skip|xfail)|@unittest\\.skip|\\bt\\.Skip\\(|@Disabled\\b|@Ignore\\b|#\\[ignore\\]|@ts-nocheck|continue-on-error:\\s{0,4}true|/[^/\\n]{0,100}\\b(?:expect|assert\\w{0,20})\\b[^/\\n]{0,100}/d)"
+  match_on: command
+  title: "Agent edits tests in place to skip them or strip assertions (sed -i 's/it(/it.skip(/', sed '/expect/d')"
+  expires_at: null
+  revoked: false
+
+- id: "CLT-AGENT-RH-010"
+  category: reward_hacking
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "\\bgh\\s{1,4}api\\s(?=[^\\n;&|]{0,300}?(?:-X\\s{0,2}|--method[= ]\\s{0,2})[\"']?DELETE\\b)[^\\n;&|]{0,300}?/(?:branches/[^\\s/\"']{1,200}/protection\\b|rulesets/\\d{1,20})"
+  match_on: command
+  title: "Agent removes branch protection or a repository ruleset through the GitHub API"
+  expires_at: null
+  revoked: false
+
+# ── 2b. Reward hacking — diff-aware file edits ─────────────────────────
+# `match_on` names a file-edit view (packages/core/src/agent-safety/
+# edit-views.ts): test_code, ci_config, quality_config, source_code (lines),
+# deleted_test_file (path). `diff: added|removed` fires on a NET change of at
+# least `min_matches` (default 1) matching lines, so editing an existing
+# skipped test or rewording an assertion is not flagged; `value_decreased`
+# compares the number in capture group 1 for the same setting. Engines
+# without these views never match these rules.
+
+- id: "CLT-AGENT-RH-101"
+  category: reward_hacking
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "\\b(?:it|test|describe|context|suite|specify|scenario)\\s{0,2}\\.\\s{0,2}(?:skip|todo|skipIf|fixme)\\s{0,2}[(.]|\\b(?:xit|xtest|xdescribe|xcontext|xspecify)\\s{0,2}\\(|\\b(?:this|ctx|context|t)\\.skip\\s{0,2}\\(|@pytest\\.mark\\.(?:skip|skipif|xfail)\\b|@unittest\\.(?:skip|skipIf|skipUnless|expectedFailure)\\b|\\bpytest\\.(?:skip|xfail)\\s{0,2}\\(|\\bself\\.skipTest\\s{0,2}\\(|\\braise\\s{1,4}(?:unittest\\.)?SkipTest\\b|\\b[tb]\\.Skip(?:f|Now)?\\s{0,2}\\(|@(?:Disabled|Ignore|Ignored)\\b|#\\[ignore\\b|^\\s{0,40}(?:skip|pending)\\s{0,2}(?:\\(|[\"'])|\\[(?:Ignore|Skip)\\b|\\bSkip\\s{0,2}=\\s{0,2}\"|\\bmarkTest(?:Skipped|Incomplete)\\s{0,2}\\("
+  match_on: test_code
+  diff: added
+  title: "Test skipped or disabled in a test file (it.skip / xit / @pytest.mark.skip / t.Skip / @Disabled)"
+  expires_at: null
+  revoked: false
+
+- id: "CLT-AGENT-RH-102"
+  category: reward_hacking
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "\\b(?:it|test|describe|context|suite)\\s{0,2}\\.\\s{0,2}only\\s{0,2}\\(|(?<![.\\w])(?:fit|fdescribe|fcontext)\\s{0,2}\\("
+  match_on: test_code
+  diff: added
+  title: "Test focus added (it.only / fdescribe): the other tests in the file stop running"
+  expires_at: null
+  revoked: false
+
+- id: "CLT-AGENT-RH-103"
+  category: reward_hacking
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "^(?!\\s{0,40}(?://|#|\\*|/\\*|<!--|--))[^\\n]{0,400}?(?:\\b(?:expect|assert(?:[A-Z_]\\w{0,40})?|assertThat|XCTAssert\\w{0,30}|EXPECT_[A-Z_]{1,30}|ASSERT_[A-Z_]{1,30})\\s{0,2}[(!]|\\bassert\\s{1,4}[^\\s=(]|\\b(?:t|b|s|suite|require|assert)\\.(?:Error|Errorf|Fatal|Fatalf|Fail|FailNow|Equal|Equalf|EqualValues|NoError|True|False|Nil|NotNil|Contains|Len|Empty|NotEmpty|ErrorIs|Greater|Less)\\s{0,2}\\(|\\.should\\b|\\.to\\.(?:be|equal|eql|have|include|deep|throw)\\b|\\bexpect\\s{0,2}\\{)"
+  match_on: test_code
+  diff: removed
+  title: "Assertions removed or commented out in a test file"
+  expires_at: null
+  revoked: false
+
+- id: "CLT-AGENT-RH-104"
+  category: reward_hacking
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "\\bexpect\\s{0,2}\\(\\s{0,2}(true|false|1|0|null|undefined|\"[^\"\\n]{0,40}\"|'[^'\\n]{0,40}')\\s{0,2}\\)\\s{0,2}\\.\\s{0,2}(?:toBe|toEqual|toStrictEqual)\\s{0,2}\\(\\s{0,2}\\1\\s{0,2}\\)|\\bexpect\\s{0,2}\\(\\s{0,2}true\\s{0,2}\\)\\s{0,2}\\.\\s{0,2}toBeTruthy\\s{0,2}\\(\\s{0,2}\\)|\\bassert\\s{1,4}(?:True|1|not\\s{1,4}False)\\s{0,4}(?:$|#|,)|\\bassert(?:True|That)?\\s{0,2}\\(\\s{0,2}(?:true|True|1)\\s{0,2}\\)|\\bassertEquals?\\s{0,2}\\(\\s{0,2}(true|True|1|\"[^\"\\n]{0,40}\")\\s{0,2},\\s{0,2}\\2\\s{0,2}\\)|\\bassert\\.(?:ok|isTrue)\\s{0,2}\\(\\s{0,2}true\\s{0,2}\\)"
+  match_on: test_code
+  diff: added
+  title: "Tautological assertion added to a test (expect(true).toBe(true) / assert True)"
+  expires_at: null
+  revoked: false
+
+- id: "CLT-AGENT-RH-105"
+  category: reward_hacking
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "(?:[._-](?:test|spec)s?\\.[A-Za-z0-9]{1,5}|(?:^|[\\\\/])test_[^\\\\/]{1,200}\\.py|_test\\.(?:py|go|rb|exs)|_spec\\.rb|(?:Test|Tests|Spec|IT)\\.(?:java|kt|kts|scala|cs|php|swift|groovy)|\\.bats|(?:^|[\\\\/])(?:__tests?__|tests?|specs?|e2e|integration[-_]tests?)[\\\\/](?:[^\\\\/]{1,200}[\\\\/]){0,20}[^\\\\/]{1,200})$"
+  match_on: deleted_test_file
+  title: "Test file deleted or emptied of all test cases"
+  expires_at: null
+  revoked: false
+
+- id: "CLT-AGENT-RH-106"
+  category: reward_hacking
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "^\\s{0,40}(?:-\\s{1,4})?(?:continue-on-error|continueOnError)\\s{0,4}:\\s{0,4}[\"']?true\\b|^\\s{0,40}(?:-\\s{1,4})?(?:allow_failure|soft_fail)\\s{0,4}:\\s{0,4}(?:[\"']?true\\b|\\{)|^\\s{0,40}allow_failures\\s{0,4}:|^\\s{0,40}(?:-\\s{1,4})?if\\s{0,4}:\\s{0,4}(?:false|[\"']?\\$\\{\\{\\s{0,4}false\\s{0,4}\\}\\}[\"']?|[\"']false[\"'])\\s{0,4}(?:#|$)|\\b(?:test|tests|lint|typecheck|type-check|tsc|pytest|jest|vitest|mocha|eslint|biome|mypy|ruff|clippy|vet|check|verify|coverage)\\b[^\\n#]{0,200}\\|\\|\\s{0,4}(?:true|exit\\s{1,4}0|:)(?=\\s|$|[;)\"'])"
+  match_on: ci_config
+  diff: added
+  title: "CI check made non-blocking or disabled (continue-on-error / allow_failure / if: false / || true)"
+  expires_at: null
+  revoked: false
+
+- id: "CLT-AGENT-RH-107"
+  category: reward_hacking
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "(?:^|[\\s:;&|(])(?:(?:npm|pnpm|yarn|bun|npx|pnpx|bunx|make|go|cargo|python\\d?|py|tox|nox|poetry|uv|mvn|gradle|\\./gradlew|gradlew|dotnet|bundle|rake|deno|mix|swift|flutter)\\b[^\\n#]{0,200}?\\b(?:test|tests|lint|typecheck|type-check|tsc|check|vet|clippy|verify|pytest|jest|vitest|mocha|eslint|biome|mypy|ruff|rspec|lint-staged|coverage)\\b|(?:pytest|jest|vitest|mocha|eslint|biome|mypy|ruff|rspec|tsc|phpunit|phpstan|golangci-lint|lint-staged)\\b)"
+  match_on: ci_config
+  diff: removed
+  title: "Test, lint or type-check step removed from CI or a git hook"
+  expires_at: null
+  revoked: false
+
+- id: "CLT-AGENT-RH-108"
+  category: reward_hacking
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "\\b(?:lines|branches|functions|statements|fail_under|fail-under|cov-fail-under|minimum_coverage|min_coverage|minCoverage|coverage_threshold|coverageThreshold|target|global_threshold)[\"']?(?:\\s{0,4}[:=]\\s{0,4}|(?<=fail-under)\\s{1,4})[\"']?(\\d{1,3}(?:\\.\\d{1,4})?)"
+  match_on: quality_config
+  diff: value_decreased
+  title: "Coverage threshold lowered (lines / branches / fail_under / cov-fail-under)"
+  expires_at: null
+  revoked: false
+
+- id: "CLT-AGENT-RH-109"
+  category: reward_hacking
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "\\b(?:lines|branches|functions|statements|fail_under|fail-under|cov-fail-under|minimum_coverage|min_coverage|minCoverage|coverage_threshold|coverageThreshold|target|global_threshold)[\"']?(?:\\s{0,4}[:=]\\s{0,4}|(?<=fail-under)\\s{1,4})[\"']?(\\d{1,3}(?:\\.\\d{1,4})?)"
+  match_on: quality_config
+  diff: removed
+  title: "Coverage threshold removed from the test configuration"
+  expires_at: null
+  revoked: false
+
+- id: "CLT-AGENT-RH-110"
+  category: reward_hacking
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "@ts-nocheck\\b|/\\*\\s{0,4}eslint-disable\\s{0,4}\\*/|^\\s{0,40}//\\s{0,4}eslint-disable\\s{0,4}$|/\\*\\s{0,4}tslint:disable\\s{0,4}\\*/|#\\s{0,4}pylint\\s{0,2}:\\s{0,2}skip-file\\b|#\\s{0,4}mypy\\s{0,2}:\\s{0,2}ignore-errors\\b|^\\s{0,4}#\\s{0,4}(?:flake8\\s{0,2}[:=]|ruff\\s{0,2}:)\\s{0,2}noqa\\s{0,4}$|#!\\[allow\\((?:warnings|clippy::all|clippy::pedantic|unused)\\)\\]|//\\s{0,4}deno-lint-ignore-file\\s{0,4}$|//\\s{0,4}biome-ignore-all\\b|@SuppressWarnings\\(\\s{0,2}\"all\"\\s{0,2}\\)|#\\s{0,4}rubocop\\s{0,2}:\\s{0,2}disable\\s{1,4}all\\b|//\\s{0,4}phpcs\\s{0,2}:\\s{0,2}ignoreFile\\b|^\\s{0,4}#\\s{0,2}type\\s{0,2}:\\s{0,2}ignore\\s{0,4}$"
+  match_on: source_code
+  diff: added
+  title: "File-wide lint or type-check suppression added (@ts-nocheck / eslint-disable / pylint: skip-file)"
+  expires_at: null
+  revoked: false
+
+- id: "CLT-AGENT-RH-111"
+  category: reward_hacking
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "@ts-ignore\\b|@ts-expect-error\\b|eslint-disable-(?:next-)?line\\b|#\\s{0,2}type\\s{0,2}:\\s{0,2}ignore\\b|#\\s{0,2}noqa\\b|#\\s{0,2}pylint\\s{0,2}:\\s{0,2}disable\\b|//\\s{0,2}nolint\\b|\\bbiome-ignore\\s|@SuppressWarnings\\b|#\\[allow\\(|//\\s{0,2}NOSONAR\\b|#\\s{0,2}nosec\\b|(?://|#)\\s{0,2}nosemgrep\\b"
+  match_on: source_code
+  diff: added
+  min_matches: 5
+  title: "Burst of lint / type-check suppressions added (5+ @ts-ignore, # type: ignore, noqa in one edit)"
+  expires_at: null
+  revoked: false
+
+- id: "CLT-AGENT-RH-112"
+  category: reward_hacking
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "\"(?:strict|noImplicitAny|strictNullChecks|noUncheckedIndexedAccess|noImplicitReturns|recommended)\"\\s{0,4}:\\s{0,4}false\\b|\"linter\"\\s{0,4}:\\s{0,4}\\{\\s{0,4}\"enabled\"\\s{0,4}:\\s{0,4}false\\b|\"(?:test|lint|typecheck|type-check|check|test:[\\w-]{1,30}|lint:[\\w-]{1,30})\"\\s{0,4}:\\s{0,4}\"(?:echo\\b[^\"\\n]{0,200}|exit 0|true|:)\\s{0,4}\"|\"(?:test|lint|typecheck|type-check|check|test:[\\w-]{1,30}|lint:[\\w-]{1,30})\"\\s{0,4}:\\s{0,4}\"[^\"\\n]{0,300}(?:\\|\\|\\s{0,4}(?:true|exit 0)|--passWithNoTests)\\b|[\"']?(?:ignore|ignores|ignorePatterns|exclude|excludes|testPathIgnorePatterns|coveragePathIgnorePatterns|omit)[\"']?\\s{0,4}[:=]\\s{0,4}\\[[^\\]\\n]{0,300}?[\"'](?:\\./)?(?:src|lib|app|packages|source|tests?|\\*\\*|\\*|\\.)(?:/\\*\\*(?:/\\*)?|/\\*|/)?[\"']|\"includes\"\\s{0,4}:\\s{0,4}\\[[^\\]\\n]{0,300}?\"!{1,2}(?:\\./)?(?:src|lib|app|packages|source|tests?)(?:/\\*\\*)?/?\"|^\\s{0,4}(?:\\./|/)?(?:src|lib|app|packages|source|tests?|\\*\\*|\\*)(?:/\\*\\*(?:/\\*)?|/\\*|/)?\\s{0,4}$|\\baddopts\\s{0,4}=\\s{0,4}[^\\n]{0,300}?--(?:ignore|deselect)(?:=|\\s{1,4})"
+  match_on: quality_config
+  diff: added
+  title: "Lint, type-check or test configuration weakened (strict mode off, whole source tree ignored, no-op test script)"
+  expires_at: null
+  revoked: false
+
+# ── 3. Autonomy escalation ─────────────────────────────────────────────
+# An agent that launches another coding agent (or itself) with its approval
+# prompts or sandbox switched off, or detached in the background, escapes
+# the human-in-the-loop this product enforces. `block` at confidence 0.90:
+# deny at paranoid and balanced, ask at relaxed. Writes to agent permission
+# settings files are covered by the data/context-poisoning rules, not here.
+
+- id: "CLT-AGENT-AUTO-001"
+  category: autonomy_escalation
+  severity: high
+  confidence: 0.90
+  action: block
+  pattern: "(?:^|[\\s;&|(`'\"/\\\\])(?:claude|claude-code)(?:\\.exe|\\.cmd|\\.js)?\\s(?:[^\\n;&|]{0,300}?\\s)?(?:--dangerously-skip-permissions\\b|--allow-dangerously-skip-permissions\\b|--permission-mode(?:=|\\s{1,4})[\"']?bypassPermissions\\b)"
+  match_on:
+    - command
+    - command_normalized
+  title: "Agent launches Claude Code with permission prompts disabled (--dangerously-skip-permissions / bypassPermissions)"
+  expires_at: null
+  revoked: false
+
+- id: "CLT-AGENT-AUTO-002"
+  category: autonomy_escalation
+  severity: high
+  confidence: 0.90
+  action: block
+  pattern: "(?:^|[\\s;&|(`'\"/\\\\])codex(?:\\.exe|\\.cmd|\\.js)?\\s(?:[^\\n;&|]{0,300}?\\s)?(?:--dangerously-bypass-approvals-and-sandbox\\b|--yolo\\b|--full-auto\\b|(?:-a|--ask-for-approval)(?:=|\\s{1,4})[\"']?never\\b|(?:-s|--sandbox)(?:=|\\s{1,4})[\"']?danger-full-access\\b|(?:-c|--config)(?:=|\\s{1,4})[\"']?(?:approval_policy|sandbox_mode)\\s{0,2}=\\s{0,2}[\"']?(?:never|danger-full-access)\\b)"
+  match_on:
+    - command
+    - command_normalized
+  title: "Agent launches Codex without approvals or sandbox (--dangerously-bypass-approvals-and-sandbox / --full-auto / -a never)"
+  expires_at: null
+  revoked: false
+
+- id: "CLT-AGENT-AUTO-003"
+  category: autonomy_escalation
+  severity: high
+  confidence: 0.90
+  action: block
+  pattern: "(?:^|[\\s;&|(`'\"/\\\\])(?:gemini|qwen)(?:\\.exe|\\.cmd|\\.js)?\\s(?:[^\\n;&|]{0,300}?\\s)?(?:--yolo\\b|-y\\b|--approval-mode(?:=|\\s{1,4})[\"']?yolo\\b)"
+  match_on:
+    - command
+    - command_normalized
+  title: "Agent launches Gemini CLI in YOLO mode (--yolo / --approval-mode yolo)"
+  expires_at: null
+  revoked: false
+
+- id: "CLT-AGENT-AUTO-004"
+  category: autonomy_escalation
+  severity: high
+  confidence: 0.90
+  action: block
+  pattern: "(?:^|[\\s;&|(`'\"/\\\\])cursor-agent(?:\\.exe|\\.cmd)?\\s(?:[^\\n;&|]{0,300}?\\s)?(?:--force\\b|-f\\b)"
+  match_on:
+    - command
+    - command_normalized
+  title: "Agent launches Cursor Agent with forced command execution (cursor-agent --force)"
+  expires_at: null
+  revoked: false
+
+- id: "CLT-AGENT-AUTO-005"
+  category: autonomy_escalation
+  severity: high
+  confidence: 0.90
+  action: block
+  pattern: "(?:^|[\\s;&|(`'\"/\\\\])aider(?:\\.exe)?\\s(?:[^\\n;&|]{0,300}?\\s)?(?:--yes-always\\b|--yes\\b)"
+  match_on:
+    - command
+    - command_normalized
+  title: "Agent launches Aider auto-confirming every action (--yes-always)"
+  expires_at: null
+  revoked: false
+
+- id: "CLT-AGENT-AUTO-006"
+  category: autonomy_escalation
+  severity: high
+  confidence: 0.90
+  action: block
+  pattern: "(?:^|[\\s;&|(`'\"/\\\\])(?:opencode|amp|droid|copilot|q|kiro-cli|crush)(?:\\.exe|\\.cmd)?\\s(?:[^\\n;&|]{0,300}?\\s)?(?:--dangerously-skip-permissions\\b|--dangerously-allow-all\\b|--skip-permissions-unsafe\\b|--trust-all-tools\\b|--allow-all-tools\\b|--yolo\\b)"
+  match_on:
+    - command
+    - command_normalized
+  title: "Agent launches a coding-agent CLI with all tool approvals disabled (--dangerously-allow-all / --trust-all-tools / --yolo)"
+  expires_at: null
+  revoked: false
+
+- id: "CLT-AGENT-AUTO-007"
+  category: autonomy_escalation
+  severity: high
+  confidence: 0.90
+  action: block
+  pattern: "\\b(?:nohup|setsid|disown|daemonize)\\s(?:[^\\n;&|]{0,100}?[\\s/])?(?:claude|claude-code|codex|gemini|qwen|cursor-agent|aider|opencode|amp|droid|crush)(?:\\.exe|\\.cmd)?\\b|\\bscreen\\s(?:[^\\n;&|]{0,100}?\\s)?-d\\s{0,2}-?m\\s(?:[^\\n;&|]{0,200}?[\\s/'\"])?(?:claude|claude-code|codex|gemini|qwen|cursor-agent|aider|opencode|amp|droid|crush)\\b|\\btmux\\s(?:[^\\n;&|]{0,100}?\\s)?new(?:-session)?\\s(?:[^\\n;&|]{0,200}?\\s)?-d\\b[^\\n;&|]{0,300}?[\\s/'\"](?:claude|claude-code|codex|gemini|qwen|cursor-agent|aider|opencode|amp|droid|crush)\\b|\\bStart-Process\\s{1,4}(?:-FilePath\\s{1,4})?[\"']?(?:claude|claude-code|codex|gemini|qwen|cursor-agent|aider|opencode|amp|droid|crush)\\b|\\bstart\\s{1,4}(?:\"[^\"\\n]{0,100}\"\\s{1,4})?/[bB]\\s{1,4}(?:claude|claude-code|codex|gemini|qwen|cursor-agent|aider|opencode|amp|droid|crush)\\b|(?:^|[\\s;&|(/])(?:claude|claude-code|codex|gemini|cursor-agent|aider|opencode)\\s[^\\n;&|]{1,300}(?<![&>|])&(?![&>])"
+  match_on:
+    - command
+    - command_normalized
+  title: "Agent spawns another coding agent detached in the background (nohup / setsid / screen -dm / tmux new -d / &)"
+  expires_at: null
+  revoked: false
+
+# ── 4. High-impact / irreversible actions ──────────────────────────────
+# Data destruction, infrastructure teardown, cloud deletions, publishing,
+# deploying and messaging or paying on the user's behalf. Always `ask`
+# (never deny): these are legitimate when a human means them.
+
+- id: "CLT-AGENT-IRR-001"
+  category: irreversible_action
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "\\b(?:psql|mysql|mariadb|sqlite3|sqlcmd|clickhouse-client|cqlsh|snowsql|duckdb|usql|pgcli|mycli|litecli|trino|presto|spark-sql|beeline|isql|osql|cockroach\\s{1,4}sql|bq\\s{1,4}query)\\b[^\\n]{0,300}?\\b(?:DROP\\s{1,4}(?:DATABASE|SCHEMA|TABLE|KEYSPACE)\\b|TRUNCATE\\s{1,4}(?:TABLE\\s{1,4})?[\\w.\"`\\[\\]]{1,200}|DELETE\\s{1,4}FROM\\s{1,4}[\\w.\"`\\[\\]]{1,200}\\s{0,4}(?:;|[\"'`]|$))|\\b(?:DROP\\s{1,4}(?:DATABASE|SCHEMA|TABLE|KEYSPACE)\\b|TRUNCATE\\s{1,4}(?:TABLE\\s{1,4})?[\\w.\"`\\[\\]]{1,200}|DELETE\\s{1,4}FROM\\s{1,4}[\\w.\"`\\[\\]]{1,200}\\s{0,4}(?:;|[\"'`]|$))[^\\n]{0,300}?\\|\\s{0,4}(?:psql|mysql|mariadb|sqlite3|sqlcmd|clickhouse-client|cqlsh|snowsql|duckdb|usql|pgcli|mycli|litecli|trino|presto|spark-sql|beeline|isql|osql|cockroach\\s{1,4}sql|bq\\s{1,4}query)\\b"
+  case_insensitive: true
+  match_on: command
+  title: "Irreversible action: database data destroyed through a SQL client (DROP / TRUNCATE / DELETE without WHERE)"
+  expires_at: null
+  revoked: false
+
+- id: "CLT-AGENT-IRR-002"
+  category: irreversible_action
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "\\b(?:(?:bin/)?rails|rake|bundle\\s{1,4}exec\\s{1,4}(?:rails|rake))\\s{1,4}db:(?:drop|reset|purge|schema:load|migrate:reset)\\b|\\bprisma\\s{1,4}migrate\\s{1,4}reset\\b|\\bprisma\\s{1,4}db\\s{1,4}push\\b[^\\n;&|]{0,200}?--(?:force-reset|accept-data-loss)\\b|\\bmanage\\.py\\s{1,4}(?:flush|reset_db|sqlflush)\\b|\\bdropdb\\s|\\bmysqladmin\\s(?:[^\\n;&|]{0,200}?\\s)?drop\\b|\\bredis-cli\\b[^\\n;&|]{0,300}?\\b(?:FLUSHALL|FLUSHDB|flushall|flushdb)\\b|\\b(?:mongosh|mongo)\\b[^\\n]{0,300}?(?:dropDatabase\\s{0,2}\\(|\\.drop\\s{0,2}\\(\\s{0,2}\\))|\\bsequelize(?:-cli)?\\s{1,4}db:drop\\b|\\bknex\\s{1,4}migrate:rollback\\s[^\\n;&|]{0,100}?--all\\b|\\bsupabase\\s{1,4}db\\s{1,4}reset\\b[^\\n;&|]{0,100}?--linked\\b|\\bdrizzle-kit\\s{1,4}drop\\b|\\btypeorm\\s{1,4}schema:drop\\b|\\balembic\\s{1,4}downgrade\\s{1,4}base\\b|\\bflyway\\s{1,4}clean\\b|\\bliquibase\\s{1,4}drop-all\\b"
+  match_on: command
+  title: "Irreversible action: database dropped or reset by a framework tool (rails db:drop / prisma migrate reset / FLUSHALL)"
+  expires_at: null
+  revoked: false
+
+- id: "CLT-AGENT-IRR-003"
+  category: irreversible_action
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "\\b(?:terraform|tofu|terragrunt)\\s(?:[^\\n;&|]{0,200}?\\s)?(?:destroy\\b|apply\\s(?:[^\\n;&|]{0,300}?\\s)?-{1,2}(?:auto-approve|destroy)\\b|run-all\\s{1,4}(?:destroy\\b|apply\\s[^\\n;&|]{0,300}?-{1,2}auto-approve\\b)|workspace\\s{1,4}delete\\b)|\\bpulumi\\s(?:[^\\n;&|]{0,200}?\\s)?(?:destroy\\b|(?:up|update)\\s(?:[^\\n;&|]{0,300}?\\s)?(?:--yes|-y|--skip-preview)\\b|stack\\s{1,4}rm\\b)|\\b(?:cdk|cdktf)\\s(?:[^\\n;&|]{0,200}?\\s)?destroy\\b|\\b(?:serverless|sls)\\s{1,4}remove\\b|\\bsam\\s{1,4}delete\\b"
+  match_on: command
+  title: "Irreversible action: infrastructure destroyed or applied without review (terraform destroy / apply -auto-approve / pulumi destroy)"
+  expires_at: null
+  revoked: false
+
+- id: "CLT-AGENT-IRR-004"
+  category: irreversible_action
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "\\b(?:kubectl|oc)\\s(?:[^\\n;&|]{0,200}?\\s)?delete\\s(?:[^\\n;&|]{0,300}?\\s)?(?:(?:namespaces?|ns|pvc?|persistentvolumes?|persistentvolumeclaims?|crds?|customresourcedefinitions?|nodes?|clusterroles?)\\b|--all\\b|-A\\b|--all-namespaces\\b)|\\bhelm\\s(?:[^\\n;&|]{0,200}?\\s)?(?:uninstall|delete|del|un)\\s|\\beksctl\\s{1,4}delete\\s{1,4}cluster\\b"
+  match_on: command
+  title: "Irreversible action: Kubernetes namespace, volume or bulk deletion (kubectl delete namespace / --all / helm uninstall)"
+  expires_at: null
+  revoked: false
+
+- id: "CLT-AGENT-IRR-005"
+  category: irreversible_action
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "\\baws\\s(?:[^\\n;&|]{0,200}?\\s)?(?:s3\\s{1,4}rb\\b|s3\\s{1,4}rm\\s[^\\n;&|]{0,300}?--recursive\\b|[a-z0-9-]{2,40}\\s{1,4}(?:terminate-instances|schedule-key-deletion|delete-(?:bucket|db-instance|db-cluster|db-snapshot|table|stack|cluster|function|repository|hosted-zone|secret|vpc|subnet|security-group|user|role|policy|key-pair|snapshot|volume|file-system|domain|distribution|log-group|queue|topic|stream|backup-vault|global-table|nodegroup|service|identity-pool|user-pool|certificate|load-balancer|auto-scaling-group|environment|application|api|rest-api|graphql-api|cache-cluster|replication-group|index|collection|database|workgroup))\\b)"
+  match_on: command
+  title: "Irreversible action: AWS resource deleted (s3 rb --force / ec2 terminate-instances / delete-db-instance)"
+  expires_at: null
+  revoked: false
+
+- id: "CLT-AGENT-IRR-006"
+  category: irreversible_action
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "\\bgcloud\\s(?:[^\\n;&|]{0,300}?\\s)?delete\\b|\\bgsutil\\s(?:[^\\n;&|]{0,100}?\\s)?(?:rb\\b|rm\\s(?:[^\\n;&|]{0,100}?\\s)?-[a-zA-Z]{0,4}r[a-zA-Z]{0,4}\\b)|\\bgcloud\\s{1,4}storage\\s{1,4}rm\\s[^\\n;&|]{0,300}?--recursive\\b|\\bbq\\s{1,4}rm\\b"
+  match_on: command
+  title: "Irreversible action: Google Cloud resource deleted (gcloud ... delete / gsutil rm -r / bq rm)"
+  expires_at: null
+  revoked: false
+
+- id: "CLT-AGENT-IRR-007"
+  category: irreversible_action
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "\\baz\\s(?:[^\\n;&|]{0,300}?\\s)?(?:delete(?:-batch)?|purge)\\b(?!-)"
+  match_on: command
+  title: "Irreversible action: Azure resource deleted (az group delete / az ... delete / keyvault purge)"
+  expires_at: null
+  revoked: false
+
+- id: "CLT-AGENT-IRR-008"
+  category: irreversible_action
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "\\bheroku\\s{1,4}(?:apps:destroy|pg:reset|addons:destroy)\\b|\\b(?:fly|flyctl)\\s{1,4}(?:apps\\s{1,4}destroy|destroy|volumes\\s{1,4}destroy|postgres\\s{1,4}destroy)\\b|\\bdoctl\\s(?:[^\\n;&|]{0,200}?\\s)?delete\\b|\\bvercel\\s{1,4}(?:remove|rm|project\\s{1,4}rm)\\b|\\bnetlify\\s{1,4}sites:delete\\b|\\bgh\\s{1,4}(?:repo|release)\\s{1,4}delete\\b|\\bfirebase\\s{1,4}(?:firestore:delete\\b[^\\n;&|]{0,300}?(?:--all-collections|-r\\b|--recursive)|projects:delete\\b|hosting:disable\\b|database:remove\\b)|\\bsupabase\\s{1,4}(?:projects|branches)\\s{1,4}delete\\b|\\bnpm\\s{1,4}unpublish\\b|\\bcf\\s{1,4}delete(?:-service|-space|-org)?\\b|\\brailway\\s{1,4}down\\b"
+  match_on: command
+  title: "Irreversible action: hosted app, project, repository or release destroyed (heroku apps:destroy / gh repo delete / npm unpublish)"
+  expires_at: null
+  revoked: false
+
+- id: "CLT-AGENT-IRR-009"
+  category: irreversible_action
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "\\bgh\\s{1,4}pr\\s{1,4}merge\\s(?:[^\\n;&|]{0,300}?\\s)?--admin\\b|\\bgh\\s{1,4}repo\\s{1,4}edit\\s[^\\n;&|]{0,300}?--visibility[= ]\\s{0,2}[\"']?public\\b"
+  match_on: command
+  title: "Irreversible action: pull request merged past branch protection (gh pr merge --admin) or repository made public"
+  expires_at: null
+  revoked: false
+
+- id: "CLT-AGENT-IRR-010"
+  category: irreversible_action
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "\\b(?:npm|pnpm|bun)\\s(?:[^\\n;&|]{0,100}?\\s)?publish(?![\\w:-])(?![^\\n;&|]{0,300}?--dry-run)|\\byarn\\s{1,4}(?:npm\\s{1,4})?publish(?![\\w:-])(?![^\\n;&|]{0,300}?--dry-run)|\\b(?:twine|flit|poetry|hatch|uv|cargo|vsce|ovsx|lerna|changeset)\\s(?:[^\\n;&|]{0,100}?\\s)?(?:upload|publish)(?![\\w:-])(?![^\\n;&|]{0,300}?--dry-run)|\\bgem\\s{1,4}push\\b|\\b(?:dotnet\\s{1,4})?nuget\\s{1,4}push\\b|\\bmvn\\s(?:[^\\n;&|]{0,200}?\\s)?deploy(?![\\w:-])|\\b(?:gradle|\\./gradlew|gradlew)\\s(?:[^\\n;&|]{0,200}?\\s)?publish(?:ToMavenCentral|AllPublicationsTo\\w{1,60})?(?![\\w:-])|\\bpod\\s{1,4}trunk\\s{1,4}push\\b|\\bgh\\s{1,4}release\\s{1,4}create\\b"
+  match_on: command
+  title: "Irreversible action: package or release published to a registry (npm publish / twine upload / cargo publish / gh release create)"
+  expires_at: null
+  revoked: false
+
+- id: "CLT-AGENT-IRR-011"
+  category: irreversible_action
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "\\b(?:docker|podman|nerdctl)\\s(?:[^\\n;&|]{0,100}?\\s)?(?:image\\s{1,4})?push\\s(?:[^\\n;&|]{0,200}?\\s)?[\"']?(?:(?:docker\\.io|index\\.docker\\.io|registry-1\\.docker\\.io|registry\\.hub\\.docker\\.com|ghcr\\.io|quay\\.io|public\\.ecr\\.aws|registry\\.gitlab\\.com|docker\\.pkg\\.github\\.com)/|(?!localhost\\b)[a-z0-9][a-z0-9_-]{0,100}/[a-z0-9])|\\bdocker\\s{1,4}buildx\\s{1,4}(?:build|bake)\\s(?=[^\\n;&|]{0,300}?--push\\b)[^\\n;&|]{0,300}?(?:-t|--tag)(?:=|\\s{1,4})[\"']?(?:(?:docker\\.io|index\\.docker\\.io|registry-1\\.docker\\.io|registry\\.hub\\.docker\\.com|ghcr\\.io|quay\\.io|public\\.ecr\\.aws|registry\\.gitlab\\.com|docker\\.pkg\\.github\\.com)/|(?!localhost\\b)[a-z0-9][a-z0-9_-]{0,100}/[a-z0-9])"
+  match_on: command
+  title: "Irreversible action: container image pushed to a public registry (docker push to Docker Hub / ghcr.io / quay.io)"
+  expires_at: null
+  revoked: false
+
+- id: "CLT-AGENT-IRR-012"
+  category: irreversible_action
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "\\b(?:sendmail|mailx|mutt|swaks|msmtp|ssmtp)\\b(?![.-])[^\\n;&|]{0,300}?(?:@|\\s-t\\b|--to\\b)|\\bmail\\s(?:[^\\n;&|]{0,200}?\\s)?-s\\s[^\\n;&|]{0,300}?[\\w.+-]{1,64}@[\\w-]{1,63}(?:\\.[\\w-]{1,63}){1,8}|\\bcurl\\s[^\\n;&|]{0,300}?(?:--mail-rcpt\\b|smtps?://)|\\bSend-MailMessage\\b|\\baws\\s(?:[^\\n;&|]{0,200}?\\s)?(?:ses|sesv2)\\s{1,4}send-(?:email|raw-email|bulk-email|templated-email|bulk-templated-email)\\b|\\baws\\s(?:[^\\n;&|]{0,200}?\\s)?sns\\s{1,4}publish\\b|\\btwilio\\s{1,4}api:[\\w:]{0,100}(?:messages|calls):create\\b|\\bcurl\\s[^\\n;&|]{0,300}?https://(?:hooks\\.slack\\.com/services|discord(?:app)?\\.com/api/webhooks|api\\.telegram\\.org/bot[^\\s/]{1,200}/send\\w{1,30}|outlook\\.office\\.com/webhook|[\\w-]{1,63}\\.webhook\\.office\\.com)/"
+  match_on: command
+  title: "Irreversible action: email, SMS or chat message sent on the user's behalf (sendmail / mail -s / aws ses send-email / Slack webhook)"
+  expires_at: null
+  revoked: false
+
+- id: "CLT-AGENT-IRR-013"
+  category: irreversible_action
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "\\bstripe\\s(?:[^\\n;&|]{0,200}?\\s)?(?:charges|payment_intents|refunds|payouts|transfers|invoices|subscriptions|checkout_sessions|topups|application_fees)\\s{1,4}(?:create|confirm|capture|pay|finalize|cancel|delete|update)\\b|\\bstripe\\s(?:[^\\n;&|]{0,200}?\\s)?(?:post|delete)\\s{1,4}/v1/(?:charges|payment_intents|refunds|payouts|transfers|invoices|subscriptions|customers|topups)\\b|\\bcurl\\s(?=[^\\n;&|]{0,300}?(?:\\s-d\\b|\\s--data\\b|\\s-X\\s{0,2}POST\\b|\\s-F\\b))[^\\n;&|]{0,300}?api\\.stripe\\.com/v1/(?:charges|payment_intents|refunds|payouts|transfers|invoices|subscriptions|topups)\\b"
+  match_on: command
+  title: "Irreversible action: payment, refund or payout made through the Stripe CLI or API"
+  expires_at: null
+  revoked: false
+
+- id: "CLT-AGENT-IRR-014"
+  category: irreversible_action
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "\\bvercel\\s(?:[^\\n;&|]{0,200}?\\s)?--prod(?:uction)?\\b|\\bvercel\\s{1,4}promote\\b|\\bnetlify\\s{1,4}deploy\\s[^\\n;&|]{0,300}?--prod\\b|\\bfirebase\\s{1,4}deploy\\b|\\b(?:fly|flyctl)\\s{1,4}deploy\\b|\\bgcloud\\s{1,4}(?:app|run|functions)\\s{1,4}deploy\\b|\\bgit\\s{1,4}push\\s{1,4}(?:-\\S{1,40}\\s{1,4}){0,4}heroku\\b|\\beb\\s{1,4}deploy\\b|\\b(?:serverless|sls)\\s{1,4}deploy\\b|\\bwrangler\\s{1,4}(?:deploy|publish)\\b|\\bsupabase\\s{1,4}(?:functions\\s{1,4}deploy|db\\s{1,4}push)\\b|\\bcdk\\s(?:[^\\n;&|]{0,200}?\\s)?deploy\\b|\\bkubectl\\s(?:[^\\n;&|]{0,200}?\\s)?(?:apply|replace|set\\s{1,4}image|rollout\\s{1,4}restart)\\s[^\\n;&|]{0,300}?(?:--context[= ]\\S{0,100}prod|-n\\s{1,4}prod|--namespace[= ]prod)|\\bhelm\\s(?:[^\\n;&|]{0,200}?\\s)?(?:upgrade|install)\\s[^\\n;&|]{0,300}?(?:--kube-context[= ]\\S{0,100}prod|-n\\s{1,4}prod|--namespace[= ]prod)"
+  match_on: command
+  title: "Irreversible action: deployment to production (vercel --prod / firebase deploy / fly deploy / kubectl apply to prod)"
+  expires_at: null
+  revoked: false

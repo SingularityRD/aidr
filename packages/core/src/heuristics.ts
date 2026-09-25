@@ -35,6 +35,12 @@
  */
 
 import {
+	DELETED_TEST_FILE_VIEW,
+	EDIT_VIEW_TYPES,
+	type EditLineViewEntry,
+	type EditViews,
+} from "./agent-safety/edit-views.js";
+import {
 	isTrustedModelSourceMatch,
 	NO_TRUSTED_MODEL_SOURCES,
 	type TrustedModelSources,
@@ -58,6 +64,38 @@ const MAX_MATCH_INPUT = MAX_ARTIFACT_SIZE;
  */
 const NORMALIZED_SUFFIX = "_normalized";
 
+function countMatchingLines(
+	pattern: RegExp,
+	lines: readonly string[],
+): { count: number; first: string | undefined } {
+	let count = 0;
+	let first: string | undefined;
+	for (const line of lines) {
+		if (!pattern.test(line)) continue;
+		count++;
+		first ??= line;
+	}
+	return { count, first };
+}
+
+/**
+ * `setting -> number` for every line where the pattern's first capture group is
+ * a number. The key is the matched text with that number blanked, so
+ * `lines: 80` and `lines: 60` compare as the same setting.
+ */
+function numericSettings(pattern: RegExp, lines: readonly string[]): Map<string, number> {
+	const settings = new Map<string, number>();
+	for (const line of lines) {
+		const match = pattern.exec(line);
+		const raw = match?.[1];
+		if (!match || raw === undefined) continue;
+		const value = Number.parseFloat(raw);
+		if (!Number.isFinite(value)) continue;
+		const key = match[0].replace(raw, "#").toLowerCase().replace(/\s+/g, "");
+		settings.set(key, value);
+	}
+	return settings;
+}
 /**
  * Occurrences of one model-source rule examined per artifact before the match
  * is kept as-is (fail towards reporting, never towards suppression).
@@ -183,6 +221,67 @@ export class HeuristicsEngine {
 		const normalized = normalizeShellText(value);
 		for (const threat of threats) {
 			if (!alreadyMatched.has(threat.id)) this.runThreat(threat, normalized, matches);
+		}
+	}
+
+	/** True when any loaded rule inspects the diff-aware file-edit views. */
+	get hasEditViewRules(): boolean {
+		for (const type of EDIT_VIEW_TYPES) {
+			if ((this.threatMap.get(type)?.length ?? 0) > 0) return true;
+		}
+		return false;
+	}
+
+	/**
+	 * Match the diff-aware file-edit views (see `agent-safety/edit-views.ts`).
+	 * Line rules compare how many added and removed lines match (`Threat.diff`);
+	 * the reported artifact is the file path, never the edited content. Call
+	 * after {@link match}: regex failures are appended to the same skip list.
+	 */
+	matchEditViews(views: EditViews): HeuristicMatch[] {
+		const matches: HeuristicMatch[] = [];
+		for (const entry of views.lines) {
+			for (const threat of this.threatMap.get(entry.view) ?? []) {
+				const match = this.runLineRule(threat, entry);
+				if (match) matches.push(match);
+			}
+		}
+		for (const filePath of views.deletedTestFiles) {
+			for (const threat of this.threatMap.get(DELETED_TEST_FILE_VIEW) ?? []) {
+				this.runThreat(threat, filePath, matches);
+			}
+		}
+		return matches;
+	}
+
+	private runLineRule(threat: Threat, entry: EditLineViewEntry): HeuristicMatch | null {
+		try {
+			const pattern =
+				threat.compiledPattern.global || threat.compiledPattern.sticky
+					? new RegExp(threat.compiledPattern.source, threat.compiledPattern.flags)
+					: threat.compiledPattern;
+			if (threat.diff === "value_decreased") {
+				const before = numericSettings(pattern, entry.removed);
+				for (const [key, value] of numericSettings(pattern, entry.added)) {
+					const previous = before.get(key);
+					if (previous !== undefined && value < previous) {
+						return { threat, artifact: entry.filePath, matchValue: key };
+					}
+				}
+				return null;
+			}
+			const added = countMatchingLines(pattern, entry.added);
+			const removed = countMatchingLines(pattern, entry.removed);
+			const wantsRemoval = threat.diff === "removed";
+			const net = wantsRemoval ? removed.count - added.count : added.count - removed.count;
+			if (net < (threat.minMatches ?? 1)) return null;
+			const sample = (wantsRemoval ? removed.first : added.first) ?? "";
+			return { threat, artifact: entry.filePath, matchValue: sample.slice(0, 200) };
+		} catch (error) {
+			const reason = error instanceof Error ? error.message : String(error);
+			this._unavailableThreats.push({ threatId: threat.id, reason });
+			console.warn(`Regex execution failed for threat ${threat.id}: ${reason}`);
+			return null;
 		}
 	}
 

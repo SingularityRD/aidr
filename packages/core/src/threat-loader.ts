@@ -21,6 +21,8 @@ const REQUIRED_FIELDS = new Set([
 	"title",
 ]);
 
+const DIFF_MODES: ReadonlySet<string> = new Set(["added", "removed", "value_decreased"]);
+
 function parseExpiresAt(value: string | null | undefined): Date | null {
 	if (value == null) return null;
 	try {
@@ -150,6 +152,28 @@ export async function loadThreats(
 				Array.isArray(rawMatchOn) ? rawMatchOn : [rawMatchOn as string],
 			);
 
+			// File-edit view rules (agent-safety/edit-views.ts) may declare how the
+			// added and removed lines of an edit are compared. A malformed value is
+			// a rule error, never a silently widened rule.
+			const diff = record.diff;
+			if (diff !== undefined && !DIFF_MODES.has(diff as string)) {
+				const errorMsg = `Skipping threat ${record.id} in ${filename}: diff must be one of ${[...DIFF_MODES].join(", ")}`;
+				errors.push(errorMsg);
+				logger.error(errorMsg, { file: filename, threatId: record.id });
+				continue;
+			}
+			const minMatches = record.min_matches;
+			if (
+				minMatches !== undefined &&
+				(!Number.isInteger(minMatches) ||
+					(minMatches as number) < 1 ||
+					(minMatches as number) > 1000)
+			) {
+				const errorMsg = `Skipping threat ${record.id} in ${filename}: min_matches must be an integer between 1 and 1000`;
+				errors.push(errorMsg);
+				logger.error(errorMsg, { file: filename, threatId: record.id });
+				continue;
+			}
 			const frameworks = frameworkMappings
 				? resolveRuleFrameworks(frameworkMappings, {
 						id: record.id as string,
@@ -170,6 +194,8 @@ export async function loadThreats(
 				title: record.title as string,
 				expiresAt: parseExpiresAt(record.expires_at as string | null | undefined),
 				revoked: false,
+				...(diff === undefined ? {} : { diff: diff as NonNullable<Threat["diff"]> }),
+				...(minMatches === undefined ? {} : { minMatches: minMatches as number }),
 				sourceFile: filename,
 				...(frameworks ? { frameworks } : {}),
 			});

@@ -55,6 +55,10 @@ export const ThreatSchema = z.object({
 	title: z.string(),
 	expires_at: z.string().nullable().optional(),
 	revoked: z.boolean().optional().default(false),
+	/** File-edit view rules only (see `agent-safety/edit-views.ts`). */
+	diff: z.enum(["added", "removed", "value_decreased"]).optional(),
+	/** File-edit view rules only: the net number of matching lines required. */
+	min_matches: z.number().int().min(1).max(1000).optional(),
 });
 
 /** Raw threat from YAML (before compilation). */
@@ -93,6 +97,16 @@ export interface Threat {
 	title: string;
 	expiresAt: Date | null;
 	revoked: boolean;
+	/**
+	 * File-edit view rules only (`match_on: test_code | ci_config |
+	 * quality_config | source_code`): compare the lines an edit adds with the
+	 * lines it removes. `added` / `removed` fire on a net change of at least
+	 * `minMatches` matching lines; `value_decreased` fires when the number in the
+	 * pattern's first capture group went down for the same setting.
+	 */
+	diff?: "added" | "removed" | "value_decreased";
+	/** Net matching lines an `added` / `removed` rule needs (default 1). */
+	minMatches?: number;
 	/** Rule file the threat was loaded from (e.g. `commands.yaml`). */
 	sourceFile?: string;
 	/** Framework mapping; absent when the rule directory ships no mapping for it. */
@@ -818,6 +832,42 @@ const OperatorApprovalsConfigSchema = z.object({
 	dashboard_only: z.boolean().default(false),
 });
 
+/**
+ * Session-level runaway guardrails for autonomous agents (loops, tool-call rate
+ * spikes, optional per-session budgets). Every signal is an `ask`: the session
+ * is paused until a human reviews it. See docs/agent-safety.md.
+ *
+ * `max_*` values are the most the guard allows before pausing; `0` switches that
+ * individual check off. Budgets are off by default.
+ */
+export const RunawayConfigSchema = z.object({
+	enabled: z.boolean().default(true),
+	/** Sliding window for loop and repeated-failure detection. */
+	window_seconds: z.number().int().min(10).max(86_400).default(600),
+	/** The same tool call back-to-back, with nothing else in between. */
+	max_consecutive_identical_calls: z.number().int().min(0).max(1000).default(8),
+	/** The same tool call anywhere in the window. */
+	max_identical_calls: z.number().int().min(0).max(1000).default(25),
+	/** Near-identical calls (numbers, ids and whitespace ignored) in the window. */
+	max_similar_calls: z.number().int().min(0).max(1000).default(50),
+	/** Recorded failures of the same call with no file edit in between. */
+	max_repeated_failures: z.number().int().min(0).max(1000).default(3),
+	/** Tool calls in any rolling 60 seconds. */
+	max_calls_per_minute: z.number().int().min(0).max(1000).default(120),
+	/** Optional session budgets (0 = unlimited). */
+	max_tool_calls: z.number().int().min(0).default(0),
+	max_session_minutes: z.number().int().min(0).default(0),
+	max_files_written: z.number().int().min(0).max(2000).default(0),
+	/** Session state older than this is discarded. */
+	state_ttl_hours: z.number().min(1).max(720).default(24),
+	/** At most this many session state files are kept. */
+	max_sessions: z.number().int().min(1).max(10_000).default(512),
+});
+
+export const AgentSafetyConfigSchema = z.object({
+	runaway: RunawayConfigSchema.default({}),
+});
+
 export const ConfigSchema = z.object({
 	// Default to local enforcement so a fresh install protects on the first tool
 	// call. Managed mode adds the control plane, signed entitlements and premium
@@ -852,6 +902,7 @@ export const ConfigSchema = z.object({
 	sensitivity: SensitivitySchema.default("balanced"),
 	disabled_threats: z.array(z.string()).default([]),
 	operator_approvals: OperatorApprovalsConfigSchema.default({}),
+	agent_safety: AgentSafetyConfigSchema.default({}),
 });
 
 export type AuthConfig = z.infer<typeof AuthConfigSchema>;
@@ -912,6 +963,7 @@ export type CacheConfig = z.infer<typeof CacheConfigSchema>;
 export type AllowlistConfig = z.infer<typeof AllowlistConfigSchema>;
 export type LoggingConfig = z.infer<typeof LoggingConfigSchema>;
 export type Config = z.infer<typeof ConfigSchema>;
+export type RunawayConfig = z.infer<typeof RunawayConfigSchema>;
 
 // ── Allowlist ───────────────────────────────────────────────────────
 

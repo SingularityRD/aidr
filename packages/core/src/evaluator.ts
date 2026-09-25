@@ -11,6 +11,12 @@ import {
 	evaluateAgentProfiles,
 	mergeAgentProfileVerdict,
 } from "./agent-profile.js";
+import { buildEditViews } from "./agent-safety/edit-views.js";
+import {
+	applyRunawayOutcome,
+	checkRunaway,
+	RUNAWAY_UNAVAILABLE_CATEGORY,
+} from "./agent-safety/runaway-guard.js";
 import { loadTrustedModelSources, type TrustedModelSources } from "./ai-supply-chain.js";
 import { isAllowlisted, loadAllowlist } from "./allowlist.js";
 import {
@@ -695,7 +701,17 @@ async function applyRuntimeDetectors(
 		await contextPoisoningVerdict(request, context, config, baseVerdict),
 	);
 	const canaryGap = canaryUnavailableByRequest.get(request);
-	const verdict = canaryGap ? canaryUnavailableVerdict(checked, canaryGap) : checked;
+	const detected = canaryGap ? canaryUnavailableVerdict(checked, canaryGap) : checked;
+	// Session-level runaway guardrails see every evaluated call exactly once,
+	// whichever path decided it (see agent-safety/runaway-guard.ts).
+	const verdict = applyRunawayOutcome(
+		detected,
+		await checkRunaway(request, config, {
+			configPath: context.configPath,
+			agentRuntime: context.agentRuntime,
+			logger: context.logger,
+		}),
+	);
 	return delegationOutcome ? { ...verdict, delegation: delegationOutcome.lineage } : verdict;
 }
 
@@ -1660,6 +1676,7 @@ async function runEvaluationPipeline(
 			if (
 				verdict.decision !== "allow" ||
 				verdict.category === "behavioral_unavailable" ||
+				verdict.category === RUNAWAY_UNAVAILABLE_CATEGORY ||
 				verdict.category === CANARY_UNAVAILABLE_CATEGORY ||
 				verdict.category.startsWith("toxic_flow") ||
 				verdict.transformedInput
@@ -1779,6 +1796,11 @@ async function runEvaluationPipeline(
 		const loaded = await loadHeuristics(context, config, logger);
 		threatsLoaded = loaded.threatsLoaded;
 		heuristicMatches = loaded.engine.match(request.artifacts);
+		// Diff-aware agent-safety rules: what an edit adds to or removes from
+		// tests, CI and lint/coverage configuration (agent-safety/edit-views.ts).
+		if (loaded.engine.hasEditViewRules) {
+			heuristicMatches.push(...loaded.engine.matchEditViews(await buildEditViews(request, logger)));
+		}
 		// Model-loading rules decide like any heuristic; secure-code findings
 		// are advisory and folded in after the decision (see below).
 		codeGuard = inspectCodeLeg(request, loaded, config, logger);

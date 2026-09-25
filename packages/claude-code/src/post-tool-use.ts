@@ -9,6 +9,7 @@ import {
 	inspectValueForCanaryTokens,
 	type Logger,
 	recordCanaryTrigger,
+	recordToolOutcome,
 	recordToolOutputFlow,
 	verifyArtifactIntegrityAndLog,
 } from "@singularityrd/aidr-core";
@@ -22,6 +23,7 @@ import {
 	type ToolResponseScan,
 	toolResponseInspectionResult,
 } from "./output-inspection.js";
+import { toolResponseFailed } from "./tool-outcome.js";
 import {
 	appendPostToolContext,
 	quarantineFailedToolInspection,
@@ -144,6 +146,24 @@ async function main(): Promise<void> {
 						? (toolInput as Record<string, unknown>)
 						: undefined,
 				findings: scan.findings,
+			},
+			{ agentRuntime: "claude-code", logger },
+		);
+	}
+	if (toolResponseFailed(hookInput.tool_response)) {
+		// Runaway guard: the same call failing again and again with no file change
+		// in between is a stuck loop; its next retry is paused for review.
+		// Never changes this hook's response and never throws.
+		const toolInput = hookInput.tool_input;
+		await recordToolOutcome(
+			{
+				sessionId,
+				toolName: typeof hookInput.tool_name === "string" ? hookInput.tool_name : "unknown",
+				toolInput:
+					toolInput && typeof toolInput === "object" && !Array.isArray(toolInput)
+						? (toolInput as Record<string, unknown>)
+						: {},
+				failed: true,
 			},
 			{ agentRuntime: "claude-code", logger },
 		);

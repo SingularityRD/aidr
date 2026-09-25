@@ -90,6 +90,8 @@ const AUDITED_ALLOW_CATEGORIES: ReadonlySet<string> = new Set([
 	"dlp_redacted",
 	"prompt_protection",
 	"prompt_protection_warning",
+	// An allow whose runaway guard could not run is not a clean check.
+	"runaway_guard_unavailable",
 	"secure_code_warning",
 	"toxic_flow_monitor",
 	"toxic_flow_unavailable",

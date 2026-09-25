@@ -61,6 +61,35 @@ export {
 	AGENT_PROFILE_TEMPLATES,
 	agentProfileTemplateDocument,
 } from "./agent-profile-templates.js";
+// Agent-safety guardrails: diff-aware edit views and session runaway guard
+export {
+	buildEditViews,
+	DELETED_TEST_FILE_VIEW,
+	EDIT_LINE_VIEWS,
+	type EditLineView,
+	type EditViews,
+	isTestFile,
+	lineDiff,
+	patchChanges,
+	viewsForPath,
+} from "./agent-safety/edit-views.js";
+export {
+	applyRunawayOutcome,
+	checkRunaway,
+	evaluateRunawayCall,
+	isRunawayState,
+	RUNAWAY_CATEGORY,
+	RUNAWAY_SIGNAL_IDS,
+	RUNAWAY_UNAVAILABLE_CATEGORY,
+	type RunawayOutcome,
+	type RunawaySignal,
+	type RunawayState,
+	recordToolOutcome,
+	runawayStateDir,
+	runawayVerdict,
+	toolCallFingerprints,
+	writtenPaths,
+} from "./agent-safety/runaway-guard.js";
 // AI model supply chain: trusted model sources (hubs and publisher organisations)
 export {
 	isTrustedModelSourceMatch,
@@ -1290,6 +1319,15 @@ export {
 	toAuditFindingData,
 	toFindingData,
 } from "./session-start-scan.js";
+export {
+	SessionStateError,
+	type SessionStateErrorCode,
+	type SessionStateRecovery,
+	SessionStateStore,
+	type SessionStateStoreOptions,
+	type SessionStateUpdateResult,
+	sessionStateDigest,
+} from "./session-state-store.js";
 export { normalizeShellText } from "./shell-normalize.js";
 export {
 	createSiemEvent,
@@ -1431,6 +1469,7 @@ export type {
 	PromptContentSafetyConfig,
 	PromptProtectionConfig,
 	PromptProtectionMode,
+	RunawayConfig,
 	SecureCodeConfig,
 	SignalSources,
 	Threat,
@@ -1447,6 +1486,7 @@ export type {
 // Types
 export {
 	ActionSchema,
+	AgentSafetyConfigSchema,
 	AiSupplyChainConfigSchema,
 	AllowlistConfigSchema,
 	ArtifactSchema,
@@ -1468,6 +1508,7 @@ export {
 	PromptContentSafetySchema,
 	PromptProtectionConfigSchema,
 	PromptProtectionModeSchema,
+	RunawayConfigSchema,
 	SecureCodeConfigSchema,
 	SensitivitySchema,
 	SeveritySchema,
