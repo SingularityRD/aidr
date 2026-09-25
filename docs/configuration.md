@@ -254,36 +254,81 @@ When enabled, Singularity AIDR scans tool inputs (commands, file content, edits)
 
 ### `prompt_protection`
 
-Claude Code only (`UserPromptSubmit` hook, `packages/claude-code/dist/user-prompt-submit.cjs`).
-Inspects the user's prompt before Claude Code sends it to the model.
+Inspects the user's prompt before the agent sends it to the model, on every connector whose
+host exposes a pre-model prompt hook. All connectors share one engine (`scanPrompt` and the
+`inspectUserPrompt` runner in `@singularityrd/aidr-core`), so the same prompt gets the same
+decision everywhere.
 
 | Field | Default | Description |
 |-------|---------|-------------|
 | `secrets` | `"block"` | Tokens, API keys, AWS keys, private keys, password assignments. `"block"`, `"warn"` or `"off"`. |
-| `pii` | `"warn"` | Email addresses, formatted phone numbers and SSNs, Luhn-valid card numbers. `"block"`, `"warn"` or `"off"`. |
+| `pii` | `"warn"` | Email addresses, formatted phone numbers and SSNs, Luhn-valid card numbers, Turkish ID numbers (TC Kimlik, checksum-validated), IBANs (mod-97) and TR/international phone numbers. `"block"`, `"warn"` or `"off"`. |
 
-- `block` stops the prompt; Claude Code shows the reason to the user only. The reason names
-  the kind of data found (for example "GitHub token"), never the value.
-- `warn` sends the prompt, shows the user a notice and gives the model a context note not to
-  repeat or copy the data.
+Per-connector support:
+
+| Connector | Host hook | Block | Warn (personal data) | Audit `tool_name` | Deadline (host timeout) |
+|-----------|-----------|-------|----------------------|-------------------|-------------------------|
+| Claude Code | `UserPromptSubmit` (`hooks/hooks.json`) | `decision: "block"` + reason, shown to the user only | `systemMessage` to the user, `additionalContext` to the model | `UserPromptSubmit` | 7 s (10 s) |
+| Cursor | `beforeSubmitPrompt` (managed `~/.cursor/hooks.json`, `failClosed: true`) | `continue: false` + `user_message` | Prompt is sent; notice in `user_message` (Cursor documents it for blocked prompts) and in the audit log. The event has no model-context field. | `beforeSubmitPrompt` | 20 s (30 s) |
+| VS Code (Local agent hooks) | `UserPromptSubmit` (managed `.claude/settings.json`, needs `chat.useClaudeHooks`) | `continue: false` + `stopReason` | `systemMessage` to the user; the event has no documented model-context field | `UserPromptSubmit` | 20 s (30 s) |
+| Codex CLI | `UserPromptSubmit` (register `aidr-codex-hook` under `[[hooks.UserPromptSubmit]]`, then trust it) | `decision: "block"` + non-empty reason; exit 2 + stderr on internal failure | `systemMessage` to the user, `additionalContext` to the model | `UserPromptSubmit` | 7 s (the documented `timeout = 10`) |
+| OpenCode | `chat.message` plugin hook | Text parts replaced with the block notice, TUI toast, and the hook throws so the prompt is not stored or sent | Prompt is sent; TUI toast, and a notice attached to that message for the model (`experimental.chat.messages.transform`, not persisted) | `chat.message` | 10 s (in-process) |
+| OpenClaw | `before_agent_run` gate (embedded and CLI runners) | `{ outcome: "block", message }`; OpenClaw keeps only the replacement text in the transcript | Notice prepended for the model through `before_prompt_build`, asking it to tell the user | `before_agent_run` | 10 s (15 s, fail-closed) |
+
+Connector notes:
+
+- **Cursor**: attachments listed in the `beforeSubmitPrompt` payload are not inspected, only
+  the prompt text.
+- **VS Code**: only the Local agent harness runs these hooks; Agent Host sessions (Copilot,
+  Claude, Codex) use their own hook systems. The same `.claude/settings.json` entry is also
+  honoured by Claude Code, which reads the same file.
+- **Codex**: Codex runs `UserPromptSubmit` hooks without a matcher and fails open when the
+  hook is untrusted, crashes, times out or returns malformed output. Register it next to the
+  `PreToolUse` handler (see [packages/codex/README.md](../packages/codex/README.md)).
+- **OpenCode**: only the user's own text parts are inspected; `synthetic` parts that OpenCode
+  generates (for example the contents of an attached file) are not. If the plugin fails to
+  initialise, prompts get the uninspected-prompt policy below.
+- **OpenClaw**: `before_agent_run` is not an input gate for OpenClaw's Codex or Copilot
+  harnesses, and a host without the hook ignores the registration. A non-bundled plugin
+  needs `plugins.entries.aidr-openclaw.hooks.allowConversationAccess: true` for
+  `before_agent_run` and `before_prompt_build`.
+- Host acceptance: the Cursor, VS Code, Codex, OpenCode and OpenClaw paths are verified
+  against the hosts' published hook contracts and by tests that drive the built connector
+  bundles; no named real-host acceptance record exists yet
+  (`deploy/native/interception-matrix.json`, `pre-prompt` rows).
+
+Behaviour common to all connectors:
+
+- `block` stops the prompt and shows the reason to the user. The reason names the kind of
+  data found (for example "GitHub token"), never the value.
+- `warn` sends the prompt, shows the user a notice where the host can display one and gives
+  the model a context note not to repeat or copy the data where the host can deliver one
+  (see the table).
 - An operator-provisioned tenant DLP policy is also applied to the prompt and cannot be
   turned off here. A prompt cannot be rewritten, so any tenant action other than `allow`
   (including `redact`, and an uninspectable prompt) blocks.
-- Audit entries (`tool_name: "UserPromptSubmit"`) record the kinds and counts found, never
-  the prompt.
-- Failure policy: if the hook cannot inspect the prompt (unreadable or oversized input over
-  2 MiB, or an internal error) it blocks only when `secrets` is `"block"`. With `"warn"` or
-  `"off"` the prompt is sent with a visible "not inspected" notice. A provisioned tenant
-  policy that cannot be verified always blocks. A hook process that is killed before it
-  writes a response cannot block; that is a Claude Code host limitation.
-- Deadline: Claude Code kills the hook after 10 s (`hooks/hooks.json`), so the hook answers
-  itself after 7 s. A prompt it could not finish inspecting by then is blocked when
-  `secrets` is `"block"` or a tenant DLP policy is provisioned; otherwise it is sent with a
-  visible "not fully inspected" notice. Override with `AIDR_USER_PROMPT_SUBMIT_DEADLINE_MS`
-  (an integer from 100 to 9000; anything else uses the default). Inspection cost is linear
-  in the prompt size (a 1.5 MB prompt takes well under a second), and once a secret is found
-  in `"block"` mode the scan stops there, so the block reports the first secret found rather
-  than a full count.
+- Audit entries (`tool_name` per the table) record the kinds and counts found, never the
+  prompt.
+- Failure policy: if the hook cannot inspect the prompt (unreadable input, an oversized
+  payload — over 2 MiB on Claude Code, over 1 MiB on the Cursor/VS Code hook — or an internal
+  error) it blocks only when `secrets` is `"block"`. With `"warn"` or `"off"` the prompt is
+  sent with a visible "not inspected" notice. A provisioned tenant policy that cannot be
+  verified always blocks. A hook process that is killed before it writes a response cannot
+  block on Claude Code, VS Code or Codex (host limitations); the managed Cursor hook requests
+  `failClosed: true` (host enforcement not yet verified), and OpenClaw's `before_agent_run`
+  gate blocks on a thrown error or timeout. A hook that fails before it
+  reads the payload (for example a failed artifact integrity check) answers with a
+  combined deny-and-stop response on Cursor/VS Code, exit 2 on Codex, and a block on
+  OpenClaw.
+- Deadline: each connector answers before its host's hook timeout (see the table). A prompt
+  it could not finish inspecting by then is blocked when `secrets` is `"block"` or a tenant
+  DLP policy is provisioned; otherwise it is sent with a visible "not fully inspected"
+  notice. Override with `AIDR_USER_PROMPT_SUBMIT_DEADLINE_MS` on Claude Code (an integer
+  from 100 to 9000) and `AIDR_PROMPT_INSPECTION_DEADLINE_MS` on the other connectors (from
+  100 to 28000 on Cursor/VS Code, 9000 on Codex, 13000 on OpenClaw, 60000 on OpenCode);
+  anything else uses the default. Inspection cost is linear in the prompt size (a 1.5 MB
+  prompt takes well under a second), and once a secret is found in `"block"` mode the scan
+  stops there, so the block reports the first secret found rather than a full count.
 
 #### DLP redaction of tool input
 

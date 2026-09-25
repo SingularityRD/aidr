@@ -30,12 +30,29 @@
     {
       "connector": "claude-code",
       "point": "pre-prompt",
-      "status": "unsupported",
-      "hostBoundary": null,
-      "reason": "The connector registers no pre-prompt hook. hooks/hooks.json registers PreToolUse, PostToolUse and SessionStart only, and session-start.ts emits a user-facing systemMessage rather than inspecting or gating the prompt.",
-      "evidence": [],
+      "status": "declared-not-proven",
+      "hostBoundary": "UserPromptSubmit",
+      "reason": null,
+      "evidence": [
+        {
+          "kind": "prompt-boundary",
+          "path": "hooks/hooks.json",
+          "contains": ["\"UserPromptSubmit\"", "user-prompt-submit.cjs"]
+        },
+        {
+          "kind": "prompt-boundary",
+          "path": "packages/claude-code/src/user-prompt-submit.ts",
+          "contains": ["scanPrompt", "decision: \"block\""]
+        },
+        {
+          "kind": "test",
+          "path": "packages/claude-code/src/__tests__/prompt-protection-bundle.test.ts",
+          "contains": ["UserPromptSubmit"]
+        }
+      ],
       "limitations": [
-        "No prompt-submission interception is implemented for this connector, so nothing inspects or blocks user input before the model sees it."
+        "Prompt protection (secrets block, personal data warns by default) inspects the prompt text only; a hook process killed before it answers cannot block, which is a Claude Code host limitation.",
+        "No named real-host acceptance record exists."
       ]
     },
     {
@@ -117,12 +134,29 @@
     {
       "connector": "cursor",
       "point": "pre-prompt",
-      "status": "unsupported",
-      "hostBoundary": null,
-      "reason": "The Cursor hook installer registers no pre-prompt event; cursor_hook_installer.ts registers beforeShellExecution, preToolUse, postToolUse, afterAgentResponse, beforeMCPExecution and beforeReadFile only.",
-      "evidence": [],
+      "status": "declared-not-proven",
+      "hostBoundary": "beforeSubmitPrompt",
+      "reason": null,
+      "evidence": [
+        {
+          "kind": "prompt-boundary",
+          "path": "packages/extension/src/cursor_hook_installer.ts",
+          "contains": ["{ event: \"beforeSubmitPrompt\" }", "failClosed: true"]
+        },
+        {
+          "kind": "prompt-boundary",
+          "path": "packages/extension/src/aidr-hook.ts",
+          "contains": ["handleCursorPrompt", "continue: outcome.decision !== \"block\""]
+        },
+        {
+          "kind": "test",
+          "path": "packages/extension/src/__tests__/prompt-protection.test.ts",
+          "contains": ["Cursor beforeSubmitPrompt"]
+        }
+      ],
       "limitations": [
-        "No prompt-submission interception is implemented for this connector."
+        "beforeSubmitPrompt has no model-context field: a personal-data warning sends the prompt with the notice in user_message (Cursor documents it for blocked prompts) and the audit log only.",
+        "Attachments are not inspected; only the prompt text is. No named real-host acceptance record exists."
       ]
     },
     {
@@ -135,7 +169,7 @@
         {
           "kind": "hook-registration",
           "path": "packages/extension/src/cursor_hook_installer.ts",
-          "contains": ["hooks.preToolUse", "hooks.beforeShellExecution", "hooks.beforeMCPExecution", "hooks.beforeReadFile", "failClosed: true"]
+          "contains": ["{ event: \"preToolUse\"", "{ event: \"beforeShellExecution\" }", "{ event: \"beforeMCPExecution\" }", "{ event: \"beforeReadFile\" }", "failClosed: true"]
         },
         {
           "kind": "hook-registration",
@@ -200,12 +234,29 @@
     {
       "connector": "vscode",
       "point": "pre-prompt",
-      "status": "unsupported",
-      "hostBoundary": null,
-      "reason": "The VS Code hook installer registers no pre-prompt event; vscode_hook_installer.ts registers PreToolUse and PostToolUse only.",
-      "evidence": [],
+      "status": "declared-not-proven",
+      "hostBoundary": "UserPromptSubmit",
+      "reason": null,
+      "evidence": [
+        {
+          "kind": "prompt-boundary",
+          "path": "packages/extension/src/vscode_hook_installer.ts",
+          "contains": ["hooks.UserPromptSubmit = appendManaged"]
+        },
+        {
+          "kind": "prompt-boundary",
+          "path": "packages/extension/src/aidr-hook.ts",
+          "contains": ["handleVsCodePrompt", "continue: false, stopReason"]
+        },
+        {
+          "kind": "test",
+          "path": "packages/extension/src/__tests__/prompt-protection.test.ts",
+          "contains": ["VS Code Local UserPromptSubmit"]
+        }
+      ],
       "limitations": [
-        "No prompt-submission interception is implemented for this connector."
+        "VS Code Local UserPromptSubmit supports the common output only: a block stops the request with continue:false, a personal-data warning reaches the user (systemMessage) but not the model.",
+        "Requires chat.useClaudeHooks for the Claude-format settings file; Agent Host harnesses (Copilot, Claude, Codex sessions) do not run Local hooks. No named real-host acceptance record exists."
       ]
     },
     {
@@ -282,23 +333,33 @@
       "connector": "openclaw",
       "point": "pre-prompt",
       "status": "declared-not-proven",
-      "hostBoundary": "before_prompt_build",
+      "hostBoundary": "before_agent_run",
       "reason": null,
       "evidence": [
+        {
+          "kind": "prompt-boundary",
+          "path": "packages/openclaw/src/index.ts",
+          "contains": ["\"before_agent_run\"", "prompts.beforeAgentRun", "before_prompt_build"]
+        },
+        {
+          "kind": "prompt-boundary",
+          "path": "packages/openclaw/src/prompt-protection.ts",
+          "contains": ["toInputGateDecision", "outcome: \"block\""]
+        },
         {
           "kind": "prompt-boundary",
           "path": "packages/openclaw/src/startup-scan.ts",
           "contains": ["createBeforePromptBuildHandler", "prependContext"]
         },
         {
-          "kind": "prompt-boundary",
-          "path": "packages/openclaw/src/index.ts",
-          "contains": ["before_prompt_build"]
+          "kind": "test",
+          "path": "packages/openclaw/src/__tests__/prompt-protection.test.ts",
+          "contains": ["OpenClaw before_agent_run prompt gate"]
         }
       ],
       "limitations": [
-        "The handler is a one-shot advisory injection of plugin-scan findings; it neither inspects the user prompt nor blocks it, so no prompt-side enforcement is claimed.",
-        "No named real-host acceptance record exists."
+        "before_agent_run is implemented by OpenClaw's embedded and CLI runners only; it is not an input gate for the Codex or Copilot harnesses, and a host without the hook ignores the registration.",
+        "A non-bundled plugin needs plugins.entries.aidr-openclaw.hooks.allowConversationAccess: true. Personal-data warnings reach the model through before_prompt_build context only. No named real-host acceptance record exists."
       ]
     },
     {
@@ -378,18 +439,28 @@
       "connector": "opencode",
       "point": "pre-prompt",
       "status": "declared-not-proven",
-      "hostBoundary": "experimental.chat.messages.transform",
+      "hostBoundary": "chat.message",
       "reason": null,
       "evidence": [
         {
           "kind": "prompt-boundary",
           "path": "packages/opencode/src/index.ts",
-          "contains": ["experimental.chat.messages.transform", "<system-reminder>"]
+          "contains": ["\"chat.message\": prompts.chatMessage", "experimental.chat.messages.transform"]
+        },
+        {
+          "kind": "prompt-boundary",
+          "path": "packages/opencode/src/prompt-handler.ts",
+          "contains": ["throw new AidrVerdictBlockError(outcome.userMessage)"]
+        },
+        {
+          "kind": "test",
+          "path": "packages/opencode/src/__tests__/prompt-protection.test.ts",
+          "contains": ["OpenCode chat.message prompt protection"]
         }
       ],
       "limitations": [
-        "The hook appends a synthetic system-reminder carrying plugin-scan findings to the first user message; it neither inspects nor blocks the user prompt, so no prompt-side enforcement is claimed.",
-        "The hook is experimental host API and no named real-host acceptance record exists."
+        "Only the user's own text parts are inspected; synthetic parts OpenCode generates (such as attached file contents) are not.",
+        "A block replaces the text parts and throws from chat.message; how the host surfaces the thrown error is not host-verified, and no named real-host acceptance record exists."
       ]
     },
     {
@@ -464,12 +535,29 @@
     {
       "connector": "codex",
       "point": "pre-prompt",
-      "status": "unsupported",
-      "hostBoundary": null,
-      "reason": "The Codex connector is a native PreToolUse hook only; no pre-prompt hook is implemented or documented for it.",
-      "evidence": [],
+      "status": "declared-not-proven",
+      "hostBoundary": "UserPromptSubmit",
+      "reason": null,
+      "evidence": [
+        {
+          "kind": "prompt-boundary",
+          "path": "packages/codex/src/cli.ts",
+          "contains": ["event === CODEX_USER_PROMPT_SUBMIT", "handleUserPromptSubmit"]
+        },
+        {
+          "kind": "prompt-boundary",
+          "path": "packages/codex/src/prompt-protection.ts",
+          "contains": ["decision: \"block\", reason: outcome.userMessage"]
+        },
+        {
+          "kind": "test",
+          "path": "packages/codex/src/__tests__/prompt-protection.test.ts",
+          "contains": ["Codex UserPromptSubmit hook (built bundle)"]
+        }
+      ],
       "limitations": [
-        "No prompt-submission interception is implemented for this connector."
+        "Codex fails open when the UserPromptSubmit hook is untrusted, crashes, times out or answers malformed output; the connector answers every path it controls with an explicit block or exit 2 with stderr.",
+        "The handler must be registered and trusted separately from PreToolUse. No named real-host acceptance record exists."
       ]
     },
     {

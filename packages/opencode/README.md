@@ -45,6 +45,31 @@ OpenCode does not currently provide a pre-consumption hook for arbitrary
 provider streams or non-tool content. The health event reports that channel as
 `unsupported_by_host_preconsumption_api` rather than implying coverage.
 
+## Prompt protection
+
+The `chat.message` hook inspects the user's message after OpenCode assembles it and
+before it is stored or sent to the model (`prompt_protection` in
+`~/.singularity-aidr/config.json`: secrets `block`, personal data such as TC Kimlik,
+IBAN, email and phone numbers `warn` by default; a provisioned tenant DLP policy also
+applies and blocks on any action other than `allow`).
+
+- **block**: every inspected text part is replaced with the block notice, a TUI toast
+  is shown when the TUI is attached, and the hook throws, which aborts the prompt. The
+  notice names the kind of data found, never the value.
+- **warn**: the message is sent; a TUI toast warns the user, and a notice for the model
+  (do not repeat or copy the data, tell the user) is attached to that message through
+  `experimental.chat.messages.transform` on every model call. The notice is never
+  persisted.
+- A prompt that cannot be inspected, or whose inspection is still running after 10 s
+  (`AIDR_PROMPT_INSPECTION_DEADLINE_MS`, 100–60000), is blocked while secrets are in
+  `block` mode and otherwise sent with a "not inspected" warning. If the plugin fails to
+  initialise, prompts get the same uninspected-prompt policy.
+- Audit entries use `tool_name: "chat.message"` and record kinds and counts only.
+
+Only the user's own text parts are inspected; `synthetic` parts OpenCode generates
+(for example the contents of an attached file) are not. How the OpenCode TUI presents
+the thrown error has not been accepted on a real host.
+
 ## Provisioned tenant detector policy
 
 An operator can deliver a signed tenant detector policy (DLP and behavioural

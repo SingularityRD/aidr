@@ -33,6 +33,9 @@ describe("setup guidance for detected hosts", () => {
 			if (agent === "codex") {
 				expect(guidance).toMatch(/\[\[hooks\.PreToolUse\]\]\n\s+matcher =/);
 				expect(guidance).toMatch(/\[\[hooks\.PreToolUse\.hooks\]\]\n\s+type = "command"/);
+				expect(guidance).toMatch(
+					/\[\[hooks\.UserPromptSubmit\]\]\n\s+\[\[hooks\.UserPromptSubmit\.hooks\]\]\n\s+type = "command"\n\s+command = "aidr-codex-hook"/,
+				);
 				expect(guidance).toContain("@singularityrd/aidr-codex@9.8.7");
 			} else if (agent === "openclaw") {
 				expect(guidance).toContain("npm:@singularityrd/aidr-openclaw@9.8.7");

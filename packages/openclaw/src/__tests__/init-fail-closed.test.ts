@@ -1,4 +1,7 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const failures = vi.hoisted(() => ({
 	integrity: undefined as unknown,
@@ -71,9 +74,20 @@ async function expectBlocked(handlers: Map<string, Handler[]>, expectedCode: str
 	}
 }
 
+let home = "";
+
+beforeEach(() => {
+	// The prompt gate reads the local config; never the developer's own.
+	home = mkdtempSync(join(tmpdir(), "aidr-openclaw-init-"));
+	vi.stubEnv("HOME", home);
+	vi.stubEnv("USERPROFILE", home);
+});
+
 afterEach(() => {
 	failures.integrity = undefined;
 	failures.threatLoad = undefined;
+	vi.unstubAllEnvs();
+	rmSync(home, { recursive: true, force: true });
 });
 
 describe("OpenClaw plugin initialisation fails closed", () => {
@@ -85,6 +99,12 @@ describe("OpenClaw plugin initialisation fails closed", () => {
 		// Only the integrity gate fails: the rest of the plugin registered normally.
 		expect(errors).toEqual([]);
 		await expectBlocked(handlers, "integrity_bad_signature");
+		// The prompt gate cannot trust its inspection either: default policy blocks.
+		const [promptGate] = handlers.get("before_agent_run") ?? [];
+		await expect(promptGate?.({ prompt: "hello", messages: [] }, {})).resolves.toMatchObject({
+			outcome: "block",
+			reason: "aidr_prompt_protection:not_inspected",
+		});
 	});
 
 	it("still registers a blocking gate when threat resources cannot be loaded", async () => {
@@ -94,9 +114,15 @@ describe("OpenClaw plugin initialisation fails closed", () => {
 		);
 		const { handlers, tools, errors } = register();
 		await expectBlocked(handlers, "ENOENT");
-		// The failed plugin exposes no allowlist tools and no other hooks.
+		// The failed plugin exposes no allowlist tools and no hooks beyond the two gates.
 		expect(tools).toEqual([]);
-		expect([...handlers.keys()]).toEqual(["before_tool_call"]);
+		expect([...handlers.keys()]).toEqual(["before_tool_call", "before_agent_run"]);
+		// Prompts cannot be inspected: the default policy (secrets: block) blocks them.
+		const [promptGate] = handlers.get("before_agent_run") ?? [];
+		await expect(promptGate?.({ prompt: "hello", messages: [] }, {})).resolves.toMatchObject({
+			outcome: "block",
+			reason: "aidr_prompt_protection:not_inspected",
+		});
 		// Raw error text stays in the host log; the agent-visible reason is only the code.
 		expect(errors.join("\n")).toContain("/secret/path");
 		const [gate] = handlers.get("before_tool_call") ?? [];

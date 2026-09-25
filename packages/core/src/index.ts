@@ -865,6 +865,17 @@ export {
 	type PostureUploadResult,
 	uploadPostureEvents,
 } from "./posture-upload.js";
+// Connector-side prompt inspection runner (config, tenant DLP, deadline, audit, failure policy)
+export {
+	inspectUserPrompt,
+	MIN_PROMPT_INSPECTION_DEADLINE_MS,
+	PROMPT_INSPECTION_DEADLINE_ENV,
+	type PromptInspectionOutcome,
+	type PromptInspectionReason,
+	type PromptInspectionRequest,
+	resolvePromptInspectionDeadlineMs,
+	uninspectedPromptOutcome,
+} from "./prompt-inspection.js";
 // Prompt protection (UserPromptSubmit-style inspection of the user's prompt)
 export {
 	DEFAULT_PROMPT_PROTECTION,

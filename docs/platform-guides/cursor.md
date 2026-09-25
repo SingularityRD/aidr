@@ -37,6 +37,8 @@ Open the command palette (`Ctrl+Shift+P`) and use:
 
 The extension installs managed hooks into the Cursor/VS Code agent system. When a tool call is intercepted, the hook spawns `aidr-hook.cjs` as a subprocess, which runs the same detection pipeline as the Claude Code connector. Cursor `preToolUse` cannot enforce an approval (`ask`) response, so AIDR maps that verdict to an explicit deny.
 
+The same runner also provides prompt protection: Cursor `beforeSubmitPrompt` and VS Code Local `UserPromptSubmit` are registered with the tool hooks, so a prompt carrying a secret is stopped (`continue: false`) before it is sent, and personal data is flagged. See [configuration](../configuration.md#prompt_protection) for the per-host behaviour.
+
 ## Scope
 
 The extension supports a configurable scope setting:

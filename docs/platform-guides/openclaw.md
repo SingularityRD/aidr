@@ -15,7 +15,8 @@ The OpenClaw connector runs in-process using the OpenClaw plugin API:
 - **`after_tool_call`** - Inspects tool output after execution and records risky or incomplete results; carrying that observation forward depends on OpenClaw providing matching tool-call, run, or session identifiers. It is observation-only and cannot undo the action or prove the same-turn model did not see the original result.
 - **`tool_result_persist`** - Synchronously replaces risky or incompletely inspected output before it is written to the transcript. This is still a post-execution boundary.
 - **`message_sending` / `reply_payload_sending`** - Inspect and replace risky or incompletely inspected generated responses before channel delivery. A correlated finding from opaque binary tool output is marked unsupported/incomplete and routes through this protection path rather than being treated as clean.
-- **`before_prompt_build`** - Adds plugin-scan findings as advisory context; it does not inspect or block the user's prompt.
+- **`before_agent_run`** - Prompt protection gate (embedded and CLI runners): inspects the user's prompt before model submission and blocks secrets (and, per `prompt_protection`, personal data); see [configuration](../configuration.md#prompt_protection). A non-bundled plugin needs `plugins.entries.aidr-openclaw.hooks.allowConversationAccess: true`.
+- **`before_prompt_build`** - Adds plugin-scan findings and prompt-protection warnings (for example a Turkish ID number or IBAN in the prompt) as context for the model; blocking is left to `before_agent_run`.
 - **`aidr_allowlist_add` / `aidr_allowlist_remove`** - Manage the on-disk allowlist. `aidr_allowlist_add` refuses unless a genuine approval was already recorded, so it cannot be used to approve a blocked action.
 - **`gateway_start` / `session_start`** - Scans installed plugins for threats.
 
