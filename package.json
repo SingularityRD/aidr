@@ -50,6 +50,7 @@
 		"build:release": "node scripts/build-workspace.mjs --release",
 		"build:browser-guard": "pnpm --filter @singularityrd/aidr-browser-guard run build",
 		"brochure:render": "node scripts/render-brochure.mjs",
+		"catalog:render": "node scripts/render-catalog.mjs",
 		"feature-guide:render": "node scripts/render-feature-guide.mjs",
 		"package:browser-guard": "pnpm --filter @singularityrd/aidr-browser-guard run build:release",
 		"quality:gate": "pnpm quality:static && pnpm audit:prod && pnpm audit:build && pnpm check && pnpm test && pnpm test:coverage && pnpm test:coverage:core && pnpm build:release",
