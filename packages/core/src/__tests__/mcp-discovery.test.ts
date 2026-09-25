@@ -1,8 +1,8 @@
 import { generateKeyPairSync, type KeyObject } from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	approveQuarantinedMcpToolset,
 	attestMcpToolManifest,
@@ -11,6 +11,7 @@ import {
 	signMcpToolManifest,
 } from "../mcp-attestation.js";
 import { discoverMcpServers } from "../mcp-discovery.js";
+import { defaultMcpConfigPaths } from "../mcp-inventory.js";
 
 function keyPair(): { privateKey: KeyObject; publicKeyPem: string } {
 	const pair = generateKeyPairSync("ed25519");
@@ -411,14 +412,23 @@ describe("MCP discovery evidence", () => {
 					sequence: signed.manifest.sequence + 1,
 					tools: [
 						...signed.manifest.tools,
-						{ name: "files.write", description: "Write one file", input_schema: { type: "object" } },
+						{
+							name: "files.write",
+							description: "Write one file",
+							input_schema: { type: "object" },
+						},
 					],
 				},
 				keyId: signed.key_id,
 				privateKey: keys.privateKey,
 			});
 			const unseen = await discoverMcpServers([path], {
-				attestation: { tenantId: "tenant-a", keyring, manifests: { filesystem: changedSigned }, store },
+				attestation: {
+					tenantId: "tenant-a",
+					keyring,
+					manifests: { filesystem: changedSigned },
+					store,
+				},
 			});
 			expect(unseen.servers[0]?.attestation).toMatchObject({
 				status: "unapproved",
@@ -444,7 +454,12 @@ describe("MCP discovery evidence", () => {
 				reason: "sequence_replay",
 			});
 			const pending = await discoverMcpServers([path], {
-				attestation: { tenantId: "tenant-a", keyring, manifests: { filesystem: changedSigned }, store },
+				attestation: {
+					tenantId: "tenant-a",
+					keyring,
+					manifests: { filesystem: changedSigned },
+					store,
+				},
 			});
 			expect(pending.servers[0]?.attestation.status).toBe("quarantined");
 			if (change.status !== "quarantined") throw new Error("expected changed quarantine");
@@ -457,7 +472,12 @@ describe("MCP discovery evidence", () => {
 				store,
 			});
 			const accepted = await discoverMcpServers([path], {
-				attestation: { tenantId: "tenant-a", keyring, manifests: { filesystem: changedSigned }, store },
+				attestation: {
+					tenantId: "tenant-a",
+					keyring,
+					manifests: { filesystem: changedSigned },
+					store,
+				},
 			});
 			expect(accepted.servers[0]?.attestation.status).toBe("approved");
 			const superseded = await discoverMcpServers([path], {
@@ -467,5 +487,97 @@ describe("MCP discovery evidence", () => {
 		} finally {
 			await rm(dir, { recursive: true, force: true });
 		}
+	});
+});
+
+describe("MCP discovery with a fixture home directory", () => {
+	const previousHome = process.env.HOME;
+	let home: string;
+	let project: string;
+
+	beforeEach(async () => {
+		home = await mkdtemp(join(tmpdir(), "aidr-discover-home-"));
+		project = join(home, "work", "app");
+		await mkdir(project, { recursive: true });
+		process.env.HOME = home;
+	});
+
+	afterEach(async () => {
+		process.env.HOME = previousHome;
+		await rm(home, { recursive: true, force: true });
+	});
+
+	it("treats a ~/.claude.json without mcpServers as read with zero servers", async () => {
+		await writeFile(
+			join(home, ".claude.json"),
+			JSON.stringify({ numStartups: 3, projects: { [project]: { allowedTools: [] } } }),
+		);
+
+		const report = await discoverMcpServers(defaultMcpConfigPaths(project));
+
+		expect(report.servers).toEqual([]);
+		expect(report.sources.find((s) => s.path === join(home, ".claude.json"))?.status).toBe("read");
+		expect(report.sources.some((s) => s.status === "invalid")).toBe(false);
+		expect(report.coverage).toMatchObject({ status: "read", invalid_sources: 0 });
+	});
+
+	it("reports malformed ~/.claude.json as an invalid source", async () => {
+		await writeFile(join(home, ".claude.json"), '{"mcpServers": ');
+
+		const report = await discoverMcpServers(defaultMcpConfigPaths(project));
+
+		expect(report.sources.find((s) => s.path === join(home, ".claude.json"))?.status).toBe(
+			"invalid",
+		);
+		expect(report.coverage).toMatchObject({ status: "invalid", invalid_sources: 1 });
+	});
+
+	it("discovers per-project servers with distinct ids and never exports their arguments", async () => {
+		const shared = { command: "npx", args: ["-y", "@modelcontextprotocol/server-github"] };
+		await writeFile(
+			join(home, ".claude.json"),
+			JSON.stringify({
+				mcpServers: { github: shared },
+				projects: {
+					[project]: {
+						mcpServers: {
+							github: shared,
+							db: {
+								command: "npx",
+								args: ["pg-mcp", "--password", "hunter2-private", "postgres://u:p@db/app"],
+								env: { PGPASSWORD: "env-private" },
+							},
+						},
+					},
+					[join(home, "work", "other")]: {
+						mcpServers: { db: { command: "npx", args: ["pg-mcp"] } },
+					},
+				},
+			}),
+		);
+
+		const report = await discoverMcpServers(defaultMcpConfigPaths(project));
+		const serialized = JSON.stringify(report);
+
+		expect(report.coverage.status).toBe("read");
+		expect(report.servers.map((server) => [server.name, server.project ?? null]).sort()).toEqual([
+			["db", join(home, "work", "app")],
+			["db", join(home, "work", "other")],
+			["github", null],
+		]);
+		expect(new Set(report.servers.map((server) => server.inventory_id)).size).toBe(3);
+		expect(serialized).not.toContain("hunter2-private");
+		expect(serialized).not.toContain("env-private");
+		expect(serialized).not.toContain("u:p@");
+
+		const withLaunch = await discoverMcpServers(defaultMcpConfigPaths(project), {
+			includeRedactedLaunch: true,
+		});
+		const launched = JSON.stringify(withLaunch);
+		expect(launched).not.toContain("hunter2-private");
+		expect(launched).not.toContain("env-private");
+		expect(launched).not.toContain("u:p@");
+		const db = withLaunch.servers.find((server) => server.project === project);
+		expect(db?.launch?.args).toContain("postgres://db/app");
 	});
 });

@@ -4,6 +4,7 @@ import { useTeam } from "../../enterprise/team-provider";
 import { readErrorMessage } from "../../lib/errors";
 import { supabase, supabaseProjectUrl } from "../../lib/supabase";
 import {
+	acceptableUseNotice,
 	actionBadge,
 	entityLabel,
 	GUARD_MODES,
@@ -703,10 +704,31 @@ function ShadowAiTrend({ summary }: { summary: ShadowAiSummary }) {
 function EnrollBrowsersPanel() {
 	const [mode, setMode] = useState<GuardModeValue>("auto");
 	const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
-	const snippet = useMemo(
-		() => managedPolicySnippet({ controlPlaneUrl: supabaseProjectUrl, mode }),
-		[mode],
+	const [noticeOn, setNoticeOn] = useState(false);
+	const [notice, setNotice] = useState({
+		id: "ai-acceptable-use",
+		version: "1",
+		title: "",
+		text: "",
+		url: "",
+	});
+	const noticeResult = useMemo(
+		() => (noticeOn ? acceptableUseNotice(notice) : null),
+		[noticeOn, notice],
 	);
+	const snippet = useMemo(
+		() =>
+			managedPolicySnippet({
+				controlPlaneUrl: supabaseProjectUrl,
+				mode,
+				acceptableUse: noticeResult?.ok ? noticeResult.value : null,
+			}),
+		[mode, noticeResult],
+	);
+	const editNotice = (field: keyof typeof notice) => (value: string) => {
+		setNotice((current) => ({ ...current, [field]: value }));
+		setCopyState("idle");
+	};
 	const copy = useCallback(async () => {
 		try {
 			await navigator.clipboard.writeText(snippet);
@@ -767,6 +789,85 @@ function EnrollBrowsersPanel() {
 					{GUARD_MODES.find((option) => option.value === mode)?.hint}
 				</span>
 			</div>
+			<fieldset className="stack" style={{ border: 0, padding: 0, marginTop: 12 }}>
+				<legend>
+					<b>AI acceptable-use notice</b>{" "}
+					<span className="muted small">(optional; AI literacy)</span>
+				</legend>
+				<label className="row" style={{ alignItems: "center", gap: 8 }}>
+					<input
+						type="checkbox"
+						checked={noticeOn}
+						onChange={(event) => {
+							setNoticeOn(event.target.checked);
+							setCopyState("idle");
+						}}
+					/>
+					Show an acceptable-use notice on protected AI sites
+				</label>
+				<p className="muted small">
+					Each browser shows the notice once per version, on the first visit to a protected AI site,
+					with an "I understand" button. Only acknowledgement counts per version are reported (see
+					Governance); the text stays in the browser. Raise the version to show a changed notice
+					again.
+				</p>
+				{noticeOn ? (
+					<>
+						<div className="row" style={{ flexWrap: "wrap", gap: 12 }}>
+							<label className="label">
+								Notice ID
+								<input
+									className="input"
+									value={notice.id}
+									onChange={(e) => editNotice("id")(e.target.value)}
+								/>
+							</label>
+							<label className="label">
+								Version
+								<input
+									className="input"
+									type="number"
+									min={1}
+									value={notice.version}
+									onChange={(e) => editNotice("version")(e.target.value)}
+								/>
+							</label>
+							<label className="label">
+								Policy link (https, optional)
+								<input
+									className="input"
+									value={notice.url}
+									onChange={(e) => editNotice("url")(e.target.value)}
+								/>
+							</label>
+						</div>
+						<label className="label">
+							Title
+							<input
+								className="input"
+								maxLength={120}
+								value={notice.title}
+								onChange={(e) => editNotice("title")(e.target.value)}
+							/>
+						</label>
+						<label className="label">
+							Notice text (plain text; blank lines separate paragraphs)
+							<textarea
+								className="input"
+								rows={5}
+								maxLength={4000}
+								value={notice.text}
+								onChange={(e) => editNotice("text")(e.target.value)}
+							/>
+						</label>
+						{noticeResult && !noticeResult.ok ? (
+							<div className="notice" role="alert">
+								{noticeResult.error} The notice is left out of the policy below until this is fixed.
+							</div>
+						) : null}
+					</>
+				) : null}
+			</fieldset>
 			<pre className="mono small" aria-label="Managed policy JSON" style={{ overflowX: "auto" }}>
 				{snippet}
 			</pre>

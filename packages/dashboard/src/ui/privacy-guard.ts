@@ -259,6 +259,7 @@ export function privacyEventSummary(payload: Record<string, unknown> | null | un
 export function managedPolicySnippet(options: {
 	controlPlaneUrl: string | null;
 	mode: GuardModeValue;
+	acceptableUse?: AcceptableUseNoticeInput | null;
 }): string {
 	return JSON.stringify(
 		{
@@ -269,8 +270,65 @@ export function managedPolicySnippet(options: {
 				controlPlaneUrl: options.controlPlaneUrl ?? "https://<your-project>.supabase.co",
 				apiKey: "<paste a Browser Guard ingest-only key created on the API Keys page>",
 			},
+			...(options.acceptableUse ? { acceptableUse: options.acceptableUse } : {}),
 		},
 		null,
 		2,
 	);
+}
+
+/**
+ * AI acceptable-use notice for Browser Guard managed policy (`acceptableUse`). Mirrors
+ * `validateAcceptableUseNotice` in packages/browser-guard/src/background/policy.ts (a
+ * dashboard test pins the two): the extension ignores the whole notice when any field is
+ * out of range, so the dashboard refuses to emit one.
+ */
+export interface AcceptableUseNoticeInput {
+	id: string;
+	version: number;
+	title: string;
+	text: string;
+	url?: string;
+}
+
+export const ACCEPTABLE_USE_LIMITS = Object.freeze({
+	versionMax: 999_999,
+	titleMax: 120,
+	textMax: 4000,
+});
+const NOTICE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/;
+const NOTICE_CONTROL = /[^\P{Cc}\t\n\r]/u;
+
+export function acceptableUseNotice(input: {
+	id: string;
+	version: string | number;
+	title: string;
+	text: string;
+	url: string;
+}): { ok: true; value: AcceptableUseNoticeInput } | { ok: false; error: string } {
+	const id = input.id.trim();
+	const version = typeof input.version === "number" ? input.version : Number(input.version.trim());
+	const title = input.title.trim();
+	const text = input.text.trim();
+	const url = input.url.trim();
+	if (!NOTICE_ID.test(id))
+		return { ok: false, error: "Notice ID: letters, digits, . _ : - (up to 64)." };
+	if (!Number.isSafeInteger(version) || version < 1 || version > ACCEPTABLE_USE_LIMITS.versionMax)
+		return { ok: false, error: "Version must be a whole number from 1 to 999999." };
+	if (!title || title.length > ACCEPTABLE_USE_LIMITS.titleMax || NOTICE_CONTROL.test(title))
+		return { ok: false, error: "Title is required (up to 120 characters)." };
+	if (!text || text.length > ACCEPTABLE_USE_LIMITS.textMax || NOTICE_CONTROL.test(text))
+		return { ok: false, error: "Notice text is required (up to 4000 characters, plain text)." };
+	if (url) {
+		let parsed: URL;
+		try {
+			parsed = new URL(url);
+		} catch {
+			return { ok: false, error: "Policy link must be an https:// address." };
+		}
+		if (parsed.protocol !== "https:" || parsed.username || parsed.password || url.length > 2048)
+			return { ok: false, error: "Policy link must be an https:// address." };
+		return { ok: true, value: { id, version, title, text, url: parsed.href } };
+	}
+	return { ok: true, value: { id, version, title, text } };
 }

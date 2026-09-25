@@ -14,6 +14,8 @@
  * sees tab URLs only on origins the user granted and keeps catalog ids and counts only.
  * The per-tab placeholder vault (VAULT_SAVE / VAULT_LOAD, ./vault-store.ts) is keyed by
  * the sender's tab id and page origin, so one tab or site can never read another's.
+ * Acceptable-use acknowledgements (AUP_STATUS / AUP_ACKNOWLEDGE) are kept per browser
+ * profile in storage.local and reported once per notice version, counts only.
  */
 import type {
 	GuardError,
@@ -30,7 +32,12 @@ import type {
 import { CustomSiteScripts, customSiteForUrl, originGranted } from "./custom-sites.js";
 import { applyBlockedSites, redirectBlockedTab, siteForUrl, updatedTabUrl } from "./dnr.js";
 import { createNativeBridge } from "./native.js";
-import { DEFAULT_POLICY, evaluatePolicy, validateUserSettings } from "./policy.js";
+import {
+	DEFAULT_POLICY,
+	evaluatePolicy,
+	NOTICE_ID_PATTERN,
+	validateUserSettings,
+} from "./policy.js";
 import {
 	applyShadowRules,
 	blockedServices,
@@ -56,6 +63,8 @@ import {
 import { VaultStore } from "./vault-store.js";
 
 const PAUSE_ALARM = "aidr-pause-end";
+/** Acknowledged notice ids kept in storage.local (older ids are dropped first). */
+const AUP_ACK_MAX_IDS = 16;
 const PAUSE_MAX_MINUTES = 60;
 /** Upper bound for text proxied to the native host in one NATIVE_SCAN. */
 const NATIVE_SCAN_MAX_CHARS = 1_000_000;
@@ -420,6 +429,54 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 		return { ok: true };
 	}
 
+	/** Notice id -> highest acknowledged version, from storage.local (malformed entries dropped). */
+	async function acknowledgements(): Promise<Record<string, number>> {
+		const raw = await storage.getLocal(STORAGE_KEYS.aupAcknowledged);
+		const out: Record<string, number> = {};
+		if (!isRecord(raw)) return out;
+		for (const [id, version] of Object.entries(raw)) {
+			if (NOTICE_ID_PATTERN.test(id) && Number.isSafeInteger(version) && (version as number) > 0)
+				out[id] = version as number;
+		}
+		return out;
+	}
+
+	async function aupStatus(): Promise<GuardResponse> {
+		const notice = current.acceptableUse ?? null;
+		if (!notice) return { ok: true, notice: null, acknowledged: true };
+		const acknowledged = ((await acknowledgements())[notice.id] ?? 0) >= notice.version;
+		return { ok: true, notice, acknowledged };
+	}
+
+	let ackChain: Promise<unknown> = Promise.resolve();
+
+	/** Records "I understand" for the notice in force; one telemetry event per new version. */
+	function aupAcknowledge(message: Record<string, unknown>, who: Sender): Promise<GuardResponse> {
+		if (who.kind !== "content" || !who.topFrame) return Promise.resolve(fail("NOT_ALLOWED"));
+		const notice = current.acceptableUse ?? null;
+		if (!notice || message.noticeId !== notice.id || message.version !== notice.version)
+			return Promise.resolve(fail("BAD_MESSAGE"));
+		const task = async (): Promise<GuardResponse> => {
+			const known = await acknowledgements();
+			if ((known[notice.id] ?? 0) >= notice.version) return { ok: true };
+			delete known[notice.id];
+			const kept = Object.entries(known).slice(-(AUP_ACK_MAX_IDS - 1));
+			const next = Object.fromEntries([...kept, [notice.id, notice.version]]);
+			if (!(await storage.setLocal(STORAGE_KEYS.aupAcknowledged, next))) return fail("INTERNAL");
+			void telemetry
+				.recordAcknowledgement({
+					site: who.site,
+					noticeId: notice.id,
+					noticeVersion: notice.version,
+				})
+				.catch(() => log("telemetry: failed to queue acknowledgement"));
+			return { ok: true };
+		};
+		const result = ackChain.then(task, task);
+		ackChain = result.catch(() => {});
+		return result;
+	}
+
 	async function policyFor(who: Sender): Promise<GuardResponse> {
 		const content = who.kind === "content";
 		return {
@@ -465,6 +522,10 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 				return vaultSave(message, who);
 			case "VAULT_LOAD":
 				return vaultLoad(who);
+			case "AUP_STATUS":
+				return aupStatus();
+			case "AUP_ACKNOWLEDGE":
+				return aupAcknowledge(message, who);
 			case "GET_SITE_ACCESS":
 				return extensionOnly() ? fail("NOT_ALLOWED") : { ok: true, access: await siteAccess() };
 			default:

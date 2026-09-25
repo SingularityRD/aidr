@@ -149,6 +149,7 @@ function mcpService(server: AiInventoryMcpServer): CycloneDxService {
 	if (server.args.length > 0) properties.push(prop("aidr:mcp:args", JSON.stringify(server.args)));
 	properties.push(
 		prop("aidr:mcp:config_source", server.config_source),
+		...(server.project !== null ? [prop("aidr:mcp:project", server.project)] : []),
 		prop("aidr:mcp:configuration_sha256", server.configuration_sha256),
 		prop("aidr:mcp:attestation", server.attestation_status),
 		prop("aidr:mcp:risk_level", server.risk_level),

@@ -20,6 +20,7 @@ const EVENT_TYPES = new Set([
 	"plugin_scan_finding",
 	"runtime_policy_cache",
 	"privacy_scan",
+	"aup_acknowledgement",
 	"shadow_ai_usage",
 ]);
 const DECISIONS = new Set(["allow", "ask", "deny"]);
@@ -156,6 +157,40 @@ function privacyAction(value: unknown): keyof typeof PRIVACY_ACTION_DECISIONS | 
 }
 
 /**
+ * Browser Guard acceptable-use acknowledgement (docs/contracts/privacy-telemetry.md):
+ * one event per install and notice version, carrying the notice identifier and
+ * version only. The notice text never leaves the browser.
+ */
+export const AUP_NOTICE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/;
+export const MAX_AUP_NOTICE_VERSION = 999_999;
+
+function aupEventProblem(event: Record<string, unknown>): string | undefined {
+	if (typeof event.notice_id !== "string" || !AUP_NOTICE_ID_PATTERN.test(event.notice_id) ||
+		isSensitiveIdentifier(event.notice_id)) {
+		return "notice_id";
+	}
+	const version = event.notice_version;
+	if (typeof version !== "number" || !Number.isInteger(version) || version < 1 || version > MAX_AUP_NOTICE_VERSION) {
+		return "notice_version";
+	}
+	return undefined;
+}
+
+/** Counts-only projection: the site enum, notice id and version survive; nothing else. */
+function projectAupEvent(event: Record<string, unknown> & { event_id: string }) {
+	const projected: Record<string, unknown> & { event_id: string } = {
+		event_id: event.event_id,
+		type: "aup_acknowledgement",
+	};
+	const timestamp = safeTimestamp(event.timestamp);
+	if (timestamp) projected.timestamp = timestamp;
+	projected.site = safeEnum(event.site, PRIVACY_SITE_SET) ?? "other";
+	projected.notice_id = event.notice_id;
+	projected.notice_version = event.notice_version;
+	return projected;
+}
+
+/**
  * Resolve the event type from `type` or its contract alias `event_type`.
  * Returns null when the two disagree or name an unknown type.
  */
@@ -259,6 +294,7 @@ function safeDigestOrMarker(value: unknown): string {
  */
 function projectEvent(event: Record<string, unknown> & { event_id: string }, type: string) {
 	if (type === "privacy_scan") return projectPrivacyEvent(event);
+	if (type === "aup_acknowledgement") return projectAupEvent(event);
 	if (type === "shadow_ai_usage") return projectShadowAiEvent(event);
 	const projected: Record<string, unknown> & { event_id: string } = {
 		event_id: event.event_id,
@@ -363,7 +399,9 @@ export function normalizeIngestEvents(value: unknown): NormalizedIngestEvents {
 			? privacyEventProblem(event)
 			: type === "shadow_ai_usage"
 				? shadowAiEventProblem(event)
-				: undefined;
+				: type === "aup_acknowledgement"
+					? aupEventProblem(event)
+					: undefined;
 		if (privacyProblem) {
 			return {
 				ok: false,

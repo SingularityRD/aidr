@@ -1,0 +1,160 @@
+# ISO/IEC 42001:2023 (AI management systems), Annex A reference controls: product
+# control mapping for Singularity AIDR. Control identifiers and titles follow
+# Annex A; the standard's text is not reproduced. Only controls to which the
+# product contributes, or which customers commonly ask about for AI tool use,
+# are listed. Coverage values: see nist-ai-rmf.yaml.
+
+framework:
+  id: iso-iec-42001
+  name: ISO/IEC 42001 AI management system
+  version: "ISO/IEC 42001:2023, Annex A"
+  reference: https://www.iso.org/standard/81230.html
+  scope: >-
+    Annex A controls where Singularity AIDR provides a technical capability or evidence
+    for an organisation that uses AI coding agents, AI chat sites and MCP servers. The
+    organisation decides applicability in its Statement of Applicability; this mapping
+    supports that work and is not a certification.
+
+controls:
+  - id: A.2.2
+    group: A.2 Policies related to AI
+    title: AI policy
+    capabilities: [acceptable-use-notice, runtime-policy-management]
+    evidence: [events.aup_acknowledgement, tenant_runtime_policies]
+    coverage: partial
+    note: >-
+      The acceptable-use notice distributes the organisation's AI use policy to browser
+      users and runtime policy enforces its technical rules for coding agents. Writing and
+      approving the AI policy is the organisation's.
+  - id: A.2.4
+    group: A.2 Policies related to AI
+    title: Review of the AI policy
+    capabilities: [runtime-policy-management, governance-scorecard]
+    evidence: [runtime_policy_revisions, dlp_policy_revisions, governance-scorecard]
+    coverage: partial
+    note: >-
+      Revision history and the scorecard's policy-age figures show when technical policy
+      was last reviewed. Review of the written policy itself is outside the product.
+  - id: A.3.2
+    group: A.3 Internal organization
+    title: AI roles and responsibilities
+    capabilities: [identity-access-control, human-approval]
+    evidence: [compliance-report.access_identity, admin_audit_logs]
+    coverage: partial
+    note: >-
+      Workspace roles separate who administers policy, who approves blocked actions and who
+      only reads. Organisation-wide AI roles are defined by the customer.
+  - id: A.3.3
+    group: A.3 Internal organization
+    title: Reporting of concerns
+    capabilities: []
+    evidence: []
+    coverage: customer-responsibility
+    note: >-
+      AIDR has no channel for people to report concerns; incidents in the product are
+      raised by connectors, not by staff.
+  - id: A.4.4
+    group: A.4 Resources for AI systems
+    title: Tooling resources
+    capabilities: [ai-asset-inventory, mcp-inventory]
+    evidence: [agents, posture_findings, compliance-report.protection_coverage]
+    coverage: partial
+    note: >-
+      The inventory lists agent runtimes, browser installs and MCP servers in use on
+      enrolled endpoints. Unmanaged tooling is not visible.
+  - id: A.5.2
+    group: A.5 Assessing impacts of AI systems
+    title: AI system impact assessment process
+    capabilities: [compliance-evidence-report, governance-scorecard]
+    evidence: [compliance-report.data_protection_activity, governance-scorecard]
+    coverage: customer-responsibility
+    note: >-
+      Impact assessments are performed by the organisation; the evidence report and the
+      scorecard provide factual input on how AI tools are used.
+  - id: A.6.2.6
+    group: A.6 AI system life cycle
+    title: AI system operation and monitoring
+    capabilities: [runtime-enforcement, browser-guard-masking, governance-scorecard, incident-management]
+    evidence: [events.runtime_verdict, events.privacy_scan, events.incident, governance-scorecard]
+    coverage: partial
+    note: >-
+      Operation of the AI tools the organisation uses is monitored at the point of use
+      (tool calls and prompts). Monitoring of models the organisation builds itself is out
+      of scope.
+  - id: A.6.2.8
+    group: A.6 AI system life cycle
+    title: AI system recording of event logs
+    capabilities: [audit-logging, runtime-enforcement, audit-export]
+    evidence: [events.runtime_verdict, admin_audit_logs, local-audit-log, audit-export]
+    coverage: partial
+    note: >-
+      Decisions are logged on the endpoint and, on managed installs, in the control plane;
+      administrative actions are logged append-only. Logs carry decisions, digests and
+      identifiers rather than prompt text, and are kept according to the workspace
+      retention policy.
+  - id: A.8.2
+    group: A.8 Information for interested parties of AI systems
+    title: System documentation and information for users
+    capabilities: [acceptable-use-notice, runtime-enforcement, browser-guard-masking]
+    evidence: [events.aup_acknowledgement]
+    coverage: partial
+    note: >-
+      Users see the acceptable-use notice, the reason for each blocked action and in-page
+      coaching when data is masked. Vendor documentation of the AI service is outside the
+      product.
+  - id: A.8.4
+    group: A.8 Information for interested parties of AI systems
+    title: Communication of incidents
+    capabilities: [incident-management, siem-export, governance-digest]
+    evidence: [events.incident, siem-export, governance_digest_deliveries]
+    coverage: partial
+    note: >-
+      Incidents reach the SIEM and the owners' summary. Communicating incidents to users,
+      customers or authorities is the organisation's.
+  - id: A.9.2
+    group: A.9 Use of AI systems
+    title: Processes for responsible use of AI systems
+    capabilities: [runtime-policy-management, runtime-enforcement, browser-guard-masking, acceptable-use-notice, human-approval]
+    evidence: [tenant_runtime_policies, events.runtime_verdict, events.privacy_scan, approval_requests]
+    coverage: partial
+    note: >-
+      Responsible-use rules are enforced at the point of use: risky agent actions are
+      denied or held for human approval and personal data is masked before it reaches AI
+      sites. The organisation defines the process those rules implement.
+  - id: A.9.3
+    group: A.9 Use of AI systems
+    title: Objectives for responsible use of AI system
+    capabilities: [governance-scorecard]
+    evidence: [governance-scorecard]
+    coverage: customer-responsibility
+    note: >-
+      Objectives are set by the organisation; the scorecard can track the ones that map to
+      product metrics.
+  - id: A.9.4
+    group: A.9 Use of AI systems
+    title: Intended use of the AI system
+    capabilities: [runtime-policy-management, browser-guard-masking, mcp-gateway]
+    evidence: [tenant_runtime_policies]
+    coverage: partial
+    note: >-
+      Blocked AI sites, MCP allow/deny lists and per-artifact default actions keep agent and
+      browser use within the scope the organisation allows.
+  - id: A.10.2
+    group: A.10 Third-party and customer relationships
+    title: Allocating responsibilities
+    capabilities: [data-flow-inventory]
+    evidence: [privacy-data-flow-matrix, compliance-report.data_flows]
+    coverage: customer-responsibility
+    note: >-
+      The data-flow inventory documents what the product processes and which
+      subprocessors are involved; allocating responsibilities between the organisation and
+      its AI suppliers is contractual.
+  - id: A.10.3
+    group: A.10 Third-party and customer relationships
+    title: Suppliers
+    capabilities: [mcp-inventory, plugin-skill-scanning, browser-guard-masking, ai-asset-inventory]
+    evidence: [posture_findings, events.privacy_scan]
+    coverage: partial
+    note: >-
+      Shows which AI sites, MCP servers, plugins and skills are in use and their findings.
+      Supplier due diligence and contracts are the organisation's.

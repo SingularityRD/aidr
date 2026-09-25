@@ -171,6 +171,26 @@ describe("aidr aibom", () => {
 		expect(bom.vulnerabilities.map((v: { id?: string }) => v.id)).toContain("CVE-2024-37032");
 	});
 
+	it("exits 0 on default paths when ~/.claude.json has no mcpServers key", async () => {
+		const previousHome = process.env.HOME;
+		const home = join(root, "home");
+		await mkdir(home, { recursive: true });
+		await writeFile(join(home, ".claude.json"), JSON.stringify({ numStartups: 4, projects: {} }));
+		process.env.HOME = home;
+		try {
+			const stdout = captureStdout();
+			const stderr = vi.spyOn(console, "error").mockImplementation(() => {});
+			await runAiBom({ path: project, format: "json" }, deps());
+			const inventory = JSON.parse(stdout.text());
+			expect(inventory.coverage.mcp.sources_invalid).toBe(0);
+			expect(inventory.mcp_servers.map((s: { name: string }) => s.name)).toEqual(["github"]);
+			expect(stderr).not.toHaveBeenCalledWith(expect.stringContaining("could not be read"));
+			expect(process.exitCode).toBe(initialExitCode);
+		} finally {
+			process.env.HOME = previousHome;
+		}
+	});
+
 	it("still emits the BOM but exits 1 when the inventory is incomplete", async () => {
 		await writeFile(join(project, ".mcp.json"), "{ broken");
 		const stdout = captureStdout();

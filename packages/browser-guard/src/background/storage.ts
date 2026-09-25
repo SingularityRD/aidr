@@ -7,6 +7,7 @@
  *
  * Storage layout:
  *   local   userSettings, installationId, telemetryQueue, telemetryState,
+ *           aupAcknowledged (acceptable-use notice id -> highest acknowledged version),
  *           shadowAiUsage (per-day visit/block counts per catalog service id; no URLs)
  *   session guardStats, pausedUntil, `vault:<tabId>:<origin>` (per-tab placeholder vault,
  *           see ./vault-store.ts; TRUSTED_CONTEXTS only, so page scripts cannot read it)
@@ -144,6 +145,7 @@ export const STORAGE_KEYS = Object.freeze({
 	telemetryState: "telemetryState",
 	stats: "guardStats",
 	pausedUntil: "pausedUntil",
+	aupAcknowledged: "aupAcknowledged",
 	shadowAiUsage: "shadowAiUsage",
 });
 

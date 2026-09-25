@@ -44,7 +44,7 @@ export interface MailMessage {
 	idempotencyKey?: string;
 }
 
-type MailResult =
+export type MailResult =
 	| { ok: true; provider: "resend"; messageId: string }
 	| { ok: false; reason: "not_configured" | "invalid_message" | "rejected" | "unavailable" };
 
@@ -64,7 +64,7 @@ export const noMailer: Mailer = Object.freeze({
 	send: async (): Promise<MailResult> => ({ ok: false, reason: "not_configured" }),
 });
 
-function isMailAddress(value: string): boolean {
+export function isMailAddress(value: string): boolean {
 	return value.length <= 254 && ADDRESS.test(value);
 }
 

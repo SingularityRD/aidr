@@ -1,0 +1,114 @@
+# Regulation (EU) 2024/1689 (Artificial Intelligence Act): deployer-side
+# obligations and how Singularity AIDR capabilities support them. Coverage values:
+# see nist-ai-rmf.yaml.
+#
+# Applicability matters: Article 4 applies to every provider and deployer of AI
+# systems (from 2 February 2025). Article 26 applies to deployers of HIGH-RISK AI
+# systems only (Annex III use cases); general-purpose coding agents and AI chat
+# assistants used for ordinary work are typically not high-risk. Article 14 is a
+# design obligation of providers of high-risk systems. Those rows are listed
+# because customers use them as a good-practice reference for oversight of AI
+# agents; the mapping does not classify any system.
+
+framework:
+  id: eu-ai-act
+  name: EU Artificial Intelligence Act
+  version: "Regulation (EU) 2024/1689"
+  reference: https://eur-lex.europa.eu/eli/reg/2024/1689/oj
+  scope: >-
+    Obligations of organisations that use (deploy) AI systems, plus the human-oversight
+    article customers use as a reference. The mapping supports your obligations; it is not
+    legal advice and does not determine whether a system is high-risk.
+
+controls:
+  - id: Art. 4
+    group: General provisions
+    title: AI literacy
+    capabilities: [acceptable-use-notice, browser-guard-masking, runtime-enforcement]
+    evidence: [events.aup_acknowledgement, events.privacy_scan]
+    coverage: partial
+    note: >-
+      Applies to all deployers. The acceptable-use notice is shown once per version on
+      protected AI sites and acknowledgements are counted; in-page coaching and block
+      reasons explain risky use in context. Training measures appropriate to staff roles
+      remain the organisation's.
+  - id: Art. 5
+    group: Prohibited AI practices
+    title: Prohibited AI practices
+    capabilities: [browser-guard-masking]
+    evidence: []
+    coverage: customer-responsibility
+    note: >-
+      Whether an AI use falls under a prohibited practice is a legal assessment. Browser
+      Guard can block an AI site the organisation decides not to allow, but it does not
+      classify practices.
+  - id: Art. 14
+    group: High-risk AI systems - requirements
+    title: Human oversight (provider design obligation; reference for agent oversight)
+    capabilities: [human-approval, oversight-analytics, runtime-enforcement]
+    evidence: [approval_requests, governance-scorecard, events.runtime_verdict]
+    coverage: partial
+    note: >-
+      Article 14 binds providers of high-risk systems. For AI agents, AIDR gives deployers
+      a working oversight layer: actions can be stopped (deny) or held for a person (ask),
+      and the scorecard flags approval patterns that suggest over-reliance (automation
+      bias) as a review prompt. It does not make any AI system conform to Article 14.
+  - id: Art. 26(1)
+    group: Obligations of deployers of high-risk AI systems
+    title: Use in accordance with the instructions for use
+    capabilities: [runtime-policy-management, runtime-enforcement]
+    evidence: [tenant_runtime_policies, runtime_policy_revisions]
+    coverage: partial
+    note: >-
+      High-risk systems only. Technical and organisational measures that keep agent use
+      within the instructions can be expressed as runtime policy; reading and following the
+      provider's instructions is the organisation's.
+  - id: Art. 26(2)
+    group: Obligations of deployers of high-risk AI systems
+    title: Assign human oversight to competent, trained persons with authority and support
+    capabilities: [human-approval, identity-access-control, oversight-analytics]
+    evidence: [approval_requests, compliance-report.access_identity, governance-scorecard]
+    coverage: partial
+    note: >-
+      High-risk systems only. Only owners and admins (with step-up authentication) can
+      approve held actions; the scorecard shows who decides and how. Competence and training
+      of those people are the organisation's.
+  - id: Art. 26(5)
+    group: Obligations of deployers of high-risk AI systems
+    title: Monitor operation; inform the provider and suspend use when a risk or serious incident arises
+    capabilities: [runtime-enforcement, incident-management, governance-digest, runtime-policy-management]
+    evidence: [events.runtime_verdict, events.incident, governance_digest_deliveries]
+    coverage: partial
+    note: >-
+      High-risk systems only. Decisions and incidents are monitored and summarised, and a
+      policy change can stop agent actions. Informing the provider, distributor or market
+      surveillance authority is the organisation's.
+  - id: Art. 26(6)
+    group: Obligations of deployers of high-risk AI systems
+    title: Keep automatically generated logs under the deployer's control for at least six months
+    capabilities: [audit-logging, retention-legal-hold, audit-export]
+    evidence: [events.runtime_verdict, tenant_data_retention_policies, tenant_legal_holds, audit-export]
+    coverage: partial
+    note: >-
+      High-risk systems only. AIDR's own decision logs can be retained for six months or
+      longer by setting telemetry retention to at least 183 days, and exported. Logs
+      generated by the high-risk AI system itself are outside AIDR.
+  - id: Art. 26(7)
+    group: Obligations of deployers of high-risk AI systems
+    title: Inform workers' representatives and affected workers before workplace use
+    capabilities: [acceptable-use-notice]
+    evidence: [events.aup_acknowledgement]
+    coverage: customer-responsibility
+    note: >-
+      High-risk systems only. The acceptable-use notice can carry the information to
+      browser users, but information and consultation duties toward worker representatives
+      are the organisation's.
+  - id: Art. 27
+    group: Obligations of deployers of high-risk AI systems
+    title: Fundamental rights impact assessment
+    capabilities: [compliance-evidence-report]
+    evidence: [compliance-report.data_protection_activity]
+    coverage: customer-responsibility
+    note: >-
+      Applies to certain deployers of certain high-risk systems. The assessment is the
+      deployer's; product evidence can be an input.

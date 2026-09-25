@@ -1,0 +1,288 @@
+# NIST AI Risk Management Framework 1.0 (NIST AI 100-1, January 2023): product
+# control mapping for Singularity AIDR. Only subcategories to which the product
+# contributes, or which customers commonly ask about for AI tool use, are listed;
+# unlisted subcategories are out of scope of the product.
+#
+# coverage:
+#   full                    when deployed, the capability performs the activity for
+#                           the AI tools it guards (still limited to those tools)
+#   partial                 the capability supports part of the activity
+#   customer-responsibility the organisation performs the activity; the listed
+#                           capabilities and evidence can only serve as input
+
+framework:
+  id: nist-ai-rmf
+  name: NIST AI Risk Management Framework
+  version: "AI RMF 1.0 (NIST AI 100-1, January 2023)"
+  reference: https://www.nist.gov/itl/ai-risk-management-framework
+  scope: >-
+    Subcategories of the GOVERN, MAP, MEASURE and MANAGE functions where Singularity AIDR
+    provides a technical capability or evidence for the AI coding agents, AI chat sites and
+    MCP servers it guards. The framework is voluntary; this mapping supports your risk
+    management program and is not an attestation.
+
+controls:
+  - id: GOVERN 1.1
+    group: GOVERN
+    title: >-
+      Legal and regulatory requirements involving AI are understood, managed, and
+      documented.
+    capabilities: [compliance-evidence-report, data-flow-inventory]
+    evidence: [compliance-report.data_flows, privacy-data-flow-matrix]
+    coverage: customer-responsibility
+    note: >-
+      Understanding which laws apply is the organisation's task. The compliance evidence
+      report and the data-flow inventory are inputs to that work, not a legal assessment.
+  - id: GOVERN 1.4
+    group: GOVERN
+    title: >-
+      The risk management process and its outcomes are established through transparent
+      policies, procedures, and other controls based on organizational risk priorities.
+    capabilities: [runtime-policy-management, prompt-dlp-protection, runtime-enforcement]
+    evidence: [tenant_runtime_policies, runtime_policy_revisions, tenant_dlp_policies, compliance-report.policy_inventory]
+    coverage: partial
+    note: >-
+      Runtime and DLP policies are explicit, versioned and enforced on every guarded tool
+      call, with revision history and digests. The risk priorities behind them are set by
+      the organisation.
+  - id: GOVERN 1.5
+    group: GOVERN
+    title: >-
+      Ongoing monitoring and periodic review of the risk management process and its
+      outcomes are planned and organizational roles and responsibilities clearly defined,
+      including determining the frequency of periodic review.
+    capabilities: [governance-scorecard, governance-digest]
+    evidence: [governance-scorecard, governance-digest, governance_digest_deliveries, tenant_governance_settings]
+    coverage: partial
+    note: >-
+      The scorecard and the weekly or monthly summary give reviewers a recurring,
+      data-backed view; who reviews and what they decide stays with the organisation.
+  - id: GOVERN 1.6
+    group: GOVERN
+    title: >-
+      Mechanisms are in place to inventory AI systems and are resourced according to
+      organizational risk priorities.
+    capabilities: [ai-asset-inventory, mcp-inventory, browser-guard-masking]
+    evidence: [agents, posture_findings, events.privacy_scan, compliance-report.protection_coverage]
+    coverage: partial
+    note: >-
+      Enrolled agents, browser installs, AI sites seen by Browser Guard and reported MCP
+      servers form an inventory of AI tool use. Unmanaged endpoints and AI systems outside
+      these channels are not visible.
+  - id: GOVERN 2.1
+    group: GOVERN
+    title: >-
+      Roles and responsibilities and lines of communication related to mapping, measuring,
+      and managing AI risks are documented and are clear to individuals and teams
+      throughout the organization.
+    capabilities: [identity-access-control, human-approval]
+    evidence: [compliance-report.access_identity, admin_audit_logs]
+    coverage: partial
+    note: >-
+      Workspace roles decide who may change policy and who may approve blocked actions;
+      the role list and administrative actions are recorded. Organisational role
+      definitions outside the product remain the customer's.
+  - id: GOVERN 2.2
+    group: GOVERN
+    title: >-
+      The organization's personnel and partners receive AI risk management training to
+      enable them to perform their duties and responsibilities consistent with related
+      policies, procedures, and agreements.
+    capabilities: [acceptable-use-notice]
+    evidence: [events.aup_acknowledgement]
+    coverage: partial
+    note: >-
+      The acceptable-use notice and its per-version acknowledgement counts show that
+      browser users were shown the policy. It is awareness, not training; training content
+      and records stay with the organisation.
+  - id: GOVERN 4.3
+    group: GOVERN
+    title: >-
+      Organizational practices are in place to enable AI testing, identification of
+      incidents, and information sharing.
+    capabilities: [incident-management, siem-export, audit-export]
+    evidence: [events.incident, compliance-report.incidents, siem-export, audit-export]
+    coverage: partial
+    note: >-
+      Blocked and flagged agent actions become incidents that can be exported to a SIEM or
+      as audit records. Testing practices and external information sharing are the
+      organisation's.
+  - id: GOVERN 6.1
+    group: GOVERN
+    title: >-
+      Policies and procedures are in place that address AI risks associated with
+      third-party entities, including risks of infringement of a third-party's
+      intellectual property or other rights.
+    capabilities: [runtime-policy-management, mcp-gateway, plugin-skill-scanning, browser-guard-masking]
+    evidence: [tenant_runtime_policies, posture_findings]
+    coverage: partial
+    note: >-
+      MCP server and tool allow/approval/deny lists, plugin and skill scanning and AI-site
+      blocking address security and data-exposure risk from third-party AI components.
+      Intellectual-property and contractual risk are not assessed by the product.
+  - id: GOVERN 6.2
+    group: GOVERN
+    title: >-
+      Contingency processes are in place to handle failures or incidents in third-party
+      data or AI systems deemed to be high-risk.
+    capabilities: [runtime-enforcement, runtime-policy-management]
+    evidence: [tenant_runtime_policies, events.incident]
+    coverage: partial
+    note: >-
+      Connector entry points fail closed on an internal error, and a policy change can deny
+      a misbehaving MCP server or tool across the fleet. Business continuity for the
+      third-party AI service itself is the organisation's.
+  - id: MAP 3.5
+    group: MAP
+    title: >-
+      Processes for human oversight are defined, assessed, and documented in accordance
+      with organizational policies from the GOVERN function.
+    capabilities: [human-approval, oversight-analytics]
+    evidence: [approval_requests, governance-scorecard, admin_audit_logs]
+    coverage: partial
+    note: >-
+      Ask decisions stop an agent action until a person approves it out of band, and the
+      scorecard measures how those decisions are made. Defining which actions need
+      oversight is done in policy by the organisation.
+  - id: MAP 4.1
+    group: MAP
+    title: >-
+      Approaches for mapping AI technology and legal risks of its components, including
+      the use of third-party data or software, are in place, followed, and documented, as
+      are risks of infringement of a third party's intellectual property or other rights.
+    capabilities: [mcp-inventory, plugin-skill-scanning, ai-posture-scanning]
+    evidence: [posture_findings, compliance-report.ai_security_posture]
+    coverage: partial
+    note: >-
+      Covers the security risk of agent components (MCP servers, plugins, skills and known
+      vulnerabilities). Legal and intellectual-property risk mapping is not performed.
+  - id: MAP 4.2
+    group: MAP
+    title: >-
+      Internal risk controls for components of the AI system, including third-party AI
+      technologies, are identified and documented.
+    capabilities: [runtime-policy-management, governance-scorecard]
+    evidence: [tenant_runtime_policies, compliance-report.policy_inventory, governance-scorecard]
+    coverage: partial
+    note: >-
+      The controls AIDR applies are documented by the policy inventory and by this control
+      matrix. Controls implemented in other tools are outside it.
+  - id: MEASURE 1.1
+    group: MEASURE
+    title: >-
+      Approaches and metrics for measurement of AI risks enumerated during the MAP function
+      are selected for implementation starting with the most significant AI risks.
+    capabilities: [governance-scorecard]
+    evidence: [governance-scorecard]
+    coverage: partial
+    note: >-
+      The scorecard supplies ready metrics (decision volumes, approvals, incidents, masking
+      counts, policy age). Selecting which metrics matter is the organisation's.
+  - id: MEASURE 2.4
+    group: MEASURE
+    title: >-
+      The functionality and behavior of the AI system and its components, as identified in
+      the MAP function, are monitored when in production.
+    capabilities: [runtime-enforcement, browser-guard-masking, governance-scorecard]
+    evidence: [events.runtime_verdict, events.privacy_scan, governance-scorecard]
+    coverage: full
+    note: >-
+      Every guarded tool call and every Browser Guard send is evaluated and, on managed
+      installs, reported as a counts-only event. Only enrolled agents and browsers are
+      monitored.
+  - id: MEASURE 2.7
+    group: MEASURE
+    title: >-
+      AI system security and resilience, as identified in the MAP function, are evaluated
+      and documented.
+    capabilities: [threat-rule-library, output-inspection, ai-posture-scanning, plugin-skill-scanning]
+    evidence: [threat-rules, posture_findings, compliance-report.ai_security_posture]
+    coverage: partial
+    note: >-
+      Threat rules, prompt-injection signals, output inspection and posture findings
+      document the security of the agent tool chain. Model-level robustness testing is not
+      performed.
+  - id: MEASURE 2.10
+    group: MEASURE
+    title: >-
+      Privacy risk of the AI system, as identified in the MAP function, is examined and
+      documented.
+    capabilities: [browser-guard-masking, prompt-dlp-protection, data-flow-inventory]
+    evidence: [events.privacy_scan, compliance-report.data_protection_activity, privacy-data-flow-matrix]
+    coverage: partial
+    note: >-
+      Counts of personal data and secrets masked, warned about or blocked show where
+      prompts carried personal data. Privacy impact assessments remain the organisation's.
+  - id: MEASURE 3.1
+    group: MEASURE
+    title: >-
+      Approaches, personnel, and documentation are in place to regularly identify and track
+      existing, unanticipated, and emergent AI risks based on factors such as intended and
+      actual performance in deployed contexts.
+    capabilities: [incident-management, ai-posture-scanning, governance-scorecard]
+    evidence: [events.incident, posture_findings, governance-scorecard]
+    coverage: partial
+    note: >-
+      Incidents, posture findings and the scorecard's top-risks list are tracked over time.
+      Personnel and review cadence are the organisation's.
+  - id: MANAGE 1.3
+    group: MANAGE
+    title: >-
+      Responses to the AI risks deemed high priority, as identified by the MAP function,
+      are developed, planned, and documented. Risk response options can include mitigating,
+      transferring, avoiding, or accepting.
+    capabilities: [runtime-policy-management, runtime-enforcement, prompt-dlp-protection]
+    evidence: [tenant_runtime_policies, runtime_policy_revisions, tenant_dlp_policies]
+    coverage: partial
+    note: >-
+      Deny, ask and masking policies are the documented technical responses for the risks
+      AIDR detects. Transfer and acceptance decisions are made by the organisation.
+  - id: MANAGE 2.4
+    group: MANAGE
+    title: >-
+      Mechanisms are in place and applied, and responsibilities are assigned and
+      understood, to supersede, disengage, or deactivate AI systems that demonstrate
+      performance or outcomes inconsistent with intended use.
+    capabilities: [runtime-enforcement, runtime-policy-management, browser-guard-masking]
+    evidence: [tenant_runtime_policies, runtime_policy_revisions]
+    coverage: partial
+    note: >-
+      A policy change can deny an agent action type, an MCP server or tool, or block an AI
+      site in managed browsers. AIDR stops actions of guarded tools; it does not switch off
+      the vendor's AI service.
+  - id: MANAGE 3.1
+    group: MANAGE
+    title: >-
+      AI risks and benefits from third-party resources are regularly monitored, and risk
+      controls are applied and documented.
+    capabilities: [mcp-inventory, ai-posture-scanning, runtime-policy-management]
+    evidence: [posture_findings, tenant_runtime_policies]
+    coverage: partial
+    note: >-
+      MCP servers, plugins, skills and known vulnerabilities are monitored where scans are
+      uploaded. Benefits are not measured.
+  - id: MANAGE 4.1
+    group: MANAGE
+    title: >-
+      Post-deployment AI system monitoring plans are implemented, including mechanisms for
+      capturing and evaluating input from users and other relevant AI actors, appeal and
+      override, decommissioning, incident response, recovery, and change management.
+    capabilities: [human-approval, incident-management, runtime-policy-management, governance-digest]
+    evidence: [approval_requests, events.incident, runtime_policy_revisions, governance_digest_deliveries]
+    coverage: partial
+    note: >-
+      Human approval provides the override path, incidents the response trail and policy
+      revisions the change record. User feedback collection and decommissioning plans are
+      the organisation's.
+  - id: MANAGE 4.3
+    group: MANAGE
+    title: >-
+      Incidents and errors are communicated to relevant AI actors, including affected
+      communities. Processes for tracking, responding to, and recovering from incidents and
+      errors are followed and documented.
+    capabilities: [incident-management, siem-export, governance-digest]
+    evidence: [events.incident, compliance-report.incidents, siem-export]
+    coverage: partial
+    note: >-
+      Incidents are tracked with severity and status, exported to SIEM and summarised to
+      owners. Communication to affected people and regulators is the organisation's.

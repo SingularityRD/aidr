@@ -13,12 +13,17 @@ import { inspectMcpServerInventory, type McpInventoryItem } from "./mcp-inventor
 import { redactMcpLaunch } from "./mcp-launch-redaction.js";
 import type { Threat } from "./types.js";
 
-function inventoryId(sourcePath: string, name: string): string {
+function inventoryId(sourcePath: string, name: string, projectPath?: string): string {
 	const resolvedPath = resolve(sourcePath);
 	const canonicalPath = process.platform === "win32" ? resolvedPath.toLowerCase() : resolvedPath;
+	// A project-scoped server shares its file and possibly its name with other
+	// scopes, so the project is part of its identity. Top-level servers keep
+	// their original two-part id.
+	const identity =
+		projectPath === undefined ? [canonicalPath, name] : [canonicalPath, name, projectPath];
 	return createHash("sha256")
 		.update("aidr-mcp-inventory-v1\0")
-		.update(JSON.stringify([canonicalPath, name]))
+		.update(JSON.stringify(identity))
 		.digest("hex");
 }
 
@@ -115,6 +120,8 @@ export interface McpDiscoveryServer {
 	inventory_id: string;
 	name: string;
 	source: string;
+	/** Claude Code project the server is scoped to (`~/.claude.json` `projects`); absent otherwise. */
+	project?: string;
 	transport: "remote" | "stdio";
 	endpoint: string | null;
 	risk_hints: string[];
@@ -341,11 +348,12 @@ export async function discoverMcpServers(paths?: string[], options: McpDiscovery
 			} catch {
 				/* Invalid URLs remain unverified. */
 			}
-			const id = inventoryId(item.sourcePath, item.name);
+			const id = inventoryId(item.sourcePath, item.name, item.projectPath);
 			return {
 				inventory_id: id,
 				name: item.name,
 				source: item.sourcePath,
+				...(item.projectPath !== undefined ? { project: item.projectPath } : {}),
 				transport: item.url ? ("remote" as const) : ("stdio" as const),
 				endpoint,
 				risk_hints: item.riskHints,

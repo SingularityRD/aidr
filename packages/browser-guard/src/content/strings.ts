@@ -47,6 +47,13 @@ export interface Strings {
 	readonly fileReplaceUnsupported: string;
 	/** Native NER was enabled but gave no usable answer: this check was rules-only. */
 	readonly nativeUnavailable: string;
+	/** Acceptable-use notice (administrator text is shown verbatim; these are the controls). */
+	readonly aupAcknowledge: string;
+	readonly aupLater: string;
+	readonly aupPolicyLink: string;
+	readonly aupRecorded: string;
+	readonly aupRecordFailed: string;
+	aupVersion(version: number): string;
 }
 
 const EN: Strings = {
@@ -97,6 +104,12 @@ const EN: Strings = {
 		"This browser cannot replace the file with a sanitized copy, so it was not uploaded.",
 	nativeUnavailable:
 		"Advanced name and address detection (native host) is unavailable: checked with built-in rules only.",
+	aupAcknowledge: "I understand",
+	aupLater: "Remind me later",
+	aupPolicyLink: "Read the full policy",
+	aupRecorded: "Thank you. Your acknowledgement was recorded.",
+	aupRecordFailed: "Your acknowledgement could not be saved; the notice will be shown again.",
+	aupVersion: (version) => `Acceptable-use notice, version ${version}`,
 };
 
 const TR: Strings = {
@@ -145,6 +158,12 @@ const TR: Strings = {
 		"Bu tarayıcı dosyayı temizlenmiş kopyasıyla değiştiremiyor; dosya yüklenmedi.",
 	nativeUnavailable:
 		"Gelişmiş ad ve adres algılama (yerel yardımcı uygulama) kullanılamıyor: yalnızca yerleşik kurallarla kontrol edildi.",
+	aupAcknowledge: "Anladım",
+	aupLater: "Daha sonra hatırlat",
+	aupPolicyLink: "Politikanın tamamını okuyun",
+	aupRecorded: "Teşekkürler. Onayınız kaydedildi.",
+	aupRecordFailed: "Onayınız kaydedilemedi; bildirim yeniden gösterilecek.",
+	aupVersion: (version) => `Kabul edilebilir kullanım bildirimi, sürüm ${version}`,
 };
 
 export const STRINGS: Readonly<Record<Lang, Strings>> = { en: EN, tr: TR };

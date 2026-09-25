@@ -280,6 +280,39 @@ export interface GuardPolicy {
 	/** Keys locked by managed policy (UI renders them read-only). */
 	readonly managedKeys: readonly string[];
 	readonly policyId: string;
+	/**
+	 * Administrator-published AI acceptable-use notice (managed policy key `acceptableUse`),
+	 * shown once per version on a protected AI site. Absent or null: no notice. Optional so
+	 * policies built before the notice existed stay valid; the worker always sets it.
+	 */
+	readonly acceptableUse?: AcceptableUseNotice | null;
+}
+
+/**
+ * AI acceptable-use notice (AI literacy support, e.g. EU AI Act Art. 4). The text stays in
+ * the browser; telemetry reports only `id` and `version` when a user acknowledges it.
+ */
+export interface AcceptableUseNotice {
+	/** `^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$`; reported in acknowledgement telemetry. */
+	readonly id: string;
+	/** 1..999999. Raising it shows the notice again to every user. */
+	readonly version: number;
+	/** 1..120 characters. */
+	readonly title: string;
+	/** Plain text (no markup), 1..4000 characters; blank lines separate paragraphs. */
+	readonly text: string;
+	/** Optional https link to the full policy (shown as a link, never fetched). */
+	readonly url?: string;
+}
+
+/** Acknowledgement telemetry event (see docs/contracts/privacy-telemetry.md). No text. */
+export interface AupAcknowledgementEvent {
+	readonly event_id: string;
+	readonly event_type: "aup_acknowledgement";
+	readonly timestamp: string;
+	readonly site: SiteId;
+	readonly notice_id: string;
+	readonly notice_version: number;
 }
 
 export interface TelemetryConfig {
@@ -318,7 +351,7 @@ export interface ShadowAiUsageEvent {
 }
 
 /** Any event the Browser Guard telemetry queue carries. */
-export type TelemetryEvent = PrivacyScanEvent | ShadowAiUsageEvent;
+export type TelemetryEvent = PrivacyScanEvent | ShadowAiUsageEvent | AupAcknowledgementEvent;
 
 /** One UTC day of Shadow AI counts for one service (options page; never sent as such). */
 export interface ShadowAiDailyUsage {
@@ -389,6 +422,14 @@ export type GuardMessage =
 	  }
 	/** Content script -> worker: the vault saved for the sender's tab id + origin, if any. */
 	| { readonly type: "VAULT_LOAD" }
+	/** Content script -> worker: the current acceptable-use notice and whether it was acknowledged. */
+	| { readonly type: "AUP_STATUS" }
+	/**
+	 * Content script -> worker: the user pressed "I understand" for this notice version. The
+	 * worker accepts it only for the notice currently in force and queues one counts-only
+	 * acknowledgement event per version.
+	 */
+	| { readonly type: "AUP_ACKNOWLEDGE"; readonly noticeId: string; readonly version: number }
 	/** Extension pages only: host access for Shadow AI and custom sites, plus local counts. */
 	| { readonly type: "GET_SITE_ACCESS" };
 
@@ -427,6 +468,12 @@ export interface GuardResponses {
 		readonly snapshot: VaultSnapshot | null;
 		readonly sent: readonly string[];
 	};
+	readonly AUP_STATUS: {
+		readonly ok: true;
+		readonly notice: AcceptableUseNotice | null;
+		readonly acknowledged: boolean;
+	};
+	readonly AUP_ACKNOWLEDGE: { readonly ok: true };
 	readonly GET_SITE_ACCESS: { readonly ok: true; readonly access: SiteAccessStatus };
 }
 export type GuardResponse<T extends keyof GuardResponses = keyof GuardResponses> =
@@ -489,6 +536,7 @@ export interface NativeBridge {
  *                      export function findSendButton(adapter: SiteAdapter, root: Document, editor: EditorAccess | null): HTMLElement | null
  *   background/policy.ts export const DEFAULT_POLICY: GuardPolicy; export function mergePolicy(managed: unknown, user: Partial<UserSettings> | undefined): GuardPolicy
  *   background/native.ts export function createNativeBridge(enabled: boolean): NativeBridge
+ *   content/acceptable-use.ts export function createAcceptableUseNotice(deps): AcceptableUseController
  * Entry points bundled by scripts/build.mjs:
  *   src/background/index.ts, src/content/index.ts, src/ui/popup.ts, src/ui/options.ts
  * Static assets: static/*.html, static/*.css, static/managed_schema.json, static/icons/*, _locales/{en,tr}/messages.json

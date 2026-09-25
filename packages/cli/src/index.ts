@@ -24,6 +24,7 @@ import {
 	rotateKeyCommand,
 	SECRET_STORE_OPTION_DESCRIPTION,
 } from "./commands/config-secret.js";
+import coverageCommand from "./commands/coverage.js";
 import discoverCommand from "./commands/discover.js";
 import doctorCommand from "./commands/doctor.js";
 import privacyScanCommand from "./commands/privacy.js";
@@ -87,7 +88,7 @@ program
 program
 	.command("scan")
 	.description(
-		"Scan AI infrastructure targets for known products and CVEs (native, no external service)",
+		"Scan AI infrastructure targets, skill packages or project code (native, no external service)",
 	)
 	.option(
 		"-t, --target <url...>",
@@ -97,6 +98,10 @@ program
 	.option(
 		"--skill <path...>",
 		"Scan a skill or plugin package directory with the T01-T09 skill rules (repeatable)",
+	)
+	.option(
+		"--code <path...>",
+		"Scan a project directory or file for unsafe model loading and insecure code patterns (file:line, local only)",
 	)
 	.option("--json", "Emit machine-readable JSON")
 	.option("--allow-public", "Permit non-private targets (off by default)")
@@ -220,6 +225,14 @@ program
 	)
 	.option("--json", "Emit a machine-readable report")
 	.action((options) => doctorCommand(options));
+
+program
+	.command("coverage")
+	.description(
+		"Show how the installed detection rules map to OWASP LLM Top 10 2025, OWASP Agentic Top 10 2026 and MITRE ATLAS",
+	)
+	.option("--format <format>", "table, json or markdown", "table")
+	.action((options) => coverageCommand(options));
 
 program
 	.command("pending")

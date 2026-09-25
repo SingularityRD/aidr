@@ -21,6 +21,10 @@ export interface BubbleOptions {
 	readonly tone: Tone;
 	/** Action id that receives focus; defaults to the primary action, then the first. */
 	readonly initialFocus?: string;
+	/** Optional https link rendered under the lines (opens in a new tab, no opener). */
+	readonly link?: { readonly href: string; readonly label: string };
+	/** Small print under the title (e.g. a notice version). */
+	readonly caption?: string;
 }
 
 /** Result id when a bubble is dismissed with Escape or replaced by another bubble. */
@@ -64,7 +68,11 @@ const STYLE = `
 .card[data-tone="error"] { border-left-color: var(--error); }
 .brand { font-weight: 700; letter-spacing: .08em; color: var(--accent); margin-right: 6px; }
 .title { font-weight: 600; margin: 0 0 4px; font-size: 14px; }
-.line { margin: 4px 0; color: var(--muted); }
+.line { margin: 4px 0; color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+.body { max-height: min(50vh, 360px); overflow-y: auto; }
+.caption { margin: 0 0 4px; font-size: 12px; color: var(--muted); }
+a { color: var(--accent); }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 10px; }
 button { font: inherit; cursor: pointer; border-radius: 7px; padding: 6px 12px; border: 1px solid var(--border);
   background: var(--btn); color: var(--fg); }
@@ -142,6 +150,10 @@ export function createGuardUi(deps: GuardUiDeps): GuardUi {
 	};
 
 	const buttons = (): HTMLButtonElement[] => [...bubbleEl.querySelectorAll("button")];
+	/** Tab order of the open bubble: its link (if any) and its buttons. */
+	const focusables = (): HTMLElement[] => [
+		...bubbleEl.querySelectorAll<HTMLElement>("a[href], button"),
+	];
 
 	bubbleEl.addEventListener("keydown", (event) => {
 		const e = event as KeyboardEvent;
@@ -152,7 +164,7 @@ export function createGuardUi(deps: GuardUiDeps): GuardUi {
 			return;
 		}
 		if (e.key === "Tab") {
-			const list = buttons();
+			const list = focusables();
 			if (list.length === 0) return;
 			const active = root.activeElement;
 			const index = list.findIndex((b) => b === active);
@@ -176,10 +188,23 @@ export function createGuardUi(deps: GuardUiDeps): GuardUi {
 		title.append(brandSpan(), doc.createTextNode(options.title));
 		const body = doc.createElement("div");
 		body.id = bodyId;
+		body.className = "body";
 		for (const line of options.lines) {
 			const p = doc.createElement("p");
 			p.className = "line";
 			p.textContent = line;
+			body.append(p);
+		}
+		if (options.link) {
+			const p = doc.createElement("p");
+			p.className = "line";
+			const a = doc.createElement("a");
+			a.href = options.link.href;
+			a.target = "_blank";
+			a.rel = "noopener noreferrer";
+			a.textContent = options.link.label;
+			a.addEventListener("click", (event) => event.stopPropagation());
+			p.append(a);
 			body.append(p);
 		}
 		const actions = doc.createElement("div");
@@ -196,7 +221,14 @@ export function createGuardUi(deps: GuardUiDeps): GuardUi {
 			});
 			actions.append(button);
 		}
-		bubbleEl.replaceChildren(title, body, actions);
+		const header: HTMLElement[] = [title];
+		if (options.caption) {
+			const caption = doc.createElement("p");
+			caption.className = "caption";
+			caption.textContent = options.caption;
+			header.push(caption);
+		}
+		bubbleEl.replaceChildren(...header, body, actions);
 		bubbleEl.dataset.tone = options.tone;
 		bubbleEl.setAttribute("aria-labelledby", titleId);
 		bubbleEl.setAttribute("aria-describedby", bodyId);

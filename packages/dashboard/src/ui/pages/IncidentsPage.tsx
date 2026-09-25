@@ -4,6 +4,7 @@ import { type EvidenceAuditRow, EvidenceView } from "../../enterprise/evidence-v
 import { useTeam } from "../../enterprise/team-provider";
 import { readErrorMessage } from "../../lib/errors";
 import { supabase } from "../../lib/supabase";
+import { FrameworkTags } from "../framework-coverage";
 
 type AgentRow = {
 	id: string;
@@ -288,7 +289,12 @@ function TenantIncidentsPage({ tenantId }: { tenantId: string }) {
 												</div>
 											) : null}
 										</td>
-										<td className="mono">{summarize(e)}</td>
+										<td className="mono">
+											{summarize(e)}
+											{e.type === "runtime_verdict" || e.type === "incident" ? (
+												<FrameworkTags ruleId={e.payload?.matched_threat_id} />
+											) : null}
+										</td>
 									</tr>
 								);
 							})}
