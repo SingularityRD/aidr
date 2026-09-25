@@ -113,10 +113,11 @@ export async function loadTrustedModelSources(
 		else logger.warn(`Ignoring invalid trusted model host from ${origin}`);
 	};
 
-	const dir = join(allowlistsDir, MODEL_SOURCES_SUBDIR);
+	// JavaScript callers may omit the directory; that trusts nothing from disk.
+	const dir = typeof allowlistsDir === "string" ? join(allowlistsDir, MODEL_SOURCES_SUBDIR) : "";
 	let files: string[] = [];
 	try {
-		files = (await readdir(dir)).filter((name) => name.endsWith(".yaml")).sort();
+		files = dir ? (await readdir(dir)).filter((name) => name.endsWith(".yaml")).sort() : [];
 	} catch {
 		logger.debug("Trusted model-source directory is absent; no model source is trusted", {
 			path: dir,

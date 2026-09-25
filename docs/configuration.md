@@ -389,6 +389,29 @@ MCP gateway) gets it. See [Toxic-flow detection](toxic-flow.md) for the model.
   tampering: the session is assumed to have exercised all three capabilities for the rest of
   the window, so its next egress needs approval.
 
+### `secure_code`
+
+Advisory checks on the code an agent writes (TLS verification disabled, SQL/command
+injection, `eval` on request input, `chmod 777`, wildcard CORS with credentials, exposed debug
+servers, disabled CSRF, weak crypto, hard-coded credentials). Only the lines a call adds are
+inspected, gated by file language. See [Secure-code guardrails](secure-code-guardrails.md).
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `enabled` | `true` | Turn the guardrails on or off |
+| `action` | `"warn"` | `"warn"`: the write goes through with a notice and an audit entry; `"ask"`: the write is held for review |
+
+### `ai_supply_chain`
+
+Trusted model sources for the AI model supply-chain rules (unsafe model loading and unvetted
+model downloads). These lists add to the shipped `allowlists/model-sources/*.yaml`. See
+[AI model supply-chain safety](ai-supply-chain-safety.md).
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `trusted_model_orgs` | `[]` | Extra Hugging Face organisations whose repositories are trusted (exact, case-insensitive) |
+| `trusted_model_hosts` | `[]` | Extra HTTPS hosts trusted for direct model-weight downloads (suffix match on a dot boundary) |
+
 ### `heuristics_enabled`
 
 Boolean, default `true`. Set to `false` to disable all local pattern matching.

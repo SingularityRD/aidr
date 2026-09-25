@@ -142,7 +142,10 @@ function printResults(
 	if (codeResults) printCodeSummary(codeResults);
 }
 
-async function scanCode(paths: string[], dependencies: ScanDependencies): Promise<CodeScanReport[]> {
+async function scanCode(
+	paths: string[],
+	dependencies: ScanDependencies,
+): Promise<CodeScanReport[]> {
 	const bundled = resolveBundledDataDirs();
 	const threatsDir = dependencies.threatsDir ?? bundled.threatsDir;
 	const allowlistsDir = dependencies.allowlistsDir ?? bundled.allowlistsDir;
@@ -251,7 +254,9 @@ function printUsage(): void {
 	console.log("  aidr scan --target http://127.0.0.1:8080 --target http://10.0.0.4:3000");
 	console.log("  aidr scan --file targets.txt          # one URL per line");
 	console.log("  aidr scan --skill ~/.claude/skills/my-skill   # skill/plugin package (T01-T09)");
-	console.log("  aidr scan --code .                     # model loading + secure-code rules, file:line");
+	console.log(
+		"  aidr scan --code .                     # model loading + secure-code rules, file:line",
+	);
 	console.log("\nOptions:");
 	console.log("  --json             machine-readable output");
 	console.log("  --allow-public     permit non-private targets (off by default)");
@@ -450,7 +455,8 @@ function setExitCode(
 			)
 		: false;
 	const codeIncomplete =
-		code?.some((report) => !report.exists || report.filesSkipped > 0 || report.rules === 0) ?? false;
+		code?.some((report) => !report.exists || report.filesSkipped > 0 || report.rules === 0) ??
+		false;
 	process.exitCode = infraIncomplete || skillIncomplete || codeIncomplete ? 1 : 0;
 }
 

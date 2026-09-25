@@ -309,6 +309,9 @@ describe("trusted model sources", () => {
 	it("trusts nothing when the list is missing (the conservative direction)", async () => {
 		const empty = await loadTrustedModelSources(await makeTmpDir());
 		expect(empty.orgs.size).toBe(0);
+		// A JavaScript caller that passes no directory gets the same, not a throw.
+		const absent = await loadTrustedModelSources(undefined as unknown as string);
+		expect(absent.hosts).toEqual([]);
 		expect(isTrustedModelSourceMatch("AISC-012", "hf download meta-llama/x", empty)).toBe(false);
 	});
 
