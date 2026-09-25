@@ -1,7 +1,6 @@
 #!/usr/bin/env node
-import { readGatewayConfig, reportFailure, stage } from "./diagnostics.mjs";
-import { createMcpGateway } from "./gateway.mjs";
-import { requireGatewayIntegrity } from "./integrity.mjs";
+import { reportFailure, stage } from "./diagnostics.mjs";
+import { openVerifiedGateway } from "./operator-startup.mjs";
 
 const configPath = process.argv[2];
 if (!configPath || process.argv.length !== 3) {
@@ -9,9 +8,7 @@ if (!configPath || process.argv.length !== 3) {
 	process.exitCode = 2;
 } else {
 	try {
-		await stage("integrity_verification_failed", () => requireGatewayIntegrity());
-		const config = await readGatewayConfig(configPath);
-		const gateway = await stage("config_invalid", () => createMcpGateway(config));
+		const gateway = await openVerifiedGateway(configPath);
 		const address = await stage("startup_failed", () => gateway.listen());
 		process.stdout.write(`AIDR MCP gateway listening on 127.0.0.1:${address.port}\n`);
 	} catch (error) {

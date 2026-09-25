@@ -5,7 +5,7 @@
 // typo here would otherwise surface as a confusing "not masked" failure.
 
 /** Turkish national ID (TC Kimlik No) checksum. */
-export function validTckn(value) {
+function validTckn(value) {
 	if (!/^[1-9][0-9]{10}$/.test(value)) return false;
 	const d = [...value].map(Number);
 	const odd = d[0] + d[2] + d[4] + d[6] + d[8];
@@ -16,7 +16,7 @@ export function validTckn(value) {
 }
 
 /** ISO 13616 IBAN mod-97 checksum (compact form, no spaces). */
-export function validIban(value) {
+function validIban(value) {
 	const compact = value.replace(/\s+/g, "").toUpperCase();
 	if (!/^[A-Z]{2}[0-9]{2}[A-Z0-9]{10,30}$/.test(compact)) return false;
 	const rearranged = compact.slice(4) + compact.slice(0, 4);
@@ -28,12 +28,12 @@ export function validIban(value) {
 	return remainder === 1;
 }
 
-export const EMAIL = "ayse.yilmaz@example.com";
+const EMAIL = "ayse.yilmaz@example.com";
 export const EMAIL_2 = "john.doe@example.org";
 /** 1,0,0,0,0,0,0,0,1 -> d10 = (2*7 - 0) % 10 = 4, d11 = (1+1+4) % 10 = 6. */
-export const TCKN = "10000000146";
-export const IBAN = "TR330006100519786457841326";
-export const API_KEY = "sk-proj-Q7vX2mN9pL4kR8tW1yB6cD3fG5hJ0sAaZe";
+const TCKN = "10000000146";
+const IBAN = "TR330006100519786457841326";
+const API_KEY = "sk-proj-Q7vX2mN9pL4kR8tW1yB6cD3fG5hJ0sAaZe";
 
 if (!validTckn(TCKN)) throw new Error(`test data: ${TCKN} is not a valid TCKN`);
 if (!validIban(IBAN)) throw new Error(`test data: ${IBAN} is not a valid IBAN`);
@@ -42,7 +42,7 @@ if (!validIban(IBAN)) throw new Error(`test data: ${IBAN} is not a valid IBAN`);
  * A sensitive item the suite types into a page: `value` must never reach the
  * network in a masking mode, `placeholder` matches the vault's replacement.
  */
-export const ITEMS = {
+const ITEMS = {
 	email: { type: "EMAIL", value: EMAIL, placeholder: /\[EMAIL_\d+\]/ },
 	tckn: { type: "TC_KIMLIK", value: TCKN, placeholder: /\[TCKN_\d+\]/ },
 	iban: { type: "IBAN", value: IBAN, placeholder: /\[IBAN_\d+\]/ },

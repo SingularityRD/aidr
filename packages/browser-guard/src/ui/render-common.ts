@@ -52,6 +52,24 @@ export function switchRow(doc: Document, options: SwitchOptions): HTMLElement {
 	]);
 }
 
+/**
+ * Replaces `host`'s content with a fresh render and moves focus back to the element
+ * with id `focusId` (default: the element focused before the render) if it still
+ * exists and is enabled, so keyboard users keep their place across re-renders.
+ */
+export function replaceKeepingFocus(
+	doc: Document,
+	host: HTMLElement,
+	content: Node,
+	focusId?: string,
+): void {
+	const active = focusId ?? (doc.activeElement instanceof HTMLElement ? doc.activeElement.id : "");
+	host.replaceChildren(content);
+	if (!active) return;
+	const again = doc.getElementById(active);
+	if (again instanceof HTMLElement && !again.hasAttribute("disabled")) again.focus();
+}
+
 export interface Notice {
 	readonly kind: "ok" | "error";
 	readonly text: string;

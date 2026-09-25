@@ -56,7 +56,7 @@ function hasCardBrand(digits: string): boolean {
 }
 
 /** Luhn-valid, issued by a known network, and written the way cards are written. */
-export function isPlausibleCardNumber(value: string): boolean {
+function isPlausibleCardNumber(value: string): boolean {
 	if (!/^\d[\d -]*\d$/.test(value)) return false;
 	const separators = value.match(/[ -]/g) ?? [];
 	if (separators.length > 0) {
@@ -77,7 +77,7 @@ export function isPlausibleCardNumber(value: string): boolean {
  * must use the NANP 3-3-4 layout with separators. A bare digit run (epoch
  * seconds, order ids) or a dotted quad is never a phone number here.
  */
-export function isPlausiblePhoneNumber(match: PiiMatch, text: string): boolean {
+function isPlausiblePhoneNumber(match: PiiMatch, text: string): boolean {
 	const previous = text[match.start - 1];
 	const value = previous === "+" || previous === "(" ? `${previous}${match.value}` : match.value;
 	const digits = value.replace(/\D/g, "");
@@ -88,14 +88,14 @@ export function isPlausiblePhoneNumber(match: PiiMatch, text: string): boolean {
 }
 
 /** Only the canonical dashed layout; nine bare digits are an id, not an SSN. */
-export function isPlausibleSsn(match: PiiMatch, text: string, requireContext: boolean): boolean {
+function isPlausibleSsn(match: PiiMatch, text: string, requireContext: boolean): boolean {
 	if (!/^\d{3}-\d{2}-\d{4}$/.test(match.value)) return false;
 	if (!requireContext) return true;
 	return SSN_CONTEXT.test(text.slice(Math.max(0, match.start - 48), match.start));
 }
 
 /** True when a raw `PiiDetectorImpl` match survives the precision checks for its type. */
-export function isPrecisePiiMatch(
+function isPrecisePiiMatch(
 	match: PiiMatch,
 	text: string,
 	options: PiiPrecisionOptions = {},

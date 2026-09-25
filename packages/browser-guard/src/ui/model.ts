@@ -69,13 +69,7 @@ export function siteForUrl(url: string | undefined): SupportedSiteId | null {
 	return isSupportedSite(id) ? id : null;
 }
 
-export type EntityGroupId =
-	| "identity"
-	| "contact"
-	| "financial"
-	| "technical"
-	| "organization"
-	| "other";
+type EntityGroupId = "identity" | "contact" | "financial" | "technical" | "organization" | "other";
 
 export interface EntityGroup {
 	readonly id: EntityGroupId;
@@ -237,8 +231,8 @@ export const TELEMETRY_ERROR_KEYS: Readonly<Record<TelemetryError, string>> = {
 	key_invalid: msg("telemetry_error_key_invalid"),
 };
 
-export const API_KEY_MIN_LENGTH = 8;
-export const API_KEY_MAX_LENGTH = 512;
+const API_KEY_MIN_LENGTH = 8;
+const API_KEY_MAX_LENGTH = 512;
 const API_KEY_PATTERN = /^[\x21-\x7e]+$/;
 const MAX_URL_LENGTH = 2048;
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1"]);
@@ -289,7 +283,7 @@ function isStringArray(value: unknown): value is string[] {
 }
 
 /** Structural check on a GET_POLICY response before the UI trusts it. */
-export function isGuardPolicy(value: unknown): value is GuardPolicy {
+function isGuardPolicy(value: unknown): value is GuardPolicy {
 	if (typeof value !== "object" || value === null) return false;
 	const policy = value as Partial<Record<keyof GuardPolicy, unknown>>;
 	return (
@@ -320,7 +314,7 @@ export function isGuardPolicy(value: unknown): value is GuardPolicy {
 }
 
 /** Structural check on a GET_STATS response. */
-export function isGuardStats(value: unknown): value is GuardStats {
+function isGuardStats(value: unknown): value is GuardStats {
 	if (typeof value !== "object" || value === null) return false;
 	const stats = value as Partial<Record<keyof GuardStats, unknown>>;
 	return (

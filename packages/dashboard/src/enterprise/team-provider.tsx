@@ -31,7 +31,7 @@ export type InvitationDelivery =
 	| { delivery: "manual"; inviteUrl: string; emailFailed: boolean };
 
 /** Accept only a link this deployment issued for its invitation route. */
-export function readInvitationLink(value: unknown): string {
+function readInvitationLink(value: unknown): string {
 	if (typeof value !== "string")
 		throw new Error("The invitation service returned no shareable link.");
 	const inviteUrl = new URL(value);

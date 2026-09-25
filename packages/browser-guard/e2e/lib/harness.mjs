@@ -19,7 +19,7 @@ const FALLBACK_EXECUTABLE =
 const WORKER_START_TIMEOUT_MS = Number(process.env.BG_E2E_WORKER_TIMEOUT_MS) || 30000;
 
 /** Playwright resolves its browser registry at import time, so set the path first. */
-export async function loadPlaywright() {
+async function loadPlaywright() {
 	if (!process.env.PLAYWRIGHT_BROWSERS_PATH && fs.existsSync("/opt/pw-browsers")) {
 		process.env.PLAYWRIGHT_BROWSERS_PATH = "/opt/pw-browsers";
 	}
@@ -45,7 +45,7 @@ function patternToRegExp(pattern) {
 	return new RegExp(`^${schemeRe}://${hostRe}(?::\\d+)?${pathRe}$`);
 }
 
-export function manifestMatchesUrl(manifest, url) {
+function manifestMatchesUrl(manifest, url) {
 	for (const cs of manifest.content_scripts ?? []) {
 		const included = (cs.matches ?? []).some((p) => patternToRegExp(p).test(url));
 		const excluded = (cs.exclude_matches ?? []).some((p) => patternToRegExp(p).test(url));
@@ -111,7 +111,7 @@ class Recorder {
 // that was asked to "email the customer about the refund".
 // ---------------------------------------------------------------------------
 
-export function fakeModelReply(prompt) {
+function fakeModelReply(prompt) {
 	const placeholders = [...new Set(String(prompt).match(ANY_PLACEHOLDER) ?? [])];
 	if (placeholders.length === 0) return `You said: ${prompt}`;
 	return `I will follow up with ${placeholders.join(" and ")} as requested.`;
@@ -166,7 +166,7 @@ async function findWorker(context, timeout, { wakeUrl = null, wakeAfterMs = 5000
  * Id Chromium assigns to an unpacked extension: the first 128 bits of
  * SHA-256(absolute path), hex digits mapped to the letters a-p.
  */
-export function unpackedExtensionId(extDir) {
+function unpackedExtensionId(extDir) {
 	const hex = crypto
 		.createHash("sha256")
 		.update(fs.realpathSync(extDir))
@@ -263,7 +263,7 @@ export async function launch({ extDir, headed = false, log = () => {} }) {
 // Harness
 // ---------------------------------------------------------------------------
 
-export class Harness {
+class Harness {
 	constructor({ context, worker, extensionId, manifest, extDir, profileDir, launchMode }) {
 		this.context = context;
 		this.worker = worker;
@@ -734,4 +734,3 @@ export function assertNoLeaks(
 	checks.check(label, leaks.length === 0, leaks);
 }
 
-export { AssertionError };

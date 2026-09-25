@@ -6,7 +6,7 @@ import type { SiteAdapter, SiteId } from "../types";
  * Site DOMs change without notice; these keep interception working on a
  * redesigned page until the specific selectors are updated.
  */
-export const GENERIC_SELECTORS = {
+const GENERIC_SELECTORS = {
 	editor: ["textarea", '[contenteditable="true"]', '[role="textbox"]'],
 	send: ['button[type="submit"]', 'button[aria-label*="send" i]'],
 	response: ['[data-message-author-role="assistant"]', "article", ".markdown", ".prose"],

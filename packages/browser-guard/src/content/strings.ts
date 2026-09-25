@@ -146,10 +146,6 @@ export function resolveLanguage(
 	return (navigatorLanguage ?? "").toLowerCase().startsWith("tr") ? "tr" : "en";
 }
 
-export function stringsFor(lang: Lang): Strings {
-	return STRINGS[lang];
-}
-
 /** Total of all per-type counts. */
 export function totalCount(counts: Readonly<Partial<Record<EntityType, number>>>): number {
 	let total = 0;

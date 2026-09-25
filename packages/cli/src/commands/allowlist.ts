@@ -24,7 +24,7 @@ import {
 	operatorIdentity,
 } from "../utils/operator-confirm.js";
 
-export type AllowlistType = "url" | "command" | "file_path";
+type AllowlistType = "url" | "command" | "file_path";
 const TYPES: readonly AllowlistType[] = ["url", "command", "file_path"];
 
 /** Test seams; production callers pass nothing. */
@@ -45,6 +45,17 @@ function parseType(value: string): AllowlistType | null {
 	return (TYPES as readonly string[]).includes(normalized) ? (normalized as AllowlistType) : null;
 }
 
+/** Parses the type argument; reports an unknown type and returns null. */
+function requireType(typeArg: string): AllowlistType | null {
+	const type = parseType(typeArg);
+	if (!type) {
+		fail(
+			`Unknown allowlist type "${escapeTerminalText(typeArg)}". Use one of: ${TYPES.join(", ")}.`,
+		);
+	}
+	return type;
+}
+
 async function loadCurrent(deps: AllowlistCommandDeps) {
 	const config = await loadConfig(deps.configPath);
 	if (isInvalidConfig(config)) {
@@ -54,6 +65,42 @@ async function loadCurrent(deps: AllowlistCommandDeps) {
 	}
 	const allowlist = await loadAllowlist(config.allowlist);
 	return { config, allowlist, path: resolvePath(config.allowlist.path) };
+}
+
+type Current = Awaited<ReturnType<typeof loadCurrent>>;
+
+/** Loads the config and allowlist; reports a failure and returns null. */
+async function tryLoadCurrent(deps: AllowlistCommandDeps): Promise<Current | null> {
+	try {
+		return await loadCurrent(deps);
+	} catch (error) {
+		fail(error instanceof Error ? error.message : String(error));
+		return null;
+	}
+}
+
+/** The value as the allowlist will store and match it (commands are shown as typed). */
+function normalizedValue(type: AllowlistType, value: string): string {
+	if (type === "url") return normalizeUrl(value);
+	return type === "file_path" ? normalizeFilePath(value) : value;
+}
+
+function addEntry(allowlist: Allowlist, type: AllowlistType, value: string, reason: string): void {
+	if (type === "url") addUrl(allowlist, value, reason, "operator");
+	else if (type === "command") addCommand(allowlist, value, reason, "operator");
+	else addFilePath(allowlist, value, reason, "operator");
+}
+
+function removeEntry(allowlist: Allowlist, type: AllowlistType, value: string): boolean {
+	if (type === "url") return removeUrl(allowlist, value);
+	if (type === "file_path") return removeFilePath(allowlist, value);
+	// Accept the command text or the stored hash (as `list` shows it).
+	const hash = value.replace(/^sha256:/, "").replace(/…$/, "");
+	return (
+		removeCommand(allowlist, hashCommand(value)) ||
+		removeCommand(allowlist, hash) ||
+		removeCommandByPrefix(allowlist, hash)
+	);
 }
 
 function rows(allowlist: Allowlist) {
@@ -80,13 +127,8 @@ export async function allowlistListCommand(
 	options: { json?: boolean } = {},
 	deps: AllowlistCommandDeps = {},
 ): Promise<void> {
-	let current: Awaited<ReturnType<typeof loadCurrent>>;
-	try {
-		current = await loadCurrent(deps);
-	} catch (error) {
-		fail(error instanceof Error ? error.message : String(error));
-		return;
-	}
+	const current = await tryLoadCurrent(deps);
+	if (!current) return;
 	const entries = rows(current.allowlist);
 	if (options.json) {
 		console.log(JSON.stringify({ path: current.path, entries }, null, 2));
@@ -114,29 +156,17 @@ export async function allowlistAddCommand(
 	options: { reason?: string; yes?: boolean } = {},
 	deps: AllowlistCommandDeps = {},
 ): Promise<void> {
-	const type = parseType(typeArg);
-	if (!type) {
-		fail(
-			`Unknown allowlist type "${escapeTerminalText(typeArg)}". Use one of: ${TYPES.join(", ")}.`,
-		);
-		return;
-	}
+	const type = requireType(typeArg);
+	if (!type) return;
 	if (value.trim().length === 0) {
 		fail("The value to allowlist is empty.");
 		return;
 	}
-	let current: Awaited<ReturnType<typeof loadCurrent>>;
-	try {
-		current = await loadCurrent(deps);
-	} catch (error) {
-		fail(error instanceof Error ? error.message : String(error));
-		return;
-	}
+	const current = await tryLoadCurrent(deps);
+	if (!current) return;
 	// The value may have been pasted from an agent's message: show it with control
 	// and bidi characters escaped, so what the operator confirms is what is added.
-	const shown = escapeTerminalText(
-		type === "url" ? normalizeUrl(value) : type === "file_path" ? normalizeFilePath(value) : value,
-	);
+	const shown = escapeTerminalText(normalizedValue(type, value));
 
 	let mode: Awaited<ReturnType<typeof confirmOperatorAction>>;
 	try {
@@ -157,9 +187,7 @@ export async function allowlistAddCommand(
 	}
 
 	const reason = options.reason?.trim() || `Added by operator ${operatorIdentity(mode)}`;
-	if (type === "url") addUrl(current.allowlist, value, reason, "operator");
-	else if (type === "command") addCommand(current.allowlist, value, reason, "operator");
-	else addFilePath(current.allowlist, value, reason, "operator");
+	addEntry(current.allowlist, type, value, reason);
 
 	if (!(await saveAllowlist(current.allowlist, current.config.allowlist))) {
 		fail(`Could not write the allowlist at ${current.path}; nothing was added.`);
@@ -179,32 +207,11 @@ export async function allowlistRemoveCommand(
 	_options: Record<string, unknown> = {},
 	deps: AllowlistCommandDeps = {},
 ): Promise<void> {
-	const type = parseType(typeArg);
-	if (!type) {
-		fail(
-			`Unknown allowlist type "${escapeTerminalText(typeArg)}". Use one of: ${TYPES.join(", ")}.`,
-		);
-		return;
-	}
-	let current: Awaited<ReturnType<typeof loadCurrent>>;
-	try {
-		current = await loadCurrent(deps);
-	} catch (error) {
-		fail(error instanceof Error ? error.message : String(error));
-		return;
-	}
-	let removed: boolean;
-	if (type === "url") removed = removeUrl(current.allowlist, value);
-	else if (type === "file_path") removed = removeFilePath(current.allowlist, value);
-	else {
-		// Accept the command text or the stored hash (as `list` shows it).
-		const hash = value.replace(/^sha256:/, "").replace(/…$/, "");
-		removed =
-			removeCommand(current.allowlist, hashCommand(value)) ||
-			removeCommand(current.allowlist, hash) ||
-			removeCommandByPrefix(current.allowlist, hash);
-	}
-	if (!removed) {
+	const type = requireType(typeArg);
+	if (!type) return;
+	const current = await tryLoadCurrent(deps);
+	if (!current) return;
+	if (!removeEntry(current.allowlist, type, value)) {
 		fail(`No ${type} entry matching that value is on the allowlist.`);
 		return;
 	}

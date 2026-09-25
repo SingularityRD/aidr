@@ -6,7 +6,7 @@
  */
 import type { Strings } from "./strings.js";
 
-export type Tone = "info" | "warn" | "error";
+type Tone = "info" | "warn" | "error";
 
 export interface BubbleAction {
 	readonly id: string;
@@ -74,6 +74,12 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 @media (prefers-reduced-motion: no-preference) { .card { animation: in .14s ease-out; }
   @keyframes in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } } }
 `;
+
+/** Index Tab (or Shift+Tab when `backwards`) moves focus to, wrapping at either end. */
+function wrapFocusIndex(index: number, length: number, backwards: boolean): number {
+	if (backwards) return index <= 0 ? length - 1 : index - 1;
+	return index === length - 1 ? 0 : index + 1;
+}
 
 export function createGuardUi(deps: GuardUiDeps): GuardUi {
 	const { document: doc, window: win } = deps;
@@ -150,15 +156,8 @@ export function createGuardUi(deps: GuardUiDeps): GuardUi {
 			if (list.length === 0) return;
 			const active = root.activeElement;
 			const index = list.findIndex((b) => b === active);
-			const next = e.shiftKey
-				? index <= 0
-					? list.length - 1
-					: index - 1
-				: index === list.length - 1
-					? 0
-					: index + 1;
 			e.preventDefault();
-			list[next]?.focus();
+			list[wrapFocusIndex(index, list.length, e.shiftKey)]?.focus();
 		}
 		// Keys typed in the bubble never reach the page's key handlers.
 		e.stopPropagation();

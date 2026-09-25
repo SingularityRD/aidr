@@ -3,7 +3,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { constants } from "node:fs";
+import { constants, type Stats } from "node:fs";
 import { lstat, open, readdir, realpath } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -258,57 +258,48 @@ async function walkPluginFiles(installPath: string, logger: Logger): Promise<Plu
 		return unavailable();
 	}
 
+	/**
+	 * The path's own (unfollowed) stats when it can be inspected: not a symlink and
+	 * resolving inside the plugin root. Anything else counts as an incomplete path.
+	 */
+	async function inspectable(dirOrFile: string): Promise<Stats | null> {
+		const stats = await lstat(dirOrFile).catch(() => null);
+		const resolved =
+			stats && !stats.isSymbolicLink() ? await realpath(dirOrFile).catch(() => null) : null;
+		if (stats && resolved !== null && isWithinPath(realRoot, resolved)) return stats;
+		incompletePaths += 1;
+		return null;
+	}
+
+	function addFile(file: string, size: number, inBytecodeCache: boolean): void {
+		const extension = extname(file).toLowerCase();
+		allFiles.add(file);
+		if (BYTECODE_EXTENSIONS.has(extension)) bytecodeFiles.push(file);
+		// Only bytecode is of interest inside an interpreter cache directory.
+		if (inBytecodeCache) return;
+		if (SCANNABLE_EXTENSIONS.has(extension) && size <= MAX_FILE_SIZE) files.push(file);
+		else incompletePaths += 1;
+	}
+
+	async function walkDirectory(dir: string, inBytecodeCache: boolean): Promise<void> {
+		let entries: string[];
+		try {
+			entries = await readdir(dir);
+		} catch {
+			incompletePaths += 1;
+			return;
+		}
+		for (const entry of entries) {
+			if (SKIP_DIRS.has(entry)) continue;
+			await walk(join(dir, entry), inBytecodeCache || entry === BYTECODE_CACHE_DIR);
+		}
+	}
+
 	async function walk(dirOrFile: string, inBytecodeCache = false): Promise<void> {
-		let stats: Awaited<ReturnType<typeof lstat>>;
-		try {
-			stats = await lstat(dirOrFile);
-		} catch {
-			incompletePaths += 1;
-			return;
-		}
-		if (stats.isSymbolicLink()) {
-			incompletePaths += 1;
-			return;
-		}
-		let resolvedPath: string;
-		try {
-			resolvedPath = await realpath(dirOrFile);
-		} catch {
-			incompletePaths += 1;
-			return;
-		}
-		if (!isWithinPath(realRoot, resolvedPath)) {
-			incompletePaths += 1;
-			return;
-		}
-		// Handle file: check if scannable and add to results
-		if (stats.isFile()) {
-			const extension = extname(dirOrFile).toLowerCase();
-			allFiles.add(dirOrFile);
-			if (BYTECODE_EXTENSIONS.has(extension)) bytecodeFiles.push(dirOrFile);
-			// Only bytecode is of interest inside an interpreter cache directory.
-			if (inBytecodeCache) return;
-			if (SCANNABLE_EXTENSIONS.has(extension)) {
-				if (stats.size <= MAX_FILE_SIZE) files.push(dirOrFile);
-				else incompletePaths += 1;
-			} else incompletePaths += 1;
-			return;
-		}
-		// Handle directory: recursively walk entries
-		if (stats.isDirectory()) {
-			let entries: string[];
-			try {
-				entries = await readdir(dirOrFile);
-			} catch {
-				incompletePaths += 1;
-				return;
-			}
-			for (const entry of entries) {
-				if (SKIP_DIRS.has(entry)) continue;
-				const fullPath = join(dirOrFile, entry);
-				await walk(fullPath, inBytecodeCache || entry === BYTECODE_CACHE_DIR);
-			}
-		}
+		const stats = await inspectable(dirOrFile);
+		if (!stats) return;
+		if (stats.isFile()) addFile(dirOrFile, stats.size, inBytecodeCache);
+		else if (stats.isDirectory()) await walkDirectory(dirOrFile, inBytecodeCache);
 	}
 	try {
 		await walk(rootPath);
@@ -519,9 +510,9 @@ function extractArtifactsFromFile(filePath: string, content: string): Artifact[]
 export { SKILL_RISK_TYPES, skillRiskTypeForThreatId } from "./skill-risk-types.js";
 
 /** match_on value for rules evaluated against the whole text of a plugin file. */
-export const PLUGIN_CONTENT_MATCH = "plugin_content";
+const PLUGIN_CONTENT_MATCH = "plugin_content";
 /** match_on value for rules evaluated against bytecode shipped without source. */
-export const PLUGIN_ORPHAN_BYTECODE_MATCH = "plugin_orphan_bytecode";
+const PLUGIN_ORPHAN_BYTECODE_MATCH = "plugin_orphan_bytecode";
 
 /** Categories whose matched text is a credential and must never be echoed. */
 const SECRET_BEARING_CATEGORIES = new Set(["skill_hardcoded_secret"]);

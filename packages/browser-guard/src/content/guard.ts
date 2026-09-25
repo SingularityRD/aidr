@@ -26,6 +26,8 @@
  * `monitor` mode, which never blocks). Telemetry (`RECORD`) is best-effort and
  * carries counts only - never prompt text, originals or file content.
  */
+
+import { type Counts, countFindings } from "../engine/counts.js";
 import {
 	type DetectionEngine,
 	type EditorAccess,
@@ -39,7 +41,7 @@ import {
 	type SignalCode,
 	type SiteAdapter,
 } from "../types.js";
-import { type Counts, createFileGuard, type SanitizeFileFn } from "./file-guard.js";
+import { createFileGuard, type SanitizeFileFn } from "./file-guard.js";
 import {
 	formatCounts,
 	type Lang,
@@ -48,7 +50,7 @@ import {
 	type Strings,
 	totalCount,
 } from "./strings.js";
-import { type BubbleAction, createGuardUi, type GuardUi } from "./ui.js";
+import { type BubbleAction, type BubbleOptions, createGuardUi, type GuardUi } from "./ui.js";
 import { createUnmasker, placeholderRegex, type Unmasker } from "./unmask.js";
 
 export interface ContentGuardDeps {
@@ -180,12 +182,6 @@ export function mergeNativeFindings(
 /** Normalises editor text for equality checks (line endings, nbsp, outer whitespace). */
 export function normalizeText(text: string): string {
 	return text.replace(/\r\n?/g, "\n").replace(/ /g, " ").trim();
-}
-
-export function countFindings(findings: readonly Finding[]): Counts {
-	const counts: Counts = {};
-	for (const f of findings) counts[f.type] = (counts[f.type] ?? 0) + 1;
-	return counts;
 }
 
 const asElement = (node: unknown): Element | null =>
@@ -508,19 +504,13 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 			await replay(origin, editor, text);
 			return;
 		}
-		const total = totalCount(counts);
-		const summary = formatCounts(counts);
 		const coaching = [
 			...signals.map((code) => deps.coachingFor(code, lang())),
 			...nativeLines(result),
 		];
-		if (signals.length > 0 && policy.signalAction === "block") {
-			showBlocked([...(total > 0 ? [s.blockedBody(total, summary)] : []), ...coaching]);
-			record("blocked", "prompt", counts);
-			return;
-		}
-		if (findings.length > 0 && policy.mode === "block") {
-			showBlocked([s.blockedBody(total, summary), s.blockedCoaching, ...coaching]);
+		const blocked = blockedLines(policy, findings.length > 0, signals.length > 0, counts, coaching);
+		if (blocked) {
+			showBlocked(blocked);
 			record("blocked", "prompt", counts);
 			return;
 		}
@@ -529,26 +519,78 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 			return;
 		}
 		// confirm mode, or a warn-level signal: ask the user.
-		const actions: BubbleAction[] = [];
-		const lines: string[] = [];
-		if (findings.length > 0) {
-			lines.push(s.confirmBody(total, summary));
-			actions.push({ id: "send-masked", label: s.sendMasked, primary: true });
-			actions.push({ id: "edit", label: s.edit });
-			if (policy.allowSendAnyway) actions.push({ id: "send-original", label: s.sendOriginal });
-		} else {
-			actions.push({ id: "edit", label: s.edit, primary: true });
-			actions.push({ id: "send-anyway", label: s.sendAnyway });
+		await askUser(policy, origin, editor, text, findings, result, counts, coaching);
+	};
+
+	/** The block bubble's lines when the policy refuses this send outright, otherwise null. */
+	const blockedLines = (
+		policy: GuardPolicy,
+		hasFindings: boolean,
+		hasSignals: boolean,
+		counts: Readonly<Counts>,
+		coaching: readonly string[],
+	): string[] | null => {
+		const s = strings();
+		const total = totalCount(counts);
+		const summary = formatCounts(counts);
+		if (hasSignals && policy.signalAction === "block") {
+			return [...(total > 0 ? [s.blockedBody(total, summary)] : []), ...coaching];
 		}
-		lines.push(...coaching);
-		const choice = await ui.bubble({
-			title: findings.length > 0 ? s.confirmTitle : s.warnTitle,
-			lines,
+		if (hasFindings && policy.mode === "block") {
+			return [s.blockedBody(total, summary), s.blockedCoaching, ...coaching];
+		}
+		return null;
+	};
+
+	/**
+	 * Confirm bubble: send masked / edit (/ send original) when there are findings,
+	 * edit / send anyway for a warn-level signal alone.
+	 */
+	const confirmBubble = (
+		policy: GuardPolicy,
+		hasFindings: boolean,
+		counts: Readonly<Counts>,
+		coaching: readonly string[],
+	): BubbleOptions => {
+		const s = strings();
+		if (!hasFindings) {
+			return {
+				title: s.warnTitle,
+				lines: [...coaching],
+				actions: [
+					{ id: "edit", label: s.edit, primary: true },
+					{ id: "send-anyway", label: s.sendAnyway },
+				],
+				tone: "warn",
+			};
+		}
+		const actions: BubbleAction[] = [
+			{ id: "send-masked", label: s.sendMasked, primary: true },
+			{ id: "edit", label: s.edit },
+		];
+		if (policy.allowSendAnyway) actions.push({ id: "send-original", label: s.sendOriginal });
+		return {
+			title: s.confirmTitle,
+			lines: [s.confirmBody(totalCount(counts), formatCounts(counts)), ...coaching],
 			actions,
 			tone: "warn",
-		});
+		};
+	};
+
+	const askUser = async (
+		policy: GuardPolicy,
+		origin: SendOrigin,
+		editor: EditorAccess,
+		text: string,
+		findings: readonly Finding[],
+		scanned: GuardScan,
+		counts: Counts,
+		coaching: readonly string[],
+	): Promise<void> => {
+		const s = strings();
+		const choice = await ui.bubble(confirmBubble(policy, findings.length > 0, counts, coaching));
 		if (choice === "send-masked") {
-			await maskAndSend(origin, editor, text, findings, result);
+			await maskAndSend(origin, editor, text, findings, scanned);
 			return;
 		}
 		if (choice === "send-original" || choice === "send-anyway") {
@@ -582,35 +624,76 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 
 	// ---- send interception ----------------------------------------------------------
 
-	const onSendAttempt = (event: Event, origin: SendOrigin, editor: EditorAccess | null): void => {
-		let text: string | null = null;
+	const readEditor = (editor: EditorAccess | null): string | null => {
 		try {
-			text = editor ? editor.read() : null;
+			return editor ? editor.read() : null;
 		} catch {
-			text = null;
+			return null;
 		}
-		if (replayText !== null && text !== null && normalizeText(text) === normalizeText(replayText)) {
-			return; // our own replay of an already-checked prompt
-		}
-		const policy = deps.getPolicy();
-		const s = strings();
-		if (!policy) {
-			stopEvent(event);
-			showBlocked([s.policyMissing]);
+	};
+
+	/** True while `text` is the prompt our own replay is re-sending. */
+	const isReplay = (text: string | null): boolean =>
+		replayText !== null && text !== null && normalizeText(text) === normalizeText(replayText);
+
+	/** Stops the send and tells the user why (fail closed). */
+	const refuseSend = (event: Event, line: string): void => {
+		stopEvent(event);
+		showBlocked([line]);
+		record("blocked", "prompt", {});
+	};
+
+	const isClean = (text: string, policy: GuardPolicy, result: ScanResult): boolean =>
+		relevantFindings(text, result).length === 0 && activeSignals(policy, result).length === 0;
+
+	/** Holds the send while the prompt is scanned (or reuses a pre-scan), then decides. */
+	const scanAndDecide = (
+		policy: GuardPolicy,
+		origin: SendOrigin,
+		editor: EditorAccess,
+		text: string,
+		hit: GuardScan | undefined,
+	): void => {
+		busy = true;
+		void (async () => {
+			let result: GuardScan | null;
+			try {
+				result = hit ?? (await scan(text, policy));
+			} finally {
+				busy = false;
+			}
+			await decide(policy, origin, editor, text, result);
+		})().catch(() => {
+			busy = false;
+			showBlocked([strings().scanFailed]);
 			record("blocked", "prompt", {});
-			return;
+		});
+	};
+
+	/**
+	 * The policy a send is checked against, or null when the send was already refused
+	 * (no policy, blocked site).
+	 */
+	const sendPolicy = (event: Event): GuardPolicy | null => {
+		const policy = deps.getPolicy();
+		if (!policy) {
+			refuseSend(event, strings().policyMissing);
+			return null;
 		}
 		if (siteBlocked(policy)) {
-			stopEvent(event);
-			showBlocked([s.siteBlocked]);
-			record("blocked", "prompt", {});
-			return;
+			refuseSend(event, strings().siteBlocked);
+			return null;
 		}
+		return policy;
+	};
+
+	const onSendAttempt = (event: Event, origin: SendOrigin, editor: EditorAccess | null): void => {
+		const text = readEditor(editor);
+		if (isReplay(text)) return; // our own replay of an already-checked prompt
+		const policy = sendPolicy(event);
+		if (!policy) return;
 		if (!editor || text === null) {
-			if (monitoring(policy)) return;
-			stopEvent(event);
-			showBlocked([s.editorMissing]);
-			record("blocked", "prompt", {});
+			if (!monitoring(policy)) refuseSend(event, strings().editorMissing);
 			return;
 		}
 		if (normalizeText(text) === "") return;
@@ -619,39 +702,32 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 			void monitorScan(text, "prompt", policy);
 			return;
 		}
+		guardSend(event, policy, origin, editor, text);
+	};
+
+	/** Enforcing modes: let a pre-scanned clean prompt through, otherwise hold it and scan. */
+	const guardSend = (
+		event: Event,
+		policy: GuardPolicy,
+		origin: SendOrigin,
+		editor: EditorAccess,
+		text: string,
+	): void => {
 		if (busy) {
 			stopEvent(event);
-			ui.toast(s.busy, "info");
+			ui.toast(strings().busy, "info");
 			return;
 		}
 		if (ui.bubbleOpen) ui.closeBubble();
 		const hit = cached(text, policy);
-		if (
-			hit &&
-			relevantFindings(text, hit).length === 0 &&
-			activeSignals(policy, hit).length === 0
-		) {
+		if (hit && isClean(text, policy, hit)) {
 			record("allowed", "prompt", {});
 			noticeNativeOnce(hit);
 			noteSent(text);
 			return; // pre-scanned clean: the original, trusted event goes through untouched
 		}
 		stopEvent(event);
-		busy = true;
-		const scanned = text;
-		void (async () => {
-			let result: GuardScan | null;
-			try {
-				result = hit ?? (await scan(scanned, policy));
-			} finally {
-				busy = false;
-			}
-			await decide(policy, origin, editor, scanned, result);
-		})().catch(() => {
-			busy = false;
-			showBlocked([strings().scanFailed]);
-			record("blocked", "prompt", {});
-		});
+		scanAndDecide(policy, origin, editor, text, hit);
 	};
 
 	/** Events the guard must never intercept: our own UI and the editor module's rewrites. */
@@ -664,14 +740,21 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 		}
 	};
 
+	/** The event's innermost target and the editor containing it; null outside the editor. */
+	const editorTargetOf = (event: Event): { target: Element; editor: EditorAccess } | null => {
+		const target = asElement(event.composedPath()[0] ?? event.target);
+		if (!target) return null;
+		const editor = editorFor(target);
+		return editor && contains(editor.element, target) ? { target, editor } : null;
+	};
+
 	const onKeyDown = (event: KeyboardEvent): void => {
 		if (event.key !== "Enter" || event.shiftKey || event.altKey) return;
 		if (event.isComposing || event.keyCode === 229) return;
 		if (ignored(event)) return;
-		const target = asElement(event.composedPath()[0] ?? event.target);
-		if (!target) return;
-		const editor = editorFor(target);
-		if (!editor || !contains(editor.element, target)) return;
+		const hit = editorTargetOf(event);
+		if (!hit) return;
+		const { target, editor } = hit;
 		onSendAttempt(
 			event,
 			{
@@ -778,64 +861,77 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 		return { text: masked.masked, counts: { ...masked.counts } };
 	};
 
-	const onPaste = (event: ClipboardEvent): void => {
-		if (ignored(event) || fileGuard.replaying) return;
-		if (fileGuard.onPasteFiles(event)) return;
-		const target = asElement(event.composedPath()[0] ?? event.target);
-		if (!target) return;
-		const editor = editorFor(target);
-		if (!editor || !contains(editor.element, target)) return;
-		const text = event.clipboardData?.getData("text/plain") ?? "";
-		if (!text) return;
-		const policy = deps.getPolicy();
+	/** Scans pasted text, then inserts it as is, masked, or not at all (block mode). */
+	const pasteScanned = async (
+		editor: EditorAccess,
+		text: string,
+		policy: GuardPolicy,
+	): Promise<void> => {
 		const s = strings();
-		if (!policy) {
-			stopEvent(event);
-			ui.toast(s.policyMissing, "error");
-			return;
-		}
-		if (siteBlocked(policy)) {
-			stopEvent(event);
-			showBlocked([s.siteBlocked]);
+		const result = await scan(text, policy);
+		if (!result) {
+			showBlocked([s.pasteScanFailed]);
 			record("blocked", "paste", {});
 			return;
 		}
-		if (!policy.maskPaste) return;
+		const findings = relevantFindings(text, result);
+		if (findings.length === 0) {
+			noticeNativeOnce(result);
+			await insertText(editor, text);
+			return;
+		}
+		if (policy.mode === "block") {
+			showBlocked([s.pasteBlocked, s.blockedCoaching, ...nativeLines(result)]);
+			record("blocked", "paste", countFindings(findings));
+			return;
+		}
+		const masked = vault.mask(text, findings);
+		await insertText(editor, masked.masked);
+		ui.toast(
+			[
+				s.pasteMaskedToast(totalCount(masked.counts), formatCounts(masked.counts)),
+				...nativeLines(result),
+			].join(" "),
+			"info",
+		);
+		record("masked", "paste", masked.counts);
+	};
+
+	/**
+	 * The policy a text paste is checked under, or null when the paste is not checked:
+	 * refused (no policy, blocked site) or left to the page (maskPaste off).
+	 */
+	const pastePolicy = (event: Event): GuardPolicy | null => {
+		const policy = deps.getPolicy();
+		if (!policy) {
+			stopEvent(event);
+			ui.toast(strings().policyMissing, "error");
+			return null;
+		}
+		if (siteBlocked(policy)) {
+			stopEvent(event);
+			showBlocked([strings().siteBlocked]);
+			record("blocked", "paste", {});
+			return null;
+		}
+		return policy.maskPaste ? policy : null;
+	};
+
+	const onPaste = (event: ClipboardEvent): void => {
+		if (ignored(event) || fileGuard.replaying) return;
+		if (fileGuard.onPasteFiles(event)) return;
+		const editor = editorTargetOf(event)?.editor;
+		if (!editor) return;
+		const text = event.clipboardData?.getData("text/plain") ?? "";
+		if (!text) return;
+		const policy = pastePolicy(event);
+		if (!policy) return;
 		if (monitoring(policy)) {
 			void monitorScan(text, "paste", policy);
 			return;
 		}
 		stopEvent(event);
-		void (async () => {
-			const result = await scan(text, policy);
-			if (!result) {
-				showBlocked([s.pasteScanFailed]);
-				record("blocked", "paste", {});
-				return;
-			}
-			const findings = relevantFindings(text, result);
-			if (findings.length === 0) {
-				noticeNativeOnce(result);
-				await insertText(editor, text);
-				return;
-			}
-			const counts = countFindings(findings);
-			if (policy.mode === "block") {
-				showBlocked([s.pasteBlocked, s.blockedCoaching, ...nativeLines(result)]);
-				record("blocked", "paste", counts);
-				return;
-			}
-			const masked = vault.mask(text, findings);
-			await insertText(editor, masked.masked);
-			ui.toast(
-				[
-					s.pasteMaskedToast(totalCount(masked.counts), formatCounts(masked.counts)),
-					...nativeLines(result),
-				].join(" "),
-				"info",
-			);
-			record("masked", "paste", masked.counts);
-		})().catch(() => {
+		pasteScanned(editor, text, policy).catch(() => {
 			showBlocked([strings().rewriteFailed]);
 		});
 	};

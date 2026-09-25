@@ -4,7 +4,7 @@
  */
 import type { GuardMode, GuardPolicy, GuardStats } from "../types.js";
 import { UI_STORAGE_PREFIX, type UiEnv } from "./env.js";
-import { applyI18n, browserLocalizer, createLocalizer, type Localizer, msg } from "./i18n.js";
+import { browserLocalizer, type Localizer, msg, relocalizeDocument } from "./i18n.js";
 import {
 	errorKeyFor,
 	expectOk,
@@ -15,7 +15,7 @@ import {
 	siteForUrl,
 	statsFromResponse,
 } from "./model.js";
-import { renderNotice } from "./render-common.js";
+import { renderNotice, replaceKeepingFocus } from "./render-common.js";
 import { PAUSE_MINUTES, type PopupState, renderPopup, restoreToggle } from "./render-popup.js";
 
 /** chrome.storage.session key remembering the popup's "show originals" choice. */
@@ -38,12 +38,7 @@ export function startPopup(doc: Document, env: UiEnv, elements: PopupElements): 
 	let tabId: number | undefined;
 
 	const render = () => {
-		const active = doc.activeElement instanceof HTMLElement ? doc.activeElement.id : "";
-		elements.app.replaceChildren(renderPopup(doc, state, localizer.t, localizer.locale));
-		if (active) {
-			const again = doc.getElementById(active);
-			if (again instanceof HTMLElement && !again.hasAttribute("disabled")) again.focus();
-		}
+		replaceKeepingFocus(doc, elements.app, renderPopup(doc, state, localizer.t, localizer.locale));
 	};
 
 	const notify = (key: string | null, kind: "ok" | "error" = "ok") => {
@@ -51,9 +46,7 @@ export function startPopup(doc: Document, env: UiEnv, elements: PopupElements): 
 	};
 
 	const relocalize = async (language: GuardPolicy["language"]) => {
-		localizer = await createLocalizer(env, language);
-		doc.documentElement.lang = localizer.locale;
-		applyI18n(doc, localizer.t);
+		localizer = await relocalizeDocument(doc, env, language);
 	};
 
 	const fetchPolicyAndStats = async (): Promise<{ policy: GuardPolicy; stats: GuardStats }> => {

@@ -145,6 +145,33 @@ function parseTtlMinutes(value: string | undefined): number | null {
 	return Number(value.trim()) * 60 * 1000;
 }
 
+/** The pending ask with this id if it can be approved; otherwise reports why and returns null. */
+async function approvablePending(
+	actionId: string,
+	store: OperatorApprovalStoreOptions,
+): Promise<ListedPendingAsk | null> {
+	let pending: ListedPendingAsk | null;
+	try {
+		pending = await getPendingAsk(actionId, store);
+	} catch (error) {
+		fail(error instanceof Error ? error.message : String(error));
+		return null;
+	}
+	if (!pending) {
+		fail(
+			"No pending Singularity AIDR ask has this actionId (it may have expired or already been approved). Run `aidr pending` to list open asks.",
+		);
+		return null;
+	}
+	if (!pending.verified) {
+		fail(
+			"This pending ask failed integrity verification (the record was edited or the approval key changed). It was not approved; have the agent retry to record a fresh ask.",
+		);
+		return null;
+	}
+	return pending;
+}
+
 /**
  * `aidr approve <actionId>` — the out-of-band, human-only approval of one ask.
  *
@@ -170,25 +197,8 @@ export async function approveCommand(
 		return;
 	}
 
-	let pending: ListedPendingAsk | null;
-	try {
-		pending = await getPendingAsk(normalizedId, store);
-	} catch (error) {
-		fail(error instanceof Error ? error.message : String(error));
-		return;
-	}
-	if (!pending) {
-		fail(
-			"No pending Singularity AIDR ask has this actionId (it may have expired or already been approved). Run `aidr pending` to list open asks.",
-		);
-		return;
-	}
-	if (!pending.verified) {
-		fail(
-			"This pending ask failed integrity verification (the record was edited or the approval key changed). It was not approved; have the agent retry to record a fresh ask.",
-		);
-		return;
-	}
+	const pending = await approvablePending(normalizedId, store);
+	if (!pending) return;
 
 	const allowlistNote = options.permitAllowlist
 		? "The agent will also be allowed to add these artifacts to the permanent allowlist once."

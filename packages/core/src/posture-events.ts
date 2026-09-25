@@ -22,16 +22,16 @@ export const MCP_INVENTORY_FINDING_EVENT = "mcp_inventory_finding";
 /** Existing ingest type reused for skill/plugin package findings. */
 export const PLUGIN_SCAN_FINDING_EVENT = "plugin_scan_finding";
 
-export const POSTURE_SEVERITIES = ["critical", "high", "medium", "low", "info", "unknown"] as const;
+const POSTURE_SEVERITIES = ["critical", "high", "medium", "low", "info", "unknown"] as const;
 export type PostureSeverity = (typeof POSTURE_SEVERITIES)[number];
 
 /** MCP risk indicators produced by `inspectMcpServerInventory`. */
-export const MCP_RISK_HINTS = [
+const MCP_RISK_HINTS = [
 	"remote_mcp_url",
 	"shell_wrapper_command",
 	"broad_filesystem_access_arg",
 ] as const;
-export const MCP_ATTESTATION_STATUSES = [
+const MCP_ATTESTATION_STATUSES = [
 	"approved",
 	"unapproved",
 	"quarantined",
@@ -70,7 +70,7 @@ function digest(value: string): string {
 }
 
 /** An identifier safe to store: bounded charset and not credential- or phone-shaped. */
-export function safePostureIdentifier(value: unknown): string | undefined {
+function safePostureIdentifier(value: unknown): string | undefined {
 	return typeof value === "string" &&
 		IDENTIFIER_PATTERN.test(value) &&
 		!SENSITIVE_IDENTIFIER_PATTERN.test(value) &&
@@ -149,60 +149,78 @@ function targetDigest(target: string): string {
 	}
 }
 
+/** A CVSS base score rounded to one decimal, or undefined outside 0-10. */
+function cvssScore(value: unknown): number | undefined {
+	return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 10
+		? Math.round(value * 10) / 10
+		: undefined;
+}
+
+/** `component`, `fingerprint` and `component_version`, each only when its label is safe. */
+function componentFields(product: unknown, version: unknown): Record<string, string> {
+	const component = safeLabel(product, COMPONENT_PATTERN);
+	const componentVersion = safeLabel(version, VERSION_PATTERN);
+	return {
+		...(component ? { component, fingerprint: component.toLowerCase() } : {}),
+		...(componentVersion ? { component_version: componentVersion } : {}),
+	};
+}
+
+type InfraTarget = AigInfraScanSummary["targets"][number];
+
+/** CVE/advisory events for one target, then one event per component with none. */
+function infraTargetEvents(
+	target: InfraTarget,
+	scanId: string,
+	timestamp: string,
+): Record<string, unknown>[] {
+	const target_digest = targetDigest(target.url);
+	const versions = new Map(
+		target.matched.map((match) => [match.product.toLowerCase(), match.version]),
+	);
+	const events: Record<string, unknown>[] = target.cves.map((cve) => {
+		const findingSeverity = normalizePostureSeverity(cve.severity);
+		const vulnId = safeLabel(cve.cveId, VULN_ID_PATTERN);
+		const cvss = cvssScore(cve.cvss);
+		return {
+			event_id: eventId("infra", scanId, target_digest, cve.cveId, cve.product),
+			type: INFRA_SCAN_FINDING_EVENT,
+			timestamp,
+			scan_id: scanId,
+			finding_kind: vulnId ? "cve" : "advisory",
+			severity: ingestSeverity(findingSeverity),
+			finding_severity: findingSeverity,
+			...(vulnId ? { vuln_id: vulnId } : {}),
+			...(cvss !== undefined ? { cvss } : {}),
+			...componentFields(cve.product, versions.get(cve.product.toLowerCase())),
+			applicability: cve.evaluated ? "confirmed" : "unconfirmed",
+			target_digest,
+		};
+	});
+	const productsWithFindings = new Set(target.cves.map((cve) => cve.product.toLowerCase()));
+	for (const match of target.matched) {
+		if (productsWithFindings.has(match.product.toLowerCase())) continue;
+		events.push({
+			event_id: eventId("infra", scanId, target_digest, "component", match.product),
+			type: INFRA_SCAN_FINDING_EVENT,
+			timestamp,
+			scan_id: scanId,
+			finding_kind: "exposed_component",
+			severity: "info",
+			finding_severity: "info",
+			...componentFields(match.product, match.version),
+			target_digest,
+		});
+	}
+	return events;
+}
+
 /** One event per matched CVE/advisory, plus one per identified component without any. */
 export function buildInfraScanFindingEvents(
 	summary: AigInfraScanSummary,
 	scanId: string,
 ): Record<string, unknown>[] {
-	const events: Record<string, unknown>[] = [];
-	for (const target of summary.targets) {
-		const target_digest = targetDigest(target.url);
-		const versions = new Map(
-			target.matched.map((match) => [match.product.toLowerCase(), match.version]),
-		);
-		for (const cve of target.cves) {
-			const findingSeverity = normalizePostureSeverity(cve.severity);
-			const vulnId = safeLabel(cve.cveId, VULN_ID_PATTERN);
-			const component = safeLabel(cve.product, COMPONENT_PATTERN);
-			const version = safeLabel(versions.get(cve.product.toLowerCase()), VERSION_PATTERN);
-			events.push({
-				event_id: eventId("infra", scanId, target_digest, cve.cveId, cve.product),
-				type: INFRA_SCAN_FINDING_EVENT,
-				timestamp: summary.scannedAt,
-				scan_id: scanId,
-				finding_kind: vulnId ? "cve" : "advisory",
-				severity: ingestSeverity(findingSeverity),
-				finding_severity: findingSeverity,
-				...(vulnId ? { vuln_id: vulnId } : {}),
-				...(typeof cve.cvss === "number" && cve.cvss >= 0 && cve.cvss <= 10
-					? { cvss: Math.round(cve.cvss * 10) / 10 }
-					: {}),
-				...(component ? { component, fingerprint: component.toLowerCase() } : {}),
-				...(version ? { component_version: version } : {}),
-				applicability: cve.evaluated ? "confirmed" : "unconfirmed",
-				target_digest,
-			});
-		}
-		const productsWithFindings = new Set(target.cves.map((cve) => cve.product.toLowerCase()));
-		for (const match of target.matched) {
-			if (productsWithFindings.has(match.product.toLowerCase())) continue;
-			const component = safeLabel(match.product, COMPONENT_PATTERN);
-			const version = safeLabel(match.version, VERSION_PATTERN);
-			events.push({
-				event_id: eventId("infra", scanId, target_digest, "component", match.product),
-				type: INFRA_SCAN_FINDING_EVENT,
-				timestamp: summary.scannedAt,
-				scan_id: scanId,
-				finding_kind: "exposed_component",
-				severity: "info",
-				finding_severity: "info",
-				...(component ? { component, fingerprint: component.toLowerCase() } : {}),
-				...(version ? { component_version: version } : {}),
-				target_digest,
-			});
-		}
-	}
-	return events;
+	return summary.targets.flatMap((target) => infraTargetEvents(target, scanId, summary.scannedAt));
 }
 
 const HINT_SEVERITY: Record<(typeof MCP_RISK_HINTS)[number], PostureSeverity> = {
@@ -294,6 +312,43 @@ export function buildSkillScanFindingEvents(
 	return events;
 }
 
+/** Known risk hints and AIG MCP categories, deduplicated and bounded; undefined if not a list. */
+function riskCategories(value: unknown): string[] | undefined {
+	if (!Array.isArray(value)) return undefined;
+	const known = value.filter(
+		(item): item is string =>
+			typeof item === "string" &&
+			((MCP_RISK_HINTS as readonly string[]).includes(item) || AIG_MCP_CATEGORY_PATTERN.test(item)),
+	);
+	return [...new Set(known)].slice(0, MAX_RISK_CATEGORIES);
+}
+
+const postureDigest = (value: unknown): string | undefined =>
+	typeof value === "string" && HASH_PATTERN.test(value) ? value : undefined;
+
+/** Each posture field the ingest contract understands and its validator (undefined drops it). */
+const POSTURE_FIELDS: ReadonlyArray<readonly [string, (value: unknown) => unknown]> = [
+	["scan_id", safePostureIdentifier],
+	["finding_kind", (value) => oneOf(value, FINDING_KINDS)],
+	["finding_severity", (value) => oneOf(value, POSTURE_SEVERITIES)],
+	["vuln_id", (value) => safeLabel(value, VULN_ID_PATTERN)],
+	["cvss", cvssScore],
+	["component", (value) => safeLabel(value, COMPONENT_PATTERN)],
+	["fingerprint", (value) => safeLabel(value, COMPONENT_PATTERN)],
+	["component_version", (value) => safeLabel(value, VERSION_PATTERN)],
+	["applicability", (value) => oneOf(value, APPLICABILITY)],
+	["mcp_server_name", safePostureIdentifier],
+	["mcp_transport", (value) => oneOf(value, TRANSPORTS)],
+	["risk_categories", riskCategories],
+	["attestation_status", (value) => oneOf(value, MCP_ATTESTATION_STATUSES)],
+	["plugin_version", (value) => safeLabel(value, VERSION_PATTERN)],
+	["skill_risk_type", (value) => safeLabel(value, SKILL_RISK_TYPE_PATTERN)],
+	["target_digest", postureDigest],
+	["server_digest", postureDigest],
+	["configuration_digest", postureDigest],
+	["source_file_digest", postureDigest],
+];
+
 /**
  * Copy only the posture fields the ingest contract understands, re-validating
  * each one. Used by the telemetry boundary (`redactRemoteEvent`) so that a
@@ -301,60 +356,9 @@ export function buildSkillScanFindingEvents(
  */
 export function projectPostureFields(source: Record<string, unknown>): Record<string, unknown> {
 	const out: Record<string, unknown> = {};
-	const scanId = safePostureIdentifier(source.scan_id);
-	if (scanId) out.scan_id = scanId;
-	const kind = oneOf(source.finding_kind, FINDING_KINDS);
-	if (kind) out.finding_kind = kind;
-	const findingSeverity = oneOf(source.finding_severity, POSTURE_SEVERITIES);
-	if (findingSeverity) out.finding_severity = findingSeverity;
-	const vulnId = safeLabel(source.vuln_id, VULN_ID_PATTERN);
-	if (vulnId) out.vuln_id = vulnId;
-	if (
-		typeof source.cvss === "number" &&
-		Number.isFinite(source.cvss) &&
-		source.cvss >= 0 &&
-		source.cvss <= 10
-	) {
-		out.cvss = Math.round(source.cvss * 10) / 10;
-	}
-	const component = safeLabel(source.component, COMPONENT_PATTERN);
-	if (component) out.component = component;
-	const fingerprint = safeLabel(source.fingerprint, COMPONENT_PATTERN);
-	if (fingerprint) out.fingerprint = fingerprint;
-	const version = safeLabel(source.component_version, VERSION_PATTERN);
-	if (version) out.component_version = version;
-	const applicability = oneOf(source.applicability, APPLICABILITY);
-	if (applicability) out.applicability = applicability;
-	const name = safePostureIdentifier(source.mcp_server_name);
-	if (name) out.mcp_server_name = name;
-	const transport = oneOf(source.mcp_transport, TRANSPORTS);
-	if (transport) out.mcp_transport = transport;
-	if (Array.isArray(source.risk_categories)) {
-		out.risk_categories = [
-			...new Set(
-				source.risk_categories.filter(
-					(value): value is string =>
-						typeof value === "string" &&
-						((MCP_RISK_HINTS as readonly string[]).includes(value) ||
-							AIG_MCP_CATEGORY_PATTERN.test(value)),
-				),
-			),
-		].slice(0, MAX_RISK_CATEGORIES);
-	}
-	const attestation = oneOf(source.attestation_status, MCP_ATTESTATION_STATUSES);
-	if (attestation) out.attestation_status = attestation;
-	const pluginVersion = safeLabel(source.plugin_version, VERSION_PATTERN);
-	if (pluginVersion) out.plugin_version = pluginVersion;
-	const skillRiskType = safeLabel(source.skill_risk_type, SKILL_RISK_TYPE_PATTERN);
-	if (skillRiskType) out.skill_risk_type = skillRiskType;
-	for (const key of [
-		"target_digest",
-		"server_digest",
-		"configuration_digest",
-		"source_file_digest",
-	] as const) {
-		const value = source[key];
-		if (typeof value === "string" && HASH_PATTERN.test(value)) out[key] = value;
+	for (const [key, validate] of POSTURE_FIELDS) {
+		const value = validate(source[key]);
+		if (value !== undefined && value !== "") out[key] = value;
 	}
 	return out;
 }

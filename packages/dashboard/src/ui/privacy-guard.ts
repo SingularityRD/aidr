@@ -10,7 +10,7 @@
 export const PRIVACY_WINDOWS = [7, 30] as const;
 export type PrivacyWindow = (typeof PRIVACY_WINDOWS)[number];
 
-export const PRIVACY_ENTITY_LABELS: Readonly<Record<string, string>> = {
+const PRIVACY_ENTITY_LABELS: Readonly<Record<string, string>> = {
 	PERSON: "Person name",
 	EMAIL: "Email address",
 	PHONE: "Phone number",
@@ -49,7 +49,7 @@ export const BROWSER_GUARD_DEFAULT_ENTITIES: readonly string[] = PRIVACY_ENTITY_
 	(type) => type !== "USERNAME" && type !== "LOCATION",
 );
 
-export const PRIVACY_SITE_LABELS: Readonly<Record<string, string>> = {
+const PRIVACY_SITE_LABELS: Readonly<Record<string, string>> = {
 	chatgpt: "ChatGPT",
 	gemini: "Gemini",
 	claude: "Claude",
@@ -61,9 +61,9 @@ export const PRIVACY_SITE_LABELS: Readonly<Record<string, string>> = {
 	other: "Other AI site",
 };
 
-export const PRIVACY_ACTIONS = ["masked", "warned", "blocked", "allowed"] as const;
+const PRIVACY_ACTIONS = ["masked", "warned", "blocked", "allowed"] as const;
 export type PrivacyAction = (typeof PRIVACY_ACTIONS)[number];
-export const PRIVACY_CHANNELS = ["prompt", "paste", "file"] as const;
+const PRIVACY_CHANNELS = ["prompt", "paste", "file"] as const;
 
 export const GUARD_MODES = [
 	{
@@ -81,7 +81,7 @@ export const GUARD_MODES = [
 ] as const;
 export type GuardModeValue = (typeof GUARD_MODES)[number]["value"];
 
-export interface PrivacyTotals {
+interface PrivacyTotals {
 	scans: number;
 	promptsProtected: number;
 	itemsMasked: number;

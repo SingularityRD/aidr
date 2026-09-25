@@ -14,7 +14,7 @@ export interface StatsCounters {
 	readonly byType: Readonly<Partial<Record<EntityType, number>>>;
 }
 
-export interface TabCounters extends StatsCounters {
+interface TabCounters extends StatsCounters {
 	readonly site: SiteId;
 }
 
@@ -26,7 +26,7 @@ interface StatsSnapshot {
 const COUNTER_MAX = Number.MAX_SAFE_INTEGER;
 const MAX_TABS = 512;
 
-export const EMPTY_COUNTERS: StatsCounters = Object.freeze({
+const EMPTY_COUNTERS: StatsCounters = Object.freeze({
 	protectedPrompts: 0,
 	maskedItems: 0,
 	blockedSends: 0,

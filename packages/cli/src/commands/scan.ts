@@ -92,25 +92,39 @@ export async function runScan(
 	if (summary && options.saveReport)
 		await atomicWriteJson(resolvePath(options.saveReport), summary);
 
-	if (options.json) {
-		console.log(
-			JSON.stringify(skillResults ? { infra: summary, skills: skillResults } : summary, null, 2),
-		);
-	} else {
-		if (summary) printHumanSummary(summary, targets.length);
-		if (skillResults) printSkillSummary(skillResults);
-	}
+	printResults(Boolean(options.json), summary, skillResults, targets.length);
 	setExitCode(summary, skillResults);
 
 	if (options.upload) {
-		const scanId = newPostureScanId();
-		const events = [
-			...(summary ? buildInfraScanFindingEvents(summary, scanId) : []),
-			...(skillResults ? buildSkillScanFindingEvents(skillResults.results, scanId) : []),
-		];
-		const upload = await (dependencies.upload ?? uploadPostureEvents)(events);
+		const upload = await (dependencies.upload ?? uploadPostureEvents)(
+			findingEvents(summary, skillResults),
+		);
 		reportUpload(upload, Boolean(options.json));
 	}
+}
+
+function printResults(
+	json: boolean,
+	summary: AigInfraScanSummary | null,
+	skillResults: SkillScanReport | null,
+	targetCount: number,
+): void {
+	if (json) {
+		console.log(
+			JSON.stringify(skillResults ? { infra: summary, skills: skillResults } : summary, null, 2),
+		);
+		return;
+	}
+	if (summary) printHumanSummary(summary, targetCount);
+	if (skillResults) printSkillSummary(skillResults);
+}
+
+function findingEvents(summary: AigInfraScanSummary | null, skillResults: SkillScanReport | null) {
+	const scanId = newPostureScanId();
+	return [
+		...(summary ? buildInfraScanFindingEvents(summary, scanId) : []),
+		...(skillResults ? buildSkillScanFindingEvents(skillResults.results, scanId) : []),
+	];
 }
 
 interface SkillScanReport {
@@ -204,33 +218,37 @@ function describe(result: AigInfraTargetResult): string {
 		.join(", ");
 }
 
+function printCves(result: AigInfraTargetResult): void {
+	const shown = result.cves.slice(0, 10);
+	for (const cve of shown) {
+		const conf = cve.evaluated ? "" : " (applicability unconfirmed)";
+		const score = cve.cvss !== null ? ` cvss ${cve.cvss}` : "";
+		console.log(`      ${cve.cveId}  ${cve.severity}${score}${conf}`);
+	}
+	if (result.cves.length > shown.length) {
+		console.log(`      ... and ${result.cves.length - shown.length} more`);
+	}
+}
+
+function printTarget(result: AigInfraTargetResult): void {
+	const findings = result.cves.length;
+	const marker = findings > 0 ? "!" : result.matched.length > 0 ? "✓" : "○";
+	console.log(`${marker} ${result.url}`);
+	console.log(`    ${describe(result)}`);
+	if (findings > 0) printCves(result);
+	// An unreachable/unevaluated result must never be presented as clean.
+	if (result.error && result.error !== "target_not_allowed" && result.reachable) {
+		console.log(`    note: ${result.error} - result is not a clean verdict`);
+	}
+}
+
 function printHumanSummary(summary: AigInfraScanSummary, targetCount: number): void {
 	console.log("\n🛡️  AIDR infrastructure scan\n");
 	console.log(
 		`Targets: ${targetCount}   Dataset: ${fingerprintCount()} fingerprints / ${cveCount()} CVEs\n`,
 	);
 
-	for (const result of summary.targets) {
-		const findings = result.cves.length;
-		const marker = findings > 0 ? "!" : result.matched.length > 0 ? "✓" : "○";
-		console.log(`${marker} ${result.url}`);
-		console.log(`    ${describe(result)}`);
-		if (findings > 0) {
-			const shown = result.cves.slice(0, 10);
-			for (const cve of shown) {
-				const conf = cve.evaluated ? "" : " (applicability unconfirmed)";
-				const score = cve.cvss !== null ? ` cvss ${cve.cvss}` : "";
-				console.log(`      ${cve.cveId}  ${cve.severity}${score}${conf}`);
-			}
-			if (result.cves.length > shown.length) {
-				console.log(`      ... and ${result.cves.length - shown.length} more`);
-			}
-		}
-		// An unreachable/unevaluated result must never be presented as clean.
-		if (result.error && result.error !== "target_not_allowed" && result.reachable) {
-			console.log(`    note: ${result.error} - result is not a clean verdict`);
-		}
-	}
+	for (const result of summary.targets) printTarget(result);
 
 	console.log("");
 	console.log(
@@ -261,6 +279,24 @@ function printHumanSummary(summary: AigInfraScanSummary, targetCount: number): v
 	}
 }
 
+function printSkillResult(result: PluginScanResult): void {
+	const marker = result.findings.length > 0 ? "!" : "✓";
+	console.log(`${marker} ${result.plugin.installPath}`);
+	for (const finding of result.findings.slice(0, 25)) {
+		const riskType = skillRiskTypeForThreatId(finding.threatId);
+		const taxonomy = riskType ? ` [${riskType} ${SKILL_RISK_TYPES[riskType]}]` : "";
+		console.log(`      ${finding.severity.padEnd(8)} ${finding.threatId}${taxonomy}`);
+		console.log(`               ${finding.sourceFile || "(package root)"} ${finding.artifact}`);
+	}
+	if (result.findings.length > 25) {
+		console.log(`      ... and ${result.findings.length - 25} more`);
+	}
+	for (const unavailable of result.unavailableChecks ?? []) {
+		if (unavailable.check !== "plugin_files") continue;
+		console.log(`    note: ${unavailable.reason} (${unavailable.uncheckedCount} unchecked)`);
+	}
+}
+
 function printSkillSummary(report: SkillScanReport): void {
 	console.log("\n🛡️  AIDR skill / plugin package scan\n");
 	console.log(
@@ -272,23 +308,7 @@ function printSkillSummary(report: SkillScanReport): void {
 	for (const path of report.missing) {
 		console.log(`○ ${path}\n    not scanned (path does not exist)`);
 	}
-	for (const result of report.results) {
-		const marker = result.findings.length > 0 ? "!" : "✓";
-		console.log(`${marker} ${result.plugin.installPath}`);
-		for (const finding of result.findings.slice(0, 25)) {
-			const riskType = skillRiskTypeForThreatId(finding.threatId);
-			const taxonomy = riskType ? ` [${riskType} ${SKILL_RISK_TYPES[riskType]}]` : "";
-			console.log(`      ${finding.severity.padEnd(8)} ${finding.threatId}${taxonomy}`);
-			console.log(`               ${finding.sourceFile || "(package root)"} ${finding.artifact}`);
-		}
-		if (result.findings.length > 25) {
-			console.log(`      ... and ${result.findings.length - 25} more`);
-		}
-		for (const unavailable of result.unavailableChecks ?? []) {
-			if (unavailable.check !== "plugin_files") continue;
-			console.log(`    note: ${unavailable.reason} (${unavailable.uncheckedCount} unchecked)`);
-		}
-	}
+	for (const result of report.results) printSkillResult(result);
 	const total = report.results.reduce((count, result) => count + result.findings.length, 0);
 	console.log(`\nSkill findings: ${total}`);
 	if (total === 0 && report.results.length > 0) {

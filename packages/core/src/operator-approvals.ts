@@ -849,9 +849,14 @@ async function readDocument(path: string): Promise<StoreDocument> {
 	} catch {
 		return emptyDocument();
 	}
-	if (typeof raw !== "object" || raw === null) return emptyDocument();
-	const record = raw as Record<string, unknown>;
+	return parseDocument(raw);
+}
+
+/** The pending asks and approvals that match the disk schema; anything else is dropped. */
+function parseDocument(raw: unknown): StoreDocument {
 	const doc = emptyDocument();
+	if (typeof raw !== "object" || raw === null) return doc;
+	const record = raw as Record<string, unknown>;
 	for (const entry of Array.isArray(record.pending) ? record.pending : []) {
 		const parsed = PendingDiskSchema.safeParse(entry);
 		if (parsed.success) doc.pending.push(parsed.data);
@@ -891,6 +896,32 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
+ * One attempt to create the lock file: "acquired"; "retry" at once when the lock
+ * was stale (removed) or vanished meanwhile; "held" while another writer has it.
+ */
+async function tryAcquireLock(lockPath: string): Promise<"acquired" | "retry" | "held"> {
+	try {
+		const handle = await open(lockPath, "wx", 0o600);
+		try {
+			await handle.writeFile(`${process.pid}\n`, "utf8");
+		} finally {
+			await handle.close();
+		}
+		return "acquired";
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+	}
+	try {
+		const info = await stat(lockPath);
+		if (Date.now() - info.mtimeMs <= LOCK_STALE_MS) return "held";
+		await unlink(lockPath).catch(() => undefined);
+		return "retry";
+	} catch {
+		return "retry";
+	}
+}
+
+/**
  * Cross-process mutual exclusion around a read-modify-write of the store.
  *
  * An `O_EXCL` lock file works across the CLI and every connector process. A lock
@@ -901,33 +932,16 @@ async function withStoreLock<T>(path: string, fn: () => Promise<T>): Promise<T> 
 	const lockPath = `${path}.lock`;
 	const deadline = Date.now() + LOCK_TIMEOUT_MS;
 	for (;;) {
-		try {
-			const handle = await open(lockPath, "wx", 0o600);
-			try {
-				await handle.writeFile(`${process.pid}\n`, "utf8");
-			} finally {
-				await handle.close();
-			}
-			break;
-		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-			try {
-				const info = await stat(lockPath);
-				if (Date.now() - info.mtimeMs > LOCK_STALE_MS) {
-					await unlink(lockPath).catch(() => undefined);
-					continue;
-				}
-			} catch {
-				continue;
-			}
-			if (Date.now() > deadline) {
-				throw new OperatorApprovalError(
-					"lock_timeout",
-					"Timed out waiting for the approval store lock.",
-				);
-			}
-			await sleep(5 + Math.floor(Math.random() * 20));
+		const attempt = await tryAcquireLock(lockPath);
+		if (attempt === "acquired") break;
+		if (attempt === "retry") continue;
+		if (Date.now() > deadline) {
+			throw new OperatorApprovalError(
+				"lock_timeout",
+				"Timed out waiting for the approval store lock.",
+			);
 		}
+		await sleep(5 + Math.floor(Math.random() * 20));
 	}
 	try {
 		return await fn();

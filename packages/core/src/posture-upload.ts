@@ -93,17 +93,8 @@ export async function uploadPostureEvents(
 	if (!config.control_plane.enabled) return failure("control_plane_disabled", total);
 	if (!config.control_plane.endpoint.trim()) return failure("control_plane_not_configured", total);
 
-	const managedState = await loadManagedState(options.managedStatePath ?? managedStatePath(), {
-		authToken: config.auth.api_key?.trim() || undefined,
-		publicKeysPem: config.licensing.public_keys_pem,
-	});
-	// Only an issued API key identifies an enrolled installation; an enrollment
-	// token is exchanged by the connectors, never used to upload findings.
-	const apiKey =
-		config.auth.api_key?.trim() ||
-		(typeof managedState.api_key === "string" ? managedState.api_key.trim() : "");
-	if (!apiKey) return failure("not_enrolled", total);
-	if (isSyncDisabled(managedState)) return failure("sync_disabled", total);
+	const enrolled = await enrolledApiKey(config, options);
+	if ("error" in enrolled) return failure(enrolled.error, total);
 
 	const iid = await getInstallationId(options.aidrDir ?? resolvePath("~/.singularity-aidr"));
 	if (!iid) return failure("missing_installation_id", total);
@@ -116,14 +107,44 @@ export async function uploadPostureEvents(
 				...config.control_plane,
 				timeout_seconds: Math.max(config.control_plane.timeout_seconds, MIN_UPLOAD_TIMEOUT_SECONDS),
 			},
-			apiKey,
+			enrolled.apiKey,
 			logger,
 			options.clientOptions,
 		);
 	} catch {
 		return failure("insecure_endpoint", total);
 	}
+	return sendInBatches(client, events, iid, options);
+}
 
+/**
+ * The API key this installation uploads with. Only an issued API key identifies
+ * an enrolled installation; an enrollment token is exchanged by the connectors,
+ * never used to upload findings.
+ */
+async function enrolledApiKey(
+	config: Config,
+	options: PostureUploadOptions,
+): Promise<{ apiKey: string } | { error: PostureUploadError }> {
+	const managedState = await loadManagedState(options.managedStatePath ?? managedStatePath(), {
+		authToken: config.auth.api_key?.trim() || undefined,
+		publicKeysPem: config.licensing.public_keys_pem,
+	});
+	const apiKey =
+		config.auth.api_key?.trim() ||
+		(typeof managedState.api_key === "string" ? managedState.api_key.trim() : "");
+	if (!apiKey) return { error: "not_enrolled" };
+	if (isSyncDisabled(managedState)) return { error: "sync_disabled" };
+	return { apiKey };
+}
+
+async function sendInBatches(
+	client: ControlPlaneClient,
+	events: Record<string, unknown>[],
+	iid: string,
+	options: PostureUploadOptions,
+): Promise<PostureUploadResult> {
+	const total = events.length;
 	let delivered = 0;
 	for (let start = 0; start < total; start += POSTURE_UPLOAD_BATCH_SIZE) {
 		const batch = events.slice(start, start + POSTURE_UPLOAD_BATCH_SIZE);

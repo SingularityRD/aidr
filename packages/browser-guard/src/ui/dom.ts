@@ -34,7 +34,7 @@ export function h<K extends keyof HTMLElementTagNameMap>(
 	return element;
 }
 
-export function append(parent: Node, children: readonly Child[]): void {
+function append(parent: Node, children: readonly Child[]): void {
 	const doc = parent.ownerDocument ?? (parent as Document);
 	for (const child of children) {
 		if (child === null || child === undefined || child === false) continue;

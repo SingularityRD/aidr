@@ -13,70 +13,90 @@ const MIGRATION = new URL(
 
 type SqlValue = string | number | boolean | null | string[];
 
+/** A cursor over one SQL VALUES tuple. */
+class TupleReader {
+	index = 0;
+
+	constructor(readonly source: string) {}
+
+	get done(): boolean {
+		return this.index >= this.source.length;
+	}
+
+	skipSpace(): void {
+		while (!this.done && /\s/.test(this.source[this.index] ?? "")) this.index += 1;
+	}
+
+	/** Skips `char` if it is next. */
+	skip(char: string): boolean {
+		if (this.source[this.index] !== char) return false;
+		this.index += 1;
+		return true;
+	}
+
+	/** A single-quoted string; `''` is an escaped quote. */
+	readString(): string {
+		if (!this.skip("'")) throw new Error(`expected string at ${this.index}: ${this.source}`);
+		let out = "";
+		while (!this.done) {
+			const char = this.source[this.index];
+			this.index += 1;
+			if (char !== "'") out += char;
+			else if (this.skip("'")) out += "'";
+			else return out;
+		}
+		throw new Error("unterminated string");
+	}
+
+	/** `array['a', 'b']`, positioned just after `array[`. */
+	readArrayItems(): string[] {
+		const items: string[] = [];
+		for (;;) {
+			this.skipSpace();
+			if (this.skip("]")) return items;
+			items.push(this.readString());
+			this.skipSpace();
+			this.skip(",");
+		}
+	}
+
+	/** null, true, false or an integer. */
+	readScalar(): SqlValue {
+		const match = /^(null|true|false|-?\d+)/.exec(this.source.slice(this.index));
+		if (!match?.[1]) {
+			throw new Error(`unexpected token at ${this.index}: ${this.source.slice(this.index)}`);
+		}
+		this.index += match[1].length;
+		const literals: Record<string, SqlValue> = { null: null, true: true, false: false };
+		return match[1] in literals ? (literals[match[1]] as SqlValue) : Number(match[1]);
+	}
+
+	readValue(): SqlValue {
+		if (this.source[this.index] === "'") return this.readString();
+		if (this.source.startsWith("array[", this.index)) {
+			this.index += "array[".length;
+			return this.readArrayItems();
+		}
+		return this.readScalar();
+	}
+
+	skipCast(): void {
+		const cast = /^::[a-z]+/.exec(this.source.slice(this.index));
+		if (cast) this.index += cast[0].length;
+	}
+}
+
 /** Tokenize one SQL VALUES tuple: quoted strings, numbers, null, booleans, array[...] and ::casts. */
 function parseTuple(source: string): SqlValue[] {
 	const values: SqlValue[] = [];
-	let index = 0;
-	const skipSpace = () => {
-		while (index < source.length && /\s/.test(source[index] ?? "")) index += 1;
-	};
-	const readString = (): string => {
-		if (source[index] !== "'") throw new Error(`expected string at ${index}: ${source}`);
-		index += 1;
-		let out = "";
-		while (index < source.length) {
-			const char = source[index];
-			if (char === "'") {
-				if (source[index + 1] === "'") {
-					out += "'";
-					index += 2;
-					continue;
-				}
-				index += 1;
-				return out;
-			}
-			out += char;
-			index += 1;
-		}
-		throw new Error("unterminated string");
-	};
-	while (index < source.length) {
-		skipSpace();
-		let value: SqlValue;
-		if (source[index] === "'") {
-			value = readString();
-		} else if (source.startsWith("array[", index)) {
-			index += "array[".length;
-			const items: string[] = [];
-			for (;;) {
-				skipSpace();
-				if (source[index] === "]") {
-					index += 1;
-					break;
-				}
-				items.push(readString());
-				skipSpace();
-				if (source[index] === ",") index += 1;
-			}
-			value = items;
-		} else {
-			const match = /^(null|true|false|-?\d+)/.exec(source.slice(index));
-			if (!match?.[1]) throw new Error(`unexpected token at ${index}: ${source.slice(index)}`);
-			index += match[1].length;
-			value =
-				match[1] === "null"
-					? null
-					: match[1] === "true"
-						? true
-						: match[1] === "false"
-							? false
-							: Number(match[1]);
-		}
-		const cast = /^::[a-z]+/.exec(source.slice(index));
-		if (cast) index += cast[0].length;
+	const reader = new TupleReader(source);
+	while (!reader.done) {
+		reader.skipSpace();
+		const value = reader.readValue();
+		reader.skipCast();
 		values.push(value);
-		skipSpace();
-		if (source[index] === ",") index += 1;
+		reader.skipSpace();
+		reader.skip(",");
 	}
 	return values;
 }

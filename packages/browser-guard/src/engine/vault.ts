@@ -24,7 +24,7 @@ import { ENTITY_TYPES, PLACEHOLDER_PREFIX } from "../types";
 export const DEFAULT_VAULT_TTL_MS = 4 * 60 * 60 * 1000;
 export const MAX_VAULT_ENTRIES = 10_000;
 /** Longest single value accepted from a snapshot (a PEM private key is ~3 KiB). */
-export const MAX_SNAPSHOT_VALUE_CHARS = 65_536;
+const MAX_SNAPSHOT_VALUE_CHARS = 65_536;
 /** Snapshots stamped further in the future than this are rejected. */
 const MAX_CLOCK_SKEW_MS = 60_000;
 /** Bound on remembered foreign placeholder-like tokens (collision avoidance). */

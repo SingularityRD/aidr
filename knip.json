@@ -80,6 +80,16 @@
 			],
 			"project": ["src/**/*.ts", "scripts/**/*.{js,mjs}", "*.{js,mjs,ts}"]
 		},
+		"packages/browser-guard": {
+			"entry": [
+				"src/background/index.ts",
+				"src/content/index.ts",
+				"src/ui/popup.ts",
+				"src/ui/options.ts",
+				"e2e/fixtures/kit.js"
+			],
+			"project": ["src/**/*.ts", "scripts/**/*.mjs", "e2e/**/*.{js,mjs}"]
+		},
 		"packages/cli": {
 			"entry": ["src/index.ts"],
 			"project": ["src/**/*.ts", "*.{js,mjs,ts}"]

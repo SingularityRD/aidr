@@ -4,10 +4,11 @@ import path from "node:path";
 
 import * as vscode from "vscode";
 
-import type {
-	ManagedHookHealth,
-	ManagedHookInstallOptions,
-	ManagedHookScope,
+import {
+	inRegistrationOrder,
+	type ManagedHookHealth,
+	type ManagedHookInstallOptions,
+	type ManagedHookScope,
 } from "./managedHooks.js";
 
 const MANAGED_MARKER = "--managed-by aidr-cursor";
@@ -197,11 +198,10 @@ function collectInstalledEvents(hooks: HookMap): string[] {
 	const managedEvents = Object.keys(hooks).filter((eventName) =>
 		(hooks[eventName] ?? []).some((entry) => isManagedEntry(entry)),
 	);
-	const documentedOrder = MANAGED_HOOK_EVENTS.map(({ event }) => event);
-	return [
-		...documentedOrder.filter((event) => managedEvents.includes(event)),
-		...managedEvents.filter((event) => !documentedOrder.includes(event)),
-	];
+	return inRegistrationOrder(
+		managedEvents,
+		MANAGED_HOOK_EVENTS.map(({ event }) => event),
+	);
 }
 
 function removeManagedEntries(existing: CursorHooksFile): CursorHooksFile {

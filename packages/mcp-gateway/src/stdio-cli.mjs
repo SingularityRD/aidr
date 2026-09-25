@@ -1,7 +1,6 @@
 #!/usr/bin/env node
-import { readGatewayConfig, reportFailure, stage } from "./diagnostics.mjs";
-import { createMcpGateway } from "./gateway.mjs";
-import { requireGatewayIntegrity } from "./integrity.mjs";
+import { reportFailure, stage } from "./diagnostics.mjs";
+import { openVerifiedGateway } from "./operator-startup.mjs";
 import { runStdioBridge } from "./stdio.mjs";
 
 const [configPath, tenantId, clientId, serverId, tokenEnv] = process.argv.slice(2);
@@ -12,9 +11,7 @@ if (!configPath || !tenantId || !clientId || !serverId || !tokenEnv || process.a
 	process.exitCode = 2;
 } else {
 	try {
-		await stage("integrity_verification_failed", () => requireGatewayIntegrity());
-		const config = await readGatewayConfig(configPath);
-		const gateway = await stage("config_invalid", () => createMcpGateway(config));
+		const gateway = await openVerifiedGateway(configPath);
 		await stage("bridge_stopped", () =>
 			runStdioBridge({
 				gateway,

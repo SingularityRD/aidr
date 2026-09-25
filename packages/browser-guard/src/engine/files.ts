@@ -70,6 +70,7 @@ import type {
 	PlaceholderVault,
 	SignalCode,
 } from "../types.js";
+import { type Counts, countFindings, mergeCounts } from "./counts.js";
 
 export interface GuardFile {
 	readonly name: string;
@@ -83,7 +84,6 @@ export interface SanitizeDeps {
 	readonly policy: GuardPolicy;
 }
 
-type Counts = Partial<Record<EntityType, number>>;
 type TextKind = "text" | "csv" | "tsv" | "json" | "jsonl" | "env";
 
 const TEXT_EXTENSIONS: Readonly<Record<string, TextKind>> = {
@@ -392,7 +392,7 @@ function decodeUpload(file: GuardFile): DecodedText | null | typeof UNDECODABLE_
 }
 
 /** Known text extension, dotenv name, or a MIME type that declares text. */
-export function isDeclaredText(file: Pick<GuardFile, "name" | "type">): boolean {
+function isDeclaredText(file: Pick<GuardFile, "name" | "type">): boolean {
 	const base = baseName(file.name);
 	const ext = extensionOf(base);
 	if (BINARY_EXTENSIONS.has(ext)) return false;
@@ -557,18 +557,6 @@ function distributeFinding(
 	}
 }
 
-function addCounts(target: Counts, source: Readonly<Counts>): void {
-	for (const [type, n] of Object.entries(source) as Array<[EntityType, number | undefined]>) {
-		if (n) target[type] = (target[type] ?? 0) + n;
-	}
-}
-
-function countFindings(findings: readonly Finding[]): Counts {
-	const counts: Counts = {};
-	for (const f of findings) counts[f.type] = (counts[f.type] ?? 0) + 1;
-	return counts;
-}
-
 function wholeValueFinding(value: string, type: EntityType): Finding | null {
 	if (!value.trim() || PLACEHOLDER_ONLY.test(value.trim())) return null;
 	return { type, start: 0, end: value.length, score: 1, source: "rule" };
@@ -600,7 +588,7 @@ function maskValue(ctx: Ctx, value: string, findings: readonly Finding[], counts
 	const merged = mergeFindings(findings, value.length);
 	if (!merged.length) return value;
 	const result = ctx.vault.mask(value, merged);
-	addCounts(counts, result.counts);
+	mergeCounts(counts, result.counts);
 	return result.masked;
 }
 
@@ -682,7 +670,7 @@ async function handleEnv(ctx: Ctx, text: string): Promise<Outcome> {
 
 // --- CSV / TSV -------------------------------------------------------------------------------
 
-export interface CsvCell {
+interface CsvCell {
 	value: string;
 	quoted: boolean;
 }
@@ -814,7 +802,7 @@ async function handleDelimited(ctx: Ctx, text: string, delimiter: "," | "\t"): P
 		);
 		if (!cellFindings.length) return;
 		findings += cellFindings.length;
-		addCounts(findingCounts, countFindings(cellFindings));
+		mergeCounts(findingCounts, countFindings(cellFindings));
 		const masked = maskValue(ctx, cell.value, cellFindings, counts);
 		if (masked !== cell.value) {
 			cell.value = masked;
@@ -992,7 +980,7 @@ async function handleJson(ctx: Ctx, text: string, kind: "json" | "jsonl"): Promi
 		);
 		if (!leafFindings.length) return;
 		findings += leafFindings.length;
-		addCounts(findingCounts, countFindings(leafFindings));
+		mergeCounts(findingCounts, countFindings(leafFindings));
 		const masked = maskValue(ctx, leaf.value, leafFindings, counts);
 		if (masked !== leaf.value)
 			replacements.push({ start: leaf.start, end: leaf.end, raw: JSON.stringify(masked) });

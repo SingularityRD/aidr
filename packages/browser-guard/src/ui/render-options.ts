@@ -65,7 +65,7 @@ export function emptyDraft(policy: GuardPolicy | null): OptionsDraft {
 	};
 }
 
-export const OPTIONS_SECTIONS = [
+const OPTIONS_SECTIONS = [
 	{ id: "protection", titleKey: msg("section_protection") },
 	{ id: "terms", titleKey: msg("section_terms") },
 	{ id: "sites", titleKey: msg("section_sites") },
@@ -591,7 +591,7 @@ function renderAbout(
 	]);
 }
 
-export function managedKeysPresent(policy: GuardPolicy): readonly ManagedKey[] {
+function managedKeysPresent(policy: GuardPolicy): readonly ManagedKey[] {
 	const keys: readonly ManagedKey[] = [
 		"mode",
 		"enabledEntities",

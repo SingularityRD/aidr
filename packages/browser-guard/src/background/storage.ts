@@ -13,7 +13,7 @@
  */
 import type { UserSettings } from "../types.js";
 
-export interface ChromeEvent<F extends (...args: never[]) => unknown> {
+interface ChromeEvent<F extends (...args: never[]) => unknown> {
 	addListener(listener: F): void;
 	removeListener(listener: F): void;
 }
@@ -45,9 +45,7 @@ export interface TabInfo {
 	active?: boolean;
 }
 
-export type DnrRuleAction =
-	| { type: "block" }
-	| { type: "redirect"; redirect: { extensionPath: string } };
+type DnrRuleAction = { type: "block" } | { type: "redirect"; redirect: { extensionPath: string } };
 
 export interface DnrRule {
 	id: number;

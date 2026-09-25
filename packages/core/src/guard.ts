@@ -62,7 +62,7 @@ import {
 	responseAuditorFromConfig,
 } from "./response-audit.js";
 import { normalizeToolEvaluationRequest } from "./tool-normalization.js";
-import type { Artifact, Config, Logger, Verdict } from "./types.js";
+import type { Allowlist, Artifact, Config, Logger, Verdict } from "./types.js";
 import { nullLogger } from "./types.js";
 import { hashCommand, normalizeFilePath, normalizeUrl } from "./url-utils.js";
 
@@ -735,6 +735,32 @@ export async function approveAction(store: ApprovalStore, actionId: string): Pro
 	].join("\n");
 }
 
+/** The operator approval store `addToAllowlist` checks, or null when disabled (`false`). */
+function operatorApprovalStore(
+	config: Config,
+	logger: Logger,
+	operatorApprovals: OperatorApprovalStoreOptions | false,
+): OperatorApprovalStoreOptions | null {
+	if (operatorApprovals === false) return null;
+	return {
+		logger,
+		// Read defensively: a config read that yields nothing must not crash here.
+		keyStorage: (config as Config | undefined)?.operator_approvals?.key_storage,
+		...operatorApprovals,
+	};
+}
+
+function addAllowlistEntry(
+	allowlist: Allowlist,
+	type: "url" | "command" | "file_path",
+	value: string,
+	reason: string,
+): void {
+	if (type === "url") addUrl(allowlist, value, reason, "ask");
+	else if (type === "command") addCommand(allowlist, value, reason, "ask");
+	else addFilePath(allowlist, value, reason, "ask");
+}
+
 /**
  * Turn an out-of-band approval into a permanent allowlist entry.
  *
@@ -754,15 +780,7 @@ export async function addToAllowlist(
 	operatorApprovals: OperatorApprovalStoreOptions | false = {},
 ): Promise<string> {
 	const config = await loadConfig(configPath, logger);
-	const operatorStore =
-		operatorApprovals === false
-			? null
-			: {
-					logger,
-					// Read defensively: a config read that yields nothing must not crash here.
-					keyStorage: (config as Config | undefined)?.operator_approvals?.key_storage,
-					...operatorApprovals,
-				};
+	const operatorStore = operatorApprovalStore(config, logger, operatorApprovals);
 	const inProcess = store.hasApprovedArtifact(type, value);
 	const operatorGrant =
 		!inProcess && operatorStore
@@ -783,13 +801,7 @@ export async function addToAllowlist(
 			? `Approved by operator (aidr approve ${operatorGrant.slice(0, 12)})`
 			: "Approved by user (out-of-band approval)");
 
-	if (type === "url") {
-		addUrl(allowlist, value, entryReason, "ask");
-	} else if (type === "command") {
-		addCommand(allowlist, value, entryReason, "ask");
-	} else {
-		addFilePath(allowlist, value, entryReason, "ask");
-	}
+	addAllowlistEntry(allowlist, type, value, entryReason);
 
 	if (operatorGrant && operatorStore) {
 		// Spend the grant before writing, so a concurrent second call cannot also

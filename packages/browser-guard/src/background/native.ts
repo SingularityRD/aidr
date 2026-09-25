@@ -34,11 +34,11 @@ export const NATIVE_RETRY_AFTER_MS = 60_000;
 /** Consecutive scan failures that mark the host unavailable. */
 export const NATIVE_MAX_FAILURES = 3;
 /** Host `begin` limit for kind "text" (NativeSession). */
-export const NATIVE_MAX_TEXT_BYTES = 1_048_576;
+const NATIVE_MAX_TEXT_BYTES = 1_048_576;
 /** protectDocument refuses to emit more than twice its input limit. */
 const MAX_OUTPUT_BYTES = 2 * NATIVE_MAX_TEXT_BYTES;
 /** The host does not export per-span scores; its redactions are policy decisions. */
-export const NATIVE_FINDING_SCORE = 0.9;
+const NATIVE_FINDING_SCORE = 0.9;
 /** Each scan starts its own host process; cap concurrent processes. */
 const MAX_IN_FLIGHT = 2;
 

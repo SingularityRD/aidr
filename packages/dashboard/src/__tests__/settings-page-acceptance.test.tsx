@@ -41,84 +41,110 @@ function httpError(status: number, error: string) {
 	};
 }
 
-function install(fixture: Fixture = {}) {
-	const role = fixture.role ?? "owner";
-	const status = fixture.status ?? "active";
-	let name = "Acme Security";
-	let retentionDays = fixture.retentionDays ?? 90;
-	invoke.mockImplementation(
-		async (
-			fn: string,
-			options: {
-				method?: string;
-				headers?: Record<string, string>;
-				body?: Record<string, unknown>;
-			},
-		) => {
-			if (fn === "identity-security") {
-				return {
-					data: {
-						ok: true,
-						tenant_id: TENANT,
-						current_assurance: fixture.assurance ?? "aal2",
-						require_mfa: fixture.requireMfa ?? false,
-					},
-					error: null,
-				};
-			}
-			if (fn !== "tenant-settings") throw new Error(`unexpected function ${fn}`);
-			const workspace = () => ({
-				id: TENANT,
-				name,
-				kind: "team",
-				status,
-				retention_days: retentionDays,
-				created_at: "2026-01-01T00:00:00.000Z",
-			});
-			if (options.method === "GET") {
-				if (fixture.loadError) return httpError(503, "authorization_unavailable");
-				expect(options.headers).toEqual({ "X-AIDR-Tenant-ID": TENANT });
-				const active = status === "active";
-				return {
-					data: {
-						ok: true,
-						workspace: workspace(),
-						role,
-						permissions: {
-							can_edit: active && (role === "owner" || role === "admin"),
-							can_close: active && role === "owner",
-							requires_aal2: true,
-						},
-						retention_bounds: { min: 1, max: 3650 },
-					},
-					error: null,
-				};
-			}
-			if (options.body?.action === "update") {
-				if (fixture.updateError) return httpError(403, fixture.updateError);
-				if (typeof options.body.name === "string") name = options.body.name;
-				if (typeof options.body.retention_days === "number")
-					retentionDays = options.body.retention_days;
-				return { data: { ok: true, workspace: workspace(), changed: [] }, error: null };
-			}
-			if (options.body?.action === "close") {
-				if (fixture.closeError) return httpError(400, fixture.closeError);
-				return {
-					data: {
-						ok: true,
-						closure: {
-							run_id: "55555555-5555-4555-8555-555555555555",
-							status: "requested",
-							backup_scope: "excluded_external_retention",
-							backup_exception: "Backup copies are excluded from this live-data receipt.",
-						},
-					},
-					error: null,
-				};
-			}
-			throw new Error("unexpected tenant-settings request");
+interface InvokeOptions {
+	method?: string;
+	headers?: Record<string, string>;
+	body?: Record<string, unknown>;
+}
+
+/** The tenant as the fake tenant-settings function currently stores it. */
+interface FakeTenant {
+	readonly role: string;
+	readonly status: string;
+	name: string;
+	retentionDays: number;
+}
+
+function workspaceRow(tenant: FakeTenant) {
+	return {
+		id: TENANT,
+		name: tenant.name,
+		kind: "team",
+		status: tenant.status,
+		retention_days: tenant.retentionDays,
+		created_at: "2026-01-01T00:00:00.000Z",
+	};
+}
+
+function identitySecurityResponse(fixture: Fixture) {
+	return {
+		data: {
+			ok: true,
+			tenant_id: TENANT,
+			current_assurance: fixture.assurance ?? "aal2",
+			require_mfa: fixture.requireMfa ?? false,
 		},
-	);
+		error: null,
+	};
+}
+
+function getSettingsResponse(fixture: Fixture, tenant: FakeTenant, options: InvokeOptions) {
+	if (fixture.loadError) return httpError(503, "authorization_unavailable");
+	expect(options.headers).toEqual({ "X-AIDR-Tenant-ID": TENANT });
+	const active = tenant.status === "active";
+	return {
+		data: {
+			ok: true,
+			workspace: workspaceRow(tenant),
+			role: tenant.role,
+			permissions: {
+				can_edit: active && (tenant.role === "owner" || tenant.role === "admin"),
+				can_close: active && tenant.role === "owner",
+				requires_aal2: true,
+			},
+			retention_bounds: { min: 1, max: 3650 },
+		},
+		error: null,
+	};
+}
+
+function updateSettingsResponse(
+	fixture: Fixture,
+	tenant: FakeTenant,
+	body: Record<string, unknown>,
+) {
+	if (fixture.updateError) return httpError(403, fixture.updateError);
+	if (typeof body.name === "string") tenant.name = body.name;
+	if (typeof body.retention_days === "number") tenant.retentionDays = body.retention_days;
+	return { data: { ok: true, workspace: workspaceRow(tenant), changed: [] }, error: null };
+}
+
+function closeWorkspaceResponse(fixture: Fixture) {
+	if (fixture.closeError) return httpError(400, fixture.closeError);
+	return {
+		data: {
+			ok: true,
+			closure: {
+				run_id: "55555555-5555-4555-8555-555555555555",
+				status: "requested",
+				backup_scope: "excluded_external_retention",
+				backup_exception: "Backup copies are excluded from this live-data receipt.",
+			},
+		},
+		error: null,
+	};
+}
+
+function tenantSettingsResponse(fixture: Fixture, tenant: FakeTenant, options: InvokeOptions) {
+	if (options.method === "GET") return getSettingsResponse(fixture, tenant, options);
+	if (options.body?.action === "update")
+		return updateSettingsResponse(fixture, tenant, options.body);
+	if (options.body?.action === "close") return closeWorkspaceResponse(fixture);
+	throw new Error("unexpected tenant-settings request");
+}
+
+function install(fixture: Fixture = {}) {
+	const tenant: FakeTenant = {
+		role: fixture.role ?? "owner",
+		status: fixture.status ?? "active",
+		name: "Acme Security",
+		retentionDays: fixture.retentionDays ?? 90,
+	};
+	invoke.mockImplementation(async (fn: string, options: InvokeOptions) => {
+		if (fn === "identity-security") return identitySecurityResponse(fixture);
+		if (fn !== "tenant-settings") throw new Error(`unexpected function ${fn}`);
+		return tenantSettingsResponse(fixture, tenant, options);
+	});
 }
 
 function patches() {
