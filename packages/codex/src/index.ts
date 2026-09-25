@@ -7,6 +7,7 @@ export type {
 } from "./coverage.js";
 export {
 	CODEX_COVERAGE_SCHEMA_VERSION,
+	CODEX_SHIPPED_EVENTS,
 	getCodexConnectorCoverageEvidence,
 	inspectionCoverageForEvent,
 } from "./coverage.js";
@@ -40,6 +41,12 @@ export { handleCodexHook } from "./hook.js";
 export { createCodexInstrumentation } from "./instrumentation.js";
 export { normalizeCodexHookInput } from "./normalize.js";
 export { CentralPolicyClient } from "./policy.js";
+export type { CodexPromptProtectionResult, CodexPromptWireOutput } from "./prompt-protection.js";
+export {
+	CODEX_USER_PROMPT_SUBMIT,
+	enforceCodexUserPromptSubmit,
+	toCodexPromptWire,
+} from "./prompt-protection.js";
 export { redactRecord, redactString, redactValue } from "./redaction.js";
 export type {
 	SignedIngressClientOptions,

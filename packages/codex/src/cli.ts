@@ -11,7 +11,9 @@
  *   command = 'aidr-codex-hook'
  *   timeout = 10
  *
- * or equivalently via `~/.codex/hooks.json`.
+ * or equivalently via `~/.codex/hooks.json`. The same command registered for
+ * `[[hooks.UserPromptSubmit]]` (no matcher) inspects the user's prompt before
+ * it starts a turn (prompt protection, see prompt-protection.ts).
  *
  * Codex fails OPEN on malformed or missing hook output. This entry point uses
  * empty stdout for an evaluated allow (the 0.141.0 no-op shape) and emits a
@@ -32,6 +34,10 @@ import {
 } from "@singularityrd/aidr-core";
 import { getCodexConnectorCoverageEvidence } from "./coverage.js";
 import { type CodexWireResult, DENY_HEADLINE, enforceCodexPreToolUse } from "./enforcement.js";
+import { CODEX_USER_PROMPT_SUBMIT, enforceCodexUserPromptSubmit } from "./prompt-protection.js";
+
+/** Measured from process start: Codex's hook timeout runs from launch. */
+const startedAt = Date.now();
 
 // Codex surfaces stderr on a non-zero exit as the block reason, so diagnostics
 // must never share the channel that carries a decision.
@@ -68,6 +74,37 @@ function blockUnconditionally(reason: string): void {
 	process.exitCode = 2;
 }
 
+/**
+ * UserPromptSubmit prompt protection (see prompt-protection.ts). The shared
+ * runner never throws; if anything around it does, the prompt is blocked with
+ * the Claude-style `decision: "block"` shape plus exit 2 and a stderr reason.
+ */
+async function handleUserPromptSubmit(input: Record<string, unknown>): Promise<void> {
+	try {
+		const { outcome, wire } = await enforceCodexUserPromptSubmit(input, { startedAt, logger });
+		if (wire) process.stdout.write(`${JSON.stringify(wire)}\n`);
+		recordHostObservation(hostObservation, {
+			connector: "codex",
+			event: CODEX_USER_PROMPT_SUBMIT,
+			decision: outcome.decision === "block" ? "deny" : "allow",
+		});
+	} catch {
+		const reason =
+			"🛡️ Singularity AIDR failed while inspecting this prompt, so it was not sent. Try again; if this persists, run `aidr status`.";
+		try {
+			process.stdout.write(`${JSON.stringify({ decision: "block", reason })}\n`);
+		} catch {
+			// Fall through to the stderr/exit-2 channel.
+		}
+		try {
+			process.stderr.write(`${reason}\n`);
+		} catch {
+			// Nothing further we can do.
+		}
+		process.exitCode = 2;
+	}
+}
+
 async function main(): Promise<void> {
 	await verifyArtifactIntegrityAndLog({ artifactDir: __dirname, artifactId: "codex/dist", logger });
 
@@ -102,9 +139,14 @@ async function main(): Promise<void> {
 		return;
 	}
 
-	// The Codex schema only ever sends PreToolUse here, but a mismatched event
-	// means our configuration is wrong; blocking is the safe reading.
+	// Registered events: PreToolUse (tool calls) and UserPromptSubmit (prompt
+	// protection). Any other event means our configuration is wrong; blocking is
+	// the safe reading.
 	const event = typeof input.hook_event_name === "string" ? input.hook_event_name : "PreToolUse";
+	if (event === CODEX_USER_PROMPT_SUBMIT) {
+		await handleUserPromptSubmit(input);
+		return;
+	}
 	if (event !== "PreToolUse") {
 		blockUnconditionally(
 			`${DENY_HEADLINE}\nSingularity AIDR received an unsupported hook event, so the tool call was blocked.`,

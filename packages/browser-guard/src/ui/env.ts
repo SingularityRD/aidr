@@ -54,6 +54,11 @@ export interface UiEnv {
 	 * await anything before it.
 	 */
 	requestPermission?(permission: OptionalPermission): Promise<boolean>;
+	/**
+	 * Requests host access for `https://<host>/*` origins (manifest
+	 * `optional_host_permissions`). Same user-gesture rule as requestPermission.
+	 */
+	requestOrigins?(origins: readonly string[]): Promise<boolean>;
 }
 
 /** Optional permissions the pages may request (manifest `optional_permissions`). */
@@ -96,8 +101,14 @@ interface ChromeLike {
 		};
 	};
 	permissions?: {
-		contains(permissions: { permissions: string[] }, callback: Callback<boolean>): void;
-		request(permissions: { permissions: string[] }, callback: Callback<boolean>): void;
+		contains(
+			permissions: { permissions?: string[]; origins?: string[] },
+			callback: Callback<boolean>,
+		): void;
+		request(
+			permissions: { permissions?: string[]; origins?: string[] },
+			callback: Callback<boolean>,
+		): void;
 	};
 }
 
@@ -220,6 +231,20 @@ export function chromeEnv(chrome: ChromeLike | undefined = getChrome()): UiEnv {
 			return new Promise((resolve) => {
 				try {
 					permissions.request({ permissions: [permission] }, (granted) => {
+						resolve(!lastErrorOf(chrome) && granted === true);
+					});
+				} catch {
+					resolve(false);
+				}
+			});
+		},
+		requestOrigins(origins) {
+			const permissions = chrome.permissions;
+			const valid = origins.filter((o) => /^https:\/\/[a-z0-9.-]+\/\*$/.test(o));
+			if (!permissions || valid.length === 0) return Promise.resolve(false);
+			return new Promise((resolve) => {
+				try {
+					permissions.request({ origins: valid }, (granted) => {
 						resolve(!lastErrorOf(chrome) && granted === true);
 					});
 				} catch {

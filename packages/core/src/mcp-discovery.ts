@@ -10,6 +10,7 @@ import {
 	verifySignedMcpToolManifest,
 } from "./mcp-attestation.js";
 import { inspectMcpServerInventory, type McpInventoryItem } from "./mcp-inventory.js";
+import { redactMcpLaunch } from "./mcp-launch-redaction.js";
 import type { Threat } from "./types.js";
 
 function inventoryId(sourcePath: string, name: string): string {
@@ -54,6 +55,12 @@ export interface McpDiscoveryAttestationOptions {
 export interface McpDiscoveryOptions {
 	/** Tool-manifest attestation inputs; absent means nothing can be verified. */
 	attestation?: McpDiscoveryAttestationOptions;
+	/**
+	 * Attach the server's command line with credentials redacted
+	 * (`redactMcpLaunch`). Off by default: the discovery report and posture
+	 * uploads never carry arguments; local exports such as the AI-BOM opt in.
+	 */
+	includeRedactedLaunch?: boolean;
 	/**
 	 * `mcp_tool_metadata` rules (see `loadContextPoisoningRules`). When supplied,
 	 * the tool names, descriptions and schemas of every supplied manifest are
@@ -115,6 +122,8 @@ export interface McpDiscoveryServer {
 	attestation: McpDiscoveryAttestation;
 	/** Present only when a manifest and tool-metadata rules were both supplied. */
 	tool_metadata?: McpDiscoveryToolMetadata;
+	/** Redacted command line; present only with `includeRedactedLaunch`. */
+	launch?: { command: string | null; args: string[] };
 }
 
 function keyringIsConfigured(
@@ -343,6 +352,9 @@ export async function discoverMcpServers(paths?: string[], options: McpDiscovery
 				configuration_sha256: item.configurationSha256,
 				attestation: await attestDiscoveredServer(item, id, attestationOptions),
 				...toolMetadataEvidence(item, id, attestationOptions, options.toolMetadataRules),
+				...(options.includeRedactedLaunch
+					? { launch: redactMcpLaunch(item.command, item.args) }
+					: {}),
 			};
 		}),
 	);

@@ -81,6 +81,7 @@ import { syncRemoteRuntimePolicy } from "./remote-policy.js";
 import type { ReputationFeedLoadOptions } from "./reputation-feed.js";
 import { loadThreatsFromDirs } from "./threat-loader.js";
 import { normalizeToolEvaluationRequest, readFileEditPayload } from "./tool-normalization.js";
+import { applyToxicFlow } from "./toxic-flow.js";
 import { loadTrustedDomains } from "./trusted-domains.js";
 import type {
 	AgentRuntime,
@@ -829,6 +830,27 @@ async function recordEarlyVerdict(
 	}
 }
 
+/**
+ * Session toxic-flow detection (docs/toxic-flow.md), applied after every other
+ * layer so it sees their decision: a deny is left alone and not recorded, an
+ * allow or ask is recorded into the session and may be escalated when this
+ * call completes a dangerous chain. It never throws; state failures come back
+ * as a marked, non-clean verdict.
+ */
+function applySessionFlow(
+	request: ToolEvaluationRequest,
+	context: ToolEvaluationContext,
+	config: Config,
+	verdict: Verdict,
+	allowlisted = false,
+): Promise<Verdict> {
+	return applyToxicFlow(request, verdict, config, {
+		agentRuntime: context.agentRuntime,
+		logger: context.logger ?? nullLogger,
+		allowlisted,
+	});
+}
+
 export function allowVerdict(source = "none"): Verdict {
 	return {
 		decision: "allow",
@@ -1412,13 +1434,18 @@ async function runEvaluationPipeline(
 		// no artifacts for the tool name, so it may not take this fast path.
 		if (!isMcpTool && manifestEdits.length === 0) {
 			const verdict = hostEffectiveVerdict(
-				await applyRuntimeDetectors(
+				await applySessionFlow(
 					request,
 					context,
 					config,
-					allowVerdict("no_artifacts"),
-					managedState,
-					rewriteSource,
+					await applyRuntimeDetectors(
+						request,
+						context,
+						config,
+						allowVerdict("no_artifacts"),
+						managedState,
+						rewriteSource,
+					),
 				),
 				config,
 				context,
@@ -1426,6 +1453,7 @@ async function runEvaluationPipeline(
 			if (
 				verdict.decision !== "allow" ||
 				verdict.category === "behavioral_unavailable" ||
+				verdict.category.startsWith("toxic_flow") ||
 				verdict.transformedInput
 			) {
 				await recordEarlyVerdict(request, context, config, verdict, logger, startTime);
@@ -1454,13 +1482,19 @@ async function runEvaluationPipeline(
 
 	if (allowlisted) {
 		const finalVerdict = hostEffectiveVerdict(
-			await applyRuntimeDetectors(
+			await applySessionFlow(
 				request,
 				context,
 				config,
-				allowlisted,
-				managedState,
-				rewriteSource,
+				await applyRuntimeDetectors(
+					request,
+					context,
+					config,
+					allowlisted,
+					managedState,
+					rewriteSource,
+				),
+				true,
 			),
 			config,
 			context,
@@ -1479,13 +1513,18 @@ async function runEvaluationPipeline(
 
 	if (policyVerdict) {
 		const finalVerdict = hostEffectiveVerdict(
-			await applyRuntimeDetectors(
+			await applySessionFlow(
 				request,
 				context,
 				config,
-				policyVerdict,
-				managedState,
-				rewriteSource,
+				await applyRuntimeDetectors(
+					request,
+					context,
+					config,
+					policyVerdict,
+					managedState,
+					rewriteSource,
+				),
 			),
 			config,
 			context,
@@ -1796,7 +1835,12 @@ async function runEvaluationPipeline(
 		);
 	}
 	verdict = hostEffectiveVerdict(
-		await applyRuntimeDetectors(request, context, config, verdict, managedState, rewriteSource),
+		await applySessionFlow(
+			request,
+			context,
+			config,
+			await applyRuntimeDetectors(request, context, config, verdict, managedState, rewriteSource),
+		),
 		config,
 		context,
 	);

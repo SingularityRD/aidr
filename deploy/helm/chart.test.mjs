@@ -16,7 +16,7 @@ const root = resolve(here, "../..");
 const chartDir = join(here, "aidr");
 const { parse, parseAllDocuments } = createRequire(join(root, "packages/core/package.json"))("yaml");
 const readYaml = (path) => parse(readFileSync(path, "utf8"));
-const CI_VALUES = ["default", "prod", "aig"];
+const CI_VALUES = ["default", "prod", "posture-scanner"];
 const KUBE_VERSION = "1.30.0";
 
 function findHelm() {
@@ -80,7 +80,8 @@ test("default values are secure and generate no credentials", () => {
 	assert.equal(values.containerSecurityContext.readOnlyRootFilesystem, true);
 	assert.equal(values.serviceAccount.automountServiceAccountToken, false);
 	assert.equal(values.auth.disableSignup, true);
-	assert.equal(values.aig.enabled, false);
+	assert.equal(values.postureScanner.enabled, false);
+	assert.equal(Object.hasOwn(values, "aig"), false, "the pre-rename values key must not return");
 	assert.ok(["small", "medium", "large"].includes(values.resourcesPreset));
 	const images = [];
 	const walk = (node, path) => {
@@ -119,7 +120,7 @@ test("every workload template applies resources and hardened security contexts",
 	}
 });
 
-test("helm lint passes for default, prod and aig values", { skip: helmSkip }, () => {
+test("helm lint passes for default, prod and posture-scanner values", { skip: helmSkip }, () => {
 	for (const name of CI_VALUES) {
 		const result = runHelm(["lint", chartDir, "--strict", "--kube-version", KUBE_VERSION, "-f", join(chartDir, "ci", `${name}-values.yaml`)]);
 		assert.equal(result.status, 0, `${name}: ${result.stdout}${result.stderr}`);
@@ -199,15 +200,52 @@ test("rendered production values use the external database and backups", { skip:
 	assert.equal(ingress.metadata.annotations["cert-manager.io/cluster-issuer"], "letsencrypt-prod");
 });
 
-test("rendered aig values add the scanning stack with an egress-proxied agent", { skip: helmSkip }, () => {
-	const docs = renderDocs("aig");
-	for (const component of ["aig-server", "aig-agent", "aig-bridge"]) {
+test("the notification dispatcher CronJob is opt-in, token-authenticated and never sees the service-role key", () => {
+	const values = readYaml(join(chartDir, "values.yaml"));
+	assert.equal(values.notifications.dispatcher.enabled, false, "upgrades with an older functions Secret must not start failing jobs");
+	assert.equal(values.notifications.dispatcher.schedule, "* * * * *");
+	const template = readFileSync(join(chartDir, "templates", "notification-dispatch-cronjob.yaml"), "utf8");
+	assert.match(template, /^\{\{- if \.Values\.notifications\.dispatcher\.enabled \}\}/);
+	assert.match(template, /concurrencyPolicy: Forbid/);
+	assert.match(template, /secretKeyRef:\s+name: \{\{ include "aidr\.functionsSecretName" \. \}\}\s+key: AIDR_NOTIFICATION_DISPATCH_TOKEN/);
+	assert.match(template, /http:\/\/%s:9000\/notification-dispatch/);
+	assert.doesNotMatch(template, /service-role-key|SERVICE_ROLE/);
+	assert.doesNotMatch(template, /\$\{?AIDR_NOTIFICATION_DISPATCH_TOKEN/, "the token is read from the environment, never interpolated into argv");
+	const policies = readFileSync(join(chartDir, "templates", "networkpolicy.yaml"), "utf8");
+	assert.match(policies, /component" "notification-dispatch"\) \| nindent 8 \}\}[\s\S]*?port: 9000/);
+});
+
+test("rendered prod values add the notification dispatcher with its own network allow-list", { skip: helmSkip }, () => {
+	const docs = renderDocs("prod");
+	const cron = docs.find((doc) => doc.kind === "CronJob" && doc.metadata.name.endsWith("-notification-dispatch"));
+	assert.ok(cron, "notification-dispatch CronJob");
+	const container = cron.spec.jobTemplate.spec.template.spec.containers[0];
+	const token = container.env.find((entry) => entry.name === "AIDR_NOTIFICATION_DISPATCH_TOKEN");
+	assert.deepEqual(token.valueFrom.secretKeyRef, { name: "aidr-functions", key: "AIDR_NOTIFICATION_DISPATCH_TOKEN" });
+	assert.ok(!JSON.stringify(container.command).includes(token.valueFrom.secretKeyRef.key.toLowerCase()));
+	const policy = docs.find((doc) => doc.kind === "NetworkPolicy" && doc.metadata.name.endsWith("-notification-dispatch"));
+	assert.equal(policy.spec.egress[0].ports[0].port, 9000);
+	const functions = docs.find((doc) => doc.kind === "NetworkPolicy" && doc.metadata.name.endsWith("-functions"));
+	assert.ok(JSON.stringify(functions.spec.ingress).includes("notification-dispatch"));
+	assert.ok(!renderDocs("default").some((doc) => doc.kind === "CronJob" && doc.metadata.name.endsWith("-notification-dispatch")));
+});
+
+test("rendered posture-scanner values add the scanning stack with an egress-proxied agent", { skip: helmSkip }, () => {
+	const docs = renderDocs("posture-scanner");
+	for (const component of ["posture-scanner-server", "posture-scanner-agent", "posture-scanner-bridge"]) {
 		assert.ok(docs.some((doc) => doc.kind === "Deployment" && doc.metadata.labels["app.kubernetes.io/component"] === component), component);
 		assert.ok(docs.some((doc) => doc.kind === "NetworkPolicy" && doc.metadata.name.endsWith(component)), `${component} NetworkPolicy`);
 	}
-	const agent = docs.find((doc) => doc.kind === "Deployment" && doc.metadata.name.endsWith("-aig-agent"));
+	const agent = docs.find((doc) => doc.kind === "Deployment" && doc.metadata.name.endsWith("-posture-scanner-agent"));
 	const env = Object.fromEntries(agent.spec.template.spec.containers[0].env.map((entry) => [entry.name, entry.value]));
 	assert.equal(env.HTTPS_PROXY, "http://egress-proxy.security.svc:3128");
+	// Every Kubernetes object the chart names for the scanner uses the posture-scanner name.
+	const scannerObjects = docs.filter((doc) => /posture-scanner|aig/.test(doc.metadata?.name ?? ""));
+	assert.ok(scannerObjects.length >= 11, "Deployments, Services, PVCs and NetworkPolicies are rendered");
+	for (const doc of scannerObjects) assert.doesNotMatch(doc.metadata.name, /aig/, `${doc.kind}/${doc.metadata.name}`);
+	for (const doc of docs.filter((item) => item.kind === "Deployment" && /posture-scanner/.test(item.metadata.name))) {
+		assert.match(doc.spec.template.spec.containers[0].image, /^registry\.example\.internal\/aidr\/posture-scanner-(server|agent|bridge):/);
+	}
 });
 
 test("rendering fails closed on missing secrets, weak URLs and mutable tags", { skip: helmSkip }, () => {
@@ -221,7 +259,10 @@ test("rendering fails closed on missing secrets, weak URLs and mutable tags", { 
 		[["ingress.tlsSecretName="], /TLS is mandatory/],
 		[["postgresql.enabled=false", "externalDatabase.host=db.example.com"], /networkPolicyCIDRs is required/],
 		[["storage.replicaCount=2"], /storage\.replicaCount > 1/],
-		[["aig.enabled=true"], /aig\.existingSecret is required/],
+		[["postureScanner.enabled=true"], /postureScanner\.existingSecret is required/],
+		// The pre-rename key is refused with a pointer to the new one, never silently ignored.
+		[["aig.enabled=true"], /values key `aig` was renamed to `postureScanner`/],
+		[["aig.enabled=false"], /values key `aig` was renamed to `postureScanner`/],
 	];
 	for (const [sets, message] of cases) {
 		const result = render([base], sets);

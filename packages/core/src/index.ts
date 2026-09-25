@@ -1,5 +1,37 @@
 // @singularityrd/aidr-core public API
 
+// AI-BOM (AI Bill of Materials): redacted AI inventory and its CycloneDX 1.6 rendering.
+export {
+	type BuildCycloneDxOptions,
+	buildCycloneDxBom,
+	CYCLONEDX_SPEC_VERSION,
+	type CycloneDxBom,
+	type CycloneDxComponent,
+	type CycloneDxProperty,
+	type CycloneDxService,
+	type CycloneDxVulnerability,
+} from "./aibom/cyclonedx.js";
+export {
+	AI_INVENTORY_SCHEMA,
+	type AiBomAgentInput,
+	type AiInventory,
+	type AiInventoryCoverage,
+	type AiInventoryMcpServer,
+	type AiInventoryPackage,
+	type AiInventoryVulnerability,
+	aiInventoryGaps,
+	type CollectAiInventoryOptions,
+	collectAiInventory,
+	displayPath,
+	packageUrl,
+} from "./aibom/inventory.js";
+export {
+	type AiProjectScan,
+	loadAiComponentCatalog,
+	matchCatalogEntry,
+	normalizePackageName,
+	scanProjectForAiComponents,
+} from "./aibom/project-scan.js";
 export type {
 	AigCveFinding,
 	AigFingerprintMatch,
@@ -27,7 +59,11 @@ export {
 	scanTarget,
 	scanTargets,
 } from "./aig-infra-scan.js";
-export { evaluateInfrastructurePolicy, inspectInfrastructurePolicy } from "./aig-policy.js";
+export {
+	evaluateInfrastructurePolicy,
+	inspectInfrastructurePolicy,
+	parseInfrastructureScanReport,
+} from "./aig-policy.js";
 export type {
 	AigAgentScanOptions,
 	AigFinding,
@@ -80,6 +116,7 @@ export {
 	getAuditLogLossState,
 	getRecentEntries,
 	logAllowedResponseActions,
+	logDashboardApprovalEvent,
 	logPluginScan,
 	logResponseActions,
 	logVerdict,
@@ -237,6 +274,33 @@ export {
 	resetCveIndexCache,
 	setTestIndexPath,
 } from "./cve-checker.js";
+// Managed-mode dashboard approvals (out-of-band admin approval, signed single-use tokens)
+export {
+	type ApprovalRequestBody,
+	type ApprovalRequestStatus,
+	DASHBOARD_APPROVAL_REQUEST_TIMEOUT_MS,
+	DASHBOARD_APPROVAL_REQUEST_TTL_MS,
+	DASHBOARD_APPROVAL_SOURCE,
+	DASHBOARD_APPROVAL_TOKEN_MAX_TTL_MS,
+	DASHBOARD_APPROVAL_TOTAL_BUDGET_MS,
+	type DashboardApprovalBinding,
+	type DashboardApprovalContext,
+	type DashboardApprovalInput,
+	type DashboardApprovalOptions,
+	type DashboardApprovalOutcome,
+	type DashboardApprovalStatus,
+	type DashboardApprovalTokenPayload,
+	type DashboardContextResult,
+	type DashboardTokenRejection,
+	type DashboardTokenVerification,
+	type DashboardUnavailableReason,
+	dashboardApprovalStatePath,
+	dashboardArtifactDigest,
+	dashboardToolName,
+	processDashboardApproval,
+	resolveDashboardApprovalContext,
+	verifyDashboardApprovalToken,
+} from "./dashboard-approvals.js";
 // Scoped, short-lived user -> agent -> tool -> resource credentials.
 export {
 	canonicalDelegatedCredentialJson,
@@ -522,10 +586,12 @@ export {
 // allowed the call and snapshotted the target, the connector runs the call, and
 // this wrapper rolls the target back if the call fails.
 export {
+	type AskApprovalResolution,
 	addToAllowlist,
 	approveAction,
 	executeWithRollback,
 	formatAskMessage,
+	formatDashboardApprovalNotice,
 	formatDenyMessage,
 	type GuardOptions,
 	type GuardResponseSettings,
@@ -533,6 +599,7 @@ export {
 	guardInputSummary,
 	guardToolCall,
 	removeFromAllowlist,
+	resolveAskWithDashboardApproval,
 	resolveGuardResponseSettings,
 	rollbackSnapshotFromGuardResult,
 	summarizeArtifacts,
@@ -648,12 +715,13 @@ export {
 } from "./local-dlp-policy.js";
 // Logger
 export { createChildLogger, createLogger, getLogger, setLogger } from "./logger.js";
-export type { ManagedState } from "./managed.js";
+export type { ApprovalPublicKeyEntry, ManagedState } from "./managed.js";
 // Verified managed identity and entitlement state for connector provisioning.
 export {
 	isEntitlementActive,
 	loadManagedState,
 	managedStatePath,
+	parseApprovalPublicKeys,
 } from "./managed.js";
 export type {
 	AigMcpCategory,
@@ -719,6 +787,8 @@ export type {
 	McpInventoryReport,
 	McpInventorySourceStatus,
 } from "./mcp-inventory.js";
+export { defaultMcpConfigPaths } from "./mcp-inventory.js";
+export { redactLaunchToken, redactMcpLaunch } from "./mcp-launch-redaction.js";
 export type { McpFetchOptions } from "./mcp-transport.js";
 // Pinned-DNS MCP upstream transport used by the inline MCP gateway.
 export { fetchMcpEndpoint, McpTransportError } from "./mcp-transport.js";
@@ -741,6 +811,7 @@ export {
 	consumeOperatorApproval,
 	createDefaultOperatorKeyProvider,
 	describeOperatorApprovalKey,
+	type ExternalSpendResult,
 	findOperatorAllowlistGrant,
 	getPendingAsk,
 	type ListedPendingAsk,
@@ -773,6 +844,7 @@ export {
 	recordOperatorApproval,
 	recordPendingAsk,
 	resolveOperatorKeyStorage,
+	spendExternalApprovalToken,
 } from "./operator-approvals.js";
 export { scanModelOutput } from "./output-scanner.js";
 // High-precision credential / payment-card detection shared by output scanning and the CLI
@@ -854,6 +926,17 @@ export {
 	type PostureUploadResult,
 	uploadPostureEvents,
 } from "./posture-upload.js";
+// Connector-side prompt inspection runner (config, tenant DLP, deadline, audit, failure policy)
+export {
+	inspectUserPrompt,
+	MIN_PROMPT_INSPECTION_DEADLINE_MS,
+	PROMPT_INSPECTION_DEADLINE_ENV,
+	type PromptInspectionOutcome,
+	type PromptInspectionReason,
+	type PromptInspectionRequest,
+	resolvePromptInspectionDeadlineMs,
+	uninspectedPromptOutcome,
+} from "./prompt-inspection.js";
 // Prompt protection (UserPromptSubmit-style inspection of the user's prompt)
 export {
 	DEFAULT_PROMPT_PROTECTION,
@@ -1110,6 +1193,14 @@ export {
 } from "./terminal-text.js";
 // Threat loader
 export { loadThreats, loadThreatsFromDirs } from "./threat-loader.js";
+// Session toxic-flow ("lethal trifecta") and behavioral chain detection
+export {
+	recordToolOutputFlow,
+	TOXIC_FLOW_THREAT_IDS,
+	type ToolOutputFlowInput,
+	type ToolOutputFlowResult,
+	type ToxicFlowChain,
+} from "./toxic-flow.js";
 export type {
 	DetectionPhaseAttributes,
 	SecurityDecisionAttributes,
@@ -1180,6 +1271,7 @@ export type {
 	SignalSources,
 	Threat,
 	ThreatData,
+	ToxicFlowConfig,
 	TrustedDomain,
 	UrlCheckConfig,
 	UrlCheckFinding,

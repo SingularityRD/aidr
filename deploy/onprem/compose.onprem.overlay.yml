@@ -4,7 +4,8 @@
 # compose.yml. It is not a standalone Compose file: `x-aidr-onprem.defaults`
 # is applied to every generated service, and each `services.<name>` entry is
 # deep-merged into that service (objects merge, lists and scalars replace).
-# Entries for aig-* services apply only when preparation runs with --with-aig.
+# Entries for the posture scanner's aig-* services apply only when preparation
+# runs with --with-posture-scanner.
 # Per-service CPU, memory and PID limits come from resource-profile.json
 # (--profile small|medium|large), not from this file.
 x-aidr-onprem:
@@ -18,11 +19,12 @@ x-aidr-onprem:
         max-size: 20m
         max-file: "5"
         compress: "true"
-  aig:
-    # AIG services start with the main stack because preparation writes
-    # COMPOSE_PROFILES=aig to .env. Remove it there to keep AIG stopped.
+  posture_scanner:
+    # Posture scanner services start with the main stack because preparation
+    # writes COMPOSE_PROFILES=posture-scanner to .env. Remove it there to keep
+    # the scanner stopped.
     profiles:
-      - aig
+      - posture-scanner
 
 services:
   db:

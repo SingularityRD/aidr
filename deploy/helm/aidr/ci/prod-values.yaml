@@ -73,3 +73,6 @@ networkPolicy:
   smtpEgressCIDRs: ["10.30.0.10/32"]
   storageEgressCIDRs: ["10.40.0.0/16"]
   dashboardEgressCIDRs: ["10.50.0.0/24"]
+notifications:
+  dispatcher:
+    enabled: true

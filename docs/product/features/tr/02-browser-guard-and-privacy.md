@@ -41,6 +41,8 @@ belirtilmiştir.
 11. [Açılır pencere ve ayarlar sayfası](#11-açılır-pencere-ve-ayarlar-sayfası)
 12. [Duraklatma ve site bazında kapatma](#12-duraklatma-ve-site-bazında-kapatma)
 13. [Yapay zekâ sitelerini engelleme](#13-yapay-zekâ-sitelerini-engelleme)
+    - [13a. Gölge Yapay Zekâ (Shadow AI) keşfi ve denetimi](#13a-gölge-yapay-zekâ-shadow-ai-keşfi-ve-denetimi)
+    - [13b. Kurum içi özel yapay zekâ siteleri](#13b-kurum-içi-özel-yapay-zekâ-siteleri)
 14. [Kurumsal yönetilen politika ve dağıtım](#14-kurumsal-yönetilen-politika-ve-dağıtım)
 15. [Yalnızca sayım içeren telemetri ve Browser Privacy paneli](#15-yalnızca-sayım-içeren-telemetri-ve-browser-privacy-paneli)
 16. [NER ve OCR için isteğe bağlı native host](#16-ner-ve-ocr-için-isteğe-bağlı-native-host)
@@ -495,7 +497,8 @@ söyler. Gerçek tarayıcıdaki `paste-*` senaryoları bu davranışı kapsar.
 
 **Ne yapar** — Kullanıcının desteklenen bir yapay zekâ sitesinde seçtiği, sürükleyip
 bıraktığı ya da yapıştırdığı dosyaları site almadan önce okur. Hassas veri içeren metin
-dosyalarının yerine temizlenmiş bir kopya (aynı ad, aynı tür) konur. Denetlenemeyen
+dosyalarının ve Word/Excel/PowerPoint belgelerinin yerine temizlenmiş bir kopya (aynı ad,
+aynı tür) konur. PDF'ler taranır ve hassas veri içeriyorsa engellenir. Denetlenemeyen
 dosyalar politikaya göre uyarıyla geçer ya da engellenir.
 
 **Neden önemli** — Tek bir CSV dışa aktarımı binlerce müşteri kaydı içerebilir. `.env`
@@ -507,12 +510,15 @@ yazmaktan çok daha büyük bir sızıntı kanalıdır.
 1. `fileHandling: "allow"` → dosya okunmadan geçer. `fileHandling: "block"` → her modda
    engellenir (`FILE_BLOCKED_BY_POLICY`).
 2. `maxFileBytes` sınırından büyükse (varsayılan 5 MiB, en fazla 50 MiB) → engellenir
-   (`FILE_TOO_LARGE`).
+   (`FILE_TOO_LARGE`). **Office belgeleri ve PDF'ler** ardından belge işleyicilerine gider
+   (aşağıdaki "Office belgeleri ve PDF'ler" bölümüne bakın). Uzantılarından tanınırlar;
+   uzantısı bilinmeyen ya da hiç olmayan bir dosya MIME türünden veya içeriğinden tanınır,
+   yani belgenin adını değiştirmek denetimi atlatmaz.
 3. **Metin mi, ikili mi?** Dosya; katı UTF-8 (BOM olabilir) ya da bayt sırası işaretli
    UTF-16 olarak çözülüyorsa, NUL baytı içermiyorsa ve bilinen bir metin/kaynak kodu
    uzantısına ya da ikili MIME türü taşımayan bilinmeyen bir uzantıya sahipse metin sayılır.
-   Bilinen ikili uzantılar (PDF, Office, görseller, arşivler, medya, veritabanları,
-   çalıştırılabilir dosyalar…) her zaman ikilidir.
+   Bilinen ikili uzantılar (görseller, arşivler, eski `.doc`/`.xls`/`.ppt`, OpenDocument,
+   medya, veritabanları, çalıştırılabilir dosyalar…) her zaman ikilidir.
 4. **İkili dosyalar** tarayıcıda incelenemez. `block` modunda engellenir
    (`BINARY_FILE_UNSCANNABLE`), diğer modlarda uyarı bildirimiyle geçer.
 5. **Metin biçimleri**
@@ -537,6 +543,55 @@ yazmaktan çok daha büyük bir sızıntı kanalıdır.
    tamamlanamazsa dosya engellenir (`SCAN_INCOMPLETE`). Beklenmeyen her iç hata da engelleme
    ile sonuçlanır (`FILE_SCAN_ERROR`).
 
+**Office belgeleri ve PDF'ler** (`src/engine/office/`, `src/engine/pdf/`, yönetilen anahtar
+`documentHandling`, varsayılan `mask`). Tümü içerik betiğinde çalışır: tarayıcının
+`DecompressionStream`/`CompressionStream` API'si üzerinde küçük bir ZIP okuyucu/yazıcı, katı
+bir XML tarayıcı ve bir PDF metin çıkarıcı. Uzaktan kod, WebAssembly ya da yeni bağımlılık
+yoktur.
+
+- **DOCX, XLSX, PPTX** (ayrıca `docm`/`xlsm`/`pptm`, şablonlar ve gösteriler): metin
+  yerinde maskelenir ve paket yeniden sıkıştırılır. Word paragrafları bütün olarak taranır;
+  Word'ün farklı biçimlendirilmiş parçalara (run) böldüğü bir e-posta adresi ya da TCKN yine
+  bulunur. Yer tutucu ilk parçaya yazılır, değerin geri kalanı diğer parçalardan silinir.
+  Yalnızca değeri taşıyan parçalar değişir ve biçimlendirmeleri korunur. Kapsam: gövde,
+  üst ve alt bilgiler, dipnot ve son notlar, açıklamalar ve yazarları, izlenen
+  değişiklikler, alan kodları, metin kutuları ve tablolar. Excel'de: paylaşılan metinler
+  (zengin metin dâhil), satır içi metinler, formül metin sonuçları ve sayı/tarih hücreleri.
+  Maskelenen bir sayı metin hücresine dönüşür; formül hücresi formülünü korur ve metin
+  sonucu alır. Açıklamalar, pivot önbelleği metinleri ve üst/alt bilgi metni de kapsanır;
+  başlığı hassas bir alanı adlandıran sütun, CSV'de olduğu gibi bütünüyle maskelenir.
+  PowerPoint'te: slaytlar, konuşmacı notları, düzenler, asıl slaytlar ve açıklamalar. Tüm
+  biçimlerde: grafikler, diyagramlar (SmartArt), çizimler, alternatif metin, belge
+  özellikleri ve `mailto:` ile diğer dış bağlantı hedefleri. Stiller, görseller, yazı
+  tipleri ve diğer tüm parçalar bayt bayt aynen kopyalanır.
+  Sonuç: `mask` ve `SENSITIVE_DATA`; hiçbir şey bulunmadıysa `allow`.
+- **Reddedilenler** (engellenir; `monitor` yalnızca kaydeder): makro ya da ActiveX
+  (`DOCUMENT_MACROS`), parola koruması (`DOCUMENT_ENCRYPTED`), dış çalışma kitabı
+  bağlantıları, veri bağlantıları, uzak şablonlar, bağlı nesneler ya da adres mektup
+  kaynakları (`DOCUMENT_EXTERNAL_LINKS`; sıradan köprülere izin verilir, hedefleri taranır),
+  DOCX/XLSX/PPTX olmayan gömülü nesneler (`DOCUMENT_EMBEDDED_OBJECT`; grafik verisi gibi
+  gömülü çalışma kitapları aynı şekilde temizlenir), bozuk XML ya da DOCTYPE bildirimi
+  (`DOCUMENT_MALFORMED`) ve güvensiz arşivler (`ARCHIVE_*`): ZIP64, 4.096'dan fazla girdi,
+  1 MiB'ı aşan bir girdide 200:1'den yüksek beyan edilmiş sıkıştırma oranı, 48 MiB'ı aşan
+  bir girdi ya da toplamda 64 MiB'tan fazla açılan veri, yol geçişi (path traversal),
+  yinelenen ya da çakışan girdiler veya CRC uyuşmazlığı. Açma işlemi bir girdi beyan edilen
+  boyutu aştığı anda durur; zip bombası hiçbir zaman açılmaz.
+- **PDF**: metin çıkarılır (nesne ve çapraz başvuru akışları; Flate, LZW, ASCIIHex, ASCII85
+  ve RunLength filtreleri; Türkçe harfler dâhil `/Differences` ile WinAnsi, MacRoman ve
+  Standard kodlamaları; Identity-H yazı tipleri için ToUnicode eşlemeleri; Form XObject'ler;
+  açıklamalar, form alanı değerleri ve belge bilgileri) ve taranır. PDF'ler yeniden
+  **yazılmaz**. Bulgu içeren PDF engellenir (`SENSITIVE_DATA_IN_PDF`) ve baloncuk
+  kullanıcıya metni yapıştırmasını önerir; yapıştırılan metin maskelenir. `monitor` modu
+  yalnızca kaydeder. Çıkarılabilir metni olmayan (taranmış), yalnızca görsel içeren sayfaları
+  ya da çözülemeyen bölümleri olan (`PDF_NO_TEXT`, `PDF_PARTIAL`), şifreli (`PDF_ENCRYPTED`)
+  veya ayrıştırılamayan (`PDF_UNPARSEABLE`) PDF'ler ikili dosya kuralına uyar: uyarıyla
+  yüklenir, `block` modunda engellenir. Okunabilen bölümdeki bulgular yine engellemeye yol
+  açar.
+- `documentHandling: "block"` tüm Office/PDF yüklemelerini her modda reddeder
+  (`DOCUMENT_BLOCKED_BY_POLICY`). `documentHandling: "allow"` belge ayrıştırmayı atlar;
+  dosya ikili dosya kuralına (4. adım) uyar. Taraması 30 saniyeden uzun süren bir belge
+  engellenir (`SCAN_INCOMPLETE`).
+
 Temizlenmiş dosya UTF-8 olarak yazılır (orijinalde varsa UTF-8 BOM korunur) ve yeniden
 tetiklenen olayla sitenin kendi yükleme işleyicisine verilir. `monitor` modunda (ve
 duraklatma süresince) dosyalar değiştirilmeden geçer ve yalnızca sayılır. Engelli siteler ve
@@ -548,12 +603,15 @@ duraklatma süresince) dosyalar değiştirilmeden geçer ve yalnızca sayılır.
 | İkili, engellenmedi | `"report.pdf" taranamadı (ikili dosya). Göndermeden önce kontrol edin.` |
 | Engellendi | **Yükleme engellendi**: `"big.csv" yüklenmedi (FILE_TOO_LARGE).` |
 | Yükleme politikayla kapalı | "Kurumunuz yapay zekâ hizmetlerine dosya yüklenmesine izin vermiyor." |
+| Belgeler politikayla kapalı | "Kurumunuz yapay zekâ hizmetlerine Office veya PDF belgesi yüklenmesine izin vermiyor." |
+| Hassas veri içeren PDF | `"sozlesme.pdf" yüklenmedi (SENSITIVE_DATA_IN_PDF, 1 EMAIL). PDF dosyaları maskelenemez. Gereken metni kopyalayıp yapıştırın: AIDR yapıştırılan metni maskeler.` |
 | Dosya denetlenemedi | "AIDR dosyayı kontrol edemedi; dosya yüklenmedi." |
 | Tarayıcı dosyayı değiştiremiyor | "Bu tarayıcı dosyayı temizlenmiş kopyasıyla değiştiremiyor; dosya yüklenmedi." |
 
 **Nasıl kullanılır** — Yönetilen anahtarlar `fileHandling` (`scan` | `block` | `allow`,
-varsayılan `scan`) ve `maxFileBytes` (bayt; 1 ile 52.428.800 arası, varsayılan 5.242.880).
-Dosyalar için kullanıcı ayarı yoktur.
+varsayılan `scan`), `documentHandling` (`mask` | `block` | `allow`, varsayılan `mask`;
+`fileHandling` `scan` olduğunda geçerlidir) ve `maxFileBytes` (bayt; 1 ile 52.428.800 arası,
+varsayılan 5.242.880). Dosyalar için kullanıcı ayarı yoktur.
 
 **Örnek** — `customers.csv` yüklenirken:
 
@@ -574,6 +632,14 @@ name,email,formula
 Gerçek tarayıcı senaryosu `file-upload-csv`, sayfaya tam olarak bir yükleme ulaştığını,
 yüklemede orijinal e-posta bulunmadığını ve başlık satırının korunduğunu doğrular.
 
+Bir paragrafı `Müşteri e-postası: ayse.yilmaz@example.com` olan, `ayse.yilmaz@` kısmı kalın,
+`example.com` kısmı normal biçimli bir Word dosyası siteye aynı `.docx` olarak ulaşır; o
+paragraf artık `Müşteri e-postası: [EMAIL_1]` şeklindedir (yer tutucu kalın parçadadır, diğer
+parça boştur). `file-upload-docx` senaryosu ChatGPT fikstüründe böyle bir dosya yükler ve
+yüklenen baytları yeniden açarak `word/document.xml` içeriğini denetler;
+`file-upload-pdf-blocked` e-posta adresi içeren bir PDF'in sayfaya hiç ulaşmadığını ve
+baloncuğun metni yapıştırmayı önerdiğini doğrular.
+
 **Kapsam**
 
 | | |
@@ -583,9 +649,19 @@ yüklemede orijinal e-posta bulunmadığını ve başlık satırının korunduğ
 | Platformlar | Chrome, Edge, Firefox (masaüstü) |
 
 **Sınırlamalar**
-- PDF'ler, Office belgeleri ve görseller tarayıcıda **incelenmez** (OCR ya da belge
-  ayrıştırma yok). `block` modu dışında uyarıyla geçerler. Bu tür yüklemelerin hiç
-  ulaşmaması gerekiyorsa `fileHandling: "block"` kullanın.
+- Görseller **incelenmez** (tarayıcıda OCR yok): Office belgelerindeki resimler, taranmış
+  PDF'ler ve yalnızca görsel içeren PDF sayfaları. Taranmış PDF'ler temiz değil, taranmamış
+  olarak bildirilir. Bu tür yüklemelerin hiç ulaşmaması gerekiyorsa `fileHandling: "block"`
+  ya da `documentHandling: "block"` kullanın.
+- PDF'ler taranır ama yeniden yazılmaz; bulgu içeren bir PDF maskelenmez, engellenir.
+  Şifreli PDF'lerin şifresi çözülmez; ToUnicode eşlemesi olmayan Type0 yazı tipleri ve
+  önceden tanımlı CJK CMap'leri çözülmez (`PDF_PARTIAL` olarak bildirilir); kelime ve satır
+  araları glif konumlarından yeniden kurulur ve çok sütunlu düzenlerde okuma sırasından
+  farklı olabilir.
+- Office maskelemesi metni kapsar. Sayfa adları, tanımlı adlar, tablo sütun adları ve pivot
+  önbelleğindeki sayısal değerler yeniden yazılmaz (maskelenen bir başlık hücresi Excel'in
+  bir tablonun sütun adını onarmasına yol açabilir). Eski `.doc`/`.xls`/`.ppt` ve
+  OpenDocument dosyaları ayrıştırılmaz, ikili dosya kuralına uyar.
 - UTF-8 olmayan metin dosyaları Windows-1254 (Türkçe) olarak, daha uygun düştüğünde
   Windows-1252 olarak çözülür, taranır ve maskelenmiş kopya UTF-8 olarak yüklenir (CSV/TSV
   için BOM ile). Başka tek baytlık kodlamalardaki dosyalar (örneğin Kiril Windows-1251) bu
@@ -907,10 +983,117 @@ davranışı kapsar.
 | Platformlar | Chrome, Edge, Firefox (masaüstü) |
 
 **Sınırlamalar**
-- Yalnızca bilinen sekiz ürün engellenebilir. Diğer yapay zekâ hizmetleri için web proxy'nizi
+- `blockedSites` korunan sekiz ürünü kapsar. Yaklaşık 75 başka üretken yapay zekâ hizmeti
+  Gölge Yapay Zekâ denetimiyle (13a) engellenebilir; bunların dışındakiler için web proxy'nizi
   ya da tarayıcının adres engelleme politikasını kullanın.
 - Tarayıcı düzeyinde bir denetimdir. Diğer tarayıcılar, gizli pencereler ve tarayıcı dışı
   istemciler etkilenmez.
+
+### 13a. Gölge Yapay Zekâ (Shadow AI) keşfi ve denetimi
+
+**Ne yapar** — Yönetilen tarayıcılarda hangi üretken yapay zekâ hizmetlerinin açıldığını
+(onaylı olsun olmasın) gösterir ve isterseniz onaylamadığınız her hizmeti engeller.
+
+**Neden önemli** — Şirket içindeki yapay zekâ kullanımının büyük kısmı kimsenin onaylamadığı
+araçlarda gerçekleşir. Neye izin vereceğinize karar vermeden önce neyin kullanıldığını
+bilmeniz, karar verdikten sonra da bu kararın tarayıcıda uygulanması gerekir.
+
+**Nasıl çalışır** — Browser Guard yaklaşık 75 bilinen hizmetten oluşan bir katalogla gelir
+(`packages/browser-guard/src/sites/catalog.ts`): sohbet asistanları (ChatGPT, Gemini, Claude,
+Poe, Character.AI, Meta AI, Kimi, Qwen, Doubao, ERNIE, ...), kodlama araçları ve uygulama
+oluşturucular (Cursor, v0, Bolt, Lovable, Replit, Windsurf, AI Studio, ...), görsel/video/ses
+(Midjourney, Leonardo, Ideogram, Runway, ElevenLabs, ...), toplantı asistanları (Otter,
+Fireflies, tl;dv, ...), yazım (Jasper, QuillBot, DeepL, Grammarly, Gamma, ...), arama
+(Perplexity, You.com, Consensus, ...) ve ajanlar (Devin, Manus, Genspark). Her hizmetin sabit
+bir kimliği vardır. Yönetilen `shadowAi` anahtarıyla eklenti, bir sekmenin katalogdaki bir
+hizmete kaç kez girdiğini hizmet ve UTC günü bazında sayar; `block-unsanctioned` kipinde
+`sanctioned` listesinde olmayan her hizmeti bir declarativeNetRequest kuralıyla engeller. Sekme
+bu durumda **"Poe kuruluşunuz tarafından engellendi"** başlığını ve "Kuruluşunuz bu yapay zekâ
+hizmetini iş kullanımı için onaylamadığından Browser Guard sayfanın açılmasını durdurdu."
+açıklamasını gösterir. Sayılar 30 gün boyunca cihazda kalır (seçenekler sayfası, **Yapay zekâ
+hizmetleri** bölümü); telemetri açıksa panoya `shadow_ai_usage` olayı olarak ulaşır: hizmet
+kimliği, ziyaret ya da engelleme, sayı ve onay bilgisi. URL, alan adı, yol ya da sayfa başlığı
+asla gönderilmez.
+
+Bir hizmeti görebilmek ve engelleyebilmek için eklentinin o hizmetin sitesine erişimi
+gerekir. Browser Guard `tabs` ya da tarama geçmişi izni istemez; bunun yerine her kullanıcı
+seçenekler sayfasında bir kez **Erişime izin ver** düğmesine tıklar ve yalnızca katalogdaki
+hizmet adreslerine erişim verir. O zamana kadar seçenekler sayfası erişimin eksik olduğunu
+söyler: eksik erişim hiçbir zaman "kullanım yok" olarak gösterilmez.
+
+**Nasıl kullanılır** — Yönetilen anahtar `shadowAi`:
+`{ "mode": "monitor" | "block-unsanctioned" | "off", "sanctioned": [kimlikler], "blocked": [kimlikler] }`.
+`blocked` içindeki kimlikler her kipte engellenir; iki listede birden bulunan kimlik
+engellenir. Panodaki **Browser Privacy** sayfasında bir **Shadow AI** paneli (en çok
+kullanılan hizmetler, onaylı ve onaysız ziyaretler, engellenen denemeler, günlük eğilim) ve
+bir politika parçacığı oluşturucusu bulunur.
+
+**Örnek** — `{"mode": "block-unsanctioned", "sanctioned": ["chatgpt", "copilot"]}`.
+`https://poe.com` adresini açan kullanıcı engelleme sayfasına düşer; ChatGPT açılır ve onaylı
+ziyaret olarak sayılır. Gerçek tarayıcı senaryosu `shadow-ai` bu davranışı kapsar.
+
+**Kapsam**
+
+| | |
+|---|---|
+| Plan | Team, Business, Enterprise (katalog) |
+| Dağıtım | Yerel (sayılar cihazda) / Bulut / Kurum içi / Air-gapped (engelleme ağ gerektirmez) |
+| Platformlar | Chrome, Edge, Firefox (masaüstü) |
+
+**Sınırlamalar**
+- Her kullanıcı site erişimini bir kez vermelidir; yönetilen politika bunu sessizce veremez.
+- Genel amaçlı bir sitenin bir yolunda çalışan hizmetler (Notion AI, GitHub Copilot, Bing'deki
+  Copilot, Microsoft 365 Copilot) katalogda yoktur; alan adıyla engellemek ürünün tamamını
+  bozardı.
+- Başka bir web sitesindeki bağlantıdan açılan gezinmelerde Chrome, ağ kuralının uygulanması
+  için o siteye de erişim isteyebilir; sekme hizmete ulaştığı anda eklenti sayfayı yine de
+  engelleme sayfasıyla değiştirir.
+- Hugging Face, DeepL ve Grammarly alan adıyla kataloglanmıştır; engellendiklerinde sitenin
+  tamamı (model merkezi, çevirmen, tanıtım sayfaları) engellenir.
+
+### 13b. Kurum içi özel yapay zekâ siteleri
+
+**Ne yapar** — İstemleri yalnızca herkese açık yapay zekâ ürünlerinde değil, şirketinizin
+kurum içi LLM portallarında da maskeler ve yanıtları yerel olarak geri yükler.
+
+**Neden önemli** — Kurum içi asistanlara çoğu zaman herkese açık olanlardan daha fazla veri
+emanet edilir; ancak günlükleri, tedarikçileri ve saklama süreleri nadiren incelenir. Aynı
+maskeleme burada da uygulanmalıdır.
+
+**Nasıl çalışır** — Yönetilen `customSites` anahtarı en fazla 20 portal listeler; her birinde
+bir kimlik, bir etiket, tam HTTPS alan adları ve istem düzenleyicisi, gönder düğmesi ile
+yanıtlar için CSS seçicileri bulunur. Kullanıcı seçenekler sayfasında **Erişime izin ver**
+düğmesine tıkladıktan sonra Browser Guard içerik betiğini yalnızca bu alan adları için kaydeder
+(`chrome.scripting`, `scripting` izni) ve portal yerleşik bir site gibi davranır: gönderimde
+maskeleme, yapıştırma ve dosya koruması, yapılandırılan yanıt bloklarında yerel geri yükleme,
+`custom` sitesi olarak raporlama. Erişim verilmemiş siteler **Erişim gerekli** olarak görünür
+ve orada hiçbir şey çalışmaz.
+
+**Nasıl kullanılır** — Örnek kayıt:
+`{"id": "acme-gpt", "label": "ACME GPT", "hosts": ["gpt.acme.example"], "editorSelectors":
+["textarea#prompt"], "sendButtonSelectors": ["button.send"], "responseSelectors": [".answer"]}`.
+Alan adları tam ad olmalıdır (bağlantı noktası, yol, joker karakter ya da IP adresi olamaz) ve
+yerleşik yapay zekâ alan adlarından biri olamaz. Seçicilere her zaman genel yedek seçiciler
+eklenir.
+
+**Örnek** — Gerçek tarayıcı senaryosu `custom-site`, gönder düğmesi ve yanıt blokları yalnızca
+yapılandırılan seçicilerle eşleşen bir portalı `https://ai.internal.example` adresinde sunar;
+kaydedilen istek yalnızca yer tutucular taşır ve yanıt kullanıcıya özgün e-posta adresini
+gösterir.
+
+**Kapsam**
+
+| | |
+|---|---|
+| Plan | Team, Business, Enterprise (katalog) |
+| Dağıtım | Yerel / Bulut / Kurum içi / Air-gapped |
+| Platformlar | Chrome, Edge, Firefox (masaüstü) |
+
+**Sınırlamalar**
+- Her kullanıcı site erişimini bir kez verir; zaten açık olan sekmelerin ardından yeniden
+  yüklenmesi gerekir.
+- Seçiciler portalın işaretlemesine bağlıdır; yeniden tasarım politikanın güncellenmesini
+  gerektirebilir.
 
 ### 14. Kurumsal yönetilen politika ve dağıtım
 
@@ -947,6 +1130,7 @@ Tüm yönetilen anahtarlar (`static/managed_schema.json` ve `src/background/poli
 | `allowSendAnyway` | boolean | `true` | Kullanıcı uyarıdan sonra maskesiz gönderebilir |
 | `maskPaste` | boolean | `true` | Yapıştırılan metni maskele (özellik 6) |
 | `fileHandling` | `scan` \| `block` \| `allow` | `scan` | Yükleme davranışı (özellik 7) |
+| `documentHandling` | `mask` \| `block` \| `allow` | `mask` | `fileHandling` `scan` iken Office/PDF yüklemeleri (özellik 7) |
 | `maxFileBytes` | tamsayı, 1 ile 52.428.800 arası | 5.242.880 (5 MiB) | Taranan en büyük dosya; daha büyükler engellenir |
 | `restoreResponses` | boolean | `true` | Orijinalleri yanıtlarda yerel olarak geri yükle |
 | `useNativeHost` | boolean | `false` | NER için AIDR Privacy native host'unu kullan (özellik 16). Yönetilmiyorsa kullanıcı ayarlar sayfasından da açabilir |
@@ -1353,7 +1537,8 @@ paketlerle Python 3 ve libseccomp gerekir. Ayrıntılar:
 
 **Sınırlamalar** — Taranmış ya da görsel PDF'ler, medya içeren Office dosyaları, eski Office
 biçimleri, parola korumalı dosyalar ve customXML içeriği engellenir. Biçimi koruyan PDF/Office
-maskeleme yoktur; çıktı yalnızca metindir. Browser Guard yüklemelerine bağlı değildir.
+maskeleme yoktur; çıktı yalnızca metindir. Browser Guard yüklemelerine bağlı değildir; Browser
+Guard'ın kendi tarayıcı içi Office maskelemesi ve PDF taraması vardır (özellik 7).
 
 ### 22. Kurumsal ağ geçidi ve platform katmanı
 

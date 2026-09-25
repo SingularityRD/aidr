@@ -23,8 +23,9 @@ alongside the generated, pinned configuration.
 ## Self-hosted installation
 
 The [on-prem guide](onprem/README.md) is the short entry point for a customer
-host: sizing profiles (`--profile small|medium|large`), the optional AIG
-scanning sidecar (`--with-aig`), upgrade, backup, uninstall and troubleshooting.
+host: sizing profiles (`--profile small|medium|large`), the optional AI
+Security Posture scanner (`--with-posture-scanner`), upgrade, backup, uninstall
+and troubleshooting.
 
 Build from the repository root on the release machine (skip this step when
 using an already built, independently verified customer kit):
@@ -95,7 +96,7 @@ degrade while local detection keeps enforcing. See [licensing](../docs/operation
 ### Kubernetes
 
 The Helm chart in `deploy/helm/aidr` installs the same control plane on Kubernetes
-(external HA Postgres recommended, secure defaults, NetworkPolicy, optional AIG stack).
+(external HA Postgres recommended, secure defaults, NetworkPolicy, optional AI Security Posture scanner).
 Images are built with `deploy/helm/build-images.mjs` and credentials generated once with
 `deploy/helm/generate-secrets.mjs`. See `docs/operations/kubernetes.md`; validate the
 chart with `pnpm verify:helm`.
@@ -309,9 +310,9 @@ each `build:` service, the `FROM` base images of its Dockerfile (stage aliases
 and `scratch` excluded, `ARG` defaults and build args substituted), so the
 disconnected host can rebuild offline. A service with both `build:` and
 `image:` (the `aidr-dashboard:<version>` image, and `aidr-aig-*` with
-`--with-aig`) is a local build: it is never pulled, must already exist from the
+`--with-posture-scanner`) is a local build: it is never pulled, must already exist from the
 `docker compose build` step, and is saved into the bundle. See the
-[on-prem sizing and AIG guide](onprem/README.md). `--plan
+[on-prem sizing and posture scanner guide](onprem/README.md). `--plan
 <json>` (a `{ "images": [{ "ref": "...", "digest": "sha256:..." }] }` document) or
 repeated `--images <ref>` are the alternatives when no compose file is available.
 Pinned digests are enforced when supplied. Every `docker save` output is hashed,

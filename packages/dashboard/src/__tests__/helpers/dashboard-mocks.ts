@@ -41,7 +41,8 @@ const TEAM = {
 };
 
 type QueryError = { message: string; code?: string };
-type QueryResult = { data: unknown; error: QueryError | null };
+/** `count` models a `select(..., { count: "exact", head: true })` answer. */
+type QueryResult = { data: unknown; error: QueryError | null; count?: number | null };
 type MockFn = ReturnType<typeof vi.fn>;
 
 interface MockQueryChain {

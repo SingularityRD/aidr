@@ -138,6 +138,27 @@ verify_jwt = true
 # Workspace rename, retention and closure. The handler repeats session, identity
 # barrier, membership/role and AAL2 checks, and the RPCs re-check under locks.
 verify_jwt = true
+[functions.approval-requests]
+# Managed-mode dashboard approvals. Connectors authenticate with a hash-only
+# tenant API key (not a Supabase JWT), so gateway JWT verification is off; the
+# handler verifies the API key (scope tenant) for create/poll and, for
+# decisions, the Supabase session, identity barrier, owner/admin role and AAL2.
+verify_jwt = false
+
+[functions.compliance-report]
+# Compliance evidence report. The handler repeats session, identity barrier,
+# owner/admin role, AAL2 and a tenant rate limit; the SQL re-checks under locks.
+verify_jwt = true
+
+[functions.notification-channels]
+# Tenant alert channels (Settings -> Notifications). The handler repeats session,
+# identity barrier, owner/admin and AAL2 checks; destinations are write-only.
+verify_jwt = true
+
+[functions.notification-dispatch]
+# Outbox dispatcher, invoked by the deployment scheduler with the dedicated
+# AIDR_NOTIFICATION_DISPATCH_TOKEN bearer (not a JWT); never browser-facing.
+verify_jwt = false
 [functions.oauth-callback]
 verify_jwt = true
 [functions.audit-export]

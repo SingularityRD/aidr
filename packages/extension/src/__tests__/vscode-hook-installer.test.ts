@@ -43,7 +43,48 @@ describe("VS Code Local managed hook configuration", () => {
 			expect.objectContaining({ matcher: "Bash|WebFetch|Write|Edit|Read|Delete|editFiles" }),
 		);
 		expect(health.configPath).toBe(path.join(home, ".claude", "settings.json"));
-		expect(health.installedEvents).toEqual(["PreToolUse", "PostToolUse"]);
+		expect(health.installedEvents).toEqual(["UserPromptSubmit", "PreToolUse", "PostToolUse"]);
+	});
+
+	it("registers UserPromptSubmit prompt protection without a matcher, idempotently", async () => {
+		const configPath = path.join(home, ".claude", "settings.json");
+		await mkdir(path.dirname(configPath), { recursive: true });
+		await writeFile(
+			configPath,
+			JSON.stringify({
+				hooks: {
+					PostToolUse: [{ hooks: [{ type: "command", command: "customer-post" }] }],
+					UserPromptSubmit: [{ hooks: [{ type: "command", command: "customer-prompt" }] }],
+				},
+			}),
+		);
+		const context = { asAbsolutePath: (relativePath: string) => relativePath };
+
+		await installManagedHooks({ context: context as never, scope: "user" });
+		const health = await installManagedHooks({ context: context as never, scope: "user" });
+		// Registration order, independent of the key order already in the customer's file.
+		expect(health.installedEvents).toEqual(["UserPromptSubmit", "PreToolUse", "PostToolUse"]);
+		const settings = JSON.parse(await readFile(configPath, "utf8")) as {
+			hooks: Record<
+				string,
+				Array<{ matcher?: string; hooks: Array<{ command: string; timeout?: number }> }>
+			>;
+		};
+		const prompt = settings.hooks.UserPromptSubmit ?? [];
+		expect(prompt).toHaveLength(2);
+		expect(prompt[0]?.hooks[0]?.command).toBe("customer-prompt");
+		expect(prompt[1]).not.toHaveProperty("matcher");
+		expect(prompt[1]?.hooks[0]?.command).toMatch(/ vscode --managed-by aidr-vscode$/);
+		expect(prompt[1]?.hooks[0]?.timeout).toBe(30);
+
+		await removeManagedHooks("user");
+		const removed = JSON.parse(await readFile(configPath, "utf8")) as {
+			hooks: Record<string, unknown>;
+		};
+		expect(removed.hooks).toEqual({
+			PostToolUse: [{ hooks: [{ type: "command", command: "customer-post" }] }],
+			UserPromptSubmit: [{ hooks: [{ type: "command", command: "customer-prompt" }] }],
+		});
 	});
 
 	it("refuses malformed customer settings on install and removal without overwriting them", async () => {

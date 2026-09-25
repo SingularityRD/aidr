@@ -108,13 +108,14 @@ test("build-images refuses an unreviewed upstream, unsafe tags and existing outp
 test("build-images stages the dashboard context the Dockerfile expects", { skip: existsSync(join(root, "packages/dashboard/dist/index.html")) ? false : "dashboard dist not built" }, (t) => {
 	const dir = scratch(t);
 	const output = join(dir, "images");
-	const result = node("build-images.mjs", ["--output", output, "--only", "dashboard,aig-agent"]);
+	const result = node("build-images.mjs", ["--output", output, "--only", "dashboard,posture-scanner-agent"]);
 	assert.equal(result.status, 0, result.stderr);
 	for (const file of ["Dockerfile", "server.mjs", "monitoring.mjs", "saml-config.mjs", "auth-templates/recovery.html", "public/index.html"]) {
 		assert.ok(existsSync(join(output, "dashboard", file)), file);
 	}
-	assert.ok(existsSync(join(output, "aig-agent/aig_compat")));
-	assert.match(result.stdout, /--build-arg AIG_AGENT_BASE=<registry>\/aidr\/aig-agent-base:0\.6\.0/);
+	assert.ok(existsSync(join(output, "posture-scanner-agent/aig_compat")));
+	assert.match(result.stdout, /--build-arg AIG_AGENT_BASE=<registry>\/aidr\/posture-scanner-agent-base:0\.6\.0/);
+	assert.doesNotMatch(result.stderr, /deprecated/);
 });
 
 function generate(t, extra = []) {
@@ -161,6 +162,9 @@ test("generate-secrets writes strong, private Kubernetes Secrets without printin
 	assert.equal(signingKey.asymmetricKeyType, "ed25519");
 	assert.equal(Buffer.from(env.AIDR_PACK_MASTER_KEY_B64, "base64").length, 32);
 	assert.ok(Buffer.byteLength(env.AIDR_DEVICE_START_INGRESS_SECRET) >= 32);
+	assert.match(env.AIDR_NOTIFICATION_ENCRYPTION_KEYS, /^k1:[A-Za-z0-9+/]{43}=$/);
+	assert.equal(Buffer.from(env.AIDR_NOTIFICATION_ENCRYPTION_KEYS.slice(3), "base64").length, 32);
+	assert.match(env.AIDR_NOTIFICATION_DISPATCH_TOKEN, /^[A-Za-z0-9_-]{43}$/);
 	const delegation = createPrivateKey({ key: Buffer.from(env.AIDR_DELEGATION_SIGNING_PRIVATE_KEY_PKCS8_B64, "base64"), format: "der", type: "pkcs8" });
 	const delegationPublic = createPublicKey({ key: Buffer.from(env.AIDR_DELEGATION_SIGNING_PUBLIC_KEY_SPKI_B64, "base64"), format: "der", type: "spki" });
 	assert.ok(verify(null, Buffer.from("probe"), delegationPublic, sign(null, Buffer.from("probe"), delegation)));
@@ -196,4 +200,14 @@ test("generate-secrets refuses insecure or ambiguous input", (t) => {
 	const { output, keyFile } = generate(t);
 	const again = node("generate-secrets.mjs", ["--output", output, "--dashboard-url", "https://a.example.com", "--api-url", "https://b.example.com", "--artifact-verification-public-key-file", keyFile]);
 	assert.match(again.stderr, /generated exactly once/);
+});
+
+test("build-images accepts the pre-rename posture scanner component names with a note", (t) => {
+	const dir = scratch(t);
+	const output = join(dir, "legacy");
+	const result = node("build-images.mjs", ["--output", output, "--only", "aig-agent"]);
+	assert.equal(result.status, 0, result.stderr);
+	assert.match(result.stderr, /NOTE: component "aig-agent" is deprecated; use "posture-scanner-agent"\./);
+	assert.ok(existsSync(join(output, "posture-scanner-agent/Dockerfile")));
+	assert.match(result.stdout, /<registry>\/aidr\/posture-scanner-agent:0\.6\.0/);
 });

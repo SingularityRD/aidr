@@ -206,14 +206,15 @@ test("Compose and its safe env example report the pinned AIG release tag", async
 	const manifest = JSON.parse(await readFile(new URL("../packages/core/src/generated/aig-data-manifest.json", import.meta.url), "utf8"));
 	assert.equal(source.source_commit, manifest.source.commit);
 	assert.equal(source.source_tree_oid, manifest.source.git_tree_oid);
-	const env = await readFile(new URL("../.env.aig.example", import.meta.url), "utf8");
-	const compose = await readFile(new URL("../docker-compose.aig.yml", import.meta.url), "utf8");
-	assert.match(env, new RegExp(`^AIG_SOURCE_VERSION=${tag.replaceAll(".", "\\.")}$`, "m"));
-	for (const key of ["AIG_AGENT_SHARED_SECRET", "BRIDGE_API_KEY"]) {
+	const env = await readFile(new URL("../.env.posture-scanner.example", import.meta.url), "utf8");
+	const compose = await readFile(new URL("../docker-compose.posture-scanner.yml", import.meta.url), "utf8");
+	assert.match(env, new RegExp(`^POSTURE_SCANNER_SOURCE_VERSION=${tag.replaceAll(".", "\\.")}$`, "m"));
+	for (const key of ["POSTURE_SCANNER_AGENT_SHARED_SECRET", "BRIDGE_API_KEY"]) {
 		assert.match(env, new RegExp(`^${key}=$`, "m"), `${key} must remain blank in the committed example`);
 	}
-	assert.match(compose, new RegExp(`AIG_AGENT_VERSION=\\$\\{AIG_SOURCE_VERSION:-${tag.replaceAll(".", "\\.")}\\}`));
-	assert.match(compose, new RegExp(`AIG_SOURCE_VERSION=\\$\\{AIG_SOURCE_VERSION:-${tag.replaceAll(".", "\\.")}\\}`));
+	const pinned = `\\$\\{POSTURE_SCANNER_SOURCE_VERSION:-\\$\\{AIG_SOURCE_VERSION:-${tag.replaceAll(".", "\\.")}\\}\\}`;
+	assert.match(compose, new RegExp(`AIG_AGENT_VERSION=${pinned}`));
+	assert.match(compose, new RegExp(`AIG_SOURCE_VERSION=${pinned}`));
 });
 
 test("the generated manifest is bound to every pinned Unicode Git blob", async () => {

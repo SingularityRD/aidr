@@ -99,6 +99,11 @@ flows](privacy.md) before enabling network features.
     "secrets": "block",
     "pii": "warn"
   },
+  "toxic_flow": {
+    "enabled": true,
+    "action": "auto",
+    "window_minutes": 60
+  },
   "version_check": {
     "enabled": false
   },
@@ -291,36 +296,81 @@ When enabled, Singularity AIDR scans tool inputs (commands, file content, edits)
 
 ### `prompt_protection`
 
-Claude Code only (`UserPromptSubmit` hook, `packages/claude-code/dist/user-prompt-submit.cjs`).
-Inspects the user's prompt before Claude Code sends it to the model.
+Inspects the user's prompt before the agent sends it to the model, on every connector whose
+host exposes a pre-model prompt hook. All connectors share one engine (`scanPrompt` and the
+`inspectUserPrompt` runner in `@singularityrd/aidr-core`), so the same prompt gets the same
+decision everywhere.
 
 | Field | Default | Description |
 |-------|---------|-------------|
 | `secrets` | `"block"` | Tokens, API keys, AWS keys, private keys, password assignments. `"block"`, `"warn"` or `"off"`. |
-| `pii` | `"warn"` | Email addresses, formatted phone numbers and SSNs, Luhn-valid card numbers. `"block"`, `"warn"` or `"off"`. |
+| `pii` | `"warn"` | Email addresses, formatted phone numbers and SSNs, Luhn-valid card numbers, Turkish ID numbers (TC Kimlik, checksum-validated), IBANs (mod-97) and TR/international phone numbers. `"block"`, `"warn"` or `"off"`. |
 
-- `block` stops the prompt; Claude Code shows the reason to the user only. The reason names
-  the kind of data found (for example "GitHub token"), never the value.
-- `warn` sends the prompt, shows the user a notice and gives the model a context note not to
-  repeat or copy the data.
+Per-connector support:
+
+| Connector | Host hook | Block | Warn (personal data) | Audit `tool_name` | Deadline (host timeout) |
+|-----------|-----------|-------|----------------------|-------------------|-------------------------|
+| Claude Code | `UserPromptSubmit` (`hooks/hooks.json`) | `decision: "block"` + reason, shown to the user only | `systemMessage` to the user, `additionalContext` to the model | `UserPromptSubmit` | 7 s (10 s) |
+| Cursor | `beforeSubmitPrompt` (managed `~/.cursor/hooks.json`, `failClosed: true`) | `continue: false` + `user_message` | Prompt is sent; notice in `user_message` (Cursor documents it for blocked prompts) and in the audit log. The event has no model-context field. | `beforeSubmitPrompt` | 20 s (30 s) |
+| VS Code (Local agent hooks) | `UserPromptSubmit` (managed `.claude/settings.json`, needs `chat.useClaudeHooks`) | `continue: false` + `stopReason` | `systemMessage` to the user; the event has no documented model-context field | `UserPromptSubmit` | 20 s (30 s) |
+| Codex CLI | `UserPromptSubmit` (register `aidr-codex-hook` under `[[hooks.UserPromptSubmit]]`, then trust it) | `decision: "block"` + non-empty reason; exit 2 + stderr on internal failure | `systemMessage` to the user, `additionalContext` to the model | `UserPromptSubmit` | 7 s (the documented `timeout = 10`) |
+| OpenCode | `chat.message` plugin hook | Text parts replaced with the block notice, TUI toast, and the hook throws so the prompt is not stored or sent | Prompt is sent; TUI toast, and a notice attached to that message for the model (`experimental.chat.messages.transform`, not persisted) | `chat.message` | 10 s (in-process) |
+| OpenClaw | `before_agent_run` gate (embedded and CLI runners) | `{ outcome: "block", message }`; OpenClaw keeps only the replacement text in the transcript | Notice prepended for the model through `before_prompt_build`, asking it to tell the user | `before_agent_run` | 10 s (15 s, fail-closed) |
+
+Connector notes:
+
+- **Cursor**: attachments listed in the `beforeSubmitPrompt` payload are not inspected, only
+  the prompt text.
+- **VS Code**: only the Local agent harness runs these hooks; Agent Host sessions (Copilot,
+  Claude, Codex) use their own hook systems. The same `.claude/settings.json` entry is also
+  honoured by Claude Code, which reads the same file.
+- **Codex**: Codex runs `UserPromptSubmit` hooks without a matcher and fails open when the
+  hook is untrusted, crashes, times out or returns malformed output. Register it next to the
+  `PreToolUse` handler (see [packages/codex/README.md](../packages/codex/README.md)).
+- **OpenCode**: only the user's own text parts are inspected; `synthetic` parts that OpenCode
+  generates (for example the contents of an attached file) are not. If the plugin fails to
+  initialise, prompts get the uninspected-prompt policy below.
+- **OpenClaw**: `before_agent_run` is not an input gate for OpenClaw's Codex or Copilot
+  harnesses, and a host without the hook ignores the registration. A non-bundled plugin
+  needs `plugins.entries.aidr-openclaw.hooks.allowConversationAccess: true` for
+  `before_agent_run` and `before_prompt_build`.
+- Host acceptance: the Cursor, VS Code, Codex, OpenCode and OpenClaw paths are verified
+  against the hosts' published hook contracts and by tests that drive the built connector
+  bundles; no named real-host acceptance record exists yet
+  (`deploy/native/interception-matrix.json`, `pre-prompt` rows).
+
+Behaviour common to all connectors:
+
+- `block` stops the prompt and shows the reason to the user. The reason names the kind of
+  data found (for example "GitHub token"), never the value.
+- `warn` sends the prompt, shows the user a notice where the host can display one and gives
+  the model a context note not to repeat or copy the data where the host can deliver one
+  (see the table).
 - An operator-provisioned tenant DLP policy is also applied to the prompt and cannot be
   turned off here. A prompt cannot be rewritten, so any tenant action other than `allow`
   (including `redact`, and an uninspectable prompt) blocks.
-- Audit entries (`tool_name: "UserPromptSubmit"`) record the kinds and counts found, never
-  the prompt.
-- Failure policy: if the hook cannot inspect the prompt (unreadable or oversized input over
-  2 MiB, or an internal error) it blocks only when `secrets` is `"block"`. With `"warn"` or
-  `"off"` the prompt is sent with a visible "not inspected" notice. A provisioned tenant
-  policy that cannot be verified always blocks. A hook process that is killed before it
-  writes a response cannot block; that is a Claude Code host limitation.
-- Deadline: Claude Code kills the hook after 10 s (`hooks/hooks.json`), so the hook answers
-  itself after 7 s. A prompt it could not finish inspecting by then is blocked when
-  `secrets` is `"block"` or a tenant DLP policy is provisioned; otherwise it is sent with a
-  visible "not fully inspected" notice. Override with `AIDR_USER_PROMPT_SUBMIT_DEADLINE_MS`
-  (an integer from 100 to 9000; anything else uses the default). Inspection cost is linear
-  in the prompt size (a 1.5 MB prompt takes well under a second), and once a secret is found
-  in `"block"` mode the scan stops there, so the block reports the first secret found rather
-  than a full count.
+- Audit entries (`tool_name` per the table) record the kinds and counts found, never the
+  prompt.
+- Failure policy: if the hook cannot inspect the prompt (unreadable input, an oversized
+  payload — over 2 MiB on Claude Code, over 1 MiB on the Cursor/VS Code hook — or an internal
+  error) it blocks only when `secrets` is `"block"`. With `"warn"` or `"off"` the prompt is
+  sent with a visible "not inspected" notice. A provisioned tenant policy that cannot be
+  verified always blocks. A hook process that is killed before it writes a response cannot
+  block on Claude Code, VS Code or Codex (host limitations); the managed Cursor hook requests
+  `failClosed: true` (host enforcement not yet verified), and OpenClaw's `before_agent_run`
+  gate blocks on a thrown error or timeout. A hook that fails before it
+  reads the payload (for example a failed artifact integrity check) answers with a
+  combined deny-and-stop response on Cursor/VS Code, exit 2 on Codex, and a block on
+  OpenClaw.
+- Deadline: each connector answers before its host's hook timeout (see the table). A prompt
+  it could not finish inspecting by then is blocked when `secrets` is `"block"` or a tenant
+  DLP policy is provisioned; otherwise it is sent with a visible "not fully inspected"
+  notice. Override with `AIDR_USER_PROMPT_SUBMIT_DEADLINE_MS` on Claude Code (an integer
+  from 100 to 9000) and `AIDR_PROMPT_INSPECTION_DEADLINE_MS` on the other connectors (from
+  100 to 28000 on Cursor/VS Code, 9000 on Codex, 13000 on OpenClaw, 60000 on OpenCode);
+  anything else uses the default. Inspection cost is linear in the prompt size (a 1.5 MB
+  prompt takes well under a second), and once a secret is found in `"block"` mode the scan
+  stops there, so the block reports the first secret found rather than a full count.
 
 #### DLP redaction of tool input
 
@@ -346,6 +396,35 @@ Because the rewritten input is executed, its replacement tokens are shell-inert 
 the text is shown, never in a rewritten tool input. The rewritten input is also re-run
 through the local threat rules; if it matches a rule the original did not (and that match
 would not be allowed on its own), the call is denied as `dlp_redaction_unsafe`.
+
+### `toxic_flow`
+
+Session toxic-flow ("lethal trifecta") and behavioral chain detection. Every connector that
+uses the shared evaluator (Claude Code, Cursor / VS Code, OpenClaw, OpenCode, Codex and the
+MCP gateway) gets it. See [Toxic-flow detection](toxic-flow.md) for the model.
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `enabled` | `true` | Track private-data access, untrusted-content exposure and external communication per agent session. |
+| `action` | `"auto"` | What a completed chain does: `"auto"` asks in `balanced`/`relaxed` and denies in `paranoid`; `"ask"`, `"deny"`, or `"monitor"` (allow, but record the finding in the audit log as `toxic_flow_monitor`). |
+| `window_minutes` | `60` | How long a step keeps counting toward a chain (1-1440). Also the lifetime of a session record. |
+| `bulk_sensitive_threshold` | `5` | Distinct sensitive files / credential stores in the window that trigger `bulk_sensitive_access` (2-64). |
+| `trusted_domains` | `[]` | Extra destination domains (suffix match) for which a plain request is not external communication. Package registries and source hosts are built in. A request that carries a payload (body, upload, piped data) still counts. |
+| `trusted_mcp_servers` | `[]` | MCP server ids whose output is not untrusted content. `policy.mcp.allow_servers` is also honoured. |
+| `trusted_git_remotes` | `["origin"]` | Git remote names a push to is not external communication. A push to a URL or any other remote counts. |
+
+- Chains: `lethal_trifecta` (`AIDR-FLOW-001`), `exfil_chain` (`AIDR-FLOW-002`),
+  `injection_to_action` (`AIDR-FLOW-003`), `bulk_sensitive_access` (`AIDR-FLOW-004`). The verdict
+  category is `toxic_flow` and the reason names the chain, the earlier steps (tool plus a redacted
+  target summary and age) and this call.
+- An `ask` is a block pending out-of-band approval like any other (`aidr pending` /
+  `aidr approve <actionId>` on soft-gated connectors, the native dialog in Claude Code).
+- Calls the operator allowlisted are recorded but never escalated.
+- Failure policy: a state file that cannot be read or written is a skipped signal; the call is
+  evaluated by every other layer and an `allow` is marked `toxic_flow_unavailable` in the audit
+  log (never a clean result). A state file that fails its integrity check is treated as
+  tampering: the session is assumed to have exercised all three capabilities for the rest of
+  the window, so its next egress needs approval.
 
 ### `heuristics_enabled`
 
@@ -399,6 +478,12 @@ key and the single-use ledger live. With `"os-vault"` and no OS credential vault
 operator approvals are disabled and asks stay blocked; `"file"` is an explicit,
 reduced-protection opt-in that `aidr doctor` warns about. Overridden by
 `AIDR_OPERATOR_APPROVAL_KEY_STORAGE`. See [Key custody](#key-custody).
+
+`dashboard_only`: `false` (default) or `true`. **Managed mode only.** When `true`,
+an `ask` can be released only by a [dashboard approval](#managed-mode-dashboard-approvals):
+the guard does not record or consume `aidr approve` approvals, and Claude Code and
+the VS Code / Cursor hooks block the call instead of opening their native
+confirmation dialog. Ignored in local mode.
 
 ### `disabled_threats`
 
@@ -527,8 +612,18 @@ quarantine reason.
 
 ## Operator approvals
 
+In managed mode an `ask` can also be approved out of band by an owner or admin
+in the dashboard (AAL2, signed single-use token verified by the connector); see
+[Dashboard approvals](control-plane.md#dashboard-approvals-managed-mode) and
+[contracts/dashboard-approvals.md](contracts/dashboard-approvals.md). The
+control plane needs the Edge secret `AIDR_APPROVAL_SIGNING_WRAP_KEY_B64` for it.
+
 OpenClaw, OpenCode and Codex cannot show a host-native confirmation dialog, so
 their `ask` verdicts go through a file-backed, operator-only approval channel:
+
+This is the approval channel in **local mode**. In managed mode an `ask` is also
+sent to the AIDR dashboard for an administrator to approve — see
+[Managed mode: dashboard approvals](#managed-mode-dashboard-approvals).
 
 1. When a connector blocks an `ask`, it records a **pending ask** in
    `~/.singularity-aidr/approvals.json`: the `actionId` (a SHA-256 of tool, input
@@ -675,9 +770,74 @@ vault item to prompt on every access (Keychain Access → the
 `singularity-aidr-cli` item → Access Control → "Ask for Keychain password"; each
 recorded ask and each approval then shows a prompt), or run the agent under a
 separate OS account from the operator, so its shell cannot open the operator's
-vault at all. Where approvals must hold against same-user code, those are the
-options today: an approval channel through the managed-mode dashboard, which
-would remove the local same-user path entirely, is not part of this release.
+vault at all. In managed mode, [dashboard approvals](#managed-mode-dashboard-approvals)
+with `operator_approvals.dashboard_only: true` remove the local same-user approval
+path entirely.
+
+### Managed mode: dashboard approvals
+
+In **local mode** nothing changes: the only approval channel is the operator CLI
+described above, and no approval ever leaves the machine.
+
+In **managed mode** (enrolled: an API key and an active, ed25519-verified
+entitlement), every `ask` from every connector — OpenClaw, OpenCode, Codex, Claude
+Code and the Cursor / VS Code hook — is additionally submitted to the AIDR
+dashboard, where an administrator can approve or deny it:
+
+1. **Request.** The connector sends `POST {endpoint}/v1/approval-requests` with the
+   installation id, connector, `actionId`, `sha256:`-prefixed artifact-set digest,
+   tool, matched threat ids, a redacted and control-character-escaped summary (at
+   most 512 characters; raw artifact values are never sent) and an expiry of
+   25 minutes. The request is idempotent on tenant, installation and `actionId`.
+   The call stays blocked, and the block reason tells the user
+   `Approval requested in the AIDR dashboard: <request_id>`. The request id is
+   remembered in `~/.singularity-aidr/dashboard-approval-requests.json`, so the
+   next hook process (Claude Code and Codex start one per call) finds it.
+2. **Decision.** An owner or admin approves it in the dashboard (AAL2 / MFA
+   session). The control plane signs an approval token with the tenant's Ed25519
+   approval key, which never leaves the server.
+3. **Release.** On the identical retry the connector polls the request. An
+   approved token is released only if **all** of these hold, otherwise the call
+   stays blocked and the reason is logged and audited:
+   - the Ed25519 signature verifies under a key whose `key_id` is listed in
+     `approval_public_keys` of the **signed entitlement** (an unknown key id, or
+     an entitlement without approval keys, is a rejection — the keys are never
+     read from config, the network response or any unsigned file);
+   - `tenant_id`, installation id, `actionId`, artifact digest and tool match the
+     pending ask exactly, and the decision is `approve`;
+   - it is unexpired, was issued no more than 15 minutes before it expires, and
+     was not issued in the future;
+   - its nonce has not been spent. The nonce is spent in the same consumption
+     ledger as operator approvals (OS vault by default, read back after writing),
+     so one approval releases **exactly one** call, across processes and even if
+     `dashboard-approval-requests.json` or `approvals.json` is rolled back. With
+     no usable ledger nothing is released.
+
+   The release is audited twice: a `runtime_verdict` with `source:
+   "dashboard_approval"` and `user_override: true`, and `dashboard_approval`
+   entries for each step (`requested`, `denied`, `expired`, `rejected` with its
+   reason, `consumed` with the approver id). Tokens and the API key are never
+   logged.
+
+Every control-plane call on the hook path is bounded (1.5 s each, 3 s in total),
+so a slow or unreachable control plane cannot hold the hook past its deadline; a
+failure keeps the call blocked and says the request could not be sent.
+
+**Why this is stronger than the CLI channel.** The approver is a different,
+authenticated human on a different device, not whoever runs as the agent's OS
+user. The only thing on the endpoint that can make a token valid is the
+control plane's signing key, which the endpoint does not have: the verification
+keys arrive inside the entitlement the licensing key signs, so neither the agent
+nor any same-user process can mint an approval, re-bind one to another call, or
+replay one. What remains local is *which* request to poll, and tampering with that
+only ever results in a block.
+
+By default the local operator channel keeps working alongside the dashboard (and
+Claude Code / VS Code keep their native dialog). Set
+`operator_approvals.dashboard_only: true` to make the dashboard the **only**
+channel: `aidr approve` approvals are ignored, native dialogs become blocks, and if
+the dashboard is unavailable (not enrolled, no signed entitlement, control plane
+unreachable) the call stays blocked with the reason in the message.
 
 ## Files on Disk
 
@@ -692,6 +852,8 @@ would remove the local same-user path entirely, is not part of this release.
 | `~/.singularity-aidr/operator-approval.key` | Approval HMAC key, only with the explicit `operator_approvals.key_storage: "file"` opt-in (`0600`) |
 | `~/.singularity-aidr/operator-approval-ledger.json` | Single-use consumption ledger, only with the `file` key storage (`0600`); otherwise it lives in the OS vault |
 | `~/.singularity-aidr/operator-approval-key.json` | Informational record of where the approval key lives; never makes AIDR read a key file |
+| `~/.singularity-aidr/dashboard-approval-requests.json` | Managed mode: which dashboard approval request to poll for which pending ask (`0600`); grants nothing by itself |
+| `~/.singularity-aidr/session-flow/` | Per-session toxic-flow records (`<digest>.json`, HMAC-protected, `0600`, pruned after `toxic_flow.window_minutes`) and their per-install key `.flow-key` (`0600`) |
 | `~/.singularity-aidr/installation-id` | Random UUID identifying this installation |
 | `~/.singularity-aidr/managed.json` | Managed-mode state (seat status, backoff windows) |
 | `~/.singularity-aidr/pending-approvals.json` | Pending approval state (transient, managed by PreToolUse hook) |

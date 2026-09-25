@@ -1,0 +1,12 @@
+[Unit]
+Description=Minute AIDR alert notification dispatch
+
+[Timer]
+OnBootSec=45s
+OnUnitActiveSec=1min
+AccuracySec=5s
+Persistent=true
+Unit=aidr-notification-dispatch.service
+
+[Install]
+WantedBy=timers.target
