@@ -2,13 +2,13 @@
   "schema_version": 1,
   "generated_on": "2026-09-25",
   "generation_timezone": "Europe/Istanbul",
-  "source_commit": "b094b6b534b0a1959fd77337aa0c505ddd0d00d5",
+  "source_commit": "58fe2dada46bd31c4e3c34e3900cd9f50e619ef3",
   "worktree_has_changes": false,
   "decision": "NO-GO",
   "methodology": "Generated capability/consumer mapping; statuses do not imply production effectiveness. Wired means a callable implementation; partial means scope or delivery gaps; missing means no end-to-end consumer; external requires independent evidence. Includes proposed market capabilities and deployment/assurance requirements. Historical module-reachability counts are not feature counts.",
   "status_counts": {
-    "wired": 50,
-    "partial": 36,
+    "wired": 51,
+    "partial": 37,
     "missing": 0,
     "external": 2
   },
@@ -19,11 +19,12 @@
       "name": "Tool artifact extraction",
       "status": "wired",
       "source_paths": [
-        "packages/core/src/extractors.ts"
+        "packages/core/src/extractors.ts",
+        "packages/core/src/evaluator.ts"
       ],
       "consumer": "Evaluator and connectors",
-      "delivered": "Commands, paths, URLs, package specs, content",
-      "remaining": "Unrecognized or host-hidden actions remain outside visibility",
+      "delivered": "Commands, paths, URLs, package specs and content; unknown and MCP tool input is walked to depth 16, 1024 strings, 2048 artifacts and 4 MiB, object keys are inspected, free text over 64 KiB (including Write/Edit/Read content) is scanned in overlapping line-aligned windows, and any residual limit marks the call input_not_fully_inspected, which the evaluator denies (POL-INPUT-003) instead of allowing it uninspected",
+      "remaining": "Unrecognized or host-hidden actions remain outside visibility; an oversized benign tool input is now denied rather than allowed, so the limits still need calibration against customer workloads",
       "production_accepted": false
     },
     {
@@ -115,8 +116,8 @@
         "packages/claude-code/src/detector-provisioning.ts"
       ],
       "consumer": "Core evaluator; signed per-runtime tenant bundle loaded by every connector; optional local-mode policy file",
-      "delivered": "Tenant labels, rules, owner-bound exceptions, redact/ask/block, tenant-governed PII baseline and signed tenant bundle verification. The cross-connector parity suite provisions one signed bundle in Claude Code, Codex, OpenCode, OpenClaw, Cursor and VS Code: block and ask rules match, and an untrusted, edited or missing required bundle fails closed before evaluation in every connector. Local mode accepts an unsigned ~/.singularity-aidr/dlp-policy.json (invalid = skipped + degraded health)",
-      "remaining": "Bundles are operator-placed files: no control-plane push/rotation operation is accepted in the field. The local-mode policy file is unsigned and user-editable, so it is a convenience, not a managed control. The parity suite's redact row still expects a block and failed on 2026-09-24 (25 of 26 cases passed) because Claude Code now rewrites redacted input (DET-14); that expectation is unreconciled. Customer label/false-positive acceptance remains open",
+      "delivered": "Tenant labels, rules, owner-bound exceptions, redact/ask/block, tenant-governed PII baseline and signed tenant bundle verification. The cross-connector parity suite provisions one signed bundle in Claude Code, Codex, OpenCode, OpenClaw, Cursor and VS Code: block and ask rules match, and an untrusted, edited or missing required bundle fails closed before evaluation in every connector. Local mode accepts an unsigned ~/.singularity-aidr/dlp-policy.json (invalid = skipped + degraded health). On 2026-09-25 the parity suite passed 27 of 27 cases against rebuilt bundles; its redact row expects the input-rewriting connectors (Claude Code, OpenCode) to run the redacted input and the others to block",
+      "remaining": "Bundles are operator-placed files: no control-plane push/rotation operation is accepted in the field. The local-mode policy file is unsigned and user-editable, so it is a convenience, not a managed control. Customer label/false-positive acceptance remains open",
       "production_accepted": false
     },
     {
@@ -228,8 +229,8 @@
         "packages/opencode/src/tool-handler.ts"
       ],
       "consumer": "Claude Code UserPromptSubmit and connectors that declare input rewrite",
-      "delivered": "Prompts are scanned for secrets (block by default) and PII (warn) plus tenant DLP, with kinds/counts only; a DLP redact becomes an allow with rewritten input only where the host supports rewrite (Claude Code updatedInput, OpenCode args) and only if every parameter survives and the result rescans clean, otherwise deny",
-      "remaining": "Prompt protection exists only for Claude Code; Codex, Cursor, VS Code and OpenClaw keep redact as deny; the rewrite contract is verified locally against one Claude Code version and still needs native host-version acceptance",
+      "delivered": "Prompts are scanned for secrets (block by default), PII including TC Kimlik, IBAN and TR/international phones from the AIDR Privacy rules (warn by default) and tenant DLP, with kinds/counts only. Overlap resolution is a linear sort-and-sweep, a blocking scan stops at the first confirmed secret, and an internal deadline (default 7 s; the host kills the hook at 10 s) blocks an unfinished scan when secrets=block or a tenant DLP policy applies and otherwise sends the prompt with a visible not-fully-inspected notice; an incomplete personal-data scan is never reported clean. A DLP redact becomes an allow with rewritten input only where the host supports rewrite (Claude Code updatedInput, OpenCode args), using shell-inert REDACTED tokens, only if every parameter survives and the rewritten input rescans clean against DLP and the threat heuristics (dlp_redaction_unsafe otherwise); everything else is denied",
+      "remaining": "Prompt protection exists only for Claude Code; Codex, Cursor, VS Code and OpenClaw keep redact as deny; with PII in the default warn mode a prompt that could not be fully inspected is still sent with a notice; the rewrite contract is verified locally against one Claude Code version and still needs native host-version acceptance",
       "production_accepted": false
     },
     {
@@ -329,8 +330,8 @@
         "packages/core/src/mcp-transport.ts"
       ],
       "consumer": "Opt-in loopback HTTP and stdio JSON-RPC gateway",
-      "delivered": "Signed tool approval, tenant-bound auth, initialized notifications, DNS pinning and bounded inline output inspection. tools/call arguments run through the core evaluator before upstream execution (deny, ask = blocked pending operator action, evaluator failure = detection_unavailable). Image/audio/resource blobs are inspected within bounds (MIME allowlist, canonical base64, size limit, magic bytes, printable-run scan); server-initiated sampling/elicitation/roots follow a deny-by-default policy and those client capabilities are stripped from the forwarded initialize",
-      "remaining": "Forced routing of direct upstream access (a host can still reach the MCP server without the gateway), media formats outside the byte-verifiable allowlist and customer native acceptance remain open",
+      "delivered": "Signed tool approval, tenant-bound auth, initialized notifications, DNS pinning and bounded inline output inspection. tools/call arguments run through the core evaluator before upstream execution (deny, ask = blocked pending operator action, evaluator failure = detection_unavailable). Image/audio/resource blobs are inspected within bounds (MIME allowlist, canonical base64, size limit, magic bytes, printable-run scan); server-initiated sampling/elicitation/roots follow a deny-by-default policy and those client capabilities are stripped from the forwarded initialize. Tool-call input beyond the extractor limits is refused as input_not_fully_inspected instead of being forwarded; PNG zTXt/iTXt/iCCP chunks and PDF FlateDecode streams are inflated under ratio, per-item and stream-count bounds and UTF-16 runs decoded, and output past a bound is refused (binary_inflation_limit)",
+      "remaining": "Forced routing of direct upstream access (a host can still reach the MCP server without the gateway), media and compressed formats outside the byte-verifiable allowlist (only PNG text chunks and PDF FlateDecode streams are inflated) and customer native acceptance remain open",
       "production_accepted": false
     },
     {
@@ -391,7 +392,7 @@
         "packages/dashboard/src/ui/pages/PosturePage.tsx"
       ],
       "consumer": "aidr scan --skill/--upload, aidr discover --upload, ingest and /posture dashboard",
-      "delivered": "26 deterministic skill-scan rules (AIG T01-T09 taxonomy), infra CVE, MCP inventory and skill findings uploaded as ids/enums/CVSS/digests only, strict server-side projection, member-read RLS posture_findings table with retention/offboarding cascade, and a dashboard with explicit empty/error states",
+      "delivered": "26 deterministic skill-scan rules (AIG T01-T09 taxonomy), infra CVE, MCP inventory and skill findings uploaded as ids/enums/CVSS/digests only, strict server-side projection, member-read RLS posture_findings table with the tenant identity barrier and retention/offboarding cascade, and a dashboard with explicit empty/error states",
       "remaining": "A deterministic pattern port of the AIG taxonomy, not AIG's model-driven scanner; coverage is limited to what an enrolled collector uploads, and detection efficacy on real customer skills/plugins is unmeasured",
       "production_accepted": false
     },
@@ -506,14 +507,17 @@
       "source_paths": [
         "packages/core/src/operator-approvals.ts",
         "packages/core/src/guard.ts",
+        "packages/core/src/shell-normalize.ts",
+        "packages/core/src/terminal-text.ts",
+        "threats/self-defense.yaml",
         "packages/cli/src/commands/approvals.ts",
         "packages/cli/src/commands/allowlist.ts",
         "packages/cli/src/commands/audit.ts",
         "packages/cli/src/commands/doctor.ts"
       ],
       "consumer": "aidr pending/approve/allowlist/audit/doctor and guardToolCall in OpenClaw, OpenCode and Codex",
-      "delivered": "File-backed 0600 store of HMAC-signed pending asks and single-use, tool- and artifact-bound approvals (15-minute default expiry); tampered, expired or mismatched records keep the block; interactive TTY confirmation or explicit non-interactive opt-in; audit tail/export re-redacted; no agent-callable approval tool",
-      "remaining": "Approval is local to one host and OS user: there is no central/multi-approver workflow, and an agent running as the same OS user is only deterred by the CLT-SELF-007/CLT-SELF-002 self-defense rules, not isolated from the store. Operator usability and native host acceptance remain open",
+      "delivered": "HMAC-signed pending asks and single-use, tool- and artifact-bound approvals (15-minute default expiry) in a 0600 store. The HMAC key lives only in the OS vault by default: with no vault, approvals are disabled and asks stay blocked, and a plain key file needs an explicit key_storage=file that aidr doctor warns about. Single use is anchored in a vault-held consumption ledger, so restoring an old approvals.json yields already_used. Self-defense hard blocks CLT-SELF-007/008/009 deny any agent reference to the state directory, the vault entries or aidr approve/pending/allowlist add over a shell-normalised view (quotes, escapes, ANSI-C strings, variables, concatenation, globs). Stored and displayed records escape C0/C1, bidi and format controls with a truncation marker and artifact count. Interactive TTY confirmation or explicit non-interactive opt-in; no agent-callable approval tool",
+      "remaining": "Approval is local to one host and OS user: there is no central/multi-approver workflow. The agent runs as the same OS user, so separation rests on the OS vault's own access policy and on pattern-based self-defense rules, not on process isolation; a shell construct the normaliser does not model, or a vault that releases secrets to any process of the user without a prompt, can still expose the channel. Real macOS/Windows/Linux vault behaviour, operator usability and native host acceptance remain open",
       "production_accepted": false
     },
     {
@@ -647,6 +651,21 @@
       "production_accepted": false
     },
     {
+      "id": "CLI-05",
+      "area": "Endpoint",
+      "name": "Local TR/EN privacy scan",
+      "status": "wired",
+      "source_paths": [
+        "packages/cli/src/commands/privacy.ts",
+        "packages/core/src/dlp/privacy-detectors.ts",
+        "packages/core/src/output-sensitive-data.ts"
+      ],
+      "consumer": "aidr privacy scan",
+      "delivered": "Scans one file or stdin (4 MiB cap; binary, non-UTF-8 or oversize input is refused) with the core TR/EN privacy detectors (all, or --types) plus the output credential detector and reports type, offsets and line numbers only, never the matched value; --mask prints a redacted copy and is refused when inspection is incomplete; --json output; exit 0 clean, 2 findings per --fail-on, 3 incomplete inspection, 1 error",
+      "remaining": "A local operator/CI utility, not an enforcement point: it inspects only the input it is given; address and person detectors are heuristic, and false-positive rates on customer Turkish/English data are unmeasured",
+      "production_accepted": false
+    },
+    {
       "id": "CON-01",
       "area": "Connectors",
       "name": "Claude Code",
@@ -744,8 +763,8 @@
         "packages/opencode/src/tool-handler.ts"
       ],
       "consumer": "Built entry points of all six connectors",
-      "delivered": "One payload matrix (download-to-shell, home-directory deletion, credential reads, malicious package, MCP injection, field aliases, clean controls) reaches the same blocked class and threat id in every connector; argv-array shell commands are normalised and malformed commands denied; OpenClaw/OpenCode register a deny-all gate when initialisation fails instead of registering no hooks",
-      "remaining": "Parity is proven against built bundles in-process and over stdin, not against installed native hosts; documented host-verb differences (ask becomes block in Codex/OpenCode/OpenClaw, deny in Cursor) remain. On 2026-09-24 the OpenClaw integrity-failure test still blocked every call but reported init_error instead of integrity_bad_signature (1 of 2 cases failed), and the DLP redact parity row is stale (DET-07)",
+      "delivered": "One payload matrix (download-to-shell, home-directory deletion, credential reads, malicious package, MCP injection, field aliases, clean controls) reaches the same blocked class and threat id in every connector; argv-array shell commands are normalised and malformed commands denied; OpenClaw/OpenCode register a deny-all gate when initialisation fails instead of registering no hooks. On 2026-09-25, against rebuilt bundles, the parity suite passed 27 of 27 cases (including the DLP redact row, which expects Claude Code and OpenCode to run the redacted input and the other connectors to block) and the OpenClaw and OpenCode init fail-closed suites passed 2 of 2 and 3 of 3",
+      "remaining": "Parity is proven against built bundles in-process and over stdin, not against installed native hosts; documented host-verb differences (ask becomes block in Codex/OpenCode/OpenClaw, deny in Cursor) and redact differences (rewrite in Claude Code and OpenCode, block elsewhere) remain",
       "production_accepted": false
     },
     {
@@ -754,10 +773,12 @@
       "name": "Tenant isolation and RBAC",
       "status": "wired",
       "source_paths": [
-        "supabase/migrations/20260805000000_hybrid_tenancy.sql"
+        "supabase/migrations/20260805000000_hybrid_tenancy.sql",
+        "supabase/migrations/20260925000060_tenant_identity_barrier_coverage.sql",
+        "scripts/lib/tenant-identity-barrier.mjs"
       ],
       "consumer": "Database RLS and Edge authorization",
-      "delivered": "Personal/team tenants, roles, membership and ownership safeguards",
+      "delivered": "Personal/team tenants, roles, membership and ownership safeguards; every RLS table with a tenant_id carries the restrictive tenant identity barrier policy, enforced by a static replay of all migrations in supabase:check (CI) with a reasoned, stale-checked exception list",
       "remaining": "Independent penetration test and full endpoint negative matrix remain required",
       "production_accepted": false
     },
@@ -830,10 +851,12 @@
       "status": "wired",
       "source_paths": [
         "supabase/functions/api-keys/index.ts",
-        "supabase/functions/enrollment-tokens/index.ts"
+        "supabase/functions/enrollment-tokens/index.ts",
+        "supabase/functions/_shared/api-key-auth.ts",
+        "supabase/migrations/20260925000061_browser_guard_ingest_keys.sql"
       ],
       "consumer": "Dashboard and native callers",
-      "delivered": "Hash-only storage, selected-team UI, active membership, server-only mutations, member ownership and revocation",
+      "delivered": "Hash-only storage, selected-team UI, active membership, server-only mutations, member ownership and revocation. Ingest-only ingest:browser_guard keys (immutable scope and install limit, audited owner/admin issue) are accepted only by /v1/ingest for Browser Guard privacy_scan events, rate limited per key, capped by install_limit and never given the signed entitlement; every other key-authenticated endpoint refuses them (api_key_scope_denied)",
       "remaining": "Per-tool short-lived delegation is tracked separately in MCP-06; live provider acceptance and endpoint secret-vault integration remain open",
       "production_accepted": false
     },
@@ -1066,14 +1089,17 @@
     {
       "id": "DEP-03",
       "area": "Deployment",
-      "name": "Atomic migration runner",
+      "name": "Atomic migration runner and signal-safe upgrade",
       "status": "wired",
       "source_paths": [
-        "scripts/deployment-migrate.mjs"
+        "scripts/deployment-migrate.mjs",
+        "scripts/deployment-upgrade.mjs",
+        "scripts/verify-deployment-upgrade.mjs",
+        "deploy/UPGRADE.md"
       ],
       "consumer": "Self-hosted deployment",
-      "delivered": "Checksums, advisory lock, transactional apply and replay-safe ledger",
-      "remaining": "Restore and production upgrade drill required before customer changes",
+      "delivered": "Checksums, advisory lock, transactional apply and replay-safe ledger. The upgrade runs each step in its own process group: on SIGINT/SIGTERM read-only steps stop, state-changing steps finish, the recorded writers are restarted before the schema commit (target services stay drained after it), interrupted_by and the resumable phase are recorded and the process exits 130/143; pnpm verify:upgrade (43 checks, including signal-during-backup-verify and signal-during-migration scenarios) runs in the onprem-deploy CI job",
+      "remaining": "Restore and a production upgrade drill from a real previous customer version are required before customer changes",
       "production_accepted": false
     },
     {
@@ -1164,7 +1190,7 @@
       ],
       "consumer": "deployment-prepare --profile/--with-aig, doctor and customer kit",
       "delivered": "Small/medium/large resource budgets, restart/log-rotation overlay, AIG bridge under a digest-pinned deny-by-default Squid egress gateway, air-gap base-image planning, generated configuration reference with drift check, BYO-certificate nginx vhosts and static TLS renewal with restore on failure",
-      "remaining": "No Kubernetes/Helm chart exists in this source tree; customer-host install, air-gap media transfer drill, sizing validation and customer TLS acceptance remain open",
+      "remaining": "The Compose bundle is single-host (the Kubernetes chart is DEP-12); customer-host install, air-gap media transfer drill, sizing validation and customer TLS acceptance remain open",
       "production_accepted": false
     },
     {
@@ -1197,6 +1223,25 @@
       "consumer": "Dashboard /downloads and onboarding step",
       "delivered": "Schema-validated manifest (https-only links, sha256, optional detached signature, no unknown ids), per-OS verify commands, server-side manifest validation with ETag, and a generator that fails closed on http: URLs, symlinks and mixed versions; with no manifest configured the page shows no links",
       "remaining": "No published release host or signed manifest exists yet; signatures depend on publisher key custody (DEP-05) and private registry delivery (COM-012)",
+      "production_accepted": false
+    },
+    {
+      "id": "DEP-12",
+      "area": "Deployment",
+      "name": "Kubernetes Helm chart for the self-hosted control plane",
+      "status": "partial",
+      "source_paths": [
+        "deploy/helm/aidr/Chart.yaml",
+        "deploy/helm/aidr/values.yaml",
+        "deploy/helm/aidr/values.schema.json",
+        "deploy/helm/chart.test.mjs",
+        "deploy/helm/build-images.mjs",
+        "deploy/helm/generate-secrets.mjs",
+        "docs/operations/kubernetes.md"
+      ],
+      "consumer": "helm install of deploy/helm/aidr with operator-created Secrets and staged images",
+      "delivered": "Dashboard, Envoy API gateway, GoTrue, PostgREST, storage-api, edge runtime, optional single-instance Postgres or an external database, a checksum-verified migrations hook Job, optional pg_dump backup CronJob, TLS ingress, default-deny NetworkPolicy and the optional AIG stack. The chart never renders or generates Secrets and fails rendering on missing secret names, non-HTTPS origins, missing TLS, latest tags and incomplete AIG input; pods run non-root with a read-only root filesystem (Postgres excepted), dropped capabilities and small/medium/large resource presets. pnpm verify:helm runs helm lint --strict and helm template on three value sets and kubeconform against the Kubernetes 1.25 and 1.30 schemas when those binaries are present; the CI helm job installs signature-verified Helm 3.19.0 and runs it",
+      "remaining": "Not exercised on a live cluster. CI does not install kubeconform, so schema validation there is skipped and is recorded only from development runs; without Helm the rendered checks skip (10 of 20 checks skipped in this review's local run). The chart does not deploy the device-start ingress signer or the maintenance timers, HA/failover is unproven (DEP-07) and customer cluster acceptance remains open",
       "production_accepted": false
     },
     {
@@ -1249,10 +1294,12 @@
         "packages/browser-guard/src/engine/detect.ts",
         "packages/browser-guard/src/engine/vault.ts",
         "packages/browser-guard/src/content/unmask.ts",
-        "packages/browser-guard/src/sites/index.ts"
+        "packages/browser-guard/src/background/vault-store.ts",
+        "packages/browser-guard/src/sites/index.ts",
+        "packages/browser-guard/e2e/run.mjs"
       ],
       "consumer": "Chrome/Edge/Firefox MV3 content script on ChatGPT, Gemini, Claude, Copilot, Perplexity, DeepSeek, Mistral, Grok and a generic adapter",
-      "delivered": "Capture-phase send interception with reversible per-type placeholders, response unmasking, auto/confirm/block/monitor modes and fail-closed handling of scan errors or incomplete scans; the recorded hermetic Chromium E2E run against simulated site fixtures passed 18 of 19 scenarios",
+      "delivered": "Capture-phase send interception with reversible per-type placeholders, response unmasking, auto/confirm/block/monitor modes and fail-closed handling of scan errors or incomplete scans. Restored originals are CSS generated content inside a closed shadow root with reset inheritance, generic fonts and a fixed-width box, so page fonts, CSS, window.find and selection cannot observe them, and a placeholder is restored only in content inserted after the send from this tab that carried it. The vault and sent-placeholder set persist per tab and origin in chrome.storage.session (4 h TTL, removed on tab close), so replies still restore after a reload. Sites in disabledSites are monitored: sent unchanged, still scanned and counted. The recorded hermetic Chromium E2E run against simulated site fixtures ran 22 scenarios: 21 passed and 1 was an intentional skip",
       "remaining": "Fixture pages are not the live sites: real-site DOM drift, store publication/review and customer browser acceptance remain open; text typed outside a recognised editor or sent by site-internal paths is not visible",
       "production_accepted": false
     },
@@ -1266,7 +1313,7 @@
         "packages/browser-guard/src/engine/files.ts"
       ],
       "consumer": "Browser Guard content script (input, drop and paste)",
-      "delivered": "CSV/TSV cell masking with formula neutralisation, JSON/JSONL leaf rewriting, .env value masking; incomplete scans and internal errors block",
+      "delivered": "CSV/TSV cell masking with formula neutralisation, JSON/JSONL leaf rewriting, .env value masking; incomplete scans and internal errors block. Text-named or text-MIME files that are not UTF-8 are decoded as windows-1254 or windows-1252 and scanned, masked copies are re-encoded as UTF-8, and a NUL byte in such a file blocks (TEXT_FILE_NOT_DECODABLE) outside monitor mode",
       "remaining": "Binary and office/PDF/image formats are not inspected (blocked only in block mode, otherwise allowed with a marker); large-file and real-site upload acceptance remain open",
       "production_accepted": false
     },
@@ -1295,7 +1342,7 @@
         "deploy/browser-guard/README.md"
       ],
       "consumer": "Browser managed storage and deployment examples",
-      "delivered": "Managed-over-user-over-default policy with locked keys, RE2-compatible managed schema checked at build, sender-validated message router, DNR site blocking; Chrome/Edge (JSON, .reg, Intune), Firefox policies and macOS Jamf examples; reproducible release zips with SHA256SUMS",
+      "delivered": "Managed-over-user-over-default policy with locked keys, RE2-compatible managed schema checked at build, sender-validated message router, DNR site blocking; Chrome/Edge (JSON, .reg, Intune), Firefox policies and macOS Jamf examples; reproducible release zips with SHA256SUMS. Any managed policy locks the protection-reducing user settings (mode, enabledEntities, literals, maskPaste, restoreResponses, disabledSites) unless it sets allowUserOverrides: true; blocked.html is not web accessible (the DNR rule blocks the navigation and the worker opens the block page)",
       "remaining": "Real GPO/Intune/Jamf rollout, store or self-hosted signed distribution and a customer fleet run remain external",
       "production_accepted": false
     },
@@ -1311,8 +1358,8 @@
         "packages/dashboard/src/ui/pages/PrivacyGuardPage.tsx"
       ],
       "consumer": "Browser Guard worker to ingest and /privacy-guard",
-      "delivered": "privacy_scan events carry only site/action/channel enums, entity-type counts, findings count and policy id; strict server projection drops unknown fields; events reuse tenant RLS, seat guard, retention and offboarding; dashboard KPIs, breakdowns and series",
-      "remaining": "No live browser fleet has reported into a deployed control plane; the data-flow/DPA approval for this telemetry (COM-003) remains open",
+      "delivered": "privacy_scan events carry only site/action/channel enums, entity-type counts, findings count and policy id; strict server projection drops unknown fields; events reuse tenant RLS, seat guard, retention and offboarding; dashboard KPIs, breakdowns and series; the worker can use an ingest-only browser_guard key that no other endpoint accepts",
+      "remaining": "No live browser fleet has reported into a deployed control plane; a policy-distributed ingest key is visible to the local user (for example at chrome://policy) and can send forged counts up to its rate and install limits; the data-flow/DPA approval for this telemetry (COM-003) remains open",
       "production_accepted": false
     },
     {
@@ -1323,10 +1370,11 @@
       "source_paths": [
         "packages/privacy/src/rules.ts",
         "packages/browser-guard/src/background/native.ts",
+        "packages/browser-guard/src/content/guard.ts",
         "packages/browser-guard/docs/native-host.md"
       ],
       "consumer": "Browser Guard detection and optional native messaging host",
-      "delivered": "@singularityrd/aidr-privacy 0.6.0 browser-safe rule layer reused by Browser Guard and core; privacy dist signed into release artifacts; bounded native NER bridge (2 s, 1 MiB, strict validation, back-off) that is off unless permitted",
+      "delivered": "@singularityrd/aidr-privacy 0.6.0 browser-safe rule layer reused by Browser Guard and core; privacy dist signed into release artifacts; bounded native NER bridge (2 s, 1 MiB, strict validation, back-off) that is off unless permitted. With useNativeHost the content guard runs a native scan (up to 200k characters, 2.5 s page-side deadline) in parallel with the rules and merges validated PERSON/ADDRESS/LOCATION findings; an unavailable host degrades visibly to rules-only. The options page requests the optional nativeMessaging permission from a user gesture and shows live host status",
       "remaining": "Native host installation, NER/OCR accuracy and platform acceptance are unmeasured; privacy suites run separately via test:privacy with named optional-dependency skips",
       "production_accepted": false
     }
