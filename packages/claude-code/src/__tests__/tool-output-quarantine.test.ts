@@ -68,6 +68,27 @@ describe("Claude Code inspected output quarantine", () => {
 		expect(original.interrupted).toBe(true);
 	});
 
+	it("replaces the Bash result shape Claude Code 2.1.x sends (with noOutputExpected)", () => {
+		const result = quarantineInspectedToolOutput(inspection, {
+			stdout: "deploy token: ghp_secretvalue",
+			stderr: "",
+			interrupted: false,
+			isImage: false,
+			noOutputExpected: false,
+		});
+		const replacement = (result?.hookSpecificOutput as Record<string, unknown>)
+			.updatedToolOutput as Record<string, unknown>;
+
+		expect(replacement).toEqual({
+			stdout: "[Singularity AIDR quarantined this tool output after inspection]",
+			stderr: "[Singularity AIDR quarantined this tool output after inspection]",
+			interrupted: false,
+			isImage: false,
+			noOutputExpected: false,
+		});
+		expect(JSON.stringify(result)).not.toContain("ghp_secretvalue");
+	});
+
 	it("converts opaque Bash image output to a text-only replacement with the same shape", () => {
 		const result = quarantineInspectedToolOutput(inspection, {
 			stdout: "base64-image-bytes",

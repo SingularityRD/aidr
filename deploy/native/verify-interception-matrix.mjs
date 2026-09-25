@@ -19,6 +19,10 @@
  *
  * `enforced` additionally requires a named real-host acceptance record in the
  * row evidence, so a row can never round up to enforced on source code alone.
+ * An acceptance record is a JSON file under `docs/evidence/real-host/` written by
+ * `pnpm test:e2e:real-host` (scripts/real-host-e2e/run.mjs): the gate parses it
+ * and requires that it names the row's connector, passed, and proves exactly the
+ * point (or observed exactly the failure-condition outcome) the row cites it for.
  *
  * A structurally valid matrix that is still NO-GO (open points, unobserved
  * conditions) passes this gate: validity and readiness are reported separately.
@@ -121,6 +125,14 @@ export const SUPPORT_MATRIX_MAPPING = {
 	},
 };
 
+/**
+ * Real-host acceptance records are not connector source, so they live in one
+ * shared evidence directory instead of a connector's source root. A record is
+ * only accepted from here.
+ */
+export const ACCEPTANCE_RECORD_ROOT = "docs/evidence/real-host/";
+export const ACCEPTANCE_RECORD_KIND = "aidr-real-host-acceptance";
+
 const STATUS_OUTCOMES_REQUIRING_EVIDENCE = new Set(["fail-closed", "explicitly-unsupported"]);
 const TAMPER_POSTURES_REQUIRING_EVIDENCE = new Set(["tamper-evident-only", "fail-closed-on-tamper"]);
 
@@ -188,7 +200,9 @@ function report(options = {}) {
  * can require "at least one entry of the expected kind".
  */
 function checkEvidence(entry, context) {
-	const { state, connector, point, repoRoot, roots, label } = context;
+	const { state, connector, point, repoRoot, label } = context;
+	const acceptance = entry?.kind === "acceptance-record";
+	const roots = acceptance ? [ACCEPTANCE_RECORD_ROOT] : context.roots;
 	if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
 		state.add("EVIDENCE_NOT_OBJECT", connector, point, label);
 		return;
@@ -232,6 +246,45 @@ function checkEvidence(entry, context) {
 		if (!content.includes(marker)) {
 			state.add("EVIDENCE_MARKER_MISSING", connector, point, `${entry.path} lacks ${JSON.stringify(marker)}`);
 		}
+	}
+	if (acceptance) checkAcceptanceRecord(content, { ...context, path: entry.path });
+}
+
+/**
+ * An acceptance record must be evidence for the claim that cites it: the same
+ * connector, an overall pass, and either the cited point proven (`passed`) or the
+ * cited failure condition observed with the outcome the row declares.
+ */
+function checkAcceptanceRecord(content, { state, connector, point, path, claim }) {
+	let record;
+	try {
+		record = JSON.parse(content);
+	} catch (error) {
+		state.add("ACCEPTANCE_RECORD_INVALID", connector, point, `${path}: ${error instanceof Error ? error.message : String(error)}`);
+		return;
+	}
+	if (record?.kind !== ACCEPTANCE_RECORD_KIND || record?.schemaVersion !== 1) {
+		state.add("ACCEPTANCE_RECORD_INVALID", connector, point, `${path} is not an ${ACCEPTANCE_RECORD_KIND} v1 record`);
+		return;
+	}
+	if (record.connector !== connector) {
+		state.add("ACCEPTANCE_RECORD_CONNECTOR_MISMATCH", connector, point, `${path} records ${String(record.connector)}`);
+		return;
+	}
+	if (record.passed !== true) {
+		state.add("ACCEPTANCE_RECORD_NOT_PASSED", connector, point, path);
+		return;
+	}
+	if (claim?.type === "point" && record.proves?.points?.[claim.point] !== "passed") {
+		state.add("ACCEPTANCE_RECORD_DOES_NOT_PROVE", connector, point, `${path} does not prove ${claim.point}`);
+	}
+	if (claim?.type === "condition" && record.proves?.conditions?.[claim.condition] !== claim.outcome) {
+		state.add(
+			"ACCEPTANCE_RECORD_DOES_NOT_PROVE",
+			connector,
+			point,
+			`${path} observed ${claim.condition}=${String(record.proves?.conditions?.[claim.condition])}, row declares ${claim.outcome}`,
+		);
 	}
 }
 
@@ -331,7 +384,15 @@ export function verifyInterceptionMatrix(options = {}) {
 		let matching = 0;
 		for (const entry of row.evidence) {
 			if (entry && typeof entry === "object" && entry.kind === requiredKind) matching += 1;
-			checkEvidence(entry, { state, connector, point, repoRoot, roots, label: `${key} evidence` });
+			checkEvidence(entry, {
+				state,
+				connector,
+				point,
+				repoRoot,
+				roots,
+				label: `${key} evidence`,
+				claim: { type: "point", point },
+			});
 		}
 
 		if (row.status === "unsupported") {
@@ -484,6 +545,7 @@ function checkFailureConditions(matrix, soldConnectors, soldSet, repoRoot, state
 				repoRoot,
 				roots: null,
 				label: `${key} evidence`,
+				claim: { type: "condition", condition, outcome: row.outcome },
 			});
 		}
 		if (STATUS_OUTCOMES_REQUIRING_EVIDENCE.has(row.outcome) && (row.evidence.length === 0 || matching === 0)) {
@@ -598,6 +660,7 @@ function finish(state, matrixFile, supportFile, byConnectorPoint) {
 		limitations: [
 			"A structurally valid matrix is not host acceptance: every non-enforced row stays open until a named real-host record exists.",
 			"Source markers prove that the guard is declared in the repository, not that a host loaded, trusted or honoured it.",
+			"An `enforced` row rests on a real-host acceptance record for the recorded host version and platform only; the records in docs/evidence/real-host/ drive the real host binary with a scripted mock model.",
 		],
 	};
 }
