@@ -76,7 +76,7 @@ test("outer bundle uses one canonical signing claim after exact-candidate E2E", 
 	assert.match(assembly, /Reverify signed packages across runner boundary[\s\S]*node scripts\/verify-release-evidence\.mjs/);
 	assert.ok(assembly.indexOf("Reverify signed packages across runner boundary") < assembly.indexOf("Clean-consumer package install gate"));
 	assert.ok(assembly.indexOf("Clean-consumer package install gate") < assembly.indexOf("Bind candidate identity and digest"));
-	assert.match(assembly, /verify-package-install\.mjs --tarball-dir release-output/);
+	assert.match(assembly, /verify-package-install\.mjs --require-signed --tarball-dir release-output/);
 	assert.match(assembly, /sha256sum release-output\/release-metadata\.json release-output\/release-inventory\.json/);
 	assert.match(acceptance, /AIDR_RUNNER_ENVIRONMENT[\s\S]*self-hosted/);
 	assert.match(acceptance, /AIDR_E2E_CANDIDATE_BOUND_AT/);

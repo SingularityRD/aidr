@@ -49,6 +49,7 @@ import {
 	selectSteps,
 	summarize,
 	TOOL_SOURCES,
+	blockingDependency,
 	versionAtLeast,
 } from "./lib/ci-local-plan.mjs";
 
@@ -656,6 +657,12 @@ async function main() {
 		const post = entry.phase === "post";
 		if (interrupted || (stopped && !post)) {
 			results.push({ id: entry.id, group: entry.group, name: entry.name, required: entry.required, status: STATUS.NOT_RUN, durationMs: 0, command: commands.get(entry.id).display, note: interrupted ? "interrupted" : "stopped after a required failure" });
+			continue;
+		}
+		const blocker = blockingDependency(entry, results);
+		if (blocker) {
+			console.log(`\n${paint("90", "--- NOT RUN")} [${index + 1}/${selected.length}] ${entry.group} > ${entry.name}\n    ${blocker} did not complete, and this step consumes its output`);
+			results.push({ id: entry.id, group: entry.group, name: entry.name, required: entry.required, status: STATUS.NOT_RUN, durationMs: 0, command: commands.get(entry.id).display, note: `blocked: ${blocker} did not complete`, blockedBy: blocker });
 			continue;
 		}
 		const result = await runStep(entry, index, selected.length, context);
