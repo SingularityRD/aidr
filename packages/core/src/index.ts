@@ -1,5 +1,37 @@
 // @singularityrd/aidr-core public API
 
+// AI-BOM (AI Bill of Materials): redacted AI inventory and its CycloneDX 1.6 rendering.
+export {
+	type BuildCycloneDxOptions,
+	buildCycloneDxBom,
+	CYCLONEDX_SPEC_VERSION,
+	type CycloneDxBom,
+	type CycloneDxComponent,
+	type CycloneDxProperty,
+	type CycloneDxService,
+	type CycloneDxVulnerability,
+} from "./aibom/cyclonedx.js";
+export {
+	AI_INVENTORY_SCHEMA,
+	type AiBomAgentInput,
+	type AiInventory,
+	type AiInventoryCoverage,
+	type AiInventoryMcpServer,
+	type AiInventoryPackage,
+	type AiInventoryVulnerability,
+	aiInventoryGaps,
+	type CollectAiInventoryOptions,
+	collectAiInventory,
+	displayPath,
+	packageUrl,
+} from "./aibom/inventory.js";
+export {
+	type AiProjectScan,
+	loadAiComponentCatalog,
+	matchCatalogEntry,
+	normalizePackageName,
+	scanProjectForAiComponents,
+} from "./aibom/project-scan.js";
 export type {
 	AigCveFinding,
 	AigFingerprintMatch,
@@ -27,7 +59,11 @@ export {
 	scanTarget,
 	scanTargets,
 } from "./aig-infra-scan.js";
-export { evaluateInfrastructurePolicy, inspectInfrastructurePolicy } from "./aig-policy.js";
+export {
+	evaluateInfrastructurePolicy,
+	inspectInfrastructurePolicy,
+	parseInfrastructureScanReport,
+} from "./aig-policy.js";
 export type {
 	AigAgentScanOptions,
 	AigFinding,
@@ -696,6 +732,8 @@ export type {
 	McpInventoryReport,
 	McpInventorySourceStatus,
 } from "./mcp-inventory.js";
+export { defaultMcpConfigPaths } from "./mcp-inventory.js";
+export { redactLaunchToken, redactMcpLaunch } from "./mcp-launch-redaction.js";
 export type { McpFetchOptions } from "./mcp-transport.js";
 // Pinned-DNS MCP upstream transport used by the inline MCP gateway.
 export { fetchMcpEndpoint, McpTransportError } from "./mcp-transport.js";

@@ -2,6 +2,7 @@
 
 import { VERSION } from "@singularityrd/aidr-core";
 import { Command } from "commander";
+import aibomCommand from "./commands/aibom.js";
 import {
 	allowlistAddCommand,
 	allowlistListCommand,
@@ -151,6 +152,21 @@ program
 		"Send server names, risk categories and digests (no paths, endpoints or arguments) to the managed control plane",
 	)
 	.action(discoverCommand);
+
+program
+	.command("aibom")
+	.description(
+		"Export an AI Bill of Materials (CycloneDX 1.6): agents, MCP servers, AI packages, models, plugins and known vulnerabilities; secrets are redacted",
+	)
+	.option("--format <format>", "cyclonedx-json or json (AIDR inventory)", "cyclonedx-json")
+	.option("-o, --output <file>", "Write to a new file (0600) instead of stdout")
+	.option("--path <project>", "Project directory whose manifests and MCP configs are read", ".")
+	.option("--config <paths...>", "Inspect explicit MCP configuration paths instead of the defaults")
+	.option(
+		"--scan-report <path>",
+		"Include a saved `aidr scan --save-report` result (defaults to the configured AI infrastructure report)",
+	)
+	.action(aibomCommand);
 
 program
 	.command("uninstall")

@@ -112,6 +112,11 @@ every upload. When nothing has been uploaded the page says so and shows the
 commands above — an empty posture is never presented as a clean environment. If
 the data cannot be read, the page shows an error instead of an empty state.
 
+**Export AI-BOM** on the same page downloads the tenant's reported AI estate
+(fleet agent runtimes, MCP servers, AI infrastructure components,
+skills/plugins and their vulnerabilities) as a CycloneDX 1.6 document; `aidr
+aibom` produces the per-project equivalent locally. See [AI-BOM](ai-bom.md).
+
 ## Limitations
 
 - The infrastructure scan covers only the bundled fingerprint and CVE dataset,
