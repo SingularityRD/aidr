@@ -73,7 +73,7 @@ program
 program
 	.command("scan")
 	.description(
-		"Scan AI infrastructure targets for known products and CVEs (native, no external service)",
+		"Scan AI infrastructure targets, skill packages or project code (native, no external service)",
 	)
 	.option(
 		"-t, --target <url...>",
@@ -83,6 +83,10 @@ program
 	.option(
 		"--skill <path...>",
 		"Scan a skill or plugin package directory with the T01-T09 skill rules (repeatable)",
+	)
+	.option(
+		"--code <path...>",
+		"Scan a project directory or file for unsafe model loading and insecure code patterns (file:line, local only)",
 	)
 	.option("--json", "Emit machine-readable JSON")
 	.option("--allow-public", "Permit non-private targets (off by default)")

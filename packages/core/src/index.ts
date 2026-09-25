@@ -1,5 +1,14 @@
 // @singularityrd/aidr-core public API
 
+// AI model supply chain: trusted model sources (hubs and publisher organisations)
+export {
+	isTrustedModelSourceMatch,
+	loadTrustedModelSources,
+	MODEL_SOURCES_SUBDIR,
+	modelRepoOrgs,
+	NO_TRUSTED_MODEL_SOURCES,
+	type TrustedModelSources,
+} from "./ai-supply-chain.js";
 export type {
 	AigCveFinding,
 	AigFingerprintMatch,
@@ -155,6 +164,31 @@ export { FileCheckClient } from "./clients/file-check.js";
 export type { PackageMetadata } from "./clients/package-registry.js";
 export { RegistryClient, resolveDistDigest } from "./clients/package-registry.js";
 export { UrlCheckClient } from "./clients/url-check.js";
+// Code guard: AI supply-chain and secure-code rules over code an agent writes or runs
+export {
+	applySecureCodeWarnings,
+	CODE_MATCH_PREFIX,
+	type CodeBlock,
+	type CodeFinding,
+	type CodeGuardResult,
+	CodeRuleSet,
+	codeBlocksForToolCall,
+	codeLanguageForPath,
+	describeSecureCodeWarnings,
+	inspectToolCallCode,
+	isReportableFinding,
+	isSecureCodeRule,
+	matchCodeBlock,
+	SECRET_RULE_ID,
+	SECURE_CODE_WARNING_CATEGORY,
+} from "./code-guard.js";
+// Project code scan (`aidr scan --code`)
+export {
+	type CodeScanFinding,
+	type CodeScanOptions,
+	type CodeScanReport,
+	scanCodePath,
+} from "./code-scanner.js";
 // Shell argv normalization (argv arrays -> inspected command text)
 export {
 	type CommandValueResult,
@@ -879,6 +913,7 @@ export {
 // Prompt protection (UserPromptSubmit-style inspection of the user's prompt)
 export {
 	DEFAULT_PROMPT_PROTECTION,
+	locateSecrets,
 	type PromptFindingCategory,
 	type PromptFindingSummary,
 	type PromptIncompleteInspection,
@@ -887,6 +922,7 @@ export {
 	PromptScanDeadlineError,
 	type PromptScanOptions,
 	type PromptTenantDlp,
+	type SecretLocation,
 	scanPrompt,
 } from "./prompt-protection.js";
 // Quarantine
@@ -1165,6 +1201,7 @@ export {
 } from "./trusted-domains.js";
 export type {
 	AgentRuntime,
+	AiSupplyChainConfig,
 	Allowlist,
 	AllowlistConfig,
 	AllowlistEntry,
@@ -1198,6 +1235,7 @@ export type {
 	PluginScanResult,
 	PromptProtectionConfig,
 	PromptProtectionMode,
+	SecureCodeConfig,
 	SignalSources,
 	Threat,
 	ThreatData,
@@ -1207,10 +1245,12 @@ export type {
 	UrlCheckResult,
 	Verdict,
 	VerdictSeverity,
+	VerdictWarning,
 } from "./types.js";
 // Types
 export {
 	ActionSchema,
+	AiSupplyChainConfigSchema,
 	AllowlistConfigSchema,
 	ArtifactSchema,
 	ArtifactTypeSchema,
@@ -1229,6 +1269,7 @@ export {
 	PackageCheckConfigSchema,
 	PromptProtectionConfigSchema,
 	PromptProtectionModeSchema,
+	SecureCodeConfigSchema,
 	SensitivitySchema,
 	SeveritySchema,
 	ThreatSchema,

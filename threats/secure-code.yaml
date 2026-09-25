@@ -1,0 +1,345 @@
+# Secure-code guardrail rules for Singularity AIDR
+# Author: SingularityRD
+# License: DRL-1.1 (see threats/LICENSE)
+#
+# Insecure patterns in code an AI agent writes. These rules are advisory: they
+# only ever run on `code:<language>` text (see packages/core/src/code-guard.ts),
+# never on commands, so they cannot block a tool call by themselves. What
+# happens on a match is decided by the `secure_code` configuration, not by the
+# `action` field below:
+#
+#   secure_code.enabled  true (default) | false
+#   secure_code.action   "warn" (default): the write goes through with a notice
+#                        to the user and the model, and is counted in the audit
+#                        log; "ask": the write is held for review.
+#
+# Only the lines a call ADDS are inspected (Edit/MultiEdit old/new text,
+# apply_patch "+" lines, a Write's whole content), and every rule is gated by
+# language (file extension), so a Markdown file that *documents* verify=False
+# is not flagged. `aidr scan --code <dir>` runs the same rules over a project.
+#
+# Hard-coded credentials are covered by rule SCG-SECRET-001, which reuses the
+# product's shared secret detectors instead of a pattern here (see
+# code-guard.ts); disable it like any rule, through `disabled_threats`.
+#
+# Every gap is bounded ({0,N}); spans that must stay inside one call use [^)].
+
+# ── TLS verification ──────────────────────────────────────────────────────
+
+- id: "SCG-TLS-001"
+  category: secure_code_tls
+  severity: high
+  confidence: 0.9
+  action: log
+  pattern: "\\bverify\\s{0,4}=\\s{0,4}False\\b|\\bssl\\._create_unverified_context\\b|\\bcheck_hostname\\s{0,4}=\\s{0,4}False\\b|\\b(?:cert_reqs|verify_mode)\\s{0,4}=\\s{0,4}(?:ssl\\.)?CERT_NONE\\b"
+  match_on: ["code:python"]
+  title: "TLS certificate verification disabled (verify=False / CERT_NONE); keep verification on and point to a private CA bundle instead"
+  expires_at: null
+  revoked: false
+
+- id: "SCG-TLS-002"
+  category: secure_code_tls
+  severity: high
+  confidence: 0.9
+  action: log
+  pattern: "\\brejectUnauthorized\\s{0,4}:\\s{0,4}false\\b|\\bstrictSSL\\s{0,4}:\\s{0,4}false\\b|\\bcheckServerIdentity\\s{0,4}:\\s{0,4}\\(\\s{0,4}\\)\\s{0,4}=>\\s{0,4}(?:undefined|null|\\{\\s{0,4}\\})"
+  match_on: ["code:javascript", "code:typescript"]
+  title: "TLS certificate verification disabled (rejectUnauthorized: false); keep verification on and pass the private CA via the ca option"
+  expires_at: null
+  revoked: false
+
+- id: "SCG-TLS-003"
+  category: secure_code_tls
+  severity: high
+  confidence: 0.9
+  action: log
+  pattern: "\\bNODE_TLS_REJECT_UNAUTHORIZED[\"']?(?:\\s{0,4}\\]?\\s{0,4}[=:]\\s{0,4}|\\s{1,4})[\"']?0\\b|\\bPYTHONHTTPSVERIFY[\"']?\\s{0,4}\\]?\\s{0,4}[=:]\\s{0,4}[\"']?0\\b|\\bGIT_SSL_NO_VERIFY[\"']?\\s{0,4}\\]?\\s{0,4}[=:]\\s{0,4}[\"']?(?:1|true)\\b"
+  match_on: ["code:javascript", "code:typescript", "code:python", "code:shell", "code:dockerfile", "code:makefile", "code:yaml", "code:dotenv", "code:powershell"]
+  title: "TLS verification switched off process-wide by environment variable (NODE_TLS_REJECT_UNAUTHORIZED=0 and similar); trust the private CA instead"
+  expires_at: null
+  revoked: false
+
+- id: "SCG-TLS-004"
+  category: secure_code_tls
+  severity: high
+  confidence: 0.9
+  action: log
+  pattern: "\\bInsecureSkipVerify\\s{0,4}:\\s{0,4}true\\b"
+  match_on: ["code:go"]
+  title: "TLS certificate verification disabled (InsecureSkipVerify: true); configure RootCAs with the private CA instead"
+  expires_at: null
+  revoked: false
+
+- id: "SCG-TLS-005"
+  category: secure_code_tls
+  severity: high
+  confidence: 0.9
+  action: log
+  pattern: "\\bcurl\\b[^\\n|;&]{0,300}?\\s(?:--insecure\\b|-[A-Za-z]{0,8}k[A-Za-z]{0,8}(?=\\s|$))|\\bwget\\b[^\\n|;&]{0,300}?\\s--no-check-certificate\\b|\\bhttp\\.ssl[Vv]erify\\s{0,4}[= ]\\s{0,4}[\"']?false\\b"
+  match_on: ["code:shell", "code:dockerfile", "code:makefile", "code:yaml", "code:powershell"]
+  title: "Script disables TLS verification (curl -k, wget --no-check-certificate, http.sslVerify=false); trust the private CA with --cacert instead"
+  expires_at: null
+  revoked: false
+
+- id: "SCG-TLS-006"
+  category: secure_code_tls
+  severity: high
+  confidence: 0.9
+  action: log
+  pattern: "\\b(?:NoopHostnameVerifier|ALLOW_ALL_HOSTNAME_VERIFIER|TrustAllStrategy|InsecureTrustManagerFactory)\\b|\\bsetHostnameVerifier\\s{0,4}\\(\\s{0,4}\\(\\s{0,4}\\w{1,40}\\s{0,4},\\s{0,4}\\w{1,40}\\s{0,4}\\)\\s{0,4}->\\s{0,4}true\\b"
+  match_on: ["code:java", "code:kotlin"]
+  title: "TLS trust-all certificate or hostname verifier; load the private CA into a TrustManager instead"
+  expires_at: null
+  revoked: false
+
+# ── Code injection ────────────────────────────────────────────────────────
+
+- id: "SCG-EVAL-001"
+  category: secure_code_code_injection
+  severity: critical
+  confidence: 0.9
+  action: log
+  pattern: "\\b(?:eval|exec)\\s{0,4}\\([^\\n)]{0,200}?(?:\\brequest\\.(?:args|form|values|json|data|files|headers|cookies|GET|POST|body|query_params|path_params)\\b|\\bflask\\.request\\b|\\b(?:raw_)?input\\s{0,4}\\(|\\bsys\\.argv\\b|\\bself\\.request\\b)"
+  match_on: ["code:python"]
+  title: "eval()/exec() on request or user input allows arbitrary code execution; parse the input (json, ast.literal_eval) instead"
+  expires_at: null
+  revoked: false
+
+- id: "SCG-EVAL-002"
+  category: secure_code_code_injection
+  severity: critical
+  confidence: 0.9
+  action: log
+  pattern: "(?:\\beval|\\bnew\\s{1,4}Function|\\bFunction|\\bvm\\.(?:runInNewContext|runInThisContext|runInContext|compileFunction))\\s{0,4}\\([^\\n)]{0,200}?(?:\\b(?:req|request|ctx\\.request|ctx)\\.(?:body|query|params|headers|cookies)\\b|\\bprocess\\.argv\\b|\\blocation\\.(?:hash|search|href)\\b|\\bdocument\\.(?:URL|cookie)\\b|\\bwindow\\.name\\b)"
+  match_on: ["code:javascript", "code:typescript"]
+  title: "eval()/new Function()/vm on request or user input allows arbitrary code execution; parse the input (JSON.parse) instead"
+  expires_at: null
+  revoked: false
+
+# ── SQL injection ─────────────────────────────────────────────────────────
+
+- id: "SCG-SQLI-001"
+  category: secure_code_sql_injection
+  severity: high
+  confidence: 0.85
+  action: log
+  case_insensitive: true
+  pattern: "\\.(?:execute|executemany|executescript|exec_driver_sql|raw|read_sql|read_sql_query)\\s{0,4}\\(\\s{0,4}(?:f(?:\"\"\"|'''|\"|')(?:[^\"'\\\\]|\\\\.){0,400}?\\{|[\"'](?:[^\"'\\n\\\\]|\\\\.){0,300}[\"']\\s{0,4}(?:%\\s{0,4}[\\w(]|\\+|\\.format\\s{0,4}\\())|\\btext\\s{0,4}\\(\\s{0,4}f[\"'][^\"'\\n]{0,300}?\\{|\\b(?:select|insert|update|delete)\\b[^\\n]{0,200}?(?:\\{\\s{0,4}request\\.|[\"']\\s{0,4}\\+\\s{0,4}request\\.|%\\s{0,4}\\(?\\s{0,4}request\\.)"
+  match_on: ["code:python"]
+  title: "SQL built with f-strings, % formatting or concatenation is injectable; pass values as query parameters"
+  expires_at: null
+  revoked: false
+
+- id: "SCG-SQLI-002"
+  category: secure_code_sql_injection
+  severity: high
+  confidence: 0.85
+  action: log
+  pattern: "\\.(?:query|execute|raw|whereRaw|orderByRaw|havingRaw|\\$queryRawUnsafe|\\$executeRawUnsafe)\\s{0,4}\\(\\s{0,4}(?:`[^`]{0,400}?\\$\\{|[\"'](?:[^\"'\\n\\\\]|\\\\.){0,300}[\"']\\s{0,4}\\+)|\\b(?:SELECT|INSERT|UPDATE|DELETE|select|insert|update|delete)\\b[^\\n]{0,200}?(?:[\"'`]\\s{0,4}\\+\\s{0,4}req(?:uest)?\\.|\\$\\{\\s{0,4}req(?:uest)?\\.)"
+  match_on: ["code:javascript", "code:typescript"]
+  title: "SQL built with template literals or concatenation is injectable; pass values as query parameters ($1, ?)"
+  expires_at: null
+  revoked: false
+
+- id: "SCG-SQLI-003"
+  category: secure_code_sql_injection
+  severity: high
+  confidence: 0.85
+  action: log
+  pattern: "\\.(?:Query|QueryRow|QueryContext|QueryRowContext|Exec|ExecContext|Raw|Where)\\s{0,4}\\((?:[^\\n()]|\\([^\\n()]{0,80}\\)){0,40}?(?:fmt\\.Sprintf\\s{0,4}\\(|\"(?:[^\"\\n\\\\]|\\\\.){0,300}\"\\s{0,4}\\+|`[^`]{0,300}`\\s{0,4}\\+)"
+  match_on: ["code:go"]
+  title: "SQL built with fmt.Sprintf or concatenation is injectable; pass values as query arguments"
+  expires_at: null
+  revoked: false
+
+- id: "SCG-SQLI-004"
+  category: secure_code_sql_injection
+  severity: high
+  confidence: 0.85
+  action: log
+  pattern: "\\b(?:executeQuery|executeUpdate|executeLargeUpdate|execute|prepareStatement|createQuery|createNativeQuery|addBatch)\\s{0,4}\\(\\s{0,4}\"(?:[^\"\\n\\\\]|\\\\.){0,300}\"\\s{0,4}\\+"
+  match_on: ["code:java", "code:kotlin"]
+  title: "SQL built by string concatenation is injectable (even inside prepareStatement); bind values with ? placeholders"
+  expires_at: null
+  revoked: false
+
+- id: "SCG-SQLI-005"
+  category: secure_code_sql_injection
+  severity: high
+  confidence: 0.85
+  action: log
+  case_insensitive: true
+  pattern: "\\b(?:select|insert|update|delete)\\b[^\\n;]{0,300}?\\$_(?:get|post|request|cookie)\\b|\\b(?:mysqli?_query|pg_query)\\s{0,4}\\([^\\n;]{0,300}?\\$_(?:get|post|request|cookie)\\b"
+  match_on: ["code:php"]
+  title: "SQL built from $_GET/$_POST input is injectable; use prepared statements with bound parameters"
+  expires_at: null
+  revoked: false
+
+# ── Command injection ─────────────────────────────────────────────────────
+
+- id: "SCG-CMDI-001"
+  category: secure_code_command_injection
+  severity: high
+  confidence: 0.85
+  action: log
+  pattern: "\\bsubprocess\\.(?:run|call|Popen|check_output|check_call)\\s{0,4}\\(\\s{0,4}(?:args\\s{0,4}=\\s{0,4})?(?:f[\"']|[\"'](?:[^\"'\\n\\\\]|\\\\.){0,300}[\"']\\s{0,4}(?:%|\\+|\\.format\\s{0,4}\\())(?:(?!\\bsubprocess\\.)[\\s\\S]){0,300}?\\bshell\\s{0,4}=\\s{0,4}True\\b|\\b(?:os\\.(?:system|popen)|subprocess\\.(?:getoutput|getstatusoutput))\\s{0,4}\\(\\s{0,4}(?:f[\"']|[\"'](?:[^\"'\\n\\\\]|\\\\.){0,300}[\"']\\s{0,4}(?:%|\\+|\\.format\\s{0,4}\\())"
+  match_on: ["code:python"]
+  title: "Shell command built from interpolated input (shell=True, os.system) is injectable; pass an argument list without shell=True"
+  expires_at: null
+  revoked: false
+
+- id: "SCG-CMDI-002"
+  category: secure_code_command_injection
+  severity: high
+  confidence: 0.85
+  action: log
+  pattern: "\\b(?:exec|execSync)\\s{0,4}\\(\\s{0,4}(?:`[^`]{0,400}?\\$\\{|[\"'](?:[^\"'\\n\\\\]|\\\\.){0,300}[\"']\\s{0,4}\\+)"
+  match_on: ["code:javascript", "code:typescript"]
+  title: "Shell command built from interpolated input (child_process.exec) is injectable; use execFile/spawn with an argument array"
+  expires_at: null
+  revoked: false
+
+# ── File permissions ──────────────────────────────────────────────────────
+
+- id: "SCG-PERM-001"
+  category: secure_code_permissions
+  severity: medium
+  confidence: 0.85
+  action: log
+  pattern: "\\bchmod\\s{1,4}(?:-[A-Za-z]{1,4}\\s{1,4}){0,3}(?:0?777|(?:a|ugo)\\+rwx|a=rwx)(?=\\s|$|[;&|\"'])"
+  match_on: ["code:shell", "code:dockerfile", "code:makefile", "code:yaml", "code:powershell"]
+  title: "chmod 777 makes files world-writable; grant the narrowest mode that works (for example 755 or 644)"
+  expires_at: null
+  revoked: false
+
+- id: "SCG-PERM-002"
+  category: secure_code_permissions
+  severity: medium
+  confidence: 0.85
+  action: log
+  pattern: "\\b[Cc]hmod(?:Sync)?\\s{0,4}\\([^\\n)]{0,200}?,\\s{0,4}(?:0o?777\\b|[\"']0?777[\"'])|\\bchmod\\s{0,4}\\(\\s{0,4}0o?777\\b|\\b(?:MkdirAll|Mkdir|WriteFile|OpenFile|makedirs|mkdir|mkdirSync)\\s{0,4}\\([^\\n)]{0,200}?(?:,\\s{0,4}|\\bmode\\s{0,4}[=:]\\s{0,4})0o?777\\b|\\bumask\\s{0,4}\\(\\s{0,4}0\\s{0,4}\\)"
+  match_on: ["code:python", "code:javascript", "code:typescript", "code:go", "code:ruby", "code:php"]
+  title: "File or directory created world-writable (mode 0777 or umask 0); grant the narrowest mode that works"
+  expires_at: null
+  revoked: false
+
+# ── CORS ──────────────────────────────────────────────────────────────────
+
+- id: "SCG-CORS-001"
+  category: secure_code_cors
+  severity: high
+  confidence: 0.85
+  action: log
+  pattern: "\\ballow_origins\\s{0,4}=\\s{0,4}\\[\\s{0,4}[\"']\\*[\"']\\s{0,4}\\][^)]{0,300}?\\ballow_credentials\\s{0,4}=\\s{0,4}True\\b|\\ballow_credentials\\s{0,4}=\\s{0,4}True\\b[^)]{0,300}?\\ballow_origins\\s{0,4}=\\s{0,4}\\[\\s{0,4}[\"']\\*[\"']\\s{0,4}\\]|\\bCORS\\s{0,4}\\((?:(?!\\borigins\\b)[^)]){0,300}?\\bsupports_credentials\\s{0,4}=\\s{0,4}True\\b(?:(?!\\borigins\\b)[^)]){0,300}?\\)|\\bCORS\\s{0,4}\\([^)]{0,300}?\\borigins\\s{0,4}=\\s{0,4}[\"']\\*[\"'][^)]{0,300}?\\bsupports_credentials\\s{0,4}=\\s{0,4}True\\b|\\bCORS\\s{0,4}\\([^)]{0,300}?\\bsupports_credentials\\s{0,4}=\\s{0,4}True\\b[^)]{0,300}?\\borigins\\s{0,4}=\\s{0,4}[\"']\\*[\"']|\\bCORS_(?:ALLOW_ALL_ORIGINS|ORIGIN_ALLOW_ALL)\\s{0,4}=\\s{0,4}True\\b[\\s\\S]{0,600}?\\bCORS_ALLOW_CREDENTIALS\\s{0,4}=\\s{0,4}True\\b|\\bCORS_ALLOW_CREDENTIALS\\s{0,4}=\\s{0,4}True\\b[\\s\\S]{0,600}?\\bCORS_(?:ALLOW_ALL_ORIGINS|ORIGIN_ALLOW_ALL)\\s{0,4}=\\s{0,4}True\\b"
+  match_on: ["code:python"]
+  title: "Any-origin CORS combined with credentials lets every website make authenticated requests; list the allowed origins explicitly"
+  expires_at: null
+  revoked: false
+
+- id: "SCG-CORS-002"
+  category: secure_code_cors
+  severity: high
+  confidence: 0.85
+  action: log
+  pattern: "\\bcors\\s{0,4}\\(\\s{0,4}\\{[^}]{0,400}?\\borigin\\s{0,4}:\\s{0,4}(?:[\"']\\*[\"']|true\\b)[^}]{0,400}?\\bcredentials\\s{0,4}:\\s{0,4}true\\b|\\bcors\\s{0,4}\\(\\s{0,4}\\{[^}]{0,400}?\\bcredentials\\s{0,4}:\\s{0,4}true\\b[^}]{0,400}?\\borigin\\s{0,4}:\\s{0,4}(?:[\"']\\*[\"']|true\\b)"
+  match_on: ["code:javascript", "code:typescript"]
+  title: "cors() reflects any origin (origin: \"*\" or true) with credentials: true, so every website can make authenticated requests; list the allowed origins"
+  expires_at: null
+  revoked: false
+
+- id: "SCG-CORS-003"
+  category: secure_code_cors
+  severity: high
+  confidence: 0.85
+  action: log
+  case_insensitive: true
+  pattern: "access-control-allow-origin[\"']?\\s{0,4}[,:=]\\s{0,4}[\"']?(?:\\*|\\$http_origin|req(?:uest)?\\.headers?\\.(?:origin|get\\s{0,4}\\(\\s{0,4}[\"']origin[\"']\\s{0,4}\\)))[\\s\\S]{0,300}?access-control-allow-credentials[\"']?\\s{0,4}[,:=]\\s{0,4}[\"']?true|access-control-allow-credentials[\"']?\\s{0,4}[,:=]\\s{0,4}[\"']?true[\\s\\S]{0,300}?access-control-allow-origin[\"']?\\s{0,4}[,:=]\\s{0,4}[\"']?(?:\\*|\\$http_origin|req(?:uest)?\\.headers?\\.(?:origin|get\\s{0,4}\\(\\s{0,4}[\"']origin[\"']\\s{0,4}\\)))"
+  match_on: ["code:javascript", "code:typescript", "code:python", "code:go", "code:java", "code:kotlin", "code:php", "code:ruby", "code:csharp"]
+  title: "Access-Control-Allow-Origin set to * or the reflected request origin together with Allow-Credentials: true; list the allowed origins explicitly"
+  expires_at: null
+  revoked: false
+
+# ── Debug servers and CSRF ────────────────────────────────────────────────
+
+- id: "SCG-DEBUG-001"
+  category: secure_code_debug_exposure
+  severity: high
+  confidence: 0.85
+  action: log
+  pattern: "\\.run\\s{0,4}\\([^)]{0,300}?(?:\\bhost\\s{0,4}=\\s{0,4}[\"']0\\.0\\.0\\.0[\"'][^)]{0,300}?\\bdebug\\s{0,4}=\\s{0,4}True\\b|\\bdebug\\s{0,4}=\\s{0,4}True\\b[^)]{0,300}?\\bhost\\s{0,4}=\\s{0,4}[\"']0\\.0\\.0\\.0[\"'])|\\brun_simple\\s{0,4}\\([^)]{0,300}?[\"']0\\.0\\.0\\.0[\"'][^)]{0,300}?\\buse_debugger\\s{0,4}=\\s{0,4}True\\b"
+  match_on: ["code:python"]
+  title: "Debug server bound to all interfaces (host 0.0.0.0 with debug=True) exposes an interactive debugger to the network; bind to 127.0.0.1 or turn debug off"
+  expires_at: null
+  revoked: false
+
+- id: "SCG-DEBUG-002"
+  category: secure_code_debug_exposure
+  severity: high
+  confidence: 0.85
+  action: log
+  pattern: "\\bflask\\s{1,4}run\\b[^\\n]{0,200}?(?:--host[= ]0\\.0\\.0\\.0\\b[^\\n]{0,200}?--debug\\b|--debug\\b[^\\n]{0,200}?--host[= ]0\\.0\\.0\\.0\\b)|--inspect(?:-brk)?=0\\.0\\.0\\.0\\b"
+  match_on: ["code:shell", "code:dockerfile", "code:makefile", "code:yaml", "code:json", "code:javascript", "code:typescript"]
+  title: "Debugger exposed on all interfaces (flask run --debug --host 0.0.0.0, node --inspect=0.0.0.0); bind it to 127.0.0.1"
+  expires_at: null
+  revoked: false
+
+- id: "SCG-CSRF-001"
+  category: secure_code_csrf
+  severity: high
+  confidence: 0.85
+  action: log
+  pattern: "@csrf_exempt\\b|\\bWTF_CSRF_ENABLED[\"']?\\s{0,4}\\]?\\s{0,4}[=:]\\s{0,4}False\\b|\\bcsrf\\s{0,4}\\(\\s{0,4}\\)\\s{0,4}\\.\\s{0,4}disable\\s{0,4}\\(|\\bcsrf\\s{0,4}(?:\\(\\s{0,4}(?:\\w{1,20}\\s{0,4}->\\s{0,4}\\w{1,20}\\.disable\\s{0,4}\\(|AbstractHttpConfigurer::disable\\b)|\\{\\s{0,4}(?:it\\.)?disable\\s{0,4}\\(\\s{0,4}\\)\\s{0,4}\\})|\\bskip_before_action\\s{1,4}:verify_authenticity_token\\b"
+  match_on: ["code:python", "code:java", "code:kotlin", "code:ruby"]
+  title: "CSRF protection disabled (csrf_exempt, csrf().disable(), skipped authenticity token); keep it on for cookie-authenticated endpoints"
+  expires_at: null
+  revoked: false
+
+# ── Weak cryptography ─────────────────────────────────────────────────────
+
+- id: "SCG-CRYPTO-001"
+  category: secure_code_weak_crypto
+  severity: high
+  confidence: 0.85
+  action: log
+  case_insensitive: true
+  pattern: "\\b(?:md5|sha1)\\s{0,4}\\([^\\n)]{0,120}?\\b\\$?\\w{0,20}(?:password|passwd|pwd)|\\bDigest::(?:MD5|SHA1)\\.(?:hexdigest|digest|base64digest)\\s{0,4}\\([^\\n)]{0,120}?(?:password|passwd|pwd)|\\bcreateHash\\s{0,4}\\(\\s{0,4}[\"'](?:md5|sha1)[\"']\\s{0,4}\\)[^\\n;]{0,120}?\\.update\\s{0,4}\\([^\\n)]{0,80}?(?:password|passwd|pwd)|\\b(?:md5|sha1)\\.Sum\\s{0,4}\\(\\s{0,4}\\[\\]byte\\s{0,4}\\([^\\n)]{0,80}?(?:password|passwd|pwd)|\\bMessageDigest\\.getInstance\\s{0,4}\\(\\s{0,4}\"(?:md5|sha-?1)\"\\s{0,4}\\)[\\s\\S]{0,300}?(?:password|passwd|pwd)"
+  match_on: ["code:python", "code:javascript", "code:typescript", "code:go", "code:java", "code:kotlin", "code:php", "code:ruby"]
+  title: "Passwords hashed with MD5/SHA-1 are cheap to crack; use a password hashing function (Argon2, bcrypt, scrypt or PBKDF2)"
+  expires_at: null
+  revoked: false
+
+- id: "SCG-CRYPTO-002"
+  category: secure_code_weak_crypto
+  severity: high
+  confidence: 0.85
+  action: log
+  case_insensitive: true
+  pattern: "\\bAES\\.MODE_ECB\\b|\\bmodes\\.ECB\\s{0,4}\\(|\\bCipher\\.getInstance\\s{0,4}\\(\\s{0,4}\"(?:AES|DES|DESede|Blowfish)(?:/ECB/[\\w]{1,20})?\"\\s{0,4}\\)|[\"'](?:aes|des|des-ede3?|bf)(?:-\\d{3})?-ecb[\"']|\\bCipherMode\\.ECB\\b"
+  match_on: ["code:python", "code:java", "code:kotlin", "code:javascript", "code:typescript", "code:csharp", "code:php", "code:ruby"]
+  title: "ECB block-cipher mode (also the default for Cipher.getInstance(\"AES\")) leaks plaintext patterns; use an authenticated mode such as AES-GCM"
+  expires_at: null
+  revoked: false
+
+- id: "SCG-CRYPTO-003"
+  category: secure_code_weak_crypto
+  severity: high
+  confidence: 0.85
+  action: log
+  case_insensitive: true
+  pattern: "\\b\\w{0,30}(?:token|secret|password|passwd|nonce|salt|otp|api_?key|session_?id|csrf)\\w{0,30}\\s{0,4}[=:]\\s{0,4}[^\\n;]{0,120}?\\bMath\\.random\\s{0,4}\\("
+  match_on: ["code:javascript", "code:typescript"]
+  title: "Math.random() is predictable and must not generate tokens, passwords or nonces; use crypto.randomBytes() or crypto.randomUUID()"
+  expires_at: null
+  revoked: false
+
+- id: "SCG-CRYPTO-004"
+  category: secure_code_weak_crypto
+  severity: high
+  confidence: 0.85
+  action: log
+  case_insensitive: true
+  pattern: "\\b\\w{0,30}(?:token|secret|password|passwd|nonce|salt|otp|api_?key|session_?id|csrf)\\w{0,30}\\s{0,4}=\\s{0,4}[^\\n]{0,120}?\\brandom\\.(?:random|randint|choice|choices|getrandbits|randrange|sample)\\s{0,4}\\("
+  match_on: ["code:python"]
+  title: "The random module is predictable and must not generate tokens, passwords or nonces; use the secrets module"
+  expires_at: null
+  revoked: false

@@ -3,6 +3,7 @@
  * Hooks should normalize transport-specific payloads, then call this function.
  */
 
+import { loadTrustedModelSources, type TrustedModelSources } from "./ai-supply-chain.js";
 import { isAllowlisted, loadAllowlist } from "./allowlist.js";
 import {
 	buildIncidentEntry,
@@ -17,6 +18,13 @@ import { VerdictCache } from "./cache.js";
 import { AmsiClient, isAmsiSupported } from "./clients/amsi.js";
 import { ControlPlaneClient } from "./clients/control-plane.js";
 import { UrlCheckClient } from "./clients/url-check.js";
+import {
+	applySecureCodeWarnings,
+	type CodeGuardResult,
+	CodeRuleSet,
+	EMPTY_CODE_GUARD_RESULT,
+	inspectToolCallCode,
+} from "./code-guard.js";
 import { isInvalidConfig, loadConfig, resolvePath } from "./config.js";
 import {
 	type DelegatedCredentialClaimsV1,
@@ -868,12 +876,20 @@ function truncatedCommandVerdict(): Verdict {
 	};
 }
 
+interface LoadedHeuristics {
+	engine: HeuristicsEngine;
+	threatsLoaded: number;
+	/** The same rules, indexed for the code guard (`match_on: code:<language>`). */
+	codeRules: CodeRuleSet;
+	modelSources: TrustedModelSources;
+}
+
 /** The local threat rules this call is matched against, honouring `disabled_threats`. */
 async function loadHeuristics(
 	context: ToolEvaluationContext,
 	config: Config,
 	logger: Logger,
-): Promise<{ engine: HeuristicsEngine; threatsLoaded: number }> {
+): Promise<LoadedHeuristics> {
 	const userThreatsDir = context.userThreatsDir ?? resolvePath("~/.singularity-aidr/threats");
 	let threats = await loadThreatsFromDirs([context.threatsDir, userThreatsDir], logger);
 	if (config.disabled_threats.length > 0) {
@@ -881,10 +897,44 @@ async function loadHeuristics(
 		threats = threats.filter((t) => !disabledSet.has(t.id));
 	}
 	const trustedDomains = await loadTrustedDomains(context.allowlistsDir, logger);
+	const modelSources = await loadTrustedModelSources(
+		context.allowlistsDir,
+		config.ai_supply_chain,
+		logger,
+	);
 	return {
-		engine: new HeuristicsEngine(threats, trustedDomains),
+		engine: new HeuristicsEngine(threats, trustedDomains, modelSources),
 		threatsLoaded: threats.length,
+		codeRules: new CodeRuleSet(threats, config.disabled_threats),
+		modelSources,
 	};
+}
+
+/**
+ * The code-guard leg (AI supply-chain and secure-code rules over the code this
+ * call writes or runs). A failure here is a detection-internal failure: the
+ * signal is skipped and logged, never reported as a clean inspection.
+ */
+function inspectCodeLeg(
+	request: ToolEvaluationRequest,
+	loaded: LoadedHeuristics,
+	config: Config,
+	logger: Logger,
+): CodeGuardResult {
+	try {
+		return inspectToolCallCode(
+			request.toolName,
+			request.toolInput,
+			loaded.codeRules,
+			loaded.modelSources,
+			config.secure_code,
+		);
+	} catch (error) {
+		logger.warn("Code inspection leg did not run; model-loading and secure-code rules skipped", {
+			errorType: error instanceof Error ? error.name : typeof error,
+		});
+		return EMPTY_CODE_GUARD_RESULT;
+	}
 }
 
 /** Normalization flags that mean the tool input could not be read unambiguously. */
@@ -1504,10 +1554,15 @@ async function runEvaluationPipeline(
 	// Tracked so the degraded-detection guard below can tell "nothing matched"
 	// apart from "no rules were loaded at all".
 	let threatsLoaded = 0;
+	let codeGuard: CodeGuardResult = EMPTY_CODE_GUARD_RESULT;
 	if (config.heuristics_enabled) {
 		const loaded = await loadHeuristics(context, config, logger);
 		threatsLoaded = loaded.threatsLoaded;
 		heuristicMatches = loaded.engine.match(request.artifacts);
+		// Model-loading rules decide like any heuristic; secure-code findings
+		// are advisory and folded in after the decision (see below).
+		codeGuard = inspectCodeLeg(request, loaded, config, logger);
+		heuristicMatches = [...heuristicMatches, ...codeGuard.heuristicMatches];
 	}
 
 	let urlCheckResults: Awaited<ReturnType<UrlCheckClient["checkUrls"]>> = [];
@@ -1739,6 +1794,9 @@ async function runEvaluationPipeline(
 			`URL reputation lookup was unavailable (${urlLegUnavailableReason}), so the URLs in this call were NOT verified clean and require review.`,
 		);
 	}
+	// Secure-code guardrails: a notice by default (`warn`), a review with
+	// `secure_code.action: "ask"`. Never a deny on their own.
+	verdict = applySecureCodeWarnings(verdict, codeGuard.warnings, config.secure_code);
 	verdict = hostEffectiveVerdict(
 		await applyRuntimeDetectors(request, context, config, verdict, managedState, rewriteSource),
 		config,

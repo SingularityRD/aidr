@@ -6,15 +6,19 @@ import {
 	atomicWriteJson,
 	buildInfraScanFindingEvents,
 	buildSkillScanFindingEvents,
+	type CodeScanReport,
 	cveCount,
 	describePostureUploadError,
 	fingerprintCount,
+	loadConfig,
 	loadThreatsFromDirs,
+	loadTrustedModelSources,
 	newPostureScanId,
 	type PluginScanResult,
 	type PostureUploadResult,
 	resolvePath,
 	SKILL_RISK_TYPES,
+	scanCodePath,
 	scanPlugin,
 	scanTargets,
 	skillRiskTypeForThreatId,
@@ -26,6 +30,7 @@ interface ScanOptions {
 	target?: string[];
 	file?: string;
 	skill?: string[];
+	code?: string[];
 	json?: boolean;
 	allowPublic?: boolean;
 	timeout?: string;
@@ -38,6 +43,9 @@ interface ScanOptions {
 export interface ScanDependencies {
 	upload?: typeof uploadPostureEvents;
 	threatsDir?: string;
+	allowlistsDir?: string;
+	/** Configuration whose `disabled_threats` and `ai_supply_chain` apply to `--code`. */
+	configPath?: string;
 }
 
 /**
@@ -53,6 +61,11 @@ export interface ScanDependencies {
  * (threats/skill-scan.yaml) plus the command rules over a skill or plugin
  * package directory. Nothing is executed and no file leaves the machine.
  *
+ * Code: `--code <path>` runs the AI model supply-chain and secure-code rules
+ * (threats/ai-supply-chain.yaml, threats/secure-code.yaml) over a project
+ * directory or file and reports every finding as file:line. Local only:
+ * code findings are never uploaded.
+ *
  * `--upload` sends the findings (identifiers, severities and digests only) to
  * the managed control plane with this installation's enrolled API key.
  */
@@ -67,8 +80,9 @@ export async function runScan(
 ): Promise<void> {
 	const targets = collectTargets(options);
 	const skills = [...new Set((options.skill ?? []).map((path) => resolve(path)))];
+	const codePaths = [...new Set((options.code ?? []).map((path) => resolve(path)))];
 
-	if (targets.length === 0 && skills.length === 0) {
+	if (targets.length === 0 && skills.length === 0 && codePaths.length === 0) {
 		printUsage();
 		return;
 	}
@@ -88,12 +102,13 @@ export async function runScan(
 			? await scanTargets(targets, { timeoutMs, concurrency, allowPublicTargets: allowPublic })
 			: null;
 	const skillResults = skills.length > 0 ? await scanSkills(skills, dependencies.threatsDir) : null;
+	const codeResults = codePaths.length > 0 ? await scanCode(codePaths, dependencies) : null;
 
 	if (summary && options.saveReport)
 		await atomicWriteJson(resolvePath(options.saveReport), summary);
 
-	printResults(Boolean(options.json), summary, skillResults, targets.length);
-	setExitCode(summary, skillResults);
+	printResults(Boolean(options.json), summary, skillResults, targets.length, codeResults);
+	setExitCode(summary, skillResults, codeResults);
 
 	if (options.upload) {
 		const upload = await (dependencies.upload ?? uploadPostureEvents)(
@@ -108,15 +123,83 @@ function printResults(
 	summary: AigInfraScanSummary | null,
 	skillResults: SkillScanReport | null,
 	targetCount: number,
+	codeResults: CodeScanReport[] | null = null,
 ): void {
 	if (json) {
-		console.log(
-			JSON.stringify(skillResults ? { infra: summary, skills: skillResults } : summary, null, 2),
-		);
+		const combined =
+			skillResults || codeResults
+				? {
+						infra: summary,
+						...(skillResults ? { skills: skillResults } : {}),
+						...(codeResults ? { code: codeResults } : {}),
+					}
+				: summary;
+		console.log(JSON.stringify(combined, null, 2));
 		return;
 	}
 	if (summary) printHumanSummary(summary, targetCount);
 	if (skillResults) printSkillSummary(skillResults);
+	if (codeResults) printCodeSummary(codeResults);
+}
+
+async function scanCode(paths: string[], dependencies: ScanDependencies): Promise<CodeScanReport[]> {
+	const bundled = resolveBundledDataDirs();
+	const threatsDir = dependencies.threatsDir ?? bundled.threatsDir;
+	const allowlistsDir = dependencies.allowlistsDir ?? bundled.allowlistsDir;
+	const threats = existsSync(threatsDir) ? await loadThreatsFromDirs([threatsDir]) : [];
+	// An unreadable configuration falls back to the shipped defaults: no extra
+	// trusted model sources and no disabled rules (the stricter reading).
+	const config = await loadConfig(dependencies.configPath).catch(() => null);
+	const trustedModelSources = await loadTrustedModelSources(allowlistsDir, config?.ai_supply_chain);
+	const reports: CodeScanReport[] = [];
+	for (const path of paths) {
+		reports.push(
+			await scanCodePath(path, threats, {
+				trustedModelSources,
+				disabledThreats: config?.disabled_threats ?? [],
+			}),
+		);
+	}
+	return reports;
+}
+
+function printCodeReport(report: CodeScanReport): void {
+	const marker = !report.exists ? "○" : report.findings.length > 0 ? "!" : "✓";
+	console.log(`${marker} ${report.root}`);
+	if (!report.exists) {
+		console.log("    not scanned (path does not exist)");
+		return;
+	}
+	console.log(
+		`    ${report.filesScanned} file(s) scanned, ${report.filesSkipped} skipped, ${report.linksSkipped} link(s) not followed`,
+	);
+	for (const finding of report.findings) {
+		const where = `${finding.file}${finding.cell !== undefined ? ` [cell ${finding.cell}]` : ""}:${finding.line}`;
+		console.log(`    ${where}  ${finding.severity.padEnd(8)} ${finding.ruleId}  ${finding.title}`);
+		if (finding.evidence) console.log(`        ${finding.evidence}`);
+	}
+	if (report.truncated) console.log("    note: finding limit reached; the list is incomplete");
+}
+
+function printCodeSummary(reports: CodeScanReport[]): void {
+	console.log("\n🛡️  AIDR code scan (AI model supply chain + secure-code guardrails)\n");
+	const rules = reports[0]?.rules ?? 0;
+	console.log(`Paths: ${reports.length}   Code rules: ${rules}\n`);
+	if (rules === 0) console.log("No code rules were loaded. This is NOT a clean result.\n");
+	for (const report of reports) printCodeReport(report);
+	const findings = reports.flatMap((report) => report.findings);
+	const supplyChain = findings.filter((finding) => finding.kind === "ai_supply_chain").length;
+	console.log(
+		`\nCode findings: ${findings.length} (${supplyChain} AI supply chain, ${findings.length - supplyChain} secure code)`,
+	);
+	const skipped = reports.reduce((count, report) => count + report.filesSkipped, 0);
+	if (skipped > 0) console.log(`${skipped} file(s) could not be inspected; they are not clean.`);
+	if (findings.length === 0 && reports.some((report) => report.filesScanned > 0)) {
+		console.log(
+			"No rule matched. This reflects only the deterministic pattern rules; it is not a\n" +
+				"full security review of the code.\n",
+		);
+	}
 }
 
 function findingEvents(summary: AigInfraScanSummary | null, skillResults: SkillScanReport | null) {
@@ -168,6 +251,7 @@ function printUsage(): void {
 	console.log("  aidr scan --target http://127.0.0.1:8080 --target http://10.0.0.4:3000");
 	console.log("  aidr scan --file targets.txt          # one URL per line");
 	console.log("  aidr scan --skill ~/.claude/skills/my-skill   # skill/plugin package (T01-T09)");
+	console.log("  aidr scan --code .                     # model loading + secure-code rules, file:line");
 	console.log("\nOptions:");
 	console.log("  --json             machine-readable output");
 	console.log("  --allow-public     permit non-private targets (off by default)");
@@ -335,15 +419,25 @@ function reportUpload(result: PostureUploadResult, json: boolean): void {
 	if (!process.exitCode) process.exitCode = 1;
 }
 
-function setExitCode(summary: AigInfraScanSummary | null, skills: SkillScanReport | null): void {
+function setExitCode(
+	summary: AigInfraScanSummary | null,
+	skills: SkillScanReport | null,
+	code: CodeScanReport[] | null = null,
+): void {
 	const skillSevere =
 		skills?.results.some((result) =>
 			result.findings.some(
 				(finding) => finding.severity === "critical" || finding.severity === "high",
 			),
 		) ?? false;
+	const codeSevere =
+		code?.some((report) =>
+			report.findings.some(
+				(finding) => finding.severity === "critical" || finding.severity === "high",
+			),
+		) ?? false;
 	// Non-zero when a vulnerability was found, so this is usable in CI.
-	if ((summary && (summary.critical > 0 || summary.high > 0)) || skillSevere) {
+	if ((summary && (summary.critical > 0 || summary.high > 0)) || skillSevere || codeSevere) {
 		process.exitCode = 2;
 		return;
 	}
@@ -355,7 +449,9 @@ function setExitCode(summary: AigInfraScanSummary | null, skills: SkillScanRepor
 				(result.unavailableChecks ?? []).some((entry) => entry.check === "plugin_files"),
 			)
 		: false;
-	process.exitCode = infraIncomplete || skillIncomplete ? 1 : 0;
+	const codeIncomplete =
+		code?.some((report) => !report.exists || report.filesSkipped > 0 || report.rules === 0) ?? false;
+	process.exitCode = infraIncomplete || skillIncomplete || codeIncomplete ? 1 : 0;
 }
 
 export default scanCommand;

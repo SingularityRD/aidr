@@ -88,7 +88,23 @@ const AUDITED_ALLOW_CATEGORIES: ReadonlySet<string> = new Set([
 	"dlp_redacted",
 	"prompt_protection",
 	"prompt_protection_warning",
+	"secure_code_warning",
 ]);
+
+/**
+ * Secure-code findings on a verdict, as counts and rule ids only: the titles
+ * are in the rule catalog, and the matched source text is never recorded.
+ */
+function secureCodeSummary(verdict: Verdict): Record<string, unknown> {
+	const warnings = verdict.warnings ?? [];
+	if (warnings.length === 0) return {};
+	return {
+		secure_code: {
+			findings: warnings.length,
+			rule_ids: [...new Set(warnings.map((warning) => warning.ruleId))].sort(),
+		},
+	};
+}
 
 function toolInputSummary(toolName: string, toolInput: Record<string, unknown>): string {
 	return toolInputSummaryForAudit(toolName, toolInput);
@@ -119,6 +135,7 @@ export function buildRuntimeVerdictEntry(
 		...(durationMs !== undefined && Number.isFinite(durationMs) && durationMs >= 0
 			? { duration_ms: durationMs }
 			: {}),
+		...secureCodeSummary(verdict),
 		// Verified user -> agent -> tool -> resource lineage, present only when the
 		// call carried a delegated credential that verified. Without it an audited
 		// event cannot be traced back to the resource it touched.
