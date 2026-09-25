@@ -125,6 +125,8 @@ Edge Functions runtime (`functions` service `env_file`). Holds the control-plane
 | `AIDR_APPROVAL_SIGNING_WRAP_KEY_B64` | always | generated secret | *(secret)* | Wraps the per-tenant dashboard approval signing keys (32 bytes, base64); without it dashboard approvals fail closed. |
 | `AIDR_BILLING_PROVIDER` | always | operator | *(blank)* | Billing provider; blank for invoice/sales-led on-prem contracts. |
 | `AIDR_DEVICE_START_INGRESS_SECRET` | always | generated secret | *(secret)* | Shared with `.env.ingress`; authenticates the device-start signer. |
+| `AIDR_NOTIFICATION_ENCRYPTION_KEYS` | always | generated secret | *(secret)* | Alert channel keyring `<key id>:<base64 32-byte key>[,…]`; the first key encrypts channel destinations, every listed key decrypts. |
+| `AIDR_NOTIFICATION_DISPATCH_TOKEN` | always | generated secret | *(secret)* | Bearer token the notification dispatcher timer presents to `notification-dispatch` (at least 32 characters). |
 
 ## `.env.readiness`
 

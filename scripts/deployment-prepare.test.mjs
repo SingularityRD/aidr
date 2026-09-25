@@ -308,6 +308,8 @@ test("generated self-hosted deployment wires protected monitoring without invent
 		assert.match(functionEnv, /^AIDR_REVOCATION_SIGNING_PRIVATE_KEY_PKCS8_B64=\S+$/m);
 		assert.match(functionEnv, /^AIDR_DELEGATION_SIGNING_PRIVATE_KEY_PKCS8_B64=\S+$/m);
 		assert.match(functionEnv, /^AIDR_PACK_DOWNLOAD_GRANT_SECRET=[A-Za-z0-9_-]{43}$/m);
+		assert.match(functionEnv, /^AIDR_NOTIFICATION_ENCRYPTION_KEYS=k1:[A-Za-z0-9+/]{43}=$/m);
+		assert.match(functionEnv, /^AIDR_NOTIFICATION_DISPATCH_TOKEN=[A-Za-z0-9_-]{43}$/m);
 		assert.ok(functionEnv.split(/\r?\n/).includes(`AIDR_PUBLIC_API_ORIGIN=${supabaseUrl}`));
 		assert.equal(existsSync(join(output, ".secrets")), false, "signing canaries must not verify disconnected key copies");
 		assert.equal(existsSync(join(output, "upstream")), false, "the checked-out pinned Supabase submodule must not be copied into the installation root");

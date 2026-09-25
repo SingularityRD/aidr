@@ -130,6 +130,8 @@ export const CATALOG = [
 	v(".env.functions", "AIDR_APPROVAL_SIGNING_WRAP_KEY_B64", "always", "generated-secret", "", "Wraps the per-tenant dashboard approval signing keys (32 bytes, base64); without it dashboard approvals fail closed."),
 	v(".env.functions", "AIDR_BILLING_PROVIDER", "always", "operator", "", "Billing provider; blank for invoice/sales-led on-prem contracts."),
 	v(".env.functions", "AIDR_DEVICE_START_INGRESS_SECRET", "always", "generated-secret", "", "Shared with `.env.ingress`; authenticates the device-start signer."),
+	v(".env.functions", "AIDR_NOTIFICATION_ENCRYPTION_KEYS", "always", "generated-secret", "", "Alert channel keyring `<key id>:<base64 32-byte key>[,…]`; the first key encrypts channel destinations, every listed key decrypts."),
+	v(".env.functions", "AIDR_NOTIFICATION_DISPATCH_TOKEN", "always", "generated-secret", "", "Bearer token the notification dispatcher timer presents to `notification-dispatch` (at least 32 characters)."),
 
 	v(".env.readiness", "AIDR_DEPLOYMENT_DIR", "always", "fixed", "/srv/aidr", "Installation directory the host workers operate on."),
 	v(".env.readiness", "AIDR_HEALTH_STATE_DIR", "always", "fixed", "/srv/aidr/health", "Evidence files mounted read-only into the dashboard."),

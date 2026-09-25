@@ -89,7 +89,20 @@ with `jwt-secret`), `metrics-token`. Optional: the key named by `auth.smtp.passw
 `AIDR_REVOCATION_SIGNING_KEY_ID`, `AIDR_REVOCATION_SIGNING_PRIVATE_KEY_PKCS8_B64`,
 `AIDR_DELEGATION_SIGNING_KEY_ID`, `AIDR_DELEGATION_SIGNING_PRIVATE_KEY_PKCS8_B64`,
 `AIDR_DELEGATION_SIGNING_PUBLIC_KEY_SPKI_B64`, `AIDR_PACK_MASTER_KEY_B64`,
-`AIDR_PACK_DOWNLOAD_GRANT_SECRET`, `AIDR_DEVICE_START_INGRESS_SECRET`.
+`AIDR_PACK_DOWNLOAD_GRANT_SECRET`, `AIDR_DEVICE_START_INGRESS_SECRET`,
+`AIDR_NOTIFICATION_ENCRYPTION_KEYS`, `AIDR_NOTIFICATION_DISPATCH_TOKEN`.
+
+## Alert notifications
+
+Settings → Notifications lets workspace owners and administrators send alerts to Slack,
+Microsoft Teams, signed HTTPS webhooks or e-mail. Set `notifications.dispatcher.enabled=true`
+to render the `notification-dispatch` CronJob (every minute, `concurrencyPolicy: Forbid`),
+which calls the functions Service with `AIDR_NOTIFICATION_DISPATCH_TOKEN` from the functions
+Secret. Both notification keys must exist in that Secret first (`generate-secrets.mjs` writes
+them; for an older Secret add `AIDR_NOTIFICATION_ENCRYPTION_KEYS=k1:<base64 32 bytes>` and a
+random 32+ character `AIDR_NOTIFICATION_DISPATCH_TOKEN`). Deliveries leave from the functions
+pods, so add the receivers' CIDRs (or an egress proxy) to `networkPolicy.functionsEgressCIDRs`;
+that list opens port 443 only, so a generic webhook on 8443 also needs its own egress rule.
 
 `deploy/helm/generate-secrets.mjs` writes both Secrets plus the operator record used by
 `scripts/deployment-bootstrap.mjs` and the `agent-config.json` enrolled agents need. You
@@ -109,6 +122,7 @@ Vault, sealed-secrets) as long as the Secret names match.
 | `storage.backend` | `file` | `file` (PVC, one replica) or `s3` |
 | `migrations.enabled` | `true` | Schema hook Job |
 | `backup.enabled` | `false` | Nightly `pg_dump` CronJob to a PVC |
+| `notifications.dispatcher.enabled` | `false` | Minute CronJob draining the alert outbox (needs the notification keys in the functions Secret) |
 | `ingress.certManager.*` | disabled | Adds the cert-manager issuer annotation |
 | `networkPolicy.enabled` | `true` | Default-deny plus per-component allows |
 | `networkPolicy.*EgressCIDRs` | `[]` | Opt-in egress: functions (npm mirror/IdP/billing), SMTP, dashboard certificate probe, S3 |

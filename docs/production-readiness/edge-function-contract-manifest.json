@@ -76,6 +76,10 @@
       "owner": "Product Engineering",
       "tests": ["supabase/functions/__tests__/pilot-intake-contract.test.ts"]
     },
+    "notification-channels": {
+      "owner": "Platform Engineering",
+      "tests": ["supabase/functions/__tests__/notification-channels-contract.test.ts", "supabase/functions/__tests__/notification-delivery.test.ts"]
+    },
     "pilot-status": {
       "owner": "Product Engineering",
       "tests": ["supabase/functions/__tests__/pilot-intake-contract.test.ts"]
