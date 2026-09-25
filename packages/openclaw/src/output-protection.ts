@@ -217,7 +217,7 @@ function persistedToolWarning(inspection: OutputInspection): string {
 const PRE_MODEL_BOUNDARY = "pre_model_tool_result";
 
 /** Safe metadata only: the notice never repeats an excerpt of the withheld output. */
-export function preModelQuarantineNotice(inspection: OutputInspection): string {
+function preModelQuarantineNotice(inspection: OutputInspection): string {
 	return [
 		"Singularity AIDR quarantined this tool output before it reached the model.",
 		`Detection: ${outputInspectionSummary(inspection)}.`,
