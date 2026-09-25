@@ -55,16 +55,14 @@ function write(wire: CodexWireResult): void {
 	process.stdout.write(`${JSON.stringify(wire)}\n`);
 }
 
-/** Last-resort block. Writes both channels Codex can honour. */
-function blockUnconditionally(reason: string): void {
+/**
+ * Writes a block on both channels Codex can honour: `stdoutPayload` as JSON on
+ * stdout, and `reason` on stderr with exit 2 (Codex's secondary block signal),
+ * so a partially-broken stdout still blocks.
+ */
+function blockOnBothChannels(stdoutPayload: object, reason: string): void {
 	try {
-		write({
-			hookSpecificOutput: {
-				hookEventName: "PreToolUse",
-				permissionDecision: "deny",
-				permissionDecisionReason: reason,
-			},
-		});
+		process.stdout.write(`${JSON.stringify(stdoutPayload)}\n`);
 	} catch {
 		// stdout is gone; fall through to the stderr/exit-2 channel below.
 	}
@@ -73,8 +71,21 @@ function blockUnconditionally(reason: string): void {
 	} catch {
 		// Nothing further we can do.
 	}
-	// Exit 2 with non-empty stderr is Codex's secondary block signal.
 	process.exitCode = 2;
+}
+
+/** Last-resort PreToolUse block. */
+function blockUnconditionally(reason: string): void {
+	blockOnBothChannels(
+		{
+			hookSpecificOutput: {
+				hookEventName: "PreToolUse",
+				permissionDecision: "deny",
+				permissionDecisionReason: reason,
+			},
+		},
+		reason,
+	);
 }
 
 /**
@@ -94,17 +105,7 @@ async function handleUserPromptSubmit(input: Record<string, unknown>): Promise<v
 	} catch {
 		const reason =
 			"🛡️ Singularity AIDR failed while inspecting this prompt, so it was not sent. Try again; if this persists, run `aidr status`.";
-		try {
-			process.stdout.write(`${JSON.stringify({ decision: "block", reason })}\n`);
-		} catch {
-			// Fall through to the stderr/exit-2 channel.
-		}
-		try {
-			process.stderr.write(`${reason}\n`);
-		} catch {
-			// Nothing further we can do.
-		}
-		process.exitCode = 2;
+		blockOnBothChannels({ decision: "block", reason }, reason);
 	}
 }
 
@@ -126,17 +127,7 @@ async function handlePostToolUse(input: Record<string, unknown>): Promise<void> 
 	} catch {
 		const reason =
 			"Singularity AIDR failed while inspecting this tool output, so it was withheld from the model and not classified as clean.";
-		try {
-			process.stdout.write(`${JSON.stringify({ decision: "block", reason })}\n`);
-		} catch {
-			// Fall through to the stderr/exit-2 channel.
-		}
-		try {
-			process.stderr.write(`${reason}\n`);
-		} catch {
-			// Nothing further we can do.
-		}
-		process.exitCode = 2;
+		blockOnBothChannels({ decision: "block", reason }, reason);
 	}
 }
 

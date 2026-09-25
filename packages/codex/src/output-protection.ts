@@ -77,32 +77,38 @@ class CollectLimitError extends Error {}
  */
 function outputText(value: unknown): string {
 	if (typeof value === "string") return value;
-	const parts: string[] = [];
-	let chars = 0;
-	let nodes = 0;
-	const visit = (current: unknown, depth: number): void => {
-		nodes += 1;
-		if (nodes > MAX_NODES || depth > MAX_DEPTH) throw new CollectLimitError();
-		if (chars > MAX_COLLECTED_CHARS) return;
-		if (typeof current === "string") {
-			parts.push(current);
-			chars += current.length + 1;
-			return;
-		}
-		if (current === null || typeof current !== "object") return;
-		if (Array.isArray(current)) {
-			for (const item of current) visit(item, depth + 1);
-			return;
-		}
-		const record = current as Record<string, unknown>;
-		const binary = typeof record.type === "string" && BINARY_BLOCK_TYPES.has(record.type);
-		for (const [key, child] of Object.entries(record)) {
-			if (binary && (key === "data" || key === "blob")) continue;
-			visit(child, depth + 1);
-		}
-	};
-	visit(value, 0);
-	return parts.join("\n");
+	const collector: StringCollector = { parts: [], chars: 0, nodes: 0 };
+	collectStrings(value, 0, collector);
+	return collector.parts.join("\n");
+}
+
+interface StringCollector {
+	parts: string[];
+	chars: number;
+	nodes: number;
+}
+
+function collectStrings(current: unknown, depth: number, out: StringCollector): void {
+	out.nodes += 1;
+	if (out.nodes > MAX_NODES || depth > MAX_DEPTH) throw new CollectLimitError();
+	if (out.chars > MAX_COLLECTED_CHARS) return;
+	if (typeof current === "string") {
+		out.parts.push(current);
+		out.chars += current.length + 1;
+		return;
+	}
+	if (current === null || typeof current !== "object") return;
+	for (const child of childValues(current)) collectStrings(child, depth + 1, out);
+}
+
+/** An array's items or a record's values, minus the payload of a binary content block. */
+function childValues(node: object): unknown[] {
+	if (Array.isArray(node)) return node;
+	const record = node as Record<string, unknown>;
+	const binary = typeof record.type === "string" && BINARY_BLOCK_TYPES.has(record.type);
+	return Object.entries(record)
+		.filter(([key]) => !(binary && (key === "data" || key === "blob")))
+		.map(([, child]) => child);
 }
 
 function blockedReason(ruleIds: string[]): string {
