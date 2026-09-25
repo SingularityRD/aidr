@@ -5,8 +5,8 @@ the things they touch: the commands, files and URLs of AI coding agents, the MCP
 results those agents read, and the prompts people paste into AI chat products. This page
 describes what each product line does, where it runs and where its boundaries are. The
 current release decision is in
-[first-customer-ready.md](../production-readiness/first-customer-ready.md) (NO-GO today);
-nothing here replaces that record.
+[first-customer-ready.md](../production-readiness/first-customer-ready.md) (not yet
+released for customer use); nothing here replaces that record.
 
 ## Product lines at a glance
 
@@ -31,7 +31,7 @@ Each connector hands observed tool calls to one shared local decision engine
 | OpenCode | `tool.execute.before` plugin | [opencode.md](../platform-guides/opencode.md) |
 | Codex CLI | Native `PreToolUse` command hook for `Bash` and `apply_patch` | [codex.md](../platform-guides/codex.md) |
 
-**Detection.** 451 YAML threat rules in 28 files under [`threats/`](../../threats/)
+**Detection.** 494 YAML threat rules in 29 files under [`threats/`](../../threats/)
 cover dangerous commands, credential access, persistence, obfuscation, crypto-mining,
 supply-chain and LLM-specific patterns for Linux, macOS and Windows. The rules are data,
 not code, and customers can add their own under `~/.singularity-aidr/threats/`. Package
@@ -45,6 +45,21 @@ connector exposes an approval tool to the agent, so a prompt-injected agent cann
 approve its own block. When several signals fire the stricter one wins
 (`deny > ask > allow`). Sensitivity presets are paranoid (0.70), balanced (0.85) and
 relaxed (0.95).
+
+**Session, safety and governance layers.** On top of the per-call rules:
+[toxic-flow detection](../toxic-flow.md) holds the call that would combine private data,
+untrusted content and an outbound channel in one session;
+[canary credentials](../canary-tokens.md) catch an agent that touches decoy keys;
+[agent permission profiles](../agent-profiles.md) restrict each agent to its tools, paths,
+domains and MCP servers; [AI safety guardrails](../agent-safety.md) pause runaway loops and
+hold test sabotage, autonomy escalation and irreversible actions;
+[poisoning protection](../poisoning-protection.md) guards instruction, memory and MCP
+configuration files; [model supply-chain](../ai-supply-chain-safety.md) and
+[secure-code](../secure-code-guardrails.md) rules check the code an agent writes (secure-code
+findings warn by default). `aidr simulate`, `aidr aibom` and `aidr coverage` provide a
+defensive self-test, a CycloneDX AI-BOM and the OWASP / MITRE ATLAS coverage matrix; the
+dashboard adds approvals, an AI asset register, four-eyes change control and a governance
+scorecard ([ai-governance.md](../ai-governance.md)).
 
 **Failure behaviour, per layer:**
 
@@ -188,8 +203,9 @@ signed cached state.
 
 ## 6. Plans
 
-Free (local mode), Team, Business and Enterprise. List prices and proposed packaging are
-in [pricing.md](../sales/pricing.md); they are subject to COM-001 approval.
+Free (local mode), Team, Business and Enterprise. Pricing is by quote through
+anil@singularityrd.com; edition contents are listed in the
+[product catalog](../sales/catalog/README.md).
 
 ## Related
 

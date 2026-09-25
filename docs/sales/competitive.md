@@ -48,7 +48,11 @@ builds itself.
   fingerprints of sensitive records; the plaintext dataset is never shipped to browsers.
 - **Deployment choice.** Free local mode, cloud, on-prem Docker Compose or Helm, and
   air-gapped with a signed offline license.
-- **Rules as data.** 451 YAML threat rules the customer can read and extend.
+- **Rules as data.** 494 YAML threat rules the customer can read and extend, each mapped to
+  OWASP LLM, OWASP Agentic and MITRE ATLAS with per-item coverage (including what is not
+  covered).
+- **Agent behaviour, not only malware.** Session toxic-flow chains, runaway and sabotage
+  guardrails, and an AI asset register with four-eyes change control.
 - **Counts-only telemetry.** Browser Guard reports per-type counts, not content.
 
 ## Where competitors are ahead (say so if asked)

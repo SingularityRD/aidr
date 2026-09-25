@@ -43,6 +43,7 @@ belirtilmiştir.
 13. [Yapay zekâ sitelerini engelleme](#13-yapay-zekâ-sitelerini-engelleme)
     - [13a. Gölge Yapay Zekâ (Shadow AI) keşfi ve denetimi](#13a-gölge-yapay-zekâ-shadow-ai-keşfi-ve-denetimi)
     - [13b. Kurum içi özel yapay zekâ siteleri](#13b-kurum-içi-özel-yapay-zekâ-siteleri)
+    - [13c. Yapay zekâ kabul edilebilir kullanım bildirimi](#13c-yapay-zekâ-kabul-edilebilir-kullanım-bildirimi)
 14. [Kurumsal yönetilen politika ve dağıtım](#14-kurumsal-yönetilen-politika-ve-dağıtım)
 15. [Yalnızca sayım içeren telemetri ve Browser Privacy paneli](#15-yalnızca-sayım-içeren-telemetri-ve-browser-privacy-paneli)
 16. [NER ve OCR için isteğe bağlı native host](#16-ner-ve-ocr-için-isteğe-bağlı-native-host)
@@ -62,8 +63,7 @@ belirtilmiştir.
 
 ## Kapsam özeti
 
-Plan kataloğu (`packages/dashboard/src/billing/plans.ts`; liste fiyatları ticari onay
-COM-001'i beklemektedir) **Browser Privacy Guard** özelliğini (`browser_privacy_guard`)
+Plan kataloğu (`packages/dashboard/src/billing/plans.ts`) **Browser Privacy Guard** özelliğini (`browser_privacy_guard`)
 **Team, Business ve Enterprise** planlarında listeler; Free planda bu özellik yer almaz.
 Eklentinin kendisi plan ya da hesap denetimi yapmaz. Algılama, maskeleme ve geri yükleme,
 eklenti kontrol düzlemine kayıtlı olsun ya da olmasın tarayıcıda çalışır. Kayıt, kontrol
@@ -1095,6 +1095,48 @@ gösterir.
 - Seçiciler portalın işaretlemesine bağlıdır; yeniden tasarım politikanın güncellenmesini
   gerektirebilir.
 
+### 13c. Yapay zekâ kabul edilebilir kullanım bildirimi
+
+**Ne yapar** — Yeni bir bildirim sürümü yayımlandıktan sonra kullanıcı korunan bir yapay
+zekâ sitesini ilk kez açtığında kurumunuzun yapay zekâ kabul edilebilir kullanım bildirimini
+gösterir ve onayları sayar.
+
+**Neden önemli** — Çalışanlar, işlerini bir yapay zekâ aracına yapıştırmadan önce kuralları
+bilmelidir. Bildirim ve onay sayıları, örneğin AB Yapay Zekâ Yasası Madde 4 kapsamındaki
+yapay zekâ okuryazarlığı çalışmalarını destekler (farkındalık sağlar, eğitim yerine geçmez).
+
+**Nasıl çalışır** — Yöneticiler bildirimi yönetilen politikanın `acceptableUse` anahtarında
+yayımlar (kimlik, sürüm, başlık, en fazla 4.000 karakter düz metin, isteğe bağlı `https://`
+bağlantısı); JSON'u **Browser Privacy** sayfası oluşturur. Browser Guard bildirimi
+**I understand** ve **Remind me later** seçenekleriyle kendi penceresinde gösterir. Metin
+işaretleme olarak değil, her zaman düz metin olarak gösterilir; bildirim bilgilendirir,
+gönderimi asla engellemez. **I understand** her tarayıcı profili için hatırlanır; `version`
+artırıldığında bildirim herkese yeniden gösterilir. Her onay, kurulum ve sürüm başına bir kez,
+yalnızca sayım içeren bir `aup_acknowledgement` olayı olarak raporlanır (site, bildirim
+kimliği, sürüm; metin ya da kullanıcı asla). Herhangi bir alanı sınır dışında olan bildirim
+bütünüyle yok sayılır.
+
+**Nasıl kullanılır** — Örnek kayıt:
+`{"acceptableUse": {"id": "acme-ai-use", "version": 2, "title": "Using AI at Acme", "text":
+"Do not paste customer records.", "url": "https://intranet.example.com/ai-policy"}}`.
+Bildirim sürümü başına kapsam, paneldeki **Governance** skor kartında görünür.
+
+**Örnek** — 2. sürüm yayımlandıktan sonra ChatGPT'yi açan kullanıcı "Using AI at Acme"
+bildirimini bir kez görür, **I understand** düğmesine tıklar ve skor kartı 2. sürüm için
+onaylayan tarayıcı kurulumu sayısını bir artırır.
+
+**Kapsam**
+
+| | |
+|---|---|
+| Plan | Team, Business, Enterprise (katalog) |
+| Dağıtım | Yerel / Bulut / Kurum içi / Air-gapped (sayımlar için kontrol düzlemi gerekir) |
+| Platformlar | Chrome, Edge, Firefox (masaüstü) |
+
+**Sınırlamalar**
+- Kodlama ajanı connector'ları bildirimi göstermez; bu bir Browser Guard özelliğidir.
+- Telemetri yapılandırılmamışken verilen bir onay sonradan raporlanmaz.
+
 ### 14. Kurumsal yönetilen politika ve dağıtım
 
 **Ne yapar** — Yöneticilerin eklentiyi zorunlu olarak kurmasına ve yapılandırmasını merkezden
@@ -1250,8 +1292,7 @@ satırı bir tarama ve iki öğe artar.
   kilitlendiğini unutmayın.
 - Kullanıcının girdiği API anahtarı o tarayıcı profilinin `chrome.storage.local` alanında
   saklanır.
-- Plan kataloğu ticari onay (COM-001) bekleyen bir liste fiyatı yansısıdır. Kod, olay alımında
-  plan özelliklerini zorunlu kılmaz.
+- Plan kataloğu paketleri tanımlar; kod, olay alımında plan özelliklerini zorunlu kılmaz.
 
 ### 16. NER ve OCR için isteğe bağlı native host
 

@@ -9,12 +9,12 @@ yapabileceğini belirleyen plan ve lisans kayıtlarını sağlar. Bu bölüm kon
 tüm özelliklerini ve her dağıtım seçeneğini anlatır: SaaS, müşterinin işlettiği Docker
 Compose veya Kubernetes kurulumu ve air-gapped (internetten yalıtılmış) kurulum.
 
-> **Sürüm durumu.** [first-customer-ready.md](../../../production-readiness/first-customer-ready.md)
-> içindeki ilk müşteri kararı bugün **NO-GO**. Barındırılan (hosted) hizmet henüz müşteri
-> kullanımı için kabul edilmedi. Her self-hosted kurulumun da kendi provası ve kabulü
-> gerekir. Bu rehber yazılımın ne yaptığını ve nasıl işletileceğini anlatır;
-> erişilebilirlik, SLA veya desteklenen bir satış taahhüdü vermez. Fiyatlar liste
-> fiyatıdır ve COM-001 onayına tabidir.
+> **Sürüm durumu.** Singularity AIDR henüz müşteri kullanımı için yayımlanmamıştır; sürüm
+> kaydı: [first-customer-ready.md](../../../production-readiness/first-customer-ready.md).
+> Barındırılan (hosted) hizmet henüz müşteri kullanımı için kabul edilmedi. Her
+> self-hosted kurulumun da kendi provası ve kabulü gerekir. Bu rehber yazılımın ne
+> yaptığını ve nasıl işletileceğini anlatır; erişilebilirlik, SLA veya desteklenen bir
+> satış taahhüdü vermez. Fiyatlandırma teklifle yapılır: anil@singularityrd.com.
 
 ## İçindekiler
 
@@ -33,6 +33,8 @@ Compose veya Kubernetes kurulumu ve air-gapped (internetten yalıtılmış) kuru
    - [Kademeli politika dağıtımı ve geri alma](#kademeli-politika-dağıtımı-ve-geri-alma)
    - [DLP politika düzenleyicisi](#dlp-politika-düzenleyicisi)
    - [Tarayıcı gizliliği (Browser Privacy)](#tarayıcı-gizliliği-browser-privacy)
+   - [Yapay zekâ yönetişimi: varlık envanteri, talep, istisna ve değişiklik denetimi](#yapay-zekâ-yönetişimi-varlık-envanteri-talep-istisna-ve-değişiklik-denetimi)
+   - [Yönetişim skor kartı, çerçeve eşlemesi ve zamanlanmış özet](#yönetişim-skor-kartı-çerçeve-eşlemesi-ve-zamanlanmış-özet)
    - [AutoSecOps görünümü ve müdahale playbook'ları](#autosecops-görünümü-ve-müdahale-playbookları)
    - [API anahtarları ve kayıt belirteçleri](#api-anahtarları-ve-kayıt-belirteçleri)
    - [Ekip, roller ve davetler](#ekip-roller-ve-davetler)
@@ -132,6 +134,7 @@ belirli bir hareketsizlik süresinden sonra tarayıcıda sonlanır. Rotalar
 | `/discovery` | Discovery | Raporlanan AI altyapı toplayıcıları ve hedefleri | [Keşif](#keşif-kapsamı-discovery) |
 | `/posture` | Posture | Altyapı CVE'leri, MCP riskleri, skill bulguları | [Yapay Zekâ Güvenlik Duruşu](#yapay-zekâ-güvenlik-duruşu-ai-security-posture) |
 | `/incidents` | Incidents | Engellenen ve onay bekleyen kararlar, kanıt zinciri | [Olası olaylar](#olası-olaylar-ve-kanıt-zinciri) |
+| `/approvals` | Approvals (sahip ve yöneticiler için bekleyen talep sayısı) | Yönetilen moddaki `ask` taleplerine gerekçeyle karar verme | [Panelden onay](01-ai-agent-security.md#panelden-onay) |
 | `/privacy-guard` | Browser Privacy | Browser Guard sayımları ve tarayıcı kaydı | [Tarayıcı gizliliği](#tarayıcı-gizliliği-browser-privacy) |
 | `/autosecops` | AutoSecOps | AutoSecOps entegrasyonundan çalışma zamanı filo görünümü | [AutoSecOps](#autosecops-görünümü-ve-müdahale-playbookları) |
 | `/settings` | Settings | Çalışma alanı adı, saklama süresi, kapatma, alarm bildirimleri, MFA durumu, tema | [Ayarlar](#çalışma-alanı-ayarları-ad-saklama-süresi-kapatma), [Alarm entegrasyonları](#alarm-entegrasyonları-slack-teams-imzalı-webhook-ve-e-posta) |
@@ -139,6 +142,9 @@ belirli bir hareketsizlik süresinden sonra tarayıcıda sonlanır. Rotalar
 | `/scim` | Directory provisioning (yalnızca sahipler) | SCIM kimlik bilgileri ve grup-rol eşlemeleri | [SCIM](#scim-dizin-senkronizasyonu) |
 | `/policies` | Policies (politika düzenleyebilen roller) | Ekip politikası, çalışma zamanı politikası, dağıtım, DLP düzenleyicisi | [Politikalar](#ekip-politikası-ve-çalışma-zamanı-politikası) |
 | `/compliance` | Compliance (sahipler ve yöneticiler) | Uyum kanıt raporu (özetle mühürlü, isteğe bağlı imzalı): JSON, CSV paketi, yazdırılabilir TR/EN | [Uyum kanıt raporu](#uyum-kanıt-raporu) |
+| `/governance` | Governance (sahipler ve yöneticiler) | Yönetişim skor kartı, çerçeve kontrol matrisi, zamanlanmış özet ayarları | [Yönetişim skor kartı](#yönetişim-skor-kartı-çerçeve-eşlemesi-ve-zamanlanmış-özet) |
+| `/governance/register` | AI register | Yapay zekâ varlık envanteri | [Yapay zekâ yönetişimi](#yapay-zekâ-yönetişimi-varlık-envanteri-talep-istisna-ve-değişiklik-denetimi) |
+| `/governance/requests`, `/governance/change-control` | (AI register sayfasından) | Talepler ve istisnalar; dört göz politika değişikliği denetimi | [Yapay zekâ yönetişimi](#yapay-zekâ-yönetişimi-varlık-envanteri-talep-istisna-ve-değişiklik-denetimi) |
 | `/enterprise` | yok (davet bağlantısında) | Davet kabulü | [Ekip](#ekip-roller-ve-davetler) |
 | `/auth/dlp-step-up` | yok | DLP ve çalışma alanı değişikliklerinden önce MFA doğrulaması | [MFA](#çok-faktörlü-doğrulama-kurtarma-ve-oturum-iptali) |
 | `/auth/recover` | yok | Parola kurtarma ve acil durum (break-glass) kurtarma kodları | [MFA](#çok-faktörlü-doğrulama-kurtarma-ve-oturum-iptali) |
@@ -407,7 +413,11 @@ bilinen zafiyet var? Hangi MCP sunucuları yapılandırılmış ve ne kadar risk
 veya eklenti paketlerinde tehlikeli kalıplar var? Kritik CVE, yüksek CVE, MCP sunucusu ve
 skill bulgusu kutucuklarının ardından **Infrastructure exposure**, **MCP inventory
 risks**, **Skill and plugin findings** tablolarını ve 30 günlük **Trend** tablosunu
-gösterir.
+gösterir. Ayrıca bir **Agent environment and autonomy** tablosu (`aidr discover --agents
+--upload` çıktısından), kuralların OWASP ve MITRE ATLAS
+[çerçeve kapsamı](01-ai-agent-security.md#güvenlik-çerçevesi-kapsamı-owasp-mitre-atlas) ve
+kiracı genelinde bir CycloneDX 1.6 belgesi için **Export AI-BOM** düğmesi
+([AI-BOM](01-ai-agent-security.md#ai-bom-yapay-zekâ-malzeme-listesi)) bulunur.
 
 **Neden önemli.** Bir ajan, konuştuğu sunucular ve araçlar kadar güvenlidir. Bilinen
 CVE'si olan açıkta bir çıkarım sunucusu veya kabuk (shell) saran bir MCP sunucusu,
@@ -610,6 +620,116 @@ kayıtlı 240 kurulumdan 212'si etkin. En sık varlık türü `EMAIL`, en sık s
 **Sınırlamalar.** Kayıt yalnızca raporlama ekler; tespit ve maskeleme, tarayıcı kayıtlı
 olsun ya da olmasın yerelde çalışır. Her kayıtlı profil bir ajan koltuğu kullanır.
 Gizlilik taramaları denetim dışa aktarımına dahil değildir.
+
+### Yapay zekâ yönetişimi: varlık envanteri, talep, istisna ve değişiklik denetimi
+
+**Ne yapar.** Hangi yapay zekâ sistemlerinin kullanıldığını, kimin sorumluluğunda ve hangi
+amaçla olduğunu, kimin hangi yapay zekâyı kullanabileceğini ve bunu kimin onayladığını,
+hangi istisnaların ne zamana kadar geçerli olduğunu ve güvenlik politikasını kimin, kimin
+onayıyla değiştirdiğini kaydeder. Sayfalar: **AI register** (`/governance/register`),
+**Requests & exceptions** (`/governance/requests`) ve **Change control**
+(`/governance/change-control`).
+
+**Neden önemli.** Güvenlik, veri koruma ve yapay zekâ yönetişim kurulları bu soruları AB
+Yapay Zekâ Yasası, GDPR ve KVKK gibi çerçeveler kapsamında sorar. Yanıtlar, mümkün olan
+yerde denetimi de yönlendiren tek bir kayıttan gelmelidir.
+
+**Nasıl çalışır.**
+- **Varlık envanteri.** Her kodlama ajanı, MCP sunucusu, yapay zekâ sohbet sitesi ya da
+  model servisi için bir kayıt: sahibi, iş amacı, veri kategorileri (kişisel veri, özel
+  nitelikli veri, kaynak kod, gizli anahtarlar, müşteri verisi), AB Yapay Zekâ Yasası
+  tarzında risk seviyesi, durum (önerildi, onaylı, kısıtlı, yasaklı, emekli), sonraki
+  gözden geçirme tarihi ve bağlı kanıtlar (duruş bulguları, olaylar, onay talepleri).
+  **Import observed AI systems**, kontrol düzleminin gördüğü her ajan, MCP sunucusu,
+  yapay zekâ sitesi ve model uç noktası için `proposed` durumunda kayıt ekler.
+- **Bir durum neyi uygular.** Yasaklı bir MCP sunucusu her yönetilen connector tarafından
+  engellenir (`deny`); kısıtlı olan bant dışı onay gerektirir (`ask`). Listeler, yayımlanan
+  çalışma zamanı politikasının yanında, özeti doğrulanarak bir sonraki politika
+  yenilemesinde connector'lara ulaşır. Yasaklı bir yapay zekâ sohbet sitesi, yöneticinin
+  tarayıcı yönetimiyle dağıttığı bir **Browser Guard yönetilen politika parçasında**
+  (`blockedSites`) listelenir; Browser Guard bunu kendisi çekmez. Diğer her şey yalnızca
+  kaydedilir. Envanter yalnızca kısıtlama ekler; yayımlanmış bir politikayı asla gevşetmez.
+- **Talep (intake).** Sahipler, yöneticiler ve üyeler yeni bir yapay zekâ aracı ya da
+  durum değişikliği için amaç ve ilgili veriyle talep açar. Sahipler, yöneticiler ya da
+  atanmış gözden geçirenler gerekçeyle karar verir; talebi açan kişi asla karar veremez
+  (veritabanı tarafından uygulanır).
+- **Süreli istisnalar.** Bir yasak ya da kısıtlamanın adı verilen üyeler, ajanlar ya da
+  herkes için, gerekçeli ve en fazla 365 gün içindeki bir bitiş tarihiyle kaldırılması;
+  talep edenden farklı bir sahip ya da yönetici onaylar. Bitiş tarihi her politika
+  çekiminde denetlenir; süresi dolan istisna kendiliğinden geçersiz olur.
+- **Dört göz değişiklik denetimi.** Açıkken çalışma zamanı ya da DLP politikası yayımlama,
+  geri alma, kademeli dağıtım ve bir envanter durumunu gevşetme, ikinci bir sahip ya da
+  yöneticinin farkı inceleyip onayladığı değişiklik taleplerine dönüşür. Veritabanı bunu
+  uygular; kapatmak da bir değişiklik talebidir.
+- Her değişiklik çok faktörlü doğrulama gerektirir ve aynı işlemde denetim kaydına yazılır.
+
+**Nasıl kullanılır.** **AI register** sayfasını açın, **Import observed AI systems**
+seçeneğini kullanın, ardından sahip ve gözden geçirme tarihlerini atayın. Dört gözü
+**Change control** sayfasından açın (iki etkin sahip ya da yönetici gerekir). Ayrıntılar:
+[ai-governance.md](../../../ai-governance.md).
+
+**Örnek.** Bir yönetici `shell-runner` MCP sunucusunu yasaklar. Bir sonraki politika
+yenilemesiyle çalışma alanındaki her yönetilen ajanın bu sunucuya çağrısı reddedilir. Bir
+geliştirici bir taşıma işi için istisna ister; başka bir yönetici bunu üç üye için ay
+sonuna kadar onaylar ve süre dolunca kimsenin müdahalesi olmadan geçersiz olur.
+
+**Kapsam.**
+
+| Plan | Dağıtım | Platform / işletim sistemi |
+| --- | --- | --- |
+| Free, Team, Business, Enterprise (panel) | Bulut, On-prem, Air-gapped | Web konsolu; uygulama yönetilen connector'larda |
+
+**Sınırlamalar.** MCP uygulaması, yayımlanmış bir çalışma zamanı politikası ve yönetişim
+bloğunu tanıyan connector'lar gerektirir. Site yasakları tarayıcılara ancak yönetici
+politika parçasını dağıttığında ulaşır. Gözden geçirme hatırlatmaları yalnızca panelde
+görünür. Envanter bir kayıt ve denetim aracıdır; yasal uyumluluk beyanı değildir.
+
+### Yönetişim skor kartı, çerçeve eşlemesi ve zamanlanmış özet
+
+**Ne yapar.** **Governance** (`/governance`, sahipler ve yöneticiler) 7, 30 ya da 90
+günlük bir pencere için skor kartı gösterir: öne çıkan riskler, çerçeve kapsamı, yapay zekâ
+kullanımı, ajan kararları, insan gözetimi, olaylar ve duruş, Browser Guard ve kabul
+edilebilir kullanım kapsamı, politika güncelliği ve NIST AI RMF, ISO/IEC 42001, AB Yapay
+Zekâ Yasası ile KVKK/GDPR için bir kontrol matrisi. Haftalık ya da aylık bir e-posta özeti
+zamanlanabilir.
+
+**Neden önemli.** Yöneticiler ve yönetişim ekipleri, ham olayları okumadan yapay zekâ
+kullanımının ve uygulanan denetimlerin periyodik, kanıta dayalı bir görünümüne ihtiyaç
+duyar.
+
+**Nasıl çalışır.**
+- **Çerçeve eşlemesi** veridir (`governance/frameworks/*.yaml`): her kontrol onu
+  destekleyen ürün yeteneklerini, kanıt kaynağını, bir kapsam düzeyini (tam, kısmi ya da
+  müşteri sorumluluğu) ve desteğin sınırını belirten bir notu listeler. Bir yetenek
+  yalnızca çalışma alanındaki gözlemlenebilir sinyallerden dağıtılmış sayılır.
+- **İnsan gözetimi**: onay talepleri, onay/ret oranı, medyan ve 90. yüzdelik karar süresi,
+  süresi dolan talepler ve onaylayan başına bir tablo. Taleplerin çoğunu saniyeler içinde
+  onaylayan kişi *Review pattern* olarak işaretlenir; bu, otomatik onayı kontrol etmek için
+  bir uyarıdır, kişi hakkında bir bulgu değildir.
+- Skor kartı, çalışma alanının kendi kayıtlarından bir veritabanı işleviyle hesaplanır ve
+  yalnızca sayı, tarih ve sürüm döndürür; prompt metni ya da olay içeriği asla döndürmez.
+- **Zamanlanmış özet** (haftalık pazartesi ya da aylık ayın 1'i, 06:00 UTC) sahiplere ya da
+  sahip ve yöneticilere yalnızca sayılarla gider; onaylayanların kimliği yer almaz.
+- *Print / save as PDF* kendi içinde tam bir A4 sürümü üretir; imzalı kanıt için
+  [uyum kanıt raporu](#uyum-kanıt-raporu) kullanılır.
+
+**Nasıl kullanılır.** **Governance** sayfasını açın, bir pencere seçin ve özeti
+**Scheduled summary** altından açın. Ayrıntılar:
+[ai-governance-frameworks.md](../../../ai-governance-frameworks.md).
+
+**Örnek.** 30 günlük skor kartı 42 onay talebi, dört dakikalık medyan karar süresi,
+*Review pattern* ile işaretlenmiş bir onaylayan ve altı aydan kısa saklama süresi nedeniyle
+sınırlı AB Yapay Zekâ Yasası kapsamı gösterir.
+
+**Kapsam.**
+
+| Plan | Dağıtım | Platform / işletim sistemi |
+| --- | --- | --- |
+| Free, Team, Business, Enterprise (panel) | Bulut, On-prem, Air-gapped (özet için e-posta gönderimi gerekir) | Web konsolu |
+
+**Sınırlamalar.** Eşleme ve skor kartı yükümlülükleri *destekler*; sertifika, denetim görüşü
+ya da hukuki tavsiye değildir. Kapsam bir ürün görünümüdür ve kurumsal önlemleri göremez.
+Çevrim dışı, yerel moddaki ve yönetilmeyen uç noktalar temsil edilmez.
 
 ### AutoSecOps görünümü ve müdahale playbook'ları
 
@@ -995,24 +1115,22 @@ tüm tenant'ları görebilir.
 
 ### Plan kataloğu ve plan x özellik matrisi
 
-**Ne yapar.** `public.plans` (migration `20260925000010_plan_catalog.sql`) planların, liste
-fiyatlarının, asgari koltuk sayılarının, dağıtım seçeneklerinin, liste saklama
-sürelerinin ve özellik anahtarlarının tek kaynağıdır. `/pricing` sayfası, bir sapma
-(drift) testiyle birebir aynı tutulan statik bir aynayı gösterir.
+**Ne yapar.** `public.plans` (migration `20260925000010_plan_catalog.sql`) planların,
+asgari koltuk sayılarının, dağıtım seçeneklerinin, liste saklama sürelerinin ve özellik
+anahtarlarının tek kaynağıdır. Herkese açık plan sayfası, bir sapma (drift) testiyle
+birebir aynı tutulan statik bir aynayı gösterir.
 
-**Neden önemli.** Satış ekibi, fiyat sayfası ve faturalama sayfası aynı rakamları söyler.
+**Neden önemli.** Satış ekibi, plan sayfası ve faturalama sayfası aynı paketleri tanımlar.
 
 **Nasıl çalışır.** Bir katalog satırı hiçbir şey vermez; kapasite yalnızca aşağıdaki
 denetlenen kabul yollarıyla değişir. Oturum açmış kullanıcılar etkin satırları okuyabilir;
 satırları yalnızca migration'lar yazar.
 
-**Plan x özellik matrisi** (liste fiyatları; USD, geliştirici koltuğu başına, vergiler
-hariç; COM-001 onayına tabi; teklif veya sipariş geçerlidir):
+**Plan x özellik matrisi** (fiyatlandırma anil@singularityrd.com üzerinden teklifle yapılır;
+teklif veya sipariş geçerlidir):
 
 | | Free | Team | Business | Enterprise |
 | --- | --- | --- | --- | --- |
-| Fiyat, aylık faturalama | $0 | $24 / geliştirici / ay | sunulmaz (yalnızca yıllık) | Özel |
-| Fiyat, yıllık faturalama | $0 | $20 / geliştirici / ay (yılda $240) | $45 / geliştirici / ay (yılda $540) | Özel |
 | Asgari | 1 ajan | 3 geliştirici | 25 geliştirici | Anlaşmaya göre |
 | Koltuk başına ajan | 1 | 1 | 1 | 1 |
 | Dağıtım | Bulut | Bulut | Bulut, On-prem | On-prem, Air-gapped |
@@ -1030,12 +1148,12 @@ hariç; COM-001 onayına tabi; teklif veya sipariş geçerlidir):
 
 Yerel tespit her uç noktada, bir plan veya hesap **olsun ya da olmasın** çalışır.
 
-**Nasıl kullanılır.** `/pricing` sayfasına bakın veya oturum açmış bir kullanıcı olarak
-`public.plans` tablosunu sorgulayın. Sütunların açıklaması [pricing.md](../../../pricing.md)
-dosyasındadır.
+**Nasıl kullanılır.** **Billing** sayfasına bakın veya oturum açmış bir kullanıcı olarak
+`public.plans` tablosunu sorgulayın. Fiyatlandırma ve teklif için anil@singularityrd.com
+adresine yazın.
 
-**Örnek.** Yıllık Business planındaki 40 geliştiricili bir şirket: liste fiyatıyla
-40 × $540 = yılda $21.600; 40 korunan ajan kabul edilir.
+**Örnek.** Business planındaki 40 geliştiricili bir şirket için 40 korunan ajan kabul
+edilir (geliştirici koltuğu başına bir ajan). Fiyat teklifte belirlenir.
 
 **Kapsam.**
 
@@ -1581,7 +1699,7 @@ paketleri, olay alımı, olası olaylar, denetim dışa aktarımı ve SIEM tesli
 anlatılan maskelenmiş verileri gönderir. Ticari karar AB, ABD ve APAC bölgelerini kapsar;
 bunlar [`deploy/regions.manifest.json`](../../../../deploy/regions.manifest.json) içinde
 beyan olarak kayıtlıdır. Bir bölge, barındırılan projesi, veri yerleşimi koşulları ve alt
-işlemci listesi onaylandığında (COM-011) kullanılabilir olur.
+işlemci listesi onaylandığında kullanılabilir olur.
 
 **Nasıl kullanılır.** Kayıt açıksa kaydolun, denemeyi başlatın, uç noktaları kaydedin,
 bağlayıcıları ve Browser Guard'ı dağıtın, ardından politika yayımlayın. Ayrıntılar için
@@ -1931,6 +2049,7 @@ telemetri planlama modeli. Bu varsayımları gerçek müşteri verisiyle değiş
 | Çalışma zamanı politikası, kademeli dağıtım, DLP düzenleyicisi | Yalnızca yerel politika dosyası | Evet | Evet | Evet | Evet |
 | Browser Privacy raporlaması | Eklenti yerelde maskeler, rapor yok | Evet | Evet | Evet | Evet |
 | Yapay Zekâ Güvenlik Duruşu sayfası | Tarayıcılar yerelde çalışır, sayfa yok | Evet | Evet | Evet | Evet (iç hedefler) |
+| Panelden onay, yapay zekâ envanteri, değişiklik denetimi, yönetişim skor kartı | Yalnızca terminalden onay | Evet | Evet | Evet | Evet |
 | Derin tarama yan konteyneri | İsteğe bağlı loopback köprü | Barındırılan hizmette listelenmemiş | İsteğe bağlı `--with-posture-scanner` | İsteğe bağlı `postureScanner.enabled` | İsteğe bağlı; uzak taramalar yalnızca çıkış izin listesiyle |
 | Entra ID SSO | - | Evet | Evet | Evet | Yalnızca IdP iç ağdan erişilebilirse |
 | SAML 2.0 | - | Evet | Evet (Auth SAML için yapılandırılmış) | Evet (`dashboard.saml.*`) | İç IdP ile |

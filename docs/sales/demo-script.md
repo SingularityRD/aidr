@@ -95,7 +95,7 @@ echo '{"session_id":"demo","tool_name":"Bash","tool_input":{"command":"ls -la"}}
 
 An empty `{}` means allow.
 
-> "The verdict names the rule and the artifact. The rules are YAML — 386 of them —
+> "The verdict names the rule and the artifact. The rules are YAML — 494 of them —
 > your team can read and extend them."
 
 Open `threats/commands.yaml` and show one rule.

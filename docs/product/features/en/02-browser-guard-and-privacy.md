@@ -41,6 +41,7 @@ Related documents: [product overview](../../overview.md) ·
 13. [Blocking AI sites](#13-blocking-ai-sites)
     - [13a. Shadow AI discovery and control](#13a-shadow-ai-discovery-and-control)
     - [13b. Custom internal AI sites](#13b-custom-internal-ai-sites)
+    - [13c. AI acceptable-use notice](#13c-ai-acceptable-use-notice)
 14. [Enterprise managed policy and deployment](#14-enterprise-managed-policy-and-deployment)
 15. [Counts-only telemetry and the Browser Privacy dashboard](#15-counts-only-telemetry-and-the-browser-privacy-dashboard)
 16. [Optional native host for NER and OCR](#16-optional-native-host-for-ner-and-ocr)
@@ -60,8 +61,7 @@ Related documents: [product overview](../../overview.md) ·
 
 ## Availability at a glance
 
-The plan catalog (`packages/dashboard/src/billing/plans.ts`, list prices pending commercial
-approval COM-001) lists **Browser Privacy Guard** (`browser_privacy_guard`) for **Team,
+The plan catalog (`packages/dashboard/src/billing/plans.ts`) lists **Browser Privacy Guard** (`browser_privacy_guard`) for **Team,
 Business and Enterprise**, not for Free. The extension itself does not check a plan or an
 account: detection, masking and restore run in the browser whether or not it is enrolled.
 Enrollment adds reporting to the control plane (feature 15). The dashboard describes each
@@ -1229,8 +1229,8 @@ two items.
   `USERNAME` and `LOCATION`; a test keeps the two lists equal). Add those two types yourself
   if you want them, and remember that a managed `enabledEntities` locks the list for users.
 - A user-entered API key is stored in that browser profile's `chrome.storage.local`.
-- The plan catalog is a list-price mirror pending commercial approval (COM-001). The code
-  does not enforce plan features for ingest.
+- The plan catalog describes editions; the code does not enforce plan features for
+  ingest.
 
 ### 16. Optional native host for NER and OCR
 

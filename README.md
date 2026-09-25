@@ -39,11 +39,10 @@ Singularity AIDR intercepts tool calls (Bash commands, URL fetches, file writes)
 
 ## Plans
 
-Free (local mode), **Team** ($20 per developer per month billed annually, $24 monthly,
-minimum 3), **Business** ($45 per developer per month, minimum 25) and **Enterprise**
-(custom). These are list prices, subject to COM-001 approval. Orders currently go
-through an approved written quote; self-service checkout is not enabled. See
-[Pricing](docs/sales/pricing.md).
+Free (local mode), **Team** (minimum 3 developers), **Business** (minimum 25
+developers) and **Enterprise** (on-premises and air-gapped). Pricing is by written quote
+through anil@singularityrd.com; self-service checkout is not enabled. Edition contents
+are listed in the [product catalog](docs/sales/catalog/README.md).
 
 ## Quick start
 
@@ -85,7 +84,7 @@ Private registry credentials and versioned setup are in
 
 ## Release status
 
-The current decision is **NO-GO for a customer or production release**. Connectors,
+Singularity AIDR is **not yet released for customer or production use**. Connectors,
 Browser Guard and the control plane are implemented and tested in this repository, but
 signed-candidate evidence, real-host acceptance, an independent security review and
 commercial approvals are still open. Read the

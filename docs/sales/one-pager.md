@@ -43,6 +43,13 @@ servers to 14 MCP risk categories; skill and plugin packages are scanned against
 T01–T09 taxonomy. The dashboard's Posture view collects the results, and uploads carry
 identifiers and digests only, never target URLs, file paths or matched text.
 
+**AI safety and governance.** Session-level toxic-flow detection holds the step that
+would combine private data, untrusted content and an outbound channel. Guardrails pause
+runaway loops and hold test sabotage and irreversible actions (database drops, cloud
+deletions, publishing) for a person. The dashboard adds an AI asset register, an intake and
+exception workflow, four-eyes policy change and a governance scorecard; `aidr simulate`
+tests defanged attacks against your settings without executing anything.
+
 ## How it works
 
 ```
@@ -50,7 +57,7 @@ AI agent tool call                     Prompt / paste / file in an AI chat
         │                                           │
         ▼                                           ▼
   connector hook  ─▶ local engine          Browser Guard (in the browser)
-                    ├─ 451 YAML rules        ├─ TR/EN PII + secrets detection
+                    ├─ 494 YAML rules        ├─ TR/EN PII + secrets detection
                     ├─ command-chain and     ├─ custom terms + exact-data match
                     │  obfuscation analysis  └─ reversible placeholders
                     ├─ package/plugin checks          │
@@ -79,9 +86,9 @@ AI agent tool call                     Prompt / paste / file in an AI chat
 
 ## Plans
 
-Free · **Team** $20 per developer per month billed annually ($24 monthly, minimum 3) ·
-**Business** $45 per developer per month (minimum 25) · **Enterprise** custom. List
-prices, subject to COM-001 approval. Details in [pricing.md](pricing.md).
+Free (local mode) · **Team** (minimum 3 developers) · **Business** (minimum 25
+developers) · **Enterprise** (on-premises and air-gapped). Pricing and quotes:
+anil@singularityrd.com.
 
 ## Who it's for
 
@@ -110,14 +117,14 @@ use public AI chat products with customer data.
 
 ## Appendix — current status and what is not ready yet
 
-The release decision is **NO-GO**; see
+Singularity AIDR is not yet released for live pilots or production; the release record is
 [first-customer-ready.md](../production-readiness/first-customer-ready.md). Use the
 [controlled demo runbook](../production-readiness/controlled-demo-runbook.md) and the
 [demo script](demo-script.md) for any session.
 
 **Working in this repository today**
 
-- Local engine with 451 YAML threat rules in 28 files; `aidr setup` refuses to report
+- Local engine with 494 YAML threat rules in 29 files; `aidr setup` refuses to report
   success if zero rules load or the self-test does not match.
 - Connector code for Claude Code, Cursor, VS Code, OpenClaw, OpenCode and Codex CLI,
   with cross-connector parity tests.
@@ -142,12 +149,13 @@ The release decision is **NO-GO**; see
 - **Real-host acceptance is open** for each connector, OS and host version, and for each
   browser and AI site. A returned `deny` is not proof that a side effect was prevented.
 - **Known coverage edges.** If a hook is disabled, untrusted or killed, the host
-  proceeds; Codex fails open in those cases. Browser Guard cannot inspect binary files
-  such as PDF or DOCX in the browser (blocked in `block` mode, otherwise let through with
-  a warning), and a site redesign can require an adapter update. Names and addresses
-  without cue words need the optional NER host, which ships without a model.
-- **Commercial gates open.** Prices, legal terms and DPA, billing, support and regions
-  (COM-001 to COM-013) await approval.
+  proceeds; Codex fails open in those cases. Browser Guard uploads Word, Excel and
+  PowerPoint files as masked copies but cannot rewrite PDFs (a PDF with findings is
+  blocked; scanned or encrypted PDFs are uploaded with a warning unless the mode is
+  `block`), and a site redesign can require an adapter update. Names and addresses without
+  cue words need the optional NER host, which ships without a model.
+- **Commercial terms open.** Legal terms and DPA, billing, support and regions still await
+  approval.
 
 *This document contains no customer names, certifications or efficacy claims, because
 none exist. It will be updated when they do.*

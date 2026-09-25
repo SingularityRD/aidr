@@ -8,12 +8,12 @@ licence records that decide how many endpoints may report to it. This part cover
 control-plane feature and each way to deploy it: SaaS, customer-operated on Docker
 Compose or Kubernetes, and air-gapped.
 
-> **Release status.** The first-customer decision in
-> [first-customer-ready.md](../../../production-readiness/first-customer-ready.md) is
-> **NO-GO** today. The hosted service is not yet accepted for customer use, and every
-> self-hosted installation still needs its own rehearsal and acceptance. This guide says
-> what the software does and how to operate it. It does not promise availability, an
-> SLA or a supported sale. Prices are list prices, subject to COM-001 approval.
+> **Release status.** Singularity AIDR is not yet released for customer use; the release
+> record is [first-customer-ready.md](../../../production-readiness/first-customer-ready.md).
+> The hosted service is not yet accepted for customer use, and every self-hosted
+> installation still needs its own rehearsal and acceptance. This guide says what the
+> software does and how to operate it. It does not promise availability, an SLA or a
+> supported sale. Pricing is by quote: anil@singularityrd.com.
 
 ## Contents
 
@@ -32,6 +32,8 @@ Compose or Kubernetes, and air-gapped.
    - [Staged policy rollout and rollback](#staged-policy-rollout-and-rollback)
    - [DLP policy editor](#dlp-policy-editor)
    - [Browser Privacy](#browser-privacy)
+   - [AI governance: asset register, intake, exceptions and change control](#ai-governance-asset-register-intake-exceptions-and-change-control)
+   - [Governance scorecard, framework mapping and scheduled summary](#governance-scorecard-framework-mapping-and-scheduled-summary)
    - [AutoSecOps view and response playbooks](#autosecops-view-and-response-playbooks)
    - [API keys and enrollment tokens](#api-keys-and-enrollment-tokens)
    - [Team, roles and invitations](#team-roles-and-invitations)
@@ -130,6 +132,7 @@ locally after an inactivity timeout. The routes are declared in
 | `/discovery` | Discovery | Reported AI-infrastructure collectors and targets | [Discovery coverage](#discovery-coverage) |
 | `/posture` | Posture | Infrastructure CVEs, MCP risks, skill findings | [AI Security Posture](#ai-security-posture) |
 | `/incidents` | Incidents | Blocked and approval-required verdicts, evidence chain | [Incidents](#incidents-and-evidence-chain) |
+| `/approvals` | Approvals (pending-count badge for owners and admins) | Decide managed-mode `ask` requests with a reason | [Dashboard approvals](01-ai-agent-security.md#dashboard-approvals) |
 | `/privacy-guard` | Browser Privacy | Browser Guard counts and browser enrollment | [Browser Privacy](#browser-privacy) |
 | `/autosecops` | AutoSecOps | Runtime fleet view from the AutoSecOps integration | [AutoSecOps](#autosecops-view-and-response-playbooks) |
 | `/settings` | Settings | Workspace name, retention, closure, alert notifications, MFA status, theme | [Workspace settings](#workspace-settings-name-retention-closure), [Alert integrations](#alert-integrations-slack-teams-signed-webhooks-and-e-mail) |
@@ -137,6 +140,9 @@ locally after an inactivity timeout. The routes are declared in
 | `/scim` | Directory provisioning (owners only) | SCIM credentials and group-to-role mappings | [SCIM](#scim-directory-provisioning) |
 | `/policies` | Policies (roles that can edit policy) | Team policy, runtime policy, rollout, DLP editor | [Policies](#team-policy-and-runtime-policy) |
 | `/compliance` | Compliance (owners and admins) | Compliance evidence report (hash-sealed, optionally signed): JSON, CSV bundle, printable EN/TR | [Compliance evidence report](#compliance-evidence-report) |
+| `/governance` | Governance (owners and admins) | Governance scorecard, framework control matrix, scheduled summary settings | [Governance scorecard](#governance-scorecard-framework-mapping-and-scheduled-summary) |
+| `/governance/register` | AI register | AI asset register | [AI governance](#ai-governance-asset-register-intake-exceptions-and-change-control) |
+| `/governance/requests`, `/governance/change-control` | (from the AI register) | Intake requests and exceptions; four-eyes policy change control | [AI governance](#ai-governance-asset-register-intake-exceptions-and-change-control) |
 | `/enterprise` | none (link in the invitation) | Invitation acceptance | [Team](#team-roles-and-invitations) |
 | `/auth/dlp-step-up` | none | MFA step-up before DLP and workspace changes | [MFA](#multi-factor-authentication-recovery-and-session-revocation) |
 | `/auth/recover` | none | Password recovery and break-glass recovery codes | [MFA](#multi-factor-authentication-recovery-and-session-revocation) |
@@ -399,7 +405,11 @@ infrastructure has known vulnerabilities? Which MCP servers are configured, and 
 are they? Which skill or plugin packages contain dangerous patterns? It shows tiles for
 critical CVEs, high CVEs, MCP servers and skill findings, then tables for
 **Infrastructure exposure**, **MCP inventory risks**, **Skill and plugin findings**
-and a 30-day **Trend**.
+and a 30-day **Trend**. It also shows an **Agent environment and autonomy** table
+(from `aidr discover --agents --upload`), the OWASP and MITRE ATLAS
+[framework coverage](01-ai-agent-security.md#security-framework-coverage-owasp-mitre-atlas)
+of the rules, and an **Export AI-BOM** button for a tenant-wide CycloneDX 1.6 document
+([AI-BOM](01-ai-agent-security.md#ai-bom-ai-bill-of-materials)).
 
 **Why it matters.** An agent is only as safe as the servers and tools it talks to. An
 exposed inference server with a known CVE, or an MCP server that wraps a shell, widens
@@ -594,6 +604,110 @@ and 212 active installs of 240 enrolled. The top entity type is `EMAIL`, the top
 **Limitations.** Enrollment only adds reporting. Detection and masking run locally
 whether or not a browser is enrolled. Each enrolled profile consumes an agent seat.
 Privacy scans are not part of the audit export.
+
+### AI governance: asset register, intake, exceptions and change control
+
+**What it does.** Records which AI systems are in use, who owns them and why, who may use
+which AI and who approved it, which exceptions are in force until when, and who changed
+security policy with whose approval. Pages: **AI register** (`/governance/register`),
+**Requests & exceptions** (`/governance/requests`) and **Change control**
+(`/governance/change-control`).
+
+**Why it matters.** Security, data-protection and AI governance boards ask these questions
+under frameworks such as the EU AI Act, GDPR and KVKK. The answers should come from one
+record that also drives enforcement where it can.
+
+**How it works.**
+- **Asset register.** One entry per coding agent, MCP server, AI chat site or model
+  service: owner, business purpose, data categories (personal, special category, source
+  code, secrets, customer data), an EU AI Act-style risk tier, status (proposed, approved,
+  restricted, banned, retired), next review date and linked evidence (posture findings,
+  incidents, approval requests). **Import observed AI systems** adds a `proposed` entry for
+  each agent, MCP server, AI site and model endpoint the control plane has seen.
+- **What a status enforces.** A banned MCP server is blocked by every managed connector
+  (`deny`); a restricted one needs out-of-band approval (`ask`). The lists reach
+  connectors next to the published runtime policy, digest-checked, at the next policy
+  refresh. A banned AI chat site is listed in a **Browser Guard managed-policy snippet**
+  (`blockedSites`) that the administrator deploys through browser management; Browser
+  Guard does not fetch it by itself. Anything else is recorded only. The register only
+  adds restrictions; it never relaxes a published policy.
+- **Intake.** Owners, admins and members request a new AI tool or a status change with a
+  purpose and the data involved. Owners, admins or designated reviewers decide with a
+  reason, and never the requester (enforced by the database).
+- **Time-boxed exceptions.** A waiver of a ban or restriction for named members, agents or
+  everyone, with a justification and an end date within 365 days, approved by an owner or
+  admin other than the requester. The end date is checked on every policy fetch, so an
+  expired exception stops applying on its own.
+- **Four-eyes change control.** While on, publishing runtime or DLP policy, rollbacks,
+  staged rollouts and relaxing a register status become change requests that a second
+  owner or admin approves after reviewing the diff. The database enforces it; turning it
+  off is itself a change request.
+- Every change needs multi-factor verification and is written to the audit log in the same
+  transaction.
+
+**How to use.** Open **AI register**, choose **Import observed AI systems**, then assign
+owners and review dates. Turn on four-eyes on **Change control** (needs two active
+owners or admins). Details: [ai-governance.md](../../../ai-governance.md).
+
+**Example.** An administrator bans the `shell-runner` MCP server. Within the next policy
+refresh every managed agent in the workspace is denied calls to it. A developer requests an
+exception for a migration; another administrator approves it for three named members until
+month end, after which it stops applying without anyone intervening.
+
+**Availability.**
+
+| Plan | Deployment | Platforms / OS |
+| --- | --- | --- |
+| Free, Team, Business, Enterprise (dashboard) | Cloud, On-prem, Air-gapped | Web console; enforcement on managed connectors |
+
+**Limitations.** MCP enforcement needs a published runtime policy and connectors that
+understand the governance block. Site bans reach browsers only when the administrator
+deploys the policy snippet. Review reminders are shown in the dashboard only. The register
+is a record-keeping and control tool, not a statement of legal compliance.
+
+### Governance scorecard, framework mapping and scheduled summary
+
+**What it does.** **Governance** (`/governance`, owners and admins) shows a scorecard for a
+7, 30 or 90-day window: top risks, framework coverage, AI usage, agent decisions, human
+oversight, incidents and posture, Browser Guard and acceptable-use coverage, policy
+freshness, and a control matrix for NIST AI RMF, ISO/IEC 42001, the EU AI Act and
+KVKK/GDPR. A weekly or monthly e-mail summary can be scheduled.
+
+**Why it matters.** Executives and governance teams need a periodic, evidence-based view of
+AI use and of the controls in place, without reading raw events.
+
+**How it works.**
+- **Framework mapping** is data (`governance/frameworks/*.yaml`): each control lists the
+  product capabilities that support it, the evidence source, a coverage level (full,
+  partial or customer responsibility) and a note stating the limit of the support. A
+  capability counts as deployed only from observable signals in the workspace.
+- **Human oversight**: approval requests, approve/deny ratio, median and 90th-percentile
+  decision time, expired requests and a per-approver table. An approver who approves most
+  requests within seconds is marked *Review pattern*, a prompt to check for automatic
+  approval, not a finding about the person.
+- The scorecard is computed by a database function from the workspace's own records and
+  returns counts, dates and versions only, never prompt text or event payloads.
+- The **scheduled summary** (weekly on Monday or monthly on the 1st, 06:00 UTC) goes to
+  owners, or owners and admins, with counts only; approver identities are left out.
+- *Print / save as PDF* produces a self-contained A4 edition; signed evidence remains the
+  [compliance evidence report](#compliance-evidence-report).
+
+**How to use.** Open **Governance**, pick a window, and enable the summary under
+**Scheduled summary**. Details: [ai-governance-frameworks.md](../../../ai-governance-frameworks.md).
+
+**Example.** The 30-day scorecard shows 42 approval requests, a median decision time of four
+minutes, one approver marked *Review pattern*, and EU AI Act coverage limited by a retention
+period shorter than six months.
+
+**Availability.**
+
+| Plan | Deployment | Platforms / OS |
+| --- | --- | --- |
+| Free, Team, Business, Enterprise (dashboard) | Cloud, On-prem, Air-gapped (summary needs a mail transport) | Web console |
+
+**Limitations.** The mapping and scorecard *support* obligations; they are not a
+certification, audit opinion or legal advice. Coverage is a product view and cannot see
+organisational measures. Offline, local-mode and unmanaged endpoints are not represented.
 
 ### AutoSecOps view and response playbooks
 
@@ -968,23 +1082,21 @@ their own installation.
 ### Plan catalog and plan x feature matrix
 
 **What it does.** `public.plans` (migration `20260925000010_plan_catalog.sql`) is the one
-source of plans, list prices, seat minimums, deployment options, list retention terms
-and feature keys. `/pricing` renders a static mirror that a drift test keeps identical.
+source of plans, seat minimums, deployment options, list retention terms and feature
+keys. The public plans page renders a static mirror that a drift test keeps identical.
 
-**Why it matters.** Sales, the pricing page and the billing page all quote the same
-numbers.
+**Why it matters.** Sales, the plans page and the billing page all describe the same
+editions.
 
 **How it works.** A catalog row never grants anything. Capacity changes only through
 the audited admission paths below. Signed-in users can read active rows, and only
 migrations write them.
 
-**Plan x feature matrix** (list prices, USD per developer seat, before tax, subject to
-COM-001; a quote or order governs):
+**Plan x feature matrix** (pricing is by quote through anil@singularityrd.com; the quote or
+order governs):
 
 | | Free | Team | Business | Enterprise |
 | --- | --- | --- | --- | --- |
-| Price, monthly billing | $0 | $24 / developer / month | not offered (annual only) | Custom |
-| Price, annual billing | $0 | $20 / developer / month ($240 / year) | $45 / developer / month ($540 / year) | Custom |
 | Minimum | 1 agent | 3 developers | 25 developers | By agreement |
 | Agents per seat | 1 | 1 | 1 | 1 |
 | Deployment | Cloud | Cloud | Cloud, On-prem | On-prem, Air-gapped |
@@ -1002,11 +1114,11 @@ COM-001; a quote or order governs):
 
 Local detection runs on every endpoint **with or without** any plan or account.
 
-**How to use.** See `/pricing`, or query `public.plans` as a signed-in user.
-[pricing.md](../../../pricing.md) explains every column.
+**How to use.** See the **Billing** page, or query `public.plans` as a signed-in user.
+For pricing and a quote, contact anil@singularityrd.com.
 
-**Example.** A 40-developer company on annual Business: 40 × $540 = $21,600 per year at
-list price, admitting 40 protected agents.
+**Example.** A 40-developer company on Business is admitted 40 protected agents (one agent
+per developer seat); the price is set in the quote.
 
 **Availability.**
 
@@ -1534,7 +1646,7 @@ described in [section 7](#7-telemetry-and-its-privacy). The commercial decision 
 EU, US and APAC regions, recorded as declarations in
 [`deploy/regions.manifest.json`](../../../../deploy/regions.manifest.json). A region
 becomes available when its hosted project, residency terms and subprocessor list are
-approved (COM-011).
+approved.
 
 **How to use.** Sign up where signup is open, start the trial, enroll endpoints, deploy
 connectors and Browser Guard, then publish policy. See
@@ -1877,6 +1989,7 @@ the daily average. Replace these assumptions with real customer data:
 | Runtime policy, rollout, DLP editor | Local policy file only | Yes | Yes | Yes | Yes |
 | Browser Privacy reporting | Extension masks locally, no report | Yes | Yes | Yes | Yes |
 | AI Security Posture page | Scanners run locally, no page | Yes | Yes | Yes | Yes (internal targets) |
+| Dashboard approvals, AI register, change control, governance scorecard | Terminal approvals only | Yes | Yes | Yes | Yes |
 | Deep-scan sidecar | Optional loopback bridge | Not listed for the hosted service | Optional `--with-posture-scanner` | Optional `postureScanner.enabled` | Optional; remote scans only via egress allowlist |
 | Entra ID SSO | - | Yes | Yes | Yes | Only if the IdP is reachable internally |
 | SAML 2.0 | - | Yes | Yes (Auth configured for SAML) | Yes (`dashboard.saml.*`) | With an internal IdP |

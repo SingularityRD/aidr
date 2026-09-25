@@ -2,7 +2,7 @@
 
 Answers for security reviewers and procurement questionnaires. Answers point at the
 sources or documents they come from. Where something is not in place, the answer says so.
-The release decision is **NO-GO** today
+Singularity AIDR is not yet released for customer use
 ([first-customer-ready.md](../production-readiness/first-customer-ready.md)); these
 answers describe the implemented design, not an accepted production service.
 
@@ -147,8 +147,8 @@ AIDR is **designed to support** KVKK and GDPR obligations: data minimisation (lo
 detection, counts-only telemetry, hashed artifacts), masking of personal data before it
 reaches third-party AI providers, tenant-scoped retention and legal holds, deletion on
 offboarding, and an on-prem option for data residency. Using AIDR does not by itself make
-an organisation compliant. A DPA, subprocessor list and regional hosting terms are part
-of the open commercial gates (COM-002, COM-003, COM-011).
+an organisation compliant. A DPA, subprocessor list and regional hosting terms are still
+awaiting approval.
 
 Owners and admins can generate a **compliance evidence report** for up to 366 days from
 the dashboard (**Compliance**): coverage, counts-only data-protection activity, policy
