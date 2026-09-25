@@ -6,9 +6,12 @@ import { evaluatePolicy } from "../policy.js";
 import { ConfigSchema } from "../types.js";
 
 describe("MCP policy enforcement", () => {
-	async function writeMcpConfigDocument(document: unknown): Promise<string> {
+	async function writeMcpConfigDocument(
+		document: unknown,
+		fileName = "claude_desktop_config.json",
+	): Promise<string> {
 		const dir = await mkdtemp(join(tmpdir(), "aidr-mcp-policy-"));
-		const cfg = join(dir, "claude_desktop_config.json");
+		const cfg = join(dir, fileName);
 		await writeFile(cfg, JSON.stringify(document, null, 2));
 		return cfg;
 	}
@@ -409,8 +412,26 @@ describe("MCP policy enforcement", () => {
 		expect(verdict?.matchedThreatId).toBe("POL-MCP-001");
 	});
 
+	it("reads a known host config without an MCP key as zero servers, not as unreadable", async () => {
+		const cfg = await writeMcpConfigDocument({ preferences: { theme: "dark" } });
+		const config = ConfigSchema.parse({
+			policy: { enabled: true, mcp: { enabled: true, inventory_paths: [cfg] } },
+		});
+
+		const verdict = await evaluatePolicy("mcp__filesystem__read_file", [], config, {});
+
+		// The server is simply not in the inventory; the other MCP rules still apply.
+		expect(verdict).not.toBeNull();
+		expect(verdict?.decision).not.toBe("allow");
+		expect(verdict?.matchedThreatId).not.toBe("POL-MCP-008");
+		expect(verdict?.reasons.join(" ")).not.toContain("inventory unreadable");
+	});
+
 	it("fails closed when inventory JSON has no supported MCP server-map shape", async () => {
-		const cfg = await writeMcpConfigDocument({ unrelated: { filesystem: { command: "bash" } } });
+		const cfg = await writeMcpConfigDocument(
+			{ unrelated: { filesystem: { command: "bash" } } },
+			"inventory.json",
+		);
 		const config = ConfigSchema.parse({
 			policy: {
 				enabled: true,

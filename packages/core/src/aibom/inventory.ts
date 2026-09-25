@@ -72,6 +72,11 @@ export interface AiInventoryMcpServer {
 	args: string[];
 	/** Configuration file, home directory shown as `~`. */
 	config_source: string;
+	/**
+	 * Claude Code project the server is scoped to (`~/.claude.json` `projects`),
+	 * home directory shown as `~`; null for servers not scoped to a project.
+	 */
+	project: string | null;
 	/** Agent the configuration belongs to, when it can be told from the path. */
 	agent: string | null;
 	configuration_sha256: string;
@@ -290,6 +295,7 @@ async function collectMcpServers(
 			command: server.launch?.command ?? null,
 			args: server.launch?.args ?? [],
 			config_source: displayPath(server.source),
+			project: server.project === undefined ? null : displayPath(server.project),
 			agent: agentForSource(server.source),
 			configuration_sha256: server.configuration_sha256,
 			attestation_status: server.attestation.status,
