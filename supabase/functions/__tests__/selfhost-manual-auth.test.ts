@@ -11,7 +11,8 @@ type Route =
 	| "response-playbooks"
 	| "audit-export"
 	| "tenant-settings"
-	| "approval-requests";
+	| "approval-requests"
+	| "compliance-report";
 
 const TENANT = "22222222-2222-4222-8222-222222222222";
 const USER = "11111111-1111-4111-8111-111111111111";
@@ -73,6 +74,7 @@ async function loadHandler(route: Route) {
 		case "audit-export": await import("../audit-export/index.ts"); break;
 		case "tenant-settings": await import("../tenant-settings/index.ts"); break;
 		case "approval-requests": await import("../approval-requests/index.ts"); break;
+		case "compliance-report": await import("../compliance-report/index.ts"); break;
 	}
 	const handler = served[0];
 	if (!handler) throw new Error(`${route} did not register its Edge handler`);
@@ -108,6 +110,7 @@ function request(route: Route, token?: string): Request {
 			decision: "approve",
 			reason: "Auth regression fixture",
 		},
+		"compliance-report": { tenant_id: TENANT, from: "2026-09-01T00:00:00.000Z", to: "2026-09-02T00:00:00.000Z" },
 	};
 	const method = route === "azure-ad-groups" ? "GET" : route === "tenant-settings" ? "PATCH" : "POST";
 	return new Request(`https://project.supabase.co/functions/v1/${route}`, {
@@ -136,6 +139,7 @@ describe("manual session guards when the self-host gateway JWT check is disabled
 		"audit-export",
 		"tenant-settings",
 		"approval-requests",
+		"compliance-report",
 	] satisfies Route[])("%s rejects a missing bearer before privileged access", async (route) => {
 		const { handler, getUser, privilegedCalls } = await loadHandler(route);
 		const response = await handler(request(route));
@@ -157,6 +161,7 @@ describe("manual session guards when the self-host gateway JWT check is disabled
 		"audit-export",
 		"tenant-settings",
 		"approval-requests",
+		"compliance-report",
 	] satisfies Route[])("%s rejects an Auth-rejected bearer before privileged access", async (route) => {
 		const { handler, getUser, privilegedCalls } = await loadHandler(route);
 		const response = await handler(request(route, "not-a-valid-supabase-jwt"));

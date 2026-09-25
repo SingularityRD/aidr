@@ -2030,3 +2030,21 @@ select.input {
 		scroll-behavior: auto !important;
 	}
 }
+
+/* Compliance report: definition list of report facts. */
+.kv {
+	display: grid;
+	grid-template-columns: max-content 1fr;
+	gap: 4px 16px;
+	margin: 8px 0;
+}
+
+.kv dt {
+	font-weight: 600;
+	color: var(--text-primary);
+}
+
+.kv dd {
+	margin: 0;
+	min-width: 0;
+}

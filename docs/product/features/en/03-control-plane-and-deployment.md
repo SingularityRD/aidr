@@ -50,6 +50,7 @@ Compose or Kubernetes, and air-gapped.
    - [Operator administration (operator-admin)](#operator-administration-operator-admin)
 7. [Telemetry and its privacy](#7-telemetry-and-its-privacy)
 8. [Audit export and SIEM delivery](#8-audit-export-and-siem-delivery)
+   - [Compliance evidence report](#compliance-evidence-report)
 9. [Retention, legal hold and offboarding](#9-retention-legal-hold-and-offboarding)
 10. [Backups and restore drills](#10-backups-and-restore-drills)
 11. [Monitoring and alerts](#11-monitoring-and-alerts)
@@ -132,6 +133,7 @@ locally after an inactivity timeout. The routes are declared in
 | `/team` | Team | Members, roles, invitations, team audit and export | [Team](#team-roles-and-invitations) |
 | `/scim` | Directory provisioning (owners only) | SCIM credentials and group-to-role mappings | [SCIM](#scim-directory-provisioning) |
 | `/policies` | Policies (roles that can edit policy) | Team policy, runtime policy, rollout, DLP editor | [Policies](#team-policy-and-runtime-policy) |
+| `/compliance` | Compliance (owners and admins) | Compliance evidence report (hash-sealed, optionally signed): JSON, CSV bundle, printable EN/TR | [Compliance evidence report](#compliance-evidence-report) |
 | `/enterprise` | none (link in the invitation) | Invitation acceptance | [Team](#team-roles-and-invitations) |
 | `/auth/dlp-step-up` | none | MFA step-up before DLP and workspace changes | [MFA](#multi-factor-authentication-recovery-and-session-revocation) |
 | `/auth/recover` | none | Password recovery and break-glass recovery codes | [MFA](#multi-factor-authentication-recovery-and-session-revocation) |
@@ -1243,6 +1245,56 @@ retry after a crash produces a duplicate that the SOC rule deduplicates on `even
 **Limitations.** Not exactly-once. Webhooks do not require authentication, so do not
 point an unauthenticated webhook at an internet-reachable receiver. There is no mTLS or
 request signing. "Delivered" does not prove indexing or alerting downstream.
+
+### Compliance evidence report
+
+**What it does.** Owners and admins generate a tenant-scoped JSON report for a chosen
+period (up to 366 days) from **Compliance** (`/compliance`) or the `compliance-report`
+API. It gathers the evidence security and DPO teams are usually asked for: tenant
+profile and retention settings, protection coverage by runtime, Browser Guard
+masked/warned/blocked counts by entity type, AI site and day, agent DLP decisions,
+policy versions and digests, MFA/SSO/SCIM state with the owner/admin list, incidents,
+AI security posture (CVE severities, MCP risks), the data-flow and subprocessor
+inventory, and retention, legal-hold, offboarding and export clean-up evidence.
+
+**Why it matters.** KVKK and GDPR accountability work needs the same facts every
+quarter. The report is designed to support that work with one verifiable document. It is
+not a certification and does not state that anyone is compliant.
+
+**How it works.** A service-role SQL function aggregates counts, enums, identifiers,
+timestamps and SHA-256 digests only; the Edge Function projects the result through a
+declarative schema that drops anything else and refuses malformed evidence. The report
+carries the SHA-256 of its canonical JSON and, when the deployment has a compliance
+signing key, an Ed25519 signature. Each issued report is written to the admin audit log
+(`compliance_report.generated`) before it is returned. Generation requires an AAL2
+session, passes the identity barrier, is rate limited (3 per minute per user) and fails
+closed at every step.
+
+**How to use.** Open **Compliance**, pick a period and press **Generate report**. Then
+download the JSON (the authoritative artifact), a ZIP of CSV files (one per section
+table), or a printable report in English or Turkish (**Print / save as PDF**). Auditors
+verify the JSON offline:
+
+```bash
+aidr compliance verify report.json --public-key issuer.pem --require-signature
+```
+
+**Example.** A DPO generates the last 90 days, attaches the PDF to the quarterly access
+review and gives the auditor the JSON and the operator's public key. The auditor's
+`aidr compliance verify` prints `VERIFIED`; changing a single count makes it exit 2.
+
+**Availability.**
+
+| Plan | Deployment | Platforms / OS |
+| --- | --- | --- |
+| All plans (dashboard) | Cloud, On-prem, Air-gapped (signing key set by hand on-prem) | Web console; `aidr` CLI on Linux, macOS, Windows for verification |
+
+**Limitations.** Counts cover only telemetry that reached the control plane and is still
+within retention. Policy bodies, prompt text and hold reasons are deliberately excluded.
+The data-flow matrix is the product's engineering inventory with open `unknown` values.
+CSV and printable editions are derived and unsigned. Without a signing key the report is
+hash-only. See [docs/compliance-report.md](../../../compliance-report.md) for what each
+section proves and does not prove.
 
 ---
 

@@ -10,6 +10,7 @@ import {
 import { approveCommand, pendingCommand } from "./commands/approvals.js";
 import { auditExportCommand, auditTailCommand } from "./commands/audit.js";
 import collectCommand from "./commands/collect.js";
+import complianceVerifyCommand from "./commands/compliance.js";
 import configCommand from "./commands/config.js";
 import {
 	revokeKeyCommand,
@@ -212,6 +213,20 @@ allowlistProgram
 	.command("remove <type> <value>")
 	.description("Remove a url, command (text or hash) or file_path from the allowlist")
 	.action((type, value) => allowlistRemoveCommand(type, value));
+
+const complianceProgram = program
+	.command("compliance")
+	.description("Work with compliance evidence reports from the control plane");
+
+complianceProgram
+	.command("verify <report>")
+	.description(
+		"Verify a compliance report offline: recompute its SHA-256 and check the Ed25519 signature",
+	)
+	.option("--public-key <file>", "PEM public key the report must be signed with (pins the issuer)")
+	.option("--require-signature", "Fail when the report is not signed")
+	.option("--json", "Emit a machine-readable result")
+	.action((report, options) => complianceVerifyCommand(report, options));
 
 const auditProgram = program.command("audit").description("Read the local verdict audit log");
 
