@@ -254,7 +254,9 @@ message; this connector watches both boundaries.
 
 **How it works**
 - `before_tool_call` runs the full pipeline and blocks the call on `deny` and `ask`.
-- `after_tool_call` observes output; `tool_result_persist` replaces risky text before
+- Tool-result middleware (OpenClaw 2026.9+, embedded runner) replaces a risky tool
+  result with a quarantine notice before the model receives it; `after_tool_call`
+  observes output; `tool_result_persist` replaces risky text before
   it is persisted; `message_sending` and `reply_payload_sending` replace a risky outbound
   reply with a non-echoing notice. Text scanning is bounded to 256 KiB.
 - `before_agent_run` gates the user's prompt before the model reads it (prompt
@@ -305,8 +307,10 @@ The user reviews it with `aidr pending` and, if appropriate, runs
 **Limitations**
 - OpenClaw offers no host-native confirmation dialog, so approval happens in a separate
   terminal and the user then asks the agent to retry.
-- Output hooks are post-execution: they cannot undo the tool action or prove the
-  same-turn model never saw the original result. Provider token streams are not
+- Output hooks are post-execution: they cannot undo the tool action. Same-turn
+  containment of a risky tool result relies on the tool-result middleware, which needs
+  OpenClaw 2026.9+, the embedded runner (not the Codex harness) and
+  `plugins.entries.aidr-openclaw.enabled: true`. Provider token streams are not
   intercepted.
 - OpenClaw's `plugins.code_safety` audit may show a `potential-exfiltration` warning
   because file reads and network requests coexist in the bundle; review the actual
@@ -1250,7 +1254,7 @@ Output beyond the inspection limit is reported as incomplete, never as clean.
 | Connector | Output path | Guarantee |
 | --- | --- | --- |
 | Claude Code | `PostToolUse` → `updatedToolOutput` replacement | After execution; live host acceptance pending |
-| OpenClaw | `tool_result_persist`, `message_sending`, `reply_payload_sending` | Transcript and delivery boundary (256 KiB text budget) |
+| OpenClaw | Tool-result middleware, `tool_result_persist`, `message_sending`, `reply_payload_sending` | Before the model on the embedded runner (OpenClaw 2026.9.6 real-host record, scripted model); transcript and delivery boundary (256 KiB text budget) |
 | OpenCode | `tool.execute.after` | Replacement for supported shapes only |
 | Cursor | `postToolUse` (MCP output replacement), `afterAgentResponse` | Unverified / advisory / observation-only |
 | VS Code | `PostToolUse` | Context only; no byte replacement |

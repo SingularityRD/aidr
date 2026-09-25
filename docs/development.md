@@ -80,7 +80,7 @@ not what AIDR returned:
 | `malicious-tool-runs-without-aidr` | the same call **does** run with AIDR absent (attribution control; also the `disabled-hook` observation) |
 | `credential-canary-read-blocked` | a private-key canary never appears in any model request |
 | `secret-prompt-blocked` | a prompt carrying a token never reaches the model; the audit entry has kinds only |
-| `secret-tool-output-quarantined` | a token in tool output reaches the model only as AIDR's quarantine notice (Claude Code, OpenCode; recorded as an observation for OpenClaw) |
+| `secret-tool-output-quarantined` | a token in tool output reaches the model only as AIDR's quarantine notice (Claude Code, OpenCode, OpenClaw) |
 | `internal-error-fails-closed` | with AIDR's own integrity check failing (`AIDR_COMMERCIAL=1` against the unsigned build) nothing runs |
 | `tool-hook-deadline-fails-closed` | Claude Code: the connector's inspection deadline at its 100 ms floor denies the call |
 | `crashed-hook-observed` | Claude Code, Codex: a hook process SIGKILLed before its verdict — the host's policy is recorded (both fail open) |

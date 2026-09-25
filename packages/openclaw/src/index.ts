@@ -26,6 +26,11 @@ import {
 	type AfterToolCallEvent,
 	OpenClawOutputProtection,
 	type OutputHookContext,
+	PRE_MODEL_INSPECTION_FAILURE_NOTICE,
+	quarantinedToolResult,
+	type ToolResultMiddlewareContext,
+	type ToolResultMiddlewareEvent,
+	type ToolResultMiddlewareResult,
 } from "./output-protection.js";
 import {
 	type BeforeAgentRunEvent,
@@ -34,6 +39,7 @@ import {
 	type PromptHookContext,
 } from "./prompt-protection.js";
 import {
+	feedQuarantinedOutput,
 	feedToolOutcome,
 	feedToolOutputCanaries,
 	feedToolOutputFlow,
@@ -51,10 +57,24 @@ import {
 } from "./tool-handler.js";
 
 interface PluginApi {
+	id?: string;
+	config?: unknown;
 	logger: PluginLogger;
 	// biome-ignore lint/suspicious/noExplicitAny: OpenClaw handler signatures vary by event
 	on(event: string, handler: (...args: any[]) => any, options?: { priority?: number }): void;
 	registerTool(tool: Record<string, unknown>): void;
+	/**
+	 * OpenClaw 2026.9.x: tool-result middleware the embedded runner awaits before a
+	 * tool result enters the model context. Installed plugins need
+	 * `contracts.agentToolResultMiddleware` in the manifest and explicit enablement.
+	 */
+	registerAgentToolResultMiddleware?(
+		handler: (
+			event: ToolResultMiddlewareEvent,
+			ctx: ToolResultMiddlewareContext,
+		) => Promise<ToolResultMiddlewareResult | undefined>,
+		options?: { runtimes?: string[] },
+	): void;
 }
 
 declare const __dirname: string;
@@ -86,6 +106,80 @@ function integrityGatedTool(
 
 function initFailureBlock(error: unknown): BlockResult {
 	return { block: true, blockReason: formatInitFailureMessage(initFailureCode(error)) };
+}
+
+const PLUGIN_ID = "aidr-openclaw";
+/**
+ * Only the embedded `openclaw` runtime feeds the middleware's result back to the
+ * model. OpenClaw's Codex native-hook relay runs the same middleware but only
+ * forwards its result to `after_tool_call`, so `codex` is deliberately not claimed.
+ */
+const TOOL_RESULT_MIDDLEWARE_RUNTIMES = ["openclaw"];
+
+function initFailureQuarantine(reason: string): ToolResultMiddlewareResult {
+	return quarantinedToolResult(
+		`Singularity AIDR quarantined this tool output before it reached the model: ${reason}`,
+		"quarantine_on_init_failure",
+	);
+}
+
+/**
+ * Whether OpenClaw's config explicitly enables this plugin
+ * (`plugins.entries.aidr-openclaw.enabled: true`), which OpenClaw requires before
+ * an installed plugin may register tool-result middleware. `undefined` when the
+ * host supplied no readable config.
+ */
+function explicitlyEnabled(api: PluginApi): boolean | undefined {
+	try {
+		const config = api.config;
+		if (!config || typeof config !== "object") return undefined;
+		const plugins = Reflect.get(config, "plugins");
+		const entries =
+			plugins && typeof plugins === "object" ? Reflect.get(plugins, "entries") : undefined;
+		const entry =
+			entries && typeof entries === "object"
+				? Reflect.get(entries, typeof api.id === "string" ? api.id : PLUGIN_ID)
+				: undefined;
+		return Boolean(entry && typeof entry === "object" && Reflect.get(entry, "enabled") === true);
+	} catch {
+		return undefined;
+	}
+}
+
+type ToolResultMiddlewareHandler = (
+	event: ToolResultMiddlewareEvent,
+	ctx: ToolResultMiddlewareContext,
+) => Promise<ToolResultMiddlewareResult | undefined>;
+
+/**
+ * Register the pre-model tool-output boundary. OpenClaw reports a rejected
+ * registration only as a registry diagnostic, so every condition that leaves the
+ * boundary unenforced (host without the API, registration throwing, plugin not
+ * explicitly enabled) is reported through `onUnavailable` rather than implied clean.
+ */
+function registerToolResultQuarantine(
+	api: PluginApi,
+	handler: ToolResultMiddlewareHandler,
+	onUnavailable: (reason: string) => void,
+): void {
+	const register = api.registerAgentToolResultMiddleware;
+	if (typeof register !== "function") {
+		onUnavailable("host does not offer registerAgentToolResultMiddleware");
+		return;
+	}
+	try {
+		Reflect.apply(register, api, [handler, { runtimes: TOOL_RESULT_MIDDLEWARE_RUNTIMES }]);
+	} catch (error) {
+		onUnavailable(
+			`tool-result middleware registration failed: ${error instanceof Error ? error.name : typeof error}`,
+		);
+		return;
+	}
+	if (explicitlyEnabled(api) === false) {
+		onUnavailable(
+			`OpenClaw accepts tool-result middleware only when plugins.entries.${PLUGIN_ID}.enabled is true`,
+		);
+	}
 }
 
 /**
@@ -121,6 +215,17 @@ function registerInitFailure(api: PluginApi, error: unknown): void {
 		// Logging must never undo the fail-closed registration below.
 	}
 	api.on("before_tool_call", async () => block, { priority: 100 });
+	// A tool result produced anyway (for instance the block itself) is replaced
+	// before the model receives it.
+	try {
+		registerToolResultQuarantine(
+			api,
+			async () => initFailureQuarantine(block.blockReason),
+			() => undefined,
+		);
+	} catch {
+		// The tool-call gate above is the primary fail-closed boundary.
+	}
 	// Prompts cannot be inspected either: apply the uninspected-prompt policy
 	// (block unless `prompt_protection.secrets` is not `block`). The host fails
 	// closed if this handler itself throws.
@@ -179,15 +284,44 @@ function registerGuarded(api: PluginApi): void {
 			requireIntegrity,
 			async (event: AfterToolCallEvent, context?: OutputHookContext) => {
 				const inspection = outputProtection.afterToolCall(event, context);
-				// Session toxic-flow: secrets or injection payloads this output carried
-				// taint the session for its next calls. Never throws.
-				await feedToolOutputFlow(event, context, inspection, logger);
-				// Canary value in the output: audit entry and managed incident. Never throws.
-				await feedToolOutputCanaries(event, context, logger);
+				// A result quarantined before the model already fed the flow and canary
+				// records from the original output; the host hands this hook the notice.
+				if (!outputProtection.wasQuarantinedBeforeModel(event?.toolCallId)) {
+					// Session toxic-flow: secrets or injection payloads this output carried
+					// taint the session for its next calls. Never throws.
+					await feedToolOutputFlow(event, context, inspection, logger);
+					// Canary value in the output: audit entry and managed incident. Never throws.
+					await feedToolOutputCanaries(event, context, logger);
+				}
 				// Runaway guard: a failed call counts towards the repeated-failure loop.
 				await feedToolOutcome(event, context, logger);
 			},
 		),
+	);
+	// Pre-model boundary: OpenClaw awaits this middleware after the tool ran and
+	// before its result enters the model context, so a risky result is replaced
+	// by AIDR's quarantine notice for the same-turn model. The original is never
+	// handed back on error: an integrity or handler failure also quarantines.
+	registerToolResultQuarantine(
+		api,
+		async (event, ctx) => {
+			try {
+				await integrityReady;
+			} catch (error) {
+				return initFailureQuarantine(formatInitFailureMessage(initFailureCode(error)));
+			}
+			try {
+				const { replacement, inspection } = outputProtection.toolResultMiddleware(event, ctx);
+				if (replacement) await feedQuarantinedOutput(event, ctx, inspection, logger);
+				return replacement;
+			} catch {
+				return quarantinedToolResult(
+					PRE_MODEL_INSPECTION_FAILURE_NOTICE,
+					"quarantine_on_inspection_error",
+				);
+			}
+		},
+		(reason) => outputProtection.recordPreModelBoundaryUnavailable(reason),
 	);
 	// OpenClaw requires this persistence hook to be synchronous. It can keep
 	// future transcript reads safe, but it runs after the tool already executed.

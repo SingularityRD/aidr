@@ -12,6 +12,7 @@ customer installation.
 The OpenClaw connector runs in-process using the OpenClaw plugin API:
 
 - **`before_tool_call`** - Intercepts `exec`, `web_fetch`, `write`, `edit`, `read`, and `apply_patch`. Runs the full detection pipeline.
+- **Tool-result middleware** (`api.registerAgentToolResultMiddleware`, OpenClaw 2026.9+) - Pre-model tool-output quarantine: the embedded runner awaits it after the tool executed and before the result enters the model context. A risky or incompletely inspected result is replaced by a fresh text-only notice (`Singularity AIDR quarantined this tool output before it reached the model`, rule identifiers only), so the same-turn model never reads the original. Inspection, integrity and initialisation failures also quarantine. Requires `contracts.agentToolResultMiddleware: ["openclaw"]` (shipped in `openclaw.plugin.json`) and explicit enablement (`plugins.entries.aidr-openclaw.enabled: true`); otherwise OpenClaw drops the registration and the connector logs the boundary as `enforced: false`. Only the embedded `openclaw` runtime is claimed: OpenClaw's Codex native-hook relay does not feed a middleware result back to the model.
 - **`after_tool_call`** - Inspects tool output after execution and records risky or incomplete results; carrying that observation forward depends on OpenClaw providing matching tool-call, run, or session identifiers. It is observation-only and cannot undo the action or prove the same-turn model did not see the original result.
 - **`tool_result_persist`** - Synchronously replaces risky or incompletely inspected output before it is written to the transcript. This is still a post-execution boundary.
 - **`message_sending` / `reply_payload_sending`** - Inspect and replace risky or incompletely inspected generated responses before channel delivery. A correlated finding from opaque binary tool output is marked unsupported/incomplete and routes through this protection path rather than being treated as clean.
@@ -20,9 +21,10 @@ The OpenClaw connector runs in-process using the OpenClaw plugin API:
 - **`aidr_allowlist_add` / `aidr_allowlist_remove`** - Manage the on-disk allowlist. `aidr_allowlist_add` refuses unless a genuine approval was already recorded, so it cannot be used to approve a blocked action.
 - **`gateway_start` / `session_start`** - Scans installed plugins for threats.
 
-The post-execution hooks do not prevent the tool side effect, and no provider
-token-stream interception is implemented. Same-turn model isolation from an
-original tool result remains a real-host acceptance question.
+No output hook prevents the tool side effect (use `before_tool_call` for that),
+and no provider token-stream interception is implemented. Same-turn model
+isolation from a risky tool result rests on the tool-result middleware above,
+accepted on the embedded runner only (see Real-host acceptance below).
 
 ## Intercepted Tools
 
@@ -79,8 +81,11 @@ Recorded by `pnpm test:e2e:real-host` (see [development](../development.md#real-
   effect; a benign exec ran; the same exec ran with the plugin absent.
 - `before_agent_run`: a prompt carrying a token never reached the model.
 - A plugin integrity failure blocked the prompt.
-- **Gap (observation):** a token in exec output reached the same-turn model without AIDR's
-  quarantine notice; only OpenClaw's own token masking hid the value. Same-turn tool-output
-  containment by AIDR is not proven.
+- Tool-result middleware: a token in exec output reached the model only as AIDR's
+  quarantine notice (the same-turn follow-up request carried the notice, never the token).
+  The earlier record showed this as a gap, when the connector relied on
+  `after_tool_call`/`tool_result_persist` alone. The deployment's sold output point for
+  this connector remains `pre-delivery-response`, so the matrix keeps `post-tool-output`
+  as `declared-not-proven` with the record attached.
 - `message_sending` is not exercised: `agent --local` does not deliver through a channel.
   The gateway process is not exercised either.

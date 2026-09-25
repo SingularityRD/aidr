@@ -24,6 +24,7 @@ Replace `VERSION` with the version in the approved release record.
 - Validates npm/PyPI packages against supply-chain risks
 - Scans installed plugins for threats at session start
 - Inspects tool output and outbound model responses with a bounded 256 KiB text budget
+- Quarantines risky tool output before the model receives it (OpenClaw 2026.9+ embedded runner; see below)
 - Replaces risky persisted tool output and risky outbound text with a safe, non-echoing notice
 - Blocks `ask` verdicts until a human approves them out of band (see below)
 - Inspects the user's prompt before the model reads it (prompt protection, see below)
@@ -57,13 +58,41 @@ hooks:
 { "plugins": { "entries": { "aidr-openclaw": { "hooks": { "allowConversationAccess": true } } } } }
 ```
 
-No real-host acceptance of the prompt gate has been recorded.
+Real-host acceptance of the prompt gate and of the pre-model tool-output quarantine
+(OpenClaw 2026.9.6 embedded runner, scripted mock model, linux/x64) is recorded in
+[`docs/evidence/real-host/openclaw.json`](../../docs/evidence/real-host/openclaw.json).
 
 ## Output protection boundaries
 
 OpenClaw exposes different guarantees at each output hook, so the connector
 labels them explicitly:
 
+- **Pre-model tool-result quarantine** (`api.registerAgentToolResultMiddleware`,
+  OpenClaw 2026.9 and later). OpenClaw's embedded runner awaits this middleware
+  after the tool executed and **before** its result enters the model context. The
+  connector inspects the result's `content` and, when it is risky or cannot be
+  fully inspected (non-text blocks, the 256 KiB budget), returns a fresh text-only
+  result: `Singularity AIDR quarantined this tool output before it reached the
+  model`, the rule identifiers, nothing of the original. An inspection error, an
+  integrity failure or an initialisation failure also quarantines; the original
+  is never handed back on error (a middleware that throws is replaced by OpenClaw
+  with its own "Tool output unavailable" error result). The tool side effect has
+  already happened; what is contained is what the same-turn model reads. Flow and
+  canary records are fed from the original output here, because `after_tool_call`
+  then sees only the notice.
+  Requirements and scope:
+  - `openclaw.plugin.json` declares `contracts.agentToolResultMiddleware: ["openclaw"]`,
+    and OpenClaw accepts the middleware from an installed plugin only when it is
+    **explicitly enabled** (`plugins.entries.aidr-openclaw.enabled: true`).
+    Otherwise OpenClaw drops the registration with a registry diagnostic; the
+    connector logs `pre-model tool-output quarantine is not enforced` with
+    `enforced: false` when it can see that (host without the API, a refused
+    registration, or config that does not enable the plugin).
+  - Only the `openclaw` runtime (the embedded runner) is claimed. OpenClaw's Codex
+    native-hook relay runs tool-result middleware but forwards the result only to
+    `after_tool_call`, not to the model, so the Codex harness is not covered.
+  - `details` is not inspected at this boundary because OpenClaw strips it before
+    provider replay; the transcript boundary below still inspects the whole message.
 - `after_tool_call` observes the result after the tool has executed. A finding is
   recorded and correlated with the run when OpenClaw supplies a run or session
   identifier. This hook cannot undo the call or change what the same-turn model
@@ -71,8 +100,9 @@ labels them explicitly:
   recorded finding is carried into that transcript rewrite.
 - `tool_result_persist` synchronously replaces risky text before OpenClaw writes
   it to its transcript, including text that only `after_tool_call` observed for
-  the same tool call. This protects later transcript reuse, but it is still a
-  **post-execution transcript boundary**, not a pre-consumption tool-result gate.
+  the same tool call. This protects later transcript reuse; on its own it is a
+  **post-execution transcript boundary** (the pre-model quarantine above is the
+  same-turn boundary).
   If the host does not deliver this hook (or registering it fails), the connector
   records the transcript boundary as **not enforced** instead of implying the
   observed output was contained.

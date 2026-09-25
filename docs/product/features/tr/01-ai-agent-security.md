@@ -263,7 +263,9 @@ dışarıya giden bir mesaja taşınabilir; bu connector her iki sınırı da iz
 **Nasıl çalışır**
 - `before_tool_call` tüm tespit hattını çalıştırır; `deny` ve `ask` durumunda çağrıyı
   engeller.
-- `after_tool_call` çıktıyı gözlemler; `tool_result_persist` riskli metni kalıcı hâle
+- Araç sonucu ara katmanı (OpenClaw 2026.9+, gömülü çalıştırıcı) riskli bir araç
+  sonucunu model almadan önce karantina bildirimiyle değiştirir; `after_tool_call`
+  çıktıyı gözlemler; `tool_result_persist` riskli metni kalıcı hâle
   gelmeden önce değiştirir; `message_sending` ve `reply_payload_sending` riskli bir giden
   yanıtı içeriği tekrar etmeyen bir bildirimle değiştirir. Metin taraması 256 KiB ile
   sınırlıdır.
@@ -315,8 +317,10 @@ Kullanıcı çağrıyı `aidr pending` ile inceler ve uygun görürse kendi term
 **Sınırlamalar**
 - OpenClaw, host'a ait bir onay diyaloğu sunmadığı için onay ayrı bir terminalde verilir;
   ardından kullanıcı ajandan çağrıyı yeniden denemesini ister.
-- Çıktı hook'ları çalıştırma sonrasında devreye girer: araç eylemini geri alamaz ve aynı
-  turdaki modelin özgün sonucu hiç görmediğini kanıtlayamaz. Sağlayıcı token akışları
+- Çıktı hook'ları çalıştırma sonrasında devreye girer: araç eylemini geri alamaz. Riskli
+  bir araç sonucunun aynı turda modelden uzak tutulması araç sonucu ara katmanına dayanır;
+  bu, OpenClaw 2026.9+, gömülü çalıştırıcı (Codex harness değil) ve
+  `plugins.entries.aidr-openclaw.enabled: true` gerektirir. Sağlayıcı token akışları
   yakalanmaz.
 - OpenClaw'ın `plugins.code_safety` denetimi, pakette dosya okuma ve ağ isteği bir arada
   bulunduğu için `potential-exfiltration` uyarısı gösterebilir; gerçek yapılandırmayı ve
@@ -1282,7 +1286,7 @@ sayılmaz.
 | Connector | Çıktı yolu | Güvence |
 | --- | --- | --- |
 | Claude Code | `PostToolUse` → `updatedToolOutput` ile değiştirme | Çalıştırma sonrası; gerçek host kabulü beklemede |
-| OpenClaw | `tool_result_persist`, `message_sending`, `reply_payload_sending` | Transkript ve teslim sınırı (256 KiB metin bütçesi) |
+| OpenClaw | Araç sonucu ara katmanı, `tool_result_persist`, `message_sending`, `reply_payload_sending` | Gömülü çalıştırıcıda modelden önce (OpenClaw 2026.9.6 gerçek host kaydı, betikli model); transkript ve teslim sınırı (256 KiB metin bütçesi) |
 | OpenCode | `tool.execute.after` | Yalnızca desteklenen biçimlerde değiştirme |
 | Cursor | `postToolUse` (MCP çıktısı değiştirme), `afterAgentResponse` | Doğrulanmamış / tavsiye / yalnızca gözlem |
 | VS Code | `PostToolUse` | Yalnızca bağlam; içerik değiştirme yok |

@@ -37,6 +37,7 @@ function register() {
 	const handlers = new Map<string, Handler[]>();
 	const tools: Array<Record<string, unknown>> = [];
 	const errors: string[] = [];
+	const middlewares: Handler[] = [];
 	plugin.register({
 		logger: {
 			debug() {},
@@ -52,8 +53,28 @@ function register() {
 		registerTool(tool: Record<string, unknown>) {
 			tools.push(tool);
 		},
+		registerAgentToolResultMiddleware(handler: Handler) {
+			middlewares.push(handler);
+		},
 	});
-	return { handlers, tools, errors };
+	return { handlers, tools, errors, middlewares };
+}
+
+/** OpenClaw applies every middleware in order; the last replacement is what the model gets. */
+async function expectQuarantined(middlewares: Handler[], expectedCode: string) {
+	expect(middlewares.length).toBeGreaterThan(0);
+	let result: unknown = { content: [{ type: "text", text: "aidr-benign-ok" }] };
+	for (const middleware of middlewares) {
+		const replaced = (await middleware(
+			{ toolCallId: "call-init", toolName: "exec", result },
+			{ runtime: "openclaw" },
+		)) as { result?: unknown } | undefined;
+		result = replaced?.result ?? result;
+	}
+	expect(JSON.stringify(result)).toContain(
+		`Singularity AIDR quarantined this tool output before it reached the model: AIDR failed to initialise: ${expectedCode}`,
+	);
+	expect(JSON.stringify(result)).not.toContain("aidr-benign-ok");
 }
 
 async function expectBlocked(handlers: Map<string, Handler[]>, expectedCode: string) {
@@ -95,10 +116,12 @@ describe("OpenClaw plugin initialisation fails closed", () => {
 		failures.integrity = new ArtifactIntegrityError("openclaw/dist", {
 			status: "bad_signature",
 		});
-		const { handlers, errors } = register();
+		const { handlers, errors, middlewares } = register();
 		// Only the integrity gate fails: the rest of the plugin registered normally.
 		expect(errors).toEqual([]);
 		await expectBlocked(handlers, "integrity_bad_signature");
+		// A tool result the host produces anyway never reaches the model uninspected.
+		await expectQuarantined(middlewares, "integrity_bad_signature");
 		// The prompt gate cannot trust its inspection either: default policy blocks.
 		const [promptGate] = handlers.get("before_agent_run") ?? [];
 		await expect(promptGate?.({ prompt: "hello", messages: [] }, {})).resolves.toMatchObject({
@@ -112,8 +135,9 @@ describe("OpenClaw plugin initialisation fails closed", () => {
 			new Error("ENOENT: no such file or directory, scandir '/secret/path/threats'"),
 			{ code: "ENOENT" },
 		);
-		const { handlers, tools, errors } = register();
+		const { handlers, tools, errors, middlewares } = register();
 		await expectBlocked(handlers, "ENOENT");
+		await expectQuarantined(middlewares, "ENOENT");
 		// The failed plugin exposes no allowlist tools and no hooks beyond the two gates.
 		expect(tools).toEqual([]);
 		expect([...handlers.keys()]).toEqual(["before_tool_call", "before_agent_run"]);

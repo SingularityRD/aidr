@@ -5,7 +5,12 @@ import {
 	recordToolOutputFlow,
 } from "@singularityrd/aidr-core";
 import type { OutputInspection } from "./output-inspection.js";
-import type { AfterToolCallEvent, OutputHookContext } from "./output-protection.js";
+import type {
+	AfterToolCallEvent,
+	OutputHookContext,
+	ToolResultMiddlewareContext,
+	ToolResultMiddlewareEvent,
+} from "./output-protection.js";
 
 /**
  * Feed a completed tool's inspection findings into the session's toxic-flow
@@ -62,6 +67,40 @@ export async function feedToolOutputCanaries(
 		});
 	} catch {
 		// recordToolOutputCanaries never throws; a hostile event shape must not either.
+	}
+}
+
+/**
+ * Feed the flow and canary records from a tool result that the pre-model
+ * middleware quarantined. `after_tool_call` then only sees AIDR's notice, so the
+ * original output is recorded here, once. Never throws.
+ */
+export async function feedQuarantinedOutput(
+	event: ToolResultMiddlewareEvent,
+	context: ToolResultMiddlewareContext | undefined,
+	inspection: OutputInspection | undefined,
+	logger: Logger,
+): Promise<void> {
+	try {
+		const observed: AfterToolCallEvent = {
+			toolName: typeof event?.toolName === "string" ? event.toolName : "unknown",
+			params:
+				event?.args && typeof event.args === "object" && !Array.isArray(event.args)
+					? event.args
+					: {},
+			toolCallId: typeof event?.toolCallId === "string" ? event.toolCallId : undefined,
+			runId: context?.runId,
+			result: event?.result?.content,
+		};
+		const hookContext: OutputHookContext = {
+			sessionKey: context?.sessionKey,
+			sessionId: context?.sessionId,
+			runId: context?.runId,
+		};
+		if (inspection) await feedToolOutputFlow(observed, hookContext, inspection, logger);
+		await feedToolOutputCanaries(observed, hookContext, logger);
+	} catch {
+		// Recording is best effort; the quarantine itself has already been decided.
 	}
 }
 

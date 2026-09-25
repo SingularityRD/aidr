@@ -357,13 +357,10 @@ const openclaw = {
 	protocol: "openai-chat-completions",
 	canaryTool: "read",
 	supportsCrashProbe: false,
+	// Asserted: the connector replaces a risky tool result through OpenClaw's agent
+	// tool-result middleware, which the embedded runner awaits before the result
+	// enters the model context (requires plugins.entries.aidr-openclaw.enabled: true).
 	supportsOutputInspection: true,
-	// Recorded, not asserted: the connector README documents tool_result_persist as a
-	// post-execution transcript boundary, not a same-turn pre-consumption gate.
-	observeOnly: {
-		"secret-tool-output-quarantined":
-			"OpenClaw documents no same-turn pre-consumption tool-result hook; the AIDR boundary here is the post-execution transcript rewrite",
-	},
 	async resolve({ hostsDir, install }) {
 		const pin = HOST_PINS.openclaw;
 		const localRoot = path.join(hostsDir, "openclaw", "node_modules", "openclaw");

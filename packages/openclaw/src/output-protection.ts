@@ -57,6 +57,36 @@ export interface ReplyPayloadSendingResult {
 	reason: string;
 }
 
+/**
+ * OpenClaw `api.registerAgentToolResultMiddleware` event (OpenClaw 2026.9.x,
+ * runtime `openclaw`): the embedded runner awaits the middleware after the tool
+ * executed and BEFORE the tool result enters the model context, so a returned
+ * `result` replaces what the same-turn model receives.
+ */
+export interface ToolResultMiddlewareEvent {
+	toolCallId?: string;
+	toolName?: string;
+	args?: Record<string, unknown>;
+	isError?: boolean;
+	result?: { content?: unknown; details?: unknown };
+}
+
+export interface ToolResultMiddlewareContext {
+	runtime?: string;
+	agentId?: string;
+	sessionId?: string;
+	sessionKey?: string;
+	runId?: string;
+}
+
+/** The only content shape OpenClaw's middleware validator accepts from a plugin. */
+export interface ToolResultMiddlewareResult {
+	result: {
+		content: Array<{ type: "text"; text: string }>;
+		details: { aidr: Record<string, string | number> };
+	};
+}
+
 interface PendingFinding {
 	id: string;
 	inspection: OutputInspection;
@@ -184,6 +214,39 @@ function persistedToolWarning(inspection: OutputInspection): string {
 	].join(" ");
 }
 
+const PRE_MODEL_BOUNDARY = "pre_model_tool_result";
+
+/** Safe metadata only: the notice never repeats an excerpt of the withheld output. */
+export function preModelQuarantineNotice(inspection: OutputInspection): string {
+	return [
+		"Singularity AIDR quarantined this tool output before it reached the model.",
+		`Detection: ${outputInspectionSummary(inspection)}.`,
+		"The tool had already executed; its output was withheld and is not repeated here.",
+		"Do not try to re-read or reproduce it; ask the user to review it outside the agent.",
+	].join(" ");
+}
+
+export const PRE_MODEL_INSPECTION_FAILURE_NOTICE =
+	"Singularity AIDR quarantined this tool output before it reached the model because output inspection could not complete safely. The tool had already executed; its output was withheld.";
+
+/**
+ * A fresh, text-only tool result in the only shape OpenClaw's middleware
+ * validator accepts. Nothing of the original result (content blocks, media,
+ * `details`) is carried over.
+ */
+export function quarantinedToolResult(
+	text: string,
+	decision: string,
+	findingCount = 0,
+): ToolResultMiddlewareResult {
+	return {
+		result: {
+			content: [{ type: "text", text }],
+			details: { aidr: { decision, boundary: PRE_MODEL_BOUNDARY, findingCount } },
+		},
+	};
+}
+
 function withheldResponseWarning(
 	modelInspection: OutputInspection,
 	pending: PendingFinding[],
@@ -222,7 +285,10 @@ function withheldResponseWarning(
 const SAFE_REPLY_REPLACEMENT_REASON = "aidr_output_inspection";
 
 /**
- * OpenClaw output protection spans three different host boundaries:
+ * OpenClaw output protection spans four different host boundaries:
+ * - agent tool-result middleware: after execution but before the tool result
+ *   enters the model context; a risky result is replaced there, so the
+ *   same-turn model receives AIDR's quarantine notice instead of the output;
  * - after_tool_call: observation only, after execution;
  * - tool_result_persist: synchronous transcript rewrite, also after execution,
  *   which carries a finding observed by after_tool_call for the same tool call;
@@ -231,11 +297,103 @@ const SAFE_REPLY_REPLACEMENT_REASON = "aidr_output_inspection";
  */
 export class OpenClawOutputProtection {
 	private readonly pending = new Map<string, Map<string, PendingFinding>>();
+	/** Tool calls whose output was replaced before the model received it (id -> expiry). */
+	private readonly quarantined = new Map<string, number>();
 
 	constructor(
 		private readonly logger: Logger,
 		private readonly now: () => number = Date.now,
 	) {}
+
+	/**
+	 * Pre-model boundary: inspect a completed tool's result before OpenClaw hands
+	 * it to the model and, when it is risky or cannot be fully inspected, return a
+	 * fresh quarantine result in its place. An inspection failure also returns a
+	 * quarantine result: the original is never handed back on error.
+	 *
+	 * Only `content` is inspected here: OpenClaw strips `details` before provider
+	 * replay, so it is not model-visible. The transcript boundary still inspects
+	 * the whole persisted message, `details` included.
+	 */
+	toolResultMiddleware(
+		event: ToolResultMiddlewareEvent,
+		context: ToolResultMiddlewareContext = {},
+	): { replacement?: ToolResultMiddlewareResult; inspection?: OutputInspection } {
+		const toolCallId = safeToolIdentifier(safeOwnData(event, "toolCallId"));
+		const toolName = safeToolIdentifier(safeOwnData(event, "toolName")) ?? "unknown";
+		let inspection: OutputInspection;
+		try {
+			const result = safeOwnData(event, "result");
+			inspection = inspectBoundedOutput(safeOwnData(result, "content"), "tool_output");
+		} catch (error) {
+			this.recordQuarantined(toolCallId);
+			this.logger.error("AIDR: pre-model tool-output inspection failed, quarantining output", {
+				boundary: PRE_MODEL_BOUNDARY,
+				toolName,
+				toolCallId,
+				errorType: error instanceof Error ? error.name : typeof error,
+			});
+			return {
+				replacement: quarantinedToolResult(
+					PRE_MODEL_INSPECTION_FAILURE_NOTICE,
+					"quarantine_on_inspection_error",
+				),
+			};
+		}
+		if (!requiresOutputProtection(inspection)) return { inspection };
+
+		this.recordQuarantined(toolCallId);
+		this.logger.warn("AIDR: quarantined risky tool output before the model received it", {
+			boundary: PRE_MODEL_BOUNDARY,
+			toolName,
+			toolCallId,
+			runId: context.runId,
+			summary: outputInspectionSummary(inspection),
+		});
+		return {
+			inspection,
+			replacement: quarantinedToolResult(
+				preModelQuarantineNotice(inspection),
+				"quarantine_tool_output",
+				inspection.findings.length,
+			),
+		};
+	}
+
+	/**
+	 * Record that the pre-model boundary is not in force for this plugin load: the
+	 * host lacks tool-result middleware, refused the registration, or will reject it
+	 * because the plugin is not explicitly enabled. Risky output then reaches the
+	 * same-turn model; only the transcript and delivery boundaries still apply.
+	 */
+	recordPreModelBoundaryUnavailable(reason: string): void {
+		this.logger.error("AIDR: pre-model tool-output quarantine is not enforced", {
+			boundary: PRE_MODEL_BOUNDARY,
+			enforced: false,
+			reason,
+		});
+	}
+
+	/** Whether this tool call's output was already replaced before the model received it. */
+	wasQuarantinedBeforeModel(toolCallId: string | undefined): boolean {
+		const id = safeToolIdentifier(toolCallId);
+		if (!id) return false;
+		const expiresAt = this.quarantined.get(id);
+		return expiresAt !== undefined && expiresAt > this.now();
+	}
+
+	private recordQuarantined(toolCallId: string | undefined): void {
+		if (!toolCallId) return;
+		const now = this.now();
+		for (const [id, expiresAt] of this.quarantined) {
+			if (expiresAt <= now) this.quarantined.delete(id);
+		}
+		if (this.quarantined.size >= MAX_TRACKED_CORRELATIONS && !this.quarantined.has(toolCallId)) {
+			const oldest = this.quarantined.keys().next().value;
+			if (typeof oldest === "string") this.quarantined.delete(oldest);
+		}
+		this.quarantined.set(toolCallId, now + PENDING_TTL_MS);
+	}
 
 	/** Observe a completed tool's output; returns the inspection for the session-flow feed. */
 	afterToolCall(event: AfterToolCallEvent, context: OutputHookContext = {}): OutputInspection {
