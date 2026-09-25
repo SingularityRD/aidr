@@ -113,7 +113,7 @@
       "supportOwnerRole": "Endpoint Engineering",
       "knownBypasses": [
         "Plugin removed or the gateway started without it",
-        "after_tool_call cannot prove same-turn model blocking"
+        "Pre-model tool-output quarantine needs plugins.entries.aidr-openclaw.enabled: true and the embedded runner; the Codex harness relay and after_tool_call alone do not keep a tool result from the same-turn model"
       ],
       "unobservedActions": [
         "Same-turn model blocking through a running gateway (only the embedded `agent --local` runner is recorded)",
@@ -122,7 +122,7 @@
       "acceptanceEvidence": [
         {
           "path": "docs/evidence/real-host/openclaw.json",
-          "sha256": "064c71fbd935fc16185e4029593320235b818e87009f7611b7ab1036cce63150"
+          "sha256": "bf985afb33bdc19fec11a5c7011fd7145c0554dde2c94f7f5bbfe5a4f0b985f2"
         }
       ]
     },

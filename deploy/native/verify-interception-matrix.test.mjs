@@ -94,15 +94,15 @@ test("the committed matrix is structurally valid, source-grounded and honestly o
 	assert.equal(report.matrixSha256.length, 64);
 });
 
-test("OpenClaw opaque binary remains uninspected and post-execution containment is unaccepted", () => {
+test("OpenClaw opaque binary remains uninspected and its pre-model quarantine is not host-accepted", () => {
 	const matrix = committedMatrix();
 	const binary = matrix.failureConditions.find(
 		(entry) => entry.connector === "openclaw" && entry.condition === "large-binary-response",
 	);
 	assert.ok(binary, "missing OpenClaw large-binary-response condition");
 	assert.equal(binary.outcome, "explicitly-unsupported");
-	assert.match(binary.reason, /Opaque binary output is marked incomplete/iu);
-	assert.match(binary.reason, /cannot prove the same-turn model did not receive the original result/iu);
+	assert.match(binary.reason, /not decoded or inspected; it is marked incomplete/iu);
+	assert.match(binary.reason, /not host-accepted with a binary result/iu);
 	const report = verifyInterceptionMatrix({
 		matrixPath: MATRIX_PATH,
 		supportMatrixPath: SUPPORT_MATRIX_PATH,
@@ -282,8 +282,9 @@ test("another connector's acceptance record cannot prove a row", () => {
 test("an acceptance record that does not prove the cited point fails the gate", () => {
 	const report = verify(
 		mutate((matrix) => {
-			// The OpenClaw record observed a post-tool-output gap; it cannot back an enforced row.
-			const target = row(matrix, "openclaw", "post-tool-output");
+			// `agent --local` never delivers through a channel, so the OpenClaw record does
+			// not prove pre-delivery-response; it cannot back an enforced row.
+			const target = row(matrix, "openclaw", "pre-delivery-response");
 			target.status = "enforced";
 			target.evidence.push({
 				kind: "acceptance-record",
@@ -294,6 +295,20 @@ test("an acceptance record that does not prove the cited point fails the gate", 
 	);
 	assert.equal(report.ok, false);
 	assert.ok(codes(report).includes("ACCEPTANCE_RECORD_DOES_NOT_PROVE"), report.failureReasons.join("; "));
+});
+
+test("a point the record proves stays unenforced when the support matrix does not sell it", () => {
+	// OpenClaw's record proves post-tool-output, but OpenClaw sells pre-delivery-response.
+	const record = JSON.parse(readFileSync(resolve(REPO_ROOT, "docs/evidence/real-host/openclaw.json"), "utf8"));
+	assert.equal(record.proves.points["post-tool-output"], "passed");
+	const report = verify(
+		mutate((matrix) => {
+			row(matrix, "openclaw", "post-tool-output").status = "enforced";
+		}),
+	);
+	assert.equal(report.ok, false);
+	assert.ok(codes(report).includes("ENFORCED_OUTSIDE_SOLD_MATRIX"), report.failureReasons.join("; "));
+	assert.ok(!codes(report).includes("ACCEPTANCE_RECORD_DOES_NOT_PROVE"), report.failureReasons.join("; "));
 });
 
 test("a failure condition must match the outcome its acceptance record observed", () => {

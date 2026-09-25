@@ -3,7 +3,7 @@
   "kind": "aidr-interception-matrix",
   "reviewedAt": "2026-09-25",
   "decision": "NO-GO",
-  "decisionMeaning": "MKT-03. This manifest declares, for every sold connector, the pre-prompt / pre-tool / post-tool-output / pre-delivery-response / model-stream / network interception points, the tamper posture and the outcome of the plugin-disabled, crashed, offline and large-binary-response conditions. A status of `enforced` requires a named real-host acceptance record in the row evidence. The records under docs/evidence/real-host/ are written by `pnpm test:e2e:real-host`: the real, unmodified host binary (Claude Code 2.1.282, Codex CLI 0.141.0, OpenCode 1.18.32, OpenClaw 2026.9.6) runs one non-interactive turn per scenario against a scripted loopback mock model, with AIDR installed from the development build in a disposable HOME on linux/x64. A row is `enforced` only where such a record proves the point for that host version on that platform and the support matrix sells the point; pre-prompt is proven for four connectors but is not a sold interception point there, so those rows stay `declared-not-proven` with the record attached. Cursor and VS Code have no record (their hosts could not be installed in the evidence environment), and no record covers Windows, macOS, arm64, a signed commercial artefact or a real model, so the decision stays NO-GO.",
+  "decisionMeaning": "MKT-03. This manifest declares, for every sold connector, the pre-prompt / pre-tool / post-tool-output / pre-delivery-response / model-stream / network interception points, the tamper posture and the outcome of the plugin-disabled, crashed, offline and large-binary-response conditions. A status of `enforced` requires a named real-host acceptance record in the row evidence. The records under docs/evidence/real-host/ are written by `pnpm test:e2e:real-host`: the real, unmodified host binary (Claude Code 2.1.282, Codex CLI 0.141.0, OpenCode 1.18.32, OpenClaw 2026.9.6) runs one non-interactive turn per scenario against a scripted loopback mock model, with AIDR installed from the development build in a disposable HOME on linux/x64. A row is `enforced` only where such a record proves the point for that host version on that platform and the support matrix sells the point; pre-prompt is proven for four connectors but is not a sold interception point there, and OpenClaw's post-tool-output is proven but OpenClaw sells pre-delivery-response as its output point, so those rows stay `declared-not-proven` with the record attached. Cursor and VS Code have no record (their hosts could not be installed in the evidence environment), and no record covers Windows, macOS, arm64, a signed commercial artefact or a real model, so the decision stays NO-GO.",
   "soldConnectorSource": "./support-matrix.json",
   "supportMatrixMapping": {
     "interceptionPoint": {
@@ -421,23 +421,40 @@
       "connector": "openclaw",
       "point": "post-tool-output",
       "status": "declared-not-proven",
-      "hostBoundary": "message_sending|reply_payload_sending",
+      "hostBoundary": "registerAgentToolResultMiddleware|tool_result_persist",
       "reason": null,
       "evidence": [
         {
           "kind": "output-inspection",
+          "path": "packages/openclaw/src/index.ts",
+          "contains": ["registerAgentToolResultMiddleware", "TOOL_RESULT_MIDDLEWARE_RUNTIMES = [\"openclaw\"]"]
+        },
+        {
+          "kind": "output-inspection",
           "path": "packages/openclaw/src/output-protection.ts",
-          "contains": ["messageSending", "replyPayloadSending", "pre_delivery_response_rewrite"]
+          "contains": ["toolResultMiddleware(", "pre_model_tool_result", "PRE_MODEL_INSPECTION_FAILURE_NOTICE"]
         },
         {
           "kind": "output-inspection",
           "path": "packages/openclaw/src/output-inspection.ts",
           "contains": ["OUTPUT_INSPECTION_MAX_CHARS", "requiresOutputProtection"]
+        },
+        {
+          "kind": "test",
+          "path": "packages/openclaw/src/__tests__/tool-result-quarantine-bundle.test.ts",
+          "contains": ["returns AIDR's quarantine notice in place of a secret-bearing result", "agentToolResultMiddleware"]
+        },
+        {
+          "kind": "acceptance-record",
+          "path": "docs/evidence/real-host/openclaw.json",
+          "contains": ["\"connector\": \"openclaw\"", "\"post-tool-output\": \"passed\""]
         }
       ],
       "limitations": [
-        "after_tool_call and tool_result_persist run after the tool has executed; the sold support matrix advertises `post-tool-call` as this connector's output interception point, so same-turn model blocking is not proven.",
-        "Observed on OpenClaw 2026.9.6 (docs/evidence/real-host/openclaw.json, recorded as an observation, not a proof): a tool result carrying a GitHub token reached the same-turn model without AIDR's quarantine notice; only OpenClaw's own token masking hid the value. Same-turn containment by AIDR is not proven."
+        "The boundary is OpenClaw's agent tool-result middleware: the tool has already executed, and the embedded runner replaces its result before the model context. Only the `openclaw` runtime is registered; OpenClaw's Codex native-hook relay forwards a middleware result to after_tool_call, not to the model, so the Codex harness is not covered.",
+        "OpenClaw accepts the middleware from an installed plugin only with contracts.agentToolResultMiddleware in the manifest and plugins.entries.aidr-openclaw.enabled: true; otherwise it drops the registration with a registry diagnostic and the connector logs the boundary as enforced: false.",
+        "Real-host acceptance: on the OpenClaw 2026.9.6 embedded runner (`openclaw agent --local`, linux/x64, scripted mock model) an exec result carrying a GitHub token reached the model only as AIDR's quarantine notice (docs/evidence/real-host/openclaw.json). The earlier record showed this as a gap while only after_tool_call/tool_result_persist were registered. Non-text, MCP and gateway/channel paths are not host-accepted.",
+        "The point is proven by the real-host record cited in the evidence, but deploy/native/support-matrix.json sells `pre-delivery-response` as this connector's output interception point, not post-tool-output, so the row stays `declared-not-proven` (the gate refuses `enforced` outside the sold matrix)."
       ]
     },
     {
@@ -1062,7 +1079,7 @@
       "connector": "openclaw",
       "condition": "large-binary-response",
       "outcome": "explicitly-unsupported",
-      "reason": "Opaque binary output is marked incomplete; post-execution protection can replace persisted output and withhold a correlated outbound response, but cannot prove the same-turn model did not receive the original result.",
+      "reason": "Opaque binary output is not decoded or inspected; it is marked incomplete, so the pre-model tool-result middleware quarantines it on the embedded runner (unit-tested, not host-accepted with a binary result), the transcript copy is replaced and a correlated outbound response is withheld.",
       "evidence": [
         {
           "kind": "failure-policy",
@@ -1078,10 +1095,15 @@
           "kind": "test",
           "path": "packages/openclaw/src/__tests__/output-protection.test.ts",
           "contains": ["fails closed for opaque binary output", "redacts binary output blocks and withholds the correlated response as uninspected"]
+        },
+        {
+          "kind": "test",
+          "path": "packages/openclaw/src/__tests__/tool-result-quarantine.test.ts",
+          "contains": ["quarantines content it cannot inspect instead of declaring it clean"]
         }
       ],
       "limitations": [
-        "Opaque binary bytes are not decoded or inspected. Persisted output replacement and outbound-response withholding run after tool execution; carrying a finding into a later response depends on OpenClaw providing matching tool-call, run, or session correlation."
+        "Opaque binary bytes are not decoded or inspected. The pre-model quarantine needs the embedded runner and an explicitly enabled plugin; persisted output replacement and outbound-response withholding run after tool execution, and carrying a finding into a later response depends on OpenClaw providing matching tool-call, run, or session correlation."
       ]
     },
     {
