@@ -2,8 +2,8 @@
   "schema_version": 1,
   "generated_on": "2026-09-25",
   "generation_timezone": "Europe/Istanbul",
-  "source_commit": "4d2fe4a4eb1392b7e0178512594f1d3ee531b32e",
-  "worktree_has_changes": false,
+  "source_commit": "074108e526f8da870da49e981b3961e2bf02296c",
+  "worktree_has_changes": true,
   "decision": "NO-GO",
   "methodology": "Generated capability/consumer mapping; statuses do not imply production effectiveness. Wired means a callable implementation; partial means scope or delivery gaps; missing means no end-to-end consumer; external requires independent evidence. Includes proposed market capabilities and deployment/assurance requirements. Historical module-reachability counts are not feature counts.",
   "status_counts": {
@@ -98,8 +98,8 @@
         "packages/sdk/src/output-guard.ts"
       ],
       "consumer": "Connector-specific result boundaries",
-      "delivered": "Bounded pre-model tool-result inspection in OpenCode, VS Code and SDK; Claude/Cursor/OpenClaw use host-specific later boundaries. Sensitive-output quarantine now fires only on high-precision findings (verified key/token formats, PEM key material, Luhn cards, labelled SSNs), so timestamps, hashes, UUIDs and git emails no longer quarantine output",
-      "remaining": "Claude PostToolUse and OpenClaw after_tool_call cannot prove same-turn model blocking; provider streams and native host bypass need acceptance; the precision filter trades recall on unlabelled formats and needs customer benign/attack corpus calibration",
+      "delivered": "Bounded pre-model tool-result inspection in OpenCode, VS Code, SDK and OpenClaw (tool-result middleware on the embedded runner); Claude/Cursor use host-specific later boundaries. Sensitive-output quarantine now fires only on high-precision findings (verified key/token formats, PEM key material, Luhn cards, labelled SSNs), so timestamps, hashes, UUIDs and git emails no longer quarantine output",
+      "remaining": "Claude PostToolUse cannot prove same-turn model blocking and OpenClaw's pre-model quarantine covers only the explicitly enabled plugin on the embedded runner (not the Codex harness); provider streams and native host bypass need acceptance; the precision filter trades recall on unlabelled formats and needs customer benign/attack corpus calibration",
       "production_accepted": false
     },
     {
@@ -908,11 +908,12 @@
       "status": "wired",
       "source_paths": [
         "packages/openclaw/src/tool-handler.ts",
+        "packages/openclaw/src/output-protection.ts",
         "docs/evidence/real-host/openclaw.json"
       ],
-      "consumer": "before_tool_call",
-      "delivered": "Guarded evaluation and response actions. A real-host acceptance record (OpenClaw 2026.9.6 gateway driven by a scripted mock model) proves pre-tool enforcement",
-      "remaining": "The real-host record is recorded on linux/x64 only, with a development build and a scripted mock model (no Windows/macOS/arm64, signed artefact or real model); tool-output inspection is not proven on a real host and a same-turn tool-output gap was observed; a removed plugin enforces nothing; other versions and event coverage require native acceptance",
+      "consumer": "before_tool_call and agent tool-result middleware",
+      "delivered": "Guarded evaluation, response actions and pre-model tool-output quarantine. A real-host acceptance record (OpenClaw 2026.9.6 embedded runner driven by a scripted mock model) proves pre-tool, pre-prompt and post-tool-output enforcement",
+      "remaining": "The real-host record is recorded on linux/x64 only, with a development build and a scripted mock model (no Windows/macOS/arm64, signed artefact or real model); the gateway process and channel delivery are not exercised; the tool-output quarantine needs plugins.entries.aidr-openclaw.enabled: true and does not cover the Codex harness, and post-tool-output is not in the sold support matrix for this connector; a removed plugin enforces nothing; other versions and event coverage require native acceptance",
       "production_accepted": false
     },
     {
