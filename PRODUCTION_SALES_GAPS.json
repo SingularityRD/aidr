@@ -4,7 +4,7 @@
   "generation_timezone": "Europe/Istanbul",
   "generation_note": "Generated from the current worktree. source_commit identifies only the base commit; worktree_has_changes is explicit. This report is not candidate-bound release evidence. READINESS_BACKLOG.json is an older issue-ledger snapshot; its historical open IDs are not current verification results.",
   "decision": "NO-GO",
-  "source_commit": "58fe2dada46bd31c4e3c34e3900cd9f50e619ef3",
+  "source_commit": "cb1b280e02791c3f1cb292afa0f4f8fe700cc8a9",
   "worktree_has_changes": false,
   "historical_issue_ledger": {
     "path": "READINESS_BACKLOG.json",
@@ -262,7 +262,7 @@
       "priority": "P1",
       "title": "MCP gateway ve taşıma güvenliği",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Loopback/stdio JSON-RPC geçidi DNS pinleme, gerçek stream sınırı, tekil framing ve bozuk yanıt reddi uyguluyor. tools/call argümanları upstream çağrısından önce core evaluator'dan geçiyor (deny, ask=operatör onayı bekleyen blok, evaluator hatası=detection_unavailable); extractor sınırlarını aşan argümanlar iletilmek yerine input_not_fully_inspected ile reddediliyor. Image/audio/resource blob'ları MIME allowlist, kanonik base64, çözülmüş boyut sınırı, magic-byte ve yazdırılabilir dizi taramasıyla sınırlı biçimde inceleniyor; PNG zTXt/iTXt/iCCP ve PDF FlateDecode akışları oran, öğe ve akış sayısı sınırlarıyla açılıyor, UTF-16 dizileri çözülüyor, sınır aşımında çıktı reddediliyor (binary_inflation_limit). Server-initiated sampling/elicitation/roots/notification'lar varsayılan deny politikasına bağlı ve bu istemci yetenekleri iletilen initialize'dan çıkarılıyor. Gateway'i atlayan doğrudan upstream erişiminin zorunlu yönlendirilmesi, allowlist dışı medya/sıkıştırma biçimleri ve müşteri native kabulü açık.",
+      "implementation_update": "Loopback/stdio JSON-RPC geçidi DNS pinleme, gerçek stream sınırı, tekil framing ve bozuk yanıt reddi uyguluyor. tools/call argümanları upstream çağrısından önce core evaluator'dan geçiyor (deny, ask=operatör onayı bekleyen blok, evaluator hatası=detection_unavailable); extractor sınırlarını aşan argümanlar iletilmek yerine input_not_fully_inspected ile reddediliyor. Image/audio/resource blob'ları MIME allowlist, kanonik base64, çözülmüş boyut sınırı, magic-byte ve yazdırılabilir dizi taramasıyla sınırlı biçimde inceleniyor; PNG zTXt/iTXt/iCCP ve PDF FlateDecode akışları oran, öğe ve akış sayısı sınırlarıyla açılıyor, UTF-16 dizileri çözülüyor, sınır aşımında çıktı reddediliyor (binary_inflation_limit). Sunucu kaynaklı (server-initiated) sampling/elicitation/roots/notification'lar varsayılan deny politikasına bağlı ve bu istemci yetenekleri iletilen initialize'dan çıkarılıyor. Gateway'i atlayan doğrudan upstream erişiminin zorunlu yönlendirilmesi, allowlist dışı medya/sıkıştırma biçimleri ve müşteri native kabulü açık.",
       "feature_ids": [
         "MCP-07"
       ],
