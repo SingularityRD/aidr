@@ -197,3 +197,89 @@ describe("aidr scan --skill / --upload", () => {
 		expect(upload).not.toHaveBeenCalled();
 	});
 });
+
+describe("aidr scan --code", () => {
+	const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
+	const threatsDir = join(repoRoot, "threats");
+	const allowlistsDir = join(repoRoot, "allowlists");
+
+	async function run(options: Parameters<typeof runScan>[0], configPath: string) {
+		const previousExitCode = process.exitCode;
+		const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+		const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+		process.exitCode = 0;
+		try {
+			await runScan(options, { threatsDir, allowlistsDir, configPath, upload: vi.fn() });
+			return {
+				exitCode: process.exitCode,
+				stdout: log.mock.calls.map((call) => String(call[0])).join("\n"),
+			};
+		} finally {
+			log.mockRestore();
+			error.mockRestore();
+			process.exitCode = previousExitCode;
+		}
+	}
+
+	async function project(configExtra: Record<string, unknown> = {}) {
+		const directory = await mkdtemp(join(tmpdir(), "aidr-cli-code-"));
+		await mkdir(join(directory, "src"), { recursive: true });
+		await writeFile(
+			join(directory, "src", "train.py"),
+			'import torch\nmodel = torch.load("model.pt")\nr = requests.get(url, verify=False)\n',
+		);
+		await writeFile(
+			join(directory, "src", "fetch.sh"),
+			"huggingface-cli download meta-llama/Llama-3.1-8B\n",
+		);
+		const configPath = join(directory, "config.json");
+		await writeFile(configPath, JSON.stringify(configExtra));
+		return { directory, configPath };
+	}
+
+	it("reports file:line findings as JSON and exits 2 on high-severity findings", async () => {
+		const { directory, configPath } = await project();
+		try {
+			const result = await run({ code: [directory], json: true }, configPath);
+			const report = JSON.parse(result.stdout) as {
+				code: Array<{ findings: Array<{ file: string; line: number; ruleId: string }> }>;
+			};
+			expect(
+				report.code[0]?.findings.map(
+					(finding) => `${finding.file}:${finding.line} ${finding.ruleId}`,
+				),
+			).toEqual([
+				`${join("src", "train.py")}:2 AISC-001`,
+				`${join("src", "train.py")}:3 SCG-TLS-001`,
+			]);
+			expect(result.exitCode).toBe(2);
+		} finally {
+			await rm(directory, { recursive: true, force: true });
+		}
+	});
+
+	it("prints a human summary and honours disabled_threats from the configuration", async () => {
+		const { directory, configPath } = await project({
+			disabled_threats: ["AISC-001", "SCG-TLS-001"],
+		});
+		try {
+			const result = await run({ code: [directory] }, configPath);
+			expect(result.stdout).toContain("AIDR code scan");
+			expect(result.stdout).toContain("Code findings: 0");
+			expect(result.exitCode).toBe(0);
+		} finally {
+			await rm(directory, { recursive: true, force: true });
+		}
+	});
+
+	it("never reports a missing path as clean", async () => {
+		const { directory, configPath } = await project();
+		try {
+			const result = await run({ code: [join(directory, "nope")] }, configPath);
+			expect(result.stdout).toContain("not scanned (path does not exist)");
+			expect(result.exitCode).toBe(1);
+		} finally {
+			await rm(directory, { recursive: true, force: true });
+		}
+	});
+});

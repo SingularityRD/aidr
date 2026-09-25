@@ -185,6 +185,14 @@ export interface Verdict {
 	 * when a profile made the decision stricter than threat detection alone.
 	 */
 	agentProfile?: AgentProfileVerdictRef;
+	/**
+	 * Advisory secure-code findings on the code this call writes (see
+	 * `code-guard.ts`). In the default `secure_code.action: "warn"` mode they
+	 * never change the decision: a connector surfaces them through its notice
+	 * channel (or records them in the audit log only, when the host has none).
+	 * Titles and locations only — never the matched source text.
+	 */
+	warnings?: VerdictWarning[];
 }
 
 /** Which profile rule restricted a call (names only, never tool input). */
@@ -192,6 +200,20 @@ export interface AgentProfileVerdictRef {
 	profile: string;
 	source: "managed" | "local";
 	rule: string;
+}
+
+/** One advisory finding attached to a verdict. */
+export interface VerdictWarning {
+	source: "secure_code";
+	ruleId: string;
+	title: string;
+	category: string;
+	severity: "critical" | "high" | "medium" | "low";
+	/** File the tool call writes; empty when the host did not name one. */
+	filePath: string;
+	language: string;
+	/** 1-based line in the written file, when the tool input makes it knowable. */
+	line?: number;
 }
 
 // ── Package check ──────────────────────────────────────────────────
@@ -640,6 +662,29 @@ export const PromptProtectionConfigSchema = z.object({
 });
 
 /**
+ * Secure-code guardrails for code an agent writes (Write, Edit, MultiEdit,
+ * apply_patch, NotebookEdit and heredoc file writes). Only the lines the call
+ * adds are inspected, gated by file language. `warn` (default) lets the call
+ * through with a notice to the user and the model; `ask` holds it for review.
+ */
+export const SecureCodeConfigSchema = z.object({
+	enabled: z.boolean().default(true),
+	action: z.enum(["warn", "ask"]).default("warn"),
+});
+
+/**
+ * AI model supply chain. The shipped trusted hubs and publisher organisations
+ * live in `allowlists/model-sources/*.yaml`; these lists add to them. A model
+ * download is trusted only when every source it names is on a list.
+ */
+export const AiSupplyChainConfigSchema = z.object({
+	/** Extra Hugging Face organisations/users whose repositories are trusted (case-insensitive). */
+	trusted_model_orgs: z.array(z.string()).default([]),
+	/** Extra HTTPS hosts trusted for direct model-weight downloads (suffix match on a dot boundary). */
+	trusted_model_hosts: z.array(z.string()).default([]),
+});
+
+/**
  * Session toxic-flow ("lethal trifecta") and behavioral chain detection. See
  * docs/toxic-flow.md. On by default; `action: "auto"` asks in balanced/relaxed
  * and denies in paranoid.
@@ -733,6 +778,8 @@ export const ConfigSchema = z.object({
 	package_check: PackageCheckConfigSchema.default({}),
 	amsi_check: AmsiCheckConfigSchema.default({}),
 	prompt_protection: PromptProtectionConfigSchema.default({}),
+	secure_code: SecureCodeConfigSchema.default({}),
+	ai_supply_chain: AiSupplyChainConfigSchema.default({}),
 	toxic_flow: ToxicFlowConfigSchema.default({}),
 	/** @deprecated Accepted for configuration compatibility; not used at runtime. */
 	nvd_check: NvdConfigSchema.default({}),
@@ -777,6 +824,8 @@ export type PackageCheckConfig = z.infer<typeof PackageCheckConfigSchema>;
 export type AmsiCheckConfig = z.infer<typeof AmsiCheckConfigSchema>;
 export type PromptProtectionMode = z.infer<typeof PromptProtectionModeSchema>;
 export type PromptProtectionConfig = z.infer<typeof PromptProtectionConfigSchema>;
+export type SecureCodeConfig = z.infer<typeof SecureCodeConfigSchema>;
+export type AiSupplyChainConfig = z.infer<typeof AiSupplyChainConfigSchema>;
 export type ToxicFlowConfig = z.infer<typeof ToxicFlowConfigSchema>;
 /**
  * @deprecated NVD lookup is no longer wired into the runtime.

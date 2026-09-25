@@ -583,21 +583,24 @@ describe("VS Code hook integration", () => {
 				streamContent: "eval $(base64 --decode <<< YWJj)",
 			},
 		],
-	])("denies per-file %s alias conflicts in later Local editFiles entries", async (_kind, secondEdit) => {
-		const { stdout, code } = await runHook("vscode", {
-			hook_event_name: "PreToolUse",
-			tool_name: "editFiles",
-			tool_input: {
-				files: [
-					{ path: "/tmp/notes-first.ts", streamContent: "const first = true;" },
-					secondEdit,
-				],
-			},
-		});
+	])(
+		"denies per-file %s alias conflicts in later Local editFiles entries",
+		async (_kind, secondEdit) => {
+			const { stdout, code } = await runHook("vscode", {
+				hook_event_name: "PreToolUse",
+				tool_name: "editFiles",
+				tool_input: {
+					files: [
+						{ path: "/tmp/notes-first.ts", streamContent: "const first = true;" },
+						secondEdit,
+					],
+				},
+			});
 
-		expect(code).toBe(0);
-		expect(permissionDecision(stdout)).toBe("deny");
-	});
+			expect(code).toBe(0);
+			expect(permissionDecision(stdout)).toBe("deny");
+		},
+	);
 
 	it("denies Local editFiles when a file entry cannot be paired with a path", async () => {
 		const { stdout, code } = await runHook("vscode", {
@@ -772,5 +775,43 @@ describe("Provisioned tenant detector policy", () => {
 		const vscode = await runHook("vscode", writePayload, { HOME: home });
 		expect(vscode.code).toBe(0);
 		expect(parseResponse(vscode.stdout)).toEqual({});
+	});
+});
+
+describe("secure-code guardrail notices", () => {
+	const insecureWrite = (event: string) => ({
+		hook_event_name: event,
+		tool_name: "Write",
+		tool_input: {
+			file_path: "/work/client.py",
+			content: "import requests\nr = requests.get(url, verify=False)\n",
+		},
+	});
+
+	it("Cursor allows the write and carries the notice to the user and the agent", async () => {
+		const home = await mkdtemp(join(tmpdir(), "aidr-ext-secure-code-"));
+		try {
+			const { stdout, code } = await runHook("cursor", insecureWrite("preToolUse"), { HOME: home });
+			expect(code).toBe(0);
+			const response = parseResponse(stdout);
+			expect(response.permission).toBe("allow");
+			expect(String(response.user_message)).toContain("SCG-TLS-001");
+			expect(String(response.agent_message)).toContain("Fix these");
+		} finally {
+			await rm(home, { recursive: true, force: true });
+		}
+	});
+
+	it("VS Code allows the write with a systemMessage notice", async () => {
+		const home = await mkdtemp(join(tmpdir(), "aidr-ext-secure-code-"));
+		try {
+			const { stdout, code } = await runHook("vscode", insecureWrite("PreToolUse"), { HOME: home });
+			expect(code).toBe(0);
+			const response = parseResponse(stdout);
+			expect(response.hookSpecificOutput).toBeUndefined();
+			expect(String(response.systemMessage)).toContain("/work/client.py:2");
+		} finally {
+			await rm(home, { recursive: true, force: true });
+		}
 	});
 });
