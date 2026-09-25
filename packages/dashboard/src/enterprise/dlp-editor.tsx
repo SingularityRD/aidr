@@ -45,6 +45,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { readErrorMessage } from "../lib/errors";
+import { pendingPolicyChangeNotice } from "../lib/governance";
 import { supabase } from "../lib/supabase";
 import { EnterpriseAuth } from "./auth";
 import { useTeam } from "./team-provider";
@@ -1228,6 +1229,11 @@ export function DlpPolicyEditor() {
 			});
 			if (tenantGeneration.current !== generation) return;
 			if (error) throw error;
+			const pendingChange = pendingPolicyChangeNotice(data);
+			if (pendingChange) {
+				setOutcome({ tone: "success", message: `DLP policy change filed for approval. ${pendingChange}` });
+				return;
+			}
 			const payload = (data ?? null) as DlpPublishResponse | null;
 			// A 200 or an echoed version alone proves neither storage nor delivery.
 			// This endpoint saves only; reject missing or contradictory evidence.
@@ -2186,6 +2192,7 @@ export function DlpStepUpPage() {
 	const returnTo = params.get("return");
 	const toSettings = returnTo === "settings";
 	const toApprovals = returnTo === "approvals";
+	const toGovernance = returnTo === "governance";
 	if (!tenantId || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(tenantId)) {
 		return <div role="alert">Select a team from <Link to="/policies">Policies</Link> before verifying.</div>;
 	}
@@ -2202,10 +2209,18 @@ export function DlpStepUpPage() {
 								? "/settings"
 								: toApprovals
 									? "/approvals"
-									: `/policies?tenant=${encodeURIComponent(tenantId)}`
+									: toGovernance
+										? "/governance/change-control"
+										: `/policies?tenant=${encodeURIComponent(tenantId)}`
 						}
 					>
-						{toSettings ? "Return to settings" : toApprovals ? "Return to approvals" : "Return to DLP policy"}
+						{toSettings
+							? "Return to settings"
+							: toApprovals
+								? "Return to approvals"
+								: toGovernance
+									? "Return to AI governance"
+									: "Return to DLP policy"}
 					</Link>
 				</div>
 			</EnterpriseAuth>

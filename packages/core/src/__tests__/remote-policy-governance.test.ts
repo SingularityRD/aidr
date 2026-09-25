@@ -33,7 +33,11 @@ function response(body: Record<string, unknown>): Response {
 	return { ok: true, status: 200, json: async () => body } as unknown as Response;
 }
 
-function policyBody(policy: Record<string, unknown>, governance?: Record<string, unknown>, digest?: string) {
+function policyBody(
+	policy: Record<string, unknown>,
+	governance?: Record<string, unknown>,
+	digest?: string,
+) {
 	return {
 		policy_version: "7",
 		cache_seconds: 60,
@@ -58,7 +62,11 @@ describe("AI governance overlay on the remote runtime policy", () => {
 		const merged = applyRemoteRuntimePolicy(
 			config,
 			policyBody(
-				{ mcp_default: "allow", mcp_deny_servers: ["published-deny"], mcp_allow_servers: ["github"] },
+				{
+					mcp_default: "allow",
+					mcp_deny_servers: ["published-deny"],
+					mcp_allow_servers: ["github"],
+				},
 				governance,
 			),
 		);
@@ -94,7 +102,11 @@ describe("AI governance overlay on the remote runtime policy", () => {
 			.mockResolvedValueOnce(response(policyBody(policy, governance)));
 		globalThis.fetch = fetchMock;
 		const config = ConfigSchema.parse({
-			control_plane: { enabled: true, endpoint: "https://control.example.test", remote_policy_cache_path: cachePath },
+			control_plane: {
+				enabled: true,
+				endpoint: "https://control.example.test",
+				remote_policy_cache_path: cachePath,
+			},
 			policy: { enabled: false },
 		});
 		try {
@@ -114,10 +126,17 @@ describe("AI governance overlay on the remote runtime policy", () => {
 		const root = await mkdtemp(join(tmpdir(), "aidr-governance-cache-"));
 		const cachePath = join(root, "runtime-policy-cache.json");
 		const policy = { mcp_default: "allow" };
-		const governance = { mcp_deny_servers: ["shell-runner"], mcp_require_approval_servers: ["github"] };
+		const governance = {
+			mcp_deny_servers: ["shell-runner"],
+			mcp_require_approval_servers: ["github"],
+		};
 		globalThis.fetch = vi.fn().mockResolvedValue(response(policyBody(policy, governance)));
 		const config = ConfigSchema.parse({
-			control_plane: { enabled: true, endpoint: "https://control.example.test", remote_policy_cache_path: cachePath },
+			control_plane: {
+				enabled: true,
+				endpoint: "https://control.example.test",
+				remote_policy_cache_path: cachePath,
+			},
 			policy: { enabled: false },
 		});
 		try {
@@ -161,7 +180,12 @@ describe("AI governance overlay on the remote runtime policy", () => {
 		globalThis.fetch = vi.fn().mockResolvedValue(response(policyBody(policy, governance)));
 		try {
 			const verdict = await evaluateToolCall(
-				{ sessionId: "sess_governance", toolName: "mcp__shell-runner__exec", toolInput: {}, artifacts: [] },
+				{
+					sessionId: "sess_governance",
+					toolName: "mcp__shell-runner__exec",
+					toolInput: {},
+					artifacts: [],
+				},
 				{ configPath, threatsDir: join(root, "threats"), allowlistsDir: join(root, "allowlists") },
 			);
 			expect(verdict.decision).toBe("deny");

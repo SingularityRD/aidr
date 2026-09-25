@@ -51,7 +51,8 @@ export function createPolicyHandler(deps: { db?: ReturnType<typeof createClient>
 			// AI governance register bans/restrictions for this member or agent, on
 			// top of (never inside) the published policy. An unreadable overlay
 			// fails closed: serving the policy without the bans would relax it.
-			const overlayResult = await db.rpc("ai_governance_policy_overlay", { p_tenant_id: tenant, p_user_id: auth.userId, p_agent_id: agentId });
+			const overlayRpc = db as unknown as { rpc(name: string, args: Record<string, unknown>): PromiseLike<{ data: unknown; error: unknown }> };
+			const overlayResult = await overlayRpc.rpc("ai_governance_policy_overlay", { p_tenant_id: tenant, p_user_id: auth.userId, p_agent_id: agentId });
 			if (overlayResult.error) return json(503, { error: "policy_unavailable" });
 			const governance = validateGovernanceOverlay(overlayResult.data);
 			return json(200, {

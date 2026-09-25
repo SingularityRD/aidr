@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { readErrorMessage } from "../lib/errors";
+import { pendingPolicyChangeNotice } from "../lib/governance";
 import { supabase } from "../lib/supabase";
 import { PolicyRollout } from "./policy-rollout";
 import { useTeam } from "./team-provider";
@@ -104,6 +105,11 @@ export function RuntimePolicyEditor() {
 				body: { action: "publish", tenant_id: currentTeam.id, expected_version: version, policy },
 			});
 			if (selectedTeamId.current !== requestedTeam) return;
+			const pendingChange = error ? null : pendingPolicyChangeNotice(data);
+			if (pendingChange) {
+				setMessage(pendingChange);
+				return;
+			}
 			if (error || data?.ok !== true || !Number.isSafeInteger(data.version))
 				throw new Error(
 					"Publication failed. Reload the page if another administrator changed the policy.",
@@ -193,6 +199,12 @@ export function RuntimePolicyEditor() {
 				},
 			});
 			if (selectedTeamId.current !== requestedTeam) return;
+			const pendingChange = error ? null : pendingPolicyChangeNotice(data);
+			if (pendingChange) {
+				setReviewedDocument(null);
+				setMessage(pendingChange);
+				return;
+			}
 			if (error || data?.ok !== true || (!data.policy && !data.runtime_policy))
 				throw new Error(
 					"Saved YAML could not be compiled and published. Run a new dry run before retrying.",

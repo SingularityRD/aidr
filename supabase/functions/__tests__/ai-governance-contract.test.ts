@@ -621,4 +621,16 @@ describe("ai-governance: request schema and SQL invariants", () => {
 		}
 		expect(REGISTER_SQL).toContain("from public, anon, authenticated;\ngrant execute on function public.upsert_ai_asset");
 	});
+
+	it("is registered for deployment, in the browser contract manifest and the route smoke lists", () => {
+		expect(read("supabase", "config.toml")).toMatch(/^\[functions\.ai-governance\]\n(#.*\n)*verify_jwt = true$/m);
+		const manifest = JSON.parse(read("docs", "production-readiness", "edge-function-contract-manifest.json")) as {
+			functions: Record<string, { tests: string[] }>;
+		};
+		expect(manifest.functions["ai-governance"]?.tests).toContain("supabase/functions/__tests__/ai-governance-contract.test.ts");
+		for (const route of ["/governance/register", "/governance/requests", "/governance/change-control"]) {
+			expect(read("scripts", "dashboard-route-smoke.mjs")).toContain(`"${route}"`);
+			expect(read("packages", "dashboard", "tests", "browser-smoke.manifest.json")).toContain(`"${route}"`);
+		}
+	});
 });

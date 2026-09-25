@@ -39,6 +39,11 @@ async function fixture(t, failure) {
       { tenant: noPolicyTenant, expired: true, retentionElapsed: true, active: true, hasPolicy: false, accepted: false },
     ],
     rateLimits: [{ expired: true }, { expired: true, tenant: freeTenant }, { expired: false }],
+    governance: [
+      { tenant: heldTenant, lapsed: false, due: true },
+      { tenant: freeTenant, lapsed: true, due: false },
+      { tenant: freeTenant, lapsed: false, due: true },
+    ],
     approvals: [
       { tenant: heldTenant, due: true },
       { tenant: freeTenant, due: true },
@@ -141,6 +146,21 @@ async function fixture(t, failure) {
         contended_tenants: 0, hold_race_skips: 0, active_tenants_missing_policy: 0,
         missing_policy_tenants_truncated: false, held_tenants_present: held.size, held_tenants_truncated: false });
     }
+    if (req.url === "/rest/v1/rpc/run_ai_governance_maintenance") {
+      if (failure === "governance-invalid") return reply(200, { expired: 0, eligible: 1, deleted: 2, remaining: 0, applied: body.p_apply });
+      const lapsed = state.governance.filter(row => row.lapsed);
+      const due = state.governance.filter(row => row.due && !isHeld(row)).slice(0, body.p_limit);
+      const held = new Set(state.governance.filter(row => row.due && isHeld(row)).map(row => row.tenant));
+      if (body.p_apply) {
+        for (const row of lapsed) row.lapsed = false;
+        state.governance = state.governance.filter(row => !due.includes(row));
+      }
+      return reply(200, { applied: body.p_apply, cutoff: new Date().toISOString(), expired: lapsed.length,
+        expiry_remaining: false, eligible: due.length, deleted: body.p_apply ? due.length : 0,
+        remaining: state.governance.some(row => row.due && !isHeld(row)) ? 1 : 0,
+        contended_tenants: 0, hold_race_skips: 0, active_tenants_missing_policy: 0,
+        missing_policy_tenants_truncated: false, held_tenants_present: held.size, held_tenants_truncated: false });
+    }
     if (req.url === "/rest/v1/rpc/prune_expired_rate_limits") {
       if (failure === "rate-prune-invalid") return reply(200, { eligible: 1, deleted: 2, remaining: 0, applied: body.p_apply });
       const due = state.rateLimits.filter(row => row.expired).slice(0, body.p_limit);
@@ -188,6 +208,9 @@ test("held/unheld exports and billing: dry-run, apply, release-then-prune, repea
   assert.equal(f.evidence().team_invitation_retention.remaining, 1);
   assert.equal(f.state.invitations.length, 7, "dry-run never removes invitation PII");
   assert.equal(f.evidence().approval_request_retention.eligible_observed, 1);
+  assert.equal(f.evidence().ai_governance_maintenance.expired, 1, "dry-run reports lapsed governance requests");
+  assert.equal(f.evidence().ai_governance_maintenance.deleted, 0);
+  assert.equal(f.state.governance.length, 3, "dry-run never removes governance records");
   assert.equal(f.evidence().approval_request_retention.deleted, 0);
   assert.equal(f.state.approvals.length, 3, "dry-run never removes approval requests");
   result = await f.run();
@@ -253,6 +276,25 @@ test("held/unheld exports and billing: dry-run, apply, release-then-prune, repea
   assert.equal(f.state.invitations.length, 4, "only retained accepted, young, unexpired, and inactive invitations remain");
   assert.equal(f.state.telemetry.length, 2, "retention resumes when the missing policy is configured");
   assert.equal(f.evidence().rate_limit_pruning.deleted, 0, "repeated maintenance is idempotent");
+});
+
+test("invalid AI governance maintenance receipt cannot complete maintenance", async t => {
+  const f = await fixture(t, "governance-invalid");
+  const result = await f.run();
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /Invalid AI governance maintenance response/);
+});
+
+test("AI governance maintenance expires lapsed requests and prunes only unheld closed records", async t => {
+  const f = await fixture(t);
+  await f.run();
+  const governance = f.evidence().ai_governance_maintenance;
+  assert.equal(governance.expired, 1);
+  assert.equal(governance.deleted, 1);
+  assert.equal(governance.held_tenants_present, 1);
+  assert.equal(governance.complete, true);
+  assert.equal(f.state.governance.length, 2);
+  assert.equal(f.state.governance.some(row => row.tenant === f.heldTenant && row.due), true, "held tenant records are retained");
 });
 
 test("invalid approval-request deletion receipt cannot complete maintenance", async t => {

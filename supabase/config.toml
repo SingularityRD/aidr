@@ -149,6 +149,12 @@ verify_jwt = false
 # Compliance evidence report. The handler repeats session, identity barrier,
 # owner/admin role, AAL2 and a tenant rate limit; the SQL re-checks under locks.
 verify_jwt = true
+[functions.ai-governance]
+# AI governance register, intake, exceptions and four-eyes change control.
+# Dashboard sessions only; the handler repeats session, identity barrier,
+# membership/role, AAL2 for decisions and a tenant rate limit, and every RPC
+# re-checks under row locks.
+verify_jwt = true
 
 [functions.notification-channels]
 # Tenant alert channels (Settings -> Notifications). The handler repeats session,

@@ -37,29 +37,36 @@ export function diffLines(before: string, after: string): DiffLine[] {
 			...b.map((text) => ({ kind: "add" as const, text })),
 		];
 	}
-	// lcs[i][j] = length of the LCS of a[i..] and b[j..].
-	const lcs: number[][] = Array.from({ length: a.length + 1 }, () => new Array<number>(b.length + 1).fill(0));
+	// lcs[i * width + j] = length of the LCS of a[i..] and b[j..].
+	const width = b.length + 1;
+	const lcs = new Int32Array((a.length + 1) * width);
+	const at = (i: number, j: number) => lcs[i * width + j] ?? 0;
 	for (let i = a.length - 1; i >= 0; i--) {
 		for (let j = b.length - 1; j >= 0; j--) {
-			lcs[i][j] = a[i] === b[j] ? lcs[i + 1][j + 1] + 1 : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
+			lcs[i * width + j] =
+				a[i] === b[j] ? at(i + 1, j + 1) + 1 : Math.max(at(i + 1, j), at(i, j + 1));
 		}
 	}
 	const out: DiffLine[] = [];
 	let i = 0;
 	let j = 0;
 	while (i < a.length && j < b.length) {
-		if (a[i] === b[j]) {
-			out.push({ kind: "same", text: a[i] });
+		const left = a[i] ?? "";
+		const right = b[j] ?? "";
+		if (left === right) {
+			out.push({ kind: "same", text: left });
 			i++;
 			j++;
-		} else if (lcs[i + 1][j] >= lcs[i][j + 1]) {
-			out.push({ kind: "del", text: a[i++] });
+		} else if (at(i + 1, j) >= at(i, j + 1)) {
+			out.push({ kind: "del", text: left });
+			i++;
 		} else {
-			out.push({ kind: "add", text: b[j++] });
+			out.push({ kind: "add", text: right });
+			j++;
 		}
 	}
-	while (i < a.length) out.push({ kind: "del", text: a[i++] });
-	while (j < b.length) out.push({ kind: "add", text: b[j++] });
+	for (; i < a.length; i++) out.push({ kind: "del", text: a[i] ?? "" });
+	for (; j < b.length; j++) out.push({ kind: "add", text: b[j] ?? "" });
 	return out;
 }
 

@@ -70,6 +70,9 @@ const protectedRoutes = [
 	"/privacy-guard",
 	"/approvals",
 	"/compliance",
+	"/governance/register",
+	"/governance/requests",
+	"/governance/change-control",
 ];
 const routes = [...publicRoutes, ...protectedRoutes, ...legacyRoutes];
 

@@ -214,6 +214,28 @@ const router = createBrowserRouter([
 		loader: requireSessionLoader,
 		children: [{ index: true, lazy: async () => ({ Component: (await import("./ui/pages/CompliancePage")).CompliancePage }) }],
 	},
+	{ path: "/governance", loader: () => redirect("/governance/register") },
+	{
+		path: "/governance/register",
+		lazy: loadAppLayout,
+		errorElement: routeErrorElement,
+		loader: requireSessionLoader,
+		children: [{ index: true, lazy: async () => ({ Component: (await import("./ui/pages/GovernanceRegisterPage")).GovernanceRegisterPage }) }],
+	},
+	{
+		path: "/governance/requests",
+		lazy: loadAppLayout,
+		errorElement: routeErrorElement,
+		loader: requireSessionLoader,
+		children: [{ index: true, lazy: async () => ({ Component: (await import("./ui/pages/GovernanceRequestsPage")).GovernanceRequestsPage }) }],
+	},
+	{
+		path: "/governance/change-control",
+		lazy: loadAppLayout,
+		errorElement: routeErrorElement,
+		loader: requireSessionLoader,
+		children: [{ index: true, lazy: async () => ({ Component: (await import("./ui/pages/GovernanceChangeControlPage")).GovernanceChangeControlPage }) }],
+	},
 	{
 		path: "/policies",
 		lazy: loadAppLayout,

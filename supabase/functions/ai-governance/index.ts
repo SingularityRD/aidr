@@ -14,7 +14,7 @@
 // Every failure is closed: an unreadable session, policy, membership,
 // assurance level, rate-limit counter or RPC result refuses the request.
 
-import { createClient } from "npm:@supabase/supabase-js@2.116.0";
+import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.116.0";
 import {
 	AI_GOVERNANCE_MAX_BODY_BYTES,
 	GOVERNANCE_ACTIONS,
@@ -44,10 +44,11 @@ const readRuntimeEnv: EnvReader = (name) => {
 	} catch {
 		// Node contract tests use process.env when Deno is unavailable.
 	}
-	return globalThis.process?.env?.[name];
+	return (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.[name];
 };
 
-type DatabaseClient = ReturnType<typeof createClient>;
+// Untyped schema: every result is validated at runtime before use.
+type DatabaseClient = SupabaseClient;
 type RpcError = { code?: string; message?: string } | null;
 
 export interface AiGovernanceDeps {

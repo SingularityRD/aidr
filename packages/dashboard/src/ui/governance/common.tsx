@@ -30,7 +30,10 @@ export function GovernanceTabs() {
 export function NoticeBanner({ notice, tenantId }: { notice: Notice; tenantId: string }) {
 	const error = notice.tone === "error";
 	return (
-		<div className={`notice ${error ? "notice-danger" : "notice-success"}`} role={error ? "alert" : "status"}>
+		<div
+			className={`notice ${error ? "notice-danger" : "notice-success"}`}
+			role={error ? "alert" : "status"}
+		>
 			{notice.message}
 			{notice.code === "mfa_required" ? (
 				<div style={{ marginTop: 8 }}>
@@ -95,7 +98,11 @@ export function formatTime(value: string | null): string {
 }
 
 /** A member's email when the directory is readable, otherwise a short id. */
-export function memberLabel(members: TeamMember[], userId: string | null, currentUserId?: string): string {
+export function memberLabel(
+	members: TeamMember[],
+	userId: string | null,
+	currentUserId?: string,
+): string {
 	if (!userId) return "—";
 	if (userId === currentUserId) return "You";
 	const member = members.find((item) => item.user_id === userId);
@@ -111,9 +118,10 @@ export function DiffView({ lines, label }: { lines: DiffLine[]; label: string })
 			{lines.map((line, index) => (
 				<span
 					// Line position is the identity of a diff row.
-					// biome-ignore lint/suspicious/noArrayIndexKey: diff rows have no other stable key
 					key={index}
-					className={line.kind === "add" ? "diff-add" : line.kind === "del" ? "diff-del" : undefined}
+					className={
+						line.kind === "add" ? "diff-add" : line.kind === "del" ? "diff-del" : undefined
+					}
 				>
 					{line.kind === "add" ? "+ " : line.kind === "del" ? "- " : "  "}
 					{line.text}
@@ -154,7 +162,6 @@ export function ReasonField({
 	);
 }
 
-// biome-ignore lint/suspicious/noControlCharactersInRegex: refusing control characters is the point
 const CONTROL = /[\u0000-\u0008\u000b-\u001f\u007f]/;
 
 export function validText(value: string, max: number): boolean {

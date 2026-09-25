@@ -225,6 +225,41 @@ async function main() {
       break;
     }
   }
+  // AI governance (docs/ai-governance.md): mark lapsed intake/exception/policy
+  // change requests expired (each audited) and delete closed decision records
+  // older than each active, unheld tenant's security_audit retention.
+  // Enforcement never waits for this sweep; the policy overlay ignores an
+  // exception from its end date on.
+  const governance = { expired: 0, eligible_observed: 0, deleted: 0, remaining: 0, batches: 0, complete: false,
+    contended_tenants: 0, hold_race_skips: 0, active_tenants_missing_policy: 0, held_tenants_present: 0 };
+  for (let batch = 0; batch < 100; batch++) {
+    const result = await request("/rest/v1/rpc/run_ai_governance_maintenance", "POST", { p_limit: 100, p_apply: apply });
+    if (!result || ![result.expired, result.eligible, result.deleted, result.remaining, result.contended_tenants,
+      result.hold_race_skips, result.active_tenants_missing_policy, result.held_tenants_present].every(isCount)
+      || typeof result.expiry_remaining !== "boolean"
+      || typeof result.missing_policy_tenants_truncated !== "boolean"
+      || result.applied !== apply || result.deleted > result.eligible || result.remaining > 1
+      || (!apply && result.deleted !== 0)
+      || typeof result.cutoff !== "string" || !Number.isFinite(Date.parse(result.cutoff))) {
+      throw new Error("Invalid AI governance maintenance response");
+    }
+    governance.expired += result.expired;
+    governance.eligible_observed += result.eligible;
+    governance.deleted += result.deleted;
+    governance.remaining = result.remaining;
+    governance.batches += 1;
+    governance.contended_tenants += result.contended_tenants;
+    governance.hold_race_skips += result.hold_race_skips;
+    governance.active_tenants_missing_policy = result.active_tenants_missing_policy;
+    governance.held_tenants_present = result.held_tenants_present;
+    const more = result.expiry_remaining || (result.remaining > 0 && result.deleted > 0);
+    if (!apply || !more) {
+      governance.complete = !result.expiry_remaining && result.remaining === 0 && result.contended_tenants === 0
+        && result.hold_race_skips === 0 && result.active_tenants_missing_policy === 0
+        && !result.missing_policy_tenants_truncated;
+      break;
+    }
+  }
   const rateLimits = { eligible: 0, deleted: 0, remaining: 0, batches: 0, complete: false,
     contended_tenants: 0, held_tenants_present: 0, inactive_tenant_rows_present: 0 };
   for (let batch = 0; batch < 100; batch++) {
@@ -253,22 +288,23 @@ async function main() {
   }
   const evidence = {
     checked_at: new Date().toISOString(),
-    action: "expire-private-audit-exports-billing-webhooks-telemetry-trial-subjects-team-invitations-approval-requests-and-rate-limits",
+    action: "expire-private-audit-exports-billing-webhooks-telemetry-trial-subjects-team-invitations-approval-requests-ai-governance-records-and-rate-limits",
     applied: apply, selected, removed,
-    complete: exportsComplete && billing.complete && telemetry.complete && trialSubjects.complete && invitations.complete && approvals.complete && rateLimits.complete, cutoff,
-    status: !apply ? "dry_run" : exportsComplete && billing.complete && telemetry.complete && trialSubjects.complete && invitations.complete && approvals.complete && rateLimits.complete ? "completed" : "incomplete",
+    complete: exportsComplete && billing.complete && telemetry.complete && trialSubjects.complete && invitations.complete && approvals.complete && governance.complete && rateLimits.complete, cutoff,
+    status: !apply ? "dry_run" : exportsComplete && billing.complete && telemetry.complete && trialSubjects.complete && invitations.complete && approvals.complete && governance.complete && rateLimits.complete ? "completed" : "incomplete",
     export_retention: exportRetention,
     billing_retention: billing,
     telemetry_retention: telemetry,
     trial_subject_retention: trialSubjects,
     team_invitation_retention: invitations,
     approval_request_retention: approvals,
+    ai_governance_maintenance: governance,
     rate_limit_pruning: rateLimits,
     scope: "Deletes authorized expired temporary export objects, completed attributed billing webhooks for active unheld tenants, expired events for active tenants according to each tenant's telemetry retention policy, pseudonymous trial-subject digests at the original 14-day expiry, expired unaccepted team invitations only after each active tenant's existing identity_membership retention window, decided or expired dashboard approval requests only after each active tenant's telemetry retention window, and operational rate-limit counters at least 15 minutes after their last update. Accepted and unexpired invitations are preserved; held and inactive-tenant invitation rows are retained. Active tenants missing identity_membership policy and contention/hold-race cases keep the run incomplete. Tenant rate-limit counters under legal hold or outside active tenancy are retained for the tenant lifecycle; global counters have no tenant association. Settlement request keys remain durable; unfinished, unattributed, held, and inactive-tenant webhooks are retained. Events without a telemetry policy and non-active tenants are not selected; legal-hold tenants are preserved. The append-only settlement ledger is never touched. Counts acknowledge Storage API responses, not an independent deletion receipt or backup erasure.",
   };
   writeFileSync(join(dir, "maintenance-evidence.json"), JSON.stringify(evidence, null, 2));
   console.log(JSON.stringify(evidence));
-  if (apply && (!exportsComplete || !billing.complete || !telemetry.complete || !trialSubjects.complete || !invitations.complete || !approvals.complete || !rateLimits.complete)) process.exitCode = 2;
+  if (apply && (!exportsComplete || !billing.complete || !telemetry.complete || !trialSubjects.complete || !invitations.complete || !approvals.complete || !governance.complete || !rateLimits.complete)) process.exitCode = 2;
 }
 
 // Report failures without abrupt unhandled-rejection teardown of HTTP handles.

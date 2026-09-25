@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { readErrorMessage } from "../lib/errors";
+import { pendingPolicyChangeNotice } from "../lib/governance";
 import { supabase } from "../lib/supabase";
 import { useTeam } from "./team-provider";
 
@@ -160,6 +161,12 @@ export function PolicyRollout({
 					: { action, tenant_id: team, expected_version: version, target_version: targetVersion };
 			const result = await supabase.functions.invoke("policy-management", { body });
 			if (selectedTeam.current !== team) return;
+			const pendingChange = result.error ? null : pendingPolicyChangeNotice(result.data);
+			if (pendingChange) {
+				setNotice(pendingChange);
+				setSelected([]);
+				return;
+			}
 			if (result.error || result.data?.ok !== true)
 				throw new Error(
 					"Policy change failed. Refresh if another administrator published a version.",

@@ -827,7 +827,14 @@ export interface Database {
 					target_version: number | null;
 					payload_sha256: string;
 					summary: Record<string, number>;
-					status: "pending" | "approved" | "rejected" | "cancelled" | "superseded" | "failed" | "expired";
+					status:
+						| "pending"
+						| "approved"
+						| "rejected"
+						| "cancelled"
+						| "superseded"
+						| "failed"
+						| "expired";
 					requested_by: string;
 					created_at: string;
 					expires_at: string;
