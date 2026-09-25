@@ -34,7 +34,8 @@ vi.mock("../lib/supabase", () => ({
 		},
 	},
 }));
-vi.mock("../billing/commercial", () => ({
+vi.mock("../billing/commercial", async (importOriginal) => ({
+	...(await importOriginal<typeof import("../billing/commercial")>()),
 	selfServiceCheckoutEnabled: true,
 	safeCommercialLink: (value: string | null) => value,
 	getSalesContactHref: () => "mailto:sales@example.com",

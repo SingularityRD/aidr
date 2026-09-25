@@ -149,8 +149,9 @@ belirli bir hareketsizlik süresinden sonra tarayıcıda sonlanır. Rotalar
 | `/auth/dlp-step-up` | yok | DLP ve çalışma alanı değişikliklerinden önce MFA doğrulaması | [MFA](#çok-faktörlü-doğrulama-kurtarma-ve-oturum-iptali) |
 | `/auth/recover` | yok | Parola kurtarma ve acil durum (break-glass) kurtarma kodları | [MFA](#çok-faktörlü-doğrulama-kurtarma-ve-oturum-iptali) |
 
-Oturum gerektirmeyen herkese açık sayfalar: `/` (tanıtım), `/pricing` (statik katalog
-aynasından), `/pilot` (pilot başvurusu), `/verify` (cihaz kodu onayı), `/support`,
+Oturum gerektirmeyen herkese açık sayfalar: `/` (tanıtım), `/pricing` (fiyat içermeyen
+katalog aynasından üretilen **Paketler / Editions** sayfası; fiyat yerine
+anil@singularityrd.com üzerinden teklif talebi), `/pilot` (pilot başvurusu), `/verify` (cihaz kodu onayı), `/support`,
 `/status`, `/privacy`, `/security`, `/terms` ve `/login`.
 
 ---
@@ -920,9 +921,9 @@ applied." der. O zamana kadar kabul edilen ajan sayısı değişmez.
 | Tüm planlar | Bulut; on-prem'de bunun yerine [imzalı lisans](#çevrimdışı-imzalı-lisans) kullanılır | Web konsolu |
 
 **Sınırlamalar.** Self-service kart ödemesi varsayılan olarak kapalıdır ve canlı bir
-sağlayıcı hesabıyla kabul edilmemiştir. Katalog fiyatları liste fiyatıdır; teklif veya
-sipariş geçerlidir. Plan verisi okunamazsa sayfa tahmin yürütmek yerine hiç rakam
-göstermez.
+sağlayıcı hesabıyla kabul edilmemiştir. Fiyatlar yayımlanmaz ve sayfa fiyat göstermez:
+her ücretli plan anil@singularityrd.com üzerinden teklifle satılır; teklif veya sipariş
+geçerlidir. Plan verisi okunamazsa sayfa tahmin yürütmek yerine hiç rakam göstermez.
 
 ---
 

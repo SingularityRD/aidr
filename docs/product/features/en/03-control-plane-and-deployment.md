@@ -147,8 +147,10 @@ locally after an inactivity timeout. The routes are declared in
 | `/auth/dlp-step-up` | none | MFA step-up before DLP and workspace changes | [MFA](#multi-factor-authentication-recovery-and-session-revocation) |
 | `/auth/recover` | none | Password recovery and break-glass recovery codes | [MFA](#multi-factor-authentication-recovery-and-session-revocation) |
 
-Public pages that need no sign-in: `/` (landing), `/pricing` (rendered from the static
-catalog mirror), `/pilot` (pilot application), `/verify` (device-code approval),
+Public pages that need no sign-in: `/` (landing), `/pricing` (the **Editions** page,
+rendered from the price-free catalog mirror, with a quote request to
+anil@singularityrd.com instead of prices), `/pilot` (pilot application), `/verify`
+(device-code approval),
 `/support`, `/status`, `/privacy`, `/security`, `/terms`, and `/login`.
 
 ---
@@ -890,9 +892,9 @@ applied." Admitted agents stay unchanged until then.
 | All plans | Cloud; On-prem uses the [signed licence](#signed-offline-licence) instead | Web console |
 
 **Limitations.** Self-service card payment is disabled by default and has not been
-accepted against a live provider account. Catalog prices are list prices, and a quote or
-order governs. If plan data cannot be read, the page shows no figures rather than
-guessing.
+accepted against a live provider account. Prices are not published and the page shows
+none: every paid plan is quoted through anil@singularityrd.com, and a quote or order
+governs. If plan data cannot be read, the page shows no figures rather than guessing.
 
 ---
 

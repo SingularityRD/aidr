@@ -1,10 +1,13 @@
-# Pricing — plan catalog (list prices)
+# Editions — plan catalog (quote-based pricing)
 
-**Status:** list prices recorded in the plan catalog. They are not yet an
-approved SKU or price book: **final SKU approval is COM-001** in the
-[commercial evidence registry](production-readiness/commercial-go-evidence-registry.json),
-and a signed quote or order governs every sale. See the
-[Commercial Release Manifest](production-readiness/commercial-release-manifest-template.md)
+**Status:** prices are **not published**. Product-owner decision (2026-09-25):
+no customer-facing surface (dashboard, website, README, product docs, sales
+collateral) shows a price, currency or per-seat / per-month figure. Every paid
+edition is sold by written quote; request one from
+[anil@singularityrd.com](mailto:anil@singularityrd.com). A signed quote or order
+governs every sale, and **final SKU approval is COM-001** in the
+[commercial evidence registry](production-readiness/commercial-go-evidence-registry.json).
+See the [Commercial Release Manifest](production-readiness/commercial-release-manifest-template.md)
 before making a customer offer.
 
 The catalog has one source of truth and one mirror:
@@ -12,8 +15,9 @@ The catalog has one source of truth and one mirror:
 | Where | What |
 |---|---|
 | `supabase/migrations/20260925000010_plan_catalog.sql` | `public.plans` table and seed (authoritative) |
-| `packages/dashboard/src/billing/plans.ts` | static mirror used by the public `/pricing` page |
-| `packages/dashboard/src/__tests__/plan-catalog-drift.test.ts` | fails when the mirror and the seed disagree |
+| `packages/dashboard/src/billing/plans.ts` | price-free static mirror used by the public `/pricing` route (titled **Editions**) and the Billing plan picker |
+| `packages/dashboard/src/__tests__/plan-catalog-drift.test.ts` | fails when the mirror and the seed disagree, or when a price field reaches the mirror |
+| `packages/dashboard/src/__tests__/public-pages-no-prices.test.tsx` | renders every public route and fails on any price or currency text |
 
 ## Unit of sale
 
@@ -25,16 +29,20 @@ The catalog has one source of truth and one mirror:
 - Local detection runs on the developer machine on every plan and does not
   depend on a plan or an account.
 
-## Plans
+## Editions
 
-All prices are USD, per developer seat, before tax.
+| Edition | Minimum | Deployment | Event retention | Billing intervals offered | Purchase |
+|---|---|---|---|---|---|
+| **Free** | 1 agent | Cloud | 7 days | — | Sign up |
+| **Team** | 3 developers | Cloud | 90 days | Monthly or annual | Quote; self-serve card checkout only in a self-service build |
+| **Business** | 25 developers | Cloud or on-premises | 365 days | Annual | Sales-assisted quote and invoice |
+| **Enterprise** | By agreement | On-premises or air-gapped | Contractual | By agreement | Sales-assisted quote and invoice |
 
-| Plan | Monthly billing | Annual billing | Minimum | Deployment | Event retention | Purchase |
-|---|---|---|---|---|---|---|
-| **Free** | $0 | $0 | 1 agent | Cloud | 7 days | Sign up |
-| **Team** | $24 / developer / month | $20 / developer / month ($240 / year) | 3 developers | Cloud | 90 days | Self-serve card checkout when enabled, otherwise invoice |
-| **Business** | — (annual only) | $45 / developer / month ($540 / year) | 25 developers | Cloud or on-premises | 365 days | Sales-assisted; invoice |
-| **Enterprise** | Custom | Custom | By agreement | On-premises or air-gapped | Contractual | Sales-assisted; invoice |
+Paid editions are quoted per developer seat for the customer's seats and
+deployment. The amount of a card checkout is set by the Stripe price that
+`AIDR_STRIPE_PRICE_MAP` names and is shown only on Stripe's checkout page; the
+dashboard never renders an amount it did not read from a recorded order or
+ledger row.
 
 Catalog features (each plan includes the ones above it):
 
@@ -53,9 +61,9 @@ as supported; the catalog does not assert readiness.
 | `id` | `free`, `team`, `business`, `enterprise` |
 | `included_agents` | protected agents admitted per purchased seat |
 | `min_seats` | smallest purchasable seat quantity |
-| `price_monthly_cents` | per-seat price for one month on monthly billing (`null` = not offered monthly / custom) |
-| `price_yearly_cents` | per-seat price for one year on annual billing (`null` = custom quote) |
-| `currency` | always `USD` |
+| `price_monthly_cents` | internal per-seat reference for monthly billing; `null` = monthly not offered. Server-side only: never mirrored to the dashboard bundle or shown in any UI; the mirror carries only whether the interval is offered |
+| `price_yearly_cents` | internal per-seat reference for annual billing; `null` = quote only. Server-side only, as above |
+| `currency` | internal reference currency of the two columns above; not displayed |
 | `features` | feature keys (labels live in the dashboard mirror) |
 | `self_serve` | may be bought by card in a self-service build (Free and Team only) |
 | `deployment` | `cloud`, `onprem`, `air-gapped` |
@@ -63,8 +71,9 @@ as supported; the catalog does not assert readiness.
 | `active` | shown and purchasable |
 
 Signed-in users can read active catalog rows (RLS `plans_select_authenticated`);
-nobody but a migration writes them. The public pricing page reads only the
-static mirror.
+nobody but a migration writes them. The public Editions page reads only the
+price-free static mirror. The price columns are reference data for Finance and
+quoting, not a published price list; checkout amounts come from Stripe.
 
 ## How a plan becomes active
 
@@ -84,6 +93,7 @@ uses to show the current plan, admission and usage against admitted agents.
 
 ## History
 
-An earlier draft priced "$2 per additional agent per month" on top of one free
-agent. It is superseded by the per-developer catalog above and was never an
+An earlier draft priced each additional agent on top of one free agent, and a
+later revision showed list prices on the public `/pricing` page. Both are
+superseded: prices are quote-based and not published, and neither was ever an
 offer.
