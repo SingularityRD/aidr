@@ -3,6 +3,14 @@
  * Hooks should normalize transport-specific payloads, then call this function.
  */
 
+import { isAbsolute } from "node:path";
+import {
+	type AgentProfileContext,
+	agentProfileFailureVerdict,
+	agentProfileVerdict,
+	evaluateAgentProfiles,
+	mergeAgentProfileVerdict,
+} from "./agent-profile.js";
 import { isAllowlisted, loadAllowlist } from "./allowlist.js";
 import {
 	buildIncidentEntry,
@@ -227,6 +235,18 @@ export interface ToolEvaluationContext {
 	 * makes no delegation claim, and the call is evaluated exactly as before.
 	 */
 	delegation?: ToolDelegationContext;
+	/**
+	 * Trusted agent permission profiles for this connector (local document and,
+	 * in managed mode, the signed tenant section). Absent means no profile
+	 * restricts the call. Profiles only ever make a verdict stricter.
+	 */
+	agentProfiles?: AgentProfileContext;
+	/**
+	 * Host-reported absolute working directory of the agent session. Selects
+	 * repository-scoped profiles and anchors `${workspace}` and relative paths.
+	 * Defaults to the process working directory.
+	 */
+	workingDirectory?: string;
 }
 
 const DETECTOR_DECISION_RANK = { allow: 0, ask: 1, deny: 2 } as const;
@@ -982,6 +1002,31 @@ async function recheckRedactedInput(
 	}
 }
 
+/**
+ * The agent permission profile outcome for this call, or null when no profile
+ * restricts it. An unexpected evaluation failure is a deny: the profile is a
+ * security control and must not silently disappear.
+ */
+async function evaluateAgentProfileVerdict(
+	request: ToolEvaluationRequest,
+	context: ToolEvaluationContext,
+): Promise<Verdict | null> {
+	const profiles = context.agentProfiles;
+	if (!profiles || profiles.layers.length === 0) return null;
+	const reported = context.workingDirectory?.trim();
+	const workingDirectory = reported && isAbsolute(reported) ? reported : process.cwd();
+	try {
+		const evaluation = await evaluateAgentProfiles(
+			profiles,
+			{ toolName: request.toolName, toolInput: request.toolInput, artifacts: request.artifacts },
+			{ workingDirectory },
+		);
+		return agentProfileVerdict(evaluation);
+	} catch {
+		return agentProfileFailureVerdict();
+	}
+}
+
 /** MCP calls reach the evaluator as `mcp__<server>__<tool>` or the host's generic `MCP` tool. */
 function isMcpToolName(toolName: string): boolean {
 	return toolName === "MCP" || toolName.startsWith("mcp__");
@@ -1066,6 +1111,38 @@ async function runEvaluationPipeline(
 		await recordEarlyVerdict(request, context, config, verdict, logger, startTime);
 		return verdict;
 	}
+	// A profile deny is final: nothing downstream can soften it. An ask (or an
+	// allow) is merged into whatever detection decides, deny > ask > allow.
+	const profileVerdict = await evaluateAgentProfileVerdict(request, context);
+	if (profileVerdict?.decision === "deny") {
+		await recordEarlyVerdict(request, context, config, profileVerdict, logger, startTime);
+		return profileVerdict;
+	}
+	// Every exit below routes its verdict through here: tenant runtime
+	// detectors, then session (toxic) flow, then the profile restriction,
+	// then host promotion.
+	const finalize = async (verdict: Verdict, allowlisted = false): Promise<Verdict> =>
+		hostEffectiveVerdict(
+			mergeAgentProfileVerdict(
+				await applySessionFlow(
+					request,
+					context,
+					config,
+					await applyRuntimeDetectors(
+						request,
+						context,
+						config,
+						verdict,
+						managedState,
+						rewriteSource,
+					),
+					allowlisted,
+				),
+				profileVerdict,
+			),
+			config,
+			context,
+		);
 	const commercial = isCommercialBuild();
 	// Computed once: the same manifest edits decide whether this request has
 	// anything for the package leg to inspect at all (see the empty-artifact
@@ -1074,7 +1151,9 @@ async function runEvaluationPipeline(
 
 	// Managed-only commercial behavior: without a valid auth token + signed entitlement (or offline grace),
 	// the runtime does not enforce and becomes inert (allow-only).
-	const disabled = (reason: string): Verdict => {
+	const disabled = (reason: string): Verdict =>
+		mergeAgentProfileVerdict(disabledVerdict(reason), profileVerdict);
+	const disabledVerdict = (reason: string): Verdict => {
 		if (commercial) {
 			return {
 				decision: "ask",
@@ -1377,23 +1456,7 @@ async function runEvaluationPipeline(
 		// A manifest edit is inspectable input even when the connector extracted
 		// no artifacts for the tool name, so it may not take this fast path.
 		if (!isMcpTool && manifestEdits.length === 0) {
-			const verdict = hostEffectiveVerdict(
-				await applySessionFlow(
-					request,
-					context,
-					config,
-					await applyRuntimeDetectors(
-						request,
-						context,
-						config,
-						allowVerdict("no_artifacts"),
-						managedState,
-						rewriteSource,
-					),
-				),
-				config,
-				context,
-			);
+			const verdict = await finalize(allowVerdict("no_artifacts"));
 			if (
 				verdict.decision !== "allow" ||
 				verdict.category === "behavioral_unavailable" ||
@@ -1425,24 +1488,7 @@ async function runEvaluationPipeline(
 	}
 
 	if (allowlisted) {
-		const finalVerdict = hostEffectiveVerdict(
-			await applySessionFlow(
-				request,
-				context,
-				config,
-				await applyRuntimeDetectors(
-					request,
-					context,
-					config,
-					allowlisted,
-					managedState,
-					rewriteSource,
-				),
-				true,
-			),
-			config,
-			context,
-		);
+		const finalVerdict = await finalize(allowlisted, true);
 		await recordEarlyVerdict(
 			request,
 			context,
@@ -1456,23 +1502,7 @@ async function runEvaluationPipeline(
 	}
 
 	if (policyVerdict) {
-		const finalVerdict = hostEffectiveVerdict(
-			await applySessionFlow(
-				request,
-				context,
-				config,
-				await applyRuntimeDetectors(
-					request,
-					context,
-					config,
-					policyVerdict,
-					managedState,
-					rewriteSource,
-				),
-			),
-			config,
-			context,
-		);
+		const finalVerdict = await finalize(policyVerdict);
 		const durationMs = performance.now() - startTime;
 		const auditInput = auditToolInputForVerdict(request.toolInput, finalVerdict, context);
 		let incidentEntry: Record<string, unknown> | null = null;
@@ -1778,16 +1808,7 @@ async function runEvaluationPipeline(
 			`URL reputation lookup was unavailable (${urlLegUnavailableReason}), so the URLs in this call were NOT verified clean and require review.`,
 		);
 	}
-	verdict = hostEffectiveVerdict(
-		await applySessionFlow(
-			request,
-			context,
-			config,
-			await applyRuntimeDetectors(request, context, config, verdict, managedState, rewriteSource),
-		),
-		config,
-		context,
-	);
+	verdict = await finalize(verdict);
 	const durationMs = performance.now() - startTime;
 	const auditInput = auditToolInputForVerdict(request.toolInput, verdict, context);
 

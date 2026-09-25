@@ -17,6 +17,12 @@ import { createHash, createPublicKey, verify } from "node:crypto";
 import { lstat, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
+import {
+	buildAgentProfileContext,
+	inspectLocalAgentProfiles,
+	localAgentProfileLayer,
+	managedAgentProfileLayer,
+} from "./agent-profile-loader.js";
 import { createBehavioralBaselineStore } from "./behavioral-baseline-store.js";
 import { BehavioralCorpusSchema, LOCAL_EMBEDDER_MODEL_VERSION } from "./behavioral-corpus.js";
 import { createBehavioralDetectionOrchestrator } from "./behavioral-orchestrator.js";
@@ -75,6 +81,10 @@ const DetectorPolicyPayloadSchema = z
 			})
 			.strict()
 			.optional(),
+		// Agent permission profiles. Validated separately (after the signature
+		// check) so a malformed section denies calls with a reason that names the
+		// profile problem instead of failing the whole bundle generically.
+		agent_profiles: z.unknown().optional(),
 	})
 	.strict()
 	.refine(
@@ -95,9 +105,11 @@ const DetectorPolicyPayloadSchema = z
 		},
 		{ message: "Behavioral provisioning requires an explicit supported V2 workflow" },
 	)
-	.refine((value) => value.dlp || value.behavioral || value.reputation_feed, {
-		message: "At least one provisioned detector is required",
-	});
+	.refine(
+		(value) =>
+			value.dlp || value.behavioral || value.reputation_feed || value.agent_profiles !== undefined,
+		{ message: "At least one provisioned detector is required" },
+	);
 
 const SignedDetectorPolicySchema = z
 	.object({
@@ -108,7 +120,7 @@ const SignedDetectorPolicySchema = z
 	.strict();
 
 export type DetectorProvisionedContext = Partial<
-	Pick<ToolEvaluationContext, "runtimeDetectors" | "reputationFeed">
+	Pick<ToolEvaluationContext, "runtimeDetectors" | "reputationFeed" | "agentProfiles">
 >;
 type SignedDetectorPolicy = z.infer<typeof SignedDetectorPolicySchema>;
 
@@ -313,6 +325,7 @@ function validateFeedKeyring(feed: SignedDetectorPolicy["payload"]["reputation_f
 
 async function detectorContext(
 	payload: SignedDetectorPolicy["payload"],
+	agentRuntime: AgentRuntime,
 ): Promise<DetectorProvisionedContext> {
 	const context: DetectorProvisionedContext = {};
 	if (payload.dlp || payload.behavioral) {
@@ -351,6 +364,10 @@ async function detectorContext(
 			};
 		}
 		context.runtimeDetectors = runtimeDetectors;
+	}
+	if (payload.agent_profiles !== undefined) {
+		const layer = managedAgentProfileLayer(payload.agent_profiles, "signed tenant detector bundle");
+		context.agentProfiles = buildAgentProfileContext(agentRuntime, [layer]);
 	}
 	const feed = payload.reputation_feed;
 	if (feed) {
@@ -410,6 +427,36 @@ async function localDlpContext(logger: Logger): Promise<DetectorProvisionedConte
 }
 
 /**
+ * The operator's local agent profile document. Valid: enforced in every mode
+ * (it can only narrow a managed profile). Invalid: refused, warned once, and
+ * reported by `aidr doctor` — never enforced as if it were valid.
+ */
+async function withLocalAgentProfiles(
+	agentRuntime: AgentRuntime,
+	context: DetectorProvisionedContext,
+	logger: Logger,
+): Promise<DetectorProvisionedContext> {
+	const state = await inspectLocalAgentProfiles();
+	if (state.status === "invalid") {
+		const key = `profiles\0${state.path}\0${state.reason}`;
+		if (!reportedLocalPolicyWarnings.has(key)) {
+			reportedLocalPolicyWarnings.add(key);
+			logger.warn(
+				"Local agent permission profiles are invalid and were NOT loaded; run `aidr profile validate`.",
+				{ path: state.path, reason: state.reason },
+			);
+		}
+	}
+	const local = localAgentProfileLayer(state);
+	if (!local) return context;
+	const agentProfiles = buildAgentProfileContext(agentRuntime, [
+		...(context.agentProfiles?.layers ?? []),
+		local,
+	]);
+	return { ...context, agentProfiles };
+}
+
+/**
  * Load the detector policy for one agent runtime.
  *
  * `agentRuntime` selects a fixed file for that runtime only. It must come from
@@ -417,7 +464,9 @@ async function localDlpContext(logger: Logger): Promise<DetectorProvisionedConte
  *
  * Managed mode accepts only the signed, entitlement-bound bundle. Local mode
  * additionally reads the optional unsigned `dlp-policy.json` when no signed
- * bundle is installed (see `local-dlp-policy.ts`).
+ * bundle is installed (see `local-dlp-policy.ts`). Agent permission profiles
+ * come from the signed bundle's `agent_profiles` section and, in every mode,
+ * from the local `agent-profiles.json` (see `agent-profile-loader.ts`).
  */
 export async function loadProvisionedDetectorContext(
 	agentRuntime: AgentRuntime,
@@ -432,11 +481,17 @@ export async function loadProvisionedDetectorContext(
 		state.entitlement?.schema_version === 2 &&
 		isEntitlementActive(state) &&
 		state.entitlement.premium_modules.includes("runtime_detectors");
+	const logger = options.logger ?? stderrLogger;
 	const installed = await readInstalledPolicy(agentRuntime, required);
 	if (!installed) {
-		return config.mode === "local" ? localDlpContext(options.logger ?? stderrLogger) : {};
+		const base = config.mode === "local" ? await localDlpContext(logger) : {};
+		return withLocalAgentProfiles(agentRuntime, base, logger);
 	}
 	validatePolicyTrust(config, state, installed.signed, installed.rawPayload);
 	validateFeedKeyring(installed.signed.payload.reputation_feed);
-	return detectorContext(installed.signed.payload);
+	return withLocalAgentProfiles(
+		agentRuntime,
+		await detectorContext(installed.signed.payload, agentRuntime),
+		logger,
+	);
 }

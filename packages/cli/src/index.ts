@@ -21,6 +21,12 @@ import {
 import discoverCommand from "./commands/discover.js";
 import doctorCommand from "./commands/doctor.js";
 import privacyScanCommand from "./commands/privacy.js";
+import {
+	profileListCommand,
+	profileShowCommand,
+	profileTestCommand,
+	profileValidateCommand,
+} from "./commands/profile.js";
 import scanCommand from "./commands/scan.js";
 import setupCommand from "./commands/setup.js";
 import simulateCommand from "./commands/simulate.js";
@@ -204,7 +210,7 @@ program
 program
 	.command("doctor")
 	.description(
-		"Check hosts, hook registration, rules, mode, DLP policy, approvals and the last verdict; exits non-zero on problems",
+		"Check hosts, hook registration, rules, mode, DLP policy, agent profiles, approvals and the last verdict; exits non-zero on problems",
 	)
 	.option("--json", "Emit a machine-readable report")
 	.action((options) => doctorCommand(options));
@@ -280,5 +286,41 @@ auditProgram
 	.option("--format <format>", "jsonl or csv", "jsonl")
 	.option("-o, --output <file>", "Write to a new file (0600) instead of stdout")
 	.action((options) => auditExportCommand(options));
+
+const profileProgram = program
+	.command("profile")
+	.description("Inspect, validate and dry-run agent permission profiles (least privilege)");
+
+profileProgram
+	.command("list")
+	.description("List local and managed agent permission profiles and the shipped templates")
+	.option("--json", "Emit machine-readable JSON")
+	.action((options) => profileListCommand(options));
+
+profileProgram
+	.command("show <name>")
+	.description("Print one profile (local or managed), or a shipped template with --template")
+	.option(
+		"--template",
+		"Show a shipped template: read-only-reviewer, standard-developer, ci-agent, locked-down",
+	)
+	.action((name, options) => profileShowCommand(name, options));
+
+profileProgram
+	.command("validate [file]")
+	.description("Validate a profile document (default: ~/.singularity-aidr/agent-profiles.json)")
+	.option("--json", "Emit machine-readable JSON")
+	.action((file, options) => profileValidateCommand(file, options));
+
+profileProgram
+	.command("test <tool-call-json>")
+	.description(
+		'Dry-run a tool call (JSON or @file, e.g. \'{"tool_name":"Bash","tool_input":{"command":"ls"}}\') against the effective profiles',
+	)
+	.option("--connector <name>", "Connector whose profiles apply", "claude-code")
+	.option("--cwd <dir>", "Working directory of the agent session (selects repository profiles)")
+	.option("--file <path>", "Test against this profile document instead of the installed ones")
+	.option("--json", "Emit machine-readable JSON")
+	.action((toolCall, options) => profileTestCommand(toolCall, options));
 
 await program.parseAsync(process.argv);
