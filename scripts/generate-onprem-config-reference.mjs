@@ -127,6 +127,7 @@ export const CATALOG = [
 	v(".env.functions", "AIDR_PACK_MASTER_KEY_B64", "always", "generated-secret", "", "Master key that encrypts policy/intel packs at rest."),
 	v(".env.functions", "AIDR_ENABLE_LEGACY_SELF_SERVICE_BILLING", "always", "fixed", "false", "Legacy self-service billing stays disabled."),
 	v(".env.functions", "AIDR_PACK_DOWNLOAD_GRANT_SECRET", "always", "generated-secret", "", "HMAC secret for short-lived pack download grants."),
+	v(".env.functions", "AIDR_APPROVAL_SIGNING_WRAP_KEY_B64", "always", "generated-secret", "", "Wraps the per-tenant dashboard approval signing keys (32 bytes, base64); without it dashboard approvals fail closed."),
 	v(".env.functions", "AIDR_BILLING_PROVIDER", "always", "operator", "", "Billing provider; blank for invoice/sales-led on-prem contracts."),
 	v(".env.functions", "AIDR_DEVICE_START_INGRESS_SECRET", "always", "generated-secret", "", "Shared with `.env.ingress`; authenticates the device-start signer."),
 

@@ -122,6 +122,7 @@ Edge Functions runtime (`functions` service `env_file`). Holds the control-plane
 | `AIDR_PACK_MASTER_KEY_B64` | always | generated secret | *(secret)* | Master key that encrypts policy/intel packs at rest. |
 | `AIDR_ENABLE_LEGACY_SELF_SERVICE_BILLING` | always | fixed by preparation | `false` | Legacy self-service billing stays disabled. |
 | `AIDR_PACK_DOWNLOAD_GRANT_SECRET` | always | generated secret | *(secret)* | HMAC secret for short-lived pack download grants. |
+| `AIDR_APPROVAL_SIGNING_WRAP_KEY_B64` | always | generated secret | *(secret)* | Wraps the per-tenant dashboard approval signing keys (32 bytes, base64); without it dashboard approvals fail closed. |
 | `AIDR_BILLING_PROVIDER` | always | operator | *(blank)* | Billing provider; blank for invoice/sales-led on-prem contracts. |
 | `AIDR_DEVICE_START_INGRESS_SECRET` | always | generated secret | *(secret)* | Shared with `.env.ingress`; authenticates the device-start signer. |
 

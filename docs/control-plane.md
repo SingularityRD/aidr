@@ -129,6 +129,61 @@ that keeps those RLS policies in force:
 The page also shows the entity-type and AI-site breakdowns, a daily (UTC)
 series and the latest 25 scans (counts only). The audit export
 (`audit-export`) covers the audit log only; privacy scans are not part of it.
+
+## Dashboard approvals (managed mode)
+
+In managed mode an `ask` verdict can be approved by a human in the dashboard
+instead of only through the same-OS-user `aidr approve` CLI. The flow is
+defined in [contracts/dashboard-approvals.md](contracts/dashboard-approvals.md)
+and is never agent-callable:
+
+1. The **connector** (not the agent) files a request with its tenant API key:
+   `POST /functions/v1/approval-requests` with the installation id, `action_id`,
+   artifact digest, tool, threat ids, a redacted summary and an expiry of at
+   most 30 minutes. Filing is idempotent on (tenant, installation, action).
+   Only `tenant`-scope keys are accepted; Browser Guard ingest-only keys are
+   refused, and an agent-bound key can only file and poll for its own
+   installation.
+2. An **owner or admin** reviews it on the dashboard **Approvals** page
+   (`/approvals`, with a pending-count badge in the navigation): tool, threat
+   ids, redacted summary, agent and a live expiry countdown. Approve and deny
+   both require a reason. The Edge Function re-checks the session, the tenant
+   identity barrier, the owner/admin role and **AAL2** (an AAL1 session is sent
+   through the MFA step-up flow), is rate limited, and writes the decision and
+   its reason to the audit log in the same transaction.
+3. The function signs an **Ed25519 approval token** that binds tenant,
+   installation, `action_id`, artifact digest, tool, decision, approver, a
+   15-minute lifetime and a single-use nonce. The connector collects it by
+   polling `GET /functions/v1/approval-requests/{request_id}` and verifies it
+   against `approval_public_keys` in its signed entitlement; any mismatch keeps
+   the action blocked, and a valid approval releases exactly one identical
+   retry.
+
+**Key custody.** Each tenant has its own Ed25519 approval signing key, created
+on the first decision. The private key is stored only as AES-256-GCM ciphertext
+under a per-tenant key-encryption key derived with HKDF-SHA256 from the Edge
+secret `AIDR_APPROVAL_SIGNING_WRAP_KEY_B64` (32 random bytes, base64), with the
+tenant and key id bound as additional data; the table is service-role only and
+no client role can read it. Without that secret the function answers
+`server_misconfigured` and nothing can be approved (asks stay blocked). Owners
+and admins can rotate the key from the Approvals page; the retired key stays
+published for 20 minutes so tokens it already signed still verify, and closing a
+workspace revokes the key. Changing the wrap secret makes existing keys
+unusable (decisions fail closed with `approval_signing_unavailable`) until the
+key is rotated.
+
+**Data handling.** Members can read their tenant's requests through RLS, but the
+token and nonce columns are never granted to the browser. Decided and expired
+requests are deleted after the tenant's telemetry retention by the maintenance
+worker (`prune_expired_approval_requests`, legal holds respected); offboarding
+expires pending requests and revokes keys at request time and deletes both in
+the telemetry and access-credential phases.
+
+**Compatibility.** `approval_public_keys` is added to the signed entitlement only
+once a tenant has a signing key. Connector builds that predate this field
+re-canonicalize the entitlement without it and therefore reject the signature
+of such an entitlement; upgrade every managed connector in a tenant before
+deciding its first dashboard approval.
 ## Operator administration
 
 Platform operators fix the deployment admission mode, record the approved

@@ -4,6 +4,7 @@ import { TeamProvider, useTeam } from "../enterprise/team-provider";
 import { supabaseEnvError } from "../lib/supabase";
 import { signOut } from "./session";
 import { ThemeToggle } from "./ThemeToggle";
+import { usePendingApprovalCount } from "./use-pending-approvals";
 
 /**
  * Team navigation entries.
@@ -44,6 +45,30 @@ function TeamNavLinks() {
 	);
 }
 
+/**
+ * Dashboard approvals link. The pending-count badge is read only for roles
+ * that can decide, once the role is resolved (after the identity gate).
+ */
+function ApprovalsNavLink() {
+	const { currentTeam, currentRole, roleResolved } = useTeam();
+	const canDecide = roleResolved && (currentRole === "owner" || currentRole === "admin");
+	const count = usePendingApprovalCount(canDecide && currentTeam ? currentTeam.id : null);
+	return (
+		<NavLink to="/approvals">
+			Approvals
+			{count ? (
+				<span
+					className="badge badge-warning badge-plain nav-count"
+					data-testid="approvals-pending-count"
+				>
+					<span className="sr-only">, pending: </span>
+					{count > 99 ? "99+" : count}
+				</span>
+			) : null}
+		</NavLink>
+	);
+}
+
 export function AppLayout() {
 	const navigate = useNavigate();
 	const [signingOut, setSigningOut] = useState(false);
@@ -81,6 +106,7 @@ export function AppLayout() {
 						<NavLink to="/discovery">Discovery</NavLink>
 						<NavLink to="/posture">Posture</NavLink>
 						<NavLink to="/incidents">Incidents</NavLink>
+						<ApprovalsNavLink />
 						<NavLink to="/privacy-guard">Browser Privacy</NavLink>
 						<NavLink to="/autosecops">AutoSecOps</NavLink>
 						<NavLink to="/settings">Settings</NavLink>

@@ -381,6 +381,7 @@ const functionEnv = {
 	AIDR_DELEGATION_SIGNING_PUBLIC_KEY_SPKI_B64: delegationPublicKeyDer.toString("base64"),
 	AIDR_PACK_MASTER_KEY_B64: randomBytes(32).toString("base64"), AIDR_ENABLE_LEGACY_SELF_SERVICE_BILLING: "false",
 	AIDR_PACK_DOWNLOAD_GRANT_SECRET: randomBytes(32).toString("base64url"),
+	AIDR_APPROVAL_SIGNING_WRAP_KEY_B64: randomBytes(32).toString("base64"),
 	AIDR_BILLING_PROVIDER: "",
 	AIDR_DEVICE_START_INGRESS_SECRET: deviceIngressSecret,
 };

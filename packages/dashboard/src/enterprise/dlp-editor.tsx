@@ -2183,7 +2183,9 @@ export function DlpStepUpPage() {
 	const [params] = useSearchParams();
 	const tenantId = params.get("tenant");
 	// Only fixed in-app destinations; never an arbitrary return URL.
-	const toSettings = params.get("return") === "settings";
+	const returnTo = params.get("return");
+	const toSettings = returnTo === "settings";
+	const toApprovals = returnTo === "approvals";
 	if (!tenantId || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(tenantId)) {
 		return <div role="alert">Select a team from <Link to="/policies">Policies</Link> before verifying.</div>;
 	}
@@ -2195,9 +2197,15 @@ export function DlpStepUpPage() {
 					<p>The control plane confirmed this session at AAL2 for the selected tenant.</p>
 					<Link
 						className="button"
-						to={toSettings ? "/settings" : `/policies?tenant=${encodeURIComponent(tenantId)}`}
+						to={
+							toSettings
+								? "/settings"
+								: toApprovals
+									? "/approvals"
+									: `/policies?tenant=${encodeURIComponent(tenantId)}`
+						}
 					>
-						{toSettings ? "Return to settings" : "Return to DLP policy"}
+						{toSettings ? "Return to settings" : toApprovals ? "Return to approvals" : "Return to DLP policy"}
 					</Link>
 				</div>
 			</EnterpriseAuth>

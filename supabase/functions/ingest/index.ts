@@ -21,6 +21,7 @@
 // (which can carry the tenant pack key).
 
 import { createClient } from "npm:@supabase/supabase-js@2.116.0";
+import { type ApprovalPublicKey, loadApprovalPublicKeys } from "../_shared/approval-token.ts";
 import { capEntitlementTimes, parseActiveAdmission, parseEffectiveSeats } from "../_shared/effective-seats.ts";
 import {
 	authenticateTenantApiKey,
@@ -176,6 +177,7 @@ function buildEntitlementSnapshot(params: {
 	revocationEpoch: number;
 	timing: { ttlHours: number; graceHours: number };
 	providerValidUntilMs?: number | null;
+	approvalPublicKeys?: ApprovalPublicKey[];
 }) {
 	const issuedAt = new Date();
 	const normalExpiresAt = new Date(issuedAt.getTime() + params.timing.ttlHours * 3_600_000);
@@ -211,6 +213,12 @@ function buildEntitlementSnapshot(params: {
 		grace_until: capped.graceUntil,
 		serial: crypto.randomUUID(),
 		revocation_epoch: params.revocationEpoch,
+		// Dashboard approval verification keys (docs/contracts/dashboard-approvals.md).
+		// Added only once the tenant has a signing key, so tenants that never use
+		// dashboard approvals keep the exact snapshot shape older connectors verify.
+		...(params.approvalPublicKeys && params.approvalPublicKeys.length > 0
+			? { approval_public_keys: params.approvalPublicKeys }
+			: {}),
 	};
 }
 
@@ -432,6 +440,7 @@ Deno.serve(async (req) => {
 		const entitlement = buildEntitlementSnapshot({
 			tenantId, includedAgents, extraAgents, allowedAgents, premiumModules,
 			tenantPackKey, revocationEpoch, timing, providerValidUntilMs,
+			approvalPublicKeys: await loadApprovalPublicKeys(supabase, tenantId, Date.now()),
 		});
 		if (!entitlement) return json(503, { error: "entitlements_unavailable", retryable: true });
 		const entitlementJson = canonicalJson(entitlement);
@@ -500,6 +509,7 @@ Deno.serve(async (req) => {
 	const entitlement = buildEntitlementSnapshot({
 		tenantId, includedAgents, extraAgents, allowedAgents, premiumModules,
 		tenantPackKey, revocationEpoch, timing, providerValidUntilMs,
+		approvalPublicKeys: await loadApprovalPublicKeys(supabase, tenantId, Date.now()),
 	});
 	if (!entitlement) return json(503, { error: "entitlements_unavailable", retryable: true });
 	const entitlementJson = canonicalJson(entitlement);

@@ -490,6 +490,12 @@ quarantine reason.
 
 ## Operator approvals
 
+In managed mode an `ask` can also be approved out of band by an owner or admin
+in the dashboard (AAL2, signed single-use token verified by the connector); see
+[Dashboard approvals](control-plane.md#dashboard-approvals-managed-mode) and
+[contracts/dashboard-approvals.md](contracts/dashboard-approvals.md). The
+control plane needs the Edge secret `AIDR_APPROVAL_SIGNING_WRAP_KEY_B64` for it.
+
 OpenClaw, OpenCode and Codex cannot show a host-native confirmation dialog, so
 their `ask` verdicts go through a file-backed, operator-only approval channel:
 
