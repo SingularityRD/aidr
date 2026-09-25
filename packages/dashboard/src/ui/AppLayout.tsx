@@ -47,6 +47,7 @@ function TeamNavLinks() {
 			{currentRole === "owner" || currentRole === "admin" ? (
 				<NavLink to="/governance">Governance</NavLink>
 			) : null}
+			<NavLink to="/governance/register">AI register</NavLink>
 		</>
 	);
 }

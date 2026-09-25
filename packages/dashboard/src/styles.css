@@ -2048,3 +2048,29 @@ select.input {
 	margin: 0;
 	min-width: 0;
 }
+
+/* AI governance: policy diff view (four-eyes review and revision history). */
+.diff-view {
+	margin: 6px 0 0;
+	padding: 8px 10px;
+	max-height: 420px;
+	overflow: auto;
+	border-radius: var(--radius-md);
+	background: var(--surface-soft);
+	font-family: var(--font-mono, ui-monospace, monospace);
+	font-size: var(--text-sm);
+	white-space: pre;
+}
+
+.diff-view .diff-add {
+	background: color-mix(in srgb, #16a34a 16%, transparent);
+}
+
+.diff-view .diff-del {
+	background: color-mix(in srgb, #dc2626 16%, transparent);
+}
+
+nav[aria-label="AI governance"] a.active {
+	border-color: var(--accent, #3862e8);
+	font-weight: 600;
+}

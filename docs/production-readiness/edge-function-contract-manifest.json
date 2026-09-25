@@ -36,6 +36,10 @@
       "owner": "Billing Engineering",
       "tests": ["supabase/functions/__tests__/billing-portal.test.ts"]
     },
+    "ai-governance": {
+      "owner": "Platform Engineering",
+      "tests": ["supabase/functions/__tests__/ai-governance-contract.test.ts", "supabase/functions/__tests__/policy-change-control-contract.test.ts"]
+    },
     "compliance-report": {
       "owner": "Platform Engineering",
       "tests": ["supabase/functions/__tests__/compliance-report-contract.test.ts"]
