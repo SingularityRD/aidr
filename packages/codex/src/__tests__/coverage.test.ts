@@ -27,20 +27,35 @@ describe("Codex event inspection coverage", () => {
 			outputInspection: "post_execution_observation",
 		});
 	});
+
+	it("marks UserPromptSubmit as inline prompt blocking with no tool visibility", () => {
+		expect(inspectionCoverageForEvent("UserPromptSubmit")).toMatchObject({
+			eventVisibility: { toolInput: false, toolOutput: false, userPrompt: true },
+			enforcement: { toolCall: "none", prompt: "inline_blocking" },
+			outputInspection: "unavailable",
+		});
+	});
 });
 
 describe("Codex connector coverage evidence", () => {
-	it("reports the shipped PreToolUse-only boundary without an inline output claim", () => {
+	it("reports the shipped PreToolUse + UserPromptSubmit boundary without an inline output claim", () => {
 		const evidence = getCodexConnectorCoverageEvidence();
 
-		expect(evidence.configuredEvents).toEqual(["PreToolUse"]);
+		expect(evidence.configuredEvents).toEqual(["PreToolUse", "UserPromptSubmit"]);
+		expect(evidence.eventCoverage).toEqual({
+			preToolUse: true,
+			postToolUse: false,
+			userPromptSubmit: true,
+		});
 		expect(evidence.capabilities).toEqual({
 			toolInputInspection: "inline_blocking",
 			toolOutputInspection: "unavailable",
+			promptInspection: "inline_blocking",
 			canBlockOutputBeforeModelConsumption: false,
 		});
 		expect(evidence.claims).toEqual({
 			inlineToolCallBlocking: true,
+			inlinePromptBlocking: true,
 			inlineOutputBlocking: false,
 		});
 		expect(evidence.hostFailureBoundary).toMatchObject({
@@ -61,6 +76,14 @@ describe("Codex connector coverage evidence", () => {
 		expect(evidence.capabilities.canBlockOutputBeforeModelConsumption).toBe(false);
 		expect(evidence.claims.inlineOutputBlocking).toBe(false);
 		expect(evidence.health.reasonCodes).toContain("tool_output_is_observation_only");
+	});
+
+	it("reports a PreToolUse-only registration as lacking prompt inspection", () => {
+		const evidence = getCodexConnectorCoverageEvidence(["PreToolUse"]);
+
+		expect(evidence.capabilities.promptInspection).toBe("unavailable");
+		expect(evidence.claims.inlinePromptBlocking).toBe(false);
+		expect(evidence.health.reasonCodes).toContain("prompt_inspection_unavailable");
 	});
 
 	it("reports an event set without PreToolUse as not enforcing", () => {

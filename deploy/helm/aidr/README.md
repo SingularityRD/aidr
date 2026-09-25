@@ -15,7 +15,7 @@ services AIDR uses:
 | `db` | `supabase/postgres:17.6.1.136` | Optional single instance; use `externalDatabase` in production |
 | `migrations` | `aidr/migrations` (built here) | Helm hook Job |
 | `backup` | `aidr/migrations` | Optional `pg_dump` CronJob |
-| `aig-*` | `aidr/aig-server`, `aidr/aig-agent`, `aidr/aig-bridge` (built here) | Optional AI-Infra-Guard stack (`aig.enabled`) |
+| `posture-scanner-*` | `aidr/posture-scanner-server`, `aidr/posture-scanner-agent`, `aidr/posture-scanner-bridge` (built here) | Optional AI Security Posture scanner (`postureScanner.enabled`) |
 
 Supabase Studio, pg-meta, Realtime, imgproxy, analytics and the pooler are **not**
 deployed. The gateway answers 404 for their routes.
@@ -75,7 +75,8 @@ Rendering fails, rather than producing a weaker install, when:
 - `postgresql.enabled=false` with `networkPolicy.enabled` and no
   `externalDatabase.networkPolicyCIDRs`.
 - `storage.replicaCount > 1` on a `ReadWriteOnce` file volume.
-- `aig.enabled` without its Secret, signing key, data ConfigMap, trust anchors or egress proxy.
+- `postureScanner.enabled` without its Secret, signing key, data ConfigMap, trust anchors or egress proxy.
+- Any value under the former `aig` key; see [AI Security Posture scanner](#ai-security-posture-scanner).
 
 ## Secrets
 
@@ -88,7 +89,20 @@ with `jwt-secret`), `metrics-token`. Optional: the key named by `auth.smtp.passw
 `AIDR_REVOCATION_SIGNING_KEY_ID`, `AIDR_REVOCATION_SIGNING_PRIVATE_KEY_PKCS8_B64`,
 `AIDR_DELEGATION_SIGNING_KEY_ID`, `AIDR_DELEGATION_SIGNING_PRIVATE_KEY_PKCS8_B64`,
 `AIDR_DELEGATION_SIGNING_PUBLIC_KEY_SPKI_B64`, `AIDR_PACK_MASTER_KEY_B64`,
-`AIDR_PACK_DOWNLOAD_GRANT_SECRET`, `AIDR_DEVICE_START_INGRESS_SECRET`.
+`AIDR_PACK_DOWNLOAD_GRANT_SECRET`, `AIDR_DEVICE_START_INGRESS_SECRET`,
+`AIDR_NOTIFICATION_ENCRYPTION_KEYS`, `AIDR_NOTIFICATION_DISPATCH_TOKEN`.
+
+## Alert notifications
+
+Settings → Notifications lets workspace owners and administrators send alerts to Slack,
+Microsoft Teams, signed HTTPS webhooks or e-mail. Set `notifications.dispatcher.enabled=true`
+to render the `notification-dispatch` CronJob (every minute, `concurrencyPolicy: Forbid`),
+which calls the functions Service with `AIDR_NOTIFICATION_DISPATCH_TOKEN` from the functions
+Secret. Both notification keys must exist in that Secret first (`generate-secrets.mjs` writes
+them; for an older Secret add `AIDR_NOTIFICATION_ENCRYPTION_KEYS=k1:<base64 32 bytes>` and a
+random 32+ character `AIDR_NOTIFICATION_DISPATCH_TOKEN`). Deliveries leave from the functions
+pods, so add the receivers' CIDRs (or an egress proxy) to `networkPolicy.functionsEgressCIDRs`;
+that list opens port 443 only, so a generic webhook on 8443 also needs its own egress rule.
 
 `deploy/helm/generate-secrets.mjs` writes both Secrets plus the operator record used by
 `scripts/deployment-bootstrap.mjs` and the `agent-config.json` enrolled agents need. You
@@ -108,13 +122,31 @@ Vault, sealed-secrets) as long as the Secret names match.
 | `storage.backend` | `file` | `file` (PVC, one replica) or `s3` |
 | `migrations.enabled` | `true` | Schema hook Job |
 | `backup.enabled` | `false` | Nightly `pg_dump` CronJob to a PVC |
+| `notifications.dispatcher.enabled` | `false` | Minute CronJob draining the alert outbox (needs the notification keys in the functions Secret) |
 | `ingress.certManager.*` | disabled | Adds the cert-manager issuer annotation |
 | `networkPolicy.enabled` | `true` | Default-deny plus per-component allows |
 | `networkPolicy.*EgressCIDRs` | `[]` | Opt-in egress: functions (npm mirror/IdP/billing), SMTP, dashboard certificate probe, S3 |
 | `functions.npmRegistry` | `""` | npm mirror for the functions' `npm:` imports |
-| `aig.enabled` | `false` | AI-Infra-Guard scanning stack |
+| `postureScanner.enabled` | `false` | AI Security Posture scanner |
 
 `values.schema.json` validates types, enums and patterns at install time.
+
+## AI Security Posture scanner
+
+`postureScanner.enabled=true` adds the `posture-scanner-server`, `posture-scanner-agent`
+and `posture-scanner-bridge` Deployments, their Services, PersistentVolumeClaims and
+NetworkPolicies. The bridge is reachable only from pods carrying
+`postureScanner.bridge.clientPodLabel` (default `aidr.singularity/posture-scanner-client: "true"`).
+
+Chart versions before the rename used the values key `aig`. Rendering now stops with
+``values key `aig` was renamed to `postureScanner` `` whenever that key is present:
+move every `aig.*` setting under `postureScanner.*` (for example `aig.enabled` becomes
+`postureScanner.enabled`), rebuild the images under their new repository names
+(`node deploy/helm/build-images.mjs --only posture-scanner-server,posture-scanner-agent,posture-scanner-bridge`)
+and relabel bridge clients with the new pod label. The Kubernetes objects are renamed
+too, so an upgrade creates new `posture-scanner-*` PersistentVolumeClaims; the old
+`*-aig-*` claims are kept (`helm.sh/resource-policy: keep`) and can be copied or
+deleted once the scanner is verified.
 
 ## Security posture
 

@@ -275,6 +275,21 @@
         }
       }
     },
+    "notifications": {
+      "type": "object",
+      "properties": {
+        "dispatcher": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "schedule": { "type": "string", "minLength": 9 },
+            "image": { "$ref": "#/definitions/image" },
+            "resources": { "$ref": "#/definitions/resources" },
+            "runAsUser": { "$ref": "#/definitions/uid" }
+          }
+        }
+      }
+    },
     "ingress": {
       "type": "object",
       "properties": {
@@ -306,7 +321,7 @@
         "storageEgressCIDRs": { "$ref": "#/definitions/cidrList" }
       }
     },
-    "aig": {
+    "postureScanner": {
       "type": "object",
       "properties": {
         "enabled": { "type": "boolean" },

@@ -395,33 +395,33 @@ jobs:
           pnpm verify:backup-offsite
           pnpm verify:onprem-config-reference
 
-      - name: AIG compose model fails closed and validates with placeholders
+      - name: Posture scanner compose model fails closed and validates with placeholders
         shell: bash
         run: |
           set -euo pipefail
           # The shipped example leaves credentials blank on purpose; Compose must
           # refuse it for that reason and no other.
-          if ! output="$(docker compose -f docker-compose.aig.yml --env-file .env.aig.example config --quiet 2>&1)"; then
+          if ! output="$(docker compose -f docker-compose.posture-scanner.yml --env-file .env.posture-scanner.example config --quiet 2>&1)"; then
             grep -Eq 'required variable [A-Z0-9_]+ is missing a value' <<<"${output}" || {
               printf '%s\n' "${output}" >&2
-              echo "docker-compose.aig.yml failed for a reason other than a blank required credential." >&2
+              echo "docker-compose.posture-scanner.yml failed for a reason other than a blank required credential." >&2
               exit 1
             }
-            echo "Blank .env.aig.example fails closed: ${output}"
+            echo "Blank .env.posture-scanner.example fails closed: ${output}"
           fi
-          env_file="${RUNNER_TEMP}/aig-ci.env"
-          cp .env.aig.example "${env_file}"
+          env_file="${RUNNER_TEMP}/posture-scanner-ci.env"
+          cp .env.posture-scanner.example "${env_file}"
           cat >> "${env_file}" <<'ENV'
-          AIG_AGENT_SHARED_SECRET=ci-placeholder-not-a-secret
-          AIG_SIGNING_PUBLIC_KEY_HOST_PATH=./ci-placeholder-aig-public.pem
-          AIG_TRUSTED_SIGNING_KEY_ID=ci-placeholder
-          AIG_TRUSTED_SIGNING_PUBLIC_KEY_SHA256=0000000000000000000000000000000000000000000000000000000000000000
-          AIG_EXPECTED_DATA_BUNDLE_ID=ci-placeholder
-          AIG_EXPECTED_SOURCE_COMMIT=0000000000000000000000000000000000000000
+          POSTURE_SCANNER_AGENT_SHARED_SECRET=ci-placeholder-not-a-secret
+          POSTURE_SCANNER_SIGNING_PUBLIC_KEY_HOST_PATH=./ci-placeholder-posture-scanner-public.pem
+          POSTURE_SCANNER_TRUSTED_SIGNING_KEY_ID=ci-placeholder
+          POSTURE_SCANNER_TRUSTED_SIGNING_PUBLIC_KEY_SHA256=0000000000000000000000000000000000000000000000000000000000000000
+          POSTURE_SCANNER_EXPECTED_DATA_BUNDLE_ID=ci-placeholder
+          POSTURE_SCANNER_EXPECTED_SOURCE_COMMIT=0000000000000000000000000000000000000000
           BRIDGE_EGRESS_PROXY_URL=http://egress-proxy.invalid:3128
           BRIDGE_API_KEY=ci-placeholder-not-a-secret
           ENV
-          docker compose -f docker-compose.aig.yml --env-file "${env_file}" config --quiet
+          docker compose -f docker-compose.posture-scanner.yml --env-file "${env_file}" config --quiet
 
       # deploy/dashboard is a template: deployment-prepare stages it with the
       # built dashboard (public/), auth templates and SAML config. Build the

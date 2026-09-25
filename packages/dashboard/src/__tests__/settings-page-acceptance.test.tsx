@@ -142,6 +142,8 @@ function install(fixture: Fixture = {}) {
 	};
 	invoke.mockImplementation(async (fn: string, options: InvokeOptions) => {
 		if (fn === "identity-security") return identitySecurityResponse(fixture);
+		// Settings → Notifications has its own suite (notification-settings.test.tsx).
+		if (fn === "notification-channels") return httpError(403, "notification_channels_forbidden");
 		if (fn !== "tenant-settings") throw new Error(`unexpected function ${fn}`);
 		return tenantSettingsResponse(fixture, tenant, options);
 	});

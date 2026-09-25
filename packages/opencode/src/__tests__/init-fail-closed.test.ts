@@ -99,9 +99,23 @@ describe("OpenCode plugin initialisation fails closed", () => {
 		).rejects.not.toThrow("/secret/path");
 	});
 
+	it("applies the uninspected-prompt policy to chat.message when initialisation fails", async () => {
+		failures.integrity = new ArtifactIntegrityError("opencode/dist", {
+			status: "hash_mismatch",
+		});
+		const hooks = await loadPlugin();
+		const parts = [{ type: "text", text: "a clean prompt" }];
+		// Default policy (secrets: block): a prompt that cannot be inspected is blocked.
+		await expect(
+			hooks["chat.message"]?.({ sessionID: "s" }, { message: { id: "m" }, parts } as never),
+		).rejects.toThrow("could not inspect this prompt");
+		expect(parts[0]?.text).not.toBe("a clean prompt");
+	});
+
 	it("registers the normal hooks when initialisation succeeds", async () => {
 		const hooks = await loadPlugin();
 		expect(hooks["tool.execute.before"]).toBeTypeOf("function");
+		expect(hooks["chat.message"]).toBeTypeOf("function");
 		expect(Object.keys(hooks.tool ?? {})).toEqual(["aidr_allowlist_add", "aidr_allowlist_remove"]);
 	});
 });

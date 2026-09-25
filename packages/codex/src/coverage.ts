@@ -2,16 +2,24 @@ import { CODEX_CONNECTOR } from "./types.js";
 
 export const CODEX_COVERAGE_SCHEMA_VERSION = "aidr-connector-coverage/v1" as const;
 
-export type CodexHookEventName = "PreToolUse" | "PostToolUse";
+export type CodexHookEventName = "PreToolUse" | "PostToolUse" | "UserPromptSubmit";
 export type CodexCoverageHealthStatus = "degraded" | "unhealthy";
+
+/** Events the shipped configuration registers (README, `aidr setup` guidance). */
+export const CODEX_SHIPPED_EVENTS: readonly CodexHookEventName[] = [
+	"PreToolUse",
+	"UserPromptSubmit",
+];
 
 export interface CodexEventInspectionCoverage {
 	eventVisibility: {
-		toolInput: true;
+		toolInput: boolean;
 		toolOutput: boolean;
+		userPrompt: boolean;
 	};
 	enforcement: {
 		toolCall: "inline_blocking" | "none";
+		prompt: "inline_blocking" | "none";
 		outputBeforeModelConsumption: "unavailable";
 	};
 	outputInspection: "unavailable" | "post_execution_observation";
@@ -26,14 +34,17 @@ export interface CodexConnectorCoverageEvidence {
 	eventCoverage: {
 		preToolUse: boolean;
 		postToolUse: boolean;
+		userPromptSubmit: boolean;
 	};
 	capabilities: {
 		toolInputInspection: "inline_blocking" | "unavailable";
 		toolOutputInspection: "unavailable" | "post_execution_observation";
+		promptInspection: "inline_blocking" | "unavailable";
 		canBlockOutputBeforeModelConsumption: false;
 	};
 	claims: {
 		inlineToolCallBlocking: boolean;
+		inlinePromptBlocking: boolean;
 		inlineOutputBlocking: false;
 	};
 	hostFailureBoundary: {
@@ -55,17 +66,20 @@ export interface CodexConnectorCoverageEvidence {
 export function inspectionCoverageForEvent(
 	eventName: CodexHookEventName,
 ): CodexEventInspectionCoverage {
-	const isPreToolUse = eventName === "PreToolUse";
+	const isPrompt = eventName === "UserPromptSubmit";
+	const isPostToolUse = eventName === "PostToolUse";
 	return {
 		eventVisibility: {
-			toolInput: true,
-			toolOutput: !isPreToolUse,
+			toolInput: !isPrompt,
+			toolOutput: isPostToolUse,
+			userPrompt: isPrompt,
 		},
 		enforcement: {
-			toolCall: isPreToolUse ? "inline_blocking" : "none",
+			toolCall: eventName === "PreToolUse" ? "inline_blocking" : "none",
+			prompt: isPrompt ? "inline_blocking" : "none",
 			outputBeforeModelConsumption: "unavailable",
 		},
-		outputInspection: isPreToolUse ? "unavailable" : "post_execution_observation",
+		outputInspection: isPostToolUse ? "post_execution_observation" : "unavailable",
 		hostFailureBoundary: "fail_open_if_hook_is_not_invoked_or_does_not_emit_a_valid_deny",
 	};
 }
@@ -76,17 +90,19 @@ export function inspectionCoverageForEvent(
  * the hook on a particular endpoint.
  */
 export function getCodexConnectorCoverageEvidence(
-	configuredEvents: readonly CodexHookEventName[] = ["PreToolUse"],
+	configuredEvents: readonly CodexHookEventName[] = CODEX_SHIPPED_EVENTS,
 ): CodexConnectorCoverageEvidence {
 	const events = [...new Set(configuredEvents)];
 	const preToolUse = events.includes("PreToolUse");
 	const postToolUse = events.includes("PostToolUse");
+	const userPromptSubmit = events.includes("UserPromptSubmit");
 	const reasonCodes = [
 		"host_hook_failure_is_fail_open",
 		"runtime_hook_registration_and_trust_not_verified",
 		postToolUse ? "tool_output_is_observation_only" : "tool_output_inspection_unavailable",
 		"pre_model_output_blocking_unavailable",
 	];
+	if (!userPromptSubmit) reasonCodes.push("prompt_inspection_unavailable");
 	if (!preToolUse) reasonCodes.unshift("pre_tool_use_enforcement_unavailable");
 
 	return {
@@ -94,14 +110,16 @@ export function getCodexConnectorCoverageEvidence(
 		connector: CODEX_CONNECTOR,
 		basis: "declared_connector_contract_not_runtime_registration",
 		configuredEvents: events,
-		eventCoverage: { preToolUse, postToolUse },
+		eventCoverage: { preToolUse, postToolUse, userPromptSubmit },
 		capabilities: {
 			toolInputInspection: preToolUse ? "inline_blocking" : "unavailable",
 			toolOutputInspection: postToolUse ? "post_execution_observation" : "unavailable",
+			promptInspection: userPromptSubmit ? "inline_blocking" : "unavailable",
 			canBlockOutputBeforeModelConsumption: false,
 		},
 		claims: {
 			inlineToolCallBlocking: preToolUse,
+			inlinePromptBlocking: userPromptSubmit,
 			inlineOutputBlocking: false,
 		},
 		hostFailureBoundary: {

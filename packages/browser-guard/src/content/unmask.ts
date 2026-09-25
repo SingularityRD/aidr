@@ -200,7 +200,18 @@ function applyStyles(doc: Document, root: ShadowRoot): void {
 
 export function createUnmasker(deps: UnmaskerDeps): Unmasker {
 	const { document: doc, adapter, vault } = deps;
-	const scope = [...adapter.responseSelectors, ...adapter.userMessageSelectors].join(",");
+	// Read at use (a custom site's adapter resolves after its policy arrived, see boot.ts);
+	// adapter selector lists are frozen, so their identity keys the cached join.
+	let scopeFrom: readonly (readonly string[])[] = [];
+	let scopeText = "";
+	const scopeSelector = (): string => {
+		const lists = [adapter.responseSelectors, adapter.userMessageSelectors];
+		if (lists[0] !== scopeFrom[0] || lists[1] !== scopeFrom[1]) {
+			scopeFrom = lists;
+			scopeText = lists.flat().join(",");
+		}
+		return scopeText;
+	};
 	const schedule = deps.schedule ?? ((cb: () => void) => queueMicrotask(cb));
 	const entries = new Map<Text, Entry>();
 	const ours = new WeakSet<Node>();
@@ -217,6 +228,7 @@ export function createUnmasker(deps: UnmaskerDeps): Unmasker {
 	let editor: Element | null = null;
 
 	const eligible = (text: Text): boolean => {
+		const scope = scopeSelector();
 		if (ours.has(text) || !scope) return false;
 		const parent = text.parentElement;
 		if (!parent?.closest(scope)) return false;
@@ -329,6 +341,7 @@ export function createUnmasker(deps: UnmaskerDeps): Unmasker {
 			out.push(node as Text);
 			return;
 		}
+		const scope = scopeSelector();
 		if (node.nodeType !== 1 || !scope) return;
 		const el = node as Element;
 		if (el.closest(scope)) {

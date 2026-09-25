@@ -58,6 +58,7 @@ const PRIVACY_SITE_LABELS: Readonly<Record<string, string>> = {
 	deepseek: "DeepSeek",
 	mistral: "Mistral",
 	grok: "Grok",
+	custom: "Internal AI site",
 	other: "Other AI site",
 };
 

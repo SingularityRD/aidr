@@ -14,7 +14,7 @@ Singularity AIDR intercepts tool calls made by AI agents, extracts security-rele
 | Platform | Hooks / Tools |
 |----------|---------------|
 | Claude Code | `PreToolUse` on `Bash`, `WebFetch`, `Write`, `Edit`, `Read` |
-| Cursor | `beforeShellExecution`, `preToolUse` (Write, Edit, Delete, WebFetch), `beforeMCPExecution`, `beforeReadFile` |
+| Cursor | `beforeSubmitPrompt` (prompt protection), `beforeShellExecution`, `preToolUse` (Write, Edit, Delete, WebFetch), `beforeMCPExecution`, `beforeReadFile` |
 | VS Code | `PreToolUse` on `Bash`, `WebFetch`, `Write`, `Edit`, `Read`, `Delete` |
 | OpenClaw | `exec`, `web_fetch`, `write`, `edit`, `read`, `apply_patch` |
 

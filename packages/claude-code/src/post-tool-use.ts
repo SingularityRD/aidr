@@ -9,13 +9,19 @@ import {
 	inspectValueForCanaryTokens,
 	type Logger,
 	recordCanaryTrigger,
+	recordToolOutputFlow,
 	verifyArtifactIntegrityAndLog,
 } from "@singularityrd/aidr-core";
 import pino from "pino";
 import { consumePendingApproval } from "./approval-tracker.js";
 import { approvedActionContext } from "./format.js";
 import { MAX_POST_TOOL_INPUT_BYTES, readBoundedJson } from "./hook-input.js";
-import { inspectToolResponse, postToolInspectionUnavailable } from "./output-inspection.js";
+import {
+	postToolInspectionUnavailable,
+	scanToolResponse,
+	type ToolResponseScan,
+	toolResponseInspectionResult,
+} from "./output-inspection.js";
 import {
 	appendPostToolContext,
 	quarantineFailedToolInspection,
@@ -109,9 +115,11 @@ async function main(): Promise<void> {
 	const toolUseId = (hookInput.tool_use_id ?? "") as string;
 	const sessionId = (hookInput.session_id ?? "unknown") as string;
 	let inspection: Record<string, unknown> | null;
+	let scan: ToolResponseScan | null = null;
 	try {
+		scan = scanToolResponse(hookInput.tool_response);
 		inspection = quarantineInspectedToolOutput(
-			inspectToolResponse(hookInput.tool_response),
+			toolResponseInspectionResult(scan),
 			hookInput.tool_response,
 		);
 	} catch {
@@ -122,6 +130,24 @@ async function main(): Promise<void> {
 		typeof hookInput.tool_name === "string" ? hookInput.tool_name : "unknown",
 		hookInput.tool_response,
 	);
+	if (scan && scan.findings.length > 0) {
+		// The output is already in Claude's context: record what it carried
+		// (secrets, injection payloads) so the session's next calls are judged
+		// with it. Never changes this hook's response and never throws.
+		const toolInput = hookInput.tool_input;
+		await recordToolOutputFlow(
+			{
+				sessionId,
+				toolName: typeof hookInput.tool_name === "string" ? hookInput.tool_name : "unknown",
+				toolInput:
+					toolInput && typeof toolInput === "object" && !Array.isArray(toolInput)
+						? (toolInput as Record<string, unknown>)
+						: undefined,
+				findings: scan.findings,
+			},
+			{ agentRuntime: "claude-code", logger },
+		);
+	}
 	let response: Record<string, unknown> = inspection ?? {};
 	if (toolUseId) {
 		try {

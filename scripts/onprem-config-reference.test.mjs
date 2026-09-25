@@ -24,7 +24,7 @@ function envKeys(path) {
 /** A throwaway copy of every input the generator reads, so drift can be simulated safely. */
 function generatorKit(t) {
 	const kit = temporaryDirectory(t);
-	for (const path of ["scripts/generate-onprem-config-reference.mjs", "scripts/deployment-prepare.mjs", "docker-compose.aig.yml", ".env.aig.example", REFERENCE_PATH, EXAMPLE_PATH]) {
+	for (const path of ["scripts/generate-onprem-config-reference.mjs", "scripts/deployment-prepare.mjs", "docker-compose.posture-scanner.yml", ".env.posture-scanner.example", REFERENCE_PATH, EXAMPLE_PATH]) {
 		mkdirSync(dirname(join(kit, path)), { recursive: true });
 		copyFileSync(join(root, path), join(kit, path));
 	}
@@ -53,15 +53,24 @@ test("--check reports a stale reference and regeneration repairs it", (t) => {
 	assert.equal(run(script, ["--check"]).status, 0);
 });
 
-test("--check fails when AIG configuration or preparation drifts from the catalog", (t) => {
-	const newAigVariable = generatorKit(t);
-	writeFileSync(join(newAigVariable, ".env.aig.example"), `${readFileSync(join(newAigVariable, ".env.aig.example"), "utf8")}AIG_UNDOCUMENTED_SETTING=1\n`);
-	const aigResult = run(join(newAigVariable, "scripts/generate-onprem-config-reference.mjs"), ["--check"]);
-	assert.equal(aigResult.status, 1);
-	assert.match(aigResult.stderr, /\.env\.aig\.example names AIG_UNDOCUMENTED_SETTING, which the reference does not document/);
+test("--check fails when posture scanner configuration or preparation drifts from the catalog", (t) => {
+	const newScannerVariable = generatorKit(t);
+	writeFileSync(join(newScannerVariable, ".env.posture-scanner.example"), `${readFileSync(join(newScannerVariable, ".env.posture-scanner.example"), "utf8")}POSTURE_SCANNER_UNDOCUMENTED_SETTING=1\nAIG_SOURCE_VERSION=v1\n`);
+	const scannerResult = run(join(newScannerVariable, "scripts/generate-onprem-config-reference.mjs"), ["--check"]);
+	assert.equal(scannerResult.status, 1);
+	assert.match(scannerResult.stderr, /\.env\.posture-scanner\.example names POSTURE_SCANNER_UNDOCUMENTED_SETTING, which the reference does not document/);
+	// Legacy names are tolerated only as Compose fallbacks, never in the operator example.
+	assert.match(scannerResult.stderr, /\.env\.posture-scanner\.example names AIG_SOURCE_VERSION, which the reference does not document/);
+
+	const missingFallback = generatorKit(t);
+	const fallbackCompose = join(missingFallback, "docker-compose.posture-scanner.yml");
+	writeFileSync(fallbackCompose, readFileSync(fallbackCompose, "utf8").replace("${POSTURE_SCANNER_AGENT_COUNT:-${AIG_AGENT_COUNT:-1}}", "${POSTURE_SCANNER_AGENT_COUNT:-1}"));
+	const fallbackResult = run(join(missingFallback, "scripts/generate-onprem-config-reference.mjs"), ["--check"]);
+	assert.equal(fallbackResult.status, 1);
+	assert.match(fallbackResult.stderr, /POSTURE_SCANNER_AGENT_COUNT must fall back to AIG_AGENT_COUNT/);
 
 	const composeVariable = generatorKit(t);
-	writeFileSync(join(composeVariable, "docker-compose.aig.yml"), readFileSync(join(composeVariable, "docker-compose.aig.yml"), "utf8").replace("BRIDGE_LOG_LEVEL=${BRIDGE_LOG_LEVEL:-INFO}", "BRIDGE_LOG_LEVEL=${BRIDGE_VERBOSITY:-INFO}"));
+	writeFileSync(join(composeVariable, "docker-compose.posture-scanner.yml"), readFileSync(join(composeVariable, "docker-compose.posture-scanner.yml"), "utf8").replace("BRIDGE_LOG_LEVEL=${BRIDGE_LOG_LEVEL:-INFO}", "BRIDGE_LOG_LEVEL=${BRIDGE_VERBOSITY:-INFO}"));
 	const composeResult = run(join(composeVariable, "scripts/generate-onprem-config-reference.mjs"), ["--check"]);
 	assert.equal(composeResult.status, 1);
 	assert.match(composeResult.stderr, /interpolates BRIDGE_VERBOSITY, which the reference does not document/);

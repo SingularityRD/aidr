@@ -210,7 +210,12 @@ describe("release build with --zip (stub entries)", () => {
 			"storage",
 			"alarms",
 			"declarativeNetRequestWithHostAccess",
+			"scripting",
 		]);
+		// No browsing-history-class permission: Shadow AI visibility and custom sites use
+		// per-origin grants from the optional host permissions.
+		for (const broad of ["tabs", "webNavigation", "history", "declarativeNetRequestFeedback"])
+			expect(manifest.permissions).not.toContain(broad);
 		expect(manifest.optional_permissions).toEqual(["nativeMessaging"]);
 		expect(manifest.optional_host_permissions).toEqual(["https://*/*"]);
 		expect(manifest.host_permissions).toEqual([...MATCH_PATTERNS]);
@@ -245,6 +250,7 @@ describe("release build with --zip (stub entries)", () => {
 			"storage",
 			"alarms",
 			"declarativeNetRequestWithHostAccess",
+			"scripting",
 		]);
 		expect(manifest.optional_permissions).toEqual(["nativeMessaging"]);
 		// Firefox has no MV3 service workers, no version_name and no storage.managed_schema.

@@ -205,7 +205,7 @@ native with no runtime cost; three are LLM-driven by nature** and should be offe
 opt-in features that use the customer's own model, never as a hidden dependency. That
 keeps the product lightweight while still covering the feature suite.
 
-**Consequence for the shipped stack.** `services/aig-bridge` and `docker-compose.aig.yml`
+**Consequence for the shipped stack.** `services/aig-bridge` and `docker-compose.posture-scanner.yml`
 are no longer required for infra scanning or CVE matching. The SingularityRD-owned
 `vendor/ai-infra-guard/` source is tracked directly in this repository and remains
 the pinned build-time data source for the compiler; it does not need to be deployed.
@@ -306,7 +306,7 @@ Ordered by what a critical customer would notice first:
 2. **Finish the native AIG wiring.** The scanner and dataset now work (§3.2); the
    remaining step is exposing findings to the operator (CLI command, session-start
    summary, policy action on critical CVEs) and then retiring `services/aig-bridge`,
-   `docker-compose.aig.yml` and the deployment half of the submodule, which the native
+   `docker-compose.posture-scanner.yml` and the deployment half of the submodule, which the native
    path makes unnecessary. Decide explicitly whether MCP/Agent/Jailbreak scans are
    offered as opt-in LLM-backed features (customer's own key) or dropped.
 3. **Deploy the reputation + control-plane services**, or make every dependent

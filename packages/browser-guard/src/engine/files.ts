@@ -8,6 +8,23 @@
  *   1. `policy.fileHandling === "allow"`  -> allow, nothing is read.
  *      `policy.fileHandling === "block"`  -> block `FILE_BLOCKED_BY_POLICY`.
  *   2. `bytes.length > policy.maxFileBytes` -> block `FILE_TOO_LARGE`.
+ *   2b. Documents: Office Open XML (docx/xlsx/pptx and their macro/template variants) and PDF,
+ *      by extension, or - for an unknown/missing extension - by MIME type or content.
+ *      `policy.documentHandling` (default "mask"):
+ *        "block" -> block `DOCUMENT_BLOCKED_BY_POLICY`;
+ *        "allow" -> not parsed; handled like any other binary (step 4);
+ *        "mask"  -> OOXML: text is masked in place and the package re-zipped (./office/ooxml.ts)
+ *                   -> action "mask" (`SENSITIVE_DATA`), or "allow" without findings. Macros,
+ *                   encryption, external links, non-OOXML embedded objects, unsafe ZIP
+ *                   structure (zip bombs, ZIP64, path traversal) and malformed XML block
+ *                   (`DOCUMENT_*` / `ARCHIVE_*`); an unreadable file (not a ZIP) follows step 4
+ *                   with `DOCUMENT_UNPARSEABLE`.
+ *                   PDF: text is extracted (./pdf/extract.ts) and scanned, never rewritten:
+ *                   findings block `SENSITIVE_DATA_IN_PDF` (the user is told to paste the text
+ *                   instead); a clean, fully readable PDF is allowed; scanned/partly unreadable
+ *                   or encrypted/unparseable PDFs follow step 4 with `PDF_NO_TEXT`,
+ *                   `PDF_PARTIAL`, `PDF_ENCRYPTED` or `PDF_UNPARSEABLE`.
+ *      Document refusals and PDF findings are recorded instead of enforced in monitor mode.
  *   3. Classification. A file is scanned as text when its content decodes as strict UTF-8
  *      (UTF-8 BOM stripped; UTF-16 with a BOM is also accepted) and contains no NUL, AND
  *      either its extension is a known text/source extension, or its extension is unknown
@@ -28,7 +45,8 @@
  *      or binary content behind a text name) cannot be decoded safely: it is blocked with
  *      `TEXT_FILE_NOT_DECODABLE` in auto/confirm/block mode (monitor mode, which never
  *      blocks, allows it with that reason so the event is recorded).
- *   4. Binary files cannot be inspected in the browser:
+ *   4. Other binary files (images, archives, legacy .doc/.xls, OpenDocument...) and documents
+ *      that could not be read are not inspected (a detail reason may follow):
  *        `policy.mode === "block"` -> block `BINARY_FILE_UNSCANNABLE`;
  *        any other mode            -> allow `BINARY_FILE_UNSCANNED` so the content script can
  *                                     warn (and record) instead of silently passing it.
@@ -53,12 +71,13 @@
  *      to the decision without changing the action.
  *
  * Failure policy (fail closed): an incomplete scan (engine limit/timeout, even after retrying
- * in smaller chunks) blocks with `SCAN_INCOMPLETE`; any internal error blocks with
- * `FILE_SCAN_ERROR`. The function never throws.
+ * in smaller chunks) or a document that exceeds its scan time budget blocks with
+ * `SCAN_INCOMPLETE`; any internal error blocks with `FILE_SCAN_ERROR`. The function never throws.
  *
- * `sanitizeFile` does not interpret `auto` / `confirm` / `monitor`; the content script applies
- * the guard mode to the returned decision (e.g. `confirm` asks before substituting the masked
- * copy). The only mode-dependent rule here is binary handling (step 4).
+ * `sanitizeFile` does not otherwise interpret `auto` / `confirm` / `monitor`; the content script
+ * applies the guard mode to the returned decision (e.g. `confirm` asks before substituting the
+ * masked copy). The mode-dependent rules here are binary handling (step 4) and document
+ * refusals / PDF findings, which monitor mode records instead of blocking (step 2b).
  */
 import { keyType } from "../../../privacy/src/detectors.js";
 import type {
@@ -71,6 +90,16 @@ import type {
 	SignalCode,
 } from "../types.js";
 import { type Counts, countFindings, mergeCounts } from "./counts.js";
+import {
+	DocumentRefused,
+	DocumentUnreadable,
+	OOXML_EXTENSIONS,
+	sanitizeOoxml,
+	sniffOoxml,
+} from "./office/ooxml.js";
+import type { DocScanner } from "./office/scanner.js";
+import { looksLikeZip } from "./office/zip.js";
+import { extractPdfText, PdfUnreadable } from "./pdf/extract.js";
 
 export interface GuardFile {
 	readonly name: string;
@@ -1009,6 +1038,183 @@ function block(reasons: readonly string[], counts: Readonly<Counts> = {}): FileD
 	return { action: "block", counts, reasons };
 }
 
+/** Binary content that could not be inspected: blocked in block mode, otherwise a warning. */
+function unscanned(policy: GuardPolicy, detail: readonly string[] = []): FileDecision {
+	return policy.mode === "block"
+		? block(["BINARY_FILE_UNSCANNABLE", ...detail])
+		: { action: "allow", counts: {}, reasons: ["BINARY_FILE_UNSCANNED", ...detail] };
+}
+
+/** A refusal that monitor mode (which never blocks) records instead of enforcing. */
+function refuse(
+	policy: GuardPolicy,
+	reasons: readonly string[],
+	counts: Readonly<Counts> = {},
+): FileDecision {
+	return policy.mode === "monitor" ? { action: "allow", counts, reasons } : block(reasons, counts);
+}
+
+function signalReasons(policy: GuardPolicy, signals: ReadonlySet<SignalCode>): string[] {
+	return policy.signalAction === "off" ? [] : [...signals].sort().map((s) => `SIGNAL_${s}`);
+}
+
+// --- documents (OOXML, PDF) ------------------------------------------------------------------
+
+type DocumentKind = "ooxml" | "pdf";
+
+const OOXML_MIME =
+	/^application\/vnd\.(?:openxmlformats-officedocument\.(?:wordprocessingml|spreadsheetml|presentationml)\.|ms-(?:word|excel|powerpoint)\.[\w.]*macroenabled)/i;
+/** Whole-document scan budget (all engine calls, parsing and rewriting). */
+const DOCUMENT_SCAN_BUDGET_MS = 30_000;
+
+/**
+ * Office Open XML and PDF uploads, by extension; files with an unknown or missing extension
+ * are recognised by MIME type or content (so a renamed document is not waved through).
+ */
+function documentKind(file: GuardFile): DocumentKind | null {
+	const ext = extensionOf(baseName(file.name));
+	if (OOXML_EXTENSIONS.has(ext)) return "ooxml";
+	if (ext === "pdf") return "pdf";
+	if (ext && (BINARY_EXTENSIONS.has(ext) || TEXT_EXTENSIONS[ext] !== undefined)) return null;
+	if (/^application\/pdf\s*(?:;|$)/i.test(file.type) || startsWithPdf(file.bytes)) return "pdf";
+	if (OOXML_MIME.test(file.type) || (looksLikeZip(file.bytes) && sniffOoxml(file.bytes)))
+		return "ooxml";
+	return null;
+}
+
+function startsWithPdf(bytes: Uint8Array): boolean {
+	return (
+		bytes[0] === 0x25 &&
+		bytes[1] === 0x50 &&
+		bytes[2] === 0x44 &&
+		bytes[3] === 0x46 &&
+		bytes[4] === 0x2d
+	);
+}
+
+/** The document handlers' view of detection + vault (see ./office/scanner.ts). */
+function documentScanner(ctx: Ctx, counts: Counts, deadline: number): DocScanner {
+	return {
+		async scan(inputs) {
+			const { perSegment, signals } = await scanSegments(
+				ctx.engine,
+				inputs.map((i) => ({ context: i.context, value: i.value })),
+			);
+			return {
+				perSegment: inputs.map((input, i) => {
+					const forced =
+						input.forced && ctx.enabled.has(input.forced)
+							? wholeValueFinding(input.value, input.forced)
+							: null;
+					return mergeFindings(
+						[...(perSegment[i] ?? []), ...(forced ? [forced] : [])],
+						input.value.length,
+					);
+				}),
+				signals,
+			};
+		},
+		replace(value, finding) {
+			const result = ctx.vault.mask(value, [{ ...finding, start: 0, end: value.length }]);
+			mergeCounts(counts, result.counts);
+			return result.masked;
+		},
+		headerType(header) {
+			const type = sensitiveKeyType(header, true);
+			return type && ctx.enabled.has(type) ? type : undefined;
+		},
+		checkDeadline() {
+			if (Date.now() > deadline) throw new ScanIncomplete();
+		},
+	};
+}
+
+async function handleOoxml(
+	file: GuardFile,
+	scanner: DocScanner,
+	counts: Counts,
+	policy: GuardPolicy,
+): Promise<FileDecision> {
+	let outcome: Awaited<ReturnType<typeof sanitizeOoxml>>;
+	try {
+		outcome = await sanitizeOoxml(file.bytes, scanner);
+	} catch (error) {
+		if (error instanceof DocumentRefused) return refuse(policy, error.reasons);
+		if (error instanceof DocumentUnreadable) return unscanned(policy, [error.reason]);
+		throw error;
+	}
+	const signals = signalReasons(policy, outcome.signals);
+	if (signals.length && policy.signalAction === "block")
+		return block(signals, outcome.findingCounts);
+	const reasons = [...(outcome.findings > 0 ? ["SENSITIVE_DATA"] : []), ...signals];
+	if (!outcome.bytes) return { action: "allow", counts: outcome.findingCounts, reasons };
+	return {
+		action: "mask",
+		masked: { name: file.name, type: file.type, bytes: outcome.bytes },
+		counts,
+		reasons,
+	};
+}
+
+/**
+ * PDFs are scanned but never rewritten: sensitive data blocks the upload (the user is told to
+ * paste the text instead, where it can be masked); monitor mode records it.
+ */
+async function handlePdf(
+	file: GuardFile,
+	scanner: DocScanner,
+	policy: GuardPolicy,
+): Promise<FileDecision> {
+	let extraction: Awaited<ReturnType<typeof extractPdfText>>;
+	try {
+		extraction = await extractPdfText(file.bytes, () => scanner.checkDeadline());
+	} catch (error) {
+		if (error instanceof PdfUnreadable) return unscanned(policy, [error.reason]);
+		throw error;
+	}
+	const scan = await scanner.scan(extraction.segments.map((value) => ({ context: "", value })));
+	const findingCounts: Counts = {};
+	for (const findings of scan.perSegment) mergeCounts(findingCounts, countFindings(findings));
+	const signals = signalReasons(policy, scan.signals);
+	if (signals.length && policy.signalAction === "block") return block(signals, findingCounts);
+	if (Object.keys(findingCounts).length > 0)
+		return refuse(policy, ["SENSITIVE_DATA_IN_PDF", ...signals], findingCounts);
+	if (!extraction.complete) return unscanned(policy, [...extraction.reasons, ...signals]);
+	return { action: "allow", counts: {}, reasons: signals };
+}
+
+async function handleDocument(
+	file: GuardFile,
+	kind: DocumentKind,
+	deps: SanitizeDeps,
+): Promise<FileDecision> {
+	const { policy } = deps;
+	const handling = policy.documentHandling ?? "mask";
+	if (handling === "allow") return unscanned(policy);
+	if (handling !== "mask") return block(["DOCUMENT_BLOCKED_BY_POLICY"]);
+	const counts: Counts = {};
+	const ctx: Ctx = {
+		engine: deps.engine,
+		vault: deps.vault,
+		enabled: new Set(policy.enabledEntities),
+	};
+	const scanner = documentScanner(ctx, counts, Date.now() + DOCUMENT_SCAN_BUDGET_MS);
+	return kind === "pdf"
+		? handlePdf(file, scanner, policy)
+		: handleOoxml(file, scanner, counts, policy);
+}
+
+/** True for uploads handled as documents (OOXML/PDF); used by the content script's policy gate. */
+export function isDocumentFile(file: Pick<GuardFile, "name" | "type">): boolean {
+	const ext = extensionOf(baseName(file.name));
+	return (
+		OOXML_EXTENSIONS.has(ext) ||
+		ext === "pdf" ||
+		/^application\/pdf\s*(?:;|$)/i.test(file.type) ||
+		OOXML_MIME.test(file.type)
+	);
+}
+
 /** MIME type of a re-encoded (UTF-8) copy: a declared charset parameter becomes utf-8. */
 function utf8MimeType(type: string): string {
 	return type.replace(/(;\s*charset\s*=\s*)(?:"[^"]*"|[^;\s]*)/i, "$1utf-8");
@@ -1034,6 +1240,9 @@ export async function sanitizeFile(file: GuardFile, deps: SanitizeDeps): Promise
 		if (policy.fileHandling !== "scan") return block(["FILE_BLOCKED_BY_POLICY"]);
 		if (!(file.bytes.length <= policy.maxFileBytes)) return block(["FILE_TOO_LARGE"]);
 
+		const document = documentKind(file);
+		if (document) return await handleDocument(file, document, deps);
+
 		const decoded = decodeUpload(file);
 		if (decoded === UNDECODABLE_TEXT) {
 			// A text file that cannot be decoded must never pass through unscanned.
@@ -1042,11 +1251,7 @@ export async function sanitizeFile(file: GuardFile, deps: SanitizeDeps): Promise
 				: block(["TEXT_FILE_NOT_DECODABLE"]);
 		}
 		const kind = classify(file, decoded);
-		if (kind === "binary" || !decoded) {
-			return policy.mode === "block"
-				? block(["BINARY_FILE_UNSCANNABLE"])
-				: { action: "allow", counts: {}, reasons: ["BINARY_FILE_UNSCANNED"] };
-		}
+		if (kind === "binary" || !decoded) return unscanned(policy);
 		const ctx: Ctx = { engine, vault, enabled: new Set(policy.enabledEntities) };
 		const outcome = await runHandler(ctx, kind, decoded.text);
 		return decide(file, decoded, kind, outcome, policy);
@@ -1078,15 +1283,14 @@ function decide(
 	outcome: Outcome,
 	policy: GuardPolicy,
 ): FileDecision {
-	const signalReasons =
-		policy.signalAction === "off" ? [] : [...outcome.signals].sort().map((s) => `SIGNAL_${s}`);
-	if (signalReasons.length && policy.signalAction === "block")
-		return block(signalReasons, outcome.findingCounts);
+	const signals = signalReasons(policy, outcome.signals);
+	if (signals.length && policy.signalAction === "block")
+		return block(signals, outcome.findingCounts);
 
 	const reasons: string[] = [];
 	if (outcome.findings > 0) reasons.push("SENSITIVE_DATA");
 	if (outcome.formulaCells > 0) reasons.push("FORMULA_CELL");
-	reasons.push(...signalReasons);
+	reasons.push(...signals);
 	if (!outcome.changed) return { action: "allow", counts: outcome.findingCounts, reasons };
 	// Legacy code-page input is re-encoded as UTF-8; delimited files get a BOM so that
 	// spreadsheet tools do not read the new encoding as the ANSI code page.

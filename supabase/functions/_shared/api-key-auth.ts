@@ -21,8 +21,9 @@ type DatabaseClient = {
  * Key types. `tenant` is the write-capable tenant credential used by the
  * endpoint connectors. `ingest:browser_guard` is the Browser Guard telemetry
  * key (supabase/migrations/20260925000061_browser_guard_ingest_keys.sql): it
- * is only honoured by /v1/ingest, for `privacy_scan` events from the
- * `browser_guard` runtime, up to its installation limit.
+ * is only honoured by /v1/ingest, for counts-only `privacy_scan` and
+ * `shadow_ai_usage` events from the `browser_guard` runtime, up to its
+ * installation limit.
  */
 export const API_KEY_SCOPES = ["tenant", "ingest:browser_guard"] as const;
 export type ApiKeyScope = (typeof API_KEY_SCOPES)[number];

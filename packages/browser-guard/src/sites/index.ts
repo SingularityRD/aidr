@@ -1,7 +1,8 @@
-import type { SiteAdapter, SiteId } from "../types";
+import type { CustomSiteConfig, SiteAdapter, SiteId } from "../types";
 import { chatgpt } from "./chatgpt";
 import { claude } from "./claude";
 import { copilot } from "./copilot";
+import { customAdapter, customSiteForHost } from "./custom";
 import { deepseek } from "./deepseek";
 import { gemini } from "./gemini";
 import { GENERIC_ADAPTER } from "./generic";
@@ -23,9 +24,13 @@ export const ADAPTERS: readonly SiteAdapter[] = Object.freeze([
 	grok,
 ]);
 
-/** Every SiteId, supported sites first and "other" last (for policy/UI lists). */
+/**
+ * Every SiteId, supported sites first, then "custom" (administrator-configured internal
+ * portals) and "other" last (for policy/UI lists).
+ */
 export const SITE_IDS: readonly SiteId[] = Object.freeze([
 	...ADAPTERS.map((a) => a.id),
+	"custom",
 	GENERIC_ADAPTER.id,
 ]);
 
@@ -43,9 +48,14 @@ const MAX_URL_LENGTH = 8192;
 /**
  * Resolves the adapter for a page URL. Only an exact https host from an
  * adapter's `hosts` list matches: no suffix matching, no explicit port, no
- * credentials, no other scheme. Anything else gets the generic adapter.
+ * credentials, no other scheme. A built-in site always wins; otherwise an exact host
+ * of an administrator-configured custom site (policy `customSites`) yields that site's
+ * adapter (id "custom"). Anything else gets the generic adapter.
  */
-export function adapterForUrl(url: string): SiteAdapter {
+export function adapterForUrl(
+	url: string,
+	customSites: readonly CustomSiteConfig[] = [],
+): SiteAdapter {
 	if (typeof url !== "string" || url.length > MAX_URL_LENGTH) return GENERIC_ADAPTER;
 	let parsed: URL;
 	try {
@@ -56,7 +66,10 @@ export function adapterForUrl(url: string): SiteAdapter {
 	if (parsed.protocol !== "https:" || parsed.port || parsed.username || parsed.password) {
 		return GENERIC_ADAPTER;
 	}
-	return BY_HOST.get(parsed.hostname) ?? GENERIC_ADAPTER;
+	const builtIn = BY_HOST.get(parsed.hostname);
+	if (builtIn) return builtIn;
+	const custom = customSiteForHost(parsed.hostname, customSites);
+	return custom ? customAdapter(custom) : GENERIC_ADAPTER;
 }
 
 /** Adapter for a SiteId; "other" (or an unknown id) yields the generic adapter. */

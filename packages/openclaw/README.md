@@ -26,6 +26,38 @@ Replace `VERSION` with the version in the approved release record.
 - Inspects tool output and outbound model responses with a bounded 256 KiB text budget
 - Replaces risky persisted tool output and risky outbound text with a safe, non-echoing notice
 - Blocks `ask` verdicts until a human approves them out of band (see below)
+- Inspects the user's prompt before the model reads it (prompt protection, see below)
+
+## Prompt protection
+
+The `before_agent_run` gate inspects the current user input after prompt construction
+and before model submission (`prompt_protection` in `~/.singularity-aidr/config.json`:
+secrets `block`, personal data such as TC Kimlik, IBAN, email and phone numbers `warn`
+by default; a provisioned tenant DLP policy also applies and blocks on any action other
+than `allow`).
+
+- **block**: returns `{ outcome: "block", reason, message, category: "prompt_protection" }`.
+  OpenClaw keeps only the replacement `message` (which names the kind of data, never the
+  value) in the transcript; the internal `reason` is a static code.
+- **warn**: the gate passes. `before_prompt_build`, which runs before the gate on the
+  same request, prepends a notice asking the model not to repeat or copy the data and
+  to tell the user. It inspects `currentUserMessage` when the host supplies it.
+- The gate always returns an explicit decision. A prompt that cannot be inspected, or
+  whose inspection is still running after 10 s (`AIDR_PROMPT_INSPECTION_DEADLINE_MS`,
+  100–13000; the host fails closed at 15 s), is blocked while secrets are in `block` mode.
+  If the plugin fails to initialise, prompts get the same uninspected-prompt policy.
+- Audit entries use `tool_name: "before_agent_run"` and record kinds and counts only.
+
+Boundaries: OpenClaw implements `before_agent_run` in its embedded and CLI runners only;
+it is not an input gate for the Codex or Copilot harnesses, and a host without the hook
+ignores the registration. A non-bundled plugin needs conversation access for both
+hooks:
+
+```json
+{ "plugins": { "entries": { "aidr-openclaw": { "hooks": { "allowConversationAccess": true } } } } }
+```
+
+No real-host acceptance of the prompt gate has been recorded.
 
 ## Output protection boundaries
 
@@ -120,6 +152,17 @@ are:
 2. **Permanently allowlist the exact artifact** with `aidr allowlist add
    <url|command|file_path> <value>` (also interactive). Any later tool call with
    that exact artifact evaluates to `allowlisted`.
+3. **Managed mode: dashboard approval.** On an enrolled installation every `ask`
+   is also submitted to the AIDR dashboard, and the block reason says
+   `Approval requested in the AIDR dashboard: <request_id>`. An administrator — a
+   different, MFA-authenticated person on another device — approves it there, and
+   the next identical call is released once by a control-plane-signed token that
+   is verified against the approval keys in the signed entitlement and whose nonce
+   is spent locally. The agent cannot mint, re-bind or replay such a token. With
+   `operator_approvals.dashboard_only: true` this is the only channel (path 1 is
+   then ignored). See
+   [dashboard approvals](../../docs/configuration.md#managed-mode-dashboard-approvals).
+   In local mode nothing is sent anywhere and only paths 1 and 2 apply.
 
 ### Honest limitation
 

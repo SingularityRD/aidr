@@ -17,6 +17,13 @@ import {
 	parsePrivacySummary,
 	siteLabel,
 } from "../privacy-guard";
+import {
+	categoryLabel,
+	parseShadowAiSummary,
+	type ShadowAiSummary,
+	serviceName,
+	shadowAiPolicySnippet,
+} from "../shadow-ai";
 
 const RECENT_LIMIT = 25;
 const REFRESH_MS = 30_000;
@@ -236,6 +243,8 @@ function TenantPrivacyGuardPage({ tenantId }: { tenantId: string }) {
 
 			<SeriesCard summary={summary} loaded={loaded} windowDays={windowDays} />
 
+			<ShadowAiPanel tenantId={tenantId} windowDays={windowDays} refreshTick={refreshTick} />
+
 			<section className="card" aria-labelledby="privacy-recent-heading">
 				<div className="panel-head">
 					<h2 id="privacy-recent-heading">Recent privacy events</h2>
@@ -434,6 +443,260 @@ function SeriesCard({
 				</>
 			)}
 		</section>
+	);
+}
+
+const SHADOW_UNAVAILABLE = "Shadow AI summary is unavailable.";
+const TOP_SERVICES = 12;
+
+async function readShadowAi(
+	tenantId: string,
+	windowDays: PrivacyWindow,
+): Promise<Read<ShadowAiSummary>> {
+	try {
+		const { data, error } = await supabase.rpc("shadow_ai_summary", {
+			p_tenant_id: tenantId,
+			p_days: windowDays,
+		});
+		if (error) throw new Error(readErrorMessage(error, SHADOW_UNAVAILABLE));
+		return { ok: true, value: parseShadowAiSummary(data, windowDays) };
+	} catch (cause) {
+		return { ok: false, error: readErrorMessage(cause, SHADOW_UNAVAILABLE) };
+	}
+}
+
+/**
+ * Shadow AI: which catalogued AI services managed browsers opened, sanctioned vs not,
+ * and navigations the policy blocked. Loads on its own so an older control plane
+ * without `shadow_ai_summary` only greys out this panel.
+ */
+function ShadowAiPanel({
+	tenantId,
+	windowDays,
+	refreshTick,
+}: {
+	tenantId: string;
+	windowDays: PrivacyWindow;
+	refreshTick: number;
+}) {
+	const [read, setRead] = useState<Read<ShadowAiSummary> | null>(null);
+	const [policyMode, setPolicyMode] = useState<"monitor" | "block-unsanctioned">("monitor");
+
+	useEffect(() => {
+		let cancelled = false;
+		const load = async () => {
+			const next = await readShadowAi(tenantId, windowDays);
+			if (!cancelled) setRead(next);
+		};
+		setRead(null);
+		void load();
+		const timer = setInterval(() => void load(), REFRESH_MS);
+		return () => {
+			cancelled = true;
+			clearInterval(timer);
+		};
+		// refreshTick re-runs the read on demand.
+	}, [tenantId, windowDays, refreshTick]);
+
+	const summary = read?.ok ? read.value : null;
+	const totals = summary?.totals;
+	const sanctionedShare =
+		totals && totals.visits > 0
+			? Math.round((totals.sanctionedVisits / totals.visits) * 100)
+			: null;
+	const snippet = shadowAiPolicySnippet({
+		mode: policyMode,
+		sanctioned: (summary?.byService ?? [])
+			.filter((row) => row.sanctioned)
+			.map((row) => row.serviceId),
+	});
+
+	return (
+		<section className="card" aria-labelledby="shadow-ai-heading">
+			<div className="panel-head">
+				<h2 id="shadow-ai-heading">Shadow AI</h2>
+			</div>
+			<p className="muted small">
+				Generative-AI services your managed browsers opened, whether your policy sanctions them, and
+				navigations the Shadow AI policy blocked. Browsers report a catalog service id and counts
+				per day only: never page addresses, titles or content.
+			</p>
+			{read && !read.ok ? (
+				<p className="muted" role="status">
+					{read.error}
+				</p>
+			) : null}
+			<div className="grid" role="group" aria-label="Shadow AI counters">
+				<div className="card stat-card">
+					<div className="stat-label">AI service visits</div>
+					<div className="stat-value">{numberText(totals?.visits)}</div>
+					<div className="stat-hint">
+						{totals ? `${totals.services.toLocaleString()} service(s) · ${windowDays} days` : "—"}
+					</div>
+				</div>
+				<div className="card stat-card">
+					<div className="stat-label">Unsanctioned visits</div>
+					<div className="stat-value">{numberText(totals?.unsanctionedVisits)}</div>
+					<div className="stat-hint">
+						{sanctionedShare === null
+							? "no visits yet"
+							: `${sanctionedShare}% of visits sanctioned`}
+					</div>
+				</div>
+				<div className="card stat-card">
+					<div className="stat-label">Blocked attempts</div>
+					<div className="stat-value">{numberText(totals?.blockedAttempts)}</div>
+					<div className="stat-hint">navigations refused by policy</div>
+				</div>
+			</div>
+
+			<h3 style={{ marginTop: 16 }}>Top AI services</h3>
+			{summary === null ? (
+				<p className="muted">{read ? "Unavailable right now." : "Loading…"}</p>
+			) : (
+				<ShadowAiServicesTable summary={summary} />
+			)}
+
+			{summary ? <ShadowAiTrend summary={summary} /> : null}
+
+			<details style={{ marginTop: 12 }}>
+				<summary className="small">Configure Shadow AI and internal AI sites</summary>
+				<p className="muted small">
+					Add these keys to the Browser Guard managed policy. <code>sanctioned</code> lists the
+					catalog ids you approve (prefilled from the services reported as sanctioned);
+					<code> block-unsanctioned</code> blocks every other catalogued AI service. Each user
+					grants the extension access to the AI service sites and internal hosts once, on its
+					options page.
+				</p>
+				<div className="row" style={{ alignItems: "center" }}>
+					<label className="label" htmlFor="shadow-ai-mode">
+						Shadow AI mode
+					</label>
+					<select
+						id="shadow-ai-mode"
+						className="input"
+						style={{ maxWidth: 220 }}
+						value={policyMode}
+						onChange={(event) =>
+							setPolicyMode(
+								event.target.value === "block-unsanctioned" ? "block-unsanctioned" : "monitor",
+							)
+						}
+					>
+						<option value="monitor">Monitor (count only)</option>
+						<option value="block-unsanctioned">Block unsanctioned</option>
+					</select>
+				</div>
+				<pre
+					className="mono small"
+					aria-label="Shadow AI policy JSON"
+					style={{ overflowX: "auto" }}
+				>
+					{snippet}
+				</pre>
+			</details>
+		</section>
+	);
+}
+
+function ShadowAiServicesTable({ summary }: { summary: ShadowAiSummary }) {
+	const services = summary.byService.slice(0, TOP_SERVICES);
+	if (services.length === 0) {
+		return (
+			<p className="muted">
+				No Shadow AI activity in this window. Set <code>shadowAi</code> in the Browser Guard managed
+				policy (monitor or block-unsanctioned) to start reporting.
+			</p>
+		);
+	}
+	const max = Math.max(1, ...services.map((row) => row.visits + row.blocked));
+	return (
+		<div className="table-wrap">
+			<table className="table" aria-label="Top AI services">
+				<thead>
+					<tr>
+						<th>AI service</th>
+						<th>Category</th>
+						<th>Status</th>
+						<th>Visits</th>
+						<th>Blocked</th>
+						<th aria-hidden="true" />
+					</tr>
+				</thead>
+				<tbody>
+					{services.map((row) => (
+						<tr key={row.serviceId}>
+							<td>{serviceName(row.serviceId)}</td>
+							<td>{categoryLabel(row.category)}</td>
+							<td>
+								<span className={row.sanctioned ? "badge badge-allow" : "badge badge-ask"}>
+									{row.sanctioned ? "sanctioned" : "unsanctioned"}
+								</span>
+							</td>
+							<td>{row.visits.toLocaleString()}</td>
+							<td>{row.blocked.toLocaleString()}</td>
+							<td style={{ minWidth: 120 }}>
+								<div className="usage-bar" aria-hidden="true">
+									<div
+										className="usage-fill"
+										style={{ width: `${((row.visits + row.blocked) / max) * 100}%` }}
+									/>
+								</div>
+							</td>
+						</tr>
+					))}
+				</tbody>
+			</table>
+		</div>
+	);
+}
+
+function ShadowAiTrend({ summary }: { summary: ShadowAiSummary }) {
+	const { series, totals, windowDays } = summary;
+	const max = Math.max(1, ...series.map((day) => day.visits + day.blocked));
+	return (
+		<>
+			<h3 style={{ marginTop: 16 }}>Daily trend</h3>
+			<div
+				className="privacy-series"
+				role="img"
+				aria-label={`${totals.visits} AI service visits and ${totals.blockedAttempts} blocked attempts over ${windowDays} days`}
+			>
+				{series.map((day) => (
+					<div
+						key={day.day}
+						className="privacy-series-day"
+						title={`${day.day}: ${day.visits} visits (${day.unsanctionedVisits} unsanctioned), ${day.blocked} blocked`}
+					>
+						<div
+							className="privacy-series-stack"
+							style={{ height: `${((day.visits + day.blocked) / max) * 100}%` }}
+						>
+							<span className="privacy-series-blocked" style={{ flexGrow: day.blocked }} />
+							<span
+								className="privacy-series-warned"
+								style={{ flexGrow: day.unsanctionedVisits }}
+							/>
+							<span
+								className="privacy-series-masked"
+								style={{ flexGrow: Math.max(0, day.visits - day.unsanctionedVisits) }}
+							/>
+						</div>
+					</div>
+				))}
+			</div>
+			<div className="row small muted" style={{ marginTop: 8 }}>
+				<span>
+					<span className="privacy-key privacy-series-masked" /> sanctioned visits
+				</span>
+				<span>
+					<span className="privacy-key privacy-series-warned" /> unsanctioned visits
+				</span>
+				<span>
+					<span className="privacy-key privacy-series-blocked" /> blocked
+				</span>
+			</div>
+		</>
 	);
 }
 
