@@ -34,6 +34,7 @@ Requires Node.js >= 22.12.0 and pnpm >= 9.
 | `pnpm test:e2e:opencode` | OpenCode E2E tests only |
 | `pnpm test:e2e:cursor` | Cursor extension E2E tests only |
 | `pnpm test:e2e:vscode` | VS Code extension E2E tests only |
+| `pnpm test:e2e:real-host` | Real Claude Code / Codex / OpenCode / OpenClaw binaries against a scripted mock model (no API keys) |
 | `pnpm build:sea` | Build standalone SEA binaries |
 | `pnpm lint` | Lint with Biome |
 | `pnpm lint:fix` | Lint + auto-fix |
@@ -53,8 +54,49 @@ Requires Node.js >= 22.12.0 and pnpm >= 9.
 | E2E (OpenCode) | OpenCode CLI smoke test | `packages/opencode/src/__tests__/e2e.test.ts` | OpenCode CLI executable |
 | E2E (Cursor extension) | Singularity AIDR extension in Cursor Extension Host | `packages/extension/src/__tests__/e2e.test.ts` | Installed Cursor executable (`agent` CLI required for headless Cursor-agent sub-suite) |
 | E2E (VS Code extension) | Singularity AIDR extension in VS Code Extension Host | `packages/extension/src/__tests__/e2e.test.ts` | Installed VS Code executable |
+| E2E (real host, mock model) | Real host binaries with AIDR installed in a disposable HOME, tool calls scripted by a loopback mock model | `scripts/real-host-e2e/` | `claude` on PATH; network on first run to install the pinned Codex, OpenCode, OpenClaw and Node 24 |
 
-`pnpm test` runs unit and integration tests. E2E is excluded — run separately with `pnpm test:e2e` (all), `pnpm test:e2e:claude`, `pnpm test:e2e:openclaw`, `pnpm test:e2e:opencode`, `pnpm test:e2e:cursor`, or `pnpm test:e2e:vscode`.
+`pnpm test` runs unit and integration tests. E2E is excluded — run separately with `pnpm test:e2e` (all), `pnpm test:e2e:claude`, `pnpm test:e2e:openclaw`, `pnpm test:e2e:opencode`, `pnpm test:e2e:cursor`, `pnpm test:e2e:vscode`, or `pnpm test:e2e:real-host`.
+
+### Real-host E2E with a scripted mock model
+
+`pnpm test:e2e:real-host` (scripts/real-host-e2e/) runs the **real, unmodified host
+programs** — Claude Code, Codex CLI 0.141.0, OpenCode 1.18.32 and OpenClaw 2026.9.6
+(the last three installed, pinned, into `.ci-local/real-host` on first run, plus a
+sha256-verified Node.js 24 for OpenClaw) — with AIDR installed from this checkout's
+`pnpm build` output in a disposable HOME. Only the model is replaced: a loopback server
+(`mock-llm-server.mjs`) speaks the Anthropic Messages, OpenAI Responses and Chat
+Completions streaming protocols and answers each turn with a predetermined tool call,
+then a final text. No API key, account or outbound model traffic is involved, and the
+host processes get a minimal environment (no proxy, no credentials, no operator HOME).
+
+Each scenario is one non-interactive turn, and the assertions read what the host did,
+not what AIDR returned:
+
+| Scenario | Asserted on the host |
+|---|---|
+| `benign-tool-executes` | the command ran (marker file), its output went back to the model, the connector receipt says `allow` |
+| `malicious-tool-blocked` | `curl … \| sh` to a TEST-NET address never ran, AIDR's denial went back to the model, the audit log has the `CLT-CMD-001` deny |
+| `malicious-tool-runs-without-aidr` | the same call **does** run with AIDR absent (attribution control; also the `disabled-hook` observation) |
+| `credential-canary-read-blocked` | a private-key canary never appears in any model request |
+| `secret-prompt-blocked` | a prompt carrying a token never reaches the model; the audit entry has kinds only |
+| `secret-tool-output-quarantined` | a token in tool output reaches the model only as AIDR's quarantine notice (Claude Code, OpenCode; recorded as an observation for OpenClaw) |
+| `internal-error-fails-closed` | with AIDR's own integrity check failing (`AIDR_COMMERCIAL=1` against the unsigned build) nothing runs |
+| `tool-hook-deadline-fails-closed` | Claude Code: the connector's inspection deadline at its 100 ms floor denies the call |
+| `crashed-hook-observed` | Claude Code, Codex: a hook process SIGKILLed before its verdict — the host's policy is recorded (both fail open) |
+
+Each host writes one record (default `.release-evidence/real-host/<connector>.json`).
+`--evidence-dir docs/evidence/real-host` refreshes the committed records that
+`deploy/native/interception-matrix.json` cites; the support matrix pins their sha256,
+so update `acceptanceEvidence` there in the same change. Useful flags: `--host
+claude-code,codex`, `--scenario <id>`, `--hosts-dir <dir>` (or `AIDR_REAL_HOST_DIR`),
+`--keep` (keep the sandboxes). A selected host that cannot be found fails the run.
+
+What this tier does **not** prove: real model behaviour or detection breadth (the
+tool call is scripted), a signed commercial artefact (it loads the development
+build), interactive approval dialogs, or any platform other than the one it ran on.
+Cursor and VS Code are not covered (their installers could not be fetched in the
+environment the records were produced in).
 
 The isolated core coverage gate currently prevents regression below 83% lines, 80% statements, 72% branches, and 84% functions. On the current tree the isolated run measures about 83.7% lines, 80.2% statements, 72.6% branches, and 84.7% functions; raise the enforced floors as coverage improves rather than lowering or bypassing the gate.
 

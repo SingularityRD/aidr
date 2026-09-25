@@ -28,6 +28,7 @@ pnpm test:e2e:openclaw                       # OpenClaw E2E only (requires gatew
 pnpm test:e2e:cursor                         # Cursor extension E2E only
 pnpm test:e2e:vscode                         # VS Code extension E2E only
 pnpm test:e2e:browser-guard                  # Browser Guard real-browser E2E (Playwright + fixtures)
+pnpm test:e2e:real-host                      # Real Claude Code/Codex/OpenCode/OpenClaw binaries vs a scripted mock model (no API keys)
 pnpm test:privacy                            # Build @singularityrd/aidr-privacy and run its node --test suites (not part of `pnpm test`)
 pnpm build                                  # Build all packages (tsc + esbuild bundle)
 pnpm build:browser-guard                    # Build the Browser Guard extension bundles
@@ -95,9 +96,10 @@ Readiness and defect tracking live in `READINESS_BACKLOG.json` (authoritative),
 | 3 — E2E (VS Code extension) | Singularity AIDR extension in VS Code Extension Host | `packages/extension/src/__tests__/e2e.test.ts` | Installed VS Code executable |
 | 1 — Unit (Browser Guard) | Engine, vault, sites, editor, content, background | `packages/browser-guard/src/__tests__/*.test.ts` (jsdom where marked) | pnpm dev deps |
 | 3 — E2E (Browser Guard) | Built extension in Chromium against hermetic AI-site fixtures | `packages/browser-guard/e2e/` | `playwright-core` Chromium build |
+| 3 — E2E (real host, mock model) | Real, unmodified Claude Code / Codex / OpenCode / OpenClaw binaries with AIDR installed from the build in a disposable HOME; a scripted loopback mock model supplies the tool calls, so it proves host enforcement, not model behaviour | `scripts/real-host-e2e/` (records: `docs/evidence/real-host/`) | `claude` on PATH (or `AIDR_CLAUDE_PATH`); network on first run to install pinned Codex/OpenCode/OpenClaw (+ Node 24 for OpenClaw) into `.ci-local/real-host`; no API keys |
 | Privacy (node --test) | `@singularityrd/aidr-privacy` suites | `packages/privacy/tests/**/*.test.mjs` | Node >= 22.16; optional Python/libseccomp/OpenSSL (named skips) |
 
-`pnpm test` runs tiers 1–2 automatically (builds via `globalSetup` before running). Tier 3 (E2E) is excluded — run with `pnpm test:e2e` (all), `pnpm test:e2e:claude`, `pnpm test:e2e:openclaw`, `pnpm test:e2e:cursor`, `pnpm test:e2e:vscode`, or `pnpm test:e2e:browser-guard`. The privacy package is run separately with `pnpm test:privacy`.
+`pnpm test` runs tiers 1–2 automatically (builds via `globalSetup` before running). Tier 3 (E2E) is excluded — run with `pnpm test:e2e` (all), `pnpm test:e2e:claude`, `pnpm test:e2e:openclaw`, `pnpm test:e2e:cursor`, `pnpm test:e2e:vscode`, `pnpm test:e2e:browser-guard`, or `pnpm test:e2e:real-host` (local-only opt-in step `real-host-mock-model` in `pnpm ci:local`; `--evidence-dir docs/evidence/real-host` refreshes the records `deploy/native/interception-matrix.json` cites, whose sha256 is pinned in `deploy/native/support-matrix.json`). Cursor and VS Code are not covered by the real-host tier. The privacy package is run separately with `pnpm test:privacy`.
 
 **Claude Code E2E prerequisites:** `claude` CLI in PATH, valid `ANTHROPIC_API_KEY`, and AIDR must **not** be installed via the Claude Code marketplace (duplicate-plugin conflict with `--plugin-dir`).
 

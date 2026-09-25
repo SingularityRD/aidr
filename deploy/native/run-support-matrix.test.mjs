@@ -71,15 +71,16 @@ async function withTempDir(fn) {
 const committedMatrix = () => JSON.parse(readFileSync(SUPPORT_MATRIX_PATH, "utf8"));
 const sorted = (values) => [...values].sort();
 
-test("Claude support claim matches the disabled-hook host boundary", () => {
+test("Claude support claim matches the disabled-hook and crashed-hook host boundaries", () => {
 	const claude = committedMatrix().rows.find((row) => row.connector === "claude-code");
 	const interception = JSON.parse(readFileSync(join(HERE, "interception-matrix.json"), "utf8"));
-	const disabled = interception.failureConditions.find(
-		(row) => row.connector === "claude-code" && row.condition === "disabled-hook",
-	);
-	assert.equal(disabled?.outcome, "fail-open");
+	const outcome = (condition) =>
+		interception.failureConditions.find((row) => row.connector === "claude-code" && row.condition === condition)?.outcome;
+	assert.equal(outcome("disabled-hook"), "fail-open");
 	assert.match(claude?.tamperResistance ?? "", /disabled hook is fail-open/u);
-	assert.match(claude?.tamperResistance ?? "", /crashes before a verdict is unverified/u);
+	// Observed by the real-host tier (docs/evidence/real-host/claude-code.json).
+	assert.equal(outcome("crashed-hook"), "fail-open");
+	assert.match(claude?.tamperResistance ?? "", /killed before it writes a verdict is fail-open/u);
 });
 
 /**

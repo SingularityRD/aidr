@@ -67,14 +67,30 @@ test("the committed matrix is structurally valid, source-grounded and honestly o
 	});
 	assert.equal(report.ok, true, report.failureReasons.join("; "));
 	assert.deepEqual(report.failures, []);
-	// Validity and readiness are separate: nothing is enforced without a named
-	// real-host acceptance record, so the matrix stays NO-GO.
+	// Validity and readiness are separate: only rows backed by a real-host
+	// acceptance record (docs/evidence/real-host/) are enforced, the rest stay
+	// open, so the matrix stays NO-GO.
 	assert.equal(report.decision, "NO-GO");
 	assert.equal(report.counts.connectors, 6);
 	assert.equal(report.counts.rows, 36);
-	assert.equal(report.counts.byStatus.enforced, 0);
-	assert.equal(report.connectorsWithoutNamedAcceptance, 6);
-	assert.equal(report.openPointCount, 36);
+	assert.equal(report.counts.byStatus.enforced, 6);
+	assert.deepEqual(
+		committedMatrix()
+			.rows.filter((entry) => entry.status === "enforced")
+			.map((entry) => `${entry.connector}/${entry.point}`)
+			.sort(),
+		[
+			"claude-code/post-tool-output",
+			"claude-code/pre-tool",
+			"codex/pre-tool",
+			"openclaw/pre-tool",
+			"opencode/post-tool-output",
+			"opencode/pre-tool",
+		],
+	);
+	// Cursor and VS Code have no real-host record.
+	assert.equal(report.connectorsWithoutNamedAcceptance, 2);
+	assert.equal(report.openPointCount, 30);
 	assert.equal(report.matrixSha256.length, 64);
 });
 
@@ -220,12 +236,83 @@ test("an unsupported row with a reason passes, and one without a reason fails", 
 test("marking a row enforced without a named real-host acceptance record fails the gate", () => {
 	const report = verify(
 		mutate((matrix) => {
-			row(matrix, "claude-code", "pre-tool").status = "enforced";
+			row(matrix, "cursor", "pre-tool").status = "enforced";
 		}),
 	);
 	assert.equal(report.ok, false);
 	assert.ok(codes(report).includes("ENFORCED_WITHOUT_ACCEPTANCE_RECORD"), report.failureReasons.join("; "));
 	assert.ok(codes(report).includes("ENFORCED_WITHOUT_SUPPORT_MATRIX_ACCEPTANCE"), report.failureReasons.join("; "));
+});
+
+test("an enforced row loses its status when its acceptance record is removed", () => {
+	const report = verify(
+		mutate((matrix) => {
+			const target = row(matrix, "claude-code", "pre-tool");
+			target.evidence = target.evidence.filter((entry) => entry.kind !== "acceptance-record");
+		}),
+	);
+	assert.equal(report.ok, false);
+	assert.deepEqual(codes(report), ["ENFORCED_WITHOUT_ACCEPTANCE_RECORD"]);
+});
+
+test("an acceptance record must live in the shared real-host evidence directory", () => {
+	const report = verify(
+		mutate((matrix) => {
+			const record = row(matrix, "codex", "pre-tool").evidence.find((entry) => entry.kind === "acceptance-record");
+			record.path = "docs/evidence/model-interception-live.json";
+			record.contains = ["codex-cli"];
+		}),
+	);
+	assert.equal(report.ok, false);
+	assert.ok(codes(report).includes("EVIDENCE_OUTSIDE_CONNECTOR_ROOT"), report.failureReasons.join("; "));
+});
+
+test("another connector's acceptance record cannot prove a row", () => {
+	const report = verify(
+		mutate((matrix) => {
+			const record = row(matrix, "claude-code", "pre-tool").evidence.find((entry) => entry.kind === "acceptance-record");
+			record.path = "docs/evidence/real-host/codex.json";
+			record.contains = ['"pre-tool": "passed"'];
+		}),
+	);
+	assert.equal(report.ok, false);
+	assert.ok(codes(report).includes("ACCEPTANCE_RECORD_CONNECTOR_MISMATCH"), report.failureReasons.join("; "));
+});
+
+test("an acceptance record that does not prove the cited point fails the gate", () => {
+	const report = verify(
+		mutate((matrix) => {
+			// The OpenClaw record observed a post-tool-output gap; it cannot back an enforced row.
+			const target = row(matrix, "openclaw", "post-tool-output");
+			target.status = "enforced";
+			target.evidence.push({
+				kind: "acceptance-record",
+				path: "docs/evidence/real-host/openclaw.json",
+				contains: ['"connector": "openclaw"'],
+			});
+		}),
+	);
+	assert.equal(report.ok, false);
+	assert.ok(codes(report).includes("ACCEPTANCE_RECORD_DOES_NOT_PROVE"), report.failureReasons.join("; "));
+});
+
+test("a failure condition must match the outcome its acceptance record observed", () => {
+	const report = verify(
+		mutate((matrix) => {
+			const crashed = matrix.failureConditions.find(
+				(entry) => entry.connector === "claude-code" && entry.condition === "crashed-hook",
+			);
+			assert.equal(crashed.outcome, "fail-open");
+			crashed.outcome = "fail-closed";
+			crashed.evidence.push({
+				kind: "failure-policy",
+				path: "packages/claude-code/src/pre-tool-use.ts",
+				contains: ["writeInspectionFailure"],
+			});
+		}),
+	);
+	assert.equal(report.ok, false);
+	assert.deepEqual(codes(report), ["ACCEPTANCE_RECORD_DOES_NOT_PROVE"]);
 });
 
 test("a point declared unsupported while the support matrix sells it fails the gate", () => {
@@ -279,7 +366,7 @@ test("the CLI reports the committed matrix and exits 0 while keeping readiness N
 	assert.equal(result.status, 0, result.stderr);
 	assert.match(result.stdout, /validity PASS {2}readiness NO-GO/u);
 	assert.match(result.stdout, /failures 0/u);
-	assert.match(result.stdout, /enforced=0/u);
+	assert.match(result.stdout, /enforced=6/u);
 });
 
 test("the CLI fails closed on a validation failure and on --require-enforced", () => {

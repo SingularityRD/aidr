@@ -69,3 +69,18 @@ coexist in the bundle. The URL reputation leg sends extracted full URLs (not
 hashes); package checks may send names, versions and hashes. This is not
 evidence that file contents are uploaded by those legs. Review the actual
 configuration and outbound traffic before dismissing the warning.
+
+## Real-host acceptance
+
+Recorded by `pnpm test:e2e:real-host` (see [development](../development.md#real-host-e2e-with-a-scripted-mock-model)): the real host binary on linux/x64, AIDR installed from the development build in a disposable HOME, and a scripted loopback mock model in place of a real one. It proves what the host does with AIDR's answer at each boundary, not how a real model behaves or how broad detection is. Record: [`docs/evidence/real-host/openclaw.json`](../evidence/real-host/openclaw.json)
+(OpenClaw 2026.9.6 embedded runner, `openclaw agent --local`, on Node.js 24.21.0).
+
+- `before_tool_call`: `curl … | sh` and a read of `~/.ssh/id_rsa` were refused with no side
+  effect; a benign exec ran; the same exec ran with the plugin absent.
+- `before_agent_run`: a prompt carrying a token never reached the model.
+- A plugin integrity failure blocked the prompt.
+- **Gap (observation):** a token in exec output reached the same-turn model without AIDR's
+  quarantine notice; only OpenClaw's own token masking hid the value. Same-turn tool-output
+  containment by AIDR is not proven.
+- `message_sending` is not exercised: `agent --local` does not deliver through a channel.
+  The gateway process is not exercised either.
