@@ -6,7 +6,7 @@
 
 export const GOVERNANCE_TENANT = "22222222-2222-4222-8222-222222222222";
 export const GOVERNANCE_OWNER = "11111111-1111-4111-8111-111111111111";
-export const GOVERNANCE_APPROVER = "33333333-3333-4333-8333-333333333333";
+const GOVERNANCE_APPROVER = "33333333-3333-4333-8333-333333333333";
 
 function trend(days: number) {
 	return Array.from({ length: days }, (_, index) => {
@@ -104,7 +104,11 @@ export function governanceSummaryFixture(days = 30): Record<string, unknown> {
 	};
 }
 
-/** The dashboard scorecard (owner/admin view with approver identities). */
+/**
+ * The dashboard scorecard (owner/admin view with approver identities).
+ * @public Loaded by packages/dashboard/src/__tests__/governance-page.test.tsx through a
+ * computed dynamic import (the dashboard tsconfig does not include supabase/).
+ */
 export function governanceScorecardFixture(days: 7 | 30 | 90 = 30): Record<string, unknown> {
 	const summary = governanceSummaryFixture(days);
 	return {
@@ -151,7 +155,10 @@ export function governanceScorecardFixture(days: 7 | 30 | 90 = 30): Record<strin
 	};
 }
 
-/** A scorecard for a workspace that has reported nothing yet. */
+/**
+ * A scorecard for a workspace that has reported nothing yet.
+ * @public Loaded by governance-page.test.tsx through a computed dynamic import.
+ */
 export function emptyGovernanceScorecardFixture(): Record<string, unknown> {
 	const days = 30;
 	return {

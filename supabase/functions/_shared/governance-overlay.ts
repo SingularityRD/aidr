@@ -9,7 +9,7 @@
 // lists on top of the published policy.
 
 const MCP_ID = /^[A-Za-z0-9][A-Za-z0-9._:/_-]{0,255}$/;
-export const GOVERNANCE_OVERLAY_MAX_ENTRIES = 500;
+const GOVERNANCE_OVERLAY_MAX_ENTRIES = 500;
 
 export interface GovernanceOverlay {
 	mcp_deny_servers: string[];

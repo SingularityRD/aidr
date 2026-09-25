@@ -561,7 +561,7 @@ function isExfilSink(url: string, host: string): boolean {
  * Whether a URL itself carries a payload: a long query/fragment, or a long
  * unbroken token in it. Documentation links (`?q=foo`) do not; `?k=<base64>` does.
  */
-export function urlCarriesData(url: string): boolean {
+function urlCarriesData(url: string): boolean {
 	try {
 		const parsed = new URL(url);
 		const tail = `${parsed.search}${parsed.hash}`;
@@ -1356,7 +1356,7 @@ function commandText(input: Record<string, unknown>, artifacts: readonly Artifac
 }
 
 /** `mcp__<server>__<tool>` → `{ server, tool }`; the host's generic `MCP` tool reads its input. */
-export function mcpToolIdentity(
+function mcpToolIdentity(
 	toolName: string,
 	toolInput: Record<string, unknown>,
 ): { server: string; tool: string } | null {
@@ -1503,6 +1503,3 @@ export function capabilityLabel(cap: FlowCapability): string {
 	if (cap === "untrusted_content") return "untrusted content";
 	return "external communication";
 }
-
-/** Exposed for tests and docs: the built-in exfiltration sink list. */
-export const TOXIC_FLOW_EXFIL_SINKS: readonly string[] = EXFIL_SINK_DOMAINS;

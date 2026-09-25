@@ -19,16 +19,15 @@
 // Only WebCrypto is used, so the same module runs in Deno and in the vitest
 // contract suites.
 
-export const APPROVAL_TOKEN_VERSION = 1;
+const APPROVAL_TOKEN_VERSION = 1;
 export const APPROVAL_TOKEN_TTL_MS = 15 * 60_000;
 export const APPROVAL_REQUEST_MAX_TTL_MS = 30 * 60_000;
-export const APPROVAL_WRAP_ALG = "aes-256-gcm+hkdf-sha256";
-export const APPROVAL_WRAP_KEY_VERSION = 1;
+const APPROVAL_WRAP_KEY_VERSION = 1;
 /** A retired key stays published while any token it signed can still be valid. */
 export const RETIRED_KEY_PUBLICATION_MS = APPROVAL_TOKEN_TTL_MS + 5 * 60_000;
 
-export const APPROVAL_KEY_ID = /^apk_[a-f0-9]{32}$/;
-export const APPROVAL_SPKI_B64 = /^MCowBQYDK2VwAyEA[A-Za-z0-9+/]{43}=$/;
+const APPROVAL_KEY_ID = /^apk_[a-f0-9]{32}$/;
+const APPROVAL_SPKI_B64 = /^MCowBQYDK2VwAyEA[A-Za-z0-9+/]{43}=$/;
 
 export type ApprovalDecision = "approve" | "deny";
 
@@ -72,25 +71,25 @@ function canonicalize(value: unknown): unknown {
 	return out;
 }
 
-export function canonicalJson(value: unknown): string {
+function canonicalJson(value: unknown): string {
 	return JSON.stringify(canonicalize(value));
 }
 
-export function bytesToBase64(bytes: Uint8Array): string {
+function bytesToBase64(bytes: Uint8Array): string {
 	let binary = "";
 	for (const byte of bytes) binary += String.fromCharCode(byte);
 	return btoa(binary);
 }
 
-export function base64ToBytes(value: string): Uint8Array {
+function base64ToBytes(value: string): Uint8Array {
 	return Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
 }
 
-export function base64UrlEncode(bytes: Uint8Array): string {
+function base64UrlEncode(bytes: Uint8Array): string {
 	return bytesToBase64(bytes).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
 }
 
-export function base64UrlDecode(value: string): Uint8Array {
+function base64UrlDecode(value: string): Uint8Array {
 	if (!/^[A-Za-z0-9_-]*$/.test(value) || value.length % 4 === 1) throw new Error("invalid_base64url");
 	const padded = value.replaceAll("-", "+").replaceAll("_", "/") + "=".repeat((4 - (value.length % 4)) % 4);
 	return base64ToBytes(padded);

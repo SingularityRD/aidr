@@ -20,9 +20,9 @@
 
 import type { PostureFindingRow } from "../ui/pages/PosturePage";
 
-export const AIBOM_SPEC_VERSION = "1.6";
+const AIBOM_SPEC_VERSION = "1.6";
 const SCHEMA_URL = "http://cyclonedx.org/schema/bom-1.6.schema.json";
-export const TENANT_REF = "tenant";
+const TENANT_REF = "tenant";
 
 /** The 14 MCP risk categories (`mcp-01`…`mcp-14`) reported by MCP inventory uploads. */
 export const MCP_RISK_CATEGORY_IDS: readonly string[] = Array.from(
@@ -45,7 +45,7 @@ export type FleetAgentRow = {
 
 type Property = { name: string; value: string };
 
-export type AiBomComponent = {
+type AiBomComponent = {
 	type: "application" | "library";
 	"bom-ref": string;
 	name: string;
@@ -54,7 +54,7 @@ export type AiBomComponent = {
 	properties: Property[];
 };
 
-export type AiBomService = {
+type AiBomService = {
 	"bom-ref": string;
 	name: string;
 	description: string;
@@ -62,7 +62,7 @@ export type AiBomService = {
 	properties: Property[];
 };
 
-export type AiBomVulnerability = {
+type AiBomVulnerability = {
 	"bom-ref": string;
 	id?: string;
 	source: { name: string };

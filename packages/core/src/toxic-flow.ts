@@ -67,7 +67,7 @@ import { nullLogger } from "./types.js";
 
 // ── Constants ──────────────────────────────────────────────────────
 
-export const TOXIC_FLOW_STATE_DIR = "~/.singularity-aidr/session-flow";
+const TOXIC_FLOW_STATE_DIR = "~/.singularity-aidr/session-flow";
 /** Most recent steps kept per session. */
 export const MAX_STEPS = 64;
 const MAX_DOWNLOADS = 32;
@@ -107,7 +107,7 @@ const CHAIN_PRECEDENCE: readonly ToxicFlowChain[] = [
 
 // ── Settings ───────────────────────────────────────────────────────
 
-export type ToxicFlowAction = "auto" | "ask" | "deny" | "monitor";
+type ToxicFlowAction = "auto" | "ask" | "deny" | "monitor";
 
 export interface ToxicFlowSettings {
 	enabled: boolean;
@@ -146,7 +146,7 @@ function effectiveAction(
 
 // ── State ──────────────────────────────────────────────────────────
 
-export interface FlowStep {
+interface FlowStep {
 	/** Epoch milliseconds. */
 	t: number;
 	cap: FlowCapability;
@@ -250,7 +250,7 @@ export function resolveFlowSessionKey(
 
 // ── Pure evaluation ────────────────────────────────────────────────
 
-export interface ToxicFlowFinding {
+interface ToxicFlowFinding {
 	chain: ToxicFlowChain;
 	threatId: string;
 	severity: "warning" | "critical";
@@ -529,7 +529,7 @@ export function recordFlowObservations(
 
 // ── Integrity-protected store ──────────────────────────────────────
 
-export class ToxicFlowStateUnavailableError extends Error {
+class ToxicFlowStateUnavailableError extends Error {
 	constructor(reason: string) {
 		super(reason);
 		this.name = "ToxicFlowStateUnavailableError";

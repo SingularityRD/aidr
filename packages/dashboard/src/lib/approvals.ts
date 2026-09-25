@@ -36,7 +36,7 @@ export type ApprovalResult<T> = { ok: true; value: T } | { ok: false; error: str
 
 export const APPROVAL_COLUMNS =
 	"id,iid,agent_id,agent_runtime,action_id,artifact_digest,tool,threat_ids,summary,status,decided_by,decided_at,reason,key_id,expires_at,created_at";
-export const APPROVAL_LIST_LIMIT = 200;
+const APPROVAL_LIST_LIMIT = 200;
 export const APPROVAL_REASON_MAX = 500;
 
 const STATUSES: readonly ApprovalStatus[] = ["pending", "approved", "denied", "expired"];

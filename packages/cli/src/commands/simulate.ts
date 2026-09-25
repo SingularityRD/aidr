@@ -55,11 +55,11 @@ const DECISION_RANK: Record<Decision, number> = { allow: 0, ask: 1, deny: 2 };
 export const simulateRuntime = { spawn: nodeSpawn };
 
 /** Non-detection outcome that must NOT be scored (see CLAUDE.md failure policy). */
-export interface SimAbort {
+interface SimAbort {
 	kind: "abort";
 	reason: string;
 }
-export interface SimDecision {
+interface SimDecision {
 	kind: "decision";
 	decision: Decision;
 }

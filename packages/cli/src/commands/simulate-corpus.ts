@@ -45,18 +45,15 @@ export const SIM_CATEGORIES: readonly SimCategory[] = [
 	"privacy",
 ] as const;
 
-/** How a fixture reaches the detector, mirroring the three connector surfaces. */
-export type SimChannel = "tool" | "prompt" | "output";
-
 /** A tool call as a connector would forward it (evaluated by the core evaluator). */
-export interface SimToolInput {
+interface SimToolInput {
 	readonly channel: "tool";
 	readonly toolName: string;
 	readonly toolInput: Record<string, unknown>;
 }
 
 /** A user prompt (`scanPrompt`) or a model/tool output (`scanModelOutput`). */
-export interface SimTextInput {
+interface SimTextInput {
 	readonly channel: "prompt" | "output";
 	readonly text: string;
 }
@@ -64,7 +61,7 @@ export interface SimTextInput {
 export type SimInput = SimToolInput | SimTextInput;
 
 /** The least severe verdict a defended product should return for a fixture. */
-export type SimExpectation = "ask" | "deny";
+type SimExpectation = "ask" | "deny";
 
 export interface SimCase {
 	readonly id: string;

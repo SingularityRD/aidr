@@ -10,7 +10,7 @@ import { createZip, readEntry, readZip } from "../../engine/office/zip.js";
 import { createVault } from "../../engine/vault.js";
 import type { DetectionEngine, FileDecision, GuardPolicy, PlaceholderVault } from "../../types.js";
 
-export const W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+const W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships";
 const OFFICE_DOC_REL =
 	"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument";
@@ -164,7 +164,7 @@ export type PdfObject =
 
 const latin1 = (s: string): Uint8Array => Uint8Array.from(s, (c) => c.charCodeAt(0) & 0xff);
 
-export async function zlib(data: Uint8Array): Promise<Uint8Array> {
+async function zlib(data: Uint8Array): Promise<Uint8Array> {
 	const stream = new Blob([new Uint8Array(data)])
 		.stream()
 		.pipeThrough(new CompressionStream("deflate"));
@@ -262,7 +262,7 @@ export function simplePdf(
 // Sanitising with the real engine and vault
 // ---------------------------------------------------------------------------------------------
 
-export function realEngine(): DetectionEngine {
+function realEngine(): DetectionEngine {
 	return createDetectionEngine({
 		enabledEntities: DEFAULT_POLICY.enabledEntities,
 		literals: [],
@@ -273,7 +273,7 @@ export function realEngine(): DetectionEngine {
 	});
 }
 
-export function realVault(): PlaceholderVault {
+function realVault(): PlaceholderVault {
 	return createVault({ neverRestore: DEFAULT_POLICY.neverRestore });
 }
 

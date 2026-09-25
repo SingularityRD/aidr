@@ -145,7 +145,7 @@ function infoTexts(doc: PdfDocument): string[] {
 // Entry point
 // ---------------------------------------------------------------------------------------------
 
-export function looksLikePdf(bytes: Uint8Array): boolean {
+function looksLikePdf(bytes: Uint8Array): boolean {
 	return binaryString(bytes.subarray(0, 1024)).includes("%PDF-");
 }
 

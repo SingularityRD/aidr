@@ -70,7 +70,7 @@ import {
 } from "./zip.js";
 
 /** Nesting levels of embedded packages that are opened (the outer document is level 0). */
-export const MAX_DEPTH = 2;
+const MAX_DEPTH = 2;
 
 /** The package must be blocked; `reasons` are stable codes. */
 export class DocumentRefused extends Error {
@@ -117,7 +117,7 @@ export const OOXML_EXTENSIONS: ReadonlySet<string> = new Set([
 
 const CFB_MAGIC = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1] as const;
 
-export function isCompoundFile(bytes: Uint8Array): boolean {
+function isCompoundFile(bytes: Uint8Array): boolean {
 	return CFB_MAGIC.every((b, i) => bytes[i] === b);
 }
 

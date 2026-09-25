@@ -24,11 +24,11 @@ function sortKeys(value: unknown): unknown {
 }
 
 /** Key-sorted, indented JSON; `null` for an absent document. */
-export function stableJson(value: unknown): string {
+function stableJson(value: unknown): string {
 	return value === undefined ? "null" : JSON.stringify(sortKeys(value), null, 2);
 }
 
-export function diffLines(before: string, after: string): DiffLine[] {
+function diffLines(before: string, after: string): DiffLine[] {
 	const a = before.split("\n");
 	const b = after.split("\n");
 	if (a.length > MAX_LINES || b.length > MAX_LINES) {

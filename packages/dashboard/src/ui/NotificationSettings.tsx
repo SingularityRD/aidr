@@ -37,7 +37,7 @@ const EVENT_LABELS: Record<string, string> = {
 };
 
 /** Operator copy for the service's machine-readable errors. */
-export function notificationErrorMessage(code: string): string {
+function notificationErrorMessage(code: string): string {
 	switch (code) {
 		case "mfa_required":
 			return "Multi-factor verification is required to change alert channels. Verify with your authenticator, then try again.";

@@ -291,7 +291,7 @@ export interface AcceptableUseNoticeInput {
 	url?: string;
 }
 
-export const ACCEPTABLE_USE_LIMITS = Object.freeze({
+const ACCEPTABLE_USE_LIMITS = Object.freeze({
 	versionMax: 999_999,
 	titleMax: 120,
 	textMax: 4000,

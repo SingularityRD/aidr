@@ -28,7 +28,7 @@ import {
 } from "@singularityrd/aidr-core";
 import { AidrVerdictBlockError } from "./error.js";
 
-export const OPENCODE_PROMPT_EVENT = "chat.message";
+const OPENCODE_PROMPT_EVENT = "chat.message";
 
 /** In-process: no host timeout applies, the deadline only bounds latency. */
 const DEFAULT_PROMPT_DEADLINE_MS = 10_000;

@@ -126,7 +126,7 @@ export function viewsForPath(filePath: string): EditLineView[] {
 	return views;
 }
 
-export function hasTestDeclaration(text: string): boolean {
+function hasTestDeclaration(text: string): boolean {
 	return TEST_DECLARATION.test(text);
 }
 
@@ -299,7 +299,7 @@ function snippetChange(
 }
 
 /** The file changes a normalized tool call makes. */
-export async function fileChangesFor(
+async function fileChangesFor(
 	request: ToolEvaluationRequest,
 	cwd: string = process.cwd(),
 ): Promise<{ changes: FileChange[]; truncated: boolean }> {

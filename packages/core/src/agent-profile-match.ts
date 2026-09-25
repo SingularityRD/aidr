@@ -14,11 +14,11 @@ import { normalizeShellText } from "./shell-normalize.js";
 // ── Paths ──────────────────────────────────────────────────────────
 
 /** Case-insensitive filesystems by default; a deny match must not miss `.ENV`. */
-export function pathMatchingIsCaseInsensitive(platform: NodeJS.Platform = process.platform) {
+function pathMatchingIsCaseInsensitive(platform: NodeJS.Platform = process.platform) {
 	return platform === "win32" || platform === "darwin";
 }
 
-export function toPosixPath(path: string): string {
+function toPosixPath(path: string): string {
 	return path.replace(/\\/g, "/");
 }
 
@@ -28,7 +28,7 @@ const globCache = new Map<string, RegExp>();
  * `**` matches across directories, `*` within one segment and `?` one character.
  * Every other character, including `[` and `{`, is literal.
  */
-export function compileGlob(pattern: string, caseInsensitive: boolean): RegExp {
+function compileGlob(pattern: string, caseInsensitive: boolean): RegExp {
 	const key = `${caseInsensitive ? "i" : "s"}\0${pattern}`;
 	const cached = globCache.get(key);
 	if (cached) return cached;
@@ -113,7 +113,7 @@ export function isPathWithin(
 
 // ── Commands ───────────────────────────────────────────────────────
 
-export interface CommandSegment {
+interface CommandSegment {
 	/** Whitespace-collapsed segment text. */
 	text: string;
 	/** An unquoted output redirection to anything other than /dev/null or a descriptor. */
@@ -263,12 +263,12 @@ function firstWordBasename(segment: string): string {
 	return base + rest;
 }
 
-export function startsWithPrefix(segment: string, prefix: string): boolean {
+function startsWithPrefix(segment: string, prefix: string): boolean {
 	return segment === prefix || segment.startsWith(`${prefix} `);
 }
 
 /** Over-approximated views of every segment a deny prefix is checked against. */
-export function denyCandidateSegments(command: string): string[] {
+function denyCandidateSegments(command: string): string[] {
 	const views = new Set<string>();
 	const texts = [command];
 	try {

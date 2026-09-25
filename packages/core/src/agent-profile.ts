@@ -253,7 +253,7 @@ export type AgentProfileValidation =
 	| { ok: false; errors: string[] };
 
 /** Issue locations and messages only; never the offending value. */
-export function describeAgentProfileIssues(issues: readonly ZodIssue[], max = 8): string[] {
+function describeAgentProfileIssues(issues: readonly ZodIssue[], max = 8): string[] {
 	const listed = issues.slice(0, max).map((issue) => {
 		const path = issue.path.length > 0 ? issue.path.join(".") : "(document)";
 		const message =
@@ -359,7 +359,7 @@ function homeDirectory(environment: AgentProfileEnvironment): string {
 }
 
 /** Expand `~` and `${workspace}` and resolve relative paths against the workspace. */
-export function expandProfilePath(value: string, environment: AgentProfileEnvironment): string {
+function expandProfilePath(value: string, environment: AgentProfileEnvironment): string {
 	let path = value;
 	if (path.startsWith(WORKSPACE_PLACEHOLDER)) {
 		path = environment.workingDirectory + path.slice(WORKSPACE_PLACEHOLDER.length);
@@ -484,7 +484,7 @@ export interface AgentProfileCall {
 	artifacts: Artifact[];
 }
 
-export type AgentProfileCheck =
+type AgentProfileCheck =
 	| "tool"
 	| "command"
 	| "file"

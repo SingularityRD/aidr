@@ -21,24 +21,24 @@ import {
 	resolvePublicAddresses,
 } from "./notification-targets.ts";
 
-export const NOTIFICATION_SCHEMA = "aidr.notification.v1";
-export const NOTIFICATION_EVENT_TYPES = [
+const NOTIFICATION_SCHEMA = "aidr.notification.v1";
+const NOTIFICATION_EVENT_TYPES = [
 	"incident.created",
 	"runtime.deny_critical",
 	"approval.requested",
 	"privacy.blocked_spike",
 	"notification.test",
 ] as const;
-export type NotificationEventType = (typeof NOTIFICATION_EVENT_TYPES)[number];
-export const SEVERITIES = ["info", "warning", "high", "critical"] as const;
-export type Severity = (typeof SEVERITIES)[number];
+type NotificationEventType = (typeof NOTIFICATION_EVENT_TYPES)[number];
+const SEVERITIES = ["info", "warning", "high", "critical"] as const;
+type Severity = (typeof SEVERITIES)[number];
 
-export const SIGNATURE_HEADER = "X-AIDR-Signature";
-export const SIGNATURE_TOLERANCE_SECONDS = 300;
-export const USER_AGENT = "Singularity-AIDR-Notifications/1.0";
-export const DELIVERY_TIMEOUT_MS = 10_000;
-export const BACKOFF_BASE_SECONDS = 30;
-export const BACKOFF_CAP_SECONDS = 3600;
+const SIGNATURE_HEADER = "X-AIDR-Signature";
+const SIGNATURE_TOLERANCE_SECONDS = 300;
+const USER_AGENT = "Singularity-AIDR-Notifications/1.0";
+const DELIVERY_TIMEOUT_MS = 10_000;
+const BACKOFF_BASE_SECONDS = 30;
+const BACKOFF_CAP_SECONDS = 3600;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
@@ -85,7 +85,7 @@ const DEEP_LINK_PATHS: Record<NotificationEventType, string> = {
 };
 
 /** The dashboard origin for deep links, or null when not a usable URL. */
-export function dashboardOrigin(value: string | null | undefined): string | null {
+function dashboardOrigin(value: string | null | undefined): string | null {
 	if (typeof value !== "string" || value.trim() === "") return null;
 	try {
 		const url = new URL(value.trim());
@@ -133,7 +133,7 @@ export function buildNotification(delivery: DeliveryRecord, dashboardUrl: string
 	};
 }
 
-export function notificationTitle(message: NotificationMessage): string {
+function notificationTitle(message: NotificationMessage): string {
 	switch (message.event) {
 		case "incident.created":
 			return `New ${message.severity ?? "unrated"} incident`;
@@ -151,7 +151,7 @@ export function notificationTitle(message: NotificationMessage): string {
 }
 
 /** Label/value facts shared by every human-readable format. */
-export function notificationFacts(message: NotificationMessage): Array<[string, string]> {
+function notificationFacts(message: NotificationMessage): Array<[string, string]> {
 	const facts: Array<[string, string]> = [["Event", message.event]];
 	if (message.severity) facts.push(["Severity", message.severity]);
 	if (message.category) facts.push(["Category", message.category]);
@@ -506,7 +506,7 @@ export interface DispatchOptions extends DeliveryDeps {
 	deliveryId?: string;
 }
 
-export interface DeliveryResult {
+interface DeliveryResult {
 	deliveryId: string;
 	status: "delivered" | "pending" | "dead" | "lease_lost";
 	error: string | null;

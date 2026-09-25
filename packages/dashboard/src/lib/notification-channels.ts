@@ -7,7 +7,7 @@ import { supabase } from "./supabase";
  * non-secret `targetHint`.
  */
 
-export const CHANNEL_TYPES = ["slack", "teams", "webhook", "email"] as const;
+const CHANNEL_TYPES = ["slack", "teams", "webhook", "email"] as const;
 export type ChannelType = (typeof CHANNEL_TYPES)[number];
 export const SEVERITIES = ["info", "warning", "high", "critical"] as const;
 export type Severity = (typeof SEVERITIES)[number];
@@ -138,7 +138,7 @@ function readFilters(value: unknown): NotificationFilters | null {
 	};
 }
 
-export function filtersBody(filters: NotificationFilters) {
+function filtersBody(filters: NotificationFilters) {
 	return {
 		incident_created: filters.incidentCreated,
 		incident_min_severity: filters.incidentMinSeverity,
