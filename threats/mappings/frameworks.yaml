@@ -53,11 +53,13 @@ assessments:
         dataset provenance are not checked, and package reputation needs the separately
         deployed package-check endpoint (inert when none is configured).
     LLM04:
-      status: not_applicable
+      status: partial
       rationale: >-
-        AIDR sits at the agent's tool-call boundary and never sees training, fine-tuning or
-        embedding data, so no rule can observe data or model poisoning. Runtime memory and
-        context poisoning of an agent is tracked under ASI06.
+        AIDR never sees training or fine-tuning data. It does see what an agent writes into
+        memory and vector/RAG stores through MCP tools, and those writes are scanned for
+        hidden or injected instructions and standing orders before they are stored. Poisoned
+        records that carry none of those signals, and stores written outside the agent, are
+        not detected. Runtime memory and context poisoning of an agent is tracked under ASI06.
     LLM05:
       status: covered
       rationale: >-
@@ -133,8 +135,11 @@ assessments:
       status: partial
       rationale: >-
         Content that asks the agent to persist instructions in memory, and skill files that
-        write into agent memory or instruction files, are flagged. Poisoning through
-        ordinary-looking stored content or retrieval data is not detected.
+        write into agent memory or instruction files, are flagged. Every agent write to an
+        instruction, memory, configuration or MCP file needs out-of-band approval, and the
+        written text, memory-store writes and MCP tool descriptions are scanned for hidden
+        Unicode and injected directives. Poisoning through ordinary-looking stored content
+        or retrieval data is not detected.
     ASI07:
       status: not_covered
       rationale: >-
@@ -216,6 +221,11 @@ assessments:
       rationale: >-
         Hidden or encoded instructions, zero-width and Unicode tag characters, bidi controls
         and hidden HTML comments are detected.
+    AML.T0070:
+      status: partial
+      rationale: >-
+        Agent writes to vector/RAG stores through MCP tools are scanned for hidden or injected
+        instructions before they are stored. Documents ingested outside the agent are not seen.
     AML.T0072:
       status: covered
       rationale: >-
@@ -769,3 +779,28 @@ rules:
 
   # win-supply-chain.yaml
   CLT-WIN-SUPPLY-001: []
+
+  # context-poisoning.yaml
+  CTX-PATH-001: [LLM01, ASI06, AML.T0080]
+  CTX-PATH-002: [ASI06, AML.T0080.000]
+  CTX-PATH-003: [LLM06, ASI03, ASI06, AML.T0081]
+  CTX-PATH-004: [ASI04, ASI06, AML.T0081]
+  CTX-PATH-005: [ASI05, AML.T0081]
+  CTX-PATH-006: [LLM06, ASI05]
+  CTX-PATH-007: [LLM06, ASI05]
+  CTX-HIDE-001: [LLM01, ASI01, ASI06, AML.T0068]
+  CTX-HIDE-002: [LLM01, ASI01, ASI06, AML.T0068]
+  CTX-HIDE-003: [LLM01, ASI01, ASI06, AML.T0068]
+  CTX-INJ-001: [LLM01, ASI01, ASI06, AML.T0051.001, AML.T0080]
+  CTX-INJ-002: [ASI06, ASI09, AML.T0080]
+  CTX-INJ-003: [LLM02, ASI06, AML.T0086]
+  CTX-INJ-004: [LLM02, ASI03, ASI06, AML.T0055]
+  CTX-INJ-005: [LLM01, ASI06, AML.T0051]
+  CTX-INJ-006: [LLM01, ASI06, AML.T0051.001, AML.T0068]
+  CTX-INJ-007: [LLM05, ASI05, ASI06, AML.T0050]
+  CTX-CFG-001: [LLM06, ASI03, AML.T0081]
+  CTX-MCP-001: [LLM02, ASI04, AML.T0110.000]
+  CTX-MCP-002: [ASI02, ASI04, AML.T0110.000]
+  CTX-MCP-003: [LLM01, ASI04, AML.T0110.000]
+  CTX-MEM-001: [LLM04, ASI06, AML.T0070, AML.T0080.000]
+  CTX-MEM-002: [LLM04, ASI06, AML.T0070, AML.T0080.000]

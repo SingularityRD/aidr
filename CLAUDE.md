@@ -75,7 +75,7 @@ TypeScript monorepo. Connector packages and their shared core:
   gateway (`/platform`). Tests run with `node --test` via `pnpm test:privacy`, not vitest.
 - `services/aig-bridge/` — Python/FastAPI bridge for the SingularityRD-owned AI Infra Guard source, tracked directly under `vendor/ai-infra-guard/` (not a submodule)
 - `supabase/` — canonical migrations + Edge Functions; `packages/dashboard/supabase/functions/` contains dashboard-specific shared function code, not migration copies
-- `threats/` — YAML threat definitions (data, not code); 410 rules across 26 files (`grep -h '^- id:' threats/*.yaml | wc -l`)
+- `threats/` — YAML threat definitions (data, not code); 451 rules across 28 files (`grep -h '^- id:' threats/*.yaml | wc -l`)
 - `allowlists/` — Trusted domain allowlists
 - `hooks/` — `hooks.json` registering hooks with Claude Code
 - `skills/` — `security-awareness/SKILL.md`, synced into connector `resources/`
