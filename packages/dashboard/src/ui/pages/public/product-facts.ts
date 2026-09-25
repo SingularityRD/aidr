@@ -11,10 +11,24 @@ import { LIST_PRICE_NOTICE, PLAN_CATALOG, type PlanDefinition } from "../../../b
 export const SHIPPED_THREAT_RULES = 386;
 /** YAML files under `threats/`. */
 export const THREAT_RULE_FILES = 24;
-/** AIG CVE rule files (`vendor/ai-infra-guard/data/vuln`, recursive), shown as a lower bound. */
+/** AI Security Posture CVE rule files in the bundled vulnerability dataset, shown as a lower bound. */
 export const AIG_CVE_RULES_FLOOR = 2000;
-/** AIG AI component fingerprint files (`vendor/ai-infra-guard/data/fingerprints`, recursive). */
+/** AI Security Posture AI component fingerprint files in the bundled dataset. */
 export const AIG_AI_COMPONENTS = 146;
+/** MCP risk categories (`mcp-01`..`mcp-14`) that `aidr discover` maps servers onto. */
+export const POSTURE_MCP_RISK_CATEGORIES = 14;
+/** Skill and plugin scan taxonomy codes (`threats/skill-scan.yaml`, `SKILL-Txx-nnn`). */
+export const POSTURE_SKILL_RISK_CODES = [
+	"T01",
+	"T02",
+	"T03",
+	"T04",
+	"T05",
+	"T06",
+	"T07",
+	"T08",
+	"T09",
+] as const;
 
 export const AGENT_CONNECTORS = [
 	"Claude Code",

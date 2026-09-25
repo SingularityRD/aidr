@@ -36,8 +36,12 @@ originals again in the response, on the user's screen only. It covers Turkish an
 data (T.C. kimlik, IBAN, phones, emails, cards), secrets and API keys, custom terms and
 exact-data-match fingerprints of your own records.
 
-**AI Security Posture.** AI Infra Guard-based scans check AI services against 2,000+ CVE
-rules for 146 AI components, map MCP risk categories and scan agent skills and plugins.
+**AI Security Posture.** Find the weak spots in the AI stack around your agents.
+`aidr scan --target` fingerprints AI services (146 AI component fingerprints) and matches
+them against 2,000+ CVE rules with severity and CVSS; `aidr discover` maps local MCP
+servers to 14 MCP risk categories; skill and plugin packages are scanned against the
+T01–T09 taxonomy. The dashboard's Posture view collects the results, and uploads carry
+identifiers and digests only, never target URLs, file paths or matched text.
 
 ## How it works
 

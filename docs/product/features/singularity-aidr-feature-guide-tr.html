@@ -327,7 +327,7 @@ td code, th code { font-size: 0.92em; overflow-wrap: break-word; }
 <li class="toc-h3"><a href="#p3-olası-olaylar-ve-kanıt-zinciri"><span class="toc-text">Olası olaylar ve kanıt zinciri</span><span class="toc-leader"></span><span class="toc-page">61</span></a></li>
 <li class="toc-h3"><a href="#p3-ajanlar-ve-ajan-ayrıntısı"><span class="toc-text">Ajanlar ve ajan ayrıntısı</span><span class="toc-leader"></span><span class="toc-page">62</span></a></li>
 <li class="toc-h3"><a href="#p3-keşif-kapsamı-discovery"><span class="toc-text">Keşif kapsamı (Discovery)</span><span class="toc-leader"></span><span class="toc-page">62</span></a></li>
-<li class="toc-h3"><a href="#p3-ai-güvenlik-duruşu-posture"><span class="toc-text">AI güvenlik duruşu (Posture)</span><span class="toc-leader"></span><span class="toc-page">63</span></a></li>
+<li class="toc-h3"><a href="#p3-yapay-zekâ-güvenlik-duruşu-ai-security-posture"><span class="toc-text">Yapay Zekâ Güvenlik Duruşu (AI Security Posture)</span><span class="toc-leader"></span><span class="toc-page">63</span></a></li>
 <li class="toc-h3"><a href="#p3-ekip-politikası-ve-çalışma-zamanı-politikası"><span class="toc-text">Ekip politikası ve çalışma zamanı politikası</span><span class="toc-leader"></span><span class="toc-page">64</span></a></li>
 <li class="toc-h3"><a href="#p3-kademeli-politika-dağıtımı-ve-geri-alma"><span class="toc-text">Kademeli politika dağıtımı ve geri alma</span><span class="toc-leader"></span><span class="toc-page">65</span></a></li>
 <li class="toc-h3"><a href="#p3-dlp-politika-düzenleyicisi"><span class="toc-text">DLP politika düzenleyicisi</span><span class="toc-leader"></span><span class="toc-page">65</span></a></li>
@@ -1573,7 +1573,7 @@ değerlerini alır (varsayılan: işletim sistemi kasasını algıla).</p>
 <pre data-lang="bash"><code>$ aidr doctor
 <span class="c"># kontroller: configuration, detection, connectors, dlp, operator_approvals, last_verdict, core_version</span></code></pre>
 <p class="label"><strong>Kapsam</strong></p>
-<div class="table"><table><thead><tr><th>Plan</th><th>Dağıtım</th><th>Platform / işletim sistemi</th></tr></thead><tbody><tr><td>Free, Team, Business, Enterprise (<code>--upload</code> ve güvenlik duruşu özellikleri: Business, Enterprise)</td><td>Yerel; Cloud, On-prem, Air-gapped</td><td>Windows, Linux, macOS</td></tr></tbody></table></div>
+<div class="table"><table><thead><tr><th>Plan</th><th>Dağıtım</th><th>Platform / işletim sistemi</th></tr></thead><tbody><tr><td>Free, Team, Business, Enterprise (<code>--upload</code> ve Yapay Zekâ Güvenlik Duruşu özellikleri: Business, Enterprise)</td><td>Yerel; Cloud, On-prem, Air-gapped</td><td>Windows, Linux, macOS</td></tr></tbody></table></div>
 <p class="label"><strong>Sınırlamalar</strong></p>
 <ul>
 <li><p><code>aidr setup</code> bir connector'ı kurmaz veya etkinleştirmez; connector kurulumu her
@@ -2783,7 +2783,7 @@ belirli bir hareketsizlik süresinden sonra tarayıcıda sonlanır. Rotalar
 <tr><td><code>/agents</code>, <code>/agents/:agentId</code></td><td>Agents</td><td>Kayıtlı kurulumlar, koltuk kullanımı, ajan bazında olaylar</td><td><a href="#p3-ajanlar-ve-ajan-ayrıntısı">Ajanlar</a></td></tr>
 <tr><td><code>/events</code></td><td>Events</td><td>Raporlanan son 500 karar olayı</td><td><a href="#p3-olaylar-events">Olaylar</a></td></tr>
 <tr><td><code>/discovery</code></td><td>Discovery</td><td>Raporlanan AI altyapı toplayıcıları ve hedefleri</td><td><a href="#p3-keşif-kapsamı-discovery">Keşif</a></td></tr>
-<tr><td><code>/posture</code></td><td>Posture</td><td>Altyapı CVE'leri, MCP riskleri, skill bulguları</td><td><a href="#p3-ai-güvenlik-duruşu-posture">Posture</a></td></tr>
+<tr><td><code>/posture</code></td><td>Posture</td><td>Altyapı CVE'leri, MCP riskleri, skill bulguları</td><td><a href="#p3-yapay-zekâ-güvenlik-duruşu-ai-security-posture">Yapay Zekâ Güvenlik Duruşu</a></td></tr>
 <tr><td><code>/incidents</code></td><td>Incidents</td><td>Engellenen ve onay bekleyen kararlar, kanıt zinciri</td><td><a href="#p3-olası-olaylar-ve-kanıt-zinciri">Olası olaylar</a></td></tr>
 <tr><td><code>/privacy-guard</code></td><td>Browser Privacy</td><td>Browser Guard sayımları ve tarayıcı kaydı</td><td><a href="#p3-tarayıcı-gizliliği-browser-privacy">Tarayıcı gizliliği</a></td></tr>
 <tr><td><code>/autosecops</code></td><td>AutoSecOps</td><td>AutoSecOps entegrasyonundan çalışma zamanı filo görünümü</td><td><a href="#p3-autosecops-görünümü-ve-müdahale-playbookları">AutoSecOps</a></td></tr>
@@ -2971,7 +2971,7 @@ güncelliğini yitirmiş ve ulaşılamaz olarak işaretlenir ve sayfadaki alarm 
 kapsar; bulutunuzun, MDM'inizin veya tüm varlıklarınızın eksiksiz keşfi anlamına gelmez.
 Yalnızca <code>local</code> sağlayıcısı uygulanmıştır; bulut ve MDM sağlayıcıları bir adaptör
 gerektirir.</p>
-<h3 id="p3-ai-güvenlik-duruşu-posture">AI güvenlik duruşu (Posture)</h3>
+<h3 id="p3-yapay-zekâ-güvenlik-duruşu-ai-security-posture">Yapay Zekâ Güvenlik Duruşu (AI Security Posture)</h3>
 <p><strong>Ne yapar.</strong> <code>/posture</code> son 90 gün için üç soruya yanıt verir. Hangi AI altyapısında
 bilinen zafiyet var? Hangi MCP sunucuları yapılandırılmış ve ne kadar riskli? Hangi skill
 veya eklenti paketlerinde tehlikeli kalıplar var? Kritik CVE, yüksek CVE, MCP sunucusu ve
@@ -2981,17 +2981,17 @@ gösterir.</p>
 <p><strong>Neden önemli.</strong> Bir ajan, konuştuğu sunucular ve araçlar kadar güvenlidir. Bilinen
 CVE'si olan açıkta bir çıkarım sunucusu veya kabuk (shell) saran bir MCP sunucusu,
 prompt injection'a uğramış bir ajanın erişebileceği alanı genişletir.</p>
-<p><strong>Nasıl çalışır.</strong> SingularityRD'nin <code>vendor/<wbr>ai-infra-guard/</code> altında sürdürdüğü
-AI-Infra-Guard (AIG) verisine dayanan üç yerel ve deterministik tarayıcı vardır:</p>
-<div class="table"><table><thead><tr><th>Tarayıcı</th><th>Komut</th><th>Arkasındaki veri (bu depoda sayıldı)</th></tr></thead><tbody><tr><td>Altyapı açıklığı</td><td><code>aidr scan --target &lt;url&gt;</code> veya <code>--file targets.txt</code></td><td>146 servis parmak izi; vendor verisinde 116 bileşen için 2.014 CVE kural dosyası, 127 ürün genelinde 2.017 bildirim kaydına derlenmiş (<code>packages/<wbr>core/<wbr>src/<wbr>generated/<wbr>aig-cve-index.<wbr>json</code>)</td></tr>
-<tr><td>MCP envanteri</td><td><code>aidr discover [--config &lt;yol&gt;.<wbr>.<wbr>.<wbr>]</code></td><td>Yerel MCP yapılandırma dosyaları ve 14 AIG MCP risk kategorisi (15 vendor MCP kural dosyasından)</td></tr>
+<p><strong>Nasıl çalışır.</strong> AIDR CLI'ya yerleşik, AIDR ile birlikte gelen zafiyet ve parmak izi
+veri kümesine dayanan üç yerel ve deterministik tarayıcı vardır:</p>
+<div class="table"><table><thead><tr><th>Tarayıcı</th><th>Komut</th><th>Arkasındaki veri (bu depoda sayıldı)</th></tr></thead><tbody><tr><td>Altyapı açıklığı</td><td><code>aidr scan --target &lt;url&gt;</code> veya <code>--file targets.txt</code></td><td>146 yapay zekâ bileşeni parmak izi (çıkarım sunucuları, ajan çatıları, AI uygulamaları); 116 bileşen için 2.014 CVE kural dosyası, 127 ürün genelinde 2.017 bildirim kaydına derlenmiş; her kayıt önem derecesi ve yayımlanmışsa CVSS puanı taşır</td></tr>
+<tr><td>MCP envanteri</td><td><code>aidr discover [--config &lt;yol&gt;.<wbr>.<wbr>.<wbr>]</code></td><td>Yerel MCP yapılandırma dosyaları ve 14 MCP risk kategorisi (<code>mcp-01</code>-<code>mcp-14</code>; örneğin token sızıntısı, araç zehirleme, komut enjeksiyonu ve araç gölgeleme)</td></tr>
 <tr><td>Skill ve eklenti paketleri</td><td><code>aidr scan --skill &lt;dizin&gt;</code> ve her oturum başı eklenti taraması</td><td>T01-T09 sınıflandırması için <code>threats/<wbr>skill-scan.<wbr>yaml</code> içinde 26 deterministik kural</td></tr></tbody></table></div>
 <p><code>--upload</code> ile bulgular kurulumun kayıtlı API anahtarıyla ingest'e gider. Bir veritabanı
 tetikleyicisi bunları <code>public.<wbr>posture_<wbr>findings</code> tablosuna yansıtır. Makineden yalnızca
 tanımlayıcılar, önem dereceleri, bileşen sürümleri ve özetler çıkar. Hedef URL'ler, ana
 makine adları, dosya yolları, eşleşen metin, MCP komutları, argümanlar ve kimlik
-bilgileri asla çıkmaz. AIG köprüsünün (<code>services/<wbr>aig-bridge</code>) sunduğu derin taramalar
-isteğe bağlı bir yan konteyner (sidecar) olarak çalışır (bkz.
+bilgileri asla çıkmaz. İsteğe bağlı derin taramalar, loopback üzerinde dinleyen ayrı bir
+köprü hizmetinde, isteğe bağlı bir yan konteyner (sidecar) olarak çalışır (bkz.
 <a href="#p3-docker-compose-ile-on-prem">Compose</a>).</p>
 <p class="label"><strong>Nasıl kullanılır.</strong></p>
 <pre data-lang="sh"><code>aidr scan --target http://10.0.0.5:11434 --upload
@@ -3008,8 +3008,8 @@ görünmez, çünkü yalnızca özeti gönderilmiştir.</p>
 <p><strong>Sınırlamalar.</strong> Yalnızca tespit yapar; çalışma zamanı kararlarını değiştirmez. Kapsam,
 derlenmiş parmak izi ve CVE veri kümesi ile erişilebilen ve tanımlanabilen hedeflerle
 sınırlıdır. Ulaşılamayan bir hedef &quot;temiz&quot; değil, &quot;not scanned&quot; olarak raporlanır. MCP
-keşfi yalnızca yerel yapılandırma dosyalarını okur. AIG Skill-Scan'in LLM tabanlı
-inceleme aşaması AIDR'ye dahil değildir. Boş bir sayfa ortamın temiz olduğu anlamına
+keşfi yalnızca yerel yapılandırma dosyalarını okur. Skill kuralları deterministik
+kalıplardır; LLM tabanlı bir inceleme aşaması yoktur. Boş bir sayfa ortamın temiz olduğu anlamına
 gelmez; yalnızca henüz bir şey yüklenmediğini gösterir.</p>
 <h3 id="p3-ekip-politikası-ve-çalışma-zamanı-politikası">Ekip politikası ve çalışma zamanı politikası</h3>
 <p><strong>Ne yapar.</strong> <code>/policies</code>, kayıtlı ajanlar için kod olarak politikadır (policy as code).
@@ -3409,7 +3409,7 @@ hariç; COM-001 onayına tabi; teklif veya sipariş geçerlidir):</p>
 <tr><td>Microsoft Entra ID SSO (<code>entra_sso</code>)</td><td>-</td><td>Evet</td><td>Evet</td><td>Evet</td></tr>
 <tr><td>SIEM dışa aktarımı (<code>siem_export</code>)</td><td>-</td><td>-</td><td>Evet</td><td>Evet</td></tr>
 <tr><td>SCIM senkronizasyonu (<code>scim</code>)</td><td>-</td><td>-</td><td>Evet</td><td>Evet</td></tr>
-<tr><td>AI güvenlik duruşu (<code>ai_<wbr>security_<wbr>posture</code>)</td><td>-</td><td>-</td><td>Evet</td><td>Evet</td></tr>
+<tr><td>Yapay Zekâ Güvenlik Duruşu (<code>ai_<wbr>security_<wbr>posture</code>)</td><td>-</td><td>-</td><td>Evet</td><td>Evet</td></tr>
 <tr><td>Air-gapped dağıtım (<code>air_<wbr>gapped_<wbr>deployment</code>)</td><td>-</td><td>-</td><td>-</td><td>Evet</td></tr>
 <tr><td>Özel destek (<code>dedicated_support</code>)</td><td>-</td><td>-</td><td>-</td><td>Evet</td></tr></tbody></table></div>
 <p>Yerel tespit her uç noktada, bir plan veya hesap <strong>olsun ya da olmasın</strong> çalışır.</p>
@@ -3656,7 +3656,7 @@ veritabanı sağlayıcısının zamanda geri dönüş (PITR) özelliğini kullan
 RTO 4 saat ile ölçülen değerleri içeren <code>restore-drill-evidence.<wbr>json</code> dosyasını yazar.</p>
 <p class="label"><strong>Kapsam.</strong></p>
 <div class="table"><table><thead><tr><th>Plan</th><th>Dağıtım</th><th>Platform / işletim sistemi</th></tr></thead><tbody><tr><td>Self-hosted planlar (Business, Enterprise)</td><td>On-prem Compose, Air-gapped (çevrimdışı hedef); Helm: yalnızca <code>pg_dump</code> CronJob; Bulut: sağlayıcı işletir</td><td>systemd'li Linux ana makine; S3 hedefleri için AWS CLI v2</td></tr></tbody></table></div>
-<p><strong>Sınırlamalar.</strong> AIG tarama durumu birimleri (volume) yedeğe dahil değildir. Gerçek uzak
+<p><strong>Sınırlamalar.</strong> Derin tarama durumu birimleri (volume) yedeğe dahil değildir. Gerçek uzak
 hedef erişimi, bağımsız anahtar saklama, alarm teslimi ve ikinci bir arıza bölgesindeki
 ana makinede geri yükleme her müşteri ortamında ayrıca kanıtlanmalıdır.</p>
 <hr>
@@ -3740,8 +3740,8 @@ kurallarınız ve değişiklik yönetiminiz altında kalır.</p>
 <code>.env.readiness</code> ve <code>.env.ingress</code> (hepsi <code>0600</code>), migration'lar, fonksiyonlar,
 <code>agent-config.json</code> ve <code>deployment.json</code>. Portlar loopback'e bağlanır; önlerinde sizin TLS
 proxy'niz durur. Üç <strong>kaynak profili</strong> servis başına CPU, bellek ve PID sınırlarını belirler
-(bkz. <a href="#p3-kaynak-boyutlandırma">boyutlandırma</a>). İsteğe bağlı <strong>AIG tarama yan konteyneri</strong>
-(<code>--with-aig</code>), <code>aig</code> Compose profili altında AIG sunucusunu, ajanını ve köprüsünü ekler.
+(bkz. <a href="#p3-kaynak-boyutlandırma">boyutlandırma</a>). İsteğe bağlı <strong>derin tarama yan konteyneri</strong>
+(<code>--with-aig</code>), <code>aig</code> Compose profili altında derin tarama sunucusunu, ajanını ve köprüsünü ekler.
 Köprü yalnızca <code>127.0.0.1:8099</code> adresinde yayımlanır. Uzak taramalar yalnızca
 <strong><code>aig-egress</code></strong> üzerinden dışarı çıkar; bu, varsayılan olarak her şeyi reddeden,
 sürümü sabitlenmiş bir Squid geçididir. İzin verilen alan adlarını
@@ -3765,19 +3765,19 @@ takılmıştır; operatör bir sonraki bakım penceresinde <code>--profile mediu
 <div class="table"><table><thead><tr><th>Plan</th><th>Dağıtım</th><th>Platform / işletim sistemi</th></tr></thead><tbody><tr><td>Business, Enterprise</td><td>On-prem, Air-gapped</td><td>systemd'li 64 bit Linux (x86_64 veya arm64), Compose eklentili Docker Engine, Node 24</td></tr></tbody></table></div>
 <p><strong>Sınırlamalar.</strong> Tek ana makinedir: çoklu ana makine yüksek erişilebilirliği veya
 erişilebilirlik SLA'sı yoktur. TLS, device-start imzalayıcısı, kanıt ve yedek
-zamanlayıcıları ile ilk hesap oluşturulana kadar doctor başarısız olur. Depodaki AIG veri
+zamanlayıcıları ile ilk hesap oluşturulana kadar doctor başarısız olur. Depodaki derin tarama veri
 manifesti imzasızdır; sürümle imzalanmış bir manifest kurulana kadar köprü &quot;hazır değil&quot;
 raporlar.</p>
 <h3 id="p3-helm-ile-kubernetes">Helm ile Kubernetes</h3>
 <p><strong>Ne yapar.</strong> <code>deploy/helm/aidr</code> chart'ı aynı kontrol düzlemini Kubernetes 1.25+ üzerine
 kurar. Konsol, Envoy API geçidi, auth, REST, storage, functions, isteğe bağlı küme içi
-Postgres, bir migration hook Job'u, isteğe bağlı yedek CronJob'u ve isteğe bağlı AIG
+Postgres, bir migration hook Job'u, isteğe bağlı yedek CronJob'u ve isteğe bağlı derin tarama
 yığınını (<code>aig.enabled</code>) çalıştırır.</p>
 <p><strong>Neden önemli.</strong> Kubernetes kullanan ekipler chart ile yönetilen yükseltmeler, replikalar,
 PodDisruptionBudget'lar ve otomatik ölçeklendirme elde eder; kendi yüksek erişilebilir
 Postgres'lerini kullanabilirler.</p>
 <p><strong>Nasıl çalışır.</strong> Chart zayıf kurulumları reddeder: mevcut Secret'lar yoksa, URL'ler
-<code>https</code> değilse, TLS Secret'ı yoksa, bir imaj etiketi <code>latest</code> ise veya AIG girdileri
+<code>https</code> değilse, TLS Secret'ı yoksa, bir imaj etiketi <code>latest</code> ise veya derin tarama girdileri
 eksikse render başarısız olur. Chart asla sır üretmez. Her pod root olmayan kullanıcıyla,
 <code>seccompProfile:<wbr> RuntimeDefault</code>, tüm yetenekler (capabilities) kaldırılmış ve salt okunur
 kök dosya sistemiyle çalışır; tek istisna küme içi Postgres'in dosya sistemidir. Varsayılan
@@ -3947,7 +3947,7 @@ alma, geriye doğru migration değil, yedeği yeni ve yalıtılmış bir projeye
 <p>Aşağıdaki değerler <code>deploy/<wbr>onprem/<wbr>resource-profile.<wbr>json</code>,
 <code>deploy/<wbr>RESOURCE_<wbr>REQUIREMENTS.<wbr>md</code> ve Helm değerlerinden alınan başlangıç bütçeleridir.
 Kapasite taahhüdü değildir; kendi yük ve dayanıklılık (soak) testlerinizle doğrulayın.</p>
-<div class="table"><table class="medium"><thead><tr><th>Nerede</th><th>Profil</th><th>Başlangıç noktası</th><th>AIG yan konteyneri için ek</th></tr></thead><tbody><tr><td>Compose ana makinesi</td><td><code>small</code> (varsayılan): pilot, yaklaşık 100 uç noktaya kadar</td><td>4 vCPU, 8 GiB RAM, 100 GiB SSD</td><td>+4 vCPU, 6 GiB, 40 GiB</td></tr>
+<div class="table"><table class="medium"><thead><tr><th>Nerede</th><th>Profil</th><th>Başlangıç noktası</th><th>Derin tarama yan konteyneri için ek</th></tr></thead><tbody><tr><td>Compose ana makinesi</td><td><code>small</code> (varsayılan): pilot, yaklaşık 100 uç noktaya kadar</td><td>4 vCPU, 8 GiB RAM, 100 GiB SSD</td><td>+4 vCPU, 6 GiB, 40 GiB</td></tr>
 <tr><td>Compose ana makinesi</td><td><code>medium</code>: yaklaşık 1.000 uç nokta için yük testi başlangıcı</td><td>8 vCPU, 16 GiB RAM, 250 GiB SSD</td><td>+6 vCPU, 8 GiB, 60 GiB</td></tr>
 <tr><td>Compose ana makinesi</td><td><code>large</code>: binlerce uç noktalı testler için ayrılmış ana makine</td><td>16 vCPU, 32 GiB RAM, 500 GiB SSD</td><td>+8 vCPU, 12 GiB, 100 GiB</td></tr>
 <tr><td>Kubernetes</td><td><code>resourcesPreset:<wbr> small</code> (değerlendirme, 250 koltuk altı), <code>medium</code> (x2, 2.500 koltuk altı), <code>large</code> (x4)</td><td>Bileşen başına istek ve sınırlar</td><td><code>aig.*</code> bileşenleri</td></tr>
@@ -3966,8 +3966,8 @@ telemetri planlama modeli. Bu varsayımları gerçek müşteri verisiyle değiş
 <tr><td>API anahtarları ve kayıt belirteçleri</td><td>-</td><td>Evet</td><td>Evet</td><td>Evet</td><td>Evet</td></tr>
 <tr><td>Çalışma zamanı politikası, kademeli dağıtım, DLP düzenleyicisi</td><td>Yalnızca yerel politika dosyası</td><td>Evet</td><td>Evet</td><td>Evet</td><td>Evet</td></tr>
 <tr><td>Browser Privacy raporlaması</td><td>Eklenti yerelde maskeler, rapor yok</td><td>Evet</td><td>Evet</td><td>Evet</td><td>Evet</td></tr>
-<tr><td>AI güvenlik duruşu sayfası</td><td>Tarayıcılar yerelde çalışır, sayfa yok</td><td>Evet</td><td>Evet</td><td>Evet</td><td>Evet (iç hedefler)</td></tr>
-<tr><td>AIG derin tarama yan konteyneri</td><td>İsteğe bağlı loopback köprü</td><td>Barındırılan hizmette listelenmemiş</td><td>İsteğe bağlı <code>--with-aig</code></td><td>İsteğe bağlı <code>aig.enabled</code></td><td>İsteğe bağlı; uzak taramalar yalnızca çıkış izin listesiyle</td></tr>
+<tr><td>Yapay Zekâ Güvenlik Duruşu sayfası</td><td>Tarayıcılar yerelde çalışır, sayfa yok</td><td>Evet</td><td>Evet</td><td>Evet</td><td>Evet (iç hedefler)</td></tr>
+<tr><td>Derin tarama yan konteyneri</td><td>İsteğe bağlı loopback köprü</td><td>Barındırılan hizmette listelenmemiş</td><td>İsteğe bağlı <code>--with-aig</code></td><td>İsteğe bağlı <code>aig.enabled</code></td><td>İsteğe bağlı; uzak taramalar yalnızca çıkış izin listesiyle</td></tr>
 <tr><td>Entra ID SSO</td><td>-</td><td>Evet</td><td>Evet</td><td>Evet</td><td>Yalnızca IdP iç ağdan erişilebilirse</td></tr>
 <tr><td>SAML 2.0</td><td>-</td><td>Evet</td><td>Evet (Auth SAML için yapılandırılmış)</td><td>Evet (<code>dashboard.saml.*</code>)</td><td>İç IdP ile</td></tr>
 <tr><td>SCIM</td><td>-</td><td>Evet</td><td>Evet</td><td>Evet</td><td>Evet (IdP API'ye ulaşabilmeli)</td></tr>
@@ -3993,7 +3993,7 @@ telemetri planlama modeli. Bu varsayımları gerçek müşteri verisiyle değiş
 <li><p><span class="xref">Kubernetes işletimi</span> <span class="path">(docs/operations/kubernetes.md)</span>, <span class="xref">Helm chart</span> <span class="path">(deploy/helm/aidr/README.md)</span></p></li>
 <li><p><span class="xref">Lisanslama</span> <span class="path">(docs/operations/licensing.md)</span>, <span class="xref">operatör yönetimi</span> <span class="path">(docs/operations/operator-admin.md)</span>, <span class="xref">kabul operatörleri</span> <span class="path">(docs/operations/admission-operators.md)</span></p></li>
 <li><p><span class="xref">Yükseltme runbook'u</span> <span class="path">(deploy/UPGRADE.md)</span>, <span class="xref">yedekleme runbook'u</span> <span class="path">(deploy/backup/README.md)</span>, <span class="xref">izleme</span> <span class="path">(deploy/monitoring/README.md)</span>, <span class="xref">zamanlanmış bakım</span> <span class="path">(deploy/maintenance/README.md)</span>, <span class="xref">giriş ve TLS</span> <span class="path">(deploy/ingress/README.md)</span></p></li>
-<li><p><span class="xref">AI güvenlik duruşu</span> <span class="path">(docs/ai-security-posture.md)</span>, <span class="xref">tehdit istihbaratı senkronizasyonu ve air-gapped güncellemeler</span> <span class="path">(docs/operations/threat-sync.md)</span></p></li>
+<li><p><span class="xref">Yapay Zekâ Güvenlik Duruşu</span> <span class="path">(docs/ai-security-posture.md)</span>, <span class="xref">tehdit istihbaratı senkronizasyonu ve air-gapped güncellemeler</span> <span class="path">(docs/operations/threat-sync.md)</span></p></li>
 <li><p><span class="xref">Gizlilik ve telemetri veri akışı</span> <span class="path">(docs/privacy.md)</span>, <span class="xref">gizlilik telemetrisi sözleşmesi</span> <span class="path">(docs/contracts/privacy-telemetry.md)</span>, <span class="xref">cihaz yetkilendirmesi</span> <span class="path">(docs/device-auth.md)</span></p></li>
 <li><p><span class="xref">Müdahale playbook'ları</span> <span class="path">(docs/operations/response-playbooks.md)</span>, <span class="xref">kurtarma kodları</span> <span class="path">(docs/security/recovery-codes.md)</span></p></li>
 <li><p><span class="xref">Ürün genel bakışı</span> <span class="path">(docs/product/overview.md)</span></p></li>

@@ -516,6 +516,10 @@ describe("Dashboard integration", () => {
 			expect(screen.getByText(line)).toBeInTheDocument();
 		}
 		expect(
+			screen.getByText(/MCP server risk analysis across 14 risk categories, T01–T09 skill/),
+		).toBeInTheDocument();
+		expect(document.body.textContent).not.toMatch(/infra[- ]?guard|tencent|\baig\b/i);
+		expect(
 			screen.getByRole("heading", { name: "Mask sensitive data before it reaches AI chat." }),
 		).toBeInTheDocument();
 		expect(

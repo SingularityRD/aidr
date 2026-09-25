@@ -2866,16 +2866,16 @@ and a 30-day <strong>Trend</strong>.</p>
 <p><strong>Why it matters.</strong> An agent is only as safe as the servers and tools it talks to. An
 exposed inference server with a known CVE, or an MCP server that wraps a shell, widens
 what a prompt-injected agent can reach.</p>
-<p><strong>How it works.</strong> Three local, deterministic scanners built on AI-Infra-Guard (AIG) data
-that SingularityRD maintains under <code>vendor/<wbr>ai-infra-guard/</code>:</p>
-<div class="table"><table><thead><tr><th>Scanner</th><th>Command</th><th>Data behind it (counted in this repository)</th></tr></thead><tbody><tr><td>Infrastructure exposure</td><td><code>aidr scan --target &lt;url&gt;</code> or <code>--file targets.txt</code></td><td>146 service fingerprints; 2,014 CVE rule files for 116 components in the vendor data, compiled to 2,017 advisory entries across 127 products (<code>packages/<wbr>core/<wbr>src/<wbr>generated/<wbr>aig-cve-index.<wbr>json</code>)</td></tr>
-<tr><td>MCP inventory</td><td><code>aidr discover [--config &lt;path&gt;.<wbr>.<wbr>.<wbr>]</code></td><td>Local MCP configuration files plus 14 AIG MCP risk categories (from 15 vendor MCP rule files)</td></tr>
+<p><strong>How it works.</strong> Three local, deterministic scanners built into the AIDR CLI, backed by
+a vulnerability and fingerprint dataset that ships with AIDR:</p>
+<div class="table"><table><thead><tr><th>Scanner</th><th>Command</th><th>Data behind it (counted in this repository)</th></tr></thead><tbody><tr><td>Infrastructure exposure</td><td><code>aidr scan --target &lt;url&gt;</code> or <code>--file targets.txt</code></td><td>146 AI component fingerprints (inference servers, agent frameworks, AI apps); 2,014 CVE rule files for 116 components, compiled to 2,017 advisory entries across 127 products, each with a severity and, where published, a CVSS score</td></tr>
+<tr><td>MCP inventory</td><td><code>aidr discover [--config &lt;path&gt;.<wbr>.<wbr>.<wbr>]</code></td><td>Local MCP configuration files plus 14 MCP risk categories (<code>mcp-01</code> to <code>mcp-14</code>, such as token exposure, tool poisoning, command injection and tool shadowing)</td></tr>
 <tr><td>Skill and plugin packages</td><td><code>aidr scan --skill &lt;dir&gt;</code>, plus every session-start plugin scan</td><td>26 deterministic rules in <code>threats/<wbr>skill-scan.<wbr>yaml</code> for the T01-T09 taxonomy</td></tr></tbody></table></div>
 <p>With <code>--upload</code>, findings go to ingest using the installation's enrolled API key. A
 database trigger projects them into <code>public.<wbr>posture_<wbr>findings</code>. Only identifiers,
 severities, component versions and digests leave the machine. Target URLs, host names,
-file paths, matched text, MCP commands, arguments and credentials never do. The deep
-scans offered by the AIG bridge (<code>services/<wbr>aig-bridge</code>) run as an optional sidecar (see
+file paths, matched text, MCP commands, arguments and credentials never do. Optional
+deep scans run in a separate loopback bridge service, deployed as an optional sidecar (see
 <a href="#p3-on-premises-with-docker-compose">Compose</a>).</p>
 <p class="label"><strong>How to use.</strong></p>
 <pre data-lang="sh"><code>aidr scan --target http://10.0.0.5:11434 --upload
@@ -2892,8 +2892,8 @@ not shown because only its digest was sent.</p>
 <p><strong>Limitations.</strong> Detection only: posture never changes runtime verdicts. Coverage is
 limited to the compiled fingerprint and CVE dataset and to reachable, identified
 targets. A target that could not be reached is &quot;not scanned&quot;, never clean. MCP
-discovery reads local configuration files only. The LLM review stage of AIG Skill-Scan
-is not part of AIDR. An empty page means nothing was uploaded, not that the estate is
+discovery reads local configuration files only. Skill rules are deterministic patterns;
+there is no LLM-based review stage. An empty page means nothing was uploaded, not that the estate is
 clean.</p>
 <h3 id="p3-team-policy-and-runtime-policy">Team policy and runtime policy</h3>
 <p><strong>What it does.</strong> <code>/policies</code> is policy as code for enrolled agents. The <strong>Security
@@ -3508,7 +3508,7 @@ database provider's point-in-time recovery.</p>
 <code>restore-drill-evidence.<wbr>json</code> with target RPO 24 h and RTO 4 h and the measured values.</p>
 <p class="label"><strong>Availability.</strong></p>
 <div class="table"><table><thead><tr><th>Plan</th><th>Deployment</th><th>Platforms / OS</th></tr></thead><tbody><tr><td>Self-hosted plans (Business, Enterprise)</td><td>On-prem Compose, Air-gapped (offline target); Helm: <code>pg_dump</code> CronJob only; Cloud: operated by the provider</td><td>Linux host with systemd; AWS CLI v2 for S3 targets</td></tr></tbody></table></div>
-<p><strong>Limitations.</strong> AIG scan state volumes are not part of the backup. Real offsite access,
+<p><strong>Limitations.</strong> Deep-scan state volumes are not part of the backup. Real offsite access,
 independent key custody, alert delivery and a restore on a second failure-domain host
 must be proven in each customer environment.</p>
 <hr>
@@ -3588,8 +3588,8 @@ retention and your change control.</p>
 and resource limits), <code>.env</code>, <code>.env.functions</code>, <code>.env.readiness</code> and <code>.env.ingress</code> (all
 <code>0600</code>), migrations, functions, <code>agent-config.json</code> and <code>deployment.json</code>. Ports bind to
 loopback, so your TLS proxy fronts them. Three <strong>resource profiles</strong> set per-service CPU,
-memory and PID limits (see <a href="#p3-resource-sizing">sizing</a>). The optional <strong>AIG scanning
-sidecar</strong> (<code>--with-aig</code>) adds the AIG server, agent and bridge under Compose profile
+memory and PID limits (see <a href="#p3-resource-sizing">sizing</a>). The optional <strong>deep-scan
+sidecar</strong> (<code>--with-aig</code>) adds the deep-scan server, agent and bridge under Compose profile
 <code>aig</code>. The bridge is published on <code>127.0.0.1:8099</code> only. Remote scans leave only through
 <strong><code>aig-egress</code></strong>, a pinned Squid gateway that denies everything by default. You list
 authorized domains in <code>/<wbr>srv/<wbr>aidr/<wbr>aig/<wbr>egress/<wbr>allowlist.<wbr>txt</code>. Loopback, private, CGNAT and
@@ -3613,18 +3613,18 @@ the operator moves to <code>--profile medium</code> in the next maintenance wind
 <div class="table"><table><thead><tr><th>Plan</th><th>Deployment</th><th>Platforms / OS</th></tr></thead><tbody><tr><td>Business, Enterprise</td><td>On-prem, Air-gapped</td><td>64-bit Linux (x86_64 or arm64) with systemd, Docker Engine with Compose, Node 24</td></tr></tbody></table></div>
 <p><strong>Limitations.</strong> One host: no multi-host high availability or availability SLA. The
 doctor fails until TLS, the device-start signer, evidence and backup timers and the
-first account exist. The committed AIG data manifest is unsigned, so the bridge reports
+first account exist. The committed deep-scan data manifest is unsigned, so the bridge reports
 not-ready until a release-signed manifest is deployed.</p>
 <h3 id="p3-kubernetes-with-helm">Kubernetes with Helm</h3>
 <p><strong>What it does.</strong> The chart <code>deploy/helm/aidr</code> installs the same control plane on
 Kubernetes 1.25+. It runs the dashboard, an Envoy API gateway, auth, REST, storage,
 functions, an optional in-cluster Postgres, a migrations hook Job, an optional backup
-CronJob and the optional AIG stack (<code>aig.enabled</code>).</p>
+CronJob and the optional deep-scan stack (<code>aig.enabled</code>).</p>
 <p><strong>Why it matters.</strong> Teams that run Kubernetes get chart-managed upgrades, replicas,
 PodDisruptionBudgets and autoscaling, with their own HA Postgres.</p>
 <p><strong>How it works.</strong> The chart refuses weak installs. Rendering fails without existing
 Secrets, with non-<code>https</code> URLs, without a TLS Secret, with a <code>latest</code> image tag, and
-without complete AIG inputs. It never generates secrets. Every pod runs as non-root
+without complete deep-scan inputs. It never generates secrets. Every pod runs as non-root
 with <code>seccompProfile:<wbr> RuntimeDefault</code>, all capabilities dropped and a read-only root
 filesystem. The one exception is the in-cluster Postgres filesystem. A default-deny
 NetworkPolicy opens only the flows the stack needs. Egress to the internet is opt-in per
@@ -3789,7 +3789,7 @@ Helm, <code>helm rollback</code> restores manifests, not the schema.</p>
 <p>Starting budgets from <code>deploy/<wbr>onprem/<wbr>resource-profile.<wbr>json</code>,
 <code>deploy/<wbr>RESOURCE_<wbr>REQUIREMENTS.<wbr>md</code> and the Helm values. They are not a capacity promise:
 validate with your own load and soak tests.</p>
-<div class="table"><table class="medium"><thead><tr><th>Where</th><th>Profile</th><th>Starting point</th><th>Extra for the AIG sidecar</th></tr></thead><tbody><tr><td>Compose host</td><td><code>small</code> (default): pilot, up to about 100 endpoints</td><td>4 vCPU, 8 GiB RAM, 100 GiB SSD</td><td>+4 vCPU, 6 GiB, 40 GiB</td></tr>
+<div class="table"><table class="medium"><thead><tr><th>Where</th><th>Profile</th><th>Starting point</th><th>Extra for the deep-scan sidecar</th></tr></thead><tbody><tr><td>Compose host</td><td><code>small</code> (default): pilot, up to about 100 endpoints</td><td>4 vCPU, 8 GiB RAM, 100 GiB SSD</td><td>+4 vCPU, 6 GiB, 40 GiB</td></tr>
 <tr><td>Compose host</td><td><code>medium</code>: load-test start for about 1,000 endpoints</td><td>8 vCPU, 16 GiB RAM, 250 GiB SSD</td><td>+6 vCPU, 8 GiB, 60 GiB</td></tr>
 <tr><td>Compose host</td><td><code>large</code>: dedicated host for multi-thousand endpoint tests</td><td>16 vCPU, 32 GiB RAM, 500 GiB SSD</td><td>+8 vCPU, 12 GiB, 100 GiB</td></tr>
 <tr><td>Kubernetes</td><td><code>resourcesPreset:<wbr> small</code> (evaluation, under 250 seats), <code>medium</code> (x2, under 2,500 seats), <code>large</code> (x4)</td><td>Requests and limits per component</td><td><code>aig.*</code> components</td></tr>
@@ -3809,7 +3809,7 @@ the daily average. Replace these assumptions with real customer data:</p>
 <tr><td>Runtime policy, rollout, DLP editor</td><td>Local policy file only</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
 <tr><td>Browser Privacy reporting</td><td>Extension masks locally, no report</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
 <tr><td>AI Security Posture page</td><td>Scanners run locally, no page</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes (internal targets)</td></tr>
-<tr><td>AIG deep-scan sidecar</td><td>Optional loopback bridge</td><td>Not listed for the hosted service</td><td>Optional <code>--with-aig</code></td><td>Optional <code>aig.enabled</code></td><td>Optional; remote scans only via egress allowlist</td></tr>
+<tr><td>Deep-scan sidecar</td><td>Optional loopback bridge</td><td>Not listed for the hosted service</td><td>Optional <code>--with-aig</code></td><td>Optional <code>aig.enabled</code></td><td>Optional; remote scans only via egress allowlist</td></tr>
 <tr><td>Entra ID SSO</td><td>-</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Only if the IdP is reachable internally</td></tr>
 <tr><td>SAML 2.0</td><td>-</td><td>Yes</td><td>Yes (Auth configured for SAML)</td><td>Yes (<code>dashboard.saml.*</code>)</td><td>With an internal IdP</td></tr>
 <tr><td>SCIM</td><td>-</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes (IdP must reach the API)</td></tr>

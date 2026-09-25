@@ -5,6 +5,8 @@ import {
 	AIG_CVE_RULES_FLOOR,
 	BROWSER_GUARD_BROWSERS,
 	BROWSER_GUARD_SITES,
+	POSTURE_MCP_RISK_CATEGORIES,
+	POSTURE_SKILL_RISK_CODES,
 	SHIPPED_THREAT_RULES,
 	THREAT_RULE_FILES,
 } from "./product-facts";
@@ -31,7 +33,7 @@ const productLines = [
 	},
 	{
 		title: "AI Security Posture",
-		desc: `AI Infra Guard scans: ${AIG_CVE_RULES_FLOOR.toLocaleString("en-US")}+ CVE rules for ${AIG_AI_COMPONENTS} AI components, MCP risk categories, skill and plugin scanning.`,
+		desc: `AI infrastructure vulnerability scanning with ${AIG_AI_COMPONENTS} AI component fingerprints and ${AIG_CVE_RULES_FLOOR.toLocaleString("en-US")}+ CVE rules rated by severity and CVSS, MCP server risk analysis across ${POSTURE_MCP_RISK_CATEGORIES} risk categories, ${POSTURE_SKILL_RISK_CODES[0]}–${POSTURE_SKILL_RISK_CODES[POSTURE_SKILL_RISK_CODES.length - 1]} skill and plugin scanning, and a dashboard posture view. Uploads carry identifiers and digests only.`,
 	},
 ];
 

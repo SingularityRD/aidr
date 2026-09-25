@@ -27,8 +27,9 @@ Singularity AIDR has four product lines that share one control plane:
   products, and restores them locally in responses.
 - **AIDR Privacy engine** — the TR/EN detection engine behind Browser Guard, with an
   optional native host and enterprise gateway.
-- **AI Security Posture** — AIG-based CVE scanning of AI components, MCP risk
-  categories and skill/plugin scanning.
+- **AI Security Posture** — AI infrastructure vulnerability scanning (146 AI component
+  fingerprints, 2,000+ CVE rules with severity and CVSS), MCP server risk analysis (14
+  risk categories), skill and plugin scanning (T01–T09) and a dashboard posture view.
 
 The structural fact behind the model: **local enforcement needs no server.** The
 default mode is `local`; a fresh install evaluates every tool call on the device. We do
@@ -96,7 +97,7 @@ Everything in Team, plus:
 - Exact-data-match datasets for Browser Guard, tenant DLP detector policy.
 - Signed policy and intel packs, SIEM delivery (Splunk / Sentinel / Elastic formats).
 - SCIM provisioning and IdP group mapping.
-- AI Security Posture scans (AIG CVE rules, MCP risk categories).
+- AI Security Posture: infrastructure CVE scans, MCP risk analysis, skill/plugin scanning and the dashboard posture view.
 - MCP Gateway deployment assistance.
 - Named support contact with published response targets; security questionnaire and
   architecture review support.

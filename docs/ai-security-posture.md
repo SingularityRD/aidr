@@ -15,9 +15,9 @@ the runtime engine never evaluates.
 
 | Scanner | Command | What it checks | Data source |
 |---|---|---|---|
-| Infrastructure exposure | `aidr scan --target <url>` / `--file targets.txt` | Fingerprints AI services (Ollama, vLLM, ComfyUI, Gradio, …), extracts versions and matches CVEs/advisories | Compiled AI-Infra-Guard fingerprints and CVE index (`packages/core/src/generated/`) |
-| MCP inventory | `aidr discover [--config <path>…]` | Local MCP configurations: server names, transport, risk indicators, tool-manifest attestation status | Local JSON/JSONC configs; AIG MCP categories |
-| Skill / plugin packages | `aidr scan --skill <dir>` (and every session-start plugin scan) | AIG Skill-Scan T01–T09 taxonomy as deterministic rules | `threats/skill-scan.yaml` |
+| Infrastructure exposure | `aidr scan --target <url>` / `--file targets.txt` | Fingerprints AI services (Ollama, vLLM, ComfyUI, Gradio, …), extracts versions and matches CVEs/advisories with severity and CVSS | Bundled AI component fingerprints (146) and CVE index (2,000+ rules), compiled into `packages/core/src/generated/` |
+| MCP inventory | `aidr discover [--config <path>…]` | Local MCP configurations: server names, transport, risk indicators, tool-manifest attestation status | Local JSON/JSONC configs; 14 MCP risk categories (`mcp-01`…`mcp-14`) |
+| Skill / plugin packages | `aidr scan --skill <dir>` (and every session-start plugin scan) | T01–T09 skill-scan taxonomy as deterministic rules | `threats/skill-scan.yaml` |
 
 `aidr scan --target` only contacts loopback/private targets unless
 `--allow-public` is given. A target that could not be reached or identified is
@@ -27,9 +27,9 @@ the command exit `1`. Critical or high findings exit `2` for CI use.
 
 ## Skill-scan rules (T01–T09)
 
-The AI-Infra-Guard Skill-Scan combines an LLM audit with a regex pre-scan. AIDR
-ships the deterministic part only, as reviewable data in
-`threats/skill-scan.yaml` (rule ids `SKILL-Txx-nnn`):
+AIDR's skill scan is deterministic: it ships as reviewable data in
+`threats/skill-scan.yaml` (rule ids `SKILL-Txx-nnn`), with no LLM-based review
+stage:
 
 | Code | Category | Examples of what the rules match |
 |---|---|---|
@@ -71,8 +71,8 @@ delivery from this installation.
 
 | Event type | Fields |
 |---|---|
-| `infra_scan_finding` | CVE/GHSA id (free-text AIG advisory titles are omitted), severity, CVSS, component name and version, applicability (`confirmed`/`unconfirmed`), sha256 digest of the target origin |
-| `mcp_inventory_finding` | server name (omitted when credential-shaped), transport, risk categories (`remote_mcp_url`, `shell_wrapper_command`, `broad_filesystem_access_arg`, AIG `mcp-01`…`mcp-14`), attestation status, digests of the inventory id and configuration |
+| `infra_scan_finding` | CVE/GHSA id (free-text advisory titles are omitted), severity, CVSS, component name and version, applicability (`confirmed`/`unconfirmed`), sha256 digest of the target origin |
+| `mcp_inventory_finding` | server name (omitted when credential-shaped), transport, risk categories (`remote_mcp_url`, `shell_wrapper_command`, `broad_filesystem_access_arg`, `mcp-01`…`mcp-14`), attestation status, digests of the inventory id and configuration |
 | `plugin_scan_finding` | plugin key and version, rule id, T01–T09 code, severity, digest of the plugin-relative file path |
 
 Never uploaded: target URLs and hostnames, file paths, matched text, MCP
@@ -114,11 +114,17 @@ the data cannot be read, the page shows an error instead of an empty state.
 
 ## Limitations
 
-- The infrastructure scan covers only the compiled AI-Infra-Guard fingerprint
-  and CVE dataset, and only reachable targets that were identified.
+- The infrastructure scan covers only the bundled fingerprint and CVE dataset,
+  and only reachable targets that were identified.
 - MCP discovery reads local configuration files; it is not cloud-wide discovery.
-  AIG MCP categories for a server are suggested from its name.
-- Skill rules are deterministic patterns. The LLM-based review stage of
-  AI-Infra-Guard Skill-Scan is not part of AIDR.
+  MCP risk categories for a server are suggested from its name.
+- Skill rules are deterministic patterns; there is no LLM-based review stage.
 - Findings reflect what was uploaded; a resolved issue remains visible until it
   ages out of the 90-day window or the tenant's telemetry retention removes it.
+
+## Upstream data source (engineering note)
+
+The fingerprint, CVE and MCP category data are compiled from the
+SingularityRD-maintained AI-Infra-Guard source tracked under
+`vendor/ai-infra-guard/`; attribution is in `THIRD_PARTY_NOTICES` and the
+integration design in [aig-integration.md](architecture/aig-integration.md).

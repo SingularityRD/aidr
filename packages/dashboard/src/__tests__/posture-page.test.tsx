@@ -179,6 +179,7 @@ describe("AI security posture page", () => {
 		expect(counters).toHaveTextContent("High CVEs1");
 
 		expect(screen.getByRole("region", { name: "Posture trend" })).toBeInTheDocument();
+		expect(document.body.textContent).not.toMatch(/infra[- ]?guard|tencent|\baig\b/i);
 	});
 
 	it("explains how to upload when nothing has been reported", async () => {
@@ -189,6 +190,7 @@ describe("AI security posture page", () => {
 		expect(empty).toHaveTextContent("aidr scan --target");
 		expect(empty).toHaveTextContent("--upload");
 		expect(empty).toHaveTextContent("aidr discover --upload");
+		expect(document.body.textContent).not.toMatch(/infra[- ]?guard|tencent|\baig\b/i);
 		expect(
 			screen.queryByRole("region", { name: "Infrastructure exposure" }),
 		).not.toBeInTheDocument();

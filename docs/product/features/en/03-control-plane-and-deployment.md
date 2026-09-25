@@ -400,20 +400,20 @@ and a 30-day **Trend**.
 exposed inference server with a known CVE, or an MCP server that wraps a shell, widens
 what a prompt-injected agent can reach.
 
-**How it works.** Three local, deterministic scanners built on AI-Infra-Guard (AIG) data
-that SingularityRD maintains under `vendor/ai-infra-guard/`:
+**How it works.** Three local, deterministic scanners built into the AIDR CLI, backed by
+a vulnerability and fingerprint dataset that ships with AIDR:
 
 | Scanner | Command | Data behind it (counted in this repository) |
 | --- | --- | --- |
-| Infrastructure exposure | `aidr scan --target <url>` or `--file targets.txt` | 146 service fingerprints; 2,014 CVE rule files for 116 components in the vendor data, compiled to 2,017 advisory entries across 127 products (`packages/core/src/generated/aig-cve-index.json`) |
-| MCP inventory | `aidr discover [--config <path>...]` | Local MCP configuration files plus 14 AIG MCP risk categories (from 15 vendor MCP rule files) |
+| Infrastructure exposure | `aidr scan --target <url>` or `--file targets.txt` | 146 AI component fingerprints (inference servers, agent frameworks, AI apps); 2,014 CVE rule files for 116 components, compiled to 2,017 advisory entries across 127 products, each with a severity and, where published, a CVSS score |
+| MCP inventory | `aidr discover [--config <path>...]` | Local MCP configuration files plus 14 MCP risk categories (`mcp-01` to `mcp-14`, such as token exposure, tool poisoning, command injection and tool shadowing) |
 | Skill and plugin packages | `aidr scan --skill <dir>`, plus every session-start plugin scan | 26 deterministic rules in `threats/skill-scan.yaml` for the T01-T09 taxonomy |
 
 With `--upload`, findings go to ingest using the installation's enrolled API key. A
 database trigger projects them into `public.posture_findings`. Only identifiers,
 severities, component versions and digests leave the machine. Target URLs, host names,
-file paths, matched text, MCP commands, arguments and credentials never do. The deep
-scans offered by the AIG bridge (`services/aig-bridge`) run as an optional sidecar (see
+file paths, matched text, MCP commands, arguments and credentials never do. Optional
+deep scans run in a separate loopback bridge service, deployed as an optional sidecar (see
 [Compose](#on-premises-with-docker-compose)).
 
 **How to use.**
@@ -439,8 +439,8 @@ not shown because only its digest was sent.
 **Limitations.** Detection only: posture never changes runtime verdicts. Coverage is
 limited to the compiled fingerprint and CVE dataset and to reachable, identified
 targets. A target that could not be reached is "not scanned", never clean. MCP
-discovery reads local configuration files only. The LLM review stage of AIG Skill-Scan
-is not part of AIDR. An empty page means nothing was uploaded, not that the estate is
+discovery reads local configuration files only. Skill rules are deterministic patterns;
+there is no LLM-based review stage. An empty page means nothing was uploaded, not that the estate is
 clean.
 
 ### Team policy and runtime policy
@@ -1331,7 +1331,7 @@ database provider's point-in-time recovery.
 | --- | --- | --- |
 | Self-hosted plans (Business, Enterprise) | On-prem Compose, Air-gapped (offline target); Helm: `pg_dump` CronJob only; Cloud: operated by the provider | Linux host with systemd; AWS CLI v2 for S3 targets |
 
-**Limitations.** AIG scan state volumes are not part of the backup. Real offsite access,
+**Limitations.** Deep-scan state volumes are not part of the backup. Real offsite access,
 independent key custody, alert delivery and a restore on a second failure-domain host
 must be proven in each customer environment.
 
@@ -1452,8 +1452,8 @@ retention and your change control.
 and resource limits), `.env`, `.env.functions`, `.env.readiness` and `.env.ingress` (all
 `0600`), migrations, functions, `agent-config.json` and `deployment.json`. Ports bind to
 loopback, so your TLS proxy fronts them. Three **resource profiles** set per-service CPU,
-memory and PID limits (see [sizing](#resource-sizing)). The optional **AIG scanning
-sidecar** (`--with-aig`) adds the AIG server, agent and bridge under Compose profile
+memory and PID limits (see [sizing](#resource-sizing)). The optional **deep-scan
+sidecar** (`--with-aig`) adds the deep-scan server, agent and bridge under Compose profile
 `aig`. The bridge is published on `127.0.0.1:8099` only. Remote scans leave only through
 **`aig-egress`**, a pinned Squid gateway that denies everything by default. You list
 authorized domains in `/srv/aidr/aig/egress/allowlist.txt`. Loopback, private, CGNAT and
@@ -1486,7 +1486,7 @@ the operator moves to `--profile medium` in the next maintenance window.
 
 **Limitations.** One host: no multi-host high availability or availability SLA. The
 doctor fails until TLS, the device-start signer, evidence and backup timers and the
-first account exist. The committed AIG data manifest is unsigned, so the bridge reports
+first account exist. The committed deep-scan data manifest is unsigned, so the bridge reports
 not-ready until a release-signed manifest is deployed.
 
 ### Kubernetes with Helm
@@ -1494,14 +1494,14 @@ not-ready until a release-signed manifest is deployed.
 **What it does.** The chart `deploy/helm/aidr` installs the same control plane on
 Kubernetes 1.25+. It runs the dashboard, an Envoy API gateway, auth, REST, storage,
 functions, an optional in-cluster Postgres, a migrations hook Job, an optional backup
-CronJob and the optional AIG stack (`aig.enabled`).
+CronJob and the optional deep-scan stack (`aig.enabled`).
 
 **Why it matters.** Teams that run Kubernetes get chart-managed upgrades, replicas,
 PodDisruptionBudgets and autoscaling, with their own HA Postgres.
 
 **How it works.** The chart refuses weak installs. Rendering fails without existing
 Secrets, with non-`https` URLs, without a TLS Secret, with a `latest` image tag, and
-without complete AIG inputs. It never generates secrets. Every pod runs as non-root
+without complete deep-scan inputs. It never generates secrets. Every pod runs as non-root
 with `seccompProfile: RuntimeDefault`, all capabilities dropped and a read-only root
 filesystem. The one exception is the in-cluster Postgres filesystem. A default-deny
 NetworkPolicy opens only the flows the stack needs. Egress to the internet is opt-in per
@@ -1729,7 +1729,7 @@ Starting budgets from `deploy/onprem/resource-profile.json`,
 `deploy/RESOURCE_REQUIREMENTS.md` and the Helm values. They are not a capacity promise:
 validate with your own load and soak tests.
 
-| Where | Profile | Starting point | Extra for the AIG sidecar |
+| Where | Profile | Starting point | Extra for the deep-scan sidecar |
 | --- | --- | --- | --- |
 | Compose host | `small` (default): pilot, up to about 100 endpoints | 4 vCPU, 8 GiB RAM, 100 GiB SSD | +4 vCPU, 6 GiB, 40 GiB |
 | Compose host | `medium`: load-test start for about 1,000 endpoints | 8 vCPU, 16 GiB RAM, 250 GiB SSD | +6 vCPU, 8 GiB, 60 GiB |
@@ -1760,7 +1760,7 @@ the daily average. Replace these assumptions with real customer data:
 | Runtime policy, rollout, DLP editor | Local policy file only | Yes | Yes | Yes | Yes |
 | Browser Privacy reporting | Extension masks locally, no report | Yes | Yes | Yes | Yes |
 | AI Security Posture page | Scanners run locally, no page | Yes | Yes | Yes | Yes (internal targets) |
-| AIG deep-scan sidecar | Optional loopback bridge | Not listed for the hosted service | Optional `--with-aig` | Optional `aig.enabled` | Optional; remote scans only via egress allowlist |
+| Deep-scan sidecar | Optional loopback bridge | Not listed for the hosted service | Optional `--with-aig` | Optional `aig.enabled` | Optional; remote scans only via egress allowlist |
 | Entra ID SSO | - | Yes | Yes | Yes | Only if the IdP is reachable internally |
 | SAML 2.0 | - | Yes | Yes (Auth configured for SAML) | Yes (`dashboard.saml.*`) | With an internal IdP |
 | SCIM | - | Yes | Yes | Yes | Yes (IdP must reach the API) |

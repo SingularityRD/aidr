@@ -15,7 +15,7 @@ nothing here replaces that record.
 | AIDR for AI coding agents | Developer endpoint, inside the agent host's hook | `packages/core`, connectors, `packages/mcp-gateway`, `packages/sdk`, `packages/cli` |
 | AIDR Browser Guard | The user's browser (Chrome, Edge, Firefox) | `packages/browser-guard` |
 | AIDR Privacy engine | In the browser (rule layer), optional endpoint native host, optional server gateway | `packages/privacy` |
-| AI Security Posture | CLI and the AIG bridge service | `packages/core/src/aig-*.ts`, `services/aig-bridge`, `vendor/ai-infra-guard` |
+| AI Security Posture | Developer or operator machine (CLI), optional loopback deep-scan service, dashboard Posture view | `packages/core` posture scanners, `packages/cli` (`scan`, `discover`, `collect`), `threats/skill-scan.yaml`, `packages/dashboard` |
 | Control plane | Cloud (SaaS) or customer-operated (on-prem) | `supabase/`, `packages/dashboard` |
 
 ## 1. AIDR for AI coding agents
@@ -137,20 +137,40 @@ what is not. Tests run with `pnpm test:privacy`.
 
 ## 4. AI Security Posture
 
-Built on AI Infra Guard (AIG), which SingularityRD maintains under
-`vendor/ai-infra-guard/` ([integration architecture](../architecture/aig-integration.md)):
+Singularity AIDR's AI Security Posture shows where the AI stack around your agents is
+exposed. It is detection, not enforcement: three local, deterministic scanners report
+findings, and runtime `allow`/`ask`/`deny` decisions are unchanged
+([AI Security Posture](../ai-security-posture.md)).
 
-- **Infrastructure CVE scanning.** 2,000+ CVE rules covering 146 AI components
-  (inference servers, agent frameworks, AI apps). `aidr scan --target <url>` fingerprints
-  a service and matches versions against the generated CVE index; `aidr collect` keeps a
-  tenant-scoped inventory. Private targets only by default.
-- **MCP risk categories.** AIG's MCP rule categories map onto AIDR's MCP enforcement
-  policy.
-- **Skill and plugin scanning.** Installed agent plugins are scanned at session start,
-  and the AIG bridge exposes MCP, agent and skill scans.
+- **AI infrastructure vulnerability scanning.** `aidr scan --target <url>` (or
+  `--file targets.txt`) fingerprints AI services such as inference servers, agent
+  frameworks and AI apps (146 AI component fingerprints), extracts their versions and
+  matches them against 2,000+ CVE rules. Each finding carries a CVE/GHSA id, severity
+  and CVSS score. Only loopback and private targets are scanned unless `--allow-public`
+  is given; a target that could not be reached or identified is reported as *not
+  scanned*, never as clean. Critical or high findings exit `2` for CI use.
+  `aidr collect` keeps a tenant-scoped inventory of scanned targets.
+- **MCP server risk analysis.** `aidr discover` reads local MCP configuration files and
+  reports each server's transport, risk indicators (remote URL, shell wrapper, broad
+  filesystem access), tool-manifest attestation status and the 14 MCP risk categories
+  (`mcp-01` to `mcp-14`, such as token exposure, tool poisoning, command injection and
+  tool shadowing). The categories map onto AIDR's MCP enforcement policy.
+- **Skill and plugin scanning.** `aidr scan --skill <dir>` and the session-start plugin
+  scan check skill and plugin packages against the T01–T09 taxonomy (instruction
+  hijacking, memory poisoning, remote payload execution, embedded malicious code,
+  privilege escalation, persistence, tool hijacking, insecure dependencies, insecure
+  coding practices) as reviewable rules in `threats/skill-scan.yaml`.
+- **Dashboard posture view.** With `--upload`, findings reach the managed control plane
+  and appear on the dashboard's **Posture** page: CVEs by severity and CVSS, MCP servers
+  with their risk categories, skill/plugin findings and a 30-day trend. An empty posture
+  is never shown as a clean environment.
+- **Identifiers only.** Uploads carry identifiers and digests (CVE id, severity, CVSS,
+  component and version, risk category codes, rule ids, SHA-256 digests). Target URLs and
+  hostnames, file paths, matched text, MCP commands, arguments and credentials never
+  leave the machine.
 
-Deep scans run through the AIG bridge (`services/aig-bridge`), a loopback FastAPI service
-by default. A scan target can contain user-controlled text, so check where the bridge runs
+Optional deep scans run through a separate bridge service that listens on loopback by
+default. A scan target can contain user-controlled text, so check where the bridge runs
 before scanning customer systems.
 
 ## 5. Control plane and deployment

@@ -39,7 +39,7 @@ const COLUMNS =
 const SEVERITY_ORDER: PostureSeverity[] = ["critical", "high", "medium", "low", "info", "unknown"];
 const SEVERITY_RANK = new Map(SEVERITY_ORDER.map((severity, index) => [severity, index]));
 
-/** AIG Skill-Scan (SkillTrustBench) taxonomy, mirrored from core. */
+/** Skill and plugin scan taxonomy (T01-T09), mirrored from `threats/skill-scan.yaml`. */
 export const SKILL_RISK_TYPES: Record<string, string> = {
 	T01: "Skill instruction hijacking",
 	T02: "Agent memory poisoning",
@@ -52,7 +52,7 @@ export const SKILL_RISK_TYPES: Record<string, string> = {
 	T09: "Insecure skill coding practices",
 };
 
-/** AIG MCP risk categories and the local configuration indicators. */
+/** MCP risk categories (`mcp-01`..`mcp-14`) and the local configuration indicators. */
 const MCP_CATEGORY_LABELS: Record<string, string> = {
 	remote_mcp_url: "Remote endpoint",
 	shell_wrapper_command: "Shell wrapper",
@@ -532,7 +532,8 @@ function TenantPosturePage({ tenantId }: { tenantId: string }) {
 										<tr>
 											<td colSpan={7} className="muted">
 												No CVE matched in the uploaded infrastructure scans. This reflects only the
-												compiled AI-Infra-Guard dataset for the targets that were scanned.
+												bundled AI component fingerprint and CVE dataset for the targets that were
+												scanned.
 											</td>
 										</tr>
 									) : null}

@@ -184,9 +184,11 @@ control plane.
 
 ## Part C — Posture and deployment (90 seconds)
 
-- `aidr scan --target http://127.0.0.1:<port>` against a local test service: AIG
-  fingerprinting against 2,000+ CVE rules for 146 AI components. Private targets only by
-  default.
+- `aidr scan --target http://127.0.0.1:<port>` against a local test service: AI Security
+  Posture fingerprints the service (146 AI component fingerprints) and matches its version
+  against 2,000+ CVE rules, showing severity and CVSS. Private targets only by default.
+- `aidr discover` on the demo machine: lists the configured MCP servers with transport and
+  their MCP risk categories (14 categories).
 - Deployment options: local mode (free), cloud, on-prem Docker Compose or Helm,
   air-gapped with a signed offline license. Point to [onprem.md](../deployment/onprem.md).
 

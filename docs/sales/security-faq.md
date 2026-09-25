@@ -23,7 +23,8 @@ the browser. Outbound flows exist only when they are enabled:
 | Version check | Off | Version, runtime, OS/arch, random installation ID | [privacy.md](../privacy.md) |
 | Managed agent telemetry | Off (managed mode + key) | Verdict events after credential redaction; tool summaries and artifacts hashed by default | [privacy.md](../privacy.md) |
 | Browser Guard telemetry | Off (needs control-plane URL + key) | Site, action, channel and per-type counts only | [privacy-telemetry.md](../contracts/privacy-telemetry.md) |
-| AIG deep scan | Explicit command | Target and options to the configured AIG bridge (loopback by default) | [privacy.md](../privacy.md) |
+| AI Security Posture upload | Off (explicit `--upload` on `aidr scan` / `aidr discover`, enrolled API key) | Identifiers and digests only: CVE/GHSA id, severity, CVSS, component and version, MCP risk category codes, skill rule ids and T01–T09 codes, SHA-256 digests. Never target URLs, host names, file paths, matched text, MCP commands or credentials | [ai-security-posture.md](../ai-security-posture.md) |
+| AI Security Posture deep scan | Explicit command | Target and options to the configured deep-scan bridge (loopback by default) | [privacy.md](../privacy.md) |
 | Diagnostics (Sentry) | Off | Scrubbed error events, only with an explicit opt-in and DSN | [privacy.md](../privacy.md) |
 
 ### Are prompts, source code or files uploaded to SingularityRD?

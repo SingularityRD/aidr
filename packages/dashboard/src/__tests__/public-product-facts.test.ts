@@ -1,5 +1,5 @@
-// The public landing and pricing pages quote countable facts (rule counts, AIG
-// catalog size, supported sites, list prices). These tests bind each number to
+// The public landing and pricing pages quote countable facts (rule counts, AI Security
+// Posture dataset size, supported sites, list prices). These tests bind each number to
 // the repository so stale marketing copy fails the build.
 
 import { readdirSync, readFileSync } from "node:fs";
@@ -13,6 +13,8 @@ import {
 	AIG_CVE_RULES_FLOOR,
 	BROWSER_GUARD_SITES,
 	LIST_PRICE_NOTE,
+	POSTURE_MCP_RISK_CATEGORIES,
+	POSTURE_SKILL_RISK_CODES,
 	PUBLIC_PLANS,
 	SHIPPED_THREAT_RULES,
 	THREAT_RULE_FILES,
@@ -36,13 +38,25 @@ describe("public product facts", () => {
 		expect(rules).toBe(SHIPPED_THREAT_RULES);
 	});
 
-	it("matches the vendored AI Infra Guard catalog", () => {
+	it("matches the bundled AI Security Posture vulnerability and fingerprint dataset", () => {
 		expect(yamlFiles("vendor/ai-infra-guard/data/vuln", true).length).toBeGreaterThanOrEqual(
 			AIG_CVE_RULES_FLOOR,
 		);
 		expect(yamlFiles("vendor/ai-infra-guard/data/fingerprints", true)).toHaveLength(
 			AIG_AI_COMPONENTS,
 		);
+	});
+
+	it("matches the MCP risk categories and the skill-scan taxonomy", () => {
+		const categories = readFileSync(
+			join(repoRoot, "packages/core/src/mcp-aig-categories.ts"),
+			"utf8",
+		);
+		const ids = new Set(categories.match(/\bid: "mcp-\d{2}"/g));
+		expect(ids.size).toBe(POSTURE_MCP_RISK_CATEGORIES);
+		const skillRules = readFileSync(join(repoRoot, "threats/skill-scan.yaml"), "utf8");
+		const codes = [...new Set(skillRules.match(/SKILL-T\d{2}/g)?.map((id) => id.slice(6)))].sort();
+		expect(codes).toEqual([...POSTURE_SKILL_RISK_CODES]);
 	});
 
 	it("lists exactly the Browser Guard sites that have a dedicated adapter", () => {

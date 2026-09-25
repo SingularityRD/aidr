@@ -1587,7 +1587,7 @@ $ aidr doctor
 
 | Plan | Dağıtım | Platform / işletim sistemi |
 | --- | --- | --- |
-| Free, Team, Business, Enterprise (`--upload` ve güvenlik duruşu özellikleri: Business, Enterprise) | Yerel; Cloud, On-prem, Air-gapped | Windows, Linux, macOS |
+| Free, Team, Business, Enterprise (`--upload` ve Yapay Zekâ Güvenlik Duruşu özellikleri: Business, Enterprise) | Yerel; Cloud, On-prem, Air-gapped | Windows, Linux, macOS |
 
 **Sınırlamalar**
 - `aidr setup` bir connector'ı kurmaz veya etkinleştirmez; connector kurulumu her
