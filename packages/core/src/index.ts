@@ -498,6 +498,50 @@ export {
 	separatorLine,
 	severityEmoji,
 } from "./format.js";
+// Security framework mapping (OWASP LLM 2025, OWASP Agentic 2026, MITRE ATLAS)
+export {
+	type AtlasTechnique,
+	FRAMEWORK_IDS,
+	FRAMEWORKS,
+	type FrameworkDefinition,
+	type FrameworkId,
+	type FrameworkItemDefinition,
+	frameworkItemLabel,
+	frameworkItemTitle,
+	frameworkOfItem,
+	MITRE_ATLAS_TACTICS,
+	MITRE_ATLAS_TECHNIQUES,
+	OWASP_AGENTIC_2026,
+	OWASP_LLM_2025,
+} from "./framework-catalog.js";
+export {
+	buildCoverageMatrix,
+	buildDashboardCoverageArtifact,
+	type CoverageItem,
+	type CoverageMatrix,
+	type CoverageRule,
+	type CoverageStatus,
+	type CoverageTacticSummary,
+	coverageMatrixToJson,
+	FRAMEWORK_MAPPINGS_RELATIVE_PATH,
+	type FrameworkAssessment,
+	type FrameworkCoverage,
+	type FrameworkMappings,
+	type FrameworkMappingsParseResult,
+	type FrameworkRuleRef,
+	frameworkRefLabels,
+	frameworkRefsFromJson,
+	frameworkRefsToJson,
+	loadFrameworkMappings,
+	parseFrameworkMappings,
+	parseFrameworkMappingsYaml,
+	renderCoverageDocument,
+	renderCoverageMarkdown,
+	renderCoverageTable,
+	resolveRuleFrameworks,
+	toCoverageRules,
+	validateFrameworkMappingsAgainstRules,
+} from "./framework-mappings.js";
 // Guard (soft-gated connector orchestrator)
 //
 // `executeWithRollback` is the connector-facing shape of a response: the guard
@@ -778,19 +822,6 @@ export {
 	redactPII,
 	validateNoPII,
 } from "./pii-detector.js";
-// Prompt protection (UserPromptSubmit-style inspection of the user's prompt)
-export {
-	DEFAULT_PROMPT_PROTECTION,
-	type PromptFindingCategory,
-	type PromptFindingSummary,
-	type PromptIncompleteInspection,
-	type PromptProtectionDecision,
-	type PromptProtectionResult,
-	PromptScanDeadlineError,
-	type PromptScanOptions,
-	type PromptTenantDlp,
-	scanPrompt,
-} from "./prompt-protection.js";
 // Plugin scan cache
 export {
 	cacheKey,
@@ -844,6 +875,19 @@ export {
 	type PostureUploadResult,
 	uploadPostureEvents,
 } from "./posture-upload.js";
+// Prompt protection (UserPromptSubmit-style inspection of the user's prompt)
+export {
+	DEFAULT_PROMPT_PROTECTION,
+	type PromptFindingCategory,
+	type PromptFindingSummary,
+	type PromptIncompleteInspection,
+	type PromptProtectionDecision,
+	type PromptProtectionResult,
+	PromptScanDeadlineError,
+	type PromptScanOptions,
+	type PromptTenantDlp,
+	scanPrompt,
+} from "./prompt-protection.js";
 // Quarantine
 export {
 	AutoQuarantine,
@@ -1137,6 +1181,8 @@ export type {
 	Decision,
 	DelegationLineage,
 	FileCheckConfig,
+	FrameworkRefs,
+	FrameworkRefsJson,
 	HeuristicMatch,
 	IncidentConfig,
 	IntegrityConfig,

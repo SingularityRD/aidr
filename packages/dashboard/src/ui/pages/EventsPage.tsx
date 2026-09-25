@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useTeam } from "../../enterprise/team-provider";
 import { readErrorMessage } from "../../lib/errors";
 import { supabase } from "../../lib/supabase";
+import { FrameworkTags } from "../framework-coverage";
 import { privacyEventSummary } from "../privacy-guard";
 
 type AgentRow = {
@@ -216,7 +217,12 @@ function TenantEventsPage({ tenantId }: { tenantId: string }) {
 												<span className="muted small">—</span>
 											)}
 										</td>
-										<td className="mono">{summarize(event)}</td>
+										<td className="mono">
+											{summarize(event)}
+											{event.type === "runtime_verdict" ? (
+												<FrameworkTags ruleId={event.payload?.matched_threat_id} />
+											) : null}
+										</td>
 									</tr>
 								);
 							})}

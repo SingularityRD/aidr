@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useTeam } from "../../enterprise/team-provider";
 import { readErrorMessage } from "../../lib/errors";
 import { supabase } from "../../lib/supabase";
+import { FrameworkCoverageSection } from "../framework-coverage";
 
 /** Findings older than this are outside the posture window (and the trend). */
 export const POSTURE_WINDOW_DAYS = 90;
@@ -587,6 +588,8 @@ function TenantPosturePage({ tenantId }: { tenantId: string }) {
 					<TrendSection trend={trend} trendMax={trendMax} />
 				</>
 			) : null}
+
+			<FrameworkCoverageSection />
 		</div>
 	);
 }

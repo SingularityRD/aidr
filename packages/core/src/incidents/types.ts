@@ -1,3 +1,4 @@
+import type { FrameworkRefsJson } from "../types.js";
 import type { EvidenceClock } from "./evidence-receipt.js";
 
 export type IncidentSeverity = "info" | "warning" | "high" | "critical";
@@ -41,6 +42,8 @@ export interface NormalizedSignal {
 	// Best-effort enrichment
 	tool_name?: string;
 	threat_id?: string;
+	/** Framework IDs of the matched rule, when the audit entry carried them. */
+	frameworks?: FrameworkRefsJson;
 
 	artifact?: string;
 	reasons?: string[];
@@ -54,6 +57,8 @@ export interface IncidentEventRef {
 	signal_type: SignalType;
 	severity: IncidentSeverity;
 	summary: string;
+	/** Framework IDs of the rule behind this event (OWASP LLM/Agentic, MITRE ATLAS). */
+	frameworks?: FrameworkRefsJson;
 }
 
 export interface Incident {

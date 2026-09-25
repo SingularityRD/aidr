@@ -21,6 +21,8 @@ Rules ship in the `threats/` directory at the repository root:
 | `win-*.yaml` | Windows-specific variants of the above |
 | `mac-*.yaml` | macOS-specific variants (osascript, Keychain, LOLBins, defense evasion) |
 
+`threats/mappings/frameworks.yaml` is not a rule file (the loader reads only `threats/*.yaml`). It maps every rule id to OWASP Top 10 for LLM Applications 2025, OWASP Top 10 for Agentic Applications 2026 and MITRE ATLAS; a new rule needs an entry there or the test suite fails. See [Security framework coverage](framework-coverage.md) (regenerate with `pnpm coverage:frameworks -- --write`).
+
 ## Rule Schema
 
 ```yaml

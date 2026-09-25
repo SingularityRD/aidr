@@ -16,6 +16,7 @@ import {
 	rotateKeyCommand,
 	SECRET_STORE_OPTION_DESCRIPTION,
 } from "./commands/config-secret.js";
+import coverageCommand from "./commands/coverage.js";
 import discoverCommand from "./commands/discover.js";
 import doctorCommand from "./commands/doctor.js";
 import privacyScanCommand from "./commands/privacy.js";
@@ -171,6 +172,14 @@ program
 	)
 	.option("--json", "Emit a machine-readable report")
 	.action((options) => doctorCommand(options));
+
+program
+	.command("coverage")
+	.description(
+		"Show how the installed detection rules map to OWASP LLM Top 10 2025, OWASP Agentic Top 10 2026 and MITRE ATLAS",
+	)
+	.option("--format <format>", "table, json or markdown", "table")
+	.action((options) => coverageCommand(options));
 
 program
 	.command("pending")

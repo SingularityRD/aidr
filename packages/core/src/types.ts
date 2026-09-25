@@ -60,6 +60,26 @@ export const ThreatSchema = z.object({
 /** Raw threat from YAML (before compilation). */
 export type ThreatData = z.infer<typeof ThreatSchema>;
 
+/**
+ * Security framework items a rule maps to (see `threats/mappings/frameworks.yaml`).
+ * IDs carry no edition suffix and are sorted: `LLM01`, `ASI02`, `AML.T0051.001`.
+ */
+export interface FrameworkRefs {
+	/** OWASP Top 10 for LLM Applications 2025. */
+	owaspLlm: string[];
+	/** OWASP Top 10 for Agentic Applications 2026. */
+	owaspAgentic: string[];
+	/** MITRE ATLAS techniques and sub-techniques. */
+	mitreAtlas: string[];
+}
+
+/** Serialized (snake_case) form of {@link FrameworkRefs} used in audit/SIEM JSON. */
+export interface FrameworkRefsJson {
+	owasp_llm: string[];
+	owasp_agentic: string[];
+	mitre_atlas: string[];
+}
+
 /** Loaded threat with compiled regex and normalized match_on. */
 export interface Threat {
 	id: string;
@@ -73,6 +93,10 @@ export interface Threat {
 	title: string;
 	expiresAt: Date | null;
 	revoked: boolean;
+	/** Rule file the threat was loaded from (e.g. `commands.yaml`). */
+	sourceFile?: string;
+	/** Framework mapping; absent when the rule directory ships no mapping for it. */
+	frameworks?: FrameworkRefs;
 }
 
 // ── Heuristic match ─────────────────────────────────────────────────
@@ -139,6 +163,12 @@ export interface Verdict {
 	artifacts: string[];
 	matchedThreatId: string | null;
 	reasons: string[];
+	/**
+	 * Framework items of the matched rule (OWASP LLM 2025, OWASP Agentic 2026,
+	 * MITRE ATLAS). Enrichment only: absent when no rule matched or the rule has
+	 * no mapping, and never an input to the decision.
+	 */
+	frameworks?: FrameworkRefs;
 	/** Verified delegation lineage; absent when the call carried no credential. */
 	delegation?: DelegationLineage;
 	/**

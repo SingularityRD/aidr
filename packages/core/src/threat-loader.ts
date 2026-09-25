@@ -6,6 +6,7 @@ import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { getFileContent } from "./file-utils.js";
+import { loadFrameworkMappings, resolveRuleFrameworks } from "./framework-mappings.js";
 import type { Logger, Threat } from "./types.js";
 import { nullLogger } from "./types.js";
 
@@ -51,6 +52,10 @@ export async function loadThreats(
 		logger.error(errorMsg, { path: threatDir, error: String(error) });
 		throw new Error(errorMsg);
 	}
+
+	// Enrichment only: a missing or invalid mapping file leaves `frameworks` off
+	// the loaded rules and is logged; it never stops a rule from loading.
+	const frameworkMappings = await loadFrameworkMappings(threatDir, logger);
 
 	for (const filename of files) {
 		const filePath = join(threatDir, filename);
@@ -133,6 +138,14 @@ export async function loadThreats(
 				Array.isArray(rawMatchOn) ? rawMatchOn : [rawMatchOn as string],
 			);
 
+			const frameworks = frameworkMappings
+				? resolveRuleFrameworks(frameworkMappings, {
+						id: record.id as string,
+						category: record.category as string,
+						sourceFile: filename,
+					})
+				: null;
+
 			threats.push({
 				id: record.id as string,
 				category: record.category as string,
@@ -145,6 +158,8 @@ export async function loadThreats(
 				title: record.title as string,
 				expiresAt: parseExpiresAt(record.expires_at as string | null | undefined),
 				revoked: false,
+				sourceFile: filename,
+				...(frameworks ? { frameworks } : {}),
 			});
 		}
 	}

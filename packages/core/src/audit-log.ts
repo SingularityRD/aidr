@@ -8,6 +8,7 @@ import { chmod, open, rename, stat, unlink } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { resolvePath } from "./config.js";
 import { getFileContent } from "./file-utils.js";
+import { frameworkRefsToJson } from "./framework-mappings.js";
 import { preparePrivateLocalFile } from "./private-local-file.js";
 import type { ResponseActionRecord } from "./response-actions.js";
 import { redactTelemetryData, redactTelemetryString } from "./telemetry-redaction.js";
@@ -115,6 +116,8 @@ export function buildRuntimeVerdictEntry(
 		reasons: redactTelemetryData(verdict.reasons),
 		source: verdict.source,
 		matched_threat_id: verdict.matchedThreatId,
+		// Framework IDs of the matched rule (official identifiers only, no input data).
+		...(verdict.frameworks ? { frameworks: frameworkRefsToJson(verdict.frameworks) } : {}),
 		user_override: userOverride,
 		...(durationMs !== undefined && Number.isFinite(durationMs) && durationMs >= 0
 			? { duration_ms: durationMs }
@@ -193,6 +196,9 @@ export function buildIncidentEntry(
 		reasons: redactTelemetryData(params.verdict.reasons),
 		source: params.verdict.source,
 		matched_threat_id: params.verdict.matchedThreatId,
+		...(params.verdict.frameworks
+			? { frameworks: frameworkRefsToJson(params.verdict.frameworks) }
+			: {}),
 		recommended_actions: params.recommendedActions,
 		// Same lineage rule as the plain verdict entry: the incident is traceable to
 		// the resource only when a delegated credential verified for the call.
