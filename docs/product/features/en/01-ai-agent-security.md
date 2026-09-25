@@ -454,7 +454,7 @@ session is released once.
 **What it does**
 The engine extracts artifacts (commands, URLs, file paths, content, packages) from each
 tool call and matches them against YAML threat rules. The rules are data, not code:
-**386 rules in 24 files** under [`threats/`](../../../../threats/), covering Linux,
+**451 rules in 28 files** under [`threats/`](../../../../threats/), covering Linux,
 macOS and Windows.
 
 **Why it matters**
@@ -471,8 +471,10 @@ reputation legs → decision engine (deny > ask > allow) → cache → audit log
 
 Each rule has `id`, `category`, `severity`, `confidence` (0–1), `action` (`block` →
 `deny`, `require_approval` → `ask`, `log` → `allow`), a regex `pattern`, `match_on`,
-`title`, `expires_at` and `revoked`. Of the 386 rules, 186 block, 199 require approval
-and 1 logs; 148 are critical, 215 high and 23 medium.
+`title`, `expires_at` and `revoked`. Of the 451 rules, 204 block, 219 require approval
+and 28 log; 168 are critical, 256 high and 27 medium. The 27 `secure-code.yaml` rules are
+advisory: they only inspect code the agent writes, and `secure_code.action` (`warn` by
+default, or `ask`) decides what a match does.
 
 Rule files:
 
@@ -487,12 +489,16 @@ Rule files:
 | `urls.yaml` | Malicious URL and domain patterns | 5 |
 | `mining.yaml` | Crypto-mining / resource hijacking (ATT&CK T1496) | 17 |
 | `self-defense.yaml` | Attempts to disable or bypass AIDR | 9 |
+| `canary.yaml` | Agent use of AIDR canary-credential management | 1 |
 | `mitre.yaml` | MITRE ATT&CK technique mappings | 64 |
 | `llm-threats.yaml` | LLM-specific threats | 21 |
 | `skill-scan.yaml` | Skill/plugin package rules T01–T09 | 26 |
+| `ai-supply-chain.yaml` | Unsafe model loading and unvetted model sources | 14 |
+| `secure-code.yaml` | Insecure code the agent writes (secure-code guardrails) | 27 |
+| `context-poisoning.yaml` | Data and context poisoning: agent instruction, memory, config and MCP file writes, hidden or injected instructions, MCP tool poisoning, memory-store writes | 23 |
 | `mac-commands.yaml`, `mac-credentials.yaml`, `mac-files.yaml`, `mac-obfuscation.yaml`, `mac-persistence.yaml`, `mac-supply-chain.yaml` | macOS variants | 27 + 8 + 10 + 7 + 9 + 3 = 64 |
 | `win-commands.yaml`, `win-credentials.yaml`, `win-files.yaml`, `win-obfuscation.yaml`, `win-persistence.yaml`, `win-supply-chain.yaml` | Windows variants | 61 + 10 + 10 + 16 + 8 + 1 = 106 |
-| **Total** | 24 files | **386** |
+| **Total** | 28 files | **451** |
 
 Rules by category:
 
@@ -505,9 +511,12 @@ Rules by category:
 | LLM threats | `prompt_injection` (5), `tool_misuse` (4), `indirect_prompt_injection` (3), `prompt_extraction` (3), `information_disclosure` (2), `memory_poisoning` (2), `content_safety` (2) | 21 |
 | Resource hijacking | `resource_hijacking` | 17 |
 | Network egress | `network_egress` | 9 |
-| Self-defence | `self_defense` | 9 |
+| Self-defence | `self_defense` | 10 |
 | Supply chain | `supply_chain` | 5 |
-| **Total** | | **386** |
+| AI model supply chain | `ai_supply_chain` | 14 |
+| Secure code | `secure_code_tls` (6), `secure_code_sql_injection` (5), `secure_code_weak_crypto` (4), `secure_code_cors` (3), `secure_code_code_injection` (2), `secure_code_command_injection` (2), `secure_code_permissions` (2), `secure_code_debug_exposure` (2), `secure_code_csrf` (1) | 27 |
+| Context poisoning | `context_poisoning` (14), `context_poisoning_hidden_unicode` (3), `mcp_tool_poisoning` (3), `memory_poisoning` (2), `context_poisoning_permission_widening` (1) | 23 |
+| **Total** | | **451** |
 
 Customers can add their own rules under `~/.singularity-aidr/threats/*.yaml`; a custom
 rule with the same `id` overrides the built-in one.

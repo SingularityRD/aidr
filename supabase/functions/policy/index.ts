@@ -4,6 +4,7 @@ import { authenticateTenantApiKey } from "../_shared/api-key-auth.ts";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 import { consumeTenantRateLimit, rateLimitHeaders } from "../_shared/request-limits.ts";
 import { canonicalPolicy, sha256, validateRuntimePolicy } from "../_shared/runtime-policy.ts";
+import { overlayIsEmpty, validateGovernanceOverlay } from "../_shared/governance-overlay.ts";
 
 const json = (status: number, body: Record<string, unknown>, headers: Record<string, string> = {}) => new Response(JSON.stringify(body), {
 	status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store", ...headers },
@@ -46,7 +47,19 @@ export function createPolicyHandler(deps: { db?: ReturnType<typeof createClient>
 			const { data: policy, error: policyError } = await query.maybeSingle() as { data: { version: number; policy: unknown } | null; error: unknown };
 			if (policyError) return json(503, { error: "policy_unavailable" });
 			if (!policy) return json(404, { error: "policy_not_published" });
-			return json(200, { policy_version: String(policy.version), cache_seconds: 30, runtime_policy: validateRuntimePolicy(policy.policy), policy_sha256: await sha256(canonicalPolicy(policy.policy)), agent_bound: !!agentId }, rateLimitHeaders(rate));
+			const runtimePolicy = validateRuntimePolicy(policy.policy);
+			// AI governance register bans/restrictions for this member or agent, on
+			// top of (never inside) the published policy. An unreadable overlay
+			// fails closed: serving the policy without the bans would relax it.
+			const overlayRpc = db as unknown as { rpc(name: string, args: Record<string, unknown>): PromiseLike<{ data: unknown; error: unknown }> };
+			const overlayResult = await overlayRpc.rpc("ai_governance_policy_overlay", { p_tenant_id: tenant, p_user_id: auth.userId, p_agent_id: agentId });
+			if (overlayResult.error) return json(503, { error: "policy_unavailable" });
+			const governance = validateGovernanceOverlay(overlayResult.data);
+			return json(200, {
+				policy_version: String(policy.version), cache_seconds: 30, runtime_policy: runtimePolicy,
+				policy_sha256: await sha256(canonicalPolicy(policy.policy)), agent_bound: !!agentId,
+				...(overlayIsEmpty(governance) ? {} : { governance, governance_sha256: await sha256(canonicalPolicy(governance)) }),
+			}, rateLimitHeaders(rate));
 		} catch {
 			return json(503, { error: "policy_unavailable" });
 		}

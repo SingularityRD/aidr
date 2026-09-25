@@ -97,7 +97,16 @@ flows](privacy.md) before enabling network features.
   },
   "prompt_protection": {
     "secrets": "block",
-    "pii": "warn"
+    "pii": "warn",
+    "jailbreak": "warn",
+    "content_safety": {
+      "malware": "warn",
+      "phishing_kit": "warn",
+      "weapons_cbrn": "block",
+      "self_harm": "warn",
+      "hate_harassment": "warn",
+      "sexual_minors": "block"
+    }
   },
   "toxic_flow": {
     "enabled": true,
@@ -305,6 +314,49 @@ decision everywhere.
 |-------|---------|-------------|
 | `secrets` | `"block"` | Tokens, API keys, AWS keys, private keys, password assignments. `"block"`, `"warn"` or `"off"`. |
 | `pii` | `"warn"` | Email addresses, formatted phone numbers and SSNs, Luhn-valid card numbers, Turkish ID numbers (TC Kimlik, checksum-validated), IBANs (mod-97) and TR/international phone numbers. `"block"`, `"warn"` or `"off"`. |
+| `jailbreak` | `"warn"` | Jailbreak attempts: instruction overrides ("ignore your previous instructions", including Turkish phrasings), persona/role-play overrides that lift restrictions, "you have no restrictions" / named-mode phrasings, decode-then-execute requests and many-shot fake-dialogue framing. `"block"`, `"warn"` or `"off"`. |
+| `content_safety.malware` | `"warn"` | Explicit requests to write malware (ransomware, keyloggers, stealers) or code that evades antivirus/EDR. |
+| `content_safety.phishing_kit` | `"warn"` | Explicit requests to build a phishing kit, fake login page or credential-harvesting page. |
+| `content_safety.weapons_cbrn` | `"block"` | Explicit requests to make chemical, biological, radiological or nuclear weapons or explosive devices. |
+| `content_safety.self_harm` | `"warn"` | Self-harm method seeking. The notice is supportive (it points to a crisis line) rather than a violation message. |
+| `content_safety.hate_harassment` | `"warn"` | Explicit requests to generate hate speech, slurs or threatening/harassing messages aimed at people. |
+| `content_safety.sexual_minors` | `"block"` | Sexual content involving minors. **Always blocked**: any other value is accepted and ignored. |
+
+#### Jailbreak and content-safety policy: what it is and is not
+
+These checks are **conservative pattern matching**, not a model-grade classifier. Each
+content-safety pattern needs both an authoring verb ("write", "build", "make", …) and an
+explicit category term close together, so ordinary defensive, analytical or fictional work
+("explain how ransomware spreads", "summarise nuclear treaty history") is not flagged. The
+cost of that precision is recall: paraphrased, novel or heavily obfuscated requests will be
+missed. Treat these categories as an **oversight and policy aid** that makes clear
+attempts visible and auditable. They are not a guarantee that unsafe prompts cannot reach
+the model, and the model's own safety behaviour remains the primary control.
+
+- Findings name the category only, for example "jailbreak / instruction-override attempt"
+  or "malware authoring request", with a count. The prompt text is never shown back,
+  logged or uploaded.
+- On `warn`, the model receives a context note to keep following its system instructions
+  and safety guidelines. Data findings (secrets, PII) and safety findings are reported in
+  separate clauses of the same notice.
+- **Tenant policy.** An operator-provisioned signed detector policy may carry a
+  `prompt_safety` block with the same fields (`jailbreak`, `content_safety.<category>`).
+  For each category the effective action is the **stronger** of the local and tenant
+  values: a tenant can tighten `warn` to `block` for its fleet, but it cannot relax a local
+  setting. An unknown category in the signed payload makes the policy invalid, and the
+  connector then fails closed. A connector build that predates this field rejects a
+  payload that contains it, so roll the connector out before provisioning `prompt_safety`.
+- Rule ids (for framework mapping and tests): `jailbreak.instruction_override`,
+  `jailbreak.instruction_override_tr`, `jailbreak.persona_override`,
+  `jailbreak.constraint_release`, `jailbreak.many_shot`, `jailbreak.encoded_payload`,
+  `malware.authoring`, `malware.evasion`, `phishing_kit.authoring`,
+  `phishing_kit.clone_login`, `weapons_cbrn.synthesis`, `weapons_cbrn.explosive`,
+  `self_harm.method`, `hate_harassment.generate`, `hate_harassment.threats`,
+  `sexual_minors.explicit` (`packages/core/src/prompt-safety.ts`). They complement the tool-content
+  rules `LLM-INJ-002` and `LLM-INJ-003` in `threats/llm-threats.yaml`, which inspect tool
+  inputs rather than the user's prompt.
+- Browser Guard does not apply these categories: its detection engine masks data entities,
+  and a policy category that blocks a whole prompt does not fit that contract.
 
 Per-connector support:
 

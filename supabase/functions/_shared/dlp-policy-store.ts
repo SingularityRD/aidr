@@ -3,6 +3,7 @@ import type { SupabaseClient } from "npm:@supabase/supabase-js@2.116.0";
 // functions/ for self-hosted deployments; never the dashboard validation mirror.
 import { DlpPolicySchema } from "./dlp-policy-schema.ts";
 import { corsJson } from "./cors.ts";
+import { isFourEyesRefusal, readPolicyFourEyes, submitPolicyChange } from "./policy-change-control.ts";
 
 const DELIVERY = {
 	delivered: false,
@@ -63,10 +64,19 @@ export async function handleDlpPolicyAction(
 	// The editor keeps its document version independent of its CAS precondition.
 	// Storage owns the revision counter; never allow client-chosen version jumps.
 	const policy = { ...validated.data, version: Number(expected) + 1 };
+	// Four-eyes change control: the saved revision waits for a second owner/admin.
+	const fourEyes = await readPolicyFourEyes(db, tenant);
+	if (!fourEyes.ok) return corsJson(req, 503, { error: "dlp_policy_publish_failed" });
+	if (fourEyes.enabled) {
+		return await submitPolicyChange(req, db, {
+			tenantId: tenant, userId, kind: "dlp_publish", baseVersion: Number(expected), payload: { policy },
+		});
+	}
 	const { data, error } = await db.rpc("publish_dlp_policy", {
 		p_tenant_id: tenant, p_user_id: userId, p_expected_version: expected, p_policy: policy,
 	});
 	if (error) {
+		if (isFourEyesRefusal(error)) return corsJson(req, 409, { error: "policy_four_eyes_required" });
 		return corsJson(req, error.code === "PT409" ? 409 : error.code === "42501" ? 403 : error.code === "22023" ? 400 : 503, {
 			error: error.code === "PT409" ? "policy_version_conflict" : "dlp_policy_publish_failed",
 		});

@@ -49,23 +49,35 @@ assessments:
       status: partial
       rationale: >-
         Rules flag install-script piping, unpinned or unsigned package installs, miner
-        packages, insecure dependency sources and malicious skill/plugin content. Model and
-        dataset provenance are not checked, and package reputation needs the separately
-        deployed package-check endpoint (inert when none is configured).
+        packages, insecure dependency sources and malicious skill/plugin content. For models,
+        downloads from Hugging Face organisations or hosts outside the trusted model sources,
+        weight downloads over plain HTTP, trust_remote_code and unsafe model deserialization
+        are held or denied. Model files are not verified by hash or signature, dataset
+        provenance is not checked, and package reputation needs the separately deployed
+        package-check endpoint (inert when none is configured).
     LLM04:
       status: partial
       rationale: >-
-        AIDR never sees training or fine-tuning data. It does see what an agent writes into
-        memory and vector/RAG stores through MCP tools, and those writes are scanned for
-        hidden or injected instructions and standing orders before they are stored. Poisoned
-        records that carry none of those signals, and stores written outside the agent, are
-        not detected. Runtime memory and context poisoning of an agent is tracked under ASI06.
+        AIDR sits at the agent's tool-call boundary and never sees training or fine-tuning
+        data, so poisoned training data and backdoored weights are not detected. Two steps
+        are covered. The loading step through which a tampered model file runs code:
+        torch.load without weights_only, pickle/joblib/dill on downloads, Keras
+        safe_mode=False and numpy allow_pickle=True in code the agent writes or runs; a
+        poisoned model in a data-only format (for example .safetensors) passes. And what an
+        agent writes into memory and vector/RAG stores through MCP tools, which is scanned
+        for hidden or injected instructions and standing orders before it is stored; records
+        without those signals, and stores written outside the agent, are not detected.
+        Runtime memory and context poisoning of an agent is tracked under ASI06.
     LLM05:
       status: covered
       rationale: >-
         Model-generated commands and code are validated before they execute: pipe-to-shell,
         reverse shells, eval of decoded payloads, LOLBin and script-host execution and
-        obfuscated command lines are denied or held for approval at the tool boundary.
+        obfuscated command lines are denied or held for approval at the tool boundary. Code
+        the agent writes is also checked by the secure-code guardrails (eval or shell
+        commands built from input, SQL built by string formatting, TLS verification off,
+        permissive CORS, exposed debuggers, CSRF off, weak crypto); those are
+        language-gated patterns over added lines and warn by default rather than block.
         Output rendered in a UI (XSS, markdown links) is not covered by these rules.
     LLM06:
       status: covered
@@ -123,14 +135,20 @@ assessments:
       rationale: >-
         Skill and plugin packages are scanned for injected instructions, remote payloads,
         embedded code, credential exfiltration and insecure dependencies, and risky install
-        commands are flagged. MCP server identity and signed manifests are enforced by the
-        MCP gateway rather than these rules; model and dataset provenance are not covered.
+        commands are flagged. Models from untrusted Hugging Face organisations or hosts,
+        plain-HTTP weight downloads, trust_remote_code and unsafe model loading are held or
+        denied. MCP server identity and signed manifests are enforced by the MCP gateway
+        rather than these rules; model integrity (hash or signature) and dataset provenance
+        are not covered.
     ASI05:
       status: covered
       rationale: >-
         Download-and-execute chains, pipe-to-shell, reverse shells, encoded or obfuscated
         execution, script hosts and LOLBins on Linux, macOS and Windows are denied before
-        the command runs.
+        the command runs. Loading model files through code-executing deserializers and
+        trust_remote_code are held or denied, and eval, shell commands built from input and
+        network-exposed debuggers in code the agent writes are flagged by the (advisory)
+        secure-code guardrails.
     ASI06:
       status: partial
       rationale: >-
@@ -161,10 +179,32 @@ assessments:
       status: partial
       rationale: >-
         Behaviour typical of a compromised or rogue agent is detected: tampering with or
-        disabling AIDR itself, disabling OS security controls, clearing logs and hiding
-        artifacts. Slow behavioural drift within allowed actions is not something a
+        disabling AIDR itself, reading or changing AIDR's canary credentials, disabling OS
+        security controls, clearing logs and hiding artifacts. Slow behavioural drift within allowed actions is not something a
         per-call rule can see (the behavioural analyzer is a separate, optional detector).
   mitre_atlas:
+    AML.T0010.003:
+      status: partial
+      rationale: >-
+        The routes by which a compromised model reaches the agent's host are flagged:
+        downloads from Hugging Face organisations or hosts outside the trusted model
+        sources, weight downloads over plain HTTP, remote model code and code-executing
+        model formats. A compromised model from a trusted publisher, or tampered weights in
+        a data-only format, are not detected; files are not verified by hash or signature.
+    AML.T0011:
+      status: partial
+      rationale: >-
+        Enabling trust_remote_code (in code or on a serving command line), which runs Python
+        shipped in a model repository, is held for approval and denied for publishers
+        outside the trusted model sources.
+    AML.T0011.000:
+      status: partial
+      rationale: >-
+        Loading unsafe AI artifacts is held or denied: torch.load without weights_only,
+        pickle/joblib/dill on downloaded files or network responses, Keras safe_mode=False,
+        numpy allow_pickle=True and unsafe YAML loaders. The Python patterns apply to code
+        the agent writes or runs; a loader reached through a library wrapper the patterns
+        do not name is missed.
     AML.T0010.005:
       status: partial
       rationale: >-
@@ -298,6 +338,8 @@ assessments:
 defaults:
   # Keyed by the rule file name under threats/.
   files:
+    ai-supply-chain.yaml: [LLM03, ASI04, AML.T0010.003]
+    canary.yaml: [LLM06, ASI10, AML.T0053]
     commands.yaml: [LLM06, ASI02, AML.T0053]
     credentials.yaml: [LLM02, ASI03, AML.T0053, AML.T0055]
     files.yaml: [LLM06, ASI02, AML.T0053]
@@ -311,6 +353,7 @@ defaults:
     mitre.yaml: [LLM06, ASI02, AML.T0053]
     obfuscation.yaml: [LLM06, ASI02, AML.T0053, AML.T0123]
     persistence.yaml: [LLM06, ASI02, AML.T0053]
+    secure-code.yaml: [LLM05]
     self-defense.yaml: [LLM06, ASI10, AML.T0053]
     skill-scan.yaml: [LLM03, ASI04, AML.T0010.005]
     supply_chain.yaml: [LLM03, ASI04, AML.T0053]
@@ -346,6 +389,30 @@ defaults:
     skill_insecure_coding: [ASI05]
 
 rules:
+  # ai-supply-chain.yaml
+  # Unsafe deserialization of model files: the load step is where a tampered
+  # model runs code (LLM04 delivery path, ASI05 execution).
+  AISC-001: [LLM04, ASI05, AML.T0011.000]
+  AISC-002: [LLM04, ASI05, AML.T0011.000]
+  AISC-003: [LLM04, ASI05, AML.T0011.000]
+  AISC-004: [LLM04, ASI05, AML.T0011.000]
+  # trust_remote_code runs repository code rather than deserializing an artifact.
+  AISC-005: [ASI05, AML.T0011]
+  AISC-006: [ASI05, AML.T0011]
+  AISC-007: [ASI05, AML.T0011]
+  AISC-008: [ASI05, AML.T0011]
+  AISC-009: [LLM04, ASI05, AML.T0011.000]
+  AISC-010: [LLM04, ASI05, AML.T0011.000]
+  # Unsafe YAML loaders: a config, not model weights, so no LLM04.
+  AISC-011: [ASI05, AML.T0011.000]
+  # Unvetted model sources (download only; nothing is executed).
+  AISC-012: []
+  AISC-013: []
+  AISC-014: []
+
+  # canary.yaml
+  CLT-CANARY-001: []
+
   # commands.yaml
   CLT-CMD-001: [LLM05, ASI05, AML.T0050]
   CLT-CMD-002: [LLM05, ASI05, AML.T0050]
@@ -612,6 +679,36 @@ rules:
   CLT-PERSIST-006: [ASI03]
   CLT-PERSIST-007: [ASI05]
   CLT-PERSIST-008: []
+
+  # secure-code.yaml (advisory; warns by default). ASI05 only where the
+  # insecure code is itself a code-execution path.
+  SCG-TLS-001: []
+  SCG-TLS-002: []
+  SCG-TLS-003: []
+  SCG-TLS-004: []
+  SCG-TLS-005: []
+  SCG-TLS-006: []
+  SCG-EVAL-001: [ASI05]
+  SCG-EVAL-002: [ASI05]
+  SCG-SQLI-001: []
+  SCG-SQLI-002: []
+  SCG-SQLI-003: []
+  SCG-SQLI-004: []
+  SCG-SQLI-005: []
+  SCG-CMDI-001: [ASI05]
+  SCG-CMDI-002: [ASI05]
+  SCG-PERM-001: []
+  SCG-PERM-002: []
+  SCG-CORS-001: []
+  SCG-CORS-002: []
+  SCG-CORS-003: []
+  SCG-DEBUG-001: [ASI05]
+  SCG-DEBUG-002: [ASI05]
+  SCG-CSRF-001: []
+  SCG-CRYPTO-001: []
+  SCG-CRYPTO-002: []
+  SCG-CRYPTO-003: []
+  SCG-CRYPTO-004: []
 
   # self-defense.yaml
   CLT-SELF-001: []

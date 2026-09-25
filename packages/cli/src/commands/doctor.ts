@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import {
+	type AgentEnvironmentReport,
 	type AgentRuntime,
 	type Config,
 	describeOperatorApprovalKey,
@@ -14,6 +15,7 @@ import {
 	resolvePath,
 	VERSION,
 } from "@singularityrd/aidr-core";
+import { scanAgentEnvironment } from "../utils/agent-posture.js";
 import { type ConnectorStatus, detectConnectorStatuses } from "../utils/connector-status.js";
 import { loadBundledThreatCount, verifyDetection } from "../utils/test-protection.js";
 import { auditLogFiles, readAuditEntries, redactAuditEntry } from "./audit.js";
@@ -43,6 +45,8 @@ export interface DoctorDeps {
 	connectors?: () => ConnectorStatus[];
 	/** Per-runtime detector policy loader (DLP status). */
 	loadDetectors?: typeof loadProvisionedDetectorContext;
+	/** Agent environment posture scan. */
+	agentEnvironment?: (connectors: ConnectorStatus[]) => AgentEnvironmentReport;
 	/** Local agent permission profile document location. */
 	agentProfilesPath?: string;
 }
@@ -298,6 +302,49 @@ async function checkApprovals(deps: DoctorDeps, config: Config): Promise<DoctorC
 	}
 }
 
+/**
+ * Agent environment and autonomy posture. Findings are advisory: they warn, and
+ * never fail the doctor, because AIDR still enforces on a permissive host.
+ */
+function checkAgentEnvironment(connectors: ConnectorStatus[], deps: DoctorDeps): DoctorCheck {
+	let report: AgentEnvironmentReport;
+	try {
+		report = deps.agentEnvironment
+			? deps.agentEnvironment(connectors)
+			: scanAgentEnvironment({ home: deps.home, connectors });
+	} catch (error) {
+		return {
+			id: "agent_environment",
+			status: "warn",
+			summary: `Agent environment posture could not be checked: ${message(error)}. This is not a clean result.`,
+		};
+	}
+	const serious = report.findings.filter((f) => f.severity === "critical" || f.severity === "high");
+	const gaps = report.unreadable.length;
+	const summary =
+		report.findings.length === 0
+			? "Agent environment: no unsafe autonomy setting or exposure found by the static checks."
+			: `Agent environment: ${report.findings.length} finding(s), ${serious.length} high or critical ` +
+				`(${[...new Set(report.findings.map((f) => f.id))].join(", ")}). Run \`aidr discover --agents\` for remediation.`;
+	return {
+		id: "agent_environment",
+		status: report.findings.length > 0 || gaps > 0 ? "warn" : "ok",
+		summary: gaps > 0 ? `${summary} ${gaps} configuration file(s) could not be parsed.` : summary,
+		detail: {
+			findings: report.findings.map((f) => ({
+				id: f.id,
+				severity: f.severity,
+				host: f.host,
+				count: f.count,
+				remediation: f.remediation,
+				...(f.evidence.key ? { key: f.evidence.key } : {}),
+				...(f.evidence.names ? { names: f.evidence.names } : {}),
+			})),
+			unreadable: report.unreadable,
+		},
+	};
+}
+
 async function checkLastVerdict(config: Config): Promise<DoctorCheck> {
 	if (!config.logging.enabled) {
 		return {
@@ -352,6 +399,7 @@ export async function runDoctor(deps: DoctorDeps = {}): Promise<DoctorReport> {
 	checks.push(await checkDlp(connectors, deps));
 	checks.push(await checkAgentProfiles(connectors, deps));
 	checks.push(await checkApprovals(deps, config));
+	checks.push(checkAgentEnvironment(connectors, deps));
 	checks.push(await checkLastVerdict(config));
 	return {
 		schema_version: 1,

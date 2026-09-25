@@ -149,4 +149,50 @@ describe("ingest posture finding projection", () => {
 			error: "invalid_event",
 		});
 	});
+	it("accepts agent_posture_finding with host, check id and count only", () => {
+		const result = normalizeIngestEvents([
+			{
+				event_id: "agent-20260925120000abcdef01-0123456789abcdef01234567",
+				type: "agent_posture_finding",
+				timestamp: "2026-09-25T12:00:00Z",
+				scan_id: "20260925120000abcdef01",
+				finding_kind: "agent_config",
+				severity: "high",
+				finding_severity: "medium",
+				agent_host: "environment",
+				check_id: "cloud_credentials_in_env",
+				finding_count: 2,
+				// Local-only evidence a modified client might add is never stored.
+				names: ["AWS_SECRET_ACCESS_KEY"],
+				path: "/home/username/.codex/config.toml",
+			},
+		]);
+		expect(result).toEqual({
+			ok: true,
+			events: [
+				{
+					event_id: "agent-20260925120000abcdef01-0123456789abcdef01234567",
+					type: "agent_posture_finding",
+					timestamp: "2026-09-25T12:00:00.000Z",
+					scan_id: "20260925120000abcdef01",
+					finding_kind: "agent_config",
+					severity: "high",
+					finding_severity: "medium",
+					agent_host: "environment",
+					check_id: "cloud_credentials_in_env",
+					finding_count: 2,
+				},
+			],
+		});
+	});
+
+	it("drops unknown agent hosts, check ids and out-of-range counts", () => {
+		expect(
+			projectPostureFields({
+				agent_host: "gpu-01.corp.internal",
+				check_id: "AWS_SECRET_ACCESS_KEY",
+				finding_count: -1,
+			}),
+		).toEqual({});
+	});
 });

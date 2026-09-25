@@ -653,8 +653,14 @@ export interface Database {
 					tenant_id: string;
 					event_row_id: number;
 					agent_id: string;
-					source: "infra_scan" | "mcp_inventory" | "skill_scan";
-					finding_kind: "cve" | "advisory" | "exposed_component" | "mcp_server" | "skill_rule";
+					source: "infra_scan" | "mcp_inventory" | "skill_scan" | "agent_environment";
+					finding_kind:
+						| "cve"
+						| "advisory"
+						| "exposed_component"
+						| "mcp_server"
+						| "skill_rule"
+						| "agent_config";
 					severity: "critical" | "high" | "medium" | "low" | "info" | "unknown";
 					cvss: number | string | null;
 					vuln_id: string | null;
@@ -671,6 +677,9 @@ export interface Database {
 					rule_id: string | null;
 					skill_risk_type: string | null;
 					scan_id: string | null;
+					agent_host: string | null;
+					check_id: string | null;
+					finding_count: number | null;
 					observed_at: string;
 					created_at: string;
 				};
@@ -700,6 +709,150 @@ export interface Database {
 					token_delivered_at: string | null;
 					expires_at: string;
 					created_at: string;
+				};
+				Insert: Record<string, never>;
+				Update: Record<string, never>;
+			};
+			// AI governance (docs/ai-governance.md). Read-only for the browser; every
+			// write is an ai-governance Edge Function RPC.
+			tenant_ai_governance_settings: {
+				Row: {
+					tenant_id: string;
+					policy_four_eyes: boolean;
+					default_review_days: number;
+					updated_by: string | null;
+					updated_at: string;
+				};
+				Insert: Record<string, never>;
+				Update: Record<string, never>;
+			};
+			ai_governance_reviewers: {
+				Row: { tenant_id: string; user_id: string; designated_by: string; designated_at: string };
+				Insert: Record<string, never>;
+				Update: Record<string, never>;
+			};
+			ai_assets: {
+				Row: {
+					id: string;
+					tenant_id: string;
+					asset_type: "coding_agent" | "mcp_server" | "ai_site" | "model_service";
+					identifier: string;
+					name: string;
+					vendor: string | null;
+					owner_user_id: string | null;
+					business_purpose: string | null;
+					data_categories: string[];
+					risk_tier: "unassessed" | "minimal" | "limited" | "high" | "prohibited";
+					risk_score: number | null;
+					status: "proposed" | "approved" | "restricted" | "banned" | "retired";
+					review_due_at: string | null;
+					last_reviewed_at: string | null;
+					last_reviewed_by: string | null;
+					source: string;
+					first_observed_at: string | null;
+					last_observed_at: string | null;
+					version: number;
+					created_by: string | null;
+					created_at: string;
+					updated_by: string | null;
+					updated_at: string;
+				};
+				Insert: Record<string, never>;
+				Update: Record<string, never>;
+			};
+			ai_asset_evidence: {
+				Row: {
+					id: string;
+					tenant_id: string;
+					asset_id: string;
+					evidence_kind: "posture_finding" | "incident" | "approval_request";
+					evidence_ref: string;
+					label: string;
+					observed_at: string | null;
+					linked_by: string;
+					linked_at: string;
+				};
+				Insert: Record<string, never>;
+				Update: Record<string, never>;
+			};
+			ai_intake_requests: {
+				Row: {
+					id: string;
+					tenant_id: string;
+					asset_id: string | null;
+					asset_type: "coding_agent" | "mcp_server" | "ai_site" | "model_service";
+					identifier: string;
+					name: string;
+					vendor: string | null;
+					business_purpose: string;
+					data_categories: string[];
+					requested_status: "approved" | "restricted";
+					status: "pending" | "approved" | "rejected" | "cancelled" | "expired";
+					requested_by: string;
+					created_at: string;
+					expires_at: string;
+					decided_by: string | null;
+					decided_at: string | null;
+					decision_reason: string | null;
+					closed_at: string | null;
+					resulting_asset_id: string | null;
+				};
+				Insert: Record<string, never>;
+				Update: Record<string, never>;
+			};
+			ai_governance_exceptions: {
+				Row: {
+					id: string;
+					tenant_id: string;
+					asset_id: string;
+					scope_kind: "tenant" | "members" | "agents";
+					scope_user_ids: string[];
+					scope_agent_ids: string[];
+					justification: string;
+					status: "pending" | "approved" | "rejected" | "cancelled" | "revoked" | "expired";
+					requested_by: string;
+					created_at: string;
+					expires_at: string;
+					starts_at: string | null;
+					decided_by: string | null;
+					decided_at: string | null;
+					decision_reason: string | null;
+					revoked_by: string | null;
+					revoked_at: string | null;
+					revoke_reason: string | null;
+					closed_at: string | null;
+				};
+				Insert: Record<string, never>;
+				Update: Record<string, never>;
+			};
+			// Column grants exclude `payload` (DLP payloads carry sensitive matchers).
+			policy_change_requests: {
+				Row: {
+					id: string;
+					tenant_id: string;
+					change_kind: string;
+					base_version: number;
+					expected_revision_version: number | null;
+					target_version: number | null;
+					payload_sha256: string;
+					summary: Record<string, number>;
+					status:
+						| "pending"
+						| "approved"
+						| "rejected"
+						| "cancelled"
+						| "superseded"
+						| "failed"
+						| "expired";
+					requested_by: string;
+					created_at: string;
+					expires_at: string;
+					decided_by: string | null;
+					decided_at: string | null;
+					decision_reason: string | null;
+					closed_at: string | null;
+					applied_version: number | null;
+					outcome_code: string | null;
 				};
 				Insert: Record<string, never>;
 				Update: Record<string, never>;

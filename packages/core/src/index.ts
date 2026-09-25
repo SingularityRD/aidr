@@ -1,5 +1,66 @@
 // @singularityrd/aidr-core public API
 
+// Agent environment & autonomy posture (aidr doctor / aidr discover --agents)
+export {
+	AGENT_HOSTS,
+	AGENT_POSTURE_CHECKS,
+	type AgentEnvironmentOptions,
+	type AgentEnvironmentReport,
+	type AgentHost,
+	type AgentHostDetection,
+	type AgentPostureCheck,
+	type AgentPostureFinding,
+	type AgentPostureSeverity,
+	inspectAgentEnvironment,
+} from "./agent-environment-posture.js";
+// Agent permission profiles: least-privilege restrictions per connector and
+// repository, evaluated by the shared evaluator on top of threat detection.
+export {
+	AGENT_PROFILE_ACTIONS,
+	AGENT_PROFILE_CONNECTORS,
+	AGENT_PROFILE_TOOL_CLASSES,
+	type AgentProfile,
+	type AgentProfileAction,
+	type AgentProfileCall,
+	type AgentProfileConnector,
+	type AgentProfileContext,
+	type AgentProfileDiagnostic,
+	type AgentProfileDocument,
+	AgentProfileDocumentSchema,
+	type AgentProfileEnvironment,
+	type AgentProfileEvaluation,
+	type AgentProfileLayer,
+	type AgentProfileOutcome,
+	type AgentProfileSource,
+	type AgentProfileValidation,
+	agentProfileVerdict,
+	classifyAgentTool,
+	evaluateAgentProfile,
+	evaluateAgentProfiles,
+	mcpCallIdentity,
+	mergeAgentProfileVerdict,
+	parseAgentProfileSource,
+	selectAgentProfiles,
+	validateAgentProfileDocument,
+	validateAgentProfileSource,
+	WORKSPACE_PLACEHOLDER,
+} from "./agent-profile.js";
+export {
+	buildAgentProfileContext,
+	DEFAULT_LOCAL_AGENT_PROFILES_PATH,
+	evaluateAgentProfilesForToolCall,
+	inspectLocalAgentProfiles,
+	LOCAL_AGENT_PROFILES_ENV,
+	type LocalAgentProfilesState,
+	localAgentProfileLayer,
+	localAgentProfilesPath,
+	managedAgentProfileLayer,
+} from "./agent-profile-loader.js";
+export {
+	AGENT_PROFILE_TEMPLATE_NAMES,
+	AGENT_PROFILE_TEMPLATES,
+	agentProfileTemplateDocument,
+} from "./agent-profile-templates.js";
 // AI model supply chain: trusted model sources (hubs and publisher organisations)
 export {
 	isTrustedModelSourceMatch,
@@ -357,54 +418,6 @@ export {
 } from "./delegated-credential.js";
 export type { DetectionLeg } from "./detection-leg.js";
 export { DetectionLegUnavailableError, describeHttpFailure } from "./detection-leg.js";
-// Agent permission profiles: least-privilege restrictions per connector and
-// repository, evaluated by the shared evaluator on top of threat detection.
-export {
-	AGENT_PROFILE_ACTIONS,
-	AGENT_PROFILE_CONNECTORS,
-	AGENT_PROFILE_TOOL_CLASSES,
-	type AgentProfile,
-	type AgentProfileAction,
-	type AgentProfileCall,
-	type AgentProfileConnector,
-	type AgentProfileContext,
-	type AgentProfileDiagnostic,
-	type AgentProfileDocument,
-	AgentProfileDocumentSchema,
-	type AgentProfileEnvironment,
-	type AgentProfileEvaluation,
-	type AgentProfileLayer,
-	type AgentProfileOutcome,
-	type AgentProfileSource,
-	type AgentProfileValidation,
-	agentProfileVerdict,
-	classifyAgentTool,
-	evaluateAgentProfile,
-	evaluateAgentProfiles,
-	mcpCallIdentity,
-	mergeAgentProfileVerdict,
-	parseAgentProfileSource,
-	selectAgentProfiles,
-	validateAgentProfileDocument,
-	validateAgentProfileSource,
-	WORKSPACE_PLACEHOLDER,
-} from "./agent-profile.js";
-export {
-	buildAgentProfileContext,
-	DEFAULT_LOCAL_AGENT_PROFILES_PATH,
-	evaluateAgentProfilesForToolCall,
-	inspectLocalAgentProfiles,
-	LOCAL_AGENT_PROFILES_ENV,
-	type LocalAgentProfilesState,
-	localAgentProfileLayer,
-	localAgentProfilesPath,
-	managedAgentProfileLayer,
-} from "./agent-profile-loader.js";
-export {
-	AGENT_PROFILE_TEMPLATE_NAMES,
-	AGENT_PROFILE_TEMPLATES,
-	agentProfileTemplateDocument,
-} from "./agent-profile-templates.js";
 // Signed tenant detector policy: the single provisioning implementation every
 // connector uses to build a `ToolEvaluationContext`. The policy file is fixed
 // per agent runtime under `~/.singularity-aidr/detectors/`, so an operator
@@ -910,13 +923,13 @@ export {
 	type McpDiscoveryServer,
 	type McpSignedManifestIndex,
 } from "./mcp-discovery.js";
-export type {
-	McpInventoryCoverage,
-	McpInventoryCoverageStatus,
-	McpInventoryReport,
-	McpInventorySourceStatus,
+export {
+	defaultMcpConfigPaths,
+	type McpInventoryCoverage,
+	type McpInventoryCoverageStatus,
+	type McpInventoryReport,
+	type McpInventorySourceStatus,
 } from "./mcp-inventory.js";
-export { defaultMcpConfigPaths } from "./mcp-inventory.js";
 export { redactLaunchToken, redactMcpLaunch } from "./mcp-launch-redaction.js";
 export type { McpFetchOptions } from "./mcp-transport.js";
 // Pinned-DNS MCP upstream transport used by the inline MCP gateway.
@@ -1037,6 +1050,8 @@ export {
 } from "./policy-document.js";
 // AI security posture findings (infra CVEs, MCP inventory, skill/plugin scan)
 export {
+	AGENT_POSTURE_FINDING_EVENT,
+	buildAgentPostureFindingEvents,
 	buildInfraScanFindingEvents,
 	buildMcpInventoryFindingEvents,
 	buildSkillScanFindingEvents,
@@ -1081,6 +1096,17 @@ export {
 	type SecretLocation,
 	scanPrompt,
 } from "./prompt-protection.js";
+// Jailbreak & content-safety prompt inspection
+export {
+	applyTenantPromptSafety,
+	DEFAULT_PROMPT_SAFETY,
+	PROMPT_SAFETY_LABELS,
+	type PromptSafetyCategory,
+	type PromptSafetyFinding,
+	type PromptSafetyResult,
+	scanPromptSafety,
+	type TenantPromptSafetyPolicy,
+} from "./prompt-safety.js";
 // Quarantine
 export {
 	AutoQuarantine,
@@ -1401,6 +1427,8 @@ export type {
 	PluginScanCache,
 	PluginScanResult,
 	PoisoningProtectionConfig,
+	PromptContentSafetyCategory,
+	PromptContentSafetyConfig,
 	PromptProtectionConfig,
 	PromptProtectionMode,
 	SecureCodeConfig,
@@ -1437,6 +1465,7 @@ export {
 	nullLogger,
 	PackageCheckConfigSchema,
 	PoisoningProtectionConfigSchema,
+	PromptContentSafetySchema,
 	PromptProtectionConfigSchema,
 	PromptProtectionModeSchema,
 	SecureCodeConfigSchema,
