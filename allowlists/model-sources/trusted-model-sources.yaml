@@ -1,0 +1,117 @@
+# Trusted AI model sources for Singularity AIDR
+#
+# Used by the AI model supply-chain rules in threats/ai-supply-chain.yaml:
+#
+#   - `orgs`: Hugging Face organisations/users. A hub download
+#     (`huggingface-cli download`, `hf download`, `hf_hub_download`,
+#     `snapshot_download`) or a `trust_remote_code=True` load is trusted only
+#     when EVERY repository it names belongs to one of these organisations.
+#     Matching is case-insensitive and exact (no prefixes).
+#   - `hosts`: hosts trusted for direct downloads of model-weight files
+#     (`curl`/`wget`/`urlretrieve` of .pt/.pth/.pkl/.ckpt/.joblib/... files).
+#     Only HTTPS URLs can be trusted; plain HTTP is never suppressed. Hosts are
+#     matched by suffix on a dot boundary ("huggingface.co" also covers
+#     "cdn-lfs.huggingface.co" but not "evilhuggingface.co").
+#
+# A trusted source only removes the "unvetted source" finding. Unsafe loading
+# (pickle, torch.load without weights_only=True, trust_remote_code=True, ...)
+# is still flagged whatever the source.
+#
+# This file lives in a subdirectory on purpose: every *.yaml directly under
+# allowlists/ is read as a trusted *installer* domain list for pipe-to-shell
+# rules, and model hubs must never suppress those.
+#
+# Operators extend these lists with `ai_supply_chain.trusted_model_orgs` and
+# `ai_supply_chain.trusted_model_hosts` in ~/.singularity-aidr/config.json.
+
+hosts:
+  - host: huggingface.co
+    reason: Hugging Face Hub, including its LFS/CDN download hosts
+  - host: hf.co
+    reason: Hugging Face Hub short domain
+  - host: download.pytorch.org
+    reason: Official PyTorch model and wheel downloads
+  - host: tfhub.dev
+    reason: TensorFlow Hub
+  - host: kaggle.com
+    reason: Kaggle Models
+  - host: ngc.nvidia.com
+    reason: NVIDIA NGC model registry
+  - host: modelscope.cn
+    reason: ModelScope model hub
+
+orgs:
+  - org: meta-llama
+    reason: Meta Llama models
+  - org: facebook
+    reason: Meta AI research models
+  - org: FacebookAI
+    reason: Meta AI (RoBERTa and related canonical models)
+  - org: google
+    reason: Google models
+  - org: google-bert
+    reason: Google BERT canonical models
+  - org: google-t5
+    reason: Google T5 canonical models
+  - org: microsoft
+    reason: Microsoft models
+  - org: openai
+    reason: OpenAI open-weight models
+  - org: openai-community
+    reason: OpenAI GPT-2 canonical models
+  - org: mistralai
+    reason: Mistral AI models
+  - org: Qwen
+    reason: Alibaba Qwen models
+  - org: deepseek-ai
+    reason: DeepSeek models
+  - org: nvidia
+    reason: NVIDIA models
+  - org: apple
+    reason: Apple models
+  - org: amazon
+    reason: Amazon models
+  - org: ibm-granite
+    reason: IBM Granite models
+  - org: allenai
+    reason: Allen Institute for AI models
+  - org: EleutherAI
+    reason: EleutherAI models
+  - org: bigscience
+    reason: BigScience models
+  - org: bigcode
+    reason: BigCode models
+  - org: huggingface
+    reason: Hugging Face models
+  - org: HuggingFaceH4
+    reason: Hugging Face H4 models
+  - org: HuggingFaceTB
+    reason: Hugging Face SmolLM models
+  - org: HuggingFaceM4
+    reason: Hugging Face multimodal models
+  - org: sentence-transformers
+    reason: Sentence Transformers embedding models
+  - org: cross-encoder
+    reason: Sentence Transformers cross-encoder models
+  - org: distilbert
+    reason: DistilBERT canonical models
+  - org: BAAI
+    reason: Beijing Academy of AI embedding models
+  - org: intfloat
+    reason: E5 embedding models
+  - org: stabilityai
+    reason: Stability AI models
+  - org: CohereLabs
+    reason: Cohere Labs models
+  - org: tiiuae
+    reason: Technology Innovation Institute (Falcon) models
+  - org: Salesforce
+    reason: Salesforce Research models
+  - org: databricks
+    reason: Databricks models
+  - org: mosaicml
+    reason: MosaicML models
+  - org: timm
+    reason: PyTorch Image Models
+  - org: laion
+    reason: LAION models

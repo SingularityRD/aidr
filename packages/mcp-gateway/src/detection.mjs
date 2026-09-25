@@ -191,6 +191,22 @@ export function createToolCallDetector(
 					...(config.detection?.agentConfigPath
 						? { configPath: config.detection.agentConfigPath }
 						: {}),
+					...(config.agentProfiles
+						? {
+								agentProfiles: {
+									connector: "mcp-gateway",
+									layers: [
+										{
+											status: "loaded",
+											source: "local",
+											origin: "gateway configuration",
+											document: config.agentProfiles,
+										},
+									],
+									...(client.profile ? { profileName: client.profile } : {}),
+								},
+							}
+						: {}),
 					...(server.dlpPolicy
 						? {
 								runtimeDetectors: {
@@ -210,6 +226,9 @@ export function createToolCallDetector(
 		// than forwarded half-inspected; the code tells the operator why.
 		if (verdict?.decision === "deny" && verdict.category === INPUT_NOT_FULLY_INSPECTED)
 			throw new McpToolCallBlocked(INPUT_NOT_FULLY_INSPECTED, verdict);
+		// A profile deny is a least-privilege refusal, not a finding in the arguments.
+		if (verdict?.decision === "deny" && verdict.source === "agent_profile")
+			throw new McpToolCallBlocked("profile_denied", verdict);
 		if (verdict?.decision === "deny") throw new McpToolCallBlocked("arguments_blocked", verdict);
 		if (verdict?.decision === "ask") throw new McpToolCallBlocked("approval_required", verdict);
 		throw new McpToolCallBlocked("detection_unavailable");

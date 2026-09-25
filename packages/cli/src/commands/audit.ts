@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { lstat, readFile, writeFile } from "node:fs/promises";
 import {
+	frameworkRefLabels,
+	frameworkRefsFromJson,
 	type LoggingConfig,
 	loadConfig,
 	redactTelemetryData,
@@ -121,6 +123,18 @@ function decisionOf(entry: AuditEntry): string {
 	return field(entry, "verdict") || field(entry, "decision");
 }
 
+/** Framework IDs of the matched rule as `LLM06:2025; ASI02:2026; AML.T0053`. */
+function frameworksOf(entry: AuditEntry): string {
+	const refs = frameworkRefsFromJson(entry.frameworks);
+	return refs ? frameworkRefLabels(refs).join("; ") : "";
+}
+
+function csvField(entry: AuditEntry, column: (typeof CSV_COLUMNS)[number]): string {
+	if (column === "decision") return decisionOf(entry);
+	if (column === "frameworks") return frameworksOf(entry);
+	return field(entry, column);
+}
+
 const CSV_COLUMNS = [
 	"timestamp",
 	"type",
@@ -134,6 +148,7 @@ const CSV_COLUMNS = [
 	"session_digest",
 	"tool_input_summary",
 	"reasons",
+	"frameworks",
 ] as const;
 
 /** RFC 4180 quoting plus spreadsheet formula neutralisation. */
@@ -145,11 +160,7 @@ function csvCell(value: string): string {
 export function toCsv(entries: AuditEntry[]): string {
 	const lines = [CSV_COLUMNS.join(",")];
 	for (const entry of entries) {
-		lines.push(
-			CSV_COLUMNS.map((column) =>
-				csvCell(column === "decision" ? decisionOf(entry) : field(entry, column)),
-			).join(","),
-		);
+		lines.push(CSV_COLUMNS.map((column) => csvCell(csvField(entry, column))).join(","));
 	}
 	return `${lines.join("\n")}\n`;
 }

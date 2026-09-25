@@ -33,7 +33,7 @@ import {
 } from "../deploy/dashboard/release-manifest.mjs";
 
 /** Release file names produced by scripts/build-release-candidate.mjs and the extension/browser builds. */
-export const DEFAULT_PATTERNS = Object.freeze([
+const DEFAULT_PATTERNS = Object.freeze([
 	{ id: "claude-code", pattern: /^aidr-claude-plugin(?:-[^/]*)?\.tar\.gz$/ },
 	{ id: "cursor", pattern: /^aidr-cursor(?:-[^/]*)?\.vsix$/ },
 	{ id: "vscode", pattern: /^aidr-vscode(?:-[^/]*)?\.vsix$/ },

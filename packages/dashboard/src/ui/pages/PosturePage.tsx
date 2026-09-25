@@ -1,7 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTeam } from "../../enterprise/team-provider";
+import { aiBomFileName, buildTenantAiBom, type FleetAgentRow } from "../../lib/aibom";
 import { readErrorMessage } from "../../lib/errors";
 import { supabase } from "../../lib/supabase";
+import { RUNTIME_CATALOG } from "../../onboarding/runtime-catalog";
+import { FrameworkCoverageSection } from "../framework-coverage";
 
 /** Findings older than this are outside the posture window (and the trend). */
 export const POSTURE_WINDOW_DAYS = 90;
@@ -330,6 +333,172 @@ function skillCategoryText(row: PostureFindingRow): string {
 	return `${row.skill_risk_type} ${SKILL_RISK_TYPES[row.skill_risk_type] ?? ""}`;
 }
 
+const FLEET_PAGE_SIZE = 1000;
+const FLEET_MAX_PAGES = 100;
+
+function isFleetAgentRow(value: unknown): value is FleetAgentRow {
+	if (typeof value !== "object" || value === null) return false;
+	const row = value as Record<string, unknown>;
+	return (
+		(row.agent_runtime === null || typeof row.agent_runtime === "string") &&
+		(row.agent_runtime_version === null || typeof row.agent_runtime_version === "string") &&
+		typeof row.last_seen === "string"
+	);
+}
+
+/**
+ * Every fleet check-in of the tenant, paged until the exact count is reached
+ * (the server may cap a page below the requested size). Null when a page cannot
+ * be read or the fleet is larger than the browser export reads: an incomplete
+ * BOM is never exported.
+ */
+async function fetchFleetAgents(tenantId: string): Promise<FleetAgentRow[] | null> {
+	const agents: FleetAgentRow[] = [];
+	for (let page = 0; page < FLEET_MAX_PAGES; page++) {
+		const result = await supabase
+			.from("agents")
+			.select("id,agent_runtime,agent_runtime_version,last_seen", { count: "exact" })
+			.eq("tenant_id", tenantId)
+			.order("id", { ascending: true })
+			.range(agents.length, agents.length + FLEET_PAGE_SIZE - 1);
+		if (
+			result.error ||
+			typeof result.count !== "number" ||
+			!Array.isArray(result.data) ||
+			!result.data.every(isFleetAgentRow)
+		)
+			return null;
+		for (const row of result.data as FleetAgentRow[])
+			agents.push({
+				agent_runtime: row.agent_runtime,
+				agent_runtime_version: row.agent_runtime_version,
+				last_seen: row.last_seen,
+			});
+		if (agents.length >= result.count) return agents;
+		if (result.data.length === 0) return null;
+	}
+	return null;
+}
+
+/** Runtime ids (`agents.agent_runtime`) to product names, from the download catalog. */
+function runtimeLabels(): Map<string, string> {
+	const labels = new Map<string, string>();
+	for (const entry of RUNTIME_CATALOG) {
+		for (const runtime of entry.detection?.runtimes ?? []) {
+			const existing = labels.get(runtime);
+			// Browser Guard has one entry per browser family; name the runtime once.
+			labels.set(runtime, existing ? (entry.label.split(" for ")[0] ?? entry.label) : entry.label);
+		}
+	}
+	return labels;
+}
+
+type ReadyAiBom = { url: string; fileName: string; summary: string };
+
+/**
+ * "Export AI-BOM": a CycloneDX 1.6 document of the tenant's reported AI estate
+ * (fleet runtimes, MCP servers, AI infrastructure components, skills/plugins and
+ * their vulnerabilities), built in the browser from data already on this page.
+ */
+function AiBomExport({
+	tenantId,
+	tenantName,
+	findings,
+	truncated,
+}: {
+	tenantId: string;
+	tenantName: string;
+	findings: PostureFindingRow[] | null;
+	truncated: boolean;
+}) {
+	const [exporting, setExporting] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+	const [ready, setReady] = useState<ReadyAiBom | null>(null);
+	const readyUrl = useRef<string | null>(null);
+
+	useEffect(
+		() => () => {
+			if (readyUrl.current) URL.revokeObjectURL(readyUrl.current);
+		},
+		[],
+	);
+
+	async function exportAiBom() {
+		if (findings === null) return;
+		setExporting(true);
+		setError(null);
+		try {
+			const agents = await fetchFleetAgents(tenantId);
+			if (agents === null) {
+				setError(
+					"AI-BOM export failed: the fleet inventory could not be read. No file was produced.",
+				);
+				return;
+			}
+			const generatedAt = new Date().toISOString();
+			const bom = buildTenantAiBom({
+				tenant: { id: tenantId, name: tenantName },
+				agents,
+				findings,
+				runtimeLabels: runtimeLabels(),
+				postureWindowDays: POSTURE_WINDOW_DAYS,
+				postureTruncated: truncated,
+				generatedAt,
+				serialNumber: `urn:uuid:${crypto.randomUUID()}`,
+			});
+			const url = URL.createObjectURL(
+				new Blob([`${JSON.stringify(bom, null, 2)}\n`], { type: "application/vnd.cyclonedx+json" }),
+			);
+			if (readyUrl.current) URL.revokeObjectURL(readyUrl.current);
+			readyUrl.current = url;
+			setReady({
+				url,
+				fileName: aiBomFileName(tenantName, generatedAt),
+				summary: `${bom.components.length} component(s), ${bom.services.length} MCP server(s), ${bom.vulnerabilities.length} vulnerability record(s)`,
+			});
+		} catch {
+			setError("AI-BOM export failed. No file was produced.");
+		} finally {
+			setExporting(false);
+		}
+	}
+
+	return (
+		<div className="stack" aria-label="AI-BOM export">
+			<div className="row">
+				<button
+					type="button"
+					className="button button-secondary"
+					disabled={exporting || findings === null}
+					onClick={() => void exportAiBom()}
+				>
+					{exporting ? "Preparing AI-BOM…" : "Export AI-BOM"}
+				</button>
+				<span className="muted small">
+					CycloneDX 1.6 JSON of the agents, MCP servers, AI components and vulnerabilities reported
+					for this team.
+				</span>
+			</div>
+			{error ? (
+				<div className="notice notice-danger" role="alert">
+					{error}
+				</div>
+			) : null}
+			{ready ? (
+				<p role="status">
+					AI-BOM ready: {ready.summary}.{" "}
+					<a href={ready.url} download={ready.fileName}>
+						Save {ready.fileName}
+					</a>
+					{truncated
+						? ` Only the latest ${MAX_ROWS} posture observations were read; the BOM records this.`
+						: ""}
+				</p>
+			) : null}
+		</div>
+	);
+}
+
 function NoPostureData() {
 	return (
 		<section className="card" aria-label="No posture data">
@@ -521,10 +690,16 @@ export function PosturePage() {
 	const { currentTeam, isLoading } = useTeam();
 	if (isLoading) return <div role="status">Resolving the managed tenant…</div>;
 	if (!currentTeam) return <div role="alert">Select a team to view AI security posture.</div>;
-	return <TenantPosturePage key={currentTeam.id} tenantId={currentTeam.id} />;
+	return (
+		<TenantPosturePage
+			key={currentTeam.id}
+			tenantId={currentTeam.id}
+			tenantName={currentTeam.name}
+		/>
+	);
 }
 
-function TenantPosturePage({ tenantId }: { tenantId: string }) {
+function TenantPosturePage({ tenantId, tenantName }: { tenantId: string; tenantName: string }) {
 	// null = not loaded / unavailable (fail closed); [] = a real, empty posture.
 	const [rows, setRows] = useState<PostureFindingRow[] | null>(null);
 	const [error, setError] = useState<string | null>(null);
@@ -596,6 +771,12 @@ function TenantPosturePage({ tenantId }: { tenantId: string }) {
 					</div>
 				) : null}
 				{!loaded && rows === null ? <div role="status">Loading posture findings…</div> : null}
+				<AiBomExport
+					tenantId={tenantId}
+					tenantName={tenantName}
+					findings={rows === null ? null : current}
+					truncated={(rows?.length ?? 0) >= MAX_ROWS}
+				/>
 			</section>
 
 			{rows !== null && rows.length === 0 ? <NoPostureData /> : null}
@@ -730,6 +911,8 @@ function TenantPosturePage({ tenantId }: { tenantId: string }) {
 					<TrendSection trend={trend} trendMax={trendMax} />
 				</>
 			) : null}
+
+			<FrameworkCoverageSection />
 		</div>
 	);
 }

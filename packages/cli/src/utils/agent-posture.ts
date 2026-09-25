@@ -1,7 +1,7 @@
 import { cwd } from "node:process";
 import {
 	type AgentEnvironmentReport,
-	DEFAULT_MCP_INVENTORY_PATHS,
+	defaultMcpConfigPaths,
 	inspectAgentEnvironment,
 	resolvePath,
 } from "@singularityrd/aidr-core";
@@ -20,18 +20,20 @@ export interface AgentPostureContext {
  */
 export function scanAgentEnvironment(context: AgentPostureContext = {}): AgentEnvironmentReport {
 	const home = context.home ?? resolvePath("~");
+	const projectRoot = context.projectRoot ?? cwd();
 	const connectors = context.connectors ?? detectConnectorStatuses(home);
 	return inspectAgentEnvironment({
 		home,
-		projectRoot: context.projectRoot ?? cwd(),
+		projectRoot,
 		env: context.env ?? process.env,
 		uid: typeof process.getuid === "function" ? process.getuid() : undefined,
 		platform: process.platform,
 		installedConnectors: new Set(
 			connectors.filter((c) => c.state === "installed").map((c) => c.id),
 		),
-		mcpConfigPaths: DEFAULT_MCP_INVENTORY_PATHS.map((path) =>
-			path.startsWith("~/") ? `${home}${path.slice(1)}` : resolvePath(path),
+		// Same sources `aidr discover` inventories; `~/` resolves against the scanned home.
+		mcpConfigPaths: defaultMcpConfigPaths(projectRoot).map((path) =>
+			path.startsWith("~/") ? `${home}${path.slice(1)}` : path,
 		),
 	});
 }

@@ -123,6 +123,7 @@ function toEventRef(s: NormalizedSignal): IncidentEventRef {
 		signal_type: s.signal_type,
 		severity: s.severity,
 		summary: summarizeSignal(s),
+		...(s.frameworks ? { frameworks: s.frameworks } : {}),
 	};
 }
 

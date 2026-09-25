@@ -20,6 +20,7 @@ const EVENT_TYPES = new Set([
 	"plugin_scan_finding",
 	"runtime_policy_cache",
 	"privacy_scan",
+	"shadow_ai_usage",
 ]);
 const DECISIONS = new Set(["allow", "ask", "deny"]);
 const SEVERITIES = new Set(["info", "warning", "high", "critical"]);
@@ -48,9 +49,10 @@ export const PRIVACY_ENTITY_TYPES = [
 	"LOCATION", "USERNAME", "HEALTH_ID", "LICENSE_PLATE",
 ] as const;
 export const PRIVACY_SITES = [
-	"chatgpt", "gemini", "claude", "copilot", "perplexity", "deepseek", "mistral", "grok", "other",
+	"chatgpt", "gemini", "claude", "copilot", "perplexity", "deepseek", "mistral", "grok", "custom",
+	"other",
 ] as const;
-export const PRIVACY_CHANNELS = ["prompt", "paste", "file"] as const;
+const PRIVACY_CHANNELS = ["prompt", "paste", "file"] as const;
 /** Generic decision for each guard action: a masked send left redacted, so it was allowed. */
 export const PRIVACY_ACTION_DECISIONS = {
 	masked: "allow",
@@ -59,10 +61,89 @@ export const PRIVACY_ACTION_DECISIONS = {
 	allowed: "allow",
 } as const;
 export const MAX_PRIVACY_ENTITY_KEYS = 32;
-export const MAX_PRIVACY_ENTITY_COUNT = 100_000;
+const MAX_PRIVACY_ENTITY_COUNT = 100_000;
 const PRIVACY_ENTITY_TYPE_SET = new Set<string>(PRIVACY_ENTITY_TYPES);
 const PRIVACY_SITE_SET = new Set<string>(PRIVACY_SITES);
 const PRIVACY_CHANNEL_SET = new Set<string>(PRIVACY_CHANNELS);
+
+/**
+ * Browser Guard Shadow AI usage (docs/contracts/privacy-telemetry.md): aggregated
+ * visit/block counts per catalogued AI service. Keys and categories mirror the catalog in
+ * packages/browser-guard/src/sites/catalog.ts (pinned by the contract suite); a
+ * well-formed id this server does not know yet is filed under "other".
+ */
+export const SHADOW_AI_SERVICE_CATEGORIES: Readonly<Record<string, string>> = {
+	chatgpt: "chat", gemini: "chat", claude: "chat", copilot: "chat", perplexity: "search",
+	deepseek: "chat", mistral: "chat", grok: "chat", poe: "chat", "character-ai": "chat",
+	huggingface: "chat", "meta-ai": "chat", pi: "chat", "duck-ai": "chat", kimi: "chat",
+	qwen: "chat", doubao: "chat", ernie: "chat", chatglm: "chat", yuanbao: "chat",
+	cohere: "chat", groq: "chat", openrouter: "chat", together: "chat", lmarena: "chat",
+	monica: "chat", replika: "chat", chatpdf: "chat", notebooklm: "chat", you: "search",
+	consensus: "search", elicit: "search", phind: "coding", "ai-studio": "coding",
+	"openai-platform": "coding", "anthropic-console": "coding", "azure-ai-foundry": "coding",
+	cursor: "coding", v0: "coding", bolt: "coding", lovable: "coding", replit: "coding",
+	windsurf: "coding", tabnine: "coding", blackbox: "coding", devin: "agent", manus: "agent",
+	genspark: "agent", jasper: "writing", writesonic: "writing", "copy-ai": "writing",
+	quillbot: "writing", deepl: "writing", grammarly: "writing", wordtune: "writing",
+	rytr: "writing", gamma: "writing", tome: "writing", "beautiful-ai": "writing",
+	midjourney: "image", leonardo: "image", ideogram: "image", runway: "image",
+	elevenlabs: "image", suno: "image", pika: "image", krea: "image", firefly: "image",
+	heygen: "image", synthesia: "image", otter: "meeting", fireflies: "meeting",
+	tldv: "meeting", fathom: "meeting", "read-ai": "meeting",
+};
+export const SHADOW_AI_ACTION_DECISIONS = { visited: "allow", blocked: "deny" } as const;
+export const MAX_SHADOW_AI_COUNT = 100_000;
+const SHADOW_AI_SERVICE_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,31}$/;
+
+function shadowAiAction(value: unknown): keyof typeof SHADOW_AI_ACTION_DECISIONS | undefined {
+	return typeof value === "string" && Object.hasOwn(SHADOW_AI_ACTION_DECISIONS, value)
+		? (value as keyof typeof SHADOW_AI_ACTION_DECISIONS)
+		: undefined;
+}
+
+function isShadowAiCount(value: unknown): value is number {
+	return typeof value === "number" && Number.isInteger(value) && value >= 1 &&
+		value <= MAX_SHADOW_AI_COUNT;
+}
+
+/** Reject a Shadow AI event whose required fields cannot be projected faithfully. */
+function shadowAiEventProblem(event: Record<string, unknown>): string | undefined {
+	if (!shadowAiAction(event.action)) return "action";
+	if (typeof event.service_id !== "string" || !SHADOW_AI_SERVICE_ID_PATTERN.test(event.service_id)) {
+		return "service_id";
+	}
+	if (!isShadowAiCount(event.count)) return "count";
+	if (event.sanctioned !== undefined && typeof event.sanctioned !== "boolean") return "sanctioned";
+	return undefined;
+}
+
+/**
+ * Counts-only projection of a Shadow AI usage event: a catalog id (or "other"), its
+ * category, visited|blocked, a bounded count and the sanctioned flag. URLs, hosts, paths
+ * and titles are dropped even when a client sends them.
+ */
+function projectShadowAiEvent(event: Record<string, unknown> & { event_id: string }) {
+	const action = shadowAiAction(event.action) ?? "visited";
+	const serviceId = typeof event.service_id === "string" &&
+			Object.hasOwn(SHADOW_AI_SERVICE_CATEGORIES, event.service_id)
+		? event.service_id
+		: "other";
+	const projected: Record<string, unknown> & { event_id: string } = {
+		event_id: event.event_id,
+		type: "shadow_ai_usage",
+	};
+	const timestamp = safeTimestamp(event.timestamp);
+	if (timestamp) projected.timestamp = timestamp;
+	projected.service_id = serviceId;
+	projected.category = SHADOW_AI_SERVICE_CATEGORIES[serviceId] ?? "other";
+	projected.action = action;
+	projected.decision = SHADOW_AI_ACTION_DECISIONS[action];
+	projected.count = isShadowAiCount(event.count) ? event.count : 1;
+	projected.sanctioned = event.sanctioned === true;
+	const policyId = safeIdentifier(event.policy_id);
+	if (policyId) projected.policy_id = policyId;
+	return projected;
+}
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -178,6 +259,7 @@ function safeDigestOrMarker(value: unknown): string {
  */
 function projectEvent(event: Record<string, unknown> & { event_id: string }, type: string) {
 	if (type === "privacy_scan") return projectPrivacyEvent(event);
+	if (type === "shadow_ai_usage") return projectShadowAiEvent(event);
 	const projected: Record<string, unknown> & { event_id: string } = {
 		event_id: event.event_id,
 		type,
@@ -277,7 +359,11 @@ export function normalizeIngestEvents(value: unknown): NormalizedIngestEvents {
 		if (type === null) {
 			return { ok: false, status: 400, error: "invalid_event", detail: `events[${index}].type` };
 		}
-		const privacyProblem = type === "privacy_scan" ? privacyEventProblem(event) : undefined;
+		const privacyProblem = type === "privacy_scan"
+			? privacyEventProblem(event)
+			: type === "shadow_ai_usage"
+				? shadowAiEventProblem(event)
+				: undefined;
 		if (privacyProblem) {
 			return {
 				ok: false,

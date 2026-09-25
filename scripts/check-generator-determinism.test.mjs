@@ -19,8 +19,6 @@ import { tmpdir } from "node:os";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SCRIPT = join(ROOT, "scripts", "check-generator-determinism.mjs");
-const INVENTORY = join(ROOT, "FEATURE_INVENTORY.json");
-const SALES_GAPS = join(ROOT, "PRODUCTION_SALES_GAPS.json");
 
 /** Temporary committed-output fixtures; tests never write into the repository. */
 const guarded = ["FEATURE_INVENTORY.json", "FEATURE_INVENTORY.md", "PRODUCTION_SALES_GAPS.json", "PRODUCTION_SALES_GAPS.md"];
@@ -60,15 +58,26 @@ function run(committedOutputDir) {
 
 describe("generator determinism checker", () => {
 	it("records the actual Git worktree state in both generated registries", () => {
+		// Run the generators into a scratch directory and check the stamps they write.
+		// Comparing the committed files instead cannot hold: committing a regenerated
+		// record flips worktree_has_changes, and generated_on changes every day - which
+		// is exactly why the checker treats both as provenance stamps.
+		const outputDir = mkdtempSync(join(tmpdir(), "aidr-generator-stamps-"));
+		fixtureDirs.add(outputDir);
 		const actualChanges = execFileSync("git", ["status", "--porcelain", "--untracked-files=normal"], { cwd: ROOT, encoding: "utf8" }).trim().length > 0;
+		for (const generator of ["generate-feature-inventory.mjs", "generate-production-sales-gap-audit.mjs"]) {
+			execFileSync(process.execPath, [join(ROOT, "scripts", generator)], { cwd: ROOT, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, AIDR_GENERATOR_OUTPUT_DIR: outputDir } });
+		}
 		const generatedOn = new Intl.DateTimeFormat("en-CA", {
 			timeZone: "Europe/Istanbul",
 			year: "numeric",
 			month: "2-digit",
 			day: "2-digit",
 		}).format(new Date());
-		const inventory = JSON.parse(readFileSync(INVENTORY, "utf8"));
-		const salesGaps = JSON.parse(readFileSync(SALES_GAPS, "utf8"));
+		const inventory = JSON.parse(readFileSync(join(outputDir, "FEATURE_INVENTORY.json"), "utf8"));
+		const salesGaps = JSON.parse(readFileSync(join(outputDir, "PRODUCTION_SALES_GAPS.json"), "utf8"));
+		// Generating into a scratch directory must not have changed the tree it describes.
+		assert.equal(execFileSync("git", ["status", "--porcelain", "--untracked-files=normal"], { cwd: ROOT, encoding: "utf8" }).trim().length > 0, actualChanges);
 		assert.equal(inventory.worktree_has_changes, actualChanges);
 		assert.equal(salesGaps.worktree_has_changes, actualChanges);
 		assert.equal(inventory.generated_on, generatedOn);

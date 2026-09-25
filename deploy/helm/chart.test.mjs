@@ -254,7 +254,8 @@ test("rendering fails closed on missing secrets, weak URLs and mutable tags", { 
 		[["secrets.existingSecret="], /secrets\.existingSecret is required/],
 		[["secrets.functionsExistingSecret="], /secrets\.functionsExistingSecret is required/],
 		[["publicUrls.api=http://api.aidr.example.com"], /publicUrls/],
-		[["auth.image.tag=latest"], /latest|auth\.image\.tag/],
+		// Helm 3.19 rejects this in values.schema.json and names the JSON pointer /auth/image/tag.
+		[["auth.image.tag=latest"], /latest|auth[./]image[./]tag/],
 		[["global.imageRegistry="], /no registry/],
 		[["ingress.tlsSecretName="], /TLS is mandatory/],
 		[["postgresql.enabled=false", "externalDatabase.host=db.example.com"], /networkPolicyCIDRs is required/],

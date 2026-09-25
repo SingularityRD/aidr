@@ -9,6 +9,8 @@ import type {
 	DnrRule,
 	MessageListener,
 	MessageSender,
+	PermissionsListener,
+	RegisteredContentScript,
 	StorageAreaApi,
 	StorageChange,
 	TabInfo,
@@ -135,6 +137,12 @@ export interface ChromeFake {
 	readonly badges: Map<number | "global", string>;
 	readonly alarms: Map<string, { periodInMinutes?: number; when?: number }>;
 	readonly dnrRules: Map<number, DnrRule>;
+	/** Host-permission origins the "browser" has granted (`https://host/*`). */
+	readonly grantedOrigins: Set<string>;
+	/** Dynamically registered content scripts by id (chrome.scripting). */
+	readonly contentScripts: Map<string, RegisteredContentScript>;
+	/** Grants (or revokes) host access and fires permissions.onAdded/onRemoved. */
+	setOriginsGranted(origins: readonly string[], granted: boolean): void;
 	readonly events: {
 		readonly onMessage: FakeEvent<MessageListener>;
 		readonly onInstalled: FakeEvent<(details: { reason: string }) => void>;
@@ -176,8 +184,35 @@ export function createChromeFake(options: { version?: string } = {}): ChromeFake
 	const badges = new Map<number | "global", string>();
 	const alarms = new Map<string, { periodInMinutes?: number; when?: number }>();
 	const dnrRules = new Map<number, DnrRule>();
+	const grantedOrigins = new Set<string>();
+	const contentScripts = new Map<string, RegisteredContentScript>();
+	const onPermissionsAdded = new FakeEvent<PermissionsListener>();
+	const onPermissionsRemoved = new FakeEvent<PermissionsListener>();
 
 	const chrome: ChromeApi = {
+		permissions: {
+			async contains(request) {
+				return (request.origins ?? []).every((o) => grantedOrigins.has(o));
+			},
+			onAdded: onPermissionsAdded,
+			onRemoved: onPermissionsRemoved,
+		},
+		scripting: {
+			async registerContentScripts(scripts) {
+				for (const script of scripts) {
+					if (contentScripts.has(script.id)) throw new Error(`Duplicate script ID '${script.id}'`);
+					contentScripts.set(script.id, clone(script));
+				}
+			},
+			async unregisterContentScripts(filter) {
+				for (const id of filter?.ids ?? [...contentScripts.keys()]) contentScripts.delete(id);
+			},
+			async getRegisteredContentScripts(filter) {
+				return [...contentScripts.values()]
+					.filter((s) => !filter?.ids || filter.ids.includes(s.id))
+					.map(clone);
+			},
+		},
 		runtime: {
 			id: EXTENSION_ID,
 			getManifest: () => ({ version: options.version ?? "1.0.0" }),
@@ -251,6 +286,15 @@ export function createChromeFake(options: { version?: string } = {}): ChromeFake
 		badges,
 		alarms,
 		dnrRules,
+		grantedOrigins,
+		contentScripts,
+		setOriginsGranted(origins, granted) {
+			for (const origin of origins) {
+				if (granted) grantedOrigins.add(origin);
+				else grantedOrigins.delete(origin);
+			}
+			(granted ? onPermissionsAdded : onPermissionsRemoved).dispatch({ origins: [...origins] });
+		},
 		events,
 		sendRuntimeMessage(message, sender) {
 			return new Promise((resolve) => {

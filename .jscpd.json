@@ -1,6 +1,6 @@
 {
 	"threshold": 10,
-	"reporters": ["console", "html"],
+	"reporters": ["console"],
 	"ignore": [
 		"**/node_modules/**",
 		"**/dist/**",
@@ -16,5 +16,5 @@
 	"gitignore": true,
 	"minLines": 5,
 	"minTokens": 50,
-	"languages": ["typescript", "javascript", "yaml", "json"]
+	"format": ["typescript", "javascript", "yaml", "json"]
 }

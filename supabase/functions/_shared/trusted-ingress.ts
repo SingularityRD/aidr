@@ -8,11 +8,11 @@
 // `${context}\n${timestamp}\n${ip}`. The context binds a proof to one route, so
 // a signature minted for one endpoint cannot be replayed against another.
 
-export const INGRESS_IP_HEADER = "x-aidr-client-ip";
-export const INGRESS_TIMESTAMP_HEADER = "x-aidr-client-timestamp";
-export const INGRESS_SIGNATURE_HEADER = "x-aidr-client-signature";
-export const INGRESS_MAX_CLOCK_SKEW_SECONDS = 60;
-export const INGRESS_MIN_SECRET_BYTES = 32;
+const INGRESS_IP_HEADER = "x-aidr-client-ip";
+const INGRESS_TIMESTAMP_HEADER = "x-aidr-client-timestamp";
+const INGRESS_SIGNATURE_HEADER = "x-aidr-client-signature";
+const INGRESS_MAX_CLOCK_SKEW_SECONDS = 60;
+const INGRESS_MIN_SECRET_BYTES = 32;
 
 /** A shared ingress secret must carry at least 256 bits of UTF-8 input. */
 export function validIngressSecret(secret: string | null | undefined): secret is string {
@@ -20,7 +20,7 @@ export function validIngressSecret(secret: string | null | undefined): secret is
 }
 
 /** Canonical dotted IPv4 or lower-case compressed IPv6; anything else is refused. */
-export function canonicalIp(value: string | null): string | null {
+function canonicalIp(value: string | null): string | null {
 	if (!value || value.length > 45 || value !== value.trim()) return null;
 	if (/^(?:\d{1,3}\.){3}\d{1,3}$/.test(value)) {
 		const parts = value.split(".");

@@ -3,7 +3,9 @@ import { Link } from "react-router-dom";
 import { useTeam } from "../../enterprise/team-provider";
 import { readErrorMessage } from "../../lib/errors";
 import { supabase } from "../../lib/supabase";
+import { FrameworkTags } from "../framework-coverage";
 import { privacyEventSummary } from "../privacy-guard";
+import { shadowAiEventSummary } from "../shadow-ai";
 
 type AgentRow = {
 	id: string;
@@ -42,6 +44,7 @@ function summarize(event: EventRow): string {
 		return `${key}: ${count} finding(s)`;
 	}
 	if (event.type === "privacy_scan") return privacyEventSummary(event.payload);
+	if (event.type === "shadow_ai_usage") return shadowAiEventSummary(event.payload);
 	return "Additional event details are not shown.";
 }
 
@@ -184,10 +187,12 @@ function TenantEventsPage({ tenantId }: { tenantId: string }) {
 							{(events ?? []).map((event) => {
 								const agent = agents.get(event.agent_id);
 								const agentName = agent?.display_name ?? agent?.iid?.slice(0, 12) ?? event.agent_id;
-								// Privacy scans carry the contract's generic decision (masked => allow).
-								const verdictField = event.type === "privacy_scan" ? "decision" : "verdict";
+								// Browser Guard events carry the contract's generic decision (masked => allow).
+								const browserEvent =
+									event.type === "privacy_scan" || event.type === "shadow_ai_usage";
+								const verdictField = browserEvent ? "decision" : "verdict";
 								const verdict =
-									(event.type === "runtime_verdict" || event.type === "privacy_scan") &&
+									(event.type === "runtime_verdict" || browserEvent) &&
 									typeof event.payload?.[verdictField] === "string"
 										? String(event.payload[verdictField])
 										: null;
@@ -216,7 +221,12 @@ function TenantEventsPage({ tenantId }: { tenantId: string }) {
 												<span className="muted small">—</span>
 											)}
 										</td>
-										<td className="mono">{summarize(event)}</td>
+										<td className="mono">
+											{summarize(event)}
+											{event.type === "runtime_verdict" ? (
+												<FrameworkTags ruleId={event.payload?.matched_threat_id} />
+											) : null}
+										</td>
 									</tr>
 								);
 							})}

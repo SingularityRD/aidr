@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { webcrypto } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,6 +11,7 @@ import * as fingerprint from "../../scripts/fingerprint-dataset.mjs";
 import { decodePng, ICON_SIZES, MASTER_ICON, renderIcons } from "../../scripts/icons.mjs";
 // @ts-expect-error -- plain ESM build script without type declarations
 import { crc32, createZip, readZip } from "../../scripts/zip.mjs";
+import { evaluatePolicy } from "../background/policy";
 import { ENTITY_TYPES, type ExactDataSet } from "../types";
 
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -152,7 +153,7 @@ describe("fingerprint-dataset", () => {
 	});
 
 	const exactDataModule = join(PACKAGE_ROOT, "src", "engine", "exact-data.ts");
-	it.skipIf(!existsSync(exactDataModule))("matches the engine's fingerprintValue()", async () => {
+	it("matches the engine's fingerprintValue()", async () => {
 		const engine = (await import(/* @vite-ignore */ exactDataModule)) as {
 			fingerprintValue(keyB64: string, value: string): Promise<string>;
 		};
@@ -194,6 +195,7 @@ describe("zip writer", () => {
 	});
 
 	const unzip = spawnSync("unzip", ["-v"], { encoding: "utf8" });
+	// AIDR-SKIP: AIDR-063 qa-owner - cross-checks the ZIP writer against Info-ZIP unzip, an optional host tool
 	it.skipIf(unzip.status !== 0)("is accepted by Info-ZIP unzip", () => {
 		const dir = tempDir();
 		const file = join(dir, "t.zip");
@@ -246,6 +248,8 @@ const MANAGED_KEYS = [
 	"signalAction",
 	"blockedSites",
 	"disabledSites",
+	"customSites",
+	"shadowAi",
 	"allowUserPause",
 	"allowSendAnyway",
 	"maskPaste",
@@ -267,6 +271,7 @@ const SITE_IDS = [
 	"deepseek",
 	"mistral",
 	"grok",
+	"custom",
 	"other",
 ];
 const CHROME_ID = "REPLACE_WITH_CHROME_EXTENSION_ID";
@@ -298,6 +303,11 @@ function assertValidPolicy(policy: Record<string, Json>): void {
 	const telemetry = policy.telemetry as { controlPlaneUrl: string; apiKey: string };
 	expect(Object.keys(telemetry).sort()).toEqual(["apiKey", "controlPlaneUrl"]);
 	expect(telemetry.controlPlaneUrl).toMatch(/^https:\/\//);
+	// The worker's own validator accepts every key (nothing silently ignored).
+	const evaluation = evaluatePolicy(policy, undefined);
+	expect(evaluation.warnings).toEqual([]);
+	expect(evaluation.policy.customSites.map((site) => site.hosts)).toEqual([["gpt.acme.example"]]);
+	expect(evaluation.policy.shadowAi.mode).toBe("block-unsanctioned");
 }
 
 /** Minimal XML plist reader for the example profile (dict/array/string/integer/true/false). */
@@ -480,11 +490,8 @@ describe("deployment examples", () => {
 	});
 
 	const schemaFile = join(PACKAGE_ROOT, "static", "managed_schema.json");
-	it.skipIf(!existsSync(schemaFile))(
-		"every example key is declared in static/managed_schema.json",
-		() => {
-			const schema = JSON.parse(readFileSync(schemaFile, "utf8"));
-			for (const key of Object.keys(canonical)) expect(schema.properties).toHaveProperty(key);
-		},
-	);
+	it("every example key is declared in static/managed_schema.json", () => {
+		const schema = JSON.parse(readFileSync(schemaFile, "utf8"));
+		for (const key of Object.keys(canonical)) expect(schema.properties).toHaveProperty(key);
+	});
 });

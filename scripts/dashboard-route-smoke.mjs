@@ -57,6 +57,7 @@ const protectedRoutes = [
 	"/dashboard",
 	"/events",
 	"/discovery",
+	"/posture",
 	"/settings",
 	"/agents",
 	"/autosecops",

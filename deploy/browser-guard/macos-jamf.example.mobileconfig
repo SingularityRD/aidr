@@ -138,6 +138,46 @@
 			</array>
 			<key>disabledSites</key>
 			<array/>
+			<key>customSites</key>
+			<array>
+				<dict>
+					<key>id</key>
+					<string>acme-gpt</string>
+					<key>label</key>
+					<string>ACME GPT</string>
+					<key>hosts</key>
+					<array>
+						<string>gpt.acme.example</string>
+					</array>
+					<key>editorSelectors</key>
+					<array>
+						<string>textarea#prompt</string>
+					</array>
+					<key>sendButtonSelectors</key>
+					<array>
+						<string>button.send</string>
+					</array>
+					<key>responseSelectors</key>
+					<array>
+						<string>.answer</string>
+					</array>
+				</dict>
+			</array>
+			<key>shadowAi</key>
+			<dict>
+				<key>mode</key>
+				<string>block-unsanctioned</string>
+				<key>sanctioned</key>
+				<array>
+					<string>chatgpt</string>
+					<string>copilot</string>
+					<string>gemini</string>
+				</array>
+				<key>blocked</key>
+				<array>
+					<string>deepseek</string>
+				</array>
+			</dict>
 			<key>allowUserPause</key>
 			<false/>
 			<key>allowSendAnyway</key>
@@ -270,6 +310,46 @@
 			</array>
 			<key>disabledSites</key>
 			<array/>
+			<key>customSites</key>
+			<array>
+				<dict>
+					<key>id</key>
+					<string>acme-gpt</string>
+					<key>label</key>
+					<string>ACME GPT</string>
+					<key>hosts</key>
+					<array>
+						<string>gpt.acme.example</string>
+					</array>
+					<key>editorSelectors</key>
+					<array>
+						<string>textarea#prompt</string>
+					</array>
+					<key>sendButtonSelectors</key>
+					<array>
+						<string>button.send</string>
+					</array>
+					<key>responseSelectors</key>
+					<array>
+						<string>.answer</string>
+					</array>
+				</dict>
+			</array>
+			<key>shadowAi</key>
+			<dict>
+				<key>mode</key>
+				<string>block-unsanctioned</string>
+				<key>sanctioned</key>
+				<array>
+					<string>chatgpt</string>
+					<string>copilot</string>
+					<string>gemini</string>
+				</array>
+				<key>blocked</key>
+				<array>
+					<string>deepseek</string>
+				</array>
+			</dict>
 			<key>allowUserPause</key>
 			<false/>
 			<key>allowSendAnyway</key>

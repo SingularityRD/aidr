@@ -10,6 +10,7 @@
 import {
 	type Artifact,
 	createHostObservation,
+	describeSecureCodeWarnings,
 	evaluateToolCall,
 	extractFromToolCall,
 	formatDashboardApprovalNotice,
@@ -48,14 +49,44 @@ const hostObservation = createHostObservation();
  * also auto-approve the call and bypass that flow, which a redaction must not do.
  */
 function redactedResponse(verdict: Verdict, updatedInput: Record<string, unknown>) {
+	const notice = secureCodeNotice(verdict);
+	const systemMessage =
+		`🛡️ Singularity AIDR redacted sensitive data from this tool call before it ran. ${verdict.reasons[0] ?? ""}`.trim();
+	const additionalContext =
+		"Singularity AIDR data-loss prevention replaced sensitive values in this tool input with redaction markers before it ran. Do not try to recover or re-insert the original values.";
 	return {
-		systemMessage:
-			`🛡️ Singularity AIDR redacted sensitive data from this tool call before it ran. ${verdict.reasons[0] ?? ""}`.trim(),
+		systemMessage: notice ? `${systemMessage}\n${notice.userMessage}` : systemMessage,
 		hookSpecificOutput: {
 			hookEventName: "PreToolUse",
 			updatedInput,
-			additionalContext:
-				"Singularity AIDR data-loss prevention replaced sensitive values in this tool input with redaction markers before it ran. Do not try to recover or re-insert the original values.",
+			additionalContext: notice
+				? `${additionalContext}\n${notice.modelContext}`
+				: additionalContext,
+		},
+	};
+}
+
+/** Secure-code guardrail notice for the user and the model, when the verdict carries findings. */
+function secureCodeNotice(verdict: Verdict): ReturnType<typeof describeSecureCodeWarnings> | null {
+	return verdict.warnings && verdict.warnings.length > 0
+		? describeSecureCodeWarnings(verdict.warnings)
+		: null;
+}
+
+/**
+ * An allowed call with secure-code findings (`secure_code.action: "warn"`):
+ * no `permissionDecision`, so the call goes through the user's normal
+ * permission flow unchanged; `systemMessage` tells the user and
+ * `additionalContext` tells the model what to fix.
+ */
+function warnedResponse(verdict: Verdict): Record<string, unknown> {
+	const notice = secureCodeNotice(verdict);
+	if (!notice) return {};
+	return {
+		systemMessage: notice.userMessage,
+		hookSpecificOutput: {
+			hookEventName: "PreToolUse",
+			additionalContext: notice.modelContext,
 		},
 	};
 }
@@ -73,10 +104,16 @@ function makeResponse(
 	dashboard: DashboardNote = { notice: null, dashboardOnly: false },
 ): Record<string, unknown> {
 	if (verdict.decision === "allow") {
-		return verdict.transformedInput ? redactedResponse(verdict, verdict.transformedInput) : {};
+		return verdict.transformedInput
+			? redactedResponse(verdict, verdict.transformedInput)
+			: warnedResponse(verdict);
 	}
 
-	const banner = formatBlockReason(verdict);
+	// A blocked or held call that also carries secure-code findings lists them
+	// under the banner.
+	const banner = verdict.warnings?.length
+		? `${formatBlockReason(verdict)}\n${describeSecureCodeWarnings(verdict.warnings, false).userMessage}`
+		: formatBlockReason(verdict);
 
 	if (verdict.decision === "ask" && dashboard.dashboardOnly) {
 		// operator_approvals.dashboard_only: the native dialog would let the local
@@ -100,7 +137,10 @@ function makeResponse(
 			hookSpecificOutput: {
 				hookEventName: "PreToolUse",
 				permissionDecision: "deny",
-				permissionDecisionReason: "🛡️ Singularity AIDR: Threat Blocked",
+				permissionDecisionReason:
+					verdict.source === "agent_profile"
+						? "🛡️ Singularity AIDR: Blocked by agent permission profile"
+						: "🛡️ Singularity AIDR: Threat Blocked",
 			},
 		};
 	}
@@ -205,6 +245,8 @@ async function main(): Promise<void> {
 	const toolInput = (toolCall.tool_input ?? {}) as Record<string, unknown>;
 	const sessionId = typeof toolCall.session_id === "string" ? toolCall.session_id : "unknown";
 	const toolUseId = typeof toolCall.tool_use_id === "string" ? toolCall.tool_use_id : "";
+	// Host-reported session directory: selects repository-scoped agent profiles.
+	const workingDirectory = typeof toolCall.cwd === "string" ? toolCall.cwd : undefined;
 	// Extraction is best-effort. Even without artifacts, the evaluator must see
 	// the raw tool input for configured runtime inspection and MCP policy.
 	const artifacts: Artifact[] = extractFromToolCall(toolName, toolInput);
@@ -215,6 +257,7 @@ async function main(): Promise<void> {
 			threatsDir: resolveAssetDir("threats"),
 			allowlistsDir: resolveAssetDir("allowlists"),
 			agentRuntime: "claude-code",
+			workingDirectory,
 			logger,
 			// Claude Code applies PreToolUse `updatedInput` (see redactedResponse).
 			supportsInputRewrite: true,

@@ -13,6 +13,95 @@ export {
 	type AgentPostureSeverity,
 	inspectAgentEnvironment,
 } from "./agent-environment-posture.js";
+// Agent permission profiles: least-privilege restrictions per connector and
+// repository, evaluated by the shared evaluator on top of threat detection.
+export {
+	AGENT_PROFILE_ACTIONS,
+	AGENT_PROFILE_CONNECTORS,
+	AGENT_PROFILE_TOOL_CLASSES,
+	type AgentProfile,
+	type AgentProfileAction,
+	type AgentProfileCall,
+	type AgentProfileConnector,
+	type AgentProfileContext,
+	type AgentProfileDiagnostic,
+	type AgentProfileDocument,
+	AgentProfileDocumentSchema,
+	type AgentProfileEnvironment,
+	type AgentProfileEvaluation,
+	type AgentProfileLayer,
+	type AgentProfileOutcome,
+	type AgentProfileSource,
+	type AgentProfileValidation,
+	agentProfileVerdict,
+	classifyAgentTool,
+	evaluateAgentProfile,
+	evaluateAgentProfiles,
+	mcpCallIdentity,
+	mergeAgentProfileVerdict,
+	parseAgentProfileSource,
+	selectAgentProfiles,
+	validateAgentProfileDocument,
+	validateAgentProfileSource,
+	WORKSPACE_PLACEHOLDER,
+} from "./agent-profile.js";
+export {
+	buildAgentProfileContext,
+	DEFAULT_LOCAL_AGENT_PROFILES_PATH,
+	evaluateAgentProfilesForToolCall,
+	inspectLocalAgentProfiles,
+	LOCAL_AGENT_PROFILES_ENV,
+	type LocalAgentProfilesState,
+	localAgentProfileLayer,
+	localAgentProfilesPath,
+	managedAgentProfileLayer,
+} from "./agent-profile-loader.js";
+export {
+	AGENT_PROFILE_TEMPLATE_NAMES,
+	AGENT_PROFILE_TEMPLATES,
+	agentProfileTemplateDocument,
+} from "./agent-profile-templates.js";
+// AI model supply chain: trusted model sources (hubs and publisher organisations)
+export {
+	isTrustedModelSourceMatch,
+	loadTrustedModelSources,
+	MODEL_SOURCES_SUBDIR,
+	modelRepoOrgs,
+	NO_TRUSTED_MODEL_SOURCES,
+	type TrustedModelSources,
+} from "./ai-supply-chain.js";
+// AI-BOM (AI Bill of Materials): redacted AI inventory and its CycloneDX 1.6 rendering.
+export {
+	type BuildCycloneDxOptions,
+	buildCycloneDxBom,
+	CYCLONEDX_SPEC_VERSION,
+	type CycloneDxBom,
+	type CycloneDxComponent,
+	type CycloneDxProperty,
+	type CycloneDxService,
+	type CycloneDxVulnerability,
+} from "./aibom/cyclonedx.js";
+export {
+	AI_INVENTORY_SCHEMA,
+	type AiBomAgentInput,
+	type AiInventory,
+	type AiInventoryCoverage,
+	type AiInventoryMcpServer,
+	type AiInventoryPackage,
+	type AiInventoryVulnerability,
+	aiInventoryGaps,
+	type CollectAiInventoryOptions,
+	collectAiInventory,
+	displayPath,
+	packageUrl,
+} from "./aibom/inventory.js";
+export {
+	type AiProjectScan,
+	loadAiComponentCatalog,
+	matchCatalogEntry,
+	normalizePackageName,
+	scanProjectForAiComponents,
+} from "./aibom/project-scan.js";
 export type {
 	AigCveFinding,
 	AigFingerprintMatch,
@@ -40,7 +129,11 @@ export {
 	scanTarget,
 	scanTargets,
 } from "./aig-infra-scan.js";
-export { evaluateInfrastructurePolicy, inspectInfrastructurePolicy } from "./aig-policy.js";
+export {
+	evaluateInfrastructurePolicy,
+	inspectInfrastructurePolicy,
+	parseInfrastructureScanReport,
+} from "./aig-policy.js";
 export type {
 	AigAgentScanOptions,
 	AigFinding,
@@ -135,6 +228,8 @@ export {
 export { isCommercialBuild } from "./build-flavor.js";
 // Cache
 export { VerdictCache } from "./cache.js";
+// Canary credentials (honeytokens): deploy decoys, detect any agent touching them
+export * from "./canary/index.js";
 // Causal agent chain (message -> retrieval -> tool -> authorization -> action ->
 // side effect -> intervention), ordered by position and logical clock, with a
 // missing link reported as `chain_gap` and tamper-evident binding through the
@@ -168,6 +263,31 @@ export { FileCheckClient } from "./clients/file-check.js";
 export type { PackageMetadata } from "./clients/package-registry.js";
 export { RegistryClient, resolveDistDigest } from "./clients/package-registry.js";
 export { UrlCheckClient } from "./clients/url-check.js";
+// Code guard: AI supply-chain and secure-code rules over code an agent writes or runs
+export {
+	applySecureCodeWarnings,
+	CODE_MATCH_PREFIX,
+	type CodeBlock,
+	type CodeFinding,
+	type CodeGuardResult,
+	CodeRuleSet,
+	codeBlocksForToolCall,
+	codeLanguageForPath,
+	describeSecureCodeWarnings,
+	inspectToolCallCode,
+	isReportableFinding,
+	isSecureCodeRule,
+	matchCodeBlock,
+	SECRET_RULE_ID,
+	SECURE_CODE_WARNING_CATEGORY,
+} from "./code-guard.js";
+// Project code scan (`aidr scan --code`)
+export {
+	type CodeScanFinding,
+	type CodeScanOptions,
+	type CodeScanReport,
+	scanCodePath,
+} from "./code-scanner.js";
 // Shell argv normalization (argv arrays -> inspected command text)
 export {
 	type CommandValueResult,
@@ -388,6 +508,7 @@ export { CONFIDENCE_THRESHOLD, DecisionEngine } from "./engine.js";
 export {
 	allowVerdict,
 	evaluateToolCall,
+	recordCanaryTrigger,
 	type ToolDelegationContext,
 	type ToolEvaluationContext,
 	type ToolEvaluationRequest,
@@ -539,6 +660,50 @@ export {
 	separatorLine,
 	severityEmoji,
 } from "./format.js";
+// Security framework mapping (OWASP LLM 2025, OWASP Agentic 2026, MITRE ATLAS)
+export {
+	type AtlasTechnique,
+	FRAMEWORK_IDS,
+	FRAMEWORKS,
+	type FrameworkDefinition,
+	type FrameworkId,
+	type FrameworkItemDefinition,
+	frameworkItemLabel,
+	frameworkItemTitle,
+	frameworkOfItem,
+	MITRE_ATLAS_TACTICS,
+	MITRE_ATLAS_TECHNIQUES,
+	OWASP_AGENTIC_2026,
+	OWASP_LLM_2025,
+} from "./framework-catalog.js";
+export {
+	buildCoverageMatrix,
+	buildDashboardCoverageArtifact,
+	type CoverageItem,
+	type CoverageMatrix,
+	type CoverageRule,
+	type CoverageStatus,
+	type CoverageTacticSummary,
+	coverageMatrixToJson,
+	FRAMEWORK_MAPPINGS_RELATIVE_PATH,
+	type FrameworkAssessment,
+	type FrameworkCoverage,
+	type FrameworkMappings,
+	type FrameworkMappingsParseResult,
+	type FrameworkRuleRef,
+	frameworkRefLabels,
+	frameworkRefsFromJson,
+	frameworkRefsToJson,
+	loadFrameworkMappings,
+	parseFrameworkMappings,
+	parseFrameworkMappingsYaml,
+	renderCoverageDocument,
+	renderCoverageMarkdown,
+	renderCoverageTable,
+	resolveRuleFrameworks,
+	toCoverageRules,
+	validateFrameworkMappingsAgainstRules,
+} from "./framework-mappings.js";
 // Guard (soft-gated connector orchestrator)
 //
 // `executeWithRollback` is the connector-facing shape of a response: the guard
@@ -736,12 +901,13 @@ export {
 	type McpSignedManifestIndex,
 } from "./mcp-discovery.js";
 export {
-	DEFAULT_MCP_INVENTORY_PATHS,
+	defaultMcpConfigPaths,
 	type McpInventoryCoverage,
 	type McpInventoryCoverageStatus,
 	type McpInventoryReport,
 	type McpInventorySourceStatus,
 } from "./mcp-inventory.js";
+export { redactLaunchToken, redactMcpLaunch } from "./mcp-launch-redaction.js";
 export type { McpFetchOptions } from "./mcp-transport.js";
 // Pinned-DNS MCP upstream transport used by the inline MCP gateway.
 export { fetchMcpEndpoint, McpTransportError } from "./mcp-transport.js";
@@ -895,6 +1061,7 @@ export {
 // Prompt protection (UserPromptSubmit-style inspection of the user's prompt)
 export {
 	DEFAULT_PROMPT_PROTECTION,
+	locateSecrets,
 	type PromptFindingCategory,
 	type PromptFindingSummary,
 	type PromptIncompleteInspection,
@@ -903,6 +1070,7 @@ export {
 	PromptScanDeadlineError,
 	type PromptScanOptions,
 	type PromptTenantDlp,
+	type SecretLocation,
 	scanPrompt,
 } from "./prompt-protection.js";
 // Jailbreak & content-safety prompt inspection
@@ -1159,6 +1327,14 @@ export {
 } from "./terminal-text.js";
 // Threat loader
 export { loadThreats, loadThreatsFromDirs } from "./threat-loader.js";
+// Session toxic-flow ("lethal trifecta") and behavioral chain detection
+export {
+	recordToolOutputFlow,
+	TOXIC_FLOW_THREAT_IDS,
+	type ToolOutputFlowInput,
+	type ToolOutputFlowResult,
+	type ToxicFlowChain,
+} from "./toxic-flow.js";
 export type {
 	DetectionPhaseAttributes,
 	SecurityDecisionAttributes,
@@ -1191,7 +1367,9 @@ export {
 	loadTrustedDomains,
 } from "./trusted-domains.js";
 export type {
+	AgentProfileVerdictRef,
 	AgentRuntime,
+	AiSupplyChainConfig,
 	Allowlist,
 	AllowlistConfig,
 	AllowlistEntry,
@@ -1209,6 +1387,8 @@ export type {
 	Decision,
 	DelegationLineage,
 	FileCheckConfig,
+	FrameworkRefs,
+	FrameworkRefsJson,
 	HeuristicMatch,
 	IncidentConfig,
 	IntegrityConfig,
@@ -1227,19 +1407,23 @@ export type {
 	PromptContentSafetyConfig,
 	PromptProtectionConfig,
 	PromptProtectionMode,
+	SecureCodeConfig,
 	SignalSources,
 	Threat,
 	ThreatData,
+	ToxicFlowConfig,
 	TrustedDomain,
 	UrlCheckConfig,
 	UrlCheckFinding,
 	UrlCheckResult,
 	Verdict,
 	VerdictSeverity,
+	VerdictWarning,
 } from "./types.js";
 // Types
 export {
 	ActionSchema,
+	AiSupplyChainConfigSchema,
 	AllowlistConfigSchema,
 	ArtifactSchema,
 	ArtifactTypeSchema,
@@ -1259,6 +1443,7 @@ export {
 	PromptContentSafetySchema,
 	PromptProtectionConfigSchema,
 	PromptProtectionModeSchema,
+	SecureCodeConfigSchema,
 	SensitivitySchema,
 	SeveritySchema,
 	ThreatSchema,

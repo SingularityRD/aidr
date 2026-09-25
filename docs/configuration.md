@@ -98,6 +98,11 @@ flows](privacy.md) before enabling network features.
       "sexual_minors": "block"
     }
   },
+  "toxic_flow": {
+    "enabled": true,
+    "action": "auto",
+    "window_minutes": 60
+  },
   "version_check": {
     "enabled": false
   },
@@ -407,6 +412,58 @@ the text is shown, never in a rewritten tool input. The rewritten input is also 
 through the local threat rules; if it matches a rule the original did not (and that match
 would not be allowed on its own), the call is denied as `dlp_redaction_unsafe`.
 
+### `toxic_flow`
+
+Session toxic-flow ("lethal trifecta") and behavioral chain detection. Every connector that
+uses the shared evaluator (Claude Code, Cursor / VS Code, OpenClaw, OpenCode, Codex and the
+MCP gateway) gets it. See [Toxic-flow detection](toxic-flow.md) for the model.
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `enabled` | `true` | Track private-data access, untrusted-content exposure and external communication per agent session. |
+| `action` | `"auto"` | What a completed chain does: `"auto"` asks in `balanced`/`relaxed` and denies in `paranoid`; `"ask"`, `"deny"`, or `"monitor"` (allow, but record the finding in the audit log as `toxic_flow_monitor`). |
+| `window_minutes` | `60` | How long a step keeps counting toward a chain (1-1440). Also the lifetime of a session record. |
+| `bulk_sensitive_threshold` | `5` | Distinct sensitive files / credential stores in the window that trigger `bulk_sensitive_access` (2-64). |
+| `trusted_domains` | `[]` | Extra destination domains (suffix match) for which a plain request is not external communication. Package registries and source hosts are built in. A request that carries a payload (body, upload, piped data) still counts. |
+| `trusted_mcp_servers` | `[]` | MCP server ids whose output is not untrusted content. `policy.mcp.allow_servers` is also honoured. |
+| `trusted_git_remotes` | `["origin"]` | Git remote names a push to is not external communication. A push to a URL or any other remote counts. |
+
+- Chains: `lethal_trifecta` (`AIDR-FLOW-001`), `exfil_chain` (`AIDR-FLOW-002`),
+  `injection_to_action` (`AIDR-FLOW-003`), `bulk_sensitive_access` (`AIDR-FLOW-004`). The verdict
+  category is `toxic_flow` and the reason names the chain, the earlier steps (tool plus a redacted
+  target summary and age) and this call.
+- An `ask` is a block pending out-of-band approval like any other (`aidr pending` /
+  `aidr approve <actionId>` on soft-gated connectors, the native dialog in Claude Code).
+- Calls the operator allowlisted are recorded but never escalated.
+- Failure policy: a state file that cannot be read or written is a skipped signal; the call is
+  evaluated by every other layer and an `allow` is marked `toxic_flow_unavailable` in the audit
+  log (never a clean result). A state file that fails its integrity check is treated as
+  tampering: the session is assumed to have exercised all three capabilities for the rest of
+  the window, so its next egress needs approval.
+
+### `secure_code`
+
+Advisory checks on the code an agent writes (TLS verification disabled, SQL/command
+injection, `eval` on request input, `chmod 777`, wildcard CORS with credentials, exposed debug
+servers, disabled CSRF, weak crypto, hard-coded credentials). Only the lines a call adds are
+inspected, gated by file language. See [Secure-code guardrails](secure-code-guardrails.md).
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `enabled` | `true` | Turn the guardrails on or off |
+| `action` | `"warn"` | `"warn"`: the write goes through with a notice and an audit entry; `"ask"`: the write is held for review |
+
+### `ai_supply_chain`
+
+Trusted model sources for the AI model supply-chain rules (unsafe model loading and unvetted
+model downloads). These lists add to the shipped `allowlists/model-sources/*.yaml`. See
+[AI model supply-chain safety](ai-supply-chain-safety.md).
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `trusted_model_orgs` | `[]` | Extra Hugging Face organisations whose repositories are trusted (exact, case-insensitive) |
+| `trusted_model_hosts` | `[]` | Extra HTTPS hosts trusted for direct model-weight downloads (suffix match on a dot boundary) |
+
 ### `heuristics_enabled`
 
 Boolean, default `true`. Set to `false` to disable all local pattern matching.
@@ -638,7 +695,8 @@ sent to the AIDR dashboard for an administrator to approve — see
 | `aidr allowlist list\|add\|remove` | Manage permanent exceptions (`add` is operator only) |
 | `aidr audit tail [-n N] [--json]` | Show recent audit entries, re-redacted |
 | `aidr audit export [--since 24h\|ISO] [--format jsonl\|csv] [-o file]` | Export redacted entries, including rotated files; the session id is replaced by a digest and CSV cells are neutralised against spreadsheet formulas |
-| `aidr doctor [--json]` | Check hosts, hook registration, rule count, core version, mode, DLP policy, the approval store and key custody, and the last verdict; exits non-zero on problems |
+| `aidr doctor [--json]` | Check hosts, hook registration, rule count, core version, mode, DLP policy, agent permission profiles, the approval store and key custody, and the last verdict; exits non-zero on problems |
+| `aidr profile list\|show\|validate\|test` | Inspect, validate and dry-run agent permission profiles (see [Agent permission profiles](agent-profiles.md)) |
 
 ### Key custody
 
@@ -834,10 +892,12 @@ unreachable) the call stays blocked with the reason in the message.
 | `~/.singularity-aidr/operator-approval-ledger.json` | Single-use consumption ledger, only with the `file` key storage (`0600`); otherwise it lives in the OS vault |
 | `~/.singularity-aidr/operator-approval-key.json` | Informational record of where the approval key lives; never makes AIDR read a key file |
 | `~/.singularity-aidr/dashboard-approval-requests.json` | Managed mode: which dashboard approval request to poll for which pending ask (`0600`); grants nothing by itself |
+| `~/.singularity-aidr/session-flow/` | Per-session toxic-flow records (`<digest>.json`, HMAC-protected, `0600`, pruned after `toxic_flow.window_minutes`) and their per-install key `.flow-key` (`0600`) |
 | `~/.singularity-aidr/installation-id` | Random UUID identifying this installation |
 | `~/.singularity-aidr/managed.json` | Managed-mode state (seat status, backoff windows) |
 | `~/.singularity-aidr/pending-approvals.json` | Pending approval state (transient, managed by PreToolUse hook) |
 | `~/.singularity-aidr/consumed-approvals.json` | Consumed approvals for MCP allowlist flow (10-min TTL entries) |
 | `~/.singularity-aidr/intel/` | Optional offline intel packs |
 | `~/.singularity-aidr/dlp-policy.json` | Optional unsigned DLP policy (local mode only; override with `AIDR_DLP_POLICY_PATH`) |
-| `~/.singularity-aidr/detectors/<runtime>.json` | Signed tenant detector bundle (managed mode) |
+| `~/.singularity-aidr/detectors/<runtime>.json` | Signed tenant detector bundle (managed mode); may carry signed agent permission profiles |
+| `~/.singularity-aidr/agent-profiles.json` | Optional local agent permission profiles, any mode (override with `AIDR_AGENT_PROFILES_PATH`); see [Agent permission profiles](agent-profiles.md) |

@@ -122,7 +122,7 @@ const BUTTON_RETRY_MS = 50;
 const BUTTON_RETRIES = 6;
 
 /** Entity types the native host's NER contributes on top of the rule layer. */
-export const NATIVE_NER_TYPES: readonly EntityType[] = Object.freeze([
+const NATIVE_NER_TYPES: readonly EntityType[] = Object.freeze([
 	"PERSON",
 	"ADDRESS",
 	"LOCATION",
@@ -198,7 +198,8 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 	const win = deps.window as Win;
 	const now = deps.now ?? (() => Date.now());
 	const prescanDelay = deps.prescanDelayMs ?? 250;
-	const sendSelector = adapter.sendButtonSelectors.join(",");
+	// Read at use: a custom site's adapter is resolved once its policy arrives (boot.ts).
+	const sendSelector = (): string => adapter.sendButtonSelectors.join(",");
 	const lang = (): Lang => resolveLanguage(deps.getPolicy()?.language, win.navigator?.language);
 	const strings = (): Strings => STRINGS[lang()];
 
@@ -770,7 +771,13 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 	const resolveSendButton = (
 		target: Element,
 	): { button: HTMLElement; editor: EditorAccess | null } | null => {
-		const bySelector = sendSelector ? target.closest<HTMLElement>(sendSelector) : null;
+		const selector = sendSelector();
+		let bySelector: HTMLElement | null = null;
+		try {
+			bySelector = selector ? target.closest<HTMLElement>(selector) : null;
+		} catch {
+			bySelector = null;
+		}
 		if (bySelector) return { button: bySelector, editor: editorFor(null) };
 		const editor = editorFor(null);
 		const found = deps.findSendButton(adapter, doc, editor);

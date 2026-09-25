@@ -488,7 +488,7 @@ describe("aidr audit", () => {
 		expect(parseSince("7d", 10 * 86_400_000)).toBe(3 * 86_400_000);
 		expect(parseSince("yesterday-ish", 0)).toBeNull();
 		expect(toCsv([])).toBe(
-			"timestamp,type,decision,severity,category,tool_name,matched_threat_id,source,user_override,session_digest,tool_input_summary,reasons\n",
+			"timestamp,type,decision,severity,category,tool_name,matched_threat_id,source,user_override,session_digest,tool_input_summary,reasons,frameworks\n",
 		);
 	});
 });

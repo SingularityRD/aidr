@@ -9,13 +9,19 @@ import {
 	verifySignedMcpToolManifest,
 } from "./mcp-attestation.js";
 import { inspectMcpServerInventory, type McpInventoryItem } from "./mcp-inventory.js";
+import { redactMcpLaunch } from "./mcp-launch-redaction.js";
 
-function inventoryId(sourcePath: string, name: string): string {
+function inventoryId(sourcePath: string, name: string, projectPath?: string): string {
 	const resolvedPath = resolve(sourcePath);
 	const canonicalPath = process.platform === "win32" ? resolvedPath.toLowerCase() : resolvedPath;
+	// A project-scoped server shares its file and possibly its name with other
+	// scopes, so the project is part of its identity. Top-level servers keep
+	// their original two-part id.
+	const identity =
+		projectPath === undefined ? [canonicalPath, name] : [canonicalPath, name, projectPath];
 	return createHash("sha256")
 		.update("aidr-mcp-inventory-v1\0")
-		.update(JSON.stringify([canonicalPath, name]))
+		.update(JSON.stringify(identity))
 		.digest("hex");
 }
 
@@ -52,6 +58,12 @@ export interface McpDiscoveryAttestationOptions {
 export interface McpDiscoveryOptions {
 	/** Tool-manifest attestation inputs; absent means nothing can be verified. */
 	attestation?: McpDiscoveryAttestationOptions;
+	/**
+	 * Attach the server's command line with credentials redacted
+	 * (`redactMcpLaunch`). Off by default: the discovery report and posture
+	 * uploads never carry arguments; local exports such as the AI-BOM opt in.
+	 */
+	includeRedactedLaunch?: boolean;
 }
 
 export type McpDiscoveryAttestationStatus =
@@ -89,11 +101,15 @@ export interface McpDiscoveryServer {
 	inventory_id: string;
 	name: string;
 	source: string;
+	/** Claude Code project the server is scoped to (`~/.claude.json` `projects`); absent otherwise. */
+	project?: string;
 	transport: "remote" | "stdio";
 	endpoint: string | null;
 	risk_hints: string[];
 	configuration_sha256: string;
 	attestation: McpDiscoveryAttestation;
+	/** Redacted command line; present only with `includeRedactedLaunch`. */
+	launch?: { command: string | null; args: string[] };
 }
 
 function keyringIsConfigured(
@@ -292,16 +308,20 @@ export async function discoverMcpServers(paths?: string[], options: McpDiscovery
 			} catch {
 				/* Invalid URLs remain unverified. */
 			}
-			const id = inventoryId(item.sourcePath, item.name);
+			const id = inventoryId(item.sourcePath, item.name, item.projectPath);
 			return {
 				inventory_id: id,
 				name: item.name,
 				source: item.sourcePath,
+				...(item.projectPath !== undefined ? { project: item.projectPath } : {}),
 				transport: item.url ? ("remote" as const) : ("stdio" as const),
 				endpoint,
 				risk_hints: item.riskHints,
 				configuration_sha256: item.configurationSha256,
 				attestation: await attestDiscoveredServer(item, id, attestationOptions),
+				...(options.includeRedactedLaunch
+					? { launch: redactMcpLaunch(item.command, item.args) }
+					: {}),
 			};
 		}),
 	);

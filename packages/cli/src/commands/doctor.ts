@@ -4,10 +4,12 @@ import {
 	type AgentRuntime,
 	type Config,
 	describeOperatorApprovalKey,
+	inspectLocalAgentProfiles,
 	isInvalidConfig,
 	listPendingAsks,
 	loadConfig,
 	loadProvisionedDetectorContext,
+	localAgentProfilesPath,
 	type OperatorApprovalStoreOptions,
 	operatorApprovalStorePath,
 	resolvePath,
@@ -45,6 +47,8 @@ export interface DoctorDeps {
 	loadDetectors?: typeof loadProvisionedDetectorContext;
 	/** Agent environment posture scan. */
 	agentEnvironment?: (connectors: ConnectorStatus[]) => AgentEnvironmentReport;
+	/** Local agent permission profile document location. */
+	agentProfilesPath?: string;
 }
 
 function message(error: unknown): string {
@@ -176,6 +180,75 @@ async function checkDlp(connectors: ConnectorStatus[], deps: DoctorDeps): Promis
 				? `DLP enabled for ${enabled.map(([runtime]) => runtime).join(", ")}.`
 				: "DLP is not active: it requires a signed managed detector policy (local mode has no DLP).",
 		detail: { runtimes: results },
+	};
+}
+
+/**
+ * Agent permission profiles. An invalid local document is refused by every
+ * connector (so the operator's restrictions are NOT in force); an invalid
+ * managed section denies every call for that connector. Both are failures.
+ */
+async function checkAgentProfiles(
+	connectors: ConnectorStatus[],
+	deps: DoctorDeps,
+): Promise<DoctorCheck> {
+	const local = await inspectLocalAgentProfiles(deps.agentProfilesPath ?? localAgentProfilesPath());
+	const load = deps.loadDetectors ?? loadProvisionedDetectorContext;
+	const managed: Record<string, string> = {};
+	const managedFailures: string[] = [];
+	for (const connector of connectors.filter((c) => c.state === "installed")) {
+		try {
+			const context = await load(connector.id as AgentRuntime);
+			const layer = context.agentProfiles?.layers.find((item) => item.source === "managed");
+			if (!layer) continue;
+			if (layer.status === "invalid") {
+				managed[connector.id] = `invalid: ${layer.reason}`;
+				managedFailures.push(connector.id);
+			} else {
+				managed[connector.id] = layer.document.profiles.map((p) => p.name).join(", ");
+			}
+		} catch {
+			// A bundle that fails to load at all is reported by the DLP check.
+		}
+	}
+	const detail = {
+		local: {
+			path: local.path,
+			status: local.status,
+			...(local.status === "invalid" ? { reason: local.reason } : {}),
+			...(local.status === "loaded"
+				? { profiles: local.document.profiles.map((p) => p.name), diagnostics: local.diagnostics }
+				: {}),
+		},
+		managed,
+	};
+	const problems: string[] = [];
+	if (local.status === "invalid") {
+		problems.push(
+			`Local agent profiles at ${local.path} are invalid and were NOT loaded (${local.reason}); run \`aidr profile validate\`.`,
+		);
+	}
+	if (managedFailures.length > 0) {
+		problems.push(
+			`Managed agent profiles are invalid for ${managedFailures.join(", ")}; those connectors deny every call.`,
+		);
+	}
+	if (problems.length > 0) {
+		return { id: "agent_profiles", status: "fail", summary: problems.join(" "), detail };
+	}
+	const parts: string[] = [];
+	if (local.status === "loaded") parts.push(`${local.document.profiles.length} local profile(s)`);
+	const managedNames = Object.keys(managed);
+	if (managedNames.length > 0) parts.push(`managed profiles for ${managedNames.join(", ")}`);
+	const diagnostics = local.status === "loaded" ? local.diagnostics.length : 0;
+	return {
+		id: "agent_profiles",
+		status: diagnostics > 0 ? "warn" : "ok",
+		summary:
+			parts.length > 0
+				? `Agent permission profiles: ${parts.join("; ")}${diagnostics > 0 ? ` (${diagnostics} diagnostic(s); see \`aidr profile list\`)` : ""}.`
+				: "No agent permission profiles configured (threat detection only).",
+		detail,
 	};
 }
 
@@ -324,6 +397,7 @@ export async function runDoctor(deps: DoctorDeps = {}): Promise<DoctorReport> {
 		: detectConnectorStatuses(deps.home ?? resolvePath("~"));
 	checks.push(checkConnectors(connectors));
 	checks.push(await checkDlp(connectors, deps));
+	checks.push(await checkAgentProfiles(connectors, deps));
 	checks.push(await checkApprovals(deps, config));
 	checks.push(checkAgentEnvironment(connectors, deps));
 	checks.push(await checkLastVerdict(config));

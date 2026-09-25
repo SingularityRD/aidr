@@ -37,3 +37,26 @@ test("the dashboard summary keeps RLS and is not callable anonymously", () => {
 		assert.ok(["action", "site", "findings_count", "entity_counts"].includes(field[1]), field[1]);
 	}
 });
+
+const shadow = read("20260926000010_browser_shadow_ai_usage.sql");
+
+test("Shadow AI usage stays in public.events under the same tenant controls", () => {
+	assert.doesNotMatch(shadow, /create\s+table/i);
+	assert.doesNotMatch(shadow, /create\s+policy/i);
+	assert.match(shadow, /create index if not exists events_shadow_ai_usage_tenant_created_idx\s+on public\.events \(tenant_id, created_at desc\)\s+where type = 'shadow_ai_usage'/);
+});
+
+test("the Shadow AI summary keeps RLS, checks membership and is not callable anonymously", () => {
+	assert.match(shadow, /function public\.shadow_ai_summary\(\s+p_tenant_id uuid,\s+p_days integer default 30\s+\)/);
+	assert.match(shadow, /security invoker/);
+	assert.doesNotMatch(shadow, /security definer/);
+	assert.match(shadow, /set search_path = pg_catalog, public, app, pg_temp/);
+	assert.match(shadow, /p_days not in \(7, 30\)/);
+	assert.match(shadow, /if not app\.is_tenant_member\(p_tenant_id\) then\s+raise exception 'tenant_forbidden' using errcode = '42501'/);
+	assert.match(shadow, /revoke all on function public\.shadow_ai_summary\(uuid, integer\) from public, anon;/);
+	assert.match(shadow, /grant execute on function public\.shadow_ai_summary\(uuid, integer\) to authenticated, service_role;/);
+	// Aggregates read ids, enums, flags and counts only; there is no URL field to read.
+	for (const field of shadow.matchAll(/payload->>?'([a-z_]+)'/g)) {
+		assert.ok(["service_id", "category", "action", "sanctioned", "count"].includes(field[1]), field[1]);
+	}
+});

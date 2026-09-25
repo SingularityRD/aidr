@@ -33,7 +33,7 @@ const ADDRESS = /^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/;
 const SENDER = /^(?:[^<>\p{Cc}]{1,120} <[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+>|[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+)$/u;
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9._:/-]{1,256}$/;
 
-export type MailProvider = "resend" | "none";
+type MailProvider = "resend" | "none";
 
 export interface MailMessage {
 	to: string;
@@ -44,7 +44,7 @@ export interface MailMessage {
 	idempotencyKey?: string;
 }
 
-export type MailResult =
+type MailResult =
 	| { ok: true; provider: "resend"; messageId: string }
 	| { ok: false; reason: "not_configured" | "invalid_message" | "rejected" | "unavailable" };
 
@@ -64,7 +64,7 @@ export const noMailer: Mailer = Object.freeze({
 	send: async (): Promise<MailResult> => ({ ok: false, reason: "not_configured" }),
 });
 
-export function isMailAddress(value: string): boolean {
+function isMailAddress(value: string): boolean {
 	return value.length <= 254 && ADDRESS.test(value);
 }
 

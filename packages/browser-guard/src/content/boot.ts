@@ -18,6 +18,7 @@
  * message); policy fetches are retried with capped backoff for as long as the page lives.
  */
 import type {
+	CustomSiteConfig,
 	DetectionEngine,
 	DetectionOptions,
 	EntityType,
@@ -55,7 +56,7 @@ const ARRAY_KEYS = [
 const POLICY_RETRY_BASE_MS = 200;
 const POLICY_RETRY_MAX_MS = 10_000;
 /** How long boot waits for the persisted vault before starting with an empty one. */
-export const VAULT_LOAD_TIMEOUT_MS = 1_500;
+const VAULT_LOAD_TIMEOUT_MS = 1_500;
 
 /** The persisted vault from a VAULT_LOAD reply, or null (nothing saved / malformed). */
 export function extractVault(
@@ -112,7 +113,8 @@ export interface BootDeps
 	extends Omit<ContentGuardDeps, "adapter" | "engine" | "vault" | "getPolicy" | "send"> {
 	readonly url: string;
 	readonly runtime: RuntimeLike;
-	adapterForUrl(url: string): SiteAdapter;
+	/** Site adapter for the page; custom sites resolve once the policy (customSites) is known. */
+	adapterForUrl(url: string, customSites?: readonly CustomSiteConfig[]): SiteAdapter;
 	createDetectionEngine(options: DetectionOptions): DetectionEngine;
 	createVault(options: {
 		neverRestore: readonly EntityType[];
@@ -133,9 +135,45 @@ export interface BootedGuard {
 const sameList = (a: readonly string[], b: readonly string[]): boolean =>
 	a.length === b.length && a.every((v, i) => v === b[i]);
 
+/**
+ * Adapter whose fields always read the currently resolved adapter. A built-in site is
+ * known from the URL alone; an administrator-configured custom site (whose content script
+ * is registered dynamically) is only known once the policy with `customSites` arrived, and
+ * until then the page runs with the generic selectors (and fails closed on send anyway).
+ */
+function liveAdapter(resolve: () => SiteAdapter): SiteAdapter {
+	return {
+		get id() {
+			return resolve().id;
+		},
+		get label() {
+			return resolve().label;
+		},
+		get hosts() {
+			return resolve().hosts;
+		},
+		get editorSelectors() {
+			return resolve().editorSelectors;
+		},
+		get sendButtonSelectors() {
+			return resolve().sendButtonSelectors;
+		},
+		get responseSelectors() {
+			return resolve().responseSelectors;
+		},
+		get userMessageSelectors() {
+			return resolve().userMessageSelectors;
+		},
+		get fileInputSelectors() {
+			return resolve().fileInputSelectors;
+		},
+	};
+}
+
 export function bootContentGuard(deps: BootDeps): BootedGuard {
 	const { runtime } = deps;
-	const adapter = deps.adapterForUrl(deps.url);
+	let resolvedAdapter = deps.adapterForUrl(deps.url);
+	const adapter = liveAdapter(() => resolvedAdapter);
 	const sleep =
 		deps.sleep ??
 		((ms: number) =>
@@ -253,6 +291,12 @@ export function bootContentGuard(deps: BootDeps): BootedGuard {
 	});
 
 	const apply = (next: GuardPolicy): void => {
+		try {
+			const customSites = Array.isArray(next.customSites) ? next.customSites : [];
+			resolvedAdapter = deps.adapterForUrl(deps.url, customSites);
+		} catch {
+			// Keep the adapter resolved so far (the URL-only resolution).
+		}
 		try {
 			engine = deps.createDetectionEngine(detectionOptions(next));
 		} catch {

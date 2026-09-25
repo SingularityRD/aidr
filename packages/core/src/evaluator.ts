@@ -3,6 +3,15 @@
  * Hooks should normalize transport-specific payloads, then call this function.
  */
 
+import { isAbsolute } from "node:path";
+import {
+	type AgentProfileContext,
+	agentProfileFailureVerdict,
+	agentProfileVerdict,
+	evaluateAgentProfiles,
+	mergeAgentProfileVerdict,
+} from "./agent-profile.js";
+import { loadTrustedModelSources, type TrustedModelSources } from "./ai-supply-chain.js";
 import { isAllowlisted, loadAllowlist } from "./allowlist.js";
 import {
 	buildIncidentEntry,
@@ -14,9 +23,25 @@ import {
 import { BehavioralDetectionOrchestrator } from "./behavioral-orchestrator.js";
 import { isCommercialBuild } from "./build-flavor.js";
 import { VerdictCache } from "./cache.js";
+import {
+	CANARY_TRIGGERED_CATEGORY,
+	CANARY_UNAVAILABLE_CATEGORY,
+	type CanaryHit,
+	type CanaryStage,
+	canaryTriggeredVerdict,
+	canaryUnavailableVerdict,
+	inspectToolInputForCanaries,
+} from "./canary/detect.js";
 import { AmsiClient, isAmsiSupported } from "./clients/amsi.js";
 import { ControlPlaneClient } from "./clients/control-plane.js";
 import { UrlCheckClient } from "./clients/url-check.js";
+import {
+	applySecureCodeWarnings,
+	type CodeGuardResult,
+	CodeRuleSet,
+	EMPTY_CODE_GUARD_RESULT,
+	inspectToolCallCode,
+} from "./code-guard.js";
 import { isInvalidConfig, loadConfig, resolvePath } from "./config.js";
 import {
 	type DelegatedCredentialClaimsV1,
@@ -81,6 +106,7 @@ import { syncRemoteRuntimePolicy } from "./remote-policy.js";
 import type { ReputationFeedLoadOptions } from "./reputation-feed.js";
 import { loadThreatsFromDirs } from "./threat-loader.js";
 import { normalizeToolEvaluationRequest, readFileEditPayload } from "./tool-normalization.js";
+import { applyToxicFlow } from "./toxic-flow.js";
 import { loadTrustedDomains } from "./trusted-domains.js";
 import type {
 	AgentRuntime,
@@ -229,6 +255,18 @@ export interface ToolEvaluationContext {
 	 * makes no delegation claim, and the call is evaluated exactly as before.
 	 */
 	delegation?: ToolDelegationContext;
+	/**
+	 * Trusted agent permission profiles for this connector (local document and,
+	 * in managed mode, the signed tenant section). Absent means no profile
+	 * restricts the call. Profiles only ever make a verdict stricter.
+	 */
+	agentProfiles?: AgentProfileContext;
+	/**
+	 * Host-reported absolute working directory of the agent session. Selects
+	 * repository-scoped profiles and anchors `${workspace}` and relative paths.
+	 * Defaults to the process working directory.
+	 */
+	workingDirectory?: string;
 }
 
 const DETECTOR_DECISION_RANK = { allow: 0, ask: 1, deny: 2 } as const;
@@ -285,6 +323,9 @@ function auditToolInputForVerdict(
 	// credential redactor does not know. Never copy their raw payload into an
 	// audit summary or remote event when the configured detector determined the
 	// outcome (including unavailable inspection).
+	// A canary trigger may carry the decoy token value itself; it never enters a
+	// log or remote event (the verdict names the canary id instead).
+	if (verdict.category === CANARY_TRIGGERED_CATEGORY) return { content_omitted: "canary trigger" };
 	return context.runtimeDetectors?.dlp?.enabled === true ||
 		verdict.source === "dlp" ||
 		verdict.category === "behavioral_unavailable" ||
@@ -637,13 +678,87 @@ async function applyRuntimeDetectors(
 		};
 	}
 
-	const verdict = await recheckRedactedInput(
+	const checked = await recheckRedactedInput(
 		await applyConfiguredDetectors(request, context, baseVerdict, managedState, rewriteSource),
 		request,
 		context,
 		config,
 	);
+	const canaryGap = canaryUnavailableByRequest.get(request);
+	const verdict = canaryGap ? canaryUnavailableVerdict(checked, canaryGap) : checked;
 	return delegationOutcome ? { ...verdict, delegation: delegationOutcome.lineage } : verdict;
+}
+
+/**
+ * Requests whose canary check could not run, with the reason. Set by the early
+ * canary check and read where every pipeline path settles its verdict
+ * (`applyRuntimeDetectors`), so a skipped check is never reported as clean.
+ */
+const canaryUnavailableByRequest = new WeakMap<ToolEvaluationRequest, string>();
+
+/**
+ * Canary check, run before any other leg: a call that touches a decoy is
+ * denied outright (no allowlist, approval or cached verdict applies), and no
+ * reputation lookup ever receives the decoy value. Detection-internal failures
+ * are skipped, logged and remembered for the final verdict.
+ */
+function checkToolCallCanaries(request: ToolEvaluationRequest, logger: Logger): Verdict | null {
+	const inspection = inspectToolInputForCanaries(request.toolInput);
+	if (inspection.status === "triggered") return canaryTriggeredVerdict(inspection.hits);
+	if (inspection.status === "unavailable") {
+		canaryUnavailableByRequest.set(request, inspection.reason);
+		logger.warn("Canary credential check unavailable; signal skipped", {
+			reason: inspection.reason,
+		});
+	}
+	return null;
+}
+
+/**
+ * Record a canary trigger seen outside the pre-execution tool check (tool
+ * output after execution, a user prompt): audit entry, and in managed mode an
+ * incident through the same path as a blocked tool call. Never throws; the
+ * returned deny verdict is what the caller enforces.
+ */
+export async function recordCanaryTrigger(params: {
+	sessionId: string;
+	toolName: string;
+	hits: readonly CanaryHit[];
+	stage: Exclude<CanaryStage, "tool_input">;
+	configPath?: string;
+	logger?: Logger;
+	agentRuntime?: AgentRuntime;
+	agentRuntimeVersion?: string;
+}): Promise<Verdict> {
+	const verdict = canaryTriggeredVerdict(params.hits, params.stage);
+	const logger = params.logger ?? nullLogger;
+	try {
+		const config = await loadConfig(params.configPath, logger);
+		if (isInvalidConfig(config)) return verdict;
+		await recordEarlyVerdict(
+			{
+				sessionId: params.sessionId,
+				toolName: params.toolName,
+				toolInput: { content_omitted: params.stage },
+				artifacts: [],
+			},
+			{
+				threatsDir: "",
+				allowlistsDir: "",
+				configPath: params.configPath,
+				agentRuntime: params.agentRuntime,
+				agentRuntimeVersion: params.agentRuntimeVersion,
+				logger,
+			},
+			config,
+			verdict,
+			logger,
+			performance.now(),
+		);
+	} catch {
+		// Recording cannot change the enforced decision.
+	}
+	return verdict;
 }
 
 async function applyConfiguredDetectors(
@@ -776,6 +891,27 @@ async function recordEarlyVerdict(
 	}
 }
 
+/**
+ * Session toxic-flow detection (docs/toxic-flow.md), applied after every other
+ * layer so it sees their decision: a deny is left alone and not recorded, an
+ * allow or ask is recorded into the session and may be escalated when this
+ * call completes a dangerous chain. It never throws; state failures come back
+ * as a marked, non-clean verdict.
+ */
+function applySessionFlow(
+	request: ToolEvaluationRequest,
+	context: ToolEvaluationContext,
+	config: Config,
+	verdict: Verdict,
+	allowlisted = false,
+): Promise<Verdict> {
+	return applyToxicFlow(request, verdict, config, {
+		agentRuntime: context.agentRuntime,
+		logger: context.logger ?? nullLogger,
+		allowlisted,
+	});
+}
+
 export function allowVerdict(source = "none"): Verdict {
 	return {
 		decision: "allow",
@@ -871,12 +1007,20 @@ function truncatedCommandVerdict(): Verdict {
 	};
 }
 
+interface LoadedHeuristics {
+	engine: HeuristicsEngine;
+	threatsLoaded: number;
+	/** The same rules, indexed for the code guard (`match_on: code:<language>`). */
+	codeRules: CodeRuleSet;
+	modelSources: TrustedModelSources;
+}
+
 /** The local threat rules this call is matched against, honouring `disabled_threats`. */
 async function loadHeuristics(
 	context: ToolEvaluationContext,
 	config: Config,
 	logger: Logger,
-): Promise<{ engine: HeuristicsEngine; threatsLoaded: number }> {
+): Promise<LoadedHeuristics> {
 	const userThreatsDir = context.userThreatsDir ?? resolvePath("~/.singularity-aidr/threats");
 	let threats = await loadThreatsFromDirs([context.threatsDir, userThreatsDir], logger);
 	if (config.disabled_threats.length > 0) {
@@ -884,10 +1028,44 @@ async function loadHeuristics(
 		threats = threats.filter((t) => !disabledSet.has(t.id));
 	}
 	const trustedDomains = await loadTrustedDomains(context.allowlistsDir, logger);
+	const modelSources = await loadTrustedModelSources(
+		context.allowlistsDir,
+		config.ai_supply_chain,
+		logger,
+	);
 	return {
-		engine: new HeuristicsEngine(threats, trustedDomains),
+		engine: new HeuristicsEngine(threats, trustedDomains, modelSources),
 		threatsLoaded: threats.length,
+		codeRules: new CodeRuleSet(threats, config.disabled_threats),
+		modelSources,
 	};
+}
+
+/**
+ * The code-guard leg (AI supply-chain and secure-code rules over the code this
+ * call writes or runs). A failure here is a detection-internal failure: the
+ * signal is skipped and logged, never reported as a clean inspection.
+ */
+function inspectCodeLeg(
+	request: ToolEvaluationRequest,
+	loaded: LoadedHeuristics,
+	config: Config,
+	logger: Logger,
+): CodeGuardResult {
+	try {
+		return inspectToolCallCode(
+			request.toolName,
+			request.toolInput,
+			loaded.codeRules,
+			loaded.modelSources,
+			config.secure_code,
+		);
+	} catch (error) {
+		logger.warn("Code inspection leg did not run; model-loading and secure-code rules skipped", {
+			errorType: error instanceof Error ? error.name : typeof error,
+		});
+		return EMPTY_CODE_GUARD_RESULT;
+	}
 }
 
 /** Normalization flags that mean the tool input could not be read unambiguously. */
@@ -963,6 +1141,31 @@ async function recheckRedactedInput(
 	}
 }
 
+/**
+ * The agent permission profile outcome for this call, or null when no profile
+ * restricts it. An unexpected evaluation failure is a deny: the profile is a
+ * security control and must not silently disappear.
+ */
+async function evaluateAgentProfileVerdict(
+	request: ToolEvaluationRequest,
+	context: ToolEvaluationContext,
+): Promise<Verdict | null> {
+	const profiles = context.agentProfiles;
+	if (!profiles || profiles.layers.length === 0) return null;
+	const reported = context.workingDirectory?.trim();
+	const workingDirectory = reported && isAbsolute(reported) ? reported : process.cwd();
+	try {
+		const evaluation = await evaluateAgentProfiles(
+			profiles,
+			{ toolName: request.toolName, toolInput: request.toolInput, artifacts: request.artifacts },
+			{ workingDirectory },
+		);
+		return agentProfileVerdict(evaluation);
+	} catch {
+		return agentProfileFailureVerdict();
+	}
+}
+
 /** MCP calls reach the evaluator as `mcp__<server>__<tool>` or the host's generic `MCP` tool. */
 function isMcpToolName(toolName: string): boolean {
 	return toolName === "MCP" || toolName.startsWith("mcp__");
@@ -1015,6 +1218,11 @@ async function runEvaluationPipeline(
 		await recordEarlyVerdict(request, context, config, verdict, logger, startTime);
 		return verdict;
 	}
+	const canaryVerdict = checkToolCallCanaries(request, logger);
+	if (canaryVerdict) {
+		await recordEarlyVerdict(request, context, config, canaryVerdict, logger, startTime);
+		return canaryVerdict;
+	}
 	if (request.toolInput.__aidr_input_normalization_failed === true) {
 		const verdict = ambiguousToolInputVerdict();
 		await recordEarlyVerdict(request, context, config, verdict, logger, startTime);
@@ -1047,6 +1255,38 @@ async function runEvaluationPipeline(
 		await recordEarlyVerdict(request, context, config, verdict, logger, startTime);
 		return verdict;
 	}
+	// A profile deny is final: nothing downstream can soften it. An ask (or an
+	// allow) is merged into whatever detection decides, deny > ask > allow.
+	const profileVerdict = await evaluateAgentProfileVerdict(request, context);
+	if (profileVerdict?.decision === "deny") {
+		await recordEarlyVerdict(request, context, config, profileVerdict, logger, startTime);
+		return profileVerdict;
+	}
+	// Every exit below routes its verdict through here: tenant runtime
+	// detectors, then session (toxic) flow, then the profile restriction,
+	// then host promotion.
+	const finalize = async (verdict: Verdict, allowlisted = false): Promise<Verdict> =>
+		hostEffectiveVerdict(
+			mergeAgentProfileVerdict(
+				await applySessionFlow(
+					request,
+					context,
+					config,
+					await applyRuntimeDetectors(
+						request,
+						context,
+						config,
+						verdict,
+						managedState,
+						rewriteSource,
+					),
+					allowlisted,
+				),
+				profileVerdict,
+			),
+			config,
+			context,
+		);
 	const commercial = isCommercialBuild();
 	// Computed once: the same manifest edits decide whether this request has
 	// anything for the package leg to inspect at all (see the empty-artifact
@@ -1055,7 +1295,9 @@ async function runEvaluationPipeline(
 
 	// Managed-only commercial behavior: without a valid auth token + signed entitlement (or offline grace),
 	// the runtime does not enforce and becomes inert (allow-only).
-	const disabled = (reason: string): Verdict => {
+	const disabled = (reason: string): Verdict =>
+		mergeAgentProfileVerdict(disabledVerdict(reason), profileVerdict);
+	const disabledVerdict = (reason: string): Verdict => {
 		if (commercial) {
 			return {
 				decision: "ask",
@@ -1358,21 +1600,12 @@ async function runEvaluationPipeline(
 		// A manifest edit is inspectable input even when the connector extracted
 		// no artifacts for the tool name, so it may not take this fast path.
 		if (!isMcpTool && manifestEdits.length === 0) {
-			const verdict = hostEffectiveVerdict(
-				await applyRuntimeDetectors(
-					request,
-					context,
-					config,
-					allowVerdict("no_artifacts"),
-					managedState,
-					rewriteSource,
-				),
-				config,
-				context,
-			);
+			const verdict = await finalize(allowVerdict("no_artifacts"));
 			if (
 				verdict.decision !== "allow" ||
 				verdict.category === "behavioral_unavailable" ||
+				verdict.category === CANARY_UNAVAILABLE_CATEGORY ||
+				verdict.category.startsWith("toxic_flow") ||
 				verdict.transformedInput
 			) {
 				await recordEarlyVerdict(request, context, config, verdict, logger, startTime);
@@ -1400,18 +1633,7 @@ async function runEvaluationPipeline(
 	}
 
 	if (allowlisted) {
-		const finalVerdict = hostEffectiveVerdict(
-			await applyRuntimeDetectors(
-				request,
-				context,
-				config,
-				allowlisted,
-				managedState,
-				rewriteSource,
-			),
-			config,
-			context,
-		);
+		const finalVerdict = await finalize(allowlisted, true);
 		await recordEarlyVerdict(
 			request,
 			context,
@@ -1425,18 +1647,7 @@ async function runEvaluationPipeline(
 	}
 
 	if (policyVerdict) {
-		const finalVerdict = hostEffectiveVerdict(
-			await applyRuntimeDetectors(
-				request,
-				context,
-				config,
-				policyVerdict,
-				managedState,
-				rewriteSource,
-			),
-			config,
-			context,
-		);
+		const finalVerdict = await finalize(policyVerdict);
 		const durationMs = performance.now() - startTime;
 		const auditInput = auditToolInputForVerdict(request.toolInput, finalVerdict, context);
 		let incidentEntry: Record<string, unknown> | null = null;
@@ -1507,10 +1718,15 @@ async function runEvaluationPipeline(
 	// Tracked so the degraded-detection guard below can tell "nothing matched"
 	// apart from "no rules were loaded at all".
 	let threatsLoaded = 0;
+	let codeGuard: CodeGuardResult = EMPTY_CODE_GUARD_RESULT;
 	if (config.heuristics_enabled) {
 		const loaded = await loadHeuristics(context, config, logger);
 		threatsLoaded = loaded.threatsLoaded;
 		heuristicMatches = loaded.engine.match(request.artifacts);
+		// Model-loading rules decide like any heuristic; secure-code findings
+		// are advisory and folded in after the decision (see below).
+		codeGuard = inspectCodeLeg(request, loaded, config, logger);
+		heuristicMatches = [...heuristicMatches, ...codeGuard.heuristicMatches];
 	}
 
 	let urlCheckResults: Awaited<ReturnType<UrlCheckClient["checkUrls"]>> = [];
@@ -1742,11 +1958,10 @@ async function runEvaluationPipeline(
 			`URL reputation lookup was unavailable (${urlLegUnavailableReason}), so the URLs in this call were NOT verified clean and require review.`,
 		);
 	}
-	verdict = hostEffectiveVerdict(
-		await applyRuntimeDetectors(request, context, config, verdict, managedState, rewriteSource),
-		config,
-		context,
-	);
+	// Secure-code guardrails: a notice by default (`warn`), a review with
+	// `secure_code.action: "ask"`. Never a deny on their own.
+	verdict = applySecureCodeWarnings(verdict, codeGuard.warnings, config.secure_code);
+	verdict = await finalize(verdict);
 	const durationMs = performance.now() - startTime;
 	const auditInput = auditToolInputForVerdict(request.toolInput, verdict, context);
 
