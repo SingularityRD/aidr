@@ -55,24 +55,25 @@ export function createToolHandlers(
 			// fails closed rather than evaluating without it.
 			const provisioned = await loadProvisionedDetectorContext("opencode");
 
-			const { verdict, actionId, responseActions, pendingRecorded } = await guardToolCall(
-				{
-					sessionId: input.sessionID,
-					toolName: input.tool,
-					toolInput: args,
-					artifacts,
-				},
-				{
-					threatsDir,
-					allowlistsDir,
-					logger,
-					agentRuntime: "opencode",
-					// tool.execute.before may rewrite output.args (see applyRedactedArgs).
-					supportsInputRewrite: true,
-					...provisioned,
-				},
-				approvalStore,
-			);
+			const { verdict, actionId, responseActions, pendingRecorded, dashboardApproval } =
+				await guardToolCall(
+					{
+						sessionId: input.sessionID,
+						toolName: input.tool,
+						toolInput: args,
+						artifacts,
+					},
+					{
+						threatsDir,
+						allowlistsDir,
+						logger,
+						agentRuntime: "opencode",
+						// tool.execute.before may rewrite output.args (see applyRedactedArgs).
+						supportsInputRewrite: true,
+						...provisioned,
+					},
+					approvalStore,
+				);
 			recordHostObservation(hostObservation, {
 				connector: "opencode",
 				event: "tool.execute.before",
@@ -95,7 +96,14 @@ export function createToolHandlers(
 
 			// ask — actionId is always set for ask verdicts
 			throw new AidrVerdictBlockError(
-				formatAskMessage(actionId as string, verdict, artifacts, responseActions, pendingRecorded),
+				formatAskMessage(
+					actionId as string,
+					verdict,
+					artifacts,
+					responseActions,
+					pendingRecorded,
+					dashboardApproval,
+				),
 			);
 		} catch (error) {
 			// Verdict errors are expected (blocks and asks); internal errors deny execution.

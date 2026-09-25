@@ -69,6 +69,12 @@ async function runHook(
 		recordHostObservation: vi.fn(),
 		evaluateToolCall: evaluate,
 		extractFromToolCall: extract,
+		// Local mode: the managed dashboard approval step leaves the verdict unchanged.
+		resolveAskWithDashboardApproval: vi.fn(async (_request: unknown, evaluated: unknown) => ({
+			verdict: evaluated,
+			dashboardOnly: false,
+		})),
+		formatDashboardApprovalNotice: () => null,
 		initSentry: vi.fn(),
 		verifyArtifactIntegrityAndLog: vi.fn().mockResolvedValue({ status: "skipped" }),
 	};

@@ -96,6 +96,16 @@ Approval is an **out-of-band, human-only action**:
    permanently allowlists the artifact with `aidr allowlist add`.
 4. Only then does a retry of the original tool call succeed — once
 
+**Managed mode.** On an enrolled installation every `ask` is also submitted to the
+AIDR dashboard and the block message says
+`Approval requested in the AIDR dashboard: <request_id>`. An administrator (a
+different, MFA-authenticated person) approves it there; the next identical call
+is released once by a control-plane-signed token, verified against the approval
+keys in the signed entitlement, whose nonce is spent locally. The agent cannot
+mint or replay such a token. `operator_approvals.dashboard_only: true` makes the
+dashboard the only channel. Local mode is unchanged. See
+[dashboard approvals](../../docs/configuration.md#managed-mode-dashboard-approvals).
+
 Singularity AIDR also provides:
 
 - `aidr_allowlist_add` to permanently allow a URL/command/file path (**requires a

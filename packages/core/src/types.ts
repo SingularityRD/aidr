@@ -640,6 +640,13 @@ export const NvdConfigSchema = z.object({
  */
 const OperatorApprovalsConfigSchema = z.object({
 	key_storage: z.enum(["os-vault", "file"]).default("os-vault"),
+	/**
+	 * Managed mode only: an `ask` can be released ONLY by a dashboard approval (an
+	 * authenticated admin in the AIDR dashboard). The local `aidr approve` channel
+	 * is not consulted and hosts with a native confirmation dialog (Claude Code,
+	 * VS Code) block instead of asking. Ignored in local mode.
+	 */
+	dashboard_only: z.boolean().default(false),
 });
 
 export const ConfigSchema = z.object({

@@ -363,6 +363,12 @@ operator approvals are disabled and asks stay blocked; `"file"` is an explicit,
 reduced-protection opt-in that `aidr doctor` warns about. Overridden by
 `AIDR_OPERATOR_APPROVAL_KEY_STORAGE`. See [Key custody](#key-custody).
 
+`dashboard_only`: `false` (default) or `true`. **Managed mode only.** When `true`,
+an `ask` can be released only by a [dashboard approval](#managed-mode-dashboard-approvals):
+the guard does not record or consume `aidr approve` approvals, and Claude Code and
+the VS Code / Cursor hooks block the call instead of opening their native
+confirmation dialog. Ignored in local mode.
+
 ### `disabled_threats`
 
 Array of threat IDs to skip during heuristic matching. Default: `[]`.
@@ -492,6 +498,10 @@ quarantine reason.
 
 OpenClaw, OpenCode and Codex cannot show a host-native confirmation dialog, so
 their `ask` verdicts go through a file-backed, operator-only approval channel:
+
+This is the approval channel in **local mode**. In managed mode an `ask` is also
+sent to the AIDR dashboard for an administrator to approve — see
+[Managed mode: dashboard approvals](#managed-mode-dashboard-approvals).
 
 1. When a connector blocks an `ask`, it records a **pending ask** in
    `~/.singularity-aidr/approvals.json`: the `actionId` (a SHA-256 of tool, input
@@ -638,9 +648,74 @@ vault item to prompt on every access (Keychain Access → the
 `singularity-aidr-cli` item → Access Control → "Ask for Keychain password"; each
 recorded ask and each approval then shows a prompt), or run the agent under a
 separate OS account from the operator, so its shell cannot open the operator's
-vault at all. Where approvals must hold against same-user code, those are the
-options today: an approval channel through the managed-mode dashboard, which
-would remove the local same-user path entirely, is not part of this release.
+vault at all. In managed mode, [dashboard approvals](#managed-mode-dashboard-approvals)
+with `operator_approvals.dashboard_only: true` remove the local same-user approval
+path entirely.
+
+### Managed mode: dashboard approvals
+
+In **local mode** nothing changes: the only approval channel is the operator CLI
+described above, and no approval ever leaves the machine.
+
+In **managed mode** (enrolled: an API key and an active, ed25519-verified
+entitlement), every `ask` from every connector — OpenClaw, OpenCode, Codex, Claude
+Code and the Cursor / VS Code hook — is additionally submitted to the AIDR
+dashboard, where an administrator can approve or deny it:
+
+1. **Request.** The connector sends `POST {endpoint}/v1/approval-requests` with the
+   installation id, connector, `actionId`, `sha256:`-prefixed artifact-set digest,
+   tool, matched threat ids, a redacted and control-character-escaped summary (at
+   most 512 characters; raw artifact values are never sent) and an expiry of
+   25 minutes. The request is idempotent on tenant, installation and `actionId`.
+   The call stays blocked, and the block reason tells the user
+   `Approval requested in the AIDR dashboard: <request_id>`. The request id is
+   remembered in `~/.singularity-aidr/dashboard-approval-requests.json`, so the
+   next hook process (Claude Code and Codex start one per call) finds it.
+2. **Decision.** An owner or admin approves it in the dashboard (AAL2 / MFA
+   session). The control plane signs an approval token with the tenant's Ed25519
+   approval key, which never leaves the server.
+3. **Release.** On the identical retry the connector polls the request. An
+   approved token is released only if **all** of these hold, otherwise the call
+   stays blocked and the reason is logged and audited:
+   - the Ed25519 signature verifies under a key whose `key_id` is listed in
+     `approval_public_keys` of the **signed entitlement** (an unknown key id, or
+     an entitlement without approval keys, is a rejection — the keys are never
+     read from config, the network response or any unsigned file);
+   - `tenant_id`, installation id, `actionId`, artifact digest and tool match the
+     pending ask exactly, and the decision is `approve`;
+   - it is unexpired, was issued no more than 15 minutes before it expires, and
+     was not issued in the future;
+   - its nonce has not been spent. The nonce is spent in the same consumption
+     ledger as operator approvals (OS vault by default, read back after writing),
+     so one approval releases **exactly one** call, across processes and even if
+     `dashboard-approval-requests.json` or `approvals.json` is rolled back. With
+     no usable ledger nothing is released.
+
+   The release is audited twice: a `runtime_verdict` with `source:
+   "dashboard_approval"` and `user_override: true`, and `dashboard_approval`
+   entries for each step (`requested`, `denied`, `expired`, `rejected` with its
+   reason, `consumed` with the approver id). Tokens and the API key are never
+   logged.
+
+Every control-plane call on the hook path is bounded (1.5 s each, 3 s in total),
+so a slow or unreachable control plane cannot hold the hook past its deadline; a
+failure keeps the call blocked and says the request could not be sent.
+
+**Why this is stronger than the CLI channel.** The approver is a different,
+authenticated human on a different device, not whoever runs as the agent's OS
+user. The only thing on the endpoint that can make a token valid is the
+control plane's signing key, which the endpoint does not have: the verification
+keys arrive inside the entitlement the licensing key signs, so neither the agent
+nor any same-user process can mint an approval, re-bind one to another call, or
+replay one. What remains local is *which* request to poll, and tampering with that
+only ever results in a block.
+
+By default the local operator channel keeps working alongside the dashboard (and
+Claude Code / VS Code keep their native dialog). Set
+`operator_approvals.dashboard_only: true` to make the dashboard the **only**
+channel: `aidr approve` approvals are ignored, native dialogs become blocks, and if
+the dashboard is unavailable (not enrolled, no signed entitlement, control plane
+unreachable) the call stays blocked with the reason in the message.
 
 ## Files on Disk
 
@@ -655,6 +730,7 @@ would remove the local same-user path entirely, is not part of this release.
 | `~/.singularity-aidr/operator-approval.key` | Approval HMAC key, only with the explicit `operator_approvals.key_storage: "file"` opt-in (`0600`) |
 | `~/.singularity-aidr/operator-approval-ledger.json` | Single-use consumption ledger, only with the `file` key storage (`0600`); otherwise it lives in the OS vault |
 | `~/.singularity-aidr/operator-approval-key.json` | Informational record of where the approval key lives; never makes AIDR read a key file |
+| `~/.singularity-aidr/dashboard-approval-requests.json` | Managed mode: which dashboard approval request to poll for which pending ask (`0600`); grants nothing by itself |
 | `~/.singularity-aidr/installation-id` | Random UUID identifying this installation |
 | `~/.singularity-aidr/managed.json` | Managed-mode state (seat status, backoff windows) |
 | `~/.singularity-aidr/pending-approvals.json` | Pending approval state (transient, managed by PreToolUse hook) |

@@ -146,6 +146,16 @@ within 15 minutes by default. A permanent exception is `aidr allowlist add`.
 Residual risk and the key handling are described in
 [docs/configuration.md](../../docs/configuration.md#operator-approvals).
 
+**Managed mode.** When the installation is enrolled, every `ask` is also submitted
+to the AIDR dashboard and the deny reason says
+`Approval requested in the AIDR dashboard: <request_id>`. An administrator (a
+different, MFA-authenticated person) approves it there; the next identical call
+polls the request, verifies the control-plane-signed token against the approval
+keys in the signed entitlement and spends its nonce, so exactly one retry runs —
+across Codex's one-process-per-hook model. The agent cannot mint or replay a
+token. `operator_approvals.dashboard_only: true` makes this the only channel. See
+[dashboard approvals](../../docs/configuration.md#managed-mode-dashboard-approvals).
+
 ## Provisioned tenant detector policy
 
 An operator can deliver a signed tenant detector policy (DLP and behavioural
