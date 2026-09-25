@@ -13,8 +13,6 @@
 	--accent: #3862e8;
 	--accent-deep: #2448bb;
 	--accent-soft: #8fa9f5;
-	--logo: #0052cc;
-	--logo-soft: #c1d9f4;
 	--ink: #0a0a0a;
 	--ink-2: #151923;
 	--text: #1c2130;
@@ -74,13 +72,16 @@ ul { padding: 0; list-style: none; }
 code, .mono { font-family: var(--mono); font-size: 0.92em; }
 svg.i { width: 1em; height: 1em; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+/* Company logo: images/singularity-logo.png (white mark and wordmark on pure black), embedded
+   unchanged. It is only placed on pure black so its own background blends in. */
+.sg-logo { display: block; flex: none; background: #000 url("data:image/png;base64,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") center / contain no-repeat; }
 
 /* ---------- running header / footer on inner pages ---------- */
 .kicker { display: flex; align-items: center; justify-content: space-between; margin-bottom: 5mm; }
 .kicker .sec { display: flex; align-items: center; gap: 2.5mm; font-size: 7.4pt; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent-deep); }
 .kicker .num { display: inline-grid; place-items: center; width: 7mm; height: 7mm; border-radius: 2mm; background: var(--accent); color: #fff; letter-spacing: 0; font-size: 8pt; }
 .kicker .brand { display: flex; align-items: center; gap: 2mm; font-size: 7.6pt; font-weight: 700; color: var(--ink); letter-spacing: 0.01em; }
-.kicker .brand svg { width: 3.6mm; height: 4.65mm; }
+.kicker .brand .sg-logo { width: 7mm; height: 7mm; border-radius: 1.8mm; }
 .foot {
 	position: absolute; left: 16mm; right: 16mm; bottom: 9mm;
 	display: flex; justify-content: space-between; align-items: center;
@@ -97,21 +98,18 @@ h3.sub::after { content: ""; flex: 1; height: 0.3mm; background: var(--line); ma
 
 /* ---------- cover ---------- */
 .cover {
-	background:
-		radial-gradient(120mm 110mm at 50% 34%, rgba(56, 98, 232, 0.34), rgba(56, 98, 232, 0) 70%),
-		radial-gradient(160mm 90mm at 50% 112%, rgba(36, 72, 187, 0.35), rgba(36, 72, 187, 0) 70%),
-		#0a0a0a;
+	background: #000;
 	color: #fff;
 	padding: 14mm 16mm 13mm;
 }
-.cover .grid-bg { position: absolute; inset: 0; width: 100%; height: 100%; }
-.cover > *:not(.grid-bg) { position: relative; }
+.cover > * { position: relative; }
 .cover-top { display: flex; justify-content: space-between; align-items: center; font-size: 7.6pt; letter-spacing: 0.16em; text-transform: uppercase; color: rgba(255, 255, 255, 0.62); }
 .cover-top .co { display: flex; align-items: center; gap: 2.4mm; color: #fff; font-weight: 700; letter-spacing: 0.12em; }
-.cover-top .co svg { width: 4.2mm; height: 5.4mm; }
 .cover-hero { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding-top: 4mm; }
-.cover-logo { width: 50mm; height: 64.6mm; filter: drop-shadow(0 6mm 14mm rgba(56, 98, 232, 0.45)); }
-.cover .eyebrow { margin-top: 10mm; font-size: 8.4pt; font-weight: 700; letter-spacing: 0.3em; text-transform: uppercase; color: var(--accent-soft); }
+.cover-mark { position: relative; width: 62mm; height: 62mm; }
+.cover-mark .orbit { position: absolute; left: 50%; top: 50%; width: 170mm; height: 170mm; transform: translate(-50%, -50%); overflow: visible; }
+.cover-logo { position: relative; width: 100%; height: 100%; }
+.cover .eyebrow { margin-top: 16mm; font-size: 8.4pt; font-weight: 700; letter-spacing: 0.3em; text-transform: uppercase; color: var(--accent-soft); }
 .cover h1 { margin-top: 3mm; font-size: 42pt; line-height: 1.02; font-weight: 800; letter-spacing: -0.035em; }
 .cover h1 span { color: var(--accent-soft); }
 .cover .tagline { text-wrap: balance; margin-top: 5mm; max-width: 150mm; font-size: 14.5pt; line-height: 1.35; font-weight: 400; color: rgba(255, 255, 255, 0.86); letter-spacing: -0.005em; }
@@ -183,7 +181,7 @@ h3.sub::after { content: ""; flex: 1; height: 0.3mm; background: var(--line); ma
 .ph { padding: 0.2mm 0.8mm; border-radius: 0.8mm; background: var(--tint-2); color: var(--accent-deep); font-family: var(--mono); font-size: 7.3pt; font-weight: 700; }
 .rs { padding: 0.2mm 0.8mm; border-radius: 0.8mm; background: var(--ok-tint); color: var(--ok); font-weight: 600; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
 
-/* ---------- page 4: deploy, security, plans ---------- */
+/* ---------- page 4: deploy, security, editions ---------- */
 .deploy { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2.8mm; }
 .dep { display: flex; flex-direction: column; padding: 3.4mm 3.4mm 3.2mm; border-radius: 2.8mm; border: 0.3mm solid var(--line); background: #fff; }
 .dep .ic { display: grid; place-items: center; width: 8mm; height: 8mm; border-radius: 2.2mm; background: var(--tint-2); color: var(--accent-deep); font-size: 11pt; }
@@ -204,19 +202,29 @@ h3.sub::after { content: ""; flex: 1; height: 0.3mm; background: var(--line); ma
 .kvkk .badge { display: inline-block; padding: 0.6mm 2mm; border-radius: 10mm; background: rgba(255, 255, 255, 0.16); font-size: 6.8pt; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
 .kvkk h5 { margin: 2.4mm 0 0; font-size: 10pt; line-height: 1.25; }
 .kvkk p { margin-top: 1.6mm; font-size: 7.2pt; line-height: 1.45; color: rgba(255, 255, 255, 0.86); }
-.plans-wrap { border: 0.3mm solid var(--line); border-radius: 3mm; overflow: hidden; }
-table.plans { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 7.5pt; }
-table.plans th, table.plans td { padding: 1.5mm 2.6mm; text-align: left; vertical-align: top; border-bottom: 0.3mm solid var(--line); }
-table.plans tr:last-child td, table.plans tr:last-child th { border-bottom: 0; }
-table.plans thead th { vertical-align: middle; background: var(--ink); color: #fff; font-size: 9pt; font-weight: 700; padding-top: 2.4mm; padding-bottom: 2.4mm; }
-table.plans thead th:first-child { color: rgba(255, 255, 255, 0.6); font-size: 7pt; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; }
-table.plans tbody th { color: var(--muted); font-weight: 600; background: var(--tint); }
-table.plans td { color: var(--text); }
-table.plans .price { font-size: 13pt; font-weight: 800; color: var(--ink); letter-spacing: -0.02em; line-height: 1.1; }
-table.plans .price small { font-size: 7pt; font-weight: 500; color: var(--muted); letter-spacing: 0; }
-table.plans .terms { display: block; margin-top: 0.6mm; font-size: 6.9pt; line-height: 1.35; color: var(--muted); }
-table.plans .plus { color: var(--accent-deep); font-weight: 700; }
-.note { margin: 1.8mm 0 4mm; font-size: 6.9pt; color: var(--faint); }
+.editions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2.8mm; }
+.ed { position: relative; display: flex; flex-direction: column; padding: 4mm 3.4mm 3.2mm; border-radius: 2.8mm; border: 0.3mm solid var(--line); background: #fff; }
+.ed::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 1mm; border-radius: 2.8mm 2.8mm 0 0; background: linear-gradient(90deg, var(--accent), var(--accent-deep)); }
+.ed h4 { font-size: 11pt; line-height: 1.15; letter-spacing: -0.01em; color: var(--ink); }
+.ed .who { margin-top: 0.8mm; font-size: 7.2pt; line-height: 1.35; font-weight: 600; color: var(--accent-deep); }
+.ed .bul { margin-top: 2.2mm; }
+.ed .bul li { font-size: 7.2pt; }
+.ed dl { margin: auto 0 0; padding-top: 2.2mm; display: grid; grid-template-columns: 3fr 2fr; gap: 0 3mm; font-size: 7pt; line-height: 1.35; }
+.ed dl::before { content: ""; grid-column: 1 / -1; height: 0.3mm; background: var(--line); margin-bottom: 1.2mm; }
+.ed dt { font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; font-size: 6pt; color: var(--faint); }
+.ed dd { margin: 0.3mm 0 0; color: var(--text); font-weight: 600; }
+.nw { white-space: nowrap; }
+.ed.top { background: var(--ink); border-color: var(--ink); }
+.ed.top h4, .ed.top dd, .ed.top .bul li b { color: #fff; }
+.ed.top .who { color: var(--accent-soft); }
+.ed.top .bul li { color: rgba(255, 255, 255, 0.72); }
+.ed.top .bul li::before { background: var(--accent-soft); }
+.ed.top dl::before { background: rgba(255, 255, 255, 0.16); }
+.ed.top dt { color: rgba(255, 255, 255, 0.5); }
+.quote { display: flex; justify-content: space-between; align-items: center; gap: 4mm; margin: 2.8mm 0 4mm; padding: 2.4mm 4mm; border-radius: 2.6mm; background: var(--tint); border: 0.3mm solid var(--tint-2); }
+.quote .ask { font-size: 9pt; font-weight: 700; color: var(--ink); }
+.quote .ask b { color: var(--accent-deep); }
+.quote .scope { font-size: 6.9pt; color: var(--muted); text-align: right; }
 .cta {
 	margin-top: auto;
 	display: grid; grid-template-columns: 1fr auto; gap: 6mm; align-items: center;
@@ -235,7 +243,6 @@ table.plans .plus { color: var(--accent-deep); font-weight: 700; }
 </head>
 <body>
 <svg class="sprite" aria-hidden="true" focusable="false">
-	<symbol id="aidr-logo" viewBox="0 0 2400 3100"><path d="M1200 0L2400 500V1500C2400 2200 1950 2800 1200 3100C450 2800 0 2200 0 1500V500L1200 0Z" fill="#0052CC"/><path d="M961.937 808.368C966.515 815.622 970.413 818.54 967.382 827.344C958.281 853.766 938.976 887.259 931.507 913.36C900.546 1021.56 915.222 1125.65 968.37 1223.91C1007.34 1295.94 1066.71 1341.34 1129.75 1391.04C1208.96 1453.48 1290.9 1513.19 1370.52 1574.88C1504.05 1678.35 1612.87 1753.38 1640.22 1931.36C1649.73 1994.64 1645.11 2059.25 1626.68 2120.53C1592.86 2231.89 1516.05 2325.17 1413.25 2379.74C1391.1 2391.22 1336.75 2399.97 1325.18 2410.52C1344.12 2420.91 1395.03 2402.55 1413.3 2397.86C1544.18 2364.29 1660.6 2277.2 1723.41 2157.07C1727.71 2148.84 1735.56 2150.88 1744 2148.29C1732.57 2217.62 1658.14 2323.13 1608.5 2372.34C1509.22 2470.5 1375.07 2525.31 1235.45 2524.75C1091.64 2523.94 954.183 2465.4 853.945 2362.28C661.765 2165.66 702.956 1912.88 705.21 1662.95C704.253 1640.55 703.691 1608.77 700.812 1587.31C796.011 1684.75 890.558 1782.84 984.441 1881.56C1000.3 1898.09 1081.96 1980.97 1088.55 1992.38C1140.37 2026.62 1302.32 2203.12 1336.09 2258.14C1415.73 2223.29 1458.94 2181.86 1496.75 2104.8C1568.22 1891.73 1468.23 1803.59 1311.61 1684.53L1101.94 1523.98C1040.91 1477.04 981.503 1434.75 929.706 1377.04C787.034 1218.06 795.226 949.434 961.937 808.368Z" fill="#C1D9F4"/><path d="M700.812 1587.3C796.011 1684.75 890.558 1782.84 984.441 1881.56C1000.3 1898.09 1081.96 1980.97 1088.55 1992.38C1140.37 2026.62 1302.32 2203.12 1336.09 2258.14C1415.73 2223.29 1458.94 2181.86 1496.75 2104.8C1501.33 2107.34 1502.59 2110.48 1505.32 2114.96C1501.51 2156.6 1473.2 2202.66 1449.32 2236.28C1330.13 2404.07 1107.36 2417.88 946.878 2302.41C782.093 2183.84 770.406 2013.52 742.113 1829.45C733.148 1771.1 715.066 1721.2 705.21 1662.95C704.253 1640.55 703.691 1608.77 700.812 1587.3Z" fill="white"/><path d="M949.475 1991.64C990.385 1991.23 1049.07 1988.96 1088.55 1992.37C1140.37 2026.62 1302.31 2203.12 1336.09 2258.14C1313.25 2265.83 1283.62 2272.47 1259.66 2274.39C1184.62 2280.49 1110.21 2256.76 1052.57 2208.34C985.295 2150.96 956.506 2078.06 949.475 1991.64Z" fill="#0052CC"/><path d="M1234.48 700C1403.97 708.945 1537.3 785.695 1608.9 943.734C1620.51 971.598 1627.11 989.617 1634.03 1019.29C1765.6 1080.98 1782.67 1208.64 1701 1320.61C1576.49 1487.18 1273.52 1317.28 1397.85 1093.78C1389.47 1054.31 1380.32 1026.53 1350.84 995.906C1321.04 964.855 1279.78 947.406 1236.74 947.637C1171.72 947.73 1114.56 987.383 1088.81 1046.5C1073.94 1080.64 1074.94 1109.62 1075.25 1145.71C1109.17 1232.31 1174.63 1266.12 1242.78 1321.94C1364.66 1421.76 1539.37 1532.31 1641.61 1648.07C1763.63 1786.21 1796.7 1972.52 1744 2148.29C1735.56 2150.88 1727.71 2148.84 1723.41 2157.07C1660.6 2277.2 1544.18 2364.29 1413.3 2397.86C1395.03 2402.55 1344.12 2420.91 1325.18 2410.52C1336.75 2399.97 1391.1 2391.21 1413.25 2379.73C1516.05 2325.17 1592.86 2231.89 1626.68 2120.53C1645.11 2059.25 1649.73 1994.64 1640.22 1931.36C1612.87 1753.38 1504.06 1678.35 1370.52 1574.88C1290.9 1513.19 1208.96 1453.48 1129.75 1391.04C1066.71 1341.34 1007.34 1295.94 968.371 1223.91C915.223 1125.65 900.547 1021.56 931.508 913.359C938.977 887.258 958.282 853.766 967.383 827.344C970.414 818.539 966.516 815.621 961.938 808.367C1055.17 731.621 1114.33 708.895 1234.48 700Z" fill="white"/><path d="M1075.25 1145.71C1069.76 1132.32 1054.76 1118.65 1053.09 1112.43C970.702 806.051 1385.49 725.273 1495.03 987.176C1499.21 997.047 1502.97 1007.1 1506.28 1017.3C1474.77 1040.92 1451.68 1057.8 1434.01 1093.1C1363.43 1234.11 1509.32 1402.58 1657.98 1327.44C1675.75 1318.46 1682.57 1314.68 1701 1320.61C1576.49 1487.18 1273.52 1317.28 1397.85 1093.78C1389.47 1054.31 1380.32 1026.53 1350.84 995.906C1321.03 964.855 1279.78 947.406 1236.74 947.636C1171.72 947.73 1114.55 987.383 1088.81 1046.5C1073.94 1080.64 1074.94 1109.62 1075.25 1145.71Z" fill="#C1D9F4"/><path d="M1541.75 1096.42C1595.6 1085.32 1648.24 1120.04 1659.25 1173.92C1670.26 1227.8 1635.46 1280.38 1581.56 1291.3C1527.79 1302.2 1475.35 1267.49 1464.37 1213.74C1453.38 1159.98 1488.01 1107.49 1541.75 1096.42Z" fill="#0052CC"/></symbol>
 	<symbol id="i-terminal" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M7 9.5l3 2.5-3 2.5M12.5 15h4.5"/></symbol>
 	<symbol id="i-browser" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M3 9h18M6.5 6.6h.01M9 6.6h.01"/></symbol>
 	<symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7.5 3v5.5c0 4.7-3.3 8.1-7.5 9.5-4.2-1.4-7.5-4.8-7.5-9.5V6z"/><path d="M8.8 12.2l2.2 2.2 4.2-4.4"/></symbol>
@@ -269,25 +276,21 @@ table.plans .plus { color: var(--accent-deep); font-weight: 700; }
 
 <!-- ============================== PAGE 1 — COVER ============================== -->
 <section class="page cover" aria-label="Kapak">
-	<svg class="grid-bg" viewBox="0 0 210 297" preserveAspectRatio="none" aria-hidden="true">
-		<defs>
-			<pattern id="dots" width="6" height="6" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="0.28" fill="#ffffff" fill-opacity="0.12"/></pattern>
-			<radialGradient id="fade" cx="50%" cy="36%" r="60%"><stop offset="0" stop-color="#fff" stop-opacity="1"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
-			<mask id="fademask"><rect width="210" height="297" fill="url(#fade)"/></mask>
-		</defs>
-		<rect width="210" height="297" fill="url(#dots)" mask="url(#fademask)"/>
-		<g fill="none" stroke="#8fa9f5" stroke-width="0.25">
-			<circle cx="105" cy="98" r="46" stroke-opacity="0.22"/>
-			<circle cx="105" cy="98" r="62" stroke-opacity="0.14" stroke-dasharray="1 2"/>
-			<circle cx="105" cy="98" r="80" stroke-opacity="0.08"/>
-		</g>
-	</svg>
 	<div class="cover-top">
-		<span class="co" lang="en"><svg aria-hidden="true"><use href="#aidr-logo"/></svg>SingularityRD</span>
+		<span class="co" lang="en">SingularityRD</span>
 		<span>Ürün broşürü · 2026</span>
 	</div>
 	<div class="cover-hero">
-		<svg class="cover-logo" role="img" aria-label="Singularity AIDR logosu"><use href="#aidr-logo"/></svg>
+		<div class="cover-mark">
+			<svg class="grid-bg orbit" viewBox="0 0 170 170" aria-hidden="true">
+				<g fill="none" stroke="#8fa9f5" stroke-width="0.25">
+					<circle cx="85" cy="85" r="46" stroke-opacity="0.22"/>
+					<circle cx="85" cy="85" r="62" stroke-opacity="0.14" stroke-dasharray="1 2"/>
+					<circle cx="85" cy="85" r="80" stroke-opacity="0.08"/>
+				</g>
+			</svg>
+			<span class="sg-logo cover-logo" role="img" aria-label="Singularity logosu"></span>
+		</div>
 		<div class="eyebrow" lang="en">AI Agent Detection &amp; Response</div>
 		<h1>Singularity <span>AIDR</span></h1>
 		<p class="tagline">Yapay zekâ ajanları ve çalışanlarınız için tespit, müdahale ve veri gizliliği</p>
@@ -316,7 +319,7 @@ table.plans .plus { color: var(--accent-deep); font-weight: 700; }
 	</div>
 	<div class="cover-foot">
 		<span><b>singularityrd.com</b></span>
-		<span>sales@singularityrd.com</span>
+		<span>anil@singularityrd.com</span>
 	</div>
 </section>
 
@@ -324,7 +327,7 @@ table.plans .plus { color: var(--accent-deep); font-weight: 700; }
 <section class="page" aria-label="Sorun ve çözüm">
 	<div class="kicker">
 		<span class="sec"><span class="num">01</span>Sorun ve çözüm</span>
-		<span class="brand"><svg aria-hidden="true"><use href="#aidr-logo"/></svg>Singularity AIDR</span>
+		<span class="brand"><span class="sg-logo" aria-hidden="true"></span>Singularity AIDR</span>
 	</div>
 	<h2 class="title">Yapay zekâ artık yalnızca metin üretmiyor. <em>Komut çalıştırıyor, dosya değiştiriyor, veri gönderiyor.</em></h2>
 	<p class="lead">Kodlama ajanları geliştiricinin yetkileriyle çalışır, çalışanlar yapay zekâ sohbetlerine her gün veri taşır. Singularity AIDR ikisinin arasında durur: eylem gerçekleşmeden ve veri sayfadan çıkmadan önce.</p>
@@ -393,16 +396,16 @@ table.plans .plus { color: var(--accent-deep); font-weight: 700; }
 		<article class="line-card">
 			<div class="line-head">
 				<span class="ic"><svg class="i"><use href="#i-radar"/></svg></span>
-				<div><div class="n">Ürün hattı 4</div><h4>Yapay zekâ güvenlik duruşu</h4></div>
+				<div><div class="n">Ürün hattı 4</div><h4>Yapay Zekâ Güvenlik Duruşu</h4></div>
 			</div>
-			<p class="what">AI Infra Guard (AIG) tabanlı tarama, yapay zekâ altyapınızdaki bilinen açıkları ve riskli bileşenleri görünür kılar.</p>
+			<p class="what">Yapay zekâ altyapınızın, MCP sunucularınızın ve ajan eklentilerinizin açıklarını tek bir duruş görünümünde gösterir.</p>
 			<ul class="bul">
-				<li><b><span data-fact="aig-cve-floor">2.000+</span> CVE kuralı</b>, <span data-fact="aig-components">146</span> yapay zekâ bileşeni için: çıkarım sunucuları, ajan çatıları, uygulamalar.</li>
-				<li><b>MCP sunucu risk kategorileri:</b> komut enjeksiyonu, araç zehirleme, kimlik bilgisi sızdırma, SSRF ve diğerleri.</li>
-				<li><b>Skill ve eklenti taraması:</b> T01–T09 sınıflandırması; kurulu eklentiler oturum başında taranır.</li>
-				<li><b>Envanter:</b> <code>aidr scan --target</code> servisin parmak izini alır, sürümünü CVE diziniyle eşler; <code>aidr collect</code> kiracı bazlı envanter tutar. Varsayılan olarak yalnızca özel ağ hedefleri.</li>
+				<li><b>Altyapı taraması:</b> <span data-fact="posture-components">146</span> yapay zekâ bileşeni parmak izi, <span data-fact="posture-cve-floor">2.000+</span> CVE kuralı; bulgular önem derecesi ve CVSS ile.</li>
+				<li><b>MCP risk analizi:</b> aktarım, manifest doğrulaması ve <span data-fact="mcp-risk-categories">14</span> risk kategorisiyle MCP sunucu envanteri.</li>
+				<li><b>Skill ve eklenti taraması:</b> <span data-fact="skill-scan-codes">T01–T09</span> kategorileri; kurulu eklentiler oturum başında taranır.</li>
+				<li><b>Duruş paneli:</b> önem derecesi ve CVSS'e göre bulgular, 30 günlük eğilim; boş görünüm temiz diye sunulmaz.</li>
 			</ul>
-			<div class="chips"><span class="chip">aidr scan</span><span class="chip">MCP</span><span class="chip">Skill · Plugin</span></div>
+			<div class="chips"><span class="chip">aidr scan</span><span class="chip">aidr discover</span><span class="chip">MCP</span><span class="chip">Skill · Plugin</span></div>
 		</article>
 	</div>
 
@@ -413,7 +416,7 @@ table.plans .plus { color: var(--accent-deep); font-weight: 700; }
 <section class="page" aria-label="Nasıl çalışır">
 	<div class="kicker">
 		<span class="sec"><span class="num">02</span>Nasıl çalışır</span>
-		<span class="brand"><svg aria-hidden="true"><use href="#aidr-logo"/></svg>Singularity AIDR</span>
+		<span class="brand"><span class="sg-logo" aria-hidden="true"></span>Singularity AIDR</span>
 	</div>
 	<h2 class="title">Karar cihazda verilir. <em>Merkeze yalnızca ihtiyaç duyduğunuz gider.</em></h2>
 	<p class="lead">Ajan araç çağrıları ve tarayıcıdaki istemler aynı yerel motordan geçer. Kontrol düzlemi isteğe bağlıdır: politika dağıtır, denetim kaydı toplar; uygulama her zaman uç noktada kalır.</p>
@@ -559,11 +562,11 @@ table.plans .plus { color: var(--accent-deep); font-weight: 700; }
 	<div class="foot"><span><b>Singularity AIDR</b> · Ürün broşürü</span><span>singularityrd.com</span><span>3 / 4</span></div>
 </section>
 
-<!-- ============================== PAGE 4 — DEPLOY, SECURITY, PLANS, CTA ============================== -->
-<section class="page compact" aria-label="Kurulum, güvenlik ve planlar">
+<!-- ============================== PAGE 4 — DEPLOY, SECURITY, EDITIONS, CTA ============================== -->
+<section class="page compact" aria-label="Kurulum, güvenlik ve paketler">
 	<div class="kicker">
-		<span class="sec"><span class="num">03</span>Kurulum, güvenlik ve planlar</span>
-		<span class="brand"><svg aria-hidden="true"><use href="#aidr-logo"/></svg>Singularity AIDR</span>
+		<span class="sec"><span class="num">03</span>Kurulum, güvenlik ve paketler</span>
+		<span class="brand"><span class="sg-logo" aria-hidden="true"></span>Singularity AIDR</span>
 	</div>
 	<h2 class="title">Nerede çalışacağına <em>siz karar verin.</em></h2>
 
@@ -591,51 +594,53 @@ table.plans .plus { color: var(--accent-deep); font-weight: 700; }
 		</div>
 	</div>
 
-	<h3 class="sub">Planlar</h3>
-	<div class="plans-wrap"><table class="plans">
-		<colgroup><col style="width:25mm"><col style="width:30mm"><col style="width:40mm"><col style="width:39mm"><col></colgroup>
-		<thead>
-			<tr><th>Plan</th><th>Free</th><th>Team</th><th>Business</th><th>Enterprise</th></tr>
-		</thead>
-		<tbody>
-			<tr>
-				<th>Liste fiyatı</th>
-				<td><span class="price" data-fact="plan-free-price">$0</span><span class="terms">Ücretsiz</span></td>
-				<td><span class="price"><span data-fact="plan-team-monthly">$24</span> <small>/ geliştirici / ay</small></span><span class="terms">aylık faturalama · yıllık faturalamada <b data-fact="plan-team-annual-monthly">$20</b> / ay</span></td>
-				<td><span class="price"><span data-fact="plan-business-annual-monthly">$45</span> <small>/ geliştirici / ay</small></span><span class="terms">yıllık faturalama</span></td>
-				<td><span class="price">Özel</span><span class="terms">kuruluma göre teklif</span></td>
-			</tr>
-			<tr>
-				<th>Asgari</th>
-				<td><span data-fact="plan-free-agents">1</span> korunan ajan</td>
-				<td>En az <span data-fact="plan-team-min">3</span> geliştirici</td>
-				<td>En az <span data-fact="plan-business-min">25</span> geliştirici</td>
-				<td>Sözleşmeye göre</td>
-			</tr>
-			<tr>
-				<th>Kurulum</th>
-				<td>Bulut</td>
-				<td>Bulut</td>
-				<td>Bulut, kurum içi</td>
-				<td>Kurum içi, hava boşluklu</td>
-			</tr>
-			<tr>
-				<th>Olay saklama</th>
-				<td><span data-fact="plan-free-retention">7</span> gün</td>
-				<td><span data-fact="plan-team-retention">90</span> gün</td>
-				<td><span data-fact="plan-business-retention">365</span> gün</td>
-				<td>Sözleşmeye bağlı</td>
-			</tr>
-			<tr>
-				<th>Özellikler</th>
-				<td>Yerel tespit motoru, kontrol düzlemi paneli</td>
-				<td><span class="plus">+</span> Browser Privacy Guard, Microsoft Entra ID SSO</td>
-				<td><span class="plus">+</span> SIEM dışa aktarımı, SCIM, yapay zekâ güvenlik duruşu</td>
-				<td><span class="plus">+</span> Hava boşluklu kurulum, özel destek</td>
-			</tr>
-		</tbody>
-	</table></div>
-	<p class="note">Liste fiyatlarıdır; nihai ticari onaya tabidir. USD, geliştirici koltuğu başına, vergiler hariç; geçerli olan yazılı teklif veya sipariştir. Yerel mod ücretsizdir.</p>
+	<h3 class="sub">Paketler</h3>
+	<div class="editions">
+		<div class="ed">
+			<h4>Free</h4>
+			<p class="who">Bireysel geliştiriciler için: <span data-fact="plan-free-agents">1</span> korunan ajan</p>
+			<ul class="bul">
+				<li><b>Yerel tespit motoru</b>, tüm bağlayıcılarda</li>
+				<li><b>Kontrol düzlemi paneli</b></li>
+			</ul>
+			<dl><div><dt>Kurulum</dt><dd>Bulut</dd></div><div><dt>Saklama</dt><dd><span data-fact="plan-free-retention">7</span> gün</dd></div></dl>
+		</div>
+		<div class="ed">
+			<h4>Team</h4>
+			<p class="who">En az <span data-fact="plan-team-min">3</span> geliştiricili ekipler için</p>
+			<ul class="bul">
+				<li>Free'deki her şey</li>
+				<li><b>Browser Guard</b></li>
+				<li><b>Microsoft Entra ID SSO</b></li>
+			</ul>
+			<dl><div><dt>Kurulum</dt><dd>Bulut</dd></div><div><dt>Saklama</dt><dd><span data-fact="plan-team-retention">90</span> gün</dd></div></dl>
+		</div>
+		<div class="ed">
+			<h4>Business</h4>
+			<p class="who">En az <span data-fact="plan-business-min">25</span> geliştiricili kurumlar için</p>
+			<ul class="bul">
+				<li>Team'deki her şey</li>
+				<li><b>SIEM dışa aktarımı</b></li>
+				<li><b>SCIM</b></li>
+				<li><b>Yapay Zekâ Güvenlik Duruşu</b></li>
+			</ul>
+			<dl><div><dt>Kurulum</dt><dd>Bulut, kurum içi</dd></div><div><dt>Saklama</dt><dd><span data-fact="plan-business-retention">365</span> gün</dd></div></dl>
+		</div>
+		<div class="ed top">
+			<h4>Enterprise</h4>
+			<p class="who">Düzenlemeye tabi ve kapalı ağlar için</p>
+			<ul class="bul">
+				<li>Business'taki her şey</li>
+				<li><b>Hava boşluklu kurulum</b></li>
+				<li><b>Özel destek</b></li>
+			</ul>
+			<dl><div><dt>Kurulum</dt><dd>Kurum içi, hava boşluklu</dd></div><div><dt>Saklama</dt><dd>Sözleşmeye göre</dd></div></dl>
+		</div>
+	</div>
+	<div class="quote">
+		<span class="ask">Fiyatlandırma ve teklif için: <b>anil@singularityrd.com</b></span>
+		<span class="scope">Paket kapsamı yazılı teklifinizde netleşir.<br>Yerel mod ücretsiz kalır.</span>
+	</div>
 
 	<div class="cta">
 		<div>
@@ -648,7 +653,7 @@ table.plans .plus { color: var(--accent-deep); font-weight: 700; }
 			</div>
 		</div>
 		<div class="contact">
-			<span class="mail">sales@singularityrd.com</span>
+			<span class="mail">anil@singularityrd.com</span>
 			<div class="web">singularityrd.com</div>
 		</div>
 	</div>
