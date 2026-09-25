@@ -95,9 +95,18 @@ const { values } = parseArgs({ options: {
 	"project-name": { type: "string" }, "device-start-upstream-url": { type: "string" },
 	"telemetry-queue-root": { type: "string" },
 	region: { type: "string" }, "tenant-region": { type: "string" }, "regions-manifest": { type: "string" },
-	profile: { type: "string" }, "with-aig": { type: "boolean", default: false },
+	profile: { type: "string" }, "with-posture-scanner": { type: "boolean", default: false },
+	"posture-scanner-signing-public-key-file": { type: "string" }, "posture-scanner-signing-key-id": { type: "string" },
+	// Deprecated spellings kept so existing runbooks keep working; not documented.
+	"with-aig": { type: "boolean", default: false },
 	"aig-signing-public-key-file": { type: "string" }, "aig-signing-key-id": { type: "string" },
 } });
+for (const [legacy, current] of [["with-aig", "with-posture-scanner"], ["aig-signing-public-key-file", "posture-scanner-signing-public-key-file"], ["aig-signing-key-id", "posture-scanner-signing-key-id"]]) {
+	if (!values[legacy]) continue;
+	console.error(`NOTE: --${legacy} is deprecated; use --${current}.`);
+	if (values[current] && values[current] !== values[legacy]) throw new Error(`--${legacy} and --${current} disagree; pass only --${current}`);
+	values[current] = values[legacy];
+}
 if (!["self-hosted", "cloud"].includes(values.mode)) throw new Error("mode must be self-hosted or cloud");
 const isPlainObject = (value) => !!value && typeof value === "object" && !Array.isArray(value);
 function deepMerge(target, patch) {
@@ -142,39 +151,42 @@ for (const [name, budget] of Object.entries(resourceProfile.services)) {
 let aidrVersion;
 try { aidrVersion = JSON.parse(readFileSync(join(root, "packages/dashboard/package.json"), "utf8")).version; } catch { aidrVersion = undefined; }
 if (typeof aidrVersion !== "string" || !/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/.test(aidrVersion)) throw new Error("packages/dashboard/package.json must declare a version usable as an image tag");
-// AIG is an optional scanning sidecar. It needs the release operator's RSA data
-// signing public key and key id; it is never started with placeholder trust.
-const aigServices = ["aig-server", "aig-agent", "aig-bridge", "aig-egress"];
-let aig = null;
-if (values["with-aig"]) {
-	if (values.mode !== "self-hosted") throw new Error("--with-aig is only supported for self-hosted on-prem installations");
-	const sources = ["docker-compose.aig.yml", ".env.aig.example", "services/aig-bridge/Dockerfile", "vendor/ai-infra-guard/Dockerfile", "vendor/ai-infra-guard/Dockerfile_Agent", "packages/core/src/generated/aig-data-manifest.json", "deploy/onprem/egress/squid.conf", "deploy/onprem/egress/allowlist.txt"];
+// The AI Security Posture scanner is an optional sidecar. It needs the release
+// operator's RSA data signing public key and key id; it is never started with
+// placeholder trust. Its Compose service and volume names stay stable so
+// existing installations keep their scan state.
+const postureScannerServices = ["aig-server", "aig-agent", "aig-bridge", "aig-egress"];
+const postureScannerDir = "posture-scanner";
+let postureScanner = null;
+if (values["with-posture-scanner"]) {
+	if (values.mode !== "self-hosted") throw new Error("--with-posture-scanner is only supported for self-hosted on-prem installations");
+	const sources = ["docker-compose.posture-scanner.yml", ".env.posture-scanner.example", "services/aig-bridge/Dockerfile", "vendor/ai-infra-guard/Dockerfile", "vendor/ai-infra-guard/Dockerfile_Agent", "packages/core/src/generated/aig-data-manifest.json", "deploy/onprem/egress/squid.conf", "deploy/onprem/egress/allowlist.txt"];
 	const missing = sources.filter((path) => !existsSync(join(root, path)));
-	if (missing.length) throw new Error(`--with-aig requires the AIG sources from the release checkout; missing: ${missing.join(", ")}`);
-	const keyId = values["aig-signing-key-id"];
-	if (!values["aig-signing-public-key-file"] || !keyId) throw new Error("--with-aig requires --aig-signing-public-key-file and --aig-signing-key-id from the AIG release operator");
-	if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(keyId)) throw new Error("--aig-signing-key-id must be a short identifier");
+	if (missing.length) throw new Error(`--with-posture-scanner requires the posture scanner sources from the release checkout; missing: ${missing.join(", ")}`);
+	const keyId = values["posture-scanner-signing-key-id"];
+	if (!values["posture-scanner-signing-public-key-file"] || !keyId) throw new Error("--with-posture-scanner requires --posture-scanner-signing-public-key-file and --posture-scanner-signing-key-id from the posture scanner release operator");
+	if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(keyId)) throw new Error("--posture-scanner-signing-key-id must be a short identifier");
 	let publicKeyPem;
 	let publicKeySha256;
 	try {
-		const supplied = readFileSync(resolve(values["aig-signing-public-key-file"]), "utf8");
+		const supplied = readFileSync(resolve(values["posture-scanner-signing-public-key-file"]), "utf8");
 		if (!supplied.includes("-----BEGIN PUBLIC KEY-----") || supplied.includes("PRIVATE KEY")) throw new Error();
 		const key = createPublicKey(supplied);
 		if (key.asymmetricKeyType !== "rsa" || (key.asymmetricKeyDetails?.modulusLength ?? 0) < 2048) throw new Error();
 		publicKeyPem = key.export({ type: "spki", format: "pem" }).toString();
 		publicKeySha256 = createHash("sha256").update(key.export({ type: "spki", format: "der" })).digest("hex");
 	} catch {
-		throw new Error("AIG signing public key must be a readable RSA (2048-bit or larger) SPKI public key");
+		throw new Error("Posture scanner signing public key must be a readable RSA (2048-bit or larger) SPKI public key");
 	}
 	const dataManifest = JSON.parse(readFileSync(join(root, "packages/core/src/generated/aig-data-manifest.json"), "utf8"));
-	const sourceVersion = readFileSync(join(root, ".env.aig.example"), "utf8").match(/^AIG_SOURCE_VERSION=([A-Za-z0-9_.-]+)$/m)?.[1];
+	const sourceVersion = readFileSync(join(root, ".env.posture-scanner.example"), "utf8").match(/^POSTURE_SCANNER_SOURCE_VERSION=([A-Za-z0-9_.-]+)$/m)?.[1];
 	if (!sourceVersion || !/^[a-f0-9]{64}$/.test(dataManifest.bundle_id ?? "") || !/^[a-f0-9]{40}$/.test(dataManifest.source?.commit ?? "")) {
-		throw new Error("AIG source version or generated data manifest is invalid; run pnpm compile:aig and pnpm aig:verify");
+		throw new Error("Posture scanner source version or generated data manifest is invalid; run pnpm compile:aig and pnpm aig:verify");
 	}
-	aig = { keyId, publicKeyPem, publicKeySha256, sourceVersion, bundleId: dataManifest.bundle_id, sourceCommit: dataManifest.source.commit, signed: !!dataManifest.signature };
+	postureScanner = { keyId, publicKeyPem, publicKeySha256, sourceVersion, bundleId: dataManifest.bundle_id, sourceCommit: dataManifest.source.commit, signed: !!dataManifest.signature };
 }
 for (const name of Object.keys(overlay.services)) {
-	if (!aigServices.includes(name) && !resourceProfile.services[name]) throw new Error(`On-prem overlay names unknown service "${name}"`);
+	if (!postureScannerServices.includes(name) && !resourceProfile.services[name]) throw new Error(`On-prem overlay names unknown service "${name}"`);
 }
 const output = resolve(values.output);
 if (existsSync(output)) throw new Error("Output already exists; reuse its secrets and data. Choose a new output for a separate installation.");
@@ -353,12 +365,12 @@ Object.assign(env, {
 	S3_PROTOCOL_ACCESS_KEY_ID: secret(16), S3_PROTOCOL_ACCESS_KEY_SECRET: secret(),
 	AIDR_METRICS_TOKEN: secret(),
 	OPENAI_API_KEY: "", SMTP_HOST: "", SMTP_USER: "", SMTP_PASS: "", SMTP_ADMIN_EMAIL: "", SMTP_SENDER_NAME: "AIDR", FUNCTIONS_VERIFY_JWT: "false",
-	...(aig ? {
-		COMPOSE_PROFILES: overlay["x-aidr-onprem"].aig.profiles.join(","),
-		AIG_SOURCE_VERSION: aig.sourceVersion, AIG_TZ: "UTC",
-		AIG_AGENT_SHARED_SECRET: secret(32),
-		AIG_TRUSTED_SIGNING_KEY_ID: aig.keyId, AIG_TRUSTED_SIGNING_PUBLIC_KEY_SHA256: aig.publicKeySha256,
-		AIG_EXPECTED_DATA_BUNDLE_ID: aig.bundleId, AIG_EXPECTED_SOURCE_COMMIT: aig.sourceCommit,
+	...(postureScanner ? {
+		COMPOSE_PROFILES: overlay["x-aidr-onprem"].posture_scanner.profiles.join(","),
+		POSTURE_SCANNER_SOURCE_VERSION: postureScanner.sourceVersion, POSTURE_SCANNER_TZ: "UTC",
+		POSTURE_SCANNER_AGENT_SHARED_SECRET: secret(32),
+		POSTURE_SCANNER_TRUSTED_SIGNING_KEY_ID: postureScanner.keyId, POSTURE_SCANNER_TRUSTED_SIGNING_PUBLIC_KEY_SHA256: postureScanner.publicKeySha256,
+		POSTURE_SCANNER_EXPECTED_DATA_BUNDLE_ID: postureScanner.bundleId, POSTURE_SCANNER_EXPECTED_SOURCE_COMMIT: postureScanner.sourceCommit,
 		BRIDGE_AUTH_MODE: "api_key", BRIDGE_API_KEY: secret(32),
 		BRIDGE_TASK_BACKEND: "sqlite", BRIDGE_HA_REQUIRED: "false", BRIDGE_EGRESS_PROXY_URL: "http://aig-egress:3128",
 	} : {}),
@@ -432,45 +444,45 @@ compose.services.dashboard = {
 	},
 	volumes: [{ type: "bind", source: "./health", target: "/run/aidr-health", read_only: true }],
 };
-if (aig) {
-	// Merge the reviewed AIG stack with build contexts and mounts rebased into the
-	// installation root. Volumes and networks become project-scoped so two
-	// installations on one host never share scan state.
-	const aigCompose = parse(readFileSync(join(root, "docker-compose.aig.yml"), "utf8"));
+if (postureScanner) {
+	// Merge the reviewed posture scanner stack with build contexts and mounts
+	// rebased into the installation root. Volumes and networks become
+	// project-scoped so two installations on one host never share scan state.
+	const scannerCompose = parse(readFileSync(join(root, "docker-compose.posture-scanner.yml"), "utf8"));
 	const rebase = [
-		["./services/aig-bridge/aig_compat", "./aig/bridge/aig_compat"],
-		["./services/aig-bridge", "./aig/bridge"],
-		["./vendor/ai-infra-guard", "./aig/vendor/ai-infra-guard"],
-		["./packages/core/src/generated", "./aig/generated"],
-		["./deploy/onprem/egress/squid.conf", "./aig/egress/squid.conf"],
-		["${AIG_EGRESS_ALLOWLIST_PATH:-./deploy/onprem/egress/allowlist.txt}", "./aig/egress/allowlist.txt"],
-		["${AIG_SIGNING_PUBLIC_KEY_HOST_PATH:?set AIG_SIGNING_PUBLIC_KEY_HOST_PATH}", "./aig/aig-signing-public.pem"],
+		["./services/aig-bridge/aig_compat", `./${postureScannerDir}/bridge/aig_compat`],
+		["./services/aig-bridge", `./${postureScannerDir}/bridge`],
+		["./vendor/ai-infra-guard", `./${postureScannerDir}/vendor/ai-infra-guard`],
+		["./packages/core/src/generated", `./${postureScannerDir}/generated`],
+		["./deploy/onprem/egress/squid.conf", `./${postureScannerDir}/egress/squid.conf`],
+		["${POSTURE_SCANNER_EGRESS_ALLOWLIST_PATH:-${AIG_EGRESS_ALLOWLIST_PATH:-./deploy/onprem/egress/allowlist.txt}}", `./${postureScannerDir}/egress/allowlist.txt`],
+		["${POSTURE_SCANNER_SIGNING_PUBLIC_KEY_HOST_PATH:-${AIG_SIGNING_PUBLIC_KEY_HOST_PATH:?set POSTURE_SCANNER_SIGNING_PUBLIC_KEY_HOST_PATH}}", `./${postureScannerDir}/signing-public.pem`],
 	];
 	const rebased = (path) => {
 		if (!path.startsWith(".") && !path.startsWith("${")) return path;
 		for (const [from, to] of rebase) if (path === from || path.startsWith(`${from}/`) || path.startsWith(`${from}:`)) return to + path.slice(from.length);
-		throw new Error(`AIG Compose references an unreviewed host path: ${path}`);
+		throw new Error(`Posture scanner Compose references an unreviewed host path: ${path}`);
 	};
 	const images = {
-		"aig-server": `aidr-aig-server:${aig.sourceVersion}`,
-		"aig-agent": `aidr-aig-agent:${aig.sourceVersion}`,
+		"aig-server": `aidr-aig-server:${postureScanner.sourceVersion}`,
+		"aig-agent": `aidr-aig-agent:${postureScanner.sourceVersion}`,
 		"aig-bridge": `aidr-aig-bridge:${aidrVersion}`,
 	};
-	if (Object.keys(aigCompose.services).sort().join(",") !== [...aigServices].sort().join(",")) throw new Error("docker-compose.aig.yml services do not match the reviewed AIG service set");
-	for (const [name, service] of Object.entries(aigCompose.services)) {
+	if (Object.keys(scannerCompose.services).sort().join(",") !== [...postureScannerServices].sort().join(",")) throw new Error("docker-compose.posture-scanner.yml services do not match the reviewed posture scanner service set");
+	for (const [name, service] of Object.entries(scannerCompose.services)) {
 		delete service.container_name;
 		if (images[name]) service.image = images[name];
 		if (service.build) service.build.context = rebased(service.build.context);
 		service.volumes = (service.volumes ?? []).map((volume) => typeof volume === "string"
 			? rebased(volume)
 			: { ...volume, ...(volume.type === "bind" ? { source: rebased(volume.source) } : {}) });
-		service.profiles = [...overlay["x-aidr-onprem"].aig.profiles];
+		service.profiles = [...overlay["x-aidr-onprem"].posture_scanner.profiles];
 		compose.services[name] = service;
 	}
 	compose.volumes ??= {};
-	for (const [name, volume] of Object.entries(aigCompose.volumes ?? {})) { const { name: _global, ...rest } = volume ?? {}; compose.volumes[name] = rest; }
+	for (const [name, volume] of Object.entries(scannerCompose.volumes ?? {})) { const { name: _global, ...rest } = volume ?? {}; compose.volumes[name] = rest; }
 	compose.networks ??= {};
-	for (const [name, network] of Object.entries(aigCompose.networks ?? {})) { const { name: _global, ...rest } = network ?? {}; compose.networks[name] = rest; }
+	for (const [name, network] of Object.entries(scannerCompose.networks ?? {})) { const { name: _global, ...rest } = network ?? {}; compose.networks[name] = rest; }
 }
 // Apply the on-prem overlay and resource budgets to every generated service.
 for (const [name, service] of Object.entries(compose.services)) {
@@ -501,17 +513,17 @@ cpSync(join(root, "supabase/templates"), join(output, "dashboard/auth-templates"
 cpSync(join(root, "packages/dashboard/dist"), join(output, "dashboard/public"), { recursive: true });
 cpSync(join(root, "supabase/functions"), join(output, "volumes/functions"), { recursive: true, filter: (p) => !p.includes("__tests__") });
 cpSync(join(root, "supabase/migrations"), join(output, "migrations"), { recursive: true });
-if (aig) {
-	// Build contexts only: skip paths the AIG .dockerignore already excludes,
+if (postureScanner) {
+	// Build contexts only: skip paths the scanner .dockerignore already excludes,
 	// release PDFs, and the bridge's test suite.
 	const without = (names) => (path) => !names.includes(path.split(/[\\/]/).pop()) && !path.endsWith(".pdf");
-	cpSync(join(root, "vendor/ai-infra-guard"), join(output, "aig/vendor/ai-infra-guard"), { filter: without([".git", ".github", "img", "testcase", "node_modules", "__pycache__"]) });
-	cpSync(join(root, "services/aig-bridge"), join(output, "aig/bridge"), { filter: without(["tests", "__pycache__", ".pytest_cache"]) });
+	cpSync(join(root, "vendor/ai-infra-guard"), join(output, postureScannerDir, "vendor/ai-infra-guard"), { filter: without([".git", ".github", "img", "testcase", "node_modules", "__pycache__"]) });
+	cpSync(join(root, "services/aig-bridge"), join(output, postureScannerDir, "bridge"), { filter: without(["tests", "__pycache__", ".pytest_cache"]) });
 	for (const name of ["aig-data-manifest.json", "aig-cve-index.json", "aig-fingerprints.json", "aig-mcp-categories.json"]) {
-		cpSync(join(root, "packages/core/src/generated", name), join(output, "aig/generated", name));
+		cpSync(join(root, "packages/core/src/generated", name), join(output, postureScannerDir, "generated", name));
 	}
-	cpSync(join(root, "deploy/onprem/egress"), join(output, "aig/egress"));
-	writeFileSync(join(output, "aig/aig-signing-public.pem"), aig.publicKeyPem, { mode: 0o644, flag: "wx" });
+	cpSync(join(root, "deploy/onprem/egress"), join(output, postureScannerDir, "egress"));
+	writeFileSync(join(output, postureScannerDir, "signing-public.pem"), postureScanner.publicKeyPem, { mode: 0o644, flag: "wx" });
 }
 const write = (path, content) => writeFileSync(join(output, path), content, { mode: 0o600, flag: "wx" });
 const envText = (items) => Object.entries(items).map(([name, value]) => `${name}=${value}`).join("\n") + "\n";
@@ -545,7 +557,7 @@ function inventory(dir, prefix = "") {
 		return statSync(path).isDirectory() ? inventory(path, relative) : [{ path: relative, sha256: createHash("sha256").update(readFileSync(path)).digest("hex") }];
 	});
 }
-const artifacts = [...(aig ? ["aig/bridge", "aig/egress", "aig/generated"].flatMap((path) => inventory(join(output, path), path)) : []), ...inventory(join(output, "dashboard"), "dashboard"), ...inventory(join(output, "ingress"), "ingress"), ...inventory(join(output, "backup"), "backup"), ...inventory(join(output, "maintenance"), "maintenance"), ...inventory(join(output, "auth-templates"), "auth-templates"), ...inventory(join(output, "volumes/functions"), "volumes/functions")];
+const artifacts = [...(postureScanner ? ["bridge", "egress", "generated"].map((path) => `${postureScannerDir}/${path}`).flatMap((path) => inventory(join(output, path), path)) : []), ...inventory(join(output, "dashboard"), "dashboard"), ...inventory(join(output, "ingress"), "ingress"), ...inventory(join(output, "backup"), "backup"), ...inventory(join(output, "maintenance"), "maintenance"), ...inventory(join(output, "auth-templates"), "auth-templates"), ...inventory(join(output, "volumes/functions"), "volumes/functions")];
 const source = existsSync(join(root, "release-source.json")) ? JSON.parse(readFileSync(join(root, "release-source.json"), "utf8")) : { commit: execFileSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" }).trim(), dirty: !!execFileSync("git", ["-C", root, "status", "--porcelain"], { encoding: "utf8" }).trim() };
-write("deployment.json", JSON.stringify({ schema_version: 1, project_name: compose.name, mode: values.mode, development: values.development, prepared_at: preparedAt.toISOString(), source_commit: source.commit, source_has_changes: source.dirty, upstream_sha: values.mode === "self-hosted" ? upstreamSha : null, dashboard_url: dashboardUrl, supabase_url: supabaseUrl, region: regionId, tenant_region: tenantRegionId, regions, resource_profile: profileName, dashboard_image: compose.services.dashboard.image, aig: aig ? { enabled: true, source_version: aig.sourceVersion, source_commit: aig.sourceCommit, bundle_id: aig.bundleId, data_manifest_signed: aig.signed, signing_key_id: aig.keyId, signing_public_key_sha256: aig.publicKeySha256, images: Object.fromEntries(aigServices.map((name) => [name, compose.services[name].image])), task_backend: "sqlite", ha_required: false, egress: "aig-egress deny-by-default allowlist (aig/egress/allowlist.txt)" } : { enabled: false }, migrations, artifacts, note: "Prepared configuration, not a deployment acceptance record. Region and residency fields are operator declarations, not evidence of provider placement. The readiness, TLS renewal and backup timer units are prepared but not installed or enabled. TLS, authentication, backups and live smoke evidence required." }, null, 2));
+write("deployment.json", JSON.stringify({ schema_version: 1, project_name: compose.name, mode: values.mode, development: values.development, prepared_at: preparedAt.toISOString(), source_commit: source.commit, source_has_changes: source.dirty, upstream_sha: values.mode === "self-hosted" ? upstreamSha : null, dashboard_url: dashboardUrl, supabase_url: supabaseUrl, region: regionId, tenant_region: tenantRegionId, regions, resource_profile: profileName, dashboard_image: compose.services.dashboard.image, posture_scanner: postureScanner ? { enabled: true, source_version: postureScanner.sourceVersion, source_commit: postureScanner.sourceCommit, bundle_id: postureScanner.bundleId, data_manifest_signed: postureScanner.signed, signing_key_id: postureScanner.keyId, signing_public_key_sha256: postureScanner.publicKeySha256, images: Object.fromEntries(postureScannerServices.map((name) => [name, compose.services[name].image])), task_backend: "sqlite", ha_required: false, egress: `aig-egress deny-by-default allowlist (${postureScannerDir}/egress/allowlist.txt)` } : { enabled: false }, migrations, artifacts, note: "Prepared configuration, not a deployment acceptance record. Region and residency fields are operator declarations, not evidence of provider placement. The readiness, TLS renewal and backup timer units are prepared but not installed or enabled. TLS, authentication, backups and live smoke evidence required." }, null, 2));
 console.log(`Prepared ${values.mode} installation at ${output}. Secrets written to private .env files; none printed.`);

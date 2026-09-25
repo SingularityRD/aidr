@@ -1453,10 +1453,11 @@ and resource limits), `.env`, `.env.functions`, `.env.readiness` and `.env.ingre
 `0600`), migrations, functions, `agent-config.json` and `deployment.json`. Ports bind to
 loopback, so your TLS proxy fronts them. Three **resource profiles** set per-service CPU,
 memory and PID limits (see [sizing](#resource-sizing)). The optional **deep-scan
-sidecar** (`--with-aig`) adds the deep-scan server, agent and bridge under Compose profile
-`aig`. The bridge is published on `127.0.0.1:8099` only. Remote scans leave only through
-**`aig-egress`**, a pinned Squid gateway that denies everything by default. You list
-authorized domains in `/srv/aidr/aig/egress/allowlist.txt`. Loopback, private, CGNAT and
+sidecar** (`--with-posture-scanner`) adds the deep-scan server, agent and bridge under
+Compose profile `posture-scanner`. The bridge is published on `127.0.0.1:8099` only. Remote
+scans leave only through a pinned **Squid egress gateway** that denies everything by
+default. You list authorized domains in `/srv/aidr/posture-scanner/egress/allowlist.txt`.
+Loopback, private, CGNAT and
 reserved destinations are refused even if listed.
 
 **How to use.**
@@ -1470,8 +1471,8 @@ docker compose --project-directory /srv/aidr -f /srv/aidr/compose.yml up -d --bu
 node scripts/deployment-migrate.mjs /srv/aidr
 node scripts/deployment-doctor.mjs --deployment /srv/aidr --online
 ```
-Add `--with-aig --aig-signing-public-key-file <pem> --aig-signing-key-id <id>` for the
-scanning sidecar. Every setting is listed in the
+Add `--with-posture-scanner --posture-scanner-signing-public-key-file <pem>
+--posture-scanner-signing-key-id <id>` for the scanning sidecar. Every setting is listed in the
 [on-prem configuration reference](../../../operations/onprem-config-reference.md)
 (`pnpm onprem:config-reference`).
 
@@ -1494,7 +1495,7 @@ not-ready until a release-signed manifest is deployed.
 **What it does.** The chart `deploy/helm/aidr` installs the same control plane on
 Kubernetes 1.25+. It runs the dashboard, an Envoy API gateway, auth, REST, storage,
 functions, an optional in-cluster Postgres, a migrations hook Job, an optional backup
-CronJob and the optional deep-scan stack (`aig.enabled`).
+CronJob and the optional deep-scan stack (`postureScanner.enabled`).
 
 **Why it matters.** Teams that run Kubernetes get chart-managed upgrades, replicas,
 PodDisruptionBudgets and autoscaling, with their own HA Postgres.
@@ -1734,7 +1735,7 @@ validate with your own load and soak tests.
 | Compose host | `small` (default): pilot, up to about 100 endpoints | 4 vCPU, 8 GiB RAM, 100 GiB SSD | +4 vCPU, 6 GiB, 40 GiB |
 | Compose host | `medium`: load-test start for about 1,000 endpoints | 8 vCPU, 16 GiB RAM, 250 GiB SSD | +6 vCPU, 8 GiB, 60 GiB |
 | Compose host | `large`: dedicated host for multi-thousand endpoint tests | 16 vCPU, 32 GiB RAM, 500 GiB SSD | +8 vCPU, 12 GiB, 100 GiB |
-| Kubernetes | `resourcesPreset: small` (evaluation, under 250 seats), `medium` (x2, under 2,500 seats), `large` (x4) | Requests and limits per component | `aig.*` components |
+| Kubernetes | `resourcesPreset: small` (evaluation, under 250 seats), `medium` (x2, under 2,500 seats), `large` (x4) | Requests and limits per component | `postureScanner.*` components |
 | Endpoint | per protected device | Reserve 512 MiB disk (packages, 64 MiB default event queue, feed, logs) | n/a |
 
 Planning model for telemetry, assuming 2 KiB events, 90-day retention and a peak of 10x
@@ -1760,7 +1761,7 @@ the daily average. Replace these assumptions with real customer data:
 | Runtime policy, rollout, DLP editor | Local policy file only | Yes | Yes | Yes | Yes |
 | Browser Privacy reporting | Extension masks locally, no report | Yes | Yes | Yes | Yes |
 | AI Security Posture page | Scanners run locally, no page | Yes | Yes | Yes | Yes (internal targets) |
-| Deep-scan sidecar | Optional loopback bridge | Not listed for the hosted service | Optional `--with-aig` | Optional `aig.enabled` | Optional; remote scans only via egress allowlist |
+| Deep-scan sidecar | Optional loopback bridge | Not listed for the hosted service | Optional `--with-posture-scanner` | Optional `postureScanner.enabled` | Optional; remote scans only via egress allowlist |
 | Entra ID SSO | - | Yes | Yes | Yes | Only if the IdP is reachable internally |
 | SAML 2.0 | - | Yes | Yes (Auth configured for SAML) | Yes (`dashboard.saml.*`) | With an internal IdP |
 | SCIM | - | Yes | Yes | Yes | Yes (IdP must reach the API) |

@@ -1498,11 +1498,11 @@ kurallarınız ve değişiklik yönetiminiz altında kalır.
 `agent-config.json` ve `deployment.json`. Portlar loopback'e bağlanır; önlerinde sizin TLS
 proxy'niz durur. Üç **kaynak profili** servis başına CPU, bellek ve PID sınırlarını belirler
 (bkz. [boyutlandırma](#kaynak-boyutlandırma)). İsteğe bağlı **derin tarama yan konteyneri**
-(`--with-aig`), `aig` Compose profili altında derin tarama sunucusunu, ajanını ve köprüsünü ekler.
-Köprü yalnızca `127.0.0.1:8099` adresinde yayımlanır. Uzak taramalar yalnızca
-**`aig-egress`** üzerinden dışarı çıkar; bu, varsayılan olarak her şeyi reddeden,
-sürümü sabitlenmiş bir Squid geçididir. İzin verilen alan adlarını
-`/srv/aidr/aig/egress/allowlist.txt` dosyasına eklersiniz. Loopback, özel, CGNAT ve ayrılmış
+(`--with-posture-scanner`), `posture-scanner` Compose profili altında derin tarama
+sunucusunu, ajanını ve köprüsünü ekler. Köprü yalnızca `127.0.0.1:8099` adresinde
+yayımlanır. Uzak taramalar yalnızca varsayılan olarak her şeyi reddeden, sürümü
+sabitlenmiş bir **Squid çıkış geçidi** üzerinden dışarı çıkar. İzin verilen alan adlarını
+`/srv/aidr/posture-scanner/egress/allowlist.txt` dosyasına eklersiniz. Loopback, özel, CGNAT ve ayrılmış
 adreslere çözümlenen hedefler listede olsalar bile reddedilir.
 
 **Nasıl kullanılır.**
@@ -1516,8 +1516,8 @@ docker compose --project-directory /srv/aidr -f /srv/aidr/compose.yml up -d --bu
 node scripts/deployment-migrate.mjs /srv/aidr
 node scripts/deployment-doctor.mjs --deployment /srv/aidr --online
 ```
-Tarama yan konteyneri için `--with-aig --aig-signing-public-key-file <pem> --aig-signing-key-id <kimlik>`
-ekleyin. Tüm ayarlar [on-prem yapılandırma başvurusunda](../../../operations/onprem-config-reference.md)
+Tarama yan konteyneri için `--with-posture-scanner --posture-scanner-signing-public-key-file <pem>
+--posture-scanner-signing-key-id <kimlik>` ekleyin. Tüm ayarlar [on-prem yapılandırma başvurusunda](../../../operations/onprem-config-reference.md)
 listelenir (`pnpm onprem:config-reference`).
 
 **Örnek.** Bir konteyner 137 çıkış koduyla sürekli yeniden başlar. Bellek sınırına
@@ -1540,7 +1540,7 @@ raporlar.
 **Ne yapar.** `deploy/helm/aidr` chart'ı aynı kontrol düzlemini Kubernetes 1.25+ üzerine
 kurar. Konsol, Envoy API geçidi, auth, REST, storage, functions, isteğe bağlı küme içi
 Postgres, bir migration hook Job'u, isteğe bağlı yedek CronJob'u ve isteğe bağlı derin tarama
-yığınını (`aig.enabled`) çalıştırır.
+yığınını (`postureScanner.enabled`) çalıştırır.
 
 **Neden önemli.** Kubernetes kullanan ekipler chart ile yönetilen yükseltmeler, replikalar,
 PodDisruptionBudget'lar ve otomatik ölçeklendirme elde eder; kendi yüksek erişilebilir
@@ -1785,7 +1785,7 @@ Kapasite taahhüdü değildir; kendi yük ve dayanıklılık (soak) testlerinizl
 | Compose ana makinesi | `small` (varsayılan): pilot, yaklaşık 100 uç noktaya kadar | 4 vCPU, 8 GiB RAM, 100 GiB SSD | +4 vCPU, 6 GiB, 40 GiB |
 | Compose ana makinesi | `medium`: yaklaşık 1.000 uç nokta için yük testi başlangıcı | 8 vCPU, 16 GiB RAM, 250 GiB SSD | +6 vCPU, 8 GiB, 60 GiB |
 | Compose ana makinesi | `large`: binlerce uç noktalı testler için ayrılmış ana makine | 16 vCPU, 32 GiB RAM, 500 GiB SSD | +8 vCPU, 12 GiB, 100 GiB |
-| Kubernetes | `resourcesPreset: small` (değerlendirme, 250 koltuk altı), `medium` (x2, 2.500 koltuk altı), `large` (x4) | Bileşen başına istek ve sınırlar | `aig.*` bileşenleri |
+| Kubernetes | `resourcesPreset: small` (değerlendirme, 250 koltuk altı), `medium` (x2, 2.500 koltuk altı), `large` (x4) | Bileşen başına istek ve sınırlar | `postureScanner.*` bileşenleri |
 | Uç nokta | korunan cihaz başına | 512 MiB disk ayırın (paketler, varsayılan 64 MiB olay kuyruğu, besleme, günlükler) | - |
 
 2 KiB'lık olaylar, 90 günlük saklama ve günlük ortalamanın 10 katı zirve varsayımıyla
@@ -1811,7 +1811,7 @@ telemetri planlama modeli. Bu varsayımları gerçek müşteri verisiyle değiş
 | Çalışma zamanı politikası, kademeli dağıtım, DLP düzenleyicisi | Yalnızca yerel politika dosyası | Evet | Evet | Evet | Evet |
 | Browser Privacy raporlaması | Eklenti yerelde maskeler, rapor yok | Evet | Evet | Evet | Evet |
 | Yapay Zekâ Güvenlik Duruşu sayfası | Tarayıcılar yerelde çalışır, sayfa yok | Evet | Evet | Evet | Evet (iç hedefler) |
-| Derin tarama yan konteyneri | İsteğe bağlı loopback köprü | Barındırılan hizmette listelenmemiş | İsteğe bağlı `--with-aig` | İsteğe bağlı `aig.enabled` | İsteğe bağlı; uzak taramalar yalnızca çıkış izin listesiyle |
+| Derin tarama yan konteyneri | İsteğe bağlı loopback köprü | Barındırılan hizmette listelenmemiş | İsteğe bağlı `--with-posture-scanner` | İsteğe bağlı `postureScanner.enabled` | İsteğe bağlı; uzak taramalar yalnızca çıkış izin listesiyle |
 | Entra ID SSO | - | Evet | Evet | Evet | Yalnızca IdP iç ağdan erişilebilirse |
 | SAML 2.0 | - | Evet | Evet (Auth SAML için yapılandırılmış) | Evet (`dashboard.saml.*`) | İç IdP ile |
 | SCIM | - | Evet | Evet | Evet | Evet (IdP API'ye ulaşabilmeli) |

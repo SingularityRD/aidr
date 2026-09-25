@@ -1,16 +1,22 @@
 # =============================================================================
-# AIG (AI-Infra-Guard) Sidecar Stack
+# AI Security Posture scanner sidecar stack
 # =============================================================================
-# Runs AIG's scanning platform alongside AIDR. Four services:
+# Runs the posture scanner alongside AIDR. Four services (their Compose names
+# and volume names are kept stable so existing installations keep their data):
 #   aig-server  — Go backend (CVE scans, MCP scans, task management)
 #   aig-agent   — Go agent (WebSocket worker for scan execution)
 #   aig-bridge  — Python/FastAPI (clean REST API consumed by AIDR core)
 #   aig-egress  — pinned deny-by-default forward proxy for remote scan traffic
 #
 # Single-host defaults: SQLite task registry, HA not required, and the shipped
-# egress gateway (deploy/onprem/egress). See .env.aig.example for the
-# PostgreSQL HA switch. `scripts/deployment-prepare.mjs --with-aig` merges this
-# stack into a prepared on-prem installation.
+# egress gateway (deploy/onprem/egress). See .env.posture-scanner.example for
+# the PostgreSQL HA switch. `scripts/deployment-prepare.mjs
+# --with-posture-scanner` merges this stack into a prepared on-prem
+# installation.
+#
+# Operator settings use POSTURE_SCANNER_* names. Each one falls back to its
+# legacy AIG_* name so an existing .env keeps working; the containers still
+# receive the AIG_* variables the scanner services read.
 #
 # Attribution: AI-Infra-Guard by Tencent Zhuque Lab (Apache 2.0).
 # See vendor/ai-infra-guard/NOTICE for requirements.
@@ -19,7 +25,7 @@
 services:
   # ── AIG Go Backend Server ────────────────────────────────────────────────
   aig-server:
-    image: aidr-aig-server:${AIG_SOURCE_VERSION:-v4.6.1-aidr.1}
+    image: aidr-aig-server:${POSTURE_SCANNER_SOURCE_VERSION:-${AIG_SOURCE_VERSION:-v4.6.1-aidr.1}}
     build:
       context: ./vendor/ai-infra-guard
       dockerfile: Dockerfile
@@ -42,15 +48,15 @@ services:
       - APP_ENV=production
       - UPLOAD_DIR=/app/uploads
       - DB_PATH=/app/db/tasks.db
-      - TZ=${AIG_TZ:-Asia/Shanghai}
-      - AIG_AGENT_SHARED_SECRET=${AIG_AGENT_SHARED_SECRET:?set AIG_AGENT_SHARED_SECRET}
+      - TZ=${POSTURE_SCANNER_TZ:-${AIG_TZ:-Asia/Shanghai}}
+      - AIG_AGENT_SHARED_SECRET=${POSTURE_SCANNER_AGENT_SHARED_SECRET:-${AIG_AGENT_SHARED_SECRET:?set POSTURE_SCANNER_AGENT_SHARED_SECRET}}
       - AIG_DATA_ROOT=/app/data
       - AIG_DATA_MANIFEST_PATH=/app/aig-manifest/aig-data-manifest.json
       - AIG_SIGNING_PUBLIC_KEY_PATH=/run/secrets/aig-signing-public.pem
-      - AIG_TRUSTED_SIGNING_KEY_ID=${AIG_TRUSTED_SIGNING_KEY_ID:?set AIG_TRUSTED_SIGNING_KEY_ID}
-      - AIG_TRUSTED_SIGNING_PUBLIC_KEY_SHA256=${AIG_TRUSTED_SIGNING_PUBLIC_KEY_SHA256:?set AIG_TRUSTED_SIGNING_PUBLIC_KEY_SHA256}
-      - AIG_EXPECTED_DATA_BUNDLE_ID=${AIG_EXPECTED_DATA_BUNDLE_ID:?set AIG_EXPECTED_DATA_BUNDLE_ID}
-      - AIG_EXPECTED_SOURCE_COMMIT=${AIG_EXPECTED_SOURCE_COMMIT:?set AIG_EXPECTED_SOURCE_COMMIT}
+      - AIG_TRUSTED_SIGNING_KEY_ID=${POSTURE_SCANNER_TRUSTED_SIGNING_KEY_ID:-${AIG_TRUSTED_SIGNING_KEY_ID:?set POSTURE_SCANNER_TRUSTED_SIGNING_KEY_ID}}
+      - AIG_TRUSTED_SIGNING_PUBLIC_KEY_SHA256=${POSTURE_SCANNER_TRUSTED_SIGNING_PUBLIC_KEY_SHA256:-${AIG_TRUSTED_SIGNING_PUBLIC_KEY_SHA256:?set POSTURE_SCANNER_TRUSTED_SIGNING_PUBLIC_KEY_SHA256}}
+      - AIG_EXPECTED_DATA_BUNDLE_ID=${POSTURE_SCANNER_EXPECTED_DATA_BUNDLE_ID:-${AIG_EXPECTED_DATA_BUNDLE_ID:?set POSTURE_SCANNER_EXPECTED_DATA_BUNDLE_ID}}
+      - AIG_EXPECTED_SOURCE_COMMIT=${POSTURE_SCANNER_EXPECTED_SOURCE_COMMIT:-${AIG_EXPECTED_SOURCE_COMMIT:?set POSTURE_SCANNER_EXPECTED_SOURCE_COMMIT}}
     volumes:
       - aig-db:/app/db
       - aig-logs:/app/logs
@@ -60,7 +66,7 @@ services:
         target: /app/aig-manifest
         read_only: true
       - type: bind
-        source: ${AIG_SIGNING_PUBLIC_KEY_HOST_PATH:?set AIG_SIGNING_PUBLIC_KEY_HOST_PATH}
+        source: ${POSTURE_SCANNER_SIGNING_PUBLIC_KEY_HOST_PATH:-${AIG_SIGNING_PUBLIC_KEY_HOST_PATH:?set POSTURE_SCANNER_SIGNING_PUBLIC_KEY_HOST_PATH}}
         target: /run/secrets/aig-signing-public.pem
         read_only: true
     networks:
@@ -105,15 +111,15 @@ services:
 
   # ── AIG Agent Worker ─────────────────────────────────────────────────────
   aig-agent:
-    image: aidr-aig-agent:${AIG_SOURCE_VERSION:-v4.6.1-aidr.1}
+    image: aidr-aig-agent:${POSTURE_SCANNER_SOURCE_VERSION:-${AIG_SOURCE_VERSION:-v4.6.1-aidr.1}}
     build:
       context: ./vendor/ai-infra-guard
       dockerfile: Dockerfile_Agent
     environment:
-      - TZ=${AIG_TZ:-Asia/Shanghai}
+      - TZ=${POSTURE_SCANNER_TZ:-${AIG_TZ:-Asia/Shanghai}}
       - AIG_SERVER=aig-server:8088
-      - AIG_AGENT_VERSION=${AIG_SOURCE_VERSION:-v4.6.1-aidr.1}
-      - AIG_AGENT_SHARED_SECRET=${AIG_AGENT_SHARED_SECRET:?set AIG_AGENT_SHARED_SECRET}
+      - AIG_AGENT_VERSION=${POSTURE_SCANNER_SOURCE_VERSION:-${AIG_SOURCE_VERSION:-v4.6.1-aidr.1}}
+      - AIG_AGENT_SHARED_SECRET=${POSTURE_SCANNER_AGENT_SHARED_SECRET:-${AIG_AGENT_SHARED_SECRET:?set POSTURE_SCANNER_AGENT_SHARED_SECRET}}
       - AIG_UPLOAD_ROOT=/app/uploads
       - AIG_WORK_DIR=/work
       # Remote scan traffic must traverse the egress gateway (the shipped
@@ -121,7 +127,7 @@ services:
       # private compose network.
       - HTTP_PROXY=${BRIDGE_EGRESS_PROXY_URL:-http://aig-egress:3128}
       - HTTPS_PROXY=${BRIDGE_EGRESS_PROXY_URL:-http://aig-egress:3128}
-      - NO_PROXY=${AIG_NO_PROXY:-aig-server,localhost,127.0.0.1}
+      - NO_PROXY=${POSTURE_SCANNER_NO_PROXY:-${AIG_NO_PROXY:-aig-server,localhost,127.0.0.1}}
       # The pinned AIG worker imports a pre-rename MCP SDK symbol. The tracked shim is
       # loaded via PYTHONPATH until the upstream import is fixed.
       - PYTHONPATH=/app/aig-compat
@@ -164,7 +170,7 @@ services:
     deploy:
       # The pinned source does not expose unique live worker identities. Keep one
       # worker until registration and readiness can prove distinct workers.
-      replicas: ${AIG_AGENT_COUNT:-1}
+      replicas: ${POSTURE_SCANNER_AGENT_COUNT:-${AIG_AGENT_COUNT:-1}}
       resources:
         limits:
           cpus: "4"
@@ -176,28 +182,28 @@ services:
 
   # ── AIG Bridge (Python/FastAPI) ──────────────────────────────────────────
   aig-bridge:
-    image: aidr-aig-bridge:${AIG_BRIDGE_IMAGE_TAG:-local}
+    image: aidr-aig-bridge:${POSTURE_SCANNER_BRIDGE_IMAGE_TAG:-${AIG_BRIDGE_IMAGE_TAG:-local}}
     build:
       context: ./services/aig-bridge
       dockerfile: Dockerfile
     container_name: aidr-aig-bridge
     ports:
-      - "${AIG_BIND_ADDRESS:-127.0.0.1}:${AIG_BRIDGE_PORT:-8099}:8099"
+      - "${POSTURE_SCANNER_BIND_ADDRESS:-${AIG_BIND_ADDRESS:-127.0.0.1}}:${POSTURE_SCANNER_BRIDGE_PORT:-${AIG_BRIDGE_PORT:-8099}}:8099"
     environment:
       - BRIDGE_HOST=0.0.0.0
       - BRIDGE_PORT=8099
       - BRIDGE_LOG_LEVEL=${BRIDGE_LOG_LEVEL:-INFO}
-      - TZ=${AIG_TZ:-Asia/Shanghai}
+      - TZ=${POSTURE_SCANNER_TZ:-${AIG_TZ:-Asia/Shanghai}}
       - BRIDGE_AIG_URL=http://aig-server:8088
-      - AIG_SOURCE_VERSION=${AIG_SOURCE_VERSION:-v4.6.1-aidr.1}
-      - AIG_AGENT_SHARED_SECRET=${AIG_AGENT_SHARED_SECRET:?set AIG_AGENT_SHARED_SECRET}
-      - AIG_MIN_WORKERS=${AIG_MIN_WORKERS:-1}
+      - AIG_SOURCE_VERSION=${POSTURE_SCANNER_SOURCE_VERSION:-${AIG_SOURCE_VERSION:-v4.6.1-aidr.1}}
+      - AIG_AGENT_SHARED_SECRET=${POSTURE_SCANNER_AGENT_SHARED_SECRET:-${AIG_AGENT_SHARED_SECRET:?set POSTURE_SCANNER_AGENT_SHARED_SECRET}}
+      - AIG_MIN_WORKERS=${POSTURE_SCANNER_MIN_WORKERS:-${AIG_MIN_WORKERS:-1}}
       - AIG_DATA_MANIFEST_PATH=/app/aig-data/aig-data-manifest.json
       - AIG_SIGNING_PUBLIC_KEY_PATH=/run/secrets/aig-signing-public.pem
-      - AIG_TRUSTED_SIGNING_KEY_ID=${AIG_TRUSTED_SIGNING_KEY_ID:?set AIG_TRUSTED_SIGNING_KEY_ID}
-      - AIG_TRUSTED_SIGNING_PUBLIC_KEY_SHA256=${AIG_TRUSTED_SIGNING_PUBLIC_KEY_SHA256:?set AIG_TRUSTED_SIGNING_PUBLIC_KEY_SHA256}
-      - AIG_EXPECTED_DATA_BUNDLE_ID=${AIG_EXPECTED_DATA_BUNDLE_ID:?set AIG_EXPECTED_DATA_BUNDLE_ID}
-      - AIG_EXPECTED_SOURCE_COMMIT=${AIG_EXPECTED_SOURCE_COMMIT:?set AIG_EXPECTED_SOURCE_COMMIT}
+      - AIG_TRUSTED_SIGNING_KEY_ID=${POSTURE_SCANNER_TRUSTED_SIGNING_KEY_ID:-${AIG_TRUSTED_SIGNING_KEY_ID:?set POSTURE_SCANNER_TRUSTED_SIGNING_KEY_ID}}
+      - AIG_TRUSTED_SIGNING_PUBLIC_KEY_SHA256=${POSTURE_SCANNER_TRUSTED_SIGNING_PUBLIC_KEY_SHA256:-${AIG_TRUSTED_SIGNING_PUBLIC_KEY_SHA256:?set POSTURE_SCANNER_TRUSTED_SIGNING_PUBLIC_KEY_SHA256}}
+      - AIG_EXPECTED_DATA_BUNDLE_ID=${POSTURE_SCANNER_EXPECTED_DATA_BUNDLE_ID:-${AIG_EXPECTED_DATA_BUNDLE_ID:?set POSTURE_SCANNER_EXPECTED_DATA_BUNDLE_ID}}
+      - AIG_EXPECTED_SOURCE_COMMIT=${POSTURE_SCANNER_EXPECTED_SOURCE_COMMIT:-${AIG_EXPECTED_SOURCE_COMMIT:?set POSTURE_SCANNER_EXPECTED_SOURCE_COMMIT}}
       - BRIDGE_API_KEY=${BRIDGE_API_KEY:-}
       - BRIDGE_AUTH_MODE=${BRIDGE_AUTH_MODE:-broker}
       - BRIDGE_AUTH_REQUIRED=${BRIDGE_AUTH_REQUIRED:-true}
@@ -237,7 +243,7 @@ services:
         target: /app/aig-data
         read_only: true
       - type: bind
-        source: ${AIG_SIGNING_PUBLIC_KEY_HOST_PATH:?set AIG_SIGNING_PUBLIC_KEY_HOST_PATH}
+        source: ${POSTURE_SCANNER_SIGNING_PUBLIC_KEY_HOST_PATH:-${AIG_SIGNING_PUBLIC_KEY_HOST_PATH:?set POSTURE_SCANNER_SIGNING_PUBLIC_KEY_HOST_PATH}}
         target: /run/secrets/aig-signing-public.pem
         read_only: true
     read_only: true
@@ -297,7 +303,7 @@ services:
         target: /etc/squid/squid.conf
         read_only: true
       - type: bind
-        source: ${AIG_EGRESS_ALLOWLIST_PATH:-./deploy/onprem/egress/allowlist.txt}
+        source: ${POSTURE_SCANNER_EGRESS_ALLOWLIST_PATH:-${AIG_EGRESS_ALLOWLIST_PATH:-./deploy/onprem/egress/allowlist.txt}}
         target: /etc/squid/aidr-allowlist.txt
         read_only: true
     read_only: true
