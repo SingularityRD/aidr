@@ -736,7 +736,7 @@
 		}
 	},
 	"shadow_access_missing": {
-		"message": "Browser Guard needs your permission to access $COUNT$ AI service addresses to count visits and enforce blocks. It only learns which service a tab opened.",
+		"message": "Browser Guard needs your permission to access $COUNT$ AI service addresses to count visits and explain blocks. Blocks apply either way. It only learns which service a tab opened.",
 		"description": "Shadow AI host access missing.",
 		"placeholders": {
 			"count": {
@@ -746,7 +746,7 @@
 		}
 	},
 	"shadow_access_granted": {
-		"message": "Access granted: counting and blocking are active.",
+		"message": "Access granted: visit counting and block explanations are active.",
 		"description": "Shadow AI host access granted."
 	},
 	"access_grant_button": {

@@ -97,19 +97,23 @@ export const EXTENSION_CSP = [
  * sites (managed `customSites`, src/background/custom-sites.ts), only on hosts the user
  * granted from the optional host permissions below. It carries no install warning and
  * gives no access by itself: injection still needs host access to the page.
+ *
+ * `declarativeNetRequest` (not `declarativeNetRequestWithHostAccess`): the extension only
+ * installs `block` rules (src/background/dnr.ts, src/background/shadow-ai.ts), and under the
+ * host-access variant a block applies only where the user granted host access to BOTH the
+ * blocked site and the page that started the navigation. An administrator's `blockedSites`
+ * or Shadow AI block would then depend on the policed user's own grant (declining or
+ * revoking it, or following a link from any other site, bypassed it). Block rules under
+ * `declarativeNetRequest` need no host permission at all. Install warning: "Block content
+ * on any page". No redirect or header-modifying rule is ever installed.
  */
-export const PERMISSIONS = Object.freeze([
-	"storage",
-	"alarms",
-	"declarativeNetRequestWithHostAccess",
-	"scripting",
-]);
+export const PERMISSIONS = Object.freeze(["storage", "alarms", "declarativeNetRequest", "scripting"]);
 /** Requested at runtime only, when an admin or user enables the local NER host. */
 export const OPTIONAL_PERMISSIONS = Object.freeze(["nativeMessaging"]);
 /**
  * Requested at runtime, per origin, from the options page: custom internal AI sites and
- * the Shadow AI catalog hosts (visit counts and blocking under
- * declarativeNetRequestWithHostAccess). Never `tabs`, `webNavigation` or `<all_urls>`.
+ * the Shadow AI catalog hosts (visit counts and the blocked.html explanation page; the block
+ * itself needs no grant). Never `tabs`, `webNavigation` or `<all_urls>`.
  */
 export const OPTIONAL_HOST_PERMISSIONS = Object.freeze(["https://*/*"]);
 

@@ -736,7 +736,7 @@
 		}
 	},
 	"shadow_access_missing": {
-		"message": "Browser Guard'ın ziyaretleri sayabilmesi ve engelleri uygulayabilmesi için $COUNT$ yapay zekâ hizmeti adresine erişim izninize ihtiyacı var. Yalnızca bir sekmenin hangi hizmeti açtığını öğrenir.",
+		"message": "Browser Guard'ın ziyaretleri sayabilmesi ve engelleri açıklayabilmesi için $COUNT$ yapay zekâ hizmeti adresine erişim izninize ihtiyacı var. Engeller her durumda uygulanır. Yalnızca bir sekmenin hangi hizmeti açtığını öğrenir.",
 		"description": "Shadow AI host access missing.",
 		"placeholders": {
 			"count": {
@@ -746,7 +746,7 @@
 		}
 	},
 	"shadow_access_granted": {
-		"message": "Erişim verildi: sayma ve engelleme etkin.",
+		"message": "Erişim verildi: ziyaret sayımı ve engel açıklamaları etkin.",
 		"description": "Shadow AI host access granted."
 	},
 	"access_grant_button": {

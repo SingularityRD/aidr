@@ -137,6 +137,12 @@ governance restriction for its scope; for other assets it is a recorded waiver.
 An exception never lifts a restriction written into the published runtime
 policy itself, and prohibited-tier systems cannot be waived.
 
+An exception waives only the level it was approved against: one approved while
+an MCP server was `restricted` stops applying as soon as the server is
+escalated to `banned` (for example during incident response), and applies again
+only if the status is lowered back. Waiving a ban needs an exception decided
+against the ban.
+
 ## Policy change control (four-eyes)
 
 Owners and administrators can turn on **four-eyes change control** (it needs at

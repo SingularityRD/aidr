@@ -25,6 +25,7 @@ const migrations = [
 	"20260927000040_ai_governance_register.sql",
 	"20260927000041_policy_change_control.sql",
 	"20260927000042_ai_governance_retention_offboarding.sql",
+	"20260928000023_ai_exception_status_scope.sql",
 ].map((name) => readFileSync(resolve(root, "supabase/migrations", name), "utf8"));
 
 function run(command, args, input = "") {
@@ -339,6 +340,19 @@ test("AI governance: register, intake, exceptions, four-eyes change control, ret
 		sql(`select public.decide_ai_governance_exception('${TENANT_A}', '${OWNER_A}', '${agentScoped.exception_id}', 'approve', 'CI only');`);
 		assert.deepEqual(overlay(MEMBER_A, AGENT_A).mcp_require_approval_servers, []);
 		assert.deepEqual(overlay(MEMBER_A, null).mcp_require_approval_servers, ["github"]);
+		// 20260928000023: a waiver decided against `restricted` never waives a later ban
+		// (incident response escalates for everyone); lowering the status restores it.
+		assert.equal(sql(`select waived_status from public.ai_governance_exceptions where id = '${agentScoped.exception_id}';`),
+			"restricted");
+		sql(upsert(ADMIN_A, assetId("github"), 1, { status: "banned" }));
+		assert.deepEqual(overlay(MEMBER_A, AGENT_A), {
+			mcp_deny_servers: ["github", "shell-runner"], mcp_require_approval_servers: [], browser_guard_blocked_sites: ["deepseek"],
+		});
+		sql(upsert(ADMIN_A, assetId("github"), 2, { status: "restricted" }));
+		assert.deepEqual(overlay(MEMBER_A, AGENT_A).mcp_require_approval_servers, []);
+		assert.deepEqual(overlay(MEMBER_A, AGENT_A).mcp_deny_servers, ["shell-runner"]);
+		fails(`update public.ai_governance_exceptions set waived_status = null where id = '${agentScoped.exception_id}';`,
+			/ai_governance_exceptions_waived_status/);
 
 		// ── Intake: four-eyes and designated reviewers ────────────────────────
 		const intake = json(`select public.submit_ai_intake_request('${TENANT_A}', '${MEMBER_A}', ${js({
