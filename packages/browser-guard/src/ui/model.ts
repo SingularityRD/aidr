@@ -5,6 +5,7 @@
 
 import { ADAPTERS, adapterForUrl } from "../sites/index.js";
 import {
+	type CustomSiteConfig,
 	ENTITY_TYPES,
 	type EntityType,
 	type GuardMode,
@@ -34,7 +35,10 @@ export function isLocked(policy: GuardPolicy, key: ManagedKey): boolean {
 	return policy.managedKeys.includes(key);
 }
 
-export type SupportedSiteId = Exclude<SiteId, "other">;
+/** Built-in AI chat products (per-site switches, blocked-page names). */
+export type SupportedSiteId = Exclude<SiteId, "other" | "custom">;
+/** Sites the guard runs on: the built-in ones plus administrator-configured custom sites. */
+export type ProtectedSiteId = SupportedSiteId | "custom";
 
 export interface SiteInfo {
 	readonly id: SupportedSiteId;
@@ -59,14 +63,17 @@ export function isSupportedSite(id: unknown): id is SupportedSiteId {
 }
 
 /**
- * Maps a tab URL to a supported site, or null. Uses the same exact-host
- * resolver as the content script, so the popup never claims protection on a
- * page the guard does not run on.
+ * Maps a tab URL to a supported site ("custom" for a host of an administrator-configured
+ * custom site), or null. Uses the same exact-host resolver as the content script, so the
+ * popup never claims protection on a page the guard does not run on.
  */
-export function siteForUrl(url: string | undefined): SupportedSiteId | null {
+export function siteForUrl(
+	url: string | undefined,
+	customSites: readonly CustomSiteConfig[] = [],
+): ProtectedSiteId | null {
 	if (!url) return null;
-	const id = adapterForUrl(url).id;
-	return isSupportedSite(id) ? id : null;
+	const id = adapterForUrl(url, customSites).id;
+	return isSupportedSite(id) || id === "custom" ? id : null;
 }
 
 type EntityGroupId = "identity" | "contact" | "financial" | "technical" | "organization" | "other";
@@ -126,12 +133,12 @@ export function toggleSite(
 export type ProtectionStatus =
 	| { readonly kind: "loading" }
 	| { readonly kind: "unsupported" }
-	| { readonly kind: "blocked"; readonly site: SupportedSiteId }
-	| { readonly kind: "disabled-policy"; readonly site: SupportedSiteId }
-	| { readonly kind: "disabled-user"; readonly site: SupportedSiteId }
-	| { readonly kind: "paused"; readonly site: SupportedSiteId; readonly until: number }
-	| { readonly kind: "monitoring"; readonly site: SupportedSiteId }
-	| { readonly kind: "protected"; readonly site: SupportedSiteId };
+	| { readonly kind: "blocked"; readonly site: ProtectedSiteId }
+	| { readonly kind: "disabled-policy"; readonly site: ProtectedSiteId }
+	| { readonly kind: "disabled-user"; readonly site: ProtectedSiteId }
+	| { readonly kind: "paused"; readonly site: ProtectedSiteId; readonly until: number }
+	| { readonly kind: "monitoring"; readonly site: ProtectedSiteId }
+	| { readonly kind: "protected"; readonly site: ProtectedSiteId };
 
 /**
  * Protection status for the current tab. Order matters: an organisation block
@@ -140,10 +147,11 @@ export type ProtectionStatus =
 export function protectionStatus(
 	policy: GuardPolicy,
 	stats: GuardStats,
-	urlSite: SupportedSiteId | null,
+	urlSite: ProtectedSiteId | null,
 	now: number,
 ): ProtectionStatus {
-	const site = isSupportedSite(stats.site) ? stats.site : urlSite;
+	const site: ProtectedSiteId | null =
+		isSupportedSite(stats.site) || stats.site === "custom" ? stats.site : urlSite;
 	if (!site) return { kind: "unsupported" };
 	if (policy.blockedSites.includes(site)) return { kind: "blocked", site };
 	if (policy.disabledSites.includes(site)) {

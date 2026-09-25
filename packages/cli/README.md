@@ -37,6 +37,7 @@ procedure.
 | `aidr audit tail [-n N] [--json]` | Most recent audit entries, re-redacted |
 | `aidr audit export [--since 24h\|ISO] [--format jsonl\|csv] [-o file]` | Redacted export across rotated log files |
 | `aidr privacy scan [file] [--json] [--mask] [--types <list>] [--fail-on none\|any\|secret]` | Local TR/EN personal-data and secret scan of a file or stdin; see [Privacy scan](#privacy-scan) |
+| `aidr aibom [--format cyclonedx-json\|json] [-o file] [--path <project>] [--config <paths…>] [--scan-report <file>]` | AI Bill of Materials (CycloneDX 1.6): agents and their protection state, MCP servers with the 14 risk-category flags, AI SDKs/frameworks/models from the project's manifests, model files, skills/plugins and known vulnerabilities. Secrets are redacted; exits `1` when a source could not be read. See [AI-BOM](../../docs/ai-bom.md) |
 | `aidr config`, `aidr scan`, `aidr collect`, `aidr discover`, `aidr uninstall` | See `aidr <command> --help` |
 
 ### Operator-only commands

@@ -89,6 +89,8 @@ const AUDITED_ALLOW_CATEGORIES: ReadonlySet<string> = new Set([
 	"prompt_protection",
 	"prompt_protection_warning",
 	"secure_code_warning",
+	"toxic_flow_monitor",
+	"toxic_flow_unavailable",
 ]);
 
 /**

@@ -45,6 +45,8 @@ export const BASE_POLICY: GuardPolicy = {
 	signalAction: "warn",
 	blockedSites: [],
 	disabledSites: [],
+	customSites: [],
+	shadowAi: { mode: "off", sanctioned: [], blocked: [] },
 	allowUserPause: true,
 	allowSendAnyway: false,
 	maskPaste: true,
