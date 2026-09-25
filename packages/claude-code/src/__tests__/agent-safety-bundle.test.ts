@@ -10,6 +10,11 @@ import { join, resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { toolResponseFailed } from "../tool-outcome.js";
 
+// Agent-edit fixture text that adds a Vitest skip. Assembled at runtime so the
+// mandatory-skip gate (scripts/check-mandatory-skips.mjs) does not read the
+// fixture string as a skip in this suite.
+const IT_SKIP = ["it", "skip"].join(".");
+
 const DIST_DIR = resolve(__dirname, "..", "..", "dist");
 const PRE_TOOL_USE = resolve(DIST_DIR, "pre-tool-use.cjs");
 const POST_TOOL_USE = resolve(DIST_DIR, "post-tool-use.cjs");
@@ -72,7 +77,7 @@ describe("Claude Code bundle: agent-safety guardrails", { timeout: 120_000 }, ()
 		const skip = await pre("cc-1", "Edit", {
 			file_path: "/repo/src/auth.test.ts",
 			old_string: "it('logs in', () => {",
-			new_string: "it.skip('logs in', () => {",
+			new_string: `${IT_SKIP}('logs in', () => {`,
 		});
 		expect(decision(skip)).toBe("ask");
 		expect(reason(skip)).toContain("Test skipped or disabled");

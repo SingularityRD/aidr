@@ -125,6 +125,23 @@ describe("Codex UserPromptSubmit wire mapping", () => {
 	});
 });
 
+describe("Codex UserPromptSubmit hook (release trust)", () => {
+	it("inspects prompts in a development bundle and blocks them in an untrusted release bundle", () => {
+		const run = submit("add a unit test for the parser");
+		if (!releaseBundle) {
+			// No release manifest: the development bundle starts and inspects the prompt.
+			expect(run.status).toBe(0);
+			expect(run.stderr).not.toContain("no_public_keys");
+			return;
+		}
+		// A commercial release bundle with no trusted public keys refuses to start and
+		// blocks the prompt through Codex's exit-2 + stderr channel (fail closed).
+		expect(run.status).toBe(2);
+		expect(run.stderr).toContain("no_public_keys");
+	});
+});
+
+// AIDR-SKIP: AIDR-063 qa-owner - a release bundle without trusted public keys blocks every prompt before inspection, so these development-bundle assertions cannot hold; the release-trust test above covers that build
 describe.skipIf(releaseBundle)("Codex UserPromptSubmit hook (built bundle)", () => {
 	it("allows a clean prompt with empty stdout", () => {
 		const run = submit("add a unit test for the parser");
