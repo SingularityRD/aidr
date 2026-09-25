@@ -14,7 +14,7 @@
 
 /** Countable claims. Formatting (digit grouping) is applied per language at build time. */
 export const FACTS = {
-	"threat-rules": 386,
+	"threat-rules": 428,
 	"ai-components": 146,
 	"cve-rules": { n: 2000, plus: true },
 	"mcp-categories": 14,

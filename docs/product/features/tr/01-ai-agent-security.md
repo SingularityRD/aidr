@@ -469,7 +469,7 @@ serbest bırakılır.
 **Ne yapar**
 Motor her araç çağrısından artifact'ları (komutlar, URL'ler, dosya yolları, içerik,
 paketler) çıkarır ve bunları YAML tehdit kurallarıyla eşleştirir. Kurallar kod değil,
-veridir: [`threats/`](../../../../threats/) altında **24 dosyada 386 kural** bulunur ve
+veridir: [`threats/`](../../../../threats/) altında **27 dosyada 428 kural** bulunur ve
 Linux, macOS ile Windows'u kapsar.
 
 **Neden önemli**
@@ -488,8 +488,10 @@ denetim kaydı → karar
 
 Her kuralda `id`, `category`, `severity`, `confidence` (0–1), `action` (`block` → `deny`,
 `require_approval` → `ask`, `log` → `allow`), regex `pattern`, `match_on`, `title`,
-`expires_at` ve `revoked` alanları bulunur. 386 kuralın 186'sı engeller, 199'u onay ister,
-1'i yalnızca kayıt tutar; 148'i critical, 215'i high, 23'ü medium önem derecesindedir.
+`expires_at` ve `revoked` alanları bulunur. 428 kuralın 191'i engeller, 209'u onay ister,
+28'i yalnızca kayıt tutar; 155'i critical, 246'sı high, 27'si medium önem derecesindedir.
+`secure-code.yaml` içindeki 27 kural tavsiye niteliğindedir: yalnızca ajanın yazdığı kodu
+inceler ve eşleşmede ne olacağını `secure_code.action` (varsayılan `warn` ya da `ask`) belirler.
 
 Kural dosyaları:
 
@@ -504,12 +506,15 @@ Kural dosyaları:
 | `urls.yaml` | Kötü amaçlı URL ve alan adı kalıpları | 5 |
 | `mining.yaml` | Kripto madenciliği / kaynak gaspı (ATT&CK T1496) | 17 |
 | `self-defense.yaml` | AIDR'yi devre dışı bırakma veya atlatma girişimleri | 9 |
+| `canary.yaml` | Ajanın AIDR tuzak (canary) kimlik bilgisi yönetimini kullanması | 1 |
 | `mitre.yaml` | MITRE ATT&CK teknik eşlemeleri | 64 |
 | `llm-threats.yaml` | LLM'e özgü tehditler | 21 |
 | `skill-scan.yaml` | Skill/plugin paketi kuralları T01–T09 | 26 |
+| `ai-supply-chain.yaml` | Güvensiz model yükleme ve doğrulanmamış model kaynakları | 14 |
+| `secure-code.yaml` | Ajanın yazdığı güvensiz kod (güvenli kod korumaları) | 27 |
 | `mac-commands.yaml`, `mac-credentials.yaml`, `mac-files.yaml`, `mac-obfuscation.yaml`, `mac-persistence.yaml`, `mac-supply-chain.yaml` | macOS varyantları | 27 + 8 + 10 + 7 + 9 + 3 = 64 |
 | `win-commands.yaml`, `win-credentials.yaml`, `win-files.yaml`, `win-obfuscation.yaml`, `win-persistence.yaml`, `win-supply-chain.yaml` | Windows varyantları | 61 + 10 + 10 + 16 + 8 + 1 = 106 |
-| **Toplam** | 24 dosya | **386** |
+| **Toplam** | 27 dosya | **428** |
 
 Kategoriye göre kurallar:
 
@@ -522,9 +527,11 @@ Kategoriye göre kurallar:
 | LLM tehditleri | `prompt_injection` (5), `tool_misuse` (4), `indirect_prompt_injection` (3), `prompt_extraction` (3), `information_disclosure` (2), `memory_poisoning` (2), `content_safety` (2) | 21 |
 | Kaynak gaspı | `resource_hijacking` | 17 |
 | Ağ çıkışı | `network_egress` | 9 |
-| Öz savunma | `self_defense` | 9 |
+| Öz savunma | `self_defense` | 10 |
 | Tedarik zinciri | `supply_chain` | 5 |
-| **Toplam** | | **386** |
+| Yapay zekâ model tedarik zinciri | `ai_supply_chain` | 14 |
+| Güvenli kod | `secure_code_tls` (6), `secure_code_sql_injection` (5), `secure_code_weak_crypto` (4), `secure_code_cors` (3), `secure_code_code_injection` (2), `secure_code_command_injection` (2), `secure_code_permissions` (2), `secure_code_debug_exposure` (2), `secure_code_csrf` (1) | 27 |
+| **Toplam** | | **428** |
 
 Müşteriler kendi kurallarını `~/.singularity-aidr/threats/*.yaml` altına ekleyebilir; aynı
 `id`'ye sahip özel bir kural yerleşik kuralın yerine geçer.
