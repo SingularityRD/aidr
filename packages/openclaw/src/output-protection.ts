@@ -237,12 +237,13 @@ export class OpenClawOutputProtection {
 		private readonly now: () => number = Date.now,
 	) {}
 
-	afterToolCall(event: AfterToolCallEvent, context: OutputHookContext = {}): void {
+	/** Observe a completed tool's output; returns the inspection for the session-flow feed. */
+	afterToolCall(event: AfterToolCallEvent, context: OutputHookContext = {}): OutputInspection {
 		const inspection = inspectBoundedOutput(
 			{ result: event.result, error: event.error },
 			"tool_output",
 		);
-		if (!requiresOutputProtection(inspection)) return;
+		if (!requiresOutputProtection(inspection)) return inspection;
 
 		this.recordPending(event.toolCallId, event.toolName, inspection, event.runId, context);
 
@@ -253,6 +254,7 @@ export class OpenClawOutputProtection {
 			runId: event.runId || context.runId,
 			summary: outputInspectionSummary(inspection),
 		});
+		return inspection;
 	}
 
 	toolResultPersist(

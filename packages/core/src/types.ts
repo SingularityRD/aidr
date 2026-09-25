@@ -598,6 +598,27 @@ export const PromptProtectionConfigSchema = z.object({
 });
 
 /**
+ * Session toxic-flow ("lethal trifecta") and behavioral chain detection. See
+ * docs/toxic-flow.md. On by default; `action: "auto"` asks in balanced/relaxed
+ * and denies in paranoid.
+ */
+export const ToxicFlowConfigSchema = z.object({
+	enabled: z.boolean().default(true),
+	/** `auto` follows `sensitivity`; `monitor` records and logs without blocking. */
+	action: z.enum(["auto", "ask", "deny", "monitor"]).default("auto"),
+	/** How long a step keeps counting toward a chain. */
+	window_minutes: z.number().int().min(1).max(1440).default(60),
+	/** Distinct sensitive files/credential stores in the window that trigger `bulk_sensitive_access`. */
+	bulk_sensitive_threshold: z.number().int().min(2).max(64).default(5),
+	/** Extra destination domains (suffix match) a plain request to is not external communication. */
+	trusted_domains: z.array(z.string().min(1).max(253)).max(500).default([]),
+	/** MCP server ids whose output is not untrusted content (in addition to `policy.mcp.allow_servers`). */
+	trusted_mcp_servers: z.array(z.string().min(1).max(128)).max(200).default([]),
+	/** Git remote names a push to is not external communication. */
+	trusted_git_remotes: z.array(z.string().min(1).max(128)).max(50).default(["origin"]),
+});
+
+/**
  * @deprecated NVD lookup is no longer wired into the runtime.
  * @public
  */
@@ -663,6 +684,7 @@ export const ConfigSchema = z.object({
 	package_check: PackageCheckConfigSchema.default({}),
 	amsi_check: AmsiCheckConfigSchema.default({}),
 	prompt_protection: PromptProtectionConfigSchema.default({}),
+	toxic_flow: ToxicFlowConfigSchema.default({}),
 	/** @deprecated Accepted for configuration compatibility; not used at runtime. */
 	nvd_check: NvdConfigSchema.default({}),
 	heuristics_enabled: z.boolean().default(true),
@@ -706,6 +728,7 @@ export type PackageCheckConfig = z.infer<typeof PackageCheckConfigSchema>;
 export type AmsiCheckConfig = z.infer<typeof AmsiCheckConfigSchema>;
 export type PromptProtectionMode = z.infer<typeof PromptProtectionModeSchema>;
 export type PromptProtectionConfig = z.infer<typeof PromptProtectionConfigSchema>;
+export type ToxicFlowConfig = z.infer<typeof ToxicFlowConfigSchema>;
 /**
  * @deprecated NVD lookup is no longer wired into the runtime.
  * @public

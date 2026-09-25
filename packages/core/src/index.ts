@@ -1087,6 +1087,14 @@ export {
 } from "./terminal-text.js";
 // Threat loader
 export { loadThreats, loadThreatsFromDirs } from "./threat-loader.js";
+// Session toxic-flow ("lethal trifecta") and behavioral chain detection
+export {
+	recordToolOutputFlow,
+	TOXIC_FLOW_THREAT_IDS,
+	type ToolOutputFlowInput,
+	type ToolOutputFlowResult,
+	type ToxicFlowChain,
+} from "./toxic-flow.js";
 export type {
 	DetectionPhaseAttributes,
 	SecurityDecisionAttributes,
@@ -1156,6 +1164,7 @@ export type {
 	SignalSources,
 	Threat,
 	ThreatData,
+	ToxicFlowConfig,
 	TrustedDomain,
 	UrlCheckConfig,
 	UrlCheckFinding,

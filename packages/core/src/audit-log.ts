@@ -88,6 +88,8 @@ const AUDITED_ALLOW_CATEGORIES: ReadonlySet<string> = new Set([
 	"dlp_redacted",
 	"prompt_protection",
 	"prompt_protection_warning",
+	"toxic_flow_monitor",
+	"toxic_flow_unavailable",
 ]);
 
 function toolInputSummary(toolName: string, toolInput: Record<string, unknown>): string {
