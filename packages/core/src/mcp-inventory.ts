@@ -13,6 +13,12 @@ export interface McpInventoryItem {
 	riskHints: string[];
 	configurationSha256: string;
 	status: "known" | "unknown";
+	/**
+	 * Claude Code project the server is scoped to (a key of `projects` in
+	 * `~/.claude.json`), as written in that file. Absent for servers declared at
+	 * the top level of a configuration file.
+	 */
+	projectPath?: string;
 }
 
 function riskHintsFor(entry: { command?: unknown; url?: unknown; args?: unknown }): string[] {
@@ -72,6 +78,7 @@ function inventoryItemFromEntry(
 	name: string,
 	raw: unknown,
 	sourcePath: string,
+	projectPath?: string,
 ): McpInventoryItem | null {
 	const rec = asRecord(raw);
 	if (!rec) return null;
@@ -104,6 +111,7 @@ function inventoryItemFromEntry(
 		riskHints,
 		configurationSha256: createHash("sha256").update(JSON.stringify(rec)).digest("hex"),
 		status: riskHints.length > 0 ? "unknown" : "known",
+		...(projectPath !== undefined ? { projectPath } : {}),
 	};
 }
 
@@ -120,12 +128,13 @@ type ParsedServerRecords = Pick<ParsedServers, "items" | "skippedNames">;
 function parseServerRecord(
 	servers: Record<string, unknown> | null | undefined,
 	sourcePath: string,
+	projectPath?: string,
 ): ParsedServerRecords {
 	if (!servers) return { items: [], skippedNames: [] };
 	const items: McpInventoryItem[] = [];
 	const skippedNames: string[] = [];
 	for (const [name, raw] of Object.entries(servers)) {
-		const item = inventoryItemFromEntry(name, raw, sourcePath);
+		const item = inventoryItemFromEntry(name, raw, sourcePath, projectPath);
 		if (item) items.push(item);
 		else skippedNames.push(name);
 	}
@@ -142,7 +151,8 @@ function parseMcpServers(data: unknown, sourcePath: string): ParsedServers {
 		(Object.hasOwn(root, "servers") && !asRecord(root.servers)) ||
 		(Object.hasOwn(root, "mcp") && !nestedMcp) ||
 		(nestedMcp && Object.hasOwn(nestedMcp, "servers") && !asRecord(nestedMcp.servers))
-	) throw new Error("invalid_mcp_server_map");
+	)
+		throw new Error("invalid_mcp_server_map");
 	const nestedMcpServers = asRecord(nestedMcp?.servers);
 	const hasNestedMcpServers = nestedMcp !== null && Object.hasOwn(nestedMcp, "servers");
 	const candidates = [
@@ -181,6 +191,90 @@ function parseMcpServers(data: unknown, sourcePath: string): ParsedServers {
 		skippedNames: [...skippedNames],
 		supportedShape: candidates.some((servers) => servers !== null),
 	};
+}
+
+/**
+ * Claude Code's user configuration (`~/.claude.json`), read with its own
+ * schema: user-scoped servers live in `mcpServers` and local (per-project)
+ * servers in `projects["<absolute path>"].mcpServers`. The file mostly holds
+ * unrelated settings, so only those keys are read, and a file with neither is
+ * an ordinary configuration with zero servers.
+ *
+ * A project server identical (same name and configuration) to a user-scoped
+ * server is the same server and is reported once, at user scope. A project
+ * server that overrides a user-scoped name with a different configuration is a
+ * distinct server and is kept, labelled with its project.
+ */
+function parseClaudeUserConfig(root: Record<string, unknown>, sourcePath: string): ParsedServers {
+	if (Object.hasOwn(root, "mcpServers") && !asRecord(root.mcpServers)) {
+		throw new Error("invalid_mcp_server_map");
+	}
+	const projects = asRecord(root.projects);
+	if (Object.hasOwn(root, "projects") && !projects) throw new Error("invalid_claude_projects_map");
+
+	const user = parseServerRecord(asRecord(root.mcpServers), sourcePath);
+	const userConfigurations = new Map(
+		user.items.map((item) => [item.name, item.configurationSha256]),
+	);
+	const items = [...user.items];
+	const skippedNames = [...user.skippedNames];
+	for (const [projectPath, rawProject] of Object.entries(projects ?? {})) {
+		const parsed = parseClaudeProjectServers(rawProject, sourcePath, projectPath);
+		skippedNames.push(...parsed.skippedNames);
+		items.push(
+			...parsed.items.filter(
+				(item) => userConfigurations.get(item.name) !== item.configurationSha256,
+			),
+		);
+	}
+	return { items, skippedNames, supportedShape: true };
+}
+
+/** One `projects["<path>"]` entry of `~/.claude.json`; a project without servers is empty. */
+function parseClaudeProjectServers(
+	rawProject: unknown,
+	sourcePath: string,
+	projectPath: string,
+): ParsedServerRecords {
+	const project = asRecord(rawProject);
+	if (!project) throw new Error("invalid_claude_project_entry");
+	if (!Object.hasOwn(project, "mcpServers")) return { items: [], skippedNames: [] };
+	const servers = asRecord(project.mcpServers);
+	if (!servers) throw new Error("invalid_mcp_server_map");
+	return parseServerRecord(servers, sourcePath, projectPath);
+}
+
+/**
+ * How a configuration file is interpreted.
+ *
+ * - `claude-user`: `~/.claude.json`, read with its own schema.
+ * - `host`: a known agent-host MCP configuration file (Claude Code project
+ *   `.mcp.json`, Claude Desktop, Cursor, VS Code, OpenCode, OpenClaw). Hosts
+ *   create or share these files without an MCP key when no server is
+ *   configured, so a missing key means zero servers, not an unreadable source.
+ * - `generic`: any other file (an explicit `--config` or policy inventory
+ *   path). Without a recognised server map it cannot be told apart from a file
+ *   of an unsupported format, so it stays a coverage gap.
+ *
+ * In every format, unparseable JSON and a server map of the wrong type are
+ * invalid.
+ */
+type McpConfigFormat = "claude-user" | "host" | "generic";
+
+const HOST_MCP_CONFIG_PATTERNS: readonly RegExp[] = [
+	/(?:^|\/)\.mcp\.json$/,
+	/(?:^|\/)claude_desktop_config\.json$/,
+	/(?:^|\/)\.cursor\/(?:mcp|config)\.json$/,
+	/(?:^|\/)\.vscode\/mcp\.json$/,
+	/(?:^|\/)(?:Code|Code - Insiders|VSCodium)\/User\/mcp\.json$/,
+	/(?:^|\/)opencode\.jsonc?$/,
+	/(?:^|\/)openclaw\.json$/,
+];
+
+function mcpConfigFormat(path: string): McpConfigFormat {
+	const normalized = path.replaceAll("\\", "/");
+	if (/(?:^|\/)\.claude\.json$/.test(normalized)) return "claude-user";
+	return HOST_MCP_CONFIG_PATTERNS.some((pattern) => pattern.test(normalized)) ? "host" : "generic";
 }
 
 export type McpInventorySourceStatus = "read" | "missing" | "invalid";
@@ -243,11 +337,14 @@ async function readInventorySource(path: string): Promise<InventorySourceRead> {
 		if (content.length > 2 * 1024 * 1024) throw new Error("inventory_source_too_large");
 		const parsed = parseJsonc(content);
 		if (parsed.status !== "ok") throw new Error(`invalid_inventory_json:${parsed.error}`);
-		if (!asRecord(parsed.value) || Array.isArray(parsed.value)) {
-			throw new Error("invalid_inventory_root");
+		const root = asRecord(parsed.value);
+		if (!root) throw new Error("invalid_inventory_root");
+		const format = mcpConfigFormat(path);
+		const servers =
+			format === "claude-user" ? parseClaudeUserConfig(root, path) : parseMcpServers(root, path);
+		if (!servers.supportedShape && format === "generic") {
+			throw new Error("unsupported_inventory_shape");
 		}
-		const servers = parseMcpServers(parsed.value, path);
-		if (!servers.supportedShape) throw new Error("unsupported_inventory_shape");
 		return {
 			status: "read",
 			items: servers.items,
