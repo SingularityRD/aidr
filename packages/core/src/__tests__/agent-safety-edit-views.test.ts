@@ -20,6 +20,11 @@ import { normalizeToolEvaluationRequest } from "../tool-normalization.js";
 import { loadEngine } from "./test-helper.js";
 import { makeTmpDir, removeTmpDir } from "./test-utils.js";
 
+// Agent-edit fixture text that adds a Vitest skip. Assembled at runtime so the
+// mandatory-skip gate (scripts/check-mandatory-skips.mjs) does not read the
+// fixture string as a skip in this suite.
+const IT_SKIP = ["it", "skip"].join(".");
+
 let engine: HeuristicsEngine;
 let dir: string;
 
@@ -98,7 +103,7 @@ describe("test weakening (test_code view)", () => {
 			await edit(
 				"src/auth.test.ts",
 				"it('logs in', async () => {",
-				"it.skip('logs in', async () => {",
+				`${IT_SKIP}('logs in', async () => {`,
 			),
 		).toContain("CLT-AGENT-RH-101");
 		expect(
@@ -114,14 +119,14 @@ describe("test weakening (test_code view)", () => {
 	});
 
 	it("does not flag skips outside test files or edits to an already skipped test", async () => {
-		expect(await edit("src/router.ts", "const a = 1;", "it.skip('x', () => {});")).not.toContain(
+		expect(await edit("src/router.ts", "const a = 1;", `${IT_SKIP}('x', () => {});`)).not.toContain(
 			"CLT-AGENT-RH-101",
 		);
 		expect(
 			await edit(
 				"src/auth.test.ts",
-				"it.skip('logs in', async () => {\n  await login();",
-				"it.skip('logs in', async () => {\n  await login('user');",
+				`${IT_SKIP}('logs in', async () => {\n  await login();`,
+				`${IT_SKIP}('logs in', async () => {\n  await login('user');`,
 			),
 		).toEqual([]);
 	});
@@ -213,7 +218,7 @@ describe("test weakening (test_code view)", () => {
 				file_path: "src/a.test.ts",
 				edits: [
 					{ old_string: "const a = 1;", new_string: "const a = 2;" },
-					{ old_string: "it('b', () => {", new_string: "it.skip('b', () => {" },
+					{ old_string: "it('b', () => {", new_string: `${IT_SKIP}('b', () => {` },
 				],
 			}),
 		).toContain("CLT-AGENT-RH-101");

@@ -764,7 +764,7 @@ export const AiSupplyChainConfigSchema = z.object({
  * docs/toxic-flow.md. On by default; `action: "auto"` asks in balanced/relaxed
  * and denies in paranoid.
  */
-export const ToxicFlowConfigSchema = z.object({
+const ToxicFlowConfigSchema = z.object({
 	enabled: z.boolean().default(true),
 	/** `auto` follows `sensitivity`; `monitor` records and logs without blocking. */
 	action: z.enum(["auto", "ask", "deny", "monitor"]).default("auto"),

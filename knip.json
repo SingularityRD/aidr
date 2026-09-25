@@ -38,6 +38,7 @@
 				"scripts/run-evidence-gates.mjs",
 				"scripts/run-ide-host-e2e.mjs",
 				"scripts/sign-artifact-manifest.mjs",
+				"scripts/sync-governance-frameworks.mjs",
 				"scripts/verify-customer-kit.mjs",
 				"scripts/verify-deployment-recovery.mjs",
 				"scripts/verify-enterprise-operations.mjs",

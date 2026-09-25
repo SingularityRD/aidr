@@ -124,7 +124,7 @@ function bound(text: string): string {
 	return redacted;
 }
 
-/** Collapse home-directory spellings so `~/.aws/x`, `$HOME/.aws/x` and `/home/u/.aws/x` agree. */
+/** Collapse home-directory spellings so `~/.aws/x`, `$HOME/.aws/x` and `/home/<user>/.aws/x` agree. */
 export function normalizeFlowPath(raw: string): string {
 	let path = raw.trim().replace(/^["'`]+|["'`]+$/g, "");
 	path = path.replace(/^(?:\$HOME|\$\{HOME\}|%USERPROFILE%)(?=[\\/]|$)/i, "~");
@@ -209,7 +209,7 @@ function isExfilSink(url: string, host: string, patterns: FlowCapabilityPatterns
  * Whether a URL itself carries a payload: a long query/fragment, or a long
  * unbroken token in it. Documentation links (`?q=foo`) do not; `?k=<base64>` does.
  */
-export function urlCarriesData(url: string): boolean {
+function urlCarriesData(url: string): boolean {
 	try {
 		const parsed = new URL(url);
 		const tail = `${parsed.search}${parsed.hash}`;
@@ -938,7 +938,7 @@ function commandText(input: Record<string, unknown>, artifacts: readonly Artifac
 }
 
 /** `mcp__<server>__<tool>` → `{ server, tool }`; the host's generic `MCP` tool reads its input. */
-export function mcpToolIdentity(
+function mcpToolIdentity(
 	toolName: string,
 	toolInput: Record<string, unknown>,
 ): { server: string; tool: string } | null {

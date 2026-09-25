@@ -29,20 +29,20 @@ export type ChannelTarget =
 	| { type: "webhook"; url: string; secret: string }
 	| { type: "email"; recipients: string[] };
 
-export const MAX_EMAIL_RECIPIENTS = 10;
-export const MIN_WEBHOOK_SECRET_LENGTH = 32;
-export const MAX_WEBHOOK_SECRET_LENGTH = 256;
+const MAX_EMAIL_RECIPIENTS = 10;
+const MIN_WEBHOOK_SECRET_LENGTH = 32;
+const MAX_WEBHOOK_SECRET_LENGTH = 256;
 const MAX_URL_LENGTH = 2048;
 const ADDRESS = /^[^\s@<>"',;]+@[^\s@<>"',;]+\.[^\s@<>"',;]+$/;
 
 /** Slack incoming-webhook hosts (commercial and GovSlack). */
-export const SLACK_WEBHOOK_HOSTS = Object.freeze(["hooks.slack.com", "hooks.slack-gov.com"]);
+const SLACK_WEBHOOK_HOSTS = Object.freeze(["hooks.slack.com", "hooks.slack-gov.com"]);
 /**
  * Microsoft Teams incoming-webhook hosts: Power Automate / Workflows triggers
  * (`*.logic.azure.com`, `*.api.powerplatform.com`) and legacy Office 365
  * connectors (`*.webhook.office.com`).
  */
-export const TEAMS_WEBHOOK_HOST_SUFFIXES = Object.freeze([
+const TEAMS_WEBHOOK_HOST_SUFFIXES = Object.freeze([
 	".logic.azure.com",
 	".api.powerplatform.com",
 	".webhook.office.com",
@@ -117,7 +117,7 @@ export function checkTargetUrl(type: ChannelType, value: unknown):
 	return { ok: true, url };
 }
 
-export function isEmailAddress(value: unknown): value is string {
+function isEmailAddress(value: unknown): value is string {
 	return typeof value === "string" && value.length <= 254 && ADDRESS.test(value);
 }
 
@@ -185,7 +185,7 @@ export async function targetHint(target: ChannelTarget): Promise<string> {
 
 // ── Address classification ─────────────────────────────────────────────────
 
-export function parseIpv4(value: string): number[] | null {
+function parseIpv4(value: string): number[] | null {
 	const parts = value.split(".");
 	if (parts.length !== 4) return null;
 	const octets: number[] = [];
@@ -199,7 +199,7 @@ export function parseIpv4(value: string): number[] | null {
 }
 
 /** Parse an IPv6 literal (optionally with an embedded IPv4 tail) into 16 bytes. */
-export function parseIpv6(value: string): number[] | null {
+function parseIpv6(value: string): number[] | null {
 	let text = value.toLowerCase();
 	const zone = text.indexOf("%");
 	if (zone >= 0) text = text.slice(0, zone);

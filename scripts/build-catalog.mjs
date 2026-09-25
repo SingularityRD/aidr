@@ -59,7 +59,7 @@ export function parsePlanCatalog(source) {
 	return plans;
 }
 
-export async function loadContent() {
+async function loadContent() {
 	return import(pathToFileURL(path.join(SRC_DIR, "content.mjs")).href);
 }
 

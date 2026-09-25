@@ -41,7 +41,7 @@ const RULE_ID_BY_SERVICE: ReadonlyMap<string, number> = new Map(
 const BLOCKED_PAGE_PATH = "/blocked.html";
 /** A second report of the same refused navigation within this window is not counted. */
 const BLOCKED_DEDUPE_MS = 5_000;
-export const SHADOW_USAGE_LIMITS = Object.freeze({ retentionDays: 30, countMax: 100_000 });
+const SHADOW_USAGE_LIMITS = Object.freeze({ retentionDays: 30, countMax: 100_000 });
 
 /**
  * Services the policy blocks: every id in `blocked` (in any mode) plus, in
@@ -56,7 +56,7 @@ export function blockedServices(policy: ShadowAiPolicy): AiService[] {
 }
 
 /** Whether visits are counted (the administrator turned discovery on). */
-export const shadowAiObserved = (policy: ShadowAiPolicy): boolean => policy.mode !== "off";
+const shadowAiObserved = (policy: ShadowAiPolicy): boolean => policy.mode !== "off";
 
 /**
  * Host-permission origins the policy needs: every catalog origin when discovery is on
@@ -92,7 +92,7 @@ export async function applyShadowRules(
 }
 
 /** True when `rules` hold this module's navigation block for `service`. */
-export function shadowRuleInstalled(rules: readonly DnrRule[], service: AiService): boolean {
+function shadowRuleInstalled(rules: readonly DnrRule[], service: AiService): boolean {
 	const id = RULE_ID_BY_SERVICE.get(service.id);
 	return rules.some(
 		(r) =>

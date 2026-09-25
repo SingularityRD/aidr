@@ -50,11 +50,11 @@ export interface AiBomAgentInput {
 	state: string;
 }
 
-export interface AiInventoryAgent extends AiBomAgentInput {
+interface AiInventoryAgent extends AiBomAgentInput {
 	ref: string;
 }
 
-export interface AiInventoryMcpCategory {
+interface AiInventoryMcpCategory {
 	id: string;
 	name: string;
 	matched: boolean;
@@ -98,11 +98,11 @@ export interface AiInventoryPackage extends AiProjectPackage {
 		| "cve_index_unavailable";
 }
 
-export interface AiInventoryModelFile extends AiProjectModelFile {
+interface AiInventoryModelFile extends AiProjectModelFile {
 	ref: string;
 }
 
-export interface AiInventoryPlugin {
+interface AiInventoryPlugin {
 	ref: string;
 	key: string;
 	version: string;
@@ -112,7 +112,7 @@ export interface AiInventoryPlugin {
 	finding_count: number;
 }
 
-export interface AiInventoryInfrastructure {
+interface AiInventoryInfrastructure {
 	ref: string;
 	endpoint: string;
 	reachable: boolean;
@@ -134,7 +134,7 @@ export interface AiInventoryVulnerability {
 	affects: Array<{ ref: string; version: string | null }>;
 }
 
-export type AiSourceStatus = "read" | "missing" | "invalid" | "not_configured";
+type AiSourceStatus = "read" | "missing" | "invalid" | "not_configured";
 
 export interface AiInventoryCoverage {
 	mcp: {

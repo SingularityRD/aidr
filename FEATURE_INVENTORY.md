@@ -1,6 +1,6 @@
 # AIDR alt özellik envanteri
 
-Otomatik üretim tarihi: **2026-09-25**. 90 alt özellik ve teslimat gereksinimi eşlendi: 51 çalışan kod akışına bağlı, 37 kısmi, 0 eksik, 2 dış kanıta bağlı. Bu sayılar üretim kabulü veya tespit başarım oranı değildir. Satış/GA kararı **NO-GO** olarak korunur.
+Otomatik üretim tarihi: **2026-09-25**. 109 alt özellik ve teslimat gereksinimi eşlendi: 66 çalışan kod akışına bağlı, 41 kısmi, 0 eksik, 2 dış kanıta bağlı. Bu sayılar üretim kabulü veya tespit başarım oranı değildir. Satış/GA kararı **NO-GO** olarak korunur.
 
 Makine kaydı: [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json). Kaynaklar, tüketen bileşenler ve her satırın kalan işi bu dosyada bulunur. Önceki PRODUCT_SCOPE_AND_FEATURES.md dosyasındaki modül erişilebilirlik sayıları tarihsel bir ara denetime aittir.
 
@@ -29,6 +29,12 @@ Makine kaydı: [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json). Kaynaklar, tük
 | DET-12 | [Package and plugin supply chain](packages/core/src/package-checker.ts) | partial | Registry/provider provenance and customer dependency corpus still need acceptance |
 | DET-13 | [TR/EN privacy detectors in core DLP](packages/core/src/dlp/privacy-detectors.ts) | wired | Address/person detectors are heuristic and opt-in; Turkish/English customer corpus calibration and false-positive acceptance remain open |
 | DET-14 | [Prompt protection and DLP input redaction](packages/core/src/prompt-protection.ts) | partial | Prompt protection exists only for Claude Code; Codex, Cursor, VS Code and OpenClaw keep redact as deny; with PII in the default warn mode a prompt that could not be fully inspected is still sent with a notice; the rewrite contract is verified locally against one Claude Code version and still needs native host-version acceptance |
+| DET-15 | [Session toxic-flow and behavioral chain detection](packages/core/src/toxic-flow.ts) | wired | Classification is heuristic and one level deep (bash -c, eval, argv, common prefixes); a custom binary that uploads data is not recognised as external communication, taint does not cross agent sessions or follow a moved/renamed download, and false-positive rates on real agent sessions are unmeasured |
+| DET-16 | [Data and context poisoning protection](threats/context-poisoning.yaml) | partial | Pattern-based: a paraphrased instruction without a covered signal is caught only by the path-based review; shell writes built at run time are not attributed; tool descriptions are visible only through the MCP gateway or signed manifests; Codex has no read-time layer and enforces ask as deny; PyPI adoption uses release count because it has no download API |
+| DET-17 | [Canary credentials (honeytokens)](threats/canary.yaml) | wired | A split, reversed or encrypted value is not recognised (base64 only from the start of the run); directory-wide reads that do not name a decoy are caught only in the tool output; relative paths match by trailing segments; Browser Guard treats decoys as ordinary secrets |
+| DET-18 | [Agent-safety guardrails for autonomous agents](threats/agent-safety.yaml) | wired | Shell rules see the command line, not what a script it runs does; diff-aware checks read the previous file from disk (regular files up to 1 MiB); a force-push without a branch name cannot be tied to a protected branch; repeated-failure detection depends on the host reporting failures; efficacy on real agent sessions is unmeasured |
+| DET-19 | [AI model supply-chain and secure-code guardrails](threats/ai-supply-chain.yaml) | wired | Pattern rules over the written text: no cross-file data flow or renamed imports, model files themselves are not inspected, and the secure-code findings are advisory warnings, not a static-analysis or secure-code certification |
+| DET-20 | [Prompt jailbreak and content-safety policy](packages/core/src/prompt-safety.ts) | wired | Phrase and pattern based, not a moderation model; the default is warn rather than block, a connector build that predates the prompt_safety field rejects a provisioned payload carrying it (and fails closed), so connectors must be upgraded first, and false-positive/evasion rates on customer prompts are unmeasured |
 
 ## MCP
 
@@ -50,6 +56,8 @@ Makine kaydı: [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json). Kaynaklar, tük
 | INF-02 | [Scan report to runtime policy](packages/core/src/aig-policy.ts) | wired | Opt-in, scoped origins; report file is a trusted local administrative input |
 | INF-03 | [Continuous fleet discovery](packages/cli/src/commands/collect.ts) | partial | Cloud/MDM provider adapters, customer-approved scopes/credentials, customer-activated production scheduling and alert/paging delivery, and customer field acceptance remain open |
 | INF-04 | [AI security posture findings](threats/skill-scan.yaml) | wired | A deterministic pattern port of the AIG taxonomy, not AIG's model-driven scanner; coverage is limited to what an enrolled collector uploads, and detection efficacy on real customer skills/plugins is unmeasured |
+| INF-05 | [AI Bill of Materials (CycloneDX 1.6)](packages/core/src/aibom/cyclonedx.ts) | wired | Project root only (no nested workspaces or transitive lockfile-only packages), npm and PyPI only, MCP risk categories are name-based indicators, model files are not hashed, and a component outside the CVE index is marked not_in_cve_index rather than clean |
+| INF-06 | [Agent environment and autonomy posture](packages/core/src/agent-environment-posture.ts) | partial | A configuration snapshot, not proof of how a session was launched (a command-line flag can override config); Cursor/VS Code auto-run, OpenClaw sandbox and Gemini CLI/Aider autonomy settings are not read, and cloud credential privilege is not assessed |
 
 ## Response
 
@@ -63,6 +71,7 @@ Makine kaydı: [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json). Kaynaklar, tük
 | RSP-06 | [Fleet kill switch and credential revoke](supabase/functions/revocations/index.ts) | partial | No installed endpoint service, verified OS isolation adapter, device attestation or cross-provider credential revocation |
 | RSP-07 | [SOAR playbook orchestration](supabase/functions/response-playbooks/index.ts) | partial | Not production accepted or connected to an alert/AutoSecOps trigger. A separately installed endpoint worker and verified host adapter are not provisioned or customer-validated; host permissions and native acceptance, external SOAR/provider connectors, credential revocation and rollback remain unsupported or open |
 | RSP-08 | [Out-of-band operator approvals and operator CLI](packages/core/src/operator-approvals.ts) | wired | Approval is local to one host and OS user: there is no central/multi-approver workflow. The agent runs as the same OS user, so separation rests on the OS vault's own access policy and on pattern-based self-defense rules, not on process isolation; a shell construct the normaliser does not model, or a vault that releases secrets to any process of the user without a prompt, can still expose the channel. Real macOS/Windows/Linux vault behaviour, operator usability and native host acceptance remain open |
+| RSP-09 | [Managed-mode dashboard approvals](packages/core/src/dashboard-approvals.ts) | wired | Requires managed enrollment and a published policy carrying approval_public_keys; not exercised against a deployed control plane or real approver workflow; polling latency and multi-approver (four-eyes) approval for tool calls are not provided |
 
 ## Policy
 
@@ -73,6 +82,7 @@ Makine kaydı: [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json). Kaynaklar, tük
 | POL-03 | [Runtime publication and history](supabase/functions/policy-management/index.ts) | wired | Revision review, targeted staging, republish/rollback and transactional publication audit are implemented; native field acceptance remains |
 | POL-04 | [Native policy retrieval and cache](supabase/functions/policy/index.ts) | wired | Required policy uses a fixed offline grace and then denies; authorization failure or invalid policy cannot downgrade to local rules. Unenrolled devices retain local detection |
 | POL-05 | [Fleet adoption and rollout controls](supabase/functions/policy-ack/index.ts) | wired | Receipts report loaded configuration, not host attestation; legacy unbound keys need reenrollment. Native enforcement acceptance remains |
+| POL-06 | [Agent permission profiles](packages/core/src/agent-profile.ts) | wired | Command prefixes are coarse (a program an allowed prefix starts can do anything it does); shell words are checked lexically against files.deny; repository selection trusts the host-reported working directory; the dashboard shows templates and decisions but does not store or sign profiles |
 
 ## Endpoint
 
@@ -83,6 +93,7 @@ Makine kaydı: [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json). Kaynaklar, tük
 | CLI-03 | [Claude local installer](scripts/endpoint-install.mjs) | wired | Host restart/acceptance and authenticated signed distribution still required |
 | CLI-04 | [Enterprise fleet rollout](deploy/fleet/windows/README.md) | partial | Actual Intune/SCCM/Jamf execution and publisher signing acceptance remain external |
 | CLI-05 | [Local TR/EN privacy scan](packages/cli/src/commands/privacy.ts) | wired | A local operator/CI utility, not an enforcement point: it inspects only the input it is given; address and person detectors are heuristic, and false-positive rates on customer Turkish/English data are unmeasured |
+| CLI-06 | [Defensive detection self-test (aidr simulate)](packages/cli/src/commands/simulate.ts) | wired | Measures that the shipped rules still match their own fixtures, not efficacy against novel or customer-specific attacks; it is not an independent benchmark (EVAL-01) |
 
 ## Connectors
 
@@ -120,6 +131,16 @@ Makine kaydı: [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json). Kaynaklar, tük
 | OBS-04 | [SIEM delivery and native telemetry](packages/core/src/siem-delivery.ts) | partial | Customer SIEM configuration, scheduled worker, native source coverage and delivery receipt remain open |
 | OBS-05 | [Tamper and offline integrity](packages/core/src/integrity/verify.ts) | wired | External signer custody, distribution and adversarial host tests remain required |
 | OBS-06 | [Retention and deletion](supabase/migrations/20260912140000_tenant_offboarding_retention.sql) | partial | External backups and customer retention/offboarding acceptance remain outside live-data receipts |
+| OBS-07 | [Signed compliance evidence report](supabase/functions/compliance-report/index.ts) | wired | Supports KVKK/GDPR accountability but is not a certification or audit opinion; counts cover only telemetry that reached the control plane within retention; data-flow values marked unknown must be completed per deployment; only the JSON is signed |
+| OBS-08 | [Real-time alert integrations](supabase/functions/notification-channels/index.ts) | wired | Delivery depends on the deployment running the dispatcher schedule and a mail transport; no live Slack/Teams/customer receiver has been exercised; receivers must deduplicate retries |
+
+## Governance
+
+| Kimlik | Alt özellik | Durum | Kalan sınır / kabul işi |
+|---|---|---|---|
+| GOV-01 | [Detection framework mapping (OWASP LLM 2025, OWASP Agentic 2026, MITRE ATLAS)](threats/mappings/frameworks.yaml) | wired | A mapping of product rules to framework categories, not an assessment by the framework owners; coverage of a category says a rule exists, not how well it detects |
+| GOV-02 | [AI governance framework mapping, scorecard and scheduled summary](governance/frameworks/capabilities.yaml) | wired | Computed only from telemetry that reached the control plane within retention; organisational measures and other tools are invisible to it; the approver-review prompt is a timing heuristic; summaries need the deployment mail transport and maintenance timer |
+| GOV-03 | [AI asset register, intake, exceptions and four-eyes policy change control](supabase/functions/ai-governance/index.ts) | wired | Only MCP servers and Browser Guard sites are enforced; other asset types are records only; enforcement needs a published runtime policy and connectors that understand the governance block (older connectors ignore it); not exercised with a real customer approval workflow |
 
 ## Commercial
 
@@ -142,7 +163,7 @@ Makine kaydı: [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json). Kaynaklar, tük
 | DEP-06 | [Backup, restore and disaster recovery](scripts/deployment-backup.mjs) | partial | Real offsite provider, independent-host recovery and agreed RPO/RTO evidence remain open |
 | DEP-07 | [Availability and scale](deploy/dashboard/monitoring.mjs) | partial | Authenticated workload, HA, capacity, noisy-neighbor and monthly SLI remain unproved |
 | DEP-08 | [Portable installation candidate and doctor](scripts/customer-kit.mjs) | wired | Node 24/Docker/tar required; container images need network or a separate air-gap image delivery; publisher signatures remain external |
-| DEP-09 | [On-prem bundle, resource profiles, AIG sidecar and egress proxy](deploy/onprem/README.md) | partial | The Compose bundle is single-host (the Kubernetes chart is DEP-12); customer-host install, air-gap media transfer drill, sizing validation and customer TLS acceptance remain open |
+| DEP-09 | [On-prem bundle, resource profiles, posture scanner sidecar and egress proxy](deploy/onprem/README.md) | partial | The Compose bundle is single-host (the Kubernetes chart is DEP-12); customer-host install, air-gap media transfer drill, sizing validation and customer TLS acceptance remain open |
 | DEP-10 | [Vendor-signed offline licence and offline pack import](scripts/license-issue.mjs) | partial | The shipped public-key registry is intentionally empty and fails closed until a vendor signing key is generated and custodied; vendor key custody, licence issuance operations and a customer air-gap update drill remain external |
 | DEP-11 | [Download center and release manifest](packages/dashboard/src/ui/pages/DownloadsPage.tsx) | partial | No published release host or signed manifest exists yet; signatures depend on publisher key custody (DEP-05) and private registry delivery (COM-012) |
 | DEP-12 | [Kubernetes Helm chart for the self-hosted control plane](deploy/helm/aidr/Chart.yaml) | partial | Not exercised on a live cluster. CI does not install kubeconform, so schema validation there is skipped and is recorded only from development runs; without Helm the rendered checks skip (10 of 20 checks skipped in this review's local run). The chart does not deploy the device-start ingress signer or the maintenance timers, HA/failover is unproven (DEP-07) and customer cluster acceptance remains open |
@@ -160,8 +181,11 @@ Makine kaydı: [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json). Kaynaklar, tük
 | Kimlik | Alt özellik | Durum | Kalan sınır / kabul işi |
 |---|---|---|---|
 | PRV-01 | [Browser Guard prompt masking on AI chat sites](packages/browser-guard/src/content/guard.ts) | partial | Fixture pages are not the live sites: real-site DOM drift, store publication/review and customer browser acceptance remain open; text typed outside a recognised editor or sent by site-internal paths is not visible |
-| PRV-02 | [Paste and file-upload sanitisation](packages/browser-guard/src/content/file-guard.ts) | wired | Binary and office/PDF/image formats are not inspected (blocked only in block mode, otherwise allowed with a marker); large-file and real-site upload acceptance remain open |
+| PRV-02 | [Paste and file-upload sanitisation](packages/browser-guard/src/content/file-guard.ts) | wired | Images and other binary formats are not inspected (blocked only in block mode, otherwise allowed with a marker); Office and PDF uploads are handled by PRV-08; large-file and real-site upload acceptance remain open |
 | PRV-03 | [Exact-data match on customer datasets](packages/browser-guard/src/engine/exact-data.ts) | wired | Customer dataset onboarding, HMAC key custody/rotation and false-positive calibration remain open |
 | PRV-04 | [Managed browser policy and fleet deployment](packages/browser-guard/src/background/policy.ts) | partial | Real GPO/Intune/Jamf rollout, store or self-hosted signed distribution and a customer fleet run remain external |
 | PRV-05 | [Counts-only privacy telemetry and Privacy Guard dashboard](packages/browser-guard/src/background/telemetry.ts) | wired | No live browser fleet has reported into a deployed control plane; a policy-distributed ingest key is visible to the local user (for example at chrome://policy) and can send forged counts up to its rate and install limits; the data-flow/DPA approval for this telemetry (COM-003) remains open |
 | PRV-06 | [AIDR Privacy engine and optional native NER host](packages/privacy/src/rules.ts) | partial | Native host installation, NER/OCR accuracy and platform acceptance are unmeasured; privacy suites run separately via test:privacy with named optional-dependency skips |
+| PRV-07 | [Shadow AI discovery/control and custom internal AI sites](packages/browser-guard/src/background/shadow-ai.ts) | partial | Counting and blocking act only on origins the user granted; services on a path of a general-purpose host are not catalogued; a worker restart can count a visit twice; other browsers, desktop apps and API clients are not covered |
+| PRV-08 | [Office document masking and PDF scanning](packages/browser-guard/src/engine/office/ooxml.ts) | partial | No OCR (images in documents and scanned PDFs are not inspected); PDFs are never rewritten; encrypted PDFs and some CJK font encodings are not extracted; sheet names, defined names and pivot-cache values are not rewritten; legacy .doc/.xls/.ppt and OpenDocument follow the binary-file rule |
+| PRV-09 | [AI acceptable-use notice](packages/browser-guard/src/content/acceptable-use.ts) | wired | Informs and never blocks sending; coding-agent connectors do not show it; an acknowledgement made while telemetry is off is never reported |

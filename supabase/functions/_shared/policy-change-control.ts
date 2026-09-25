@@ -10,7 +10,7 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.116.0";
 import { corsJson } from "./cors.ts";
 
-export type PolicyChangeKind =
+type PolicyChangeKind =
 	| "runtime_publish"
 	| "runtime_publish_document"
 	| "runtime_restore"

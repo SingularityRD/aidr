@@ -21,7 +21,7 @@ import {
 } from "./lexer.js";
 
 type Matrix = readonly [number, number, number, number, number, number];
-export const IDENTITY: Matrix = [1, 0, 0, 1, 0, 0];
+const IDENTITY: Matrix = [1, 0, 0, 1, 0, 0];
 
 function mul(m1: Matrix, m2: Matrix): Matrix {
 	return [

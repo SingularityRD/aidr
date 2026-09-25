@@ -6,7 +6,7 @@
  */
 import type { EntityType, Finding, SignalCode } from "../../types.js";
 
-export interface ScanInput {
+interface ScanInput {
 	/** Detection context scanned in front of the value (column header), or "". */
 	readonly context: string;
 	readonly value: string;
@@ -14,7 +14,7 @@ export interface ScanInput {
 	readonly forced?: EntityType;
 }
 
-export interface SegmentScan {
+interface SegmentScan {
 	/** Sorted, non-overlapping findings per input, in value coordinates. */
 	readonly perSegment: readonly (readonly Finding[])[];
 	readonly signals: ReadonlySet<SignalCode>;

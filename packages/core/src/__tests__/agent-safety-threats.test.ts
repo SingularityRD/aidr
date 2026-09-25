@@ -9,6 +9,11 @@ import { DecisionEngine } from "../engine.js";
 import type { HeuristicsEngine } from "../heuristics.js";
 import { createMatcher, loadEngine } from "./test-helper.js";
 
+// Agent-edit fixture text that adds a Vitest skip. Assembled at runtime so the
+// mandatory-skip gate (scripts/check-mandatory-skips.mjs) does not read the
+// fixture string as a skip in this suite.
+const IT_SKIP = ["it", "skip"].join(".");
+
 const matchCommand = createMatcher("command");
 
 let engine: HeuristicsEngine;
@@ -193,7 +198,7 @@ describe("reward hacking / sabotage — shell commands", () => {
 		expectRule(
 			"CLT-AGENT-RH-009",
 			[
-				"sed -i 's/it(/it.skip(/' src/app.test.ts",
+				`sed -i 's/it(/${IT_SKIP}(/' src/app.test.ts`,
 				"sed -i '/expect(/d' src/app.test.ts",
 				"perl -pi -e 's/def test_/@pytest.mark.skip\\ndef test_/' tests/test_x.py",
 			],

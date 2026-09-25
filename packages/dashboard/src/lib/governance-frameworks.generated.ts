@@ -1,7 +1,7 @@
 // Generated from governance/frameworks/*.yaml; do not edit.
 // Regenerate: node scripts/sync-governance-frameworks.mjs --write
 
-export type GovernanceCoverage = "full" | "partial" | "customer-responsibility";
+type GovernanceCoverage = "full" | "partial" | "customer-responsibility";
 
 export interface GovernanceCapability {
 	readonly id: string;

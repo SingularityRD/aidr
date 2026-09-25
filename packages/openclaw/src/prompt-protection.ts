@@ -35,7 +35,7 @@ import {
 	resolvePromptInspectionDeadlineMs,
 } from "@singularityrd/aidr-core";
 
-export const OPENCLAW_PROMPT_EVENT = "before_agent_run";
+const OPENCLAW_PROMPT_EVENT = "before_agent_run";
 
 /** The host fails closed after 15 s; answer well before that. */
 const DEFAULT_PROMPT_DEADLINE_MS = 10_000;
@@ -78,7 +78,7 @@ export function toInputGateDecision(outcome: PromptInspectionOutcome): InputGate
 	};
 }
 
-export function promptWarningContext(
+function promptWarningContext(
 	outcome: Extract<PromptInspectionOutcome, { decision: "warn" }>,
 ): string {
 	return [

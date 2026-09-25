@@ -163,7 +163,7 @@ export function matchPoisoningRules(
 // ── Paths ─────────────────────────────────────────────────────────────────
 
 /** Lexically normalised, forward-slash form of a path for path-rule matching. */
-export function normalizeControlPath(path: string): string {
+function normalizeControlPath(path: string): string {
 	let value = path.trim().replace(/^["'`]+|["'`]+$/g, "");
 	if (value.startsWith("file://")) value = value.slice("file://".length);
 	value = value.replace(/\\/g, "/");

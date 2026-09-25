@@ -36,7 +36,7 @@ export class XmlError extends Error {
 	}
 }
 
-export interface XmlAttr {
+interface XmlAttr {
 	readonly name: string;
 	/** Decoded value. */
 	readonly value: string;
@@ -93,7 +93,7 @@ export function escapeXmlText(s: string): string {
 	return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-export function escapeXmlAttr(s: string, quote: '"' | "'"): string {
+function escapeXmlAttr(s: string, quote: '"' | "'"): string {
 	const out = s
 		.replace(/&/g, "&amp;")
 		.replace(/</g, "&lt;")
@@ -293,7 +293,7 @@ function preserves(set: ReadonlySet<string> | undefined, name: string): boolean 
 }
 
 /** Raw replacement for a leaf whose text becomes `text`. */
-export function leafReplacement(leaf: Leaf, text: string, preserve: boolean): RawReplacement {
+function leafReplacement(leaf: Leaf, text: string, preserve: boolean): RawReplacement {
 	if (preserve && /^\s|\s$/.test(text) && !hasPreserve(leaf.tag)) {
 		const open = `${leaf.open.slice(0, -1)} xml:space="preserve">`;
 		return { start: leaf.tag.start, end: leaf.contentEnd, raw: open + escapeXmlText(text) };
@@ -351,7 +351,7 @@ export function spliceEdits(value: string, edits: readonly Edit[]): string {
 	return out + value.slice(cursor);
 }
 
-export function attributeSegment(attr: XmlAttr): TextSegment {
+function attributeSegment(attr: XmlAttr): TextSegment {
 	return {
 		text: attr.value,
 		context: "",

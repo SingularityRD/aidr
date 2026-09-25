@@ -16,9 +16,9 @@ import type { ChromeApi, RegisteredContentScript } from "./storage.js";
 export const CUSTOM_SCRIPT_ID = "aidr-custom-sites";
 const CONTENT_SCRIPT_FILE = "content.js";
 
-export const originForHost = (host: string): string => `https://${host}/*`;
+const originForHost = (host: string): string => `https://${host}/*`;
 
-export function customSiteOrigins(site: CustomSiteConfig): string[] {
+function customSiteOrigins(site: CustomSiteConfig): string[] {
 	return site.hosts.map(originForHost);
 }
 

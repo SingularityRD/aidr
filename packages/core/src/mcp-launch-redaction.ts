@@ -22,7 +22,7 @@
 
 import { REDACTED_TELEMETRY_VALUE, redactTelemetryString } from "./telemetry-redaction.js";
 
-export const REDACTED_LAUNCH_VALUE = REDACTED_TELEMETRY_VALUE;
+const REDACTED_LAUNCH_VALUE = REDACTED_TELEMETRY_VALUE;
 
 const CREDENTIAL_NAME =
 	"(?:api[_-]?key|apikey|access[_-]?key|key|token|secret|password|passwd|pwd|credential|auth|bearer|cookie|signature|dsn|connection[_-]?string)";

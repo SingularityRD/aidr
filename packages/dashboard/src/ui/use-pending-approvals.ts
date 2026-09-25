@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { countPendingApprovals } from "../lib/approvals";
 
-export const PENDING_APPROVALS_REFRESH_MS = 30_000;
+const PENDING_APPROVALS_REFRESH_MS = 30_000;
 
 /**
  * Pending approval count for the navigation badge. `tenantId` null disables

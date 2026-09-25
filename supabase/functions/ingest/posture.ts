@@ -35,10 +35,10 @@ const FINDING_KINDS = new Set([
 	"agent_config",
 ]);
 // Mirrors AGENT_HOSTS / AGENT_POSTURE_CHECKS in packages/core/src/agent-environment-posture.ts.
-export const AGENT_HOSTS = [
+const AGENT_HOSTS = [
 	"claude-code", "cursor", "vscode", "codex", "opencode", "openclaw", "gemini-cli", "aider", "environment",
 ] as const;
-export const AGENT_POSTURE_CHECKS = [
+const AGENT_POSTURE_CHECKS = [
 	"permission_bypass_mode", "broad_shell_allow_rule", "hooks_disabled", "aidr_hook_missing",
 	"no_aidr_connector", "approval_policy_never", "sandbox_full_access", "permission_allow_all",
 	"running_as_root", "docker_socket_writable", "cloud_credentials_in_env", "no_devcontainer",

@@ -310,8 +310,9 @@ assessments:
     AML.T0101:
       status: covered
       rationale: >-
-        Recursive root/home/system deletion, disk formatting and wiping, backup and shadow-copy
-        deletion and deletion of .env, database and .git data are denied or held.
+        Recursive deletion of the root, home or system directories, disk formatting and wiping,
+        backup and shadow-copy deletion and deletion of .env, database and .git data are denied
+        or held.
     AML.T0110.000:
       status: partial
       rationale: Instruction-hijack and hidden-instruction text in skill instruction files is flagged before use.

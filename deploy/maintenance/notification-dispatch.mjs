@@ -16,7 +16,7 @@ import { pathToFileURL } from "node:url";
 const MIN_TOKEN_LENGTH = 32;
 const COUNT_FIELDS = ["claimed", "delivered", "retrying", "dead", "lease_lost"];
 
-export function readEnvFile(path) {
+function readEnvFile(path) {
 	const values = {};
 	for (const line of readFileSync(path, "utf8").split(/\r?\n/)) {
 		const match = /^([A-Z][A-Z0-9_]*)=(.*)$/.exec(line);

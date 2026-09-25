@@ -26,6 +26,7 @@ import {
 	STATUS,
 	STEPS,
 	TOOL_SOURCES,
+	blockingDependency,
 	buildReport,
 	ciRunTokens,
 	computeDrift,
@@ -320,6 +321,39 @@ test("the summary table lists SKIPPED steps with the missing prerequisite and fi
 	assert.match(text, /opt-in, as in CI \(select with --only real-host-e2e\): real-e2e/u);
 	assert.match(text, /RESULT: FAIL \(exit 1\)$/u);
 	assert.match(formatSummary([result("a", STATUS.PASS)]), /RESULT: PASS \(exit 0\)$/u);
+});
+
+test("every step dependency names an earlier step, and the release consumers wait for build-release", () => {
+	const order = STEPS.map((entry) => entry.id);
+	for (const entry of STEPS) {
+		for (const id of entry.after ?? []) {
+			assert.ok(order.includes(id), `${entry.id} depends on unknown step ${id}`);
+			assert.ok(order.indexOf(id) < order.indexOf(entry.id), `${entry.id} must run after ${id}`);
+		}
+	}
+	for (const id of ["package-install", "route-smoke"]) {
+		assert.deepEqual(STEPS.find((entry) => entry.id === id).after, ["build-release"]);
+	}
+});
+
+test("a failed or not-run dependency blocks its consumers; an unselected or skipped one does not", () => {
+	const consumer = { id: "route-smoke", after: ["build-release"] };
+	assert.equal(blockingDependency(consumer, [result("build-release", STATUS.FAIL)]), "build-release");
+	assert.equal(blockingDependency(consumer, [result("build-release", STATUS.NOT_RUN)]), "build-release");
+	assert.equal(blockingDependency(consumer, [result("build-release", STATUS.PASS)]), null);
+	assert.equal(blockingDependency(consumer, [result("build-release", STATUS.SKIPPED)]), null);
+	assert.equal(blockingDependency(consumer, []), null);
+	assert.equal(blockingDependency({ id: "lint" }, [result("build-release", STATUS.FAIL)]), null);
+});
+
+test("the summary names steps blocked by a dependency separately from a stop", () => {
+	const text = formatSummary([
+		result("build-release", STATUS.FAIL, { note: "exit 1" }),
+		result("route-smoke", STATUS.NOT_RUN, { note: "blocked: build-release did not complete", blockedBy: "build-release" }),
+	]);
+	assert.match(text, /NOT RUN \(1\) because a step they consume did not complete in this run:\n {2}- route-smoke: needs build-release/u);
+	assert.doesNotMatch(text, /after the first required failure/u);
+	assert.match(text, /RESULT: FAIL \(exit 1\)$/u);
 });
 
 test("the JSON report carries per-step status, duration, reason and exit code", () => {

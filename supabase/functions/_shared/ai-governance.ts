@@ -105,7 +105,7 @@ function uuid(value: unknown): string | null {
 }
 
 /** 1..max characters after trimming; newlines and tabs allowed, other controls refused. */
-export function boundedText(value: unknown, max: number): string | null {
+function boundedText(value: unknown, max: number): string | null {
 	if (typeof value !== "string") return null;
 	const trimmed = value.trim();
 	if (trimmed.length < 1 || trimmed.length > max || CONTROL_EXCEPT_NEWLINE_TAB.test(trimmed)) return null;
@@ -123,10 +123,10 @@ const EXCEPTION_FIELDS = new Set([
 	"asset_id", "scope_kind", "scope_user_ids", "scope_agent_ids", "justification", "expires_at",
 ]);
 
-export const ASSET_TYPES = ["coding_agent", "mcp_server", "ai_site", "model_service"] as const;
-export const ASSET_STATUSES = ["proposed", "approved", "restricted", "banned", "retired"] as const;
-export const RISK_TIERS = ["unassessed", "minimal", "limited", "high", "prohibited"] as const;
-export const DATA_CATEGORIES = ["personal_data", "special_category", "source_code", "secrets", "customer_data"] as const;
+const ASSET_TYPES = ["coding_agent", "mcp_server", "ai_site", "model_service"] as const;
+const ASSET_STATUSES = ["proposed", "approved", "restricted", "banned", "retired"] as const;
+const RISK_TIERS = ["unassessed", "minimal", "limited", "high", "prohibited"] as const;
+const DATA_CATEGORIES = ["personal_data", "special_category", "source_code", "secrets", "customer_data"] as const;
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,255}$/;
 
 /**

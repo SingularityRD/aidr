@@ -298,6 +298,24 @@ extend a step in the catalog (or list it in `CI_ONLY_STEPS` with a reason).
 SKIPPED section - never as PASS and never silently. Only required failures make the
 exit code non-zero (`--strict` also fails on skips).
 
+**Step dependencies (NOT RUN).** `package-install` and `route-smoke` consume what
+`build-release` writes (the release `dist/` trees and the dashboard build). In `ci.yml`
+a failed `pnpm quality:gate` ends the job before they run, so with `--keep-going` they
+are reported `NOT RUN` ("needs build-release") when `build-release` failed in the same
+run, instead of failing a second time on missing or stale development artefacts.
+Selected on their own (`--only route-smoke`), they run against whatever is on disk.
+
+**Unsigned release builds and signed-release evidence.** `pnpm build:release` (and
+therefore `ci.yml`'s quality gate and `ci:local`) writes unsigned `dist/` manifests.
+The package-level `packages/claude-code/aidr-artifact.manifest.json` and every
+`aidr-artifact.manifest.sig` are written only by the signing workflow
+(`release-rc.yml`). `pnpm verify:package-install` therefore checks everything else in
+an unsigned build and reports the absent signed-release evidence as an explicit
+`SKIPPED_WITH_REASON` line (never a pass); shipping only part of that set still fails.
+Signed-release mode (`node scripts/verify-package-install.mjs --require-signed`, also
+on whenever `AIDR_SIGNING_PUBLIC_KEY_PEM_PATH` is set, as in the release-rc
+clean-consumer gate) requires every declared signature and package manifest.
+
 | Prerequisite | Steps | Without it |
 |--------------|-------|------------|
 | Docker CLI + compose v2 | `onprem-compose` | SKIPPED |

@@ -33,8 +33,8 @@ export const CODEX_USER_PROMPT_SUBMIT = "UserPromptSubmit" as const;
  * the hook answers itself first. The documented registration uses `timeout = 10`;
  * `AIDR_PROMPT_INSPECTION_DEADLINE_MS` may override the deadline within [100, 9000].
  */
-export const DEFAULT_CODEX_PROMPT_DEADLINE_MS = 7_000;
-export const MAX_CODEX_PROMPT_DEADLINE_MS = 9_000;
+const DEFAULT_CODEX_PROMPT_DEADLINE_MS = 7_000;
+const MAX_CODEX_PROMPT_DEADLINE_MS = 9_000;
 
 /** UserPromptSubmit output (`user-prompt-submit.command.output.schema.json`). */
 export interface CodexPromptWireOutput {

@@ -18,7 +18,7 @@ function u32(n) {
 }
 
 /** A ZIP with deflated entries (what Word writes). */
-export function zip(files) {
+function zip(files) {
 	const locals = [];
 	const centrals = [];
 	let offset = 0;

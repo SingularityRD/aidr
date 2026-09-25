@@ -30,7 +30,7 @@ export type CanaryKind = (typeof CANARY_KINDS)[number];
 
 /** Shortest token core the detector hashes; every generated token is at least this long. */
 export const MIN_CANARY_TOKEN_LENGTH = 20;
-export const MAX_CANARY_TOKEN_LENGTH = 128;
+const MAX_CANARY_TOKEN_LENGTH = 128;
 
 const HEX_DIGEST = /^[a-f0-9]{64}$/;
 
@@ -62,7 +62,6 @@ const CanaryRegistrySchema = z
 	})
 	.strict();
 
-export type CanaryTokenDigest = z.infer<typeof CanaryTokenDigestSchema>;
 export type CanaryRecord = z.infer<typeof CanaryRecordSchema>;
 export type CanaryRegistry = z.infer<typeof CanaryRegistrySchema>;
 

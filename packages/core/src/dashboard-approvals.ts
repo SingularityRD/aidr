@@ -482,10 +482,10 @@ export interface ApprovalRequestBody {
 	expires_at: string;
 }
 
-export type SubmitResult = { ok: true; requestId: string } | { ok: false; error: string };
+type SubmitResult = { ok: true; requestId: string } | { ok: false; error: string };
 
 /** `POST {base}/v1/approval-requests`. Idempotent server side on (tenant, iid, action_id). */
-export async function submitApprovalRequest(
+async function submitApprovalRequest(
 	context: Pick<DashboardApprovalContext, "endpoint" | "apiKey">,
 	body: ApprovalRequestBody,
 	budget: RequestBudget,
@@ -507,12 +507,12 @@ export async function submitApprovalRequest(
 
 export type ApprovalRequestStatus = "pending" | "approved" | "denied" | "expired";
 
-export type StatusResult =
+type StatusResult =
 	| { ok: true; status: ApprovalRequestStatus; token?: string; keyId?: string }
 	| { ok: false; error: string; notFound: boolean };
 
 /** `GET {base}/v1/approval-requests/{request_id}`. */
-export async function fetchApprovalStatus(
+async function fetchApprovalStatus(
 	context: Pick<DashboardApprovalContext, "endpoint" | "apiKey">,
 	requestId: string,
 	budget: RequestBudget,

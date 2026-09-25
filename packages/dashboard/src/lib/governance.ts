@@ -97,13 +97,13 @@ export const SIGNAL_KEYS = [
 ] as const;
 export type SignalKey = (typeof SIGNAL_KEYS)[number];
 
-export interface PolicyAge {
+interface PolicyAge {
 	version: number | null;
 	updatedAt: string;
 	ageDays: number;
 }
 
-export interface Approver {
+interface Approver {
 	userId: string;
 	email: string | null;
 	decisions: number;
@@ -421,7 +421,7 @@ export function parseGovernanceScorecard(
 	};
 }
 
-export function parseSettings(settings: Record<string, unknown>): GovernanceSettings {
+function parseSettings(settings: Record<string, unknown>): GovernanceSettings {
 	return {
 		digestEnabled: bool(settings.digest_enabled, "settings.digest_enabled"),
 		digestCadence: text(settings.digest_cadence, "settings.digest_cadence", CADENCE) as
@@ -459,7 +459,7 @@ export type ControlStatus =
 	| "not_observable"
 	| "customer";
 
-export interface ControlAssessment {
+interface ControlAssessment {
 	control: GovernanceControl;
 	status: ControlStatus;
 	/** Fraction of the mapped, observable capabilities the workspace has deployed. */
@@ -566,7 +566,7 @@ const SEVERITY_ORDER: Readonly<Record<RiskSeverity, number>> = {
 	info: 4,
 };
 /** EU AI Act Art. 26(6): logs kept at least six months (deployers of high-risk systems). */
-export const SIX_MONTHS_DAYS = 183;
+const SIX_MONTHS_DAYS = 183;
 const STALE_POLICY_DAYS = 180;
 
 const plural = (n: number, one: string, many = `${one}s`) =>

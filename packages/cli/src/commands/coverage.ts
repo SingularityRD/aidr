@@ -13,8 +13,8 @@ import {
 } from "@singularityrd/aidr-core";
 import { resolveBundledDataDirs } from "../utils/test-protection.js";
 
-export const COVERAGE_FORMATS = ["table", "json", "markdown"] as const;
-export type CoverageFormat = (typeof COVERAGE_FORMATS)[number];
+const COVERAGE_FORMATS = ["table", "json", "markdown"] as const;
+type CoverageFormat = (typeof COVERAGE_FORMATS)[number];
 
 export interface CoverageOptions {
 	format?: string;

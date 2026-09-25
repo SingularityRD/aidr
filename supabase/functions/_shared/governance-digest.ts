@@ -168,7 +168,7 @@ export function parseGovernanceSummary(value: unknown): GovernanceSummary {
 
 // ── Dispatcher claims ──────────────────────────────────────────────────────
 
-export interface GovernanceDigestClaim {
+interface GovernanceDigestClaim {
 	tenantId: string;
 	tenantName: string;
 	claimId: string;
@@ -276,7 +276,7 @@ function policyLine(label: string, policy: { version: number | null; ageDays: nu
 }
 
 /** The summary's sections as plain lines (shared by the text and HTML bodies). */
-export function summarySections(summary: GovernanceSummary): Array<{ title: string; lines: string[] }> {
+function summarySections(summary: GovernanceSummary): Array<{ title: string; lines: string[] }> {
 	const aup = summary.acceptableUse;
 	return [
 		{

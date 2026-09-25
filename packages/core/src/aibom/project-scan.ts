@@ -30,7 +30,7 @@ function moduleDir(): string | null {
 }
 
 export type AiBomEcosystem = "npm" | "pypi";
-export type CycloneDxComponentType =
+type CycloneDxComponentType =
 	| "application"
 	| "framework"
 	| "library"
@@ -141,9 +141,9 @@ export function matchCatalogEntry(
 	return prefixMatch;
 }
 
-export type ManifestStatus = "read" | "invalid";
+type ManifestStatus = "read" | "invalid";
 
-export interface ProjectManifest {
+interface ProjectManifest {
 	/** Project-relative file name. */
 	path: string;
 	status: ManifestStatus;

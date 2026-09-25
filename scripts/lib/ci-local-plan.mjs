@@ -580,8 +580,12 @@ export const STEPS = Object.freeze([
 		requires: ["non-root"],
 		timeoutMs: 10 * MIN,
 	}),
-	step({ id: "package-install", group: "release", name: "Install every packed consumer artifact", ci: ["quality-gate", "Install every packed consumer artifact"], timeoutMs: 20 * MIN }),
-	step({ id: "route-smoke", group: "release", name: "Dashboard static route smoke", ci: ["quality-gate", "Dashboard static route smoke"], timeoutMs: 10 * MIN }),
+	// Both consume what build-release writes (release tarball contents, the
+	// dashboard's dist/). In ci.yml a failed `pnpm quality:gate` ends the job
+	// before they run; here they are reported NOT RUN when build-release failed
+	// in the same run instead of failing again on missing or stale artefacts.
+	step({ id: "package-install", group: "release", name: "Install every packed consumer artifact", ci: ["quality-gate", "Install every packed consumer artifact"], after: ["build-release"], timeoutMs: 20 * MIN }),
+	step({ id: "route-smoke", group: "release", name: "Dashboard static route smoke", ci: ["quality-gate", "Dashboard static route smoke"], after: ["build-release"], timeoutMs: 10 * MIN }),
 	step({ id: "evidence-boundary", group: "release", name: "CI evidence upload boundary", ci: ["quality-gate", "Verify CI evidence upload boundary"], quick: true, timeoutMs: 3 * MIN }),
 
 	// ── real-host-e2e (manual opt-in in CI, opt-in here) ────────────────────
@@ -996,6 +1000,22 @@ export function selectExtraSuites(fileNames, patterns, coveredText) {
 export const STATUS = Object.freeze({ PASS: "PASS", FAIL: "FAIL", SKIPPED: "SKIPPED", NOT_RUN: "NOT RUN" });
 
 /**
+ * The id of a step listed in `entry.after` that already ran in this run and did
+ * not produce its output (FAIL or NOT RUN), or null. A dependency that was not
+ * selected, or that was SKIPPED for a missing prerequisite, does not block: the
+ * step then runs against whatever is on disk and reports its own failure.
+ * @param {{after?: string[]}} entry
+ * @param {Array<{id: string, status: string}>} results
+ */
+export function blockingDependency(entry, results) {
+	for (const id of entry.after ?? []) {
+		const dependency = results.find((result) => result.id === id);
+		if (dependency && (dependency.status === STATUS.FAIL || dependency.status === STATUS.NOT_RUN)) return id;
+	}
+	return null;
+}
+
+/**
  * @param {Array<{status: string, required: boolean}>} results
  * @param {{strict?: boolean, interrupted?: boolean}} options
  */
@@ -1051,9 +1071,16 @@ export function formatSummary(results, { notSelected = [], strict = false, inter
 		for (const result of [...failedRequired, ...failedAdvisory]) out.push(`  - ${result.id}: ${result.note ?? "failed"}${result.log ? ` (log: ${result.log})` : ""}`);
 	}
 	const notRun = results.filter((result) => result.status === STATUS.NOT_RUN);
-	if (notRun.length > 0) {
+	const blocked = notRun.filter((result) => result.blockedBy);
+	const stoppedCount = notRun.length - blocked.length;
+	if (stoppedCount > 0) {
 		out.push("");
-		out.push(`NOT RUN (${notRun.length}) after the first required failure; rerun with --keep-going to run them.`);
+		out.push(`NOT RUN (${stoppedCount}) after the first required failure; rerun with --keep-going to run them.`);
+	}
+	if (blocked.length > 0) {
+		out.push("");
+		out.push(`NOT RUN (${blocked.length}) because a step they consume did not complete in this run:`);
+		for (const result of blocked) out.push(`  - ${result.id}: needs ${result.blockedBy}`);
 	}
 	if (notSelected.length > 0) {
 		out.push("");

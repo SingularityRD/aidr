@@ -15,7 +15,7 @@ import type { PdfDocument } from "./document.js";
 import { type BaseEncoding, baseEncoding, glyphToUnicode } from "./encodings.js";
 import { binaryString, PdfDict, PdfName, PdfStream, type PdfValue } from "./lexer.js";
 
-export interface Glyph {
+interface Glyph {
 	readonly text: string | undefined;
 	/** Advance in text-space units per 1 unit of font size (glyph width / 1000). */
 	readonly width: number;

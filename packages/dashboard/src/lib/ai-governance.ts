@@ -22,7 +22,7 @@ export const DATA_CATEGORIES = [
 	"customer_data",
 ] as const;
 /** Browser Guard site ids that the managed `blockedSites` policy accepts. */
-export const BROWSER_GUARD_SITES = [
+const BROWSER_GUARD_SITES = [
 	"chatgpt",
 	"gemini",
 	"claude",
@@ -113,7 +113,7 @@ export interface AssetEvidence {
 	linkedAt: string;
 }
 
-export type RequestStatus = "pending" | "approved" | "rejected" | "cancelled" | "expired";
+type RequestStatus = "pending" | "approved" | "rejected" | "cancelled" | "expired";
 
 export interface IntakeRequest {
 	id: string;
@@ -135,7 +135,7 @@ export interface IntakeRequest {
 	decisionReason: string | null;
 }
 
-export type ExceptionStatus =
+type ExceptionStatus =
 	| "pending"
 	| "approved"
 	| "rejected"
@@ -171,7 +171,7 @@ export type ChangeKind =
 	| "dlp_publish"
 	| "disable_four_eyes";
 
-export type ChangeStatus =
+type ChangeStatus =
 	| "pending"
 	| "approved"
 	| "rejected"
@@ -198,7 +198,7 @@ export interface PolicyChangeRequest {
 	outcomeCode: string | null;
 }
 
-export interface GovernanceSettings {
+interface GovernanceSettings {
 	policyFourEyes: boolean;
 	defaultReviewDays: number;
 }
@@ -215,13 +215,13 @@ export interface GovernanceData {
 
 export type GovernanceResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
-export const ASSET_COLUMNS =
+const ASSET_COLUMNS =
 	"id,asset_type,identifier,name,vendor,owner_user_id,business_purpose,data_categories,risk_tier,risk_score,status,review_due_at,last_reviewed_at,last_reviewed_by,source,first_observed_at,last_observed_at,version,updated_at";
-export const EVIDENCE_COLUMNS =
+const EVIDENCE_COLUMNS =
 	"id,asset_id,evidence_kind,evidence_ref,label,observed_at,linked_at";
-export const INTAKE_COLUMNS =
+const INTAKE_COLUMNS =
 	"id,asset_id,asset_type,identifier,name,vendor,business_purpose,data_categories,requested_status,status,requested_by,created_at,expires_at,decided_by,decided_at,decision_reason";
-export const EXCEPTION_COLUMNS =
+const EXCEPTION_COLUMNS =
 	"id,asset_id,scope_kind,scope_user_ids,scope_agent_ids,justification,status,requested_by,created_at,expires_at,starts_at,decided_by,decision_reason,revoked_by,revoke_reason";
 /** Never includes `payload` (not granted to the browser; DLP payloads are sensitive). */
 export const CHANGE_COLUMNS =
@@ -318,7 +318,7 @@ export function parseAsset(value: unknown): AiAsset | null {
 	}));
 }
 
-export function parseEvidence(value: unknown): AssetEvidence | null {
+function parseEvidence(value: unknown): AssetEvidence | null {
 	return tryParse(value, (r) => ({
 		id: r.str("id"),
 		assetId: r.str("asset_id"),
@@ -332,7 +332,7 @@ export function parseEvidence(value: unknown): AssetEvidence | null {
 
 const lapsedAt = (expiresAt: string, nowMs: number) => !(Date.parse(expiresAt) > nowMs);
 
-export function parseIntake(value: unknown, nowMs: number): IntakeRequest | null {
+function parseIntake(value: unknown, nowMs: number): IntakeRequest | null {
 	return tryParse(value, (r) => {
 		const status = r.one("status", [
 			"pending",
@@ -644,7 +644,7 @@ export function stepUpPath(tenantId: string): string {
 }
 
 /** YYYY-MM-DD in UTC. */
-export function isoDay(ms: number): string {
+function isoDay(ms: number): string {
 	return new Date(ms).toISOString().slice(0, 10);
 }
 

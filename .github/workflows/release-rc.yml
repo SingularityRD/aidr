@@ -645,7 +645,7 @@ jobs:
           printf '%s\n' "${SIGNING_PUBLIC_KEY}" > "${public_path}"
           unset SIGNING_PUBLIC_KEY
           AIDR_SIGNING_PUBLIC_KEY_PEM_PATH="${public_path}" \
-            node scripts/verify-package-install.mjs --tarball-dir release-output
+            node scripts/verify-package-install.mjs --require-signed --tarball-dir release-output
           cleanup
           trap - EXIT
 

@@ -12,6 +12,11 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+// Agent-edit fixture text that adds a Vitest skip. Assembled at runtime so the
+// mandatory-skip gate (scripts/check-mandatory-skips.mjs) does not read the
+// fixture string as a skip in this suite.
+const IT_SKIP = ["it", "skip"].join(".");
+
 const require = createRequire(import.meta.url);
 const PLUGIN_DIST = resolve(__dirname, "..", "..", "dist", "index.cjs");
 
@@ -65,7 +70,7 @@ describe("OpenClaw bundle: agent-safety guardrails", { timeout: 60_000 }, () => 
 		const result = await beforeCall("s-edit", "edit", {
 			path: "src/auth.test.ts",
 			oldText: "it('logs in', () => {",
-			newText: "it.skip('logs in', () => {",
+			newText: `${IT_SKIP}('logs in', () => {`,
 		});
 		expect(result?.block).toBe(true);
 		expect(result?.blockReason).toContain("Test skipped or disabled");

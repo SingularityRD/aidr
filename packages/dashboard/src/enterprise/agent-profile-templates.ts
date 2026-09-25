@@ -4,7 +4,7 @@
  * depend on the engine package at runtime, so this is a display mirror; the
  * `agent-profiles-panel` test fails if it drifts from the shipped templates.
  */
-export type ProfileAction = "allow" | "ask" | "deny";
+type ProfileAction = "allow" | "ask" | "deny";
 
 export const PROFILE_TOOL_CLASSES = [
 	"shell",
@@ -14,7 +14,7 @@ export const PROFILE_TOOL_CLASSES = [
 	"mcp",
 	"other",
 ] as const;
-export type ProfileToolClass = (typeof PROFILE_TOOL_CLASSES)[number];
+type ProfileToolClass = (typeof PROFILE_TOOL_CLASSES)[number];
 
 export interface ProfileTemplateSummary {
 	name: string;

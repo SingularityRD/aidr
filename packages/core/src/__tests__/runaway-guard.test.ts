@@ -22,6 +22,11 @@ import { normalizeToolEvaluationRequest } from "../tool-normalization.js";
 import { type Config, ConfigSchema, type RunawayConfig, RunawayConfigSchema } from "../types.js";
 import { makeTmpDir, removeTmpDir } from "./test-utils.js";
 
+// Agent-edit fixture text that adds a Vitest skip. Assembled at runtime so the
+// mandatory-skip gate (scripts/check-mandatory-skips.mjs) does not read the
+// fixture string as a skip in this suite.
+const IT_SKIP = ["it", "skip"].join(".");
+
 const THREATS_DIR = join(__dirname, "..", "..", "..", "..", "threats");
 const ALLOWLISTS_DIR = join(__dirname, "..", "..", "..", "..", "allowlists");
 
@@ -416,7 +421,7 @@ describe("evaluateToolCall integration", () => {
 				toolInput: {
 					file_path: "src/auth.test.ts",
 					old_string: "it('logs in', () => {",
-					new_string: "it.skip('logs in', () => {",
+					new_string: `${IT_SKIP}('logs in', () => {`,
 				},
 				artifacts: [],
 			},
