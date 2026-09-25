@@ -1,20 +1,26 @@
 import {
+	type AgentEnvironmentReport,
+	buildAgentPostureFindingEvents,
 	buildMcpInventoryFindingEvents,
 	describePostureUploadError,
 	discoverMcpServers,
 	newPostureScanId,
 	uploadPostureEvents,
 } from "@singularityrd/aidr-core";
+import { formatAgentFinding, scanAgentEnvironment } from "../utils/agent-posture.js";
 
 interface DiscoverOptions {
 	config?: string[];
 	json?: boolean;
 	upload?: boolean;
+	/** Also report agent environment and autonomy posture. */
+	agents?: boolean;
 }
 
 /** Injectable collaborators, for tests. */
 export interface DiscoverDependencies {
 	upload?: typeof uploadPostureEvents;
+	agentEnvironment?: () => AgentEnvironmentReport;
 }
 
 export default async function discoverCommand(options: DiscoverOptions): Promise<void> {
@@ -49,18 +55,36 @@ function isIncomplete(report: DiscoveryReport, explicitConfigs: boolean): boolea
 	);
 }
 
+function printAgentReport(report: AgentEnvironmentReport): void {
+	const detected = report.hosts.filter((host) => host.detected).map((host) => host.host);
+	console.log(
+		`Agent environment: ${detected.length > 0 ? detected.join(", ") : "no agent host"} detected; ${report.findings.length} finding(s)`,
+	);
+	for (const finding of report.findings) console.log(`  ${formatAgentFinding(finding)}`);
+	for (const path of report.unreadable) console.error(`Unreadable agent configuration: ${path}`);
+	console.log(report.scope);
+}
+
 async function uploadInventory(
 	report: DiscoveryReport,
+	agents: AgentEnvironmentReport | undefined,
 	json: boolean,
 	upload: typeof uploadPostureEvents,
 ): Promise<void> {
 	// Server names, transport, risk categories, attestation status and digests
 	// only: no source paths, endpoints, arguments, headers or environment.
-	const events = buildMcpInventoryFindingEvents(report, newPostureScanId());
+	// Agent findings: host, check id, severity and a count; no paths, keys or names.
+	const scanId = newPostureScanId();
+	const events = [
+		...buildMcpInventoryFindingEvents(report, scanId),
+		...(agents ? buildAgentPostureFindingEvents(agents, scanId) : []),
+	];
 	const result = await upload(events);
 	const write = json ? console.error : console.log;
 	if (result.ok) {
-		write(`Uploaded ${result.delivered} MCP inventory finding(s) to the control plane.`);
+		write(
+			`Uploaded ${result.delivered} ${agents ? "MCP inventory and agent environment" : "MCP inventory"} finding(s) to the control plane.`,
+		);
 		return;
 	}
 	console.error(
@@ -77,12 +101,23 @@ export async function runDiscover(
 	dependencies: DiscoverDependencies = {},
 ): Promise<void> {
 	const report = await discoverMcpServers(options.config);
-	if (options.json) console.log(JSON.stringify(report, null, 2));
-	else printReport(report);
+	const agents = options.agents
+		? (dependencies.agentEnvironment ?? scanAgentEnvironment)()
+		: undefined;
+	if (options.json) {
+		console.log(
+			JSON.stringify(agents ? { ...report, agent_environment: agents } : report, null, 2),
+		);
+	} else {
+		printReport(report);
+		if (agents) printAgentReport(agents);
+	}
 	if (isIncomplete(report, Boolean(options.config?.length))) process.exitCode = 1;
+	if (agents && agents.unreadable.length > 0) process.exitCode = 1;
 	if (options.upload) {
 		await uploadInventory(
 			report,
+			agents,
 			options.json === true,
 			dependencies.upload ?? uploadPostureEvents,
 		);

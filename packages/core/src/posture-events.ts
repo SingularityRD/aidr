@@ -11,6 +11,11 @@
  */
 
 import { createHash } from "node:crypto";
+import {
+	AGENT_HOSTS,
+	AGENT_POSTURE_CHECKS,
+	type AgentEnvironmentReport,
+} from "./agent-environment-posture.js";
 import type { AigInfraScanSummary } from "./aig-infra-scan.js";
 import { classifyMcpTool } from "./mcp-aig-categories.js";
 import type { McpDiscoveryServer } from "./mcp-discovery.js";
@@ -19,6 +24,7 @@ import type { PluginScanResult } from "./types.js";
 
 export const INFRA_SCAN_FINDING_EVENT = "infra_scan_finding";
 export const MCP_INVENTORY_FINDING_EVENT = "mcp_inventory_finding";
+export const AGENT_POSTURE_FINDING_EVENT = "agent_posture_finding";
 /** Existing ingest type reused for skill/plugin package findings. */
 export const PLUGIN_SCAN_FINDING_EVENT = "plugin_scan_finding";
 
@@ -56,7 +62,15 @@ const AIG_MCP_CATEGORY_PATTERN = /^(?:aig-)?mcp-[a-z0-9-]{1,48}$/;
 const SKILL_RISK_TYPE_PATTERN = /^T0[1-9]$/;
 const RULE_ID_PATTERN = /^[A-Z][A-Z0-9_-]{1,63}$/;
 
-const FINDING_KINDS = ["cve", "advisory", "exposed_component", "mcp_server", "skill_rule"] as const;
+const FINDING_KINDS = [
+	"cve",
+	"advisory",
+	"exposed_component",
+	"mcp_server",
+	"skill_rule",
+	"agent_config",
+] as const;
+const MAX_FINDING_COUNT = 10_000;
 const APPLICABILITY = ["confirmed", "unconfirmed"] as const;
 const TRANSPORTS = ["remote", "stdio"] as const;
 const MAX_RISK_CATEGORIES = 16;
@@ -312,6 +326,37 @@ export function buildSkillScanFindingEvents(
 	return events;
 }
 
+/**
+ * One event per agent environment finding: host, check id, severity and a count.
+ * Config paths, key names, environment variable names and values stay local.
+ */
+export function buildAgentPostureFindingEvents(
+	report: Pick<AgentEnvironmentReport, "scanned_at" | "findings">,
+	scanId: string,
+): Record<string, unknown>[] {
+	return report.findings.map((finding, index) => ({
+		event_id: eventId("agent", scanId, finding.host, finding.id, String(index)),
+		type: AGENT_POSTURE_FINDING_EVENT,
+		timestamp: report.scanned_at,
+		scan_id: scanId,
+		finding_kind: "agent_config",
+		severity: ingestSeverity(finding.severity),
+		finding_severity: finding.severity,
+		agent_host: finding.host,
+		check_id: finding.id,
+		finding_count: findingCount(finding.count),
+	}));
+}
+
+function findingCount(value: unknown): number | undefined {
+	return typeof value === "number" &&
+		Number.isInteger(value) &&
+		value >= 0 &&
+		value <= MAX_FINDING_COUNT
+		? value
+		: undefined;
+}
+
 /** Known risk hints and AIG MCP categories, deduplicated and bounded; undefined if not a list. */
 function riskCategories(value: unknown): string[] | undefined {
 	if (!Array.isArray(value)) return undefined;
@@ -343,6 +388,9 @@ const POSTURE_FIELDS: ReadonlyArray<readonly [string, (value: unknown) => unknow
 	["attestation_status", (value) => oneOf(value, MCP_ATTESTATION_STATUSES)],
 	["plugin_version", (value) => safeLabel(value, VERSION_PATTERN)],
 	["skill_risk_type", (value) => safeLabel(value, SKILL_RISK_TYPE_PATTERN)],
+	["agent_host", (value) => oneOf(value, AGENT_HOSTS)],
+	["check_id", (value) => oneOf(value, AGENT_POSTURE_CHECKS)],
+	["finding_count", findingCount],
 	["target_digest", postureDigest],
 	["server_digest", postureDigest],
 	["configuration_digest", postureDigest],

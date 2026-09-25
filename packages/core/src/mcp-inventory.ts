@@ -141,7 +141,8 @@ function parseMcpServers(data: unknown, sourcePath: string): ParsedServers {
 		(Object.hasOwn(root, "servers") && !asRecord(root.servers)) ||
 		(Object.hasOwn(root, "mcp") && !nestedMcp) ||
 		(nestedMcp && Object.hasOwn(nestedMcp, "servers") && !asRecord(nestedMcp.servers))
-	) throw new Error("invalid_mcp_server_map");
+	)
+		throw new Error("invalid_mcp_server_map");
 	const nestedMcpServers = asRecord(nestedMcp?.servers);
 	const hasNestedMcpServers = nestedMcp !== null && Object.hasOwn(nestedMcp, "servers");
 	const candidates = [
@@ -271,27 +272,29 @@ function coverageStatus(
 	return readSources > 0 ? "read" : "missing";
 }
 
+/** MCP configuration files enumerated when no explicit path is given. */
+export const DEFAULT_MCP_INVENTORY_PATHS: readonly string[] = Object.freeze([
+	"~/.claude.json",
+	".mcp.json",
+	"~/.claude/claude_desktop_config.json",
+	"~/.config/claude/claude_desktop_config.json",
+	"~/.cursor/mcp.json",
+	"~/.cursor/config.json",
+	".cursor/mcp.json",
+	".cursor/config.json",
+	".vscode/mcp.json",
+	"~/.config/opencode/opencode.json",
+	".opencode/opencode.json",
+	"~/.openclaw/openclaw.json",
+	".openclaw/openclaw.json",
+]);
+
 export async function inspectMcpServerInventory(
 	configPaths?: string[],
 ): Promise<McpInventoryReport> {
-	const defaultPaths = [
-		"~/.claude.json",
-		".mcp.json",
-		"~/.claude/claude_desktop_config.json",
-		"~/.config/claude/claude_desktop_config.json",
-		"~/.cursor/mcp.json",
-		"~/.cursor/config.json",
-		".cursor/mcp.json",
-		".cursor/config.json",
-		".vscode/mcp.json",
-		"~/.config/opencode/opencode.json",
-		".opencode/opencode.json",
-		"~/.openclaw/openclaw.json",
-		".openclaw/openclaw.json",
-	];
-	const paths = (configPaths && configPaths.length > 0 ? configPaths : defaultPaths).map(
-		resolvePath,
-	);
+	const paths = (
+		configPaths && configPaths.length > 0 ? configPaths : DEFAULT_MCP_INVENTORY_PATHS
+	).map(resolvePath);
 	const all: McpInventoryItem[] = [];
 	const sources: McpInventoryReport["sources"] = [];
 	let serversNotEnumerated = 0;

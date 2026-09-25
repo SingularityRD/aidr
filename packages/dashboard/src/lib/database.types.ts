@@ -653,8 +653,14 @@ export interface Database {
 					tenant_id: string;
 					event_row_id: number;
 					agent_id: string;
-					source: "infra_scan" | "mcp_inventory" | "skill_scan";
-					finding_kind: "cve" | "advisory" | "exposed_component" | "mcp_server" | "skill_rule";
+					source: "infra_scan" | "mcp_inventory" | "skill_scan" | "agent_environment";
+					finding_kind:
+						| "cve"
+						| "advisory"
+						| "exposed_component"
+						| "mcp_server"
+						| "skill_rule"
+						| "agent_config";
 					severity: "critical" | "high" | "medium" | "low" | "info" | "unknown";
 					cvss: number | string | null;
 					vuln_id: string | null;
@@ -671,6 +677,9 @@ export interface Database {
 					rule_id: string | null;
 					skill_risk_type: string | null;
 					scan_id: string | null;
+					agent_host: string | null;
+					check_id: string | null;
+					finding_count: number | null;
 					observed_at: string;
 					created_at: string;
 				};

@@ -1,5 +1,6 @@
 // AI security posture fields for /v1/ingest (infra_scan_finding,
-// mcp_inventory_finding, and the posture fields of plugin_scan_finding).
+// mcp_inventory_finding, agent_posture_finding, and the posture fields of
+// plugin_scan_finding).
 //
 // Mirrors packages/core/src/posture-events.ts `projectPostureFields`. The
 // client projection is not trusted: every field is re-validated here and any
@@ -7,7 +8,11 @@
 // server arguments, matched text and credentials are never accepted; only
 // identifiers, enums, bounded numbers and sha256 digests are stored.
 
-export const POSTURE_EVENT_TYPES = ["infra_scan_finding", "mcp_inventory_finding"] as const;
+export const POSTURE_EVENT_TYPES = [
+	"infra_scan_finding",
+	"mcp_inventory_finding",
+	"agent_posture_finding",
+] as const;
 
 const IDENTIFIER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const SENSITIVE_PATTERN =
@@ -21,7 +26,27 @@ const VERSION_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$/;
 const MCP_CATEGORY_PATTERN = /^(?:aig-)?mcp-[a-z0-9-]{1,48}$/;
 const SKILL_RISK_TYPE_PATTERN = /^T0[1-9]$/;
 
-const FINDING_KINDS = new Set(["cve", "advisory", "exposed_component", "mcp_server", "skill_rule"]);
+const FINDING_KINDS = new Set([
+	"cve",
+	"advisory",
+	"exposed_component",
+	"mcp_server",
+	"skill_rule",
+	"agent_config",
+]);
+// Mirrors AGENT_HOSTS / AGENT_POSTURE_CHECKS in packages/core/src/agent-environment-posture.ts.
+export const AGENT_HOSTS = [
+	"claude-code", "cursor", "vscode", "codex", "opencode", "openclaw", "gemini-cli", "aider", "environment",
+] as const;
+export const AGENT_POSTURE_CHECKS = [
+	"permission_bypass_mode", "broad_shell_allow_rule", "hooks_disabled", "aidr_hook_missing",
+	"no_aidr_connector", "approval_policy_never", "sandbox_full_access", "permission_allow_all",
+	"running_as_root", "docker_socket_writable", "cloud_credentials_in_env", "no_devcontainer",
+	"mcp_plaintext_secret",
+] as const;
+const AGENT_HOST_SET = new Set<string>(AGENT_HOSTS);
+const AGENT_CHECK_SET = new Set<string>(AGENT_POSTURE_CHECKS);
+const MAX_FINDING_COUNT = 10_000;
 const FINDING_SEVERITIES = new Set(["critical", "high", "medium", "low", "info", "unknown"]);
 const APPLICABILITY = new Set(["confirmed", "unconfirmed"]);
 const TRANSPORTS = new Set(["remote", "stdio"]);
@@ -90,6 +115,16 @@ export function projectPostureFields(event: Record<string, unknown>): Record<str
 	set("attestation_status", member(event.attestation_status, ATTESTATION_STATUSES));
 	set("plugin_version", label(event.plugin_version, VERSION_PATTERN));
 	set("skill_risk_type", label(event.skill_risk_type, SKILL_RISK_TYPE_PATTERN));
+	set("agent_host", member(event.agent_host, AGENT_HOST_SET));
+	set("check_id", member(event.check_id, AGENT_CHECK_SET));
+	if (
+		typeof event.finding_count === "number" &&
+		Number.isInteger(event.finding_count) &&
+		event.finding_count >= 0 &&
+		event.finding_count <= MAX_FINDING_COUNT
+	) {
+		out.finding_count = event.finding_count;
+	}
 	for (const key of DIGEST_KEYS) {
 		const value = event[key];
 		if (typeof value === "string" && HASH_PATTERN.test(value)) out[key] = value;

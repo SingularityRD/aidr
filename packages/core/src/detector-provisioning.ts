@@ -31,7 +31,12 @@ import {
 	managedStatePath,
 } from "./managed.js";
 import { LocalEmbeddingModel } from "./ml-model.js";
-import type { AgentRuntime, Config, Logger } from "./types.js";
+import {
+	type AgentRuntime,
+	type Config,
+	type Logger,
+	PromptProtectionModeSchema,
+} from "./types.js";
 
 const MAX_BUNDLE_BYTES = 8 * 1024 * 1024;
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
@@ -59,6 +64,25 @@ const DetectorPolicyPayloadSchema = z
 				// explicitly selects the degraded skip behavior.
 				unavailable_action: z.enum(["ask", "deny", "skip"]).default("ask"),
 				threat_corpus: BehavioralCorpusSchema.optional(),
+			})
+			.strict()
+			.optional(),
+		// Tenant floor for prompt jailbreak / content-safety actions. It can only
+		// tighten the local `prompt_protection` settings (see prompt-safety.ts).
+		prompt_safety: z
+			.object({
+				jailbreak: PromptProtectionModeSchema.optional(),
+				content_safety: z
+					.object({
+						malware: PromptProtectionModeSchema.optional(),
+						phishing_kit: PromptProtectionModeSchema.optional(),
+						weapons_cbrn: PromptProtectionModeSchema.optional(),
+						self_harm: PromptProtectionModeSchema.optional(),
+						hate_harassment: PromptProtectionModeSchema.optional(),
+						sexual_minors: PromptProtectionModeSchema.optional(),
+					})
+					.strict()
+					.optional(),
 			})
 			.strict()
 			.optional(),
@@ -95,9 +119,12 @@ const DetectorPolicyPayloadSchema = z
 		},
 		{ message: "Behavioral provisioning requires an explicit supported V2 workflow" },
 	)
-	.refine((value) => value.dlp || value.behavioral || value.reputation_feed, {
-		message: "At least one provisioned detector is required",
-	});
+	.refine(
+		(value) => value.dlp || value.behavioral || value.reputation_feed || value.prompt_safety,
+		{
+			message: "At least one provisioned detector is required",
+		},
+	);
 
 const SignedDetectorPolicySchema = z
 	.object({
@@ -315,11 +342,12 @@ async function detectorContext(
 	payload: SignedDetectorPolicy["payload"],
 ): Promise<DetectorProvisionedContext> {
 	const context: DetectorProvisionedContext = {};
-	if (payload.dlp || payload.behavioral) {
+	if (payload.dlp || payload.behavioral || payload.prompt_safety) {
 		const runtimeDetectors: NonNullable<ToolEvaluationContext["runtimeDetectors"]> = {
 			tenantId: payload.tenant_id,
 		};
 		if (payload.dlp) runtimeDetectors.dlp = { enabled: true, policy: payload.dlp.policy };
+		if (payload.prompt_safety) runtimeDetectors.promptSafety = payload.prompt_safety;
 		if (payload.behavioral) {
 			const corpus = payload.behavioral.threat_corpus;
 			// Import only after signature, entitlement, tenant, digest and model

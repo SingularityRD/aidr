@@ -148,8 +148,12 @@ program
 	.option("--config <paths...>", "Inspect explicit JSON configuration paths")
 	.option("--json", "Emit a redacted machine-readable inventory")
 	.option(
+		"--agents",
+		"Also check agent hosts for unsafe autonomy settings, missing AIDR hooks and environment exposure",
+	)
+	.option(
 		"--upload",
-		"Send server names, risk categories and digests (no paths, endpoints or arguments) to the managed control plane",
+		"Send server names, risk categories and digests (no paths, endpoints or arguments) to the managed control plane; with --agents also host, check id, severity and count per finding",
 	)
 	.action(discoverCommand);
 

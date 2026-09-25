@@ -11,6 +11,7 @@ vi.mock("../enterprise/team-provider", () => ({ useTeam: vi.fn() }));
 import { useTeam } from "../enterprise/team-provider";
 import { supabase } from "../lib/supabase";
 import {
+	groupAgentFindings,
 	latestFindings,
 	type PostureFindingRow,
 	PosturePage,
@@ -104,6 +105,26 @@ const ROWS: PostureFindingRow[] = [
 		skill_risk_type: "T03",
 		subject_digest: DIGEST_B,
 	}),
+	row({
+		id: 7,
+		source: "agent_environment",
+		finding_kind: "agent_config",
+		severity: "critical",
+		agent_id: "agent-1",
+		agent_host: "codex",
+		check_id: "sandbox_full_access",
+		finding_count: 1,
+	}),
+	row({
+		id: 8,
+		source: "agent_environment",
+		finding_kind: "agent_config",
+		severity: "critical",
+		agent_id: "agent-2",
+		agent_host: "codex",
+		check_id: "sandbox_full_access",
+		finding_count: 1,
+	}),
 ];
 
 function mockRows(result: { data: unknown; error: { message: string } | null }) {
@@ -178,6 +199,14 @@ describe("AI security posture page", () => {
 		expect(counters).toHaveTextContent("Critical CVEs1");
 		expect(counters).toHaveTextContent("High CVEs1");
 
+		const agents = screen.getByRole("region", { name: "Agent environment" });
+		const agentRows = within(agents).getAllByRole("row").slice(1);
+		expect(agentRows).toHaveLength(1);
+		expect(agentRows[0]).toHaveTextContent("Codex");
+		expect(agentRows[0]).toHaveTextContent("Sandbox disabled");
+		expect(within(agentRows[0] as HTMLElement).getAllByRole("cell")[3]).toHaveTextContent("2");
+		expect(counters).toHaveTextContent("Agent settings at risk1");
+
 		expect(screen.getByRole("region", { name: "Posture trend" })).toBeInTheDocument();
 		expect(document.body.textContent).not.toMatch(/infra[- ]?guard|tencent|\baig\b/i);
 	});
@@ -190,6 +219,7 @@ describe("AI security posture page", () => {
 		expect(empty).toHaveTextContent("aidr scan --target");
 		expect(empty).toHaveTextContent("--upload");
 		expect(empty).toHaveTextContent("aidr discover --upload");
+		expect(empty).toHaveTextContent("aidr discover --agents --upload");
 		expect(document.body.textContent).not.toMatch(/infra[- ]?guard|tencent|\baig\b/i);
 		expect(
 			screen.queryByRole("region", { name: "Infrastructure exposure" }),
@@ -243,5 +273,38 @@ describe("posture aggregation", () => {
 		expect(trend.at(-1)).toEqual({ day: "2026-09-24", critical: 1, high: 1, other: 0 });
 		expect(trend.at(-2)).toEqual({ day: "2026-09-23", critical: 0, high: 0, other: 1 });
 		expect(trend.reduce((sum, day) => sum + day.critical + day.high + day.other, 0)).toBe(3);
+	});
+
+	it("groups agent findings per host and check, most severe first", () => {
+		const groups = groupAgentFindings([
+			row({
+				id: 1,
+				source: "agent_environment",
+				severity: "medium",
+				agent_id: "a",
+				agent_host: "environment",
+				check_id: "cloud_credentials_in_env",
+			}),
+			row({
+				id: 2,
+				source: "agent_environment",
+				severity: "high",
+				agent_id: "a",
+				agent_host: "claude-code",
+				check_id: "broad_shell_allow_rule",
+			}),
+			row({
+				id: 3,
+				source: "agent_environment",
+				severity: "high",
+				agent_id: "b",
+				agent_host: "claude-code",
+				check_id: "broad_shell_allow_rule",
+			}),
+		]);
+		expect(groups.map((group) => [group.row.check_id, group.installations])).toEqual([
+			["broad_shell_allow_rule", 2],
+			["cloud_credentials_in_env", 1],
+		]);
 	});
 });

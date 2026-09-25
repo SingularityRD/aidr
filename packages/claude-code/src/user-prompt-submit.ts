@@ -8,6 +8,9 @@
  *     ID numbers, IBANs and TR phone numbers. A personal-data scan that could not
  *     inspect the whole prompt is never treated as clean: `block` blocks the
  *     prompt, `warn` sends it with a notice to the user and the model.
+ *   - jailbreak and content-safety patterns: `prompt_protection.jailbreak`
+ *     (default `warn`) and `prompt_protection.content_safety.<category>`; a
+ *     signed tenant `prompt_safety` floor can only tighten them.
  *   - an operator-provisioned tenant DLP policy, when present: any non-allow
  *     outcome blocks (a prompt cannot be rewritten by this hook).
  *
@@ -44,6 +47,7 @@ import {
 	PromptScanDeadlineError,
 	type PromptTenantDlp,
 	scanPrompt,
+	type TenantPromptSafetyPolicy,
 	type Verdict,
 	verifyArtifactIntegrityAndLog,
 } from "@singularityrd/aidr-core";
@@ -183,12 +187,20 @@ function readPrompt(): { sessionId: string; prompt: string } | null {
 	};
 }
 
-async function tenantDlp(): Promise<PromptTenantDlp | undefined> {
+/** Tenant DLP and the tenant prompt-safety floor from the signed detector policy. */
+async function tenantPolicy(): Promise<{
+	dlp?: PromptTenantDlp;
+	promptSafety?: TenantPromptSafetyPolicy;
+}> {
 	const provisioned = await loadProvisionedDetectorContext();
 	const detectors = provisioned.runtimeDetectors;
-	return detectors?.dlp?.enabled === true
-		? { tenantId: detectors.tenantId, policy: detectors.dlp.policy }
-		: undefined;
+	return {
+		dlp:
+			detectors?.dlp?.enabled === true
+				? { tenantId: detectors.tenantId, policy: detectors.dlp.policy }
+				: undefined,
+		promptSafety: detectors?.promptSafety,
+	};
 }
 
 async function main(): Promise<void> {
@@ -209,8 +221,9 @@ async function main(): Promise<void> {
 		}
 
 		let tenant: PromptTenantDlp | undefined;
+		let tenantPromptSafety: TenantPromptSafetyPolicy | undefined;
 		try {
-			tenant = await tenantDlp();
+			({ dlp: tenant, promptSafety: tenantPromptSafety } = await tenantPolicy());
 		} catch {
 			writeTenantPolicyFailure();
 			return;
@@ -221,7 +234,7 @@ async function main(): Promise<void> {
 
 		let result: PromptProtectionResult;
 		try {
-			result = scanPrompt(input.prompt, policy, tenant, { deadlineAt });
+			result = scanPrompt(input.prompt, policy, tenant, { deadlineAt, tenantPromptSafety });
 		} catch (error) {
 			if (error instanceof PromptScanDeadlineError) {
 				writeDeadlineResponse();

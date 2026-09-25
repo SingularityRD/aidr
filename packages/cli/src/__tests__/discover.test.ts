@@ -133,4 +133,70 @@ describe("aidr discover", () => {
 		expect(String(error.mock.calls.at(-1)?.[0])).toContain("no control_plane.endpoint");
 		expect(process.exitCode).toBe(1);
 	});
+	it("adds agent environment findings with --agents and uploads host, check id and count only", async () => {
+		vi.mocked(discoverMcpServers).mockResolvedValue({
+			schema_version: 1,
+			scanned_at: "2026-09-25T00:00:00.000Z",
+			scope: "Local configuration discovery",
+			sources: [],
+			coverage: {
+				status: "read",
+				total_sources: 0,
+				read_sources: 0,
+				missing_sources: 0,
+				invalid_sources: 0,
+				servers_not_enumerated: 0,
+				sources_not_enumerated: 0,
+			},
+			servers: [],
+		});
+		const log = vi.spyOn(console, "log").mockImplementation(() => {});
+		const upload = vi.fn<NonNullable<DiscoverDependencies["upload"]>>(async (events) => ({
+			ok: true as const,
+			delivered: events.length,
+			total: events.length,
+		}));
+
+		await runDiscover(
+			{ agents: true, upload: true },
+			{
+				upload,
+				agentEnvironment: () => ({
+					schema_version: 1,
+					scanned_at: "2026-09-25T00:00:00.000Z",
+					hosts: [
+						{ host: "codex", detected: true, connector: true, evidence: ["/home/username/.codex"] },
+					],
+					findings: [
+						{
+							id: "cloud_credentials_in_env",
+							severity: "medium",
+							host: "environment",
+							title: "Cloud credentials are exported",
+							remediation: "Do not export them.",
+							evidence: { names: ["AWS_SECRET_ACCESS_KEY"] },
+							count: 1,
+						},
+					],
+					unreadable: [],
+					scope: "test",
+				}),
+			},
+		);
+
+		const printed = log.mock.calls.map((call) => String(call[0])).join("\n");
+		expect(printed).toContain(
+			"MEDIUM environment: Cloud credentials are exported [AWS_SECRET_ACCESS_KEY]",
+		);
+		const events = upload.mock.calls[0]?.[0] ?? [];
+		expect(events).toHaveLength(1);
+		expect(events[0]).toMatchObject({
+			type: "agent_posture_finding",
+			agent_host: "environment",
+			check_id: "cloud_credentials_in_env",
+			finding_count: 1,
+		});
+		expect(JSON.stringify(events)).not.toContain("AWS_SECRET_ACCESS_KEY");
+		expect(process.exitCode).not.toBe(1);
+	});
 });

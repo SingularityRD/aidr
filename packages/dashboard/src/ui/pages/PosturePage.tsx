@@ -13,7 +13,7 @@ export type PostureSeverity = "critical" | "high" | "medium" | "low" | "info" | 
 
 export type PostureFindingRow = {
 	id: number;
-	source: "infra_scan" | "mcp_inventory" | "skill_scan";
+	source: "infra_scan" | "mcp_inventory" | "skill_scan" | "agent_environment";
 	finding_kind: string;
 	severity: PostureSeverity;
 	cvss: number | string | null;
@@ -30,11 +30,16 @@ export type PostureFindingRow = {
 	plugin_key: string | null;
 	rule_id: string | null;
 	skill_risk_type: string | null;
+	/** Agent environment rows only. */
+	agent_id?: string | null;
+	agent_host?: string | null;
+	check_id?: string | null;
+	finding_count?: number | null;
 	observed_at: string;
 };
 
 const COLUMNS =
-	"id,source,finding_kind,severity,cvss,vuln_id,component,component_version,applicability,target_digest,mcp_server_name,mcp_transport,risk_categories,attestation_status,subject_digest,plugin_key,rule_id,skill_risk_type,observed_at";
+	"id,source,finding_kind,severity,cvss,vuln_id,component,component_version,applicability,target_digest,mcp_server_name,mcp_transport,risk_categories,attestation_status,subject_digest,plugin_key,rule_id,skill_risk_type,agent_id,agent_host,check_id,finding_count,observed_at";
 
 const SEVERITY_ORDER: PostureSeverity[] = ["critical", "high", "medium", "low", "info", "unknown"];
 const SEVERITY_RANK = new Map(SEVERITY_ORDER.map((severity, index) => [severity, index]));
@@ -71,6 +76,35 @@ const MCP_CATEGORY_LABELS: Record<string, string> = {
 	"mcp-12": "Rug pull",
 	"mcp-13": "Tool shadowing",
 	"mcp-14": "CORS misconfiguration",
+};
+
+/** Agent environment checks (`aidr discover --agents --upload`), see docs/agent-environment-posture.md. */
+export const AGENT_CHECK_LABELS: Record<string, string> = {
+	permission_bypass_mode: "Permission prompts bypassed",
+	broad_shell_allow_rule: "Every shell command pre-approved",
+	hooks_disabled: "Agent hooks disabled",
+	aidr_hook_missing: "AIDR hook not registered",
+	no_aidr_connector: "Agent without an AIDR connector",
+	approval_policy_never: "Approvals turned off",
+	sandbox_full_access: "Sandbox disabled",
+	permission_allow_all: "Shell or edit pre-approved",
+	running_as_root: "Agent runs as root",
+	docker_socket_writable: "Docker socket writable",
+	cloud_credentials_in_env: "Cloud credentials in environment",
+	no_devcontainer: "No devcontainer isolation",
+	mcp_plaintext_secret: "MCP config holds plaintext credentials",
+};
+
+const AGENT_HOST_LABELS: Record<string, string> = {
+	"claude-code": "Claude Code",
+	cursor: "Cursor",
+	vscode: "VS Code",
+	codex: "Codex",
+	opencode: "OpenCode",
+	openclaw: "OpenClaw",
+	"gemini-cli": "Gemini CLI",
+	aider: "Aider",
+	environment: "Host environment",
 };
 
 function severityBadge(severity: PostureSeverity): string {
@@ -111,6 +145,9 @@ function findingKey(row: PostureFindingRow): string {
 	}
 	if (row.source === "mcp_inventory") {
 		return `mcp|${row.subject_digest ?? row.mcp_server_name ?? row.id}`;
+	}
+	if (row.source === "agent_environment") {
+		return `agent|${row.agent_id ?? row.id}|${row.agent_host ?? ""}|${row.check_id ?? row.id}`;
 	}
 	return `skill|${row.plugin_key ?? ""}|${row.rule_id ?? ""}|${row.subject_digest ?? row.id}`;
 }
@@ -195,6 +232,46 @@ function groupInfra(rows: PostureFindingRow[]): InfraGroup[] {
 		);
 }
 
+export type AgentCheckGroup = {
+	key: string;
+	row: PostureFindingRow;
+	installations: number;
+	lastSeen: string;
+};
+
+/** Current agent findings per host and check, with how many installations report it. */
+export function groupAgentFindings(rows: PostureFindingRow[]): AgentCheckGroup[] {
+	const groups = new Map<
+		string,
+		{ row: PostureFindingRow; agents: Set<string>; lastSeen: string }
+	>();
+	for (const row of rows) {
+		const key = `${row.agent_host ?? ""}|${row.check_id ?? `row-${row.id}`}`;
+		const agent = row.agent_id ?? `row-${row.id}`;
+		const group = groups.get(key);
+		if (!group) {
+			groups.set(key, { row, agents: new Set([agent]), lastSeen: row.observed_at });
+			continue;
+		}
+		group.agents.add(agent);
+		if (compareSeverity(row, group.row) < 0) group.row = row;
+		if (Date.parse(row.observed_at) > Date.parse(group.lastSeen)) group.lastSeen = row.observed_at;
+	}
+	return [...groups.entries()]
+		.map(([key, group]) => ({
+			key,
+			row: group.row,
+			installations: group.agents.size,
+			lastSeen: group.lastSeen,
+		}))
+		.sort(
+			(a, b) =>
+				compareSeverity(a.row, b.row) ||
+				b.installations - a.installations ||
+				a.key.localeCompare(b.key),
+		);
+}
+
 function countBySeverity(rows: PostureFindingRow[]): Record<PostureSeverity, number> {
 	const counts = { critical: 0, high: 0, medium: 0, low: 0, info: 0, unknown: 0 };
 	for (const row of rows) counts[row.severity] = (counts[row.severity] ?? 0) + 1;
@@ -267,6 +344,7 @@ function NoPostureData() {
 					"aidr scan --target http://10.0.0.5:11434 --upload   # AI infrastructure CVEs",
 					"aidr discover --upload                              # MCP server inventory",
 					"aidr scan --skill ~/.claude/skills/<name> --upload  # skill/plugin T01-T09",
+					"aidr discover --agents --upload                     # agent autonomy & environment",
 				].join("\n")}
 			</pre>
 		</section>
@@ -320,6 +398,61 @@ function SkillSection({
 								<td colSpan={5} className="muted">
 									No skill or plugin findings uploaded. Run{" "}
 									<span className="mono">aidr scan --skill &lt;dir&gt; --upload</span>.
+								</td>
+							</tr>
+						) : null}
+					</tbody>
+				</table>
+			</div>
+		</section>
+	);
+}
+
+function AgentEnvironmentSection({ groups }: { groups: AgentCheckGroup[] }) {
+	return (
+		<section className="card" aria-label="Agent environment">
+			<h2>Agent environment and autonomy</h2>
+			<p className="muted small">
+				Static checks of agent host settings and of the environment agents inherit. Only the host,
+				check, severity and a count are uploaded; configuration values and variable names stay on
+				the machine. Run <span className="mono">aidr discover --agents</span> on the machine for the
+				remediation steps.
+			</p>
+			<div className="table-wrap" style={{ marginTop: 12 }}>
+				<table className="table">
+					<thead>
+						<tr>
+							<th>Host</th>
+							<th>Check</th>
+							<th>Severity</th>
+							<th>Installations</th>
+							<th>Items</th>
+							<th>Last seen</th>
+						</tr>
+					</thead>
+					<tbody>
+						{groups.map(({ key, row, installations, lastSeen }) => (
+							<tr key={key}>
+								<td>
+									{AGENT_HOST_LABELS[row.agent_host ?? ""] ?? row.agent_host ?? "(not reported)"}
+								</td>
+								<td>
+									{AGENT_CHECK_LABELS[row.check_id ?? ""] ?? row.check_id ?? "(not reported)"}
+								</td>
+								<td>
+									<span className={severityBadge(row.severity)}>{row.severity}</span>
+								</td>
+								<td className="mono">{installations}</td>
+								<td className="mono">{row.finding_count ?? "—"}</td>
+								<td className="mono">{new Date(lastSeen).toLocaleString()}</td>
+							</tr>
+						))}
+						{groups.length === 0 ? (
+							<tr>
+								<td colSpan={6} className="muted">
+									No agent environment findings uploaded. Run{" "}
+									<span className="mono">aidr discover --agents --upload</span>; an empty table
+									means nothing was reported, not that agents are configured safely.
 								</td>
 							</tr>
 						) : null}
@@ -434,6 +567,10 @@ function TenantPosturePage({ tenantId }: { tenantId: string }) {
 		() => current.filter((row) => row.source === "skill_scan").sort(bySeverityThenPlugin),
 		[current],
 	);
+	const agentGroups = useMemo(
+		() => groupAgentFindings(current.filter((row) => row.source === "agent_environment")),
+		[current],
+	);
 	const trend = useMemo(() => postureTrend(rows ?? [], nowMs), [rows, nowMs]);
 	const infraCounts = useMemo(
 		() => countBySeverity(vulnerabilities.map((group) => group.row)),
@@ -447,8 +584,8 @@ function TenantPosturePage({ tenantId }: { tenantId: string }) {
 			<section className="card">
 				<h1>AI security posture</h1>
 				<p className="muted">
-					Infrastructure exposure, MCP server inventory and skill/plugin package findings reported
-					by <span className="mono">aidr scan --upload</span> and{" "}
+					Infrastructure exposure, MCP server inventory, skill/plugin package and agent environment
+					findings reported by <span className="mono">aidr scan --upload</span> and{" "}
 					<span className="mono">aidr discover --upload</span> over the last {POSTURE_WINDOW_DAYS}{" "}
 					days. Only identifiers, severities and digests are stored; target hosts, file paths and
 					matched text never leave the scanning machine.
@@ -481,6 +618,10 @@ function TenantPosturePage({ tenantId }: { tenantId: string }) {
 						<div className="card stat-card">
 							<div className="stat-label">Skill findings</div>
 							<div className="stat-value">{skills.length}</div>
+						</div>
+						<div className="card stat-card">
+							<div className="stat-label">Agent settings at risk</div>
+							<div className="stat-value">{agentGroups.length}</div>
 						</div>
 					</section>
 
@@ -583,6 +724,8 @@ function TenantPosturePage({ tenantId }: { tenantId: string }) {
 					</section>
 
 					<SkillSection skills={skills} skillTypes={skillTypes} />
+
+					<AgentEnvironmentSection groups={agentGroups} />
 
 					<TrendSection trend={trend} trendMax={trendMax} />
 				</>

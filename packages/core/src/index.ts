@@ -1,5 +1,18 @@
 // @singularityrd/aidr-core public API
 
+// Agent environment & autonomy posture (aidr doctor / aidr discover --agents)
+export {
+	AGENT_HOSTS,
+	AGENT_POSTURE_CHECKS,
+	type AgentEnvironmentOptions,
+	type AgentEnvironmentReport,
+	type AgentHost,
+	type AgentHostDetection,
+	type AgentPostureCheck,
+	type AgentPostureFinding,
+	type AgentPostureSeverity,
+	inspectAgentEnvironment,
+} from "./agent-environment-posture.js";
 export type {
 	AigCveFinding,
 	AigFingerprintMatch,
@@ -722,11 +735,12 @@ export {
 	type McpDiscoveryServer,
 	type McpSignedManifestIndex,
 } from "./mcp-discovery.js";
-export type {
-	McpInventoryCoverage,
-	McpInventoryCoverageStatus,
-	McpInventoryReport,
-	McpInventorySourceStatus,
+export {
+	DEFAULT_MCP_INVENTORY_PATHS,
+	type McpInventoryCoverage,
+	type McpInventoryCoverageStatus,
+	type McpInventoryReport,
+	type McpInventorySourceStatus,
 } from "./mcp-inventory.js";
 export type { McpFetchOptions } from "./mcp-transport.js";
 // Pinned-DNS MCP upstream transport used by the inline MCP gateway.
@@ -847,6 +861,8 @@ export {
 } from "./policy-document.js";
 // AI security posture findings (infra CVEs, MCP inventory, skill/plugin scan)
 export {
+	AGENT_POSTURE_FINDING_EVENT,
+	buildAgentPostureFindingEvents,
 	buildInfraScanFindingEvents,
 	buildMcpInventoryFindingEvents,
 	buildSkillScanFindingEvents,
@@ -889,6 +905,17 @@ export {
 	type PromptTenantDlp,
 	scanPrompt,
 } from "./prompt-protection.js";
+// Jailbreak & content-safety prompt inspection
+export {
+	applyTenantPromptSafety,
+	DEFAULT_PROMPT_SAFETY,
+	PROMPT_SAFETY_LABELS,
+	type PromptSafetyCategory,
+	type PromptSafetyFinding,
+	type PromptSafetyResult,
+	scanPromptSafety,
+	type TenantPromptSafetyPolicy,
+} from "./prompt-safety.js";
 // Quarantine
 export {
 	AutoQuarantine,
@@ -1196,6 +1223,8 @@ export type {
 	PluginInfo,
 	PluginScanCache,
 	PluginScanResult,
+	PromptContentSafetyCategory,
+	PromptContentSafetyConfig,
 	PromptProtectionConfig,
 	PromptProtectionMode,
 	SignalSources,
@@ -1227,6 +1256,7 @@ export {
 	LoggingConfigSchema,
 	nullLogger,
 	PackageCheckConfigSchema,
+	PromptContentSafetySchema,
 	PromptProtectionConfigSchema,
 	PromptProtectionModeSchema,
 	SensitivitySchema,

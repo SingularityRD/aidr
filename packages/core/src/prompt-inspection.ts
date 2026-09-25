@@ -33,6 +33,7 @@ import {
 	type PromptTenantDlp,
 	scanPrompt,
 } from "./prompt-protection.js";
+import type { TenantPromptSafetyPolicy } from "./prompt-safety.js";
 import {
 	type AgentRuntime,
 	type Config,
@@ -82,6 +83,11 @@ export interface PromptInspectionRequest {
 	config?: Config;
 	/** Tenant DLP loader; defaults to the signed/local provisioned policy for `runtime`. */
 	loadTenantDlp?: (runtime: AgentRuntime) => Promise<PromptTenantDlp | undefined>;
+	/**
+	 * Tenant prompt-safety floor loader; defaults to the signed provisioned policy
+	 * for `runtime`. A load failure blocks, like an unverifiable tenant DLP policy.
+	 */
+	loadTenantPromptSafety?: (runtime: AgentRuntime) => Promise<TenantPromptSafetyPolicy | undefined>;
 }
 
 export const PROMPT_INSPECTION_DEADLINE_ENV = "AIDR_PROMPT_INSPECTION_DEADLINE_MS";
@@ -171,6 +177,28 @@ function resultOutcome(result: PromptProtectionResult): PromptInspectionOutcome 
 	return { decision: "allow", reason: "clean" };
 }
 
+async function defaultTenantPromptSafety(
+	runtime: AgentRuntime,
+): Promise<TenantPromptSafetyPolicy | undefined> {
+	return (await loadProvisionedDetectorContext(runtime)).runtimeDetectors?.promptSafety;
+}
+
+/**
+ * Tenant DLP and the tenant prompt-safety floor. An injected DLP loader (tests,
+ * embedded runtimes) owns the tenant policy unless a prompt-safety loader is
+ * injected too. Throws when a provisioned policy cannot be verified.
+ */
+async function loadTenantPromptPolicy(request: PromptInspectionRequest): Promise<{
+	tenant?: PromptTenantDlp;
+	tenantPromptSafety?: TenantPromptSafetyPolicy;
+}> {
+	const tenant = await (request.loadTenantDlp ?? defaultTenantDlp)(request.runtime);
+	const loadPromptSafety =
+		request.loadTenantPromptSafety ??
+		(request.loadTenantDlp ? undefined : defaultTenantPromptSafety);
+	return { tenant, tenantPromptSafety: await loadPromptSafety?.(request.runtime) };
+}
+
 async function defaultTenantDlp(runtime: AgentRuntime): Promise<PromptTenantDlp | undefined> {
 	const detectors = (await loadProvisionedDetectorContext(runtime)).runtimeDetectors;
 	return detectors?.dlp?.enabled === true
@@ -231,15 +259,19 @@ export async function inspectUserPrompt(
 		if (typeof request.prompt !== "string") return uninspectedPromptOutcome(policy.secrets);
 
 		let tenant: PromptTenantDlp | undefined;
+		let tenantPromptSafety: TenantPromptSafetyPolicy | undefined;
 		try {
-			tenant = await (request.loadTenantDlp ?? defaultTenantDlp)(request.runtime);
+			({ tenant, tenantPromptSafety } = await loadTenantPromptPolicy(request));
 		} catch {
 			return tenantPolicyOutcome();
 		}
 		if (tenant) fallback.tenantPolicy = true;
 
 		try {
-			result = scanPrompt(request.prompt, policy, tenant, { deadlineAt: request.deadlineAt });
+			result = scanPrompt(request.prompt, policy, tenant, {
+				deadlineAt: request.deadlineAt,
+				tenantPromptSafety,
+			});
 		} catch (error) {
 			if (error instanceof PromptScanDeadlineError) {
 				return deadlineOutcome(fallback.secretsMode, fallback.tenantPolicy);
