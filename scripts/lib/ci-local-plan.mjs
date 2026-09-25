@@ -101,6 +101,10 @@ export const REQUIREMENTS = Object.freeze({
 		label: "Node.js at or above the privacy engine floor (ci.yml PRIVACY_NODE_VERSION)",
 		fix: "Run ci:local on a newer Node.js 22 or 24 release.",
 	},
+	pwsh: {
+		label: "PowerShell 7 (pwsh), preinstalled on GitHub's Ubuntu runners",
+		fix: "Install PowerShell 7 so `pwsh` is on PATH (https://learn.microsoft.com/powershell/scripting/install/installing-powershell-on-linux).",
+	},
 	python312: {
 		label: "Python 3.12 (ci.yml pins 3.12.8)",
 		fix: "Install python3.12 (with the venv module) or set AIDR_PYTHON312_BIN; the runner creates .ci-local/venv/aig-bridge from it.",
@@ -159,6 +163,9 @@ export const ONPREM_EXTRA_SUITE_PATTERNS = Object.freeze([
 	/^import-offline-pack[\w-]*\.test\.mjs$/u,
 	/^onprem-[\w-]+\.test\.mjs$/u,
 ]);
+
+/** pip through a proxy on a loaded machine needs more than the 15 s default read timeout. */
+const PIP_ENV = Object.freeze({ PIP_DEFAULT_TIMEOUT: "120", PIP_RETRIES: "5" });
 
 const step = (definition) => Object.freeze({ required: true, quick: false, timeoutMs: DEFAULT_TIMEOUT_MS, requires: [], ...definition });
 
@@ -532,6 +539,7 @@ export const STEPS = Object.freeze([
 		name: "Install pinned bridge tooling and dependencies",
 		ci: ["aig-bridge", "Install pinned bridge tooling and dependencies"],
 		venv: "aig-bridge",
+		env: PIP_ENV,
 		requires: ["python312", "network"],
 		timeoutMs: 15 * MIN,
 	}),
@@ -541,13 +549,31 @@ export const STEPS = Object.freeze([
 		name: "Audit and test the AIG bridge",
 		ci: ["aig-bridge", "Audit and test bridge"],
 		venv: "aig-bridge",
+		env: PIP_ENV,
 		requires: ["python312", "network"],
 		timeoutMs: 15 * MIN,
 	}),
 
 	// ── release ─────────────────────────────────────────────────────────────
 	step({ id: "build-release", group: "release", name: "Release build", run: "pnpm build:release", timeoutMs: 30 * MIN }),
-	step({ id: "fleet", group: "release", name: "Windows and Unix fleet lifecycles", ci: ["quality-gate", "Verify Windows and Unix fleet lifecycles"], timeoutMs: 10 * MIN }),
+	// Split so a host without PowerShell still runs the Unix leg (GitHub's Ubuntu runners ship pwsh).
+	step({
+		id: "fleet-windows",
+		group: "release",
+		name: "Windows fleet lifecycle (PowerShell fixtures)",
+		run: "pnpm verify:fleet:windows",
+		covers: [["quality-gate", "Verify Windows and Unix fleet lifecycles"]],
+		requires: ["pwsh"],
+		timeoutMs: 10 * MIN,
+	}),
+	step({
+		id: "fleet-unix",
+		group: "release",
+		name: "Unix fleet lifecycle",
+		run: "pnpm verify:fleet:unix",
+		covers: [["quality-gate", "Verify Windows and Unix fleet lifecycles"]],
+		timeoutMs: 10 * MIN,
+	}),
 	step({ id: "package-install", group: "release", name: "Install every packed consumer artifact", ci: ["quality-gate", "Install every packed consumer artifact"], timeoutMs: 20 * MIN }),
 	step({ id: "route-smoke", group: "release", name: "Dashboard static route smoke", ci: ["quality-gate", "Dashboard static route smoke"], timeoutMs: 10 * MIN }),
 	step({ id: "evidence-boundary", group: "release", name: "CI evidence upload boundary", ci: ["quality-gate", "Verify CI evidence upload boundary"], quick: true, timeoutMs: 3 * MIN }),
@@ -559,6 +585,7 @@ export const STEPS = Object.freeze([
 		name: "Install pinned bridge E2E dependencies",
 		ci: ["real-host-e2e", "Install pinned bridge E2E dependencies"],
 		venv: "aig-bridge",
+		env: PIP_ENV,
 		optIn: true,
 		requires: ["python312", "network"],
 		timeoutMs: 15 * MIN,

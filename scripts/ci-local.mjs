@@ -182,7 +182,9 @@ function findPython312() {
 function findChromium() {
 	let revision;
 	try {
-		const browsersJson = createRequire(path.join(root, "packages/browser-guard/package.json")).resolve("playwright-core/browsers.json");
+		// browsers.json is not in playwright-core's package exports; resolve it next to package.json.
+		const manifest = createRequire(path.join(root, "packages/browser-guard/package.json")).resolve("playwright-core/package.json");
+		const browsersJson = path.join(path.dirname(manifest), "browsers.json");
 		revision = JSON.parse(readFileSync(browsersJson, "utf8")).browsers.find((browser) => browser.name === "chromium")?.revision;
 	} catch {
 		return { detail: "playwright-core is not installed for packages/browser-guard (run pnpm install)" };
@@ -225,6 +227,10 @@ function probeFacts(selected, workflow) {
 	if (needed.has("node-privacy-floor")) {
 		available["node-privacy-floor"] = versionAtLeast(process.versions.node, String(workflow.env.PRIVACY_NODE_VERSION));
 		detail["node-privacy-floor"] = `current v${process.versions.node}, floor ${workflow.env.PRIVACY_NODE_VERSION}`;
+	}
+	if (needed.has("pwsh")) {
+		const pwsh = onPath("pwsh");
+		record("pwsh", pwsh ? { path: pwsh } : { detail: "pwsh not on PATH" });
 	}
 	if (needed.has("python312")) record("python312", findPython312(), (value) => `${value.version} at ${value.path}`);
 	if (needed.has("chromium")) record("chromium", findChromium(), (value) => `chromium-${value.revision} in ${value.path}`);
@@ -488,7 +494,7 @@ async function runStep(entry, index, total, context) {
 			const runnerTemp = path.join(localDir, "runner-temp", entry.id);
 			rmSync(runnerTemp, { recursive: true, force: true });
 			mkdirSync(runnerTemp, { recursive: true });
-			const env = { ...process.env, ...resolved.env, AIDR_CI_LOCAL: "1", RUNNER_TEMP: runnerTemp, GITHUB_ENV: path.join(runnerTemp, "github_env"), GITHUB_PATH: path.join(runnerTemp, "github_path"), GITHUB_WORKSPACE: root };
+			const env = { ...process.env, ...resolved.env, ...(entry.env ?? {}), AIDR_CI_LOCAL: "1", RUNNER_TEMP: runnerTemp, GITHUB_ENV: path.join(runnerTemp, "github_env"), GITHUB_PATH: path.join(runnerTemp, "github_path"), GITHUB_WORKSPACE: root };
 			const pathDirs = [toolsBin];
 			for (const [tool, variable] of Object.entries(TOOL_ENV)) {
 				const found = context.facts.found[tool];
