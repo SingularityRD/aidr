@@ -117,6 +117,23 @@ function npmInstall(prefix, spec, postinstall = null) {
 	}
 }
 
+/**
+ * A host whose npm package ships a `<name>` bin: the override path, else the
+ * pinned local install (installed on demand when `install` is set). The package's
+ * own postinstall runs only when `runPostinstall` is set, after npmInstall checks it.
+ */
+function resolveNpmHost(hostsDir, install, name, { runPostinstall }) {
+	const pin = HOST_PINS[name];
+	const local = path.join(hostsDir, name, "node_modules", ".bin", name);
+	let binary = [process.env[pin.envOverride], local].filter(Boolean).find((candidate) => existsSync(candidate));
+	if (!binary && install) {
+		npmInstall(path.join(hostsDir, name), `${pin.npm}@${pin.version}`, runPostinstall ? pin.npm : null);
+		binary = local;
+	}
+	if (!binary || !existsSync(binary)) return null;
+	return { binary, version: versionOf(binary, ["--version"], process.env), pinnedVersion: pin.version };
+}
+
 /** Download and sha256-verify an official Node.js build (OpenClaw needs Node >= 24.16). */
 async function installNode(version, hostsDir) {
 	const platform = process.platform === "darwin" ? "darwin" : process.platform === "linux" ? "linux" : null;
@@ -231,15 +248,7 @@ const codex = {
 	supportsCrashProbe: true,
 	supportsOutputInspection: false,
 	async resolve({ hostsDir, install }) {
-		const pin = HOST_PINS.codex;
-		const local = path.join(hostsDir, "codex", "node_modules", ".bin", "codex");
-		let binary = [process.env[pin.envOverride], local].filter(Boolean).find((candidate) => existsSync(candidate));
-		if (!binary && install) {
-			npmInstall(path.join(hostsDir, "codex"), `${pin.npm}@${pin.version}`);
-			binary = local;
-		}
-		if (!binary || !existsSync(binary)) return null;
-		return { binary, version: versionOf(binary, ["--version"], process.env), pinnedVersion: pin.version };
+		return resolveNpmHost(hostsDir, install, "codex", { runPostinstall: false });
 	},
 	prepare(sandbox, mode, { mockUrl }) {
 		const codexHome = path.join(sandbox.home, ".codex");
@@ -296,15 +305,7 @@ const opencode = {
 	supportsCrashProbe: false,
 	supportsOutputInspection: true,
 	async resolve({ hostsDir, install }) {
-		const pin = HOST_PINS.opencode;
-		const local = path.join(hostsDir, "opencode", "node_modules", ".bin", "opencode");
-		let binary = [process.env[pin.envOverride], local].filter(Boolean).find((candidate) => existsSync(candidate));
-		if (!binary && install) {
-			npmInstall(path.join(hostsDir, "opencode"), `${pin.npm}@${pin.version}`, pin.npm);
-			binary = local;
-		}
-		if (!binary || !existsSync(binary)) return null;
-		return { binary, version: versionOf(binary, ["--version"], process.env), pinnedVersion: pin.version };
+		return resolveNpmHost(hostsDir, install, "opencode", { runPostinstall: true });
 	},
 	prepare(sandbox, mode, { mockUrl }) {
 		const configDir = path.join(sandbox.home, ".config", "opencode");
