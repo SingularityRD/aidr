@@ -36,7 +36,7 @@ export class XmlError extends Error {
 	}
 }
 
-interface XmlAttr {
+export interface XmlAttr {
 	readonly name: string;
 	/** Decoded value. */
 	readonly value: string;
@@ -93,7 +93,7 @@ export function escapeXmlText(s: string): string {
 	return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-function escapeXmlAttr(s: string, quote: '"' | "'"): string {
+export function escapeXmlAttr(s: string, quote: '"' | "'"): string {
 	const out = s
 		.replace(/&/g, "&amp;")
 		.replace(/</g, "&lt;")
@@ -351,7 +351,7 @@ export function spliceEdits(value: string, edits: readonly Edit[]): string {
 	return out + value.slice(cursor);
 }
 
-function attributeSegment(attr: XmlAttr): TextSegment {
+export function attributeSegment(attr: XmlAttr): TextSegment {
 	return {
 		text: attr.value,
 		context: "",

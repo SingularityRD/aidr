@@ -128,7 +128,7 @@ export const OOXML_EXTENSIONS: ReadonlySet<string> = new Set([
 
 const CFB_MAGIC = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1] as const;
 
-function isCompoundFile(bytes: Uint8Array): boolean {
+export function isCompoundFile(bytes: Uint8Array): boolean {
 	return CFB_MAGIC.every((b, i) => bytes[i] === b);
 }
 
