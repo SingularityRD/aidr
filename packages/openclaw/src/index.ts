@@ -22,7 +22,12 @@ import {
 import { createAllowlistAddTool, createAllowlistRemoveTool } from "./allowlist-tools.js";
 import { getBundledDataDirs } from "./bundled-dirs.js";
 import { createLogger, type PluginLogger } from "./logger-adapter.js";
-import { OpenClawOutputProtection } from "./output-protection.js";
+import {
+	type AfterToolCallEvent,
+	OpenClawOutputProtection,
+	type OutputHookContext,
+} from "./output-protection.js";
+import { feedToolOutputFlow } from "./session-flow-feed.js";
 import {
 	type BeforeAgentRunEvent,
 	type BeforePromptBuildEvent,
@@ -166,7 +171,15 @@ function registerGuarded(api: PluginApi): void {
 
 	api.on(
 		"after_tool_call",
-		afterIntegrity(requireIntegrity, outputProtection.afterToolCall.bind(outputProtection)),
+		afterIntegrity(
+			requireIntegrity,
+			async (event: AfterToolCallEvent, context?: OutputHookContext) => {
+				const inspection = outputProtection.afterToolCall(event, context);
+				// Session toxic-flow: secrets or injection payloads this output carried
+				// taint the session for its next calls. Never throws.
+				await feedToolOutputFlow(event, context, inspection, logger);
+			},
+		),
 	);
 	// OpenClaw requires this persistence hook to be synchronous. It can keep
 	// future transcript reads safe, but it runs after the tool already executed.
