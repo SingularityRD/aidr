@@ -120,6 +120,17 @@ are:
 2. **Permanently allowlist the exact artifact** with `aidr allowlist add
    <url|command|file_path> <value>` (also interactive). Any later tool call with
    that exact artifact evaluates to `allowlisted`.
+3. **Managed mode: dashboard approval.** On an enrolled installation every `ask`
+   is also submitted to the AIDR dashboard, and the block reason says
+   `Approval requested in the AIDR dashboard: <request_id>`. An administrator — a
+   different, MFA-authenticated person on another device — approves it there, and
+   the next identical call is released once by a control-plane-signed token that
+   is verified against the approval keys in the signed entitlement and whose nonce
+   is spent locally. The agent cannot mint, re-bind or replay such a token. With
+   `operator_approvals.dashboard_only: true` this is the only channel (path 1 is
+   then ignored). See
+   [dashboard approvals](../../docs/configuration.md#managed-mode-dashboard-approvals).
+   In local mode nothing is sent anywhere and only paths 1 and 2 apply.
 
 ### Honest limitation
 

@@ -534,6 +534,44 @@ export async function logPluginScan(
 	}
 }
 
+/**
+ * One step of a managed-mode dashboard approval (request submitted, decision
+ * observed, token rejected or consumed). Carries identifiers and outcome codes
+ * only: never the tool input, the token or the API key.
+ */
+export async function logDashboardApprovalEvent(
+	config: LoggingConfig,
+	event: {
+		event: string;
+		sessionId: string;
+		toolName: string;
+		actionId: string;
+		requestId?: string;
+		reason?: string;
+		approverId?: string;
+	},
+): Promise<void> {
+	if (!config.enabled) return;
+	const entry: Record<string, unknown> = {
+		type: "dashboard_approval",
+		source: "dashboard_approval",
+		timestamp: new Date().toISOString(),
+		event: event.event,
+		session_id: event.sessionId,
+		tool_name: event.toolName,
+		action_id: event.actionId,
+		...(event.requestId ? { request_id: event.requestId } : {}),
+		...(event.reason ? { reason: event.reason } : {}),
+		...(event.approverId ? { approver_id: event.approverId } : {}),
+	};
+	try {
+		await appendEntry(config, redactTelemetryData(entry));
+	} catch (error) {
+		// Fail-open for the audit write only; the approval decision is unaffected.
+		recordAuditWriteFailure(error);
+	}
+}
+
 export async function logIncident(
 	config: LoggingConfig,
 	entry: Record<string, unknown>,

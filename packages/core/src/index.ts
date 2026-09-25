@@ -80,6 +80,7 @@ export {
 	getAuditLogLossState,
 	getRecentEntries,
 	logAllowedResponseActions,
+	logDashboardApprovalEvent,
 	logPluginScan,
 	logResponseActions,
 	logVerdict,
@@ -219,6 +220,33 @@ export {
 	resetCveIndexCache,
 	setTestIndexPath,
 } from "./cve-checker.js";
+// Managed-mode dashboard approvals (out-of-band admin approval, signed single-use tokens)
+export {
+	type ApprovalRequestBody,
+	type ApprovalRequestStatus,
+	DASHBOARD_APPROVAL_REQUEST_TIMEOUT_MS,
+	DASHBOARD_APPROVAL_REQUEST_TTL_MS,
+	DASHBOARD_APPROVAL_SOURCE,
+	DASHBOARD_APPROVAL_TOKEN_MAX_TTL_MS,
+	DASHBOARD_APPROVAL_TOTAL_BUDGET_MS,
+	type DashboardApprovalBinding,
+	type DashboardApprovalContext,
+	type DashboardApprovalInput,
+	type DashboardApprovalOptions,
+	type DashboardApprovalOutcome,
+	type DashboardApprovalStatus,
+	type DashboardApprovalTokenPayload,
+	type DashboardContextResult,
+	type DashboardTokenRejection,
+	type DashboardTokenVerification,
+	type DashboardUnavailableReason,
+	dashboardApprovalStatePath,
+	dashboardArtifactDigest,
+	dashboardToolName,
+	processDashboardApproval,
+	resolveDashboardApprovalContext,
+	verifyDashboardApprovalToken,
+} from "./dashboard-approvals.js";
 // Scoped, short-lived user -> agent -> tool -> resource credentials.
 export {
 	canonicalDelegatedCredentialJson,
@@ -504,10 +532,12 @@ export {
 // allowed the call and snapshotted the target, the connector runs the call, and
 // this wrapper rolls the target back if the call fails.
 export {
+	type AskApprovalResolution,
 	addToAllowlist,
 	approveAction,
 	executeWithRollback,
 	formatAskMessage,
+	formatDashboardApprovalNotice,
 	formatDenyMessage,
 	type GuardOptions,
 	type GuardResponseSettings,
@@ -515,6 +545,7 @@ export {
 	guardInputSummary,
 	guardToolCall,
 	removeFromAllowlist,
+	resolveAskWithDashboardApproval,
 	resolveGuardResponseSettings,
 	rollbackSnapshotFromGuardResult,
 	summarizeArtifacts,
@@ -625,12 +656,13 @@ export {
 } from "./local-dlp-policy.js";
 // Logger
 export { createChildLogger, createLogger, getLogger, setLogger } from "./logger.js";
-export type { ManagedState } from "./managed.js";
+export type { ApprovalPublicKeyEntry, ManagedState } from "./managed.js";
 // Verified managed identity and entitlement state for connector provisioning.
 export {
 	isEntitlementActive,
 	loadManagedState,
 	managedStatePath,
+	parseApprovalPublicKeys,
 } from "./managed.js";
 export type {
 	AigMcpCategory,
@@ -718,6 +750,7 @@ export {
 	consumeOperatorApproval,
 	createDefaultOperatorKeyProvider,
 	describeOperatorApprovalKey,
+	type ExternalSpendResult,
 	findOperatorAllowlistGrant,
 	getPendingAsk,
 	type ListedPendingAsk,
@@ -750,6 +783,7 @@ export {
 	recordOperatorApproval,
 	recordPendingAsk,
 	resolveOperatorKeyStorage,
+	spendExternalApprovalToken,
 } from "./operator-approvals.js";
 export { scanModelOutput } from "./output-scanner.js";
 // High-precision credential / payment-card detection shared by output scanning and the CLI
@@ -778,19 +812,6 @@ export {
 	redactPII,
 	validateNoPII,
 } from "./pii-detector.js";
-// Prompt protection (UserPromptSubmit-style inspection of the user's prompt)
-export {
-	DEFAULT_PROMPT_PROTECTION,
-	type PromptFindingCategory,
-	type PromptFindingSummary,
-	type PromptIncompleteInspection,
-	type PromptProtectionDecision,
-	type PromptProtectionResult,
-	PromptScanDeadlineError,
-	type PromptScanOptions,
-	type PromptTenantDlp,
-	scanPrompt,
-} from "./prompt-protection.js";
 // Plugin scan cache
 export {
 	cacheKey,
@@ -844,6 +865,19 @@ export {
 	type PostureUploadResult,
 	uploadPostureEvents,
 } from "./posture-upload.js";
+// Prompt protection (UserPromptSubmit-style inspection of the user's prompt)
+export {
+	DEFAULT_PROMPT_PROTECTION,
+	type PromptFindingCategory,
+	type PromptFindingSummary,
+	type PromptIncompleteInspection,
+	type PromptProtectionDecision,
+	type PromptProtectionResult,
+	PromptScanDeadlineError,
+	type PromptScanOptions,
+	type PromptTenantDlp,
+	scanPrompt,
+} from "./prompt-protection.js";
 // Quarantine
 export {
 	AutoQuarantine,

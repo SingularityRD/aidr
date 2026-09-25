@@ -12,8 +12,10 @@ import {
 	extractFromToolCall,
 	extractFromWebFetch,
 	extractFromWrite,
+	formatDashboardApprovalNotice,
 	loadProvisionedDetectorContext,
 	recordHostObservation,
+	resolveAskWithDashboardApproval,
 	type Verdict,
 	verifyArtifactIntegrityAndLog,
 } from "@singularityrd/aidr-core";
@@ -131,13 +133,13 @@ async function handleCursor(payload: unknown): Promise<void> {
 	}
 
 	try {
-		const verdict = await evaluateNormalizedCall(normalized, "cursor");
-		writeJson(toCursorResponse(verdict, eventName));
+		const evaluation = await evaluateNormalizedCall(normalized, "cursor");
+		writeJson(toCursorResponse(evaluation, eventName));
 		recordHostObservation(hostObservation, {
 			connector: "cursor",
 			event: eventName,
 			toolName: normalized.toolName,
-			decision: verdict.decision,
+			decision: evaluation.verdict.decision,
 		});
 	} catch {
 		writeJson(
@@ -170,13 +172,13 @@ async function handleVsCode(payload: unknown): Promise<void> {
 	}
 
 	try {
-		const verdict = await evaluateNormalizedCall(normalized, "vscode");
-		writeJson(toVsCodeResponse(verdict));
+		const evaluation = await evaluateNormalizedCall(normalized, "vscode");
+		writeJson(toVsCodeResponse(evaluation));
 		recordHostObservation(hostObservation, {
 			connector: "vscode",
 			event: "PreToolUse",
 			toolName: normalized.toolName,
-			decision: verdict.decision,
+			decision: evaluation.verdict.decision,
 		});
 	} catch {
 		writeJson(internalVsCodeResponse("Singularity AIDR internal error; execution was denied."));
@@ -317,7 +319,8 @@ async function handleVsCodeToolOutput(payload: unknown): Promise<void> {
 	const reason =
 		result.status === "blocked"
 			? `Singularity AIDR detected untrusted VS Code tool output (${findingSummary}).`
-			: result.reason ?? "Singularity AIDR could not fully inspect VS Code tool output; coverage is incomplete and it was not classified as clean.";
+			: (result.reason ??
+				"Singularity AIDR could not fully inspect VS Code tool output; coverage is incomplete and it was not classified as clean.");
 	const coverageNotice = `${reason} The tool already completed. VS Code PostToolUse blocks further processing, but this hook does not replace output bytes; the original result may already be in the transcript.`;
 	writeJson({
 		decision: "block",
@@ -398,22 +401,47 @@ function writeHookInputLimitResponse(mode: HookMode | undefined): void {
 	writeJson({ additional_context: reason });
 }
 
-async function evaluateNormalizedCall(call: NormalizedHookCall, mode: HookMode): Promise<Verdict> {
+/** A verdict plus the managed-mode dashboard approval details for an `ask`. */
+interface HookEvaluation {
+	verdict: Verdict;
+	/** User-facing dashboard request line, or null when there is nothing to say. */
+	dashboardNotice: string | null;
+	/** `operator_approvals.dashboard_only`: an `ask` must block, not ask. */
+	dashboardOnly: boolean;
+}
+
+async function evaluateNormalizedCall(
+	call: NormalizedHookCall,
+	mode: HookMode,
+): Promise<HookEvaluation> {
 	const { threatsDir, allowlistsDir } = getBundledDataDirs();
 	// Operator-provisioned tenant detector policy for this host runtime. The
 	// policy file is selected by the reported runtime, which is the same closed
 	// union value the evaluator receives; an unprovisioned host gets an empty
 	// context and is evaluated exactly as before.
 	const provisioned = await loadProvisionedDetectorContext(mode);
-	return evaluateToolCall(
-		{
-			sessionId: call.sessionId,
-			toolName: call.toolName,
-			toolInput: call.toolInput,
-			artifacts: call.artifacts,
-		},
-		{ threatsDir, allowlistsDir, agentRuntime: mode, ...provisioned },
-	);
+	const request = {
+		sessionId: call.sessionId,
+		toolName: call.toolName,
+		toolInput: call.toolInput,
+		artifacts: call.artifacts,
+	};
+	const evaluated = await evaluateToolCall(request, {
+		threatsDir,
+		allowlistsDir,
+		agentRuntime: mode,
+		...provisioned,
+	});
+	// Managed mode: submit the ask to the AIDR dashboard or release it with a
+	// verified single-use approval token (persisted across hook processes by core).
+	const resolution = await resolveAskWithDashboardApproval(request, evaluated, {
+		agentRuntime: mode,
+	});
+	return {
+		verdict: resolution.verdict,
+		dashboardNotice: formatDashboardApprovalNotice(resolution.dashboardApproval),
+		dashboardOnly: resolution.dashboardOnly,
+	};
 }
 
 function detectCursorEvent(payload: unknown): CursorEventName | undefined {
@@ -720,14 +748,25 @@ function readFilePath(toolInput: Record<string, unknown>): string | undefined {
 	return firstPopulatedString(...EDIT_FILE_PATH_FIELDS.map((field) => toolInput[field]));
 }
 
-function toCursorResponse(verdict: Verdict, eventName: CursorEventName): Record<string, unknown> {
+function withDashboardNotice(reason: string, evaluation: HookEvaluation): string {
+	return evaluation.dashboardNotice ? `${reason}\n${evaluation.dashboardNotice}` : reason;
+}
+
+function toCursorResponse(
+	evaluation: HookEvaluation,
+	eventName: CursorEventName,
+): Record<string, unknown> {
+	const { verdict } = evaluation;
 	if (verdict.decision === "allow") {
 		return { decision: "allow", permission: "allow" };
 	}
 
+	// dashboard_only: a native "ask" would let the local user approve, so block.
 	const decision =
-		verdict.decision === "ask" && eventName === "preToolUse" ? "deny" : verdict.decision;
-	const reason = truncateReason(verdict);
+		verdict.decision === "ask" && (eventName === "preToolUse" || evaluation.dashboardOnly)
+			? "deny"
+			: verdict.decision;
+	const reason = withDashboardNotice(truncateReason(verdict), evaluation);
 	const agentMessage = `Singularity AIDR ${decision === "deny" ? "blocked" : "flagged"} this action (${verdict.severity}).`;
 
 	return {
@@ -742,7 +781,8 @@ function toCursorResponse(verdict: Verdict, eventName: CursorEventName): Record<
 	};
 }
 
-function toVsCodeResponse(verdict: Verdict): Record<string, unknown> {
+function toVsCodeResponse(evaluation: HookEvaluation): Record<string, unknown> {
+	const { verdict } = evaluation;
 	if (verdict.decision === "allow") {
 		return {};
 	}
@@ -750,8 +790,10 @@ function toVsCodeResponse(verdict: Verdict): Record<string, unknown> {
 	return {
 		hookSpecificOutput: {
 			hookEventName: "PreToolUse",
-			permissionDecision: verdict.decision,
-			permissionDecisionReason: truncateReason(verdict),
+			// dashboard_only: a native "ask" would let the local user approve, so block.
+			permissionDecision:
+				verdict.decision === "ask" && evaluation.dashboardOnly ? "deny" : verdict.decision,
+			permissionDecisionReason: withDashboardNotice(truncateReason(verdict), evaluation),
 		},
 	};
 }

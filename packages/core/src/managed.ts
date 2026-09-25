@@ -46,11 +46,59 @@ export interface EntitlementSnapshotV2 {
 		key_b64: string;
 		expires_at: string;
 	}>;
+	/**
+	 * Ed25519 public keys (base64 SPKI DER) the tenant's dashboard approval tokens
+	 * are signed with. Trusted only as part of a verified ed25519 entitlement.
+	 */
+	approval_public_keys?: ApprovalPublicKeyEntry[];
 	issued_at: string;
 	expires_at: string;
 	grace_until: string;
 	serial: string;
 	revocation_epoch: number;
+}
+
+/** One dashboard approval verification key, as delivered in the signed entitlement. */
+export interface ApprovalPublicKeyEntry {
+	key_id: string;
+	public_key_spki_b64: string;
+}
+
+const APPROVAL_KEY_ID = /^[A-Za-z0-9._:-]{1,128}$/;
+const MAX_APPROVAL_PUBLIC_KEYS = 16;
+
+/**
+ * Validate `approval_public_keys`: every entry must be a well-formed key id and a
+ * base64 SPKI DER that parses as an Ed25519 public key. Anything else rejects the
+ * whole list (null), so a malformed entitlement never yields a partial key set.
+ */
+export function parseApprovalPublicKeys(input: unknown): ApprovalPublicKeyEntry[] | null {
+	if (!Array.isArray(input) || input.length > MAX_APPROVAL_PUBLIC_KEYS) return null;
+	const out: ApprovalPublicKeyEntry[] = [];
+	const seen = new Set<string>();
+	for (const entry of input) {
+		if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
+		const record = entry as Record<string, unknown>;
+		const keyId = record.key_id;
+		const spki = record.public_key_spki_b64;
+		if (typeof keyId !== "string" || !APPROVAL_KEY_ID.test(keyId) || seen.has(keyId)) return null;
+		if (typeof spki !== "string" || spki.length > 1024 || !/^[A-Za-z0-9+/]+={0,2}$/.test(spki)) {
+			return null;
+		}
+		try {
+			const key = createPublicKey({
+				key: Buffer.from(spki, "base64"),
+				format: "der",
+				type: "spki",
+			});
+			if (key.asymmetricKeyType !== "ed25519") return null;
+		} catch {
+			return null;
+		}
+		seen.add(keyId);
+		out.push({ key_id: keyId, public_key_spki_b64: spki });
+	}
+	return out;
 }
 
 export interface RevocationListV1 {
@@ -517,6 +565,15 @@ function validateEntitlementSnapshotV2Strict(input: unknown): EntitlementSnapsho
 		packKeys = out;
 	}
 
+	// Additive field: absent on older control planes. When present it is part of
+	// the signed snapshot, so it must be kept verbatim for the signature to verify.
+	let approvalPublicKeys: ApprovalPublicKeyEntry[] | undefined;
+	if (obj.approval_public_keys !== undefined) {
+		const parsed = parseApprovalPublicKeys(obj.approval_public_keys);
+		if (!parsed) return null;
+		approvalPublicKeys = parsed;
+	}
+
 	return {
 		schema_version: 2,
 		tenant_id: tenantId,
@@ -526,6 +583,7 @@ function validateEntitlementSnapshotV2Strict(input: unknown): EntitlementSnapsho
 		allowed_agents: allowedAgents,
 		premium_modules: premiumModules,
 		...(packKeys ? { pack_keys: packKeys } : {}),
+		...(approvalPublicKeys ? { approval_public_keys: approvalPublicKeys } : {}),
 		issued_at: issuedAt,
 		expires_at: expiresAt,
 		grace_until: graceUntil,

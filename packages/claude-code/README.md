@@ -25,6 +25,15 @@ behavior is unverified. No real-host side-effect acceptance is recorded.
   outputs has not been verified, and PostToolUse cannot undo tool execution.
 - Records decisions in the local audit log and, when a managed control plane is
   configured, forwards scoped telemetry.
+- Approvals: an `ask` opens Claude Code's native confirmation dialog. In managed
+  mode the ask is also submitted to the AIDR dashboard (the dialog shows
+  `Approval requested in the AIDR dashboard: <request_id>`); once an administrator
+  approves it there, the identical retry is released once without the dialog by a
+  control-plane-signed, single-use token (the request id and the spent nonce are
+  persisted, since every hook call is its own process). With
+  `operator_approvals.dashboard_only: true` the dialog is replaced by a block so
+  only the dashboard can release the call. See
+  [dashboard approvals](../../docs/configuration.md#managed-mode-dashboard-approvals).
 - Loads the pinned native AMSI addon from `dist/vendor/koffi` on Windows so file
   and buffer reputation can use the host antimalware interface. The installer
   refuses to register hooks when that payload is missing.

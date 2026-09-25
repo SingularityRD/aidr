@@ -23,6 +23,13 @@ For a forwarded shell command, file operation, or URL fetch, Singularity AIDR ch
 Cursor's `preToolUse` response does not provide an enforceable approval prompt,
 so an `ask` verdict is returned as an explicit deny.
 
+In managed mode an `ask` is also submitted to the AIDR dashboard and the reason
+includes `Approval requested in the AIDR dashboard: <request_id>`. After an
+administrator approves it there, the identical retry is released once by a
+control-plane-signed, single-use token. `operator_approvals.dashboard_only: true`
+turns every remaining `ask` into a deny so only the dashboard can release it. See
+[dashboard approvals](../../docs/configuration.md#managed-mode-dashboard-approvals).
+
 ## Getting started
 
 For VS Code Local agent hooks, enable `chat.useClaudeHooks` in VS Code User
