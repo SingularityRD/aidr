@@ -274,7 +274,7 @@ export function normalizeShellText(text: string): string {
 	const view = peel(stripQuoting(decoded));
 	// A backslash is an escape to a POSIX shell but a path separator to cmd and
 	// PowerShell. When there is one, add the view with backslashes kept, so a
-	// Windows path (`C:\Users\me\.s*\x`) keeps its separators for the glob step.
+	// Windows path (`C:\Users\user\.s*\x`) keeps its separators for the glob step.
 	if (!decoded.includes("\\")) return view;
 	return `${view}\n;\n${peel(stripQuoting(decoded, true))}`;
 }

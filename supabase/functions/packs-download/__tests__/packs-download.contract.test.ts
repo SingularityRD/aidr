@@ -29,7 +29,7 @@ function harness(options: {
 	rate?: "allowed" | "denied" | "error";
 } = {}) {
 	const rows: Record<string, Row | null> = {
-		api_keys: options.key === undefined ? { id: API_KEY_ID, key_hash: KEY_HASH, user_id: "user-1", tenant_id: TENANT, revoked: false } : options.key,
+		api_keys: options.key === undefined ? { id: API_KEY_ID, key_hash: KEY_HASH, user_id: "user-1", tenant_id: TENANT, revoked: false, scope: "tenant" } : options.key,
 		tenant_members: options.membership === undefined ? { tenant_id: TENANT, user_id: "user-1", role: "member", expires_at: null } : options.membership,
 		tenants: options.tenant === undefined ? { id: TENANT, status: "active" } : options.tenant,
 		entitlements: options.entitlement === undefined ? { tenant_id: TENANT, premium_intel: true, premium_pkg_plugin: false } : options.entitlement,
@@ -190,7 +190,7 @@ describe("packs-download customer contract", () => {
 	});
 
 	it.each([
-		["revoked key", "api_keys", { id: API_KEY_ID, key_hash: KEY_HASH, user_id: "user-1", tenant_id: TENANT, revoked: true }, 401],
+		["revoked key", "api_keys", { id: API_KEY_ID, key_hash: KEY_HASH, user_id: "user-1", tenant_id: TENANT, revoked: true, scope: "tenant" }, 401],
 		["removed membership", "tenant_members", null, 403],
 		["demoted membership", "tenant_members", { tenant_id: TENANT, user_id: "user-1", role: "viewer", expires_at: null }, 403],
 		["suspended tenant", "tenants", { id: TENANT, status: "suspended" }, 403],
@@ -273,7 +273,7 @@ describe("packs-download customer contract", () => {
 	it("denies invalid or revoked keys and inactive tenant membership", async () => {
 		for (const [options, status] of [
 			[{ key: null }, 401],
-			[{ key: { key_hash: KEY_HASH, user_id: "user-1", tenant_id: TENANT, revoked: true } }, 401],
+			[{ key: { key_hash: KEY_HASH, user_id: "user-1", tenant_id: TENANT, revoked: true, scope: "tenant" } }, 401],
 			[{ membership: null }, 403],
 			[{ membership: { tenant_id: TENANT, user_id: "user-1", role: "viewer", expires_at: null } }, 403],
 			[{ membership: { tenant_id: TENANT, user_id: "user-1", role: "member", expires_at: "2000-01-01T00:00:00Z" } }, 403],
@@ -286,6 +286,37 @@ describe("packs-download customer contract", () => {
 			expect(runtime.queries.some((query) => query.table === "entitlements")).toBe(false);
 			expect(runtime.sign).not.toHaveBeenCalled();
 		}
+	});
+
+	it("refuses an ingest-only Browser Guard key before any budget, entitlement or Storage work", async () => {
+		const runtime = harness({
+			key: {
+				id: API_KEY_ID,
+				key_hash: KEY_HASH,
+				user_id: "user-1",
+				tenant_id: TENANT,
+				revoked: false,
+				scope: "ingest:browser_guard",
+				install_limit: 50,
+			},
+		});
+		const response = await runtime.handler(request());
+		expect(response.status).toBe(403);
+		expect(await response.json()).toEqual({ error: "api_key_scope_denied" });
+		expect(runtime.rateCalls).toEqual([]);
+		expect(runtime.queries.some((query) => query.table === "entitlements")).toBe(false);
+		expect(runtime.sign).not.toHaveBeenCalled();
+	});
+
+	it("refuses a grant whose key was re-typed ingest-only before streaming", async () => {
+		const runtime = harness();
+		const issued = await runtime.handler(request());
+		const { download_url: downloadUrl } = await issued.json() as { download_url: string };
+		runtime.rows.api_keys = { ...runtime.rows.api_keys, scope: "ingest:browser_guard", install_limit: 50 };
+		const response = await runtime.handler(grantRequest(downloadUrl));
+		expect(response.status).toBe(403);
+		expect(await response.json()).toEqual({ error: "api_key_scope_denied" });
+		expect(runtime.fetch).not.toHaveBeenCalled();
 	});
 
 	it("denies unpaid access and never queries a pack", async () => {
