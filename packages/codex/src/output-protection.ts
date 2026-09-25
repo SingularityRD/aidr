@@ -202,7 +202,14 @@ export async function enforceCodexPostToolUse(
 
 	const ruleIds = [...new Set(findings.map((finding) => finding.ruleId))].sort();
 	// The session's next calls are judged with what this output carried. Never throws.
-	await recordToolOutputFlow({ sessionId, toolName, toolInput, findings }, { agentRuntime: "codex", logger });
+	await recordToolOutputFlow(
+		{ sessionId, toolName, toolInput, findings },
+		{ agentRuntime: "codex", logger },
+	);
 	await auditBlockedOutput(sessionId, toolName, "blocked", ruleIds, text.length, logger);
-	return { status: "blocked", ruleIds, wire: { decision: "block", reason: blockedReason(ruleIds) } };
+	return {
+		status: "blocked",
+		ruleIds,
+		wire: { decision: "block", reason: blockedReason(ruleIds) },
+	};
 }

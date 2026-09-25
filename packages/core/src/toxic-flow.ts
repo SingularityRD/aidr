@@ -53,6 +53,11 @@ import { join } from "node:path";
 import { isInvalidConfig, loadConfig, resolvePath } from "./config.js";
 import { atomicWriteJson, getFileContent } from "./file-utils.js";
 import {
+	DEFAULT_FLOW_CAPABILITIES,
+	type FlowCapabilityPatterns,
+	loadFlowCapabilities,
+} from "./toxic-flow-capabilities.js";
+import {
 	capabilityLabel,
 	classifyToolCallFlow,
 	type FlowCapability,
@@ -61,11 +66,6 @@ import {
 	type FlowObservation,
 	pathWithinDownload,
 } from "./toxic-flow-classify.js";
-import {
-	DEFAULT_FLOW_CAPABILITIES,
-	type FlowCapabilityPatterns,
-	loadFlowCapabilities,
-} from "./toxic-flow-capabilities.js";
 import type { Artifact, Config, Logger, Verdict } from "./types.js";
 import { nullLogger } from "./types.js";
 

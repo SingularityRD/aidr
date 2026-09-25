@@ -497,7 +497,8 @@ async function observeCompletedTool(
 	toolOutput: unknown,
 ): Promise<void> {
 	try {
-		const call = mode === "cursor" ? normalizeCursorPostToolCall(input) : normalizeVsCodeCall(input);
+		const call =
+			mode === "cursor" ? normalizeCursorPostToolCall(input) : normalizeVsCodeCall(input);
 		const sessionId =
 			call?.sessionId ?? (mode === "cursor" ? cursorSessionId(input) : vsCodeSessionId(input));
 		await recordToolOutputCanaries({
@@ -522,7 +523,9 @@ async function observeCompletedTool(
  * shell commands are evaluated at `beforeShellExecution` (`{ command, cwd }`),
  * every other tool at `preToolUse`.
  */
-function normalizeCursorPostToolCall(input: Record<string, unknown>): NormalizedHookCall | undefined {
+function normalizeCursorPostToolCall(
+	input: Record<string, unknown>,
+): NormalizedHookCall | undefined {
 	if (asString(input.tool_name) === "Shell") {
 		const toolInput = parseUnknownObject(input.tool_input);
 		return normalizeCursorCall(

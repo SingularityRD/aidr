@@ -212,7 +212,10 @@ function parseFlowCapabilities(raw: unknown): FlowCapabilitiesParseResult {
 			interpreters: executableSet("interpreters"),
 			shells: executableSet("shells"),
 		},
-		interpreterNetworkApi: read.patternEntry(root.interpreter_network_api, "interpreter_network_api"),
+		interpreterNetworkApi: read.patternEntry(
+			root.interpreter_network_api,
+			"interpreter_network_api",
+		),
 		interpreterPayloadHint: read.patternEntry(
 			root.interpreter_payload_hint,
 			"interpreter_payload_hint",

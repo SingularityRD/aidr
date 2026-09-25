@@ -2,11 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { toolResultReportsFailure } from "../agent-safety/tool-outcome.js";
-import {
-	type CanaryRecord,
-	deployCanaries,
-	invalidateCanaryIndex,
-} from "../canary/index.js";
+import { type CanaryRecord, deployCanaries, invalidateCanaryIndex } from "../canary/index.js";
 import {
 	CANARY_PROMPT_BLOCK_MESSAGE,
 	checkPromptForCanaries,

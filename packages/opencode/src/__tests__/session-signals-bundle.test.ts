@@ -66,7 +66,10 @@ beforeAll(async () => {
 	await mkdir(aidrDir, { recursive: true });
 	await writeFile(
 		join(aidrDir, "config.json"),
-		JSON.stringify({ mode: "local", logging: { enabled: true, path: join(aidrDir, "audit.jsonl") } }),
+		JSON.stringify({
+			mode: "local",
+			logging: { enabled: true, path: join(aidrDir, "audit.jsonl") },
+		}),
 	);
 	records = deployCanaries({
 		homeDir: home,
@@ -124,7 +127,12 @@ describe("OpenCode canary credentials (built plugin)", () => {
 			metadata: { exit: 0 },
 		};
 		await hooks["tool.execute.after"]?.(
-			{ tool: "bash", sessionID: "ses_out", callID: "call_1", args: { command: "grep -rn SECRET ." } },
+			{
+				tool: "bash",
+				sessionID: "ses_out",
+				callID: "call_1",
+				args: { command: "grep -rn SECRET ." },
+			},
 			output,
 		);
 		// Output inspection quarantines it (OUT-CANARY-001); the incident is recorded.

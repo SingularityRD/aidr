@@ -6,13 +6,13 @@ import { extractFromToolCall } from "../extractors.js";
 import { loadThreats } from "../threat-loader.js";
 import { normalizeToolEvaluationRequest } from "../tool-normalization.js";
 import { applyToxicFlow, resolveToxicFlowSettings } from "../toxic-flow.js";
+import { EMBEDDED_FLOW_CAPABILITIES_YAML } from "../toxic-flow-capabilities.data.js";
 import {
 	DEFAULT_FLOW_CAPABILITIES,
 	FLOW_CAPABILITIES_RELATIVE_PATH,
 	loadFlowCapabilities,
 	parseFlowCapabilitiesYaml,
 } from "../toxic-flow-capabilities.js";
-import { EMBEDDED_FLOW_CAPABILITIES_YAML } from "../toxic-flow-capabilities.data.js";
 import { classifyToolCallFlow, TOXIC_FLOW_EXFIL_SINKS } from "../toxic-flow-classify.js";
 import type { Logger, Verdict } from "../types.js";
 import { makeTmpDir, removeTmpDir } from "./test-utils.js";
@@ -76,7 +76,9 @@ describe("toxic-flow capability data (threats/flow/capabilities.yaml)", () => {
 		expect(bad("  - label: 'SSH private key'", "  - label: ''").patterns).toBeNull();
 		expect(bad("    kind: sensitive_file", "    kind: other").patterns).toBeNull();
 		expect(bad("flags: i", "flags: gi").errors.join("\n")).toContain("flags must use only");
-		expect(bad("pattern: '(?:^|[\\\\/])\\.ssh", "pattern: '(?:^|[\\\\/]\\.ssh").patterns).toBeNull();
+		expect(
+			bad("pattern: '(?:^|[\\\\/])\\.ssh", "pattern: '(?:^|[\\\\/]\\.ssh").patterns,
+		).toBeNull();
 		expect(bad("broad_delete_patterns:", "broad_delete_patterns_x:").errors.join("\n")).toContain(
 			"broad_delete_patterns",
 		);

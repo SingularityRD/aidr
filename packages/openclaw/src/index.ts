@@ -33,7 +33,11 @@ import {
 	OpenClawPromptProtection,
 	type PromptHookContext,
 } from "./prompt-protection.js";
-import { feedToolOutcome, feedToolOutputCanaries, feedToolOutputFlow } from "./session-flow-feed.js";
+import {
+	feedToolOutcome,
+	feedToolOutputCanaries,
+	feedToolOutputFlow,
+} from "./session-flow-feed.js";
 import {
 	createBeforePromptBuildHandler,
 	createSessionScanHandler,

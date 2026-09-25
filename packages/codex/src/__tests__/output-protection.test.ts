@@ -44,7 +44,11 @@ function runHook(input: Record<string, unknown>): {
 	};
 }
 
-function postToolUse(sessionId: string, toolResponse: unknown, extra: Record<string, unknown> = {}) {
+function postToolUse(
+	sessionId: string,
+	toolResponse: unknown,
+	extra: Record<string, unknown> = {},
+) {
 	return runHook({
 		session_id: sessionId,
 		turn_id: "turn_1",
@@ -111,9 +115,10 @@ describe.skipIf(releaseBundle)("Codex PostToolUse output inspection (shipped hoo
 		expect(reason).toMatch(/OUT-[A-Z]+-\d{3}/);
 		expect(reason).not.toContain("collector.example");
 		expect(reason).not.toContain("id_rsa");
-		expect(auditEntries()).toContainEqual(
-			expect.objectContaining({ category: "unsafe_output", tool_name: "ModelOutput" }),
-		);
+		const audited = auditEntries().find((entry) => entry.source === "codex-output-inspection");
+		expect(audited).toMatchObject({ tool_name: "ModelOutput", verdict: "deny" });
+		expect(audited?.artifacts).toContain("OUT-INJ-001");
+		expect(JSON.stringify(auditEntries())).not.toContain("collector.example");
 
 		// The injection now counts as untrusted content in this session.
 		const next = runHook({

@@ -9,6 +9,10 @@
  *   - `untrusted_content`  web pages, search results, MCP output, downloads
  *   - `external_comm`      sending anything to a destination the user does not own
  *
+ * Which paths, commands, executables, hosts and tool names count is data, not
+ * code: `threats/flow/capabilities.yaml` (see `toxic-flow-capabilities.ts`),
+ * passed in as `options.patterns` or taken from the core's embedded copy.
+ *
  * This module is pure: it only looks at the call (tool name, input, artifacts)
  * and the options it is handed. It never touches the filesystem, so it can run
  * on every call without cost, and the state layer is only consulted when a call
@@ -695,7 +699,8 @@ function handleCopyClient(ctx: StageContext): boolean {
 	if (!last) return true;
 	if (isRemoteCopyOperand(last)) {
 		addRemoteUpload(ctx.set, ctx.exe, last, "copies files out");
-		for (const source of operands.slice(0, -1)) addSensitivePath(ctx.set, source, ctx.exe, ctx.options.patterns);
+		for (const source of operands.slice(0, -1))
+			addSensitivePath(ctx.set, source, ctx.exe, ctx.options.patterns);
 	} else if (operands.slice(0, -1).some(isRemoteCopyOperand)) {
 		ctx.downloads.push(last);
 	}
