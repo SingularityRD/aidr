@@ -57,14 +57,14 @@ function fakeUpstreamResponse(rpc, result, overrides, nextSessionId) {
 }
 
 export function fixture(overrides = {}) {
-	const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+	const { privateKey, publicKey } = overrides.keyPair ?? generateKeyPairSync("ed25519");
 	const tools = overrides.tools ?? [
 		{ name: "search", description: "Search trusted corpus", input_schema: { type: "object" } },
 	];
 	const manifest = {
 		schema_version: 1,
 		server_id: "server-a",
-		sequence: 1,
+		sequence: overrides.sequence ?? 1,
 		issued_at: new Date(Date.now() - 60_000).toISOString(),
 		expires_at: new Date(Date.now() + 60 * 60_000).toISOString(),
 		tools,
@@ -79,13 +79,13 @@ export function fixture(overrides = {}) {
 			id: "client-a",
 			tenantId: "tenant-a",
 			tokenSha256: createHash("sha256").update(tokenA).digest("hex"),
-			allowedTools: { "server-a": ["search"] },
+			allowedTools: { "server-a": overrides.allowedTools ?? ["search"] },
 		},
 		{
 			id: "client-b",
 			tenantId: "tenant-b",
 			tokenSha256: createHash("sha256").update(tokenB).digest("hex"),
-			allowedTools: { "server-a": ["search"] },
+			allowedTools: { "server-a": overrides.allowedTools ?? ["search"] },
 		},
 	];
 	const servers = ["tenant-a", "tenant-b"].map((tenantId) => {

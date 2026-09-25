@@ -1,0 +1,355 @@
+# Data and context poisoning rules for Singularity AIDR
+# Author: SingularityRD
+# License: DRL-1.1 (see threats/LICENSE)
+#
+# Protects what an agent reads as instructions and what it remembers: agent
+# instruction and memory files, agent/IDE/MCP configuration, git hooks and
+# shell start-up files, MCP tool metadata and memory/vector-store writes.
+# Evaluated by packages/core/src/context-poisoning.ts, which knows the operation
+# (write vs read, which file, which MCP tool) that a plain artifact does not.
+#
+# match_on values used only by the context-poisoning detector:
+#   agent_control_path     - path a write/edit/patch/delete or a shell write
+#                            (redirect, tee, sed -i, cp/mv target, ...) targets.
+#                            Reads never match these rules.
+#   agent_control_content  - the text written into a path that matched an
+#                            agent_control_path rule (for a shell write, the
+#                            whole command line)
+#   mcp_tool_metadata      - an MCP tool's name, description and input-schema
+#                            strings (MCP gateway tools/list, discovery manifests)
+#   memory_write_content   - arguments of an MCP tool that writes to agent
+#                            memory or a vector/RAG store
+# The heuristics engine never produces these artifact types, so these rules do
+# not change verdicts for any other tool call.
+#
+# Existing rules this file complements rather than duplicates:
+#   CLT-FILE-004 / CLT-FILE-009 ask on any file-tool access to shell rc files
+#   and .git/hooks; CLT-PERSIST-001/007 cover `>`/`>>` redirects to shell rc
+#   files. CTX-PATH-006/007 extend that to every shell write form (tee, cp, mv,
+#   sed -i, interpreters) and to hook managers, and let the content written
+#   there be scanned.
+#
+# Every quantifier is bounded (no unbounded `.*` spans).
+
+# ── Agent control paths (writes need out-of-band approval) ──────────────────
+
+- id: "CTX-PATH-001"
+  category: context_poisoning
+  severity: high
+  confidence: 0.90
+  action: require_approval
+  pattern: "(?:^|/)(?:(?:CLAUDE|AGENTS|GEMINI|CODEX|QWEN|WARP)(?:\\.local)?\\.md|\\.cursorrules|\\.windsurfrules|\\.clinerules|\\.roorules|\\.goosehints|\\.github/copilot-instructions\\.md)$|(?:^|/)\\.github/(?:instructions|prompts|chatmodes)/[^/]{1,200}\\.md$|(?:^|/)\\.(?:cursor|windsurf|roo|continue|kiro|trae|amazonq)/(?:rules|steering)(?:/|$)|(?:^|/)\\.clinerules/"
+  case_insensitive: true
+  match_on: agent_control_path
+  title: "Agent instruction file modified (persistent instructions for every future session)"
+  expires_at: null
+  revoked: false
+
+- id: "CTX-PATH-002"
+  category: context_poisoning
+  severity: high
+  confidence: 0.90
+  action: require_approval
+  pattern: "(?:^|/)MEMORY\\.md$|(?:^|/)memory-bank/[^/]{1,200}$|(?:^|/)\\.claude/(?:memory|agent-memory)/|(?:^|/)\\.claude/projects/[^/]{1,300}/memory/|(?:^|/)\\.codex/(?:memories/|instructions\\.md$)|(?:^|/)\\.codeium/windsurf/memories/|(?:^|/)\\.openclaw/(?:workspace[^/]{0,64}/)?(?:[^/]{1,200}\\.md$|memory/)|(?:^|/)\\.gemini/memory/|(?:^|/)\\.cursor/memories"
+  case_insensitive: true
+  match_on: agent_control_path
+  title: "Agent memory file modified (long-term agent memory)"
+  expires_at: null
+  revoked: false
+
+- id: "CTX-PATH-003"
+  category: context_poisoning
+  severity: high
+  confidence: 0.90
+  action: require_approval
+  pattern: "(?:^|/)\\.claude/(?:settings(?:\\.local)?\\.json$|hooks/|commands/|agents/|skills/|output-styles/|plugins/)|(?:^|/)\\.claude\\.json$|(?:^|/)\\.cursor/(?:hooks\\.json$|commands/|cli-config\\.json$|environment\\.json$)|(?:^|/)\\.codex/(?:config\\.toml$|prompts/|hooks)|(?:^|/)\\.gemini/(?:settings\\.json$|commands/|extensions/)|(?:^|/)\\.openclaw/openclaw\\.json$|(?:^|/)\\.opencode/|(?:^|/)opencode\\.jsonc?$|(?:^|/)\\.config/opencode/|(?:^|/)\\.continue/config\\.(?:json|ya?ml|ts)$|(?:^|/)\\.aider\\.conf\\.ya?ml$|(?:^|/)\\.windsurf/(?:workflows|hooks)|(?:^|/)\\.kiro/(?:hooks|settings)/"
+  case_insensitive: true
+  match_on: agent_control_path
+  title: "Agent configuration, hook, command, sub-agent or skill modified"
+  expires_at: null
+  revoked: false
+
+- id: "CTX-PATH-004"
+  category: context_poisoning
+  severity: high
+  confidence: 0.90
+  action: require_approval
+  pattern: "(?:^|/)(?:\\.mcp\\.json|mcp\\.json|mcp_config\\.json|mcp_settings\\.json|cline_mcp_settings\\.json|claude_desktop_config\\.json|mcp-servers\\.json)$"
+  case_insensitive: true
+  match_on: agent_control_path
+  title: "MCP server configuration modified (adds or changes tools the agent trusts)"
+  expires_at: null
+  revoked: false
+
+- id: "CTX-PATH-005"
+  category: context_poisoning
+  severity: high
+  confidence: 0.90
+  action: require_approval
+  pattern: "(?:^|/)\\.vscode/(?:tasks|settings|launch|extensions)\\.json$|(?:^|/)\\.devcontainer/(?:[^/]{1,100}/)?devcontainer\\.json$|(?:^|/)\\.devcontainer\\.json$|\\.code-workspace$|(?:^|/)\\.idea/workspace\\.xml$"
+  case_insensitive: true
+  match_on: agent_control_path
+  title: "IDE automation or workspace settings modified (tasks, trust, auto-approval)"
+  expires_at: null
+  revoked: false
+
+- id: "CTX-PATH-006"
+  category: context_poisoning
+  severity: high
+  confidence: 0.90
+  action: require_approval
+  pattern: "(?:^|/)\\.git/(?:hooks/|config$|info/attributes$)|(?:^|/)\\.git/modules/[^/]{1,200}/(?:hooks/|config$)|(?:^|/)\\.husky/(?!_/)[^/]{1,200}$|(?:^|/)\\.githooks/"
+  case_insensitive: true
+  match_on: agent_control_path
+  title: "Git hook or repository git configuration modified (runs code on git events)"
+  expires_at: null
+  revoked: false
+
+- id: "CTX-PATH-007"
+  category: context_poisoning
+  severity: high
+  confidence: 0.90
+  action: require_approval
+  pattern: "(?:^|/)\\.(?:bashrc|bash_profile|bash_login|bash_logout|profile|zshrc|zshenv|zprofile|zlogin|zlogout|kshrc|cshrc|tcshrc|inputrc)$|(?:^|/)\\.config/fish/(?:config\\.fish$|conf\\.d/)|(?:^|/)(?:Microsoft\\.)?PowerShell_profile\\.ps1$|(?:^|/)profile\\.ps1$|(?:^|/)etc/(?:profile|bash\\.bashrc|zsh/zshrc|environment)$|(?:^|/)etc/profile\\.d/"
+  case_insensitive: true
+  match_on: agent_control_path
+  title: "Shell start-up file modified (runs on every new shell)"
+  expires_at: null
+  revoked: false
+
+# ── Hidden instructions (invisible Unicode) ────────────────────────────────
+
+# Unicode tag characters (U+E0000-E007F) render as nothing but carry ASCII
+# text a model reads. The lookbehind exempts emoji subdivision flags
+# (U+1F3F4 followed by up to 7 tag characters, e.g. the flag of England).
+- id: "CTX-HIDE-001"
+  category: context_poisoning_hidden_unicode
+  severity: critical
+  confidence: 0.99
+  action: block
+  pattern: "(?<!\\uD83C\\uDFF4(?:\\uDB40[\\uDC20-\\uDC7E]){0,6})\\uDB40[\\uDC00-\\uDC7F]"
+  match_on:
+    - agent_control_content
+    - mcp_tool_metadata
+    - memory_write_content
+  title: "Invisible Unicode tag characters smuggle hidden instructions"
+  expires_at: null
+  revoked: false
+
+- id: "CTX-HIDE-002"
+  category: context_poisoning_hidden_unicode
+  severity: critical
+  confidence: 0.95
+  action: block
+  pattern: "[\\u202A-\\u202E\\u2066-\\u2069]"
+  match_on:
+    - agent_control_content
+    - mcp_tool_metadata
+    - memory_write_content
+  title: "Bidirectional control characters disguise what the text says (Trojan Source)"
+  expires_at: null
+  revoked: false
+
+# Zero-width space, word joiner, invisible operators and Mongolian vowel
+# separator anywhere; a byte-order mark anywhere but the first character;
+# ZWJ/ZWNJ only next to ASCII, so emoji sequences and Persian/Indic text
+# (which need them) are not flagged.
+- id: "CTX-HIDE-003"
+  category: context_poisoning_hidden_unicode
+  severity: critical
+  confidence: 0.95
+  action: block
+  pattern: "[\\u200B\\u2060-\\u2064\\u180E]|(?<=[\\s\\S])\\uFEFF|(?<=[\\x00-\\x7F])[\\u200C\\u200D]|[\\u200C\\u200D](?=[\\x00-\\x7F])"
+  match_on:
+    - agent_control_content
+    - mcp_tool_metadata
+    - memory_write_content
+  title: "Zero-width characters hide text inside agent instructions or metadata"
+  expires_at: null
+  revoked: false
+
+# ── Injected directives ────────────────────────────────────────────────────
+
+- id: "CTX-INJ-001"
+  category: context_poisoning
+  severity: critical
+  confidence: 0.95
+  action: block
+  pattern: "\\b(?:ignore|disregard|forget|override)\\s{1,4}(?:all\\s{1,4}|any\\s{1,4}|the\\s{1,4})?(?:previous|prior|above|earlier|preceding|your|system|original)\\s{1,4}(?:instructions?|rules|guidelines|directives|prompts?|guardrails|safety\\s{1,4}(?:rules|guidelines|policies))"
+  case_insensitive: true
+  match_on:
+    - agent_control_content
+    - mcp_tool_metadata
+    - memory_write_content
+  title: "Instruction override planted in persistent agent context"
+  expires_at: null
+  revoked: false
+
+- id: "CTX-INJ-002"
+  category: context_poisoning
+  severity: critical
+  confidence: 0.90
+  action: block
+  pattern: "(?:do\\s{1,4}not|don'?t|never)\\s{1,4}(?:tell|inform|notify|alert|mention\\s{1,4}(?:this|it|that)\\s{1,4}to|reveal\\s{1,4}(?:this\\s{1,4}|it\\s{1,4})?to|show\\s{1,4}(?:this\\s{1,4}|it\\s{1,4})?to)\\s{1,4}the\\s{1,4}user|without\\s{1,4}(?:the\\s{1,4})?user'?s?\\s{1,4}(?:knowledge|consent|awareness|noticing)|(?:keep|hide)\\s{1,4}(?:this|it|these\\s{1,4}\\w{1,20})\\s{1,4}(?:secret\\s{1,4}|hidden\\s{1,4})?from\\s{1,4}the\\s{1,4}user|(?:silently|secretly|covertly)\\s{1,4}(?:send|upload|post|forward|exfiltrate|transmit|leak)"
+  case_insensitive: true
+  match_on:
+    - agent_control_content
+    - mcp_tool_metadata
+    - memory_write_content
+  title: "Directive to conceal agent actions from the user"
+  expires_at: null
+  revoked: false
+
+# Verb ... secret ... destination. A negation right before the verb
+# ("never send secrets to https://...") is a safety rule, not an attack.
+- id: "CTX-INJ-003"
+  category: context_poisoning
+  severity: critical
+  confidence: 0.95
+  action: block
+  pattern: "(?<!(?:\\bnot|\\bnever|n't|\\bno)\\s{1,4})\\b(?:send|upload|post|transmit|exfiltrate|forward|leak|share|copy|include|append|attach|pass)\\b[^\\n]{0,120}?\\b(?:\\.env\\b|\\.ssh\\b|id_rsa|id_ed25519|credentials?|secrets?|api[ _-]?keys?|access[ _-]?tokens?|auth[ _-]?tokens?|passwords?|private[ _-]?keys?|\\.aws\\b|\\.npmrc|\\.netrc|cookies|session[ _-]?tokens?|env(?:ironment)?\\s{1,4}variables)\\b[^\\n]{0,160}?(?:https?://|\\bwebhooks?\\b|\\bcurl\\b|\\bwget\\b|pastebin|ngrok|requestbin|discord(?:app)?\\.com|telegram|\\b[\\w.+-]{1,64}@[\\w-]{1,63}\\.[a-z]{2,})"
+  case_insensitive: true
+  match_on:
+    - agent_control_content
+    - mcp_tool_metadata
+    - memory_write_content
+  title: "Directive to send secrets or credentials to an external destination"
+  expires_at: null
+  revoked: false
+
+- id: "CTX-INJ-004"
+  category: context_poisoning
+  severity: critical
+  confidence: 0.90
+  action: block
+  pattern: "(?<!(?:\\bnot|\\bnever|n't)\\s{1,4})\\b(?:read|cat|open|load|include|attach|pass|send|upload|print|output|return)\\b[^\\n]{0,80}?(?:~|\\$HOME|\\$\\{HOME\\}|%USERPROFILE%|/home/[^/\\s]{1,64}|/Users/[^/\\s]{1,64}|/root)[/\\\\]\\.(?:ssh|aws|gnupg|docker/config|kube/config|config/gcloud|netrc|npmrc|pypirc|git-credentials|env\\b)"
+  case_insensitive: true
+  match_on:
+    - agent_control_content
+    - mcp_tool_metadata
+    - memory_write_content
+  title: "Directive to read private keys or credential files from the home directory"
+  expires_at: null
+  revoked: false
+
+- id: "CTX-INJ-005"
+  category: context_poisoning
+  severity: critical
+  confidence: 0.90
+  action: block
+  pattern: "<\\|(?:im_start|im_end|system|endoftext)\\|>|\\[/?INST\\]|<</?SYS>>|</?(?:system|assistant)_?(?:prompt|message)?\\s{0,4}>"
+  case_insensitive: true
+  match_on:
+    - agent_control_content
+    - mcp_tool_metadata
+    - memory_write_content
+  title: "Chat-template role tokens planted in persistent agent context"
+  expires_at: null
+  revoked: false
+
+- id: "CTX-INJ-006"
+  category: context_poisoning
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "<!--[^>]{0,400}?(?:ignore\\s{1,4}(?:all|previous|prior|the\\s{1,4}user)|you\\s{1,4}(?:must|should|will)\\s{1,4}(?:now\\s{1,4}|also\\s{1,4}|always\\s{1,4})?(?:run|execute|send|call|fetch|upload|read|curl|download|install)|as\\s{1,4}the\\s{1,4}(?:ai|assistant|agent|model)\\b|system\\s{1,4}prompt|(?:ai|llm|assistant|agent|model)s?\\s{0,4}[:,]\\s{0,4}(?:please\\s{1,4})?(?:run|execute|send|ignore|read))"
+  case_insensitive: true
+  match_on:
+    - agent_control_content
+    - mcp_tool_metadata
+    - memory_write_content
+  title: "Hidden HTML comment carries agent-directed instructions"
+  expires_at: null
+  revoked: false
+
+- id: "CTX-INJ-007"
+  category: context_poisoning
+  severity: critical
+  confidence: 0.90
+  action: block
+  pattern: "\\b(?:curl|wget|iwr|irm|Invoke-WebRequest|Invoke-RestMethod)\\b[^\\n|;]{0,300}\\|\\s{0,4}(?:sudo\\s{1,4})?(?:ba|z|da|k|fi)?sh\\b|\\b(?:iex|Invoke-Expression)\\b[^\\n]{0,40}\\b(?:iwr|irm|Invoke-WebRequest|Invoke-RestMethod|DownloadString|Net\\.WebClient)|base64\\s{1,4}(?:-d|--decode|-D)\\b[^\\n|]{0,100}\\|\\s{0,4}(?:ba|z)?sh\\b|\\bbash\\s{1,4}-c\\s{1,4}[\"']?\\$\\((?:curl|wget)"
+  case_insensitive: true
+  match_on:
+    - agent_control_content
+    - mcp_tool_metadata
+    - memory_write_content
+  title: "Remote script fetched and executed from a persistent agent or start-up file"
+  expires_at: null
+  revoked: false
+
+# ── Permission widening in agent / IDE configuration ────────────────────────
+
+- id: "CTX-CFG-001"
+  category: context_poisoning_permission_widening
+  severity: critical
+  confidence: 0.95
+  action: block
+  pattern: "\"defaultMode\"\\s{0,4}:\\s{0,4}\"bypassPermissions\"|dangerously[-_]?skip[-_]?permissions|\"disableAllHooks\"\\s{0,4}:\\s{0,4}true|\"enableAllProjectMcpServers\"\\s{0,4}:\\s{0,4}true|\\bapproval_policy\\s{0,4}=\\s{0,4}[\"']never[\"']|\\bsandbox_mode\\s{0,4}=\\s{0,4}[\"']danger-full-access[\"']|dangerously-bypass-approvals-and-sandbox|\"approvalMode\"\\s{0,4}:\\s{0,4}\"yolo\"|\"autoAccept\"\\s{0,4}:\\s{0,4}true|\"chat\\.tools\\.(?:global\\.)?autoApprove\"\\s{0,4}:\\s{0,4}true|\"chat\\.tools\\.terminal\\.autoApprove\"\\s{0,4}:\\s{0,4}\\{[^}]{0,400}\"/\\.\\*/\"\\s{0,4}:\\s{0,4}true|\"task\\.allowAutomaticTasks\"\\s{0,4}:\\s{0,4}\"on\"|\"security\\.workspace\\.trust\\.enabled\"\\s{0,4}:\\s{0,4}false|\"runOn\"\\s{0,4}:\\s{0,4}\"folderOpen\"|\"allow\"\\s{0,4}:\\s{0,4}\\[[^\\]]{0,2000}?\"(?:Bash|Shell)(?:\\((?:\\*{1,2}|:\\*)\\))?\""
+  match_on: agent_control_content
+  title: "Agent or IDE configuration widened to auto-approve tools, skip permissions or auto-run tasks"
+  expires_at: null
+  revoked: false
+
+# ── MCP tool poisoning (tool names, descriptions, schemas) ──────────────────
+
+- id: "CTX-MCP-001"
+  category: mcp_tool_poisoning
+  severity: critical
+  confidence: 0.95
+  action: block
+  pattern: "\\b(?:before|prior\\s{1,4}to|first)\\b[^\\n]{0,40}?\\b(?:using|calling|invoking|running|executing)\\b[^\\n]{0,160}?\\b(?:read|cat|open|access|load|include|attach|send|upload)\\b[^\\n]{0,120}?(?:~/|\\$HOME|\\.ssh\\b|\\.env\\b|\\.aws\\b|id_rsa|credentials?\\s{1,4}file|mcp\\.json|claude_desktop_config|\\.cursor/|\\.claude/|/etc/passwd)"
+  case_insensitive: true
+  match_on: mcp_tool_metadata
+  title: "Tool description orders the agent to read local secrets or agent configuration first"
+  expires_at: null
+  revoked: false
+
+- id: "CTX-MCP-002"
+  category: mcp_tool_poisoning
+  severity: critical
+  confidence: 0.90
+  action: block
+  pattern: "\\b(?:overrides?|supersedes?|takes\\s{1,4}precedence\\s{1,4}over)\\s{1,4}(?:the\\s{1,4})?(?:behaviou?r|instructions?|descriptions?|rules)\\s{1,4}(?:of|for)\\s{1,4}(?:(?:all|any|other|every|the)\\s{1,4}){1,2}(?:[\\w.-]{1,64}\\s{1,4})?tools?\\b|\\b(?:when|whenever|every\\s{1,4}time|each\\s{1,4}time|if)\\s{1,4}(?:you\\s{1,4}|the\\s{1,4}(?:agent|assistant|model)\\s{1,4})?(?:use|call|invoke)s?\\s{1,4}(?:any\\s{1,4}other|another|any|other|all\\s{1,4}other)\\s{1,4}tools?\\b[^\\n]{0,160}?\\b(?:also|must|always|first|instead|additionally)\\b|\\b(?:all|every|any)\\s{1,4}(?:emails?|messages?|payments?|transfers?|requests?)\\b[^\\n]{0,80}?\\bmust\\s{1,4}(?:also\\s{1,4})?(?:be\\s{1,4})?(?:sent|forwarded|cc'?d|bcc'?d|copied|redirected|routed)\\s{1,4}to\\b"
+  case_insensitive: true
+  match_on: mcp_tool_metadata
+  title: "Tool description shadows or redirects the behaviour of other tools"
+  expires_at: null
+  revoked: false
+
+- id: "CTX-MCP-003"
+  category: mcp_tool_poisoning
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "\\binstead\\s{1,4}of\\s{1,4}(?:using|calling|invoking)\\s{1,4}(?:the\\s{1,4})?[\\w.-]{1,64}\\s{1,4}tool\\b|<\\s{0,4}(?:IMPORTANT|CRITICAL|SYSTEM|INSTRUCTIONS?|HIDDEN|SECRET)\\s{0,4}>"
+  case_insensitive: true
+  match_on: mcp_tool_metadata
+  title: "Tool description carries model-directed pseudo-markup or tool substitution"
+  expires_at: null
+  revoked: false
+
+# ── Memory / RAG store writes ───────────────────────────────────────────────
+
+- id: "CTX-MEM-001"
+  category: memory_poisoning
+  severity: critical
+  confidence: 0.90
+  action: block
+  pattern: "\\b(?:always|must|should|remember\\s{1,4}to|make\\s{1,4}sure\\s{1,4}to)\\b[^\\n]{0,40}?\\b(?:run|execute|call|invoke|fetch|download|send|upload|post)\\b[^\\n]{0,120}?(?:https?://|\\bcurl\\b|\\bwget\\b|\\|\\s{0,4}(?:ba)?sh\\b|\\beval\\b|base64)"
+  case_insensitive: true
+  match_on: memory_write_content
+  title: "Memory entry plants a standing order to fetch, run or send something"
+  expires_at: null
+  revoked: false
+
+- id: "CTX-MEM-002"
+  category: memory_poisoning
+  severity: high
+  confidence: 0.80
+  action: require_approval
+  pattern: "\\b(?:from\\s{1,4}now\\s{1,4}on|going\\s{1,4}forward|in\\s{1,4}(?:all\\s{1,4})?(?:future|subsequent|later)\\s{1,4}(?:sessions?|conversations?|chats?|tasks?)|next\\s{1,4}time|whenever\\s{1,4}you\\s{1,4}(?:see|are\\s{1,4}asked|start))\\b[^\\n]{0,40}?\\b(?:you\\s{1,4})?(?:must|should|always|never|will|are\\s{1,4}to)\\b|\\b(?:the\\s{1,4})?(?:assistant|agent|ai|llm|model)\\s{1,4}(?:must|should|shall|is\\s{1,4}(?:required|instructed)\\s{1,4}to)\\s{1,4}(?:always\\s{1,4}|never\\s{1,4})?\\w"
+  case_insensitive: true
+  match_on: memory_write_content
+  title: "Memory entry changes how the agent behaves in future sessions"
+  expires_at: null
+  revoked: false

@@ -19,7 +19,12 @@ import {
 	makeMcpGatewayCoverageEvent,
 	refusalPayload,
 } from "./coverage.mjs";
-import { createToolCallDetector, decisionPayload, McpToolCallBlocked } from "./detection.mjs";
+import {
+	createToolCallDetector,
+	createToolMetadataScanner,
+	decisionPayload,
+	McpToolCallBlocked,
+} from "./detection.mjs";
 import { inspectToolResult } from "./output-inspection.mjs";
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
@@ -862,6 +867,7 @@ export function createMcpGateway(input, dependencies = {}) {
 		config,
 		dependencies.evaluateToolCall ? { evaluate: dependencies.evaluateToolCall } : {},
 	);
+	const scanToolMetadata = dependencies.toolMetadataScanner ?? createToolMetadataScanner(config);
 	let startupCheckPromise;
 
 	async function emitEvent(event) {
@@ -1129,11 +1135,36 @@ export function createMcpGateway(input, dependencies = {}) {
 			signal,
 		);
 		const observed = normalizeToolSet(result);
-		if (mcpToolsetHash(observed) !== mcpToolsetHash(server.signedManifest.manifest.tools)) {
+		const observedHash = mcpToolsetHash(observed);
+		if (observedHash !== mcpToolsetHash(server.signedManifest.manifest.tools)) {
 			throw new Error("toolset_drift");
 		}
+		await assertToolMetadataClean(server, observed, observedHash);
 		inspect(result, scanner, config.maxBodyBytes);
 		return observed;
+	}
+
+	/**
+	 * Tool poisoning: hidden or injected instructions in tool names, descriptions
+	 * or schemas block every request to the server, even when the toolset is
+	 * signed and operator-approved (a signature proves the publisher, not the
+	 * content). Review-level findings are audited and left to output inspection.
+	 */
+	async function assertToolMetadataClean(server, observed, toolsetHash) {
+		const { blocking, suspicious } = await scanToolMetadata(observed, toolsetHash);
+		const clientId = server.requestContext?.clientId;
+		if (suspicious.length > 0) {
+			await audit(server.tenantId, server.id, clientId, "warn", "tool_metadata_suspicious", {
+				threatIds: [...new Set(suspicious.map((finding) => finding.threatId))],
+			});
+		}
+		if (blocking.length === 0) return;
+		const first = blocking[0];
+		throw new McpToolCallBlocked("tool_metadata_poisoned", {
+			decision: "deny",
+			category: "mcp_tool_poisoning",
+			matchedThreatId: first.threatId,
+		});
 	}
 
 	function boundSession(header, client, server) {
@@ -1262,6 +1293,7 @@ export function createMcpGateway(input, dependencies = {}) {
 			client,
 			toolName: rpc.params.name,
 			args: structuredClone(rpc.params.arguments ?? {}),
+			description: tool.description,
 		});
 		signal.throwIfAborted();
 		const upstream = await forward(

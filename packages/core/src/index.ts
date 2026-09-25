@@ -199,6 +199,24 @@ export {
 export type { ContainConfig } from "./contain.js";
 // Auto-Contain
 export { AutoContain, createDefaultContainConfig } from "./contain.js";
+// Data and context poisoning protection (instruction/memory files, MCP tool metadata, memory writes)
+export {
+	AGENT_CONTROL_CONTENT,
+	AGENT_CONTROL_PATH,
+	type AgentWriteTarget,
+	agentWriteTargets,
+	CONTEXT_POISONING_SOURCE,
+	evaluateContextPoisoning,
+	isMemoryWriteTool,
+	loadContextPoisoningRules,
+	MCP_TOOL_METADATA,
+	type McpToolMetadataFinding,
+	type McpToolMetadataInput,
+	MEMORY_WRITE_CONTENT,
+	matchAgentControlPath,
+	scanMcpToolMetadata,
+	shellWriteTargets,
+} from "./context-poisoning.js";
 export type {
 	AigDataIntegrityStatus,
 	AigTargetKind,
@@ -534,6 +552,11 @@ export {
 } from "./health.js";
 // Heuristics
 export { HeuristicsEngine } from "./heuristics.js";
+export {
+	type HiddenUnicodeReport,
+	inspectHiddenUnicode,
+	renderInvisibleCharacters,
+} from "./hidden-unicode.js";
 // Native-host acceptance observations (inert outside a gate run)
 export {
 	createHostObservation,
@@ -778,19 +801,6 @@ export {
 	redactPII,
 	validateNoPII,
 } from "./pii-detector.js";
-// Prompt protection (UserPromptSubmit-style inspection of the user's prompt)
-export {
-	DEFAULT_PROMPT_PROTECTION,
-	type PromptFindingCategory,
-	type PromptFindingSummary,
-	type PromptIncompleteInspection,
-	type PromptProtectionDecision,
-	type PromptProtectionResult,
-	PromptScanDeadlineError,
-	type PromptScanOptions,
-	type PromptTenantDlp,
-	scanPrompt,
-} from "./prompt-protection.js";
 // Plugin scan cache
 export {
 	cacheKey,
@@ -844,6 +854,19 @@ export {
 	type PostureUploadResult,
 	uploadPostureEvents,
 } from "./posture-upload.js";
+// Prompt protection (UserPromptSubmit-style inspection of the user's prompt)
+export {
+	DEFAULT_PROMPT_PROTECTION,
+	type PromptFindingCategory,
+	type PromptFindingSummary,
+	type PromptIncompleteInspection,
+	type PromptProtectionDecision,
+	type PromptProtectionResult,
+	PromptScanDeadlineError,
+	type PromptScanOptions,
+	type PromptTenantDlp,
+	scanPrompt,
+} from "./prompt-protection.js";
 // Quarantine
 export {
 	AutoQuarantine,
@@ -1151,6 +1174,7 @@ export type {
 	PluginInfo,
 	PluginScanCache,
 	PluginScanResult,
+	PoisoningProtectionConfig,
 	PromptProtectionConfig,
 	PromptProtectionMode,
 	SignalSources,
@@ -1182,6 +1206,7 @@ export {
 	LoggingConfigSchema,
 	nullLogger,
 	PackageCheckConfigSchema,
+	PoisoningProtectionConfigSchema,
 	PromptProtectionConfigSchema,
 	PromptProtectionModeSchema,
 	SensitivitySchema,

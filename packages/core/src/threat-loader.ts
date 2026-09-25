@@ -36,9 +36,20 @@ function isExpired(entry: Record<string, unknown>): boolean {
 	return Date.now() > expiresAt.getTime();
 }
 
+/** Options for loading a subset of the rule files. */
+export interface LoadThreatsOptions {
+	/**
+	 * Parse only the files whose raw text satisfies this predicate. Detectors that
+	 * consume a few dedicated `match_on` values use it to avoid parsing every rule
+	 * file on each call; the default parses all files.
+	 */
+	includeFile?: (content: string) => boolean;
+}
+
 export async function loadThreats(
 	threatDir: string,
 	logger: Logger = nullLogger,
+	options: LoadThreatsOptions = {},
 ): Promise<Threat[]> {
 	const threats: Threat[] = [];
 	const errors: string[] = [];
@@ -63,6 +74,7 @@ export async function loadThreats(
 			logger.error(errorMsg, { file: filename, error: String(e) });
 			continue;
 		}
+		if (options.includeFile && !options.includeFile(content)) continue;
 
 		let data: unknown;
 		try {
@@ -168,12 +180,13 @@ export async function loadThreats(
 export async function loadThreatsFromDirs(
 	threatDirs: string[],
 	logger: Logger = nullLogger,
+	options: LoadThreatsOptions = {},
 ): Promise<Threat[]> {
 	const merged = new Map<string, Threat>();
 	for (const dir of threatDirs) {
 		if (!dir) continue;
 		try {
-			const threats = await loadThreats(dir, logger);
+			const threats = await loadThreats(dir, logger, options);
 			for (const threat of threats) {
 				merged.set(threat.id, threat);
 			}

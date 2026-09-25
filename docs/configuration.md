@@ -80,7 +80,17 @@ flows](privacy.md) before enabling network features.
   },
   "package_check": {
     "enabled": true,
-    "timeout_seconds": 5
+    "timeout_seconds": 5,
+    "new_package_days": 30,
+    "low_adoption_weekly_downloads": 1000,
+    "low_adoption_max_versions": 3,
+    "adoption_lookup": true
+  },
+  "poisoning_protection": {
+    "enabled": true,
+    "agent_control_files": "ask",
+    "content_scan": true,
+    "memory_write_scan": true
   },
   "amsi_check": {
     "enabled": true
@@ -237,6 +247,33 @@ Example (Supabase Edge Function):
 |-------|---------|-------------|
 | `enabled` | `false` | Explicit opt-in to send package names to npm/PyPI. Disabled package operations are marked unverified and require review. |
 | `timeout_seconds` | `5` | Request timeout |
+| `new_package_days` | `30` | Slopsquatting window. A package first published fewer days ago than this, with low adoption, is held for review with a slopsquatting reason. Packages younger than 7 days are always held. `0` turns the low-adoption signal off. |
+| `low_adoption_weekly_downloads` | `1000` | npm packages below this many downloads last week count as low adoption inside the window. |
+| `low_adoption_max_versions` | `3` | When download counts are unavailable (PyPI, or the npm downloads API did not answer), a package with this many published versions or fewer counts as low adoption. |
+| `adoption_lookup` | `true` | Ask the npm downloads API (`api.npmjs.org`) about packages inside the window. Sends the package name only. |
+
+A package that does not exist on the registry, or a requested version that was
+never published (a hallucinated name or version), is denied. With `enabled:
+false`, or when the registry cannot be reached, none of these signals runs and
+the package operation is reported as unverified, never as clean. See
+[Data and context poisoning protection](poisoning-protection.md#slopsquatting).
+
+### `poisoning_protection`
+
+Data and context poisoning protection. It runs inside the shared evaluator, so
+it applies to every connector. See
+[Data and context poisoning protection](poisoning-protection.md).
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `enabled` | `true` | Master switch for write-time instruction/memory file integrity and memory-write inspection. Read-time inspection is part of tool-output inspection and is not affected. |
+| `agent_control_files` | `"ask"` | What a write, edit, patch, delete or shell write to an agent instruction, memory, configuration, MCP, IDE automation, repository hook or shell start-up file needs: `ask` (out-of-band approval), `deny`, or `off` (no path-based review; the written content is still scanned). |
+| `content_scan` | `true` | Scan the text written into those files for hidden Unicode, injected instructions, exfiltration and concealment directives, remote-script execution and permission-widening settings. A finding denies the write. |
+| `memory_write_scan` | `true` | Scan the arguments of MCP tools that write to agent memory or a vector/RAG store for the same payloads. Injected instructions deny; standing behaviour changes for future sessions ask. |
+
+Individual rules (`CTX-*` in `threats/context-poisoning.yaml`) can be switched
+off with `disabled_threats`. A user allowlist entry that matches the call drops
+the path-based review but never the content findings.
 
 ### `version_check`
 

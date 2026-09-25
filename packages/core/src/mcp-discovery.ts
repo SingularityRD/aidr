@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { resolve } from "node:path";
+import { scanMcpToolMetadata } from "./context-poisoning.js";
 import {
 	type McpAttestationStateStore,
 	type McpAttestationStateV1,
@@ -9,6 +10,7 @@ import {
 	verifySignedMcpToolManifest,
 } from "./mcp-attestation.js";
 import { inspectMcpServerInventory, type McpInventoryItem } from "./mcp-inventory.js";
+import type { Threat } from "./types.js";
 
 function inventoryId(sourcePath: string, name: string): string {
 	const resolvedPath = resolve(sourcePath);
@@ -52,6 +54,23 @@ export interface McpDiscoveryAttestationOptions {
 export interface McpDiscoveryOptions {
 	/** Tool-manifest attestation inputs; absent means nothing can be verified. */
 	attestation?: McpDiscoveryAttestationOptions;
+	/**
+	 * `mcp_tool_metadata` rules (see `loadContextPoisoningRules`). When supplied,
+	 * the tool names, descriptions and schemas of every supplied manifest are
+	 * scanned for tool poisoning, whether or not the signature verifies.
+	 */
+	toolMetadataRules?: readonly Threat[];
+}
+
+/** Tool-poisoning scan of a server's supplied manifest. */
+export interface McpDiscoveryToolMetadata {
+	status: "clean" | "findings";
+	findings: Array<{
+		tool: string;
+		threat_id: string;
+		action: Threat["action"];
+		severity: Threat["severity"];
+	}>;
 }
 
 export type McpDiscoveryAttestationStatus =
@@ -94,6 +113,8 @@ export interface McpDiscoveryServer {
 	risk_hints: string[];
 	configuration_sha256: string;
 	attestation: McpDiscoveryAttestation;
+	/** Present only when a manifest and tool-metadata rules were both supplied. */
+	tool_metadata?: McpDiscoveryToolMetadata;
 }
 
 function keyringIsConfigured(
@@ -275,6 +296,25 @@ async function attestDiscoveredServer(
 	};
 }
 
+function toolMetadataEvidence(
+	item: McpInventoryItem,
+	id: string,
+	options: McpDiscoveryAttestationOptions,
+	rules: readonly Threat[] | undefined,
+): { tool_metadata?: McpDiscoveryToolMetadata } {
+	if (!rules || rules.length === 0) return {};
+	const signed = manifestFor(options.manifests, id) ?? manifestFor(options.manifests, item.name);
+	const tools = signed?.manifest?.tools;
+	if (!Array.isArray(tools)) return {};
+	const findings = scanMcpToolMetadata(tools, rules).map((finding) => ({
+		tool: finding.toolName,
+		threat_id: finding.threatId,
+		action: finding.action,
+		severity: finding.severity,
+	}));
+	return { tool_metadata: { status: findings.length > 0 ? "findings" : "clean", findings } };
+}
+
 /**
  * Public inventory never exports server arguments, credentials, headers or URL
  * queries. Each entry now carries tool-manifest attestation evidence derived
@@ -302,6 +342,7 @@ export async function discoverMcpServers(paths?: string[], options: McpDiscovery
 				risk_hints: item.riskHints,
 				configuration_sha256: item.configurationSha256,
 				attestation: await attestDiscoveredServer(item, id, attestationOptions),
+				...toolMetadataEvidence(item, id, attestationOptions, options.toolMetadataRules),
 			};
 		}),
 	);

@@ -6,6 +6,8 @@ import {
 	evaluateToolCall,
 	extractFromToolCall,
 	INPUT_NOT_FULLY_INSPECTED,
+	loadContextPoisoningRules,
+	scanMcpToolMetadata,
 } from "@singularityrd/aidr-core";
 import { EMBEDDED_RULE_SETS } from "./embedded-rules.mjs";
 
@@ -173,7 +175,7 @@ export function createToolCallDetector(
 		}
 	}
 
-	return async function evaluateMcpToolCall({ server, client, toolName, args }) {
+	return async function evaluateMcpToolCall({ server, client, toolName, args, description }) {
 		const qualifiedName = `mcp__${server.id}__${toolName}`;
 		let verdict;
 		try {
@@ -191,6 +193,7 @@ export function createToolCallDetector(
 					...(config.detection?.agentConfigPath
 						? { configPath: config.detection.agentConfigPath }
 						: {}),
+					...(typeof description === "string" ? { mcpToolDescription: description } : {}),
 					...(server.dlpPolicy
 						? {
 								runtimeDetectors: {
@@ -213,5 +216,63 @@ export function createToolCallDetector(
 		if (verdict?.decision === "deny") throw new McpToolCallBlocked("arguments_blocked", verdict);
 		if (verdict?.decision === "ask") throw new McpToolCallBlocked("approval_required", verdict);
 		throw new McpToolCallBlocked("detection_unavailable");
+	};
+}
+
+/**
+ * Tool-poisoning scan of the observed tool list (names, descriptions and
+ * input-schema strings) against the `mcp_tool_metadata` rules of the same rule
+ * set the argument evaluator uses. A signed, operator-approved manifest proves
+ * who published the descriptions, not that they are safe: a publisher (or a
+ * compromised publisher key) can sign hidden instructions.
+ *
+ * Returns `{ blocking, suspicious }` finding lists. Rules that cannot be loaded
+ * throw `detection_unavailable`, so the gateway fails closed. Results are cached
+ * per toolset hash; the observed toolset already has to match the signed one.
+ * `scan` is injectable for tests.
+ */
+export function createToolMetadataScanner(
+	config,
+	{ embedded = EMBEDDED_RULE_SETS, scan = scanMcpToolMetadata } = {},
+) {
+	let dirsPromise;
+	let rulesPromise;
+	const cache = new Map();
+
+	async function rules() {
+		dirsPromise ??= resolveRuleDirs(config, embedded);
+		rulesPromise ??= dirsPromise.then((dirs) => loadContextPoisoningRules([dirs.threats]));
+		try {
+			const loaded = await rulesPromise;
+			if (!loaded.some((rule) => rule.matchOn.has("mcp_tool_metadata")))
+				throw new Error("detection_unavailable");
+			return loaded;
+		} catch {
+			dirsPromise = undefined;
+			rulesPromise = undefined;
+			throw new McpToolCallBlocked("detection_unavailable");
+		}
+	}
+
+	return async function scanToolMetadata(tools, toolsetHash) {
+		const cached = toolsetHash ? cache.get(toolsetHash) : undefined;
+		if (cached) return cached;
+		let findings;
+		try {
+			findings = scan(tools, await rules());
+		} catch (cause) {
+			if (cause instanceof McpToolCallBlocked) throw cause;
+			throw new McpToolCallBlocked("detection_unavailable");
+		}
+		if (!Array.isArray(findings)) throw new McpToolCallBlocked("detection_unavailable");
+		const result = {
+			blocking: findings.filter((finding) => finding.action === "block"),
+			suspicious: findings.filter((finding) => finding.action !== "block"),
+		};
+		if (toolsetHash) {
+			if (cache.size >= 256) cache.clear();
+			cache.set(toolsetHash, result);
+		}
+		return result;
 	};
 }

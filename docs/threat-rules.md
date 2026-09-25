@@ -17,6 +17,7 @@ Rules ship in the `threats/` directory at the repository root:
 | `supply_chain.yaml` | Supply chain risk patterns |
 | `mining.yaml` | Cryptomining / resource hijacking (MITRE ATT&CK T1496): miner binaries, pool connections, miner flags, wallet payout targets, miner package installs |
 | `self-defense.yaml` | Attempts to disable or bypass Singularity AIDR |
+| `context-poisoning.yaml` | Data and context poisoning: writes to agent instruction/memory/config files, hidden or injected instructions in what is written, MCP tool poisoning, memory-store writes. Uses dedicated `match_on` values evaluated with operation context; see [poisoning-protection.md](poisoning-protection.md) |
 | `mitre.yaml` | MITRE ATT&CK technique mappings |
 | `win-*.yaml` | Windows-specific variants of the above |
 | `mac-*.yaml` | macOS-specific variants (osascript, Keychain, LOLBins, defense evasion) |

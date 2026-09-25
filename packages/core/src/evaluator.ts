@@ -18,6 +18,7 @@ import { AmsiClient, isAmsiSupported } from "./clients/amsi.js";
 import { ControlPlaneClient } from "./clients/control-plane.js";
 import { UrlCheckClient } from "./clients/url-check.js";
 import { isInvalidConfig, loadConfig, resolvePath } from "./config.js";
+import { evaluateContextPoisoning, loadContextPoisoningRules } from "./context-poisoning.js";
 import {
 	type DelegatedCredentialClaimsV1,
 	type DelegatedCredentialErrorCode,
@@ -93,7 +94,7 @@ import type {
 	UrlCheckResult,
 	Verdict,
 } from "./types.js";
-import { nullLogger } from "./types.js";
+import { nullLogger, PoisoningProtectionConfigSchema } from "./types.js";
 import { VERSION } from "./version.js";
 
 type CachedIntelMerged = { loadedAt: number; tag: string; merged: IntelMerged };
@@ -226,6 +227,12 @@ export interface ToolEvaluationContext {
 	 * makes no delegation claim, and the call is evaluated exactly as before.
 	 */
 	delegation?: ToolDelegationContext;
+	/**
+	 * Description of the MCP tool being called, when the caller has it (the MCP
+	 * gateway does). It lets the context-poisoning detector recognise memory and
+	 * vector-store write tools whose names alone do not say so.
+	 */
+	mcpToolDescription?: string;
 }
 
 const DETECTOR_DECISION_RANK = { allow: 0, ask: 1, deny: 2 } as const;
@@ -634,13 +641,62 @@ async function applyRuntimeDetectors(
 		};
 	}
 
-	const verdict = await recheckRedactedInput(
-		await applyConfiguredDetectors(request, context, baseVerdict, managedState, rewriteSource),
-		request,
-		context,
-		config,
+	const verdict = mergeContextPoisoningVerdict(
+		await recheckRedactedInput(
+			await applyConfiguredDetectors(request, context, baseVerdict, managedState, rewriteSource),
+			request,
+			context,
+			config,
+		),
+		await contextPoisoningVerdict(request, context, config, baseVerdict),
 	);
 	return delegationOutcome ? { ...verdict, delegation: delegationOutcome.lineage } : verdict;
+}
+
+/**
+ * Instruction/memory file integrity and memory-write inspection. It runs on
+ * every path through the pipeline (policy, allowlist, no-artifact fast path),
+ * so neither a policy allow nor a user allowlist entry can wave a poisoned
+ * write through; an allowlist entry only drops the path-based review. A rule
+ * load failure skips this signal (logged), like any other detection internal.
+ */
+async function contextPoisoningVerdict(
+	request: ToolEvaluationRequest,
+	context: ToolEvaluationContext,
+	config: Config,
+	baseVerdict: Verdict,
+): Promise<Verdict | null> {
+	// Configurations built without the schema (tests, embedders) get the defaults.
+	const settings = config.poisoning_protection ?? PoisoningProtectionConfigSchema.parse({});
+	if (!settings.enabled) return null;
+	const logger = context.logger ?? nullLogger;
+	try {
+		const rules = await loadContextPoisoningRules(
+			[context.threatsDir, context.userThreatsDir ?? resolvePath("~/.singularity-aidr/threats")],
+			logger,
+		);
+		const disabled = new Set(config.disabled_threats);
+		return await evaluateContextPoisoning(request, {
+			rules: rules.filter((rule) => !disabled.has(rule.id)),
+			settings,
+			sensitivity: config.sensitivity,
+			allowlisted: baseVerdict.source === "allowlisted",
+			mcpToolDescription: context.mcpToolDescription,
+		});
+	} catch (error) {
+		logger.warn("Context-poisoning detector did not run; this call was not checked for it", {
+			errorType: error instanceof Error ? error.name : typeof error,
+		});
+		return null;
+	}
+}
+
+/** deny > ask > allow; an equal-rank poisoning verdict does not replace an existing one. */
+function mergeContextPoisoningVerdict(current: Verdict, poisoning: Verdict | null): Verdict {
+	if (!poisoning) return current;
+	return DETECTOR_DECISION_RANK[poisoning.decision] > DETECTOR_DECISION_RANK[current.decision]
+		? poisoning
+		: current;
 }
 
 async function applyConfiguredDetectors(
@@ -2166,6 +2222,10 @@ async function checkPackages(
 					intelPackageNameDeny: intelMerged?.packageNameDeny,
 					intelPackageHashDeny: intelMerged?.packageHashDeny,
 					reputationFeed,
+					newPackageDays: config.package_check.new_package_days,
+					lowAdoptionWeeklyDownloads: config.package_check.low_adoption_weekly_downloads,
+					lowAdoptionMaxVersions: config.package_check.low_adoption_max_versions,
+					adoptionLookup: config.package_check.adoption_lookup,
 				},
 				logger,
 			);

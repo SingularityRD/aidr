@@ -577,6 +577,43 @@ export const PackageCheckConfigSchema = z.object({
 	/** Explicit opt-in to sending package names to public registries. */
 	enabled: z.boolean().default(false),
 	timeout_seconds: z.number().default(5.0),
+	/**
+	 * Slopsquatting window: a package first published fewer than this many days
+	 * ago is held for review when its adoption is also low. Packages younger than
+	 * seven days are always held. `0` disables the low-adoption signal.
+	 */
+	new_package_days: z.number().int().min(0).max(3650).default(30),
+	/** npm weekly downloads below this count are "low adoption" inside the window. */
+	low_adoption_weekly_downloads: z.number().int().min(0).default(1000),
+	/**
+	 * Published versions at or below this count are "low adoption" when download
+	 * counts are unavailable (PyPI, or the npm downloads API did not answer).
+	 */
+	low_adoption_max_versions: z.number().int().min(0).default(3),
+	/** Ask the npm downloads API about young packages (sends the package name). */
+	adoption_lookup: z.boolean().default(true),
+});
+
+/**
+ * Data and context poisoning protection: integrity of agent instruction, memory
+ * and configuration files, scanning of what is written into them, and memory /
+ * RAG write inspection. Every switch is on by default; see
+ * docs/poisoning-protection.md.
+ */
+export const PoisoningProtectionConfigSchema = z.object({
+	/** Master switch for the runtime context-poisoning detector. */
+	enabled: z.boolean().default(true),
+	/**
+	 * What a write to an agent instruction, memory, configuration, MCP, IDE
+	 * automation, repository hook or shell start-up file needs: `ask`
+	 * (out-of-band approval), `deny`, or `off` (no path signal; the written
+	 * content is still scanned).
+	 */
+	agent_control_files: z.enum(["ask", "deny", "off"]).default("ask"),
+	/** Scan the text written into those files for hidden or injected instructions. */
+	content_scan: z.boolean().default(true),
+	/** Scan the arguments of MCP tools that write to agent memory or a vector store. */
+	memory_write_scan: z.boolean().default(true),
 });
 
 const AmsiCheckConfigSchema = z.object({
@@ -661,6 +698,7 @@ export const ConfigSchema = z.object({
 	file_check: FileCheckConfigSchema.default({}),
 	version_check: VersionCheckConfigSchema.default({}),
 	package_check: PackageCheckConfigSchema.default({}),
+	poisoning_protection: PoisoningProtectionConfigSchema.default({}),
 	amsi_check: AmsiCheckConfigSchema.default({}),
 	prompt_protection: PromptProtectionConfigSchema.default({}),
 	/** @deprecated Accepted for configuration compatibility; not used at runtime. */
@@ -703,6 +741,7 @@ export type ResponseAuditConfig = ResponseConfig["audit"];
 export type UrlCheckConfig = OptionalUrlCheckDefaults<z.infer<typeof UrlCheckConfigSchema>>;
 export type FileCheckConfig = OptionalInsecureLoopback<z.infer<typeof FileCheckConfigSchema>>;
 export type PackageCheckConfig = z.infer<typeof PackageCheckConfigSchema>;
+export type PoisoningProtectionConfig = z.infer<typeof PoisoningProtectionConfigSchema>;
 export type AmsiCheckConfig = z.infer<typeof AmsiCheckConfigSchema>;
 export type PromptProtectionMode = z.infer<typeof PromptProtectionModeSchema>;
 export type PromptProtectionConfig = z.infer<typeof PromptProtectionConfigSchema>;

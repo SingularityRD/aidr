@@ -10,6 +10,7 @@ import type { Logger } from "../types.js";
 import { nullLogger } from "../types.js";
 
 const NPM_REGISTRY = "https://registry.npmjs.org";
+const NPM_DOWNLOADS_API = "https://api.npmjs.org/downloads/point/last-week";
 const PYPI_REGISTRY = "https://pypi.org/pypi";
 const DEFAULT_TIMEOUT = 5.0;
 export const MAX_REGISTRY_RESPONSE_BYTES = 20 * 1024 * 1024;
@@ -109,6 +110,8 @@ export interface PackageMetadata {
 	firstReleaseDate: Date | null;
 	/** False when a specific version was requested but not found in the registry. */
 	requestedVersionFound: boolean;
+	/** Published versions (npm) or releases with files (PyPI); an adoption proxy. */
+	versionCount?: number;
 }
 
 export class RegistryClient {
@@ -127,6 +130,29 @@ export class RegistryClient {
 	): Promise<PackageMetadata | null> {
 		if (registry === "npm") return this.getNpmMetadata(name, version);
 		return this.getPypiMetadata(name, version);
+	}
+
+	/**
+	 * Last-week npm download count, or null when it is unavailable (non-npm
+	 * registry, invalid name, HTTP/timeout failure or malformed answer). Null is
+	 * "adoption unknown", never "low adoption".
+	 */
+	async getWeeklyDownloads(name: string, registry: "npm" | "pypi"): Promise<number | null> {
+		if (registry !== "npm" || !NPM_NAME_RE.test(name)) return null;
+		try {
+			const response = await fetch(`${NPM_DOWNLOADS_API}/${name}`, {
+				signal: AbortSignal.timeout(this.timeoutMs),
+			});
+			if (!response.ok) return null;
+			const data = await readRegistryJson(response);
+			const downloads = isRecord(data) ? data.downloads : undefined;
+			return typeof downloads === "number" && Number.isSafeInteger(downloads) && downloads >= 0
+				? downloads
+				: null;
+		} catch (e) {
+			this.logger.warn("npm downloads lookup failed", { name, error: String(e) });
+			return null;
+		}
 	}
 
 	private async getNpmMetadata(name: string, version?: string): Promise<PackageMetadata | null> {
@@ -219,6 +245,7 @@ export class RegistryClient {
 				hashAlgorithm,
 				firstReleaseDate,
 				requestedVersionFound,
+				versionCount: Object.keys(versions).length,
 			};
 		} catch (e) {
 			this.logger.warn("Failed to parse npm response", { name, error: String(e) });
@@ -322,6 +349,9 @@ export class RegistryClient {
 				hashAlgorithm: "sha256",
 				firstReleaseDate,
 				requestedVersionFound,
+				versionCount: Object.values(releases).filter(
+					(files) => Array.isArray(files) && files.length > 0,
+				).length,
 			};
 		} catch (e) {
 			this.logger.warn("Failed to parse PyPI response", { name, error: String(e) });
