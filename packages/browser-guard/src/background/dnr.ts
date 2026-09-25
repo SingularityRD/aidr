@@ -21,7 +21,8 @@
 import type { SiteId } from "../types.js";
 import type { ChromeApi, DnrRule, TabInfo } from "./storage.js";
 
-type SupportedSite = Exclude<SiteId, "other">;
+/** Built-in sites ("custom" portals have policy-defined hosts, "other" has none). */
+type SupportedSite = Exclude<SiteId, "other" | "custom">;
 
 export const SITE_HOSTS: Readonly<Record<SupportedSite, readonly string[]>> = Object.freeze({
 	chatgpt: Object.freeze(["chatgpt.com", "chat.openai.com"]),
@@ -68,7 +69,7 @@ export function siteForUrl(url: unknown): SupportedSite | null {
 	return HOST_TO_SITE.get(parsed.hostname) ?? null;
 }
 
-/** Rules for the given sites ("other" has no hosts and yields no rule). */
+/** Rules for the given sites ("other" and "custom" yield no rule). */
 export function buildBlockRules(blockedSites: readonly SiteId[]): DnrRule[] {
 	const rules: DnrRule[] = [];
 	SUPPORTED_SITES.forEach((site, i) => {

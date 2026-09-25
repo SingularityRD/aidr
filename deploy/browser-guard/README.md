@@ -52,7 +52,9 @@ apart or use a key the extension does not accept.
 | `detectSignals` | boolean | prompt-injection and source-code signals |
 | `signalAction` | string | `off`, `warn`, `block` |
 | `blockedSites` | array of site ids | the page is blocked from loading; `chatgpt`, `gemini`, `claude`, `copilot`, `perplexity`, `deepseek`, `mistral`, `grok` |
-| `disabledSites` | array of site ids | the guard only monitors on these sites |
+| `disabledSites` | array of site ids | the guard only monitors on these sites (`custom` = every configured internal site) |
+| `customSites` | array of `{ "id", "label", "hosts", "editorSelectors", "sendButtonSelectors", "responseSelectors" }` | company-internal AI portals to protect; up to 20 sites, 1-10 exact HTTPS hosts each (no port, path, wildcard, IP or built-in AI host), up to 20 CSS selectors per list. Each user allows access to the hosts once on the options page (**AI services** > **Allow access**); only then is the content script registered there |
+| `shadowAi` | `{ "mode", "sanctioned", "blocked" }` | Shadow AI discovery and control: `mode` `off` (default), `monitor` (count visits per catalogued AI service and day) or `block-unsanctioned` (also block every catalogued service not in `sanctioned`); ids in `blocked` are blocked in every mode. Ids are the catalog ids in `src/sites/catalog.ts`. Counting and blocking need each user's one-time **Allow access** on the options page; until then the page reports access as missing |
 | `allowUserPause` | boolean | users may pause protection for up to 60 minutes |
 | `allowSendAnyway` | boolean | users may send unmasked after a warning |
 | `maskPaste` | boolean | mask sensitive data as it is pasted |
@@ -201,3 +203,8 @@ normalisation and fingerprint algorithm are documented in
    `[EMAIL_1]`.
 4. With telemetry configured, `privacy_scan` counts appear in the control plane
    within about a minute.
+5. With `customSites` or `shadowAi` set, the options page has an **AI services**
+   section. After **Allow access**, a custom site shows **Protected** (reload tabs
+   that were already open) and Shadow AI shows "Access granted"; opening an
+   unsanctioned catalogued service (in `block-unsanctioned` mode) shows the blocked
+   page, and `shadow_ai_usage` counts reach the dashboard's **Shadow AI** panel.

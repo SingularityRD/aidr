@@ -92,9 +92,25 @@ export const EXTENSION_CSP = [
 	"frame-ancestors 'none'",
 ].join("; ");
 
-export const PERMISSIONS = Object.freeze(["storage", "alarms", "declarativeNetRequestWithHostAccess"]);
+/**
+ * `scripting` registers content.js at runtime for administrator-configured internal AI
+ * sites (managed `customSites`, src/background/custom-sites.ts), only on hosts the user
+ * granted from the optional host permissions below. It carries no install warning and
+ * gives no access by itself: injection still needs host access to the page.
+ */
+export const PERMISSIONS = Object.freeze([
+	"storage",
+	"alarms",
+	"declarativeNetRequestWithHostAccess",
+	"scripting",
+]);
 /** Requested at runtime only, when an admin or user enables the local NER host. */
 export const OPTIONAL_PERMISSIONS = Object.freeze(["nativeMessaging"]);
+/**
+ * Requested at runtime, per origin, from the options page: custom internal AI sites and
+ * the Shadow AI catalog hosts (visit counts and blocking under
+ * declarativeNetRequestWithHostAccess). Never `tabs`, `webNavigation` or `<all_urls>`.
+ */
 export const OPTIONAL_HOST_PERMISSIONS = Object.freeze(["https://*/*"]);
 
 /** Hosts (besides the site hosts) a bundle may mention in a URL literal. Anything else fails the build. */

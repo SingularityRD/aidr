@@ -38,6 +38,8 @@ Start from the managed values in
 | What counts as sensitive | `enabledEntities`, `literals`, `exactData` | keep the defaults, add project code names as `literals`, and customer/employee lists as `exactData` |
 | What is never shown again | `neverRestore` | keep `SECRET` and `PRIVATE_KEY` |
 | Sites people may not use at all | `blockedSites` | e.g. `deepseek`, if your data policy forbids it |
+| Which other AI services are used, and which are allowed | `shadowAi` | start with `{"mode": "monitor"}` to see usage on the dashboard's **Shadow AI** panel, then list the approved services in `sanctioned` and switch to `block-unsanctioned` |
+| Company-internal AI portals | `customSites` | one entry per portal with its exact HTTPS hosts and the CSS selectors of its prompt box, send button and answers |
 | Whether users can switch it off | `allowUserPause` | `false` for enforcement, `true` during a pilot |
 | Files | `fileHandling`, `maxFileBytes` | `scan` (text files are sanitised); `block` if no uploads to AI sites are allowed |
 | Reporting | `telemetry`, `policyId` | connect your AIDR control plane to see counts per site and entity type |
@@ -105,6 +107,11 @@ parallel; when the host is not reachable the check is rules-only and the user se
 - The extension popup shows the managed mode with a lock.
 - Sending `jane.doe@example.com` on a supported site in `auto` mode delivers
   `[EMAIL_1]` to the site.
+- With `shadowAi` or `customSites` set: the options page's **AI services**
+  section lists them. Browser Guard cannot see or block other AI services, nor run
+  on internal hosts, until the user clicks **Allow access** there once (a managed
+  policy cannot grant host access; Browser Guard deliberately does not request the
+  `tabs`/browsing-history permission). Tell users to do this during rollout.
 
 ### Troubleshooting
 
@@ -115,6 +122,8 @@ parallel; when the host is not reachable the check is rules-only and the user se
 | Nothing masked on a site | The site is in the supported list and not in `disabledSites` (a disabled site is only monitored: sends are counted, nothing is masked); `mode` is not `monitor`; the entity type is in `enabledEntities` |
 | Names in running text not masked | `useNativeHost` is on, the user granted `nativeMessaging`, the popup says "Advanced detection is connected", and the host config has an approved `ner` block (without one it runs rules-only) |
 | No telemetry | `controlPlaneUrl` is `https://`; the API key is valid; the machine can reach the control plane |
+| Internal AI portal not masked | The host is listed exactly in `customSites` (no port or path), the options page shows the site as **Protected** (not **Needs access**), and the tab was reloaded after access was granted; check the selectors against the portal's markup |
+| Shadow AI shows no usage or does not block | `shadowAi.mode` is `monitor` or `block-unsanctioned`; the options page says "Access granted" (otherwise click **Allow access**); the service is in the catalog (`packages/browser-guard/src/sites/catalog.ts`) |
 | Works in a normal window only | Expected: the extension is not allowed in private/incognito windows |
 
 ---
@@ -161,6 +170,12 @@ Open the options page from the popup:
   masked, but how often sensitive data is sent is still counted.
 - **Language:** automatic, English or Turkish.
 - **Pause:** if allowed, pause protection for 15 minutes from the popup.
+- **AI services** (only when your organisation configured it): the internal AI
+  sites Browser Guard protects and your organisation's rules for other AI
+  services. Click **Allow access** once when asked; Browser Guard then learns only
+  which AI service a tab opened (never the page address) and can mask your
+  messages on the internal sites. An AI service your organisation has not approved
+  may open a "blocked by your organization" page instead.
 
 ### Your privacy
 
@@ -169,7 +184,9 @@ only for the current browser session so they can be shown in answers (also
 after you reload the page), and are cleared when you close the tab or the
 browser. If your organisation has connected the AIDR
 control plane, only counts (for example "2 email addresses masked on ChatGPT")
-are reported, never what you typed.
+are reported, never what you typed. If it also turned on AI service discovery,
+the number of visits per AI service (for example "Midjourney: 3 visits") is
+reported, never the addresses of the pages you opened.
 
 ### Good to know
 

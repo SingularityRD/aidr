@@ -5,6 +5,7 @@ import autoMask from "./auto-mask.mjs";
 import blockedSite from "./blocked-site.mjs";
 import editing from "./editing.mjs";
 import fileUpload from "./file-upload.mjs";
+import managedAiSites from "./managed-ai-sites.mjs";
 import modes from "./modes.mjs";
 import paste from "./paste.mjs";
 import popup from "./popup.mjs";
@@ -23,6 +24,7 @@ export const SCENARIOS = [
 	...popup,
 	...editing,
 	...blockedSite,
+	...managedAiSites,
 ];
 
 /** Selects scenarios by comma-separated ids or id prefixes (`auto` matches `auto-chatgpt`). */

@@ -7,17 +7,23 @@
  * does not match static/managed_schema.json) and reported in a warning list.
  * Warnings name keys only, never values (an apiKey must not reach a log line).
  */
+import { AI_SERVICE_ID_PATTERN, AI_SERVICES } from "../sites/catalog.js";
+import { CUSTOM_SITE_LIMITS, SELECTOR_FORBIDDEN } from "../sites/custom.js";
 import {
+	type CustomSiteConfig,
 	ENTITY_TYPES,
 	type EntityType,
 	type ExactDataSet,
 	type GuardMode,
 	type GuardPolicy,
 	type LiteralRule,
+	type ShadowAiMode,
+	type ShadowAiPolicy,
 	type SiteId,
 	type TelemetryConfig,
 	type UserSettings,
 } from "../types.js";
+import { SITE_HOSTS } from "./dnr.js";
 
 const MIB = 1024 * 1024;
 
@@ -38,6 +44,7 @@ export const SITE_ID_LIST: readonly SiteId[] = Object.freeze([
 	"deepseek",
 	"mistral",
 	"grok",
+	"custom",
 	"other",
 ]);
 
@@ -74,6 +81,8 @@ export const DEFAULT_POLICY: GuardPolicy = deepFreeze({
 	signalAction: "warn",
 	blockedSites: [],
 	disabledSites: [],
+	customSites: [],
+	shadowAi: { mode: "off", sanctioned: [], blocked: [] },
 	allowUserPause: true,
 	allowSendAnyway: true,
 	maskPaste: true,
@@ -235,6 +244,137 @@ function telemetryValidator(allowNull: boolean): Validator {
 	};
 }
 
+const CUSTOM_SITE_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,31}$/;
+/** Exact DNS hostname: lowercase labels, at least one dot (matches the build's host shape). */
+const HOSTNAME_PATTERN =
+	/^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/;
+/** Labels must not carry control characters. */
+const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
+const BUILT_IN_HOSTS: ReadonlySet<string> = new Set(Object.values(SITE_HOSTS).flat());
+
+/**
+ * Normalises one configured custom-site host: a bare hostname or an `https://host[/]`
+ * origin. Anything with another scheme, a port, credentials, a path, a query, a
+ * wildcard, a single label or an IP-looking tail is rejected (null).
+ */
+export function normalizeCustomHost(raw: unknown): string | null {
+	if (typeof raw !== "string" || raw.length === 0 || raw.length > 300) return null;
+	let host = raw.trim().toLowerCase();
+	if (host.includes("://")) {
+		let url: URL;
+		try {
+			url = new URL(host);
+		} catch {
+			return null;
+		}
+		if (url.protocol !== "https:" || url.port || url.username || url.password) return null;
+		if (url.search || url.hash || (url.pathname !== "/" && url.pathname !== "")) return null;
+		if (!/^https:\/\/[^/?#]+\/?$/.test(host)) return null;
+		host = url.hostname;
+	}
+	if (!HOSTNAME_PATTERN.test(host) || /^[0-9.]+$/.test(host)) return null;
+	return host;
+}
+
+function selectorList(raw: unknown): string[] | null {
+	if (raw === undefined) return [];
+	if (!Array.isArray(raw) || raw.length > CUSTOM_SITE_LIMITS.maxSelectorsPerList) return null;
+	const out: string[] = [];
+	for (const item of raw) {
+		if (typeof item !== "string" || item.trim().length === 0) return null;
+		if (item.length > CUSTOM_SITE_LIMITS.maxSelectorChars || SELECTOR_FORBIDDEN.test(item))
+			return null;
+		if (!out.includes(item)) out.push(item);
+	}
+	return out;
+}
+
+const CUSTOM_SITE_KEYS = [
+	"id",
+	"label",
+	"hosts",
+	"editorSelectors",
+	"sendButtonSelectors",
+	"responseSelectors",
+] as const;
+
+/** One custom site (see CustomSiteConfig), or null when any field is malformed. */
+function customSite(item: unknown): CustomSiteConfig | null {
+	if (!isPlainObject(item)) return null;
+	if (Object.keys(item).some((k) => !(CUSTOM_SITE_KEYS as readonly string[]).includes(k)))
+		return null;
+	const { id, label } = item;
+	if (typeof id !== "string" || !CUSTOM_SITE_ID_PATTERN.test(id)) return null;
+	if (typeof label !== "string" || CONTROL_CHARS.test(label)) return null;
+	const trimmedLabel = label.trim();
+	if (trimmedLabel.length === 0 || trimmedLabel.length > CUSTOM_SITE_LIMITS.maxLabelChars)
+		return null;
+	if (!Array.isArray(item.hosts) || item.hosts.length === 0) return null;
+	if (item.hosts.length > CUSTOM_SITE_LIMITS.maxHostsPerSite) return null;
+	const hosts: string[] = [];
+	for (const raw of item.hosts) {
+		const host = normalizeCustomHost(raw);
+		// A built-in site keeps its own adapter; configuring it again is a policy error.
+		if (!host || BUILT_IN_HOSTS.has(host)) return null;
+		if (!hosts.includes(host)) hosts.push(host);
+	}
+	const editorSelectors = selectorList(item.editorSelectors);
+	const sendButtonSelectors = selectorList(item.sendButtonSelectors);
+	const responseSelectors = selectorList(item.responseSelectors);
+	if (!editorSelectors || !sendButtonSelectors || !responseSelectors) return null;
+	return {
+		id,
+		label: trimmedLabel,
+		hosts,
+		editorSelectors,
+		sendButtonSelectors,
+		responseSelectors,
+	};
+}
+
+/** At most 20 sites, unique ids, no host configured twice; any bad entry rejects the key. */
+const customSites: Validator = (raw) => {
+	if (!Array.isArray(raw) || raw.length > CUSTOM_SITE_LIMITS.maxSites) return invalid;
+	const out: CustomSiteConfig[] = [];
+	const ids = new Set<string>();
+	const hosts = new Set<string>();
+	for (const item of raw) {
+		const site = customSite(item);
+		if (!site || ids.has(site.id) || site.hosts.some((h) => hosts.has(h))) return invalid;
+		ids.add(site.id);
+		for (const host of site.hosts) hosts.add(host);
+		out.push(site);
+	}
+	return valid(out);
+};
+
+export const SHADOW_AI_MODES: readonly ShadowAiMode[] = Object.freeze([
+	"off",
+	"monitor",
+	"block-unsanctioned",
+]);
+
+/**
+ * Service id list. Well-formed ids this build's catalog does not know are kept (a newer
+ * policy must not switch enforcement off); they simply match no service.
+ */
+function serviceIdList(raw: unknown): string[] | null {
+	if (raw === undefined) return [];
+	if (!Array.isArray(raw) || raw.length > AI_SERVICES.length * 4) return null;
+	if (!raw.every((id) => typeof id === "string" && AI_SERVICE_ID_PATTERN.test(id))) return null;
+	return [...new Set(raw as string[])];
+}
+
+const shadowAi: Validator = (raw) => {
+	if (!isPlainObject(raw)) return invalid;
+	if (Object.keys(raw).some((k) => !["mode", "sanctioned", "blocked"].includes(k))) return invalid;
+	if (!SHADOW_AI_MODES.includes(raw.mode as ShadowAiMode)) return invalid;
+	const sanctioned = serviceIdList(raw.sanctioned);
+	const blocked = serviceIdList(raw.blocked);
+	if (!sanctioned || !blocked) return invalid;
+	return valid({ mode: raw.mode as ShadowAiMode, sanctioned, blocked } satisfies ShadowAiPolicy);
+};
+
 type ManagedKey = Exclude<keyof GuardPolicy, "version" | "managedKeys">;
 
 const MANAGED_VALIDATORS: Readonly<Record<ManagedKey, Validator>> = {
@@ -247,6 +387,8 @@ const MANAGED_VALIDATORS: Readonly<Record<ManagedKey, Validator>> = {
 	signalAction: oneOf(["off", "warn", "block"]),
 	blockedSites: siteList,
 	disabledSites: siteList,
+	customSites,
+	shadowAi,
 	allowUserPause: bool,
 	allowSendAnyway: bool,
 	maskPaste: bool,
