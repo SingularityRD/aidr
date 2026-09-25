@@ -3,7 +3,13 @@
  * renderOptions and sends SET_USER_SETTINGS for every change. Keys locked by
  * managed policy are rejected here as well as rendered read-only.
  */
-import { ENTITY_TYPES, type EntityType, type GuardPolicy, type UserSettings } from "../types.js";
+import {
+	ENTITY_TYPES,
+	type EntityType,
+	type GuardPolicy,
+	type SiteAccessStatus,
+	type UserSettings,
+} from "../types.js";
 import type { UiEnv } from "./env.js";
 import { browserLocalizer, type Localizer, msg, relocalizeDocument } from "./i18n.js";
 import {
@@ -23,6 +29,7 @@ import {
 import { renderNotice, replaceKeepingFocus } from "./render-common.js";
 import {
 	emptyDraft,
+	hasAiAccessPolicy,
 	type NativeState,
 	type OptionsDraft,
 	type OptionsState,
@@ -142,17 +149,39 @@ export function startOptions(
 		if (state.phase === "ready") state = { ...state, native };
 	};
 
+	/** Host access for Shadow AI and custom sites; null when the worker cannot say. */
+	const readAccess = async (policy: GuardPolicy): Promise<SiteAccessStatus | null> => {
+		if (!hasAiAccessPolicy(policy)) return null;
+		try {
+			const response = (await env.send({ type: "GET_SITE_ACCESS" })) as {
+				ok?: unknown;
+				access?: SiteAccessStatus;
+			};
+			return response?.ok === true && response.access ? response.access : null;
+		} catch {
+			return null;
+		}
+	};
+
+	const refreshAccess = async () => {
+		if (state.phase !== "ready") return;
+		const access = await readAccess(state.policy);
+		if (state.phase === "ready") state = { ...state, access, now: env.now() };
+	};
+
 	const load = async () => {
 		try {
 			const policy = await fetchPolicy();
 			await relocalize(policy.language);
-			const native = await readNative();
+			const [native, access] = await Promise.all([readNative(), readAccess(policy)]);
 			state = {
 				phase: "ready",
 				policy,
 				version: env.getVersion(),
 				draft: emptyDraft(policy),
 				native,
+				access,
+				now: env.now(),
 			};
 		} catch {
 			state = { phase: "error" };
@@ -346,10 +375,44 @@ export function startOptions(
 		void save({ literals: remaining }, { successKey: msg("notice_term_removed"), focusId });
 	};
 
+	/**
+	 * Asks the browser for host access (optional host permissions). Called synchronously
+	 * from the click so the browser shows its prompt; the worker re-syncs on the grant.
+	 */
+	const grantOrigins = (origins: readonly string[], focusId: string) => {
+		if (origins.length === 0 || !env.requestOrigins) {
+			notify(msg("notice_access_denied"), "error");
+			return;
+		}
+		void env
+			.requestOrigins(origins)
+			.catch(() => false)
+			.then(async (granted) => {
+				await refreshAccess();
+				render(focusId);
+				notify(
+					granted ? msg("notice_access_granted") : msg("notice_access_denied"),
+					granted ? "ok" : "error",
+				);
+			});
+	};
+
 	const onClick = (event: Event) => {
 		const target = event.target instanceof Element ? event.target.closest("[data-action]") : null;
 		if (!(target instanceof HTMLButtonElement)) return;
 		switch (target.dataset.action) {
+			case "grant-shadow-access":
+				if (state.phase === "ready" && state.access)
+					grantOrigins(state.access.shadowAi.missingOrigins, "shadow-access");
+				return;
+			case "grant-custom-access": {
+				const site =
+					state.phase === "ready"
+						? state.access?.customSites.find((entry) => entry.id === target.dataset.siteId)
+						: undefined;
+				if (site) grantOrigins(site.origins, `custom-site-${site.id}`);
+				return;
+			}
 			case "retry":
 				state = { phase: "loading" };
 				render();
@@ -391,6 +454,7 @@ export function startOptions(
 				if (state.phase !== "ready" || busy) return;
 				if (fresh.language !== state.policy.language) await relocalize(fresh.language);
 				state = { ...state, policy: fresh };
+				await refreshAccess();
 				render();
 			})
 			.catch(() => undefined)

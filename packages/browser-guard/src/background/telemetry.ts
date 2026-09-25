@@ -1,19 +1,23 @@
 /**
  * Privacy telemetry client. Implements docs/contracts/privacy-telemetry.md exactly:
  * POST {controlPlaneUrl}/functions/v1/ingest with the shared connector envelope and
- * `privacy_scan` events that carry counts only (no text, no values, no URLs).
+ * `privacy_scan` events that carry counts only (no text, no values, no URLs), plus
+ * aggregated `shadow_ai_usage` counts (catalog service id, visited|blocked, count).
  *
  * Events are queued in chrome.storage.local (bounded, oldest dropped) so a worker
  * restart does not lose them, flushed every 60 s by chrome.alarms or as soon as 50
  * are pending, and retried with exponential backoff plus jitter (capped at 1 h).
  * Nothing here ever blocks the user: callers fire and forget.
  */
+import { AI_SERVICE_ID_PATTERN, isAiServiceId } from "../sites/catalog.js";
 import {
 	ENTITY_TYPES,
 	type EntityType,
 	type PrivacyScanEvent,
+	type ShadowAiUsageEvent,
 	type SiteId,
 	type TelemetryConfig,
+	type TelemetryEvent,
 } from "../types.js";
 import { POLICY_ID_PATTERN, SITE_ID_LIST } from "./policy.js";
 import { type GuardStorage, STORAGE_KEYS } from "./storage.js";
@@ -126,6 +130,76 @@ export interface RecordInput {
 	readonly policyId?: string;
 }
 
+const SHADOW_ACTIONS: readonly ShadowAiUsageEvent["action"][] = ["visited", "blocked"];
+const SHADOW_EVENT_KEYS = new Set([
+	"event_id",
+	"event_type",
+	"timestamp",
+	"service_id",
+	"action",
+	"count",
+	"sanctioned",
+	"policy_id",
+]);
+
+/**
+ * Re-validates a `shadow_ai_usage` event: a known catalog id, visited|blocked, a count
+ * of 1..100000, a boolean `sanctioned` and nothing else (no URL can ride along).
+ */
+export function sanitizeShadowEvent(raw: unknown): ShadowAiUsageEvent | null {
+	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+	const e = raw as Record<string, unknown>;
+	if (Object.keys(e).some((k) => !SHADOW_EVENT_KEYS.has(k))) return null;
+	if (typeof e.event_id !== "string" || !EVENT_ID_PATTERN.test(e.event_id)) return null;
+	if (e.event_type !== "shadow_ai_usage") return null;
+	if (typeof e.timestamp !== "string" || Number.isNaN(Date.parse(e.timestamp))) return null;
+	if (typeof e.service_id !== "string" || !AI_SERVICE_ID_PATTERN.test(e.service_id)) return null;
+	if (!isAiServiceId(e.service_id)) return null;
+	if (!SHADOW_ACTIONS.includes(e.action as ShadowAiUsageEvent["action"])) return null;
+	if (!Number.isSafeInteger(e.count) || (e.count as number) < 1) return null;
+	if ((e.count as number) > TELEMETRY_LIMITS.countMax) return null;
+	if (typeof e.sanctioned !== "boolean" || !isOptionalPolicyId(e.policy_id)) return null;
+	return {
+		event_id: e.event_id,
+		event_type: "shadow_ai_usage",
+		timestamp: new Date(Date.parse(e.timestamp)).toISOString(),
+		service_id: e.service_id,
+		action: e.action as ShadowAiUsageEvent["action"],
+		count: e.count as number,
+		sanctioned: e.sanctioned,
+		...(typeof e.policy_id === "string" ? { policy_id: e.policy_id } : {}),
+	};
+}
+
+/** Any queued event, re-validated against its contract. */
+export function sanitizeQueuedEvent(raw: unknown): TelemetryEvent | null {
+	const type = raw && typeof raw === "object" ? (raw as { event_type?: unknown }).event_type : null;
+	return type === "shadow_ai_usage" ? sanitizeShadowEvent(raw) : sanitizeEvent(raw);
+}
+
+export interface ShadowRecordInput {
+	readonly serviceId: string;
+	readonly action: ShadowAiUsageEvent["action"];
+	readonly count: number;
+	readonly sanctioned: boolean;
+	readonly policyId?: string;
+}
+
+export function buildShadowEvent(input: ShadowRecordInput, now: number): ShadowAiUsageEvent | null {
+	return sanitizeShadowEvent({
+		event_id: `bg:${crypto.randomUUID()}`,
+		event_type: "shadow_ai_usage",
+		timestamp: new Date(now).toISOString(),
+		service_id: input.serviceId,
+		action: input.action,
+		count: Math.min(input.count, TELEMETRY_LIMITS.countMax),
+		sanctioned: input.sanctioned,
+		...(input.policyId && POLICY_ID_PATTERN.test(input.policyId)
+			? { policy_id: input.policyId }
+			: {}),
+	});
+}
+
 export function buildEvent(input: RecordInput, now: number): PrivacyScanEvent | null {
 	const entityCounts = sanitizeCounts(input.counts);
 	return sanitizeEvent({
@@ -178,7 +252,7 @@ export interface IngestEnvelope {
 	readonly agent_runtime: typeof AGENT_RUNTIME;
 	readonly agent_runtime_version: string;
 	readonly aidr_version: string;
-	readonly events: readonly PrivacyScanEvent[];
+	readonly events: readonly TelemetryEvent[];
 }
 
 interface TelemetryState {
@@ -269,7 +343,17 @@ export class TelemetryClient {
 	async record(input: RecordInput): Promise<void> {
 		if (!this.config) return;
 		const event = buildEvent(input, this.deps.now());
-		if (!event) return;
+		if (event) await this.enqueue(event);
+	}
+
+	/** Queues one aggregated Shadow AI count (dropped when telemetry is not configured). */
+	async recordShadow(input: ShadowRecordInput): Promise<void> {
+		if (!this.config) return;
+		const event = buildShadowEvent(input, this.deps.now());
+		if (event) await this.enqueue(event);
+	}
+
+	private async enqueue(event: TelemetryEvent): Promise<void> {
 		const size = await this.serial(async () => {
 			const queue = await this.readQueue();
 			queue.push(event);
@@ -280,7 +364,7 @@ export class TelemetryClient {
 		if (size >= TELEMETRY_LIMITS.flushThreshold) void this.flush();
 	}
 
-	async pending(): Promise<readonly PrivacyScanEvent[]> {
+	async pending(): Promise<readonly TelemetryEvent[]> {
 		return this.serial(() => this.readQueue());
 	}
 
@@ -370,12 +454,12 @@ export class TelemetryClient {
 		return next;
 	}
 
-	private async readQueue(): Promise<PrivacyScanEvent[]> {
+	private async readQueue(): Promise<TelemetryEvent[]> {
 		const raw = await this.deps.storage.getLocal(STORAGE_KEYS.telemetryQueue);
 		if (!Array.isArray(raw)) return [];
-		const out: PrivacyScanEvent[] = [];
+		const out: TelemetryEvent[] = [];
 		for (const item of raw.slice(-TELEMETRY_LIMITS.queueMax)) {
-			const event = sanitizeEvent(item);
+			const event = sanitizeQueuedEvent(item);
 			if (event) out.push(event);
 		}
 		return out;

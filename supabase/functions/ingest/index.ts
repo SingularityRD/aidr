@@ -10,12 +10,13 @@
 // - idempotently inserts stable event identities for the dashboard
 //
 // Browser Guard installs use agent_runtime "browser_guard" and send counts-only
-// "privacy_scan" events (docs/contracts/privacy-telemetry.md). Each install is
-// a protected agent seat like any other runtime; events.ts projects the scan.
+// "privacy_scan" and "shadow_ai_usage" events (docs/contracts/privacy-telemetry.md).
+// Each install is a protected agent seat like any other runtime; events.ts
+// projects the events.
 //
 // Browser Guard should authenticate with an `ingest:browser_guard` key, not a
 // tenant key: its credential sits in browser management policy where any user
-// of the profile can read it. That key may only send privacy_scan events as
+// of the profile can read it. That key may only send those two event types as
 // the browser_guard runtime, is rate limited per key, registers at most its
 // `install_limit` installations, and never receives the signed entitlement
 // (which can carry the tenant pack key).
@@ -42,7 +43,8 @@ const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"] as const;
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
 
 const BROWSER_GUARD_RUNTIME = "browser_guard";
-const BROWSER_GUARD_EVENT_TYPE = "privacy_scan";
+/** The only event types an `ingest:browser_guard` key may deliver (counts only). */
+const BROWSER_GUARD_EVENT_TYPES: ReadonlySet<string> = new Set(["privacy_scan", "shadow_ai_usage"]);
 const TENANT_INGEST_EVENTS_PER_MIN = 50_000;
 // Events per minute one `ingest:browser_guard` key may deliver across all of
 // its installations. A malformed value fails closed (rate_limit_unavailable).
@@ -296,7 +298,7 @@ Deno.serve(async (req) => {
 	}
 	// An empty batch is a heartbeat that only updates last_seen.
 	const events = normalizedEvents.events;
-	if (browserKey && events.some((event) => event.type !== BROWSER_GUARD_EVENT_TYPE)) {
+	if (browserKey && events.some((event) => !BROWSER_GUARD_EVENT_TYPES.has(String(event.type)))) {
 		return json(403, { error: "event_type_not_permitted" });
 	}
 

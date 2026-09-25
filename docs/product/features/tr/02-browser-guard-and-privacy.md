@@ -41,6 +41,8 @@ belirtilmiştir.
 11. [Açılır pencere ve ayarlar sayfası](#11-açılır-pencere-ve-ayarlar-sayfası)
 12. [Duraklatma ve site bazında kapatma](#12-duraklatma-ve-site-bazında-kapatma)
 13. [Yapay zekâ sitelerini engelleme](#13-yapay-zekâ-sitelerini-engelleme)
+    - [13a. Gölge Yapay Zekâ (Shadow AI) keşfi ve denetimi](#13a-gölge-yapay-zekâ-shadow-ai-keşfi-ve-denetimi)
+    - [13b. Kurum içi özel yapay zekâ siteleri](#13b-kurum-içi-özel-yapay-zekâ-siteleri)
 14. [Kurumsal yönetilen politika ve dağıtım](#14-kurumsal-yönetilen-politika-ve-dağıtım)
 15. [Yalnızca sayım içeren telemetri ve Browser Privacy paneli](#15-yalnızca-sayım-içeren-telemetri-ve-browser-privacy-paneli)
 16. [NER ve OCR için isteğe bağlı native host](#16-ner-ve-ocr-için-isteğe-bağlı-native-host)
@@ -907,10 +909,117 @@ davranışı kapsar.
 | Platformlar | Chrome, Edge, Firefox (masaüstü) |
 
 **Sınırlamalar**
-- Yalnızca bilinen sekiz ürün engellenebilir. Diğer yapay zekâ hizmetleri için web proxy'nizi
+- `blockedSites` korunan sekiz ürünü kapsar. Yaklaşık 75 başka üretken yapay zekâ hizmeti
+  Gölge Yapay Zekâ denetimiyle (13a) engellenebilir; bunların dışındakiler için web proxy'nizi
   ya da tarayıcının adres engelleme politikasını kullanın.
 - Tarayıcı düzeyinde bir denetimdir. Diğer tarayıcılar, gizli pencereler ve tarayıcı dışı
   istemciler etkilenmez.
+
+### 13a. Gölge Yapay Zekâ (Shadow AI) keşfi ve denetimi
+
+**Ne yapar** — Yönetilen tarayıcılarda hangi üretken yapay zekâ hizmetlerinin açıldığını
+(onaylı olsun olmasın) gösterir ve isterseniz onaylamadığınız her hizmeti engeller.
+
+**Neden önemli** — Şirket içindeki yapay zekâ kullanımının büyük kısmı kimsenin onaylamadığı
+araçlarda gerçekleşir. Neye izin vereceğinize karar vermeden önce neyin kullanıldığını
+bilmeniz, karar verdikten sonra da bu kararın tarayıcıda uygulanması gerekir.
+
+**Nasıl çalışır** — Browser Guard yaklaşık 75 bilinen hizmetten oluşan bir katalogla gelir
+(`packages/browser-guard/src/sites/catalog.ts`): sohbet asistanları (ChatGPT, Gemini, Claude,
+Poe, Character.AI, Meta AI, Kimi, Qwen, Doubao, ERNIE, ...), kodlama araçları ve uygulama
+oluşturucular (Cursor, v0, Bolt, Lovable, Replit, Windsurf, AI Studio, ...), görsel/video/ses
+(Midjourney, Leonardo, Ideogram, Runway, ElevenLabs, ...), toplantı asistanları (Otter,
+Fireflies, tl;dv, ...), yazım (Jasper, QuillBot, DeepL, Grammarly, Gamma, ...), arama
+(Perplexity, You.com, Consensus, ...) ve ajanlar (Devin, Manus, Genspark). Her hizmetin sabit
+bir kimliği vardır. Yönetilen `shadowAi` anahtarıyla eklenti, bir sekmenin katalogdaki bir
+hizmete kaç kez girdiğini hizmet ve UTC günü bazında sayar; `block-unsanctioned` kipinde
+`sanctioned` listesinde olmayan her hizmeti bir declarativeNetRequest kuralıyla engeller. Sekme
+bu durumda **"Poe kuruluşunuz tarafından engellendi"** başlığını ve "Kuruluşunuz bu yapay zekâ
+hizmetini iş kullanımı için onaylamadığından Browser Guard sayfanın açılmasını durdurdu."
+açıklamasını gösterir. Sayılar 30 gün boyunca cihazda kalır (seçenekler sayfası, **Yapay zekâ
+hizmetleri** bölümü); telemetri açıksa panoya `shadow_ai_usage` olayı olarak ulaşır: hizmet
+kimliği, ziyaret ya da engelleme, sayı ve onay bilgisi. URL, alan adı, yol ya da sayfa başlığı
+asla gönderilmez.
+
+Bir hizmeti görebilmek ve engelleyebilmek için eklentinin o hizmetin sitesine erişimi
+gerekir. Browser Guard `tabs` ya da tarama geçmişi izni istemez; bunun yerine her kullanıcı
+seçenekler sayfasında bir kez **Erişime izin ver** düğmesine tıklar ve yalnızca katalogdaki
+hizmet adreslerine erişim verir. O zamana kadar seçenekler sayfası erişimin eksik olduğunu
+söyler: eksik erişim hiçbir zaman "kullanım yok" olarak gösterilmez.
+
+**Nasıl kullanılır** — Yönetilen anahtar `shadowAi`:
+`{ "mode": "monitor" | "block-unsanctioned" | "off", "sanctioned": [kimlikler], "blocked": [kimlikler] }`.
+`blocked` içindeki kimlikler her kipte engellenir; iki listede birden bulunan kimlik
+engellenir. Panodaki **Browser Privacy** sayfasında bir **Shadow AI** paneli (en çok
+kullanılan hizmetler, onaylı ve onaysız ziyaretler, engellenen denemeler, günlük eğilim) ve
+bir politika parçacığı oluşturucusu bulunur.
+
+**Örnek** — `{"mode": "block-unsanctioned", "sanctioned": ["chatgpt", "copilot"]}`.
+`https://poe.com` adresini açan kullanıcı engelleme sayfasına düşer; ChatGPT açılır ve onaylı
+ziyaret olarak sayılır. Gerçek tarayıcı senaryosu `shadow-ai` bu davranışı kapsar.
+
+**Kapsam**
+
+| | |
+|---|---|
+| Plan | Team, Business, Enterprise (katalog) |
+| Dağıtım | Yerel (sayılar cihazda) / Bulut / Kurum içi / Air-gapped (engelleme ağ gerektirmez) |
+| Platformlar | Chrome, Edge, Firefox (masaüstü) |
+
+**Sınırlamalar**
+- Her kullanıcı site erişimini bir kez vermelidir; yönetilen politika bunu sessizce veremez.
+- Genel amaçlı bir sitenin bir yolunda çalışan hizmetler (Notion AI, GitHub Copilot, Bing'deki
+  Copilot, Microsoft 365 Copilot) katalogda yoktur; alan adıyla engellemek ürünün tamamını
+  bozardı.
+- Başka bir web sitesindeki bağlantıdan açılan gezinmelerde Chrome, ağ kuralının uygulanması
+  için o siteye de erişim isteyebilir; sekme hizmete ulaştığı anda eklenti sayfayı yine de
+  engelleme sayfasıyla değiştirir.
+- Hugging Face, DeepL ve Grammarly alan adıyla kataloglanmıştır; engellendiklerinde sitenin
+  tamamı (model merkezi, çevirmen, tanıtım sayfaları) engellenir.
+
+### 13b. Kurum içi özel yapay zekâ siteleri
+
+**Ne yapar** — İstemleri yalnızca herkese açık yapay zekâ ürünlerinde değil, şirketinizin
+kurum içi LLM portallarında da maskeler ve yanıtları yerel olarak geri yükler.
+
+**Neden önemli** — Kurum içi asistanlara çoğu zaman herkese açık olanlardan daha fazla veri
+emanet edilir; ancak günlükleri, tedarikçileri ve saklama süreleri nadiren incelenir. Aynı
+maskeleme burada da uygulanmalıdır.
+
+**Nasıl çalışır** — Yönetilen `customSites` anahtarı en fazla 20 portal listeler; her birinde
+bir kimlik, bir etiket, tam HTTPS alan adları ve istem düzenleyicisi, gönder düğmesi ile
+yanıtlar için CSS seçicileri bulunur. Kullanıcı seçenekler sayfasında **Erişime izin ver**
+düğmesine tıkladıktan sonra Browser Guard içerik betiğini yalnızca bu alan adları için kaydeder
+(`chrome.scripting`, `scripting` izni) ve portal yerleşik bir site gibi davranır: gönderimde
+maskeleme, yapıştırma ve dosya koruması, yapılandırılan yanıt bloklarında yerel geri yükleme,
+`custom` sitesi olarak raporlama. Erişim verilmemiş siteler **Erişim gerekli** olarak görünür
+ve orada hiçbir şey çalışmaz.
+
+**Nasıl kullanılır** — Örnek kayıt:
+`{"id": "acme-gpt", "label": "ACME GPT", "hosts": ["gpt.acme.example"], "editorSelectors":
+["textarea#prompt"], "sendButtonSelectors": ["button.send"], "responseSelectors": [".answer"]}`.
+Alan adları tam ad olmalıdır (bağlantı noktası, yol, joker karakter ya da IP adresi olamaz) ve
+yerleşik yapay zekâ alan adlarından biri olamaz. Seçicilere her zaman genel yedek seçiciler
+eklenir.
+
+**Örnek** — Gerçek tarayıcı senaryosu `custom-site`, gönder düğmesi ve yanıt blokları yalnızca
+yapılandırılan seçicilerle eşleşen bir portalı `https://ai.internal.example` adresinde sunar;
+kaydedilen istek yalnızca yer tutucular taşır ve yanıt kullanıcıya özgün e-posta adresini
+gösterir.
+
+**Kapsam**
+
+| | |
+|---|---|
+| Plan | Team, Business, Enterprise (katalog) |
+| Dağıtım | Yerel / Bulut / Kurum içi / Air-gapped |
+| Platformlar | Chrome, Edge, Firefox (masaüstü) |
+
+**Sınırlamalar**
+- Her kullanıcı site erişimini bir kez verir; zaten açık olan sekmelerin ardından yeniden
+  yüklenmesi gerekir.
+- Seçiciler portalın işaretlemesine bağlıdır; yeniden tasarım politikanın güncellenmesini
+  gerektirebilir.
 
 ### 14. Kurumsal yönetilen politika ve dağıtım
 

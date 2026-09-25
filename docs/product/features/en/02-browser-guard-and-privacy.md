@@ -39,6 +39,8 @@ Related documents: [product overview](../../overview.md) ·
 11. [Popup and options pages (English and Turkish)](#11-popup-and-options-pages-english-and-turkish)
 12. [Pause and per-site switch](#12-pause-and-per-site-switch)
 13. [Blocking AI sites](#13-blocking-ai-sites)
+    - [13a. Shadow AI discovery and control](#13a-shadow-ai-discovery-and-control)
+    - [13b. Custom internal AI sites](#13b-custom-internal-ai-sites)
 14. [Enterprise managed policy and deployment](#14-enterprise-managed-policy-and-deployment)
 15. [Counts-only telemetry and the Browser Privacy dashboard](#15-counts-only-telemetry-and-the-browser-privacy-dashboard)
 16. [Optional native host for NER and OCR](#16-optional-native-host-for-ner-and-ocr)
@@ -863,10 +865,110 @@ the blocked page. Covered by the real-browser `blocked-site` scenario.
 | Platforms | Chrome, Edge, Firefox (desktop) |
 
 **Limitations**
-- Only the eight known products can be blocked. Other AI services need your web proxy or
+- `blockedSites` covers the eight protected products. About 75 further generative-AI
+  services can be blocked with Shadow AI control (13a); anything else needs your web proxy or
   browser URL-blocklist policy.
 - It is a browser-level control. Other browsers, private windows and non-browser clients
   are not affected.
+
+### 13a. Shadow AI discovery and control
+
+**What it does** — Shows which generative-AI services people open in managed browsers
+(sanctioned or not) and, if you choose, blocks every service you have not approved.
+
+**Why it matters** — Most AI use in a company happens in tools nobody approved. Before you
+can decide what to allow you need to know what is used, and afterwards you need the
+decision enforced in the browser.
+
+**How it works** — Browser Guard ships a catalog of about 75 well-known services
+(`packages/browser-guard/src/sites/catalog.ts`): chat assistants (ChatGPT, Gemini, Claude,
+Poe, Character.AI, Meta AI, Kimi, Qwen, Doubao, ERNIE, ...), coding tools and app builders
+(Cursor, v0, Bolt, Lovable, Replit, Windsurf, AI Studio, ...), image/video/voice (Midjourney,
+Leonardo, Ideogram, Runway, ElevenLabs, ...), meeting assistants (Otter, Fireflies, tl;dv,
+...), writing (Jasper, QuillBot, DeepL, Grammarly, Gamma, ...), search (Perplexity, You.com,
+Consensus, ...) and agents (Devin, Manus, Genspark). Each has a stable id. With the managed
+key `shadowAi` the extension counts, per service and UTC day, how often a tab enters a
+catalogued service, and in `block-unsanctioned` mode blocks every service not listed in
+`sanctioned` with a declarativeNetRequest rule; the tab then shows **"Poe is blocked by your
+organization"** with "Your organization has not approved this AI service for work, so
+Browser Guard stopped the page from loading." Counts stay on the device for 30 days (options
+page, **AI services** section) and, with telemetry enabled, reach the dashboard as
+`shadow_ai_usage` events: service id, visited or blocked, count, sanctioned flag. Never a URL,
+host, path or page title.
+
+To see and block a service the extension needs access to that service's site. Browser Guard
+does not ask for the `tabs` or browsing-history permission; instead each user clicks **Allow
+access** once on the options page, which grants exactly the catalogued service addresses.
+Until then the options page says access is missing: missing access is never shown as "no
+usage".
+
+**How to use** — Managed key `shadowAi`:
+`{ "mode": "monitor" | "block-unsanctioned" | "off", "sanctioned": [ids], "blocked": [ids] }`.
+Ids in `blocked` are blocked in every mode; an id in both lists is blocked. The dashboard's
+**Browser Privacy** page has a **Shadow AI** panel (top services, sanctioned vs
+unsanctioned visits, blocked attempts, daily trend) and a policy snippet generator.
+
+**Example** — `{"mode": "block-unsanctioned", "sanctioned": ["chatgpt", "copilot"]}`. A user
+opening `https://poe.com` lands on the blocked page; opening ChatGPT works and is counted as
+a sanctioned visit. Covered by the real-browser `shadow-ai` scenario.
+
+**Availability**
+
+| | |
+|---|---|
+| Plan | Team, Business, Enterprise (catalog) |
+| Deployment | Local (counts on the device) / Cloud / On-prem / Air-gapped (blocking needs no network) |
+| Platforms | Chrome, Edge, Firefox (desktop) |
+
+**Limitations**
+- Each user must grant host access once; a managed policy cannot grant it silently.
+- Services that live on a path of a general-purpose site (Notion AI, GitHub Copilot, Copilot
+  in Bing, Microsoft 365 Copilot) are not in the catalog; blocking by host would break the
+  whole product.
+- For a link followed from another website, Chrome may require access to that website too
+  before the network rule applies; the extension still replaces the page with the blocked
+  page as soon as the tab reaches the service.
+- Hugging Face, DeepL and Grammarly are catalogued by host, so blocking them blocks the whole
+  site (model hub, translator, marketing pages).
+
+### 13b. Custom internal AI sites
+
+**What it does** — Masks prompts and restores answers on your company-internal LLM portals,
+not only on the public AI products.
+
+**Why it matters** — Internal assistants are often trusted with more data than public ones,
+yet their logs, vendors and retention are rarely reviewed. The same masking should apply.
+
+**How it works** — The managed key `customSites` lists up to 20 portals, each with an id, a
+label, exact HTTPS hosts and CSS selectors for the prompt editor, the send button and the
+answers. After the user clicks **Allow access** on the options page, Browser Guard registers
+its content script for exactly those hosts (`chrome.scripting`, the `scripting` permission)
+and the portal behaves like a built-in site: masking on send, paste and file protection,
+local restore in the configured answer blocks, reporting as site `custom`. Sites without
+access show **Needs access** and nothing runs there.
+
+**How to use** — Example entry:
+`{"id": "acme-gpt", "label": "ACME GPT", "hosts": ["gpt.acme.example"], "editorSelectors":
+["textarea#prompt"], "sendButtonSelectors": ["button.send"], "responseSelectors": [".answer"]}`.
+Hosts must be exact names (no port, path, wildcard or IP address) and must not be one of the
+built-in AI hosts. Generic fallbacks are always added to the selectors.
+
+**Example** — The real-browser `custom-site` scenario serves a portal at
+`https://ai.internal.example` whose send button and answer blocks match only the configured
+selectors; the recorded request carries placeholders only and the answer shows the original
+email to the user.
+
+**Availability**
+
+| | |
+|---|---|
+| Plan | Team, Business, Enterprise (catalog) |
+| Deployment | Local / Cloud / On-prem / Air-gapped |
+| Platforms | Chrome, Edge, Firefox (desktop) |
+
+**Limitations**
+- Each user grants host access once; tabs already open need a reload afterwards.
+- Selectors follow the portal's markup; a redesign can require an update of the policy.
 
 ### 14. Enterprise managed policy and deployment
 

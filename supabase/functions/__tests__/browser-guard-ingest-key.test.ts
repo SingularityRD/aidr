@@ -3,7 +3,7 @@
 //
 // Browser Guard's telemetry key is readable at chrome://policy by anyone using
 // the managed profile, so the key must only be able to deliver counts-only
-// privacy_scan events, within a per-key rate budget and installation cap, and
+// privacy_scan and shadow_ai_usage events, within a per-key rate budget and installation cap, and
 // must never receive the tenant entitlement (which can carry the pack key).
 import { createHash, webcrypto } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -228,7 +228,37 @@ describe("ingest with an ingest:browser_guard key", () => {
 		}
 	});
 
-	it("refuses any event type other than privacy_scan", async () => {
+	it("also delivers counts-only shadow_ai_usage events", async () => {
+		const runtime = await ingestHandler();
+		const usage = {
+			event_id: "bg:6f1d2c3b-4a5e-4f60-8a7b-9c0d1e2f3a4b",
+			event_type: "shadow_ai_usage",
+			timestamp: "2026-09-24T10:16:00Z",
+			service_id: "poe",
+			action: "blocked",
+			count: 3,
+			sanctioned: false,
+			url: "https://poe.com/chat/secret-conversation",
+		};
+		const response = await runtime.handler(ingestRequest({ events: [scan(), usage] }));
+		expect(response.status).toBe(200);
+		const rows = (runtime.insertedEvents.mock.calls[0] as unknown as [Array<Record<string, unknown>>])[0];
+		expect(rows.map((row) => row.type)).toEqual(["privacy_scan", "shadow_ai_usage"]);
+		expect(rows[1]?.payload).toEqual({
+			event_id: usage.event_id,
+			type: "shadow_ai_usage",
+			timestamp: "2026-09-24T10:16:00.000Z",
+			service_id: "poe",
+			category: "chat",
+			action: "blocked",
+			decision: "deny",
+			count: 3,
+			sanctioned: false,
+		});
+		expect(JSON.stringify(rows)).not.toContain("poe.com");
+	});
+
+	it("refuses any event type other than privacy_scan and shadow_ai_usage", async () => {
 		for (const event of [
 			{ event_id: "evt-1", type: "runtime_verdict", verdict: "deny" },
 			{ event_id: "evt-2", type: "incident", severity: "high", title: "forged" },

@@ -11,6 +11,7 @@ import * as fingerprint from "../../scripts/fingerprint-dataset.mjs";
 import { decodePng, ICON_SIZES, MASTER_ICON, renderIcons } from "../../scripts/icons.mjs";
 // @ts-expect-error -- plain ESM build script without type declarations
 import { crc32, createZip, readZip } from "../../scripts/zip.mjs";
+import { evaluatePolicy } from "../background/policy";
 import { ENTITY_TYPES, type ExactDataSet } from "../types";
 
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -246,6 +247,8 @@ const MANAGED_KEYS = [
 	"signalAction",
 	"blockedSites",
 	"disabledSites",
+	"customSites",
+	"shadowAi",
 	"allowUserPause",
 	"allowSendAnyway",
 	"maskPaste",
@@ -267,6 +270,7 @@ const SITE_IDS = [
 	"deepseek",
 	"mistral",
 	"grok",
+	"custom",
 	"other",
 ];
 const CHROME_ID = "REPLACE_WITH_CHROME_EXTENSION_ID";
@@ -298,6 +302,11 @@ function assertValidPolicy(policy: Record<string, Json>): void {
 	const telemetry = policy.telemetry as { controlPlaneUrl: string; apiKey: string };
 	expect(Object.keys(telemetry).sort()).toEqual(["apiKey", "controlPlaneUrl"]);
 	expect(telemetry.controlPlaneUrl).toMatch(/^https:\/\//);
+	// The worker's own validator accepts every key (nothing silently ignored).
+	const evaluation = evaluatePolicy(policy, undefined);
+	expect(evaluation.warnings).toEqual([]);
+	expect(evaluation.policy.customSites.map((site) => site.hosts)).toEqual([["gpt.acme.example"]]);
+	expect(evaluation.policy.shadowAi.mode).toBe("block-unsanctioned");
 }
 
 /** Minimal XML plist reader for the example profile (dict/array/string/integer/true/false). */

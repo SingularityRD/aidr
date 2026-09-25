@@ -6,6 +6,7 @@ import { supabase } from "../../lib/supabase";
 import { dashboardAgentFreshness } from "../dashboard-freshness";
 import { privacyEventSummary } from "../privacy-guard";
 import { getSession } from "../session";
+import { shadowAiEventSummary } from "../shadow-ai";
 
 type AgentRow = {
 	id: string;
@@ -85,6 +86,7 @@ function eventSummary(event: EventRow): string {
 		return `${key}: ${count} finding(s)`;
 	}
 	if (event.type === "privacy_scan") return privacyEventSummary(event.payload);
+	if (event.type === "shadow_ai_usage") return shadowAiEventSummary(event.payload);
 	return "Additional event details are not shown.";
 }
 

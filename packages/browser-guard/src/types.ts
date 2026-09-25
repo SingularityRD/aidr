@@ -172,7 +172,52 @@ export type SiteId =
 	| "deepseek"
 	| "mistral"
 	| "grok"
+	/** A company-internal AI portal configured by the administrator (`customSites`). */
+	| "custom"
 	| "other";
+
+/**
+ * Company-internal AI chat portal configured by the administrator (managed key
+ * `customSites`). Masking runs there once the browser granted the extension access to
+ * its hosts; the content script is then registered dynamically (chrome.scripting).
+ */
+export interface CustomSiteConfig {
+	/** `^[a-z0-9][a-z0-9-]{0,31}$`, unique within the policy. */
+	readonly id: string;
+	readonly label: string;
+	/** Exact lowercase HTTPS hostnames (no scheme, port, path or wildcard). */
+	readonly hosts: readonly string[];
+	readonly editorSelectors: readonly string[];
+	readonly sendButtonSelectors: readonly string[];
+	readonly responseSelectors: readonly string[];
+}
+
+/** Shadow AI category of a catalogued generative-AI service (src/sites/catalog.ts). */
+export type AiServiceCategory =
+	| "chat"
+	| "coding"
+	| "image"
+	| "meeting"
+	| "writing"
+	| "search"
+	| "agent";
+
+/**
+ * Shadow AI discovery and control (managed key `shadowAi`). Service ids come from the
+ * catalog in src/sites/catalog.ts.
+ *   off                 visits are not counted (default)
+ *   monitor             visits to catalogued services are counted (per service, per day)
+ *   block-unsanctioned  counted, and every catalogued service not in `sanctioned` is blocked
+ * Ids in `blocked` are blocked in every mode; a service in both `sanctioned` and `blocked`
+ * is blocked (deny wins).
+ */
+export type ShadowAiMode = "off" | "monitor" | "block-unsanctioned";
+
+export interface ShadowAiPolicy {
+	readonly mode: ShadowAiMode;
+	readonly sanctioned: readonly string[];
+	readonly blocked: readonly string[];
+}
 
 export interface SiteAdapter {
 	readonly id: SiteId;
@@ -212,6 +257,10 @@ export interface GuardPolicy {
 	readonly signalAction: "off" | "warn" | "block";
 	readonly blockedSites: readonly SiteId[];
 	readonly disabledSites: readonly SiteId[];
+	/** Administrator-configured internal AI portals (managed only). */
+	readonly customSites: readonly CustomSiteConfig[];
+	/** Shadow AI discovery and control (managed only). */
+	readonly shadowAi: ShadowAiPolicy;
 	readonly allowUserPause: boolean;
 	readonly allowSendAnyway: boolean;
 	readonly maskPaste: boolean;
@@ -244,6 +293,66 @@ export interface PrivacyScanEvent {
 	readonly policy_id?: string;
 }
 
+/**
+ * Shadow AI usage telemetry (see docs/contracts/privacy-telemetry.md). Aggregated counts
+ * of top-level visits to (or blocked navigations towards) one catalogued AI service:
+ * no URL, no page title, no path, only the catalog id.
+ */
+export interface ShadowAiUsageEvent {
+	readonly event_id: string;
+	readonly event_type: "shadow_ai_usage";
+	readonly timestamp: string;
+	readonly service_id: string;
+	readonly action: "visited" | "blocked";
+	readonly count: number;
+	/** Whether the service is in the policy's `sanctioned` list when the event was built. */
+	readonly sanctioned: boolean;
+	readonly policy_id?: string;
+}
+
+/** Any event the Browser Guard telemetry queue carries. */
+export type TelemetryEvent = PrivacyScanEvent | ShadowAiUsageEvent;
+
+/** One UTC day of Shadow AI counts for one service (options page; never sent as such). */
+export interface ShadowAiDailyUsage {
+	readonly day: string;
+	readonly serviceId: string;
+	readonly visited: number;
+	readonly blocked: number;
+}
+
+/** Host access for one administrator-configured custom site (GET_SITE_ACCESS). */
+export interface CustomSiteAccess {
+	readonly id: string;
+	readonly label: string;
+	readonly hosts: readonly string[];
+	/** `https://<host>/*` for every host. */
+	readonly origins: readonly string[];
+	/** Host access granted for every host of the site. */
+	readonly granted: boolean;
+	/** The content script is registered for (some of) the site's hosts. */
+	readonly active: boolean;
+}
+
+/**
+ * Host access the policy needs and whether the browser granted it (GET_SITE_ACCESS).
+ * Origins are `https://<host>/*` match patterns within the optional host permissions.
+ */
+export interface SiteAccessStatus {
+	readonly shadowAi: {
+		readonly mode: ShadowAiMode;
+		/** Services currently blocked by policy (catalog ids). */
+		readonly blocked: readonly string[];
+		/** Origins Shadow AI visibility/enforcement needs; empty when it is off. */
+		readonly origins: readonly string[];
+		/** Subset of `origins` the browser has not granted. */
+		readonly missingOrigins: readonly string[];
+		/** Local per-day counts (last 30 UTC days, newest first). */
+		readonly usage: readonly ShadowAiDailyUsage[];
+	};
+	readonly customSites: readonly CustomSiteAccess[];
+}
+
 /** Messages between content scripts / UI pages and the background worker. */
 export type GuardMessage =
 	| { readonly type: "GET_POLICY" }
@@ -272,7 +381,9 @@ export type GuardMessage =
 			readonly sent: readonly string[];
 	  }
 	/** Content script -> worker: the vault saved for the sender's tab id + origin, if any. */
-	| { readonly type: "VAULT_LOAD" };
+	| { readonly type: "VAULT_LOAD" }
+	/** Extension pages only: host access for Shadow AI and custom sites, plus local counts. */
+	| { readonly type: "GET_SITE_ACCESS" };
 
 /**
  * Background worker replies to GuardMessage (src/background/index.ts). Every reply is
@@ -309,6 +420,7 @@ export interface GuardResponses {
 		readonly snapshot: VaultSnapshot | null;
 		readonly sent: readonly string[];
 	};
+	readonly GET_SITE_ACCESS: { readonly ok: true; readonly access: SiteAccessStatus };
 }
 export type GuardResponse<T extends keyof GuardResponses = keyof GuardResponses> =
 	| GuardResponses[T]
@@ -363,7 +475,8 @@ export interface NativeBridge {
  *   engine/coaching.ts export function coachingFor(code: SignalCode, lang: "en" | "tr"): string
  *   engine/vault.ts    export function createVault(options: { neverRestore: readonly EntityType[]; ttlMs?: number; snapshot?: VaultSnapshot }): PlaceholderVault
  *   engine/files.ts    export function sanitizeFile(file: { name: string; type: string; bytes: Uint8Array }, deps: { engine: DetectionEngine; vault: PlaceholderVault; policy: GuardPolicy }): Promise<FileDecision>
- *   sites/index.ts     export const ADAPTERS: readonly SiteAdapter[]; export function adapterForUrl(url: string): SiteAdapter  // unknown host -> generic adapter with id "other"
+ *   sites/index.ts     export const ADAPTERS: readonly SiteAdapter[]; export function adapterForUrl(url: string, customSites?: readonly CustomSiteConfig[]): SiteAdapter  // custom host -> id "custom"; unknown host -> generic adapter with id "other"
+ *   sites/catalog.ts   export const AI_SERVICES: readonly AiService[]; export function serviceForUrl(url: unknown): AiService | null
  *   dom/editor.ts      export function findEditor(adapter: SiteAdapter, root: Document, lastFocused?: Element | null): EditorAccess | null
  *                      export function editorAccess(element: HTMLElement): EditorAccess
  *                      export function findSendButton(adapter: SiteAdapter, root: Document, editor: EditorAccess | null): HTMLElement | null

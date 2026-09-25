@@ -683,6 +683,124 @@
 		"message": "Bu karar web sitesi tarafından değil, kuruluşunuzun belirlediği bir politika tarafından verildi.",
 		"description": "Blocked footer."
 	},
+	"blocked_detail_shadow_ai": {
+		"message": "Kuruluşunuz bu yapay zekâ hizmetini iş kullanımı için onaylamadığından Browser Guard sayfanın açılmasını durdurdu.",
+		"description": "Blocked body for a Shadow AI block."
+	},
+	"site_custom_label": {
+		"message": "kuruluşunuzun yapay zekâ sitesi",
+		"description": "Popup: name used for an administrator-configured internal AI site."
+	},
+	"section_ai_access": {
+		"message": "Yapay zekâ hizmetleri",
+		"description": "Section title (Shadow AI and internal AI sites)."
+	},
+	"ai_access_intro": {
+		"message": "Bu tarayıcıda hangi yapay zekâ hizmetlerinin kullanılabileceğini ve Browser Guard'ın hangi kurum içi yapay zekâ sitelerinde mesajlarınızı maskeleyeceğini kuruluşunuz yönetir.",
+		"description": "AI services intro."
+	},
+	"shadow_title": {
+		"message": "Yapay zekâ hizmeti kullanımı",
+		"description": "Shadow AI subsection title."
+	},
+	"shadow_mode_off": {
+		"message": "Yapay zekâ hizmetlerine yapılan ziyaretler sayılmaz. Kuruluşunuzun engellediği hizmetler açılmaz.",
+		"description": "Shadow AI mode off."
+	},
+	"shadow_mode_monitor": {
+		"message": "Browser Guard, kuruluşunuz hangi hizmetlerin kullanıldığını görebilsin diye bilinen yapay zekâ hizmetlerine yapılan ziyaretleri günlük olarak sayar (yalnızca hizmet adı, sayfa adresi asla).",
+		"description": "Shadow AI mode monitor."
+	},
+	"shadow_mode_block": {
+		"message": "Bu tarayıcıda yalnızca kuruluşunuzun onayladığı yapay zekâ hizmetleri açılır. Ziyaretler hizmet ve gün bazında sayılır (sayfa adresi asla).",
+		"description": "Shadow AI mode block-unsanctioned."
+	},
+	"shadow_sanctioned": {
+		"message": "Onaylı: $LIST$",
+		"description": "Approved AI services.",
+		"placeholders": {
+			"list": {
+				"content": "$1",
+				"example": "ChatGPT, Claude"
+			}
+		}
+	},
+	"shadow_blocked_count": {
+		"message": "Kuruluşunuzun engellediği yapay zekâ hizmetleri: $COUNT$",
+		"description": "Blocked AI service count.",
+		"placeholders": {
+			"count": {
+				"content": "$1",
+				"example": "12"
+			}
+		}
+	},
+	"shadow_access_missing": {
+		"message": "Browser Guard'ın ziyaretleri sayabilmesi ve engelleri uygulayabilmesi için $COUNT$ yapay zekâ hizmeti adresine erişim izninize ihtiyacı var. Yalnızca bir sekmenin hangi hizmeti açtığını öğrenir.",
+		"description": "Shadow AI host access missing.",
+		"placeholders": {
+			"count": {
+				"content": "$1",
+				"example": "140"
+			}
+		}
+	},
+	"shadow_access_granted": {
+		"message": "Erişim verildi: sayma ve engelleme etkin.",
+		"description": "Shadow AI host access granted."
+	},
+	"access_grant_button": {
+		"message": "Erişime izin ver",
+		"description": "Button requesting host access."
+	},
+	"access_unknown": {
+		"message": "Erişim durumu şu anda alınamıyor.",
+		"description": "Host access status unavailable."
+	},
+	"shadow_usage_title": {
+		"message": "Bu tarayıcıdaki ziyaretler (son 7 gün)",
+		"description": "Shadow AI usage table caption."
+	},
+	"shadow_usage_service": {
+		"message": "Yapay zekâ hizmeti",
+		"description": "Column header."
+	},
+	"shadow_usage_visits": {
+		"message": "Ziyaret",
+		"description": "Column header."
+	},
+	"shadow_usage_blocked": {
+		"message": "Engellenen",
+		"description": "Column header."
+	},
+	"shadow_usage_empty": {
+		"message": "Henüz ziyaret kaydedilmedi.",
+		"description": "Empty usage table."
+	},
+	"custom_title": {
+		"message": "Kurum içi yapay zekâ siteleri",
+		"description": "Custom sites subsection title."
+	},
+	"custom_intro": {
+		"message": "Browser Guard, bu sitelere erişmesine izin verdiğinizde mesajlarınızı burada da maskeler. İzin verdikten sonra sitenin açık sekmelerini yeniden yükleyin.",
+		"description": "Custom sites intro."
+	},
+	"custom_status_active": {
+		"message": "Korunuyor",
+		"description": "Custom site status."
+	},
+	"custom_status_missing": {
+		"message": "Erişim gerekli",
+		"description": "Custom site status."
+	},
+	"notice_access_granted": {
+		"message": "Erişim verildi.",
+		"description": "Notice."
+	},
+	"notice_access_denied": {
+		"message": "Erişim verilmedi.",
+		"description": "Notice."
+	},
 	"entity_PERSON": {
 		"message": "Kişi adı",
 		"description": "Entity type PERSON."

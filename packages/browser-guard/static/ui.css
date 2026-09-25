@@ -956,6 +956,43 @@ a:hover {
 	color: var(--danger);
 }
 
+/* ---------- Options: AI services (Shadow AI, internal AI sites) ---------- */
+
+.shadow-ai + .custom-sites {
+	margin-top: 20px;
+}
+
+.access--missing {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px 12px;
+	margin: 8px 0;
+}
+
+.custom-sites__list {
+	display: grid;
+	gap: 8px;
+	margin: 8px 0 0;
+	padding: 0;
+	list-style: none;
+}
+
+.custom-site {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px 12px;
+}
+
+.custom-site__text {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+
 /* ---------- Options: forms ---------- */
 
 .field {
