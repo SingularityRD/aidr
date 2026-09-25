@@ -29,6 +29,7 @@ const KIND_LABEL: Record<ChangeKind, string> = {
 	runtime_stage: "Stage runtime policy for selected agents",
 	runtime_rollout: "Ordered canary rollout",
 	dlp_publish: "Save DLP policy",
+	agent_profiles_stage: "Stage agent permission profiles",
 	disable_four_eyes: "Turn off four-eyes change control",
 };
 

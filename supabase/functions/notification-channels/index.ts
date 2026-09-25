@@ -44,6 +44,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const CONTROL = /\p{Cc}/u;
 export const MAX_CHANNELS = 20;
 export const CHANNEL_NAME_MAX = 80;
+/** Always required (the original filter object). */
 export const FILTER_KEYS = [
 	"incident_created",
 	"incident_min_severity",
@@ -53,6 +54,22 @@ export const FILTER_KEYS = [
 	"privacy_spike_threshold",
 	"privacy_spike_window_minutes",
 ] as const;
+/**
+ * Agent-offline and governance filters (migration 20260928000001). Optional:
+ * absent means "off" on create and "unchanged" on update.
+ */
+export const EXTENDED_FILTER_KEYS = [
+	"agent_offline",
+	"agent_offline_minutes",
+	"governance_review_overdue",
+	"governance_intake_requested",
+	"governance_change_pending",
+	"governance_exception_expiring",
+	"governance_exception_days",
+	"governance_digest",
+] as const;
+export const AGENT_OFFLINE_MINUTES = Object.freeze({ min: 5, max: 10_080 });
+export const EXCEPTION_DAYS = Object.freeze({ min: 1, max: 90 });
 
 const readRuntimeEnv: EnvReader = (name) => {
 	try {
@@ -85,6 +102,14 @@ export interface ChannelFilters {
 	privacy_blocked_spike: boolean;
 	privacy_spike_threshold: number;
 	privacy_spike_window_minutes: number;
+	agent_offline?: boolean;
+	agent_offline_minutes?: number;
+	governance_review_overdue?: boolean;
+	governance_intake_requested?: boolean;
+	governance_change_pending?: boolean;
+	governance_exception_expiring?: boolean;
+	governance_exception_days?: number;
+	governance_digest?: boolean;
 }
 
 export type ChannelCommand =
@@ -122,9 +147,32 @@ export function normalizeChannelName(value: unknown): string | null {
 	return trimmed.length >= 1 && trimmed.length <= CHANNEL_NAME_MAX ? trimmed : null;
 }
 
-/** Mirrors app.notification_filters_valid: one complete filter object. */
+function boundedInteger(value: unknown, bounds: { min: number; max: number }): boolean {
+	return typeof value === "number" && Number.isSafeInteger(value) && value >= bounds.min && value <= bounds.max;
+}
+
+/**
+ * Mirrors app.notification_filters_valid: the original keys are all required,
+ * the extended keys are optional, anything else is refused.
+ */
 export function parseFilters(value: unknown): ChannelFilters | null {
-	if (!isRecord(value) || Object.keys(value).length !== FILTER_KEYS.length || !onlyKeys(value, FILTER_KEYS)) {
+	if (!isRecord(value) || !FILTER_KEYS.every((key) => key in value) ||
+		!onlyKeys(value, [...FILTER_KEYS, ...EXTENDED_FILTER_KEYS])) {
+		return null;
+	}
+	const extendedBools = [
+		"agent_offline",
+		"governance_review_overdue",
+		"governance_intake_requested",
+		"governance_change_pending",
+		"governance_exception_expiring",
+		"governance_digest",
+	] as const;
+	if (!extendedBools.every((key) => value[key] === undefined || typeof value[key] === "boolean")) return null;
+	if (value.agent_offline_minutes !== undefined && !boundedInteger(value.agent_offline_minutes, AGENT_OFFLINE_MINUTES)) {
+		return null;
+	}
+	if (value.governance_exception_days !== undefined && !boundedInteger(value.governance_exception_days, EXCEPTION_DAYS)) {
 		return null;
 	}
 	const bools = ["incident_created", "runtime_deny_critical", "approval_requested", "privacy_blocked_spike"] as const;
@@ -136,7 +184,7 @@ export function parseFilters(value: unknown): ChannelFilters | null {
 		return null;
 	}
 	if (typeof window !== "number" || !Number.isSafeInteger(window) || window < 5 || window > 1440) return null;
-	if (!bools.some((key) => value[key] === true)) return null;
+	if (!bools.some((key) => value[key] === true) && !extendedBools.some((key) => value[key] === true)) return null;
 	return value as unknown as ChannelFilters;
 }
 

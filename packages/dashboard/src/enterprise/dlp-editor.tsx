@@ -48,6 +48,7 @@ import { readErrorMessage } from "../lib/errors";
 import { pendingPolicyChangeNotice } from "../lib/ai-governance";
 import { supabase } from "../lib/supabase";
 import { EnterpriseAuth } from "./auth";
+import { DlpPolicyHistory } from "./dlp-history";
 import { useTeam } from "./team-provider";
 
 /* ── Schema mirror ──────────────────────────────────────────────────────── */
@@ -2177,6 +2178,24 @@ export function DlpPolicyEditor() {
 								{outcome.message}
 							</div>
 						</section>
+					) : null}
+
+					{teamId && store.kind === "loaded" ? (
+						<DlpPolicyHistory
+							tenantId={teamId}
+							currentVersion={store.version}
+							canManage={canManageTeam}
+							onRestored={(version, policy) => {
+								const restored = validateDlpPolicyDocument(policy);
+								if (restored.ok && restored.policy.version === version) {
+									setOutcome(null);
+									setDraft(restored.policy);
+									setStore({ kind: "loaded", version });
+								} else {
+									setStore({ kind: "unreadable", detail: "The restored revision could not be verified." });
+								}
+							}}
+						/>
 					) : null}
 				</>
 			)}

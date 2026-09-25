@@ -15,8 +15,11 @@ import {
 	installBundle,
 	main,
 	readInstalledBundle,
+	readStagedProfileRevision,
 	signAgentProfileBundle,
+	stagedProfileDigest,
 	validateExpiry,
+	validateStagedRequest,
 } from "./provision-agent-profiles.mjs";
 import { signSavedDlpRevision } from "./provision-dlp-detector.mjs";
 
@@ -132,6 +135,93 @@ test("sections of a bundle that does not verify are never re-signed", async () =
 		);
 		assert.equal(await readInstalledBundle(scratch, "cursor"), null);
 	} finally {
+		await rm(scratch, { recursive: true, force: true });
+	}
+});
+
+const ENDPOINT = "https://control.example.test/functions/v1/policy-management";
+
+function stagedAnswer(document, overrides = {}) {
+	return {
+		ok: true, tenant_id: TENANT, current: true, current_version: 4,
+		revision: { version: 4, policy: document, policy_sha256: stagedProfileDigest(document), profile_count: 1 },
+		delivered: false, delivery_status: "staged_not_signed",
+		...overrides,
+	};
+}
+
+function fetcherFor(body, status = 200) {
+	const calls = [];
+	const fetcher = async (url, init) => {
+		calls.push({ url, init });
+		return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+	};
+	return { fetcher, calls };
+}
+
+test("a staged revision is pulled with the AAL2 token and must be current, same-tenant and digest-exact", async () => {
+	const document = agentProfileTemplateDocument("ci-agent");
+	const ok = fetcherFor(stagedAnswer(document));
+	const pulled = await readStagedProfileRevision({ endpoint: ENDPOINT, token: "aal2-token", tenant: TENANT, revision: 4, fetcher: ok.fetcher });
+	assert.deepEqual(JSON.parse(pulled.source), document);
+	assert.equal(pulled.sha256, stagedProfileDigest(document));
+	assert.equal(ok.calls[0].init.headers.Authorization, "Bearer aal2-token");
+	assert.equal(ok.calls[0].init.redirect, "error");
+	assert.deepEqual(JSON.parse(ok.calls[0].init.body), { action: "read_agent_profile_revision", tenant_id: TENANT, version: 4 });
+
+	const refusals = [
+		[stagedAnswer(document, { current: false, current_version: 5 }), /not the current staged revision \(current: 5\)/],
+		[stagedAnswer(document, { tenant_id: "44444444-4444-4444-8444-444444444444" }), /another tenant/],
+		[{ ...stagedAnswer(document), revision: { ...stagedAnswer(document).revision, policy_sha256: "0".repeat(64) } }, /digest/],
+		[{ ...stagedAnswer(document), revision: { ...stagedAnswer(document).revision, version: 3 } }, /absent or changed/],
+	];
+	for (const [body, pattern] of refusals) {
+		const { fetcher } = fetcherFor(body);
+		await assert.rejects(readStagedProfileRevision({ endpoint: ENDPOINT, token: "t", tenant: TENANT, revision: 4, fetcher }), pattern);
+	}
+	const { fetcher: forbidden } = fetcherFor({ error: "mfa_required" }, 403);
+	await assert.rejects(readStagedProfileRevision({ endpoint: ENDPOINT, token: "t", tenant: TENANT, revision: 4, fetcher: forbidden }), /HTTP 403/);
+	for (const endpoint of ["http://control.example.test/functions/v1/policy-management", `${ENDPOINT}?x=1`,
+		"https://user:pw@control.example.test/functions/v1/policy-management", "https://control.example.test/functions/v1/policy"]) {
+		assert.throws(() => validateStagedRequest({ endpoint, tenant: TENANT, revision: 4 }), /Profile endpoint/);
+	}
+	assert.throws(() => validateStagedRequest({ endpoint: ENDPOINT, tenant: "not-a-uuid", revision: 4 }), /tenant/);
+	assert.throws(() => validateStagedRequest({ endpoint: ENDPOINT, tenant: TENANT, revision: 0 }), /revision/);
+});
+
+test("one command signs the staged revision into the bundle the connectors verify", async () => {
+	const scratch = await mkdtemp(join(tmpdir(), "aidr-profile-staged-"));
+	const priorHome = process.env.HOME;
+	try {
+		process.env.HOME = scratch;
+		const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+		const publicPem = publicKey.export({ type: "spki", format: "pem" }).toString();
+		const stateDir = await managedHome(scratch, publicPem, privateKey);
+		const detectors = join(stateDir, "detectors");
+		const keyFile = join(scratch, "signing.pem");
+		await writeFile(keyFile, privateKey.export({ type: "pkcs8", format: "pem" }));
+		const tokenFile = join(scratch, "token");
+		await writeFile(tokenFile, "aal2-token\n");
+		const document = agentProfileTemplateDocument("locked-down");
+		const { fetcher } = fetcherFor(stagedAnswer(document));
+		const expiresAt = new Date(Date.now() + 300_000).toISOString();
+		const result = await main(["--tenant", TENANT, "--runtime", "codex", "--endpoint", ENDPOINT,
+			"--token-file", tokenFile, "--revision", "4", "--expires-at", expiresAt,
+			"--private-key", keyFile, "--output-dir", detectors], { fetcher });
+		assert.equal(result.staged_revision, 4);
+		assert.equal(result.policy_sha256, stagedProfileDigest(document));
+		assert.deepEqual(result.profiles, ["locked-down"]);
+		const context = await loadProvisionedDetectorContext("codex");
+		assert.equal(context.agentProfiles?.layers[0]?.source, "managed");
+
+		// Mixing sources, or a partial staged request, is refused before any read.
+		await assert.rejects(main(["--tenant", TENANT, "--runtime", "codex", "--endpoint", ENDPOINT, "--profiles", keyFile,
+			"--expires-at", expiresAt, "--private-key", keyFile, "--output-dir", detectors], { fetcher }), /either --profiles/);
+		await assert.rejects(main(["--tenant", TENANT, "--runtime", "codex", "--endpoint", ENDPOINT,
+			"--expires-at", expiresAt, "--private-key", keyFile, "--output-dir", detectors], { fetcher }), /needs --endpoint, --token-file and --revision/);
+	} finally {
+		if (priorHome === undefined) delete process.env.HOME;
+		else process.env.HOME = priorHome;
 		await rm(scratch, { recursive: true, force: true });
 	}
 });

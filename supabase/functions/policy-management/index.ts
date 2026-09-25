@@ -1,7 +1,8 @@
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.116.0";
 import { parseDocument } from "npm:yaml@2.8.3";
 import { getBearerToken } from "../_shared/auth.ts";
-import { handleDlpPolicyAction } from "../_shared/dlp-policy-store.ts";
+import { handleAgentProfileAction, isAgentProfileAction } from "../_shared/agent-profile-store.ts";
+import { handleDlpPolicyAction, isDlpPolicyAction } from "../_shared/dlp-policy-store.ts";
 import { checkIdentityBarrier } from "../_shared/identity-barrier.ts";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 import { corsJson, handleCors } from "../_shared/cors.ts";
@@ -102,7 +103,7 @@ export function createPolicyManagementHandler(deps: PolicyManagementDeps = {}) {
 			const action = typeof body.action === "string" ? body.action : "";
 			const expectedDocument = isPolicyDocumentPrecondition(body.expected_document) ? body.expected_document : null;
 			if (action === "publish_document" && !expectedDocument) return corsJson(req, 400, { error: "invalid_document_precondition" });
-			const workCost = ["adoption", "rollout_progress", "rollout", "create_rollout"].includes(action) ? 5 : action === "history" ? 2 : 1;
+			const workCost = ["adoption", "rollout_progress", "rollout", "create_rollout"].includes(action) ? 5 : ["history", "dlp_policy_history", "agent_profile_history"].includes(action) ? 2 : 1;
 			const rate = await consumeTenantRateLimit(db, {
 				tenantId: tenant,
 				subject: auth.user.id,
@@ -114,8 +115,11 @@ export function createPolicyManagementHandler(deps: PolicyManagementDeps = {}) {
 			if (!rate.ok) {
 				return corsJson(req, rate.status, { error: rate.error }, rateLimitHeaders(rate));
 			}
-			if (action === "read_dlp_policy" || action === "publish_dlp_policy") {
+			if (isDlpPolicyAction(action)) {
 				return await handleDlpPolicyAction(req, db, body, { tenant, userId: auth.user.id, role: member.role, token });
+			}
+			if (isAgentProfileAction(action)) {
+				return await handleAgentProfileAction(req, db, body, { tenant, userId: auth.user.id, role: member.role, token });
 			}
 			if (body.action === "read") {
 				const { data, error } = await db.from("tenant_runtime_policies").select("version,policy,updated_at").eq("tenant_id", tenant).maybeSingle();

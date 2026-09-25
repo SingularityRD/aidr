@@ -94,7 +94,7 @@
     },
     "policy-management": {
       "owner": "Detection Engineering",
-      "tests": ["supabase/functions/__tests__/policy-document.test.ts", "supabase/functions/__tests__/policy-management-contract.test.ts"]
+      "tests": ["supabase/functions/__tests__/policy-document.test.ts", "supabase/functions/__tests__/policy-management-contract.test.ts", "supabase/functions/__tests__/policy-history-profiles-contract.test.ts"]
     },
     "scim-admin": {
       "owner": "Identity Engineering",

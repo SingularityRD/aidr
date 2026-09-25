@@ -165,6 +165,12 @@ test("generate-secrets writes strong, private Kubernetes Secrets without printin
 	assert.match(env.AIDR_NOTIFICATION_ENCRYPTION_KEYS, /^k1:[A-Za-z0-9+/]{43}=$/);
 	assert.equal(Buffer.from(env.AIDR_NOTIFICATION_ENCRYPTION_KEYS.slice(3), "base64").length, 32);
 	assert.match(env.AIDR_NOTIFICATION_DISPATCH_TOKEN, /^[A-Za-z0-9_-]{43}$/);
+	assert.equal(Buffer.from(env.AIDR_APPROVAL_SIGNING_WRAP_KEY_B64, "base64").length, 32);
+	assert.match(env.AIDR_COMPLIANCE_SIGNING_KEY_ID, /^aidr-compliance-[a-f0-9]{12}$/);
+	const complianceKey = createPrivateKey({ key: Buffer.from(env.AIDR_COMPLIANCE_SIGNING_PRIVATE_KEY_PKCS8_B64, "base64"), format: "der", type: "pkcs8" });
+	const compliancePublic = createPublicKey(readFileSync(join(output, "compliance-signing-public.pem"), "utf8"));
+	assert.ok(verify(null, Buffer.from("report"), compliancePublic, sign(null, Buffer.from("report"), complianceKey)));
+	assert.notEqual(env.AIDR_COMPLIANCE_SIGNING_PRIVATE_KEY_PKCS8_B64, env.AIDR_ENTITLEMENT_SIGNING_PRIVATE_KEY_PKCS8_B64);
 	const delegation = createPrivateKey({ key: Buffer.from(env.AIDR_DELEGATION_SIGNING_PRIVATE_KEY_PKCS8_B64, "base64"), format: "der", type: "pkcs8" });
 	const delegationPublic = createPublicKey({ key: Buffer.from(env.AIDR_DELEGATION_SIGNING_PUBLIC_KEY_SPKI_B64, "base64"), format: "der", type: "spki" });
 	assert.ok(verify(null, Buffer.from("probe"), delegationPublic, sign(null, Buffer.from("probe"), delegation)));

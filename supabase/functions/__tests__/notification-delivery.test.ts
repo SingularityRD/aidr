@@ -15,6 +15,7 @@ import {
 	parseClaimedDeliveries,
 	runNotificationDispatch,
 	signatureHeader,
+	notificationTitle as notificationTitleOf,
 	slackPayload,
 	teamsPayload,
 	verifySignature,
@@ -269,6 +270,7 @@ describe("message formats carry no sensitive fields", () => {
 			tenant_id: TENANT,
 			severity: "critical",
 			category: "T01",
+			// The original events keep the exact published v1 body.
 			subject: { event_id: "42", agent_id: AGENT, incident_id: "inc-1" },
 			counts: { findings: 2, blocked: null, window_minutes: null },
 			links: { dashboard: "https://aidr.example.com/incidents" },
@@ -311,6 +313,109 @@ describe("message formats carry no sensitive fields", () => {
 		expect(teams.attachments[0].content.actions).toEqual([
 			{ type: "Action.OpenUrl", title: "Open in AIDR", url: "https://aidr.example.com/privacy-guard" },
 		]);
+	});
+});
+
+describe("agent and governance alerts", () => {
+	const SENSITIVE = /curl|evil|TCKN|12345678950|sk-live|rm -rf|prompt|justification|purpose|display_name|laptop/i;
+	const REQUEST = "88888888-8888-4888-8888-888888888888";
+	const row = (eventType: string, payload: Record<string, unknown>) => ({
+		deliveryId: DELIVERY,
+		tenantId: TENANT,
+		eventType: eventType as "agent.offline",
+		createdAt: "2026-09-25T09:59:58.000Z",
+		payload: {
+			...payload,
+			// Nothing but the allow-list may reach a receiver.
+			display_name: "alice-laptop",
+			justification: "business purpose text",
+			prompt: "my TCKN is 12345678950",
+		},
+	});
+
+	function rendered(message: ReturnType<typeof buildNotification>) {
+		return [
+			JSON.stringify(message),
+			JSON.stringify(slackPayload(message)),
+			JSON.stringify(teamsPayload(message)),
+			JSON.stringify(emailContent(message)),
+		];
+	}
+
+	it("announces an offline agent and its recovery with identifiers and minutes only", () => {
+		const offline = buildNotification(row("agent.offline", {
+			agent_id: AGENT, category: "claude-code", offline_minutes: 240, occurred_at: "2026-09-25T05:00:00.000Z",
+		}), "https://aidr.example.com");
+		expect(offline).toMatchObject({
+			event: "agent.offline",
+			category: "claude-code",
+			subject: { agent_id: AGENT },
+			counts: { offline_minutes: 240 },
+			links: { dashboard: "https://aidr.example.com/agents" },
+		});
+		expect(emailContent(offline).subject).toBe("[AIDR] Agent not seen for 240 min");
+		expect(emailContent(offline).text).toContain("Last seen: 2026-09-25T05:00:00.000Z");
+		const recovered = buildNotification(row("agent.recovered", { agent_id: AGENT, offline_minutes: 312 }), null);
+		expect(slackPayload(recovered).text).toBe("Agent back online after 312 min");
+		expect(emailContent(recovered).text).toContain("Offline for: 312 min");
+		for (const text of [...rendered(offline), ...rendered(recovered)]) expect(text).not.toMatch(SENSITIVE);
+	});
+
+	it("renders governance events with counts, request ids and governance deep links", () => {
+		const overdue = buildNotification(row("governance.review_overdue", { items_count: 3, category: "ai_register" }), "https://aidr.example.com");
+		expect(notificationTitleOf(overdue)).toBe("3 AI register items are past the review date");
+		expect(overdue.links.dashboard).toBe("https://aidr.example.com/governance/register");
+		const intake = buildNotification(row("governance.intake_requested", { request_id: REQUEST, category: "mcp_server" }), "https://aidr.example.com");
+		expect(intake.subject.request_id).toBe(REQUEST);
+		expect(intake.links.dashboard).toBe("https://aidr.example.com/governance/requests");
+		const change = buildNotification(row("governance.change_pending", { request_id: "not-a-uuid", category: "dlp_publish" }), "https://aidr.example.com");
+		expect(change.subject.request_id).toBeNull();
+		expect(change.links.dashboard).toBe("https://aidr.example.com/governance/change-control");
+		const expiring = buildNotification(row("governance.exception_expiring", { items_count: 1, window_days: 14 }), null);
+		expect(notificationTitleOf(expiring)).toBe("1 AI governance exception expires within 14 days");
+		for (const message of [overdue, intake, change, expiring]) {
+			for (const text of rendered(message)) expect(text).not.toMatch(SENSITIVE);
+		}
+	});
+
+	it("carries the governance digest as allow-listed counts and splits long Slack field lists", () => {
+		const digest = buildNotification(row("governance.digest", {
+			category: "weekly",
+			occurred_at: "2026-09-21T00:00:00.000Z",
+			period_from: "2026-09-14T00:00:00.000Z",
+			period_to: "2026-09-21T00:00:00.000Z",
+			digest: {
+				agents_enrolled: 12, agents_active: 9, decisions_allow: 400, decisions_ask: 7, decisions_deny: 3,
+				approvals_requested: 7, approvals_pending: 1, incidents_reported: 2, incidents_open: 1,
+				incidents_open_critical: 0, browser_blocked: 5, browser_masked: 40, mcp_not_approved: 2,
+				reviews_overdue: 1, intake_pending: 2, policy_changes_pending: 1,
+				// Unknown or malformed values are dropped.
+				owner_email: 5, agents_offline: -1, top_user: "alice@example.com",
+			},
+		}), "https://aidr.example.com");
+		expect(digest.period).toEqual({ from: "2026-09-14T00:00:00.000Z", to: "2026-09-21T00:00:00.000Z" });
+		expect(Object.keys(digest.digest ?? {})).toHaveLength(16);
+		expect(JSON.stringify(digest)).not.toContain("alice");
+		expect(JSON.stringify(digest)).not.toContain("owner_email");
+		const slack = slackPayload(digest) as { text: string; blocks: Array<{ type: string; fields?: unknown[] }> };
+		expect(slack.text).toBe("Weekly AI governance summary");
+		const sections = slack.blocks.filter((block) => block.type === "section");
+		expect(sections.length).toBeGreaterThan(1);
+		for (const section of sections) expect(section.fields?.length ?? 0).toBeLessThanOrEqual(10);
+		expect(emailContent(digest).text).toContain("Blocked actions: 3");
+		expect(digest.links.dashboard).toBe("https://aidr.example.com/governance");
+		// A digest field on another event type is never rendered.
+		const other = buildNotification(row("governance.review_overdue", { items_count: 1, digest: { decisions_deny: 3 } }), null);
+		expect(other.digest).toBeNull();
+	});
+
+	it("accepts the new event types from the claim RPC", () => {
+		const claimed = parseClaimedDeliveries([{
+			delivery_id: DELIVERY, lease_token: DELIVERY, tenant_id: TENANT, channel_id: DELIVERY, channel_type: "slack",
+			target_ciphertext: "v1.k1.x", event_type: "agent.offline", payload: {}, attempts: 1, max_attempts: 8,
+			created_at: "2026-09-25T09:59:58.000Z",
+		}]);
+		expect(claimed?.[0].eventType).toBe("agent.offline");
 	});
 });
 

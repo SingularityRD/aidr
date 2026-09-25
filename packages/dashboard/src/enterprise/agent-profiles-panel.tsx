@@ -1,16 +1,18 @@
 /**
- * Agent permission profiles — read-only view in the Policy area.
+ * Agent permission profiles in the Policy area.
  *
  * Profiles are enforced by every connector from two sources: the operator's
  * local `agent-profiles.json` and, in managed mode, the Ed25519-signed tenant
- * detector bundle. The control plane does not store or sign profiles (the
- * signing key stays with the operator), so this panel does not edit them. It
- * shows the shipped templates, how to publish a signed profile, and the real
- * profile decisions agents have reported.
+ * detector bundle. The control plane validates and stages profile documents
+ * (see agent-profile-editor.tsx) but never signs them: the signing key stays
+ * with the operator, who publishes a staged revision with one command. The
+ * panel also shows the shipped templates and the profile decisions agents
+ * have reported.
  */
 import { useEffect, useMemo, useState } from "react";
 import { readErrorMessage } from "../lib/errors";
 import { supabase } from "../lib/supabase";
+import { AgentProfileEditor } from "./agent-profile-editor";
 import {
 	PROFILE_CHECK_LABELS,
 	PROFILE_TEMPLATE_SUMMARIES,
@@ -97,11 +99,6 @@ async function loadDecisions(tenantId: string): Promise<Load> {
 	}
 }
 
-const PUBLISH_COMMAND = `aidr profile validate agent-profiles.json
-node scripts/provision-agent-profiles.mjs --tenant <tenant-id> --runtime <claude-code|cursor|vscode|openclaw|opencode|codex> \\
-  --profiles agent-profiles.json --expires-at <UTC time within 24h> \\
-  --private-key <publisher-ed25519.pem> --output-dir ~/.singularity-aidr/detectors`;
-
 function DecisionSummary({ rows }: { rows: ProfileDecisionRow[] }) {
 	const byCheck = useMemo(() => {
 		const counts = new Map<string, { deny: number; ask: number }>();
@@ -137,7 +134,7 @@ function DecisionSummary({ rows }: { rows: ProfileDecisionRow[] }) {
 }
 
 export function AgentProfilesPanel() {
-	const { currentTeam } = useTeam();
+	const { currentTeam, canManageTeam } = useTeam();
 	const tenantId = currentTeam?.id ?? null;
 	const [load, setLoad] = useState<Load>({ state: "loading" });
 
@@ -169,13 +166,23 @@ export function AgentProfilesPanel() {
 			</div>
 
 			<div className="notice notice-warning" role="status">
-				<b>Profiles are published as signed bundles, not from this page.</b>
+				<b>Staged here, enforced once an operator signs it.</b>
 				<div className="muted small" style={{ marginTop: 6 }}>
-					The signing key stays with your policy administrator, so the dashboard only shows
-					templates and what agents report. A managed profile overrides the agent's local profile
-					file, which can only narrow it. A broken managed profile blocks every call on that
-					connector until it is fixed.
+					Connectors only trust the Ed25519-signed tenant detector bundle, and the signing key stays
+					with your policy administrator. Edit, validate and stage the document here (with four-eyes
+					approval when it is on); the operator then signs that exact staged revision with one
+					command. A managed profile overrides the agent's local profile file, which can only narrow
+					it. A broken managed profile blocks every call on that connector until it is fixed.
 				</div>
+			</div>
+
+			<div>
+				<h3>Edit and stage profiles</h3>
+				{tenantId ? (
+					<AgentProfileEditor tenantId={tenantId} canManage={canManageTeam === true} />
+				) : (
+					<p className="muted">Select a managed tenant to edit its profiles.</p>
+				)}
 			</div>
 
 			<div>
@@ -210,22 +217,6 @@ export function AgentProfilesPanel() {
 				<p className="muted small">
 					Print one with <code>aidr profile show &lt;template&gt; --template</code>, scope it with{" "}
 					<code>applies_to</code>, and dry-run calls with <code>aidr profile test</code>.
-				</p>
-			</div>
-
-			<div>
-				<h3>Publish a signed profile</h3>
-				<pre
-					className="mono small"
-					aria-label="Signed profile publishing commands"
-					style={{ overflowX: "auto" }}
-				>
-					{PUBLISH_COMMAND}
-				</pre>
-				<p className="muted small">
-					Run on the publishing host for each connector runtime. The bundle keeps any DLP policy
-					already signed for the same tenant. Confirm adoption on the agent with{" "}
-					<code>aidr doctor</code>.
 				</p>
 			</div>
 

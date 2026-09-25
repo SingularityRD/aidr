@@ -20,6 +20,16 @@ export interface NotificationFilters {
 	privacyBlockedSpike: boolean;
 	privacySpikeThreshold: number;
 	privacySpikeWindowMinutes: number;
+	/** An enrolled agent not seen for `agentOfflineMinutes`, and its recovery. */
+	agentOffline: boolean;
+	agentOfflineMinutes: number;
+	governanceReviewOverdue: boolean;
+	governanceIntakeRequested: boolean;
+	governanceChangePending: boolean;
+	governanceExceptionExpiring: boolean;
+	governanceExceptionDays: number;
+	/** The scheduled governance digest, counts only. */
+	governanceDigest: boolean;
 }
 
 export const DEFAULT_FILTERS: NotificationFilters = Object.freeze({
@@ -30,12 +40,39 @@ export const DEFAULT_FILTERS: NotificationFilters = Object.freeze({
 	privacyBlockedSpike: false,
 	privacySpikeThreshold: 10,
 	privacySpikeWindowMinutes: 15,
+	agentOffline: false,
+	agentOfflineMinutes: 240,
+	governanceReviewOverdue: false,
+	governanceIntakeRequested: false,
+	governanceChangePending: false,
+	governanceExceptionExpiring: false,
+	governanceExceptionDays: 14,
+	governanceDigest: false,
 });
 
 export const SPIKE_BOUNDS = Object.freeze({
 	threshold: { min: 1, max: 10_000 },
 	windowMinutes: { min: 5, max: 1440 },
 });
+
+export const AGENT_OFFLINE_BOUNDS = Object.freeze({ min: 5, max: 10_080 });
+export const EXCEPTION_DAYS_BOUNDS = Object.freeze({ min: 1, max: 90 });
+
+/** Whether at least one event is selected (the service refuses an empty channel). */
+export function anyEventSelected(filters: NotificationFilters): boolean {
+	return (
+		filters.incidentCreated ||
+		filters.runtimeDenyCritical ||
+		filters.approvalRequested ||
+		filters.privacyBlockedSpike ||
+		filters.agentOffline ||
+		filters.governanceReviewOverdue ||
+		filters.governanceIntakeRequested ||
+		filters.governanceChangePending ||
+		filters.governanceExceptionExpiring ||
+		filters.governanceDigest
+	);
+}
 
 export interface NotificationChannel {
 	id: string;
@@ -127,7 +164,46 @@ function readFilters(value: unknown): NotificationFilters | null {
 		!Number.isSafeInteger(privacy_spike_window_minutes)
 	)
 		return null;
+	// A deployment that predates agent/governance alerts omits these keys; a
+	// present key of the wrong type is a contract breach.
+	const flag = (key: string, fallback: boolean): boolean | null =>
+		value[key] === undefined
+			? fallback
+			: typeof value[key] === "boolean"
+				? (value[key] as boolean)
+				: null;
+	const whole = (key: string, fallback: number): number | null =>
+		value[key] === undefined
+			? fallback
+			: Number.isSafeInteger(value[key])
+				? (value[key] as number)
+				: null;
+	const extended = {
+		agentOffline: flag("agent_offline", false),
+		agentOfflineMinutes: whole("agent_offline_minutes", DEFAULT_FILTERS.agentOfflineMinutes),
+		governanceReviewOverdue: flag("governance_review_overdue", false),
+		governanceIntakeRequested: flag("governance_intake_requested", false),
+		governanceChangePending: flag("governance_change_pending", false),
+		governanceExceptionExpiring: flag("governance_exception_expiring", false),
+		governanceExceptionDays: whole(
+			"governance_exception_days",
+			DEFAULT_FILTERS.governanceExceptionDays,
+		),
+		governanceDigest: flag("governance_digest", false),
+	};
+	if (Object.values(extended).some((entry) => entry === null)) return null;
 	return {
+		...(extended as Pick<
+			NotificationFilters,
+			| "agentOffline"
+			| "agentOfflineMinutes"
+			| "governanceReviewOverdue"
+			| "governanceIntakeRequested"
+			| "governanceChangePending"
+			| "governanceExceptionExpiring"
+			| "governanceExceptionDays"
+			| "governanceDigest"
+		>),
 		incidentCreated: incident_created,
 		incidentMinSeverity: incident_min_severity as Severity,
 		runtimeDenyCritical: runtime_deny_critical,
@@ -147,6 +223,14 @@ function filtersBody(filters: NotificationFilters) {
 		privacy_blocked_spike: filters.privacyBlockedSpike,
 		privacy_spike_threshold: filters.privacySpikeThreshold,
 		privacy_spike_window_minutes: filters.privacySpikeWindowMinutes,
+		agent_offline: filters.agentOffline,
+		agent_offline_minutes: filters.agentOfflineMinutes,
+		governance_review_overdue: filters.governanceReviewOverdue,
+		governance_intake_requested: filters.governanceIntakeRequested,
+		governance_change_pending: filters.governanceChangePending,
+		governance_exception_expiring: filters.governanceExceptionExpiring,
+		governance_exception_days: filters.governanceExceptionDays,
+		governance_digest: filters.governanceDigest,
 	};
 }
 

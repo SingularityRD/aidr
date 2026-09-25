@@ -62,8 +62,31 @@ function setup(events: unknown[] | { error: { message: string } }) {
 	});
 	vi.mocked(useTeam).mockReturnValue({
 		currentTeam: { id: TEAM_ID, name: "Runtime team" },
+		canManageTeam: true,
 		isLoading: false,
 	} as never);
+	// The editor reads the staged document and its history (policy-management).
+	mockedSupabase().functions.invoke.mockImplementation(
+		async (_name: string, request?: { body?: { action?: string } }) => {
+			if (request?.body?.action === "read_agent_profiles") {
+				return {
+					data: {
+						ok: true,
+						staged: true,
+						version: 2,
+						policy: { version: 1, profiles: [{ name: "ci-agent", default: "deny" }] },
+						policy_sha256: "a".repeat(64),
+						profile_count: 1,
+						updated_at: "2026-09-28T10:00:00.000Z",
+						delivered: false,
+						delivery_status: "staged_not_signed",
+					},
+					error: null,
+				};
+			}
+			return { data: { ok: true, revisions: [], next_before_version: null }, error: null };
+		},
+	);
 }
 
 afterEach(() => {
@@ -108,9 +131,9 @@ describe("agent permission profiles panel", () => {
 		for (const name of ["read-only-reviewer", "standard-developer", "ci-agent", "locked-down"]) {
 			expect(within(templates).getByText(name)).toBeInTheDocument();
 		}
-		expect(screen.getByLabelText("Signed profile publishing commands")).toHaveTextContent(
-			"provision-agent-profiles.mjs",
-		);
+		const command = await screen.findByLabelText("Signed profile publishing commands");
+		expect(command).toHaveTextContent("provision-agent-profiles.mjs");
+		expect(command).toHaveTextContent(`--tenant ${TEAM_ID} --revision 2`);
 
 		const recent = await screen.findByRole("table", { name: "Recent profile decisions" });
 		expect(within(recent).getAllByText("build-runner-1")).toHaveLength(3);

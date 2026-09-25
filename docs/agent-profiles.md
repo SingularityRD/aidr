@@ -263,3 +263,36 @@ a verified managed entitlement for the same tenant; confirm with
   controls, or make every profile that could match restrictive.
 - The dashboard shows templates and reported decisions; it does not store or
   sign profiles.
+
+## Staging profiles from the dashboard
+
+Policy → **Agent permission profiles** lets an owner or administrator (at AAL2) edit a
+profile document (JSON or YAML), validate it with the engine's own schema (the Edge copy
+`supabase/functions/_shared/agent-profile-schema.ts` is generated from
+`packages/core/src/agent-profile-schema.ts` and drift-checked), and **stage** it as a
+versioned, audited revision. With four-eyes change control on, staging files an
+`agent_profiles_stage` change request that a second owner/administrator approves. Every
+staged revision is kept; the panel diffs revisions and rolls back by staging an earlier
+revision again.
+
+Staging is not enforcement. Connectors accept managed profiles only from the Ed25519
+tenant detector bundle, verified against `licensing.public_keys_pem` and bound to the
+verified entitlement's tenant, and there is no network path through which the control plane
+delivers that bundle. The per-tenant dashboard-approval keys are trusted for approval
+tokens only. Signing on the server would therefore mean putting a key that connectors trust
+for detector policy on the control plane without delivering anything, so the signing key
+stays with the operator, who publishes the staged revision with one command:
+
+```bash
+node scripts/provision-agent-profiles.mjs \
+  --endpoint https://<project>/functions/v1/policy-management --token-file <aal2-access-token-file> \
+  --tenant <tenant-id> --revision <staged revision> \
+  --runtime <claude-code|cursor|vscode|openclaw|opencode|codex> --expires-at <UTC time within 24h> \
+  --private-key <publisher-ed25519.pem> --output-dir ~/.singularity-aidr/detectors
+```
+
+The command pulls exactly that revision (`read_agent_profile_revision`), refuses it unless
+it is the tenant's current staged revision, checks the sha256 over the canonical document
+against the digest the control plane recorded, re-validates it, and signs it into the
+bundle while carrying over the tenant's verified DLP section. Connector signature
+verification is unchanged.

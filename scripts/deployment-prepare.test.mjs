@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { createHash, generateKeyPairSync } from "node:crypto";
+import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, sign, verify } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -310,6 +310,17 @@ test("generated self-hosted deployment wires protected monitoring without invent
 		assert.match(functionEnv, /^AIDR_PACK_DOWNLOAD_GRANT_SECRET=[A-Za-z0-9_-]{43}$/m);
 		assert.match(functionEnv, /^AIDR_NOTIFICATION_ENCRYPTION_KEYS=k1:[A-Za-z0-9+/]{43}=$/m);
 		assert.match(functionEnv, /^AIDR_NOTIFICATION_DISPATCH_TOKEN=[A-Za-z0-9_-]{43}$/m);
+		assert.match(functionEnv, /^AIDR_APPROVAL_SIGNING_WRAP_KEY_B64=[A-Za-z0-9+/]{43}=$/m);
+		// Compliance reports are sealed with their own Ed25519 key; auditors get the public half.
+		const complianceKeyId = /^AIDR_COMPLIANCE_SIGNING_KEY_ID=(aidr-compliance-[a-f0-9]{12})$/m.exec(functionEnv)?.[1];
+		assert.ok(complianceKeyId);
+		const compliancePkcs8 = /^AIDR_COMPLIANCE_SIGNING_PRIVATE_KEY_PKCS8_B64=(\S+)$/m.exec(functionEnv)?.[1];
+		const complianceKey = createPrivateKey({ key: Buffer.from(compliancePkcs8, "base64"), format: "der", type: "pkcs8" });
+		assert.equal(complianceKey.asymmetricKeyType, "ed25519");
+		const complianceRecord = JSON.parse(readFileSync(join(output, "deployment.json"), "utf8")).compliance_signing;
+		assert.equal(complianceRecord.key_id, complianceKeyId);
+		assert.ok(verify(null, Buffer.from("report"), createPublicKey(complianceRecord.public_key_pem), sign(null, Buffer.from("report"), complianceKey)));
+		assert.notEqual(compliancePkcs8, /^AIDR_ENTITLEMENT_SIGNING_PRIVATE_KEY_PKCS8_B64=(\S+)$/m.exec(functionEnv)?.[1]);
 		assert.ok(functionEnv.split(/\r?\n/).includes(`AIDR_PUBLIC_API_ORIGIN=${supabaseUrl}`));
 		assert.equal(existsSync(join(output, ".secrets")), false, "signing canaries must not verify disconnected key copies");
 		assert.equal(existsSync(join(output, "upstream")), false, "the checked-out pinned Supabase submodule must not be copied into the installation root");
