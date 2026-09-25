@@ -17,6 +17,7 @@ and the **AIDR Privacy** engine that Browser Guard's detection reuses. See
 
 ```bash
 pnpm install                               # Install all dependencies
+pnpm ci:local --keep-going                   # Run every .github/workflows/ci.yml gate locally (CI is disabled); ci:local:quick for the fast subset, --list for steps
 pnpm test                                    # Run all tests (builds automatically, E2E excluded)
 pnpm test -- --reporter=verbose              # Verbose test output
 pnpm test -- packages/core/src/__tests__/extractors.test.ts  # Single test file
