@@ -348,7 +348,7 @@
 		},
 		"documentHandling": {
 			"title": "Document handling",
-			"description": "Office (DOCX/XLSX/PPTX) and PDF uploads when fileHandling is scan. mask (default) masks Office text in place and scans PDFs, blocking PDFs that contain sensitive data; block rejects every Office/PDF upload; allow skips document parsing and treats them like other binary files (uploaded with an unscanned warning, blocked in block mode). Macro-enabled, encrypted or externally linked Office files are always blocked under mask.",
+			"description": "Office (DOCX/XLSX/PPTX), OpenDocument (ODT/ODS/ODP/ODG), legacy Office (DOC/XLS/PPT) and PDF uploads when fileHandling is scan. mask (default) masks Office and OpenDocument text in place and scans PDFs, blocking PDFs that contain sensitive data; legacy Office files cannot be parsed and are uploaded with an unscanned warning (blocked in block mode); block rejects every document upload, legacy formats included; allow skips document parsing and treats them like other binary files (uploaded with an unscanned warning, blocked in block mode). Macro-enabled, encrypted or externally linked documents are always blocked under mask.",
 			"type": "string",
 			"enum": [
 				"mask",

@@ -345,6 +345,20 @@ describe("DLP detectors on a labelled field that runs into other values", () => 
 		expect(scan.matches.map((m) => [m.detector, text.slice(m.start, m.end)])).toEqual(expected);
 	});
 
+	it.each([
+		[`Ad Soyad: Ayşe Yılmaz, TCKN ${VALID_TCKN}`, "tc_kimlik", VALID_TCKN],
+		[`Full name: Jane Doe IBAN ${VALID_IBAN}`, "iban", VALID_IBAN],
+		["Full name: Jane Doe, jane.doe@example.com", "email", "jane.doe@example.com"],
+		[`Sayın Ayşe Yılmaz IBAN ${VALID_IBAN}`, "iban", VALID_IBAN],
+	])("reports the name and the value in %s separately", (text, detector, value) => {
+		const scan = scanPrivacyDetectors(text, ["person", "tc_kimlik", "iban", "email"]);
+		const name = text.includes("Jane") ? "Jane Doe" : "Ayşe Yılmaz";
+		expect(scan.matches.map((m) => [m.detector, text.slice(m.start, m.end)])).toEqual([
+			["person", name],
+			[detector, value],
+		]);
+	});
+
 	it("still rejects a label with no value after re-scanning it", () => {
 		const text = "interface Account { iban: IbanType; phone: string; tc: TcknString }";
 		expect(scanPrivacyDetectors(text, ["tc_kimlik", "iban", "phone"])).toEqual({

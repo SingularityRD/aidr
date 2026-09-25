@@ -266,10 +266,12 @@ export interface GuardPolicy {
 	readonly maskPaste: boolean;
 	readonly fileHandling: "scan" | "block" | "allow";
 	/**
-	 * Office (DOCX/XLSX/PPTX) and PDF uploads when `fileHandling` is "scan" (managed-only):
-	 * "mask" masks Office text in place and scans PDFs (blocking PDFs with findings);
-	 * "block" rejects every such document; "allow" skips parsing and treats them like other
-	 * binary files (unscanned warning; blocked in block mode). Absent means "mask".
+	 * Office (DOCX/XLSX/PPTX), OpenDocument (ODT/ODS/ODP/ODG), legacy Office (DOC/XLS/PPT) and
+	 * PDF uploads when `fileHandling` is "scan" (managed-only): "mask" masks OOXML/OpenDocument
+	 * text in place and scans PDFs (blocking PDFs with findings); legacy Office files cannot be
+	 * parsed and pass only as unscanned (warning; blocked in block mode); "block" rejects every
+	 * such document; "allow" skips parsing and treats them like other binary files (unscanned
+	 * warning; blocked in block mode). Absent means "mask".
 	 */
 	readonly documentHandling: "mask" | "block" | "allow";
 	readonly maxFileBytes: number;
@@ -409,6 +411,11 @@ export type GuardMessage =
 	/** minutes 1..60 pauses (only when policy.allowUserPause); 0 resumes. */
 	| { readonly type: "PAUSE"; readonly minutes: number }
 	| { readonly type: "NATIVE_SCAN"; readonly text: string }
+	/**
+	 * OCR of an uploaded image (or an image inside an uploaded document) by the native host:
+	 * `data` is the image, base64 (at most NATIVE_IMAGE_MAX_BYTES decoded). Counts-only reply.
+	 */
+	| { readonly type: "NATIVE_IMAGE_SCAN"; readonly data: string }
 	| { readonly type: "SET_RESTORE_VISIBLE"; readonly visible: boolean }
 	/**
 	 * Content script -> worker: persist this tab's vault (restorable entries only) and the
@@ -459,6 +466,12 @@ export interface GuardResponses {
 	readonly NATIVE_SCAN: {
 		readonly ok: true;
 		readonly findings: readonly Finding[] | null;
+		readonly status?: NativeHostStatus;
+	};
+	/** `inspection` is null when the host or its OCR is unavailable (the image is then not inspected). */
+	readonly NATIVE_IMAGE_SCAN: {
+		readonly ok: true;
+		readonly inspection: ImageInspection | null;
 		readonly status?: NativeHostStatus;
 	};
 	readonly SET_RESTORE_VISIBLE: { readonly ok: true };
@@ -512,7 +525,26 @@ export interface FileDecision {
 	/** Present when action === "mask": sanitized replacement file content. */
 	readonly masked?: { readonly name: string; readonly type: string; readonly bytes: Uint8Array };
 	readonly counts: Readonly<Partial<Record<EntityType, number>>>;
-	/** Stable reason codes, e.g. BINARY_FILE, FILE_TOO_LARGE, FORMULA_CELL, SENSITIVE_DATA. */
+	/**
+	 * Stable reason codes, e.g. BINARY_FILE_UNSCANNED, FILE_TOO_LARGE, FORMULA_CELL, SENSITIVE_DATA,
+	 * SENSITIVE_DATA_IN_PDF, SENSITIVE_DATA_IN_IMAGE, IMAGE_NOT_INSPECTED, LEGACY_OFFICE_FORMAT,
+	 * DOCUMENT_IMAGES_NOT_INSPECTED.
+	 */
+	readonly reasons: readonly string[];
+}
+
+/**
+ * Native-host OCR verdict for one image (packages/privacy `image-scan`): whether its text shows
+ * sensitive data. Pixels are never masked; a "sensitive" image is blocked.
+ *   clean       every OCR word was inspected and nothing sensitive was found;
+ *   sensitive   sensitive text (per-type `counts`) or a host policy that blocks images;
+ *   incomplete  not fully inspected (no text read, uncertain OCR, barcode, limits, OCR failure);
+ *               callers treat it like an image that was not inspected - never as clean.
+ */
+export interface ImageInspection {
+	readonly result: "clean" | "sensitive" | "incomplete";
+	readonly counts: Readonly<Partial<Record<EntityType, number>>>;
+	/** Stable host reason codes (`IMAGE_*`, `NATIVE_*`), never OCR text. */
 	readonly reasons: readonly string[];
 }
 
@@ -521,6 +553,8 @@ export interface NativeBridge {
 	status(): NativeHostStatus;
 	/** NER findings for PERSON/ADDRESS etc.; null when the host is unavailable. */
 	scanText(text: string): Promise<readonly Finding[] | null>;
+	/** OCR inspection of an image; null when the host, or OCR on the host, is unavailable. */
+	scanImage?(bytes: Uint8Array): Promise<ImageInspection | null>;
 }
 
 /*
@@ -528,7 +562,7 @@ export interface NativeBridge {
  *   engine/detect.ts   export function createDetectionEngine(options: DetectionOptions): DetectionEngine
  *   engine/coaching.ts export function coachingFor(code: SignalCode, lang: "en" | "tr"): string
  *   engine/vault.ts    export function createVault(options: { neverRestore: readonly EntityType[]; ttlMs?: number; snapshot?: VaultSnapshot }): PlaceholderVault
- *   engine/files.ts    export function sanitizeFile(file: { name: string; type: string; bytes: Uint8Array }, deps: { engine: DetectionEngine; vault: PlaceholderVault; policy: GuardPolicy }): Promise<FileDecision>
+ *   engine/files.ts    export function sanitizeFile(file: { name: string; type: string; bytes: Uint8Array }, deps: { engine: DetectionEngine; vault: PlaceholderVault; policy: GuardPolicy; inspectImage?: (bytes: Uint8Array) => Promise<ImageInspection | null> }): Promise<FileDecision>
  *   sites/index.ts     export const ADAPTERS: readonly SiteAdapter[]; export function adapterForUrl(url: string, customSites?: readonly CustomSiteConfig[]): SiteAdapter  // custom host -> id "custom"; unknown host -> generic adapter with id "other"
  *   sites/catalog.ts   export const AI_SERVICES: readonly AiService[]; export function serviceForUrl(url: unknown): AiService | null
  *   dom/editor.ts      export function findEditor(adapter: SiteAdapter, root: Document, lastFocused?: Element | null): EditorAccess | null

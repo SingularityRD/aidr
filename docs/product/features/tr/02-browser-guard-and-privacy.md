@@ -497,9 +497,11 @@ söyler. Gerçek tarayıcıdaki `paste-*` senaryoları bu davranışı kapsar.
 
 **Ne yapar** — Kullanıcının desteklenen bir yapay zekâ sitesinde seçtiği, sürükleyip
 bıraktığı ya da yapıştırdığı dosyaları site almadan önce okur. Hassas veri içeren metin
-dosyalarının ve Word/Excel/PowerPoint belgelerinin yerine temizlenmiş bir kopya (aynı ad,
-aynı tür) konur. PDF'ler taranır ve hassas veri içeriyorsa engellenir. Denetlenemeyen
-dosyalar politikaya göre uyarıyla geçer ya da engellenir.
+dosyalarının, Word/Excel/PowerPoint ve OpenDocument belgelerinin yerine temizlenmiş bir kopya
+(aynı ad, aynı tür) konur. PDF'ler taranır ve hassas veri içeriyorsa engellenir. İsteğe bağlı
+native host'un OCR'ı varsa, hassas veri gösteren ekran görüntüleri ve belge içindeki resimler
+engellenir. Denetlenemeyen dosyalar politikaya göre uyarıyla geçer ya da engellenir; hiçbir
+zaman temiz sayılmaz.
 
 **Neden önemli** — Tek bir CSV dışa aktarımı binlerce müşteri kaydı içerebilir. `.env`
 dosyaları ve JSON yapılandırmaları neredeyse tümüyle kimlik bilgisidir. Dosya yükleme,
@@ -510,17 +512,21 @@ yazmaktan çok daha büyük bir sızıntı kanalıdır.
 1. `fileHandling: "allow"` → dosya okunmadan geçer. `fileHandling: "block"` → her modda
    engellenir (`FILE_BLOCKED_BY_POLICY`).
 2. `maxFileBytes` sınırından büyükse (varsayılan 5 MiB, en fazla 50 MiB) → engellenir
-   (`FILE_TOO_LARGE`). **Office belgeleri ve PDF'ler** ardından belge işleyicilerine gider
-   (aşağıdaki "Office belgeleri ve PDF'ler" bölümüne bakın). Uzantılarından tanınırlar;
-   uzantısı bilinmeyen ya da hiç olmayan bir dosya MIME türünden veya içeriğinden tanınır,
-   yani belgenin adını değiştirmek denetimi atlatmaz.
+   (`FILE_TOO_LARGE`). **Office, OpenDocument, eski Office ve PDF belgeleri** ardından belge
+   işleyicilerine gider (aşağıdaki "Office belgeleri ve PDF'ler" bölümüne bakın).
+   Uzantılarından tanınırlar; uzantısı bilinmeyen ya da hiç olmayan bir dosya MIME türünden
+   veya içeriğinden tanınır, yani belgenin adını değiştirmek denetimi atlatmaz. **Görseller**
+   (PNG/JPEG/WebP, içerikten tanınır) native host OCR sunuyorsa OCR'a gider (aşağıdaki
+   "Görseller" maddesine bakın).
 3. **Metin mi, ikili mi?** Dosya; katı UTF-8 (BOM olabilir) ya da bayt sırası işaretli
    UTF-16 olarak çözülüyorsa, NUL baytı içermiyorsa ve bilinen bir metin/kaynak kodu
    uzantısına ya da ikili MIME türü taşımayan bilinmeyen bir uzantıya sahipse metin sayılır.
-   Bilinen ikili uzantılar (görseller, arşivler, eski `.doc`/`.xls`/`.ppt`, OpenDocument,
-   medya, veritabanları, çalıştırılabilir dosyalar…) her zaman ikilidir.
+   Bilinen ikili uzantılar (görseller, arşivler, medya, veritabanları, çalıştırılabilir
+   dosyalar…) her zaman ikilidir.
 4. **İkili dosyalar** tarayıcıda incelenemez. `block` modunda engellenir
-   (`BINARY_FILE_UNSCANNABLE`), diğer modlarda uyarı bildirimiyle geçer.
+   (`BINARY_FILE_UNSCANNABLE`), diğer modlarda uyarı bildirimiyle geçer
+   (`BINARY_FILE_UNSCANNED`, ayrıca `IMAGE_NOT_INSPECTED` ya da `LEGACY_OFFICE_FORMAT` gibi
+   bir ayrıntı).
 5. **Metin biçimleri**
    - **CSV/TSV**: gerçek bir ayrıştırıcıyla okunur (tırnaklı alanlar, kaçışlı tırnaklar,
      CRLF/LF/CR). Hücreler, sütun başlığı bağlam olarak kullanılarak tek tek maskelenir.
@@ -562,9 +568,30 @@ yoktur.
   başlığı hassas bir alanı adlandıran sütun, CSV'de olduğu gibi bütünüyle maskelenir.
   PowerPoint'te: slaytlar, konuşmacı notları, düzenler, asıl slaytlar ve açıklamalar. Tüm
   biçimlerde: grafikler, diyagramlar (SmartArt), çizimler, alternatif metin, belge
-  özellikleri ve `mailto:` ile diğer dış bağlantı hedefleri. Stiller, görseller, yazı
-  tipleri ve diğer tüm parçalar bayt bayt aynen kopyalanır.
+  özellikleri ve `mailto:` ile diğer dış bağlantı hedefleri. Stiller, yazı tipleri ve diğer
+  tüm parçalar bayt bayt aynen kopyalanır (resimler için aşağıya bakın).
   Sonuç: `mask` ve `SENSITIVE_DATA`; hiçbir şey bulunmadıysa `allow`.
+- **ODT, ODS, ODP, ODG** (OpenDocument, örneğin LibreOffice, ve şablonları) aynı ZIP
+  okuyucu/yazıcı, XML tarayıcı ve sınırlarla açılır ve aynı şekilde yerinde maskelenir:
+  paragraflar span, bağlantı ve alanlarıyla birlikte; dipnotlar, açıklamalar ve metin
+  kutuları; üst/alt bilgiler, belge üst verileri, köprü hedefleri, hücre değerleri ve
+  formüller. Tablolarda ilk satır sütun başlığıdır (hassas bir başlık sütunu bütünüyle
+  maskeler); hücre bir bütün olarak maskelenir ve maskelenen sayı/tarih hücresi metin
+  hücresine dönüşür. Gömülü nesneler (grafikler) paket içinde maskelenir. Office'teki gibi
+  reddedilenler: şifreleme, Basic/betik kitaplıkları ve betik olay dinleyicileri, DDE ve
+  bağlı bölüm/sayfa/nesneler, eklenti/applet/çerçeveler, OLE nesneleri ve gömülü medya gibi
+  diğer ikili parçalar.
+- **Eski `.doc`, `.xls`, `.ppt`** (OLE bileşik dosyaları; içerik ya da MIME türünden de
+  tanınır) ayrıştırılmaz ve hiçbir zaman denetlenmiş sayılmaz: kullanıcıya dosyayı
+  `.docx`/`.xlsx`/`.pptx` olarak kaydetmesini söyleyen bir uyarıyla yüklenir
+  (`LEGACY_OFFICE_FORMAT`), `block` modunda engellenir ve `documentHandling: "block"`
+  altında diğer belgelerle birlikte reddedilir.
+- **Office ve OpenDocument dosyalarındaki resimler**: ilk sayfa küçük resmi maskelemeden
+  önceki metni gösterir; bu yüzden yeniden yazılan paketin küçük resmi boş bir görselle
+  değiştirilir. Native host OCR'ı varsa PNG/JPEG/WebP resimler incelenir ve hassas metin
+  içeren bir resim belgeyi engeller (`SENSITIVE_DATA_IN_IMAGE`). İncelenemeyen resimler
+  (OCR yok, başka biçim, 16'dan fazla resim, 90 saniyelik OCR bütçesi)
+  `DOCUMENT_IMAGES_NOT_INSPECTED` gerekçesi ve bir uyarı ekler.
 - **Reddedilenler** (engellenir; `monitor` yalnızca kaydeder): makro ya da ActiveX
   (`DOCUMENT_MACROS`), parola koruması (`DOCUMENT_ENCRYPTED`), dış çalışma kitabı
   bağlantıları, veri bağlantıları, uzak şablonlar, bağlı nesneler ya da adres mektup
@@ -587,7 +614,14 @@ yoktur.
   veya ayrıştırılamayan (`PDF_UNPARSEABLE`) PDF'ler ikili dosya kuralına uyar: uyarıyla
   yüklenir, `block` modunda engellenir. Okunabilen bölümdeki bulgular yine engellemeye yol
   açar.
-- `documentHandling: "block"` tüm Office/PDF yüklemelerini her modda reddeder
+- **Görseller** (ekran görüntüleri, fotoğraflar): `useNativeHost` açık ve native host OCR
+  ile yapılandırılmışsa görsel uç noktada OCR'dan geçirilir (yalnız sayılar döner; host piksel
+  ya da metin döndürmez). Hassas metin yüklemeyi engeller (`SENSITIVE_DATA_IN_IMAGE`;
+  pikseller hiçbir zaman maskelenmez); temiz sonuç geçmesine izin verir. Host ya da OCR'ı
+  yoksa veya OCR görselin tamamını okuyamadıysa (metin yok, belirsiz kelimeler, barkod,
+  sınırlar) görsel incelenmemiş sayılır (`IMAGE_NOT_INSPECTED`): uyarıyla yüklenir, `block`
+  modunda engellenir.
+- `documentHandling: "block"` tüm Office/OpenDocument/PDF yüklemelerini her modda reddeder
   (`DOCUMENT_BLOCKED_BY_POLICY`). `documentHandling: "allow"` belge ayrıştırmayı atlar;
   dosya ikili dosya kuralına (4. adım) uyar. Taraması 30 saniyeden uzun süren bir belge
   engellenir (`SCAN_INCOMPLETE`).
@@ -601,6 +635,10 @@ duraklatma süresince) dosyalar değiştirilmeden geçer ve yalnızca sayılır.
 |---|---|
 | Temizlendi | "1 dosya yüklenmeden önce temizlendi: 2 EMAIL" / "1 file sanitized before upload: 2 EMAIL" |
 | İkili, engellenmedi | `"report.pdf" taranamadı (ikili dosya). Göndermeden önce kontrol edin.` |
+| Eski Office, engellenmedi | `"eski.doc" eski bir Office dosyası (.doc/.xls/.ppt); AIDR bu biçimi denetleyemez. Maskelenmesi için .docx/.xlsx/.pptx olarak kaydedin ya da göndermeden önce kontrol edin.` |
+| Görsel incelenmedi | `"ekran.png" bir görsel ve içeriği denetlenmedi (yerel OCR yardımcısı yok ya da görseli okuyamadı). Göndermeden önce kontrol edin.` |
+| Belgedeki resimler incelenmedi | `"rapor.docx" içindeki görseller denetlenmedi. Göndermeden önce kontrol edin.` |
+| Hassas veri içeren görsel | `"ekran.png" yüklenmedi (SENSITIVE_DATA_IN_IMAGE, 1 EMAIL). Görselde hassas veri görünüyor ve görseller maskelenemez. Yüklemeden önce kırpın ya da karartın.` |
 | Engellendi | **Yükleme engellendi**: `"big.csv" yüklenmedi (FILE_TOO_LARGE).` |
 | Yükleme politikayla kapalı | "Kurumunuz yapay zekâ hizmetlerine dosya yüklenmesine izin vermiyor." |
 | Belgeler politikayla kapalı | "Kurumunuz yapay zekâ hizmetlerine Office veya PDF belgesi yüklenmesine izin vermiyor." |
@@ -638,7 +676,10 @@ paragraf artık `Müşteri e-postası: [EMAIL_1]` şeklindedir (yer tutucu kalı
 parça boştur). `file-upload-docx` senaryosu ChatGPT fikstüründe böyle bir dosya yükler ve
 yüklenen baytları yeniden açarak `word/document.xml` içeriğini denetler;
 `file-upload-pdf-blocked` e-posta adresi içeren bir PDF'in sayfaya hiç ulaşmadığını ve
-baloncuğun metni yapıştırmayı önerdiğini doğrular.
+baloncuğun metni yapıştırmayı önerdiğini doğrular. `file-upload-odt` aynısını değerleri
+span'lere bölünmüş bir ODT için yapar, `file-upload-pptx-thumbnail` maskelenen sununun küçük
+resminin Chromium'un çözebildiği boş bir görselle değiştirildiğini, `file-upload-legacy-doc`
+ise eski biçim uyarısını doğrular.
 
 **Kapsam**
 
@@ -649,10 +690,13 @@ baloncuğun metni yapıştırmayı önerdiğini doğrular.
 | Platformlar | Chrome, Edge, Firefox (masaüstü) |
 
 **Sınırlamalar**
-- Görseller **incelenmez** (tarayıcıda OCR yok): Office belgelerindeki resimler, taranmış
-  PDF'ler ve yalnızca görsel içeren PDF sayfaları. Taranmış PDF'ler temiz değil, taranmamış
-  olarak bildirilir. Bu tür yüklemelerin hiç ulaşmaması gerekiyorsa `fileHandling: "block"`
-  ya da `documentHandling: "block"` kullanın.
+- Tarayıcının kendisinde OCR yoktur. Görseller ve Office/OpenDocument dosyalarındaki
+  resimler yalnız OCR ile yapılandırılmış isteğe bağlı native host üzerinden OCR'dan geçer ve
+  hassas veri gösterirse engellenir (hiçbir zaman maskelenmez); OCR küçük, el yazısı ya da
+  düşük kontrastlı yazıyı kaçırabilir. Host yoksa temiz değil, incelenmemiş olarak
+  bildirilir. Taranmış PDF'lere ve yalnızca görsel içeren PDF sayfalarına OCR uygulanmaz
+  (taranmamış olarak bildirilir). Bu tür yüklemelerin hiç ulaşmaması gerekiyorsa
+  `fileHandling: "block"` ya da `documentHandling: "block"` kullanın.
 - PDF'ler taranır ama yeniden yazılmaz; bulgu içeren bir PDF maskelenmez, engellenir.
   Şifreli PDF'lerin şifresi çözülmez; ToUnicode eşlemesi olmayan Type0 yazı tipleri ve
   önceden tanımlı CJK CMap'leri çözülmez (`PDF_PARTIAL` olarak bildirilir); kelime ve satır
@@ -660,8 +704,9 @@ baloncuğun metni yapıştırmayı önerdiğini doğrular.
   farklı olabilir.
 - Office maskelemesi metni kapsar. Sayfa adları, tanımlı adlar, tablo sütun adları ve pivot
   önbelleğindeki sayısal değerler yeniden yazılmaz (maskelenen bir başlık hücresi Excel'in
-  bir tablonun sütun adını onarmasına yol açabilir). Eski `.doc`/`.xls`/`.ppt` ve
-  OpenDocument dosyaları ayrıştırılmaz, ikili dosya kuralına uyar.
+  bir tablonun sütun adını onarmasına yol açabilir); OpenDocument sayfa ve tablo adları için
+  de aynısı geçerlidir. Eski `.doc`/`.xls`/`.ppt` dosyaları ayrıştırılmaz: yalnız uyarıyla
+  geçer ya da engellenir.
 - UTF-8 olmayan metin dosyaları Windows-1254 (Türkçe) olarak, daha uygun düştüğünde
   Windows-1252 olarak çözülür, taranır ve maskelenmiş kopya UTF-8 olarak yüklenir (CSV/TSV
   için BOM ile). Başka tek baytlık kodlamalardaki dosyalar (örneğin Kiril Windows-1251) bu
@@ -1172,10 +1217,10 @@ Tüm yönetilen anahtarlar (`static/managed_schema.json` ve `src/background/poli
 | `allowSendAnyway` | boolean | `true` | Kullanıcı uyarıdan sonra maskesiz gönderebilir |
 | `maskPaste` | boolean | `true` | Yapıştırılan metni maskele (özellik 6) |
 | `fileHandling` | `scan` \| `block` \| `allow` | `scan` | Yükleme davranışı (özellik 7) |
-| `documentHandling` | `mask` \| `block` \| `allow` | `mask` | `fileHandling` `scan` iken Office/PDF yüklemeleri (özellik 7) |
+| `documentHandling` | `mask` \| `block` \| `allow` | `mask` | `fileHandling` `scan` iken Office, OpenDocument, eski Office ve PDF yüklemeleri (özellik 7) |
 | `maxFileBytes` | tamsayı, 1 ile 52.428.800 arası | 5.242.880 (5 MiB) | Taranan en büyük dosya; daha büyükler engellenir |
 | `restoreResponses` | boolean | `true` | Orijinalleri yanıtlarda yerel olarak geri yükle |
-| `useNativeHost` | boolean | `false` | NER için AIDR Privacy native host'unu kullan (özellik 16). Yönetilmiyorsa kullanıcı ayarlar sayfasından da açabilir |
+| `useNativeHost` | boolean | `false` | NER için, host'ta varsa görsel OCR'ı için de AIDR Privacy native host'unu kullan (özellik 16). Yönetilmiyorsa kullanıcı ayarlar sayfasından da açabilir |
 | `telemetry` | `{ controlPlaneUrl, apiKey }` | yok (telemetri yok) | Yalnızca sayım raporlama. `https://` zorunlu (düz `http://` yalnızca `localhost`/`127.0.0.1` için); kimlik bilgisi, sorgu ya da parça (fragment) içeremez; API anahtarı 8–512 yazdırılabilir karakter |
 | `language` | `auto` \| `en` \| `tr` | `auto` | Arayüz dili |
 | `policyId` | metin, `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$` | `aidr-browser-guard-default` | Telemetriyle raporlanan kimlik |
@@ -1298,7 +1343,8 @@ satırı bir tarama ve iki öğe artar.
 
 **Ne yapar** — Eklentiyi aynı makinedeki AIDR Privacy native messaging host'una
 (`com.singularity.aidr_privacy`) bağlar. Host'un amacı, sabit biçimi olmayan ad, adres ve konum
-bilgileri için öğrenilmiş varlık adı tanıma (NER) eklemektir.
+bilgileri için öğrenilmiş varlık adı tanıma (NER) ve yerel OCR ile yapılandırıldığında
+yüklenen görsellerdeki yazıyı okumaktır.
 
 **Neden önemli** — Kurallar bir cümlenin içindeki "Ahmet Kaya" adını tanıyamaz. Yerel bir NER
 modeli, metni makineden çıkarmadan bunu yapabilir.
@@ -1316,6 +1362,10 @@ denetlenir ve sayfa içi bildirim ya da balon "Gelişmiş ad ve adres algılama 
 uygulama) kullanılamıyor: yalnızca yerleşik kurallarla kontrol edildi." der (temiz çıkan
 istemler için sayfa başına bir kez). Hiçbir şey kalıcı olarak saklanmaz. Yalnızca metnin
 kendisi gönderilir; adres, site, sekme ya da kullanıcı bilgisi gönderilmez.
+Yüklenen görseller (ve Office/OpenDocument dosyalarındaki resimler), host OCR bildirdiğinde
+aynı yoldan `image-scan` (`NATIVE_IMAGE_SCAN`) olarak gönderilir: host bunları OCR'dan geçirir
+ve yalnız sayıları içeren bir karar döndürür; hassas görsel engellenir (özellik 7). Sayfa görsel
+başına en fazla 65 saniye bekler.
 
 **Nasıl kullanılır** (ayrıntılar
 [native-host.md](../../../../packages/browser-guard/docs/native-host.md) belgesinde):
@@ -1344,15 +1394,17 @@ devam eder ve sayfa içi mesaj denetimin yalnızca kurallarla yapıldığını b
 
 **Sınırlamalar — güvenmeden önce okuyun**
 - NER yalnızca istemlere ve yapıştırılan metne uygulanır. Yüklenen dosyalar kurallarla
-  taranır.
+  taranır; host'a yalnız görseller, OCR için gider.
 - Host aralık değil, temizlenmiş bir kopya döndürür. Köprü bunu girdiyle hizalar ve belirsiz
   aralıkları genişletir (sızdırmak yerine fazla maskeler); hizalanamayan çıktı o istem için
   "NER sonucu yok" sayılır.
 - Host'un hâlâ taradığı bir istemin gönderilmesi en fazla 2,5 saniye gecikebilir.
 - `packages/privacy` host protokolünü içerir, ancak **NER model ağırlıklarını ve doğruluk
   kanıtını içermez**. Kesinlik ve duyarlılığı kendi verinizle ölçün.
-- OCR, privacy paketinin görsel katmanının parçasıdır (özellik 20). Browser Guard görsellere ve
-  PDF'lere OCR uygulamaz.
+- OCR, privacy paketinin görsel katmanından (özellik 20) yalnız karar amacıyla kullanılır:
+  hassas metin içeren görsel engellenir, hiçbir zaman maskelenmez. Taranmış PDF'lere OCR
+  uygulanmaz. OCR host'un isteğe bağlı Python/Tesseract yığınını gerektirir; protokol sahte
+  OCR çalışanlarıyla test edilmiştir, gerçek OCR doğruluğu kendi görsellerinizde ölçülmelidir.
 - Ağır bir model ile büyük bir istem 2 saniyelik bütçeyi aşabilir. Bu durumda köprü geri çekilir
   ve yalnızca kurallar çalışır.
 
@@ -1374,7 +1426,7 @@ minimizasyonu yükümlülüklerini desteklemek üzere tasarlanmıştır.
 | Ayarlar, özel terimler, telemetri API anahtarı | Tarayıcı profilinin `chrome.storage.local` alanı (yönetilen değerler tarayıcı politikasından gelir) |
 | Oturum istatistikleri | `chrome.storage.session` (tarayıcı kapanınca silinir) |
 | Telemetri, yalnızca `telemetry` ayarlıysa | Türe göre sayılar, site kimliği, eylem, kanal, politika kimliği, kuruluma özgü rastgele kimlik, tarayıcı ailesi ve ana sürümü, eklenti sürümü. Yapılandırılan kontrol düzlemine gider |
-| Native host, yalnızca etkinse | Metin, stdio üzerinden yerel host sürecine gider; bu kanaldan makine dışına bir şey çıkmaz |
+| Native host, yalnızca etkinse | Metin ve OCR için yüklenen görseller, stdio üzerinden yerel host sürecine gider; yalnız sayılar döner; bu kanaldan makine dışına bir şey çıkmaz |
 
 `telemetry` ayarlı değilse eklenti **kendi adına hiçbir ağ isteği yapmaz**. Ayarlar sayfası da
 bunu söyler: "Bağlı değil. Bu tarayıcıdan hiçbir veri çıkmaz."
@@ -1546,7 +1598,9 @@ siyahla kapatılmış bir PNG'ye dönüşür (varsayılan satır bazında maskel
 - Bu depoda sahte OCR çalışanlarıyla test edilmiştir. Gerçek OCR doğruluğu kurulu yığına bağlıdır
   ve bağımsız olarak doğrulanmamıştır.
 - PDF, SVG, TIFF, GIF, HEIC ve video desteklenmez. OCR'ın kaçırdığı yazı maskelenemez.
-- Browser Guard'a bağlı değildir: tarayıcıda yüklenen görsellere OCR uygulanmaz.
+- Browser Guard bu motoru native host üzerinden yalnız karar için kullanır (`inspect`,
+  özellik 16): hassas metin içeren yüklenen görsel engellenir; maskelenmiş PNG orada
+  kullanılmaz.
 
 ### 21. Belge içerik arındırma ve yeniden oluşturma (CDR)
 

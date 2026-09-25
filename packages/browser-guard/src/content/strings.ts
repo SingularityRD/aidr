@@ -20,6 +20,12 @@ export interface Strings {
 	pasteMaskedToast(total: number, summary: string): string;
 	fileMaskedToast(files: number, summary: string): string;
 	fileUnscannedToast(name: string): string;
+	/** A legacy .doc/.xls/.ppt upload passed through unchecked (it cannot be parsed). */
+	legacyOfficeToast(name: string): string;
+	/** An image passed through without OCR (no native host, or it could not read it fully). */
+	imageUnscannedToast(name: string): string;
+	/** A document was checked, but pictures inside it were not inspected. */
+	documentImagesToast(name: string): string;
 	readonly confirmTitle: string;
 	confirmBody(total: number, summary: string): string;
 	readonly warnTitle: string;
@@ -43,6 +49,10 @@ export interface Strings {
 	readonly documentBlockedByPolicy: string;
 	/** Appended when a PDF was blocked for sensitive data (PDFs cannot be masked in place). */
 	readonly pdfPasteHint: string;
+	/** Appended when an image (or a picture in a document) was blocked for sensitive text. */
+	readonly imageBlockedHint: string;
+	/** Appended when a legacy Office file was blocked because it cannot be checked. */
+	readonly legacyOfficeHint: string;
 	readonly fileScanFailed: string;
 	readonly fileReplaceUnsupported: string;
 	/** Native NER was enabled but gave no usable answer: this check was rules-only. */
@@ -71,6 +81,12 @@ const EN: Strings = {
 		`${files} ${files === 1 ? "file" : "files"} sanitized before upload: ${summary}`,
 	fileUnscannedToast: (name) =>
 		`"${name}" could not be scanned (binary file). Check it before sending.`,
+	legacyOfficeToast: (name) =>
+		`"${name}" is a legacy Office file (.doc/.xls/.ppt) that AIDR cannot check. Save it as .docx/.xlsx/.pptx to have it masked, or check it before sending.`,
+	imageUnscannedToast: (name) =>
+		`"${name}" is an image and its content was not inspected (the local OCR helper is not available or could not read it). Check it before sending.`,
+	documentImagesToast: (name) =>
+		`Pictures inside "${name}" were not inspected. Check them before sending.`,
 	confirmTitle: "Sensitive data in your prompt",
 	confirmBody: (total, summary) =>
 		`${total} sensitive ${total === 1 ? "item was" : "items were"} found: ${summary}. ` +
@@ -99,6 +115,10 @@ const EN: Strings = {
 		"Your organisation does not allow Office or PDF documents to be uploaded to AI services.",
 	pdfPasteHint:
 		"PDFs cannot be masked. Copy the text you need and paste it instead: AIDR masks pasted text.",
+	imageBlockedHint:
+		"The image shows sensitive data and images cannot be masked. Crop or redact it before uploading.",
+	legacyOfficeHint:
+		"Legacy Office formats cannot be checked. Save the file as .docx/.xlsx/.pptx and upload that instead.",
 	fileScanFailed: "AIDR could not check the file, so it was not uploaded.",
 	fileReplaceUnsupported:
 		"This browser cannot replace the file with a sanitized copy, so it was not uploaded.",
@@ -125,6 +145,12 @@ const TR: Strings = {
 	fileMaskedToast: (files, summary) => `${files} dosya yüklenmeden önce temizlendi: ${summary}`,
 	fileUnscannedToast: (name) =>
 		`"${name}" taranamadı (ikili dosya). Göndermeden önce kontrol edin.`,
+	legacyOfficeToast: (name) =>
+		`"${name}" eski bir Office dosyası (.doc/.xls/.ppt); AIDR bu biçimi denetleyemez. Maskelenmesi için .docx/.xlsx/.pptx olarak kaydedin ya da göndermeden önce kontrol edin.`,
+	imageUnscannedToast: (name) =>
+		`"${name}" bir görsel ve içeriği denetlenmedi (yerel OCR yardımcısı yok ya da görseli okuyamadı). Göndermeden önce kontrol edin.`,
+	documentImagesToast: (name) =>
+		`"${name}" içindeki görseller denetlenmedi. Göndermeden önce kontrol edin.`,
 	confirmTitle: "İsteminizde hassas veri var",
 	confirmBody: (total, summary) =>
 		`${total} hassas öğe bulundu: ${summary}. ` +
@@ -153,6 +179,10 @@ const TR: Strings = {
 		"Kurumunuz yapay zekâ hizmetlerine Office veya PDF belgesi yüklenmesine izin vermiyor.",
 	pdfPasteHint:
 		"PDF dosyaları maskelenemez. Gereken metni kopyalayıp yapıştırın: AIDR yapıştırılan metni maskeler.",
+	imageBlockedHint:
+		"Görselde hassas veri görünüyor ve görseller maskelenemez. Yüklemeden önce kırpın ya da karartın.",
+	legacyOfficeHint:
+		"Eski Office biçimleri denetlenemez. Dosyayı .docx/.xlsx/.pptx olarak kaydedip onu yükleyin.",
 	fileScanFailed: "AIDR dosyayı kontrol edemedi; dosya yüklenmedi.",
 	fileReplaceUnsupported:
 		"Bu tarayıcı dosyayı temizlenmiş kopyasıyla değiştiremiyor; dosya yüklenmedi.",

@@ -8,17 +8,25 @@
  *   1. `policy.fileHandling === "allow"`  -> allow, nothing is read.
  *      `policy.fileHandling === "block"`  -> block `FILE_BLOCKED_BY_POLICY`.
  *   2. `bytes.length > policy.maxFileBytes` -> block `FILE_TOO_LARGE`.
- *   2b. Documents: Office Open XML (docx/xlsx/pptx and their macro/template variants) and PDF,
- *      by extension, or - for an unknown/missing extension - by MIME type or content.
+ *   2b. Documents: Office Open XML (docx/xlsx/pptx and their macro/template variants),
+ *      OpenDocument (odt/ods/odp/odg and templates), legacy binary Office (doc/xls/ppt...) and
+ *      PDF, by extension, or - for an unknown/missing extension - by MIME type or content.
  *      `policy.documentHandling` (default "mask"):
- *        "block" -> block `DOCUMENT_BLOCKED_BY_POLICY`;
+ *        "block" -> block `DOCUMENT_BLOCKED_BY_POLICY` (legacy formats included);
  *        "allow" -> not parsed; handled like any other binary (step 4);
- *        "mask"  -> OOXML: text is masked in place and the package re-zipped (./office/ooxml.ts)
- *                   -> action "mask" (`SENSITIVE_DATA`), or "allow" without findings. Macros,
- *                   encryption, external links, non-OOXML embedded objects, unsafe ZIP
- *                   structure (zip bombs, ZIP64, path traversal) and malformed XML block
- *                   (`DOCUMENT_*` / `ARCHIVE_*`); an unreadable file (not a ZIP) follows step 4
- *                   with `DOCUMENT_UNPARSEABLE`.
+ *        "mask"  -> OOXML / OpenDocument: text is masked in place and the package re-zipped
+ *                   (./office/ooxml.ts, ./office/odf.ts) -> action "mask" (`SENSITIVE_DATA`), or
+ *                   "allow" without findings. Macros, encryption, external links, embedded
+ *                   objects that cannot be sanitised, unsafe ZIP structure (zip bombs, ZIP64,
+ *                   path traversal) and malformed XML block (`DOCUMENT_*` / `ARCHIVE_*`); an
+ *                   unreadable file (not a ZIP) follows step 4 with `DOCUMENT_UNPARSEABLE`.
+ *                   Pictures inside the package (./office/images.ts): with the native host's
+ *                   OCR (`deps.inspectImage`) an image showing sensitive data blocks
+ *                   `SENSITIVE_DATA_IN_IMAGE`; pictures that were not (fully) inspected add
+ *                   `DOCUMENT_IMAGES_NOT_INSPECTED` (never reported as clean); the thumbnail of
+ *                   a rewritten package is replaced by a blank image.
+ *                   Legacy binary Office (.doc/.xls/.ppt, OLE compound files) cannot be parsed:
+ *                   step 4 with `LEGACY_OFFICE_FORMAT` (blocked in block mode).
  *                   PDF: text is extracted (./pdf/extract.ts) and scanned, never rewritten:
  *                   findings block `SENSITIVE_DATA_IN_PDF` (the user is told to paste the text
  *                   instead); a clean, fully readable PDF is allowed; scanned/partly unreadable
@@ -45,8 +53,13 @@
  *      or binary content behind a text name) cannot be decoded safely: it is blocked with
  *      `TEXT_FILE_NOT_DECODABLE` in auto/confirm/block mode (monitor mode, which never
  *      blocks, allows it with that reason so the event is recorded).
- *   4. Other binary files (images, archives, legacy .doc/.xls, OpenDocument...) and documents
- *      that could not be read are not inspected (a detail reason may follow):
+ *   3b. Images (PNG/JPEG/WebP by content) with the native host's OCR (`deps.inspectImage`):
+ *      sensitive text blocks `SENSITIVE_DATA_IN_IMAGE` (recorded in monitor mode; pixels are
+ *      never masked); a clean OCR result allows the image; an image the host could not fully
+ *      inspect follows step 4 with `IMAGE_NOT_INSPECTED` (+ the host's reason). Without OCR,
+ *      images follow step 4 with `IMAGE_NOT_INSPECTED`.
+ *   4. Other binary files (images, archives...) and documents that could not be read are not
+ *      inspected (a detail reason may follow):
  *        `policy.mode === "block"` -> block `BINARY_FILE_UNSCANNABLE`;
  *        any other mode            -> allow `BINARY_FILE_UNSCANNED` so the content script can
  *                                     warn (and record) instead of silently passing it.
@@ -86,13 +99,18 @@ import type {
 	FileDecision,
 	Finding,
 	GuardPolicy,
+	ImageInspection,
 	PlaceholderVault,
 	SignalCode,
 } from "../types.js";
 import { type Counts, countFindings, mergeCounts } from "./counts.js";
+import { MAX_OCR_IMAGE_BYTES, ocrFormat } from "./office/images.js";
+import { ODF_EXTENSIONS, ODF_MIME, sanitizeOdf, sniffOdf } from "./office/odf.js";
 import {
+	type DocumentOutcome,
 	DocumentRefused,
 	DocumentUnreadable,
+	isCompoundFile,
 	OOXML_EXTENSIONS,
 	sanitizeOoxml,
 	sniffOoxml,
@@ -111,6 +129,11 @@ export interface SanitizeDeps {
 	readonly engine: DetectionEngine;
 	readonly vault: PlaceholderVault;
 	readonly policy: GuardPolicy;
+	/**
+	 * OCR of an image through the native host (policy.useNativeHost); null when unavailable.
+	 * Absent: images are not inspected (reported, never treated as clean).
+	 */
+	readonly inspectImage?: (bytes: Uint8Array) => Promise<ImageInspection | null>;
 }
 
 type TextKind = "text" | "csv" | "tsv" | "json" | "jsonl" | "env";
@@ -1058,27 +1081,56 @@ function signalReasons(policy: GuardPolicy, signals: ReadonlySet<SignalCode>): s
 	return policy.signalAction === "off" ? [] : [...signals].sort().map((s) => `SIGNAL_${s}`);
 }
 
-// --- documents (OOXML, PDF) ------------------------------------------------------------------
+// --- documents (OOXML, OpenDocument, legacy Office, PDF) ------------------------------------
 
-type DocumentKind = "ooxml" | "pdf";
+type DocumentKind = "ooxml" | "odf" | "legacy" | "pdf";
 
 const OOXML_MIME =
 	/^application\/vnd\.(?:openxmlformats-officedocument\.(?:wordprocessingml|spreadsheetml|presentationml)\.|ms-(?:word|excel|powerpoint)\.[\w.]*macroenabled)/i;
+/** Legacy binary Office formats (OLE compound files): recognised, never parsed. */
+const LEGACY_EXTENSIONS: ReadonlySet<string> = new Set([
+	"doc",
+	"dot",
+	"xls",
+	"xlt",
+	"xla",
+	"ppt",
+	"pot",
+	"pps",
+	"ppa",
+]);
+const LEGACY_MIME = /^application\/(?:msword|vnd\.ms-(?:excel|powerpoint))\s*(?:;|$)/i;
 /** Whole-document scan budget (all engine calls, parsing and rewriting). */
 const DOCUMENT_SCAN_BUDGET_MS = 30_000;
 
 /**
- * Office Open XML and PDF uploads, by extension; files with an unknown or missing extension
- * are recognised by MIME type or content (so a renamed document is not waved through).
+ * Office Open XML, OpenDocument, legacy Office and PDF uploads, by extension; files with an
+ * unknown or missing extension are recognised by MIME type or content (so a renamed document is
+ * not waved through).
  */
 function documentKind(file: GuardFile): DocumentKind | null {
 	const ext = extensionOf(baseName(file.name));
+	const known = documentKindByExtension(ext);
+	if (known !== undefined) return known;
+	return documentKindByContent(file);
+}
+
+/** The kind an extension implies: a document kind, null for other known files, else undefined. */
+function documentKindByExtension(ext: string): DocumentKind | null | undefined {
 	if (OOXML_EXTENSIONS.has(ext)) return "ooxml";
+	if (ODF_EXTENSIONS.has(ext)) return "odf";
+	if (LEGACY_EXTENSIONS.has(ext)) return "legacy";
 	if (ext === "pdf") return "pdf";
 	if (ext && (BINARY_EXTENSIONS.has(ext) || TEXT_EXTENSIONS[ext] !== undefined)) return null;
+	return undefined;
+}
+
+function documentKindByContent(file: GuardFile): DocumentKind | null {
 	if (/^application\/pdf\s*(?:;|$)/i.test(file.type) || startsWithPdf(file.bytes)) return "pdf";
-	if (OOXML_MIME.test(file.type) || (looksLikeZip(file.bytes) && sniffOoxml(file.bytes)))
-		return "ooxml";
+	const zip = looksLikeZip(file.bytes);
+	if (OOXML_MIME.test(file.type) || (zip && sniffOoxml(file.bytes))) return "ooxml";
+	if (ODF_MIME.test(file.type) || (zip && sniffOdf(file.bytes))) return "odf";
+	if (LEGACY_MIME.test(file.type) || isCompoundFile(file.bytes)) return "legacy";
 	return null;
 }
 
@@ -1093,7 +1145,12 @@ function startsWithPdf(bytes: Uint8Array): boolean {
 }
 
 /** The document handlers' view of detection + vault (see ./office/scanner.ts). */
-function documentScanner(ctx: Ctx, counts: Counts, deadline: number): DocScanner {
+function documentScanner(
+	ctx: Ctx,
+	counts: Counts,
+	deadline: number,
+	inspectImage: SanitizeDeps["inspectImage"],
+): DocScanner {
 	return {
 		async scan(inputs) {
 			const { perSegment, signals } = await scanSegments(
@@ -1126,18 +1183,24 @@ function documentScanner(ctx: Ctx, counts: Counts, deadline: number): DocScanner
 		checkDeadline() {
 			if (Date.now() > deadline) throw new ScanIncomplete();
 		},
+		...(inspectImage ? { inspectImage } : {}),
 	};
 }
 
-async function handleOoxml(
+/** OOXML and OpenDocument packages: text masked in place, pictures OCR'd or reported. */
+async function handlePackage(
 	file: GuardFile,
+	kind: "ooxml" | "odf",
 	scanner: DocScanner,
 	counts: Counts,
 	policy: GuardPolicy,
 ): Promise<FileDecision> {
-	let outcome: Awaited<ReturnType<typeof sanitizeOoxml>>;
+	let outcome: DocumentOutcome;
 	try {
-		outcome = await sanitizeOoxml(file.bytes, scanner);
+		outcome =
+			kind === "odf"
+				? await sanitizeOdf(file.bytes, scanner)
+				: await sanitizeOoxml(file.bytes, scanner);
 	} catch (error) {
 		if (error instanceof DocumentRefused) return refuse(policy, error.reasons);
 		if (error instanceof DocumentUnreadable) return unscanned(policy, [error.reason]);
@@ -1146,7 +1209,16 @@ async function handleOoxml(
 	const signals = signalReasons(policy, outcome.signals);
 	if (signals.length && policy.signalAction === "block")
 		return block(signals, outcome.findingCounts);
-	const reasons = [...(outcome.findings > 0 ? ["SENSITIVE_DATA"] : []), ...signals];
+	if (outcome.images.sensitive > 0) {
+		const all = mergeCounts({ ...outcome.findingCounts }, outcome.images.counts);
+		return refuse(policy, ["SENSITIVE_DATA_IN_IMAGE", ...signals], all);
+	}
+	const reasons = [
+		...(outcome.findings > 0 ? ["SENSITIVE_DATA"] : []),
+		// Pictures that were not (fully) inspected: reported, never passed off as clean.
+		...(outcome.images.notInspected > 0 ? ["DOCUMENT_IMAGES_NOT_INSPECTED"] : []),
+		...signals,
+	];
 	if (!outcome.bytes) return { action: "allow", counts: outcome.findingCounts, reasons };
 	return {
 		action: "mask",
@@ -1192,27 +1264,81 @@ async function handleDocument(
 	const handling = policy.documentHandling ?? "mask";
 	if (handling === "allow") return unscanned(policy);
 	if (handling !== "mask") return block(["DOCUMENT_BLOCKED_BY_POLICY"]);
+	// .doc/.xls/.ppt are OLE compound files: not parsed, so never passed off as checked.
+	if (kind === "legacy") return unscanned(policy, ["LEGACY_OFFICE_FORMAT"]);
 	const counts: Counts = {};
 	const ctx: Ctx = {
 		engine: deps.engine,
 		vault: deps.vault,
 		enabled: new Set(policy.enabledEntities),
 	};
-	const scanner = documentScanner(ctx, counts, Date.now() + DOCUMENT_SCAN_BUDGET_MS);
+	const deadline = Date.now() + DOCUMENT_SCAN_BUDGET_MS;
+	const scanner = documentScanner(ctx, counts, deadline, deps.inspectImage);
 	return kind === "pdf"
 		? handlePdf(file, scanner, policy)
-		: handleOoxml(file, scanner, counts, policy);
+		: handlePackage(file, kind, scanner, counts, policy);
 }
 
-/** True for uploads handled as documents (OOXML/PDF); used by the content script's policy gate. */
+/** True for uploads handled as documents (Office, OpenDocument, PDF): the content script's policy gate. */
 export function isDocumentFile(file: Pick<GuardFile, "name" | "type">): boolean {
 	const ext = extensionOf(baseName(file.name));
 	return (
 		OOXML_EXTENSIONS.has(ext) ||
+		ODF_EXTENSIONS.has(ext) ||
+		LEGACY_EXTENSIONS.has(ext) ||
 		ext === "pdf" ||
 		/^application\/pdf\s*(?:;|$)/i.test(file.type) ||
-		OOXML_MIME.test(file.type)
+		OOXML_MIME.test(file.type) ||
+		ODF_MIME.test(file.type) ||
+		LEGACY_MIME.test(file.type)
 	);
+}
+
+// --- images -----------------------------------------------------------------------------------
+
+const IMAGE_EXTENSIONS: ReadonlySet<string> = new Set([
+	"png",
+	"jpg",
+	"jpeg",
+	"jfif",
+	"gif",
+	"webp",
+	"bmp",
+	"tif",
+	"tiff",
+	"heic",
+	"heif",
+	"ico",
+	"avif",
+	"psd",
+]);
+/** Host reason codes passed on with a not-inspected image (static codes, never content). */
+const HOST_REASON = /^(?:IMAGE|NATIVE)_[A-Z0-9_]{1,48}$/;
+
+function isImageFile(file: GuardFile): boolean {
+	const ext = extensionOf(baseName(file.name));
+	if (IMAGE_EXTENSIONS.has(ext)) return true;
+	if (ext && (BINARY_EXTENSIONS.has(ext) || TEXT_EXTENSIONS[ext] !== undefined)) return false;
+	return /^image\/(?!svg)/i.test(file.type) || ocrFormat(file.bytes) !== null;
+}
+
+/**
+ * Screenshots and photos: OCR'd by the native host when available. Sensitive text blocks the
+ * upload (pixels are not masked); anything short of a complete, clean inspection is reported
+ * as not inspected. Null: not an image.
+ */
+async function handleImage(file: GuardFile, deps: SanitizeDeps): Promise<FileDecision | null> {
+	if (!isImageFile(file)) return null;
+	const { policy, inspectImage } = deps;
+	const ocrReadable = ocrFormat(file.bytes) !== null && file.bytes.length <= MAX_OCR_IMAGE_BYTES;
+	const inspection =
+		inspectImage && ocrReadable ? await inspectImage(file.bytes).catch(() => null) : null;
+	if (inspection?.result === "sensitive")
+		return refuse(policy, ["SENSITIVE_DATA_IN_IMAGE"], inspection.counts);
+	if (inspection?.result === "clean")
+		return { action: "allow", counts: {}, reasons: ["IMAGE_OCR_CLEAN"] };
+	const detail = inspection?.reasons.filter((r) => HOST_REASON.test(r)).slice(0, 4) ?? [];
+	return unscanned(policy, ["IMAGE_NOT_INSPECTED", ...detail]);
 }
 
 /** MIME type of a re-encoded (UTF-8) copy: a declared charset parameter becomes utf-8. */
@@ -1242,6 +1368,8 @@ export async function sanitizeFile(file: GuardFile, deps: SanitizeDeps): Promise
 
 		const document = documentKind(file);
 		if (document) return await handleDocument(file, document, deps);
+		const image = await handleImage(file, deps);
+		if (image) return image;
 
 		const decoded = decodeUpload(file);
 		if (decoded === UNDECODABLE_TEXT) {

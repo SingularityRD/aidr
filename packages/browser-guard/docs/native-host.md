@@ -1,10 +1,11 @@
-# Browser Guard native host (optional NER)
+# Browser Guard native host (optional NER and OCR)
 
 Browser Guard does all of its detection inside the browser with the AIDR Privacy rule
 layer. An administrator can also connect it to the **AIDR Privacy native host**
 (`com.singularity.aidr_privacy`, shipped by `packages/privacy`). The host runs on the
-endpoint and adds learned named-entity recognition (NER). Browser Guard sends it
-the prompt text and gets back extra spans.
+endpoint and adds learned named-entity recognition (NER) and, when configured with a
+`visual` backend, OCR of images. Browser Guard sends it the prompt text and gets back
+extra spans, and sends it uploaded images and gets back a counts-only verdict.
 
 The host is optional. Without it, every prompt is still scanned, masked and
 restored locally. The bridge (`src/background/native.ts`) returns `null` and callers
@@ -30,7 +31,29 @@ When the effective policy has `useNativeHost: true`, the content guard
   unavailable: checked with built-in rules only.", and a clean prompt shows that
   notice once per page until the host works again. The `NATIVE_SCAN` reply also
   carries the bridge `status`.
-- Uploaded files are not sent to the host; they are scanned by the rules only.
+- Uploaded text files and documents are not sent to the host for NER; they are
+  scanned by the rules only. Images are, for OCR (next section).
+
+## How uploads use it (OCR)
+
+With `useNativeHost: true` and a host whose `hello` reports `ocr: true` (a `visual`
+block in the host config, i.e. local Tesseract with the Turkish and English data):
+
+- An uploaded PNG, JPEG or WebP image (recognised by content, at most 8 MiB), and the
+  PNG/JPEG/WebP pictures inside an uploaded DOCX/XLSX/PPTX or ODT/ODS/ODP (at most 16
+  per document, within a 90 s OCR budget), are sent to the worker as
+  `NATIVE_IMAGE_SCAN` and on to the host as an `image-scan` session. The page waits at
+  most 65 s per image (the bridge's own limit is 60 s).
+- The host OCRs the image and runs its text engine over the words. It returns only a
+  decision and per-type counts: never pixels, OCR text or positions.
+  `allow` → clean, `block` → sensitive, `review` → not fully inspected (no text read,
+  uncertain words, an undecoded barcode, limits, timeouts, OCR failures).
+- A sensitive image blocks the upload (`SENSITIVE_DATA_IN_IMAGE`, recorded only in
+  `monitor` mode); the user is told to crop or redact it. Pixels are never masked.
+- An image that was not fully inspected, or any image when the host, its OCR or the
+  permission is missing, is reported as not inspected (`IMAGE_NOT_INSPECTED`, or
+  `DOCUMENT_IMAGES_NOT_INSPECTED` for pictures in a document): uploaded with a
+  warning, blocked in `block` mode, never treated as clean.
 
 ## What it adds
 
@@ -105,7 +128,11 @@ The bridge uses the privacy host's native-messaging protocol exactly
   Only one request is outstanding at a time.
 - Each scan uses its own port and host process: `hello` → `begin{kind:"text", size,
   sha256, policyDigest}` → `write{offset, data}` in 192 KiB base64 chunks → `commit`
-  → `read{offset}` until `done`. The status probe sends a single `hello` (via
+  → `read{offset}` until `done`. An image uses `begin{kind:"image-scan", ...}` (only
+  after `hello` reported `ocr: true`) → `write` → `commit`, whose reply is
+  `{decision: allow|block|review, reasons, counts, coverage, outputBytes: 0}`; nothing
+  is read back. The bridge rejects a reply with output bytes, a foreign policy digest,
+  unknown keys or a clean decision with counts. The status probe sends a single `hello` (via
   `sendNativeMessage`, or a port when that API is missing).
 - Browser Guard does not share the AIDR Privacy extension's `PolicyJSON`. It echoes
   the `policyDigest` from `hello`, so the **host's** policy decides. If that policy

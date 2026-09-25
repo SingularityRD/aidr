@@ -1,9 +1,21 @@
 // (7) File upload: a CSV with emails reaches the page's upload handler masked; a DOCX with
 // an e-mail and a TCKN split across formatted runs reaches it as a re-zipped DOCX whose
 // document.xml holds placeholders; a PDF with sensitive data is blocked (PDFs are scanned,
-// never rewritten) and the user is told to paste the text instead.
+// never rewritten) and the user is told to paste the text instead. An ODT is masked like a
+// DOCX; the first-page thumbnail of a masked ODT/PPTX is replaced by a blank image that the
+// browser can still decode; a legacy .doc passes only with a "cannot be checked" warning.
 
-import { splitRunDocx, textPdf, unzip } from "../lib/documents.mjs";
+import {
+	FAKE_JPEG,
+	FAKE_PNG,
+	legacyDoc,
+	splitRunDocx,
+	splitSpanOdt,
+	textPdf,
+	thumbnailPptx,
+	unzip,
+	unzipBytes,
+} from "../lib/documents.mjs";
 import { staysFalse, waitFor } from "../lib/expect.mjs";
 import { assertNoLeaks } from "../lib/harness.mjs";
 import { SITES } from "../lib/sites.mjs";
@@ -16,6 +28,33 @@ const productOnly = (_h, data) =>
 	(data?.items ?? []).some((i) => i.type === "TC_KIMLIK")
 		? null
 		: "product feature (document sanitisation) not implemented by the self-test extension";
+
+/** Decodes image bytes in the page (Chromium's own decoder): [width, height] or an error text. */
+async function decodedSize(page, bytes, type) {
+	return page.evaluate(
+		async ({ b64, type }) => {
+			try {
+				const data = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+				const bitmap = await createImageBitmap(new Blob([data], { type }));
+				return [bitmap.width, bitmap.height];
+			} catch (error) {
+				return String(error);
+			}
+		},
+		{ b64: Buffer.from(bytes).toString("base64"), type },
+	);
+}
+
+/** Uploads one file and returns the page handler's view of it. */
+async function uploadOne(h, page, file) {
+	const mark = h.recorder.mark();
+	await page.locator(SITES[SITE].fileInput).setInputFiles(file);
+	const upload = await waitFor(() => h.recorder.apiSince(mark, { kind: "upload" })[0], {
+		timeout: 10000,
+		message: `the page to upload ${file.name}`,
+	});
+	return { mark, upload, bytes: Buffer.from(upload.json?.bytesB64 ?? "", "base64") };
+}
 
 function itemValue(data, type) {
 	const item = data.items.find((i) => i.type === type);
@@ -112,6 +151,97 @@ export default [
 			checks.contains("clean Turkish text is preserved", xml, "Bu satır temiz: çalışma planı.");
 			checks.contains("run formatting is preserved", xml, "<w:b/>");
 			assertNoLeaks(checks, h, mark, [email, tckn]);
+		},
+	},
+	{
+		id: "file-upload-odt",
+		title: "file upload: ODT with split-span e-mail/TCKN is re-zipped with placeholders and a blank thumbnail",
+		settings: { mode: "auto" },
+		skip: productOnly,
+		async run({ h, checks, data, open }) {
+			const email = itemValue(data, "EMAIL");
+			const tckn = itemValue(data, "TC_KIMLIK");
+			const page = await open(SITE);
+			const { mark, upload, bytes } = await uploadOne(h, page, {
+				name: "musteri-raporu.odt",
+				mimeType: "application/vnd.oasis.opendocument.text",
+				buffer: splitSpanOdt(email, tckn),
+			});
+			checks.equal("uploaded file keeps its name", upload.json?.name, "musteri-raporu.odt");
+			let parts = new Map();
+			try {
+				parts = unzipBytes(bytes);
+			} catch (error) {
+				checks.check("uploaded ODT is a readable ZIP", false, String(error));
+			}
+			const names = [...parts.keys()];
+			checks.equal("mimetype is still the first entry", names[0], "mimetype");
+			const content = parts.get("content.xml")?.toString("utf8") ?? "";
+			checks.contains("content.xml contains an e-mail placeholder", content, /\[EMAIL_\d+\]/);
+			checks.contains("content.xml contains a TCKN placeholder", content, /\[TCKN_\d+\]/);
+			checks.contains("span formatting is preserved", content, 'text:style-name="T1"');
+			checks.contains("clean Turkish text is preserved", content, "Bu satır temiz: çalışma planı.");
+			const all = [...parts.values()].map((b) => b.toString("latin1")).join("\n");
+			checks.excludes("no part of the uploaded ODT holds the e-mail", all, email);
+			checks.excludes("no part of the uploaded ODT holds the TCKN", all, tckn);
+			const thumbnail = parts.get("Thumbnails/thumbnail.png") ?? Buffer.alloc(0);
+			checks.check("the thumbnail was replaced", !thumbnail.equals(FAKE_PNG), thumbnail.length);
+			checks.equal(
+				"the blank thumbnail decodes as a 1x1 PNG",
+				JSON.stringify(await decodedSize(page, thumbnail, "image/png")),
+				"[1,1]",
+			);
+			assertNoLeaks(checks, h, mark, [email, tckn]);
+		},
+	},
+	{
+		id: "file-upload-pptx-thumbnail",
+		title: "file upload: a masked PPTX gets a blank, decodable JPEG thumbnail",
+		settings: { mode: "auto" },
+		skip: productOnly,
+		async run({ h, checks, data, open }) {
+			const email = itemValue(data, "EMAIL");
+			const page = await open(SITE);
+			const { mark, bytes } = await uploadOne(h, page, {
+				name: "sunum.pptx",
+				mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+				buffer: thumbnailPptx(email),
+			});
+			const parts = unzipBytes(bytes);
+			const slide = parts.get("ppt/slides/slide1.xml")?.toString("utf8") ?? "";
+			checks.contains("the slide holds an e-mail placeholder", slide, /\[EMAIL_\d+\]/);
+			const thumbnail = parts.get("docProps/thumbnail.jpeg") ?? Buffer.alloc(0);
+			checks.check("the thumbnail was replaced", !thumbnail.equals(FAKE_JPEG), thumbnail.length);
+			checks.equal(
+				"the blank thumbnail decodes as an 8x8 JPEG",
+				JSON.stringify(await decodedSize(page, thumbnail, "image/jpeg")),
+				"[8,8]",
+			);
+			assertNoLeaks(checks, h, mark, [email]);
+		},
+	},
+	{
+		id: "file-upload-legacy-doc",
+		title: "file upload: a legacy .doc is not passed off as checked",
+		settings: { mode: "auto" },
+		skip: productOnly,
+		async run({ h, checks, open }) {
+			const page = await open(SITE);
+			const baseline = await h.overlays(page, SITE);
+			const { upload } = await uploadOne(h, page, {
+				name: "eski-rapor.doc",
+				mimeType: "application/msword",
+				buffer: legacyDoc(),
+			});
+			checks.equal("the page received the file", upload.json?.name, "eski-rapor.doc");
+			const warning = await waitFor(
+				async () =>
+					(await h.overlays(page, SITE)).find(
+						(o) => !baseline.includes(o) && o.includes("legacy Office"),
+					),
+				{ timeout: 10000, message: "a legacy-format warning" },
+			).catch(() => null);
+			checks.check("a warning says the legacy file cannot be checked", warning, await h.overlays(page, SITE));
 		},
 	},
 	{

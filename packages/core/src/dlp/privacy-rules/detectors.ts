@@ -12,30 +12,34 @@ function run(text:string, re:RegExp, type:EntityType, emit:Emit, score=.85, evid
     emit(m.index+offset,m.index+offset+v.length,type,score,evidence);
   }
 }
+/** Field labels (TR/EN) of the labelled-field detector, as regex sources (İ/ı folded to i when compiled). */
+const FIELD_LABELS:readonly (readonly [string,EntityType])[]=[
+  ['(?:full[ \\t]+name|first[ \\t]+name|last[ \\t]+name|name|ad[ıi]?[ \\t]+soyad[ıi]?|isim|adı)','PERSON'],
+  ['(?:e-?posta|e-?mail(?:[ \\t]+address)?)','EMAIL'],
+  ['(?:phone|telephone|mobile|telefon|tel|gsm|cep[ \\t]+telefonu)(?:[ \\t]*(?:number|no))?','PHONE'],
+  ['(?:T\\.?C\\.?(?:[ \\t]*(?:kimlik)(?:[ \\t]*(?:no(?:su)?|numarası))?)?|TCKN|Turkish[ \\t]+ID)','TC_KIMLIK'],
+  ['IBAN','IBAN'],
+  ['(?:credit[ \\t]*card(?:[ \\t]*(?:number|no))?|card[ \\t]*(?:number|no)|kredi[ \\t]*kartı(?:[ \\t]*(?:numarası|no))?|kart[ \\t]*no)','CREDIT_CARD'],
+  ['(?:SSN|social[ \\t]+security(?:[ \\t]+number)?)','US_SSN'],
+  ['(?:date[ \\t]*of[ \\t]*birth|birth[ \\t]*date|dob|doğum[ \\t]*tarihi)','DATE_OF_BIRTH'],
+  ['(?:passport|pasaport)(?:[ \\t]*(?:number|numarası|no))?','PASSPORT'],
+  ['(?:tax[ \\t]*(?:id|number)|vergi[ \\t]*(?:no(?:su)?|numarası)|vkn)','TAX_ID'],
+  ['(?:bank[ \\t]*account(?:[ \\t]*(?:number|no))?|account[ \\t]*(?:number|no)|hesap[ \\t]*(?:no(?:su)?|numarası))','BANK_ACCOUNT'],
+  ['(?:national[ \\t]*id|identity[ \\t]*number|kimlik[ \\t]*(?:no(?:su)?|numarası))','NATIONAL_ID'],
+  ['(?:(?:home|postal)[ \\t]+address|address|adres|ikametg[aâ]h)','ADDRESS'],
+];
+/** Labels of the `key=value` credential detector, used only to find where a SECRET value's label starts. */
+const SECRET_LABEL='(?:api[_ -]?key|client[_ -]?secret|access[_ -]?token|refresh[_ -]?token|password|passwd|pwd|secret|şifre|sifre|bearer|basic)';
+/** JS /i is not Turkish-locale-aware; labels are matched against a length-preserving view with İ/ı folded to i. */
+const foldLabel=(text:string):string=>text.replace(/[İı]/g,'i');
 /** Protect complete explicitly labeled fields, including malformed identifiers/check digits.
  * Stop at another recognized field or a structural delimiter, not at a regex length cap.
  */
 function detectFields(text:string,emit:Emit):void {
-  // JS /i is not Turkish-locale-aware. This length-preserving label-only view handles İ/ı.
-  const labelText=text.replace(/[İı]/g,'i');
-  const definitions:[string,EntityType][]=[
-    ['(?:full[ \\t]+name|first[ \\t]+name|last[ \\t]+name|name|ad[ıi]?[ \\t]+soyad[ıi]?|isim|adı)','PERSON'],
-    ['(?:e-?posta|e-?mail(?:[ \\t]+address)?)','EMAIL'],
-    ['(?:phone|telephone|mobile|telefon|tel|gsm|cep[ \\t]+telefonu)(?:[ \\t]*(?:number|no))?','PHONE'],
-    ['(?:T\\.?C\\.?(?:[ \\t]*(?:kimlik)(?:[ \\t]*(?:no(?:su)?|numarası))?)?|TCKN|Turkish[ \\t]+ID)','TC_KIMLIK'],
-    ['IBAN','IBAN'],
-    ['(?:credit[ \\t]*card(?:[ \\t]*(?:number|no))?|card[ \\t]*(?:number|no)|kredi[ \\t]*kartı(?:[ \\t]*(?:numarası|no))?|kart[ \\t]*no)','CREDIT_CARD'],
-    ['(?:SSN|social[ \\t]+security(?:[ \\t]+number)?)','US_SSN'],
-    ['(?:date[ \\t]*of[ \\t]*birth|birth[ \\t]*date|dob|doğum[ \\t]*tarihi)','DATE_OF_BIRTH'],
-    ['(?:passport|pasaport)(?:[ \\t]*(?:number|numarası|no))?','PASSPORT'],
-    ['(?:tax[ \\t]*(?:id|number)|vergi[ \\t]*(?:no(?:su)?|numarası)|vkn)','TAX_ID'],
-    ['(?:bank[ \\t]*account(?:[ \\t]*(?:number|no))?|account[ \\t]*(?:number|no)|hesap[ \\t]*(?:no(?:su)?|numarası))','BANK_ACCOUNT'],
-    ['(?:national[ \\t]*id|identity[ \\t]*number|kimlik[ \\t]*(?:no(?:su)?|numarası))','NATIONAL_ID'],
-    ['(?:(?:home|postal)[ \\t]+address|address|adres|ikametg[aâ]h)','ADDRESS'],
-  ];
+  const labelText=foldLabel(text);
   const fields:{at:number;start:number;type:EntityType}[]=[];
-  for(const [label,type]of definitions) {
-    const re=new RegExp('(?<![\\p{L}\\p{N}])'+label.replace(/[İı]/g,'i')+'[ \\t]*[:=#][ \\t]*','giu');
+  for(const [label,type]of FIELD_LABELS) {
+    const re=new RegExp('(?<![\\p{L}\\p{N}])'+foldLabel(label)+'[ \\t]*[:=#][ \\t]*','giu');
     for(const m of labelText.matchAll(re))fields.push({at:m.index,start:m.index+m[0].length,type});
   }
   fields.sort((a,b)=>a.at-b.at||a.start-b.start);
@@ -54,7 +58,87 @@ function detectFields(text:string,emit:Emit):void {
     if(end>start)emit(start,end,f.type,.9,'context');
   }
 }
-export function detectRules(text:string,emit:Emit):void {
+type Span={start:number;end:number;type:EntityType;score:number;evidence:Evidence};
+/** Context spans that may run past their value: labelled fields, contextual names/addresses, labelled ids. */
+const NARROWABLE:ReadonlySet<EntityType>=new Set(FIELD_LABELS.map(([,type])=>type));
+/** Punctuation/whitespace between a field value and the next value or its label. */
+const SEPARATOR=/[\s,;:=#.!?\/|(<\[\-–—"']/u;
+/** Longest separator run still read as "right after" a contextual name (`Ayşe Yılmaz, (`). */
+const MAX_NAME_GAP=4;
+let labelPatterns:ReadonlyMap<EntityType,RegExp>|undefined;
+/** Per type: a label of that type ending the string (`, TCKN`, `e-posta`, `T.C. Kimlik No`, `"password"`). */
+function labelPattern(type:EntityType):RegExp|undefined {
+  if(!labelPatterns) {
+    const sources=new Map<EntityType,string[]>([['SECRET',[SECRET_LABEL]]]);
+    for(const [label,t]of FIELD_LABELS)sources.set(t,[...(sources.get(t)??[]),foldLabel(label)]);
+    labelPatterns=new Map([...sources].map(([t,alts])=>[t,new RegExp('(?<![\\p{L}\\p{N}])(?:'+alts.join('|')+')["\']?$','iu')]));
+  }
+  return labelPatterns.get(type);
+}
+function trimSeparators(text:string,from:number,end:number):number {
+  while(end>from&&SEPARATOR.test(text[end-1]!))end--;
+  return end;
+}
+/** Start of a `type` label that ends (after separators) at `end`, no earlier than `from`; -1 when there is none. */
+function labelStart(labelText:string,from:number,end:number,type:EntityType):number {
+  const re=labelPattern(type); if(!re)return -1;
+  const at=trimSeparators(labelText,from,end), window=Math.max(from,at-48);
+  const m=re.exec(labelText.slice(window,at)); if(!m)return -1;
+  const start=window+m.index;
+  // A window that starts inside a word must not turn that word's tail into a label.
+  return start===window&&start>0&&/[\p{L}\p{N}]/u.test(labelText[start-1]!)?-1:start;
+}
+function firstStartingAfter(values:readonly Span[],pos:number):number {
+  let lo=0,hi=values.length;
+  while(lo<hi){const mid=(lo+hi)>>1;if(values[mid]!.start<=pos)lo=mid+1;else hi=mid;}
+  return lo;
+}
+/**
+ * A context span (labelled field, contextual name, `Adres:` line) runs to its delimiter, so it can swallow
+ * the next value on the line: `Ad Soyad: Ayşe Yılmaz, TCKN 10000000146` read as one PERSON field that
+ * `mergeFindings` then relabels by priority as a TC_KIMLIK. The value ends before the next validated value
+ * of another type (checksum/pattern evidence, or a label-anchored SECRET) and that value's own label:
+ * - PERSON: at any such value inside the name or right after it (a name holds no identifier);
+ * - other fields and ADDRESS: only at a value introduced by its own label (`Tel 0532…`, `IBAN TR…`), because
+ *   identifiers and addresses may contain digit runs that happen to validate as another type.
+ * Nothing that was covered is exposed: the rest of the old span, from the value on, becomes a context span
+ * of the value's type (the field that label opens, as `IBAN: …` would), and is narrowed in turn. It also
+ * keeps the value covered when a caller filters the checksum/pattern finding itself out.
+ * SECRET spans are never split or narrowed.
+ */
+function narrowFields(text:string,spans:readonly Span[],enabled:(type:EntityType)=>boolean):Span[] {
+  const values=spans.filter(s=>(s.evidence==='checksum'||s.evidence==='pattern'||(s.type==='SECRET'&&s.evidence==='context'))&&enabled(s.type));
+  if(!values.length||!spans.some(s=>s.evidence==='context'&&NARROWABLE.has(s.type)))return [...spans];
+  values.sort((a,b)=>a.start-b.start);
+  const labelText=foldLabel(text), out:Span[]=[], work=[...spans];
+  for(let s=work.pop();s;s=work.pop()) {
+    if(s.evidence!=='context'||!NARROWABLE.has(s.type)){out.push(s);continue;}
+    const person=s.type==='PERSON', limit=person?s.end+MAX_NAME_GAP:s.end-1;
+    let end=s.end,tail:Span|undefined;
+    for(let i=firstStartingAfter(values,s.start);i<values.length&&values[i]!.start<=limit;i++) {
+      const v=values[i]!;
+      if(v.type===s.type||(v.start>=s.end&&trimSeparators(text,s.end,v.start)>s.end))continue;
+      const before=Math.min(v.start,s.end), label=labelStart(labelText,s.start,before,v.type);
+      if(label<0&&!person)continue;
+      end=trimSeparators(text,s.start,label<0?before:label);
+      if(v.start<s.end)tail={start:v.start,end:s.end,type:v.type,score:s.score,evidence:'context'};
+      break;
+    }
+    if(end>s.start)out.push(end===s.end?s:{...s,end});
+    if(tail)work.push(tail);
+  }
+  return out;
+}
+/** Every TR/EN rule over `text`. Spans are buffered so labelled fields can be narrowed; a detector that
+ * aborts (PrivacyError) still hands over everything found before it. `enabled` names the types the caller
+ * reports: a value of a type it drops does not end a field, so the field keeps covering it.
+ */
+export function detectRules(text:string,emit:Emit,enabled:(type:EntityType)=>boolean=()=>true):void {
+  const spans:Span[]=[];
+  try{collectRules(text,(start,end,type,score,evidence)=>{spans.push({start,end,type,score,evidence});});}
+  finally{for(const s of narrowFields(text,spans,enabled))emit(s.start,s.end,s.type,s.score,s.evidence);}
+}
+function collectRules(text:string,emit:Emit):void {
   detectFields(text,emit);
   // Unicode local parts and IDNs. This is a privacy recognizer, not an RFC mailbox validator.
   run(text,/(?<![\p{L}\p{N}_.%+'-])[\p{L}\p{N}\p{M}_.%+'-]{1,64}@[\p{L}\p{N}](?:[\p{L}\p{N}.-]{0,251}[\p{L}\p{N}])?\.[\p{L}]{2,24}(?![\p{L}\p{N}-])/gu,'EMAIL',emit,.99);

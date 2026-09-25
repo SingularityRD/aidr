@@ -534,6 +534,51 @@ describe("background: NATIVE_SCAN and SET_RESTORE_VISIBLE", () => {
 		});
 	});
 
+	it("proxies NATIVE_IMAGE_SCAN to the bridge's OCR and zeroes the decoded image", async () => {
+		const seen: Uint8Array[] = [];
+		const scanImage = vi.fn(async (bytes: Uint8Array) => {
+			seen.push(bytes);
+			return {
+				result: "sensitive" as const,
+				counts: { EMAIL: 1 },
+				reasons: ["IMAGE_SENSITIVE_TEXT"],
+			};
+		});
+		const t = await setup({
+			managed: { useNativeHost: true },
+			bridge: { status: () => "connected", scanText: async () => null, scanImage },
+		});
+		const data = Buffer.from([1, 2, 3, 4]).toString("base64");
+		expect(await t.send({ type: "NATIVE_IMAGE_SCAN", data }, t.content())).toEqual({
+			ok: true,
+			inspection: { result: "sensitive", counts: { EMAIL: 1 }, reasons: ["IMAGE_SENSITIVE_TEXT"] },
+			status: "connected",
+		});
+		expect([...(seen[0] ?? [])]).toEqual([0, 0, 0, 0]);
+		scanImage.mockRejectedValueOnce(new Error("host crashed"));
+		expect(await t.send({ type: "NATIVE_IMAGE_SCAN", data }, t.content())).toEqual({
+			ok: true,
+			inspection: null,
+			status: "connected",
+		});
+		for (const bad of [42, "not base64!", "QQ"]) {
+			expect(await t.send({ type: "NATIVE_IMAGE_SCAN", data: bad }, t.content())).toEqual({
+				ok: false,
+				error: "BAD_MESSAGE",
+			});
+		}
+	});
+
+	it("answers NATIVE_IMAGE_SCAN with no inspection when the native host is off", async () => {
+		const t = await setup();
+		const data = Buffer.from([1, 2, 3]).toString("base64");
+		expect(await t.send({ type: "NATIVE_IMAGE_SCAN", data }, t.content())).toEqual({
+			ok: true,
+			inspection: null,
+			status: "disabled",
+		});
+	});
+
 	it("honours a user opt-in and recreates the bridge when nativeMessaging is granted", async () => {
 		const fake = createChromeFake();
 		fake.local.data.set(STORAGE_KEYS.userSettings, { useNativeHost: true });

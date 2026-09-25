@@ -17,6 +17,8 @@
  * Acceptable-use acknowledgements (AUP_STATUS / AUP_ACKNOWLEDGE) are kept per browser
  * profile in storage.local and reported once per notice version, counts only.
  */
+
+import { fromBase64 } from "../../../privacy/src/browser/transport.js";
 import type {
 	GuardError,
 	GuardPolicy,
@@ -31,7 +33,7 @@ import type {
 } from "../types.js";
 import { CustomSiteScripts, customSiteForUrl, originGranted } from "./custom-sites.js";
 import { applyBlockedSites, redirectBlockedTab, siteForUrl, updatedTabUrl } from "./dnr.js";
-import { createNativeBridge } from "./native.js";
+import { createNativeBridge, NATIVE_MAX_IMAGE_BYTES } from "./native.js";
 import {
 	DEFAULT_POLICY,
 	evaluatePolicy,
@@ -375,6 +377,30 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 		return { ok: true, findings, status: used.status() };
 	}
 
+	/** OCR of one uploaded image through the native host (counts-only verdict, see native.ts). */
+	async function nativeImageScan(data: unknown): Promise<GuardResponse> {
+		let bytes: Uint8Array;
+		try {
+			bytes = fromBase64(data, NATIVE_MAX_IMAGE_BYTES);
+		} catch {
+			return fail("BAD_MESSAGE");
+		}
+		try {
+			if (!current.useNativeHost || !bridge?.scanImage)
+				return { ok: true, inspection: null, status: "disabled" };
+			const used = bridge;
+			let inspection: GuardResponses["NATIVE_IMAGE_SCAN"]["inspection"] = null;
+			try {
+				inspection = (await used.scanImage?.(bytes)) ?? null;
+			} catch {
+				inspection = null;
+			}
+			return { ok: true, inspection, status: used.status() };
+		} finally {
+			bytes.fill(0);
+		}
+	}
+
 	async function vaultSave(message: Record<string, unknown>, who: Sender): Promise<GuardResponse> {
 		if (who.kind !== "content" || !who.topFrame) return fail("NOT_ALLOWED");
 		const result = await vaults.save(who.tabId, who.origin, message.snapshot, message.sent);
@@ -516,6 +542,8 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 				return extensionOnly() ? fail("NOT_ALLOWED") : pause(message.minutes);
 			case "NATIVE_SCAN":
 				return nativeScan(message.text);
+			case "NATIVE_IMAGE_SCAN":
+				return nativeImageScan(message.data);
 			case "SET_RESTORE_VISIBLE":
 				return setRestoreVisible(message.visible, who);
 			case "VAULT_SAVE":

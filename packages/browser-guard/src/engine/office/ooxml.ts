@@ -37,6 +37,15 @@
  */
 import type { EntityType, Finding, SignalCode } from "../../types.js";
 import { type Counts, countFindings, mergeCounts } from "../counts.js";
+import {
+	blankThumbnail,
+	emptyImageSummary,
+	type ImageSummary,
+	inspectImages,
+	isImageEntry,
+	isThumbnail,
+	OCR_BUDGET_MS,
+} from "./images.js";
 import type { DocScanner } from "./scanner.js";
 import {
 	applyReplacements,
@@ -94,6 +103,8 @@ export interface DocumentOutcome {
 	readonly findings: number;
 	readonly findingCounts: Counts;
 	readonly signals: ReadonlySet<SignalCode>;
+	/** Pictures in the package (see ./images.ts). */
+	readonly images: ImageSummary;
 }
 
 export const OOXML_EXTENSIONS: ReadonlySet<string> = new Set([
@@ -288,9 +299,9 @@ const SPECS: Readonly<Record<Exclude<PartKind, "sst" | "sheet">, TextSpec>> = {
 // Part text decoding
 // ---------------------------------------------------------------------------------------------
 
-type PartEncoding = "utf-8" | "utf-8-bom" | "utf-16le" | "utf-16be";
+export type PartEncoding = "utf-8" | "utf-8-bom" | "utf-16le" | "utf-16be";
 
-function decodePart(bytes: Uint8Array): { xml: string; encoding: PartEncoding } {
+export function decodePart(bytes: Uint8Array): { xml: string; encoding: PartEncoding } {
 	try {
 		if (bytes[0] === 0xff && bytes[1] === 0xfe)
 			return {
@@ -312,7 +323,7 @@ function decodePart(bytes: Uint8Array): { xml: string; encoding: PartEncoding } 
 	}
 }
 
-function encodePart(xml: string, encoding: PartEncoding): Uint8Array {
+export function encodePart(xml: string, encoding: PartEncoding): Uint8Array {
 	if (encoding === "utf-8") return new TextEncoder().encode(xml);
 	if (encoding === "utf-8-bom") return new TextEncoder().encode(`﻿${xml}`);
 	const out = new Uint8Array(2 + xml.length * 2);
@@ -650,10 +661,45 @@ interface PartModel {
 	readonly segments: readonly TextSegment[];
 }
 
-interface Totals {
+export interface Totals {
 	findings: number;
 	readonly findingCounts: Counts;
 	readonly signals: Set<SignalCode>;
+	readonly images: ImageSummary;
+	/** End of the OCR time budget for the whole document. */
+	readonly ocrDeadline: number;
+}
+
+export function newTotals(): Totals {
+	return {
+		findings: 0,
+		findingCounts: {},
+		signals: new Set(),
+		images: emptyImageSummary(),
+		ocrDeadline: Date.now() + OCR_BUDGET_MS,
+	};
+}
+
+/**
+ * Pictures of a package that is about to be rewritten (`replacements` non-empty) or kept: a
+ * thumbnail of a rewritten package is blanked; every other picture is OCR'd or counted as not
+ * inspected. `skip` excludes entries handled elsewhere (embedded packages).
+ */
+export async function handleImages(
+	archive: ZipArchive,
+	replacements: Map<string, Uint8Array>,
+	scanner: DocScanner,
+	totals: Totals,
+	skip: (name: string) => boolean = () => false,
+): Promise<void> {
+	const pending: ZipEntry[] = [];
+	for (const entry of archive.entries) {
+		if (skip(entry.name) || !isImageEntry(entry.name) || replacements.has(entry.name)) continue;
+		const blank = replacements.size && isThumbnail(entry.name) ? blankThumbnail(entry.name) : null;
+		if (blank) replacements.set(entry.name, blank);
+		else pending.push(entry);
+	}
+	await inspectImages(archive, pending, scanner, totals.images, totals.ocrDeadline);
 }
 
 function editsFor(segment: TextSegment, findings: readonly Finding[], scanner: DocScanner): Edit[] {
@@ -741,6 +787,7 @@ async function sanitizeArchive(
 		archive.readBytes += nested.readBytes;
 		if (masked) replacements.set(entry.name, masked);
 	}
+	await handleImages(archive, replacements, scanner, totals, (name) => EMBEDDING.test(name));
 	if (!replacements.size) return null;
 	const out = await rewriteZip(archive, replacements);
 	readZip(out, archive.limits); // structural self-check of what is handed to the page
@@ -793,7 +840,7 @@ export async function sanitizeOoxml(
 	scanner: DocScanner,
 	limits: ZipLimits = DEFAULT_ZIP_LIMITS,
 ): Promise<DocumentOutcome> {
-	const totals: Totals = { findings: 0, findingCounts: {}, signals: new Set() };
+	const totals = newTotals();
 	try {
 		const archive = await openArchive(bytes, limits);
 		const out = await sanitizeArchive(archive, scanner, 0, totals);

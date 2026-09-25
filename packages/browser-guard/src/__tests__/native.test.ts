@@ -4,6 +4,8 @@ import type { DocumentScanner } from "../../../privacy/src/browser/documents.js"
 import { PrivacyEngine } from "../../../privacy/src/engine.js";
 import { NativeSession } from "../../../privacy/src/native/session.js";
 import type { EngineOptions, NerProvider } from "../../../privacy/src/types.js";
+import { VisualPrivacyEngine } from "../../../privacy/src/visual/engine.js";
+import type { ImageBackend, ImageScan } from "../../../privacy/src/visual/types.js";
 import {
 	createNativeBridge,
 	NATIVE_HOST_NAME,
@@ -55,6 +57,52 @@ interface HostOptions {
 	tamper?: (response: Msg, request: Msg) => Msg | null;
 	/** Ops the host never answers (timeout tests). */
 	hang?: readonly string[];
+	/** OCR lines the host's (fake) OCR backend reads from any image; absent: host without OCR. */
+	ocrLines?: readonly string[];
+}
+
+/** The host's real VisualPrivacyEngine over a fake OCR backend that reads `lines`. */
+function fakeVisual(lines: readonly string[]): VisualPrivacyEngine {
+	const backend: ImageBackend = {
+		async inspect(data: Uint8Array): Promise<ImageScan> {
+			const { createHash } = await import("node:crypto");
+			const words = lines.flatMap((line, row) => {
+				let x = 10;
+				return line.split(" ").map((text) => {
+					const word = {
+						text,
+						confidence: 95,
+						line: row,
+						x,
+						y: 10 + row * 32,
+						width: text.length * 7 + 7,
+						height: 18,
+					};
+					x += word.width + 7;
+					return word;
+				});
+			});
+			return {
+				protocol: 1,
+				complete: true,
+				inputSha256: createHash("sha256").update(data).digest("hex"),
+				pixelSha256: "a".repeat(64),
+				width: 640,
+				height: 300,
+				format: "PNG",
+				languages: ["eng", "tur"],
+				pages: [{ words }],
+				barcodes: [],
+			};
+		},
+		async render() {
+			throw new Error("inspection never renders");
+		},
+	};
+	return new VisualPrivacyEngine({
+		backend,
+		textEngine: new PrivacyEngine({ profile: "balanced", maxInputBytes: 262_144 }),
+	});
 }
 
 interface FakeChrome extends NativeChromeApi {
@@ -81,6 +129,7 @@ function fakeChrome(options: HostOptions & { granted?: boolean; installed?: bool
 					...(options.engine ?? {}),
 					ner: dictionaryNer(options.nerFails),
 				}),
+			...(options.ocrLines ? { visual: fakeVisual(options.ocrLines) } : {}),
 			policyId: "aidr-default-v1",
 			policyDigest: POLICY_DIGEST,
 		});
@@ -503,6 +552,88 @@ describe("createNativeBridge: malformed host responses are rejected", () => {
 		};
 		const bridge = createNativeBridge(true, { chrome: fakeChrome({ scanner }) });
 		expect(await bridge.scanText(text)).toBeNull();
+	});
+});
+
+describe("createNativeBridge: image OCR (image-scan)", () => {
+	const IMAGE = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4, 5, 6, 7, 8]);
+
+	it("reports sensitive text in an image as counts, without reading anything back", async () => {
+		const chrome = fakeChrome({ ocrLines: ["Ad Soyad: Ayşe Yılmaz", "TCKN 10000000146"] });
+		const bridge = createNativeBridge(true, { chrome });
+		const inspection = await withFrozenClock(
+			() => bridge.scanImage?.(IMAGE) ?? Promise.resolve(null),
+		);
+		expect(inspection).toEqual({
+			result: "sensitive",
+			counts: { PERSON: 1, TC_KIMLIK: 1 },
+			reasons: ["IMAGE_SENSITIVE_TEXT"],
+		});
+		const ops = chrome.sent.map((m) => m.op);
+		expect(ops).toEqual(["hello", "begin", "write", "commit"]);
+		expect(chrome.sent.find((m) => m.op === "begin")?.kind).toBe("image-scan");
+		expect(bridge.status()).toBe("connected");
+	});
+
+	it("reports a benign image as clean", async () => {
+		const bridge = createNativeBridge(true, {
+			chrome: fakeChrome({ ocrLines: ["Release ready"] }),
+		});
+		const inspection = await withFrozenClock(
+			() => bridge.scanImage?.(IMAGE) ?? Promise.resolve(null),
+		);
+		expect(inspection).toEqual({ result: "clean", counts: {}, reasons: [] });
+	});
+
+	it("reports an image without readable text as incomplete, never clean", async () => {
+		const bridge = createNativeBridge(true, { chrome: fakeChrome({ ocrLines: [] }) });
+		const inspection = await withFrozenClock(
+			() => bridge.scanImage?.(IMAGE) ?? Promise.resolve(null),
+		);
+		expect(inspection?.result).toBe("incomplete");
+		expect(inspection?.reasons).toEqual(["IMAGE_NO_TEXT"]);
+	});
+
+	it("returns null without uploading when the host has no OCR", async () => {
+		const chrome = fakeChrome();
+		const bridge = createNativeBridge(true, { chrome });
+		expect(
+			await withFrozenClock(() => bridge.scanImage?.(IMAGE) ?? Promise.resolve(null)),
+		).toBeNull();
+		expect(chrome.sent.map((m) => m.op)).toEqual(["hello"]);
+		expect(bridge.status()).toBe("connected");
+	});
+
+	it("returns null for oversized or empty images and when disabled", async () => {
+		const chrome = fakeChrome({ ocrLines: ["x"] });
+		const bridge = createNativeBridge(true, { chrome });
+		expect(await bridge.scanImage?.(new Uint8Array(0))).toBeNull();
+		expect(await bridge.scanImage?.(new Uint8Array(8_388_609))).toBeNull();
+		expect(await createNativeBridge(false, { chrome }).scanImage?.(IMAGE)).toBeNull();
+		expect(chrome.sent).toEqual([]);
+	});
+
+	it.each([
+		["a clean verdict with counts", (r: Msg) => ({ ...r, decision: "allow" })],
+		["output bytes", (r: Msg) => ({ ...r, outputBytes: 10 })],
+		["a foreign policy digest", (r: Msg) => ({ ...r, policyDigest: "e".repeat(64) })],
+		["an unknown decision", (r: Msg) => ({ ...r, decision: "redact" })],
+		["an unknown key", (r: Msg) => ({ ...r, text: "Ayşe Yılmaz" })],
+	])("rejects a commit with %s", async (_name, change) => {
+		const chrome = fakeChrome({
+			ocrLines: ["TCKN 10000000146"],
+			tamper: (response, request) => (request.op === "commit" ? change(response) : response),
+		});
+		const bridge = createNativeBridge(true, { chrome });
+		expect(
+			await withFrozenClock(() => bridge.scanImage?.(IMAGE) ?? Promise.resolve(null)),
+		).toBeNull();
+	});
+
+	it("gives up after its own deadline", async () => {
+		const chrome = fakeChrome({ ocrLines: ["x"], hang: ["commit"] });
+		const bridge = createNativeBridge(true, { chrome, imageTimeoutMs: 30 });
+		expect(await bridge.scanImage?.(IMAGE)).toBeNull();
 	});
 });
 
