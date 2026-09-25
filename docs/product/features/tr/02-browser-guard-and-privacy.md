@@ -497,7 +497,8 @@ söyler. Gerçek tarayıcıdaki `paste-*` senaryoları bu davranışı kapsar.
 
 **Ne yapar** — Kullanıcının desteklenen bir yapay zekâ sitesinde seçtiği, sürükleyip
 bıraktığı ya da yapıştırdığı dosyaları site almadan önce okur. Hassas veri içeren metin
-dosyalarının yerine temizlenmiş bir kopya (aynı ad, aynı tür) konur. Denetlenemeyen
+dosyalarının ve Word/Excel/PowerPoint belgelerinin yerine temizlenmiş bir kopya (aynı ad,
+aynı tür) konur. PDF'ler taranır ve hassas veri içeriyorsa engellenir. Denetlenemeyen
 dosyalar politikaya göre uyarıyla geçer ya da engellenir.
 
 **Neden önemli** — Tek bir CSV dışa aktarımı binlerce müşteri kaydı içerebilir. `.env`
@@ -509,12 +510,15 @@ yazmaktan çok daha büyük bir sızıntı kanalıdır.
 1. `fileHandling: "allow"` → dosya okunmadan geçer. `fileHandling: "block"` → her modda
    engellenir (`FILE_BLOCKED_BY_POLICY`).
 2. `maxFileBytes` sınırından büyükse (varsayılan 5 MiB, en fazla 50 MiB) → engellenir
-   (`FILE_TOO_LARGE`).
+   (`FILE_TOO_LARGE`). **Office belgeleri ve PDF'ler** ardından belge işleyicilerine gider
+   (aşağıdaki "Office belgeleri ve PDF'ler" bölümüne bakın). Uzantılarından tanınırlar;
+   uzantısı bilinmeyen ya da hiç olmayan bir dosya MIME türünden veya içeriğinden tanınır,
+   yani belgenin adını değiştirmek denetimi atlatmaz.
 3. **Metin mi, ikili mi?** Dosya; katı UTF-8 (BOM olabilir) ya da bayt sırası işaretli
    UTF-16 olarak çözülüyorsa, NUL baytı içermiyorsa ve bilinen bir metin/kaynak kodu
    uzantısına ya da ikili MIME türü taşımayan bilinmeyen bir uzantıya sahipse metin sayılır.
-   Bilinen ikili uzantılar (PDF, Office, görseller, arşivler, medya, veritabanları,
-   çalıştırılabilir dosyalar…) her zaman ikilidir.
+   Bilinen ikili uzantılar (görseller, arşivler, eski `.doc`/`.xls`/`.ppt`, OpenDocument,
+   medya, veritabanları, çalıştırılabilir dosyalar…) her zaman ikilidir.
 4. **İkili dosyalar** tarayıcıda incelenemez. `block` modunda engellenir
    (`BINARY_FILE_UNSCANNABLE`), diğer modlarda uyarı bildirimiyle geçer.
 5. **Metin biçimleri**
@@ -539,6 +543,55 @@ yazmaktan çok daha büyük bir sızıntı kanalıdır.
    tamamlanamazsa dosya engellenir (`SCAN_INCOMPLETE`). Beklenmeyen her iç hata da engelleme
    ile sonuçlanır (`FILE_SCAN_ERROR`).
 
+**Office belgeleri ve PDF'ler** (`src/engine/office/`, `src/engine/pdf/`, yönetilen anahtar
+`documentHandling`, varsayılan `mask`). Tümü içerik betiğinde çalışır: tarayıcının
+`DecompressionStream`/`CompressionStream` API'si üzerinde küçük bir ZIP okuyucu/yazıcı, katı
+bir XML tarayıcı ve bir PDF metin çıkarıcı. Uzaktan kod, WebAssembly ya da yeni bağımlılık
+yoktur.
+
+- **DOCX, XLSX, PPTX** (ayrıca `docm`/`xlsm`/`pptm`, şablonlar ve gösteriler): metin
+  yerinde maskelenir ve paket yeniden sıkıştırılır. Word paragrafları bütün olarak taranır;
+  Word'ün farklı biçimlendirilmiş parçalara (run) böldüğü bir e-posta adresi ya da TCKN yine
+  bulunur. Yer tutucu ilk parçaya yazılır, değerin geri kalanı diğer parçalardan silinir.
+  Yalnızca değeri taşıyan parçalar değişir ve biçimlendirmeleri korunur. Kapsam: gövde,
+  üst ve alt bilgiler, dipnot ve son notlar, açıklamalar ve yazarları, izlenen
+  değişiklikler, alan kodları, metin kutuları ve tablolar. Excel'de: paylaşılan metinler
+  (zengin metin dâhil), satır içi metinler, formül metin sonuçları ve sayı/tarih hücreleri.
+  Maskelenen bir sayı metin hücresine dönüşür; formül hücresi formülünü korur ve metin
+  sonucu alır. Açıklamalar, pivot önbelleği metinleri ve üst/alt bilgi metni de kapsanır;
+  başlığı hassas bir alanı adlandıran sütun, CSV'de olduğu gibi bütünüyle maskelenir.
+  PowerPoint'te: slaytlar, konuşmacı notları, düzenler, asıl slaytlar ve açıklamalar. Tüm
+  biçimlerde: grafikler, diyagramlar (SmartArt), çizimler, alternatif metin, belge
+  özellikleri ve `mailto:` ile diğer dış bağlantı hedefleri. Stiller, görseller, yazı
+  tipleri ve diğer tüm parçalar bayt bayt aynen kopyalanır.
+  Sonuç: `mask` ve `SENSITIVE_DATA`; hiçbir şey bulunmadıysa `allow`.
+- **Reddedilenler** (engellenir; `monitor` yalnızca kaydeder): makro ya da ActiveX
+  (`DOCUMENT_MACROS`), parola koruması (`DOCUMENT_ENCRYPTED`), dış çalışma kitabı
+  bağlantıları, veri bağlantıları, uzak şablonlar, bağlı nesneler ya da adres mektup
+  kaynakları (`DOCUMENT_EXTERNAL_LINKS`; sıradan köprülere izin verilir, hedefleri taranır),
+  DOCX/XLSX/PPTX olmayan gömülü nesneler (`DOCUMENT_EMBEDDED_OBJECT`; grafik verisi gibi
+  gömülü çalışma kitapları aynı şekilde temizlenir), bozuk XML ya da DOCTYPE bildirimi
+  (`DOCUMENT_MALFORMED`) ve güvensiz arşivler (`ARCHIVE_*`): ZIP64, 4.096'dan fazla girdi,
+  1 MiB'ı aşan bir girdide 200:1'den yüksek beyan edilmiş sıkıştırma oranı, 48 MiB'ı aşan
+  bir girdi ya da toplamda 64 MiB'tan fazla açılan veri, yol geçişi (path traversal),
+  yinelenen ya da çakışan girdiler veya CRC uyuşmazlığı. Açma işlemi bir girdi beyan edilen
+  boyutu aştığı anda durur; zip bombası hiçbir zaman açılmaz.
+- **PDF**: metin çıkarılır (nesne ve çapraz başvuru akışları; Flate, LZW, ASCIIHex, ASCII85
+  ve RunLength filtreleri; Türkçe harfler dâhil `/Differences` ile WinAnsi, MacRoman ve
+  Standard kodlamaları; Identity-H yazı tipleri için ToUnicode eşlemeleri; Form XObject'ler;
+  açıklamalar, form alanı değerleri ve belge bilgileri) ve taranır. PDF'ler yeniden
+  **yazılmaz**. Bulgu içeren PDF engellenir (`SENSITIVE_DATA_IN_PDF`) ve baloncuk
+  kullanıcıya metni yapıştırmasını önerir; yapıştırılan metin maskelenir. `monitor` modu
+  yalnızca kaydeder. Çıkarılabilir metni olmayan (taranmış), yalnızca görsel içeren sayfaları
+  ya da çözülemeyen bölümleri olan (`PDF_NO_TEXT`, `PDF_PARTIAL`), şifreli (`PDF_ENCRYPTED`)
+  veya ayrıştırılamayan (`PDF_UNPARSEABLE`) PDF'ler ikili dosya kuralına uyar: uyarıyla
+  yüklenir, `block` modunda engellenir. Okunabilen bölümdeki bulgular yine engellemeye yol
+  açar.
+- `documentHandling: "block"` tüm Office/PDF yüklemelerini her modda reddeder
+  (`DOCUMENT_BLOCKED_BY_POLICY`). `documentHandling: "allow"` belge ayrıştırmayı atlar;
+  dosya ikili dosya kuralına (4. adım) uyar. Taraması 30 saniyeden uzun süren bir belge
+  engellenir (`SCAN_INCOMPLETE`).
+
 Temizlenmiş dosya UTF-8 olarak yazılır (orijinalde varsa UTF-8 BOM korunur) ve yeniden
 tetiklenen olayla sitenin kendi yükleme işleyicisine verilir. `monitor` modunda (ve
 duraklatma süresince) dosyalar değiştirilmeden geçer ve yalnızca sayılır. Engelli siteler ve
@@ -550,12 +603,15 @@ duraklatma süresince) dosyalar değiştirilmeden geçer ve yalnızca sayılır.
 | İkili, engellenmedi | `"report.pdf" taranamadı (ikili dosya). Göndermeden önce kontrol edin.` |
 | Engellendi | **Yükleme engellendi**: `"big.csv" yüklenmedi (FILE_TOO_LARGE).` |
 | Yükleme politikayla kapalı | "Kurumunuz yapay zekâ hizmetlerine dosya yüklenmesine izin vermiyor." |
+| Belgeler politikayla kapalı | "Kurumunuz yapay zekâ hizmetlerine Office veya PDF belgesi yüklenmesine izin vermiyor." |
+| Hassas veri içeren PDF | `"sozlesme.pdf" yüklenmedi (SENSITIVE_DATA_IN_PDF, 1 EMAIL). PDF dosyaları maskelenemez. Gereken metni kopyalayıp yapıştırın: AIDR yapıştırılan metni maskeler.` |
 | Dosya denetlenemedi | "AIDR dosyayı kontrol edemedi; dosya yüklenmedi." |
 | Tarayıcı dosyayı değiştiremiyor | "Bu tarayıcı dosyayı temizlenmiş kopyasıyla değiştiremiyor; dosya yüklenmedi." |
 
 **Nasıl kullanılır** — Yönetilen anahtarlar `fileHandling` (`scan` | `block` | `allow`,
-varsayılan `scan`) ve `maxFileBytes` (bayt; 1 ile 52.428.800 arası, varsayılan 5.242.880).
-Dosyalar için kullanıcı ayarı yoktur.
+varsayılan `scan`), `documentHandling` (`mask` | `block` | `allow`, varsayılan `mask`;
+`fileHandling` `scan` olduğunda geçerlidir) ve `maxFileBytes` (bayt; 1 ile 52.428.800 arası,
+varsayılan 5.242.880). Dosyalar için kullanıcı ayarı yoktur.
 
 **Örnek** — `customers.csv` yüklenirken:
 
@@ -576,6 +632,14 @@ name,email,formula
 Gerçek tarayıcı senaryosu `file-upload-csv`, sayfaya tam olarak bir yükleme ulaştığını,
 yüklemede orijinal e-posta bulunmadığını ve başlık satırının korunduğunu doğrular.
 
+Bir paragrafı `Müşteri e-postası: ayse.yilmaz@example.com` olan, `ayse.yilmaz@` kısmı kalın,
+`example.com` kısmı normal biçimli bir Word dosyası siteye aynı `.docx` olarak ulaşır; o
+paragraf artık `Müşteri e-postası: [EMAIL_1]` şeklindedir (yer tutucu kalın parçadadır, diğer
+parça boştur). `file-upload-docx` senaryosu ChatGPT fikstüründe böyle bir dosya yükler ve
+yüklenen baytları yeniden açarak `word/document.xml` içeriğini denetler;
+`file-upload-pdf-blocked` e-posta adresi içeren bir PDF'in sayfaya hiç ulaşmadığını ve
+baloncuğun metni yapıştırmayı önerdiğini doğrular.
+
 **Kapsam**
 
 | | |
@@ -585,9 +649,19 @@ yüklemede orijinal e-posta bulunmadığını ve başlık satırının korunduğ
 | Platformlar | Chrome, Edge, Firefox (masaüstü) |
 
 **Sınırlamalar**
-- PDF'ler, Office belgeleri ve görseller tarayıcıda **incelenmez** (OCR ya da belge
-  ayrıştırma yok). `block` modu dışında uyarıyla geçerler. Bu tür yüklemelerin hiç
-  ulaşmaması gerekiyorsa `fileHandling: "block"` kullanın.
+- Görseller **incelenmez** (tarayıcıda OCR yok): Office belgelerindeki resimler, taranmış
+  PDF'ler ve yalnızca görsel içeren PDF sayfaları. Taranmış PDF'ler temiz değil, taranmamış
+  olarak bildirilir. Bu tür yüklemelerin hiç ulaşmaması gerekiyorsa `fileHandling: "block"`
+  ya da `documentHandling: "block"` kullanın.
+- PDF'ler taranır ama yeniden yazılmaz; bulgu içeren bir PDF maskelenmez, engellenir.
+  Şifreli PDF'lerin şifresi çözülmez; ToUnicode eşlemesi olmayan Type0 yazı tipleri ve
+  önceden tanımlı CJK CMap'leri çözülmez (`PDF_PARTIAL` olarak bildirilir); kelime ve satır
+  araları glif konumlarından yeniden kurulur ve çok sütunlu düzenlerde okuma sırasından
+  farklı olabilir.
+- Office maskelemesi metni kapsar. Sayfa adları, tanımlı adlar, tablo sütun adları ve pivot
+  önbelleğindeki sayısal değerler yeniden yazılmaz (maskelenen bir başlık hücresi Excel'in
+  bir tablonun sütun adını onarmasına yol açabilir). Eski `.doc`/`.xls`/`.ppt` ve
+  OpenDocument dosyaları ayrıştırılmaz, ikili dosya kuralına uyar.
 - UTF-8 olmayan metin dosyaları Windows-1254 (Türkçe) olarak, daha uygun düştüğünde
   Windows-1252 olarak çözülür, taranır ve maskelenmiş kopya UTF-8 olarak yüklenir (CSV/TSV
   için BOM ile). Başka tek baytlık kodlamalardaki dosyalar (örneğin Kiril Windows-1251) bu
@@ -1056,6 +1130,7 @@ Tüm yönetilen anahtarlar (`static/managed_schema.json` ve `src/background/poli
 | `allowSendAnyway` | boolean | `true` | Kullanıcı uyarıdan sonra maskesiz gönderebilir |
 | `maskPaste` | boolean | `true` | Yapıştırılan metni maskele (özellik 6) |
 | `fileHandling` | `scan` \| `block` \| `allow` | `scan` | Yükleme davranışı (özellik 7) |
+| `documentHandling` | `mask` \| `block` \| `allow` | `mask` | `fileHandling` `scan` iken Office/PDF yüklemeleri (özellik 7) |
 | `maxFileBytes` | tamsayı, 1 ile 52.428.800 arası | 5.242.880 (5 MiB) | Taranan en büyük dosya; daha büyükler engellenir |
 | `restoreResponses` | boolean | `true` | Orijinalleri yanıtlarda yerel olarak geri yükle |
 | `useNativeHost` | boolean | `false` | NER için AIDR Privacy native host'unu kullan (özellik 16). Yönetilmiyorsa kullanıcı ayarlar sayfasından da açabilir |
@@ -1462,7 +1537,8 @@ paketlerle Python 3 ve libseccomp gerekir. Ayrıntılar:
 
 **Sınırlamalar** — Taranmış ya da görsel PDF'ler, medya içeren Office dosyaları, eski Office
 biçimleri, parola korumalı dosyalar ve customXML içeriği engellenir. Biçimi koruyan PDF/Office
-maskeleme yoktur; çıktı yalnızca metindir. Browser Guard yüklemelerine bağlı değildir.
+maskeleme yoktur; çıktı yalnızca metindir. Browser Guard yüklemelerine bağlı değildir; Browser
+Guard'ın kendi tarayıcı içi Office maskelemesi ve PDF taraması vardır (özellik 7).
 
 ### 22. Kurumsal ağ geçidi ve platform katmanı
 

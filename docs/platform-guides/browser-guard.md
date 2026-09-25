@@ -42,6 +42,7 @@ Start from the managed values in
 | Company-internal AI portals | `customSites` | one entry per portal with its exact HTTPS hosts and the CSS selectors of its prompt box, send button and answers |
 | Whether users can switch it off | `allowUserPause` | `false` for enforcement, `true` during a pilot |
 | Files | `fileHandling`, `maxFileBytes` | `scan` (text files are sanitised); `block` if no uploads to AI sites are allowed |
+| Office and PDF documents | `documentHandling` | `mask` (default: Word/Excel/PowerPoint text is masked in place; PDFs with sensitive data are blocked); `block` if documents must not be uploaded at all |
 | Reporting | `telemetry`, `policyId` | connect your AIDR control plane to see counts per site and entity type |
 
 ### 3. Deploy
@@ -142,6 +143,14 @@ parallel; when the host is not reachable the check is rules-only and the user se
   such as API keys and private keys stay masked.
 - Pasted text is masked as you paste it, and text files you upload are
   checked and, if needed, uploaded as a cleaned copy.
+- Word, Excel and PowerPoint files you upload are checked the same way: the AI
+  site receives a copy of the same file in which the sensitive values are
+  replaced by placeholders; formatting and everything else stay as they were.
+  Files with macros, a password, or links to other files are not uploaded.
+- PDF files are checked but cannot be cleaned. If a PDF contains sensitive data
+  it is not uploaded; copy the text you need and paste it into the prompt
+  instead (pasted text is masked). Scanned PDFs (pictures of pages) cannot be
+  read and are uploaded with a warning unless your organisation blocks them.
 
 ### Modes
 
@@ -197,3 +206,5 @@ reported, never the addresses of the pages you opened.
   "Protected" status.
 - If you copy or share a conversation from the AI site itself, the copy
   contains the placeholders, not your original values.
+- Pictures inside documents (screenshots, scanned pages, photos of ID cards)
+  are not read. Check them yourself before uploading.
