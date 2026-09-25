@@ -90,6 +90,7 @@ export {
 	toolCallFingerprints,
 	writtenPaths,
 } from "./agent-safety/runaway-guard.js";
+export { toolResultReportsFailure } from "./agent-safety/tool-outcome.js";
 // AI model supply chain: trusted model sources (hubs and publisher organisations)
 export {
 	isTrustedModelSourceMatch,
@@ -259,6 +260,13 @@ export { isCommercialBuild } from "./build-flavor.js";
 export { VerdictCache } from "./cache.js";
 // Canary credentials (honeytokens): deploy decoys, detect any agent touching them
 export * from "./canary/index.js";
+// Canary triggers in prompts and tool output, shared by every connector
+export {
+	CANARY_PROMPT_BLOCK_MESSAGE,
+	type CanaryCheckStatus,
+	checkPromptForCanaries,
+	recordToolOutputCanaries,
+} from "./canary-triggers.js";
 // Causal agent chain (message -> retrieval -> tool -> authorization -> action ->
 // side effect -> intervention), ordered by position and logical clock, with a
 // missing link reported as `chain_gap` and tamper-evident binding through the
@@ -1396,6 +1404,13 @@ export {
 	type ToolOutputFlowResult,
 	type ToxicFlowChain,
 } from "./toxic-flow.js";
+// Toxic-flow capability patterns (threats/flow/capabilities.yaml)
+export {
+	FLOW_CAPABILITIES_RELATIVE_PATH,
+	type FlowCapabilityPatterns,
+	loadFlowCapabilities,
+	parseFlowCapabilitiesYaml,
+} from "./toxic-flow-capabilities.js";
 export type {
 	DetectionPhaseAttributes,
 	SecurityDecisionAttributes,

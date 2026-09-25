@@ -6,11 +6,11 @@
  */
 
 import {
-	inspectValueForCanaryTokens,
 	type Logger,
-	recordCanaryTrigger,
 	recordToolOutcome,
+	recordToolOutputCanaries,
 	recordToolOutputFlow,
+	toolResultReportsFailure,
 	verifyArtifactIntegrityAndLog,
 } from "@singularityrd/aidr-core";
 import pino from "pino";
@@ -23,7 +23,6 @@ import {
 	type ToolResponseScan,
 	toolResponseInspectionResult,
 } from "./output-inspection.js";
-import { toolResponseFailed } from "./tool-outcome.js";
 import {
 	appendPostToolContext,
 	quarantineFailedToolInspection,
@@ -31,36 +30,6 @@ import {
 } from "./tool-output-quarantine.js";
 
 const logger: Logger = pino({ level: "warn" }, pino.destination(2));
-
-/**
- * The output scanner already blocks canary content; this adds the audit entry
- * and, in managed mode, the incident. Failures never change the response.
- */
-async function recordOutputCanaries(
-	sessionId: string,
-	toolName: string,
-	toolResponse: unknown,
-): Promise<void> {
-	try {
-		const inspection = inspectValueForCanaryTokens(toolResponse);
-		if (inspection.status === "triggered") {
-			await recordCanaryTrigger({
-				sessionId,
-				toolName,
-				hits: inspection.hits,
-				stage: "tool_output",
-				logger,
-				agentRuntime: "claude-code",
-			});
-		} else if (inspection.status === "unavailable") {
-			logger.warn("Canary check of tool output unavailable; signal skipped", {
-				reason: inspection.reason,
-			});
-		}
-	} catch {
-		// Recording is best effort; the scanner's block stands.
-	}
-}
 
 function reportUnavailableCoverage(reason: string): void {
 	process.stdout.write(`${JSON.stringify(postToolInspectionUnavailable(reason))}\n`);
@@ -127,11 +96,15 @@ async function main(): Promise<void> {
 	} catch {
 		inspection = quarantineFailedToolInspection(hookInput.tool_response);
 	}
-	await recordOutputCanaries(
+	// The output scanner already blocks canary content; this adds the audit entry
+	// and, in managed mode, the incident. Never changes the response.
+	await recordToolOutputCanaries({
 		sessionId,
-		typeof hookInput.tool_name === "string" ? hookInput.tool_name : "unknown",
-		hookInput.tool_response,
-	);
+		toolName: typeof hookInput.tool_name === "string" ? hookInput.tool_name : "unknown",
+		toolOutput: hookInput.tool_response,
+		agentRuntime: "claude-code",
+		logger,
+	});
 	if (scan && scan.findings.length > 0) {
 		// The output is already in Claude's context: record what it carried
 		// (secrets, injection payloads) so the session's next calls are judged
@@ -150,7 +123,7 @@ async function main(): Promise<void> {
 			{ agentRuntime: "claude-code", logger },
 		);
 	}
-	if (toolResponseFailed(hookInput.tool_response)) {
+	if (toolResultReportsFailure(hookInput.tool_response)) {
 		// Runaway guard: the same call failing again and again with no file change
 		// in between is a stuck loop; its next retry is paused for review.
 		// Never changes this hook's response and never throws.

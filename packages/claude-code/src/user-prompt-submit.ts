@@ -39,8 +39,9 @@
  */
 
 import {
+	CANARY_PROMPT_BLOCK_MESSAGE,
+	checkPromptForCanaries,
 	DEFAULT_PROMPT_PROTECTION,
-	findCanaryTokens,
 	initSentry,
 	type Logger,
 	loadConfig,
@@ -49,7 +50,6 @@ import {
 	type PromptProtectionResult,
 	PromptScanDeadlineError,
 	type PromptTenantDlp,
-	recordCanaryTrigger,
 	scanPrompt,
 	type TenantPromptSafetyPolicy,
 	type Verdict,
@@ -191,34 +191,6 @@ function readPrompt(): { sessionId: string; prompt: string } | null {
 	};
 }
 
-const CANARY_PROMPT_BLOCK =
-	"🛡️ Singularity AIDR blocked this prompt before it reached the model: it contains a canary credential planted by Singularity AIDR. Decoy credentials are never needed for real work; if this text came from a file, page or tool output, treat that source as untrusted.";
-
-/**
- * Block a prompt carrying a canary token value. A canary check that cannot run
- * is skipped (detection internal) and the regular scan still decides.
- */
-async function blockedForCanary(sessionId: string, prompt: string): Promise<boolean> {
-	let hits: ReturnType<typeof findCanaryTokens>;
-	try {
-		hits = findCanaryTokens(prompt);
-	} catch {
-		logger.warn("Canary check of the prompt unavailable; signal skipped");
-		return false;
-	}
-	if (hits.length === 0) return false;
-	await recordCanaryTrigger({
-		sessionId,
-		toolName: HOOK_EVENT,
-		hits,
-		stage: "user_prompt",
-		logger,
-		agentRuntime: "claude-code",
-	});
-	write({ decision: "block", reason: CANARY_PROMPT_BLOCK });
-	return true;
-}
-
 /** Tenant DLP and the tenant prompt-safety floor from the signed detector policy. */
 async function tenantPolicy(): Promise<{
 	dlp?: PromptTenantDlp;
@@ -251,7 +223,20 @@ async function main(): Promise<void> {
 			writeInspectionFailure();
 			return;
 		}
-		if (await blockedForCanary(input.sessionId, input.prompt)) return;
+		// Canary values first (shared with every connector's prompt path): a hit is
+		// recorded as a canary incident and the prompt is blocked.
+		const canary = await checkPromptForCanaries({
+			sessionId: input.sessionId,
+			hookEvent: HOOK_EVENT,
+			prompt: input.prompt,
+			agentRuntime: "claude-code",
+			config,
+			logger,
+		});
+		if (canary === "triggered") {
+			write({ decision: "block", reason: CANARY_PROMPT_BLOCK_MESSAGE });
+			return;
+		}
 
 		let tenant: PromptTenantDlp | undefined;
 		let tenantPromptSafety: TenantPromptSafetyPolicy | undefined;

@@ -55,13 +55,17 @@ import { atomicWriteJson, getFileContent } from "./file-utils.js";
 import {
 	capabilityLabel,
 	classifyToolCallFlow,
-	DEFAULT_TOXIC_FLOW_TRUSTED_DOMAINS,
 	type FlowCapability,
 	type FlowClassification,
 	type FlowKind,
 	type FlowObservation,
 	pathWithinDownload,
 } from "./toxic-flow-classify.js";
+import {
+	DEFAULT_FLOW_CAPABILITIES,
+	type FlowCapabilityPatterns,
+	loadFlowCapabilities,
+} from "./toxic-flow-capabilities.js";
 import type { Artifact, Config, Logger, Verdict } from "./types.js";
 import { nullLogger } from "./types.js";
 
@@ -117,10 +121,18 @@ export interface ToxicFlowSettings {
 	trustedDomains: string[];
 	trustedMcpServers: string[];
 	trustedGitRemotes: string[];
+	/** Capability patterns (`threats/flow/capabilities.yaml`). */
+	patterns: FlowCapabilityPatterns;
 }
 
-/** Read `toxic_flow` defensively: a partial or mocked config means the defaults. */
-export function resolveToxicFlowSettings(config: Partial<Config> | undefined): ToxicFlowSettings {
+/**
+ * Read `toxic_flow` defensively: a partial or mocked config means the defaults.
+ * `patterns` is the capability data in force (the shipped copy by default).
+ */
+export function resolveToxicFlowSettings(
+	config: Partial<Config> | undefined,
+	patterns: FlowCapabilityPatterns = DEFAULT_FLOW_CAPABILITIES,
+): ToxicFlowSettings {
 	const raw = (config?.toxic_flow ?? {}) as Partial<NonNullable<Config["toxic_flow"]>>;
 	const window = Number(raw.window_minutes ?? 60);
 	const threshold = Number(raw.bulk_sensitive_threshold ?? 5);
@@ -130,9 +142,10 @@ export function resolveToxicFlowSettings(config: Partial<Config> | undefined): T
 		action: raw.action ?? "auto",
 		windowMs: (Number.isFinite(window) && window > 0 ? Math.min(window, 1440) : 60) * 60_000,
 		bulkThreshold: Number.isFinite(threshold) && threshold >= 2 ? Math.min(threshold, 64) : 5,
-		trustedDomains: [...DEFAULT_TOXIC_FLOW_TRUSTED_DOMAINS, ...(raw.trusted_domains ?? [])],
+		trustedDomains: [...patterns.trustedDomains, ...(raw.trusted_domains ?? [])],
 		trustedMcpServers: [...(raw.trusted_mcp_servers ?? []), ...mcpAllow],
 		trustedGitRemotes: raw.trusted_git_remotes ?? ["origin"],
+		patterns,
 	};
 }
 
@@ -878,6 +891,11 @@ export interface ToxicFlowOptions {
 	allowlisted?: boolean;
 	/** Override the state directory (tests, embedders with their own state root). */
 	stateDir?: string;
+	/**
+	 * Threats directory whose `flow/capabilities.yaml` supplies the capability
+	 * patterns; the embedded shipped copy is used when absent.
+	 */
+	threatsDir?: string;
 	now?: () => number;
 }
 
@@ -971,10 +989,13 @@ export async function applyToxicFlow(
 	config: Partial<Config>,
 	options: ToxicFlowOptions = {},
 ): Promise<Verdict> {
-	const settings = resolveToxicFlowSettings(config);
-	if (!settings.enabled || verdict.decision === "deny") return verdict;
+	if (!resolveToxicFlowSettings(config).enabled || verdict.decision === "deny") return verdict;
 	const logger = options.logger ?? nullLogger;
 	const now = (options.now ?? Date.now)();
+	const settings = resolveToxicFlowSettings(
+		config,
+		await loadFlowCapabilities(options.threatsDir, logger),
+	);
 
 	let classification: FlowClassification;
 	try {

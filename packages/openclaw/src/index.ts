@@ -33,7 +33,7 @@ import {
 	OpenClawPromptProtection,
 	type PromptHookContext,
 } from "./prompt-protection.js";
-import { feedToolOutcome, feedToolOutputFlow } from "./session-flow-feed.js";
+import { feedToolOutcome, feedToolOutputCanaries, feedToolOutputFlow } from "./session-flow-feed.js";
 import {
 	createBeforePromptBuildHandler,
 	createSessionScanHandler,
@@ -178,6 +178,8 @@ function registerGuarded(api: PluginApi): void {
 				// Session toxic-flow: secrets or injection payloads this output carried
 				// taint the session for its next calls. Never throws.
 				await feedToolOutputFlow(event, context, inspection, logger);
+				// Canary value in the output: audit entry and managed incident. Never throws.
+				await feedToolOutputCanaries(event, context, logger);
 				// Runaway guard: a failed call counts towards the repeated-failure loop.
 				await feedToolOutcome(event, context, logger);
 			},
