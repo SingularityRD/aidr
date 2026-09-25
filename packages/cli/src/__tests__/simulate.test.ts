@@ -1,10 +1,11 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	buildReport,
 	type CaseResult,
+	connectorRepoRoot,
 	formatHtml,
 	formatReport,
 	formatTable,
@@ -324,6 +325,30 @@ describe("simulate connector mode (claude-code)", () => {
 			spawnSpy.mockRestore();
 		}
 	}, 120_000);
+
+	it("spawns only the checkout's own connector build, never one from the working directory", async () => {
+		const spawnSpy = vi.spyOn(simulateRuntime, "spawn");
+		try {
+			await runSimulation({ connector: "claude-code", suite: "destructive" });
+			const repoRoot = connectorRepoRoot(resolve(__dirname, "..", ".."));
+			expect(repoRoot).not.toBeNull();
+			const scripts = spawnSpy.mock.calls.map((call) => (call[1] as string[])[0]);
+			expect(scripts.length).toBeGreaterThan(0);
+			for (const script of scripts) {
+				expect(script).toBe(
+					join(repoRoot as string, "packages", "claude-code", "dist", "pre-tool-use.cjs"),
+				);
+			}
+		} finally {
+			spawnSpy.mockRestore();
+		}
+	}, 120_000);
+
+	it("refuses connector mode outside a source checkout instead of falling back to cwd", () => {
+		expect(connectorRepoRoot("/usr/lib/node_modules/@singularityrd/aidr-cli")).toBeNull();
+		expect(connectorRepoRoot("/work/evil/packages/aidr-cli")).toBeNull();
+		expect(connectorRepoRoot("/src/aidr/packages/cli")).toBe("/src/aidr");
+	});
 
 	it("rejects a connector it cannot drive from stdin", async () => {
 		await expect(runSimulation({ connector: "openclaw", suite: "destructive" })).rejects.toThrow(

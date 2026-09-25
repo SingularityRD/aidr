@@ -164,15 +164,20 @@ export class HeuristicsEngine {
 	 * match itself for non-source rules, or null when all occurrences are trusted.
 	 */
 	private untrustedModelSourceMatch(match: HeuristicMatch): HeuristicMatch | null {
-		if (!isTrustedModelSourceMatch(match.threat.id, match.matchValue, this.trustedModelSources)) {
-			return match;
-		}
+		const trusted = (matchValue: string) =>
+			isTrustedModelSourceMatch(
+				match.threat.id,
+				matchValue,
+				this.trustedModelSources,
+				match.artifact,
+			);
+		if (!trusted(match.matchValue)) return match;
 		const { source, flags } = match.threat.compiledPattern;
 		const pattern = new RegExp(source, `${flags.replace(/[gy]/g, "")}g`);
 		let occurrences = 0;
 		for (let m = pattern.exec(match.artifact); m !== null; m = pattern.exec(match.artifact)) {
 			if (m[0] === "") pattern.lastIndex++;
-			if (!isTrustedModelSourceMatch(match.threat.id, m[0], this.trustedModelSources)) {
+			if (!trusted(m[0])) {
 				return { ...match, matchValue: m[0] };
 			}
 			if (++occurrences >= MAX_SOURCE_OCCURRENCES) return match;

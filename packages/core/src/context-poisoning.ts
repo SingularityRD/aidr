@@ -144,6 +144,97 @@ function excerpt(value: string): string {
 	return visible.length > 160 ? `${visible.slice(0, 160)}…` : visible;
 }
 
+/**
+ * Characters that render as nothing (or as a plain space) and are dropped from
+ * the folded view: soft hyphen, combining grapheme joiner, Hangul fillers,
+ * Mongolian and variation selectors, zero-width and direction marks, word
+ * joiners and the BOM. The raw view keeps them for the hidden-Unicode rules.
+ */
+const INVISIBLE_FILLERS = /[­͏ᅟᅠ឴឵᠋-᠏​-‏⁠-⁤ㅤ︀-️﻿ﾠ]/g;
+
+/** Cyrillic and Greek letters that are drawn like Latin ones, folded to the Latin letter. */
+const LATIN_LOOKALIKES: Readonly<Record<string, string>> = {
+	а: "a",
+	в: "b",
+	е: "e",
+	о: "o",
+	р: "p",
+	с: "c",
+	у: "y",
+	х: "x",
+	і: "i",
+	ј: "j",
+	ѕ: "s",
+	ԁ: "d",
+	һ: "h",
+	ԛ: "q",
+	ԝ: "w",
+	ґ: "r",
+	ӏ: "l",
+	к: "k",
+	м: "m",
+	н: "h",
+	т: "t",
+	А: "A",
+	В: "B",
+	Е: "E",
+	К: "K",
+	М: "M",
+	Н: "H",
+	О: "O",
+	Р: "P",
+	С: "C",
+	Т: "T",
+	Х: "X",
+	У: "Y",
+	І: "I",
+	Ј: "J",
+	Ѕ: "S",
+	Ԁ: "D",
+	Һ: "H",
+	Ԛ: "Q",
+	Ԝ: "W",
+	α: "a",
+	ο: "o",
+	ι: "i",
+	κ: "k",
+	ν: "v",
+	ρ: "p",
+	τ: "t",
+	υ: "u",
+	χ: "x",
+	ε: "e",
+	Α: "A",
+	Β: "B",
+	Ε: "E",
+	Ζ: "Z",
+	Η: "H",
+	Ι: "I",
+	Κ: "K",
+	Μ: "M",
+	Ν: "N",
+	Ο: "O",
+	Ρ: "P",
+	Τ: "T",
+	Υ: "Y",
+	Χ: "X",
+};
+const LOOKALIKE_PATTERN = new RegExp(`[${Object.keys(LATIN_LOOKALIKES).join("")}]`, "g");
+
+/**
+ * The text as a reader sees it: compatibility forms folded (`ｉｇｎｏｒｅ` →
+ * `ignore`), invisible fillers removed and Latin look-alike letters mapped to
+ * Latin. An instruction written with them reads the same to the model, so the
+ * content rules must see the same text. Returns `text` itself when nothing changes.
+ */
+export function readerView(text: string): string {
+	const folded = text
+		.normalize("NFKC")
+		.replace(INVISIBLE_FILLERS, "")
+		.replace(LOOKALIKE_PATTERN, (letter) => LATIN_LOOKALIKES[letter] ?? letter);
+	return folded === text ? text : folded;
+}
+
 /** Rule ids of `surface` that match `text`, as heuristic matches labelled with `label`. */
 export function matchPoisoningRules(
 	rules: readonly Threat[],
@@ -152,9 +243,13 @@ export function matchPoisoningRules(
 	label: string,
 ): HeuristicMatch[] {
 	if (!text) return [];
+	// Content surfaces are also matched as the model reads them; paths are not text.
+	const bounded = text.length > MAX_SCANNED_CHARS ? text.slice(0, MAX_SCANNED_CHARS) : text;
+	const folded = surface === AGENT_CONTROL_PATH ? bounded : readerView(bounded);
 	const matches: HeuristicMatch[] = [];
 	for (const threat of rulesFor(rules, surface)) {
-		const matched = firstMatch(threat, text);
+		const matched =
+			firstMatch(threat, bounded) ?? (folded !== bounded ? firstMatch(threat, folded) : null);
 		if (matched !== null) matches.push({ threat, artifact: label, matchValue: excerpt(matched) });
 	}
 	return matches;

@@ -628,7 +628,7 @@ export function matchCodeBlock(
 
 /** A code finding is a real signal unless it is a model-source rule that matched only trusted sources. */
 export function isReportableFinding(item: CodeFinding, sources: TrustedModelSources): boolean {
-	return !isTrustedModelSourceMatch(item.ruleId, item.matchValue, sources);
+	return !isTrustedModelSourceMatch(item.ruleId, item.matchValue, sources, item.block.text);
 }
 
 // ── Runtime leg ───────────────────────────────────────────────────────

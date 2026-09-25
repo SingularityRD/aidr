@@ -105,12 +105,16 @@
 # `expect`, `unbuffer`, which all carry the inner command) do not hide it.
 # Read-only diagnostics (`aidr doctor`, `aidr status`, `aidr audit tail`,
 # `aidr allowlist list|remove`) are not matched.
+# The MCP gateway's operator toolset approval (`aidr-mcp-approve`, its package
+# runner form and its approve.mjs script) is matched too: it accepts a
+# quarantined (changed, "rug-pulled") MCP toolset, so an agent running it would
+# approve the very tool descriptions the gateway refused.
 - id: "CLT-SELF-007"
   category: self_defense
   severity: critical
   confidence: 0.99
   action: block
-  pattern: "\\baidr(?:-cli|-setup)?(?:@[\\w.^~-]{1,40})?(?:/[\\w.@-]{1,100}){0,8}(?:\\.exe|\\.cmd|\\.ps1|\\.js|\\.mjs|\\.cjs)?[\\s,\\[\\]]{1,20}(?:-{1,2}[\\w-]{1,40}(?:=\\S{0,200})?[\\s,\\[\\]]{1,20}){0,6}(?:approve|approvals|pending|allowlist[\\s,\\[\\]]{1,20}(?:-{1,2}[\\w-]{1,40}[\\s,\\[\\]]{1,20}){0,4}add)\\b|AIDR_OPERATOR_NONINTERACTIVE"
+  pattern: "\\baidr(?:-cli|-setup)?(?:@[\\w.^~-]{1,40})?(?:/[\\w.@-]{1,100}){0,8}(?:\\.exe|\\.cmd|\\.ps1|\\.js|\\.mjs|\\.cjs)?[\\s,\\[\\]]{1,20}(?:-{1,2}[\\w-]{1,40}(?:=\\S{0,200})?[\\s,\\[\\]]{1,20}){0,6}(?:approve|approvals|pending|allowlist[\\s,\\[\\]]{1,20}(?:-{1,2}[\\w-]{1,40}[\\s,\\[\\]]{1,20}){0,4}add)\\b|AIDR_OPERATOR_NONINTERACTIVE|\\baidr-mcp-approve\\b|aidr-mcp-gateway[\\\\/](?:[\\w.-]{1,100}[\\\\/]){0,4}(?:aidr-mcp-)?approve\\.[cm]?js\\b|mcp-gateway[\\\\/](?:src|dist)[\\\\/](?:aidr-mcp-)?approve\\.[cm]?js\\b"
   case_insensitive: true
   match_on: command_normalized
   title: "Attempt to self-approve a Singularity AIDR block or forge an operator approval"

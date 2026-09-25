@@ -409,7 +409,7 @@ executables:
 # Interpreter one-liners (`python -c`, `node -e`): code that uses a network API,
 # and the hint that it sends a payload rather than only fetching.
 interpreter_network_api:
-  pattern: '(?:requests\.|urllib|http\.client|urlopen|fetch\(|axios|XMLHttpRequest|net\.connect|socket\.|Net::HTTP|LWP|HTTP::Tiny|curl_exec|file_get_contents\(\s*[''"]https?)'
+  pattern: '(?:requests\.|urllib|http\.client|urlopen|fetch\(|axios|XMLHttpRequest|net\.connect|socket\.|Net::HTTP|LWP|HTTP::Tiny|curl_exec|file_get_contents\(\s*[''"]https?|require\(\s*[''"](?:node:)?(?:https?|http2|net|tls|dgram)[''"]\s*\)|\bhttps?\.(?:get|request)\s*\()'
 interpreter_payload_hint:
   pattern: '(?:post|put|patch|body|data=|json=|send|write|sendall)'
   flags: i

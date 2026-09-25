@@ -23,7 +23,7 @@ import { spawn as nodeSpawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import {
 	type Artifact,
 	type Config,
@@ -309,13 +309,29 @@ interface ConnectorEntry {
 	parse: (stdout: string, code: number | null) => Decision;
 }
 
+/**
+ * The repository whose built connector entry points connector mode spawns,
+ * derived from this CLI's own package location (`<repo>/packages/cli`), or null
+ * when the CLI is not running from a source checkout (an npm install, a SEA
+ * binary). Never the working directory: `aidr simulate --connector` run inside
+ * an untrusted repository would otherwise execute that repository's
+ * `packages/<connector>/dist/*.cjs` and report its made-up verdicts as a score.
+ */
+export function connectorRepoRoot(cliPackageRoot: string): string | null {
+	const packagesDir = dirname(cliPackageRoot);
+	if (basename(cliPackageRoot) !== "cli" || basename(packagesDir) !== "packages") return null;
+	return dirname(packagesDir);
+}
+
 function repoRootFrom(sandbox: Sandbox): string {
-	// The bundled data dir is <cli>/resources/threats; the repo root is four up
-	// from packages/cli/resources when running from source. Fall back to cwd.
-	const marker = sandbox.threatsDir;
-	const idx = marker.indexOf(`${join("packages", "cli")}`);
-	if (idx > 0) return marker.slice(0, idx).replace(/[\\/]+$/, "");
-	return process.cwd();
+	// The bundled data dir is <cli>/resources/threats.
+	const root = connectorRepoRoot(resolve(sandbox.threatsDir, "..", ".."));
+	if (!root) {
+		throw new Error(
+			"Connector mode drives the built connector entry points of an AIDR source checkout, and this CLI is not running from one. Run it from the repository's packages/cli, or use the default evaluator mode.",
+		);
+	}
+	return root;
 }
 
 function parseHookDecision(stdout: string): Decision {

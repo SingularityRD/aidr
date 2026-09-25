@@ -18,6 +18,7 @@
 import { statSync } from "node:fs";
 import { homedir } from "node:os";
 import { posix } from "node:path";
+import { globMatches, normalizeShellText } from "../shell-normalize.js";
 import type { Verdict } from "../types.js";
 import {
 	type CanaryKind,
@@ -190,12 +191,20 @@ function decodeUnicodeEscapes(text: string): string {
 	);
 }
 
-/** Views of `text` a token can hide in: raw, percent-, `\u`- and base64-encoded. */
+/** Views of `text` a token can hide in: raw, percent-, `\u`-, hex- and base64-encoded. */
 function scanTokenViews(text: string, index: ReadyIndex, collector: HitCollector): void {
 	if (text.length < MIN_CANARY_TOKEN_LENGTH) return;
 	scanAlnumRuns(text, index, collector);
 	if (text.includes("%")) scanAlnumRuns(decodePercent(text), index, collector);
 	if (text.includes("\\u")) scanAlnumRuns(decodeUnicodeEscapes(text), index, collector);
+	// `xxd -p` / `.hex()` output: a decoy token is at least 20 characters, so 40+ hex digits.
+	let hexBudget = MAX_BASE64_DECODE_CHARS;
+	for (const match of text.matchAll(/[0-9A-Fa-f]{40,}/g)) {
+		if (hexBudget <= 0) break;
+		const encoded = match[0].slice(0, Math.min(match[0].length & ~1, hexBudget));
+		hexBudget -= encoded.length;
+		scanAlnumRuns(Buffer.from(encoded, "hex").toString("latin1"), index, collector);
+	}
 	let decodedBudget = MAX_BASE64_DECODE_CHARS;
 	for (const match of text.matchAll(/[A-Za-z0-9+/_-]{28,}={0,2}/g)) {
 		if (decodedBudget <= 0) break;
@@ -229,6 +238,10 @@ function matchPathToken(
 	let token = raw.replace(/^@/, "").replace(/^file:\/\//i, "");
 	const expanded = expandHome(token);
 	if (expanded) token = expanded;
+	if (GLOB_CHARACTER.test(token)) {
+		matchGlobToken(token, index, allowRelative, collector);
+		return;
+	}
 	if (isAbsolutePathToken(token)) {
 		const hit = index.paths.get(comparisonKey(token));
 		if (hit) collector.add({ id: hit.id, kind: hit.kind, via: "path" });
@@ -246,7 +259,60 @@ function matchPathToken(
 	}
 }
 
+const GLOB_CHARACTER = /[*?[]/;
+/** Literal characters the last segment of a path glob needs before it can name a decoy. */
+const MIN_GLOB_LITERAL_CHARS = 6;
+/** Longest text also scanned in its shell-normalized view. */
+const MAX_NORMALIZED_PATH_TEXT = 256 * 1024;
+
+/** Shell-glob match of one path segment; `*`/`?` never match a leading dot, as in the shell. */
+function segmentGlobMatches(glob: string, name: string): boolean {
+	if (name.startsWith(".") && !glob.startsWith(".")) return false;
+	return GLOB_CHARACTER.test(glob)
+		? globMatches(glob, name)
+		: glob.toLowerCase() === name.toLowerCase();
+}
+
+/**
+ * A path glob the shell would expand to a decoy (`~/.aws/credentials.*`,
+ * `.env.b?ckup`): matched segment by segment against every decoy path, the way
+ * the shell expands it. A relative glob matches the decoy's trailing segments.
+ */
+function matchGlobToken(
+	token: string,
+	index: ReadyIndex,
+	allowRelative: boolean,
+	collector: HitCollector,
+): void {
+	const absolute = isAbsolutePathToken(token);
+	if (!absolute && !allowRelative) return;
+	const slashed = (process.platform === "win32" ? token.replace(/\\/g, "/") : token).replace(
+		/^(?:\.\/)+/,
+		"",
+	);
+	const globSegments = slashed.split("/").filter((segment) => segment !== "");
+	if (globSegments.length === 0 || globSegments.length > 64) return;
+	// Only a glob that names the decoy: `cat *` or `rm *.bak` in a project must not
+	// count as touching a decoy that happens to be among the files it expands to.
+	const last = globSegments[globSegments.length - 1] as string;
+	if (last.replace(/\[[^\]]*\]|[*?]/g, "").length < MIN_GLOB_LITERAL_CHARS) return;
+	for (const entry of index.paths.values()) {
+		const segments = entry.key.split("/").filter((segment) => segment !== "");
+		if (
+			absolute ? segments.length !== globSegments.length : segments.length < globSegments.length
+		) {
+			continue;
+		}
+		const tail = segments.slice(segments.length - globSegments.length);
+		if (globSegments.every((glob, i) => segmentGlobMatches(glob, tail[i] as string))) {
+			collector.add({ id: entry.id, kind: entry.kind, via: "path" });
+		}
+	}
+}
+
 const PATH_TOKEN_SEPARATORS = /[\s"'`;|&<>(){}[\],=]+/;
+/** Characters the shell rewrites before a path reaches a program (quotes, escapes, `$`). */
+const SHELL_REWRITTEN = /["'\\$]/;
 
 function scanPathTokens(
 	text: string,
@@ -254,9 +320,18 @@ function scanPathTokens(
 	allowRelative: boolean,
 	collector: HitCollector,
 ): void {
-	for (const token of text.split(PATH_TOKEN_SEPARATORS)) {
-		if (token.length > 0 && token.length <= 4096) {
-			matchPathToken(token, index, allowRelative, collector);
+	// The shell's view as well: `crede""ntials`, `crede\ntials` and `$'\x63'…` name
+	// the decoy without spelling it, and the split below would cut them apart.
+	const views = [text];
+	if (SHELL_REWRITTEN.test(text) && text.length <= MAX_NORMALIZED_PATH_TEXT) {
+		const normalized = normalizeShellText(text);
+		if (normalized !== text) views.push(normalized);
+	}
+	for (const view of views) {
+		for (const token of view.split(PATH_TOKEN_SEPARATORS)) {
+			if (token.length > 0 && token.length <= 4096) {
+				matchPathToken(token, index, allowRelative, collector);
+			}
 		}
 	}
 }

@@ -743,7 +743,12 @@ function handleGit(ctx: StageContext): boolean {
 		arg.startsWith("-") || all[i - 1] === "-C" || all[i - 1] === "-c";
 	if (pushIndex >= 0 && args.slice(0, pushIndex).every(globalOptionsOnly)) {
 		const remote = gitRemoteName(args, pushIndex);
-		if (remote && !options.trustedGitRemotes.includes(remote)) {
+		// `git -c remote.origin.pushurl=https://elsewhere push origin` keeps the
+		// trusted remote's name but sends to wherever the override points.
+		const redirected = args
+			.slice(0, pushIndex)
+			.some((arg, i, all) => all[i - 1] === "-c" && /^remote\.[^=]+\.(?:push)?url=/i.test(arg));
+		if (remote && (redirected || !options.trustedGitRemotes.includes(remote))) {
 			set.add({
 				cap: "external_comm",
 				kind: "git_push_remote",

@@ -153,16 +153,77 @@ export function selectAgentProfiles(
 	document: AgentProfileDocument,
 	connector: AgentProfileConnector,
 	environment: AgentProfileEnvironment,
+	targets: readonly string[] = [],
 ): AgentProfile[] {
 	const matching = document.profiles.filter((profile) =>
 		profileApplies(profile, connector, environment),
 	);
+	let selected: AgentProfile[];
 	if (matching.length === 0) {
 		const fallback = document.profiles.find((profile) => profile.name === document.default_profile);
-		return fallback ? [fallback] : [];
+		selected = fallback ? [fallback] : [];
+	} else {
+		const best = Math.max(...matching.map(selectorScore));
+		selected = matching.filter((profile) => selectorScore(profile) === best);
 	}
-	const best = Math.max(...matching.map(selectorScore));
-	return matching.filter((profile) => selectorScore(profile) === best);
+	return [
+		...selected,
+		...touchedRepositoryProfiles(document, connector, environment, targets, selected),
+	];
+}
+
+/**
+ * Repository-scoped profiles of the repositories a call's paths lie in, beyond
+ * those the working directory already selected. The working directory is
+ * host-reported, and an agent can move it (`cd /tmp`); without this, a call
+ * reaching into a protected repository from elsewhere was judged only by the
+ * looser profile of wherever the agent stood. These profiles are ADDED to the
+ * selection (the strictest outcome wins), never substituted for it, so a
+ * permissive repository profile cannot relax the profile the call would
+ * otherwise get.
+ */
+function touchedRepositoryProfiles(
+	document: AgentProfileDocument,
+	connector: AgentProfileConnector,
+	environment: AgentProfileEnvironment,
+	targets: readonly string[],
+	selected: readonly AgentProfile[],
+): AgentProfile[] {
+	if (targets.length === 0) return [];
+	return document.profiles.filter((profile) => {
+		const repositories = profile.applies_to?.repositories;
+		if (!repositories || selected.includes(profile)) return false;
+		const connectors = profile.applies_to?.connectors;
+		if (connectors && !connectors.includes(connector)) return false;
+		return repositories.some((pattern) => {
+			const expanded = expandProfilePath(pattern, environment);
+			return targets.some((target) => pathMatchesGlob(target, expanded));
+		});
+	});
+}
+
+const MAX_SELECTION_TARGETS = 64;
+
+/**
+ * Absolute paths a call names (file-tool paths, MCP path arguments and the
+ * anchored words of a shell command), for repository-scoped profile selection.
+ * Relative paths resolve inside the working directory, whose repository is
+ * already selected.
+ */
+function callTargets(call: AgentProfileCall, environment: AgentProfileEnvironment): string[] {
+	const raw = [
+		...call.artifacts
+			.filter((artifact) => artifact.type === "file_path" && artifact.value.trim())
+			.map((artifact) => artifact.value.trim()),
+		...(classifyAgentTool(call.toolName) === "shell" ? commandPathWords(commandStrings(call)) : []),
+	];
+	const out = new Set<string>();
+	for (const path of raw) {
+		if (!/^(?:\/|~(?:[\\/]|$)|\$HOME[\\/]|[A-Za-z]:[\\/]|\\\\)/.test(path)) continue;
+		out.add(expandProfilePath(path, environment));
+		if (out.size >= MAX_SELECTION_TARGETS) break;
+	}
+	return [...out];
 }
 
 // ── Tool classification ────────────────────────────────────────────
@@ -285,8 +346,19 @@ function quoted(value: string): string {
 	return JSON.stringify(value);
 }
 
+/**
+ * An operator-configured entry of a name-keyed profile map. Own properties
+ * only: tool and MCP server names come from the host or an MCP server, and a
+ * plain `map[name]` lookup of `constructor`, `toString` or `__proto__` returns
+ * an `Object.prototype` member instead of "not listed". That value is not an
+ * action, ranks as nothing, and silently dropped the profile's restriction.
+ */
+function ownEntry<T>(map: Readonly<Record<string, T>> | undefined, key: string): T | undefined {
+	return map && Object.hasOwn(map, key) ? map[key] : undefined;
+}
+
 function toolGate(profile: AgentProfile, toolName: string): AgentProfileOutcome {
-	const override = profile.tool_overrides?.[toolName];
+	const override = ownEntry(profile.tool_overrides, toolName);
 	if (override) {
 		return {
 			action: override,
@@ -618,7 +690,7 @@ function mcpChecks(
 		];
 	}
 	const { server, tool } = identity;
-	const toolAction = rules.tools?.[server]?.[tool];
+	const toolAction = ownEntry(ownEntry(rules.tools, server), tool);
 	if (toolAction) {
 		return [
 			{
@@ -630,7 +702,7 @@ function mcpChecks(
 			},
 		];
 	}
-	const serverAction = rules.servers?.[server];
+	const serverAction = ownEntry(rules.servers, server);
 	if (serverAction) {
 		return [
 			{
@@ -732,6 +804,7 @@ export async function evaluateAgentProfiles(
 		if (outcome.action === "allow") return;
 		if (!deciding || RANK[outcome.action] > RANK[deciding.action]) deciding = outcome;
 	};
+	const targets = context.profileName ? [] : callTargets(call, environment);
 	for (const layer of context.layers) {
 		if (layer.status === "invalid") {
 			consider(invalidOutcome(layer));
@@ -754,7 +827,7 @@ export async function evaluateAgentProfiles(
 			}
 			profiles = [named];
 		} else {
-			profiles = selectAgentProfiles(layer.document, context.connector, environment);
+			profiles = selectAgentProfiles(layer.document, context.connector, environment, targets);
 		}
 		for (const profile of profiles) {
 			selected.push({ profile: profile.name, source: layer.source });

@@ -10,8 +10,14 @@
 #   - `hosts`: hosts trusted for direct downloads of model-weight files
 #     (`curl`/`wget`/`urlretrieve` of .pt/.pth/.pkl/.ckpt/.joblib/... files).
 #     Only HTTPS URLs can be trusted; plain HTTP is never suppressed. Hosts are
-#     matched by suffix on a dot boundary ("huggingface.co" also covers
-#     "cdn-lfs.huggingface.co" but not "evilhuggingface.co").
+#     matched by suffix on a dot boundary ("huggingface.co" covers
+#     "www.huggingface.co" but not "evilhuggingface.co"). Anyone can upload to
+#     the Hugging Face Hub, so a Hugging Face URL is trusted only when it names
+#     a repository of a trusted organisation (`orgs`); LFS/CDN object URLs,
+#     which name no repository, are never trusted by host alone.
+#   - A download that overrides the hub endpoint (`HF_ENDPOINT=…`,
+#     `endpoint=…`) is never trusted by organisation: the repository id then
+#     says nothing about where the bytes come from.
 #
 # A trusted source only removes the "unvetted source" finding. Unsafe loading
 # (pickle, torch.load without weights_only=True, trust_remote_code=True, ...)

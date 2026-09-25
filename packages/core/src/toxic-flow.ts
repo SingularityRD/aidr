@@ -246,19 +246,20 @@ const GENERIC_SESSION_IDS = new Set([
  * Connectors pass the host's session/conversation id. When a host provides none
  * (the connector falls back to a generic placeholder), the key is derived from
  * the connector, the parent process (the agent host that spawned the hook, or
- * the host process itself for in-process plugins) and the working directory, so
- * two unrelated agents never share a record and one agent keeps a stable one.
+ * the host process itself for in-process plugins) and the process working
+ * directory, so two unrelated agents never share a record and one agent keeps a
+ * stable one. Nothing in the tool call's own arguments takes part: a `cwd`
+ * argument is chosen by the model, and letting it pick the key would let each
+ * step of a chain land in a fresh, empty session.
  */
 export function resolveFlowSessionKey(
 	sessionId: string | undefined,
 	agentRuntime: string | undefined,
-	toolInput?: Record<string, unknown>,
 ): string {
 	const runtime = agentRuntime ?? "agent";
 	const id = typeof sessionId === "string" ? sessionId.trim() : "";
 	if (!GENERIC_SESSION_IDS.has(id.toLowerCase())) return `sid:${runtime}:${id}`;
-	const cwd = typeof toolInput?.cwd === "string" && toolInput.cwd ? toolInput.cwd : process.cwd();
-	return `derived:${runtime}:${process.ppid}:${cwd}`;
+	return `derived:${runtime}:${process.ppid}:${process.cwd()}`;
 }
 
 // ── Pure evaluation ────────────────────────────────────────────────
@@ -1008,11 +1009,7 @@ export async function applyToxicFlow(
 	}
 	if (!needsState(classification)) return verdict;
 
-	const sessionKey = resolveFlowSessionKey(
-		request.sessionId,
-		options.agentRuntime,
-		request.toolInput,
-	);
+	const sessionKey = resolveFlowSessionKey(request.sessionId, options.agentRuntime);
 	const store = new SessionFlowStore({ dir: options.stateDir, logger, ttlMs: settings.windowMs });
 	let result = verdict;
 	try {
@@ -1150,11 +1147,7 @@ export async function recordToolOutputFlow(
 		const settings = resolveToxicFlowSettings(config);
 		if (!settings.enabled) return "disabled";
 		const now = (options.now ?? Date.now)();
-		const sessionKey = resolveFlowSessionKey(
-			input.sessionId,
-			options.agentRuntime,
-			input.toolInput,
-		);
+		const sessionKey = resolveFlowSessionKey(input.sessionId, options.agentRuntime);
 		const store = new SessionFlowStore({ dir: options.stateDir, logger, ttlMs: settings.windowMs });
 		const { written } = await store.update(sessionKey, now, (fresh) =>
 			recordFlowObservations(fresh, input.toolName, observations, [], settings, now),
