@@ -237,7 +237,7 @@ export function buildNotification(delivery: DeliveryRecord, dashboardUrl: string
 	return { ...rest, links };
 }
 
-function notificationTitle(message: NotificationMessage): string {
+export function notificationTitle(message: NotificationMessage): string {
 	switch (message.event) {
 		case "incident.created":
 			return `New ${message.severity ?? "unrated"} incident`;

@@ -155,6 +155,34 @@ export interface InstalledMocks {
  * Defaults describe an older deployment without the member directory RPC,
  * so the UI uses its explicit ID-only fallback.
  */
+/**
+ * policy-management replies for a tenant that has never staged an agent
+ * profile. The Policies page mounts the agent profile editor, which reads both
+ * on load, so every Policies page render needs them.
+ */
+export const EMPTY_AGENT_PROFILE_REPLIES: Readonly<Record<string, { data: unknown; error: null }>> =
+	{
+		read_agent_profiles: {
+			data: {
+				ok: true,
+				staged: false,
+				version: 0,
+				policy: null,
+				policy_sha256: null,
+				profile_count: 0,
+				updated_by: null,
+				updated_at: null,
+				delivered: false,
+				delivery_status: "staged_not_signed",
+			},
+			error: null,
+		},
+		agent_profile_history: {
+			data: { ok: true, revisions: [], next_before_version: null },
+			error: null,
+		},
+	};
+
 export function installDashboardMocks(options: MockOptions = {}): InstalledMocks {
 	const mocked = mockedSupabase();
 	vi.resetAllMocks();
@@ -262,6 +290,8 @@ export function installDashboardMocks(options: MockOptions = {}): InstalledMocks
 						error: null,
 					};
 				if (action === "read") return { data: { ok: true, version: 0, policy: null }, error: null };
+				const profileReply = action ? EMPTY_AGENT_PROFILE_REPLIES[action] : undefined;
+				if (profileReply) return profileReply;
 				if (action === "read_dlp_policy") {
 					return {
 						data: {

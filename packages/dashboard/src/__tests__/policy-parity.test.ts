@@ -39,7 +39,12 @@ vi.mock("../lib/supabase", () => ({
 import { saveDocumentDraft, validateDocument } from "../enterprise/policy-editor";
 import { AppLayout } from "../ui/AppLayout";
 import { PolicyPage } from "../ui/pages/PolicyPage";
-import { installDashboardMocks, POLICY_ROW_ID, TEAM_ID } from "./helpers/dashboard-mocks";
+import {
+	EMPTY_AGENT_PROFILE_REPLIES,
+	installDashboardMocks,
+	POLICY_ROW_ID,
+	TEAM_ID,
+} from "./helpers/dashboard-mocks";
 
 const FIXTURE_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "fixtures", "policy-parity");
 const STORED_AT = "2026-01-02T00:00:00.000Z";
@@ -222,6 +227,9 @@ function policyManagementResponse(request?: {
 		case "save_document_draft":
 			if (typeof body.content !== "string") return refusedResponse("invalid_policy_document");
 			return compileAndSaveDraft(body.content, body.simulation);
+		case "read_agent_profiles":
+		case "agent_profile_history":
+			return EMPTY_AGENT_PROFILE_REPLIES[body.action];
 		default:
 			return refusedResponse("unsupported_action");
 	}

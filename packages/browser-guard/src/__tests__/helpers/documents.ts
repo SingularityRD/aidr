@@ -268,7 +268,7 @@ export function simplePdf(
 // Sanitising with the real engine and vault
 // ---------------------------------------------------------------------------------------------
 
-function realEngine(): DetectionEngine {
+export function realEngine(): DetectionEngine {
 	return createDetectionEngine({
 		enabledEntities: DEFAULT_POLICY.enabledEntities,
 		literals: [],
@@ -279,7 +279,7 @@ function realEngine(): DetectionEngine {
 	});
 }
 
-function realVault(): PlaceholderVault {
+export function realVault(): PlaceholderVault {
 	return createVault({ neverRestore: DEFAULT_POLICY.neverRestore });
 }
 
