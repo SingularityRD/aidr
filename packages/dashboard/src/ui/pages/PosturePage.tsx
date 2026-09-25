@@ -4,6 +4,7 @@ import { aiBomFileName, buildTenantAiBom, type FleetAgentRow } from "../../lib/a
 import { readErrorMessage } from "../../lib/errors";
 import { supabase } from "../../lib/supabase";
 import { RUNTIME_CATALOG } from "../../onboarding/runtime-catalog";
+import { FrameworkCoverageSection } from "../framework-coverage";
 
 /** Findings older than this are outside the posture window (and the trend). */
 export const POSTURE_WINDOW_DAYS = 90;
@@ -767,6 +768,8 @@ function TenantPosturePage({ tenantId, tenantName }: { tenantId: string; tenantN
 					<TrendSection trend={trend} trendMax={trendMax} />
 				</>
 			) : null}
+
+			<FrameworkCoverageSection />
 		</div>
 	);
 }

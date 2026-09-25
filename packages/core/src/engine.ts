@@ -5,6 +5,7 @@
 import type {
 	AmsiCheckResult,
 	Decision,
+	FrameworkRefs,
 	HeuristicMatch,
 	PackageCheckResult,
 	PolicyMatch,
@@ -55,6 +56,7 @@ interface Signal {
 	threatId: string | null;
 	reason: string;
 	artifact: string;
+	frameworks?: FrameworkRefs;
 }
 
 export class DecisionEngine {
@@ -113,6 +115,7 @@ export class DecisionEngine {
 			artifacts: allArtifacts,
 			matchedThreatId: top.threatId,
 			reasons: allReasons,
+			...(top.frameworks ? { frameworks: top.frameworks } : {}),
 		};
 	}
 
@@ -135,6 +138,7 @@ export class DecisionEngine {
 				threatId: match.threat.id,
 				reason: match.threat.title,
 				artifact: match.artifact,
+				...(match.threat.frameworks ? { frameworks: match.threat.frameworks } : {}),
 			});
 		}
 
