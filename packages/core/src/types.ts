@@ -654,11 +654,35 @@ export const PromptProtectionModeSchema = z.enum(["off", "warn", "block"]);
  * `UserPromptSubmit`). `block` stops the prompt, `warn` lets it through with a
  * notice to the user and the model, `off` skips that category.
  */
+/**
+ * Content-safety categories for user prompts. Each is `off | warn | block`,
+ * except `sexual_minors`, which is always `block`: any other value is accepted
+ * for compatibility and has no effect.
+ */
+export const PromptContentSafetySchema = z.object({
+	/** Requests to author malware (ransomware, stealers, keyloggers, AV/EDR evasion). */
+	malware: PromptProtectionModeSchema.default("warn"),
+	/** Requests to build credential-phishing kits or fake login pages. */
+	phishing_kit: PromptProtectionModeSchema.default("warn"),
+	/** Requests to produce weapons or chemical, biological, radiological or nuclear agents. */
+	weapons_cbrn: PromptProtectionModeSchema.default("block"),
+	/** Self-harm intent or method seeking; the notice points to support, not to a violation. */
+	self_harm: PromptProtectionModeSchema.default("warn"),
+	/** Requests to generate hate speech, harassment or threats against people. */
+	hate_harassment: PromptProtectionModeSchema.default("warn"),
+	/** Sexual content involving minors: always blocked. */
+	sexual_minors: PromptProtectionModeSchema.default("block").transform(() => "block" as const),
+});
+
 export const PromptProtectionConfigSchema = z.object({
 	/** Credentials, tokens and private keys. */
 	secrets: PromptProtectionModeSchema.default("block"),
 	/** Personal data: email addresses, phone numbers, SSNs, payment card numbers. */
 	pii: PromptProtectionModeSchema.default("warn"),
+	/** Jailbreak attempts: instruction overrides, persona/role-play overrides, encoded payloads. */
+	jailbreak: PromptProtectionModeSchema.default("warn"),
+	/** Content-safety categories (pattern-based policy aid, not a model-grade classifier). */
+	content_safety: PromptContentSafetySchema.default({}),
 });
 
 /**
@@ -823,7 +847,19 @@ export type FileCheckConfig = OptionalInsecureLoopback<z.infer<typeof FileCheckC
 export type PackageCheckConfig = z.infer<typeof PackageCheckConfigSchema>;
 export type AmsiCheckConfig = z.infer<typeof AmsiCheckConfigSchema>;
 export type PromptProtectionMode = z.infer<typeof PromptProtectionModeSchema>;
-export type PromptProtectionConfig = z.infer<typeof PromptProtectionConfigSchema>;
+export type PromptContentSafetyConfig = z.infer<typeof PromptContentSafetySchema>;
+export type PromptContentSafetyCategory = keyof PromptContentSafetyConfig;
+/**
+ * Prompt protection policy as scanPrompt consumes it. `jailbreak` and
+ * `content_safety` are optional so a caller that predates them keeps the
+ * documented defaults (see DEFAULT_PROMPT_SAFETY in prompt-safety.ts).
+ */
+export interface PromptProtectionConfig {
+	secrets: PromptProtectionMode;
+	pii: PromptProtectionMode;
+	jailbreak?: PromptProtectionMode;
+	content_safety?: Partial<Record<PromptContentSafetyCategory, PromptProtectionMode>>;
+}
 export type SecureCodeConfig = z.infer<typeof SecureCodeConfigSchema>;
 export type AiSupplyChainConfig = z.infer<typeof AiSupplyChainConfigSchema>;
 export type ToxicFlowConfig = z.infer<typeof ToxicFlowConfigSchema>;

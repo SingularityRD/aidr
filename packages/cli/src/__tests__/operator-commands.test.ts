@@ -589,4 +589,34 @@ describe("aidr doctor", () => {
 		expect(byId.dlp?.status).toBe("fail");
 		expect(byId.dlp?.summary).toContain("opencode");
 	});
+	it("warns, but does not fail, on agent environment findings", async () => {
+		const report = await runDoctor({
+			connectors: () => [connector("installed")],
+			operatorApprovals: store,
+			loadDetectors: async () => ({}),
+			agentEnvironment: () => ({
+				schema_version: 1,
+				scanned_at: "2026-09-25T00:00:00.000Z",
+				hosts: [],
+				findings: [
+					{
+						id: "sandbox_full_access",
+						severity: "critical",
+						host: "codex",
+						title: "Codex sandbox is disabled",
+						remediation: "Set sandbox_mode.",
+						evidence: { path: "/home/username/.codex/config.toml", key: "sandbox_mode" },
+						count: 1,
+					},
+				],
+				unreadable: [],
+				scope: "test",
+			}),
+		});
+		const check = report.checks.find((c) => c.id === "agent_environment");
+		expect(check?.status).toBe("warn");
+		expect(check?.summary).toContain("1 high or critical");
+		expect(check?.summary).toContain("sandbox_full_access");
+		expect(report.ok).toBe(true);
+	});
 });

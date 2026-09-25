@@ -151,6 +151,31 @@ describe("shared tenant detector provisioning", () => {
 		});
 	});
 
+	it("provisions a signed tenant prompt-safety floor on its own", async () => {
+		const payload = detectorPolicyPayload(TEST_TENANT_ID, {
+			prompt_safety: { jailbreak: "block", content_safety: { malware: "block" } },
+		});
+		delete payload.dlp;
+		await provisionTenantDetectorPolicy({ homeDir: home, agentRuntime: "opencode", payload });
+		const context = await loadProvisionedDetectorContext("opencode");
+		expect(context.runtimeDetectors?.dlp).toBeUndefined();
+		expect(context.runtimeDetectors?.promptSafety).toEqual({
+			jailbreak: "block",
+			content_safety: { malware: "block" },
+		});
+	});
+
+	it("rejects an unknown prompt-safety category in the signed payload", async () => {
+		await provisionTenantDetectorPolicy({
+			homeDir: home,
+			agentRuntime: "opencode",
+			payload: detectorPolicyPayload(TEST_TENANT_ID, {
+				prompt_safety: { content_safety: { unknown_category: "block" } },
+			}),
+		});
+		await expect(loadProvisionedDetectorContext("opencode")).rejects.toThrow();
+	});
+
 	it("keeps one runtime's provisioned policy away from another runtime", async () => {
 		// Without the `runtime_detectors` premium module the bundle is optional, so
 		// a runtime that was never provisioned stays unprovisioned.
@@ -408,30 +433,30 @@ describe("shared tenant detector provisioning", () => {
 			expect((await evaluateFresh()).learning.baselineSamplesBefore).toBe(0);
 		});
 
-		it.each([
-			false,
-			"omitted",
-		] as const)("pins signed learning %s off despite per-event true", async (setting) => {
-			const payload = behavioralPolicyPayload(TEST_TENANT_ID, { learning_allowed: false });
-			if (setting === "omitted")
-				delete (payload.behavioral as Record<string, unknown>).learning_allowed;
-			await provisionBehavioral(payload);
-			for (let index = 0; index < 11; index++) {
-				const detector = await freshBehavioral();
-				expect(detector.learningAllowed).toBe(false);
-				const result = await detector.orchestrator.evaluate(
-					syntheticBehavioralInput(index, {
-						learningAllowed: true,
-					}),
-				);
-				expect(result.learning).toMatchObject({
-					accepted: false,
-					reason: "explicitly_disabled",
-					baselineSamplesBefore: 0,
-					baselineSamplesAfter: 0,
-				});
-			}
-		});
+		it.each([false, "omitted"] as const)(
+			"pins signed learning %s off despite per-event true",
+			async (setting) => {
+				const payload = behavioralPolicyPayload(TEST_TENANT_ID, { learning_allowed: false });
+				if (setting === "omitted")
+					delete (payload.behavioral as Record<string, unknown>).learning_allowed;
+				await provisionBehavioral(payload);
+				for (let index = 0; index < 11; index++) {
+					const detector = await freshBehavioral();
+					expect(detector.learningAllowed).toBe(false);
+					const result = await detector.orchestrator.evaluate(
+						syntheticBehavioralInput(index, {
+							learningAllowed: true,
+						}),
+					);
+					expect(result.learning).toMatchObject({
+						accepted: false,
+						reason: "explicitly_disabled",
+						baselineSamplesBefore: 0,
+						baselineSamplesAfter: 0,
+					});
+				}
+			},
+		);
 
 		it("requires affirmative per-event learning consent even when the signed capability allows it", async () => {
 			await provisionBehavioral();
@@ -500,9 +525,7 @@ describe("shared tenant detector provisioning", () => {
 			await provisionBehavioral();
 			const detector = await freshBehavioral();
 			for (let index = 0; index < 5; index++) {
-				expect(
-					await detector.orchestrator.evaluate(syntheticBehavioralInput()),
-				).toMatchObject({
+				expect(await detector.orchestrator.evaluate(syntheticBehavioralInput())).toMatchObject({
 					learning: { accepted: true, baselineSamplesAfter: index + 1 },
 				});
 			}
@@ -519,10 +542,13 @@ describe("shared tenant detector provisioning", () => {
 
 			const freshContext = await freshBehavioral();
 			expect(freshContext.orchestrator.getStats().totalBaselineSamples).toBe(0);
-			expect(
-				await freshContext.orchestrator.evaluate(syntheticBehavioralInput()),
-			).toMatchObject({
-				learning: { accepted: true, reason: "accepted", baselineSamplesBefore: 0, baselineSamplesAfter: 1 },
+			expect(await freshContext.orchestrator.evaluate(syntheticBehavioralInput())).toMatchObject({
+				learning: {
+					accepted: true,
+					reason: "accepted",
+					baselineSamplesBefore: 0,
+					baselineSamplesAfter: 1,
+				},
 			});
 		});
 
@@ -701,12 +727,15 @@ describe("shared tenant detector provisioning", () => {
 			],
 			["malformed value", (): unknown => "not-a-corpus"],
 			["null", (): unknown => null],
-		] as const)("rejects a supplied %s corpus rather than activating or silently dropping it", async (_name, makeCorpus) => {
-			await provisionBehavioral(
-				behavioralPolicyPayload(TEST_TENANT_ID, { threat_corpus: makeCorpus() }),
-			);
-			await expect(loadProvisionedDetectorContext("opencode")).rejects.toThrow();
-		});
+		] as const)(
+			"rejects a supplied %s corpus rather than activating or silently dropping it",
+			async (_name, makeCorpus) => {
+				await provisionBehavioral(
+					behavioralPolicyPayload(TEST_TENANT_ID, { threat_corpus: makeCorpus() }),
+				);
+				await expect(loadProvisionedDetectorContext("opencode")).rejects.toThrow();
+			},
+		);
 
 		it("rejects a non-finite JSON coordinate before activating the corpus", async () => {
 			const installed = await provisionBehavioral();

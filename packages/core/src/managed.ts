@@ -4,6 +4,7 @@ import type { ControlPlaneIngestResult } from "./clients/control-plane.js";
 import { resolvePath } from "./config.js";
 import { atomicWriteJson, getFileContent } from "./file-utils.js";
 import {
+	AGENT_POSTURE_FINDING_EVENT,
 	INFRA_SCAN_FINDING_EVENT,
 	MCP_INVENTORY_FINDING_EVENT,
 	projectPostureFields,
@@ -348,6 +349,7 @@ export function redactRemoteEvent(
 		"runtime_policy_cache",
 		INFRA_SCAN_FINDING_EVENT,
 		MCP_INVENTORY_FINDING_EVENT,
+		AGENT_POSTURE_FINDING_EVENT,
 	]);
 	// Posture findings carry their own bounded, re-validated field set.
 	Object.assign(safeEntry, projectPostureFields(scrubbed));

@@ -101,6 +101,7 @@ import {
 } from "./package-extractor.js";
 import { evaluateCommonPiiBaseline } from "./pii-baseline.js";
 import { evaluatePolicy } from "./policy.js";
+import type { TenantPromptSafetyPolicy } from "./prompt-safety.js";
 import { syncRemoteRuntimePolicy } from "./remote-policy.js";
 import type { ReputationFeedLoadOptions } from "./reputation-feed.js";
 import { loadThreatsFromDirs } from "./threat-loader.js";
@@ -229,6 +230,8 @@ export interface ToolEvaluationContext {
 	runtimeDetectors?: {
 		tenantId: string;
 		dlp?: { enabled: boolean; policy: DlpPolicy; contentType?: string };
+		/** Signed tenant floor for prompt jailbreak / content-safety actions (prompt hooks only). */
+		promptSafety?: TenantPromptSafetyPolicy;
 		behavioral?: {
 			enabled: boolean;
 			orchestrator: BehavioralDetectionOrchestrator;
