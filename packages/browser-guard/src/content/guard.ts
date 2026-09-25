@@ -31,6 +31,7 @@
 
 import { toBase64 } from "../../../privacy/src/browser/transport.js";
 import { type Counts, countFindings } from "../engine/counts.js";
+import { MAX_OCR_IMAGE_BYTES } from "../engine/office/images.js";
 import {
 	type DetectionEngine,
 	type EditorAccess,
@@ -137,8 +138,6 @@ const NATIVE_NER_TYPES: readonly EntityType[] = Object.freeze(["PERSON", "ADDRES
 export const NATIVE_REPLY_TIMEOUT_MS = 2_500;
 /** How long an image OCR waits: the worker's bridge gives up after 60 s, plus messaging slack. */
 const NATIVE_IMAGE_REPLY_TIMEOUT_MS = 65_000;
-/** Largest image sent for OCR (the host's `image-scan` limit). */
-const NATIVE_IMAGE_MAX_BYTES = 8_388_608;
 const INSPECTION_RESULTS: readonly ImageInspection["result"][] = [
 	"clean",
 	"sensitive",
@@ -306,6 +305,21 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 		return entry.result;
 	};
 
+	/** The worker's reply to `message`, or undefined when none arrives within `ms`. */
+	const sendWithin = async (message: GuardMessage, ms: number): Promise<unknown> => {
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		try {
+			return await Promise.race([
+				Promise.resolve(deps.send(message)),
+				new Promise<undefined>((resolve) => {
+					timer = win.setTimeout(() => resolve(undefined), ms);
+				}),
+			]);
+		} finally {
+			if (timer !== undefined) win.clearTimeout(timer);
+		}
+	};
+
 	/**
 	 * Native NER for `text` through the worker's bridge (NATIVE_SCAN), bounded in size and
 	 * time. Never rejects: any failure is "unavailable" and the scan continues rules-only.
@@ -318,22 +332,14 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 		if (!policy?.useNativeHost || types.length === 0) return { findings: [], use: "off" };
 		const unavailable = { findings: [], use: "unavailable" as const };
 		if (text.length > NATIVE_MAX_CHARS) return unavailable;
-		let timer: ReturnType<typeof setTimeout> | undefined;
 		try {
-			const reply = await Promise.race([
-				Promise.resolve(deps.send({ type: "NATIVE_SCAN", text })),
-				new Promise<undefined>((resolve) => {
-					timer = win.setTimeout(() => resolve(undefined), nativeTimeout);
-				}),
-			]);
+			const reply = await sendWithin({ type: "NATIVE_SCAN", text }, nativeTimeout);
 			const found = (reply as { ok?: unknown; findings?: unknown } | undefined)?.findings;
 			if ((reply as { ok?: unknown } | undefined)?.ok !== true || !Array.isArray(found))
 				return unavailable;
 			return { findings: found.filter((f) => isNativeFinding(f, text, types)), use: "used" };
 		} catch {
 			return unavailable;
-		} finally {
-			if (timer !== undefined) win.clearTimeout(timer);
 		}
 	};
 
@@ -993,20 +999,12 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 
 	/** OCR of an uploaded image through the worker's native bridge; null: not inspected. */
 	const inspectImage = async (bytes: Uint8Array): Promise<ImageInspection | null> => {
-		if (!deps.getPolicy()?.useNativeHost || bytes.length > NATIVE_IMAGE_MAX_BYTES) return null;
-		let timer: ReturnType<typeof setTimeout> | undefined;
+		if (!deps.getPolicy()?.useNativeHost || bytes.length > MAX_OCR_IMAGE_BYTES) return null;
 		try {
-			const reply = await Promise.race([
-				Promise.resolve(deps.send({ type: "NATIVE_IMAGE_SCAN", data: toBase64(bytes) })),
-				new Promise<undefined>((resolve) => {
-					timer = win.setTimeout(() => resolve(undefined), nativeImageTimeout);
-				}),
-			]);
-			return parseImageInspection(reply);
+			const message: GuardMessage = { type: "NATIVE_IMAGE_SCAN", data: toBase64(bytes) };
+			return parseImageInspection(await sendWithin(message, nativeImageTimeout));
 		} catch {
 			return null;
-		} finally {
-			if (timer !== undefined) win.clearTimeout(timer);
 		}
 	};
 

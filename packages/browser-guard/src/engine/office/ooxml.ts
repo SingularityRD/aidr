@@ -710,6 +710,32 @@ function editsFor(segment: TextSegment, findings: readonly Finding[], scanner: D
 	}));
 }
 
+/**
+ * Masks each segment's findings (counted into `totals`) and returns the part re-encoded as it
+ * was read, or null when nothing changed. Shared by the OOXML and OpenDocument sanitisers.
+ */
+export function rewritePart(
+	part: { readonly xml: string; readonly encoding: PartEncoding },
+	segments: readonly TextSegment[],
+	perSegment: readonly (readonly Finding[] | undefined)[],
+	scanner: DocScanner,
+	totals: Totals,
+): Uint8Array | null {
+	const replacements: RawReplacement[] = [];
+	segments.forEach((segment, i) => {
+		const findings = perSegment[i] ?? [];
+		if (!findings.length) return;
+		totals.findings += findings.length;
+		mergeCounts(totals.findingCounts, countFindings(findings));
+		replacements.push(...segment.apply(editsFor(segment, findings, scanner)));
+	});
+	if (!replacements.length) return null;
+	const xml = applyReplacements(part.xml, replacements);
+	if (xml === part.xml) return null;
+	assertWellFormed(xml);
+	return encodePart(xml, part.encoding);
+}
+
 /** Scans one part's segments and returns the rewritten part, or null when unchanged. */
 async function maskPart(
 	part: PartModel,
@@ -722,19 +748,14 @@ async function maskPart(
 		part.segments.map((s) => ({ context: s.context, value: s.text, forced: s.forced })),
 	);
 	for (const signal of scan.signals) totals.signals.add(signal);
-	const replacements: RawReplacement[] = [];
-	part.segments.forEach((segment, i) => {
-		const findings = scan.perSegment[i] ?? [];
-		if (!findings.length) return;
-		totals.findings += findings.length;
-		mergeCounts(totals.findingCounts, countFindings(findings));
-		replacements.push(...segment.apply(editsFor(segment, findings, scanner)));
-	});
-	if (!replacements.length) return null;
-	const xml = applyReplacements(part.xml, replacements);
-	if (xml === part.xml) return null;
-	assertWellFormed(xml);
-	return encodePart(xml, part.encoding);
+	return rewritePart(part, part.segments, scan.perSegment, scanner, totals);
+}
+
+/** An archive or XML failure as the refusal the caller blocks on; any other error unchanged. */
+export function asDocumentRefusal(error: unknown): unknown {
+	if (error instanceof ArchiveError) return new DocumentRefused([`ARCHIVE_${error.code}`]);
+	if (error instanceof XmlError) return new DocumentRefused(["DOCUMENT_MALFORMED"]);
+	return error;
 }
 
 async function buildModels(archive: ZipArchive, scanner: DocScanner): Promise<PartModel[]> {
@@ -846,8 +867,6 @@ export async function sanitizeOoxml(
 		const out = await sanitizeArchive(archive, scanner, 0, totals);
 		return { bytes: out, ...totals };
 	} catch (error) {
-		if (error instanceof ArchiveError) throw new DocumentRefused([`ARCHIVE_${error.code}`]);
-		if (error instanceof XmlError) throw new DocumentRefused(["DOCUMENT_MALFORMED"]);
-		throw error;
+		throw asDocumentRefusal(error);
 	}
 }
