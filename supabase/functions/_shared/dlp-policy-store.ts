@@ -62,6 +62,22 @@ function revisionRow(value: unknown, tenant: string) {
 	};
 }
 
+/** One stored revision of this tenant, or the error response to return instead. */
+async function readRevision(
+	req: Request,
+	db: SupabaseClient,
+	tenant: string,
+	version: number,
+): Promise<{ revision: NonNullable<ReturnType<typeof revisionRow>> } | { response: Response }> {
+	const { data, error } = await db.from("dlp_policy_revisions").select("version,policy,updated_by,created_at")
+		.eq("tenant_id", tenant).eq("version", version).maybeSingle();
+	if (error || data === undefined) return { response: corsJson(req, 503, { error: "dlp_history_unavailable" }) };
+	if (data === null) return { response: corsJson(req, 404, { error: "revision_not_found" }) };
+	const revision = revisionRow(data, tenant);
+	if (!revision) return { response: corsJson(req, 503, { error: "dlp_history_unavailable" }) };
+	return { revision };
+}
+
 /**
  * Validate and save one DLP document at `expected + 1`, through four-eyes when
  * the tenant has it on. Shared by publish and restore.
@@ -180,13 +196,9 @@ export async function handleDlpPolicyAction(
 
 	if (action === "read_dlp_policy_revision") {
 		if (!positiveVersion(body.version)) return corsJson(req, 400, { error: "invalid_version" });
-		const { data, error } = await db.from("dlp_policy_revisions").select("version,policy,updated_by,created_at")
-			.eq("tenant_id", tenant).eq("version", Number(body.version)).maybeSingle();
-		if (error || data === undefined) return corsJson(req, 503, { error: "dlp_history_unavailable" });
-		if (data === null) return corsJson(req, 404, { error: "revision_not_found" });
-		const revision = revisionRow(data, tenant);
-		if (!revision) return corsJson(req, 503, { error: "dlp_history_unavailable" });
-		return corsJson(req, 200, { ok: true, revision });
+		const read = await readRevision(req, db, tenant, Number(body.version));
+		if ("response" in read) return read.response;
+		return corsJson(req, 200, { ok: true, revision: read.revision });
 	}
 
 	const expected = body.expected_version;
@@ -199,16 +211,12 @@ export async function handleDlpPolicyAction(
 		if (Number(body.version) >= Number(expected)) {
 			return corsJson(req, 400, { error: "restore_target_not_older" });
 		}
-		const { data, error } = await db.from("dlp_policy_revisions").select("version,policy,updated_by,created_at")
-			.eq("tenant_id", tenant).eq("version", Number(body.version)).maybeSingle();
-		if (error || data === undefined) return corsJson(req, 503, { error: "dlp_history_unavailable" });
-		if (data === null) return corsJson(req, 404, { error: "revision_not_found" });
-		const revision = revisionRow(data, tenant);
-		if (!revision) return corsJson(req, 503, { error: "dlp_history_unavailable" });
+		const read = await readRevision(req, db, tenant, Number(body.version));
+		if ("response" in read) return read.response;
 		// Re-validated with today's schema and clock: an exception that has
 		// expired since that revision refuses the rollback with its path.
-		return await commitDlpPolicy(req, db, context, Number(expected), revision.policy, {
-			restored_from: revision.version,
+		return await commitDlpPolicy(req, db, context, Number(expected), read.revision.policy, {
+			restored_from: read.revision.version,
 		});
 	}
 
