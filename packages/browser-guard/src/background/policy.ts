@@ -10,6 +10,7 @@
 import { AI_SERVICE_ID_PATTERN, AI_SERVICES } from "../sites/catalog.js";
 import { CUSTOM_SITE_LIMITS, SELECTOR_FORBIDDEN } from "../sites/custom.js";
 import {
+	type AcceptableUseNotice,
 	type CustomSiteConfig,
 	ENTITY_TYPES,
 	type EntityType,
@@ -95,6 +96,7 @@ export const DEFAULT_POLICY: GuardPolicy = deepFreeze({
 	language: "auto",
 	managedKeys: [],
 	policyId: "aidr-browser-guard-default",
+	acceptableUse: null,
 } satisfies GuardPolicy);
 
 type Validator = (raw: unknown) => { ok: true; value: unknown } | { ok: false };
@@ -207,6 +209,58 @@ const maxFileBytes: Validator = (raw) =>
 
 const policyId: Validator = (raw) =>
 	typeof raw === "string" && POLICY_ID_PATTERN.test(raw) ? valid(raw) : invalid;
+
+/** Acceptable-use notice identifier, shared with the acknowledgement telemetry contract. */
+export const NOTICE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/;
+export const NOTICE_LIMITS = Object.freeze({
+	versionMax: 999_999,
+	titleMaxChars: 120,
+	textMaxChars: 4000,
+	urlMaxChars: 2048,
+});
+/** Control characters other than tab, line feed and carriage return. */
+const NOTICE_CONTROL = /[^\P{Cc}\t\n\r]/u;
+const NOTICE_KEYS = ["id", "version", "title", "text", "url"];
+
+/** https only, no credentials; returns the normalised href or null. */
+function noticeUrl(raw: unknown): string | null {
+	if (typeof raw !== "string" || raw.length === 0 || raw.length > NOTICE_LIMITS.urlMaxChars)
+		return null;
+	try {
+		const url = new URL(raw);
+		if (url.protocol !== "https:" || url.username || url.password) return null;
+		return url.href;
+	} catch {
+		return null;
+	}
+}
+
+function noticeText(raw: unknown, max: number): string | null {
+	if (typeof raw !== "string" || NOTICE_CONTROL.test(raw)) return null;
+	const trimmed = raw.trim();
+	return trimmed.length === 0 || trimmed.length > max ? null : trimmed;
+}
+
+/** The `acceptableUse` managed key: a whole notice or nothing. */
+export function validateAcceptableUseNotice(raw: unknown): AcceptableUseNotice | null {
+	if (!isPlainObject(raw) || !Object.keys(raw).every((key) => NOTICE_KEYS.includes(key)))
+		return null;
+	const { id, version } = raw;
+	if (typeof id !== "string" || !NOTICE_ID_PATTERN.test(id)) return null;
+	if (!Number.isSafeInteger(version) || (version as number) < 1) return null;
+	if ((version as number) > NOTICE_LIMITS.versionMax) return null;
+	const title = noticeText(raw.title, NOTICE_LIMITS.titleMaxChars);
+	const text = noticeText(raw.text, NOTICE_LIMITS.textMaxChars);
+	if (title === null || text === null) return null;
+	if (raw.url === undefined) return { id, version: version as number, title, text };
+	const url = noticeUrl(raw.url);
+	return url === null ? null : { id, version: version as number, title, text, url };
+}
+
+const acceptableUse: Validator = (raw) => {
+	const notice = validateAcceptableUseNotice(raw);
+	return notice ? valid(notice) : invalid;
+};
 
 /**
  * Control-plane base URL: https only, except plain http to localhost/127.0.0.1 for
@@ -401,6 +455,7 @@ const MANAGED_VALIDATORS: Readonly<Record<ManagedKey, Validator>> = {
 	telemetry: telemetryValidator(false),
 	language: oneOf(["auto", "en", "tr"]),
 	policyId,
+	acceptableUse,
 };
 
 const USER_VALIDATORS: Readonly<Record<keyof UserSettings, Validator>> = {

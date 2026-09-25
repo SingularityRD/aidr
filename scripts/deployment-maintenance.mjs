@@ -251,12 +251,47 @@ async function main() {
       break;
     }
   }
+  // Scheduled governance summaries (supabase/functions/governance-digest): the
+  // function claims due schedules under a lease, mails counts-only summaries to
+  // each workspace's owners/admins and records every outcome. A failed send is
+  // retried by a later run; a dry run only counts due schedules. A dispatch
+  // failure is recorded in the evidence (and keeps the run incomplete) instead
+  // of discarding the retention receipts gathered above.
+  const governanceDigest = { due: 0, processed: 0, sent: 0, partial: 0, failed: 0, no_transport: 0,
+    no_recipients: 0, errors: 0, batches: 0, mail_transport: null, complete: false, error: null };
+  const digestCounts = ["due", "processed", "sent", "partial", "failed", "no_transport", "no_recipients", "errors"];
+  try {
+    for (let batch = 0; batch < 20; batch++) {
+      const result = await request("/functions/v1/governance-digest", "POST", { action: "dispatch", apply, limit: 50 });
+      if (!result || result.ok !== true || result.applied !== apply || !digestCounts.every(key => isCount(result[key]))
+        || result.processed > 50
+        || result.sent + result.partial + result.failed + result.no_transport + result.no_recipients + result.errors !== result.processed
+        || !["resend", "none"].includes(result.mail_transport)) {
+        throw new Error("Invalid governance digest dispatch response");
+      }
+      if (batch === 0) governanceDigest.due = result.due;
+      for (const key of digestCounts.slice(1)) governanceDigest[key] += result[key];
+      governanceDigest.batches += 1;
+      governanceDigest.mail_transport = result.mail_transport;
+      if (!apply || result.processed < 50) {
+        // Lost claims (errors) are released by their lease and retried next run.
+        governanceDigest.complete = result.errors === 0;
+        break;
+      }
+    }
+  } catch (error) {
+    governanceDigest.complete = false;
+    governanceDigest.error = error instanceof Error && error.message.startsWith("Invalid governance digest")
+      ? "invalid_dispatch_response" : "dispatch_unavailable";
+  }
+  const retentionComplete = exportsComplete && billing.complete && telemetry.complete && trialSubjects.complete
+    && invitations.complete && approvals.complete && rateLimits.complete;
   const evidence = {
     checked_at: new Date().toISOString(),
     action: "expire-private-audit-exports-billing-webhooks-telemetry-trial-subjects-team-invitations-approval-requests-and-rate-limits",
     applied: apply, selected, removed,
-    complete: exportsComplete && billing.complete && telemetry.complete && trialSubjects.complete && invitations.complete && approvals.complete && rateLimits.complete, cutoff,
-    status: !apply ? "dry_run" : exportsComplete && billing.complete && telemetry.complete && trialSubjects.complete && invitations.complete && approvals.complete && rateLimits.complete ? "completed" : "incomplete",
+    complete: retentionComplete && governanceDigest.complete, cutoff,
+    status: !apply ? "dry_run" : retentionComplete && governanceDigest.complete ? "completed" : "incomplete",
     export_retention: exportRetention,
     billing_retention: billing,
     telemetry_retention: telemetry,
@@ -264,11 +299,12 @@ async function main() {
     team_invitation_retention: invitations,
     approval_request_retention: approvals,
     rate_limit_pruning: rateLimits,
-    scope: "Deletes authorized expired temporary export objects, completed attributed billing webhooks for active unheld tenants, expired events for active tenants according to each tenant's telemetry retention policy, pseudonymous trial-subject digests at the original 14-day expiry, expired unaccepted team invitations only after each active tenant's existing identity_membership retention window, decided or expired dashboard approval requests only after each active tenant's telemetry retention window, and operational rate-limit counters at least 15 minutes after their last update. Accepted and unexpired invitations are preserved; held and inactive-tenant invitation rows are retained. Active tenants missing identity_membership policy and contention/hold-race cases keep the run incomplete. Tenant rate-limit counters under legal hold or outside active tenancy are retained for the tenant lifecycle; global counters have no tenant association. Settlement request keys remain durable; unfinished, unattributed, held, and inactive-tenant webhooks are retained. Events without a telemetry policy and non-active tenants are not selected; legal-hold tenants are preserved. The append-only settlement ledger is never touched. Counts acknowledge Storage API responses, not an independent deletion receipt or backup erasure.",
+    governance_digest: governanceDigest,
+    scope: "Deletes authorized expired temporary export objects, completed attributed billing webhooks for active unheld tenants, expired events for active tenants according to each tenant's telemetry retention policy, pseudonymous trial-subject digests at the original 14-day expiry, expired unaccepted team invitations only after each active tenant's existing identity_membership retention window, decided or expired dashboard approval requests only after each active tenant's telemetry retention window, and operational rate-limit counters at least 15 minutes after their last update. Accepted and unexpired invitations are preserved; held and inactive-tenant invitation rows are retained. Active tenants missing identity_membership policy and contention/hold-race cases keep the run incomplete. Tenant rate-limit counters under legal hold or outside active tenancy are retained for the tenant lifecycle; global counters have no tenant association. Settlement request keys remain durable; unfinished, unattributed, held, and inactive-tenant webhooks are retained. Events without a telemetry policy and non-active tenants are not selected; legal-hold tenants are preserved. The append-only settlement ledger is never touched. Counts acknowledge Storage API responses, not an independent deletion receipt or backup erasure. The run also dispatches due governance summaries (counts-only e-mail to workspace owners/admins) and records their delivery outcome; a dry run only counts due schedules.",
   };
   writeFileSync(join(dir, "maintenance-evidence.json"), JSON.stringify(evidence, null, 2));
   console.log(JSON.stringify(evidence));
-  if (apply && (!exportsComplete || !billing.complete || !telemetry.complete || !trialSubjects.complete || !invitations.complete || !approvals.complete || !rateLimits.complete)) process.exitCode = 2;
+  if (apply && (!retentionComplete || !governanceDigest.complete)) process.exitCode = 2;
 }
 
 // Report failures without abrupt unhandled-rejection teardown of HTTP handles.

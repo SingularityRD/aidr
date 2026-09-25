@@ -1,0 +1,376 @@
+# Singularity AIDR governance capability and evidence catalog.
+#
+# Product CONTROLS (not detection rules; rule-level mappings live elsewhere).
+# Every framework file in this directory (nist-ai-rmf.yaml, iso-iec-42001.yaml,
+# eu-ai-act.yaml, kvkk-gdpr.yaml) references capabilities and evidence sources
+# by the ids defined here.
+#
+#   capabilities[].paths   repository files that implement the capability; a
+#                          test fails when one of them no longer exists
+#   capabilities[].signal  how the governance scorecard decides whether a
+#                          tenant has the capability deployed:
+#                            always      built into every workspace
+#                            local_only  runs on endpoints and is not visible
+#                                        to the control plane
+#                            <name>      a boolean in governance_scorecard().signals
+#   evidence[].kind        table | report_section | function | rpc | file
+#
+# Regenerate the dashboard embed after editing:
+#   node scripts/sync-governance-frameworks.mjs --write
+
+capabilities:
+  - id: runtime-enforcement
+    title: Inline allow / ask / deny decisions on AI coding agent tool calls
+    description: >-
+      Commands, file access, web requests, packages and MCP calls of the supported coding
+      agents are evaluated before they run. Connector entry points fail closed on an
+      internal error.
+    signal: agents_reporting
+    paths:
+      - packages/core/src/engine.ts
+      - packages/core/src/evaluator.ts
+      - packages/claude-code/src/pre-tool-use.ts
+      - packages/codex/src
+      - packages/openclaw/src
+      - packages/opencode/src
+      - packages/extension/src
+  - id: threat-rule-library
+    title: Versioned threat rule library (data, not code)
+    description: YAML threat definitions evaluated by every connector.
+    signal: agents_reporting
+    paths:
+      - threats
+      - packages/core/src/threat-loader.ts
+      - packages/core/src/heuristics.ts
+  - id: prompt-dlp-protection
+    title: Prompt and tool-input data loss prevention for coding agents
+    description: >-
+      Personal data and secrets in agent prompts and tool inputs are detected and handled
+      according to the workspace DLP policy.
+    signal: dlp_policy_configured
+    paths:
+      - packages/core/src/prompt-protection.ts
+      - packages/core/src/dlp/scanner.ts
+      - supabase/functions/_shared/dlp-policy-store.ts
+      - packages/dashboard/src/enterprise/dlp-editor.tsx
+  - id: output-inspection
+    title: Tool output and MCP result inspection
+    description: Sensitive data and injected instructions in tool outputs are detected before they reach the model.
+    signal: agents_reporting
+    paths:
+      - packages/core/src/output-scanner.ts
+      - packages/mcp-gateway/src/output-inspection.mjs
+  - id: browser-guard-masking
+    title: Browser Guard masking of personal data and secrets on AI chat sites
+    description: >-
+      The browser extension masks TR/EN personal data and secrets before a prompt, paste or
+      file reaches a protected AI site, and can block sites. Only counts are reported.
+    signal: browser_guard_reporting
+    paths:
+      - packages/browser-guard/src/engine/detect.ts
+      - packages/browser-guard/src/engine/vault.ts
+      - packages/browser-guard/src/content/guard.ts
+      - packages/browser-guard/src/background/telemetry.ts
+  - id: acceptable-use-notice
+    title: AI acceptable-use notice with per-version acknowledgement
+    description: >-
+      Administrators publish an acceptable-use notice in managed browser policy; Browser
+      Guard shows it once per version on a protected AI site and reports acknowledgement
+      counts only.
+    signal: acceptable_use_acknowledged
+    paths:
+      - packages/browser-guard/src/content/acceptable-use.ts
+      - packages/browser-guard/src/background/policy.ts
+      - docs/contracts/privacy-telemetry.md
+  - id: human-approval
+    title: Out-of-band human approval for ask decisions
+    description: >-
+      An ask verdict blocks the action until a person approves it outside the agent
+      (dashboard approval by an owner or admin, or the local operator CLI). No approval tool
+      is exposed to the agent.
+    signal: human_approval_in_use
+    paths:
+      - supabase/functions/approval-requests/index.ts
+      - packages/core/src/dashboard-approvals.ts
+      - packages/core/src/operator-approvals.ts
+      - packages/dashboard/src/ui/pages/ApprovalsPage.tsx
+  - id: oversight-analytics
+    title: Human oversight analytics (decision latency, expiry, rubber-stamp review prompts)
+    description: >-
+      The governance scorecard measures how approvals are decided: volume, approve/deny
+      ratio, median decision latency, requests that expired undecided and approvers whose
+      pattern suggests automatic approval.
+    signal: human_approval_in_use
+    paths:
+      - supabase/migrations/20260927000060_governance_scorecard.sql
+      - packages/dashboard/src/lib/governance.ts
+  - id: runtime-policy-management
+    title: Versioned runtime policy with revision history
+    description: >-
+      Default actions per artifact type, MCP server and tool allow/approval/deny lists,
+      staged rollout and a revision history with digests.
+    signal: runtime_policy_configured
+    paths:
+      - supabase/functions/policy-management/index.ts
+      - supabase/functions/policy/index.ts
+      - packages/dashboard/src/enterprise/runtime-policy-editor.tsx
+  - id: mcp-gateway
+    title: Loopback MCP gateway with signed manifests
+    description: Inspects MCP tool results and enforces operator-approved server manifests on the endpoint.
+    signal: local_only
+    paths:
+      - packages/mcp-gateway/src/gateway.mjs
+      - packages/mcp-gateway/src/approve.mjs
+  - id: mcp-inventory
+    title: MCP server inventory and attestation reporting
+    description: MCP servers found on endpoints are reported with transport, attestation state and risk categories.
+    signal: mcp_inventory_reported
+    paths:
+      - packages/core/src/mcp-inventory.ts
+      - packages/core/src/mcp-attestation.ts
+      - packages/core/src/posture-upload.ts
+  - id: ai-posture-scanning
+    title: AI tool-chain vulnerability and skill posture findings
+    description: CVE, exposed component and skill findings uploaded from scans, by severity.
+    signal: posture_reported
+    paths:
+      - packages/core/src/posture-events.ts
+      - packages/core/src/posture-upload.ts
+      - packages/dashboard/src/ui/pages/PosturePage.tsx
+  - id: plugin-skill-scanning
+    title: Plugin and skill scanning at session start
+    description: Installed agent plugins and skills are scanned against the threat rules when a session starts.
+    signal: agents_reporting
+    paths:
+      - packages/core/src/plugin-scanner.ts
+      - packages/core/src/session-start-scan.ts
+  - id: ai-asset-inventory
+    title: Inventory of protected AI agents, browser installs and AI sites
+    description: >-
+      Every enrolled agent and browser install is a registered seat with runtime, first and
+      last seen; AI sites in use are counted from Browser Guard scans.
+    signal: agents_reporting
+    paths:
+      - packages/core/src/fleet-inventory.ts
+      - packages/dashboard/src/ui/pages/AgentsPage.tsx
+      - supabase/functions/discovery/index.ts
+  - id: incident-management
+    title: Incident correlation and tracking
+    description: Blocked and flagged actions are correlated into incidents with severity and status.
+    signal: agents_reporting
+    paths:
+      - packages/core/src/incidents/correlate.ts
+      - packages/dashboard/src/ui/pages/IncidentsPage.tsx
+  - id: siem-export
+    title: SIEM export of incidents
+    description: Incidents are delivered to the organisation's SIEM from a durable local queue.
+    signal: local_only
+    paths:
+      - packages/core/src/siem-delivery.ts
+      - packages/core/src/siem-export.ts
+      - scripts/siem-delivery-worker.mjs
+  - id: audit-logging
+    title: Decision and administrative audit logs
+    description: >-
+      Endpoints keep a local JSONL decision log; the control plane keeps an append-only
+      administrative audit log and the reported decision events. Logs hold decisions,
+      digests and identifiers, not prompt text.
+    signal: always
+    paths:
+      - packages/core/src/audit-log.ts
+      - supabase/migrations/20260327000200_golive_v1.sql
+  - id: audit-export
+    title: Paginated audit export with legal-hold awareness
+    description: Owners and admins export audit records as JSON or CSV.
+    signal: always
+    paths:
+      - supabase/functions/audit-export/index.ts
+      - packages/dashboard/src/enterprise/audit-export.ts
+  - id: identity-access-control
+    title: Role-based access with MFA, SSO and SCIM
+    description: >-
+      Owner, admin, member and viewer roles; workspace MFA and SAML requirements enforced as
+      a tenant identity barrier on every tenant table; SCIM provisioning.
+    signal: mfa_required
+    paths:
+      - supabase/functions/identity-security/index.ts
+      - supabase/functions/scim/index.ts
+      - supabase/functions/_shared/identity-barrier.ts
+  - id: tenant-isolation
+    title: Tenant isolation with row-level security
+    description: Every tenant table carries membership policies plus the restrictive tenant identity barrier.
+    signal: always
+    paths:
+      - supabase/migrations/20260925000060_tenant_identity_barrier_coverage.sql
+      - scripts/tenant-identity-barrier.test.mjs
+  - id: retention-legal-hold
+    title: Retention policies, legal holds and verified offboarding
+    description: Retention days per data class, legal holds that pause deletion, and offboarding with phase receipts.
+    signal: retention_configured
+    paths:
+      - supabase/migrations/20260912140000_tenant_offboarding_retention.sql
+      - scripts/deployment-maintenance.mjs
+  - id: compliance-evidence-report
+    title: Signed compliance evidence report
+    description: Tenant-scoped, period-bounded evidence bundle designed to support KVKK and GDPR accountability work.
+    signal: compliance_report_generated
+    paths:
+      - supabase/functions/compliance-report/index.ts
+      - packages/dashboard/src/ui/pages/CompliancePage.tsx
+      - docs/compliance-report.md
+  - id: data-flow-inventory
+    title: Product data-flow and subprocessor inventory
+    description: Purpose, destination, region, retention and transfer mechanism of each product data flow.
+    signal: always
+    paths:
+      - docs/production-readiness/privacy-data-flow-matrix.json
+      - supabase/functions/_shared/compliance-data-flows.ts
+  - id: governance-scorecard
+    title: Governance scorecard and framework control matrix
+    description: Executive view computed from the workspace's own records, with this control mapping.
+    signal: always
+    paths:
+      - packages/dashboard/src/ui/pages/GovernancePage.tsx
+      - supabase/migrations/20260927000060_governance_scorecard.sql
+  - id: governance-digest
+    title: Scheduled governance summary by email
+    description: Weekly or monthly counts-only summary sent to the workspace owners (and admins).
+    signal: governance_digest_enabled
+    paths:
+      - supabase/functions/governance-digest/index.ts
+      - supabase/migrations/20260927000061_governance_digest_schedule.sql
+      - scripts/deployment-maintenance.mjs
+
+evidence:
+  - id: events.runtime_verdict
+    kind: table
+    ref: events
+    detail: Agent decisions (allow, ask, deny) reported by managed connectors, with source and severity.
+  - id: events.privacy_scan
+    kind: table
+    ref: events
+    detail: Browser Guard scans (masked, warned, blocked, allowed) by site, channel and entity type. Counts only.
+  - id: events.incident
+    kind: table
+    ref: events
+    detail: Incidents reported by connectors, with severity and status.
+  - id: events.aup_acknowledgement
+    kind: table
+    ref: events
+    detail: One acknowledgement per browser install and acceptable-use notice version. Counts only.
+  - id: agents
+    kind: table
+    ref: agents
+    detail: Enrolled agents and browser installs by runtime, first seen and last seen.
+  - id: approval_requests
+    kind: table
+    ref: approval_requests
+    detail: Dashboard approval requests with status, approver and decision time.
+  - id: admin_audit_logs
+    kind: table
+    ref: admin_audit_logs
+    detail: Append-only administrative audit log.
+  - id: posture_findings
+    kind: table
+    ref: posture_findings
+    detail: CVE, MCP server and skill findings by severity, attestation and risk category.
+  - id: tenant_runtime_policies
+    kind: table
+    ref: tenant_runtime_policies
+    detail: Current runtime policy version and update time.
+  - id: runtime_policy_revisions
+    kind: table
+    ref: runtime_policy_revisions
+    detail: Runtime policy revision history.
+  - id: tenant_dlp_policies
+    kind: table
+    ref: tenant_dlp_policies
+    detail: Current DLP policy version and update time.
+  - id: dlp_policy_revisions
+    kind: table
+    ref: dlp_policy_revisions
+    detail: DLP policy revision history.
+  - id: tenant_identity_policies
+    kind: table
+    ref: tenant_identity_policies
+    detail: Workspace MFA, SSO and break-glass settings.
+  - id: tenant_data_retention_policies
+    kind: table
+    ref: tenant_data_retention_policies
+    detail: Retention days per data class.
+  - id: tenant_legal_holds
+    kind: table
+    ref: tenant_legal_holds
+    detail: Legal holds that pause deletion.
+  - id: tenant_offboarding_runs
+    kind: table
+    ref: tenant_offboarding_runs
+    detail: Offboarding runs with phase receipts.
+  - id: tenant_governance_settings
+    kind: table
+    ref: tenant_governance_settings
+    detail: Governance summary schedule and human-oversight review thresholds.
+  - id: governance_digest_deliveries
+    kind: table
+    ref: governance_digest_deliveries
+    detail: Delivery receipts of scheduled and test governance summaries (counts, status).
+  - id: compliance-report.protection_coverage
+    kind: report_section
+    ref: protection_coverage
+    detail: Compliance report section on agents and browser installs in scope.
+  - id: compliance-report.data_protection_activity
+    kind: report_section
+    ref: data_protection_activity
+    detail: Compliance report section on masking and DLP decisions (counts only).
+  - id: compliance-report.policy_inventory
+    kind: report_section
+    ref: policy_inventory
+    detail: Compliance report section on policy versions and digests.
+  - id: compliance-report.access_identity
+    kind: report_section
+    ref: access_identity
+    detail: Compliance report section on MFA, SSO, SCIM and the owner/admin list.
+  - id: compliance-report.incidents
+    kind: report_section
+    ref: incidents
+    detail: Compliance report section on incidents by severity and status.
+  - id: compliance-report.ai_security_posture
+    kind: report_section
+    ref: ai_security_posture
+    detail: Compliance report section on CVE, MCP and skill findings.
+  - id: compliance-report.data_flows
+    kind: report_section
+    ref: data_flows
+    detail: Compliance report section with the data-flow and subprocessor inventory.
+  - id: compliance-report.retention_deletion
+    kind: report_section
+    ref: retention_deletion
+    detail: Compliance report section on retention, legal holds and offboarding receipts.
+  - id: audit-export
+    kind: function
+    ref: audit-export
+    detail: JSON or CSV export of audit records.
+  - id: governance-digest
+    kind: function
+    ref: governance-digest
+    detail: Scheduled governance summary dispatch and test sends.
+  - id: governance-scorecard
+    kind: rpc
+    ref: governance_scorecard
+    detail: Counts-only governance scorecard for a 7, 30 or 90 day period.
+  - id: local-audit-log
+    kind: file
+    ref: packages/core/src/audit-log.ts
+    detail: Endpoint JSONL decision log (stays on the endpoint unless exported).
+  - id: siem-export
+    kind: file
+    ref: packages/core/src/siem-export.ts
+    detail: SIEM export format and delivery queue.
+  - id: privacy-data-flow-matrix
+    kind: file
+    ref: docs/production-readiness/privacy-data-flow-matrix.json
+    detail: Engineering data-flow matrix; unknown values are completed per deployment.
+  - id: threat-rules
+    kind: file
+    ref: threats
+    detail: Threat rule files evaluated by the connectors.

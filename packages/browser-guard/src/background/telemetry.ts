@@ -2,7 +2,8 @@
  * Privacy telemetry client. Implements docs/contracts/privacy-telemetry.md exactly:
  * POST {controlPlaneUrl}/functions/v1/ingest with the shared connector envelope and
  * `privacy_scan` events that carry counts only (no text, no values, no URLs), plus
- * aggregated `shadow_ai_usage` counts (catalog service id, visited|blocked, count).
+ * aggregated `shadow_ai_usage` counts (catalog service id, visited|blocked, count), and
+ * `aup_acknowledgement` events (notice id and version only, never the notice text).
  *
  * Events are queued in chrome.storage.local (bounded, oldest dropped) so a worker
  * restart does not lose them, flushed every 60 s by chrome.alarms or as soon as 50
@@ -11,6 +12,7 @@
  */
 import { AI_SERVICE_ID_PATTERN, isAiServiceId } from "../sites/catalog.js";
 import {
+	type AupAcknowledgementEvent,
 	ENTITY_TYPES,
 	type EntityType,
 	type PrivacyScanEvent,
@@ -19,7 +21,7 @@ import {
 	type TelemetryConfig,
 	type TelemetryEvent,
 } from "../types.js";
-import { POLICY_ID_PATTERN, SITE_ID_LIST } from "./policy.js";
+import { NOTICE_ID_PATTERN, NOTICE_LIMITS, POLICY_ID_PATTERN, SITE_ID_LIST } from "./policy.js";
 import { type GuardStorage, STORAGE_KEYS } from "./storage.js";
 
 export const TELEMETRY_LIMITS = Object.freeze({
@@ -122,6 +124,60 @@ export function sanitizeEvent(raw: unknown): PrivacyScanEvent | null {
 	return event;
 }
 
+/** Contract fields of an `aup_acknowledgement` event, and nothing else. */
+export const AUP_ACK_EVENT_KEYS: readonly string[] = Object.freeze([
+	"event_id",
+	"event_type",
+	"timestamp",
+	"site",
+	"notice_id",
+	"notice_version",
+]);
+
+const isNoticeVersion = (raw: unknown): raw is number =>
+	Number.isSafeInteger(raw) && (raw as number) >= 1 && (raw as number) <= NOTICE_LIMITS.versionMax;
+
+/** Re-validates an acknowledgement event; returns a fresh contract-only object or null. */
+export function sanitizeAupAckEvent(raw: unknown): AupAcknowledgementEvent | null {
+	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+	const e = raw as Record<string, unknown>;
+	if (Object.keys(e).some((k) => !AUP_ACK_EVENT_KEYS.includes(k))) return null;
+	if (typeof e.event_id !== "string" || !EVENT_ID_PATTERN.test(e.event_id)) return null;
+	if (e.event_type !== "aup_acknowledgement") return null;
+	if (typeof e.timestamp !== "string" || Number.isNaN(Date.parse(e.timestamp))) return null;
+	if (!SITE_ID_LIST.includes(e.site as SiteId)) return null;
+	if (typeof e.notice_id !== "string" || !NOTICE_ID_PATTERN.test(e.notice_id)) return null;
+	if (!isNoticeVersion(e.notice_version)) return null;
+	return {
+		event_id: e.event_id,
+		event_type: "aup_acknowledgement",
+		timestamp: new Date(Date.parse(e.timestamp)).toISOString(),
+		site: e.site as SiteId,
+		notice_id: e.notice_id,
+		notice_version: e.notice_version,
+	};
+}
+
+export interface AcknowledgementInput {
+	readonly site: SiteId;
+	readonly noticeId: string;
+	readonly noticeVersion: number;
+}
+
+export function buildAupAckEvent(
+	input: AcknowledgementInput,
+	now: number,
+): AupAcknowledgementEvent | null {
+	return sanitizeAupAckEvent({
+		event_id: `bg:${crypto.randomUUID()}`,
+		event_type: "aup_acknowledgement",
+		timestamp: new Date(now).toISOString(),
+		site: input.site,
+		notice_id: input.noticeId,
+		notice_version: input.noticeVersion,
+	});
+}
+
 export interface RecordInput {
 	readonly site: SiteId;
 	readonly action: PrivacyScanEvent["action"];
@@ -174,7 +230,9 @@ export function sanitizeShadowEvent(raw: unknown): ShadowAiUsageEvent | null {
 /** Any queued event, re-validated against its contract. */
 export function sanitizeQueuedEvent(raw: unknown): TelemetryEvent | null {
 	const type = raw && typeof raw === "object" ? (raw as { event_type?: unknown }).event_type : null;
-	return type === "shadow_ai_usage" ? sanitizeShadowEvent(raw) : sanitizeEvent(raw);
+	if (type === "shadow_ai_usage") return sanitizeShadowEvent(raw);
+	if (type === "aup_acknowledgement") return sanitizeAupAckEvent(raw);
+	return sanitizeEvent(raw);
 }
 
 export interface ShadowRecordInput {
@@ -343,6 +401,13 @@ export class TelemetryClient {
 	async record(input: RecordInput): Promise<void> {
 		if (!this.config) return;
 		const event = buildEvent(input, this.deps.now());
+		if (event) await this.enqueue(event);
+	}
+
+	/** Queues one acceptable-use acknowledgement (dropped when telemetry is not configured). */
+	async recordAcknowledgement(input: AcknowledgementInput): Promise<void> {
+		if (!this.config) return;
+		const event = buildAupAckEvent(input, this.deps.now());
 		if (event) await this.enqueue(event);
 	}
 

@@ -408,6 +408,42 @@
 			"type": "string",
 			"pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
 		},
+		"acceptableUse": {
+			"title": "AI acceptable-use notice",
+			"description": "Notice shown once per version on the first visit to a protected AI site, with an 'I understand' acknowledgement. Raise version to show it again. Only the id and version of each acknowledgement are reported (counts only); the text never leaves the browser.",
+			"type": "object",
+			"properties": {
+				"id": {
+					"type": "string",
+					"pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$"
+				},
+				"version": {
+					"type": "integer",
+					"minimum": 1,
+					"maximum": 999999
+				},
+				"title": {
+					"type": "string",
+					"pattern": "^[\\s\\S]{1,120}$"
+				},
+				"text": {
+					"type": "string",
+					"description": "Plain text, 1 to 4000 characters; blank lines separate paragraphs.",
+					"pattern": "\\S"
+				},
+				"url": {
+					"type": "string",
+					"description": "Optional https link to the full policy (at most 2048 characters).",
+					"pattern": "^https://[^\\s]+$"
+				}
+			},
+			"required": [
+				"id",
+				"version",
+				"title",
+				"text"
+			]
+		},
 		"allowUserOverrides": {
 			"title": "Allow user overrides of protection settings",
 			"description": "When any managed policy is present, the user can no longer change mode, enabled entity types, custom literals, paste masking, response restore or per-site disabling (they stay at the managed or built-in value). Set to true to let users keep changing the ones this policy does not set.",
