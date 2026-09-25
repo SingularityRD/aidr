@@ -162,18 +162,6 @@ export const ALLOWLIST = [
 		reason:
 			"The poisoning rules match instructions to read another user's files with regex character classes such as `/home/[^/\\s]{1,64}` and `/Users/[^/\\s]{1,64}`; they name no real account.",
 	},
-	{
-		path: "threats/mappings/frameworks.yaml",
-		owner: "AIDR-012",
-		reason:
-			"The framework rationale text says a rule blocks `root/home/system` deletion; the words describe directory classes, not a host path on any machine.",
-	},
-	{
-		path: "packages/dashboard/src/generated/framework-coverage.json",
-		owner: "AIDR-012",
-		reason:
-			"Generated from threats/mappings/frameworks.yaml; it carries the same `root/home/system` rationale wording, which is prose rather than a host path.",
-	},
 ];
 
 /* ------------------------------------------------------------------ *

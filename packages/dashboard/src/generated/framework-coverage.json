@@ -743,7 +743,7 @@
             "label": "AML.T0101",
             "title": "Data Destruction via AI Agent Tool Invocation",
             "status": "covered",
-            "rationale": "Recursive root/home/system deletion, disk formatting and wiping, backup and shadow-copy deletion and deletion of .env, database and .git data are denied or held.",
+            "rationale": "Recursive deletion of the root, home or system directories, disk formatting and wiping, backup and shadow-copy deletion and deletion of .env, database and .git data are denied or held.",
             "rule_count": 35,
             "example_rules": [
               "CLT-AGENT-IRR-001",

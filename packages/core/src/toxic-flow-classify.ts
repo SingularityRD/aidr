@@ -479,7 +479,7 @@ function bound(text: string): string {
 	return redacted;
 }
 
-/** Collapse home-directory spellings so `~/.aws/x`, `$HOME/.aws/x` and `/home/u/.aws/x` agree. */
+/** Collapse home-directory spellings so `~/.aws/x`, `$HOME/.aws/x` and `/home/<user>/.aws/x` agree. */
 export function normalizeFlowPath(raw: string): string {
 	let path = raw.trim().replace(/^["'`]+|["'`]+$/g, "");
 	path = path.replace(/^(?:\$HOME|\$\{HOME\}|%USERPROFILE%)(?=[\\/]|$)/i, "~");
