@@ -816,8 +816,10 @@ export function NotificationSettings({ tenantId }: { tenantId: string }) {
 		<div className="card">
 			<h2>Notifications</h2>
 			<p className="muted">
-				Real-time alerts to Slack, Microsoft Teams, signed webhooks or e-mail when incidents open,
-				critical actions are blocked, approvals are requested or blocked AI prompts spike.
+				Alerts to Slack, Microsoft Teams, signed webhooks or e-mail when incidents open, critical
+				actions are blocked, approvals are requested or blocked AI prompts spike. Each alert is
+				queued when the event is recorded and sent on the dispatcher's next run, which is scheduled
+				once a minute; failed sends are retried.
 			</p>
 			{!settings.configured ? (
 				<div className="notice notice-warning" role="status" style={{ marginTop: 12 }}>
