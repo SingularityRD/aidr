@@ -2,7 +2,7 @@
   "schema_version": 1,
   "kind": "aidr-sold-scope-coverage-denominator",
   "scope_id": "singularity-aidr-sold-scope",
-  "reviewed_at": "2026-09-24",
+  "reviewed_at": "2026-09-30",
   "$comment": "Engineering/evaluation coverage denominator (legacy filename, kind, scope_id and evaluator field names). It follows the six-connector deploy/native/support-matrix.json#soldConnectorScope, including Codex; this is broader than the five-connector direct-GA order scope in COM-010, which excludes Codex unless Product expressly adds and accepts it. `node scripts/benchmarks/evaluate.mjs --scope-file scripts/benchmarks/sold-scope.json` asserts that a corpus declares exactly these attack families, connectors and surfaces (no extras, no omissions) and carries at least `required_scenarios_per_family` malicious cases plus matching benign twins for every one of them. This file is a scope declaration only: it contains no case, digest, measurement, reviewer name or customer fact, is not sale/evaluation-offer authorization, and is not evidence that any detection works. A corpus that fails this check — including the committed empty scaffold scripts/benchmarks/corpus.template.json — is the correct honest state until an independent evaluator supplies signed data.",
   "derivation": {
     "$comment": "Every id below was read out of the shipped surface, not from a marketing claim. The connector denominator follows the six-connector engineering/evaluation support scope, including Codex; COM-010's five-connector direct-GA order scope is narrower and excludes Codex unless Product adds and accepts it. Interception vocabulary comes from the support matrix and the MCP interception matrix; the edge-function contract manifest is the control-plane counterpart, which is why control-plane-only families are listed under out_of_scope_with_reason instead of here.",
@@ -312,7 +312,7 @@
       "id": "claude-code",
       "host_binary": "claude",
       "source": "deploy/native/support-matrix.json#soldConnectorScope",
-      "evidence": "Sold row: interceptionPoint pre-tool-call, outputInterceptionPoint post-tool-output, entry point packages/claude-code/src/pre-tool-use.ts."
+      "evidence": "Sold row: interceptionPoint pre-tool-call, outputInterceptionPoint post-tool-output, additionalInterceptionPoints pre-prompt; entry points packages/claude-code/src/pre-tool-use.ts and packages/claude-code/src/user-prompt-submit.ts."
     },
     {
       "id": "cursor",
@@ -330,19 +330,19 @@
       "id": "openclaw",
       "host_binary": "openclaw",
       "source": "deploy/native/support-matrix.json#soldConnectorScope",
-      "evidence": "Sold row: interceptionPoint pre-tool-call, outputInterceptionPoint post-tool-call, entry point packages/openclaw/src/tool-handler.ts."
+      "evidence": "Sold row: interceptionPoint pre-tool-call, outputInterceptionPoint pre-delivery-response, additionalInterceptionPoints pre-prompt and post-tool-output; entry points packages/openclaw/src/tool-handler.ts, packages/openclaw/src/prompt-protection.ts and packages/openclaw/src/output-protection.ts."
     },
     {
       "id": "opencode",
       "host_binary": "opencode",
       "source": "deploy/native/support-matrix.json#soldConnectorScope",
-      "evidence": "Sold row: interceptionPoint pre-tool-call, outputInterceptionPoint post-tool-output, entry point packages/opencode/src/tool-handler.ts."
+      "evidence": "Sold row: interceptionPoint pre-tool-call, outputInterceptionPoint post-tool-output, additionalInterceptionPoints pre-prompt; entry points packages/opencode/src/tool-handler.ts and packages/opencode/src/prompt-handler.ts."
     },
     {
       "id": "codex",
       "host_binary": "codex",
       "source": "deploy/native/support-matrix.json#soldConnectorScope",
-      "evidence": "Sold row: interceptionPoint pre-tool-call, outputInterceptionPoint none, entry point packages/codex/src/enforcement.ts; the host fails open when the hook is not invoked, so the connector maps ask to an explicit deny."
+      "evidence": "Sold row: interceptionPoint pre-tool-call, outputInterceptionPoint none, additionalInterceptionPoints pre-prompt; entry points packages/codex/src/enforcement.ts and packages/codex/src/prompt-protection.ts; the host fails open when the hook is not invoked, so the connector maps ask to an explicit deny."
     }
   ],
   "surfaces": [
@@ -355,7 +355,7 @@
       "source": "deploy/native/support-matrix.json#rows[].interceptionPoint",
       "evidence": "All six sold rows declare interceptionPoint pre-tool-call and an in-connector deny path (packages/claude-code/src/pre-tool-use.ts, packages/extension/src/aidr-hook.ts, packages/openclaw/src/tool-handler.ts, packages/opencode/src/tool-handler.ts, packages/codex/src/enforcement.ts).",
       "limitations": [
-        "The verdict is source-declared only: every deploy/native/interception-matrix.json pre-tool row is `declared-not-proven` because no row carries a named real-host acceptance record.",
+        "deploy/native/interception-matrix.json records pre-tool as `enforced` for claude-code, codex, opencode and openclaw on real-host acceptance records (one host version each, linux/x64, development build, scripted mock model); cursor and vscode stay `declared-not-proven` with no record.",
         "A disabled or unregistered hook/plugin is a documented fail-open bypass in deploy/native/support-matrix.json."
       ]
     },
@@ -368,7 +368,7 @@
       "source": "deploy/native/interception-matrix.json#rows (outputInterceptionPoint)",
       "evidence": "Connectors inspect tool results after execution; supported paths may attempt replacement, but original output can remain available and real-host containment has not been accepted.",
       "limitations": [
-        "Cursor exposes replacement only for MCP output; non-MCP inspection is advisory. Codex declares outputInterceptionPoint `none` and inspects no tool output at all. Claude, VS Code, OpenClaw and OpenCode mutations have no real-host acceptance evidence."
+        "Cursor exposes replacement only for MCP output; non-MCP inspection is advisory. Codex declares outputInterceptionPoint `none` and inspects no tool output at all. Claude Code, OpenCode and the OpenClaw embedded runner (plugins.entries.aidr-openclaw.enabled: true, not the Codex harness) have real-host records for a secret-bearing shell result on linux/x64 with a scripted model; VS Code mutations and MCP or non-text results have no real-host acceptance evidence."
       ]
     },
     {
@@ -388,12 +388,12 @@
       "id": "prompt",
       "label": "Prompt: user or model input before submission",
       "interception_point": "pre-prompt",
-      "posture": "observe",
+      "posture": "enforce",
       "required": true,
       "source": "deploy/native/interception-matrix.json#rows (pre-prompt)",
-      "evidence": "No connector inspects or blocks the prompt. openclaw `before_agent_start` prepends plugin-scan context (packages/openclaw/src/startup-scan.ts) and opencode `experimental.chat.messages.transform` appends a system-reminder (packages/opencode/src/index.ts); both are one-shot advisory injections. claude-code, cursor, vscode and codex register no pre-prompt hook.",
+      "evidence": "Every sold connector inspects the prompt before model submission and blocks secrets by default (prompt_protection): claude-code and codex UserPromptSubmit, cursor beforeSubmitPrompt, vscode UserPromptSubmit (Local agent hooks), opencode chat.message and openclaw before_agent_run. Pre-prompt is sold for claude-code, codex, opencode and openclaw (deploy/native/support-matrix.json additionalInterceptionPoints) and `enforced` there on real-host acceptance records.",
       "limitations": [
-        "Prompt-injection rules therefore fire on tool artifacts and inspected output, not at the prompt boundary; the interception matrix records every pre-prompt row as `unsupported` or advisory `declared-not-proven`."
+        "The real-host records cover one host version each on linux/x64 with a development build and a scripted mock model; cursor and vscode pre-prompt rows stay `declared-not-proven`. Jailbreak and content-safety categories default to warn, and the tool-content prompt-injection rules still fire on tool artifacts and inspected output rather than on the user prompt."
       ]
     },
     {
