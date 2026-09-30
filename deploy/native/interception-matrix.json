@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "kind": "aidr-interception-matrix",
-  "reviewedAt": "2026-09-25",
+  "reviewedAt": "2026-09-30",
   "decision": "NO-GO",
-  "decisionMeaning": "MKT-03. This manifest declares, for every sold connector, the pre-prompt / pre-tool / post-tool-output / pre-delivery-response / model-stream / network interception points, the tamper posture and the outcome of the plugin-disabled, crashed, offline and large-binary-response conditions. A status of `enforced` requires a named real-host acceptance record in the row evidence. The records under docs/evidence/real-host/ are written by `pnpm test:e2e:real-host`: the real, unmodified host binary (Claude Code 2.1.282, Codex CLI 0.141.0, OpenCode 1.18.32, OpenClaw 2026.9.6) runs one non-interactive turn per scenario against a scripted loopback mock model, with AIDR installed from the development build in a disposable HOME on linux/x64. A row is `enforced` only where such a record proves the point for that host version on that platform and the support matrix sells the point; pre-prompt is proven for four connectors but is not a sold interception point there, and OpenClaw's post-tool-output is proven but OpenClaw sells pre-delivery-response as its output point, so those rows stay `declared-not-proven` with the record attached. Cursor and VS Code have no record (their hosts could not be installed in the evidence environment), and no record covers Windows, macOS, arm64, a signed commercial artefact or a real model, so the decision stays NO-GO.",
+  "decisionMeaning": "MKT-03. This manifest declares, for every sold connector, the pre-prompt / pre-tool / post-tool-output / pre-delivery-response / model-stream / network interception points, the tamper posture and the outcome of the plugin-disabled, crashed, offline and large-binary-response conditions. A status of `enforced` requires a named real-host acceptance record in the row evidence. The records under docs/evidence/real-host/ are written by `pnpm test:e2e:real-host`: the real, unmodified host binary (Claude Code 2.1.282, Codex CLI 0.141.0, OpenCode 1.18.32, OpenClaw 2026.9.6) runs one non-interactive turn per scenario against a scripted loopback mock model, with AIDR installed from the development build in a disposable HOME on linux/x64. A row is `enforced` only where such a record proves the point for that host version on that platform and the support matrix sells the point. Since 2026-09-30 the support matrix sells pre-prompt for Claude Code, Codex, OpenCode and OpenClaw and OpenClaw's pre-model post-tool-output (additionalInterceptionPoints), so those rows are `enforced` on their records; OpenClaw's pre-delivery-response stays `declared-not-proven` because no record exercises channel delivery. Cursor and VS Code have no record (their hosts could not be installed in the evidence environment), and no record covers Windows, macOS, arm64, a signed commercial artefact or a real model, so the decision stays NO-GO.",
   "soldConnectorSource": "./support-matrix.json",
   "supportMatrixMapping": {
     "interceptionPoint": {
@@ -18,6 +18,12 @@
       "tool-output-inspection": ["post-tool-output"],
       "post-tool-call": ["post-tool-output"],
       "none": []
+    },
+    "additionalInterceptionPoints": {
+      "pre-prompt": ["pre-prompt"],
+      "post-tool-output": ["post-tool-output"],
+      "pre-delivery-response": ["pre-delivery-response"],
+      "network-egress": ["network"]
     }
   },
   "outputSidePoints": ["post-tool-output", "pre-delivery-response", "model-stream"],
@@ -30,7 +36,7 @@
     {
       "connector": "claude-code",
       "point": "pre-prompt",
-      "status": "declared-not-proven",
+      "status": "enforced",
       "hostBoundary": "UserPromptSubmit",
       "reason": null,
       "evidence": [
@@ -58,7 +64,7 @@
       "limitations": [
         "Prompt protection (secrets block, personal data warns by default) inspects the prompt text only; a hook process killed before it answers cannot block, which is a Claude Code host limitation.",
         "Real-host acceptance: Claude Code 2.1.282 on linux/x64 stopped a prompt carrying a GitHub token at UserPromptSubmit before any model request, and the audit entry records kinds only (scripted mock model, docs/evidence/real-host/claude-code.json). Other host versions and platforms are not covered.",
-        "The point is proven by the real-host record cited in the evidence, but deploy/native/support-matrix.json does not list pre-prompt among this connector's sold interception points, so the row stays `declared-not-proven` (the gate refuses `enforced` outside the sold matrix)."
+        "Sold since 2026-09-30 (deploy/native/support-matrix.json additionalInterceptionPoints). `enforced` rests on that one real-host record only: Claude Code 2.1.282 (`claude -p`), linux/x64, the development build and a scripted mock model. Windows, macOS, arm64, a signed commercial artefact, a real model and other host versions are not covered."
       ]
     },
     {
@@ -348,7 +354,7 @@
     {
       "connector": "openclaw",
       "point": "pre-prompt",
-      "status": "declared-not-proven",
+      "status": "enforced",
       "hostBoundary": "before_agent_run",
       "reason": null,
       "evidence": [
@@ -381,7 +387,7 @@
       "limitations": [
         "before_agent_run is implemented by OpenClaw's embedded and CLI runners only; it is not an input gate for the Codex or Copilot harnesses, and a host without the hook ignores the registration.",
         "A non-bundled plugin needs plugins.entries.aidr-openclaw.hooks.allowConversationAccess: true. Personal-data warnings reach the model through before_prompt_build context only. Real-host acceptance: OpenClaw 2026.9.6 (`openclaw agent --local`, linux/x64, scripted mock model) sent no model request for a prompt carrying a GitHub token (docs/evidence/real-host/openclaw.json); the gateway and channel paths are not exercised.",
-        "The point is proven by the real-host record cited in the evidence, but deploy/native/support-matrix.json does not list pre-prompt among this connector's sold interception points, so the row stays `declared-not-proven` (the gate refuses `enforced` outside the sold matrix)."
+        "Sold since 2026-09-30 (deploy/native/support-matrix.json additionalInterceptionPoints). `enforced` rests on that one real-host record only: the OpenClaw 2026.9.6 embedded runner (`openclaw agent --local`; not the gateway, channel delivery or the Codex/Copilot harnesses), linux/x64, the development build and a scripted mock model. Windows, macOS, arm64, a signed commercial artefact, a real model and other host versions are not covered."
       ]
     },
     {
@@ -420,7 +426,7 @@
     {
       "connector": "openclaw",
       "point": "post-tool-output",
-      "status": "declared-not-proven",
+      "status": "enforced",
       "hostBoundary": "registerAgentToolResultMiddleware|tool_result_persist",
       "reason": null,
       "evidence": [
@@ -454,7 +460,7 @@
         "The boundary is OpenClaw's agent tool-result middleware: the tool has already executed, and the embedded runner replaces its result before the model context. Only the `openclaw` runtime is registered; OpenClaw's Codex native-hook relay forwards a middleware result to after_tool_call, not to the model, so the Codex harness is not covered.",
         "OpenClaw accepts the middleware from an installed plugin only with contracts.agentToolResultMiddleware in the manifest and plugins.entries.aidr-openclaw.enabled: true; otherwise it drops the registration with a registry diagnostic and the connector logs the boundary as enforced: false.",
         "Real-host acceptance: on the OpenClaw 2026.9.6 embedded runner (`openclaw agent --local`, linux/x64, scripted mock model) an exec result carrying a GitHub token reached the model only as AIDR's quarantine notice (docs/evidence/real-host/openclaw.json). The earlier record showed this as a gap while only after_tool_call/tool_result_persist were registered. Non-text, MCP and gateway/channel paths are not host-accepted.",
-        "The point is proven by the real-host record cited in the evidence, but deploy/native/support-matrix.json sells `pre-delivery-response` as this connector's output interception point, not post-tool-output, so the row stays `declared-not-proven` (the gate refuses `enforced` outside the sold matrix)."
+        "Sold since 2026-09-30 (deploy/native/support-matrix.json additionalInterceptionPoints, next to the `pre-delivery-response` output point). `enforced` rests on that one real-host record only: the OpenClaw 2026.9.6 embedded runner with plugins.entries.aidr-openclaw.enabled: true, linux/x64, the development build and a scripted mock model. The Codex harness, the gateway process, Windows, macOS, a signed commercial artefact and a real model are not covered."
       ]
     },
     {
@@ -482,7 +488,7 @@
     {
       "connector": "opencode",
       "point": "pre-prompt",
-      "status": "declared-not-proven",
+      "status": "enforced",
       "hostBoundary": "chat.message",
       "reason": null,
       "evidence": [
@@ -510,7 +516,7 @@
       "limitations": [
         "Only the user's own text parts are inspected; synthetic parts OpenCode generates (such as attached file contents) are not.",
         "A block replaces the text parts and throws from chat.message. Real-host acceptance: on OpenCode 1.18.32 (`opencode run`, linux/x64, scripted mock model) no model request carried a prompted GitHub token (docs/evidence/real-host/opencode.json); how the interactive TUI presents the thrown error is not verified.",
-        "The point is proven by the real-host record cited in the evidence, but deploy/native/support-matrix.json does not list pre-prompt among this connector's sold interception points, so the row stays `declared-not-proven` (the gate refuses `enforced` outside the sold matrix)."
+        "Sold since 2026-09-30 (deploy/native/support-matrix.json additionalInterceptionPoints). `enforced` rests on that one real-host record only: OpenCode 1.18.32 (`opencode run`), linux/x64, the development build and a scripted mock model. Windows, macOS, arm64, a signed commercial artefact, a real model and other host versions are not covered."
       ]
     },
     {
@@ -595,7 +601,7 @@
     {
       "connector": "codex",
       "point": "pre-prompt",
-      "status": "declared-not-proven",
+      "status": "enforced",
       "hostBoundary": "UserPromptSubmit",
       "reason": null,
       "evidence": [
@@ -623,7 +629,7 @@
       "limitations": [
         "Codex fails open when the UserPromptSubmit hook is untrusted, crashes, times out or answers malformed output; the connector answers every path it controls with an explicit block or exit 2 with stderr.",
         "The handler must be registered and trusted separately from PreToolUse. Real-host acceptance: Codex CLI 0.141.0 on linux/x64 ended the turn before any model request for a prompt carrying a GitHub token (scripted mock model, hook trust bypassed with --dangerously-bypass-hook-trust, docs/evidence/real-host/codex.json); `codex exec` surfaces no reason text for the block.",
-        "The point is proven by the real-host record cited in the evidence, but deploy/native/support-matrix.json does not list pre-prompt among this connector's sold interception points, so the row stays `declared-not-proven` (the gate refuses `enforced` outside the sold matrix)."
+        "Sold since 2026-09-30 (deploy/native/support-matrix.json additionalInterceptionPoints). `enforced` rests on that one real-host record only: Codex CLI 0.141.0 (`codex exec`, hook trust bypassed; the handler must be registered and trusted in a deployment), linux/x64, the development build and a scripted mock model. Windows, macOS, arm64, a signed commercial artefact, a real model and other host versions are not covered."
       ]
     },
     {

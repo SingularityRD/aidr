@@ -15,7 +15,10 @@
  *   3. Agreement with the sold support matrix: a point the support matrix
  *      advertises for a connector may not be `unsupported` here, output-side
  *      points may not be claimed where the support matrix declares `none`, and
- *      nothing may be `enforced` that is not part of the sold matrix.
+ *      nothing may be `enforced` that is not part of the sold matrix. A row's
+ *      `additionalInterceptionPoints` (sold points beyond its primary input and
+ *      output point) must each be `enforced` here, so the sold scope only grows
+ *      where a real-host acceptance record proves the point.
  *
  * `enforced` additionally requires a named real-host acceptance record in the
  * row evidence, so a row can never round up to enforced on source code alone.
@@ -123,7 +126,21 @@ export const SUPPORT_MATRIX_MAPPING = {
 		"post-tool-call": ["post-tool-output"],
 		none: [],
 	},
+	additionalInterceptionPoints: {
+		"pre-prompt": ["pre-prompt"],
+		"post-tool-output": ["post-tool-output"],
+		"pre-delivery-response": ["pre-delivery-response"],
+		"network-egress": ["network"],
+	},
 };
+
+/**
+ * Support-matrix fields that hold a list of points rather than one. A point in
+ * `additionalInterceptionPoints` widens the sold scope beyond the row's primary
+ * input/output points, so the gate accepts it only where this matrix records
+ * that point as `enforced` with a real-host acceptance record.
+ */
+const SUPPORT_MATRIX_LIST_FIELDS = new Set(["additionalInterceptionPoints"]);
 
 /**
  * Real-host acceptance records are not connector source, so they live in one
@@ -582,23 +599,46 @@ function checkSupportMatrixAgreement({ matrix, support, soldConnectors, byConnec
 
 	for (const [connector, supportRow] of supportByConnector) {
 		const declared = [];
+		const additional = [];
 		for (const [field, mapping] of Object.entries(SUPPORT_MATRIX_MAPPING)) {
-			const value = supportRow[field];
-			if (value === null || value === undefined) continue;
-			if (!Object.hasOwn(mapping, value)) {
-				state.add("UNMAPPED_SUPPORT_MATRIX_POINT", connector, null, `${field}=${String(value)}`);
+			const raw = supportRow[field];
+			if (raw === null || raw === undefined) continue;
+			const listField = SUPPORT_MATRIX_LIST_FIELDS.has(field);
+			if (listField !== Array.isArray(raw)) {
+				state.add("UNMAPPED_SUPPORT_MATRIX_POINT", connector, null, `${field} must be ${listField ? "an array" : "a single value"}`);
 				continue;
 			}
-			const mapped = mapping[value];
-			if (mapped.length === 0 && field === "outputInterceptionPoint") {
-				for (const point of OUTPUT_SIDE_POINTS) {
-					const row = byConnectorPoint.get(`${connector}/${point}`);
-					if (row && row.status !== "unsupported") {
-						state.add("SUPPORT_MATRIX_OUTPUT_NONE", connector, point, `support matrix declares ${field}=${value}`);
+			for (const value of listField ? raw : [raw]) {
+				if (typeof value !== "string" || !Object.hasOwn(mapping, value)) {
+					state.add("UNMAPPED_SUPPORT_MATRIX_POINT", connector, null, `${field}=${String(value)}`);
+					continue;
+				}
+				const mapped = mapping[value];
+				if (mapped.length === 0 && field === "outputInterceptionPoint") {
+					for (const point of OUTPUT_SIDE_POINTS) {
+						const row = byConnectorPoint.get(`${connector}/${point}`);
+						if (row && row.status !== "unsupported") {
+							state.add("SUPPORT_MATRIX_OUTPUT_NONE", connector, point, `support matrix declares ${field}=${value}`);
+						}
 					}
 				}
+				for (const point of mapped) {
+					declared.push(point);
+					if (listField) additional.push(point);
+				}
 			}
-			for (const point of mapped) declared.push(point);
+		}
+
+		for (const point of additional) {
+			const row = byConnectorPoint.get(`${connector}/${point}`);
+			if (row && row.status !== "enforced") {
+				state.add(
+					"ADDITIONAL_POINT_NOT_ENFORCED",
+					connector,
+					point,
+					"additionalInterceptionPoints sells a point only where a real-host acceptance record makes it enforced",
+				);
+			}
 		}
 
 		for (const point of declared) {

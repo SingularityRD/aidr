@@ -73,7 +73,7 @@ test("the committed matrix is structurally valid, source-grounded and honestly o
 	assert.equal(report.decision, "NO-GO");
 	assert.equal(report.counts.connectors, 6);
 	assert.equal(report.counts.rows, 36);
-	assert.equal(report.counts.byStatus.enforced, 6);
+	assert.equal(report.counts.byStatus.enforced, 11);
 	assert.deepEqual(
 		committedMatrix()
 			.rows.filter((entry) => entry.status === "enforced")
@@ -81,20 +81,25 @@ test("the committed matrix is structurally valid, source-grounded and honestly o
 			.sort(),
 		[
 			"claude-code/post-tool-output",
+			"claude-code/pre-prompt",
 			"claude-code/pre-tool",
+			"codex/pre-prompt",
 			"codex/pre-tool",
+			"openclaw/post-tool-output",
+			"openclaw/pre-prompt",
 			"openclaw/pre-tool",
 			"opencode/post-tool-output",
+			"opencode/pre-prompt",
 			"opencode/pre-tool",
 		],
 	);
 	// Cursor and VS Code have no real-host record.
 	assert.equal(report.connectorsWithoutNamedAcceptance, 2);
-	assert.equal(report.openPointCount, 30);
+	assert.equal(report.openPointCount, 25);
 	assert.equal(report.matrixSha256.length, 64);
 });
 
-test("OpenClaw opaque binary remains uninspected and its pre-model quarantine is not host-accepted", () => {
+test("OpenClaw opaque binary remains uninspected and is not host-accepted with a binary result", () => {
 	const matrix = committedMatrix();
 	const binary = matrix.failureConditions.find(
 		(entry) => entry.connector === "openclaw" && entry.condition === "large-binary-response",
@@ -298,17 +303,87 @@ test("an acceptance record that does not prove the cited point fails the gate", 
 });
 
 test("a point the record proves stays unenforced when the support matrix does not sell it", () => {
-	// OpenClaw's record proves post-tool-output, but OpenClaw sells pre-delivery-response.
+	// OpenClaw's record proves post-tool-output; without the sold additional point the
+	// enforced row is outside the sold matrix even though the record proves it.
 	const record = JSON.parse(readFileSync(resolve(REPO_ROOT, "docs/evidence/real-host/openclaw.json"), "utf8"));
 	assert.equal(record.proves.points["post-tool-output"], "passed");
-	const report = verify(
+	assert.equal(row(committedMatrix(), "openclaw", "post-tool-output").status, "enforced");
+	const report = verify(committedMatrix(), {
+		mutateSupport: (support) => {
+			const openclaw = support.rows.find((entry) => entry.connector === "openclaw");
+			openclaw.additionalInterceptionPoints = ["pre-prompt"];
+		},
+	});
+	assert.equal(report.ok, false);
+	assert.deepEqual(
+		report.failures.map((failure) => `${failure.code}:${failure.connector}/${failure.point}`),
+		["ENFORCED_OUTSIDE_SOLD_MATRIX:openclaw/post-tool-output"],
+	);
+});
+
+test("an additional sold point must be enforced on a real-host record", () => {
+	// Cursor's pre-prompt hook exists in source but has no real-host record, so the
+	// sold scope cannot grow to include it.
+	const cursor = verify(committedMatrix(), {
+		mutateSupport: (support) => {
+			support.rows.find((entry) => entry.connector === "cursor").additionalInterceptionPoints = ["pre-prompt"];
+		},
+	});
+	assert.equal(cursor.ok, false);
+	assert.deepEqual(
+		cursor.failures.map((failure) => `${failure.code}:${failure.connector}/${failure.point}`),
+		["ADDITIONAL_POINT_NOT_ENFORCED:cursor/pre-prompt"],
+	);
+
+	// Dropping the acceptance record from a sold additional point fails twice over.
+	const withoutRecord = verify(
 		mutate((matrix) => {
-			row(matrix, "openclaw", "post-tool-output").status = "enforced";
+			const prompt = row(matrix, "codex", "pre-prompt");
+			prompt.evidence = prompt.evidence.filter((entry) => entry.kind !== "acceptance-record");
 		}),
 	);
-	assert.equal(report.ok, false);
-	assert.ok(codes(report).includes("ENFORCED_OUTSIDE_SOLD_MATRIX"), report.failureReasons.join("; "));
-	assert.ok(!codes(report).includes("ACCEPTANCE_RECORD_DOES_NOT_PROVE"), report.failureReasons.join("; "));
+	assert.equal(withoutRecord.ok, false);
+	assert.ok(codes(withoutRecord).includes("ENFORCED_WITHOUT_ACCEPTANCE_RECORD"), withoutRecord.failureReasons.join("; "));
+
+	// Downgrading a sold additional point is refused instead of silently narrowing the claim.
+	const downgraded = verify(
+		mutate((matrix) => {
+			row(matrix, "claude-code", "pre-prompt").status = "declared-not-proven";
+		}),
+	);
+	assert.equal(downgraded.ok, false);
+	assert.deepEqual(codes(downgraded), ["ADDITIONAL_POINT_NOT_ENFORCED"]);
+});
+
+test("additionalInterceptionPoints must be a list of mapped points", () => {
+	const scalar = verify(committedMatrix(), {
+		mutateSupport: (support) => {
+			support.rows.find((entry) => entry.connector === "codex").additionalInterceptionPoints = "pre-prompt";
+		},
+	});
+	assert.equal(scalar.ok, false);
+	assert.ok(codes(scalar).includes("UNMAPPED_SUPPORT_MATRIX_POINT"), scalar.failureReasons.join("; "));
+
+	const unmapped = verify(committedMatrix(), {
+		mutateSupport: (support) => {
+			support.rows.find((entry) => entry.connector === "codex").additionalInterceptionPoints = ["model-stream"];
+		},
+	});
+	assert.equal(unmapped.ok, false);
+	assert.ok(codes(unmapped).includes("UNMAPPED_SUPPORT_MATRIX_POINT"), unmapped.failureReasons.join("; "));
+
+	// Codex declares no output point, so an additional output point contradicts it.
+	const contradicts = verify(committedMatrix(), {
+		mutateSupport: (support) => {
+			support.rows.find((entry) => entry.connector === "codex").additionalInterceptionPoints = [
+				"pre-prompt",
+				"post-tool-output",
+			];
+		},
+	});
+	assert.equal(contradicts.ok, false);
+	assert.ok(codes(contradicts).includes("ADDITIONAL_POINT_NOT_ENFORCED"), contradicts.failureReasons.join("; "));
+	assert.ok(codes(contradicts).includes("SUPPORT_MATRIX_REQUIRES_POINT"), contradicts.failureReasons.join("; "));
 });
 
 test("a failure condition must match the outcome its acceptance record observed", () => {
@@ -381,7 +456,7 @@ test("the CLI reports the committed matrix and exits 0 while keeping readiness N
 	assert.equal(result.status, 0, result.stderr);
 	assert.match(result.stdout, /validity PASS {2}readiness NO-GO/u);
 	assert.match(result.stdout, /failures 0/u);
-	assert.match(result.stdout, /enforced=6/u);
+	assert.match(result.stdout, /enforced=11/u);
 });
 
 test("the CLI fails closed on a validation failure and on --require-enforced", () => {

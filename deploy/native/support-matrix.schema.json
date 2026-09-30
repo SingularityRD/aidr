@@ -116,6 +116,13 @@
         "outputInterceptionPoint": {
           "oneOf": [{ "type": "string", "minLength": 1, "pattern": "\\S" }, { "type": "null" }]
         },
+        "additionalInterceptionPoints": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "pattern": "\\S" },
+          "description": "Further sold interception points beyond interceptionPoint and outputInterceptionPoint, each from interceptionPointVocabulary. deploy/native/verify-interception-matrix.mjs accepts an entry only where the interception matrix records that point as enforced with a real-host acceptance record."
+        },
         "tamperResistance": { "type": "string", "minLength": 1, "pattern": "\\S" },
         "supportedPlatforms": {
           "type": "array",

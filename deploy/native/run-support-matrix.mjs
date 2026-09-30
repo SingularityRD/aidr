@@ -109,7 +109,7 @@ export const RESIDUAL_REQUIRED_FIELDS = ["id", "description", "ownerRole", "requ
 const RESIDUAL_STRING_FIELDS = ["id", "description", "ownerRole", "requiredInput", "acceptanceCommand"];
 /** Optional fields accepted by the published schema and validator. */
 const MATRIX_OPTIONAL_FIELDS = ["$schema"];
-export const ROW_OPTIONAL_FIELDS = ["versionArgs"];
+export const ROW_OPTIONAL_FIELDS = ["versionArgs", "additionalInterceptionPoints"];
 /** Exact property sets paired with each `additionalProperties: false` schema. */
 export const MATRIX_ALLOWED_FIELDS = [...MATRIX_OPTIONAL_FIELDS, ...MATRIX_REQUIRED_FIELDS];
 export const ROW_ALLOWED_FIELDS = [...ROW_REQUIRED_FIELDS, ...ROW_OPTIONAL_FIELDS];
@@ -260,6 +260,22 @@ export function validateMatrix(matrix) {
 		}
 		if (row.outputInterceptionPoint !== null && !matrix.interceptionPointVocabulary.includes(row.outputInterceptionPoint)) {
 			fail(`row ${row.connector} has an unknown outputInterceptionPoint`);
+		}
+		if (Object.hasOwn(row, "additionalInterceptionPoints")) {
+			const additional = row.additionalInterceptionPoints;
+			requireStringArrayItems(additional, "additionalInterceptionPoints", `row ${row.connector}`);
+			if (additional.length === 0) fail(`row ${row.connector}.additionalInterceptionPoints must be a non-empty array`);
+			if (new Set(additional).size !== additional.length) {
+				fail(`row ${row.connector}.additionalInterceptionPoints contains duplicates`);
+			}
+			for (const point of additional) {
+				if (!matrix.interceptionPointVocabulary.includes(point) || point === "none") {
+					fail(`row ${row.connector} has an unknown additionalInterceptionPoints entry ${point}`);
+				}
+				if (point === row.interceptionPoint || point === row.outputInterceptionPoint) {
+					fail(`row ${row.connector}.additionalInterceptionPoints repeats its primary point ${point}`);
+				}
+			}
 		}
 		if (!Array.isArray(row.supportedPlatforms) || row.supportedPlatforms.length === 0) {
 			fail(`row ${row.connector} must declare supportedPlatforms`);
@@ -560,6 +576,7 @@ export async function buildRecord(options = {}) {
 			advertisedContexts: row.supportedContexts,
 			interceptionPoint: row.interceptionPoint,
 			outputInterceptionPoint: row.outputInterceptionPoint,
+			additionalInterceptionPoints: row.additionalInterceptionPoints ?? [],
 			tamperResistance: row.tamperResistance,
 			knownBypasses: row.knownBypasses,
 			unobservedActions: row.unobservedActions,

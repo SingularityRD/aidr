@@ -232,6 +232,9 @@ test("the support-matrix schema exists and agrees with the validator constants",
 	assert.equal(row.properties.hostBinaryEnvOverride.oneOf[0].pattern, HOST_BINARY_ENV_PATTERN);
 	assert.equal(row.properties.versionArgs.minItems, 1);
 	assert.equal(row.properties.versionArgs.items.pattern, NON_EMPTY_STRING_PATTERN);
+	assert.equal(row.properties.additionalInterceptionPoints.minItems, 1);
+	assert.equal(row.properties.additionalInterceptionPoints.uniqueItems, true);
+	assert.equal(row.properties.additionalInterceptionPoints.items.pattern, NON_EMPTY_STRING_PATTERN);
 	assert.equal(row.properties.acceptanceEvidence.items.$ref, "#/$defs/evidence");
 	assert.deepEqual(schema.$defs.evidence.required, EVIDENCE_REQUIRED_FIELDS);
 	assert.equal(schema.$defs.evidence.additionalProperties, false);
@@ -283,6 +286,46 @@ test("the support-matrix schema exists and agrees with the validator constants",
 		assert.ok(Object.hasOwn(CONNECTOR_HOST_IDS, connector), `no scenario host id is declared for ${connector}`);
 	}
 	assert.equal(validateMatrix(committedMatrix()).rows.length, 6);
+});
+
+test("additionalInterceptionPoints must name further vocabulary points, once each", () => {
+	const withAdditional = () => {
+		const matrix = fixtureMatrix();
+		matrix.interceptionPointVocabulary = ["pre-tool-call", "pre-prompt", "post-tool-output", "none"];
+		return matrix;
+	};
+	const valid = withAdditional();
+	valid.rows[0].additionalInterceptionPoints = ["pre-prompt"];
+	assert.deepEqual(validateMatrix(valid).rows[0].additionalInterceptionPoints, ["pre-prompt"]);
+
+	const cases = [
+		[[], /additionalInterceptionPoints must be a non-empty array/u],
+		["pre-prompt", /additionalInterceptionPoints must be an array/u],
+		[[""], /additionalInterceptionPoints entries must be non-empty strings/u],
+		[["pre-prompt", "pre-prompt"], /additionalInterceptionPoints contains duplicates/u],
+		[["model-stream"], /unknown additionalInterceptionPoints entry model-stream/u],
+		[["none"], /unknown additionalInterceptionPoints entry none/u],
+		[["pre-tool-call"], /additionalInterceptionPoints repeats its primary point pre-tool-call/u],
+	];
+	for (const [value, expected] of cases) {
+		const broken = withAdditional();
+		broken.rows[0].additionalInterceptionPoints = value;
+		assert.throws(() => validateMatrix(broken), expected, JSON.stringify(value));
+	}
+
+	// The committed manifest sells pre-prompt beyond the primary points for the four
+	// connectors with a real-host record, and OpenClaw's post-tool-output as well.
+	const committed = Object.fromEntries(
+		committedMatrix().rows.map((row) => [row.connector, row.additionalInterceptionPoints ?? []]),
+	);
+	assert.deepEqual(committed, {
+		"claude-code": ["pre-prompt"],
+		cursor: [],
+		vscode: [],
+		openclaw: ["pre-prompt", "post-tool-output"],
+		opencode: ["pre-prompt"],
+		codex: ["pre-prompt"],
+	});
 });
 
 test("the validator rejects schema-disallowed and malformed matrix fields", () => {
