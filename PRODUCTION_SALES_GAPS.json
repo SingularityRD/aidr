@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "generated_on": "2026-09-25",
+  "generated_on": "2026-09-30",
   "generation_timezone": "Europe/Istanbul",
   "generation_note": "Generated from the current worktree. source_commit identifies only the base commit; worktree_has_changes is explicit. This report is not candidate-bound release evidence. READINESS_BACKLOG.json is an older issue-ledger snapshot; its historical open IDs are not current verification results.",
   "decision": "NO-GO",
-  "source_commit": "074108e526f8da870da49e981b3961e2bf02296c",
+  "source_commit": "4b5f67e9acbdfc882001feb81a5012acd4d6a2dd",
   "worktree_has_changes": true,
   "historical_issue_ledger": {
     "path": "READINESS_BACKLOG.json",
@@ -27,7 +27,7 @@
       "priority": "P0",
       "title": "Gerçek host ve işletim sistemi kapsamı",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "deploy/native/support-matrix.json satilan connector/OS/arch/context/interception matrisini ve bilinen bypass/unobserved listesini tanimliyor; deploy/native/run-support-matrix.mjs kurulu olmayan hostu HOST_UNAVAILABLE olarak NO-GO uretiyor. pnpm test:e2e:real-host gercek Claude Code 2.1.282, Codex CLI 0.141.0, OpenCode 1.18.32 ve OpenClaw 2026.9.6 ikililerini betikli bir mock modelle surup docs/evidence/real-host/ altinda kabul kayitlari uretti; interception matrisi claude-code pre-tool/post-tool-output, codex pre-tool, opencode pre-tool/post-tool-output ve openclaw pre-tool satirlarini bu kayitlarla enforced olarak isaretliyor, Claude Code icin oldurulen PreToolUse kancasinin fail-open oldugu gozlendi. Kayitlar yalniz linux/x64, gelistirme build'i ve mock model uzerinde; Cursor/VS Code kaydi, Windows/macOS/arm64, imzali artefact, gercek model ve isimli kabul acik, matris karari NO-GO.",
+      "implementation_update": "deploy/native/support-matrix.json satilan connector/OS/arch/context/interception matrisini ve bilinen bypass/unobserved listesini tanimliyor; deploy/native/run-support-matrix.mjs kurulu olmayan hostu HOST_UNAVAILABLE olarak NO-GO uretiyor. pnpm test:e2e:real-host gercek Claude Code 2.1.282, Codex CLI 0.141.0, OpenCode 1.18.32 ve OpenClaw 2026.9.6 ikililerini betikli bir mock modelle surup docs/evidence/real-host/ altinda kabul kayitlari uretti; 2026-09-30 urun karariyla support matrisi pre-prompt'u Claude Code, Codex, OpenCode ve OpenClaw icin, OpenClaw'in model oncesi post-tool-output karantinasini da additionalInterceptionPoints ile satilan kapsama ekledi (dogrulayici bu alandaki bir noktayi yalniz gercek-host kaydiyla enforced ise kabul ediyor). Interception matrisi claude-code pre-tool/pre-prompt/post-tool-output, codex pre-tool/pre-prompt, opencode pre-tool/pre-prompt/post-tool-output ve openclaw pre-tool/pre-prompt/post-tool-output (yalniz embedded runner, plugins.entries.aidr-openclaw.enabled: true, Codex harness haric) satirlarini bu kayitlarla enforced olarak isaretliyor (11 enforced, 25 acik nokta), Claude Code icin oldurulen PreToolUse kancasinin fail-open oldugu gozlendi. Kayitlar yalniz linux/x64, gelistirme build'i ve mock model uzerinde; Cursor/VS Code kaydi, Windows/macOS/arm64, imzali artefact, gercek model ve isimli kabul acik, matris karari NO-GO.",
       "feature_ids": [
         "CON-01",
         "CON-02",
@@ -109,7 +109,7 @@
       "priority": "P1",
       "title": "Model tüketiminden önce çıktı denetimi",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Çıktı tarayıcı 2 MiB UTF-8, 3000 ms best-effort ve 128 bulgu sınırında inspection_incomplete/critical fail-closed üretiyor; JSON/Unicode ve sınır payloadları test edildi. Hassas çıktı karantinası artık yalnız yüksek kesinlikli bulgularda (doğrulanmış anahtar/token biçimleri, PEM anahtar materyali, Luhn kartları, etiketli SSN) tetikleniyor. Claude Code UserPromptSubmit prompt koruması sırları engelliyor, PII'de (TC Kimlik, IBAN, TR/uluslararası telefon dahil) uyarıyor; çakışma çözümü doğrusal, engelleyici tarama ilk doğrulanmış sırda duruyor ve 7 sn iç süre sınırı (host 10 sn'de kancayı öldürüyor) secrets=block veya tenant DLP varken bitmemiş taramayı engelliyor, aksi halde görünür 'tam incelenmedi' uyarısıyla gönderiyor; eksik kişisel veri taraması temiz sayılmıyor. DLP redact yalnız rewrite destekleyen hostta (Claude Code updatedInput, OpenCode args), shell açısından etkisiz REDACTED tokenlarıyla ve yeniden yazılan girdi DLP ve tehdit sezgilerinden temiz geçerse uygulanıyor. Her hostta aynı-tur blok kanıtı yok.",
+      "implementation_update": "Çıktı tarayıcı 2 MiB UTF-8, 3000 ms best-effort ve 128 bulgu sınırında inspection_incomplete/critical fail-closed üretiyor; JSON/Unicode ve sınır payloadları test edildi. Hassas çıktı karantinası artık yalnız yüksek kesinlikli bulgularda (doğrulanmış anahtar/token biçimleri, PEM anahtar materyali, Luhn kartları, etiketli SSN) tetikleniyor. Claude Code UserPromptSubmit prompt koruması sırları engelliyor, PII'de (TC Kimlik, IBAN, TR/uluslararası telefon dahil) uyarıyor; çakışma çözümü doğrusal, engelleyici tarama ilk doğrulanmış sırda duruyor ve 7 sn iç süre sınırı (host 10 sn'de kancayı öldürüyor) secrets=block veya tenant DLP varken bitmemiş taramayı engelliyor, aksi halde görünür 'tam incelenmedi' uyarısıyla gönderiyor; eksik kişisel veri taraması temiz sayılmıyor. DLP redact yalnız rewrite destekleyen hostta (Claude Code updatedInput, OpenCode args), shell açısından etkisiz REDACTED tokenlarıyla ve yeniden yazılan girdi DLP ve tehdit sezgilerinden temiz geçerse uygulanıyor. Prompt koruması Codex UserPromptSubmit, OpenCode chat.message ve OpenClaw before_agent_run üzerinde de çalışıyor. Gerçek-host kayıtları (linux/x64, geliştirme build'i, betikli mock model) dört bağlayıcıda token taşıyan prompt'un modele hiç ulaşmadığını, Claude Code, OpenCode ve OpenClaw embedded runner'da sır içeren araç çıktısının modele yalnız karantina bildirimi olarak ulaştığını gösteriyor; bu noktalar 2026-09-30'dan beri satılan kapsamda. Cursor/VS Code için gerçek-host kaydı yok, Codex araç çıktısını denetlemiyor; gerçek model, Windows/macOS/arm64 ve imzalı artefact kabulü açık.",
       "feature_ids": [
         "DET-06",
         "DET-07",
@@ -1717,8 +1717,8 @@
         "packages/sdk/src/output-guard.ts"
       ],
       "consumer": "Connector-specific result boundaries",
-      "delivered": "Bounded pre-model tool-result inspection in OpenCode, VS Code, SDK and OpenClaw (tool-result middleware on the embedded runner); Claude/Cursor use host-specific later boundaries. Sensitive-output quarantine now fires only on high-precision findings (verified key/token formats, PEM key material, Luhn cards, labelled SSNs), so timestamps, hashes, UUIDs and git emails no longer quarantine output",
-      "remaining": "Claude PostToolUse cannot prove same-turn model blocking and OpenClaw's pre-model quarantine covers only the explicitly enabled plugin on the embedded runner (not the Codex harness); provider streams and native host bypass need acceptance; the precision filter trades recall on unlabelled formats and needs customer benign/attack corpus calibration",
+      "delivered": "Bounded pre-model tool-result inspection in OpenCode, VS Code, SDK and OpenClaw (tool-result middleware on the embedded runner); Claude Code replaces the result through PostToolUse updatedToolOutput and Cursor uses host-specific later boundaries. Real-host records (linux/x64, development build, scripted mock model) show a secret-bearing tool result reaching the model only as AIDR's quarantine notice on Claude Code 2.1.282, OpenCode 1.18.32 and the OpenClaw 2026.9.6 embedded runner, and post-tool-output is sold for those three connectors (OpenClaw since 2026-09-30). Sensitive-output quarantine now fires only on high-precision findings (verified key/token formats, PEM key material, Luhn cards, labelled SSNs), so timestamps, hashes, UUIDs and git emails no longer quarantine output",
+      "remaining": "The real-host records quarantine one secret-bearing Bash/exec result with a scripted model; prompt-injection payloads, MCP and non-text results, Cursor/VS Code and Codex (no output interception) are not host-accepted, and OpenClaw's pre-model quarantine covers only the explicitly enabled plugin on the embedded runner (not the Codex harness); provider streams and native host bypass need acceptance; the precision filter trades recall on unlabelled formats and needs customer benign/attack corpus calibration",
       "production_accepted": false,
       "gap_ids": [
         "T04"
@@ -1880,12 +1880,16 @@
       "source_paths": [
         "packages/core/src/prompt-protection.ts",
         "packages/claude-code/src/user-prompt-submit.ts",
+        "packages/codex/src/prompt-protection.ts",
+        "packages/opencode/src/prompt-handler.ts",
+        "packages/openclaw/src/prompt-protection.ts",
         "packages/core/src/evaluator.ts",
-        "packages/opencode/src/tool-handler.ts"
+        "packages/opencode/src/tool-handler.ts",
+        "deploy/native/interception-matrix.json"
       ],
-      "consumer": "Claude Code UserPromptSubmit and connectors that declare input rewrite",
-      "delivered": "Prompts are scanned for secrets (block by default), PII including TC Kimlik, IBAN and TR/international phones from the AIDR Privacy rules (warn by default) and tenant DLP, with kinds/counts only. Overlap resolution is a linear sort-and-sweep, a blocking scan stops at the first confirmed secret, and an internal deadline (default 7 s; the host kills the hook at 10 s) blocks an unfinished scan when secrets=block or a tenant DLP policy applies and otherwise sends the prompt with a visible not-fully-inspected notice; an incomplete personal-data scan is never reported clean. A DLP redact becomes an allow with rewritten input only where the host supports rewrite (Claude Code updatedInput, OpenCode args), using shell-inert REDACTED tokens, only if every parameter survives and the rewritten input rescans clean against DLP and the threat heuristics (dlp_redaction_unsafe otherwise); everything else is denied",
-      "remaining": "Prompt protection exists only for Claude Code; Codex, Cursor, VS Code and OpenClaw keep redact as deny; with PII in the default warn mode a prompt that could not be fully inspected is still sent with a notice; the rewrite contract is verified locally against one Claude Code version and still needs native host-version acceptance",
+      "consumer": "UserPromptSubmit (Claude Code, Codex, VS Code), beforeSubmitPrompt (Cursor), chat.message (OpenCode), before_agent_run (OpenClaw) and connectors that declare input rewrite",
+      "delivered": "Prompts are scanned for secrets (block by default), PII including TC Kimlik, IBAN and TR/international phones from the AIDR Privacy rules (warn by default) and tenant DLP, with kinds/counts only. Overlap resolution is a linear sort-and-sweep, a blocking scan stops at the first confirmed secret, and an internal deadline (default 7 s; the host kills the hook at 10 s) blocks an unfinished scan when secrets=block or a tenant DLP policy applies and otherwise sends the prompt with a visible not-fully-inspected notice; an incomplete personal-data scan is never reported clean. A DLP redact becomes an allow with rewritten input only where the host supports rewrite (Claude Code updatedInput, OpenCode args), using shell-inert REDACTED tokens, only if every parameter survives and the rewritten input rescans clean against DLP and the threat heuristics (dlp_redaction_unsafe otherwise); everything else is denied. Real-host records (linux/x64, development build, scripted mock model) show a prompt carrying a GitHub token never reaching the model on Claude Code 2.1.282, Codex CLI 0.141.0, OpenCode 1.18.32 and the OpenClaw 2026.9.6 embedded runner; pre-prompt is in the sold support matrix for those four connectors since 2026-09-30",
+      "remaining": "The four records cover linux/x64, a development build and a scripted mock model only (no Windows/macOS/arm64, signed artefact or real model); the Cursor and VS Code prompt hooks have no real-host record and are not sold as enforced; a Codex prompt hook that is untrusted, crashed or timed out, and a Claude Code or VS Code hook killed before it answers, let the prompt through (host behaviour); OpenClaw's gate runs in the embedded and CLI runners only; Codex, Cursor, VS Code and OpenClaw keep redact as deny; with PII in the default warn mode a prompt that could not be fully inspected is still sent with a notice; the rewrite contract is verified locally against one Claude Code version and still needs native host-version acceptance",
       "production_accepted": false,
       "gap_ids": [
         "T04",
@@ -2664,11 +2668,12 @@
       "status": "wired",
       "source_paths": [
         "packages/claude-code/src/pre-tool-use.ts",
+        "packages/claude-code/src/user-prompt-submit.ts",
         "hooks/hooks.json",
         "docs/evidence/real-host/claude-code.json"
       ],
-      "consumer": "Native PreToolUse/PostToolUse/SessionStart",
-      "delivered": "All-tool matcher, local evaluation, output feedback and startup scan. A real-host acceptance record (Claude Code 2.1.282 binary driven by a scripted mock model, pnpm test:e2e:real-host) proves pre-tool and post-tool-output enforcement",
+      "consumer": "Native PreToolUse/PostToolUse/UserPromptSubmit/SessionStart",
+      "delivered": "All-tool matcher, local evaluation, output feedback and startup scan. A real-host acceptance record (Claude Code 2.1.282 binary driven by a scripted mock model, pnpm test:e2e:real-host) proves pre-tool, pre-prompt (UserPromptSubmit) and post-tool-output enforcement; all three are in the sold support matrix",
       "remaining": "The real-host record is recorded on linux/x64 only, with a development build and a scripted mock model (no Windows/macOS/arm64, signed artefact or real model); a disabled plugin enforces nothing and a PreToolUse hook killed before it answers was observed to fail open; other host versions require native acceptance",
       "production_accepted": false,
       "gap_ids": [
@@ -2700,12 +2705,13 @@
       "status": "wired",
       "source_paths": [
         "packages/openclaw/src/tool-handler.ts",
+        "packages/openclaw/src/prompt-protection.ts",
         "packages/openclaw/src/output-protection.ts",
         "docs/evidence/real-host/openclaw.json"
       ],
-      "consumer": "before_tool_call and agent tool-result middleware",
-      "delivered": "Guarded evaluation, response actions and pre-model tool-output quarantine. A real-host acceptance record (OpenClaw 2026.9.6 embedded runner driven by a scripted mock model) proves pre-tool, pre-prompt and post-tool-output enforcement",
-      "remaining": "The real-host record is recorded on linux/x64 only, with a development build and a scripted mock model (no Windows/macOS/arm64, signed artefact or real model); the gateway process and channel delivery are not exercised; the tool-output quarantine needs plugins.entries.aidr-openclaw.enabled: true and does not cover the Codex harness, and post-tool-output is not in the sold support matrix for this connector; a removed plugin enforces nothing; other versions and event coverage require native acceptance",
+      "consumer": "before_tool_call, before_agent_run and agent tool-result middleware",
+      "delivered": "Guarded evaluation, prompt gate, response actions and pre-model tool-output quarantine. A real-host acceptance record (OpenClaw 2026.9.6 embedded runner driven by a scripted mock model) proves pre-tool, pre-prompt and post-tool-output enforcement; all three are in the sold support matrix (pre-prompt and post-tool-output since 2026-09-30)",
+      "remaining": "The real-host record is recorded on linux/x64 only, with a development build and a scripted mock model (no Windows/macOS/arm64, signed artefact or real model); the gateway process and channel delivery are not exercised; the sold tool-output quarantine needs plugins.entries.aidr-openclaw.enabled: true and does not cover the Codex harness, the sold prompt gate runs in the embedded and CLI runners only and a non-bundled plugin needs hooks.allowConversationAccess: true; pre-delivery-response is not exercised; a removed plugin enforces nothing; other versions and event coverage require native acceptance",
       "production_accepted": false,
       "gap_ids": [
         "T01",
@@ -2719,12 +2725,13 @@
       "status": "wired",
       "source_paths": [
         "packages/opencode/src/tool-handler.ts",
+        "packages/opencode/src/prompt-handler.ts",
         "packages/opencode/src/output-handler.ts",
         "docs/evidence/real-host/opencode.json"
       ],
-      "consumer": "tool.execute.before and tool.execute.after",
-      "delivered": "Guarded input and bounded pre-model tool-result inspection. A real-host acceptance record (OpenCode 1.18.32 driven by a scripted mock model) proves pre-tool and post-tool-output enforcement",
-      "remaining": "The real-host record is recorded on linux/x64 only, with a development build and a scripted mock model (no Windows/macOS/arm64, signed artefact or real model); a removed plugin enforces nothing; other versions and host cancellation acceptance required",
+      "consumer": "tool.execute.before, chat.message and tool.execute.after",
+      "delivered": "Guarded input, prompt protection and bounded pre-model tool-result inspection. A real-host acceptance record (OpenCode 1.18.32 driven by a scripted mock model) proves pre-tool, pre-prompt and post-tool-output enforcement; all three are in the sold support matrix",
+      "remaining": "The real-host record is recorded on linux/x64 only, with a development build and a scripted mock model (no Windows/macOS/arm64, signed artefact or real model); a removed plugin enforces nothing; prompt protection inspects the user's own text parts only (not synthetic parts such as attached file contents); other versions, interactive TUI presentation and host cancellation acceptance required",
       "production_accepted": false,
       "gap_ids": [
         "T01",
@@ -2740,11 +2747,12 @@
       "source_paths": [
         "packages/codex/src/enforcement.ts",
         "packages/codex/src/cli.ts",
+        "packages/codex/src/prompt-protection.ts",
         "docs/evidence/real-host/codex.json"
       ],
-      "consumer": "PreToolUse connector",
-      "delivered": "Built connector and policy decisions; argv shell/local_shell/exec commands are extracted instead of yielding an uninspected allow; ask and DLP redact are converted to an explicit deny; operator approvals release an identical retry. A real-host acceptance record (Codex CLI 0.141.0 driven by a scripted mock model) proves pre-tool enforcement",
-      "remaining": "Host can fail open when hook execution is unavailable (an untrusted, crashed or timed-out hook); not tamper-resistant isolation; the real-host record is recorded on linux/x64 only, with a development build and a scripted mock model (no Windows/macOS/arm64, signed artefact or real model)",
+      "consumer": "PreToolUse and UserPromptSubmit connector",
+      "delivered": "Built connector and policy decisions; argv shell/local_shell/exec commands are extracted instead of yielding an uninspected allow; ask and DLP redact are converted to an explicit deny; operator approvals release an identical retry. A real-host acceptance record (Codex CLI 0.141.0 driven by a scripted mock model) proves pre-tool and pre-prompt enforcement; both are in the sold support matrix (pre-prompt since 2026-09-30)",
+      "remaining": "Host can fail open when hook execution is unavailable (an untrusted, crashed or timed-out hook); the UserPromptSubmit handler must be registered and trusted separately and codex exec shows no reason text for a blocked prompt; no tool output is inspected; not tamper-resistant isolation; the real-host record is recorded on linux/x64 only, with a development build and a scripted mock model (no Windows/macOS/arm64, signed artefact or real model)",
       "production_accepted": false,
       "gap_ids": [
         "T01",
