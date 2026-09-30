@@ -1,4 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
+import { execFileSync } from "node:child_process";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
+import ts from "typescript";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { DlpPolicySchema } from "../dlp/policy.js";
 import { PRIVACY_DETECTOR_MAX_CHARS, scanPrivacyDetectors } from "../dlp/privacy-detectors.js";
 import {
@@ -385,6 +391,43 @@ describe("scanPrompt personal-data inspection coverage", () => {
 });
 
 /**
+ * Transpiles `entry` and every module it reaches through relative imports into
+ * `outDir` (types stripped, no type check) and returns the entry's output path.
+ * Bare imports resolve through a link to core's own node_modules.
+ */
+async function transpileForProcess(entry: string, outDir: string): Promise<string> {
+	const sourceRoot = dirname(entry);
+	await writeFile(join(outDir, "package.json"), '{"type":"module"}\n', "utf8");
+	await symlink(
+		fileURLToPath(new URL("../../node_modules", import.meta.url)),
+		join(outDir, "node_modules"),
+		"junction",
+	);
+	const pending = [entry];
+	const done = new Set<string>();
+	for (let file = pending.pop(); file !== undefined; file = pending.pop()) {
+		if (done.has(file)) continue;
+		done.add(file);
+		const path = relative(sourceRoot, file);
+		if (path.startsWith("..")) throw new Error(`${file} is outside ${sourceRoot}`);
+		const source = await readFile(file, "utf8");
+		const { outputText } = ts.transpileModule(source, {
+			compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+			fileName: file,
+		});
+		const output = join(outDir, "src", path.replace(/\.ts$/, ".js"));
+		await mkdir(dirname(output), { recursive: true });
+		await writeFile(output, outputText, "utf8");
+		for (const { fileName } of ts.preProcessFile(source, true, true).importedFiles) {
+			if (fileName.startsWith(".")) {
+				pending.push(join(dirname(file), fileName.replace(/\.js$/, ".ts")));
+			}
+		}
+	}
+	return join(outDir, "src", relative(sourceRoot, entry).replace(/\.ts$/, ".js"));
+}
+
+/**
  * Regression for a fail-open: Claude Code kills the prompt hook after 10 s and
  * then sends the prompt. Overlap checks used to be quadratic (a 1.47 MB prompt
  * of 88k emails plus one token took ~30 s) and several patterns rescanned long
@@ -394,44 +437,75 @@ describe("scanPrompt personal-data inspection coverage", () => {
 describe("scanPrompt cost on large adversarial prompts", () => {
 	const MAX_SCAN_MS = 2_000;
 	const TARGET_CHARS = 1_500_000;
-	const fill = (unit: string): string => unit.repeat(Math.ceil(TARGET_CHARS / unit.length));
 	const emails = (count: number): string =>
 		Array.from({ length: count }, (_, i) => `u${i}@c${i}.io `).join("");
-	const adversarial: Record<string, () => string> = {
-		"emails then a token": () => `${emails(110_000)} my token ${GITHUB_TOKEN}`,
-		"a token then emails": () => `my token ${GITHUB_TOKEN} ${emails(110_000)}`,
-		"dotted local part": () => fill("a."),
-		"dotted domain": () => `x@${fill("a.")}`,
-		"percent-encoded run": () => fill("%41"),
-		"dash-joined JWT prefixes": () => fill("eyJ-"),
-		"many tokens": () => fill(`${GITHUB_TOKEN} `),
-		"dash-separated digits": () => fill("123-"),
-		"spaced digits": () => fill("1 "),
-		"base64 run": () => fill("QUJD"),
+	const EMAIL = "u{i}@c{i}.io ";
+	/** Prompt = head + unit repeated (`{i}` = repetition index) up to TARGET_CHARS or `count` times + tail. */
+	interface AdversarialCase {
+		head?: string;
+		unit: string;
+		count?: number;
+		tail?: string;
+	}
+	const adversarial: Record<string, AdversarialCase> = {
+		"emails then a token": { unit: EMAIL, count: 110_000, tail: ` my token ${GITHUB_TOKEN}` },
+		"a token then emails": { head: `my token ${GITHUB_TOKEN} `, unit: EMAIL, count: 110_000 },
+		"dotted local part": { unit: "a." },
+		"dotted domain": { head: "x@", unit: "a." },
+		"percent-encoded run": { unit: "%41" },
+		"dash-joined JWT prefixes": { unit: "eyJ-" },
+		"many tokens": { unit: `${GITHUB_TOKEN} ` },
+		"dash-separated digits": { unit: "123-" },
+		"spaced digits": { unit: "1 " },
+		"base64 run": { unit: "QUJD" },
 		// Digits keep the privacy rules from skipping the text.
-		"Turkish text": () => fill("Çağrı İşığı 42 öğüş "),
-		"labelled Turkish IDs": () => fill(`tc: ${TC_KIMLIK} tel: 0532 123 45 67 `),
-		"unterminated quoted labels": () => fill('ad: "Ayşe 7 '),
+		"Turkish text": { unit: "Çağrı İşığı 42 öğüş " },
+		"labelled Turkish IDs": { unit: `tc: ${TC_KIMLIK} tel: 0532 123 45 67 ` },
+		"unterminated quoted labels": { unit: 'ad: "Ayşe 7 ' },
 	};
 
-	function bestOfThree(run: () => void): number {
-		let best = Number.POSITIVE_INFINITY;
-		for (let attempt = 0; attempt < 3; attempt++) {
-			const started = performance.now();
-			run();
-			best = Math.min(best, performance.now() - started);
-		}
-		return best;
-	}
+	/**
+	 * The budget is for the scan, so it is timed in a process of its own on a
+	 * fresh transpile of the current source (see prompt-scan-cost-process.mjs):
+	 * under `vitest --coverage` this process counts every executed block for V8
+	 * coverage, which made the privacy rules ~1.5–1.8x slower than the code that
+	 * ships. The bound is the same in every run.
+	 */
+	let scratch = "";
+	let scanModule = "";
+
+	beforeAll(async () => {
+		scratch = await mkdtemp(join(tmpdir(), "aidr-prompt-scan-cost-"));
+		scanModule = await transpileForProcess(
+			fileURLToPath(new URL("../prompt-protection.ts", import.meta.url)),
+			scratch,
+		);
+	}, 60_000);
+
+	afterAll(async () => {
+		if (scratch) await rm(scratch, { recursive: true, force: true });
+	});
 
 	it.each(Object.keys(adversarial))(
 		"scans %s in under 2 s",
 		(name) => {
-			const prompt = adversarial[name]?.() ?? "";
-			expect(prompt.length).toBeGreaterThanOrEqual(TARGET_CHARS);
-			const fullScan = { secrets: "warn", pii: "warn" } as const;
-			expect(bestOfThree(() => scanPrompt(prompt, fullScan))).toBeLessThan(MAX_SCAN_MS);
-			expect(bestOfThree(() => scanPrompt(prompt))).toBeLessThan(MAX_SCAN_MS);
+			const output = execFileSync(
+				process.execPath,
+				[
+					fileURLToPath(new URL("./prompt-scan-cost-process.mjs", import.meta.url)),
+					scanModule,
+					JSON.stringify({ ...adversarial[name], targetChars: TARGET_CHARS }),
+				],
+				{
+					encoding: "utf8",
+					env: { ...process.env, NODE_V8_COVERAGE: undefined },
+					timeout: 55_000,
+				},
+			);
+			const timing = JSON.parse(output) as { length: number; full: number; default: number };
+			expect(timing.length).toBeGreaterThanOrEqual(TARGET_CHARS);
+			expect(timing.full).toBeLessThan(MAX_SCAN_MS);
+			expect(timing.default).toBeLessThan(MAX_SCAN_MS);
 		},
 		60_000,
 	);

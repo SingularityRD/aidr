@@ -43,9 +43,13 @@ const ENTITY_DETECTORS: ReadonlyMap<EntityType, DlpDetector> = new Map(
 	]),
 );
 
+/** ASCII digits in `value` (code units: every ASCII digit is one, and no surrogate is one). */
 function digitCount(value: string): number {
 	let count = 0;
-	for (const character of value) if (character >= "0" && character <= "9") count++;
+	for (let index = 0; index < value.length; index++) {
+		const code = value.charCodeAt(index);
+		if (code >= 0x30 && code <= 0x39) count++;
+	}
 	return count;
 }
 

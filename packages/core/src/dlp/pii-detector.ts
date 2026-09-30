@@ -253,6 +253,75 @@ interface PatternDef {
 	readonly confidenceBase: number;
 	/** Optional post-match validation (e.g. Luhn check). */
 	readonly validate?: (value: string) => boolean;
+	/**
+	 * Optional match finder yielding exactly what a global exec loop over `regex`
+	 * would, for patterns that can find those matches more cheaply.
+	 */
+	readonly find?: (input: string) => Iterable<RegExpExecArray>;
+}
+
+/**
+ * Email: RFC 5322 simplified — covers the vast majority of real-world addresses.
+ * RFC 5321 length limits (64-char local part, 253-char domain, 63-char label)
+ * keep every attempt bounded: with unbounded runs a long `a.a.a…` or `%41%41…`
+ * text is rescanned from every word boundary (quadratic).
+ */
+const EMAIL_SOURCE = String.raw`\b[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,253}\.[A-Za-z]{2,63}\b`;
+const EMAIL_MAX_LOCAL = 64;
+/** Sticky form of the email pattern: one attempt at exactly `lastIndex`. */
+const EMAIL_AT = new RegExp(EMAIL_SOURCE, "y");
+
+/** A character of the email pattern's local-part class `[A-Za-z0-9._%+-]`. */
+function isEmailLocalChar(code: number): boolean {
+	return (
+		(code >= 0x61 && code <= 0x7a) || // a-z
+		(code >= 0x41 && code <= 0x5a) || // A-Z
+		(code >= 0x30 && code <= 0x39) || // 0-9
+		code === 0x2e || // .
+		code === 0x5f || // _
+		code === 0x25 || // %
+		code === 0x2b || // +
+		code === 0x2d // -
+	);
+}
+
+/**
+ * The matches of a global exec loop over the email pattern, found from each `@`
+ * instead of from every word boundary. A match contains exactly one `@` (neither
+ * the local part nor the domain allows one), and its local part is the at most
+ * 64 local-part characters right before it, so the only starts that can match
+ * lie in that run. Trying just those starts, in order, from the end of the
+ * previous match yields the same matches; a long digit or dotted run with no
+ * `@` (which the plain loop rescans from every boundary, 64 characters at a
+ * time) costs one `indexOf`.
+ */
+function* findEmails(input: string): Generator<RegExpExecArray> {
+	let from = 0;
+	for (let at = input.indexOf("@"); at !== -1; at = input.indexOf("@", at + 1)) {
+		const floor = Math.max(from, at - EMAIL_MAX_LOCAL);
+		let start = at;
+		while (start > floor && isEmailLocalChar(input.charCodeAt(start - 1))) start--;
+		for (let candidate = start; candidate < at; candidate++) {
+			EMAIL_AT.lastIndex = candidate;
+			const match = EMAIL_AT.exec(input);
+			if (match !== null) {
+				from = candidate + match[0].length;
+				yield match;
+				break;
+			}
+		}
+	}
+}
+
+/** The matches of `def` in `input`, in position order. */
+function* patternMatches(def: PatternDef, input: string): Generator<RegExpExecArray> {
+	if (def.find) {
+		yield* def.find(input);
+		return;
+	}
+	def.regex.lastIndex = 0;
+	let match: RegExpExecArray | null;
+	while ((match = def.regex.exec(input)) !== null) yield match;
 }
 
 const PATTERNS: readonly PatternDef[] = Object.freeze([
@@ -280,13 +349,10 @@ const PATTERNS: readonly PatternDef[] = Object.freeze([
 	// ── Email ────────────────────────────────────────────────────────────
 	{
 		type: "email",
-		// RFC 5322 simplified — covers the vast majority of real-world addresses.
-		// RFC 5321 length limits (64-char local part, 253-char domain, 63-char
-		// label) keep every attempt bounded: with unbounded runs a long `a.a.a…`
-		// or `%41%41…` text is rescanned from every word boundary (quadratic).
-		regex: /\b[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,253}\.[A-Za-z]{2,63}\b/g,
+		regex: new RegExp(EMAIL_SOURCE, "g"),
 		severity: "high",
 		confidenceBase: 0.9,
+		find: findEmails,
 	},
 
 	// ── Phone Number (US / International) ────────────────────────────────
@@ -416,8 +482,11 @@ export function calculateConfidence(
 ): number {
 	let confidence = def.confidenceBase;
 
-	// Entropy bonus — high-entropy values are more likely genuine secrets
-	const entropy = shannonEntropy(value);
+	// Entropy bonus — high-entropy values are more likely genuine secrets. The
+	// entropy of n symbols is at most log2(n), so a value too short to exceed
+	// the threshold skips the per-character count (most card, phone and SSN
+	// candidates, which a long digit run produces by the hundred thousand).
+	const entropy = Math.log2(value.length) > entropyThreshold ? shannonEntropy(value) : 0;
 	if (entropy > entropyThreshold) {
 		const bonus = Math.min(0.15, (entropy - entropyThreshold) * 0.04);
 		confidence += bonus;
@@ -526,16 +595,12 @@ export class PiiDetectorImpl implements PiiDetector {
 		}
 
 		const matches: PiiMatch[] = [];
-		const seen = new Set<string>();
 		const { minConfidence, entropyThreshold } = this.config;
 
+		// Spans cannot repeat: each type has one pattern, and one pattern's matches
+		// are non-empty and non-overlapping, so no per-span dedupe set is needed.
 		for (const def of this.enabledPatterns) {
-			let match: RegExpExecArray | null;
-
-			// Reset lastIndex for global regexes
-			def.regex.lastIndex = 0;
-
-			while ((match = def.regex.exec(input)) !== null) {
+			for (const match of patternMatches(def, input)) {
 				const value = match[0];
 				const start = match.index;
 				const end = start + value.length;
@@ -543,11 +608,6 @@ export class PiiDetectorImpl implements PiiDetector {
 				const confidence = calculateConfidence(value, def, entropyThreshold);
 
 				if (confidence < minConfidence) continue;
-
-				// Deduplicate by exact position span (a set: a linear scan per match is quadratic)
-				const key = `${def.type}:${start}:${end}`;
-				if (seen.has(key)) continue;
-				seen.add(key);
 
 				matches.push({
 					type: def.type,
