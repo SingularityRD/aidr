@@ -321,12 +321,15 @@ meeting, writing, search, agent), identified by stable catalog ids.
 | `block-unsanctioned` | counted, and every catalogued service not in `sanctioned` is blocked |
 
 A service in both `sanctioned` and `blocked` is blocked. Blocking uses one
-declarativeNetRequest rule per service (`main_frame` + `sub_frame`, ids 7401+); the
-worker then shows `blocked.html?service=<id>` in the tab. Visibility uses
-`tabs.onUpdated`, which reports a URL only for origins the extension holds host
-access to, so the options page asks each user once to allow access to the catalog
-origins; until then the page (and the `missingOrigins` list of `GET_SITE_ACCESS`)
-says counting and blocking are not in force - it is never shown as "no usage".
+declarativeNetRequest rule per service (`main_frame` + `sub_frame`, ids 7401+). The
+block needs no host access (`declarativeNetRequest` applies block rules everywhere), so
+it holds whether or not the user granted anything; with access to the service's origin
+the worker also shows `blocked.html?service=<id>` in the tab, without it the user sees
+the browser's own blocked page. Visibility uses `tabs.onUpdated`, which reports a URL
+only for origins the extension holds host access to, so the options page asks each user
+once to allow access to the catalog origins; until then the page (and the
+`missingOrigins` list of `GET_SITE_ACCESS`) says visits are not counted and blocks are
+not explained - it is never shown as "no usage".
 Only the catalog id is kept: counts live in `chrome.storage.local`
 (`shadowAiUsage`, 30 days, no URL, host, path or title) and, with telemetry on, are
 sent as aggregated `shadow_ai_usage` events at each flush

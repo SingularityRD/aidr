@@ -950,9 +950,10 @@ Blocking in the same extension avoids a separate web filter rule set for eight f
 hostnames.
 
 **How it works** — For every site id in `blockedSites`, the background installs
-`declarativeNetRequest` rules. Top-level navigations to that product's hosts (and their
-subdomains) are redirected to the extension page `blocked.html`, and embedded frames are
-blocked. The page reads **This AI service is blocked by your organization** (or "ChatGPT is
+`declarativeNetRequest` block rules. Top-level navigations to that product's hosts (and
+their subdomains) and embedded frames are refused, and the extension then shows its own page
+`blocked.html` in the tab. The rules need no host access, so the block holds whatever the
+user granted. The page reads **This AI service is blocked by your organization** (or "ChatGPT is
 blocked by your organization"), with "Your organization's policy does not allow this AI
 service in this browser, so Browser Guard stopped the page from loading." It also says the
 decision was made by the organisation's policy, not the website. If a blocked site's page is
@@ -1005,11 +1006,13 @@ page, **AI services** section) and, with telemetry enabled, reach the dashboard 
 `shadow_ai_usage` events: service id, visited or blocked, count, sanctioned flag. Never a URL,
 host, path or page title.
 
-To see and block a service the extension needs access to that service's site. Browser Guard
-does not ask for the `tabs` or browsing-history permission; instead each user clicks **Allow
-access** once on the options page, which grants exactly the catalogued service addresses.
-Until then the options page says access is missing: missing access is never shown as "no
-usage".
+Blocking needs no access to the service's site: the `declarativeNetRequest` block rule
+applies whatever the user granted. To count visits, and to replace the browser's own error
+page with the Browser Guard blocked page, the extension needs access to that service's
+site. Browser Guard does not ask for the `tabs` or browsing-history permission; instead
+each user clicks **Allow access** once on the options page, which grants exactly the
+catalogued service addresses. Until then the options page says access is missing: missing
+access is never shown as "no usage".
 
 **How to use** — Managed key `shadowAi`:
 `{ "mode": "monitor" | "block-unsanctioned" | "off", "sanctioned": [ids], "blocked": [ids] }`.
@@ -1030,13 +1033,12 @@ a sanctioned visit. Covered by the real-browser `shadow-ai` scenario.
 | Platforms | Chrome, Edge, Firefox (desktop) |
 
 **Limitations**
-- Each user must grant host access once; a managed policy cannot grant it silently.
+- Counting and the Browser Guard blocked page need each user's one-time host-access grant;
+  a managed policy cannot grant it silently. Without it blocks still apply, but the user
+  sees the browser's own blocked page and nothing is counted.
 - Services that live on a path of a general-purpose site (Notion AI, GitHub Copilot, Copilot
   in Bing, Microsoft 365 Copilot) are not in the catalog; blocking by host would break the
   whole product.
-- For a link followed from another website, Chrome may require access to that website too
-  before the network rule applies; the extension still replaces the page with the blocked
-  page as soon as the tab reaches the service.
 - Hugging Face, DeepL and Grammarly are catalogued by host, so blocking them blocks the whole
   site (model hub, translator, marketing pages).
 
@@ -1202,6 +1204,13 @@ New-ItemProperty -Path $key -Name neverRestore -PropertyType String -Value '["SE
   `exactData` set (its key is public) and the telemetry values before deployment.
 - Chrome and Edge install extensions from outside their stores only when force-installed by
   policy on managed machines. Firefox requires a Mozilla-signed XPI.
+- The install and permission screens show **"Block content on any page"**. That is the
+  `declarativeNetRequest` permission, used only for the `block` rules behind `blockedSites`
+  and Shadow AI control (no redirect or header-modifying rule). The quieter
+  `declarativeNetRequestWithHostAccess` variant is not used on purpose: it applies a block
+  only where the user granted host access to both the blocked site and the page that
+  started the navigation, so a user could escape the block by declining that access or
+  following a link from another site. Force-installed copies install without a prompt.
 - A user with local administrator rights can remove browser policy or use another browser.
   Pair the extension with browser management (force-install, restrict other profiles,
   browsers and private windows).

@@ -39,6 +39,20 @@ apart or use a key the extension does not accept.
 3. **Pilot first.** Roll out to a test group in `monitor` mode, check the
    popup statistics and control-plane counts, then switch to `auto` or
    `confirm`.
+4. **Expect the "Block content on any page" permission warning.** The
+   extension requests the `declarativeNetRequest` permission, which Chrome,
+   Edge and Firefox describe as "Block content on any page" on the install
+   and permission screens. It is used only to install `block` rules for the
+   sites you list in `blockedSites` and the services Shadow AI control blocks
+   (`shadowAi`); no redirect or header-modifying rule is ever installed. The
+   extension deliberately does not use the quieter
+   `declarativeNetRequestWithHostAccess` variant: under it a block applies
+   only where the user has granted host access to both the blocked site and
+   the page that started the navigation, so a user could escape your block by
+   declining or revoking that access or by following a link from another
+   site. With `declarativeNetRequest` your block never depends on the policed
+   user's grant. Tell users about the warning before a user-installed rollout;
+   force-installed copies are installed without a prompt.
 
 ## Managed keys
 
@@ -54,7 +68,7 @@ apart or use a key the extension does not accept.
 | `blockedSites` | array of site ids | the page is blocked from loading; `chatgpt`, `gemini`, `claude`, `copilot`, `perplexity`, `deepseek`, `mistral`, `grok` |
 | `disabledSites` | array of site ids | the guard only monitors on these sites (`custom` = every configured internal site) |
 | `customSites` | array of `{ "id", "label", "hosts", "editorSelectors", "sendButtonSelectors", "responseSelectors" }` | company-internal AI portals to protect; up to 20 sites, 1-10 exact HTTPS hosts each (no port, path, wildcard, IP or built-in AI host), up to 20 CSS selectors per list. Each user allows access to the hosts once on the options page (**AI services** > **Allow access**); only then is the content script registered there |
-| `shadowAi` | `{ "mode", "sanctioned", "blocked" }` | Shadow AI discovery and control: `mode` `off` (default), `monitor` (count visits per catalogued AI service and day) or `block-unsanctioned` (also block every catalogued service not in `sanctioned`); ids in `blocked` are blocked in every mode. Ids are the catalog ids in `src/sites/catalog.ts`. Counting and blocking need each user's one-time **Allow access** on the options page; until then the page reports access as missing |
+| `shadowAi` | `{ "mode", "sanctioned", "blocked" }` | Shadow AI discovery and control: `mode` `off` (default), `monitor` (count visits per catalogued AI service and day) or `block-unsanctioned` (also block every catalogued service not in `sanctioned`); ids in `blocked` are blocked in every mode. Ids are the catalog ids in `src/sites/catalog.ts`. Blocking applies without any user grant. Counting visits, and showing the Browser Guard blocked page instead of the browser's own, need each user's one-time **Allow access** on the options page; until then the page reports access as missing |
 | `allowUserPause` | boolean | users may pause protection for up to 60 minutes |
 | `allowSendAnyway` | boolean | users may send unmasked after a warning |
 | `maskPaste` | boolean | mask sensitive data as it is pasted |

@@ -1002,9 +1002,10 @@ Engellemenin aynı eklentide yapılması, hızla değişen sekiz alan adı için
 kural seti tutma ihtiyacını ortadan kaldırır.
 
 **Nasıl çalışır** — `blockedSites` içindeki her site kimliği için arka plan,
-`declarativeNetRequest` kuralları kurar. O ürünün adreslerine (ve alt alan adlarına) yapılan
-üst düzey gezinmeler eklentinin `blocked.html` sayfasına yönlendirilir, gömülü çerçeveler
-engellenir. Sayfada **Bu yapay zekâ hizmeti kuruluşunuz tarafından engellendi** (ya da
+`declarativeNetRequest` engelleme kuralları kurar. O ürünün adreslerine (ve alt alan
+adlarına) yapılan üst düzey gezinmeler ve gömülü çerçeveler reddedilir; eklenti ardından
+sekmede kendi `blocked.html` sayfasını gösterir. Kurallar site erişimi gerektirmez, bu
+yüzden engel kullanıcının verdiği izinlerden bağımsız olarak geçerlidir. Sayfada **Bu yapay zekâ hizmeti kuruluşunuz tarafından engellendi** (ya da
 "ChatGPT kuruluşunuz tarafından engellendi") başlığı ve "Kuruluşunuzun politikası bu
 tarayıcıda bu yapay zekâ hizmetine izin vermediği için Browser Guard sayfanın açılmasını
 durdurdu." açıklaması yer alır. Sayfa, kararı web sitesinin değil kurum politikasının
@@ -1060,8 +1061,10 @@ hizmetleri** bölümü); telemetri açıksa panoya `shadow_ai_usage` olayı olar
 kimliği, ziyaret ya da engelleme, sayı ve onay bilgisi. URL, alan adı, yol ya da sayfa başlığı
 asla gönderilmez.
 
-Bir hizmeti görebilmek ve engelleyebilmek için eklentinin o hizmetin sitesine erişimi
-gerekir. Browser Guard `tabs` ya da tarama geçmişi izni istemez; bunun yerine her kullanıcı
+Engelleme, hizmetin sitesine erişim gerektirmez: `declarativeNetRequest` engelleme kuralı
+kullanıcının verdiği izinlerden bağımsız olarak uygulanır. Ziyaretleri saymak ve tarayıcının
+kendi hata sayfası yerine Browser Guard engelleme sayfasını göstermek için ise eklentinin o
+hizmetin sitesine erişimi gerekir. Browser Guard `tabs` ya da tarama geçmişi izni istemez; bunun yerine her kullanıcı
 seçenekler sayfasında bir kez **Erişime izin ver** düğmesine tıklar ve yalnızca katalogdaki
 hizmet adreslerine erişim verir. O zamana kadar seçenekler sayfası erişimin eksik olduğunu
 söyler: eksik erişim hiçbir zaman "kullanım yok" olarak gösterilmez.
@@ -1086,13 +1089,13 @@ ziyaret olarak sayılır. Gerçek tarayıcı senaryosu `shadow-ai` bu davranış
 | Platformlar | Chrome, Edge, Firefox (masaüstü) |
 
 **Sınırlamalar**
-- Her kullanıcı site erişimini bir kez vermelidir; yönetilen politika bunu sessizce veremez.
+- Sayım ve Browser Guard engelleme sayfası için her kullanıcı site erişimini bir kez
+  vermelidir; yönetilen politika bunu sessizce veremez. Erişim verilmeden de engeller
+  uygulanır, ancak kullanıcı tarayıcının kendi engelleme sayfasını görür ve hiçbir şey
+  sayılmaz.
 - Genel amaçlı bir sitenin bir yolunda çalışan hizmetler (Notion AI, GitHub Copilot, Bing'deki
   Copilot, Microsoft 365 Copilot) katalogda yoktur; alan adıyla engellemek ürünün tamamını
   bozardı.
-- Başka bir web sitesindeki bağlantıdan açılan gezinmelerde Chrome, ağ kuralının uygulanması
-  için o siteye de erişim isteyebilir; sekme hizmete ulaştığı anda eklenti sayfayı yine de
-  engelleme sayfasıyla değiştirir.
 - Hugging Face, DeepL ve Grammarly alan adıyla kataloglanmıştır; engellendiklerinde sitenin
   tamamı (model merkezi, çevirmen, tanıtım sayfaları) engellenir.
 
@@ -1267,6 +1270,14 @@ New-ItemProperty -Path $key -Name neverRestore -PropertyType String -Value '["SE
   değiştirin.
 - Chrome ve Edge, mağaza dışı eklentileri yalnızca yönetilen makinelerde politikayla zorunlu
   kurulduklarında yükler. Firefox, Mozilla imzalı bir XPI ister.
+- Kurulum ve izin ekranları **"Block content on any page"** (herhangi bir sayfadaki içeriği
+  engelleme) uyarısını gösterir. Bu, yalnızca `blockedSites` ve Shadow AI denetiminin
+  `block` kuralları için kullanılan `declarativeNetRequest` iznidir (yönlendirme ya da
+  başlık değiştiren kural kurulmaz). Daha sessiz `declarativeNetRequestWithHostAccess`
+  çeşidi bilerek kullanılmaz: o çeşitte engel yalnızca kullanıcının hem engellenen siteye
+  hem de gezinmeyi başlatan sayfaya erişim verdiği yerde uygulanır, yani kullanıcı erişimi
+  reddederek ya da başka bir siteden bağlantı izleyerek engeli aşabilirdi. Politikayla
+  zorunlu kurulan kopyalar izin sorulmadan kurulur.
 - Yerel yönetici hakları olan bir kullanıcı tarayıcı politikasını kaldırabilir ya da başka
   bir tarayıcı kullanabilir. Eklentiyi tarayıcı yönetimiyle birlikte kullanın (zorunlu
   kurulum, diğer profil, tarayıcı ve gizli pencerelerin kısıtlanması).
