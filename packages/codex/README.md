@@ -3,10 +3,13 @@
 Singularity AIDR's `PreToolUse` connector for the **OpenAI Codex CLI** (`codex`)
 evaluates named `Bash` and `apply_patch` calls only when an enabled, trusted hook
 forwards them and returns a verdict. Codex enforces that verdict; disabled,
-untrusted, crashed, timed-out, or out-of-matcher paths can proceed. Real-host
-side-effect prevention for a customer release has not been accepted. The same hook,
+untrusted, crashed, timed-out, or out-of-matcher paths can proceed. The same hook,
 registered for `UserPromptSubmit`, also provides prompt protection (secrets block,
-personal data warns) before a prompt reaches the model.
+personal data warns) before a prompt reaches the model. A real-host acceptance record
+([`docs/evidence/real-host/codex.json`](../../docs/evidence/real-host/codex.json):
+`codex exec` 0.141.0, linux/x64, development build, scripted mock model) shows both
+boundaries holding for the scripted cases; a signed customer release, other versions and
+platforms have not been accepted.
 
 Verified against `codex-cli 0.141.0`.
 

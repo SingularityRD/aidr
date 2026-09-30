@@ -13,10 +13,17 @@ Singularity AIDR intercepts tool calls made by AI agents, extracts security-rele
 
 | Platform | Hooks / Tools |
 |----------|---------------|
-| Claude Code | `PreToolUse` on `Bash`, `WebFetch`, `Write`, `Edit`, `Read` |
+| Claude Code | `UserPromptSubmit` (prompt protection), `PreToolUse` on every tool (`matcher: "*"`), `PostToolUse` |
 | Cursor | `beforeSubmitPrompt` (prompt protection), `beforeShellExecution`, `preToolUse` (Write, Edit, Delete, WebFetch), `beforeMCPExecution`, `beforeReadFile` |
-| VS Code | `PreToolUse` on `Bash`, `WebFetch`, `Write`, `Edit`, `Read`, `Delete` |
-| OpenClaw | `exec`, `web_fetch`, `write`, `edit`, `read`, `apply_patch` |
+| VS Code | `UserPromptSubmit` (prompt protection, Local agent hooks), `PreToolUse` on `Bash`, `WebFetch`, `Write`, `Edit`, `Read`, `Delete` |
+| OpenClaw | `before_agent_run` (prompt protection), `before_tool_call` on `exec`, `web_fetch`, `write`, `edit`, `read`, `apply_patch`, agent tool-result middleware |
+| OpenCode | `chat.message` (prompt protection), `tool.execute.before`, `tool.execute.after` |
+| Codex CLI | `UserPromptSubmit` (prompt protection), `PreToolUse` on `Bash` and `apply_patch` |
+
+Prompt protection and tool-call blocking are sold, and recorded as enforced on a real host
+(one host version each, linux/x64, scripted mock model), for Claude Code, Codex, OpenCode
+and OpenClaw; see `deploy/native/interception-matrix.json`. Cursor and VS Code have no
+real-host record.
 
 For tool calls outside these known shapes (including `mcp__*`), Singularity AIDR falls back to a generic string-scan extractor and still applies heuristics + URL checks.
 

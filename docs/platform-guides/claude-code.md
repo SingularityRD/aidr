@@ -88,6 +88,12 @@ Recorded by `pnpm test:e2e:real-host` (see [development](../development.md#real-
 | Connector errors | An integrity failure blocked at the prompt hook; the PreToolUse inspection deadline denied the call |
 | Hook process killed before its verdict | **Fail-open**: the host ran the call |
 
+PreToolUse, UserPromptSubmit (prompt protection, sold since 2026-09-30) and the PostToolUse
+replacement are part of the sold support matrix (`deploy/native/support-matrix.json`) and
+are `enforced` in `deploy/native/interception-matrix.json` on this record only: Claude Code
+2.1.282 on linux/x64, the development build and a scripted mock model. Other host
+versions, Windows, macOS, arm64, a signed release and a real model still need acceptance.
+
 In non-interactive `-p` mode an `ask` verdict is a refusal; the interactive approval
 dialog is not covered. The first run of this tier found that Claude Code 2.1.x adds a
 `noOutputExpected` field to every Bash result, which made PostToolUse quarantine fall back

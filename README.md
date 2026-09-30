@@ -56,7 +56,7 @@ installed; managed features need a control plane and a signed tenant configurati
 | **Cursor / VS Code** | Install the signed `aidr-cursor.vsix` via `Extensions > Install from VSIX`, then run `Singularity AIDR: Enable protection`. [Guide](docs/platform-guides/cursor.md) |
 | **OpenClaw** | Install the approved `@singularityrd/aidr-openclaw` version from the private registry. [Guide](docs/platform-guides/openclaw.md) |
 | **OpenCode** | Install the approved `@singularityrd/aidr-opencode` version from the private registry. [Guide](docs/platform-guides/opencode.md) |
-| **Codex CLI** | Install `@singularityrd/aidr-codex`, register `aidr-codex-hook` as a `PreToolUse` hook and trust it with `/hooks`. [Guide](docs/platform-guides/codex.md) |
+| **Codex CLI** | Install `@singularityrd/aidr-codex`, register `aidr-codex-hook` as a `PreToolUse` and a `UserPromptSubmit` (prompt protection) hook and trust both with `/hooks`. [Guide](docs/platform-guides/codex.md) |
 | **MCP Gateway** | Run the loopback gateway with a signed configuration and point MCP clients at it. [Gateway README](packages/mcp-gateway/README.md) |
 | **Browser Guard** | Deploy the extension to Chrome, Edge or Firefox, or push it with enterprise browser policy using [`managed_schema.json`](packages/browser-guard/static/managed_schema.json). [Browser Guard](packages/browser-guard/README.md) |
 | **CLI** | `aidr setup`, `aidr status`, `aidr scan --target <url>`. [Package Installation](docs/package-installation.md) |

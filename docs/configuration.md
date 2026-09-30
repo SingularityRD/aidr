@@ -306,7 +306,7 @@ When enabled, Singularity AIDR scans tool inputs (commands, file content, edits)
 ### `prompt_protection`
 
 Inspects the user's prompt before the agent sends it to the model, on every connector whose
-host exposes a pre-model prompt hook. All connectors share one engine (`scanPrompt` and the
+host exposes a pre-model prompt hook. Every connector shares one engine (`scanPrompt` and the
 `inspectUserPrompt` runner in `@singularityrd/aidr-core`), so the same prompt gets the same
 decision everywhere. A prompt that carries a canary credential value (`aidr canary deploy`)
 is blocked on every connector before these settings apply and recorded as a canary incident
@@ -388,12 +388,19 @@ Connector notes:
   harnesses, and a host without the hook ignores the registration. A non-bundled plugin
   needs `plugins.entries.aidr-openclaw.hooks.allowConversationAccess: true` for
   `before_agent_run` and `before_prompt_build`.
-- Host acceptance: the Cursor, VS Code, Codex, OpenCode and OpenClaw paths are verified
-  against the hosts' published hook contracts and by tests that drive the built connector
-  bundles; no named real-host acceptance record exists yet
-  (`deploy/native/interception-matrix.json`, `pre-prompt` rows).
+- Host acceptance: prompt protection is part of the sold scope for **Claude Code, Codex,
+  OpenCode and OpenClaw**. For each of them a real-host acceptance record
+  (`docs/evidence/real-host/<connector>.json`, written by `pnpm test:e2e:real-host`) shows a
+  prompt carrying a token stopped before any model request, so their `pre-prompt` rows in
+  `deploy/native/interception-matrix.json` are `enforced`. The records cover one host version
+  each (Claude Code 2.1.282, Codex CLI 0.141.0, OpenCode 1.18.32, the OpenClaw 2026.9.6
+  embedded runner) on linux/x64 with the development build and a scripted mock model; other
+  host versions, Windows, macOS, arm64, a signed release and a real model are not covered.
+  The Cursor and VS Code paths are verified against the hosts' published hook contracts and
+  by tests that drive the built connector bundles only; they have no real-host record and
+  stay `declared-not-proven`.
 
-Behaviour common to all connectors:
+Behaviour common to every connector:
 
 - `block` stops the prompt and shows the reason to the user. The reason names the kind of
   data found (for example "GitHub token"), never the value.

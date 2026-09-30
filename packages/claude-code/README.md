@@ -4,12 +4,20 @@ Singularity AIDR connector for **Claude Code**, shipped as hook entry points plu
 a bundled MCP server.
 
 The plugin registers a `PreToolUse` hook (the decision point), a `PostToolUse`
-hook (tool-output inspection), a `SessionStart` hook (installed-plugin scan and
-version check) and a `health` command used by the endpoint installer and the
-release consumer gate. Every hook reads the tool call from stdin and writes a
-verdict to stdout. Caught internal errors produce an explicit **deny**; if a
-hook process is killed or times out before writing a verdict, Claude Code's
-behavior is unverified. No real-host side-effect acceptance is recorded.
+hook (tool-output inspection), a `UserPromptSubmit` hook (prompt protection), a
+`SessionStart` hook (installed-plugin scan and version check) and a `health`
+command used by the endpoint installer and the release consumer gate. Every hook
+reads its event from stdin and writes a verdict to stdout. Caught internal errors
+produce an explicit **deny** (or block); a hook process killed before it writes a
+verdict lets the call run (fail-open, observed on Claude Code 2.1.282).
+
+Real-host acceptance ([`docs/evidence/real-host/claude-code.json`](../../docs/evidence/real-host/claude-code.json),
+`pnpm test:e2e:real-host`) covers Claude Code 2.1.282 on linux/x64 with the
+development build and a scripted mock model: a malicious Bash call and a
+credential read were refused with no side effect, a prompt carrying a token never
+reached the model, and a token in Bash output reached the model only as AIDR's
+quarantine notice. Other host versions, platforms, a signed release and a real
+model are not covered.
 
 ## What it does
 
@@ -22,7 +30,8 @@ behavior is unverified. No real-host side-effect acceptance is recorded.
   replacements.
   Unknown shapes or oversized hook input are reported as coverage-unavailable
   rather than claimed as quarantined. Live Claude-host acceptance of replacement
-  outputs has not been verified, and PostToolUse cannot undo tool execution.
+  outputs covers a Bash result only (see above); MCP and other result shapes are
+  not host-accepted, and PostToolUse cannot undo tool execution.
 - Records decisions in the local audit log and, when a managed control plane is
   configured, forwards scoped telemetry.
 - Approvals: an `ask` opens Claude Code's native confirmation dialog. In managed

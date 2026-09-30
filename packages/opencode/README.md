@@ -1,6 +1,6 @@
 # Singularity AIDR for OpenCode
 
-Singularity AIDR evaluates named tool calls forwarded by an enabled OpenCode `tool.execute.before` plugin hook and returns a verdict. Host enforcement and disabled, crashed, unmapped, or directly bypassed paths require real-host acceptance; a returned verdict alone does not prove side-effect prevention.
+Singularity AIDR evaluates named tool calls forwarded by an enabled OpenCode `tool.execute.before` plugin hook and returns a verdict, inspects the user's prompt in `chat.message` (prompt protection) and tool results in `tool.execute.after`. A real-host acceptance record ([`docs/evidence/real-host/opencode.json`](../../docs/evidence/real-host/opencode.json): OpenCode 1.18.32, `opencode run`, linux/x64, development build, scripted mock model) shows a blocked call with no side effect, a prompt carrying a token never reaching the model, and a token in bash output reaching the model only as AIDR's quarantine notice. Other versions and platforms, and disabled, crashed, unmapped, or directly bypassed paths, still require real-host acceptance; a returned verdict alone does not prove side-effect prevention.
 
 ## Inspected tool calls
 
@@ -33,9 +33,10 @@ tool has executed. When a finding or incomplete inspection is detected, the
 plugin attempts to replace supported output shapes with a quarantine notice.
 For raw MCP results, replacement is limited to mutable plain-data objects. If
 the shape is unsupported or immutable, AIDR reports `replacement_unavailable`;
-the original result may remain visible to OpenCode and the model. Even when a
-mutation succeeds locally, real-host acceptance that OpenCode honors it before
-same-turn model consumption has not been established. Oversized, malformed, or
+the original result may remain visible to OpenCode and the model. Real-host
+acceptance that OpenCode honors the replacement before same-turn model
+consumption covers a bash result on OpenCode 1.18.32 only; MCP results are not
+host-accepted. Oversized, malformed, or
 opaque results are never reported as clean, but output quarantine is not
 guaranteed for them. The plugin's structured
 `aidr.output_inspection.health` and `aidr.output_inspection.coverage` events do

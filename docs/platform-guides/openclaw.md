@@ -84,8 +84,16 @@ Recorded by `pnpm test:e2e:real-host` (see [development](../development.md#real-
 - Tool-result middleware: a token in exec output reached the model only as AIDR's
   quarantine notice (the same-turn follow-up request carried the notice, never the token).
   The earlier record showed this as a gap, when the connector relied on
-  `after_tool_call`/`tool_result_persist` alone. The deployment's sold output point for
-  this connector remains `pre-delivery-response`, so the matrix keeps `post-tool-output`
-  as `declared-not-proven` with the record attached.
+  `after_tool_call`/`tool_result_persist` alone.
 - `message_sending` is not exercised: `agent --local` does not deliver through a channel.
   The gateway process is not exercised either.
+
+**Sold scope.** Tool-call blocking (`before_tool_call`), the prompt gate
+(`before_agent_run`) and the pre-model tool-output quarantine (tool-result middleware) are
+part of the sold support matrix (`deploy/native/support-matrix.json`; the prompt gate and
+the quarantine since 2026-09-30) and are `enforced` in
+`deploy/native/interception-matrix.json` on the record above only. That scope carries the
+record's conditions: the embedded runner, `plugins.entries.aidr-openclaw.enabled: true` for
+the quarantine, `hooks.allowConversationAccess: true` for a non-bundled prompt gate, and
+neither the Codex nor the Copilot harness. `message_sending`/`reply_payload_sending`
+(`pre-delivery-response`) stays `declared-not-proven`.

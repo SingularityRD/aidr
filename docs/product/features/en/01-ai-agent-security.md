@@ -17,9 +17,11 @@ command, configuration key and file path below was taken from the repository.
 > [first-customer-ready.md](../../../production-readiness/first-customer-ready.md).
 > Platform and host rows in the
 > [native support matrix](../../../../deploy/native/support-matrix.json) are target
-> scope, and real-host acceptance evidence is still open for every connector. Treat
-> the capabilities below as the designed and tested behaviour of the software, not as
-> accepted host-side guarantees.
+> scope. Real-host acceptance is recorded for Claude Code, Codex, OpenCode and OpenClaw
+> only, on one host version each on linux/x64 with the development build and a scripted
+> mock model; Cursor and VS Code have none, and no record covers Windows, macOS, arm64, a
+> signed release or a real model. Treat the capabilities below as the designed and tested
+> behaviour of the software, not as accepted host-side guarantees beyond those records.
 
 ## Contents
 
@@ -167,11 +169,13 @@ shows:
 | Free, Team, Business, Enterprise (local detection engine is in every plan) | Local; also under a Cloud, On-prem or Air-gapped control plane | Windows, Linux, macOS (x64, arm64) target scope; Node.js ≥ 22.12.0 |
 
 **Limitations**
-- If Claude Code kills or times out a hook before it writes a verdict, the host's
-  behaviour is unverified; a timed-out `PreToolUse` may let the call through.
+- If Claude Code kills a hook before it writes a verdict, the host runs the call
+  (fail-open, observed on Claude Code 2.1.282); a timed-out `PreToolUse` may let the call
+  through.
 - `PostToolUse` runs after the tool has executed. It can replace the result the model
-  sees, but it cannot undo the action; live host acceptance of replacement outputs is
-  not yet recorded.
+  sees, but it cannot undo the action. The real-host record (Claude Code 2.1.282,
+  linux/x64, scripted model) covers the replacement of a Bash result only; MCP and other
+  result shapes are not host-accepted.
 - A disabled plugin does not enforce anything. Tool channels that do not pass through
   `PreToolUse`, and network access that never forms a tool call, are outside the hook.
 - Do not install AIDR from the Claude Code marketplace and load it with `--plugin-dir`
@@ -1253,9 +1257,9 @@ Output beyond the inspection limit is reported as incomplete, never as clean.
 
 | Connector | Output path | Guarantee |
 | --- | --- | --- |
-| Claude Code | `PostToolUse` → `updatedToolOutput` replacement | After execution; live host acceptance pending |
-| OpenClaw | Tool-result middleware, `tool_result_persist`, `message_sending`, `reply_payload_sending` | Before the model on the embedded runner (OpenClaw 2026.9.6 real-host record, scripted model); transcript and delivery boundary (256 KiB text budget) |
-| OpenCode | `tool.execute.after` | Replacement for supported shapes only |
+| Claude Code | `PostToolUse` → `updatedToolOutput` replacement | After execution; before the model's next request (Claude Code 2.1.282 real-host record, scripted model, Bash result) |
+| OpenClaw | Tool-result middleware, `tool_result_persist`, `message_sending`, `reply_payload_sending` | Before the model on the embedded runner with `plugins.entries.aidr-openclaw.enabled: true` (OpenClaw 2026.9.6 real-host record, scripted model; not the Codex harness); transcript and delivery boundary (256 KiB text budget) |
+| OpenCode | `tool.execute.after` | Replacement for supported shapes only (OpenCode 1.18.32 real-host record, scripted model, bash result) |
 | Cursor | `postToolUse` (MCP output replacement), `afterAgentResponse` | Unverified / advisory / observation-only |
 | VS Code | `PostToolUse` | Context only; no byte replacement |
 | Codex | None | Not inspected |
@@ -1277,8 +1281,10 @@ original text, with context that the tool call already completed.
 
 **Limitations**
 - Output hooks run after the tool: they never undo the action itself.
-- On most hosts, same-turn model isolation from the original output is not accepted on a
-  real host.
+- Same-turn model isolation from the original output is accepted on a real host only for
+  the Claude Code, OpenCode and OpenClaw (embedded runner) records above: one host version
+  each, linux/x64, a scripted model and a secret-bearing shell result. Cursor, VS Code and
+  Codex have no such record, and MCP or non-text results are not host-accepted.
 - Tenant DLP policy does not apply to tool output; the output scanner is a separate,
   fixed set of detectors.
 
@@ -1524,9 +1530,13 @@ a live credential that has been shared anywhere else, rotate it."
   or timed-out hook lets the prompt through (host behaviour).
 - A hook process killed before it answers cannot block on Claude Code, VS Code or Codex
   (host limitation).
-- No named real-host acceptance record exists yet for the Cursor, VS Code, Codex, OpenCode
-  or OpenClaw prompt paths; they are verified against the hosts' published hook contracts
-  and by tests that drive the built connector bundles.
+- Real-host acceptance records (one host version each, linux/x64, development build,
+  scripted mock model) show a prompt carrying a token stopped before any model request on
+  Claude Code 2.1.282, Codex CLI 0.141.0, OpenCode 1.18.32 and the OpenClaw 2026.9.6
+  embedded runner; prompt protection is sold for those four connectors. Other versions,
+  platforms and a real model are not covered. The Cursor and VS Code prompt paths have no
+  real-host record; they are verified against the hosts' published hook contracts and by
+  tests that drive the built connector bundles.
 - In `block` mode the scan stops at the first secret, so the message reports the first
   one found rather than a full count.
 
@@ -1755,7 +1765,10 @@ reason instead of an empty response that Codex would read as "carry on".
 **Limitations**
 - A hook the host never runs (disabled, untrusted, killed before output) cannot block
   anything. AIDR is a guardrail at the hook boundary, not endpoint isolation.
-- Real-host acceptance of these failure paths is still an open release gate.
+- Real-host records (one host version each, linux/x64, scripted model) show an induced
+  internal error blocking on Claude Code, Codex, OpenCode and OpenClaw, and a killed hook
+  letting the call run on Claude Code and Codex. Other failure paths, versions, platforms
+  and Cursor/VS Code remain an open release gate.
 
 ### Audit log and SIEM-friendly output
 

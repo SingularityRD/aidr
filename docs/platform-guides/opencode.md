@@ -117,3 +117,10 @@ Recorded by `pnpm test:e2e:real-host` (see [development](../development.md#real-
 - A plugin initialisation failure (integrity check) blocked the prompt.
 
 How the interactive TUI presents a blocked prompt is not covered.
+
+`tool.execute.before`, `chat.message` (prompt protection, sold since 2026-09-30) and
+`tool.execute.after` are part of the sold support matrix
+(`deploy/native/support-matrix.json`) and are `enforced` in
+`deploy/native/interception-matrix.json` on this record only: OpenCode 1.18.32 on
+linux/x64, the development build and a scripted mock model. Prompt protection inspects the
+user's own text parts; synthetic parts such as attached file contents are not inspected.

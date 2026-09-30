@@ -19,9 +19,12 @@ doğrudan kod deposundan alınmıştır. Ürünün kullanıcıya gösterdiği me
 > yayımlanmamıştır; sürüm kaydı:
 > [first-customer-ready.md](../../../production-readiness/first-customer-ready.md).
 > [Yerel destek matrisindeki](../../../../deploy/native/support-matrix.json) platform ve
-> host satırları hedef kapsamı gösterir; hiçbir connector için gerçek host üzerinde kabul
-> kanıtı henüz tamamlanmamıştır. Aşağıdaki yetenekleri, yazılımın tasarlanmış ve test
-> edilmiş davranışı olarak değerlendirin; host tarafında kabul edilmiş bir garanti olarak
+> host satırları hedef kapsamı gösterir. Gerçek host kabul kaydı yalnızca Claude Code,
+> Codex, OpenCode ve OpenClaw için, her biri tek bir host sürümünde, linux/x64 üzerinde,
+> geliştirme build'i ve betikli bir mock modelle vardır; Cursor ve VS Code için kayıt
+> yoktur ve hiçbir kayıt Windows, macOS, arm64, imzalı bir sürüm ya da gerçek bir modeli
+> kapsamaz. Aşağıdaki yetenekleri, yazılımın tasarlanmış ve test edilmiş davranışı olarak
+> değerlendirin; bu kayıtların ötesinde host tarafında kabul edilmiş bir garanti olarak
 > değil.
 
 ## İçindekiler
@@ -171,12 +174,13 @@ döndürür; izin gerekçesinde `🛡️ Singularity AIDR: Threat Blocked` yazar
 | Free, Team, Business, Enterprise (yerel tespit motoru her planda vardır) | Yerel; ayrıca Cloud, On-prem veya Air-gapped kontrol düzlemiyle | Windows, Linux, macOS (x64, arm64) hedef kapsam; Node.js ≥ 22.12.0 |
 
 **Sınırlamalar**
-- Claude Code bir hook'u karar yazmadan önce sonlandırırsa ya da hook zaman aşımına
-  uğrarsa host'un davranışı doğrulanmamıştır; zaman aşımına uğrayan bir `PreToolUse`
+- Claude Code bir hook'u karar yazmadan önce sonlandırırsa host çağrıyı çalıştırır
+  (fail-open, Claude Code 2.1.282'de gözlendi); zaman aşımına uğrayan bir `PreToolUse`
   çağrının geçmesine izin verebilir.
 - `PostToolUse` araç çalıştıktan sonra devreye girer. Modelin gördüğü sonucu
-  değiştirebilir, ancak eylemi geri alamaz; değiştirilmiş çıktının gerçek host'ta kabulü
-  henüz kayıtlı değildir.
+  değiştirebilir, ancak eylemi geri alamaz. Gerçek host kaydı (Claude Code 2.1.282,
+  linux/x64, betikli model) yalnızca bir Bash sonucunun değiştirilmesini kapsar; MCP ve
+  diğer sonuç biçimleri host'ta kabul edilmemiştir.
 - Devre dışı bırakılmış bir plugin hiçbir şeyi uygulamaz. `PreToolUse` üzerinden geçmeyen
   araç kanalları ve hiç araç çağrısı oluşturmayan ağ erişimi hook'un kapsamı dışındadır.
 - AIDR'yi Claude Code marketplace'inden kurup aynı anda `--plugin-dir` ile yüklemeyin
@@ -1285,9 +1289,9 @@ sayılmaz.
 
 | Connector | Çıktı yolu | Güvence |
 | --- | --- | --- |
-| Claude Code | `PostToolUse` → `updatedToolOutput` ile değiştirme | Çalıştırma sonrası; gerçek host kabulü beklemede |
-| OpenClaw | Araç sonucu ara katmanı, `tool_result_persist`, `message_sending`, `reply_payload_sending` | Gömülü çalıştırıcıda modelden önce (OpenClaw 2026.9.6 gerçek host kaydı, betikli model); transkript ve teslim sınırı (256 KiB metin bütçesi) |
-| OpenCode | `tool.execute.after` | Yalnızca desteklenen biçimlerde değiştirme |
+| Claude Code | `PostToolUse` → `updatedToolOutput` ile değiştirme | Çalıştırma sonrası; modelin sonraki isteğinden önce (Claude Code 2.1.282 gerçek host kaydı, betikli model, Bash sonucu) |
+| OpenClaw | Araç sonucu ara katmanı, `tool_result_persist`, `message_sending`, `reply_payload_sending` | `plugins.entries.aidr-openclaw.enabled: true` ile gömülü çalıştırıcıda modelden önce (OpenClaw 2026.9.6 gerçek host kaydı, betikli model; Codex harness hariç); transkript ve teslim sınırı (256 KiB metin bütçesi) |
+| OpenCode | `tool.execute.after` | Yalnızca desteklenen biçimlerde değiştirme (OpenCode 1.18.32 gerçek host kaydı, betikli model, bash sonucu) |
 | Cursor | `postToolUse` (MCP çıktısı değiştirme), `afterAgentResponse` | Doğrulanmamış / tavsiye / yalnızca gözlem |
 | VS Code | `PostToolUse` | Yalnızca bağlam; içerik değiştirme yok |
 | Codex | Yok | Denetlenmez |
@@ -1310,8 +1314,11 @@ Code'da model özgün metin yerine
 
 **Sınırlamalar**
 - Çıktı hook'ları araç çalıştıktan sonra devreye girer: eylemin kendisini asla geri almaz.
-- Çoğu host'ta, aynı turdaki modelin özgün çıktıdan yalıtıldığı gerçek host üzerinde kabul
-  edilmemiştir.
+- Aynı turdaki modelin özgün çıktıdan yalıtılması gerçek host üzerinde yalnızca yukarıdaki
+  Claude Code, OpenCode ve OpenClaw (gömülü çalıştırıcı) kayıtlarında kabul edilmiştir: her
+  biri tek host sürümü, linux/x64, betikli model ve gizli bilgi içeren bir kabuk sonucu.
+  Cursor, VS Code ve Codex için böyle bir kayıt yoktur; MCP ve metin dışı sonuçlar host'ta
+  kabul edilmemiştir.
 - Kiracı DLP politikası araç çıktısına uygulanmaz; çıktı tarayıcısı ayrı ve sabit bir
   dedektör kümesidir.
 
@@ -1565,9 +1572,13 @@ a live credential that has been shared anywhere else, rotate it."
   (host davranışı).
 - Yanıt vermeden sonlandırılan bir hook süreci Claude Code, VS Code ve Codex'te engelleme
   yapamaz (host sınırlaması).
-- Cursor, VS Code, Codex, OpenCode ve OpenClaw prompt yolları için henüz adı belirli bir
-  gerçek host kabul kaydı yoktur; host'ların yayımlanmış hook sözleşmelerine göre ve
-  derlenmiş connector paketlerini çalıştıran testlerle doğrulanmıştır.
+- Gerçek host kabul kayıtları (her biri tek host sürümü, linux/x64, geliştirme build'i,
+  betikli mock model), token taşıyan bir prompt'un Claude Code 2.1.282, Codex CLI 0.141.0,
+  OpenCode 1.18.32 ve OpenClaw 2026.9.6 gömülü çalıştırıcısında hiçbir model isteğinden
+  önce durdurulduğunu gösterir; prompt koruması bu dört connector için satılır. Diğer
+  sürümler, platformlar ve gerçek bir model kapsanmaz. Cursor ve VS Code prompt yolları için
+  gerçek host kaydı yoktur; host'ların yayımlanmış hook sözleşmelerine göre ve derlenmiş
+  connector paketlerini çalıştıran testlerle doğrulanmıştır.
 - `block` modunda tarama ilk gizli bilgide durur; mesaj tam bir sayım yerine ilk bulunanı
   bildirir.
 
@@ -1804,7 +1815,11 @@ okuyacağı boş bir yanıt yerine gerekçeli açık bir `deny` döndürür.
 - Host'un hiç çalıştırmadığı bir hook (devre dışı, güvenilmeyen, çıktı yazmadan
   sonlandırılan) hiçbir şeyi engelleyemez. AIDR hook sınırındaki bir koruma katmanıdır; uç
   nokta izolasyonu değildir.
-- Bu arıza yollarının gerçek host üzerinde kabulü hâlâ açık bir sürüm kapısıdır.
+- Gerçek host kayıtları (her biri tek host sürümü, linux/x64, betikli model), tetiklenen
+  bir iç hatanın Claude Code, Codex, OpenCode ve OpenClaw'da engellediğini, sonlandırılan
+  bir hook'un ise Claude Code ve Codex'te çağrının çalışmasına izin verdiğini gösterir.
+  Diğer arıza yolları, sürümler, platformlar ve Cursor/VS Code hâlâ açık bir sürüm
+  kapısıdır.
 
 ### Denetim kaydı ve SIEM uyumlu çıktı
 

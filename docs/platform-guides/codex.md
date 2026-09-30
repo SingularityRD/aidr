@@ -126,3 +126,10 @@ Recorded by `pnpm test:e2e:real-host` (see [development](../development.md#real-
   `codex exec` shows no reason text for this block.
 - An internal connector failure (integrity check) blocked; a hook process killed before
   its verdict let the command run, as the table above states.
+
+`PreToolUse` and `UserPromptSubmit` (prompt protection, sold since 2026-09-30) are part of
+the sold support matrix (`deploy/native/support-matrix.json`) and are `enforced` in
+`deploy/native/interception-matrix.json` on this record only: linux/x64, the development
+build and a scripted mock model. Prompt protection needs the `UserPromptSubmit` handler
+registered and trusted next to `PreToolUse`; an untrusted, crashed or timed-out prompt hook
+lets the prompt through. Codex tool output is not inspected.
