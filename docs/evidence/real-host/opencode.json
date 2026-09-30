@@ -12,9 +12,9 @@
 	"platform": "linux",
 	"architecture": "x64",
 	"runnerNode": "v22.22.2",
-	"recordedAtUtc": "2026-09-25T14:34:26.879Z",
+	"recordedAtUtc": "2026-09-30T18:39:51.751Z",
 	"source": {
-		"commit": "8163c2ba7703a4e852d8e2fe374d5110f499bd58",
+		"commit": "3e3002a44dda3d65c7e68364b93c31c140540406",
 		"trackedChanges": false
 	},
 	"aidrArtifact": {
@@ -57,7 +57,7 @@
 				"status": 0,
 				"signal": null
 			},
-			"durationMs": 19704,
+			"durationMs": 23683,
 			"modelRequests": 3,
 			"checks": [
 				{
@@ -97,7 +97,7 @@
 				"status": 0,
 				"signal": null
 			},
-			"durationMs": 19244,
+			"durationMs": 21614,
 			"modelRequests": 3,
 			"checks": [
 				{
@@ -144,7 +144,7 @@
 				"status": 0,
 				"signal": null
 			},
-			"durationMs": 6518,
+			"durationMs": 6143,
 			"modelRequests": 3,
 			"checks": [
 				{
@@ -178,7 +178,7 @@
 				"status": 0,
 				"signal": null
 			},
-			"durationMs": 21824,
+			"durationMs": 24484,
 			"modelRequests": 3,
 			"checks": [
 				{
@@ -218,7 +218,7 @@
 				"status": 1,
 				"signal": null
 			},
-			"durationMs": 13032,
+			"durationMs": 23177,
 			"modelRequests": 0,
 			"checks": [
 				{
@@ -257,7 +257,7 @@
 				"status": 0,
 				"signal": null
 			},
-			"durationMs": 17597,
+			"durationMs": 27812,
 			"modelRequests": 3,
 			"checks": [
 				{
@@ -294,7 +294,7 @@
 				"status": 1,
 				"signal": null
 			},
-			"durationMs": 13806,
+			"durationMs": 19788,
 			"modelRequests": 0,
 			"checks": [
 				{
