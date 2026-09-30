@@ -1952,7 +1952,7 @@
           "verifiedBy": "2026-09-25 records review: 56/56 passed (29 runtime detectors, 27 parity)"
         }
       ],
-      "residualRisk": "Prompt protection exists only for Claude Code; with PII in the default warn mode a prompt that could not be fully inspected is still sent with a notice; host timeout behaviour is verified against one Claude Code version."
+      "residualRisk": "Prompt protection runs in every connector, but pre-prompt is sold and enforced only for Claude Code, Codex, OpenCode and OpenClaw. For each of those, a real-host record (linux/x64, development build, scripted mock model; deploy/native/interception-matrix.json) proves one host version. Cursor and VS Code stay declared-not-proven with no real-host record. With PII in the default warn mode, a prompt that could not be fully inspected is still sent with a notice. A prompt hook the host kills, or does not trust (Codex), cannot block. Host timeout behaviour is verified against one Claude Code version."
     },
     {
       "id": "AIDR-075",
