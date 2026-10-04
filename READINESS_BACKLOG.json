@@ -1745,6 +1745,12 @@
           "evidencePath": "scripts/pre-release-audit.sh",
           "command": "pnpm verify:secrets",
           "verifiedBy": "this session with checksum-verified Gitleaks 8.30.1; history phase exit 1 with 296 redacted findings; current-tree phase passed"
+        },
+        {
+          "claim": "A 2026-10-05 all-refs history scan with a partial-scan guard (gitleaks --no-textconv; the earlier Windows run without it can abort part-way yet still print a findings count) returned 184 redacted findings (92 distinct values, 56 commits, 83 paths). 182 are classified as synthetic or identifier false positives with a per-row rationale and 2 are owner-confirm (browser-guard example dataset key); no live credential was identified. This is an engineering triage, not Security-owner sign-off, and used a non-pinned gitleaks build.",
+          "evidencePath": "docs/production-readiness/secret-history-triage-2026-10-05.md",
+          "command": "node scripts/scan-history-secrets.mjs",
+          "verifiedBy": "this session with a locally installed gitleaks (not the pinned 8.30.1 release binary); exit 1 with 184 redacted findings; ledger at docs/production-readiness/evidence/secret-history-ledger-2026-10-05.csv"
         }
       ],
       "remainingExternal": "A named Security owner must classify the 296 redacted historical findings, identify whether any value was ever live, revoke and rotate live credentials, and approve only exact false-positive fingerprints. Rewriting published Git history, if chosen, requires repository-owner coordination and is not performed automatically."

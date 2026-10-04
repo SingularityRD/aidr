@@ -68,11 +68,14 @@ interface ClientOptions {
 	tenantStatus?: string | null;
 	tenantError?: boolean;
 	barrier?: { ok: boolean; error?: string };
+	/** Result of the consume_tenant_rate_limit RPC; defaults to an allowed call. */
+	rate?: { data: unknown; error: unknown };
 }
 
 function client(options: ClientOptions = {}) {
 	const user = options.user === undefined ? { id: "11111111-1111-4111-8111-111111111111" } : options.user;
 	const calls: Array<{ table: string; column: string; value: unknown }> = [];
+	const rpcCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
 	const builder: Record<string, unknown> = {};
 	const chain = {
 		select: () => chain,
@@ -123,6 +126,7 @@ function client(options: ClientOptions = {}) {
 	let currentTable = "";
 	return {
 		calls,
+		rpcCalls,
 		instance: {
 			auth: {
 				getUser: async () =>
@@ -133,6 +137,10 @@ function client(options: ClientOptions = {}) {
 			from(table: string) {
 				currentTable = table;
 				return chain;
+			},
+			rpc: async (name: string, args: Record<string, unknown>) => {
+				rpcCalls.push({ name, args });
+				return options.rate ?? { data: [{ allowed: true, remaining: 100 }], error: null };
 			},
 		},
 	};
@@ -576,5 +584,28 @@ describe("autosecops handler guards", () => {
 		});
 		const response = await handle(request({ action: "health" }));
 		expect(response.status).toBe(503);
+	});
+
+	it("spends a tenant/subject quota before the provider leg and refuses when exhausted", async () => {
+		const allowed = handler({});
+		expect((await allowed.handle(request({ action: "health" }))).status).toBe(200);
+		expect(allowed.fakeClient.rpcCalls).toHaveLength(1);
+		expect(allowed.fakeClient.rpcCalls[0]).toMatchObject({
+			name: "consume_tenant_rate_limit",
+			args: { p_tenant_id: TENANT, p_endpoint: "autosecops-runtime" },
+		});
+
+		const limited = handler({ clientOptions: { rate: { data: [{ allowed: false, remaining: 0 }], error: null } } });
+		const limitedResponse = await limited.handle(request({ action: "health" }));
+		expect(limitedResponse.status).toBe(429);
+		expect(limitedResponse.headers.get("Retry-After")).toBeTruthy();
+		expect(limited.calls).toEqual([]);
+	});
+
+	it("fails closed when the rate-limit store is unavailable", async () => {
+		const unavailable = handler({ clientOptions: { rate: { data: null, error: new Error("db_down") } } });
+		const response = await unavailable.handle(request({ action: "health" }));
+		expect(response.status).toBe(503);
+		expect(unavailable.calls).toEqual([]);
 	});
 });

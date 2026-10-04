@@ -27,7 +27,7 @@
 - [ ] I have updated CLAUDE.md if needed
 - [ ] I have run the code-simplifier subagent on changed files (if applicable)
 - [ ] My code follows the project's naming conventions (snake_case for YAML/JSON, camelCase for TypeScript)
-- [ ] I have verified the fail-open behavior is preserved for error paths
+- [ ] I have verified the per-layer failure policy in CLAUDE.md: connector entry points and security controls fail closed (deny/block on internal error); only optional detection signals (e.g. a reputation lookup) are skipped and logged
 
 ## Related Issues
 <!-- Link to related issues using #issue_number -->

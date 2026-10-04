@@ -24,9 +24,31 @@ describe("auth callback security contract", () => {
     expect(source).toContain('error: "authorization_failed"');
     expect(source).toContain('return json(401,');
     expect(source).toContain('return json(500,');
-    const tenantGuard = source.indexOf("if (membershipError || !membership || membership.tenant_id !== state.tenantId)");
+    const tenantGuard = source.indexOf("if (membershipError || !membership || membership.tenant_id !== state.tenantId || membershipExpired)");
     const successResponse = source.indexOf("return json(200, {");
     expect(tenantGuard).toBeGreaterThanOrEqual(0);
     expect(successResponse).toBeGreaterThan(tenantGuard);
+  });
+
+  it("rejects replayable, expired or immortal signed state", () => {
+    // A signed state without a bounded expiry could be replayed forever.
+    expect(source).toContain("!Number.isSafeInteger(decoded.exp)");
+    expect(source).toContain("parsed.expiresAt <= nowSeconds");
+    expect(source).toContain("parsed.expiresAt > nowSeconds + MAX_STATE_TTL_SECONDS");
+    const verify = source.indexOf("crypto.subtle.verify");
+    const expiry = source.indexOf("parsed.expiresAt <= nowSeconds");
+    expect(expiry).toBeGreaterThan(verify);
+  });
+
+  it("bounds the request body before parsing and honours membership expiry", () => {
+    expect(source).toContain("MAX_BODY_BYTES");
+    expect(source).not.toContain("await req.json()");
+    expect(source).toContain('"tenant_id,expires_at"');
+    expect(source).toContain("membershipExpired");
+  });
+
+  it("pins the supabase-js import to an exact version", () => {
+    expect(source).not.toMatch(/supabase-js@2["']/);
+    expect(source).toMatch(/supabase-js@\d+\.\d+\.\d+["']/);
   });
 });
