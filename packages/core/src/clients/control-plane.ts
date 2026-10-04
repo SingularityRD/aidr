@@ -85,6 +85,14 @@ function safeIngestFailure(
 	return { ok: false, status, error, body: body ? safeBody : undefined };
 }
 
+/**
+ * Enrollment bootstrap (device-start, device-poll, enroll) is a user-initiated,
+ * once-per-install exchange that writes several records server-side. The 0.5s
+ * default budget exists to keep per-tool-call hooks fast; applying it here made
+ * enrollment fail against any cold control plane.
+ */
+const BOOTSTRAP_MIN_TIMEOUT_MS = 8_000; // 3 sequential calls must fit the 30s session-start hook budget
+
 export interface ControlPlaneClientOptions {
 	/** Override used by tests and embedded runtimes with a dedicated state root. */
 	telemetryQueueRoot?: string;
@@ -191,7 +199,7 @@ export class ControlPlaneClient {
 		try {
 			const response = await fetch(controlPlaneUrl(this.baseUrl, "device-start"), {
 				method: "POST",
-				signal: AbortSignal.timeout(this.timeoutMs),
+				signal: AbortSignal.timeout(Math.max(this.timeoutMs, BOOTSTRAP_MIN_TIMEOUT_MS)),
 				headers: {
 					Accept: "application/json",
 					"Content-Type": "application/json",
@@ -246,7 +254,7 @@ export class ControlPlaneClient {
 		try {
 			const response = await fetch(controlPlaneUrl(this.baseUrl, "device-poll"), {
 				method: "POST",
-				signal: AbortSignal.timeout(this.timeoutMs),
+				signal: AbortSignal.timeout(Math.max(this.timeoutMs, BOOTSTRAP_MIN_TIMEOUT_MS)),
 				headers: {
 					Accept: "application/json",
 					"Content-Type": "application/json",
@@ -601,7 +609,7 @@ export class ControlPlaneClient {
 		try {
 			const response = await fetch(controlPlaneUrl(this.baseUrl, "enroll"), {
 				method: "POST",
-				signal: AbortSignal.timeout(this.timeoutMs),
+				signal: AbortSignal.timeout(Math.max(this.timeoutMs, BOOTSTRAP_MIN_TIMEOUT_MS)),
 				headers: {
 					Accept: "application/json",
 					"Content-Type": "application/json",

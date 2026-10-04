@@ -30,3 +30,15 @@ export function assertSecureControlPlaneEndpoint(
 		"Control plane endpoint must use HTTPS (loopback HTTP requires allow_insecure_loopback)",
 	);
 }
+
+/**
+ * Control plane used by `mode: "managed"` installs that do not set
+ * `control_plane.endpoint`.
+ *
+ * This is the origin that serves the connector API (`/v1/device-start`,
+ * `/v1/device-poll`, `/v1/enroll`, `/v1/ingest`, `/v1/policy`, `/v1/revocations`):
+ * the AIDR web application (Next.js `src/app/v1/*` in the aidr-landing repo).
+ * The previous default, `aidr-control.svc.singularityrd.com`, never had DNS
+ * (AIDR-016). Local mode (the default) never contacts it.
+ */
+export const DEFAULT_CONTROL_PLANE_ENDPOINT = "https://aidr.singularityrd.com";

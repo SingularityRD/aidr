@@ -39,6 +39,8 @@ class RemoteRuntimePolicyUnavailableError extends Error {
 	constructor() { super("Required central policy is unavailable or its offline grace has expired. Restore connectivity or contact the policy administrator."); }
 }
 
+/** Opaque revision label: integer (Supabase) or an identifier such as `pol_20260506101000` (web control plane). */
+const POLICY_VERSION_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const MCP_ID = /^[A-Za-z0-9][A-Za-z0-9._:/_-]{0,255}$/;
 const LEGACY_MCP_TOOL = /^[A-Za-z0-9][A-Za-z0-9_:/-]{0,255}\.[A-Za-z0-9][A-Za-z0-9_:/-]{0,255}$/;
 
@@ -58,7 +60,7 @@ function validMcpToolSelector(value: unknown): boolean {
 
 function validRequiredPolicy(body: Record<string, unknown>): boolean {
 	const policy = getRuntimePolicy(body);
-	if (!policy || !/^[1-9][0-9]*$/.test(String(body.policy_version))) return false;
+	if (!policy || !POLICY_VERSION_ID.test(String(body.policy_version))) return false;
 	return validRuntimePolicy(body) && verifiedPolicySha256(body) !== null;
 }
 

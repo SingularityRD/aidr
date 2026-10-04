@@ -6,7 +6,10 @@
 import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { isCommercialBuild } from "./build-flavor.js";
-import { assertSecureControlPlaneEndpoint } from "./clients/control-plane-url.js";
+import {
+	assertSecureControlPlaneEndpoint,
+	DEFAULT_CONTROL_PLANE_ENDPOINT,
+} from "./clients/control-plane-url.js";
 import { getFileContent } from "./file-utils.js";
 import { resolveSecretStore, type SecretStore } from "./secret-store.js";
 import type { Config, Logger } from "./types.js";
@@ -152,6 +155,15 @@ function sanitizeConfigPaths(config: Config, logger: Logger): Config {
 				integrity: { ...next.integrity, enabled: true, verify_on_start: true },
 			};
 		}
+	}
+
+	// Managed mode is an explicit opt-in to the AIDR control plane; give it the
+	// documented endpoint when none is configured. Local mode stays endpoint-less.
+	if (next.mode === "managed" && !next.control_plane.endpoint.trim()) {
+		next = {
+			...next,
+			control_plane: { ...next.control_plane, endpoint: DEFAULT_CONTROL_PLANE_ENDPOINT },
+		};
 	}
 
 	return next;

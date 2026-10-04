@@ -455,7 +455,8 @@
       "evidence": [
         "Resolve-DnsName aidr-control.svc.singularityrd.com -> NXDOMAIN",
         "POST https://aidr.singularityrd.com/v1/device-start -> 404",
-        "2026-09-11: empty default endpoint, correct /functions/v1 route composition and both deployment preparation modes implemented. Isolated Docker installation passes 29 checks including full device pairing/enrollment and signature verification. Production cloud/domains/IdP/SMTP remain external; no production acceptance claimed."
+        "2026-09-11: empty default endpoint, correct /functions/v1 route composition and both deployment preparation modes implemented. Isolated Docker installation passes 29 checks including full device pairing/enrollment and signature verification. Production cloud/domains/IdP/SMTP remain external; no production acceptance claimed.",
+        "2026-10-05: managed-mode default endpoint is now https://aidr.singularityrd.com (the origin whose Next.js app serves /v1/device-start|device-poll|enroll|ingest|policy|revocations; local mode keeps no endpoint). The landing control plane was aligned to the connector wire contract and an in-process suite drives the real ControlPlaneClient/runSessionStart against its handlers (aidr-landing: src/lib/control-plane/__tests__/connector-contract.test.ts). Live acceptance still requires deploying that build to the host and DNS/TLS for it."
       ],
       "localEvidence": [
         {
