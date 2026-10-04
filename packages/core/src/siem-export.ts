@@ -53,7 +53,14 @@ const PRODUCT = "AIDR";
  *   - `\n` → `\n` (preserved as literal control char)
  */
 function escapeCefValue(raw: string): string {
-	return raw.replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/=/g, "\\=");
+	// CR/LF are escaped so a field value can never terminate the record and
+	// forge a second CEF line (log injection).
+	return raw
+		.replace(/\\/g, "\\\\")
+		.replace(/\|/g, "\\|")
+		.replace(/=/g, "\\=")
+		.replace(/\r/g, "\\r")
+		.replace(/\n/g, "\\n");
 }
 
 /**
@@ -131,7 +138,7 @@ function cefName(incident: Incident): string {
  * with a leading `\`.
  */
 function escapeLeefHeader(raw: string): string {
-	return raw.replace(/\|/g, "\\|");
+	return raw.replace(/\|/g, "\\|").replace(/\r/g, "\\r").replace(/\n/g, "\\n");
 }
 
 /**
@@ -140,7 +147,11 @@ function escapeLeefHeader(raw: string): string {
  * Tab characters in values are replaced with `\t` to preserve the structure.
  */
 function escapeLeefValue(raw: string): string {
-	return raw.replace(/\t/g, "\\t").replace(/\\/g, "\\\\");
+	return raw
+		.replace(/\t/g, "\\t")
+		.replace(/\\/g, "\\\\")
+		.replace(/\r/g, "\\r")
+		.replace(/\n/g, "\\n");
 }
 
 /**

