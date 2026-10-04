@@ -52,7 +52,7 @@ TypeScript monorepo. Connector packages and their shared core:
   the rules via `scripts/sync-assets.mjs`.
 - `services/aig-bridge/` — Python/FastAPI bridge for the SingularityRD-owned AI Infra Guard source, tracked directly under `vendor/ai-infra-guard/` (not a submodule)
 - `supabase/` — canonical migrations + Edge Functions; `packages/dashboard/supabase/functions/` contains dashboard-specific shared function code, not migration copies
-- `threats/` — YAML threat definitions (data, not code); 351 rules across 23 files
+- `threats/` — YAML threat definitions (data, not code); 356 rules across 23 files
 - `allowlists/` — Trusted domain allowlists
 - `hooks/` — `hooks.json` registering hooks with Claude Code
 - `skills/` — `security-awareness/SKILL.md`, synced into connector `resources/`
