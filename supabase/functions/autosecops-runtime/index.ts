@@ -22,7 +22,7 @@ import {
 	type EnvReader,
 } from "../_shared/config.ts";
 import { corsJson, handleCors } from "../_shared/cors.ts";
-import { readBoundedJson } from "../_shared/request-limits.ts";
+import { consumeTenantRateLimit, rateLimitHeaders, readBoundedJson } from "../_shared/request-limits.ts";
 import { membershipActive } from "../_shared/runtime-policy.ts";
 
 /**
@@ -424,6 +424,17 @@ export function createAutoSecOpsRuntimeHandler(deps: AutoSecOpsRuntimeDeps = {})
 			const autoSecOpsTeamId = resolveAutoSecOpsTeam(aidrTeamId);
 			if (!autoSecOpsTeamId) throw new Error("integration_not_configured");
 			const query = parseQuery(action, request.query);
+			// Every accepted call spends the shared provider credential and holds an
+			// outbound request open for up to 5s. Quota is spent before the provider
+			// leg and fails closed when the counter store is unavailable.
+			const rate = await consumeTenantRateLimit(supabase, {
+				tenantId: aidrTeamId,
+				subject: userId,
+				endpoint: "autosecops-runtime",
+				perSubject: 120,
+				perTenant: 600,
+			});
+			if (!rate.ok) return corsJson(req, rate.status, { error: rate.error }, rateLimitHeaders(rate));
 			const path = action;
 			const payload: Record<string, unknown> = {
 				scope: { tenant_id: `team:${autoSecOpsTeamId}`, team_id: autoSecOpsTeamId },

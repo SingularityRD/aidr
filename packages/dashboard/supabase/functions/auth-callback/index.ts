@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.116.0";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 
 const REQUIRED_ENV = [
@@ -18,7 +18,13 @@ const GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo";
 export interface CallbackState {
   tenantId: string;
   redirectUri: string;
+  /** Expiry as epoch seconds. A signed state without one would be replayable forever. */
+  expiresAt: number;
 }
+
+const MAX_BODY_BYTES = 16 * 1024;
+/** Longest accepted state lifetime; guards against a minter signing effectively-immortal states. */
+const MAX_STATE_TTL_SECONDS = 3600;
 
 function json(status: number, body: Record<string, unknown>, origin?: string): Response {
   const headers: Record<string, string> = {
@@ -55,15 +61,21 @@ export function parseState(value: unknown): CallbackState | null {
       !decoded || typeof decoded !== "object" ||
       typeof decoded.tenant_id !== "string" ||
       !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(decoded.tenant_id) ||
-      typeof decoded.redirect_uri !== "string"
+      typeof decoded.redirect_uri !== "string" ||
+      !Number.isSafeInteger(decoded.exp)
     ) return null;
-    return { tenantId: decoded.tenant_id, redirectUri: decoded.redirect_uri };
+    return { tenantId: decoded.tenant_id, redirectUri: decoded.redirect_uri, expiresAt: decoded.exp };
   } catch {
     return null;
   }
 }
 
-async function verifyState(value: unknown, secret: string, requestOriginValue: string): Promise<CallbackState | null> {
+export async function verifyState(
+  value: unknown,
+  secret: string,
+  requestOriginValue: string,
+  nowSeconds = Math.floor(Date.now() / 1000),
+): Promise<CallbackState | null> {
   if (typeof value !== "string") return null;
   const separator = value.indexOf(".");
   if (separator <= 0) return null;
@@ -81,6 +93,7 @@ async function verifyState(value: unknown, secret: string, requestOriginValue: s
   if (!valid) return null;
   const parsed = parseState(value);
   if (!parsed) return null;
+  if (parsed.expiresAt <= nowSeconds || parsed.expiresAt > nowSeconds + MAX_STATE_TTL_SECONDS) return null;
   try {
     if (new URL(parsed.redirectUri).origin !== requestOriginValue) return null;
   } catch {
@@ -129,7 +142,15 @@ export async function handleRequest(req: Request, env: (name: string) => string 
 
   let payload: { code?: unknown; state?: unknown };
   try {
-    payload = await req.json();
+    const declared = Number(req.headers.get("Content-Length") ?? "0");
+    if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) return json(413, { error: "request_too_large" }, origin);
+    const text = await req.text();
+    if (text.length > MAX_BODY_BYTES) return json(413, { error: "request_too_large" }, origin);
+    const parsedBody = JSON.parse(text);
+    if (!parsedBody || typeof parsedBody !== "object" || Array.isArray(parsedBody)) {
+      return json(400, { error: "invalid_request" }, origin);
+    }
+    payload = parsedBody;
   } catch {
     return json(400, { error: "invalid_request" }, origin);
   }
@@ -184,11 +205,13 @@ export async function handleRequest(req: Request, env: (name: string) => string 
     // session. A caller cannot select another tenant by changing state.
     const { data: membership, error: membershipError } = await supabase
       .from("tenant_members")
-      .select("tenant_id")
+      .select("tenant_id,expires_at")
       .eq("tenant_id", state.tenantId)
       .eq("user_id", authData.user.id)
       .maybeSingle();
-    if (membershipError || !membership || membership.tenant_id !== state.tenantId) {
+    const membershipExpired = typeof membership?.expires_at === "string" &&
+      !(Date.parse(membership.expires_at) > Date.now());
+    if (membershipError || !membership || membership.tenant_id !== state.tenantId || membershipExpired) {
       return json(403, { error: "tenant_not_allowed" }, origin);
     }
 
