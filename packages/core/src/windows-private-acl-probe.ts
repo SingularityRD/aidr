@@ -93,13 +93,12 @@ function readDacl(path: string): string | null {
 function aclIsExactlyPrivate(sddl: string, directory: boolean, user: CurrentUser): boolean {
 	const dacl = /^D:([A-Z]*)((?:\([^)]*\))+)$/.exec(sddl);
 	if (!dacl?.[1] || !dacl[2]) return false;
-	const isProtected = dacl[1].includes("P");
-	// A file freshly created inside a hardened directory carries exactly the
-	// directory's ACEs as inherited ("ID"). That is as private as the directory,
-	// which `windowsTargetsAreAlreadyPrivate` verifies in the same call.
-	const inheritedFromPrivateParent = !directory && !isProtected && dacl[1].includes("AI");
-	if (!isProtected && !inheritedFromPrivateParent) return false;
-	const aceFlags = directory ? "OICI" : inheritedFromPrivateParent ? "ID" : "";
+	// Only the explicit, inheritance-protected state counts. A file that merely
+	// inherits a private directory's ACEs ("ID") is not accepted: the repository's
+	// invariant (and the SIEM state-file test) is an explicitly protected DACL, so
+	// such files still get the full hardening.
+	if (!dacl[1].includes("P")) return false;
+	const aceFlags = directory ? "OICI" : "";
 	const required = new Set([user.sid, SYSTEM_SID, ADMINISTRATORS_SID]);
 	const seen = new Set<string>();
 	for (const ace of dacl[2].matchAll(/\(([^)]*)\)/g)) {
