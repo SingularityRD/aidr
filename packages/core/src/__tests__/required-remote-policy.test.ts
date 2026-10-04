@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ControlPlaneClient } from "../clients/control-plane.js";
 import { evaluateToolCall } from "../evaluator.js";
@@ -12,6 +11,7 @@ import {
 	syncRemoteRuntimePolicy,
 } from "../remote-policy.js";
 import { ConfigSchema } from "../types.js";
+import { advanceWallClock } from "./test-utils.js";
 
 const roots: string[] = [];
 const originalFetch = globalThis.fetch;
@@ -210,7 +210,7 @@ describe("required central policy offline boundary", () => {
 			expect(wal).toContain("remote_policy_unavailable");
 			expect(wal).not.toContain("SENSITIVE_INPUT_123");
 
-			await delay(1_150);
+			advanceWallClock(5_000);
 			const delivered: Array<Record<string, unknown>> = [];
 			globalThis.fetch = vi.fn().mockImplementation(async (_url: string, init: RequestInit) => {
 				const body = JSON.parse(String(init.body)) as { events: Array<Record<string, unknown>> };
