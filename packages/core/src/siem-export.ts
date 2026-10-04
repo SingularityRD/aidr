@@ -353,3 +353,85 @@ export function exportToJSON(incidents: Incident[], filter?: SiemExportFilter): 
 	const matched = applyFilter(incidents, filter);
 	return JSON.stringify(matched.map(incidentToSiemRecord));
 }
+
+// ---------------------------------------------------------------------------
+// Syslog (RFC 5424) formatter
+// ---------------------------------------------------------------------------
+
+/** RFC 5424 severity (0 = emergency ... 7 = debug) for each AIDR severity. */
+const SYSLOG_SEVERITY: Record<IncidentSeverity, number> = {
+	info: 6,
+	warning: 4,
+	high: 3,
+	critical: 2,
+};
+
+export interface SyslogExportOptions extends SiemExportFilter {
+	/** RFC 5424 facility number 0-23. Default 16 (local0). */
+	facility?: number;
+	/** HOSTNAME field. Default "-" (NILVALUE). Characters outside printable ASCII are replaced. */
+	hostname?: string;
+	/**
+	 * Private Enterprise Number for the structured-data ID `aidr@<pen>`.
+	 * Default 32473, the RFC 5612 value reserved for documentation: set the
+	 * organisation's own registered PEN before relying on the SD-ID.
+	 */
+	enterpriseNumber?: number;
+}
+
+/** RFC 5424 header fields are printable US-ASCII 33-126 with no spaces. */
+function syslogHeaderToken(raw: string, max: number): string {
+	const cleaned = raw.replace(/[^\x21-\x7e]/g, "_").slice(0, max);
+	return cleaned.length > 0 ? cleaned : "-";
+}
+
+/** SD-PARAM value escaping: `"`, `\` and `]`, plus CR/LF so a value cannot start a new record. */
+function escapeSyslogParam(raw: string): string {
+	return raw
+		.replace(/\\/g, "\\\\")
+		.replace(/"/g, '\\"')
+		.replace(/]/g, "\\]")
+		.replace(/\r/g, "\\r")
+		.replace(/\n/g, "\\n");
+}
+
+/**
+ * Export incidents as **RFC 5424** syslog messages (one string per incident,
+ * no embedded line breaks). This is a formatter only: AIDR ships no
+ * UDP/TCP/TLS syslog transport; pipe the output to rsyslog/syslog-ng or use
+ * {@link frameSyslogOctetCounting} for RFC 6587 TCP/TLS framing.
+ */
+export function exportToSyslog(incidents: Incident[], options: SyslogExportOptions = {}): string[] {
+	const facility = Number.isInteger(options.facility)
+		? Math.min(23, Math.max(0, options.facility as number))
+		: 16;
+	const pen = Number.isInteger(options.enterpriseNumber)
+		? (options.enterpriseNumber as number)
+		: 32473;
+	const hostname = syslogHeaderToken(options.hostname ?? "", 255);
+	return applyFilter(incidents, options).map((inc) => {
+		const pri = facility * 8 + SYSLOG_SEVERITY[inc.severity];
+		const timestamp = new Date(inc.opened_at_ms).toISOString();
+		const msgId = syslogHeaderToken(cefSignatureId(inc).replace(/\//g, "."), 32);
+		const params: Array<[string, string | number | undefined | null]> = [
+			["incident_id", inc.incident_id],
+			["severity", inc.severity],
+			["status", inc.status],
+			["agent_iid", inc.agent_iid],
+			["connector", inc.connector],
+			["session_id", inc.session_id],
+			["event_count", inc.events.length],
+		];
+		const sd = params
+			.filter(([, value]) => value !== undefined && value !== null && value !== "")
+			.map(([key, value]) => `${key}="${escapeSyslogParam(String(value))}"`)
+			.join(" ");
+		const msg = cefName(inc).replace(/[\r\n]+/g, " ");
+		return `<${pri}>1 ${timestamp} ${hostname} aidr - ${msgId} [aidr@${pen} ${sd}] ${msg}`;
+	});
+}
+
+/** RFC 6587 section 3.4.1 octet-counting frame: `<byte length> <message>`. */
+export function frameSyslogOctetCounting(message: string): string {
+	return `${Buffer.byteLength(message, "utf8")} ${message}`;
+}
