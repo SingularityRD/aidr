@@ -2,10 +2,12 @@
  * Load and validate YAML-based threat definitions.
  */
 
-import { readdir } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { getFileContent } from "./file-utils.js";
+import { THREAT_PARSE_CACHE } from "./generated/threat-parse-cache.js";
 import type { Logger, Threat } from "./types.js";
 import { nullLogger } from "./types.js";
 
@@ -34,6 +36,29 @@ function isExpired(entry: Record<string, unknown>): boolean {
 	const expiresAt = parseExpiresAt(entry.expires_at as string | null | undefined);
 	if (expiresAt === null) return false;
 	return Date.now() > expiresAt.getTime();
+}
+
+/** SHA-256 of a threat file's content with line endings normalised (CRLF checkouts). */
+export function threatContentHash(content: string): string {
+	return createHash("sha256").update(content.replace(/\r\n/g, "\n"), "utf8").digest("hex");
+}
+
+/**
+ * Parse one threat YAML file. A hook is a fresh process per tool call, so the
+ * YAML parser would run cold over every rule file; files whose exact content was
+ * pre-parsed at build time (scripts/compile-threat-cache.mjs) skip it. The YAML
+ * on disk stays authoritative: any other content is parsed normally.
+ */
+export function parseThreatYaml(content: string): unknown {
+	const cached = THREAT_PARSE_CACHE[threatContentHash(content)];
+	if (cached) return cached;
+	try {
+		return parseYaml(content);
+	} catch {
+		// Retry: escape backslashes before regex-special chars that
+		// are not valid YAML double-quoted string escape sequences
+		return parseYaml(content.replace(/\\(?=[.*+?^$()\[\]{}|\\])/g, "\\\\"));
+	}
 }
 
 export async function loadThreats(
@@ -66,19 +91,12 @@ export async function loadThreats(
 
 		let data: unknown;
 		try {
-			data = parseYaml(content);
-		} catch {
-			// Retry: escape backslashes before regex-special chars that
-			// are not valid YAML double-quoted string escape sequences
-			try {
-				const fixed = content.replace(/\\(?=[.*+?^$()\[\]{}|\\])/g, "\\\\");
-				data = parseYaml(fixed);
-			} catch (e2) {
-				const errorMsg = `Failed to parse ${filename}: ${String(e2)}`;
-				errors.push(errorMsg);
-				logger.error(errorMsg, { file: filename, error: String(e2) });
-				continue;
-			}
+			data = parseThreatYaml(content);
+		} catch (e2) {
+			const errorMsg = `Failed to parse ${filename}: ${String(e2)}`;
+			errors.push(errorMsg);
+			logger.error(errorMsg, { file: filename, error: String(e2) });
+			continue;
 		}
 
 		if (!Array.isArray(data)) {
@@ -170,8 +188,15 @@ export async function loadThreatsFromDirs(
 	logger: Logger = nullLogger,
 ): Promise<Threat[]> {
 	const merged = new Map<string, Threat>();
-	for (const dir of threatDirs) {
+	for (const [index, dir] of threatDirs.entries()) {
 		if (!dir) continue;
+		// Only the first (primary) directory is mandatory. An absent optional
+		// directory (e.g. ~/.singularity-aidr/threats on a fresh install) is the
+		// normal case, so it must not be reported as an error on every call.
+		if (index > 0 && !(await isDirectory(dir))) {
+			logger.debug(`Skipping absent optional threat directory: ${dir}`);
+			continue;
+		}
 		try {
 			const threats = await loadThreats(dir, logger);
 			for (const threat of threats) {
@@ -184,4 +209,12 @@ export async function loadThreatsFromDirs(
 		}
 	}
 	return [...merged.values()];
+}
+
+async function isDirectory(path: string): Promise<boolean> {
+	try {
+		return (await stat(path)).isDirectory();
+	} catch {
+		return false;
+	}
 }

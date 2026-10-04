@@ -2,7 +2,6 @@ import { mkdir, mkdtemp, readdir, readFile, rm, stat, utimes, writeFile } from "
 import { createServer } from "node:http";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -18,6 +17,7 @@ import {
 	SIEM_CONFIG_PATH_ENV,
 } from "../siem-incident-producer.js";
 import type { LoggingConfig } from "../types.js";
+import { advanceWallClock } from "./test-utils.js";
 
 const tempDirectories: string[] = [];
 
@@ -131,32 +131,62 @@ describe("configured SIEM incident producer", () => {
 		try {
 			const address = server.address();
 			if (!address || typeof address === "string") throw new Error("loopback_server_unavailable");
-			await writeFile(configPath, JSON.stringify({
-				state_file: stateFile,
-				adapter: {
-					provider: "webhook",
-					endpoint: `http://127.0.0.1:${address.port}/ingest`,
-					allowInsecureLoopback: true,
-				},
-				request_timeout_ms: 1_000,
-			}), { mode: 0o600 });
+			await writeFile(
+				configPath,
+				JSON.stringify({
+					state_file: stateFile,
+					adapter: {
+						provider: "webhook",
+						endpoint: `http://127.0.0.1:${address.port}/ingest`,
+						allowInsecureLoopback: true,
+					},
+					request_timeout_ms: 1_000,
+				}),
+				{ mode: 0o600 },
+			);
 			vi.stubEnv(SIEM_CONFIG_PATH_ENV, configPath);
 			expect((await produceConfiguredSiemIncident(incident("loopback"))).status).toBe("queued");
 			expect(received).toHaveLength(0);
 
 			const first = workerIo();
-			expect(await runSiemDeliveryWorker(["--max-items", "1"], async () => ({ drainConfiguredSiemDelivery }), first.io)).toBe(2);
-			expect(parseFirstOutput(first.output)).toMatchObject({ attempted: 1, delivered: 0, retrying: 1 });
+			expect(
+				await runSiemDeliveryWorker(
+					["--max-items", "1"],
+					async () => ({ drainConfiguredSiemDelivery }),
+					first.io,
+				),
+			).toBe(2);
+			expect(parseFirstOutput(first.output)).toMatchObject({
+				attempted: 1,
+				delivered: 0,
+				retrying: 1,
+			});
 			const retryState = JSON.parse(await readFile(stateFile, "utf8"));
-			expect(retryState.payload.receipts[0]).toMatchObject({ status: "retrying", lastStatusCode: 429 });
+			expect(retryState.payload.receipts[0]).toMatchObject({
+				status: "retrying",
+				lastStatusCode: 429,
+			});
 			expect(received).toHaveLength(1);
 
-			await delay(1_050);
+			advanceWallClock(5_000);
 			const second = workerIo();
-			expect(await runSiemDeliveryWorker(["--max-items", "1"], async () => ({ drainConfiguredSiemDelivery }), second.io)).toBe(0);
-			expect(parseFirstOutput(second.output)).toMatchObject({ attempted: 1, delivered: 1, queueDepth: 0 });
+			expect(
+				await runSiemDeliveryWorker(
+					["--max-items", "1"],
+					async () => ({ drainConfiguredSiemDelivery }),
+					second.io,
+				),
+			).toBe(0);
+			expect(parseFirstOutput(second.output)).toMatchObject({
+				attempted: 1,
+				delivered: 1,
+				queueDepth: 0,
+			});
 			const deliveredState = JSON.parse(await readFile(stateFile, "utf8"));
-			expect(deliveredState.payload.receipts[0]).toMatchObject({ status: "delivered", attemptCount: 2 });
+			expect(deliveredState.payload.receipts[0]).toMatchObject({
+				status: "delivered",
+				attemptCount: 2,
+			});
 			expect(received).toHaveLength(2);
 			expect(received[0]?.eventId).toBe(received[1]?.eventId);
 			expect(JSON.parse(received[1]?.body ?? "{}").event_id).toBe(received[1]?.eventId);
@@ -316,7 +346,7 @@ describe("configured SIEM incident producer", () => {
 				first.io,
 			),
 		).toBe(2);
-		await delay(1_100);
+		advanceWallClock(5_000);
 		const { io, output, errors } = workerIo();
 		const exit = await runSiemDeliveryWorker(
 			["--max-items", "5"],

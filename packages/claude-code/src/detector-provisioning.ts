@@ -9,8 +9,6 @@
  * unprovisioned install still gets an empty context here.
  */
 import {
-	behavioralBaselineDir,
-	canonicalDetectorPolicyPayload,
 	type DetectorProvisionedContext,
 	detectorPolicyPath as coreDetectorPolicyPath,
 	loadProvisionedDetectorContext as coreLoadProvisionedDetectorContext,

@@ -34,8 +34,14 @@ if (files.length === 0) {
 	process.exit(1);
 }
 
-await rm(target, { recursive: true, force: true });
+// `dist/generated/` also holds tsc output (e.g. threat-parse-cache.js), so only
+// the data files are replaced; wiping the directory would delete compiled code.
 await mkdir(target, { recursive: true });
-await cp(source, target, { recursive: true });
+for (const stale of (await readdir(target)).filter((name) => name.endsWith(".json"))) {
+	await rm(join(target, stale), { force: true });
+}
+for (const name of files) {
+	await cp(join(source, name), join(target, name));
+}
 
 console.log(`[core] copied ${files.length} generated data file(s) to dist/generated/`);
