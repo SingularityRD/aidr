@@ -155,10 +155,14 @@ function extract(tarball: string, destDir: string): void {
 	mkdirSync(destDir, { recursive: true });
 	// Relative archive name + cwd and forward-slash -C: GNU tar on Windows parses an
 	// absolute "C:\..." archive as a remote host and mishandles backslashes in -C.
-	execFileSync("tar", ["-xzf", basename(tarball), "-C", destDir.split(sep).join("/"), "--strip-components=1"], {
-		cwd: dirname(tarball),
-		stdio: "pipe",
-	});
+	execFileSync(
+		"tar",
+		["-xzf", basename(tarball), "-C", destDir.split(sep).join("/"), "--strip-components=1"],
+		{
+			cwd: dirname(tarball),
+			stdio: "pipe",
+		},
+	);
 	if (!existsSync(join(destDir, "package.json"))) {
 		throw new Error(`extraction of ${basename(tarball)} produced no package.json in ${destDir}`);
 	}
@@ -401,7 +405,10 @@ describe("packaged SDK tarball (installed outside the monorepo)", () => {
 		const threats = readdirSync(threatsDir).filter((entry) => entry.endsWith(".yaml"));
 		expect(threats.length).toBeGreaterThan(20);
 		// Evidence straight from the tarball's own file list.
-		const listing = execFileSync("tar", ["-tzf", basename(sdkTarballPath)], { cwd: dirname(sdkTarballPath), encoding: "utf8" });
+		const listing = execFileSync("tar", ["-tzf", basename(sdkTarballPath)], {
+			cwd: dirname(sdkTarballPath),
+			encoding: "utf8",
+		});
 		expect(listing).toContain("package/resources/threats/");
 		expect(listing).toContain("package/resources/allowlists/");
 		expect(listing).toContain("package/dist/index.mjs");
