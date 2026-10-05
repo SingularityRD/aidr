@@ -40,6 +40,7 @@ function TeamNavLinks() {
 			<NavLink to="/team">Team</NavLink>
 			{currentRole === "owner" ? <NavLink to="/scim">Directory provisioning</NavLink> : null}
 			{!roleResolved || canEditPolicy ? <NavLink to="/policies">Policies</NavLink> : null}
+			{canEditPolicy ? <NavLink to="/siem">SIEM export</NavLink> : null}
 		</>
 	);
 }

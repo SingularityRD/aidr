@@ -26,6 +26,37 @@ The installer rejects paths outside these systemd-writable state directories.
 User-local or remote endpoint queues are not inferred from an empty
 dashboard-host directory.
 
+### Syslog destination (TCP, TLS, UDP)
+
+Besides the HTTPS providers, the `adapter` block can be
+`{ "provider": "syslog", "endpoint": "tls://collector.example.com:6514" }`.
+Messages are RFC 5424 (UTF-8 BOM + single-line JSON MSG, structured data
+`aidr@32473`); TCP and TLS use RFC 6587 octet counting. The dashboard
+**SIEM export** page (`/siem`) generates and validates this block locally.
+
+- `tls://` verifies the certificate chain and host name and cannot be
+  downgraded. `tlsCaCertificatePem` replaces the system roots with your private
+  CA; `tlsPinnedSha256` additionally requires that one certificate in the
+  presented chain has a matching SHA-256 public-key pin (hex or base64).
+- `tcp://` and `udp://` send incident data unencrypted and are refused unless
+  `allowPlaintextTransport` is `true`.
+- Egress policy: loopback, link-local (including cloud metadata), multicast,
+  broadcast and unspecified addresses are always refused. RFC 1918, CGNAT, ULA
+  and similar ranges need `allowPrivateNetwork: true`. Every address a host name
+  resolves to is checked on every send and the connection is made to the
+  checked address, so a rebinding answer cannot steer the sender.
+- Delivery uses the same durable queue, bounded exponential backoff
+  (`maxAttempts`, default 10) and dead-letter counters as the HTTPS adapters.
+  Receipts carry `deliveryCode`: `syslog_tcp_written` / `syslog_tls_written`
+  mean every byte was flushed and the peer closed cleanly; UDP records
+  `syslog_udp_sent_unacknowledged` because syslog has no application
+  acknowledgement. None of these proves downstream indexing, so validate
+  visibility in the SIEM during acceptance.
+- `facility`, `hostname`, `appName`, `structuredDataId` and `maxMessageBytes`
+  (default 64 KiB; events are truncated to fit; UDP datagrams over 8 KiB are
+  dead-lettered rather than split) tune the message. Verification-disabling
+  options do not exist.
+
 Protect the SIEM JSON configuration and state as secrets: the config contains
 provider credentials in plaintext, and the local state contains incident
 payloads. On Linux, the state directory and file must be owner-only; the

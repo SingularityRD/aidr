@@ -180,6 +180,13 @@ const router = createBrowserRouter([
 		children: [{ index: true, lazy: async () => ({ Component: (await import("./ui/pages/ScimPage")).ScimPage }) }],
 	},
 	{
+		path: "/siem",
+		lazy: loadAppLayout,
+		errorElement: routeErrorElement,
+		loader: requireSessionLoader,
+		children: [{ index: true, lazy: async () => ({ Component: (await import("./ui/pages/SiemPage")).SiemPage }) }],
+	},
+	{
 		path: "/policies",
 		lazy: loadAppLayout,
 		errorElement: routeErrorElement,
