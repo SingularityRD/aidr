@@ -245,14 +245,15 @@ export class SupabaseScimStore implements ScimStore {
 // Per-minute SCIM limits. IdP provisioning bursts are bounded; an aggregate bucket
 // bounds unauthenticated token guessing, and a per-token bucket stops one tenant
 // credential from starving the others.
-const SCIM_RATE_LIMITS: ScimRateLimits = {
-	globalPerMinute: Number(Deno.env.get("AIDR_SCIM_GLOBAL_RL_PER_MIN") ?? "6000"),
-	perTokenPerMinute: Number(Deno.env.get("AIDR_SCIM_TOKEN_RL_PER_MIN") ?? "600"),
-};
+const readScimRateLimits = (): ScimRateLimits => ({
+	globalPerMinute: Number(runtimeEnv("AIDR_SCIM_GLOBAL_RL_PER_MIN") ?? "6000"),
+	perTokenPerMinute: Number(runtimeEnv("AIDR_SCIM_TOKEN_RL_PER_MIN") ?? "600"),
+});
 
 Deno.serve(async (req) => {
 	const config = loadConfig(runtimeEnv, REQUIRED_ENV);
 	if (config.ok === false) return configFailure("scim", config.error, (status, body) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/scim+json", "Cache-Control": "no-store" } }));
+	const SCIM_RATE_LIMITS = readScimRateLimits();
 	const invalid: string[] = [];
 	if (!validRateLimit(SCIM_RATE_LIMITS.perTokenPerMinute, 100_000)) invalid.push("AIDR_SCIM_TOKEN_RL_PER_MIN");
 	if (!validRateLimit(SCIM_RATE_LIMITS.globalPerMinute, 1_000_000) || SCIM_RATE_LIMITS.globalPerMinute < SCIM_RATE_LIMITS.perTokenPerMinute) invalid.push("AIDR_SCIM_GLOBAL_RL_PER_MIN");
