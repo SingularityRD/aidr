@@ -90,3 +90,53 @@ test("the repository tree satisfies the matrix", async () => {
 	// guarded: the two sets partition the tree.
 	assert.equal(report.guarded + report.allowlisted, routes.length);
 });
+
+test("a public route without application rate limiting fails the gate", () => {
+	const entry = {
+		route: "supabase/functions/open/index.ts",
+		mechanism: "device code",
+		justification: "Public bootstrap route whose credential is a high-entropy code in the request body.",
+		rateLimited: true,
+	};
+	const unlimited = evaluateAuthMatrix(
+		[{ route: entry.route, source: "Deno.serve(() => new Response('ok'));" }],
+		[entry],
+		{ fileExists: () => true },
+	);
+	assert.equal(unlimited.failures.length, 1);
+	assert.match(unlimited.failures[0], /must enforce application-level rate limiting/);
+
+	// Importing the limiter without calling it is not enforcement.
+	const importedOnly = evaluateAuthMatrix(
+		[{ route: entry.route, source: 'import { consumeRateLimit } from "../_shared/rate-limit.ts";' }],
+		[entry],
+		{ fileExists: () => true },
+	);
+	assert.equal(importedOnly.failures.length, 1);
+
+	const limited = evaluateAuthMatrix(
+		[
+			{
+				route: entry.route,
+				source: 'import { consumeRateLimit } from "../_shared/rate-limit.ts";\nawait consumeRateLimit(db, key, 5);',
+			},
+		],
+		[entry],
+		{ fileExists: () => true },
+	);
+	assert.deepEqual(limited.failures, []);
+
+	const undeclared = evaluateAuthMatrix(
+		[{ route: entry.route, source: "Deno.serve(() => new Response());" }],
+		[{ ...entry, rateLimited: undefined }],
+		{ fileExists: () => true },
+	);
+	assert.match(undeclared.failures[0], /must declare rateLimited/);
+});
+
+test("device-poll and scim are rate limited public routes in the real allowlist", () => {
+	for (const route of ["device-poll", "scim"]) {
+		const entry = PUBLIC_ROUTE_ALLOWLIST.find((item) => item.route === `supabase/functions/${route}/index.ts`);
+		assert.equal(entry?.rateLimited, true, `${route} must declare rate limiting`);
+	}
+});

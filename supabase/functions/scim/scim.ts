@@ -61,7 +61,21 @@ export interface ScimCreateGroup {
 	members: string[];
 }
 
+export type ScimRateLimitResult =
+	| { status: "allowed" }
+	| { status: "limited"; retryAfterSeconds: number }
+	| { status: "unavailable"; retryAfterSeconds: number };
+
+export interface ScimRateLimits {
+	/** Requests per minute across the whole deployment, counted before authentication. */
+	globalPerMinute: number;
+	/** Requests per minute per SCIM token (tenant credential), counted after authentication. */
+	perTokenPerMinute: number;
+}
+
 export interface ScimStore {
+	/** Fixed-window counter; callers fail closed on "unavailable". */
+	rateLimit?(key: string, limitPerMinute: number): Promise<ScimRateLimitResult>;
 	authenticate(token: string): Promise<ScimTenant | null>;
 	listUsers(tenantId: string, offset: number, limit: number, filter: ScimFilter | null): Promise<ScimList<ScimUser>>;
 	getUser(tenantId: string, id: string): Promise<ScimUser | null>;
@@ -433,13 +447,30 @@ async function groupRoute(req: Request, store: ScimStore, tenant: ScimTenant, id
 	return error(405, "Method not allowed");
 }
 
-export function createScimHandler(store: ScimStore): (req: Request) => Promise<Response> {
+function rateLimitResponse(result: Exclude<ScimRateLimitResult, { status: "allowed" }>): Response {
+	const retry = { "Retry-After": String(result.retryAfterSeconds) };
+	return result.status === "limited"
+		? json(429, { schemas: [SCIM_ERROR_SCHEMA], status: "429", detail: "Too many requests" }, retry)
+		: json(503, { schemas: [SCIM_ERROR_SCHEMA], status: "503", detail: "SCIM service unavailable" }, retry);
+}
+
+export function createScimHandler(store: ScimStore, limits?: ScimRateLimits): (req: Request) => Promise<Response> {
 	return async (req: Request): Promise<Response> => {
 		try {
+			// Aggregate bucket first: it bounds unauthenticated token guessing without
+			// letting an attacker create per-credential counter rows.
+			if (limits && store.rateLimit) {
+				const aggregate = await store.rateLimit("scim:v1:aggregate", limits.globalPerMinute);
+				if (aggregate.status !== "allowed") return rateLimitResponse(aggregate);
+			}
 			const token = getBearerToken(req.headers.get("Authorization"));
 			if (!token) return error(401, "A bearer token is required", undefined);
 			const tenant = await store.authenticate(token);
 			if (!tenant) return json(401, { schemas: [SCIM_ERROR_SCHEMA], status: "401", detail: "Invalid bearer token" }, { "WWW-Authenticate": "Bearer" });
+			if (limits && store.rateLimit) {
+				const perToken = await store.rateLimit(`scim:v1:token:${tenant.tokenId}`, limits.perTokenPerMinute);
+				if (perToken.status !== "allowed") return rateLimitResponse(perToken);
+			}
 			const parsed = parsePath(new URL(req.url).pathname);
 			if (!parsed) return error(404, "SCIM endpoint not found");
 			if (req.method === "GET" && parsed.resource.toLowerCase() === "serviceproviderconfig" && !parsed.id) return json(200, serviceProviderConfig());
