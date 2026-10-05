@@ -43,6 +43,11 @@ import type {
 const MAX_BODY_BYTES = 16 * 1024;
 const AUTH_REQUEST_TTL_MS = 10 * 60_000;
 const LOGIN_TICKET_TTL_MS = 2 * 60_000;
+// Deployment-wide availability bounds, not security controls: state is 256-bit and single-use, so
+// guessing is infeasible. They only cap unauthenticated database writes. A fixed bound can be used
+// to starve sign-in, so it is deliberately far above any real login rate (see residual risks).
+const START_LIMIT_PER_MINUTE = 600;
+const CALLBACK_LIMIT_PER_MINUTE = 1_200;
 const SCOPES = ["openid", "email", "profile"] as const;
 const DOMAIN_TXT_LABEL = "_aidr-sso";
 const DOMAIN_TXT_PREFIX = "aidr-sso-verification=";
@@ -111,7 +116,7 @@ export function createOidcHandler(deps: OidcDeps): (req: Request) => Promise<Res
 		if ((body.provider_id !== undefined && !providerId) || (!providerId && !domain))
 			return deps.json(req, 400, { error: "invalid_request" });
 
-		const limit = await store.rateLimit(`oidc-start:${await sha256Hex(providerId ?? domain ?? "")}`, 60_000, 30);
+		const limit = await store.rateLimit(`oidc-start:${await sha256Hex(providerId ?? domain ?? "")}`, 60_000, START_LIMIT_PER_MINUTE);
 		if (limit === "unavailable") return deps.json(req, 503, { error: "sso_unavailable" });
 		if (limit === "limited") return deps.json(req, 429, { error: "rate_limited" });
 
@@ -222,7 +227,7 @@ export function createOidcHandler(deps: OidcDeps): (req: Request) => Promise<Res
 		const bindingVerifier = isPkceVerifier(body.binding_verifier) ? body.binding_verifier : null;
 		if (!code || !state || !bindingVerifier) return deps.json(req, 400, { error: "invalid_request" });
 
-		const limit = await store.rateLimit("oidc-callback", 60_000, 300);
+		const limit = await store.rateLimit("oidc-callback", 60_000, CALLBACK_LIMIT_PER_MINUTE);
 		if (limit === "unavailable") return deps.json(req, 503, { error: "sso_unavailable" });
 		if (limit === "limited") return deps.json(req, 429, { error: "rate_limited" });
 

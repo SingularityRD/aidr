@@ -114,6 +114,7 @@ Prerequisites: a global or application administrator in the customer directory; 
 * **DNS rebinding.** The Edge runtime's `fetch` resolves names again, so the guard validates every DNS answer but cannot pin the connection the way `packages/core` MCP transport does. Compensating controls: https and port 443 only, no redirects, DNS names only, the provider is owner-configured at AAL2, and the Supabase Edge network has no route to the project's internal services.
 * **No IdP-initiated revocation.** See above; sessions end by SCIM deactivation or `session_max_seconds`.
 * **Per-isolate JWKS cache.** Each warm isolate fetches independently; the fetch is rate-limited per URI per isolate.
+* **Unauthenticated write bounds.** `start` is limited to 600 per provider per minute and `callback` to 1,200 per minute deployment-wide. These cap database writes; they are not a security control (state is 256-bit and single-use) and, like any fixed bound, could be used to starve sign-in under deliberate flooding. Put the Edge function behind the platform/WAF rate limiting for volumetric abuse.
 * **Break-glass power.** Possession of an owner's unexpired recovery code can suspend enforcement. Treat codes like the password-recovery codes they are.
 
 ## Owner acceptance checklist

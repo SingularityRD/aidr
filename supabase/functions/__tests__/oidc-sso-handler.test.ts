@@ -525,7 +525,7 @@ describe("start", () => {
 		expect((await call(ctx, { action: "start", provider_id: "not-a-uuid", binding_challenge: await sha256Text("b") })).status).toBe(400);
 		const challenge = await sha256Text("b");
 		let limited = 0;
-		for (let index = 0; index < 40; index += 1) {
+		for (let index = 0; index < 620; index += 1) {
 			const result = await call(ctx, { action: "start", provider_id: PROVIDER_A, binding_challenge: challenge });
 			if (result.status === 429) limited += 1;
 		}
