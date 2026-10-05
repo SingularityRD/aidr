@@ -72,7 +72,7 @@ export const SIEM_SYSLOG_CONFIG_JSON_SCHEMA = {
 	},
 } as const;
 
-export interface SyslogDestination {
+interface SyslogDestination {
 	transport: SyslogTransport;
 	/** Lower-case host without brackets. */
 	host: string;
@@ -85,7 +85,7 @@ export type SyslogAddressClass = "public" | "loopback" | "private" | "blocked";
 
 export type SyslogLookup = (hostname: string) => Promise<readonly string[]>;
 
-export interface SyslogSendContext {
+interface SyslogSendContext {
 	timeoutMs: number;
 	lookup?: SyslogLookup;
 }
@@ -186,7 +186,7 @@ function assertAddressAllowed(address: string, config: SyslogSiemConfig): void {
 }
 
 /** Synchronous destination checks. Hostnames are re-validated after DNS on every send. */
-export function parseSyslogDestination(config: SyslogSiemConfig): SyslogDestination {
+function parseSyslogDestination(config: SyslogSiemConfig): SyslogDestination {
 	let url: URL;
 	try {
 		url = new URL(config.endpoint);
@@ -235,7 +235,7 @@ export function parseSyslogDestination(config: SyslogSiemConfig): SyslogDestinat
 	return { transport, host, port, origin: `${transport}://${displayHost}:${port}` };
 }
 
-export function normalizeSyslogPin(value: string): string {
+function normalizeSyslogPin(value: string): string {
 	if (/^[A-Fa-f0-9]{64}$/.test(value)) return Buffer.from(value, "hex").toString("base64");
 	if (/^[A-Za-z0-9+/_-]{43}={0,1}$/.test(value)) {
 		const bytes = Buffer.from(value.replace(/-/g, "+").replace(/_/g, "/"), "base64");
@@ -245,7 +245,7 @@ export function normalizeSyslogPin(value: string): string {
 }
 
 /** Validate TLS trust settings once at construction; returns normalised pins. */
-export function validateSyslogTls(config: SyslogSiemConfig): { ca?: string; pins: string[] } {
+function validateSyslogTls(config: SyslogSiemConfig): { ca?: string; pins: string[] } {
 	if (config.tlsCaCertificatePem !== undefined) {
 		const pem = config.tlsCaCertificatePem;
 		const certificates = pem.match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g);

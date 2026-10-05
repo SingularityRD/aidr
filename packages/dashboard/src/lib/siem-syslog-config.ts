@@ -19,7 +19,7 @@ export type SyslogFormValues = {
 	pinnedSha256: string;
 };
 
-export type SyslogAdapterConfig = {
+type SyslogAdapterConfig = {
 	provider: "syslog";
 	endpoint: string;
 	facility?: number;

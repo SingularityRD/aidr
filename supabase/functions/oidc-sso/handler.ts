@@ -49,7 +49,7 @@ const DOMAIN_TXT_PREFIX = "aidr-sso-verification=";
 const ENTRA_ISSUER = /^https:\/\/login\.microsoftonline\.com\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/v2\.0$/;
 
 type Body = Record<string, unknown>;
-export type LoginFailureReason =
+type LoginFailureReason =
 	| "request_invalid"
 	| "binding_mismatch"
 	| "provider_unavailable"

@@ -1,6 +1,6 @@
 // AIDR pilot edge: serve the existing dashboard and proxy the existing
 // Supabase API. This is not a replacement for Postgres, Auth or Edge Functions.
-import { parseSamlRuntimeConfig } from "../saml-config.mjs";
+import { parseOidcRuntimeConfig, parseSamlRuntimeConfig } from "../saml-config.mjs";
 
 const API_PREFIXES = ["/auth/v1", "/rest/v1", "/storage/v1", "/realtime/v1", "/functions/v1"];
 const DEVICE_START = "/functions/v1/device-start";
@@ -316,7 +316,9 @@ export async function handle(request, env, fetcher = fetch) {
 		const authMethods = ["password", "magic-link"];
 		if (env.AIDR_ENABLE_AZURE_AUTH === "true") authMethods.push("azure");
 		let samlConfig;
+		let oidcConfig;
 		try {
+			oidcConfig = parseOidcRuntimeConfig(env.AIDR_OIDC_SSO);
 			samlConfig = parseSamlRuntimeConfig({
 				providers: env.AIDR_SAML_PROVIDERS,
 				providerId: env.AIDR_SAML_PROVIDER_ID,
@@ -325,7 +327,7 @@ export async function handle(request, env, fetcher = fetch) {
 		} catch {
 			return jsonError(503, "service_not_configured");
 		}
-		const payload = JSON.stringify({ supabaseUrl: config.site, supabaseAnonKey: config.anonKey, authMethods, signupMode: config.signupMode, ...samlConfig }).replace(/</g, "\\u003c");
+		const payload = JSON.stringify({ supabaseUrl: config.site, supabaseAnonKey: config.anonKey, authMethods, signupMode: config.signupMode, ...samlConfig, ...oidcConfig }).replace(/</g, "\\u003c");
 		return new Response(request.method === "HEAD" ? null : `window.__AIDR_CONFIG__=${payload};`, {
 			headers: { "content-type": "application/javascript; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" },
 		});

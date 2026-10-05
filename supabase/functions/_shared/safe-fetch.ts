@@ -17,7 +17,7 @@
 
 import { isBlockedHostname, isPublicIpAddress, ipVersion } from "./egress-guard.ts";
 
-export type SafeFetchError =
+type SafeFetchError =
 	| "invalid_url"
 	| "insecure_scheme"
 	| "url_credentials_forbidden"
@@ -37,7 +37,7 @@ export type SafeFetchResult =
 	| { ok: true; status: number; json: unknown; headers: Headers }
 	| { ok: false; error: SafeFetchError; status?: number };
 
-export type DnsResolver = (hostname: string, type: "A" | "AAAA") => Promise<string[]>;
+type DnsResolver = (hostname: string, type: "A" | "AAAA") => Promise<string[]>;
 
 export interface SafeFetchOptions {
 	fetch?: typeof fetch;

@@ -134,7 +134,7 @@ export function makeIdp(issuer: string, keys: TestKey[], host = new URL(issuer).
 	};
 }
 
-export function idpFetch(idps: IdpFixture[]): OidcDeps["fetchJson"] {
+function idpFetch(idps: IdpFixture[]): OidcDeps["fetchJson"] {
 	return async (url, init) => {
 		const idp = idps.find((candidate) => [candidate.discoveryUrl, candidate.tokenEndpoint, candidate.jwksUri].includes(url));
 		if (!idp) return { ok: false, error: "blocked_host" };
@@ -199,7 +199,7 @@ export function providerRow(overrides: Partial<OidcProviderRow> = {}): OidcProvi
 	};
 }
 
-export class MemoryStore implements OidcStore {
+class MemoryStore implements OidcStore {
 	providers = new Map<string, OidcProviderRow>();
 	requests = new Map<string, OidcAuthRequestRow & { consumed_at?: string }>();
 	domains: DomainRow[] = [];

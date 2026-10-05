@@ -10,6 +10,10 @@ The control plane is the managed layer for:
 
 For commercial builds, Singularity AIDR is **managed-first**: enrollment is required before protection is activated.
 
+## Single sign-on
+
+Tenants can require SAML or OpenID Connect (Entra ID, Okta, generic) sign-in; see [OIDC SSO](production-readiness/oidc-sso-admin.md) and [SCIM directory setup](production-readiness/scim-directory-admin.md). Both are optional and off by default.
+
 ## Enrollment (recommended)
 
 The primary onboarding flow is **device authorization**:

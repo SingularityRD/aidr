@@ -3,7 +3,7 @@ import { timingSafeEqual } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { extname, isAbsolute, resolve, sep } from "node:path";
 import { createHttpRequestMetrics, createReadinessMonitor, loadReadinessConfig } from "./monitoring.mjs";
-import { parseSamlRuntimeConfig } from "../saml-config.mjs";
+import { parseOidcRuntimeConfig, parseSamlRuntimeConfig } from "../saml-config.mjs";
 
 const root = resolve(process.env.AIDR_STATIC_DIR || "/app/public");
 const url = new URL(process.env.VITE_SUPABASE_URL);
@@ -25,6 +25,7 @@ const samlConfig = parseSamlRuntimeConfig({
 	providerId: process.env.AIDR_SAML_PROVIDER_ID,
 	domain: process.env.AIDR_SAML_DOMAIN,
 });
+const oidcConfig = parseOidcRuntimeConfig(process.env.AIDR_OIDC_SSO);
 
 let sentryDsn = null;
 const configuredSentryDsn = process.env.SENTRY_DSN?.trim();
@@ -65,6 +66,7 @@ const config = {
 	authMethods: [...new Set(authMethods)],
 	signupMode,
 	...samlConfig,
+	...oidcConfig,
 	sentryDsn: sentryDsn?.href ?? null,
 	sentryEnvironment,
 	sentryTracesSampleRate,

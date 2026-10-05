@@ -8,7 +8,6 @@
 export type OidcAlgorithm = "RS256" | "PS256" | "ES256";
 /** Asymmetric algorithms only. `none` and every HMAC algorithm are refused outright. */
 export const SUPPORTED_ALGORITHMS: readonly OidcAlgorithm[] = ["RS256", "PS256", "ES256"];
-export const DEFAULT_ALGORITHMS: readonly OidcAlgorithm[] = ["RS256"];
 
 const MAX_JWT_BYTES = 16 * 1024;
 const MIN_RSA_MODULUS_BITS = 2048;
@@ -27,7 +26,7 @@ export function base64UrlEncode(bytes: Uint8Array): string {
 	return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-export function base64UrlDecode(value: string): Uint8Array<ArrayBuffer> | null {
+function base64UrlDecode(value: string): Uint8Array<ArrayBuffer> | null {
 	if (!/^[A-Za-z0-9_-]*$/.test(value) || value.length % 4 === 1) return null;
 	const padded = value.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(value.length / 4) * 4, "=");
 	try {
@@ -36,10 +35,6 @@ export function base64UrlDecode(value: string): Uint8Array<ArrayBuffer> | null {
 	} catch {
 		return null;
 	}
-}
-
-export function randomToken(bytes = 32, random: (array: Uint8Array) => Uint8Array = (array) => crypto.getRandomValues(array)): string {
-	return base64UrlEncode(random(new Uint8Array(bytes)));
 }
 
 export async function sha256Hex(value: string): Promise<string> {
@@ -165,7 +160,7 @@ async function importVerificationKey(jwk: Jwk, alg: OidcAlgorithm): Promise<Cryp
 	}
 }
 
-export async function verifySignature(
+async function verifySignature(
 	alg: OidcAlgorithm,
 	jwk: Jwk,
 	signingInput: string,
@@ -198,7 +193,7 @@ export function selectKey(keys: readonly Jwk[], kid: string | undefined, alg: Oi
 // ID token verification
 // ---------------------------------------------------------------------------
 
-export type IdTokenError =
+type IdTokenError =
 	| "malformed_token"
 	| "alg_not_allowed"
 	| "unknown_kid"
@@ -239,7 +234,7 @@ function numericClaim(value: unknown): number | null {
 	return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-export function resolveAlgorithm(
+function resolveAlgorithm(
 	header: Record<string, unknown>,
 	allowed: readonly OidcAlgorithm[],
 ): OidcAlgorithm | null {

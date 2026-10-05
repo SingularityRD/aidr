@@ -11,7 +11,7 @@
 
 import { type Jwk, type KeyLookup, type OidcAlgorithm, selectKey } from "./oidc.ts";
 
-export type JwksFetcher = (jwksUri: string) => Promise<Jwk[] | null>;
+type JwksFetcher = (jwksUri: string) => Promise<Jwk[] | null>;
 
 interface CacheEntry {
 	keys: Jwk[];

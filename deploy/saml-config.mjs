@@ -35,3 +35,11 @@ export function parseSamlRuntimeConfig({ providers: rawProviders, providerId: ra
 	if (domain && !validDomain(domain)) throw new Error("Invalid AIDR_SAML_DOMAIN");
 	return providerId ? { samlProviderId: providerId } : domain ? { samlDomain: domain } : {};
 }
+
+/** AIDR_OIDC_SSO=true shows the work-email OIDC sign-in form. Anything else (including unset) leaves it off. */
+export function parseOidcRuntimeConfig(raw) {
+	const value = raw?.trim().toLowerCase();
+	if (value === undefined || value === "" || value === "false") return {};
+	if (value === "true") return { oidcSso: true };
+	throw new Error("Invalid AIDR_OIDC_SSO");
+}
