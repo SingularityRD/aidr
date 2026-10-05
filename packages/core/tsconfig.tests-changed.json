@@ -41,6 +41,7 @@
     "src/__tests__/rule-sync.test.ts",
     "src/__tests__/siem-delivery.test.ts",
     "src/__tests__/siem-incident-producer.test.ts",
+    "src/__tests__/siem-syslog.test.ts",
     "src/__tests__/signed-reputation-consumers.test.ts",
     "src/__tests__/telemetry-loss-summary.test.ts",
     "src/__tests__/telemetry-queue.test.ts",

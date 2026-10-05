@@ -342,3 +342,185 @@ export function exportToJSON(incidents: Incident[], filter?: SiemExportFilter): 
 	const matched = applyFilter(incidents, filter);
 	return JSON.stringify(matched.map(incidentToSiemRecord));
 }
+
+// ---------------------------------------------------------------------------
+// Syslog (RFC 5424)
+// ---------------------------------------------------------------------------
+
+/** RFC 5424 severity (0 = emergency ... 7 = debug) for each AIDR severity. */
+const SYSLOG_SEVERITY: Record<IncidentSeverity, number> = {
+	critical: 2,
+	high: 3,
+	warning: 4,
+	info: 6,
+};
+
+const DEFAULT_SYSLOG_FACILITY = 16; // local0
+const DEFAULT_SYSLOG_APP_NAME = "aidr";
+const DEFAULT_SYSLOG_MSG_ID = "INCIDENT";
+const DEFAULT_SYSLOG_SD_ID = "aidr@32473"; // 32473 is the IANA documentation enterprise number
+const DEFAULT_SYSLOG_MAX_BYTES = 64 * 1024;
+const SYSLOG_SD_ID_PATTERN = /^[A-Za-z0-9_.-]{1,32}@[0-9]{1,10}$/;
+
+export class SyslogMessageTooLargeError extends RangeError {
+	readonly code = "syslog_message_too_large";
+
+	constructor() {
+		super("Syslog message exceeds the configured size limit");
+		this.name = "SyslogMessageTooLargeError";
+	}
+}
+
+export interface SyslogFormatOptions {
+	/** RFC 5424 facility 0-23. Defaults to 16 (local0). */
+	facility?: number;
+	/** HOSTNAME field. Printable ASCII only; anything else is replaced. Defaults to NILVALUE. */
+	hostname?: string;
+	/** APP-NAME field (max 48). Defaults to `aidr`. */
+	appName?: string;
+	/** MSGID field (max 32). Defaults to `INCIDENT`. */
+	msgId?: string;
+	/** STRUCTURED-DATA ID in `name@enterprise-number` form. */
+	structuredDataId?: string;
+	/** Upper bound for the whole UTF-8 message. Events are truncated to fit. */
+	maxBytes?: number;
+}
+
+export interface SyslogMessageInput {
+	timestampMs: number;
+	severity: IncidentSeverity;
+	eventId: string;
+	incidentId: string;
+	status?: string;
+	connector?: string | null;
+	agentIid?: string | null;
+	/** JSON-serialisable body whose `events` (or `incident.events`) array may be truncated to fit. */
+	payload: Record<string, unknown>;
+}
+
+function syslogHeaderField(value: string | undefined, maxLength: number): string {
+	if (!value) return "-";
+	// PRINTUSASCII (33-126): no spaces, controls or non-ASCII.
+	const cleaned = value.replace(/[^\x21-\x7e]/g, "_").slice(0, maxLength);
+	return cleaned.length > 0 ? cleaned : "-";
+}
+
+function syslogParamValue(value: string): string {
+	// Control characters would let a value forge a new line or frame.
+	return value
+		.replace(/[\p{Cc}\p{Zl}\p{Zp}]/gu, " ")
+		.replace(/\\/g, "\\\\")
+		.replace(/"/g, '\\"')
+		.replace(/]/g, "\\]")
+		.slice(0, 256);
+}
+
+function syslogStructuredData(
+	sdId: string,
+	params: Array<[string, string | null | undefined]>,
+): string {
+	const body = params
+		.filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1] !== "")
+		.map(([name, value]) => ` ${name}="${syslogParamValue(value)}"`)
+		.join("");
+	return `[${sdId}${body}]`;
+}
+
+function eventHolder(payload: Record<string, unknown>): Record<string, unknown> | undefined {
+	if (Array.isArray(payload.events)) return payload;
+	const incident = payload.incident;
+	return incident && typeof incident === "object" && !Array.isArray(incident)
+		? eventHolder(incident as Record<string, unknown>)
+		: undefined;
+}
+
+function withEventLimit(payload: Record<string, unknown>, keep: number): Record<string, unknown> {
+	if (Array.isArray(payload.events)) {
+		return { ...payload, events: payload.events.slice(0, keep), events_truncated: true };
+	}
+	const incident = payload.incident;
+	if (incident && typeof incident === "object" && !Array.isArray(incident)) {
+		return { ...payload, incident: withEventLimit(incident as Record<string, unknown>, keep) };
+	}
+	return payload;
+}
+
+/**
+ * Format one RFC 5424 syslog message (no framing, no trailing newline). The MSG
+ * is a UTF-8 BOM followed by single-line JSON, so a receiver need not guess the
+ * encoding and no value can inject a second record.
+ */
+export function formatSyslogMessage(
+	input: SyslogMessageInput,
+	options: SyslogFormatOptions = {},
+): string {
+	const facility = options.facility ?? DEFAULT_SYSLOG_FACILITY;
+	if (!Number.isInteger(facility) || facility < 0 || facility > 23)
+		throw new RangeError("Syslog facility must be an integer from 0 to 23");
+	const sdId = options.structuredDataId ?? DEFAULT_SYSLOG_SD_ID;
+	if (!SYSLOG_SD_ID_PATTERN.test(sdId))
+		throw new TypeError("Syslog structured-data ID must look like name@enterprise-number");
+	const maxBytes = options.maxBytes ?? DEFAULT_SYSLOG_MAX_BYTES;
+	if (!Number.isSafeInteger(maxBytes) || maxBytes < 480)
+		throw new RangeError("Syslog maxBytes must be at least 480");
+	if (!Number.isSafeInteger(input.timestampMs) || input.timestampMs < 0)
+		throw new RangeError("Syslog timestamp must be a non-negative safe integer");
+
+	const header = [
+		`<${facility * 8 + SYSLOG_SEVERITY[input.severity]}>1`,
+		new Date(input.timestampMs).toISOString(),
+		syslogHeaderField(options.hostname, 255),
+		syslogHeaderField(options.appName ?? DEFAULT_SYSLOG_APP_NAME, 48),
+		"-",
+		syslogHeaderField(options.msgId ?? DEFAULT_SYSLOG_MSG_ID, 32),
+		syslogStructuredData(sdId, [
+			["eventId", input.eventId],
+			["incidentId", input.incidentId],
+			["severity", input.severity],
+			["status", input.status],
+			["connector", input.connector],
+			["agent", input.agentIid],
+		]),
+	].join(" ");
+
+	const full = `${header} ﻿${JSON.stringify(input.payload)}`;
+	if (Buffer.byteLength(full, "utf8") <= maxBytes) return full;
+	// Halve the event list until the message fits; the event count stays in the payload.
+	const events = eventHolder(input.payload)?.events;
+	let remaining = Array.isArray(events) ? Math.floor(events.length / 2) : 0;
+	for (;;) {
+		const message = `${header} ﻿${JSON.stringify(withEventLimit(input.payload, remaining))}`;
+		if (Buffer.byteLength(message, "utf8") <= maxBytes) return message;
+		if (remaining === 0) throw new SyslogMessageTooLargeError();
+		remaining = Math.floor(remaining / 2);
+	}
+}
+
+/**
+ * Export incidents as newline-separated RFC 5424 syslog messages, one per
+ * incident, for file-based collectors. Network delivery uses the same
+ * formatter through the `syslog` SIEM delivery adapter.
+ */
+export function exportToSyslog(
+	incidents: Incident[],
+	filter?: SiemExportFilter,
+	options?: SyslogFormatOptions,
+): string {
+	return applyFilter(incidents, filter)
+		.map((incident) =>
+			formatSyslogMessage(
+				{
+					timestampMs: incident.last_seen_ms,
+					severity: incident.severity,
+					eventId: incident.incident_id,
+					incidentId: incident.incident_id,
+					status: incident.status,
+					connector: incident.connector,
+					agentIid: incident.agent_iid,
+					payload: incidentToSiemRecord(incident),
+				},
+				options,
+			),
+		)
+		.join("\n");
+}

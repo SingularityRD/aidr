@@ -802,13 +802,24 @@ export {
 	type SplunkHecSiemConfig,
 	type WebhookSiemConfig,
 } from "./siem-delivery.js";
-// SIEM export (CEF, LEEF, JSON)
+export {
+	classifySyslogAddress,
+	SIEM_SYSLOG_CONFIG_JSON_SCHEMA,
+	type SyslogAddressClass,
+	type SyslogSiemConfig,
+	type SyslogTransport,
+} from "./siem-syslog.js";
+// SIEM export (CEF, LEEF, JSON, RFC 5424 syslog)
 export {
 	exportToCEF,
 	exportToJSON,
 	exportToLEEF,
+	exportToSyslog,
+	formatSyslogMessage,
 	incidentToSiemRecord,
 	type SiemExportFilter,
+	type SyslogFormatOptions,
+	SyslogMessageTooLargeError,
 } from "./siem-export.js";
 export type {
 	DurableTelemetryEvent,
