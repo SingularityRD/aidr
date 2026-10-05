@@ -22,6 +22,7 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { cycloneDxHashFromSri } from "./lib/release-evidence-digests.mjs";
 import { parseHashLockedRequirements } from "./lib/python-requirements-sbom.mjs";
+import { bindPypiLicenseEvidence, cycloneDxLicenses, resolvePypiLicense } from "./lib/pypi-license-data.mjs";
 
 const exposedSigningMaterial = [
 	"AIDR_SIGNING_PRIVATE_KEY_PEM_PATH",
@@ -50,6 +51,14 @@ const lockIntegrities = parseLockIntegrities(lockfileBytes.toString("utf8"));
 const pythonLockfileBytes = readFileSync(path.join(repoRoot, "services/aig-bridge/requirements-runtime.lock"));
 const pythonLockfileDigest = createHash("sha256").update(pythonLockfileBytes).digest("hex");
 const pythonPackages = parseHashLockedRequirements(pythonLockfileBytes.toString("utf8"));
+const pythonLicenseEvidencePath = path.join(repoRoot, "services/aig-bridge/pypi-runtime-licenses.json");
+const pythonLicenseEvidence = bindPypiLicenseEvidence(
+	existsSync(pythonLicenseEvidencePath) ? readFileSync(pythonLicenseEvidencePath, "utf8") : "",
+	pythonLockfileDigest,
+	pythonPackages,
+);
+const copyleftFindings = [];
+const licenseFlags = [];
 
 const pnpmCommand = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 const pnpmArgs = ["list", "--json", "--prod", "--recursive", "--depth", "Infinity", "--lockfile-only"];
@@ -121,17 +130,31 @@ components.set(bridgeRef, {
 const bridgeDependencies = new Set();
 for (const pkg of pythonPackages) {
 	const ref = `pkg:pypi/${pkg.name}@${encodeURIComponent(pkg.version)}`;
-	// The hash lock proves distribution identity, not licence terms. Do not let
-	// commercial generation succeed with an SBOM promotion will reject.
-	missingLicenses.push(`${pkg.name}@${pkg.version} (PyPI runtime)`);
+	// The hash lock proves distribution identity, not licence terms. Terms come
+	// from the wheel's own metadata (pypi-runtime-licenses.json); a package that
+	// cannot be resolved stays unknown and fails commercial generation.
+	const evidence = pythonLicenseEvidence.byName.get(pkg.name);
+	const resolved = evidence ? resolvePypiLicense(evidence) : undefined;
+	const licenses = resolved ? cycloneDxLicenses(resolved) : undefined;
+	if (!licenses) missingLicenses.push(`${pkg.name}@${pkg.version} (PyPI runtime${resolved?.reason ? `: ${resolved.reason}` : ""})`);
+	if (resolved && resolved.obligation !== "permissive" && resolved.obligation !== "unknown") {
+		copyleftFindings.push(`${pkg.name}@${pkg.version}: ${resolved.obligation} (${resolved.expression ?? (resolved.spdx.join(", ") || resolved.name)})`);
+	}
+	for (const flag of resolved?.flags ?? []) licenseFlags.push(`${pkg.name}@${pkg.version}: ${flag}`);
 	components.set(ref, {
 		type: "library",
 		"bom-ref": ref,
 		name: pkg.name,
 		version: pkg.version,
 		purl: ref,
+		...(licenses ? { licenses } : {}),
 		hashes: pkg.hashes.map((content) => ({ alg: "SHA-256", content })),
-		properties: [{ name: "aidr:source-lockfile", value: "services/aig-bridge/requirements-runtime.lock" }],
+		properties: [
+			{ name: "aidr:source-lockfile", value: "services/aig-bridge/requirements-runtime.lock" },
+			{ name: "aidr:license-obligation", value: resolved?.obligation ?? "unknown" },
+			...(licenses ? [{ name: "aidr:license-basis", value: resolved.basis }] : []),
+			...(resolved?.flags.length ? [{ name: "aidr:license-flags", value: resolved.flags.join("; ") }] : []),
+		],
 	});
 	bridgeDependencies.add(ref);
 }
@@ -148,6 +171,16 @@ if (unresolved.length > 0) {
 	console.error("Dependency graph contains packages without a locked identity:");
 	for (const item of unique) console.error(`  - ${item}`);
 	if (commercial) process.exit(1);
+}
+for (const problem of pythonLicenseEvidence.problems) {
+	console.error(`Python licence evidence: ${problem}`);
+	if (commercial) process.exit(1);
+}
+if (copyleftFindings.length > 0) {
+	console.error(`Copyleft licences need Legal review before redistribution: ${copyleftFindings.sort(compareStrings).join("; ")}`);
+}
+if (licenseFlags.length > 0) {
+	console.error(`Licence flags needing owner review: ${licenseFlags.sort(compareStrings).join("; ")}`);
 }
 if (missingLicenses.length > 0 || missingIntegrities.length > 0) {
 	if (missingLicenses.length > 0) {
