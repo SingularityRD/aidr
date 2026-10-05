@@ -17,6 +17,7 @@ import {
 	claudePluginRequiredFiles,
 } from "./lib/claude-plugin-package.mjs";
 import { inspectReleaseArchive } from "./lib/release-archive-inspection.mjs";
+import { tarDirectory } from "./lib/tar-path.mjs";
 import { createTempWorkspace } from "./verify-package-install.mjs";
 
 function fixture() {
@@ -80,13 +81,14 @@ test("the release archive extracts to a complete, hygienic marketplace root", ()
 		const output = workspace.directory("output");
 		const extracted = workspace.directory("extracted");
 		const archive = path.join(output, "aidr-claude-plugin.tar.gz");
-		const packed = spawnSync("tar", ["-czf", archive, "-C", workspace.root, ...claudePluginArchivePaths()], {
+		const packed = spawnSync("tar", ["-czf", path.basename(archive), "-C", tarDirectory(workspace.root), ...claudePluginArchivePaths()], {
+			cwd: output, // relative archive name: GNU tar on Windows parses "C:" in -f as a remote host
 			encoding: "utf8",
 		});
 		assert.equal(packed.status, 0, packed.stderr);
 		const inspection = inspectReleaseArchive(archive, { requiredEntries: claudePluginRequiredFiles() });
 		assert.equal(inspection.entries.has("packages/claude-code/dist/mcp-server.cjs"), true);
-		const unpacked = spawnSync("tar", ["-xzf", archive, "-C", extracted], { encoding: "utf8" });
+		const unpacked = spawnSync("tar", ["-xzf", path.basename(archive), "-C", tarDirectory(extracted)], { cwd: output, encoding: "utf8" });
 		assert.equal(unpacked.status, 0, unpacked.stderr);
 		assert.deepEqual(assertClaudePluginPackage(extracted), { plugin: "aidr", referencedFiles: 18 });
 	} finally {

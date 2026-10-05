@@ -33,6 +33,7 @@ import {
 	assertClaudePluginResourcesCanonical,
 	claudePluginRequiredFiles,
 } from "./lib/claude-plugin-package.mjs";
+import { tarDirectory } from "./lib/tar-path.mjs";
 import { inspectReleaseArchive } from "./lib/release-archive-inspection.mjs";
 import { cleanupDirectory } from "./release-candidate-cleanup.mjs";
 
@@ -208,7 +209,10 @@ try {
 		if (!existsSync(sourceDir)) fail(`${target.dir} is missing; build it before assembling a candidate`);
 		const archived = `${target.name}-${rcVersion}.tar.gz`;
 		const destination = path.join(outputDir, archived);
-		const tar = spawnSync("tar", ["-czf", destination, "-C", sourceDir, "."], { encoding: "utf8" });
+		const tar = spawnSync("tar", ["-czf", archived, "-C", tarDirectory(sourceDir), "."], {
+			cwd: outputDir, // relative archive name: GNU tar on Windows parses "C:" in -f as a remote host
+			encoding: "utf8",
+		});
 		if (tar.error || tar.status !== 0) fail(`${target.name}: tar failed (${tar.error?.message ?? `exit ${tar.status}`})`);
 		staged.push({ name: archived, file: destination });
 	}
@@ -238,8 +242,8 @@ try {
 	const pluginDestination = path.join(outputDir, pluginArchive);
 	const pluginTar = spawnSync(
 		"tar",
-		["-czf", pluginDestination, "-C", ROOT, ...claudePluginArchivePaths({ requireSignedEvidence: pluginSigned })],
-		{ encoding: "utf8" },
+		["-czf", pluginArchive, "-C", tarDirectory(ROOT), ...claudePluginArchivePaths({ requireSignedEvidence: pluginSigned })],
+		{ cwd: outputDir, encoding: "utf8" }, // relative archive name: see EXTRA_TARGETS above
 	);
 	if (pluginTar.error || pluginTar.status !== 0) fail(`Claude plugin archive failed: ${pluginTar.error?.message ?? `exit ${pluginTar.status}`}`);
 	try {

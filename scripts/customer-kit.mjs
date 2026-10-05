@@ -5,6 +5,7 @@ import { basename, dirname, join, resolve, sep } from "node:path";
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { parseArgs } from "node:util";
+import { tarDirectory } from "./lib/tar-path.mjs";
 import { loadReleaseBundle } from "./release-signing-lib.mjs";
 import {
   CUSTOMER_KIT_BENCHMARK_FILES,
@@ -193,7 +194,7 @@ writeFileSync(join(output, "SHA256SUMS"), inventory.map((entry) => `${entry.sha2
 if (envelope) {
   mkdirSync(envelope, { recursive: true });
   const archive = "aidr-customer-kit.tar.gz";
-  execFileSync("tar", ["-czf", join(envelope, archive), "-C", dirname(output), basename(output)], { stdio: "pipe" });
+  execFileSync("tar", ["-czf", archive, "-C", tarDirectory(dirname(output)), basename(output)], { cwd: envelope, stdio: "pipe" }); // relative archive + cwd: GNU tar on Windows parses "C:" as a host
   const bytes = readFileSync(join(envelope, archive));
   const digest = createHash("sha256").update(bytes).digest("hex");
   const artifact = { path: archive, size: bytes.length, sha256: digest };

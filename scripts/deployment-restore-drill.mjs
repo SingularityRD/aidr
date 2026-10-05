@@ -71,14 +71,22 @@ async function command(executable, args, timeoutMs = 600000, env = process.env) 
 	});
 }
 
+// Resolve Windows system tools by absolute path: an MSYS/POSIX-shell PATH ahead of
+// System32 supplies a coreutils `whoami.exe` that rejects `/user` (and could be
+// a planted binary), so never rely on PATH order for ACL-bearing operations.
+function windowsSystemTool(...segments) {
+	const root = process.env.SystemRoot || process.env.windir || "C:\Windows";
+	return join(root, "System32", ...segments);
+}
+
 async function protectWindowsPath(path, directory, apply) {
-	const identity = await command("whoami.exe", ["/user", "/fo", "csv", "/nh"], 30000);
+	const identity = await command(windowsSystemTool("whoami.exe"), ["/user", "/fo", "csv", "/nh"], 30000);
 	const sid = identity.match(/S-1-\d+(?:-\d+)+/)?.[0];
 	if (!sid) throw new Error("Could not resolve the current user SID");
 	if (apply) {
-		await command("icacls.exe", [path, "/inheritance:r", "/grant:r", directory ? `*${sid}:(OI)(CI)F` : `*${sid}:F`], 30000);
+		await command(windowsSystemTool("icacls.exe"), [path, "/inheritance:r", "/grant:r", directory ? `*${sid}:(OI)(CI)F` : `*${sid}:F`], 30000);
 	}
-	await command("icacls.exe", [path, "/verify"], 30000);
+	await command(windowsSystemTool("icacls.exe"), [path, "/verify"], 30000);
 	// .NET provides structured SIDs without PowerShell module autoload, which can
 	// be unavailable on locked-down recovery hosts.
 	const inspect = `
@@ -95,7 +103,7 @@ $rules = @($acl.GetAccessRules($true, $true, [System.Security.Principal.Security
 })
 [pscustomobject]@{ protected = $acl.AreAccessRulesProtected; rules = $rules } | ConvertTo-Json -Compress -Depth 4
 `;
-	const output = await command("powershell.exe", ["-NoProfile", "-NonInteractive", "-EncodedCommand", Buffer.from(inspect, "utf16le").toString("base64")], 30000, { ...process.env, AIDR_RESTORE_ACL_PATH: path });
+	const output = await command(windowsSystemTool("WindowsPowerShell", "v1.0", "powershell.exe"), ["-NoProfile", "-NonInteractive", "-EncodedCommand", Buffer.from(inspect, "utf16le").toString("base64")], 30000, { ...process.env, AIDR_RESTORE_ACL_PATH: path });
 	const acl = JSON.parse(output);
 	if (!acl || typeof acl !== "object") throw new Error(`ACL inspection returned no structured result (${output.slice(0, 80)})`);
 	const rules = Array.isArray(acl.rules) ? acl.rules : acl.rules ? [acl.rules] : [];

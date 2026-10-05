@@ -132,7 +132,7 @@
 		"verify:support-bundle": "node scripts/verify-support-bundle.mjs --self-test",
 		"verify:load": "node scripts/verify-load-test.mjs",
 		"verify:release-signing": "node --test scripts/release-signing.test.mjs scripts/release-evidence-digests.test.mjs scripts/release-key-isolation.test.mjs scripts/verify-release-run.test.mjs",
-		"verify:provenance": "node --test scripts/provenance.test.mjs",
+		"verify:provenance": "node --test scripts/provenance.test.mjs scripts/pypi-license-data.test.mjs",
 		"verify:airgap-images": "node --test scripts/airgap-images.test.mjs",
 		"verify:customer-kit": "node --test scripts/customer-kit-verify.test.mjs",
 		"verify:dlp-delivery": "node --test scripts/provision-dlp-detector.test.mjs",
