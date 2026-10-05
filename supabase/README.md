@@ -76,6 +76,13 @@ Commercial v1 (managed-first) requires additional secrets for signing and premiu
 - `AIDR_ENTITLEMENT_SIGNING_KEY_ID`
 - `AIDR_ENTITLEMENT_SIGNING_PRIVATE_KEY_PKCS8_B64`
   - Base64 of the Ed25519 private key (PKCS8 PEM bytes).
+- `AIDR_POLICY_SIGNING_KEY_ID`
+- `AIDR_POLICY_SIGNING_PRIVATE_KEY_PKCS8_B64`
+  - Optional Ed25519 key (PKCS8 DER base64) that signs the `policy` function's `policy_signed` envelope.
+    Set both or neither; a half-configured pair returns `503 policy_signing_unavailable`. When unset, the
+    entitlement key above is reused; with neither the policy is served unsigned, and connectors that hold
+    policy public keys reject it. A dedicated key is recommended.
+- `AIDR_POLICY_SIGNATURE_TTL_HOURS` (default `24`; `1..720`)
 - `AIDR_PACK_MASTER_KEY_B64`
   - Base64 of a 32-byte master key used to derive per-tenant AES-256-GCM pack keys (HKDF-SHA256).
 - `AIDR_REVOCATION_SIGNING_KEY_ID`

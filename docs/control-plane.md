@@ -101,5 +101,19 @@ policy publish time in epoch milliseconds (or an explicit `runtime_policy_sequen
 node -e "const c=require('crypto');const k=c.generateKeyPairSync('ed25519');console.log('AIDR_POLICY_SIGNING_PRIVATE_KEY_PKCS8_B64='+k.privateKey.export({type:'pkcs8',format:'der'}).toString('base64'));console.log('public (connector policy_public_keys_pem):\n'+k.publicKey.export({type:'spki',format:'pem'}))"
 ```
 
+**Supabase Edge Function.** `supabase/functions/policy` emits the identical envelope (canonicalisation
+copied into `_shared/policy-signature.ts`, held to `packages/core` by `policy-signature.test.ts`, which
+runs the real `verifySignedPolicy` over the function output). It uses the same variables as the landing
+control plane: `AIDR_POLICY_SIGNING_KEY_ID` + `AIDR_POLICY_SIGNING_PRIVATE_KEY_PKCS8_B64`
+(both or neither), `AIDR_POLICY_SIGNATURE_TTL_HOURS` (default 24, 1 to 720), falling back to
+`AIDR_ENTITLEMENT_SIGNING_KEY_ID` / `AIDR_ENTITLEMENT_SIGNING_PRIVATE_KEY_PKCS8_B64`. A half-configured
+pair, an invalid TTL, an unusable key or a missing publish time answers 503 `policy_signing_unavailable`
+(before authentication); with no key configured the policy is served unsigned, which connectors holding
+policy public keys reject. The sequence is the publish time in epoch milliseconds
+(`tenant_runtime_policies.updated_at`; for an agent-bound policy the later of the revision `created_at` and
+the assignment `assigned_at`). Limitation: removing an agent's assignment so it returns to the tenant policy
+can yield a lower sequence than the staged revision it left; connectors then refuse it as rollback until the
+tenant policy is re-published (which advances the sequence).
+
 Rotate by adding the new public key to connectors, switching the landing key id and private key,
 then revoking the old `key_id` in the signed revocation feed.
