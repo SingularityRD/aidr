@@ -234,6 +234,20 @@ export function verifyEd25519SignedEntitlementSnapshot(params: {
 	return verifyEd25519(msg, sig, params.public_keys_pem);
 }
 
+/**
+ * Generic detached Ed25519 verification over `canonicalJson(value)`, trying every configured
+ * key. Shared by signed policy envelopes so they use the entitlement signing wire format.
+ */
+export function verifyEd25519CanonicalJson(params: {
+	value: unknown;
+	sig_b64: string;
+	public_keys_pem: string[];
+}): boolean {
+	const sig = parseSignatureBase64(params.sig_b64);
+	if (!sig) return false;
+	return verifyEd25519(Buffer.from(canonicalJson(params.value), "utf8"), sig, params.public_keys_pem);
+}
+
 export function verifyEd25519SignedRevocationList(params: {
 	list: RevocationListV1;
 	sig_b64: string;

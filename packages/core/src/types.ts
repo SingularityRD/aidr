@@ -248,6 +248,14 @@ export const ControlPlaneConfigSchema = z.object({
 	 * Example: "https://aidr.example.com"
 	 */
 	endpoint: z.string().default(""),
+	/**
+	 * Ed25519 public keys (PEM or base64 SPKI) that verify the signed runtime policy
+	 * (`policy_signed`). When empty, `licensing.public_keys_pem` is used instead. When
+	 * neither is configured, signature verification is skipped and only the
+	 * `policy_sha256` digest over TLS protects the policy. When any key is configured,
+	 * unsigned, tampered, wrong-signer, expired, revoked-key and rolled-back policies are rejected.
+	 */
+	policy_public_keys_pem: z.array(z.string()).optional(),
 	/** Explicitly allow plaintext HTTP to a loopback endpoint for local development. */
 	allow_insecure_loopback: z.boolean().default(false),
 	/** Request timeout for control-plane calls. */

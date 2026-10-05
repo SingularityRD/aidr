@@ -39,3 +39,59 @@ Enforcement is intended to be **server-side**:
 
 - If the control plane sees a new `iid` over the entitlement limit, it should reject ingest (`402`/`403`) and optionally return a machine-readable error.
 - The client should keep running local protections and simply disable cloud-only features (fail-open).
+
+## Signed runtime policy (Ed25519)
+
+`GET /v1/policy` returns the tenant policy with a `policy_sha256` digest (SHA-256 of the
+canonical `runtime_policy`) and, when the control plane has a policy signing key, a
+`policy_signed` block:
+
+```json
+"policy_signed": {
+  "alg": "ed25519",
+  "key_id": "policy-2026-10",
+  "sig_b64": "...",
+  "envelope": {
+    "schema_version": 1, "key_id": "policy-2026-10",
+    "policy_version": "pol_20261005120000", "policy_sha256": "<hex>",
+    "sequence": 1791201600000, "issued_at": "...Z", "expires_at": "...Z", "tenant_id": "..."
+  }
+}
+```
+
+The signature is Ed25519 over `canonicalJson(envelope)` (recursively key-sorted JSON, the same
+form as signed entitlements). The legacy `policy_signature` HMAC field is an
+operator-side value that connectors cannot verify and is ignored by them.
+
+**Connector configuration.** Trust anchors are `control_plane.policy_public_keys_pem`
+(Ed25519 public keys, PEM or base64 SPKI). If empty, `licensing.public_keys_pem` is used. If
+neither is set, signature checking is off and only the digest over TLS applies.
+
+When at least one key is configured, a policy is applied only if all of these hold:
+
+- the signature verifies against one configured key (several keys may be listed for rotation);
+- `key_id` (signed inside the envelope) is not in the signed revocation feed's `key_ids`
+  (`licensing.revocations_cache_path`, the same feed that revokes entitlement and pack keys);
+- the envelope's `policy_sha256` and `policy_version` equal the delivered ones, and the digest
+  matches the delivered `runtime_policy`;
+- `issued_at` is not in the future (5 minute skew) and `expires_at` has not passed;
+- `sequence` is not lower than the highest accepted for this endpoint and token, and an equal
+  sequence carries the same digest (rollback and replay protection, persisted in the policy cache).
+
+Unsigned, tampered, wrong-signer, expired, revoked-key and rolled-back policies are rejected.
+With `control_plane.remote_policy_required` the connector then fails closed (no policy applies
+and the call is blocked); otherwise the response is ignored and local policy stays in force.
+The last good signed policy is still cached and may be used inside the offline grace window, but
+never beyond its signed `expires_at`, and it is re-verified on every load, so a tampered cache
+file is rejected.
+
+**Landing control plane.** Provision the signing key with `AIDR_POLICY_SIGNING_KEY_ID` and
+`AIDR_POLICY_SIGNING_PRIVATE_KEY_PKCS8_B64` (Ed25519, PKCS#8 DER base64), validity with
+`AIDR_POLICY_SIGNATURE_TTL_HOURS` (default 24, 1 to 720). Generate a key pair:
+
+```bash
+node -e "const c=require('crypto');const k=c.generateKeyPairSync('ed25519');console.log('AIDR_POLICY_SIGNING_PRIVATE_KEY_PKCS8_B64='+k.privateKey.export({type:'pkcs8',format:'der'}).toString('base64'));console.log('public (connector policy_public_keys_pem):\n'+k.publicKey.export({type:'spki',format:'pem'}))"
+```
+
+Rotate by adding the new public key to connectors, switching the landing key id and private key,
+then revoking the old `key_id` in the signed revocation feed.
