@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { join, resolve, sep } from "node:path";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
@@ -57,8 +57,8 @@ function candidateArchive(candidate, expectedDigest) {
 
 function inspectSafeArchive(file) {
 	inspectReleaseArchive(file, { requiredEntries: claudePluginRequiredFiles() });
-	const names = run("tar", ["-tf", file]).trimEnd().split(/\r?\n/u);
-	const details = run("tar", ["-tvf", file]).trimEnd().split(/\r?\n/u);
+	const names = run("tar", ["-tf", basename(file)], { cwd: dirname(file) }).trimEnd().split(/\r?\n/u);
+	const details = run("tar", ["-tvf", basename(file)], { cwd: dirname(file) }).trimEnd().split(/\r?\n/u);
 	if (names.length !== details.length || names.length === 0) fail("Claude plugin archive has an ambiguous entry listing");
 	for (let index = 0; index < names.length; index++) {
 		const name = names[index].replace(/\/$/u, "");

@@ -26,6 +26,7 @@ import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
+import { tarDirectory } from "./lib/tar-path.mjs";
 import { cleanupDirectory } from "./release-candidate-cleanup.mjs";
 import { resolvePnpmEntry } from "./build-workspace.mjs";
 
@@ -107,8 +108,7 @@ async function checkClaude() {
 		if (tarballs.length !== 1) {
 			throw new Error(`expected one Claude tarball, found ${tarballs.length}`);
 		}
-		const tarball = path.join(packRoot, tarballs[0]);
-		const extracted = runCommand("tar", ["-xzf", tarball, "-C", extractedRoot], repoRoot);
+		const extracted = runCommand("tar", ["-xzf", tarballs[0], "-C", tarDirectory(extractedRoot)], packRoot); // relative archive + cwd: GNU tar on Windows parses "C:" as a host
 		assertSuccess(extracted, "Claude package extraction");
 
 		const unpacked = path.join(extractedRoot, "package");
