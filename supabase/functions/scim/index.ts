@@ -1,5 +1,6 @@
 import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
+import { consumeRateLimit, type RateLimitDb, validRateLimit } from "../_shared/rate-limit.ts";
 import { collectMemberPages, MAX_SCIM_GROUP_MEMBERS, SCIM_MEMBER_PAGE_SIZE } from "./member-pages.ts";
 import {
 	createScimHandler,
@@ -9,6 +10,8 @@ import {
 	type ScimCreateUser,
 	type ScimFilter,
 	type ScimGroup,
+	type ScimRateLimitResult,
+	type ScimRateLimits,
 	type ScimList,
 	type ScimStore,
 	type ScimTenant,
@@ -53,6 +56,10 @@ function conflictFrom(error: { code?: string; message?: string } | null): never 
 
 export class SupabaseScimStore implements ScimStore {
 	constructor(private readonly db: Db) {}
+
+	rateLimit(key: string, limitPerMinute: number): Promise<ScimRateLimitResult> {
+		return consumeRateLimit(this.db as unknown as RateLimitDb, key, limitPerMinute);
+	}
 
 	async authenticate(token: string): Promise<ScimTenant | null> {
 		if (token.length < 32 || token.length > 4096) return null;
@@ -235,9 +242,22 @@ export class SupabaseScimStore implements ScimStore {
 	}
 }
 
+// Per-minute SCIM limits. IdP provisioning bursts are bounded; an aggregate bucket
+// bounds unauthenticated token guessing, and a per-token bucket stops one tenant
+// credential from starving the others.
+const readScimRateLimits = (): ScimRateLimits => ({
+	globalPerMinute: Number(runtimeEnv("AIDR_SCIM_GLOBAL_RL_PER_MIN") ?? "6000"),
+	perTokenPerMinute: Number(runtimeEnv("AIDR_SCIM_TOKEN_RL_PER_MIN") ?? "600"),
+});
+
 Deno.serve(async (req) => {
 	const config = loadConfig(runtimeEnv, REQUIRED_ENV);
 	if (config.ok === false) return configFailure("scim", config.error, (status, body) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/scim+json", "Cache-Control": "no-store" } }));
+	const SCIM_RATE_LIMITS = readScimRateLimits();
+	const invalid: string[] = [];
+	if (!validRateLimit(SCIM_RATE_LIMITS.perTokenPerMinute, 100_000)) invalid.push("AIDR_SCIM_TOKEN_RL_PER_MIN");
+	if (!validRateLimit(SCIM_RATE_LIMITS.globalPerMinute, 1_000_000) || SCIM_RATE_LIMITS.globalPerMinute < SCIM_RATE_LIMITS.perTokenPerMinute) invalid.push("AIDR_SCIM_GLOBAL_RL_PER_MIN");
+	if (invalid.length > 0) return new Response(JSON.stringify({ error: "server_misconfigured", invalid }), { status: 500, headers: { "Content-Type": "application/scim+json", "Cache-Control": "no-store" } });
 	const db = createClient<any, "public">(config.values.SUPABASE_URL, config.values.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
-	return createScimHandler(new SupabaseScimStore(db))(req);
+	return createScimHandler(new SupabaseScimStore(db), SCIM_RATE_LIMITS)(req);
 });

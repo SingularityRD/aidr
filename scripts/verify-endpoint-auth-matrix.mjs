@@ -40,47 +40,70 @@ export const API_KEY_GUARD_CALL = "authenticateTenantApiKey(";
 export const PUBLIC_ROUTE_ALLOWLIST = Object.freeze([
 	{
 		route: "supabase/functions/device-start/index.ts",
+		rateLimited: true,
 		mechanism: "signed ingress IP proof",
 		justification:
 			"Public device-code bootstrap: no user identity exists yet, and the caller must present an HMAC signature over the canonical client IP (AIDR_DEVICE_START_INGRESS_SECRET).",
 	},
 	{
 		route: "supabase/functions/device-poll/index.ts",
+		rateLimited: true,
 		mechanism: "device code",
 		justification:
 			"Public device-code poll: the 256-bit device code in the request is the credential, and it can only read the session it names.",
 	},
 	{
 		route: "supabase/functions/enroll/index.ts",
+		rateLimited: true,
 		mechanism: "one-time enrollment token",
 		justification:
 			"Exchanges a one-time enrollment token (Bearer) for an API key; the caller has neither an account JWT nor an API key by definition.",
 	},
 	{
 		route: "supabase/functions/waitlist-signup/index.ts",
+		rateLimited: true,
 		mechanism: "public intake",
 		justification:
 			"Public waitlist intake: it creates no account and writes no tenant data, is throttled by a fail-closed deployment-wide aggregate quota (not caller IP), and echoes CORS headers only for allowlisted origins.",
 	},
 	{
 		route: "supabase/functions/scim/index.ts",
+		rateLimited: true,
 		mechanism: "SCIM bearer token",
 		justification:
 			"IdP provisioning: the Bearer token is resolved to a tenant by the hash-only `scim_resolve_token` RPC, which is neither a Supabase session nor a tenant API key.",
 	},
 	{
 		route: "supabase/functions/paddle-webhook/index.ts",
+		rateLimited: false,
 		mechanism: "webhook HMAC signature",
 		justification:
 			"Paddle webhook: HMAC-SHA256 over `ts:rawBody` is verified against the configured secret before any billing state is read or written.",
 	},
 	{
 		route: "supabase/functions/stripe-webhook/index.ts",
+		rateLimited: false,
 		mechanism: "webhook HMAC signature",
 		justification:
 			"Stripe webhook: the `Stripe-Signature` header is verified over the raw body before any billing state is read or written.",
 	},
 ]);
+
+export const RATE_LIMIT_MODULE = "../_shared/rate-limit.ts";
+export const RATE_LIMIT_CALL = "consumeRateLimit(";
+export const RATE_LIMIT_RPC = "increment_rate_limit";
+
+/**
+ * A public route enforces application-level rate limiting when it calls the
+ * shared limiter or the `increment_rate_limit` RPC directly. Importing the
+ * module without calling it does not count.
+ */
+export function hasRateLimit(source) {
+	return (
+		(source.includes(RATE_LIMIT_MODULE) && source.includes(RATE_LIMIT_CALL)) ||
+		source.includes(RATE_LIMIT_RPC)
+	);
+}
 
 /** Which shared guards the route source presents (an empty list is a failure). */
 export function guardsForRoute(source) {
@@ -130,6 +153,12 @@ export function evaluateAuthMatrix(routes, allowlist = PUBLIC_ROUTE_ALLOWLIST, o
 				);
 			}
 			continue;
+		}
+		const entry = allowed.get(route);
+		if (entry && typeof entry.rateLimited !== "boolean") {
+			failures.push(`${route}: allowlist entry must declare rateLimited (true, or false for a signature-verified webhook)`);
+		} else if (entry?.rateLimited && !hasRateLimit(source)) {
+			failures.push(`${route}: public route must enforce application-level rate limiting (consumeRateLimit or increment_rate_limit)`);
 		}
 		if (!allowed.has(route)) {
 			failures.push(

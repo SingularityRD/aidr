@@ -5,6 +5,7 @@ import {
 	forbiddenMigrationControls,
 	MIGRATION_FILENAME_PATTERN,
 } from "./lib/migration-contract.mjs";
+import { SEARCH_PATH_HARDENING_VERSION, securityDefinerWithoutPgTemp } from "./lib/security-definer-scan.mjs";
 
 const root = process.cwd();
 const migrationsDir = path.join(root, "supabase", "migrations");
@@ -128,6 +129,16 @@ if (teamCreateIdempotency) {
 	}
 } else {
 	errors.push("20260924000010_idempotent_team_creation.sql: missing durable team-create idempotency migration");
+}
+
+// Migrations after the search_path hardening backfill may not reintroduce a
+// SECURITY DEFINER function without an explicit `pg_temp` (older definitions are
+// repaired by that forward migration; the live-catalog test covers the result).
+for (const [name, sql] of contents) {
+	if (name.slice(0, 14) <= SEARCH_PATH_HARDENING_VERSION) continue;
+	for (const finding of securityDefinerWithoutPgTemp(sql)) {
+		errors.push(`${name}:${finding.line}: SECURITY DEFINER function ${finding.name} must set search_path with an explicit pg_temp`);
+	}
 }
 
 if (errors.length) {

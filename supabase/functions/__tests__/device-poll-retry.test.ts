@@ -94,7 +94,7 @@ function harness(options: {
 		},
 	};
 	new Function("Deno", "createClient", "readDeviceCode", "configFailure", "loadConfig",
-		"runtimeEnv", "corsJson", "handleCors", "evaluateDevicePollState", compiled)(
+		"runtimeEnv", "corsJson", "handleCors", "evaluateDevicePollState", "consumeRateLimit", "validRateLimit", compiled)(
 		{ env: { get: () => undefined }, serve: (fn: typeof handler) => { handler = fn; } },
 		() => { clientCreations++; return client; },
 		readDeviceCode,
@@ -104,6 +104,8 @@ function harness(options: {
 		(_request: Request, status: number, body: unknown) => Response.json(body, { status }),
 		() => null,
 		evaluateDevicePollState,
+		async () => ({ status: "allowed" }),
+		() => true,
 	);
 	if (!handler) throw new Error("device-poll handler was not registered");
 	const poll = async (request = new Request("https://test.invalid/device-poll", {

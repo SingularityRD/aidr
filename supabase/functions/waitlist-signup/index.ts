@@ -100,10 +100,15 @@ export async function handleWaitlistSignup(req: Request): Promise<Response> {
 	const ok = await rateLimitWaitlist(supabase);
 	if (!ok) return json(429, { error: "rate_limited" }, req);
 
+	// Insert-only. An unauthenticated caller who knows an address must not be
+	// able to overwrite the name/company/message of the existing row, so there is
+	// no upsert. A duplicate address (unique email_lower, SQLSTATE 23505) leaves
+	// the original row untouched and answers exactly like a first signup, so the
+	// response does not reveal whether an email is already on the waitlist.
 	const { error } = await supabase
 		.from("waitlist_signups")
-		.upsert({ email, name, company, message }, { onConflict: "email_lower" });
-	if (error) return json(500, { error: "db_error" }, req);
+		.insert({ email, name, company, message });
+	if (error && (error as { code?: string }).code !== "23505") return json(500, { error: "db_error" }, req);
 
 	return json(200, { ok: true }, req);
 }

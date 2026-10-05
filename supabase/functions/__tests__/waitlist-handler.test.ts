@@ -1,10 +1,13 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
 	count: 0,
 	readError: false,
 	keys: [] as string[],
-	upsert: vi.fn(),
+	insert: vi.fn(),
 }));
 
 vi.mock("npm:@supabase/supabase-js@2.116.0", () => ({
@@ -15,7 +18,7 @@ vi.mock("npm:@supabase/supabase-js@2.116.0", () => ({
 			return { error: null };
 		},
 		from: (table: string) => {
-			if (table === "waitlist_signups") return { upsert: state.upsert };
+			if (table === "waitlist_signups") return { insert: state.insert };
 			if (table !== "rate_limits") throw new Error(`unexpected table: ${table}`);
 			let key = "";
 			const query = {
@@ -55,7 +58,7 @@ describe("waitlist handler", () => {
 		state.count = 0;
 		state.readError = false;
 		state.keys = [];
-		state.upsert.mockReset().mockResolvedValue({ error: null });
+		state.insert.mockReset().mockResolvedValue({ error: null });
 	});
 	beforeEach(async () => {
 		vi.resetModules();
@@ -71,17 +74,39 @@ describe("waitlist handler", () => {
 		const response = await handleWaitlistSignup(request());
 		expect(response.status).toBe(429);
 		expect(await response.json()).toEqual({ error: "rate_limited" });
-		expect(state.upsert).not.toHaveBeenCalled();
+		expect(state.insert).not.toHaveBeenCalled();
 	});
 
 	it("writes a bounded signup after a recorded rate-limit increment", async () => {
 		const response = await handleWaitlistSignup(request());
 		expect(response.status).toBe(200);
 		expect(await response.json()).toEqual({ ok: true });
-		expect(state.upsert).toHaveBeenCalledWith({
+		expect(state.insert).toHaveBeenCalledWith({
 			email: "person@example.test", name: "Test Person", company: null, message: null,
-		}, { onConflict: "email_lower" });
+		});
 		expect(state.keys).toEqual(["waitlist:global:v1"]);
+	});
+
+	it("is insert-only: a duplicate email keeps the original row and answers like a first signup", async () => {
+		const first = await handleWaitlistSignup(request());
+		state.insert.mockResolvedValueOnce({ error: { code: "23505", message: "duplicate key value" } });
+		const duplicate = await handleWaitlistSignup(request());
+		expect(duplicate.status).toBe(first.status);
+		expect(await duplicate.json()).toEqual(await first.json());
+		// Nothing else is attempted against an existing row (no upsert/update/select by email).
+		expect(state.insert).toHaveBeenCalledTimes(2);
+	});
+
+	it("still reports genuine database failures", async () => {
+		state.insert.mockResolvedValueOnce({ error: { code: "XX000", message: "boom" } });
+		const response = await handleWaitlistSignup(request());
+		expect(response.status).toBe(500);
+		expect(await response.json()).toEqual({ error: "db_error" });
+	});
+
+	it("never calls upsert or update on the waitlist table", () => {
+		const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "waitlist-signup", "index.ts"), "utf8");
+		expect(source).not.toMatch(/\.upsert\(|\.update\(/);
 	});
 
 	it("does not let spoofed proxy headers create bypass buckets", async () => {
@@ -101,6 +126,6 @@ describe("waitlist handler", () => {
 		expect(refused.status).toBe(429);
 		expect(await refused.json()).toEqual({ error: "rate_limited" });
 		expect(state.keys).toEqual(Array(3).fill("waitlist:global:v1"));
-		expect(state.upsert).toHaveBeenCalledTimes(2);
+		expect(state.insert).toHaveBeenCalledTimes(2);
 	});
 });

@@ -126,6 +126,11 @@ verify_jwt = false
   # SCIM clients use tenant-scoped hash-only bearer tokens which the function
   # validates before resolving any directory object or role mapping.
   verify_jwt = false
+[functions.retention-admin]
+  # Legal holds and per-tenant retention are managed only by an authenticated
+  # active tenant owner (admins may read); every write RPC re-verifies the owner,
+  # takes the shared tenant lock and writes an admin audit row transactionally.
+  verify_jwt = true
 [functions.scim-admin]
   # SCIM provisioning credentials and role mappings are managed only by an
   # authenticated tenant owner; the handler repeats identity and MFA checks.

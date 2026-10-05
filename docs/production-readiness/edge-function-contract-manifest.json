@@ -76,6 +76,10 @@
       "owner": "Detection Engineering",
       "tests": ["supabase/functions/__tests__/policy-document.test.ts", "supabase/functions/__tests__/policy-management-contract.test.ts"]
     },
+    "retention-admin": {
+      "owner": "Platform Engineering",
+      "tests": ["supabase/functions/__tests__/retention-admin-contract.test.ts"]
+    },
     "scim-admin": {
       "owner": "Identity Engineering",
       "tests": ["supabase/functions/__tests__/scim-admin-contract.test.ts"]
