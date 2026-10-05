@@ -1,6 +1,6 @@
 import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
-import { consumeRateLimit, validRateLimit } from "../_shared/rate-limit.ts";
+import { consumeRateLimit, type RateLimitDb, validRateLimit } from "../_shared/rate-limit.ts";
 import { collectMemberPages, MAX_SCIM_GROUP_MEMBERS, SCIM_MEMBER_PAGE_SIZE } from "./member-pages.ts";
 import {
 	createScimHandler,
@@ -58,7 +58,7 @@ export class SupabaseScimStore implements ScimStore {
 	constructor(private readonly db: Db) {}
 
 	rateLimit(key: string, limitPerMinute: number): Promise<ScimRateLimitResult> {
-		return consumeRateLimit(this.db, key, limitPerMinute);
+		return consumeRateLimit(this.db as unknown as RateLimitDb, key, limitPerMinute);
 	}
 
 	async authenticate(token: string): Promise<ScimTenant | null> {
