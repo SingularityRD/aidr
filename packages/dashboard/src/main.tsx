@@ -69,6 +69,16 @@ const router = createBrowserRouter([
 		errorElement: routeErrorElement,
 	},
 	{
+		path: "/auth/oidc/callback",
+		lazy: async () => ({ Component: (await import("./ui/pages/OidcCallbackPage")).OidcCallbackPage }),
+		errorElement: routeErrorElement,
+	},
+	{
+		path: "/auth/sso-recovery",
+		lazy: async () => ({ Component: (await import("./ui/pages/OidcBreakGlassPage")).OidcBreakGlassPage }),
+		errorElement: routeErrorElement,
+	},
+	{
 		path: "/auth/recover",
 		lazy: async () => ({ Component: (await import("./ui/pages/RecoveryPage")).RecoveryPage }),
 		errorElement: routeErrorElement,
@@ -178,6 +188,13 @@ const router = createBrowserRouter([
 		errorElement: routeErrorElement,
 		loader: requireSessionLoader,
 		children: [{ index: true, lazy: async () => ({ Component: (await import("./ui/pages/ScimPage")).ScimPage }) }],
+	},
+	{
+		path: "/sso",
+		lazy: loadAppLayout,
+		errorElement: routeErrorElement,
+		loader: requireSessionLoader,
+		children: [{ index: true, lazy: async () => ({ Component: (await import("./ui/pages/OidcSsoPage")).OidcSsoPage }) }],
 	},
 	{
 		path: "/siem",

@@ -11,6 +11,8 @@ declare global {
 			samlProviderId?: string;
 			samlDomain?: string;
 			samlProviders?: Array<{ providerId: string; label: string }>;
+			/** Opt in to the work-email OIDC sign-in form (tenant OIDC SSO). */
+			oidcSso?: boolean;
 			sentryDsn?: string | null;
 			sentryEnvironment?: string;
 			sentryTracesSampleRate?: number;
