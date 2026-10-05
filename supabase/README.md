@@ -245,3 +245,9 @@ all of the following:
 6. Enable backups, PITR, alerting, request-id correlation, webhook failure
    alerts, and a tested restore. Do not call the system production-ready
    without browser and agent smoke evidence from the actual hosted endpoint.
+
+## Abuse limits and database hardening (2026-10-05)
+
+- Public endpoints apply fixed one-minute windows through `increment_rate_limit` (shared helper `functions/_shared/rate-limit.ts`) and fail closed (429/503 with `Retry-After`). `device-poll`: `AIDR_DEVICE_POLL_RL_PER_MIN` (per device-code hash, default 60) and `AIDR_DEVICE_POLL_GLOBAL_RL_PER_MIN` (aggregate, default 6000). `scim`: `AIDR_SCIM_TOKEN_RL_PER_MIN` (per SCIM token, default 600) and `AIDR_SCIM_GLOBAL_RL_PER_MIN` (aggregate before authentication, default 6000). Invalid values answer 500 `server_misconfigured`. Neither endpoint trusts caller IP headers, so there is no per-IP key; a distributed attacker can still exhaust an aggregate budget, which is the documented availability trade-off. `pnpm verify:endpoint-auth` fails a public route that does not call the limiter.
+- `waitlist-signup` is insert-only and answers a duplicate email exactly like a first signup.
+- Every SECURITY DEFINER function in `public`/`app` pins `search_path` with an explicit `pg_temp` (migration `20261005101001`; guarded by `pnpm supabase:check` for new migrations and `pnpm verify:security-definer` against a real PostgreSQL). `app.tenant_admission_config` has deny-by-default RLS.

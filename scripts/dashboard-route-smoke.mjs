@@ -65,6 +65,7 @@ const protectedRoutes = [
 	"/billing",
 	"/team",
 	"/scim",
+	"/retention",
 	"/policies",
 ];
 const routes = [...publicRoutes, ...protectedRoutes, ...legacyRoutes];
