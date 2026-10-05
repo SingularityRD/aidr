@@ -43,7 +43,7 @@ import {
 } from "node:fs";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -153,7 +153,12 @@ function pack(packageDir: string, destDir: string): string {
 /** Extract a tarball into `destDir`, flattening the tarball's `package/` prefix. */
 function extract(tarball: string, destDir: string): void {
 	mkdirSync(destDir, { recursive: true });
-	execSync(`tar -xzf "${tarball}" -C "${destDir}" --strip-components=1`, { stdio: "pipe" });
+	// Relative archive name + cwd and forward-slash -C: GNU tar on Windows parses an
+	// absolute "C:\..." archive as a remote host and mishandles backslashes in -C.
+	execFileSync("tar", ["-xzf", basename(tarball), "-C", destDir.split(sep).join("/"), "--strip-components=1"], {
+		cwd: dirname(tarball),
+		stdio: "pipe",
+	});
 	if (!existsSync(join(destDir, "package.json"))) {
 		throw new Error(`extraction of ${basename(tarball)} produced no package.json in ${destDir}`);
 	}
@@ -396,7 +401,7 @@ describe("packaged SDK tarball (installed outside the monorepo)", () => {
 		const threats = readdirSync(threatsDir).filter((entry) => entry.endsWith(".yaml"));
 		expect(threats.length).toBeGreaterThan(20);
 		// Evidence straight from the tarball's own file list.
-		const listing = execFileSync("tar", ["-tzf", sdkTarballPath], { encoding: "utf8" });
+		const listing = execFileSync("tar", ["-tzf", basename(sdkTarballPath)], { cwd: dirname(sdkTarballPath), encoding: "utf8" });
 		expect(listing).toContain("package/resources/threats/");
 		expect(listing).toContain("package/resources/allowlists/");
 		expect(listing).toContain("package/dist/index.mjs");
