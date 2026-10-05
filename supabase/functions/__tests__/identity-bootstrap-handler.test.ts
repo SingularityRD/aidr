@@ -543,7 +543,7 @@ describe("identity-security bootstrap handler", () => {
 			{ table: "tenants", columns: "id", filters: [["in", "id", [TEAM]], ["eq", "status", "active"]], order: { field: "id", ascending: true } },
 			{ table: "team_members", columns: "team_id,tenant_id", filters: [["eq", "user_id", USER], ["in", "tenant_id", [TEAM]]], order: { field: "joined_at", ascending: false } },
 			{ table: "teams", columns: "id,tenant_id", filters: [["in", "id", [TEAM]], ["in", "tenant_id", [TEAM]]] },
-			{ table: "tenant_identity_policies", columns: "tenant_id,require_mfa,required_saml_provider_id", filters: [["in", "tenant_id", [TEAM]]] },
+			{ table: "tenant_identity_policies", columns: "tenant_id,require_mfa,required_saml_provider_id,required_oidc_provider_id", filters: [["in", "tenant_id", [TEAM]]] },
 		]);
 	});
 

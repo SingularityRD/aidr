@@ -64,6 +64,7 @@ test("dashboard exposes configured auth, Sentry origin, metrics, and only the re
 		AIDR_SIGNUP_MODE: "cloud",
 		AIDR_SAML_PROVIDER_ID: "21648a9d-8d5a-4555-a9d1-d6375dc14e92",
 		AIDR_SAML_DOMAIN: "",
+		AIDR_OIDC_SSO: "true",
 		AIDR_METRICS_TOKEN: "test-metrics-token",
 		NODE_ENV: "production",
 		PORT: "0",
@@ -84,6 +85,7 @@ test("dashboard exposes configured auth, Sentry origin, metrics, and only the re
 			[{ AIDR_SAML_DOMAIN: "company.example" }, /Configure only one of AIDR_SAML_PROVIDERS/],
 			[{ AIDR_SAML_PROVIDER_ID: "", AIDR_SAML_DOMAIN: "company.example/path" }, /Invalid AIDR_SAML_DOMAIN/],
 			[{ AIDR_SAML_PROVIDERS: "not-json", AIDR_SAML_PROVIDER_ID: "" }, /Invalid AIDR_SAML_PROVIDERS/],
+			[{ AIDR_OIDC_SSO: "maybe" }, /Invalid AIDR_OIDC_SSO/],
 		]) {
 			const invalidSaml = spawnSync(process.execPath, [serverFile], { env: { ...env, ...overrides }, encoding: "utf8", timeout: 10_000 });
 			assert.notEqual(invalidSaml.status, 0);
@@ -99,6 +101,7 @@ test("dashboard exposes configured auth, Sentry origin, metrics, and only the re
 		assert.equal(config.signupMode, "cloud");
 		assert.equal(config.samlProviderId, env.AIDR_SAML_PROVIDER_ID);
 		assert.equal(config.samlDomain, undefined);
+		assert.equal(config.oidcSso, true);
 		assert.equal(config.supabaseUrl, "https://api.customer.example");
 		assert.equal(config.sentryDsn, "https://public-key@o123.ingest.sentry.io/456");
 		assert.equal(config.sentryEnvironment, "customer-production");

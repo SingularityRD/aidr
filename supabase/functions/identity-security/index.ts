@@ -7,7 +7,7 @@
 
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.116.0";
 import { getBearerToken } from "../_shared/auth.ts";
-import { checkIdentityBarrier } from "../_shared/identity-barrier.ts";
+import { checkIdentityBarrier, sessionHasOidcProvider } from "../_shared/identity-barrier.ts";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 import { corsJson, handleCors } from "../_shared/cors.ts";
 import { getRequestId } from "../_shared/response.ts";
@@ -42,7 +42,8 @@ type IdentityDatabase = {
 			rate_limits: ReadTable<{ key: string; window_start: number; count: number }>;
 			tenant_members: ReadTable<{ tenant_id: string; user_id: string; role: string; expires_at: string | null }>;
 			tenants: ReadTable<{ id: string; status: string }>;
-			tenant_identity_policies: ReadTable<{ tenant_id: string; require_mfa: boolean; break_glass_enabled: boolean; required_saml_provider_id: string | null }>;
+			tenant_identity_policies: ReadTable<{ tenant_id: string; require_mfa: boolean; break_glass_enabled: boolean; required_saml_provider_id: string | null; required_oidc_provider_id: string | null }>;
+			oidc_sso_sessions: ReadTable<{ session_id: string; user_id: string; provider_id: string; tenant_id: string; expires_at: string; revoked_at: string | null }>;
 			admin_audit_logs: { Row: AuditValues; Insert: AuditValues; Update: never; Relationships: [] };
 			team_members: ReadTable<{ team_id: string; tenant_id: string; user_id: string; joined_at: string }>;
 			teams: ReadTable<{ id: string; tenant_id: string }>;
@@ -151,7 +152,7 @@ async function memberContext(
 	db: DatabaseClient,
 	userId: string,
 	tenantId: string,
-): Promise<{ role: string; requireMfa: boolean; breakGlassEnabled: boolean; requiredSamlProviderId: string | null } | null> {
+): Promise<{ role: string; requireMfa: boolean; breakGlassEnabled: boolean; requiredSamlProviderId: string | null; requiredOidcProviderId: string | null } | null> {
 	const { data: member, error: memberError } = await db
 		.from("tenant_members")
 		.select("role,expires_at")
@@ -167,7 +168,7 @@ async function memberContext(
 	if (tenantError || tenant?.status !== "active") return null;
 	const { data: policy, error: policyError } = await db
 		.from("tenant_identity_policies")
-		.select("require_mfa,break_glass_enabled,required_saml_provider_id")
+		.select("require_mfa,break_glass_enabled,required_saml_provider_id,required_oidc_provider_id")
 		.eq("tenant_id", tenantId)
 		.maybeSingle();
 	if (policyError) return null;
@@ -176,6 +177,7 @@ async function memberContext(
 		requireMfa: policy?.require_mfa === true,
 		breakGlassEnabled: policy?.break_glass_enabled === true,
 		requiredSamlProviderId: policy?.required_saml_provider_id ?? null,
+		requiredOidcProviderId: policy?.required_oidc_provider_id ?? null,
 	};
 }
 
@@ -564,10 +566,20 @@ Deno.serve(async (req) => {
 
 			const { data: policies, error: policyError } = await db
 				.from("tenant_identity_policies")
-				.select("tenant_id,require_mfa,required_saml_provider_id")
+				.select("tenant_id,require_mfa,required_saml_provider_id,required_oidc_provider_id")
 				.in("tenant_id", tenantIds);
 			if (policyError || !policies) {
 				return corsJson(req, 503, { error: "identity_bootstrap_unavailable" });
+			}
+			// OIDC sessions carry no AMR proof; resolve the server-side binding for each enforcing tenant.
+			const oidcSatisfied = new Map<string, boolean>();
+			for (const policy of policies) {
+				if (!policy.required_oidc_provider_id) continue;
+				const bound = await sessionHasOidcProvider(
+					db, identity.token, identity.user.id, policy.required_oidc_provider_id, policy.tenant_id,
+				);
+				if (bound === "unavailable") return corsJson(req, 503, { error: "identity_bootstrap_unavailable" });
+				oidcSatisfied.set(policy.tenant_id, bound);
 			}
 			const orderedTenantIds = [
 				...teamByTenant.keys(),
@@ -580,6 +592,7 @@ Deno.serve(async (req) => {
 						policy.tenant_id === tenantId && policy.require_mfa === true
 					);
 					const samlProvider = policies.find((policy) => policy.tenant_id === tenantId)?.required_saml_provider_id;
+					const oidcAllowed = oidcSatisfied.get(tenantId) ?? true;
 					return {
 						team_id: teamByTenant.get(tenantId) ?? null,
 						tenant_id: tenantId,
@@ -587,6 +600,7 @@ Deno.serve(async (req) => {
 						current_assurance: identity.currentLevel,
 						next_assurance: identity.nextLevel,
 						access_allowed: (!samlProvider || jwtHasSamlProvider(identity.token, samlProvider)) &&
+							oidcAllowed &&
 							policyAllowsAssurance(requireMfa, identity.currentLevel),
 					};
 				}),
@@ -599,6 +613,13 @@ Deno.serve(async (req) => {
 		if (!member) return corsJson(req, 403, { error: "tenant_not_authorized" });
 		if (member.requiredSamlProviderId && !jwtHasSamlProvider(identity.token, member.requiredSamlProviderId)) {
 			return corsJson(req, 403, { error: "sso_required" });
+		}
+		if (member.requiredOidcProviderId) {
+			const oidcBound = await sessionHasOidcProvider(
+				db, identity.token, identity.user.id, member.requiredOidcProviderId, tenantId,
+			);
+			if (oidcBound === "unavailable") return corsJson(req, 503, { error: "identity_policy_unavailable" });
+			if (!oidcBound) return corsJson(req, 403, { error: "sso_required" });
 		}
 
 		if (body.action === "status") {

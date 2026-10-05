@@ -64,6 +64,10 @@
       "owner": "Identity Engineering",
       "tests": ["supabase/functions/__tests__/oauth-callback-contract.test.ts"]
     },
+    "oidc-sso": {
+      "owner": "Identity Engineering",
+      "tests": ["supabase/functions/__tests__/oidc-sso-handler.test.ts", "supabase/functions/__tests__/oidc-sso-protocol.test.ts"]
+    },
     "pilot-apply": {
       "owner": "Product Engineering",
       "tests": ["supabase/functions/__tests__/pilot-intake-contract.test.ts"]

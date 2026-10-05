@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { redirectToIdp, startOidcFlow } from "../../auth/oidc-sso";
 import { Turnstile } from "../../components/Turnstile";
 import { supabase } from "../../lib/supabase";
 import { ShieldIcon } from "../icons";
@@ -35,6 +36,8 @@ export function LoginPage() {
 		? [{ providerId: samlProviderId, label: "company SSO" }]
 		: samlDomain ? [{ domain: samlDomain, label: "company SSO" }] : []);
 	const samlEnabled = samlProviders.length > 0;
+	const oidcEnabled = window.__AIDR_CONFIG__?.oidcSso === true;
+	const [ssoEmail, setSsoEmail] = useState("");
 	const captchaConfigured = Boolean(import.meta.env.VITE_TURNSTILE_SITE_KEY);
 	const captchaReady = !captchaConfigured || Boolean(captchaToken);
 	const redirectTo = `${location.origin}/auth/callback`;
@@ -159,6 +162,25 @@ export function LoginPage() {
 		}
 	}
 
+	async function signInWithOidc() {
+		if (!ssoEmail.trim()) return;
+		setBusy(true);
+		setStatus(null);
+		try {
+			const started = await startOidcFlow({ email: ssoEmail, returnTo });
+			if (!started.ok) {
+				setStatus(started.message);
+				return;
+			}
+			setPostAuthReturnTo(returnTo);
+			redirectToIdp(started.url);
+		} catch {
+			setStatus("Company sign-in is unavailable. Contact your administrator.");
+		} finally {
+			setBusy(false);
+		}
+	}
+
 	async function signInWithSaml(provider: SamlLoginProvider) {
 		setBusy(true);
 		setStatus(null);
@@ -262,7 +284,30 @@ export function LoginPage() {
 							Continue with {provider.label}
 						</button>
 					))}
-				{!registering && (providers.length > 0 || samlEnabled) && emailEnabled && (
+				{!registering && oidcEnabled && (
+					<form
+						aria-label="Company single sign-on"
+						onSubmit={(event) => {
+							event.preventDefault();
+							void signInWithOidc();
+						}}
+					>
+						<label className="label" htmlFor="sso-email">
+							Work email for single sign-on
+						</label>
+						<input
+							id="sso-email"
+							type="email"
+							autoComplete="username"
+							value={ssoEmail}
+							onChange={(event) => setSsoEmail(event.target.value)}
+						/>
+						<button type="submit" className="auth-provider" disabled={busy || !ssoEmail.trim()}>
+							Continue with work email SSO
+						</button>
+					</form>
+				)}
+				{!registering && (providers.length > 0 || samlEnabled || oidcEnabled) && emailEnabled && (
 					<div className="auth-divider">or continue with email</div>
 				)}
 				{emailEnabled && (
@@ -400,7 +445,7 @@ export function LoginPage() {
 						)}
 					</form>
 				)}
-				{methods.length === 0 && !samlEnabled && (
+				{methods.length === 0 && !samlEnabled && !oidcEnabled && (
 					<p role="alert">Sign-in has not been configured. Contact your administrator.</p>
 				)}
 				{status && (

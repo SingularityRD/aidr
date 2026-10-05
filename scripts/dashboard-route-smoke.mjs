@@ -42,6 +42,8 @@ const publicRoutes = [
 	"/login",
 	"/auth/callback",
 	"/auth/recover",
+	"/auth/oidc/callback",
+	"/auth/sso-recovery",
 	"/enterprise",
 	"/support",
 	"/status",
@@ -66,6 +68,8 @@ const protectedRoutes = [
 	"/team",
 	"/scim",
 	"/retention",
+	"/sso",
+	"/siem",
 	"/policies",
 ];
 const routes = [...publicRoutes, ...protectedRoutes, ...legacyRoutes];

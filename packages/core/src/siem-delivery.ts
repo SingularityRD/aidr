@@ -6,6 +6,7 @@ import type { Incident } from "./incidents/types.js";
 import { incidentToSiemRecord } from "./siem-export.js";
 import { preparePrivateLocalDirectory, preparePrivateLocalFile } from "./private-local-file.js";
 import { redactTelemetryString } from "./telemetry-redaction.js";
+import { createSyslogSender, type SyslogLookup, type SyslogSiemConfig } from "./siem-syslog.js";
 
 export const SIEM_EVENT_SCHEMA_VERSION = "aidr.siem.event/v1" as const;
 
@@ -132,7 +133,8 @@ export type SiemAdapterConfig =
 	| WebhookSiemConfig
 	| SplunkHecSiemConfig
 	| SentinelSiemConfig
-	| ElasticSiemConfig;
+	| ElasticSiemConfig
+	| SyslogSiemConfig;
 
 export type SiemProvider = SiemAdapterConfig["provider"];
 /** `delivered` confirms the adapter's provider receipt contract, not downstream indexing. */
@@ -148,6 +150,8 @@ export interface SiemDeliveryReceipt {
 	enqueuedAtMs: number;
 	updatedAtMs: number;
 	attemptCount: number;
+	/** Provider receipt contract that confirmed delivery, e.g. `syslog_udp_sent_unacknowledged`. */
+	deliveryCode?: string;
 	nextAttemptAtMs?: number;
 	lastStatusCode?: number;
 	lastErrorCode?: string;
@@ -223,6 +227,8 @@ export interface SiemDeliveryOptions {
 	maxBackoffMs?: number;
 	requestTimeoutMs?: number;
 	fetch?: typeof fetch;
+	/** Resolver for syslog hostnames (tests and split-horizon DNS); results are policy-checked. */
+	syslogLookup?: SyslogLookup;
 	now?: () => number;
 	random?: () => number;
 }
@@ -283,12 +289,20 @@ type HttpClassification =
 interface SiemAdapter {
 	provider: SiemProvider;
 	endpointOrigin: string;
-	buildRequest(envelope: SiemEventEnvelope): AdapterRequest;
-	classify(
+	/** HTTP adapters build a request and classify the response. */
+	buildRequest?(envelope: SiemEventEnvelope): AdapterRequest;
+	classify?(
 		response: Response,
 		nowMs: number,
 		envelope: SiemEventEnvelope,
 	): Promise<DeliveryClassification>;
+	/** Socket adapters (syslog) deliver directly and classify the outcome themselves. */
+	transmit?(
+		envelope: SiemEventEnvelope,
+		context: { timeoutMs: number; lookup?: SyslogLookup },
+	): Promise<DeliveryClassification>;
+	/** Credential-free route description bound into durable state. */
+	fingerprintInput?(): Record<string, unknown>;
 }
 
 const DEFAULT_MAX_QUEUE_ENTRIES = 10_000;
@@ -607,7 +621,18 @@ function createElasticAdapter(config: ElasticSiemConfig, base: URL): SiemAdapter
 	};
 }
 
+function createSyslogAdapter(config: SyslogSiemConfig): SiemAdapter {
+	const sender = createSyslogSender(config);
+	return {
+		provider: config.provider,
+		endpointOrigin: sender.origin,
+		transmit: (envelope, context) => sender.send(envelope, context),
+		fingerprintInput: () => sender.fingerprintInput(),
+	};
+}
+
 function createAdapter(config: SiemAdapterConfig): SiemAdapter {
+	if (config.provider === "syslog") return createSyslogAdapter(config);
 	const base = validateEndpoint(config);
 	switch (config.provider) {
 		case "webhook":
@@ -621,7 +646,9 @@ function createAdapter(config: SiemAdapterConfig): SiemAdapter {
 	}
 }
 
-function destinationFingerprint(config: SiemAdapterConfig): string {
+function destinationFingerprint(config: SiemAdapterConfig, adapter: SiemAdapter): string {
+	if (config.provider === "syslog")
+		return hashJson({ provider: config.provider, ...adapter.fingerprintInput?.() });
 	const endpoint = validateEndpoint(config).toString();
 	switch (config.provider) {
 		case "webhook": {
@@ -650,8 +677,12 @@ function destinationFingerprint(config: SiemAdapterConfig): string {
 	}
 }
 
-function bindDestination(state: DeliveryState, config: SiemAdapterConfig): void {
-	const destination = destinationFingerprint(config);
+function bindDestination(
+	state: DeliveryState,
+	config: SiemAdapterConfig,
+	adapter: SiemAdapter,
+): void {
+	const destination = destinationFingerprint(config, adapter);
 	if (state.destinationFingerprint && state.destinationFingerprint !== destination)
 		throw new SiemStateIntegrityError("SIEM delivery state belongs to a different destination");
 	if (!state.destinationFingerprint && (state.queue.length > 0 || state.receipts.length > 0))
@@ -800,6 +831,7 @@ export class DurableSiemDelivery {
 	private readonly maxBackoffMs: number;
 	private readonly requestTimeoutMs: number;
 	private readonly fetcher: typeof fetch;
+	private readonly syslogLookup: SyslogLookup | undefined;
 	private readonly now: () => number;
 	private readonly random: () => number;
 	private state: DeliveryState;
@@ -808,7 +840,7 @@ export class DurableSiemDelivery {
 	private constructor(options: SiemDeliveryOptions, state: DeliveryState) {
 		this.stateFile = resolve(options.stateFile);
 		this.adapter = createAdapter(options.adapter);
-		bindDestination(state, options.adapter);
+		bindDestination(state, options.adapter, this.adapter);
 		state.deadLetteredTotal ??= state.receipts.filter(
 			(item) => item.status === "dead_letter",
 		).length;
@@ -820,6 +852,7 @@ export class DurableSiemDelivery {
 		this.maxBackoffMs = options.maxBackoffMs ?? DEFAULT_MAX_BACKOFF_MS;
 		this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
 		this.fetcher = options.fetch ?? fetch;
+		this.syslogLookup = options.syslogLookup;
 		this.now = options.now ?? Date.now;
 		this.random = options.random ?? Math.random;
 		this.state = state;
@@ -954,7 +987,16 @@ export class DurableSiemDelivery {
 	}
 
 	private async send(envelope: SiemEventEnvelope): Promise<DeliveryClassification> {
-		const request = this.adapter.buildRequest(envelope);
+		const { buildRequest, classify, transmit } = this.adapter;
+		if (transmit) {
+			return transmit.call(this.adapter, envelope, {
+				timeoutMs: this.requestTimeoutMs,
+				lookup: this.syslogLookup,
+			});
+		}
+		if (!buildRequest || !classify)
+			throw new SiemStateIntegrityError("SIEM adapter has no delivery method");
+		const request = buildRequest.call(this.adapter, envelope);
 		const controller = new AbortController();
 		const timer = setTimeout(() => controller.abort(), this.requestTimeoutMs);
 		timer.unref?.();
@@ -965,7 +1007,7 @@ export class DurableSiemDelivery {
 				signal: controller.signal,
 				redirect: "error",
 			});
-			return await this.adapter.classify(response, this.now(), envelope);
+			return await classify.call(this.adapter, response, this.now(), envelope);
 		} catch (error) {
 			return {
 				outcome: "retry",
@@ -1054,6 +1096,7 @@ export class DurableSiemDelivery {
 			};
 			if (classified.outcome === "delivered") {
 				receipt.status = "delivered";
+				receipt.deliveryCode = classified.code;
 				receipt.nextAttemptAtMs = undefined;
 				this.state.queue = this.state.queue.filter(
 					(candidate) => candidate.receiptId !== receipt.receiptId,
