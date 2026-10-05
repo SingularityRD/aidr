@@ -109,10 +109,10 @@ export class SupabaseScimStore implements ScimStore {
 		if (rowResult.error || !rowResult.data) throw new Error("SCIM claimed user unavailable");
 		let row = rowResult.data as Row;
 		const identityPolicy = await this.db.from("tenant_identity_policies")
-			.select("required_saml_provider_id").eq("tenant_id", tenantId).maybeSingle();
+			.select("required_saml_provider_id,required_oidc_provider_id").eq("tenant_id", tenantId).maybeSingle();
 		if (identityPolicy.error) throw new Error("SCIM identity policy unavailable");
-		if (identityPolicy.data?.required_saml_provider_id) {
-			// SAML creates a different Auth UUID; bind only after a verified provider/subject login.
+		if (identityPolicy.data?.required_saml_provider_id || identityPolicy.data?.required_oidc_provider_id) {
+			// SAML/OIDC create a different Auth UUID; bind only after a verified provider/subject login.
 			return { user: asUser(row), created: claim.created === true };
 		}
 		if (!row.auth_user_id) {

@@ -5,6 +5,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
 	evaluateAuthMatrix,
+	MIXED_ROUTE_PUBLIC_ACTIONS,
 	PUBLIC_ROUTE_ALLOWLIST,
 	readRoutes,
 } from "./verify-endpoint-auth-matrix.mjs";
@@ -89,4 +90,83 @@ test("the repository tree satisfies the matrix", async () => {
 	// Every allowlisted route is genuinely unguarded, and every other route is
 	// guarded: the two sets partition the tree.
 	assert.equal(report.guarded + report.allowlisted, routes.length);
+});
+
+const MIXED = {
+	route: "supabase/functions/mixed/index.ts",
+	handler: "supabase/functions/mixed/handler.ts",
+	actions: [
+		{
+			name: "login",
+			mechanism: "single-use state",
+			justification: "Public login start: it only stores a hashed single-use state and returns an IdP redirect URL.",
+		},
+	],
+};
+const MIXED_ROUTE = {
+	route: MIXED.route,
+	source: [
+		'import { checkIdentityBarrier } from "../_shared/identity-barrier.ts";',
+		"await checkIdentityBarrier(db, token, userId);",
+	].join("\n"),
+};
+const HANDLER_OK = [
+	"switch (body.action) {",
+	"\t// public-action: login",
+	'\tcase "login": return start();',
+	'\tcase "admin": return deps.authenticate(req);',
+	"}",
+].join("\n");
+
+function mixedFailures(handlerSource, mixed = MIXED, route = MIXED_ROUTE) {
+	return evaluateAuthMatrix([route], [], {
+		fileExists: () => true,
+		mixedRoutes: [mixed],
+		readSource: () => handlerSource,
+	}).failures;
+}
+
+test("a mixed route passes only when its public actions are declared and marked", () => {
+	assert.deepEqual(mixedFailures(HANDLER_OK), []);
+});
+
+test("an undeclared public action in a mixed route fails the gate", () => {
+	const failures = mixedFailures(
+		HANDLER_OK.replace('\tcase "admin"', '\t// public-action: sneaky\n\tcase "sneaky": return ok();\n\tcase "admin"'),
+	);
+	assert.equal(failures.length, 1);
+	assert.match(failures[0], /public action "sneaky" is not declared/);
+});
+
+test("a stale declaration, a mismatched marker and an all-public handler fail", () => {
+	assert.match(mixedFailures(HANDLER_OK.replace("// public-action: login", "// nothing")).join("\n"), /declared public action "login" is not marked/);
+	assert.match(
+		mixedFailures(HANDLER_OK.replace('case "login"', 'case "other"')).join("\n"),
+		/marker "login" is attached to case "other"/,
+	);
+	const allPublic = ["// public-action: login", 'case "login": return start();'].join("\n");
+	assert.match(mixedFailures(allPublic).join("\n"), /no authenticated action/);
+	assert.match(mixedFailures(HANDLER_OK.replace("deps.authenticate(req)", "ok()")).join("\n"), /never call authenticate/);
+});
+
+test("a mixed declaration needs a guarded route and a readable handler", () => {
+	const unguarded = { route: MIXED.route, source: "Deno.serve(() => new Response());" };
+	assert.match(mixedFailures(HANDLER_OK, MIXED, unguarded).join("\n"), /presents no identity or API-key guard/);
+	const missing = evaluateAuthMatrix([MIXED_ROUTE], [], {
+		fileExists: () => true,
+		mixedRoutes: [MIXED],
+		readSource: () => undefined,
+	});
+	assert.match(missing.failures.join("\n"), /cannot be read/);
+	const stale = evaluateAuthMatrix([], [], { fileExists: () => true, mixedRoutes: [MIXED], readSource: () => HANDLER_OK });
+	assert.match(stale.failures.join("\n"), /does not match an Edge route/);
+});
+
+test("the OIDC route's declared public actions match its handler", () => {
+	const declared = MIXED_ROUTE_PUBLIC_ACTIONS.find((entry) => entry.route === "supabase/functions/oidc-sso/index.ts");
+	assert.ok(declared, "oidc-sso must be declared as a mixed route");
+	assert.deepEqual(
+		declared.actions.map((action) => action.name).sort(),
+		["break_glass_suspend_enforcement", "callback", "start"],
+	);
 });

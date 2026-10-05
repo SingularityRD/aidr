@@ -21,7 +21,7 @@
 // being allowlisted is reported as a stale exception, so the exception list
 // cannot outlive its reason.
 
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
@@ -82,6 +82,41 @@ export const PUBLIC_ROUTE_ALLOWLIST = Object.freeze([
 	},
 ]);
 
+/**
+ * Guarded routes that ALSO serve a deliberately public action. The route-level
+ * guard above is not enough for these: a guard on one action says nothing about
+ * the others. Each public action must be declared here with the credential it
+ * verifies, and the handler must mark exactly those switch cases with a
+ * `// public-action: <name>` comment. An undeclared public case, a declared case
+ * that is missing, or a handler with no authenticated case at all fails the gate.
+ */
+export const MIXED_ROUTE_PUBLIC_ACTIONS = Object.freeze([
+	{
+		route: "supabase/functions/oidc-sso/index.ts",
+		handler: "supabase/functions/oidc-sso/handler.ts",
+		actions: Object.freeze([
+			{
+				name: "start",
+				mechanism: "provider-scoped rate limit; creates only a single-use PKCE/state row",
+				justification:
+					"Begins an authorization-code flow: it returns an IdP URL and stores a hashed single-use state, nonce and PKCE verifier; no session or tenant data is returned and unknown providers are indistinguishable.",
+			},
+			{
+				name: "callback",
+				mechanism: "single-use state + PKCE + browser binding secret + verified ID token",
+				justification:
+					"Finishes the flow: the state is consumed atomically, the browser must present the binding secret, and the ID token signature, issuer, audience, nonce and tenant-verified email domain are checked before any login ticket is issued.",
+			},
+			{
+				name: "break_glass_suspend_enforcement",
+				mechanism: "single-use owner recovery code",
+				justification:
+					"IdP-outage recovery for a tenant owner: spends one single-use, hashed recovery code under the shared identity-recovery rate limit, returns no session and audits the suspension.",
+			},
+		]),
+	},
+]);
+
 /** Which shared guards the route source presents (an empty list is a failure). */
 export function guardsForRoute(source) {
 	const guards = [];
@@ -138,12 +173,62 @@ export function evaluateAuthMatrix(routes, allowlist = PUBLIC_ROUTE_ALLOWLIST, o
 		}
 	}
 
+	for (const mixed of options.mixedRoutes ?? []) {
+		const route = routes.find((candidate) => candidate.route === mixed.route);
+		if (!route) {
+			failures.push(`${mixed.route}: mixed-route declaration does not match an Edge route (stale entry)`);
+			continue;
+		}
+		if (guardsForRoute(route.source).length === 0)
+			failures.push(`${mixed.route}: declares public actions but presents no identity or API-key guard`);
+		const handlerSource = options.readSource?.(mixed.handler);
+		if (typeof handlerSource !== "string") {
+			failures.push(`${mixed.handler}: handler for ${mixed.route} cannot be read`);
+			continue;
+		}
+		failures.push(...evaluateMixedHandler(mixed, handlerSource));
+	}
+
 	return {
 		failures,
 		checked: routes.length,
 		guarded,
 		allowlisted: allowed.size,
+		mixed: (options.mixedRoutes ?? []).length,
 	};
+}
+
+/** Compare the handler's `// public-action:` markers with the declared public actions. */
+export function evaluateMixedHandler(mixed, handlerSource) {
+	const failures = [];
+	const cases = [...handlerSource.matchAll(/(\/\/ public-action: (\w+)\s*\n\s*)?case "(\w+)":/g)];
+	const publicCases = new Set();
+	let authenticated = 0;
+	for (const match of cases) {
+		if (match[1]) {
+			if (match[2] !== match[3])
+				failures.push(`${mixed.handler}: public-action marker "${match[2]}" is attached to case "${match[3]}"`);
+			publicCases.add(match[3]);
+		} else {
+			authenticated += 1;
+		}
+	}
+	const declared = new Set(mixed.actions.map((action) => action.name));
+	for (const name of publicCases)
+		if (!declared.has(name))
+			failures.push(`${mixed.handler}: public action "${name}" is not declared in MIXED_ROUTE_PUBLIC_ACTIONS`);
+	for (const action of mixed.actions) {
+		if (!publicCases.has(action.name))
+			failures.push(`${mixed.handler}: declared public action "${action.name}" is not marked in the handler (stale declaration)`);
+		if (action.justification.trim().length < 40 || action.justification.includes("\n"))
+			failures.push(`${mixed.handler}: public action "${action.name}" needs a one-line justification`);
+		if (action.mechanism.trim().length === 0)
+			failures.push(`${mixed.handler}: public action "${action.name}" must name its mechanism`);
+	}
+	if (authenticated === 0) failures.push(`${mixed.handler}: no authenticated action; the route is entirely public`);
+	if (!/\.authenticate\(/.test(handlerSource))
+		failures.push(`${mixed.handler}: authenticated actions never call authenticate()`);
+	return failures;
 }
 
 /** Every `supabase/functions/<name>/index.ts` route plus its source. */
@@ -167,6 +252,8 @@ async function main() {
 	const routes = await readRoutes(root);
 	const report = evaluateAuthMatrix(routes, PUBLIC_ROUTE_ALLOWLIST, {
 		fileExists: (route) => existsSync(path.join(root, route)),
+		mixedRoutes: MIXED_ROUTE_PUBLIC_ACTIONS,
+		readSource: (file) => readFileSync(path.join(root, file), "utf8"),
 	});
 	if (report.failures.length > 0) {
 		console.error("Endpoint auth matrix failed:");
@@ -176,7 +263,7 @@ async function main() {
 	}
 	console.log(
 		`Endpoint auth matrix passed (${report.checked} routes: ${report.guarded} guarded, ` +
-			`${report.allowlisted} justified public).`,
+			`${report.allowlisted} justified public, ${report.mixed} with declared public actions).`,
 	);
 }
 

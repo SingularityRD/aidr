@@ -20,6 +20,7 @@ function fixture(
 	samlProviderId: string | null = null,
 	recoveredUserId: string | null = null,
 	failFirstBind = false,
+	oidcProviderId: string | null = null,
 ) {
 	const row: Record<string, unknown> = {
 		id: scimUserId, external_id: input.externalId, user_name: email, display_name: input.displayName,
@@ -36,7 +37,7 @@ function fixture(
 	const db = {
 		from: (table: string) => {
 			if (table === "tenant_identity_policies") {
-				const query = { eq: () => query, maybeSingle: async () => ({ data: samlProviderId ? { required_saml_provider_id: samlProviderId } : null, error: null }) };
+				const query = { eq: () => query, maybeSingle: async () => ({ data: samlProviderId || oidcProviderId ? { required_saml_provider_id: samlProviderId, required_oidc_provider_id: oidcProviderId } : null, error: null }) };
 				return { select: () => query };
 			}
 			if (table !== "scim_users") throw new Error("unexpected table");
@@ -69,6 +70,21 @@ function fixture(
 describe("SCIM auth identity binding", () => {
 	it("leaves a SAML tenant user pending without email lookup or Auth precreation", async () => {
 		const { store, rpcCalls, createUser } = fixture(() => authUserId, false, "33333333-3333-4333-8333-333333333333");
+		const result = await store.createUser(tenantA, input);
+		expect(result.created).toBe(true);
+		expect(createUser).not.toHaveBeenCalled();
+		expect(rpcCalls.map((call) => call.name)).toEqual(["scim_claim_user"]);
+	});
+
+	it("leaves an OIDC tenant user pending exactly like SAML (no email lookup, no Auth precreation)", async () => {
+		const { store, rpcCalls, createUser } = fixture(
+			() => authUserId,
+			false,
+			null,
+			null,
+			false,
+			"44444444-4444-4444-8444-444444444444",
+		);
 		const result = await store.createUser(tenantA, input);
 		expect(result.created).toBe(true);
 		expect(createUser).not.toHaveBeenCalled();

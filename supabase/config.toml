@@ -146,3 +146,9 @@ verify_jwt = true
 # the handler re-resolves tenant, membership, role and MFA server-side and never
 # accepts a client-supplied tenant or provider customer id.
 verify_jwt = true
+
+[functions.oidc-sso]
+# Public start/callback/break-glass actions are bound by single-use state, PKCE and a
+# browser binding secret (or a single-use recovery code); every other action
+# verifies the access token and runs the shared identity barrier in the handler.
+verify_jwt = false
