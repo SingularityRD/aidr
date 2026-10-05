@@ -86,8 +86,12 @@ never beyond its signed `expires_at`, and it is re-verified on every load, so a 
 file is rejected.
 
 **Landing control plane.** Provision the signing key with `AIDR_POLICY_SIGNING_KEY_ID` and
-`AIDR_POLICY_SIGNING_PRIVATE_KEY_PKCS8_B64` (Ed25519, PKCS#8 DER base64), validity with
-`AIDR_POLICY_SIGNATURE_TTL_HOURS` (default 24, 1 to 720). Generate a key pair:
+`AIDR_POLICY_SIGNING_PRIVATE_KEY_PKCS8_B64` (Ed25519, PKCS#8 DER base64; set both or neither,
+a half-configured pair returns 503 `policy_signing_unavailable`), validity with
+`AIDR_POLICY_SIGNATURE_TTL_HOURS` (default 24, 1 to 720). A dedicated key is recommended; when
+unset the entitlement signing key is reused (matching the connector's fallback to
+`licensing.public_keys_pem`), and with neither the policy is served unsigned. The sequence is the
+policy publish time in epoch milliseconds (or an explicit `runtime_policy_sequence`). Generate a key pair:
 
 ```bash
 node -e "const c=require('crypto');const k=c.generateKeyPairSync('ed25519');console.log('AIDR_POLICY_SIGNING_PRIVATE_KEY_PKCS8_B64='+k.privateKey.export({type:'pkcs8',format:'der'}).toString('base64'));console.log('public (connector policy_public_keys_pem):\n'+k.publicKey.export({type:'spki',format:'pem'}))"
