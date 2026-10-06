@@ -750,6 +750,28 @@ function truncatedInputVerdict(): Verdict {
 	};
 }
 
+async function localHeuristicSignals(
+	request: ToolEvaluationRequest,
+	context: ToolEvaluationContext,
+	config: Config,
+	logger: Logger,
+) {
+	let heuristicMatches: ReturnType<HeuristicsEngine["match"]> = [];
+	let threatsLoaded = 0;
+	if (config.heuristics_enabled) {
+		const userThreatsDir = context.userThreatsDir ?? resolvePath("~/.singularity-aidr/threats");
+		let threats = await loadThreatsFromDirs([context.threatsDir, userThreatsDir], logger);
+		if (config.disabled_threats.length > 0) {
+			const disabledSet = new Set(config.disabled_threats);
+			threats = threats.filter((threat) => !disabledSet.has(threat.id));
+		}
+		threatsLoaded = threats.length;
+		const trustedDomains = await loadTrustedDomains(context.allowlistsDir, logger);
+		heuristicMatches = new HeuristicsEngine(threats, trustedDomains).match(request.artifacts);
+	}
+	return { heuristicMatches, threatsLoaded };
+}
+
 async function runEvaluationPipeline(
 	request: ToolEvaluationRequest,
 	context: ToolEvaluationContext,
@@ -764,7 +786,42 @@ async function runEvaluationPipeline(
 	}
 	if (isInvalidConfig(config)) {
 		const verdict = invalidConfigVerdict();
-		await recordEarlyVerdict(request, context, config, verdict, logger, startTime);
+		await recordEarlyVerdict(
+			{ ...request, artifacts: [], toolInput: { content_omitted: "unverified configuration" } },
+			context,
+			{ ...config, control_plane: { ...config.control_plane, enabled: false } },
+			verdict,
+			logger,
+			startTime,
+		);
+		return verdict;
+	}
+	if (config.privacy?.required === true) {
+		const reason =
+			"Mandatory privacy requires the owned private text/MCP gateway; this tool hook cannot authorize model transport or output delivery.";
+		let verdict = detectorVerdict("deny", "privacy_required_unsupported", "privacy", reason);
+		try {
+			const { heuristicMatches } = await localHeuristicSignals(request, context, config, logger);
+			const local = await new DecisionEngine(config.sensitivity).decide({
+				heuristicMatches,
+				urlCheckResults: [],
+			});
+			if (local.decision === "deny") {
+				verdict = { ...local, artifacts: [], reasons: [...local.reasons, reason] };
+			}
+		} catch {
+			// Missing local rules cannot authorize an unsupported privacy route.
+		}
+		// No enrollment, reputation lookup, managed upload or raw-content audit is
+		// allowed to precede refusal of this unsupported mandatory profile.
+		await recordEarlyVerdict(
+			{ ...request, artifacts: [], toolInput: { content_omitted: "mandatory privacy" } },
+			context,
+			{ ...config, control_plane: { ...config.control_plane, enabled: false } },
+			verdict,
+			logger,
+			startTime,
+		);
 		return verdict;
 	}
 	if (request.toolInput.__aidr_input_normalization_failed === true) {
@@ -1297,22 +1354,14 @@ async function runEvaluationPipeline(
 		? { cachedUrlVerdicts: new Map<string, CachedVerdict>(), uncachedUrls: urls }
 		: partitionUrlsByCache(urls, cache);
 
-	let heuristicMatches: ReturnType<HeuristicsEngine["match"]> = [];
 	// Tracked so the degraded-detection guard below can tell "nothing matched"
 	// apart from "no rules were loaded at all".
-	let threatsLoaded = 0;
-	if (config.heuristics_enabled) {
-		const userThreatsDir = context.userThreatsDir ?? resolvePath("~/.singularity-aidr/threats");
-		let threats = await loadThreatsFromDirs([context.threatsDir, userThreatsDir], logger);
-		if (config.disabled_threats.length > 0) {
-			const disabledSet = new Set(config.disabled_threats);
-			threats = threats.filter((t) => !disabledSet.has(t.id));
-		}
-		threatsLoaded = threats.length;
-		const trustedDomains = await loadTrustedDomains(context.allowlistsDir, logger);
-		const heuristics = new HeuristicsEngine(threats, trustedDomains);
-		heuristicMatches = heuristics.match(request.artifacts);
-	}
+	const { heuristicMatches, threatsLoaded } = await localHeuristicSignals(
+		request,
+		context,
+		config,
+		logger,
+	);
 
 	let urlCheckResults: Awaited<ReturnType<UrlCheckClient["checkUrls"]>> = [];
 	// Any DetectionLegUnavailableError from the URL leg is a degradation, whether

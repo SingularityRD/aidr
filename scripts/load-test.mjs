@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
@@ -118,6 +118,7 @@ function resolveTemplate(value, sequence) {
 		return process.env[envName];
 	}
 	if (keys.length === 1 && keys[0] === "$sequence") return sequence;
+	if (keys.length === 1 && keys[0] === "$request_id") return randomUUID();
 	if (keys.length === 1 && keys[0] === "$timestamp") return new Date().toISOString();
 	return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, resolveTemplate(item, sequence)]));
 }
@@ -406,6 +407,8 @@ while (nextAt < profile.duration_seconds * 1000) {
 	}
 	nextAt += intervalMs;
 }
+const remainingWindowMs = profile.duration_seconds * 1000 - (performance.now() - clockStart);
+if (remainingWindowMs > 0) await new Promise((done) => setTimeout(done, remainingWindowMs));
 scheduleFinishedAtMs = performance.now() - clockStart;
 await Promise.allSettled([...inFlight]);
 const drainFinishedAtMs = performance.now() - clockStart;

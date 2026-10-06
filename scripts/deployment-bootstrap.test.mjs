@@ -12,6 +12,9 @@ const PREVIOUS_OWNER_ID = "22222222-2222-4222-8222-222222222222";
 const NEW_OWNER_ID = "33333333-3333-4333-8333-333333333333";
 const PREVIOUS_OWNER_EMAIL = "owner@example.test";
 const NEW_OWNER_EMAIL = "successor@example.test";
+const vendorEnv = Object.fromEntries((await readFile(path.resolve(import.meta.dirname, "../deploy/upstream/docker/.env.example"), "utf8"))
+	.split(/\r?\n/).filter((line) => /^[A-Z][A-Z0-9_]*=/.test(line))
+	.map((line) => [line.slice(0, line.indexOf("=")), line.slice(line.indexOf("=") + 1)]));
 
 const temporaryDirectories = [];
 const servers = [];
@@ -177,6 +180,25 @@ function transfer(directory, { confirmation = NEW_OWNER_EMAIL, requestedBy = PRE
 		["--transfer-owner", NEW_OWNER_EMAIL, ...(requestedBy ? ["--requested-by", requestedBy] : [])],
 		confirmation === null ? "" : `${confirmation}\n`,
 	);
+}
+
+for (const [name, value, kind] of [
+	...["ANON_KEY", "SERVICE_ROLE_KEY", "JWT_SECRET", "POSTGRES_PASSWORD"].map((name) => [name, vendorEnv[name], "public vendor"]),
+	["JWT_SECRET", "REPLACE_WITH_THE_DEPLOYMENT_PRIVATE_JWT_SECRET", "non-API placeholder"],
+]) {
+	test(`bootstrap rejects the ${kind} ${name} before any request or receipt mutation`, async () => {
+		const f = await fixture({ members: { [PREVIOUS_OWNER_ID]: "owner" } });
+		const originalReceipt = await readFile(path.join(f.directory, "bootstrap-receipt.json"), "utf8");
+		const configured = { SERVICE_ROLE_KEY: "test-service-role", ANON_KEY: "test-anon-key", [name]: value };
+		await writeFile(path.join(f.directory, ".env"), Object.entries(configured).map(([key, value]) => `${key}=${value}`).join("\n") + "\n");
+		const result = await transfer(f.directory);
+		assert.notEqual(result.status, 0);
+		assert.match(result.stderr, /shared vendor credentials/);
+		assert.deepEqual(f.state.calls, []);
+		assert.equal(await readFile(path.join(f.directory, "bootstrap-receipt.json"), "utf8"), originalReceipt);
+		assert.equal(existsSync(path.join(f.directory, "owner-transfer-receipt.json")), false);
+		assert.equal((result.stdout + result.stderr).includes(value), false, "credential values must not be printed");
+	});
 }
 
 test("ownership transfer works on an explicitly configured IPv6 loopback deployment", async () => {

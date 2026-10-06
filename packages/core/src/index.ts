@@ -89,6 +89,7 @@ export {
 	summarizeActionsForLog,
 	toolInputSummaryForAudit,
 } from "./audit-log.js";
+export * from "./authenticated-behavioral-baseline-store.js";
 // Durable, bounded baseline for the behavioural detector
 export {
 	type BehavioralBaselineObservation,
@@ -99,6 +100,8 @@ export {
 	createBehavioralBaselineStore,
 	FileBehavioralBaselineStore,
 } from "./behavioral-baseline-store.js";
+export * from "./behavioral-learning.js";
+export * from "./behavioral-learning-receipt.js";
 // Tenant/session-isolated behavioral, novelty and ML orchestration
 export {
 	BEHAVIORAL_ORCHESTRATOR_BOUNDS,
@@ -114,8 +117,8 @@ export {
 	type BehavioralOrchestratorConfig,
 	type BehavioralOrchestratorDependencies,
 	type BehavioralOrchestratorStats,
-	createBehavioralDetectionOrchestrator,
 	behavioralObservationForInput,
+	createBehavioralDetectionOrchestrator,
 	LOCAL_EMBEDDER_MODEL_VERSION,
 } from "./behavioral-orchestrator.js";
 // Build flavor
@@ -180,7 +183,7 @@ export {
 	type SOC2Report,
 } from "./compliance-report.js";
 // Config
-export { AIDR_DIR, loadConfig, resolvePath } from "./config.js";
+export { AIDR_DIR, isInvalidConfig, loadConfig, resolvePath } from "./config.js";
 // Connector tool-name contract (aliases every connector's emitted tool names)
 export {
 	CONNECTOR_TOOL_SURFACES,
@@ -239,15 +242,15 @@ export { DetectionLegUnavailableError, describeHttpFailure } from "./detection-l
 // delivers the same contract to Claude Code, OpenCode, OpenClaw, Codex and the
 // Cursor/VS Code extension.
 export {
+	type BrokerLearningAuthorityBundle,
 	behavioralBaselineDir,
 	canonicalDetectorPolicyPayload,
 	type DetectorProvisionedContext,
 	detectorPolicyPath,
-	loadProvisionedDetectorContext,
-	loadProvisionedLearningContext,
 	exportBrokerLearningAuthority,
+	loadProvisionedDetectorContext,
 	loadProvisionedLearningApprovalContext,
-	type BrokerLearningAuthorityBundle,
+	loadProvisionedLearningContext,
 	type ProvisionedLearningContext,
 } from "./detector-provisioning.js";
 export type { DeviceAttestation, DeviceAttestationError } from "./device-attestation.js";
@@ -262,7 +265,12 @@ export {
 } from "./device-attestation.js";
 // Tenant-scoped local HTTP, cloud management and Intune discovery.
 export { type CloudDiscoveryConfig, parseCloudDiscoveryConfig } from "./discovery-cloud-config.js";
-export { type CloudDiscoveryEvidence, cloudDiscoveryScopeHash, CloudDiscoveryProvider, parseCloudDiscoveryEvidence } from "./discovery-cloud-provider.js";
+export {
+	type CloudDiscoveryEvidence,
+	CloudDiscoveryProvider,
+	cloudDiscoveryScopeHash,
+	parseCloudDiscoveryEvidence,
+} from "./discovery-cloud-provider.js";
 export {
 	createDiscoveryProvider,
 	type DiscoveryProvider,
@@ -725,6 +733,7 @@ export {
 	parsePolicyDocument,
 	simulateRuntimePolicy,
 } from "./policy-document.js";
+export { preparePrivateLocalDirectory, preparePrivateLocalFile } from "./private-local-file.js";
 export {
 	scanCachedProvisionedOutput,
 	scanProvisionedOutput,
@@ -808,6 +817,13 @@ export {
 	type ResponseChainWrite,
 	responseAuditorFromConfig,
 } from "./response-audit.js";
+export {
+	inspectResponseBarrier,
+	type ResponseBarrierInspection,
+	type ResponseBarrierOptions,
+	type ResponseControlConfig,
+	ResponseControlConfigSchema,
+} from "./response-barrier.js";
 export type {
 	FleetResponseActionAdapter,
 	FleetResponseAuditEvent,
@@ -819,37 +835,19 @@ export type {
 	FleetResponseSignedDelivery,
 } from "./response-command-consumer-v6.js";
 export {
-	FleetResponseCommandConsumer,
 	FleetResponseActionInterrupted,
+	FleetResponseCommandConsumer,
 	verifyFleetResponseCommandDelivery,
 } from "./response-command-consumer-v6.js";
+export {
+	type FleetJournalState,
+	type FleetResponseControlHead,
+	FleetResponseJournal,
+} from "./response-command-journal-v6.js";
 export {
 	FleetResponseCommandWorker,
 	type FleetResponseWorkerOptions,
 } from "./response-command-worker-v6.js";
-export {
-	FleetResponseJournal,
-	type FleetJournalState,
-	type FleetResponseControlHead,
-} from "./response-command-journal-v6.js";
-export {
-	inspectResponseBarrier,
-	ResponseControlConfigSchema,
-	type ResponseControlConfig,
-	type ResponseBarrierInspection,
-	type ResponseBarrierOptions,
-} from "./response-barrier.js";
-export {
-	initializeInstalledWindowsResponseWorker,
-	loadInstalledWindowsResponseWorker,
-	runInstalledWindowsResponseWorker,
-	validateInstalledWindowsResponseRemoval,
-} from "./windows-response-worker.js";
-export * from "./behavioral-learning-receipt.js";
-export * from "./behavioral-learning.js";
-export * from "./authenticated-behavioral-baseline-store.js";
-export { preparePrivateLocalDirectory, preparePrivateLocalFile } from "./private-local-file.js";
-export { windowsTargetsAreAlreadyPrivate } from "./windows-private-acl-probe.js";
 // Response config
 export {
 	auditActionForMode,
@@ -1110,3 +1108,10 @@ export { getVersion, VERSION } from "./version.js";
 export type { VersionCheckContext, VersionCheckResult } from "./version-check.js";
 // Version check
 export { checkForUpdate, isNewerVersion } from "./version-check.js";
+export { windowsTargetsAreAlreadyPrivate } from "./windows-private-acl-probe.js";
+export {
+	initializeInstalledWindowsResponseWorker,
+	loadInstalledWindowsResponseWorker,
+	runInstalledWindowsResponseWorker,
+	validateInstalledWindowsResponseRemoval,
+} from "./windows-response-worker.js";

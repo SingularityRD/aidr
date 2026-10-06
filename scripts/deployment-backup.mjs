@@ -10,6 +10,7 @@ import { parseArgs } from "node:util";
 import { createGunzip } from "node:zlib";
 import { REVIEWED_RUNTIME_ARCHIVE_ENTRIES, copyReviewedRuntime, createTarBoundaryValidator, inspectAuthenticatedInstallation, inspectReviewedRuntime } from "./archive-boundary.mjs";
 import { assertRecoveryKeyFileAcl, hardenRecoveryKeyFile, hardenWorkDirectory } from "./deployment-restore-drill.mjs";
+import { buildNodeHelperImage } from "./lib/node-helper-image.mjs";
 
 const SOURCE_COMMIT = /^[a-f0-9]{40,64}$/;
 const RECOVERY_PROJECT = /^aidr-recovery-[a-f0-9]{16}$/;
@@ -118,7 +119,7 @@ if (action !== "recover-services") {
 }
 const encKey = rawKey && Buffer.from(hkdfSync("sha256", rawKey, "aidr-backup-v1", "encryption", 32));
 const macKey = rawKey && Buffer.from(hkdfSync("sha256", rawKey, "aidr-backup-v1", "manifest", 32));
-const helperImage = "node:24.12.0-alpine3.23";
+let helperImage;
 const output = values.output ? canonicalNew(values.output, "Output") : null;
 let ownedBackupOutput;
 function backupOutputIsOwned() {
@@ -248,7 +249,7 @@ if (action === "backup") {
 	if (!SOURCE_COMMIT.test(deployment.source_commit ?? "") || deployment.source_has_changes !== false) throw new Error("Backup requires a clean deployment with a 40-64 character source commit");
 	if (!validComposeProject(deployment.project_name)) throw new Error("Backup deployment has no valid Compose project name");
 	const installationBinding = inspectReviewedRuntime(dir, { sourceCommit: deployment.source_commit });
-  command("docker", ["image", "inspect", helperImage]);
+  helperImage = buildNodeHelperImage();
   command("tar", ["--version"]);
 	const project = deployment.project_name;
 	const dbVolume = inspectMount(dir, "db", "/var/lib/postgresql/data", project);
@@ -375,6 +376,7 @@ const runtime = canonicalExisting(values.runtime, "Reviewed runtime");
 if (within(keyPath, runtime) || within(runtime, backup) || within(backup, runtime)) throw new Error("Keep the reviewed runtime separate from recovery-key custody and the backup directory");
 if (manifest.architecture !== command("docker", ["info", "--format", "{{.Architecture}}"] )) throw new Error("Physical database recovery requires the same architecture and database image");
 const reviewedBinding = inspectReviewedRuntime(runtime, { sourceCommit: manifest.source_commit });
+helperImage = buildNodeHelperImage();
 const project = values.project ?? `aidr-recovery-${randomBytes(8).toString("hex")}`;
 if (!RECOVERY_PROJECT.test(project)) throw new Error("Recovery project name is invalid");
 assertUnusedRecoveryProject(project);

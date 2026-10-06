@@ -21,7 +21,7 @@ test("CI and RC block on isolated identity, offboarding and retention PostgreSQL
 		const gate = step(workflow, gateName);
 		assert.match(gate, /^\s+set -euo pipefail\r?$/m);
 		assert.match(gate, /docker pull supabase\/postgres:17\.6\.1\.136/);
-		for (const suite of ["oidc-administration", "saml-administration", "fleet-signed-delivery"]) {
+		for (const suite of ["oidc-administration", "saml-administration", "fleet-signed-delivery", "delegated-session-policy"]) {
 			const command = `node --test scripts/${suite}-postgres.test.mjs`;
 			assert.ok(gate.split(/\r?\n/).includes(`          ${command}`), `${file}: ${suite} must be an unconditional command`);
 			assert.ok(gate.indexOf("docker pull supabase/postgres:17.6.1.136") < gate.indexOf(command));
@@ -42,6 +42,7 @@ test("the workflow contract is itself part of the required migration check", () 
 	const scripts = JSON.parse(read("package.json")).scripts;
 	assert.match(scripts["supabase:check"], /scripts\/database-workflow-gates\.test\.mjs/);
 	assert.match(scripts["supabase:check:edge-typed-slice"], /supabase\/functions\/response-playbooks\/index\.ts/);
+	assert.match(scripts["supabase:check:edge-typed-slice"], /supabase\/functions\/delegated-credentials\/index\.ts/);
 	assert.match(scripts["verify:offboarding"], /scripts\/billing-offboarding-postgres\.test\.mjs/);
 	assert.match(scripts["verify:offboarding"], /scripts\/pack-offboarding-guard-postgres\.test\.mjs/);
 	assert.match(scripts["verify:offboarding"], /scripts\/oidc-scim-offboarding-postgres\.test\.mjs/);

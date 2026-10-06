@@ -1,0 +1,226 @@
+{
+  "schema": "aidr.libgcc.publisher-provenance-trace.v1",
+  "recorded_at_utc": "2026-10-06T10:36:07.612586+00:00",
+  "scope": "Bounded read-only primary publisher evidence; new ignored scratch only. No application source edits, builds, image pulls, package installs, or package imports.",
+  "image_id": "sha256:dd8993b9abaed977cc6d6a123a39388f188ba86d83552b140935773005b3d195",
+  "canonical_wheel_metadata_sha256": "7f21cc59f321dac9a13865d1639f9cda20f092aea4a4cfb1f89de02a00645e4f",
+  "installed_byte_equality_receipt_sha256": "3b15de1ff84f4aa005ccf014c1773b52a58f405544de572dc82ff5dca16e9107",
+  "packages": [
+    {
+      "name": "cryptography",
+      "version": "50.0.2",
+      "wheel": "cryptography-50.0.2-cp311-abi3-musllinux_1_2_x86_64.whl",
+      "wheel_sha256": "85d0d9a31b9098e98534226d5686b47264b95e62ce459dc2e62fdfc809f9fe93",
+      "official_pypi_file_url": "https://files.pythonhosted.org/packages/68/e3/f2298d3bb55e0c4a91841ec4d01b3f020ba8c5fbf15ccdcc6dcf03f97025/cryptography-50.0.2-cp311-abi3-musllinux_1_2_x86_64.whl",
+      "pypi_provenance": {
+        "status": 200,
+        "response_sha256": "20ec72d079ea3223e7e946b16efda805bf1c09e705531a4ac1b29b9f3333413e",
+        "publish_subject_sha256_matches_exact_wheel": true,
+        "statement_predicate_types": [
+          "https://docs.pypi.org/attestations/publish/v1"
+        ],
+        "predicates": [
+          null
+        ],
+        "independent_sigstore_signature_verification_performed": false,
+        "result": "Official PyPI publish identity and wheel subject only; null predicate does not describe builder inputs or native-library source."
+      },
+      "tagged_workflow": {
+        "tag": "50.0.2",
+        "resolved_tree_sha": "4dda5c7fe4ae71b8925f2551910a0ef959df9c7a",
+        "url": "https://raw.githubusercontent.com/pyca/cryptography/4dda5c7fe4ae71b8925f2551910a0ef959df9c7a/.github/workflows/wheel-builder.yml",
+        "sha256": "d5a13b5c376e9944488bf45ad9657ba10c98cee4f60af8f42c276d3ee6df7b01",
+        "git_blob_sha1": "7510c096ae38737238dad0ccf10f4fb727f75d72",
+        "git_blob_bytes_verified": true,
+        "musllinux_container_reference": "ghcr.io/pyca/cryptography-musllinux_1_2:x86_64",
+        "exact_builder_image_digest": null,
+        "gcc_source_version": null,
+        "source_to_binary_mapping_verified": false
+      },
+      "installed_bundled_libgcc": {
+        "path": "cryptography.libs/libgcc_s-0cd532bd.so.1",
+        "sha256": "42b5f2c8ca13e5e173d837f5117a04b6c042437548112bde7879251ae8dcff8f",
+        "bytes": 183337
+      },
+      "wheel_sbom_named_paths": [
+        "cryptography-50.0.2.dist-info/sboms/",
+        "cryptography-50.0.2.dist-info/sboms/auditwheel.cdx.json",
+        "cryptography-50.0.2.dist-info/sboms/cryptography-rust.cyclonedx.json",
+        "cryptography-50.0.2.dist-info/sboms/sbom.json"
+      ],
+      "publisher_embedded_sbom": {
+        "wheel_path": "cryptography-50.0.2.dist-info/sboms/auditwheel.cdx.json",
+        "sha256": "de69771b622e975a594179c2efd9bbf90f0820e67ea6b070e65ad3e6ca80b389",
+        "publisher_declared_libgcc_component": {
+          "type": "library",
+          "bom-ref": "pkg:apk/alpine/libgcc@14.2.0-r6#933a623c9e323e83b1734e630a342f206999adc096732a3fea9896fa0181ea29",
+          "name": "libgcc",
+          "version": "14.2.0-r6",
+          "purl": "pkg:apk/alpine/libgcc@14.2.0-r6"
+        },
+        "publisher_declared_package_version": "14.2.0-r6",
+        "publisher_declared_libgcc_version": "14.2.0-r6",
+        "declared_libgcc_license_fields": null,
+        "declared_libgcc_source_references": null,
+        "declared_libgcc_hash_fields": null,
+        "absent_libgcc_component_fields": [
+          "licenses",
+          "externalReferences",
+          "hashes",
+          "properties"
+        ],
+        "interpretation": "Exact selected wheel contains this publisher declaration. It identifies a declared Alpine package version; it does not include exact GCC source digest, builder image digest, a hash field for the relocated library, or source-to-binary proof. The bom-ref suffix is preserved verbatim without assuming a hash algorithm or byte mapping."
+      },
+      "gcc_source_version": null,
+      "exact_gcc_runtime_license_terms_verified": false,
+      "status": "OPEN_MISSING_EXACT_BUILD_SOURCE_PROVENANCE"
+    },
+    {
+      "name": "pydantic-core",
+      "version": "2.27.2",
+      "wheel": "pydantic_core-2.27.2-cp312-cp312-musllinux_1_1_x86_64.whl",
+      "wheel_sha256": "a0fcd29cd6b4e74fe8ddd2c90330fd8edf2e30cb52acda47f06dd615ae72da57",
+      "official_pypi_file_url": "https://files.pythonhosted.org/packages/fc/df/791c827cd4ee6efd59248dca9369fb35e80a9484462c33c6649a8d02b565/pydantic_core-2.27.2-cp312-cp312-musllinux_1_1_x86_64.whl",
+      "pypi_upload_time_utc": "2024-12-18T11:28:54.122868Z",
+      "pypi_release_digest_matches_local_wheel": true,
+      "pypi_provenance": {
+        "status": 404,
+        "source_id": "pydantic-core-pypi-provenance",
+        "response_sha256": "dca5e448b286553c43ff434c7267096e65dc774c07dd90a8de8659eed2fcd09f",
+        "result": "No provenance response available for this exact wheel at the time of retrieval"
+      },
+      "tagged_workflow": {
+        "source_id": "pydantic-core-tagged-ci",
+        "url": "https://raw.githubusercontent.com/pydantic/pydantic-core/v2.27.2/.github/workflows/ci.yml",
+        "git_blob_sha1": "a08a25ea250921d1ada28edac2b6ed6dbab6131a",
+        "git_blob_bytes_verified": true,
+        "musllinux_target": "musllinux_1_1",
+        "action": "PyO3/maturin-action@v1",
+        "exact_builder_image_digest": null,
+        "gcc_source_version": null,
+        "source_to_binary_mapping_verified": false
+      },
+      "installed_bundled_libgcc": {
+        "wheel_member_path": "pydantic_core.libs/libgcc_s-1e52349c.so.1",
+        "runtime_path": "/usr/local/lib/python3.12/site-packages/pydantic_core.libs/libgcc_s-1e52349c.so.1",
+        "sha256": "0278b4bbf5bfb41f044ac15e3cee03da69f696b8162e1c85770e91113c414d83",
+        "bytes": 437537,
+        "bundled_library": true,
+        "match": true
+      },
+      "disposition": "OPEN_MISSING_EXACT_BUILDER_AND_GCC_SOURCE_TO_BINARY_PROVENANCE",
+      "wheel_sbom_named_paths": [],
+      "embedded_json_sbom_gcc_component_check": []
+    },
+    {
+      "name": "watchfiles",
+      "version": "1.3.0",
+      "wheel": "watchfiles-1.3.0-cp310-abi3-musllinux_1_1_x86_64.whl",
+      "wheel_sha256": "380f513d26cc2e598266b88d66456e07d67ef4be8f0f435a1154d9c44b43d509",
+      "official_pypi_file_url": "https://files.pythonhosted.org/packages/48/64/db4a4684275fe9b696ee5118c194705c1423b3d42181c3f8ee70194d5c73/watchfiles-1.3.0-cp310-abi3-musllinux_1_1_x86_64.whl",
+      "pypi_upload_time_utc": "2026-09-21T09:08:28.004294Z",
+      "pypi_release_digest_matches_local_wheel": true,
+      "pypi_provenance": {
+        "status": 404,
+        "source_id": "watchfiles-pypi-provenance",
+        "response_sha256": "4152c323740f11abe593747a7a52f5c8459be70b71fb2f1b2e6daffe82194f1d",
+        "result": "No provenance response available for this exact wheel at the time of retrieval"
+      },
+      "tagged_workflow": {
+        "source_id": "watchfiles-tagged-ci",
+        "url": "https://raw.githubusercontent.com/samuelcolvin/watchfiles/v1.3.0/.github/workflows/ci.yml",
+        "git_blob_sha1": "f41f7f5f97ff9d393fbc48a7685757aa05a0e84c",
+        "git_blob_bytes_verified": true,
+        "musllinux_target": "musllinux_1_1",
+        "action": "PyO3/maturin-action@v1.49.3",
+        "exact_builder_image_digest": null,
+        "gcc_source_version": null,
+        "source_to_binary_mapping_verified": false
+      },
+      "installed_bundled_libgcc": {
+        "wheel_member_path": "watchfiles.libs/libgcc_s-f685abf1.so.1",
+        "runtime_path": "/usr/local/lib/python3.12/site-packages/watchfiles.libs/libgcc_s-f685abf1.so.1",
+        "sha256": "91a43de5877248a317d14faa35490ef474a1b33a83e235b52fb1eabf7108108e",
+        "bytes": 538513,
+        "bundled_library": true,
+        "match": true
+      },
+      "disposition": "OPEN_MISSING_EXACT_BUILDER_AND_GCC_SOURCE_TO_BINARY_PROVENANCE",
+      "wheel_sbom_named_paths": [
+        "watchfiles-1.3.0.dist-info/sboms/watchfiles_rust_notify.cyclonedx.json"
+      ],
+      "embedded_json_sbom_gcc_component_check": [
+        {
+          "wheel_path": "watchfiles-1.3.0.dist-info/sboms/watchfiles_rust_notify.cyclonedx.json",
+          "sha256": "c2c232a650560e7f9599b29acfe4403a9360dbdb54e6b50bed827e7525806b40",
+          "bytes": 32134,
+          "gcc_components": [],
+          "scope": "Components in this exact embedded JSON only; no claim about other unexamined upstream provenance."
+        }
+      ]
+    }
+  ],
+  "gnu_terms": [
+    {
+      "name": "gnu-terms/COPYING3",
+      "url": "https://raw.githubusercontent.com/gcc-mirror/gcc/master/COPYING3",
+      "status": 200,
+      "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903",
+      "bytes": 35147,
+      "recorded_at_utc": "2026-10-06T10:33:20.2130296Z",
+      "scope": "Reference-only upstream GCC license text. This does not identify or establish the terms applicable to the three actual bundled wheel libgcc files."
+    },
+    {
+      "name": "gnu-terms/COPYING.RUNTIME",
+      "url": "https://raw.githubusercontent.com/gcc-mirror/gcc/master/COPYING.RUNTIME",
+      "status": 200,
+      "sha256": "9d6b43ce4d8de0c878bf16b54d8e7a10d9bd42b75178153e3af6a815bdc90f74",
+      "bytes": 3324,
+      "recorded_at_utc": "2026-10-06T10:33:20.2379569Z",
+      "scope": "Reference-only upstream GCC license text. This does not identify or establish the terms applicable to the three actual bundled wheel libgcc files."
+    }
+  ],
+  "source_requests": [
+    {
+      "name": "cryptography/provenance.json",
+      "url": "https://pypi.org/integrity/cryptography/50.0.2/cryptography-50.0.2-cp311-abi3-musllinux_1_2_x86_64.whl/provenance",
+      "status": 200,
+      "sha256": "20ec72d079ea3223e7e946b16efda805bf1c09e705531a4ac1b29b9f3333413e",
+      "bytes": 9690,
+      "recorded_at_utc": "2026-10-06T10:32:08.9989818Z"
+    },
+    {
+      "name": "cryptography/tag-tree.json",
+      "url": "https://api.github.com/repos/pyca/cryptography/git/trees/50.0.2?recursive=1",
+      "status": 200,
+      "sha256": "ce1f2fe52c7e363816c8e9eaa79e0859caeabe842f2d3dedb1aeca67bae970db",
+      "bytes": 904989,
+      "recorded_at_utc": "2026-10-06T10:32:09.5251623Z"
+    },
+    {
+      "name": "gnu-terms/gpl-3.0.txt",
+      "url": "https://www.gnu.org/licenses/gpl-3.0.txt",
+      "error": "The request was canceled due to the configured HttpClient.Timeout of 20 seconds elapsing."
+    },
+    {
+      "name": "gnu-terms/gcc-exception-3.1.txt",
+      "url": "https://www.gnu.org/licenses/gcc-exception-3.1.txt",
+      "error": "The request was canceled due to the configured HttpClient.Timeout of 20 seconds elapsing."
+    }
+  ],
+  "status": "OPEN_MISSING_EXACT_BUILD_SOURCE_PROVENANCE",
+  "missing_inputs": [
+    "The exact executed musllinux builder image digest for each selected wheel.",
+    "A publisher-provided GCC source version and source archive/commit digest associated with each actual bundled libgcc binary.",
+    "A verified source-to-native-blob mapping and the applicable runtime exception/license/source-offer materials for these exact bytes."
+  ],
+  "limitations": [
+    "The cryptography publish statement subject is matched to the official wheel SHA, but its Sigstore signature is not independently verified here and its predicate is null.",
+    "HTTP 404 for the other exact wheel provenance endpoints means unavailable at retrieval; it is not proof that no evidence exists elsewhere.",
+    "Tagged build workflow source and wheel identity do not prove which mutable builder image ran.",
+    "Cryptography's exact embedded auditwheel SBOM declares libgcc 14.2.0-r6, which is recorded as a publisher claim; independent mapping to GCC source and relocated vendored bytes remains OPEN.",
+    "Captured upstream GCC GPLv3 and Runtime Library Exception 3.1 texts are reference-only; their availability does not establish applicability to unknown-source bundled files.",
+    "No GCC version is inferred from Alpine installed APKs, wheel musllinux tags, or compiler action names.",
+    "No legal acceptance, source-offer fulfillment, vulnerability clearance, waiver, or production GO is established."
+  ]
+}

@@ -40,6 +40,7 @@ const context = {
 function allowClient(): AIDRClient {
 	return {
 		check: vi.fn(async () => ({ allowed: true, decision: "allow", confidence: 1 })),
+		assertCallerOperationAllowed: vi.fn(async () => {}),
 	} as unknown as AIDRClient;
 }
 

@@ -624,6 +624,11 @@ export const ConfigSchema = z.object({
 	mode: OperatingModeSchema.default("local"),
 	auth: AuthConfigSchema.default({}),
 	control_plane: ControlPlaneConfigSchema.default({}),
+	/** Explicit mandatory privacy profile; ordinary tool hooks do not own model transport. */
+	privacy: z
+		.object({ required: z.boolean().default(false) })
+		.strict()
+		.optional(),
 	policy: PolicyConfigSchema.default({}),
 	intel: IntelConfigSchema.default({}),
 	intel_packs: IntelPacksConfigSchema.default({}),

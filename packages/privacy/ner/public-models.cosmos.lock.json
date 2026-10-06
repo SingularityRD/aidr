@@ -1,0 +1,78 @@
+{
+  "version": 1,
+  "status": "unqualified-public-candidates",
+  "models": [
+    {
+      "repository": "ytu-ce-cosmos/modernbert-tr-pii-ner",
+      "revision": "69b2563bf18126fc3285ac2c66371b483bb6d7ec",
+      "license": "Apache-2.0",
+      "directory": "tr-cosmos-pii",
+      "languages": [
+        "tr"
+      ],
+      "max_length": 384,
+      "stride": 96,
+      "label_map": {
+        "O": null,
+        "KISI_AD_SOYAD": "PERSON",
+        "TCKN": "TC_KIMLIK",
+        "TELEFON": "PHONE",
+        "EMAIL": "EMAIL",
+        "ADRES": "ADDRESS",
+        "POSTA_KODU": "INTERNAL",
+        "DOGUM_TARIHI": "DATE_OF_BIRTH",
+        "PLAKA": "LICENSE_PLATE",
+        "IP_ADRES": "IP_ADDRESS",
+        "KIMLIK_BELGE_NO": "NATIONAL_ID",
+        "PASAPORT_NO": "PASSPORT",
+        "SURUCU_BELGESI_NO": "INTERNAL",
+        "IBAN_TR": "IBAN",
+        "KART_NO": "CREDIT_CARD",
+        "KART_CVV": "INTERNAL",
+        "KART_SON_KULLANMA": "INTERNAL",
+        "HESAP_NO": "BANK_ACCOUNT",
+        "SWIFT_BIC": "INTERNAL",
+        "VKN": "TAX_ID",
+        "MERSIS_NO": "INTERNAL",
+        "ETTN_EFATURA_ID": "INTERNAL",
+        "MESLEK_UNVAN": "INTERNAL",
+        "TUZEL_KISI": "INTERNAL",
+        "SAGLIK_BILGISI": "INTERNAL",
+        "DIN_ETNIK_SIYASI_TERIM": "INTERNAL"
+      },
+      "files": {
+        "README.md": {
+          "source": "README.md",
+          "size": 1851,
+          "sha256": "81b192d6b64817df82b8772a0524e35f9b3fbb22c17413ac40720c7a9ed3b530"
+        },
+        "config.json": {
+          "source": "config.json",
+          "size": 4503,
+          "sha256": "e82b0cd84eaebb35c215f5816130896ac5124db24e884bf503bb024edbeb5e4e"
+        },
+        "tokenizer.json": {
+          "source": "tokenizer.json",
+          "size": 1206540,
+          "sha256": "ddf4c994be620badb248704aae0c2523747ebd77d38ca07792dd44f34d7285c8"
+        },
+        "tokenizer_config.json": {
+          "source": "tokenizer_config.json",
+          "size": 548,
+          "sha256": "849553071a07fb5728642f7868ca3cb46a8b2e320104a14c1877fa6548aefad8"
+        },
+        "special_tokens_map.json": {
+          "source": "special_tokens_map.json",
+          "size": 832,
+          "sha256": "349aa82ee27bef2974b28faeddcc73b86c5bf01d34fc7e1242c18f95b4d485d7"
+        },
+        "model.safetensors": {
+          "source": "model.safetensors",
+          "size": 597484596,
+          "sha256": "0eabfa749daeab78da40c5f18cd3f5f985436846753059e927dbd11a45de68fc"
+        }
+      },
+      "aggregation": "first_word"
+    }
+  ]
+}

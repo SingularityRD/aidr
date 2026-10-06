@@ -16,6 +16,7 @@ const ALLOW: CheckResult = { allowed: true, decision: "allow", confidence: 0.99 
 
 class AllowClient {
 	check = vi.fn(async (_request: CheckRequest): Promise<CheckResult> => ALLOW);
+	assertCallerOperationAllowed = vi.fn(async () => {});
 }
 
 function asClient(client: AllowClient): AIDRClient {

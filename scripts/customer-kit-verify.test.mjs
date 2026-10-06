@@ -227,6 +227,21 @@ test("extracted kit bootstrap resolves its local helper before deployment access
 	}
 });
 
+test("extracted kit carries the shared credential guard without relying on upstream source", async () => {
+	const kit = createKit();
+	try {
+		const { deploymentCredentialFailures } = await import(pathToFileURL(join(kit, "scripts/lib/deployment-credentials.mjs")).href);
+		assert.deepEqual(deploymentCredentialFailures({ ANON_KEY: "sb_publishable_customer_fixture", SERVICE_ROLE_KEY: "sb_secret_customer_fixture" }), []);
+		assert.deepEqual(deploymentCredentialFailures({ ANON_KEY: "REPLACE_WITH_PROJECT_ANON_KEY", SERVICE_ROLE_KEY: "sb_secret_customer_fixture" }), ["ANON_KEY"]);
+		const { cpSync } = await import(pathToFileURL(join(kit, "scripts/lib/deployment-input-copy.mjs")).href);
+		const copied = join(kit, "copied-recovery-template.html");
+		cpSync(join(kit, "supabase/templates/recovery.html"), copied);
+		assert.deepEqual(readFileSync(copied), readFileSync(join(kit, "supabase/templates/recovery.html")));
+	} finally {
+		rmSync(kit, { recursive: true, force: true });
+	}
+});
+
 test("extracted kit carries the real authentication helper and recovery template required by both preparation modes", async () => {
 	const kit = createKit();
 	try {
@@ -274,7 +289,7 @@ test("a regenerated checksum inventory cannot omit a required new artifact", () 
 });
 
 test("a regenerated checksum inventory cannot omit the installer, doctor or hold runbook", () => {
-	for (const missing of ["scripts/deployment-prepare.mjs", "scripts/deployment-doctor.mjs", "deploy/saml-config.mjs", "supabase/templates/recovery.html", "RETENTION-HOLDS.md", "SAML-RECOVERY.md", "scripts/saml-outage-recovery.mjs", "RESPONSE-PLAYBOOKS.md", "CLOUD-DISCOVERY.md", "BEHAVIORAL-LEARNING.md", "PACKAGE-INSTALLATION.md"]) {
+	for (const missing of ["scripts/deployment-prepare.mjs", "scripts/deployment-doctor.mjs", "scripts/lib/deployment-credentials.mjs", "scripts/lib/deployment-input-copy.mjs", "deploy/saml-config.mjs", "supabase/templates/recovery.html", "RETENTION-HOLDS.md", "SAML-RECOVERY.md", "scripts/saml-outage-recovery.mjs", "RESPONSE-PLAYBOOKS.md", "CLOUD-DISCOVERY.md", "BEHAVIORAL-LEARNING.md", "PACKAGE-INSTALLATION.md"]) {
 		const kit = createKit();
 		try {
 			unlinkSync(join(kit, missing));

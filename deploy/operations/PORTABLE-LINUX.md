@@ -14,8 +14,24 @@ preparation, database migration, SMTP, first administrator, device enrollment
 and policy publication. Node 24, Docker Engine with Compose v2, `tar`, systemd,
 and the approved TLS proxy/ACME tooling must already exist on the Linux host;
 S3 backup also requires an approved AWS CLI/provider integration. For disconnected
-installation, transfer and verify the exact Compose images and the backup helper
-image `node:24.12.0-alpine3.23` through the customer's approved image process.
+installation, transfer and verify the exact Compose images and the backup helper's
+pinned base `node:24.21.0-alpine3.24@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1`
+through the customer's approved image process. The supplied helper Dockerfile
+removes unused package managers. Backup and recovery build that public-only
+context from the cached base with pulling and build networking disabled, then
+run its immutable image ID; no installation files or live configuration enter
+the build context. Load the pinned base before scheduling maintenance.
+On the approved connected build host, include the exact helper base alongside
+the prepared Compose images using the existing air-gap assembler:
+
+```sh
+node scripts/build-airgap-images.mjs --compose /srv/aidr/compose.yml \
+  --images node:24.21.0-alpine3.24@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 \
+  --output /approved-transfer/aidr-images
+```
+
+Verify that bundle with the same `--compose` and `--images` references before
+loading it through the customer's approved Docker image process.
 This pack does not download or approve host prerequisites for you.
 
 ## Paths and private configuration

@@ -30,7 +30,11 @@ test('text service startup: required trust inputs, authenticated principal, canc
   execFileSync(openssl, ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', keyPath, '-out', certPath,
     '-days', '1', '-subj', '/CN=service-test', '-addext', 'subjectAltName=IP:127.0.0.1'], {stdio: 'ignore', windowsHide: true});
   const cert = readFileSync(certPath), tls = {cert, key: readFileSync(keyPath), clientCa: cert};
-  const manifest = join(root, 'unqualified-test-manifest.json'); writeFileSync(manifest, '{}');
+  // Explicit synthetic TEST approval for control-flow fixtures, not model qualification.
+  const manifest = join(root, 'synthetic-test-approved-manifest.json');
+  const testApproval = JSON.stringify({version:1,approved:true,qualificationStatus:'qualified',models:[]});
+  writeFileSync(manifest, testApproval);
+  const manifestDigest = () => createHash('sha256').update(readFileSync(manifest)).digest('hex');
   const keys = generateKeyPairSync('ed25519'), now = Date.now(), seconds = Math.floor(now / 1000);
   const trust = {issuer: 'https://test-issuer.example.com', audience: 'aidr', keys: new Map([['signer', keys.publicKey]])};
   let next = 0;
@@ -40,14 +44,14 @@ test('text service startup: required trust inputs, authenticated principal, canc
     policy: {signed: signPolicy(policy({notBefore: now - 1000, expiresAt: now + 600000,
       destinations: [{...policy().destinations[0], id: 'provider', origin: 'https://api.openai.com'}]}), 'signer', keys.privateKey), keys: trust.keys},
     destinations: [{id: 'provider', kind: 'openai-responses', model: 'approved-model', apiKey: randomBytes(24).toString('hex')}]},
-    ner: {python: process.execPath, manifest, manifestSha256: 'a'.repeat(64), startupTimeoutMs: 1000}, tls,
+    ner: {python: process.execPath, manifest, manifestSha256: manifestDigest(), startupTimeoutMs: 1000}, tls,
     initializeBroker: async () => {throw new Error('TEST_BROKER_SHOULD_NOT_RUN');}});
   const realOpen = LocalNerProcess.open.bind(LocalNerProcess);
   let model;
   const modelFixture = () => mock.method(LocalNerProcess, 'open', async (config, signal) => {
     assert.equal(config.command, process.execPath);
     assert.equal(config.args[0], resolve('ner/ner_worker.py'));
-    assert.deepEqual(config.args.slice(1), ['--manifest', manifest, '--manifest-sha256', 'a'.repeat(64)]);
+    assert.deepEqual(config.args.slice(1), ['--manifest', manifest, '--manifest-sha256', manifestDigest()]);
     // Deterministic child-process fixture, not real learned-model qualification.
     model = await realOpen({command: process.execPath, args: [resolve('tests/fixtures/mock-ner.mjs')], startupTimeoutMs: 1000}, signal);
     return model;
@@ -74,10 +78,38 @@ test('text service startup: required trust inputs, authenticated principal, canc
       // Node cannot execute the Python worker. This deliberately unavailable inference environment must not start.
       await assert.rejects(startTextService(options()), /NER_STARTUP_FAILURE/);
     });
-    await t.test('downloaded unqualified candidate cannot start production listener',async()=>{
-      writeFileSync(manifest,JSON.stringify({approved:false,qualificationStatus:'independent-corpus-required'}));
-      try{await assert.rejects(startTextService(options()),/SERVICE_MODEL_APPROVAL_REQUIRED/);}finally{writeFileSync(manifest,'{}');}
-    });
+    const noModel = mock.method(LocalNerProcess, 'open', async () => {throw new Error('TEST_MODEL_SHOULD_NOT_LAUNCH');});
+    try {
+      for (const [name,value] of [
+        ['missing approval',{}],
+        ['false approval',{approved:false,qualificationStatus:'qualified'}],
+        ['string approval',{approved:'true',qualificationStatus:'qualified'}],
+        ['missing qualification status',{approved:true}],
+        ['unknown qualification status',{approved:true,qualificationStatus:'unknown'}],
+        ['downloaded unqualified candidate',{approved:false,qualificationStatus:'independent-corpus-required'}],
+        ['approved flag cannot override unqualified status',{approved:true,qualificationStatus:'independent-corpus-required'}],
+        ['null manifest',null],
+        ['array manifest',[]],
+      ]) await t.test(name+' fails before model launch',async()=>{
+        writeFileSync(manifest,JSON.stringify(value));
+        try {
+          await assert.rejects(startTextService(options()),/SERVICE_MODEL_APPROVAL_REQUIRED/);
+          assert.equal(noModel.mock.callCount(),0);
+        } finally {writeFileSync(manifest,testApproval);}
+      });
+      await t.test('mismatched independently configured manifest digest fails before model launch',async()=>{
+        const config=options();config.ner.manifestSha256='a'.repeat(64);
+        await assert.rejects(startTextService(config),/SERVICE_MODEL_DIGEST_MISMATCH/);
+        assert.equal(noModel.mock.callCount(),0);
+      });
+      await t.test('changed raw approval bytes cannot retain the configured manifest digest',async()=>{
+        const config=options();writeFileSync(manifest,testApproval+'\n');
+        try {
+          await assert.rejects(startTextService(config),/SERVICE_MODEL_DIGEST_MISMATCH/);
+          assert.equal(noModel.mock.callCount(),0);
+        } finally {writeFileSync(manifest,testApproval);}
+      });
+    } finally {noModel.mock.restore();}
     const mocked = modelFixture();
     await t.test('signed token without a provisioned durable session fails startup and closes worker', async () => {
       const config = options(); config.initializeBroker = async runtime => ({principal: runtime.identity.authenticate(token('user')), close() {}});

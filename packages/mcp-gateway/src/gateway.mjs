@@ -837,6 +837,9 @@ export function createMcpGateway(input, dependencies = {}) {
 	let startupCheckPromise;
 	let ready = false;
 	let activeRequests = 0;
+	// Only standalone hosts install this check; private hosts supply their own full guards.
+	const assertInstalledPrivacySupported = async () =>
+		await dependencies.assertInstalledPrivacySupported?.();
 
 	async function emitEvent(event) {
 		try {
@@ -1064,6 +1067,7 @@ export function createMcpGateway(input, dependencies = {}) {
 			server.replyIds.add(id);
 			delivered = { ...message, id };
 		}
+		await assertInstalledPrivacySupported();
 		if (!response.headersSent)
 			response.writeHead(200, {
 				"content-type": "text/event-stream",
@@ -1275,7 +1279,8 @@ export function createMcpGateway(input, dependencies = {}) {
 					tokens.push(token);
 				}
 				for (const protocolVersion of server.protocolVersions)
-					for (const token of tokens)
+					for (const token of tokens) {
+						await assertInstalledPrivacySupported();
 						await fetchMcpEndpoint(
 							server.url,
 							{
@@ -1311,6 +1316,7 @@ export function createMcpGateway(input, dependencies = {}) {
 								acceptUnauthorizedResponse: true,
 							},
 						);
+					}
 			}
 			const observation = await observeDirectUpstream(server, gatewayAddress);
 			const refusal = observation.status === "bypass" ? startupBypassRefusal() : null;
@@ -1368,6 +1374,7 @@ export function createMcpGateway(input, dependencies = {}) {
 		const reply = !Object.hasOwn(rpc, "method");
 		await guardPayload(rpc, server, sessionId, "to_upstream", rpc.method ?? "reply");
 		const headersServer = { ...server, rpcMethod: rpc.method, rpcName: rpc.params?.name };
+		await assertInstalledPrivacySupported();
 		const response = await fetchMcpEndpoint(
 			server.url,
 			{
@@ -1473,6 +1480,7 @@ export function createMcpGateway(input, dependencies = {}) {
 
 	async function terminateUpstreamSession(server, sessionId) {
 		try {
+			await assertInstalledPrivacySupported();
 			await fetchMcpEndpoint(
 				server.url,
 				{
@@ -1753,6 +1761,7 @@ export function createMcpGateway(input, dependencies = {}) {
 			await attest(requestUpstream);
 			const result = await processRpc(rpc, client, requestUpstream, request, controller.signal);
 			await audit(client.tenantId, serverId, client.id, "allow", rpc.method);
+			await assertInstalledPrivacySupported();
 			sendRpcResult(response, result);
 		} catch (cause) {
 			const reason = safeReason(cause);
@@ -1822,6 +1831,12 @@ export function createMcpGateway(input, dependencies = {}) {
 	}
 
 	const server = createServer(async (request, response) => {
+		try {
+			await assertInstalledPrivacySupported();
+		} catch {
+			send(response, 503, { error: "gateway_unavailable" });
+			return;
+		}
 		if (!ready) {
 			send(response, 503, { error: "gateway_starting" });
 			return;
@@ -1879,7 +1894,8 @@ export function createMcpGateway(input, dependencies = {}) {
 			if (!startupCheckPromise) startupCheckPromise = runStartupSelfCheck(gatewayAddress);
 			return startupCheckPromise;
 		},
-		listen(port = config.port) {
+		async listen(port = config.port) {
+			await assertInstalledPrivacySupported();
 			return new Promise((resolve, reject) => {
 				server.once("error", reject);
 				server.listen(port, "127.0.0.1", async () => {
@@ -1888,6 +1904,7 @@ export function createMcpGateway(input, dependencies = {}) {
 					try {
 						if (!startupCheckPromise) startupCheckPromise = runStartupSelfCheck(address);
 						await startupCheckPromise;
+						await assertInstalledPrivacySupported();
 						ready = true;
 						resolve(address);
 					} catch (cause) {

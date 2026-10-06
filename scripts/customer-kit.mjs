@@ -59,6 +59,10 @@ for (const file of [
 	"lib/migration-contract.mjs",
 	"lib/migration-hash-compat.mjs",
 	"lib/atomic-write.mjs",
+	"lib/deployment-credentials.mjs",
+	"lib/deployment-input-copy.mjs",
+	"lib/node-helper-image.mjs",
+	"lib/node-helper.Dockerfile",
   "deployment-bootstrap.mjs",
 	"deployment-backup.mjs",
 	"deployment-backup-offsite.mjs",
@@ -111,7 +115,7 @@ const requireClaude = createRequire(join(root, "packages/claude-code/package.jso
 await requireClaude("esbuild").build({ entryPoints: [requireCore.resolve("yaml")], outfile: join(output, "deploy/vendor/yaml.cjs"), bundle: true, platform: "node", format: "cjs", sourcemap: false, legalComments: "inline" });
 await requireClaude("esbuild").build({ entryPoints: [join(root, "scripts/siem-delivery-worker.mjs")], outfile: join(output, "scripts/siem-delivery-worker.mjs"), bundle: true, platform: "node", format: "esm", target: "node24", sourcemap: false, legalComments: "inline" });
 await requireClaude("esbuild").build({ entryPoints: [join(root, "scripts/readiness-evidence-worker.mjs")], outfile: join(output, "scripts/readiness-evidence-worker.mjs"), bundle: true, platform: "node", format: "esm", target: "node24", sourcemap: false, legalComments: "inline" });
-await requireClaude("esbuild").build({ entryPoints: [join(root, "scripts/deployment-backup.mjs")], outfile: join(output, "scripts/deployment-backup.mjs"), bundle: true, platform: "node", format: "esm", target: "node24", sourcemap: false, legalComments: "inline" });
+await requireClaude("esbuild").build({ entryPoints: [join(root, "scripts/deployment-backup.mjs")], outfile: join(output, "scripts/deployment-backup.mjs"), bundle: true, platform: "node", format: "esm", target: "node24", sourcemap: false, legalComments: "inline", external: ["./lib/node-helper-image.mjs"] });
 copy(resolve(dirname(requireCore.resolve("yaml")), "../LICENSE"), join(output, "deploy/vendor/YAML-LICENSE"));
 if (existsSync(gatewaySource)) {
   const gatewayManifest = JSON.parse(readFileSync(join(gatewayDist, "aidr-artifact.manifest.json"), "utf8"));

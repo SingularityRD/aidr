@@ -278,6 +278,7 @@ jobs:
           node --test scripts/saml-outage-recovery.test.mjs scripts/saml-outage-recovery-postgres.test.mjs
           node --test scripts/discovery-cloud-postgres.test.mjs
           node --test scripts/fleet-signed-delivery-postgres.test.mjs
+          node --test scripts/delegated-session-policy-postgres.test.mjs
           pnpm verify:offboarding
           pnpm verify:retention
           node --test scripts/tenant-rate-limit-postgres.test.mjs
@@ -301,6 +302,11 @@ jobs:
           "${RUNNER_TEMP}/privacy-python/bin/python" -m pip install --disable-pip-version-check --only-binary=:all: -r packages/privacy/parsers/requirements.txt
           "${RUNNER_TEMP}/privacy-python/bin/python" -m pip check
           AIDR_PYTHON="${RUNNER_TEMP}/privacy-python/bin/python" AIDR_TEST_PYTHON="${RUNNER_TEMP}/privacy-python/bin/python" pnpm --filter @singularity/aidr-privacy test:ci:platform
+
+      - name: Mandatory SDK ESM and CJS mTLS input and output gate
+        run: |
+          pnpm --filter @singularity/aidr-privacy build:release
+          node --test packages/sdk/src/__tests__/privacy-send-mtls.test.mjs
 
       - name: Deterministic commercial release build
         env:

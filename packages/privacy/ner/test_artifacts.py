@@ -6,7 +6,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from artifacts import ArtifactError, aggregate_tokens, sha256_file, utf16_offsets, verified_manifest
+from artifacts import ArtifactError, aggregate_tokens, encode_first_words, sha256_file, utf16_offsets, verified_manifest
 
 class ArtifactsTests(unittest.TestCase):
     def setUp(self):
@@ -123,6 +123,21 @@ class ArtifactsTests(unittest.TestCase):
         with self.assertRaisesRegex(ArtifactError, 'INVALID_LANGUAGE'):
             verified_manifest(self.path, digest)
 
+    def test_invalid_aggregation_profile_rejected(self):
+        for aggregation in ['first', 'average', None, False, {}, []]:
+            with self.subTest(aggregation=aggregation):
+                self.spec['aggregation'] = aggregation
+                digest = self.write_manifest()
+                with self.assertRaisesRegex(ArtifactError, 'INVALID_AGGREGATION'):
+                    verified_manifest(self.path, digest)
+
+    def test_explicit_profile_preserved_without_changing_default(self):
+        digest = self.write_manifest()
+        self.assertNotIn('aggregation', verified_manifest(self.path, digest)['models'][0])
+        self.spec['aggregation'] = 'first_word'
+        digest = self.write_manifest()
+        self.assertEqual(verified_manifest(self.path, digest)['models'][0]['aggregation'], 'first_word')
+
     def test_unknown_entity(self):
         self.spec['label_map']['PER'] = 'SECRET_CUSTOM_TYPE'
         digest = self.write_manifest()
@@ -149,6 +164,7 @@ class ArtifactsTests(unittest.TestCase):
     def test_manifest_builder_cli(self):
         import subprocess
         import sys
+        self.spec['aggregation'] = 'first_word'
         config = self.root / 'configuration.json'
         config.write_text(json.dumps({'version': 1, 'models': [self.spec]}))
         completed = subprocess.run([sys.executable, str(Path(__file__).with_name('build_manifest.py')),
@@ -157,11 +173,24 @@ class ArtifactsTests(unittest.TestCase):
         digest = completed.stdout.strip()
         self.assertEqual(digest, sha256_file(self.path))
         self.assertEqual(verified_manifest(self.path, digest)['version'], 1)
+        self.assertEqual(verified_manifest(self.path, digest)['models'][0]['aggregation'], 'first_word')
 
     def test_sha256_empty_file(self):
         path = self.root / 'empty'
         path.write_bytes(b'')
         self.assertEqual(sha256_file(path), hashlib.sha256(b'').hexdigest())
+
+    def test_manifest_builder_invalid_profile_never_publishes_output(self):
+        import subprocess
+        import sys
+        self.spec['aggregation'] = 'average'
+        config = self.root / 'invalid-config.json'
+        config.write_text(json.dumps({'version': 1, 'models': [self.spec]}))
+        completed = subprocess.run([sys.executable, str(Path(__file__).with_name('build_manifest.py')),
+                                    '--config', str(config), '--output', str(self.path)],
+                                   capture_output=True, text=True, timeout=10)
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertFalse(self.path.exists())
 
 class OffsetTests(unittest.TestCase):
     def test_ascii(self): self.assertEqual(utf16_offsets('Jane'), [0, 1, 2, 3, 4])
@@ -172,6 +201,66 @@ class OffsetTests(unittest.TestCase):
     def test_surrogates_rejected(self):
         for s in ['\ud800', '\udfff']:
             with self.subTest(s=repr(s)), self.assertRaises(ArtifactError): utf16_offsets(s)
+
+class FirstWordTests(unittest.TestCase):
+    text = "😀 Yılmaz'a\tAli"
+
+    def tokenizer(self, overlap=2):
+        class Encoding(dict):
+            def word_ids(self, i=0): return self.words[i]
+        full = Encoding(input_ids=[101, 10, 11, 12, 13, 14, 102],
+                        offset_mapping=[(0, 0), (0, 1), (0, 6), (6, 7), (7, 8), (0, 3), (0, 0)],
+                        special_tokens_mask=[1, 0, 0, 0, 0, 0, 1])
+        full.words = [[None, 0, 1, 1, 1, 2, None]]
+        start = 4 - overlap
+        windows = Encoding(input_ids=[], offset_mapping=[], special_tokens_mask=[])
+        windows.words = []
+        for left, right in [(0, 4), (start, 5)]:
+            windows['input_ids'].append([101] + full['input_ids'][1 + left:1 + right] + [102])
+            windows['offset_mapping'].append([(0, 0)] + full['offset_mapping'][1 + left:1 + right] + [(0, 0)])
+            windows['special_tokens_mask'].append([1] + [0] * (right - left) + [1])
+            windows.words.append([None] + full.words[0][1 + left:1 + right] + [None])
+        def tokenizer(values, **options):
+            self.assertEqual(values, ['😀', "Yılmaz'a", 'Ali'])
+            self.assertTrue(options['is_split_into_words'])
+            return windows if options.get('return_overflowing_tokens') else full
+        return tokenizer, full, windows
+
+    def test_midword_overflow_never_promotes_unsupervised_continuation(self):
+        tokenizer, _, _ = self.tokenizer()
+        _, absolute, projected = encode_first_words(tokenizer, self.text, 6, 2)
+        self.assertEqual(absolute[1][1], (8, 9))  # apostrophe at the second window's start
+        self.assertEqual(projected[0], [None, (0, 1), (2, 10), None, None, None])
+        self.assertEqual(projected[1], [None, None, None, (11, 14), None])
+        self.assertEqual(utf16_offsets(self.text)[projected[0][2][1]], 11)
+
+    def test_supervised_low_score_retained_and_continuation_logits_unused(self):
+        tokenizer, _, _ = self.tokenizer()
+        _, _, projected = encode_first_words(tokenizer, self.text, 6, 2)
+        labels = ['O', 'O', 'B-PER', 'B-EMAIL', 'B-EMAIL', 'O']
+        scores = [.9, .9, .01, .999, .999, .9]
+        selected = [j for j, offset in enumerate(projected[0]) if offset is not None]
+        result = aggregate_tokens(self.text, [projected[0][j] for j in selected],
+            [labels[j] for j in selected], [scores[j] for j in selected], {'O': None, 'PER': 'PERSON', 'EMAIL': 'EMAIL'})
+        self.assertEqual(result, [{'start': 2, 'end': 10, 'type': 'PERSON', 'score': .01}])
+
+    def test_overlapping_true_first_piece_remains_eligible(self):
+        tokenizer, _, _ = self.tokenizer(overlap=3)
+        _, _, projected = encode_first_words(tokenizer, self.text, 6, 3)
+        self.assertEqual(projected[1][1], (2, 10))
+        self.assertEqual(projected[1][4], (11, 14))
+
+    def test_alignment_gap_fails_closed(self):
+        tokenizer, _, windows = self.tokenizer()
+        windows['input_ids'][1][1] = 999
+        with self.assertRaisesRegex(ArtifactError, 'INVALID_WORD_ALIGNMENT'):
+            encode_first_words(tokenizer, self.text, 6, 2)
+
+    def test_missing_original_word_fails_closed(self):
+        tokenizer, full, _ = self.tokenizer()
+        full.words[0][5] = 1
+        with self.assertRaisesRegex(ArtifactError, 'INCOMPLETE_WORD_COVERAGE'):
+            encode_first_words(tokenizer, self.text, 6, 2)
 
 class AggregationTests(unittest.TestCase):
     mapping = {'O': None, 'PER': 'PERSON', 'ADDR': 'ADDRESS'}

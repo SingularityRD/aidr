@@ -1,5 +1,5 @@
 import { createSecureContext } from 'node:tls';
-import { X509Certificate } from 'node:crypto';
+import { X509Certificate, createHash } from 'node:crypto';
 import { isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isIP } from 'node:net';
@@ -47,8 +47,10 @@ export async function startTextService(options: TextServiceOptions, signal?: Abo
     if (typeof path !== 'string' || !isAbsolute(path) || !statSync(path).isFile()) deny('SERVICE_MODEL_CONFIG');
   }
   if (!/^[a-f0-9]{64}$/.test(options.ner.manifestSha256)) deny('SERVICE_MODEL_CONFIG');
-  const manifest=parseJsonStrict(readFileSync(options.ner.manifest,'utf8'),16,4096) as Record<string,unknown>;
-  if(manifest.approved===false||manifest.qualificationStatus==='independent-corpus-required')deny('SERVICE_MODEL_APPROVAL_REQUIRED');
+  const manifestBytes=readFileSync(options.ner.manifest);
+  if(createHash('sha256').update(manifestBytes).digest('hex')!==options.ner.manifestSha256)deny('SERVICE_MODEL_DIGEST_MISMATCH');
+  const manifest=parseJsonStrict(manifestBytes.toString('utf8'),16,4096);
+  if(!manifest||typeof manifest!=='object'||Array.isArray(manifest)||manifest.approved!==true||manifest.qualificationStatus!=='qualified')deny('SERVICE_MODEL_APPROVAL_REQUIRED');
   object(options.tls, ['key', 'cert', 'clientCa']);
   for (const name of ['key', 'cert', 'clientCa'] as const) if (!Buffer.isBuffer(options.tls[name]) || !options.tls[name].length) deny('SERVICE_TLS_CONFIG');
   const clientCa = new X509Certificate(options.tls.clientCa), certificate = new X509Certificate(options.tls.cert), now = Date.now();

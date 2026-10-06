@@ -29,6 +29,7 @@ vi.mock("@singularityrd/aidr-core", async () => {
 			putUrl = mocks.cacheWrite;
 		},
 		loadConfig: mocks.config,
+		isInvalidConfig: () => false,
 		loadManagedState: mocks.state,
 		getEffectiveManagedApiKey: mocks.key,
 		inspectResponseBarrier: mocks.barrier,

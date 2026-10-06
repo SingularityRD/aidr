@@ -69,6 +69,45 @@ test("rejects a pinned image when the bundle has no matching digest", async () =
 	assert.match(result.stderr, /does not match the digest pinned in the plan/);
 });
 
+test("enforces the digest embedded in a prepared compose image reference", async () => {
+	const fixture = await createFixture();
+	const pinnedDigest = `sha256:${"a".repeat(64)}`;
+	const ref = `example/gateway:1@${pinnedDigest}`;
+	await writeBundle(fixture, [ref]);
+	const compose = path.join(fixture.root, "compose.yml");
+	await writeFile(compose, `services:\n  api:\n    image: ${ref}\n`);
+	const manifestPath = path.join(fixture.output, "aidr-airgap-images.manifest.json");
+	const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+	manifest.images[0].repo_digest = `example/gateway@sha256:${"b".repeat(64)}`;
+	manifest.images[0].image_id = `sha256:${"c".repeat(64)}`;
+	await writeFile(manifestPath, JSON.stringify(manifest));
+	const refused = run(["--verify", "--output", fixture.output, "--compose", compose, "--docker-bin", missingDockerBin]);
+	assert.equal(refused.status, 1, "wrong image identity was accepted under the pinned compose reference");
+	assert.match(refused.stderr, /does not match the digest pinned in the plan/);
+
+	// OCI index/repository digests differ from the image-config identity.
+	manifest.images[0].repo_digest = `example/gateway@${pinnedDigest}`;
+	await writeFile(manifestPath, JSON.stringify(manifest));
+	const accepted = run(["--verify", "--output", fixture.output, "--compose", compose, "--docker-bin", missingDockerBin]);
+	assert.equal(accepted.status, 0, accepted.stderr);
+});
+
+test("refuses malformed and conflicting digest-qualified image plans", async () => {
+	const fixture = await createFixture();
+	const pinnedDigest = `sha256:${"a".repeat(64)}`;
+	for (const images of [
+		[{ ref: "example/gateway:1@sha256:short" }],
+		[{ ref: `example/gateway:1@${pinnedDigest}`, digest: `sha256:${"b".repeat(64)}` }],
+		[{ ref: "example/gateway:1", digest: pinnedDigest }, { ref: "example/gateway:1", digest: `sha256:${"b".repeat(64)}` }],
+	]) {
+		await writeFile(fixture.plan, JSON.stringify({ images }));
+		await writeBundle(fixture, [images[0].ref]);
+		const refused = run(["--verify", "--output", fixture.output, "--plan", fixture.plan, "--docker-bin", missingDockerBin]);
+		assert.equal(refused.status, 1);
+		assert.match(refused.stderr, /must pin a sha256|conflicting pinned digests/);
+	}
+});
+
 test("refuses an incomplete image set and a tampered tarball", async () => {
 	const incomplete = await createFixture();
 	await writeBundle(incomplete, ["example/a:1"]);

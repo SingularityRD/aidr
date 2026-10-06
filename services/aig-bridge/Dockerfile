@@ -8,24 +8,24 @@
 # under Apache 2.0 license. See vendor/ai-infra-guard/NOTICE.
 # =============================================================================
 
-FROM python:3.12.15-slim-trixie@sha256:ddb0207ae1f0356c2b724d740769b0c5f5f51cc54a0525178f721825f78fe74c
+FROM python:3.12.15-alpine3.24@sha256:1b668429b3511ab407d8e00648891631b0b1a4d7e15e3ca70f38ab5b91ad4ab4
 
 # ── System dependencies ──────────────────────────────────────────────────────
+# CPython's library finder needs ld/objdump and libpq's linker name on musl.
 RUN set -eux; \
-    apt-get update; \
-    apt-get install -y --no-install-recommends \
+    apk add --no-cache \
         ca-certificates \
-        libpcre2-8-0 \
-        libpq5 \
-        libssl3t64 \
-        openssl \
-        tzdata; \
-    apt-get purge -y mount; \
-    # DSA-6531 backports the September 2026 OpenSSL fixes to this trixie version.
-    dpkg --compare-versions "$(dpkg-query -W -f='${Version}' libssl3t64)" ge '3.5.7-1~deb13u3'; \
-    # DSA-6530 fixes CVE-2026-103111 in the installed PCRE2 library.
-    dpkg --compare-versions "$(dpkg-query -W -f='${Version}' libpcre2-8-0)" ge '10.46-1~deb13u3'; \
-    rm -rf /var/lib/apt/lists/*
+        binutils \
+        'libpq>=18.6-r0' \
+        'libpq-dev>=18.6-r0' \
+        'libssl3>=3.5.9-r0' \
+        'libcrypto3>=3.5.9-r0' \
+        'busybox>=1.37.0-r31' \
+        'musl>=1.2.6-r2' \
+        'sqlite-libs>=3.53.4-r0' \
+        'libuuid>=2.42.3-r1' \
+        'libncursesw>=6.6_p20260516-r0' \
+        tzdata
 
 # ── Application ──────────────────────────────────────────────────────────────
 WORKDIR /app
@@ -33,12 +33,14 @@ WORKDIR /app
 COPY requirements-runtime.lock .
 RUN python -m pip install --no-cache-dir --require-hashes --only-binary=:all: -r requirements-runtime.lock && \
     python -m pip check && \
+    PSYCOPG_IMPL=python python -c "import psycopg; assert psycopg.pq.__impl__ == 'python'; assert psycopg.pq.version() >= 180006" && \
     python -m pip uninstall --yes pip && \
     python -c "import shutil, sysconfig; shutil.rmtree(sysconfig.get_path('stdlib') + '/ensurepip')"
 
 COPY app/ ./app/
 
-RUN useradd --system --uid 1000 --user-group --create-home bridge && \
+RUN addgroup -S -g 1000 bridge && \
+    adduser -S -D -u 1000 -G bridge -h /home/bridge bridge && \
     mkdir -p /app/uploads /app/state && \
     chown -R bridge:bridge /app
 

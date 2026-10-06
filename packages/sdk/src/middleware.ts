@@ -1,6 +1,7 @@
 import type { AIDRClient } from "./client.js";
 import type { CheckRequest, CheckResult, MiddlewareFn } from "./config.js";
 import { type ApprovalCallback, enforceCheckResult } from "./enforcement.js";
+import { assertPrivacyCallbacksAllowed } from "./privacy-text.js";
 
 /**
  * Options for the SDK middleware surface (`wrap`, `express`, `nextjs`).
@@ -38,6 +39,7 @@ class MiddlewareChain {
 
 	async execute(request: CheckRequest, result?: CheckResult, error?: Error): Promise<void> {
 		for (const middleware of this.middlewares) {
+			await assertPrivacyCallbacksAllowed();
 			await middleware({ request, result, error, next: async () => {} });
 		}
 	}
@@ -58,7 +60,17 @@ export function createMiddleware(client: AIDRClient, options: MiddlewareEnforcem
 	 * `express()` / `nextjs()` / `wrap()` previously disagreed on the same
 	 * result object; they now all go through `enforceCheckResult`.
 	 */
-	const enforce = (result: CheckResult) => enforceCheckResult(result, options);
+	const onAsk = options.onAsk;
+	const enforce = (result: CheckResult) =>
+		enforceCheckResult(result, {
+			...options,
+			onAsk: onAsk
+				? async (verdict) => {
+						await assertPrivacyCallbacksAllowed();
+						return onAsk(verdict);
+					}
+				: undefined,
+		});
 
 	const api = {
 		/**
@@ -108,6 +120,7 @@ export function createMiddleware(client: AIDRClient, options: MiddlewareEnforcem
 			requestFactory: (...args: Parameters<T>) => CheckRequest,
 		): ((...args: Parameters<T>) => Promise<ReturnType<T>>) => {
 			return async (...args: Parameters<T>): Promise<ReturnType<T>> => {
+				await assertPrivacyCallbacksAllowed();
 				const request = requestFactory(...args);
 				const result = await client.check(request);
 
@@ -119,7 +132,16 @@ export function createMiddleware(client: AIDRClient, options: MiddlewareEnforcem
 				// Execute middleware chain
 				await chain.execute(request, result);
 
-				return fn(...args) as ReturnType<T>;
+				await client.assertCallerOperationAllowed();
+				let output: unknown;
+				try {
+					output = await fn(...args);
+				} catch (error) {
+					await assertPrivacyCallbacksAllowed();
+					throw error;
+				}
+				await assertPrivacyCallbacksAllowed();
+				return output as ReturnType<T>;
 			};
 		},
 
@@ -162,6 +184,7 @@ export function createMiddleware(client: AIDRClient, options: MiddlewareEnforcem
 						return;
 					}
 
+					await client.assertCallerOperationAllowed();
 					next();
 				} catch (error) {
 					next(error instanceof Error ? error : new Error(String(error)));
@@ -207,6 +230,7 @@ export function createMiddleware(client: AIDRClient, options: MiddlewareEnforcem
 					);
 				}
 
+				await client.assertCallerOperationAllowed();
 				return null; // Continue to handler
 			};
 		},

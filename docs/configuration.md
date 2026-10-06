@@ -21,6 +21,44 @@ Missing enrollment does not disable the local evaluator, but missing or invalid
 artifact trust can stop commercial startup. Do not describe an unenrolled
 commercial package as a ready managed installation.
 
+## Mandatory privacy routing
+
+An operator can explicitly require the private profile in the installed config:
+
+```json
+{ "privacy": { "required": true } }
+```
+
+This setting is off when absent. Ordinary agent tool hooks and SDK callback
+wrappers cannot own the host's final model transport, so they refuse operations
+under this setting before reputation or telemetry dispatch. Local threat
+classification still runs, and refusal records omit raw tool content. A malformed
+configuration also refuses startup and execution; it does not restore ordinary
+defaults.
+
+The standalone public MCP gateway/stdIO commands and Codex central handoff
+exports also refuse this unsupported profile before raw callbacks or outbound
+dispatch. A running public MCP command rechecks at request, transport and output
+boundaries. The private MCP launcher remains the supported owned gateway route.
+
+The supported SDK model path is `AIDRClient.sendText`, configured with the
+constructor's separate `privacyGateway` options. It constructs the installed
+`@singularity/aidr-privacy/platform` client and sends bounded text only to the
+fixed mTLS service. Provider credentials remain on that service, which applies
+its signed policy before provider dispatch and before returning output. Missing
+service/package, invalid trust or credentials, unqualified model, review, unknown
+completion and withheld output cannot return the original input or invoke a
+direct-provider fallback. The private MCP launcher likewise scans its complete
+text/JSON request and response; it blocks required redaction rather than releasing
+the original message. See the [SDK usage](../packages/sdk/README.md) and the
+[private MCP installation](../packages/privacy/docs/MCP_SERVICE.md).
+
+An AIDR startup refusal is not a host firewall. Raw host prompts, separately
+created provider clients, browser/native traffic and processes outside the owned
+SDK/private MCP route require the institution's actual transport integration,
+credential separation and enforced network policy. A tool-hook banner or the
+`privacy.required` flag alone does not prove that traffic was stopped.
+
 ## Example Config
 
 This example is not a list of defaults. Provider-backed URL, file, and package

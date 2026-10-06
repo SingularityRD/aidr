@@ -42,6 +42,7 @@ const INDETERMINATE: CheckResult = {
 class MockClient {
 	constructor(private readonly result: CheckResult) {}
 	check = vi.fn(async (_request: CheckRequest) => this.result);
+	assertCallerOperationAllowed = vi.fn(async () => {});
 }
 
 function asClient(client: MockClient): AIDRClient {

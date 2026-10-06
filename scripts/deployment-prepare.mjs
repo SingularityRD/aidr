@@ -1,24 +1,16 @@
 #!/usr/bin/env node
 import { createHash, createHmac, createPublicKey, generateKeyPairSync, randomBytes } from "node:crypto";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, rmdirSync, writeFileSync, statSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, rmdirSync, writeFileSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import { parseArgs } from "node:util";
+import { cpSync } from "./lib/deployment-input-copy.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const requireCore = createRequire(join(root, "packages/core/package.json"));
 const { parse, stringify } = existsSync(join(root, "deploy/vendor/yaml.cjs")) ? requireCore(join(root, "deploy/vendor/yaml.cjs")) : requireCore("yaml");
-// Avoid Node's recursive cp binding failing on Windows paths with non-ASCII characters.
-function cpSync(source, destination, options = {}) {
-	if (options.filter && !options.filter(source)) return;
-	if (statSync(source).isDirectory()) {
-		mkdirSync(destination, { recursive: true });
-		for (const entry of readdirSync(source)) cpSync(join(source, entry), join(destination, entry), options);
-	} else { mkdirSync(dirname(destination), { recursive: true }); copyFileSync(source, destination); }
-}
-
 async function stageMaintenanceRuntime(output) {
 	const readinessSource = join(root, "scripts/readiness-evidence-worker.mjs");
 	const backupSource = join(root, "scripts/deployment-backup.mjs");
@@ -31,13 +23,16 @@ async function stageMaintenanceRuntime(output) {
 		const esbuild = requireBuilder("esbuild");
 		await Promise.all([
 			esbuild.build({ entryPoints: [readinessSource], outfile: readinessOutput, bundle: true, platform: "node", format: "esm", target: "node24", sourcemap: false, legalComments: "inline" }),
-			esbuild.build({ entryPoints: [backupSource], outfile: backupOutput, bundle: true, platform: "node", format: "esm", target: "node24", sourcemap: false, legalComments: "inline" }),
+			esbuild.build({ entryPoints: [backupSource], outfile: backupOutput, bundle: true, platform: "node", format: "esm", target: "node24", sourcemap: false, legalComments: "inline", external: ["./lib/node-helper-image.mjs"] }),
 		]);
 	} else if (!readFileSync(readinessSource, "utf8").includes("../packages/core/dist/")) {
 		cpSync(readinessSource, readinessOutput);
 		cpSync(backupSource, backupOutput);
 	} else throw new Error("Maintenance runtime requires a complete core build before deployment preparation");
 	cpSync(join(root, "scripts/deployment-backup-offsite.mjs"), join(output, "backup/deployment-backup-offsite.mjs"));
+	for (const file of ["node-helper-image.mjs", "node-helper.Dockerfile"]) {
+		cpSync(join(root, "scripts/lib", file), join(output, "backup/lib", file));
+	}
 	for (const path of [readinessOutput, backupOutput, join(output, "backup/deployment-backup-offsite.mjs")]) chmodSync(path, 0o644);
 }
 
@@ -321,6 +316,9 @@ for (const service of Object.values(compose.services)) {
 }
 if (values.mode === "self-hosted") {
 	delete compose.services.supavisor;
+	compose.services["api-gw"].image = "envoyproxy/envoy:v1.39.2@sha256:460f8c329f24b2e1c7c5af64cb314a6f351ad1c262ba77b135ac46b35ebd5f85";
+	compose.services.imgproxy.image = "darthsim/imgproxy:v4.0.17@sha256:db0b4b9cd690c8b3590203dea300fb759a18c4ec2af7b37424f0bdef23ce317d";
+	compose.services.imgproxy.environment.IMGPROXY_USE_LAST_MODIFIED = "false";
 	compose.services["api-gw"].ports = [`${loopbackBinding(supabaseUrl)}:${developmentHostPort(supabaseUrl, "8000")}:8000`];
 	compose.services.functions.env_file = [".env.functions"];
 	compose.services.auth.environment.GOTRUE_MAILER_TEMPLATES_RECOVERY = "http://dashboard:8080/auth-templates/recovery.html";

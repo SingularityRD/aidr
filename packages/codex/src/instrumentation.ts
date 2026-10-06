@@ -1,5 +1,6 @@
 import { normalizeCodexHookInput } from "./normalize.js";
 import { CentralPolicyClient, type CentralPolicyClientOptions } from "./policy.js";
+import { installedPrivacyRequired, PRIVACY_ROUTE_UNAVAILABLE } from "./privacy.js";
 import {
 	type CodexHookInput,
 	type CodexHookResult,
@@ -19,10 +20,12 @@ export function createCodexInstrumentation(options: CodexInstrumentationOptions)
 		"decide" in options.policy ? options.policy : new CentralPolicyClient(options.policy);
 	return {
 		async preToolUse(input: CodexHookInput): Promise<CodexHookResult> {
+			if (await installedPrivacyRequired()) return deny(PRIVACY_ROUTE_UNAVAILABLE);
 			let event: CodexHookResult["event"] = null;
 			try {
 				event = normalizeCodexHookInput({ ...input, phase: "pre_tool_use" }, options.identity);
 				const decision = await policy.decide(event);
+				if (await installedPrivacyRequired()) return deny(PRIVACY_ROUTE_UNAVAILABLE);
 				return { ...decision, event };
 			} catch (error) {
 				return deny(
@@ -34,12 +37,14 @@ export function createCodexInstrumentation(options: CodexInstrumentationOptions)
 			}
 		},
 		async postToolUse(input: CodexHookInput): Promise<CodexHookResult> {
+			if (await installedPrivacyRequired()) return deny(PRIVACY_ROUTE_UNAVAILABLE);
 			try {
 				const event = normalizeCodexHookInput(
 					{ ...input, phase: "post_tool_use" },
 					options.identity,
 				);
 				const published = await policy.publish(event);
+				if (await installedPrivacyRequired()) return deny(PRIVACY_ROUTE_UNAVAILABLE);
 				return published.accepted
 					? {
 							decision: "allow",

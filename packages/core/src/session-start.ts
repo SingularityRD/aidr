@@ -6,7 +6,7 @@
 import { inspectInfrastructurePolicy } from "./aig-policy.js";
 import { isCommercialBuild } from "./build-flavor.js";
 import { ControlPlaneClient } from "./clients/control-plane.js";
-import { loadConfig, resolvePath } from "./config.js";
+import { isInvalidConfig, loadConfig, resolvePath } from "./config.js";
 import { pruneOrphanedTmpFiles } from "./file-utils.js";
 import { getInstallationId } from "./installation-id.js";
 import { getDegradedSafeModeReason, isDegradedSafeMode } from "./integrity/index.js";
@@ -42,7 +42,7 @@ import type { McpInventoryCoverageStatus } from "./mcp-inventory.js";
 import { inspectRemoteRuntimePolicyCache } from "./remote-policy.js";
 import { runSessionStartScan } from "./session-start-scan.js";
 import type { AgentRuntime, Logger, PluginInfo, PluginScanResult } from "./types.js";
-import { ConfigSchema, nullLogger } from "./types.js";
+import { nullLogger } from "./types.js";
 import { checkForUpdate, type VersionCheckResult } from "./version-check.js";
 
 export interface SessionStartContext {
@@ -177,7 +177,23 @@ function mcpToolManifestCoverageFindings(
 export async function runSessionStart(ctx: SessionStartContext): Promise<SessionStartResult> {
 	const logger = ctx.logger ?? nullLogger;
 	const aidrDirPath = resolvePath(ctx.aidrDirPath ?? "~/.singularity-aidr");
-	const config = await loadConfig(ctx.configPath, logger).catch(() => ConfigSchema.parse({}));
+	const config = await loadConfig(ctx.configPath, logger).catch(() => undefined);
+	if (!config || isInvalidConfig(config)) {
+		return {
+			enabled: false,
+			disabled_reason: "configuration_invalid",
+			scanResults: [],
+			versionCheck: null,
+		};
+	}
+	if (config.privacy?.required === true) {
+		return {
+			enabled: false,
+			disabled_reason: "mandatory_privacy_requires_owned_gateway",
+			scanResults: [],
+			versionCheck: null,
+		};
+	}
 	const commercial = isCommercialBuild();
 	const [inventory, infrastructure] = await Promise.all([
 		discoverMcpServers(config.policy.mcp.inventory_paths, { attestation: ctx.mcpAttestation }),

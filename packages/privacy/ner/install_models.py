@@ -22,6 +22,8 @@ def validate_lock(lock: dict) -> None:
         raise ArtifactError('INVALID_INSTALL_LOCK')
     directories = set()
     for model in lock['models']:
+        if model.get('aggregation', 'token') not in ('token', 'first_word'):
+            raise ArtifactError('INVALID_AGGREGATION')
         if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', model.get('repository', '')) or not re.fullmatch('[a-f0-9]{40}', model.get('revision', '')):
             raise ArtifactError('IMMUTABLE_REPOSITORY_REQUIRED')
         directory = model.get('directory')
@@ -42,7 +44,8 @@ def validate_lock(lock: dict) -> None:
         for name, spec in files.items():
             if not safe_path(name) or '/' in name or Path(name).suffix not in {'.json', '.safetensors', '.txt', '.md', '.model'} or not safe_path(spec.get('source')):
                 raise ArtifactError('UNSAFE_ARTIFACT_PATH')
-            if not re.fullmatch('[a-f0-9]{64}', spec.get('sha256', '')) or type(spec.get('size')) is not int or not 0 < spec['size'] <= 2 * 1024 ** 3:
+            limit = (4 if name.endswith('.safetensors') else 2) * 1024 ** 3
+            if not re.fullmatch('[a-f0-9]{64}', spec.get('sha256', '')) or type(spec.get('size')) is not int or not 0 < spec['size'] <= limit:
                 raise ArtifactError('INVALID_INVENTORY')
 
 
@@ -95,12 +98,12 @@ def install(lock: dict, destination: Path, python: Path) -> dict:
             url = f"https://huggingface.co/{source['repository']}/resolve/{source['revision']}/{spec['source']}"
             download_file(url, root / name, spec)
         config = json.loads((root / 'config.json').read_text('utf-8'))
-        if config.get('auto_map') or config.get('model_type') not in {'bert', 'distilbert', 'deberta-v2', 'xlm-roberta', 'roberta', 'modernbert'}:
+        if config.get('auto_map') or config.get('model_type') not in {'bert', 'distilbert', 'deberta-v2', 'xlm-roberta', 'roberta', 'modernbert', 'openai_privacy_filter'}:
             raise ArtifactError('UNSUPPORTED_MODEL_ARCHITECTURE')
         actual = {re.sub(r'^[BIESLU]-', '', label) for label in config['id2label'].values()}
         if actual != set(source['label_map']) or not {'PERSON', 'ADDRESS'} <= {source['label_map'][label] for label in actual}:
             raise ArtifactError('MODEL_LABEL_COVERAGE_MISMATCH')
-        models.append({k: source[k] for k in ['directory', 'repository', 'revision', 'license', 'languages', 'max_length', 'stride', 'label_map']} | {'files': {name: spec['sha256'] for name, spec in source['files'].items()}})
+        models.append({k: source[k] for k in ['directory', 'repository', 'revision', 'license', 'languages', 'max_length', 'stride', 'label_map', 'aggregation'] if k in source} | {'files': {name: spec['sha256'] for name, spec in source['files'].items()}})
     manifest = destination / 'manifest.json'
     encoded = json.dumps({'version': 1, 'approved': False, 'qualificationStatus': 'independent-corpus-required', 'models': models}, indent=2, ensure_ascii=False) + '\n'
     if manifest.exists() and manifest.read_text('utf-8') != encoded:

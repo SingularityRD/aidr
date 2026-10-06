@@ -4,6 +4,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { parseArgs } from "node:util";
+import { deploymentCredentialFailures } from "./lib/deployment-credentials.mjs";
 
 const { values } = parseArgs({ options: { deployment: { type: "string", default: ".aidr-deploy" }, online: { type: "boolean", default: false } } });
 const dir = resolve(values.deployment);
@@ -64,7 +65,9 @@ if (manifest.mode === "cloud") {
     "cloud device-start ingress uses the selected project's configured anonymous API key",
   );
 }
-check(!!env.ANON_KEY && !!env.SERVICE_ROLE_KEY && !env.ANON_KEY.startsWith("REPLACE_") && !env.SERVICE_ROLE_KEY.startsWith("REPLACE_"), "selected project's public and private keys configured");
+const credentialFailures = deploymentCredentialFailures(env);
+check(credentialFailures.length === 0, "selected project's public and private keys configured");
+if (credentialFailures.length) console.log(`FAIL missing, placeholder or shared vendor credentials: ${credentialFailures.join(", ")}`);
 check(typeof functionEnv.AIDR_DELEGATION_ISSUER === "string" && functionEnv.AIDR_DELEGATION_ISSUER === manifest.supabase_url, "delegated credential issuer matches this control plane");
 check(/^aidr-delegation-[a-f0-9]{12}$/.test(functionEnv.AIDR_DELEGATION_SIGNING_KEY_ID ?? ""), "delegated credential signing key id configured");
 check(typeof functionEnv.AIDR_DELEGATION_SIGNING_PRIVATE_KEY_PKCS8_B64 === "string" && Buffer.from(functionEnv.AIDR_DELEGATION_SIGNING_PRIVATE_KEY_PKCS8_B64, "base64").length >= 48, "delegated credential private signing key configured");
@@ -79,8 +82,7 @@ try {
 check(delegationKeyPairValid, "delegated credential signing and verification keys match");
 const signupMode = manifest.mode === "cloud" ? env.AIDR_SIGNUP_MODE : "closed";
 check(manifest.mode === "cloud" ? ["closed", "cloud"].includes(signupMode) : env.DISABLE_SIGNUP === "true", manifest.mode === "cloud" ? "cloud signup mode is explicit and valid" : "public signup disabled");
-const demoS3SecretHash = ["7f59edafa4d502ca0156b8fddf283946", "34d77b1843838b5783a7c9c95fcbd32f"].join("");
-check(typeof env.S3_PROTOCOL_ACCESS_KEY_SECRET === "string" && env.S3_PROTOCOL_ACCESS_KEY_SECRET.length >= 32 && createHash("sha256").update(env.S3_PROTOCOL_ACCESS_KEY_SECRET).digest("hex") !== demoS3SecretHash, "S3 protocol credential is private and differs from the upstream demonstration secret");
+check(typeof env.S3_PROTOCOL_ACCESS_KEY_SECRET === "string" && env.S3_PROTOCOL_ACCESS_KEY_SECRET.length >= 32 && !credentialFailures.includes("S3_PROTOCOL_ACCESS_KEY_SECRET"), "S3 protocol credential is private and differs from the upstream demonstration secret");
 // Failed SIEM deliveries and readiness evidence advance only while the shared maintenance
 // worker is scheduled, so the doctor reports two separate facts: the unit templates travel
 // with the kit, and the host actually schedules them. Only systemd can answer the second one, and only when
@@ -178,7 +180,7 @@ if (manifest.mode === "self-hosted") {
     check(state.status === 0 && servicesHealthy, "all required deployment services running and healthy");
   }
 }
-if (values.online) {
+if (values.online && credentialFailures.length === 0) {
   if (manifest.mode === "cloud") {
     try {
       const response = await fetch(`${manifest.dashboard_url}/runtime-config.js`, { signal: AbortSignal.timeout(10000) });

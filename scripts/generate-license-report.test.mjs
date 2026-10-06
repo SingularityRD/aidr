@@ -47,16 +47,20 @@ test("OR branches preserve mandatory AND obligations and separate declarations",
 	assert.equal(classifyComponent(lib("a", [{ expression: "MIT OR GPL-3.0-only" }, { license: { id: "AGPL-3.0-only" } }])).category, "review-required");
 });
 
-test("exact wheel licences retain all three known weak-copyleft obligations", () => {
+test("exact runtime wheels retain copyleft obligations and bundled native-library flags", () => {
 	const evidence = JSON.parse(readFileSync(new URL("../services/aig-bridge/pypi-runtime-licenses.json", import.meta.url), "utf8"));
 	const report = buildReport({ components: evidence.packages.map((entry) => {
 		const resolved = resolvePypiLicense(entry);
 		return { ...lib(entry.name, cycloneDxLicenses(resolved)), properties: resolved.flags.map((value) => ({ name: "aidr:license-flags", value })) };
 	}) });
-	assert.deepEqual(report.totals, { libraries: 31, permissive: 28, reviewRequired: 3, other: 0, unknown: 0 });
-	assert.deepEqual(report.attention.map((entry) => entry.name).sort(), ["certifi", "psycopg", "psycopg-binary"]);
-	assert.match(report.attention.find((entry) => entry.name === "psycopg-binary").licenseFlags[0], /14 native libraries/);
-	assert.match(renderMarkdown(report), /14 native libraries/);
+	assert.deepEqual(report.totals, { libraries: 30, permissive: 28, reviewRequired: 2, other: 0, unknown: 0 });
+	assert.deepEqual(report.attention.map((entry) => entry.name).sort(), ["certifi", "cryptography", "psycopg", "pydantic-core", "watchfiles"]);
+	assert.equal(evidence.packages.some((entry) => entry.name === "psycopg-binary"), false);
+	for (const name of ["cryptography", "pydantic-core", "watchfiles"]) {
+		assert.equal(report.attention.find((entry) => entry.name === name).licenseFlags.length, 1);
+		assert.match(report.attention.find((entry) => entry.name === name).licenseFlags[0], /bundles 1 native library/);
+	}
+	assert.match(renderMarkdown(report), /bundles 1 native library/);
 	assert.match(report.legalStatus, /Counsel approval \(COM-002\) is not implied/);
 });
 

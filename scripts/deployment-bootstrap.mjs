@@ -13,6 +13,7 @@ import { randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { parseArgs } from "node:util";
 import { renameWithRetry } from "./lib/atomic-write.mjs";
+import { deploymentCredentialFailures } from "./lib/deployment-credentials.mjs";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -24,7 +25,8 @@ if (manifest.mode !== "self-hosted") throw new Error("Deployment bootstrap is on
 const env = Object.fromEntries(readFileSync(join(dir, ".env"), "utf8").split(/\r?\n/).filter((line) => /^[A-Z][A-Z0-9_]*=/.test(line)).map((line) => [line.slice(0, line.indexOf("=")), line.slice(line.indexOf("=") + 1)]));
 const base = new URL(manifest.supabase_url);
 if (base.protocol !== "https:" && !(manifest.development && base.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(base.hostname))) throw new Error("HTTPS required");
-if (!env.SERVICE_ROLE_KEY || env.SERVICE_ROLE_KEY.startsWith("REPLACE_")) throw new Error("Configure the selected project's credentials first");
+const credentialFailures = deploymentCredentialFailures(env);
+if (credentialFailures.length) throw new Error(`Configure the selected project's credentials first; missing, placeholder or shared vendor credentials: ${credentialFailures.join(", ")}`);
 const receiptPath = join(dir, "bootstrap-receipt.json");
 const transferReceiptPath = join(dir, "owner-transfer-receipt.json");
 

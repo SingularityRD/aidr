@@ -1765,6 +1765,253 @@
         }
       ],
       "remainingExternal": "A named Security owner must review the pinned 132-finding refresh and both dataset-key owner-confirm rows, determine whether any value was ever live, rotate any live credential and bind the final full-clone scan to the exact clean candidate. The older 296 and unpinned 184 snapshots remain historical; engineering fixture classification is not Security sign-off. No published history rewrite or allowlist bypass was performed."
+    },
+    {
+      "id": "AIDR-071",
+      "priority": "P0",
+      "feature": "Public demonstration and placeholder credentials during deployment",
+      "status": "VERIFIED_CLOSED",
+      "component": "scripts/lib/deployment-credentials.mjs; deployment-bootstrap; deployment-doctor; portable customer kit",
+      "impact": "Copied public Supabase credentials and configured non-API REPLACE_* secrets reached bootstrap mutations and online doctor probes. A long S3 placeholder could also be reported as private.",
+      "acceptanceCriteria": "Reject the pinned public credential fingerprints, reserialized supabase-demo JWTs and supplied REPLACE_* values before network or receipt writes; retain fresh self-hosted and real opaque/JWT cloud inputs.",
+      "localEvidence": [
+        {
+          "claim": "Actual failing bootstrap/doctor cases now make zero online calls and zero receipt mutations; extracted Linux portable kit retains the shared guard with empty PATH.",
+          "evidencePath": "scripts/deployment-bootstrap.test.mjs",
+          "command": "node --test scripts/deployment-bootstrap.test.mjs scripts/deployment-doctor.test.mjs scripts/customer-kit-verify.test.mjs",
+          "verifiedBy": "2026-10-06: 64 focused tests and fresh self-host preparation passed; 3 real Linux extracted-kit helper checks passed. No live project or production credential assertion."
+        }
+      ],
+      "evidence": [
+        "Actual failing bootstrap/doctor cases now make zero online calls and zero receipt mutations; extracted Linux portable kit retains the shared guard with empty PATH."
+      ]
+    },
+    {
+      "id": "AIDR-072",
+      "priority": "P0",
+      "feature": "Independent release anti-rollback filesystem boundary",
+      "status": "VERIFIED_CLOSED",
+      "component": "scripts/release-signing-lib.mjs",
+      "impact": "Existing dangling or looping rollback-state links were treated as absent. Parent aliases could place state, trust policy or receipt physically inside the untrusted bundle despite a lexically external path.",
+      "acceptanceCriteria": "Only genuine absence creates empty rollback state; nonregular state and any state/trust alias physically inside the untrusted bundle are rejected without altering protected state, policy or success receipts.",
+      "localEvidence": [
+        {
+          "claim": "Actual Linux dangling/looping state and physical parent-alias regressions failed before the fixes. Canonical parent resolution now rejects inside-bundle trust/state/receipt aliases while preserving valid external aliases and nested missing state.",
+          "evidencePath": "scripts/release-signing.test.mjs",
+          "command": "node --test scripts/release-signing.test.mjs",
+          "verifiedBy": "2026-10-06: final 21/21 Windows plus 21/21 actual Linux, no skip. Historical 88ec candidate signing matched all 10 real CLI outcomes; fresh candidate repetition remains separate. No approved publisher trust is implied."
+        }
+      ],
+      "remainingExternal": "Approved publisher identity and independent physical-machine acceptance remain external release gates. Final candidate signing replay is recorded separately from this source-bound filesystem fix.",
+      "evidence": [
+        "Actual Linux dangling/looping state and physical parent-alias regressions failed before the fixes. Canonical parent resolution now rejects inside-bundle trust/state/receipt aliases while preserving valid external aliases and nested missing state."
+      ]
+    },
+    {
+      "id": "AIDR-073",
+      "priority": "P0",
+      "feature": "Delegated authority after identity-policy cutover or membership restoration",
+      "status": "VERIFIED_CLOSED",
+      "component": "supabase/functions/delegated-credentials; migration 20261006007000_delegated_session_policy_binding.sql",
+      "impact": "Previously issued delegates could bypass newly required SSO, restored membership revived old grants, and a grant writer waiting during a real OIDC cutover could create authority from the old issuer session.",
+      "acceptanceCriteria": "Capture immutable server-validated issuer-session proof, enforce current MFA/SAML/OIDC and session/member barriers after lock waits, inherit proof for children, permanently revoke removed-member grants, and roll back expired post-audit writes atomically.",
+      "localEvidence": [
+        {
+          "claim": "All 140 migrations and 14 native PostgreSQL scenarios passed, including observed OIDC cutover waits, wrong/missing proof, SCIM restoration and real expiry waits with no leftover grant or audit.",
+          "evidencePath": "scripts/delegated-session-policy-postgres.test.mjs",
+          "command": "node --test scripts/delegated-session-policy-postgres.test.mjs",
+          "verifiedBy": "2026-10-06: native 14/14 without skip; Edge 75/75; frozen Deno 25 entry points; workflow 13/13. Disposable database removed. Offline signature verification still cannot observe future database revocation and remains expiry-bounded."
+        }
+      ],
+      "evidence": [
+        "All 140 migrations and 14 native PostgreSQL scenarios passed, including observed OIDC cutover waits, wrong/missing proof, SCIM restoration and real expiry waits with no leftover grant or audit."
+      ]
+    },
+    {
+      "id": "AIDR-074",
+      "priority": "P1",
+      "feature": "Reproducible local NER checkpoint and tokenizer inference",
+      "status": "VERIFIED_CLOSED",
+      "component": "packages/privacy/ner/ner_worker.py; artifacts.py; bioes.py; model locks",
+      "impact": "The runtime could accept checkpoint key discrepancies, Transformers could replace the pinned Unicode normalizer, and an author-trained first-word model was interpreted using unsupervised continuation heads.",
+      "acceptanceCriteria": "Reject any checkpoint loading discrepancy before readiness, restore exact hash-verified preprocessing, and use only an explicit manifest-bound aggregation/tagging contract. Existing token-profile inputs and gold thresholds must remain unchanged.",
+      "localEvidence": [
+        {
+          "claim": "Native isolated Python tests and actual original/candidate checkpoints verify startup, Unicode, overflow, complete-coverage and BIOES behavior; all original 600 token encodings remain unchanged.",
+          "evidencePath": "packages/privacy/ner/test_ner_worker.py",
+          "command": "node packages/privacy/scripts/platform/ci-gate.mjs",
+          "verifiedBy": "2026-10-06: integrated isolated Linux CI passed 1,432 Node, six installed signed MCP and 71 Python tests with zero failures or skips; all 673 source inputs stayed identical. Native offline Linux inference passed three supplemental probes. Actual unchanged 600-example evaluations still fail qualification."
+        }
+      ],
+      "remainingModelQualification": "Unchanged 600-example acceptance still fails for existing and two new unapproved models. No threshold, gold or production model approval was changed.",
+      "evidence": [
+        "Native isolated Python tests and actual original/candidate checkpoints verify startup, Unicode, overflow, complete-coverage and BIOES behavior; all original 600 token encodings remain unchanged."
+      ]
+    },
+    {
+      "id": "AIDR-075",
+      "priority": "P1",
+      "feature": "Real-duration authenticated ingestion load measurement",
+      "status": "VERIFIED_CLOSED",
+      "component": "scripts/load-test.mjs; deploy/ha/README.md",
+      "impact": "The generator lacked unique request IDs needed by event ingestion, and a fast final response could end a declared duration early, overstating the collection interval.",
+      "acceptanceCriteria": "Provide independent UUID request placeholders and wait through the full declared monotonic interval without fake time; preserve actual response/error observations.",
+      "localEvidence": [
+        {
+          "claim": "A real short-duration regression failed before the fix; UUID ingestion and the full-window wait pass with the normal control cases.",
+          "evidencePath": "scripts/load-test.test.mjs",
+          "command": "node --test scripts/load-test.test.mjs",
+          "verifiedBy": "2026-10-06: 8/8 actual tests, no skip. The separate actual eight-hour local collection is running and is not yet PASS; it does not prove monthly SLA or fleet-queue duration."
+        }
+      ],
+      "evidence": [
+        "A real short-duration regression failed before the fix; UUID ingestion and the full-window wait pass with the normal control cases."
+      ]
+    },
+    {
+      "id": "AIDR-076",
+      "priority": "P0",
+      "feature": "Declared mandatory privacy across owned public transport and delivery paths",
+      "status": "IN_PROGRESS",
+      "component": "core installed privacy profile; SDK; Codex exports; standalone MCP CLI/stdIO; private text service",
+      "impact": "An ordinary hook or caller-owned transport cannot implement a mandatory institution privacy route. Unchecked public exports and awaited observers could otherwise send or release raw content despite the declared installed profile.",
+      "acceptanceCriteria": "Preserve ordinary local detection defaults, refuse unsupported required routes before content callbacks or transport, recheck final owned boundaries, and provide a single actual mTLS SDK/private-MCP dispatch path with checked output and no raw fallback.",
+      "localEvidence": [
+        {
+          "claim": "Actual SDK ESM/CJS source bundles and the installed private client exercise input/output masking, withheld output, provider denial, mismatched cert/JWT, untrusted CA, revocation and missing private package.",
+          "evidencePath": "packages/sdk/src/__tests__/privacy-send-mtls.test.mjs",
+          "command": "node --test packages/sdk/src/__tests__/privacy-send-mtls.test.mjs",
+          "verifiedBy": "2026-10-06: 13/13 real local HTTPS/mTLS cases; core47/startup11, SDK130/privacy63, Codex47, public MCP28/existing55/integrity1, service22 and workflow10 passed. Strict rules-only TEST runtime; not qualified learned NER, OS firewall proof or whole-product T37 acceptance. Sources frozen; fresh actual packed-consumer verification is pending."
+        }
+      ],
+      "remainingExternal": "Repeat actual CJS/ESM consumers with the final packed public SDK and optional private package. Institutional OS/MDM/network authority, qualified model and deployed data-flow review remain separate external acceptance.",
+      "evidence": [
+        "Actual SDK ESM/CJS source bundles and the installed private client exercise input/output masking, withheld output, provider denial, mismatched cert/JWT, untrusted CA, revocation and missing private package."
+      ]
+    },
+    {
+      "id": "AIDR-077",
+      "priority": "P0",
+      "feature": "Bridge runtime HIGH vulnerabilities in the shipped container",
+      "status": "VERIFIED_CLOSED",
+      "component": "services/aig-bridge/Dockerfile; pypi-runtime-licenses.json",
+      "impact": "The previous optional bridge image contained 40 HIGH findings across 8 distinct CVEs. A Python-only audit missed vulnerable operating-system libraries.",
+      "acceptanceCriteria": "Use a supported pinned base and actual fixed native packages; retain all locked Python versions, working PostgreSQL/TLS/nonroot health behavior, intact package metadata and a full-image scan without ignores.",
+      "localEvidence": [
+        {
+          "claim": "The final repository-built dd8993 image passed all 98 bridge tests, TLS verify-full/TLS1.3 at UID1000 and four health checks. Full scan recognized 47 APK and 30 Python packages with zero findings; upstream compiled-library checks are recorded separately.",
+          "evidencePath": "docs/production-readiness/evidence/bridge-high-zero-security-2026-10-06.json",
+          "command": "node --test scripts/pypi-license-data.test.mjs scripts/generate-license-report.test.mjs",
+          "verifiedBy": "2026-10-06: actual final image scan/tests and exact image archive audit; source wheel metadata validated against installed bytes; root licence regression 12/12. This is technical remediation, not independent Security or Legal approval."
+        }
+      ],
+      "remainingDistributionReview": "Complete exact native notice/source preparation and disclose any upstream provenance limits; distribution rights and independent Security approval remain commercial gates.",
+      "evidence": [
+        "The final repository-built dd8993 image passed all 98 bridge tests, TLS verify-full/TLS1.3 at UID1000 and four health checks. Full scan recognized 47 APK and 30 Python packages with zero findings; upstream compiled-library checks are recorded separately."
+      ]
+    },
+    {
+      "id": "AIDR-078",
+      "priority": "P1",
+      "feature": "Portable Linux preparation inherited writable Windows public-file permissions",
+      "status": "VERIFIED_CLOSED",
+      "component": "scripts/deployment-prepare.mjs; scripts/lib/deployment-input-copy.mjs; customer kit",
+      "impact": "Public inputs copied from a Windows-mounted source inherited mode0777, so a real prepared Linux installation was rejected by the strict recovery archive boundary.",
+      "acceptanceCriteria": "Strip group/world write on copied public files without adding private/read-only permissions or removing owner execution. Keep the private root and secret writers restrictive; do not relax the recovery verifier.",
+      "localEvidence": [
+        {
+          "claim": "Real Linux mode regressions and independent fresh prepare-to-recovery proof pass without manual chmod; root remains700, four secret env files remain600 and copied public entries have no022.",
+          "evidencePath": "scripts/lib/deployment-input-copy.test.mjs",
+          "command": "node --test scripts/lib/deployment-input-copy.test.mjs scripts/customer-kit-verify.test.mjs",
+          "verifiedBy": "2026-10-06: Linux helper2/2, Windows fresh prepare/ACL2/2, kit22/22, independent real Linux signed-recovery5/5. Historical payload and changed preparation tools are labeled separately from any fresh release candidate."
+        }
+      ],
+      "evidence": [
+        "Real Linux mode regressions and independent fresh prepare-to-recovery proof pass without manual chmod; root remains700, four secret env files remain600 and copied public entries have no022."
+      ]
+    },
+    {
+      "id": "AIDR-079",
+      "priority": "P0",
+      "feature": "First-party dashboard and landing container runtime vulnerabilities",
+      "status": "VERIFIED_CLOSED",
+      "component": "deploy/dashboard/Dockerfile; aidr-landing/Dockerfile",
+      "impact": "Actual full-image scans found 49 HIGH and three CRITICAL dashboard findings, and 60 HIGH and four CRITICAL landing findings. Clean npm production audits did not cover their operating-system bases or bundled unused build tools.",
+      "acceptanceCriteria": "Use an official supported pinned Node base, remove unused build tooling only from the production runner, preserve required native libraries and startup behavior, and repeat full OS/language scans without ignores plus hardened nonroot runtime checks.",
+      "evidence": [
+        "Exact replacements built with the supported pinned Node24.21/Alpine3.24 base physically omit unused npm/Corepack/Yarn; native nonroot read-only startup/readiness checks and full OS/language scans pass."
+      ],
+      "localEvidence": [
+        {
+          "claim": "Exact replacements built with the supported pinned Node24.21/Alpine3.24 base physically omit unused npm/Corepack/Yarn; native nonroot read-only startup/readiness checks and full OS/language scans pass.",
+          "evidencePath": ".tmp-test/dashboard-image-remediation-2026-10-06/remediation-receipt.json",
+          "command": "node --test deploy/dashboard/server.test.mjs",
+          "verifiedBy": "2026-10-06: actual dashboard9cfc507 and landing5ddb50 full scans return zero at all severities with the identical scanner database. Native hardened startup, absent-config and readiness/outage checks pass. SBOM-derived product inventory and embedded Node library applicability are explicitly separate from actual installed-package recognition."
+        }
+      ],
+      "remainingExternal": "Fresh compiled customer-kit dashboard bytes will be rebuilt and checked separately; independent Security/native provider/customer acceptance remains open. Raw old first-party image REDs are preserved."
+    },
+    {
+      "id": "AIDR-080",
+      "priority": "P0",
+      "feature": "Pinned self-hosted upstream container runtime security",
+      "status": "IN_PROGRESS",
+      "component": "Reviewed upstream Supabase deployment images; self-hosted customer kit",
+      "impact": "Full scans of actual pinned functions, realtime, meta and storage images report CRITICAL findings, with additional HIGH findings in auth, imgproxy and the gateway. A successful local stack or dependency audit does not establish these third-party runtimes are patched.",
+      "acceptanceCriteria": "Classify exact vendor/package findings with primary evidence, select supported fixed compatible artifacts when available, verify package-recognition coverage and run affected native acceptance. Preserve original findings and do not silently edit pinned upstream source or accept unreviewed repacks.",
+      "evidence": [
+        "Actual-image full scans are in progress; supported upstream remediation is being assessed without changing the running eight-hour collection or reviewed gitlink."
+      ],
+      "localEvidence": [
+        {
+          "claim": "Current deployed image scans identify further concrete self-hosted runtime blockers; remediation feasibility and vendor status must be established per finding.",
+          "evidencePath": ".tmp-test/operational-acceptance-2026-10-06/runtime-image-security",
+          "command": "node scripts/check-supabase-migrations.mjs",
+          "verifiedBy": "2026-10-06: exact 11-service baseline has 893 HIGH and 36 CRITICAL scanner occurrences, not unique CVEs or reachability. Supported Envoy1.39.2 and imgproxy4.0.17 candidates each have zero HIGH/CRITICAL; native compatibility is separately tested. Other pinned services, actual PostgreSQL17.6 and native recognition gaps remain unresolved. No blanket ignore or vendor approval is inferred."
+        }
+      ],
+      "remainingExternal": "Finish exact vendor/fixed-artifact and recognition review, implement supported compatible replacements when available, and rerun affected acceptance. Findings lacking supported fixes require an explicit unresolved status; no Security disposition is inferred."
+    },
+    {
+      "id": "AIDR-081",
+      "priority": "P0",
+      "feature": "Offline image metadata did not bind an embedded Compose digest",
+      "status": "VERIFIED_CLOSED",
+      "component": "scripts/build-airgap-images.mjs; scripts/airgap-images.test.mjs",
+      "impact": "The receiver accepted the expected pinned image reference while its manifest recorded another repository digest and image ID. Compose planning discarded the embedded digest.",
+      "acceptanceCriteria": "Infer and enforce the embedded sha256 repository digest, reject conflicting plans and persist the actual matching RepoDigest while preserving the distinction between OCI index and image config IDs. Archive integrity and publisher trust remain separate checks.",
+      "evidence": [
+        "The incorrect pinned-reference metadata was reproduced before the fix; focused receiver and actual saved-image checks pass."
+      ],
+      "localEvidence": [
+        {
+          "claim": "A real receiver RED accepted inconsistent pinned-reference metadata. Seven focused airgap tests now pass; actual exact-pinned Envoy Docker-save and offline receiver checks pass two cases.",
+          "evidencePath": "scripts/airgap-images.test.mjs",
+          "command": "node --test scripts/airgap-images.test.mjs",
+          "verifiedBy": "2026-10-06: 7/7 source tests plus 2/2 actual 80,517,632-byte saved-image checks. This metadata binding is not authentication of an unsigned manifest or an approved publisher."
+        }
+      ]
+    },
+    {
+      "id": "AIDR-082",
+      "priority": "P0",
+      "feature": "Shipped backup and recovery Node helper runtime",
+      "status": "VERIFIED_CLOSED",
+      "component": "scripts/deployment-backup.mjs; deployment-restore-drill.mjs; verify-deployment-recovery.mjs; portable Linux operations",
+      "impact": "Backup and restore scripts actually run the old Node24.12/Alpine3.23 helper with 49 HIGH and three CRITICAL findings. A stock supported Node24.21 base still contains eight HIGH findings in unused bundled package tools.",
+      "acceptanceCriteria": "Use one minimal supported Node-only helper with unused package tools physically removed. Build from a fixed public-only context, run the returned immutable image ID, retain disconnected cached-base operation, and verify actual encrypted backup/recovery behavior without changing custody or archive boundaries.",
+      "evidence": [
+        "A shared public-only Dockerfile builds a Node-only helper without network, uses the actual returned immutable ID, and preserves source/kit/prepared-backup module and asset inventories. Both actual Windows and Linux helper images were independently scanned."
+      ],
+      "localEvidence": [
+        {
+          "claim": "A shared public-only Dockerfile builds a Node-only helper without network, uses the actual returned immutable ID, and preserves source/kit/prepared-backup module and asset inventories. Both actual Windows and Linux helper images were independently scanned.",
+          "evidencePath": ".tmp-test/node-helper-2026-10-06/native-restore/native-restore-results.json",
+          "command": "node --test scripts/deployment-backup-lifecycle.test.mjs scripts/deployment-restore-drill.test.mjs",
+          "verifiedBy": "2026-10-06: backup/restore24 and combined prepare/kit/airgap46 tests passed without skips; actual Linux encrypted recovery12/12 plus Docker-free readonly integrity3/3 passed with all12 source inputs unchanged. Exact Linux6064 helper and Windowsa18ec separately recognized18APK/20ELF and rawscan0all. Embedded OpenSSL DTLS vendor patch/applicability is a separate unresolved native boundary, not hidden by scan0."
+        }
+      ],
+      "remainingExternal": "Embedded Node OpenSSL3.5.8 DTLS vendor patch/applicability remains explicitly separate; physical independent off-host recovery and real operator custody acceptance remain external gates."
     }
   ],
   "closedWithoutLocalEvidence": {
@@ -2763,6 +3010,25 @@
         },
         "currentRun": "Current source and packaged behavior are locally tested. Publisher trust, customer/native/provider acceptance, TLS/host operations, restore, security/legal/commercial approvals and capacity remain open. No production or sales GO is inferred."
       }
+    },
+    "remainingFixes": {
+      "recordedAt": "2026-10-06T11:26:35.554Z",
+      "status": "IN_PROGRESS_SOURCE_REMEDIATION",
+      "sourceSnapshotCommit": null,
+      "productionAccepted": false,
+      "sourceScope": "Current dirty working source plus separately hash-bound local fixtures. Existing latestVerification fields remain historical; no fresh final-candidate test result is implied.",
+      "actualEightHourSoak": {
+        "status": "RUNNING_NOT_ACCEPTED",
+        "startedAt": "2026-10-06T10:09:46.245Z",
+        "earliestCompleteAt": "2026-10-06T18:09:46.247Z",
+        "scope": "Two synthetic authenticated tenants; policy/ingest; one local Docker engine; frozen139-migration snapshot excludes the new delegation work."
+      },
+      "learnedModelQualification": "FAIL_UNAPPROVED_SAME_600",
+      "selectedClerkDirectoryAuthority": "OPEN_UNSUPPORTED",
+      "publisherApproval": "OPEN",
+      "physicalOffHostAndSecondMachineAcceptance": "OPEN",
+      "legalSecurityAndCustomerDecisions": "OPEN_UNCHANGED",
+      "containerRuntimeSecurity": "FIRST_PARTY_UNUSED_TOOL_AND_TWO_SUPPORTED_UPSTREAM_FIXES_VERIFIED_OTHER_VENDOR_NATIVE_GAPS_OPEN"
     }
   }
 }

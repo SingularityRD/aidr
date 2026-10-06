@@ -1,4 +1,5 @@
-import { createHash, randomUUID, sign, type KeyLike } from "node:crypto";
+import { createHash, type KeyLike, randomUUID, sign } from "node:crypto";
+import { installedPrivacyRequired, PRIVACY_ROUTE_UNAVAILABLE } from "./privacy.js";
 import { stableJson } from "./types.js";
 
 const SIGNED_CALLER_SCHEMA = "aidr-signed-caller/v1";
@@ -47,7 +48,10 @@ export interface SignedIngressClientOptions {
 }
 
 export class SignedIngressError extends Error {
-	constructor(message: string, readonly status?: number) {
+	constructor(
+		message: string,
+		readonly status?: number,
+	) {
 		super(message);
 		this.name = "SignedIngressError";
 	}
@@ -102,7 +106,9 @@ function validateRequest(request: SignedIngressRequest, options: SignedIngressCl
 		!isRecord(toolScope) ||
 		eventScope.tenant_id !== options.tenantId ||
 		eventScope.team_id !== options.teamId ||
-		!Object.values(eventScope).every((value) => typeof value === "string" && validIdentifier(value)) ||
+		!Object.values(eventScope).every(
+			(value) => typeof value === "string" && validIdentifier(value),
+		) ||
 		stableJson(eventScope) !== stableJson(toolScope) ||
 		request.event.source !== request.connector ||
 		request.tool.source !== request.connector ||
@@ -143,7 +149,10 @@ export class SignedIngressClient {
 			const endpoint = new URL(options.endpoint);
 			if (
 				endpoint.protocol !== "https:" ||
-				endpoint.username || endpoint.password || endpoint.search || endpoint.hash
+				endpoint.username ||
+				endpoint.password ||
+				endpoint.search ||
+				endpoint.hash
 			) {
 				throw new Error("invalid signed ingress endpoint");
 			}
@@ -166,6 +175,7 @@ export class SignedIngressClient {
 	}
 
 	async submit(request: SignedIngressRequest): Promise<SignedIngressResponse> {
+		if (await installedPrivacyRequired()) throw new SignedIngressError(PRIVACY_ROUTE_UNAVAILABLE);
 		validateRequest(request, this.options);
 		const controller = new AbortController();
 		const timer = setTimeout(() => controller.abort(), this.timeoutMs);
@@ -175,10 +185,13 @@ export class SignedIngressClient {
 				this.options.nextSequence(),
 				new Promise<never>((_resolve, reject) => {
 					controller.signal.addEventListener(
-						"abort", () => reject(new SignedIngressError("signed ingress timed out")), { once: true },
+						"abort",
+						() => reject(new SignedIngressError("signed ingress timed out")),
+						{ once: true },
 					);
 				}),
 			]);
+			if (await installedPrivacyRequired()) throw new SignedIngressError(PRIVACY_ROUTE_UNAVAILABLE);
 			const requestId = this.requestId();
 			if (!Number.isSafeInteger(sequence) || sequence <= 0 || !validIdentifier(requestId)) {
 				throw new SignedIngressError("invalid signed ingress sequence or request id");
@@ -198,9 +211,17 @@ export class SignedIngressClient {
 				// Go's time.RFC3339Nano omits all trailing fractional zeros.
 				signed_at: this.now().toISOString().replace(/0+Z$/, "Z").replace(/\.Z$/, "Z"),
 			};
-			const signature = sign(null, Buffer.from(JSON.stringify(unsigned), "utf8"), this.options.privateKey);
-			const envelope: SignedCallerEnvelope = { ...unsigned, signature: signature.toString("base64") };
+			const signature = sign(
+				null,
+				Buffer.from(JSON.stringify(unsigned), "utf8"),
+				this.options.privateKey,
+			);
+			const envelope: SignedCallerEnvelope = {
+				...unsigned,
+				signature: signature.toString("base64"),
+			};
 			const header = Buffer.from(JSON.stringify(envelope), "utf8").toString("base64url");
+			if (await installedPrivacyRequired()) throw new SignedIngressError(PRIVACY_ROUTE_UNAVAILABLE);
 			controller.signal.throwIfAborted();
 			const response = await this.fetchImpl(this.endpoint, {
 				method: "POST",

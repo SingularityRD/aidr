@@ -45,6 +45,23 @@ class InstallTests(unittest.TestCase):
             download_file('https://huggingface.co/fixture', path, spec)
         self.assertEqual(path.read_bytes(), b'tamper')
 
+    def test_invalid_profile_rejected_before_executable_or_download(self):
+        self.lock['models'][0]['aggregation'] = 'first'
+        with patch('install_models.download_file') as download, self.assertRaisesRegex(ArtifactError, 'INVALID_AGGREGATION'):
+            install(self.lock, self.root / 'not-created', self.root / 'no-python')
+        download.assert_not_called()
+        self.assertFalse((self.root / 'not-created').exists())
+
+    def test_large_native_safetensors_stays_bounded_without_allowing_large_config(self):
+        lock = copy.deepcopy(self.lock)
+        lock['models'][0]['files']['model.safetensors']['size'] = 2798989498
+        validate_lock(lock)
+        for name, size in [('model.safetensors', 4 * 1024 ** 3 + 1), ('config.json', 2 * 1024 ** 3 + 1)]:
+            invalid = copy.deepcopy(lock)
+            invalid['models'][0]['files'][name]['size'] = size
+            with self.subTest(name=name), self.assertRaisesRegex(ArtifactError, 'INVALID_INVENTORY'):
+                validate_lock(invalid)
+
     def test_bad_download_never_publishes_a_model_file(self):
         for size, digest in [(8, hashlib.sha256(b'fixture').hexdigest()), (7, '0' * 64), (1, '0' * 64)]:
             with self.subTest(size=size), patch('urllib.request.build_opener') as opener:
@@ -57,6 +74,7 @@ class InstallTests(unittest.TestCase):
 
     def test_install_inspects_actual_labels_and_generates_digest_pinned_provider(self):
         model = self.lock['models'][1]
+        model['aggregation'] = 'first_word'
         self.lock['models'] = [model]
         content = {'config.json': json.dumps({'model_type': 'distilbert', 'id2label': {'0': 'O', '1': 'B-PERSON_NAME', '2': 'B-ADDRESS'}}).encode(),
                    'tokenizer.json': b'{}', 'tokenizer_config.json': b'{}', 'model.safetensors': b'NOT_REAL_WEIGHTS', 'README.md': b'fixture'}
@@ -72,6 +90,7 @@ class InstallTests(unittest.TestCase):
         manifest = json.loads((self.root / 'installed/manifest.json').read_text())
         self.assertIs(manifest['approved'], False)
         self.assertEqual(manifest['qualificationStatus'], 'independent-corpus-required')
+        self.assertEqual(manifest['models'][0]['aggregation'], 'first_word')
         content['config.json'] = json.dumps({'model_type': 'distilbert', 'id2label': {'0': 'O', '1': 'B-PERSON_NAME', '2': 'B-LOC'}}).encode()
         with patch('install_models.download_file', fixture_download), self.assertRaisesRegex(ArtifactError, 'MODEL_LABEL_COVERAGE_MISMATCH'):
             install(self.lock, self.root / 'wrong-labels', Path(sys.executable))

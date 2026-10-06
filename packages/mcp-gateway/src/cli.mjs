@@ -2,6 +2,7 @@
 import { readFile } from "node:fs/promises";
 import { createMcpGateway } from "./gateway.mjs";
 import { requireGatewayIntegrity } from "./integrity.mjs";
+import { requireStandaloneProfile, standalonePayloadGuard } from "./standalone.mjs";
 
 const configPath = process.argv[2];
 const requireRouting = process.argv[3] === "--require-routing";
@@ -10,10 +11,15 @@ if (!configPath || (process.argv.length !== 3 && !(process.argv.length === 4 && 
 	process.exitCode = 2;
 } else {
 	try {
+		await requireStandaloneProfile();
 		await requireGatewayIntegrity();
 		const config = JSON.parse(await readFile(configPath, "utf8"));
 		if (requireRouting) config.routingRequired = true;
+		await requireStandaloneProfile();
 		const gateway = createMcpGateway(config, {
+			assertInstalledPrivacySupported: requireStandaloneProfile,
+			toolGuard: standalonePayloadGuard,
+			outputGuard: standalonePayloadGuard,
 			onEvent: (event) => process.stderr.write(`${JSON.stringify(event)}\n`),
 		});
 		const address = await gateway.listen();

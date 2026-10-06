@@ -8,9 +8,73 @@ snapshot and regenerate/bind materials after the final candidate is selected.
 
 ## Current source and runtime scope
 
-### Latest repaired image — same-day follow-up
+### Latest Alpine runtime — 0 measured findings, acceptance OPEN
 
-The current Dockerfile adds the PCRE2 security floor and removes the unused pip
+The latest bridge image is
+`sha256:dd8993b9abaed977cc6d6a123a39388f188ba86d83552b140935773005b3d195`.
+It uses the digest-pinned official Python 3.12.15 Alpine 3.24 base, the unchanged
+30-package runtime lock and actual selected musllinux wheels. The exact source
+wheel metadata now has SHA-256
+`7f21cc59f321dac9a13865d1639f9cda20f092aea4a4cfb1f89de02a00645e4f`.
+All 30 installed package metadata fields, 60 METADATA/WHEEL files, 36 physical
+wheel licence texts and 12 native ELF payloads match the verified selected
+wheels. Eight native wheel filenames differ from the preserved historical
+manylinux selection; all 36 dist-info licence hashes remain equal.
+
+The [new technical security report](./bridge-high-zero-security-2026-10-06.md)
+records 0 findings at every scanned severity over 47 APK and 30 Python packages,
+98 actual image tests without skips, TLS verification and four readiness-command
+checks. Manual vendor source/version checks cover declared scanner database gaps.
+This local evidence grants no Legal, Security, publisher or customer acceptance.
+
+The [actual APK/native inventory](./evidence/bridge-high-zero-apk-native-inventory-2026-10-06.json)
+replaces dpkg material for this image: 47 actual package/version/origin/licence
+declarations, 46 observed native paths, four raw APK/repository records and 37
+physical Python/CPython notice texts. None of the 47 APK packages contains an
+installed physical licence/copyright text. Metadata declarations and historical
+Debian notice texts do not fulfil the current container's complete notice scope.
+
+The [Alpine source-material index](./evidence/bridge-high-zero-legal-source-inventory-2026-10-06.json)
+now binds 252 exact checksum-verified source/patch/config/helper inputs, including
+BusyBox 1.37.0-r31, binutils 2.45.1-r1 (also its with-gold source), and PostgreSQL
+18.6/libpq. All 46 real APK packages map to 33 exact installed-origin recipes;
+the empty `.python-rundeps` virtual row is explicit. The pack preserves 33
+installed-origin source archives, all 15 declared lifecycle/trigger controls and
+164 upstream licence/header materials (152 full texts and 12 explicitly labelled
+header prefixes). BusyBox declares
+GPL-2.0-only; exact binutils `objdump.c`/`ldmain.c` headers declare GPLv3-or-later,
+which is retained alongside the APK's coarser mixed expression. PostgreSQL's
+COPYRIGHT text is retained. The declared-material fetch gaps are closed;
+whole-origin licence expressions remain raw metadata rather than an automatic
+file/subpackage legal determination. Candidate utmps/skalibs recipes add ten
+verified inputs and two archives. Stable BusyBox APK/control/binary bytes match
+the image, but surviving vendor logs cannot establish the exact executed static
+dependency build. That source-to-byte mapping remains an engineering gap.
+No written offer or human distribution acceptance was issued.
+
+The final pack is
+`.tmp-test/high-zero-2026-10-06/bridge/legal-complete/full-declared-source-materials.tar.gz`,
+317,367,132 bytes, SHA-256
+`7dbadf8f83512ff0c6e653aec3c90e5a1e20cc4e031ebbe9ad6a06eb1a0066c9`;
+its manifest binds 641 files. The initial 82 MB pack is immutable historical proof.
+
+Three selected musllinux wheels additionally bundle distinct `libgcc_s` payloads
+in cryptography, pydantic-core and watchfiles. Exact byte inventories are
+preserved in the [wheel equality proof](./evidence/bridge-high-zero-wheel-equality-2026-10-06.json)
+and prepared wheel licence materials. Their independent source version/terms
+remain OPEN; equality of enclosing wheel licence texts is not GCC runtime
+licence approval. The [publisher trace](./evidence/bridge-high-zero-libgcc-provenance-2026-10-06.json)
+records cryptography's declared libgcc 14.2.0-r6 without source/hash/licence fields;
+the two other wheel provenance endpoints return 404. APK GCC 15.2.0 source is
+bundled for APK libraries and does not resolve those wheel-source mappings.
+This new scope must be included in COM-002 review.
+
+All Debian image bindings and materials below are preserved historical inputs.
+Use the Alpine image and fresh evidence above for current runtime review.
+
+### Earlier Debian repaired image — historical same-day proof
+
+The earlier Debian Dockerfile added the PCRE2 security floor and removed the unused pip
 installer plus ensurepip after the hash-locked runtime installation. The exact
 repaired image is `sha256:1840809665e666eec7c89cc7fb451fa7b65210d37dcf7ee0a41f7eb82390386a`;
 the unchanged runtime lock still contains 30 packages. Actual image tests passed

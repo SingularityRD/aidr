@@ -17,7 +17,8 @@ function bridgeError(id, reason) {
 	};
 }
 
-async function writeLine(output, message) {
+async function writeLine(output, message, assertInstalledPrivacySupported) {
+	await assertInstalledPrivacySupported?.();
 	if (!output.write(`${JSON.stringify(message)}\n`)) await once(output, "drain");
 }
 
@@ -83,6 +84,7 @@ async function postToGateway(context, rpc) {
 	if (metadataVersion !== undefined && !MCP_PROTOCOL_VERSIONS.includes(metadataVersion))
 		throw new Error("invalid stdio protocol version");
 	const protocolVersion = metadataVersion ?? context.protocolVersion;
+	await context.assertInstalledPrivacySupported?.();
 	return context.fetchImpl(context.route, {
 		method: "POST",
 		headers: {
@@ -115,7 +117,7 @@ async function readGatewayReply(response, rpc, maxBytes, context) {
 							throw new Error("invalid gateway request id");
 						context.pendingServerIds.add(message.id);
 					}
-					await writeLine(context.output, message);
+					await writeLine(context.output, message, context.assertInstalledPrivacySupported);
 				} else {
 					reply = message;
 					break;
@@ -145,10 +147,13 @@ async function readGatewayReply(response, rpc, maxBytes, context) {
 
 async function handleFrame(line, context) {
 	if (line.length === 0) return;
+	await context.assertInstalledPrivacySupported?.();
 	const parsed = parseFrame(line);
-	if (parsed.error) return writeLine(context.output, parsed.error);
+	if (parsed.error)
+		return writeLine(context.output, parsed.error, context.assertInstalledPrivacySupported);
 	const rpc = parsed.rpc;
-	if (!object(rpc)) return writeLine(context.output, bridgeError(null, "invalid_rpc_request"));
+	if (!object(rpc))
+		return writeLine(context.output, bridgeError(null, "invalid_rpc_request"), context.assertInstalledPrivacySupported);
 	const notification = !Object.hasOwn(rpc, "id");
 	const serverResponse = !Object.hasOwn(rpc, "method");
 	if (serverResponse && !context.pendingServerIds.delete(rpc.id))
@@ -170,7 +175,7 @@ async function handleFrame(line, context) {
 		context.sessionId = response.headers.get("mcp-session-id") ?? undefined;
 		context.protocolVersion = reply.result.protocolVersion;
 	}
-	await writeLine(context.output, reply);
+	await writeLine(context.output, reply, context.assertInstalledPrivacySupported);
 }
 
 async function consumeChunk(chunk, pending, maxBytes, onFrame) {
@@ -207,6 +212,7 @@ export async function runStdioBridge({
 	output,
 	environment = process.env,
 	fetchImpl = fetch,
+	assertInstalledPrivacySupported,
 }) {
 	const token = validateStdioBinding(
 		gateway.config,
@@ -221,6 +227,7 @@ export async function runStdioBridge({
 		output,
 		fetchImpl,
 		maxBytes: gateway.config.maxBodyBytes,
+		assertInstalledPrivacySupported,
 		sessionId: undefined,
 		pendingServerIds: new Set(),
 		signal: controller.signal,
@@ -228,6 +235,7 @@ export async function runStdioBridge({
 	const tasks = new Set();
 	let failure;
 	try {
+		await assertInstalledPrivacySupported?.();
 		await consumeFrames(input, context.maxBytes, async (line) => {
 			const frame = parseFrame(line).rpc;
 			if (frame?.method === "initialize" && tasks.size)

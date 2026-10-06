@@ -1,0 +1,2001 @@
+{
+  "schemaVersion": 1,
+  "recordedLocalDate": "2026-10-06",
+  "status": "actual-offline-candidates-fail-qualification",
+  "productionGO": false,
+  "approved": false,
+  "qualified": false,
+  "customerCorpusEvaluated": false,
+  "rawCorpusTextIncluded": false,
+  "corpusSha256": "1c94a485923445a0c5a7b49919e5cb39fc619fbb2753e5c5768deecca85080a1",
+  "policy": {
+    "requiredTypes": [
+      "PERSON",
+      "ADDRESS"
+    ],
+    "minGold": 100,
+    "minRecallLower": 0.95,
+    "minPrecisionLower": 0.9,
+    "maxCleanFalseAlarmRate": 0.05
+  },
+  "scope": "Actual raw learned NER on all600 unchanged public comparison records. This is not a new full-defense runtime corpus benchmark or corporate acceptance.",
+  "measuredPlatform": {
+    "os": "Windows x64",
+    "python": "3.12.10",
+    "node": "24.18.1",
+    "torch": "2.14.1+cpu",
+    "transformers": "5.13.0",
+    "tokenizers": "0.22.2",
+    "safetensors": "0.8.0",
+    "threads": 2
+  },
+  "sourceSha256": {
+    "ner_worker.py": "b243853f039e26f98722cd36bbca7437d4756152fd4070be2c955a76eb79c6df",
+    "artifacts.py": "531eb803f1eea0ff02a12bca37444f7c70ba1729e779a68186341ec84b31cdc1",
+    "bioes.py": "76fde232d4455c71dd9e8bb978a477336553d10821cddf181722ce9e7a2605d8",
+    "build_manifest.py": "438cd93fe0fa38fb961dad63bad255fd63aba887df27a8d43fd959b3c4df8170",
+    "install_models.py": "882a2cd73eee5cc676189302cc209cb76b9cacca937fd6dfe99b146cbe46417b",
+    "test_ner_worker.py": "9187c001fe1acc4892afdf582c5399cfed789a1daa18a28675a7e7c0faa0a32e",
+    "test_artifacts.py": "9815d8293cda39087caed63e98c91bbcc73edd26a04df9f194f9cda9c8b59407",
+    "test_bioes.py": "3f9a54d912f9bcf7e322161a3558ac49d8ad2212533c2431e396f2d15071ed8b",
+    "test_install_models.py": "4b15111b0fd76fde4dfac2c641264d836d73c99351d4d587cd7475f1dda4a528",
+    "public-models.cosmos.lock.json": "8bf10a6e5fc8ee094eb0cd0b191e31ec76ec545f859d5a44acc32fe6c0caa52a",
+    "public-models.openai-privacy-filter.lock.json": "43ceccd4424294978805b74ee1c074423cd50b8c414949230166da0c2f97a8a9",
+    "requirements.windows-py312.lock.txt": "a77bacb1be72d35a4e84c8495345a441d969c748ed6e4013ed4da17f54ecf89e",
+    "requirements.linux-py311.lock.txt": "3fbe0ee8e958cd354640fb7dc6a29c70ad2cb425e1cc80ef8559209922ee9dcc"
+  },
+  "candidateResearch": {
+    "sourceSha256": "e63b9622f95b3301074e1d3efd28b404384d418290410a708deb6630b2008901",
+    "report": {
+      "schema_version": 1,
+      "date": "2026-10-06",
+      "status": "research-and-download-locks-only-unqualified",
+      "scope": "Primary author metadata, license declarations, architecture and label semantics; no release approval or accuracy qualification.",
+      "runtime": {
+        "transformers": "5.13.0",
+        "torch": "2.14.1+cpu",
+        "pipeline": "AutoTokenizer and AutoModelForTokenClassification, local immutable artifacts, trust_remote_code disabled",
+        "tracked_source_edited": false,
+        "weights_downloaded_by_research_lane": false
+      },
+      "candidates": [
+        {
+          "repository": "ytu-ce-cosmos/modernbert-tr-pii-ner",
+          "revision": "69b2563bf18126fc3285ac2c66371b483bb6d7ec",
+          "priority": "first-actual-evaluation-candidate",
+          "license_declaration": "Apache-2.0",
+          "architecture": "ModernBertForTokenClassification",
+          "weight_size": 597484596,
+          "weight_sha256": "0eabfa749daeab78da40c5f18cd3f5f985436846753059e927dbd11a45de68fc",
+          "candidate_lock": "cosmos-candidate.lock.json",
+          "initial_candidate_lock_sha256": "b7a56bc5e3ea4898fffd77b790a75a10e255251044295a71d463770556839f5c",
+          "lock_freeze_note": "Initial lock ignored MESLEK_UNVAN and TUZEL_KISI in addition to O; evaluation owner was notified and controls conservative INTERNAL remapping and subsequent lock hash. Research lane did not mutate active lock.",
+          "labels": {
+            "KISI_AD_SOYAD": "PERSON",
+            "ADRES": "ADDRESS"
+          },
+          "language": "Turkish",
+          "evidence": [
+            "Author reports 8,014-document mixture of Turkish web PDFs, anonymized high-court decisions, born-labeled synthetic documents and OCR-degraded synthetic documents; 7,763 retained for training.",
+            "Author's 300-document test is not released; annotations are model-panel and rules based; only 17 of 25 entity labels covered.",
+            "Released checkpoint overlap micro-F2=0.8101 is not strict full-span F1; run.json strict test_f1=0.681491 is a different metric.",
+            "Author prescribes first WordPiece per whitespace word / aggregation_strategy first; pinned trainer masks continuation/special labels to -100, uses is_split_into_words=True, and evaluation removes masked labels. Existing worker raw-tokenizer argmax over all token logits is not guaranteed author-equivalent; paired unchanged-corpus comparison is required before asserting a defect or benefit."
+          ],
+          "sources": [
+            "https://huggingface.co/ytu-ce-cosmos/modernbert-tr-pii-ner/tree/69b2563bf18126fc3285ac2c66371b483bb6d7ec",
+            "https://cosmos-ytu.github.io/modernbert-tr/",
+            "https://github.com/mrbesher/bertfinetuner/blob/34c279bd1319ed31643ba805fedb7e73b57e5591/src/bertfinetuner/data.py",
+            "https://github.com/mrbesher/bertfinetuner/blob/34c279bd1319ed31643ba805fedb7e73b57e5591/src/bertfinetuner/tasks/pii.py",
+            "https://github.com/mrbesher/bertfinetuner/blob/34c279bd1319ed31643ba805fedb7e73b57e5591/src/bertfinetuner/metrics.py",
+            "https://github.com/mrbesher/bertfinetuner/blob/34c279bd1319ed31643ba805fedb7e73b57e5591/src/bertfinetuner/trainer.py"
+          ],
+          "trainer_source_receipts": [
+            {
+              "path": "src/bertfinetuner/data.py",
+              "size": 6347,
+              "sha256": "1577f5a2f093a0dd508c17bd14a306cb14941c2df59fa82946be75f12fd371fe"
+            },
+            {
+              "path": "src/bertfinetuner/tasks/pii.py",
+              "size": 3124,
+              "sha256": "96b1ddc51971a22ab09676d206f27b858dafadb585f71cb7d4177799b03764bd"
+            },
+            {
+              "path": "src/bertfinetuner/metrics.py",
+              "size": 5436,
+              "sha256": "379d4d9f61f605fe396c86c041bdf5046f432951ced84cd4b16607ffba70d27f"
+            }
+          ]
+        },
+        {
+          "repository": "girenit/girenit-KVKK-PII-150M",
+          "revision": "8e4b92195f52987d72bb3aaa6771e5a47140fe8e",
+          "license_declaration": "Apache-2.0",
+          "architecture": "ModernBertForTokenClassification",
+          "weight_size": 597459988,
+          "weight_sha256": "5d4942740d951363595224ab33eb4ceed7d7bf2a90caacccfb7088e2545f2b18",
+          "candidate_lock": "girenit-candidate.lock.json",
+          "candidate_lock_sha256": "bbcca36fc645e1ba9e3a1540d629379491d46e9ac86649343c1d87b5c302369e",
+          "identical_weight_repository": "Werea-co/Werea-KVKK-PII-150M",
+          "identical_weight_revision": "34948a8d57bf25984dbaf69498fce67fbee416bf",
+          "labels": {
+            "PERSON": "PERSON",
+            "ADDRESS": "ADDRESS"
+          },
+          "language": "Turkish",
+          "evidence": [
+            "Count once: both repositories expose byte-identical weight SHA, architecture and 43 BIO labels.",
+            "2,400 deterministic synthetic rows; no demonstrated real-world accuracy.",
+            "Inference from author's generator and trainer: ADDRESS is assigned only index%18==1, while validation requires index%10==8; ADDRESS indices are odd so none can enter validation.",
+            "Generator has five repeated street-number/district forms and lacks full neighborhood/city/apartment/floor/postcode coverage. This is generator analysis, not an audit of every raw row."
+          ],
+          "sources": [
+            "https://huggingface.co/girenit/girenit-KVKK-PII-150M/tree/8e4b92195f52987d72bb3aaa6771e5a47140fe8e",
+            "https://huggingface.co/datasets/Werea-co/Werea-KVKK-Bench/blob/e523d0e2865dd974b152590702b325518669eead/scripts/build_synthetic.py"
+          ]
+        },
+        {
+          "repository": "openai/privacy-filter",
+          "revision": "7ffa9a043d54d1be65afb281eddf0ffbe629385b",
+          "priority": "native-multilingual-fallback-experiment",
+          "license_declaration": "Apache-2.0",
+          "model_type": "openai_privacy_filter",
+          "architecture": "OpenAIPrivacyFilterForTokenClassification",
+          "weight_size": 2798989498,
+          "weight_sha256": "06f66b87650b988b04e218285f9fe3df6a4943416b6ffa8171f07bc56cf12a9d",
+          "tokenizer_size": 27868174,
+          "tokenizer_sha256": "0614fe83cadab421296e664e1f48f4261fa8fef6e03e63bb75c20f38e37d07d3",
+          "candidate_lock": "openai-privacy-filter-candidate.lock.json",
+          "candidate_lock_sha256": "43ceccd4424294978805b74ee1c074423cd50b8c414949230166da0c2f97a8a9",
+          "candidate_lock_size": 1873,
+          "label_map": {
+            "O": null,
+            "account_number": "INTERNAL",
+            "private_address": "ADDRESS",
+            "private_date": "INTERNAL",
+            "private_email": "EMAIL",
+            "private_person": "PERSON",
+            "private_phone": "PHONE",
+            "private_url": "INTERNAL",
+            "secret": "SECRET"
+          },
+          "evidence": [
+            "Local installed Transformers 5.13.0 resolves native AutoConfig and token-classification mapping; no remote code or new dependency required for root HF-format artifacts.",
+            "Reduced random native model completed offline CPU forward with finite shape [1,4,33], eager experts/attention. This does not verify actual pretrained load, RAM, speed or quality.",
+            "Root fast tokenizer is TokenizersBackend, not tiktoken; maximum model length 128000 is not an advised CPU evaluation window.",
+            "Author recommends constrained BIOES Viterbi decoding. Current independent token argmax aggregation does not reproduce that decoder.",
+            "Author's Turkish synthetic robustness slice: 956 examples, P=0.852, R=0.883, F1=0.867. Clue-before-PII Turkish slice: 1192 examples, P=0.824, R=0.715. Primarily English base; synthetic metrics are not current qualification.",
+            "Current Transformers loader defaults dtype=auto and native config is BF16. Disk size must not be equated with actual CPU RAM; full checkpoint RAM/speed remain unmeasured.",
+            "Current installer has both architecture whitelist and 2GiB per-file cap blockers for this 2798989498-byte native checkpoint.",
+            "Pinned decoder permits O/B/S at start, O/E/S at end; O/E/S -> O or B/S, B/I -> same-category I/E; impossible transitions -1e9 and all six shipped transition biases zero. Logprob-emission max-plus dynamic programming with backtracking; no learned CRF weights required."
+          ],
+          "sources": [
+            "https://huggingface.co/openai/privacy-filter/tree/7ffa9a043d54d1be65afb281eddf0ffbe629385b",
+            "https://github.com/openai/privacy-filter/blob/f7f00ca7fb869683eb732c010299d901457f19c3/opf/_core/decoding.py",
+            "https://github.com/openai/privacy-filter/blob/f7f00ca7fb869683eb732c010299d901457f19c3/opf/_core/sequence_labeling.py",
+            "https://cdn.openai.com/pdf/c66281ed-b638-456a-8ce1-97e9f5264a90/OpenAI-Privacy-Filter-Model-Card.pdf"
+          ],
+          "decoder_source_sha256": "785cc314e62b783bf673fdbed09475125f1975d8f0f5cd8a4ee340257e47c926",
+          "sequence_labeling_source_sha256": "03075733c692c43c4a0a9c08fd03df89d64a4f27e4a93186af22b631ec671c0c"
+        },
+        {
+          "repository": "llm-semantic-router/mmbert-pii-detector-merged",
+          "revision": "4e9c41ddae1eab9006a2c9395a4336a264f2eed4",
+          "license_declaration": "Apache-2.0",
+          "architecture": "ModernBertForTokenClassification",
+          "weight_size": 1230242940,
+          "weight_sha256": "8a3ee29bb8cbf70f093752c9b55f41a898664e4a08c8fdadeea7b14735783fd9",
+          "max_position_embeddings": 8192,
+          "evidence": [
+            "Actual config has 35 BIO labels including PERSON, STREET_ADDRESS, GPE and ZIP_CODE. No full ADDRESS label despite README prose.",
+            "Card claims multilingual 1800+ languages but supplies no Turkish PII training corpus or language-specific evaluation artifact.",
+            "Exact current runtime instantiated config on meta device; all 138 local state_dict names/shapes match immutable remote safetensors header read via HTTP206 64KiB range; zero mismatches. This is load-structure proof, not inference."
+          ],
+          "sources": [
+            "https://huggingface.co/llm-semantic-router/mmbert-pii-detector-merged/tree/4e9c41ddae1eab9006a2c9395a4336a264f2eed4"
+          ]
+        },
+        {
+          "repository": "rm0013/roberta-pii-ner-en",
+          "revision": "649bb5dabada602cc8611ab9a45cd216db3fcafb",
+          "status": "research-retained-no-lock-or-download-license-provenance-unresolved",
+          "license_declaration": "MIT",
+          "architecture": "RobertaForTokenClassification",
+          "weight_size": 496474772,
+          "weight_sha256": "e10ebf286e098567e618ecca096138f996918b8e4e06c12fb62e21c259302003",
+          "labels": {
+            "PERSON_NAME": "PERSON",
+            "ADDRESS": "ADDRESS",
+            "SECONDARYADDRESS": "ADDRESS"
+          },
+          "language": "English",
+          "evidence": [
+            "Author maps street, building number, city, state, postcode, country, county, apartment and suite into ADDRESS. Whole address coverage is intended but isolated cities/countries may cause false alarms.",
+            "Model card and author GitHub license declare MIT, but training source ai4privacy/pii-masking-200k has conditional organizational/corporate licensing and derivative restrictions at reviewed revision. Effect on trained weights needs provenance review; no Legal approval claimed.",
+            "Synthetic AI4Privacy plus Faker training and self-reported metrics do not establish current clean-negative or exact-span gates."
+          ],
+          "sources": [
+            "https://huggingface.co/rm0013/roberta-pii-ner-en/tree/649bb5dabada602cc8611ab9a45cd216db3fcafb",
+            "https://github.com/rakmohan/pii-ner-en/blob/7754492a43f00f53474cdca524764ae10e2f888f/config/entity_mappings.yaml",
+            "https://huggingface.co/datasets/ai4privacy/pii-masking-200k/blob/7c22e6816b8fc24b7781e9f4e22016c698842dd0/LICENSE",
+            "https://huggingface.co/datasets/ai4privacy/pii-masking-200k/blob/7c22e6816b8fc24b7781e9f4e22016c698842dd0/license.md"
+          ]
+        }
+      ],
+      "exclusions": [
+        {
+          "repository": "BTX24/turkish-privacy-filter-pii",
+          "revision": "707b491bb3770614058279fce1e793b287c0c368",
+          "reason": "Original privacy_filter model type, no tokenizer; not direct native Auto* load. Requires intentional conversion. Fine-tune is synthetic; no independent gold qualification."
+        },
+        {
+          "repository": "vectorsense/piiscan",
+          "revision": "87e6ff6245ea325880af9f38e6dad8493f2ec123",
+          "reason": "30-language list excludes Turkish; full ADDRESS is explicitly blocked for insufficient data. STREET_ADDRESS + CITY/POSTAL_CODE are separate. Standard safetensors checkpoint exists but not a full-address TR solution."
+        },
+        {
+          "repository": "iiiorg/piiranha-v1-detect-personal-information",
+          "revision": "255acde67a2f34cf452eb42e365b24d2957352fc",
+          "reason": "Current card license CC-BY-NC-ND-4.0, six supported languages exclude Turkish; component address labels."
+        },
+        {
+          "repository": "tanaos/tanaos-text-anonymizer-v1",
+          "revision": "4d31fe74fde87b694240bca983e1c3b6db60af6b",
+          "reason": "MIT standard English RoBERTa experiment, but actual synthetic sample marks London LOCATION outside street ADDRESS; no demonstrated full postal span semantics or quantitative qualification."
+        },
+        {
+          "repository": "nextgeo/address-extraction",
+          "revision": "d1aed230a45f60045a253fa4558c94af7b8f57bb",
+          "reason": "MIT Turkish address-component parser; no PERSON and no unified full ADDRESS span; current per-model installer requires both PERSON and ADDRESS."
+        },
+        {
+          "repository": "tugrulkaya/turkish-pii-detector",
+          "reason": "Public repository contains card/config/inference documentation but no model weights or tokenizer artifacts."
+        },
+        {
+          "repository": "OpenMed/OpenMed-PII-Turkish-BiomedBERTFull-Base-110M-v1",
+          "revision": "fc6711b6df04d926df34a2f6f4832af66549989f",
+          "reason": "Current immutable card repaired to Turkish and expressly reports no verified Turkish evaluation artifact. Actual labels are name/address components; old cached Arabic card must not be used as current evidence."
+        },
+        {
+          "repository": "OpenMed/OpenMed-PII-Turkish-BiomedBERT-Base-110M-v1",
+          "revision": "9ebc2fa84eb55becb4cdcade77672e16c812d3a8",
+          "reason": "Same component-label/no verified Turkish evaluation limitation as BiomedBERTFull; standard 435823712-byte weights do not establish full ADDRESS quality."
+        }
+      ]
+    },
+    "scope": "Primary immutable author/config/licence/training metadata; not legal clearance or quality approval."
+  },
+  "cosmos": {
+    "lock": "ner/public-models.cosmos.lock.json",
+    "approved": false,
+    "declaredLanguages": [
+      "tr"
+    ],
+    "originalProfileComparison": {
+      "schemaVersion": 1,
+      "status": "actual-aggregation-diagnosis-no-approval",
+      "corpusSha256": "1c94a485923445a0c5a7b49919e5cb39fc619fbb2753e5c5768deecca85080a1",
+      "manifestSha256": "21fdb67999c8325e19e15a79ee8fbc751fbecf1d61bca01fe4ea33838f64d4b4",
+      "counts": {
+        "rawVsSplitInputIdsDiffer": 0,
+        "rawVsSplitAbsoluteOffsetsDiffer": 0,
+        "wordAtOverflowBoundarySkipped": 6
+      },
+      "elapsedSeconds": 80.47,
+      "policy": {
+        "requiredTypes": [
+          "PERSON",
+          "ADDRESS"
+        ],
+        "minGold": 100,
+        "minRecallLower": 0.95,
+        "minPrecisionLower": 0.9,
+        "maxCleanFalseAlarmRate": 0.05
+      },
+      "currentRawReproduction": true,
+      "profiles": {
+        "token-argmax": {
+          "report": {
+            "abstained": 0,
+            "blocked": 0,
+            "buckets": {
+              "en:ADDRESS": {
+                "coverageRecall": 0.2616822429906542,
+                "covered": 28,
+                "fn": 88,
+                "fp": 196,
+                "gold": 107,
+                "precision": 0.08837209302325581,
+                "precisionInterval": {
+                  "lower": 0.05730442391262211,
+                  "upper": 0.13389087813924624
+                },
+                "recall": 0.17757009345794392,
+                "recallInterval": {
+                  "lower": 0.11672950730153281,
+                  "upper": 0.2607597396451369
+                },
+                "tp": 19
+              },
+              "en:CREDIT_CARD": {
+                "coverageRecall": null,
+                "covered": 0,
+                "fn": 0,
+                "fp": 20,
+                "gold": 0,
+                "precision": 0,
+                "precisionInterval": {
+                  "lower": 0,
+                  "upper": 0.16112515805281938
+                },
+                "recall": null,
+                "recallInterval": null,
+                "tp": 0
+              },
+              "en:DATE_OF_BIRTH": {
+                "coverageRecall": null,
+                "covered": 0,
+                "fn": 0,
+                "fp": 1,
+                "gold": 0,
+                "precision": 0,
+                "precisionInterval": {
+                  "lower": 0,
+                  "upper": 0.7934506856227626
+                },
+                "recall": null,
+                "recallInterval": null,
+                "tp": 0
+              },
+              "en:EMAIL": {
+                "coverageRecall": null,
+                "covered": 0,
+                "fn": 0,
+                "fp": 20,
+                "gold": 0,
+                "precision": 0,
+                "precisionInterval": {
+                  "lower": 0,
+                  "upper": 0.16112515805281938
+                },
+                "recall": null,
+                "recallInterval": null,
+                "tp": 0
+              },
+              "en:IBAN": {
+                "coverageRecall": null,
+                "covered": 0,
+                "fn": 0,
+                "fp": 6,
+                "gold": 0,
+                "precision": 0,
+                "precisionInterval": {
+                  "lower": 2.7755575615628914e-17,
+                  "upper": 0.3903342879021653
+                },
+                "recall": null,
+                "recallInterval": null,
+                "tp": 0
+              },
+              "en:INTERNAL": {
+                "coverageRecall": null,
+                "covered": 0,
+                "fn": 0,
+                "fp": 84,
+                "gold": 0,
+                "precision": 0,
+                "precisionInterval": {
+                  "lower": 0,
+                  "upper": 0.04373172841465989
+                },
+                "recall": null,
+                "recallInterval": null,
+                "tp": 0
+              },
+              "en:IP_ADDRESS": {
+                "coverageRecall": null,
+                "covered": 0,
+                "fn": 0,
+                "fp": 8,
+                "gold": 0,
+                "precision": 0,
+                "precisionInterval": {
+                  "lower": 0,
+                  "upper": 0.32440756488388023
+                },
+                "recall": null,
+                "recallInterval": null,
+                "tp": 0
+              },
+              "en:LICENSE_PLATE": {
+                "coverageRecall": null,
+                "covered": 0,
+                "fn": 0,
+                "fp": 30,
+                "gold": 0,
+                "precision": 0,
+                "precisionInterval": {
+                  "lower": 0,
+                  "upper": 0.11351339317396876
+                },
+                "recall": null,
+                "recallInterval": null,
+                "tp": 0
+              },
+              "en:NATIONAL_ID": {
+                "coverageRecall": null,
+                "covered": 0,
+                "fn": 0,
+                "fp": 12,
+                "gold": 0,
+                "precision": 0,
+                "precisionInterval": {
+                  "lower": 2.7755575615628914e-17,
+                  "upper": 0.24249400665524085
+                },
+                "recall": null,
+                "recallInterval": null,
+                "tp": 0
+              },
+              "en:PERSON": {
+                "coverageRecall": 0.3333333333333333,
+                "covered": 36,
+                "fn": 73,
+                "fp": 67,
+                "gold": 108,
+                "precision": 0.3431372549019608,
+                "precisionInterval": {
+                  "lower": 0.2582050661604638,
+                  "upper": 0.43945594157175993
+                },
+                "recall": 0.32407407407407407,
+                "recallInterval": {
+                  "lower": 0.2431666541281401,
+                  "upper": 0.4170666761530558
+                },
+                "tp": 35
+              },
+              "en:PHONE": {
+                "coverageRecall": null,
+                "covered": 0,
+                "fn": 0,
+                "fp": 8,
+                "gold": 0,
+                "precision": 0,
+                "precisionInterval": {
+                  "lower": 0,
+                  "upper": 0.32440756488388023
+                },
+                "recall": null,
+                "recallInterval": null,
+                "tp": 0
+              },
+              "en:TAX_ID": {
+                "coverageRecall": null,
+                "covered": 0,
+                "fn": 0,
+                "fp": 18,
+                "gold": 0,
+                "precision": 0,
+                "precisionInterval": {
+                  "lower": 0,
+                  "upper": 0.17587922364665765
+                },
+                "recall": null,
+                "recallInterval": null,
+                "tp": 0
+              },
+              "en:TC_KIMLIK": {
+                "coverageRecall": null,
+                "covered": 0,
+                "fn": 0,
+                "fp": 2,
+                "gold": 0,
+                "precision": 0,
+                "precisionInterval": {
+                  "lower": 0,
+                  "upper": 0.6576197724933469
+                },
+                "recall": null,
+                "recallInterval": null,
+                "tp": 0
+              },
+              "tr:ADDRESS": {
+                "coverageRecall": 0.3,
+                "covered": 30,
+                "fn": 71,
+                "fp": 136,
+                "gold": 100,
+                "precision": 0.17575757575757575,
+                "precisionInterval": {
+                  "lower": 0.12525193987760452,
+                  "upper": 0.2410174542193061
+                },
+                "recall": 0.29,
+                "recallInterval": {
+                  "lower": 0.2101483574912227,
+                  "upper": 0.3853889117557111
+                },
+                "tp": 29
+              },
+              "tr:DATE_OF_BIRTH": {
+                "coverageRecall": null,
+                "covered": 0,
+                "fn": 0,
+                "fp": 5,
+                "gold": 0,
+                "precision": 0,
+                "precisionInterval": {
+                  "lower": 0,
+                  "upper": 0.43448246478317476
+                },
+                "recall": null,
+                "recallInterval": null,
+                "tp": 0
+              },
+              "tr:INTERNAL": {
+                "coverageRecall": null,
+                "covered": 0,
+                "fn": 0,
+                "fp": 1,
+                "gold": 0,
+                "precision": 0,
+                "precisionInterval": {
+                  "lower": 0,
+                  "upper": 0.7934506856227626
+                },
+                "recall": null,
+                "recallInterval": null,
+                "tp": 0
+              },
+              "tr:LICENSE_PLATE": {
+                "coverageRecall": null,
+                "covered": 0,
+                "fn": 0,
+                "fp": 3,
+                "gold": 0,
+                "precision": 0,
+                "precisionInterval": {
+                  "lower": 5.551115123125783e-17,
+                  "upper": 0.5614970317550454
+                },
+                "recall": null,
+                "recallInterval": null,
+                "tp": 0
+              },
+              "tr:NATIONAL_ID": {
+                "coverageRecall": null,
+                "covered": 0,
+                "fn": 0,
+                "fp": 21,
+                "gold": 0,
+                "precision": 0,
+                "precisionInterval": {
+                  "lower": 0,
+                  "upper": 0.154639018924847
+                },
+                "recall": null,
+                "recallInterval": null,
+                "tp": 0
+              },
+              "tr:PERSON": {
+                "coverageRecall": 0.39,
+                "covered": 39,
+                "fn": 61,
+                "fp": 36,
+                "gold": 100,
+                "precision": 0.52,
+                "precisionInterval": {
+                  "lower": 0.4087421577281785,
+                  "upper": 0.6293088885725093
+                },
+                "recall": 0.39,
+                "recallInterval": {
+                  "lower": 0.3001687400639441,
+                  "upper": 0.4879698295415926
+                },
+                "tp": 39
+              }
+            },
+            "cleanByLanguage": {
+              "en": {
+                "falseAlarm": 24,
+                "samples": 100
+              },
+              "tr": {
+                "falseAlarm": 28,
+                "samples": 100
+              }
+            },
+            "cleanFalseAlarm": 52,
+            "cleanSamples": 200,
+            "corpusDigest": "f64449c5c8a18d7c599f327aa89e430e5b8ad2a3111f27cd6b2bd2b10641d6ce",
+            "independent": 0,
+            "samples": 600,
+            "synthetic": 600
+          },
+          "acceptance": {
+            "qualified": false,
+            "reasons": [
+              "INDEPENDENT_CORPORATE_CORPUS_REQUIRED",
+              "CLEAN_FALSE_ALARM_RATE",
+              "CLEAN_FALSE_ALARM_RATE_tr",
+              "RECALL_tr_PERSON",
+              "PRECISION_tr_PERSON",
+              "RECALL_tr_ADDRESS",
+              "PRECISION_tr_ADDRESS",
+              "CLEAN_FALSE_ALARM_RATE_en",
+              "RECALL_en_PERSON",
+              "PRECISION_en_PERSON",
+              "RECALL_en_ADDRESS",
+              "PRECISION_en_ADDRESS"
+            ]
+          }
+        },
+        "hf-first": {
+          "report": {
+            "abstained": 0,
+            "blocked": 0,
+            "buckets": {
+              "en:ADDRESS": {
+                "coverageRecall": 0.5233644859813084,
+                "covered": 56,
+                "fn": 61,
+                "fp": 100,
+                "gold": 107,
+                "precision": 0.3150684931506849,
+                "precisionInterval": {
+                  "lower": 0.24527826405551967,
+                  "upper": 0.39434083452374336
+                },
+                "recall": 0.42990654205607476,
+                "recallInterval": {
+                  "lower": 0.3401406874570182,
+                  "upper": 0.524530887966171
+                },
+                "tp": 46
+              },
+              "en:CREDIT_CARD": {
+                "coverageRecall": null,
+                "covered": 0,
+                "fn": 0,
+                "fp": 1,
+                "gold": 0,
+                "precision": 0,
+                "precisionInterval": {
+                  "lower": 0,
+                  "upper": 0.7934506856227626
+                },
+                "recall": null,
+                "recallInterval": null,
+                "tp": 0
+              },
+              "en:EMAIL": {
+                "coverageRecall": null,
+                "covered": 0,
+                "fn": 0,
+                "fp": 8,
+                "gold": 0,
+                "precision": 0,
+                "precisionInterval": {
+                  "lower": 0,
+                  "upper": 0.32440756488388023
+                },
+                "recall": null,
+                "recallInterval": null,
+                "tp": 0
+              },
+              "en:IBAN": {
+                "coverageRecall": null,
+                "covered": 0,
+                "fn": 0,
+                "fp": 2,
+                "gold": 0,
+                "precision": 0,
+                "precisionInterval": {
+                  "lower": 0,
+                  "upper": 0.6576197724933469
+                },
+                "recall": null,
+                "recallInterval": null,
+                "tp": 0
+              },
+              "en:INTERNAL": {
+                "coverageRecall": null,
+                "covered": 0,
+                "fn": 0,
+                "fp": 53,
+                "gold": 0,
+                "precision": 0,
+                "precisionInterval": {
+                  "lower": 0,
+                  "upper": 0.06758198857654187
+                },
+                "recall": null,
+                "recallInterval": null,
+                "tp": 0
+              },
+              "en:IP_ADDRESS": {
+                "coverageRecall": null,
+                "covered": 0,
+                "fn": 0,
+                "fp": 7,
+                "gold": 0,
+                "precision": 0,
+                "precisionInterval": {
+                  "lower": 5.551115123125783e-17,
+                  "upper": 0.35433043506668743
+                },
+                "recall": null,
+                "recallInterval": null,
+                "tp": 0
+              },
+              "en:LICENSE_PLATE": {
+                "coverageRecall": null,
+                "covered": 0,
+                "fn": 0,
+                "fp": 1,
+                "gold": 0,
+                "precision": 0,
+                "precisionInterval": {
+                  "lower": 0,
+                  "upper": 0.7934506856227626
+                },
+                "recall": null,
+                "recallInterval": null,
+                "tp": 0
+              },
+              "en:NATIONAL_ID": {
+                "coverageRecall": null,
+                "covered": 0,
+                "fn": 0,
+                "fp": 3,
+                "gold": 0,
+                "precision": 0,
+                "precisionInterval": {
+                  "lower": 5.551115123125783e-17,
+                  "upper": 0.5614970317550454
+                },
+                "recall": null,
+                "recallInterval": null,
+                "tp": 0
+              },
+              "en:PERSON": {
+                "coverageRecall": 0.5833333333333334,
+                "covered": 63,
+                "fn": 45,
+                "fp": 24,
+                "gold": 108,
+                "precision": 0.7241379310344828,
+                "precisionInterval": {
+                  "lower": 0.6222622842419965,
+                  "upper": 0.8070571091968461
+                },
+                "recall": 0.5833333333333334,
+                "recallInterval": {
+                  "lower": 0.4890571088397164,
+                  "upper": 0.6718849978691908
+                },
+                "tp": 63
+              },
+              "en:PHONE": {
+                "coverageRecall": null,
+                "covered": 0,
+                "fn": 0,
+                "fp": 8,
+                "gold": 0,
+                "precision": 0,
+                "precisionInterval": {
+                  "lower": 0,
+                  "upper": 0.32440756488388023
+                },
+                "recall": null,
+                "recallInterval": null,
+                "tp": 0
+              },
+              "en:TAX_ID": {
+                "coverageRecall": null,
+                "covered": 0,
+                "fn": 0,
+                "fp": 10,
+                "gold": 0,
+                "precision": 0,
+                "precisionInterval": {
+                  "lower": 0,
+                  "upper": 0.2775327998628892
+                },
+                "recall": null,
+                "recallInterval": null,
+                "tp": 0
+              },
+              "tr:ADDRESS": {
+                "coverageRecall": 0.31,
+                "covered": 31,
+                "fn": 70,
+                "fp": 131,
+                "gold": 100,
+                "precision": 0.18633540372670807,
+                "precisionInterval": {
+                  "lower": 0.13375638905813314,
+                  "upper": 0.2535336730259297
+                },
+                "recall": 0.3,
+                "recallInterval": {
+                  "lower": 0.2189488529493276,
+                  "upper": 0.3958485463334666
+                },
+                "tp": 30
+              },
+              "tr:DATE_OF_BIRTH": {
+                "coverageRecall": null,
+                "covered": 0,
+                "fn": 0,
+                "fp": 5,
+                "gold": 0,
+                "precision": 0,
+                "precisionInterval": {
+                  "lower": 0,
+                  "upper": 0.43448246478317476
+                },
+                "recall": null,
+                "recallInterval": null,
+                "tp": 0
+              },
+              "tr:NATIONAL_ID": {
+                "coverageRecall": null,
+                "covered": 0,
+                "fn": 0,
+                "fp": 14,
+                "gold": 0,
+                "precision": 0,
+                "precisionInterval": {
+                  "lower": 1.3877787807814457e-17,
+                  "upper": 0.2153108027376358
+                },
+                "recall": null,
+                "recallInterval": null,
+                "tp": 0
+              },
+              "tr:PERSON": {
+                "coverageRecall": 0.44,
+                "covered": 44,
+                "fn": 56,
+                "fp": 25,
+                "gold": 100,
+                "precision": 0.6376811594202898,
+                "precisionInterval": {
+                  "lower": 0.5197977087380359,
+                  "upper": 0.7410427563983122
+                },
+                "recall": 0.44,
+                "recallInterval": {
+                  "lower": 0.34672026630160796,
+                  "upper": 0.5377189534832302
+                },
+                "tp": 44
+              }
+            },
+            "cleanByLanguage": {
+              "en": {
+                "falseAlarm": 19,
+                "samples": 100
+              },
+              "tr": {
+                "falseAlarm": 19,
+                "samples": 100
+              }
+            },
+            "cleanFalseAlarm": 38,
+            "cleanSamples": 200,
+            "corpusDigest": "f64449c5c8a18d7c599f327aa89e430e5b8ad2a3111f27cd6b2bd2b10641d6ce",
+            "independent": 0,
+            "samples": 600,
+            "synthetic": 600
+          },
+          "acceptance": {
+            "qualified": false,
+            "reasons": [
+              "INDEPENDENT_CORPORATE_CORPUS_REQUIRED",
+              "CLEAN_FALSE_ALARM_RATE",
+              "CLEAN_FALSE_ALARM_RATE_tr",
+              "RECALL_tr_PERSON",
+              "PRECISION_tr_PERSON",
+              "RECALL_tr_ADDRESS",
+              "PRECISION_tr_ADDRESS",
+              "CLEAN_FALSE_ALARM_RATE_en",
+              "RECALL_en_PERSON",
+              "PRECISION_en_PERSON",
+              "RECALL_en_ADDRESS",
+              "PRECISION_en_ADDRESS"
+            ]
+          }
+        },
+        "training-first-wordpiece": {
+          "report": {
+            "abstained": 0,
+            "blocked": 0,
+            "buckets": {
+              "en:ADDRESS": {
+                "coverageRecall": 0.1588785046728972,
+                "covered": 17,
+                "fn": 107,
+                "fp": 103,
+                "gold": 107,
+                "precision": 0,
+                "precisionInterval": {
+                  "lower": 0,
+                  "upper": 0.03595475822864816
+                },
+                "recall": 0,
+                "recallInterval": {
+                  "lower": 0,
+                  "upper": 0.03465723801874867
+                },
+                "tp": 0
+              },
+              "en:CREDIT_CARD": {
+                "coverageRecall": null,
+                "covered": 0,
+                "fn": 0,
+                "fp": 1,
+                "gold": 0,
+                "precision": 0,
+                "precisionInterval": {
+                  "lower": 0,
+                  "upper": 0.7934506856227626
+                },
+                "recall": null,
+                "recallInterval": null,
+                "tp": 0
+              },
+              "en:INTERNAL": {
+                "coverageRecall": null,
+                "covered": 0,
+                "fn": 0,
+                "fp": 15,
+                "gold": 0,
+                "precision": 0,
+                "precisionInterval": {
+                  "lower": 0,
+                  "upper": 0.20388330103584862
+                },
+                "recall": null,
+                "recallInterval": null,
+                "tp": 0
+              },
+              "en:IP_ADDRESS": {
+                "coverageRecall": null,
+                "covered": 0,
+                "fn": 0,
+                "fp": 1,
+                "gold": 0,
+                "precision": 0,
+                "precisionInterval": {
+                  "lower": 0,
+                  "upper": 0.7934506856227626
+                },
+                "recall": null,
+                "recallInterval": null,
+                "tp": 0
+              },
+              "en:LICENSE_PLATE": {
+                "coverageRecall": null,
+                "covered": 0,
+                "fn": 0,
+                "fp": 1,
+                "gold": 0,
+                "precision": 0,
+                "precisionInterval": {
+                  "lower": 0,
+                  "upper": 0.7934506856227626
+                },
+                "recall": null,
+                "recallInterval": null,
+                "tp": 0
+              },
+              "en:NATIONAL_ID": {
+                "coverageRecall": null,
+                "covered": 0,
+                "fn": 0,
+                "fp": 3,
+                "gold": 0,
+                "precision": 0,
+                "precisionInterval": {
+                  "lower": 5.551115123125783e-17,
+                  "upper": 0.5614970317550454
+                },
+                "recall": null,
+                "recallInterval": null,
+                "tp": 0
+              },
+              "en:PERSON": {
+                "coverageRecall": 0.12037037037037036,
+                "covered": 13,
+                "fn": 108,
+                "fp": 42,
+                "gold": 108,
+                "precision": 0,
+                "precisionInterval": {
+                  "lower": 0,
+                  "upper": 0.08379879086570391
+                },
+                "recall": 0,
+                "recallInterval": {
+                  "lower": 0,
+                  "upper": 0.034347359746557025
+                },
+                "tp": 0
+              },
+              "en:PHONE": {
+                "coverageRecall": null,
+                "covered": 0,
+                "fn": 0,
+                "fp": 1,
+                "gold": 0,
+                "precision": 0,
+                "precisionInterval": {
+                  "lower": 0,
+                  "upper": 0.7934506856227626
+                },
+                "recall": null,
+                "recallInterval": null,
+                "tp": 0
+              },
+              "en:TAX_ID": {
+                "coverageRecall": null,
+                "covered": 0,
+                "fn": 0,
+                "fp": 1,
+                "gold": 0,
+                "precision": 0,
+                "precisionInterval": {
+                  "lower": 0,
+                  "upper": 0.7934506856227626
+                },
+                "recall": null,
+                "recallInterval": null,
+                "tp": 0
+              },
+              "tr:ADDRESS": {
+                "coverageRecall": 0.78,
+                "covered": 78,
+                "fn": 28,
+                "fp": 34,
+                "gold": 100,
+                "precision": 0.6792452830188679,
+                "precisionInterval": {
+                  "lower": 0.5854617194006704,
+                  "upper": 0.7604914426201603
+                },
+                "recall": 0.72,
+                "recallInterval": {
+                  "lower": 0.6251197129007884,
+                  "upper": 0.7986031478881379
+                },
+                "tp": 72
+              },
+              "tr:NATIONAL_ID": {
+                "coverageRecall": null,
+                "covered": 0,
+                "fn": 0,
+                "fp": 4,
+                "gold": 0,
+                "precision": 0,
+                "precisionInterval": {
+                  "lower": 0,
+                  "upper": 0.4898908364545973
+                },
+                "recall": null,
+                "recallInterval": null,
+                "tp": 0
+              },
+              "tr:PERSON": {
+                "coverageRecall": 0.45,
+                "covered": 45,
+                "fn": 57,
+                "fp": 25,
+                "gold": 100,
+                "precision": 0.6323529411764706,
+                "precisionInterval": {
+                  "lower": 0.5135563563911616,
+                  "upper": 0.7369953486476433
+                },
+                "recall": 0.43,
+                "recallInterval": {
+                  "lower": 0.33733298524110106,
+                  "upper": 0.5278461045078768
+                },
+                "tp": 43
+              }
+            },
+            "cleanByLanguage": {
+              "en": {
+                "falseAlarm": 5,
+                "samples": 100
+              },
+              "tr": {
+                "falseAlarm": 4,
+                "samples": 100
+              }
+            },
+            "cleanFalseAlarm": 9,
+            "cleanSamples": 200,
+            "corpusDigest": "f64449c5c8a18d7c599f327aa89e430e5b8ad2a3111f27cd6b2bd2b10641d6ce",
+            "independent": 0,
+            "samples": 600,
+            "synthetic": 600
+          },
+          "acceptance": {
+            "qualified": false,
+            "reasons": [
+              "INDEPENDENT_CORPORATE_CORPUS_REQUIRED",
+              "RECALL_tr_PERSON",
+              "PRECISION_tr_PERSON",
+              "RECALL_tr_ADDRESS",
+              "PRECISION_tr_ADDRESS",
+              "RECALL_en_PERSON",
+              "PRECISION_en_PERSON",
+              "RECALL_en_ADDRESS",
+              "PRECISION_en_ADDRESS"
+            ]
+          }
+        }
+      }
+    },
+    "finalConservativeFirstWordActual600": {
+      "schemaVersion": 1,
+      "status": "actual-offline-candidate-evaluation-no-approval",
+      "capabilities": {
+        "local": true,
+        "offsetUnit": "utf16",
+        "languages": [
+          "tr"
+        ],
+        "entities": [
+          "ADDRESS",
+          "BANK_ACCOUNT",
+          "CREDIT_CARD",
+          "DATE_OF_BIRTH",
+          "EMAIL",
+          "IBAN",
+          "INTERNAL",
+          "IP_ADDRESS",
+          "LICENSE_PLATE",
+          "NATIONAL_ID",
+          "PASSPORT",
+          "PERSON",
+          "PHONE",
+          "TAX_ID",
+          "TC_KIMLIK"
+        ],
+        "revision": "4c603053282cd997521fe8f66117f7cc1ac24d0a5e0b922293bc75cdf0a85382",
+        "entitiesByLanguage": {
+          "tr": [
+            "ADDRESS",
+            "BANK_ACCOUNT",
+            "CREDIT_CARD",
+            "DATE_OF_BIRTH",
+            "EMAIL",
+            "IBAN",
+            "INTERNAL",
+            "IP_ADDRESS",
+            "LICENSE_PLATE",
+            "NATIONAL_ID",
+            "PASSPORT",
+            "PERSON",
+            "PHONE",
+            "TAX_ID",
+            "TC_KIMLIK"
+          ]
+        }
+      },
+      "corpusSha256": "1c94a485923445a0c5a7b49919e5cb39fc619fbb2753e5c5768deecca85080a1",
+      "policy": {
+        "requiredTypes": [
+          "PERSON",
+          "ADDRESS"
+        ],
+        "minGold": 100,
+        "minRecallLower": 0.95,
+        "minPrecisionLower": 0.9,
+        "maxCleanFalseAlarmRate": 0.05
+      },
+      "report": {
+        "abstained": 0,
+        "blocked": 0,
+        "buckets": {
+          "en:ADDRESS": {
+            "coverageRecall": 0.1588785046728972,
+            "covered": 17,
+            "fn": 107,
+            "fp": 103,
+            "gold": 107,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 0,
+              "upper": 0.03595475822864816
+            },
+            "recall": 0,
+            "recallInterval": {
+              "lower": 0,
+              "upper": 0.03465723801874867
+            },
+            "tp": 0
+          },
+          "en:CREDIT_CARD": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 1,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 0,
+              "upper": 0.7934506856227626
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          },
+          "en:INTERNAL": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 18,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 0,
+              "upper": 0.17587922364665765
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          },
+          "en:IP_ADDRESS": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 1,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 0,
+              "upper": 0.7934506856227626
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          },
+          "en:LICENSE_PLATE": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 1,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 0,
+              "upper": 0.7934506856227626
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          },
+          "en:NATIONAL_ID": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 3,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 5.551115123125783e-17,
+              "upper": 0.5614970317550454
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          },
+          "en:PERSON": {
+            "coverageRecall": 0.12037037037037036,
+            "covered": 13,
+            "fn": 108,
+            "fp": 42,
+            "gold": 108,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 0,
+              "upper": 0.08379879086570391
+            },
+            "recall": 0,
+            "recallInterval": {
+              "lower": 0,
+              "upper": 0.034347359746557025
+            },
+            "tp": 0
+          },
+          "en:PHONE": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 1,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 0,
+              "upper": 0.7934506856227626
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          },
+          "en:TAX_ID": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 1,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 0,
+              "upper": 0.7934506856227626
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          },
+          "tr:ADDRESS": {
+            "coverageRecall": 0.78,
+            "covered": 78,
+            "fn": 28,
+            "fp": 34,
+            "gold": 100,
+            "precision": 0.6792452830188679,
+            "precisionInterval": {
+              "lower": 0.5854617194006704,
+              "upper": 0.7604914426201603
+            },
+            "recall": 0.72,
+            "recallInterval": {
+              "lower": 0.6251197129007884,
+              "upper": 0.7986031478881379
+            },
+            "tp": 72
+          },
+          "tr:INTERNAL": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 11,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 0,
+              "upper": 0.2588329669680317
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          },
+          "tr:NATIONAL_ID": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 4,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 0,
+              "upper": 0.4898908364545973
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          },
+          "tr:PERSON": {
+            "coverageRecall": 0.45,
+            "covered": 45,
+            "fn": 57,
+            "fp": 25,
+            "gold": 100,
+            "precision": 0.6323529411764706,
+            "precisionInterval": {
+              "lower": 0.5135563563911616,
+              "upper": 0.7369953486476433
+            },
+            "recall": 0.43,
+            "recallInterval": {
+              "lower": 0.33733298524110106,
+              "upper": 0.5278461045078768
+            },
+            "tp": 43
+          }
+        },
+        "cleanByLanguage": {
+          "en": {
+            "falseAlarm": 5,
+            "samples": 100
+          },
+          "tr": {
+            "falseAlarm": 4,
+            "samples": 100
+          }
+        },
+        "cleanFalseAlarm": 9,
+        "cleanSamples": 200,
+        "corpusDigest": "f64449c5c8a18d7c599f327aa89e430e5b8ad2a3111f27cd6b2bd2b10641d6ce",
+        "independent": 0,
+        "samples": 600,
+        "synthetic": 600
+      },
+      "acceptance": {
+        "qualified": false,
+        "reasons": [
+          "INDEPENDENT_CORPORATE_CORPUS_REQUIRED",
+          "RECALL_tr_PERSON",
+          "PRECISION_tr_PERSON",
+          "RECALL_tr_ADDRESS",
+          "PRECISION_tr_ADDRESS",
+          "RECALL_en_PERSON",
+          "PRECISION_en_PERSON",
+          "RECALL_en_ADDRESS",
+          "PRECISION_en_ADDRESS"
+        ]
+      },
+      "workerSourceSha256": "b243853f039e26f98722cd36bbca7437d4756152fd4070be2c955a76eb79c6df",
+      "workerSourceAtReportSaveSha256": "b243853f039e26f98722cd36bbca7437d4756152fd4070be2c955a76eb79c6df",
+      "workerSourceUnchangedDuringEvaluation": true,
+      "workerCodeSha256": {
+        "ner_worker.py": "b243853f039e26f98722cd36bbca7437d4756152fd4070be2c955a76eb79c6df",
+        "artifacts.py": "531eb803f1eea0ff02a12bca37444f7c70ba1729e779a68186341ec84b31cdc1",
+        "bioes.py": "76fde232d4455c71dd9e8bb978a477336553d10821cddf181722ce9e7a2605d8"
+      },
+      "workerCodeAtReportSaveSha256": {
+        "ner_worker.py": "b243853f039e26f98722cd36bbca7437d4756152fd4070be2c955a76eb79c6df",
+        "artifacts.py": "531eb803f1eea0ff02a12bca37444f7c70ba1729e779a68186341ec84b31cdc1",
+        "bioes.py": "76fde232d4455c71dd9e8bb978a477336553d10821cddf181722ce9e7a2605d8"
+      },
+      "workerCodeUnchangedDuringEvaluation": true,
+      "elapsedSeconds": 117,
+      "fullScratchReportSha256": "f97b9b9415c8ee021c21397be67178741687e316692281fd69d7050a5a488191",
+      "rawTextOrPredictionsIncluded": false
+    },
+    "actualTokenizerRegression": {
+      "scope": "Actual COSMOS tokenizer-only first_word alignment regression; no model quality claim",
+      "artifactsSha256": "531eb803f1eea0ff02a12bca37444f7c70ba1729e779a68186341ec84b31cdc1",
+      "results": [
+        {
+          "synthetic": "😀 Ayşe Yılmaz'a\tayse@example.com\r\nNo: 5 Ankara",
+          "words": 7,
+          "windows": 1,
+          "selectedTrueFirstPiecesIncludingOverlaps": 7,
+          "excludedUnsupervisedPieces": 10,
+          "originalWordSpansUtf16": [
+            [
+              0,
+              2
+            ],
+            [
+              3,
+              7
+            ],
+            [
+              8,
+              16
+            ],
+            [
+              17,
+              33
+            ],
+            [
+              35,
+              38
+            ],
+            [
+              39,
+              40
+            ],
+            [
+              41,
+              47
+            ]
+          ]
+        },
+        {
+          "synthetic": "Ali Veli",
+          "words": 2,
+          "windows": 1,
+          "selectedTrueFirstPiecesIncludingOverlaps": 2,
+          "excludedUnsupervisedPieces": 0,
+          "originalWordSpansUtf16": [
+            [
+              0,
+              3
+            ],
+            [
+              4,
+              8
+            ]
+          ]
+        },
+        {
+          "synthetic": "Yılmaz'a Yılmaz'a Yılmaz'a Yılmaz'a Yılmaz'a Yılmaz'a Yılmaz'a Yılmaz'a Yılmaz'a Yılmaz'a Yılmaz'a Yılmaz'a Yılmaz'a Yılmaz'a Yılmaz'a Yılmaz'a Yılmaz'a Yılmaz'a Yılmaz'a Yılmaz'a Yılmaz'a Yılmaz'a Yılmaz'a Yılmaz'a Yılmaz'a Yılmaz'a Yılmaz'a Yılmaz'a Yılmaz'a Yılmaz'a ",
+          "words": 30,
+          "windows": 4,
+          "selectedTrueFirstPiecesIncludingOverlaps": 38,
+          "excludedUnsupervisedPieces": 76,
+          "originalWordSpansUtf16": [
+            [
+              0,
+              8
+            ],
+            [
+              9,
+              17
+            ],
+            [
+              18,
+              26
+            ],
+            [
+              27,
+              35
+            ],
+            [
+              36,
+              44
+            ],
+            [
+              45,
+              53
+            ],
+            [
+              54,
+              62
+            ],
+            [
+              63,
+              71
+            ],
+            [
+              72,
+              80
+            ],
+            [
+              81,
+              89
+            ],
+            [
+              90,
+              98
+            ],
+            [
+              99,
+              107
+            ],
+            [
+              108,
+              116
+            ],
+            [
+              117,
+              125
+            ],
+            [
+              126,
+              134
+            ],
+            [
+              135,
+              143
+            ],
+            [
+              144,
+              152
+            ],
+            [
+              153,
+              161
+            ],
+            [
+              162,
+              170
+            ],
+            [
+              171,
+              179
+            ],
+            [
+              180,
+              188
+            ],
+            [
+              189,
+              197
+            ],
+            [
+              198,
+              206
+            ],
+            [
+              207,
+              215
+            ],
+            [
+              216,
+              224
+            ],
+            [
+              225,
+              233
+            ],
+            [
+              234,
+              242
+            ],
+            [
+              243,
+              251
+            ],
+            [
+              252,
+              260
+            ],
+            [
+              261,
+              269
+            ]
+          ]
+        },
+        {
+          "synthetic": "​Ali",
+          "words": 1,
+          "windows": 1,
+          "selectedTrueFirstPiecesIncludingOverlaps": 1,
+          "excludedUnsupervisedPieces": 0,
+          "originalWordSpansUtf16": [
+            [
+              0,
+              4
+            ]
+          ]
+        },
+        {
+          "synthetic": "   \t\r\n",
+          "words": 0,
+          "windows": 1,
+          "selectedTrueFirstPiecesIncludingOverlaps": 0,
+          "excludedUnsupervisedPieces": 0,
+          "originalWordSpansUtf16": []
+        },
+        {
+          "synthetic": "",
+          "words": 0,
+          "windows": 1,
+          "selectedTrueFirstPiecesIncludingOverlaps": 0,
+          "excludedUnsupervisedPieces": 0,
+          "originalWordSpansUtf16": []
+        }
+      ]
+    },
+    "initialWorkerSourceBinding": {
+      "schemaVersion": 1,
+      "status": "source-binding-verified",
+      "originalReport": "cosmos-current-path.json",
+      "originalReportSha256": "500f99771276b81ef2714f63a5fd131c2c324f474448f50d8b8c577effc2d3a5",
+      "startedWorkerSha256": "6a7780235e647584a94591462555270bb1f589098fdd10aa4ee0e021f507b2df",
+      "savedWorkerSha256": "6a7780235e647584a94591462555270bb1f589098fdd10aa4ee0e021f507b2df",
+      "workerSourceChangedDuringRun": false,
+      "reportLastWriteUtc": "2026-10-06T10:09:29.3509296Z",
+      "nativeBioesFileCreatedUtc": "2026-10-06T10:11:04.7347911Z",
+      "manifestSha256": "21fdb67999c8325e19e15a79ee8fbc751fbecf1d61bca01fe4ea33838f64d4b4",
+      "predictionsRetainedUnchanged": true,
+      "explanation": "The saved worker hash matches the preceding 57-test frozen worker receipts. COSMOS report was saved before native BIOES source creation. Later worker edits do not apply to this historical evaluation."
+    },
+    "englishScope": "Diagnostics outside the declared Turkish model language only; no English capability claim."
+  },
+  "openai": {
+    "lock": "ner/public-models.openai-privacy-filter.lock.json",
+    "approved": false,
+    "actualFinalWorker600": {
+      "schemaVersion": 1,
+      "status": "actual-offline-candidate-evaluation-no-approval",
+      "capabilities": {
+        "local": true,
+        "offsetUnit": "utf16",
+        "languages": [
+          "en",
+          "tr"
+        ],
+        "entities": [
+          "ADDRESS",
+          "EMAIL",
+          "INTERNAL",
+          "PERSON",
+          "PHONE",
+          "SECRET"
+        ],
+        "revision": "82352345a538be18ed4cfa0a47f6215cff511450d5f74a5028b0efd5bc54da88",
+        "entitiesByLanguage": {
+          "tr": [
+            "ADDRESS",
+            "EMAIL",
+            "INTERNAL",
+            "PERSON",
+            "PHONE",
+            "SECRET"
+          ],
+          "en": [
+            "ADDRESS",
+            "EMAIL",
+            "INTERNAL",
+            "PERSON",
+            "PHONE",
+            "SECRET"
+          ]
+        }
+      },
+      "corpusSha256": "1c94a485923445a0c5a7b49919e5cb39fc619fbb2753e5c5768deecca85080a1",
+      "policy": {
+        "requiredTypes": [
+          "PERSON",
+          "ADDRESS"
+        ],
+        "minGold": 100,
+        "minRecallLower": 0.95,
+        "minPrecisionLower": 0.9,
+        "maxCleanFalseAlarmRate": 0.05
+      },
+      "report": {
+        "abstained": 0,
+        "blocked": 0,
+        "buckets": {
+          "en:ADDRESS": {
+            "coverageRecall": 0.48598130841121495,
+            "covered": 52,
+            "fn": 56,
+            "fp": 111,
+            "gold": 107,
+            "precision": 0.3148148148148148,
+            "precisionInterval": {
+              "lower": 0.24828835708753444,
+              "upper": 0.38992032470613397
+            },
+            "recall": 0.4766355140186916,
+            "recallInterval": {
+              "lower": 0.384461146514527,
+              "upper": 0.5704293786265361
+            },
+            "tp": 51
+          },
+          "en:EMAIL": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 4,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 0,
+              "upper": 0.4898908364545973
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          },
+          "en:INTERNAL": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 65,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 0,
+              "upper": 0.05580153132285689
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          },
+          "en:PERSON": {
+            "coverageRecall": 0.8703703703703703,
+            "covered": 94,
+            "fn": 23,
+            "fp": 187,
+            "gold": 108,
+            "precision": 0.3125,
+            "precisionInterval": {
+              "lower": 0.26034985926894755,
+              "upper": 0.36987251398820925
+            },
+            "recall": 0.7870370370370371,
+            "recallInterval": {
+              "lower": 0.7006656475723132,
+              "upper": 0.853690497758367
+            },
+            "tp": 85
+          },
+          "en:PHONE": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 4,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 0,
+              "upper": 0.4898908364545973
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          },
+          "en:SECRET": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 103,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 0,
+              "upper": 0.03595475822864816
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          },
+          "tr:ADDRESS": {
+            "coverageRecall": 0.1,
+            "covered": 10,
+            "fn": 93,
+            "fp": 75,
+            "gold": 100,
+            "precision": 0.08536585365853659,
+            "precisionInterval": {
+              "lower": 0.04196652499324202,
+              "upper": 0.1658754556278168
+            },
+            "recall": 0.07,
+            "recallInterval": {
+              "lower": 0.03431926106727268,
+              "upper": 0.137495147390735
+            },
+            "tp": 7
+          },
+          "tr:INTERNAL": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 136,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 0,
+              "upper": 0.027470099733582408
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          },
+          "tr:PERSON": {
+            "coverageRecall": 0.61,
+            "covered": 61,
+            "fn": 52,
+            "fp": 83,
+            "gold": 100,
+            "precision": 0.366412213740458,
+            "precisionInterval": {
+              "lower": 0.28880383281708993,
+              "upper": 0.45163208128451166
+            },
+            "recall": 0.48,
+            "recallInterval": {
+              "lower": 0.384645517580519,
+              "upper": 0.5768342223477603
+            },
+            "tp": 48
+          },
+          "tr:SECRET": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 6,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 2.7755575615628914e-17,
+              "upper": 0.3903342879021653
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          }
+        },
+        "cleanByLanguage": {
+          "en": {
+            "falseAlarm": 41,
+            "samples": 100
+          },
+          "tr": {
+            "falseAlarm": 87,
+            "samples": 100
+          }
+        },
+        "cleanFalseAlarm": 128,
+        "cleanSamples": 200,
+        "corpusDigest": "f64449c5c8a18d7c599f327aa89e430e5b8ad2a3111f27cd6b2bd2b10641d6ce",
+        "independent": 0,
+        "samples": 600,
+        "synthetic": 600
+      },
+      "acceptance": {
+        "qualified": false,
+        "reasons": [
+          "INDEPENDENT_CORPORATE_CORPUS_REQUIRED",
+          "CLEAN_FALSE_ALARM_RATE",
+          "CLEAN_FALSE_ALARM_RATE_tr",
+          "RECALL_tr_PERSON",
+          "PRECISION_tr_PERSON",
+          "RECALL_tr_ADDRESS",
+          "PRECISION_tr_ADDRESS",
+          "CLEAN_FALSE_ALARM_RATE_en",
+          "RECALL_en_PERSON",
+          "PRECISION_en_PERSON",
+          "RECALL_en_ADDRESS",
+          "PRECISION_en_ADDRESS"
+        ]
+      },
+      "workerSourceSha256": "b243853f039e26f98722cd36bbca7437d4756152fd4070be2c955a76eb79c6df",
+      "workerSourceAtReportSaveSha256": "b243853f039e26f98722cd36bbca7437d4756152fd4070be2c955a76eb79c6df",
+      "workerSourceUnchangedDuringEvaluation": true,
+      "workerCodeSha256": {
+        "ner_worker.py": "b243853f039e26f98722cd36bbca7437d4756152fd4070be2c955a76eb79c6df",
+        "artifacts.py": "531eb803f1eea0ff02a12bca37444f7c70ba1729e779a68186341ec84b31cdc1",
+        "bioes.py": "76fde232d4455c71dd9e8bb978a477336553d10821cddf181722ce9e7a2605d8"
+      },
+      "workerCodeAtReportSaveSha256": {
+        "ner_worker.py": "b243853f039e26f98722cd36bbca7437d4756152fd4070be2c955a76eb79c6df",
+        "artifacts.py": "531eb803f1eea0ff02a12bca37444f7c70ba1729e779a68186341ec84b31cdc1",
+        "bioes.py": "76fde232d4455c71dd9e8bb978a477336553d10821cddf181722ce9e7a2605d8"
+      },
+      "workerCodeUnchangedDuringEvaluation": true,
+      "elapsedSeconds": 287,
+      "fullScratchReportSha256": "33c83c057d95194acf960957cb571ffc0ecdc5f4fc1d06d92490901cd9459bf0",
+      "rawTextOrPredictionsIncluded": false
+    },
+    "priorNative600PredictionsEqualToFinal": true,
+    "priorNative600ReportSha256": "411970233ae62ae5cc1acbfe9e9f9183b51f5e2e9fc88ed6d326959db9c656b0",
+    "decoder": "Independent standard-library constrainedBIOES valid-path implementation, exact pinned zero-bias calibration; no confidence filtering or label dropping.",
+    "independentAlgorithmReview": {
+      "ordinaryFloat32PathComparisons": 150,
+      "allIdenticalToPinnedAuthorRecurrence": true,
+      "malformedCalibrationCasesRejected": 11,
+      "sourceCommit": "f7f00ca7fb869683eb732c010299d901457f19c3",
+      "license": "Apache-2.0",
+      "licenseSha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+    }
+  },
+  "validation": {
+    "isolatedLinuxStdlibPython": {
+      "tests": 71,
+      "passed": 71,
+      "skipped": 0,
+      "dependencyMode": "-I -S; standard library only"
+    },
+    "modelFiles": "Actual downloaded safetensors/fast-tokenizer/checkpoint/config/author-card bytes verified by immutable hashes before inference.",
+    "approval": "Installer manifests remain approved:false and independent-corpus-required; service independently refuses missing/unqualified/invalid-digest approvals before worker startup.",
+    "nativeLinuxFull600Evaluated": false
+  },
+  "limits": [
+    "All models fail unchanged numeric qualification.",
+    "Public synthetic gold and train-labelled Turkish negatives do not constitute independent corporate holdout.",
+    "Publisher training overlap remains unverified.",
+    "COSMOS whole-word boundaries do not match every source entity boundary, and PERSON recognition remains inadequate.",
+    "The service requires a separately accepted model/runtime and genuine organizational approval.",
+    "Weights and inference runtimes are separately staged, not bundled or implicitly approved."
+  ]
+}

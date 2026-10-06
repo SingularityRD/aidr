@@ -81,6 +81,7 @@ async function fakeCommands(root) {
 	const tarScript = join(bin, "fake-tar.mjs");
 	await writeFile(dockerScript, `
 import { appendFile, readFile, writeFile } from "node:fs/promises";
+import { readdirSync, readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 const args = process.argv.slice(2);
 await appendFile(process.env.FAKE_DOCKER_LOG, args.join(" ") + "\\n");
@@ -90,6 +91,11 @@ const save = async (services) => writeFile(process.env.FAKE_DOCKER_STATE, [...se
 if (args[0] === "image" || args[0] === "info" || has("pg_isready")) {
   if (args[0] === "info") process.stdout.write("x86_64\\n");
   process.exit(0);
+}
+if (args[0] === "build") {
+  if (process.env.FAKE_HELPER_BUILD_FAIL === "1") process.exit(72);
+  if (JSON.stringify(readdirSync(args.at(-1))) !== '["Dockerfile"]' || !readFileSync(args.at(-2), "utf8").startsWith("FROM node:24.21.0-alpine3.24@sha256:")) process.exit(73);
+  process.stdout.write("sha256:" + "1".repeat(64) + "\\n"); process.exit(0);
 }
 if (has("ps") && has("--all") && has("--quiet")) {
   process.stdout.write(args.at(-1) === "db" ? "db-id\\n" : "storage-id\\n"); process.exit(0);
@@ -135,7 +141,7 @@ process.exit(71);
 	if (platform() === "win32") {
 		const preload = join(bin, "fake-cli.cjs");
 		await writeFile(preload, `
-const { appendFileSync, readFileSync, writeFileSync } = require("node:fs");
+const { appendFileSync, readFileSync, readdirSync, writeFileSync } = require("node:fs");
 const { basename } = require("node:path");
 const { spawnSync } = require("node:child_process");
 const kind = basename(process.execPath).toLowerCase();
@@ -146,6 +152,7 @@ const state = () => { try { return new Set(readFileSync(process.env.FAKE_DOCKER_
 const save = (services) => writeFileSync(process.env.FAKE_DOCKER_STATE, [...services].sort().join(","));
 const has = (value) => args.includes(value);
 if (args[0] === "image" || args[0] === "info" || has("pg_isready")) { if (args[0] === "info") process.stdout.write("x86_64\\n"); process.exit(0); }
+if (args[0] === "build") { if (process.env.FAKE_HELPER_BUILD_FAIL === "1") process.exit(72); if (JSON.stringify(readdirSync(args.at(-1))) !== '["Dockerfile"]' || !readFileSync(args.at(-2), "utf8").startsWith("FROM node:24.21.0-alpine3.24@sha256:")) process.exit(73); process.stdout.write("sha256:" + "1".repeat(64) + "\\n"); process.exit(0); }
 if (has("ps") && has("--all") && has("--quiet")) { process.stdout.write(args.at(-1) === "db" ? "db-id\\n" : "storage-id\\n"); process.exit(0); }
 if (args[0] === "inspect") { const db = args[1] === "db-id"; process.stdout.write(JSON.stringify([{ Mounts: [{ Destination: db ? "/var/lib/postgresql/data" : "/var/lib/storage", Type: "volume", Name: db ? "db-volume" : "storage-volume" }], Config: { Image: "postgres:test" } }])); process.exit(0); }
 if (has("config") && has("--services")) { process.stdout.write("db\\nstorage\\napi\\n"); process.exit(0); }
@@ -248,8 +255,27 @@ test("cold backup validates and encrypts the same archive stream", async (t) => 
 	assert.equal((await exit(run.child)).code, 0, run.stderr());
 	const verified = spawnSync(process.execPath, [SCRIPT, "verify", "--backup", run.output, "--key-file", run.key], { encoding: "utf8", windowsHide: true });
 	assert.equal(verified.status, 0, verified.stderr);
+	const log = await readFile(run.log, "utf8");
+	assert.equal(log.match(/(?:^|\r?\n)build /g)?.length, 1, "verification must not build a Docker helper");
+	assert.match(log, /build --quiet --pull=false --network=none --file /);
+	const manifest = JSON.parse(JSON.parse(await readFile(join(run.output, "backup.json"), "utf8")).payload);
+	assert.equal(manifest.helper_image, `sha256:${"1".repeat(64)}`);
+	for (const line of log.split(/\r?\n/).filter((line) => line.includes("dst=/data,readonly") && line.includes("tar -C"))) {
+		assert.ok(line.includes(`sha256:${"1".repeat(64)}`), "archives must use the built immutable image ID");
+	}
 	await assert.rejects(stat(run.journal), /ENOENT/);
 	assert.equal(await readFile(run.state, "utf8"), "api,db,storage");
+});
+
+test("an unavailable pinned helper base fails before stopping source services", async (t) => {
+	const root = await mkdtemp(join(tmpdir(), "aidr-backup-helper-unavailable-"));
+	t.after(() => rm(root, { recursive: true, force: true }));
+	const run = await command(root, { FAKE_HELPER_BUILD_FAIL: "1" });
+	assert.notEqual((await exit(run.child)).code, 0);
+	assert.match(run.stderr(), /Node helper build failed/);
+	assert.doesNotMatch(await readFile(run.log, "utf8"), /(?:^|\s)(?:stop|start|run)(?:\s|$)/);
+	await assert.rejects(stat(run.output), /ENOENT/);
+	await assert.rejects(stat(run.journal), /ENOENT/);
 });
 
 test("boot recovery restores the exact pre-stop services after an abrupt backup interruption", async (t) => {

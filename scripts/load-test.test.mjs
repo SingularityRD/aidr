@@ -8,7 +8,41 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
+test("telemetry workload can generate distinct string request identities", async () => {
+	const ids = [];
+	await withFixture((request, response) => {
+		let text = "";
+		request.on("data", chunk => { text += chunk; });
+		request.on("end", () => {
+			const id = JSON.parse(text).event_id;
+			const valid = typeof id === "string" && /^[a-f0-9-]{36}$/.test(id);
+			if (valid) ids.push(id);
+			response.writeHead(valid ? 200 : 400); response.end();
+		});
+	}, async run => {
+		const { status, result } = await run(profile({
+			workload_class: "soak", duration_seconds: 0.5, rate_per_second: 10,
+			fault_windows: [], thresholds: { min_requests: 4, max_error_ratio: 0, max_loss_ratio: 0 },
+			scenarios: [{ name: "unique-events", cohort: "one", method: "POST", path: "/ingest", weight: 1, expected_statuses: [200], body_json: { event_id: { $request_id: true }, sequence: { $sequence: true } } }],
+		}));
+		assert.equal(status, 0); assert.equal(result.passed, true);
+		assert.ok(ids.length >= 4); assert.equal(new Set(ids).size, ids.length);
+	});
+});
+
 const harness = fileURLToPath(new URL("./load-test.mjs", import.meta.url));
+
+test("a fast request still observes the full declared workload window", async () => {
+	await withFixture((_request, response) => response.end(), async run => {
+		const { status, result } = await run(profile({
+			workload_class: "soak", duration_seconds: 0.3, rate_per_second: 1,
+			fault_windows: [], scenarios: [{ name: "fast", cohort: "one", method: "GET", path: "/", weight: 1, expected_statuses: [200] }],
+		}));
+		assert.equal(status, 0);
+		assert.ok(Date.parse(result.completed_at) - Date.parse(result.started_at) >= 300);
+		assert.ok(result.diagnostics.generator.drain_finished_at_ms >= 300);
+	});
+});
 
 async function withFixture(handler, check) {
 	const directory = mkdtempSync(join(tmpdir(), "aidr-load-test-"));

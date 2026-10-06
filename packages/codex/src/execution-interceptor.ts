@@ -1,8 +1,6 @@
 import { normalizeCodexHookInput } from "./normalize.js";
-import type {
-	SignedIngressRequest,
-	SignedIngressResponse,
-} from "./signed-ingress.js";
+import { installedPrivacyRequired, PRIVACY_ROUTE_UNAVAILABLE } from "./privacy.js";
+import type { SignedIngressRequest, SignedIngressResponse } from "./signed-ingress.js";
 import type {
 	CodexHookInput,
 	CodexRuntimeIdentity,
@@ -22,7 +20,10 @@ export interface RegisteredCodexTool {
 	riskClass: IngressRiskClass;
 	dataClass: IngressDataClass;
 	mutating: boolean;
-	target: (input: RedactedValue, event: NormalizedRuntimeEvent) => {
+	target: (
+		input: RedactedValue,
+		event: NormalizedRuntimeEvent,
+	) => {
 		kind: IngressTargetKind;
 		value: string;
 	};
@@ -196,6 +197,9 @@ export function createCodexExecutionInterceptor(options: CodexExecutionIntercept
 	}
 	return {
 		async execute(input: CodexHookInput): Promise<CodexExecutionInterceptResult> {
+			if (await installedPrivacyRequired()) {
+				throw new CodexExecutionInterceptError(PRIVACY_ROUTE_UNAVAILABLE);
+			}
 			const phase = input.hook_event_name ?? input.phase ?? input.event ?? input.type;
 			if (
 				phase === "PostToolUse" ||
@@ -207,7 +211,11 @@ export function createCodexExecutionInterceptor(options: CodexExecutionIntercept
 			}
 			const event = normalizeCodexHookInput(input, options.identity);
 			const registration = options.registry.require(event.toolName);
-			const receipt = await options.transport.submit(buildRequest(event, registration, options));
+			const request = buildRequest(event, registration, options);
+			if (await installedPrivacyRequired()) {
+				throw new CodexExecutionInterceptError(PRIVACY_ROUTE_UNAVAILABLE);
+			}
+			const receipt = await options.transport.submit(request);
 			return {
 				decision: "suppress_local_execution",
 				outcome: receipt.route === "read_only" ? "server_executed" : "governed_handoff",

@@ -6,14 +6,13 @@ import {
 	sign as cryptoSign,
 	verify as cryptoVerify,
 } from "node:crypto";
-import { constants as fsConstants } from "node:fs";
 import {
-	access,
 	lstat,
 	mkdir,
 	open,
 	readFile,
 	readdir,
+	realpath,
 	rename,
 	unlink,
 	writeFile,
@@ -240,8 +239,7 @@ export function createReleaseManifest(bundle, options) {
 }
 
 export async function loadEd25519PrivateKey(privateKeyPath, bundlePath) {
-	const resolvedKey = path.resolve(privateKeyPath);
-	if (isWithin(resolvedKey, bundlePath)) throw new Error("private signing key must be outside the release bundle");
+	const resolvedKey = await resolveExternalControlPath(privateKeyPath, bundlePath, "private signing key");
 	const info = await lstat(resolvedKey);
 	if (!info.isFile() || info.isSymbolicLink()) throw new Error("private signing key must be a regular file");
 	const pem = await readFile(resolvedKey, "utf8");
@@ -265,8 +263,7 @@ export function signReleaseManifest(rawManifest, privateKey, keyId) {
 }
 
 export async function loadSignerPolicy(policyPath, bundlePath) {
-	const resolvedPolicy = path.resolve(policyPath);
-	if (isWithin(resolvedPolicy, bundlePath)) throw new Error("signer policy must be stored outside the release bundle");
+	const resolvedPolicy = await resolveExternalControlPath(policyPath, bundlePath, "signer policy");
 	const { value: policy } = await readJsonFile(resolvedPolicy, "signer policy");
 	if (!policy || policy.schema_version !== 1 || typeof policy.policy_id !== "string" || policy.policy_id.length < 1) {
 		throw new Error("signer policy schema is invalid");
@@ -325,6 +322,7 @@ export async function loadSignerPolicy(policyPath, bundlePath) {
 		trustedSigners.set(keyId, { keyId, publicKey, fingerprint: actualFingerprint, validFrom, validUntil });
 	}
 	return {
+		path: resolvedPolicy,
 		policyId: policy.policy_id,
 		productId: policy.product_id,
 		allowedChannels: new Set(allowedChannels),
@@ -441,11 +439,11 @@ export function verifyManifestSignature(rawManifest, signatureEnvelope, validate
 }
 
 export async function loadRollbackState(statePath, bundlePath) {
-	const resolvedState = path.resolve(statePath);
-	if (isWithin(resolvedState, bundlePath)) throw new Error("anti-rollback state must be stored outside the release bundle");
+	const resolvedState = await resolveExternalControlPath(statePath, bundlePath, "anti-rollback state");
 	try {
-		await access(resolvedState, fsConstants.F_OK);
-	} catch {
+		await lstat(resolvedState);
+	} catch (error) {
+		if (error?.code !== "ENOENT") throw error;
 		return { path: resolvedState, value: { schema_version: 1, records: {} } };
 	}
 	const { value } = await readJsonFile(resolvedState, "anti-rollback state");
@@ -545,6 +543,26 @@ export function isWithin(candidate, root) {
 	const resolvedCandidate = normalizeCase(path.resolve(candidate));
 	const resolvedRoot = normalizeCase(path.resolve(root));
 	return resolvedCandidate === resolvedRoot || resolvedCandidate.startsWith(`${resolvedRoot}${path.sep}`);
+}
+
+// Resolve the nearest existing parent, including when a new state/receipt has
+// missing directories. Keep the final entry unresolved so regular-file checks
+// still reject dangling or looping links. Use the physical path for later I/O.
+export async function resolveExternalControlPath(filePath, bundlePath, label) {
+	const resolved = path.resolve(filePath);
+	let parent = path.dirname(resolved);
+	for (;;) {
+		try { await lstat(parent); break; }
+		catch (error) {
+			if (error?.code !== "ENOENT") throw error;
+			parent = path.dirname(parent);
+		}
+	}
+	const physical = path.resolve(await realpath(parent), path.relative(parent, resolved));
+	if (isWithin(resolved, bundlePath) || isWithin(physical, await realpath(bundlePath))) {
+		throw new Error(`${label} must be stored outside the release bundle`);
+	}
+	return physical;
 }
 
 async function listBundleTree(root) {

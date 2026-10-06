@@ -11,6 +11,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { inspectReviewedRuntime } from "./archive-boundary.mjs";
 import { assertPrivateRecoveryKey, parseTarget } from "./deployment-backup-offsite.mjs";
+import { buildNodeHelperImage } from "./lib/node-helper-image.mjs";
 import {
 	RELEASE_MANIFEST_NAME,
 	RELEASE_SIGNATURE_NAME,
@@ -194,8 +195,9 @@ async function readDatabase(containerId) {
 }
 
 async function readStorage(volumeName) {
+	const helperImage = buildNodeHelperImage();
 	const shell = "set -eu; cd /data; test -z \"$(find . -type l -print -quit)\"; find . -type f -exec sha256sum {} + | sort | sha256sum; find . -type f | wc -l";
-	const output = await command("docker", ["run", "--rm", "--pull", "never", "--network", "none", "--mount", `type=volume,src=${volumeName},dst=/data,readonly`, "node:24.12.0-alpine3.23", "sh", "-c", shell], 120000);
+	const output = await command("docker", ["run", "--rm", "--pull", "never", "--network", "none", "--mount", `type=volume,src=${volumeName},dst=/data,readonly`, helperImage, "sh", "-c", shell], 120000);
 	const lines = output.split(/\r?\n/).map((line) => line.trim());
 	const fingerprint = lines[0]?.match(/^([a-f0-9]{64})\s+-$/)?.[1];
 	const count = Number(lines[1]);

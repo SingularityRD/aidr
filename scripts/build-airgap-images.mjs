@@ -92,7 +92,7 @@ async function buildBundle() {
 				sha256: sha256(bytes),
 				size: bytes.byteLength,
 				image_id: inspect.imageId,
-				repo_digest: inspect.repoDigests[0] ?? null,
+				repo_digest: inspect.repoDigests.find((digest) => planned.digest && digest.endsWith(planned.digest)) ?? inspect.repoDigests[0] ?? null,
 				observed_platform: inspect.platform,
 			});
 			console.log(`Saved ${ref} -> ${TARBALL_DIR}/${slug}.tar (${bytes.byteLength} bytes)`);
@@ -245,8 +245,14 @@ function hasPlanSource() {
 
 function addPlannedImage(images, { ref, digest }) {
 	assertImageRef(ref);
+	const embeddedDigest = ref.includes("@") ? ref.slice(ref.indexOf("@") + 1) : null;
+	if (embeddedDigest !== null) assertDigest(embeddedDigest, ref);
 	if (digest !== undefined && digest !== null) assertDigest(digest, ref);
-	if (!images.has(ref)) images.set(ref, { ref, digest: digest ?? null });
+	if (embeddedDigest && digest && embeddedDigest !== digest) throw new Error(`image ${ref} has conflicting pinned digests`);
+	const plannedDigest = digest ?? embeddedDigest;
+	const existingDigest = images.get(ref)?.digest;
+	if (existingDigest && plannedDigest && existingDigest !== plannedDigest) throw new Error(`image ${ref} has conflicting pinned digests`);
+	images.set(ref, { ref, digest: plannedDigest ?? existingDigest ?? null });
 }
 
 function parseComposeImages(content) {

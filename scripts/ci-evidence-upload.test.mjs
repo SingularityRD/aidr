@@ -59,6 +59,23 @@ function allArtifactUploads() {
 	return uploads;
 }
 
+test("CI and RC require the owned SDK mTLS gate after the complete private profile gate", () => {
+	for (const [file, gateName] of [
+		["ci.yml", "Map-free private build, complete Node suite and installed signed MCP"],
+		["release-rc.yml", "Private privacy full and installed signed MCP release gate"],
+	]) {
+		const workflow = readWorkflow(file);
+		const full = step(workflow, gateName);
+		const sdk = step(workflow, "Mandatory SDK ESM and CJS mTLS input and output gate");
+		assert.match(full, /pnpm --filter @singularity\/aidr-privacy test:ci:platform/);
+		const build = sdk.indexOf("pnpm --filter @singularity/aidr-privacy build:release");
+		const check = sdk.indexOf("node --test packages/sdk/src/__tests__/privacy-send-mtls.test.mjs");
+		assert.ok(build >= 0 && check > build, `${file}: the SDK gate needs fresh private bytes`);
+		assert.ok(workflow.indexOf(full) < workflow.indexOf(sdk));
+		assert.doesNotMatch(sdk, /continue-on-error:|\n\s+if:/);
+	}
+});
+
 test("CI artifacts exclude raw release evidence and credentials-bearing E2E output", () => {
 	const workflow = readWorkflow("ci.yml");
 	const quality = uploadPaths(workflow, "Upload deterministic test evidence (pinned)");

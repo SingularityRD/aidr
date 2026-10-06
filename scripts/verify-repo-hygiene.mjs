@@ -444,7 +444,13 @@ export function scanHostPaths({ repoRoot, trackedFiles, allowlist = ALLOWLIST })
 			let match;
 			while ((match = hostPattern.re.exec(text)) !== null) {
 				const matched = match[0];
-				if (isAnonymousIdentity(matched)) {
+				// This declared Alpine account home belongs to the container. Keep the
+				// rest of the Dockerfile scanned, including COPY host paths.
+				const bridgeContainerHome = file === "services/aig-bridge/Dockerfile"
+					&& hostPattern.id === "posix_home_path" && matched === "/home/bridge"
+					&& text.slice(text.lastIndexOf("\n", match.index) + 1, text.indexOf("\n", match.index) < 0 ? text.length : text.indexOf("\n", match.index)).trim()
+						=== "adduser -S -D -u 1000 -G bridge -h /home/bridge bridge && \\";
+				if (isAnonymousIdentity(matched) || bridgeContainerHome) {
 					if (match.index === hostPattern.re.lastIndex) hostPattern.re.lastIndex += 1;
 					continue;
 				}

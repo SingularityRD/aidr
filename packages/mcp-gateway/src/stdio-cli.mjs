@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { createMcpGateway } from "./gateway.mjs";
 import { requireGatewayIntegrity } from "./integrity.mjs";
 import { runStdioBridge } from "./stdio.mjs";
+import { requireStandaloneProfile, standalonePayloadGuard } from "./standalone.mjs";
 
 const [configPath, tenantId, clientId, serverId, tokenEnv, routingFlag] = process.argv.slice(2);
 const requireRouting = routingFlag === "--require-routing";
@@ -20,11 +21,16 @@ if (
 	process.exitCode = 2;
 } else {
 	try {
+		await requireStandaloneProfile();
 		await requireGatewayIntegrity();
 		const config = JSON.parse(await readFile(configPath, "utf8"));
 		if (requireRouting) config.routingRequired = true;
+		await requireStandaloneProfile();
 		await runStdioBridge({
 			gateway: createMcpGateway(config, {
+				assertInstalledPrivacySupported: requireStandaloneProfile,
+				toolGuard: standalonePayloadGuard,
+				outputGuard: standalonePayloadGuard,
 				onEvent: (event) => process.stderr.write(`${JSON.stringify(event)}\n`),
 			}),
 			tenantId,
@@ -33,6 +39,7 @@ if (
 			tokenEnv,
 			input: process.stdin,
 			output: process.stdout,
+			assertInstalledPrivacySupported: requireStandaloneProfile,
 		});
 	} catch {
 		process.stderr.write(

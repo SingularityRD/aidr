@@ -1,9 +1,11 @@
 import { createHash } from "node:crypto";
 import {
+	type Config,
 	DecisionEngine,
 	getEffectiveManagedApiKey,
 	HeuristicsEngine,
 	inspectResponseBarrier,
+	isInvalidConfig,
 	type Logger,
 	loadConfig,
 	loadManagedState,
@@ -31,6 +33,15 @@ import type {
 } from "./config.js";
 import { CheckRequestSchema, CheckResultSchema, SDKConfigSchema } from "./config.js";
 import { INDETERMINATE_METADATA_KEY } from "./enforcement.js";
+import {
+	AIDRPrivacyTextError,
+	loadPrivacyTextGateway,
+	type PrivacyGatewayOptions,
+	type PrivacyTextGateway,
+	type PrivacyTextSendOptions,
+	type SDKPrivateOptions,
+	snapshotPrivacyGateway,
+} from "./privacy-text.js";
 
 export type { Logger };
 
@@ -58,8 +69,10 @@ export class AIDRClient {
 	private trustedDomains: TrustedDomain[] = [];
 	private dataDirs?: DataDirResolution;
 	private initialized = false;
+	#privacyGatewayOptions?: PrivacyGatewayOptions;
+	#privacyGateway?: Promise<PrivacyTextGateway>;
 
-	constructor(config: SDKConfigInput) {
+	constructor(config: SDKConfigInput, privateOptions?: SDKPrivateOptions) {
 		// Validate and default the configuration up front.
 		//
 		// Without this the SDK trusted its caller's object shape: a JavaScript
@@ -70,6 +83,7 @@ export class AIDRClient {
 		// defaults (retries: 2, timeout: 5000, cache: true, cacheTtl: 300000,
 		// environment: "production") and rejects out-of-range values.
 		this.config = SDKConfigSchema.parse(config);
+		this.#privacyGatewayOptions = snapshotPrivacyGateway(privateOptions);
 		this.logger = this.config.logger ?? nullLogger;
 
 		// Initialize cache if enabled
@@ -221,7 +235,14 @@ export class AIDRClient {
 		while (attempts <= maxRetries) {
 			try {
 				const result = await this._performCheck(request);
-				this._emitDecisionEvent(request, result);
+				this._emitDecisionEvent(
+					result.metadata?.privacyRoute === "unsupported"
+						? { action: "privacy-route", resource: "[withheld]" }
+						: request,
+					result.metadata?.privacyRoute === "unsupported"
+						? { ...result, reason: "Required privacy routing blocked a caller-owned operation." }
+						: result,
+				);
 				return result;
 			} catch (error) {
 				lastError = error instanceof Error ? error : new Error(String(error));
@@ -256,12 +277,109 @@ export class AIDRClient {
 		return fallbackResult;
 	}
 
+	/** Recheck installed controls after approval/hooks, immediately before caller-owned execution. */
+	async assertCallerOperationAllowed(): Promise<void> {
+		try {
+			const installed = await loadConfig();
+			if (isInvalidConfig(installed) || installed.privacy?.required) {
+				throw new AIDRPrivacyTextError("PRIVACY_CALLER_ROUTE_UNSUPPORTED");
+			}
+			if (await this._responseControlResult(installed))
+				throw new AIDRPrivacyTextError("AIDR_INSTALLED_CONTROL_BLOCKED");
+		} catch (error) {
+			if (error instanceof AIDRPrivacyTextError) throw error;
+			throw new AIDRPrivacyTextError("PRIVACY_POLICY_UNAVAILABLE");
+		}
+	}
+
+	/** One bounded final model send through the installed privacy service; never retries dispatch. */
+	async sendText(text: string, options: PrivacyTextSendOptions = {}): Promise<string> {
+		try {
+			if (typeof text !== "string" || !text.length || Buffer.byteLength(text) > 500_000) {
+				throw new AIDRPrivacyTextError("PRIVACY_TEXT_INVALID");
+			}
+			if (
+				Object.keys(options).some((key) => !["requestId", "reviewCaseId", "signal"].includes(key))
+			) {
+				throw new AIDRPrivacyTextError("PRIVACY_TEXT_OPTIONS_INVALID");
+			}
+			const sendOptions = {
+				requestId: options.requestId,
+				reviewCaseId: options.reviewCaseId,
+				signal: options.signal,
+			};
+			sendOptions.signal?.throwIfAborted();
+			const gatewayOptions = this.#privacyGatewayOptions;
+			if (!gatewayOptions) throw new AIDRPrivacyTextError("PRIVACY_GATEWAY_REQUIRED");
+			if (!this.initialized) await this.init();
+			const installed = await loadConfig();
+			if (isInvalidConfig(installed)) throw new AIDRPrivacyTextError("PRIVACY_POLICY_UNAVAILABLE");
+			const barrier = await this._responseControlResult(installed);
+			if (barrier) throw new AIDRPrivacyTextError("PRIVACY_SEND_BLOCKED");
+			const verdict = await this.engine.decide({
+				heuristicMatches: this.heuristics?.match([{ type: "content", value: text }]) ?? [],
+				urlCheckResults: [],
+			});
+			if (verdict.decision !== "allow") throw new AIDRPrivacyTextError("PRIVACY_SEND_BLOCKED");
+			this.#privacyGateway ??= loadPrivacyTextGateway({
+				...gatewayOptions,
+				credentials: async () => {
+					const credentials = await gatewayOptions.credentials();
+					const beforeDispatch = await loadConfig();
+					if (
+						isInvalidConfig(beforeDispatch) ||
+						(await this._responseControlResult(beforeDispatch))
+					) {
+						throw new AIDRPrivacyTextError("PRIVACY_SEND_BLOCKED");
+					}
+					return credentials;
+				},
+			});
+			const gateway = await this.#privacyGateway;
+			const current = await loadConfig();
+			if (isInvalidConfig(current) || (await this._responseControlResult(current))) {
+				throw new AIDRPrivacyTextError("PRIVACY_SEND_BLOCKED");
+			}
+			sendOptions.signal?.throwIfAborted();
+			const receipt = await gateway.send(text, sendOptions).catch(() => {
+				// Credential/transport exceptions are outside this SDK's error authority.
+				throw new AIDRPrivacyTextError("PRIVACY_SEND_OUTCOME_UNAVAILABLE");
+			});
+			if (
+				receipt.decision !== "sent" ||
+				typeof receipt.outputText !== "string" ||
+				Buffer.byteLength(receipt.outputText) > 2 * 1024 * 1024
+			) {
+				throw new AIDRPrivacyTextError("PRIVACY_MODEL_OUTPUT_UNAVAILABLE");
+			}
+			const delivered = await loadConfig();
+			if (isInvalidConfig(delivered) || (await this._responseControlResult(delivered))) {
+				throw new AIDRPrivacyTextError("PRIVACY_MODEL_OUTPUT_UNAVAILABLE");
+			}
+			return receipt.outputText;
+		} catch (error) {
+			if (error instanceof AIDRPrivacyTextError) throw error;
+			throw new AIDRPrivacyTextError("PRIVACY_SEND_OUTCOME_UNAVAILABLE");
+		}
+	}
+
 	/**
 	 * Internal check implementation
 	 */
 	private async _performCheck(request: CheckRequest): Promise<CheckResult> {
-		const barrier = await this._responseControlResult();
-		if (barrier) return barrier;
+		let installed: Config;
+		try {
+			installed = await loadConfig();
+		} catch {
+			return this._unsupportedPrivacyResult();
+		}
+		const barrier = await this._responseControlResult(installed);
+		if (barrier)
+			return isInvalidConfig(installed) || installed.privacy?.required
+				? { ...barrier, metadata: { ...barrier.metadata, privacyRoute: "unsupported" } }
+				: barrier;
+		const privacy = await this._privacyRouteResult(request, installed);
+		if (privacy) return privacy;
 		// Check cache first
 		const cacheKey = this._getCacheKey(request);
 		/** Set when the reputation leg could not run, so the result is never clean. */
@@ -309,6 +427,17 @@ export class AIDRClient {
 			heuristicMatches: matches ?? [],
 			urlCheckResults,
 		});
+		// Installed mandatory routing can change while a provider lookup is pending.
+		let current: Config;
+		try {
+			current = await loadConfig();
+		} catch {
+			return this._unsupportedPrivacyResult();
+		}
+		const currentPrivacy = await this._privacyRouteResult(request, current);
+		if (currentPrivacy) return currentPrivacy;
+		const currentBarrier = await this._responseControlResult(current);
+		if (currentBarrier) return currentBarrier;
 
 		// An unverified URL must never come back as `allow`. The same indeterminate
 		// marker the retry-exhaustion path uses keeps every SDK enforcer from
@@ -328,12 +457,6 @@ export class AIDRClient {
 			);
 			return indeterminate;
 		}
-		// A pause applied while reputation I/O was pending cannot escape as a new allow.
-		if (verdict.decision === "allow") {
-			const currentBarrier = await this._responseControlResult();
-			if (currentBarrier) return currentBarrier;
-		}
-
 		// An incomplete reputation result must not be cached as clean (or as if
 		// all enabled checks had completed).
 		if (this.cache && !urlLegUnavailableReason) {
@@ -357,8 +480,37 @@ export class AIDRClient {
 		return this._verdictToResult(verdict);
 	}
 
-	private async _responseControlResult(): Promise<CheckResult | undefined> {
-		const barrier = await this._inspectInstalledResponseBarrier();
+	private async _privacyRouteResult(
+		request: CheckRequest,
+		installed: Config,
+	): Promise<CheckResult | undefined> {
+		if (!isInvalidConfig(installed) && !installed.privacy?.required) return undefined;
+		try {
+			const local = await this.engine.decide({
+				heuristicMatches: this.heuristics?.match(this._extractArtifacts(request)) ?? [],
+				urlCheckResults: [],
+			});
+			if (local.decision === "deny")
+				return { ...this._verdictToResult(local), metadata: { privacyRoute: "unsupported" } };
+		} catch {
+			/* Broken detection cannot authorize an unsupported route. */
+		}
+		return this._unsupportedPrivacyResult();
+	}
+
+	private _unsupportedPrivacyResult(): CheckResult {
+		return {
+			allowed: false,
+			decision: "deny",
+			confidence: 1,
+			reason:
+				"Required privacy routing does not support caller-owned SDK operations; use the owned privacy text sender.",
+			metadata: { privacyRoute: "unsupported" },
+		};
+	}
+
+	private async _responseControlResult(installedConfig?: Config): Promise<CheckResult | undefined> {
+		const barrier = await this._inspectInstalledResponseBarrier(installedConfig);
 		if (barrier.status !== "paused" && barrier.status !== "unavailable") return undefined;
 		return {
 			allowed: false,
@@ -373,9 +525,11 @@ export class AIDRClient {
 	}
 
 	/** Caller-owned remote API keys cannot authorize or bypass installed endpoint controls. */
-	private async _inspectInstalledResponseBarrier(): Promise<ResponseBarrierInspection> {
+	private async _inspectInstalledResponseBarrier(
+		installedConfig?: Config,
+	): Promise<ResponseBarrierInspection> {
 		try {
-			const config = await loadConfig();
+			const config = installedConfig ?? (await loadConfig());
 			const options = {
 				required: config.control_plane.response_worker_required,
 				managedState: {},

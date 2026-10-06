@@ -184,6 +184,22 @@ describe("verify-repo-hygiene: host-path scan", () => {
 		assert.equal(entry.match, "/home/someone");
 	});
 
+	it("recognizes the bridge container user home while retaining host-path checks in its Dockerfile", () => {
+		const declaration = "    adduser -S -D -u 1000 -G bridge -h /home/bridge bridge && \\\n";
+		const root = makeFixture({
+			".gitignore": "node_modules/\n",
+			"services/aig-bridge/Dockerfile": declaration + "COPY /home/someone/private /app/private\n",
+			"config.yaml": "home: /home/bridge/private\n",
+		});
+		const report = runFixture(root);
+		assert.equal(report.ok, false);
+		assert.deepEqual(report.violations.map(entry => [entry.file, entry.line, entry.match]), [
+			["config.yaml", 1, "/home/bridge"],
+			["services/aig-bridge/Dockerfile", 2, "/home/someone"],
+		]);
+		assert.ok(!report.allowlistedFiles.includes("services/aig-bridge/Dockerfile"));
+	});
+
 	it("fails on a macOS /Users/<name>/ path and on an escaped Windows path", () => {
 		const root = makeFixture({
 			".gitignore": "node_modules/\n",

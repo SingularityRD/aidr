@@ -1,15 +1,16 @@
-import { createClient } from "npm:@supabase/supabase-js@2.116.0";
+import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.116.0";
 import { getBearerToken } from "../_shared/auth.ts";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 import { corsJson as sharedCorsJson, handleCors } from "../_shared/cors.ts";
 import { checkIdentityBarrier } from "../_shared/identity-barrier.ts";
-import { jwtIssuedAtMs } from "../identity-security/logic.ts";
+import { jwtExpiresAtMs, jwtIssuedAtMs, jwtSamlProviderId, jwtSessionId } from "../identity-security/logic.ts";
 import {
 	consumeTenantRateLimit,
 	rateLimitHeaders,
 	readBoundedText,
 } from "../_shared/request-limits.ts";
 import {
+	type BrokerDelegatedClaims,
 	matchesDelegatedContext,
 	signDelegatedCredential,
 	verifyDelegatedCredentialForBroker,
@@ -27,7 +28,29 @@ const REQUIRED_ENV = [
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SAFE_NAME = /^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$/;
 const SCOPE = /^[a-z0-9][a-z0-9._:/-]{0,127}$/;
-type DatabaseClient = ReturnType<typeof createClient>;
+type ReadTable<Row extends Record<string, unknown>> = { Row: Row; Insert: never; Update: never; Relationships: [] };
+type DelegatedCredentialsDatabase = {
+	public: {
+		Tables: {
+			tenant_members: ReadTable<{ tenant_id: string; user_id: string; role: string; expires_at: string | null }>;
+			tenants: ReadTable<{ id: string; status: string }>;
+			delegated_credential_grants: ReadTable<{ id: string; tenant_id: string; subject_user_id: string; revoked_at: string | null; expires_at: string }>;
+		};
+		Views: Record<string, never>;
+		Functions: {
+			validate_delegated_credential: { Args: { p_claims: BrokerDelegatedClaims; p_claims_sha256: string }; Returns: { active: boolean } | null };
+			reserve_delegated_credential: { Args: { p_actor_user_id: string; p_issuer: string; p_request: Record<string, unknown> }; Returns: { claims: BrokerDelegatedClaims } | null };
+			reserve_child_delegated_credential: { Args: { p_issuer: string; p_parent_claims: BrokerDelegatedClaims; p_parent_sha256: string; p_request: Record<string, unknown> }; Returns: { claims: BrokerDelegatedClaims } | null };
+			finalize_delegated_credential: { Args: { p_claims: BrokerDelegatedClaims; p_claims_sha256: string }; Returns: boolean };
+			create_delegated_credential_grant: { Args: { p_actor_user_id: string; p_request: Record<string, unknown> }; Returns: Record<string, unknown> | null };
+			revoke_delegated_credential_grant: { Args: { p_actor_user_id: string; p_tenant_id: string; p_grant_id: string }; Returns: boolean };
+			read_delegated_credential_lineage: { Args: { p_actor_user_id: string; p_tenant_id: string; p_token_id: string }; Returns: { found: boolean; lineage: Record<string, unknown> } | null };
+		};
+		Enums: Record<string, never>;
+		CompositeTypes: Record<string, never>;
+	};
+};
+type DatabaseClient = SupabaseClient<DelegatedCredentialsDatabase>;
 
 function corsJson(
 	req: Request,
@@ -171,7 +194,7 @@ Deno.serve(async (req) => {
 		return corsJson(req, 400, { error: "invalid_json" });
 	}
 	if (!body || typeof body !== "object" || Array.isArray(body) || typeof body.action !== "string") return corsJson(req, 400, { error: "invalid_request" });
-	const db = createClient(config.values.SUPABASE_URL, config.values.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
+	const db = createClient<DelegatedCredentialsDatabase>(config.values.SUPABASE_URL, config.values.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 	const bearer = getBearerToken(req.headers.get("Authorization"));
 
 	try {
@@ -227,8 +250,7 @@ Deno.serve(async (req) => {
 		}
 		const identity = await checkIdentityBarrier(db, bearer, auth.user.id, body.tenant_id);
 		if (!identity.ok) return corsJson(req, identity.status, { error: identity.error });
-		// `auth.getUser` validated this bearer, and validIssue rejected caller extras;
-		// carry its signed iat only in the server-private reservation payload.
+		// Auth validated this bearer; only server code forwards its signed issuance.
 		const sessionIssuedAtMs = jwtIssuedAtMs(bearer);
 		if (
 			sessionIssuedAtMs === null ||
@@ -254,22 +276,47 @@ Deno.serve(async (req) => {
 			cost: body.action === "lineage" ? 1 : body.action === "revoke_grant" ? 5 : 10,
 		});
 		if (!rate.ok) return corsJson(req, rate.status, { error: rate.error }, rateLimitHeaders(rate));
+		let privateRequest = body;
+		if (body.action === "grant" || body.action === "issue") {
+			// Exact caller validation has already rejected proof fields for both actions.
+			const sessionId = jwtSessionId(bearer);
+			const sessionExpiresAtMs = jwtExpiresAtMs(bearer);
+			if (!sessionId || sessionExpiresAtMs === null || sessionExpiresAtMs <= Date.now() ||
+				sessionExpiresAtMs <= sessionIssuedAtMs || sessionIssuedAtMs > Date.now() + 60_000 ||
+				!Number.isFinite(new Date(sessionIssuedAtMs).getTime())) {
+				return corsJson(req, 401, { error: "invalid_access_token" });
+			}
+			const { data: assurance, error: assuranceError } = await db.auth.mfa.getAuthenticatorAssuranceLevel(bearer);
+			if (assuranceError || (assurance?.currentLevel !== "aal1" && assurance?.currentLevel !== "aal2")) {
+				return corsJson(req, 503, { error: "assurance_unavailable" });
+			}
+			const validatedSession = {
+				session_id: sessionId,
+				issued_at: new Date(sessionIssuedAtMs).toISOString(),
+				expires_at: new Date(sessionExpiresAtMs).toISOString(),
+				aal: assurance.currentLevel,
+				saml_provider_id: jwtSamlProviderId(bearer),
+			};
+			privateRequest = { ...body, validated_session_issued_at: new Date(sessionIssuedAtMs).toISOString(), validated_session: validatedSession };
+		}
 
 		if (body.action === "grant") {
-			const { data, error } = await db.rpc("create_delegated_credential_grant", { p_actor_user_id: auth.user.id, p_request: body });
-			return error ? dbError(req, error) : corsJson(req, 201, { ok: true, ...data });
+			const { data, error } = await db.rpc("create_delegated_credential_grant", { p_actor_user_id: auth.user.id, p_request: privateRequest });
+			if (error) return dbError(req, error);
+			if (!data || !uuid(data.grant_id) || typeof data.expires_at !== "string") return corsJson(req, 503, { error: "delegation_unavailable" });
+			return corsJson(req, 201, { ok: true, grant_id: data.grant_id, expires_at: data.expires_at });
 		}
 		if (body.action === "revoke_grant") {
-			const { data, error } = await db.rpc("revoke_delegated_credential_grant", { p_actor_user_id: auth.user.id, p_tenant_id: body.tenant_id, p_grant_id: body.grant_id });
+			const { data, error } = await db.rpc("revoke_delegated_credential_grant", { p_actor_user_id: auth.user.id, p_tenant_id: body.tenant_id, p_grant_id: String(body.grant_id) });
 			if (error) return dbError(req, error);
 			return data === true ? corsJson(req, 200, { ok: true }) : corsJson(req, 404, { error: "grant_not_found" });
 		}
 		if (body.action === "lineage") {
-			const { data, error } = await db.rpc("read_delegated_credential_lineage", { p_actor_user_id: auth.user.id, p_tenant_id: body.tenant_id, p_token_id: body.token_id });
+			const { data, error } = await db.rpc("read_delegated_credential_lineage", { p_actor_user_id: auth.user.id, p_tenant_id: body.tenant_id, p_token_id: String(body.token_id) });
 			if (error) return dbError(req, error);
 			return data?.found ? corsJson(req, 200, { ok: true, lineage: data.lineage }) : corsJson(req, 404, { error: "delegation_not_found" });
 		}
-		const reserved = await db.rpc("reserve_delegated_credential", { p_actor_user_id: auth.user.id, p_issuer: config.values.AIDR_DELEGATION_ISSUER, p_request: { ...body, validated_session_issued_at: new Date(sessionIssuedAtMs).toISOString() } });
+		const reserved = await db.rpc("reserve_delegated_credential", { p_actor_user_id: auth.user.id, p_issuer: config.values.AIDR_DELEGATION_ISSUER, p_request: privateRequest });
 		if (reserved.error) return dbError(req, reserved.error);
 		const signed = await signDelegatedCredential({ claims: reserved.data?.claims, keyId: config.values.AIDR_DELEGATION_SIGNING_KEY_ID, privateKeyPkcs8Base64: config.values.AIDR_DELEGATION_SIGNING_PRIVATE_KEY_PKCS8_B64 });
 		const finalized = await db.rpc("finalize_delegated_credential", { p_claims: signed.claims, p_claims_sha256: signed.claimsSha256 });
