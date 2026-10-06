@@ -1887,7 +1887,7 @@
         {
           "claim": "Actual commercial core/public SDK/private tarballs installed into two independent consumer directories: all 13 real HTTPS/mTLS and optional-peer-absent cases passed, no skips; original tarballs and installed runtime bytes stayed unchanged. Independent receipt review confirmed the result.",
           "evidencePath": ".tmp-test/remaining-fixes-2026-10-06/packed-sdk-route/run-20261006114930302-c9de083a/receipt.json",
-          "command": "node run-packed.mjs --sdk-tarball <actual packed SDK> --core-tarball <actual packed core> --privacy-tarball <actual optional private package> --sdk-sha256 <checked SHA256> --core-sha256 <checked SHA256> --privacy-sha256 <checked SHA256>",
+          "command": "node .tmp-test/remaining-fixes-2026-10-06/packed-sdk-route/run-packed.mjs --sdk-tarball (Resolve-Path .tmp-test/remaining-fixes-delivery/provisional-packs/singularityrd-aidr-sdk-0.6.0.tgz).Path --sdk-sha256 8c0529b88ebe9af88cb86ff7ff6d68ba48587e51ad67bceded42e55657cda328 --core-tarball (Resolve-Path .tmp-test/remaining-fixes-delivery/provisional-packs/singularityrd-aidr-core-0.6.0.tgz).Path --core-sha256 b931b0042cdc7cd5a39499463ad8f2bf58c203402c2cce2942ad63d08234f038 --privacy-tarball (Resolve-Path .tmp-test/remaining-fixes-delivery/provisional-packs/singularity-aidr-privacy-0.5.0-rc.1.tgz).Path --privacy-sha256 511ff3a7c11eb131781f7f16cf96ef5ae589bbf0a3666e48e5c42e55a2314046",
           "verifiedBy": "2026-10-06 actual Windows Node24.18.1: 13 passed, 0 failed, 0 skipped; receipt SHA256 5e43af6ea0d11bee0b45ec545b924cee329c005158afa56f6b65b87df27a3522. Strict rules-only TEST runtime and provisional compiled consumer-route inputs, not learned-model/customer/publisher/firewall acceptance."
         }
       ],
