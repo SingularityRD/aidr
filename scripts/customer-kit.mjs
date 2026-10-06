@@ -48,7 +48,7 @@ function copy(source, target) {
 function files(path, prefix = "") {
   return readdirSync(path).sort().flatMap((name) => { const relative = prefix ? `${prefix}/${name}` : name; return statSync(join(path, name)).isDirectory() ? files(join(path, name), relative) : [{ path: relative, sha256: createHash("sha256").update(readFileSync(join(path, name))).digest("hex") }]; });
 }
-for (const path of ["deploy/backup", "deploy/dashboard", "deploy/fleet", "deploy/ha", "deploy/ingress", "deploy/maintenance", "deploy/monitoring", "deploy/operations", "deploy/regions.manifest.json", "packages/dashboard/dist", "supabase/config.toml", "supabase/functions", "supabase/migrations"]) copy(join(root, path), join(output, path));
+for (const path of ["deploy/backup", "deploy/dashboard", "deploy/fleet", "deploy/ha", "deploy/ingress", "deploy/maintenance", "deploy/monitoring", "deploy/operations", "deploy/regions.manifest.json", "deploy/saml-config.mjs", "packages/dashboard/dist", "supabase/config.toml", "supabase/functions", "supabase/migrations", "supabase/templates"]) copy(join(root, path), join(output, path));
 // The interception catalogue's source checker requires the separately supplied
 // checkout. Ship only the self-contained native operator assets here.
 for (const path of ["deploy/native/README.md", "deploy/native/support-matrix.json", "deploy/native/support-matrix.schema.json", "deploy/native/interception-matrix.json", "deploy/native/run-support-matrix.mjs", "deploy/native/scenarios/TEMPLATE.json", "deploy/native/scenarios/README.md"]) copy(join(root, path), join(output, path));

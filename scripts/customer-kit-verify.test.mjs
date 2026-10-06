@@ -227,6 +227,19 @@ test("extracted kit bootstrap resolves its local helper before deployment access
 	}
 });
 
+test("extracted kit carries the real authentication helper and recovery template required by both preparation modes", async () => {
+	const kit = createKit();
+	try {
+		const saml = await import(pathToFileURL(join(kit, "deploy/saml-config.mjs")).href);
+		assert.deepEqual(saml.parseSamlRuntimeConfig({ domain: "customer.example" }), { samlDomain: "customer.example" });
+		assert.deepEqual(saml.parseOidcRuntimeConfig("true"), { oidcSso: true });
+		assert.equal(readFileSync(join(kit, "supabase/templates/recovery.html"), "utf8"), readFileSync(join(repoRoot, "supabase/templates/recovery.html"), "utf8"));
+		const assembler = readFileSync(join(repoRoot, "scripts/customer-kit.mjs"), "utf8");
+		assert.match(assembler, /"deploy\/saml-config\.mjs"/);
+		assert.match(assembler, /"supabase\/templates"/);
+	} finally { rmSync(kit, { recursive: true, force: true }); }
+});
+
 test("extracted kit guides contain only resolvable local links", () => {
 	const kit = createKit();
 	try {
@@ -261,7 +274,7 @@ test("a regenerated checksum inventory cannot omit a required new artifact", () 
 });
 
 test("a regenerated checksum inventory cannot omit the installer, doctor or hold runbook", () => {
-	for (const missing of ["scripts/deployment-prepare.mjs", "scripts/deployment-doctor.mjs", "RETENTION-HOLDS.md", "SAML-RECOVERY.md", "scripts/saml-outage-recovery.mjs", "RESPONSE-PLAYBOOKS.md", "CLOUD-DISCOVERY.md", "BEHAVIORAL-LEARNING.md", "PACKAGE-INSTALLATION.md"]) {
+	for (const missing of ["scripts/deployment-prepare.mjs", "scripts/deployment-doctor.mjs", "deploy/saml-config.mjs", "supabase/templates/recovery.html", "RETENTION-HOLDS.md", "SAML-RECOVERY.md", "scripts/saml-outage-recovery.mjs", "RESPONSE-PLAYBOOKS.md", "CLOUD-DISCOVERY.md", "BEHAVIORAL-LEARNING.md", "PACKAGE-INSTALLATION.md"]) {
 		const kit = createKit();
 		try {
 			unlinkSync(join(kit, missing));

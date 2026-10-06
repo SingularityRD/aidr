@@ -101,6 +101,8 @@ export const CUSTOMER_KIT_REQUIRED_FILES = Object.freeze([
 	"FIRST-CUSTOMER-SALES-PACKET.md",
 	"CANDIDATE-STATUS.md",
 	"supabase/config.toml",
+	"supabase/templates/recovery.html",
+	"deploy/saml-config.mjs",
 	...Object.values(CUSTOMER_KIT_DELIVERY_FILES),
 	...CUSTOMER_KIT_BENCHMARK_FILES,
 ]);
