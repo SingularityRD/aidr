@@ -10,6 +10,7 @@ import { parseArgs } from "node:util";
 import { createGunzip } from "node:zlib";
 import { REVIEWED_RUNTIME_ARCHIVE_ENTRIES, copyReviewedRuntime, createTarBoundaryValidator, inspectAuthenticatedInstallation, inspectReviewedRuntime } from "./archive-boundary.mjs";
 import { assertRecoveryKeyFileAcl, hardenRecoveryKeyFile, hardenWorkDirectory } from "./deployment-restore-drill.mjs";
+import { buildNodeHelperImage } from "./lib/node-helper-image.mjs";
 
 const SOURCE_COMMIT = /^[a-f0-9]{40,64}$/;
 const RECOVERY_PROJECT = /^aidr-recovery-[a-f0-9]{16}$/;
@@ -118,7 +119,7 @@ if (action !== "recover-services") {
 }
 const encKey = rawKey && Buffer.from(hkdfSync("sha256", rawKey, "aidr-backup-v1", "encryption", 32));
 const macKey = rawKey && Buffer.from(hkdfSync("sha256", rawKey, "aidr-backup-v1", "manifest", 32));
-const helperImage = "node:24.12.0-alpine3.23";
+let helperImage;
 const output = values.output ? canonicalNew(values.output, "Output") : null;
 let ownedBackupOutput;
 function backupOutputIsOwned() {
@@ -211,7 +212,13 @@ async function encrypt(exe, args, name, signal) {
   const cipher = createCipheriv("aes-256-gcm", encKey, iv); cipher.setAAD(Buffer.from(name));
   const path = join(output, name);
 	const { proc, finished } = child(exe, args, signal); proc.stdin.end();
-  try { await Promise.all([pipeline(proc.stdout, cipher, createWriteStream(path, { flags: "wx", mode: 0o600 })), finished]); }
+  try {
+	await Promise.all([
+		pipeline(proc.stdout, cipher, createWriteStream(path, { flags: "wx", mode: 0o600 })),
+		pipeline(proc.stdout, createGunzip(), createTarBoundaryValidator()),
+		finished,
+	]);
+  }
   catch (error) { proc.kill(); throw error; }
   return { name, iv: iv.toString("hex"), tag: cipher.getAuthTag().toString("hex"), sha256: await digest(path) };
 }
@@ -242,7 +249,7 @@ if (action === "backup") {
 	if (!SOURCE_COMMIT.test(deployment.source_commit ?? "") || deployment.source_has_changes !== false) throw new Error("Backup requires a clean deployment with a 40-64 character source commit");
 	if (!validComposeProject(deployment.project_name)) throw new Error("Backup deployment has no valid Compose project name");
 	const installationBinding = inspectReviewedRuntime(dir, { sourceCommit: deployment.source_commit });
-  command("docker", ["image", "inspect", helperImage]);
+  helperImage = buildNodeHelperImage();
   command("tar", ["--version"]);
 	const project = deployment.project_name;
 	const dbVolume = inspectMount(dir, "db", "/var/lib/postgresql/data", project);
@@ -306,11 +313,13 @@ if (action === "backup") {
 		failure = error;
 	} finally {
 		const restartFailures = [];
-		for (const service of running) {
+		// Only the invocation that owns the journal may resume the snapshot's
+		// services. A concurrent backup must not start them while another archives.
+		for (const service of journalIdentity ? running : []) {
 			try { command("docker", [...composeArgs(dir, project), "start", service]); }
 			catch { restartFailures.push(service); }
 		}
-		if (restartFailures.length === 0) {
+		if (journalIdentity && restartFailures.length === 0) {
 			try {
 				const active = new Set(command("docker", [...composeArgs(dir, project), "ps", "--services", "--status", "running"]).split(/\r?\n/).filter(Boolean));
 				restartFailures.push(...running.filter((service) => !active.has(service)));
@@ -331,7 +340,7 @@ if (action === "backup") {
 		}
 		if (restartFailures.length > 0) {
 			failure = new Error(`${failure?.message ?? "Backup completed"}; could not restart originally running services: ${restartFailures.join(", ")}`);
-		} else {
+		} else if (journalIdentity) {
 			console.log("Previously running source services restarted. Verify health before ending the maintenance window.");
 		}
 	}
@@ -367,6 +376,7 @@ const runtime = canonicalExisting(values.runtime, "Reviewed runtime");
 if (within(keyPath, runtime) || within(runtime, backup) || within(backup, runtime)) throw new Error("Keep the reviewed runtime separate from recovery-key custody and the backup directory");
 if (manifest.architecture !== command("docker", ["info", "--format", "{{.Architecture}}"] )) throw new Error("Physical database recovery requires the same architecture and database image");
 const reviewedBinding = inspectReviewedRuntime(runtime, { sourceCommit: manifest.source_commit });
+helperImage = buildNodeHelperImage();
 const project = values.project ?? `aidr-recovery-${randomBytes(8).toString("hex")}`;
 if (!RECOVERY_PROJECT.test(project)) throw new Error("Recovery project name is invalid");
 assertUnusedRecoveryProject(project);

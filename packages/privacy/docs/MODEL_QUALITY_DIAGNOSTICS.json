@@ -1,0 +1,2067 @@
+{
+  "schemaVersion": 1,
+  "recordedLocalDate": "2026-10-06",
+  "status": "pipeline-reproducibility-fixed-public-candidate-quality-still-failed",
+  "approved": false,
+  "qualified": false,
+  "customerCorpusEvaluated": false,
+  "rawCorpusTextIncluded": false,
+  "corpusSha256": "1c94a485923445a0c5a7b49919e5cb39fc619fbb2753e5c5768deecca85080a1",
+  "policy": {
+    "requiredTypes": [
+      "PERSON",
+      "ADDRESS"
+    ],
+    "minGold": 100,
+    "minRecallLower": 0.95,
+    "minPrecisionLower": 0.9,
+    "maxCleanFalseAlarmRate": 0.05
+  },
+  "sourceSha256": {
+    "ner/ner_worker.py": "6a7780235e647584a94591462555270bb1f589098fdd10aa4ee0e021f507b2df",
+    "ner/test_ner_worker.py": "48701129f1b29b7e441cd923da10eaacc6804dd3b4ffef208baf291467a07b1a"
+  },
+  "primaryAuthorCode": [
+    {
+      "repository": "ersan-ai/kvkk-pii",
+      "revision": "4d1f9fbb87ef30443ec3782d3932196251fd841b",
+      "files": [
+        {
+          "url": "https://github.com/ersan-ai/kvkk-pii/blob/4d1f9fbb87ef30443ec3782d3932196251fd841b/kvkk_pii/ner/berturk_ner.py",
+          "sha256OfSavedUtf8Receipt": "4966d3edc2afdf978aef9945643297d4c960a4c661c906c716e3b1ea389cd632"
+        },
+        {
+          "url": "https://github.com/ersan-ai/kvkk-pii/blob/4d1f9fbb87ef30443ec3782d3932196251fd841b/generate_real_training.py",
+          "sha256OfSavedUtf8Receipt": "8405a6fc9fe4d8125a9a4dcaf7c8f1d94471b009e1a1521490103236d33f7977"
+        }
+      ]
+    },
+    {
+      "repository": "aditrynacode/PrivyShield",
+      "revision": "95a73338b0ad907ab6b751c58e79db0fc902df94",
+      "files": [
+        {
+          "url": "https://github.com/aditrynacode/PrivyShield/blob/95a73338b0ad907ab6b751c58e79db0fc902df94/NER/train.py",
+          "sha256OfSavedUtf8Receipt": "c614d9385c4bd22273437bde3a4f9af8e23ef989a20d40e5669c32feba6b648f"
+        },
+        {
+          "url": "https://github.com/aditrynacode/PrivyShield/blob/95a73338b0ad907ab6b751c58e79db0fc902df94/NER/dataset_generator.py",
+          "sha256OfSavedUtf8Receipt": "7017fbac664f33184a779717d5f04dd0f1cd038d2c177fb58996dc56f2331e4a"
+        },
+        {
+          "url": "https://github.com/aditrynacode/PrivyShield/blob/95a73338b0ad907ab6b751c58e79db0fc902df94/detection/ner_inference.py",
+          "sha256OfSavedUtf8Receipt": "d3cafbfd2f8a4d08927b91d4b0adc16e2206635bf92bd16984c7d3fa15b08f28"
+        }
+      ]
+    }
+  ],
+  "actualCheckpointDiagnostics": [
+    {
+      "name": "tr-kvkk",
+      "repository": "ersanbil/kvkk-pii-ner",
+      "revision": "cb85fbd0839f92cff2ddc92c4f23ecf61cb769c2",
+      "license": "Apache-2.0",
+      "loadingInfo": {
+        "missing_keys": [],
+        "unexpected_keys": [],
+        "mismatched_keys": [],
+        "error_msgs": []
+      },
+      "tokenizerClass": "BertTokenizer",
+      "tokenizerVocabSize": 32000,
+      "modelVocabSize": 32000,
+      "id2label": {
+        "0": "O",
+        "1": "B-PERSON",
+        "2": "I-PERSON",
+        "3": "B-ADDRESS",
+        "4": "I-ADDRESS",
+        "5": "B-HEALTH_DATA",
+        "6": "I-HEALTH_DATA",
+        "7": "B-KVKK_SPECIAL",
+        "8": "I-KVKK_SPECIAL"
+      },
+      "classifierParameters": {
+        "classifier.weight": {
+          "shape": [
+            9,
+            768
+          ],
+          "finite": true,
+          "std": 0.020197810605168343,
+          "mean": 0.0002747300604823977
+        },
+        "classifier.bias": {
+          "shape": [
+            9
+          ],
+          "finite": true,
+          "std": 0.0003983584465458989,
+          "mean": -8.117069228319451e-05
+        }
+      },
+      "ownDeclaredLanguageDiagnostics": {
+        "routingImplemented": false,
+        "goldCoverageByType": {
+          "ADDRESS": {
+            "gold": 100,
+            "exact": 0,
+            "anySameTypeOverlap": 50,
+            "fullyMissed": 50,
+            "allNonWhitespaceCovered": 0
+          },
+          "PERSON": {
+            "gold": 100,
+            "exact": 78,
+            "anySameTypeOverlap": 88,
+            "fullyMissed": 12,
+            "allNonWhitespaceCovered": 78
+          }
+        },
+        "cleanPredictedEntityTypes": {
+          "PERSON": 3,
+          "ADDRESS": 2
+        }
+      },
+      "representativeCasesWithoutRawText": [
+        {
+          "id": "btx-test-2",
+          "category": "ADDRESS-exact-miss",
+          "goldTokenLabels": {
+            "O": 11
+          },
+          "goldAddressProbabilityMax": 0.2180768847465515,
+          "authorPathComparison": {
+            "sameInputPrefix": true,
+            "workerTokens": 18,
+            "authorTokens": 18,
+            "labelsEqualOnCommonTokens": true,
+            "maxAbsLogitDeltaCommon": 0.0,
+            "authorMaxLength": 512
+          }
+        },
+        {
+          "id": "btx-test-4",
+          "category": "ADDRESS-exact-miss",
+          "goldTokenLabels": {
+            "B-ADDRESS": 1,
+            "O": 10,
+            "I-ADDRESS": 2
+          },
+          "goldAddressProbabilityMax": 0.5785849690437317,
+          "authorPathComparison": {
+            "sameInputPrefix": true,
+            "workerTokens": 23,
+            "authorTokens": 23,
+            "labelsEqualOnCommonTokens": true,
+            "maxAbsLogitDeltaCommon": 0.0,
+            "authorMaxLength": 512
+          }
+        },
+        {
+          "id": "btx-test-11",
+          "category": "ADDRESS-exact-miss",
+          "goldTokenLabels": {
+            "O": 14
+          },
+          "goldAddressProbabilityMax": 0.015446744859218597,
+          "authorPathComparison": {
+            "sameInputPrefix": true,
+            "workerTokens": 24,
+            "authorTokens": 24,
+            "labelsEqualOnCommonTokens": true,
+            "maxAbsLogitDeltaCommon": 0.0,
+            "authorMaxLength": 512
+          }
+        },
+        {
+          "id": "btx-test-21",
+          "category": "PERSON-exact-miss",
+          "goldTokenLabels": {
+            "O": 2,
+            "B-PERSON": 1,
+            "I-PERSON": 2
+          },
+          "goldAddressProbabilityMax": 0.014613588340580463,
+          "authorPathComparison": {
+            "sameInputPrefix": true,
+            "workerTokens": 17,
+            "authorTokens": 17,
+            "labelsEqualOnCommonTokens": true,
+            "maxAbsLogitDeltaCommon": 0.0,
+            "authorMaxLength": 512
+          }
+        },
+        {
+          "id": "btx-test-23",
+          "category": "PERSON-exact-miss",
+          "goldTokenLabels": {
+            "O": 1
+          },
+          "goldAddressProbabilityMax": 0.004785874392837286,
+          "authorPathComparison": {
+            "sameInputPrefix": true,
+            "workerTokens": 17,
+            "authorTokens": 17,
+            "labelsEqualOnCommonTokens": true,
+            "maxAbsLogitDeltaCommon": 0.0,
+            "authorMaxLength": 512
+          }
+        },
+        {
+          "id": "btx-test-365",
+          "category": "PERSON-exact-miss",
+          "goldTokenLabels": {
+            "O": 1,
+            "I-PERSON": 1
+          },
+          "goldAddressProbabilityMax": 0.0017944497521966696,
+          "authorPathComparison": {
+            "sameInputPrefix": true,
+            "workerTokens": 18,
+            "authorTokens": 18,
+            "labelsEqualOnCommonTokens": true,
+            "maxAbsLogitDeltaCommon": 0.0,
+            "authorMaxLength": 512
+          }
+        },
+        {
+          "id": "yusuf-train-clean-1",
+          "category": "clean-no-alarm",
+          "goldTokenLabels": {},
+          "goldAddressProbabilityMax": null,
+          "authorPathComparison": {
+            "sameInputPrefix": true,
+            "workerTokens": 66,
+            "authorTokens": 66,
+            "labelsEqualOnCommonTokens": true,
+            "maxAbsLogitDeltaCommon": 0.0,
+            "authorMaxLength": 512
+          }
+        },
+        {
+          "id": "yusuf-train-clean-12",
+          "category": "clean-no-alarm",
+          "goldTokenLabels": {},
+          "goldAddressProbabilityMax": null,
+          "authorPathComparison": {
+            "sameInputPrefix": true,
+            "workerTokens": 67,
+            "authorTokens": 67,
+            "labelsEqualOnCommonTokens": true,
+            "maxAbsLogitDeltaCommon": 0.0,
+            "authorMaxLength": 512
+          }
+        },
+        {
+          "id": "yusuf-train-clean-13",
+          "category": "clean-no-alarm",
+          "goldTokenLabels": {},
+          "goldAddressProbabilityMax": null,
+          "authorPathComparison": {
+            "sameInputPrefix": true,
+            "workerTokens": 65,
+            "authorTokens": 65,
+            "labelsEqualOnCommonTokens": true,
+            "maxAbsLogitDeltaCommon": 0.0,
+            "authorMaxLength": 512
+          }
+        },
+        {
+          "id": "yusuf-train-clean-87",
+          "category": "clean-false-alarm",
+          "goldTokenLabels": {},
+          "goldAddressProbabilityMax": null,
+          "authorPathComparison": {
+            "sameInputPrefix": true,
+            "workerTokens": 35,
+            "authorTokens": 35,
+            "labelsEqualOnCommonTokens": true,
+            "maxAbsLogitDeltaCommon": 0.0,
+            "authorMaxLength": 512
+          }
+        },
+        {
+          "id": "yusuf-train-clean-106",
+          "category": "clean-false-alarm",
+          "goldTokenLabels": {},
+          "goldAddressProbabilityMax": null,
+          "authorPathComparison": {
+            "sameInputPrefix": true,
+            "workerTokens": 32,
+            "authorTokens": 32,
+            "labelsEqualOnCommonTokens": true,
+            "maxAbsLogitDeltaCommon": 0.0,
+            "authorMaxLength": 512
+          }
+        }
+      ]
+    },
+    {
+      "name": "en-privyshield",
+      "repository": "aditrynacode/privyshield-ner",
+      "revision": "a3aa3695fb2998f32a750d581337610eafa079a3",
+      "license": "Apache-2.0",
+      "loadingInfo": {
+        "missing_keys": [],
+        "unexpected_keys": [],
+        "mismatched_keys": [],
+        "error_msgs": []
+      },
+      "tokenizerClass": "BertTokenizer",
+      "tokenizerVocabSize": 30522,
+      "modelVocabSize": 30522,
+      "id2label": {
+        "0": "O",
+        "1": "B-PERSON_NAME",
+        "2": "I-PERSON_NAME",
+        "3": "B-ADDRESS",
+        "4": "I-ADDRESS"
+      },
+      "classifierParameters": {
+        "classifier.weight": {
+          "shape": [
+            5,
+            768
+          ],
+          "finite": true,
+          "std": 0.020008491352200508,
+          "mean": 0.00010230924090137705
+        },
+        "classifier.bias": {
+          "shape": [
+            5
+          ],
+          "finite": true,
+          "std": 0.0004350611416157335,
+          "mean": -9.434939420316368e-05
+        }
+      },
+      "ownDeclaredLanguageDiagnostics": {
+        "routingImplemented": false,
+        "goldCoverageByType": {
+          "PERSON": {
+            "gold": 108,
+            "exact": 33,
+            "anySameTypeOverlap": 41,
+            "fullyMissed": 67,
+            "allNonWhitespaceCovered": 35
+          },
+          "ADDRESS": {
+            "gold": 107,
+            "exact": 36,
+            "anySameTypeOverlap": 107,
+            "fullyMissed": 0,
+            "allNonWhitespaceCovered": 96
+          }
+        },
+        "cleanPredictedEntityTypes": {
+          "ADDRESS": 1443,
+          "PERSON": 173
+        }
+      },
+      "representativeCasesWithoutRawText": [
+        {
+          "id": "privy-test-small-1",
+          "category": "PERSON-exact-miss",
+          "goldTokenLabels": {
+            "B-ADDRESS": 1,
+            "I-ADDRESS": 2
+          },
+          "goldAddressProbabilityMax": 0.9749850630760193,
+          "authorPathComparison": {
+            "sameInputPrefix": false,
+            "workerTokens": 84,
+            "authorTokens": 64,
+            "labelsEqualOnCommonTokens": false,
+            "maxAbsLogitDeltaCommon": 3.4697823524475098,
+            "authorMaxLength": 64
+          }
+        },
+        {
+          "id": "privy-test-small-4",
+          "category": "clean-false-alarm",
+          "goldTokenLabels": {},
+          "goldAddressProbabilityMax": null,
+          "authorPathComparison": {
+            "sameInputPrefix": true,
+            "workerTokens": 63,
+            "authorTokens": 64,
+            "labelsEqualOnCommonTokens": true,
+            "maxAbsLogitDeltaCommon": 4.76837158203125e-06,
+            "authorMaxLength": 64
+          }
+        },
+        {
+          "id": "privy-test-small-5",
+          "category": "PERSON-exact-miss",
+          "goldTokenLabels": {
+            "B-ADDRESS": 1
+          },
+          "goldAddressProbabilityMax": 0.6537349820137024,
+          "authorPathComparison": {
+            "sameInputPrefix": false,
+            "workerTokens": 136,
+            "authorTokens": 64,
+            "labelsEqualOnCommonTokens": false,
+            "maxAbsLogitDeltaCommon": 3.909653902053833,
+            "authorMaxLength": 64
+          }
+        },
+        {
+          "id": "privy-test-small-10",
+          "category": "PERSON-exact-miss",
+          "goldTokenLabels": {
+            "O": 1
+          },
+          "goldAddressProbabilityMax": 0.0034000324085354805,
+          "authorPathComparison": {
+            "sameInputPrefix": false,
+            "workerTokens": 69,
+            "authorTokens": 64,
+            "labelsEqualOnCommonTokens": false,
+            "maxAbsLogitDeltaCommon": 1.972367525100708,
+            "authorMaxLength": 64
+          }
+        },
+        {
+          "id": "privy-test-small-13",
+          "category": "clean-false-alarm",
+          "goldTokenLabels": {},
+          "goldAddressProbabilityMax": null,
+          "authorPathComparison": {
+            "sameInputPrefix": true,
+            "workerTokens": 61,
+            "authorTokens": 64,
+            "labelsEqualOnCommonTokens": true,
+            "maxAbsLogitDeltaCommon": 1.1444091796875e-05,
+            "authorMaxLength": 64
+          }
+        },
+        {
+          "id": "privy-test-small-15",
+          "category": "clean-false-alarm",
+          "goldTokenLabels": {},
+          "goldAddressProbabilityMax": null,
+          "authorPathComparison": {
+            "sameInputPrefix": false,
+            "workerTokens": 281,
+            "authorTokens": 64,
+            "labelsEqualOnCommonTokens": false,
+            "maxAbsLogitDeltaCommon": 8.775861740112305,
+            "authorMaxLength": 64
+          }
+        },
+        {
+          "id": "privy-test-small-161",
+          "category": "ADDRESS-exact-miss",
+          "goldTokenLabels": {
+            "B-ADDRESS": 2,
+            "I-ADDRESS": 30,
+            "O": 1
+          },
+          "goldAddressProbabilityMax": 0.9997513890266418,
+          "authorPathComparison": {
+            "sameInputPrefix": false,
+            "workerTokens": 78,
+            "authorTokens": 64,
+            "labelsEqualOnCommonTokens": false,
+            "maxAbsLogitDeltaCommon": 9.309584617614746,
+            "authorMaxLength": 64
+          }
+        },
+        {
+          "id": "privy-test-small-222",
+          "category": "ADDRESS-exact-miss",
+          "goldTokenLabels": {
+            "B-ADDRESS": 2,
+            "I-ADDRESS": 18,
+            "B-PERSON_NAME": 1
+          },
+          "goldAddressProbabilityMax": 0.9990298748016357,
+          "authorPathComparison": {
+            "sameInputPrefix": false,
+            "workerTokens": 124,
+            "authorTokens": 64,
+            "labelsEqualOnCommonTokens": false,
+            "maxAbsLogitDeltaCommon": 7.7235026359558105,
+            "authorMaxLength": 64
+          }
+        },
+        {
+          "id": "privy-test-small-264",
+          "category": "clean-no-alarm",
+          "goldTokenLabels": {},
+          "goldAddressProbabilityMax": null,
+          "authorPathComparison": {
+            "sameInputPrefix": true,
+            "workerTokens": 13,
+            "authorTokens": 64,
+            "labelsEqualOnCommonTokens": true,
+            "maxAbsLogitDeltaCommon": 2.1457672119140625e-06,
+            "authorMaxLength": 64
+          }
+        },
+        {
+          "id": "privy-test-small-474",
+          "category": "ADDRESS-exact-miss",
+          "goldTokenLabels": {
+            "I-ADDRESS": 12
+          },
+          "goldAddressProbabilityMax": 0.9994511604309082,
+          "authorPathComparison": {
+            "sameInputPrefix": false,
+            "workerTokens": 167,
+            "authorTokens": 64,
+            "labelsEqualOnCommonTokens": false,
+            "maxAbsLogitDeltaCommon": 5.400504112243652,
+            "authorMaxLength": 64
+          }
+        }
+      ]
+    },
+    {
+      "name": "en-deberta",
+      "repository": "seongyeon1/pii-deberta-v3-base-multi",
+      "revision": "9d83044fc56074f871ee811e7009778867beb7cf",
+      "license": "Apache-2.0",
+      "loadingInfo": {
+        "missing_keys": [],
+        "unexpected_keys": [],
+        "mismatched_keys": [],
+        "error_msgs": []
+      },
+      "tokenizerClass": "DebertaV2Tokenizer",
+      "tokenizerVocabSize": 128001,
+      "modelVocabSize": 128100,
+      "id2label": {
+        "0": "O",
+        "1": "B-NAME_STUDENT",
+        "2": "I-NAME_STUDENT",
+        "3": "B-EMAIL",
+        "4": "I-EMAIL",
+        "5": "B-USERNAME",
+        "6": "I-USERNAME",
+        "7": "B-ID_NUM",
+        "8": "I-ID_NUM",
+        "9": "B-PHONE_NUM",
+        "10": "I-PHONE_NUM",
+        "11": "B-URL_PERSONAL",
+        "12": "I-URL_PERSONAL",
+        "13": "B-STREET_ADDRESS",
+        "14": "I-STREET_ADDRESS"
+      },
+      "classifierParameters": {
+        "classifier.weight": {
+          "shape": [
+            15,
+            768
+          ],
+          "finite": true,
+          "std": 0.020259439945220947,
+          "mean": 0.00024261295038741082
+        },
+        "classifier.bias": {
+          "shape": [
+            15
+          ],
+          "finite": true,
+          "std": 0.00039744816604070365,
+          "mean": -0.0002433361514704302
+        }
+      },
+      "ownDeclaredLanguageDiagnostics": {
+        "routingImplemented": false,
+        "goldCoverageByType": {
+          "PERSON": {
+            "gold": 108,
+            "exact": 63,
+            "anySameTypeOverlap": 102,
+            "fullyMissed": 6,
+            "allNonWhitespaceCovered": 93
+          },
+          "ADDRESS": {
+            "gold": 107,
+            "exact": 8,
+            "anySameTypeOverlap": 102,
+            "fullyMissed": 5,
+            "allNonWhitespaceCovered": 55
+          }
+        },
+        "cleanPredictedEntityTypes": {
+          "INTERNAL": 168,
+          "PERSON": 1,
+          "EMAIL": 5,
+          "PHONE": 6
+        }
+      },
+      "representativeCasesWithoutRawText": [
+        {
+          "id": "privy-test-small-4",
+          "category": "clean-false-alarm",
+          "goldTokenLabels": {},
+          "goldAddressProbabilityMax": null,
+          "authorPathComparison": {
+            "sameInputPrefix": true,
+            "workerTokens": 62,
+            "authorTokens": 62,
+            "labelsEqualOnCommonTokens": true,
+            "maxAbsLogitDeltaCommon": 0.0,
+            "authorMaxLength": 256
+          }
+        },
+        {
+          "id": "privy-test-small-7",
+          "category": "PERSON-exact-miss",
+          "goldTokenLabels": {
+            "B-NAME_STUDENT": 2,
+            "I-NAME_STUDENT": 1
+          },
+          "goldAddressProbabilityMax": 0.010883694514632225,
+          "authorPathComparison": {
+            "sameInputPrefix": true,
+            "workerTokens": 152,
+            "authorTokens": 152,
+            "labelsEqualOnCommonTokens": true,
+            "maxAbsLogitDeltaCommon": 0.0,
+            "authorMaxLength": 256
+          }
+        },
+        {
+          "id": "privy-test-small-9",
+          "category": "PERSON-exact-miss",
+          "goldTokenLabels": {
+            "B-NAME_STUDENT": 2
+          },
+          "goldAddressProbabilityMax": 0.011825363151729107,
+          "authorPathComparison": {
+            "sameInputPrefix": true,
+            "workerTokens": 84,
+            "authorTokens": 84,
+            "labelsEqualOnCommonTokens": true,
+            "maxAbsLogitDeltaCommon": 0.0,
+            "authorMaxLength": 256
+          }
+        },
+        {
+          "id": "privy-test-small-13",
+          "category": "clean-false-alarm",
+          "goldTokenLabels": {},
+          "goldAddressProbabilityMax": null,
+          "authorPathComparison": {
+            "sameInputPrefix": true,
+            "workerTokens": 60,
+            "authorTokens": 60,
+            "labelsEqualOnCommonTokens": true,
+            "maxAbsLogitDeltaCommon": 0.0,
+            "authorMaxLength": 256
+          }
+        },
+        {
+          "id": "privy-test-small-15",
+          "category": "clean-false-alarm",
+          "goldTokenLabels": {},
+          "goldAddressProbabilityMax": null,
+          "authorPathComparison": {
+            "sameInputPrefix": true,
+            "workerTokens": 243,
+            "authorTokens": 243,
+            "labelsEqualOnCommonTokens": true,
+            "maxAbsLogitDeltaCommon": 0.0,
+            "authorMaxLength": 256
+          }
+        },
+        {
+          "id": "privy-test-small-21",
+          "category": "clean-no-alarm",
+          "goldTokenLabels": {},
+          "goldAddressProbabilityMax": null,
+          "authorPathComparison": {
+            "sameInputPrefix": true,
+            "workerTokens": 35,
+            "authorTokens": 35,
+            "labelsEqualOnCommonTokens": true,
+            "maxAbsLogitDeltaCommon": 0.0,
+            "authorMaxLength": 256
+          }
+        },
+        {
+          "id": "privy-test-small-22",
+          "category": "clean-no-alarm",
+          "goldTokenLabels": {},
+          "goldAddressProbabilityMax": null,
+          "authorPathComparison": {
+            "sameInputPrefix": true,
+            "workerTokens": 112,
+            "authorTokens": 112,
+            "labelsEqualOnCommonTokens": true,
+            "maxAbsLogitDeltaCommon": 0.0,
+            "authorMaxLength": 256
+          }
+        },
+        {
+          "id": "privy-test-small-24",
+          "category": "clean-no-alarm",
+          "goldTokenLabels": {},
+          "goldAddressProbabilityMax": null,
+          "authorPathComparison": {
+            "sameInputPrefix": true,
+            "workerTokens": 19,
+            "authorTokens": 19,
+            "labelsEqualOnCommonTokens": true,
+            "maxAbsLogitDeltaCommon": 0.0,
+            "authorMaxLength": 256
+          }
+        },
+        {
+          "id": "privy-test-small-73",
+          "category": "PERSON-exact-miss",
+          "goldTokenLabels": {
+            "B-NAME_STUDENT": 4,
+            "I-NAME_STUDENT": 2
+          },
+          "goldAddressProbabilityMax": 0.011017190292477608,
+          "authorPathComparison": {
+            "sameInputPrefix": true,
+            "workerTokens": 238,
+            "authorTokens": 238,
+            "labelsEqualOnCommonTokens": true,
+            "maxAbsLogitDeltaCommon": 0.0,
+            "authorMaxLength": 256
+          }
+        },
+        {
+          "id": "privy-test-small-127",
+          "category": "ADDRESS-exact-miss",
+          "goldTokenLabels": {
+            "B-STREET_ADDRESS": 5,
+            "I-STREET_ADDRESS": 9,
+            "O": 2
+          },
+          "goldAddressProbabilityMax": 0.9871447682380676,
+          "authorPathComparison": {
+            "sameInputPrefix": true,
+            "workerTokens": 179,
+            "authorTokens": 179,
+            "labelsEqualOnCommonTokens": true,
+            "maxAbsLogitDeltaCommon": 0.0,
+            "authorMaxLength": 256
+          }
+        },
+        {
+          "id": "privy-test-small-161",
+          "category": "ADDRESS-exact-miss",
+          "goldTokenLabels": {
+            "B-STREET_ADDRESS": 6,
+            "I-STREET_ADDRESS": 18,
+            "O": 6
+          },
+          "goldAddressProbabilityMax": 0.9835948944091797,
+          "authorPathComparison": {
+            "sameInputPrefix": true,
+            "workerTokens": 75,
+            "authorTokens": 75,
+            "labelsEqualOnCommonTokens": true,
+            "maxAbsLogitDeltaCommon": 0.0,
+            "authorMaxLength": 256
+          }
+        },
+        {
+          "id": "privy-test-small-222",
+          "category": "ADDRESS-exact-miss",
+          "goldTokenLabels": {
+            "O": 17,
+            "I-ID_NUM": 1
+          },
+          "goldAddressProbabilityMax": 0.14558714628219604,
+          "authorPathComparison": {
+            "sameInputPrefix": true,
+            "workerTokens": 121,
+            "authorTokens": 121,
+            "labelsEqualOnCommonTokens": true,
+            "maxAbsLogitDeltaCommon": 0.0,
+            "authorMaxLength": 256
+          }
+        }
+      ]
+    }
+  ],
+  "normalizerMismatchBeforeFix": {
+    "scope": "Offline tokenizer-only comparison; no model inference or raw corpus output",
+    "runtime": {
+      "transformers": "5.13.0",
+      "tokenizers": "0.22.2"
+    },
+    "sha256": {
+      "packages/privacy/reports/platform/t38-public-comparison.jsonl": "1c94a485923445a0c5a7b49919e5cb39fc619fbb2753e5c5768deecca85080a1",
+      "packages/privacy/reports/platform/t38-alternative-models/en-deberta/tokenizer.json": "fa3cbe7ce1be7311df6b43a5a5cca547a2e86ce6c604b0505638ff054dfbe952",
+      "packages/privacy/reports/platform/t38-alternative-models/en-deberta/tokenizer_config.json": "2d4cb82493b36f48593a41fbcbd4a37c87e7dcf49d15a328d919847c5aced76c",
+      ".tmp-test/model-quality-2026-10-06/privacy/compare-tokenizer-contract.py": "f448983f72e61fb95a735228343ea5cb5112010de2b386f89f91c60898ac51bb"
+    },
+    "normalizers": {
+      "pinned": [
+        {
+          "type": "Strip",
+          "strip_left": true,
+          "strip_right": true
+        },
+        {
+          "type": "Precompiled"
+        },
+        {
+          "type": "Replace",
+          "pattern": {
+            "Regex": " {2,}"
+          },
+          "content": " "
+        }
+      ],
+      "actual": [
+        {
+          "type": "Replace",
+          "pattern": {
+            "Regex": "\\s{2,}|[\\n\\r\\t]"
+          },
+          "content": " "
+        },
+        {
+          "type": "NFC"
+        },
+        {
+          "type": "Strip",
+          "strip_left": false,
+          "strip_right": true
+        }
+      ]
+    },
+    "unchangedPublicCorpus": {
+      "tr": {
+        "documents": 300,
+        "inputIdsDiffer": 0,
+        "offsetsDiffer": 0,
+        "windowCountDiffer": 0,
+        "allInputIdsDiffer": 0,
+        "allOffsetsDiffer": 0
+      },
+      "en": {
+        "documents": 300,
+        "inputIdsDiffer": 0,
+        "offsetsDiffer": 0,
+        "windowCountDiffer": 0,
+        "allInputIdsDiffer": 0,
+        "allOffsetsDiffer": 0
+      }
+    },
+    "changedRowIds": [],
+    "syntheticVariants": [
+      {
+        "synthetic": "\uff21\uff4c\uff49\uff43\uff45",
+        "pinned": [
+          {
+            "id": 8085,
+            "token": "\u2581Alice",
+            "offset": [
+              0,
+              5
+            ]
+          }
+        ],
+        "actual": [
+          {
+            "id": 507,
+            "token": "\u2581",
+            "offset": [
+              0,
+              1
+            ]
+          },
+          {
+            "id": 3,
+            "token": "[UNK]",
+            "offset": [
+              0,
+              5
+            ]
+          }
+        ]
+      },
+      {
+        "synthetic": "Name: \u2168",
+        "pinned": [
+          {
+            "id": 5445,
+            "token": "\u2581Name",
+            "offset": [
+              0,
+              4
+            ]
+          },
+          {
+            "id": 294,
+            "token": ":",
+            "offset": [
+              4,
+              5
+            ]
+          },
+          {
+            "id": 24409,
+            "token": "\u2581IX",
+            "offset": [
+              5,
+              7
+            ]
+          }
+        ],
+        "actual": [
+          {
+            "id": 5445,
+            "token": "\u2581Name",
+            "offset": [
+              0,
+              4
+            ]
+          },
+          {
+            "id": 294,
+            "token": ":",
+            "offset": [
+              4,
+              5
+            ]
+          },
+          {
+            "id": 507,
+            "token": "\u2581",
+            "offset": [
+              5,
+              6
+            ]
+          },
+          {
+            "id": 3,
+            "token": "[UNK]",
+            "offset": [
+              6,
+              7
+            ]
+          }
+        ]
+      },
+      {
+        "synthetic": "A\u00a0B",
+        "pinned": [
+          {
+            "id": 336,
+            "token": "\u2581A",
+            "offset": [
+              0,
+              1
+            ]
+          },
+          {
+            "id": 736,
+            "token": "\u2581B",
+            "offset": [
+              1,
+              3
+            ]
+          }
+        ],
+        "actual": [
+          {
+            "id": 336,
+            "token": "\u2581A",
+            "offset": [
+              0,
+              1
+            ]
+          },
+          {
+            "id": 3,
+            "token": "[UNK]",
+            "offset": [
+              1,
+              2
+            ]
+          },
+          {
+            "id": 983,
+            "token": "B",
+            "offset": [
+              2,
+              3
+            ]
+          }
+        ]
+      },
+      {
+        "synthetic": "\tJane Doe\n",
+        "pinned": [
+          {
+            "id": 5807,
+            "token": "\u2581Jane",
+            "offset": [
+              1,
+              5
+            ]
+          },
+          {
+            "id": 32181,
+            "token": "\u2581Doe",
+            "offset": [
+              5,
+              9
+            ]
+          }
+        ],
+        "actual": [
+          {
+            "id": 5807,
+            "token": "\u2581Jane",
+            "offset": [
+              0,
+              5
+            ]
+          },
+          {
+            "id": 32181,
+            "token": "\u2581Doe",
+            "offset": [
+              5,
+              9
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "actualNormalizerRegressionAfterFix": {
+    "scope": "Actual tokenizer-only regression, not model qualification",
+    "corpusSha256": "1c94a485923445a0c5a7b49919e5cb39fc619fbb2753e5c5768deecca85080a1",
+    "workerSha256": "6a7780235e647584a94591462555270bb1f589098fdd10aa4ee0e021f507b2df",
+    "models": [
+      {
+        "model": "tr-kvkk",
+        "revision": "cb85fbd0839f92cff2ddc92c4f23ecf61cb769c2",
+        "normalizerRestored": false,
+        "publicDocuments": 600,
+        "inputIdDifferences": 0,
+        "offsetDifferences": 0,
+        "syntheticVariants": [
+          {
+            "synthetic": "\uff21\uff4c\uff49\uff43\uff45",
+            "inputIds": [
+              2,
+              1,
+              3
+            ],
+            "offsets": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                5
+              ],
+              [
+                0,
+                0
+              ]
+            ]
+          },
+          {
+            "synthetic": "A\u00a0B",
+            "inputIds": [
+              2,
+              37,
+              38,
+              3
+            ],
+            "offsets": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                2,
+                3
+              ],
+              [
+                0,
+                0
+              ]
+            ]
+          },
+          {
+            "synthetic": "Name: \u2168",
+            "inputIds": [
+              2,
+              16161,
+              1025,
+              30,
+              1,
+              3
+            ],
+            "offsets": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                3
+              ],
+              [
+                3,
+                4
+              ],
+              [
+                4,
+                5
+              ],
+              [
+                6,
+                7
+              ],
+              [
+                0,
+                0
+              ]
+            ]
+          },
+          {
+            "synthetic": "\ud83d\ude00 \uff2a\uff4f\uff48\uff4e \uff33\uff4d\uff49\uff54\uff48",
+            "inputIds": [
+              2,
+              984,
+              1,
+              1,
+              3
+            ],
+            "offsets": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                2,
+                6
+              ],
+              [
+                7,
+                12
+              ],
+              [
+                0,
+                0
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "model": "en-privyshield",
+        "revision": "a3aa3695fb2998f32a750d581337610eafa079a3",
+        "normalizerRestored": false,
+        "publicDocuments": 600,
+        "inputIdDifferences": 0,
+        "offsetDifferences": 0,
+        "syntheticVariants": [
+          {
+            "synthetic": "\uff21\uff4c\uff49\uff43\uff45",
+            "inputIds": [
+              101,
+              100,
+              102
+            ],
+            "offsets": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                5
+              ],
+              [
+                0,
+                0
+              ]
+            ]
+          },
+          {
+            "synthetic": "A\u00a0B",
+            "inputIds": [
+              101,
+              1037,
+              1038,
+              102
+            ],
+            "offsets": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                2,
+                3
+              ],
+              [
+                0,
+                0
+              ]
+            ]
+          },
+          {
+            "synthetic": "Name: \u2168",
+            "inputIds": [
+              101,
+              2171,
+              1024,
+              100,
+              102
+            ],
+            "offsets": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                4
+              ],
+              [
+                4,
+                5
+              ],
+              [
+                6,
+                7
+              ],
+              [
+                0,
+                0
+              ]
+            ]
+          },
+          {
+            "synthetic": "\ud83d\ude00 \uff2a\uff4f\uff48\uff4e \uff33\uff4d\uff49\uff54\uff48",
+            "inputIds": [
+              101,
+              100,
+              100,
+              100,
+              102
+            ],
+            "offsets": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                2,
+                6
+              ],
+              [
+                7,
+                12
+              ],
+              [
+                0,
+                0
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "model": "en-deberta",
+        "revision": "9d83044fc56074f871ee811e7009778867beb7cf",
+        "normalizerRestored": true,
+        "publicDocuments": 600,
+        "inputIdDifferences": 0,
+        "offsetDifferences": 0,
+        "syntheticVariants": [
+          {
+            "synthetic": "\uff21\uff4c\uff49\uff43\uff45",
+            "inputIds": [
+              1,
+              8085,
+              2
+            ],
+            "offsets": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                5
+              ],
+              [
+                0,
+                0
+              ]
+            ]
+          },
+          {
+            "synthetic": "A\u00a0B",
+            "inputIds": [
+              1,
+              336,
+              736,
+              2
+            ],
+            "offsets": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                3
+              ],
+              [
+                0,
+                0
+              ]
+            ]
+          },
+          {
+            "synthetic": "Name: \u2168",
+            "inputIds": [
+              1,
+              5445,
+              294,
+              24409,
+              2
+            ],
+            "offsets": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                4
+              ],
+              [
+                4,
+                5
+              ],
+              [
+                5,
+                7
+              ],
+              [
+                0,
+                0
+              ]
+            ]
+          },
+          {
+            "synthetic": "\ud83d\ude00 \uff2a\uff4f\uff48\uff4e \uff33\uff4d\uff49\uff54\uff48",
+            "inputIds": [
+              1,
+              54783,
+              918,
+              2430,
+              2
+            ],
+            "offsets": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                6
+              ],
+              [
+                6,
+                12
+              ],
+              [
+                0,
+                0
+              ]
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "checkpointGuard": {
+    "behavior": "No ready advertisement for missing, unexpected or mismatched keys, loader errors or unknown loading-info contract",
+    "allThreePinnedCandidatesLoadWithoutKeyMismatch": true,
+    "originalPairActualStartup": {
+      "scope": "Original pair actual worker startup and fixed synthetic clean inference, not corpus qualification",
+      "workerSha256": "6a7780235e647584a94591462555270bb1f589098fdd10aa4ee0e021f507b2df",
+      "exitCode": 0,
+      "messages": [
+        {
+          "ready": true,
+          "capabilities": {
+            "local": true,
+            "offsetUnit": "utf16",
+            "languages": [
+              "en",
+              "tr"
+            ],
+            "entities": [
+              "ADDRESS",
+              "INTERNAL",
+              "PERSON"
+            ],
+            "entitiesByLanguage": {
+              "tr": [
+                "ADDRESS",
+                "INTERNAL",
+                "PERSON"
+              ],
+              "en": [
+                "ADDRESS",
+                "PERSON"
+              ]
+            },
+            "revision": "ae86f6809e139363ebdd8b16f5624dec87c3abb50122df00ee20d844a02505b3"
+          }
+        },
+        {
+          "id": "pinned-startup",
+          "complete": true,
+          "entities": []
+        }
+      ],
+      "stderrEmpty": true
+    }
+  },
+  "currentActualAlternativeWorkerProbe": {
+    "schemaVersion": 1,
+    "ready": true,
+    "modelRevision": "a5ce382e4b2a833845ac55e252fa1b2d3d9daae054b9229913c6f058504355ff",
+    "capabilities": {
+      "local": true,
+      "offsetUnit": "utf16",
+      "languages": [
+        "en",
+        "tr"
+      ],
+      "entities": [
+        "ADDRESS",
+        "EMAIL",
+        "INTERNAL",
+        "PERSON",
+        "PHONE",
+        "USERNAME"
+      ],
+      "revision": "a5ce382e4b2a833845ac55e252fa1b2d3d9daae054b9229913c6f058504355ff",
+      "entitiesByLanguage": {
+        "tr": [
+          "ADDRESS",
+          "INTERNAL",
+          "PERSON"
+        ],
+        "en": [
+          "ADDRESS",
+          "EMAIL",
+          "INTERNAL",
+          "PERSON",
+          "PHONE",
+          "USERNAME"
+        ]
+      }
+    },
+    "scope": "three synthetic real-inference smoke cases; not independent accuracy evidence",
+    "qualified": false,
+    "results": [
+      {
+        "id": "tr-person-address",
+        "language": "tr",
+        "decision": "review",
+        "reasons": [
+          "REVIEW_REQUIRED"
+        ],
+        "types": [
+          "ADDRESS",
+          "PERSON"
+        ],
+        "expected": [
+          {
+            "type": "PERSON",
+            "start": 0,
+            "end": 12
+          },
+          {
+            "type": "ADDRESS",
+            "start": 14,
+            "end": 54
+          }
+        ],
+        "modelTypes": [
+          "ADDRESS",
+          "PERSON"
+        ],
+        "modelSpans": [
+          {
+            "start": 0,
+            "end": 12,
+            "type": "PERSON",
+            "score": 0.7023367285728455
+          },
+          {
+            "start": 0,
+            "end": 5,
+            "type": "PERSON",
+            "score": 0.955686628818512
+          },
+          {
+            "start": 6,
+            "end": 12,
+            "type": "PERSON",
+            "score": 0.8625904321670532
+          },
+          {
+            "start": 14,
+            "end": 35,
+            "type": "ADDRESS",
+            "score": 0.6934093236923218
+          },
+          {
+            "start": 48,
+            "end": 54,
+            "type": "ADDRESS",
+            "score": 0.9156591296195984
+          }
+        ],
+        "modelExpectedTypesPresent": true,
+        "expectedTypesPresent": true,
+        "modelExactSpans": false,
+        "modelTypedCoverage": false,
+        "runtimeMaskCoverage": true,
+        "utf16OffsetsValid": true,
+        "elapsedMs": 306
+      },
+      {
+        "id": "en-person-address",
+        "language": "en",
+        "decision": "redact",
+        "reasons": [],
+        "types": [
+          "ADDRESS",
+          "PERSON"
+        ],
+        "expected": [
+          {
+            "type": "PERSON",
+            "start": 11,
+            "end": 23
+          },
+          {
+            "type": "ADDRESS",
+            "start": 38,
+            "end": 59
+          }
+        ],
+        "modelTypes": [
+          "ADDRESS",
+          "PERSON"
+        ],
+        "modelSpans": [
+          {
+            "start": 11,
+            "end": 23,
+            "type": "PERSON",
+            "score": 0.48055481910705566
+          },
+          {
+            "start": 11,
+            "end": 17,
+            "type": "PERSON",
+            "score": 0.9703376889228821
+          },
+          {
+            "start": 18,
+            "end": 23,
+            "type": "PERSON",
+            "score": 0.7007918357849121
+          },
+          {
+            "start": 38,
+            "end": 48,
+            "type": "ADDRESS",
+            "score": 0.9663597941398621
+          },
+          {
+            "start": 50,
+            "end": 59,
+            "type": "ADDRESS",
+            "score": 0.923106849193573
+          }
+        ],
+        "modelExpectedTypesPresent": true,
+        "expectedTypesPresent": true,
+        "modelExactSpans": false,
+        "modelTypedCoverage": false,
+        "runtimeMaskCoverage": true,
+        "utf16OffsetsValid": true,
+        "elapsedMs": 178
+      },
+      {
+        "id": "en-utf16",
+        "language": "en",
+        "decision": "review",
+        "reasons": [
+          "REVIEW_REQUIRED"
+        ],
+        "types": [
+          "PERSON"
+        ],
+        "expected": [
+          {
+            "type": "PERSON",
+            "start": 14,
+            "end": 26
+          }
+        ],
+        "modelTypes": [
+          "PERSON"
+        ],
+        "modelSpans": [
+          {
+            "start": 18,
+            "end": 26,
+            "type": "PERSON",
+            "score": 0.5177352428436279
+          },
+          {
+            "start": 14,
+            "end": 20,
+            "type": "PERSON",
+            "score": 0.9647333025932312
+          },
+          {
+            "start": 21,
+            "end": 26,
+            "type": "PERSON",
+            "score": 0.6357547640800476
+          }
+        ],
+        "modelExpectedTypesPresent": true,
+        "expectedTypesPresent": true,
+        "modelExactSpans": false,
+        "modelTypedCoverage": true,
+        "runtimeMaskCoverage": true,
+        "utf16OffsetsValid": true,
+        "elapsedMs": 200
+      }
+    ]
+  },
+  "privyAuthorWindowTrial": {
+    "status": "diagnostic-only-no-window-default-change",
+    "corpusSha256": "1c94a485923445a0c5a7b49919e5cb39fc619fbb2753e5c5768deecca85080a1",
+    "policy": {
+      "requiredTypes": [
+        "PERSON",
+        "ADDRESS"
+      ],
+      "minGold": 100,
+      "minRecallLower": 0.95,
+      "minPrecisionLower": 0.9,
+      "maxCleanFalseAlarmRate": 0.05
+    },
+    "profile": {
+      "max_length": 64,
+      "stride": 16,
+      "padding": "max_length"
+    },
+    "elapsedSeconds": 48.703,
+    "completeTokenCoverage": true,
+    "englishOnly": {
+      "before": {
+        "abstained": 0,
+        "blocked": 0,
+        "buckets": {
+          "en:ADDRESS": {
+            "coverageRecall": 0.8317757009345794,
+            "covered": 89,
+            "fn": 71,
+            "fp": 5718,
+            "gold": 107,
+            "precision": 0.006256517205422315,
+            "precisionInterval": {
+              "lower": 0.0045227857400282345,
+              "upper": 0.008649070304133803
+            },
+            "recall": 0.3364485981308411,
+            "recallInterval": {
+              "lower": 0.2539726954082616,
+              "upper": 0.4302609805791796
+            },
+            "tp": 36
+          },
+          "en:PERSON": {
+            "coverageRecall": 0.32407407407407407,
+            "covered": 35,
+            "fn": 75,
+            "fp": 650,
+            "gold": 108,
+            "precision": 0.048316251830161056,
+            "precisionInterval": {
+              "lower": 0.0346081122713821,
+              "upper": 0.06707686600673732
+            },
+            "recall": 0.3055555555555556,
+            "recallInterval": {
+              "lower": 0.22660233791018655,
+              "upper": 0.39786607976903
+            },
+            "tp": 33
+          }
+        },
+        "cleanByLanguage": {
+          "en": {
+            "falseAlarm": 99,
+            "samples": 100
+          },
+          "tr": {
+            "falseAlarm": 0,
+            "samples": 0
+          }
+        },
+        "cleanFalseAlarm": 99,
+        "cleanSamples": 100,
+        "corpusDigest": "ef1c9443254831ba6236dd08784b151da90542aba22a34eb1c968484750e2e72",
+        "independent": 0,
+        "samples": 300,
+        "synthetic": 300
+      },
+      "after": {
+        "abstained": 0,
+        "blocked": 0,
+        "buckets": {
+          "en:ADDRESS": {
+            "coverageRecall": 0.8878504672897196,
+            "covered": 95,
+            "fn": 60,
+            "fp": 5592,
+            "gold": 107,
+            "precision": 0.008334811136726369,
+            "precisionInterval": {
+              "lower": 0.006273941113709611,
+              "upper": 0.011065099781680377
+            },
+            "recall": 0.4392523364485981,
+            "recallInterval": {
+              "lower": 0.3489409789836415,
+              "upper": 0.5337743863831225
+            },
+            "tp": 47
+          },
+          "en:PERSON": {
+            "coverageRecall": 0.3888888888888889,
+            "covered": 42,
+            "fn": 68,
+            "fp": 867,
+            "gold": 108,
+            "precision": 0.044101433296582136,
+            "precisionInterval": {
+              "lower": 0.03255230813840633,
+              "upper": 0.059496047817247336
+            },
+            "recall": 0.37037037037037035,
+            "recallInterval": {
+              "lower": 0.28521534777174484,
+              "upper": 0.46443026401439946
+            },
+            "tp": 40
+          }
+        },
+        "cleanByLanguage": {
+          "en": {
+            "falseAlarm": 99,
+            "samples": 100
+          },
+          "tr": {
+            "falseAlarm": 0,
+            "samples": 0
+          }
+        },
+        "cleanFalseAlarm": 99,
+        "cleanSamples": 100,
+        "corpusDigest": "ef1c9443254831ba6236dd08784b151da90542aba22a34eb1c968484750e2e72",
+        "independent": 0,
+        "samples": 300,
+        "synthetic": 300
+      }
+    },
+    "combined": {
+      "before": {
+        "abstained": 0,
+        "blocked": 0,
+        "buckets": {
+          "en:ADDRESS": {
+            "coverageRecall": 0.8317757009345794,
+            "covered": 89,
+            "fn": 71,
+            "fp": 5722,
+            "gold": 107,
+            "precision": 0.006252170892671066,
+            "precisionInterval": {
+              "lower": 0.004519641529637756,
+              "upper": 0.008643070315650848
+            },
+            "recall": 0.3364485981308411,
+            "recallInterval": {
+              "lower": 0.2539726954082616,
+              "upper": 0.4302609805791796
+            },
+            "tp": 36
+          },
+          "en:PERSON": {
+            "coverageRecall": 0.32407407407407407,
+            "covered": 35,
+            "fn": 75,
+            "fp": 804,
+            "gold": 108,
+            "precision": 0.03942652329749104,
+            "precisionInterval": {
+              "lower": 0.02820967840770299,
+              "upper": 0.05485170978627225
+            },
+            "recall": 0.3055555555555556,
+            "recallInterval": {
+              "lower": 0.22660233791018655,
+              "upper": 0.39786607976903
+            },
+            "tp": 33
+          },
+          "tr:ADDRESS": {
+            "coverageRecall": 0.19,
+            "covered": 19,
+            "fn": 99,
+            "fp": 1076,
+            "gold": 100,
+            "precision": 0.0009285051067780873,
+            "precisionInterval": {
+              "lower": 0.0001639227581725529,
+              "upper": 0.005240624572078583
+            },
+            "recall": 0.01,
+            "recallInterval": {
+              "lower": 0.0017674320641406505,
+              "upper": 0.054486196178705315
+            },
+            "tp": 1
+          },
+          "tr:PERSON": {
+            "coverageRecall": 0.96,
+            "covered": 96,
+            "fn": 22,
+            "fp": 1157,
+            "gold": 100,
+            "precision": 0.06315789473684211,
+            "precisionInterval": {
+              "lower": 0.0508996553417748,
+              "upper": 0.07812529590005239
+            },
+            "recall": 0.78,
+            "recallInterval": {
+              "lower": 0.6892964648501421,
+              "upper": 0.8499871761539459
+            },
+            "tp": 78
+          }
+        },
+        "cleanByLanguage": {
+          "en": {
+            "falseAlarm": 100,
+            "samples": 100
+          },
+          "tr": {
+            "falseAlarm": 100,
+            "samples": 100
+          }
+        },
+        "cleanFalseAlarm": 200,
+        "cleanSamples": 200,
+        "corpusDigest": "f64449c5c8a18d7c599f327aa89e430e5b8ad2a3111f27cd6b2bd2b10641d6ce",
+        "independent": 0,
+        "samples": 600,
+        "synthetic": 600
+      },
+      "after": {
+        "abstained": 0,
+        "blocked": 0,
+        "buckets": {
+          "en:ADDRESS": {
+            "coverageRecall": 0.8878504672897196,
+            "covered": 95,
+            "fn": 60,
+            "fp": 5596,
+            "gold": 107,
+            "precision": 0.008328903065745172,
+            "precisionInterval": {
+              "lower": 0.006269489913951929,
+              "upper": 0.011057268688037877
+            },
+            "recall": 0.4392523364485981,
+            "recallInterval": {
+              "lower": 0.3489409789836415,
+              "upper": 0.5337743863831225
+            },
+            "tp": 47
+          },
+          "en:PERSON": {
+            "coverageRecall": 0.3888888888888889,
+            "covered": 42,
+            "fn": 68,
+            "fp": 1021,
+            "gold": 108,
+            "precision": 0.03770028275212064,
+            "precisionInterval": {
+              "lower": 0.02780693607869362,
+              "upper": 0.05092915944631352
+            },
+            "recall": 0.37037037037037035,
+            "recallInterval": {
+              "lower": 0.28521534777174484,
+              "upper": 0.46443026401439946
+            },
+            "tp": 40
+          },
+          "tr:ADDRESS": {
+            "coverageRecall": 0.19,
+            "covered": 19,
+            "fn": 99,
+            "fp": 1077,
+            "gold": 100,
+            "precision": 0.0009276437847866419,
+            "precisionInterval": {
+              "lower": 0.00016377067881026422,
+              "upper": 0.0052357809588778025
+            },
+            "recall": 0.01,
+            "recallInterval": {
+              "lower": 0.0017674320641406505,
+              "upper": 0.054486196178705315
+            },
+            "tp": 1
+          },
+          "tr:PERSON": {
+            "coverageRecall": 0.96,
+            "covered": 96,
+            "fn": 22,
+            "fp": 1202,
+            "gold": 100,
+            "precision": 0.0609375,
+            "precisionInterval": {
+              "lower": 0.049100213197502796,
+              "upper": 0.07540227713920952
+            },
+            "recall": 0.78,
+            "recallInterval": {
+              "lower": 0.6892964648501421,
+              "upper": 0.8499871761539459
+            },
+            "tp": 78
+          }
+        },
+        "cleanByLanguage": {
+          "en": {
+            "falseAlarm": 100,
+            "samples": 100
+          },
+          "tr": {
+            "falseAlarm": 100,
+            "samples": 100
+          }
+        },
+        "cleanFalseAlarm": 200,
+        "cleanSamples": 200,
+        "corpusDigest": "f64449c5c8a18d7c599f327aa89e430e5b8ad2a3111f27cd6b2bd2b10641d6ce",
+        "independent": 0,
+        "samples": 600,
+        "synthetic": 600
+      },
+      "beforeAcceptance": {
+        "qualified": false,
+        "reasons": [
+          "INDEPENDENT_CORPORATE_CORPUS_REQUIRED",
+          "CLEAN_FALSE_ALARM_RATE",
+          "CLEAN_FALSE_ALARM_RATE_tr",
+          "RECALL_tr_PERSON",
+          "PRECISION_tr_PERSON",
+          "RECALL_tr_ADDRESS",
+          "PRECISION_tr_ADDRESS",
+          "CLEAN_FALSE_ALARM_RATE_en",
+          "RECALL_en_PERSON",
+          "PRECISION_en_PERSON",
+          "RECALL_en_ADDRESS",
+          "PRECISION_en_ADDRESS"
+        ]
+      },
+      "afterAcceptance": {
+        "qualified": false,
+        "reasons": [
+          "INDEPENDENT_CORPORATE_CORPUS_REQUIRED",
+          "CLEAN_FALSE_ALARM_RATE",
+          "CLEAN_FALSE_ALARM_RATE_tr",
+          "RECALL_tr_PERSON",
+          "PRECISION_tr_PERSON",
+          "RECALL_tr_ADDRESS",
+          "PRECISION_tr_ADDRESS",
+          "CLEAN_FALSE_ALARM_RATE_en",
+          "RECALL_en_PERSON",
+          "PRECISION_en_PERSON",
+          "RECALL_en_ADDRESS",
+          "PRECISION_en_ADDRESS"
+        ]
+      }
+    }
+  },
+  "validation": {
+    "isolatedPythonSuite": {
+      "passed": 57,
+      "failed": 0,
+      "network": "Docker --network none"
+    },
+    "scopeDiffCheck": "passed",
+    "actualModelRuntime": "Windows CPython 3.12 cached hash-pinned runtime",
+    "currentLinuxLearnedWorkerRerun": false
+  },
+  "limits": [
+    "No public corpus inputs change from tokenizer restoration; measured candidate failures persist.",
+    "Normalizer regression is tokenization equivalence, not a new corpus inference/qualification run.",
+    "Author max64 trial is a complete-coverage diagnostic; no lock or worker default changed.",
+    "No confidence filtering, language guessing, BIO boundary merging, gold or threshold changes.",
+    "Public synthetic corpus cannot establish independent customer/institutional qualification.",
+    "New model candidate research/evaluation is coordinated separately by the parent task."
+  ]
+}

@@ -16,7 +16,7 @@
 // licensing.public_keys_pem). With neither the policy is served unsigned.
 import { type EnvReader, isConfiguredValue } from "./config.ts";
 
-export type PolicyEnvelope = {
+type PolicyEnvelope = {
 	schema_version: 1;
 	key_id: string;
 	policy_version: string;

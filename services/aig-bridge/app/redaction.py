@@ -56,7 +56,7 @@ def redact_url(value: str) -> str:
             query.append((name, REDACTED if name.lower() in _SECRET_QUERY else item))
         return urlunsplit((parsed.scheme, netloc, parsed.path, urlencode(query), ""))
     except (TypeError, ValueError):
-        return _redact_string(value)
+        return REDACTED
 
 
 def _redact_string(value: str) -> str:
@@ -69,7 +69,7 @@ def _redact_string(value: str) -> str:
         text,
     )
     if "://" in text:
-        text = redact_url(text)
+        text = re.sub(r"https?://[^\s<>\"']+", lambda match: redact_url(match.group()), text)
     return text
 
 

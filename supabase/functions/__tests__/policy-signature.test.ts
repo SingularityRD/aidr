@@ -260,7 +260,7 @@ describe("policy endpoint signed envelope verified by core verifySignedPolicy", 
 		expect((await fetchPolicy()).response.status).toBe(503);
 		vi.stubEnv("AIDR_ENTITLEMENT_SIGNING_KEY_ID", "");
 		vi.stubEnv("AIDR_POLICY_SIGNING_KEY_ID", "policy-2026-10");
-		vi.stubEnv("AIDR_POLICY_SIGNING_PRIVATE_KEY_PKCS8_B64", "bm90IGEga2V5");
+		vi.stubEnv("AIDR_POLICY_SIGNING_PRIVATE_KEY_PKCS8_B64", Buffer.from("not a key").toString("base64"));
 		const unusable = await fetchPolicy();
 		expect(unusable.response.status).toBe(503);
 		expect(unusable.body).toEqual({ error: "policy_signing_unavailable" });

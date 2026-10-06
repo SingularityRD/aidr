@@ -86,6 +86,10 @@ pnpm install
 pnpm -C packages/dashboard dev
 ```
 
+The bundle's compiler targets are ES2020, Chrome 87, Edge 88, Firefox 78, and
+Safari 14.1 or newer. Run customer browser acceptance on the browser versions
+the deployment supports; a successful bundle build is not browser acceptance.
+
 ## Customer access smoke gate
 
 The public product starts at `/login` and `/onboarding`. The old `/demo`

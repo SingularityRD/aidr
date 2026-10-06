@@ -15,7 +15,7 @@ behavior is unverified. No real-host side-effect acceptance is recorded.
 
 - Extracts commands, URLs, file paths and package installs from the tool input
   and evaluates them against the shared detection core (`@singularityrd/aidr-core`)
-  using the local YAML threat corpus in `resources/`.
+  using the local YAML threat corpus in integrity-covered `dist/resources/`.
 - Inspects supported PostToolUse result shapes after the tool has already run.
   Unsafe or uninspectable recognized MCP result envelopes are replaced by a
   text-only MCP error result; supported built-in results use shape-preserving

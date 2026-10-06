@@ -1,0 +1,206 @@
+{
+  "schema_version": 1,
+  "recorded_at_utc": "2026-10-06T10:17:23.004457+00:00",
+  "scope": "Read-only archive/evidence audit; no new build or runtime tests; only this audit JSON is written.",
+  "source_hashes": {
+    "services/aig-bridge/Dockerfile": "a18e7731d502a51744c91630e26f706d70d897c237226ef8e6000eb8a5973d7e",
+    "services/aig-bridge/.dockerignore": "48169157d8adfd335b1d4919716362a282c15d18785a26ea54ac3e62f97698d5",
+    "services/aig-bridge/requirements-runtime.lock": "af4cf84b33c07df728ddb2e8b9a0f10c1d4f8f309295cc18bf808b8377a5c598",
+    "docker-compose.aig.yml": "3be3da5b4e0d5a06a32aa7249ae08af804f25c9d30fa45f718214aabc87612b1"
+  },
+  "evidence_hashes": {
+    "image.tar": "b59a64cac6db18c36852e6edea41a1f85e81c6764be136930e0fa5ec6ef3640f",
+    "final-image-inspect.json": "07c9f471f43bdabaf3cf1ffec2aa1442aaab1fccb08df074281d6a99cb58391b",
+    "trivy-report.json": "5184922522468182639ab72a8b641f03cf995b1ccad03633c1915c4a269ffc19",
+    "runtime-inventory.json": "ce36e45fed22d1facf93b006ad429d33d244ee1c8f69e59f4f8983c3b23ad5c8",
+    "tls-runtime-probe.json": "1e28331448e2f21017b5d3c53edcf5eae84033638844e5faea446a313e2035ef",
+    "bridge-junit.xml": "b2e99ec4b1b91e134eaf8a4f34f519bc253df7aea04cbd17ff0c25e61dad5aef",
+    "healthcheck-config.json": "919847799fd3b698e700c20c496a13ce5b6632259929ccdd15ca9c9f6c3a8d4e",
+    "healthcheck-probe.json": "dc4e17f27d576ba3534edfae8ce3f0f7a1f62844bf0ea13f5ff9b36210bc265a",
+    "scan-process.json": "953f48ff1125d866ebcc7c9d2a4c5308503258cc1aaede68db78ae5ecf7ccf86",
+    "final-build-process.json": "bd328d8663504bb80bee78c968d9ec169d67ee557667048b7a72a396c96307a9"
+  },
+  "image_binding": {
+    "index_digest": "sha256:dd8993b9abaed977cc6d6a123a39388f188ba86d83552b140935773005b3d195",
+    "linux_amd64_manifest_digest": "sha256:9dc3101ee675d0f404fdc4fb4a362ae1186040013cadb27f5578113a38bf3a47",
+    "config_digest": "sha256:6e7b84bf460c0a803b726cd9e35f0f18aef963d1d5c31eccc9c28e2a7534a5e2",
+    "all_blob_hashes_verified": 16,
+    "layer_bindings": [
+      {
+        "compressed_digest": "sha256:e2de96513ba9eb53b431787ec8a65cdde380ac4772a3e4c4b714dcfde2a102b5",
+        "diff_id": "sha256:74d97c428c51a828f9051a7a40a53ff1fc99e54fc30323ce36760701b0b7f711",
+        "verified": true
+      },
+      {
+        "compressed_digest": "sha256:bce3d672089f7ccc5125c3f8f95542fa3971138f323fb7f77e338a14396c85aa",
+        "diff_id": "sha256:41366f7f48797df937c15865e4a91a5de2822c369ca5155709f2d0ae3690be9b",
+        "verified": true
+      },
+      {
+        "compressed_digest": "sha256:283ac05c32e67060aa59f8a841b02df4cc0bd7fbf8d880f67d9b622e1cbd1935",
+        "diff_id": "sha256:7e9021171c2796d59b4f3190e9d4f4c8f702f2ebedaac6aa38e197237e68b3e8",
+        "verified": true
+      },
+      {
+        "compressed_digest": "sha256:e203d50c86bd38d307585d33fd69e7e7fd91e7535b65af46aa1d663cfb80c0fa",
+        "diff_id": "sha256:4d211c3f1c45c08a83c284d1a2482ebf01c961dba549e9a3f7f877bb88d5fd60",
+        "verified": true
+      },
+      {
+        "compressed_digest": "sha256:a825eef9eceb581f345584660e1c301cd007e848cce57bb8afdac8f5d63333b5",
+        "diff_id": "sha256:95b5935b5e151bf7f12100e7c5c80297eab063827d45a6893fc5789b7110fee5",
+        "verified": true
+      },
+      {
+        "compressed_digest": "sha256:49fd05bb0f017b6c4ba6bc0db03017fb283c6fa4f6bd6e52f10468046e693253",
+        "diff_id": "sha256:e76f4467b6bf4671cfaf8eb4383f0544ad32db05032b9098fa6e40319ff8b335",
+        "verified": true
+      },
+      {
+        "compressed_digest": "sha256:5071a4cbcb4cd0281ff772e27b4843ae28f3957676f49d5b5bd4871922dcf8de",
+        "diff_id": "sha256:e9999559361e53bbe2435a48d2e6586f983551a6b25a288767351bc4dd1d91c2",
+        "verified": true
+      },
+      {
+        "compressed_digest": "sha256:b6e3f766305b1d25a0f8ff324dd57de4977170f897c2e7bf27e660ee9adee096",
+        "diff_id": "sha256:969d4ffa18290db14177b5a2b84adf4a8a226c15cbc63f4937d7aae698fdb8d0",
+        "verified": true
+      },
+      {
+        "compressed_digest": "sha256:8cec5f718c2fa1b870da3f638dd81c9d38b60cc580e6291d46c08948a69efa52",
+        "diff_id": "sha256:498ec73b0b52eabf6d83755d70596a40b569c49618813082253714e729e5fa33",
+        "verified": true
+      },
+      {
+        "compressed_digest": "sha256:ad26efca6d2f29fc07bdb1382a3d6c3741f50fdddbe4cfcc1540cb03ee43de34",
+        "diff_id": "sha256:1e97afa44547c4ff1da6549b1a628a5223de32c72dff9a75d116170ea772305d",
+        "verified": true
+      }
+    ],
+    "inspect_and_scan_diff_ids_exact": true
+  },
+  "source_binding": {
+    "app_files": {
+      "app/auth.py": "07fdde3dfb5a30988c02af5d9e97b369cf446ea250e56c532103e7106bdaa9b2",
+      "app/incidents.py": "3d3e43706d72b9eaa995ff40ad2a3268c3116cc854bb08db2160387f5b69b1cf",
+      "app/main.py": "7322bc7673be1f44802a47804d8409d213d4e04942b702bc0b7b6fe4ee377ded",
+      "app/provenance.py": "cf6644777c36f2687e186d21814dc631bae56d05f3f25593a02b6e7d0af49433",
+      "app/redaction.py": "a29906d95b15ea47c45e92a5becbc39bda02cc9376fc08f6cc453e71d47a7917",
+      "app/result_adapter.py": "015978c14f2a4743d577e995f326b4a8d04038317106b29def3a97c0463654e2",
+      "app/task_registry.py": "815926bc9b7ae84f0c65f12ec197bcdaf2dc829e05f38697f59895c7ffd1a4fe",
+      "app/uploads.py": "8e44b913fbcb2fb263f6500d868257ed99d9b9eb4f7704bd349b5c05951af62d",
+      "app/validation.py": "88ed700c03bdfd5ab4e408e4f8b39ddc09c1c09893f4a5d49610cb5c3689a5c2",
+      "app/__init__.py": "efd3777fddbeaaed6cc864b399a026a13daabdbcc34ce5a99d940537297ed645",
+      "app/models/schemas.py": "5dd74591df0235ca2563539ee627050ad26efaee068d50186225bb3a8e20cae5",
+      "app/models/__init__.py": "73ca32ea3f26ea70601f461c734c60133e733e8d5cba229e37d8ccd27a531d1d",
+      "app/routers/health.py": "0b30515b7a4f12b26fc82e90e0c331e467d3e14dadc248a66e58bb7195c1e7ae",
+      "app/routers/scan.py": "2e52724bbab6ffc8092a02e0fd869f7f8d9406b35520ef8d94faae8e339acdfd",
+      "app/routers/uploads.py": "110609da0b4a77cf99131031ba56d980b873709b3261dcc8107bf05dda931275",
+      "app/routers/__init__.py": "456674b824e2e890c46558358ff2a27f1f78e8ea7f277fa0b914c1a2286943e4",
+      "app/utils/aig_client.py": "2f21466d05a1cb77559497a90b876170aa73f0b9b1a658ec95cfc9a33366578b",
+      "app/utils/__init__.py": "751501fc97c123ec9f21a12599d2356a946a8d474d2b304b1adf059b7a683b22"
+    },
+    "app_file_count": 18,
+    "image_and_tls_probe_exact": true,
+    "runtime_lock_exact": true
+  },
+  "package_metadata": {
+    "apk_database_present": true,
+    "apk_database_sha256": "2ab3eb932c9943456e54b83976a01a72014d0fc392cc656e4c340dd61e747f42",
+    "apk_packages": 47,
+    "apk_scan_exact": true,
+    "python_distributions": 30,
+    "python_lock_runtime_scan_metadata_exact": true,
+    "python_packages": {
+      "pyyaml": "6.0.2",
+      "annotated-doc": "0.0.5",
+      "annotated-types": "0.8.0",
+      "anyio": "4.15.1",
+      "certifi": "2026.7.22",
+      "cffi": "2.1.1",
+      "click": "8.5.0",
+      "cryptography": "50.0.2",
+      "fastapi": "0.141.1",
+      "h11": "0.16.0",
+      "httpcore": "1.0.9",
+      "httptools": "0.8.0",
+      "httpx": "0.28.1",
+      "idna": "3.20",
+      "prometheus-client": "0.21.1",
+      "psycopg": "3.2.10",
+      "pycparser": "3.0",
+      "pydantic": "2.10.4",
+      "pydantic-core": "2.27.2",
+      "pydantic-settings": "2.7.1",
+      "python-dotenv": "1.2.3",
+      "python-multipart": "0.0.32",
+      "starlette": "1.3.1",
+      "tenacity": "9.0.0",
+      "typing-extensions": "4.16.0",
+      "typing-inspection": "0.4.4",
+      "uvicorn": "0.34.0",
+      "uvloop": "0.22.1",
+      "watchfiles": "1.3.0",
+      "websockets": "17.1"
+    },
+    "whiteouts": [
+      "usr/local/bin/.wh.pip",
+      "usr/local/bin/.wh.pip3",
+      "usr/local/bin/.wh.pip3.12",
+      "usr/local/lib/python3.12/.wh.ensurepip",
+      "usr/local/lib/python3.12/site-packages/.wh.pip",
+      "usr/local/lib/python3.12/site-packages/.wh.pip-25.0.1.dist-info"
+    ],
+    "only_pip_and_ensurepip_removed": true
+  },
+  "scan": {
+    "all_severities": true,
+    "apk_findings": 0,
+    "python_findings": 0,
+    "db_sha256": {
+      "db": "3360d4fd28e3f89b0e484b19fcea2230d4ce9003596aead075831a20683c074d",
+      "metadata": "6386ebec15dd604e361943b660442827699dff50ab8ba1f90d179a1fa16c0eaa"
+    },
+    "same_db_comparisons": [
+      {
+        "path": "production-followup-2026-10-06/bridge-full-image-trivy-20261006",
+        "sha256": {
+          "db": "3360d4fd28e3f89b0e484b19fcea2230d4ce9003596aead075831a20683c074d",
+          "metadata": "6386ebec15dd604e361943b660442827699dff50ab8ba1f90d179a1fa16c0eaa"
+        },
+        "same_as_final": true
+      },
+      {
+        "path": "go-preparation-2026-10-06/bridge",
+        "sha256": {
+          "db": "3360d4fd28e3f89b0e484b19fcea2230d4ce9003596aead075831a20683c074d",
+          "metadata": "6386ebec15dd604e361943b660442827699dff50ab8ba1f90d179a1fa16c0eaa"
+        },
+        "same_as_final": true
+      }
+    ]
+  },
+  "health_parity": {
+    "dockerfile_inspect_compose_and_probe_command_exact": true,
+    "timing_exact": true,
+    "cases": 4,
+    "passes": 4,
+    "ambient_proxy_bypassed": true
+  },
+  "junit": {
+    "tests": "98",
+    "failures": "0",
+    "errors": "0",
+    "skipped": "0"
+  },
+  "caveats": [
+    "Four health cases execute the actual image/Compose command against an isolated mock HTTP server; they do not establish live AIG deployment readiness.",
+    "Vulnerability zero is limited to the frozen Trivy DB and identified 47 APK plus 30 Python distribution packages; it is not a universal vulnerability or production-readiness claim.",
+    "Official CPython and embedded native components are not necessarily first-class packages in this Trivy APK/Python report; retained runtime versions/hashes and vendor evidence are separate coverage.",
+    "The lock generation comment targets manylinux; actual Alpine musllinux hash coverage, installation and native runtime imports are evidenced separately.",
+    "Base image digest and Python lock are pinned; APK lower-bound constraints and live Alpine repositories can select newer packages on a future rebuild.",
+    "This audit does not attest that the previous pypi-runtime-licenses.json describes the new native musllinux wheels; canonical license evidence is being updated separately.",
+    "Standalone musl ldd unresolved CPython host symbols do not establish import failure; runtime imports/versions succeeded and raw diagnostics remain retained."
+  ],
+  "issues": []
+}

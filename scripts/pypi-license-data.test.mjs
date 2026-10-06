@@ -37,7 +37,11 @@ test("copyleft licences are classified precisely rather than collapsed to permis
 	assert.equal(psycopg.obligation, "weak-copyleft");
 	assert.deepEqual(psycopg.spdx, [], "LGPLv3 does not say -only or -or-later, so no SPDX id is invented");
 	assert.deepEqual(cycloneDxLicenses(psycopg), [{ license: { name: "GNU Lesser General Public License v3 (LGPLv3)" } }]);
-	assert.equal(resolvePypiLicense(entry("psycopg-binary")).flags.length, 1);
+	assert.equal(evidence.packages.some((candidate) => candidate.name === "psycopg-binary"), false);
+	assert.equal(locked.some((candidate) => candidate.name === "psycopg-binary"), false);
+	const bundledFixture = entry("psycopg");
+	bundledFixture.bundled_native_libraries = ["fixture.libs/libpq.so"];
+	assert.match(resolvePypiLicense(bundledFixture).flags[0], /bundles 1 native library/);
 	assert.equal(resolvePypiLicense(entry("cryptography")).obligation, "permissive");
 });
 

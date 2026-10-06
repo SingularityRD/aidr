@@ -244,15 +244,16 @@ describe("extractFromWrite", () => {
 		expect(urls[0]?.context).toBe("from_file_content");
 	});
 
-	it("caps content at 64KB", () => {
+	it("caps content at 64KB and records incomplete inspection", () => {
 		const bigContent = "x".repeat(128 * 1024);
 		const artifacts = extractFromWrite({
 			file_path: "/tmp/big.txt",
 			content: bigContent,
 		});
-		const contents = artifacts.filter((a) => a.type === "content");
+		const contents = artifacts.filter((a) => a.type === "content" && a.context === "write");
 		expect(contents).toHaveLength(1);
 		expect(contents[0]?.value.length).toBe(64 * 1024);
+		expect(artifacts.some((a) => a.context === "inspection_incomplete")).toBe(true);
 	});
 
 	it("skips empty content", () => {
@@ -345,15 +346,16 @@ describe("extractFromEdit", () => {
 		expect(urls[0]?.context).toBe("from_edit_content");
 	});
 
-	it("caps content at 64KB", () => {
+	it("caps content at 64KB and records incomplete inspection", () => {
 		const bigContent = "y".repeat(128 * 1024);
 		const artifacts = extractFromEdit({
 			file_path: "/tmp/big.py",
 			new_string: bigContent,
 		});
-		const contents = artifacts.filter((a) => a.type === "content");
+		const contents = artifacts.filter((a) => a.type === "content" && a.context === "edit");
 		expect(contents).toHaveLength(1);
 		expect(contents[0]?.value.length).toBe(64 * 1024);
+		expect(artifacts.some((a) => a.context === "inspection_incomplete")).toBe(true);
 	});
 
 	it("handles empty input", () => {

@@ -43,25 +43,46 @@ try {
     $settingsPath = Join-Path $target '.claude/settings.json'
     $stage = 'hook_registration'
     try { $settings = Get-Content -LiteralPath $settingsPath -Raw -Encoding utf8 | ConvertFrom-Json } catch { throw "Claude settings are missing or invalid" }
+    Assert-AidrSettingsShape $settings
+    if ((Get-AidrProperty $settings 'disableAllHooks') -eq $true) { throw "Claude hooks are globally disabled" }
+    $node = (Get-Command node.exe -ErrorAction Stop).Source
     $managedCount = 0
-    $eventBundles = [ordered]@{ PreToolUse = 'pre-tool-use.cjs'; PostToolUse = 'post-tool-use.cjs'; SessionStart = 'session-start.cjs' }
+    $eventBundles = [ordered]@{ PreToolUse = @('pre-tool-use.cjs', 15); PostToolUse = @('post-tool-use.cjs', 5); SessionStart = @('session-start.cjs', 30) }
     foreach ($event in $eventBundles.Keys) {
         $stage = "hook_registration_$event"
-        $managed = @($settings.hooks.$event | Where-Object { $_.hooks | Where-Object { $_.statusMessage -eq 'Singularity AIDR managed installation' } })
+        $managed = @($settings.hooks.$event | Where-Object { $_.hooks | Where-Object { (Get-AidrProperty $_ 'statusMessage') -ceq 'Singularity AIDR managed installation' } })
         if ($managed.Count -ne 1) { throw "Managed hook registration is missing or duplicated" }
         $stage = "hook_command_$event"
         # Windows PowerShell can expand an 8.3 path when reading the receipt,
         # while Node preserves the spelling originally passed on the command
         # line. Build the command form from the protected target-home state.
         $commandConnectorPath = Join-Path ([string]$state.target_home) ".singularity-aidr/connectors/claude/$([string]$state.active.connector_digest)"
-        $expectedBundlePath = (Join-Path $commandConnectorPath "dist/$($eventBundles[$event])").Replace('\', '/')
-        $commands = @($managed[0].hooks | Where-Object { $_.statusMessage -eq 'Singularity AIDR managed installation' } | ForEach-Object { [string]$_.command })
-        if ($commands.Count -ne 1 -or $commands[0].IndexOf(('"' + $expectedBundlePath + '"'), [StringComparison]::OrdinalIgnoreCase) -lt 0) {
+        $expectedBundlePath = Join-Path $commandConnectorPath "dist/$($eventBundles[$event][0])"
+        $hooks = @($managed[0].hooks | Where-Object { (Get-AidrProperty $_ 'statusMessage') -ceq 'Singularity AIDR managed installation' })
+        if ($hooks.Count -ne 1 -or -not (Test-AidrManagedHookRegistration -Entry $managed[0] -Hook $hooks[0] -NodePath $node -BundlePath $expectedBundlePath -Event $event -Timeout $eventBundles[$event][1])) {
             throw "Managed hook command does not point to the active connector"
         }
         $managedCount += $managed.Count
     }
-    $result = [ordered]@{ detected = $true; version = [string]$state.active.package_version; manifest_sha256 = [string]$state.active.manifest_sha256; artifact_sha256 = [string]$state.active.artifact_sha256; managed_hook_events = $managedCount; host_execution = 'unverified' }
+    $responseWorker = 'not_configured'
+    $runtimePath = Join-Path $target '.singularity-aidr/config.json'
+    $responseRequired = $false
+    if (Test-Path -LiteralPath $runtimePath -PathType Leaf) {
+        try { $runtime = Get-Content -LiteralPath $runtimePath -Raw -Encoding utf8 | ConvertFrom-Json }
+        catch { throw 'Agent configuration is invalid' }
+        $controlPlane = Get-AidrProperty $runtime 'control_plane'
+        if ($null -ne $controlPlane) { $responseRequired = (Get-AidrProperty $controlPlane 'response_worker_required') -eq $true }
+    }
+    if ($responseRequired -or (Test-Path -LiteralPath (Join-Path $target '.singularity-aidr/response-control/config.json'))) {
+        $stage = 'response_worker'
+        $responseContext = Get-AidrResponseWorkerContext -TargetHome $target -StateRoot $StateRoot
+        $responseTask = Get-ScheduledTask -TaskPath $responseContext.TaskPath -TaskName $responseContext.TaskName -ErrorAction Stop
+        Assert-AidrResponseTaskOwnership -Task $responseTask -Context $responseContext
+        if ($responseTask.State -eq 'Disabled' -or [string]$responseTask.Actions[0].Arguments -cne ('"' + $responseContext.Worker + '"')) { throw 'The required response task is disabled or does not use the active connector' }
+        Invoke-AidrResponseWorkerProvisioning -Context $responseContext -Mode '--validate'
+        $responseWorker = 'configured_native_acceptance_unverified'
+    }
+    $result = [ordered]@{ detected = $true; version = [string]$state.active.package_version; manifest_sha256 = [string]$state.active.manifest_sha256; artifact_sha256 = [string]$state.active.artifact_sha256; managed_hook_events = $managedCount; response_worker = $responseWorker; host_execution = 'unverified' }
     if ($Json) { $result | ConvertTo-Json -Compress } else { Write-Output "Singularity AIDR $($result.version) detected" }
     exit 0
 } catch {

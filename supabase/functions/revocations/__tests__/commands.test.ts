@@ -3,7 +3,6 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
-	deviceCommandView,
 	effectiveCommandState,
 	parseDeviceResult,
 	parseQueueBody,
@@ -65,11 +64,6 @@ describe("fleet response input contracts", () => {
 		]) {
 			expect(parseDeviceResult({ command_id: command, ...bad }).ok).toBe(false);
 		}
-		expect(deviceCommandView({
-			id: command, command_type: "agent_pause", expires_at: "2030-01-01",
-			attempts: 2, rollback_of: null, reason: "Sensitive incident context",
-			actor_user_id: agent,
-		})).not.toHaveProperty("reason");
 		expect(effectiveCommandState({ state: "pending", expires_at: "2026-01-01" },
 			Date.parse("2026-02-01"))).toBe("expired");
 		expect(effectiveCommandState({ state: "delivered", expires_at: "2026-01-01" },
@@ -98,15 +92,15 @@ describe("fleet response database and Edge wiring", () => {
 		expect(source).toContain("deviceAttestationError(values.device_attestation, identity)");
 		expect(attestationSource).toContain("device_attestation_required");
 		expect(source.indexOf("deviceAttestationError(values.device_attestation, identity)")).toBeLessThan(
-			source.indexOf('db.rpc("poll_fleet_response_command"'),
+			source.indexOf('db.rpc("poll_bound_fleet_response_command"'),
 	);
 	});
 
 	it("requires an active tenant membership for the signed GET feed", () => {
-		expect(source).toContain('supabase.from("tenant_members").select("role,expires_at")');
-		expect(source).toContain('supabase.from("tenants").select("status")');
-		expect(source).toContain('tenant?.status !== "active"');
-		expect(source.match(/apiKeyMembershipActive\(member\)/g)).toHaveLength(2);
+		expect(source).toContain('from "../_shared/api-key-auth.ts"');
+		expect(source).toContain("await authenticateTenantApiKey(supabase, apiKey)");
+		expect(source).toContain("await authenticateTenantApiKey(db, token)");
+		expect(source).not.toContain('.from("api_keys")');
 		expect(source).not.toContain('(keyRow.tenant_id as string | null) ?? (keyRow.user_id as string)');
 	});
 

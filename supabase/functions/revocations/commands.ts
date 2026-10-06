@@ -90,13 +90,47 @@ export function parseDeviceResult(body: Record<string, unknown>):
 	return { ok: true, commandId, stage, outcome, resultCode: code as string | null };
 }
 
-export function deviceCommandView(row: Record<string, unknown>) {
+function deviceCommandView(row: Record<string, unknown>) {
 	return {
 		id: row.id,
 		command_type: row.command_type,
 		expires_at: row.expires_at,
 		attempt: row.attempts,
 		rollback_of: row.rollback_of,
+	};
+}
+
+/** Only immutable, bounded actions and the authenticated device binding are signed. */
+export function commandSigningPayload(
+	row: Record<string, unknown>,
+	identity: { tenantId: string; agentId: string; installationId: string; keyHash: string },
+	keyId: string,
+	now = Date.now(),
+) {
+	const command = deviceCommandView(row);
+	const created = typeof row.created_at === "string" ? Date.parse(row.created_at) : NaN;
+	const expires = typeof command.expires_at === "string" ? Date.parse(command.expires_at) : NaN;
+	const rollback = command.command_type === "agent_resume" || command.command_type === "network_release";
+	if (!isUuid(command.id) || row.tenant_id !== identity.tenantId || row.agent_id !== identity.agentId ||
+		!["agent_pause", "agent_resume", "network_isolate", "network_release"].includes(String(command.command_type)) ||
+		!Number.isSafeInteger(command.attempt) || Number(command.attempt) < 1 || Number(command.attempt) > 5 ||
+		(rollback ? !isUuid(command.rollback_of) : command.rollback_of !== null) ||
+		!Number.isFinite(created) || !Number.isFinite(expires) || created > now + 60_000 ||
+		expires <= now || expires <= created || expires - created > 3_600_000 ||
+		!/^[a-f0-9]{64}$/.test(identity.keyHash) || !identity.installationId || identity.installationId.length > 128 ||
+		/[\u0000-\u001f\u007f]/.test(identity.installationId) || !/^[A-Za-z0-9._:-]{1,128}$/.test(keyId)) return null;
+	return {
+		schema_version: 1,
+		purpose: "aidr.fleet-response.command",
+		key_id: keyId,
+		tenant_id: identity.tenantId,
+		agent_id: identity.agentId,
+		installation_id: identity.installationId,
+		key_hash: identity.keyHash,
+		...command,
+		payload: {},
+		created_at: new Date(created).toISOString(),
+		expires_at: new Date(expires).toISOString(),
 	};
 }
 

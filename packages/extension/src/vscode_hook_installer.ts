@@ -1,6 +1,7 @@
 import { access, chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { atomicWriteJson } from "@singularityrd/aidr-core";
 
 import * as vscode from "vscode";
 
@@ -164,7 +165,7 @@ function assertSafePathForShim(pathValue: string, label: string): void {
 function upsertManagedHooks(existing: SettingsObject, command: string): SettingsObject {
 	const hooks = cloneHookSettings(existing.hooks);
 	hooks.PreToolUse = appendManaged(asMatcherEntries(hooks.PreToolUse), {
-		matcher: "Bash|WebFetch|Write|Edit|Read|Delete|editFiles",
+		matcher: "*",
 		hooks: [
 			{
 				type: "command",
@@ -295,8 +296,7 @@ async function readSettingsFile(filePath: string): Promise<SettingsObject> {
 }
 
 async function writeSettingsFile(filePath: string, data: SettingsObject): Promise<void> {
-	await mkdir(path.dirname(filePath), { recursive: true });
-	await writeFile(filePath, `${JSON.stringify(data, null, 2)}\n`, "utf8");
+	await atomicWriteJson(filePath, data);
 }
 
 function normalizeHookMap(input: unknown): HookMap {

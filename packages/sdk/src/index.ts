@@ -59,6 +59,7 @@ export type {
 	MiddlewareContext,
 	MiddlewareFn,
 	SDKConfig,
+	SDKConfigInput,
 	SDKEvent,
 } from "./config.js";
 export {
@@ -111,6 +112,12 @@ export {
 	MAX_TOOL_OUTPUT_MAX_BYTES,
 	scanToolOutput,
 } from "./output-guard.js";
+export type {
+	PrivacyGatewayOptions,
+	PrivacyTextSendOptions,
+	SDKPrivateOptions,
+} from "./privacy-text.js";
+export { AIDRPrivacyTextError } from "./privacy-text.js";
 /**
  * SDK version
  */

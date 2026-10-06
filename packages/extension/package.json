@@ -29,7 +29,7 @@
     "dist/vscode_extension.js",
     "dist/aidr-hook.cjs",
     "dist/aidr-artifact.manifest.json",
-    "resources/**",
+    "dist/resources/**",
     "aidr-icon.png",
     "package.json",
     "README.md",

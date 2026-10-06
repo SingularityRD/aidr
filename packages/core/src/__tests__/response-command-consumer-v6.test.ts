@@ -1,3 +1,4 @@
+import { createHmac, generateKeyPairSync, randomBytes, sign } from "node:crypto";
 import { mkdir, mkdtemp, readdir, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,8 +9,9 @@ import {
 	type FleetResponseAuditEvent,
 	type FleetResponseCommand,
 	FleetResponseCommandConsumer,
+	type FleetResponseSignedDelivery,
 } from "../response-command-consumer-v6.js";
-import { FleetResponseJournal } from "../response-command-journal-v6.js";
+import { FleetResponseJournal as ProductionFleetResponseJournal } from "../response-command-journal-v6.js";
 import { FleetResponseCommandWorker } from "../response-command-worker-v6.js";
 
 const tenantId = "11111111-1111-4111-8111-111111111111";
@@ -17,7 +19,24 @@ const agentId = "22222222-2222-4222-8222-222222222222";
 const installationId = "installation-test-001";
 const commandId = "33333333-3333-4333-8333-333333333333";
 const now = Date.parse("2026-09-13T12:00:00.000Z");
+const signingKey = generateKeyPairSync("ed25519");
+const rotatedSigningKey = generateKeyPairSync("ed25519");
+const trustedCommandKeys = {
+	"response-current": signingKey.publicKey.export({ type: "spki", format: "pem" }).toString(),
+	"response-next": rotatedSigningKey.publicKey.export({ type: "spki", format: "pem" }).toString(),
+};
+const stableJournalKey = randomBytes(32).toString("base64");
 const temporaryDirectories: string[] = [];
+
+class FleetResponseJournal extends ProductionFleetResponseJournal {
+	constructor(
+		...[path, identity, apiKey, installation, stableKey, clock]: ConstructorParameters<
+			typeof ProductionFleetResponseJournal
+		>
+	) {
+		super(path, identity, apiKey, installation, stableKey, clock ?? (() => now));
+	}
+}
 
 afterEach(async () => {
 	for (const directory of temporaryDirectories.splice(0))
@@ -45,46 +64,93 @@ function worker(
 	fetchImpl: typeof fetch,
 	localAdapter: FleetResponseActionAdapter = adapter(),
 	actionTimeoutMs?: number,
+	keys: Readonly<Record<string, string>> = trustedCommandKeys,
+	options: { apiKey?: string; stableJournalKey?: string; now?: () => number } = {},
 ) {
 	return new FleetResponseCommandWorker({
 		endpoint: "http://127.0.0.1:8000/functions",
 		developmentLoopback: true,
-		apiKey: "enrollment-secret",
+		apiKey: options.apiKey ?? "enrollment-secret",
 		identity: { tenantId, agentId },
 		installationId,
+		trustedCommandKeys: keys,
 		adapter: localAdapter,
 		statePath,
 		fetchImpl,
-		now: () => now,
+		now: options.now ?? (() => now),
 		actionTimeoutMs,
+		stableJournalKey: options.stableJournalKey,
 	});
 }
 
 async function seedJournal(
 	statePath: string,
 	phase: "polled" | "acknowledged" | "execute_intent" | "result_pending",
+	options: {
+		delivery?: FleetResponseSignedDelivery;
+		view?: FleetResponseCommand;
+		stableJournalKey?: string;
+	} = {},
 ) {
 	const journal = new FleetResponseJournal(
 		statePath,
 		{ tenantId, agentId },
 		"enrollment-secret",
 		installationId,
+		options.stableJournalKey,
 	);
+	if (options.stableJournalKey) await journal.bootstrapResponseControl();
 	const state = await journal.load();
 	await journal.save({
 		...state,
-		current: { command: typedCommand(), phase, resultCode: null },
+		current: {
+			command: options.view ?? typedCommand(),
+			delivery: options.delivery ?? command(),
+			phase,
+			resultCode: null,
+		},
 	});
 }
 
-function command(overrides: Record<string, unknown> = {}) {
-	return {
+function canonical(value: unknown): string {
+	if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+	if (value && typeof value === "object") {
+		const entries = Object.entries(value).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+		return `{${entries.map(([key, item]) => `${JSON.stringify(key)}:${canonical(item)}`).join(",")}}`;
+	}
+	return JSON.stringify(value);
+}
+
+function command(
+	overrides: Record<string, unknown> = {},
+	keyId = "response-current",
+): FleetResponseSignedDelivery {
+	const payload = {
+		schema_version: 1,
+		purpose: "aidr.fleet-response.command",
+		key_id: keyId,
+		tenant_id: tenantId,
+		agent_id: agentId,
+		installation_id: installationId,
+		key_hash: hashDeviceKey("enrollment-secret"),
 		id: commandId,
 		command_type: "agent_pause",
+		payload: {},
+		created_at: new Date(now - 60_000).toISOString(),
 		expires_at: new Date(now + 60_000).toISOString(),
 		attempt: 1,
 		rollback_of: null,
 		...overrides,
+	};
+	return {
+		alg: "ed25519",
+		key_id: keyId,
+		sig_b64: sign(
+			null,
+			Buffer.from(canonical(payload)),
+			keyId === "response-next" ? rotatedSigningKey.privateKey : signingKey.privateKey,
+		).toString("base64"),
+		payload,
 	};
 }
 
@@ -125,6 +191,7 @@ function consumer(
 	localAdapter?: FleetResponseActionAdapter,
 	clock = () => now,
 	audit?: (event: FleetResponseAuditEvent) => void | Promise<void>,
+	keys: Readonly<Record<string, string>> = trustedCommandKeys,
 ) {
 	return new FleetResponseCommandConsumer({
 		endpoint: "http://127.0.0.1:8000/functions",
@@ -132,6 +199,7 @@ function consumer(
 		apiKey: "enrollment-secret",
 		identity: { tenantId, agentId },
 		installationId,
+		trustedCommandKeys: keys,
 		adapter: localAdapter,
 		audit,
 		fetchImpl,
@@ -140,6 +208,263 @@ function consumer(
 }
 
 describe("fleet response command consumer", () => {
+	it("consumes an actual server-produced payload signed with the shared canonical wire format", async () => {
+		// Dynamic source URLs keep the independently deployed Edge module outside core's build root.
+		const producerUrl = new URL(
+			"../../../../supabase/functions/revocations/commands.ts",
+			import.meta.url,
+		).href;
+		const canonicalUrl = new URL(
+			"../../../../supabase/functions/_shared/policy-signature.ts",
+			import.meta.url,
+		).href;
+		const { commandSigningPayload } = await import(producerUrl);
+		const { canonicalJson } = await import(canonicalUrl);
+		const payload = commandSigningPayload(
+			{
+				id: commandId,
+				tenant_id: tenantId,
+				agent_id: agentId,
+				command_type: "agent_pause",
+				created_at: new Date(now - 60_000).toISOString(),
+				expires_at: new Date(now + 60_000).toISOString(),
+				attempts: 1,
+				rollback_of: null,
+				reason: "private operator reason",
+				payload: {},
+			},
+			{ tenantId, agentId, installationId, keyHash: hashDeviceKey("enrollment-secret") },
+			"response-current",
+			now,
+		);
+		expect(payload).not.toBeNull();
+		const signingMaterial = signingKey.privateKey.export({ type: "pkcs8", format: "der" });
+		const cryptoKey = await crypto.subtle.importKey(
+			"pkcs8",
+			new Uint8Array(signingMaterial),
+			{ name: "Ed25519" },
+			false,
+			["sign"],
+		);
+		const signature = await crypto.subtle.sign(
+			"Ed25519",
+			cryptoKey,
+			new TextEncoder().encode(canonicalJson(payload)),
+		);
+		const delivery = {
+			alg: "ed25519",
+			key_id: "response-current",
+			sig_b64: Buffer.from(signature).toString("base64"),
+			payload,
+		};
+		const localAdapter = adapter();
+		const { fetchImpl, requests } = transport([
+			json({ ok: true, command_signed: delivery }),
+			json({ ok: true, command_id: commandId, state: "acknowledged" }),
+			json({ ok: true, command_id: commandId, state: "succeeded" }),
+		]);
+		expect(await consumer(fetchImpl, localAdapter).pollOnce()).toEqual({
+			status: "succeeded",
+			commandId,
+		});
+		expect(localAdapter.execute).toHaveBeenCalledWith(
+			typedCommand(),
+			expect.any(AbortSignal),
+			delivery,
+		);
+		expect(requests.map((request) => request.body.action)).toEqual(["poll", "ack", "result"]);
+		expect(fetchImpl).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.objectContaining({ redirect: "error" }),
+		);
+		expect(JSON.stringify(delivery)).not.toContain("private operator reason");
+	});
+
+	it("requires installed signing trust without a development bypass", () => {
+		expect(() => consumer(transport([]).fetchImpl, undefined, () => now, undefined, {})).toThrow(
+			"missing_fleet_command_trust",
+		);
+	});
+
+	it("rejects legacy unsigned replies without acknowledging them", async () => {
+		const localAdapter = adapter();
+		const { fetchImpl, requests } = transport([json({ ok: true, command: command().payload })]);
+		expect(await consumer(fetchImpl, localAdapter).pollOnce()).toEqual({
+			status: "outcome_unknown",
+			stage: "poll",
+			reason: "invalid_poll_response",
+		});
+		expect(requests).toHaveLength(1);
+		expect(localAdapter.execute).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		["tenant_id", tenantId],
+		["agent_id", agentId],
+		["installation_id", installationId],
+		["key_hash", hashDeviceKey("enrollment-secret")],
+		["created_at", new Date(now).toISOString()],
+		["expires_at", new Date(now + 60_000).toISOString()],
+		["rollback_of", null],
+		["attempt", 1],
+	])("requires the signed %s field", async (field, _expectedValue) => {
+		const signed = command();
+		delete (signed.payload as Record<string, unknown>)[field as string];
+		const localAdapter = adapter();
+		const { fetchImpl, requests } = transport([json({ ok: true, command_signed: signed })]);
+		expect(await consumer(fetchImpl, localAdapter).pollOnce()).toMatchObject({
+			status: "invalid_command",
+		});
+		expect(requests).toHaveLength(1);
+		expect(localAdapter.execute).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		["id", tenantId],
+		["command_type", "network_isolate"],
+		["attempt", 2],
+		["rollback_of", tenantId],
+		["tenant_id", agentId],
+		["agent_id", tenantId],
+		["installation_id", "another-installation"],
+		["key_hash", "f".repeat(64)],
+		["created_at", new Date(now - 30_000).toISOString()],
+		["expires_at", new Date(now + 90_000).toISOString()],
+	])("rejects tampered %s before acknowledgement or action", async (field, replacement) => {
+		const signed = command();
+		(signed.payload as Record<string, unknown>)[field] = replacement;
+		const localAdapter = adapter();
+		const { fetchImpl, requests } = transport([json({ ok: true, command_signed: signed })]);
+		expect(await consumer(fetchImpl, localAdapter).pollOnce()).toEqual({
+			status: "invalid_command",
+			reason: "invalid_command_signature",
+		});
+		expect(requests).toHaveLength(1);
+		expect(localAdapter.execute).not.toHaveBeenCalled();
+		expect(localAdapter.verify).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		[{ tenant_id: agentId }, "tenant_mismatch"],
+		[{ agent_id: tenantId }, "agent_mismatch"],
+		[{ installation_id: "another-installation" }, "installation_mismatch"],
+		[{ key_hash: hashDeviceKey("retired-enrollment-secret") }, "credential_mismatch"],
+		[{ payload: { script: "untrusted" } }, "invalid_command_payload"],
+		[{ extra: true }, "invalid_command_payload"],
+		[{ purpose: "aidr.policy" }, "invalid_command_payload"],
+		[{ created_at: new Date(now + 60_001).toISOString() }, "invalid_created_at"],
+		[{ created_at: "2026-02-30T00:00:00.000Z" }, "invalid_created_at"],
+		[{ expires_at: new Date(now + 3_600_000).toISOString() }, "invalid_command_lifetime"],
+		[{ expires_at: new Date(now - 60_000).toISOString() }, "invalid_command_lifetime"],
+		[{ attempt: 6 }, "invalid_attempt"],
+		[{ command_type: "shell" }, "unsupported_command_type"],
+		[{ command_type: "agent_resume", rollback_of: commandId }, "invalid_rollback_reference"],
+	])("rejects an authentic but invalid command %j", async (overrides, reason) => {
+		const localAdapter = adapter();
+		const { fetchImpl, requests } = transport([
+			json({ ok: true, command_signed: command(overrides) }),
+		]);
+		expect(await consumer(fetchImpl, localAdapter).pollOnce()).toEqual({
+			status: "invalid_command",
+			reason,
+		});
+		expect(requests).toHaveLength(1);
+		expect(localAdapter.execute).not.toHaveBeenCalled();
+	});
+
+	it("binds a signature to its configured signer ID, including key rotation", async () => {
+		for (const keyId of ["response-current", "response-next"]) {
+			const { fetchImpl } = transport([
+				json({ ok: true, command_signed: command({}, keyId) }),
+				json({ ok: true, command_id: commandId, state: "acknowledged" }),
+				json({ ok: true, command_id: commandId, state: "succeeded" }),
+			]);
+			expect(await consumer(fetchImpl, adapter()).pollOnce()).toEqual({
+				status: "succeeded",
+				commandId,
+			});
+		}
+		const { fetchImpl, requests } = transport([json({ ok: true, command_signed: command() })]);
+		expect(
+			await consumer(fetchImpl, adapter(), () => now, undefined, {
+				"response-current": trustedCommandKeys["response-next"],
+			}).pollOnce(),
+		).toEqual({
+			status: "invalid_command",
+			reason: "invalid_command_signature",
+		});
+		expect(requests).toHaveLength(1);
+	});
+
+	it("rejects an unknown signer and differing inner/outer signer IDs", async () => {
+		for (const signed of [
+			command({}, "unknown-signer"),
+			{ ...command(), key_id: "response-next" },
+		]) {
+			const localAdapter = adapter();
+			const { fetchImpl, requests } = transport([json({ ok: true, command_signed: signed })]);
+			expect(await consumer(fetchImpl, localAdapter).pollOnce()).toMatchObject({
+				status: "invalid_command",
+			});
+			expect(requests).toHaveLength(1);
+			expect(localAdapter.execute).not.toHaveBeenCalled();
+		}
+	});
+
+	it("does not repeat a signed command on a later delivery attempt", async () => {
+		const localAdapter = adapter();
+		const { fetchImpl, requests } = transport([
+			json({ ok: true, command_signed: command() }),
+			json({ ok: true, command_id: commandId, state: "acknowledged" }),
+			json({ ok: true, command_id: commandId, state: "succeeded" }),
+			json({ ok: true, command_signed: command({ attempt: 2 }) }),
+		]);
+		const client = consumer(fetchImpl, localAdapter);
+		expect(await client.pollOnce()).toEqual({ status: "succeeded", commandId });
+		expect(await client.pollOnce()).toEqual({
+			status: "outcome_unknown",
+			commandId,
+			stage: "poll",
+			reason: "replayed_command_id",
+		});
+		expect(localAdapter.execute).toHaveBeenCalledOnce();
+		expect(requests).toHaveLength(4);
+	});
+
+	it("keeps an ambiguous acknowledgement from becoming a second execution attempt", async () => {
+		const localAdapter = adapter();
+		const { fetchImpl, requests } = transport([
+			json({ ok: true, command_signed: command() }),
+			json({ ok: true, command_id: commandId, state: "delivered" }),
+			json({ ok: true, command_signed: command({ attempt: 2 }) }),
+		]);
+		const client = consumer(fetchImpl, localAdapter);
+		expect(await client.pollOnce()).toMatchObject({ reason: "ack_unconfirmed" });
+		expect(await client.pollOnce()).toMatchObject({ reason: "replayed_command_id" });
+		expect(localAdapter.execute).not.toHaveBeenCalled();
+		expect(requests).toHaveLength(3);
+	});
+
+	it("allows only one consumer cycle at a time", async () => {
+		let resolvePoll: (response: Response) => void = () => {};
+		const fetchImpl = vi.fn(
+			() =>
+				new Promise<Response>((resolve) => {
+					resolvePoll = resolve;
+				}),
+		) as typeof fetch;
+		const client = consumer(fetchImpl, adapter());
+		const pending = client.pollOnce();
+		expect(await client.pollOnce()).toEqual({
+			status: "outcome_unknown",
+			stage: "poll",
+			reason: "cycle_in_progress",
+		});
+		resolvePoll(json({ ok: true, command_signed: null }));
+		expect(await pending).toEqual({ status: "idle" });
+		expect(fetchImpl).toHaveBeenCalledOnce();
+	});
+
 	it("rejects insecure remote transport and an adapter for another device", () => {
 		expect(
 			() =>
@@ -148,6 +473,7 @@ describe("fleet response command consumer", () => {
 					apiKey: "secret",
 					identity: { tenantId, agentId },
 					installationId,
+					trustedCommandKeys,
 				}),
 		).toThrow("fleet_endpoint_requires_https");
 		expect(
@@ -157,6 +483,7 @@ describe("fleet response command consumer", () => {
 					apiKey: "secret",
 					identity: { tenantId, agentId },
 					installationId,
+					trustedCommandKeys,
 					adapter: adapter({ identity: { tenantId, agentId: tenantId } }),
 				}),
 		).toThrow("fleet_adapter_identity_mismatch");
@@ -164,7 +491,7 @@ describe("fleet response command consumer", () => {
 
 	it("does not execute without an installed adapter and records a rejection", async () => {
 		const { fetchImpl, requests } = transport([
-			json({ ok: true, command: command() }),
+			json({ ok: true, command_signed: command() }),
 			json({ ok: true, command_id: commandId, state: "failed" }),
 		]);
 		expect(await consumer(fetchImpl).pollOnce()).toEqual({
@@ -184,7 +511,7 @@ describe("fleet response command consumer", () => {
 	});
 
 	it("emits an attestation audit event without allowing audit failure to change the result", async () => {
-		const { fetchImpl } = transport([json({ ok: true, command: null })]);
+		const { fetchImpl } = transport([json({ ok: true, command_signed: null })]);
 		const audit = vi.fn(async (event: FleetResponseAuditEvent) => {
 			expect(event.attestation.installationId).toBe(installationId);
 			expect(event.attestation.keyHash).toBe(hashDeviceKey("enrollment-secret"));
@@ -218,7 +545,7 @@ describe("fleet response command consumer", () => {
 			}),
 		});
 		const { fetchImpl, requests } = transport([
-			json({ ok: true, command: command() }),
+			json({ ok: true, command_signed: command() }),
 			json({ ok: true, command_id: commandId, state: "acknowledged" }),
 			json({ ok: true, command_id: commandId, state: "succeeded" }),
 		]);
@@ -252,7 +579,7 @@ describe("fleet response command consumer", () => {
 	it("never executes after an ambiguous ACK", async () => {
 		const localAdapter = adapter();
 		const { fetchImpl, requests } = transport([
-			json({ ok: true, command: command() }),
+			json({ ok: true, command_signed: command() }),
 			json({ ok: true, command_id: commandId, state: "delivered" }),
 		]);
 		expect(await consumer(fetchImpl, localAdapter).pollOnce()).toMatchObject({
@@ -264,21 +591,21 @@ describe("fleet response command consumer", () => {
 		expect(requests).toHaveLength(2);
 	});
 
-	it("reports failed when verification cannot observe the action", async () => {
+	it("preserves uncertainty when verification cannot observe an applied action", async () => {
 		const localAdapter = adapter({
 			verify: vi.fn(async () => ({ observed: false, code: "not_observed" })),
 		});
 		const { fetchImpl, requests } = transport([
-			json({ ok: true, command: command() }),
+			json({ ok: true, command_signed: command() }),
 			json({ ok: true, command_id: commandId, state: "acknowledged" }),
-			json({ ok: true, command_id: commandId, state: "failed" }),
 		]);
 		expect(await consumer(fetchImpl, localAdapter).pollOnce()).toEqual({
-			status: "failed",
+			status: "outcome_unknown",
 			commandId,
-			code: "not_observed",
+			stage: "result",
+			reason: "execution_state_unverified",
 		});
-		expect(requests[2]?.body).toMatchObject({ outcome: "failed", result_code: "not_observed" });
+		expect(requests.map((request) => request.body.action)).toEqual(["poll", "ack"]);
 	});
 
 	it("does not execute if TTL expires after ACK", async () => {
@@ -286,7 +613,7 @@ describe("fleet response command consumer", () => {
 		const localAdapter = adapter();
 		const fetchImpl = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
 			const action = (JSON.parse(String(init?.body)) as Record<string, unknown>).action;
-			if (action === "poll") return json({ ok: true, command: command() });
+			if (action === "poll") return json({ ok: true, command_signed: command() });
 			if (action === "ack") {
 				observedTime = now + 61_000;
 				return json({ ok: true, command_id: commandId, state: "acknowledged" });
@@ -303,7 +630,7 @@ describe("fleet response command consumer", () => {
 
 	it("ignores a forged device target and sends no acknowledgement", async () => {
 		const { fetchImpl, requests } = transport([
-			json({ ok: true, command: command({ agent_id: tenantId }) }),
+			json({ ok: true, command_signed: command({ agent_id: tenantId }) }),
 		]);
 		expect(await consumer(fetchImpl, adapter()).pollOnce()).toEqual({
 			status: "invalid_command",
@@ -314,7 +641,7 @@ describe("fleet response command consumer", () => {
 
 	it("rejects a forged reverse action without its rollback reference", async () => {
 		const { fetchImpl, requests } = transport([
-			json({ ok: true, command: command({ command_type: "network_release" }) }),
+			json({ ok: true, command_signed: command({ command_type: "network_release" }) }),
 		]);
 		expect(await consumer(fetchImpl, adapter()).pollOnce()).toEqual({
 			status: "invalid_command",
@@ -325,7 +652,7 @@ describe("fleet response command consumer", () => {
 
 	it("does not acknowledge a command already expired on receipt", async () => {
 		const { fetchImpl, requests } = transport([
-			json({ ok: true, command: command({ expires_at: new Date(now - 1).toISOString() }) }),
+			json({ ok: true, command_signed: command({ expires_at: new Date(now - 1).toISOString() }) }),
 		]);
 		expect(await consumer(fetchImpl, adapter()).pollOnce()).toEqual({
 			status: "expired",
@@ -336,7 +663,7 @@ describe("fleet response command consumer", () => {
 
 	it("does not report success if the result receipt is not confirmed", async () => {
 		const { fetchImpl } = transport([
-			json({ ok: true, command: command() }),
+			json({ ok: true, command_signed: command() }),
 			json({ ok: true, command_id: commandId, state: "acknowledged" }),
 			json({ ok: true, command_id: commandId, state: "acknowledged" }),
 		]);
@@ -351,7 +678,7 @@ describe("fleet response command consumer", () => {
 	it("keeps the outcome unknown if a revoked key prevents recording the verified action", async () => {
 		const localAdapter = adapter();
 		const { fetchImpl, requests } = transport([
-			json({ ok: true, command: command() }),
+			json({ ok: true, command_signed: command() }),
 			json({ ok: true, command_id: commandId, state: "acknowledged" }),
 			json({ error: "invalid_api_key" }, 401),
 		]);
@@ -370,7 +697,7 @@ describe("fleet response command consumer", () => {
 
 	it("rejects oversized poll data before inspecting a command", async () => {
 		const { fetchImpl, requests } = transport([
-			json({ ok: true, command: command(), padding: "x".repeat(9000) }),
+			json({ ok: true, command_signed: command(), padding: "x".repeat(9000) }),
 		]);
 		expect(await consumer(fetchImpl, adapter()).pollOnce()).toEqual({
 			status: "outcome_unknown",
@@ -391,14 +718,799 @@ describe("fleet response command consumer", () => {
 });
 
 describe("durable fleet response worker", () => {
+	it("records one bounded bootstrap grace without extending it on reinstall", async () => {
+		const statePath = await journalPath();
+		let clock = now - 180_000;
+		const journal = new FleetResponseJournal(
+			statePath,
+			{ tenantId, agentId },
+			"enrollment-secret",
+			installationId,
+			stableJournalKey,
+			() => clock,
+		);
+		const initial = await journal.bootstrapResponseControl();
+		expect(initial.bootstrap_at).toBe(new Date(clock).toISOString());
+		expect(initial.last_successful_poll_at).toBeNull();
+		clock = now;
+		expect(await journal.bootstrapResponseControl()).toEqual(initial);
+	});
+
+	it("persists a successful idle poll before returning and keeps the original bootstrap", async () => {
+		const statePath = await journalPath();
+		let clock = now - 180_000;
+		const journal = new FleetResponseJournal(
+			statePath,
+			{ tenantId, agentId },
+			"enrollment-secret",
+			installationId,
+			stableJournalKey,
+			() => clock,
+		);
+		const initial = await journal.bootstrapResponseControl();
+		clock = now;
+		const localAdapter = adapter();
+		const { fetchImpl } = transport([json({ ok: true, command_signed: null })]);
+		expect(
+			await worker(statePath, fetchImpl, localAdapter, undefined, trustedCommandKeys, {
+				stableJournalKey,
+				now: () => clock,
+			}).tick(),
+		).toEqual({ status: "idle" });
+		const persisted = await journal.inspect();
+		expect(persisted?.last_successful_poll_at).toBe(new Date(clock).toISOString());
+		expect(persisted?.bootstrap_at).toBe(initial.bootstrap_at);
+		expect(localAdapter.execute).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		["network", () => transport([]).fetchImpl],
+		["server", () => transport([json({ error: "unavailable" }, 500)]).fetchImpl],
+		["unauthorized", () => transport([json({ error: "invalid_api_key" }, 401)]).fetchImpl],
+		["forbidden", () => transport([json({ error: "forbidden" }, 403)]).fetchImpl],
+		["schema", () => transport([json({ ok: true })]).fetchImpl],
+		[
+			"signature",
+			() =>
+				transport([
+					json({ ok: true, command_signed: { ...command(), sig_b64: "A".repeat(86) + "==" } }),
+				]).fetchImpl,
+		],
+		[
+			"identity",
+			() =>
+				transport([json({ ok: true, command_signed: command({ tenant_id: agentId }) })]).fetchImpl,
+		],
+		[
+			"expired",
+			() =>
+				transport([
+					json({ ok: true, command_signed: command({ expires_at: new Date(now).toISOString() }) }),
+				]).fetchImpl,
+		],
+	] as const)("does not renew freshness after a %s poll failure", async (_name, fetchFactory) => {
+		const statePath = await journalPath();
+		let clock = now - 180_000;
+		const journal = new FleetResponseJournal(
+			statePath,
+			{ tenantId, agentId },
+			"enrollment-secret",
+			installationId,
+			stableJournalKey,
+			() => clock,
+		);
+		const initial = await journal.bootstrapResponseControl();
+		const prior = await journal.save({ ...initial, last_successful_poll_at: initial.bootstrap_at });
+		clock = now;
+		const localAdapter = adapter();
+		const result = await worker(
+			statePath,
+			fetchFactory(),
+			localAdapter,
+			undefined,
+			trustedCommandKeys,
+			{ stableJournalKey, now: () => clock },
+		).tick();
+		expect(result.status).not.toBe("idle");
+		expect(await journal.inspect()).toEqual(prior);
+		expect(localAdapter.execute).not.toHaveBeenCalled();
+	});
+
+	it("persists a new signed poll before execution even when its result receipt fails", async () => {
+		const statePath = await journalPath();
+		const journal = new FleetResponseJournal(
+			statePath,
+			{ tenantId, agentId },
+			"enrollment-secret",
+			installationId,
+			stableJournalKey,
+		);
+		await journal.bootstrapResponseControl();
+		const localAdapter = adapter({
+			execute: vi.fn(async () => {
+				const persisted = await journal.inspect();
+				expect(persisted?.last_successful_poll_at).toBe(new Date(now).toISOString());
+				expect(persisted?.current?.phase).toBe("execute_intent");
+				return { ok: true as const };
+			}),
+		});
+		const { fetchImpl } = transport([
+			json({ ok: true, command_signed: command() }),
+			json({ ok: true, command_id: commandId, state: "acknowledged" }),
+			json({ error: "unavailable" }, 500),
+		]);
+		expect(
+			await worker(statePath, fetchImpl, localAdapter, undefined, trustedCommandKeys, {
+				stableJournalKey,
+			}).tick(),
+		).toMatchObject({ status: "outcome_unknown", stage: "result" });
+		expect(localAdapter.execute).toHaveBeenCalledOnce();
+		expect((await journal.inspect())?.last_successful_poll_at).toBe(new Date(now).toISOString());
+	});
+
+	it.each(["polled", "acknowledged", "execute_intent", "result_pending"] as const)(
+		"does not renew freshness when recovering %s state",
+		async (phase) => {
+			const statePath = await journalPath();
+			let clock = now - 180_000;
+			const journal = new FleetResponseJournal(
+				statePath,
+				{ tenantId, agentId },
+				"enrollment-secret",
+				installationId,
+				stableJournalKey,
+				() => clock,
+			);
+			const initial = await journal.bootstrapResponseControl();
+			await journal.save({
+				...initial,
+				last_successful_poll_at: initial.bootstrap_at,
+				current: { command: typedCommand(), delivery: command(), phase, resultCode: null },
+			});
+			clock = now;
+			const responses = [json({ ok: true, command_id: commandId, state: "succeeded" })];
+			if (phase === "polled")
+				responses.unshift(json({ ok: true, command_id: commandId, state: "acknowledged" }));
+			const { fetchImpl, requests } = transport(responses);
+			expect(
+				await worker(statePath, fetchImpl, adapter(), undefined, trustedCommandKeys, {
+					stableJournalKey,
+					now: () => clock,
+				}).tick(),
+			).toEqual({ status: "succeeded", commandId });
+			expect(requests.every((request) => request.body.action !== "poll")).toBe(true);
+			expect((await journal.inspect())?.last_successful_poll_at).toBe(initial.bootstrap_at);
+		},
+	);
+
+	it.each([
+		["bootstrap_at", undefined],
+		["bootstrap_at", null],
+		["bootstrap_at", "1970-01-01T00:00:00.000Z"],
+		["bootstrap_at", new Date(now + 1).toISOString()],
+		["bootstrap_at", "2026-09-13T12:00:00Z"],
+		["last_successful_poll_at", undefined],
+		["last_successful_poll_at", "1970-01-01T00:00:00.000Z"],
+		["last_successful_poll_at", new Date(now - 1).toISOString()],
+		["last_successful_poll_at", new Date(now + 1).toISOString()],
+	] as const)("rejects invalid authenticated freshness %s=%s", async (field, value) => {
+		const statePath = await journalPath();
+		const journal = new FleetResponseJournal(
+			statePath,
+			{ tenantId, agentId },
+			"enrollment-secret",
+			installationId,
+			stableJournalKey,
+		);
+		const initial = await journal.bootstrapResponseControl();
+		const invalid = { ...initial, [field]: value };
+		if (value === undefined) Reflect.deleteProperty(invalid, field);
+		await expect(journal.save(invalid)).rejects.toThrow("invalid_fleet_journal_state");
+		await writeFile(
+			`${statePath}.a`,
+			JSON.stringify({
+				payload: invalid,
+				mac: createHmac("sha256", stableJournalKey).update(canonical(invalid)).digest("hex"),
+			}),
+		);
+		await expect(journal.inspect()).rejects.toThrow("invalid_fleet_journal_state");
+	});
+
+	it("does not move a successful poll checkpoint backwards when the clock changes during polling", async () => {
+		const statePath = await journalPath();
+		let clock = now - 180_000;
+		const journal = new FleetResponseJournal(
+			statePath,
+			{ tenantId, agentId },
+			"enrollment-secret",
+			installationId,
+			stableJournalKey,
+			() => clock,
+		);
+		const initial = await journal.bootstrapResponseControl();
+		clock = now;
+		const prior = await journal.save({
+			...initial,
+			last_successful_poll_at: new Date(now).toISOString(),
+		});
+		const fetchImpl = vi.fn(async () => {
+			clock = now - 1;
+			return json({ ok: true, command_signed: null });
+		}) as typeof fetch;
+		expect(
+			await worker(statePath, fetchImpl, adapter(), undefined, trustedCommandKeys, {
+				stableJournalKey,
+				now: () => clock,
+			}).tick(),
+		).toEqual({ status: "outcome_unknown", stage: "poll", reason: "journal_unavailable" });
+		clock = now;
+		expect(await journal.inspect()).toEqual(prior);
+	});
+
+	it.each([0, NaN, Infinity])("rejects an invalid journal clock %s", async (invalidClock) => {
+		const statePath = await journalPath();
+		let clock = now;
+		const journal = new FleetResponseJournal(
+			statePath,
+			{ tenantId, agentId },
+			"enrollment-secret",
+			installationId,
+			stableJournalKey,
+			() => clock,
+		);
+		await journal.bootstrapResponseControl();
+		clock = invalidClock;
+		await expect(journal.inspect()).rejects.toThrow("invalid_fleet_journal_state");
+	});
+
+	it("preserves still-valid replay IDs beyond the former 256-command cursor", async () => {
+		const statePath = await journalPath();
+		const journal = new FleetResponseJournal(
+			statePath,
+			{ tenantId, agentId },
+			"enrollment-secret",
+			installationId,
+		);
+		const state = await journal.load();
+		const ids = [
+			commandId,
+			...Array.from(
+				{ length: 300 },
+				(_, index) => `${index.toString(16).padStart(8, "0")}-aaaa-4aaa-8aaa-aaaaaaaaaaaa`,
+			),
+		];
+		await journal.save({
+			...state,
+			recent_ids: ids,
+			recent_expiries: Object.fromEntries(
+				ids.map((id) => [id, new Date(now + 60_000).toISOString()]),
+			),
+		});
+		const localAdapter = adapter();
+		const { fetchImpl, requests } = transport([
+			json({ ok: true, command_signed: command({ attempt: 2 }) }),
+		]);
+		expect(await worker(statePath, fetchImpl, localAdapter).tick()).toEqual({
+			status: "outcome_unknown",
+			commandId,
+			stage: "poll",
+			reason: "replayed_command_id",
+		});
+		expect(requests).toHaveLength(1);
+		expect(localAdapter.execute).not.toHaveBeenCalled();
+		expect((await journal.inspect())?.last_successful_poll_at).toBeNull();
+	});
+
+	it("fails closed when all 1024 replay entries remain valid, then prunes only expired entries", async () => {
+		const statePath = await journalPath();
+		const journal = new FleetResponseJournal(
+			statePath,
+			{ tenantId, agentId },
+			"enrollment-secret",
+			installationId,
+		);
+		const state = await journal.load();
+		const ids = Array.from(
+			{ length: 1024 },
+			(_, index) => `${index.toString(16).padStart(8, "0")}-aaaa-4aaa-8aaa-aaaaaaaaaaaa`,
+		);
+		const full = await journal.save({
+			...state,
+			recent_ids: ids,
+			recent_expiries: Object.fromEntries(
+				ids.map((id) => [id, new Date(now + 60_000).toISOString()]),
+			),
+		});
+		const { fetchImpl, requests } = transport([json({ ok: true, command_signed: null })]);
+		const subject = worker(statePath, fetchImpl);
+		expect(await subject.tick()).toEqual({
+			status: "outcome_unknown",
+			stage: "poll",
+			reason: "command_replay_cache_full",
+		});
+		expect(requests).toHaveLength(0);
+		await journal.save({
+			...full,
+			recent_expiries: {
+				...full.recent_expiries,
+				[ids[0] as string]: new Date(now - 1).toISOString(),
+			},
+		});
+		expect(await subject.tick()).toEqual({ status: "idle" });
+		expect(requests).toHaveLength(1);
+	});
+
+	it("never unpauses a retained control head when the signed command TTL expires", async () => {
+		const statePath = await journalPath();
+		const journal = new FleetResponseJournal(
+			statePath,
+			{ tenantId, agentId },
+			"enrollment-secret",
+			installationId,
+		);
+		const state = await journal.load();
+		const pause = command({ expires_at: new Date(now - 1).toISOString() });
+		await journal.save({
+			...state,
+			response_control: { status: "paused", pause_delivery: pause, resume_delivery: null },
+		});
+		const { fetchImpl } = transport([json({ ok: true, command_signed: null })]);
+		expect(await worker(statePath, fetchImpl).tick()).toEqual({ status: "idle" });
+		expect((await journal.inspect())?.response_control).toEqual({
+			status: "paused",
+			pause_delivery: pause,
+			resume_delivery: null,
+		});
+	});
+
+	it("inspects a missing journal without creating directories or locks", async () => {
+		const prefix = await journalPath();
+		const statePath = join(prefix, "missing", "state");
+		const journal = new FleetResponseJournal(
+			statePath,
+			{ tenantId, agentId },
+			"enrollment-secret",
+			installationId,
+			stableJournalKey,
+		);
+		expect(await journal.inspect()).toBeNull();
+		expect(await readdir(join(prefix, ".."))).toEqual([]);
+	});
+
+	it("requires explicit operator bootstrap and preserves existing control on reinstall", async () => {
+		const statePath = await journalPath();
+		const journal = new FleetResponseJournal(
+			statePath,
+			{ tenantId, agentId },
+			"enrollment-secret",
+			installationId,
+			stableJournalKey,
+		);
+		await expect(journal.load()).rejects.toThrow("fleet_journal_bootstrap_required");
+		const initial = await journal.bootstrapResponseControl();
+		expect(initial.response_control).toEqual({
+			status: "running",
+			pause_delivery: null,
+			resume_delivery: null,
+		});
+		const pause = command();
+		const paused = await journal.save({
+			...initial,
+			response_control: { status: "paused", pause_delivery: pause, resume_delivery: null },
+		});
+		expect(await journal.bootstrapResponseControl()).toEqual(paused);
+		expect(await journal.inspect()).toEqual(paused);
+		const persisted = await readFile(`${statePath}.b`, "utf8");
+		expect(persisted).not.toContain(stableJournalKey);
+		expect(persisted).not.toContain("enrollment-secret");
+	});
+
+	it("does not bootstrap over corrupt required state or a lost vault secret", async () => {
+		const statePath = await journalPath();
+		const journal = new FleetResponseJournal(
+			statePath,
+			{ tenantId, agentId },
+			"enrollment-secret",
+			installationId,
+			stableJournalKey,
+		);
+		await journal.bootstrapResponseControl();
+		const otherKey = new FleetResponseJournal(
+			statePath,
+			{ tenantId, agentId },
+			"enrollment-secret",
+			installationId,
+			randomBytes(32).toString("base64"),
+		);
+		await expect(otherKey.bootstrapResponseControl()).rejects.toThrow(
+			"fleet_journal_integrity_failed",
+		);
+		await writeFile(`${statePath}.a`, "corrupt");
+		await expect(journal.inspect()).rejects.toThrow();
+		await expect(journal.bootstrapResponseControl()).rejects.toThrow();
+		expect(await readFile(`${statePath}.a`, "utf8")).toBe("corrupt");
+	});
+
+	it("retains historical pause across bearer rotation only with the stable private MAC secret", async () => {
+		const statePath = await journalPath();
+		const journal = new FleetResponseJournal(
+			statePath,
+			{ tenantId, agentId },
+			"enrollment-secret",
+			installationId,
+			stableJournalKey,
+		);
+		const initial = await journal.bootstrapResponseControl();
+		const paused = await journal.save({
+			...initial,
+			response_control: { status: "paused", pause_delivery: command(), resume_delivery: null },
+		});
+		const rotated = new FleetResponseJournal(
+			statePath,
+			{ tenantId, agentId },
+			"new-enrollment-secret",
+			installationId,
+			stableJournalKey,
+		);
+		expect(await rotated.inspect()).toEqual(paused);
+		const withoutStableKey = new FleetResponseJournal(
+			statePath,
+			{ tenantId, agentId },
+			"new-enrollment-secret",
+			installationId,
+		);
+		await expect(withoutStableKey.inspect()).rejects.toThrow("fleet_journal_integrity_failed");
+		const otherInstallation = new FleetResponseJournal(
+			statePath,
+			{ tenantId, agentId },
+			"new-enrollment-secret",
+			"other-installation",
+			stableJournalKey,
+		);
+		await expect(otherInstallation.inspect()).rejects.toThrow("invalid_fleet_journal_state");
+	});
+
+	it("keeps signed pause and matching resume evidence after both result receipts drain", async () => {
+		const statePath = await journalPath();
+		const journal = new FleetResponseJournal(
+			statePath,
+			{ tenantId, agentId },
+			"enrollment-secret",
+			installationId,
+			stableJournalKey,
+		);
+		await journal.bootstrapResponseControl();
+		const resumeId = "99999999-9999-4999-8999-999999999999";
+		const pause = command();
+		const resume = command({
+			id: resumeId,
+			command_type: "agent_resume",
+			rollback_of: commandId,
+			created_at: new Date(now).toISOString(),
+		});
+		const localAdapter = adapter({ supportedCommands: ["agent_pause", "agent_resume"] });
+		const { fetchImpl } = transport([
+			json({ ok: true, command_signed: pause }),
+			json({ ok: true, command_id: commandId, state: "acknowledged" }),
+			json({ ok: true, command_id: commandId, state: "succeeded" }),
+			json({ ok: true, command_signed: resume }),
+			json({ ok: true, command_id: resumeId, state: "acknowledged" }),
+			json({ ok: true, command_id: resumeId, state: "succeeded" }),
+		]);
+		const subject = worker(statePath, fetchImpl, localAdapter, undefined, trustedCommandKeys, {
+			stableJournalKey,
+		});
+		expect(await subject.tick()).toEqual({ status: "succeeded", commandId });
+		const paused = await journal.inspect();
+		expect(paused?.current).toBeNull();
+		expect(paused?.response_control).toEqual({
+			status: "paused",
+			pause_delivery: pause,
+			resume_delivery: null,
+		});
+		expect(await subject.tick()).toEqual({ status: "succeeded", commandId: resumeId });
+		const running = await journal.inspect();
+		expect(running?.current).toBeNull();
+		expect(running?.response_control).toEqual({
+			status: "running",
+			pause_delivery: pause,
+			resume_delivery: resume,
+		});
+	});
+
+	it("rejects resume without the matching local paused command", async () => {
+		const statePath = await journalPath();
+		const localAdapter = adapter({ supportedCommands: ["agent_resume"] });
+		const { fetchImpl, requests } = transport([
+			json({
+				ok: true,
+				command_signed: command({ command_type: "agent_resume", rollback_of: tenantId }),
+			}),
+			json({ ok: true, command_id: commandId, state: "failed" }),
+		]);
+		expect(await worker(statePath, fetchImpl, localAdapter).tick()).toEqual({
+			status: "rejected",
+			commandId,
+			code: "rollback_state_mismatch",
+		});
+		expect(requests.map((request) => request.body.action)).toEqual(["poll", "ack"]);
+		expect(requests[1]?.body.outcome).toBe("rejected");
+		expect(localAdapter.execute).not.toHaveBeenCalled();
+	});
+
+	it("rejects an older signed resume before any action on the current pause", async () => {
+		const statePath = await journalPath();
+		const journal = new FleetResponseJournal(
+			statePath,
+			{ tenantId, agentId },
+			"enrollment-secret",
+			installationId,
+		);
+		const state = await journal.load();
+		await journal.save({
+			...state,
+			response_control: { status: "paused", pause_delivery: command(), resume_delivery: null },
+		});
+		const resumeId = "99999999-9999-4999-8999-999999999999";
+		const localAdapter = adapter({ supportedCommands: ["agent_resume"] });
+		const { fetchImpl, requests } = transport([
+			json({
+				ok: true,
+				command_signed: command({
+					id: resumeId,
+					command_type: "agent_resume",
+					rollback_of: commandId,
+					created_at: new Date(now - 120_000).toISOString(),
+				}),
+			}),
+			json({ ok: true, command_id: resumeId, state: "failed" }),
+		]);
+		expect(await worker(statePath, fetchImpl, localAdapter).tick()).toEqual({
+			status: "rejected",
+			commandId: resumeId,
+			code: "rollback_state_mismatch",
+		});
+		expect(localAdapter.execute).not.toHaveBeenCalled();
+		expect(requests[1]?.body.outcome).toBe("rejected");
+		expect((await journal.inspect())?.response_control.status).toBe("paused");
+	});
+
+	it.each(["execute", "verify"] as const)(
+		"keeps native %s ambiguity as persisted execution intent",
+		async (stage) => {
+			const statePath = await journalPath();
+			await seedJournal(statePath, "acknowledged");
+			const localAdapter = adapter(
+				stage === "execute"
+					? {
+							execute: vi.fn(async () => ({ ok: false, code: "native_action_outcome_unknown" })),
+						}
+					: {
+							verify: vi.fn(async () => ({
+								observed: false,
+								code: "native_action_outcome_unknown",
+							})),
+						},
+			);
+			const { fetchImpl, requests } = transport([]);
+			expect(await worker(statePath, fetchImpl, localAdapter).tick()).toEqual({
+				status: "outcome_unknown",
+				commandId,
+				stage: "result",
+				reason: "execution_state_unverified",
+			});
+			const saved = await new FleetResponseJournal(
+				statePath,
+				{ tenantId, agentId },
+				"enrollment-secret",
+				installationId,
+			).inspect();
+			expect(saved?.current?.phase).toBe("execute_intent");
+			expect(saved?.current?.delivery).toEqual(command());
+			expect(requests).toHaveLength(0);
+		},
+	);
+
+	it.each(["false", "throw"] as const)(
+		"retains intent after a successful apply followed by generic verification %s",
+		async (failure) => {
+			const statePath = await journalPath();
+			await seedJournal(statePath, "acknowledged");
+			const localAdapter = adapter({
+				verify: vi.fn(async () => {
+					if (failure === "throw") throw new Error("host state read failed");
+					return { observed: false, code: "firewall_owned_rule_not_enforced" };
+				}),
+			});
+			const { fetchImpl, requests } = transport([]);
+			expect(await worker(statePath, fetchImpl, localAdapter).tick()).toEqual({
+				status: "outcome_unknown",
+				commandId,
+				stage: "result",
+				reason: "execution_state_unverified",
+			});
+			const journal = new FleetResponseJournal(
+				statePath,
+				{ tenantId, agentId },
+				"enrollment-secret",
+				installationId,
+			);
+			expect((await journal.inspect())?.current?.phase).toBe("execute_intent");
+			expect(localAdapter.execute).toHaveBeenCalledOnce();
+			expect(requests).toHaveLength(0);
+
+			const recoveryAdapter = adapter();
+			const recovered = transport([json({ ok: true, command_id: commandId, state: "succeeded" })]);
+			expect(await worker(statePath, recovered.fetchImpl, recoveryAdapter).tick()).toEqual({
+				status: "succeeded",
+				commandId,
+			});
+			expect(recoveryAdapter.execute).not.toHaveBeenCalled();
+			expect(recoveryAdapter.verify).toHaveBeenCalledOnce();
+			expect(recovered.requests.map((request) => request.body.action)).toEqual(["result"]);
+			expect((await journal.inspect())?.response_control.status).toBe("paused");
+		},
+	);
+
+	it("still records a definite execution preflight refusal without invoking verification", async () => {
+		const statePath = await journalPath();
+		await seedJournal(statePath, "acknowledged");
+		const localAdapter = adapter({
+			execute: vi.fn(async () => ({ ok: false, code: "preflight_refused" })),
+		});
+		const { fetchImpl, requests } = transport([
+			json({ ok: true, command_id: commandId, state: "failed" }),
+		]);
+		expect(await worker(statePath, fetchImpl, localAdapter).tick()).toEqual({
+			status: "failed",
+			commandId,
+			code: "preflight_refused",
+		});
+		expect(localAdapter.verify).not.toHaveBeenCalled();
+		expect(requests[0]?.body).toMatchObject({
+			action: "result",
+			outcome: "failed",
+			result_code: "preflight_refused",
+		});
+		const saved = await new FleetResponseJournal(
+			statePath,
+			{ tenantId, agentId },
+			"enrollment-secret",
+			installationId,
+		).inspect();
+		expect(saved?.current).toBeNull();
+		expect(saved?.response_control.status).toBe("running");
+	});
+
+	it("rejects a historical credential on a fresh command after stable-journal bearer rotation", async () => {
+		const statePath = await journalPath();
+		const journal = new FleetResponseJournal(
+			statePath,
+			{ tenantId, agentId },
+			"enrollment-secret",
+			installationId,
+			stableJournalKey,
+		);
+		await journal.bootstrapResponseControl();
+		const localAdapter = adapter();
+		const { fetchImpl, requests } = transport([json({ ok: true, command_signed: command() })]);
+		expect(
+			await worker(statePath, fetchImpl, localAdapter, undefined, trustedCommandKeys, {
+				apiKey: "new-enrollment-secret",
+				stableJournalKey,
+			}).tick(),
+		).toEqual({
+			status: "invalid_command",
+			reason: "credential_mismatch",
+		});
+		expect(requests).toHaveLength(1);
+		expect(localAdapter.execute).not.toHaveBeenCalled();
+	});
+
+	it.each(["polled", "acknowledged"] as const)(
+		"revalidates the signature before resuming %s",
+		async (phase) => {
+			const statePath = await journalPath();
+			const delivery = { ...command(), sig_b64: Buffer.alloc(64).toString("base64") };
+			await seedJournal(statePath, phase, { delivery });
+			const localAdapter = adapter();
+			const { fetchImpl, requests } = transport([]);
+			expect(await worker(statePath, fetchImpl, localAdapter).tick()).toEqual({
+				status: "invalid_command",
+				reason: "invalid_command_signature",
+			});
+			expect(requests).toHaveLength(0);
+			expect(localAdapter.execute).not.toHaveBeenCalled();
+			expect(localAdapter.verify).not.toHaveBeenCalled();
+		},
+	);
+
+	it("rejects a retired signing key before resuming a saved acknowledgement", async () => {
+		const statePath = await journalPath();
+		await seedJournal(statePath, "acknowledged");
+		const localAdapter = adapter();
+		const { fetchImpl, requests } = transport([]);
+		expect(
+			await worker(statePath, fetchImpl, localAdapter, undefined, {
+				"response-next": trustedCommandKeys["response-next"],
+			}).tick(),
+		).toEqual({
+			status: "invalid_command",
+			reason: "unknown_command_signing_key",
+		});
+		expect(requests).toHaveLength(0);
+		expect(localAdapter.execute).not.toHaveBeenCalled();
+	});
+
+	it("fails closed on a legacy unsigned journal even when its local MAC is valid", async () => {
+		const statePath = await journalPath();
+		await seedJournal(statePath, "polled");
+		const envelope = JSON.parse(await readFile(`${statePath}.a`, "utf8"));
+		delete envelope.payload.current.delivery;
+		envelope.mac = createHmac("sha256", "enrollment-secret")
+			.update(canonical(envelope.payload))
+			.digest("hex");
+		await writeFile(`${statePath}.a`, JSON.stringify(envelope));
+		const localAdapter = adapter();
+		const { fetchImpl, requests } = transport([]);
+		expect(await worker(statePath, fetchImpl, localAdapter).tick()).toEqual({
+			status: "outcome_unknown",
+			stage: "poll",
+			reason: "journal_unavailable",
+		});
+		expect(requests).toHaveLength(0);
+		expect(localAdapter.execute).not.toHaveBeenCalled();
+	});
+
+	it("clears an expired never-acknowledged cursor without blocking subsequent polls", async () => {
+		const statePath = await journalPath();
+		const expiresAt = new Date(now - 1).toISOString();
+		await seedJournal(statePath, "polled", {
+			delivery: command({ expires_at: expiresAt }),
+			view: { ...typedCommand(), expiresAt },
+		});
+		const localAdapter = adapter();
+		const { fetchImpl, requests } = transport([json({ ok: true, command_signed: null })]);
+		const subject = worker(statePath, fetchImpl, localAdapter);
+		expect(await subject.tick()).toEqual({ status: "expired", commandId });
+		expect(await subject.tick()).toEqual({ status: "idle" });
+		expect(requests.map((request) => request.body.action)).toEqual(["poll"]);
+		expect(localAdapter.execute).not.toHaveBeenCalled();
+	});
+
+	it("observes an expired execution intent and reports the actual state without repeating execution", async () => {
+		const statePath = await journalPath();
+		const expiresAt = new Date(now - 1).toISOString();
+		const delivery = command({ expires_at: expiresAt });
+		await seedJournal(statePath, "execute_intent", {
+			delivery,
+			view: { ...typedCommand(), expiresAt },
+		});
+		const localAdapter = adapter();
+		const { fetchImpl, requests } = transport([
+			json({ ok: true, command_id: commandId, state: "succeeded" }),
+		]);
+		expect(await worker(statePath, fetchImpl, localAdapter).tick()).toEqual({
+			status: "succeeded",
+			commandId,
+		});
+		expect(localAdapter.execute).not.toHaveBeenCalled();
+		expect(localAdapter.verify).toHaveBeenCalledWith(
+			{ ...typedCommand(), expiresAt },
+			expect.any(AbortSignal),
+			delivery,
+		);
+		expect(requests.map((request) => request.body.action)).toEqual(["result"]);
+	});
+
 	it("persists a completed command cursor and never executes a replay", async () => {
 		const statePath = await journalPath();
 		const localAdapter = adapter();
 		const { fetchImpl, requests } = transport([
-			json({ ok: true, command: command() }),
+			json({ ok: true, command_signed: command() }),
 			json({ ok: true, command_id: commandId, state: "acknowledged" }),
 			json({ ok: true, command_id: commandId, state: "succeeded" }),
-			json({ ok: true, command: command({ attempt: 2 }) }),
+			json({ ok: true, command_signed: command({ attempt: 2 }) }),
 		]);
 		const subject = worker(statePath, fetchImpl, localAdapter);
 		expect(await subject.tick()).toEqual({ status: "succeeded", commandId });
@@ -430,7 +1542,7 @@ describe("durable fleet response worker", () => {
 		const abort = new AbortController();
 		const localAdapter = adapter();
 		const responses = [
-			json({ ok: true, command: command() }),
+			json({ ok: true, command_signed: command() }),
 			json({ ok: true, command_id: commandId, state: "acknowledged" }),
 		];
 		const fetchImpl = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
@@ -638,7 +1750,7 @@ describe("durable fleet response worker", () => {
 		const statePath = await journalPath();
 		const localAdapter = adapter();
 		const first = transport([
-			json({ ok: true, command: command() }),
+			json({ ok: true, command_signed: command() }),
 			json({ ok: true, command_id: commandId, state: "delivered" }),
 		]);
 		expect(await worker(statePath, first.fetchImpl, localAdapter).tick()).toMatchObject({
@@ -662,7 +1774,7 @@ describe("durable fleet response worker", () => {
 		const statePath = await journalPath();
 		const localAdapter = adapter();
 		const first = transport([
-			json({ ok: true, command: command() }),
+			json({ ok: true, command_signed: command() }),
 			json({ ok: true, command_id: commandId, state: "acknowledged" }),
 			json({ error: "unavailable" }, 503),
 		]);
@@ -843,7 +1955,7 @@ describe("durable fleet response worker", () => {
 		const abort = new AbortController();
 		const fetchImpl = vi.fn(async () => {
 			abort.abort();
-			return json({ ok: true, command: null });
+			return json({ ok: true, command_signed: null });
 		}) as typeof fetch;
 		await worker(statePath, fetchImpl).run(abort.signal);
 		expect(fetchImpl).toHaveBeenCalledOnce();
@@ -862,9 +1974,10 @@ describe("durable fleet response worker", () => {
 			apiKey: "enrollment-secret",
 			identity: { tenantId, agentId },
 			installationId,
+			trustedCommandKeys,
 			adapter: adapter(),
 			statePath,
-			fetchImpl: transport([json({ ok: true, command: null })]).fetchImpl,
+			fetchImpl: transport([json({ ok: true, command_signed: null })]).fetchImpl,
 			actionTimeoutMs: 100,
 			onCycle,
 		});
@@ -883,6 +1996,7 @@ describe("durable fleet response worker", () => {
 			apiKey: "enrollment-secret",
 			identity: { tenantId, agentId },
 			installationId,
+			trustedCommandKeys,
 			adapter: adapter(),
 			statePath,
 			fetchImpl: transport([json({ ok: true, command_id: commandId, state: "succeeded" })])
@@ -907,6 +2021,7 @@ describe("durable fleet response worker", () => {
 			apiKey: "enrollment-secret",
 			identity: { tenantId, agentId },
 			installationId,
+			trustedCommandKeys,
 			adapter: adapter(),
 			statePath,
 			fetchImpl: transport([]).fetchImpl,

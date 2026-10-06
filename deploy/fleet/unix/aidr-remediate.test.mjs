@@ -10,21 +10,36 @@
  */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const remover = join(dirname(fileURLToPath(import.meta.url)), "aidr-remediate.mjs");
+const uninstall = join(dirname(remover), "remove-managed-hooks.mjs");
 const DIGEST = "ab".repeat(32);
 const MANAGED_MARKER = "Singularity AIDR managed installation";
 const BUNDLES = ["pre-tool-use.cjs", "post-tool-use.cjs", "session-start.cjs"];
 const CUSTOMER_HOOK_A = { type: "command", command: "customer-command-a", timeout: 9 };
 const CUSTOMER_HOOK_B = { type: "command", command: "customer-command-b" };
-// A bundle that consumes stdin and denies — enough for the remediation canary.
-const FAKE_BUNDLE =
-	'const chunks=[];process.stdin.on("data",(c)=>chunks.push(c));process.stdin.on("end",()=>{process.stdout.write(JSON.stringify({hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny"}}));process.exit(0);});\n';
+const CANARY_VERDICT = {
+	hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: "🛡️ Singularity AIDR: Threat Blocked" },
+	systemMessage: "Remote code execution via curl pipe to shell",
+};
+const bundleWithVerdict = (verdict) =>
+	`process.stdin.resume();process.stdin.on("end",()=>{process.stdout.write(${JSON.stringify(JSON.stringify(verdict))});});\n`;
+const FAKE_BUNDLE = bundleWithVerdict(CANARY_VERDICT);
+
+function connectorDigest(root) {
+	const files = (directory, prefix) => readdirSync(directory, { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
+		.flatMap((entry) => entry.isDirectory() ? files(join(directory, entry.name), join(prefix, entry.name)) : [join(prefix, entry.name)]);
+	const shipped = ["package.json", ...files(join(root, "dist"), "dist"), ...files(join(root, "resources"), "resources")];
+	const hash = createHash("sha256");
+	for (const file of shipped) hash.update(file.replaceAll("\\", "/")).update("\0").update(readFileSync(join(root, file)));
+	return hash.digest("hex");
+}
 
 function temporaryHome(context) {
 	const home = mkdtempSync(join(resolve(tmpdir()), "aidr-remediate-"));
@@ -58,12 +73,17 @@ function writeReceipt(home, overrides = {}) {
 }
 
 /** A home with a verified receipt, real bundles and a mix of managed + customer hooks. */
-function createFixture(context) {
+function createFixture(context, bundleSource = FAKE_BUNDLE) {
 	const home = temporaryHome(context);
-	const connectorPath = join(home, ".singularity-aidr", "connectors", "claude", DIGEST);
+	let connectorPath = join(home, ".singularity-aidr", "connectors", "claude", DIGEST);
 	mkdirSync(join(connectorPath, "dist"), { recursive: true });
-	for (const bundle of BUNDLES) writeFileSync(join(connectorPath, "dist", bundle), FAKE_BUNDLE);
+	writeFileSync(join(connectorPath, "package.json"), '{"name":"remediation-fixture","private":true}\n');
+	for (const bundle of BUNDLES) writeFileSync(join(connectorPath, "dist", bundle), bundleSource);
 	mkdirSync(join(connectorPath, "resources", "threats"), { recursive: true });
+	const digest = connectorDigest(connectorPath);
+	const installedPath = join(dirname(connectorPath), digest);
+	renameSync(connectorPath, installedPath);
+	connectorPath = installedPath;
 	mkdirSync(join(home, ".claude"), { recursive: true });
 
 	const mispointed = (bundle) => ({
@@ -87,11 +107,24 @@ function createFixture(context) {
 	const settingsPath = join(home, ".claude", "settings.json");
 	const settingsRaw = `${JSON.stringify(settings, null, 4)}\n`;
 	writeFileSync(settingsPath, settingsRaw);
-	const receiptPath = writeReceipt(home);
+	const receiptPath = writeReceipt(home, { path: connectorPath, artifact_sha256: digest });
 	const configPath = join(home, ".singularity-aidr", "config.json");
 	const configRaw = '{"policy":"customer-owned"}\n';
 	writeFileSync(configPath, configRaw);
 	return { home, connectorPath, settingsPath, settingsRaw, receiptPath, configPath, configRaw };
+}
+
+function writeHealthySettings(fixture) {
+	const settings = JSON.parse(fixture.settingsRaw);
+	for (const [index, event] of ["PreToolUse", "PostToolUse", "SessionStart"].entries()) {
+		settings.hooks[event] = [{
+			...(event === "SessionStart" ? {} : { matcher: "*" }),
+			hooks: [{ type: "command", command: `"${process.execPath.replaceAll("\\", "/")}" "${join(fixture.connectorPath, "dist", BUNDLES[index]).replaceAll("\\", "/")}"`,
+				timeout: [15, 5, 30][index], statusMessage: MANAGED_MARKER }],
+		}];
+	}
+	writeFileSync(fixture.settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
+	return settings;
 }
 
 function runRemediate(home, ...extra) {
@@ -253,6 +286,7 @@ test("remediation refuses when the connector bytes are gone or the host is disab
 	assert.equal(second.status, 1, second.stderr || second.stdout);
 	const report = JSON.parse(second.stdout);
 	assert.equal(report.reason.code, "host_hooks_disabled");
+	assert.equal(report.host_hooks_disabled, true);
 	// Re-enabling the host would be a customer configuration change.
 	assert.equal(readFileSync(disabledHost.settingsPath, "utf8"), before);
 	assert.equal(backups(disabledHost.home).length, 0);
@@ -270,4 +304,184 @@ test("remediation --check reports an unhealthy install without writing", (contex
 	assert.equal(report.backup_path, null);
 	assert.equal(readFileSync(fixture.settingsPath, "utf8"), fixture.settingsRaw);
 	assert.equal(backups(fixture.home).length, 0);
+});
+
+test("remediation recreates missing settings only after a passing connector canary", (context) => {
+	const fixture = createFixture(context);
+	rmSync(dirname(fixture.settingsPath), { recursive: true });
+	const check = runRemediate(fixture.home, "--check");
+	assert.equal(check.status, 1, check.stdout);
+	assert.equal(existsSync(dirname(fixture.settingsPath)), false);
+	const result = runRemediate(fixture.home);
+	assert.equal(result.status, 0, result.stdout);
+	assert.equal(JSON.parse(result.stdout).backup_path, null);
+	const settings = JSON.parse(readFileSync(fixture.settingsPath, "utf8"));
+	for (const event of ["PreToolUse", "PostToolUse", "SessionStart"]) assert.equal(managedHooks(settings, event).length, 1);
+	assert.equal(readFileSync(fixture.configPath, "utf8"), fixture.configRaw);
+});
+
+test("malformed customer settings are refused without any rewrite", (context) => {
+	const invalid = ["{", "[]", "null", '{"hooks":null}', '{"hooks":[]}', '{"hooks":{"Stop":{}}}',
+		'{"hooks":{"PreToolUse":[null]}}', '{"hooks":{"Stop":[{}]}}', '{"hooks":{"Stop":[{"hooks":["customer"]}]}}',
+		'{"disableAllHooks":"true"}'];
+	for (const raw of invalid) {
+		const fixture = createFixture(context);
+		writeFileSync(fixture.settingsPath, raw);
+		for (const args of [[], ["--check"]]) {
+			const result = runRemediate(fixture.home, ...args);
+			assert.equal(result.status, 1, result.stdout);
+			assert.equal(JSON.parse(result.stdout).outcome, "unrepairable");
+			assert.equal(readFileSync(fixture.settingsPath, "utf8"), raw);
+			assert.equal(backups(fixture.home).length, 0);
+		}
+		const result = spawnSync(process.execPath, [uninstall, "--home", fixture.home], { encoding: "utf8" });
+		if (raw !== '{"disableAllHooks":"true"}') assert.notEqual(result.status, 0, raw);
+		assert.equal(readFileSync(fixture.settingsPath, "utf8"), raw);
+	}
+});
+
+test("health detection rejects inert, scoped, asynchronous and malformed managed registrations", (context) => {
+	const cases = [
+		(entry) => { entry.hooks[0].command = `echo ${entry.hooks[0].command}`; },
+		(entry) => { entry.hooks[0].command = entry.hooks[0].command.replace(process.execPath.replaceAll("\\", "/"), "missing-node"); },
+		(entry) => { entry.hooks[0].command += " && exit 0"; },
+		(entry) => { entry.matcher = "Read"; },
+		(entry) => { entry.hooks[0].type = "prompt"; },
+		(entry) => { entry.hooks[0].timeout = 0; },
+		...[true, "true", 1, {}].map((value) => (entry) => { entry.hooks[0].async = value; }),
+		...[true, "true", 1, {}].map((value) => (entry) => { entry.hooks[0].asyncRewake = value; }),
+	];
+	for (const mutate of cases) {
+		const fixture = createFixture(context);
+		assert.equal(runRemediate(fixture.home).status, 0);
+		const settings = JSON.parse(readFileSync(fixture.settingsPath, "utf8"));
+		mutate(settings.hooks.PreToolUse.at(-1));
+		const raw = `${JSON.stringify(settings, null, 2)}\n`;
+		writeFileSync(fixture.settingsPath, raw);
+		const check = runRemediate(fixture.home, "--check");
+		assert.equal(check.status, 1, check.stdout);
+		assert.equal(JSON.parse(check.stdout).hooks[0].state, "mispointed");
+		assert.equal(readFileSync(fixture.settingsPath, "utf8"), raw);
+		assert.equal(backups(fixture.home).length, 1);
+		const repaired = runRemediate(fixture.home);
+		assert.equal(repaired.status, 0, repaired.stdout);
+		assert.equal(JSON.parse(repaired.stdout).outcome, "repaired");
+		assert.equal(JSON.parse(repaired.stdout).preserved_customer_hooks, 3);
+	}
+});
+
+test("remediation removes unexpected and duplicate managed hooks while preserving customer hooks", (context) => {
+	const fixture = createFixture(context);
+	assert.equal(runRemediate(fixture.home).status, 0);
+	const settings = JSON.parse(readFileSync(fixture.settingsPath, "utf8"));
+	settings.hooks.Stop = [{ customFlag: "keep", hooks: [settings.hooks.PreToolUse.at(-1).hooks[0], CUSTOMER_HOOK_B] }];
+	writeFileSync(fixture.settingsPath, `${JSON.stringify(settings)}\n`);
+	assert.equal(runRemediate(fixture.home, "--check").status, 1);
+	const repaired = runRemediate(fixture.home);
+	assert.equal(repaired.status, 0, repaired.stdout);
+	assert.deepEqual(JSON.parse(readFileSync(fixture.settingsPath, "utf8")).hooks.Stop, [{ customFlag: "keep", hooks: [CUSTOMER_HOOK_B] }]);
+	const next = JSON.parse(readFileSync(fixture.settingsPath, "utf8"));
+	next.hooks.PreToolUse.push(next.hooks.PreToolUse.at(-1));
+	writeFileSync(fixture.settingsPath, `${JSON.stringify(next)}\n`);
+	const check = runRemediate(fixture.home, "--check");
+	assert.equal(check.status, 1, check.stdout);
+	assert.equal(JSON.parse(check.stdout).hooks[0].state, "duplicated");
+	assert.equal(runRemediate(fixture.home).status, 0);
+});
+
+test("generic or internal-error deny output cannot pass the local canary, including --check", (context) => {
+	const invalid = [
+		{ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny" } },
+		{ ...CANARY_VERDICT, hookSpecificOutput: { ...CANARY_VERDICT.hookSpecificOutput, permissionDecisionReason: "Internal error: scanner unavailable" } },
+		{ ...CANARY_VERDICT, systemMessage: "No detector initialized" },
+		{ ...CANARY_VERDICT, hookSpecificOutput: { ...CANARY_VERDICT.hookSpecificOutput, hookEventName: "PostToolUse" } },
+	];
+	for (const verdict of invalid) {
+		const fixture = createFixture(context, bundleWithVerdict(verdict));
+		writeHealthySettings(fixture);
+		const raw = readFileSync(fixture.settingsPath, "utf8");
+		for (const args of [[], ["--check"]]) {
+			const result = runRemediate(fixture.home, ...args);
+			assert.equal(result.status, 1, result.stdout);
+			assert.equal(JSON.parse(result.stdout).reason.code, "deny_canary_failed");
+			assert.equal(JSON.parse(result.stdout).canary, "failed");
+			assert.equal(readFileSync(fixture.settingsPath, "utf8"), raw);
+			assert.equal(backups(fixture.home).length, 0);
+		}
+	}
+});
+
+test("installed connector drift is rejected before executing any canary", (context) => {
+	for (const file of ["package.json", join("dist", "pre-tool-use.cjs"), join("dist", "post-tool-use.cjs"), join("dist", "session-start.cjs"), join("resources", "threats", "unexpected.json")]) {
+		const fixture = createFixture(context);
+		writeHealthySettings(fixture);
+		const marker = join(fixture.home, "tampered-canary-executed");
+		writeFileSync(join(fixture.connectorPath, file), `require("node:fs").writeFileSync(${JSON.stringify(marker)}, "executed");\n${FAKE_BUNDLE}`);
+		const raw = readFileSync(fixture.settingsPath, "utf8");
+		for (const args of [[], ["--check"]]) {
+			const result = runRemediate(fixture.home, ...args);
+			assert.equal(result.status, 1, result.stdout);
+			assert.equal(JSON.parse(result.stdout).reason.code, "connector_digest_mismatch");
+			assert.equal(existsSync(marker), false);
+			assert.equal(readFileSync(fixture.settingsPath, "utf8"), raw);
+			assert.equal(backups(fixture.home).length, 0);
+		}
+	}
+});
+
+test("remediation preserves concurrent customer edits and removes its temporary file", (context) => {
+	for (const phase of ["canary", "temporary"]) {
+		for (const missing of [false, true]) {
+			const fixture = createFixture(context);
+			if (missing) rmSync(fixture.settingsPath);
+			const edit = '{"customerChangedDuringRemediation":true}\n';
+			const preload = join(fixture.home, "remediation-fault.cjs");
+			writeFileSync(preload, `
+const fs = require("node:fs");
+const child = require("node:child_process");
+const { syncBuiltinESMExports } = require("node:module");
+const originalWrite = fs.writeFileSync;
+const originalSpawn = child.spawnSync;
+fs.writeFileSync = (path, data, options) => {
+  const result = originalWrite(path, data, options);
+  if (${JSON.stringify(phase)} === "temporary" && String(path).endsWith(".tmp")) originalWrite(process.env.AIDR_TEST_SETTINGS, ${JSON.stringify(edit)});
+  return result;
+};
+child.spawnSync = (...args) => {
+  const result = originalSpawn(...args);
+  if (${JSON.stringify(phase)} === "canary") originalWrite(process.env.AIDR_TEST_SETTINGS, ${JSON.stringify(edit)});
+  return result;
+};
+syncBuiltinESMExports();
+`);
+			const result = spawnSync(process.execPath, ["--require", preload, remover, "--home", fixture.home, "--json"], {
+				encoding: "utf8", timeout: 30_000, env: { ...process.env, AIDR_TEST_SETTINGS: fixture.settingsPath },
+			});
+			assert.equal(result.status, 1, result.stdout);
+			assert.equal(JSON.parse(result.stdout).reason.code, "settings_changed");
+			assert.equal(readFileSync(fixture.settingsPath, "utf8"), edit);
+			assert.equal(existsSync(`${fixture.settingsPath}.aidr-${result.pid}.tmp`), false);
+		}
+	}
+});
+
+test("settings directory symlinks and special connector entries are refused", (context) => {
+	const fixture = createFixture(context);
+	const saved = join(fixture.home, "customer-settings");
+	renameSync(dirname(fixture.settingsPath), saved);
+	symlinkSync(saved, dirname(fixture.settingsPath), process.platform === "win32" ? "junction" : "dir");
+	const result = runRemediate(fixture.home);
+	assert.equal(result.status, 1, result.stdout);
+	assert.equal(JSON.parse(result.stdout).reason.code, "managed_path_not_a_directory");
+	const removed = spawnSync(process.execPath, [uninstall, "--home", fixture.home], { encoding: "utf8" });
+	assert.notEqual(removed.status, 0);
+	assert.equal(readFileSync(join(saved, "settings.json"), "utf8"), fixture.settingsRaw);
+	const special = createFixture(context);
+	const originalDist = join(special.home, "linked-dist");
+	renameSync(join(special.connectorPath, "dist"), originalDist);
+	symlinkSync(originalDist, join(special.connectorPath, "dist"), process.platform === "win32" ? "junction" : "dir");
+	const probe = runRemediate(special.home);
+	assert.equal(probe.status, 1, probe.stdout);
+	assert.equal(JSON.parse(probe.stdout).reason.code, "connector_digest_mismatch");
+	assert.equal(readFileSync(special.settingsPath, "utf8"), special.settingsRaw);
 });

@@ -148,6 +148,15 @@ variables or print it into shell history/logs. Self-hosted Compose reads the
 generated value from `.env.functions`; keep that file restricted and preserve
 the secret across upgrades. See [secret management](../docs/runbooks/secrets-management.md)
 for rotation and handling.
+`deployment-prepare` forwards the operator's exact
+`AIDR_RUNTIME_CAPABILITIES_BY_TENANT` map into private `.env.functions` and
+defaults it to `{}`. For an authorized licensed tenant, use
+`{"TENANT_ID":["runtime_detectors","behavioral_learning_v1"]}`; learning requires
+both exact names. Apply this server-only value to both `enroll` and `ingest` in
+managed cloud deployments. Self-hosted functions read `.env.functions`; recreate
+the functions service after operator changes. Keep the change in the operator
+record, and never use `VITE_*`, browser settings, enrollment payloads or `*` for
+capability authority. See [the issuance and revocation contract](../supabase/README.md#configuration-is-validated-not-assumed).
 The repository does not ship a provider-side signed canary endpoint: managed
 cloud signing readiness remains failed until that endpoint and its live key
 binding are implemented and accepted. The staged local secret file is not proof

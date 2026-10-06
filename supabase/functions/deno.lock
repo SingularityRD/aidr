@@ -69,10 +69,10 @@
     "packageJson": {
       "dependencies": [
         "npm:@biomejs/biome@^2.5.1",
-        "npm:@changesets/cli@^2.29.8",
+        "npm:@changesets/cli@3.0.3",
         "npm:@vitest/coverage-v8@^4.1.11",
-        "npm:@vscode/vsce@3.6.0",
-        "npm:jscpd@^4.0.5",
+        "npm:@vscode/vsce@4.0.0",
+        "npm:jscpd@5.4.0",
         "npm:knip@^6.23.0",
         "npm:typescript@^5.9.0",
         "npm:vitest@^4.1.11"

@@ -1,0 +1,27 @@
+version: "1.0"
+default_action: ask
+rules:
+  - name: Allow dotted server
+    condition:
+      mcp_tool:
+        server: a.b
+        tool: c
+    action: allow
+    priority: 20
+  - name: Deny dotted tool
+    condition:
+      mcp_tool:
+        server: a
+        tool: b.c
+    action: deny
+    priority: 20
+  - name: Case-sensitive server identity
+    condition:
+      mcp_server: Enterprise/Repo:Read
+    action: ask
+    priority: 10
+  - name: Case-sensitive legacy tool
+    condition:
+      mcp_tool: Enterprise/Repo:Read.Tool/Write
+    action: deny
+    priority: 10

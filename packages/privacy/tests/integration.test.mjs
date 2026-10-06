@@ -1,10 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { PrivacyEngine } from '../dist/index.js';
 import { createToolGuard } from '../examples/aidr-tool-guard.mjs';
 const cli=new URL('../dist/cli.js',import.meta.url);
-function run(input,args=[]){return spawnSync(process.execPath,[cli.pathname,...args],{input,encoding:'utf8',timeout:5000});}
+function run(input,args=[]){return spawnSync(process.execPath,[fileURLToPath(cli),...args],{input,encoding:'utf8',timeout:5000});}
 test('CLI text redacts and never logs raw input',()=>{
  const r=run('Contact alice@example.com');assert.equal(r.status,0);assert.equal(r.stderr,'');
  assert.equal(JSON.parse(r.stdout).output,'Contact [EMAIL]');assert.ok(!r.stdout.includes('alice@example.com'));

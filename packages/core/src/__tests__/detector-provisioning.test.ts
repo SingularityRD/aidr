@@ -348,7 +348,7 @@ describe("shared tenant detector provisioning", () => {
 			expect(behavioral?.orchestrator.getStats().totalBaselineSamples).toBe(0);
 		});
 
-		it("learns within one context but does not restore persisted samples into a fresh context", async () => {
+		it("keeps direct observations cold within and across contexts despite a signed learning declaration", async () => {
 			await provisionBehavioral();
 			const detector = await freshBehavioral();
 			expect(detector.learningAllowed).toBe(true);
@@ -358,29 +358,49 @@ describe("shared tenant detector provisioning", () => {
 					outcome: "learning",
 					modelVersion: "local-tinyhash-v1",
 					learning: {
-						accepted: true,
-						baselineSamplesBefore: index,
-						baselineSamplesAfter: index + 1,
+						accepted: false,
+						reason: "explicitly_disabled",
+						baselineSamplesBefore: 0,
+						baselineSamplesAfter: 0,
 					},
 				});
 			}
-			const normal = await detector.orchestrator.evaluate(syntheticBehavioralInput(10));
-			expect(normal).toMatchObject({
-				outcome: "normal",
+			// A signed policy flag and repeated caller assertions are not execution
+			// or independent approval receipts. Real warm-up is covered by the native
+			// signed lifecycle in behavioral-learning-lifecycle.test.ts.
+			const cold = await detector.orchestrator.evaluate(syntheticBehavioralInput(10));
+			expect(cold).toMatchObject({
+				outcome: "learning",
 				anomalyScore: 0,
 				modelVersion: "local-tinyhash-v1",
-				learning: { accepted: true, baselineSamplesBefore: 10, baselineSamplesAfter: 11 },
+				learning: {
+					accepted: false,
+					reason: "explicitly_disabled",
+					baselineSamplesBefore: 0,
+					baselineSamplesAfter: 0,
+				},
 			});
-			expect(normal.explanations).toHaveLength(3);
-			for (const explanation of normal.explanations) {
-				expect(explanation).toMatchObject({ status: "ready", score: 0 });
+			expect(cold.explanations).toHaveLength(3);
+			for (const leg of ["behavioral", "novelty"]) {
+				expect(cold.explanations).toContainEqual(
+					expect.objectContaining({ leg, status: "learning" }),
+				);
 			}
+			expect(cold.explanations).toContainEqual(
+				expect.objectContaining({ leg: "ml", status: "ready", score: 0 }),
+			);
+			expect(detector.orchestrator.getStats().totalBaselineSamples).toBe(0);
 
 			const freshContext = await freshBehavioral();
 			expect(freshContext.orchestrator.getStats().totalBaselineSamples).toBe(0);
 			expect(await freshContext.orchestrator.evaluate(syntheticBehavioralInput(11))).toMatchObject({
 				outcome: "learning",
-				learning: { accepted: true, baselineSamplesBefore: 0, baselineSamplesAfter: 1 },
+				learning: {
+					accepted: false,
+					reason: "explicitly_disabled",
+					baselineSamplesBefore: 0,
+					baselineSamplesAfter: 0,
+				},
 			});
 		});
 
@@ -395,7 +415,7 @@ describe("shared tenant detector provisioning", () => {
 				outcome: "anomalous",
 				anomalyScore: 100,
 				modelVersion: "local-tinyhash-v1",
-				learning: { accepted: false, reason: "anomaly_detected", baselineSamplesAfter: 0 },
+				learning: { accepted: false, reason: "explicitly_disabled", baselineSamplesAfter: 0 },
 			});
 			expect(result.explanations).toContainEqual(
 				expect.objectContaining({
@@ -408,32 +428,32 @@ describe("shared tenant detector provisioning", () => {
 			expect((await evaluateFresh()).learning.baselineSamplesBefore).toBe(0);
 		});
 
-		it.each([
-			false,
-			"omitted",
-		] as const)("pins signed learning %s off despite per-event true", async (setting) => {
-			const payload = behavioralPolicyPayload(TEST_TENANT_ID, { learning_allowed: false });
-			if (setting === "omitted")
-				delete (payload.behavioral as Record<string, unknown>).learning_allowed;
-			await provisionBehavioral(payload);
-			for (let index = 0; index < 11; index++) {
-				const detector = await freshBehavioral();
-				expect(detector.learningAllowed).toBe(false);
-				const result = await detector.orchestrator.evaluate(
-					syntheticBehavioralInput(index, {
-						learningAllowed: true,
-					}),
-				);
-				expect(result.learning).toMatchObject({
-					accepted: false,
-					reason: "explicitly_disabled",
-					baselineSamplesBefore: 0,
-					baselineSamplesAfter: 0,
-				});
-			}
-		});
+		it.each([false, "omitted"] as const)(
+			"pins signed learning %s off despite per-event true",
+			async (setting) => {
+				const payload = behavioralPolicyPayload(TEST_TENANT_ID, { learning_allowed: false });
+				if (setting === "omitted")
+					delete (payload.behavioral as Record<string, unknown>).learning_allowed;
+				await provisionBehavioral(payload);
+				for (let index = 0; index < 11; index++) {
+					const detector = await freshBehavioral();
+					expect(detector.learningAllowed).toBe(false);
+					const result = await detector.orchestrator.evaluate(
+						syntheticBehavioralInput(index, {
+							learningAllowed: true,
+						}),
+					);
+					expect(result.learning).toMatchObject({
+						accepted: false,
+						reason: "explicitly_disabled",
+						baselineSamplesBefore: 0,
+						baselineSamplesAfter: 0,
+					});
+				}
+			},
+		);
 
-		it("requires affirmative per-event learning consent even when the signed capability allows it", async () => {
+		it("keeps missing caller consent disabled under the signed declaration", async () => {
 			await provisionBehavioral();
 			const result = await evaluateFresh(
 				syntheticBehavioralInput(0, { learningAllowed: undefined }),
@@ -461,14 +481,11 @@ describe("shared tenant detector provisioning", () => {
 
 		it("never seeds explicitly denied or high-risk events", async () => {
 			await provisionBehavioral();
-			for (const [overrides, reason] of [
-				[{ learningAllowed: false }, "explicitly_disabled"],
-				[{ riskScore: 90 }, "high_risk_event"],
-			] as const) {
+			for (const overrides of [{ learningAllowed: false }, { riskScore: 90 }] as const) {
 				const result = await evaluateFresh(syntheticBehavioralInput(0, overrides));
 				expect(result.learning).toMatchObject({
 					accepted: false,
-					reason,
+					reason: "explicitly_disabled",
 					baselineSamplesBefore: 0,
 					baselineSamplesAfter: 0,
 				});
@@ -496,14 +513,17 @@ describe("shared tenant detector provisioning", () => {
 			expect((await evaluateFresh()).learning.baselineSamplesBefore).toBe(0);
 		});
 
-		it("limits duplicate fingerprints within a session without restoring persisted counts", async () => {
+		it("refuses repeated unsigned fingerprints before they can consume learning counters", async () => {
 			await provisionBehavioral();
 			const detector = await freshBehavioral();
 			for (let index = 0; index < 5; index++) {
-				expect(
-					await detector.orchestrator.evaluate(syntheticBehavioralInput()),
-				).toMatchObject({
-					learning: { accepted: true, baselineSamplesAfter: index + 1 },
+				expect(await detector.orchestrator.evaluate(syntheticBehavioralInput())).toMatchObject({
+					learning: {
+						accepted: false,
+						reason: "explicitly_disabled",
+						baselineSamplesBefore: 0,
+						baselineSamplesAfter: 0,
+					},
 				});
 			}
 			for (let index = 0; index < 3; index++) {
@@ -511,18 +531,21 @@ describe("shared tenant detector provisioning", () => {
 					(await detector.orchestrator.evaluate(syntheticBehavioralInput())).learning,
 				).toMatchObject({
 					accepted: false,
-					reason: "fingerprint_limit",
-					baselineSamplesBefore: 5,
-					baselineSamplesAfter: 5,
+					reason: "explicitly_disabled",
+					baselineSamplesBefore: 0,
+					baselineSamplesAfter: 0,
 				});
 			}
 
 			const freshContext = await freshBehavioral();
 			expect(freshContext.orchestrator.getStats().totalBaselineSamples).toBe(0);
-			expect(
-				await freshContext.orchestrator.evaluate(syntheticBehavioralInput()),
-			).toMatchObject({
-				learning: { accepted: true, reason: "accepted", baselineSamplesBefore: 0, baselineSamplesAfter: 1 },
+			expect(await freshContext.orchestrator.evaluate(syntheticBehavioralInput())).toMatchObject({
+				learning: {
+					accepted: false,
+					reason: "explicitly_disabled",
+					baselineSamplesBefore: 0,
+					baselineSamplesAfter: 0,
+				},
 			});
 		});
 
@@ -540,7 +563,7 @@ describe("shared tenant detector provisioning", () => {
 			expect((await evaluateFresh()).learning.baselineSamplesBefore).toBe(0);
 		});
 
-		it("starts a separate baseline when the signed corpus digest changes", async () => {
+		it("cannot carry unsigned observations across signed corpus replacement", async () => {
 			const original = behavioralPolicyPayload();
 			await provisionBehavioral(original);
 			await evaluateFresh();
@@ -552,7 +575,9 @@ describe("shared tenant detector provisioning", () => {
 			);
 			expect((await evaluateFresh()).learning).toMatchObject({
 				baselineSamplesBefore: 0,
-				baselineSamplesAfter: 1,
+				baselineSamplesAfter: 0,
+				accepted: false,
+				reason: "explicitly_disabled",
 			});
 			await provisionBehavioral(original);
 			expect(
@@ -596,7 +621,7 @@ describe("shared tenant detector provisioning", () => {
 			expect(result).toMatchObject({ outcome: "unavailable", modelVersion: null });
 			expect(result.learning).toMatchObject({
 				accepted: false,
-				reason: schemaVersion === 2 ? "detection_unavailable" : "explicitly_disabled",
+				reason: "explicitly_disabled",
 				baselineSamplesAfter: 0,
 			});
 			expect(result.explanations).toContainEqual(
@@ -701,12 +726,15 @@ describe("shared tenant detector provisioning", () => {
 			],
 			["malformed value", (): unknown => "not-a-corpus"],
 			["null", (): unknown => null],
-		] as const)("rejects a supplied %s corpus rather than activating or silently dropping it", async (_name, makeCorpus) => {
-			await provisionBehavioral(
-				behavioralPolicyPayload(TEST_TENANT_ID, { threat_corpus: makeCorpus() }),
-			);
-			await expect(loadProvisionedDetectorContext("opencode")).rejects.toThrow();
-		});
+		] as const)(
+			"rejects a supplied %s corpus rather than activating or silently dropping it",
+			async (_name, makeCorpus) => {
+				await provisionBehavioral(
+					behavioralPolicyPayload(TEST_TENANT_ID, { threat_corpus: makeCorpus() }),
+				);
+				await expect(loadProvisionedDetectorContext("opencode")).rejects.toThrow();
+			},
+		);
 
 		it("rejects a non-finite JSON coordinate before activating the corpus", async () => {
 			const installed = await provisionBehavioral();
@@ -733,7 +761,7 @@ describe("shared tenant detector provisioning", () => {
 			);
 		});
 
-		it("does not restore persisted baselines across separate Node processes", async () => {
+		it("never promotes unsigned observations across separate Node processes", async () => {
 			await provisionBehavioral();
 			for (let index = 0; index < 10; index++) {
 				const { pid, result } = await evaluateInSeparateProcess(syntheticBehavioralInput(index));
@@ -742,9 +770,10 @@ describe("shared tenant detector provisioning", () => {
 					outcome: "learning",
 					modelVersion: "local-tinyhash-v1",
 					learning: {
-						accepted: true,
+						accepted: false,
+						reason: "explicitly_disabled",
 						baselineSamplesBefore: 0,
-						baselineSamplesAfter: 1,
+						baselineSamplesAfter: 0,
 					},
 				});
 			}
@@ -753,7 +782,12 @@ describe("shared tenant detector provisioning", () => {
 				outcome: "learning",
 				anomalyScore: 0,
 				modelVersion: "local-tinyhash-v1",
-				learning: { accepted: true, baselineSamplesBefore: 0, baselineSamplesAfter: 1 },
+				learning: {
+					accepted: false,
+					reason: "explicitly_disabled",
+					baselineSamplesBefore: 0,
+					baselineSamplesAfter: 0,
+				},
 			});
 			const matched = await evaluateInSeparateProcess(
 				syntheticBehavioralInput(0, {
@@ -766,7 +800,7 @@ describe("shared tenant detector provisioning", () => {
 				modelVersion: "local-tinyhash-v1",
 				learning: {
 					accepted: false,
-					reason: "anomaly_detected",
+					reason: "explicitly_disabled",
 					baselineSamplesBefore: 0,
 					baselineSamplesAfter: 0,
 				},

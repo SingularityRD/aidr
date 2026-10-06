@@ -207,7 +207,7 @@ describe("optional runtime detector wiring", () => {
 			}),
 		);
 
-		expect(verdict).toMatchObject({ decision: "allow", source: "no_artifacts" });
+		expect(verdict).toMatchObject({ decision: "allow", source: "none" });
 	});
 
 	it("does not let a URL allowlist bypass enabled tenant DLP", async () => {
@@ -368,7 +368,7 @@ describe("optional runtime detector wiring", () => {
 				runtimeDetectors: { tenantId: "tenant-a", dlp: { enabled: false, policy: policy() } },
 			}),
 		);
-		expect(verdict).toMatchObject({ decision: "allow", source: "no_artifacts" });
+		expect(verdict).toMatchObject({ decision: "allow", source: "none" });
 	});
 
 	it("treats an explicitly configured missing signed URL feed as unavailable", async () => {

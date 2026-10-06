@@ -3,13 +3,13 @@ import { isCommercialBuild } from "./build-flavor.js";
 import type { ControlPlaneIngestResult } from "./clients/control-plane.js";
 import { resolvePath } from "./config.js";
 import { atomicWriteJson, getFileContent } from "./file-utils.js";
-import { redactTelemetryData } from "./telemetry-redaction.js";
 import {
 	createSecretReferenceId,
-	resolveSecretStore,
 	type PlatformSecretStoreKind,
+	resolveSecretStore,
 	type SecretStore,
 } from "./secret-store.js";
+import { redactTelemetryData } from "./telemetry-redaction.js";
 import type { AuthConfig } from "./types.js";
 
 type ManagedSeatStatus = "ok" | "over_limit" | "unknown";
@@ -70,6 +70,7 @@ export interface SignedEd25519<T> {
 
 export interface ManagedState {
 	last_success_at?: string;
+	last_sync_attempt_at?: string;
 	grace_until?: string;
 	seat_status?: ManagedSeatStatus;
 	allowed_agents?: number;
@@ -82,6 +83,8 @@ export interface ManagedState {
 	 */
 	api_key?: string;
 	api_key_ref?: { store: PlatformSecretStoreKind; id: string; created_at: string };
+	/** Preserve the installation's locked telemetry WAL across authenticated key rotations. */
+	telemetry_queue?: { credential_namespace: string; anchor_namespace: string; mac: string };
 
 	/**
 	 * Device-code bootstrap cache (zero-friction onboarding).
@@ -136,12 +139,117 @@ export function getAuthToken(auth: AuthConfig): string | undefined {
 	return enroll || undefined;
 }
 
-export function managedStatePath(): string {
-	return resolvePath("~/.singularity-aidr/managed.json");
+type AgentTokenClaims = { uid: string; agent_id: string; jti: string; iat: number; exp: number };
+const AGENT_TOKEN_MAX_TTL_SECONDS = 7 * 24 * 60 * 60;
+
+// Identity/lifetime consistency only: the HS256 key stays on the control plane.
+// Authentication of these credentials is the HTTPS authority's responsibility.
+function readAgentTokenClaims(token: string): AgentTokenClaims | null {
+	if (token.length > 8192) return null;
+	const parts = token.split(".");
+	if (parts.length !== 3 || parts.some((part) => !/^[A-Za-z0-9_-]+$/.test(part))) return null;
+	try {
+		const header = JSON.parse(Buffer.from(parts[0] ?? "", "base64url").toString("utf8"));
+		const claims = JSON.parse(Buffer.from(parts[1] ?? "", "base64url").toString("utf8"));
+		if (!header || header.alg !== "HS256" || header.typ !== "JWT" || !claims) return null;
+		if (
+			![claims.uid, claims.agent_id, claims.jti].every(
+				(value) => typeof value === "string" && value.trim(),
+			)
+		)
+			return null;
+		if (
+			!Number.isSafeInteger(claims.iat) ||
+			!Number.isSafeInteger(claims.exp) ||
+			claims.iat < 0 ||
+			claims.exp <= claims.iat ||
+			claims.exp - claims.iat > AGENT_TOKEN_MAX_TTL_SECONDS
+		)
+			return null;
+		return claims as AgentTokenClaims;
+	} catch {
+		return null;
+	}
 }
 
-function revocationsCachePath(): string {
-	return resolvePath("~/.singularity-aidr/revocations.json");
+function validAgentTokenNow(claims: AgentTokenClaims, nowMs: number): boolean {
+	const now = Math.floor(nowMs / 1000);
+	return claims.iat <= now + 300 && now < claims.exp;
+}
+
+/** Prefer an authenticated managed rotation over the same installation's older configured JWT. */
+export function getEffectiveManagedApiKey(
+	configuredApiKey: string | undefined,
+	state: ManagedState,
+	nowMs = Date.now(),
+): string {
+	const configured = typeof configuredApiKey === "string" ? configuredApiKey.trim() : "";
+	const managed = typeof state.api_key === "string" ? state.api_key.trim() : "";
+	if (!configured) return managed;
+	const previous = readAgentTokenClaims(configured);
+	const next = readAgentTokenClaims(managed);
+	return previous &&
+		next &&
+		previous.uid === next.uid &&
+		previous.agent_id === next.agent_id &&
+		next.exp > previous.exp &&
+		validAgentTokenNow(next, nowMs)
+		? managed
+		: configured;
+}
+
+export function managedTelemetryQueueNamespace(
+	binding: ManagedState["telemetry_queue"],
+	endpoint: string,
+	authToken: string,
+	iid: string,
+): string {
+	const namespace = createHash("sha256")
+		.update(`${endpoint.replace(/\/+$/, "")}\0${authToken}\0${iid}`)
+		.digest("hex");
+	// Endpoint, credential or installation changes must retain their own queues.
+	if (binding?.credential_namespace !== namespace) return namespace;
+	if (
+		typeof binding.anchor_namespace !== "string" ||
+		!/^[a-f0-9]{64}$/.test(binding.anchor_namespace) ||
+		binding.mac !== telemetryQueueBindingMac(binding, authToken)
+	) {
+		throw new Error("Invalid managed telemetry queue binding");
+	}
+	return binding.anchor_namespace;
+}
+
+function telemetryQueueBindingMac(
+	binding: { credential_namespace: string; anchor_namespace: string },
+	authToken: string,
+): string {
+	return createHmac("sha256", authToken)
+		.update(`aidr-telemetry-queue-v1\0${binding.credential_namespace}\0${binding.anchor_namespace}`)
+		.digest("hex");
+}
+
+/** Bounded renewal for sessions whose clean tool calls do not emit telemetry. */
+export function shouldRefreshManagedEntitlement(
+	state: ManagedState,
+	authToken: string,
+	nowMs = Date.now(),
+): boolean {
+	const lastAttempt = Date.parse(state.last_sync_attempt_at ?? "");
+	if (Number.isFinite(lastAttempt) && lastAttempt <= nowMs && nowMs - lastAttempt < 5 * 60_000)
+		return false;
+	if (!isEntitlementActive(state, new Date(nowMs))) return true;
+	const lastSuccess = Date.parse(state.last_success_at ?? state.entitlement?.issued_at ?? "");
+	const claims = readAgentTokenClaims(authToken);
+	return (
+		!Number.isFinite(lastSuccess) ||
+		lastSuccess > nowMs ||
+		nowMs - lastSuccess >= 6 * 3_600_000 ||
+		Boolean(claims && claims.exp * 1000 - nowMs <= 48 * 3_600_000)
+	);
+}
+
+export function managedStatePath(): string {
+	return resolvePath("~/.singularity-aidr/managed.json");
 }
 
 function entitlementKeyringPath(): string {
@@ -245,7 +353,11 @@ export function verifyEd25519CanonicalJson(params: {
 }): boolean {
 	const sig = parseSignatureBase64(params.sig_b64);
 	if (!sig) return false;
-	return verifyEd25519(Buffer.from(canonicalJson(params.value), "utf8"), sig, params.public_keys_pem);
+	return verifyEd25519(
+		Buffer.from(canonicalJson(params.value), "utf8"),
+		sig,
+		params.public_keys_pem,
+	);
 }
 
 export function verifyEd25519SignedRevocationList(params: {
@@ -653,11 +765,13 @@ export async function loadManagedState(
 		publicKeysPem?: string[];
 		onSecurityEvent?: (event: ManagedSecurityEvent) => void;
 		secretStore?: SecretStore;
+		source?: { raw: string | null };
 	},
 ): Promise<ManagedState> {
 	let credentialPresent = false;
 	try {
-		const raw = await getFileContent(path, "utf-8");
+		if (opts?.source?.raw === null) return {};
+		const raw = opts?.source ? (opts.source.raw as string) : await getFileContent(path, "utf-8");
 		const parsed = JSON.parse(raw) as ManagedState;
 		if (!parsed || typeof parsed !== "object") return {};
 		if (isCommercialBuild()) {
@@ -666,9 +780,10 @@ export async function loadManagedState(
 				throw new Error("Managed credential has conflicting storage locations.");
 			}
 			if (parsed.api_key) {
+				if (opts?.source) throw new Error("Captured credential requires prior vault migration.");
 				// Migrate legacy plaintext only after the vault and reference are durable.
 				await saveManagedState(path, parsed, opts?.secretStore);
-				return loadManagedState(path, opts);
+				return loadManagedState(path, { ...opts, source: undefined });
 			}
 			if (parsed.api_key_ref) {
 				const ref = parsed.api_key_ref;
@@ -768,6 +883,7 @@ export async function saveManagedState(
 	path: string,
 	state: ManagedState,
 	secretStore?: SecretStore,
+	options: { requirePersistence?: boolean } = {},
 ): Promise<void> {
 	let created: { store: SecretStore; id: string } | undefined;
 	let committed = false;
@@ -830,7 +946,7 @@ export async function saveManagedState(
 				/* Unreferenced vault entry only. */
 			}
 		}
-		if (isCommercialBuild()) throw error;
+		if (isCommercialBuild() || options.requirePersistence) throw error;
 		// Fail open
 	}
 }
@@ -926,7 +1042,7 @@ export function applyIngestResult(
 	state: ManagedState,
 	result: ControlPlaneIngestResult,
 	gracePeriodHours: number,
-	opts?: { authToken?: string; publicKeysPem?: string[] },
+	opts?: { authToken?: string; publicKeysPem?: string[]; endpoint?: string; iid?: string },
 ): ManagedState {
 	const now = new Date();
 	// An idempotent telemetry replay never contacted the control plane. It is
@@ -982,9 +1098,46 @@ export function applyIngestResult(
 			typeof result.body?.current_agents === "number"
 				? (result.body.current_agents as number)
 				: undefined;
+		const rotatedKey = typeof result.body?.api_key === "string" ? result.body.api_key.trim() : "";
+		const previousClaims = authToken ? readAgentTokenClaims(authToken) : null;
+		const rotatedClaims = rotatedKey ? readAgentTokenClaims(rotatedKey) : null;
+		const acceptRotation =
+			result.status === 200 &&
+			previousClaims &&
+			rotatedClaims &&
+			validAgentTokenNow(previousClaims, now.getTime()) &&
+			validAgentTokenNow(rotatedClaims, now.getTime()) &&
+			previousClaims.uid === rotatedClaims.uid &&
+			previousClaims.agent_id === rotatedClaims.agent_id &&
+			result.body?.agent_id === previousClaims.agent_id &&
+			rotatedClaims.exp > previousClaims.exp &&
+			entitlementAlg === "ed25519" &&
+			entitlement?.schema_version === 2 &&
+			entitlement.tenant_id === previousClaims.uid &&
+			isEntitlementActive({ entitlement }, now);
+		let telemetryQueue = state.telemetry_queue;
+		if (acceptRotation && authToken && opts?.endpoint && opts.iid) {
+			const binding = {
+				credential_namespace: managedTelemetryQueueNamespace(
+					undefined,
+					opts.endpoint,
+					rotatedKey,
+					opts.iid,
+				),
+				anchor_namespace: managedTelemetryQueueNamespace(
+					state.telemetry_queue,
+					opts.endpoint,
+					authToken,
+					opts.iid,
+				),
+			};
+			telemetryQueue = { ...binding, mac: telemetryQueueBindingMac(binding, rotatedKey) };
+		}
 
 		return {
 			...state,
+			...(acceptRotation ? { api_key: rotatedKey } : {}),
+			telemetry_queue: telemetryQueue,
 			last_success_at: now.toISOString(),
 			grace_until: addHoursIso(now, gracePeriodHours),
 			seat_status: "ok",
@@ -1028,6 +1181,7 @@ export function applyIngestResult(
 			"tenant_not_admitted",
 			"entitlement_not_provisioned",
 			"agent_key_mismatch",
+			"agent_not_authorized",
 		].includes(denial ?? "")
 	) {
 		// A reachable authority explicitly denied this installation. Offline
@@ -1078,8 +1232,9 @@ export function applyIngestResult(
 export function isEntitlementActive(state: ManagedState, now = new Date()): boolean {
 	if (!state.entitlement) return false;
 	if (state.sync_disabled_reason === "revoked") return false;
+	const issued = Date.parse(state.entitlement.issued_at);
 	const exp = Date.parse(state.entitlement.expires_at);
-	if (!Number.isFinite(exp)) return false;
+	if (!Number.isFinite(issued) || !Number.isFinite(exp) || now.getTime() < issued) return false;
 
 	if (state.entitlement.schema_version === 2) {
 		const grace = Date.parse(state.entitlement.grace_until);
@@ -1108,27 +1263,32 @@ export function isPremiumModuleEnabled(
 	if (!isEntitlementActive(state, now)) return false;
 	if (state.entitlement_alg !== "ed25519") return false;
 	if (state.entitlement?.schema_version !== 2) return false;
-	return Array.isArray(state.entitlement.premium_modules)
-		? state.entitlement.premium_modules.includes(moduleId)
-		: false;
+	const modules = state.entitlement.premium_modules;
+	if (!Array.isArray(modules)) return false;
+	// The server publishes premium_intel; intel_packs is the legacy client capability name.
+	return (
+		modules.includes(moduleId) ||
+		(moduleId === "intel_packs" && modules.includes("premium_intel")) ||
+		(moduleId === "premium_intel" && modules.includes("intel_packs"))
+	);
 }
 
 export async function loadRevocationsCache(
 	path: string,
 	publicKeysPem: string[],
+	now = Date.now(),
+	source?: { raw: string | null },
 ): Promise<SignedEd25519<RevocationListV1> | null> {
 	try {
-		const raw = await getFileContent(path, "utf-8");
+		if (source?.raw === null) return null;
+		const raw = source ? (source.raw as string) : await getFileContent(path, "utf-8");
 		const parsed = JSON.parse(raw) as SignedEd25519<RevocationListV1>;
 		if (!parsed || typeof parsed !== "object") return null;
 		if (parsed.alg !== "ed25519") return null;
 		if (typeof parsed.sig_b64 !== "string") return null;
 		const list = validateRevocationListV1Strict(parsed.payload);
 		if (!list) return null;
-		if (!isIsoDateString(list.issued_at) || !isIsoDateString(list.expires_at)) return null;
-
-		// Strict expiry for now. (Optional future: small grace window.)
-		if (Date.now() > Date.parse(list.expires_at)) return null;
+		if (!isRevocationListCurrent(list, now)) return null;
 
 		if (
 			publicKeysPem.length === 0 ||
@@ -1145,6 +1305,10 @@ export async function loadRevocationsCache(
 	} catch {
 		return null;
 	}
+}
+
+function isRevocationListCurrent(list: RevocationListV1, now: number): boolean {
+	return Date.parse(list.issued_at) <= now && now < Date.parse(list.expires_at);
 }
 
 function validateRevocationListV1Strict(input: unknown): RevocationListV1 | null {
@@ -1193,6 +1357,7 @@ function validateRevocationListV1Strict(input: unknown): RevocationListV1 | null
 
 export function parseSignedRevocationsFromControlPlaneBody(
 	body: Record<string, unknown> | undefined,
+	now = Date.now(),
 ): SignedEd25519<RevocationListV1> | null {
 	if (!body) return null;
 	const candidate = body.revocations_signed ?? body;
@@ -1208,7 +1373,7 @@ export function parseSignedRevocationsFromControlPlaneBody(
 
 	const listRaw = obj.payload ?? obj.list ?? obj.revocations;
 	const list = validateRevocationListV1Strict(listRaw);
-	if (!list) return null;
+	if (!list || !isRevocationListCurrent(list, now)) return null;
 
 	return { alg: "ed25519", sig_b64: sigB64, key_id: keyId, payload: list };
 }

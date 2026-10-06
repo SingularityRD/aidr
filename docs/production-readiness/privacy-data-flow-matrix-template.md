@@ -2,6 +2,13 @@
 
 Status: **OPEN / SOURCE-GROUNDED TEMPLATE**
 
+The 6 October source prefill has 25 inventory rows covering Supabase and the
+separate managed web, contact, private text-service and MCP paths. Destination,
+access and deletion descriptions labelled source/configured/default are
+engineering facts. Before `measured` or `accepted`, replace those descriptions
+with the actual selected deployment values and add runtime evidence; merely
+removing literal `unknown` fields does not prove deployment or approval.
+
 The machine-readable template is [`privacy-data-flow-matrix.json`](./privacy-data-flow-matrix.json), and its shape is defined by [`privacy-data-flow-matrix.schema.json`](./privacy-data-flow-matrix.schema.json). Run the local validator from the repository root:
 
 ```sh

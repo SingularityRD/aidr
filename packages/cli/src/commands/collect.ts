@@ -1,21 +1,24 @@
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { closeSync, openSync, readFileSync, readSync } from "node:fs";
 import {
 	createDiscoveryProvider,
-	defaultFleetInventoryPath,
 	type DiscoveryProviderResult,
+	defaultFleetInventoryPath,
 	type FleetInventory,
 	getInstallationId,
 	loadFleetInventory,
 	normalizeFleetTargets,
+	parseCloudDiscoveryConfig,
+	parseCloudDiscoveryEvidence,
 	resolvePath,
 	saveFleetInventory,
 } from "@singularityrd/aidr-core";
 
 export interface CollectOptions {
 	tenant: string;
-	/** Provider selection is explicit; local is the only implemented provider. */
+	/** Provider selection is explicit; external providers also require scoped config. */
 	provider?: string;
+	providerConfig?: string;
 	target?: string[];
 	file?: string;
 	inventory?: string;
@@ -43,13 +46,16 @@ const DISCOVERY_ERROR = /^[a-z][a-z0-9_]{0,63}$/;
 const MAX_DISCOVERY_UPLOAD_TARGETS = 100;
 
 /** Upload is opt-in; an incomplete configuration cannot silently fall back to local-only mode. */
-export function discoveryUploadConfig(env: NodeJS.ProcessEnv = process.env): DiscoveryUploadConfig | null {
+export function discoveryUploadConfig(
+	env: NodeJS.ProcessEnv = process.env,
+): DiscoveryUploadConfig | null {
 	const url = env.AIDR_DISCOVERY_URL?.trim();
 	const accessToken = env.AIDR_DISCOVERY_ACCESS_TOKEN?.trim();
 	const collectorCredential = env.AIDR_DISCOVERY_COLLECTOR_CREDENTIAL?.trim();
 	const anonKey = env.AIDR_DISCOVERY_ANON_KEY?.trim();
 	if (!url && !accessToken && !collectorCredential && !anonKey) return null;
-	if (!url || !anonKey || (!accessToken && !collectorCredential)) throw new Error("discovery_upload_config_incomplete");
+	if (!url || !anonKey || (!accessToken && !collectorCredential))
+		throw new Error("discovery_upload_config_incomplete");
 	if (accessToken && collectorCredential) throw new Error("discovery_upload_auth_ambiguous");
 	const token = collectorCredential ?? accessToken;
 	if (!token) throw new Error("discovery_upload_config_incomplete");
@@ -62,12 +68,22 @@ export function discoveryUploadConfig(env: NodeJS.ProcessEnv = process.env): Dis
 	const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(endpoint.hostname);
 	if (
 		(endpoint.protocol !== "https:" && !(endpoint.protocol === "http:" && loopback)) ||
-		endpoint.username || endpoint.password || endpoint.search || endpoint.hash ||
+		endpoint.username ||
+		endpoint.password ||
+		endpoint.search ||
+		endpoint.hash ||
 		!endpoint.pathname.endsWith("/functions/v1/discovery") ||
-		!HEADER_TOKEN.test(token) || !HEADER_TOKEN.test(anonKey) ||
+		!HEADER_TOKEN.test(token) ||
+		!HEADER_TOKEN.test(anonKey) ||
 		(collectorCredential !== undefined && !/^aidr_dc_[A-Za-z0-9_-]{43}$/.test(collectorCredential))
-	) throw new Error("discovery_upload_config_invalid");
-	return { url: endpoint.toString(), accessToken: token, anonKey, mode: collectorCredential ? "collector" : "operator" };
+	)
+		throw new Error("discovery_upload_config_invalid");
+	return {
+		url: endpoint.toString(),
+		accessToken: token,
+		anonKey,
+		mode: collectorCredential ? "collector" : "operator",
+	};
 }
 
 export interface DiscoveryIngestPayload {
@@ -80,18 +96,65 @@ export interface DiscoveryIngestPayload {
 	complete: true;
 	expected_targets: number;
 	items: Array<{ target: string; reachable: boolean; attempts: number; error_code: string | null }>;
+	provider_resources?: {
+		provider: "aws" | "azure" | "gcp" | "intune";
+		scope_hash: string;
+		coverage: "tagged_resources" | "resource_groups" | "project_asset_types" | "managed_devices";
+		complete: boolean;
+		observed_at: string;
+		items: Array<{
+			resource_id: string;
+			resource_type: string;
+			scope_id: string;
+			region: string | null;
+			observed_at: string;
+		}>;
+	};
+}
+
+export function collectProviderConfig(path: string): ReturnType<typeof parseCloudDiscoveryConfig> {
+	const fd = openSync(resolvePath(path), "r");
+	try {
+		const buffer = Buffer.alloc(65_537);
+		let size = 0;
+		while (size < buffer.length) {
+			const read = readSync(fd, buffer, size, buffer.length - size, null);
+			if (!read) break;
+			size += read;
+		}
+		if (size > 65_536) throw new Error("discovery_provider_config_too_large");
+		try {
+			return parseCloudDiscoveryConfig(JSON.parse(buffer.toString("utf8", 0, size)));
+		} catch {
+			throw new Error("discovery_provider_config_invalid");
+		}
+	} finally {
+		closeSync(fd);
+	}
 }
 
 /** Only origin-level reachability crosses the tenant boundary. Paths and scan findings stay local. */
-export function discoveryIngestPayload(inventory: FleetInventory, sequence: number): DiscoveryIngestPayload {
+export function discoveryIngestPayload(
+	inventory: FleetInventory,
+	sequence: number,
+): DiscoveryIngestPayload {
 	if (!UUID.test(inventory.tenantId) || !COLLECTOR_ID.test(inventory.collectorId)) {
 		throw new Error("discovery_upload_identity_invalid");
 	}
-	if (!Number.isSafeInteger(sequence) || sequence < 1) throw new Error("discovery_upload_sequence_invalid");
-	if (!Number.isSafeInteger(inventory.staleAfterMs) || inventory.staleAfterMs < 60_000 || inventory.staleAfterMs > 2_592_000_000) {
+	if (!Number.isSafeInteger(sequence) || sequence < 1)
+		throw new Error("discovery_upload_sequence_invalid");
+	if (
+		!Number.isSafeInteger(inventory.staleAfterMs) ||
+		inventory.staleAfterMs < 60_000 ||
+		inventory.staleAfterMs > 2_592_000_000
+	) {
 		throw new Error("discovery_upload_freshness_invalid");
 	}
-	if (inventory.items.length < 1 || inventory.items.length > MAX_DISCOVERY_UPLOAD_TARGETS) throw new Error("discovery_upload_target_count_invalid");
+	if (
+		(!inventory.providerEvidence && inventory.items.length < 1) ||
+		inventory.items.length > MAX_DISCOVERY_UPLOAD_TARGETS
+	)
+		throw new Error("discovery_upload_target_count_invalid");
 	const origins = new Set<string>();
 	const items = inventory.items.map((item) => {
 		let parsed: URL;
@@ -100,30 +163,84 @@ export function discoveryIngestPayload(inventory: FleetInventory, sequence: numb
 		} catch {
 			throw new Error("discovery_upload_observation_invalid");
 		}
-		if ((parsed.protocol !== "http:" && parsed.protocol !== "https:") || parsed.username || parsed.password || parsed.search || parsed.hash) {
+		if (
+			(parsed.protocol !== "http:" && parsed.protocol !== "https:") ||
+			parsed.username ||
+			parsed.password ||
+			parsed.search ||
+			parsed.hash
+		) {
 			throw new Error("discovery_upload_observation_invalid");
 		}
 		const target = parsed.origin + "/";
-		if (target.length < 8 || target.length > 512) throw new Error("discovery_upload_observation_invalid");
+		if (target.length < 8 || target.length > 512)
+			throw new Error("discovery_upload_observation_invalid");
 		if (origins.has(target)) throw new Error("discovery_upload_duplicate_origin");
 		origins.add(target);
-		if (item.reachability === "not_checked" || !Number.isInteger(item.attempts) || item.attempts < 1 || item.attempts > 5) {
+		if (
+			item.reachability === "not_checked" ||
+			!Number.isInteger(item.attempts) ||
+			item.attempts < 1 ||
+			item.attempts > 5
+		) {
 			throw new Error("discovery_upload_observation_invalid");
 		}
 		// A partial scan is not healthy coverage even if one HTTP probe responded.
-		const reachable = item.reachability === "reachable" && item.scan.reachable && item.scan.error === null;
+		const reachable =
+			item.reachability === "reachable" && item.scan.reachable && item.scan.error === null;
 		const rawError = item.scan.error?.split(":", 1)[0];
-		const error_code = reachable ? null
-			: rawError === "timeout" || rawError === "unreachable" || rawError === "target_not_allowed" || rawError === "invalid_target_url" || rawError === "collector_exception"
-				? rawError : "other";
+		const error_code = reachable
+			? null
+			: rawError === "timeout" ||
+					rawError === "unreachable" ||
+					rawError === "target_not_allowed" ||
+					rawError === "invalid_target_url" ||
+					rawError === "collector_exception"
+				? rawError
+				: "other";
 		return { target, reachable, attempts: item.attempts, error_code };
 	});
 	const payload: DiscoveryIngestPayload = {
-		action: "ingest", tenant_id: inventory.tenantId, collector_id: inventory.collectorId,
-		cycle_id: randomUUID(), sequence, stale_after_ms: inventory.staleAfterMs,
-		complete: true, expected_targets: items.length, items,
+		action: "ingest",
+		tenant_id: inventory.tenantId,
+		collector_id: inventory.collectorId,
+		cycle_id: randomUUID(),
+		sequence,
+		stale_after_ms: inventory.staleAfterMs,
+		complete: true,
+		expected_targets: items.length,
+		items,
 	};
-	if (Buffer.byteLength(JSON.stringify(payload), "utf8") > 65_536) throw new Error("discovery_upload_payload_too_large");
+	if (inventory.providerEvidence) {
+		let evidence: ReturnType<typeof parseCloudDiscoveryEvidence>;
+		try {
+			evidence = parseCloudDiscoveryEvidence(inventory.providerEvidence);
+		} catch {
+			throw new Error("discovery_upload_provider_evidence_invalid");
+		}
+		const resourceItems = evidence.complete
+			? evidence.resources.map((resource) => ({
+					resource_id: resource.id,
+					resource_type: resource.type,
+					scope_id: resource.scope,
+					region: resource.region ?? null,
+					observed_at: resource.observedAt,
+				}))
+			: [];
+		payload.provider_resources = {
+			provider: evidence.provider,
+			scope_hash: evidence.scopeHash,
+			coverage: evidence.coverage,
+			complete: evidence.complete,
+			observed_at: evidence.observedAt,
+			items: resourceItems,
+		};
+	}
+	if (
+		Buffer.byteLength(JSON.stringify(payload), "utf8") >
+		(payload.provider_resources ? 524_288 : 65_536)
+	)
+		throw new Error("discovery_upload_payload_too_large");
 	return payload;
 }
 
@@ -149,7 +266,10 @@ async function discoveryRequest(
 		throw new Error("discovery_upload_network_error");
 	}
 	const parsed: unknown = await response.json().catch(() => null);
-	const data = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null;
+	const data =
+		parsed && typeof parsed === "object" && !Array.isArray(parsed)
+			? (parsed as Record<string, unknown>)
+			: null;
 	return { status: response.status, data };
 }
 
@@ -161,44 +281,83 @@ export async function publishDiscoveryInventory(
 ): Promise<void> {
 	// Validate before any authenticated request, including the read call.
 	discoveryIngestPayload(inventory, 1);
-	const current = await discoveryRequest(config, {
-		...(config.mode === "collector" ? { action: "cursor" } : { action: "read", limit: 1 }),
-		tenant_id: inventory.tenantId, collector_id: inventory.collectorId,
-	}, fetchImpl);
+	const current = await discoveryRequest(
+		config,
+		{
+			...(config.mode === "collector" ? { action: "cursor" } : { action: "read", limit: 1 }),
+			tenant_id: inventory.tenantId,
+			collector_id: inventory.collectorId,
+		},
+		fetchImpl,
+	);
 	let sequence = 1;
 	if (current.status === 200 && config.mode === "collector") {
 		const next = current.data?.next_sequence;
-		if (current.data?.ok !== true || current.data?.collector_id !== inventory.collectorId ||
-			typeof next !== "number" || !Number.isSafeInteger(next) || next < 1) {
+		if (
+			current.data?.ok !== true ||
+			current.data?.collector_id !== inventory.collectorId ||
+			typeof next !== "number" ||
+			!Number.isSafeInteger(next) ||
+			next < 1
+		) {
 			throw new Error("discovery_upload_cursor_invalid");
 		}
 		sequence = next;
 	} else if (current.status === 200) {
 		const collector = current.data?.collector;
-		if (current.data?.ok !== true || !collector || typeof collector !== "object" || Array.isArray(collector) ||
-			(collector as Record<string, unknown>).collector_id !== inventory.collectorId) {
+		if (
+			current.data?.ok !== true ||
+			!collector ||
+			typeof collector !== "object" ||
+			Array.isArray(collector) ||
+			(collector as Record<string, unknown>).collector_id !== inventory.collectorId
+		) {
 			throw new Error("discovery_upload_cursor_invalid");
 		}
 		const previous = (collector as Record<string, unknown>).sequence;
-		if (typeof previous !== "number" || !Number.isSafeInteger(previous) || previous < 1 || previous >= Number.MAX_SAFE_INTEGER) {
+		if (
+			typeof previous !== "number" ||
+			!Number.isSafeInteger(previous) ||
+			previous < 1 ||
+			previous >= Number.MAX_SAFE_INTEGER
+		) {
 			throw new Error("discovery_upload_cursor_invalid");
 		}
 		sequence = previous + 1;
-	} else if (!(config.mode === "operator" && current.status === 404 && current.data?.error === "collector_not_found")) {
+	} else if (
+		!(
+			config.mode === "operator" &&
+			current.status === 404 &&
+			current.data?.error === "collector_not_found"
+		)
+	) {
 		const code = current.data?.error;
-		throw new Error(typeof code === "string" && DISCOVERY_ERROR.test(code) ? `discovery_upload_${code}` : `discovery_upload_http_${current.status}`);
+		throw new Error(
+			typeof code === "string" && DISCOVERY_ERROR.test(code)
+				? `discovery_upload_${code}`
+				: `discovery_upload_http_${current.status}`,
+		);
 	}
 	const payload = discoveryIngestPayload(inventory, sequence);
 	const uploaded = await discoveryRequest(config, payload, fetchImpl);
 	if (uploaded.status !== 201) {
 		const code = uploaded.data?.error;
-		throw new Error(typeof code === "string" && DISCOVERY_ERROR.test(code) ? `discovery_upload_${code}` : `discovery_upload_http_${uploaded.status}`);
+		throw new Error(
+			typeof code === "string" && DISCOVERY_ERROR.test(code)
+				? `discovery_upload_${code}`
+				: `discovery_upload_http_${uploaded.status}`,
+		);
 	}
 	const cycle = uploaded.data?.cycle;
-	if (uploaded.data?.ok !== true || !cycle || typeof cycle !== "object" || Array.isArray(cycle) ||
+	if (
+		uploaded.data?.ok !== true ||
+		!cycle ||
+		typeof cycle !== "object" ||
+		Array.isArray(cycle) ||
 		(cycle as Record<string, unknown>).sequence !== sequence ||
 		(cycle as Record<string, unknown>).collector_id !== inventory.collectorId ||
-		(cycle as Record<string, unknown>).cycle_id !== payload.cycle_id) {
+		(cycle as Record<string, unknown>).cycle_id !== payload.cycle_id
+	) {
 		throw new Error("discovery_upload_receipt_invalid");
 	}
 }
@@ -259,9 +418,20 @@ export function fleetCollectionExitCode(inventory: FleetInventory): number {
 		return 2;
 	}
 	if (
-		inventory.items.length === 0 ||
-		inventory.items.some((item) =>
-			item.reachability !== "reachable" || item.freshness !== "fresh" || item.scan.error !== null,
+		(!inventory.providerEvidence && inventory.items.length === 0) ||
+		(inventory.providerEvidence &&
+			(!inventory.providerEvidence.complete ||
+				!inventory.providerEvidence.lastSuccessfulAt ||
+				!Number.isFinite(Date.parse(inventory.providerEvidence.lastSuccessfulAt)) ||
+				!Number.isFinite(Date.parse(inventory.generatedAt)) ||
+				Date.parse(inventory.providerEvidence.lastSuccessfulAt) >
+					Date.parse(inventory.generatedAt) ||
+				Date.parse(inventory.generatedAt) -
+					Date.parse(inventory.providerEvidence.lastSuccessfulAt) >
+					inventory.staleAfterMs)) ||
+		inventory.items.some(
+			(item) =>
+				item.reachability !== "reachable" || item.freshness !== "fresh" || item.scan.error !== null,
 		)
 	) {
 		return 1;
@@ -294,9 +464,17 @@ function printInventory(
 	const unreachable = inventory.items.filter((item) => item.reachability === "unreachable").length;
 	const scanErrors = inventory.items.filter((item) => item.scan.error !== null).length;
 	console.log("\nAIDR tenant infrastructure collection\n");
-	console.log(`Provider: ${result.provider}   Status: ${result.status}   Freshness: ${result.freshness}`);
+	console.log(
+		`Provider: ${result.provider}   Status: ${result.status}   Freshness: ${result.freshness}`,
+	);
 	console.log(`Tenant: ${inventory.tenantId}   Collector: ${inventory.collectorId}`);
 	console.log(`Inventory: ${path}`);
+	if (inventory.providerEvidence) {
+		const evidence = inventory.providerEvidence;
+		console.log(
+			`Management resources: ${evidence.resources.length}   Coverage: ${evidence.coverage}   Complete: ${evidence.complete}   Scope hash: ${evidence.scopeHash}`,
+		);
+	}
 	console.log(
 		`Targets: ${inventory.items.length}   Fresh: ${fresh}   Stale: ${stale}   Never seen: ${neverSeen}   Unreachable now: ${unreachable}   Scan errors: ${scanErrors}`,
 	);
@@ -337,15 +515,20 @@ async function waitForNextCycle(delayMs: number): Promise<boolean> {
  */
 export default async function collectCommand(options: CollectOptions): Promise<void> {
 	try {
-		const provider = createDiscoveryProvider(options.provider);
+		const provider = createDiscoveryProvider(
+			options.provider,
+			options.providerConfig ? collectProviderConfig(options.providerConfig) : undefined,
+		);
 		if (!provider.configured) throw new Error(`discovery_provider_not_configured:${provider.id}`);
 		const targets = collectTargetInputs(options);
-		if (targets.length === 0) throw new Error("collector_targets_required");
+		if (provider.id === "local" && targets.length === 0)
+			throw new Error("collector_targets_required");
 		const upload = discoveryUploadConfig();
 		if (upload && targets.length > MAX_DISCOVERY_UPLOAD_TARGETS) {
 			throw new Error("managed_discovery_upload_supports_at_most_100_targets");
 		}
-		if (upload && !UUID.test(options.tenant)) throw new Error("discovery_upload_tenant_uuid_required");
+		if (upload && !UUID.test(options.tenant))
+			throw new Error("discovery_upload_tenant_uuid_required");
 
 		const intervalSeconds =
 			options.interval === undefined
@@ -387,7 +570,12 @@ export default async function collectCommand(options: CollectOptions): Promise<v
 					},
 				},
 			});
-			if (result.failClosed || result.status === "unconfigured" || result.status === "unavailable" || !result.inventory) {
+			if (
+				result.failClosed ||
+				result.status === "unconfigured" ||
+				result.status === "unavailable" ||
+				!result.inventory
+			) {
 				throw new Error(result.reason ?? `discovery_provider_${result.status}`);
 			}
 			const inventory = result.inventory;
@@ -402,7 +590,10 @@ export default async function collectCommand(options: CollectOptions): Promise<v
 				intervalSeconds !== null,
 				result,
 			);
-			process.exitCode = Math.max(uploaded ? 0 : 1, fleetCollectionExitCode(inventory));
+			process.exitCode = Math.max(
+				uploaded && result.status === "ready" ? 0 : 1,
+				fleetCollectionExitCode(inventory),
+			);
 			previous = inventory;
 			if (intervalSeconds === null || !(await waitForNextCycle(intervalSeconds * 1_000))) break;
 		}

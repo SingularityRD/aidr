@@ -7,20 +7,23 @@ import { createRequire } from "node:module";
 import { parseArgs } from "node:util";
 import { tarDirectory } from "./lib/tar-path.mjs";
 import { loadReleaseBundle } from "./release-signing-lib.mjs";
+import { validateSignedWindowsFleet } from "../.github/scripts/windows-authenticode-inputs.mjs";
 import {
   CUSTOMER_KIT_BENCHMARK_FILES,
   CUSTOMER_KIT_REQUIRED_FILES,
+  CUSTOMER_KIT_RENDERED_GUIDES,
   CUSTOMER_KIT_REQUIRED_RELEASE_ARTIFACTS,
   renderCustomerKitDoc,
 } from "./customer-kit-contract.mjs";
 
-const { values } = parseArgs({ options: { output: { type: "string" }, "upstream-dir": { type: "string" }, "release-dir": { type: "string" }, "envelope-output": { type: "string" } } });
+const { values } = parseArgs({ options: { output: { type: "string" }, "upstream-dir": { type: "string" }, "release-dir": { type: "string" }, "envelope-output": { type: "string" }, "windows-authenticode-receipt-sha256": { type: "string" }, "windows-code-signing-thumbprint": { type: "string" } } });
 if (!values.output || !values["upstream-dir"]) throw new Error("--output and --upstream-dir required");
 if (values["envelope-output"] && !values["release-dir"]) throw new Error("--envelope-output requires --release-dir for candidate provenance");
 const output = resolve(values.output); const root = process.cwd(); const upstream = resolve(values["upstream-dir"]);
 const envelope = values["envelope-output"] ? resolve(values["envelope-output"]) : null;
 let releaseSigned = false;
 let gatewayBundled = false;
+let gatewaySignaturePresent = false;
 if (existsSync(output)) throw new Error("Customer kit output already exists; choose a new directory");
 if (envelope && (existsSync(envelope) || envelope === output || envelope.startsWith(`${output}${sep}`) || output.startsWith(`${envelope}${sep}`))) throw new Error("Envelope output must be a new, separate directory");
 const sourceCommit = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
@@ -28,7 +31,7 @@ const sourceDirty = !!execFileSync("git", ["status", "--porcelain"], { encoding:
 if (values["release-dir"] && sourceDirty) throw new Error("Release-bound customer kit requires a clean source tree; commit and review all changes before packaging");
 const gatewaySource = join(root, "packages/mcp-gateway");
 const gatewayDist = join(gatewaySource, "dist");
-if (existsSync(gatewaySource) && !["aidr-mcp-gateway.mjs", "aidr-mcp-approve.mjs", "aidr-mcp-stdio.mjs", "aidr-artifact.manifest.json", "aidr-artifact.manifest.sig"].every((name) => existsSync(join(gatewayDist, name)))) {
+if (existsSync(gatewaySource) && !["aidr-mcp-gateway.mjs", "aidr-mcp-approve.mjs", "aidr-mcp-stdio.mjs", "aidr-artifact.manifest.json"].every((name) => existsSync(join(gatewayDist, name)))) {
   throw new Error("MCP gateway source is present but its self-contained release build is missing");
 }
 if (!existsSync(join(root, "packages/core/dist/siem-incident-producer.js"))) {
@@ -45,7 +48,10 @@ function copy(source, target) {
 function files(path, prefix = "") {
   return readdirSync(path).sort().flatMap((name) => { const relative = prefix ? `${prefix}/${name}` : name; return statSync(join(path, name)).isDirectory() ? files(join(path, name), relative) : [{ path: relative, sha256: createHash("sha256").update(readFileSync(join(path, name))).digest("hex") }]; });
 }
-for (const path of ["deploy/backup", "deploy/dashboard", "deploy/fleet", "deploy/ha", "deploy/ingress", "deploy/maintenance", "deploy/monitoring", "deploy/regions.manifest.json", "packages/dashboard/dist", "supabase/config.toml", "supabase/functions", "supabase/migrations"]) copy(join(root, path), join(output, path));
+for (const path of ["deploy/backup", "deploy/dashboard", "deploy/fleet", "deploy/ha", "deploy/ingress", "deploy/maintenance", "deploy/monitoring", "deploy/operations", "deploy/regions.manifest.json", "deploy/saml-config.mjs", "packages/dashboard/dist", "supabase/config.toml", "supabase/functions", "supabase/migrations", "supabase/templates"]) copy(join(root, path), join(output, path));
+// The interception catalogue's source checker requires the separately supplied
+// checkout. Ship only the self-contained native operator assets here.
+for (const path of ["deploy/native/README.md", "deploy/native/support-matrix.json", "deploy/native/support-matrix.schema.json", "deploy/native/interception-matrix.json", "deploy/native/run-support-matrix.mjs", "deploy/native/scenarios/TEMPLATE.json", "deploy/native/scenarios/README.md"]) copy(join(root, path), join(output, path));
 copy(join(root, "scripts/benchmarks"), join(output, "scripts/benchmarks"));
 for (const file of [
   "deployment-prepare.mjs",
@@ -53,6 +59,10 @@ for (const file of [
 	"lib/migration-contract.mjs",
 	"lib/migration-hash-compat.mjs",
 	"lib/atomic-write.mjs",
+	"lib/deployment-credentials.mjs",
+	"lib/deployment-input-copy.mjs",
+	"lib/node-helper-image.mjs",
+	"lib/node-helper.Dockerfile",
   "deployment-bootstrap.mjs",
 	"deployment-backup.mjs",
 	"deployment-backup-offsite.mjs",
@@ -76,9 +86,11 @@ for (const file of [
   "customer-kit-verify.mjs",
   "verify-customer-kit.mjs",
   "support-bundle.mjs",
+  "saml-outage-recovery.mjs",
   "verify-load-test.mjs",
 	"verify-native-host-matrix-v6.mjs",
   "verify-support-bundle.mjs",
+  "verify-support-ticket-drill.mjs",
 ]) copy(join(root, "scripts", file), join(output, "scripts", file));
 const claudePackage = join(root, "packages/claude-code");
 const claudePackageManifest = join(claudePackage, "aidr-artifact.manifest.json");
@@ -103,13 +115,16 @@ const requireClaude = createRequire(join(root, "packages/claude-code/package.jso
 await requireClaude("esbuild").build({ entryPoints: [requireCore.resolve("yaml")], outfile: join(output, "deploy/vendor/yaml.cjs"), bundle: true, platform: "node", format: "cjs", sourcemap: false, legalComments: "inline" });
 await requireClaude("esbuild").build({ entryPoints: [join(root, "scripts/siem-delivery-worker.mjs")], outfile: join(output, "scripts/siem-delivery-worker.mjs"), bundle: true, platform: "node", format: "esm", target: "node24", sourcemap: false, legalComments: "inline" });
 await requireClaude("esbuild").build({ entryPoints: [join(root, "scripts/readiness-evidence-worker.mjs")], outfile: join(output, "scripts/readiness-evidence-worker.mjs"), bundle: true, platform: "node", format: "esm", target: "node24", sourcemap: false, legalComments: "inline" });
-await requireClaude("esbuild").build({ entryPoints: [join(root, "scripts/deployment-backup.mjs")], outfile: join(output, "scripts/deployment-backup.mjs"), bundle: true, platform: "node", format: "esm", target: "node24", sourcemap: false, legalComments: "inline" });
+await requireClaude("esbuild").build({ entryPoints: [join(root, "scripts/deployment-backup.mjs")], outfile: join(output, "scripts/deployment-backup.mjs"), bundle: true, platform: "node", format: "esm", target: "node24", sourcemap: false, legalComments: "inline", external: ["./lib/node-helper-image.mjs"] });
 copy(resolve(dirname(requireCore.resolve("yaml")), "../LICENSE"), join(output, "deploy/vendor/YAML-LICENSE"));
 if (existsSync(gatewaySource)) {
   const gatewayManifest = JSON.parse(readFileSync(join(gatewayDist, "aidr-artifact.manifest.json"), "utf8"));
   if (gatewayManifest.schema_version !== 1 || !Array.isArray(gatewayManifest.files)) throw new Error("Invalid MCP gateway artifact manifest");
-  const gatewaySignature = readFileSync(join(gatewayDist, "aidr-artifact.manifest.sig"), "utf8").trim();
-  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(gatewaySignature) || Buffer.from(gatewaySignature, "base64").length !== 64) throw new Error("Invalid MCP gateway artifact signature");
+  gatewaySignaturePresent = existsSync(join(gatewayDist, "aidr-artifact.manifest.sig"));
+  if (gatewaySignaturePresent) {
+    const gatewaySignature = readFileSync(join(gatewayDist, "aidr-artifact.manifest.sig"), "utf8").trim();
+    if (!/^[A-Za-z0-9+/]+={0,2}$/.test(gatewaySignature) || Buffer.from(gatewaySignature, "base64").length !== 64) throw new Error("Invalid MCP gateway artifact signature");
+  }
   const gatewayNames = new Set();
   for (const item of gatewayManifest.files) {
     if (!item || !/^[A-Za-z0-9_.-]+$/.test(item.path) || gatewayNames.has(item.path) || !/^[a-f0-9]{64}$/.test(item.sha256)) throw new Error("Invalid MCP gateway artifact entry");
@@ -120,7 +135,7 @@ if (existsSync(gatewaySource)) {
   }
   if (!["aidr-mcp-gateway.mjs", "aidr-mcp-approve.mjs", "aidr-mcp-stdio.mjs"].every((name) => gatewayNames.has(name))) throw new Error("MCP gateway binaries missing from artifact manifest");
   copy(join(gatewayDist, "aidr-artifact.manifest.json"), join(output, "deploy/gateway/aidr-artifact.manifest.json"));
-  copy(join(gatewayDist, "aidr-artifact.manifest.sig"), join(output, "deploy/gateway/aidr-artifact.manifest.sig"));
+  if (gatewaySignaturePresent) copy(join(gatewayDist, "aidr-artifact.manifest.sig"), join(output, "deploy/gateway/aidr-artifact.manifest.sig"));
   copy(join(root, "packages/mcp-gateway/README.md"), join(output, "deploy/gateway/README.md"));
   gatewayBundled = true;
 }
@@ -134,13 +149,22 @@ for (const [source, target] of [
 	["docs/runbooks/secrets-management.md", "SECRETS-RUNBOOK.md"],
   ["docs/runbooks/support-bundle.md", "SUPPORT-BUNDLE.md"],
 	["docs/production-readiness/backup-restore-v6.md", "RESTORE-DRILL.md"],
+	["docs/production-readiness/retention-holds.md", "RETENTION-HOLDS.md"],
+  ["docs/operations/saml-outage-recovery.md", "SAML-RECOVERY.md"],
+  ["docs/operations/response-playbooks.md", "RESPONSE-PLAYBOOKS.md"],
+  ["docs/runbooks/cloud-discovery.md", "CLOUD-DISCOVERY.md"],
+  ["docs/runbooks/behavioral-learning.md", "BEHAVIORAL-LEARNING.md"],
+  ["docs/package-installation.md", "PACKAGE-INSTALLATION.md"],
+  ["packages/codex/README.md", "CODEX-CONNECTOR.md"],
+  ["supabase/README.md", "CONTROL-PLANE.md"],
   ["docs/production-readiness/native-host-matrix-v6.md", "NATIVE-HOST-ACCEPTANCE.md"],
 	["docs/production-readiness/first-customer-buyer-handoff-2026-09-23.md", "FIRST-CUSTOMER-SALES-PACKET.md"],
   ["docs/production-readiness/first-customer-ready.md", "CANDIDATE-STATUS.md"],
   ["docs/release-evidence.md", "RELEASE-EVIDENCE.md"],
+  ["docs/runbooks/portable-release-signing.md", "RELEASE-SIGNING.md"],
   ["FEATURE_INVENTORY.md", "FEATURE_INVENTORY.md"],
 ]) copy(join(root, source), join(output, target));
-for (const name of ["START-HERE.md", "INSTALLATION.md"]) {
+for (const name of CUSTOMER_KIT_RENDERED_GUIDES) {
   const path = join(output, name);
   writeFileSync(path, renderCustomerKitDoc(name, readFileSync(path, "utf8")));
 }
@@ -167,6 +191,15 @@ if (values["release-dir"]) {
 if (releaseSigned && !hasClaudePackageManifest) {
   throw new Error("Signed customer kits require signed Claude Code package and dist manifests");
 }
+if (releaseSigned && gatewayBundled && !gatewaySignaturePresent) throw new Error("Signed customer kits require the MCP gateway artifact signature");
+if (releaseSigned) {
+  const signedFleet = validateSignedWindowsFleet(root,
+    values["windows-authenticode-receipt-sha256"] ?? process.env.AIDR_EXPECTED_WINDOWS_AUTHENTICODE_RECEIPT_SHA256,
+    values["windows-code-signing-thumbprint"] ?? process.env.AIDR_WINDOWS_CODE_SIGNING_THUMBPRINT);
+  // A signed kit must replace every source script with the independently pinned signed staging bytes.
+  copy(signedFleet, join(output, "deploy/fleet/windows"));
+  copy(join(root, ".release-evidence/windows-authenticode-receipt.json"), join(output, "deploy/fleet/windows/authenticode-receipt.json"));
+}
 for (const relative of CUSTOMER_KIT_REQUIRED_FILES) {
   const target = join(output, relative);
   const info = existsSync(target) ? lstatSync(target) : null;
@@ -178,12 +211,14 @@ writeFileSync(join(output, "release-source.json"), JSON.stringify({
   assembled_at: new Date().toISOString(),
   release_signed: releaseSigned,
   inline_mcp_gateway_bundled: gatewayBundled,
+  inline_mcp_gateway_signature_present: gatewaySignaturePresent,
   device_start_ingress_bundled: true,
   region_manifest_bundled: true,
   tls_renewal_bundled: true,
   provenance_tool_bundled: true,
   airgap_tool_bundled: true,
   benchmark_contract_bundled: CUSTOMER_KIT_BENCHMARK_FILES.every((relative) => existsSync(join(output, relative))),
+  windows_authenticode_receipt_bundled: releaseSigned,
   provenance_statement_bundled: releaseArtifactNames.has("aidr-provenance.intoto.json"),
   assurance: releaseSigned
     ? "A detached release signature is present but unverified during kit assembly. Trust requires an independently distributed signer policy and successful release-verify execution."

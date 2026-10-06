@@ -508,6 +508,25 @@ describe("token endpoint client authentication", () => {
 });
 
 describe("start", () => {
+	it("bounds unknown domains before they can mint new subject counters", async () => {
+		ctx.world.store.counters.set("oidc-start:aggregate", 5999);
+		const binding_challenge = await sha256Text("b");
+		expect((await call(ctx, { action: "start", domain: "first-unknown.test", binding_challenge })).status).toBe(404);
+		for (const domain of ["second-unknown.test", "third-unknown.test"]) {
+			expect(await call(ctx, { action: "start", domain, binding_challenge })).toEqual({ status: 429, json: { error: "rate_limited" } });
+		}
+		expect(ctx.world.store.counters.size).toBe(2);
+		expect(ctx.world.store.requests.size).toBe(0);
+	});
+
+	it("fails closed before subject buckets when the start aggregate is unreadable", async () => {
+		const keys: string[] = [];
+		ctx.world.store.rateLimit = async (key) => { keys.push(key); return "unavailable"; };
+		expect(await call(ctx, { action: "start", domain: "unknown.test", binding_challenge: await sha256Text("b") }))
+			.toEqual({ status: 503, json: { error: "sso_unavailable" } });
+		expect(keys).toEqual(["oidc-start:aggregate"]);
+	});
+
 	it("answers identically for unknown, disabled and un-discovered providers", async () => {
 		const challenge = await sha256Text("b");
 		ctx.world.store.providers.set(PROVIDER_A, providerRow({ discovery: discoveryFor(ctx.idpA), enabled: false }));
@@ -756,6 +775,22 @@ describe("enforce-SSO and break-glass", () => {
 	describe("break-glass suspension", () => {
 		const attempt = (overrides: Record<string, unknown> = {}) =>
 			call(ctx, { action: "break_glass_suspend_enforcement", email: "owner@a-corp.test", recovery_code: "ABCDE-12345-ABCDE-12345-ABCDE-12345-ABCDE-12345", ...overrides });
+
+		it("bounds attempts across distinct email addresses before minting subject counters", async () => {
+			ctx.world.store.counters.set("oidc-break-glass:aggregate", 299);
+			expect((await attempt({ email: "first@example.test" })).status).toBe(401);
+			for (const email of ["second@example.test", "third@example.test"]) {
+				expect(await attempt({ email })).toEqual({ status: 429, json: { error: "rate_limited" } });
+			}
+			expect(ctx.world.store.counters.size).toBe(2);
+		});
+
+		it("fails closed before subject buckets when the recovery aggregate is unreadable", async () => {
+			const keys: string[] = [];
+			ctx.world.store.rateLimit = async (key) => { keys.push(key); return "unavailable"; };
+			expect(await attempt()).toEqual({ status: 503, json: { error: "recovery_unavailable" } });
+			expect(keys).toEqual(["oidc-break-glass:aggregate"]);
+		});
 
 		it("answers 401 for an unknown or malformed code without revealing why", async () => {
 			expect(await attempt()).toEqual({ status: 401, json: { error: "invalid_or_expired_recovery_code" } });

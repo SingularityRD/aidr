@@ -17,6 +17,7 @@ import {
 	discoveryCollectorState,
 	discoveryFreshness,
 	parseDiscoveryIngest,
+	parseProviderScope,
 	validCollectorId,
 	validUuid,
 } from "./logic.ts";
@@ -48,11 +49,12 @@ Deno.serve(async (req) => {
 	const token = getBearerToken(req.headers.get("Authorization"));
 	if (!token) return corsJson(req, 401, { error: "missing_access_token" });
 	try {
-		const parsed = await readBoundedJson(req, 65_536);
+		const parsed = await readBoundedJson(req, 524_288);
 		if (!parsed.ok) return corsJson(req, parsed.status, { error: parsed.error });
 		const body = parsed.value;
 		if (!body || typeof body !== "object" || Array.isArray(body)) return corsJson(req, 400, { error: "invalid_request" });
 		const input = body as Record<string, unknown>;
+		if (!Object.hasOwn(input, "provider_resources") && parsed.bytes > 65_536) return corsJson(req, 413, { error: "request_too_large" });
 		if (!validUuid(input.tenant_id)) return corsJson(req, 400, { error: "invalid_tenant" });
 		const tenant = input.tenant_id;
 		const action = input.action;
@@ -104,6 +106,7 @@ Deno.serve(async (req) => {
 				p_complete: cycle.complete,
 				p_expected_targets: cycle.expected_targets,
 				p_items: cycle.items,
+				...(cycle.provider_resources ? { p_provider_resources: cycle.provider_resources } : {}),
 			});
 			if (result.error) {
 				if (result.error.code === "PT409") return corsJson(req, 409, { error: "discovery_cycle_replayed" });
@@ -123,7 +126,7 @@ Deno.serve(async (req) => {
 		if (!membershipActive(membership.data) || state.data?.status !== "active") return corsJson(req, 403, { error: "tenant_access_denied" });
 		const barrier = await checkIdentityBarrier(db, token, auth.user.id, tenant);
 		if (!barrier.ok) return corsJson(req, barrier.status, { error: barrier.error });
-		if (action !== "ingest" && action !== "read" && action !== "list" && action !== "summary"
+		if (action !== "ingest" && action !== "read" && action !== "resources" && action !== "list" && action !== "summary"
 			&& action !== "issue_credential" && action !== "revoke_credential") return corsJson(req, 400, { error: "invalid_action" });
 		if ((action === "ingest" || action === "issue_credential" || action === "revoke_credential")
 			&& !["owner", "admin"].includes(String(membership.data?.role))) return corsJson(req, 403, { error: "discovery_write_forbidden" });
@@ -138,7 +141,7 @@ Deno.serve(async (req) => {
 		if (!rate.ok) return corsJson(req, rate.status, { error: rate.error }, rateLimitHeaders(rate));
 
 		if (action === "issue_credential" || action === "revoke_credential") {
-			if (!exactKeys(input, ["action", "tenant_id", "collector_id"], action === "issue_credential" ? ["expires_in_days"] : [])
+			if (!exactKeys(input, ["action", "tenant_id", "collector_id"], action === "issue_credential" ? ["expires_in_days", "allowed_provider_scope"] : [])
 				|| !validCollectorId(input.collector_id)) return corsJson(req, 400, { error: "invalid_request" });
 			const { data: assurance, error: assuranceError } = await db.auth.mfa.getAuthenticatorAssuranceLevel(token);
 			if (assuranceError || !assurance) return corsJson(req, 503, { error: "assurance_unavailable" });
@@ -155,12 +158,15 @@ Deno.serve(async (req) => {
 			if (typeof expiresInDays !== "number" || !Number.isSafeInteger(expiresInDays)
 				|| expiresInDays < 1 || expiresInDays > 90) return corsJson(req, 400, { error: "invalid_expiry" });
 			const credential = createCollectorCredential();
+			const providerScope = input.allowed_provider_scope === undefined ? null : parseProviderScope(input.allowed_provider_scope);
+			if (input.allowed_provider_scope !== undefined && !providerScope) return corsJson(req, 400, { error: "invalid_provider_scope" });
 			const result = await db.rpc("issue_tenant_discovery_credential", {
 				p_tenant_id: tenant,
 				p_actor_user_id: auth.user.id,
 				p_collector_id: input.collector_id,
 				p_token_hash: await collectorCredentialHash(credential),
 				p_expires_in_days: expiresInDays,
+				p_allowed_provider_scope: providerScope,
 			});
 			if (result.error) {
 				if (result.error.code === "42501") return corsJson(req, 403, { error: "discovery_write_forbidden" });
@@ -185,6 +191,7 @@ Deno.serve(async (req) => {
 				p_complete: cycle.complete,
 				p_expected_targets: cycle.expected_targets,
 				p_items: cycle.items,
+				...(cycle.provider_resources ? { p_provider_resources: cycle.provider_resources } : {}),
 			});
 			if (result.error) {
 				if (result.error.code === "PT409") return corsJson(req, 409, { error: "discovery_cycle_replayed" });
@@ -208,7 +215,7 @@ Deno.serve(async (req) => {
 			if (input.limit !== undefined && (typeof input.limit !== "number" || !Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > 100)) return corsJson(req, 400, { error: "invalid_limit" });
 			const limit = (input.limit as number | undefined) ?? 50;
 			let query = db.from("tenant_discovery_collectors")
-				.select("collector_id,cycle_id,sequence,stale_after_ms,complete,expected_targets,observed_targets,reported_at")
+				.select("collector_id,cycle_id,sequence,stale_after_ms,complete,expected_targets,observed_targets,reported_at,provider_evidence")
 				.eq("tenant_id", tenant)
 				.order("collector_id", { ascending: true })
 				.limit(limit + 1);
@@ -229,22 +236,28 @@ Deno.serve(async (req) => {
 			}, rateLimitHeaders(rate));
 		}
 
-		if (!exactKeys(input, ["action", "tenant_id", "collector_id"], ["after_target", "limit"]) || !validCollectorId(input.collector_id)) return corsJson(req, 400, { error: "invalid_request" });
+		const resourceRead = action === "resources";
+		if (!exactKeys(input, ["action", "tenant_id", "collector_id"], resourceRead ? ["after_resource", "expected_sequence", "limit"] : ["after_target", "limit"]) || !validCollectorId(input.collector_id)) return corsJson(req, 400, { error: "invalid_request" });
 		if (input.limit !== undefined && (typeof input.limit !== "number" || !Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > 100)) return corsJson(req, 400, { error: "invalid_limit" });
 		const after = input.after_target === undefined ? null : canonicalDiscoveryOrigin(input.after_target);
 		if (input.after_target !== undefined && !after) return corsJson(req, 400, { error: "invalid_cursor" });
+		if (input.after_resource !== undefined && (typeof input.after_resource !== "string" || !input.after_resource.length || input.after_resource.length > 1024 || /[\u0000-\u001f\u007f]/.test(input.after_resource))) return corsJson(req, 400, { error: "invalid_cursor" });
+		if (input.expected_sequence !== undefined && (typeof input.expected_sequence !== "number" || !Number.isSafeInteger(input.expected_sequence) || input.expected_sequence < 1)
+			|| input.after_resource !== undefined && input.expected_sequence === undefined) return corsJson(req, 400, { error: "invalid_cursor" });
 		const limit = (input.limit as number | undefined) ?? 100;
 		const collector = await db.from("tenant_discovery_collectors")
-			.select("collector_id,cycle_id,sequence,stale_after_ms,complete,expected_targets,observed_targets,reported_at")
+			.select("collector_id,cycle_id,sequence,stale_after_ms,complete,expected_targets,observed_targets,reported_at,provider_evidence")
 			.eq("tenant_id", tenant).eq("collector_id", input.collector_id).maybeSingle();
 		if (collector.error) return unavailable(req);
 		const collectorRow = collector.data;
 		if (!collectorRow) return corsJson(req, 404, { error: "collector_not_found" });
-		let query = db.from("tenant_discovery_items")
-			.select("target,first_reported_at,last_reported_at,last_reachable_at,last_cycle_id,reachable,attempts,error_code")
+		if (resourceRead && input.expected_sequence !== undefined && input.expected_sequence !== collectorRow.sequence) return corsJson(req, 409, { error: "discovery_inventory_changed" });
+		let query = db.from(resourceRead ? "tenant_discovery_provider_resources" : "tenant_discovery_items")
+			.select(resourceRead ? "provider,scope_hash,resource_id,resource_type,scope_id,region,observed_at,last_cycle_id" : "target,first_reported_at,last_reported_at,last_reachable_at,last_cycle_id,reachable,attempts,error_code")
 			.eq("tenant_id", tenant).eq("collector_id", input.collector_id)
-			.order("target").limit(limit + 1);
-		if (after) query = query.gt("target", after);
+			.order(resourceRead ? "resource_id" : "target").limit(limit + 1);
+		if (resourceRead && typeof input.after_resource === "string") query = query.gt("resource_id", input.after_resource);
+		if (!resourceRead && after) query = query.gt("target", after);
 		const rows = await query;
 		if (rows.error || !Array.isArray(rows.data)) return unavailable(req);
 		const latestCollector = await db.from("tenant_discovery_collectors")
@@ -255,20 +268,32 @@ Deno.serve(async (req) => {
 			|| latestCollector.data.sequence !== collectorRow.sequence) {
 			return corsJson(req, 409, { error: "discovery_inventory_changed" });
 		}
-		const page = rows.data.slice(0, limit);
+		const page = rows.data.slice(0, limit) as Record<string, unknown>[];
 		const now = Date.now();
 		const collectorState = discoveryCollectorState(collectorRow.reported_at, collectorRow.complete, collectorRow.stale_after_ms, now);
+		if (resourceRead) return corsJson(req, 200, {
+			ok: true,
+			collector: { ...collectorRow, state: collectorState },
+			provider_resources: page.map((item) => ({ ...item,
+				freshness: discoveryFreshness(typeof item.observed_at === "string" ? item.observed_at : null, collectorRow.stale_after_ms, now),
+				alert_state: !collectorRow.complete ? "collection_partial"
+					: item.last_cycle_id !== collectorRow.cycle_id ? "not_reported"
+					: discoveryFreshness(typeof item.observed_at === "string" ? item.observed_at : null, collectorRow.stale_after_ms, now) === "fresh" ? "healthy" : "stale",
+			})),
+			truncated: rows.data.length > limit,
+			next_resource: rows.data.length > limit ? page[page.length - 1]?.resource_id ?? null : null,
+		}, rateLimitHeaders(rate));
 		return corsJson(req, 200, {
 			ok: true,
 			collector: { ...collectorRow, state: collectorState },
 			items: page.map((item) => ({
 				...item,
-				freshness: discoveryFreshness(item.last_reachable_at, collectorRow.stale_after_ms, now),
+				freshness: discoveryFreshness(typeof item.last_reachable_at === "string" ? item.last_reachable_at : null, collectorRow.stale_after_ms, now),
 				alert_state: discoveryAlertState({
-					lastReachableAt: item.last_reachable_at,
-					lastCycleId: item.last_cycle_id,
+					lastReachableAt: typeof item.last_reachable_at === "string" ? item.last_reachable_at : null,
+					lastCycleId: typeof item.last_cycle_id === "string" ? item.last_cycle_id : "",
 					cycleId: collectorRow.cycle_id,
-					reachable: item.reachable,
+					reachable: item.reachable === true,
 					complete: collectorRow.complete,
 					staleAfterMs: collectorRow.stale_after_ms,
 				}, now),

@@ -7,6 +7,81 @@ This is an application-owned check boundary, not an AI-host connector. It only
 checks requests the application passes to it; wrapping a tool does not provide
 the native connectors' tool normalization or package/manifest inspection.
 
+The client also honors an operator-installed local response worker. A verified
+pause or unavailable required control state returns `deny` before cached allows
+or provider requests; a pause applied during provider I/O prevents a new allow.
+The installed endpoint's credential and issuer roots establish that authority.
+The SDK caller's remote `apiKey` and request context cannot replace it or bypass
+the pause. Without an installed or required worker, caller-owned SDK checks keep
+their existing scope; configuring an SDK API key does not enroll the host.
+
+## Mandatory privacy and final text sends
+
+The installed core configuration may require `{"privacy":{"required":true}}`.
+In that mode, ordinary `check()` operations and both middleware families deny
+caller-owned execution, including raw provider callbacks. A local threat still
+keeps its denial; no cache or external reputation lookup authorizes the route.
+Mandatory denials emit a fixed withheld request instead of raw input. Malformed
+or unreadable installed configuration blocks execution. Approvals and request
+metadata cannot bypass the requirement. Wrappers recheck installed controls
+after asynchronous approval/hooks, immediately before the caller operation.
+The mandatory profile also suppresses raw observer hooks, custom request
+extractors, `.use` callbacks and composed stages before they receive input;
+normal-mode callbacks keep their existing behavior. Low-level composition
+still needs a detector middleware in normal mode to inspect tools.
+Generic and `wrap()` results are also withheld if mandatory routing is enabled
+while their operation or provisioned output scan is pending; the already-started
+operation may have completed. Express/Next middleware owns its continuation
+decision and does not intercept the later host response.
+
+`sendText()` owns one bounded final text request through the operator-installed
+private `@singularity/aidr-privacy/platform` package's real `TextGatewayClient`.
+Install that approved private package beside this SDK and run its configured
+service with approved model, broker, tenant policy, durable state and mTLS.
+The second constructor argument is trusted host configuration; it is separate
+from the SDK/reputation settings and remains private to the client. Provider
+credentials belong on the service. Keep device private keys and session tokens
+in the approved OS credential vault, with enrolled certificate/CA files owned
+by the host operator.
+
+```ts
+const client = new AIDRClient(
+  { apiKey: sdkCredential },
+  { privacyGateway: {
+    origin: approvedPrivacyServiceOrigin,
+    destinationId: approvedDestinationId,
+    tls: { ca: approvedCa, cert: enrolledCertificate, key: deviceKeyFromVault },
+    credentials: loadBoundSessionCredentialsFromVault,
+  } },
+);
+const requestId = crypto.randomUUID(); // Persist before dispatch for reconciliation.
+const outputText = await client.sendText(prompt, { requestId });
+```
+
+The SDK copies TLS buffers at construction, runs fresh local detection without
+reputation/cache, and checks current installed controls before dispatch and
+after asynchronous credential resolution. Only the service's sanitized
+`outputText` is returned. Input is nonempty text up to 500,000 UTF-8 bytes;
+the gateway's 512 KiB serialized request bound also applies. Returned text is
+bounded to 2 MiB. Streaming, files, images and destination overrides are
+unsupported and rejected. This path emits no SDK input/output events or raw
+credential errors. Only `requestId`, an approved `reviewCaseId`, and an
+`AbortSignal` may be supplied per send.
+
+A blocked/review/unknown receipt, withheld response, missing package, invalid
+configuration, failed authentication/TLS or installed pause stops delivery.
+There is no raw provider fallback and SDK retry settings never resend a model
+request. A failed/aborted send can already have committed at the provider;
+retain the explicit `requestId` and reconcile its service record before any
+operator-approved retry. Do not automatically create a fresh request ID or
+replace unavailable output with the original prompt.
+
+This enforces the SDK's owned text route. Separate host processes, browser
+clients and arbitrary unwrapped network calls require the institution's
+actual egress restrictions and removal of direct provider credentials. The
+privacy service's defense model/broker qualification and customer host
+acceptance remain separate requirements; local tests do not approve a model.
+
 ## Verdict enforcement is fail-closed
 
 Both middleware surfaces in this package share **one** enforcement rule,
@@ -105,6 +180,10 @@ map arguments explicitly with `createMiddleware(client).wrap(fn, requestFactory)
 or use and verify a supported native connector. Do not treat a generic wrapper
 as equivalent to native connector coverage.
 
+The tool wrapper executes a JSON snapshot of the inspected arguments. Custom
+prototypes, `toJSON` methods, and caller mutations cannot replace that checked
+snapshot with a different value before the tool runs.
+
 ### URL reputation and data sharing
 
 The SDK keeps URL reputation requests **off by default**. Fetch URLs are still
@@ -125,6 +204,11 @@ default; enabling `includeUrlQueryParameters: true` separately opts in to
 sending them. URLs withheld for these reasons are reported as unavailable,
 not clean. Avoid putting secrets in a URL even when reputation lookups are
 enabled.
+
+Set `baseUrl` to your reputation service's HTTPS API base (for example,
+`https://aidr.example.com/functions/v1`); the SDK calls its `/url-check` route
+with `apiKey` as a bearer credential. Configuration updates clear existing
+verdicts so a changed service or credential takes effect on the next check.
 
 Both middleware surfaces accept the same `onAsk` /
 `allowApprovalOfIndeterminateResults` options:
@@ -162,6 +246,16 @@ return guarded.output;
 Redaction replaces the complete result with a fixed marker so matched secrets or
 instructions cannot survive in an uninspected field. Hosts that return binary or
 streaming values must decode them to bounded text before calling the guard.
+
+For a host serving a locally provisioned connector profile, set
+`createGenericMiddleware(client, { agentRuntime: "cursor" })` to include that
+profile's signed tenant output DLP. Choose the runtime the host actually serves.
+The runtime is fixed when middleware is created; tool input and metadata cannot
+select or change it. Each result revalidates the local signed policy and managed
+entitlement before delivery. This also applies to the sync-compatible middleware
+and generic tool wrappers. The SDK API key does not select this local tenant
+profile, and the standalone synchronous guards continue to use the fixed output
+rules.
 
 ## Agent self-approval is not a thing in this SDK
 

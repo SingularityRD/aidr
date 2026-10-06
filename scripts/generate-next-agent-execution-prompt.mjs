@@ -171,6 +171,7 @@ const taskSection = gapRegistry.engineering_and_operations.map((task) => {
 - İlgili özellikler: ${task.feature_ids.join(", ")}
 - Kaynak: ${task.source_paths.join(", ")}
 - ${statusLabel}: ${localStatus}
+- Kalan ürün bağlantısı/protokol/model: ${(task.remaining_implementation ?? []).join(" ") || "Ayrı uygulama eksikliği kaydedilmedi; kapsam ve saha kabulünü doğrula."}
 - Başlangıç riski: ${task.initial_gap}
 - Tamamlama hedefi: ${task.implementation}
 - Zorunlu kapanış testi: ${task.acceptance}

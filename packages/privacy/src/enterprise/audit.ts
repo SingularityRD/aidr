@@ -23,11 +23,11 @@ export type AuditWriter=(record:AuditRecord)=>Promise<void>;
  * NOT immutable storage. Anchor checkpoints off-host to detect suffix truncation/rollback. */
 export class AuditJournal {
   readonly tenantId:string;readonly logId:string;readonly keyId:string;
-  #key:Buffer;#sequence=0;#head='0'.repeat(64);#lastAt=0;#write:AuditWriter;#queue:Promise<void>=Promise.resolve();#halted=false;#pending=0;#timeoutMs:number;
+  #key:Buffer;#sequence=0;#head='0'.repeat(64);#lastAt=0;#write:AuditWriter;#queue:Promise<void>=Promise.resolve();#halted=false;#closing=false;#pending=0;#timeoutMs:number;
   constructor(tenantId:string,logId:string,keyId:string,key:Uint8Array,write:AuditWriter,timeoutMs=10000){this.#timeoutMs=integer(timeoutMs,1,120000);this.tenantId=id(tenantId);this.logId=id(logId);this.keyId=id(keyId);this.#key=secret(key);if(typeof write!=='function')deny();this.#write=write;}
   actor(subjectId:string):string {return mac(this.#key,'aidr-actor-v1',this.tenantId,id(subjectId));}
   append(input:DecisionEvent):Promise<AuditRecord> {
-    if(this.#halted||this.#pending>=64)return Promise.reject(new Error('AUDIT_UNAVAILABLE'));
+    if(this.#halted||this.#closing||this.#pending>=64)return Promise.reject(new Error('AUDIT_UNAVAILABLE'));
     let event:DecisionEvent;try{event=validateAuditEvent(input);}catch(e){return Promise.reject(e);}
     this.#pending++;const task=this.#queue.then(async()=>{
       if(this.#halted)deny('AUDIT_HALTED');if(event.at<this.#lastAt)deny('CLOCK_ROLLBACK');
@@ -40,7 +40,7 @@ export class AuditJournal {
     });this.#queue=task.then(()=>{this.#pending--;},()=>{this.#pending--;this.#halted=true;});return task;
   }
   checkpoint():AuditCheckpoint {const body={tenantId:this.tenantId,logId:this.logId,sequence:this.#sequence,head:this.#head};return frozen({...body,auth:mac(this.#key,'aidr-audit-checkpoint-v1',body)});}
-  async dispose():Promise<void>{await this.#queue;this.#halted=true;this.#key.fill(0);}
+  async dispose():Promise<void>{this.#closing=true;await this.#queue;this.#halted=true;this.#key.fill(0);}
 }
 export function verifyAudit(records:readonly AuditRecord[],checkpoint:AuditCheckpoint,key:Uint8Array):boolean {
   try{

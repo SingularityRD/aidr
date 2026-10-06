@@ -17,6 +17,9 @@ const fleetFixtureEnv = Object.freeze({ AIDR_DEVELOPMENT_MODE: "true" });
 const required = [
 	"Common.ps1",
 	"Install-Aidr.ps1",
+	"Install-AidrResponseWorker.ps1",
+	"Uninstall-AidrResponseWorker.ps1",
+	"Invoke-AidrResponseAction.ps1",
 	"Update-Aidr.ps1",
 	"Rollback-Aidr.ps1",
 	"Uninstall-Aidr.ps1",
@@ -140,13 +143,20 @@ $cert.Thumbprint
 	const rolledBack = JSON.parse(runFleet("Test-AidrDetection.ps1", ["-TargetHome", target, "-StateRoot", stateRoot, "-Json"]));
 	assert.equal(rolledBack.version, "1.0.0");
 	checks.push("rollback revalidated and restored the retained signed candidate");
+	const statePath = join(stateRoot, "targets", targetId(target), "state.json");
+	const rollbackState = JSON.parse(readFileSync(statePath, "utf8"));
+	assert.deepEqual(rollbackState.history.map((candidate) => candidate.manifest_sha256), [deployment2.sha]);
+	runFleet("Rollback-Aidr.ps1", ["-TargetHome", target, "-StateRoot", stateRoot]);
+	assert.equal(JSON.parse(runFleet("Test-AidrDetection.ps1", ["-TargetHome", target, "-StateRoot", stateRoot, "-Json"])).version, "1.0.1");
+	runFleet("Rollback-Aidr.ps1", ["-TargetHome", target, "-StateRoot", stateRoot]);
+	assert.equal(JSON.parse(runFleet("Test-AidrDetection.ps1", ["-TargetHome", target, "-StateRoot", stateRoot, "-Json"])).version, "1.0.0");
+	checks.push("rollback history preserves recency and never retains its active manifest as a candidate");
 
 	assert.equal(readFileSync(join(target, ".singularity-aidr", "config.json"), "utf8"), preservedConfig);
 	const settings = JSON.parse(readFileSync(join(target, ".claude", "settings.json"), "utf8"));
 	assert.ok(settings.hooks.PreToolUse.some((entry) => entry.hooks.some((hook) => hook.statusMessage === unrelatedStatus)));
 	checks.push("existing agent configuration and unrelated hooks were preserved");
 
-	const statePath = join(stateRoot, "targets", targetId(target), "state.json");
 	const activeState = JSON.parse(readFileSync(statePath, "utf8"));
 	const activeBundle = join(activeState.active.connector_path, "dist", "pre-tool-use.cjs");
 	const activeBundleBytes = readFileSync(activeBundle);
@@ -213,6 +223,43 @@ catch { if ($_.Exception.Message -eq 'Accepted a concurrent customer edit') { th
 	checks.push("structured fleet logs excluded configuration and credential material");
 
 	const settingsPath = join(target, ".claude", "settings.json");
+	const installedSettings = JSON.parse(readFileSync(settingsPath, "utf8"));
+	const managedMarker = "Singularity AIDR managed installation";
+	const preToolEntry = (value) => value.hooks.PreToolUse.find((entry) => entry.hooks.some((hook) => hook.statusMessage === managedMarker));
+	const managedHook = (entry) => entry.hooks.find((hook) => hook.statusMessage === managedMarker);
+	const invalidRegistrations = [
+		["non-executing echo command", (entry) => { managedHook(entry).command = `echo ${managedHook(entry).command}`; }],
+		["additional shell command", (entry) => { managedHook(entry).command += " & echo skipped"; }],
+		["prompt hook type", (entry) => { managedHook(entry).type = "prompt"; }],
+		["asynchronous security hook", (entry) => { managedHook(entry).async = true; }],
+		["restrictive tool matcher", (entry) => { entry.matcher = "Read"; }],
+		["shortened hook timeout", (entry) => { managedHook(entry).timeout = 1; }],
+	];
+	for (const [label, mutate] of invalidRegistrations) {
+		const invalid = structuredClone(installedSettings);
+		mutate(preToolEntry(invalid));
+		writeFileSync(settingsPath, `${JSON.stringify(invalid)}\n`);
+		assert.notEqual(runFleet("Test-AidrDetection.ps1", ["-TargetHome", target, "-StateRoot", stateRoot, "-Json"], false).status, 0, label);
+		assert.notEqual(runFleet("Invoke-AidrRemediation.ps1", ["-TargetHome", target, "-DetectionOnly", "-Json"], false).status, 0, label);
+		assert.equal(JSON.parse(runFleet("Invoke-AidrRemediation.ps1", ["-TargetHome", target, "-Json"])).outcome, "repaired", label);
+	}
+	checks.push("detection and remediation reject and repair non-executing, asynchronous, and restricted security hooks");
+	const globallyDisabled = { ...structuredClone(installedSettings), disableAllHooks: true };
+	const globallyDisabledBytes = `${JSON.stringify(globallyDisabled)}\n`;
+	writeFileSync(settingsPath, globallyDisabledBytes);
+	assert.notEqual(runFleet("Test-AidrDetection.ps1", ["-TargetHome", target, "-StateRoot", stateRoot, "-Json"], false).status, 0);
+	assert.equal(JSON.parse(runFleet("Invoke-AidrRemediation.ps1", ["-TargetHome", target, "-Json"], false).stdout).reason.code, "host_hooks_disabled");
+	assert.equal(readFileSync(settingsPath, "utf8"), globallyDisabledBytes);
+	checks.push("globally disabled host hooks are unhealthy and cannot be silently re-enabled");
+	for (const malformed of ['"customer"\n', "true\n", "42\n", '{"hooks":"customer"}\n']) {
+		writeFileSync(settingsPath, malformed);
+		assert.notEqual(runFleet("Invoke-AidrRemediation.ps1", ["-TargetHome", target, "-Json"], false).status, 0, malformed);
+		assert.equal(readFileSync(settingsPath, "utf8"), malformed);
+		assert.notEqual(runFleet("Uninstall-Aidr.ps1", ["-TargetHome", target, "-StateRoot", stateRoot], false).status, 0, malformed);
+		assert.equal(readFileSync(settingsPath, "utf8"), malformed);
+	}
+	checks.push("remediation and uninstall refuse scalar or malformed settings without reinterpreting customer bytes");
+	writeFileSync(settingsPath, `${JSON.stringify(installedSettings)}\n`);
 	const deepValue = (depth) => {
 		let value = { leaf: "customer-value" };
 		for (let i = 0; i < depth; i++) value = { nested: value };
@@ -224,13 +271,31 @@ catch { if ($_.Exception.Message -eq 'Accepted a concurrent customer edit') { th
 	};
 	const removeManagedEvent = (value) => { delete value.hooks.PostToolUse; return value; };
 	let customerSettings = JSON.parse(readFileSync(settingsPath, "utf8"));
+	preToolEntry(customerSettings).hooks.push({ type: "command", command: "safe-case-variant-customer-hook", statusMessage: managedMarker.toLowerCase() });
 	customerSettings.customerDeep = deepValue(35);
-	writeFileSync(settingsPath, `${JSON.stringify(removeManagedEvent(customerSettings), null, 2)}\n`);
+	writeFileSync(settingsPath, Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(`${JSON.stringify(removeManagedEvent(customerSettings), null, 2)}\n`)]));
 	const repaired = JSON.parse(runFleet("Invoke-AidrRemediation.ps1", ["-TargetHome", target, "-Json"]));
 	assert.equal(repaired.outcome, "repaired");
 	const repairedSettings = JSON.parse(readFileSync(settingsPath, "utf8"));
 	assertDeepLeaf(repairedSettings.customerDeep, 35);
-	checks.push("remediation preserved customer JSON deeper than PowerShell's former 30-level limit");
+	assert.ok(repairedSettings.hooks.PreToolUse.some((entry) => entry.hooks.some((hook) => hook.command === "safe-case-variant-customer-hook")));
+	checks.push("remediation accepted UTF-8 BOM settings and preserved deep JSON and exact customer hook ownership");
+	const canarySettings = `${JSON.stringify(removeManagedEvent(structuredClone(repairedSettings)))}\n`;
+	writeFileSync(settingsPath, canarySettings);
+	writeFileSync(activeBundle, 'process.stdout.write(JSON.stringify({hookSpecificOutput:{permissionDecision:"deny",permissionDecisionReason:"Internal error"},systemMessage:"Detection unavailable"}));\n');
+	const degradedCanary = runFleet("Invoke-AidrRemediation.ps1", ["-TargetHome", target, "-Json"], false);
+	assert.notEqual(degradedCanary.status, 0);
+	assert.equal(JSON.parse(degradedCanary.stdout).reason.code, "deny_canary_failed");
+	assert.equal(readFileSync(settingsPath, "utf8"), canarySettings);
+	writeFileSync(activeBundle, 'setInterval(() => {}, 1000);\n');
+	const hungCanary = runFleet("Invoke-AidrRemediation.ps1", ["-TargetHome", target, "-Json"], false);
+	assert.notEqual(hungCanary.status, 0);
+	assert.equal(JSON.parse(hungCanary.stdout).reason.code, "deny_canary_failed");
+	assert.match(JSON.parse(hungCanary.stdout).reason.detail, /timed out/);
+	assert.equal(readFileSync(settingsPath, "utf8"), canarySettings);
+	writeFileSync(activeBundle, activeBundleBytes);
+	checks.push("remediation rejected an internal-error deny instead of treating unavailable detection as a passed threat canary");
+	checks.push("a hung remediation hook is terminated after its canary deadline without changing customer settings");
 
 	customerSettings = removeManagedEvent(JSON.parse(readFileSync(settingsPath, "utf8")));
 	writeFileSync(settingsPath, `${JSON.stringify(customerSettings, null, 2)}\n`);
@@ -259,7 +324,23 @@ catch { if ($_.Exception.Message -eq 'Accepted a concurrent customer edit') { th
 	assert.equal(readFileSync(settingsPath, "utf8"), overlyDeepUninstall);
 	checks.push("uninstall failed closed beyond safe JSON nesting depth");
 
-	writeFileSync(settingsPath, `${JSON.stringify(repairedSettings)}\n`);
+	writeFileSync(settingsPath, Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(`${JSON.stringify(repairedSettings)}\n`)]));
+	const responseRequiredConfig = `${JSON.stringify({ schema_version: 1, control_plane: { response_worker_required: true } })}\n`;
+	writeFileSync(join(target, ".singularity-aidr", "config.json"), responseRequiredConfig);
+	const protectedHooks = readFileSync(settingsPath);
+	const protectedFleetState = readFileSync(statePath);
+	const protectedReceipt = readFileSync(join(target, ".singularity-aidr", "installation.json"));
+	const unsupportedRollback = runFleet("Install-Aidr.ps1", ["-ManifestPath", deployment1.manifest, "-ExpectedManifestSha256", deployment1.sha, "-TargetHome", target, "-StateRoot", stateRoot], false);
+	assert.notEqual(unsupportedRollback.status, 0);
+	assert.deepEqual(readFileSync(settingsPath), protectedHooks);
+	assert.deepEqual(readFileSync(statePath), protectedFleetState);
+	assert.deepEqual(readFileSync(join(target, ".singularity-aidr", "installation.json")), protectedReceipt);
+	checks.push("a required response worker refuses a signed older package without its pause gate before replacing hooks or fleet state");
+	assert.notEqual(runFleet("Uninstall-Aidr.ps1", ["-TargetHome", target, "-StateRoot", stateRoot], false).status, 0);
+	assert.deepEqual(readFileSync(settingsPath), protectedHooks);
+	assert.equal(readFileSync(join(target, ".singularity-aidr", "config.json"), "utf8"), responseRequiredConfig);
+	checks.push("missing authenticated response state prevents uninstall from clearing required-worker hooks");
+	writeFileSync(join(target, ".singularity-aidr", "config.json"), preservedConfig);
 
 	runFleet("Uninstall-Aidr.ps1", ["-TargetHome", target, "-StateRoot", stateRoot]);
 	const afterUninstall = runFleet("Test-AidrDetection.ps1", ["-TargetHome", target, "-StateRoot", stateRoot, "-Json"], false);
@@ -267,9 +348,38 @@ catch { if ($_.Exception.Message -eq 'Accepted a concurrent customer edit') { th
 	const settingsAfter = JSON.parse(readFileSync(join(target, ".claude", "settings.json"), "utf8"));
 	assert.ok(settingsAfter.hooks.PreToolUse.some((entry) => entry.hooks.some((hook) => hook.statusMessage === unrelatedStatus)));
 	assert.ok(!JSON.stringify(settingsAfter).includes("Singularity AIDR managed installation"));
+	assert.ok(settingsAfter.hooks.PreToolUse.some((entry) => entry.hooks.some((hook) => hook.command === "safe-case-variant-customer-hook")));
 	assertDeepLeaf(settingsAfter.customerDeep, 35);
 	assert.equal(readFileSync(join(target, ".singularity-aidr", "config.json"), "utf8"), preservedConfig);
 	checks.push("uninstall removed only managed hooks and preserved deep customer configuration");
+	if (process.platform === "win32") {
+		const linkedTarget = join(work, "junction-profile");
+		const outsideSettings = join(work, "junction-customer-settings");
+		mkdirSync(linkedTarget);
+		mkdirSync(outsideSettings);
+		const outsideSettingsPath = join(outsideSettings, "settings.json");
+		const outsideBytes = `${JSON.stringify(repairedSettings)}\n`;
+		writeFileSync(outsideSettingsPath, outsideBytes);
+		const junctionScript = join(work, "junction.ps1");
+		writeFileSync(junctionScript, "param([string]$Link,[string]$Target)\nNew-Item -ItemType Junction -Path $Link -Target $Target -ErrorAction Stop | Out-Null\n");
+		runPs(junctionScript, [join(linkedTarget, ".claude"), outsideSettings]);
+		for (const script of ["Uninstall-Aidr.ps1", "Invoke-AidrRemediation.ps1"]) {
+			const args = ["-TargetHome", linkedTarget, ...(script === "Uninstall-Aidr.ps1" ? ["-StateRoot", stateRoot] : ["-Json"])];
+			assert.notEqual(runFleet(script, args, false).status, 0, script);
+			assert.equal(readFileSync(outsideSettingsPath, "utf8"), outsideBytes);
+		}
+		checks.push("fleet uninstall and remediation reject managed-directory junctions before touching customer files");
+		const connectorLinkedTarget = join(work, "connector-junction-profile");
+		const linkedConnector = join(connectorLinkedTarget, ".singularity-aidr", "connectors", "claude", activeState.active.connector_digest);
+		mkdirSync(dirname(linkedConnector), { recursive: true });
+		runPs(junctionScript, [linkedConnector, activeState.active.connector_path]);
+		writeFileSync(join(connectorLinkedTarget, ".singularity-aidr", "installation.json"), `${JSON.stringify({ schema_version: 1, connector: "claude-code", local_canary: "deny", artifact_sha256: activeState.active.connector_digest, path: linkedConnector })}\n`);
+		const linkedReceipt = runFleet("Invoke-AidrRemediation.ps1", ["-TargetHome", connectorLinkedTarget, "-Json"], false);
+		assert.notEqual(linkedReceipt.status, 0);
+		assert.equal(JSON.parse(linkedReceipt.stdout).reason.code, "receipt_path_reparse");
+		assert.equal(existsSync(join(connectorLinkedTarget, ".claude", "settings.json")), false);
+		checks.push("remediation refuses a receipt whose digest-addressed connector directory is a junction");
+	}
 
 	assert.match(readFileSync(join(fleet, "README.md"), "utf8"), /not an Intune\/SCCM certification claim/i);
 	checks.push("documentation keeps real MDM and native-host acceptance external");

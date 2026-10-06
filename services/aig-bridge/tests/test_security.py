@@ -123,3 +123,14 @@ def test_persistent_registry_survives_new_instance(tmp_path):
     restarted.assert_owner("task-1", "tenant-a")
     with pytest.raises(KeyError):
         restarted.assert_owner("task-1", "tenant-b")
+
+
+@pytest.mark.parametrize("url", ["http://[invalid", "http://[not-ipv6]/", "http://example.com:70000"])
+def test_malformed_remote_urls_are_validation_errors(url):
+    assert raises_http(validate_remote_url, url, field="target").status_code == 422
+
+
+def test_malformed_runtime_proxy_fails_readiness(monkeypatch):
+    monkeypatch.setenv("BRIDGE_RUNTIME_EGRESS_REQUIRED", "true")
+    monkeypatch.setenv("BRIDGE_EGRESS_PROXY_URL", "http://[invalid")
+    assert runtime_egress_ready() == (False, "runtime egress proxy URL is invalid")

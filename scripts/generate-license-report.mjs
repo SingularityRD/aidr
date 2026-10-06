@@ -12,13 +12,14 @@
  * Usage:
  *   node scripts/generate-license-report.mjs [--sbom <file>] [--output <json>] [--markdown <md>] [--strict]
  *
- * `--strict` exits 1 when any component is UNKNOWN or copyleft/review-required.
+ * `--strict` exits 1 for UNKNOWN, review-required, other terms or unresolved flags.
  */
 
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseSpdxExpression } from "./lib/pypi-license-data.mjs";
 
 const PERMISSIVE = new Set([
 	"MIT", "MIT-0", "ISC", "BSD-2-CLAUSE", "BSD-3-CLAUSE", "0BSD", "APACHE-2.0", "BLUEOAK-1.0.0",
@@ -37,9 +38,22 @@ export function splitExpression(expression) {
 
 function classifyId(id) {
 	const upper = id.toUpperCase();
+	if (id === "GNU Lesser General Public License v3 (LGPLv3)") return "review-required";
 	if (REVIEW_REQUIRED.some((pattern) => pattern.test(id))) return "review-required";
 	if (PERMISSIVE.has(upper)) return "permissive";
 	return "other";
+}
+
+function classifyDeclaration(value) {
+	if (value === "GNU Lesser General Public License v3 (LGPLv3)") return classifyId(value);
+	const parsed = parseSpdxExpression(value);
+	if (parsed) return parsed.obligation === "permissive" ? "permissive" : "review-required";
+	// Unsupported expressions remain blocked; a permissive branch cannot erase
+	// an unreviewed identifier, exception, or mandatory AND obligation.
+	if (/\b(?:OR|AND|WITH)\b|[()]/i.test(value)) {
+		return splitExpression(value).some((id) => classifyId(id) === "review-required") ? "review-required" : "other";
+	}
+	return classifyId(value);
 }
 
 /** Classify one CycloneDX component's `licenses` array. */
@@ -51,13 +65,9 @@ export function classifyComponent(component) {
 		if (typeof value === "string" && value.trim()) declared.push(value.trim());
 	}
 	if (declared.length === 0) return { declared, category: "unknown" };
-	const parts = declared.flatMap(splitExpression);
-	const categories = parts.map(classifyId);
-	const isOr = declared.some((value) => /\sOR\s/i.test(value));
+	const categories = declared.map(classifyDeclaration);
 	let category;
 	if (categories.every((c) => c === "permissive")) category = "permissive";
-	// "MIT OR GPL-3.0" can be satisfied by the permissive option.
-	else if (isOr && categories.includes("permissive")) category = "permissive";
 	else if (categories.includes("review-required")) category = "review-required";
 	else category = "other";
 	return { declared, category };
@@ -71,7 +81,10 @@ export function buildReport(sbom) {
 		const { declared, category } = classifyComponent(component);
 		const key = declared.length ? declared.join(" + ") : "UNKNOWN";
 		byLicense.set(key, (byLicense.get(key) ?? 0) + 1);
-		components.push({ name: component.name, version: component.version, purl: component.purl, licenses: declared, category });
+		const licenseFlags = (component.properties ?? [])
+			.filter((property) => property?.name === "aidr:license-flags" && typeof property.value === "string" && property.value.trim())
+			.map((property) => property.value);
+		components.push({ name: component.name, version: component.version, purl: component.purl, licenses: declared, category, ...(licenseFlags.length ? { licenseFlags } : {}) });
 	}
 	components.sort((a, b) => `${a.purl ?? a.name}`.localeCompare(`${b.purl ?? b.name}`));
 	const count = (category) => components.filter((component) => component.category === category).length;
@@ -87,7 +100,7 @@ export function buildReport(sbom) {
 			unknown: count("unknown"),
 		},
 		byLicense: Object.fromEntries([...byLicense.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))),
-		attention: components.filter((component) => component.category !== "permissive"),
+		attention: components.filter((component) => component.category !== "permissive" || component.licenseFlags?.length),
 		legalStatus:
 			"Engineering inventory only. UNKNOWN means no licence was declared in the SBOM; it is not assumed safe. Counsel approval (COM-002) is not implied.",
 	};
@@ -109,9 +122,9 @@ export function renderMarkdown(report) {
 		"",
 		"## Components needing attention",
 		"",
-		"| Component | Declared | Category |",
-		"|---|---|---|",
-		...report.attention.map((c) => `| ${c.name}@${c.version} | ${c.licenses.join(", ") || "UNKNOWN"} | ${c.category} |`),
+		"| Component | Declared | Category | Flags |",
+		"|---|---|---|---|",
+		...report.attention.map((c) => `| ${c.name}@${c.version} | ${c.licenses.join(", ") || "UNKNOWN"} | ${c.category} | ${(c.licenseFlags ?? []).join("; ")} |`),
 		"",
 	];
 	return lines.join("\n");
@@ -139,7 +152,7 @@ async function main() {
 	await writeFile(output, `${JSON.stringify(report, null, "\t")}\n`);
 	if (args.markdown) await writeFile(path.resolve(args.markdown), `${renderMarkdown(report)}\n`);
 	console.log(JSON.stringify({ status: "generated", output, ...report.totals }));
-	if (args.strict && (report.totals.unknown || report.totals.reviewRequired || report.totals.other)) process.exit(1);
+	if (args.strict && report.attention.length) process.exit(1);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();

@@ -47,6 +47,7 @@ const LOGIN_TICKET_TTL_MS = 2 * 60_000;
 // guessing is infeasible. They only cap unauthenticated database writes. A fixed bound can be used
 // to starve sign-in, so it is deliberately far above any real login rate (see residual risks).
 const START_LIMIT_PER_MINUTE = 600;
+const START_AGGREGATE_LIMIT_PER_MINUTE = 6_000;
 const CALLBACK_LIMIT_PER_MINUTE = 1_200;
 const SCOPES = ["openid", "email", "profile"] as const;
 const DOMAIN_TXT_LABEL = "_aidr-sso";
@@ -116,6 +117,10 @@ export function createOidcHandler(deps: OidcDeps): (req: Request) => Promise<Res
 		if ((body.provider_id !== undefined && !providerId) || (!providerId && !domain))
 			return deps.json(req, 400, { error: "invalid_request" });
 
+		// Unknown caller-selected providers/domains must share a bounded write budget too.
+		const aggregate = await store.rateLimit("oidc-start:aggregate", 60_000, START_AGGREGATE_LIMIT_PER_MINUTE);
+		if (aggregate === "unavailable") return deps.json(req, 503, { error: "sso_unavailable" });
+		if (aggregate === "limited") return deps.json(req, 429, { error: "rate_limited" });
 		const limit = await store.rateLimit(`oidc-start:${await sha256Hex(providerId ?? domain ?? "")}`, 60_000, START_LIMIT_PER_MINUTE);
 		if (limit === "unavailable") return deps.json(req, 503, { error: "sso_unavailable" });
 		if (limit === "limited") return deps.json(req, 429, { error: "rate_limited" });
@@ -318,7 +323,7 @@ export function createOidcHandler(deps: OidcDeps): (req: Request) => Promise<Res
 				auth_user_id: userId,
 				tenant_id: provider.tenant_id,
 				email_claim: email,
-			});
+			}, provider);
 			if (inserted !== "ok") return failLogin(req, provider, "identity_conflict", `link_${inserted}`, 409);
 		}
 		const logged = await store.audit({
@@ -343,7 +348,7 @@ export function createOidcHandler(deps: OidcDeps): (req: Request) => Promise<Res
 			auth_user_id: created,
 			tenant_id: provider.tenant_id,
 			email_claim: email,
-		});
+		}, provider);
 		if (inserted === "ok") return created;
 		// Lost a concurrent first-login race: discard our Auth user and use the winner.
 		await store.deleteAuthUser(created);
@@ -432,6 +437,9 @@ export function createOidcHandler(deps: OidcDeps): (req: Request) => Promise<Res
 	async function breakGlassSuspend(req: Request, body: Body): Promise<Response> {
 		const email = normalizeEmail(body.email);
 		const recoveryCode = normalizeRecoveryCode(body.recovery_code);
+		const aggregate = await store.rateLimit("oidc-break-glass:aggregate", 10 * 60_000, 300);
+		if (aggregate === "unavailable") return deps.json(req, 503, { error: "recovery_unavailable" });
+		if (aggregate === "limited") return deps.json(req, 429, { error: "rate_limited" });
 		const subjectHash = await sha256Hex(email ?? "invalid-email");
 		const limit = await store.rateLimit(`oidc-break-glass:${subjectHash}`, 10 * 60_000, 5);
 		if (limit === "unavailable") return deps.json(req, 503, { error: "recovery_unavailable" });
@@ -730,6 +738,7 @@ export function createOidcHandler(deps: OidcDeps): (req: Request) => Promise<Res
 				oidc_existing_identity_conflict: 409,
 				oidc_saml_enforcement_active: 409,
 				oidc_provider_unavailable: 409,
+				oidc_verified_domain_required: 409,
 				invalid_oidc_enforcement_request: 400,
 			};
 			const status = known[result.error];

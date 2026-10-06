@@ -92,6 +92,8 @@ begin
         -- or a retained-evidence receipt created at commercial cleanup.
         select 1 from (values
           ('audit_export_deletion_authorizations','audit_export_objects'),
+          ('tenant_saml_policy_change_requests','admin_audit_logs'),
+		  ('tenant_saml_outage_recoveries','admin_audit_logs'),
           ('tenant_pack_deletion_authorizations','pack_versions'),
           ('tenant_pack_deletion_receipts','pack_versions'),
           ('billing_entitlement_projections','entitlements'),
@@ -107,6 +109,7 @@ begin
           ('policy_rollouts','runtime_policy_revisions'),
           ('tenant_discovery_collectors','agents'),
           ('tenant_discovery_credentials','agents'),
+		  ('tenant_discovery_provider_resources','agents'),
           ('tenant_discovery_items','agents')
         ) covered(table_name,parent_phase)
         join public.tenant_offboarding_phase_receipts r
@@ -173,7 +176,7 @@ begin
   if (select attempts from public.tenant_offboarding_phase_receipts where run_id=initial_run and phase='events') <> 2 then
     raise exception 'event batch was not bounded';
   end if;
-  if (select count(*) from public.tenant_offboarding_phase_receipts where run_id=initial_run and status='completed') <> 52 then
+  if (select count(*) from public.tenant_offboarding_phase_receipts where run_id=initial_run and status='completed') <> 59 then
     raise exception 'phase receipt set incomplete';
   end if;
   if exists(
@@ -183,6 +186,10 @@ begin
       ('dlp_policy_revisions',44),('tenant_dlp_policies',45),
       ('admission_operators',46),('tenant_admissions',47),
       ('billing_portal_operations',48),('invoice_finance_operators',49),
+      ('oidc_auth_requests',50),('oidc_login_tickets',51),
+      ('oidc_sso_sessions',52),('oidc_identities',53),
+      ('oidc_tenant_domains',54),('oidc_providers',55),
+	  ('saml_recovery_operator_keys',56),
       ('enterprise_invoice_orders',90),('billing_settlements',91),
       ('billing_finance_evidence',92)
     ) expected(phase,phase_order)

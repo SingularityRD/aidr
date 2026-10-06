@@ -13,23 +13,34 @@
  * one) gets an empty context, so an unprovisioned connector behaves exactly as
  * it did before provisioning existed.
  */
-import { createHash, createPublicKey, verify } from "node:crypto";
-import { lstat, readFile } from "node:fs/promises";
+import { createHash, createPublicKey, randomBytes, verify } from "node:crypto";
+import { lstat, open, readFile, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
+import { FileAuthenticatedBehavioralBaselineStore } from "./authenticated-behavioral-baseline-store.js";
 import { createBehavioralBaselineStore } from "./behavioral-baseline-store.js";
 import { BehavioralCorpusSchema, LOCAL_EMBEDDER_MODEL_VERSION } from "./behavioral-corpus.js";
+import {
+	LearningAuthorityKeyringSchema,
+	type LearningReceiptContext,
+	validateLearningAuthorities,
+} from "./behavioral-learning-receipt.js";
 import { createBehavioralDetectionOrchestrator } from "./behavioral-orchestrator.js";
-import { loadConfig, resolvePath } from "./config.js";
+import { canonicalJson as canonicalDetectorPolicyPayload } from "./canonical-json.js";
+import { isInvalidConfig, loadConfig, resolvePath } from "./config.js";
 import { DlpPolicySchema } from "./dlp/index.js";
 import type { ToolEvaluationContext } from "./evaluator.js";
+import { getInstallationId } from "./installation-id.js";
 import {
 	isEntitlementActive,
 	loadManagedState,
+	loadRevocationsCache,
 	type ManagedState,
 	managedStatePath,
 } from "./managed.js";
 import { LocalEmbeddingModel } from "./ml-model.js";
+import { preparePrivateLocalDirectory, preparePrivateLocalFile } from "./private-local-file.js";
+import { resolveSecretStore } from "./secret-store.js";
 import type { AgentRuntime, Config } from "./types.js";
 
 const MAX_BUNDLE_BYTES = 8 * 1024 * 1024;
@@ -54,6 +65,7 @@ const DetectorPolicyPayloadSchema = z
 				// verified entitlement capability as well as this signed declaration.
 				learning_allowed: z.boolean().default(false),
 				learning_capability: z.literal("durable_baseline_v1").optional(),
+				learning_authorities: LearningAuthorityKeyringSchema.optional(),
 				// Missing or cold baseline is fail-closed unless the signed tenant policy
 				// explicitly selects the degraded skip behavior.
 				unavailable_action: z.enum(["ask", "deny", "skip"]).default("ask"),
@@ -84,6 +96,7 @@ const DetectorPolicyPayloadSchema = z
 				return (
 					!behavioral.learning_allowed &&
 					!behavioral.learning_capability &&
+					!behavioral.learning_authorities &&
 					behavioral.unavailable_action === "ask" &&
 					!behavioral.threat_corpus
 				);
@@ -110,6 +123,12 @@ export type DetectorProvisionedContext = Partial<
 	Pick<ToolEvaluationContext, "runtimeDetectors" | "reputationFeed">
 >;
 type SignedDetectorPolicy = z.infer<typeof SignedDetectorPolicySchema>;
+interface DetectorPolicySources {
+	config: string | null;
+	managed: string | null;
+	policy: string | null;
+	revocations: string | null;
+}
 
 /**
  * The agent runtimes a detector policy may be provisioned for. `AgentRuntime`
@@ -156,35 +175,27 @@ export function behavioralBaselineDir(): string {
 }
 
 /** The publisher signs the canonical payload bytes, never the wrapper. */
-export function canonicalDetectorPolicyPayload(value: unknown): string {
-	if (value === null || typeof value === "string" || typeof value === "boolean") {
-		return JSON.stringify(value);
-	}
-	if (typeof value === "number") {
-		if (!Number.isFinite(value)) throw new Error("Invalid detector policy number");
-		return JSON.stringify(value);
-	}
-	if (Array.isArray(value)) {
-		return `[${value.map(canonicalDetectorPolicyPayload).join(",")}]`;
-	}
-	if (typeof value === "object") {
-		const record = value as Record<string, unknown>;
-		return `{${Object.keys(record)
-			.sort()
-			.map((key) => `${JSON.stringify(key)}:${canonicalDetectorPolicyPayload(record[key])}`)
-			.join(",")}}`;
-	}
-	throw new Error("Invalid detector policy value");
-}
+export { canonicalJson as canonicalDetectorPolicyPayload } from "./canonical-json.js";
 
 function publicKey(raw: string) {
 	const trimmed = raw.trim();
-	if (trimmed.startsWith("-----BEGIN")) return createPublicKey(trimmed);
+	if (trimmed.startsWith("-----BEGIN PUBLIC KEY-----")) {
+		const key = createPublicKey(trimmed);
+		if (
+			key.export({ type: "spki", format: "pem" }).toString().trim() !==
+			trimmed.replace(/\r\n/g, "\n")
+		)
+			throw new Error("Invalid public key encoding");
+		return key;
+	}
 	const bytes = Buffer.from(trimmed, "base64");
 	if (bytes.length === 0 || bytes.toString("base64") !== trimmed) {
 		throw new Error("Invalid public key encoding");
 	}
-	return createPublicKey({ key: bytes, format: "der", type: "spki" });
+	const key = createPublicKey({ key: bytes, format: "der", type: "spki" });
+	if (!key.export({ type: "spki", format: "der" }).equals(bytes))
+		throw new Error("Invalid public key encoding");
+	return key;
 }
 
 function verifySignature(
@@ -214,15 +225,24 @@ function verifySignature(
 async function readInstalledPolicy(
 	agentRuntime: AgentRuntime,
 	required: boolean,
+	source?: { raw: string | null },
 ): Promise<{ signed: SignedDetectorPolicy; rawPayload: unknown } | null> {
 	const path = detectorPolicyPath(agentRuntime);
 	let raw: Buffer;
 	try {
-		const info = await lstat(path);
-		if (!info.isFile() || info.isSymbolicLink() || info.size > MAX_BUNDLE_BYTES) {
-			throw new Error("Detector policy file is invalid");
+		if (source?.raw === null) {
+			if (!required) return null;
+			throw new Error("Required detector policy is missing");
 		}
-		raw = await readFile(path);
+		if (source) {
+			raw = Buffer.from(source.raw as string, "utf8");
+		} else {
+			const info = await lstat(path);
+			if (!info.isFile() || info.isSymbolicLink() || info.size > MAX_BUNDLE_BYTES) {
+				throw new Error("Detector policy file is invalid");
+			}
+			raw = await readFile(path);
+		}
 		if (raw.length > MAX_BUNDLE_BYTES) throw new Error("Detector policy exceeds size limit");
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code === "ENOENT" && !required) return null;
@@ -269,6 +289,9 @@ function validatePolicyTrust(
 	) {
 		throw new Error("Provisioned behavioral learning capability is unavailable");
 	}
+	if (payload.behavioral?.learning_authorities) {
+		validateLearningAuthorities(payload.behavioral.learning_authorities);
+	}
 	const corpus = payload.behavioral?.threat_corpus;
 	if (corpus) {
 		const { sha256, ...content } = corpus;
@@ -312,8 +335,16 @@ function validateFeedKeyring(feed: SignedDetectorPolicy["payload"]["reputation_f
 
 async function detectorContext(
 	payload: SignedDetectorPolicy["payload"],
+	learning?: { receiptContext: LearningReceiptContext; authenticationKey: Buffer },
 ): Promise<DetectorProvisionedContext> {
 	const context: DetectorProvisionedContext = {};
+	const authenticatedBaselineStore = learning
+		? new FileAuthenticatedBehavioralBaselineStore({
+				context: learning.receiptContext,
+				storeDir: behavioralBaselineDir(),
+				authenticationKey: learning.authenticationKey,
+			})
+		: undefined;
 	if (payload.dlp || payload.behavioral) {
 		const runtimeDetectors: NonNullable<ToolEvaluationContext["runtimeDetectors"]> = {
 			tenantId: payload.tenant_id,
@@ -345,6 +376,7 @@ async function detectorContext(
 									corpusDigest: corpus.sha256,
 								})
 							: undefined,
+						authenticatedBaselineStore,
 					},
 				),
 			};
@@ -357,7 +389,7 @@ async function detectorContext(
 			storeDir: join(resolvePath("~/.singularity-aidr"), "reputation-feeds", feed.feed_id),
 			feedId: feed.feed_id,
 			trustedKeys: feed.trusted_keys,
-			...(feed.max_age_ms ? { maxAgeMs: feed.max_age_ms } : {}),
+			maxAgeMs: feed.max_age_ms,
 		};
 	}
 	return context;
@@ -372,18 +404,281 @@ async function detectorContext(
 export async function loadProvisionedDetectorContext(
 	agentRuntime: AgentRuntime,
 ): Promise<DetectorProvisionedContext> {
+	const installed = await loadValidatedDetectorPolicy(agentRuntime);
+	if (!installed) return {};
+	const receiptContext = await learningReceiptContext(installed, agentRuntime);
+	const learning = receiptContext
+		? { receiptContext, authenticationKey: await learningAuthenticationKey(receiptContext) }
+		: undefined;
+	return detectorContext(installed.signed.payload, learning);
+}
+
+export interface ProvisionedLearningContext {
+	receiptContext: LearningReceiptContext;
+	orchestrator: NonNullable<
+		NonNullable<DetectorProvisionedContext["runtimeDetectors"]>["behavioral"]
+	>["orchestrator"];
+	detectorContext: DetectorProvisionedContext;
+}
+
+/** Fixed installed tenant authority; neither tools nor receipts choose trust roots. */
+export async function loadProvisionedLearningContext(
+	agentRuntime: AgentRuntime,
+): Promise<ProvisionedLearningContext> {
+	const installed = await loadValidatedDetectorPolicy(agentRuntime);
+	const receiptContext = installed ? await learningReceiptContext(installed, agentRuntime) : null;
+	if (!installed || !receiptContext)
+		throw new Error("Signed behavioral learning is not provisioned for this runtime");
+	const context = await detectorContext(installed.signed.payload, {
+		receiptContext,
+		authenticationKey: await learningAuthenticationKey(receiptContext),
+	});
+	const orchestrator = context.runtimeDetectors?.behavioral?.orchestrator;
+	if (!orchestrator) throw new Error("Behavioral learning detector is unavailable");
+	return { receiptContext, orchestrator, detectorContext: context };
+}
+
+/** Public signatures and classifier policy only; the policy can contain confidential matchers. */
+export interface BrokerLearningAuthorityBundle {
+	schemaVersion: 1;
+	agentRuntime: AgentRuntime;
+	deviceId: string;
+	managed: Pick<
+		ManagedState,
+		"entitlement" | "entitlement_alg" | "entitlement_sig" | "entitlement_key_id"
+	>;
+	policy: { alg: "ed25519"; payload: unknown; sig_b64: string };
+}
+
+export async function exportBrokerLearningAuthority(
+	agentRuntime: AgentRuntime,
+): Promise<BrokerLearningAuthorityBundle> {
+	const installed = await loadValidatedDetectorPolicy(agentRuntime);
+	const context = installed ? await learningReceiptContext(installed, agentRuntime) : null;
+	if (!installed || !context) throw new Error("Signed behavioral learning is not provisioned");
+	const state = installed.state;
+	return {
+		schemaVersion: 1,
+		agentRuntime,
+		deviceId: context.deviceId,
+		managed: {
+			entitlement: state.entitlement,
+			entitlement_alg: state.entitlement_alg,
+			entitlement_sig: state.entitlement_sig,
+			entitlement_key_id: state.entitlement_key_id,
+		},
+		policy: { alg: "ed25519", payload: installed.rawPayload, sig_b64: installed.signed.sig_b64 },
+	};
+}
+
+/** An independent operator verifies the broker's signed public handoff against local issuer roots. */
+export async function loadProvisionedLearningApprovalContext(
+	agentRuntime: AgentRuntime,
+	bundle: BrokerLearningAuthorityBundle,
+): Promise<LearningReceiptContext> {
+	if (
+		bundle.schemaVersion !== 1 ||
+		bundle.agentRuntime !== agentRuntime ||
+		!z.string().uuid().safeParse(bundle.deviceId).success ||
+		Object.keys(bundle).some(
+			(key) => !["schemaVersion", "agentRuntime", "deviceId", "managed", "policy"].includes(key),
+		) ||
+		Object.keys(bundle.managed).some(
+			(key) =>
+				!["entitlement", "entitlement_alg", "entitlement_sig", "entitlement_key_id"].includes(key),
+		)
+	) {
+		throw new Error("Broker learning authority handoff is invalid");
+	}
+	const configPath = resolvePath("~/.singularity-aidr/config.json");
 	const config = await loadConfig();
+	const revocations = await readFile(
+		resolvePath(config.licensing.revocations_cache_path),
+		"utf8",
+	).catch((error: NodeJS.ErrnoException) => {
+		if (error.code === "ENOENT") return null;
+		throw error;
+	});
+	const installed = await loadValidatedDetectorPolicy(agentRuntime, {
+		config: await readFile(configPath, "utf8"),
+		managed: JSON.stringify(bundle.managed),
+		policy: JSON.stringify(bundle.policy),
+		revocations,
+	});
+	const context = installed
+		? await learningReceiptContext(installed, agentRuntime, bundle.deviceId)
+		: null;
+	if (!context) throw new Error("Broker learning authority handoff is unavailable");
+	return context;
+}
+
+async function learningReceiptContext(
+	installed: NonNullable<Awaited<ReturnType<typeof loadValidatedDetectorPolicy>>>,
+	agentRuntime: AgentRuntime,
+	brokerDeviceId?: string,
+): Promise<LearningReceiptContext | null> {
+	const behavioral = installed.signed.payload.behavioral;
+	const entitlement = installed.state.entitlement;
+	if (
+		!behavioral?.learning_allowed ||
+		!behavioral.learning_authorities ||
+		!behavioral.threat_corpus
+	)
+		return null;
+	if (
+		entitlement?.schema_version !== 2 ||
+		!entitlement.premium_modules.includes("runtime_detectors") ||
+		!entitlement.premium_modules.includes("behavioral_learning_v1")
+	)
+		throw new Error("Signed behavioral learning entitlement is unavailable");
+	const deviceId = brokerDeviceId ?? (await getInstallationId());
+	if (!z.string().uuid().safeParse(deviceId).success)
+		throw new Error("Behavioral learning installation identity is unavailable");
+	return {
+		tenantId: installed.signed.payload.tenant_id,
+		deviceId: deviceId as string,
+		agentRuntime,
+		policyDigest: createHash("sha256")
+			.update(canonicalDetectorPolicyPayload(installed.rawPayload))
+			.digest("hex"),
+		corpusDigest: behavioral.threat_corpus.sha256,
+		modelVersion: behavioral.threat_corpus.model_version,
+		entitlementSerial: entitlement.serial,
+		revocationEpoch: entitlement.revocation_epoch,
+		validFromMs: installed.validFromMs,
+		validUntilMs: installed.validUntilMs,
+		authorities: validateLearningAuthorities(behavioral.learning_authorities),
+		revokedEntitlementSerials: installed.revokedEntitlementSerials,
+	};
+}
+
+async function learningAuthenticationKey(context: LearningReceiptContext): Promise<Buffer> {
+	const store = resolveSecretStore();
+	if (store.location !== "os-vault")
+		throw new Error("Authenticated behavioral learning requires an OS vault");
+	const id = `aidr-learning-${createHash("sha256").update(`${context.tenantId}\0${context.deviceId}\0${context.agentRuntime}`).digest("hex").slice(0, 40)}`;
+	let raw = store.get(id);
+	if (raw === null) {
+		const root = join(behavioralBaselineDir(), "key-initialization");
+		preparePrivateLocalDirectory(root);
+		const lockPath = join(root, `${id}.lock`);
+		// No stale-lock takeover: a crashed initializer needs explicit operator recovery.
+		const lock = await open(lockPath, "wx", 0o600);
+		try {
+			preparePrivateLocalFile(lockPath);
+			raw = store.get(id);
+			if (raw === null) {
+				const fresh = randomBytes(32).toString("base64");
+				store.put(id, fresh);
+				raw = store.get(id);
+				if (raw !== fresh) throw new Error("Behavioral learning vault write could not be verified");
+			}
+		} finally {
+			await lock.close();
+			await unlink(lockPath);
+		}
+	}
+	const bytes = Buffer.from(raw, "base64");
+	if (bytes.length !== 32 || bytes.toString("base64") !== raw)
+		throw new Error("Behavioral learning authentication key is invalid");
+	return bytes;
+}
+
+/** Output hooks need DLP trust, without starting the behavioral model. */
+export async function loadProvisionedDlpPolicy(
+	agentRuntime: AgentRuntime,
+	sources?: DetectorPolicySources,
+): Promise<{
+	tenantId: string;
+	policy: z.infer<typeof DlpPolicySchema> | null;
+	validFromMs: number;
+	validUntilMs: number;
+} | null> {
+	const installed = await loadValidatedDetectorPolicy(agentRuntime, sources);
+	if (!installed) return null;
+	return {
+		tenantId: installed.signed.payload.tenant_id,
+		policy: installed.signed.payload.dlp?.policy ?? null,
+		validFromMs: installed.validFromMs,
+		validUntilMs: installed.validUntilMs,
+	};
+}
+
+async function loadValidatedDetectorPolicy(
+	agentRuntime: AgentRuntime,
+	sources?: DetectorPolicySources,
+) {
+	const config = await loadConfig(
+		undefined,
+		undefined,
+		undefined,
+		sources ? { raw: sources.config } : undefined,
+	);
+	if (isInvalidConfig(config)) throw new Error("Detector configuration is unavailable");
 	const state = await loadManagedState(managedStatePath(), {
 		publicKeysPem: config.licensing.public_keys_pem,
+		...(sources ? { source: { raw: sources.managed } } : {}),
 	});
 	const required =
 		state.entitlement_alg === "ed25519" &&
 		state.entitlement?.schema_version === 2 &&
-		isEntitlementActive(state) &&
 		state.entitlement.premium_modules.includes("runtime_detectors");
-	const installed = await readInstalledPolicy(agentRuntime, required);
-	if (!installed) return {};
+	const installed = await readInstalledPolicy(
+		agentRuntime,
+		required,
+		sources ? { raw: sources.policy } : undefined,
+	);
+	if (!installed) return null;
+	let nextRevocationTransitionMs = Infinity;
+	let revokedEntitlementSerials: readonly string[] = [];
+	if (config.licensing.revocations_enabled && config.licensing.public_keys_pem.length > 0) {
+		const revocations = await loadRevocationsCache(
+			resolvePath(config.licensing.revocations_cache_path),
+			config.licensing.public_keys_pem,
+			Date.now(),
+			sources ? { raw: sources.revocations } : undefined,
+		);
+		revokedEntitlementSerials = revocations?.payload.revocations.entitlement_serials ?? [];
+		if (
+			revocations &&
+			state.entitlement?.schema_version === 2 &&
+			revocations.payload.revocations.entitlement_serials.includes(state.entitlement.serial)
+		) {
+			throw new Error("Provisioned detector entitlement was revoked");
+		}
+		if (sources?.revocations) {
+			try {
+				const issuedAt = Date.parse(JSON.parse(sources.revocations).payload?.issued_at);
+				if (
+					issuedAt > Date.now() &&
+					(await loadRevocationsCache(
+						resolvePath(config.licensing.revocations_cache_path),
+						config.licensing.public_keys_pem,
+						issuedAt,
+						{ raw: sources.revocations },
+					))
+				)
+					nextRevocationTransitionMs = issuedAt;
+			} catch {
+				/* An unusable feed never grants authority. */
+			}
+		}
+	}
 	validatePolicyTrust(config, state, installed.signed, installed.rawPayload);
 	validateFeedKeyring(installed.signed.payload.reputation_feed);
-	return detectorContext(installed.signed.payload);
+	const entitlement = state.entitlement;
+	return {
+		...installed,
+		state,
+		revokedEntitlementSerials,
+		validFromMs: Math.max(
+			Date.parse(installed.signed.payload.issued_at),
+			Date.parse(entitlement?.issued_at ?? ""),
+		),
+		validUntilMs: Math.min(
+			nextRevocationTransitionMs,
+			Date.parse(installed.signed.payload.expires_at),
+			entitlement?.schema_version === 2 ? Date.parse(entitlement.grace_until) : 0,
+		),
+	};
 }

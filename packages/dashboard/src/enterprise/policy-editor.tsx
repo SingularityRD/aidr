@@ -18,13 +18,15 @@ interface PolicyRule {
 	name: string;
 	condition: {
 		mcp_server?: string;
-		mcp_tool?: string;
+		mcp_tool?: string | { server: string; tool: string };
 	};
 	action: "allow" | "deny" | "ask";
 	priority: number;
 }
 
 const POLICY_ACTIONS = ["allow", "deny", "ask"] as const;
+const MCP_ID = /^[A-Za-z0-9][A-Za-z0-9._:/_-]{0,255}$/;
+const LEGACY_TOOL = /^[A-Za-z0-9][A-Za-z0-9_:/-]{0,255}\.[A-Za-z0-9][A-Za-z0-9_:/-]{0,255}$/;
 
 const DEFAULT_POLICY: PolicyDocument = {
 	version: "1.0",
@@ -350,8 +352,19 @@ export function validateDocument(yaml: string): { ok: true; document: PolicyDocu
 		const unsupportedCondition = unsupportedKey(condition, ["mcp_server", "mcp_tool"]);
 		if (unsupportedCondition) return { ok: false, message: `Rule ${index + 1} condition has unsupported field: ${unsupportedCondition}.` };
 		if (Number(condition.mcp_server !== undefined) + Number(condition.mcp_tool !== undefined) !== 1) return { ok: false, message: `Rule ${index + 1} condition must contain exactly one of mcp_server or mcp_tool.` };
-		if (condition.mcp_server !== undefined && (typeof condition.mcp_server !== "string" || !/^[a-z0-9][a-z0-9._-]{0,79}$/.test(condition.mcp_server))) return { ok: false, message: `Rule ${index + 1} mcp_server must be a lowercase server id.` };
-		if (condition.mcp_tool !== undefined && (typeof condition.mcp_tool !== "string" || !/^[a-z0-9][a-z0-9._-]{0,79}\.[a-z0-9][a-z0-9_.-]{0,159}$/.test(condition.mcp_tool))) return { ok: false, message: `Rule ${index + 1} mcp_tool must use lowercase server.tool format.` };
+		if (condition.mcp_server !== undefined && (typeof condition.mcp_server !== "string" || !MCP_ID.test(condition.mcp_server))) return { ok: false, message: `Rule ${index + 1} mcp_server must be an MCP identifier of 1 to 256 characters.` };
+		if (condition.mcp_tool !== undefined) {
+			const tool = condition.mcp_tool;
+			if (typeof tool === "string") {
+				if (!LEGACY_TOOL.test(tool)) return { ok: false, message: `Rule ${index + 1} mcp_tool must use server.tool with no dots inside either name; use a server/tool mapping for dotted names.` };
+			} else {
+				if (!tool || typeof tool !== "object" || Array.isArray(tool)) return { ok: false, message: `Rule ${index + 1} mcp_tool must be a server.tool selector or a server/tool mapping.` };
+				const identity = tool as Record<string, unknown>;
+				const unsupportedToolField = unsupportedKey(identity, ["server", "tool"]);
+				if (unsupportedToolField) return { ok: false, message: `Rule ${index + 1} mcp_tool has unsupported field: ${unsupportedToolField}.` };
+				if (typeof identity.server !== "string" || !MCP_ID.test(identity.server) || typeof identity.tool !== "string" || !MCP_ID.test(identity.tool)) return { ok: false, message: `Rule ${index + 1} mcp_tool server and tool must be MCP identifiers of 1 to 256 characters.` };
+			}
+		}
 		if (!Number.isInteger(candidate.priority) || Number(candidate.priority) < 0 || Number(candidate.priority) > 1_000) return { ok: false, message: `Rule ${index + 1} priority must be an integer from 0 to 1000.` };
 	}
 
@@ -831,7 +844,7 @@ export function PolicyEditor() {
 						/>
 					</label>
 					<p className="muted small">
-						Supported rule selectors are exact <span className="mono">mcp_server</span> and <span className="mono">mcp_tool</span> values. Category defaults support command, file, url, package and output. Conflicts use priority first, then deny &gt; ask &gt; allow.
+						Supported rule selectors are exact, case-sensitive <span className="mono">mcp_server</span> and <span className="mono">mcp_tool</span> values. Use a server/tool mapping for dotted MCP names. Category defaults support command, file, url, package and output. Conflicts use priority first, then deny &gt; ask &gt; allow.
 					</p>
 					<div className="row" style={{ justifyContent: "space-between" }}>
 						<span className={`pill ${isValid ? "" : "notice-danger"}`}>
@@ -890,7 +903,7 @@ export function PolicyEditor() {
 									<div className="muted small" style={{ marginTop: "6px" }}>
 										Priority: {rule.priority}
 										{rule.condition.mcp_server && ` • MCP server: ${rule.condition.mcp_server}`}
-										{rule.condition.mcp_tool && ` • MCP tool: ${rule.condition.mcp_tool}`}
+										{rule.condition.mcp_tool && ` • MCP tool: ${typeof rule.condition.mcp_tool === "string" ? rule.condition.mcp_tool : JSON.stringify([rule.condition.mcp_tool.server, rule.condition.mcp_tool.tool])}`}
 									</div>
 								</div>
 							))}

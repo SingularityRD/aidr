@@ -26,7 +26,7 @@ describe("VS Code Local managed hook configuration", () => {
 		vscodeMocks.getConfiguration.mockReturnValue({ get: () => process.execPath });
 	});
 
-	it("registers Local editFiles with the canonical Edit adapter matcher", async () => {
+	it("inspects every Local tool including editFiles and MCP tools", async () => {
 		const context = { asAbsolutePath: (relativePath: string) => relativePath };
 		const health = await installManagedHooks({ context: context as never, scope: "user" });
 		const settings = JSON.parse(await readFile(health.configPath, "utf8")) as {
@@ -36,7 +36,7 @@ describe("VS Code Local managed hook configuration", () => {
 		};
 
 		expect(settings.hooks.PreToolUse).toContainEqual(
-			expect.objectContaining({ matcher: "Bash|WebFetch|Write|Edit|Read|Delete|editFiles" }),
+			expect.objectContaining({ matcher: "*" }),
 		);
 		expect(health.installedEvents).toContain("PreToolUse");
 	});

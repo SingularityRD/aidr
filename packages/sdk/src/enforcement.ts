@@ -26,6 +26,7 @@
  */
 
 import type { CheckResult } from "./config.js";
+import { CheckResultSchema } from "./config.js";
 
 /**
  * Caller-supplied human-approval callback.
@@ -88,7 +89,11 @@ export function isIndeterminate(result: CheckResult): boolean {
  * to authorize execution regardless of which field a caller happens to read.
  */
 export function isInconsistent(result: CheckResult): boolean {
-	return result.allowed !== (result.decision === "allow");
+	return (
+		!CheckResultSchema.safeParse(result).success ||
+		result.allowed !== (result.decision === "allow") ||
+		(result.decision === "allow" && isIndeterminate(result))
+	);
 }
 
 /**
@@ -101,6 +106,9 @@ export async function enforceCheckResult(
 	result: CheckResult,
 	options: EnforcementOptions = {},
 ): Promise<EnforcementOutcome> {
+	if (!CheckResultSchema.safeParse(result).success) {
+		return { execute: false, block: "indeterminate", message: INCONSISTENT_MESSAGE };
+	}
 	if (isInconsistent(result)) {
 		return {
 			execute: false,

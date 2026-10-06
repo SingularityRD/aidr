@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "scope": "statically embedded cryptography OpenSSL; separate from17 system-libpq ldd paths",
+  "cryptography_version": "50.0.2",
+  "openssl_backend_version": "OpenSSL 4.0.3 29 Sep 2026",
+  "module_path": "/usr/local/lib/python3.12/site-packages/cryptography/hazmat/bindings/_rust.abi3.so",
+  "module_sha256": "1e5d23fa66915204b9b67202a46993844d81cda56f6ad52cead2def37617ee29",
+  "ldd": "\tlinux-vdso.so.1 (0x00007e7df45a9000)\n\tlibgcc_s.so.1 => /lib/x86_64-linux-gnu/libgcc_s.so.1 (0x00007e7df3a63000)\n\tlibc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007e7df386f000)\n\t/lib64/ld-linux-x86-64.so.2 (0x00007e7df45ab000)\n",
+  "primary_changelog": "https://cryptography.io/en/latest/changelog/#v50-0-2",
+  "app_crypto_use": "configured generic PEM public-key parse followed by RSA restriction and PKCS1v1.5/SHA256 verification; no demonstrated TLS, X509, DTLS,QUIC,CMP,SM2 application use"
+}

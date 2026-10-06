@@ -49,7 +49,7 @@ done
 
 fail() { echo "AIDR fleet: $*" >&2; exit 1; }
 require_file() { [ -f "$1" ] || fail "required file missing: $1"; }
-safe_user() { printf '%s' "$1" | grep -Eq '^[A-Za-z0-9._-]+$' || fail "unsafe user name"; }
+safe_user() { printf '%s' "$1" | grep -Eq '^[A-Za-z0-9_][A-Za-z0-9._-]*$' || fail "unsafe user name"; }
 state_key() { printf '%s' "$1" | od -An -tx1 | tr -d ' \n'; }
 safe_system_root() {
 	case "$1" in /*) ;; *) fail "system roots must be absolute paths" ;; esac
@@ -114,7 +114,9 @@ verify_artifact() {
 	entries=$(tar -tzf "$ARTIFACT" | wc -l | tr -d ' '); [ "$entries" -le 5000 ] || fail "artifact exceeds the 5000-entry limit"
 	# Reject absolute/traversing names and links before extracting the archive.
 	tar -tzf "$ARTIFACT" | awk 'BEGIN{bad=0} /\\/{bad=1} /^\//{bad=1} {n=split($0,a,"/"); for(i=1;i<=n;i++) if(a[i]=="..") bad=1} END{exit bad}' || fail "unsafe archive path"
-	LC_ALL=C tar -tvzf "$ARTIFACT" | awk 'BEGIN{total=0;bad=0} {type=substr($1,1,1); if(type!="-" && type!="d"){bad=1;exit 1} if(type=="d") next; size=$3; if(size!~/^[0-9]+$/){bad=1;exit 1} total+=size; if(total>536870912){bad=1;exit 1}} END{if(bad || NR==0 || total>536870912) exit 1}' || fail "archive entries must be regular files/directories and fit within the 512 MiB expanded limit"
+	# GNU tar lists owner/group in field 2; BSD tar lists a link count there
+	# and separate owner/group fields. Both must enforce the same size limit.
+	LC_ALL=C tar -tvzf "$ARTIFACT" | awk 'BEGIN{total=0;bad=0} {type=substr($1,1,1); if(type!="-" && type!="d"){bad=1;exit 1} if(type=="d") next; size=($2~/^[0-9]+$/ ? $5 : $3); if(size!~/^[0-9]+$/){bad=1;exit 1} total+=size; if(total>536870912){bad=1;exit 1}} END{if(bad || NR==0 || total>536870912) exit 1}' || fail "archive entries must be regular files/directories and fit within the 512 MiB expanded limit"
 	printf '%s\n' "$actual"
 }
 
@@ -123,7 +125,7 @@ resolve_identity() {
 	[ -n "$TARGET_USER" ] || fail "--user is required"
 	safe_user "$TARGET_USER"
 	if [ -z "$TARGET_HOME" ]; then
-		if [ "$PLATFORM" = macos ]; then TARGET_HOME=$(dscl . -read "/Users/$TARGET_USER" NFSHomeDirectory 2>/dev/null | awk '{print $2}')
+		if [ "$PLATFORM" = macos ]; then TARGET_HOME=$(dscl . -read "/Users/$TARGET_USER" NFSHomeDirectory 2>/dev/null | sed -n 's/^NFSHomeDirectory: //p')
 		else TARGET_HOME=$(getent passwd "$TARGET_USER" | awk -F: '{print $6}'); fi
 	fi
 	[ -n "$TARGET_HOME" ] && [ -d "$TARGET_HOME" ] || fail "target user home does not exist"

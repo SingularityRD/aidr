@@ -1,0 +1,217 @@
+{
+  "schema_version": 1,
+  "recorded_at_utc": "2026-10-06T10:20:48.376525+00:00",
+  "purpose": "Canonical license metadata reconciled to the exact selected wheels and the final Alpine bridge image.",
+  "status": "ACTUAL_WHEEL_AND_INSTALLED_BYTE_EQUALITY_VERIFIED_LEGAL_OPEN",
+  "image_id": "sha256:dd8993b9abaed977cc6d6a123a39388f188ba86d83552b140935773005b3d195",
+  "canonical_file": "services/aig-bridge/pypi-runtime-licenses.json",
+  "canonical_sha256": "7f21cc59f321dac9a13865d1639f9cda20f092aea4a4cfb1f89de02a00645e4f",
+  "runtime_lock_sha256": "af4cf84b33c07df728ddb2e8b9a0f10c1d4f8f309295cc18bf808b8377a5c598",
+  "historical_canonical_sha256": "9f6f7181f22b34114c99ac3eaec3bcc5a2775d3c0c3f1a357f4f1fa182241855",
+  "existing_tools_used": [
+    {
+      "file": "scripts/extract-pypi-license-metadata.py",
+      "sha256": "f0e2aab132ee6f4527a1bc4f661a36e867494720aa9c02f46f4d9517582a733d"
+    },
+    {
+      "file": "scripts/archive-pypi-license-materials.py",
+      "sha256": "7551e4480aed8d7f4df651edea577f00ddb23a668730fa3dc810c11b26ddf370"
+    }
+  ],
+  "selection": {
+    "source": "../loader-build.log exact filenames",
+    "official_pypi_and_lock_sha256_verified_wheels": 30
+  },
+  "image_equality_counts": {
+    "packages": 30,
+    "metadata_byte_matches": 60,
+    "license_byte_matches": 36,
+    "license_bytes": 112633,
+    "native_byte_matches": 12,
+    "native_bytes": 37156590,
+    "bundled_native_byte_matches": 3
+  },
+  "canonical_platform_changes": [
+    {
+      "name": "cffi",
+      "version": "2.1.1",
+      "prior_wheel": "cffi-2.1.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "selected_wheel": "cffi-2.1.1-cp312-cp312-musllinux_1_2_x86_64.whl",
+      "license_files_equal": true,
+      "bundled_native_prior": [],
+      "bundled_native_selected": []
+    },
+    {
+      "name": "cryptography",
+      "version": "50.0.2",
+      "prior_wheel": "cryptography-50.0.2-cp311-abi3-manylinux_2_34_x86_64.whl",
+      "selected_wheel": "cryptography-50.0.2-cp311-abi3-musllinux_1_2_x86_64.whl",
+      "license_files_equal": true,
+      "bundled_native_prior": [],
+      "bundled_native_selected": [
+        "cryptography.libs/libgcc_s-0cd532bd.so.1"
+      ]
+    },
+    {
+      "name": "httptools",
+      "version": "0.8.0",
+      "prior_wheel": "httptools-0.8.0-cp312-cp312-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl",
+      "selected_wheel": "httptools-0.8.0-cp312-cp312-musllinux_1_2_x86_64.whl",
+      "license_files_equal": true,
+      "bundled_native_prior": [],
+      "bundled_native_selected": []
+    },
+    {
+      "name": "pydantic-core",
+      "version": "2.27.2",
+      "prior_wheel": "pydantic_core-2.27.2-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+      "selected_wheel": "pydantic_core-2.27.2-cp312-cp312-musllinux_1_1_x86_64.whl",
+      "license_files_equal": true,
+      "bundled_native_prior": [],
+      "bundled_native_selected": [
+        "pydantic_core.libs/libgcc_s-1e52349c.so.1"
+      ]
+    },
+    {
+      "name": "pyyaml",
+      "version": "6.0.2",
+      "prior_wheel": "PyYAML-6.0.2-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+      "selected_wheel": "PyYAML-6.0.2-cp312-cp312-musllinux_1_1_x86_64.whl",
+      "license_files_equal": true,
+      "bundled_native_prior": [],
+      "bundled_native_selected": []
+    },
+    {
+      "name": "uvloop",
+      "version": "0.22.1",
+      "prior_wheel": "uvloop-0.22.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+      "selected_wheel": "uvloop-0.22.1-cp312-cp312-musllinux_1_2_x86_64.whl",
+      "license_files_equal": true,
+      "bundled_native_prior": [],
+      "bundled_native_selected": []
+    },
+    {
+      "name": "watchfiles",
+      "version": "1.3.0",
+      "prior_wheel": "watchfiles-1.3.0-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+      "selected_wheel": "watchfiles-1.3.0-cp310-abi3-musllinux_1_1_x86_64.whl",
+      "license_files_equal": true,
+      "bundled_native_prior": [],
+      "bundled_native_selected": [
+        "watchfiles.libs/libgcc_s-f685abf1.so.1"
+      ]
+    },
+    {
+      "name": "websockets",
+      "version": "17.1",
+      "prior_wheel": "websockets-17.1-cp312-cp312-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl",
+      "selected_wheel": "websockets-17.1-cp312-cp312-musllinux_1_2_x86_64.whl",
+      "license_files_equal": true,
+      "bundled_native_prior": [],
+      "bundled_native_selected": []
+    }
+  ],
+  "archive": {
+    "schema_version": 1,
+    "purpose": "Exact selected musllinux and universal wheel license-text review supplement.",
+    "package_count": 30,
+    "license_text_count": 36,
+    "bundled_native_byte_inventory_count": 3,
+    "archive_file_count": 40,
+    "archive_file": "wheel-license-materials.zip",
+    "archive_bytes": 87640,
+    "archive_sha256": "b8e08d598f4f557a2a12f79c5c3fb34b6a50bac355ad954bab7828c96e16ad9a",
+    "inventory_sha256": "1536c342e0099d6c9dc17ad2687a5bf8e319d640f3111748fec4630a775728de",
+    "validation": "PASS: all license text hashes and every ZIP entry equal their source bytes.",
+    "acceptance": "OPEN_REVIEW_INPUT_NOT_ACCEPTED; no Legal, source-offer, binary security or release GO."
+  },
+  "open_bundled_native_reviews": [
+    {
+      "package": "cryptography",
+      "package_version": "50.0.2",
+      "path": "cryptography.libs/libgcc_s-0cd532bd.so.1",
+      "sha256": "42b5f2c8ca13e5e173d837f5117a04b6c042437548112bde7879251ae8dcff8f",
+      "bytes": 183337,
+      "elf_class": 2,
+      "elf_machine": 62,
+      "embedded_version_indicators": [],
+      "exact_source_version": "unknown",
+      "independent_license_terms": "unknown",
+      "review_status": "open"
+    },
+    {
+      "package": "pydantic-core",
+      "package_version": "2.27.2",
+      "path": "pydantic_core.libs/libgcc_s-1e52349c.so.1",
+      "sha256": "0278b4bbf5bfb41f044ac15e3cee03da69f696b8162e1c85770e91113c414d83",
+      "bytes": 437537,
+      "elf_class": 2,
+      "elf_machine": 62,
+      "embedded_version_indicators": [],
+      "exact_source_version": "unknown",
+      "independent_license_terms": "unknown",
+      "review_status": "open"
+    },
+    {
+      "package": "watchfiles",
+      "package_version": "1.3.0",
+      "path": "watchfiles.libs/libgcc_s-f685abf1.so.1",
+      "sha256": "91a43de5877248a317d14faa35490ef474a1b33a83e235b52fb1eabf7108108e",
+      "bytes": 538513,
+      "elf_class": 2,
+      "elf_machine": 62,
+      "embedded_version_indicators": [],
+      "exact_source_version": "unknown",
+      "independent_license_terms": "unknown",
+      "review_status": "open"
+    }
+  ],
+  "bindings": [
+    {
+      "file": "download-receipt.json",
+      "sha256": "359b7adf646fdbbf68e47cd0c27c65bf8661d6772f16bd8112bf0001445e63c0",
+      "bytes": 24291
+    },
+    {
+      "file": "historical-manylinux-pypi-runtime-licenses.json",
+      "sha256": "9f6f7181f22b34114c99ac3eaec3bcc5a2775d3c0c3f1a357f4f1fa182241855",
+      "bytes": 21881
+    },
+    {
+      "file": "proposed-pypi-runtime-licenses.json",
+      "sha256": "7f21cc59f321dac9a13865d1639f9cda20f092aea4a4cfb1f89de02a00645e4f",
+      "bytes": 21841
+    },
+    {
+      "file": "canonical-platform-differences.json",
+      "sha256": "93d21ef7b60b2ceec759af283547ae443393b53218946578513dc3aff5d9f098",
+      "bytes": 2933
+    },
+    {
+      "file": "archive-receipt.json",
+      "sha256": "87d56fbedf5f872d078d04abdd8222509c3c625236f063b1ef35633dfdb16534",
+      "bytes": 710
+    },
+    {
+      "file": "wheel-license-materials.zip",
+      "sha256": "b8e08d598f4f557a2a12f79c5c3fb34b6a50bac355ad954bab7828c96e16ad9a",
+      "bytes": 87640
+    },
+    {
+      "file": "native/wheel-installed-byte-equality.json",
+      "sha256": "3b15de1ff84f4aa005ccf014c1773b52a58f405544de572dc82ff5dca16e9107",
+      "bytes": 37569
+    },
+    {
+      "file": "native/native-runtime-wheel-files.json",
+      "sha256": "0264865e128626ff5da0451df01ca0dd260e33f95bd307499e6f79a4c301f0ea",
+      "bytes": 58127
+    }
+  ],
+  "limitations": [
+    "All 30 pinned versions are unchanged; canonical metadata changes eight wheel filenames/hashes and records three bundled GCC runtime libraries.",
+    "All 36 dist-info license texts match the historical manylinux evidence, but this does not independently establish terms or exact corresponding source for the three newly recorded libgcc payloads.",
+    "Legal, corresponding-source/source-offer review, security clearance for opaque bundled libraries, customer acceptance, and release GO remain OPEN; no waiver is created.",
+    "No global installation, package code execution/import, application source edit, image rebuild or exposed port was used by this evidence task."
+  ]
+}

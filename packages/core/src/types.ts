@@ -282,6 +282,8 @@ export const ControlPlaneConfigSchema = z.object({
 	remote_policy_cache_enabled: z.boolean().default(true),
 	/** Enrolled endpoints must retain central controls or block when unavailable. */
 	remote_policy_required: z.boolean().default(false),
+	/** An operator-installed response worker must retain its authenticated control state. */
+	response_worker_required: z.boolean().default(false),
 	/** Maximum stale-policy grace after its normal refresh expiry; never renewed offline. */
 	remote_policy_offline_grace_seconds: z.number().int().min(0).max(604800).default(3600),
 });
@@ -530,7 +532,7 @@ export const UrlCheckConfigSchema = z.object({
 });
 
 const EncryptionConfigSchema = z.object({
-	/** Enable transparent encryption of cache and audit files. */
+	/** Legacy host-bound cache encoding; use an OS vault/disk encryption against local attackers. */
 	enabled: z.boolean().default(false),
 });
 
@@ -622,6 +624,11 @@ export const ConfigSchema = z.object({
 	mode: OperatingModeSchema.default("local"),
 	auth: AuthConfigSchema.default({}),
 	control_plane: ControlPlaneConfigSchema.default({}),
+	/** Explicit mandatory privacy profile; ordinary tool hooks do not own model transport. */
+	privacy: z
+		.object({ required: z.boolean().default(false) })
+		.strict()
+		.optional(),
 	policy: PolicyConfigSchema.default({}),
 	intel: IntelConfigSchema.default({}),
 	intel_packs: IntelPacksConfigSchema.default({}),

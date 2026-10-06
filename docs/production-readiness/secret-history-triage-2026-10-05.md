@@ -1,6 +1,21 @@
 # Secret-history triage (AIDR-070 / FCR-05) — 5 October 2026
 
-**Decision: no live secret identified; gate stays OPEN until a security owner signs the two owner-confirm items and re-runs the scan with the pinned official gitleaks on the exact release candidate.** This supersedes the numbers in [`secret-history-triage-2026-09-23.md`](./secret-history-triage-2026-09-23.md) (see "Why the counts differ"). It is an engineering triage, not an attestation that no credential was ever exposed.
+**Decision: gate stays OPEN.** The official pinned scanner refresh below found 132 historical detections, including the same two owner-confirm items. A named security owner must review them and bind the final full-clone scan to the exact release candidate. Neither the earlier engineering triage nor this refresh establishes that no credential was ever exposed.
+
+## Official scanner refresh — current checkout
+
+- Source tip: `7f3ec0ad009abf5b032b8116b296d8604fee884e` on `master`; non-shallow clone, 793 reachable commits across all refs. Current uncommitted fixes do not change Git history.
+- Official Gitleaks **8.30.1**, executable SHA-256 `17157e2ee8b76fc8b1d8bee607a250e34b8a8023c8bc81822d4b5ee4d78fcb7c`, downloaded from the official release and verified before execution. The old Go-installed executable embeds **8.24.2**; the old ledger is not the same scanner run.
+- `pnpm verify:secrets:current`: canary/regression tests 5/5; the latest current-checkout scan passed across 8026 tracked or non-ignored files. No suppressions were added in this work.
+- `node scripts/scan-history-secrets.mjs` with the pinned executable and `--all --no-textconv`: completed with exit 1, **132 detections, 52 commits, 66 paths**. Fully redacted report SHA-256: `3bbe08432fd67f7b4c5f8bf4c6707dcf207cb4efdef9ffb008699b87ebb98bff`. The report remains outside the repository; the counts-only run log is `.tmp-test/production-hardening-2026-10-05/secrets-history-pinned.log`.
+- 131 detections match the old ledger by rule/path/line/commit metadata: 129 previously classified false positives and the same 2 owner-confirm rows. The one unmatched detection is `policy-signature.test.ts:263` at the tip commit. Its historical bytes were checked: deliberately invalid decoded text, not a valid PKCS8 key; the test asserts HTTP 503. The current test now constructs that invalid fixture from readable text and its 18 tests pass. This classification follows the fixture's actual bytes and rejection behavior, not its test-directory location.
+- The refreshed engineering dispositions therefore comprise **130 false-positive/invalid-fixture detections and 2 owner-confirm detections**. Metadata matching is not a fresh value-level review or Security-owner approval. Different default-rule versions and reachable history prevent attributing the reduction from 184 to remediation. Preserve the old 184-row ledger as historical evidence.
+
+The final gate still needs the browser-guard dataset-key owner's answer, Security review, any required provider-side rotation evidence, and a scan on the clean exact release candidate. No Git history was rewritten and no finding was bypassed.
+
+## Earlier engineering triage — historical 184-row record
+
+The following record superseded [`secret-history-triage-2026-09-23.md`](./secret-history-triage-2026-09-23.md) for its own source graph and tool. Its counts are preserved for traceability, not presented as the current pinned run.
 
 No secret value appears in this document, in the ledger, or in any log produced by this work. Reports were written fully redacted outside the repository; the per-finding ledger records only rule, path, line, commit, length and an 8-hex-character SHA-256 fingerprint (used to dedupe, not to recover a value).
 

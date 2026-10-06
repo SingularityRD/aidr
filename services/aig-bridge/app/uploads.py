@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import os
-import shutil
+import re
 import stat
 import tarfile
 import tempfile
@@ -40,10 +40,9 @@ except ValueError:
 def content_addressed_path(root: str | Path, tenant_id: str, digest: str) -> Path:
     if len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest.lower()):
         raise ValueError("invalid SHA-256 digest")
-    safe_tenant = "".join(char for char in tenant_id if char.isalnum() or char in "._:-")
-    if not safe_tenant or safe_tenant != tenant_id:
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", tenant_id):
         raise ValueError("invalid tenant identifier")
-    return Path(root).resolve(strict=False) / safe_tenant / digest.lower()
+    return Path(root).resolve(strict=False) / tenant_id / digest.lower()
 
 
 def store_upload(
@@ -53,7 +52,8 @@ def store_upload(
     tenant_id: str,
     expected_sha256: Optional[str] = None,
     max_bytes: int = MAX_UPLOAD_BYTES,
-) -> tuple[Path, str, int]:
+    require_archive: bool = False,
+) -> tuple[Path, str, int, dict[str, int | str]]:
     """Stream an upload into a tenant-scoped SHA-256 object."""
 
     root_path = Path(root).resolve(strict=False)
@@ -75,13 +75,22 @@ def store_upload(
         calculated = digest.hexdigest()
         if expected_sha256 and expected_sha256.lower() != calculated:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="upload digest mismatch")
+        # Validate before publishing: scan requests must never see an archive
+        # that is still awaiting safety checks.
+        archive = validate_archive(temporary.name)
+        if require_archive and archive["kind"] not in {"zip", "tar.gz"}:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="source uploads must be ZIP or tar.gz archives")
         target = content_addressed_path(root_path, tenant_id, calculated)
+        if target.parent.is_symlink() or target.is_symlink():
+            raise ValueError("upload path may not be a symlink")
         target.parent.mkdir(parents=True, exist_ok=True)
         if target.exists():
+            if not target.is_file():
+                raise ValueError("upload object must be a regular file")
             Path(temporary.name).unlink(missing_ok=True)
         else:
-            shutil.move(temporary.name, target)
-        return target, calculated, size
+            os.replace(temporary.name, target)
+        return target, calculated, size, archive
     except Exception:
         Path(temporary.name).unlink(missing_ok=True)
         raise
@@ -108,32 +117,38 @@ def validate_archive(path: str | Path) -> dict[str, int | str]:
                 if entries > MAX_ARCHIVE_ENTRIES:
                     raise ValueError("archive entry limit exceeded")
                 for info in infos:
-                    if not _safe_member(info.filename) or info.is_dir():
-                        if not _safe_member(info.filename):
-                            raise ValueError("archive path traversal")
-                        continue
+                    if not _safe_member(info.filename):
+                        raise ValueError("archive path traversal")
                     mode = (info.external_attr >> 16) & 0xFFFF
-                    if mode and (stat.S_ISLNK(mode) or not stat.S_ISREG(mode)):
+                    file_type = stat.S_IFMT(mode)
+                    if file_type not in {0, stat.S_IFREG, stat.S_IFDIR} or (file_type == stat.S_IFDIR and not info.is_dir()):
                         raise ValueError("archive contains unsafe member")
+                    if info.is_dir():
+                        continue
                     total += int(info.file_size)
                     if total > MAX_ARCHIVE_UNCOMPRESSED:
                         raise ValueError("archive expanded size limit exceeded")
                     if info.compress_size and info.file_size / info.compress_size > MAX_COMPRESSION_RATIO:
                         raise ValueError("archive compression ratio limit exceeded")
+                if archive.testzip() is not None:
+                    raise ValueError("archive member checksum mismatch")
         elif tarfile.is_tarfile(source):
-            kind = "tar"
+            with source.open("rb") as stream:
+                kind = "tar.gz" if stream.read(2) == b"\x1f\x8b" else "tar"
             with tarfile.open(source, "r:*") as archive:
                 for member in archive:
                     entries += 1
                     if entries > MAX_ARCHIVE_ENTRIES:
                         raise ValueError("archive entry limit exceeded")
-                    if not _safe_member(member.name) or member.issym() or member.islnk() or not member.isfile():
+                    if not _safe_member(member.name) or not (member.isfile() or member.isdir()):
                         raise ValueError("archive contains unsafe member")
+                    if member.isdir():
+                        continue
                     total += int(member.size)
                     if total > MAX_ARCHIVE_UNCOMPRESSED:
                         raise ValueError("archive expanded size limit exceeded")
         else:
             return {"kind": kind, "entries": 0, "uncompressed_bytes": source.stat().st_size}
-    except (OSError, EOFError, tarfile.TarError, zipfile.BadZipFile, ValueError) as exc:
+    except (OSError, EOFError, RuntimeError, tarfile.TarError, zipfile.BadZipFile, ValueError) as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="unsafe or corrupt archive") from exc
     return {"kind": kind, "entries": entries, "uncompressed_bytes": total}

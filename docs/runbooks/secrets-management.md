@@ -113,9 +113,30 @@ credential in plaintext.
 Older installations created before vault-backed storage may still have an
 unmarked inline `apiKey`; rerunning `aidr setup` currently reuses that file rather
 than migrating it. Treat that credential as plaintext until it has been rotated
-or migrated deliberately. The macOS Keychain adapter passes the value as an
-argument to the native `security` command because that command has no pipe-based
-write interface; same-user processes may briefly observe it in the process list.
+or migrated deliberately. The macOS Keychain adapter writes one command through
+`/usr/bin/security -q -i` standard input. Process arguments contain no credential.
+New records store marked base64 UTF-8, preserving Unicode, PEM newlines and NUL
+bytes; invalid UTF-8 and oversized inputs fail before invoking the native tool.
+The complete ASCII command is limited to **4094 bytes before its single LF and
+EOF**. With valid reference IDs of 1–128 characters, the maximum credential is
+**2805–2994 UTF-8 bytes**, depending on ID length. There is no truncation or file
+fallback when this limit is exceeded.
+
+New writes atomically update the password, fixed format marker and versioned
+label under the original service/account identity. The marked read uses
+service/label/marker filters: Apple's finder ignores non-primary attributes when
+both service and account are supplied. Missing marked records retain the legacy
+raw ASCII lookup; malformed marked records fail without that fallback. A second
+marked lookup handles migration during a legacy read. Serialize migration and
+revocation of the same reference: separate native queries cannot establish a
+stable legacy format if the item is migrated and deleted between those queries.
+AIDR credential rotation uses fresh references. Do not run old and new writers
+concurrently, or manually create duplicate versioned labels and markers: the OS
+vault does not authenticate against its own authorized owner.
+The native protocol and its line ceiling follow Apple's
+[interactive command reader](https://github.com/apple-oss-distributions/Security/blob/main/SecurityTool/macOS/security.c),
+[line buffer](https://github.com/apple-oss-distributions/Security/blob/main/SecurityTool/macOS/readline.c)
+and [Keychain attribute lookup](https://github.com/apple-oss-distributions/Security/blob/main/SecurityTool/macOS/keychain_find.c).
 The injected-runner tests verify command construction, not real macOS Keychain
 access. On uninstall, AIDR removes its verified hooks only and deliberately keeps
 the local configuration and vault item; run `aidr config revoke-key` separately

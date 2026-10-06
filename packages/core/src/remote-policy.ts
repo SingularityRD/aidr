@@ -1,10 +1,14 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { ControlPlaneClient } from "./clients/control-plane.js";
 import { resolvePath } from "./config.js";
 import { loadRevocationsCache } from "./managed.js";
-import { type PolicyHighWater, policyBodySequence, verifySignedPolicy } from "./policy-signature.js";
+import {
+	type PolicyHighWater,
+	policyBodySequence,
+	verifySignedPolicy,
+} from "./policy-signature.js";
 import type { Config, Logger } from "./types.js";
 import { ConfigSchema, nullLogger } from "./types.js";
 
@@ -33,12 +37,17 @@ type CachedPolicy = {
 	expiresAt: number;
 	cachedAt: number;
 	body: Record<string, unknown>;
+	authorityRejected?: true;
 };
 
 let cachedPolicy: CachedPolicy | null = null;
 
 class RemoteRuntimePolicyUnavailableError extends Error {
-	constructor() { super("Required central policy is unavailable or its offline grace has expired. Restore connectivity or contact the policy administrator."); }
+	constructor() {
+		super(
+			"Required central policy is unavailable or its offline grace has expired. Restore connectivity or contact the policy administrator.",
+		);
+	}
 }
 
 /** Opaque revision label: integer (Supabase) or an identifier such as `pol_20260506101000` (web control plane). */
@@ -52,9 +61,12 @@ function validMcpToolSelector(value: unknown): boolean {
 	if (value.length > 519 || !value.startsWith("[")) return false;
 	try {
 		const pair: unknown = JSON.parse(value);
-		return Array.isArray(pair) && pair.length === 2 &&
+		return (
+			Array.isArray(pair) &&
+			pair.length === 2 &&
 			pair.every((part) => typeof part === "string" && MCP_ID.test(part)) &&
-			JSON.stringify(pair) === value;
+			JSON.stringify(pair) === value
+		);
 	} catch {
 		return false;
 	}
@@ -71,21 +83,38 @@ function validRuntimePolicy(body: Record<string, unknown> | undefined): boolean 
 	const policy = getRuntimePolicy(body);
 	if (!policy) return false;
 	const modes = new Set([
-		"command_default", "file_default", "url_default", "package_default", "output_default",
-		"mcp_default", "mcp_unknown", "mcp_risky",
+		"command_default",
+		"file_default",
+		"url_default",
+		"package_default",
+		"output_default",
+		"mcp_default",
+		"mcp_unknown",
+		"mcp_risky",
 	]);
-	const serverLists = new Set(["mcp_allow_servers", "mcp_require_approval_servers", "mcp_deny_servers"]);
+	const serverLists = new Set([
+		"mcp_allow_servers",
+		"mcp_require_approval_servers",
+		"mcp_deny_servers",
+	]);
 	const toolLists = new Set(["mcp_allow_tools", "mcp_require_approval_tools", "mcp_deny_tools"]);
 	const entries = Object.entries(policy);
-	return entries.length > 0 && entries.every(([key, value]) => {
-		if (modes.has(key)) return typeof value === "string" && ["allow", "ask", "deny"].includes(value);
-		if (serverLists.has(key))
-			return Array.isArray(value) && value.length <= 200 &&
-				value.every((item) => typeof item === "string" && MCP_ID.test(item));
-		if (toolLists.has(key))
-			return Array.isArray(value) && value.length <= 200 && value.every(validMcpToolSelector);
-		return false;
-	});
+	return (
+		entries.length > 0 &&
+		entries.every(([key, value]) => {
+			if (modes.has(key))
+				return typeof value === "string" && ["allow", "ask", "deny"].includes(value);
+			if (serverLists.has(key))
+				return (
+					Array.isArray(value) &&
+					value.length <= 200 &&
+					value.every((item) => typeof item === "string" && MCP_ID.test(item))
+				);
+			if (toolLists.has(key))
+				return Array.isArray(value) && value.length <= 200 && value.every(validMcpToolSelector);
+			return false;
+		})
+	);
 }
 
 type PersistedRemotePolicyCache = {
@@ -97,6 +126,7 @@ type PersistedRemotePolicyCache = {
 	cached_at: string;
 	expires_at: string;
 	body: Record<string, unknown>;
+	authority_rejected?: true;
 };
 
 type RemoteRuntimePolicyCacheSource =
@@ -143,8 +173,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function canonicalPolicy(value: unknown): string {
 	if (Array.isArray(value)) return `[${value.map(canonicalPolicy).join(",")}]`;
 	if (isRecord(value)) {
-		return `{${Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
-			.map(([key, item]) => `${JSON.stringify(key)}:${canonicalPolicy(item)}`).join(",")}}`;
+		return `{${Object.entries(value)
+			.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+			.map(([key, item]) => `${JSON.stringify(key)}:${canonicalPolicy(item)}`)
+			.join(",")}}`;
 	}
 	return JSON.stringify(value) ?? "null";
 }
@@ -153,7 +185,9 @@ function verifiedPolicySha256(body: Record<string, unknown> | undefined): string
 	const policy = getRuntimePolicy(body);
 	const digest = body?.policy_sha256;
 	if (!policy || typeof digest !== "string" || !/^[a-f0-9]{64}$/.test(digest)) return null;
-	return createHash("sha256").update(canonicalPolicy(policy)).digest("hex") === digest ? digest : null;
+	return createHash("sha256").update(canonicalPolicy(policy)).digest("hex") === digest
+		? digest
+		: null;
 }
 
 /**
@@ -166,12 +200,16 @@ type PolicyTrust = { keys: string[]; revoked: ReadonlySet<string> };
 
 async function loadPolicyTrust(config: Config): Promise<PolicyTrust> {
 	const licensingKeys = config.licensing.public_keys_pem;
-	const keys = (config.control_plane.policy_public_keys_pem?.length ?? 0) > 0
-		? (config.control_plane.policy_public_keys_pem ?? [])
-		: licensingKeys;
+	const keys =
+		(config.control_plane.policy_public_keys_pem?.length ?? 0) > 0
+			? (config.control_plane.policy_public_keys_pem ?? [])
+			: licensingKeys;
 	const revoked = new Set<string>();
 	if (keys.length > 0 && config.licensing.revocations_enabled && licensingKeys.length > 0) {
-		const signed = await loadRevocationsCache(resolvePath(config.licensing.revocations_cache_path), licensingKeys);
+		const signed = await loadRevocationsCache(
+			resolvePath(config.licensing.revocations_cache_path),
+			licensingKeys,
+		);
 		for (const id of signed?.payload.revocations.key_ids ?? []) revoked.add(id);
 	}
 	return { keys, revoked };
@@ -186,16 +224,29 @@ function policyTrusted(
 	highWater?: PolicyHighWater | null,
 ): boolean {
 	if (trust.keys.length === 0) return true;
-	const result = verifySignedPolicy({ body, publicKeysPem: trust.keys, revokedKeyIds: trust.revoked, now, highWater });
-	if (!result.ok) logger?.warn("Remote runtime policy signature rejected", { reason: result.reason });
+	const result = verifySignedPolicy({
+		body,
+		publicKeysPem: trust.keys,
+		revokedKeyIds: trust.revoked,
+		now,
+		highWater,
+	});
+	if (!result.ok)
+		logger?.warn("Remote runtime policy signature rejected", { reason: result.reason });
 	return result.ok;
 }
 
-async function readPersistedHighWater(config: Config, keyHash: string): Promise<PolicyHighWater | null> {
+async function readPersistedHighWater(
+	config: Config,
+	keyHash: string,
+): Promise<PolicyHighWater | null> {
 	if (!config.control_plane.remote_policy_cache_enabled) return null;
 	try {
-		const parsed = parsePersistedRemotePolicyCache(await readFile(getRemotePolicyCachePath(config), "utf-8"));
-		if (!parsed || parsed.key_hash !== keyHash || parsed.endpoint !== config.control_plane.endpoint) return null;
+		const parsed = parsePersistedRemotePolicyCache(
+			await readFile(getRemotePolicyCachePath(config), "utf-8"),
+		);
+		if (!parsed || parsed.key_hash !== keyHash || parsed.endpoint !== config.control_plane.endpoint)
+			return null;
 		return policyBodySequence(parsed.body);
 	} catch {
 		return null;
@@ -208,10 +259,12 @@ function parsePersistedRemotePolicyCache(raw: string): PersistedRemotePolicyCach
 	if (typeof parsed.key_hash !== "string" || !parsed.key_hash) return null;
 	if (typeof parsed.endpoint !== "string" || !parsed.endpoint) return null;
 	if (typeof parsed.policy_version !== "string") return null;
-	if (typeof parsed.policy_sha256 !== "string" || !/^[a-f0-9]{64}$/.test(parsed.policy_sha256)) return null;
+	if (typeof parsed.policy_sha256 !== "string" || !/^[a-f0-9]{64}$/.test(parsed.policy_sha256))
+		return null;
 	if (typeof parsed.cached_at !== "string") return null;
 	if (typeof parsed.expires_at !== "string") return null;
 	if (!isRecord(parsed.body)) return null;
+	if (parsed.authority_rejected !== undefined && parsed.authority_rejected !== true) return null;
 	return parsed as PersistedRemotePolicyCache;
 }
 
@@ -241,13 +294,33 @@ async function readPersistentPolicyCache(input: {
 	try {
 		const raw = await readFile(getRemotePolicyCachePath(input.config), "utf-8");
 		const parsed = parsePersistedRemotePolicyCache(raw);
-		if (!parsed) return null;
-		if (parsed.key_hash !== input.keyHash || parsed.endpoint !== input.config.control_plane.endpoint) return null;
-		if (parsed.policy_version !== getPolicyVersion(parsed.body) || parsed.policy_sha256 !== parsed.body.policy_sha256 || verifiedPolicySha256(parsed.body) !== parsed.policy_sha256) return null;
+		if (!parsed || parsed.authority_rejected) return null;
+		if (
+			parsed.key_hash !== input.keyHash ||
+			parsed.endpoint !== input.config.control_plane.endpoint
+		)
+			return null;
+		if (
+			parsed.policy_version !== getPolicyVersion(parsed.body) ||
+			parsed.policy_sha256 !== parsed.body.policy_sha256 ||
+			verifiedPolicySha256(parsed.body) !== parsed.policy_sha256
+		)
+			return null;
 		const expiresAt = Date.parse(parsed.expires_at);
 		const cachedAt = Date.parse(parsed.cached_at);
-		if (!Number.isFinite(expiresAt) || !Number.isFinite(cachedAt) || cachedAt > input.now + 5000 || expiresAt < cachedAt || expiresAt > cachedAt + 300000) return null;
-		if (!validRuntimePolicy(parsed.body) || (input.config.control_plane.remote_policy_required && !validRequiredPolicy(parsed.body))) return null;
+		if (
+			!Number.isFinite(expiresAt) ||
+			!Number.isFinite(cachedAt) ||
+			cachedAt > input.now + 5000 ||
+			expiresAt < cachedAt ||
+			expiresAt > cachedAt + 300000
+		)
+			return null;
+		if (
+			!validRuntimePolicy(parsed.body) ||
+			(input.config.control_plane.remote_policy_required && !validRequiredPolicy(parsed.body))
+		)
+			return null;
 		if (!policyTrusted(parsed.body, input.trust, input.now, input.logger)) return null;
 		return parsed;
 	} catch (error) {
@@ -263,6 +336,7 @@ async function writePersistentPolicyCache(input: {
 	expiresAt: number;
 	now: number;
 	logger: Logger;
+	authorityRejected?: true;
 }): Promise<void> {
 	if (!input.config.control_plane.remote_policy_cache_enabled) return;
 	try {
@@ -277,9 +351,13 @@ async function writePersistentPolicyCache(input: {
 			cached_at: new Date(input.now).toISOString(),
 			expires_at: new Date(input.expiresAt).toISOString(),
 			body: getPersistablePolicyBody(input.body),
+			...(input.authorityRejected ? { authority_rejected: true } : {}),
 		};
 		const tmpPath = `${cachePath}.${process.pid}.tmp`;
-		await writeFile(tmpPath, `${JSON.stringify(payload, null, 2)}\n`, { encoding: "utf-8", mode: 0o600 });
+		await writeFile(tmpPath, `${JSON.stringify(payload, null, 2)}\n`, {
+			encoding: "utf-8",
+			mode: 0o600,
+		});
 		await rename(tmpPath, cachePath);
 	} catch (error) {
 		input.logger.debug("Remote runtime policy persistent cache write failed", {
@@ -302,19 +380,39 @@ export async function inspectRemoteRuntimePolicyCache(
 		const trust = await loadPolicyTrust(config);
 		const raw = await readFile(path, "utf-8");
 		const parsed = parsePersistedRemotePolicyCache(raw);
-		if (!parsed || parsed.endpoint !== config.control_plane.endpoint ||
+		if (parsed?.authority_rejected) {
+			return {
+				enabled: true,
+				path,
+				source: "invalid",
+				usable: false,
+				present: true,
+				message:
+					"The control plane rejected this cached authority; a fresh accepted policy is required.",
+			};
+		}
+		if (
+			!parsed ||
+			parsed.endpoint !== config.control_plane.endpoint ||
 			parsed.policy_version !== getPolicyVersion(parsed.body) ||
 			parsed.policy_sha256 !== parsed.body.policy_sha256 ||
 			verifiedPolicySha256(parsed.body) !== parsed.policy_sha256 ||
 			!validRuntimePolicy(parsed.body) ||
 			(config.control_plane.remote_policy_required && !validRequiredPolicy(parsed.body)) ||
-			!policyTrusted(parsed.body, trust, now)) {
+			!policyTrusted(parsed.body, trust, now)
+		) {
 			return { enabled: true, path, source: "invalid", usable: false, present: true };
 		}
 
 		const cachedAt = Date.parse(parsed.cached_at);
 		const expiresAt = Date.parse(parsed.expires_at);
-		if (!Number.isFinite(cachedAt) || !Number.isFinite(expiresAt) || cachedAt > now + 5000 || expiresAt < cachedAt || expiresAt > cachedAt + 300000) {
+		if (
+			!Number.isFinite(cachedAt) ||
+			!Number.isFinite(expiresAt) ||
+			cachedAt > now + 5000 ||
+			expiresAt < cachedAt ||
+			expiresAt > cachedAt + 300000
+		) {
 			return { enabled: true, path, source: "invalid", usable: false, present: true };
 		}
 
@@ -338,13 +436,21 @@ export async function inspectRemoteRuntimePolicyCache(
 		}
 
 		const source = expiresAt > now ? "valid" : "expired";
-		const offlineUntil = expiresAt + config.control_plane.remote_policy_offline_grace_seconds * 1000;
-		const inOfflineGrace = config.control_plane.remote_policy_required && keyMatches === true && validRequiredPolicy(parsed.body) && now < offlineUntil;
+		const offlineUntil =
+			expiresAt + config.control_plane.remote_policy_offline_grace_seconds * 1000;
+		const inOfflineGrace =
+			config.control_plane.remote_policy_required &&
+			keyMatches === true &&
+			validRequiredPolicy(parsed.body) &&
+			now < offlineUntil;
 		return {
 			enabled: true,
 			path,
 			source,
-			usable: (source === "valid" && (!config.control_plane.remote_policy_required || keyMatches === true)) || inOfflineGrace,
+			usable:
+				(source === "valid" &&
+					(!config.control_plane.remote_policy_required || keyMatches === true)) ||
+				inOfflineGrace,
 			present: true,
 			policyVersion: parsed.policy_version,
 			cachedAt: parsed.cached_at,
@@ -352,7 +458,9 @@ export async function inspectRemoteRuntimePolicyCache(
 			ageSeconds: Math.max(0, Math.floor((now - cachedAt) / 1000)),
 			ttlSeconds: Math.max(0, Math.floor((expiresAt - now) / 1000)),
 			keyMatches,
-			...(config.control_plane.remote_policy_required ? { offlineGraceExpiresAt: new Date(offlineUntil).toISOString() } : {}),
+			...(config.control_plane.remote_policy_required
+				? { offlineGraceExpiresAt: new Date(offlineUntil).toISOString() }
+				: {}),
 		};
 	} catch (error) {
 		return {
@@ -470,19 +578,30 @@ export async function syncRemoteRuntimePolicy(
 	logger: Logger = nullLogger,
 	now = Date.now(),
 ): Promise<Config> {
-	if (!config.control_plane.enabled) return config;
 	const trimmedToken = token.trim();
-	if (!trimmedToken) return config;
+	if (!config.control_plane.enabled || !trimmedToken) {
+		if (config.control_plane.remote_policy_required)
+			throw new RemoteRuntimePolicyUnavailableError();
+		return config;
+	}
 
 	const cacheKey = `${config.control_plane.endpoint}|${trimmedToken}`;
 	const keyHash = cacheKeyHash(config.control_plane.endpoint, trimmedToken);
 	const trust = await loadPolicyTrust(config);
-	if (cachedPolicy && cachedPolicy.key === cacheKey && cachedPolicy.expiresAt > now && cachedPolicy.cachedAt <= now + 5000) {
-		if (cachedPolicy.policySha256 === cachedPolicy.body.policy_sha256 &&
+	if (
+		cachedPolicy &&
+		!cachedPolicy.authorityRejected &&
+		cachedPolicy.key === cacheKey &&
+		cachedPolicy.expiresAt > now &&
+		cachedPolicy.cachedAt <= now + 5000
+	) {
+		if (
+			cachedPolicy.policySha256 === cachedPolicy.body.policy_sha256 &&
 			verifiedPolicySha256(cachedPolicy.body) === cachedPolicy.policySha256 &&
 			validRuntimePolicy(cachedPolicy.body) &&
 			policyTrusted(cachedPolicy.body, trust, now) &&
-			(!config.control_plane.remote_policy_required || validRequiredPolicy(cachedPolicy.body))) {
+			(!config.control_plane.remote_policy_required || validRequiredPolicy(cachedPolicy.body))
+		) {
 			return applyRemoteRuntimePolicy(config, cachedPolicy.body);
 		}
 	}
@@ -498,11 +617,29 @@ export async function syncRemoteRuntimePolicy(
 		};
 		return applyRemoteRuntimePolicy(config, persisted.body);
 	}
-	const stale = persisted ? { key: cacheKey, body: persisted.body, expiresAt: Date.parse(persisted.expires_at), cachedAt: Date.parse(persisted.cached_at) } : cachedPolicy?.key === cacheKey ? cachedPolicy : null;
+	const stale = persisted
+		? {
+				key: cacheKey,
+				body: persisted.body,
+				expiresAt: Date.parse(persisted.expires_at),
+				cachedAt: Date.parse(persisted.cached_at),
+			}
+		: cachedPolicy?.key === cacheKey && !cachedPolicy.authorityRejected
+			? cachedPolicy
+			: null;
 	const unavailable = (allowStale: boolean): Config => {
 		if (!config.control_plane.remote_policy_required) return config;
-		if (allowStale && stale && validRequiredPolicy(stale.body) && policyTrusted(stale.body, trust, now, logger) && stale.cachedAt <= now + 5000 && now < stale.expiresAt + config.control_plane.remote_policy_offline_grace_seconds * 1000) {
-			logger.warn("Using last-known central policy within its fixed offline grace", { policyVersion: getPolicyVersion(stale.body) });
+		if (
+			allowStale &&
+			stale &&
+			validRequiredPolicy(stale.body) &&
+			policyTrusted(stale.body, trust, now, logger) &&
+			stale.cachedAt <= now + 5000 &&
+			now < stale.expiresAt + config.control_plane.remote_policy_offline_grace_seconds * 1000
+		) {
+			logger.warn("Using last-known central policy within its fixed offline grace", {
+				policyVersion: getPolicyVersion(stale.body),
+			});
 			return applyRemoteRuntimePolicy(config, stale.body);
 		}
 		throw new RemoteRuntimePolicyUnavailableError();
@@ -511,7 +648,40 @@ export async function syncRemoteRuntimePolicy(
 	try {
 		const client = new ControlPlaneClient(config.control_plane, trimmedToken, logger);
 		const result = await client.fetchRuntimePolicy();
-		if (!result.ok) return unavailable(result.status === undefined || result.status === 408 || result.status === 429 || result.status >= 500);
+		if (!result.ok) {
+			const retryable =
+				result.status === undefined ||
+				result.status === 408 ||
+				result.status === 429 ||
+				result.status >= 500;
+			if (!retryable) {
+				// An observed authority rejection also invalidates offline use on later
+				// calls. Otherwise the next outage could resurrect the denied grant.
+				// Retain the signed envelope's sequence while preventing offline use.
+				// Deleting it would erase the rollback boundary after authentication recovers.
+				if (cachedPolicy?.key === cacheKey) cachedPolicy.authorityRejected = true;
+				if (config.control_plane.remote_policy_cache_enabled) {
+					const previous = await readFile(getRemotePolicyCachePath(config), "utf-8")
+						.then(parsePersistedRemotePolicyCache)
+						.catch(() => null);
+					if (
+						previous?.key_hash === keyHash &&
+						previous.endpoint === config.control_plane.endpoint
+					) {
+						await writePersistentPolicyCache({
+							config,
+							keyHash,
+							body: previous.body,
+							expiresAt: Date.parse(previous.expires_at),
+							now: Date.parse(previous.cached_at),
+							logger,
+							authorityRejected: true,
+						});
+					}
+				}
+			}
+			return unavailable(retryable);
+		}
 		const body = result.body ?? {};
 		const policySha256 = verifiedPolicySha256(body);
 		if (!policySha256) {
@@ -522,13 +692,17 @@ export async function syncRemoteRuntimePolicy(
 			logger.warn("Remote runtime policy does not match the supported policy contract");
 			return unavailable(false);
 		}
-		if (config.control_plane.remote_policy_required && !validRequiredPolicy(body)) return unavailable(false);
+		if (config.control_plane.remote_policy_required && !validRequiredPolicy(body))
+			return unavailable(false);
 		if (trust.keys.length > 0) {
 			// Highest sequence this endpoint/token has already accepted (memory or disk): refuse rollback/replay.
 			const known = [
 				cachedPolicy?.key === cacheKey ? policyBodySequence(cachedPolicy.body) : null,
 				await readPersistedHighWater(config, keyHash),
-			].reduce<PolicyHighWater | null>((best, item) => (item && (!best || item.sequence > best.sequence) ? item : best), null);
+			].reduce<PolicyHighWater | null>(
+				(best, item) => (item && (!best || item.sequence > best.sequence) ? item : best),
+				null,
+			);
 			if (!policyTrusted(body, trust, now, logger, known)) return unavailable(false);
 		}
 		const nextConfig = applyRemoteRuntimePolicy(config, body);
@@ -552,7 +726,11 @@ export async function syncRemoteRuntimePolicy(
 			now,
 			logger,
 		});
-		if (body.agent_bound === true && Number.isSafeInteger(Number(body.policy_version)) && Number(body.policy_version) > 0) {
+		if (
+			body.agent_bound === true &&
+			Number.isSafeInteger(Number(body.policy_version)) &&
+			Number(body.policy_version) > 0
+		) {
 			await client.acknowledgeRuntimePolicy(Number(body.policy_version), policySha256);
 		}
 		return nextConfig;

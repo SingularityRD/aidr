@@ -1,0 +1,7 @@
+{
+  "sourceId": "REPLACE_ACTUAL_APPROVED_SOURCE_ID",
+  "generation": 1,
+  "root": "/srv/REPLACE_AUTHORIZED_TEXT_SOURCE",
+  "groups": ["REPLACE_ACTUAL_DOCUMENT_READER_GROUP_ID"],
+  "classification": "restricted"
+}

@@ -2,6 +2,7 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from "react"
 import { useTeam } from "../../enterprise/team-provider";
 import { readErrorMessage } from "../../lib/errors";
 import { supabase } from "../../lib/supabase";
+import { SamlPolicyPanel } from "./SamlPolicyPanel";
 
 type ScimRole = "admin" | "member" | "viewer";
 type ScimToken = {
@@ -203,7 +204,7 @@ function validGroupId(value: string): boolean {
 }
 
 export function ScimPage() {
-	const { currentTeam, currentRole } = useTeam();
+	const { currentTeam, currentRole, currentUserId } = useTeam();
 	if (!currentTeam)
 		return <div className="card">Select a tenant to manage directory provisioning.</div>;
 	return (
@@ -212,6 +213,7 @@ export function ScimPage() {
 			tenantId={currentTeam.tenant_id}
 			teamName={currentTeam.name}
 			isOwner={currentRole === "owner"}
+			currentUserId={currentUserId}
 		/>
 	);
 }
@@ -220,10 +222,12 @@ function TenantScimPage({
 	tenantId,
 	teamName,
 	isOwner,
+	currentUserId,
 }: {
 	tenantId: string;
 	teamName: string;
 	isOwner: boolean;
+	currentUserId: string;
 }) {
 	const [tokens, setTokens] = useState<ScimToken[]>([]);
 	const [mappings, setMappings] = useState<GroupMapping[]>([]);
@@ -458,10 +462,12 @@ function TenantScimPage({
 					on every request.
 				</p>
 				<p className="muted small">
-					SCIM provisioning does not enable SSO enforcement. Keep required SAML provider policy off
-					until the separately documented dual-owner cutover and rollback procedure is complete.
+					SCIM provisions users and roles. SAML sign-in enforcement is managed separately below,
+					with approval from two owners.
 				</p>
 			</header>
+
+			<SamlPolicyPanel key={currentUserId} tenantId={tenantId} currentUserId={currentUserId} />
 
 			{error ? (
 				<div className="notice notice-danger" role="alert" aria-live="assertive">

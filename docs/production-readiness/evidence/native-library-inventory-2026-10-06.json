@@ -1,0 +1,321 @@
+{
+  "schema": "aidr.historical-native-byte-inventory.v1",
+  "status": "HISTORICAL_NOT_CURRENT_RELEASE_ACCEPTANCE",
+  "source_lock_sha256": "e0b423c8014a33e47f730b2fcdcdfb95b77fd9a6915604c4f889980e98f9094b",
+  "wheel": "psycopg_binary-3.2.10-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+  "wheel_sha256": "14bcbcac0cab465d88b2581e43ec01af4b01c9833e663f1352e05cb41be19e44",
+  "native_libraries": [
+    {
+      "path": "psycopg_binary.libs/libcom_err-2abe824b.so.2.1",
+      "sha256": "5426dcb54dd01c9eedda05e2179f0e47114e8b48a534ffe9e94916e79471b257",
+      "bytes": 17497,
+      "elf_class": 2,
+      "elf_machine": 62,
+      "embedded_version_indicators": [],
+      "exact_source_version": "unknown",
+      "independent_license_terms": "unknown",
+      "review_status": "open",
+      "source_family_reference": "com_err (source origin not attested)",
+      "version_reference": "unknown",
+      "primary_material_file": "e2fsprogs-1.42.9-com_err.c",
+      "primary_material_scope": "Review input only; not exact binary provenance or Legal approval"
+    },
+    {
+      "path": "psycopg_binary.libs/libcrypto-d18e4b18.so.3",
+      "sha256": "a665db00cc7af51b41157bd9d92d6d09706b146732dc486e9ce875bbbc659014",
+      "bytes": 6477577,
+      "elf_class": 2,
+      "elf_machine": 62,
+      "embedded_version_indicators": [
+        "OpenSSL 3.5.0 8 Apr 2025"
+      ],
+      "exact_source_version": "unknown",
+      "independent_license_terms": "unknown",
+      "review_status": "open",
+      "source_family_reference": "OpenSSL",
+      "version_reference": "3.5.0 embedded indicator / build intent",
+      "primary_material_file": "openssl-3.5.0-LICENSE.txt",
+      "primary_material_scope": "Review input only; not exact binary provenance or Legal approval"
+    },
+    {
+      "path": "psycopg_binary.libs/libgssapi_krb5-497db0c6.so.2.2",
+      "sha256": "2a74b0330ee973281b26f8ebe4acef0ebf9ee99c6b68497cf9151fff6c4c34e1",
+      "bytes": 345209,
+      "elf_class": 2,
+      "elf_machine": 62,
+      "embedded_version_indicators": [],
+      "exact_source_version": "unknown",
+      "independent_license_terms": "unknown",
+      "review_status": "open",
+      "source_family_reference": "MIT Kerberos (inferred from native name)",
+      "version_reference": "unknown",
+      "primary_material_file": "krb5-1.15.1-NOTICE",
+      "primary_material_scope": "Review input only; not exact binary provenance or Legal approval"
+    },
+    {
+      "path": "psycopg_binary.libs/libk5crypto-b1f99d5c.so.3.1",
+      "sha256": "9844e5009e70a6ad2fb22b587306810fe2a7b1b9f6b9922daa1c78ba3466de27",
+      "bytes": 219953,
+      "elf_class": 2,
+      "elf_machine": 62,
+      "embedded_version_indicators": [],
+      "exact_source_version": "unknown",
+      "independent_license_terms": "unknown",
+      "review_status": "open",
+      "source_family_reference": "MIT Kerberos (inferred from native name)",
+      "version_reference": "unknown",
+      "primary_material_file": "krb5-1.15.1-NOTICE",
+      "primary_material_scope": "Review input only; not exact binary provenance or Legal approval"
+    },
+    {
+      "path": "psycopg_binary.libs/libkeyutils-dfe70bd6.so.1.5",
+      "sha256": "c29e41b03cf4b2dffbfb4960946e2b42f82c0ca5d53d231d3f0fc597ba274488",
+      "bytes": 17913,
+      "elf_class": 2,
+      "elf_machine": 62,
+      "embedded_version_indicators": [],
+      "exact_source_version": "unknown",
+      "independent_license_terms": "unknown",
+      "review_status": "open",
+      "source_family_reference": "keyutils",
+      "version_reference": "unknown",
+      "primary_material_file": null,
+      "primary_material_scope": "Review input only; not exact binary provenance or Legal approval"
+    },
+    {
+      "path": "psycopg_binary.libs/libkrb5-fcafa220.so.3.3",
+      "sha256": "b2aab528ff4cab2144e5ce01b246ac09f574a072a53ff63ea81d6bb29b26b8f1",
+      "bytes": 1018953,
+      "elf_class": 2,
+      "elf_machine": 62,
+      "embedded_version_indicators": [],
+      "exact_source_version": "unknown",
+      "independent_license_terms": "unknown",
+      "review_status": "open",
+      "source_family_reference": "MIT Kerberos (inferred from native name)",
+      "version_reference": "unknown",
+      "primary_material_file": "krb5-1.15.1-NOTICE",
+      "primary_material_scope": "Review input only; not exact binary provenance or Legal approval"
+    },
+    {
+      "path": "psycopg_binary.libs/libkrb5support-d0bcff84.so.0.1",
+      "sha256": "6a71f57d748fef79b4e736d5348875545d0a224fa8928b5d62a3cf2647fc109f",
+      "bytes": 76873,
+      "elf_class": 2,
+      "elf_machine": 62,
+      "embedded_version_indicators": [],
+      "exact_source_version": "unknown",
+      "independent_license_terms": "unknown",
+      "review_status": "open",
+      "source_family_reference": "MIT Kerberos (inferred from native name)",
+      "version_reference": "unknown",
+      "primary_material_file": "krb5-1.15.1-NOTICE",
+      "primary_material_scope": "Review input only; not exact binary provenance or Legal approval"
+    },
+    {
+      "path": "psycopg_binary.libs/liblber-b2a4ca0f.so.2.0.200",
+      "sha256": "ad745fc72766e5b0bf0cf834f5f943e584bede5d6310dadee26793b7c23d52e9",
+      "bytes": 60977,
+      "elf_class": 2,
+      "elf_machine": 62,
+      "embedded_version_indicators": [],
+      "exact_source_version": "unknown",
+      "independent_license_terms": "unknown",
+      "review_status": "open",
+      "source_family_reference": "OpenLDAP",
+      "version_reference": "2.6.9 tagged build intent only",
+      "primary_material_file": "openldap-2.6.9-LICENSE",
+      "primary_material_scope": "Review input only; not exact binary provenance or Legal approval"
+    },
+    {
+      "path": "psycopg_binary.libs/libldap-7ba8ecde.so.2.0.200",
+      "sha256": "19161ced35bd7218ef273fe130291f2c4a1fef0a430baa9380aa54eb6f229e5b",
+      "bytes": 451425,
+      "elf_class": 2,
+      "elf_machine": 62,
+      "embedded_version_indicators": [],
+      "exact_source_version": "unknown",
+      "independent_license_terms": "unknown",
+      "review_status": "open",
+      "source_family_reference": "OpenLDAP",
+      "version_reference": "2.6.9 tagged build intent only",
+      "primary_material_file": "openldap-2.6.9-LICENSE",
+      "primary_material_scope": "Review input only; not exact binary provenance or Legal approval"
+    },
+    {
+      "path": "psycopg_binary.libs/libpcre-9513aab5.so.1.2.0",
+      "sha256": "02eda850e04931656d8af81f5171bff74d8bec1553d3d85c3d32d7fc5efe8864",
+      "bytes": 406817,
+      "elf_class": 2,
+      "elf_machine": 62,
+      "embedded_version_indicators": [
+        "8.32 2012-11-30"
+      ],
+      "exact_source_version": "unknown",
+      "independent_license_terms": "unknown",
+      "review_status": "open",
+      "source_family_reference": "Original PCRE",
+      "version_reference": "8.32 embedded indicator; exact distro patches unknown",
+      "primary_material_file": "pcre-original-LICENCE",
+      "primary_material_scope": "Review input only; not exact binary provenance or Legal approval"
+    },
+    {
+      "path": "psycopg_binary.libs/libpq-6a0c3ecd.so.5.17",
+      "sha256": "ad092cd9ab53bfb1fe8e132fad9540f218293330450af2b0faef6908304e59b7",
+      "bytes": 387497,
+      "elf_class": 2,
+      "elf_machine": 62,
+      "embedded_version_indicators": [],
+      "exact_source_version": "unknown",
+      "independent_license_terms": "unknown",
+      "review_status": "open",
+      "source_family_reference": "PostgreSQL libpq",
+      "version_reference": "17.5 tagged build intent only",
+      "primary_material_file": "postgres-17.5-COPYRIGHT",
+      "primary_material_scope": "Review input only; not exact binary provenance or Legal approval"
+    },
+    {
+      "path": "psycopg_binary.libs/libsasl2-883649fd.so.3.0.0",
+      "sha256": "182f02d5e474db227cda83abac7413d431d487c6c01afd0cd741e140cedc0f3a",
+      "bytes": 119217,
+      "elf_class": 2,
+      "elf_machine": 62,
+      "embedded_version_indicators": [],
+      "exact_source_version": "unknown",
+      "independent_license_terms": "unknown",
+      "review_status": "open",
+      "source_family_reference": "Cyrus SASL",
+      "version_reference": "2.1.28 tagged build intent only",
+      "primary_material_file": "cyrus-sasl-2.1.28-COPYING",
+      "primary_material_scope": "Review input only; not exact binary provenance or Legal approval"
+    },
+    {
+      "path": "psycopg_binary.libs/libselinux-0922c95c.so.1",
+      "sha256": "d4fa8e7fb3add960a68325a59c9694244aea3213fd739a50815cb067c4965654",
+      "bytes": 178337,
+      "elf_class": 2,
+      "elf_machine": 62,
+      "embedded_version_indicators": [],
+      "exact_source_version": "unknown",
+      "independent_license_terms": "unknown",
+      "review_status": "open",
+      "source_family_reference": "libselinux",
+      "version_reference": "unknown",
+      "primary_material_file": "libselinux-upstream-LICENSE",
+      "primary_material_scope": "Review input only; not exact binary provenance or Legal approval"
+    },
+    {
+      "path": "psycopg_binary.libs/libssl-c434c5f0.so.3",
+      "sha256": "696c5a58e377808719e0a250a0f737e109c78d0236a34ddafd92cbd600d9c97b",
+      "bytes": 1134929,
+      "elf_class": 2,
+      "elf_machine": 62,
+      "embedded_version_indicators": [],
+      "exact_source_version": "unknown",
+      "independent_license_terms": "unknown",
+      "review_status": "open",
+      "source_family_reference": "OpenSSL",
+      "version_reference": "3.5.0 embedded indicator / build intent",
+      "primary_material_file": "openssl-3.5.0-LICENSE.txt",
+      "primary_material_scope": "Review input only; not exact binary provenance or Legal approval"
+    }
+  ],
+  "primary_materials": [
+    {
+      "file": "psycopg-build-libpq.sh",
+      "source_url": "https://raw.githubusercontent.com/psycopg/psycopg/3.2.10/tools/build/build_libpq.sh",
+      "scope": "tagged build intent only",
+      "downloaded": true,
+      "sha256": "f4104819f97642cd498094e37785dc4e721a47329c870bca862553d2876ff66d",
+      "bytes": 7246
+    },
+    {
+      "file": "psycopg-packages-bin.yml",
+      "source_url": "https://raw.githubusercontent.com/psycopg/psycopg/3.2.10/.github/workflows/packages-bin.yml",
+      "scope": "tagged build intent only",
+      "downloaded": true,
+      "sha256": "b833c64884ae005a66c335772c47ffe4770f8912bed8a36edf1eee8c7916f3a7",
+      "bytes": 8898
+    },
+    {
+      "file": "postgres-17.5-COPYRIGHT",
+      "source_url": "https://raw.githubusercontent.com/postgres/postgres/REL_17_5/COPYRIGHT",
+      "scope": "tagged libpq build intent; exact binary source attestation absent",
+      "downloaded": true,
+      "sha256": "e3822c4797fadcab31a3fc73f75c28ac20c73d72b565da91e9974cf9398ef4d2",
+      "bytes": 1192
+    },
+    {
+      "file": "openssl-3.5.0-LICENSE.txt",
+      "source_url": "https://raw.githubusercontent.com/openssl/openssl/openssl-3.5.0/LICENSE.txt",
+      "scope": "tag matches embedded libcrypto version indicator; no publisher source attestation",
+      "downloaded": true,
+      "sha256": "7d5450cb2d142651b8afa315b5f238efc805dad827d91ba367d8516bc9d49e7a",
+      "bytes": 10175
+    },
+    {
+      "file": "cyrus-sasl-2.1.28-COPYING",
+      "source_url": "https://raw.githubusercontent.com/cyrusimap/cyrus-sasl/cyrus-sasl-2.1.28/COPYING",
+      "scope": "tagged build intent only",
+      "downloaded": true,
+      "sha256": "9d6e5d1632140a6c135b251260953650d17d87cd1124f87aaf72192aa4580d4b",
+      "bytes": 1861
+    },
+    {
+      "file": "openldap-2.6.9-LICENSE",
+      "source_url": "https://raw.githubusercontent.com/openldap/openldap/OPENLDAP_REL_ENG_2_6_9/LICENSE",
+      "scope": "tagged build intent only",
+      "downloaded": true,
+      "sha256": "310fe25c858a9515fc8c8d7d1f24a67c9496f84a91e0a0e41ea9975b1371e569",
+      "bytes": 2214
+    },
+    {
+      "file": "openldap-2.6.9-COPYRIGHT",
+      "source_url": "https://raw.githubusercontent.com/openldap/openldap/OPENLDAP_REL_ENG_2_6_9/COPYRIGHT",
+      "scope": "tagged build intent only",
+      "downloaded": true,
+      "sha256": "128ecc86259c874aee293aa67409932d7eeb38f3fad07805c8f275c3a5af5c08",
+      "bytes": 2345
+    },
+    {
+      "file": "krb5-1.15.1-NOTICE",
+      "source_url": "https://raw.githubusercontent.com/krb5/krb5/krb5-1.15.1-final/NOTICE",
+      "scope": "reference version only; exact CentOS RPM build/version unknown",
+      "downloaded": true,
+      "sha256": "f83512c49bc8cbc44ca6b8783e989a03b4051508b30563b3f9d7956eefae9151",
+      "bytes": 61301
+    },
+    {
+      "file": "libselinux-upstream-LICENSE",
+      "source_url": "https://raw.githubusercontent.com/SELinuxProject/selinux/master/libselinux/LICENSE",
+      "scope": "upstream reference only; exact CentOS RPM build/version unknown",
+      "downloaded": true,
+      "sha256": "86657b4c0fe868d7cbd977cb04c63b6c667e08fa51595a7bc846ad4bed8fc364",
+      "bytes": 1034
+    },
+    {
+      "file": "pcre-original-LICENCE",
+      "source_url": "https://www.pcre.org/original/license.txt",
+      "scope": "official original-PCRE terms reference; this text covers later release/copyright years and is not a matched 8.32 source archive",
+      "downloaded": true,
+      "sha256": "51b3dea44f63338b84b9c97b3d793826a8397309068cf9379a423216ab8ea5b2",
+      "bytes": 3190
+    },
+    {
+      "file": "e2fsprogs-1.42.9-com_err.c",
+      "source_url": "https://raw.githubusercontent.com/tytso/e2fsprogs/v1.42.9/lib/et/com_err.c",
+      "scope": "MIT com_err source reference only; actual library source origin and RPM version unknown",
+      "downloaded": true,
+      "sha256": "873d31d80fa2f930d13b3fb600159663d54861af0abb937c1b879b74e11db0ab",
+      "bytes": 2377
+    }
+  ],
+  "limitations": [
+    "Exact publisher build/source provenance for all 14 native binaries",
+    "Exact CentOS system RPM origins/patches/versions and their complete notices/source obligations",
+    "Matching PCRE8.32 source notices (official current original-PCRE text is reference only)",
+    "keyutils exact package source/licence text and version; official kernel.org download timed out",
+    "Current native security clearance; OpenSSL3.5.0/PCRE8.32 old wheel is being replaced in source",
+    "Legal obligations/distribution approval and current candidate/image notice binding"
+  ]
+}

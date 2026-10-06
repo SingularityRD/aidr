@@ -209,6 +209,7 @@ export const RELEASE_PACKAGES = [
 		display: "@singularityrd/aidr-mcp-gateway",
 		runs: [
 			{ id: "gateway bounded usage", kind: "bin", bin: "aidr-mcp-gateway", args: [], expect: "gateway-usage" },
+			{ id: "signed gateway factory and tamper boundary", kind: "gateway-signed-import", entry: { exports: "." }, format: "esm", expected: { createMcpGateway: "function" } },
 		],
 	},
 ];
@@ -818,8 +819,7 @@ function checkDeclaredArtifact(artifact, packageDir, files) {
 	if (!isWithin(resolved, packageDir)) return { code: "DECLARED_PATH_ESCAPES_PACKAGE", detail: `${artifact.field} → ${artifact.target} escapes the package` };
 	if (artifact.kind === "files") {
 		if (hasGlob(raw)) {
-			const matcher = globToRegExp(raw);
-			if (!files.some((file) => matcher.test(file))) return { code: "MISSING_FILES_ENTRY", detail: `files entry "${artifact.target}" matches nothing in the tarball` };
+			if (!files.some((file) => path.posix.matchesGlob(file, raw))) return { code: "MISSING_FILES_ENTRY", detail: `files entry "${artifact.target}" matches nothing in the tarball` };
 			return null;
 		}
 		if (!existsSync(resolved)) return { code: "MISSING_FILES_ENTRY", detail: `files entry "${artifact.target}" is not shipped` };
@@ -1127,6 +1127,7 @@ export async function verifyPackageInstall({ spec, workspace, options, available
 	try {
 		if (spec.key === "packages/codex") artifactTrust = provisionArtifactTrust({ packageDir, home, options });
 		if (spec.key === "packages/openclaw") artifactTrust = provisionArtifactTrust({ packageDir, home, options });
+		if (spec.key === "packages/mcp-gateway") artifactTrust = provisionArtifactTrust({ packageDir, home, options });
 	} catch (error) {
 		artifactTrust = { signed: true, error: formatError(error) };
 	}
@@ -1169,6 +1170,7 @@ export async function verifyPackageInstall({ spec, workspace, options, available
 		installed: install.ok,
 		installError: install.ok ? undefined : install.error,
 		exercisePlugin: artifactTrust.signed && !artifactTrust.error,
+		artifactTrust,
 		spec,
 	};
 	const result = await verifyExtractedPackage({
@@ -1234,7 +1236,7 @@ function probeLifecycleDependencies({ install, dependencies, environment }) {
 export function buildRuns(spec) {
 	const runs = [...(spec.runs ?? [])];
 	const coveredBins = new Set(runs.filter((run) => run.kind === "bin").map((run) => run.bin));
-	const coveredExports = new Set(runs.filter((run) => run.kind === "import" && run.entry?.exports).map((run) => run.entry.exports));
+	const coveredExports = new Set(runs.filter((run) => ["import", "gateway-signed-import"].includes(run.kind) && run.entry?.exports).map((run) => run.entry.exports));
 	const packageDir = path.join(repoRoot, spec.key);
 	if (!isDirectory(packageDir)) return runs;
 	const pkg = manifestOf(spec);
@@ -1271,6 +1273,8 @@ export async function defaultRunner(run, context) {
 			return runBin(run, context);
 		case "codex-signed-bin":
 			return runCodexSignedBin(run, context);
+		case "gateway-signed-import":
+			return runGatewaySignedImport(run, context);
 		case "json":
 			return runJson(run, context);
 		case "static-html":
@@ -1488,6 +1492,70 @@ function runCodexSignedBin(run, context) {
 	if (resourceTamperProblem) return { status: FAIL, detail: resourceTamperProblem };
 
 	return { status: PASS };
+}
+
+function runGatewaySignedImport(run, context) {
+	const entry = resolveEntry(run, context);
+	if (entry.error) return { status: FAIL, detail: entry.error };
+	if (!context.installed || !isWithin(safeRealpath(context.packageRoot), safeRealpath(path.join(context.consumerRoot, "node_modules")))) {
+		return { status: FAIL, detail: `${run.id}: a disposable installed package is required` };
+	}
+	if (!isFile(entry.file)) return { status: FAIL, detail: `declared target ${entry.target} is missing` };
+	const manifestPath = path.join(context.packageRoot, "dist", "aidr-artifact.manifest.json");
+	const signaturePath = path.join(context.packageRoot, "dist", "aidr-artifact.manifest.sig");
+	const configPath = path.join(context.home, ".singularity-aidr", "config.json");
+	if (!isFile(manifestPath)) return { status: FAIL, detail: `${run.id}: installed commercial manifest is missing` };
+	const installedRoot = safeRealpath(context.packageRoot);
+	for (const target of [entry.file, manifestPath, signaturePath, path.dirname(signaturePath)]) {
+		if (!isWithin(safeRealpath(target), installedRoot)) return { status: FAIL, detail: `${run.id}: integrity target escapes the disposable installed package` };
+	}
+	for (const target of [configPath, path.dirname(configPath)]) {
+		if (!isWithin(safeRealpath(target), safeRealpath(context.home))) return { status: FAIL, detail: `${run.id}: artifact trust target escapes the disposable home` };
+	}
+	if (!isFile(signaturePath)) {
+		if (context.artifactTrust?.signed !== false || context.artifactTrust.error) {
+			return { status: FAIL, detail: `${run.id}: signed candidate's installed signature is missing; refusing to replace it` };
+		}
+		// Only this disposable unsigned installation gets a synthetic signature.
+		// The private key stays in memory; publisher signatures are never replaced.
+		const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+		writeFileSync(signaturePath, `${signBytes(null, readFileSync(manifestPath), privateKey).toString("base64")}\n`, { encoding: "utf8", flag: "wx" });
+		writeArtifactTrustConfig(context.home, publicKey.export({ type: "spki", format: "pem" }).toString());
+	} else if (!context.artifactTrust?.signed || context.artifactTrust.error || !isFile(configPath)) {
+		return { status: FAIL, detail: `${run.id}: signed candidate has no independently provisioned artifact trust key` };
+	}
+	const environment = { ...context.environment, AIDR_COMMERCIAL: "1" };
+	const baseline = runImport(run, { ...context, environment });
+	if (baseline.status !== PASS) return baseline;
+	const trustedConfig = readFileSync(configPath);
+	const originalLibrary = readFileSync(entry.file);
+	const expectDenial = (status, label) => {
+		const source = `try { await import(${JSON.stringify(entry.specifier)}); process.exitCode = 3; }
+catch (error) {
+  if (error?.name !== "ArtifactIntegrityError" || error?.artifactId !== "mcp-gateway/dist" || error?.result?.status !== ${JSON.stringify(status)}) { console.error(error); process.exitCode = 3; }
+  else process.stdout.write("gateway integrity denial\\n");
+}`;
+		const result = runNode(["--input-type=module", "-e", source], { cwd: context.consumerRoot, env: environment });
+		const outcome = interpret(result, label, { assertionExitCode: 3 });
+		if (outcome.status !== PASS) return outcome;
+		return result.stdout === "gateway integrity denial\n" ? { status: PASS } : { status: FAIL, detail: `${label}: explicit integrity denial is missing` };
+	};
+	let libraryReplaced = false;
+	try {
+		const { publicKey } = generateKeyPairSync("ed25519");
+		writeArtifactTrustConfig(context.home, publicKey.export({ type: "spki", format: "pem" }).toString());
+		const wrongTrust = expectDenial("bad_signature", `${run.id} after trust-key tamper`);
+		if (wrongTrust.status !== PASS) return wrongTrust;
+		writeFileSync(configPath, trustedConfig, { mode: 0o600 });
+		// Break a package-manager hard link before altering the disposable copy.
+		rmSync(entry.file);
+		libraryReplaced = true;
+		writeFileSync(entry.file, Buffer.concat([originalLibrary, Buffer.from("\n// package-gate-tamper\n")]));
+		return expectDenial("hash_mismatch", `${run.id} after library tamper`);
+	} finally {
+		writeFileSync(configPath, trustedConfig, { mode: 0o600 });
+		if (libraryReplaced) writeFileSync(entry.file, originalLibrary);
+	}
 }
 
 function codexHealthProblem(result, label) {
@@ -1748,33 +1816,8 @@ export function scopeTarballsTo(spec, packed) {
 	return scoped;
 }
 
-function globToRegExp(pattern) {
-	let source = "^";
-	for (let index = 0; index < pattern.length; index++) {
-		const char = pattern[index];
-		if (char === "*") {
-			if (pattern[index + 1] === "*") {
-				index += 1;
-				if (pattern[index + 1] === "/") {
-					index += 1;
-					source += "(?:.*/)?";
-				} else {
-					source += ".*";
-				}
-			} else {
-				source += "[^/]*";
-			}
-		} else if (char === "?") {
-			source += "[^/]";
-		} else {
-			source += char.replace(/[.+^${}()|[\]\\]/g, "\\$&");
-		}
-	}
-	return new RegExp(`${source}$`);
-}
-
 function hasGlob(value) {
-	return value.includes("*") || value.includes("?");
+	return value.includes("*") || value.includes("?") || value.includes("{");
 }
 
 function safeRealpath(target) {

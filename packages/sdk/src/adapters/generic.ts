@@ -6,15 +6,17 @@
  * with before/after hooks for customization.
  */
 
-import { extractFromUnknownTool } from "@singularityrd/aidr-core";
+import { type AgentRuntime, extractFromUnknownTool } from "@singularityrd/aidr-core";
 import type { AIDRClient } from "../client.js";
 import type { CheckRequest, CheckResult } from "../config.js";
 import { enforceCheckResult, isInconsistent } from "../enforcement.js";
 import {
 	formatToolOutputBlockReason,
+	guardProvisionedToolOutput,
 	guardToolOutput,
 	type ToolOutputGuardOptions,
 } from "../output-guard.js";
+import { assertPrivacyCallbacksAllowed } from "../privacy-text.js";
 
 /**
  * Context passed through the middleware chain
@@ -80,6 +82,11 @@ export interface MiddlewareOptions {
 	metadata?: Record<string, unknown>;
 	/** Inspect the returned tool value before it is delivered to the model. */
 	outputGuard?: ToolOutputGuardOptions;
+	/**
+	 * Fixed local connector profile for signed tenant output DLP. Set by the host
+	 * at middleware construction; never inferred from a tool input or metadata.
+	 */
+	agentRuntime?: AgentRuntime;
 }
 
 /**
@@ -140,15 +147,24 @@ function outputBlockedResult(reason: string): CheckResult {
 async function guardResult(
 	result: unknown,
 	context: MiddlewareContext,
-	verdict: CheckResult,
 	options: MiddlewareOptions,
+	agentRuntime: AgentRuntime | undefined,
 ): Promise<unknown> {
-	const guarded = guardToolOutput(result, options.outputGuard);
+	await assertPrivacyCallbacksAllowed();
+	const guarded =
+		agentRuntime === undefined
+			? guardToolOutput(result, options.outputGuard)
+			: await guardProvisionedToolOutput(result, agentRuntime, options.outputGuard);
+	await assertPrivacyCallbacksAllowed();
 	if (guarded.delivery !== "block") return guarded.output;
 
 	const reason = formatToolOutputBlockReason(guarded.inspection);
 	const blockedVerdict = outputBlockedResult(reason);
-	if (options.afterCheck) await options.afterCheck(context, blockedVerdict, undefined);
+	if (options.afterCheck) {
+		await assertPrivacyCallbacksAllowed();
+		await options.afterCheck(context, blockedVerdict, undefined);
+	}
+	await assertPrivacyCallbacksAllowed();
 	if (options.throwOnDeny === false) return undefined;
 	throw new AIDRMiddlewareError(reason, blockedVerdict, context);
 }
@@ -169,16 +185,23 @@ async function enforceVerdict(
 ): Promise<void> {
 	const onAskOption = options.onAsk;
 	const outcome = await enforceCheckResult(verdict, {
-		onAsk: onAskOption ? (result) => onAskOption(context, result) : undefined,
+		onAsk: onAskOption
+			? async (result) => {
+					await assertPrivacyCallbacksAllowed();
+					return onAskOption(context, result);
+				}
+			: undefined,
 		allowApprovalOfIndeterminateResults: options.allowApprovalOfIndeterminateResults,
 	});
 
 	if (outcome.execute) return;
 
+	if (options.formatErrorMessage) await assertPrivacyCallbacksAllowed();
 	const message = options.formatErrorMessage
 		? options.formatErrorMessage(context, verdict)
 		: outcome.message;
 
+	await assertPrivacyCallbacksAllowed();
 	throw new AIDRMiddlewareError(message, verdict, context);
 }
 
@@ -222,7 +245,9 @@ export function createMiddleware(
 	aidrClient: AIDRClient,
 	options: MiddlewareOptions = {},
 ): MiddlewareFunction {
+	const agentRuntime = options.agentRuntime;
 	return async (context: MiddlewareContext, next: NextFunction): Promise<unknown> => {
+		await assertPrivacyCallbacksAllowed();
 		// Call beforeCheck hook
 		if (options.beforeCheck) {
 			await options.beforeCheck(context);
@@ -237,17 +262,23 @@ export function createMiddleware(
 
 		// Handle deny verdict
 		if (verdict.decision === "deny") {
-			options.onDeny?.(context, verdict);
+			if (options.onDeny) {
+				await assertPrivacyCallbacksAllowed();
+				options.onDeny(context, verdict);
+			}
 
 			if (options.throwOnDeny !== false) {
+				if (options.formatErrorMessage) await assertPrivacyCallbacksAllowed();
 				const message = options.formatErrorMessage
 					? options.formatErrorMessage(context, verdict)
 					: `Blocked: ${verdict.reason}`;
+				await assertPrivacyCallbacksAllowed();
 				throw new AIDRMiddlewareError(message, verdict, context);
 			}
 
 			// Return null/undefined if not throwing
 			if (options.afterCheck) {
+				await assertPrivacyCallbacksAllowed();
 				await options.afterCheck(context, verdict, undefined);
 			}
 			return undefined;
@@ -260,27 +291,34 @@ export function createMiddleware(
 
 		// Call onAllow hook
 		if (verdict.decision === "allow" && options.onAllow) {
+			await assertPrivacyCallbacksAllowed();
 			options.onAllow(context, verdict);
 		}
 
 		// Execute the next function (actual tool/operation)
 		let result: unknown;
 		try {
+			await aidrClient.assertCallerOperationAllowed();
 			result = await next();
 		} catch (error) {
+			await assertPrivacyCallbacksAllowed();
 			// Still call afterCheck on error
 			if (options.afterCheck) {
+				await assertPrivacyCallbacksAllowed();
 				await options.afterCheck(context, verdict, undefined);
 			}
+			await assertPrivacyCallbacksAllowed();
 			throw error;
 		}
-		result = await guardResult(result, context, verdict, options);
+		result = await guardResult(result, context, options, agentRuntime);
 
 		// Call afterCheck hook
 		if (options.afterCheck) {
+			await assertPrivacyCallbacksAllowed();
 			await options.afterCheck(context, verdict, result);
 		}
 
+		await assertPrivacyCallbacksAllowed();
 		return result;
 	};
 }
@@ -316,10 +354,12 @@ export function createSyncCompatibleMiddleware(
 	sync: (context: MiddlewareContext, next: () => unknown) => Promise<unknown>;
 } {
 	const asyncMiddleware = createMiddleware(aidrClient, options);
+	const agentRuntime = options.agentRuntime;
 
 	return {
 		async: asyncMiddleware,
 		sync: async (context: MiddlewareContext, next: () => unknown): Promise<unknown> => {
+			await assertPrivacyCallbacksAllowed();
 			// Call beforeCheck hook
 			if (options.beforeCheck) {
 				await options.beforeCheck(context);
@@ -334,11 +374,16 @@ export function createSyncCompatibleMiddleware(
 
 			// Handle deny
 			if (verdict.decision === "deny") {
-				options.onDeny?.(context, verdict);
+				if (options.onDeny) {
+					await assertPrivacyCallbacksAllowed();
+					options.onDeny(context, verdict);
+				}
 				if (options.throwOnDeny !== false) {
+					if (options.formatErrorMessage) await assertPrivacyCallbacksAllowed();
 					const message = options.formatErrorMessage
 						? options.formatErrorMessage(context, verdict)
 						: `Blocked: ${verdict.reason}`;
+					await assertPrivacyCallbacksAllowed();
 					throw new AIDRMiddlewareError(message, verdict, context);
 				}
 				return undefined;
@@ -351,28 +396,35 @@ export function createSyncCompatibleMiddleware(
 
 			// Call onAllow
 			if (verdict.decision === "allow" && options.onAllow) {
+				await assertPrivacyCallbacksAllowed();
 				options.onAllow(context, verdict);
 			}
 
 			// Execute sync next()
 			let result: unknown;
 			try {
+				await aidrClient.assertCallerOperationAllowed();
 				const candidate = next();
 				// Handle if next() returns a Promise
 				result = isPromiseLike(candidate) ? await candidate : candidate;
 			} catch (error) {
+				await assertPrivacyCallbacksAllowed();
 				if (options.afterCheck) {
+					await assertPrivacyCallbacksAllowed();
 					await options.afterCheck(context, verdict, undefined);
 				}
+				await assertPrivacyCallbacksAllowed();
 				throw error;
 			}
-			result = await guardResult(result, context, verdict, options);
+			result = await guardResult(result, context, options, agentRuntime);
 
 			// Call afterCheck
 			if (options.afterCheck) {
+				await assertPrivacyCallbacksAllowed();
 				await options.afterCheck(context, verdict, result);
 			}
 
+			await assertPrivacyCallbacksAllowed();
 			return result;
 		},
 	};
@@ -402,6 +454,7 @@ export function composeMiddleware(middlewares: MiddlewareFunction[]): Middleware
 				throw new Error("next() called multiple times in middleware");
 			}
 			index = i;
+			await assertPrivacyCallbacksAllowed();
 
 			const middleware = middlewares[i];
 			if (!middleware) {
@@ -445,6 +498,7 @@ export function wrapToolWithMiddleware(
 	return {
 		name: tool.name,
 		run: async (...args: unknown[]): Promise<unknown> => {
+			await assertPrivacyCallbacksAllowed();
 			const input = JSON.stringify(args);
 			if (typeof input !== "string") {
 				throw new TypeError("Tool input could not be serialized for security inspection");
@@ -464,7 +518,9 @@ export function wrapToolWithMiddleware(
 				metadata: options.metadata,
 			};
 
-			return middleware(context, async () => tool.run(...args));
+			// Execute the same JSON snapshot that was inspected, so toJSON hooks or
+			// caller mutations cannot replace checked input with an unchecked value.
+			return middleware(context, async () => tool.run(...parsedArgs));
 		},
 	};
 }

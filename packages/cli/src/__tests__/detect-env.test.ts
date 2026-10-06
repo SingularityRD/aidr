@@ -31,6 +31,8 @@ afterEach(() => {
 
 describe("setup agent detection", () => {
 	it.each([
+		["claude", join(".claude", "settings.json"), "{}"],
+		["openclaw", join(".openclaw", "openclaw.json"), "{}"],
 		["opencode", join(".config", "opencode", "opencode.json"), "{}"],
 		["codex", join(".codex", "config.toml"), "# Codex host\n"],
 	] as const)("recognizes an unprotected %s-only host", async (agent, file, content) => {
@@ -42,10 +44,22 @@ describe("setup agent detection", () => {
 		mkdirSync(dirname(staleProjectPlugin), { recursive: true });
 		writeFileSync(staleProjectPlugin, "{}");
 
-		expect(detectConnectorStatuses(home).find((status) => status.id === agent)?.state).toBe(
+		expect(detectConnectorStatuses(home).find((status) => status.id === (agent === "claude" ? "claude-code" : agent))?.state).toBe(
 			"runtime_present_not_installed",
 		);
 		expect((await detectEnvironment(home, home)).agent).toBe(agent);
+	});
+
+	it.each(["cursor", "vscode"] as const)("recognizes a %s-only profile outside a project", async (agent) => {
+		const home = makeHome();
+		mkdirSync(join(home, `.${agent}`));
+		expect((await detectEnvironment(home, home)).agent).toBe(agent);
+	});
+
+	it("uses the active Node runtime when node is not on PATH", async () => {
+		const home = makeHome();
+		vi.stubEnv("PATH", "");
+		expect(await detectEnvironment(home, home)).toMatchObject({ hasNode: true, nodeVersion: process.version });
 	});
 
 	it("does not claim an agent for an empty profile", async () => {

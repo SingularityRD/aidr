@@ -8,6 +8,7 @@ import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { inspectReviewedRuntime } from "./archive-boundary.mjs";
+import { deploymentCredentialFailures } from "./lib/deployment-credentials.mjs";
 
 const scriptsDirectory = dirname(fileURLToPath(import.meta.url));
 const root = resolve(scriptsDirectory, "..");
@@ -54,6 +55,48 @@ test("production first boot does not wait on readiness evidence that is installe
 	assert.match(airgap, /docker compose --project-directory \.aidr-deploy -f \.aidr-deploy\/compose\.yml up -d\s+node scripts\/deployment-migrate\.mjs \.aidr-deploy/);
 	assert.doesNotMatch(airgap, /up -d --wait/);
 	assert.match(airgap, /deployment-doctor\.mjs --deployment\s+\.aidr-deploy --online/);
+});
+
+test("operator runtime capability configuration is forwarded only to private function env", () => {
+	inTemporaryDirectory((directory) => {
+		const previous = process.env.AIDR_RUNTIME_CAPABILITIES_BY_TENANT;
+		try {
+			const mapping = { "tenant-approved": ["runtime_detectors", "behavioral_learning_v1"] };
+			process.env.AIDR_RUNTIME_CAPABILITIES_BY_TENANT = JSON.stringify(mapping, null, 2);
+			const output = join(directory, "capabilities");
+			const result = prepare(output, "--mode", "cloud", "--device-start-upstream-url", "https://project.supabase.co/functions/v1/device-start");
+			assert.equal(result.status, 0, result.stderr);
+			assert.ok(readFileSync(join(output, ".env.functions"), "utf8").split(/\r?\n/)
+				.includes(`AIDR_RUNTIME_CAPABILITIES_BY_TENANT=${JSON.stringify(mapping)}`));
+			assert.doesNotMatch(readFileSync(join(output, ".env"), "utf8"), /AIDR_RUNTIME_CAPABILITIES_BY_TENANT/);
+			assert.doesNotMatch(readFileSync(join(output, "compose.yml"), "utf8"), /AIDR_RUNTIME_CAPABILITIES_BY_TENANT/);
+			for (const [index, invalid] of ["{", "[]", '{"tenant-approved":["behavioral_learning_v1"]}', '{"tenant-approved":["*"]}'].entries()) {
+				process.env.AIDR_RUNTIME_CAPABILITIES_BY_TENANT = invalid;
+				const invalidOutput = join(directory, `invalid-capabilities-${index}`);
+				const invalidResult = prepare(invalidOutput, "--mode", "cloud", "--device-start-upstream-url", "https://project.supabase.co/functions/v1/device-start");
+				assert.notEqual(invalidResult.status, 0);
+				assert.match(invalidResult.stderr, /must be a bounded exact tenant capability map/);
+				assert.equal(existsSync(invalidOutput), false);
+			}
+		} finally {
+			if (previous === undefined) delete process.env.AIDR_RUNTIME_CAPABILITIES_BY_TENANT;
+			else process.env.AIDR_RUNTIME_CAPABILITIES_BY_TENANT = previous;
+		}
+	});
+});
+
+test("IPv6 development origins bind matching loopback ports and device ingress upstream", () => {
+	inTemporaryDirectory((directory) => {
+		const output = join(directory, "ipv6-loopback");
+		const result = prepare(output, "--development", "--dashboard-url", "http://[::1]:18080", "--supabase-url", "http://[::1]:18000");
+		assert.equal(result.status, 0, result.stderr);
+		const compose = parse(readFileSync(join(output, "compose.yml"), "utf8"));
+		assert.deepEqual(compose.services.dashboard.ports, ["[::1]:18080:8080"]);
+		assert.deepEqual(compose.services["api-gw"].ports, ["[::1]:18000:8000"]);
+		assert.match(readFileSync(join(output, ".env.ingress"), "utf8"), /^AIDR_DEVICE_START_UPSTREAM_URL=http:\/\/\[::1\]:18000\/functions\/v1\/device-start$/m);
+		const config = spawnSync("docker", ["compose", "--project-directory", output, "-f", join(output, "compose.yml"), "config", "--quiet"], { encoding: "utf8", timeout: 15_000 });
+		assert.equal(config.status, 0, config.stderr);
+	});
 });
 
 test("production preparation requires a readable valid artifact verification public key", () => {
@@ -221,6 +264,17 @@ test("development loopback origins publish matching isolated Compose ports", () 
 		], { encoding: "utf8", timeout: 60_000 });
 		assert.equal(result.status, 0, result.stderr);
 		const services = parse(readFileSync(join(output, "compose.yml"), "utf8")).services;
+		assert.equal(services["api-gw"].image, "envoyproxy/envoy:v1.39.2@sha256:460f8c329f24b2e1c7c5af64cb314a6f351ad1c262ba77b135ac46b35ebd5f85");
+		assert.equal(services.imgproxy.image, "darthsim/imgproxy:v4.0.17@sha256:db0b4b9cd690c8b3590203dea300fb759a18c4ec2af7b37424f0bdef23ce317d");
+		assert.equal(services.imgproxy.environment.IMGPROXY_USE_LAST_MODIFIED, "false");
+		const reviewed = parse(readFileSync(join(root, "deploy/upstream/docker/docker-compose.yml"), "utf8")).services;
+		for (const [name, service] of Object.entries(reviewed)) {
+			if (name !== "api-gw" && name !== "imgproxy" && name !== "supavisor") assert.equal(services[name].image, service.image, name);
+		}
+		assert.deepEqual(services.imgproxy.environment, { ...reviewed.imgproxy.environment, IMGPROXY_USE_LAST_MODIFIED: "false" });
+		for (const setting of ["restart", "networks", "healthcheck", "depends_on", "volumes", "environment", "entrypoint"]) {
+			assert.deepEqual(services["api-gw"][setting], reviewed["api-gw"][setting], setting);
+		}
 		assert.deepEqual(services["api-gw"].ports, ["127.0.0.1:38000:8000"]);
 		assert.deepEqual(services.dashboard.ports, ["127.0.0.1:38080:8080"]);
 		assert.match(readFileSync(join(output, ".env.ingress"), "utf8"), /^AIDR_DEVICE_START_UPSTREAM_URL=http:\/\/127\.0\.0\.1:38000\/functions\/v1\/device-start$/m);
@@ -248,6 +302,8 @@ test("generated self-hosted deployment wires protected monitoring without invent
 		assert.equal(result.status, 0, result.stderr);
 
 		const envText = readFileSync(join(output, ".env"), "utf8");
+		const generatedEnv = Object.fromEntries(envText.split(/\r?\n/).filter((line) => /^[A-Z][A-Z0-9_]*=/.test(line)).map((line) => [line.slice(0, line.indexOf("=")), line.slice(line.indexOf("=") + 1)]));
+		assert.deepEqual(deploymentCredentialFailures(generatedEnv), [], "fresh preparation must replace every shared vendor secret and generate private project API keys");
 		assert.match(envText, /^DISABLE_SIGNUP=true$/m);
 		const anonKey = envText.match(/^ANON_KEY=(.+)$/m)?.[1];
 		assert.ok(anonKey, "anonymous API key was not generated in the private environment file");
@@ -303,6 +359,7 @@ test("generated self-hosted deployment wires protected monitoring without invent
 		assert.match(readinessEnv, /^AIDR_DELEGATION_SIGNING_KEY_EXPIRES_AT=\d{4}-\d{2}-\d{2}T/m);
 		assert.match(readinessEnv, /^AIDR_TELEMETRY_QUEUE_ROOTS=\/var\/lib\/aidr-telemetry$/m);
 		const functionEnv = readFileSync(join(output, ".env.functions"), "utf8");
+		assert.ok(functionEnv.split(/\r?\n/).includes(`AIDR_RUNTIME_CAPABILITIES_BY_TENANT=${JSON.stringify(JSON.parse(process.env.AIDR_RUNTIME_CAPABILITIES_BY_TENANT?.trim() || "{}"))}`));
 		assert.match(functionEnv, /^AIDR_ENTITLEMENT_SIGNING_PRIVATE_KEY_PKCS8_B64=\S+$/m);
 		assert.match(functionEnv, /^AIDR_REVOCATION_SIGNING_PRIVATE_KEY_PKCS8_B64=\S+$/m);
 		assert.match(functionEnv, /^AIDR_DELEGATION_SIGNING_PRIVATE_KEY_PKCS8_B64=\S+$/m);
@@ -323,9 +380,14 @@ test("generated self-hosted deployment wires protected monitoring without invent
 		assert.match(backupService, /^ExecStart=\/usr\/bin\/node \/srv\/aidr\/backup\/deployment-backup-offsite\.mjs /m);
 		assert.equal(existsSync(join(output, "backup", "deployment-backup-offsite.mjs")), true);
 		assert.equal(existsSync(join(output, "backup", "deployment-backup.mjs")), true);
+		const deployment = JSON.parse(readFileSync(join(output, "deployment.json"), "utf8"));
+		for (const file of ["node-helper-image.mjs", "node-helper.Dockerfile"]) {
+			assert.equal(readFileSync(join(output, "backup", "lib", file), "utf8"), readFileSync(join("scripts", "lib", file), "utf8"));
+			assert.ok(deployment.artifacts.some((entry) => entry.path === `backup/lib/${file}`));
+		}
+		assert.match(readFileSync(join(output, "backup", "deployment-backup.mjs"), "utf8"), /from ["']\.\/lib\/node-helper-image\.mjs["']/);
 		assert.equal(existsSync(join(output, "backup", "deployment-backup-health-failed.mjs")), true);
 		assert.equal(existsSync(join(output, "backup", "aidr-backup-health-failed.service")), true);
-		const deployment = JSON.parse(readFileSync(join(output, "deployment.json"), "utf8"));
 		assert.ok(deployment.artifacts.some((entry) => entry.path === "backup/aidr-backup-offsite.service"));
 		assert.ok(deployment.artifacts.some((entry) => entry.path === "backup/aidr-backup-health-failed.service"));
 		assert.ok(deployment.artifacts.some((entry) => entry.path === "maintenance/aidr-siem-delivery.service"));

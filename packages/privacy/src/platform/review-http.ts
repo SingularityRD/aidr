@@ -38,6 +38,6 @@ export function createReviewHandler(o:{sessions:OidcSessionManager;workflow:Revi
       }
       if(m?.[2]==='appeal'){const b=object(await json(req),['reason']);if(typeof b.reason!=='string')deny('REVIEW_INPUT');send(200,o.workflow.appeal(session.principal,m[1]!,b.reason));return;}
       send(404,{error:'NOT_FOUND'});
-    }catch{if(!res.headersSent)send(403,{error:'REQUEST_DENIED'});else res.destroy();}
+    }catch(e){if(!res.headersSent){if(e instanceof Error&&e.message==='OIDC_BUSY'){res.setHeader('Retry-After','60');send(503,{error:'SERVICE_BUSY'});}else send(403,{error:'REQUEST_DENIED'});}else res.destroy();}
   };
 }

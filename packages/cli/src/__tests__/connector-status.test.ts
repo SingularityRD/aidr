@@ -84,6 +84,7 @@ describe("connector detection reports measured state", () => {
 		{ description: "aidr was uninstalled", hooks: {} },
 		{ disableAllHooks: true, enabledPlugins: { "aidr@aidr": true } },
 		{ hooks: { PostToolUse: [{ command: "aidr/post-tool-use.cjs" }] } },
+		{ hooks: { PreToolUse: [null, { hooks: [null] }] } },
 	])("does not mistake disabled or unrelated configuration for an enabled hook: %j", (settings) => {
 		const home = makeHome();
 		write(home, join(".claude", "settings.json"), JSON.stringify(settings));
@@ -123,9 +124,36 @@ describe("connector detection reports measured state", () => {
 
 	it("detects an OpenClaw plugin listed in its config", () => {
 		const home = makeHome();
-		write(home, join(".openclaw", "openclaw.json"), JSON.stringify({ plugins: ["aidr"] }));
+		write(home, join(".openclaw", "openclaw.json"), JSON.stringify({
+			plugins: { entries: { "aidr-openclaw": { enabled: true } }, allow: ["aidr-openclaw"] },
+		}));
 
 		expect(detectConnectorStatuses(home).find((s) => s.id === "openclaw")?.state).toBe("installed");
+	});
+
+	it.each([
+		{ description: "aidr was uninstalled" },
+		{ plugins: ["aidr"] },
+		{ plugins: { entries: { "another-plugin": { config: { description: "singularity" } } } } },
+	])("does not mistake unrelated OpenClaw text or obsolete plugin arrays for registration: %j", (config) => {
+		const home = makeHome();
+		write(home, join(".openclaw", "openclaw.json"), JSON.stringify(config));
+		expect(detectConnectorStatuses(home).find((s) => s.id === "openclaw")?.state).toBe("runtime_present_not_installed");
+	});
+
+	it.each([
+		{ enabled: false, entries: { "aidr-openclaw": { enabled: true } } },
+		{ entries: { "aidr-openclaw": { enabled: false } } },
+		{ entries: { "aidr-openclaw": { enabled: true } }, allow: ["other-plugin"] },
+		{ entries: { "aidr-openclaw": { enabled: true } }, allow: [] },
+		{ entries: { "aidr-openclaw": { enabled: true } }, deny: ["aidr-openclaw"] },
+	])("reports a registered but disabled OpenClaw plugin as degraded: %j", (plugins) => {
+		const home = makeHome();
+		write(home, join(".openclaw", "openclaw.json"), JSON.stringify({ plugins }));
+		const status = detectConnectorStatuses(home).find((s) => s.id === "openclaw");
+		expect(status?.state).toBe("installed_but_degraded");
+		expect(anyConnectorInstalled(detectConnectorStatuses(home))).toBe(false);
+		expect(status?.remedy).toBeTruthy();
 	});
 
 	it("detects an OpenCode plugin", () => {

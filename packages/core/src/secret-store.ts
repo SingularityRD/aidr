@@ -334,7 +334,38 @@ export function createWindowsDpapiStore(options: WindowsDpapiOptions = {}): Secr
 // ---------------------------------------------------------------------------
 
 const KEYCHAIN_SERVICE = "singularity-aidr-cli";
+const KEYCHAIN_EXECUTABLE = "/usr/bin/security";
+const KEYCHAIN_STORAGE_VERSION = "aidr-utf8-base64-v1";
+const KEYCHAIN_LABEL_PREFIX = "aidr-secret-v1-";
+// Apple's interactive reader has a 4096-byte buffer. At 4095 command bytes it
+// leaves the LF unread, executing a blank command and losing the failure status.
+const KEYCHAIN_MAX_COMMAND_BYTES = 4094;
 const KEYCHAIN_NOT_FOUND = /could not be found|The specified item could not be found/i;
+
+function keychainPutCommand(id: string, encoded: string): string {
+	return `add-generic-password -a ${id} -s ${KEYCHAIN_SERVICE} -l ${KEYCHAIN_LABEL_PREFIX}${id} -G ${KEYCHAIN_STORAGE_VERSION} -w ${encoded} -U`;
+}
+
+function keychainItemAbsent(result: CommandResult): boolean {
+	return !result.error && result.status === 44 && KEYCHAIN_NOT_FOUND.test(result.stderr ?? "");
+}
+
+function decodeKeychainSecret(id: string, output: string): string {
+	const encoded = output.replace(/\n$/, "");
+	if (
+		encoded.length === 0 ||
+		keychainPutCommand(id, encoded).length > KEYCHAIN_MAX_COMMAND_BYTES ||
+		!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded)
+	) {
+		throw new SecretStoreError("The macOS keychain credential has an invalid storage format.");
+	}
+	const bytes = Buffer.from(encoded, "base64");
+	const secret = bytes.toString("utf8");
+	if (bytes.toString("base64") !== encoded || !Buffer.from(secret, "utf8").equals(bytes)) {
+		throw new SecretStoreError("The macOS keychain credential has an invalid storage format.");
+	}
+	return secret;
+}
 
 export interface MacosKeychainOptions {
 	runner?: CommandRunner;
@@ -344,15 +375,43 @@ export interface MacosKeychainOptions {
  * macOS Keychain via `security add-generic-password` / `find-generic-password` /
  * `delete-generic-password`, keyed by service + account.
  *
- * `security add-generic-password` has no stdin path for the secret (`-w` without a
- * value reads from a TTY, which a piped child does not have), so the value is
- * passed as an argument and is briefly visible to same-user processes in the
- * process list. That limitation is the tool's, not this adapter's, and it is
- * recorded here rather than hidden: the credential still never touches
- * `config.json`, and `find`/`delete` do not take it on the command line.
+ * Writes use one ASCII command on `security -q -i` stdin, with a marked base64
+ * payload to preserve UTF-8 and control characters. No secret is in process argv.
+ * The complete command is limited to 4094 bytes before LF; the secret ceiling
+ * depends on the reference ID length (documented in the secrets runbook).
+ * Existing unmarked ASCII credentials retain their original read/delete identity.
  */
 export function createMacosKeychainStore(options: MacosKeychainOptions = {}): SecretStore {
 	const runner = options.runner ?? defaultCommandRunner;
+	const run = (args: string[], request: CommandRequest): CommandResult => {
+		try {
+			return runner(KEYCHAIN_EXECUTABLE, args, request);
+		} catch {
+			// Native exceptions and output can contain secret material. Never attach
+			// them as error causes or return them to callers.
+			return { status: null };
+		}
+	};
+	const getMarked = (id: string): string | null => {
+		// With both account and service, Apple's finder ignores all other
+		// attributes. The unique versioned label makes -G an exact filter.
+		const result = run(
+			[
+				"find-generic-password",
+				"-s",
+				KEYCHAIN_SERVICE,
+				"-l",
+				`${KEYCHAIN_LABEL_PREFIX}${id}`,
+				"-G",
+				KEYCHAIN_STORAGE_VERSION,
+				"-w",
+			],
+			{ timeout: 30_000 },
+		);
+		if (!result.error && result.status === 0) return decodeKeychainSecret(id, result.stdout ?? "");
+		if (keychainItemAbsent(result)) return null;
+		throw new SecretStoreError("The macOS keychain could not be queried.");
+	};
 
 	return {
 		kind: "macos-keychain",
@@ -360,55 +419,64 @@ export function createMacosKeychainStore(options: MacosKeychainOptions = {}): Se
 		osProtected: true,
 		isAvailable: () =>
 			cachedAvailability(runner, "macos-keychain", () => {
-				const result = runner("security", ["list-keychains"], { timeout: 15_000 });
+				const result = run(["list-keychains"], { timeout: 15_000 });
 				return !result.error && result.status === 0;
 			}),
 		put: (id, secret) => {
 			assertSafeId(id);
-			const result = runner(
-				"security",
-				["add-generic-password", "-a", id, "-s", KEYCHAIN_SERVICE, "-w", secret, "-U"],
-				{ timeout: 30_000 },
-			);
+			if (
+				typeof secret !== "string" ||
+				secret.length === 0 ||
+				Buffer.byteLength(secret, "utf8") > 3072
+			) {
+				throw new SecretStoreError(
+					"The macOS keychain credential is empty or exceeds its input limit.",
+				);
+			}
+			const bytes = Buffer.from(secret, "utf8");
+			if (bytes.toString("utf8") !== secret) {
+				throw new SecretStoreError("The macOS keychain credential is not valid UTF-8.");
+			}
+			const command = keychainPutCommand(id, bytes.toString("base64"));
+			if (command.length > KEYCHAIN_MAX_COMMAND_BYTES) {
+				throw new SecretStoreError("The macOS keychain credential exceeds its input limit.");
+			}
+			// Exactly one command + LF + EOF: an extra blank/exit command would hide
+			// the write's native exit status. Every token is restricted to ASCII.
+			const result = run(["-q", "-i"], { input: `${command}\n`, timeout: 30_000 });
 			if (result.error || result.status !== 0) {
-				throw new SecretStoreError("The macOS keychain could not store the credential.", {
-					cause: result.error,
-				});
+				throw new SecretStoreError("The macOS keychain could not store the credential.");
 			}
 		},
 		get: (id) => {
 			assertSafeId(id);
-			const result = runner(
-				"security",
-				["find-generic-password", "-a", id, "-s", KEYCHAIN_SERVICE, "-w"],
-				{ timeout: 30_000 },
-			);
-			if (result.error) {
-				throw new SecretStoreError("The macOS keychain could not be queried.", {
-					cause: result.error,
-				});
-			}
+			const marked = getMarked(id);
+			if (marked !== null) return marked;
+			const result = run(["find-generic-password", "-a", id, "-s", KEYCHAIN_SERVICE, "-w"], {
+				timeout: 30_000,
+			});
+			if (result.error) throw new SecretStoreError("The macOS keychain could not be queried.");
 			if (result.status !== 0) {
-				if (KEYCHAIN_NOT_FOUND.test(result.stderr ?? "")) return null;
+				if (keychainItemAbsent(result)) return null;
 				throw new SecretStoreError("The macOS keychain could not be queried.");
 			}
+			// A concurrent update can migrate the item between the two lookups.
+			// Recheck before treating the fallback's payload as unmarked plaintext.
+			const migrated = getMarked(id);
+			if (migrated !== null) return migrated;
 			// `security -w` prints the secret followed by a single newline.
 			const secret = (result.stdout ?? "").replace(/\r?\n$/, "");
 			return secret.length > 0 ? secret : null;
 		},
 		revoke: (id) => {
 			assertSafeId(id);
-			const result = runner(
-				"security",
-				["delete-generic-password", "-a", id, "-s", KEYCHAIN_SERVICE],
-				{ timeout: 30_000 },
-			);
+			const result = run(["delete-generic-password", "-a", id, "-s", KEYCHAIN_SERVICE], {
+				timeout: 30_000,
+			});
 			if (result.error) {
-				throw new SecretStoreError("The macOS keychain could not be updated.", {
-					cause: result.error,
-				});
+				throw new SecretStoreError("The macOS keychain could not be updated.");
 			}
-			if (result.status !== 0 && !KEYCHAIN_NOT_FOUND.test(result.stderr ?? "")) {
+			if (result.status !== 0 && !keychainItemAbsent(result)) {
 				throw new SecretStoreError("The macOS keychain refused to delete the credential.");
 			}
 		},

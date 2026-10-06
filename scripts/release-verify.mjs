@@ -30,6 +30,7 @@ import {
 	loadSignerPolicy,
 	readJsonFile,
 	recordRollbackState,
+	resolveExternalControlPath,
 	sha256,
 	validateReleaseManifest,
 	verifyManifestSignature,
@@ -49,12 +50,12 @@ try {
 	const validated = validateReleaseManifest(manifest, bundle, policy);
 	verifyManifestSignature(manifestRecord.raw, signatureRecord.value, validated);
 	const manifestDigest = sha256(manifestRecord.raw);
-	const statePath = path.resolve(options["--state"]);
-	const receiptPath = await validateReceiptPath(options["--receipt"], bundle.bundle, statePath, options["--policy"]);
+	const initialState = await loadRollbackState(options["--state"], bundle.bundle);
+	const statePath = initialState.path;
+	const receiptPath = await validateReceiptPath(options["--receipt"], bundle.bundle, statePath, policy.path);
 	// Serialize the state check, installer execution and state advancement. A
 	// second process fails closed rather than racing an older release over a
 	// newer one. A lock left by a killed process requires operator inspection.
-	await loadRollbackState(statePath, bundle.bundle);
 	const lock = await acquireRollbackLock(statePath);
 	try {
 		const state = await loadRollbackState(statePath, bundle.bundle);
@@ -157,8 +158,7 @@ async function runInstaller(command, cwd, env) {
 
 async function validateReceiptPath(receiptPath, bundlePath, statePath, policyPath) {
 	if (!receiptPath) return;
-	const resolved = path.resolve(receiptPath);
-	if (isWithin(resolved, bundlePath)) throw new Error("verification receipt must be stored outside the release bundle");
+	const resolved = await resolveExternalControlPath(receiptPath, bundlePath, "verification receipt");
 	if (samePath(resolved, statePath)) throw new Error("verification receipt and anti-rollback state must use different paths");
 	if (samePath(resolved, policyPath)) throw new Error("verification receipt and signer policy must use different paths");
 	try {

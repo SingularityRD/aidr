@@ -33,6 +33,39 @@ regexTarget = "match"
 regexes = ['''abcdefgh1234567890|dXNlcjpwYXNzd29yZA==''']
 paths = ['''^packages/privacy/tests/fixtures/cases\.mjs$''']
 
+# These are exact public artifact identifiers, not configurable credentials.
+[[allowlists]]
+description = "Verified bridge app/auth.py SHA256 in its two bound audit reports"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^07fdde3dfb5a30988c02af5d9e97b369cf446ea250e56c532103e7106bdaa9b2$''']
+paths = ['''^docs/production-readiness/evidence/bridge-high-zero-(archive-audit|security)-2026-10-06\.json$''']
+
+[[allowlists]]
+description = "Official Python3.12 Dockerfile public GPG verification fingerprint in the image report"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^7169605F62C751356D054A26A821E680E5FA6305$''']
+paths = ['''^docs/production-readiness/evidence/bridge-high-zero-full-image-scan-2026-10-06\.json$''']
+
+[[allowlists]]
+description = "Verified pinned OpenAI privacy-filter tokenizer SHA256 in its candidate evidence"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^0614fe83cadab421296e664e1f48f4261fa8fef6e03e63bb75c20f38e37d07d3$''']
+paths = ['''^packages/privacy/docs/MODEL_CANDIDATE_EVIDENCE\.json$''']
+
+[[allowlists]]
+description = "Verified tokenizer assets and offline comparison source SHA256 in their diagnostic receipt"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^fa3cbe7ce1be7311df6b43a5a5cca547a2e86ce6c604b0505638ff054dfbe952$''', '''^2d4cb82493b36f48593a41fbcbd4a37c87e7dcf49d15a328d919847c5aced76c$''', '''^f448983f72e61fb95a735228343ea5cb5112010de2b386f89f91c60898ac51bb$''']
+paths = ['''^packages/privacy/docs/MODEL_QUALITY_DIAGNOSTICS\.json$''']
+
 [[allowlists]]
 description = "Privacy detector's short base64-only synthetic PEM fixture"
 targetRules = ["private-key"]

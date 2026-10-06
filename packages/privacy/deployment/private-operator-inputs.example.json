@@ -1,0 +1,21 @@
+{
+  "status": "NOT_CONFIGURED_OR_ACCEPTED",
+  "profile": "single-tenant-linux-text-with-optional-signed-mcp",
+  "installedPrefix": "/opt/aidr-private",
+  "configurationModuleRoot": "/opt/aidr-private/node_modules/@singularity/aidr-privacy/examples/platform",
+  "textListener": "127.0.0.1:8443",
+  "mcpListener": "127.0.0.1:7789",
+  "operatorInputs": {
+    "delivery": ["verified private artifact and exact digest", "approved complete core dependency installation/cache", "signed commercial core and optional MCP artifact", "approved runtime/image and SBOM"],
+    "tenantPolicy": ["actual tenant ID", "current signed policy with anti-rollback revision", "Ed25519 policy public keys", "permitted provider classification and actual user groups"],
+    "identity": ["OIDC HTTPS issuer and CA", "registered HTTPS callback and confidential client ID", "OIDC client secret vault reference", "broker HTTPS issuer/audience/CA and service mTLS identity", "authoritative MDM/device and enterprise provider-account integration"],
+    "vault": ["dedicated service UID and unlocked Secret Service", "service DBus socket and secret-tool access", "independent canonical Base64 32-byte encryption/audit/data-label keys", "TLS PEM keys and provider credential references", "separate application/MCP enrolled-device keys and short-lived session bundles"],
+    "certificates": ["server certificate with actual gateway name/IP SAN", "approved enrolled-device client CA", "actual enrolled client certificate", "current broker service/client certificate chains and rotation procedures"],
+    "model": ["licensed immutable TR/EN PERSON/ADDRESS model files", "approved hash-locked physical inference environment", "independent domain gold corpus and unchanged qualification thresholds", "passing aggregate qualification and masking coverage", "independently distributed approved manifest SHA256 and institution approval"],
+    "sources": ["separate dataPolicy key reference", "exact signed security-admin group IDs", "authorized complete text-directory root", "source ID and strictly increasing generation", "actual reader group ACL and classification for every file"],
+    "documents": ["physical Linux parser environment with pinned dependencies", "approved packaged parser worker SHA256", "working seccomp kernel/libseccomp2", "acceptance only for supported digital text containers"],
+    "routing": ["distinct application/text/MCP service UIDs", "approved IdP/broker/provider/resolver IPv4 pins", "optional signed MCP tools/allowlist/upstream DNS pins and isolated credentials", "reviewed nftables policy installed before services", "direct upstream denial from actual application UID and approved gateway success"],
+    "operations": ["private local SQLite state and durable backup/recovery", "policy/token/certificate/key expiry and rotation", "actual-model resource/capacity/outage checks", "retention/access/incident ownership", "independent customer deployment acceptance"]
+  },
+  "excludedClaims": ["public candidates qualified", "universal interception of other application exits", "effective firewall already installed", "native/cloud ACL discovery", "selective ASR/video/scanned-PDF coverage", "institutional approval or production signing identity"]
+}

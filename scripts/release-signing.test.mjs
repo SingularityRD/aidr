@@ -2,12 +2,15 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash, generateKeyPairSync } from "node:crypto";
 import {
+	cp,
+	lstat,
 	mkdtemp,
 	mkdir,
 	readdir,
 	readFile,
 	rm,
 	stat,
+	symlink,
 	writeFile,
 } from "node:fs/promises";
 import os from "node:os";
@@ -23,6 +26,29 @@ afterEach(async () => {
 	await Promise.all(
 		temporaryDirectories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })),
 	);
+});
+
+test("artifact-only receiver verifies without the signer key, checkout, or package manager", async () => {
+	const fixture = await createFixture();
+	assert.equal(sign(fixture, { sequence: 7 }).status, 0);
+	const receiver = await mkdtemp(path.join(os.tmpdir(), "aidr-independent-release-fixture-"));
+	temporaryDirectories.push(receiver);
+	const bundle = path.join(receiver, "delivery");
+	await cp(fixture.bundle, bundle, { recursive: true });
+	for (const name of ["release-verify.mjs", "release-signing-lib.mjs"]) await cp(path.join(repoRoot, "scripts", name), path.join(receiver, name));
+	const policy = path.join(receiver, "independently-delivered-policy.json");
+	await cp(fixture.policy, policy);
+	await rm(fixture.privateKey);
+	const args = [path.join(receiver, "release-verify.mjs"), "--bundle", bundle, "--policy", policy, "--state", path.join(receiver, "protected-state.json"), "--record"];
+	const runReceiver = () => spawnSync(process.execPath, args, { cwd: receiver, env: { PATH: "" }, encoding: "utf8", windowsHide: true });
+	const checked = runReceiver();
+	assert.equal(checked.status, 0, checked.stderr);
+	assert.equal(JSON.parse(checked.stdout).artifacts_verified, 1);
+	assert.ok(!(await readdir(receiver)).some((name) => /private|node_modules|\.git/.test(name)));
+	await writeFile(path.join(bundle, "agent.tgz"), "changed after transfer\n");
+	const tampered = runReceiver();
+	assert.equal(tampered.status, 1);
+	assert.match(tampered.stderr, /digest|size|inventory/i);
 });
 
 test("signs an exact release and runs an installer only after verification", async () => {
@@ -228,6 +254,117 @@ test("rejects rollback and same-sequence equivocation", async () => {
 	assert.match(equivocationResult.stderr, /release equivocation rejected/);
 });
 
+for (const linkKind of ["dangling", "looping"]) {
+	test(`rejects ${linkKind} anti-rollback state links instead of accepting empty state`, async () => {
+		const fixture = await createFixture();
+		assert.equal(sign(fixture, { sequence: 15 }).status, 0);
+		await mkdir(path.dirname(fixture.state), { recursive: true });
+		const target = linkKind === "dangling" ? path.join(fixture.root, "missing-state-target") : fixture.state;
+		// Windows junctions exercise broken links without requiring symlink privileges.
+		await symlink(target, fixture.state, process.platform === "win32" ? "junction" : "file");
+		const result = verify(fixture, ["--record", "--receipt", fixture.receipt]);
+		assert.equal(result.status, 1, result.stderr);
+		assert.match(result.stderr, /anti-rollback state must be a regular file/);
+		assert.ok((await lstat(fixture.state)).isSymbolicLink());
+		await assert.rejects(stat(fixture.receipt), /ENOENT/);
+		await assert.rejects(stat(`${fixture.state}.lock`), /ENOENT/);
+	});
+}
+
+for (const stateKind of ["existing", "absent"]) {
+	test(`rejects a parent alias into the bundle for ${stateKind} anti-rollback state`, async () => {
+		const fixture = await createFixture();
+		if (stateKind === "existing") {
+			await replaceArtifact(fixture, JSON.stringify({ schema_version: 1, records: {} }));
+		}
+		assert.equal(sign(fixture, { sequence: 15 }).status, 0);
+		const alias = path.join(fixture.root, "bundle-alias");
+		await symlink(fixture.bundle, alias, process.platform === "win32" ? "junction" : "dir");
+		fixture.state = path.join(alias, stateKind === "existing" ? "agent.tgz" : "missing-parent/release-state.json");
+		const before = await readFile(path.join(fixture.bundle, "agent.tgz"));
+		const marker = path.join(fixture.root, "installer-must-not-run");
+		const result = verify(fixture, ["--receipt", fixture.receipt, "--", process.execPath, "-e", `require("node:fs").writeFileSync(${JSON.stringify(marker)}, "ran")`]);
+		assert.equal(result.status, 1, result.stderr);
+		assert.match(result.stderr, /anti-rollback state must be stored outside the release bundle/);
+		assert.deepEqual(await readFile(path.join(fixture.bundle, "agent.tgz")), before);
+		await assert.rejects(stat(marker), /ENOENT/);
+		await assert.rejects(stat(fixture.receipt), /ENOENT/);
+		await assert.rejects(stat(`${fixture.state}.lock`), /ENOENT/);
+		if (stateKind === "absent") await assert.rejects(stat(path.join(fixture.bundle, "missing-parent")), /ENOENT/);
+	});
+}
+
+test("rejects a signer policy reached through a parent alias into the bundle", async () => {
+	const fixture = await createFixture();
+	await replaceArtifact(fixture, await readFile(fixture.policy));
+	assert.equal(sign(fixture, { sequence: 15 }).status, 0);
+	const alias = path.join(fixture.root, "bundle-policy-alias");
+	await symlink(fixture.bundle, alias, process.platform === "win32" ? "junction" : "dir");
+	fixture.policy = path.join(alias, "agent.tgz");
+	const before = await readFile(fixture.policy);
+	const marker = path.join(fixture.root, "installer-must-not-run");
+	const result = verify(fixture, ["--receipt", fixture.receipt, "--", process.execPath, "-e", `require("node:fs").writeFileSync(${JSON.stringify(marker)}, "ran")`]);
+	assert.equal(result.status, 1, result.stderr);
+	assert.match(result.stderr, /signer policy must be stored outside the release bundle/);
+	assert.deepEqual(await readFile(fixture.policy), before);
+	await assert.rejects(stat(marker), /ENOENT/);
+	await assert.rejects(stat(fixture.receipt), /ENOENT/);
+	await assert.rejects(stat(fixture.state), /ENOENT/);
+});
+
+test("accepts independently held controls through an external parent alias, including new state parents", async () => {
+	const fixture = await createFixture();
+	assert.equal(sign(fixture, { sequence: 15 }).status, 0);
+	const controls = path.join(fixture.root, "trusted-controls");
+	await mkdir(controls);
+	await cp(fixture.policy, path.join(controls, "policy.json"));
+	const alias = path.join(fixture.root, "external-controls-alias");
+	await symlink(controls, alias, process.platform === "win32" ? "junction" : "dir");
+	fixture.policy = path.join(alias, "policy.json");
+	fixture.state = path.join(alias, "new-parent/release-state.json");
+	for (let attempt = 0; attempt < 2; attempt++) {
+		const result = verify(fixture, ["--record", "--receipt", fixture.receipt]);
+		assert.equal(result.status, 0, result.stderr);
+		assert.equal(JSON.parse(result.stdout).anti_rollback_state_recorded, true);
+	}
+	const state = JSON.parse(await readFile(path.join(controls, "new-parent/release-state.json"), "utf8"));
+	assert.equal(state.records["singularity-aidr/stable"].highest_release_sequence, 15);
+	await assert.rejects(stat(`${fixture.state}.lock`), /ENOENT/);
+});
+
+test("rejects physical receipt aliases into the bundle or protected controls before installation", async () => {
+	const fixture = await createFixture();
+	const controls = path.join(fixture.root, "trusted-controls");
+	await mkdir(controls);
+	await cp(fixture.policy, path.join(controls, "policy.json"));
+	fixture.policy = path.join(controls, "policy.json");
+	fixture.state = path.join(controls, "release-state.json");
+	assert.equal(sign(fixture, { sequence: 15 }).status, 0);
+	assert.equal(verify(fixture, ["--record"]).status, 0);
+	const originalPolicy = await readFile(fixture.policy);
+	const originalState = await readFile(fixture.state);
+	const bundleAlias = path.join(fixture.root, "bundle-receipt-alias");
+	const controlsAlias = path.join(fixture.root, "controls-receipt-alias");
+	await symlink(fixture.bundle, bundleAlias, process.platform === "win32" ? "junction" : "dir");
+	await symlink(controls, controlsAlias, process.platform === "win32" ? "junction" : "dir");
+	const destinations = [
+		[path.join(bundleAlias, "missing-parent/receipt.json"), /outside the release bundle/],
+		[path.join(controlsAlias, "policy.json"), /signer policy must use different paths/],
+		[path.join(controlsAlias, "release-state.json"), /anti-rollback state must use different paths/],
+	];
+	for (const [index, [receipt, expected]] of destinations.entries()) {
+		const marker = path.join(fixture.root, `receipt-installer-must-not-run-${index}`);
+		const result = verify(fixture, ["--receipt", receipt, "--", process.execPath, "-e", `require("node:fs").writeFileSync(${JSON.stringify(marker)}, "ran")`]);
+		assert.equal(result.status, 1, result.stderr);
+		assert.match(result.stderr, expected);
+		await assert.rejects(stat(marker), /ENOENT/);
+		assert.deepEqual(await readFile(fixture.policy), originalPolicy);
+		assert.deepEqual(await readFile(fixture.state), originalState);
+		await assert.rejects(stat(`${fixture.state}.lock`), /ENOENT/);
+	}
+	await assert.rejects(stat(path.join(fixture.bundle, "missing-parent")), /ENOENT/);
+});
+
 test("keeps private keys and trust policy outside the signed bundle", async () => {
 	const fixture = await createFixture();
 	const bundledKey = path.join(fixture.bundle, "release-private.pem");
@@ -427,6 +564,21 @@ function run(script, arguments_) {
 		encoding: "utf8",
 		windowsHide: true,
 	});
+}
+
+async function replaceArtifact(fixture, content) {
+	const bytes = Buffer.from(content);
+	const digest = createHash("sha256").update(bytes).digest("hex");
+	await writeFile(path.join(fixture.bundle, "agent.tgz"), bytes);
+	const metadataPath = path.join(fixture.bundle, "release-metadata.json");
+	const metadata = JSON.parse(await readFile(metadataPath, "utf8"));
+	metadata.artifacts[0].size = bytes.byteLength;
+	metadata.artifacts[0].sha256 = digest;
+	await writeFile(metadataPath, JSON.stringify(metadata));
+	const inventoryPath = path.join(fixture.bundle, "release-inventory.json");
+	const inventory = JSON.parse(await readFile(inventoryPath, "utf8"));
+	inventory.artifacts[0].sha256 = digest;
+	await writeFile(inventoryPath, JSON.stringify(inventory));
 }
 
 async function writeState(statePath, sequence, digest) {

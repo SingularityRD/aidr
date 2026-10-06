@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync, rmSync } from "node:fs";
+import { readFileSync, readdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -35,7 +35,7 @@ function step(source, name) {
 }
 
 test("private release keys exist only in fresh signing jobs", () => {
-	const build = job("build-rc", "package-signing");
+	const build = job("build-rc", "windows-authenticode");
 	const signing = job("package-signing", "assemble-e2e");
 	const assembly = job("assemble-e2e", "acceptance-e2e");
 	const acceptance = job("acceptance-e2e", "final-sign-publish");
@@ -64,6 +64,27 @@ test("signing steps clean keys and never run dependency or network tooling", () 
 		assert.match(body, /rm -f "\$\{private_path\}"/, `${name}: private key is not deleted before verification`);
 		assert.doesNotMatch(body, /\b(?:pnpm|npm|npx|corepack|pip|curl|wget|docker)\b/, `${name}: dependency/network tool crosses signing boundary`);
 	}
+});
+
+test("Windows certificate custody is isolated and independently pinned before final manifest signing", () => {
+	const windows = job("windows-authenticode", "package-signing");
+	const signing = job("package-signing", "assemble-e2e");
+	assert.match(windows, /needs: build-rc[\s\S]*runs-on: windows-2022[\s\S]*environment: release-candidate/);
+	assert.match(windows, /EXPECTED_ARCHIVE_SHA256: \$\{\{ needs\.build-rc\.outputs\.prepared_archive_sha256 \}\}/);
+	assert.ok(windows.indexOf("Unsigned build archive hash mismatch") < windows.indexOf("tar -xzf"));
+	assert.match(windows, /RUNNER_ENVIRONMENT -ne 'github-hosted'/);
+	assert.match(windows, /Count -ne 1[\s\S]*Thumbprint -cne \$thumbprint[\s\S]*HasPrivateKey/);
+	assert.ok(windows.indexOf("PFX must contain exactly") < windows.indexOf("Import-PfxCertificate"));
+	assert.ok(windows.indexOf("Set-Acl") < windows.indexOf("WriteAllBytes"));
+	assert.match(windows, /\$collection\.Import\(\$pfxBytes, \$passwordText, \[System\.Security\.Cryptography\.X509Certificates\.X509KeyStorageFlags\]::EphemeralKeySet\)/);
+	assert.doesNotMatch(windows, /\$collection\.Import\(\$pfxBytes, \$password,/);
+	assert.match(windows, /finally \{\s*\$passwordText = \$null/);
+	assert.match(windows, /finally \{[\s\S]*Remove-Item Env:WINDOWS_CODE_SIGNING_PFX_B64[\s\S]*Remove-Item -LiteralPath \$certificatePath -DeleteKey[\s\S]*Remove-Item -LiteralPath \$pfxPath/);
+	assert.doesNotMatch(windows, /pnpm install|npm install|LocalMachine\\(?:My|Root)|-ExecutionPolicy Bypass/);
+	assert.match(signing, /needs: \[build-rc, windows-authenticode\]/);
+	assert.match(signing, /AIDR_EXPECTED_WINDOWS_AUTHENTICODE_RECEIPT_SHA256: \$\{\{ needs\.windows-authenticode\.outputs\.receipt_sha256 \}\}/);
+	assert.ok(signing.indexOf("Verify and consume Authenticode inputs before package manifests") < signing.indexOf("Prepare final package manifests without private keys"));
+	assert.ok(signing.indexOf("Prepare final package manifests without private keys") < signing.indexOf("Sign package manifests only"));
 });
 
 test("outer bundle uses one canonical signing claim after exact-candidate E2E", () => {
@@ -97,7 +118,7 @@ test("outer bundle uses one canonical signing claim after exact-candidate E2E", 
 });
 
 test("unsigned RC quality gate enforces root and all-source core coverage", () => {
-	const build = job("build-rc", "package-signing");
+	const build = job("build-rc", "windows-authenticode");
 	const qualityGate = step(build, "Full deterministic quality gate");
 	assert.match(qualityGate, /pnpm test:coverage && pnpm test:coverage:core/);
 });
@@ -118,8 +139,15 @@ test("changeset status and the RC workflow preserve the monoversion package set"
 		});
 		assert.equal(status.status, 0, status.stderr);
 		const changesetStatus = JSON.parse(readFileSync(output, "utf8"));
-		const releases = changesetStatus.releases;
-		if (releases.length === 0) return;
+		const workspaceManifests = readdirSync(path.join(root, "packages"), { withFileTypes: true })
+			.filter((entry) => entry.isDirectory())
+			.map((entry) => JSON.parse(readFileSync(path.join(root, "packages", entry.name, "package.json"), "utf8")));
+		const supplementalPrivatePackages = new Set(workspaceManifests.filter((pkg) => pkg.private === true && !packageNames.includes(pkg.name)).map((pkg) => pkg.name));
+		const releases = changesetStatus.releases.filter((release) => packageNames.includes(release.name));
+		for (const release of changesetStatus.releases) {
+			assert.ok(packageNames.includes(release.name) || supplementalPrivatePackages.has(release.name), `unexpected release package: ${release.name}`);
+		}
+		if (changesetStatus.releases.length === 0) return;
 		assert.deepEqual(releases.map((release) => release.name).sort(), packageNames.sort());
 		assert.equal(new Set(releases.map((release) => release.newVersion)).size, 1, "RC package manifests must advance to one stable version");
 		assert.notEqual(releases[0].newVersion, packages[0].version);

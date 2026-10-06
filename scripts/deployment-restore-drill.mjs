@@ -11,6 +11,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { inspectReviewedRuntime } from "./archive-boundary.mjs";
 import { assertPrivateRecoveryKey, parseTarget } from "./deployment-backup-offsite.mjs";
+import { buildNodeHelperImage } from "./lib/node-helper-image.mjs";
 import {
 	RELEASE_MANIFEST_NAME,
 	RELEASE_SIGNATURE_NAME,
@@ -194,8 +195,9 @@ async function readDatabase(containerId) {
 }
 
 async function readStorage(volumeName) {
+	const helperImage = buildNodeHelperImage();
 	const shell = "set -eu; cd /data; test -z \"$(find . -type l -print -quit)\"; find . -type f -exec sha256sum {} + | sort | sha256sum; find . -type f | wc -l";
-	const output = await command("docker", ["run", "--rm", "--pull", "never", "--network", "none", "--mount", `type=volume,src=${volumeName},dst=/data,readonly`, "node:24.12.0-alpine3.23", "sh", "-c", shell], 120000);
+	const output = await command("docker", ["run", "--rm", "--pull", "never", "--network", "none", "--mount", `type=volume,src=${volumeName},dst=/data,readonly`, helperImage, "sh", "-c", shell], 120000);
 	const lines = output.split(/\r?\n/).map((line) => line.trim());
 	const fingerprint = lines[0]?.match(/^([a-f0-9]{64})\s+-$/)?.[1];
 	const count = Number(lines[1]);
@@ -396,9 +398,10 @@ async function main() {
 	const project = `aidr-recovery-${randomBytes(8).toString("hex")}`;
 	await writeFile(join(workDir, ".recovery-project"), `${project}\n`, { mode: 0o600, flag: "wx" });
 	let failure = null;
+	let cleaningUp = false;
 	const interrupt = (signal) => {
 		requestedSignal ??= signal;
-		activeChild?.kill(signal);
+		if (!cleaningUp) activeChild?.kill(signal);
 	};
 	const onInterrupt = () => interrupt("SIGINT");
 	const onTerminate = () => interrupt("SIGTERM");
@@ -470,8 +473,7 @@ async function main() {
 		evidence.failure = error.message;
 		failure = error;
 	} finally {
-		process.removeListener("SIGINT", onInterrupt);
-		process.removeListener("SIGTERM", onTerminate);
+		cleaningUp = true;
 		try {
 			await cleanupRecoveredRun(workDir);
 			evidence.sensitive_material_removed = true;
@@ -482,7 +484,11 @@ async function main() {
 			failure ??= new Error("Recovered project, volumes or plaintext material could not be removed");
 		}
 		evidence.finished_at = new Date().toISOString();
-		await writeFile(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`, { mode: 0o600, flag: "wx" });
+		try { await writeFile(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`, { mode: 0o600, flag: "wx" }); }
+		finally {
+			process.removeListener("SIGINT", onInterrupt);
+			process.removeListener("SIGTERM", onTerminate);
+		}
 	}
 	if (requestedSignal) {
 		console.error(`AIDR restore drill interrupted by ${requestedSignal}; cleanup completed before exit.`);

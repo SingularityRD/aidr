@@ -274,15 +274,20 @@ describe("Codex enforcement fails CLOSED when it cannot evaluate", () => {
 		).resolves.toBeDefined();
 	});
 
-	it("handles a malformed payload without throwing", async () => {
-		const outcome = await enforceCodexPreToolUse(
-			{ tool_name: 42, tool_input: "not-an-object", session_id: null } as unknown as Record<
-				string,
-				unknown
-			>,
-			options(),
-		);
-		expect(["allow", "deny", "ask"]).toContain(outcome.decision);
+	it("denies malformed and mismatched payloads for direct API consumers", async () => {
+		for (const input of [
+			null,
+			{},
+			{ tool_name: 42, tool_input: "not-an-object", session_id: null },
+			{ tool_name: "Bash", tool_input: null },
+			{ tool_name: "Bash", tool_input: [] },
+			{ tool_name: " ", tool_input: {} },
+			{ hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: {} },
+		]) {
+			const outcome = await enforceCodexPreToolUse(input as unknown as Record<string, unknown>, options());
+			expect(outcome.decision).toBe("deny");
+			expect(outcome.wire.hookSpecificOutput?.permissionDecision).toBe("deny");
+		}
 	});
 });
 

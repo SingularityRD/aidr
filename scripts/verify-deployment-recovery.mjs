@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { parseArgs } from "node:util";
+import { buildNodeHelperImage } from "./lib/node-helper-image.mjs";
 
 const { values } = parseArgs({ options: { source: { type: "string" }, recovered: { type: "string" } } });
 if (!values.source || !values.recovered) throw new Error("--source and --recovered development installations required");
@@ -12,7 +13,8 @@ const source = resolve(values.source); const recovered = resolve(values.recovere
 assert.notEqual(source, recovered);
 for (const dir of [source, recovered]) {
   const deployment = JSON.parse(readFileSync(join(dir, "deployment.json"), "utf8"));
-  assert.ok(deployment.development && ["localhost", "127.0.0.1"].includes(new URL(deployment.supabase_url).hostname), "Comparison requires isolated development data that has not changed since backup");
+  const endpoint = new URL(deployment.supabase_url);
+  assert.ok(deployment.development && ["http:", "https:"].includes(endpoint.protocol) && ["localhost", "127.0.0.1", "[::1]"].includes(endpoint.hostname), "Comparison requires isolated development data that has not changed since backup");
 }
 function docker(args) {
   const result = spawnSync("docker", args, { encoding: "utf8", timeout: 30000, maxBuffer: 64 * 1024 * 1024 });
@@ -37,9 +39,10 @@ for (const table of tables) {
 const policySql = "SELECT md5(coalesce(string_agg(tenant_id::text || ':' || version::text || ':' || policy::text,',' ORDER BY tenant_id),'')) FROM public.tenant_runtime_policies";
 const queryPolicy = (dir) => docker([...compose(dir), "exec", "-T", "db", "psql", "-U", "postgres", "-d", "postgres", "-tA", "-c", policySql]);
 assert.equal(queryPolicy(source), queryPolicy(recovered)); checks.push("policy tenant, version and contents match");
+const helperImage = buildNodeHelperImage();
 function storageHash(dir) {
   const name = volume(dir, "storage", "/var/lib/storage");
-  const inventory = docker(["run", "--rm", "--network", "none", "--mount", `type=volume,src=${name},dst=/data,readonly`, "node:24.12.0-alpine3.23", "sh", "-c", "cd /data && find . -type f -exec sha256sum {} + | sort"]);
+  const inventory = docker(["run", "--rm", "--network", "none", "--mount", `type=volume,src=${name},dst=/data,readonly`, helperImage, "sh", "-c", "cd /data && find . -type f -exec sha256sum {} + | sort"]);
   return createHash("sha256").update(inventory).digest("hex");
 }
 assert.equal(storageHash(source), storageHash(recovered)); checks.push("every object path and file digest matches");

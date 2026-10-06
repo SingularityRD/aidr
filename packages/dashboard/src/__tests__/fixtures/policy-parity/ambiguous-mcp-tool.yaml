@@ -1,0 +1,8 @@
+version: "1.0"
+default_action: ask
+rules:
+  - name: Ambiguous dotted selector
+    condition:
+      mcp_tool: a.b.c
+    action: deny
+    priority: 10

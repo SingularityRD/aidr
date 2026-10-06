@@ -7,6 +7,7 @@ import { createMiddleware } from "../middleware.js";
 class MockClient {
 	constructor(private readonly result: CheckResult) {}
 	check = vi.fn(async (_request: CheckRequest) => this.result);
+	assertCallerOperationAllowed = vi.fn(async () => {});
 }
 
 describe("SDK integration", () => {

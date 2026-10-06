@@ -10,6 +10,13 @@ import {
 	SECRET_STORE_OPTION_DESCRIPTION,
 } from "./commands/config-secret.js";
 import discoverCommand from "./commands/discover.js";
+import {
+	learningApproveCommand,
+	learningExecuteCommand,
+	learningExportAuthorityCommand,
+	learningIngestCommand,
+	learningKeygenCommand,
+} from "./commands/learning.js";
 import scanCommand from "./commands/scan.js";
 import setupCommand from "./commands/setup.js";
 import statusCommand from "./commands/status.js";
@@ -81,10 +88,10 @@ program
 	.command("collect")
 	.description("Continuously collect tenant-scoped AI infrastructure inventory")
 	.requiredOption("--tenant <id>", "Tenant identifier recorded in the inventory")
+	.option("--provider <id>", "Discovery provider: local, aws, azure, gcp or intune", "local")
 	.option(
-		"--provider <id>",
-		"Discovery provider (local is implemented; cloud/MDM require an adapter)",
-		"local",
+		"--provider-config <path>",
+		"Tenant-bound cloud/Intune scope and credential references (JSON)",
 	)
 	.option("-t, --target <url...>", "Target base URL (repeatable)")
 	.option("-f, --file <path>", "Read targets from a file, one URL per line")
@@ -123,5 +130,76 @@ program
 	)
 	.option("--json", "Emit a machine-readable report")
 	.action(uninstallCommand);
+
+const learningProgram = program
+	.command("learning")
+	.description(
+		"Explicit, signed behavioral learning with separate execution and approval authorities",
+	);
+
+learningProgram
+	.command("keygen")
+	.description("Create one operator authority; publish only its public key and private reference")
+	.requiredOption("--role <role>", "Authority role: execution or approval")
+	.requiredOption("--out <path>", "New private authority-reference JSON file (never overwritten)")
+	.option("--secret-store <kind>", SECRET_STORE_OPTION_DESCRIPTION)
+	.action(learningKeygenCommand);
+
+learningProgram
+	.command("export-authority")
+	.description(
+		"Export private signed broker policy and entitlement for an independent approval station",
+	)
+	.requiredOption("--runtime <runtime>", "Installed connector policy runtime")
+	.requiredOption("--out <path>", "New private authority-handoff JSON file (never overwritten)")
+	.action(learningExportAuthorityCommand);
+
+learningProgram
+	.command("execute")
+	.description("Execute one allowed foreground Bash request and issue a verified success receipt")
+	.requiredOption(
+		"--runtime <runtime>",
+		"Installed connector policy: claude-code, cursor, vscode, openclaw, opencode or codex",
+	)
+	.requiredOption(
+		"--request <path>",
+		"Strict JSON request with sessionId, toolName Bash, command and execution_shell",
+	)
+	.requiredOption("--key-ref <path>", "Private execution authority-reference file")
+	.requiredOption("--out <path>", "New execution-receipt JSON file (never overwritten)")
+	.action(learningExecuteCommand);
+
+learningProgram
+	.command("approve")
+	.description(
+		"Independently confirm benign execution and consent to learning at an interactive prompt",
+	)
+	.requiredOption("--runtime <runtime>", "Installed connector policy runtime")
+	.requiredOption("--receipt <path>", "Signed execution-receipt JSON file")
+	.requiredOption(
+		"--request <path>",
+		"The exact original request for independent benign classification",
+	)
+	.requiredOption(
+		"--broker-authority <path>",
+		"Private signed broker-authority handoff; verified against this station's fixed issuer roots",
+	)
+	.requiredOption(
+		"--key-ref <path>",
+		"Private approval authority-reference file in separate operator custody",
+	)
+	.requiredOption("--out <path>", "New approval-receipt JSON file (never overwritten)")
+	.action(learningApproveCommand);
+
+learningProgram
+	.command("ingest")
+	.description(
+		"Verify both independent signatures and accept one bounded durable baseline observation",
+	)
+	.requiredOption("--runtime <runtime>", "Installed connector policy runtime")
+	.requiredOption("--request <path>", "The exact original request JSON file")
+	.requiredOption("--receipt <path>", "Signed execution-receipt JSON file")
+	.requiredOption("--approval <path>", "Signed benign-consent approval JSON file")
+	.action(learningIngestCommand);
 
 await program.parseAsync(process.argv);

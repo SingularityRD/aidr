@@ -4,7 +4,7 @@
  *
  * The marketplace plugin keeps `threats/` and `allowlists/` at the plugin
  * root. A package consumer cannot rely on the monorepo cwd, so release builds
- * copy the same directories to `dist/../resources/` and this resolver prefers
+ * copy the same directories to integrity-covered `dist/resources/` and this resolver prefers
  * that location. Explicit environment overrides remain available for managed
  * deployments and customer-specific rule stores.
  */
@@ -26,10 +26,11 @@ const repositoryRoot = resolve(packageRoot, "..", "..");
  */
 export function resolveAssetDir(kind: AssetKind): string {
 	const envName = kind === "threats" ? "AIDR_THREATS_DIR" : "AIDR_ALLOWLISTS_DIR";
-	const packaged = join(packageRoot, "resources", kind);
+	const packaged = join(packageRoot, "dist", "resources", kind);
 	const candidates = [
 		process.env[envName],
 		packaged,
+		join(packageRoot, "resources", kind),
 		join(packageRoot, kind),
 		join(repositoryRoot, kind),
 		join(process.cwd(), kind),

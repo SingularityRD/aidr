@@ -67,6 +67,8 @@ interface ActivityRecord {
 	at: number;
 }
 
+let tabActivity: ActivityRecord | null = null;
+
 function activityStorage(): Storage | null {
 	try {
 		return typeof window === "undefined" ? null : window.localStorage;
@@ -79,10 +81,10 @@ function activityStorage(): Storage | null {
 
 function readActivity(): ActivityRecord | null {
 	const storage = activityStorage();
-	if (!storage) return null;
+	if (!storage) return tabActivity;
 	try {
 		const raw = storage.getItem(ACTIVITY_STORAGE_KEY);
-		if (!raw) return null;
+		if (!raw) return tabActivity;
 		const parsed: unknown = JSON.parse(raw);
 		if (!parsed || typeof parsed !== "object") return null;
 		const record = parsed as { user_id?: unknown; at?: unknown };
@@ -90,11 +92,12 @@ function readActivity(): ActivityRecord | null {
 		if (!Number.isFinite(record.at)) return null;
 		return { user_id: record.user_id, at: record.at };
 	} catch {
-		return null;
+		return tabActivity;
 	}
 }
 
 function writeActivity(userId: string, at: number): void {
+	tabActivity = { user_id: userId, at };
 	const storage = activityStorage();
 	if (!storage) return;
 	try {
@@ -105,6 +108,7 @@ function writeActivity(userId: string, at: number): void {
 }
 
 function clearActivity(): void {
+	tabActivity = null;
 	const storage = activityStorage();
 	if (!storage) return;
 	try {
@@ -114,11 +118,6 @@ function clearActivity(): void {
 	}
 }
 
-/**
- * End an idle session. Remote revocation is best effort, but local credentials
- * and activity state are always purged so an outage cannot resurrect the
- * expired browser session.
- */
 async function revokeCurrentSession(): Promise<void> {
 	const { data, error } = await supabase.functions.invoke("identity-security", {
 		body: { action: "revoke_sessions", scope: "global" },
@@ -135,6 +134,7 @@ async function revokeCurrentSession(): Promise<void> {
 	}
 }
 
+/** Keep the expired record until local sign-out succeeds, even during an outage. */
 async function endIdleSession(): Promise<void> {
 	try {
 		await revokeCurrentSession();
@@ -143,11 +143,10 @@ async function endIdleSession(): Promise<void> {
 		// browser credential would make the expired session usable again.
 	} finally {
 		try {
-			await supabase.auth.signOut({ scope: "local" });
+			const { error } = await supabase.auth.signOut({ scope: "local" });
+			if (!error) clearActivity();
 		} catch {
-			// Local cleanup remains best effort when the Auth client itself fails.
-		} finally {
-			clearActivity();
+			// Retain the expired record until local credentials can be cleared.
 		}
 	}
 }
@@ -224,9 +223,17 @@ export function installInactivityTimeout(onExpired: (status: SessionStatus) => v
 	let currentUserId: string | null = null;
 	let lastActivity = Date.now();
 	let watching = true;
+	let checking = false;
 
 	const noteActivity = () => {
 		if (!watching) return;
+		const record = readActivity();
+		const lastSeen = record && record.user_id === currentUserId ? record.at : lastActivity;
+		// A suspended tab must expire before focus or input can extend its clock.
+		if (currentUserId && Date.now() - lastSeen > INACTIVITY_TIMEOUT_MS) {
+			void check();
+			return;
+		}
 		lastActivity = Date.now();
 		if (currentUserId) writeActivity(currentUserId, lastActivity);
 	};
@@ -241,21 +248,30 @@ export function installInactivityTimeout(onExpired: (status: SessionStatus) => v
 	for (const event of events) window.addEventListener(event, noteActivity, { passive: true });
 
 	const check = async () => {
-		if (!watching) return;
-		const { data, error } = await supabase.auth.getSession();
-		if (error) return;
-		const userId = data?.session?.user?.id ?? null;
-		if (!userId) {
+		if (!watching || checking) return;
+		checking = true;
+		try {
+			const { data, error } = await supabase.auth.getSession();
+			if (error || !watching) return;
+			const userId = data?.session?.user?.id ?? null;
+			if (!userId) {
+				currentUserId = null;
+				return;
+			}
+			if (currentUserId !== userId) lastActivity = Date.now();
+			currentUserId = userId;
+			const record = readActivity();
+			const lastSeen = record && record.user_id === userId ? record.at : lastActivity;
+			if (!record || record.user_id !== userId) writeActivity(userId, lastSeen);
+			if (Date.now() - lastSeen <= INACTIVITY_TIMEOUT_MS) return;
+			await endIdleSession();
 			currentUserId = null;
-			return;
+			if (watching) onExpired(expiredStatus());
+		} catch {
+			// A temporary Auth failure must not stop future idle checks.
+		} finally {
+			checking = false;
 		}
-		currentUserId = userId;
-		const record = readActivity();
-		const lastSeen = record && record.user_id === userId ? record.at : lastActivity;
-		if (Date.now() - lastSeen <= INACTIVITY_TIMEOUT_MS) return;
-		await endIdleSession();
-		watching = false;
-		onExpired(expiredStatus());
 	};
 
 	// Resolve the current principal immediately so the very first user event is

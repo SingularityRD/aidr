@@ -235,12 +235,14 @@ export async function loadConfig(
 	configPath?: string,
 	logger: Logger = nullLogger,
 	secretStore?: SecretStore,
+	source?: { raw: string | null },
 ): Promise<Config> {
 	const path = configPath ?? defaultConfigPath();
 
 	let raw: string;
 	try {
-		raw = await getFileContent(path);
+		if (source?.raw === null) return sanitizeConfigPaths(parseRuntimeConfig({}), logger);
+		raw = source ? (source.raw as string) : await getFileContent(path);
 	} catch (error) {
 		if (isMissingFileError(error)) {
 			// Missing file is a deliberate fresh-install state: use local defaults.

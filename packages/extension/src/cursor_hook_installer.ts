@@ -1,6 +1,7 @@
 import { access, chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { atomicWriteJson } from "@singularityrd/aidr-core";
 
 import * as vscode from "vscode";
 
@@ -177,7 +178,6 @@ function upsertManagedHooks(existing: CursorHooksFile, command: string): CursorH
 		failClosed: true,
 	});
 	hooks.preToolUse = appendManaged(hooks.preToolUse, {
-		matcher: "Write|Delete|Edit|WebFetch",
 		command,
 		timeout: 30,
 		failClosed: true,
@@ -275,8 +275,7 @@ async function readHooksFile(filePath: string): Promise<CursorHooksFile> {
 }
 
 async function writeHooksFile(filePath: string, data: CursorHooksFile): Promise<void> {
-	await mkdir(path.dirname(filePath), { recursive: true });
-	await writeFile(filePath, `${JSON.stringify(data, null, 2)}\n`, "utf8");
+	await atomicWriteJson(filePath, data);
 }
 
 function quote(value: string): string {

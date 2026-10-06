@@ -1,6 +1,6 @@
 # AIDR alt özellik envanteri
 
-Otomatik üretim tarihi: **2026-09-24**. 71 alt özellik ve teslimat gereksinimi eşlendi: 41 çalışan kod akışına bağlı, 28 kısmi, 0 eksik, 2 dış kanıta bağlı. Bu sayılar üretim kabulü veya tespit başarım oranı değildir. Satış/GA kararı **NO-GO** olarak korunur.
+Otomatik üretim tarihi: **2026-10-06**. 71 alt özellik ve teslimat gereksinimi eşlendi: 41 çalışan kod akışına bağlı, 28 kısmi, 0 eksik, 2 dış kanıta bağlı. Bu sayılar üretim kabulü veya tespit başarım oranı değildir. Satış/GA kararı **NO-GO** olarak korunur.
 
 Makine kaydı: [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json). Kaynaklar, tüketen bileşenler ve her satırın kalan işi bu dosyada bulunur. Önceki PRODUCT_SCOPE_AND_FEATURES.md dosyasındaki modül erişilebilirlik sayıları tarihsel bir ara denetime aittir.
 
@@ -21,8 +21,8 @@ Makine kaydı: [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json). Kaynaklar, tük
 | DET-04 | [Credential access and exfiltration](threats/credentials.yaml) | wired | Customer secret types and benign workflow corpus need calibration |
 | DET-05 | [Cross-platform rules and mining](threats/mining.yaml) | wired | Native host matrix and mining workload acceptance remain external |
 | DET-06 | [Prompt injection inspection](packages/core/src/output-scanner.ts) | partial | Claude PostToolUse and OpenClaw after_tool_call cannot prove same-turn model blocking; provider streams and native host bypass need acceptance |
-| DET-07 | [Structured DLP and PII](packages/core/src/dlp/scanner.ts) | partial | Other connectors, trusted provisioning operations and customer label acceptance remain open |
-| DET-08 | [Behavioral and novelty analysis](packages/core/src/behavioral-orchestrator.ts) | partial | No host supplies a trusted, call-ID/input-digest-bound successful-execution receipt. DET-08 is not production ready; callback wiring and independent efficacy acceptance remain required |
+| DET-07 | [Structured DLP and PII](packages/core/src/dlp/scanner.ts) | partial | Real labels and TR/EN NER efficacy are unaccepted; later host callbacks cannot guarantee same-turn output blocking; unsupported opaque formats fail closed |
+| DET-08 | [Behavioral and novelty analysis](packages/core/src/behavioral-orchestrator.ts) | partial | Exit zero is not business success or process-tree isolation; real corpus efficacy, customer role custody and native OS acceptance remain required; OS owner can roll back the whole vault and journal |
 | DET-09 | [ML classification and similarity](packages/core/src/behavioral-orchestrator.ts) | partial | No independently validated production model efficacy or broad runtime adoption |
 | DET-10 | [URL reputation](packages/core/src/clients/url-check.ts) | partial | Provider feed, operational freshness and customer latency proof still required |
 | DET-11 | [File reputation and AMSI](packages/core/src/clients/file-check.ts) | partial | AMSI requires native Windows host acceptance; no clean verdict on unavailable leg |
@@ -38,7 +38,7 @@ Makine kaydı: [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json). Kaynaklar, tük
 | MCP-04 | [Empty-argument tool enforcement](packages/claude-code/src/pre-tool-use.ts) | wired | Live host event delivery still requires acceptance |
 | MCP-05 | [Tool description attestation and drift](packages/core/src/mcp-attestation.ts) | partial | Direct host paths outside the gateway and trusted publisher provisioning remain open |
 | MCP-06 | [Identity graph and delegated privileges](packages/core/src/delegated-credential.ts) | partial | Real identity-provider and tool-provider integration remains external |
-| MCP-07 | [MCP gateway response blocking](packages/mcp-gateway/src/gateway.mjs) | partial | Binary output, server-initiated requests, forced routing of direct upstream access and customer native acceptance remain open |
+| MCP-07 | [MCP gateway response blocking](packages/mcp-gateway/src/gateway.mjs) | partial | Opaque data requires an actually capable guard and otherwise denies; resources/prompts/subscriptions and unrelated GET paths are outside tools scope; host egress controls and customer/native acceptance remain open |
 
 ## AI infrastructure
 
@@ -46,7 +46,7 @@ Makine kaydı: [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json). Kaynaklar, tük
 |---|---|---|---|
 | INF-01 | [Native fingerprint and CVE scanning](packages/core/src/aig-infra-scan.ts) | wired | Compiled dataset freshness and unsupported fingerprint rules constrain coverage |
 | INF-02 | [Scan report to runtime policy](packages/core/src/aig-policy.ts) | wired | Opt-in, scoped origins; report file is a trusted local administrative input |
-| INF-03 | [Continuous fleet discovery](packages/cli/src/commands/collect.ts) | partial | Cloud/MDM provider adapters, customer-approved scopes/credentials, customer-activated production scheduling and alert/paging delivery, and customer field acceptance remain open |
+| INF-03 | [Continuous fleet discovery](packages/cli/src/commands/collect.ts) | partial | Actual customer cloud IAM/MDM licences, approved scopes, production schedules, paging and provider acceptance remain open; reported resources do not prove whole-estate coverage |
 
 ## Response
 
@@ -57,8 +57,8 @@ Makine kaydı: [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json). Kaynaklar, tük
 | RSP-03 | [File snapshot and rollback](packages/core/src/rollback.ts) | wired | Filesystem scope and restore preconditions; native acceptance still required |
 | RSP-04 | [Process containment](packages/core/src/contain.ts) | partial | No enterprise endpoint isolation or universal process authority |
 | RSP-05 | [Signed response audit chain](packages/core/src/response-audit.ts) | wired | Disabled by default; independent key custody and storage/retention evidence remain external |
-| RSP-06 | [Fleet kill switch and credential revoke](supabase/functions/revocations/index.ts) | partial | No installed endpoint service, verified OS isolation adapter, device attestation or cross-provider credential revocation |
-| RSP-07 | [SOAR playbook orchestration](supabase/functions/response-playbooks/index.ts) | partial | Not production accepted or connected to an alert/AutoSecOps trigger. A separately installed endpoint worker and verified host adapter are not provisioned or customer-validated; host permissions and native acceptance, external SOAR/provider connectors, credential revocation and rollback remain unsupported or open |
+| RSP-06 | [Fleet kill switch and credential revoke](supabase/functions/revocations/index.ts) | partial | Actual signed Windows VM/firewall/MDM acceptance remains open; non-Windows isolation and universal cloud credential revocation are unsupported; worker is not a SYSTEM impersonation service |
+| RSP-07 | [SOAR playbook orchestration](supabase/functions/response-playbooks/index.ts) | partial | External alarm source integration, real Windows permissions/effects, signed distribution, native rollback and customer incident acceptance remain open |
 
 ## Policy
 

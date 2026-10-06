@@ -89,6 +89,7 @@ export {
 	summarizeActionsForLog,
 	toolInputSummaryForAudit,
 } from "./audit-log.js";
+export * from "./authenticated-behavioral-baseline-store.js";
 // Durable, bounded baseline for the behavioural detector
 export {
 	type BehavioralBaselineObservation,
@@ -99,6 +100,8 @@ export {
 	createBehavioralBaselineStore,
 	FileBehavioralBaselineStore,
 } from "./behavioral-baseline-store.js";
+export * from "./behavioral-learning.js";
+export * from "./behavioral-learning-receipt.js";
 // Tenant/session-isolated behavioral, novelty and ML orchestration
 export {
 	BEHAVIORAL_ORCHESTRATOR_BOUNDS,
@@ -114,6 +117,7 @@ export {
 	type BehavioralOrchestratorConfig,
 	type BehavioralOrchestratorDependencies,
 	type BehavioralOrchestratorStats,
+	behavioralObservationForInput,
 	createBehavioralDetectionOrchestrator,
 	LOCAL_EMBEDDER_MODEL_VERSION,
 } from "./behavioral-orchestrator.js";
@@ -179,7 +183,7 @@ export {
 	type SOC2Report,
 } from "./compliance-report.js";
 // Config
-export { AIDR_DIR, loadConfig, resolvePath } from "./config.js";
+export { AIDR_DIR, isInvalidConfig, loadConfig, resolvePath } from "./config.js";
 // Connector tool-name contract (aliases every connector's emitted tool names)
 export {
 	CONNECTOR_TOOL_SURFACES,
@@ -238,11 +242,16 @@ export { DetectionLegUnavailableError, describeHttpFailure } from "./detection-l
 // delivers the same contract to Claude Code, OpenCode, OpenClaw, Codex and the
 // Cursor/VS Code extension.
 export {
+	type BrokerLearningAuthorityBundle,
 	behavioralBaselineDir,
 	canonicalDetectorPolicyPayload,
 	type DetectorProvisionedContext,
 	detectorPolicyPath,
+	exportBrokerLearningAuthority,
 	loadProvisionedDetectorContext,
+	loadProvisionedLearningApprovalContext,
+	loadProvisionedLearningContext,
+	type ProvisionedLearningContext,
 } from "./detector-provisioning.js";
 export type { DeviceAttestation, DeviceAttestationError } from "./device-attestation.js";
 // Device enrollment binding used by the fleet response transport. This is not
@@ -254,8 +263,14 @@ export {
 	hashDeviceKey,
 	parseDeviceAttestation,
 } from "./device-attestation.js";
-// Discovery providers: local collection is available; cloud and MDM adapters
-// remain explicit unconfigured boundaries until customer integrations exist.
+// Tenant-scoped local HTTP, cloud management and Intune discovery.
+export { type CloudDiscoveryConfig, parseCloudDiscoveryConfig } from "./discovery-cloud-config.js";
+export {
+	type CloudDiscoveryEvidence,
+	CloudDiscoveryProvider,
+	cloudDiscoveryScopeHash,
+	parseCloudDiscoveryEvidence,
+} from "./discovery-cloud-provider.js";
 export {
 	createDiscoveryProvider,
 	type DiscoveryProvider,
@@ -596,6 +611,7 @@ export { createChildLogger, createLogger, getLogger, setLogger } from "./logger.
 export type { ManagedState } from "./managed.js";
 // Verified managed identity and entitlement state for connector provisioning.
 export {
+	getEffectiveManagedApiKey,
 	isEntitlementActive,
 	loadManagedState,
 	managedStatePath,
@@ -674,7 +690,7 @@ export type {
 export { LocalEmbeddingModel } from "./ml-model.js";
 export type { AnomalyEvent, BehaviorProfile } from "./novelty-detection.js";
 export { createNoveltyDetector, NoveltyDetector } from "./novelty-detection.js";
-export { scanModelOutput } from "./output-scanner.js";
+export { type OutputFinding, scanModelOutput } from "./output-scanner.js";
 export type { PackageCheckerConfig, PackageCheckInput } from "./package-checker.js";
 // Package checker
 export { PackageChecker } from "./package-checker.js";
@@ -717,6 +733,11 @@ export {
 	parsePolicyDocument,
 	simulateRuntimePolicy,
 } from "./policy-document.js";
+export { preparePrivateLocalDirectory, preparePrivateLocalFile } from "./private-local-file.js";
+export {
+	scanCachedProvisionedOutput,
+	scanProvisionedOutput,
+} from "./provisioned-output-scanner.js";
 // Quarantine
 export {
 	AutoQuarantine,
@@ -796,6 +817,13 @@ export {
 	type ResponseChainWrite,
 	responseAuditorFromConfig,
 } from "./response-audit.js";
+export {
+	inspectResponseBarrier,
+	type ResponseBarrierInspection,
+	type ResponseBarrierOptions,
+	type ResponseControlConfig,
+	ResponseControlConfigSchema,
+} from "./response-barrier.js";
 export type {
 	FleetResponseActionAdapter,
 	FleetResponseAuditEvent,
@@ -804,8 +832,18 @@ export type {
 	FleetResponseConsumerOptions,
 	FleetResponseCycleResult,
 	FleetResponseIdentity,
+	FleetResponseSignedDelivery,
 } from "./response-command-consumer-v6.js";
-export { FleetResponseCommandConsumer } from "./response-command-consumer-v6.js";
+export {
+	FleetResponseActionInterrupted,
+	FleetResponseCommandConsumer,
+	verifyFleetResponseCommandDelivery,
+} from "./response-command-consumer-v6.js";
+export {
+	type FleetJournalState,
+	type FleetResponseControlHead,
+	FleetResponseJournal,
+} from "./response-command-journal-v6.js";
 export {
 	FleetResponseCommandWorker,
 	type FleetResponseWorkerOptions,
@@ -921,13 +959,6 @@ export {
 	type SplunkHecSiemConfig,
 	type WebhookSiemConfig,
 } from "./siem-delivery.js";
-export {
-	classifySyslogAddress,
-	SIEM_SYSLOG_CONFIG_JSON_SCHEMA,
-	type SyslogAddressClass,
-	type SyslogSiemConfig,
-	type SyslogTransport,
-} from "./siem-syslog.js";
 // SIEM export (CEF, LEEF, JSON, RFC 5424 syslog)
 export {
 	exportToCEF,
@@ -940,6 +971,13 @@ export {
 	type SyslogFormatOptions,
 	SyslogMessageTooLargeError,
 } from "./siem-export.js";
+export {
+	classifySyslogAddress,
+	SIEM_SYSLOG_CONFIG_JSON_SCHEMA,
+	type SyslogAddressClass,
+	type SyslogSiemConfig,
+	type SyslogTransport,
+} from "./siem-syslog.js";
 export type {
 	DurableTelemetryEvent,
 	TelemetryDeliveryResult,
@@ -1070,3 +1108,10 @@ export { getVersion, VERSION } from "./version.js";
 export type { VersionCheckContext, VersionCheckResult } from "./version-check.js";
 // Version check
 export { checkForUpdate, isNewerVersion } from "./version-check.js";
+export { windowsTargetsAreAlreadyPrivate } from "./windows-private-acl-probe.js";
+export {
+	initializeInstalledWindowsResponseWorker,
+	loadInstalledWindowsResponseWorker,
+	runInstalledWindowsResponseWorker,
+	validateInstalledWindowsResponseRemoval,
+} from "./windows-response-worker.js";

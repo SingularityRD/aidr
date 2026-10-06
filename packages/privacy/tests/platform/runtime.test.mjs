@@ -9,8 +9,9 @@ import {signPolicy} from '../../dist/enterprise/policy.js';
 import {PersistentAuditJournal} from '../../dist/platform/persistent-audit.js';
 import {verifyAudit} from '../../dist/enterprise/audit.js';
 import {policy, context, NOW} from '../enterprise/helpers.mjs';
+import {privateDirectory} from './helpers.mjs';
 function setup(){
- const root=mkdtempSync(join(tmpdir(),'aidr-runtime-'));chmodSync(root,0o700);
+ const root=mkdtempSync(join(tmpdir(),'aidr-runtime-'));privateDirectory(root);
  const keys=generateKeyPairSync('ed25519');const trust={issuer:'https://issuer.example.com',audience:'aidr',keys:new Map([['k1',keys.publicKey]])};
  const signed=signPolicy(policy(),'k1',keys.privateKey);
  const options={tenantId:'tenant-a',databasePath:join(root,'control.sqlite'),encryption:{active:'k1',keys:[{id:'k1',key:Buffer.alloc(32,18)}]},audit:{keyId:'audit1',key:Buffer.alloc(32,22)},identity:{user:trust,device:trust,provider:trust,roleGroups:{},scopes:[]},policy:{signed,keys:new Map([['k1',keys.publicKey]])},destinations:[],clock:()=>NOW};

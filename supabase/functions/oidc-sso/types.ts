@@ -89,7 +89,7 @@ export interface OidcStore {
 		auth_user_id: string;
 		tenant_id: string;
 		email_claim: string | null;
-	}): Promise<"ok" | "conflict" | "error">;
+	}, provider: Pick<OidcProviderRow, "issuer" | "client_id" | "subject_claim">): Promise<"ok" | "conflict" | "error">;
 	touchIdentity(providerId: string, subject: string): Promise<void>;
 	/** True unless a SCIM user is already bound to this Auth user with a different external id. */
 	scimSubjectCompatible(tenantId: string, userId: string, subject: string): Promise<boolean>;

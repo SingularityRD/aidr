@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Optional HF token-classification worker. No network, auto-download, pickle or remote code.
-Model inference has NOT been executed in the delivered environment; see docs/VALIDATION.md.
+Pinned public-candidate CPU inference was executed on 2026-10-06; see docs/MODEL_PROVIDER.md.
 """
 from __future__ import annotations
 import argparse
@@ -8,7 +8,8 @@ import json
 import os
 import sys
 from pathlib import Path
-from artifacts import verified_manifest, utf16_offsets, aggregate_tokens
+from artifacts import verified_manifest, utf16_offsets, aggregate_tokens, encode_first_words
+from bioes import decode_bioes, require_default_calibration
 
 for key, value in {'HF_HUB_OFFLINE':'1', 'TRANSFORMERS_OFFLINE':'1', 'HF_HUB_DISABLE_TELEMETRY':'1',
                    'DO_NOT_TRACK':'1', 'TOKENIZERS_PARALLELISM':'false'}.items():
@@ -17,6 +18,17 @@ for key, value in {'HF_HUB_OFFLINE':'1', 'TRANSFORMERS_OFFLINE':'1', 'HF_HUB_DIS
 def send(value: dict) -> None:
     sys.stdout.write(json.dumps(value, ensure_ascii=True, separators=(',', ':')) + '\n')
     sys.stdout.flush()
+
+def restore_tokenizer_normalizer(tokenizer, root: Path) -> None:
+    """Retain the verified tokenizer's preprocessing across Transformers versions."""
+    path = root / 'tokenizer.json'
+    if not path.is_file():
+        return
+    from tokenizers import Tokenizer
+    expected = json.loads(path.read_text(encoding='utf-8'))['normalizer']
+    tokenizer.backend_tokenizer.normalizer = Tokenizer.from_file(str(path)).normalizer
+    if json.loads(tokenizer.backend_tokenizer.to_str())['normalizer'] != expected:
+        raise ValueError('TOKENIZER_NORMALIZER_MISMATCH')
 
 def main() -> int:
     parser = argparse.ArgumentParser()
@@ -41,8 +53,16 @@ def main() -> int:
         tokenizer = AutoTokenizer.from_pretrained(spec['_root'], local_files_only=True, trust_remote_code=False, use_fast=True)
         if not tokenizer.is_fast:
             raise ValueError('FAST_TOKENIZER_REQUIRED')
-        model = AutoModelForTokenClassification.from_pretrained(spec['_root'], local_files_only=True,
-            trust_remote_code=False, use_safetensors=True).to('cpu').eval()
+        restore_tokenizer_normalizer(tokenizer, Path(spec['_root']))
+        model, loading = AutoModelForTokenClassification.from_pretrained(spec['_root'], local_files_only=True,
+            trust_remote_code=False, use_safetensors=True, output_loading_info=True)
+        if any(loading[key] for key in ('missing_keys', 'unexpected_keys', 'mismatched_keys', 'error_msgs')):
+            raise ValueError('CHECKPOINT_LOAD_MISMATCH')
+        model = model.to('cpu').eval()
+        if model.config.model_type == 'openai_privacy_filter':
+            if spec.get('aggregation', 'token') != 'token':
+                raise ValueError('INVALID_AGGREGATION')
+            require_default_calibration(Path(spec['_root']))
         length = spec.get('max_length', 384)
         if length > min(getattr(model.config, 'max_position_embeddings', 512), tokenizer.model_max_length):
             raise ValueError('WINDOW_TOO_LARGE')
@@ -73,11 +93,17 @@ def main() -> int:
         mapping = utf16_offsets(text)
         entities = {}
         for spec, tokenizer, model in models:
-            encoded = tokenizer(text, return_offsets_mapping=True, return_overflowing_tokens=True,
-                truncation=True, max_length=spec.get('max_length', 384), stride=spec.get('stride', 96))
+            first_word = spec.get('aggregation', 'token') == 'first_word'
+            if first_word:
+                encoded, offset_windows, word_windows = encode_first_words(tokenizer, text,
+                    spec.get('max_length', 384), spec.get('stride', 96))
+            else:
+                encoded = tokenizer(text, return_offsets_mapping=True, return_overflowing_tokens=True,
+                    truncation=True, max_length=spec.get('max_length', 384), stride=spec.get('stride', 96))
+                offset_windows = encoded['offset_mapping']
             covered = bytearray(len(text))
             with torch.inference_mode():
-                for i, offsets in enumerate(encoded['offset_mapping']):
+                for i, offsets in enumerate(offset_windows):
                     for start, end in offsets:
                         if not 0 <= start <= end <= len(text):
                             raise ValueError('INVALID_OFFSETS')
@@ -85,9 +111,20 @@ def main() -> int:
                     tensors = {key: torch.tensor([encoded[key][i]], dtype=torch.long)
                                for key in tokenizer.model_input_names if key in encoded}
                     logits = model(**tensors).logits[0]
-                    scores, ids = logits.softmax(-1).max(-1)
+                    probabilities = logits.float().softmax(-1)
+                    if model.config.model_type == 'openai_privacy_filter':
+                        ids = torch.tensor(decode_bioes(logits.float().log_softmax(-1).tolist(),
+                            [model.config.id2label[i] for i in range(logits.shape[-1])]), dtype=torch.long)
+                        scores = probabilities.gather(-1, ids.unsqueeze(-1)).squeeze(-1)
+                    else:
+                        scores, ids = probabilities.max(-1)
                     labels = [model.config.id2label[int(index)] for index in ids.tolist()]
-                    spans = aggregate_tokens(text, offsets, labels, scores.tolist(), spec['label_map'])
+                    if first_word:
+                        selected = [j for j, word in enumerate(word_windows[i]) if word is not None]
+                        spans = aggregate_tokens(text, [word_windows[i][j] for j in selected],
+                            [labels[j] for j in selected], [float(scores[j]) for j in selected], spec['label_map'])
+                    else:
+                        spans = aggregate_tokens(text, offsets, labels, scores.tolist(), spec['label_map'])
                     for entity in spans:
                         key = (mapping[entity['start']], mapping[entity['end']], entity['type'])
                         previous = entities.get(key)

@@ -11,7 +11,7 @@ export type RateLimitResult =
 	| { status: "limited"; retryAfterSeconds: number }
 	| { status: "unavailable"; retryAfterSeconds: number };
 
-export const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_WINDOW_MS = 60_000;
 
 // Structural subset of the Supabase client: keeps this module free of SDK imports.
 export interface RateLimitDb {
@@ -31,7 +31,7 @@ export function validRateLimit(limit: number, max = 100_000): boolean {
 	return Number.isSafeInteger(limit) && limit >= 1 && limit <= max;
 }
 
-export function retryAfterSeconds(now: number): number {
+function retryAfterSeconds(now: number): number {
 	return Math.max(1, Math.ceil((RATE_LIMIT_WINDOW_MS - (now % RATE_LIMIT_WINDOW_MS)) / 1000));
 }
 

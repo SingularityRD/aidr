@@ -1,0 +1,11 @@
+version: "1.0"
+default_action: ask
+rules:
+  - name: Unsupported structured selector
+    condition:
+      mcp_tool:
+        server: a.b
+        tool: c
+        pattern: all
+    action: deny
+    priority: 10

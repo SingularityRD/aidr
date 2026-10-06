@@ -19,6 +19,7 @@ import {
 	readBoundedJson,
 } from "../_shared/request-limits.ts";
 import { normalizeIngestEvents } from "./events.ts";
+import { buildPremiumModules, tenantRuntimeCapabilities } from "../_shared/runtime-capabilities.ts";
 
 // Required configuration. Validated per request, before any auth or DB work, so
 // a missing variable answers with an explicit 500 that names it instead of
@@ -187,14 +188,6 @@ function buildEntitlementSnapshot(params: {
 	};
 }
 
-function buildPremiumModules(entRow: Record<string, unknown> | null): string[] {
-	const out: string[] = [];
-	if (entRow && entRow.premium_intel === true) out.push("premium_intel");
-	if (entRow && entRow.premium_correlation === true) out.push("premium_correlation");
-	if (entRow && entRow.premium_pkg_plugin === true) out.push("premium_pkg_plugin");
-	return out;
-}
-
 Deno.serve(async (req) => {
 	if (req.method !== "POST") {
 		return json(405, { error: "method_not_allowed" });
@@ -212,6 +205,9 @@ Deno.serve(async (req) => {
 		AIDR_ENTITLEMENT_SIGNING_PRIVATE_KEY_PKCS8_B64: ENTITLEMENT_SIGNING_PRIVATE_KEY_PKCS8_B64,
 	});
 	if (signingProblem) return configFailure("ingest", signingProblem, json);
+	if (ENTITLEMENT_SIGNING_KEY_ID && !(await signEd25519Detached("aidr-signing-healthcheck"))) {
+		return json(503, { error: "entitlement_signing_unavailable", retryable: true });
+	}
 	const timing = entitlementTiming();
 	if (!timing) return json(503, { error: "entitlement_timing_unavailable" });
 
@@ -299,7 +295,6 @@ Deno.serve(async (req) => {
 		!Number.isSafeInteger(revocationEpoch) || revocationEpoch < 0) {
 		return json(503, { error: "entitlements_unavailable", retryable: true });
 	}
-	const premiumModules = buildPremiumModules(ent as unknown as Record<string, unknown>);
 
 	// 3) Register/touch the agent and enforce the seat limit atomically. The
 	// database function locks the tenant entitlement and agent namespace so two
@@ -348,6 +343,10 @@ Deno.serve(async (req) => {
 	}
 	const admission = parseActiveAdmission(admissionData);
 	if (!admission) return json(503, { error: "admission_unavailable", retryable: true });
+	const capabilities = ENTITLEMENT_SIGNING_KEY_ID ? tenantRuntimeCapabilities(
+		tenantId, Deno.env.get("AIDR_RUNTIME_CAPABILITIES_BY_TENANT"), admissionData,
+	) : [];
+	const premiumModules = buildPremiumModules(ent as unknown as Record<string, unknown>, capabilities);
 	const allowedAgents = Math.min(includedAgents + effective.extraAgents, registeredAllowed, admission.allowedAgents);
 	const extraAgents = allowedAgents - includedAgents;
 	const providerUntil = extraAgents > 0 ? effective.providerValidUntilMs : null;
@@ -371,6 +370,7 @@ Deno.serve(async (req) => {
 		if (!entitlement) return json(503, { error: "entitlements_unavailable", retryable: true });
 		const entitlementJson = canonicalJson(entitlement);
 		const sig = await signEd25519Detached(entitlementJson);
+		if (ENTITLEMENT_SIGNING_KEY_ID && !sig) return json(503, { error: "entitlement_signing_unavailable", retryable: true });
 		return json(402, {
 			error: "agent_limit_exceeded",
 			allowed_agents: Number(registration.allowed_agents ?? allowedAgents),
@@ -429,6 +429,7 @@ Deno.serve(async (req) => {
 	if (!entitlement) return json(503, { error: "entitlements_unavailable", retryable: true });
 	const entitlementJson = canonicalJson(entitlement);
 	const sig = await signEd25519Detached(entitlementJson);
+	if (ENTITLEMENT_SIGNING_KEY_ID && !sig) return json(503, { error: "entitlement_signing_unavailable", retryable: true });
 
 	// Best-effort: persist the latest entitlement snapshot per (tenant_id, iid) for dashboard/debugging.
 	try {

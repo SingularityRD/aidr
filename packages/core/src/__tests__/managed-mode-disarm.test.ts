@@ -21,6 +21,7 @@
  * must still enforce locally.
  */
 
+import { generateKeyPairSync } from "node:crypto";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -37,6 +38,12 @@ let allowlistsDir: string;
 
 const DESTRUCTIVE = "rm -rf /";
 const BENIGN = "ls -la";
+const PUBLIC_KEY_PEM = generateKeyPairSync("ed25519")
+	.publicKey.export({
+		type: "spki",
+		format: "pem",
+	})
+	.toString();
 
 function request(command: string) {
 	return {
@@ -102,6 +109,43 @@ describe("managed mode never disarms local detection while un-enrolled", () => {
 			"managed with the control plane disabled",
 			{ mode: "managed", control_plane: { enabled: false } },
 		],
+		[
+			"managed with a provisioned entitlement trust key but no credentials",
+			{
+				mode: "managed",
+				licensing: {
+					require_signed_entitlements: true,
+					public_keys_pem: [PUBLIC_KEY_PEM],
+					revocations_enabled: false,
+				},
+			},
+		],
+		[
+			"managed with a provisioned trust key and empty credentials",
+			{
+				mode: "managed",
+				auth: { api_key: "", enrollment_token: "" },
+				control_plane: { enabled: false },
+				licensing: {
+					require_signed_entitlements: true,
+					public_keys_pem: [PUBLIC_KEY_PEM],
+					revocations_enabled: false,
+				},
+			},
+		],
+		[
+			"managed with a trust key and enrollment token awaiting exchange",
+			{
+				mode: "managed",
+				auth: { enrollment_token: "not-yet-exchanged" },
+				control_plane: { enabled: false },
+				licensing: {
+					require_signed_entitlements: true,
+					public_keys_pem: [PUBLIC_KEY_PEM],
+					revocations_enabled: false,
+				},
+			},
+		],
 	];
 
 	for (const [label, config] of NEVER_ENROLLED) {
@@ -123,6 +167,60 @@ describe("managed mode never disarms local detection while un-enrolled", () => {
 			expect(verdict.decision).toBe("allow");
 		});
 	}
+
+	it("enforces locally in a fresh commercial install with provisioned trust keys", async () => {
+		const previous = process.env.AIDR_COMMERCIAL;
+		process.env.AIDR_COMMERCIAL = "1";
+		try {
+			await writeConfig({
+				mode: "managed",
+				licensing: {
+					require_signed_entitlements: true,
+					public_keys_pem: [PUBLIC_KEY_PEM],
+					revocations_enabled: false,
+				},
+			});
+			const destructive = await evaluateToolCall(request(DESTRUCTIVE), context());
+			expect(destructive).toMatchObject({ decision: "deny", source: "heuristic" });
+			expect(destructive.category).not.toBe("managed_disabled");
+			const benign = await evaluateToolCall(request(BENIGN), context());
+			expect(benign.decision).toBe("allow");
+			expect(benign.category).not.toBe("managed_disabled");
+		} finally {
+			if (previous === undefined) delete process.env.AIDR_COMMERCIAL;
+			else process.env.AIDR_COMMERCIAL = previous;
+		}
+	});
+
+	it.each(["config", "cache"])(
+		"keeps the signed-entitlement refusal when a %s API credential is held",
+		async (location) => {
+			await writeConfig({
+				mode: "managed",
+				auth: location === "config" ? { api_key: "held-api-credential" } : {},
+				control_plane: { enabled: true },
+				licensing: {
+					require_signed_entitlements: true,
+					public_keys_pem: [PUBLIC_KEY_PEM],
+					revocations_enabled: false,
+				},
+			});
+			await writeFile(
+				join(home, ".singularity-aidr", "managed.json"),
+				JSON.stringify({
+					// Isolate the signature gate from prerequisite network/iid checks.
+					last_sync_attempt_at: new Date().toISOString(),
+					...(location === "cache" ? { api_key: "held-api-credential" } : {}),
+				}),
+			);
+			const verdict = await evaluateToolCall(request(BENIGN), context());
+			expect(verdict).toMatchObject({
+				category: "managed_disabled",
+				source: "managed_disabled",
+			});
+			expect(verdict.reasons.join(" ")).toContain("missing or invalid server-signed entitlement");
+		},
+	);
 
 	// CREDENTIAL PRESENT BUT NOT VALIDATED. Validation needs a reachable control
 	// plane, so a credential-plus-disabled-control-plane is a misconfigured

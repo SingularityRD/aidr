@@ -16,7 +16,45 @@ Use a separate provider UUID and isolated test tenant for each IdP acceptance. S
 
 Before enabling the tenant policy, issue the SCIM token and exact group-role mappings with the current owner and record the provider UUID. Sync users/groups, then verify SAML login and the exact provider-qualified subject in an isolated tenant while the policy remains off. Once an approved policy later requires that provider, the first verified dashboard bootstrap binds only the matching SCIM subject and creates its mapped membership; same-email and other-provider sessions do not inherit access. SCIM cannot grant `owner`, so owner continuity must be completed separately. Never turn on the policy merely to test whether login works: a wrong provider or missing owner path locks out the tenant by design.
 
-**SSO activation is currently a stop gate, not an operator instruction.** There is no audited application operation for setting or clearing `required_saml_provider_id`; a direct service-role update would not provide a reviewed cutover or recovery receipt. Before a real tenant cutover, implement and test an atomic policy-change operation with two distinct authorized approvals, reason/change ticket, old/new provider, and an append-only audit event. Require two provider-verified SAML owners to sign in and access the tenant before activation; verify each exact Auth UUID and SAML provider identity, not just an invitation email. Owner changes must be made by an active owner using AAL2 and produce an atomic audit event. Keep SSO owners outside SCIM-managed membership until an explicit lifecycle design exists: the SCIM binder refuses to take over manual owner membership, and disabling such an owner at the IdP is not presently an immediate AIDR-session revocation guarantee. Password recovery/break-glass does not bypass required SAML. A tested, dual-approved disable/rollback and session-revocation procedure is needed for IdP outages. Until these are implemented and exercised with both Entra and Okta against the release candidate, leave the policy `NULL` and do not claim GA SSO continuity.
+An audited application operation for enabling and disabling `required_saml_provider_id` now exists (migration `20261005230000_saml_policy_administration.sql`, `identity-security` actions below, dashboard Directory sync page). It requires **two distinct current owners at AAL2**, reason/change reference, provider-qualified SAML sessions and one exact, short-lived transition. The local implementation does not change the live-acceptance stop gate above: leave the policy `NULL` for an unaccepted customer environment.
+
+Before activation, **every active owner** must have the target provider's exact, opaque Auth identity, with at least two owners. SAML Auth UUIDs are separate from same-email password accounts. While enforcement is off, use the existing audited AAL2 owner-role operations to establish those manual SAML owners; a SCIM provisioning record or invitation email does not establish owner continuity. Keep owners outside SCIM-managed membership. Previously email-bound SCIM accounts block activation rather than being silently relinked.
+
+### Two-owner SAML policy change
+
+Apply the migration before deploying the updated Edge function/dashboard. Provider registration remains a deployment operator responsibility through Supabase Auth; this API does not register an IdP. Activation checks the registered `auth.sso_providers`/`auth.saml_providers` entry and refuses a disabled provider. In the pinned [GoTrue provider model](https://github.com/supabase/auth/blob/v2.196.0/internal/models/sso.go), a `NULL` disabled flag means enabled. The provider UUID must also match the authenticated SAML session, and provider-qualified owner identity rows must already exist.
+
+1. Sign in as the first manual owner through the target SAML provider and complete MFA. On the Directory sync page, request activation with the exact provider UUID, reason and change reference. The backend derives user/session/provider/AAL proof from the verified access token; body-supplied proof or approver identity is rejected.
+2. Share the returned request UUID with the second owner through the approved change process. They sign in through the same provider, complete MFA, load that exact request and review tenant, old/new provider, reason, change reference and deadline before approving.
+3. The request expires **five minutes after creation, or at the requester's access-token expiry if earlier**. Approval rechecks both current owner memberships, both current Auth sessions/AAL2, revocation barriers, the target identities and SCIM compatibility after lock waits. A stale policy, expired/revoked session, self-approval or consumed request is refused. Approval, policy change and the `identity.saml.policy_change_applied` audit event commit together. A failed transaction leaves the policy/request unconsumed. Concurrent owner changes return `saml_policy_policy_conflict` for retry instead of waiting while holding membership rows; once SAML is enforced, unqualified owner insertion/promotion is refused. This path uses the deployment's normal READ COMMITTED transaction isolation.
+4. For normal disable/rollback, request `new_provider_id: null` and repeat the second-owner review. Both owners must still have valid current-provider SAML sessions at AAL2. The old provider is captured from the current database policy; callers cannot supply or alter it.
+5. Only `NULL → provider` and `provider → NULL` are supported. Direct provider A→B changes are refused. Switching providers requires a separately reviewed disable, new owner/SCIM compatibility preparation and new activation. OIDC enforcement must be off; the existing SAML/OIDC mutual exclusion remains.
+
+All requests use `POST /functions/v1/identity-security` with the current owner access token as `Authorization: Bearer …`; a conflicting tenant header is rejected. Exact JSON bodies:
+
+```json
+{
+  "action": "request_saml_policy_change",
+  "tenant_id": "<tenant UUID>",
+  "new_provider_id": "<registered SAML provider UUID>",
+  "reason": "<12–500 character approved reason>",
+  "change_ref": "<1–200 character change reference>"
+}
+```
+
+```json
+{
+  "action": "get_saml_policy_change",
+  "tenant_id": "<tenant UUID>",
+  "request_id": "<request UUID>"
+}
+```
+
+Use the second body with `action: "approve_saml_policy_change"` to approve as the distinct second owner. Successful responses are `{ "ok": true, "request": { ... } }` with request/tenant IDs, requester, old/new provider, reason, change reference, creation/deadline and approver/application timestamps. They never return bearer tokens or stored session proof. `identity-security/status` exposes the current required SAML/OIDC provider IDs. Up to ten unexpired pending requests per tenant are allowed; expired requests remain security-audit evidence. The proof ledger is linked to its immutable request audit row and is erased through the existing legal-hold-aware audit offboarding phase, rather than an independent cleanup path.
+
+**Outage recovery remains OPEN.** Password recovery/break-glass still does not bypass required SAML. If the IdP is unavailable and the required SAML sessions have expired, the normal disable operation deliberately refuses access; this change supplies no emergency bypass. A separately reviewed recovery and session-revocation procedure, and deployed Entra/Okta cutover/rollback evidence, are still required before offering SSO continuity. Normal disable does not delete membership or revoke all existing sessions, and IdP-side owner disablement is not an immediate AIDR-session revocation guarantee.
+
+**Local verification (6 October 2026).** The focused identity tests passed 129 cases; the dashboard SAML panel's focused tests passed 31 cases and its TypeScript check passed. `node --test scripts/saml-administration-postgres.test.mjs` passed 13 tests against all 135 canonical migrations through `20261005233000_fleet_response_effective_state.sql` in its own disposable, network-disabled PostgreSQL container. It verifies real owner/Auth-delete/revocation/expiry races, distinct approvals, policy CAS/replay denial, audit rollback, hold-protected proof and actual offboarding cascade with neighbor isolation. The Auth deletion deadlock was reproduced before the parent-first lock fix and passed afterward. The native fixture supplies GoTrue tables, not a running Auth server; these checks are not live Entra/Okta or production acceptance.
 
 Provider activation rejects previously email-bound SCIM users. Inventory them and stop; do not silently relink or delete accounts. Use a separately reviewed migration/owner-transfer plan or a fresh test tenant, then rerun same-email, wrong-provider, unmapped-NameID, manual-membership, deactivation, and token-rotation tests. The local PostgreSQL regression is not live Entra/Okta acceptance. Keep the SSO policy off and do not claim SAML+SCIM is sale-ready until both IdPs pass on the signed release candidate with redacted receipts.
 

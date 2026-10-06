@@ -8,6 +8,8 @@ import {
 	scanTarget,
 } from "./aig-infra-scan.js";
 import { resolvePath } from "./config.js";
+import { CloudDiscoveryEvidenceSchema } from "./discovery-cloud-http.js";
+import type { CloudDiscoveryEvidence } from "./discovery-cloud-provider.js";
 import { atomicWriteJson } from "./file-utils.js";
 
 export type FleetFreshness = "fresh" | "stale" | "never_seen";
@@ -35,6 +37,8 @@ export interface FleetInventory {
 	generatedAt: string;
 	staleAfterMs: number;
 	items: FleetInventoryEntry[];
+	/** Management API observations are not endpoint reachability or vulnerability scans. */
+	providerEvidence?: CloudDiscoveryEvidence;
 }
 
 export interface FleetCollectionOptions {
@@ -425,6 +429,11 @@ export async function loadFleetInventory(path: string): Promise<FleetInventory |
 		if (parsed.items.length > MAX_FLEET_TARGETS) {
 			throw new Error("fleet_inventory_entry_limit_exceeded");
 		}
+		if (
+			parsed.providerEvidence !== undefined &&
+			!CloudDiscoveryEvidenceSchema.safeParse(parsed.providerEvidence).success
+		)
+			throw new Error("fleet_inventory_provider_evidence_invalid");
 		return parsed;
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
@@ -433,6 +442,11 @@ export async function loadFleetInventory(path: string): Promise<FleetInventory |
 }
 
 export async function saveFleetInventory(path: string, inventory: FleetInventory): Promise<void> {
+	if (
+		inventory.providerEvidence !== undefined &&
+		!CloudDiscoveryEvidenceSchema.safeParse(inventory.providerEvidence).success
+	)
+		throw new Error("fleet_inventory_provider_evidence_invalid");
 	if (inventory.items.length > MAX_FLEET_TARGETS) {
 		throw new Error("fleet_inventory_entry_limit_exceeded");
 	}

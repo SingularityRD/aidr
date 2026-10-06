@@ -1,0 +1,39 @@
+{
+  "tenantId": "approved-tenant",
+  "secretStore": "linux-secret-service",
+  "databasePath": "/var/lib/aidr-privacy/control.sqlite",
+  "host": "127.0.0.1",
+  "port": 8443,
+  "encryption": {"active": "data1", "keys": [{"id": "data1", "secretRef": "aidr-privacy-data1"}]},
+  "audit": {"keyId": "audit1", "secretRef": "aidr-privacy-audit1"},
+  "dataPolicy": {"keyId": "labels1", "secretRef": "labels"},
+  "oidc": {
+    "issuer": "https://idp.institution.example/approved-realm",
+    "clientId": "aidr-privacy-host", "clientSecretRef": "aidr-privacy-oidc",
+    "redirectUri": "https://host.institution.example/oauth/callback",
+    "caPath": "/etc/aidr-privacy/idp-ca.pem", "scope": "openid profile"
+  },
+  "broker": {
+    "issuer": "https://broker.institution.example", "audience": "aidr-platform",
+    "caPath": "/etc/aidr-privacy/broker-ca.pem",
+    "certPath": "/etc/aidr-privacy/broker-client.pem", "keyRef": "aidr-privacy-broker-key"
+  },
+  "destination": {
+    "id": "approved-provider", "kind": "openai-responses", "origin": "https://api.openai.com",
+    "model": "REPLACE_WITH_INSTITUTION_APPROVED_MODEL", "secretRef": "aidr-privacy-provider"
+  },
+  "roleGroups": {
+    "security-reviewer": ["REPLACE_ACTUAL_REVIEWER_GROUP_ID"],
+    "security-admin": ["REPLACE_ACTUAL_SOURCE_ADMIN_GROUP_ID"]
+  }, "scopes": [],
+  "policy": {"signedPath": "/etc/aidr-privacy/policy.signed.json", "keys": [{"id": "policy1", "path": "/etc/aidr-privacy/policy1.pub.pem"}]},
+  "ner": {
+    "python": "/opt/aidr-ner/bin/python3", "manifest": "/opt/aidr-models/manifest.json",
+    "manifestSha256": "REPLACE_WITH_INDEPENDENTLY_APPROVED_64_HEX_DIGEST"
+  },
+  "documents": {
+    "python": "/opt/aidr-parsers/bin/python3",
+    "workerSha256": "REPLACE_WITH_APPROVED_PACKAGED_PARSER_WORKER_64_HEX_DIGEST"
+  },
+  "tls": {"certPath": "/etc/aidr-privacy/server.pem", "clientCaPath": "/etc/aidr-privacy/enrolled-devices-ca.pem", "keyRef": "aidr-privacy-server-key"}
+}

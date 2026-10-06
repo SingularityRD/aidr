@@ -32,6 +32,37 @@ export function cycloneDxHashFromSri(integrity) {
 	return { alg: `SHA-${bits}`, content: bytes.toString("hex") };
 }
 
+/** Read package integrity entries from pnpm's pinned lockfile format. */
+export function parseLockIntegrities(raw) {
+	const map = new Map();
+	let inPackages = false;
+	let currentKey;
+	const unquote = (value) => {
+		const trimmed = value.trim();
+		if (trimmed.startsWith("'") && trimmed.endsWith("'")) return trimmed.slice(1, -1).replace(/''/g, "'");
+		if (trimmed.startsWith('"') && trimmed.endsWith('"')) return trimmed.slice(1, -1);
+		return trimmed;
+	};
+	for (const line of raw.split(/\r?\n/)) {
+		if (/^packages:\s*$/.test(line)) {
+			inPackages = true;
+			continue;
+		}
+		if (inPackages && /^snapshots:\s*$/.test(line)) break;
+		const keyMatch = inPackages ? line.match(/^  (\S.*):\s*$/) : null;
+		if (keyMatch) {
+			currentKey = unquote(keyMatch[1]);
+			continue;
+		}
+		if (!inPackages || !currentKey) continue;
+		const inline = line.match(/^\s{4}resolution:\s*\{[^}]*integrity:\s*([^,}]+)[^}]*\}/);
+		const nested = line.match(/^\s{6}integrity:\s*(\S+)\s*$/);
+		const value = inline?.[1] ?? nested?.[1];
+		if (value) map.set(currentKey, unquote(value));
+	}
+	return map;
+}
+
 export function assertPackageReleaseEvidence(repoRoot, packageDirs) {
 	const missing = packageDirs.flatMap((packageDir) =>
 		["aidr-artifact.manifest.json", "aidr-artifact.manifest.sig"]

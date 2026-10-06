@@ -6,7 +6,7 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 import { test } from "node:test";
-import { CUSTOMER_KIT_REQUIRED_FILES, renderCustomerKitDoc } from "./customer-kit-contract.mjs";
+import { CUSTOMER_KIT_REQUIRED_FILES, CUSTOMER_KIT_RENDERED_GUIDES, renderCustomerKitDoc } from "./customer-kit-contract.mjs";
 
 const repoRoot = resolve(import.meta.dirname, "..");
 const verifier = join(repoRoot, "scripts", "customer-kit-verify.mjs");
@@ -14,19 +14,39 @@ const aliases = {
 	"START-HERE.md": "deploy/FIRST_CUSTOMER.md",
 	"INSTALLATION.md": "deploy/README.md",
 	"RESTORE-DRILL.md": "docs/production-readiness/backup-restore-v6.md",
+	"RETENTION-HOLDS.md": "docs/production-readiness/retention-holds.md",
+  "SAML-RECOVERY.md": "docs/operations/saml-outage-recovery.md",
+  "RESPONSE-PLAYBOOKS.md": "docs/operations/response-playbooks.md",
+  "CLOUD-DISCOVERY.md": "docs/runbooks/cloud-discovery.md",
+  "BEHAVIORAL-LEARNING.md": "docs/runbooks/behavioral-learning.md",
+  "PACKAGE-INSTALLATION.md": "docs/package-installation.md",
+  "CODEX-CONNECTOR.md": "packages/codex/README.md",
+  "CONTROL-PLANE.md": "supabase/README.md",
 	"NATIVE-HOST-ACCEPTANCE.md": "docs/production-readiness/native-host-matrix-v6.md",
 	"SUPPORT-RUNBOOK.md": "docs/runbooks/support-v7.md",
 	"SECRETS-RUNBOOK.md": "docs/runbooks/secrets-management.md",
 	"FIRST-CUSTOMER-SALES-PACKET.md": "docs/production-readiness/first-customer-buyer-handoff-2026-09-23.md",
 	"CANDIDATE-STATUS.md": "docs/production-readiness/first-customer-ready.md",
 	"RELEASE-EVIDENCE.md": "docs/release-evidence.md",
+	"RELEASE-SIGNING.md": "docs/runbooks/portable-release-signing.md",
 };
 
 test("customer kit sources the current readiness profile, not an old candidate snapshot", () => {
 	const assembler = readFileSync(join(repoRoot, "scripts", "customer-kit.mjs"), "utf8");
 	assert.ok(assembler.includes('"docs/production-readiness/first-customer-ready.md", "CANDIDATE-STATUS.md"'));
 	assert.ok(assembler.includes('"docs/production-readiness/first-customer-buyer-handoff-2026-09-23.md", "FIRST-CUSTOMER-SALES-PACKET.md"'));
+	assert.ok(assembler.includes('"docs/production-readiness/retention-holds.md", "RETENTION-HOLDS.md"'));
 	assert.ok(assembler.includes("worktree_dirty: releaseMetadata.worktree_dirty,"), "outer envelope must retain the source cleanliness proof");
+});
+
+test("signed kit assembly requires independent Windows receipt and publisher pins before copying staged scripts", () => {
+	const assembler = readFileSync(join(repoRoot, "scripts", "customer-kit.mjs"), "utf8");
+	const signedBlock = assembler.slice(assembler.indexOf("if (releaseSigned) {"), assembler.indexOf("for (const relative of CUSTOMER_KIT_REQUIRED_FILES)"));
+	assert.ok(signedBlock.indexOf("validateSignedWindowsFleet(root,") >= 0);
+	assert.match(signedBlock, /windows-authenticode-receipt-sha256[\s\S]*AIDR_EXPECTED_WINDOWS_AUTHENTICODE_RECEIPT_SHA256/);
+	assert.match(signedBlock, /windows-code-signing-thumbprint[\s\S]*AIDR_WINDOWS_CODE_SIGNING_THUMBPRINT/);
+	assert.ok(signedBlock.indexOf("validateSignedWindowsFleet(root,") < signedBlock.indexOf('copy(signedFleet, join(output, "deploy/fleet/windows"))'));
+	assert.doesNotMatch(signedBlock, /catch|deploy\/fleet\/windows"\), join/);
 });
 
 // Build the smallest complete extracted-kit fixture from repository files. It
@@ -40,7 +60,7 @@ function createKit() {
 		assert.ok(existsSync(sourcePath), `fixture source is missing: ${source}`);
 		const destination = join(kit, target);
 		mkdirSync(resolve(destination, ".."), { recursive: true });
-		if (["START-HERE.md", "INSTALLATION.md"].includes(target)) {
+		if (CUSTOMER_KIT_RENDERED_GUIDES.includes(target)) {
 			writeFileSync(destination, renderCustomerKitDoc(target, readFileSync(sourcePath, "utf8")));
 		} else {
 			copyFileSync(sourcePath, destination);
@@ -52,6 +72,7 @@ function createKit() {
 			{
 				release_signed: false,
 				inline_mcp_gateway_bundled: false,
+				inline_mcp_gateway_signature_present: false,
 				device_start_ingress_bundled: true,
 				region_manifest_bundled: true,
 				tls_renewal_bundled: true,
@@ -95,6 +116,7 @@ function addSignedGateway(kit) {
 	const sourcePath = join(kit, "release-source.json");
 	const source = JSON.parse(readFileSync(sourcePath, "utf8"));
 	source.inline_mcp_gateway_bundled = true;
+	source.inline_mcp_gateway_signature_present = true;
 	writeFileSync(sourcePath, `${JSON.stringify(source, null, 2)}\n`);
 	writeChecksums(kit);
 }
@@ -205,11 +227,43 @@ test("extracted kit bootstrap resolves its local helper before deployment access
 	}
 });
 
+test("extracted kit carries the shared credential guard without relying on upstream source", async () => {
+	const kit = createKit();
+	try {
+		const { deploymentCredentialFailures } = await import(pathToFileURL(join(kit, "scripts/lib/deployment-credentials.mjs")).href);
+		assert.deepEqual(deploymentCredentialFailures({ ANON_KEY: "sb_publishable_customer_fixture", SERVICE_ROLE_KEY: "sb_secret_customer_fixture" }), []);
+		assert.deepEqual(deploymentCredentialFailures({ ANON_KEY: "REPLACE_WITH_PROJECT_ANON_KEY", SERVICE_ROLE_KEY: "sb_secret_customer_fixture" }), ["ANON_KEY"]);
+		const { cpSync } = await import(pathToFileURL(join(kit, "scripts/lib/deployment-input-copy.mjs")).href);
+		const copied = join(kit, "copied-recovery-template.html");
+		cpSync(join(kit, "supabase/templates/recovery.html"), copied);
+		assert.deepEqual(readFileSync(copied), readFileSync(join(kit, "supabase/templates/recovery.html")));
+	} finally {
+		rmSync(kit, { recursive: true, force: true });
+	}
+});
+
+test("extracted kit carries the real authentication helper and recovery template required by both preparation modes", async () => {
+	const kit = createKit();
+	try {
+		const saml = await import(pathToFileURL(join(kit, "deploy/saml-config.mjs")).href);
+		assert.deepEqual(saml.parseSamlRuntimeConfig({ domain: "customer.example" }), { samlDomain: "customer.example" });
+		assert.deepEqual(saml.parseOidcRuntimeConfig("true"), { oidcSso: true });
+		assert.equal(readFileSync(join(kit, "supabase/templates/recovery.html"), "utf8"), readFileSync(join(repoRoot, "supabase/templates/recovery.html"), "utf8"));
+		const assembler = readFileSync(join(repoRoot, "scripts/customer-kit.mjs"), "utf8");
+		assert.match(assembler, /"deploy\/saml-config\.mjs"/);
+		assert.match(assembler, /"supabase\/templates"/);
+	} finally { rmSync(kit, { recursive: true, force: true }); }
+});
+
 test("extracted kit guides contain only resolvable local links", () => {
 	const kit = createKit();
 	try {
 		assert.equal(run(kit).status, 0);
 		const guide = join(kit, "START-HERE.md");
+		assert.match(readFileSync(guide, "utf8"), /\]\(RETENTION-HOLDS\.md#releasing-a-hold-after-offboarding-starts\)/);
+		const holdRunbook = readFileSync(join(kit, "RETENTION-HOLDS.md"), "utf8");
+		assert.equal(holdRunbook, readFileSync(join(repoRoot, "docs/production-readiness/retention-holds.md"), "utf8"));
+		assert.match(holdRunbook, /^### Releasing a hold after offboarding starts$/m);
 		writeFileSync(guide, `${readFileSync(guide, "utf8")}\n[missing guide](../docs/missing.md)\n`);
 		writeChecksums(kit);
 		const result = run(kit);
@@ -234,8 +288,8 @@ test("a regenerated checksum inventory cannot omit a required new artifact", () 
 	}
 });
 
-test("a regenerated checksum inventory cannot omit the installer or doctor", () => {
-	for (const missing of ["scripts/deployment-prepare.mjs", "scripts/deployment-doctor.mjs"]) {
+test("a regenerated checksum inventory cannot omit the installer, doctor or hold runbook", () => {
+	for (const missing of ["scripts/deployment-prepare.mjs", "scripts/deployment-doctor.mjs", "scripts/lib/deployment-credentials.mjs", "scripts/lib/deployment-input-copy.mjs", "deploy/saml-config.mjs", "supabase/templates/recovery.html", "RETENTION-HOLDS.md", "SAML-RECOVERY.md", "scripts/saml-outage-recovery.mjs", "RESPONSE-PLAYBOOKS.md", "CLOUD-DISCOVERY.md", "BEHAVIORAL-LEARNING.md", "PACKAGE-INSTALLATION.md"]) {
 		const kit = createKit();
 		try {
 			unlinkSync(join(kit, missing));
@@ -261,7 +315,7 @@ test("an extra unlisted artifact fails the checksum set check", () => {
 	}
 });
 
-test("a bundled gateway requires its detached artifact signature", () => {
+test("a gateway declared signed requires its detached artifact signature", () => {
 	const kit = createKit();
 	try {
 		addSignedGateway(kit);
@@ -270,10 +324,79 @@ test("a bundled gateway requires its detached artifact signature", () => {
 		writeChecksums(kit);
 		const result = run(kit);
 		assert.notEqual(result.status, 0);
-		assert.match(result.stderr, /MCP gateway delivery status does not match bundled runtime/);
+		assert.match(result.stderr, /MCP gateway signature status does not match bundled runtime/);
 	} finally {
 		rmSync(kit, { recursive: true, force: true });
 	}
+});
+
+test("unsigned gateway preparation remains explicit and cannot become a signed kit", () => {
+	const kit = createKit();
+	try {
+		addSignedGateway(kit);
+		unlinkSync(join(kit, "deploy/gateway/aidr-artifact.manifest.sig"));
+		const sourceFile = join(kit, "release-source.json");
+		const source = JSON.parse(readFileSync(sourceFile, "utf8"));
+		source.inline_mcp_gateway_signature_present = false;
+		writeFileSync(sourceFile, JSON.stringify(source));
+		writeChecksums(kit);
+		const result = run(kit);
+		assert.equal(result.status, 0, result.stderr);
+		const summary = JSON.parse(result.stdout.trim());
+		assert.equal(summary.inline_mcp_gateway_signature, "absent");
+		assert.equal(summary.publisher_authenticated, false);
+		source.release_signed = true;
+		writeFileSync(sourceFile, JSON.stringify(source));
+		writeChecksums(kit);
+		for (const rejected of [run(kit), runSourceVerifier(kit)]) {
+			assert.notEqual(rejected.status, 0);
+			assert.match(rejected.stderr, /gateway.*signature|signature.*runtime/i);
+		}
+	} finally { rmSync(kit, { recursive: true, force: true }); }
+});
+
+test("portable operations and native acceptance assets cannot be omitted with regenerated checksums", () => {
+	for (const missing of ["RELEASE-SIGNING.md", "scripts/verify-support-ticket-drill.mjs", "deploy/native/README.md", "deploy/operations/operations.env.example", "deploy/operations/workload.soak-8h.example.json", "deploy/operations/support-ticket.receipt.example.json", "deploy/native/support-matrix.schema.json", "deploy/native/scenarios/TEMPLATE.json", "deploy/native/scenarios/README.md"]) {
+		const kit = createKit();
+		try {
+			unlinkSync(join(kit, missing));
+			writeChecksums(kit);
+			assert.match(run(kit).stderr, /Required customer acceptance artifact is missing/);
+		} finally { rmSync(kit, { recursive: true, force: true }); }
+	}
+});
+
+test("documented support receipt validator runs from the extracted kit and rejects the unoperated template", () => {
+	const kit = createKit();
+	try {
+		assert.match(readFileSync(join(kit, "deploy/operations/PORTABLE-LINUX.md"), "utf8"), /node scripts\/verify-support-ticket-drill\.mjs/);
+		const result = spawnSync(process.execPath, [join(kit, "scripts/verify-support-ticket-drill.mjs"), join(kit, "deploy/operations/support-ticket.receipt.example.json"), "--candidate", "a".repeat(64)], { cwd: kit, env: { PATH: "" }, encoding: "utf8", windowsHide: true });
+		assert.equal(result.status, 1);
+		assert.match(result.stderr, /operated ticket system|named.*operators|candidate digest/);
+		assert.doesNotMatch(result.stderr, /MODULE_NOT_FOUND|ENOENT/);
+	} finally { rmSync(kit, { recursive: true, force: true }); }
+});
+
+test("portable native assets clearly leave interception source checking in the separate checkout", () => {
+	const kit = createKit();
+	try {
+		assert.match(readFileSync(join(kit, "deploy/native/README.md"), "utf8"), /complete frozen source[\s\S]*checker is intentionally absent/);
+		assert.equal(existsSync(join(kit, "deploy/native/verify-interception-matrix.mjs")), false);
+		const assembler = readFileSync(join(repoRoot, "scripts/customer-kit.mjs"), "utf8");
+		assert.doesNotMatch(assembler, /"deploy\/native"|"deploy\/native\/verify-interception-matrix\.mjs"/);
+	} finally { rmSync(kit, { recursive: true, force: true }); }
+});
+
+test("extracted kit resolves the real native scenario template without claiming host acceptance", () => {
+	const kit = createKit();
+	const reportPath = `${kit}.validation.json`;
+	try {
+		const result = spawnSync(process.execPath, [join(kit, "scripts/verify-native-host-matrix-v6.mjs"), "--validate-only", "--scenario-file", join(kit, "deploy/native/scenarios/TEMPLATE.json"), "--output", reportPath], { cwd: kit, env: { PATH: "" }, encoding: "utf8", windowsHide: true });
+		assert.equal(result.status, 0, result.stderr);
+		const report = JSON.parse(readFileSync(reportPath, "utf8"));
+		assert.equal(report.template, true);
+		assert.notEqual(report.status, "PASS");
+	} finally { rmSync(reportPath, { force: true }); rmSync(kit, { recursive: true, force: true }); }
 });
 
 test("gateway-free kit rejects even one gateway runtime file", () => {

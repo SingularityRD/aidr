@@ -36,6 +36,12 @@ this VS Code setting.
 
 Protection applies to supported tool calls intercepted by the installed host hooks.
 
+In managed mode, Enable protection starts or reuses the persisted browser
+authorization session. After authorizing the displayed code, run Enable
+protection again to finish enrollment. Local mode needs no browser enrollment.
+Bundled rules are loaded from `dist/resources/`, inside the verified release
+artifact.
+
 ## Commands
 
 | Command | Description |

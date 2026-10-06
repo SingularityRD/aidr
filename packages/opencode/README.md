@@ -113,17 +113,35 @@ it to `ApprovalStore` **without** exposing it as a model-callable tool.
 
 ## Session Startup Scanning
 
-Singularity AIDR automatically scans all installed OpenCode plugins when a new session starts.
+Singularity AIDR scans discoverable configured package installs and local plugin
+files at plugin initialization and when a new session starts. This inventory
+does not cover every configuration source or every plugin OpenCode can load.
 
 ### What's Scanned
 
-- **NPM plugins**: Packages listed in `opencode.json` config (global + project)
-- **Local plugins**: Files in `~/.config/opencode/plugins/` (global)
-- **Project plugins**: Files in `.opencode/plugins/` (project-specific)
+- **NPM registry plugins**: Bare, scoped, and version/tag/range selectors in
+  `opencode.json` and `opencode.jsonc` (global config + supplied project directory).
+  Options tuples use their first element as the package selector.
+- **Local plugins**: Top-level `.js` and `.ts` files in
+  `~/.config/opencode/plugins/` and its legacy `plugin/` directory
+- **Project plugins**: Top-level `.js` and `.ts` files in `.opencode/plugins/`
+  and its legacy `plugin/` directory
+
+Config and cache roots honor `XDG_CONFIG_HOME` and `XDG_CACHE_HOME`. Package
+discovery checks OpenCode 1.18.32's `~/.cache/opencode/packages/<selector>/node_modules/<package>`
+layout first (bare selectors become `@latest`, with the host's Windows filename
+sanitization), then the older `~/.cache/opencode/node_modules/<package>` layout.
+Discovery reads existing files; it does not install packages.
+
+Configured file/path plugins outside those directories, non-registry package
+specifiers, parent-directory configs, `.opencode/opencode.json{,c}`, legacy
+`config.json`, custom/inline/remote/managed config sources, and `~/.opencode/`
+are outside this startup inventory. Invalid configs and unsupported selectors
+are logged as discovery gaps. A clean scan concerns only the discovered files.
 
 ### When Scanning Runs
 
-- **Trigger**: Once per session on `session.created` event
+- **Trigger**: Plugin initialization and once per session on `session.created` event
 - **Not on**: `session.updated` (to avoid repeated scans)
 - **Performance**: Results are cached for fast subsequent sessions
 
@@ -158,7 +176,7 @@ Scan cache stored at `~/.singularity-aidr/plugin_scan_cache.json` for performanc
 pnpm --filter @singularityrd/aidr-opencode run build
 ```
 
-This copies `threats/` and `allowlists/` into `packages/opencode/resources/`.
+This copies `threats/` and `allowlists/` into `packages/opencode/dist/resources/`, covered by the same release integrity manifest as the plugin code.
 
 ## Test
 

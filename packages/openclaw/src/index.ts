@@ -10,7 +10,12 @@
  * blocking. See README.md ("Approving a flagged action").
  */
 
-import { ApprovalStore, initSentry, verifyArtifactIntegrityAndLog } from "@singularityrd/aidr-core";
+import {
+	ApprovalStore,
+	initSentry,
+	scanProvisionedOutput,
+	verifyArtifactIntegrityAndLog,
+} from "@singularityrd/aidr-core";
 import { createAllowlistAddTool, createAllowlistRemoveTool } from "./allowlist-tools.js";
 import { getBundledDataDirs } from "./bundled-dirs.js";
 import { createLogger, type PluginLogger } from "./logger-adapter.js";
@@ -73,6 +78,10 @@ export default {
 			artifactDir: __dirname,
 			artifactId: "openclaw/dist",
 			logger,
+		}).then(async () => {
+			// Initialize the fail-closed synchronous persistence snapshot. Each
+			// asynchronous output hook refreshes it before inspecting its payload.
+			await scanProvisionedOutput([], "openclaw");
 		});
 		const requireIntegrity = async () => {
 			// Do not convert a rejected commercial verification into a fulfilled

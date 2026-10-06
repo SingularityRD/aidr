@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "source_lock": "services/aig-bridge/requirements-runtime.lock",
-  "source_lock_sha256": "e0b423c8014a33e47f730b2fcdcdfb95b77fd9a6915604c4f889980e98f9094b",
+  "source_lock_sha256": "af4cf84b33c07df728ddb2e8b9a0f10c1d4f8f309295cc18bf808b8377a5c598",
   "evidence_origin": "Core Metadata and dist-info licence files read from the SHA-256-verified wheels pinned by the lock",
   "packages": [
     {
@@ -95,8 +95,8 @@
     {
       "name": "cffi",
       "version": "2.1.1",
-      "wheel": "cffi-2.1.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
-      "wheel_sha256": "c1453022f490d2459a11819d83ad1d586e9ff65a12ac3e705ffebd46d3685dcf",
+      "wheel": "cffi-2.1.1-cp312-cp312-musllinux_1_2_x86_64.whl",
+      "wheel_sha256": "210019b6c7cf07f081b4c54635c8cf744377001350e29cc0f81c4377b4797735",
       "core_metadata": {
         "license_expression": "MIT-0",
         "license_field": null,
@@ -136,9 +136,9 @@
     },
     {
       "name": "cryptography",
-      "version": "50.0.1",
-      "wheel": "cryptography-50.0.1-cp311-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
-      "wheel_sha256": "ff838d62ec1bfce4f9ba7fa16f4a7b554cd8d0c299e6be37502161a660c84eef",
+      "version": "50.0.2",
+      "wheel": "cryptography-50.0.2-cp311-abi3-musllinux_1_2_x86_64.whl",
+      "wheel_sha256": "85d0d9a31b9098e98534226d5686b47264b95e62ce459dc2e62fdfc809f9fe93",
       "core_metadata": {
         "license_expression": "Apache-2.0 OR BSD-3-Clause",
         "license_field": null,
@@ -163,7 +163,9 @@
           "sha256": "602c4c7482de6479dd2e9793cda275e5e63d773dacd1eca689232ab7008fb4fb"
         }
       ],
-      "bundled_native_libraries": []
+      "bundled_native_libraries": [
+        "cryptography.libs/libgcc_s-0cd532bd.so.1"
+      ]
     },
     {
       "name": "fastapi",
@@ -235,8 +237,8 @@
     {
       "name": "httptools",
       "version": "0.8.0",
-      "wheel": "httptools-0.8.0-cp312-cp312-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl",
-      "wheel_sha256": "b15fc622b0f869d19207c4089a501d9bcc63ca5e071ffdd2f03f922df882dcb2",
+      "wheel": "httptools-0.8.0-cp312-cp312-musllinux_1_2_x86_64.whl",
+      "wheel_sha256": "a1afd7c9fbff0d9f5d489c4ce2768bd09c84a46ddefc7161e6aa82ae35c85745",
       "core_metadata": {
         "license_expression": "MIT",
         "license_field": null,
@@ -357,44 +359,6 @@
       "bundled_native_libraries": []
     },
     {
-      "name": "psycopg-binary",
-      "version": "3.2.10",
-      "wheel": "psycopg_binary-3.2.10-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
-      "wheel_sha256": "14bcbcac0cab465d88b2581e43ec01af4b01c9833e663f1352e05cb41be19e44",
-      "core_metadata": {
-        "license_expression": null,
-        "license_field": "GNU Lesser General Public License v3 (LGPLv3)",
-        "license_classifiers": [
-          "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)"
-        ],
-        "license_file_headers": [
-          "LICENSE.txt"
-        ]
-      },
-      "license_files": [
-        {
-          "path": "licenses/LICENSE.txt",
-          "sha256": "e3a994d82e644b03a792a930f574002658412f62407f5fee083f2555c5f23118"
-        }
-      ],
-      "bundled_native_libraries": [
-        "psycopg_binary.libs/libcom_err-2abe824b.so.2.1",
-        "psycopg_binary.libs/libcrypto-d18e4b18.so.3",
-        "psycopg_binary.libs/libgssapi_krb5-497db0c6.so.2.2",
-        "psycopg_binary.libs/libk5crypto-b1f99d5c.so.3.1",
-        "psycopg_binary.libs/libkeyutils-dfe70bd6.so.1.5",
-        "psycopg_binary.libs/libkrb5-fcafa220.so.3.3",
-        "psycopg_binary.libs/libkrb5support-d0bcff84.so.0.1",
-        "psycopg_binary.libs/liblber-b2a4ca0f.so.2.0.200",
-        "psycopg_binary.libs/libldap-7ba8ecde.so.2.0.200",
-        "psycopg_binary.libs/libpcre-9513aab5.so.1.2.0",
-        "psycopg_binary.libs/libpq-6a0c3ecd.so.5.17",
-        "psycopg_binary.libs/libsasl2-883649fd.so.3.0.0",
-        "psycopg_binary.libs/libselinux-0922c95c.so.1",
-        "psycopg_binary.libs/libssl-c434c5f0.so.3"
-      ]
-    },
-    {
       "name": "pycparser",
       "version": "3.0",
       "wheel": "pycparser-3.0-py3-none-any.whl",
@@ -441,8 +405,8 @@
     {
       "name": "pydantic-core",
       "version": "2.27.2",
-      "wheel": "pydantic_core-2.27.2-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
-      "wheel_sha256": "6fb4aadc0b9a0c063206846d603b92030eb6f03069151a625667f982887153e2",
+      "wheel": "pydantic_core-2.27.2-cp312-cp312-musllinux_1_1_x86_64.whl",
+      "wheel_sha256": "a0fcd29cd6b4e74fe8ddd2c90330fd8edf2e30cb52acda47f06dd615ae72da57",
       "core_metadata": {
         "license_expression": null,
         "license_field": "MIT",
@@ -459,7 +423,9 @@
           "sha256": "2afdd30d54b4d62b6f488a6bcc1546e84ec5061f13f4209c03d012348783795a"
         }
       ],
-      "bundled_native_libraries": []
+      "bundled_native_libraries": [
+        "pydantic_core.libs/libgcc_s-1e52349c.so.1"
+      ]
     },
     {
       "name": "pydantic-settings",
@@ -531,8 +497,8 @@
     {
       "name": "pyyaml",
       "version": "6.0.2",
-      "wheel": "PyYAML-6.0.2-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
-      "wheel_sha256": "80bab7bfc629882493af4aa31a4cfa43a4c57c83813253626916b8c7ada83476",
+      "wheel": "PyYAML-6.0.2-cp312-cp312-musllinux_1_1_x86_64.whl",
+      "wheel_sha256": "8b9c7197f7cb2738065c481a0461e50ad02f18c78cd75775628afb4d7137fb3b",
       "core_metadata": {
         "license_expression": null,
         "license_field": "MIT",
@@ -661,8 +627,8 @@
     {
       "name": "uvloop",
       "version": "0.22.1",
-      "wheel": "uvloop-0.22.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
-      "wheel_sha256": "7b5b1ac819a3f946d3b2ee07f09149578ae76066d70b44df3fa990add49a82e4",
+      "wheel": "uvloop-0.22.1-cp312-cp312-musllinux_1_2_x86_64.whl",
+      "wheel_sha256": "512fec6815e2dd45161054592441ef76c830eddaad55c8aa30952e6fe1ed07c0",
       "core_metadata": {
         "license_expression": null,
         "license_field": "MIT License",
@@ -690,8 +656,8 @@
     {
       "name": "watchfiles",
       "version": "1.3.0",
-      "wheel": "watchfiles-1.3.0-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
-      "wheel_sha256": "b5768b49e426fd5b550b012c866db347cdf15c398ef98dc557b6e6b72fa74cd1",
+      "wheel": "watchfiles-1.3.0-cp310-abi3-musllinux_1_1_x86_64.whl",
+      "wheel_sha256": "380f513d26cc2e598266b88d66456e07d67ef4be8f0f435a1154d9c44b43d509",
       "core_metadata": {
         "license_expression": null,
         "license_field": "MIT",
@@ -708,13 +674,15 @@
           "sha256": "4fd78355b67ce2677ede9fb6f63a250f377bb7e22088136a5f4699adb4bc069f"
         }
       ],
-      "bundled_native_libraries": []
+      "bundled_native_libraries": [
+        "watchfiles.libs/libgcc_s-f685abf1.so.1"
+      ]
     },
     {
       "name": "websockets",
       "version": "17.1",
-      "wheel": "websockets-17.1-cp312-cp312-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl",
-      "wheel_sha256": "0c863507ada5805517ca6dff1c524dcd42942efe6304dacf06700878398d21a6",
+      "wheel": "websockets-17.1-cp312-cp312-musllinux_1_2_x86_64.whl",
+      "wheel_sha256": "ccbf3f4a9890d50b3a08ee04029fde30a03bfdeffaa19977628bf17251764e60",
       "core_metadata": {
         "license_expression": "BSD-3-Clause",
         "license_field": null,

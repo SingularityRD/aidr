@@ -57,6 +57,20 @@ describe("commercial managed credential storage", () => {
 		await expect(loadManagedState(path, { secretStore: vault })).rejects.toThrow(/vault/);
 	});
 
+	it("requires durable issuance storage even outside a commercial build", async () => {
+		process.env.AIDR_COMMERCIAL = "0";
+		const path = fixturePath("managed.json");
+		writeFileSync(path, "blocked directory");
+		await expect(
+			saveManagedState(join(path, "state.json"), { api_key: "synthetic-key" }),
+		).resolves.toBeUndefined();
+		await expect(
+			saveManagedState(join(path, "state.json"), { api_key: "synthetic-key" }, undefined, {
+				requirePersistence: true,
+			}),
+		).rejects.toThrow();
+	});
+
 	it("rejects a plaintext config credential and resolves an OS-vault reference", async () => {
 		process.env.AIDR_COMMERCIAL = "1";
 		const path = fixturePath("config.json");

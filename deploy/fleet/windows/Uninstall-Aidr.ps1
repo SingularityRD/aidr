@@ -12,12 +12,29 @@ try {
     $target = Get-AidrValidatedTargetHome $TargetHome
     $paths = Get-AidrFleetPaths -TargetHome $target -StateRoot $StateRoot
     if ([string]::IsNullOrWhiteSpace($LogPath)) { $LogPath = $paths.DefaultLog }
+    $runtimePath = Join-Path $target '.singularity-aidr/config.json'
+    $responseRequired = $false
+    if (Test-Path -LiteralPath $runtimePath -PathType Leaf) {
+        try { $runtimeConfiguration = Get-Content -LiteralPath $runtimePath -Raw -Encoding utf8 | ConvertFrom-Json }
+        catch { throw 'Agent configuration is invalid; response safety cannot be established for removal' }
+        $controlPlane = Get-AidrProperty $runtimeConfiguration 'control_plane'
+        if ($null -ne $controlPlane) { $responseRequired = (Get-AidrProperty $controlPlane 'response_worker_required') -eq $true }
+    }
+    if ($responseRequired -or (Test-Path -LiteralPath (Join-Path $target '.singularity-aidr/response-control'))) {
+        & (Join-Path $PSScriptRoot 'Uninstall-AidrResponseWorker.ps1') -TargetHome $target -StateRoot $StateRoot
+        if ($LASTEXITCODE -ne 0) { throw 'A signed resume/release and authenticated idle response state are required before removing managed hooks' }
+    }
     $settingsPath = Join-Path $target '.claude/settings.json'
     if (Test-Path -LiteralPath $settingsPath -PathType Leaf) {
         $settingsBytes = [IO.File]::ReadAllBytes($settingsPath)
-        try { $settings = [Text.UTF8Encoding]::new($false, $true).GetString($settingsBytes) | ConvertFrom-Json } catch { throw "Claude settings are invalid; no configuration was changed" }
+        try {
+            $settingsRaw = [Text.UTF8Encoding]::new($false, $true).GetString($settingsBytes)
+            if ($settingsRaw.Length -gt 0 -and $settingsRaw[0] -eq [char]0xFEFF) { $settingsRaw = $settingsRaw.Substring(1) }
+            $settings = $settingsRaw | ConvertFrom-Json
+        } catch { throw "Claude settings are invalid; no configuration was changed" }
+        Assert-AidrSettingsShape $settings
         $removed = 0
-        if ($null -ne $settings.hooks) {
+        if ($null -ne (Get-AidrProperty $settings 'hooks')) {
             foreach ($event in @('PreToolUse', 'PostToolUse', 'SessionStart')) {
                 $eventProperty = $settings.hooks.PSObject.Properties[$event]
                 if ($null -eq $eventProperty -or $null -eq $eventProperty.Value) { continue }
@@ -27,7 +44,7 @@ try {
                     $hooks = @($entry.hooks)
                     $remaining = @($hooks | Where-Object {
                         $status = if ($null -ne $_) { $_.PSObject.Properties['statusMessage'] } else { $null }
-                        $null -eq $status -or [string]$status.Value -ne 'Singularity AIDR managed installation'
+                        $null -eq $status -or [string]$status.Value -cne 'Singularity AIDR managed installation'
                     })
                     if ($remaining.Count -eq $hooks.Count) { $kept += $entry; continue }
                     $removed += $hooks.Count - $remaining.Count

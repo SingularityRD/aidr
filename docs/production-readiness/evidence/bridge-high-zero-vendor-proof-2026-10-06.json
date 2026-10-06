@@ -1,0 +1,510 @@
+{
+  "schema_version": 1,
+  "recorded_at_utc": "2026-10-06T10:12:11.405246+00:00",
+  "purpose": "Primary vendor remediation and explicit security database coverage evidence for the bridge HIGH-zero candidate.",
+  "candidate_image_context_supplied_by_parent": "sha256:74e5dae73cdc69a8e1f34b9c6ddf64f17a21217f42579b41b3908d19a99fbd85",
+  "acceptance": "SOURCE_EVIDENCE_VERIFIED_NO_WAIVER_NO_RELEASE_APPROVAL",
+  "verification": {
+    "source_count": 20,
+    "source_sha256_rechecks": "PASS",
+    "ncurses_source_archive_sha512_matches_pinned_aports": true,
+    "extracted_source_sha256_rechecks": "PASS"
+  },
+  "util_linux": {
+    "retained_package": "libuuid",
+    "origin": "util-linux",
+    "installed_version_supplied_by_parent": "2.42.3-r1",
+    "minimum_floor_all_four": "2.42.3-r1",
+    "alpine_secfixes": [
+      {
+        "fixed_version": "2.42.3-r0",
+        "cve": "CVE-2026-76642"
+      },
+      {
+        "fixed_version": "2.42.3-r0",
+        "cve": "CVE-2026-78409"
+      },
+      {
+        "fixed_version": "2.42.3-r0",
+        "cve": "CVE-2026-78410"
+      },
+      {
+        "fixed_version": "2.42.3-r1",
+        "cve": "CVE-2026-78408"
+      }
+    ],
+    "source_release_tag": "v2.42.3",
+    "source_release_tag_created_at": "2026-09-01T12:57:51Z",
+    "source_release_tag_object": "5e8b2f2ccd662eaa76f8d999a48a37837a0e02f1",
+    "source_release_url": "https://github.com/util-linux/util-linux/tree/v2.42.3",
+    "signature_verification": "Tag signature is retained as vendor source data; no independent OpenPGP signature verification was performed.",
+    "advisories": [
+      {
+        "cve": "CVE-2026-76642",
+        "ghsa": "GHSA-m25x-3hj9-m26f",
+        "url": "https://github.com/util-linux/util-linux/security/advisories/GHSA-m25x-3hj9-m26f",
+        "published_at": "2026-09-02T08:29:45Z",
+        "updated_at": "2026-09-02T08:29:45Z",
+        "vendor_severity": "high",
+        "vulnerable_packages": [
+          {
+            "package": {
+              "ecosystem": "",
+              "name": "util-linux"
+            },
+            "vulnerable_version_range": "<=2.42.2",
+            "patched_versions": "2.41.6; 2.42.3",
+            "vulnerable_functions": []
+          }
+        ]
+      },
+      {
+        "cve": "CVE-2026-78408",
+        "ghsa": "GHSA-55fx-f4gg-cfhj",
+        "url": "https://github.com/util-linux/util-linux/security/advisories/GHSA-55fx-f4gg-cfhj",
+        "published_at": "2026-09-02T08:27:30Z",
+        "updated_at": "2026-09-02T08:27:31Z",
+        "vendor_severity": "high",
+        "vulnerable_packages": [
+          {
+            "package": {
+              "ecosystem": "",
+              "name": "util-linux"
+            },
+            "vulnerable_version_range": ">= 2.40 ",
+            "patched_versions": "2.41.6; 2.42.3",
+            "vulnerable_functions": []
+          }
+        ]
+      },
+      {
+        "cve": "CVE-2026-78409",
+        "ghsa": "GHSA-8f2p-47x3-43mv",
+        "url": "https://github.com/util-linux/util-linux/security/advisories/GHSA-8f2p-47x3-43mv",
+        "published_at": "2026-09-02T08:28:21Z",
+        "updated_at": "2026-09-02T08:28:21Z",
+        "vendor_severity": "high",
+        "vulnerable_packages": [
+          {
+            "package": {
+              "ecosystem": "",
+              "name": "util-linux"
+            },
+            "vulnerable_version_range": ">=2.42",
+            "patched_versions": "2.41.6; 2.42.3",
+            "vulnerable_functions": []
+          }
+        ]
+      },
+      {
+        "cve": "CVE-2026-78410",
+        "ghsa": "GHSA-rh77-686x-2f2m",
+        "url": "https://github.com/util-linux/util-linux/security/advisories/GHSA-rh77-686x-2f2m",
+        "published_at": "2026-09-02T08:29:04Z",
+        "updated_at": "2026-09-02T08:29:04Z",
+        "vendor_severity": "high",
+        "vulnerable_packages": [
+          {
+            "package": {
+              "ecosystem": "",
+              "name": "util-linux"
+            },
+            "vulnerable_version_range": "<=2.42.2",
+            "patched_versions": "2.41.6; 2.42.3",
+            "vulnerable_functions": []
+          }
+        ]
+      }
+    ],
+    "evidence": "Pinned official APKBUILD secfixes and upstream vendor advisories. The r1 package includes CVE-2026-78408.patch."
+  },
+  "ncurses": {
+    "retained_packages": [
+      "libncursesw",
+      "ncurses-terminfo-base"
+    ],
+    "installed_version_supplied_by_parent": "6.6_p20260516-r0",
+    "cve": "CVE-2025-69720",
+    "upstream_fix_patch_date": "2025-12-13",
+    "upstream_source_version": "6.6-20260516",
+    "expected_archive_sha512": "20ffc27f3266b078b410f712422db00d77f5fd497e398b7be252fd207ab70ebd72a2bdf8fd6c94e2a9e41bd2b64d1c6502240c0b8423c99add073bd1226f5859",
+    "actual_archive_sha512": "20ffc27f3266b078b410f712422db00d77f5fd497e398b7be252fd207ab70ebd72a2bdf8fd6c94e2a9e41bd2b64d1c6502240c0b8423c99add073bd1226f5859",
+    "archive_sha512_matches_pinned_aports": true,
+    "source_transport": "Official Alpine distfiles mirror; the original ncurses current/ source URL in APKBUILD now returns 404. Exact source bytes match the pinned APKBUILD SHA512.",
+    "evidence": "Upstream NEWS records infocmp -i length bound on 20251213; exact SHA512-verified packaged source is retained for patched-code inspection.",
+    "coverage_limit": "The current Alpine ncurses secfixes metadata has no CVE-2025-69720 row. This omission is not a waiver; source version and patched code provide independent primary proof.",
+    "extracted_source_files": [
+      {
+        "archive_member": "ncurses-6.6-20260516/progs/infocmp.c",
+        "file": "ncurses-progs-infocmp.c",
+        "bytes": 55505,
+        "sha256": "e112e181f1d1aced56b9ea75f482cc0c6897e96b39173453186c2f3fdcc32826"
+      },
+      {
+        "archive_member": "ncurses-6.6-20260516/NEWS",
+        "file": "ncurses-NEWS",
+        "bytes": 740941,
+        "sha256": "82a5588f91d13ec8938bcf54b74ac9c17a5a4d1e5e899b98029477a42189fed1"
+      }
+    ],
+    "patched_code_checks": [
+      {
+        "expression": "char buf2[MAX_TERMINFO_LENGTH + 1];",
+        "line": 875,
+        "present": true
+      },
+      {
+        "expression": "if ((len = strlen(cp)) > MAX_TERMINFO_LENGTH)",
+        "line": 909,
+        "present": true
+      },
+      {
+        "expression": "len = MAX_TERMINFO_LENGTH;",
+        "line": 910,
+        "present": true
+      },
+      {
+        "expression": "_nc_STRNCPY(buf2, sp, len);",
+        "line": 911,
+        "present": true
+      },
+      {
+        "expression": "buf2[len] = '\\0';",
+        "line": 912,
+        "present": true
+      }
+    ],
+    "source_checks_result": "PASS: exact packaged source contains the bounded length and termination checks; NEWS records the upstream 2025-12-13 fix."
+  },
+  "alpine": {
+    "branch": "3.24",
+    "currentMinorRelease": "3.24.2",
+    "branchDate": "2026-06-09",
+    "mainEndOfSupport": "2028-06-01",
+    "communitySupport": "Until the next stable release",
+    "sourceId": "alpine-support"
+  },
+  "openssl": {
+    "alpineVersion": "3.5.9-r0",
+    "upstreamVersion": "3.5.9",
+    "releaseDate": "2026-09-29",
+    "minimumRequiredAlpineVersion": "3.5.9-r0",
+    "highestUpstreamSeverity": "High",
+    "relevantAdvisories": [
+      {
+        "id": "CVE-2026-84782",
+        "title": "DTLS Retransmits Handshake Messages From a Stale Buffer Offset",
+        "severity": "High",
+        "fixedVersion": "3.5.9"
+      },
+      {
+        "id": "CVE-2026-35189",
+        "title": "Excessive Memory Allocation in Relative CRLDP Processing",
+        "severity": "Low",
+        "fixedVersion": "3.5.9"
+      },
+      {
+        "id": "CVE-2026-35191",
+        "title": "QUIC Unvalidated Amplification Credit may be Over Accounted",
+        "severity": "Low",
+        "fixedVersion": "3.5.9"
+      },
+      {
+        "id": "CVE-2026-42772",
+        "title": "Potential CPU DoS via O(n^2) Fragment Reassembly in QUIC",
+        "severity": "Low",
+        "fixedVersion": "3.5.9"
+      },
+      {
+        "id": "CVE-2026-54872",
+        "title": "Timing Side-Channel in Scalar Multiplication for Non-NIST EC Curves",
+        "severity": "Low",
+        "fixedVersion": "3.5.9"
+      },
+      {
+        "id": "CVE-2026-54873",
+        "title": "QUIC STREAM Fragment Metadata DoS",
+        "severity": "Low",
+        "fixedVersion": "3.5.9"
+      },
+      {
+        "id": "CVE-2026-54875",
+        "title": "Non-Constant-Time SM2 Scalar Multiplication on ARM64 and RISC-V",
+        "severity": "Low",
+        "fixedVersion": "3.5.9"
+      },
+      {
+        "id": "CVE-2026-72897",
+        "title": "Out-of-Bounds Access After SSL_set_SSL_CTX() During a Handshake",
+        "severity": "Low",
+        "fixedVersion": "3.5.9"
+      },
+      {
+        "id": "CVE-2026-75804",
+        "title": "QUIC Connection-Level Flow Control is Not Enforced for Streams",
+        "severity": "Low",
+        "fixedVersion": "3.5.9"
+      },
+      {
+        "id": "CVE-2026-75805",
+        "title": "NULL Pointer Dereference in CMP Client Revocation Response Handling",
+        "severity": "Low",
+        "fixedVersion": "3.5.9"
+      },
+      {
+        "id": "CVE-2026-75806",
+        "title": "Unauthenticated and Undersized DTLS 1.2 AEAD Record Causes DoS",
+        "severity": "Low",
+        "fixedVersion": "3.5.9"
+      },
+      {
+        "id": "CVE-2026-77696",
+        "title": "Timing Side-Channel in SM2 Signature Generation",
+        "severity": "Low",
+        "fixedVersion": "3.5.9"
+      },
+      {
+        "id": "CVE-2026-84784",
+        "title": "QUIC: Unbounded RETIRE_CONNECTION_ID Backlog",
+        "severity": "Low",
+        "fixedVersion": "3.5.9"
+      }
+    ],
+    "sourceIds": [
+      "openssl-release",
+      "openssl-advisory",
+      "openssl-apkbuild"
+    ],
+    "alpineSecdbLatestDeclaredFix": "3.5.8-r0",
+    "missingFromCapturedAlpineSecdb": [
+      "CVE-2026-84782",
+      "CVE-2026-35189",
+      "CVE-2026-35191",
+      "CVE-2026-42772",
+      "CVE-2026-54872",
+      "CVE-2026-54873",
+      "CVE-2026-54875",
+      "CVE-2026-72897",
+      "CVE-2026-75804",
+      "CVE-2026-75805",
+      "CVE-2026-75806",
+      "CVE-2026-77696",
+      "CVE-2026-84784"
+    ],
+    "coverageDisposition": "Require and verify actual OpenSSL >=3.5.9. A zero result from Alpine secdb cannot establish that OpenSSL 3.5.8 is unaffected."
+  },
+  "sqlite": {
+    "alpineVersion": "3.53.4-r0",
+    "upstreamVersion": "3.53.4",
+    "releaseDate": "2026-07-24",
+    "sourceIds": [
+      "sqlite-cves",
+      "sqlite-release",
+      "sqlite-apkbuild"
+    ],
+    "upstreamFixedAdvisories": [
+      {
+        "id": "CVE-2026-11822",
+        "fixedVersion": "3.53.2",
+        "fixDate": "2026-06-03"
+      },
+      {
+        "id": "CVE-2026-11824",
+        "fixedVersion": "3.53.2",
+        "fixDate": "2026-06-03"
+      }
+    ],
+    "alpineSecdbLatestNonzeroDeclaredFix": "3.34.1-r0",
+    "alpineSecdbHas2026AdvisoryRows": false,
+    "missingFromCapturedAlpineSecdb": [
+      "CVE-2026-11822",
+      "CVE-2026-11824"
+    ],
+    "coverageDisposition": "Verify the loaded SQLite version >=3.53.2; Alpine 3.53.4 includes this release floor. Secdb absence does not establish absence of other SQLite defects."
+  },
+  "coverage_limits": [
+    "This receipt preserves vendor evidence; it does not prove which libraries a final image actually loads.",
+    "The proposed Python image includes a locally compiled interpreter, and Python wheels may carry their own libraries. Their actual runtime versions and file bindings require separate verification.",
+    "No advisory ignore, severity suppression, exploitability waiver, legal approval, customer approval, or production GO is granted by this receipt.",
+    "The current Alpine ncurses secfixes metadata has no CVE-2025-69720 row. This omission is not a waiver; source version and patched code provide independent primary proof."
+  ],
+  "artifact_bindings": [
+    {
+      "file": "coverage/coverage-proof.json",
+      "bytes": 9692,
+      "sha256": "74a033680dbe0871f1efd392116c5c2c0547fd43be476c4d5f153f1321e6ca6b"
+    },
+    {
+      "file": "fixes/fix-proof.json",
+      "bytes": 12409,
+      "sha256": "a1f4df726111c6c5929f11accc3729b7804ff183b809c3e26e84c906f2836bfb"
+    }
+  ],
+  "vendor_files_manifest": {
+    "file": "vendor-files.json",
+    "sha256": "e65db0c0b44ee183676d1497027011041c7e3171146420df7764e12d46765d18",
+    "file_count": 29
+  },
+  "sources": [
+    {
+      "id": "alpine-support",
+      "file": "coverage/alpine-release-branches.html",
+      "url": "https://www.alpinelinux.org/releases/",
+      "fetched_at_utc": "2026-10-06T10:08:28.790229+00:00",
+      "sha256": "b2dbb62485786b70c4114cfd13f5c0b077e0cac0bba5b938bd2d23e3a128d518",
+      "bytes": 37069
+    },
+    {
+      "id": "alpine-secdb",
+      "file": "coverage/alpine-v3.24-main-secdb.json",
+      "url": "https://secdb.alpinelinux.org/v3.24/main.json",
+      "fetched_at_utc": "2026-10-06T10:08:22.405050+00:00",
+      "sha256": "af9c850ac2173e4c7d17b934c5c6852ab4ae9fd4a9ebb89fd668e9c1d50c3548",
+      "bytes": 90720
+    },
+    {
+      "id": "openssl-release",
+      "file": "coverage/openssl-3.5-series-notes.html",
+      "url": "https://openssl-library.org/news/openssl-3.5-notes/index.html",
+      "fetched_at_utc": "2026-10-06T10:08:28.801732+00:00",
+      "sha256": "4d8de0c3b21f9b3a08ef6352dc342afe280d9f5a250d4f64988f196c97771fa7",
+      "bytes": 54560
+    },
+    {
+      "id": "openssl-apkbuild",
+      "file": "coverage/openssl-APKBUILD-29b9ec24.txt",
+      "url": "https://raw.githubusercontent.com/alpinelinux/aports/29b9ec24b1b5b39aeef51fa2a044210e2ec5258e/main/openssl/APKBUILD",
+      "fetched_at_utc": "2026-10-06T10:08:28.863950+00:00",
+      "sha256": "ea459c051ee8d846c06f1d47d09d0f737778502c01de88c9696e96a208de5943",
+      "bytes": 7297
+    },
+    {
+      "id": "openssl-advisory",
+      "file": "coverage/openssl-security-advisory-20260929.txt",
+      "url": "https://openssl-library.org/news/secadv/20260929.txt",
+      "fetched_at_utc": "2026-10-06T10:08:28.818514+00:00",
+      "sha256": "2a6766a213b2dac48b4666aa54c39dbe3af96f73444081a4a25c1e3dc496aeb9",
+      "bytes": 34045
+    },
+    {
+      "id": "sqlite-release",
+      "file": "coverage/sqlite-3.53.4-releaselog.html",
+      "url": "https://www.sqlite.org/releaselog/3_53_4.html",
+      "fetched_at_utc": "2026-10-06T10:08:28.843127+00:00",
+      "sha256": "c8d12ef674ac295edba47c341cb18b5913795ba94a78474c68e4213970d128ac",
+      "bytes": 12926
+    },
+    {
+      "id": "sqlite-apkbuild",
+      "file": "coverage/sqlite-APKBUILD-a9c3ba8b.txt",
+      "url": "https://raw.githubusercontent.com/alpinelinux/aports/a9c3ba8b9129ec0f294d0a9bf538c2f1632bb016/main/sqlite/APKBUILD",
+      "fetched_at_utc": "2026-10-06T10:08:28.870454+00:00",
+      "sha256": "8e0cdc5e9d36fa52760c2b89b538e0125552ee0b53451a0712c33b7dcdd609dd",
+      "bytes": 2972
+    },
+    {
+      "id": "sqlite-cves",
+      "file": "coverage/sqlite-cves.html",
+      "url": "https://www.sqlite.org/cves.html",
+      "fetched_at_utc": "2026-10-06T10:08:28.825046+00:00",
+      "sha256": "0ef51a811fdc3dcfcd86692736190db83ef78073892fbe2d89029cbc57ade3a5",
+      "bytes": 40802
+    },
+    {
+      "id": "alpine-util-linux-78408-patch",
+      "file": "fixes/CVE-2026-78408.patch",
+      "url": "https://raw.githubusercontent.com/alpinelinux/aports/cc3c058c10ef87b92a8594863868a657fd1e8320/main/util-linux/CVE-2026-78408.patch",
+      "fetched_at_utc": "2026-10-06T10:09:52.772328+00:00",
+      "sha256": "bd5b45db9dbfb340622250e92a9f35dbfd9a3574045c4e89e3d034e2391f7697",
+      "bytes": 2975
+    },
+    {
+      "id": "CVE-2026-78408",
+      "file": "fixes/GHSA-55fx-f4gg-cfhj.json",
+      "url": "https://api.github.com/repos/util-linux/util-linux/security-advisories/GHSA-55fx-f4gg-cfhj",
+      "fetched_at_utc": "2026-10-06T10:09:53.294026+00:00",
+      "sha256": "f6c921fb4ee704d967a4390d2c27620f425f3159d7a5e3e07b18bef748f77c41",
+      "bytes": 19600
+    },
+    {
+      "id": "CVE-2026-78409",
+      "file": "fixes/GHSA-8f2p-47x3-43mv.json",
+      "url": "https://api.github.com/repos/util-linux/util-linux/security-advisories/GHSA-8f2p-47x3-43mv",
+      "fetched_at_utc": "2026-10-06T10:09:53.348249+00:00",
+      "sha256": "37415d0c6ffe9e78fef578fd2a597d4a43c0c8af6ac62dbe12a24824938227a5",
+      "bytes": 16375
+    },
+    {
+      "id": "CVE-2026-76642",
+      "file": "fixes/GHSA-m25x-3hj9-m26f.json",
+      "url": "https://api.github.com/repos/util-linux/util-linux/security-advisories/GHSA-m25x-3hj9-m26f",
+      "fetched_at_utc": "2026-10-06T10:09:53.188555+00:00",
+      "sha256": "fb040006758657abaab3d5049a6b33e4ea38180afc75bc0f42af30aba371cbed",
+      "bytes": 38012
+    },
+    {
+      "id": "CVE-2026-78410",
+      "file": "fixes/GHSA-rh77-686x-2f2m.json",
+      "url": "https://api.github.com/repos/util-linux/util-linux/security-advisories/GHSA-rh77-686x-2f2m",
+      "fetched_at_utc": "2026-10-06T10:09:53.465258+00:00",
+      "sha256": "72bff2ae319b07e4574f62cad71e3ca41b6eb0a625d03e1caca86e8f01b41629",
+      "bytes": 15416
+    },
+    {
+      "id": "alpine-branch",
+      "file": "fixes/alpine-commit.json",
+      "url": "https://api.github.com/repos/alpinelinux/aports/commits/cc3c058c10ef87b92a8594863868a657fd1e8320",
+      "fetched_at_utc": "2026-10-06T10:09:52.998372+00:00",
+      "sha256": "3a7112867d2ad5fdea6c68745825c784afe2082bf13396f4bc05fa78b141d2b3",
+      "bytes": 3133
+    },
+    {
+      "id": "ncurses-source",
+      "file": "fixes/ncurses-6.6-20260516.tgz",
+      "url": "https://distfiles.alpinelinux.org/distfiles/v3.24/ncurses-6.6-20260516.tgz",
+      "fetched_at_utc": "2026-10-06T10:09:53.658628+00:00",
+      "sha256": "933438009f594f54656c53c7bc347a7e0ff21881700fc3db811086f7a3fd3b60",
+      "bytes": 3803559
+    },
+    {
+      "id": "alpine-ncurses",
+      "file": "fixes/ncurses-APKBUILD.txt",
+      "url": "https://raw.githubusercontent.com/alpinelinux/aports/cc3c058c10ef87b92a8594863868a657fd1e8320/main/ncurses/APKBUILD",
+      "fetched_at_utc": "2026-10-06T10:09:52.772295+00:00",
+      "sha256": "9801a0e262437b470ddfd6c35e55c231a79b6903262fe68df8a547845d095d6a",
+      "bytes": 4624
+    },
+    {
+      "id": "ncurses-news",
+      "file": "fixes/ncurses-NEWS.html",
+      "url": "https://invisible-island.net/ncurses/NEWS.html",
+      "fetched_at_utc": "2026-10-06T10:09:54.198581+00:00",
+      "sha256": "98fb56d1e4bcfd37c10c751f435bc6b03980d8f2796b5e4e5f9e5b1846dd7385",
+      "bytes": 1119991
+    },
+    {
+      "id": "util-linux-tag-ref",
+      "file": "fixes/util-linux-2.42.3-tag-ref.json",
+      "url": "https://api.github.com/repos/util-linux/util-linux/git/ref/tags/v2.42.3",
+      "fetched_at_utc": "2026-10-06T10:09:52.998375+00:00",
+      "sha256": "047a88b4c17de99a1b141a10578b80fbb876897ce2584295e2564011ef538b35",
+      "bytes": 347
+    },
+    {
+      "id": "util-linux-tag",
+      "file": "fixes/util-linux-2.42.3-tag.json",
+      "url": "https://api.github.com/repos/util-linux/util-linux/git/tags/5e8b2f2ccd662eaa76f8d999a48a37837a0e02f1",
+      "fetched_at_utc": "2026-10-06T10:09:53.146429+00:00",
+      "sha256": "f66ef77fc00bd2855b6745316b78bb30daaccdf938ff593afacd3c4980ccd77b",
+      "bytes": 2563
+    },
+    {
+      "id": "alpine-util-linux",
+      "file": "fixes/util-linux-APKBUILD.txt",
+      "url": "https://raw.githubusercontent.com/alpinelinux/aports/cc3c058c10ef87b92a8594863868a657fd1e8320/main/util-linux/APKBUILD",
+      "fetched_at_utc": "2026-10-06T10:09:52.772107+00:00",
+      "sha256": "5347f9d386c8684e7f5cc160ae8595c5c3d3cfedcfdc758f5e022a46e560b944",
+      "bytes": 11509
+    }
+  ]
+}

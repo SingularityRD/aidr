@@ -1,8 +1,8 @@
-import { detectionViews } from '../normalize.js';
+import { detectionViews, normalize } from '../normalize.js';
 import { id, integer, secret, mac, frozen, textBound, oneOf, deny } from './util.js';
 import { CLASSIFICATIONS, type Classification } from './types.js';
 function tokens(text:string):string[]{
-  const normalized=text.normalize('NFKC').toLowerCase().replace(/[\u200b-\u200f\u2060\ufeff]/gu,'').replace(/[ı]/gu,'i').replace(/i\u0307/gu,'i');
+  const normalized=normalize(text).text.toLowerCase().replace(/[ı]/gu,'i').replace(/i\u0307/gu,'i');
   const t=normalized.match(/[\p{L}\p{N}]+/gu)??[];if(t.length>8192||t.some(x=>x.length>512))deny('INDEX_CONTENT_LIMIT');return t;
 }
 export interface DataMatch {readonly datasetId:string;readonly reference:string;readonly kind:'exact-record'|'document-fragment';readonly classification:Classification;readonly matched:number;}

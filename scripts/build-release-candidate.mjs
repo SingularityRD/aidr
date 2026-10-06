@@ -65,7 +65,11 @@ export const EXTRA_TARGETS = Object.freeze([
 	{ dir: "packages/dashboard/dist", name: "aidr-dashboard-dist" },
 ]);
 
+let assembling = false;
+
 function fail(message) {
+	// Assembly failures must unwind the cleanup below, including incomplete output.
+	if (assembling) throw new Error(message);
 	console.error(`ERROR: ${message}`);
 	process.exit(1);
 }
@@ -139,6 +143,7 @@ if (existsSync(outputDir)) fail(`output directory already exists: ${options.outp
 
 const rootPkg = JSON.parse(readFileSync(path.join(ROOT, "package.json"), "utf8"));
 const rcVersion = options.rcVersion ?? String(rootPkg.version ?? "0.0.0");
+if (!/^[0-9A-Za-z][0-9A-Za-z.+_-]{0,127}$/u.test(rcVersion)) fail("--rc-version must be a safe release version without path separators");
 
 const commitSha = git(["rev-parse", "HEAD"]);
 const dirtyEntries = git(["status", "--porcelain=v1"])
@@ -178,12 +183,35 @@ for (const target of PACKAGE_TARGETS) {
 
 const packRoot = path.join(tmpdir(), `aidr-candidate-pack-${process.pid}`);
 cleanupDirectory(packRoot);
-mkdirSync(packRoot, { recursive: true });
-mkdirSync(outputDir, { recursive: true });
-
 const staged = [];
+let completed = false;
+assembling = true;
 
 try {
+	mkdirSync(packRoot, { recursive: true });
+	mkdirSync(outputDir, { recursive: true });
+	// Evidence is mandatory even when no publisher signature is available.
+	for (const name of ["aidr-sbom.cdx.json", "aidr-sbom.cdx.json.sha256"]) {
+		const source = path.join(ROOT, ".release-evidence", name);
+		if (!existsSync(source)) fail(`release SBOM evidence is missing: ${name}`);
+		const destination = path.join(outputDir, name);
+		await copyFile(source, destination);
+		staged.push({ name, file: destination });
+	}
+	const sbomDigest = sha256File(path.join(outputDir, "aidr-sbom.cdx.json"));
+	const sbomChecksum = readFileSync(path.join(outputDir, "aidr-sbom.cdx.json.sha256"), "utf8").trim();
+	if (!new RegExp(`^${sbomDigest}(?:  \\*?aidr-sbom\\.cdx\\.json)?$`).test(sbomChecksum)) fail("release SBOM checksum does not match the staged SBOM");
+	const provenanceName = "aidr-provenance.intoto.json";
+	const provenanceTarget = path.join(outputDir, provenanceName);
+	const provenanceInputs = ["--lockfile", "pnpm-lock.yaml", "--sbom", ".release-evidence/aidr-sbom.cdx.json",
+		...PACKAGE_TARGETS.flatMap((target) => ["--artifact-dir", `${target.dir}/dist`])];
+	for (const args of [["--output", provenanceTarget], ["--verify-provenance", "--provenance", provenanceTarget]]) {
+		const result = spawnSync(process.execPath, ["scripts/generate-provenance.mjs", ...provenanceInputs, ...args], {
+			cwd: ROOT, encoding: "utf8", env: { ...process.env, AIDR_GIT_SHA: commitSha, AIDR_RC_VERSION: rcVersion },
+		});
+		if (result.error || result.status !== 0) fail(`required release provenance failed: ${(result.stderr || result.error?.message || "unknown error").trim().slice(-800)}`);
+	}
+	staged.push({ name: provenanceName, file: provenanceTarget });
 	for (const target of PACKAGE_TARGETS) {
 		const packageDir = path.join(ROOT, target.dir);
 		const before = new Set(readdirSync(packRoot));
@@ -198,6 +226,7 @@ try {
 		const produced = readdirSync(packRoot).filter((name) => !before.has(name) && name.endsWith(".tgz"));
 		if (produced.length !== 1) fail(`${target.name}: expected exactly one tarball, saw ${produced.length}`);
 		const tarball = path.join(packRoot, produced[0]);
+		inspectReleaseArchive(tarball);
 		const published = `${target.name.replace(/^@/, "").replace(/\//, "-")}-${rcVersion}.tgz`;
 		const destination = path.join(outputDir, published);
 		await copyFile(tarball, destination);
@@ -214,6 +243,7 @@ try {
 			encoding: "utf8",
 		});
 		if (tar.error || tar.status !== 0) fail(`${target.name}: tar failed (${tar.error?.message ?? `exit ${tar.status}`})`);
+		inspectReleaseArchive(destination);
 		staged.push({ name: archived, file: destination });
 	}
 
@@ -255,18 +285,19 @@ try {
 	}
 	staged.push({ name: pluginArchive, file: pluginDestination });
 
-	// Provenance statement, when the generator can produce one here.
-	const provenanceName = "aidr-provenance.intoto.json";
-	const provenanceTarget = path.join(outputDir, provenanceName);
-	const provenance = spawnSync(process.execPath, ["scripts/generate-provenance.mjs", "--output", provenanceTarget], {
-		cwd: ROOT,
-		encoding: "utf8",
-		env: { ...process.env, AIDR_GIT_SHA: commitSha, AIDR_RC_VERSION: rcVersion },
+	// Reuse the locked packager; the candidate flag permits absent signatures
+	// only at this preparation boundary, without changing the shipped runtime.
+	const vsceVersion = rootPkg.devDependencies?.["@vscode/vsce"];
+	if (!/^\d+\.\d+\.\d+$/.test(vsceVersion ?? "")) fail("root @vscode/vsce must have an exact version");
+	const unsignedExtension = !existsSync(path.join(ROOT, "packages/extension/dist/aidr-artifact.manifest.sig"));
+	const vsix = spawnSync(process.execPath, [".github/scripts/package-vsix.mjs", ...(unsignedExtension ? ["--unsigned-candidate"] : [])], {
+		cwd: ROOT, encoding: "utf8", env: { ...process.env, VSCE_VERSION: vsceVersion, VSIX_OUTPUT_DIR: outputDir },
 	});
-	if (provenance.status === 0 && existsSync(provenanceTarget)) {
-		staged.push({ name: provenanceName, file: provenanceTarget });
-	} else {
-		console.warn(`WARN: provenance statement was not generated; the candidate carries no in-toto attestation (${(provenance.stderr ?? "").trim().slice(-200)})`);
+	if (vsix.error || vsix.status !== 0) fail(`required VSIX packaging failed: ${(vsix.stderr || vsix.error?.message || "unknown error").trim().slice(-800)}`);
+	for (const name of ["aidr-cursor.vsix", "aidr-vscode.vsix"]) {
+		const file = path.join(outputDir, name);
+		if (!existsSync(file) || statSync(file).size === 0) fail(`required VSIX is missing or empty: ${name}`);
+		staged.push({ name, file });
 	}
 
 	staged.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
@@ -328,6 +359,14 @@ try {
 			assurance: "LOCAL REHEARSAL: the worktree had uncommitted source changes when this bundle was assembled, so these bytes are not bound to the recorded commit. This file sits outside the bundle because the bundle schema accepts only metadata, inventory and artifacts.",
 		}, null, 2)}\n`, "utf8");
 	}
+	completed = true;
+} catch (error) {
+	console.error(`ERROR: ${error instanceof Error ? error.message : String(error)}`);
+	process.exitCode = 1;
 } finally {
-	cleanupDirectory(packRoot);
+	try {
+		cleanupDirectory(packRoot);
+	} finally {
+		if (!completed) cleanupDirectory(outputDir);
+	}
 }

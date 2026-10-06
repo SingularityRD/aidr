@@ -1,0 +1,7 @@
+{
+  "requiredTypes": ["PERSON", "ADDRESS"],
+  "minGold": 100,
+  "minRecallLower": 0.95,
+  "minPrecisionLower": 0.90,
+  "maxCleanFalseAlarmRate": 0.05
+}

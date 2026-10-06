@@ -154,7 +154,7 @@ export class PrivacyEngine {
     try {
       bytes=this.#checkText(text);
       if(this.#active>=this.#config.maxConcurrent)fail('CONCURRENCY_LIMIT');this.#active++;entered=true;
-      const findings=await this.#find(text),merged=mergeFindings(findings);
+      const findings=await this.#find(text);if(this.#disposed)fail('DISPOSED');const merged=mergeFindings(findings);
       // Evaluate ALL findings before overlap resolution so lower-priority block rules cannot disappear.
       if(findings.some(f=>this.#action(f.type)==='block'))return this.#result(start,bytes,'block',null,merged,['POLICY_BLOCK']);
       if(findings.some(f=>this.#action(f.type)==='review')||this.#config.profile==='defense'&&findings.some(f=>f.evidence==='ner'&&f.score<.7))
@@ -206,7 +206,7 @@ export class PrivacyEngine {
     };
     try {
       bytes=this.#checkText(input);this.#checkCapabilities();const parsed=parseJsonStrict(input,this.#config.maxJsonDepth,this.#config.maxJsonNodes);
-      const safe=await walk(parsed);check();
+      const safe=await walk(parsed);check();if(this.#disposed)fail('DISPOSED');
       // TypeScript cannot track mutation through async closures; derive the terminal state here.
       const terminal=decision as TextResult['decision'];
       return Object.freeze({decision:terminal,output:terminal==='block'||terminal==='review'?null:JSON.stringify(safe),

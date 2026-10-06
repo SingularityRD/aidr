@@ -20,6 +20,8 @@ test("exact RC requires packaged native Claude acceptance on Windows before sign
 	assert.match(native, /verify-claude-native-candidate\.mjs --candidate release-output --expected-candidate-digest \$env:EXPECTED_CANDIDATE_DIGEST --public-key/);
 	assert.match(native, /if \(\$LASTEXITCODE -ne 0\) \{ throw "Claude native candidate acceptance failed" \}/);
 	assert.match(native, /Upload Windows native package receipt/);
+	assert.match(native, /sign-windows-response-payload\.ps1 -CheckOnly[\s\S]*-ExpectedThumbprint \$env:WINDOWS_CODE_SIGNING_THUMBPRINT/);
+	assert.ok(native.indexOf("Final packaged Authenticode verification failed") < native.indexOf("Verify packaged native AMSI and hook decisions on Windows"));
 	assert.doesNotMatch(native, /continue-on-error:/);
 	assert.match(job("final-sign-publish"), /needs: \[build-rc, assemble-e2e, acceptance-e2e, acceptance-windows-native\]/);
 });
@@ -32,7 +34,7 @@ test("protected acceptance runner requires the installed loopback control plane 
 	assert.ok(acceptance.indexOf("Recheck exact candidate identity across runner boundary") < acceptance.indexOf("Candidate-bound isolated control-plane acceptance"));
 	assert.ok(acceptance.indexOf("Candidate-bound isolated control-plane acceptance") < acceptance.indexOf("Real-host connector E2E gate"));
 	assert.doesNotMatch(acceptance, /continue-on-error:/);
-	assert.doesNotMatch(job("build-rc", "package-signing"), /deployment-smoke\.mjs|verify-claude-native-candidate\.mjs/);
+	assert.doesNotMatch(job("build-rc", "windows-authenticode"), /deployment-smoke\.mjs|verify-claude-native-candidate\.mjs/);
 });
 
 test("every external E2E receipt requires a detached signature from the protected acceptance workflow", () => {

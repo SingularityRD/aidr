@@ -1,0 +1,7 @@
+{
+  "secretStore": "linux-secret-service",
+  "origin": "https://127.0.0.1:8443", "destinationId": "approved-provider",
+  "caPath": "/etc/aidr-privacy/client/server-ca.pem",
+  "certPath": "/etc/aidr-privacy/client/enrolled-device.pem",
+  "keyRef": "aidr-host-device-key", "credentialsRef": "aidr-host-session"
+}

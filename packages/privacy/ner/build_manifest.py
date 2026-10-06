@@ -6,7 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from artifacts import sha256_file, verified_manifest
+from artifacts import ArtifactError, sha256_file, verified_manifest
 
 def main() -> None:
     parser = argparse.ArgumentParser()
@@ -15,6 +15,8 @@ def main() -> None:
     args = parser.parse_args()
     config = json.loads(args.config.read_text('utf-8'))
     for spec in config['models']:
+        if spec.get('aggregation', 'token') not in ('token', 'first_word'):
+            raise ArtifactError('INVALID_AGGREGATION')
         root = args.output.parent / spec['directory']
         spec['files'] = {p.relative_to(root).as_posix(): sha256_file(p) for p in sorted(root.rglob('*')) if p.is_file()}
     args.output.write_text(json.dumps(config, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
@@ -10,19 +10,29 @@ const installRoot = resolve(values["install-root"]);
 const usersDir = join(stateRoot, "users");
 const users = [];
 let healthy = true;
+const entryInfo = (path) => {
+	try { return lstatSync(path); }
+	catch (error) { if (error.code === "ENOENT") return null; throw error; }
+};
+const regularFile = (path) => entryInfo(path)?.isFile() === true;
+const regularDirectory = (path) => entryInfo(path)?.isDirectory() === true;
 
-if (existsSync(usersDir)) {
+if (entryInfo(usersDir)) {
 	for (const encoded of readdirSync(usersDir).sort()) {
 		const currentPath = join(usersDir, encoded, "release-state");
 		const pendingPath = join(usersDir, encoded, "pending");
-		const pending = existsSync(pendingPath) && statSync(pendingPath).isFile();
-		if ((!existsSync(currentPath) || !statSync(currentPath).isFile()) && !pending) continue;
-		const release = existsSync(currentPath) ? readFileSync(currentPath, "utf8").match(/^current=([a-f0-9]{64})$/m)?.[1] ?? "" : "";
+		const pending = entryInfo(pendingPath) !== null;
+		if (!entryInfo(currentPath) && !pending) continue;
+		const release = regularFile(currentPath) ? readFileSync(currentPath, "utf8").match(/^current=([a-f0-9]{64})\nprevious=(?:[a-f0-9]{64})?\n$/)?.[1] ?? "" : "";
 		const validId = /^[a-f0-9]{64}$/.test(release);
 		const packagePath = validId ? join(installRoot, "releases", release, "package") : "";
-		const ok = !pending && validId && existsSync(join(packagePath, "package.json")) && existsSync(join(packagePath, "dist", "pre-tool-use.cjs"));
+		const releasePresent = validId && regularDirectory(join(installRoot, "releases", release)) && regularDirectory(packagePath);
+		const ok = !pending && releasePresent && regularFile(join(packagePath, "package.json")) &&
+			regularDirectory(join(packagePath, "dist")) &&
+			["pre-tool-use.cjs", "post-tool-use.cjs", "session-start.cjs"].every((bundle) => regularFile(join(packagePath, "dist", bundle))) &&
+			regularDirectory(join(packagePath, "resources"));
 		healthy &&= ok;
-		users.push({ user_id: encoded, release_sha256: validId ? release : null, release_present: validId && existsSync(packagePath), lifecycle_pending: pending });
+		users.push({ user_id: encoded, release_sha256: validId ? release : null, release_present: releasePresent, lifecycle_pending: pending });
 	}
 }
 

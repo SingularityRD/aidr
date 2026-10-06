@@ -1,6 +1,6 @@
-import type { Logger } from "@singularityrd/aidr-core";
+import { type Logger, scanProvisionedOutput } from "@singularityrd/aidr-core";
 import {
-	inspectBoundedOutput,
+	inspectCachedProvisionedBoundedOutput,
 	type OutputInspection,
 	outputInspectionSummary,
 	requiresOutputProtection,
@@ -237,20 +237,23 @@ export class OpenClawOutputProtection {
 		private readonly now: () => number = Date.now,
 	) {}
 
-	afterToolCall(event: AfterToolCallEvent, context: OutputHookContext = {}): void {
-		const inspection = inspectBoundedOutput(
+	async afterToolCall(event: AfterToolCallEvent, context: OutputHookContext = {}): Promise<void> {
+		const { toolName, toolCallId, runId } = event;
+		const correlation = { ...context };
+		await scanProvisionedOutput([], "openclaw");
+		const inspection = inspectCachedProvisionedBoundedOutput(
 			{ result: event.result, error: event.error },
 			"tool_output",
 		);
 		if (!requiresOutputProtection(inspection)) return;
 
-		this.recordPending(event.toolCallId, event.toolName, inspection, event.runId, context);
+		this.recordPending(toolCallId, toolName, inspection, runId, correlation);
 
 		this.logger.warn("AIDR: risky tool output observed after execution", {
 			boundary: "post_execution_observation_only",
-			toolName: event.toolName,
-			toolCallId: event.toolCallId,
-			runId: event.runId || context.runId,
+			toolName,
+			toolCallId,
+			runId: runId || correlation.runId,
 			summary: outputInspectionSummary(inspection),
 		});
 	}
@@ -278,7 +281,7 @@ export class OpenClawOutputProtection {
 	): ToolResultPersistResult | undefined {
 		let inspection: OutputInspection | undefined;
 		try {
-			const messageInspection = inspectBoundedOutput(event.message, "tool_output");
+			const messageInspection = inspectCachedProvisionedBoundedOutput(event.message, "tool_output");
 			if (requiresOutputProtection(messageInspection)) inspection = messageInspection;
 		} catch (error) {
 			this.logger.error("AIDR: tool-output persistence inspection failed", {
@@ -389,16 +392,20 @@ export class OpenClawOutputProtection {
 		return unique.size;
 	}
 
-	messageSending(
+	async messageSending(
 		event: MessageSendingEvent,
 		context: OutputHookContext = {},
-	): MessageSendingResult | undefined {
+	): Promise<MessageSendingResult | undefined> {
+		const correlation = { ...context };
 		try {
-			const modelInspection = inspectBoundedOutput(
+			// Await only trust refresh, then inspect the current host payload and
+			// decide synchronously so mutations during policy reads cannot bypass it.
+			await scanProvisionedOutput([], "openclaw");
+			const modelInspection = inspectCachedProvisionedBoundedOutput(
 				{ content: event.content, metadata: event.metadata },
 				"model_response",
 			);
-			const pending = this.pendingFor(context);
+			const pending = this.pendingFor(correlation);
 			if (!requiresOutputProtection(modelInspection) && pending.length === 0) return undefined;
 
 			const content = withheldResponseWarning(modelInspection, pending);
@@ -434,17 +441,22 @@ export class OpenClawOutputProtection {
 		}
 	}
 
-	replyPayloadSending(
+	async replyPayloadSending(
 		event: ReplyPayloadSendingEvent,
 		context: OutputHookContext = {},
-	): ReplyPayloadSendingResult | undefined {
+	): Promise<ReplyPayloadSendingResult | undefined> {
+		const correlation = {
+			runId: event.runId || context.runId,
+			sessionKey: event.sessionKey || context.sessionKey,
+			sessionId: context.sessionId,
+		};
 		try {
-			const modelInspection = inspectBoundedOutput(event.payload, "model_response");
-			const pending = this.pendingFor({
-				runId: event.runId || context.runId,
-				sessionKey: event.sessionKey || context.sessionKey,
-				sessionId: context.sessionId,
-			});
+			await scanProvisionedOutput([], "openclaw");
+			const modelInspection = inspectCachedProvisionedBoundedOutput(
+				event.payload,
+				"model_response",
+			);
+			const pending = this.pendingFor(correlation);
 			if (!requiresOutputProtection(modelInspection) && pending.length === 0) return undefined;
 
 			this.logger.warn("AIDR: replacing risky outbound reply payload", {

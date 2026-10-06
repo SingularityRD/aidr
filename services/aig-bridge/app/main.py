@@ -9,7 +9,7 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -27,8 +27,11 @@ logging.basicConfig(
 logger = logging.getLogger("aig-bridge")
 
 
-class _BodyTooLarge(Exception):
+class _BodyTooLarge(HTTPException):
     """Raised while receiving a request that exceeds the configured limit."""
+
+    def __init__(self) -> None:
+        super().__init__(status_code=413, detail="request body exceeds configured limit")
 
 
 class BodySizeLimitMiddleware:
@@ -138,6 +141,7 @@ app.add_middleware(
         "Idempotency-Key",
         "X-API-Key",
         "X-AIDR-Tenant-ID",
+        "X-Content-SHA256",
     ],
 )
 

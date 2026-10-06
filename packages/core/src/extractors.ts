@@ -36,6 +36,11 @@ const MAX_GENERIC_STRINGS = 200;
 const MAX_GENERIC_DEPTH = 4;
 const MAX_GENERIC_ARTIFACTS = 250;
 
+/** A bounded extraction must never be mistaken for a complete clean inspection. */
+function incompleteInspectionArtifact(): Artifact {
+	return { type: "content", value: "[UNINSPECTED_INPUT]", context: "inspection_incomplete" };
+}
+
 /**
  * Maximum gap (in characters) allowed between two parts of a shell construct,
  * e.g. between a URL and the pipe that feeds it to a shell.
@@ -321,6 +326,9 @@ function extractFileArtifacts(
 	}
 
 	const content = toolInput[contentKey];
+	if (typeof content === "string" && content.length > MAX_CONTENT_SIZE) {
+		artifacts.push(incompleteInspectionArtifact());
+	}
 	if (content && typeof content === "string" && content.trim()) {
 		const capped = content.slice(0, MAX_CONTENT_SIZE);
 		artifacts.push({ type: "content", value: capped, context: contextName });
@@ -394,9 +402,9 @@ function collectStringFields(
 	path: string,
 	depth: number,
 	out: Array<{ path: string; key: string; value: string }>,
-): void {
-	if (out.length >= MAX_GENERIC_STRINGS) return;
-	if (depth > MAX_GENERIC_DEPTH) return;
+): boolean {
+	if (value === null || (typeof value !== "string" && typeof value !== "object")) return true;
+	if (out.length >= MAX_GENERIC_STRINGS || depth > MAX_GENERIC_DEPTH) return false;
 
 	if (typeof value === "string") {
 		out.push({
@@ -404,23 +412,22 @@ function collectStringFields(
 			key: path.split(".").slice(-1)[0] ?? "",
 			value: value.slice(0, MAX_CONTENT_SIZE),
 		});
-		return;
+		return value.length <= MAX_CONTENT_SIZE;
 	}
 
 	if (Array.isArray(value)) {
 		for (let i = 0; i < value.length; i++) {
-			collectStringFields(value[i], `${path}[${i}]`, depth + 1, out);
-			if (out.length >= MAX_GENERIC_STRINGS) return;
+			if (!collectStringFields(value[i], `${path}[${i}]`, depth + 1, out)) return false;
 		}
-		return;
+		return true;
 	}
 
 	if (value && typeof value === "object") {
 		for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-			collectStringFields(v, path ? `${path}.${k}` : k, depth + 1, out);
-			if (out.length >= MAX_GENERIC_STRINGS) return;
+			if (!collectStringFields(v, path ? `${path}.${k}` : k, depth + 1, out)) return false;
 		}
 	}
+	return true;
 }
 
 /**
@@ -436,7 +443,7 @@ export function extractFromUnknownTool(
 ): Artifact[] {
 	const artifacts: Artifact[] = [];
 	const fields: Array<{ path: string; key: string; value: string }> = [];
-	collectStringFields(toolInput, "", 0, fields);
+	let complete = collectStringFields(toolInput, "", 0, fields);
 
 	for (const field of fields) {
 		const raw = field.value;
@@ -467,7 +474,10 @@ export function extractFromUnknownTool(
 			artifacts.push({ type: "url", value: url, context: `${context}:embedded_url` });
 		}
 
-		if (artifacts.length >= MAX_GENERIC_ARTIFACTS) break;
+		if (artifacts.length >= MAX_GENERIC_ARTIFACTS) {
+			complete = false;
+			break;
+		}
 	}
 
 	const seen = new Set<string>();
@@ -479,6 +489,7 @@ export function extractFromUnknownTool(
 		deduped.push(a);
 		if (deduped.length >= MAX_GENERIC_ARTIFACTS) break;
 	}
+	if (!complete) deduped.push(incompleteInspectionArtifact());
 	return deduped;
 }
 

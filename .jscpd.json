@@ -1,11 +1,15 @@
 {
 	"threshold": 10,
 	"reporters": ["console", "html"],
+	"output": ".tmp-test/duplicates",
 	"ignore": [
 		"**/node_modules/**",
 		"**/dist/**",
 		"**/coverage/**",
 		"**/.git/**",
+		"deploy/upstream/**",
+		"vendor/**",
+		"docs/production-readiness/evidence/*.json",
 		"**/*.d.ts",
 		"**/resources/**",
 		"**/__tests__/**",
@@ -16,5 +20,5 @@
 	"gitignore": true,
 	"minLines": 5,
 	"minTokens": 50,
-	"languages": ["typescript", "javascript", "yaml", "json"]
+	"format": ["typescript", "javascript", "yaml", "json"]
 }

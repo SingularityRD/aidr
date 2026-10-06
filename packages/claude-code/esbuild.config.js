@@ -75,6 +75,7 @@ const outputs = [
 	"dist/mcp-server.cjs",
 	"dist/session-start.cjs",
 	"dist/health.cjs",
+	"dist/response-worker.cjs",
 ];
 
 /**
@@ -116,9 +117,18 @@ await Promise.all([
 	esbuild.build({ ...shared, entryPoints: ["src/mcp-server.ts"], outfile: outputs[2] }),
 	esbuild.build({ ...shared, entryPoints: ["src/session-start.ts"], outfile: outputs[3] }),
 	esbuild.build({ ...shared, entryPoints: ["src/health.ts"], outfile: outputs[4] }),
+	esbuild.build({ ...shared, entryPoints: ["src/response-worker.ts"], outfile: outputs[5] }),
 ]);
 
 stageWindowsKoffi();
+// Keep the fixed native adapter inside the same integrity-verified connector.
+mkdirSync(join("dist", "native"), { recursive: true });
+for (const script of ["Invoke-AidrResponseAction.ps1", "Common.ps1"]) {
+	copyFileSync(
+		join("..", "..", "deploy", "fleet", "windows", script),
+		join("dist", "native", script),
+	);
+}
 
 for (const out of outputs) {
 	stripSourceMappingUrl(out);

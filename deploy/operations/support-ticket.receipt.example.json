@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "kind": "aidr_support_ticket_drill_receipt",
+  "candidate_digest": "REPLACE_WITH_INDEPENDENT_INVENTORY_SHA256",
+  "environment": "not_run",
+  "synthetic_ticket": true,
+  "case_id": "REPLACE_WITH_OPERATED_CASE_ID",
+  "severity": "P1",
+  "primary_operator": "required",
+  "backup_operator": "required",
+  "reviewer": "required",
+  "events": [
+    { "phase": "submitted", "at_utc": "required", "actor": "required" },
+    { "phase": "acknowledged", "at_utc": "required", "actor": "required" },
+    { "phase": "escalated", "at_utc": "required", "actor": "required" },
+    { "phase": "updated", "at_utc": "required", "actor": "required" },
+    { "phase": "closed", "at_utc": "required", "actor": "required" }
+  ],
+  "channels": [
+    { "route": "support", "final_url": "https://customer.example/support", "owner": "required", "reached": false, "reviewed_at_utc": "required" },
+    { "route": "status", "final_url": "https://customer.example/status", "owner": "required", "reached": false, "reviewed_at_utc": "required" },
+    { "route": "security", "final_url": "https://customer.example/security", "owner": "required", "reached": false, "reviewed_at_utc": "required" },
+    { "route": "privacy", "final_url": "https://customer.example/privacy", "owner": "required", "reached": false, "reviewed_at_utc": "required" },
+    { "route": "terms", "final_url": "https://customer.example/terms", "owner": "required", "reached": false, "reviewed_at_utc": "required" }
+  ],
+  "status_update": "not_run",
+  "status_update_reference_or_reason": "required",
+  "diagnostics": "not_run",
+  "diagnostic_reference_or_reason": "required",
+  "evidence": []
+}

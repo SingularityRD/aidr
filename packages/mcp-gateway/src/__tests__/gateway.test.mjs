@@ -239,6 +239,39 @@ describe("inline MCP gateway", () => {
 		assert.equal(event.hostRoutingEnforced, false);
 	});
 
+	it("does not accept MCP traffic before the startup routing check completes", async () => {
+		for (const outcome of ["routed", "bypass"]) {
+			let release;
+			let pendingRequest;
+			const observation = new Promise((resolve) => {
+				release = resolve;
+			});
+			let f;
+			f = fixture({
+				directUpstreamCheck: async ({ gatewayAddress }) => {
+					pendingRequest ??= rpc(`http://127.0.0.1:${gatewayAddress.port}`, f.tokenA);
+					return observation;
+				},
+			});
+			const startup = f.start();
+			const checkedStartup =
+				outcome === "bypass"
+					? assert.rejects(startup, (cause) => cause?.code === "direct_upstream_bypass_detected")
+					: startup;
+			try {
+				while (!pendingRequest) await new Promise((resolve) => setImmediate(resolve));
+				const result = await pendingRequest;
+				assert.equal(result.status, 503);
+				assert.deepEqual(result.body, { error: "gateway_starting" });
+				assert.equal(await f.gateway.storeFor("tenant-a").read("server-a"), null);
+				assert.equal(f.upstreamCalls, 0);
+			} finally {
+				release(outcome);
+				await checkedStartup;
+			}
+		}
+	});
+
 	it("quarantines first-seen manifest until out-of-band approval, then delivers clean text", async () => {
 		const f = fixture();
 		const base = await f.start();
@@ -321,7 +354,11 @@ describe("inline MCP gateway", () => {
 	});
 
 	it("advertises only gateway-supported tool methods during initialization", async () => {
+		let forwardedInitialize;
 		const f = fixture({
+			beforeUpstream: async (_request, rpc) => {
+				if (rpc.method === "initialize") forwardedInitialize = rpc;
+			},
 			initializeResult: {
 				protocolVersion: "2025-03-26",
 				capabilities: {
@@ -339,6 +376,11 @@ describe("inline MCP gateway", () => {
 		await f.approve();
 		const initialized = await rpc(base, f.tokenA, "initialize", 2, {
 			protocolVersion: "2025-03-26",
+			capabilities: { sampling: {}, roots: { listChanged: true }, elicitation: {} },
+			clientInfo: { name: "test", version: "1", endpoint: "https://direct-upstream.test/mcp" },
+		});
+		assert.deepEqual(forwardedInitialize.params, {
+			protocolVersion: "2025-03-26",
 			capabilities: {},
 			clientInfo: { name: "test", version: "1" },
 		});
@@ -348,6 +390,94 @@ describe("inline MCP gateway", () => {
 			serverInfo: { name: "test", version: "1" },
 		});
 		assert.ok(!JSON.stringify(initialized.body).includes("direct-upstream.test"));
+	});
+
+	it("preserves modern protocol negotiation and both response types on upstream requests", async () => {
+		for (const [transport, sessionMode] of [
+			["json", "stateless"],
+			["json", "required"],
+			["sse", "stateless"],
+			["sse", "required"],
+		]) {
+			const requests = [];
+			const f = fixture({
+				transport,
+				sessionMode,
+				initializeResult: {
+					protocolVersion: "2025-06-18",
+					capabilities: {},
+					serverInfo: { name: "test", version: "1" },
+				},
+				beforeUpstream: async ({ init }, rpc) => {
+					const headers = new Headers(init.headers);
+					assert.ok(headers.get("accept").includes("application/json"));
+					assert.ok(headers.get("accept").includes("text/event-stream"));
+					requests.push({ method: rpc.method, version: headers.get("mcp-protocol-version") });
+				},
+			});
+			const base = await f.start();
+			await rpc(base, f.tokenA);
+			await f.approve();
+			const initialized = await rpc(base, f.tokenA, "initialize", 2, {
+				protocolVersion: "2025-06-18",
+				capabilities: {},
+				clientInfo: { name: "test", version: "1" },
+			});
+			assert.equal(initialized.body.result.protocolVersion, "2025-06-18");
+			const sessionHeaders =
+				sessionMode === "required"
+					? { "mcp-session-id": initialized.headers.get("mcp-session-id") }
+					: { "mcp-protocol-version": "2025-06-18" };
+			const result = await rpc(
+				base,
+				f.tokenA,
+				"tools/call",
+				3,
+				{ name: "search", arguments: {} },
+				sessionHeaders,
+			);
+			assert.equal(result.body.result.content[0].text, "Normal result");
+			assert.deepEqual(requests.slice(-2), [
+				{ method: "tools/list", version: "2025-06-18" },
+				{ method: "tools/call", version: "2025-06-18" },
+			]);
+			const calls = f.upstreamCalls;
+			for (const version of sessionMode === "required" ? ["invalid", "2025-03-26"] : ["invalid"]) {
+				const refused = await rpc(
+					base,
+					f.tokenA,
+					"tools/call",
+					4,
+					{ name: "search", arguments: {} },
+					{
+						...sessionHeaders,
+						"mcp-protocol-version": version,
+					},
+				);
+				assert.match(refused.body.error.message, /invalid_protocol_version/);
+				assert.equal(f.upstreamCalls, calls);
+			}
+		}
+	});
+
+	it("rejects malformed initialize requests before contacting the upstream", async () => {
+		const f = fixture();
+		const base = await f.start();
+		await rpc(base, f.tokenA);
+		await f.approve();
+		const calls = f.upstreamCalls;
+		for (const params of [
+			{},
+			{
+				protocolVersion: "arbitrary",
+				capabilities: {},
+				clientInfo: { name: "test", version: "1" },
+			},
+		]) {
+			const result = await rpc(base, f.tokenA, "initialize", 2, params);
+			assert.match(result.body.error.message, /invalid_rpc_request/);
+			assert.equal(f.upstreamCalls, calls);
+		}
 	});
 
 	it("rejects malformed upstream initialization before client delivery", async () => {

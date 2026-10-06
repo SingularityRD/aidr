@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { runInNewContext } from "node:vm";
 import { transformSync } from "esbuild";
 import { describe, expect, it, vi } from "vitest";
+import { MAX_POST_TOOL_INPUT_BYTES } from "../hook-input.js";
 
 const hookSource = readFileSync(resolve(__dirname, "../pre-tool-use.ts"), "utf8");
 const hookCode = transformSync(hookSource, {
@@ -56,10 +57,15 @@ async function runHook(
 	};
 	const pino = Object.assign(() => ({}), { destination: () => ({}) });
 	const modules: Record<string, unknown> = {
-		"node:fs": {
-			readFileSync: (fd: number) => {
+		"./hook-input.js": {
+			readBoundedJson: () => {
 				if (options.readError) throw options.readError;
-				return fd === 0 ? input : "";
+				if (Buffer.byteLength(input) > MAX_POST_TOOL_INPUT_BYTES) return { status: "oversized" };
+				try {
+					return { status: "parsed", value: JSON.parse(input) };
+				} catch {
+					return { status: "invalid" };
+				}
 			},
 		},
 		"@singularityrd/aidr-core": core,
@@ -176,6 +182,16 @@ describe("PreToolUse empty-artifact inspection", () => {
 });
 
 describe("PreToolUse input and runtime failures", () => {
+	it("denies oversized input before extraction or evaluation", async () => {
+		const { response, extract, evaluate } = await runHook(
+			JSON.stringify({ tool_name: "Write", tool_input: { content: "a".repeat(MAX_POST_TOOL_INPUT_BYTES) } }),
+			"allow",
+		);
+		expect(response.hookSpecificOutput).toMatchObject({ permissionDecision: "deny" });
+		expect(extract).not.toHaveBeenCalled();
+		expect(evaluate).not.toHaveBeenCalled();
+	});
+
 	it.each([
 		"",
 		"{ malformed secret-marker",

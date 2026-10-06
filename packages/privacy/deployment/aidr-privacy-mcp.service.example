@@ -1,0 +1,35 @@
+[Unit]
+Description=AIDR MCP gateway with private mTLS text scanning
+Requires=aidr-text-firewall.service aidr-text.service
+After=network-online.target aidr-text-firewall.service aidr-text.service
+
+[Service]
+Type=simple
+User=aidr-mcp
+Group=aidr-mcp
+UMask=0077
+Environment=AIDR_PRIVACY_CLIENT_CONFIG=/etc/aidr-mcp/client.json
+Environment=AIDR_PRIVACY_MCP_CONFIG=/etc/aidr-mcp/gateway.json
+EnvironmentFile=/etc/aidr-mcp/vault-session.env
+ExecStart=/usr/bin/node /opt/aidr-private/node_modules/@singularity/aidr-privacy/dist/platform/mcp-serve.js --config /opt/aidr-private/node_modules/@singularity/aidr-privacy/examples/platform/mcp-config.mjs
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+ReadWritePaths=/var/lib/aidr-mcp
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LimitCORE=0
+TasksMax=128
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,1424 @@
+{
+  "schema_version": 1,
+  "image_index_digest": "sha256:dd8993b9abaed977cc6d6a123a39388f188ba86d83552b140935773005b3d195",
+  "real_apk_packages": 46,
+  "virtual_apk_packages": 1,
+  "origin_count": 33,
+  "packages": [
+    {
+      "name": ".python-rundeps",
+      "version": "20261001.214925",
+      "kind": "VIRTUAL_DEPENDENCY_METADATA",
+      "installed_file_count": 0,
+      "source_material_requirement": "No binary or content files; excluded from real APK source/notice boundary counts."
+    },
+    {
+      "name": "alpine-baselayout",
+      "version": "3.7.2-r1",
+      "kind": "REAL_APK_CONTENT",
+      "origin": "alpine-baselayout",
+      "actual_apk_license_expression": "GPL-2.0-only",
+      "aports_commit": "60a7585bbab2fa0f762504eb617dbca90216e31f",
+      "build_timestamp": "1774381254",
+      "package_checksum": "Q18Pz9wvTaBYr2RzvEXE6rYpFiJbI=",
+      "installed_file_count": 13,
+      "apkbuild_path": "source-materials/alpine-baselayout/APKBUILD",
+      "apkbuild_sha256": "aef255516b71e39109860b92eb027a0986d90197427fb93ec91ebcd04bf59763",
+      "version_source_crosscheck": "MATCH",
+      "declared_input_count": 14,
+      "declared_input_sha512_status": "ALL_MATCH",
+      "source_archive_paths": [],
+      "notice_material_paths": [],
+      "supplemental_control_paths": [
+        "source-materials/alpine-baselayout/alpine-baselayout.pre-install",
+        "source-materials/alpine-baselayout/alpine-baselayout.pre-upgrade",
+        "source-materials/alpine-baselayout/alpine-baselayout.post-upgrade",
+        "source-materials/alpine-baselayout/alpine-baselayout.post-install"
+      ],
+      "notice_fact": "Complete declared source/config/generator material is present; no separately extracted origin notice text. Shared standard licenses are retained, without inventing a copyright attribution.",
+      "license_acceptance": "NOT_ISSUED"
+    },
+    {
+      "name": "alpine-baselayout-data",
+      "version": "3.7.2-r1",
+      "kind": "REAL_APK_CONTENT",
+      "origin": "alpine-baselayout",
+      "actual_apk_license_expression": "GPL-2.0-only",
+      "aports_commit": "60a7585bbab2fa0f762504eb617dbca90216e31f",
+      "build_timestamp": "1774381254",
+      "package_checksum": "Q1xvm97RfYRLbxsLtXZtLDXA1chQg=",
+      "installed_file_count": 15,
+      "apkbuild_path": "source-materials/alpine-baselayout/APKBUILD",
+      "apkbuild_sha256": "aef255516b71e39109860b92eb027a0986d90197427fb93ec91ebcd04bf59763",
+      "version_source_crosscheck": "MATCH",
+      "declared_input_count": 14,
+      "declared_input_sha512_status": "ALL_MATCH",
+      "source_archive_paths": [],
+      "notice_material_paths": [],
+      "supplemental_control_paths": [
+        "source-materials/alpine-baselayout/alpine-baselayout.pre-install",
+        "source-materials/alpine-baselayout/alpine-baselayout.pre-upgrade",
+        "source-materials/alpine-baselayout/alpine-baselayout.post-upgrade",
+        "source-materials/alpine-baselayout/alpine-baselayout.post-install"
+      ],
+      "notice_fact": "Complete declared source/config/generator material is present; no separately extracted origin notice text. Shared standard licenses are retained, without inventing a copyright attribution.",
+      "license_acceptance": "NOT_ISSUED"
+    },
+    {
+      "name": "alpine-keys",
+      "version": "2.6-r0",
+      "kind": "REAL_APK_CONTENT",
+      "origin": "alpine-keys",
+      "actual_apk_license_expression": "MIT",
+      "aports_commit": "b9f23becced4d7b3ccc0fa0f28530243ccd314a0",
+      "build_timestamp": "1758215632",
+      "package_checksum": "Q12Na4DlPAWad+SRXaeLqWTz/+okA=",
+      "installed_file_count": 41,
+      "apkbuild_path": "source-materials/alpine-keys/APKBUILD",
+      "apkbuild_sha256": "cb352e13b9e481b424763bd36d3afdb81ac308e508abed15eb7175530050bd3f",
+      "version_source_crosscheck": "MATCH",
+      "declared_input_count": 18,
+      "declared_input_sha512_status": "ALL_MATCH",
+      "source_archive_paths": [],
+      "notice_material_paths": [],
+      "supplemental_control_paths": [],
+      "notice_fact": "Complete declared source/config/generator material is present; no separately extracted origin notice text. Shared standard licenses are retained, without inventing a copyright attribution.",
+      "license_acceptance": "NOT_ISSUED"
+    },
+    {
+      "name": "alpine-release",
+      "version": "3.24.2-r0",
+      "kind": "REAL_APK_CONTENT",
+      "origin": "alpine-base",
+      "actual_apk_license_expression": "MIT",
+      "aports_commit": "d9d560d5de74ff9a7a73f3c903d6f126a0bf3142",
+      "build_timestamp": "1789666254",
+      "package_checksum": "Q1b9G+RpyiNenGLxtz+j5b/6/etrU=",
+      "installed_file_count": 5,
+      "apkbuild_path": "source-materials/alpine-base/APKBUILD",
+      "apkbuild_sha256": "5f3e6446e3e80b20e0f9986760b9f151e47e723e57d32c108bce617846d05b52",
+      "version_source_crosscheck": "MATCH",
+      "declared_input_count": 0,
+      "declared_input_sha512_status": "NO_EXTERNAL_INPUTS_DECLARED_RECIPE_GENERATES_CONTENT",
+      "source_archive_paths": [],
+      "notice_material_paths": [],
+      "supplemental_control_paths": [],
+      "notice_fact": "Complete declared source/config/generator material is present; no separately extracted origin notice text. Shared standard licenses are retained, without inventing a copyright attribution.",
+      "license_acceptance": "NOT_ISSUED"
+    },
+    {
+      "name": "apk-tools",
+      "version": "3.0.8-r0",
+      "kind": "REAL_APK_CONTENT",
+      "origin": "apk-tools",
+      "actual_apk_license_expression": "GPL-2.0-only",
+      "aports_commit": "4588b452722bd4800efdc6cce4f6e980e02a997f",
+      "build_timestamp": "1788243861",
+      "package_checksum": "Q1eGEwqPLTrGn8MWEYdXt+gVG4uMM=",
+      "installed_file_count": 1,
+      "apkbuild_path": "source-materials/apk-tools/APKBUILD",
+      "apkbuild_sha256": "492db5ec3ca2ca6cfd3cc4e5b52a0262ca7bd9c77299344efb4d786c596b7005",
+      "version_source_crosscheck": "MATCH",
+      "declared_input_count": 2,
+      "declared_input_sha512_status": "ALL_MATCH",
+      "source_archive_paths": [
+        "source-materials/apk-tools/apk-tools-v3.0.8.tar.gz"
+      ],
+      "notice_material_paths": [
+        "upstream-notices/apk-tools_apk-tools-v3.0.8.tar.gz_apk-tools-v3.0.8_LICENSE"
+      ],
+      "supplemental_control_paths": [],
+      "notice_fact": "Exact source/archive notice bytes preserved; package applicability is not inferred from the whole-origin SPDX expression.",
+      "license_acceptance": "NOT_ISSUED"
+    },
+    {
+      "name": "binutils",
+      "version": "2.45.1-r1",
+      "kind": "REAL_APK_CONTENT",
+      "origin": "binutils",
+      "actual_apk_license_expression": "GPL-2.0-or-later AND LGPL-2.1-or-later AND BSD-3-Clause",
+      "aports_commit": "673df4f3ce2e71e9bcfbf64939332917a35795fc",
+      "build_timestamp": "1767883750",
+      "package_checksum": "Q1PoE7y6LhxU+kQVBIyMWyKRmhhjE=",
+      "installed_file_count": 177,
+      "apkbuild_path": "source-materials/binutils/APKBUILD",
+      "apkbuild_sha256": "75923014197b25434dd79490dd35f098c4aa599c213e6bfb5a5cafefa8ffa3f1",
+      "version_source_crosscheck": "MATCH",
+      "declared_input_count": 5,
+      "declared_input_sha512_status": "ALL_MATCH",
+      "source_archive_paths": [
+        "source-materials/binutils/binutils-2.45.1.tar.xz",
+        "source-materials/binutils/binutils-with-gold-2.44.tar.xz"
+      ],
+      "notice_material_paths": [
+        "upstream-notices/binutils_binutils-2.45.1.tar.xz_binutils-2.45.1_COPYING",
+        "upstream-notices/binutils_binutils-2.45.1.tar.xz_binutils-2.45.1_COPYING.LIB",
+        "upstream-notices/binutils_binutils-2.45.1.tar.xz_binutils-2.45.1_COPYING3",
+        "upstream-notices/binutils_binutils-2.45.1.tar.xz_binutils-2.45.1_COPYING3.LIB",
+        "upstream-notices/binutils_binutils-2.45.1.tar.xz_binutils-2.45.1_bfd_COPYING",
+        "upstream-notices/binutils_binutils-2.45.1.tar.xz_binutils-2.45.1_binutils_objdump.c",
+        "upstream-notices/binutils_binutils-2.45.1.tar.xz_binutils-2.45.1_gas_COPYING",
+        "upstream-notices/binutils_binutils-2.45.1.tar.xz_binutils-2.45.1_include_COPYING",
+        "upstream-notices/binutils_binutils-2.45.1.tar.xz_binutils-2.45.1_include_COPYING3",
+        "upstream-notices/binutils_binutils-2.45.1.tar.xz_binutils-2.45.1_ld_ldmain.c",
+        "upstream-notices/binutils_binutils-2.45.1.tar.xz_binutils-2.45.1_libiberty_COPYING.LIB",
+        "upstream-notices/binutils_binutils-2.45.1.tar.xz_binutils-2.45.1_libiberty_copying-lib.texi",
+        "upstream-notices/binutils_binutils-2.45.1.tar.xz_binutils-2.45.1_zlib_contrib_dotzlib_LICENSE_1_0.txt",
+        "upstream-notices/binutils_binutils-with-gold-2.44.tar.xz_binutils-with-gold-2.44_COPYING",
+        "upstream-notices/binutils_binutils-with-gold-2.44.tar.xz_binutils-with-gold-2.44_COPYING.LIB",
+        "upstream-notices/binutils_binutils-with-gold-2.44.tar.xz_binutils-with-gold-2.44_COPYING3",
+        "upstream-notices/binutils_binutils-with-gold-2.44.tar.xz_binutils-with-gold-2.44_COPYING3.LIB",
+        "upstream-notices/binutils_binutils-with-gold-2.44.tar.xz_binutils-with-gold-2.44_bfd_COPYING",
+        "upstream-notices/binutils_binutils-with-gold-2.44.tar.xz_binutils-with-gold-2.44_binutils_objdump.c",
+        "upstream-notices/binutils_binutils-with-gold-2.44.tar.xz_binutils-with-gold-2.44_gas_COPYING",
+        "upstream-notices/binutils_binutils-with-gold-2.44.tar.xz_binutils-with-gold-2.44_include_COPYING",
+        "upstream-notices/binutils_binutils-with-gold-2.44.tar.xz_binutils-with-gold-2.44_include_COPYING3",
+        "upstream-notices/binutils_binutils-with-gold-2.44.tar.xz_binutils-with-gold-2.44_ld_ldmain.c",
+        "upstream-notices/binutils_binutils-with-gold-2.44.tar.xz_binutils-with-gold-2.44_libiberty_COPYING.LIB",
+        "upstream-notices/binutils_binutils-with-gold-2.44.tar.xz_binutils-with-gold-2.44_libiberty_copying-lib.texi",
+        "upstream-notices/binutils_binutils-with-gold-2.44.tar.xz_binutils-with-gold-2.44_zlib_contrib_dotzlib_LICENSE_1_0.txt"
+      ],
+      "supplemental_control_paths": [],
+      "notice_fact": "Exact source/archive notice bytes preserved; package applicability is not inferred from the whole-origin SPDX expression.",
+      "license_acceptance": "NOT_ISSUED"
+    },
+    {
+      "name": "busybox",
+      "version": "1.37.0-r31",
+      "kind": "REAL_APK_CONTENT",
+      "origin": "busybox",
+      "actual_apk_license_expression": "GPL-2.0-only",
+      "aports_commit": "c3ef5d10e6ef6528852c51f0564963e2f8c1be19",
+      "build_timestamp": "1768059508",
+      "package_checksum": "Q1tUBevAL33YvpW2JlxUskPVRWq48=",
+      "installed_file_count": 7,
+      "apkbuild_path": "source-materials/busybox/APKBUILD",
+      "apkbuild_sha256": "98f019f62291aff63cb798f046fb59dfd43340885de63ca2f127651fc21d0450",
+      "version_source_crosscheck": "MATCH",
+      "declared_input_count": 75,
+      "declared_input_sha512_status": "ALL_MATCH",
+      "source_archive_paths": [
+        "source-materials/busybox/busybox-1.37.0.tar.bz2"
+      ],
+      "notice_material_paths": [
+        "upstream-notices/busybox_busybox-1.37.0.tar.bz2_busybox-1.37.0_LICENSE",
+        "upstream-notices/busybox_busybox-1.37.0.tar.bz2_busybox-1.37.0_archival_libarchive_bz_LICENSE"
+      ],
+      "supplemental_control_paths": [
+        "source-materials/busybox/busybox.post-install",
+        "source-materials/busybox/busybox.post-upgrade",
+        "source-materials/busybox/busybox-extras.post-install",
+        "source-materials/busybox/busybox-extras.pre-deinstall",
+        "source-materials/busybox/busybox.trigger"
+      ],
+      "notice_fact": "Exact source/archive notice bytes preserved; package applicability is not inferred from the whole-origin SPDX expression.",
+      "license_acceptance": "NOT_ISSUED"
+    },
+    {
+      "name": "busybox-binsh",
+      "version": "1.37.0-r31",
+      "kind": "REAL_APK_CONTENT",
+      "origin": "busybox",
+      "actual_apk_license_expression": "GPL-2.0-only",
+      "aports_commit": "c3ef5d10e6ef6528852c51f0564963e2f8c1be19",
+      "build_timestamp": "1768059508",
+      "package_checksum": "Q1XL0UrMbxgExbrGx33CxJLwELD8c=",
+      "installed_file_count": 1,
+      "apkbuild_path": "source-materials/busybox/APKBUILD",
+      "apkbuild_sha256": "98f019f62291aff63cb798f046fb59dfd43340885de63ca2f127651fc21d0450",
+      "version_source_crosscheck": "MATCH",
+      "declared_input_count": 75,
+      "declared_input_sha512_status": "ALL_MATCH",
+      "source_archive_paths": [
+        "source-materials/busybox/busybox-1.37.0.tar.bz2"
+      ],
+      "notice_material_paths": [
+        "upstream-notices/busybox_busybox-1.37.0.tar.bz2_busybox-1.37.0_LICENSE",
+        "upstream-notices/busybox_busybox-1.37.0.tar.bz2_busybox-1.37.0_archival_libarchive_bz_LICENSE"
+      ],
+      "supplemental_control_paths": [
+        "source-materials/busybox/busybox.post-install",
+        "source-materials/busybox/busybox.post-upgrade",
+        "source-materials/busybox/busybox-extras.post-install",
+        "source-materials/busybox/busybox-extras.pre-deinstall",
+        "source-materials/busybox/busybox.trigger"
+      ],
+      "notice_fact": "Exact source/archive notice bytes preserved; package applicability is not inferred from the whole-origin SPDX expression.",
+      "license_acceptance": "NOT_ISSUED"
+    },
+    {
+      "name": "ca-certificates",
+      "version": "20260909-r0",
+      "kind": "REAL_APK_CONTENT",
+      "origin": "ca-certificates",
+      "actual_apk_license_expression": "MPL-2.0 AND MIT",
+      "aports_commit": "eb7078df3a16d666e8f7723f94bb92e00d4b9236",
+      "build_timestamp": "1789650825",
+      "package_checksum": "Q1X8p9+exCokkN6LEF+NRJN+g/4uI=",
+      "installed_file_count": 126,
+      "apkbuild_path": "source-materials/ca-certificates/APKBUILD",
+      "apkbuild_sha256": "0c14312c1d5c4a8b7ef74433be9db58517b17eb091bccdf2c8325bc4c9c26480",
+      "version_source_crosscheck": "MATCH",
+      "declared_input_count": 1,
+      "declared_input_sha512_status": "ALL_MATCH",
+      "source_archive_paths": [
+        "source-materials/ca-certificates/ca-certificates-20260909.tar.bz2"
+      ],
+      "notice_material_paths": [
+        "upstream-notices/ca-certificates_ca-certificates-20260909.tar.bz2_ca-certificates-20260909_c_rehash.c",
+        "upstream-notices/ca-certificates_ca-certificates-20260909.tar.bz2_ca-certificates-20260909_certdata.txt",
+        "upstream-notices/ca-certificates_ca-certificates-20260909.tar.bz2_ca-certificates-20260909_mk-ca-bundle.pl",
+        "upstream-notices/ca-certificates_ca-certificates-20260909.tar.bz2_ca-certificates-20260909_update-ca.c"
+      ],
+      "supplemental_control_paths": [
+        "source-materials/ca-certificates/ca-certificates.post-deinstall",
+        "source-materials/ca-certificates/ca-certificates.trigger"
+      ],
+      "notice_fact": "Exact source/archive notice bytes preserved; package applicability is not inferred from the whole-origin SPDX expression.",
+      "license_acceptance": "NOT_ISSUED"
+    },
+    {
+      "name": "ca-certificates-bundle",
+      "version": "20260909-r0",
+      "kind": "REAL_APK_CONTENT",
+      "origin": "ca-certificates",
+      "actual_apk_license_expression": "MPL-2.0 AND MIT",
+      "aports_commit": "eb7078df3a16d666e8f7723f94bb92e00d4b9236",
+      "build_timestamp": "1789650825",
+      "package_checksum": "Q1eRI3zuh3mIiTo1S19snETzXU7bk=",
+      "installed_file_count": 4,
+      "apkbuild_path": "source-materials/ca-certificates/APKBUILD",
+      "apkbuild_sha256": "0c14312c1d5c4a8b7ef74433be9db58517b17eb091bccdf2c8325bc4c9c26480",
+      "version_source_crosscheck": "MATCH",
+      "declared_input_count": 1,
+      "declared_input_sha512_status": "ALL_MATCH",
+      "source_archive_paths": [
+        "source-materials/ca-certificates/ca-certificates-20260909.tar.bz2"
+      ],
+      "notice_material_paths": [
+        "upstream-notices/ca-certificates_ca-certificates-20260909.tar.bz2_ca-certificates-20260909_c_rehash.c",
+        "upstream-notices/ca-certificates_ca-certificates-20260909.tar.bz2_ca-certificates-20260909_certdata.txt",
+        "upstream-notices/ca-certificates_ca-certificates-20260909.tar.bz2_ca-certificates-20260909_mk-ca-bundle.pl",
+        "upstream-notices/ca-certificates_ca-certificates-20260909.tar.bz2_ca-certificates-20260909_update-ca.c"
+      ],
+      "supplemental_control_paths": [
+        "source-materials/ca-certificates/ca-certificates.post-deinstall",
+        "source-materials/ca-certificates/ca-certificates.trigger"
+      ],
+      "notice_fact": "Exact source/archive notice bytes preserved; package applicability is not inferred from the whole-origin SPDX expression.",
+      "license_acceptance": "NOT_ISSUED"
+    },
+    {
+      "name": "gdbm",
+      "version": "1.26-r0",
+      "kind": "REAL_APK_CONTENT",
+      "origin": "gdbm",
+      "actual_apk_license_expression": "GPL-3.0-or-later",
+      "aports_commit": "1ea03990396db618edfcc8a9a0bc6b72662bac8f",
+      "build_timestamp": "1753888742",
+      "package_checksum": "Q1YZST2BJP5JqO4dj3oTcs9+OXczc=",
+      "installed_file_count": 4,
+      "apkbuild_path": "source-materials/gdbm/APKBUILD",
+      "apkbuild_sha256": "862f63ae6868bb40b80a3da3c97d6e603af549e05c3051ceadcfa4ad7b135f1b",
+      "version_source_crosscheck": "MATCH",
+      "declared_input_count": 1,
+      "declared_input_sha512_status": "ALL_MATCH",
+      "source_archive_paths": [
+        "source-materials/gdbm/gdbm-1.26.tar.gz"
+      ],
+      "notice_material_paths": [
+        "upstream-notices/gdbm_gdbm-1.26.tar.gz_gdbm-1.26_COPYING"
+      ],
+      "supplemental_control_paths": [],
+      "notice_fact": "Exact source/archive notice bytes preserved; package applicability is not inferred from the whole-origin SPDX expression.",
+      "license_acceptance": "NOT_ISSUED"
+    },
+    {
+      "name": "jansson",
+      "version": "2.15.0-r0",
+      "kind": "REAL_APK_CONTENT",
+      "origin": "jansson",
+      "actual_apk_license_expression": "MIT",
+      "aports_commit": "88919740865a31680e7f1c4cb568dfd7a87e9f08",
+      "build_timestamp": "1769436749",
+      "package_checksum": "Q1stvtY3e3CwJPyWQOnjlB9nQqEvU=",
+      "installed_file_count": 2,
+      "apkbuild_path": "source-materials/jansson/APKBUILD",
+      "apkbuild_sha256": "d3a8a353357fcb5df7e0ef8f69eaec6a57bec895fcb48a8eadf84720d6dff38c",
+      "version_source_crosscheck": "MATCH",
+      "declared_input_count": 1,
+      "declared_input_sha512_status": "ALL_MATCH",
+      "source_archive_paths": [
+        "source-materials/jansson/jansson-2.15.0.tar.gz"
+      ],
+      "notice_material_paths": [
+        "upstream-notices/jansson_jansson-2.15.0.tar.gz_jansson-2.15.0_LICENSE"
+      ],
+      "supplemental_control_paths": [],
+      "notice_fact": "Exact source/archive notice bytes preserved; package applicability is not inferred from the whole-origin SPDX expression.",
+      "license_acceptance": "NOT_ISSUED"
+    },
+    {
+      "name": "keyutils-libs",
+      "version": "1.6.3-r4",
+      "kind": "REAL_APK_CONTENT",
+      "origin": "keyutils",
+      "actual_apk_license_expression": "GPL-2.0-or-later AND LGPL-2.0-or-later",
+      "aports_commit": "8bac74716d06c84627ab02d101fd9d2bafd0a34c",
+      "build_timestamp": "1735923921",
+      "package_checksum": "Q1tzMclvB3/DUi7kNhpEHRCXIEzZA=",
+      "installed_file_count": 2,
+      "apkbuild_path": "source-materials/keyutils/APKBUILD",
+      "apkbuild_sha256": "6b0c294e67f58f31ced1ed2b9f849a855395d6f8ae5942669b5fbb3f529daa7b",
+      "version_source_crosscheck": "MATCH",
+      "declared_input_count": 2,
+      "declared_input_sha512_status": "ALL_MATCH",
+      "source_archive_paths": [
+        "source-materials/keyutils/keyutils-1.6.3.tar.gz"
+      ],
+      "notice_material_paths": [
+        "upstream-notices/keyutils_keyutils-1.6.3.tar.gz_keyutils-1.6.3_LICENCE.GPL",
+        "upstream-notices/keyutils_keyutils-1.6.3.tar.gz_keyutils-1.6.3_LICENCE.LGPL"
+      ],
+      "supplemental_control_paths": [],
+      "notice_fact": "Exact source/archive notice bytes preserved; package applicability is not inferred from the whole-origin SPDX expression.",
+      "license_acceptance": "NOT_ISSUED"
+    },
+    {
+      "name": "krb5-conf",
+      "version": "1.0-r2",
+      "kind": "REAL_APK_CONTENT",
+      "origin": "krb5-conf",
+      "actual_apk_license_expression": "MIT",
+      "aports_commit": "4a46b2cb955e25fd6d6f913794d35bc6d876aea9",
+      "build_timestamp": "1583171707",
+      "package_checksum": "Q1QKEeBpClnhEDZ7YqgGYQJOmUKi0=",
+      "installed_file_count": 1,
+      "apkbuild_path": "source-materials/krb5-conf/APKBUILD",
+      "apkbuild_sha256": "7962206597c478b726f46b0392a73bec21bfa70afa56c62ccb043d1ade3d6286",
+      "version_source_crosscheck": "MATCH",
+      "declared_input_count": 0,
+      "declared_input_sha512_status": "NO_EXTERNAL_INPUTS_DECLARED_RECIPE_GENERATES_CONTENT",
+      "source_archive_paths": [],
+      "notice_material_paths": [],
+      "supplemental_control_paths": [],
+      "notice_fact": "Complete declared source/config/generator material is present; no separately extracted origin notice text. Shared standard licenses are retained, without inventing a copyright attribution.",
+      "license_acceptance": "NOT_ISSUED"
+    },
+    {
+      "name": "krb5-libs",
+      "version": "1.22.2-r1",
+      "kind": "REAL_APK_CONTENT",
+      "origin": "krb5",
+      "actual_apk_license_expression": "MIT",
+      "aports_commit": "92bc4f0d36aa5307e819fb57167fc19952cf515f",
+      "build_timestamp": "1776467877",
+      "package_checksum": "Q17wI0biG4F/83nkYB5bH8l2Dl4xo=",
+      "installed_file_count": 23,
+      "apkbuild_path": "source-materials/krb5/APKBUILD",
+      "apkbuild_sha256": "2a17ffcb22914c67e655de6fcf889e774e43d4fae03f4ad3f81b4d232d41764a",
+      "version_source_crosscheck": "MATCH",
+      "declared_input_count": 5,
+      "declared_input_sha512_status": "ALL_MATCH",
+      "source_archive_paths": [
+        "source-materials/krb5/krb5-1.22.2.tar.gz"
+      ],
+      "notice_material_paths": [
+        "upstream-notices/krb5_krb5-1.22.2.tar.gz_krb5-1.22.2_doc_copyright.rst",
+        "upstream-notices/krb5_krb5-1.22.2.tar.gz_krb5-1.22.2_doc_notice.rst",
+        "upstream-notices/krb5_krb5-1.22.2.tar.gz_krb5-1.22.2_doc_html__sources_copyright.rst.txt",
+        "upstream-notices/krb5_krb5-1.22.2.tar.gz_krb5-1.22.2_doc_html_copyright.html",
+        "upstream-notices/krb5_krb5-1.22.2.tar.gz_krb5-1.22.2_NOTICE",
+        "upstream-notices/krb5_krb5-1.22.2.tar.gz_krb5-1.22.2_src_lib_gssapi_LICENSE",
+        "upstream-notices/krb5_krb5-1.22.2.tar.gz_krb5-1.22.2_src_util_ss_copyright.h",
+        "upstream-notices/krb5_krb5-1.22.2.tar.gz_krb5-1.22.2_src_include_copyright.h"
+      ],
+      "supplemental_control_paths": [],
+      "notice_fact": "Exact source/archive notice bytes preserved; package applicability is not inferred from the whole-origin SPDX expression.",
+      "license_acceptance": "NOT_ISSUED"
+    },
+    {
+      "name": "libapk",
+      "version": "3.0.8-r0",
+      "kind": "REAL_APK_CONTENT",
+      "origin": "apk-tools",
+      "actual_apk_license_expression": "GPL-2.0-only",
+      "aports_commit": "4588b452722bd4800efdc6cce4f6e980e02a997f",
+      "build_timestamp": "1788243861",
+      "package_checksum": "Q1uTzpVzwdDbPup84yhBrQhXq8SlQ=",
+      "installed_file_count": 1,
+      "apkbuild_path": "source-materials/apk-tools/APKBUILD",
+      "apkbuild_sha256": "492db5ec3ca2ca6cfd3cc4e5b52a0262ca7bd9c77299344efb4d786c596b7005",
+      "version_source_crosscheck": "MATCH",
+      "declared_input_count": 2,
+      "declared_input_sha512_status": "ALL_MATCH",
+      "source_archive_paths": [
+        "source-materials/apk-tools/apk-tools-v3.0.8.tar.gz"
+      ],
+      "notice_material_paths": [
+        "upstream-notices/apk-tools_apk-tools-v3.0.8.tar.gz_apk-tools-v3.0.8_LICENSE"
+      ],
+      "supplemental_control_paths": [],
+      "notice_fact": "Exact source/archive notice bytes preserved; package applicability is not inferred from the whole-origin SPDX expression.",
+      "license_acceptance": "NOT_ISSUED"
+    },
+    {
+      "name": "libbz2",
+      "version": "1.0.8-r6",
+      "kind": "REAL_APK_CONTENT",
+      "origin": "bzip2",
+      "actual_apk_license_expression": "bzip2-1.0.6",
+      "aports_commit": "33283848034c9885d984c8e8697c645c57324938",
+      "build_timestamp": "1684120357",
+      "package_checksum": "Q1CFZrpcevl8JUdL6LJOi0jwEWtn0=",
+      "installed_file_count": 2,
+      "apkbuild_path": "source-materials/bzip2/APKBUILD",
+      "apkbuild_sha256": "7e046e9c4b1c265af9791a790049ed864c361c0949b9cd68564a48bc0f672de2",
+      "version_source_crosscheck": "MATCH",
+      "declared_input_count": 7,
+      "declared_input_sha512_status": "ALL_MATCH",
+      "source_archive_paths": [
+        "source-materials/bzip2/bzip2-1.0.8.tar.gz"
+      ],
+      "notice_material_paths": [
+        "upstream-notices/bzip2_bzip2-1.0.8.tar.gz_bzip2-1.0.8_LICENSE"
+      ],
+      "supplemental_control_paths": [],
+      "notice_fact": "Exact source/archive notice bytes preserved; package applicability is not inferred from the whole-origin SPDX expression.",
+      "license_acceptance": "NOT_ISSUED"
+    },
+    {
+      "name": "libcom_err",
+      "version": "1.47.4-r0",
+      "kind": "REAL_APK_CONTENT",
+      "origin": "e2fsprogs",
+      "actual_apk_license_expression": "GPL-2.0-or-later AND LGPL-2.0-or-later AND BSD-3-Clause AND MIT",
+      "aports_commit": "8683a6972cb245fbbdb535dad6435a9930bb9374",
+      "build_timestamp": "1773905192",
+      "package_checksum": "Q1S5+1iZ6gscDPuyosWVJwRDfU7O8=",
+      "installed_file_count": 2,
+      "apkbuild_path": "source-materials/e2fsprogs/APKBUILD",
+      "apkbuild_sha256": "fdeebc52e727e071462ef6616e1d24064fb94a9ed4df88e0b16a3e77d1baa5f3",
+      "version_source_crosscheck": "MATCH",
+      "declared_input_count": 1,
+      "declared_input_sha512_status": "ALL_MATCH",
+      "source_archive_paths": [
+        "source-materials/e2fsprogs/e2fsprogs-1.47.4.tar.gz"
+      ],
+      "notice_material_paths": [
+        "upstream-notices/e2fsprogs_e2fsprogs-1.47.4.tar.gz_e2fsprogs-1.47.4_NOTICE",
+        "upstream-notices/e2fsprogs_e2fsprogs-1.47.4.tar.gz_e2fsprogs-1.47.4_debian_copyright",
+        "upstream-notices/e2fsprogs_e2fsprogs-1.47.4.tar.gz_e2fsprogs-1.47.4_ext2ed_COPYRIGHT",
+        "upstream-notices/e2fsprogs_e2fsprogs-1.47.4.tar.gz_e2fsprogs-1.47.4_lib_et_com_err.h",
+        "upstream-notices/e2fsprogs_e2fsprogs-1.47.4.tar.gz_e2fsprogs-1.47.4_lib_uuid_COPYING"
+      ],
+      "supplemental_control_paths": [],
+      "notice_fact": "Exact source/archive notice bytes preserved; package applicability is not inferred from the whole-origin SPDX expression.",
+      "license_acceptance": "NOT_ISSUED"
+    },
+    {
+      "name": "libcrypto3",
+      "version": "3.5.9-r0",
+      "kind": "REAL_APK_CONTENT",
+      "origin": "openssl",
+      "actual_apk_license_expression": "Apache-2.0",
+      "aports_commit": "29b9ec24b1b5b39aeef51fa2a044210e2ec5258e",
+      "build_timestamp": "1790752173",
+      "package_checksum": "Q1HA3ulzTPIvyXzdGBkTu9cQ5t+wg=",
+      "installed_file_count": 10,
+      "apkbuild_path": "source-materials/openssl/APKBUILD",
+      "apkbuild_sha256": "ea459c051ee8d846c06f1d47d09d0f737778502c01de88c9696e96a208de5943",
+      "version_source_crosscheck": "MATCH",
+      "declared_input_count": 2,
+      "declared_input_sha512_status": "ALL_MATCH",
+      "source_archive_paths": [
+        "source-materials/openssl/openssl-3.5.9.tar.gz"
+      ],
+      "notice_material_paths": [
+        "upstream-notices/openssl_openssl-3.5.9.tar.gz_openssl-3.5.9_LICENSE.txt",
+        "upstream-notices/openssl_openssl-3.5.9.tar.gz_openssl-3.5.9_external_perl_Text-Template-1.56_LICENSE",
+        "upstream-notices/openssl_openssl-3.5.9.tar.gz_openssl-3.5.9_util_perl_OpenSSL_copyright.pm"
+      ],
+      "supplemental_control_paths": [
+        "source-materials/openssl/openssl-fips.post-install"
+      ],
+      "notice_fact": "Exact source/archive notice bytes preserved; package applicability is not inferred from the whole-origin SPDX expression.",
+      "license_acceptance": "NOT_ISSUED"
+    },
+    {
+      "name": "libffi",
+      "version": "3.5.2-r1",
+      "kind": "REAL_APK_CONTENT",
+      "origin": "libffi",
+      "actual_apk_license_expression": "MIT",
+      "aports_commit": "2c2a7bb4a8b16066834e90402567b2c19403a790",
+      "build_timestamp": "1776273462",
+      "package_checksum": "Q1L3smH3/OzE7r2LMw5/b7gHE7/jo=",
+      "installed_file_count": 2,
+      "apkbuild_path": "source-materials/libffi/APKBUILD",
+      "apkbuild_sha256": "7dcba5b144b4882426dbd4fcacf10c09d19e3c4347cdd8faa7c1946912b55c1f",
+      "version_source_crosscheck": "MATCH",
+      "declared_input_count": 2,
+      "declared_input_sha512_status": "ALL_MATCH",
+      "source_archive_paths": [
+        "source-materials/libffi/libffi-3.5.2.tar.gz"
+      ],
+      "notice_material_paths": [
+        "upstream-notices/libffi_libffi-3.5.2.tar.gz_libffi-3.5.2_LICENSE",
+        "upstream-notices/libffi_libffi-3.5.2.tar.gz_libffi-3.5.2_LICENSE-BUILDTOOLS"
+      ],
+      "supplemental_control_paths": [],
+      "notice_fact": "Exact source/archive notice bytes preserved; package applicability is not inferred from the whole-origin SPDX expression.",
+      "license_acceptance": "NOT_ISSUED"
+    },
+    {
+      "name": "libgcc",
+      "version": "15.2.0-r5",
+      "kind": "REAL_APK_CONTENT",
+      "origin": "gcc",
+      "actual_apk_license_expression": "GPL-2.0-or-later AND LGPL-2.1-or-later",
+      "aports_commit": "423a8ad043d07f2c7546c8ec3e2b0384cda360ae",
+      "build_timestamp": "1780084766",
+      "package_checksum": "Q1N5wVbFPgzBQOh8ecCj3SK27lFVI=",
+      "installed_file_count": 1,
+      "apkbuild_path": "source-materials/gcc/APKBUILD",
+      "apkbuild_sha256": "71d831dbef88c2b0ff7b36b7422e878a07751419583a44b06cda2e561cdb82d4",
+      "version_source_crosscheck": "MATCH",
+      "declared_input_count": 45,
+      "declared_input_sha512_status": "ALL_MATCH",
+      "source_archive_paths": [
+        "source-materials/gcc/gcc-15.2.0.tar.xz"
+      ],
+      "notice_material_paths": [
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_include_COPYING3",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_include_COPYING",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_libffi_LICENSE-BUILDTOOLS",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_libffi_LICENSE",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_zlib_contrib_dotzlib_LICENSE_1_0.txt",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_libsanitizer_LICENSE.TXT",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_COPYING.RUNTIME",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_libphobos_libdruntime_LICENSE.txt",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_libphobos_src_LICENSE_1_0.txt",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_COPYING3",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_libgo_LICENSE",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_gcc_COPYING3",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_gcc_COPYING.LIB",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_gcc_COPYING3.LIB",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_gcc_m2_COPYING.RUNTIME",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_gcc_m2_COPYING3",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_gcc_m2_COPYING3.LIB",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_gcc_m2_COPYING.FDL",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_gcc_m2_images_LICENSE.IMG",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_gcc_go_gofrontend_LICENSE",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_gcc_COPYING",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_COPYING.LIB",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_libgcobol_LICENSE",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_COPYING3.LIB",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_libgcc_libgcc2.c",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_libstdc_-v3_include_pstl_LICENSE.txt",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_libiberty_copying-lib.texi",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_libiberty_COPYING.LIB",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_libquadmath_COPYING.LIB",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_libcody_LICENSE",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_COPYING"
+      ],
+      "supplemental_control_paths": [],
+      "notice_fact": "Exact source/archive notice bytes preserved; package applicability is not inferred from the whole-origin SPDX expression.",
+      "license_acceptance": "NOT_ISSUED"
+    },
+    {
+      "name": "libintl",
+      "version": "1.0-r0",
+      "kind": "REAL_APK_CONTENT",
+      "origin": "gettext",
+      "actual_apk_license_expression": "LGPL-2.1-or-later",
+      "aports_commit": "a0b12dbf67fb047e79a1b76c6dfe6f2904d0d391",
+      "build_timestamp": "1776548958",
+      "package_checksum": "Q1KC1mQsyshyN+Q6hkFZ1zz1q+dVA=",
+      "installed_file_count": 2,
+      "apkbuild_path": "source-materials/gettext/APKBUILD",
+      "apkbuild_sha256": "e22f0eecaf4e5f1f5febe725f47ee019481ded75cdcf76d3c9dd5e7a9e590d13",
+      "version_source_crosscheck": "MATCH",
+      "declared_input_count": 5,
+      "declared_input_sha512_status": "ALL_MATCH",
+      "source_archive_paths": [
+        "source-materials/gettext/gettext-1.0.tar.xz"
+      ],
+      "notice_material_paths": [
+        "upstream-notices/gettext_gettext-1.0.tar.xz_gettext-1.0_COPYING",
+        "upstream-notices/gettext_gettext-1.0.tar.xz_gettext-1.0_gettext-runtime_COPYING",
+        "upstream-notices/gettext_gettext-1.0.tar.xz_gettext-1.0_gettext-runtime_libasprintf_COPYING",
+        "upstream-notices/gettext_gettext-1.0.tar.xz_gettext-1.0_gettext-tools_COPYING",
+        "upstream-notices/gettext_gettext-1.0.tar.xz_gettext-1.0_gettext-tools_gnulib-lib_libxml_COPYING",
+        "upstream-notices/gettext_gettext-1.0.tar.xz_gettext-1.0_gnulib-local_lib_libxml_COPYING",
+        "upstream-notices/gettext_gettext-1.0.tar.xz_gettext-1.0_libtextstyle_COPYING",
+        "upstream-notices/gettext_gettext-1.0.tar.xz_gettext-1.0_libtextstyle_lib_libxml_COPYING",
+        "upstream-notices/gettext_gettext-1.0.tar.xz_gettext-1.0_gettext-runtime_intl_COPYING.LIB",
+        "upstream-notices/gettext_gettext-1.0.tar.xz_gettext-1.0_gettext-runtime_libasprintf_COPYING.LIB",
+        "upstream-notices/gettext_gettext-1.0.tar.xz_gettext-1.0_gettext-tools_tree-sitter-0.23.2_LICENSE",
+        "upstream-notices/gettext_gettext-1.0.tar.xz_gettext-1.0_gettext-tools_tree-sitter-d-0.8.2_LICENSE",
+        "upstream-notices/gettext_gettext-1.0.tar.xz_gettext-1.0_gettext-tools_tree-sitter-go-0.23.4_LICENSE",
+        "upstream-notices/gettext_gettext-1.0.tar.xz_gettext-1.0_gettext-tools_tree-sitter-ocaml-0.23.2_LICENSE",
+        "upstream-notices/gettext_gettext-1.0.tar.xz_gettext-1.0_gettext-tools_tree-sitter-rust-0.23.2_LICENSE",
+        "upstream-notices/gettext_gettext-1.0.tar.xz_gettext-1.0_gettext-tools_tree-sitter-typescript-0.23.2_LICENSE"
+      ],
+      "supplemental_control_paths": [],
+      "notice_fact": "Exact source/archive notice bytes preserved; package applicability is not inferred from the whole-origin SPDX expression.",
+      "license_acceptance": "NOT_ISSUED"
+    },
+    {
+      "name": "libncursesw",
+      "version": "6.6_p20260516-r0",
+      "kind": "REAL_APK_CONTENT",
+      "origin": "ncurses",
+      "actual_apk_license_expression": "X11",
+      "aports_commit": "2cee8a7328d061418336ad327b512d96bcd7bc5e",
+      "build_timestamp": "1779608199",
+      "package_checksum": "Q1nzGObjJNaCcnSCkZTPasavut7RI=",
+      "installed_file_count": 2,
+      "apkbuild_path": "source-materials/ncurses/APKBUILD",
+      "apkbuild_sha256": "9801a0e262437b470ddfd6c35e55c231a79b6903262fe68df8a547845d095d6a",
+      "version_source_crosscheck": "MATCH",
+      "declared_input_count": 2,
+      "declared_input_sha512_status": "ALL_MATCH",
+      "source_archive_paths": [
+        "source-materials/ncurses/ncurses-6.6-20260516.tgz"
+      ],
+      "notice_material_paths": [
+        "upstream-notices/ncurses_ncurses-6.6-20260516.tgz_ncurses-6.6-20260516_Ada95_package_debian_copyright",
+        "upstream-notices/ncurses_ncurses-6.6-20260516.tgz_ncurses-6.6-20260516_package_debian-mingw64_copyright",
+        "upstream-notices/ncurses_ncurses-6.6-20260516.tgz_ncurses-6.6-20260516_package_debian-mingw_copyright",
+        "upstream-notices/ncurses_ncurses-6.6-20260516.tgz_ncurses-6.6-20260516_package_debian_copyright",
+        "upstream-notices/ncurses_ncurses-6.6-20260516.tgz_ncurses-6.6-20260516_test_package_debian-mingw64_copyright",
+        "upstream-notices/ncurses_ncurses-6.6-20260516.tgz_ncurses-6.6-20260516_test_package_debian-mingw_copyright",
+        "upstream-notices/ncurses_ncurses-6.6-20260516.tgz_ncurses-6.6-20260516_test_package_debian_copyright",
+        "upstream-notices/ncurses_ncurses-6.6-20260516.tgz_ncurses-6.6-20260516_COPYING"
+      ],
+      "supplemental_control_paths": [],
+      "notice_fact": "Exact source/archive notice bytes preserved; package applicability is not inferred from the whole-origin SPDX expression.",
+      "license_acceptance": "NOT_ISSUED"
+    },
+    {
+      "name": "libnsl",
+      "version": "2.0.1-r2",
+      "kind": "REAL_APK_CONTENT",
+      "origin": "libnsl",
+      "actual_apk_license_expression": "LGPL-2.0-or-later",
+      "aports_commit": "a9e2a2dc46f377eb25884f7fea9834492de7f518",
+      "build_timestamp": "1771160091",
+      "package_checksum": "Q1UZStvyZWC1K+MYSBp68pSrBf15U=",
+      "installed_file_count": 2,
+      "apkbuild_path": "source-materials/libnsl/APKBUILD",
+      "apkbuild_sha256": "08617ed63fa2fcbd890f5437b8b61a3adad2e4b3a5600c0ba4853c8ea1c94f86",
+      "version_source_crosscheck": "MATCH",
+      "declared_input_count": 1,
+      "declared_input_sha512_status": "ALL_MATCH",
+      "source_archive_paths": [
+        "source-materials/libnsl/libnsl-2.0.1.tar.xz"
+      ],
+      "notice_material_paths": [
+        "upstream-notices/libnsl_libnsl-2.0.1.tar.xz_libnsl-2.0.1_COPYING"
+      ],
+      "supplemental_control_paths": [],
+      "notice_fact": "Exact source/archive notice bytes preserved; package applicability is not inferred from the whole-origin SPDX expression.",
+      "license_acceptance": "NOT_ISSUED"
+    },
+    {
+      "name": "libpanelw",
+      "version": "6.6_p20260516-r0",
+      "kind": "REAL_APK_CONTENT",
+      "origin": "ncurses",
+      "actual_apk_license_expression": "X11",
+      "aports_commit": "2cee8a7328d061418336ad327b512d96bcd7bc5e",
+      "build_timestamp": "1779608199",
+      "package_checksum": "Q1FJvcQ0Iy7RH8W7l1ulGaBxVKb1Y=",
+      "installed_file_count": 2,
+      "apkbuild_path": "source-materials/ncurses/APKBUILD",
+      "apkbuild_sha256": "9801a0e262437b470ddfd6c35e55c231a79b6903262fe68df8a547845d095d6a",
+      "version_source_crosscheck": "MATCH",
+      "declared_input_count": 2,
+      "declared_input_sha512_status": "ALL_MATCH",
+      "source_archive_paths": [
+        "source-materials/ncurses/ncurses-6.6-20260516.tgz"
+      ],
+      "notice_material_paths": [
+        "upstream-notices/ncurses_ncurses-6.6-20260516.tgz_ncurses-6.6-20260516_Ada95_package_debian_copyright",
+        "upstream-notices/ncurses_ncurses-6.6-20260516.tgz_ncurses-6.6-20260516_package_debian-mingw64_copyright",
+        "upstream-notices/ncurses_ncurses-6.6-20260516.tgz_ncurses-6.6-20260516_package_debian-mingw_copyright",
+        "upstream-notices/ncurses_ncurses-6.6-20260516.tgz_ncurses-6.6-20260516_package_debian_copyright",
+        "upstream-notices/ncurses_ncurses-6.6-20260516.tgz_ncurses-6.6-20260516_test_package_debian-mingw64_copyright",
+        "upstream-notices/ncurses_ncurses-6.6-20260516.tgz_ncurses-6.6-20260516_test_package_debian-mingw_copyright",
+        "upstream-notices/ncurses_ncurses-6.6-20260516.tgz_ncurses-6.6-20260516_test_package_debian_copyright",
+        "upstream-notices/ncurses_ncurses-6.6-20260516.tgz_ncurses-6.6-20260516_COPYING"
+      ],
+      "supplemental_control_paths": [],
+      "notice_fact": "Exact source/archive notice bytes preserved; package applicability is not inferred from the whole-origin SPDX expression.",
+      "license_acceptance": "NOT_ISSUED"
+    },
+    {
+      "name": "libpq",
+      "version": "18.6-r0",
+      "kind": "REAL_APK_CONTENT",
+      "origin": "postgresql18",
+      "actual_apk_license_expression": "PostgreSQL",
+      "aports_commit": "dfa1ed81e8a73b5eef80e2f5d180377e5c99c08f",
+      "build_timestamp": "1786798231",
+      "package_checksum": "Q1qXfiJ9hDLF4XhwY+ulJod761eL4=",
+      "installed_file_count": 2,
+      "apkbuild_path": "source-materials/postgresql18/APKBUILD",
+      "apkbuild_sha256": "ed57518e9d6a45c992bcf7993b4f23a3b5e7134bf26a27d5c91018c04b438205",
+      "version_source_crosscheck": "MATCH",
+      "declared_input_count": 18,
+      "declared_input_sha512_status": "ALL_MATCH",
+      "source_archive_paths": [
+        "source-materials/postgresql18/postgresql-18.6.tar.bz2"
+      ],
+      "notice_material_paths": [
+        "upstream-notices/postgresql18_postgresql-18.6.tar.bz2_postgresql-18.6_COPYRIGHT",
+        "upstream-notices/postgresql18_postgresql-18.6.tar.bz2_postgresql-18.6_src_backend_regex_COPYRIGHT",
+        "upstream-notices/postgresql18_postgresql-18.6.tar.bz2_postgresql-18.6_src_tools_copyright.pl"
+      ],
+      "supplemental_control_paths": [
+        "source-materials/postgresql18/postgresql18.post-install",
+        "source-materials/postgresql18/postgresql18.pre-deinstall"
+      ],
+      "notice_fact": "Exact source/archive notice bytes preserved; package applicability is not inferred from the whole-origin SPDX expression.",
+      "license_acceptance": "NOT_ISSUED"
+    },
+    {
+      "name": "libpq-dev",
+      "version": "18.6-r0",
+      "kind": "REAL_APK_CONTENT",
+      "origin": "postgresql18",
+      "actual_apk_license_expression": "PostgreSQL",
+      "aports_commit": "dfa1ed81e8a73b5eef80e2f5d180377e5c99c08f",
+      "build_timestamp": "1786798231",
+      "package_checksum": "Q1psHv0XxN6Lbmx37uIySoF1qlQ04=",
+      "installed_file_count": 23,
+      "apkbuild_path": "source-materials/postgresql18/APKBUILD",
+      "apkbuild_sha256": "ed57518e9d6a45c992bcf7993b4f23a3b5e7134bf26a27d5c91018c04b438205",
+      "version_source_crosscheck": "MATCH",
+      "declared_input_count": 18,
+      "declared_input_sha512_status": "ALL_MATCH",
+      "source_archive_paths": [
+        "source-materials/postgresql18/postgresql-18.6.tar.bz2"
+      ],
+      "notice_material_paths": [
+        "upstream-notices/postgresql18_postgresql-18.6.tar.bz2_postgresql-18.6_COPYRIGHT",
+        "upstream-notices/postgresql18_postgresql-18.6.tar.bz2_postgresql-18.6_src_backend_regex_COPYRIGHT",
+        "upstream-notices/postgresql18_postgresql-18.6.tar.bz2_postgresql-18.6_src_tools_copyright.pl"
+      ],
+      "supplemental_control_paths": [
+        "source-materials/postgresql18/postgresql18.post-install",
+        "source-materials/postgresql18/postgresql18.pre-deinstall"
+      ],
+      "notice_fact": "Exact source/archive notice bytes preserved; package applicability is not inferred from the whole-origin SPDX expression.",
+      "license_acceptance": "NOT_ISSUED"
+    },
+    {
+      "name": "libssl3",
+      "version": "3.5.9-r0",
+      "kind": "REAL_APK_CONTENT",
+      "origin": "openssl",
+      "actual_apk_license_expression": "Apache-2.0",
+      "aports_commit": "29b9ec24b1b5b39aeef51fa2a044210e2ec5258e",
+      "build_timestamp": "1790752173",
+      "package_checksum": "Q1IMTJDqnSCp3ToE3q3yxsT2QjNkM=",
+      "installed_file_count": 1,
+      "apkbuild_path": "source-materials/openssl/APKBUILD",
+      "apkbuild_sha256": "ea459c051ee8d846c06f1d47d09d0f737778502c01de88c9696e96a208de5943",
+      "version_source_crosscheck": "MATCH",
+      "declared_input_count": 2,
+      "declared_input_sha512_status": "ALL_MATCH",
+      "source_archive_paths": [
+        "source-materials/openssl/openssl-3.5.9.tar.gz"
+      ],
+      "notice_material_paths": [
+        "upstream-notices/openssl_openssl-3.5.9.tar.gz_openssl-3.5.9_LICENSE.txt",
+        "upstream-notices/openssl_openssl-3.5.9.tar.gz_openssl-3.5.9_external_perl_Text-Template-1.56_LICENSE",
+        "upstream-notices/openssl_openssl-3.5.9.tar.gz_openssl-3.5.9_util_perl_OpenSSL_copyright.pm"
+      ],
+      "supplemental_control_paths": [
+        "source-materials/openssl/openssl-fips.post-install"
+      ],
+      "notice_fact": "Exact source/archive notice bytes preserved; package applicability is not inferred from the whole-origin SPDX expression.",
+      "license_acceptance": "NOT_ISSUED"
+    },
+    {
+      "name": "libstdc++",
+      "version": "15.2.0-r5",
+      "kind": "REAL_APK_CONTENT",
+      "origin": "gcc",
+      "actual_apk_license_expression": "GPL-2.0-or-later AND LGPL-2.1-or-later",
+      "aports_commit": "423a8ad043d07f2c7546c8ec3e2b0384cda360ae",
+      "build_timestamp": "1780084766",
+      "package_checksum": "Q1X3oq12RhKLoCzA1vuUZytoRWSNU=",
+      "installed_file_count": 2,
+      "apkbuild_path": "source-materials/gcc/APKBUILD",
+      "apkbuild_sha256": "71d831dbef88c2b0ff7b36b7422e878a07751419583a44b06cda2e561cdb82d4",
+      "version_source_crosscheck": "MATCH",
+      "declared_input_count": 45,
+      "declared_input_sha512_status": "ALL_MATCH",
+      "source_archive_paths": [
+        "source-materials/gcc/gcc-15.2.0.tar.xz"
+      ],
+      "notice_material_paths": [
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_include_COPYING3",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_include_COPYING",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_libffi_LICENSE-BUILDTOOLS",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_libffi_LICENSE",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_zlib_contrib_dotzlib_LICENSE_1_0.txt",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_libsanitizer_LICENSE.TXT",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_COPYING.RUNTIME",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_libphobos_libdruntime_LICENSE.txt",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_libphobos_src_LICENSE_1_0.txt",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_COPYING3",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_libgo_LICENSE",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_gcc_COPYING3",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_gcc_COPYING.LIB",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_gcc_COPYING3.LIB",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_gcc_m2_COPYING.RUNTIME",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_gcc_m2_COPYING3",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_gcc_m2_COPYING3.LIB",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_gcc_m2_COPYING.FDL",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_gcc_m2_images_LICENSE.IMG",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_gcc_go_gofrontend_LICENSE",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_gcc_COPYING",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_COPYING.LIB",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_libgcobol_LICENSE",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_COPYING3.LIB",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_libgcc_libgcc2.c",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_libstdc_-v3_include_pstl_LICENSE.txt",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_libiberty_copying-lib.texi",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_libiberty_COPYING.LIB",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_libquadmath_COPYING.LIB",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_libcody_LICENSE",
+        "upstream-notices/gcc_gcc-15.2.0.tar.xz_gcc-15.2.0_COPYING"
+      ],
+      "supplemental_control_paths": [],
+      "notice_fact": "Exact source/archive notice bytes preserved; package applicability is not inferred from the whole-origin SPDX expression.",
+      "license_acceptance": "NOT_ISSUED"
+    },
+    {
+      "name": "libtirpc",
+      "version": "1.3.5-r1",
+      "kind": "REAL_APK_CONTENT",
+      "origin": "libtirpc",
+      "actual_apk_license_expression": "BSD-3-Clause",
+      "aports_commit": "4519a8c0bafdd843397d13a9146c906ff64a6c2f",
+      "build_timestamp": "1753925220",
+      "package_checksum": "Q1wyhlvYaouIKdFSJ5yrvFrG1DDrI=",
+      "installed_file_count": 2,
+      "apkbuild_path": "source-materials/libtirpc/APKBUILD",
+      "apkbuild_sha256": "bdb4912bbcb40e5f4c5226d38b39e246722015225938832d094e215714dccef6",
+      "version_source_crosscheck": "MATCH",
+      "declared_input_count": 3,
+      "declared_input_sha512_status": "ALL_MATCH",
+      "source_archive_paths": [
+        "source-materials/libtirpc/libtirpc-1.3.5.tar.bz2"
+      ],
+      "notice_material_paths": [
+        "upstream-notices/libtirpc_libtirpc-1.3.5.tar.bz2_libtirpc-1.3.5_COPYING"
+      ],
+      "supplemental_control_paths": [],
+      "notice_fact": "Exact source/archive notice bytes preserved; package applicability is not inferred from the whole-origin SPDX expression.",
+      "license_acceptance": "NOT_ISSUED"
+    },
+    {
+      "name": "libtirpc-conf",
+      "version": "1.3.5-r1",
+      "kind": "REAL_APK_CONTENT",
+      "origin": "libtirpc",
+      "actual_apk_license_expression": "BSD-3-Clause",
+      "aports_commit": "4519a8c0bafdd843397d13a9146c906ff64a6c2f",
+      "build_timestamp": "1753925220",
+      "package_checksum": "Q1DBfZmI3JhskOIveXeN8EfsqZc/8=",
+      "installed_file_count": 2,
+      "apkbuild_path": "source-materials/libtirpc/APKBUILD",
+      "apkbuild_sha256": "bdb4912bbcb40e5f4c5226d38b39e246722015225938832d094e215714dccef6",
+      "version_source_crosscheck": "MATCH",
+      "declared_input_count": 3,
+      "declared_input_sha512_status": "ALL_MATCH",
+      "source_archive_paths": [
+        "source-materials/libtirpc/libtirpc-1.3.5.tar.bz2"
+      ],
+      "notice_material_paths": [
+        "upstream-notices/libtirpc_libtirpc-1.3.5.tar.bz2_libtirpc-1.3.5_COPYING"
+      ],
+      "supplemental_control_paths": [],
+      "notice_fact": "Exact source/archive notice bytes preserved; package applicability is not inferred from the whole-origin SPDX expression.",
+      "license_acceptance": "NOT_ISSUED"
+    },
+    {
+      "name": "libuuid",
+      "version": "2.42.3-r1",
+      "kind": "REAL_APK_CONTENT",
+      "origin": "util-linux",
+      "actual_apk_license_expression": "BSD-3-Clause",
+      "aports_commit": "d98c55af59055e6ca60fbe36e171546918709965",
+      "build_timestamp": "1788613309",
+      "package_checksum": "Q1jwQe9jetdfOBzAwDTyr7uwMDJk4=",
+      "installed_file_count": 2,
+      "apkbuild_path": "source-materials/util-linux/APKBUILD",
+      "apkbuild_sha256": "5347f9d386c8684e7f5cc160ae8595c5c3d3cfedcfdc758f5e022a46e560b944",
+      "version_source_crosscheck": "MATCH",
+      "declared_input_count": 12,
+      "declared_input_sha512_status": "ALL_MATCH",
+      "source_archive_paths": [
+        "source-materials/util-linux/util-linux-2.42.3.tar.xz"
+      ],
+      "notice_material_paths": [
+        "upstream-notices/util-linux_util-linux-2.42.3.tar.xz_util-linux-2.42.3_Documentation_licenses_COPYING.BSD-2-Clause",
+        "upstream-notices/util-linux_util-linux-2.42.3.tar.xz_util-linux-2.42.3_Documentation_licenses_COPYING.BSD-3-Clause",
+        "upstream-notices/util-linux_util-linux-2.42.3.tar.xz_util-linux-2.42.3_Documentation_licenses_COPYING.BSD-4-Clause-UC",
+        "upstream-notices/util-linux_util-linux-2.42.3.tar.xz_util-linux-2.42.3_Documentation_licenses_COPYING.EUPL-1.2",
+        "upstream-notices/util-linux_util-linux-2.42.3.tar.xz_util-linux-2.42.3_Documentation_licenses_COPYING.GPL-2.0-only",
+        "upstream-notices/util-linux_util-linux-2.42.3.tar.xz_util-linux-2.42.3_Documentation_licenses_COPYING.GPL-2.0-or-later",
+        "upstream-notices/util-linux_util-linux-2.42.3.tar.xz_util-linux-2.42.3_Documentation_licenses_COPYING.GPL-3.0-or-later",
+        "upstream-notices/util-linux_util-linux-2.42.3.tar.xz_util-linux-2.42.3_Documentation_licenses_COPYING.ISC",
+        "upstream-notices/util-linux_util-linux-2.42.3.tar.xz_util-linux-2.42.3_Documentation_licenses_COPYING.LGPL-2.1-or-later",
+        "upstream-notices/util-linux_util-linux-2.42.3.tar.xz_util-linux-2.42.3_Documentation_licenses_COPYING.MIT",
+        "upstream-notices/util-linux_util-linux-2.42.3.tar.xz_util-linux-2.42.3_libblkid_COPYING",
+        "upstream-notices/util-linux_util-linux-2.42.3.tar.xz_util-linux-2.42.3_libfdisk_COPYING",
+        "upstream-notices/util-linux_util-linux-2.42.3.tar.xz_util-linux-2.42.3_liblastlog2_COPYING",
+        "upstream-notices/util-linux_util-linux-2.42.3.tar.xz_util-linux-2.42.3_libmount_COPYING",
+        "upstream-notices/util-linux_util-linux-2.42.3.tar.xz_util-linux-2.42.3_libsmartcols_COPYING",
+        "upstream-notices/util-linux_util-linux-2.42.3.tar.xz_util-linux-2.42.3_libuuid_COPYING",
+        "upstream-notices/util-linux_util-linux-2.42.3.tar.xz_util-linux-2.42.3_pam_lastlog2_COPYING",
+        "upstream-notices/util-linux_util-linux-2.42.3.tar.xz_util-linux-2.42.3_COPYING",
+        "upstream-notices/util-linux_util-linux-2.42.3.tar.xz_util-linux-2.42.3_README.licensing"
+      ],
+      "supplemental_control_paths": [
+        "source-materials/util-linux/util-linux-misc.post-upgrade"
+      ],
+      "notice_fact": "Exact source/archive notice bytes preserved; package applicability is not inferred from the whole-origin SPDX expression.",
+      "license_acceptance": "NOT_ISSUED"
+    },
+    {
+      "name": "libverto",
+      "version": "0.3.2-r2",
+      "kind": "REAL_APK_CONTENT",
+      "origin": "libverto",
+      "actual_apk_license_expression": "MIT",
+      "aports_commit": "84a227baf001b6e0208e3352b294e4d7a40e93de",
+      "build_timestamp": "1681228881",
+      "package_checksum": "Q1cyMwWTOBQuSsbY+4uwB06T2nXcE=",
+      "installed_file_count": 2,
+      "apkbuild_path": "source-materials/libverto/APKBUILD",
+      "apkbuild_sha256": "92c2e109154768bb5f3080d776949f0e3225082367a33c7aa7db674e88bae9f9",
+      "version_source_crosscheck": "MATCH",
+      "declared_input_count": 1,
+      "declared_input_sha512_status": "ALL_MATCH",
+      "source_archive_paths": [
+        "source-materials/libverto/libverto-0.3.2.tar.gz"
+      ],
+      "notice_material_paths": [
+        "upstream-notices/libverto_libverto-0.3.2.tar.gz_libverto-0.3.2_COPYING"
+      ],
+      "supplemental_control_paths": [],
+      "notice_fact": "Exact source/archive notice bytes preserved; package applicability is not inferred from the whole-origin SPDX expression.",
+      "license_acceptance": "NOT_ISSUED"
+    },
+    {
+      "name": "musl",
+      "version": "1.2.6-r2",
+      "kind": "REAL_APK_CONTENT",
+      "origin": "musl",
+      "actual_apk_license_expression": "MIT",
+      "aports_commit": "f5640d3a10f664c9119720c60515265d3d6f6d01",
+      "build_timestamp": "1775900007",
+      "package_checksum": "Q1D35YJ+ThpzYxvtont4QxqLokDgU=",
+      "installed_file_count": 2,
+      "apkbuild_path": "source-materials/musl/APKBUILD",
+      "apkbuild_sha256": "db4e568cdf2b256815fdfdb55704cd2efdffdc0e8ecd0cb935fdc3e89e2140f4",
+      "version_source_crosscheck": "MATCH",
+      "declared_input_count": 11,
+      "declared_input_sha512_status": "ALL_MATCH",
+      "source_archive_paths": [
+        "source-materials/musl/musl-1.2.6.tar.gz"
+      ],
+      "notice_material_paths": [
+        "upstream-notices/musl_musl-1.2.6.tar.gz_musl-1.2.6_COPYRIGHT"
+      ],
+      "supplemental_control_paths": [],
+      "notice_fact": "Exact source/archive notice bytes preserved; package applicability is not inferred from the whole-origin SPDX expression.",
+      "license_acceptance": "NOT_ISSUED"
+    },
+    {
+      "name": "musl-utils",
+      "version": "1.2.6-r2",
+      "kind": "REAL_APK_CONTENT",
+      "origin": "musl",
+      "actual_apk_license_expression": "MIT AND BSD-2-Clause AND GPL-2.0-or-later",
+      "aports_commit": "f5640d3a10f664c9119720c60515265d3d6f6d01",
+      "build_timestamp": "1775900007",
+      "package_checksum": "Q1da2jxI1j7F2HxC/fk0o/3REpjcU=",
+      "installed_file_count": 5,
+      "apkbuild_path": "source-materials/musl/APKBUILD",
+      "apkbuild_sha256": "db4e568cdf2b256815fdfdb55704cd2efdffdc0e8ecd0cb935fdc3e89e2140f4",
+      "version_source_crosscheck": "MATCH",
+      "declared_input_count": 11,
+      "declared_input_sha512_status": "ALL_MATCH",
+      "source_archive_paths": [
+        "source-materials/musl/musl-1.2.6.tar.gz"
+      ],
+      "notice_material_paths": [
+        "upstream-notices/musl_musl-1.2.6.tar.gz_musl-1.2.6_COPYRIGHT"
+      ],
+      "supplemental_control_paths": [],
+      "notice_fact": "Exact source/archive notice bytes preserved; package applicability is not inferred from the whole-origin SPDX expression.",
+      "license_acceptance": "NOT_ISSUED"
+    },
+    {
+      "name": "ncurses-terminfo-base",
+      "version": "6.6_p20260516-r0",
+      "kind": "REAL_APK_CONTENT",
+      "origin": "ncurses",
+      "actual_apk_license_expression": "X11",
+      "aports_commit": "2cee8a7328d061418336ad327b512d96bcd7bc5e",
+      "build_timestamp": "1779608199",
+      "package_checksum": "Q1nVUdgo6cjuUsWAHB1gRoKOvxV1I=",
+      "installed_file_count": 41,
+      "apkbuild_path": "source-materials/ncurses/APKBUILD",
+      "apkbuild_sha256": "9801a0e262437b470ddfd6c35e55c231a79b6903262fe68df8a547845d095d6a",
+      "version_source_crosscheck": "MATCH",
+      "declared_input_count": 2,
+      "declared_input_sha512_status": "ALL_MATCH",
+      "source_archive_paths": [
+        "source-materials/ncurses/ncurses-6.6-20260516.tgz"
+      ],
+      "notice_material_paths": [
+        "upstream-notices/ncurses_ncurses-6.6-20260516.tgz_ncurses-6.6-20260516_Ada95_package_debian_copyright",
+        "upstream-notices/ncurses_ncurses-6.6-20260516.tgz_ncurses-6.6-20260516_package_debian-mingw64_copyright",
+        "upstream-notices/ncurses_ncurses-6.6-20260516.tgz_ncurses-6.6-20260516_package_debian-mingw_copyright",
+        "upstream-notices/ncurses_ncurses-6.6-20260516.tgz_ncurses-6.6-20260516_package_debian_copyright",
+        "upstream-notices/ncurses_ncurses-6.6-20260516.tgz_ncurses-6.6-20260516_test_package_debian-mingw64_copyright",
+        "upstream-notices/ncurses_ncurses-6.6-20260516.tgz_ncurses-6.6-20260516_test_package_debian-mingw_copyright",
+        "upstream-notices/ncurses_ncurses-6.6-20260516.tgz_ncurses-6.6-20260516_test_package_debian_copyright",
+        "upstream-notices/ncurses_ncurses-6.6-20260516.tgz_ncurses-6.6-20260516_COPYING"
+      ],
+      "supplemental_control_paths": [],
+      "notice_fact": "Exact source/archive notice bytes preserved; package applicability is not inferred from the whole-origin SPDX expression.",
+      "license_acceptance": "NOT_ISSUED"
+    },
+    {
+      "name": "openssl-dev",
+      "version": "3.5.9-r0",
+      "kind": "REAL_APK_CONTENT",
+      "origin": "openssl",
+      "actual_apk_license_expression": "Apache-2.0",
+      "aports_commit": "29b9ec24b1b5b39aeef51fa2a044210e2ec5258e",
+      "build_timestamp": "1790752173",
+      "package_checksum": "Q1uBN7xm0iehkPeVruxatZ6M1i2Ys=",
+      "installed_file_count": 149,
+      "apkbuild_path": "source-materials/openssl/APKBUILD",
+      "apkbuild_sha256": "ea459c051ee8d846c06f1d47d09d0f737778502c01de88c9696e96a208de5943",
+      "version_source_crosscheck": "MATCH",
+      "declared_input_count": 2,
+      "declared_input_sha512_status": "ALL_MATCH",
+      "source_archive_paths": [
+        "source-materials/openssl/openssl-3.5.9.tar.gz"
+      ],
+      "notice_material_paths": [
+        "upstream-notices/openssl_openssl-3.5.9.tar.gz_openssl-3.5.9_LICENSE.txt",
+        "upstream-notices/openssl_openssl-3.5.9.tar.gz_openssl-3.5.9_external_perl_Text-Template-1.56_LICENSE",
+        "upstream-notices/openssl_openssl-3.5.9.tar.gz_openssl-3.5.9_util_perl_OpenSSL_copyright.pm"
+      ],
+      "supplemental_control_paths": [
+        "source-materials/openssl/openssl-fips.post-install"
+      ],
+      "notice_fact": "Exact source/archive notice bytes preserved; package applicability is not inferred from the whole-origin SPDX expression.",
+      "license_acceptance": "NOT_ISSUED"
+    },
+    {
+      "name": "pkgconf",
+      "version": "2.5.1-r0",
+      "kind": "REAL_APK_CONTENT",
+      "origin": "pkgconf",
+      "actual_apk_license_expression": "ISC",
+      "aports_commit": "c6f80aa8e59c70d19e2d556c526f151656058536",
+      "build_timestamp": "1750805931",
+      "package_checksum": "Q1B0VN8FiPJzB3eATqTdiQ3m4d/d4=",
+      "installed_file_count": 6,
+      "apkbuild_path": "source-materials/pkgconf/APKBUILD",
+      "apkbuild_sha256": "f580adca78751db85f174efb254457ee8caf10ff9d30e069a87c630a6851c61d",
+      "version_source_crosscheck": "MATCH",
+      "declared_input_count": 1,
+      "declared_input_sha512_status": "ALL_MATCH",
+      "source_archive_paths": [
+        "source-materials/pkgconf/pkgconf-2.5.1.tar.xz"
+      ],
+      "notice_material_paths": [
+        "upstream-notices/pkgconf_pkgconf-2.5.1.tar.xz_pkgconf-2.5.1_COPYING"
+      ],
+      "supplemental_control_paths": [],
+      "notice_fact": "Exact source/archive notice bytes preserved; package applicability is not inferred from the whole-origin SPDX expression.",
+      "license_acceptance": "NOT_ISSUED"
+    },
+    {
+      "name": "readline",
+      "version": "8.3.3-r1",
+      "kind": "REAL_APK_CONTENT",
+      "origin": "readline",
+      "actual_apk_license_expression": "GPL-3.0-or-later",
+      "aports_commit": "a854c03acdac188901fb012f7acbee70a36e8041",
+      "build_timestamp": "1769144791",
+      "package_checksum": "Q1lFsW43i8AORNidTegSS7p2R/300=",
+      "installed_file_count": 3,
+      "apkbuild_path": "source-materials/readline/APKBUILD",
+      "apkbuild_sha256": "d6ea7771ae1475b0f0843ed543664beba1beea893a99000dbb34ef20878cf4e9",
+      "version_source_crosscheck": "MATCH",
+      "declared_input_count": 6,
+      "declared_input_sha512_status": "ALL_MATCH",
+      "source_archive_paths": [
+        "source-materials/readline/readline-8.3.tar.gz"
+      ],
+      "notice_material_paths": [
+        "upstream-notices/readline_readline-8.3.tar.gz_readline-8.3_COPYING"
+      ],
+      "supplemental_control_paths": [],
+      "notice_fact": "Exact source/archive notice bytes preserved; package applicability is not inferred from the whole-origin SPDX expression.",
+      "license_acceptance": "NOT_ISSUED"
+    },
+    {
+      "name": "scanelf",
+      "version": "1.3.9-r1",
+      "kind": "REAL_APK_CONTENT",
+      "origin": "pax-utils",
+      "actual_apk_license_expression": "GPL-2.0-only",
+      "aports_commit": "c61801eeacb3ffcd9c2025b09e402153bb93fb39",
+      "build_timestamp": "1774640350",
+      "package_checksum": "Q1AT+QPQuiGWc6673QT3S7XtgrAfA=",
+      "installed_file_count": 1,
+      "apkbuild_path": "source-materials/pax-utils/APKBUILD",
+      "apkbuild_sha256": "f33df75f467601dcd73038b4e15029de60338a5f3f7d9a37574475a723b07c20",
+      "version_source_crosscheck": "MATCH",
+      "declared_input_count": 1,
+      "declared_input_sha512_status": "ALL_MATCH",
+      "source_archive_paths": [
+        "source-materials/pax-utils/pax-utils-1.3.9.tar.xz"
+      ],
+      "notice_material_paths": [
+        "upstream-notices/pax-utils_pax-utils-1.3.9.tar.xz_pax-utils-1.3.9_COPYING"
+      ],
+      "supplemental_control_paths": [],
+      "notice_fact": "Exact source/archive notice bytes preserved; package applicability is not inferred from the whole-origin SPDX expression.",
+      "license_acceptance": "NOT_ISSUED"
+    },
+    {
+      "name": "sqlite-libs",
+      "version": "3.53.4-r0",
+      "kind": "REAL_APK_CONTENT",
+      "origin": "sqlite",
+      "actual_apk_license_expression": "blessing",
+      "aports_commit": "a9c3ba8b9129ec0f294d0a9bf538c2f1632bb016",
+      "build_timestamp": "1787333779",
+      "package_checksum": "Q192MM6zfCMrZgmGGuq2zbnNEg5vo=",
+      "installed_file_count": 2,
+      "apkbuild_path": "source-materials/sqlite/APKBUILD",
+      "apkbuild_sha256": "8e0cdc5e9d36fa52760c2b89b538e0125552ee0b53451a0712c33b7dcdd609dd",
+      "version_source_crosscheck": "MATCH",
+      "declared_input_count": 2,
+      "declared_input_sha512_status": "ALL_MATCH",
+      "source_archive_paths": [
+        "source-materials/sqlite/sqlite-autoconf-3530400.tar.gz",
+        "source-materials/sqlite/sqlite-src-3530400.zip"
+      ],
+      "notice_material_paths": [
+        "upstream-notices/sqlite_sqlite-autoconf-3530400.tar.gz_sqlite-autoconf-3530400_sqlite3.c",
+        "upstream-notices/sqlite_sqlite-autoconf-3530400.tar.gz_sqlite-autoconf-3530400_autosetup_LICENSE",
+        "upstream-notices/sqlite_sqlite-autoconf-3530400.tar.gz_sqlite-autoconf-3530400_tea_license.terms",
+        "upstream-notices/sqlite_sqlite-src-3530400.zip_sqlite-src-3530400_LICENSE.md",
+        "upstream-notices/sqlite_sqlite-src-3530400.zip_sqlite-src-3530400_autosetup_LICENSE",
+        "upstream-notices/sqlite_sqlite-src-3530400.zip_sqlite-src-3530400_autoconf_tea_license.terms"
+      ],
+      "supplemental_control_paths": [],
+      "notice_fact": "Exact source/archive notice bytes preserved; package applicability is not inferred from the whole-origin SPDX expression.",
+      "license_acceptance": "NOT_ISSUED"
+    },
+    {
+      "name": "ssl_client",
+      "version": "1.37.0-r31",
+      "kind": "REAL_APK_CONTENT",
+      "origin": "busybox",
+      "actual_apk_license_expression": "GPL-2.0-only",
+      "aports_commit": "c3ef5d10e6ef6528852c51f0564963e2f8c1be19",
+      "build_timestamp": "1768059508",
+      "package_checksum": "Q1wiD0pRJaMTr3M+mN75QTK7Hp1A0=",
+      "installed_file_count": 1,
+      "apkbuild_path": "source-materials/busybox/APKBUILD",
+      "apkbuild_sha256": "98f019f62291aff63cb798f046fb59dfd43340885de63ca2f127651fc21d0450",
+      "version_source_crosscheck": "MATCH",
+      "declared_input_count": 75,
+      "declared_input_sha512_status": "ALL_MATCH",
+      "source_archive_paths": [
+        "source-materials/busybox/busybox-1.37.0.tar.bz2"
+      ],
+      "notice_material_paths": [
+        "upstream-notices/busybox_busybox-1.37.0.tar.bz2_busybox-1.37.0_LICENSE",
+        "upstream-notices/busybox_busybox-1.37.0.tar.bz2_busybox-1.37.0_archival_libarchive_bz_LICENSE"
+      ],
+      "supplemental_control_paths": [
+        "source-materials/busybox/busybox.post-install",
+        "source-materials/busybox/busybox.post-upgrade",
+        "source-materials/busybox/busybox-extras.post-install",
+        "source-materials/busybox/busybox-extras.pre-deinstall",
+        "source-materials/busybox/busybox.trigger"
+      ],
+      "notice_fact": "Exact source/archive notice bytes preserved; package applicability is not inferred from the whole-origin SPDX expression.",
+      "license_acceptance": "NOT_ISSUED"
+    },
+    {
+      "name": "tzdata",
+      "version": "2026d-r0",
+      "kind": "REAL_APK_CONTENT",
+      "origin": "tzdata",
+      "actual_apk_license_expression": "Public-Domain",
+      "aports_commit": "a19caf9fe771707618d4d9e4fa2dd9db8155b461",
+      "build_timestamp": "1789452771",
+      "package_checksum": "Q1kBGUnrcDysh/MTI6t4ZIYqu4qTY=",
+      "installed_file_count": 603,
+      "apkbuild_path": "source-materials/tzdata/APKBUILD",
+      "apkbuild_sha256": "19902c11c0e94d52b002034b41cb63332905ea397d23af4cd33d0fa7eaa3a14a",
+      "version_source_crosscheck": "MATCH",
+      "declared_input_count": 5,
+      "declared_input_sha512_status": "ALL_MATCH",
+      "source_archive_paths": [
+        "source-materials/tzdata/tzcode2026d.tar.gz",
+        "source-materials/tzdata/tzdata2026d.tar.gz",
+        "source-materials/tzdata/posixtz-0.5.tar.xz"
+      ],
+      "notice_material_paths": [
+        "upstream-notices/tzdata_tzcode2026d.tar.gz_LICENSE",
+        "upstream-notices/tzdata_tzdata2026d.tar.gz_LICENSE"
+      ],
+      "supplemental_control_paths": [],
+      "notice_fact": "Exact source/archive notice bytes preserved; package applicability is not inferred from the whole-origin SPDX expression.",
+      "license_acceptance": "NOT_ISSUED"
+    },
+    {
+      "name": "xz-libs",
+      "version": "5.8.4-r0",
+      "kind": "REAL_APK_CONTENT",
+      "origin": "xz",
+      "actual_apk_license_expression": "GPL-2.0-or-later AND 0BSD AND Public-Domain AND LGPL-2.1-or-later",
+      "aports_commit": "0c088d609f9fe69eedd6b4c7f4b99cdad847c20a",
+      "build_timestamp": "1788989067",
+      "package_checksum": "Q1hQEGWxhighYwF0xmO0WXRGLCluE=",
+      "installed_file_count": 2,
+      "apkbuild_path": "source-materials/xz/APKBUILD",
+      "apkbuild_sha256": "e66901db8f5fe99356c3ccda131290c2639a940238c998fec2ce30d7c06982c3",
+      "version_source_crosscheck": "MATCH",
+      "declared_input_count": 1,
+      "declared_input_sha512_status": "ALL_MATCH",
+      "source_archive_paths": [
+        "source-materials/xz/xz-5.8.4.tar.gz"
+      ],
+      "notice_material_paths": [
+        "upstream-notices/xz_xz-5.8.4.tar.gz_xz-5.8.4_COPYING",
+        "upstream-notices/xz_xz-5.8.4.tar.gz_xz-5.8.4_COPYING.0BSD",
+        "upstream-notices/xz_xz-5.8.4.tar.gz_xz-5.8.4_COPYING.GPLv2",
+        "upstream-notices/xz_xz-5.8.4.tar.gz_xz-5.8.4_COPYING.GPLv3",
+        "upstream-notices/xz_xz-5.8.4.tar.gz_xz-5.8.4_COPYING.LGPLv2.1",
+        "upstream-notices/xz_xz-5.8.4.tar.gz_xz-5.8.4_build-aux_license-check.sh",
+        "upstream-notices/xz_xz-5.8.4.tar.gz_xz-5.8.4_src_liblzma_api_lzma.h"
+      ],
+      "supplemental_control_paths": [],
+      "notice_fact": "Exact source/archive notice bytes preserved; package applicability is not inferred from the whole-origin SPDX expression.",
+      "license_acceptance": "NOT_ISSUED"
+    },
+    {
+      "name": "zlib",
+      "version": "1.3.2-r0",
+      "kind": "REAL_APK_CONTENT",
+      "origin": "zlib",
+      "actual_apk_license_expression": "Zlib",
+      "aports_commit": "f248b33b5943c7dc69bf691031d7612ab2e8ed93",
+      "build_timestamp": "1772704820",
+      "package_checksum": "Q13Uw9ECrK7ypxoUlZUdVfq8hoBhM=",
+      "installed_file_count": 2,
+      "apkbuild_path": "source-materials/zlib/APKBUILD",
+      "apkbuild_sha256": "7b8d064be19f39b5e921e9e2dddb960964c6e159ca035848cc362375f0da9b9f",
+      "version_source_crosscheck": "MATCH",
+      "declared_input_count": 1,
+      "declared_input_sha512_status": "ALL_MATCH",
+      "source_archive_paths": [
+        "source-materials/zlib/zlib-1.3.2.tar.gz"
+      ],
+      "notice_material_paths": [
+        "upstream-notices/zlib_zlib-1.3.2.tar.gz_zlib-1.3.2_LICENSE",
+        "upstream-notices/zlib_zlib-1.3.2.tar.gz_zlib-1.3.2_contrib_dotzlib_LICENSE_1_0.txt",
+        "upstream-notices/zlib_zlib-1.3.2.tar.gz_zlib-1.3.2_contrib_minizip_LICENSE.Info-Zip"
+      ],
+      "supplemental_control_paths": [],
+      "notice_fact": "Exact source/archive notice bytes preserved; package applicability is not inferred from the whole-origin SPDX expression.",
+      "license_acceptance": "NOT_ISSUED"
+    },
+    {
+      "name": "zstd-libs",
+      "version": "1.5.7-r2",
+      "kind": "REAL_APK_CONTENT",
+      "origin": "zstd",
+      "actual_apk_license_expression": "BSD-3-Clause OR GPL-2.0-or-later",
+      "aports_commit": "3c6e2ee2b16f403d53eab39c4426eb61f003c322",
+      "build_timestamp": "1753704404",
+      "package_checksum": "Q1lWnOOpfEEJ6OU93enz4b0nJhNUA=",
+      "installed_file_count": 2,
+      "apkbuild_path": "source-materials/zstd/APKBUILD",
+      "apkbuild_sha256": "635134417b866a71fc0684bfbc1f8b5ff660c3edcd68f1b0b1335f04963ef5c1",
+      "version_source_crosscheck": "MATCH",
+      "declared_input_count": 1,
+      "declared_input_sha512_status": "ALL_MATCH",
+      "source_archive_paths": [
+        "source-materials/zstd/zstd-1.5.7.tar.gz"
+      ],
+      "notice_material_paths": [
+        "upstream-notices/zstd_zstd-1.5.7.tar.gz_zstd-1.5.7_COPYING",
+        "upstream-notices/zstd_zstd-1.5.7.tar.gz_zstd-1.5.7_LICENSE",
+        "upstream-notices/zstd_zstd-1.5.7.tar.gz_zstd-1.5.7_build_LICENSE"
+      ],
+      "supplemental_control_paths": [],
+      "notice_fact": "Exact source/archive notice bytes preserved; package applicability is not inferred from the whole-origin SPDX expression.",
+      "license_acceptance": "NOT_ISSUED"
+    }
+  ],
+  "bounded_engineering_provenance_gaps": [
+    {
+      "id": "BUSYBOX_STATIC_SOURCE_TO_BYTE_BINDING",
+      "component": "BusyBox1.37.0-r31",
+      "fact": "Official stable APK control checksum and actual binary hash match installed image. Surviving edge log names utmps0.1.3.2-r0 and skalibs2.14.5.0-r0; candidate recipes and all10 declared inputs are preserved.",
+      "missing": "Official edge log contains no artifact hash and edge r31/stable log artifacts are unavailable; source-epoch builddate does not establish exact executed static dependency build. Exact installed static library source/version and build-toolchain equivalence remain unproven.",
+      "status": "OPEN_ENGINEERING_PROVENANCE",
+      "receipt_path": "static-dependencies/source-materials-receipt.json",
+      "receipt_sha256": "e3ab0e6af6c6b3f8e49c46ea25cc7455ad03433a8fb5f7bbabd8260c1716bf67"
+    },
+    {
+      "id": "WHEEL_GCC_RUNTIME_SOURCE_TO_BYTE_BINDING",
+      "components": [
+        {
+          "path": "/usr/local/lib/python3.12/site-packages/cryptography.libs/libgcc_s-0cd532bd.so.1",
+          "sha256": "42b5f2c8ca13e5e173d837f5117a04b6c042437548112bde7879251ae8dcff8f",
+          "bytes": 183337,
+          "declared_version": "14.2.0-r6 in exact wheel auditwheel.cdx.json; independent source-to-byte mapping not proved"
+        },
+        {
+          "path": "/usr/local/lib/python3.12/site-packages/pydantic_core.libs/libgcc_s-1e52349c.so.1",
+          "sha256": "0278b4bbf5bfb41f044ac15e3cee03da69f696b8162e1c85770e91113c414d83",
+          "bytes": 437537,
+          "declared_version": null
+        },
+        {
+          "path": "/usr/local/lib/python3.12/site-packages/watchfiles.libs/libgcc_s-f685abf1.so.1",
+          "sha256": "91a43de5877248a317d14faa35490ef474a1b33a83e235b52fb1eabf7108108e",
+          "bytes": 538513,
+          "declared_version": null
+        }
+      ],
+      "missing": "Independent executed-builder/source-version/source-to-byte mapping and applicable runtime-license terms remain unproved. APK GCC15.2.0 source is not assigned to these three copies; generic GPL3/COPYING.RUNTIME is reference material only.",
+      "status": "OPEN_ENGINEERING_PROVENANCE",
+      "receipt_path": "wheel-runtime-provenance/provenance-trace.json",
+      "receipt_sha256": "858f6bb5c7641410292f855c1939476bc842388655e7c5596fad18cd64238320"
+    }
+  ],
+  "human_acceptance": "NOT_ISSUED; distinct from declared-input and provenance facts"
+}

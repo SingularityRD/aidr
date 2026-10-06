@@ -29,7 +29,12 @@ export class ReviewWorkflow {
   get(p:AuthenticatedPrincipal,caseId:string):ReviewCase{
     this.#auth(p);const c=this.state.get<ReviewCase>('reviews',id(caseId))?.value;if(!c)deny('REVIEW_NOT_FOUND');if(c.owner!==p.subjectId&&!p.roles.includes('security-reviewer')&&!p.roles.includes('security-admin'))deny('REVIEW_FORBIDDEN');return c;
   }
-  list(p:AuthenticatedPrincipal,limit=50,after=''):readonly ReviewCase[]{this.#auth(p);integer(limit,1,200);return frozen(this.state.list('reviews',limit,after).map(r=>r.cell.value as ReviewCase).filter(c=>c.owner===p.subjectId||p.roles.includes('security-reviewer')||p.roles.includes('security-admin')));}
+  list(p:AuthenticatedPrincipal,limit=50,after=''):readonly ReviewCase[]{
+    this.#auth(p);integer(limit,1,200);const out:ReviewCase[]=[],canReview=p.roles.includes('security-reviewer')||p.roles.includes('security-admin');let cursor=after;
+    // ponytail: scan tenant pages; add an owner index if tenant queue throughput requires it.
+    while(out.length<limit){const page=this.state.list('reviews',200,cursor);for(const r of page){const c=r.cell.value as ReviewCase;if(canReview||c.owner===p.subjectId)out.push(c);if(out.length===limit)break;}if(page.length<200)break;cursor=page[page.length-1]!.key;}
+    return frozen(out);
+  }
   history(p:AuthenticatedPrincipal,caseId:string):readonly ReviewHistory[]{const c=this.get(p,caseId),out:ReviewHistory[]=[];for(let n=1;n<=c.sequence;n++){const r=this.state.get<ReviewHistory>('review-history',c.id+'.'+String(n).padStart(6,'0'));if(!r)deny('REVIEW_HISTORY_INTEGRITY');out.push(r.value);}return frozen(out);}
   decide(p:AuthenticatedPrincipal,caseId:string,decision:'approved'|'denied',reason:string,expectedSequence:number,ttlMs=300000,uses=1):ReviewCase {
     this.#auth(p,'security-reviewer');if(!['approved','denied'].includes(decision))deny('REVIEW_DECISION');integer(expectedSequence,1);integer(ttlMs,1000,3600000);integer(uses,1,20);const now=this.clock();

@@ -54,6 +54,56 @@ describe("VerdictCache", () => {
 		expect(cache.getUrl("http://example.com")).toBeNull();
 	});
 
+	it("ignores malformed persisted entries instead of emitting an invalid verdict", async () => {
+		const cachePath = join(dir, "cache.json");
+		const malformed = {
+			...makeVerdict(),
+			verdict: "clean",
+			expiresAt: "9999-12-31T23:59:59Z",
+			sourceFreshUntil: "9999-12-31T23:59:59Z",
+		};
+		await writeFile(
+			cachePath,
+			JSON.stringify({
+				urls: { [normalizeUrl("https://malformed.test")]: malformed, nullEntry: null },
+				commands: { malformed },
+				packages: "not-an-object",
+			}),
+		);
+		const cache = new VerdictCache(makeConfig({ path: cachePath }));
+		await cache.load();
+		expect(cache.getUrl("https://malformed.test")).toBeNull();
+		expect(cache.getCommand("malformed")).toBeNull();
+		expect(cache.getPackage("malformed")).toBeNull();
+		cache.putCommand("new", makeVerdict({ verdict: "deny" }));
+		await cache.save();
+		expect(JSON.parse(await readFile(cachePath, "utf8"))).toMatchObject({
+			urls: {},
+			packages: {},
+			commands: { new: { verdict: "deny" } },
+		});
+	});
+
+	it("refuses silently writing plaintext when encryption was requested without a key identity", () => {
+		expect(() => new VerdictCache(makeConfig({ encryption: { enabled: true } }))).toThrow(
+			"plaintext caching is refused",
+		);
+	});
+
+	it("writes and reloads an encrypted cache without persisting plaintext", async () => {
+		const cachePath = join(dir, "cache.json");
+		const config = makeConfig({ path: cachePath, encryption: { enabled: true } });
+		const cache = new VerdictCache(config, undefined, "dev", "test-installation");
+		cache.putUrl("https://sensitive-tenant.test", makeVerdict({ verdict: "deny" }), true);
+		await cache.save();
+		const raw = await readFile(cachePath, "utf8");
+		expect(raw.startsWith("AIDRENC:1:")).toBe(true);
+		expect(raw).not.toContain("sensitive-tenant");
+		const loaded = new VerdictCache(config, undefined, "dev", "test-installation");
+		await loaded.load();
+		expect(loaded.getUrl("https://sensitive-tenant.test")).toMatchObject({ verdict: "deny" });
+	});
+
 	it("treats URL verdicts with invalid expiry as stale", async () => {
 		const cachePath = join(dir, "cache.json");
 		await writeFile(

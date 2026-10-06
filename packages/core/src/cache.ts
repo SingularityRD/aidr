@@ -4,8 +4,8 @@
  */
 
 import { resolvePath } from "./config.js";
-import { decryptFile, deriveKey, encryptFile } from "./encryption.js";
-import { atomicWriteJson, getFileContent } from "./file-utils.js";
+import { decryptFile, deriveKey, encryptedFileContent } from "./encryption.js";
+import { atomicWriteJson, atomicWriteText, getFileContent } from "./file-utils.js";
 import type { CacheConfig, CachedVerdict, CacheStore, Logger } from "./types.js";
 import { nullLogger } from "./types.js";
 import { normalizeUrl } from "./url-utils.js";
@@ -14,7 +14,7 @@ const ONE_HOUR = 3600;
 const TWENTY_FOUR_HOURS = 86400;
 const FAR_FUTURE = "9999-12-31T23:59:59+00:00";
 
-function isCachedPackageEntry(value: unknown): value is CacheStore["packages"][string] {
+function isCachedEntry(value: unknown): value is CacheStore["packages"][string] {
 	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
 	const entry = value as Record<string, unknown>;
 	return (
@@ -25,6 +25,11 @@ function isCachedPackageEntry(value: unknown): value is CacheStore["packages"][s
 		typeof entry.source === "string" &&
 		typeof entry.expiresAt === "string"
 	);
+}
+
+function cacheEntries(value: unknown): CacheStore["packages"] {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+	return Object.fromEntries(Object.entries(value).filter(([, entry]) => isCachedEntry(entry)));
 }
 
 export class VerdictCache {
@@ -45,6 +50,9 @@ export class VerdictCache {
 		this.logger = logger;
 		this.path = resolvePath(config.path);
 		this.version = version;
+		if (config.enabled && config.encryption?.enabled && !installationId) {
+			throw new Error("Encrypted cache requires an installation identifier; plaintext caching is refused.");
+		}
 		this.encryptionKey =
 			installationId && config.encryption?.enabled ? deriveKey(installationId) : null;
 	}
@@ -58,9 +66,9 @@ export class VerdictCache {
 				: await getFileContent(this.path);
 			const data = JSON.parse(raw) as CacheStore;
 			this.store = {
-				urls: data.urls ?? {},
-				commands: data.commands ?? {},
-				packages: data.packages ?? {},
+				urls: cacheEntries(data.urls),
+				commands: cacheEntries(data.commands),
+				packages: cacheEntries(data.packages),
 			};
 		} catch {
 			this.store = { urls: {}, commands: {}, packages: {} };
@@ -137,7 +145,7 @@ export class VerdictCache {
 	getPackage(key: string): CachedVerdict | null {
 		if (!this.config.enabled) return null;
 		const entry = this.store.packages[key];
-		if (!isCachedPackageEntry(entry)) return null;
+		if (!isCachedEntry(entry)) return null;
 		if (!entry || this.isStale(entry)) return null;
 
 		return {
@@ -196,9 +204,13 @@ export class VerdictCache {
 
 		try {
 			this.pruneStaleEntries();
-			await atomicWriteJson(this.path, this.store);
 			if (this.encryptionKey) {
-				await encryptFile(this.path, this.encryptionKey);
+				await atomicWriteText(
+					this.path,
+					encryptedFileContent(Buffer.from(JSON.stringify(this.store), "utf8"), this.encryptionKey),
+				);
+			} else {
+				await atomicWriteJson(this.path, this.store);
 			}
 		} catch (e) {
 			this.logger.warn(`Failed to save cache to ${this.path}`, { error: String(e) });

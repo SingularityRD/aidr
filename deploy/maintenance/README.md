@@ -96,6 +96,8 @@ This first runs the evidence worker and then enables
 `aidr-siem-delivery.timer`; a missing key, queue, or configuration fails before
 activation. Add `--with-backup`
 only after `/etc/aidr/backup-offsite.env` and
-`/etc/aidr/aidr-recovery.key` are installed; the same command then enables the
-backup timer. The installer fails instead of claiming activation when required
+`/etc/aidr/aidr-recovery.key` are installed; this installs the backup units and
+enables boot recovery only. Run and verify one offsite backup cycle and its
+failure alert before explicitly enabling `aidr-backup-offsite.timer`, as described
+in [the backup guide](../backup/README.md). The installer fails when required
 queue or backup inputs are missing.

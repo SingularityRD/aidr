@@ -37,10 +37,12 @@ export class LocalNerProcess implements NerProvider {
     this.#child.on('error',()=>this.close());this.#child.on('exit',()=>this.close());
     this.#child.stdin.on('error',()=>this.close());this.#child.stdout.on('error',()=>this.close());
   }
-  static async open(options:LocalNerOptions):Promise<LocalNerProcess> {
+  static async open(options:LocalNerOptions,signal?:AbortSignal):Promise<LocalNerProcess> {
+    signal?.throwIfAborted();
     const timeout=requireInt(options.startupTimeoutMs??30000,1,300000),provider=new LocalNerProcess(options);
+    const abort=()=>provider.close();signal?.addEventListener('abort',abort,{once:true});
     const timer=setTimeout(()=>provider.close(),timeout);
-    try{await provider.#ready;return provider;}finally{clearTimeout(timer);}
+    try{await provider.#ready;signal?.throwIfAborted();return provider;}finally{clearTimeout(timer);signal?.removeEventListener('abort',abort);}
   }
   #onData(chunk:Buffer):void {
     if(this.#closed)return;

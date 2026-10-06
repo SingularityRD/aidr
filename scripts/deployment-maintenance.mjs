@@ -10,7 +10,7 @@ async function main() {
   const manifest = JSON.parse(readFileSync(join(dir, "deployment.json"), "utf8"));
   const env = Object.fromEntries(readFileSync(join(dir, ".env"), "utf8").split(/\r?\n/).filter(s => s.includes("=")).map(s => [s.slice(0, s.indexOf("=")), s.slice(s.indexOf("=")+1)]));
   const base = new URL(manifest.supabase_url);
-  if (base.protocol !== "https:" && !(manifest.development && ["localhost", "127.0.0.1"].includes(base.hostname))) throw new Error("Maintenance requires HTTPS or a loopback development deployment");
+  if (base.protocol !== "https:" && !(manifest.development && base.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(base.hostname))) throw new Error("Maintenance requires HTTPS or a loopback development deployment");
   if (!env.SERVICE_ROLE_KEY) throw new Error("Deployment service credential missing");
   // Replace stale success evidence BEFORE any authorization or external side effect.
   writeFileSync(join(dir, "maintenance-evidence.json"), JSON.stringify({

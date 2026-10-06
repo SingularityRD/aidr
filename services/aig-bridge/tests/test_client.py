@@ -3,7 +3,7 @@
 import httpx
 import pytest
 
-from app.utils.aig_client import AIGClient, AIGSubmissionAmbiguous, _normalize_task_status
+from app.utils.aig_client import AIGClient, AIGClientError, AIGSubmissionAmbiguous, _normalize_task_status
 
 
 def mock_client(handler):
@@ -184,3 +184,61 @@ async def test_knowledge_api_provides_threat_counts_and_categories():
         await client.close()
     assert threats["cve_count"] == 1891
     assert threats["mcp_risk_categories"][0]["id"] == "mcp_ssrf"
+
+
+@pytest.mark.asyncio
+async def test_polling_failure_remains_a_controlled_upstream_error():
+    async def handler(request):
+        raise httpx.ReadTimeout("Authorization: secret", request=request)
+
+    client = mock_client(handler)
+    try:
+        with pytest.raises(AIGClientError, match="AIG upstream request failed"):
+            await client.get_task_status("task-1")
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("body", [[], {"status": 0, "data": None}])
+async def test_create_task_invalid_envelopes_are_ambiguous(body):
+    client = mock_client(lambda _request: httpx.Response(200, json=body))
+    try:
+        with pytest.raises(AIGSubmissionAmbiguous):
+            await client.create_scan_task("mcp_scan", {})
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_completed_status_without_result_is_still_pending():
+    def handler(request):
+        if "/result/" in request.url.path:
+            return httpx.Response(200, json={"status": 1, "message": "task result not available yet"})
+        return httpx.Response(200, json={"status": 0, "data": {"status": "done"}})
+
+    client = mock_client(handler)
+    try:
+        assert await client.get_task_result("task-1") == {"status": "running"}
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("url", ["http://[invalid", "http://example.com:invalid", "http://example.com:70000"])
+async def test_malformed_upstream_configuration_fails_readiness(url):
+    client = AIGClient(base_url=url)
+    try:
+        assert not await client.health_check()
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_non_json_task_result_is_an_upstream_error():
+    client = mock_client(lambda _request: httpx.Response(200, text="not JSON"))
+    try:
+        with pytest.raises(AIGClientError, match="invalid task result"):
+            await client.get_task_result.__wrapped__(client, "task-1")
+    finally:
+        await client.close()

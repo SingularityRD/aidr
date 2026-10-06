@@ -62,26 +62,83 @@ export const CUSTOMER_KIT_REQUIRED_FILES = Object.freeze([
 	"scripts/lib/migration-contract.mjs",
 	"scripts/lib/migration-hash-compat.mjs",
 	"scripts/lib/atomic-write.mjs",
+	"scripts/lib/deployment-credentials.mjs",
+	"scripts/lib/deployment-input-copy.mjs",
+	"scripts/lib/node-helper-image.mjs",
+	"scripts/lib/node-helper.Dockerfile",
 	"scripts/readiness-evidence-worker.mjs",
 	"deploy/maintenance/aidr-siem-delivery.service",
 	"deploy/maintenance/aidr-siem-delivery.timer",
 	"deploy/maintenance/install-systemd.sh",
 	"RESTORE-DRILL.md",
+	"RETENTION-HOLDS.md",
+  "SAML-RECOVERY.md",
+  "RESPONSE-PLAYBOOKS.md",
+  "CLOUD-DISCOVERY.md",
+  "BEHAVIORAL-LEARNING.md",
+  "PACKAGE-INSTALLATION.md",
+  "CODEX-CONNECTOR.md",
+  "CONTROL-PLANE.md",
+  "scripts/saml-outage-recovery.mjs",
 	"scripts/verify-native-host-matrix-v6.mjs",
+	"scripts/verify-support-ticket-drill.mjs",
+	"deploy/native/README.md",
+	"deploy/native/support-matrix.json",
+	"deploy/native/support-matrix.schema.json",
+	"deploy/native/interception-matrix.json",
+	"deploy/native/run-support-matrix.mjs",
+	"deploy/native/scenarios/TEMPLATE.json",
+	"deploy/native/scenarios/README.md",
+	"deploy/operations/PORTABLE-LINUX.md",
+	"deploy/operations/operations.env.example",
+	"deploy/operations/workload.soak-8h.example.json",
+	"deploy/operations/support-ticket.receipt.example.json",
+	"deploy/backup/README.md",
+	"deploy/maintenance/aidr-readiness-evidence.env.example",
+	"deploy/backup/aidr-backup-offsite.env.example",
+	"deploy/backup/aidr-restore-drill.env.example",
+	"deploy/ha/README.md",
+	"RELEASE-SIGNING.md",
 	"NATIVE-HOST-ACCEPTANCE.md",
 	"SUPPORT-RUNBOOK.md",
 	"SECRETS-RUNBOOK.md",
 	"FIRST-CUSTOMER-SALES-PACKET.md",
 	"CANDIDATE-STATUS.md",
 	"supabase/config.toml",
+	"supabase/templates/recovery.html",
+	"deploy/saml-config.mjs",
 	...Object.values(CUSTOMER_KIT_DELIVERY_FILES),
 	...CUSTOMER_KIT_BENCHMARK_FILES,
 ]);
 
 // Top-level guides are renamed in the portable kit. Keep their local links
 // inside the extracted directory and avoid implying source-only paths ship.
+export const CUSTOMER_KIT_RENDERED_GUIDES = Object.freeze([
+  "START-HERE.md", "INSTALLATION.md", "BEHAVIORAL-LEARNING.md", "PACKAGE-INSTALLATION.md", "CODEX-CONNECTOR.md", "deploy/operations/PORTABLE-LINUX.md",
+]);
+export const CUSTOMER_KIT_LINKED_GUIDES = Object.freeze([
+  ...CUSTOMER_KIT_RENDERED_GUIDES, "SAML-RECOVERY.md", "RESPONSE-PLAYBOOKS.md", "CLOUD-DISCOVERY.md", "RELEASE-SIGNING.md",
+]);
 const docRewrites = {
+  "deploy/operations/PORTABLE-LINUX.md": [
+    ["../../docs/runbooks/portable-release-signing.md", "../../RELEASE-SIGNING.md"],
+    ["../FIRST_CUSTOMER.md", "../../START-HERE.md"],
+  ],
+  "PACKAGE-INSTALLATION.md": [
+    ["[readiness profile](production-readiness/first-customer-ready.md)", "[readiness profile](CANDIDATE-STATUS.md)"],
+    ["[Codex connector guide](../packages/codex/README.md)", "[Codex connector guide](CODEX-CONNECTOR.md)"],
+    ["[first-customer runbook](../deploy/FIRST_CUSTOMER.md)", "[first-customer runbook](START-HERE.md)"],
+    ["[production-readiness decision](production-readiness/first-customer-ready.md)", "[production-readiness decision](CANDIDATE-STATUS.md)"],
+  ],
+  "CODEX-CONNECTOR.md": [
+    ["[Package Installation](../../docs/package-installation.md)", "[Package Installation](PACKAGE-INSTALLATION.md)"],
+  ],
+  "BEHAVIORAL-LEARNING.md": [
+    ["[Package installation](../package-installation.md)", "[Package installation](PACKAGE-INSTALLATION.md)"],
+    ["[Secret custody](secrets-management.md)", "[Secret custody](SECRETS-RUNBOOK.md)"],
+  ],
 	"START-HERE.md": [
+		["../docs/production-readiness/retention-holds.md#releasing-a-hold-after-offboarding-starts", "RETENTION-HOLDS.md#releasing-a-hold-after-offboarding-starts"],
 		["[deployment kılavuzuna](README.md)", "[deployment kılavuzuna](INSTALLATION.md)"],
 		["[Supabase dağıtım rehberine](../supabase/README.md)", "[bulut hazırlığına](INSTALLATION.md)"],
 		[
@@ -90,6 +147,7 @@ const docRewrites = {
 		],
 	],
 	"INSTALLATION.md": [
+		["[the issuance and revocation contract](../supabase/README.md#configuration-is-validated-not-assumed)", "[the issuance and revocation contract](CONTROL-PLANE.md#configuration-is-validated-not-assumed)"],
 		["[first-customer guide](FIRST_CUSTOMER.md)", "[first-customer guide](START-HERE.md)"],
 		["For a limited Cloudflare Free pilot, see [the Cloudflare deployment path](cloudflare/README.md).", "The Cloudflare Free pilot requires a separate reviewed source release; it is not deployable from this extracted customer kit."],
 		["[FEATURE_INVENTORY.md](../FEATURE_INVENTORY.md)", "[FEATURE_INVENTORY.md](FEATURE_INVENTORY.md)"],
@@ -117,4 +175,8 @@ export function isMcpGatewayReleaseArtifact(path) {
 // independent outer-envelope concern.
 export const CUSTOMER_KIT_REQUIRED_RELEASE_ARTIFACTS = Object.freeze([
 	"aidr-provenance.intoto.json",
+	"aidr-sbom.cdx.json",
+	"aidr-sbom.cdx.json.sha256",
+	"aidr-cursor.vsix",
+	"aidr-vscode.vsix",
 ]);

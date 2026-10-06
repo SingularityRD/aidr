@@ -22,11 +22,11 @@
  *
  * Usage:
  *   AIDR_E2E_VSIX_PATH=<candidate.vsix> AIDR_E2E_VSIX_SHA256=<sha256> \
- *     node scripts/run-ide-host-e2e.mjs --host <cursor|vscode> --junit <file> [--exe <path>] [--json <file>]
+ *     node scripts/run-ide-host-e2e.mjs --host <cursor|vscode> --junit <file> [--exe <path>] [--json <file>] [--workspace <fresh-temp-dir>]
  */
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { createHash, createPublicKey } from "node:crypto";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -34,7 +34,7 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const EXTENSION_ROOT = path.join(ROOT, "packages", "extension");
 const SUITE_ENTRY = path.join(EXTENSION_ROOT, "src", "__tests__", "e2e-suite", "index.js");
-const WORKSPACE_FOLDER = path.join(EXTENSION_ROOT, "test-workspace");
+const DEFAULT_WORKSPACE_FOLDER = path.join(EXTENSION_ROOT, "test-workspace");
 
 /**
  * Mirrors `HOST_METADATA` in the Vitest suite. Passing a different value makes
@@ -94,7 +94,7 @@ function parseArgs(argv) {
 	for (let i = 0; i < argv.length; i += 1) {
 		const arg = argv[i];
 		if (arg === "--help" || arg === "-h") values.help = true;
-		else if (["--host", "--junit", "--json", "--exe"].includes(arg)) {
+		else if (["--host", "--junit", "--json", "--exe", "--workspace"].includes(arg)) {
 			const next = argv[++i];
 			if (!next) fail(`${arg} requires a value`);
 			values[arg.slice(2)] = next;
@@ -105,7 +105,7 @@ function parseArgs(argv) {
 
 const options = parseArgs(process.argv.slice(2));
 if (options.help) {
-	console.log("Usage: AIDR_E2E_VSIX_PATH=<candidate.vsix> AIDR_E2E_VSIX_SHA256=<sha256> node scripts/run-ide-host-e2e.mjs --host <cursor|vscode> --junit <file> [--exe <path>] [--json <file>]");
+	console.log("Usage: AIDR_E2E_VSIX_PATH=<candidate.vsix> AIDR_E2E_VSIX_SHA256=<sha256> node scripts/run-ide-host-e2e.mjs --host <cursor|vscode> --junit <file> [--exe <path>] [--json <file>] [--workspace <fresh-temp-dir>]");
 	process.exit(0);
 }
 
@@ -113,6 +113,24 @@ const host = options.host;
 const config = HOSTS[host];
 if (!config) fail(`--host must be one of: ${Object.keys(HOSTS).join(", ")}`);
 if (!options.junit) fail("--junit is required");
+
+const WORKSPACE_FOLDER = options.workspace ?? DEFAULT_WORKSPACE_FOLDER;
+if (options.workspace) {
+	// The suite removes hook/config directories. An explicit fixture therefore
+	// must be a fresh directory directly under the OS temp root, never a profile,
+	// repository, symlink or Windows junction containing an operator's settings.
+	let safe = false;
+	try {
+		const info = lstatSync(WORKSPACE_FOLDER);
+		const tempRoot = realpathSync(tmpdir());
+		safe = path.isAbsolute(WORKSPACE_FOLDER) && info.isDirectory() && !info.isSymbolicLink()
+			&& realpathSync(path.dirname(WORKSPACE_FOLDER)) === tempRoot
+			&& path.dirname(realpathSync(WORKSPACE_FOLDER)) === tempRoot
+			&& path.basename(WORKSPACE_FOLDER).startsWith("aidr-ide-workspace-")
+			&& readdirSync(WORKSPACE_FOLDER).length === 0;
+	} catch { /* An absent/unreadable fixture is unsafe. */ }
+	if (!safe) fail("--workspace must be an empty controlled temporary directory (aidr-ide-workspace-*), without symlinks or junctions");
+}
 
 const hostCandidatePrefix = `AIDR_E2E_${host.toUpperCase()}_VSIX`;
 const candidateInput = process.env[`${hostCandidatePrefix}_PATH`] ?? process.env.AIDR_E2E_VSIX_PATH;
@@ -130,6 +148,26 @@ if (!existsSync(candidatePath) || !statSync(candidatePath).isFile()) {
 const candidateSha256 = sha256File(candidatePath);
 if (candidateSha256 !== expectedCandidateSha256) {
 	fail(`candidate VSIX SHA-256 mismatch: expected ${expectedCandidateSha256}, got ${candidateSha256}`);
+}
+
+let agentConfigBytes;
+let agentConfigSha256;
+const agentConfigPath = process.env.AIDR_E2E_AGENT_CONFIG_PATH;
+if (agentConfigPath || process.env.AIDR_E2E_AGENT_CONFIG_SHA256) {
+	try {
+		if (!agentConfigPath || !path.isAbsolute(agentConfigPath)) throw new Error("absolute config path required");
+		agentConfigBytes = readFileSync(agentConfigPath);
+		agentConfigSha256 = createHash("sha256").update(agentConfigBytes).digest("hex");
+		if (agentConfigSha256 !== process.env.AIDR_E2E_AGENT_CONFIG_SHA256?.toLowerCase()) throw new Error("SHA-256 mismatch");
+		const config = JSON.parse(agentConfigBytes);
+		const integrity = config.integrity;
+		if (integrity?.enabled !== true || integrity?.verify_on_start !== true || !Array.isArray(integrity.public_keys_pem) || integrity.public_keys_pem.length === 0) {
+			throw new Error("enabled startup integrity verification and independent public keys required");
+		}
+		for (const key of integrity.public_keys_pem) {
+			if (typeof key !== "string" || createPublicKey(key).asymmetricKeyType !== "ed25519") throw new Error("Ed25519 artifact public key required");
+		}
+	} catch (error) { fail(`invalid inventory-bound agent fixture config: ${error.message}`); }
 }
 
 const executable = options.exe ?? process.env[config.envVar] ?? config.fallback();
@@ -233,17 +271,23 @@ function spawnHost(executablePath, args, env) {
 }
 
 function installCandidate(executablePath, userDataDir, extensionsDir, env) {
-	const install = spawnHost(
-		executablePath,
-		[
+	const installArgs = [
 			"--install-extension",
 			candidatePath,
 			`--user-data-dir=${userDataDir}`,
 			`--extensions-dir=${extensionsDir}`,
 			"--force",
-		],
-		env,
-	);
+		];
+	let installEnv = env;
+	if (process.platform === "win32" && /\.exe$/i.test(executablePath)) {
+		// The vendor's .cmd launcher runs cli.js in Electron's Node mode. The
+		// GUI executable alone ignores CLI installation and opens a window.
+		const cliEntry = path.join(path.dirname(executablePath), "resources", "app", "out", "cli.js");
+		if (!existsSync(cliEntry)) throw new Error("installed vendor CLI entry is missing");
+		installArgs.unshift(cliEntry);
+		installEnv = { ...env, ELECTRON_RUN_AS_NODE: "1", VSCODE_DEV: "" };
+	}
+	const install = spawnHost(executablePath, installArgs, installEnv);
 	if (install.stdout) process.stdout.write(install.stdout);
 	if (install.stderr) process.stderr.write(install.stderr);
 	if (install.error || install.status !== 0) {
@@ -279,6 +323,7 @@ function escapeXml(value) {
 /** JUnit for the cases the host actually reported, plus one failure per missing case. */
 function writeJunit(file, outcomes, runError) {
 	let failures = 0;
+	const errors = runError ? 1 : 0;
 	const cases = EXPECTED_CASES.map((id) => {
 		const outcome = outcomes.get(id);
 		if (!outcome) {
@@ -294,9 +339,10 @@ function writeJunit(file, outcomes, runError) {
 	});
 	const body = [
 		'<?xml version="1.0" encoding="UTF-8"?>',
-		`<testsuites name="aidr-ide-host-e2e" tests="${EXPECTED_CASES.length}" failures="${failures}">`,
-		`  <testsuite name="${escapeXml(host)}" tests="${EXPECTED_CASES.length}" failures="${failures}">`,
+		`<testsuites name="aidr-ide-host-e2e" tests="${EXPECTED_CASES.length}" failures="${failures}" errors="${errors}" skipped="0">`,
+		`  <testsuite name="${escapeXml(host)}" tests="${EXPECTED_CASES.length}" failures="${failures}" errors="${errors}" skipped="0">`,
 		...cases,
+		...(runError ? [`    <system-err>${escapeXml(runError)}</system-err>`] : []),
 		"  </testsuite>",
 		"</testsuites>",
 		"",
@@ -314,12 +360,20 @@ let runError;
 let fatalError;
 
 try {
+	if (agentConfigBytes) {
+		mkdirSync(path.join(homeDir, ".singularity-aidr"), { recursive: true });
+		writeFileSync(path.join(homeDir, ".singularity-aidr", "config.json"), agentConfigBytes, { mode: 0o600 });
+	}
 	const sandboxEnv = {
 		...process.env,
 		HOME: homeDir,
 		USERPROFILE: homeDir,
 		XDG_CONFIG_HOME: path.join(homeDir, ".config"),
 	};
+	// Parent IDE/terminal state must not redirect CLI requests to its existing
+	// instance or make the actual extension-test launch run in Node/dev mode.
+	const inheritedIdeEnvKeys = new Set(["VSCODE_IPC_HOOK_CLI", "VSCODE_PID", "ELECTRON_RUN_AS_NODE", "VSCODE_DEV", "VSCODE_CWD"]);
+	for (const key of Object.keys(sandboxEnv)) if (inheritedIdeEnvKeys.has(key.toUpperCase())) delete sandboxEnv[key];
 	const developmentPath = installCandidate(executable, userDataDir, extensionsDir, sandboxEnv);
 	const artifactManifestSha256 = verifyInstalledCandidate(developmentPath);
 	const hookRunnerPath = path.join(developmentPath, "dist", "aidr-hook.cjs");
@@ -360,7 +414,7 @@ try {
 	const run = spawnHost(executable, args, env);
 	if (run.stdout) process.stdout.write(run.stdout);
 	if (run.stderr) process.stderr.write(run.stderr);
-	if (run.error) runError = run.error.message;
+	if (run.error || run.status !== 0) runError = run.error?.message ?? `host exited ${run.status}${run.signal ? ` (${run.signal})` : ""}`;
 	console.log(`[ide-e2e] ${config.label}: host exited ${run.status}`);
 
 	const outcomes = new Map();
@@ -385,12 +439,17 @@ try {
 			`${JSON.stringify({
 				host,
 				executable,
+				workspace: WORKSPACE_FOLDER,
 				candidateVsix: candidatePath,
 				candidateSha256,
 				artifactManifestSha256,
+				agentConfigSha256: agentConfigSha256 ?? null,
 				expected: EXPECTED_CASES.length,
 				passed,
 				failures,
+				errors: runError ? 1 : 0,
+				hostExitCode: run.status,
+				hostSignal: run.signal,
 				runError,
 				cases: [...outcomes.values()],
 			}, null, 2)}\n`,
@@ -399,9 +458,9 @@ try {
 	}
 
 	// A non-zero exit is the signal the gate reads. It is non-zero whenever any
-	// case is missing or failing, regardless of what the host itself returned:
-	// a host that exits 0 without running the cases has proven nothing.
-	process.exitCode = failures === 0 ? 0 : 1;
+	// case is missing or failing, or the native host failed. A host that exits 0
+	// without running the cases has proven nothing either.
+	process.exitCode = failures === 0 && !runError ? 0 : 1;
 } catch (error) {
 	fatalError = error instanceof Error ? error.message : String(error);
 } finally {

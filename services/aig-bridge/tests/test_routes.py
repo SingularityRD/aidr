@@ -461,3 +461,24 @@ async def test_liveness_is_available_without_credentials(bridge):
 
     assert response.status_code == 200
     assert response.json() == {"status": "alive"}
+
+
+@pytest.mark.asyncio
+async def test_chunked_oversized_json_is_rejected_as_payload_too_large(bridge):
+    from app.main import BodySizeLimitMiddleware
+
+    app, aig, _registry = bridge
+
+    async def chunks():
+        yield b'{"targets": ["https://example.com/"], "options": {"padding": "'
+        yield b'x' * 100 + b'"}}'
+
+    response = await request(
+        BodySizeLimitMiddleware(app, max_bytes=100),
+        "POST",
+        "/api/v1/scan/infra",
+        headers={"Content-Type": "application/json"},
+        content=chunks(),
+    )
+    assert response.status_code == 413
+    assert aig.submissions == []

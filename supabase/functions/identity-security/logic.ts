@@ -99,6 +99,15 @@ export function jwtIssuedAtMs(token: string): number | null {
 		: null;
 }
 
+export function jwtExpiresAtMs(token: string): number | null {
+	const expiresAt = jwtPayload(token)?.exp;
+	if (typeof expiresAt !== "number" || !Number.isSafeInteger(expiresAt) || expiresAt <= 0) return null;
+	const milliseconds = expiresAt * 1000;
+	return Number.isSafeInteger(milliseconds) && Number.isFinite(new Date(milliseconds).getTime())
+		? milliseconds
+		: null;
+}
+
 export function jwtHasAuthenticationMethod(token: string, requiredMethod: string): boolean {
 	const entries = jwtPayload(token)?.amr;
 	if (!Array.isArray(entries)) return false;

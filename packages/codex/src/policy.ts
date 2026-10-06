@@ -1,3 +1,4 @@
+import { installedPrivacyRequired, PRIVACY_ROUTE_UNAVAILABLE } from "./privacy.js";
 import {
 	type CentralPolicyDecision,
 	CentralPolicyError,
@@ -73,10 +74,13 @@ export class CentralPolicyClient implements PolicyHandoff {
 		this.fetchImpl = options.fetchImpl ?? fetch;
 	}
 	async decide(event: NormalizedRuntimeEvent): Promise<CentralPolicyDecision> {
+		if (await installedPrivacyRequired()) return failClosed(PRIVACY_ROUTE_UNAVAILABLE);
 		if (!this.endpoint) return failClosed("central_policy_endpoint_missing");
 		const controller = new AbortController();
 		const timer = setTimeout(() => controller.abort(), this.timeoutMs);
 		try {
+			const body = JSON.stringify({ schema_version: RUNTIME_SCHEMA_VERSION, event });
+			if (await installedPrivacyRequired()) return failClosed(PRIVACY_ROUTE_UNAVAILABLE);
 			const response = await this.fetchImpl(`${this.endpoint}/v1/aidr/policy/decide`, {
 				method: "POST",
 				signal: controller.signal,
@@ -85,10 +89,12 @@ export class CentralPolicyClient implements PolicyHandoff {
 					"Content-Type": "application/json",
 					...(this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : {}),
 				},
-				body: JSON.stringify({ schema_version: RUNTIME_SCHEMA_VERSION, event }),
+				body,
 			});
 			if (!response.ok) return failClosed("central_policy_http_error");
-			return parseDecision(await response.json());
+			const decision = await response.json();
+			if (await installedPrivacyRequired()) return failClosed(PRIVACY_ROUTE_UNAVAILABLE);
+			return parseDecision(decision);
 		} catch (error) {
 			return failClosed(
 				error instanceof CentralPolicyError

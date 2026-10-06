@@ -21,6 +21,11 @@ are loaded only through named environment variables and are never written to the
 result. The runner consumes response bodies with a configured byte limit and
 counts unexpected status, transport failure and client-side load shedding.
 
+For distinct telemetry events, use `"event_id": { "$request_id": true }` in
+`body_json`; each request gets a new UUID. `$sequence` remains numeric and
+`$timestamp` produces the current UTC timestamp. The runner observes the full
+declared duration even when the final scheduled response finishes early.
+
 The output conforms to [load-result.schema.json](load-result.schema.json). A
 `passed: true` result means only that the declared thresholds passed for the
 recorded target, workload and time window. The result always keeps

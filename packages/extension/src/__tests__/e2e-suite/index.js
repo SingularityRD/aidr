@@ -21,8 +21,6 @@ const REQUIRED_CURSOR_EVENTS = [
 	"beforeReadFile",
 ];
 
-const EXPECTED_PRE_TOOL_USE_MATCHERS = ["Write", "Delete", "Edit", "WebFetch"];
-
 const host = readRequiredEnv("AIDR_E2E_HOST");
 const extensionId = readRequiredEnv("AIDR_E2E_EXTENSION_ID");
 const scopeSettingKey = readRequiredEnv("AIDR_E2E_SCOPE_SETTING_KEY");
@@ -309,15 +307,11 @@ function verifyCursorManagedHooks(config) {
 				entry.command.includes(managedMarker),
 		);
 		assert.ok(managedEntry, `Expected managed Cursor hook for event "${eventName}"`);
+		assert.equal(managedEntry.failClosed, true, `Managed Cursor hook "${eventName}" must fail closed`);
+		assert.equal(managedEntry.timeout, 30, `Managed Cursor hook "${eventName}" must have a bounded timeout`);
 
 		if (eventName === "preToolUse" && managedEntry) {
-			const matcher = typeof managedEntry.matcher === "string" ? managedEntry.matcher : "";
-			for (const tool of EXPECTED_PRE_TOOL_USE_MATCHERS) {
-				assert.ok(
-					matcher.includes(tool),
-					`preToolUse matcher "${matcher}" missing expected tool "${tool}"`,
-				);
-			}
+			assert.equal(managedEntry.matcher, undefined, "Managed preToolUse must cover every tool without a matcher filter");
 		}
 	}
 }

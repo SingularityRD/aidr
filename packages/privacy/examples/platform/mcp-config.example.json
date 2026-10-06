@@ -1,0 +1,31 @@
+{
+  "tenantId": "REPLACE_INSTITUTION_TENANT",
+  "gatewayTokenRefs": {
+    "AIDR_MCP_CLIENT_TOKEN": "aidr/institution/mcp/client-token",
+    "AIDR_MCP_UPSTREAM_TOKEN": "aidr/institution/mcp/upstream-token"
+  },
+  "gateway": {
+    "stateDir": "/var/lib/aidr-mcp",
+    "port": 7789,
+    "maxBodyBytes": 262144,
+    "routingRequired": true,
+    "clients": [{
+      "id": "REPLACE_CLIENT_ID",
+      "tenantId": "REPLACE_INSTITUTION_TENANT",
+      "tokenSha256": "REPLACE_SHA256_OF_ACTUAL_CLIENT_TOKEN",
+      "probeTokenEnv": "AIDR_MCP_CLIENT_TOKEN",
+      "allowedTools": {"REPLACE_SERVER_ID": ["REPLACE_APPROVED_TOOL_NAME"]}
+    }],
+    "servers": [{
+      "id": "REPLACE_SERVER_ID",
+      "tenantId": "REPLACE_INSTITUTION_TENANT",
+      "url": "https://REPLACE_INSTITUTION_MCP_ORIGIN/mcp",
+      "transport": "json",
+      "sessionMode": "stateless",
+      "upstreamAuthEnv": "AIDR_MCP_UPSTREAM_TOKEN",
+      "pinnedAddresses": ["REPLACE_APPROVED_PUBLIC_UPSTREAM_ADDRESS"],
+      "signedManifest": {},
+      "trustedSigners": {}
+    }]
+  }
+}

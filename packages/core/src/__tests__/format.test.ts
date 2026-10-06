@@ -118,6 +118,7 @@ describe("core format helpers", () => {
 		// rather than reporting a dead end.
 		for (const reason of [
 			"auth_required",
+			"enrollment_repair_required",
 			"missing_or_invalid_signed_entitlement",
 			"activation_required",
 		]) {
@@ -156,6 +157,23 @@ describe("core format helpers", () => {
 		});
 		expect(unknown).toContain("Disabled");
 		expect(unknown).not.toContain("ACTIVE");
+	});
+
+	it("shows operator repair guidance and suppresses a stale device bootstrap", () => {
+		const message = formatSessionStartMessage("1.0.0", {
+			enabled: false,
+			disabled_reason: "enrollment_repair_required",
+			bootstrap: { verification_url: "https://aidr.example/stale", user_code: "CONSUMED-CODE" },
+			scanResults: [],
+			versionCheck: null,
+		});
+		expect(message).toContain("Local protection ACTIVE");
+		expect(message).toContain("Enrollment could not be confirmed locally");
+		expect(message).toContain("revoke any affected key in the control plane");
+		expect(message).toContain("approve it in the browser");
+		expect(message).toContain("Preserve the installation ID and tenant");
+		expect(message).not.toContain("https://aidr.example/stale");
+		expect(message).not.toContain("CONSUMED-CODE");
 	});
 
 	it("formats threat banners with high/critical findings, overflow, and footer notices", () => {
@@ -260,6 +278,7 @@ describe("core format helpers", () => {
 			posture: {
 				mcpServers: 0,
 				riskyMcpServers: 0,
+				unverifiedMcpServers: 0,
 				invalidSources: 1,
 				mcpCoverage: "invalid",
 				mcpServersNotEnumerated: 0,
@@ -278,6 +297,7 @@ describe("core format helpers", () => {
 			posture: {
 				mcpServers: 2,
 				riskyMcpServers: 0,
+				unverifiedMcpServers: 0,
 				invalidSources: 0,
 				mcpCoverage: "read",
 				mcpServersNotEnumerated: 0,

@@ -16,6 +16,17 @@ const NOW = "2026-09-16T12:00:00.000Z";
 const JWT = `header.${Buffer.from(JSON.stringify({ iat: Date.parse(NOW) / 1000 - 60, session_id: SESSION })).toString("base64url")}.signature`;
 const OTP_JWT = `header.${Buffer.from(JSON.stringify({ iat: Date.parse(NOW) / 1000 - 60, session_id: SESSION, amr: [{ method: "otp", timestamp: Date.parse(NOW) / 1000 - 60 }] })).toString("base64url")}.signature`;
 const SAML_JWT = `header.${Buffer.from(JSON.stringify({ iat: Date.parse(NOW) / 1000 - 60, session_id: SESSION, amr: [{ method: "totp" }, { method: "sso/saml", provider: OTHER }] })).toString("base64url")}.signature`;
+const SAML_CHANGE = {
+	request_id: "55555555-5555-4555-8555-555555555555", tenant_id: TEAM, requested_by: USER,
+	old_provider_id: null, new_provider_id: OTHER, reason: "Enable the verified SAML provider", change_ref: "SEC-42",
+	created_at: NOW, expires_at: "2026-09-16T12:15:00.000Z", approved_by: null, approved_at: null,
+};
+function samlPolicyToken(overrides: Row = {}) {
+	return `header.${Buffer.from(JSON.stringify({
+		iat: Date.parse(NOW) / 1000 - 60, exp: Date.parse(NOW) / 1000 + 3600, session_id: SESSION,
+		aal: "aal2", amr: [{ method: "sso/saml", provider: OTHER }], ...overrides,
+	})).toString("base64url")}.signature`;
+}
 type Handler = (request: Request) => Promise<Response>;
 type Row = Record<string, unknown>;
 type Query = { table: string; columns?: string; filters: [string, string, unknown][]; order?: { field: string; ascending: boolean } };
@@ -31,6 +42,9 @@ function harness(options: {
 	signOutError?: boolean;
 	signOutFailures?: number;
 	failOnceAt?: "generate-link" | "grant" | "factor-delete" | "audit" | "break-glass-complete" | "barrier" | "auth-signout" | "password-update" | "password-complete";
+	samlError?: string;
+	samlThrows?: boolean;
+	samlData?: unknown;
 } = {}) {
 	const tables: Record<string, Row[]> = {
 		identity_user_session_state: [],
@@ -67,6 +81,11 @@ function harness(options: {
 	});
 	const rpc = vi.fn(async (name: string, parameters: Record<string, unknown>) => {
 		if (options.rpcError) return { data: null, error: { message: "private database error" } };
+		if (["request_tenant_saml_policy_change", "approve_tenant_saml_policy_change", "get_tenant_saml_policy_change"].includes(name)) {
+			if (options.samlThrows) throw new Error("private database credential");
+			return { data: options.samlData === undefined ? SAML_CHANGE : options.samlData,
+				error: options.samlError ? { message: options.samlError, details: "private session proof" } : null };
+		}
 		if (name === "increment_rate_limit") {
 			const existing = tables.rate_limits.find((row) =>
 				row.key === parameters.p_key && row.window_start === parameters.p_window_start
@@ -217,6 +236,7 @@ function harness(options: {
 	const db = {
 		auth: {
 			getUser,
+			resetPasswordForEmail: vi.fn(async () => ({ error: null })),
 			mfa: { getAuthenticatorAssuranceLevel: getAssurance },
 			admin: {
 				signOut,
@@ -323,10 +343,10 @@ function harness(options: {
 	};
 }
 
-function request(token: string | null = JWT, body: Row = {}) {
+function request(token: string | null = JWT, body: Row = {}, extraHeaders: Record<string, string> = {}) {
 	return new Request("https://test.supabase.co/functions/v1/identity-security", {
 		method: "POST",
-		headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+		headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}), ...extraHeaders },
 		body: JSON.stringify({ action: "bootstrap", ...body }),
 	});
 }
@@ -334,7 +354,237 @@ function request(token: string | null = JWT, body: Row = {}) {
 beforeEach(() => { vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(new Date(NOW)); });
 afterEach(() => vi.useRealTimers());
 
+describe("SAML policy change administration", () => {
+	const enable = {
+		action: "request_saml_policy_change", tenant_id: TEAM, new_provider_id: OTHER,
+		reason: " Enable the verified SAML provider ", change_ref: " SEC-42 ",
+	};
+	const approve = { action: "approve_saml_policy_change", tenant_id: TEAM, request_id: SAML_CHANGE.request_id };
+	const get = { action: "get_saml_policy_change", tenant_id: TEAM, request_id: SAML_CHANGE.request_id };
+	const samlCalls = (runtime: ReturnType<typeof harness>) => runtime.rpc.mock.calls.filter(([name]) => name.endsWith("_tenant_saml_policy_change"));
+
+	it("derives actor and session proof only from verified Auth and signed JWT claims", async () => {
+		const runtime = harness({ current: "aal2", samlData: { ...SAML_CHANGE, validated_session: "secret", audit_id: 99, access_token: "secret" } });
+		const token = samlPolicyToken({ user_id: OTHER });
+		const response = await runtime.handler(request(token, enable));
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({ ok: true, request: SAML_CHANGE });
+		expect(response.headers.get("Cache-Control")).toBe("no-store");
+		expect(runtime.getUser).toHaveBeenCalledWith(token);
+		expect(samlCalls(runtime)).toEqual([["request_tenant_saml_policy_change", {
+			p_tenant_id: TEAM, p_actor_user_id: USER, p_new_provider_id: OTHER,
+			p_reason: enable.reason.trim(), p_change_ref: enable.change_ref.trim(), p_validated_session: {
+				session_id: SESSION, issued_at: "2026-09-16T11:59:00.000Z", expires_at: "2026-09-16T13:00:00.000Z",
+				aal: "aal2", saml_provider_id: OTHER,
+			},
+		}]]);
+	});
+
+	it("approves with the caller's verified proof and permits owner reads under the tenant barrier", async () => {
+		const runtime = harness({ current: "aal2" });
+		expect((await runtime.handler(request(samlPolicyToken(), approve))).status).toBe(200);
+		expect(samlCalls(runtime)[0]).toMatchObject(["approve_tenant_saml_policy_change", {
+			p_actor_user_id: USER, p_request_id: SAML_CHANGE.request_id,
+			p_validated_session: { session_id: SESSION, saml_provider_id: OTHER },
+		}]);
+		const reader = harness({ current: "aal1" });
+		reader.tables.tenant_identity_policies[0].require_mfa = false;
+		const result = await reader.handler(request(samlPolicyToken({ aal: "aal1", amr: [] }), get));
+		expect(result.status).toBe(200);
+		expect(samlCalls(reader)).toEqual([["get_tenant_saml_policy_change", { p_tenant_id: TEAM, p_actor_user_id: USER, p_request_id: SAML_CHANGE.request_id }]]);
+	});
+
+	it("allows disabling only through the currently enforced provider session", async () => {
+		const runtime = harness({ current: "aal2", samlData: { ...SAML_CHANGE, old_provider_id: OTHER, new_provider_id: null } });
+		runtime.tables.tenant_identity_policies[0].required_saml_provider_id = OTHER;
+		const response = await runtime.handler(request(samlPolicyToken(), { ...enable, new_provider_id: null }));
+		expect(response.status).toBe(200);
+		expect(samlCalls(runtime)[0]?.[1]).toMatchObject({ p_new_provider_id: null, p_validated_session: { saml_provider_id: OTHER } });
+	});
+
+	it.each([
+		{ ...enable, actor_user_id: OTHER },
+		{ ...enable, validated_session: { session_id: OTHER } },
+		{ ...approve, session_id: OTHER },
+		{ ...get, request_id: "not-a-uuid" },
+		{ ...enable, tenant_id: "bad" },
+		{ ...enable, new_provider_id: "bad" },
+		{ ...enable, new_provider_id: undefined },
+		{ ...enable, reason: "too short" },
+		{ ...enable, reason: "a".repeat(501) },
+		{ ...enable, reason: "contains\ncontrol characters" },
+		{ ...enable, change_ref: " " },
+		{ ...enable, change_ref: "a".repeat(201) },
+		{ ...enable, change_ref: "SEC\u0000-42" },
+	])("rejects caller proof/actor fields and malformed exact bodies %#", async (body) => {
+		const runtime = harness({ current: "aal2" });
+		const response = await runtime.handler(request(samlPolicyToken(), body));
+		expect(response.status).toBe(400);
+		expect(await response.json()).toEqual({ error: "saml_policy_invalid_request" });
+		expect(samlCalls(runtime)).toEqual([]);
+	});
+
+	it.each([OTHER, "invalid"])("rejects a conflicting or invalid tenant header (%s)", async (header) => {
+		const runtime = harness({ current: "aal2" });
+		const response = await runtime.handler(request(samlPolicyToken(), enable, { "X-AIDR-Tenant-ID": header }));
+		expect(response.status).toBe(400);
+		expect(samlCalls(runtime)).toEqual([]);
+	});
+
+	it.each([enable, approve, get])("requires an active owner for $action", async (body) => {
+		for (const role of ["admin", "member", "viewer"]) {
+			const runtime = harness({ current: "aal2" });
+			runtime.tables.tenant_members[0].role = role;
+			const response = await runtime.handler(request(samlPolicyToken(), body));
+			expect(response.status).toBe(403);
+			expect(await response.json()).toEqual({ error: "saml_policy_owner_required" });
+			expect(samlCalls(runtime)).toEqual([]);
+		}
+	});
+
+	it("rejects expired owners and inactive tenants before request RPCs", async () => {
+		for (const state of ["expired", "suspended", "closing", "closed"]) {
+			const runtime = harness({ current: "aal2" });
+			if (state === "expired") runtime.tables.tenant_members[0].expires_at = NOW;
+			else runtime.tables.tenants[0].status = state;
+			expect((await runtime.handler(request(samlPolicyToken(), enable))).status).toBe(403);
+			expect(samlCalls(runtime)).toEqual([]);
+		}
+	});
+
+	it.each([enable, approve])("requires AAL2 for $action even without a tenant MFA policy", async (body) => {
+		const runtime = harness({ current: "aal1" });
+		runtime.tables.tenant_identity_policies[0].require_mfa = false;
+		const response = await runtime.handler(request(samlPolicyToken({ aal: "aal1" }), body));
+		expect(response.status).toBe(403);
+		expect(await response.json()).toEqual({ error: "saml_policy_aal2_required" });
+		expect(samlCalls(runtime)).toEqual([]);
+	});
+
+	it.each([
+		{ exp: undefined }, { exp: "1800000000" }, { exp: Date.parse(NOW) / 1000 }, { exp: Number.MAX_SAFE_INTEGER },
+		{ iat: Date.parse(NOW) / 1000 + 7200 }, { iat: 1.5 }, { session_id: "invalid" },
+	])("rejects malformed, expired or inconsistent JWT proof %#", async (claims) => {
+		const runtime = harness({ current: "aal2" });
+		const response = await runtime.handler(request(samlPolicyToken(claims), enable));
+		expect(response.status).toBe(401);
+		expect(samlCalls(runtime)).toEqual([]);
+	});
+
+	it.each([[], [{ method: "sso/saml", provider: TEAM }], [{ method: "sso/saml", provider: OTHER }, { method: "sso/saml", provider: TEAM }]])("requires a unique target SAML provider proof %#", async (amr) => {
+		const runtime = harness({ current: "aal2" });
+		const response = await runtime.handler(request(samlPolicyToken({ amr }), enable));
+		expect(response.status).toBe(403);
+		expect(await response.json()).toEqual({ error: "saml_policy_provider_session_required" });
+		expect(samlCalls(runtime)).toEqual([]);
+	});
+
+	it.each([enable, approve, get])("preserves revocation, current-provider and tenant MFA barriers for $action", async (body) => {
+		const wrongProvider = harness({ current: "aal2" });
+		wrongProvider.tables.tenant_identity_policies[0].required_saml_provider_id = TEAM;
+		expect((await wrongProvider.handler(request(samlPolicyToken(), body))).status).toBe(403);
+		expect(samlCalls(wrongProvider)).toEqual([]);
+		const revoked = harness({ current: "aal2" });
+		revoked.tables.identity_user_session_state.push({ user_id: USER, revoked_before: NOW });
+		expect((await revoked.handler(request(samlPolicyToken(), body))).status).toBe(401);
+		expect(samlCalls(revoked)).toEqual([]);
+		const reader = harness({ current: "aal1" });
+		expect((await reader.handler(request(samlPolicyToken({ aal: "aal1" }), body))).status).toBe(403);
+		expect(samlCalls(reader)).toEqual([]);
+	});
+
+	it.each([
+		["invalid_request", 400], ["owner_required", 403], ["aal2_required", 403], ["session_invalid", 401],
+		["session_revoked", 401], ["provider_session_required", 403], ["provider_unavailable", 409],
+		["owners_not_verified", 409], ["scim_identity_conflict", 409], ["unsupported_transition", 409],
+		["policy_conflict", 409], ["request_expired", 409], ["request_consumed", 409],
+		["distinct_owner_required", 403], ["request_not_found", 404], ["request_pending_limit", 429],
+	] as const)("maps only the safe SQL reason %s", async (reason, status) => {
+		const runtime = harness({ current: "aal2", samlError: `saml_policy_${reason}` });
+		const response = await runtime.handler(request(samlPolicyToken(), approve));
+		expect(response.status).toBe(status);
+		expect(await response.json()).toEqual({ error: `saml_policy_${reason}` });
+	});
+
+	it("returns a safe unavailable response for unknown SQL errors or thrown RPC failures", async () => {
+		for (const options of [{ samlError: "database credential is private" }, { samlThrows: true }]) {
+			const runtime = harness({ current: "aal2", ...options });
+			const response = await runtime.handler(request(samlPolicyToken(), approve));
+			expect(response.status).toBe(503);
+			expect(await response.json()).toEqual({ error: "saml_policy_unavailable" });
+		}
+	});
+
+	it("maps a missing request to 404 and refuses malformed or cross-tenant metadata", async () => {
+		for (const data of [null, true, {}, { ...SAML_CHANGE, tenant_id: OTHER }]) {
+			const runtime = harness({ current: "aal2", samlData: data });
+			const response = await runtime.handler(request(samlPolicyToken(), get));
+			expect(response.status).toBe(data === null ? 404 : 503);
+		}
+	});
+
+	it("reports an unreadable identity barrier and null mutation outcomes as unavailable", async () => {
+		const runtime = harness({ current: "aal2", failTable: "identity_user_session_state" });
+		expect((await runtime.handler(request(samlPolicyToken(), enable))).status).toBe(503);
+		expect(samlCalls(runtime)).toEqual([]);
+		const empty = harness({ current: "aal2", samlData: null });
+		const response = await empty.handler(request(samlPolicyToken(), enable));
+		expect(response.status).toBe(503);
+		expect(await response.json()).toEqual({ error: "saml_policy_unavailable" });
+	});
+
+	it("exposes the current enforced provider IDs without dropping existing status fields", async () => {
+		const runtime = harness({ current: "aal2" });
+		runtime.tables.tenant_identity_policies[0].required_saml_provider_id = OTHER;
+		const response = await runtime.handler(request(samlPolicyToken(), { action: "status", tenant_id: TEAM }));
+		expect(response.status).toBe(200);
+		expect(await response.json()).toMatchObject({ ok: true, tenant_id: TEAM, role: "owner", require_mfa: true,
+			required_saml_provider_id: OTHER, required_oidc_provider_id: null, break_glass_enabled: true, current_assurance: "aal2", access_allowed: true });
+	});
+
+	it("rejects Auth-unverified tokens before any SAML request RPC", async () => {
+		const runtime = harness({ current: "aal2", invalidToken: true });
+		const response = await runtime.handler(request(samlPolicyToken(), enable));
+		expect(response.status).toBe(401);
+		expect(runtime.rpc).not.toHaveBeenCalled();
+	});
+});
+
 describe("identity-security bootstrap handler", () => {
+	it.each([
+		["request_password_reset", "identity-reset:aggregate", 1000, 202],
+		["break_glass_recover", "identity-break-glass:aggregate", 300, 401],
+	] as const)("bounds anonymous %s work across distinct emails", async (action, key, maximum, allowedStatus) => {
+		const runtime = harness();
+		runtime.tables.rate_limits.push({ key, window_start: Math.floor(Date.parse(NOW) / 600_000), count: maximum - 1 });
+		const body = { action, recovery_challenge: "b".repeat(64), recovery_code: "invalid" };
+		const first = await runtime.handler(request(null, { ...body, email: "first@example.test" }));
+		expect(first.status).toBe(allowedStatus);
+		const auditRows = runtime.tables.admin_audit_logs.length;
+		const callCount = runtime.rpc.mock.calls.length;
+		for (const email of ["second@example.test", "third@example.test"]) {
+			const denied = await runtime.handler(request(null, { ...body, email }));
+			expect(denied.status).toBe(429);
+			expect(await denied.json()).toEqual({ error: "rate_limited" });
+		}
+		// Only the fixed aggregate is touched after saturation; no new email buckets or audits.
+		expect(runtime.tables.rate_limits).toHaveLength(2);
+		expect(runtime.tables.admin_audit_logs).toHaveLength(auditRows);
+		expect(runtime.rpc.mock.calls.slice(callCount)).toEqual([
+			["increment_rate_limit", { p_key: key, p_window_start: Math.floor(Date.parse(NOW) / 600_000), p_delta: 1 }],
+			["increment_rate_limit", { p_key: key, p_window_start: Math.floor(Date.parse(NOW) / 600_000), p_delta: 1 }],
+		]);
+	});
+
+	it.each(["request_password_reset", "break_glass_recover"])("fails closed before anonymous %s subject work when aggregate storage fails", async (action) => {
+		const runtime = harness({ rpcError: true });
+		const response = await runtime.handler(request(null, { action, email: "first@example.test", recovery_challenge: "b".repeat(64) }));
+		expect(response.status).toBe(503);
+		expect(await response.json()).toEqual({ error: "recovery_unavailable" });
+		expect(runtime.rpc).toHaveBeenCalledTimes(1);
+		expect(runtime.tables.admin_audit_logs).toEqual([]);
+	});
+
 	it("rejects an understated chunked body before authentication", async () => {
 		const runtime = harness();
 		const body = new ReadableStream<Uint8Array>({

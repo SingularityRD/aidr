@@ -12,6 +12,9 @@ const PREVIOUS_OWNER_ID = "22222222-2222-4222-8222-222222222222";
 const NEW_OWNER_ID = "33333333-3333-4333-8333-333333333333";
 const PREVIOUS_OWNER_EMAIL = "owner@example.test";
 const NEW_OWNER_EMAIL = "successor@example.test";
+const vendorEnv = Object.fromEntries((await readFile(path.resolve(import.meta.dirname, "../deploy/upstream/docker/.env.example"), "utf8"))
+	.split(/\r?\n/).filter((line) => /^[A-Z][A-Z0-9_]*=/.test(line))
+	.map((line) => [line.slice(0, line.indexOf("=")), line.slice(line.indexOf("=") + 1)]));
 
 const temporaryDirectories = [];
 const servers = [];
@@ -99,20 +102,21 @@ function handlers(state) {
 	};
 }
 
-async function fixture({ receipt = true, members = {}, transferReceipt = null, mode = "self-hosted" } = {}) {
+async function fixture({ receipt = true, members = {}, transferReceipt = null, mode = "self-hosted", host = "127.0.0.1" } = {}) {
 	const state = { accounts: [], members: { ...members }, writes: [], calls: [] };
 	const server = createServer(await handlers(state));
 	servers.push(server);
-	await new Promise((done) => server.listen(0, "127.0.0.1", done));
+	await new Promise((done) => server.listen(0, host, done));
 	const address = server.address();
+	const origin = `http://${host === "::1" ? "[::1]" : host}:${address.port}`;
 	const directory = await mkdtemp(path.join(os.tmpdir(), "aidr-bootstrap-"));
 	temporaryDirectories.push(directory);
 	await writeFile(
 		path.join(directory, "deployment.json"),
 		JSON.stringify({
 			mode,
-			supabase_url: `http://127.0.0.1:${address.port}`,
-			dashboard_url: `http://127.0.0.1:${address.port}`,
+			supabase_url: origin,
+			dashboard_url: origin,
 			development: true,
 		}),
 	);
@@ -129,7 +133,7 @@ async function fixture({ receipt = true, members = {}, transferReceipt = null, m
 					email: PREVIOUS_OWNER_EMAIL,
 					name: "Customer",
 					seats: 5,
-					supabase_url: `http://127.0.0.1:${address.port}`,
+					supabase_url: origin,
 					state: "complete",
 					tenant_id: TENANT_ID,
 					user_id: PREVIOUS_OWNER_ID,
@@ -177,6 +181,51 @@ function transfer(directory, { confirmation = NEW_OWNER_EMAIL, requestedBy = PRE
 		confirmation === null ? "" : `${confirmation}\n`,
 	);
 }
+
+for (const [name, value, kind] of [
+	...["ANON_KEY", "SERVICE_ROLE_KEY", "JWT_SECRET", "POSTGRES_PASSWORD"].map((name) => [name, vendorEnv[name], "public vendor"]),
+	["JWT_SECRET", "REPLACE_WITH_THE_DEPLOYMENT_PRIVATE_JWT_SECRET", "non-API placeholder"],
+]) {
+	test(`bootstrap rejects the ${kind} ${name} before any request or receipt mutation`, async () => {
+		const f = await fixture({ members: { [PREVIOUS_OWNER_ID]: "owner" } });
+		const originalReceipt = await readFile(path.join(f.directory, "bootstrap-receipt.json"), "utf8");
+		const configured = { SERVICE_ROLE_KEY: "test-service-role", ANON_KEY: "test-anon-key", [name]: value };
+		await writeFile(path.join(f.directory, ".env"), Object.entries(configured).map(([key, value]) => `${key}=${value}`).join("\n") + "\n");
+		const result = await transfer(f.directory);
+		assert.notEqual(result.status, 0);
+		assert.match(result.stderr, /shared vendor credentials/);
+		assert.deepEqual(f.state.calls, []);
+		assert.equal(await readFile(path.join(f.directory, "bootstrap-receipt.json"), "utf8"), originalReceipt);
+		assert.equal(existsSync(path.join(f.directory, "owner-transfer-receipt.json")), false);
+		assert.equal((result.stdout + result.stderr).includes(value), false, "credential values must not be printed");
+	});
+}
+
+test("ownership transfer works on an explicitly configured IPv6 loopback deployment", async () => {
+	const accepted = await fixture({ host: "::1", members: { [PREVIOUS_OWNER_ID]: "owner" } });
+	const result = await transfer(accepted.directory);
+	assert.equal(result.status, 0, result.stderr);
+	assert.equal(accepted.state.members[NEW_OWNER_ID], "owner");
+});
+
+test("ownership transfer rejects an account whose email is not confirmed", async () => {
+	const f = await fixture({ members: { [PREVIOUS_OWNER_ID]: "owner" } });
+	f.state.accounts.find((account) => account.id === NEW_OWNER_ID).email_confirmed_at = null;
+	const result = await transfer(f.directory);
+	assert.notEqual(result.status, 0);
+	assert.match(result.stderr, /must already have a confirmed account/);
+	assert.deepEqual(f.state.writes, []);
+	assert.equal(existsSync(path.join(f.directory, "owner-transfer-receipt.json")), false);
+});
+
+test("development mode never admits a non-HTTP credential endpoint", async () => {
+	const f = await fixture({ members: { [PREVIOUS_OWNER_ID]: "owner" } });
+	await writeFile(path.join(f.directory, "deployment.json"), JSON.stringify({ mode: "self-hosted", development: true, supabase_url: "ftp://localhost" }));
+	const result = await transfer(f.directory);
+	assert.notEqual(result.status, 0);
+	assert.match(result.stderr, /HTTPS required/);
+	assert.deepEqual(f.state.calls, []);
+});
 
 test("transfer requires the current owner and records both principals", async () => {
 	// 1. The recorded bootstrap principal is no longer the tenant's owner: the

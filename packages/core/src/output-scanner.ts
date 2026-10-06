@@ -95,7 +95,7 @@ const OUTPUT_RULES: Array<{
 ];
 
 /** Decode common JSON escapes before checking model-visible text. */
-function canonicalOutput(output: string): string {
+export function canonicalOutput(output: string): string {
 	return output
 		.replace(
 			/\\u([0-9a-fA-F]{4})|\\([nrt])/g,

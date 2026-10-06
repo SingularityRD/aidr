@@ -20,7 +20,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
-import { cycloneDxHashFromSri } from "./lib/release-evidence-digests.mjs";
+import { cycloneDxHashFromSri, parseLockIntegrities } from "./lib/release-evidence-digests.mjs";
 import { parseHashLockedRequirements } from "./lib/python-requirements-sbom.mjs";
 import { bindPypiLicenseEvidence, cycloneDxLicenses, resolvePypiLicense } from "./lib/pypi-license-data.mjs";
 
@@ -52,8 +52,9 @@ const pythonLockfileBytes = readFileSync(path.join(repoRoot, "services/aig-bridg
 const pythonLockfileDigest = createHash("sha256").update(pythonLockfileBytes).digest("hex");
 const pythonPackages = parseHashLockedRequirements(pythonLockfileBytes.toString("utf8"));
 const pythonLicenseEvidencePath = path.join(repoRoot, "services/aig-bridge/pypi-runtime-licenses.json");
+const pythonLicenseEvidenceJson = existsSync(pythonLicenseEvidencePath) ? readFileSync(pythonLicenseEvidencePath, "utf8") : "";
 const pythonLicenseEvidence = bindPypiLicenseEvidence(
-	existsSync(pythonLicenseEvidencePath) ? readFileSync(pythonLicenseEvidencePath, "utf8") : "",
+	pythonLicenseEvidenceJson,
 	pythonLockfileDigest,
 	pythonPackages,
 );
@@ -207,6 +208,7 @@ const payload = {
 		properties: [
 			{ name: "aidr:lockfile-sha256", value: lockfileDigest },
 			{ name: "aidr:python-runtime-lockfile-sha256", value: pythonLockfileDigest },
+			{ name: "aidr:pypi-license-evidence-sha256", value: createHash("sha256").update(pythonLicenseEvidenceJson).digest("hex") },
 			{
 				name: "aidr:sbom-limitations",
 				value: "Container base/OS layers, upstream Supabase images, and AI-Infra-Guard server components are not included; image SBOM acceptance remains open",
@@ -358,30 +360,6 @@ function normalizeLicenses(license, licenses) {
 	return normalized.length > 0 ? normalized : undefined;
 }
 
-function parseLockIntegrities(raw) {
-	const map = new Map();
-	let inPackages = false;
-	let currentKey;
-	for (const line of raw.split(/\r?\n/)) {
-		if (/^packages:\s*$/.test(line)) {
-			inPackages = true;
-			continue;
-		}
-		if (inPackages && /^snapshots:\s*$/.test(line)) break;
-		const keyMatch = inPackages ? line.match(/^  (.+):\s*$/) : null;
-		if (keyMatch) {
-			currentKey = unquoteYaml(keyMatch[1]);
-			continue;
-		}
-		if (!inPackages || !currentKey) continue;
-		const inline = line.match(/^\s{4}resolution:\s*\{[^}]*integrity:\s*([^,}]+)[^}]*\}/);
-		const nested = line.match(/^\s{6}integrity:\s*(\S+)\s*$/);
-		const value = inline?.[1] ?? nested?.[1];
-		if (value) map.set(currentKey, unquoteYaml(value));
-	}
-	return map;
-}
-
 function findLockKey(name, version) {
 	const prefix = `${name}@${version}`;
 	for (const key of lockIntegrities.keys()) {
@@ -393,13 +371,6 @@ function findLockKey(name, version) {
 function resolveLockIntegrity(name, version) {
 	const value = lockIntegrities.get(findLockKey(name, version));
 	return cycloneDxHashFromSri(value);
-}
-
-function unquoteYaml(value) {
-	const trimmed = value.trim();
-	if (trimmed.startsWith("'") && trimmed.endsWith("'")) return trimmed.slice(1, -1).replace(/''/g, "'");
-	if (trimmed.startsWith('"') && trimmed.endsWith('"')) return trimmed.slice(1, -1);
-	return trimmed;
 }
 
 function isVersion(value) {

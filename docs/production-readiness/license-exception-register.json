@@ -2,50 +2,75 @@
   "schema_version": 1,
   "register_id": "aidr-license-exception-register",
   "status": "open",
-  "updated_at": "unknown",
+  "updated_at": "2026-10-06",
   "entries": [
     {
       "exception_id": "LIC-EX-001",
-      "component": "unknown",
-      "version": "unknown",
-      "declared_license": "unknown",
-      "exception_type": "unknown",
-      "scope": "unknown",
-      "reason": "unknown",
-      "risk": "unknown",
-      "mitigations": ["unknown"],
+      "component": "certifi",
+      "version": "2026.7.22",
+      "declared_license": "MPL-2.0",
+      "exception_type": "dependency_policy",
+      "scope": "Selected AIG bridge Python 3.12 Linux x86_64 runtime wheel; final release/image and actual customer distribution scope not accepted",
+      "reason": "Review the shipped certificate bundle licence/notice and any modification/source obligations for the selected artifact.",
+      "risk": "Distribution obligations require a documented Legal disposition; known metadata does not establish permission or approve an exception",
+      "mitigations": [
+        "Preserve exact official SHA-locked wheel metadata and shipped licence texts; inventory exact image/native terms; use ordinary compliance or reviewed removal/replacement before considering an exception"
+      ],
       "owner": "unknown",
       "approver": "unknown",
       "approved_at": "unknown",
       "expires_at": "unknown",
-      "status": "unknown",
-      "evidence": ["unknown"],
+      "status": "open",
+      "evidence": [
+        "services/aig-bridge/pypi-runtime-licenses.json; source lock and official-wheel licence digests only",
+        "THIRD_PARTY_NOTICES; no counsel decision",
+        "docs/production-readiness/bridge-notice-review-pack-2026-10-06.md; exact current wheel texts and scoped built-image distro inventory only; no counsel decision"
+      ],
       "unknowns": [
-        "component",
-        "version",
-        "declared_license",
-        "exception_type",
-        "scope",
-        "reason",
-        "risk",
-        "mitigations[0]",
         "owner",
         "approver",
         "approved_at",
-        "expires_at",
-        "status",
-        "evidence[0]"
+        "expires_at"
+      ]
+    },
+    {
+      "exception_id": "LIC-EX-002",
+      "component": "psycopg",
+      "version": "3.2.10",
+      "declared_license": "GNU Lesser General Public License v3 (LGPLv3)",
+      "exception_type": "dependency_policy",
+      "scope": "Selected AIG bridge Python 3.12 Linux x86_64 runtime wheel; final release/image and actual customer distribution scope not accepted",
+      "reason": "Review Python driver distribution/linking, licence/source notices and customer delivery obligations for the exact artifact.",
+      "risk": "Distribution obligations require a documented Legal disposition; known metadata does not establish permission or approve an exception",
+      "mitigations": [
+        "Preserve exact official SHA-locked wheel metadata and shipped licence texts; inventory exact image/native terms; use ordinary compliance or reviewed removal/replacement before considering an exception"
+      ],
+      "owner": "unknown",
+      "approver": "unknown",
+      "approved_at": "unknown",
+      "expires_at": "unknown",
+      "status": "open",
+      "evidence": [
+        "services/aig-bridge/pypi-runtime-licenses.json; source lock and official-wheel licence digests only",
+        "THIRD_PARTY_NOTICES; no counsel decision",
+        "docs/production-readiness/bridge-notice-review-pack-2026-10-06.md; exact current wheel texts and scoped built-image distro inventory only; no counsel decision"
+      ],
+      "unknowns": [
+        "owner",
+        "approver",
+        "approved_at",
+        "expires_at"
       ]
     }
   ],
   "unknowns": [
-    "updated_at",
-    "entries[0] is an unpopulated local template row",
-    "No exception owner, approval record, evidence, or expiry has been supplied"
+    "No Legal disposition, exception owner, approval or expiry has been supplied for the two current review-required declarations. Ordinary compliance may resolve review without any exception.",
+    "Exact candidate-bound native/image notice/source obligations and chain-of-title review remain open. The scoped system-libpq inventory supplies 17 actual library paths and 41 captured texts, not a full OS/image inventory or permission to distribute."
   ],
   "limitations": [
-    "This file records a local workflow shape only; it does not grant permission to ship a component.",
+    "These are known dependency-policy review requests, not approved licensing exceptions or permission to distribute.",
     "An open or unknown entry must remain unresolved until its scope, owner, evidence, and expiry are recorded.",
-    "The validator checks structure and expiry arithmetic only; it cannot verify provenance or an external decision."
+    "The validator checks structure and expiry arithmetic only; it cannot verify provenance or an external decision.",
+    "The removed psycopg-binary 3.2.10 review is historical in evidence/native-library-inventory-2026-10-06.json; removing that current dependency is not an approval or waiver of its past distribution obligations."
   ]
 }

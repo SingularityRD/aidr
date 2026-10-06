@@ -2,6 +2,7 @@ import { ConfigSchema } from "@singularityrd/aidr-core";
 import { type Config, getConfig, replaceConfig } from "../utils/config-manager.js";
 import {
 	configPathParts,
+	containsSecretConfigValue,
 	displayConfigValue,
 	isSecretConfigPath,
 	parseConfigValue,
@@ -15,16 +16,29 @@ interface ConfigOptions {
 }
 
 async function configCommand(options: ConfigOptions): Promise<void> {
-	const config = getConfig();
+	let config: Config | null;
+	try {
+		config = getConfig();
+	} catch {
+		console.error("Local configuration could not be read. Check its permissions, JSON and credential store.");
+		process.exitCode = 1;
+		return;
+	}
 
 	if (!config) {
 		console.log("⚠️  AIDR not configured. Run 'aidr setup' first.");
+		process.exitCode = 1;
 		return;
 	}
 
 	if (options.get) {
-		const value = getNestedValue(config, options.get);
-		console.log(value !== undefined ? displayConfigValue(options.get, value) : "(not set)");
+		try {
+			const value = getNestedValue(config, options.get);
+			console.log(value !== undefined ? displayConfigValue(options.get, value) : "(not set)");
+		} catch {
+			console.error("Invalid configuration path.");
+			process.exitCode = 1;
+		}
 		return;
 	}
 
@@ -40,6 +54,7 @@ async function configCommand(options: ConfigOptions): Promise<void> {
 		}
 		if (!secret && valueParts.length === 0) {
 			console.log("⚠️  Usage: aidr config -s <key> <value> (secret values are prompted securely)");
+			process.exitCode = 1;
 			return;
 		}
 
@@ -54,6 +69,11 @@ async function configCommand(options: ConfigOptions): Promise<void> {
 			}
 		} else {
 			value = parseConfigValue(valueParts.join(" "));
+			if (containsSecretConfigValue(value)) {
+				console.error("Secret fields cannot be supplied inside object arguments. Set each secret field through its hidden prompt.");
+				process.exitCode = 1;
+				return;
+			}
 		}
 		try {
 			setNestedValue(config, key, value);
@@ -89,7 +109,13 @@ async function configCommand(options: ConfigOptions): Promise<void> {
 			secretRotatedAt: config.secretRotatedAt,
 			secretRevokedAt: config.secretRevokedAt,
 		} as unknown as Config;
-		replaceConfig(normalized);
+		try {
+			replaceConfig(normalized);
+		} catch {
+			console.error("Configuration could not be saved. Check its permissions and credential store, then retry.");
+			process.exitCode = 1;
+			return;
+		}
 		console.log(`✅ Set ${key} = ${displayConfigValue(key, value)}`);
 		return;
 	}

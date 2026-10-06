@@ -11,12 +11,13 @@ acceptance evidence.
 ## Authenticode release gate
 
 The Windows management scripts are launched with `-ExecutionPolicy AllSigned`.
-This repository has no Authenticode signing automation or release signing key,
-and the checked-in PowerShell scripts are currently unsigned. That is a release
-blocker: do not package or deploy them until the release owner signs every
+The protected RC workflow includes an Authenticode signing job and an operator
+signing helper; no release certificate is stored in this repository. The
+checked-in PowerShell scripts remain unsigned. That is a release blocker until
+the configured publisher signs every
 PowerShell script in `deploy/fleet/windows` with the approved code-signing
 identity. The verifier includes itself and the manifest-generation utility, as
-well as `Common.ps1` and all six endpoint entrypoints. Sign the verifier before
+well as `Common.ps1` and the response worker entrypoints. Sign the verifier before
 running it under `AllSigned`; it checks every required script and fails closed
 on unsigned, invalid, untrusted, missing, unexpected, or differently signed
 files.
@@ -35,14 +36,21 @@ the command can run under the required policy:
 ```powershell
 $managementScriptThumbprint = 'APPROVED_AUTHENTICODE_THUMBPRINT'
 powershell.exe -NoProfile -NonInteractive -ExecutionPolicy AllSigned `
-  -File .\deploy\fleet\windows\Test-AidrFleetScriptSignatures.ps1 `
+  -File .\.release-evidence\windows-fleet\Test-AidrFleetScriptSignatures.ps1 `
   -ExpectedThumbprint $managementScriptThumbprint
 if ($LASTEXITCODE -ne 0) { throw 'Windows fleet signing preflight failed; packaging is blocked.' }
 ```
 
-The preflight checks the actual `.ps1` files in the source folder. Do not edit,
+The preflight checks the actual `.ps1` files in the verified staging folder. Do not edit,
 replace, or add PowerShell scripts after it passes; any content change requires
 the release signer to sign again and the preflight to be rerun.
+
+The Claude connector also carries `dist/native/Invoke-AidrResponseAction.ps1`
+and `dist/native/Common.ps1`. Sign these exact packaged files with the approved
+Authenticode identity **before** creating their Ed25519 artifact/package
+manifests and the tarball CMS signature. Editing or signing PowerShell after
+those manifests were made invalidates the connector integrity. The worker
+respects the host's PowerShell execution policy; it does not use `Bypass`.
 
 ## Build the deployment directory
 
@@ -73,6 +81,53 @@ SHA-256 in the MDM command line. The command-line value is the trust anchor that
 prevents an attacker from replacing the manifest, payload hash, and signer
 allowlist together; it does not replace Authenticode signing of PowerShell
 scripts.
+
+The `windows-authenticode` RC job requires protected environment secrets
+`AIDR_WINDOWS_CODE_SIGNING_PFX_B64`, `AIDR_WINDOWS_CODE_SIGNING_PFX_PASSWORD`,
+`AIDR_WINDOWS_CODE_SIGNING_THUMBPRINT` (uppercase SHA-1 certificate thumbprint),
+and protected variable `AIDR_WINDOWS_TIMESTAMP_SERVER` (approved HTTPS URL).
+It imports a single pinned certificate only on an ephemeral GitHub-hosted
+Windows runner, removes the private PFX and imported key in `finally`, and
+publishes only the staged public scripts and verification receipt. The job
+binds the 14 unsigned input hashes to the immutable commit and the independent
+unsigned build archive hash. Package signing verifies the Windows job's
+independent archive/receipt hashes, then updates the native payload before
+generating its Ed25519 manifests. Final Windows acceptance rechecks the actual
+packaged Authenticode signatures, Code Signing EKU and timestamp. Missing
+certificate material blocks the job; local mocked tests cannot establish a
+real publisher signature or customer-machine acceptance.
+
+For an operator-controlled signing station with the approved certificate
+already in `CurrentUser\My`, prepare a **new** staging directory using the
+independently recorded unsigned build archive SHA-256. Signing uses the
+Microsoft Windows SDK SignTool with HTTPS RFC 3161 timestamping and does not
+import certificates. Use PowerShell 7 or newer. The helper discovers the installed SDK's `x64/signtool.exe`
+or accepts an approved absolute `-SignToolPath`; it checks the tool's Microsoft
+Authenticode signature before invoking it. PowerShell's signing cmdlet cannot
+provide this HTTPS timestamp ([Microsoft documentation](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.security/set-authenticodesignature?view=powershell-7.5#-timestampserver)).
+
+```powershell
+node .github/scripts/windows-authenticode-inputs.mjs prepare `
+  --stage .release-evidence/windows-signing --git-sha REVIEWED_COMMIT_SHA `
+  --unsigned-release-sha256 INDEPENDENT_UNSIGNED_ARCHIVE_SHA256
+$stage = Join-Path (Get-Location) '.release-evidence/windows-signing'
+pwsh -NoProfile -NonInteractive -File scripts/sign-windows-response-payload.ps1 `
+  -FleetScriptRoot (Join-Path $stage 'fleet') `
+  -ClaudeDist (Join-Path $stage 'claude') `
+  -InputManifestPath (Join-Path $stage 'input-manifest.json') `
+  -ExpectedThumbprint APPROVED_AUTHENTICODE_THUMBPRINT `
+  -TimestampServer https://APPROVED_TIMESTAMP_SERVER `
+  -ReceiptPath (Join-Path $stage 'authenticode-receipt.json')
+```
+
+Transfer the staged inputs with their independently recorded receipt hash to
+the package-signing station and run the helper's `consume` mode with
+`--stage`, `--git-sha`, `--unsigned-release-sha256`, `--receipt-sha256`,
+`--thumbprint`, and `--timestamp-server` before generating final manifests.
+Signed customer kits require this verified staging and the independently
+configured `--windows-authenticode-receipt-sha256` and
+`--windows-code-signing-thumbprint` inputs (or their matching release environment
+variables); they cannot fall back to the unsigned repository scripts.
 
 Do not omit `-RequireTrustedChain` for a production package. Offline or isolated
 test packages may pin a self-signed certificate without that switch; this is
@@ -135,6 +190,77 @@ powershell.exe -NoProfile -NonInteractive -ExecutionPolicy AllSigned -File .\Inv
 
 Add `-DetectionOnly` for a read-only check (optionally with `-Json` for a
 machine-readable result). Neither mode proves host execution or MDM delivery.
+
+## Opt-in signed Windows response worker
+
+Activate the worker only after device enrollment has stored the agent credential
+in that Windows user's DPAPI store and a current signed managed entitlement is
+available. Provisioning must run as the actual enrolled user, with its real OS
+profile. `SYSTEM`, another administrator's profile, and `HOME`/`USERPROFILE`
+overrides cannot decrypt that user's credentials. The task uses an interactive
+user logon, retries every minute, and preserves its state between restarts.
+Commands wait while the user is logged out. Linux and macOS response adapters
+are unsupported by this worker.
+
+Create a reviewed public configuration with these exact fields. Replace every
+placeholder using the approved deployment and the enrolled device identity;
+the configuration contains no bearer or private signing key:
+
+```json
+{
+  "schema_version": 1,
+  "tenant_id": "<TENANT_UUID>",
+  "agent_id": "<AGENT_UUID>",
+  "installation_id": "<ENROLLED_INSTALLATION_UUID>",
+  "trusted_command_keys": { "<APPROVED_SIGNER_ID>": "<ED25519_PUBLIC_KEY_PEM>" },
+  "control_plane_addresses": ["<CURRENT_CONTROL_PLANE_IP>"],
+  "admin_recovery_addresses": ["<ADMIN_RECOVERY_IP>"],
+  "network_support_addresses": ["<DNS_DHCP_GATEWAY_OR_REQUIRED_IP>"]
+}
+```
+
+Pin signer IDs and public keys independently of command replies. Addresses must
+be literal IPv4/IPv6 addresses, with at most 64 unique addresses across the three
+lists. Include every current control-plane DNS answer and the tested network
+dependencies needed for recovery. No hostname, CIDR, wildcard or automatic DNS
+exception is accepted. Isolation blocks the complement of these addresses;
+Windows block-rule precedence must not accidentally block the recovery path.
+
+After the ordinary signed fleet installation, run the signed worker installer:
+
+```powershell
+$responseConfig = '.\response-worker-config.json'
+$responseConfigSha = (Get-FileHash -LiteralPath $responseConfig -Algorithm SHA256).Hash
+powershell.exe -NoProfile -NonInteractive -ExecutionPolicy AllSigned `
+  -File .\Install-AidrResponseWorker.ps1 -TargetHome C:\Users\ENROLLED_USER `
+  -ResponseWorkerConfigPath $responseConfig `
+  -ExpectedResponseWorkerConfigSha256 $responseConfigSha -RunElevated
+```
+
+`-RunElevated` requires the same enrolled user to be an administrator and the
+installer to run elevated. It enables real firewall actions. Without it the
+task supports persistent agent pause/resume; firewall commands return an
+explicit privilege failure. The ordinary installer also accepts
+`-EnableResponseWorker`, `-ResponseWorkerConfigPath`,
+`-ExpectedResponseWorkerConfigSha256` and `-ResponseWorkerRunElevated`.
+Upgrades rebind an already configured task; a rollback package without the
+response worker is refused before replacing hooks.
+
+The hook's independent required-worker flag and authenticated journal prevent
+missing or corrupt state from restoring execution. Pause survives command
+expiry and credential rotation; only a signed matching resume can release it.
+First activation creates a separate random journal secret in DPAPI. A partial
+activation or lost credential reference requires explicit operator repair.
+The protection boundary trusts the same OS user and administrator; it does not
+claim resistance to an administrator restoring old local files.
+
+Signed release/resume commands remove only the exact owned rules/barrier.
+Unobserved or partial effects remain `outcome_unknown`; recovery observes them
+without repeating the action. Removal stops the owned task and checks its
+authenticated idle state plus the native state under locks; active or ambiguous
+effects refuse uninstall and restart the task. Required configuration, vault
+and journal are preserved. Qualify this flow on an isolated VM with real signed
+inputs, DNS/DHCP, IPv6, existing connections and admin recovery before rollout.
 
 ## Operational behavior
 

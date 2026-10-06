@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTeam } from "../../enterprise/team-provider";
 import { readErrorMessage } from "../../lib/errors";
 import { supabase } from "../../lib/supabase";
@@ -36,6 +36,30 @@ type Collector = {
 	observed_targets: number;
 	reported_at: string;
 	state: CollectorState;
+	provider_evidence?: {
+		provider: string;
+		scope_hash: string;
+		coverage: string;
+		complete: boolean;
+		observed_at: string;
+	} | null;
+};
+
+type ProviderResource = {
+	provider: string;
+	scope_hash: string;
+	resource_id: string;
+	resource_type: string;
+	scope_id: string;
+	region: string | null;
+	observed_at: string;
+	freshness: Freshness;
+	alert_state: AlertState;
+};
+type ResourcePage = {
+	resources: ProviderResource[];
+	truncated: boolean;
+	next_resource: string | null;
 };
 
 type DiscoveryItem = {
@@ -68,6 +92,24 @@ function isTimestamp(value: unknown): value is string {
 	return typeof value === "string" && Number.isFinite(Date.parse(value));
 }
 
+function isProviderEvidence(value: unknown): boolean {
+	const coverage: Record<string, string> = {
+		aws: "tagged_resources",
+		azure: "resource_groups",
+		gcp: "project_asset_types",
+		intune: "managed_devices",
+	};
+	return (
+		isRecord(value) &&
+		Object.hasOwn(coverage, String(value.provider)) &&
+		value.coverage === coverage[String(value.provider)] &&
+		typeof value.scope_hash === "string" &&
+		/^[a-f0-9]{64}$/.test(value.scope_hash) &&
+		typeof value.complete === "boolean" &&
+		isTimestamp(value.observed_at)
+	);
+}
+
 function isDiscoverySummary(value: unknown): value is DiscoverySummary {
 	return (
 		isRecord(value) &&
@@ -97,11 +139,14 @@ function isCollector(value: unknown): value is Collector {
 		(value.stale_after_ms as number) <= 2_592_000_000 &&
 		typeof value.complete === "boolean" &&
 		isCount(value.expected_targets) &&
-		(value.expected_targets as number) >= 1 &&
+		(value.expected_targets as number) >= (value.provider_evidence ? 0 : 1) &&
 		(value.expected_targets as number) <= 100 &&
 		isCount(value.observed_targets) &&
 		(value.observed_targets as number) <= (value.expected_targets as number) &&
 		isTimestamp(value.reported_at) &&
+		(value.provider_evidence === undefined ||
+			value.provider_evidence === null ||
+			isProviderEvidence(value.provider_evidence)) &&
 		(value.state === "current" || value.state === "partial" || value.state === "stale")
 	);
 }
@@ -222,6 +267,60 @@ async function loadItems(
 	return { items: data.items, truncated: data.truncated, next_target: data.next_target };
 }
 
+function isResourceId(value: unknown): value is string {
+	return (
+		typeof value === "string" &&
+		value.length > 0 &&
+		value.length <= 1024 &&
+		!/[\u0000-\u001f\u007f]/.test(value)
+	);
+}
+async function loadResources(
+	tenantId: string,
+	collectorId: string,
+	sequence: number,
+	afterResource?: string,
+): Promise<ResourcePage> {
+	const data = await invokeDiscovery(tenantId, {
+		action: "resources",
+		collector_id: collectorId,
+		expected_sequence: sequence,
+		limit: 100,
+		...(afterResource ? { after_resource: afterResource } : {}),
+	});
+	if (
+		!isRecord(data.collector) ||
+		data.collector.collector_id !== collectorId ||
+		!Array.isArray(data.provider_resources) ||
+		!data.provider_resources.every(
+			(r) =>
+				isRecord(r) &&
+				["aws", "azure", "gcp", "intune"].includes(String(r.provider)) &&
+				typeof r.scope_hash === "string" &&
+				/^[a-f0-9]{64}$/.test(r.scope_hash) &&
+				isResourceId(r.resource_id) &&
+				typeof r.resource_type === "string" &&
+				r.resource_type.length > 0 &&
+				r.resource_type.length <= 256 &&
+				typeof r.scope_id === "string" &&
+				r.scope_id.length > 0 &&
+				r.scope_id.length <= 256 &&
+				(r.region === null || (typeof r.region === "string" && r.region.length <= 64)) &&
+				isTimestamp(r.observed_at) &&
+				["fresh", "stale", "never_seen"].includes(String(r.freshness)) &&
+				["healthy", "stale", "not_reported", "collection_partial"].includes(String(r.alert_state)),
+		) ||
+		typeof data.truncated !== "boolean" ||
+		(data.next_resource !== null && !isResourceId(data.next_resource))
+	)
+		throw new Error("Malformed provider resource list.");
+	return {
+		resources: data.provider_resources as ProviderResource[],
+		truncated: data.truncated,
+		next_resource: data.next_resource as string | null,
+	};
+}
+
 function badgeClass(state: string): string {
 	if (state === "current" || state === "healthy" || state === "fresh") return "badge badge-success";
 	return state === "unknown" ? "badge badge-neutral" : "badge badge-warning";
@@ -248,6 +347,76 @@ export function DiscoveryPage() {
 	const [loadingMoreItems, setLoadingMoreItems] = useState(false);
 	const [refreshVersion, setRefreshVersion] = useState(0);
 	const [itemsCheckedAt, setItemsCheckedAt] = useState<string | null>(null);
+	const [resources, setResources] = useState<ProviderResource[]>([]);
+	const [resourceCursor, setResourceCursor] = useState<string | null>(null);
+	const [resourceError, setResourceError] = useState<string | null>(null);
+	const [resourcesLoading, setResourcesLoading] = useState(false);
+	const [loadingMoreResources, setLoadingMoreResources] = useState(false);
+	const selectedCollectorRow = collectors.find(
+		(collector) => collector.collector_id === selectedCollector,
+	);
+	const selectedProvider = selectedCollectorRow?.provider_evidence;
+	const selectedSequence = selectedCollectorRow?.sequence;
+	const resourceScope = useRef("");
+	resourceScope.current = `${tenantId}:${selectedCollector}:${selectedSequence}:${selectedProvider?.scope_hash ?? ""}`;
+
+	useEffect(() => {
+		let cancelled = false;
+		setResources([]);
+		setResourceCursor(null);
+		setResourceError(null);
+		setLoadingMoreResources(false);
+		setResourcesLoading(
+			Boolean(tenantId && selectedCollector && selectedProvider && selectedSequence),
+		);
+		if (tenantId && selectedCollector && selectedProvider && selectedSequence)
+			void loadResources(tenantId, selectedCollector, selectedSequence)
+				.then((page) => {
+					if (!cancelled) {
+						setResources(page.resources);
+						setResourceCursor(page.next_resource);
+					}
+				})
+				.catch((error: unknown) => {
+					if (!cancelled)
+						setResourceError(readErrorMessage(error, "Provider resources are unavailable."));
+				})
+				.finally(() => {
+					if (!cancelled) setResourcesLoading(false);
+				});
+		return () => {
+			cancelled = true;
+		};
+	}, [tenantId, selectedCollector, selectedProvider, selectedSequence, refreshVersion]);
+	const loadMoreResources = async () => {
+		if (
+			!tenantId ||
+			!selectedCollector ||
+			!selectedSequence ||
+			!resourceCursor ||
+			loadingMoreResources
+		)
+			return;
+		const scope = resourceScope.current;
+		setLoadingMoreResources(true);
+		try {
+			const page = await loadResources(
+				tenantId,
+				selectedCollector,
+				selectedSequence,
+				resourceCursor,
+			);
+			if (scope === resourceScope.current) {
+				setResources((rows) => [...rows, ...page.resources]);
+				setResourceCursor(page.next_resource);
+			}
+		} catch (error) {
+			if (scope === resourceScope.current)
+				setResourceError(readErrorMessage(error, "Provider resources are unavailable."));
+		} finally {
+			if (scope === resourceScope.current) setLoadingMoreResources(false);
+		}
+	};
 
 	useEffect(() => {
 		let cancelled = false;
@@ -562,6 +731,78 @@ export function DiscoveryPage() {
 					</button>
 				) : null}
 			</section>
+			{selectedProvider ? (
+				<section className="card">
+					<h2>Provider resource evidence</h2>
+					<p className="muted">
+						{selectedProvider.provider} · {selectedProvider.coverage} · observed{" "}
+						{timestamp(selectedProvider.observed_at)}. Only the configured scope is reported; this
+						is not complete cloud or device coverage.
+					</p>
+					{resourceError ? (
+						<div className="notice notice-danger" role="alert">
+							{resourceError}
+						</div>
+					) : null}
+					<div className="table-wrap">
+						<table className="table">
+							<thead>
+								<tr>
+									<th>Resource</th>
+									<th>Type / scope</th>
+									<th>Region</th>
+									<th>Freshness</th>
+									<th>Alert state</th>
+								</tr>
+							</thead>
+							<tbody>
+								{resources.map((resource) => (
+									<tr key={resource.resource_id}>
+										<td className="mono">{resource.resource_id}</td>
+										<td>
+											{resource.resource_type}
+											<br />
+											{resource.scope_id}
+										</td>
+										<td>{resource.region ?? "—"}</td>
+										<td>
+											<span className={badgeClass(resource.freshness)}>{resource.freshness}</span>
+										</td>
+										<td>
+											<span className={badgeClass(resource.alert_state)}>
+												{resource.alert_state}
+											</span>
+										</td>
+									</tr>
+								))}
+								{!resources.length ? (
+									<tr>
+										<td colSpan={5}>
+											{resourcesLoading
+												? "Loading provider resources…"
+												: resourceError
+													? "Resource evidence is unavailable."
+													: selectedProvider.complete
+														? "No resources reported within the configured scope."
+														: "Provider collection is partial; absence is not an empty inventory."}
+										</td>
+									</tr>
+								) : null}
+							</tbody>
+						</table>
+					</div>
+					{resourceCursor ? (
+						<button
+							className="button button-secondary button-sm"
+							type="button"
+							disabled={loadingMoreResources}
+							onClick={() => void loadMoreResources()}
+						>
+							{loadingMoreResources ? "Loading…" : "Load more resources"}
+						</button>
+					) : null}
+				</section>
+			) : null}
 		</div>
 	);
 }

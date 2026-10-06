@@ -13,12 +13,15 @@ function Assert-AidrFleetScriptAuthenticodeSignatures {
     $required = @(
         'Common.ps1',
         'Install-Aidr.ps1',
+		'Install-AidrResponseWorker.ps1',
         'Invoke-AidrRemediation.ps1',
+		'Invoke-AidrResponseAction.ps1',
         'New-AidrFleetManifest.ps1',
         'Rollback-Aidr.ps1',
         'Test-AidrDetection.ps1',
         'Test-AidrFleetScriptSignatures.ps1',
         'Uninstall-Aidr.ps1',
+		'Uninstall-AidrResponseWorker.ps1',
         'Update-Aidr.ps1'
     )
     $scripts = @(Get-ChildItem -LiteralPath $root -Filter '*.ps1' -File -ErrorAction Stop | Sort-Object Name)
@@ -42,6 +45,126 @@ function Assert-AidrFleetScriptAuthenticodeSignatures {
         if ($actual -ne $expected) { throw "Windows fleet script '$($script.Name)' is not signed by the pinned management-script certificate" }
     }
     return $scripts.Count
+}
+
+function Get-AidrResponseWorkerContext {
+    param([Parameter(Mandatory)][string]$TargetHome, [Parameter(Mandatory)][string]$StateRoot)
+    if ($env:OS -ne 'Windows_NT') { throw 'The installed response worker requires Windows' }
+    $target = Get-AidrValidatedTargetHome $TargetHome
+    $profile = [Environment]::GetFolderPath([Environment+SpecialFolder]::UserProfile)
+    if (-not $target.Equals([IO.Path]::GetFullPath($profile).TrimEnd('\', '/'), [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'Response worker provisioning must run as the enrolled Windows user; environment HOME overrides do not change the DPAPI principal'
+    }
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $sid = $identity.User.Value
+    if ($sid -in @('S-1-5-18', 'S-1-5-19', 'S-1-5-20')) { throw 'A service account cannot access the enrolled user DPAPI credentials' }
+    $paths = Get-AidrFleetPaths -TargetHome $target -StateRoot $StateRoot
+    $state = Read-AidrFleetState $paths.State
+    if ($null -eq $state -or $state.installed -ne $true -or $null -eq $state.active) { throw 'An active verified fleet installation is required' }
+    $connector = [IO.Path]::GetFullPath([string]$state.active.connector_path)
+    $prefix = [IO.Path]::GetFullPath((Join-Path $target '.singularity-aidr/connectors/claude')).TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
+    if (-not $connector.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) { throw 'Response connector is outside the managed directory' }
+    $expected = @($state.active.connector_files)
+    $actual = @(Get-AidrConnectorInventory -ConnectorPath $connector)
+    if ($expected.Count -eq 0 -or $expected.Count -ne $actual.Count) { throw 'Response connector inventory does not match fleet state' }
+    for ($index = 0; $index -lt $expected.Count; $index++) {
+        if ([string]$expected[$index].path -ne [string]$actual[$index].path -or -not (Test-AidrFixedStringEqual ([string]$expected[$index].sha256) ([string]$actual[$index].sha256))) {
+            throw 'Response connector integrity verification failed'
+        }
+    }
+    $worker = Join-Path $connector 'dist/response-worker.cjs'
+    $native = Join-Path $connector 'dist/native/Invoke-AidrResponseAction.ps1'
+    foreach ($file in @($worker, $native, (Join-Path $connector 'dist/native/Common.ps1'))) {
+        Assert-AidrNoReparsePath $file
+        if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw 'The signed connector does not contain the installed response worker' }
+    }
+    $node = (Get-Command node.exe -ErrorAction Stop).Source
+    Assert-AidrNoReparsePath $node
+    $version = (& $node -p 'process.versions.node' 2>$null).Trim()
+    if ($LASTEXITCODE -ne 0 -or $version -notmatch '^(\d+)\.' -or [int]$Matches[1] -lt 18) { throw 'Response worker requires Node.js 18 or newer' }
+    if ($worker -match '["\r\n]' -or $node -match '["\r\n]') { throw 'Response task paths contain unsupported characters' }
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try { $suffix = ([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($sid)))).Replace('-', '').Substring(0, 24).ToLowerInvariant() }
+    finally { $sha.Dispose() }
+    return [pscustomobject]@{
+        TargetHome = $target; Sid = $sid; Node = $node; Worker = $worker;
+        TaskName = "AIDR-Response-$suffix"; TaskPath = '\SingularityAIDR\';
+        Description = "Singularity AIDR signed fleet response worker v1; owner_sid=$sid";
+        Configuration = (Join-Path $target '.singularity-aidr/response-control/config.json')
+    }
+}
+
+function Invoke-AidrResponseWorkerProvisioning {
+    param([Parameter(Mandatory)]$Context, [Parameter(Mandatory)][ValidateSet('--initialize', '--validate', '--validate-safe-removal')][string]$Mode, [AllowNull()][string]$InputJson)
+    $start = [Diagnostics.ProcessStartInfo]::new()
+    $start.FileName = $Context.Node
+    $start.Arguments = '"' + $Context.Worker + '" ' + $Mode
+    $start.UseShellExecute = $false
+    $start.CreateNoWindow = $true
+    $start.RedirectStandardInput = $true
+    $start.RedirectStandardOutput = $true
+    $start.RedirectStandardError = $true
+    $process = [Diagnostics.Process]::new()
+    $process.StartInfo = $start
+    try {
+        if (-not $process.Start()) { throw 'Response worker validation process could not start' }
+        $stdout = $process.StandardOutput.ReadToEndAsync()
+        $stderr = $process.StandardError.ReadToEndAsync()
+        if ($null -ne $InputJson) { $process.StandardInput.Write($InputJson) }
+        $process.StandardInput.Close()
+        if (-not $process.WaitForExit(60000)) {
+            try { $process.Kill() } catch { }
+            throw 'Response worker provisioning timed out; existing pause and recovery state was preserved'
+        }
+        $null = $stdout.GetAwaiter().GetResult()
+        $null = $stderr.GetAwaiter().GetResult()
+        if ($process.ExitCode -ne 0) { throw 'Response worker validation failed closed; inspect the enrolled user configuration, trust, vault and recovery addresses' }
+    } finally { $process.Dispose() }
+}
+
+function Assert-AidrResponseTaskOwnership {
+    param([Parameter(Mandatory)]$Task, [Parameter(Mandatory)]$Context)
+    try {
+        $taskUser = [string]$Task.Principal.UserId
+        $taskSid = if ($taskUser -match '^S-1-') { [Security.Principal.SecurityIdentifier]::new($taskUser).Value }
+        else { [Security.Principal.NTAccount]::new($taskUser).Translate([Security.Principal.SecurityIdentifier]).Value }
+    } catch { throw 'The existing response task user cannot be resolved to the enrolled Windows SID' }
+    # TaskScheduler resolves a SID input to its account name. Compare the resolved
+    # SID so native definitions and persisted tasks retain the exact user binding.
+    if ([string]$Task.Description -cne $Context.Description -or $taskSid -cne $Context.Sid -or [string]$Task.Principal.LogonType -ne 'Interactive') {
+        throw 'The existing scheduled task is not owned by this enrolled response worker'
+    }
+    $actions = @($Task.Actions)
+    if ($actions.Count -ne 1 -or -not ([string]$actions[0].Execute).Equals($Context.Node, [StringComparison]::OrdinalIgnoreCase)) { throw 'The existing response task action is not trusted' }
+    $argument = [string]$actions[0].Arguments
+    if ($argument -notmatch '^"([^"\r\n]+)"$') { throw 'The existing response task arguments are not trusted' }
+    $oldWorker = [IO.Path]::GetFullPath($Matches[1])
+    $prefix = [IO.Path]::GetFullPath((Join-Path $Context.TargetHome '.singularity-aidr/connectors/claude')).TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
+    if (-not $oldWorker.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) -or -not $oldWorker.EndsWith('\dist\response-worker.cjs', [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'The existing response task points outside the managed connector directory'
+    }
+}
+
+function Get-AidrResponseScheduledTask {
+    param([Parameter(Mandatory)]$Context)
+    try { return Get-ScheduledTask -TaskPath $Context.TaskPath -TaskName $Context.TaskName -ErrorAction Stop }
+    catch {
+        if ($_.FullyQualifiedErrorId -like 'CmdletizationQuery_NotFound*' -and $_.CategoryInfo.Category -eq 'ObjectNotFound') { return $null }
+        throw
+    }
+}
+
+function Test-AidrResponseWorkerRequired {
+    param([Parameter(Mandatory)][string]$TargetHome)
+    if (Test-Path -LiteralPath (Join-Path $TargetHome '.singularity-aidr/response-control')) { return $true }
+    $path = Join-Path $TargetHome '.singularity-aidr/config.json'
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return $false }
+    Assert-AidrNoReparsePath $path
+    if ((Get-Item -LiteralPath $path).Length -gt 1048576) { throw 'Agent configuration is too large to establish response safety' }
+    try { $configuration = Get-Content -LiteralPath $path -Raw -Encoding utf8 | ConvertFrom-Json }
+    catch { throw 'Agent configuration is invalid; response safety cannot be established' }
+    $controlPlane = Get-AidrProperty $configuration 'control_plane'
+    return $null -ne $controlPlane -and (Get-AidrProperty $controlPlane 'response_worker_required') -eq $true
 }
 
 function Test-AidrSha256 {
@@ -112,7 +235,22 @@ function Get-AidrValidatedTargetHome {
     }) {
         throw "TargetHome cannot be a shared operating-system directory"
     }
+    foreach ($managedPath in @($resolved, (Join-Path $resolved '.claude/settings.json'), (Join-Path $resolved '.singularity-aidr/config.json'), (Join-Path $resolved '.singularity-aidr/installation.json'), (Join-Path $resolved '.singularity-aidr/connectors/claude'))) {
+        Assert-AidrNoReparsePath $managedPath
+    }
     return $resolved
+}
+
+function Assert-AidrNoReparsePath {
+    param([Parameter(Mandatory)][string]$Path)
+    $candidate = [IO.Path]::GetFullPath($Path)
+    while (-not [string]::IsNullOrWhiteSpace($candidate)) {
+        if (Test-Path -LiteralPath $candidate) {
+            $item = Get-Item -LiteralPath $candidate -Force -ErrorAction Stop
+            if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Managed fleet paths cannot contain links or reparse points' }
+        }
+        $candidate = Split-Path -Parent $candidate
+    }
 }
 
 function Assert-AidrFileUnchanged {
@@ -142,6 +280,56 @@ function Assert-AidrJsonDepth {
         else { $children = @($node.PSObject.Properties | ForEach-Object { $_.Value }) }
         foreach ($child in $children) { $queue.Enqueue([pscustomobject]@{ Node = $child; Depth = $item.Depth + 1 }) }
     }
+}
+
+function Get-AidrProperty {
+    param([AllowNull()]$Value, [Parameter(Mandatory)][string]$Name)
+    if ($null -eq $Value) { return $null }
+    $property = $Value.PSObject.Properties[$Name]
+    if ($null -eq $property) { return $null }
+    return $property.Value
+}
+
+function Assert-AidrSettingsShape {
+    param([AllowNull()]$Settings)
+    if ($null -eq $Settings -or $Settings.GetType() -ne [Management.Automation.PSCustomObject]) { throw 'Claude settings must contain a JSON object; no configuration was changed' }
+    $hooks = $Settings.PSObject.Properties['hooks']
+    if ($null -ne $hooks -and ($null -eq $hooks.Value -or $hooks.Value.GetType() -ne [Management.Automation.PSCustomObject])) { throw 'Claude hooks must contain a JSON object; no configuration was changed' }
+}
+
+function Test-AidrManagedHookRegistration {
+    param(
+        [Parameter(Mandatory)]$Entry,
+        [Parameter(Mandatory)]$Hook,
+        [Parameter(Mandatory)][string]$NodePath,
+        [Parameter(Mandatory)][string]$BundlePath,
+        [Parameter(Mandatory)][string]$Event,
+        [Parameter(Mandatory)][int]$Timeout
+    )
+    if ([string](Get-AidrProperty $Hook 'statusMessage') -cne 'Singularity AIDR managed installation' -or
+        [string](Get-AidrProperty $Hook 'type') -cne 'command' -or
+        (Get-AidrProperty $Hook 'async') -eq $true -or
+        (Get-AidrProperty $Hook 'asyncRewake') -eq $true -or
+        (Get-AidrProperty $Hook 'timeout') -ne $Timeout) { return $false }
+    $matcher = [string](Get-AidrProperty $Entry 'matcher')
+    if ($Event -eq 'SessionStart') {
+        if ($matcher -notin @('', '*')) { return $false }
+    } elseif ($matcher -cne '*') { return $false }
+    $command = [string](Get-AidrProperty $Hook 'command')
+    if ($command -notmatch '^"([^"`$%\r\n]+)" "([^"`$%\r\n]+)"$') { return $false }
+    $executable = $Matches[1]
+    $bundle = $Matches[2]
+    try {
+        if (-not [IO.Path]::IsPathRooted($executable) -or -not [IO.Path]::IsPathRooted($bundle)) { return $false }
+        Assert-AidrNoReparsePath $bundle
+        Assert-AidrNoReparsePath $BundlePath
+        $actualNode = (Resolve-Path -LiteralPath $executable -ErrorAction Stop).Path
+        $expectedNode = (Resolve-Path -LiteralPath $NodePath -ErrorAction Stop).Path
+        $actualBundle = (Resolve-Path -LiteralPath $bundle -ErrorAction Stop).Path
+        $expectedBundle = (Resolve-Path -LiteralPath $BundlePath -ErrorAction Stop).Path
+        return $actualNode.Equals($expectedNode, [StringComparison]::OrdinalIgnoreCase) -and
+            $actualBundle.Equals($expectedBundle, [StringComparison]::OrdinalIgnoreCase)
+    } catch { return $false }
 }
 
 function Write-AidrFleetLog {
@@ -364,10 +552,12 @@ function Read-AidrFleetState {
 function Get-AidrConnectorInventory {
     param([Parameter(Mandatory)][string]$ConnectorPath)
     $root = [IO.Path]::GetFullPath($ConnectorPath).TrimEnd('\', '/')
+    Assert-AidrNoReparsePath $root
     $items = @(Get-ChildItem -LiteralPath $root -File -Force -Recurse | Sort-Object FullName)
     if ($items.Count -eq 0 -or $items.Count -gt 20000) { throw "Managed connector inventory is empty or too large" }
     $inventory = @()
     foreach ($item in $items) {
+        Assert-AidrNoReparsePath $item.FullName
         if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "Managed connector contains a reparse point" }
         $full = [IO.Path]::GetFullPath($item.FullName)
         $prefix = "$root$([IO.Path]::DirectorySeparatorChar)"
@@ -418,7 +608,8 @@ function Invoke-AidrEndpointInstaller {
     param(
         [Parameter(Mandatory)]$ManifestRecord,
         [Parameter(Mandatory)]$Payload,
-        [Parameter(Mandatory)][string]$TargetHome
+        [Parameter(Mandatory)][string]$TargetHome,
+        [switch]$RequireResponseWorker
     )
     $node = (Get-Command node.exe -ErrorAction Stop).Source
     $nodeVersion = (& $node -p 'process.versions.node' 2>$null).Trim()
@@ -436,6 +627,12 @@ function Invoke-AidrEndpointInstaller {
         }
         foreach ($required in @('dist/pre-tool-use.cjs', 'dist/post-tool-use.cjs', 'dist/session-start.cjs', 'resources/threats', 'resources/allowlists')) {
             $null = Get-AidrSafeChildPath -Root $packageRoot -RelativePath $required -MustExist -Directory:($required -notmatch '\.cjs$')
+        }
+        if ($RequireResponseWorker -or (Test-AidrResponseWorkerRequired -TargetHome $TargetHome)) {
+            # Refuse a rollback lacking the installed pause gate before replacing hooks.
+            foreach ($required in @('dist/response-worker.cjs', 'dist/native/Invoke-AidrResponseAction.ps1', 'dist/native/Common.ps1')) {
+                $null = Get-AidrSafeChildPath -Root $packageRoot -RelativePath $required -MustExist
+            }
         }
         $arguments = @($Payload.Installer, '--package-dir', $packageRoot, '--home', $TargetHome)
         $existingConfig = Join-Path $TargetHome '.singularity-aidr/config.json'

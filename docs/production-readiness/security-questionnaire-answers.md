@@ -2,14 +2,16 @@
 
 **Product:** Singularity AIDR (AI Agent Detection and Response)
 **Prepared for:** enterprise procurement and security review (large-enterprise buyer, for example BMC)
-**Bound to repository commit:** `377b9c10` (branch `readiness/enterprise-hardening`)
+**Source baseline:** `7f3ec0ad009abf5b032b8116b296d8604fee884e` on `master`, with uncommitted hardening changes. This working tree is not an accepted release candidate.
 **Prepared:** 5 October 2026
+**Updated:** 6 October 2026
 
 ## Read this first
 
 - This is an **engineering-prepared draft**. It is **not** a legal, privacy, audit or compliance attestation, and it is not a contractual commitment. Nothing here replaces a signed DPA, order form, support schedule or independent report.
-- Every answer was written from reading code, configuration and documents in this repository at the commit above. Where an answer depends on a human, process, legal or external party (certifications, penetration test, DPA, subprocessor contracts, insurance, staffing, training, retainers, live operations), the status is `Not yet` with the owner who must act. Absence of evidence is reported as absence, never as a pass.
-- Evidence was **read, not re-executed**: this sheet does not assert that any test, gate or build passed at this commit. The current release decision per `docs/production-readiness/first-customer-ready.md` is **NO-GO** for a live pilot offer or production deployment, and the 13 hard-gate receipts in `docs/production-readiness/commercial-gate-receipts.json` are open. Re-verify against a signed, candidate-bound release before sending to a customer.
+- Implementation answers primarily cover the Supabase control plane and endpoint packages in `aidr`. The separate managed app in `aidr-landing` uses Clerk, Firestore and Polar, with a legacy Lemon Squeezy integration. A trusted operator can now bind a Clerk organization to an existing tenant; requests check current administrator/member roles, and policy publication requires two distinct current administrators. Personal sessions cannot access a bound tenant. Live Clerk organization settings, two-account approval and Firestore rules still require acceptance; the managed app ships no SCIM endpoint, and native Clerk enterprise SSO requires configuration and acceptance. Supabase capabilities must not be transferred to the managed app in customer claims. See `../aidr-landing/README.md` and `../aidr-landing/src/lib/site/enterprise.ts`.
+- Answers reflect code, configuration and documents in this working tree. The earlier `377b9c10` inspection and dated September probes are historical evidence. Human, legal and external controls (certifications, penetration test, DPA, subprocessor contracts, insurance, staffing, training, retainers, live operations) retain their named owner actions.
+- This answer sheet does not establish a test pass or acceptance of a release candidate. Local verification results and their limits are recorded in `RELEASE_READINESS_REPORT.md`; the current release decision per `docs/production-readiness/first-customer-ready.md` is **NO-GO** for a live pilot offer or production deployment, and all 13 hard-gate receipts in `docs/production-readiness/commercial-gate-receipts.json` remain open. Re-verify against a signed, candidate-bound release before sending to a customer.
 - Statements about behavior describe what the code is designed to do. They are not measurements of a deployed environment. No deployed environment, packet capture, live Identity Provider (IdP) acceptance or restore on a second host has been accepted.
 - Wording follows the repository claim controls (`claimPatterns` in `docs/production-readiness/commercial-go-evidence-registry.json`). Do not paraphrase answers into broader claims.
 
@@ -91,7 +93,7 @@ Evidence: none.
 
 **SDL-01. Is source code under version control with enforced code review before merge?**
 Status: `Partially implemented`
-Answer: The repository is in Git with a `CODEOWNERS` file (all paths owned by `@SingularityRD`) and a PR template with a pre-PR checklist. Whether GitHub branch protection (required reviews, required status checks, no force-push) is enabled is a platform setting that is not visible in the repository and was not verified. Note the PR template still contains a stale line, "verify the fail-open behavior is preserved for error paths", that contradicts the current fail-closed connector policy in `CLAUDE.md`; correct it before sharing.
+Answer: The repository is in Git with a `CODEOWNERS` file (all paths owned by `@SingularityRD`) and a PR template with a pre-PR checklist. The checklist now requires connector entry points and security controls to fail closed; optional detection signals may be skipped and logged under the policy in `CLAUDE.md`. Whether GitHub branch protection (required reviews, required status checks, no force-push) is enabled is a platform setting that is not visible in the repository and was not verified.
 Evidence: `.github/CODEOWNERS`, `.github/pull_request_template.md`. Owner action for branch-protection evidence: repository admin (export of protection rules).
 
 **SDL-02. Is there a continuous integration pipeline with automated tests and static checks on every change?**
@@ -116,13 +118,13 @@ Evidence: `scripts/audit-production-deps.mjs` (header comment), `scripts/audit-p
 
 **SDL-06. Is secret scanning performed on source and history?**
 Status: `Partially implemented`
-Answer: Gitleaks 8.30.1 scans the current checkout in CI (`verify:secrets:current`) and the release workflow runs `verify:secrets`. A redacted full-history scan with a partial-scan guard (2026-10-05, `scripts/scan-history-secrets.mjs`) returned 184 findings (92 distinct values, 56 commits): 182 classified as synthetic/identifier false positives with per-row rationale, 2 owner-confirm items, 0 confirmed live credentials. This is an engineering triage; the gate stays open until a security owner signs the owner-confirm rows and the scan is repeated with the pinned official gitleaks on the release candidate. The earlier 2026-09-23 counts (296) were obtained without `--no-textconv` and may reflect a partial scan. A tracked `.env.aig` was removed from the index; its history held only empty secret-bearing keys.
+Answer: Gitleaks 8.30.1 scans the current checkout in CI (`verify:secrets:current`) and the release workflow runs `verify:secrets`. The official checksum-verified full-history refresh on 5 October returned **132 detections**, including the same **2 owner-confirm items**; the engineering dispositions are 130 false-positive/invalid-fixture detections and 2 owner-confirm detections. Metadata matching to the older ledger is not a fresh value-level review or Security approval. The 184-row engineering triage and September's 296 count are historical runs with different tool/source scope; a lower count does not establish remediation. The gate stays open until the security owner resolves the owner-confirm rows and binds a full-clone scan to the clean signed candidate. The current-checkout result belongs to the dated release report, not to that history scan. A tracked `.env.aig` was removed from the index; its inspected history held only empty secret-bearing keys.
 Evidence: `.github/workflows/ci.yml` (lines ~54-62), `.github/workflows/release-rc.yml` (lines ~154-161), `.gitleaks.toml`, `scripts/scan-current-secrets.mjs`, `docs/production-readiness/secret-history-triage-2026-10-05.md`, `docs/production-readiness/evidence/secret-history-ledger-2026-10-05.csv`. Owner action: Security Lead to sign the owner-confirm rows and repeat with the pinned binary.
 
 **SDL-07. Is a Software Bill of Materials (SBOM) produced for releases?**
 Status: `Implemented (verified in code)`
-Answer: A deterministic CycloneDX SBOM is generated from the frozen pnpm lockfile (and hash-pinned Python requirements) and is uploaded and digest-checked in the release-candidate workflow. Licence metadata for shipped Python wheels is incomplete; commercial SBOM generation fails rather than emitting a promotion-incompatible file.
-Evidence: `scripts/generate-sbom.mjs`, `scripts/lib/python-requirements-sbom.mjs`, `.github/workflows/release-rc.yml` (`aidr-sbom.cdx.json`), `docs/production-readiness/com-002-license-audit-2026-09-23.md`.
+Answer: A deterministic CycloneDX SBOM is generated from the frozen pnpm lockfile and hash-pinned Python requirements and is uploaded and digest-checked in the release-candidate workflow. Metadata from all 30 current exact, SHA-256-verified official Python wheels is recorded. The current local inventory has 216 components, including 204 libraries: 202 permissive, 2 requiring licence review and 0 UNKNOWN. Strict licence review still fails on the review-required terms. A separate scoped built-image inventory records 17 system-libpq dependency paths and captured distro copyright texts; it does not cover the full container OS/upstream images or grant distribution permission. This inventory is not counsel approval or a candidate-bound delivery.
+Evidence: `scripts/generate-sbom.mjs`, `scripts/lib/python-requirements-sbom.mjs`, `services/aig-bridge/pypi-runtime-licenses.json`, `docs/production-readiness/bridge-notice-review-pack-2026-10-06.md`, `.github/workflows/release-rc.yml` (`aidr-sbom.cdx.json`).
 
 **SDL-08. Are releases signed, and can a customer verify provenance?**
 Status: `Implemented (verified in code)`
@@ -146,8 +148,8 @@ Evidence: `scripts/check-generator-determinism.mjs`, `scripts/lib/release-source
 
 **SDL-12. Is open-source licence compliance managed?**
 Status: `Partially implemented`
-Answer: A licence report generator, an exception register and an audit exist. The audit decision is **open**: the notice file covers only direct dependencies, transitive notices and Python wheel licences are incomplete, and Legal approval is absent.
-Evidence: `scripts/generate-license-report.mjs`, `docs/production-readiness/license-exception-register.json`, `docs/production-readiness/com-002-license-audit-2026-09-23.md`, `THIRD_PARTY_NOTICES`. Owner action: Legal.
+Answer: A licence report generator, an exception register and an audit exist. Exact Python wheel metadata now removes the prior UNKNOWN declarations. The current 204-library inventory flags certifi (MPL-2.0) and pure psycopg (LGPLv3) for review. The former psycopg-binary wheel and its 14 native libraries are historical and removed from current locks. The current review archive supplies 36 actual wheel licence texts and 41 copyright/common-license texts for the scoped 17-path system-libpq inventory. Common-license text presence does not establish that every listed licence applies. Strict review remains open; exact candidate notice delivery, full image/native terms, source obligations, chain of title and Legal approval are still required.
+Evidence: `scripts/generate-license-report.mjs`, `services/aig-bridge/pypi-runtime-licenses.json`, `docs/production-readiness/bridge-notice-review-pack-2026-10-06.md`, `docs/production-readiness/license-exception-register.json`, `docs/production-readiness/com-002-license-audit-2026-09-23.md`, `THIRD_PARTY_NOTICES`. Owner action: Legal.
 
 ---
 
@@ -155,18 +157,18 @@ Evidence: `scripts/generate-license-report.mjs`, `docs/production-readiness/lice
 
 **IAM-01. How do customer users authenticate to the dashboard/control plane?**
 Status: `Partially implemented`
-Answer: Authentication is delegated to Supabase Auth (email/password plus configured OAuth providers; the set is deployment-specific). The Edge Functions verify the bearer token, a session-revocation barrier and tenant membership on each request. Auth provider choices, CAPTCHA and email delivery for a given deployment are not accepted; the readiness probe of 24 September 2026 recorded that Auth, email delivery and callback were unverified.
-Evidence: `supabase/functions/_shared/auth.ts`, `supabase/functions/_shared/identity-barrier.ts`, `docs/device-auth.md`, `docs/production-readiness/first-customer-ready.md` (deployment diagnostics table).
+Answer: The Supabase control plane delegates authentication to Supabase Auth, including configured OAuth/SAML and the tenant OIDC bridge described below. Edge Functions verify the bearer token, session-revocation barrier and tenant membership. The separate managed app uses Clerk and server-authorized Firestore access, with an operator-bound organization mapped to the existing tenant and current membership checked per request. Its identity model is not shared with Supabase. Auth providers, organization settings, mail, callbacks and recovery still require acceptance for the selected deployment. The 24 September probe is historical, not a current provider acceptance result.
+Evidence: `supabase/functions/_shared/auth.ts`, `supabase/functions/_shared/identity-barrier.ts`, `supabase/functions/oidc-sso/`, `../aidr-landing/README.md`, `docs/device-auth.md`, `docs/production-readiness/first-customer-ready.md`.
 
 **IAM-02. Is SAML single sign-on supported?**
 Status: `Partially implemented`
-Answer: The dashboard supports Supabase SAML providers configured through `AIDR_SAML_PROVIDERS`/`AIDR_SAML_PROVIDER_ID`/`AIDR_SAML_DOMAIN` (validated by `deploy/saml-config.mjs`), and a tenant can require exactly one SAML provider (`required_saml_provider_id`) with email/password sessions denied by RLS and Edge barriers. **Live Entra ID and Okta acceptance has not been performed**, there is no audited operation for setting or clearing the required provider, and the repository's own text says to keep the policy unset and not claim GA SSO continuity. Supabase-hosted SAML needs a Pro or higher plan. One tenant accepts exactly one required provider.
-Evidence: `deploy/saml-config.mjs` (`parseSamlRuntimeConfig`), `docs/production-readiness/scim-directory-admin.md` ("Entra and Okta SAML cutover"), `supabase/functions/identity-security/index.ts` (`required_saml_provider_id`). Owner action: Identity engineering to run two-IdP acceptance with redacted receipts.
+Answer: The Supabase dashboard supports configured SAML providers, and a tenant can require exactly one provider with nonmatching sessions denied by RLS and Edge barriers. Audited request/read/approval operations and a Directory sync panel now implement activation and normal disable: two distinct current owners at AAL2 approve one exact, short-lived transition, with provider-qualified sessions and identities rechecked. This is source implementation, not deployed acceptance. **Live Entra ID and Okta cutover, rollback and outage recovery remain open**; password recovery does not bypass required SAML. Keep enforcement unset for an unaccepted environment. Provider registration and the chosen Supabase hosting plan's SAML support must be verified for that deployment.
+Evidence: `deploy/saml-config.mjs`, `supabase/migrations/20261005230000_saml_policy_administration.sql`, `supabase/functions/identity-security/index.ts` (`request_saml_policy_change`, `get_saml_policy_change`, `approve_saml_policy_change`), `packages/dashboard/src/ui/pages/SamlPolicyPanel.tsx`, `docs/production-readiness/scim-directory-admin.md`. Owner action: Identity engineering to obtain deployed two-IdP cutover, rollback and recovery receipts.
 
 **IAM-03. Is OpenID Connect (OIDC) supported for enterprise SSO?**
 Status: `Partially implemented`
-Answer: Microsoft Entra ID sign-in through Supabase's Azure OAuth provider exists in the dashboard. Group claims in the browser are display-only; roles come only from server-side membership. There is no generic customer-configurable OIDC IdP onboarding flow in the repository.
-Evidence: `packages/dashboard/src/auth/azure-ad.ts` (header comment), `packages/dashboard/src/ui/pages/LoginPage.tsx`.
+Answer: Tenant-configurable OIDC SSO for Entra, Okta and generic providers is implemented in the Supabase control plane. It uses PKCE, browser-bound single-use state, JWKS and claim validation, verified tenant domains, provider-qualified subjects and session-bound enforcement. Audited owner administration and recovery-code suspension protect provider changes. Roles come from server-side membership and exact group mappings. Login is deployment-gated by `AIDR_OIDC_SSO=true`; live provider acceptance remains open. Distinct-approver OIDC authorization and IdP-initiated logout are not implemented. The Clerk-based managed app does not inherit this capability.
+Evidence: `supabase/functions/oidc-sso/`, `packages/dashboard/src/ui/pages/OidcSsoPage.tsx`, `packages/dashboard/src/ui/pages/OidcCallbackPage.tsx`, `packages/dashboard/src/ui/pages/OidcBreakGlassPage.tsx`, `docs/production-readiness/oidc-sso-admin.md`.
 
 **IAM-04. Is SCIM user and group provisioning supported?**
 Status: `Partially implemented`
@@ -175,8 +177,8 @@ Evidence: `supabase/functions/scim/index.ts`, `supabase/functions/scim-admin/`, 
 
 **IAM-05. Is role-based access control (RBAC) enforced?**
 Status: `Implemented (verified in code)`
-Answer: Roles are `owner`, `admin`, `member`, `viewer` with a hierarchy enforced in the database by `is_team_member` / `is_team_member_with_role` and the tenant equivalents `app.is_tenant_member_with_role`; Edge Functions repeat the role check server-side before privileged actions (for example DLP policy publish requires owner/admin; SCIM administration requires owner). Custom roles are not supported.
-Evidence: `supabase/migrations/20260528000000_team_rbac.sql` (lines ~1-30, 138-175), `supabase/migrations/20260922000002_database_boundary_hardening.sql`, `docs/production-readiness/dlp-policy-storage.md`.
+Answer: In the Supabase control plane, roles are `owner`, `admin`, `member`, `viewer` with a hierarchy enforced in the database by `is_team_member` / `is_team_member_with_role` and the tenant equivalents `app.is_tenant_member_with_role`; Edge Functions repeat the role check server-side before privileged actions. The Clerk-based managed app supports an operator-bound organization with current `org:admin` and `org:member` roles. Members can read; credential, billing, seat and policy management require administrators, and policy publication rechecks two distinct current administrators. Personal fallback, stale organization context and removed memberships are refused. Custom roles are unsupported in both paths. Live Clerk/Firestore and two-account acceptance remain open.
+Evidence: `supabase/migrations/20260528000000_team_rbac.sql`, `supabase/migrations/20260922000002_database_boundary_hardening.sql`, `docs/production-readiness/dlp-policy-storage.md`, `../aidr-landing/src/lib/control-plane/tenant-context.ts`, `../aidr-landing/src/lib/control-plane/tenant-organization.ts`, `../aidr-landing/README.md`.
 
 **IAM-06. Is multi-factor authentication supported and enforceable?**
 Status: `Partially implemented`
@@ -214,8 +216,8 @@ Evidence: `supabase/migrations/20260922000002_database_boundary_hardening.sql`, 
 
 **TEN-01. How is customer data segregated in the managed multi-tenant control plane?**
 Status: `Implemented (verified in code)`
-Answer: Logical segregation through a canonical `tenant_id` on tenant-owned tables with PostgreSQL row-level security (RLS). 33 migration files enable RLS and the schema defines 84 `create policy` statements in `supabase/migrations/`. Membership predicates are `SECURITY DEFINER` helpers (`is_team_member`, `is_team_member_with_role`, `app.is_tenant_member*`). Segregation is logical, not physical or per-tenant-database; a single-tenant option exists only through the self-hosted deployment model.
-Evidence: `supabase/migrations/20260805000000_hybrid_tenancy.sql`, `supabase/migrations/20260528000000_team_rbac.sql`, `supabase/migrations/20260922000002_database_boundary_hardening.sql`.
+Answer: The Supabase control plane uses a canonical `tenant_id` on tenant-owned tables with PostgreSQL row-level security and membership predicates. The managed app retains the existing `users/{tenantId}` Firestore anchor and installed machine identity when a trusted operator binds a Clerk organization. Reciprocal mapping, current membership and selected organization determine server access; inconsistent, suspended or deleted mappings fail closed. Removing the anchor owner's Clerk account does not delete shared tenant data. The checked-in deny-all Firestore rules must be deployed to prevent parallel browser access. These are logical isolation mechanisms; actual provider/rule deployment and independent isolation acceptance remain open.
+Evidence: `supabase/migrations/20260805000000_hybrid_tenancy.sql`, `supabase/migrations/20260528000000_team_rbac.sql`, `supabase/migrations/20260922000002_database_boundary_hardening.sql`, `../aidr-landing/src/lib/control-plane/tenant-context.ts`, `../aidr-landing/src/lib/control-plane/tenant-organization.ts`, `../aidr-landing/README.md`.
 
 **TEN-02. Are browser-reachable database privileges minimized?**
 Status: `Implemented (verified in code)`
@@ -239,8 +241,8 @@ Evidence: `supabase/functions/_shared/cors.ts`, `supabase/functions/_shared/orig
 
 **TEN-06. Are webhook and inbound integration endpoints authenticated?**
 Status: `Implemented (verified in code)`
-Answer: The Stripe webhook verifies signature and timestamp tolerance and fails closed on a missing secret or invalid signature; the earlier unsigned payment webhook was removed. Self-service billing endpoints are behind a fail-closed gate (`AIDR_ENABLE_LEGACY_SELF_SERVICE_BILLING`, kept `false` for direct sale). The Stripe endpoint is documented as **not deployed** and its secrets not provisioned.
-Evidence: `supabase/functions/stripe-webhook/index.ts` (header), `docs/runbooks/secrets-management.md` (Payment Provider Secrets).
+Answer: In the Supabase path, the Stripe webhook verifies signature and timestamp tolerance and fails closed on missing secrets or invalid signatures; legacy self-service billing endpoints remain behind `AIDR_ENABLE_LEGACY_SELF_SERVICE_BILLING` (false for direct sale). The separate managed app has Polar and legacy Lemon Squeezy webhook handlers, with provider/product/customer binding and replay controls. Their code and local tests do not prove a live payment account, approved order or reconciliation. Provider configuration and acceptance must follow the selected delivery path.
+Evidence: `supabase/functions/stripe-webhook/index.ts`, `docs/runbooks/secrets-management.md`, `../aidr-landing/src/app/api/webhooks/polar/route.ts`, `../aidr-landing/src/app/api/webhooks/lemon/route.ts`, `../aidr-landing/src/lib/billing/`.
 
 ---
 
@@ -248,8 +250,8 @@ Evidence: `supabase/functions/stripe-webhook/index.ts` (header), `docs/runbooks/
 
 **CRY-01. Is data encrypted in transit?**
 Status: `Partially implemented`
-Answer: Control-plane clients use HTTPS origins (SIEM adapters reject non-HTTPS unless an explicit loopback test flag is set; production preparation requires HTTPS dashboard/API origins and a TLS reverse proxy; the reference nginx configuration allows TLS 1.2 and 1.3; Cloudflare/Supabase terminate TLS in managed mode). For self-hosted deployments, TLS termination, certificates and cipher policy are customer-provided ingress; the repository ships a reference configuration and a renewal timer only. TLS configuration of a deployed environment has not been scanned.
-Evidence: `packages/core/src/siem-delivery.ts` (line ~324, protocol check), `deploy/README.md` ("Production requires … TLS reverse proxy"), `deploy/ingress/nginx.device-start.reference.conf` (line 23), `deploy/ingress/aidr-tls-renew.timer`, `scripts/deployment-tls-renew.mjs`.
+Answer: Control-plane clients use HTTPS origins; production preparation requires HTTPS dashboard/API origins and a TLS reverse proxy. Webhook, Splunk HEC, Sentinel and Elastic adapters require HTTPS, with an explicit loopback exception; the syslog adapter supports verified TLS and requires explicit opt-in for plaintext TCP/UDP. The reference nginx configuration allows TLS 1.2 and 1.3. For self-hosted deployments, TLS termination, certificates and cipher policy are customer-provided ingress; the repository ships a reference configuration and renewal timer. Managed hosting/provider TLS must be verified for the chosen path. TLS configuration of a deployed environment has not been accepted.
+Evidence: `packages/core/src/siem-delivery.ts`, `packages/core/src/siem-syslog.ts`, `deploy/README.md` ("Production requires … TLS reverse proxy"), `deploy/ingress/nginx.device-start.reference.conf`, `deploy/ingress/aidr-tls-renew.timer`, `scripts/deployment-tls-renew.mjs`.
 
 **CRY-02. Is data encrypted at rest in the managed control plane?**
 Status: `Not yet — owner action: Operations to obtain provider evidence (Supabase/Cloudflare storage encryption statements) for the production project`
@@ -263,8 +265,8 @@ Evidence: `packages/core/src/encryption.ts`, `packages/core/src/types.ts` (lines
 
 **CRY-04. How are endpoint credentials (API keys/tokens) stored?**
 Status: `Implemented (verified in code)`
-Answer: The CLI stores the managed credential in the platform vault where available (Windows DPAPI, macOS Keychain, Linux Secret Service) and never silently falls back to a plaintext file: with no selection and a failing probe it throws; `file-acl` is an explicit, labelled fallback. Backends shell out to OS tooling and are covered by injected-runner tests; **no real OS vault is exercised by the test suite** (stated in the module header).
-Evidence: `packages/core/src/secret-store.ts` (header and `SECRET_STORE_KINDS`), `packages/core/src/__tests__/secret-store.test.ts`.
+Answer: The CLI stores the managed credential in the platform vault where available (Windows DPAPI, macOS Keychain, Linux Secret Service) and never silently falls back to a plaintext file: with no selection and a failing probe it throws; `file-acl` is an explicit, labelled fallback. Injected-runner tests cover adapter protocols. A local Windows DPAPI round trip has exercised the real OS API; real macOS Keychain and Linux Secret Service round trips remain open. This does not establish the customer's service-account vault, rotation or recovery acceptance.
+Evidence: `packages/core/src/secret-store.ts`, `packages/cli/src/utils/secret-store.ts`, `packages/cli/src/__tests__/secret-store.test.ts`, `packages/core/src/__tests__/secret-store-macos.test.ts`, `docs/runbooks/secrets-management.md` (CLI credential-store evidence boundary). The macOS adapter checks are local/injected adapter evidence; actual native macOS Keychain acceptance remains open.
 
 **CRY-05. How are signing keys managed (release, artifact, entitlement, control-plane)?**
 Status: `Partially implemented`
@@ -312,8 +314,8 @@ Evidence: `supabase/functions/audit-export/index.ts`, `supabase/functions/_share
 
 **LOG-05. Can events be forwarded to a customer SIEM?**
 Status: `Partially implemented`
-Answer: A delivery layer supports generic webhook, Splunk HEC, Microsoft Sentinel and Elastic adapters over HTTPS with a versioned JSON event schema, event-id echo for generic receivers and CEF, LEEF, JSON and RFC 5424 syslog *formatters* (no syslog network transport is shipped; CR/LF in field values is neutralised in CEF, LEEF and syslog output); a systemd timer drains the durable queue (one-minute cadence template) with state files treated as secrets. SIEM is excluded from the first-customer evaluation scope until separately proven; the SIEM unit tests were run in the 2026-10-05 hardening pass (see `docs/production-readiness/enterprise-feature-verification-2026-10-05.md`). Delivery is queue-and-timer based, not guaranteed-latency.
-Evidence: `packages/core/src/siem-delivery.ts` (adapter configs, schema `siem-event-v1`), `packages/core/src/siem-export.ts` (CEF, LEEF, JSON, syslog formatters), `scripts/siem-delivery-worker.mjs`, `deploy/maintenance/README.md`, `docs/production-readiness/first-customer-ready.md` (scope exclusions).
+Answer: The Supabase/endpoint delivery layer supports generic webhook, Splunk HEC, Microsoft Sentinel and Elastic adapters over HTTPS, plus a shipped TCP/TLS/UDP syslog sender. The syslog path uses RFC 5424 output, RFC 6587 stream framing, verified TLS and destination/DNS policy checks. TCP/TLS byte-write receipts do not prove collector indexing; UDP receipts explicitly lack receiver acknowledgement. A durable queue and systemd timer template exist, with state files treated as secrets. Customer collector connectivity, worker scheduling and collector-side receipt/indexing remain open. The separate managed app supplies signed webhook exports and replayable delivery records; those do not establish that the native SIEM worker is deployed. SIEM remains outside the first-customer evaluation scope until separately proven; no delivery latency is guaranteed.
+Evidence: `packages/core/src/siem-delivery.ts`, `packages/core/src/siem-syslog.ts`, `packages/core/src/siem-export.ts`, `scripts/siem-delivery-worker.mjs`, `deploy/maintenance/README.md`, `../aidr-landing/src/lib/site/enterprise.ts`, `docs/production-readiness/enterprise-feature-verification-2026-10-05.md`, `docs/production-readiness/first-customer-ready.md`.
 
 **LOG-06. Is operational monitoring and alerting defined?**
 Status: `Partially implemented`
@@ -331,7 +333,7 @@ Evidence: `docs/production-readiness/privacy-data-flow-matrix.json` (DF-008, DF-
 
 **PRV-01. What customer data does the product process, and where does it go?**
 Status: `Partially implemented`
-Answer: A source-grounded data-flow register (19 flows, DF-001 to DF-019) and a user-facing description exist. Detection runs on the endpoint; optional outbound legs are URL reputation, file/package reputation, version check, managed telemetry, deep scan, diagnostics and response webhooks. In the machine-readable matrix the matrix status is `open`, and destination, region, subprocessor, lawful basis, retention, deletion, access and transfer mechanism are `unknown` for most flows. It is an inventory, not a deployed egress capture. Do not describe the product as keeping data only on the device.
+Answer: The source-grounded matrix updated 6 October 2026 contains 25 inventory flows (DF-001 to DF-025), including the separate managed Clerk/Firestore/Polar path, contact delivery, private privacy text service and MCP routing. Source-known fields, triggers, destination configuration and access/deletion boundaries are populated. Actual domains, regions, provider legal entities, lawful basis, accepted retention and transfer/erasure evidence remain explicit unknowns; matrix status remains `open`. Detection runs on the endpoint, with optional outbound reputation, version, telemetry, AIG, diagnostics, webhook and selected provider routes. This inventory is not a deployed egress capture and does not establish device-only processing.
 Evidence: `docs/privacy.md`, `docs/production-readiness/privacy-data-flow-matrix.json`, `docs/production-readiness/data-flow-privacy-v6.md`, `docs/production-readiness/com-003-privacy-acceptance-2026-09-23.md`.
 
 **PRV-02. Which outbound data flows are enabled by default?**
@@ -356,8 +358,8 @@ Evidence: `supabase/migrations/20260912140000_tenant_offboarding_retention.sql`,
 
 **PRV-06. Is legal hold supported?**
 Status: `Implemented (verified in code)`
-Answer: Tenant legal holds serialize with retention under a tenant advisory lock; held tenants are excluded from pruning and a hold placement is refused (not silently accepted) while export deletion authorizations are pending. Holds do not extend to offsite backups (see PRV-05).
-Evidence: `supabase/migrations/20260916000004_retention_legal_holds.sql`, `docs/production-readiness/retention-holds.md`, `scripts/retention-holds-postgres.test.mjs`.
+Answer: In the Supabase control plane, tenant legal holds serialize with retention under a tenant advisory lock; held tenants are excluded from pruning and a hold placement is refused while export deletion authorizations are pending. Owner/admin reads and audited owner-only hold/retention writes exist in the API and dashboard. Closing tenants keep the active-only API boundary: releasing a blocking hold requires the approved legal/database operators and atomic audited procedure in the runbook. Dual-control hold release is not an application feature, and holds do not extend to offsite backups (see PRV-05).
+Evidence: `supabase/migrations/20260916000004_retention_legal_holds.sql`, `supabase/functions/retention-admin/index.ts`, `packages/dashboard/src/ui/pages/RetentionPage.tsx`, `docs/production-readiness/retention-holds.md`, `scripts/retention-holds-postgres.test.mjs`.
 
 **PRV-07. Can the vendor support data-subject requests (access, rectification, deletion)?**
 Status: `Not yet — owner action: Privacy/DPO and Customer Success`
@@ -381,7 +383,7 @@ Evidence: `docs/production-readiness/privacy-data-flow-matrix.json`.
 
 **PRV-11. Is customer data used for product analytics or advertising?**
 Status: `Partially implemented`
-Answer: The repository contains no advertising integration. Optional runtime and browser Sentry diagnostics, a version check and (if configured) managed telemetry exist, each opt-in as described in PRV-02. A CI workflow named "Product Analytics Instrumentation" (`analytics-check.yml`) exists, which indicates product analytics instrumentation; its contents were not reviewed for this sheet, and the full set of production browser analytics was not inventoried, and DF-009 (browser diagnostics) is `unknown` in the matrix.
+Answer: Optional runtime and browser Sentry diagnostics, a version check and configured managed telemetry exist within the source limits in PRV-02. DF-009 now records source defaults (absent DSN skips initialization, `sendDefaultPii: false`, trace sampling defaults to zero) as `inventory`; actual browser destinations, provider region and retention remain unknown. The `analytics-check.yml` workflow is a CI check, not a measured inventory of deployed browser analytics. No deployed browser tracking/advertising audit or provider consent acceptance is held.
 Evidence: `docs/privacy.md`, `packages/dashboard/src/sentry.ts`, `docs/production-readiness/privacy-data-flow-matrix.json` (DF-007, DF-008, DF-009), `.github/workflows/analytics-check.yml`.
 
 **PRV-12. Is support access to customer data controlled?**
@@ -395,8 +397,8 @@ Evidence: `scripts/support-bundle.mjs`, `scripts/verify-support-bundle.mjs`, `do
 
 **SUB-01. Is there a list of subprocessors and a change-notification process?**
 Status: `Not yet — owner action: Privacy/DPO and Legal`
-Answer: The repository identifies likely providers by function (Supabase for database/Auth/Storage/Edge Functions, Cloudflare for the Worker/edge proxy and its challenge widget (per the CSP), Stripe or other billing providers if enabled, SMTP provider, optional Sentry, Slack/webhook destinations, S3-compatible backup storage chosen by the operator, GitHub for CI) but marks subprocessor as `unknown` in the matrix and has no approved list, contracts or notice process. Do not publish the function list as the subprocessor list.
-Evidence: `docs/production-readiness/privacy-data-flow-matrix.json`, `deploy/cloudflare/wrangler.jsonc`, `supabase/config.toml`, `docs/production-readiness/com-011-region-residency-audit-2026-09-23.md`.
+Answer: Providers differ by delivery path. The Supabase control plane references Supabase database/Auth/Storage/Edge Functions, optional Cloudflare hosting/proxy, gated Stripe/Paddle billing, SMTP, optional Sentry, configured webhook destinations and operator-selected backup storage. The managed app references Clerk authentication, Firebase/Firestore and Polar, with a legacy Lemon Squeezy path. GitHub supplies CI. These source references are not an approved subprocessor list: deployment destinations, regions, contracts and change notices must be established for the selected path, and the main repository's privacy matrix does not inventory all managed-app flows.
+Evidence: `docs/production-readiness/privacy-data-flow-matrix.json`, `deploy/cloudflare/wrangler.jsonc`, `supabase/config.toml`, `../aidr-landing/README.md`, `../aidr-landing/src/lib/billing/`. Owner action: Privacy/DPO and Legal to approve the deployment-specific list and notice process.
 
 **SUB-02. Are vendor security reviews and contracts in place for third parties with access to data?**
 Status: `Not yet — owner action: Legal / Procurement / Security Lead`
@@ -410,8 +412,8 @@ Evidence: `scripts/verify-aig-source.mjs`, `deploy/README.md` (Supabase `self-ho
 
 **SUB-04. Are payment details handled by the vendor?**
 Status: `Not applicable`
-Answer: The product does not store card data; billing is delegated to an external provider through hosted checkout. Direct-sale billing automation is excluded from the current evaluation scope; self-service billing endpoints are gated off by default.
-Evidence: `supabase/functions/billing-checkout/`, `docs/runbooks/secrets-management.md`, `docs/production-readiness/first-customer-ready.md` (scope exclusions).
+Answer: Billing code delegates card entry to provider-hosted checkout rather than storing card data. The Supabase evaluation excludes direct-sale billing automation and gates legacy self-service endpoints off by default. The managed app's Polar/legacy Lemon Squeezy checkout has its own approved-order enablement gate; provider acceptance and reconciliation remain open. Excluding a Supabase billing path does not establish a payment-provider exemption for the managed app.
+Evidence: `supabase/functions/billing-checkout/`, `docs/runbooks/secrets-management.md`, `../aidr-landing/src/lib/billing/checkout-gate.ts`, `../aidr-landing/src/lib/billing/polar-client.ts`, `docs/production-readiness/first-customer-ready.md`.
 
 ---
 
@@ -506,8 +508,8 @@ Evidence: `packages/core/src/response-actions.ts`, `packages/core/src/rollback.t
 
 **DEP-01. What deployment models are available?**
 Status: `Partially implemented`
-Answer: Two control-plane profiles are in scope in the support matrix: managed cloud (Supabase plus Cloudflare Worker) and customer self-hosted (generated Docker Compose stack on the reviewed Supabase self-hosting baseline); the endpoint detection engine also runs in local mode with no control plane. Each is prepared by repository tooling; none is accepted, and the current decision is NO-GO for a live offer.
-Evidence: `deploy/README.md`, `deploy/native/support-matrix.json` (`soldDeploymentProfiles`), `packages/core/src/types.ts` (`mode` default `local`), `docs/production-readiness/first-customer-ready.md`.
+Answer: The `aidr` support matrix describes Supabase managed-cloud preparation and a customer self-hosted Compose stack. The separate managed web app targets Clerk + Firestore + Polar on Node hosting, with operator-bound shared organizations. The private privacy launcher adds one configured text request/response route for one tenant/provider, requiring mTLS, approved NER and a real session broker. It does not automatically connect existing agent, browser or native clients or cover every outbound path. These delivery paths have distinct identity and acceptance boundaries. The endpoint engine also runs in local mode without a control plane. No path has production/customer acceptance, and the current decision remains NO-GO for a live offer.
+Evidence: `deploy/README.md`, `deploy/native/support-matrix.json` (`soldDeploymentProfiles`), `../aidr-landing/README.md`, `../aidr-landing/src/lib/site/enterprise.ts`, `packages/privacy/docs/TEXT_SERVICE.md`, `packages/core/src/types.ts` (`mode` default `local`), `docs/production-readiness/first-customer-ready.md`.
 
 **DEP-02. Can the product run fully air-gapped?**
 Status: `Partially implemented`
@@ -618,13 +620,13 @@ Evidence: none.
 
 **AI-01. Does the product send customer prompts, code or tool inputs to a large language model (LLM) provider?**
 Status: `Implemented (verified in code)`
-Answer: The detection path does not call an LLM: matching uses YAML threat rules, heuristics, DLP rules, a deterministic local embedding model for similarity ("not calibrated confidence") and a behavioral baseline. A source search of `packages/core/src` found no LLM provider client (only mentions in logger and PII-detector comments). The AI Infra Guard deep-scan bridge is a separate, explicit scan that sends the target to a configured bridge (loopback by default). Third-party LLM vendors used by the customer's own agents are outside the product.
-Evidence: `packages/core/src/ml-model.ts` (header), `packages/core/src/ml/embedder.ts`, `packages/core/src/heuristics.ts`, `packages/core/src/aig-scan-client.ts`, `docs/privacy.md` (item 6, AIG deep scan).
+Answer: Core detection uses local YAML rules, heuristics, signed tenant DLP policy, a deterministic embedding signal and a behavioral baseline. Configured input DLP runs before optional reputation/supply-chain requests; the provisioned output scanner applies signed tenant DLP where the connector invokes it. The explicit AIG deep scan sends its target to the configured bridge. Separately, the private text service can dispatch the selected application's final text to one fixed OpenAI Responses or Gemini generateContent route after its privacy checks. That service requires mTLS, approved learned NER and a real broker at startup; it does not connect every agent/browser/provider exit. Customer provider dispatch, data-flow approval and network bypass restrictions still require acceptance.
+Evidence: `packages/core/src/evaluator.ts`, `packages/core/src/provisioned-output-scanner.ts`, `packages/core/src/output-scanner.ts`, `packages/core/src/ml/embedder.ts`, `packages/core/src/aig-scan-client.ts`, `packages/privacy/docs/TEXT_SERVICE.md`, `docs/privacy.md`.
 
 **AI-02. Is customer data used to train models?**
 Status: `Implemented (verified in code)`
-Answer: No model training pipeline exists in the repository; the embedding model is a deterministic hash-based embedder, not a trained network. A federated-learning module and false-positive feedback module exist in core; their use with customer data is not enabled by a default configuration verified here and has not been privacy-reviewed, so no commitment on "never used for improvement" should be made without Privacy/Legal approval.
-Evidence: `packages/core/src/ml/embedder.ts`, `packages/core/src/ml-model.ts`, `packages/core/src/federated.ts`, `packages/core/src/false-positive-feedback.ts`. Owner action: Privacy/Legal to approve contractual wording on use of customer data for product improvement.
+Answer: Core's embedding model is a deterministic hash-based embedder. The private privacy package also includes a review classifier trained on developer-authored synthetic examples; its model card records that no customer documents were used. The text launcher requires separately approved learned NER artifacts and does not provide trained NER weights. Core federated-learning and feedback modules do not establish permission to train on customer data. Model provenance, deployment behavior and any use-of-customer-data commitment require Privacy/Legal approval; no general "never used for improvement" assurance is made.
+Evidence: `packages/core/src/ml/embedder.ts`, `packages/core/src/ml-model.ts`, `packages/core/src/federated.ts`, `packages/core/src/false-positive-feedback.ts`, `packages/privacy/models/MODEL_CARD.md`, `packages/privacy/docs/TEXT_SERVICE.md`. Owner action: Privacy/Legal to approve contractual wording on use of customer data for product improvement.
 
 **AI-03. Does the product detect prompt injection and related agent attacks?**
 Status: `Partially implemented`
@@ -643,8 +645,8 @@ Evidence: `scripts/verify-aig-source.mjs`, `scripts/sync-aig-threats.mjs`, `pack
 
 **AI-06. Does the product expose an MCP gateway or tool-call mediation, and how is it secured?**
 Status: `Partially implemented`
-Answer: An MCP gateway package exists (`packages/mcp-gateway`) with approve and stdio entry points and is type/syntax-checked in the `check` script; the first-customer profile excludes the MCP gateway unless separately proven.
-Evidence: `package.json` script `check`, `packages/mcp-gateway/src/`, `docs/production-readiness/first-customer-ready.md` (scope exclusions).
+Answer: An MCP gateway package exists (`packages/mcp-gateway`) with approve and stdio entry points; the first-customer profile excludes it unless separately proven. A separate private privacy launcher exposes one mTLS-bound text egress route for one tenant and fixed provider, using durable sessions, audit and an approved NER startup probe. Neither package automatically mediates every application or provider exit. Signed delivery, real brokers/models/providers and customer network restrictions require their own acceptance.
+Evidence: `package.json` script `check`, `packages/mcp-gateway/src/`, `packages/privacy/docs/TEXT_SERVICE.md`, `docs/production-readiness/first-customer-ready.md`.
 
 ---
 
@@ -684,11 +686,10 @@ Items below are every `Not yet` and the unresolved parts of `Partially implement
 - Set and document Supabase Auth password, session and CAPTCHA settings per deployment (IAM-10).
 
 ### Identity engineering
-- Run live Entra ID and Okta SAML plus SCIM acceptance with redacted receipts; implement the audited, dual-approved provider-requirement change operation before any SSO continuity claim (IAM-02, IAM-04).
+- Accept the implemented SAML request/approval and OIDC administration paths on the deployed candidate; obtain live Entra ID/Okta provisioning, sign-in, enforcement, rollback and outage-recovery receipts before any SSO continuity claim (IAM-02, IAM-03, IAM-04). Verify the separate Clerk managed-app scope rather than assuming Supabase acceptance covers it.
 
 ### Release Engineering
 - Produce one signed, candidate-bound release with passing evidence index; verify attestations and publish key fingerprints out-of-band (SDL-08, SDL-11).
-- Correct the stale "fail-open" checklist line in `.github/pull_request_template.md` (SDL-01).
 
 ### Support / Customer Success
 - Stand up and test the ticket route, severity definitions, and diagnostics consent/deletion receipts (PRV-12, INC-01).

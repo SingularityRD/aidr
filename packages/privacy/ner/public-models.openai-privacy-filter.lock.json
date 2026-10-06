@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "status": "unqualified-public-candidates",
+  "models": [
+    {
+      "repository": "openai/privacy-filter",
+      "revision": "7ffa9a043d54d1be65afb281eddf0ffbe629385b",
+      "license": "Apache-2.0",
+      "directory": "tr-en-openai-privacy-filter",
+      "languages": ["tr", "en"],
+      "max_length": 384,
+      "stride": 96,
+      "label_map": {
+        "O": null,
+        "account_number": "INTERNAL",
+        "private_address": "ADDRESS",
+        "private_date": "INTERNAL",
+        "private_email": "EMAIL",
+        "private_person": "PERSON",
+        "private_phone": "PHONE",
+        "private_url": "INTERNAL",
+        "secret": "SECRET"
+      },
+      "files": {
+        "config.json": {
+          "source": "config.json",
+          "size": 3039,
+          "sha256": "b2b26a4a4a000639ad30b0c264adbefe365bdb567fbd7bb27303b8c438375bd1"
+        },
+        "tokenizer.json": {
+          "source": "tokenizer.json",
+          "size": 27868174,
+          "sha256": "0614fe83cadab421296e664e1f48f4261fa8fef6e03e63bb75c20f38e37d07d3"
+        },
+        "tokenizer_config.json": {
+          "source": "tokenizer_config.json",
+          "size": 234,
+          "sha256": "6c14af9ce1a284d3c3c5146b26efe4cd589c68e1dd4e9d94455606ec911ba774"
+        },
+        "model.safetensors": {
+          "source": "model.safetensors",
+          "size": 2798989498,
+          "sha256": "06f66b87650b988b04e218285f9fe3df6a4943416b6ffa8171f07bc56cf12a9d"
+        },
+        "README.md": {
+          "source": "README.md",
+          "size": 11057,
+          "sha256": "48318ff48819858192dbb59f106dd709c3017e447bcc540807df66840a03a695"
+        },
+        "viterbi_calibration.json": {
+          "source": "viterbi_calibration.json",
+          "size": 372,
+          "sha256": "bbc8611ef08a55ed72d64856cbbbb9a91db8dfa881f0a92e2afbad6e4bbc775a"
+        }
+      }
+    }
+  ]
+}

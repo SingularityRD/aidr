@@ -4,6 +4,8 @@ const mocks = vi.hoisted(() => ({
 	commands: new Map<string, () => Promise<void>>(),
 	getConfiguration: vi.fn(),
 	loadConfig: vi.fn(),
+	formatSessionStartMessage: vi.fn(),
+	runSessionStart: vi.fn(),
 	getRecentEntries: vi.fn(),
 	showInformationMessage: vi.fn(),
 	showWarningMessage: vi.fn(),
@@ -14,9 +16,11 @@ vi.mock("@singularityrd/aidr-core", () => ({
 	ConfigSchema: { parse: (value: unknown) => value },
 	ControlPlaneClient: class {},
 	checkForUpdate: vi.fn(),
+	formatSessionStartMessage: mocks.formatSessionStartMessage,
 	getInstallationId: vi.fn(),
 	getRecentEntries: mocks.getRecentEntries,
 	loadConfig: mocks.loadConfig,
+	runSessionStart: mocks.runSessionStart,
 	pruneOrphanedTmpFiles: vi.fn(() => Promise.resolve()),
 	resolvePath: () => "/test/.singularity-aidr",
 }));
@@ -47,7 +51,11 @@ describe("VS Code Local hook setting prerequisite", () => {
 		removeManagedHooks: vi.fn(),
 		getHookHealth: vi.fn(),
 	};
-	const context = { extension: { packageJSON: { version: "0.6.0" } }, subscriptions: [] };
+	const context = {
+		extension: { packageJSON: { version: "0.6.0" } },
+		subscriptions: [],
+		asAbsolutePath: (relativePath: string) => `/extension/${relativePath}`,
+	};
 	let localHooksEnabled = false;
 
 	beforeEach(() => {
@@ -66,6 +74,7 @@ describe("VS Code Local hook setting prerequisite", () => {
 			};
 		});
 		mocks.loadConfig.mockResolvedValue({
+			mode: "local",
 			version_check: { enabled: false },
 			auth: { api_key: "test-token" },
 			logging: {},
@@ -117,6 +126,75 @@ describe("VS Code Local hook setting prerequisite", () => {
 
 		await mocks.commands.get("aidr.enableProtection")?.();
 		expect(installer.installManagedHooks).toHaveBeenCalledTimes(1);
+		expect(mocks.runSessionStart).not.toHaveBeenCalled();
 		expect(mocks.configurationUpdate).not.toHaveBeenCalled();
 	});
+
+	it("finishes managed browser activation through the shared persisted bootstrap on retry", async () => {
+		localHooksEnabled = true;
+		mocks.loadConfig.mockResolvedValue({
+			mode: "managed",
+			version_check: { enabled: false },
+			auth: {},
+		});
+		mocks.runSessionStart
+			.mockResolvedValueOnce({
+				enabled: false,
+				bootstrap: { verification_url: "https://aidr.test/verify", user_code: "ABCD" },
+			})
+			.mockResolvedValueOnce({ enabled: true });
+		activateManagedHooksExtension(context as never, {
+			hostName: "VS Code",
+			scopeSettingKey: "aidr.vscode.scope",
+			installer,
+		});
+		await mocks.commands.get("aidr.enableProtection")?.();
+		expect(mocks.showInformationMessage).toHaveBeenCalledWith(
+			expect.stringContaining("run Enable protection again to finish activation"),
+			{ modal: true },
+			"Open browser",
+		);
+		await mocks.commands.get("aidr.enableProtection")?.();
+		expect(mocks.runSessionStart).toHaveBeenCalledTimes(2);
+		expect(mocks.runSessionStart).toHaveBeenCalledWith(
+			expect.objectContaining({ agentRuntime: "vscode", plugins: [] }),
+		);
+		expect(mocks.showInformationMessage).toHaveBeenLastCalledWith(
+			expect.stringContaining("enabled for VS Code"),
+		);
+	});
+
+	it.each(["VS Code", "Cursor"])(
+		"shows shared operator repair guidance in %s without offering a stale bootstrap",
+		async (hostName) => {
+			localHooksEnabled = true;
+			mocks.loadConfig.mockResolvedValue({
+				mode: "managed",
+				version_check: { enabled: false },
+				auth: {},
+			});
+			const startup = {
+				enabled: false,
+				disabled_reason: "enrollment_repair_required",
+				bootstrap: { verification_url: "https://aidr.test/stale", user_code: "CONSUMED-CODE" },
+				scanResults: [],
+				versionCheck: null,
+			};
+			mocks.runSessionStart.mockResolvedValueOnce(startup);
+			mocks.formatSessionStartMessage.mockReturnValueOnce(
+				"Operator repair required: revoke affected key and approve fresh pairing.",
+			);
+			activateManagedHooksExtension(context as never, {
+				hostName,
+				scopeSettingKey: "aidr.vscode.scope",
+				installer,
+			});
+			await mocks.commands.get("aidr.enableProtection")?.();
+			expect(mocks.formatSessionStartMessage).toHaveBeenCalledWith("0.6.0", startup);
+			expect(mocks.showWarningMessage).toHaveBeenCalledWith(
+				"Operator repair required: revoke affected key and approve fresh pairing.",
+			);
+			expect(mocks.showInformationMessage).not.toHaveBeenCalled();
+		},
+	);
 });

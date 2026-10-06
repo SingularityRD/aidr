@@ -1,6 +1,6 @@
 # AIDR 0.5.0-rc.1 — 12 başlık için uygulama ve kabul durumu
 
-24 Eylül 2026. Bu belge, yazılmış kod ile kurumda doğrulanması gereken kabul koşullarını ayırır. Ana AIDR uygulama deposu bu çalışmada mevcut değildi; bağımsız pakete eklendi, ana uygulamada merge yapılmadı. Hiçbir satır, yalnız sentetik test sayısına dayanarak “kurumda üretim kabulü tamam” sayılmıyor.
+6 Ekim 2026 güncellemesi: ana AIDR deposu artık mevcut. Özel pakette gerçek yapılandırılmış OIDC/JWKS ve kurum broker bağlantısı, mTLS client/final send CLI, kurulan imzalı ana gateway paketine bağlanan [MCP çalıştırıcısı](MCP_SERVICE.md), kalıcı kurum etiketi/ACL ve Office/PDF metin dönüşüm uçları eklendi. Gerçek sabitlenmiş TR/EN NER modelleri Windows ve ağsız Linux ortamında çalıştırıldı; ölçülen iki aday birleşimi kalite kapısını geçmedi ([model kanıtı](MODEL_PROVIDER.md)). Kurulum sınırı [CONFIGURED_BROKER.md](CONFIGURED_BROKER.md), veri yolları [DATA_OPERATIONS.md](DATA_OPERATIONS.md), güncel test sonuçları [INTEGRATION-2026-10-06.md](../reports/platform/INTEGRATION-2026-10-06.md) içindedir. Aşağıdaki 24 Eylül başlangıç tablosu tarihsel kanıtı gösterir; canlı kurum kabulü tamamlanmış sayılmaz.
 
 | Öncelik / başlık | Bu sürümde çalışan uygulama | Gerçek kanıt | Tamamlanmayan kabul sınırı |
 |---|---|---|---|

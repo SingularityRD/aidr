@@ -42,19 +42,21 @@ verifyTlsDelivery();
 verifyBenchmarkDelivery();
 const source=JSON.parse(readFileSync(join(kit,"release-source.json"),"utf8"));
 verifyDeliveryStatus(source);
-const gatewayRuntime=["deploy/gateway/aidr-mcp-gateway.mjs","deploy/gateway/aidr-mcp-approve.mjs","deploy/gateway/aidr-mcp-stdio.mjs","deploy/gateway/aidr-artifact.manifest.json","deploy/gateway/aidr-artifact.manifest.sig","deploy/gateway/README.md"];
+const gatewayRuntime=["deploy/gateway/aidr-mcp-gateway.mjs","deploy/gateway/aidr-mcp-approve.mjs","deploy/gateway/aidr-mcp-stdio.mjs","deploy/gateway/aidr-artifact.manifest.json","deploy/gateway/README.md"];
+const gatewaySignaturePresent=expected.has("deploy/gateway/aidr-artifact.manifest.sig");
+assert.equal(source.inline_mcp_gateway_signature_present,gatewaySignaturePresent,"MCP gateway signature status does not match bundled runtime");
+assert.ok(!source.release_signed||!source.inline_mcp_gateway_bundled||gatewaySignaturePresent,"Signed customer kits require the MCP gateway artifact signature");
 const gatewayPaths=[...expected].filter((file)=>file.startsWith("deploy/gateway/"));
 assert.equal(typeof source.inline_mcp_gateway_bundled,"boolean","MCP gateway delivery status is invalid");
 assert.ok(source.inline_mcp_gateway_bundled?gatewayRuntime.every((file)=>expected.has(file)):gatewayPaths.length===0,"MCP gateway delivery status does not match bundled signed runtime");
 if(source.inline_mcp_gateway_bundled){
- const signature=readFileSync(join(kit,"deploy/gateway/aidr-artifact.manifest.sig"),"utf8").trim();
- assert.ok(/^[A-Za-z0-9+/]+={0,2}$/.test(signature)&&Buffer.from(signature,"base64").length===64,"Gateway artifact signature is invalid");
+ if(gatewaySignaturePresent){const signature=readFileSync(join(kit,"deploy/gateway/aidr-artifact.manifest.sig"),"utf8").trim();assert.ok(/^[A-Za-z0-9+/]+={0,2}$/.test(signature)&&Buffer.from(signature,"base64").length===64,"Gateway artifact signature is invalid");}
  const manifest=JSON.parse(readFileSync(join(kit,"deploy/gateway/aidr-artifact.manifest.json"),"utf8"));
  const names=new Set();
  assert.equal(manifest.schema_version,1,"Gateway artifact manifest is invalid");assert.ok(Array.isArray(manifest.files)&&manifest.files.length>=3,"Gateway artifact manifest is invalid");
  for(const item of manifest.files){assert.ok(item&&/^[A-Za-z0-9_.-]+$/.test(item.path)&&!names.has(item.path)&&/^[a-f0-9]{64}$/.test(item.sha256)&&expected.has(`deploy/gateway/${item.path}`),"Gateway artifact manifest entry is invalid");names.add(item.path);assert.equal(createHash("sha256").update(readFileSync(join(kit,"deploy/gateway",item.path))).digest("hex"),item.sha256,`Gateway artifact digest mismatch: ${item.path}`);}
  assert.ok(["aidr-mcp-gateway.mjs","aidr-mcp-approve.mjs","aidr-mcp-stdio.mjs"].every((name)=>names.has(name)),"Gateway binaries absent from manifest");
- const declared=new Set([...manifest.files.map((item)=>`deploy/gateway/${item.path}`),"deploy/gateway/aidr-artifact.manifest.json","deploy/gateway/aidr-artifact.manifest.sig","deploy/gateway/README.md"]);
+ const declared=new Set([...manifest.files.map((item)=>`deploy/gateway/${item.path}`),...gatewayRuntime,...(gatewaySignaturePresent?["deploy/gateway/aidr-artifact.manifest.sig"]:[])]);
  assert.ok(gatewayPaths.length===declared.size&&gatewayPaths.every((file)=>declared.has(file)),"MCP gateway contains files outside its signed artifact manifest");
 }
 const hasSignedManifest=expected.has("artifacts/aidr-release.manifest.json");

@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash, generateKeyPairSync } from "node:crypto";
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { deploymentCredentialFailures } from "./lib/deployment-credentials.mjs";
 
 const script = resolve(dirname(fileURLToPath(import.meta.url)), "deployment-doctor.mjs");
 const maintenanceSource = resolve(dirname(fileURLToPath(import.meta.url)), "..", "deploy", "maintenance");
@@ -15,6 +16,9 @@ const REGIONS = {
 };
 const ARTIFACT_PUBLIC_KEY = generateKeyPairSync("ed25519").publicKey.export({ type: "spki", format: "pem" }).toString();
 const LICENSING_PUBLIC_KEY = generateKeyPairSync("ed25519").publicKey.export({ type: "spki", format: "pem" }).toString();
+const vendorEnv = Object.fromEntries(readFileSync(resolve(import.meta.dirname, "../deploy/upstream/docker/.env.example"), "utf8")
+	.split(/\r?\n/).filter((line) => /^[A-Z][A-Z0-9_]*=/.test(line))
+	.map((line) => [line.slice(0, line.indexOf("=")), line.slice(line.indexOf("=") + 1)]));
 
 function writeAgentConfig(directory, artifactKey = ARTIFACT_PUBLIC_KEY, licensingKey = LICENSING_PUBLIC_KEY) {
 	writeFileSync(join(directory, "agent-config.json"), JSON.stringify({
@@ -151,6 +155,54 @@ globalThis.fetch = async (input) => {
 function doctor(directory, args = [], env = process.env) {
 	return spawnSync(process.execPath, [script, "--deployment", directory, ...args], { encoding: "utf8", timeout: 60_000, env });
 }
+
+for (const [name, value, kind] of [
+	["SERVICE_ROLE_KEY", vendorEnv.SERVICE_ROLE_KEY, "shared vendor credentials"],
+	["S3_PROTOCOL_ACCESS_KEY_SECRET", "REPLACE_WITH_THE_DEPLOYMENT_PRIVATE_S3_PROTOCOL_SECRET", "non-API placeholder"],
+]) test(`doctor rejects ${kind} before making online requests`, (t) => {
+	const directory = readyDeploymentDirectory(t);
+	const configured = readFileSync(join(directory, ".env"), "utf8").replace(new RegExp(`^${name}=.*$`, "m"), `${name}=${value}`);
+	writeFileSync(join(directory, ".env"), configured);
+	const fetchLog = join(directory, "unsafe-fetch.log");
+	const preload = join(directory, "unsafe-fetch.mjs");
+	writeFileSync(preload, 'import { appendFileSync } from "node:fs"; globalThis.fetch = async () => { appendFileSync(process.env.AIDR_DOCTOR_FETCH_LOG, "request\\n"); return Response.json({ status: "ready", disable_signup: true }); };');
+	const result = doctor(directory, ["--online"], { ...process.env, NODE_OPTIONS: `--import=${pathToFileURL(preload).href}`, AIDR_DOCTOR_FETCH_LOG: fetchLog });
+	assert.notEqual(result.status, 0);
+	assert.match(result.stdout, /^FAIL selected project's public and private keys configured$/m);
+	if (name === "S3_PROTOCOL_ACCESS_KEY_SECRET") assert.match(result.stdout, /^FAIL S3 protocol credential is private and differs from the upstream demonstration secret$/m);
+	assert.equal(existsSync(fetchLog), false, "unsafe credentials must not reach a network check");
+	assert.equal((result.stdout + result.stderr).includes(value), false);
+});
+
+test("credential guard rejects every pinned vendor secret and reserialized demo JWT without returning its value", () => {
+	const credentialNames = ["POSTGRES_PASSWORD", "JWT_SECRET", "ANON_KEY", "SERVICE_ROLE_KEY", "DASHBOARD_PASSWORD", "SECRET_KEY_BASE", "REALTIME_DB_ENC_KEY", "VAULT_ENC_KEY", "PG_META_CRYPTO_KEY", "LOGFLARE_PUBLIC_ACCESS_TOKEN", "LOGFLARE_PRIVATE_ACCESS_TOKEN", "S3_PROTOCOL_ACCESS_KEY_SECRET", "MINIO_ROOT_PASSWORD", "SMTP_PASS", "OPENAI_API_KEY"];
+	const configured = { ANON_KEY: "sb_publishable_customer_fixture", SERVICE_ROLE_KEY: "sb_secret_customer_fixture" };
+	for (const name of credentialNames) {
+		assert.deepEqual(deploymentCredentialFailures({ ...configured, [name]: vendorEnv[name] }), [name]);
+		assert.deepEqual(deploymentCredentialFailures({ ...configured, [name]: `"${vendorEnv[name]}"` }), [name]);
+		assert.deepEqual(deploymentCredentialFailures({ ...configured, [name]: `REPLACE_WITH_PRIVATE_${name}` }), [name]);
+		assert.deepEqual(deploymentCredentialFailures({ ...configured, [name]: `"replace_with_private_${name}"` }), [name]);
+		if (!["ANON_KEY", "SERVICE_ROLE_KEY"].includes(name)) {
+			assert.deepEqual(deploymentCredentialFailures({ ...configured, [name]: undefined }), [], "unused cloud secrets may be absent");
+			assert.deepEqual(deploymentCredentialFailures({ ...configured, [name]: "" }), [], "unused cloud secrets may be empty");
+		}
+	}
+	const demoKey = `e30.${Buffer.from(JSON.stringify({ iss: "supabase-demo", role: "service_role", exp: 4102444800 })).toString("base64url")}.reserialized_fixture`;
+	assert.deepEqual(deploymentCredentialFailures({ ...configured, SERVICE_ROLE_KEY: demoKey }), ["SERVICE_ROLE_KEY"]);
+	assert.deepEqual(deploymentCredentialFailures(configured), []);
+	assert.deepEqual(deploymentCredentialFailures({ ...configured, SERVICE_ROLE_KEY: "replace_with_project_key" }), ["SERVICE_ROLE_KEY"]);
+	assert.deepEqual(deploymentCredentialFailures({ ...configured, ANON_KEY: "" }), ["ANON_KEY"]);
+	const projectKey = `e30.${Buffer.from(JSON.stringify({ iss: "supabase", role: "service_role" })).toString("base64url")}.project_fixture`;
+	assert.deepEqual(deploymentCredentialFailures({ ...configured, SERVICE_ROLE_KEY: projectKey }), []);
+});
+
+test("doctor keeps customer opaque cloud keys supported", (t) => {
+	const directory = readyDeploymentDirectory(t);
+	writeFileSync(join(directory, ".env"), readFileSync(join(directory, ".env"), "utf8")
+		.replace(/^ANON_KEY=.*$/m, "ANON_KEY=sb_publishable_customer_fixture")
+		.replace(/^SERVICE_ROLE_KEY=.*$/m, "SERVICE_ROLE_KEY=sb_secret_customer_fixture"));
+	assert.match(doctor(directory).stdout, /^PASS selected project's public and private keys configured$/m);
+});
 
 test("commercial doctor requires valid artifact keys independent from licensing", (t) => {
 	const label = "commercial artifact verification uses valid independent Ed25519 public keys";
@@ -396,8 +448,9 @@ test("deployment doctor fails a deployment that contains no SIEM delivery timer"
 	const directory = deploymentDirectory(t);
 	const kit = join(directory, "kit");
 	mkdirSync(join(kit, "deploy", "maintenance"), { recursive: true });
-	mkdirSync(join(kit, "scripts"), { recursive: true });
+	mkdirSync(join(kit, "scripts", "lib"), { recursive: true });
 	copyFileSync(script, join(kit, "scripts", "deployment-doctor.mjs"));
+	copyFileSync(resolve(import.meta.dirname, "lib/deployment-credentials.mjs"), join(kit, "scripts/lib/deployment-credentials.mjs"));
 
 	// The doctor reads `.aidr-deploy` relative to its own working directory, so the
 	// throwaway kit carries its own prepared deployment there.

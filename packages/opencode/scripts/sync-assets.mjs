@@ -9,7 +9,8 @@ const repoRoot = resolve(packageRoot, "..", "..");
 const sourceThreats = join(repoRoot, "threats");
 const sourceAllowlists = join(repoRoot, "allowlists");
 
-const resourcesDir = join(packageRoot, "resources");
+// Runtime-loaded policy data must share the dist integrity boundary with code.
+const resourcesDir = join(packageRoot, "dist", "resources");
 const targetThreats = join(resourcesDir, "threats");
 const targetAllowlists = join(resourcesDir, "allowlists");
 

@@ -1,10 +1,10 @@
 # AIDR üretim ve satış hazırlığı: ayrıntılı eksik kaydı
 
-Otomatik rapor üretim tarihi: **2026-09-24** (Europe/Istanbul). Rapor bu çalışma ağacının kaynaklarından üretildi; source_commit yalnızca taban commit'i gösterir, çalışma ağacının değişmiş olduğu ayrıca işaretlenir. Bu rapor candidate-bound release evidence değildir. READINESS_BACKLOG.json issue-ledger kaydının tarihsel baseline ve doğrulama tarihleri aşağıdaki makine kaydında yer alır; açık finding ID'leri güncel checkout doğrulaması sayılmaz. **Karar: NO-GO.** Kurulabilir bir aday ve doğrulanmış yerel akışlar var; bütün ürünün üretim ve satış kabulü tamamlanmış değil.
+Otomatik rapor üretim tarihi: **2026-10-06** (Europe/Istanbul). Rapor bu çalışma ağacının kaynaklarından üretildi; source_commit yalnızca taban commit'i gösterir, çalışma ağacının değişmiş olduğu ayrıca işaretlenir. Bu rapor candidate-bound release evidence değildir. READINESS_BACKLOG.json issue-ledger kaydının tarihsel baseline ve doğrulama tarihleri aşağıdaki makine kaydında yer alır; açık finding ID'leri güncel checkout doğrulaması sayılmaz. **Karar: NO-GO.** Kurulabilir bir aday ve doğrulanmış yerel akışlar var; bütün ürünün üretim ve satış kabulü tamamlanmış değil.
 
 71 alt özellik: **41 bağlı/çalışan, 28 kısmi, 0 eksik, 2 dış kabule bağlı**. Çalışan bir özellikte de saha veya işletim kabulü açık olabilir. Bu raporda **46 teknik/operasyon iş paketi ve 13 ticari/dış kanıt kapısı** ayrıntılandırıldı. Bunlar benzersiz yazılım hatası sayısı veya tamamlanma yüzdesi değildir; örtüşen gereksinimler kimliklerle ilişkilidir. Makine kaydı: [PRODUCTION_SALES_GAPS.json](PRODUCTION_SALES_GAPS.json).
 
-44 teknik işte yerel uygulama ilerlemiş ve saha kabulü açık; 2 teknik iş uygulama/entegrasyon olarak açık. Başlangıç boşluğu tarihsel karşılaştırma için korunur; satırın güncel durumu ve kalan kabul koşulu esas alınmalıdır. Üretim ve destekli satış profillerinin her birinde **12 açık zorunlu dış kapı** var. Müşteri ortamı henüz bilinmiyor; cloud ve self-hosted kapsamları korunmuştur.
+43 teknik işte yerel uygulama ilerlemiş ve saha kabulü açık; 3 teknik iş uygulama/entegrasyon olarak açık. Başlangıç boşluğu tarihsel karşılaştırma için korunur; satırın güncel durumu ve kalan kabul koşulu esas alınmalıdır. Üretim ve destekli satış profillerinin her birinde **12 açık zorunlu dış kapı** var. Müşteri ortamı henüz bilinmiyor; cloud ve self-hosted kapsamları korunmuştur.
 
 ## Kanıt ve durum nasıl okunmalı?
 
@@ -12,7 +12,7 @@ Otomatik rapor üretim tarihi: **2026-09-24** (Europe/Istanbul). Rapor bu çalı
 - **Açık:** Başlangıç bulgusu veya eksik ürün bağlantısı tamamlanmadı.
 - **P0/P1:** Satılan kapsam önceliği. Ticari kapılar kendi profillerinde zorunludur.
 
-Güncel pre-customer gate [docs/production-readiness/first-customer-ready.md](docs/production-readiness/first-customer-ready.md) içindedir. Candidate-bound durum [.release-evidence/v8-evidence-index.json](.release-evidence/v8-evidence-index.json) tarafından izlenir; güncel index'te candidate digest bilinmiyor ve 30 gate NOT_RUN. v8 candidate raporu [docs/production-readiness/2026-09-13-customer-candidate-v8.md](docs/production-readiness/2026-09-13-customer-candidate-v8.md) yalnız tarihsel karşılaştırmadır ve güncel/accepted candidate değildir. Yerel test geçişi native host, bağımsız güvenlik değerlendirmesi veya SLA kanıtının yerini tutmaz.
+Güncel pre-customer gate [docs/production-readiness/first-customer-ready.md](docs/production-readiness/first-customer-ready.md) içindedir. Candidate-bound durum [.release-evidence/v8-evidence-index.json](.release-evidence/v8-evidence-index.json) tarafından izlenir; İndeks yoksa veya aday kimliği ve gerekli gate makbuzları doğrulanmamışsa release kabulü yoktur. v8 candidate raporu [docs/production-readiness/2026-09-13-customer-candidate-v8.md](docs/production-readiness/2026-09-13-customer-candidate-v8.md) yalnız tarihsel karşılaştırmadır ve güncel/accepted candidate değildir. Yerel test geçişi native host, bağımsız güvenlik değerlendirmesi veya SLA kanıtının yerini tutmaz.
 
 ## Öncelikli kalan işler
 
@@ -23,6 +23,70 @@ Güncel pre-customer gate [docs/production-readiness/first-customer-ready.md](do
 5. Ticari teklif/siparişten entitlement'a, veri işleme, destek kanalları, bağımsız pentest ve isimli müşteri PoV.
 
 ## Teknik ve operasyon eksikleri
+
+| Kimlik | Açık iş / kabul başlığı | Kalan iş türü |
+|---|---|---|
+| T01 | Gerçek host ve işletim sistemi kapsamı | Saha/işletim kabulü |
+| T02 | Bağlayıcılar arasında araç adı ve girdi normalizasyonu | Saha/işletim kabulü |
+| T03 | Paket denetiminde hatanın sessiz kaybolması | Saha/işletim kabulü |
+| T04 | Model tüketiminden önce çıktı denetimi | Saha/işletim kabulü |
+| T05 | Davranış, novelty ve ML kararlarının ürün akışına bağlanması | Saha/işletim kabulü |
+| T06 | Reputation ve AI altyapı verisinin güncelliği | Saha/işletim kabulü |
+| T07 | MCP keşfi ve kimlik normalizasyonunun kapsamı | Saha/işletim kabulü |
+| T08 | İmzalı MCP araç tanımı ve değişiklik onayı | Saha/işletim kabulü |
+| T09 | Kullanıcı–ajan–araç–kaynak ilişkisi ve delegasyon | Saha/işletim kabulü |
+| T10 | MCP gateway ve taşıma güvenliği | Saha/işletim kabulü |
+| T11 | Sürekli kurum/filo keşfi | Saha/işletim kabulü |
+| T12 | Filo müdahalesi ve credential iptali | Saha/işletim kabulü |
+| T13 | Response eylemlerinin güvenli uçtan uca işletimi | Saha/işletim kabulü |
+| T14 | YAML politika yazımı ile gerçek runtime ilişkisi | Saha/işletim kabulü |
+| T15 | Politika dağıtımı saha kabulü ve ölçek sınırları | Saha/işletim kabulü |
+| T16 | Endpoint sır saklama ve anahtar rotasyonu | Saha/işletim kabulü |
+| T17 | İmzalı filo kurulumu, güncelleme ve kaldırma | Saha/işletim kabulü |
+| T18 | Kurumsal giriş, MFA ve hesap kurtarma | Saha/işletim kabulü |
+| T19 | SCIM ve güvenilir directory grup eşlemesi | Ürün/protokol/model bağlantısı ve kabul |
+| T20 | Davet ve cihaz kayıt yaşam döngüsü | Saha/işletim kabulü |
+| T21 | Mevcut API anahtarında ekip ve üyelik iptali | Saha/işletim kabulü |
+| T22 | Tenant izolasyonu ve kaynak tüketim sınırları | Saha/işletim kabulü |
+| T23 | Telemetri dayanıklılığı ve görünür veri kaybı | Saha/işletim kabulü |
+| T24 | SIEM ve yerel telemetry üretim teslimi | Saha/işletim kabulü |
+| T25 | Olay araştırması ve kanıt bütünlüğü | Saha/işletim kabulü |
+| T26 | Saklama, legal hold ve müşteri çıkışı | Saha/işletim kabulü |
+| T27 | Offsite yedekleme ve RPO/RTO | Saha/işletim kabulü |
+| T28 | Gerçek cloud ve self-hosted üretim kurulumu | Saha/işletim kabulü |
+| T29 | Kimliği doğrulanan dağıtım ve release provenance | Saha/işletim kabulü |
+| T30 | HA, failover, kapasite ve SLA ölçümü | Saha/işletim kabulü |
+| T31 | Migration, upgrade ve geri dönüş tatbikatı | Saha/işletim kabulü |
+| T32 | İzleme, alarm ve işletim sahipliği | Saha/işletim kabulü |
+| T33 | Satılan fatura ve entitlement yaşam döngüsü | Saha/işletim kabulü |
+| T34 | Readiness kayıtlarının ve ürün iddialarının tutarlılığı | Saha/işletim kabulü |
+| T35 | Test kapılarının kapsamı ve başarısızlığın saklanmaması | Saha/işletim kabulü |
+| T36 | Operatör UI ve ilk müşteri kullanılabilirliği | Saha/işletim kabulü |
+| T37 | Gerçek veri akışı, redaksiyon ve gizlilik kanıtı | Ürün/protokol/model bağlantısı ve kabul |
+| T38 | Kuruma özel DLP ve veri etiketleri | Ürün/protokol/model bağlantısı ve kabul |
+| T39 | Bağımsız etkinlik, performans ve rakip kıyaslaması | Saha/işletim kabulü |
+| T40 | Güvenlik güncellemesi ve müşteri destek işletimi | Saha/işletim kabulü |
+| T41 | İlk müşteri satış ve satın alma değerlendirme paketi | Saha/işletim kabulü |
+| T42 | Legacy RLS tenant yaşam döngüsü ve itibar satırı sahteciliği | Saha/işletim kabulü |
+| T43 | Enrollment exchange işlem bütünlüğü | Saha/işletim kabulü |
+| T44 | Entitlement grace ve eski imzalı önbellek geçişi | Saha/işletim kabulü |
+| T45 | Device-start güvenilir IP ve giriş yönlendirmesi | Saha/işletim kabulü |
+| T46 | Device-poll onaydan kayda atomik geçiş | Saha/işletim kabulü |
+| COM-001 | Onaylı SKU, fiyat, teklif ve ticari sürüm manifesti | Ortam/ölçüm/isimli onay |
+| COM-002 | Lisans, fikri mülkiyet ve üçüncü taraf hakları | Ortam/ölçüm/isimli onay |
+| COM-003 | Veri işleme, DPA ve gizlilik onayı | Ortam/ölçüm/isimli onay |
+| COM-004 | Fatura–ödeme–entitlement mutabakatı | Ortam/ölçüm/isimli onay |
+| COM-005 | Çalışan destek ve müşteri iletişim yolları | Ortam/ölçüm/isimli onay |
+| COM-010 | Reklamı yapılan tüm bağlayıcıların kabulü | Ortam/ölçüm/isimli onay |
+| COM-011 | Bölge ve veri yerleşimi kanıtı | Ortam/ölçüm/isimli onay |
+| COM-012 | Faturalı ve kimliği doğrulanan özel dağıtım | Ortam/ölçüm/isimli onay |
+| COM-013 | 99.9% SLA için ölçüm ve sözleşme | Ortam/ölçüm/isimli onay |
+| SEC-EXT-001 | Bağımsız güvenlik değerlendirmesi ve yeniden test | Ortam/ölçüm/isimli onay |
+| POV-001 | İsimli müşteri PoV ve kabul kaydı | Ortam/ölçüm/isimli onay |
+| INV-001 | Yatırımcı metriklerinin kanıt ve onay sözlüğü | Yatırımcı profili onayı |
+| CLM-001 | Müşteri ve satış iddialarının kanıt onayı | Ortam/ölçüm/isimli onay |
+
+Bu tek liste 59 iş paketini kapsar. Açık backlog kayıtları ve kısmi özellikler bu kimliklere eşlenir; ayrıca yeni iş gibi toplanmaz. Kod bulunması kalan ürün bağlantısını, model onayını veya saha kabulünü kapatmaz. Ayrıntılarda **kalan ürün bağlantısı** varsa ayrıca belirtilmiştir.
 
 ### T01 — Gerçek host ve işletim sistemi kapsamı (P0)
 
@@ -74,7 +138,7 @@ Güncel pre-customer gate [docs/production-readiness/first-customer-ready.md](do
 
 ### T04 — Model tüketiminden önce çıktı denetimi (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Çıktı tarayıcı 2 MiB UTF-8, 3000 ms best-effort ve 128 bulgu sınırında inspection_incomplete/critical fail-closed üretiyor; JSON/Unicode ve sınır payloadları test edildi. Her hostta aynı-tur blok kanıtı yok.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Çıktı tarayıcı sınırlı UTF-8/JSON/Unicode kapsamı ve inspection_incomplete fail-closed davranışı uygular. İmzalı tenant DLP Claude/OpenCode/OpenClaw ve açık SDK runtime adapteri çıktılarına bağlandı; teslimde state/expiry/revocation yeniden doğrulanır. Ayrı privacy MCP metin/structuredContent/metadata ve birleştirilmiş metin parçalarını denetleyip hassas yanıtı saklar. Codex output API'si yok; Cursor/VS Code host kabiliyeti ve provider stream yolları için eksiksiz pre-consumption iddiası yapılmaz. Gerçek host kabulü açık.
 
 **Başlangıç durumu:** Claude çıktısında sınırlı tarama var; PostToolUse çalışmış eylemi geri alamaz. Diğer tüketim yollarının tamamı bağlı değil.
 
@@ -90,7 +154,7 @@ Güncel pre-customer gate [docs/production-readiness/first-customer-ready.md](do
 
 ### T05 — Davranış, novelty ve ML kararlarının ürün akışına bağlanması (P1)
 
-**Durum:** OPEN. **Mevcut yerel uygulama:** No authenticated post-execution receipt reaches the evaluator; learningAllowed remains false, the runtime starts cold, and baseline restore/persistence are intentionally disabled. DET-08 must not be sold as learned/personalized behavior detection until an authoritative execution boundary, anti-replay receipt, and persistence/retention rules are defined.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Gerçek foreground işlemden sonra ayrı execution imzası ve bağımsız onay hesabının benign/retention imzası gerekiyor. learning execute/approve/ingest akışı tenant, cihaz, çağrı, girdi ve güncel yetkiye bağlı tek kullanımlık kayıtları doğruluyor; kasa HMAC'li kalıcı journal/baseline ile 30 günlük fiziksel pruning var. Normal araç preflight'ı öğrenmiyor; issuer opt-in yetkisi ve imzalı corpus/ayrı public roller gerekiyor. Gerçek Windows işlemleri/DPAPI ve hesaplar arası akış test edildi. Exit zero iş başarısı veya süreç ağacı izolasyonu sayılmaz; müşteri corpus etkinliği, rol/key custody ve OS kabulü açık.
 
 **Başlangıç durumu:** Modüller ve testler var; sürekli çalışan tüketici, öğrenme yaşam döngüsü ve üretim başarı ölçümü kanıtı tamam değil.
 
@@ -170,7 +234,7 @@ Güncel pre-customer gate [docs/production-readiness/first-customer-ready.md](do
 
 ### T10 — MCP gateway ve taşıma güvenliği (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Loopback/stdio JSON-RPC geçidi DNS pinleme, gerçek stream sınırı, tekil framing ve bozuk yanıt reddi uyguluyor; binary, server-initiated ve zorunlu routing kabulü açık.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** DNS pinli JSON/SSE ve stdio tools geçidi incremental fatal UTF-8, gerçek bayt sınırı, 202/boş priming ve cancellation uygular. Legacy server callback ve modern MRTR continuation tek kullanımlık tenant/client/server/session/request bağlarıyla geri taşınır. Tam RPC metadata ve çıktı guard'ları kurulu imza doğrulanan ESM factory'de çalışır; private launcher gerçek mTLS tarayıcıya bağlıdır. Mandatory routing ayrı upstream credential ve unauthenticated/client-credential 401/403 negatif probu ister. Opaque format capable guard olmadan reddedilir; resources/prompts/subscriptions/unrelated GET kapsam dışı, host ağ sınırı ve gerçek müşteri kabulü açık.
 
 **Başlangıç durumu:** Framing ve policy interception yardımcıları var; çalışan tam gateway tüketicisi yok. URL DNS kontrolünden sonra fetch yeniden çözümleme yapıyor; cevap sınırı Content-Length başlığına bakıyor.
 
@@ -186,7 +250,7 @@ Güncel pre-customer gate [docs/production-readiness/first-customer-ready.md](do
 
 ### T11 — Sürekli kurum/filo keşfi (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Yerel tamamlama: aidr collect tek-seferlik OS scheduler çağrısı ve çakışmayan --interval döngüsü destekliyor; kimlikli/sequenced upload dedup edilmiş tenant envanterine gidiyor; authenticated summary/list/read ve reported_collectors_only freshness/alert-state dashboard tüketicisi tamamlandı. Dış kabul: müşteri cloud/MDM adaptörleri, izinli kapsam/credentials, etkin production schedule ve alert/paging teslimi ile canlı tool-provider ve saha kabulü açık.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** aidr collect AWS STS/SigV4 tagging, Azure Resource Graph, GCP signed OAuth Cloud Asset ve Intune device API adaptörlerini bounded pagination/scope/freshness ile çalıştırır. Collector credential yalnız açık provider+scope hash yetkisiyle typed provider_resources yükleyebilir; eski HTTP yetkisi cloud yetkisi vermez. Tenant dashboard, incomplete/complete reconcile, hold/offboarding ve gerçek PostgreSQL zinciri testlidir. Gerçek cloud hesapları/MDM lisansı, IAM kapsamı, production schedule ve paging teslimi açık.
 
 **Başlangıç durumu:** Yerel kolektör, tenant kapsamlı sequenced/dedup upload ve kimlikli Discovery dashboard summary/list/read akışları var; raporlanan collector/target tazeliği gösteriliyor.
 
@@ -202,7 +266,7 @@ Güncel pre-customer gate [docs/production-readiness/first-customer-ready.md](do
 
 ### T12 — Filo müdahalesi ve credential iptali (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** İmzalı revocation feed tenant+global kapsamı 5000 sınırından önce filtreliyor ve eksik/truncated seti imzalamıyor; native/provider iptali açık.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Bağımsız Ed25519 exact-device/tenant/iid/current-key command envelope, ACK/result ve immutable queue kanıtı eklendi. Windows opt-in current-user worker dağıtımına ve Scheduled Task yaşam döngüsüne bağlandı; kalıcı pause tüm ortak denetim yollarında kasa HMAC'li journal'dan okunur. Windows isolation owned firewall block kuralları explicit control/recovery CIDR'lerini korur; sonuç/geri alma doğrulaması failure/unknown ile ayrıdır. Kod ve güvenli native fixture testleri gerçek üretim PC izolasyonu değildir. Onaylı Authenticode/key custody, Windows VM/MDM ve diğer OS/provider kabulü açık.
 
 **Başlangıç durumu:** Yerel süreç müdahalesi ve iptal listesi temelleri var.
 
@@ -218,7 +282,7 @@ Güncel pre-customer gate [docs/production-readiness/first-customer-ready.md](do
 
 ### T13 — Response eylemlerinin güvenli uçtan uca işletimi (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Response-worker capability/önkoşul/TTL/idempotency/rollback makbuzu sözleşmesini uyguluyor; desteklenmeyen eylem reddediliyor ve geri alınamayan adım partial raporlanıyor. RSP-07 için owner/admin + AAL2 yetkili API ve dayanıklı, sabit iki adımlı pause-agent → isolate-network playbook'u eklendi; çalışan adapter/worker ayrıca kurulup doğrulanmadıkça yürütme başlamaz. Native OS/provider adapter, alarm tetikleyicisi, harici SOAR bağlayıcısı ve kurulu servis saha kabulü açık.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** İnsan owner/admin+AAL2 API ve ayrı süreli hash-only alarm/SOAR automation grant aynı sabit pause→isolate playbook'una bağlıdır. Exact target/template/source, creator/live revocation, TTL, event idempotency, hold/offboarding ve audit rollback gerçek PostgreSQL'de testlidir. Kurulu worker ayrı imzalı komutu doğrular; unverifiable OS etkisi başarı yazılmaz ve unsafe retry/rollback yapılmaz. Native signed Windows VM ve harici alarm/SOAR olay kaynağı kabulü açık.
 
 **Başlangıç durumu:** Quarantine/restore, dosya snapshot/rollback, imzalı olay zinciri ve sabit SOAR playbook yerel testli.
 
@@ -266,7 +330,7 @@ Güncel pre-customer gate [docs/production-readiness/first-customer-ready.md](do
 
 ### T16 — Endpoint sır saklama ve anahtar rotasyonu (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Windows config create/update/reuse yolu owner+SYSTEM+Administrators DACL kuruyor ve ACL hatasında credential yazmıyor; OS vault ve server-side revocation açık.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Windows config create/update/reuse yolu özel DACL kuruyor ve ACL hatasında credential yazmıyor. DPAPI, macOS Keychain ve Linux Secret Service adapterleri ile vault-ref yönetilen credential yolu mevcut; bu, yalnız dosya izinleriyle sağlanan korumadan ayrıdır. Gerçek platform/service-account vault ve server-side revocation kabulü açık.
 
 **Başlangıç durumu:** Tipli/redakte config ve özel dosyalar mevcut.
 
@@ -298,7 +362,7 @@ Güncel pre-customer gate [docs/production-readiness/first-customer-ready.md](do
 
 ### T18 — Kurumsal giriş, MFA ve hesap kurtarma (P0)
 
-**Durum:** OPEN. **Mevcut yerel uygulama:** Recovery URL only accepts hosted HTTPS/loopback HTTP, rejects credential URLs and installs a global session barrier before password changes. Enterprise SAML policy administration is still absent: application code cannot set/clear required_saml_provider_id or perform the documented dual-approved cutover/rollback. The specification leaves approver identity/AAL2, rollback target, session-revocation scope, provider allowlist source, and approval expiry/replay rules undefined; do not invent these security semantics.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Normal iki-owner+AAL2 SAML CAS ve audit korunur. Bütün IdP oturumları bitmişken önceden bağımsız kaydedilmiş iki operator HMAC kanıtı, 5 dakikalık nonce, exact provider CAS ve aktif manuel Auth owner ile NULL rollback yapan ayrı offline helper/RPC vardır; session/MFA bariyerini, hold veya Auth credential'ını kaldırmaz. Service JWT ile doğrudan tablo mutasyonu da kapatıldı. Tam migration zincirinde recovery9 ve normal administration13 gerçek PostgreSQL testi geçti; gerçek IdP/Auth kurtarma operatörü ve saha kabulü açık.
 
 **Başlangıç durumu:** İlk yönetici ve parolalı giriş SMTP olmadan çalışıyor.
 
@@ -314,7 +378,9 @@ Güncel pre-customer gate [docs/production-readiness/first-customer-ready.md](do
 
 ### T19 — SCIM ve güvenilir directory grup eşlemesi (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** SCIM stale PATCH'i reddediyor, Remove members tüm üyeleri kaldırıyor ve büyük grup üyeliğini sayfalıyor. Dashboard scim-admin çağrısı sabit fonksiyon adı ve kodlanmış cursor sorgusuyla browser Edge sözleşme kapısına bağlı; gerçek Entra/Okta kabulü açık.
+**Durum:** OPEN. **Mevcut yerel uygulama:** Self-hosted SCIM stale update/role/credential lifecycle kontrolünü korur. Landing native Clerk SSO/Directory Sync SDK ve operator yapılandırmasına, actual ordered role-ID group mapping'e, bound fresh organization/admin kontrolüne ve deprovisioned/banned reddine bağlıdır. Native JIT ve ek identity linking kapatılır. Mevcut Clerk API her üyelik için seçilmiş directory active durumunu kanıtlayamıyor; manual/başka-directory grant kaynaklarının strict deny garantisi tamam değil. Gerçek Entra/Okta/Clerk kurum kabulü ve provider ayarları açık.
+
+**Kalan ürün bağlantısı / protokol / model:** Clerk native API seçili-directory-active bilgisini her grant için sağlamıyor; manual/başka-directory üyeliğin strict deny garantisi için desteklenen provider kabiliyeti veya kurum kontrolü gerekir.
 
 **Başlangıç durumu:** Azure yardımcıları mevcut; azure-ad-groups endpointi ve tam SCIM yaşam döngüsü yok.
 
@@ -458,7 +524,7 @@ Güncel pre-customer gate [docs/production-readiness/first-customer-ready.md](do
 
 ### T28 — Gerçek cloud ve self-hosted üretim kurulumu (P0)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Historical v6 self-hosted install evidence recorded execution of 33 migrations; it is not proof for the current source tree or candidate. The current source tree contains 122 canonical migration files, and no current candidate-bound install/upgrade acceptance exists. Prepare inputs are validated without creating secrets, and cloud preparation rejects public proxy/provider upstream loops. Live provider/TLS acceptance remains open.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Historical v6 self-hosted install evidence recorded execution of 33 migrations; it is not proof for the current source tree or candidate. The current source tree contains 139 canonical migration files, and no current candidate-bound install/upgrade acceptance exists. Prepare inputs are validated without creating secrets, and cloud preparation rejects public proxy/provider upstream loops. Live provider/TLS acceptance remains open.
 
 **Başlangıç durumu:** İki model için kurulum hazırlama ve yerel Docker prova var.
 
@@ -570,7 +636,7 @@ Güncel pre-customer gate [docs/production-readiness/first-customer-ready.md](do
 
 ### T35 — Test kapılarının kapsamı ve başarısızlığın saklanmaması (P0)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Bu çalışma ağacında yerel test paketi geçti; ancak güncel ilk müşteri gate'i candidate digesti bulunmadığını ve release evidence indexindeki 30 kapının NOT_RUN olduğunu kaydediyor. Yerel test geçişi v8 adayını güncel/accepted yapmaz; native kör corpus açık.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Bu çalışma ağacında yerel test paketi geçti; güncel candidate digesti ve v8-evidence-index.json bulunmuyor. 30 NOT_RUN kapısı yalnız 24 Eylül tarihsel snapshot'ıdır. Yerel test geçişi v8 adayını güncel/accepted yapmaz; native kör corpus, secret-history Security kabulü ve landing geliştirme zincirinin yamalanmamış braces açığı açık. Gerçek bridge OCI imajı tam OS/library Trivy taramasında PCRE2 güncellendi ve kullanılmayan pip/ensurepip kaldırıldı; aynı DB ile 7 giderilebilir bulgu kapandı. Kalan 241 package/advisory satırı, 111 benzersiz ID ve düzeltmesi olmayan 52 HIGH bulgu docs/production-readiness/bridge-image-security-2026-10-06.md içinde açıklanır; Security kabulü ve GA hâlâ NO-GO.
 
 **Başlangıç durumu:** Binlerce yerel test ve derlenmiş kanca kontrolleri var; 1 canlı sağlayıcı senaryosu atlanıyor. Son koşu hatası ve düzeltme kaydı tutuluyor.
 
@@ -602,7 +668,9 @@ Güncel pre-customer gate [docs/production-readiness/first-customer-ready.md](do
 
 ### T37 — Gerçek veri akışı, redaksiyon ve gizlilik kanıtı (P0)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Privacy verifier canary boyunca source hash kararlılığı ve temp support-bundle izolasyonu istiyor; 6 canary/13 bundle kontrolü geçti. Ingest now omits JWT/credential-shaped projected identifiers and rejects credential-shaped event IDs (10 focused regressions); legal retention, data-flow, region, and live acceptance remain open.
+**Durum:** OPEN. **Mevcut yerel uygulama:** Privacy platform gerçek HTTPS OIDC discovery/JWKS, PKCE/nonce/mTLS broker login, ayrı kurum-imzalı identity assertion ve durable revoke/refresh oturumuyla çalışır. Gerçek provider gönderimi final mTLS/lease/ACL sınırına bağlıdır; datasource/read label revision ve signed-group ACL kullanır. Kurulu aidr-privacy-mcp, imzalı public gateway ESM factory'de actual RPC input/output'u gerçek private mTLS protect servisine yönlendirir ve routingRequired zorunludur. OS vault ref, üç ayrı UID ve egress kuralı recipe'si vardır. Bütün native/browser/model yollarını kurum MDM/network kontrolü olmadan kapatan evrensel dağıtım yok; gerçek kurum authority/provider/region ve onaylı model kabulü açık.
+
+**Kalan ürün bağlantısı / protokol / model:** Kurulu broker/MCP/CLI gönderim yolları bağlıdır; bütün native/browser/model-provider alternatif yollarını kapatan kurum MDM/egress dağıtımı ve gerçek authority materyali henüz yok.
 
 **Başlangıç durumu:** Redaksiyon ve tenant ayrımı bileşenleri var.
 
@@ -618,7 +686,9 @@ Güncel pre-customer gate [docs/production-readiness/first-customer-ready.md](do
 
 ### T38 — Kuruma özel DLP ve veri etiketleri (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** DLP overlapping ve JSON Unicode-escaped secret spanlarını tam redact ediyor; malformed/mapping/oversize fail-closed. Versioned CAS storage/history/audit/offboarding ve owner/admin+MFA publish sınırı uygulandı; imzalı agent delivery ve müşteri label kabulü açık.
+**Durum:** OPEN. **Mevcut yerel uygulama:** Tenant DLP CAS/history/audit ve operatör imzalama bridge'i tüm desteklenen ortak input/output yollarına bağlıdır; gerçek issuer optional runtime_detectors/behavioral_learning_v1 yetkisini yalnız tenant operator opt-in ve aktif signed grant ile üretir. Private DSPM ACL, gerçek parser ile PDF/DOCX→sanitized TXT ve conservative PCM16 redaction vardır. Hash-pinned gerçek TR/EN modeller Windows/Linux offline CPU ile ölçüldü: iki candidate da temiz false alarm/type recall eşiklerini geçmedi ve approved:false kalır. Bu model/kurum label kabulü ile formatı koruyan Office/PDF, gerçek ASR zaman aralığı ve bütün frame'leri denetleyen video yolu açık.
+
+**Kalan ürün bağlantısı / protokol / model:** Gerçek TR/EN NER candidate'ları ölçülen type recall/temiz yanlış alarm eşiklerini geçmedi. Onaylı kurum corpus/model ile formatı koruyan Office/PDF, gerçek ASR timestamp ve tam-frame video yolları eksik.
 
 **Başlangıç durumu:** PII/DLP detektörleri ve bazı çıktı kontrolleri var.
 
@@ -634,7 +704,7 @@ Güncel pre-customer gate [docs/production-readiness/first-customer-ready.md](do
 
 ### T39 — Bağımsız etkinlik, performans ve rakip kıyaslaması (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Deterministik sentetik corpus, içerik-digest holdout manifesti, sold-scope coverage, confusion/P-R-F1/ROC-AUC, reason-coded unknown competitor hücreleri, trusted-key/duty-separation binding, ölçüm bütçesi, canonical digest ve byte-exact reproduce harness'ı uygulanıp test edildi. Gerçek müşteri benign corpus'u, competitor erişimi, bağımsız evaluator/trust kaydı ve bütçe onayı dış kanıt olarak açık.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Deterministik sentetik corpus, içerik-digest holdout manifesti, sold-scope coverage, confusion/P-R-F1/ROC-AUC, reason-coded unknown competitor hücreleri, trusted-key/duty-separation binding, ölçüm bütçesi, canonical digest ve byte-exact reproduce harness'ı uygulanıp test edildi. Privacy model qualification dil başına temiz negatif kapsamı ve yapılandırılabilir observed false-alarm engineering sınırı ister; tüm temiz örnekleri engelleyen model artık qualified sayılmaz. Gerçek müşteri model/benign corpus'u, competitor erişimi, bağımsız evaluator/trust kaydı ve bütçe onayı dış kanıt olarak açık.
 
 **Başlangıç durumu:** Pazar yetenek kategorileri ve önerilen benchmark protokolü belgeli.
 
@@ -698,7 +768,7 @@ Güncel pre-customer gate [docs/production-readiness/first-customer-ready.md](do
 
 ### T43 — Enrollment exchange işlem bütünlüğü (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Atomik token/seat/key RPC ve lost-response sonucu unknown sözleşmesi var; plaintext-key recovery protokolü ve canlı HTTP kabulü açık.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Atomik token/seat/key RPC korunur. Session-start ve evaluator bootstrap aynı private, exclusive enrollment-pending journal'ını kullanır; belirsiz/committed yanıt otomatik tekrar edilmez, credential diske kesin kaydedilmeden journal silinmez. Kayıp committed anahtar plaintext olarak geri açılamaz: yetkili revoke ve yeni insan onaylı aynı-iid eşleme gerçek PostgreSQL'de tek seat/agent ile doğrulandı. Canlı TLS/host ve operatör kabulü açık.
 
 **Başlangıç durumu:** Tek kullanımlık token önceden tüketilip sonraki adım hata verince kurulum kilitlenebiliyordu.
 
@@ -714,7 +784,7 @@ Güncel pre-customer gate [docs/production-readiness/first-customer-ready.md](do
 
 ### T44 — Entitlement grace ve eski imzalı önbellek geçişi (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Cache unsigned/unknown/schema-invalid entitlement'ı atıyor; kesin invalid_api_key signed state'i temizliyor, geçici hata grace'i koruyor. Canlı kabul açık.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Cache unsigned/unknown/schema-invalid entitlement'ı atıyor; kesin invalid_api_key signed state'i temizliyor, geçici hata grace'i koruyor. Premium policy pack/cache artık mevcut doğrulanmış grant, tenant/serial/expiry/grace ve revocation durumuna bağlı; downgrade/revoke/expiry eski çözülmüş önbelleği devre dışı bırakır. Yerel operatör denylist'i ve ücretsiz detection korunur. Canlı kabul açık.
 
 **Başlangıç durumu:** Yedi günlük entitlement bitişinden sonraki 72 saatlik grace yanlış hesaplanıyordu.
 
@@ -1009,4 +1079,4 @@ Tabloda wired yalnız çağrılabilen akış demektir; üretim kabulü değildir
 
 Her kapanış kaydı isimli sorumlu, gerçek sürüm/artefact özeti, değiştirilemeyen test kanıtı, gözlem tarihi, kabul eden kişi ve kalan sınıra sahip olmalı. Tahmini bitiş tarihi vermek için ekip kapasitesi, müşteri kapsamı ve altyapı bilgisi gerekiyor; bilinmeyen bağımlılığa hayali tarih atanmadı.
 
-Güncel pre-customer gate: [docs/production-readiness/first-customer-ready.md](docs/production-readiness/first-customer-ready.md). Satış görüşmesi için var olan packet [docs/production-readiness/first-customer-sales-packet-v8.md](docs/production-readiness/first-customer-sales-packet-v8.md) tarihsel bir iç buyer-review taslağıdır; production sale veya supported deployment için NO-GO ve onaylı satış paketi değildir. Candidate-bound durum [.release-evidence/v8-evidence-index.json](.release-evidence/v8-evidence-index.json) içindedir: candidate digesti unknown, 30 kapı NOT_RUN. [deploy/FIRST_CUSTOMER.md](deploy/FIRST_CUSTOMER.md) ve [FEATURE_INVENTORY.md](FEATURE_INVENTORY.md) kurulum/kapsam kaynaklarıdır; bu materyaller hiçbiri üretim veya satış onayı değildir.
+Güncel pre-customer gate: [docs/production-readiness/first-customer-ready.md](docs/production-readiness/first-customer-ready.md). Satış görüşmesi için var olan packet [docs/production-readiness/first-customer-sales-packet-v8.md](docs/production-readiness/first-customer-sales-packet-v8.md) tarihsel bir iç buyer-review taslağıdır; production sale veya supported deployment için NO-GO ve onaylı satış paketi değildir. Candidate-bound durum [.release-evidence/v8-evidence-index.json](.release-evidence/v8-evidence-index.json) içindedir: dosyanın varlığı ve aynı aday üzerindeki makbuzları ayrıca doğrulanmalıdır; eksik indeks release kabulü değildir. [deploy/FIRST_CUSTOMER.md](deploy/FIRST_CUSTOMER.md) ve [FEATURE_INVENTORY.md](FEATURE_INVENTORY.md) kurulum/kapsam kaynaklarıdır; bu materyaller hiçbiri üretim veya satış onayı değildir.

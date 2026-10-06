@@ -36,10 +36,6 @@ export async function packageVsixVariant(variant) {
 		recursive: true,
 		force: true,
 	});
-	await cp(join(extensionRoot, "resources"), join(stageDir, "resources"), {
-		recursive: true,
-		force: true,
-	});
 	await cp(join(extensionRoot, "README.md"), join(stageDir, "README.md"), { force: true });
 	await cp(join(extensionRoot, "LICENSE"), join(stageDir, "LICENSE"), { force: true });
 	await cp(join(extensionRoot, "aidr-icon.png"), join(stageDir, "aidr-icon.png"), {

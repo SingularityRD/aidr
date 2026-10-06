@@ -12,14 +12,21 @@ function step(workflow, name) {
 	return workflow.slice(start, next ? start + marker.length + next.index : undefined);
 }
 
-test("CI and RC block on the isolated offboarding and retention PostgreSQL suites", () => {
+test("CI and RC block on isolated identity, offboarding and retention PostgreSQL suites", () => {
 	for (const [file, stopName, gateName, nextGateName] of [
 		["ci.yml", "Stop pinned local Supabase stack", "Blocking reputation, offboarding and retention PostgreSQL gates", "Type, lint, audit, tests, coverage and release build"],
 		["release-rc.yml", "Stop local Supabase", "Blocking offboarding and retention PostgreSQL gates", "Full deterministic quality gate"],
 	]) {
 		const workflow = read(`.github/workflows/${file}`);
 		const gate = step(workflow, gateName);
+		assert.match(gate, /^\s+set -euo pipefail\r?$/m);
 		assert.match(gate, /docker pull supabase\/postgres:17\.6\.1\.136/);
+		for (const suite of ["oidc-administration", "saml-administration", "fleet-signed-delivery", "delegated-session-policy"]) {
+			const command = `node --test scripts/${suite}-postgres.test.mjs`;
+			assert.ok(gate.split(/\r?\n/).includes(`          ${command}`), `${file}: ${suite} must be an unconditional command`);
+			assert.ok(gate.indexOf("docker pull supabase/postgres:17.6.1.136") < gate.indexOf(command));
+			assert.ok(gate.indexOf(command) < gate.indexOf("pnpm verify:offboarding"));
+		}
 		assert.match(gate, /pnpm verify:offboarding/);
 		assert.match(gate, /pnpm verify:retention/);
 		assert.ok(gate.indexOf("docker pull") < gate.indexOf("pnpm verify:offboarding"));
@@ -34,8 +41,11 @@ test("CI and RC block on the isolated offboarding and retention PostgreSQL suite
 test("the workflow contract is itself part of the required migration check", () => {
 	const scripts = JSON.parse(read("package.json")).scripts;
 	assert.match(scripts["supabase:check"], /scripts\/database-workflow-gates\.test\.mjs/);
+	assert.match(scripts["supabase:check:edge-typed-slice"], /supabase\/functions\/response-playbooks\/index\.ts/);
+	assert.match(scripts["supabase:check:edge-typed-slice"], /supabase\/functions\/delegated-credentials\/index\.ts/);
 	assert.match(scripts["verify:offboarding"], /scripts\/billing-offboarding-postgres\.test\.mjs/);
 	assert.match(scripts["verify:offboarding"], /scripts\/pack-offboarding-guard-postgres\.test\.mjs/);
+	assert.match(scripts["verify:offboarding"], /scripts\/oidc-scim-offboarding-postgres\.test\.mjs/);
 	assert.match(scripts["verify:retention"], /scripts\/retention-holds-postgres\.test\.mjs/);
 	for (const file of ["billing-offboarding-postgres.test.mjs", "pack-offboarding-guard-postgres.test.mjs", "retention-holds-postgres.test.mjs"])
 		assert.match(read(`scripts/${file}`), /supabase\/postgres:17\.6\.1\.136/);

@@ -43,6 +43,7 @@ const legacyControlPlaneConfig: ControlPlaneConfig = {
 	remote_policy_cache_path: "~/.singularity-aidr/remote-policy-cache",
 	remote_policy_cache_enabled: true,
 	remote_policy_required: false,
+	response_worker_required: false,
 	remote_policy_offline_grace_seconds: 3600,
 };
 const legacyUrlConfig: UrlCheckConfig = { enabled: true, timeout_seconds: 5 };

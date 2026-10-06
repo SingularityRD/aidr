@@ -31,11 +31,36 @@ Direct runtime dependency baseline
 | Supabase client | `@supabase/supabase-js@^2.108.2` | MIT | https://github.com/supabase/supabase-js |
 | OpenCode plugin API | `@opencode-ai/plugin@^1.2.10` | MIT | Upstream package repository and published package metadata |
 
-The AIG bridge separately installs 31 hash-locked PyPI runtime packages.
+The AIG bridge separately installs 30 hash-locked PyPI runtime packages.
 Their distribution hashes are in `services/aig-bridge/requirements-runtime.lock`,
-but this file does not yet contain their exact distribution licence metadata
-or licence texts. Commercial SBOM generation must stop until those are
-collected and reviewed for the shipped wheels and container image.
+and `services/aig-bridge/pypi-runtime-licenses.json` now inventories licence
+metadata and shipped licence-file digests from the exact SHA-locked official
+PyPI wheels selected for Python 3.12 / Linux x86_64. These are source inventory
+facts, not counsel approval or a complete image notice archive. The 2026-10-06
+current declared-library inventory has 204 libraries: 202 permissive declarations,
+2 requiring review and 0 UNKNOWN declarations. certifi 2026.7.22 declares
+MPL-2.0; pure psycopg 3.2.10 declares LGPLv3. The binary driver wheel was removed
+from the current locks. Its former 14-library inventory is preserved explicitly
+as historical evidence, not current delivery or an approved exception.
+
+The current review archive contains 36 actual wheel licence texts. A scoped
+extraction from the built bridge image also identifies 17 system-libpq dependency
+paths with exact file hashes and Debian package versions, and 41 captured
+copyright/common-license texts. Common-license file presence does not mean every
+listed licence applies to a component. The material index, regeneration command,
+current system-native record and historical binary record are documented in
+`docs/production-readiness/bridge-notice-review-pack-2026-10-06.md`.
+Separately, the cryptography 50.0.2 Rust module's runtime hash is matched to the
+exact selected wheel and its measured embedded OpenSSL 4.0.3 version. Exact
+tagged upstream LICENSE/AUTHORS/README materials are included in the review
+supplement; no complete static dependency provenance or Legal approval is implied.
+The same selected local bridge image additionally has a 110-package installed
+dpkg inventory with all 110 package copyright texts and 26 common-license texts
+captured and hash-checked. This supplies package notice collection, not complete
+non-dpkg/static dependency coverage, source obligations or approved distribution.
+Keep the strict gate unresolved until current source/notice obligations, exact
+candidate and full container/OS inventories receive the required review. Other
+platform wheels must be separately inventoried if selected for distribution.
 
 Existing direct-component references from the project baseline
 --------------------------------------------------------------

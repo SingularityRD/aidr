@@ -235,6 +235,41 @@ describe("Team administration is reachable (AIDR-008)", () => {
 			within(adminRow as HTMLElement).queryByRole("option", { name: "Owner" }),
 		).not.toBeInTheDocument();
 	});
+
+	it("rechecks managed access after changing the signed-in member's role", async () => {
+		installDashboardMocks({
+			role: "owner",
+			members: [{ user_id: ADMIN_USER_ID, role: "owner" }],
+		});
+		renderTeamRoute();
+		const member = await screen.findByText(`user ${ADMIN_USER_ID}`);
+		fireEvent.change(within(member.closest("tr") as HTMLElement).getByRole("combobox"), {
+			target: { value: "viewer" },
+		});
+		await waitFor(() => {
+			const bootstraps = mockedSupabase().functions.invoke.mock.calls.filter(
+				([name, request]) => name === "identity-security" && request?.body?.action === "bootstrap",
+			);
+			expect(bootstraps).toHaveLength(2);
+		});
+	});
+
+	it("rechecks managed access after removing the signed-in member", async () => {
+		installDashboardMocks({
+			role: "owner",
+			members: [{ user_id: ADMIN_USER_ID, role: "owner" }],
+		});
+		vi.spyOn(window, "confirm").mockReturnValue(true);
+		renderTeamRoute();
+		fireEvent.click(await screen.findByRole("button", { name: "Remove" }));
+		await waitFor(() => {
+			const bootstraps = mockedSupabase().functions.invoke.mock.calls.filter(
+				([name, request]) => name === "identity-security" && request?.body?.action === "bootstrap",
+			);
+			expect(bootstraps).toHaveLength(2);
+		});
+		vi.restoreAllMocks();
+	});
 });
 
 describe("Team administration fails closed (AIDR-008, AIDR-019)", () => {

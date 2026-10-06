@@ -9,7 +9,7 @@ const repoRoot = resolve(extensionRoot, "..", "..");
 const sourceThreats = join(repoRoot, "threats");
 const sourceAllowlists = join(repoRoot, "allowlists");
 
-const resourcesDir = join(extensionRoot, "resources");
+const resourcesDir = join(extensionRoot, "dist", "resources");
 const targetThreats = join(resourcesDir, "threats");
 const targetAllowlists = join(resourcesDir, "allowlists");
 

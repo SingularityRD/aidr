@@ -100,4 +100,49 @@ describe("aidr config -s", () => {
 		expect(stderr.join("\n")).not.toContain("shell-history-secret");
 		expect(stderr.join("\n")).toContain("cannot be passed as command-line arguments");
 	});
+
+	it.each([
+		["auth", '{"api_key":"shell-history-secret"}'],
+		["auth", '{"enrollment_token":"shell-history-secret"}'],
+		["nvd_check", '{"api_key":"shell-history-secret"}'],
+	])("rejects secrets nested in a %s object argument", async (key, value) => {
+		await configCommand({ set: [key, value] });
+		expect(mocks.replaceConfig).not.toHaveBeenCalled();
+		expect(stderr.join("\n")).toContain("hidden prompt");
+		expect([...stderr, ...stdout].join("\n")).not.toContain("shell-history-secret");
+		expect(process.exitCode).toBe(1);
+	});
+
+	it.each([
+		{ set: ["heuristics_enabled", "false"] },
+		{ get: "heuristics_enabled" },
+	])("returns a failure exit code when configuration is missing: %j", async (options) => {
+		mocks.getConfig.mockReturnValue(null);
+		await configCommand(options);
+		expect(mocks.replaceConfig).not.toHaveBeenCalled();
+		expect(process.exitCode).toBe(1);
+	});
+
+	it("reports a configuration read error without exposing backend details", async () => {
+		mocks.getConfig.mockImplementationOnce(() => { throw new Error("backend-secret-value"); });
+		await configCommand({ list: true });
+		expect(stderr.join("\n")).toContain("could not be read");
+		expect(stderr.join("\n")).not.toContain("backend-secret-value");
+		expect(process.exitCode).toBe(1);
+	});
+
+	it("reports a failed save without claiming it succeeded or exposing backend details", async () => {
+		mocks.replaceConfig.mockImplementationOnce(() => { throw new Error("backend-secret-value"); });
+		await configCommand({ set: ["heuristics_enabled", "false"] });
+		expect(stderr.join("\n")).toContain("could not be saved");
+		expect(stderr.join("\n")).not.toContain("backend-secret-value");
+		expect(stdout.join("\n")).not.toContain("Set heuristics_enabled");
+		expect(process.exitCode).toBe(1);
+	});
+
+	it("rejects malformed read paths with a controlled failure", async () => {
+		await configCommand({ get: "auth..api_key" });
+		expect(stderr.join("\n")).toContain("Invalid configuration path");
+		expect(process.exitCode).toBe(1);
+	});
 });

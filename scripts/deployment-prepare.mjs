@@ -1,24 +1,16 @@
 #!/usr/bin/env node
 import { createHash, createHmac, createPublicKey, generateKeyPairSync, randomBytes } from "node:crypto";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, rmdirSync, writeFileSync, statSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, rmdirSync, writeFileSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import { parseArgs } from "node:util";
+import { cpSync } from "./lib/deployment-input-copy.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const requireCore = createRequire(join(root, "packages/core/package.json"));
 const { parse, stringify } = existsSync(join(root, "deploy/vendor/yaml.cjs")) ? requireCore(join(root, "deploy/vendor/yaml.cjs")) : requireCore("yaml");
-// Avoid Node's recursive cp binding failing on Windows paths with non-ASCII characters.
-function cpSync(source, destination, options = {}) {
-	if (options.filter && !options.filter(source)) return;
-	if (statSync(source).isDirectory()) {
-		mkdirSync(destination, { recursive: true });
-		for (const entry of readdirSync(source)) cpSync(join(source, entry), join(destination, entry), options);
-	} else { mkdirSync(dirname(destination), { recursive: true }); copyFileSync(source, destination); }
-}
-
 async function stageMaintenanceRuntime(output) {
 	const readinessSource = join(root, "scripts/readiness-evidence-worker.mjs");
 	const backupSource = join(root, "scripts/deployment-backup.mjs");
@@ -31,13 +23,16 @@ async function stageMaintenanceRuntime(output) {
 		const esbuild = requireBuilder("esbuild");
 		await Promise.all([
 			esbuild.build({ entryPoints: [readinessSource], outfile: readinessOutput, bundle: true, platform: "node", format: "esm", target: "node24", sourcemap: false, legalComments: "inline" }),
-			esbuild.build({ entryPoints: [backupSource], outfile: backupOutput, bundle: true, platform: "node", format: "esm", target: "node24", sourcemap: false, legalComments: "inline" }),
+			esbuild.build({ entryPoints: [backupSource], outfile: backupOutput, bundle: true, platform: "node", format: "esm", target: "node24", sourcemap: false, legalComments: "inline", external: ["./lib/node-helper-image.mjs"] }),
 		]);
 	} else if (!readFileSync(readinessSource, "utf8").includes("../packages/core/dist/")) {
 		cpSync(readinessSource, readinessOutput);
 		cpSync(backupSource, backupOutput);
 	} else throw new Error("Maintenance runtime requires a complete core build before deployment preparation");
 	cpSync(join(root, "scripts/deployment-backup-offsite.mjs"), join(output, "backup/deployment-backup-offsite.mjs"));
+	for (const file of ["node-helper-image.mjs", "node-helper.Dockerfile"]) {
+		cpSync(join(root, "scripts/lib", file), join(output, "backup/lib", file));
+	}
 	for (const path of [readinessOutput, backupOutput, join(output, "backup/deployment-backup-offsite.mjs")]) chmodSync(path, 0o644);
 }
 
@@ -99,6 +94,23 @@ const { values } = parseArgs({ options: {
 if (!["self-hosted", "cloud"].includes(values.mode)) throw new Error("mode must be self-hosted or cloud");
 const output = resolve(values.output);
 if (existsSync(output)) throw new Error("Output already exists; reuse its secrets and data. Choose a new output for a separate installation.");
+const runtimeCapabilitiesRaw = process.env.AIDR_RUNTIME_CAPABILITIES_BY_TENANT?.trim() || "{}";
+let runtimeCapabilitiesConfig;
+try {
+	if (runtimeCapabilitiesRaw.length > 65_536) throw new Error();
+	const map = JSON.parse(runtimeCapabilitiesRaw);
+	const names = ["runtime_detectors", "behavioral_learning_v1"];
+	if (!map || typeof map !== "object" || Array.isArray(map)) throw new Error();
+	const entries = Object.entries(map);
+	if (entries.length > 256 || entries.some(([id, grants]) =>
+		!/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(id) || !Array.isArray(grants) || grants.length > 2
+		|| grants.some((grant) => !names.includes(grant)) || new Set(grants).size !== grants.length
+		|| (grants.includes("behavioral_learning_v1") && !grants.includes("runtime_detectors"))
+	)) throw new Error();
+	runtimeCapabilitiesConfig = JSON.stringify(map);
+} catch {
+	throw new Error("AIDR_RUNTIME_CAPABILITIES_BY_TENANT must be a bounded exact tenant capability map");
+}
 let artifactVerificationPublicKeyPem;
 const artifactVerificationPublicKeyFile = values["artifact-verification-public-key-file"];
 if (artifactVerificationPublicKeyFile) {
@@ -148,6 +160,7 @@ const developmentHostPort = (url, fallback) => {
 	const parsed = new URL(url);
 	return parsed.port || (parsed.protocol === "https:" ? "443" : "80");
 };
+const loopbackBinding = (url) => values.development && new URL(url).hostname === "[::1]" ? "[::1]" : "127.0.0.1";
 const projectName = values["project-name"] || `aidr-${randomBytes(6).toString("hex")}`;
 if (!/^[a-z][a-z0-9_-]{0,62}$/.test(projectName)) throw new Error("Invalid Compose project name");
 // Region and residency entries are operator declarations, not verified legal or
@@ -197,7 +210,7 @@ if (tenantRegionId !== regionId) {
 	throw new Error(`Tenant declared region "${tenantRegionId}" does not match deployment region "${regionId}"; refusing to prepare a cross-region installation`);
 }
 const deviceUpstream = values.mode === "self-hosted"
-	? `http://127.0.0.1:${developmentHostPort(supabaseUrl, "8000")}/functions/v1/device-start`
+	? `http://${loopbackBinding(supabaseUrl)}:${developmentHostPort(supabaseUrl, "8000")}/functions/v1/device-start`
 	: (values["device-start-upstream-url"] ?? "REPLACE_WITH_PROVIDER_DEVICE_START_URL");
 if (values["device-start-upstream-url"]) {
 	if (values.mode !== "cloud") throw new Error("Custom device-start upstream is only valid in cloud mode");
@@ -287,6 +300,7 @@ const functionEnv = {
 	AIDR_PUBLIC_API_ORIGIN: supabaseUrl,
 	AIDR_DEVELOPMENT_MODE: String(values.development),
 	AIDR_ENTITLEMENT_SIGNING_KEY_ID: keyId, AIDR_ENTITLEMENT_SIGNING_PRIVATE_KEY_PKCS8_B64: signingPrivateKeyDer.toString("base64"),
+	AIDR_RUNTIME_CAPABILITIES_BY_TENANT: runtimeCapabilitiesConfig,
 	AIDR_REVOCATION_SIGNING_KEY_ID: keyId, AIDR_REVOCATION_SIGNING_PRIVATE_KEY_PKCS8_B64: signingPrivateKeyDer.toString("base64"),
 	AIDR_DELEGATION_ISSUER: supabaseUrl, AIDR_DELEGATION_SIGNING_KEY_ID: delegationKeyId,
 	AIDR_DELEGATION_SIGNING_PRIVATE_KEY_PKCS8_B64: delegationPrivateKeyDer.toString("base64"),
@@ -302,7 +316,10 @@ for (const service of Object.values(compose.services)) {
 }
 if (values.mode === "self-hosted") {
 	delete compose.services.supavisor;
-	compose.services["api-gw"].ports = [`127.0.0.1:${developmentHostPort(supabaseUrl, "8000")}:8000`];
+	compose.services["api-gw"].image = "envoyproxy/envoy:v1.39.2@sha256:460f8c329f24b2e1c7c5af64cb314a6f351ad1c262ba77b135ac46b35ebd5f85";
+	compose.services.imgproxy.image = "darthsim/imgproxy:v4.0.17@sha256:db0b4b9cd690c8b3590203dea300fb759a18c4ec2af7b37424f0bdef23ce317d";
+	compose.services.imgproxy.environment.IMGPROXY_USE_LAST_MODIFIED = "false";
+	compose.services["api-gw"].ports = [`${loopbackBinding(supabaseUrl)}:${developmentHostPort(supabaseUrl, "8000")}:8000`];
 	compose.services.functions.env_file = [".env.functions"];
 	compose.services.auth.environment.GOTRUE_MAILER_TEMPLATES_RECOVERY = "http://dashboard:8080/auth-templates/recovery.html";
 	compose.services.auth.environment.GOTRUE_MAILER_SUBJECTS_RECOVERY = "Reset your AIDR password";
@@ -315,7 +332,7 @@ if (values.mode === "self-hosted") {
 const healthApiOrigin = values.mode === "self-hosted" ? "http://api-gw:8000" : supabaseUrl;
 const dashboardHealthPath = values.development ? "/livez" : "/readyz";
 compose.services.dashboard = {
-	build: "./dashboard", restart: "unless-stopped", ports: [`127.0.0.1:${developmentHostPort(dashboardUrl, "8080")}:8080`], read_only: true,
+	build: "./dashboard", restart: "unless-stopped", ports: [`${loopbackBinding(dashboardUrl)}:${developmentHostPort(dashboardUrl, "8080")}:8080`], read_only: true,
 	cap_drop: ["ALL"], security_opt: ["no-new-privileges:true"],
 	healthcheck: {
 		test: ["CMD", "node", "-e", `fetch('http://127.0.0.1:8080${dashboardHealthPath}').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))`],

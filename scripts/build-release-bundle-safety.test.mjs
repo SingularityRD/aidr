@@ -7,7 +7,7 @@ import test from "node:test";
 const repoRoot = path.resolve(import.meta.dirname, "..");
 const builder = path.join(repoRoot, ".github", "scripts", "build-release-bundle.mjs");
 
-function run(outputDirectory) {
+function run(outputDirectory, environment = {}) {
 	return spawnSync(process.execPath, [builder], {
 		cwd: repoRoot,
 		encoding: "utf8",
@@ -19,9 +19,18 @@ function run(outputDirectory) {
 			AIDR_RELEASE_VERSION: "1.2.3",
 			AIDR_RELEASE_TAG: "v1.2.3-rc.0",
 			AIDR_GIT_SHA: "a".repeat(40),
+			...environment,
 		},
 	});
 }
+
+test("release assembly requires an explicit integer source timestamp", () => {
+	for (const value of [undefined, "", " ", "-1", "1.5", "1e3", "9007199254740992"]) {
+		const result = run(path.join(repoRoot, ".git"), { SOURCE_DATE_EPOCH: value });
+		assert.notEqual(result.status, 0);
+		assert.match(result.stderr, /SOURCE_DATE_EPOCH must be an explicit nonnegative integer/u);
+	}
+});
 
 test("release assembly refuses paths that could overwrite workspace or Git data", () => {
 	const gitHead = path.join(repoRoot, ".git", "HEAD");

@@ -59,9 +59,48 @@ test("accepts a canonical regular-file and directory archive", async () => {
 });
 
 test("rejects links and every special tar entry type", async () => {
-	for (const type of ["1", "2", "3", "4", "6", "7", "x", "g", "L", "K", "S"]) {
+	for (const type of ["1", "2", "3", "4", "6", "7", "g", "K", "S"]) {
 		await assert.rejects(validate(archive([{ name: `entry-${type}`, type }])), /not a regular file or directory/);
 	}
+});
+
+function pax(key, value) {
+	const record = ` ${key}=${value}\n`;
+	let length = Buffer.byteLength(record) + 1;
+	while (Buffer.byteLength(`${length}${record}`) !== length) length = Buffer.byteLength(`${length}${record}`);
+	return `${length}${record}`;
+}
+
+test("accepts portable PAX and GNU long names while validating their effective paths", async () => {
+	const longName = `nested/${"object-".repeat(30)}`;
+	for (const type of ["x", "L"]) {
+		const body = type === "x" ? pax("path", longName) + pax("mtime", "1.5") : `${longName}\0`;
+		await validate(archive([{ name: "extended", type, body }, { name: "truncated", body: "safe" }]));
+		for (const name of ["../escape", "/absolute", "./C:/windows", "././C:/windows", "file:stream", "safe\\escape"]) {
+			const unsafe = type === "x" ? pax("path", name) : `${name}\0`;
+			await assert.rejects(validate(archive([{ name: "extended", type, body: unsafe }, { name: "safe" }])), /entry path/);
+		}
+		await assert.rejects(validate(archive([{ name: "extended", type, body }])), /no following entry/);
+		await assert.rejects(validate(archive([{ name: "extended", type, body }, { name: "truncated" }, { name: "extended-again", type, body }, { name: "truncated-again" }])), /duplicate entry path/);
+	}
+	for (const key of ["linkpath", "size", "GNU.sparse.map", "SCHILY.xattr.security.capability"]) {
+		await assert.rejects(validate(archive([{ name: "extended", type: "x", body: pax(key, "unsafe") }, { name: "safe" }])), /unsupported PAX field/);
+	}
+	for (const body of ["999 path=safe\n", "0 path=safe\n", "12 path=bad", pax("path", "first") + pax("path", "second")]) {
+		await assert.rejects(validate(archive([{ name: "extended", type: "x", body }, { name: "safe" }])), /PAX/);
+	}
+});
+
+test("validates a native tar long-filename backup in bounded stream chunks", async () => {
+	const root = mkdtempSync(join(tmpdir(), "aidr-long-backup-path-"));
+	workspaces.push(root);
+	mkdirSync(join(root, "nested"));
+	writeFileSync(join(root, "nested", "object-" + "a".repeat(110)), "safe");
+	const tar = spawnSync("tar", ["-C", root, "-cf", "-", "."], { encoding: null });
+	assert.equal(tar.status, 0, tar.stderr?.toString());
+	const chunks = [];
+	for (let offset = 0; offset < tar.stdout.length; offset += 137) chunks.push(tar.stdout.subarray(offset, offset + 137));
+	await pipeline(Readable.from(chunks), createTarBoundaryValidator());
 });
 
 test("rejects traversal, absolute, Windows and duplicate paths", async () => {
