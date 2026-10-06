@@ -9,6 +9,7 @@
 		"**/.git/**",
 		"deploy/upstream/**",
 		"vendor/**",
+		"docs/production-readiness/evidence/*.json",
 		"**/*.d.ts",
 		"**/resources/**",
 		"**/__tests__/**",
