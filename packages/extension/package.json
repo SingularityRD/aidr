@@ -104,7 +104,7 @@
   "devDependencies": {
     "@singularityrd/aidr-core": "workspace:*",
     "@types/node": "^22.0.0",
-    "@types/vscode": "1.97.0",
+    "@types/vscode": "1.140.0",
     "@vscode/test-electron": "^2.5.2",
     "esbuild": "^0.28.2",
     "typescript": "^5.9.0",
