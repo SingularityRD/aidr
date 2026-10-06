@@ -11,14 +11,15 @@
  */
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 import { describe, it } from "node:test";
 import { cleanupDirectory } from "./release-candidate-cleanup.mjs";
-import { assertVsixIntegrityEvidence, VSIX_INTEGRITY_EVIDENCE_FILES } from "./lib/vsix-package-files.mjs";
+import { assertVsixIntegrityEvidence, VSIX_INTEGRITY_EVIDENCE_FILES, VSIX_PACKAGE_FILES } from "./lib/vsix-package-files.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SCRIPT = join(ROOT, "scripts", "build-release-candidate.mjs");
@@ -127,9 +128,37 @@ describe("release candidate assembler", () => {
 		mkdirSync(join(root, "dist"));
 		for (const file of VSIX_INTEGRITY_EVIDENCE_FILES.filter((name) => !name.endsWith(".sig"))) writeFileSync(join(root, file), "fixture\n");
 		await assert.rejects(assertVsixIntegrityEvidence(root), /manifest\.sig/);
-		await assertVsixIntegrityEvidence(root, { requireSignature: false });
+		assert.deepEqual(await assertVsixIntegrityEvidence(root, { requireSignature: false }), VSIX_PACKAGE_FILES.filter((file) => !file.endsWith(".sig")));
+		writeFileSync(join(root, "dist/aidr-artifact.manifest.sig"), Buffer.alloc(64, 1).toString("base64"));
+		assert.deepEqual(await assertVsixIntegrityEvidence(root), VSIX_PACKAGE_FILES);
+		assert.deepEqual(await assertVsixIntegrityEvidence(root, { requireSignature: false }), VSIX_PACKAGE_FILES);
 		rmSync(join(root, "dist/aidr-sbom.cdx.json"));
 		await assert.rejects(assertVsixIntegrityEvidence(root, { requireSignature: false }), /aidr-sbom\.cdx\.json/);
+	});
+
+	it("locked VSCE packages the real unsigned files list while rejecting the stale signature pattern", async (t) => {
+		const root = mkdtempSync(join(tmpdir(), "aidr-vsce-unsigned-fixture-"));
+		t.after(() => cleanupDirectory(root));
+		mkdirSync(join(root, "dist/resources"), { recursive: true });
+		for (const file of VSIX_PACKAGE_FILES.filter((name) => name.startsWith("dist/") && !name.endsWith(".sig") && !name.includes("*"))) writeFileSync(join(root, file), "fixture\n");
+		writeFileSync(join(root, "dist/resources/rules.txt"), "synthetic rule fixture\n");
+		writeFileSync(join(root, "README.md"), "# Synthetic packaging fixture\n");
+		writeFileSync(join(root, "LICENSE"), "MIT\n");
+		copyFileSync(join(ROOT, "packages/extension/aidr-icon.png"), join(root, "aidr-icon.png"));
+		const manifest = { name: "aidr-fixture", publisher: "aidr-fixture", version: "0.0.0", description: "Synthetic packaging regression", engines: { vscode: "^1.85.0" }, main: "./dist/cursor_extension.js", activationEvents: ["onStartupFinished"], repository: "https://example.invalid/aidr", license: "MIT", files: VSIX_PACKAGE_FILES };
+		const writeManifest = (files) => writeFileSync(join(root, "package.json"), JSON.stringify({ ...manifest, files }));
+		const require = createRequire(import.meta.url);
+		const vsceRoot = dirname(require.resolve("@vscode/vsce/package.json"));
+		assert.equal(JSON.parse(readFileSync(join(vsceRoot, "package.json"), "utf8")).version, "4.0.0");
+		const packageFixture = () => spawnSync(process.execPath, [join(vsceRoot, "vsce"), "package", "--no-dependencies", "-o", "fixture.vsix"], { cwd: root, encoding: "utf8", windowsHide: true });
+		writeManifest(VSIX_PACKAGE_FILES);
+		const stale = packageFixture();
+		assert.notEqual(stale.status, 0);
+		assert.match(stale.stderr, /dist\/aidr-artifact\.manifest\.sig/);
+		writeManifest(await assertVsixIntegrityEvidence(root, { requireSignature: false }));
+		const unsigned = packageFixture();
+		assert.equal(unsigned.status, 0, unsigned.stderr);
+		assert.ok(readFileSync(join(root, "fixture.vsix")).length > 0);
 	});
 
 	it("rejects missing or changed mandatory SBOM evidence and cleans incomplete output", (t) => {

@@ -15,7 +15,6 @@ import { parseArgs } from "node:util";
 import { finalizeReleaseBundle } from "../../scripts/lib/finalize-release-bundle.mjs";
 import {
 	assertVsixIntegrityEvidence,
-	VSIX_PACKAGE_FILES,
 } from "../../scripts/lib/vsix-package-files.mjs";
 
 const repoRoot = resolve(import.meta.dirname, "../..");
@@ -54,13 +53,14 @@ for (const variant of variants) {
 	for (const file of ["README.md", "LICENSE", "aidr-icon.png"]) {
 		await cp(join(extensionRoot, file), join(stageDir, file));
 	}
+	const packageFiles = await assertVsixIntegrityEvidence(stageDir, { requireSignature: !values["unsigned-candidate"] });
 
 	const manifest = {
 		...baseManifest,
 		name: variant.name,
 		main: variant.main,
 		private: undefined,
-		files: [...VSIX_PACKAGE_FILES],
+		files: packageFiles,
 	};
 	delete manifest.private;
 	manifest.name = variant.name;
@@ -88,7 +88,6 @@ for (const variant of variants) {
 	}
 	await writeFile(join(stageDir, "package.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
 	await assertNoSourceMaps(join(stageDir, "dist"));
-	await assertVsixIntegrityEvidence(stageDir, { requireSignature: !values["unsigned-candidate"] });
 
 	const outputPath = join(outputDir, variant.output);
 	await runVsce(stageDir, outputPath);

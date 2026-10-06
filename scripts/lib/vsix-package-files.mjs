@@ -22,15 +22,20 @@ export const VSIX_PACKAGE_FILES = Object.freeze([
 
 export async function assertVsixIntegrityEvidence(extensionRoot, { requireSignature = true } = {}) {
 	const missing = [];
+	let signaturePresent = true;
 	for (const relativePath of VSIX_INTEGRITY_EVIDENCE_FILES) {
-		if (!requireSignature && relativePath === "dist/aidr-artifact.manifest.sig") continue;
 		try {
 			await access(join(extensionRoot, relativePath));
-		} catch {
+		} catch (error) {
+			if (!requireSignature && relativePath === "dist/aidr-artifact.manifest.sig" && error.code === "ENOENT") {
+				signaturePresent = false;
+				continue;
+			}
 			missing.push(relativePath);
 		}
 	}
 	if (missing.length > 0) {
 		throw new Error(`VSIX integrity evidence is missing: ${missing.join(", ")}`);
 	}
+	return VSIX_PACKAGE_FILES.filter((file) => signaturePresent || file !== "dist/aidr-artifact.manifest.sig");
 }
