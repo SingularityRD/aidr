@@ -582,7 +582,7 @@
       "acceptanceCriteria": "Local acceptance (verified): no UI code invokes a non-existent function and every invoked function has a contract test in the release manifest. Live acceptance (open): device enrollment completes end-to-end from a browser against the deployed control plane, and live Entra/Okta SCIM provisioning is accepted.",
       "plannedFix": "The local route/contract slice is verified. Deploy the chosen control-plane surface, then complete real browser device enrollment and live Entra/Okta provisioning acceptance; record that field evidence separately.",
       "verificationMethod": "Contract test per function plus a browser onboarding run to completion.",
-      "status": "IN_PROGRESS",
+      "status": "BLOCKED_EXTERNAL",
       "localContractStatus": "VERIFIED_CLOSED",
       "liveAcceptanceStatus": "BLOCKED_EXTERNAL",
       "evidence": [
@@ -614,7 +614,8 @@
       "remainingExternal": "Real browser device enrollment and live Entra/Okta SCIM provisioning/acceptance against a deployed control plane remain unverified; browser tests against a real tenant and live IdP cannot be produced from this repository and AIDR-016's production endpoint is absent. Contract tests prove local contracts only, not deployed identity-provider acceptance; this live field-acceptance slice remains open.",
       "owner": "engineering",
       "class": "in-repo-fixable",
-      "currentState": "LOCAL CONTRACT SLICE VERIFIED: the browser contract gate resolves all 18 browser-invoked Edge functions to deployed function entries and named test files; the current run passed with 35/35 Edge functions configuration-guarded. LIVE ACCEPTANCE OPEN: this does not prove browser enrollment against a deployed control plane or live Entra/Okta provisioning. Earlier missing-function list is historical."
+      "currentState": "LOCAL CONTRACT SLICE VERIFIED: the browser contract gate resolves all 18 browser-invoked Edge functions to deployed function entries and named test files; the current run passed with 35/35 Edge functions configuration-guarded. LIVE ACCEPTANCE OPEN: this does not prove browser enrollment against a deployed control plane or live Entra/Okta provisioning. Earlier missing-function list is historical.",
+      "blockedBy": "The local browser/Edge contracts are implemented and verified. Live browser enrollment and Entra/Okta SCIM acceptance require a deployed real tenant/IdP; the owner explicitly chose a portable preparation package because no staging exists."
     },
     {
       "id": "AIDR-020",
@@ -1872,7 +1873,7 @@
       "id": "AIDR-076",
       "priority": "P0",
       "feature": "Declared mandatory privacy across owned public transport and delivery paths",
-      "status": "IN_PROGRESS",
+      "status": "VERIFIED_CLOSED",
       "component": "core installed privacy profile; SDK; Codex exports; standalone MCP CLI/stdIO; private text service",
       "impact": "An ordinary hook or caller-owned transport cannot implement a mandatory institution privacy route. Unchecked public exports and awaited observers could otherwise send or release raw content despite the declared installed profile.",
       "acceptanceCriteria": "Preserve ordinary local detection defaults, refuse unsupported required routes before content callbacks or transport, recheck final owned boundaries, and provide a single actual mTLS SDK/private-MCP dispatch path with checked output and no raw fallback.",
@@ -1882,12 +1883,19 @@
           "evidencePath": "packages/sdk/src/__tests__/privacy-send-mtls.test.mjs",
           "command": "node --test packages/sdk/src/__tests__/privacy-send-mtls.test.mjs",
           "verifiedBy": "2026-10-06: 13/13 real local HTTPS/mTLS cases; core47/startup11, SDK130/privacy63, Codex47, public MCP28/existing55/integrity1, service22 and workflow10 passed. Strict rules-only TEST runtime; not qualified learned NER, OS firewall proof or whole-product T37 acceptance. Sources frozen; fresh actual packed-consumer verification is pending."
+        },
+        {
+          "claim": "Actual commercial core/public SDK/private tarballs installed into two independent consumer directories: all 13 real HTTPS/mTLS and optional-peer-absent cases passed, no skips; original tarballs and installed runtime bytes stayed unchanged. Independent receipt review confirmed the result.",
+          "evidencePath": ".tmp-test/remaining-fixes-2026-10-06/packed-sdk-route/run-20261006114930302-c9de083a/receipt.json",
+          "command": "node run-packed.mjs --sdk-tarball <actual packed SDK> --core-tarball <actual packed core> --privacy-tarball <actual optional private package> --sdk-sha256 <checked SHA256> --core-sha256 <checked SHA256> --privacy-sha256 <checked SHA256>",
+          "verifiedBy": "2026-10-06 actual Windows Node24.18.1: 13 passed, 0 failed, 0 skipped; receipt SHA256 5e43af6ea0d11bee0b45ec545b924cee329c005158afa56f6b65b87df27a3522. Strict rules-only TEST runtime and provisional compiled consumer-route inputs, not learned-model/customer/publisher/firewall acceptance."
         }
       ],
-      "remainingExternal": "Repeat actual CJS/ESM consumers with the final packed public SDK and optional private package. Institutional OS/MDM/network authority, qualified model and deployed data-flow review remain separate external acceptance.",
+      "remainingExternal": "Institutional OS/MDM/network authority, qualified learned model, deployed data-flow review, and selected native-host acceptance remain separately open. These are not closed by the owned-route implementation or strict TEST mTLS fixture.",
       "evidence": [
         "Actual SDK ESM/CJS source bundles and the installed private client exercise input/output masking, withheld output, provider denial, mismatched cert/JWT, untrusted CA, revocation and missing private package."
-      ]
+      ],
+      "currentState": "Owned public mandatory-privacy transport boundaries and actual installed SDK ESM/CJS/private exports are verified. Unsupported required routes fail before content callbacks/transport; the actual owned mTLS path has no raw fallback. Final delivery tarballs are independently retested after packaging."
     },
     {
       "id": "AIDR-077",
@@ -1955,12 +1963,13 @@
       "id": "AIDR-080",
       "priority": "P0",
       "feature": "Pinned self-hosted upstream container runtime security",
-      "status": "IN_PROGRESS",
+      "status": "BLOCKED_EXTERNAL",
       "component": "Reviewed upstream Supabase deployment images; self-hosted customer kit",
       "impact": "Full scans of actual pinned functions, realtime, meta and storage images report CRITICAL findings, with additional HIGH findings in auth, imgproxy and the gateway. A successful local stack or dependency audit does not establish these third-party runtimes are patched.",
       "acceptanceCriteria": "Classify exact vendor/package findings with primary evidence, select supported fixed compatible artifacts when available, verify package-recognition coverage and run affected native acceptance. Preserve original findings and do not silently edit pinned upstream source or accept unreviewed repacks.",
       "evidence": [
-        "Actual-image full scans are in progress; supported upstream remediation is being assessed without changing the running eight-hour collection or reviewed gitlink."
+        "Actual-image full scans are in progress; supported upstream remediation is being assessed without changing the running eight-hour collection or reviewed gitlink.",
+        ".tmp-test/upstream-remediation-2026-10-06/upstream-remediation-matrix.json: dated primary-source vendor feasibility review; original raw findings and exact source/image identity receipts preserved."
       ],
       "localEvidence": [
         {
@@ -1970,7 +1979,11 @@
           "verifiedBy": "2026-10-06: exact 11-service baseline has 893 HIGH and 36 CRITICAL scanner occurrences, not unique CVEs or reachability. Supported Envoy1.39.2 and imgproxy4.0.17 candidates each have zero HIGH/CRITICAL; native compatibility is separately tested. Other pinned services, actual PostgreSQL17.6 and native recognition gaps remain unresolved. No blanket ignore or vendor approval is inferred."
         }
       ],
-      "remainingExternal": "Finish exact vendor/fixed-artifact and recognition review, implement supported compatible replacements when available, and rerun affected acceptance. Findings lacking supported fixes require an explicit unresolved status; no Security disposition is inferred."
+      "remainingExternal": "Supported patched compatible vendor artifacts and affected native/customer acceptance are required for the remaining stack. Actual PostgreSQL17.6 is below advisory fixed floors; Trivy recognition gaps and embedded Node OpenSSL3.5.8 remain explicit. Seven actual helper API probes prove DTLS unavailable through the tested Node API, while compiled DTLS code is still present. A public API reachability result is not a vendor patch or full native closure.",
+      "owner": "infrastructure + Security + vendor support",
+      "class": "external-dependency",
+      "blockedBy": "Exact supported vendor artifact review and native tests fixed Envoy/imgproxy. Other reviewed upstream services lack a demonstrated fully fixed supported compatible artifact; PostgreSQL17.6 and recognition/native-library gaps remain. No unsupported vendor fork, source-pin edit or approval was substituted.",
+      "currentState": "Engineering review and supported replacement preparation complete: Envoy1.39.2/imageproxy4.0.17 exact digest pins, 21 gateway cases and 12 installed Storage ImageRenderer cases per image pass; first-party bridge/dashboard/landing/helper full scans are separately verified. Original 11-service 893 HIGH/36 CRITICAL occurrences remain historical baseline, not unique vulnerabilities or a current replacement-stack count. Native compiled libraries and remaining vendor images are unresolved."
     },
     {
       "id": "AIDR-081",
@@ -3012,11 +3025,11 @@
       }
     },
     "remainingFixes": {
-      "recordedAt": "2026-10-06T11:26:35.554Z",
-      "status": "IN_PROGRESS_SOURCE_REMEDIATION",
+      "recordedAt": "2026-10-06T12:00:22.600Z",
+      "status": "LOCAL_REMEDIATION_VERIFIED_FINAL_DELIVERY_IN_PROGRESS",
       "sourceSnapshotCommit": null,
       "productionAccepted": false,
-      "sourceScope": "Current dirty working source plus separately hash-bound local fixtures. Existing latestVerification fields remain historical; no fresh final-candidate test result is implied.",
+      "sourceScope": "Frozen implementation plus narrowly verified portable-report/test-fixture/unused-export/public-checksum metadata derivatives. Final clean delivery source commit is bound by the external delivery receipt to avoid a self-referential commit field.",
       "actualEightHourSoak": {
         "status": "RUNNING_NOT_ACCEPTED",
         "startedAt": "2026-10-06T10:09:46.245Z",
@@ -3028,7 +3041,40 @@
       "publisherApproval": "OPEN",
       "physicalOffHostAndSecondMachineAcceptance": "OPEN",
       "legalSecurityAndCustomerDecisions": "OPEN_UNCHANGED",
-      "containerRuntimeSecurity": "FIRST_PARTY_UNUSED_TOOL_AND_TWO_SUPPORTED_UPSTREAM_FIXES_VERIFIED_OTHER_VENDOR_NATIVE_GAPS_OPEN"
+      "containerRuntimeSecurity": "FIRST_PARTY_UNUSED_TOOL_AND_TWO_SUPPORTED_UPSTREAM_FIXES_VERIFIED_OTHER_VENDOR_NATIVE_GAPS_OPEN",
+      "fullUnit": {
+        "passed": 7008,
+        "failed": 0,
+        "platformSkipped": 6,
+        "total": 7014,
+        "filesPassed": 432,
+        "sourceSnapshotCommit": "1bde0c2fe323cdddef1eb95e7f6e5466356520cf",
+        "scope": "One-shot actual Windows full CI build/test; six genuine POSIX-specific source cases require a separate native Linux supplemental result."
+      },
+      "typeCheck": "PASS",
+      "enforcement": {
+        "passed": 90,
+        "failed": 0
+      },
+      "codex": {
+        "passed": 11,
+        "failed": 0
+      },
+      "actualPackedSdk": {
+        "passed": 13,
+        "failed": 0,
+        "skipped": 0,
+        "scope": "Provisional actual consumer-route tarballs; final packaged identities are independently retested"
+      },
+      "currentSourceSecrets": {
+        "files": 8221,
+        "findings": 0,
+        "scanner": "Official Gitleaks8.30.1",
+        "canaryTests": 11,
+        "publicIdentifierPositiveCanaries": 5,
+        "receiptSha256": "90e51648213d95ba67ba9d9df2f62165680607f169e0e9f87aa90a59a30f0c37"
+      },
+      "fullPortableDecodedMaterials": "PENDING_FINAL_INPUT_AND_COVERAGE_REVIEW"
     }
   }
 }

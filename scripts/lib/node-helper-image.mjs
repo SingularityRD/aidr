@@ -3,7 +3,7 @@ import { lstatSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSy
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
-export const NODE_HELPER_BASE_IMAGE = "node:24.21.0-alpine3.24@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1";
+const NODE_HELPER_BASE_IMAGE = "node:24.21.0-alpine3.24@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1";
 
 // Build only the reviewed public Dockerfile, never the installation or its env.
 // A cached pinned base permits an entirely disconnected build. Use the returned

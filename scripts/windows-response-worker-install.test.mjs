@@ -27,7 +27,7 @@ $ErrorActionPreference='Stop'
 $script:scenario='${scenario}'
 $script:eventPath='${quote(events)}'
 function Log-Event([string]$Value) { [IO.File]::AppendAllText($script:eventPath,$Value+[Environment]::NewLine) }
-$script:context=[pscustomobject]@{TargetHome='C:\Users\enrolled';Sid='S-1-5-21-1-2-3-1001';Node='C:\node\node.exe';Worker='C:\Users\enrolled\.singularity-aidr\connectors\claude\candidate\dist\response-worker.cjs';TaskName='AIDR-Response-fixture';TaskPath='\SingularityAIDR\';Description='Singularity AIDR signed fleet response worker v1; owner_sid=S-1-5-21-1-2-3-1001';Configuration='${quote(join(directory, "config.json"))}'}
+$script:context=[pscustomobject]@{TargetHome='C:\Users\TARGET_USER';Sid='S-1-5-21-1-2-3-1001';Node='C:\node\node.exe';Worker='C:\Users\TARGET_USER\.singularity-aidr\connectors\claude\candidate\dist\response-worker.cjs';TaskName='AIDR-Response-fixture';TaskPath='\SingularityAIDR\';Description='Singularity AIDR signed fleet response worker v1; owner_sid=S-1-5-21-1-2-3-1001';Configuration='${quote(join(directory, "config.json"))}'}
 function Get-AidrResponseWorkerContext { return $script:context }
 function Get-AidrResponseScheduledTask {
  if($script:scenario -eq 'query-failure'){throw 'scheduled task inventory unavailable'}
@@ -53,7 +53,7 @@ if($script:scenario -in @('existing','foreign-task','validate-failure','unsafe-r
 $block=[scriptblock]::Create(@'
 ${source}
 '@)
-${mode === "Install" ? `& $block -TargetHome 'C:\\Users\\enrolled' -StateRoot '${quote(directory)}' -ResponseWorkerConfigPath '${quote(seed)}' ${scenario === "missing-pin" ? "" : `-ExpectedResponseWorkerConfigSha256 '${scenario === "wrong-pin" ? "0".repeat(64) : digest}'`}` : `& $block -TargetHome 'C:\\Users\\enrolled' -StateRoot '${quote(directory)}'`}
+${mode === "Install" ? `& $block -TargetHome 'C:\\Users\\TARGET_USER' -StateRoot '${quote(directory)}' -ResponseWorkerConfigPath '${quote(seed)}' ${scenario === "missing-pin" ? "" : `-ExpectedResponseWorkerConfigSha256 '${scenario === "wrong-pin" ? "0".repeat(64) : digest}'`}` : `& $block -TargetHome 'C:\\Users\\TARGET_USER' -StateRoot '${quote(directory)}'`}
 `;
 	writeFileSync(script, setup);
 	try {
