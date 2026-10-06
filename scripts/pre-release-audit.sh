@@ -15,8 +15,11 @@ RESET='\033[0m'
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CONFIG="$REPO_ROOT/.gitleaks.toml"
-REQUIRED_GITLEAKS_VERSION="8.30.0"
+REQUIRED_GITLEAKS_VERSION="8.30.1"
 GITLEAKS_BIN="${GITLEAKS_BIN:-gitleaks}"
+if command -v cygpath &>/dev/null; then
+  GITLEAKS_BIN="$(cygpath -u "$GITLEAKS_BIN")"
+fi
 
 # ── Phase 1: Check prerequisites ──────────────────────────────────────────────
 
@@ -49,8 +52,13 @@ echo ""
 
 history_status=0
 current_status=0
-"$GITLEAKS_BIN" git "$REPO_ROOT" --config "$CONFIG" --redact --verbose || history_status=$?
-GITLEAKS_BIN="$(command -v "$GITLEAKS_BIN")" node "$REPO_ROOT/scripts/scan-current-secrets.mjs" || current_status=$?
+scanner_binary="$(command -v "$GITLEAKS_BIN")"
+# Node on Windows needs a native absolute path, not Git Bash's /c/... spelling.
+if command -v cygpath &>/dev/null; then
+  scanner_binary="$(cygpath -w "$scanner_binary")"
+fi
+GITLEAKS_BIN="$scanner_binary" node "$REPO_ROOT/scripts/scan-history-secrets.mjs" || history_status=$?
+GITLEAKS_BIN="$scanner_binary" node "$REPO_ROOT/scripts/scan-current-secrets.mjs" || current_status=$?
 
 if [[ "$history_status" -eq 0 && "$current_status" -eq 0 ]]; then
   echo ""
@@ -58,9 +66,9 @@ if [[ "$history_status" -eq 0 && "$current_status" -eq 0 ]]; then
   exit 0
 else
   status="$history_status"
-  [[ "$status" -ne 0 ]] || status="$current_status"
+  [[ "$current_status" -le "$status" ]] || status="$current_status"
   echo ""
-  echo -e "${RED}FAIL${RESET} — gitleaks found violations (exit code $status)."
-  echo "  Fix the issues above, or add inline '# gitleaks:allow' for false positives."
-  exit 1
+  echo -e "${RED}FAIL${RESET} — secret audit did not pass (history exit $history_status; current checkout exit $current_status)."
+  echo "  Review the redacted findings or scanner errors, resolve them, then rerun both scans."
+  exit "$status"
 fi

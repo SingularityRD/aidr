@@ -39,16 +39,16 @@ afterEach(async () => {
 	await Promise.all(temporaryDirectories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
 });
 
-async function fixture(handler) {
+async function fixture(handler, host = "127.0.0.1") {
 	const server = createServer(handler);
 	servers.push(server);
-	await new Promise((done) => server.listen(0, "127.0.0.1", done));
+	await new Promise((done) => server.listen(0, host, done));
 	const address = server.address();
 	const directory = await mkdtemp(path.join(os.tmpdir(), "aidr-offboarding-"));
 	temporaryDirectories.push(directory);
 	await writeFile(
 		path.join(directory, "deployment.json"),
-		JSON.stringify({ supabase_url: `http://127.0.0.1:${address.port}`, development: true }),
+		JSON.stringify({ supabase_url: `http://${host === "::1" ? "[::1]" : host}:${address.port}`, development: true }),
 	);
 	await writeFile(path.join(directory, ".env"), "SERVICE_ROLE_KEY=test-service-role\n");
 	return directory;
@@ -79,6 +79,25 @@ function policies() {
 		"commercial_records", "security_audit", "operational_ephemera",
 	].map((data_class) => ({ data_class, retention_days: 0, covers_backups: false }));
 }
+
+test("IPv6 offboarding preserves every OIDC phase receipt in its completion evidence", async () => {
+	const oidcPhases = ["oidc_login_tickets", "oidc_sso_sessions", "oidc_auth_requests", "oidc_identities", "oidc_tenant_domains", "oidc_providers"];
+	const receipts = [
+		...oidcPhases.map((phase) => ({ phase, status: "completed", rows_deleted: 1 })),
+		{ phase: "tenant_cache", status: "completed", cache_invalidation_receipt: { tenant_id: tenantId } },
+	];
+	const directory = await fixture((request, response) => {
+		if (request.url === "/rest/v1/rpc/request_tenant_offboarding") return json(response, 200, { run_id: runId, tenant_id: tenantId, status: "running", backup_scope: "excluded_external_retention" });
+		if (request.url === "/rest/v1/rpc/run_tenant_offboarding_batch") return json(response, 200, { run_id: runId, status: "completed", complete: true });
+		if (request.url.startsWith("/rest/v1/tenant_offboarding_phase_receipts?")) return json(response, 200, receipts);
+		return json(response, 404, {});
+	}, "::1");
+	const result = await run(directory, ["--apply", "--requested-by", operatorId]);
+	assert.equal(result.status, 0, result.stderr);
+	const evidence = JSON.parse(await readFile(path.join(directory, `offboarding-evidence-${tenantId}.json`), "utf8"));
+	assert.equal(evidence.complete, true);
+	assert.deepEqual(evidence.phase_receipts, receipts);
+});
 
 test("dry run reads the complete policy and active hold without mutating customer data", async () => {
 	const calls = [];

@@ -230,7 +230,7 @@ describe("Claude Code inspected output quarantine", () => {
 		const specific = result?.hookSpecificOutput as Record<string, unknown>;
 		expect(specific.updatedToolOutput).toBeUndefined();
 		expect(specific.additionalContext).toContain("Replacement unavailable");
-		expect(result?.decision).toBeUndefined();
+		expect(result?.decision).toBe("block");
 	});
 
 	it("quarantines the original result when inspection fails", () => {

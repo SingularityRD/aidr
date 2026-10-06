@@ -34,7 +34,7 @@ const gitSha = process.env.AIDR_GIT_SHA ?? process.env.AIDR_BUILD_ID;
 const evidenceFiles = ["aidr-artifact.manifest.json", "aidr-artifact.manifest.sig", "aidr-sbom.cdx.json", "aidr-sbom.cdx.json.sha256"];
 const inspectedArchives = new Map();
 
-if (!Number.isInteger(sourceDateEpoch) || sourceDateEpoch < 0) fail("SOURCE_DATE_EPOCH is required");
+if (!/^\d+$/u.test(process.env.SOURCE_DATE_EPOCH ?? "") || !Number.isSafeInteger(sourceDateEpoch)) fail("SOURCE_DATE_EPOCH must be an explicit nonnegative integer");
 if (!releaseVersion || !releaseTag || !gitSha) fail("AIDR_RELEASE_VERSION, AIDR_RELEASE_TAG, and AIDR_BUILD_ID are required");
 
 const outputRelative = relative(repoRoot, outputDir);

@@ -398,13 +398,13 @@ function validateGetRequest(
 
 export function validateMcpHttpResponse(
 	response: Pick<Response, "status" | "headers">,
-	mode: "json" | "sse",
+	mode: "json" | "sse" | "auto",
 ): McpValidationResult {
 	if (response.status < 200 || response.status >= 300)
 		return { ok: false, error: "upstream_http_error" };
 	const contentType = mediaTypes(response.headers.get("content-type") ?? "");
 	const expected = mode === "json" ? "application/json" : "text/event-stream";
-	return contentType.has(expected)
+	return contentType.has(expected) || (mode === "auto" && contentType.has("application/json"))
 		? { ok: true }
 		: { ok: false, error: "invalid_upstream_content_type" };
 }
@@ -525,6 +525,8 @@ export function isPrivateIpAddress(value: string): boolean {
 export interface SsrfValidationOptions {
 	requireHttps?: boolean;
 	lookup?: (hostname: string) => Promise<readonly string[]>;
+	/** Operator-pinned IP addresses; DNS answers outside this set are refused. */
+	allowedAddresses?: readonly string[];
 }
 
 interface McpPinnedFetchRequest {
@@ -606,7 +608,7 @@ export async function validateMcpRemoteUrl(
 }
 
 export interface McpFetchOptions extends SsrfValidationOptions {
-	mode?: "json" | "sse";
+	mode?: "json" | "sse" | "auto";
 	maxBodyBytes?: number;
 	/** Maximum time spent waiting for DNS before any connection is attempted. */
 	dnsLookupTimeoutMs?: number;
@@ -614,6 +616,10 @@ export interface McpFetchOptions extends SsrfValidationOptions {
 	responseHeadersTimeoutMs?: number;
 	/** Permit a bodyless HTTP 202 acknowledgement for a JSON-RPC notification only. */
 	acceptNotificationResponse?: boolean;
+	/** Accept a bodyless 202 only for a valid JSON-RPC response to a pending server request. */
+	acceptJsonRpcResponse?: boolean;
+	/** Startup negative probe: require 401/403, never interpret another status as isolation. */
+	acceptUnauthorizedResponse?: boolean;
 	/** Permit and accept the bounded MCP Streamable HTTP session-termination DELETE. */
 	acceptSessionTerminationResponse?: boolean;
 	/** Trusted transport hook for embedders/tests; it must connect only to one supplied address. */
@@ -703,11 +709,25 @@ export async function fetchMcpEndpoint(
 	const resolved = requireResolvedMcpRemoteUrl(
 		await withDnsDeadline(resolveMcpRemoteUrl(url, options), dnsLookupTimeoutMs),
 	);
+	if (
+		options.allowedAddresses &&
+		(options.allowedAddresses.length === 0 ||
+			resolved.addresses.some((address) => !options.allowedAddresses?.includes(address)))
+	)
+		throw new McpTransportError(
+			"address_not_pinned",
+			"MCP DNS address is outside the operator pin set",
+		);
 	const request = validatedMcpHttpRequest(resolved.url, init, options);
 	if (options.acceptNotificationResponse && !isJsonRpcNotification(request))
 		throw new McpTransportError(
 			"invalid_notification_request",
 			"MCP HTTP 202 acknowledgement requires a JSON-RPC notification",
+		);
+	if (options.acceptJsonRpcResponse && !isJsonRpcResponse(request))
+		throw new McpTransportError(
+			"invalid_response_request",
+			"MCP response acknowledgement requires a JSON-RPC response",
 		);
 	if (options.acceptSessionTerminationResponse && request.method !== "DELETE")
 		throw new McpTransportError(
@@ -726,9 +746,22 @@ export async function fetchMcpEndpoint(
 		response,
 		options.mode ?? (request.method === "GET" ? "sse" : "json"),
 		maxBodyBytes,
-		options.acceptNotificationResponse === true,
+		options.acceptNotificationResponse === true || options.acceptJsonRpcResponse === true,
 		options.acceptSessionTerminationResponse === true,
+		options.acceptUnauthorizedResponse === true,
 	);
+}
+
+function isJsonRpcResponse(request: McpHttpRequest): boolean {
+	if (request.method !== "POST" || !request.body) return false;
+	try {
+		const bytes =
+			typeof request.body === "string" ? textEncoder.encode(request.body) : request.body;
+		const value = parseJsonRpcMessage(bytes, bytes.byteLength);
+		return !("method" in value) && ("result" in value || "error" in value);
+	} catch {
+		return false;
+	}
 }
 
 function isJsonRpcNotification(request: McpHttpRequest): boolean {
@@ -750,11 +783,23 @@ function isJsonRpcNotification(request: McpHttpRequest): boolean {
 
 async function validateAndBoundMcpResponse(
 	response: Response,
-	mode: "json" | "sse",
+	mode: "json" | "sse" | "auto",
 	maxBodyBytes: number,
 	acceptNotificationResponse: boolean,
 	acceptSessionTerminationResponse: boolean,
+	acceptUnauthorizedResponse = false,
 ): Promise<Response> {
+	if (acceptUnauthorizedResponse) {
+		if (response.status !== 401 && response.status !== 403) {
+			await cancelResponseBody(response);
+			throw new McpTransportError(
+				"upstream_isolation_unverified",
+				"MCP upstream credential isolation was not verified",
+			);
+		}
+		await boundResponseBody(response, maxBodyBytes).arrayBuffer();
+		return cloneResponseMetadata(response, null);
+	}
 	if (response.status >= 300 && response.status < 400) {
 		await cancelResponseBody(response);
 		throw new McpTransportError("redirect_forbidden", "MCP upstream redirects are forbidden");
@@ -803,7 +848,75 @@ async function validateAndBoundMcpResponse(
 		);
 	}
 	const bounded = boundResponseBody(response, maxBodyBytes);
-	return mode === "json" ? bufferBoundedResponse(bounded) : bounded;
+	return response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() ===
+		"application/json"
+		? bufferBoundedResponse(bounded)
+		: bounded;
+}
+
+/** Finite, UTF-8-strict SSE framing. No partial JSON or oversized event is ever yielded. */
+export async function* readMcpSseMessages(
+	response: Response,
+	maxBytes: number,
+	signal?: AbortSignal,
+): AsyncGenerator<JsonRpcMessage> {
+	const reader = response.body?.getReader();
+	if (!reader) throw new McpTransportError("missing_sse_response", "MCP SSE body is missing");
+	const decoder = new TextDecoder("utf-8", { fatal: true });
+	let buffer = "";
+	let lines: string[] = [];
+	let bytes = 0;
+	const abort = () => {
+		void reader.cancel(signal?.reason).catch(() => undefined);
+	};
+	signal?.addEventListener("abort", abort, { once: true });
+	try {
+		for (;;) {
+			signal?.throwIfAborted();
+			const item = await reader.read();
+			signal?.throwIfAborted();
+			if (!item.done) {
+				bytes += item.value.byteLength;
+				if (bytes > maxBytes)
+					throw new McpTransportError("body_too_large", "MCP SSE byte limit exceeded");
+			}
+			buffer += decoder.decode(item.value, { stream: !item.done });
+			for (;;) {
+				const match = /[\r\n]/.exec(buffer);
+				if (!match || (!item.done && match.index === buffer.length - 1 && match[0] === "\r")) break;
+				const line = buffer.slice(0, match.index);
+				buffer = buffer.slice(
+					match.index + (buffer.slice(match.index, match.index + 2) === "\r\n" ? 2 : 1),
+				);
+				if (line !== "") {
+					lines.push(line);
+					continue;
+				}
+				const data: string[] = [];
+				for (const field of lines) {
+					if (field.startsWith(":")) continue;
+					if (field.startsWith("data:")) data.push(field.slice(5).replace(/^ /, ""));
+					else if (field.startsWith("event:") && field.slice(6).trim() !== "message")
+						throw new McpTransportError(
+							"unsupported_sse_event",
+							"MCP SSE event type is unsupported",
+						);
+					else if (!/^(event|id|retry):/.test(field))
+						throw new McpTransportError("invalid_sse_field", "MCP SSE field is invalid");
+				}
+				lines = [];
+				if (data.length && data.join("\n") !== "")
+					yield parseJsonRpcMessage(textEncoder.encode(data.join("\n")), maxBytes);
+			}
+			if (item.done) break;
+		}
+		if (buffer || lines.some((line) => !line.startsWith(":")))
+			throw new McpTransportError("incomplete_sse_event", "MCP SSE ended inside an event");
+	} finally {
+		signal?.removeEventListener("abort", abort);
+		await reader.cancel().catch(() => undefined);
+		reader.releaseLock();
+	}
 }
 
 function normalizeRequestBody(

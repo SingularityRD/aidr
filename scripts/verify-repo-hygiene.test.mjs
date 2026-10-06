@@ -210,6 +210,41 @@ describe("verify-repo-hygiene: host-path scan", () => {
 		assert.equal(report.ok, true, JSON.stringify(report.violations, null, 2));
 	});
 
+	it("accepts bounded username character classes in raw and JSON-escaped threat data", () => {
+		const rule = String.raw`ssh.{0,300}/home/[^\s/]{1,64}/\.ssh/`;
+		const root = makeFixture({
+			".gitignore": "node_modules/\n",
+			"packages/core/src/generated/threat-parse-cache.ts": `export const patterns = ${JSON.stringify([rule])};\n`,
+			"src/rules.yaml": `pattern: '${rule}'\n`,
+		});
+		const report = runFixture(root);
+		assert.equal(report.ok, true, JSON.stringify(report.violations, null, 2));
+		assert.equal(report.summary.allowlistedFiles, 0);
+		assert.equal(report.summary.textFilesScanned, 3, "generated detection data remains scanned");
+	});
+
+	it("an accepted threat class cannot hide real Linux, macOS or Windows homes in a generated file", () => {
+		const rule = String.raw`/home/[^\s/]{1,64}/\.ssh/`;
+		const root = makeFixture({
+			".gitignore": "node_modules/\n",
+			"packages/core/src/generated/threat-parse-cache.ts": `export const rules = ${JSON.stringify([{ pattern: rule, linux: "/home/alice/private", mac: "/Users/bob/private", windows: String.raw`C:\Users\someone\private` }])};\n`,
+		});
+		const report = runFixture(root);
+		assert.equal(report.ok, false);
+		assert.equal(report.summary.allowlistedFiles, 0);
+		assert.deepEqual(report.violations.map((entry) => entry.match).sort(), [String.raw`C:\\Users\\someone`, "/Users/bob", "/home/alice"].sort());
+	});
+
+	it("does not exempt literal bracket usernames or incomplete character-class spellings", () => {
+		const root = makeFixture({
+			".gitignore": "node_modules/\n",
+			"src/literal.ts": String.raw`const paths = ["/home/[alice]/private", "/home/[^\s/]{1,64}private", "/home/[^\s/]+/private"];` + "\n",
+		});
+		const report = runFixture(root);
+		assert.equal(report.ok, false);
+		assert.equal(report.violations.length, 3);
+	});
+
 	it("treats anonymous placeholder identities as non-identifying", () => {
 		const root = makeFixture({
 			".gitignore": "node_modules/\n",

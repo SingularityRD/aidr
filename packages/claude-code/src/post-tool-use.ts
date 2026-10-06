@@ -5,12 +5,19 @@
  * Always exits 0 and returns valid JSON.
  */
 
-import { type Logger, verifyArtifactIntegrityAndLog } from "@singularityrd/aidr-core";
+import {
+	type Logger,
+	scanProvisionedOutput,
+	verifyArtifactIntegrityAndLog,
+} from "@singularityrd/aidr-core";
 import pino from "pino";
 import { consumePendingApproval, type PendingApproval } from "./approval-tracker.js";
 import { artifactTypeLabel } from "./format.js";
 import { MAX_POST_TOOL_INPUT_BYTES, readBoundedJson } from "./hook-input.js";
-import { inspectToolResponse, postToolInspectionUnavailable } from "./output-inspection.js";
+import {
+	inspectCachedProvisionedToolResponse,
+	postToolInspectionUnavailable,
+} from "./output-inspection.js";
 import {
 	appendPostToolContext,
 	quarantineFailedToolInspection,
@@ -88,27 +95,28 @@ async function main(): Promise<void> {
 
 	const toolUseId = (hookInput.tool_use_id ?? "") as string;
 	const sessionId = (hookInput.session_id ?? "unknown") as string;
+	let approvalContext: string | null = null;
+	if (toolUseId) {
+		try {
+			const entry = await consumePendingApproval(sessionId, toolUseId, logger);
+			if (entry) approvalContext = approvedActionContext(entry);
+		} catch {
+			// Approval bookkeeping must not discard an output quarantine.
+		}
+	}
 	let inspection: Record<string, unknown> | null;
 	try {
+		await scanProvisionedOutput([], "claude-code");
+		// Inspect and replace the current payload in the same turn after all async work.
 		inspection = quarantineInspectedToolOutput(
-			inspectToolResponse(hookInput.tool_response),
+			inspectCachedProvisionedToolResponse(hookInput.tool_response),
 			hookInput.tool_response,
 		);
 	} catch {
 		inspection = quarantineFailedToolInspection(hookInput.tool_response);
 	}
 	let response: Record<string, unknown> = inspection ?? {};
-	if (toolUseId) {
-		try {
-			const entry = await consumePendingApproval(sessionId, toolUseId, logger);
-			if (entry) {
-				response = appendPostToolContext(response, approvedActionContext(entry));
-			}
-			// No pending approval is the common path; retain the inspection result.
-		} catch {
-			// Approval bookkeeping must not discard an output quarantine.
-		}
-	}
+	if (approvalContext) response = appendPostToolContext(response, approvalContext);
 	process.stdout.write(`${JSON.stringify(response)}\n`);
 }
 

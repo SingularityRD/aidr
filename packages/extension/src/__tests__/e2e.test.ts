@@ -955,10 +955,6 @@ function createVsCodeExtensionDevelopmentPath(): string {
 		recursive: true,
 		force: true,
 	});
-	cpSync(path.join(EXTENSION_ROOT, "resources"), path.join(stageDir, "resources"), {
-		recursive: true,
-		force: true,
-	});
 	cpSync(path.join(EXTENSION_ROOT, "README.md"), path.join(stageDir, "README.md"), { force: true });
 	cpSync(path.join(EXTENSION_ROOT, "LICENSE"), path.join(stageDir, "LICENSE"), { force: true });
 	writeFileSync(
@@ -985,7 +981,7 @@ function buildVsCodeManifest(baseManifest: Record<string, unknown>): Record<stri
 		files: [
 			"dist/vscode_extension.js",
 			"dist/aidr-hook.cjs",
-			"resources/**",
+			"dist/resources/**",
 			"package.json",
 			"README.md",
 			"LICENSE",

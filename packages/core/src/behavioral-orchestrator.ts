@@ -1,10 +1,12 @@
 import { createHash } from "node:crypto";
+import type { AuthenticatedBehavioralBaselineStore } from "./authenticated-behavioral-baseline-store.js";
 import { BehavioralAnalyzer, type ToolCallEvent } from "./behavioral-analyzer.js";
 import type {
 	BehavioralBaselineObservation,
 	BehavioralBaselineStore,
 } from "./behavioral-baseline-store.js";
 import { LOCAL_EMBEDDER_MODEL_VERSION } from "./behavioral-corpus.js";
+import { learningInputDigest } from "./behavioral-learning-receipt.js";
 import { LocalEmbeddingModel } from "./ml-model.js";
 
 export { LOCAL_EMBEDDER_MODEL_VERSION } from "./behavioral-corpus.js";
@@ -115,6 +117,8 @@ export interface BehavioralOrchestratorDependencies {
 	 * until verified execution receipts are bound to persisted observations.
 	 */
 	baselineStore?: BehavioralBaselineStore;
+	/** V3 restores and commits only signed success plus independent benign-consent receipts. */
+	authenticatedBaselineStore?: AuthenticatedBehavioralBaselineStore;
 	/** Trusted provisioning ceiling: events cannot override signed consent or tenant. */
 	provisionedPolicy?: { tenantId: string; learningAllowed: boolean };
 	logger?: Logger;
@@ -125,7 +129,7 @@ export interface BehavioralOrchestratorDependencies {
 
 interface SessionState {
 	/** Accepted observations, already reduced to pseudonymous novelty tokens. */
-	observations: BehavioralBaselineObservation[];
+	observations: Array<BehavioralBaselineObservation & { fingerprint: string }>;
 	noveltyDetector: NoveltyDetector;
 	baselineSamples: number;
 	fingerprintCounts: Map<string, number>;
@@ -140,7 +144,7 @@ type ModelState = "uninitialized" | "ready" | "initialization_failed" | "empty_c
 /**
  * Bounds the orchestrator applies in memory, and that any durable baseline store
  * must apply on disk. Exported so a store and its orchestrator cannot drift.
- * `retentionMs` is the event window `validateInput` already enforces.
+ * `retentionMs` applies to incoming events and retained observations before scoring.
  */
 export const BEHAVIORAL_ORCHESTRATOR_BOUNDS = {
 	maxTenants: 50,
@@ -182,6 +186,7 @@ export class BehavioralDetectionOrchestrator {
 	private readonly createBehavioralAnalyzer: () => BehavioralAnalyzer;
 	private readonly createNoveltyDetector: () => NoveltyDetector;
 	private readonly baselineStore: BehavioralBaselineStore | undefined;
+	private readonly authenticatedBaselineStore: AuthenticatedBehavioralBaselineStore | undefined;
 	private readonly provisionedPolicy:
 		| Readonly<{ tenantId: string; learningAllowed: boolean }>
 		| undefined;
@@ -203,6 +208,7 @@ export class BehavioralDetectionOrchestrator {
 		this.logger = dependencies.logger ?? nullLogger;
 		this.now = dependencies.now ?? Date.now;
 		this.baselineStore = dependencies.baselineStore;
+		this.authenticatedBaselineStore = dependencies.authenticatedBaselineStore;
 		this.provisionedPolicy = dependencies.provisionedPolicy
 			? Object.freeze({ ...dependencies.provisionedPolicy })
 			: undefined;
@@ -234,6 +240,8 @@ export class BehavioralDetectionOrchestrator {
 
 	async evaluate(input: BehavioralDetectionInput): Promise<BehavioralDetectionResult> {
 		const event = this.validateInput(input);
+		// Signed production provisioning never authorizes learning from a preflight candidate.
+		if (this.provisionedPolicy || this.authenticatedBaselineStore) event.learningAllowed = false;
 		const scopeKey = `${event.tenantId}\u0000${event.sessionId}`;
 		const prior = this.scopeQueues.get(scopeKey) ?? Promise.resolve();
 		const operation = prior.catch(() => undefined).then(() => this.evaluateScoped(event));
@@ -250,6 +258,43 @@ export class BehavioralDetectionOrchestrator {
 				this.scopeQueues.delete(scopeKey);
 			}
 		}
+	}
+
+	/** Only the authenticated post-execution lifecycle may update a production baseline. */
+	async ingestAuthenticatedExecution(
+		input: BehavioralDetectionInput,
+		bundle: unknown,
+		toolInput: Record<string, unknown>,
+		verifyCurrentAuthority?: () => Promise<void>,
+	): Promise<BehavioralDetectionResult> {
+		const store = this.authenticatedBaselineStore;
+		if (!store || !this.provisionedPolicy?.learningAllowed)
+			throw new Error("Authenticated behavioral learning is not provisioned or consented");
+		const event = this.validateInput({ ...input, learningAllowed: true });
+		const expected = behavioralObservationForInput(event);
+		const inputDigest = learningInputDigest(toolInput);
+		// Classification uses the actual signed input, never caller-provided surrogate text.
+		event.classificationText = JSON.stringify(toolInput);
+		let committedSession: SessionState | undefined;
+		const result = await store.transact(event.sessionId, bundle, async (receipt, observations) => {
+			if (
+				event.tenantId !== store.context.tenantId ||
+				receipt.inputDigest !== inputDigest ||
+				receipt.fingerprint !== expected.fingerprint ||
+				!sameObservation(receipt.observation, expected.observation)
+			)
+				throw new Error("Authenticated behavioral observation or input binding failed");
+			const session = this.createEmptySession();
+			session.observations = observations;
+			const value = await this.evaluateScoped(event, session);
+			if (value.learning.accepted) await verifyCurrentAuthority?.();
+			committedSession = session;
+			return { value, accept: value.learning.accepted };
+		});
+		// The authoritative transaction must be durable before memory or accepted=true escapes.
+		if (committedSession)
+			await this.getOrCreateSession(event.tenantId, event.sessionId, committedSession);
+		return result;
 	}
 
 	/** Load and validate a replacement before atomically making it active. */
@@ -277,6 +322,7 @@ export class BehavioralDetectionOrchestrator {
 	clearSession(tenantId: string, sessionId: string): boolean {
 		const tenant = this.tenants.get(tenantId);
 		this.dropPersisted(() => this.baselineStore?.clearSession(tenantId, sessionId));
+		this.dropPersisted(() => this.authenticatedBaselineStore?.clearSession(tenantId, sessionId));
 		if (!tenant) return false;
 		const removed = tenant.sessions.delete(sessionId);
 		if (tenant.sessions.size === 0) this.tenants.delete(tenantId);
@@ -285,6 +331,7 @@ export class BehavioralDetectionOrchestrator {
 
 	clearTenant(tenantId: string): boolean {
 		this.dropPersisted(() => this.baselineStore?.clearTenant(tenantId));
+		this.dropPersisted(() => this.authenticatedBaselineStore?.clearTenant(tenantId));
 		return this.tenants.delete(tenantId);
 	}
 
@@ -310,8 +357,11 @@ export class BehavioralDetectionOrchestrator {
 
 	private async evaluateScoped(
 		event: ReturnType<BehavioralDetectionOrchestrator["validateInput"]>,
+		authoritativeSession?: SessionState,
 	): Promise<BehavioralDetectionResult> {
-		const session = await this.getOrCreateSession(event.tenantId, event.sessionId);
+		const session =
+			authoritativeSession ?? (await this.getOrCreateSession(event.tenantId, event.sessionId));
+		await this.rebuildSessionBaseline(session);
 		const samplesBefore = session.baselineSamples;
 		const explanations = await Promise.all([
 			this.evaluateBehavioralLeg(session, event, samplesBefore),
@@ -530,14 +580,6 @@ export class BehavioralDetectionOrchestrator {
 		fingerprint: string,
 	): Promise<void> {
 		const novelty = noveltyValues(event);
-		await session.noveltyDetector.updateProfile("scope", {
-			command: novelty.command,
-			path: novelty.path,
-			url: novelty.url,
-			tool: novelty.tool,
-			duration: event.durationMs,
-			hour: new Date(event.timestamp).getUTCHours(),
-		});
 		session.observations.push({
 			toolName: event.toolName,
 			timestamp: event.timestamp,
@@ -546,19 +588,40 @@ export class BehavioralDetectionOrchestrator {
 			pathToken: novelty.path,
 			urlToken: novelty.url,
 			durationMs: event.durationMs,
+			fingerprint,
 		});
 		if (session.observations.length > this.config.maxEventsPerSession) {
 			session.observations.shift();
 		}
-		session.baselineSamples++;
-		if (session.fingerprintCounts.has(fingerprint)) {
-			session.fingerprintCounts.set(
-				fingerprint,
-				(session.fingerprintCounts.get(fingerprint) ?? 0) + 1,
+		await this.rebuildSessionBaseline(session);
+	}
+
+	private async rebuildSessionBaseline(session: SessionState): Promise<void> {
+		const cutoff = this.now() - this.config.maxEventAgeMs;
+		const observations = session.observations.filter(
+			(observation) => observation.timestamp >= cutoff,
+		);
+		const noveltyDetector = this.createNoveltyDetector();
+		const fingerprintCounts = new Map<string, number>();
+		// Replay is bounded by maxEventsPerSession (100 by default); no raw payloads are retained.
+		for (const observation of observations) {
+			await noveltyDetector.updateProfile("scope", {
+				command: observation.commandToken,
+				path: observation.pathToken,
+				url: observation.urlToken,
+				tool: stableToken("tool", observation.toolName),
+				duration: observation.durationMs,
+				hour: new Date(observation.timestamp).getUTCHours(),
+			});
+			fingerprintCounts.set(
+				observation.fingerprint,
+				(fingerprintCounts.get(observation.fingerprint) ?? 0) + 1,
 			);
-		} else if (session.fingerprintCounts.size < this.config.maxFingerprintsPerSession) {
-			session.fingerprintCounts.set(fingerprint, 1);
 		}
+		session.observations = observations;
+		session.noveltyDetector = noveltyDetector;
+		session.fingerprintCounts = fingerprintCounts;
+		session.baselineSamples = observations.length;
 	}
 
 	private dropPersisted(clear: () => Promise<void> | undefined): void {
@@ -573,25 +636,17 @@ export class BehavioralDetectionOrchestrator {
 		}
 	}
 
-	private async getOrCreateSession(tenantId: string, sessionId: string): Promise<SessionState> {
-		let tenant = this.tenants.get(tenantId);
-		if (tenant) {
-			this.tenants.delete(tenantId);
-			this.tenants.set(tenantId, tenant);
-		} else {
-			if (this.tenants.size >= this.config.maxTenants) {
-				const oldestTenant = this.tenants.keys().next().value as string | undefined;
-				if (oldestTenant !== undefined) {
-					this.tenants.delete(oldestTenant);
-					this.tenantEvictions++;
-				}
-			}
-			tenant = { sessions: new Map() };
-			this.tenants.set(tenantId, tenant);
-		}
-
+	private async getOrCreateSession(
+		tenantId: string,
+		sessionId: string,
+		authoritativeSession?: SessionState,
+	): Promise<SessionState> {
+		const tenant = this.getOrCreateTenant(tenantId);
 		let session = tenant.sessions.get(sessionId);
 		if (session) {
+			session = authoritativeSession ?? session;
+			if (!authoritativeSession)
+				await this.restoreAuthenticatedSession(session, tenantId, sessionId);
 			tenant.sessions.delete(sessionId);
 			tenant.sessions.set(sessionId, session);
 			return session;
@@ -605,16 +660,44 @@ export class BehavioralDetectionOrchestrator {
 			}
 		}
 
-		session = this.createEmptySession();
+		session = authoritativeSession ?? this.createEmptySession();
+		if (!authoritativeSession) await this.restoreAuthenticatedSession(session, tenantId, sessionId);
 		tenant.sessions.set(sessionId, session);
 		return session;
 	}
 
-	/**
-	 * Persisted records have no verified post-execution receipt, so they cannot
-	 * seed detection. Re-enable restore only when receipt verification is bound to
-	 * every stored observation.
-	 */
+	private getOrCreateTenant(tenantId: string): TenantState {
+		let tenant = this.tenants.get(tenantId);
+		if (tenant) {
+			this.tenants.delete(tenantId);
+			this.tenants.set(tenantId, tenant);
+			return tenant;
+		}
+		if (this.tenants.size >= this.config.maxTenants) {
+			const oldestTenant = this.tenants.keys().next().value as string | undefined;
+			if (oldestTenant !== undefined) {
+				this.tenants.delete(oldestTenant);
+				this.tenantEvictions++;
+			}
+		}
+		tenant = { sessions: new Map() };
+		this.tenants.set(tenantId, tenant);
+		return tenant;
+	}
+
+	private async restoreAuthenticatedSession(
+		session: SessionState,
+		tenantId: string,
+		sessionId: string,
+	): Promise<void> {
+		if (!this.authenticatedBaselineStore) return;
+		if (tenantId !== this.authenticatedBaselineStore.context.tenantId)
+			throw new Error("Authenticated behavioral baseline belongs to a different tenant");
+		session.observations = await this.authenticatedBaselineStore.load(sessionId);
+		await this.rebuildSessionBaseline(session);
+	}
+
+	/** A fresh scope is empty until authenticated accepted observations are restored. */
 	private createEmptySession(): SessionState {
 		return {
 			observations: [],
@@ -710,14 +793,18 @@ function toStoredToolCallEvent(
 	};
 }
 
-function buildFingerprint(event: ValidatedBehavioralInput): string {
+function buildFingerprint(
+	event: Pick<ValidatedBehavioralInput, "toolName" | "command" | "path" | "url">,
+): string {
 	return stableToken(
 		"event",
 		[event.toolName, event.command ?? "", event.path ?? "", event.url ?? ""].join("\u001f"),
 	);
 }
 
-function noveltyValues(event: ValidatedBehavioralInput): {
+function noveltyValues(
+	event: Pick<ValidatedBehavioralInput, "toolName" | "command" | "path" | "url">,
+): {
 	command?: string;
 	path?: string;
 	url?: string;
@@ -729,6 +816,60 @@ function noveltyValues(event: ValidatedBehavioralInput): {
 		url: event.url === undefined ? undefined : stableToken("url", event.url),
 		tool: stableToken("tool", event.toolName),
 	};
+}
+
+/** Pure privacy reduction shared by receipt issuers and authenticated ingestion. */
+export function behavioralObservationForInput(input: BehavioralDetectionInput): {
+	observation: BehavioralBaselineObservation;
+	fingerprint: string;
+} {
+	const timestamp = input.timestamp instanceof Date ? input.timestamp.getTime() : input.timestamp;
+	if (
+		!Number.isSafeInteger(timestamp) ||
+		timestamp <= 0 ||
+		!Number.isFinite(input.riskScore) ||
+		input.riskScore < 0 ||
+		input.riskScore > 100 ||
+		(input.durationMs !== undefined &&
+			(!Number.isSafeInteger(input.durationMs) ||
+				input.durationMs < 0 ||
+				input.durationMs > 86_400_000))
+	)
+		throw new Error("Behavioral observation timing or risk is invalid");
+	const event = {
+		toolName: validateValue(input.toolName, "toolName", MAX_TOOL_LENGTH, true),
+		command: validateOptionalValue(input.command, "command"),
+		path: validateOptionalValue(input.path, "path"),
+		url: validateOptionalValue(input.url, "url"),
+	};
+	const novelty = noveltyValues(event);
+	return {
+		observation: {
+			toolName: event.toolName,
+			timestamp,
+			riskScore: input.riskScore,
+			...(novelty.command !== undefined ? { commandToken: novelty.command } : {}),
+			...(novelty.path !== undefined ? { pathToken: novelty.path } : {}),
+			...(novelty.url !== undefined ? { urlToken: novelty.url } : {}),
+			...(input.durationMs !== undefined ? { durationMs: input.durationMs } : {}),
+		},
+		fingerprint: buildFingerprint(event),
+	};
+}
+
+function sameObservation(
+	left: BehavioralBaselineObservation,
+	right: BehavioralBaselineObservation,
+): boolean {
+	return (
+		left.toolName === right.toolName &&
+		left.timestamp === right.timestamp &&
+		left.riskScore === right.riskScore &&
+		left.commandToken === right.commandToken &&
+		left.pathToken === right.pathToken &&
+		left.urlToken === right.urlToken &&
+		left.durationMs === right.durationMs
+	);
 }
 
 function stableToken(kind: string, value: string): string {

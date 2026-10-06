@@ -89,8 +89,13 @@ def runtime_egress_ready() -> tuple[bool, str]:
     proxy = os.getenv("BRIDGE_EGRESS_PROXY_URL", "").strip()
     if not proxy:
         return False, "runtime egress proxy is not configured"
-    parsed = urlparse(proxy)
-    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+    try:
+        parsed = urlparse(proxy)
+        invalid = parsed.scheme not in {"http", "https"} or not parsed.hostname
+        parsed.port
+    except ValueError:
+        invalid = True
+    if invalid:
         return False, "runtime egress proxy URL is invalid"
     return True, "runtime egress proxy configured"
 
@@ -179,8 +184,14 @@ def validate_remote_url(value: str, *, field: str) -> str:
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=f"{field} is not a valid URL",
         )
-    parsed = urlparse(candidate)
-    host = (parsed.hostname or "").lower().rstrip(".")
+    try:
+        parsed = urlparse(candidate)
+        host = (parsed.hostname or "").lower().rstrip(".")
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"{field} is not a valid URL",
+        ) from exc
     if parsed.scheme not in {"http", "https"} or not host:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,

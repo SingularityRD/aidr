@@ -6,12 +6,13 @@
  * with before/after hooks for customization.
  */
 
-import { extractFromUnknownTool } from "@singularityrd/aidr-core";
+import { type AgentRuntime, extractFromUnknownTool } from "@singularityrd/aidr-core";
 import type { AIDRClient } from "../client.js";
 import type { CheckRequest, CheckResult } from "../config.js";
 import { enforceCheckResult, isInconsistent } from "../enforcement.js";
 import {
 	formatToolOutputBlockReason,
+	guardProvisionedToolOutput,
 	guardToolOutput,
 	type ToolOutputGuardOptions,
 } from "../output-guard.js";
@@ -80,6 +81,11 @@ export interface MiddlewareOptions {
 	metadata?: Record<string, unknown>;
 	/** Inspect the returned tool value before it is delivered to the model. */
 	outputGuard?: ToolOutputGuardOptions;
+	/**
+	 * Fixed local connector profile for signed tenant output DLP. Set by the host
+	 * at middleware construction; never inferred from a tool input or metadata.
+	 */
+	agentRuntime?: AgentRuntime;
 }
 
 /**
@@ -140,10 +146,13 @@ function outputBlockedResult(reason: string): CheckResult {
 async function guardResult(
 	result: unknown,
 	context: MiddlewareContext,
-	verdict: CheckResult,
 	options: MiddlewareOptions,
+	agentRuntime: AgentRuntime | undefined,
 ): Promise<unknown> {
-	const guarded = guardToolOutput(result, options.outputGuard);
+	const guarded =
+		agentRuntime === undefined
+			? guardToolOutput(result, options.outputGuard)
+			: await guardProvisionedToolOutput(result, agentRuntime, options.outputGuard);
 	if (guarded.delivery !== "block") return guarded.output;
 
 	const reason = formatToolOutputBlockReason(guarded.inspection);
@@ -222,6 +231,7 @@ export function createMiddleware(
 	aidrClient: AIDRClient,
 	options: MiddlewareOptions = {},
 ): MiddlewareFunction {
+	const agentRuntime = options.agentRuntime;
 	return async (context: MiddlewareContext, next: NextFunction): Promise<unknown> => {
 		// Call beforeCheck hook
 		if (options.beforeCheck) {
@@ -274,7 +284,7 @@ export function createMiddleware(
 			}
 			throw error;
 		}
-		result = await guardResult(result, context, verdict, options);
+		result = await guardResult(result, context, options, agentRuntime);
 
 		// Call afterCheck hook
 		if (options.afterCheck) {
@@ -316,6 +326,7 @@ export function createSyncCompatibleMiddleware(
 	sync: (context: MiddlewareContext, next: () => unknown) => Promise<unknown>;
 } {
 	const asyncMiddleware = createMiddleware(aidrClient, options);
+	const agentRuntime = options.agentRuntime;
 
 	return {
 		async: asyncMiddleware,
@@ -366,7 +377,7 @@ export function createSyncCompatibleMiddleware(
 				}
 				throw error;
 			}
-			result = await guardResult(result, context, verdict, options);
+			result = await guardResult(result, context, options, agentRuntime);
 
 			// Call afterCheck
 			if (options.afterCheck) {
@@ -464,7 +475,9 @@ export function wrapToolWithMiddleware(
 				metadata: options.metadata,
 			};
 
-			return middleware(context, async () => tool.run(...args));
+			// Execute the same JSON snapshot that was inspected, so toJSON hooks or
+			// caller mutations cannot replace checked input with an unchecked value.
+			return middleware(context, async () => tool.run(...parsedArgs));
 		},
 	};
 }

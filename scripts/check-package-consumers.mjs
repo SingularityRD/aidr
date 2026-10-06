@@ -224,9 +224,11 @@ async function checkMcpGateway() {
 	const gateway = artifact("packages/mcp-gateway/dist/aidr-mcp-gateway.mjs");
 	const approve = artifact("packages/mcp-gateway/dist/aidr-mcp-approve.mjs");
 	const stdio = artifact("packages/mcp-gateway/dist/aidr-mcp-stdio.mjs");
+	const library = artifact("packages/mcp-gateway/dist/aidr-mcp-library.mjs");
 	assertSuccess(runNode(["--check", gateway]), "MCP gateway syntax");
 	assertSuccess(runNode(["--check", approve]), "MCP gateway operator CLI syntax");
 	assertSuccess(runNode(["--check", stdio]), "MCP gateway stdio syntax");
+	assertSuccess(runNode(["--check", library]), "MCP gateway public library syntax");
 	const usage = runNode([gateway]);
 	if (usage.status !== 2 || !/usage: aidr-mcp-gateway <config\.json>/.test(usage.stderr ?? "")) {
 		throw new Error("MCP gateway did not report bounded configuration usage");

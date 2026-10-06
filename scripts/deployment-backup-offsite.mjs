@@ -430,7 +430,7 @@ async function checkedDirectory(path, create = false) {
 	await canonicalExisting(path, "Filesystem directory");
 }
 
-async function cleanupOldDirectories(root, pattern, now = Date.now()) {
+async function cleanupOldDirectories(root, pattern, now = Date.now(), preserveCompleted = false) {
 	if (!existsSync(root)) return 0;
 	await checkedDirectory(root);
 	let removed = 0;
@@ -440,6 +440,7 @@ async function cleanupOldDirectories(root, pattern, now = Date.now()) {
 		const path = join(root, entry.name);
 		const info = await lstat(path);
 		if (!info.isDirectory() || info.isSymbolicLink() || info.mtimeMs > now - ABANDONED_TEMP_AGE_MS) continue;
+		if (preserveCompleted && existsSync(join(path, "backup.json"))) continue;
 		const marker = `${path}.aidr-owned`;
 		let markerInfo;
 		try { markerInfo = await lstat(marker); } catch (error) { if (error.code === "ENOENT") continue; throw error; }
@@ -452,7 +453,7 @@ async function cleanupOldDirectories(root, pattern, now = Date.now()) {
 }
 
 export async function cleanupAbandonedSpool(root, now = Date.now()) {
-	return cleanupOldDirectories(resolve(root), SPOOL_BACKUP, now);
+	return cleanupOldDirectories(resolve(root), SPOOL_BACKUP, now, true);
 }
 
 async function readFilesystemCommit(target, backupId) {
@@ -1091,6 +1092,8 @@ export async function runOffsite(argv, env = process.env, dependencies = {}) {
 		const retention = retentionPolicy(options.retentionDays, options.objectLockMode);
 		let backup = options.backup ? resolve(options.backup) : null;
 		let cycleBackup = null;
+		let cycleBackupIdentity = null;
+		let cycleBackupVerified = false;
 		try {
 			if (options.action === "cycle") {
 				if (!options.deployment || !options.spool) throw new Error("cycle requires --deployment and --spool");
@@ -1105,6 +1108,8 @@ export async function runOffsite(argv, env = process.env, dependencies = {}) {
 				cycleBackup = backup;
 				await writeFile(`${backup}.aidr-owned`, TEMP_OWNER, { mode: 0o600, flag: "wx" });
 				await run(process.execPath, [join(SCRIPT_DIR, "deployment-backup.mjs"), "backup", "--deployment", deployment, "--output", backup, "--key-file", keyFile, "--recovery-journal", join(spool, "recovery-journal.json"), "--maintenance"]);
+				cycleBackupIdentity = await lstat(backup);
+				if (!cycleBackupIdentity.isDirectory() || cycleBackupIdentity.isSymbolicLink()) throw new Error("Local backup output is not the completed snapshot directory");
 			}
 			if (!backup) throw new Error("upload requires --backup");
 			backup = await canonicalExisting(backup, "Source backup");
@@ -1121,14 +1126,19 @@ export async function runOffsite(argv, env = process.env, dependencies = {}) {
 				: await uploadS3(target, inventory, commit, s3Options);
 			await guardTargetMount();
 			await verifyRemote(target, inventory.backupId, keyFile, options.healthFile, s3Options, guardTargetMount);
+			cycleBackupVerified = true;
 			if (options.action === "cycle") await prune(target, retention.days, options.applyRetention, s3Options, guardTargetMount);
 			console.log(JSON.stringify({ status: "ok", backup_id: inventory.backupId, completed_at: published.completed_at, target_kind: target.kind, verified: true }));
 			return;
 		} finally {
-			if (cycleBackup) {
+			if (cycleBackup && cycleBackupVerified) {
+				const current = await lstat(cycleBackup);
+				if (!current.isDirectory() || current.isSymbolicLink() || current.dev !== cycleBackupIdentity.dev || current.ino !== cycleBackupIdentity.ino) {
+					throw new Error("Local backup output changed identity and was retained");
+				}
 				await rm(cycleBackup, { recursive: true, force: true });
 				await rm(`${cycleBackup}.aidr-owned`, { force: true });
-			}
+			} else if (cycleBackup && !existsSync(cycleBackup)) await rm(`${cycleBackup}.aidr-owned`, { force: true });
 		}
 	}
 	if (options.action === "verify") {

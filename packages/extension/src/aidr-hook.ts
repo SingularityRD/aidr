@@ -14,11 +14,13 @@ import {
 	extractFromWrite,
 	loadProvisionedDetectorContext,
 	recordHostObservation,
+	scanProvisionedOutput,
 	type Verdict,
 	verifyArtifactIntegrityAndLog,
 } from "@singularityrd/aidr-core";
 import {
 	auditOutputInspection,
+	inspectCachedProvisionedOutput,
 	inspectOutput,
 	type OutputInspectionResult,
 } from "./output-inspection.js";
@@ -88,6 +90,9 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<vo
 	const payload = await readStdinJson();
 	if (payload === HOOK_INPUT_LIMIT_EXCEEDED) {
 		writeHookInputLimitResponse(mode);
+		// Both hosts block permission hooks on exit 2, even when an oversized
+		// payload prevents selecting the event-specific response schema.
+		process.exitCode = 2;
 		return;
 	}
 
@@ -208,7 +213,8 @@ async function handleCursorToolOutput(payload: unknown): Promise<void> {
 		return;
 	}
 	const input = payload as Record<string, unknown>;
-	const result = inspectOutput(input.tool_output);
+	await scanProvisionedOutput([], "cursor");
+	const result = inspectCachedProvisionedOutput(input.tool_output, "cursor");
 	if (result.status === "clean") {
 		writeJson({});
 		return;
@@ -238,7 +244,8 @@ async function handleCursorAssistantOutput(payload: unknown): Promise<void> {
 		return;
 	}
 	const input = payload as Record<string, unknown>;
-	const result = inspectOutput(input.text);
+	await scanProvisionedOutput([], "cursor");
+	const result = inspectCachedProvisionedOutput(input.text, "cursor");
 	await auditOutputInspection(result, {
 		host: "cursor",
 		surface: "assistant_response",
@@ -300,7 +307,8 @@ async function handleVsCodeToolOutput(payload: unknown): Promise<void> {
 		return;
 	}
 	const input = payload as Record<string, unknown>;
-	const result = inspectOutput(input.tool_response);
+	await scanProvisionedOutput([], "vscode");
+	const result = inspectCachedProvisionedOutput(input.tool_response, "vscode");
 	if (result.status === "clean") {
 		writeJson({});
 		return;
@@ -317,7 +325,8 @@ async function handleVsCodeToolOutput(payload: unknown): Promise<void> {
 	const reason =
 		result.status === "blocked"
 			? `Singularity AIDR detected untrusted VS Code tool output (${findingSummary}).`
-			: result.reason ?? "Singularity AIDR could not fully inspect VS Code tool output; coverage is incomplete and it was not classified as clean.";
+			: (result.reason ??
+				"Singularity AIDR could not fully inspect VS Code tool output; coverage is incomplete and it was not classified as clean.");
 	const coverageNotice = `${reason} The tool already completed. VS Code PostToolUse blocks further processing, but this hook does not replace output bytes; the original result may already be in the transcript.`;
 	writeJson({
 		decision: "block",
@@ -458,7 +467,8 @@ function normalizeCursorCall(
 		"cursor";
 
 	if (eventName === "beforeShellExecution") {
-		const command = asString(input.command) ?? "";
+		const command = asString(input.command);
+		if (command === undefined) return undefined;
 		const toolInput: Record<string, unknown> = {
 			command,
 			cwd: asString(input.cwd),
@@ -473,6 +483,7 @@ function normalizeCursorCall(
 
 	if (eventName === "beforeReadFile") {
 		const filePath = readFilePath(input);
+		if (!filePath?.trim()) return undefined;
 		const content = asString(input.content);
 		const toolInput: Record<string, unknown> = {
 			...input,
@@ -494,6 +505,7 @@ function normalizeCursorCall(
 
 	const toolName = asString(input.tool_name) ?? "";
 	const rawToolInput = parseUnknownObject(input.tool_input);
+	if (!toolName.trim() || !rawToolInput) return undefined;
 	const toolInput = normalizeFileToolInput(toolName, rawToolInput);
 	return {
 		sessionId,
@@ -506,10 +518,11 @@ function normalizeCursorCall(
 function normalizeCursorMcpCall(
 	input: Record<string, unknown>,
 	sessionId: string,
-): NormalizedHookCall {
+): NormalizedHookCall | undefined {
 	const parsedToolInput = parseUnknownObject(input.tool_input);
 	const serverName = asString(input.mcp_server_name) ?? asString(input.server);
 	const mcpToolName = asString(input.tool_name);
+	if (!mcpToolName?.trim() || !parsedToolInput) return undefined;
 	const toolInput: Record<string, unknown> = {
 		tool_name: mcpToolName,
 		tool_input: {
@@ -538,11 +551,12 @@ function normalizeVsCodeCall(payload: unknown): NormalizedHookCall | undefined {
 
 	const input = payload as Record<string, unknown>;
 	const hostToolName = asString(input.tool_name);
-	if (!hostToolName) {
+	if (!hostToolName?.trim()) {
 		return undefined;
 	}
 
 	const rawToolInput = parseUnknownObject(input.tool_input);
+	if (!rawToolInput) return undefined;
 	const toolName = hostToolName === "editFiles" ? "Edit" : hostToolName;
 	const editFiles =
 		hostToolName === "editFiles" ? normalizeVsCodeEditFiles(rawToolInput) : undefined;
@@ -788,11 +802,11 @@ function truncateReason(verdict: Verdict): string {
 	return joined.length <= 350 ? joined : `${joined.slice(0, 347)}...`;
 }
 
-function getBundledDataDirs(): { threatsDir: string; allowlistsDir: string } {
+export function getBundledDataDirs(): { threatsDir: string; allowlistsDir: string } {
 	const extensionRoot = resolve(__dirname, "..");
 	return {
-		threatsDir: join(extensionRoot, "resources", "threats"),
-		allowlistsDir: join(extensionRoot, "resources", "allowlists"),
+		threatsDir: join(extensionRoot, "dist", "resources", "threats"),
+		allowlistsDir: join(extensionRoot, "dist", "resources", "allowlists"),
 	};
 }
 
@@ -834,7 +848,7 @@ function hasConflictingPopulatedStrings(
 	);
 }
 
-function parseUnknownObject(value: unknown): Record<string, unknown> {
+function parseUnknownObject(value: unknown): Record<string, unknown> | undefined {
 	if (value && typeof value === "object" && !Array.isArray(value)) {
 		return value as Record<string, unknown>;
 	}
@@ -848,13 +862,13 @@ function parseUnknownObject(value: unknown): Record<string, unknown> {
 			// Ignore parse errors.
 		}
 	}
-	return {};
+	return undefined;
 }
 
 async function readStdinJson(): Promise<unknown> {
 	// Cursor hooks on Windows can deliver stdin as UTF-16LE (PowerShell pipeline encoding),
 	// which breaks JSON.parse if we assume UTF-8. Read bytes and attempt both decodings.
-	const raw = await new Promise<Buffer | typeof HOOK_INPUT_LIMIT_EXCEEDED>((resolve) => {
+	const raw = await new Promise<Buffer | typeof HOOK_INPUT_LIMIT_EXCEEDED>((resolve, reject) => {
 		const chunks: Buffer[] = [];
 		let byteLength = 0;
 		let exceeded = false;
@@ -872,6 +886,7 @@ async function readStdinJson(): Promise<unknown> {
 		process.stdin.on("end", () =>
 			resolve(exceeded ? HOOK_INPUT_LIMIT_EXCEEDED : Buffer.concat(chunks)),
 		);
+		process.stdin.on("error", reject);
 	});
 	if (raw === HOOK_INPUT_LIMIT_EXCEEDED) return raw;
 

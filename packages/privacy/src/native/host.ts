@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { createHash } from 'node:crypto';
 import { parsePolicy } from '../browser/policy.js';
+import { BrowserPrivacyEngine } from '../browser/engine.js';
 import { ENTITY_TYPES, type Action } from '../types.js';
 import { endianness } from 'node:os';
 import { PrivacyEngine } from '../engine.js';
@@ -36,11 +37,17 @@ async function main():Promise<void>{
     const tc=textConfig as EngineOptions,actions:Partial<Record<typeof ENTITY_TYPES[number],Action>>={...tc.actions};
     for(const t of ENTITY_TYPES){if(policy.textAction==='block'||['SECRET','PRIVATE_KEY','INTERNAL','CLASSIFIED'].includes(t))actions[t]='block';}
     text=new PrivacyEngine({maxInputBytes:1048576,...tc,actions,literals:[...(tc.literals??[]),...policy.literals],policyId:policy.id,...(ner?{ner}:{})});
+    // Apply the same signal and strict-input controls to native documents and OCR text.
+    const guard=new BrowserPrivacyEngine({injectionAction:policy.injectionAction,sourceCodeAction:policy.sourceCodeAction,policyId:policy.id,maxInputBytes:1048576});
+    const guardedText={
+      protect:async(input:string)=>{const r=guard.protect(input);return r.output===null?r:text!.protect(input);},
+      protectJson:async(input:string)=>{const r=guard.protectJson(input);return r.output===null?r:text!.protectJson(input);},
+    };
     if(config.visual){const v=config.visual as {backend:LocalImageOptions;policy?:Partial<VisualOptions>};
       if(!v||typeof v!=='object'||Object.keys(v).some(k=>!['backend','policy'].includes(k))||!v.backend||Object.keys(v.policy??{}).some(k=>!['release','mode','granularity','barcodeAction','uncertainText','minConfidence','minWordHeight','paddingPx','maxInputBytes','maxPixels','maxDimension','maxWords','maxTextBytes','maxRegions','timeoutMs','maxConcurrent','policyId','requireNer'].includes(k)))throw new Error();
-      visual=new VisualPrivacyEngine({...v.policy,backend:new LocalImageProcess(v.backend),textEngine:text});
+      visual=new VisualPrivacyEngine({...v.policy,backend:new LocalImageProcess(v.backend),textEngine:guardedText});
     }
-    const probe=await text.protect('');session=new NativeSession({text,...(visual?{visual}:{}),policyId:probe.audit.policyId,policyDigest});
+    const probe=await guardedText.protect('');session=new NativeSession({text:guardedText,...(visual?{visual}:{}),policyId:probe.audit.policyId,policyDigest});
     process.stdin.once('end',terminate);process.once('SIGTERM',terminate);process.once('SIGINT',terminate);reset();
     for await(const chunk of process.stdin){
       for(const request of decoder.push(chunk as Buffer)){

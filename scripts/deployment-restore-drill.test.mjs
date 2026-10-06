@@ -103,3 +103,12 @@ test("periodic restore template requires runtime, candidate and explicit recover
 	for (const name of ["AIDR_RESTORE_KIT_ROOT", "AIDR_RESTORE_RUNTIME", "AIDR_RESTORE_CANDIDATE_INVENTORY", "AIDR_RESTORE_CANDIDATE_POLICY", "AIDR_RESTORE_EVIDENCE_RETENTION_DAYS", "AIDR_RESTORE_RPO_TARGET_MINUTES", "AIDR_RESTORE_RTO_TARGET_SECONDS"]) assert.match(environment, new RegExp(`^${name}=`, "m"));
 	assert.match(environment, /^AIDR_RESTORE_KIT_ROOT=\/srv\/aidr-staging\/aidr-kit-1$/m);
 });
+
+test("restore drill keeps signal protection through cleanup and evidence persistence", async () => {
+	const source = await readFile(new URL("./deployment-restore-drill.mjs", import.meta.url), "utf8");
+	assert.match(source, /if \(!cleaningUp\) activeChild\?\.kill\(signal\)/);
+	const cleanup = source.indexOf("cleaningUp = true;");
+	const evidence = source.indexOf("await writeFile(evidencePath");
+	const handlerRemoval = source.indexOf('process.removeListener("SIGTERM", onTerminate)');
+	assert.ok(cleanup >= 0 && evidence > cleanup && handlerRemoval > evidence);
+});

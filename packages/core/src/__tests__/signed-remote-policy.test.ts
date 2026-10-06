@@ -1,11 +1,12 @@
 import { createHash, sign as cryptoSign, generateKeyPairSync, type KeyObject } from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { verifySignedPolicy } from "../policy-signature.js";
 import {
 	clearRemoteRuntimePolicyCacheForTests,
+	inspectRemoteRuntimePolicyCache,
 	syncRemoteRuntimePolicy,
 } from "../remote-policy.js";
 import { ConfigSchema } from "../types.js";
@@ -282,6 +283,40 @@ describe("syncRemoteRuntimePolicy with signed policy", () => {
 		expect((await sync(config, NOW + 120_000)).policy.runtime_defaults.command_action).toBe(
 			"block",
 		);
+	});
+
+	it("retains rollback protection across authority rejection, outage, and recovery", async () => {
+		const { config } = await setup({ required: true });
+		serve(signedBody({ sequence: 2, version: "pol_2" }));
+		await sync(config);
+		globalThis.fetch = vi
+			.fn()
+			.mockResolvedValue({
+				ok: false,
+				status: 401,
+				json: async () => ({ error: "denied" }),
+			} as Response);
+		await expect(sync(config, NOW + 61_000)).rejects.toThrow("unavailable");
+		const rejected = JSON.parse(
+			await readFile(config.control_plane.remote_policy_cache_path, "utf8"),
+		);
+		expect(rejected.authority_rejected).toBe(true);
+		expect(rejected.body.policy_signed.envelope.sequence).toBe(2);
+		expect(
+			await inspectRemoteRuntimePolicyCache(config, "agent-token", NOW + 62_000),
+		).toMatchObject({ source: "invalid", usable: false });
+		globalThis.fetch = vi.fn().mockRejectedValue(new Error("offline"));
+		await expect(sync(config, NOW + 62_000)).rejects.toThrow("unavailable");
+		clearRemoteRuntimePolicyCacheForTests();
+		await expect(sync(config, NOW + 62_000)).rejects.toThrow("unavailable");
+		serve(signedBody({ sequence: 1, version: "pol_1" }));
+		await expect(sync(config, NOW + 63_000)).rejects.toThrow("unavailable");
+		serve(signedBody({ sequence: 3, version: "pol_3" }));
+		expect((await sync(config, NOW + 63_000)).policy.runtime_defaults.command_action).toBe("block");
+		expect(
+			JSON.parse(await readFile(config.control_plane.remote_policy_cache_path, "utf8"))
+				.authority_rejected,
+		).toBeUndefined();
 	});
 
 	it("rejects a tampered disk cache and falls back to a fresh signed fetch", async () => {

@@ -134,14 +134,14 @@ describe("Cursor output inspection", () => {
 		expect(response.additional_context).toContain("coverage is unavailable, not clean");
 	});
 
-	it("does not fabricate a Cursor denial or replacement when oversized input hides the event", async () => {
+	it("exits with the host blocking code without fabricating an output replacement for oversized input", async () => {
 		const { response, code } = await runHook("cursor", {
 			hook_event_name: "postToolUse",
 			tool_name: "MCP:fetch",
 			tool_output: "a".repeat(1024 * 1024),
 		});
 
-		expect(code).toBe(0);
+		expect(code).toBe(2);
 		expect(response.decision).toBeUndefined();
 		expect(response.permission).toBeUndefined();
 		expect(response.updated_mcp_tool_output).toBeUndefined();
@@ -169,6 +169,19 @@ describe("Cursor output inspection", () => {
 });
 
 describe("VS Code output inspection", () => {
+	it.each(["cursor", "vscode"] as const)(
+		"blocks oversized %s pre-execution payloads through exit code 2",
+		async (mode) => {
+			const { response, code } = await runHook(mode, {
+				hook_event_name: mode === "cursor" ? "preToolUse" : "PreToolUse",
+				tool_name: "Write",
+				tool_input: { file_path: "notes.txt", content: "a".repeat(1024 * 1024) },
+			});
+			expect(code).toBe(2);
+			expect(JSON.stringify(response)).toContain("processing limit");
+		},
+	);
+
 	it("marks a malformed PostToolUse result as unavailable after execution", async () => {
 		const { response, code } = await runHook("vscode", {
 			hook_event_name: "PostToolUse",

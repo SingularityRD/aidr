@@ -1,12 +1,14 @@
 /**
  * Provider boundary for tenant-scoped infrastructure discovery.
  *
- * Local collection is the only provider implemented in this package. Cloud and
- * MDM integrations need customer credentials, scopes and scheduling outside the
- * core library; selecting either one therefore returns an explicit unconfigured
- * result instead of silently falling back to a local scan or an empty inventory.
+ * External providers require explicit credentials and tenant-bound resource scopes.
+ * Unknown or unprovisioned selections never fall back to local collection.
  */
 
+import {
+	type CloudDiscoveryDependencies,
+	CloudDiscoveryProvider,
+} from "./discovery-cloud-provider.js";
 import {
 	collectFleetInventory,
 	type FleetCollectionOptions,
@@ -178,15 +180,34 @@ export class UnconfiguredDiscoveryProvider implements DiscoveryProvider {
 }
 
 /**
- * Select the local provider by default. Every other selection is represented by
- * an unconfigured provider until a separately owned adapter is implemented and
- * provisioned; no unknown name is allowed to fall back to local collection.
+ * Select local by default; external adapters require explicit validated configuration.
  */
-export function createDiscoveryProvider(selected?: string): DiscoveryProvider {
-	if (selected === undefined) return new LocalDiscoveryProvider();
+export function createDiscoveryProvider(
+	selected?: string,
+	config?: unknown,
+	dependencies?: CloudDiscoveryDependencies,
+): DiscoveryProvider {
+	if (selected === undefined) {
+		if (config !== undefined) throw new Error("discovery_provider_selection_required");
+		return new LocalDiscoveryProvider();
+	}
 	const id = normalizedProviderId(selected);
-	return id === "local" ? new LocalDiscoveryProvider() : new UnconfiguredDiscoveryProvider(id);
+	if (id === "local") {
+		if (config !== undefined) throw new Error("discovery_provider_config_mismatch");
+		return new LocalDiscoveryProvider();
+	}
+	if (["aws", "azure", "gcp", "intune", "cloud", "mdm"].includes(id) && config !== undefined) {
+		const provider = new CloudDiscoveryProvider(config, dependencies);
+		if (
+			provider.id !== id &&
+			!(id === "cloud" && provider.id !== "intune") &&
+			!(id === "mdm" && provider.id === "intune")
+		)
+			throw new Error("discovery_provider_config_mismatch");
+		return provider;
+	}
+	return new UnconfiguredDiscoveryProvider(id);
 }
 
 /** Names reserved for future customer-owned integrations. */
-export type ExternalDiscoveryProvider = "cloud" | "mdm";
+export type ExternalDiscoveryProvider = "aws" | "azure" | "gcp" | "intune" | "cloud" | "mdm";

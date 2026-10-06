@@ -15,9 +15,12 @@ if (roots.length === 0) {
 }
 
 const PATTERNS = [
-	{ id: "win_users", re: /[A-Za-z]:\\Users\\[^\\s"'<>]+/g },
-	{ id: "mac_users", re: /\/Users\/[^/\s"'<>]+/g },
-	{ id: "linux_home", re: /\/home\/[^/\s"'<>]+/g },
+	// Windows Public is a shared OS profile, including in shipped threat titles.
+	{ id: "win_users", re: /[A-Za-z]:\\{1,2}Users\\{1,2}(?!Public(?:[\s"'<>]|$))[^\\\s"'<>]+/ },
+	{ id: "mac_users", re: /\/Users\/[^/\s"'<>]+/ },
+	// A bounded [^\s/] username class in threat data names no developer home.
+	// Accept its raw/JSON-escaped forms; concrete usernames still fail below.
+	{ id: "linux_home", re: /\/home\/(?!\[\^\\{1,2}s\/\]\{\d+(?:,\d+)?\}\/)[^/\s"'<>]+/ },
 ];
 
 async function* walk(dir) {

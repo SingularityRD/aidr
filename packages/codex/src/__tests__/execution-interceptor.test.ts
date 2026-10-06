@@ -121,6 +121,29 @@ describe("Codex execution interceptor", () => {
 		expect(submit).not.toHaveBeenCalled();
 	});
 
+	it("rejects native PostToolUse and invalid phases before transport", async () => {
+		const { interceptor, submit } = setup();
+		await expect(
+			interceptor.execute({
+				hook_event_name: "PostToolUse",
+				phase: "pre_tool_use",
+				tool_name: "search_alerts",
+				tool_use_id: "call-native-post",
+				tool_input: {},
+				tool_response: { alerts: [] },
+			}),
+		).rejects.toMatchObject({ code: "codex_post_tool_execution_forbidden" });
+		await expect(
+			interceptor.execute({
+				phase: "unsupported_phase",
+				tool_name: "search_alerts",
+				call_id: "call-invalid-phase",
+				arguments: {},
+			}),
+		).rejects.toThrow("unsupported Codex hook phase");
+		expect(submit).not.toHaveBeenCalled();
+	});
+
 	it("rejects an unregistered tool before transport", async () => {
 		const { interceptor, submit } = setup();
 		await expect(

@@ -64,3 +64,13 @@ test('findings cannot be silently truncated on exhaustion',async()=>{
 test('disposed engine blocks instead of falling back',async()=>{
   const e=new PrivacyEngine();e.dispose();assert.deepEqual((await e.protect('hello')).reasons,['DISPOSED']);
 });
+test('dispose revokes in-flight text and JSON releases',async()=>{
+  for(const input of ['hello','a@example.com']){
+    let release;const ner={capabilities:caps,detect:async()=>new Promise(resolve=>{release=resolve;})};
+    const e=new PrivacyEngine({ner}),pending=e.protect(input);await new Promise(resolve=>setImmediate(resolve));
+    e.dispose();release({complete:true,entities:[]});const r=await pending;
+    assert.equal(r.output,null);assert.deepEqual(r.reasons,['DISPOSED']);
+  }
+  const e=new PrivacyEngine(),pending=e.protectJson('null');e.dispose();
+  assert.deepEqual((await pending).reasons,['DISPOSED']);assert.equal((await pending).output,null);
+});

@@ -57,6 +57,11 @@ describe("Cursor managed hook configuration", () => {
 		]);
 		expect(managed).toHaveLength(6);
 		expect(managed.every((entry) => entry.failClosed === true)).toBe(true);
+		expect(
+			hooksFile.hooks.preToolUse.find((entry) =>
+				String(entry.command).includes("--managed-by aidr-cursor"),
+			)?.matcher,
+		).toBeUndefined();
 		expect(hooksFile.hooks.preToolUse).toContainEqual({
 			command: "customer-hook",
 			failClosed: false,

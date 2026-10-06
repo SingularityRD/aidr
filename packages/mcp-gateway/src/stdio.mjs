@@ -1,5 +1,6 @@
 import { once } from "node:events";
-import { authenticateBearer } from "./config.mjs";
+import { authenticateBearer, MCP_PROTOCOL_VERSIONS } from "./config.mjs";
+import { readMcpSseMessages } from "../../core/dist/mcp-transport.js";
 
 const ENV_NAME = /^[A-Z][A-Z0-9_]{0,127}$/;
 const decoder = new TextDecoder("utf-8", { fatal: true });
@@ -78,24 +79,49 @@ function parseFrame(line) {
 }
 
 async function postToGateway(context, rpc) {
+	const metadataVersion = rpc.params?._meta?.["io.modelcontextprotocol/protocolVersion"];
+	if (metadataVersion !== undefined && !MCP_PROTOCOL_VERSIONS.includes(metadataVersion))
+		throw new Error("invalid stdio protocol version");
+	const protocolVersion = metadataVersion ?? context.protocolVersion;
 	return context.fetchImpl(context.route, {
 		method: "POST",
 		headers: {
 			authorization: `Bearer ${context.token}`,
 			"content-type": "application/json",
 			accept: "application/json, text/event-stream",
-			...(context.sessionId ? { "mcp-session-id": context.sessionId } : {}),
+			...(context.sessionId && protocolVersion !== "2026-07-28"
+				? { "mcp-session-id": context.sessionId }
+				: {}),
+			...(protocolVersion ? { "mcp-protocol-version": protocolVersion } : {}),
 		},
 		body: JSON.stringify(rpc),
-		signal: AbortSignal.timeout(20_000),
+		signal: AbortSignal.any([AbortSignal.timeout(20_000), context.signal]),
 	});
 }
 
-async function readGatewayReply(response, rpc, maxBytes) {
+async function readGatewayReply(response, rpc, maxBytes, context) {
 	if (response.status !== 200) throw new Error("stdio gateway unavailable");
 	let reply;
 	try {
-		reply = JSON.parse(await readBoundedText(response, maxBytes * 2 + 2048));
+		if (/^text\/event-stream(?:\s*;|$)/i.test(response.headers.get("content-type") ?? "")) {
+			for await (const message of readMcpSseMessages(
+				response,
+				maxBytes * 2 + 2048,
+				context.signal,
+			)) {
+				if (typeof message.method === "string") {
+					if (Object.hasOwn(message, "id")) {
+						if (context.pendingServerIds.size >= 256 || context.pendingServerIds.has(message.id))
+							throw new Error("invalid gateway request id");
+						context.pendingServerIds.add(message.id);
+					}
+					await writeLine(context.output, message);
+				} else {
+					reply = message;
+					break;
+				}
+			}
+		} else reply = JSON.parse(await readBoundedText(response, maxBytes * 2 + 2048));
 	} catch {
 		throw new Error("invalid stdio gateway response");
 	}
@@ -107,6 +133,13 @@ async function readGatewayReply(response, rpc, maxBytes) {
 	) {
 		throw new Error("invalid stdio gateway response");
 	}
+	if (
+		rpc.method === "initialize" &&
+		Object.hasOwn(reply, "result") &&
+		(!MCP_PROTOCOL_VERSIONS.includes(reply.result?.protocolVersion) ||
+			reply.result.protocolVersion === "2026-07-28")
+	)
+		throw new Error("invalid stdio gateway response");
 	return reply;
 }
 
@@ -117,18 +150,26 @@ async function handleFrame(line, context) {
 	const rpc = parsed.rpc;
 	if (!object(rpc)) return writeLine(context.output, bridgeError(null, "invalid_rpc_request"));
 	const notification = !Object.hasOwn(rpc, "id");
+	const serverResponse = !Object.hasOwn(rpc, "method");
+	if (serverResponse && !context.pendingServerIds.delete(rpc.id))
+		throw new Error("unexpected stdio response");
 	if (notification && rpc.method !== "notifications/initialized")
 		throw new Error("unsupported stdio notification");
-	if (rpc.method === "initialize") context.sessionId = undefined;
+	if (rpc.method === "initialize") {
+		context.sessionId = undefined;
+		context.protocolVersion = undefined;
+	}
 	const response = await postToGateway(context, rpc);
-	if (notification) {
+	if (notification || serverResponse) {
 		if (response.status !== 202 || (await readBoundedText(response, context.maxBytes)) !== "")
 			throw new Error("stdio notification rejected");
 		return;
 	}
-	const reply = await readGatewayReply(response, rpc, context.maxBytes);
-	if (rpc.method === "initialize" && Object.hasOwn(reply, "result"))
+	const reply = await readGatewayReply(response, rpc, context.maxBytes, context);
+	if (rpc.method === "initialize" && Object.hasOwn(reply, "result")) {
 		context.sessionId = response.headers.get("mcp-session-id") ?? undefined;
+		context.protocolVersion = reply.result.protocolVersion;
+	}
 	await writeLine(context.output, reply);
 }
 
@@ -173,6 +214,7 @@ export async function runStdioBridge({
 		environment,
 	);
 	const address = await gateway.listen(0);
+	const controller = new AbortController();
 	const context = {
 		route: `http://127.0.0.1:${address.port}/mcp/${encodeURIComponent(serverId)}`,
 		token,
@@ -180,10 +222,33 @@ export async function runStdioBridge({
 		fetchImpl,
 		maxBytes: gateway.config.maxBodyBytes,
 		sessionId: undefined,
+		pendingServerIds: new Set(),
+		signal: controller.signal,
 	};
+	const tasks = new Set();
+	let failure;
 	try {
-		await consumeFrames(input, context.maxBytes, (line) => handleFrame(line, context));
+		await consumeFrames(input, context.maxBytes, async (line) => {
+			const frame = parseFrame(line).rpc;
+			if (frame?.method === "initialize" && tasks.size)
+				throw new Error("initialize during pending requests");
+			if (["tools/call", "tools/list", "server/discover", "ping"].includes(frame?.method)) {
+				if (tasks.size >= 16) throw new Error("stdio requests exceeded");
+				const task = handleFrame(line, context)
+					.catch((cause) => {
+						failure ??= cause;
+						controller.abort(cause);
+						input.destroy?.(cause);
+					})
+					.finally(() => tasks.delete(task));
+				tasks.add(task);
+			} else await handleFrame(line, context);
+		});
+		await Promise.all(tasks);
+		if (failure) throw failure;
 	} finally {
+		controller.abort();
+		await Promise.all(tasks);
 		await gateway.close();
 	}
 }

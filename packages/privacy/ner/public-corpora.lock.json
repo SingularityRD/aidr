@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "status": "public-synthetic-comparison-not-corporate-acceptance",
+  "datasets": [
+    {
+      "repository": "BTX24/turkish-privacy-pii-ner",
+      "revision": "45a8e18edb57224b14368c910f701e064dbb1326",
+      "license": "CC-BY-4.0",
+      "files": {
+        "btx-test.jsonl": {
+          "source": "test.jsonl",
+          "size": 1566967,
+          "sha256": "f2949df1b79d1243cc6dc7d8cb3ad529dcc31dbaa195fe10b6763b9209b3ec65"
+        },
+        "BTX24-README.md": {
+          "source": "README.md",
+          "size": 26280,
+          "sha256": "9ad4a4ff1c5bfcba413f49fcc16e0659990c875d065f3b1d3f7b38349ae1aa0d"
+        }
+      }
+    },
+    {
+      "repository": "beki/privy",
+      "revision": "dc137a6a976f6b5bb8768e9bb51ec58df930ccd1",
+      "license": "MIT",
+      "files": {
+        "privy-dataset.zip": {
+          "source": "privy-dataset.zip",
+          "size": 307518080,
+          "sha256": "ad4ffbc8f7102a92f01f8d8023ddf4f5244fea6b23c3f116641fe6bbd8cbbde4"
+        },
+        "beki-README.md": {
+          "source": "README.md",
+          "size": 6223,
+          "sha256": "321cf85250bfbede3aa4815e4ee6cf73a3f4a89e3e70087975a836e88f608ac5"
+        }
+      }
+    },
+    {
+      "repository": "yusuf-said/turkish-privacy-filter-dataset",
+      "revision": "fc2b9a3e197484d22a8201317cc722baacf053b7",
+      "license": "MIT",
+      "files": {
+        "tr_privacy_tr_curated.jsonl": {
+          "source": "tr_privacy_tr_curated.jsonl",
+          "size": 2407328,
+          "sha256": "fd39d832ad1d366d9c1f2bf11f5eab3f6a1a0ac18350af6cd6ee3a80bb3e70f2"
+        },
+        "yusuf-said-README.md": {
+          "source": "README.md",
+          "size": 9433,
+          "sha256": "af56373e571e9d9e6894301d7ffa6226500fbc3020e42decb3b8c1ad86b37761"
+        }
+      }
+    }
+  ]
+}

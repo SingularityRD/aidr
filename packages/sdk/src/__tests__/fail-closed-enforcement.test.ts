@@ -71,7 +71,12 @@ describe("SDK middleware is fail-closed", () => {
 	});
 
 	it("never approves deny or an indeterminate result by default", async () => {
-		for (const result of [DENY, INDETERMINATE]) {
+		for (const result of [
+			DENY,
+			INDETERMINATE,
+			{ ...ALLOW, metadata: { indeterminate: true } },
+			{ ...ASK, decision: "unknown" } as unknown as CheckResult,
+		]) {
 			const execute = vi.fn();
 			const onAsk = vi.fn().mockResolvedValue(true);
 			const wrapped = createMiddleware(asClient(new MockClient(result)), { onAsk }).wrap(
@@ -110,7 +115,12 @@ describe("generic middleware adapter is fail-closed", () => {
 	);
 
 	it("blocks ask and indeterminate results", async () => {
-		for (const result of [ASK, INDETERMINATE]) {
+		for (const result of [
+			ASK,
+			INDETERMINATE,
+			{ ...ALLOW, metadata: { indeterminate: true } },
+			{ ...ASK, decision: "unknown" } as unknown as CheckResult,
+		]) {
 			const next = vi.fn();
 			const middleware = createGenericMiddleware(asClient(new MockClient(result)));
 
@@ -146,6 +156,22 @@ describe("generic middleware adapter is fail-closed", () => {
 });
 
 describe("generic tool wrapper input extraction", () => {
+	it("executes the inspected snapshot when toJSON hides the original command", async () => {
+		const client = new MockClient(ALLOW);
+		const run = vi.fn().mockResolvedValue("executed");
+		const tool = wrapToolWithMiddleware({ name: "bash", run }, asClient(client));
+		await tool.run({
+			command: "unchecked dangerous command",
+			toJSON: () => ({ command: "echo checked" }),
+		});
+		expect(run).toHaveBeenCalledWith({ command: "echo checked" });
+		expect(client.check).toHaveBeenCalledWith(
+			expect.objectContaining({
+				resource: JSON.stringify([{ command: "echo checked" }]),
+			}),
+		);
+	});
+
 	it("keeps the serialized arguments and adds typed artifacts for security checks", async () => {
 		const client = new MockClient(ALLOW);
 		const run = vi.fn().mockResolvedValue("executed");

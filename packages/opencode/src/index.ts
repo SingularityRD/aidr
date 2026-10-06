@@ -59,7 +59,7 @@ export const AidrPlugin: Plugin = async ({ client, directory }) => {
 	const toolHandlers = createToolHandlers(logger, approvalStore, threatsDir, allowlistsDir);
 	const outputHandlers = createOutputHandlers(logger);
 	reportOpenCodeOutputCoverage(logger);
-	await createSessionScanHandler(logger, undefined)();
+	await createSessionScanHandler(logger, directory)();
 
 	return {
 		"tool.execute.before": toolHandlers["tool.execute.before"],
@@ -111,7 +111,7 @@ export const AidrPlugin: Plugin = async ({ client, directory }) => {
 				try {
 					logger.debug({ sessionID }, "Singularity AIDR: starting session scan");
 
-					await createSessionScanHandler(logger, undefined, (msg) => {
+					await createSessionScanHandler(logger, directory, (msg) => {
 						pendingFindingsBySession.set(sessionID, msg);
 					})();
 				} catch (error) {

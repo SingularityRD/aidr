@@ -246,7 +246,7 @@ services:
       aig-server:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:8099/api/v1/readyz"]
+      test: ["CMD", "python", "-c", "import sys, urllib.request; urllib.request.build_opener(urllib.request.ProxyHandler({})).open(sys.argv[1], timeout=3).close()", "http://localhost:8099/api/v1/readyz"]
       interval: 15s
       timeout: 5s
       start_period: 10s

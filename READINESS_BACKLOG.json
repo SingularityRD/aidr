@@ -593,23 +593,23 @@
       ],
       "localEvidence": [
         {
-        "claim": "Acceptance parts 1 and 3: every Edge Function invoked from dashboard browser code is discovered from the TypeScript AST and resolved to a real supabase/functions/<name>/index.ts, and each one is declared in the contract manifest with an existing contract test (18/18 declared, 0 recorded gaps). A dashboard call to a non-existent function fails the gate with 'dashboard calls missing Edge function'.",
+          "claim": "Acceptance parts 1 and 3: every Edge Function invoked from dashboard browser code is discovered from the TypeScript AST and resolved to a real supabase/functions/<name>/index.ts, and each one is declared in the contract manifest with an existing contract test (18/18 declared, 0 recorded gaps). A dashboard call to a non-existent function fails the gate with 'dashboard calls missing Edge function'.",
           "evidencePath": "docs/production-readiness/edge-function-contract-manifest.json",
           "command": "node scripts/check-supabase-edge-contracts.mjs",
           "verifiedBy": "this session, exit 0"
         },
-      {
-        "claim": "The same gate fails on a dynamic (non-literal) function name, a missing supabase/config.toml deployment entry, a manifest entry whose declared test file does not exist, and a stale manifest entry, so the no-non-existent-function guarantee is enforced rather than described.",
-        "evidencePath": "scripts/check-supabase-edge-contracts.mjs",
-        "command": "node scripts/check-supabase-edge-contracts.mjs",
-        "verifiedBy": "this session, exit 0"
-      },
-      {
-        "claim": "The owner-only SCIM admin surface issues one-time raw tokens with no-store responses while persisting only SHA-256 hashes; it supports overlap rotation/revocation and exact external-group role mappings, with active-owner checks and audit changes in service-role-only RPCs. Stable keyset pagination keeps token and mapping listings usable beyond 100 tokens or 500 mappings.",
-        "evidencePath": "supabase/functions/scim-admin/index.ts",
-        "command": "pnpm test -- supabase/functions/__tests__/scim-admin-contract.test.ts supabase/functions/__tests__/scim.test.ts supabase/functions/__tests__/azure-ad-groups-contract.test.ts",
-        "verifiedBy": "this session, 63/63 focused tests; migration contract 57 migrations; Edge contract 18 functions and 34/34 config guards. Migration not applied to a live database."
-      }
+        {
+          "claim": "The same gate fails on a dynamic (non-literal) function name, a missing supabase/config.toml deployment entry, a manifest entry whose declared test file does not exist, and a stale manifest entry, so the no-non-existent-function guarantee is enforced rather than described.",
+          "evidencePath": "scripts/check-supabase-edge-contracts.mjs",
+          "command": "node scripts/check-supabase-edge-contracts.mjs",
+          "verifiedBy": "this session, exit 0"
+        },
+        {
+          "claim": "The owner-only SCIM admin surface issues one-time raw tokens with no-store responses while persisting only SHA-256 hashes; it supports overlap rotation/revocation and exact external-group role mappings, with active-owner checks and audit changes in service-role-only RPCs. Stable keyset pagination keeps token and mapping listings usable beyond 100 tokens or 500 mappings.",
+          "evidencePath": "supabase/functions/scim-admin/index.ts",
+          "command": "pnpm test -- supabase/functions/__tests__/scim-admin-contract.test.ts supabase/functions/__tests__/scim.test.ts supabase/functions/__tests__/azure-ad-groups-contract.test.ts",
+          "verifiedBy": "this session, 63/63 focused tests; migration contract 57 migrations; Edge contract 18 functions and 34/34 config guards. Migration not applied to a live database."
+        }
       ],
       "remainingExternal": "Real browser device enrollment and live Entra/Okta SCIM provisioning/acceptance against a deployed control plane remain unverified; browser tests against a real tenant and live IdP cannot be produced from this repository and AIDR-016's production endpoint is absent. Contract tests prove local contracts only, not deployed identity-provider acceptance; this live field-acceptance slice remains open.",
       "owner": "engineering",
@@ -1701,7 +1701,6 @@
       "rootCause": "The class was scaffolded with placeholder bodies and shipped unchanged; no caller in the repository exercises either method, so nothing surfaced the fabrication.",
       "acceptanceCriteria": "The unconsumed TeamDashboard scaffold is absent from the published SDK and its public entry point; the real dashboard/control plane remains the sole team-management implementation; the retained SDK API typechecks, tests and builds.",
       "verificationMethod": "Repository consumer search plus SDK regression test, typecheck and release build proving the removed subsystem is absent and the retained client/middleware API remains valid.",
-      "status": "VERIFIED_CLOSED",
       "evidence": [
         "2026-09-20 source audit for this session: TODO markers in a published package led to team-dashboard.ts, which is exported from packages/sdk/src/index.ts with no test file and no in-repository caller.",
         "Fixed initially by requiring host-supplied capabilities instead of fabricating data.",
@@ -1751,55 +1750,1019 @@
           "evidencePath": "docs/production-readiness/secret-history-triage-2026-10-05.md",
           "command": "node scripts/scan-history-secrets.mjs",
           "verifiedBy": "this session with a locally installed gitleaks (not the pinned 8.30.1 release binary); exit 1 with 184 redacted findings; ledger at docs/production-readiness/evidence/secret-history-ledger-2026-10-05.csv"
+        },
+        {
+          "claim": "Official checksum-verified Gitleaks 8.30.1 scans the current tracked/non-ignored checkout with a positive detection canary. Current checkout passed; no bypass or new suppression was added.",
+          "evidencePath": "scripts/scan-current-secrets.mjs",
+          "command": "pnpm verify:secrets:current",
+          "verifiedBy": "2026-10-05 current Windows checkout: 8026 files passed; scanner canary/regression tests 5/5; official executable SHA-256 verified before execution."
+        },
+        {
+          "claim": "Pinned official all-ref, non-shallow history scan completed with no textconv and partial-scan rejection. 132 redacted findings remain: 130 previously classified or explicitly invalid-fixture detections and two owner-confirm entries. Engineering metadata reconciliation is not Security approval.",
+          "evidencePath": "docs/production-readiness/secret-history-triage-2026-10-05.md",
+          "command": "node scripts/scan-history-secrets.mjs",
+          "verifiedBy": "2026-10-05 official 8.30.1: exit 1, 132 findings, 52 commits, 66 paths; redacted report SHA-256 3bbe08432fd67f7b4c5f8bf4c6707dcf207cb4efdef9ffb008699b87ebb98bff."
         }
       ],
-      "remainingExternal": "A named Security owner must classify the 296 redacted historical findings, identify whether any value was ever live, revoke and rotate live credentials, and approve only exact false-positive fingerprints. Rewriting published Git history, if chosen, requires repository-owner coordination and is not performed automatically."
+      "remainingExternal": "A named Security owner must review the pinned 132-finding refresh and both dataset-key owner-confirm rows, determine whether any value was ever live, rotate any live credential and bind the final full-clone scan to the exact clean candidate. The older 296 and unpinned 184 snapshots remain historical; engineering fixture classification is not Security sign-off. No published history rewrite or allowlist bypass was performed."
     }
   ],
   "closedWithoutLocalEvidence": {
     "note": "Closures recorded before the localEvidence field existed. Their evidence is prose in `evidence` only; deriving a machine-checkable evidencePath/command for them out of that prose would be invention, so they are declared here instead of being silently exempted. Any new closure must carry its own localEvidence, and a finding listed here that later gains localEvidence must be removed from this list; scripts/validate-backlog.mjs enforces both directions.",
     "declaredOn": "2026-09-13",
     "findings": [
-        "AIDR-001", "AIDR-002", "AIDR-003", "AIDR-004", "AIDR-005", "AIDR-006", "AIDR-007",
-        "AIDR-008", "AIDR-009", "AIDR-010", "AIDR-011", "AIDR-013", "AIDR-015", "AIDR-017",
-        "AIDR-018", "AIDR-020", "AIDR-021", "AIDR-022", "AIDR-023", "AIDR-024", "AIDR-025",
-        "AIDR-026", "AIDR-027", "AIDR-028", "AIDR-029", "AIDR-030", "AIDR-014", "AIDR-031",
-        "AIDR-032", "AIDR-033", "AIDR-034", "AIDR-035", "AIDR-036", "AIDR-037", "AIDR-038",
-        "AIDR-039", "AIDR-040", "AIDR-041", "AIDR-042", "AIDR-043", "AIDR-045", "AIDR-046",
-        "AIDR-047", "AIDR-048", "AIDR-053", "AIDR-054", "AIDR-055", "AIDR-056", "AIDR-057",
-        "AIDR-058", "AIDR-059", "AIDR-060", "AIDR-061", "AIDR-062", "AIDR-063", "AIDR-064",
-        "AIDR-065", "AIDR-066", "AIDR-067", "AIDR-068"
+      "AIDR-001",
+      "AIDR-002",
+      "AIDR-003",
+      "AIDR-004",
+      "AIDR-005",
+      "AIDR-006",
+      "AIDR-007",
+      "AIDR-008",
+      "AIDR-009",
+      "AIDR-010",
+      "AIDR-011",
+      "AIDR-013",
+      "AIDR-015",
+      "AIDR-017",
+      "AIDR-018",
+      "AIDR-020",
+      "AIDR-021",
+      "AIDR-022",
+      "AIDR-023",
+      "AIDR-024",
+      "AIDR-025",
+      "AIDR-026",
+      "AIDR-027",
+      "AIDR-028",
+      "AIDR-029",
+      "AIDR-030",
+      "AIDR-014",
+      "AIDR-031",
+      "AIDR-032",
+      "AIDR-033",
+      "AIDR-034",
+      "AIDR-035",
+      "AIDR-036",
+      "AIDR-037",
+      "AIDR-038",
+      "AIDR-039",
+      "AIDR-040",
+      "AIDR-041",
+      "AIDR-042",
+      "AIDR-043",
+      "AIDR-045",
+      "AIDR-046",
+      "AIDR-047",
+      "AIDR-048",
+      "AIDR-053",
+      "AIDR-054",
+      "AIDR-055",
+      "AIDR-056",
+      "AIDR-057",
+      "AIDR-058",
+      "AIDR-059",
+      "AIDR-060",
+      "AIDR-061",
+      "AIDR-062",
+      "AIDR-063",
+      "AIDR-064",
+      "AIDR-065",
+      "AIDR-066",
+      "AIDR-067",
+      "AIDR-068"
     ]
   },
   "externalGatesUnchanged": {
     "note": "The hard commercial/legal/privacy/independent gates recorded in docs/production-readiness/commercial-go-evidence-registry.json (COM-001..COM-013, SEC-EXT-001, POV-001, INV-001, CLM-001) remain open and are NOT closeable from this workspace: they require counsel approval, customer credentials, deployed regional infrastructure, signing keys, and an independent assessor. No repository change can close them and none is claimed to.",
     "count": 13
   },
-  "lastReviewed": "2026-09-12",
+  "lastReviewed": "2026-10-06",
   "currentFeatureInventory": "FEATURE_INVENTORY.json",
   "latestVerification": {
-    "date": "2026-09-12",
-    "tests": {
-      "files": 215,
-      "passed": 3094,
-      "failed": 0,
-      "skipped": 2,
-      "total": 3096,
-      "windows_workers": 1,
-      "scenario_timeouts_unchanged": true,
-      "skipped_scope": "Live reputation-provider scenario and POSIX file-permission scenario on Windows were skipped, not counted as passing."
+    "date": "2026-10-06",
+    "timezone": "Europe/Istanbul",
+    "roundId": "production-completion-2026-10-06",
+    "recordedAt": "2026-10-06T00:05:21.188Z",
+    "source": {
+      "baselineCommit": "7f3ec0ad009abf5b032b8116b296d8604fee884e",
+      "landingBaselineCommit": "e039be0b01d6a9baf04e2d83cbeeb9874c6f8a93",
+      "uncommittedChanges": true,
+      "candidateDigest": null
     },
-    "release_packages": 10,
-    "package_consumers": 10,
-    "self_hosted_smoke": 30,
-    "customer_onboarding": 9,
-    "portable_kit_files_verified": 295,
-    "migrations": 30,
+    "tests": {
+      "files": 429,
+      "passed": 6857,
+      "failed": 0,
+      "skipped": 6,
+      "total": 6863,
+      "windowsWorkers": 1,
+      "scenarioTimeoutsUnchanged": true
+    },
+    "coverage": {
+      "thresholdsUnchanged": true,
+      "statements": 81.48,
+      "branches": 76.45,
+      "functions": 85.7,
+      "lines": 85.13
+    },
+    "coreCoverage": {
+      "files": 198,
+      "passed": 3649,
+      "failed": 0,
+      "skipped": 4,
+      "total": 3653,
+      "thresholdsUnchanged": true,
+      "statements": 82.79,
+      "branches": 77.3,
+      "functions": 87.42,
+      "lines": 86.1
+    },
+    "linuxComplement": {
+      "selectedPassed": 6,
+      "selectedFailed": 0,
+      "selectedSkipped": 0,
+      "unrelatedFiltered": 84,
+      "realSecretServiceAccepted": false,
+      "evidence": ".tmp-test/production-followup-2026-10-06/linux-six-posix-third-summary.json"
+    },
+    "migrations": 139,
+    "selfHostedRehearsal": {
+      "services": 11,
+      "liveChecksPassed": 92,
+      "productionDoctorPassed": false,
+      "doctor": {
+        "passed": false,
+        "total_checks": 168,
+        "passed_checks": 165,
+        "failed_checks": 1,
+        "unverified_checks": 2,
+        "failures": [
+          "dashboard readiness"
+        ],
+        "unverified": [
+          {
+            "check": "shared readiness and SIEM timer is enabled in the host scheduler",
+            "reason": "systemd timers are unavailable on win32"
+          },
+          {
+            "check": "retention reaper timer not verified: aidr-export-retention.timer",
+            "reason": "must be installed as a systemd timer or host scheduled task, which a win32 run cannot inspect"
+          }
+        ]
+      },
+      "readiness": {
+        "project": "aidr-ops139-7aa313aa93a6",
+        "livez_status": 200,
+        "readyz_status": 503,
+        "readiness": {
+          "status": "not_ready",
+          "component": "control-plane",
+          "checks": {
+            "database": "ok",
+            "storage": "ok",
+            "functions": "ok",
+            "signing": "failed",
+            "backup": "failed",
+            "queue": "failed",
+            "certificate": "failed"
+          }
+        },
+        "scope": "Synthetic local development; real TLS, operator signer/backup/queue evidence and host scheduler were not configured; no fake health waivers"
+      },
+      "cleanup": {
+        "completed_at": "2026-10-05T23:09:22.414Z",
+        "project": "aidr-ops139-7aa313aa93a6",
+        "owned_containers_remaining": 0,
+        "owned_volumes_remaining": 0,
+        "owned_networks_remaining": 0,
+        "owned_dashboard_image_tags_remaining": 0,
+        "cleanup": "Explicit unique project-bound Compose down removed only owned containers, volumes, network and local dashboard image; no other stack or native OS action",
+        "private_synthetic_deployment_config_retained": true
+      },
+      "evidence": ".tmp-test/production-followup-2026-10-06/operations-139-final/selfhost139/final-results.json",
+      "evidenceSha256": "073c5279db71d736c55bb6fe1b52706e30a51ee609d1ce797ba1875c7d3231f6"
+    },
+    "operationalRegression": {
+      "offboarding": 61,
+      "retention": 43,
+      "samlAdministration": 13,
+      "samlOutageRecovery": 9,
+      "edgeResponseAndIdentity": 131,
+      "failed": 0,
+      "skipped": 0,
+      "scope": "Separate source and actual native PostgreSQL suites; counts overlap",
+      "evidenceDirectory": ".tmp-test/production-followup-2026-10-06/operations-139-final"
+    },
+    "workerFreshness": {
+      "workerTests": 129,
+      "coreBarrierTests": 36,
+      "sdkDirectTests": 6,
+      "runningFreshnessMs": 120000,
+      "actualCustomerOsActionAccepted": false
+    },
+    "privacyPackage": {
+      "linuxNodePassed": 1407,
+      "installedSignedMcpPassed": 6,
+      "pythonNerSecurityPassed": 47,
+      "windowsFocusedPassed": 37,
+      "skipped": 0,
+      "finalReleaseOutputAndQualificationPassed": 30,
+      "ciRejectsSkipAndTodo": true,
+      "actualGitHubRunAccepted": false,
+      "package": {
+        "recordedAt": "2026-10-05T23:35:18.992Z",
+        "scope": "Current unsigned private developer package; no accepted customer signature or model weights",
+        "package": "@singularity/aidr-privacy",
+        "version": "0.5.0-rc.1",
+        "archive": ".tmp-test/production-completion-2026-10-06/privacy-package/singularity-aidr-privacy-0.5.0-rc.1.tgz",
+        "sha256": "7be96c66a67268c999e6b649199b572d985aee4872e1c43034ced6818a355dfe",
+        "files": 267,
+        "codeFilesChecked": 179,
+        "mapsOrSourceDirectives": 0,
+        "publicGatewayPeer": "0.6.0",
+        "optionalPeer": true,
+        "binsVerified": 6,
+        "requiredFiles": [
+          "dist/platform/mcp-serve.js",
+          "dist/platform/broker.js",
+          "ner/qualification-policy.example.json",
+          "ner/install_models.py",
+          "docs/CONFIGURED_BROKER.md",
+          "docs/MCP_SERVICE.md",
+          "docs/DATA_OPERATIONS.md",
+          "docs/MODEL_PROVIDER_EVIDENCE.json",
+          "reports/platform/INTEGRATION-2026-10-06.md"
+        ],
+        "customerAccepted": false
+      },
+      "realModelAccepted": false,
+      "allProductEgressCovered": false,
+      "evidence": "packages/privacy/reports/platform/INTEGRATION-2026-10-06.md"
+    },
+    "actualBridgeRuntime": {
+      "tests": {
+        "tests": 98,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "runtime": {
+        "inventory": {
+          "path": ".tmp-test/production-followup-2026-10-06/bridge-full-image-trivy-20261006/repaired/runtime-inventory.json",
+          "sha256": "f6d7c008ef24cea449a335c5cfb719b3c3ade1fd684832ad557b5de892a8b6a4",
+          "bytes": 2434
+        },
+        "locked_packages": 30,
+        "runtime_lock_equals_actual_image_distributions": true,
+        "pip_module_absent": true,
+        "pip_metadata_absent": true,
+        "ensurepip_and_bundled_wheel_absent": true,
+        "runtime_installer_removed_not_merely_metadata_hidden": true,
+        "uid": 1000,
+        "python": "3.12.14 (main, Sep 19 2026, 01:04:57) [GCC 14.2.0]",
+        "stdlib_ssl": "OpenSSL 3.5.7 9 Jun 2026",
+        "cryptography": "50.0.2",
+        "embedded_openssl": "OpenSSL 4.0.3 29 Sep 2026"
+      },
+      "imageId": "sha256:1840809665e666eec7c89cc7fb451fa7b65210d37dcf7ee0a41f7eb82390386a",
+      "actualTlsProbe": {
+        "sslmode": "verify-full",
+        "verified_peer_name": "bridge-postgres",
+        "ssl_in_use": true,
+        "server_ssl_version": "TLSv1.3",
+        "server_cipher": "TLS_AES_256_GCM_SHA384",
+        "psycopg_implementation": "python",
+        "libpq_version": 170011
+      },
+      "fullImageScan": {
+        "scanner": {
+          "Version": "0.75.0",
+          "VulnerabilityDB": {
+            "Version": 2,
+            "NextUpdate": "2026-10-06T19:07:00.467980844Z",
+            "UpdatedAt": "2026-10-05T19:07:00.467981014Z",
+            "DownloadedAt": "2026-10-05T23:43:42.066910924Z"
+          }
+        },
+        "advisoryPackageRows": 241,
+        "uniqueAdvisoryIds": 111,
+        "severity": {
+          "CRITICAL": 0,
+          "HIGH": 52,
+          "MEDIUM": 82,
+          "LOW": 105,
+          "UNKNOWN": 2
+        },
+        "fixedVersionAvailableRows": 0,
+        "initiallyFixableRowsRemoved": 7
+      },
+      "fullImageCveClearance": false,
+      "legalAccepted": false,
+      "evidence": ".tmp-test/production-followup-2026-10-06/bridge-full-image-trivy-20261006/repaired/runtime-security-receipt.json",
+      "evidenceSha256": "df8c936046f604690d015e2903abf0d53c4488efc2fcc15bb4a17fa042a1f550",
+      "durableCompleteFindings": "docs/production-readiness/evidence/bridge-image-security-2026-10-06.json"
+    },
+    "landing": {
+      "testFiles": 68,
+      "passed": 595,
+      "failed": 0,
+      "builtPages": 45,
+      "browserSmoke": "PASS current standalone synthetic demo; actual institution/provider acceptance OPEN",
+      "productionDependencyAdvisories": 0,
+      "developmentUnpatchedHighAdvisories": 1,
+      "currentSecretFiles": 269,
+      "evidence": "../aidr-landing/docs/verification-followup-2026-10-06.json"
+    },
+    "nativeHostVerification": {
+      "evidence": ".tmp-test/production-followup-2026-10-06/native-third-final-results.json",
+      "evidenceSha256": "7d5ab513e59ee680e12e117f9f675c4e3825d3f799a98270421f3284499424f2",
+      "result": {
+        "schema_version": 1,
+        "kind": "aidr-native-third-final-binding",
+        "measured_at": "2026-10-05T23:47:05.472Z",
+        "phase": "CURRENT_ROOT_FINAL_RELEASE_DIST",
+        "bounded_checks_status": "PASS",
+        "full_support_matrix_gate": "NO_GO",
+        "current_runtime_artifact_acceptance": "BOUNDED_NATIVE_FIXTURE_ONLY",
+        "hosts": [
+          {
+            "id": "codex",
+            "version": "codex-cli 0.153.2",
+            "expected": 2,
+            "passed": 2,
+            "status": "PASS",
+            "scope": "Actual native apply_patch PreToolUse, nonce-bound original hook response, denied side effect and exact benign write through deterministic loopback Responses peer.",
+            "native_binary_sha256": "e86ffd96751ded51f669b520d70ba3139b514eb36313a8eeeedde37baa7b58e3",
+            "harness_sha256": "3b7029d8dd75be6dba2d32a4e97f204464a0c461aff1b1150da6a62e0a34f422"
+          },
+          {
+            "id": "opencode",
+            "version": "1.18.32",
+            "expected": 6,
+            "passed": 6,
+            "status": "PASS",
+            "scope": "Actual native tool.execute.before: path/content deny, benign write, missing entitlement, signed input tenant DLP deny and benign write through deterministic loopback model peer.",
+            "native_binary_sha256": "cf664aa1da32b788f9b2699b84a9bb9be30b7e025693b90f9b85829d5fe4e252",
+            "harness_sha256": "8cd55e642eb1c66b7a10d067ba342e01c0a7756ce0a1d4c9dbc68dc513664bab"
+          },
+          {
+            "id": "cursor",
+            "version": "3.21.18\nc4730f7d93d787d9ab120af715999f0345ee5bc0\nx64",
+            "expected": 8,
+            "passed": 8,
+            "status": "PASS",
+            "scope": "Actual extension-host activation, commands, workspace hooks, health, direct Node hook deny/shapes and managed hook removal; Cursor agent tool dispatch is not exercised.",
+            "native_binary_sha256": "9d1de98858dc06cc323b14869799a2db730f6c1741e3397e77f65c32d3b814f7",
+            "harness_sha256": "9905592cdb03764b79657c6ea2e258af4457617f81bc4f5a5ef9d9df93c043b4",
+            "suite_sha256": "325acd050bc467f6cac9ff43977f2658372cf77c9ad4ccfec87f44404de9bac7"
+          }
+        ],
+        "runtime_artifact_bindings": [
+          {
+            "artifact_id": "codex/dist",
+            "manifest_sha256": "706ee95d81c935d9990d25dcfa31009c62819d500296f8f8cd87d3ed46b904d2",
+            "file_count": 56,
+            "file_hash_map_sha256": "ef416039fe8da85704a2e5600c053e92c7b48d484810f041eb5bd0edeb702409",
+            "runtime_bytes_unchanged": true
+          },
+          {
+            "artifact_id": "core/dist",
+            "manifest_sha256": "c0c34f4d449239e29941150b32f1511cd69303d671273c5c47964e9dda6ab28e",
+            "file_count": 311,
+            "file_hash_map_sha256": "e19f02627ba05af1621e5ec2127cd3227408cd821d379ade3d305795116269fc",
+            "runtime_bytes_unchanged": true
+          },
+          {
+            "artifact_id": "opencode/dist",
+            "manifest_sha256": "845f1931c12bc7266e6f110cdfbe8efd3be4bf6e2fe113a30ea195ed618ec7d7",
+            "file_count": 43,
+            "file_hash_map_sha256": "a9604bb0f277a3040188e5d881ac39b90ea06da08cb77b9b80b5e56be0cb1125",
+            "runtime_bytes_unchanged": true
+          },
+          {
+            "artifact_id": "extension/dist",
+            "manifest_sha256": "2973e4e22f57b06be4ee1ca4cd9c4d15f826ac06e25ae5754b24da6c08f7c247",
+            "file_count": 30,
+            "file_hash_map_sha256": "d3447c2d4318c6f2e4b4fc44d9b3c70bae71c67eb6f15132f3897be9681f5796",
+            "runtime_bytes_unchanged": true
+          }
+        ],
+        "packaging_metadata_unchanged": true,
+        "test_and_harness_source_bindings": {
+          "scripts/verify-codex-host-offline.mjs": "3b7029d8dd75be6dba2d32a4e97f204464a0c461aff1b1150da6a62e0a34f422",
+          "scripts/verify-opencode-host-offline.mjs": "8cd55e642eb1c66b7a10d067ba342e01c0a7756ce0a1d4c9dbc68dc513664bab",
+          "scripts/run-ide-host-e2e.mjs": "9905592cdb03764b79657c6ea2e258af4457617f81bc4f5a5ef9d9df93c043b4",
+          "scripts/run-ide-host-e2e.test.mjs": "0c3b85f5ca64e2e3b57140ba31f02a7f2f726994193fe2a505a07a8fb53be15f",
+          "packages/extension/src/__tests__/e2e-suite/index.js": "325acd050bc467f6cac9ff43977f2658372cf77c9ad4ccfec87f44404de9bac7"
+        },
+        "intentional_test_source_updates": [
+          "IDE runner rejects failed native processes and emits complete JUnit aggregates.",
+          "IDE runner supports a fresh guarded temp workspace and independently pinned fixture key config.",
+          "Windows installation uses the actual vendor Electron CLI entry; native launch removes all casing aliases of five inherited IDE environment names.",
+          "E2E suite requires unfiltered all-tool preToolUse, failClosed=true and bounded timeout30, matching the current shipped installer."
+        ],
+        "source_binding_scope": "Runtime artifact files and four packaging metadata files stayed unchanged. Final successful native runs bind the current harness and E2E suite hashes separately; whole repository/extension source unchanged is not asserted.",
+        "unit_gate": {
+          "expected": 20,
+          "passed": 20,
+          "failed": 0,
+          "skipped": 0,
+          "existing_junit_parser_contract_passed": 1
+        },
+        "immutable_cursor_candidate": {
+          "vsix_sha256": "43477b6a2f34c985b52da2a8dbdfe37260b6ddf8246c8cfeccf2ccb2bacb5e4a",
+          "agent_config_sha256": "2ac8689b2afc882399cc7800d6ff7c84181776acc462d6ad406d4138f8d0f806",
+          "copied_manifest_sha256": "2973e4e22f57b06be4ee1ca4cd9c4d15f826ac06e25ae5754b24da6c08f7c247",
+          "vsce_version": "4.0.0"
+        },
+        "preserved_attempts": [
+          {
+            "directory": "native-third-cursor-install-gui-failed",
+            "status": "RED",
+            "reason": "Wrong Windows GUI executable installation path; zero native cases. Precisely 11 fixture-profile processes terminated; cleanup verified."
+          },
+          {
+            "directory": "native-third-cursor-stale-matcher-failed",
+            "status": "RED",
+            "expected": 8,
+            "passed": 7,
+            "reason": "Stale explicit tool matcher assertion; current installer intentionally covers all tools without a filter."
+          },
+          {
+            "directory": "native-third-cursor-uppercase-only-interim-pass",
+            "status": "INTERIM_PASS_SUPERSEDED",
+            "expected": 8,
+            "passed": 8,
+            "reason": "Final case-insensitive inherited environment scrub was subsequently strengthened and native checks repeated."
+          }
+        ],
+        "cleanup": {
+          "kind": "aidr-native-third-final-cleanup-and-unavailable-host-check",
+          "recorded_at": "2026-10-05T23:45:32.5402711Z",
+          "remaining_owned_temp_directories": [],
+          "remaining_owned_cursor_processes": [],
+          "cleanup_complete": true,
+          "installed_missing_host_commands_present": {
+            "claude": false,
+            "code": false,
+            "openclaw": false,
+            "agent": false
+          },
+          "provider_credentials_present": {
+            "OPENAI_API_KEY": false,
+            "ANTHROPIC_API_KEY": false,
+            "OPENROUTER_API_KEY": false,
+            "OPENCODE_API_KEY": false,
+            "CODEX_API_KEY": false,
+            "CURSOR_API_KEY": false
+          }
+        },
+        "unavailable_hosts": [
+          {
+            "id": "claude",
+            "status": "HOST_UNAVAILABLE"
+          },
+          {
+            "id": "vscode",
+            "status": "HOST_UNAVAILABLE"
+          },
+          {
+            "id": "openclaw",
+            "status": "HOST_UNAVAILABLE"
+          },
+          {
+            "id": "cursor-agent",
+            "status": "HOST_UNAVAILABLE"
+          },
+          {
+            "id": "sdk",
+            "status": "REQUIRES_NAMED_EMBEDDING_APPLICATION_ACCEPTANCE"
+          }
+        ],
+        "limitations": [
+          "Deterministic loopback peer exercises the real CLI tool dispatcher; no model intelligence or remote inference was tested.",
+          "Temporary artifact signing key and explicit hook-trust/sandbox bypass apply only to the isolated single-patch fixture; production signature/trust/sandbox acceptance remains open.",
+          "These two apply_patch cases do not cover host hook crash/timeout behavior or the supported host/version/OS matrix.",
+          "Deterministic loopback peer tests actual CLI tool dispatch; no model intelligence or remote inference was tested.",
+          "Copied release artifacts use an ephemeral fixture signing key; production signing and independent deployment acceptance remain open.",
+          "Installed third-party dependencies are linked read-only into scratch; the tested core and plugin release packages are private copies.",
+          "One Windows/version run is not the supported host/OS matrix.",
+          "Eight actual extension-host lifecycle and direct Node-hook checks; Cursor agent native tool dispatch is not exercised.",
+          "Only the unchanged copied final manifest was signed with an ephemeral fixture key; no production signer/provenance or customer acceptance claim.",
+          "OS-only environment, fresh profiles/AppData/user-data/extensions and empty temp workspace; no stored credentials or existing profiles/hooks/settings used.",
+          "Host trust is bypassed only in this isolated fixture, no production tamper/subprocess/full version matrix acceptance.",
+          "OpenCode cases cover input tool gates; signed benign input case output quarantine/DLP-unavailable diagnostic is retained in full native events and is not output-direction acceptance.",
+          "Production signing keys/certificates, independent customer evidence and the complete supported host/version/OS matrix remain open.",
+          "Missing hosts, missing provider credentials and missing full scenario manifest are not passing acceptance."
+        ],
+        "primary_sources": [
+          "https://cursor.com/docs/hooks",
+          "https://learn.chatgpt.com/docs/hooks",
+          "https://learn.chatgpt.com/docs/config-file/config-reference"
+        ],
+        "receipts": [
+          {
+            "file": "native-third-codex-final.json",
+            "sha256": "9bec67d50207aa8d2e556c550e32764f6997949ebcd45fb60df95ea8ce43d85b"
+          },
+          {
+            "file": "native-third-codex-final.log",
+            "sha256": "c6e9e692cd1c24dbcc4f2e71c46e764112396a0dce85cd33f66913ea57460cfe"
+          },
+          {
+            "file": "native-third-opencode-final.json",
+            "sha256": "8d67dacc26418d9efc8d1cbcb116ef660a3c887a8812bab17aa2660b71fa8c4f"
+          },
+          {
+            "file": "native-third-opencode-final.log",
+            "sha256": "d4de5c6ca24eacedb87412f79bb31507b27890dc23171b7371b605772d2eb25c"
+          },
+          {
+            "file": "native-third-cursor-final.json",
+            "sha256": "1211ad7122b373da99ccc78802a823e6419a7b736314254ce2a2209468bbaa2c"
+          },
+          {
+            "file": "native-third-cursor-final.xml",
+            "sha256": "a8f7eaf02be6916d4739e413098eed33526aa14e1bf0d1fc9bdc6165fb0a46b3"
+          },
+          {
+            "file": "native-third-cursor-final.log",
+            "sha256": "5d0aeb5ebc8c2df8a74870a5c73d6484a98114884b9ecf7a3cf19cd4ed4064f4"
+          },
+          {
+            "file": "native-third-cursor-final-binding.json",
+            "sha256": "387d498ababc514aed921fab47628587dd721cbbcab98d4073dfedecf74d7477"
+          },
+          {
+            "file": "native-third-cursor-final-cleanup.json",
+            "sha256": "996f3212de9b976cbcea6af65f9fb43bd7d2b2754e306f75a46a8462ede5fca8"
+          },
+          {
+            "file": "native-third-final-cleanup.json",
+            "sha256": "86a9b8726c12fd71c30bfe65520e9ea98a444bccd5e4ba74ce1fab2ededcca16"
+          },
+          {
+            "file": "native-third-cursor-fixture-preparation.json",
+            "sha256": "81363a9bbb3e27959bd0517657972114bff19f4961c8431a59b45e8d9c8205d7"
+          },
+          {
+            "file": "native-third-cursor-fixture-package.log",
+            "sha256": "16477bfd36c01f84175eca04ebd9251502dcc8f86e2ab9e2b156726283915595"
+          },
+          {
+            "file": "native-third-ide-host-exit-red.log",
+            "sha256": "25b3c404dba51e8c84df8c3d23d0750258ec45d68283b4661e9f49c7b0cce86e"
+          },
+          {
+            "file": "native-third-ide-host-exit-green.log",
+            "sha256": "492f080435acc2a5f385a25ff9c1996728d767ecb9203ab08d4838ea79d2b761"
+          },
+          {
+            "file": "native-third-ide-install-red.log",
+            "sha256": "7dc5d6e495987a85adab927b5bf2fe784f2c252fa34fbbf78b53ab1c7c6f7d2d"
+          },
+          {
+            "file": "native-third-ide-install-green.log",
+            "sha256": "3f4062263f735e17a512c62ed5132398f4cc83a5c0997bc48a9f53443e48d0b3"
+          },
+          {
+            "file": "native-third-ide-env-case-red.log",
+            "sha256": "da89958f0e444f6613f828fe64f60aa2955555da1e5004efdb9d85f34d8c6439"
+          },
+          {
+            "file": "native-third-ide-final-green.log",
+            "sha256": "7aaa0241e0a425155e46d97af7568e6c379755b9ea8accd99862de7803f99060"
+          },
+          {
+            "file": "native-third-junit-parser.log",
+            "sha256": "22ba47f9f4de4f8ba97323f31ac81b91d04373f55c2ad3a81c5512db144395cb"
+          },
+          {
+            "file": "native-third-inventory.json",
+            "sha256": "b409a4e45fc499c1faff7975a70a1ec654f8e4dd88dcbe186777c7805dc41a1f"
+          },
+          {
+            "file": "native-third-prepare-cursor-fixture.mjs",
+            "sha256": "f50a5bc6bcc3bb055b3f041f8e8d6ad57fd5e4a3eeb45595c340fc5e5baf09a6"
+          },
+          {
+            "file": "native-third-run-cursor-final.mjs",
+            "sha256": "6398cae475c6299d0618a51ed8d14d36f3bfcdca23bfb2304a8fa3ec012d3c79"
+          },
+          {
+            "file": "native-third-bind-final.mjs",
+            "sha256": "01259125bacd91156eb8ee1ff8baf339d386cd2bad830ecb45995cbedd4ac847"
+          },
+          {
+            "file": "native-third-cursor-install-gui-failed/native-third-cursor-final-binding.json",
+            "sha256": "abad5881445dd4d214b12fe203d4e020a44ac6a9ca32813e95877e5f78772209"
+          },
+          {
+            "file": "native-third-cursor-install-gui-failed/native-third-cursor-final.log",
+            "sha256": "d06575b900fd6ac3f8dfd911459f5707eb187547c21acbe98393f5d83011cbb8"
+          },
+          {
+            "file": "native-third-cursor-install-gui-failed/native-third-cursor-final-cleanup.json",
+            "sha256": "9568a2bb972960b85bd4b0e6f63448b74c4617216bb544c9c2aa929917f757c2"
+          },
+          {
+            "file": "native-third-cursor-stale-matcher-failed/native-third-cursor-final-binding.json",
+            "sha256": "9174d4fb3f4531518b805330e7444f58e5ad0581f5c3df5a2b2114b4ae5f523e"
+          },
+          {
+            "file": "native-third-cursor-stale-matcher-failed/native-third-cursor-final.log",
+            "sha256": "942e0751b4ebd4cc36a1c4ee8a7d592adf158bd2ebdcd6d18e2625f51ddda24e"
+          },
+          {
+            "file": "native-third-cursor-stale-matcher-failed/native-third-cursor-final-cleanup.json",
+            "sha256": "e3eb27c388d4476765aaab7cfbcb6bfe18874d417fe541fa9097c4fc96fdb445"
+          },
+          {
+            "file": "native-third-cursor-uppercase-only-interim-pass/native-third-cursor-final-binding.json",
+            "sha256": "79aebe0b6e4c44550f954197827f9ca35e31ece72f41c443b3f54b192613be59"
+          },
+          {
+            "file": "native-third-cursor-uppercase-only-interim-pass/native-third-cursor-final.log",
+            "sha256": "d29c477c56555de576567efc2fe34e06afad6eba8392c75a09f69db7643d83fe"
+          },
+          {
+            "file": "native-third-cursor-uppercase-only-interim-pass/native-third-cursor-final-cleanup.json",
+            "sha256": "1edd631d5d06186a2604127a649e7ebf14b94db5e81b1862d33fdf72be73557c"
+          },
+          {
+            "file": "native-third-cursor-install-gui-failed/owned-processes.json",
+            "sha256": "5b6dfa89a94956ec05f9478d1f79c4876e6778038d1e7c5371a8ded24d2450cd"
+          }
+        ]
+      },
+      "productionAccepted": false
+    },
+    "releasePackages": 10,
+    "packageConsumers": 10,
+    "releaseBuild": "PASS; unsigned developer output, not an accepted release candidate",
+    "cleanPackageInstall": {
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "scope": "Real isolated lockfile-free installs including signed MCP factory and tamper boundary in disposable fixtures",
+      "evidence": ".tmp-test/production-completion-2026-10-06/package-install.log"
+    },
+    "packagedEnforcement": {
+      "passed": 90,
+      "failed": 0,
+      "evidence": ".tmp-test/production-completion-2026-10-06/enforcement.log"
+    },
+    "codexVerification": {
+      "passed": 11,
+      "failed": 0,
+      "evidence": ".tmp-test/production-completion-2026-10-06/codex.log"
+    },
+    "mcpGatewayVerification": {
+      "source": 55,
+      "coreTransport": 30,
+      "packageHelper": 60,
+      "helperSecurityFollowup": 11,
+      "installedPrivacyRoute": 6,
+      "scope": "Separate overlapping suites; authenticated current package installation also passed"
+    },
+    "customerKit": {
+      "passed": 15,
+      "scope": "Rendered eight linked guides, signed fleet overlay and deliverable path verification; production publisher acceptance OPEN"
+    },
+    "releaseSupplyChain": {
+      "passed": 66,
+      "windowsCiKitAndNativeHarnessPassed": 69,
+      "finalNativeHarnessPassed": 20,
+      "finalCustodyContractsPassed": 13,
+      "authenticodeOwnerSuitePassed": 73,
+      "scope": "Separate overlapping suites; real publisher certificate/TSA acceptance OPEN"
+    },
     "typecheck": "PASS",
-    "static": "PASS with 131 lint warnings and declared Knip review debt",
-    "diff_check": "PASS (git diff --check; CRLF conversion warnings only)",
+    "coreTestTypes": "PASS",
+    "frozenLockfileInstall": "PASS in both repositories; lifecycle disabled",
+    "static": {
+      "status": "PASS",
+      "lintWarnings": 572,
+      "lintInfo": 1,
+      "lintErrors": 0,
+      "evidence": ".tmp-test/production-completion-2026-10-06/static-delivery-final.log"
+    },
+    "repoHygiene": {
+      "status": "PASS",
+      "diffCheck": "PASS",
+      "evidence": ".tmp-test/production-completion-2026-10-06/hygiene-final.log"
+    },
+    "dependencyAudit": {
+      "mainProduction": 0,
+      "mainBuild": 0,
+      "landingProduction": 0,
+      "landingDevelopmentUnpatchedHigh": 1
+    },
+    "currentSecretScan": {
+      "officialGitleaks": "8.30.1",
+      "mainFiles": 8169,
+      "landingFiles": 269,
+      "status": "PASS",
+      "mainHistoryFindings": 132,
+      "landingHistoryFindings": 6,
+      "securityOwnerAcceptance": false
+    },
+    "license": {
+      "libraries": 204,
+      "permissive": 202,
+      "reviewRequired": 2,
+      "other": 0,
+      "unknown": 0,
+      "sbomComponents": 216,
+      "pythonLibraries": 30,
+      "strictExitCode": 1,
+      "nativeLibraryPathsMeasured": 17,
+      "fullOsPackagesMeasured": 110,
+      "legalAccepted": false
+    },
+    "salesGaps": {
+      "workPackages": 59,
+      "technical": 46,
+      "technicalLocallyImplementedFieldAcceptanceOpen": 43,
+      "technicalImplementationOpen": [
+        "T19",
+        "T37",
+        "T38"
+      ],
+      "externalReceiptsOpen": 13,
+      "productionMandatoryExternalGatesOpen": 12
+    },
     "productionAccepted": false,
-    "evidenceReport": "docs/production-readiness/2026-09-12-customer-candidate-v5.md",
-    "currentRun": "v5 full suite 215 files/3094 pass/2 scoped skips; 30-migration isolated self-hosted live smoke and customer onboarding passed. Unsigned 295-file portable kit verified; customer TLS, provider, publisher, SLA and external gates remain open."
+    "evidenceReport": "RELEASE_READINESS_REPORT.md",
+    "testEvidence": ".tmp-test/production-completion-2026-10-06/coverage-results.json",
+    "currentRun": "Current local implementation, coverage, actual 139-migration API rehearsal and final package installs pass. Institution/native/provider/model, publisher, security, legal, operational and commercial acceptance remain OPEN. No production or sales GO inferred.",
+    "priorSnapshot": {
+      "date": "2026-10-06",
+      "timezone": "Europe/Istanbul",
+      "source": {
+        "baselineCommit": "7f3ec0ad009abf5b032b8116b296d8604fee884e",
+        "landingBaselineCommit": "e039be0b01d6a9baf04e2d83cbeeb9874c6f8a93",
+        "uncommittedChanges": true,
+        "candidateDigest": null
+      },
+      "tests": {
+        "files": 416,
+        "passed": 6353,
+        "failed": 0,
+        "skipped": 5,
+        "total": 6358,
+        "windows_workers": 1,
+        "scenario_timeouts_unchanged": true,
+        "skipped_scope": "Five Windows-skipped POSIX cases passed in an isolated Linux copy. No selected Linux target was skipped."
+      },
+      "coverage": {
+        "lines": 84.5,
+        "statements": 80.77,
+        "branches": 75.59,
+        "functions": 84.74,
+        "thresholdsUnchanged": true
+      },
+      "coreCoverage": {
+        "files": 191,
+        "passed": 3369,
+        "failed": 0,
+        "skipped": 4,
+        "total": 3373,
+        "lines": 85.49,
+        "statements": 82.15,
+        "branches": 76.09,
+        "functions": 86.37,
+        "thresholdsUnchanged": true
+      },
+      "linuxComplement": {
+        "posix": 5,
+        "enrollmentRepair": 12,
+        "managedKeyRotation": 20,
+        "failed": 0,
+        "skipped": 0,
+        "realSecretServiceAccepted": false,
+        "evidence": ".tmp-test/production-hardening-2026-10-06/linux-posix-container.json"
+      },
+      "migrations": 135,
+      "selfHostedRehearsal": {
+        "services": 11,
+        "migrations": 135,
+        "liveChecksPassed": 92,
+        "productionDoctorPassed": false,
+        "scope": "Disposable synthetic loopback HTTP deployment, not customer acceptance",
+        "evidence": ".tmp-test/production-followup-2026-10-06/operations-selfhost-final-results.json"
+      },
+      "operationalRegression": {
+        "offboarding": 61,
+        "retention": 43,
+        "samlAdministration": 13,
+        "responseOffboarding": 7,
+        "failed": 0,
+        "skipped": 0,
+        "evidence": ".tmp-test/production-followup-2026-10-06/operations-final-results.json"
+      },
+      "privacyPackage": {
+        "linuxNodePassed": 1388,
+        "skipped": 0,
+        "focusedFixtureCleanupWindows": 46,
+        "focusedFixtureCleanupLinux": 46,
+        "currentReleaseMcpOutput": 25,
+        "currentReleaseQualification": 5,
+        "priorPythonAndOcrEvidenceDate": "2026-10-05",
+        "realNerModelAccepted": false,
+        "allProductEgressCovered": false
+      },
+      "landing": {
+        "testFiles": 64,
+        "passed": 539,
+        "failed": 0,
+        "builtPages": 45,
+        "coreClientWireContract": 52,
+        "browserSmoke": "PASS on current compiled standalone demo fixture; live providers and native hosts unverified",
+        "productionDependencyAdvisories": 0,
+        "developmentUnpatchedHighAdvisories": 1,
+        "currentSecretFiles": 261,
+        "evidence": "../aidr-landing/docs/verification-followup-2026-10-06.json"
+      },
+      "release_packages": 10,
+      "package_consumers": 10,
+      "cleanPackageInstall": {
+        "passed": 10,
+        "failed": 0,
+        "skipped": 0,
+        "scope": "Lockfile-free isolated clean consumer installs; unsigned developer output, not accepted signed customer artifacts",
+        "evidence": ".tmp-test/production-followup-2026-10-06/package-install.log"
+      },
+      "packagedEnforcement": {
+        "passed": 90,
+        "failed": 0,
+        "evidence": ".tmp-test/production-followup-2026-10-06/enforcement.log"
+      },
+      "codexVerification": {
+        "passed": 11,
+        "failed": 0,
+        "evidence": ".tmp-test/production-followup-2026-10-06/codex.log"
+      },
+      "mcpGatewayVerification": {
+        "passed": 49,
+        "failed": 0,
+        "skipped": 0,
+        "evidence": ".tmp-test/production-followup-2026-10-06/mcp-all.log"
+      },
+      "releaseSupplyChain": {
+        "passed": 67,
+        "failed": 0,
+        "skipped": 0,
+        "evidence": ".tmp-test/production-followup-2026-10-06/release-supply-chain-final.log"
+      },
+      "repoHygiene": {
+        "status": "PASS",
+        "regressionPassed": 26,
+        "realHostPathsStillRejected": true,
+        "generatedFileWaiverAdded": false,
+        "evidence": ".tmp-test/production-followup-2026-10-06/repo-hygiene-root.log"
+      },
+      "release_build": "PASS; unsigned developer artifacts, not an accepted release candidate",
+      "frozenLockfileInstall": "PASS in both repositories; lifecycle disabled",
+      "typecheck": "PASS",
+      "static": "PASS; final lint 518 warnings, 1 info, 0 errors; external gates not approved",
+      "currentSecretScan": {
+        "officialGitleaks": "8.30.1",
+        "files": 8053,
+        "status": "PASS",
+        "historyFindings": 132,
+        "securityOwnerAcceptance": false,
+        "evidence": ".tmp-test/production-followup-2026-10-06/secrets-current-final.log"
+      },
+      "license": {
+        "libraries": 205,
+        "permissive": 202,
+        "reviewRequired": 3,
+        "other": 0,
+        "unknown": 0,
+        "sbomComponents": 217,
+        "pythonLibraries": 31,
+        "independentlyBoundWheelEvidence": true,
+        "strictExitCode": 1,
+        "bundledNativeLibraryFlags": 14,
+        "legalAccepted": false
+      },
+      "productionAccepted": false,
+      "evidenceReport": "RELEASE_READINESS_REPORT.md",
+      "testEvidence": ".tmp-test/production-followup-2026-10-06/coverage-results.json",
+      "posixEvidence": ".tmp-test/production-hardening-2026-10-06/linux-posix-summary.json",
+      "currentRun": "Current source, current 135-migration isolated services, and packaged behavior are locally tested. Scope-dependent product connections, publisher trust, customer/native/provider acceptance, TLS/host operations, restore, security/legal/commercial approvals and measured capacity remain open. No production or sales GO is inferred.",
+      "priorSnapshot": {
+        "date": "2026-10-05",
+        "source": {
+          "baselineCommit": "7f3ec0ad009abf5b032b8116b296d8604fee884e",
+          "uncommittedChanges": true,
+          "candidateDigest": null
+        },
+        "tests": {
+          "files": 407,
+          "passed": 6159,
+          "failed": 0,
+          "skipped": 5,
+          "total": 6164,
+          "windows_workers": 1,
+          "scenario_timeouts_unchanged": true,
+          "skipped_scope": "Five POSIX permissions/symlink assertions are skipped on Windows. All five executed and passed in isolated Linux Node 22.16.0; no target skip or failure."
+        },
+        "coverage": {
+          "lines": 84.16,
+          "statements": 80.42,
+          "branches": 75.12,
+          "functions": 84.53,
+          "thresholdsUnchanged": true
+        },
+        "coreCoverage": {
+          "files": 187,
+          "passed": 3294,
+          "skippedOnWindows": 4,
+          "lines": 85.07,
+          "statements": 81.73,
+          "branches": 75.47,
+          "functions": 86.26,
+          "thresholdsUnchanged": true
+        },
+        "migrations": 131,
+        "selfHostedRehearsal": {
+          "services": 11,
+          "migrations": 130,
+          "liveChecksPassed": 92,
+          "productionDoctorPassed": false
+        },
+        "operationalRegression": {
+          "offboarding": 59,
+          "retention": 43,
+          "monitoring": 17,
+          "upgrade": 41,
+          "supportBundle": 13,
+          "failed": 0,
+          "skipped": 0
+        },
+        "privacyPackage": {
+          "linuxNodePassed": 1335,
+          "pythonPassed": 143,
+          "syntheticOcrCasesPassed": 8,
+          "skipped": 0
+        },
+        "landing": {
+          "testFiles": 59,
+          "passed": 457,
+          "failed": 0,
+          "browserSmoke": "PASS on compiled standalone demo fixture; live providers unverified",
+          "productionDependencyAdvisories": 0,
+          "developmentUnpatchedHighAdvisories": 1
+        },
+        "release_packages": 10,
+        "package_consumers": 10,
+        "cleanPackageInstall": {
+          "passed": 10,
+          "failed": 0,
+          "skipped": 0,
+          "scope": "Lockfile-free isolated clean consumer installs; unsigned developer output, not accepted signed customer artifacts",
+          "evidence": ".tmp-test/production-hardening-2026-10-05/package-install-final.log"
+        },
+        "packagedEnforcement": {
+          "passed": 90,
+          "failed": 0,
+          "evidence": ".tmp-test/production-hardening-2026-10-05/enforcement-final.log"
+        },
+        "codexVerification": {
+          "passed": 11,
+          "failed": 0,
+          "evidence": ".tmp-test/production-hardening-2026-10-05/codex-final.log"
+        },
+        "mcpGatewayVerification": {
+          "passed": 49,
+          "failed": 0,
+          "skipped": 0,
+          "evidence": ".tmp-test/production-hardening-2026-10-05/mcp-final.log"
+        },
+        "release_build": "PASS; unsigned developer artifacts, not an accepted release candidate",
+        "frozenLockfileInstall": "PASS; pnpm install --frozen-lockfile --ignore-scripts",
+        "typecheck": "PASS",
+        "static": "PASS; 506 lint warnings, 0 errors; source/harness checks do not approve external gates",
+        "currentSecretScan": {
+          "officialGitleaks": "8.30.1",
+          "files": 8026,
+          "status": "PASS",
+          "historyFindings": 132,
+          "securityOwnerAcceptance": false
+        },
+        "productionAccepted": false,
+        "evidenceReport": "RELEASE_READINESS_REPORT.md",
+        "testEvidence": ".tmp-test/production-hardening-2026-10-05/coverage-results.json",
+        "posixEvidence": ".tmp-test/production-hardening-2026-10-05/linux-posix-summary.json",
+        "priorSnapshot": {
+          "date": "2026-09-12",
+          "evidenceReport": "docs/production-readiness/2026-09-12-customer-candidate-v5.md"
+        },
+        "currentRun": "Current source and packaged behavior are locally tested. Publisher trust, customer/native/provider acceptance, TLS/host operations, restore, security/legal/commercial approvals and capacity remain open. No production or sales GO is inferred."
+      }
+    }
   }
 }

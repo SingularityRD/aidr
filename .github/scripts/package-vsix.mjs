@@ -11,6 +11,7 @@
 import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
+import { parseArgs } from "node:util";
 import { finalizeReleaseBundle } from "../../scripts/lib/finalize-release-bundle.mjs";
 import {
 	assertVsixIntegrityEvidence,
@@ -21,6 +22,7 @@ const repoRoot = resolve(import.meta.dirname, "../..");
 const extensionRoot = join(repoRoot, "packages", "extension");
 const outputDir = resolve(process.env.VSIX_OUTPUT_DIR ?? join(repoRoot, "release-output"));
 const vsceVersion = process.env.VSCE_VERSION;
+const { values } = parseArgs({ options: { "unsigned-candidate": { type: "boolean", default: false } } });
 
 if (!/^\d+\.\d+\.\d+$/.test(vsceVersion ?? "")) {
 	fail("VSCE_VERSION must be an exact x.y.z version");
@@ -49,7 +51,6 @@ for (const variant of variants) {
 	await mkdir(stageDir, { recursive: true });
 
 	await cp(join(extensionRoot, "dist"), join(stageDir, "dist"), { recursive: true });
-	await cp(join(extensionRoot, "resources"), join(stageDir, "resources"), { recursive: true });
 	for (const file of ["README.md", "LICENSE", "aidr-icon.png"]) {
 		await cp(join(extensionRoot, file), join(stageDir, file));
 	}
@@ -87,12 +88,13 @@ for (const variant of variants) {
 	}
 	await writeFile(join(stageDir, "package.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
 	await assertNoSourceMaps(join(stageDir, "dist"));
-	await assertVsixIntegrityEvidence(stageDir);
+	await assertVsixIntegrityEvidence(stageDir, { requireSignature: !values["unsigned-candidate"] });
 
 	const outputPath = join(outputDir, variant.output);
 	await runVsce(stageDir, outputPath);
 	console.log(`Wrote ${outputPath}`);
 }
+if (values["unsigned-candidate"]) console.log("Unsigned VSIX candidate only; publisher signing and commercial runtime verification remain required.");
 
 let releaseBundle = true;
 try {

@@ -106,6 +106,13 @@ describe("required central policy offline boundary", () => {
 		await expect(
 			syncRemoteRuntimePolicy(config, "required-agent", undefined, 20000),
 		).rejects.toThrow("Required central policy");
+		// The denial survives an outage and a process restart; the previously
+		// accepted offline policy must not become authoritative again.
+		clearRemoteRuntimePolicyCacheForTests();
+		globalThis.fetch = vi.fn().mockRejectedValue(new Error("offline"));
+		await expect(
+			syncRemoteRuntimePolicy(config, "required-agent", undefined, 21000),
+		).rejects.toThrow("Required central policy");
 	});
 
 	it("rejects malformed central policy and refuses a different token's cache", async () => {
@@ -239,8 +246,48 @@ describe("required central policy offline boundary", () => {
 		}
 	});
 
-	it("keeps an unenrolled endpoint's local detection independent", async () => {
+	it.each(["", "   "])("requires central policy even when the agent token is %j", async (token) => {
 		const { config } = await fixture();
+		globalThis.fetch = vi.fn();
+		await expect(syncRemoteRuntimePolicy(config, token)).rejects.toThrow("Required central policy");
+		expect(globalThis.fetch).not.toHaveBeenCalled();
+	});
+
+	it("requires central policy even when control-plane connectivity is disabled", async () => {
+		const { config } = await fixture();
+		config.control_plane.enabled = false;
+		globalThis.fetch = vi.fn();
+		await expect(syncRemoteRuntimePolicy(config, "required-agent")).rejects.toThrow(
+			"Required central policy",
+		);
+		expect(globalThis.fetch).not.toHaveBeenCalled();
+	});
+
+	it.each([false, true])(
+		"blocks an unenrolled required-policy evaluator when control-plane enabled is %j",
+		async (enabled) => {
+			const { config, root } = await fixture();
+			config.control_plane.enabled = enabled;
+			const configPath = join(root, "config.json");
+			await writeFile(configPath, JSON.stringify(config));
+			globalThis.fetch = vi.fn();
+			const verdict = await evaluateToolCall(
+				{
+					sessionId: "unenrolled",
+					toolName: "Bash",
+					toolInput: { command: "echo safe" },
+					artifacts: [],
+				},
+				{ configPath, threatsDir: root, allowlistsDir: root },
+			);
+			expect(verdict).toMatchObject({ decision: "deny", source: "remote_policy_unavailable" });
+			expect(globalThis.fetch).not.toHaveBeenCalled();
+		},
+	);
+
+	it("keeps an optional unenrolled endpoint's local detection independent", async () => {
+		const { config } = await fixture();
+		config.control_plane.remote_policy_required = false;
 		globalThis.fetch = vi.fn();
 		expect(await syncRemoteRuntimePolicy(config, "")).toBe(config);
 		expect(globalThis.fetch).not.toHaveBeenCalled();

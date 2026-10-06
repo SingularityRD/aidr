@@ -32,3 +32,7 @@ test('primitives and exact empty JSON values are supported',async()=>{
 });
 test('numeric identifier in untyped field cannot pass through',async()=>{const r=await e.protectJson('{"x":10000000146}');assert.equal(r.output,'{"x":"[TC_KIMLIK]"}');});
 test('null sensitive field remains null',async()=>{assert.equal((await e.protectJson('{"email":null}')).output,'{"email":null}');});
+test('normalized schema names do not inherit JavaScript prototype entries',async()=>{
+ const r=await e.protectJson('{"Constructor":"hello","con-structor":"world"}');
+ assert.equal(r.decision,'allow');assert.equal(r.output,'{"Constructor":"hello","con-structor":"world"}');
+});

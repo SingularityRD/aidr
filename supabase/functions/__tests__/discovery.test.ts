@@ -8,6 +8,7 @@ import {
 	discoveryCollectorState,
 	discoveryFreshness,
 	parseDiscoveryIngest,
+	parseProviderScope,
 } from "../discovery/logic.ts";
 
 const FUNCTIONS_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -33,6 +34,24 @@ function cycle(): Record<string, unknown> {
 }
 
 describe("managed discovery ingest boundary", () => {
+	const provider = () => ({ provider: "aws", scope_hash: "a".repeat(64), coverage: "tagged_resources", complete: true,
+		observed_at: new Date(Date.now() - 1000).toISOString(), items: [{ resource_id: "arn:aws:s3:::approved-bucket", resource_type: "s3:bucket",
+			scope_id: "aws:123456789012:eu-central-1", region: "eu-central-1", observed_at: new Date(Date.now() - 2000).toISOString() }] });
+	it("keeps cloud identifiers out of URL probes and marks failed provider coverage partial", () => {
+		const input = { ...cycle(), expected_targets: 0, items: [], provider_resources: provider() };
+		expect(parseDiscoveryIngest(input)?.provider_resources?.items[0]?.resource_id).toContain("arn:aws:");
+		expect(parseDiscoveryIngest({ ...input, provider_resources: { ...provider(), complete: false, items: [] } })?.complete).toBe(false);
+		expect(parseDiscoveryIngest({ ...input, provider_resources: undefined })).toBeNull();
+		expect(parseDiscoveryIngest({ ...cycle(), expected_targets: 0, items: [] })).toBeNull();
+	});
+	it("rejects unbounded, duplicate, credential-bearing arbitrary fields and wrong provider coverage", () => {
+		const p = provider(); const input = { ...cycle(), provider_resources: p };
+		expect(parseDiscoveryIngest({ ...input, provider_resources: { ...p, coverage: "managed_devices" } })).toBeNull();
+		expect(parseDiscoveryIngest({ ...input, provider_resources: { ...p, api_key: "synthetic" } })).toBeNull();
+		expect(parseDiscoveryIngest({ ...input, provider_resources: { ...p, items: [p.items[0], p.items[0]] } })).toBeNull();
+		expect(parseDiscoveryIngest({ ...input, provider_resources: { ...p, items: Array(1001).fill(p.items[0]) } })).toBeNull();
+		expect(parseProviderScope({ provider: "aws", scope_hash: "a".repeat(64), token: "synthetic" })).toBeNull();
+	});
 	it("accepts only a complete, bounded origin-level cycle", () => {
 		const parsed = parseDiscoveryIngest(cycle());
 		expect(parsed?.items).toHaveLength(2);

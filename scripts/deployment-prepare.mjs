@@ -99,6 +99,23 @@ const { values } = parseArgs({ options: {
 if (!["self-hosted", "cloud"].includes(values.mode)) throw new Error("mode must be self-hosted or cloud");
 const output = resolve(values.output);
 if (existsSync(output)) throw new Error("Output already exists; reuse its secrets and data. Choose a new output for a separate installation.");
+const runtimeCapabilitiesRaw = process.env.AIDR_RUNTIME_CAPABILITIES_BY_TENANT?.trim() || "{}";
+let runtimeCapabilitiesConfig;
+try {
+	if (runtimeCapabilitiesRaw.length > 65_536) throw new Error();
+	const map = JSON.parse(runtimeCapabilitiesRaw);
+	const names = ["runtime_detectors", "behavioral_learning_v1"];
+	if (!map || typeof map !== "object" || Array.isArray(map)) throw new Error();
+	const entries = Object.entries(map);
+	if (entries.length > 256 || entries.some(([id, grants]) =>
+		!/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(id) || !Array.isArray(grants) || grants.length > 2
+		|| grants.some((grant) => !names.includes(grant)) || new Set(grants).size !== grants.length
+		|| (grants.includes("behavioral_learning_v1") && !grants.includes("runtime_detectors"))
+	)) throw new Error();
+	runtimeCapabilitiesConfig = JSON.stringify(map);
+} catch {
+	throw new Error("AIDR_RUNTIME_CAPABILITIES_BY_TENANT must be a bounded exact tenant capability map");
+}
 let artifactVerificationPublicKeyPem;
 const artifactVerificationPublicKeyFile = values["artifact-verification-public-key-file"];
 if (artifactVerificationPublicKeyFile) {
@@ -148,6 +165,7 @@ const developmentHostPort = (url, fallback) => {
 	const parsed = new URL(url);
 	return parsed.port || (parsed.protocol === "https:" ? "443" : "80");
 };
+const loopbackBinding = (url) => values.development && new URL(url).hostname === "[::1]" ? "[::1]" : "127.0.0.1";
 const projectName = values["project-name"] || `aidr-${randomBytes(6).toString("hex")}`;
 if (!/^[a-z][a-z0-9_-]{0,62}$/.test(projectName)) throw new Error("Invalid Compose project name");
 // Region and residency entries are operator declarations, not verified legal or
@@ -197,7 +215,7 @@ if (tenantRegionId !== regionId) {
 	throw new Error(`Tenant declared region "${tenantRegionId}" does not match deployment region "${regionId}"; refusing to prepare a cross-region installation`);
 }
 const deviceUpstream = values.mode === "self-hosted"
-	? `http://127.0.0.1:${developmentHostPort(supabaseUrl, "8000")}/functions/v1/device-start`
+	? `http://${loopbackBinding(supabaseUrl)}:${developmentHostPort(supabaseUrl, "8000")}/functions/v1/device-start`
 	: (values["device-start-upstream-url"] ?? "REPLACE_WITH_PROVIDER_DEVICE_START_URL");
 if (values["device-start-upstream-url"]) {
 	if (values.mode !== "cloud") throw new Error("Custom device-start upstream is only valid in cloud mode");
@@ -287,6 +305,7 @@ const functionEnv = {
 	AIDR_PUBLIC_API_ORIGIN: supabaseUrl,
 	AIDR_DEVELOPMENT_MODE: String(values.development),
 	AIDR_ENTITLEMENT_SIGNING_KEY_ID: keyId, AIDR_ENTITLEMENT_SIGNING_PRIVATE_KEY_PKCS8_B64: signingPrivateKeyDer.toString("base64"),
+	AIDR_RUNTIME_CAPABILITIES_BY_TENANT: runtimeCapabilitiesConfig,
 	AIDR_REVOCATION_SIGNING_KEY_ID: keyId, AIDR_REVOCATION_SIGNING_PRIVATE_KEY_PKCS8_B64: signingPrivateKeyDer.toString("base64"),
 	AIDR_DELEGATION_ISSUER: supabaseUrl, AIDR_DELEGATION_SIGNING_KEY_ID: delegationKeyId,
 	AIDR_DELEGATION_SIGNING_PRIVATE_KEY_PKCS8_B64: delegationPrivateKeyDer.toString("base64"),
@@ -302,7 +321,7 @@ for (const service of Object.values(compose.services)) {
 }
 if (values.mode === "self-hosted") {
 	delete compose.services.supavisor;
-	compose.services["api-gw"].ports = [`127.0.0.1:${developmentHostPort(supabaseUrl, "8000")}:8000`];
+	compose.services["api-gw"].ports = [`${loopbackBinding(supabaseUrl)}:${developmentHostPort(supabaseUrl, "8000")}:8000`];
 	compose.services.functions.env_file = [".env.functions"];
 	compose.services.auth.environment.GOTRUE_MAILER_TEMPLATES_RECOVERY = "http://dashboard:8080/auth-templates/recovery.html";
 	compose.services.auth.environment.GOTRUE_MAILER_SUBJECTS_RECOVERY = "Reset your AIDR password";
@@ -315,7 +334,7 @@ if (values.mode === "self-hosted") {
 const healthApiOrigin = values.mode === "self-hosted" ? "http://api-gw:8000" : supabaseUrl;
 const dashboardHealthPath = values.development ? "/livez" : "/readyz";
 compose.services.dashboard = {
-	build: "./dashboard", restart: "unless-stopped", ports: [`127.0.0.1:${developmentHostPort(dashboardUrl, "8080")}:8080`], read_only: true,
+	build: "./dashboard", restart: "unless-stopped", ports: [`${loopbackBinding(dashboardUrl)}:${developmentHostPort(dashboardUrl, "8080")}:8080`], read_only: true,
 	cap_drop: ["ALL"], security_opt: ["no-new-privileges:true"],
 	healthcheck: {
 		test: ["CMD", "node", "-e", `fetch('http://127.0.0.1:8080${dashboardHealthPath}').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))`],

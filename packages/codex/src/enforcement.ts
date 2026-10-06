@@ -75,6 +75,13 @@ export interface CodexEnforcementResult {
 
 export const DENY_HEADLINE = "🛡️ Singularity AIDR: Threat Blocked";
 
+function validPreToolUseInput(input: Record<string, unknown>): boolean {
+	return input !== null && typeof input === "object" && !Array.isArray(input)
+		&& typeof input.tool_name === "string" && input.tool_name.trim() !== ""
+		&& (input.hook_event_name === undefined || input.hook_event_name === "PreToolUse")
+		&& input.tool_input !== null && typeof input.tool_input === "object" && !Array.isArray(input.tool_input);
+}
+
 /**
  * Convert a verdict into Codex's wire format.
  *
@@ -112,14 +119,14 @@ export async function enforceCodexPreToolUse(
 	options: CodexEnforcementOptions = {},
 ): Promise<CodexEnforcementResult> {
 	const logger = options.logger ?? nullLogger;
-	const toolName = typeof input.tool_name === "string" ? input.tool_name : "";
-	const toolInput =
-		input.tool_input && typeof input.tool_input === "object" && !Array.isArray(input.tool_input)
-			? (input.tool_input as Record<string, unknown>)
-			: {};
-	const sessionId = typeof input.session_id === "string" ? input.session_id : "codex-session";
+	const toolName = typeof input?.tool_name === "string" ? input.tool_name : "";
 
 	try {
+		if (!validPreToolUseInput(input)) {
+			throw new Error("invalid Codex PreToolUse payload");
+		}
+		const toolInput = input.tool_input as Record<string, unknown>;
+		const sessionId = typeof input.session_id === "string" ? input.session_id : "codex-session";
 		const artifacts: Artifact[] = extractFromCodexTool(toolName, toolInput);
 		// Operator-provisioned tenant detector policy for this runtime. Absent
 		// policy means an empty context (unchanged evaluation); a present-but-

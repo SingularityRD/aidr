@@ -196,11 +196,16 @@ export function createCodexExecutionInterceptor(options: CodexExecutionIntercept
 	}
 	return {
 		async execute(input: CodexHookInput): Promise<CodexExecutionInterceptResult> {
-			const phase = input.phase ?? input.event ?? input.type;
-			if (phase === "post_tool_use" || phase === "post_tool" || phase === "after_tool_call") {
+			const phase = input.hook_event_name ?? input.phase ?? input.event ?? input.type;
+			if (
+				phase === "PostToolUse" ||
+				phase === "post_tool_use" ||
+				phase === "post_tool" ||
+				phase === "after_tool_call"
+			) {
 				throw new CodexExecutionInterceptError("codex_post_tool_execution_forbidden");
 			}
-			const event = normalizeCodexHookInput({ ...input, phase: "pre_tool_use" }, options.identity);
+			const event = normalizeCodexHookInput(input, options.identity);
 			const registration = options.registry.require(event.toolName);
 			const receipt = await options.transport.submit(buildRequest(event, registration, options));
 			return {

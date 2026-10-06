@@ -413,6 +413,9 @@ export function validatePrivacyDataFlowMatrix(matrix, schema, { now = new Date()
 		if (["measured", "accepted"].includes(flow.status) && (unknownPaths.length > 0 || flow.unknowns?.length > 0)) {
 			failures.push(`${label}: ${flow.status} flow cannot retain unresolved unknowns`);
 		}
+		if (["measured", "accepted"].includes(flow.status) && Array.isArray(flow.evidence) && flow.evidence.every(evidence => /^Source inspection only:/u.test(evidence))) {
+			failures.push(`${label}: source inspection alone cannot establish a ${flow.status} deployment flow`);
+		}
 	}
 
 	if (matrix.status === "accepted") {

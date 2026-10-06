@@ -14,10 +14,18 @@ const SCRIPT = resolve("scripts/deployment-backup-offsite.mjs");
 const FILES = ["database.tar.gz.enc", "storage.tar.gz.enc", "installation.tar.gz.enc"];
 const TEST_MOUNT_IDENTITY = "UUID=aidr-test-uuid";
 const TEST_RUNNER = `import { runOffsite } from ${JSON.stringify(pathToFileURL(SCRIPT).href)};
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 let targetChecks = 0;
 const probe = async (path) => {
   if (path === ${JSON.stringify(sep)}) return { target: ${JSON.stringify(sep)}, uuid: "host-root-uuid", source: "/dev/host-root", fstype: "ext4" };
   targetChecks += 1;
+  if (Number(process.env.AIDR_TEST_SWAP_CYCLE_ON_CHECK) === targetChecks) {
+    const output = await readFile(process.env.AIDR_TEST_CYCLE_OUTPUT_FILE, "utf8");
+    await rename(output, output + ".original");
+    await mkdir(output);
+    await writeFile(join(output, "keep.txt"), "operator-owned");
+  }
   if (Number(process.env.AIDR_TEST_MOUNT_FAIL_AFTER_TARGET_CHECKS) === targetChecks) return { target: path, uuid: "wrong-uuid", source: "/dev/wrong", fstype: "ext4" };
   return { target: path, uuid: "aidr-test-uuid", source: "/dev/aidr-test", fstype: "ext4" };
 };
@@ -359,7 +367,12 @@ test("abandoned spool cleanup is age-bounded and ignores operator files", async 
 	const freshBackup = join(root, "2026-09-12T02-15-00-000Z-abcdef0123");
 	const operatorDirectory = join(root, "keep-me");
 	const matchingUnowned = join(root, "2026-09-10T02-15-00-000Z-9876543210");
-	await Promise.all([mkdir(oldBackup), mkdir(freshBackup), mkdir(operatorDirectory), mkdir(matchingUnowned)]);
+	const completedBackup = join(root, "2026-09-10T02-15-00-000Z-1111111111");
+	await Promise.all([mkdir(oldBackup), mkdir(freshBackup), mkdir(operatorDirectory), mkdir(matchingUnowned), mkdir(completedBackup)]);
+	await writeFile(join(completedBackup, "backup.json"), "completed snapshot awaiting upload");
+	await writeFile(`${completedBackup}.aidr-owned`, "AIDR temporary backup v1\n");
+	await utimes(completedBackup, new Date("2026-09-10T00:00:00Z"), new Date("2026-09-10T00:00:00Z"));
+	await utimes(`${completedBackup}.aidr-owned`, new Date("2026-09-10T00:00:00Z"), new Date("2026-09-10T00:00:00Z"));
 	await writeFile(`${oldBackup}.aidr-owned`, "AIDR temporary backup v1\n");
 	await utimes(oldBackup, new Date("2026-09-10T00:00:00Z"), new Date("2026-09-10T00:00:00Z"));
 	await utimes(`${oldBackup}.aidr-owned`, new Date("2026-09-10T00:00:00Z"), new Date("2026-09-10T00:00:00Z"));
@@ -370,6 +383,55 @@ test("abandoned spool cleanup is age-bounded and ignores operator files", async 
 	assert.equal((await stat(freshBackup)).isDirectory(), true);
 	assert.equal((await stat(operatorDirectory)).isDirectory(), true);
 	assert.equal((await stat(matchingUnowned)).isDirectory(), true);
+	assert.equal((await stat(completedBackup)).isDirectory(), true, "a completed snapshot must survive temporary spool retention until remote verification succeeds");
+});
+
+test("scheduled cycle retains completed snapshots on remote failure and removes only verified owned output", async (t) => {
+	for (const scenario of ["upload-failure", "verify-failure", "verified", "replacement-output"]) {
+		await t.test(scenario, async (t) => {
+			const f = await fixture(t);
+			const deployment = join(f.root, "deployment");
+			const spool = join(f.root, "spool");
+			const outputFile = join(f.root, "cycle-output.txt");
+			await mkdir(deployment);
+			const preload = join(f.root, "fake-cold-backup.cjs");
+			await writeFile(preload, `
+const { basename, join } = require("node:path");
+const { copyFileSync, mkdirSync, writeFileSync } = require("node:fs");
+if (basename(process.argv[1] || "") === "deployment-backup.mjs" && process.argv[2] === "backup") {
+  const output = process.argv[process.argv.indexOf("--output") + 1];
+  mkdirSync(output, { mode: 0o700 });
+  for (const name of ["backup.json", "database.tar.gz.enc", "storage.tar.gz.enc", "installation.tar.gz.enc"]) copyFileSync(join(process.env.AIDR_TEST_COLD_SOURCE, name), join(output, name));
+  writeFileSync(process.env.AIDR_TEST_CYCLE_OUTPUT_FILE, output);
+  process.exit(0);
+}
+`);
+			const env = {
+				NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --require "${preload.replaceAll("\\", "/")}"`.trim(),
+				AIDR_TEST_COLD_SOURCE: f.backup,
+				AIDR_TEST_CYCLE_OUTPUT_FILE: outputFile,
+				...(scenario === "upload-failure" ? { AIDR_TEST_MOUNT_FAIL_AFTER_TARGET_CHECKS: "3" } : {}),
+				...(scenario === "verify-failure" ? { AIDR_TEST_MOUNT_FAIL_AFTER_TARGET_CHECKS: "6" } : {}),
+				...(scenario === "replacement-output" ? { AIDR_TEST_SWAP_CYCLE_ON_CHECK: "6" } : {}),
+			};
+			await command([
+				"cycle", "--deployment", deployment, "--spool", spool, "--target", f.target, "--key-file", f.keyFile,
+				"--key-reference", "vault://production/aidr-recovery-key", "--retention-days", "35", "--health-file", f.health,
+			], scenario === "verified" ? 0 : 1, env);
+			const output = await readFile(outputFile, "utf8");
+			if (scenario === "verified") {
+				await assert.rejects(stat(output), /ENOENT/);
+				await assert.rejects(stat(`${output}.aidr-owned`), /ENOENT/);
+			} else if (scenario === "replacement-output") {
+				assert.equal(await readFile(join(output, "keep.txt"), "utf8"), "operator-owned");
+				assert.equal(await readFile(join(`${output}.original`, "backup.json"), "utf8"), await readFile(join(f.backup, "backup.json"), "utf8"));
+			} else {
+				assert.equal(await readFile(join(output, "backup.json"), "utf8"), await readFile(join(f.backup, "backup.json"), "utf8"));
+				assert.equal((await stat(`${output}.aidr-owned`)).isFile(), true);
+			}
+			assert.equal(JSON.parse(await readFile(f.health, "utf8")).status, scenario === "verified" ? "ok" : "failed");
+		});
+	}
 });
 
 test("scheduled cold backup places its recovery journal in the private spool", async () => {

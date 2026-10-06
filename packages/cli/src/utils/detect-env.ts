@@ -1,4 +1,3 @@
-import { execSync } from "node:child_process";
 import { accessSync, constants } from "node:fs";
 import { join } from "node:path";
 import { cwd } from "node:process";
@@ -10,13 +9,10 @@ export async function detectEnvironment(
 	home: string = resolvePath("~"),
 	projectRoot: string = cwd(),
 ): Promise<Environment> {
-	const hasNode = checkNode();
-	const nodeVersion = hasNode ? getNodeVersion() : "unknown";
-
 	return {
 		agent: detectAgent(home, projectRoot),
-		hasNode,
-		nodeVersion,
+		hasNode: true,
+		nodeVersion: process.version,
 		projectRoot,
 	};
 }
@@ -37,10 +33,9 @@ function detectAgent(home: string, projectRoot: string): Environment["agent"] {
 	}
 
 	const statuses = detectConnectorStatuses(home);
-	if (statuses.some((status) => status.id === "opencode" && status.state !== "not_detected"))
-		return "opencode";
-	if (statuses.some((status) => status.id === "codex" && status.state !== "not_detected"))
-		return "codex";
+	const detected = statuses.find((status) => status.state === "installed")
+		?? statuses.find((status) => status.state !== "not_detected");
+	if (detected) return detected.id === "claude-code" ? "claude" : detected.id;
 
 	// Check for agent-specific files
 	try {
@@ -58,21 +53,4 @@ function detectAgent(home: string, projectRoot: string): Environment["agent"] {
 	}
 
 	return "unknown";
-}
-
-function checkNode(): boolean {
-	try {
-		execSync("node --version", { stdio: "pipe" });
-		return true;
-	} catch {
-		return false;
-	}
-}
-
-function getNodeVersion(): string {
-	try {
-		return execSync("node --version", { stdio: "pipe" }).toString().trim();
-	} catch {
-		return "unknown";
-	}
 }

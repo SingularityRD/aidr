@@ -67,14 +67,19 @@ class AIGClient:
         timeout: float = 30.0,
     ):
         normalized_url = base_url.strip().rstrip("/")
-        parsed_url = urlparse(normalized_url)
-        invalid_url = (
-            parsed_url.scheme not in {"http", "https"}
-            or not parsed_url.hostname
-            or parsed_url.username
-            or parsed_url.password
-            or parsed_url.fragment
-        )
+        try:
+            parsed_url = urlparse(normalized_url)
+            invalid_url = (
+                parsed_url.scheme not in {"http", "https"}
+                or not parsed_url.hostname
+                or parsed_url.username
+                or parsed_url.password
+                or parsed_url.fragment
+                or parsed_url.query
+            )
+            parsed_url.port  # Reject malformed/out-of-range ports before HTTPX initialization.
+        except ValueError:
+            invalid_url = True
         # Keep a malformed environment value from turning /health into a
         # framework 500.  The inert loopback endpoint is never contacted when
         # `_configuration_error` is set; callers receive a redacted bridge
@@ -119,7 +124,7 @@ class AIGClient:
         secret = os.getenv("AIG_AGENT_SHARED_SECRET", "").strip()
         if len(secret) < 32:
             raise AIGClientError("AIG worker authentication is not configured")
-        response = await self._client.get(
+        response = await self._request("GET",
             "/api/v1/internal/readiness",
             headers={"X-AIG-Agent-Token": secret},
             timeout=5.0,
@@ -215,9 +220,8 @@ class AIGClient:
                 raise
             raise AIGSubmissionAmbiguous("AIG submission response was unusable") from exc
 
-        session_id = data.get("session_id") or (
-            data.get("data", {}).get("session_id")
-        )
+        container = data.get("data") if isinstance(data.get("data"), dict) else {}
+        session_id = data.get("session_id") or container.get("session_id")
         if not isinstance(session_id, str) or not _TASK_ID_RE.fullmatch(session_id):
             # Do not include the raw upstream body: an error response can
             # echo eval-model tokens or target Authorization headers.
@@ -230,7 +234,7 @@ class AIGClient:
         """Request upstream cancellation without exposing AIG's raw response."""
 
         self._ensure_configured()
-        response = await self._client.post(
+        response = await self._request("POST",
             f"/api/v1/app/tasks/{session_id}/terminate",
             headers={"username": username},
             json={},
@@ -242,6 +246,7 @@ class AIGClient:
     @retry(
         stop=stop_after_attempt(2),
         wait=wait_exponential(multiplier=1, min=1, max=5),
+        reraise=True,
     )
     async def get_task_status(self, session_id: str) -> Dict[str, Any]:
         """
@@ -251,7 +256,7 @@ class AIGClient:
         execution status and any accumulated log output.
         """
         self._ensure_configured()
-        response = await self._client.get(
+        response = await self._request("GET",
             f"/api/v1/app/taskapi/status/{session_id}",
         )
         body = self._parse_response(response, f"get task status {session_id}")
@@ -263,6 +268,7 @@ class AIGClient:
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
+        reraise=True,
     )
     async def get_task_result(self, session_id: str) -> Dict[str, Any]:
         """
@@ -273,7 +279,7 @@ class AIGClient:
         running — callers should poll ``get_task_status`` first.
         """
         self._ensure_configured()
-        response = await self._client.get(
+        response = await self._request("GET",
             f"/api/v1/app/taskapi/result/{session_id}",
         )
         try:
@@ -284,8 +290,10 @@ class AIGClient:
             # upstream outage and must not become a 502/500 in the bridge.
             try:
                 pending_body = response.json()
-            except (TypeError, ValueError):
-                raise
+            except (TypeError, ValueError, RecursionError) as exc:
+                raise AIGClientError("AIG returned an invalid task result") from exc
+            if not isinstance(pending_body, dict):
+                raise AIGClientError("AIG returned a non-object task result")
             message = str(pending_body.get("message") or "").lower()
             if pending_body.get("status") == 1 and "not available yet" in message:
                 # AIG v4 can leave the result endpoint in its generic
@@ -305,7 +313,9 @@ class AIGClient:
                     # generic; operators can inspect the authenticated AIG
                     # log stream separately.
                     return {"status": "failed", "error": "AIG task failed"}
-                return {"status": normalized_status}
+                # A terminal status can arrive before its result is persisted.
+                # Do not report an empty successful scan until evidence exists.
+                return {"status": "running"}
             raise
         data = body.get("data") if isinstance(body.get("data"), dict) else body
 
@@ -345,11 +355,11 @@ class AIGClient:
         # every readiness probe.
         try:
             self._ensure_configured()
-            vulnerabilities = await self._client.get(
+            vulnerabilities = await self._request("GET",
                 "/api/v1/knowledge/vulnerabilities?page=1&size=1",
                 timeout=10.0,
             )
-            mcp = await self._client.get(
+            mcp = await self._request("GET",
                 "/api/v1/knowledge/mcp?page=1&size=100",
                 timeout=10.0,
             )
@@ -361,9 +371,13 @@ class AIGClient:
             mcp_data = mcp_body.get("data") or {}
             if not isinstance(vulnerability_data, dict) or not isinstance(mcp_data, dict):
                 raise AIGClientError("AIG knowledge API returned an invalid data shape")
+            cve_count = vulnerability_data.get("total", 0)
+            items = mcp_data.get("items", [])
+            if isinstance(cve_count, bool) or not isinstance(cve_count, int) or cve_count < 0 or not isinstance(items, list):
+                raise AIGClientError("AIG knowledge API returned invalid dataset metadata")
 
             mcp_categories = []
-            for item in mcp_data.get("items", []):
+            for item in items:
                 if not isinstance(item, dict):
                     continue
                 info = item.get("info") if isinstance(item.get("info"), dict) else item
@@ -381,7 +395,7 @@ class AIGClient:
 
             return {
                 "rules_version": os.getenv("AIG_SOURCE_VERSION", "unknown"),
-                "cve_count": int(vulnerability_data.get("total") or 0),
+                "cve_count": cve_count,
                 "mcp_risk_categories": mcp_categories,
                 "threat_rules": [],
                 "last_updated": datetime.now(timezone.utc).isoformat(),
@@ -421,13 +435,21 @@ class AIGClient:
             url += "?verify=false"
 
         self._ensure_configured()
-        response = await self._client.post(
+        response = await self._request("POST",
             url,
             json={"content": yaml_content},
         )
         return self._parse_response(response, f"save agent config {name}")
 
     # ── Internal ────────────────────────────────────────────────────────────
+
+    async def _request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
+        """Keep transport failures within the public upstream-error contract."""
+
+        try:
+            return await self._client.request(method, url, **kwargs)
+        except httpx.HTTPError as exc:
+            raise AIGClientError("AIG upstream request failed") from exc
 
     def _ensure_configured(self) -> None:
         if self._configuration_error:
@@ -453,7 +475,7 @@ class AIGClient:
             ) from exc
         except httpx.RequestError as exc:
             raise AIGClientError(f"AIG upstream unavailable during {context}") from exc
-        except (TypeError, ValueError) as exc:
+        except (TypeError, ValueError, RecursionError) as exc:
             raise AIGClientError(f"Invalid response from AIG during {context}") from exc
 
         # Check AIG's own status field

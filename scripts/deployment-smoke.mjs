@@ -12,7 +12,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const dir = resolve(process.argv[2] || ".aidr-deploy");
 const manifest = JSON.parse(readFileSync(join(dir, "deployment.json"), "utf8"));
 const base = new URL(manifest.supabase_url);
-if (!manifest.development || !["localhost", "127.0.0.1"].includes(base.hostname)) throw new Error("Smoke fixtures require an isolated loopback development installation");
+if (!manifest.development || !["http:", "https:"].includes(base.protocol) || !["localhost", "127.0.0.1", "[::1]"].includes(base.hostname)) throw new Error("Smoke fixtures require an isolated loopback development installation");
 if (process.argv.length > 3 && (process.argv.length !== 5 || process.argv[3] !== "--candidate-inventory")) {
 	throw new Error("Usage: node scripts/deployment-smoke.mjs <deployment> [--candidate-inventory <release-inventory.json>]");
 }

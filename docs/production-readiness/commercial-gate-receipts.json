@@ -14,16 +14,15 @@
     "scope": "Registry hard gate COM-001 (commercial): SKU, price, metering, currency/tax, deployment, region, retention, SLA, support, licence rights, renewal, cancellation and offboarding fixed for one Release Candidate. No approved manifest is held, so this receipt records the gate and its inputs only.",
     "limitations": [
       "No approved Commercial Release Manifest exists for a Release Candidate; the registry still records releaseCandidate null.",
-      "The only manifest artefact in the repository is docs/production-readiness/commercial-release-manifest-template.md and it is marked DRAFT / NOT APPROVED with price, support, residency and offboarding rows explicitly not held.",
+      "The Commercial Release Manifest and enterprise order templates are now source-prefilled review drafts (2026-10-06), with proposed channel/SKU identifiers but no approved price, tax, contract terms, signed order or accepted candidate.",
       "Nothing in this receipt approves a price, a tax treatment or a contract term."
     ],
     "external_inputs": [
-      "named Commercial/Sales approver",
-      "named Finance/Billing approver",
-      "approved Commercial Release Manifest bound to one Release Candidate",
-      "sample signed quote and order",
-      "quote-to-offboarding rehearsal record with timestamps",
-      "signed-manifest verification output"
+      "Named Commercial/Product and Finance approvers; signed catalogue selecting one deployment path, SKU/provider product-price IDs, quantity bounds, currency/tax, term and cancellation rules",
+      "Completed approved Commercial Release Manifest and signed quote/order linked to its exact candidate inventory SHA-256",
+      "Approved support/SLA, actual region/retention/subprocessor and licence-rights annexes for that order",
+      "Timestamped provider or invoice-authority quote-to-entitlement, quantity-change, revoke, export and offboarding rehearsal",
+      "Production publisher signature and independent signed-manifest verification receipt"
     ]
   },
   {
@@ -42,15 +41,15 @@
     "limitations": [
       "The presence of LICENSE, NOTICE and THIRD_PARTY_NOTICES in the repository is inventory evidence only and is not a legal conclusion.",
       "Chain-of-title, contributor and vendor provenance records are not held.",
-      "A completed exception register with recorded expiry dates is not held; the repository template remains open with expiry unknown.",
+      "The current register has two named open dependency-policy reviews (certifi 2026.7.22 and pure psycopg 3.2.10), with owner/approver/expiry unknown. Thirty exact wheel packages and 36 licence texts are archived; a scoped actual-image inventory supplies 17 system-libpq dependency paths and 41 copyright/common-license texts. Exact candidate/full-image notice/source obligations and a Legal disposition remain unresolved. The removed binary wheel's 14-library record is historical. No exception is granted.",
       "docs/production-readiness/privacy-legal-review-template.md records counsel approval as not held."
     ],
     "external_inputs": [
-      "named Legal counsel approver",
-      "signed counsel approval bound to one Release Candidate",
-      "chain-of-title and contributor/source provenance records",
-      "lockfile-derived SBOM and third-party notice archive for the shipped packages",
-      "exception register entries with expiry dates"
+      "Named Legal reviewer and signed exact-candidate distribution-rights disposition",
+      "Employee/contractor/contributor chain-of-title and vendor pinned revision/source records",
+      "Exact shipped npm/PyPI/native/container/upstream SBOMs, licence texts and required notices/source obligations, with artifact hashes",
+      "Ordinary compliance/removal/replacement disposition for certifi MPL-2.0 and pure psycopg LGPLv3, plus actual current system-native source/notice obligations; review pack docs/production-readiness/bridge-notice-review-pack-2026-10-06.md; no blanket waiver",
+      "If an actual exception is approved: named owner/approver, dated immutable evidence, scope, mitigation and explicit expiry in license-exception-register.json"
     ]
   },
   {
@@ -69,16 +68,15 @@
     "limitations": [
       "No field-level data-flow matrix has been measured against a deployed build.",
       "No DPA, TOM or SCC approval is held.",
-      "docs/production-readiness/data-flow-privacy-v6.md and the privacy/legal template remain unapproved drafts.",
+      "The privacy matrix now contains 25 source-inventory flows, including separate Clerk/Firestore/Polar, contact, private text-service and MCP paths. Privacy/legal/DPA/subprocessor/retention drafts are source-prefilled but remain unapproved and unmeasured on a deployed candidate.",
       "Privacy claims in the registry remain blocked until this gate closes."
     ],
     "external_inputs": [
-      "named Privacy/DPO approver",
-      "field-level data-flow matrix measured from the deployed build",
-      "payload assertion report from an instrumented environment",
-      "DPA/TOM/SCC approval from named Legal counsel",
-      "subprocessor and region list",
-      "deletion and export receipts from a real tenant"
+      "Named Privacy/DPO, Legal and Security approvers for the selected deployed path",
+      "Enabled-flow list and exact-candidate redacted request/response capture for each flow and opt-out; source inventory paths are not measurement",
+      "Per enabled flow: actual domains/providers and legal entities, processing/backup regions, access owners, purpose/basis, numeric retention and deletion/hold exceptions",
+      "Executed DPA/TOM and applicable transfer instrument for actual parties, with contract version/hash and approved customer notice",
+      "Real tenant export/offboarding and separate provider/backup deletion/expiry receipts; retain failures/limitations"
     ]
   },
   {
@@ -95,17 +93,17 @@
     "reviewer_role": "REQUIRED",
     "scope": "Registry hard gate COM-004 (billing-entitlements): price and entitlements enforced by one provider-of-record surviving order, seat change, invoice/reconciliation, cancellation, revocation, export and deletion. No provider decision, invoice or revocation receipt is held.",
     "limitations": [
-      "No provider-of-record decision is held; the dashboard defaults to invoice requests without granting entitlement.",
+      "No approved provider/catalogue or live settlement acceptance is held. The Supabase path has invoice and optional provider routes; the separate managed app has gated Polar source. Source presence or an invoice request does not activate entitlement.",
       "No real invoice, reconciliation or dunning record exists.",
       "No revocation or deletion receipt from a billing provider exists.",
-      "Self-service checkout is deliberately disabled and is not evidence for this gate."
+      "Checkout is gated pending actual provider configuration and Finance acceptance; local provider/database fixtures are not payment or production entitlement evidence."
     ],
     "external_inputs": [
-      "named Finance/Billing approver",
-      "provider-of-record decision",
-      "real invoice and reconciliation example",
-      "SKU and seat-change entitlement test run against the provider",
-      "revocation and deletion receipts from the provider"
+      "Named Finance/Billing approver selecting provider and actual product/price IDs separately for Supabase and managed Polar paths",
+      "Approved test-mode/live provider account and webhook secrets outside source; scoped Finance authority for invoice path",
+      "Provider settlement/invoice and reconciliation exports, with actual identifiers redacted and linked to candidate/order",
+      "Seat-limit/change, duplicate/delayed/out-of-order webhook, cancellation/refund/expiry and revoke acceptance against actual provider/tenant",
+      "Provider record retention and customer export/deletion disposition with Finance/Legal sign-off"
     ]
   },
   {
@@ -125,14 +123,14 @@
       "No published support schedule, severity matrix or status page is operated as evidence.",
       "No ticket drill has been executed, so there are no timestamps to record.",
       "No on-call rota or escalation record exists.",
-      "docs/production-readiness/support-sla-template.md records every support row as not held."
+      "The support/SLA draft now contains working severity and consent/escalation procedures plus a runnable local ticket-receipt validator. Channel addresses, staff/coverage, contractual clocks and operated ticket evidence are still not held."
     ],
     "external_inputs": [
-      "named Support/Customer Success owner",
-      "published support schedule and severity SLA",
-      "timestamped ticket drill in the operated ticket system",
-      "reachable status, security and privacy URLs on the deployed domain",
-      "on-call escalation record naming real operators"
+      "Named Support owner, distinct primary/backup operators and tested escalation rota with real coverage hours/time zone/languages",
+      "Published customer ticket/security/status routes plus approved privacy/terms links on the deployed origin; rendered-link destination checks, not SPA-shell HTTP success",
+      "Approved severity mapping and acknowledgement/update/restoration clocks signed for the exact order/candidate",
+      "Redacted operated-system drill export with ticket ID, submitted/acknowledged/escalated/updated/closed UTC times, actual actors, status update or reason, candidate and evidence hashes; validate with scripts/verify-support-ticket-drill.mjs",
+      "Approved diagnostic purpose/recipient/consent, least-privilege access and local/recipient deletion receipts"
     ]
   },
   {
@@ -159,7 +157,8 @@
       "real-host E2E reports for Claude Code, Cursor, VS Code, OpenClaw and OpenCode",
       "official code-signing certificate or notarization credentials",
       "authenticated private-registry install logs",
-      "rollback and disable drill records"
+      "rollback and disable drill records",
+      "Exact accepted host/OS/version, signer fingerprint, package digest, supported input/output limitation and real malicious-side-effect plus benign-twin result per connector; use external-gates-runbook.md and native-host matrix"
     ]
   },
   {
@@ -186,7 +185,8 @@
       "signed cloud provider and data-residency contracts for EU, US and APAC",
       "tenant placement and cross-region negative test results from real regional deployments",
       "DPA/SCC/TOM approval per region",
-      "regional backup and deletion receipts"
+      "regional backup and deletion receipts",
+      "Customer order's actual region selection and per-provider processing/backup/onward-transfer geography; EU/US/APAC registry intent is not an observed deployment. Any launch-scope change requires actual Product/Legal approval"
     ]
   },
   {
@@ -215,7 +215,8 @@
       "invoice-to-entitlement test against the real billing provider",
       "signed package install from the authenticated private registry",
       "customer entitlement and revocation test",
-      "air-gapped delivery procedure validated on a disconnected host"
+      "air-gapped delivery procedure validated on a disconnected host",
+      "Production registry identity/access policy and independent signer/public-key delivery; actual customer download/install/revoke evidence, and disconnected-host drill for sold offline scope"
     ]
   },
   {
@@ -244,7 +245,8 @@
       "SLI query, denominator and observation window from production monitoring",
       "at least one complete monthly observation window of real availability data",
       "service-credit schedule approval",
-      "incident drill evidence with timestamps"
+      "incident drill evidence with timestamps",
+      "Use scripts/monthly-sli-report.mjs on real monitor exports with endpoint/region series, full-month denominator, explicit missing intervals and approved exclusions; preserve input/report hashes. Local arithmetic/self-test is not measured availability"
     ]
   },
   {
@@ -259,9 +261,9 @@
     "recorded_at_utc": null,
     "reviewer_name": "REQUIRED",
     "reviewer_role": "REQUIRED",
-    "scope": "Registry hard gate SEC-EXT-001 (independent-security): an independent penetration test or equivalent assessment with no unresolved critical/high finding for the sold Release Candidate and scope. No assessor has been engaged and no report exists.",
+    "scope": "Registry hard gate SEC-EXT-001 (independent-security): an independent penetration test or equivalent assessment with no unresolved critical/high finding for the sold Release Candidate and scope. No assessor engagement or independent report is supplied in this repository.",
     "limitations": [
-      "No independent assessor or penetration-test firm has been engaged.",
+      "No signed independent assessor engagement/scope record is supplied.",
       "No signed assessment report, scope statement or retest letter exists.",
       "Internal tests, dependency audits and static analysis are engineering evidence and are not an independent assessment.",
       "The gate stays open until an external report exists for the same candidate."
@@ -270,7 +272,8 @@
       "named independent assessor or penetration-test firm",
       "signed independent assessment report with scope and dates",
       "remediation and retest letter for the same Release Candidate",
-      "exception approvals with expiry for any high finding"
+      "exception approvals with expiry for any high finding",
+      "Assessor reviews the same source/artifact digest and sold managed/self-hosted/host boundaries, two owner-confirm secret-history items, privileged operator trust and unaccepted limitations; questionnaire/internal tests are input only"
     ]
   },
   {
@@ -285,9 +288,9 @@
     "recorded_at_utc": null,
     "reviewer_name": "REQUIRED",
     "reviewer_role": "REQUIRED",
-    "scope": "Registry hard gate POV-001 (customer-validation): a named customer or investor evaluator completing the signed Evaluation Charter, independent sandbox/PoV, mandatory scenarios, limitations review and acceptance or reservations for the same Release Candidate. No evaluator has been engaged and no acceptance is recorded.",
+    "scope": "Registry hard gate POV-001 (customer-validation): a named customer or investor evaluator completing the signed Evaluation Charter, independent sandbox/PoV, mandatory scenarios, limitations review and acceptance or reservations for the same Release Candidate. No signed evaluator engagement or acceptance record is supplied.",
     "limitations": [
-      "No named customer or investor evaluator has been engaged.",
+      "No named evaluator engagement/charter is supplied.",
       "No signed Evaluation Charter or independent run report exists.",
       "No intervention/deviation log exists.",
       "No customer result, acceptance or written reservations exist.",
@@ -298,7 +301,8 @@
       "signed Evaluation Charter",
       "independent sandbox or PoV run report",
       "intervention and deviation log",
-      "customer acceptance result or written reservations"
+      "customer acceptance result or written reservations",
+      "Customer's named acceptance authority and exact supported scope/host/providers, allowed benign/malicious scenarios, failure/rollback criteria and redacted observed outcomes in pov-001-customer-acceptance-run-sheet.md"
     ]
   },
   {
@@ -352,7 +356,8 @@
       "registry snapshot hash bound to the same Release Candidate",
       "build-output claim scan JSON from the release build",
       "claim-to-evidence links for every release-facing claim",
-      "named Legal review of claim wording"
+      "named Legal review of claim wording",
+      "Review every source-prefilled draft statement against actual accepted capability/region/support/model coverage; no %100-ready or source-test-as-customer-acceptance claim"
     ]
   }
 ]

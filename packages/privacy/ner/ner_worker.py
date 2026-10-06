@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Optional HF token-classification worker. No network, auto-download, pickle or remote code.
-Model inference has NOT been executed in the delivered environment; see docs/VALIDATION.md.
+Pinned public-candidate CPU inference was executed on 2026-10-06; see docs/MODEL_PROVIDER.md.
 """
 from __future__ import annotations
 import argparse

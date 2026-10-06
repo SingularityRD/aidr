@@ -2,14 +2,19 @@
  * Control plane client (optional).
  * Sends best-effort telemetry (audit events) for the dashboard and licensing.
  *
- * Fail-open: any error returns false and never blocks local detection.
+ * Network failures are returned to callers. Enrollment reports uncertain
+ * transaction outcomes so callers can stop issuance and request operator repair.
  */
 
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { resolvePath } from "../config.js";
 import { isDegradedSafeMode } from "../integrity/degraded-safe-mode.js";
-import { redactRemoteEvent } from "../managed.js";
+import {
+	type ManagedState,
+	managedTelemetryQueueNamespace,
+	redactRemoteEvent,
+} from "../managed.js";
 import {
 	DurableTelemetryQueue,
 	type TelemetryEnqueueResult,
@@ -97,6 +102,7 @@ export interface ControlPlaneClientOptions {
 	/** Override used by tests and embedded runtimes with a dedicated state root. */
 	telemetryQueueRoot?: string;
 	telemetryQueue?: Omit<TelemetryQueueOptions, "directory">;
+	telemetryQueueBinding?: ManagedState["telemetry_queue"];
 }
 
 function isDeliveredTelemetryReplay(enqueued: TelemetryEnqueueResult, eventCount: number): boolean {
@@ -120,6 +126,8 @@ export interface ControlPlaneEnrollResult {
 	status?: number;
 	error?: string;
 	body?: Record<string, unknown>;
+	/** A transport failure or consumed-token response does not prove rollback. */
+	enrollment_outcome?: "not_committed" | "unknown" | "committed";
 }
 
 export interface ControlPlanePacksManifestResult {
@@ -493,9 +501,12 @@ export class ControlPlaneClient {
 	private telemetryQueue(iid: string): DurableTelemetryQueue {
 		// Bind queued data to endpoint, credential and installation. A credential
 		// moved to another tenant must never flush the previous tenant's records.
-		const namespace = createHash("sha256")
-			.update(`${this.baseUrl}\0${this.apiKey}\0${iid}`)
-			.digest("hex");
+		const namespace = managedTelemetryQueueNamespace(
+			this.options.telemetryQueueBinding,
+			this.baseUrl,
+			this.apiKey,
+			iid,
+		);
 		const root = this.options.telemetryQueueRoot ?? resolvePath("~/.singularity-aidr/telemetry");
 		return new DurableTelemetryQueue({
 			...this.options.telemetryQueue,
@@ -595,16 +606,20 @@ export class ControlPlaneClient {
 
 	/**
 	 * Exchanges a one-time enrollment token for an API key (and optionally a signed entitlement).
-	 * Fail-open: callers should treat failures as "not enrolled yet".
+	 * Unknown/committed failures require operator repair: the server stores only
+	 * the key hash and cannot recover a lost plaintext issuance response.
 	 */
 	async enroll(payload: {
 		iid: string;
 		agent_runtime?: string;
 		agent_runtime_version?: string;
 	}): Promise<ControlPlaneEnrollResult> {
-		if (!this.baseUrl) return { ok: false, error: "missing_endpoint" };
-		if (!this.apiKey?.trim()) return { ok: false, error: "missing_api_key" };
-		if (isDegradedSafeMode()) return { ok: false, error: "degraded_safe_mode" };
+		if (!this.baseUrl)
+			return { ok: false, error: "missing_endpoint", enrollment_outcome: "not_committed" };
+		if (!this.apiKey?.trim())
+			return { ok: false, error: "missing_api_key", enrollment_outcome: "not_committed" };
+		if (isDegradedSafeMode())
+			return { ok: false, error: "degraded_safe_mode", enrollment_outcome: "not_committed" };
 
 		try {
 			const response = await fetch(controlPlaneUrl(this.baseUrl, "enroll"), {
@@ -638,14 +653,18 @@ export class ControlPlaneClient {
 					status: response.status,
 					error: typeof body?.error === "string" ? (body.error as string) : "http_error",
 					body,
+					enrollment_outcome:
+						body?.enrollment_outcome === "not_committed" || body?.enrollment_outcome === "committed"
+							? body.enrollment_outcome
+							: "unknown",
 				};
 			}
-			return { ok: true, status: response.status, body };
+			return { ok: true, status: response.status, body, enrollment_outcome: "committed" };
 		} catch (e) {
 			this.logger.debug("Control plane enroll failed", {
 				error: redactTelemetryString(String(e)),
 			});
-			return { ok: false, error: "request_failed" };
+			return { ok: false, error: "request_failed", enrollment_outcome: "unknown" };
 		}
 	}
 

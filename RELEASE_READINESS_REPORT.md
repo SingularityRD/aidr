@@ -1,14 +1,177 @@
 # Singularity AIDR — Release Readiness Report
 
-> **Güncel v4 kayıt:** [ilk müşteri v4 mühendislik adayı](docs/production-readiness/2026-09-12-customer-candidate-v4.md). 202 dosyada 3.010 test geçti, 1 canlı provider testi atlandı; 24 migration ve 11 servislik taze yerel prova yapıldı. 63 bulgudan 50'si yerel olarak kapalı, 13'ü açık/kısmi/dış bağımlı. Genel production/satış kararı **NO-GO**. Aşağıdaki önceki tur sayıları tarihsel kayıttır.
+## Son inceleme — 6 Ekim 2026, kalan eksikler turu
 
-> **Latest verification: 2026-09-11.** See
-> [delivery verification](docs/production-readiness/2026-09-11-delivery-verification.md)
-> and [current subfeature inventory](FEATURE_INVENTORY.md). The current suite is
-> 169 files / 2721 passed / 1 skipped; self-hosted installation smoke is 29/29.
-> The backlog now contains 52 findings (38 locally verified closed, 14 open or
-> blocked). Production/commercial acceptance remains NO-GO. Earlier rounds below
-> are historical evidence, not current capability status.
+**Temel ürün çalışıyor.c.** Bu turda tespit edilen yerel uygulama kusurları giderildi; aşağıdaki üç kapsam bağlantısı ile gerçek ortam, model, yayıncı ve müşteri kabulü açık bırakıldı. Ana depo tabanı `7f3ec0ad009abf5b032b8116b296d8604fee884e`, landing tabanı `e039be0b01d6a9baf04e2d83cbeeb9874c6f8a93`; sonuçlar henüz commit edilmemiş çalışma ağaçlarına aittir. Canlı yayın ve kabul edilmiş release candidate yoktur.
+
+### Bu turda tamamlanan uygulamalar
+
+- **Davranış öğrenmesi:** yalnız bağımsız onay ve imzalı, tek kullanımlık gerçek execution receipt ile kalıcı öğrenme; tenant/corpus ayrımı ve tekrar kullanım sınırı. Sıradan hook callback'i öğrenme yetkisi üretmez. Windows'ta desteklenmeyen arka plan öğrenme yolu açıkça sınırlandırılır.
+- **MCP:** iki yönlü protokol, oturum/yanıt kimliği, replay, kapasite ve gerçek RPC girdi/çıktı denetimi. İmzalı paketin public library export'u ve private mTLS servis bağlantısı çalışır. Desteklenmeyen opak/binary içerik yetenekli tarayıcı yoksa reddedilir.
+- **Discovery ve müdahale:** AWS/Azure/GCP/Intune için kapsamı ve sayfalaması sınırlı gerçek adapterler; exact-device imzalı komut, durable worker journal, dar yetkili otomasyon ve rollback. Çalışan worker kaydı 120 saniyeden sonra geçersizleşir; hatalı sorgu, replay veya restart bu süreyi uzatmaz. Durdurma kaydı yaşından bağımsız korunur.
+- **Kimlik ve yönetim:** iki önceden kayıtlı owner ile SAML kesintisi kurtarma, atomik tek kullanım ve audit; landing'de native SSO/Directory Sync yapılandırma ve grup–rol yaşam döngüsü. Her istekte güncel native Clerk kurum üyeliği ve deprovisioned/banned durumu denetlenir. Operator directory yapılandırması desteklenmeyen API yanıtında durur; manuel veya başka-directory grant'inin seçilmiş directory'den geldiği garantisi T19'da açık kalır.
+- **Gizlilik:** gerçek OIDC/JWKS/PKCE/nonce ve mTLS broker sözleşmesi, durable lease, final-send kontrolü, kaynak label/ACL ve revision fence; kurulu imzalı MCP üzerinden metin/metadata denetimi. Dar PDF/DOCX yolu yeni temiz TXT üretir; PCM16 yolu bütün sesi kaldırır. Bunlar format koruyan Office, ASR veya video işleme vaadi değildir.
+- **Dağıtım:** 14 Windows payload için sabit publisher certificate ve bağımsız hash/receipt doğrulamalı Authenticode hazırlama/teslim hattı; doğru HTTPS SignTool timestamp ve geçici CI certificate custody. Müşteri kitinin öğrenme, paketleme, Codex, cloud discovery, SAML kurtarma ve response rehberleri gerçek teslim yollarına bağlıdır.
+- **Bağımlılık ve kanıt:** bridge'de eski native binary yerine sistem libpq, güncel cryptography/OpenSSL, gerçek TLS doğrulaması; saf Python/native/OS lisans envanteri. Privacy CI/RC kapısı bütün testleri çalıştırır ve skip/TODO/expected-failure olan sonucu reddeder. Native IDE harness'i bütün vakalar geçse bile host crash/timeout/nonzero çıkışını reddeder.
+
+### Son doğrulama
+
+| Kontrol | Sonuç ve sınır |
+|---|---|
+| Ana suite ve coverage | **429 dosya, 6857 pass, 0 fail, 6 Windows POSIX skip**; satır %85,13, statement %81,48, branch %76,45, function %85,70. Mevcut eşikler ve test süreleri korunur. [Sonuç](.tmp-test/production-completion-2026-10-06/coverage-results.json). |
+| Core coverage | **198 dosya, 3649 pass, 0 fail, 4 POSIX skip**; satır %86,10, statement %82,79, branch %77,30, function %87,42. Daha yüksek core eşikleri geçer. [Sonuç](.tmp-test/production-completion-2026-10-06/core-coverage-results.json). |
+| Gerçek Linux tamamlayıcı testi | Windows'taki seçilmiş altı POSIX vaka **6/6**, 0 fail/skip, gerçek Linux Node 22.16'da geçti. Filtre dışındaki 84 vaka bu koşuda çalıştırılmış sayılmaz; gerçek Secret Service kabulü değildir. [Kanıt](.tmp-test/production-followup-2026-10-06/linux-six-posix-third-summary.json). |
+| Güncel veritabanı ve operasyon | **139 migration**; offboarding **61/61**, retention **43/43**, SAML yönetimi **13/13**, kesinti kurtarma **9/9**, Edge response/identity **131**. Ayrı, örtüşen suite'lerdir; gerçek PostgreSQL testleri skip vermedi. [Güncel native PostgreSQL kanıtı](.tmp-test/production-followup-2026-10-06/operations-139-final/native-postgres-results.json). |
+| Gerçek self-hosted prova | **11 sağlıklı servis, 92/92 gerçek API kontrolü**. Doctor: **165/168 PASS, 1 FAIL, 2 UNVERIFIED**. Liveness 200; readiness **503**: gerçek TLS/signing/backup/queue sağlık kanıtı ve host timer kabulü açık. Synthetic loopback credentials kullanıldı; test kaynakları temizlendi. [Kanıt](.tmp-test/production-followup-2026-10-06/operations-139-final/selfhost139/final-results.json). |
+| Privacy | Linux Node **1407/1407**, kurulu imzalı MCP/mTLS **6/6**, Python model güvenliği **47/47**, hedefli Windows **37/37**; bu ayrı suite'lerde 0 skip. Son release output/qualification **30/30**. Gerçek paket: **267 dosya**, 179 kod dosyası, 6 bin, 0 source map/directive. CI/RC skip ve TODO'yu reddeder; gerçek GitHub/kurum kabulü açık. İki gerçek TR/EN model denemesi kalite kapısını geçemedi; tüm ürün egress'i kapsanmıyor. [Sınırlar](packages/privacy/reports/platform/INTEGRATION-2026-10-06.md); [paket envanteri](.tmp-test/production-completion-2026-10-06/privacy-package-inventory.json). |
+| Bridge gerçek imaj ve tam güvenlik taraması | Yeni gerçek imajda **98/98**, 0 fail/error/skip; nonroot **verify-full PostgreSQL TLS 1.3** geçti. 30 runtime paket lock ile birebir; pip/ensurepip yok. Tam OS/library taramasındaki **7 giderilebilir satır kapandı**. Kalan **241 satır / 111 farklı ID / 52 HIGH**, 0 CRITICAL; taramada mevcut fixed-version 0. Bu güvenlik kabulü değildir: **NO-GO**. [Kalıcı bütün bulgular](docs/production-readiness/bridge-image-security-2026-10-06.md). |
+| Landing | **68 dosya, 595 test**, lint/typecheck ve **45 sayfalık production build** geçti. Güncel standalone tarayıcı prova ve runtime capability **30/30** geçti. Demo credentials kullanıldı; gerçek Clerk/kurum directory kabulü açık. Production audit 0; development zincirinde yamalanmamış **1 HIGH**. [Kanıt](../aidr-landing/docs/verification-followup-2026-10-06.json). |
+| Gerçek native hostlar | **Codex 0.153.2: 2/2**, **OpenCode 1.18.32: 6/6**, **Cursor 3.21.18 extension host: 8/8**, son derlenmiş çıktılara ve native binary SHA'larına bağlı. Cursor agent dispatch/model-output yolu ve eksik Claude/VS Code/OpenClaw/native SDK matrisi doğrulanmadı. Loopback model peer deterministiktir; gerçek ücretli model testi değildir. Harness **20/20** + ayrı mevcut JUnit parser **1/1**. Tam matris **NO-GO**. [Bağlı kanıt](.tmp-test/production-followup-2026-10-06/native-third-final-results.json). |
+| Release ve gerçek paket kurulumu | **10 release contract / 10 consumer**, **10/10 gerçek temiz kurulum**, 0 fail/skip; enforcement **90/90**, Codex verifier **11/11**. Private çıktı ayrı doğrulandı. Signed MCP factory, bağımsız trust ve tamper reddi gerçek disposable consumer'da çalıştı. Çıktı unsigned developer release'dir; test fixture imzası production publisher değildir. [Kurulum](.tmp-test/production-completion-2026-10-06/package-install.log). |
+| Teslim ve koruma sözleşmeleri | Customer kit **15/15**, supply-chain **66/66**, final custody **13/13**, Windows Authenticode sahibinin ayrı suite'i **73/73**. Worker freshness **129/129**, core barrier **36/36**, SDK direct **6/6**. Örtüşen sonuçlar toplanmaz; gerçek publisher/TSA/MDM/cihaz aksiyonu kabulü açık. |
+| Tür, statik, lock ve dependency audit | Ana tür kontrolü, core test türleri, quality:static ve son lint/knip geçti. Lint **0 hata, 572 warning, 1 info**; kurallar korunur. İki repo frozen install geçti. Ana JS production/build audit ve landing production audit **0**; bu sayı OS/native güvenlik clearance'i değildir. [Son statik kontrol](.tmp-test/production-completion-2026-10-06/static-delivery-final.log). |
+| Secret ve repo hijyeni | Checksum doğrulanmış Gitleaks **8.30.1**: main **8169**, landing **269** güncel checkout dosyası PASS; canary testleri ve varsayılan kurallar korunur. Değişmeyen history **132 / 6** bulgu ile açık; iki main owner-confirmed gerçek-anahtar adayı için rotasyon ve Security kabulü beklenir. Repo hygiene ve diff-check PASS. [Son ana tarama](.tmp-test/production-completion-2026-10-06/secrets-current-main-final.log). |
+| SBOM ve lisans | Taze SBOM **216 component, 204 library, 30 Python**; **202 permissive / 2 review / 0 unknown**. Strict gate **exit 1**: certifi MPL-2.0 ve saf psycopg LGPL-3.0 review açık. Yeni gerçek imajdaki **17 native path / 41 notice, 110 OS package / 110 copyright / 26 common-license** malzemesi hash ile doğrulandı; bu Legal onayı değildir. [Review paketi](docs/production-readiness/bridge-notice-review-pack-2026-10-06.md). |
+
+İlk başarısız denemeler saklandı. Toplu testteki dokuz eski beklenti imzasız gözlemlerden öğrenme istiyordu; yalnız testler gerçek imzalı öğrenme sözleşmesine uyarlandı. Güvenlik kuralları, test süreleri, coverage eşikleri, secret tarama kuralları veya lisans kabulü gevşetilmedi. Örtüşen test sayıları toplanıp başarı yüzdesi üretilmez.
+
+### Açık kalan işler
+
+[Tam eksik listesi](PRODUCTION_SALES_GAPS.md) **59 iş paketini** mevcut düzeltme, kalan iş, sorumlu ve kabul koşuluyla içerir. **46 teknik/operasyon işinin 43'ünde yerel uygulama var ve saha kabulü açık; 3'ünde uygulama/entegrasyon kapsamı da açık.** Bunlar benzersiz hata sayısı değildir.
+
+| Kayıt | Kalan somut kapsam |
+|---|---|
+| T19 | Seçilmiş directory için güncel aktif üyeliğin native provider API ile doğrulanması; gerçek kurum IdP/SCIM/rol kaldırma kabulü. |
+| T37 | Kurum uygulamasının zorunlu privacy rotasına alınması, gerçek broker/CA/vault ve alternatif ağ çıkışlarını kapatan etkin OS/MDM/proxy politikası; bütün native/browser/provider yolları kapsanmıyor. |
+| T38 | Onaylı gerçek TR/EN PERSON/ADDRESS modeli ve bağımsız kurum gold corpus'u. İki gerçek public-model değerlendirmesi kalite eşiğini geçemedi; model başarısızlığı gizlenmedi. Satılacaksa format koruyan Office/PDF, gerçek ASR/video ve uzak kaynak ACL değişim bağlantıları ayrıca uygulanmalı. |
+
+**Bridge güvenlik kabulü de açık.** Tam OS/library taramasındaki yedi giderilebilir bulgu düzeltildi. Aynı tarama veri tabanıyla kalan **241 advisory/package satırının 52'si HIGH**, bunlar 12 farklı CVE'ye aittir; taramada mevcut sağlayıcı düzeltmesi yoktur. Bunların tamamı açık tutulur; bu durum güvenlik muafiyeti veya exploitation mümkün değildir kararı üretmez. [Tam güvenlik raporu](docs/production-readiness/bridge-image-security-2026-10-06.md) ve [ilk/son bütün bulgu listeleri](docs/production-readiness/evidence/bridge-image-security-2026-10-06.json) kalıcıdır. Landing geliştirme zincirindeki bir yamalanmamış HIGH da açıktır.
+
+**13 dış/ticari kayıt açık; production ve assisted-sale profillerinin her biri 12 zorunlu dış kapı içerir.** Gerçek publisher/private registry, desteklenen host/OS/architecture ve provider kabulü, history Security incelemesi ve gerçek anahtar rotasyonu, bağımsız pentest, offsite restore/RPO/RTO, paging/SIEM, gerçek kapasite/yanlış alarm ölçümü, destek işletimi ve hukuk/finans/PoV onayları gerekir. Bu yetkiler ve imzalar fixture ile üretilemez. [Gerçek model kanıtı](packages/privacy/docs/MODEL_PROVIDER_EVIDENCE.json), [private entegrasyon sınırları](packages/privacy/reports/platform/INTEGRATION-2026-10-06.md) ve [machine-readable son doğrulama](READINESS_BACKLOG.json) ayrı kanıttır.
+
+---
+
+## Önceki devam turu — 6 Ekim 2026
+
+> Tarihsel snapshot: aşağıdaki sayılar önceki devam turuna aittir. Güncel sonuçlar üstteki son inceleme ve READINESS_BACKLOG.json latestVerification alanıdır.
+
+**Sonuç: temel ürün güncel, izole self-hosted kurulumda çalışıyor; sınırsız production ve kurumsal satış kabulü hâlâ NO-GO.** Bu devam turu, 5 Ekim incelemesinden sonra kalan somut kod kusurlarını da giderir. Ana depo tabanı `7f3ec0ad009abf5b032b8116b296d8604fee884e`, landing tabanı `e039be0b01d6a9baf04e2d83cbeeb9874c6f8a93` olur; iki çalışma ağacındaki değişiklikler henüz commit edilmedi. İmzalı müşteri adayı, canlıya yayın veya müşteri kabulü oluşturulmadı.
+
+### Bu turda giderilen sorunlar
+
+- **DLP dış sorgudan önce çalışır.** Hassas girdi ve gönderilecek URL/artifact, reputation/paket/AMSI sorgularından önce denetlenir. Onay isteği daha güçlü yerel zararlı işlem/paket engelini zayıflatmaz; sonraki yerel tarama ilk onay kararını sessizce izne çeviremez. Davranış değerlendirmesi bir kez çalışır. Henüz eşlenmemiş cihaz, güven anahtarları yapılandırılmış olsa da yerel korumayı sürdürebilir.
+- **İmzalı tenant DLP desteklenen çıktı yollarına bağlandı.** Claude, OpenCode, OpenClaw ve açık SDK runtime adapteri yakalanmış policy/config/grant/revocation durumunu doğrular; teslimde mevcut durum yeniden kontrol edilir. Codex output API'si, Cursor/VS Code'un kısıtlı gözlem/durdurma kabiliyeti ve provider stream sınırları ayrıca belirtilir.
+- **Premium politika önbelleği güncel yetkiye bağlıdır.** Grant kaldırma, revoke, tenant/serial değişimi, expiry/grace ve pack/trust yolu değişimi eski çözülmüş paketin kullanımını durdurur. Operatörün yerel denylist'i ve ücretsiz yerel koruma korunur.
+- **Enrollment belirsizliğinde otomatik tekrar durur.** Başlangıç ve evaluator aynı özel, exclusive journal'ı kullanır; credential kalıcı kaydedilmeden journal kaldırılmaz. Kaybolmuş committed yanıt, timeout, crash ve eski eşzamanlı yazıcılar sınandı. Yetkili revoke ve yeni insan onayıyla aynı cihaz/koltuk üzerinden yeniden eşleme gerçek PostgreSQL'de doğrulandı; hash-only anahtar plaintext olarak geri açılmaz.
+- **SAML politika yönetimi iki owner gerektirir.** Mevcut AAL2/provider-qualified oturumlar, sabit beş dakikalık talep, eski/yeni provider CAS, atomik consume/audit, owner promotion yarışları ve hold/offboarding cascade'i API ve dashboard'da bağlıdır. Native SAML testi CI/RC'de zorunludur.
+- **Yönetilen landing'de kurum yetkisi eklendi.** Sabit tenant storage anchor, güncel Clerk üyelik/rolleri, iki ayrı admin politika onayı ve stale/personal fallback reddi vardır. Kurum bağlamak mevcut cihaz kimliklerini, koltukları ve ödeme/deneme dönemini değiştirmez. Desteklenmeyen kurulum komutu ve kopuk kod üretimi kaldırıldı; onaylı kit ve host'un döndürdüğü gerçek device URL/code kullanılır.
+- **Privacy için dar mTLS metin servisi vardır.** Tek tenant/provider, zorunlu defense NER ve broker oturumu ile başlar; eksik gerçek ayarda durur. Ayrı MCP yürütücüsü metin, structuredContent ve metadata'yı denetleyip hassas yanıtı saklar. Model qualification temiz negatiflerin TR/EN kapsamını ve yapılandırılabilir observed false-alarm sınırını denetler; bütün temiz örnekleri engelleyen model başarılı sayılmaz.
+- **SQL ve teslimat doğruluğu düzeltildi.** Başarılı response adımı, sonraki queue hatasıyla kaybolmaz; süresi geçmiş/ACK verilmiş komut görünümü gerçek durumu gösterir. SCIM offboarding, silinmiş audit kaydını yeniden oluşturmaz. Müşteri kitine gerçek retention/hold runbook'u ve çalışan yerel bağlantısı eklendi.
+- **Lisans/SBOM kanıtı sıkılaştırıldı.** 31 Python wheel'in resmî metadata/hash kanıtı kullanılır; karışık SPDX ifadeleri ve native-library yükümlülükleri korunur. Önceden üretilmiş ticari SBOM, ayrı build-job digest'i ve kaynak/lock/license-evidence bağı olmadan kabul edilmez. Hukuk onayı yerine otomatik permissive kabul eklenmedi.
+
+### Güncel doğrulama
+
+| Kontrol | Sonuç ve sınır |
+|---|---|
+| Ana suite ve coverage | **416 dosya, 6353 pass, 0 fail, 5 Windows POSIX skip**. Satır %84,50; branch %75,59; function %84,74; statement %80,77. Mevcut eşikler korunur. [Sonuç](.tmp-test/production-followup-2026-10-06/coverage-results.json). |
+| Core coverage | **191 dosya, 3369 pass, 0 fail, 4 POSIX skip**. Satır %85,49; branch %76,09; function %86,37; statement %82,15; daha yüksek core eşikleri geçer. [Sonuç](.tmp-test/production-followup-2026-10-06/core-coverage-results.json). |
+| Linux complement | Windows'taki beş POSIX testi **5/5**, enrollment repair **12/12**, key rotation **20/20**; seçilmiş 37 testin tamamı gerçek Linux Node 22.16'da geçti. Vault mock'tur; gerçek Secret Service kabulü değildir. [Kanıt](.tmp-test/production-hardening-2026-10-06/linux-posix-container.json). |
+| Kimlik ve PostgreSQL | Güncel **135 migration** üzerinde SAML administration **13/13**, response/offboarding regresyonu **7/7**, geniş offboarding **61/61**, retention **43/43**; native suite'lerde skip yok. Identity handler **129** ve SAML/SCIM/MFA UI **31** hedefli test geçti. [Operasyon sonucu](.tmp-test/production-followup-2026-10-06/operations-final-results.json). |
+| Gerçek self-hosted prova | Güncel **135 migration, 11 sağlıklı servis, 92/92 canlı API smoke**. Doctor hâlâ NO-GO: gerçek signing/backup/queue sağlık kanıtları ve HTTPS eksik; iki host timer doğrulanmadı. Loopback HTTP ve sentetik credentials, müşteri kabulü değildir. Tüm own container/volume/network/image kaynakları temizlendi. [Kanıt](.tmp-test/production-followup-2026-10-06/operations-selfhost-final-results.json). |
+| Privacy | Güncel kaynakla izole Linux **1388/1388 Node testi**, 0 skip. mTLS text launcher, MCP output ve qualification regresyonları dahil. Gerçek kurum modeli/broker ve bütün ana ürün çıkışları kapsamda değildir. [Paket raporu](packages/privacy/reports/platform/TEST_REPORT.md). |
+| Landing | **64 dosya, 539 test**, lint/typecheck, 45 sayfalık production build ve güncel standalone tarayıcı onboarding/yönetim smoke geçti. Gerçek core-client wire contract **52** test. Browser smoke sentetik demo kimliği kullanır; gerçek Clerk iki hesabı veya native host kabulü değildir. [Kanıt](../aidr-landing/docs/verification-followup-2026-10-06.json). |
+| Paket/dağıtım araçları | Güncel release supply-chain suite **67/67**, SBOM/CI/operator DLP hedefli kontrolleri **32/32**, MCP gateway tüm suite'i **49/49** geçti. |
+| Son release ve temiz kurulum | Son release build **10 contract ve 10 consumer** kontrolünü geçti; unsigned developer artefact'tır. Ayrı tüketici dizinlerinde **10/10 gerçek temiz paket kurulumu**, 0 skip/fail. Derlenmiş enforcement **90/90**, Codex **11/11**. Yeni private release çıktısında MCP output **25/25**, qualification **5/5** geçti. [Kurulum kaydı](.tmp-test/production-followup-2026-10-06/package-install.log). |
+| Tür/statik/bağımlılık | `pnpm check`, quality:static, son lint/knip ve iki repo frozen install geçti. Son lint **0 hata, 518 warning, 1 info** verir. Ana production/build audit ve landing production audit **0**; landing development zincirinde upstream yaması olmayan **1 HIGH braces** açık kalır. |
+| Repo hygiene | Gerçek host path kontrolü **26/26** regresyon ve checkout taramasıyla geçti. Derlenmiş threat cache'teki açık regex karakter sınıfı gerçek kullanıcı dizini sanılmıyor; gerçek Linux/macOS/Windows yolları ve hatalı sınıflar hâlâ reddedilir. Generated dosya veya kural muafiyeti eklenmedi. |
+| Güncel secret ve lisans | Resmî checksum doğrulanmış Gitleaks 8.30.1: ana **8053**, landing **261** checkout dosyası temiz; tarama kuralları/istisnaları gevşetilmedi. İlk RED veren üç yeni sahte test anahtarı çalışma anında üretilir. History taramaları değişmemiş commit geçmişlerinde **132 / 6** bulgu ve exit 1 ile açık kalır; iki main owner-confirm kaydı ve Security kabulü beklenir. Taze SBOM **217 component, 205 library, 31 Python** içerir; declared license **202 permissive, 3 review, 0 unknown**. Strict licence gate hâlâ exit 1: üç copyleft review ve binary wheel'in 14 native-library yükümlülüğü hukuk incelemesi ister. |
+
+Örtüşen suite sayıları toplanıp ürün başarı yüzdesi üretilmez. Yeni derlenmiş/temiz kurulum kontrolleri de gerçek native host, provider veya yayıncı otoritesi yerine geçmez. 5 Ekim sonuçları aşağıda ayrı tarihsel kayıt olarak korunur.
+
+### Tam eksik listesi ve kalan uygulamalar
+
+[PRODUCTION_SALES_GAPS.md](PRODUCTION_SALES_GAPS.md) **59 iş paketinin tamamını**, mevcut düzeltmeyi, kalan işi, sorumluyu ve kabul koşulunu tek tabloda ve ayrıntısıyla listeler: 46 teknik/operasyon işi ve 13 dış/ticari kayıt. 37 teknik işte yerel uygulama var ve saha kabulü açık; aşağıdaki **9 işte** satılan kapsam veya gerçek authority/model/provider ile tamamlanacak bağlantılar da vardır:
+
+| Kimlik | Kalan bağlantı |
+|---|---|
+| T05 | Güvenilir execution receipt, bağımsız benign onayı ve kalıcı öğrenme/anti-replay; öğrenme güvenle kapalı tutulur. |
+| T10 | Satılacaksa binary/server-initiated MCP ve upstream bypass'ı kapatan zorunlu routing. |
+| T11 | Satılacaksa AWS/Azure/GCP/MDM discovery adapterleri; yerel collector bütün kurum estate'i değildir. |
+| T12 / T13 | İmzalı exact-device komut, kurulu worker, gerçek OS/provider action adapteri, SOAR tetikleyicisi ve yetkili rollback. Kütüphane ve queue tek başına containment üretmez. |
+| T18 | Tüm SAML oturumları bittikten sonra kurumca yetkilendirilen dış yönetim kurtarma yolu. |
+| T19 | Yönetilen SaaS için seçilmiş directory/SCIM/provider grup–rol yaşam döngüsü; self-hosted SCIM bunun yerine geçmez. |
+| T37 | Gerçek broker ve uygulamanın final-send bağlantısı; alternatif ağ çıkışlarını kapatma. |
+| T38 | Onaylı gerçek TR/EN PERSON/ADDRESS NER ve kurum label'ları. DSPM ACL ve Office/PDF/ASR/video, yalnız satılacak kapsamdaysa ek uygulama ister. |
+
+Gerçek host/OS ve IdP/provider kabulü, resmi publisher/private registry, bağımsız pentest ve history Security incelemesi, offsite restore/RPO/RTO, SIEM/paging, gerçek performans/yanlış alarm, destek işletimi ve hukuk/finans/PoV onayları açık kalır. 13 dış kayıt içinde yatırımcıya özel kayıt da vardır; production ve assisted-sale profillerinin her birine **12** zorunlu kapı uygulanır. Bu onaylar test fixture'ı ile kapatılmadı.
+
+---
+
+## Önceki doğrulama — 5 Ekim 2026
+
+Bu bölüm o tarihteki kapsamı ve sonuçları korur. Sonraki kaynak değişiklikleri ve güncel karar için 6 Ekim kaydı esas alınmalıdır; örneğin burada eksik görünen landing organizasyon yetkisi artık yerel uygulamada vardır.
+
+**Sonuç: ürünün temel akışları izole kurulumda çalışıyor; genel production ve kurumsal satış kabulü NO-GO.** Bu turda bulunan çalışma, güvenlik ve paketleme kusurları giderildi. Yerel testlerin geçmesi, gerçek kurum ortamının, yayıncı kimliğinin, sözleşmelerin ve işletme kapasitesinin kabul edildiği anlamına gelmiyor. Production kabulü için aşağıdaki açık işler tamamlanmalı; kabul yalnız doğrulanan kapsam ve aday sürüm için geçerlidir.
+
+İnceleme `aidr` ve kardeş `aidr-landing` deposunu kapsar. Başlangıç commit'i `7f3ec0ad009abf5b032b8116b296d8604fee884e`; sonuçlar bu commit üzerine uygulanmış, henüz commit edilmemiş çalışma ağacına aittir. Araçlar: Windows, Node 24.18.1, pnpm 10.29.3 ve Linux Docker. Bu kayıt imzalı release candidate veya müşteri kabul belgesi değildir. Aşağıdaki Eylül kayıtları korunmuş tarihsel kanıttır.
+
+### Giderilen somut sorunlar
+
+| Alan | Önceki sorun ve düzeltme |
+|---|---|
+| Girdi ve politika denetimi | Büyük, derin veya yarım okunmuş girdiler temiz sayılabiliyordu; denetlenemeyen girdi artık açık engel üretir. Zorunlu uzak politika, IPv6/özel ağ ve sembolik bağlantı kontrollerindeki atlamalar kapatıldı. İptal edilen politika tekrar çevrimdışı kullanılmıyor; imzalı sıra sınırı korunuyor. |
+| Yetki ve anahtar yenileme | `agent_not_authorized` çevrimdışı yetkiyi kaldırmıyordu; artık yetki ve premium anahtarlar iptal edilir. `premium_intel`/`intel_packs` sözleşmesi düzeltildi. Uzun oturumlar süre dolmadan, sınırlı sıklıkta yenilenir. Anahtar değişirken kalan telemetri eski kuyrukta sahipsiz kalmaz; doğrulanmış yenileme mevcut kuyruğu ve kilitlerini korur. |
+| Kimlik, tenant ve veritabanı | Eksik rate-limit scope'ları device/SCIM/OIDC işlemlerini 503'e düşürüyordu. Toplu anonim limitler, OIDC namespace ve eski callback yarışları, recovery/retention yetki kontrolleri, yenileme süresi ve SCIM/SAML kilit sırası düzeltildi. OIDC silme işlemleri offboarding'e eklendi. Beş yeni forward migration eklendi; eski uygulanmış migration'lar yeniden yazılmadı. |
+| Dashboard | İkinci girişte oturum zaman aşımı, self-role değişimi ve politika editörünün yayın/yenileme sırasında taslak kaybetmesi düzeltildi. MCP seçicileri sunucu ile aynı kuralları uygular. |
+| Connector ve SDK | Codex olayının iki kez yürütülmesi, imzalı ingress yönlendirme/scope/süre kontrolleri, büyük çıktıların temiz sayılması, plugin discovery ve hatalı CLI/config sonuçları düzeltildi. Kurallar paket içindeki `dist/resources` yolundan yüklenir. SDK yalnız denetlediği girdiyi yürütür; ESM/CJS tüketimi doğrulandı. |
+| Fleet ve güncelleme | Paket içinden güven anahtarı alma, Windows junction üzerinden yazma/çalıştırma, yanlış rollback sırası ve çalışmayan hook'un sağlıklı görünmesi kapatıldı. Gerçek tehdit canary'si gerekir. Linux offline helper, macOS tar ve boşluklu kullanıcı dizini düzeltildi. Windows kabulü gerçek Windows runner'a taşındı. |
+| Backup ve bridge | Eşzamanlı yedeğin başka snapshot'ın servislerini başlatması, geçersiz arşivin başarılı sayılması ve başarısız offsite yüklemede son yerel yedeğin kaybı düzeltildi. Bridge HA replay, bozuk JWT/ağ hataları, redaction özyinelemesi, ZIP/TAR uyumluluğu ve geçersiz upload sonuçları düzeltildi. |
+| Mahremiyet | İptalden sonra bekleyen çıktı, provenance/Unicode kaçırmaları, browser retention yarışları ve native politika atlamaları kapatıldı. Onay aynı içerik/kimlik/oturum/politika için gateway gönderiminde tüketilir; DNS/TLS sonrasında yetki tekrar kontrol edilir. Şifreli durum süresi doğrulanır. Eski v1 hücreler otomatik taşınmaz; [kurtarma prosedürü](packages/privacy/docs/STATE_RECOVERY.md) gerekir. |
+| Landing ve yönetilen servis | Clerk ile Firebase browser auth uyuşmazlığı giderildi; ekranlar yetkili sunucu API'sini kullanır. Kurulum kodu, onaylı ilk enrollment ile başlayan değiştirilemez 14 günlük değerlendirme, ingest/seat/policy yarışları, ödeme ve webhook tekrarları düzeltildi. SSRF/özel IP/DNS rebinding ve gövde sınırları uygulanır. Eksik production ayarları başlangıcı veya readiness'i durdurur. Node 24 standalone container doğrulandı. |
+| Bağımlılık ve yayın | Ana deponun production/build dependency audit'i temiz. Eski Changesets, VSCE ve duplication tooling zincirleri güncellendi. Privacy release derlemesinin kaynak haritası sızıntısı giderildi. Paket sınırları ve arşiv içerikleri sıkılaştırıldı. İmza ve güvenlik kapıları gevşetilmedi. |
+
+### Çalıştığına ilişkin kanıt ve sınırı
+
+| Kontrol | Sonuç ve kapsam |
+|---|---|
+| Birleşik test ve kapsam | 407 dosyada 6159 test geçti, 0 hata. Windows'taki 5 POSIX skip'inin tamamı ayrı Linux Node 22.16 çalışmasında gerçekten yürütülüp geçti; [Linux sonuçları](.tmp-test/production-hardening-2026-10-05/linux-posix-summary.json). Genel coverage: satır %84,16, branch %75,12, function %84,53, statement %80,42; mevcut eşikler değiştirilmeden geçti. |
+| Core ayrı kapsam kapısı | 187 dosyada 3294 test geçti, 4 POSIX skip'i yukarıdaki Linux çalışmasında doğrulandı. Satır %85,07, branch %75,47, function %86,26, statement %81,73; core'un daha yüksek mevcut eşikleri de geçti. |
+| Derlenmiş paket ve temiz kurulum | Son `pnpm build:release` 10 paket contract/consumer kontrolünü geçti. `pnpm verify:package-install`: ayrı tüketici dizininde 10/10 paket geçti; 0 fail ve 0 skip. Claude paketinde imzasız geliştirme çıktısı ile imzalı paket-root kanıtları ayrı gerçek pack testleriyle doğrulandı; production imza zorunluluğu korunur. `pnpm install --frozen-lockfile --ignore-scripts` geçti. [Temiz kurulum kaydı](.tmp-test/production-hardening-2026-10-05/package-install-final.log). |
+| Derlenmiş koruma akışı | `pnpm verify:enforcement` 90/90; `pnpm verify:codex` 11/11; MCP gateway/stdio/integrity 49/49 geçti. Yerel derlenmiş connector kararı, gerçek host'un eylemi durdurduğunu tek başına kanıtlamaz. |
+| Gerçek self-hosted prova | 11 servis sağlıklı açıldı, 130 migration uygulandı; 92 canlı API/tenant/enrollment/policy/ingest/pack/storage/revocation kontrolü geçti. [Smoke kanıtı](coverage/ops-rehearsal-aidr-ops-20261005222422/smoke-evidence.json). Son migration ayrıca bağımsız 131-migration PostgreSQL zincirinde doğrulandı. |
+| PostgreSQL | 131 migration uygulandı; 12 yönetim/yetki/concurrency ve 5 OIDC-SCIM-SAML/offboarding regresyonu geçti. Son birleşik offboarding 59/59, retention 43/43; sıfır atlanan test. |
+| Operasyon araçları | Monitoring 17/17; upgrade 41 ve support bundle 13 kontrol geçti. Backup/fleet/bridge regresyonlarının kapsamı ilgili testlerde kayıtlıdır. [Son operasyon sonuçları](.tmp-test/production-hardening-2026-10-05/operations-final-results.json). |
+| Privacy ayrı paketi | Linux'ta 1335 Node ve 143 Python testi; 8 gerçek yerel sentetik OCR senaryosu ve beş görselde 29 hassas satırın kapatılması doğrulandı. [Paket raporu](packages/privacy/reports/platform/TEST_REPORT.md). Bu sonuç kurum verisinde NER doğruluğunu veya tüm ürün çıkışlarının gateway'den geçtiğini kanıtlamaz. |
+| Landing | 59 dosyada 457 test; lint, production build ve gerçek derlenmiş sunucuda demo kimliğiyle browser onboarding/yönetim smoke geçti. Son Linux container root olmayan UID10001 ile çalışır. Canlı Clerk/Firebase/ödeme sağlayıcısı kabulü yapılmadı. [Landing çalışma ve dağıtım kaydı](../aidr-landing/README.md). |
+| Statik ve tür kontrolleri | `pnpm quality:static` ve `pnpm check` geçti. Lint 0 hata, 506 mevcut uyarı verir; bunlar gizlenmedi. Statik demo/load/SLI kontrolleri gerçek kullanıcı yükü veya aylık kullanılabilirlik ölçümü değildir. |
+| Bağımlılık ve gizli anahtar | Ana depo production/build audit: 0 bilinen açık. Landing production audit: 0; tam audit'te upstream düzeltmesi bulunmayan geliştirme ESLint zincirindeki `braces@3.0.3` için 1 high kalır; tarama muaf tutulmadı. Resmî checksum doğrulanmış Gitleaks 8.30.1 ile ana checkout 8026, landing checkout 251 dosyada temiz. İki repo CI'sında güncel kaynak taraması var; release history tarayıcısının sürüm uyuşmazlığı ve kısmi tarama riski düzeltildi. Geçmişte ana depo 132, landing 6 bulgu ile hâlâ exit 1 verir. [Ana depo triage](docs/production-readiness/secret-history-triage-2026-10-05.md) iki owner-confirm kaydını açık tutar; landing'in altı bilinen sentetik/public fixture'ı da Security kabulü yerine geçmez. |
+| Production doctor | [Doctor kanıtı](coverage/ops-rehearsal-aidr-ops-20261005222422/doctor-evidence.json) `passed:false`. Aynı izole konfigürasyonun [ayrı readiness teşhisi](.tmp-test/production-hardening-2026-10-05/operations-readiness-diagnosis.json) database/storage/functions bağlantılarını doğruladı: 503 nedeni signing/backup/queue sağlık kanıtlarının yokluğu ve loopback HTTP'de HTTPS sertifikasının yapılandırılmaması. Host scheduler kabulü de açık. Sağlıklı process/API smoke production kabulü yerine kullanılmadı. |
+
+Test sayıları farklı suite'lerin kendi kapsamıdır; örtüşen kontroller toplanıp tek başarı yüzdesi üretilmez. İmzalanmamış geliştirme artefact'ı, sentetik test receipt'i, gerçek provider veya müşteri kanıtı yerine geçmez.
+
+### Kalan ürün sınırları
+
+- Kurumsal takım/RBAC/OIDC/SCIM yetenekleri Supabase tabanlı kontrol düzlemindedir. `aidr-landing` yönetilen SaaS'ı bireysel Clerk hesabına bağlıdır; ortak organizasyon, delegasyon ve çok kullanıcılı kurumsal yetki modeli yoktur. İki kişi onayı bu modelde tam çalışmaz. Landing metinleri bu ayrımı açıklar.
+- Privacy paketi bütün ana ürün/native/browser/provider çıkışlarına bağlı değildir; onaylanmış kurum NER modeli ve gerçek broker/MDM entegrasyonu yoktur. Paket testleri eksiksiz veri sızıntısı engelleme iddiasını desteklemez.
+- Native host'un hook crash/timeout davranışı üründen bağımsız bir sınırdır; özellikle Codex'te denetim kancası çöker veya devre dışı kalırsa host işlemi engellemeden sürdürebilir. AutoSecOps'un güncel upstream'i tarihsel WT08 ingress yolunu kaldırmıştır. Eski protokol testi çalışan güncel entegrasyon sayılmaz.
+- Varsayılan reputation/control-plane hizmetleri için çalışan production endpoint ve sağlayıcı kabulü doğrulanmamıştır. Özel endpoint/credential yolu düzeltildi; gerçek servis ve erişim gerekiyor.
+- SAML canlı sağlayıcı ve politika geçişi/break-glass kabulü, gerçek SIEM teslimi, yayıncı imzaları, ağ bypass engeli ve müşteri host rollout'u açık kalır. [Güncel kurumsal yetenek kapsamı](docs/production-readiness/enterprise-feature-verification-2026-10-05.md).
+
+### Kurumsal satış ve production için sıradaki kabul adımları
+
+1. **Satılacak kapsamı ve müşteri ortamını sabitle:** dağıtım modeli, desteklenen agent/host sürümleri, kurum içi ağ ve veri akışları, retention ve destek şartlarını aynı aday sürüm için kaydet. Mevcut kurumsal self-hosted yolu, bireysel yönetilen SaaS'tan ayrı değerlendir. Tedarikçi başvurusu ve proje şartları ayrıca gerekir: [BMC](https://www.bmc.com.tr/hizmetler/satin-alma), [ASELSAN](https://www.aselsan.com/supply-chain), [HAVELSAN](https://www.havelsan.com/tr/is-ekosistemi). Kamuya açık bu kaynaklar her yazılım alımı için evrensel SOC 2/ISO 27001/Kubernetes zorunluluğu kanıtlamaz.
+2. **Teslim edilecek sürümü üret:** temiz commit, exact candidate digest, SBOM/lisans/provenance ve bağımsız güven politikası; gerçek yayıncı anahtarları, saklama/rotasyon ve gerekiyorsa Authenticode/Apple imzaları. Geçmişteki iki dataset-key owner-confirm kaydını güvenlik sahibi çözmeli; bağımsız değerlendirme ve yeniden test gerekir.
+3. **Gerçek entegrasyonları kabul et:** production TLS/DNS, IdP ve offboarding, ilk enrollment/anahtar yenileme, satılan kanala göre ödeme veya fatura yetkilendirmesi, SIEM, gerçek agent host'unda engellenen işlemin yan etkisinin oluşmaması ve offline/yükseltme/rollback senaryoları. Demo/yerel test bunun yerine geçmez.
+4. **İşletme kanıtını tamamla:** müşteri host scheduler ve fleet queue, farklı makineye offsite geri yükleme, ölçülmüş RPO/RTO, müşteri verisinde yanlış alarm/kaçırma ve gerçek kapasite, isimli destek/güvenlik sorumlusu ve olay tatbikatı. Ölçülmeden SLA taahhüdü verilmez.
+5. **Hukuk/ticaret ve müşteri kabulünü bağla:** lisans/IP/notice istisnaları, veri işleme/gizlilik şartları, onaylı teklif/sipariş/fiyat, support/renewal/offboarding ve müşteri PoV kabulünü aynı adayın kanıt indeksine bağla. [İlk müşteri kabul listesi](docs/production-readiness/first-customer-ready.md), [isimli sahip aksiyonları](docs/production-readiness/commercial-gates-prefill-and-owner-actions-2026-10-05.md) ve [açık satış işleri](PRODUCTION_SALES_GAPS.md) bu kapıları kaydeder.
+
+`commercial-gate-receipts.json` içindeki 13 kapı hâlâ açıktır; kaynak incelemesi bunları otomatik onaylamaz. `FEATURE_INVENTORY.json` 71 yeteneği kaydeder: 41 wired, 28 partial, 2 external. “Wired” production kabulü veya eksiksiz saldırı önleme anlamına gelmez. `.release-evidence/v8-evidence-index.json` bu checkout'ta yoktur; eski bir kanıt indeksi bu çalışma ağacının kabulü sayılamaz.
+
+---
+
+## Tarihsel kayıt — Eylül 2026
+
+Önceki kayıtlar: [v4](docs/production-readiness/2026-09-12-customer-candidate-v4.md), [11 Eylül doğrulaması](docs/production-readiness/2026-09-11-delivery-verification.md). Aşağıdaki sayılar ve açık/kapalı durumları o tarihlere aittir; güncel karar için üstteki kayıt ve `READINESS_BACKLOG.json` kullanılır.
 
 **Assessment date:** 2026-09-10
 **Baseline commit:** `b4361fa7` (branch `master`, working tree clean at start)

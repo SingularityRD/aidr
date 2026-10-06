@@ -1,0 +1,36 @@
+[Unit]
+Description=AIDR private final text gateway
+After=network-online.target
+Wants=network-online.target
+Requires=aidr-text-firewall.service
+After=aidr-text-firewall.service
+
+[Service]
+Type=simple
+User=aidr-privacy
+Group=aidr-privacy
+UMask=0077
+Environment=AIDR_PRIVACY_CONFIG=/etc/aidr-privacy/service.json
+EnvironmentFile=/etc/aidr-privacy/vault-session.env
+ExecStart=/usr/bin/node /opt/aidr-private/node_modules/@singularity/aidr-privacy/dist/platform/serve.js --config /opt/aidr-private/node_modules/@singularity/aidr-privacy/examples/platform/service-config.mjs
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+ReadWritePaths=/var/lib/aidr-privacy
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LimitCORE=0
+TasksMax=128
+MemoryMax=4G
+
+[Install]
+WantedBy=multi-user.target

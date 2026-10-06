@@ -12,7 +12,7 @@ import { verifyEd25519CanonicalJson } from "./managed.js";
  * policy digest, its version, a monotonic sequence and a validity window, and repeats
  * `key_id` inside the signed bytes so a key id cannot be relabelled to dodge revocation.
  */
-export type PolicyEnvelope = {
+type PolicyEnvelope = {
 	schema_version: 1;
 	key_id: string;
 	policy_version: string;
@@ -23,7 +23,7 @@ export type PolicyEnvelope = {
 	tenant_id?: string;
 };
 
-export type PolicySignatureFailure =
+type PolicySignatureFailure =
 	| "missing_signature"
 	| "malformed_signature"
 	| "no_trusted_keys"

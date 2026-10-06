@@ -1,5 +1,29 @@
 # AIDR Platform Privacy 0.5.0-rc.1 — çalıştırılan testler
 
+## 2026-10-06 MCP yanıtı ve değerlendirme kapısı
+
+Güncel privacy kaynağı mapsiz olarak yalnız paket içindeki geçici derleme dizinine derlendi; ana çalışma alanının eşzamanlı build/test çıktısı değiştirilmedi. Bu derleme ağsız Linux Docker test kopyasına yerleştirildi. Bütün Node testleri **1388/1388**, **0 başarısız / 0 atlanan** geçti. İmaj önceki bölümdeki `aidr-privacy-test:complete`, Node 22.16.0 ortamıdır; tedarik zinciri onayı değildir. Yeni bağımsız qualification testleri **5/5**, mevcut evaluation testleri **4/4** ayrıca geçti.
+
+MCP yanıtındaki e-posta için regresyon düzeltme öncesinde `Missing expected rejection` ile başarısızdı; ham `content`, `structuredContent` ve `_meta` içerikleri dönebiliyordu. Düzeltmeden sonra yalnız bounded metin CallToolResult kabul edilir; metin parçaları birlikte, tüm sonuç anahtarları ve metadata ayrıca taranır. PII/secret/instruction, parçalar arası PII/instruction, image/audio/resource/bilinmeyen binary sidecar, hatalı/çok büyük içerik, tarayıcı arızası ve tarama sırasındaki oturum/politika/guard değişimi yanıtı saklar. Dispatch `completed` kalır, write onayı tüketilmiş kalır ve tekrar yürütme yapılmaz. Bu testler gerçek yerel identity/state/guard yolları ve kontrollü taşıyıcı kullanır; canlı MCP/provider veya kaynak provenance/taint kabulü değildir.
+
+Qualification regresyonu düzeltme öncesinde bütün olumlu span'ları doğru tahmin edip 100 temiz TR metninin tamamını engelleyen, temiz EN örneği içermeyen korpusa `qualified:true` döndürüyordu. Aynı korpus artık `CLEAN_FALSE_ALARM_RATE`, `CLEAN_FALSE_ALARM_RATE_tr`, `CLEAN_NEGATIVES_REQUIRED_en` nedenleriyle reddedilir. Varsayılan %5 temiz-örnek false-alarm sınırı yapılandırılabilir mühendislik örneğidir; resmi kurum şartı veya model yeterlilik iddiası değildir. Her dilin ayrı negatif örnek tabanı gerekir; eski raporlar yeniden üretilmeden yeterli sayılamaz.
+
+## 2026-10-05 çalışma alanı doğrulaması
+
+Güncel kaynak derlemesi ve Chrome bundle kontrolü geçti. Metin servisi eklemesinden sonra ağsız Linux Docker ortamında bütün Node testleri **1358/1358** geçti. Aynı çalışma alanı doğrulamasında Python NER artifact testleri **38/38**, görsel worker testleri **72/72**, Linux seccomp belge parser testleri **33/33** geçti; hiçbir test atlanmadı. Node ortamı `aidr-privacy-test:complete` imajıdır (`sha256:4448784b4671442a7bceacfde434c0315ead1c2dae622a799d1c2a41eacef483`, Node 22.16.0). İmaj kimliği bir güvenlik veya tedarik zinciri onayı değildir.
+
+Dar metin servisi için Windows'ta mTLS ingress/sink, servis başlangıcı ve NER testleri **55/55** geçti. Gerçek HTTPS/mTLS isteğinde temizlenmiş metin kontrollü son çıkışa ulaştı; yanıt yeniden temizlendi. Sınıflandırılmış içerik, eksik sertifika/token/oturum, farklı sertifikaya bağlı token ve boş olsa bile görsel alanı sink çağrısı üretmedi. Eksik TLS key/cert/CA, broker/credential/model, strict override, uydurma principal ve provision edilmemiş oturum başlangıcı engelledi; başlangıç iptali, geç dönen broker kaynaklarının kapanması ve idempotent kapatma doğrulandı. Pozitif launcher testi deterministik NER alt süreç fixture'ı kullanır; gerçek öğrenilmiş model çalıştırıldığı iddia edilmez. Production launcher yalnız bundled Python worker, onaylı manifest ve defense profili kabul eder. `build:release` ve mapsiz çıktı kontrolü geçti; private npm dry-run paketi yeni servis bin/dosya yolunu içerdi.
+
+Gerçek yerel Tesseract TR/EN pipeline denemesi **8/8** geçti. Ayrı piksel kontrolü beş PNG/JPEG/yönlendirilmiş JPEG/WebP çıktısındaki bilinen **29 hassas satırın** tamamen siyah, çıktının opak RGB ve metadata alanlarının boş olduğunu doğruladı. Örnekler geliştirme amaçlı sentetiktir; bağımsız saha recall ölçümü değildir. Windows'ta browser/native davranış, gerçek native host alt süreçleri, CLI ve seçili ACL/runtime/approval sınırları ayrıca çalıştırıldı. Bütün Linux paket testlerinin Windows'ta desteklendiği iddia edilmez.
+
+Yeni regresyonlar motor kapatıldıktan sonra bekleyen tarama çıktısının verilmemesi, provenance taint, Unicode veri indeksi, onay sonrası tekrar PII temizleme ve tek gönderim, DNS/TLS sonrası son yetki kontrolü, MCP yanıtının iptal sonrası saklanması, policy quarantine/audit retention yarışları, geç gelen OCR çıktısının silinmesi, OIDC kapasitesi ve şifreli son-geçerlilik zamanı değişikliğini kapsar.
+
+**Kalıcı durum uyumluluğu:** yeni `aidr-state-v2` hücreleri son geçerlilik zamanını da doğrular. Eski v1 hücreleri otomatik dönüştürülmez; okuma güvenli biçimde kapanır ve eski satır korunur. Kurulu RC veritabanları için [güvenli kurtarma rehberi](../../docs/STATE_RECOVERY.md) gerekir; kalıcı replay/checkpoint/audit geçmişi sıfırlanmamalıdır.
+
+Canlı provider/kurum IdP'si, imzalı MDM/CRX dağıtımı, öğrenilmiş NER çıkarımı ve bağımsız müşteri kabulü bu doğrulamanın dışındadır. Aşağıdaki sayılar ve kapsam ölçümleri önceki sürümün tarihli kanıtıdır; güncel çalıştırma yeni coverage yüzdesi veya performans SLO'su üretmedi.
+
+## Önceki sürümün tarihli kanıtı
+
 Rapor: 2026-09-24T10:48:50.003149+00:00. Platform: v22.16.0, Linux x64; Python 3.13.5. Node `node:sqlite` deneysel uyarı verir; bu test sürümündeki SQLite 3.49.1 nedeniyle depoda varsayılan DELETE journal kullanıldı. Bu seçim diğer native bağımlılıkların güvenlik onayı değildir.
 
 ## Sonuç

@@ -1,0 +1,23 @@
+# Narrow Linux host OUTPUT control. Fill actual service/application UIDs and approved
+# IPv4 sets, validate with nft --check, then apply with institutional change control.
+# No flush ruleset: existing host ingress/firewall policy remains administrator-owned.
+# Add equivalent IPv6 sets/rules before permitting IPv6; it is denied for these UIDs here.
+define aidr_service_uid = REPLACE_SERVICE_UID
+define aidr_host_uid = REPLACE_APPLICATION_UID
+table inet aidr_text_service {
+ set identity_v4 { type ipv4_addr; elements = { REPLACE_APPROVED_IDP_AND_BROKER_IPS } }
+ set provider_v4 { type ipv4_addr; elements = { REPLACE_APPROVED_PROVIDER_IPS } }
+ set resolver_v4 { type ipv4_addr; elements = { REPLACE_APPROVED_DNS_RESOLVER_IPS } }
+ chain output {
+  type filter hook output priority 0; policy accept;
+  meta skuid $aidr_host_uid ip daddr 127.0.0.1 tcp dport 8443 accept
+  meta skuid $aidr_host_uid reject
+  meta skuid $aidr_service_uid ip daddr @resolver_v4 udp dport 53 accept
+  meta skuid $aidr_service_uid ip daddr @resolver_v4 tcp dport 53 accept
+  meta skuid $aidr_service_uid ip daddr @identity_v4 tcp dport 443 accept
+  meta skuid $aidr_service_uid ip daddr @provider_v4 tcp dport 443 accept
+  # Replies from the service listener to the local enrolled host.
+  meta skuid $aidr_service_uid ip daddr 127.0.0.1 tcp sport 8443 accept
+  meta skuid $aidr_service_uid reject
+ }
+}

@@ -6,15 +6,15 @@ The core is executable without an internet connection and has passing local auto
 
 ## 1. Reproducible and approved build
 
-The full ZIP includes compiled ESM and TypeScript declarations. Production core imports only Node standard-library modules; no production npm package is required. The build uses TypeScript 5.8.3 and @types/node 22.19.7. The environment could not obtain a registry-backed lockfile (`npm --offline` cache miss); no fake integrity entries or successful dependency audit are claimed.
+The private package includes compiled ESM and TypeScript declarations. Its text engine uses Node standard-library modules; the configured deployment also needs the installed core OS-vault package and its actual runtime dependencies, physical Python inference/parser environments and approved model files. The committed workspace lock resolves TypeScript5.9.3 and @types/node22.19.11 for this package. Use the frozen reviewed lock; a passing build alone does not establish independent supply-chain approval.
 
-In a controlled connected staging environment, resolve those pinned development packages and their transitive dependencies, produce and review the lockfile, generate a complete environment SBOM, run dependency and source scans, rebuild, run all tests and compare release content. Apply the organization's signing/attestation process before importing artifacts into an air-gapped environment. The supplied checksums detect changes relative to a trusted manifest; they do not prove publisher identity.
+Prepare the approved complete dependency cache/image, generate the complete deployment SBOM, run dependency and source scans, rebuild with maps disabled, run all tests and compare release content. Apply the organization's signing/attestation process before importing artifacts into an air-gapped environment. The supplied checksums detect changes relative to a trusted manifest; they do not prove publisher identity. The [portable operator handoff](../deployment/PRIVATE_INSTALL.md) uses the actual installed package layout and prepares reference-only configuration without requiring a live staging host.
 
 Only Node 22.16.0 on the reported Linux architecture was executed here. Pin and test an approved supported runtime in the actual target OS/container; do not treat this as a current Node patch or CVE recommendation. No vulnerability database query/audit was run for the environment.
 
 ## 2. Approved local models
 
-The worker is optional and has **not** run real model inference in this delivery. No default model weights are included.
+The optional worker ran real hash-pinned public-candidate inference and fresh offline dependency replays on Windows x64 CPython 3.12.10 and Linux x86_64 CPython 3.11.2 on 2026-10-06. The Linux real-worker probe used a network-disabled container and read-only package/model mounts. The candidates remain unapproved and unqualified; measured failures and reproducible staging instructions are in `MODEL_PROVIDER.md`. No default model weights are included in the package.
 
 Use a controlled staging host to obtain immutable, licensed model + fast-tokenizer artifacts. Reject unreviewed remote code and pickle checkpoints. Review model origin, data licensing, language/type coverage and label meanings. A generic English PER/ORG/LOC model is not a Turkish ADDRESS model.
 
@@ -39,7 +39,7 @@ python3 /opt/aidr-privacy/ner/build_manifest.py \
 
 This command prints the manifest SHA-256. Review the contents and distribute the expected digest through the organization's signed configuration channel. Recomputing a digest from arbitrary downloaded files alone does not establish trust.
 
-Build an approved CPU PyTorch / Transformers / tokenizers / safetensors virtual environment and wheelhouse. Pin exact package versions and hashes, include them in the actual deployment SBOM, and execute model acceptance tests. `ner/DEPENDENCIES.md` intentionally does not pretend an untested Python dependency stack is production locked.
+Build an approved CPU PyTorch / Transformers / tokenizers / safetensors virtual environment and wheelhouse. Pin exact package versions and hashes, include them in the actual deployment SBOM, and execute model acceptance tests. `ner/requirements.windows-py312.lock.txt` and `ner/requirements.linux-py311.lock.txt` reproduce their respective measured probe environments; `ner/DEPENDENCIES.md` describes their platform and approval limits.
 
 ## 3. Process and host isolation
 
@@ -95,7 +95,7 @@ Block unsupported binary attachments, PDFs, images, archives, custom encodings a
 
 ## 6. Policy, audit and operations
 
-Review dictionaries and schema policies through the existing signed configuration/change-control system. This library does not provide policy signing/distribution. Do not accept arbitrary user regular expressions; the included dictionary is a bounded literal matcher.
+Review dictionaries and schema policies through the existing signed configuration/change-control system. The existing `signPolicy` helper and pinned/durable policy registry implement the envelope; institution signing identity, key custody and distribution remain operator inputs. Do not accept arbitrary user regular expressions; the included dictionary is a bounded literal matcher.
 
 Use the existing AIDR RBAC/mTLS/SSO control plane. Only minimal audit summaries/static codes should enter logs or SIEM. Avoid raw prompts, original values, full result bodies or raw JSON paths in telemetry. Configure retention, access controls and alert destinations per institution. SIEM/webhook transport is not included here.
 
@@ -106,15 +106,15 @@ Review, bypass, emergency change and break-glass workflows must be institution-a
 | Gate | Delivered here | Required on the actual deployment |
 |---|---|---|
 | Core regression/property tests | Executed, reports included | Rerun on target runtime/OS |
-| Artifact verification / Python offset helpers | Executed with synthetic fixture bytes | Verify approved real model artifacts |
-| Local worker protocol | Executed with an explicitly fake deterministic worker | Run approved real worker end to end |
-| TR/EN name/address quality | Not measured | Independently annotated domain corpus, per-language/type metrics |
+| Artifact verification / Python offset helpers | Fixture tests and pinned real candidate files verified | Verify approved real model artifacts |
+| Local worker protocol | Fake-worker suite plus actual offline public-candidate inference | Run approved real worker end to end |
+| TR/EN name/address quality | Public synthetic comparison; candidates unqualified | Independently annotated domain corpus, per-language/type metrics |
 | Whole-message leakage resistance | Specified test scenarios executed | Red team every supported connector/tool/file path |
 | Performance | Single-process, rules-only measurements | Real models, host limits, cold start, concurrency, soak and outages |
 | Model and dependency licensing | Public card review only | Legal/procurement/security approval |
-| Supply chain | Source + content hashes | Reviewed locks, CVE/source scan, SBOM, signed reproducible release |
-| Network restriction | No core network calls; offline worker flags | Verified OS egress deny, host isolation, traffic observation |
-| Enterprise controls | Integration sample only | AIDR auth/RBAC/mTLS, policies, audit retention, incident response |
+| Supply chain | Pinned build/runtime/model locks and artifact checks | Complete deployment CVE/source scan, SBOM, institution-signed reproducible delivery |
+| Network restriction | Fixed checked provider transport, offline worker flags and firewall templates | Verified OS egress deny, host isolation, traffic observation |
+| Enterprise controls | Actual configured OIDC/broker, mTLS, durable policy/labels and installed MCP regression | Real institution identity/device/provider authority, audit retention, incident response |
 | Institutional acceptance | Not performed | Independent assessment and customer UAT/sign-off |
 
 There is no universal certification conferred by the string `defense`. The final authority for deploying on classified or regulated systems is the customer's security/accreditation process.

@@ -6,7 +6,11 @@ param(
     [string]$StateRoot = (Join-Path $env:ProgramData 'SingularityAIDR/Fleet'),
     [string]$LogPath,
     [switch]$RequireUpgrade,
-    [switch]$AllowDowngrade
+    [switch]$AllowDowngrade,
+    [switch]$EnableResponseWorker,
+    [string]$ResponseWorkerConfigPath,
+    [ValidatePattern('^[a-fA-F0-9]{64}$')][string]$ExpectedResponseWorkerConfigSha256,
+    [switch]$ResponseWorkerRunElevated
 )
 
 . (Join-Path $PSScriptRoot 'Common.ps1')
@@ -32,13 +36,15 @@ try {
     $cachedManifest = Copy-AidrManifestPackageToCache -ManifestRecord $manifestRecord -Payload $payload -CacheRoot $paths.Cache
     $cachedRecord = Read-AidrFleetManifest -ManifestPath $cachedManifest -ExpectedManifestSha256 $manifestRecord.Sha256
     $cachedPayload = Assert-AidrManifestPayload $cachedRecord
-    $result = Invoke-AidrEndpointInstaller -ManifestRecord $cachedRecord -Payload $cachedPayload -TargetHome $target
+    $result = Invoke-AidrEndpointInstaller -ManifestRecord $cachedRecord -Payload $cachedPayload -TargetHome $target -RequireResponseWorker:$EnableResponseWorker
     $connectorFiles = @(Get-AidrConnectorInventory -ConnectorPath $result.ConnectorPath)
 
     $history = @()
     if ($null -ne $state -and $null -ne $state.active -and [string]$state.active.manifest_sha256 -ne $manifestRecord.Sha256) { $history += $state.active }
     if ($null -ne $state -and $null -ne $state.history) { $history += @($state.history) }
-    $history = @($history | Group-Object manifest_sha256 | ForEach-Object { $_.Group[0] } | Select-Object -First 3)
+    $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    $null = $seen.Add($manifestRecord.Sha256)
+    $history = @($history | Where-Object { $seen.Add([string]$_.manifest_sha256) } | Select-Object -First 3)
     $active = [ordered]@{
         package_version = [string]$manifestRecord.Value.package_version
         manifest_sha256 = $manifestRecord.Sha256
@@ -60,6 +66,13 @@ try {
         history = $history
     }
     Write-AidrFleetState -Path $paths.State -Value $newState
+    if ($EnableResponseWorker -or (Test-AidrResponseWorkerRequired -TargetHome $target)) {
+        $responseArguments = @{ TargetHome = $target; StateRoot = $StateRoot; RunElevated = $ResponseWorkerRunElevated }
+        if (-not [string]::IsNullOrWhiteSpace($ResponseWorkerConfigPath)) { $responseArguments.ResponseWorkerConfigPath = $ResponseWorkerConfigPath }
+        if (-not [string]::IsNullOrWhiteSpace($ExpectedResponseWorkerConfigSha256)) { $responseArguments.ExpectedResponseWorkerConfigSha256 = $ExpectedResponseWorkerConfigSha256 }
+        & (Join-Path $PSScriptRoot 'Install-AidrResponseWorker.ps1') @responseArguments
+        if ($LASTEXITCODE -ne 0) { throw 'The signed response worker could not be activated for the enrolled Windows user' }
+    }
     Write-AidrFleetLog -LogPath $LogPath -Event 'install.completed' -Fields @{ version = $newVersion; target_id = $paths.TargetId; artifact_sha256 = $active.artifact_sha256; result = 'local_canary_deny' }
     Write-Output "AIDR fleet installation completed; local deny canary passed. Native host acceptance remains required."
     exit 0

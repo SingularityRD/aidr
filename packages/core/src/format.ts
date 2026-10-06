@@ -102,6 +102,7 @@ const LOCAL_ENFORCEMENT_ACTIVE_REASONS = new Set<string>([
 	// Managed/commercial installation that has not been enrolled. The evaluator
 	// keeps running the full local layer; only managed features are unavailable.
 	"auth_required",
+	"enrollment_repair_required",
 	"missing_or_invalid_signed_entitlement",
 	"activation_required",
 ]);
@@ -245,6 +246,9 @@ export function formatSessionStartMessage(version: string, result: SessionStartR
 		const base = isEnforcementStopped(result.disabled_reason)
 			? formatStartupDisabled(version, reason)
 			: formatStartupLocalOnly(version, reason);
+		if (reason === "enrollment_repair_required") {
+			return `${base}\nEnrollment could not be confirmed locally. An operator must settle the enrollment outcome and revoke any affected key in the control plane, then start fresh pairing and approve it in the browser. Preserve the installation ID and tenant; do not reuse the previous authorization code.`;
+		}
 		if (!result.bootstrap) return base;
 
 		const lines: string[] = [base, ""];

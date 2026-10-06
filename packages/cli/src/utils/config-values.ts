@@ -4,6 +4,12 @@ export function isSecretConfigPath(path: string): boolean {
 	return SECRET_PATH.test(path);
 }
 
+export function containsSecretConfigValue(value: unknown): boolean {
+	return value !== null && typeof value === "object" && Object.entries(value).some(
+		([key, nested]) => isSecretConfigPath(key) || containsSecretConfigValue(nested),
+	);
+}
+
 export function configPathParts(path: string): string[] {
 	const parts = path.split(".");
 	if (

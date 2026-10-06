@@ -1,4 +1,5 @@
-import { scanModelOutput } from "@singularityrd/aidr-core";
+import { types } from "node:util";
+import { scanCachedProvisionedOutput, scanModelOutput } from "@singularityrd/aidr-core";
 
 /**
  * Keep inspection CPU and memory work bounded even when a tool returns a huge
@@ -120,12 +121,27 @@ class BoundedTextCollector {
 	}
 
 	private visitObject(current: object, depth: number): void {
+		if (types.isProxy(current)) {
+			// Proxy descriptors can conceal different host-visible/serialized text.
+			this.markUnsupportedContent();
+			return;
+		}
 		if (depth >= OUTPUT_INSPECTION_MAX_DEPTH) {
 			this.incomplete = true;
 			return;
 		}
 		if (this.seen.has(current)) return;
 		this.seen.add(current);
+		const prototype = Object.getPrototypeOf(current);
+		if (
+			(Array.isArray(current)
+				? prototype !== Array.prototype
+				: prototype !== Object.prototype && prototype !== null) ||
+			Object.getOwnPropertyDescriptor(current, "toJSON")
+		) {
+			this.markUnsupportedContent();
+			return;
+		}
 
 		const type = Object.getOwnPropertyDescriptor(current, "type");
 		if (
@@ -138,7 +154,7 @@ class BoundedTextCollector {
 				OPAQUE_CONTENT_TYPES.has(type.value.toLowerCase())) ||
 			Object.hasOwn(current, "blob")
 		) {
-			this.markUnsupportedBinary();
+			this.markUnsupportedContent();
 			return;
 		}
 
@@ -149,9 +165,9 @@ class BoundedTextCollector {
 		this.visitRecord(current, depth);
 	}
 
-	private markUnsupportedBinary(): void {
-		// Do not claim opaque bytes are clean; the text scanner cannot inspect
-		// them, so callers take the existing fail-closed path.
+	private markUnsupportedContent(): void {
+		// Opaque bytes and custom-serialized values cannot be inspected as text.
+		// Callers take the existing fail-closed path.
 		this.incomplete = true;
 		this.unsupportedContent = true;
 	}
@@ -217,7 +233,8 @@ class BoundedTextCollector {
 }
 
 function mcpTextBlockText(value: unknown): string | undefined {
-	if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
+	if (value === null || typeof value !== "object" || types.isProxy(value) || Array.isArray(value))
+		return undefined;
 	const type = Object.getOwnPropertyDescriptor(value, "type");
 	const text = Object.getOwnPropertyDescriptor(value, "text");
 	return type &&
@@ -242,18 +259,36 @@ function collectBoundedText(value: unknown): TextCollection {
 export function inspectBoundedOutput(
 	value: unknown,
 	surface: OutputInspectionSurface,
+	scan: (views: readonly string[]) => ReturnType<typeof scanModelOutput> = (views) =>
+		views.flatMap(scanModelOutput),
 ): OutputInspection {
 	const collection = collectBoundedText(value);
+	return summarizeInspection(collection, surface, scan([collection.text, collection.mcpText]));
+}
+
+/** The host's persistence hook cannot await policy or entitlement reads. */
+export function inspectCachedProvisionedBoundedOutput(
+	value: unknown,
+	surface: OutputInspectionSurface,
+): OutputInspection {
+	return inspectBoundedOutput(value, surface, (views) =>
+		scanCachedProvisionedOutput(views, "openclaw"),
+	);
+}
+
+function summarizeInspection(
+	collection: TextCollection,
+	surface: OutputInspectionSurface,
+	scanned: ReturnType<typeof scanModelOutput>,
+): OutputInspection {
 	const findingsByRule = new Map<string, SafeOutputFinding>();
-	for (const view of [collection.text, collection.mcpText]) {
-		for (const finding of scanModelOutput(view)) {
-			if (!findingsByRule.has(finding.ruleId)) {
-				findingsByRule.set(finding.ruleId, {
-					ruleId: finding.ruleId,
-					reason: finding.reason,
-					severity: finding.severity,
-				});
-			}
+	for (const finding of scanned) {
+		if (!findingsByRule.has(finding.ruleId)) {
+			findingsByRule.set(finding.ruleId, {
+				ruleId: finding.ruleId,
+				reason: finding.reason,
+				severity: finding.severity,
+			});
 		}
 	}
 	const findings = [...findingsByRule.values()];

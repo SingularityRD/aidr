@@ -230,8 +230,16 @@ export class SupabaseOidcStore implements OidcStore {
 		return error || !data ? null : { subject: String((data as Row).subject) };
 	}
 
-	async insertIdentity(row: Parameters<OidcStore["insertIdentity"]>[0]): Promise<"ok" | "conflict" | "error"> {
-		const { error } = await this.db.from("oidc_identities").insert({ ...row, last_login_at: new Date().toISOString() });
+	async insertIdentity(
+		row: Parameters<OidcStore["insertIdentity"]>[0],
+		provider: Parameters<OidcStore["insertIdentity"]>[1],
+	): Promise<"ok" | "conflict" | "error"> {
+		const { error } = await this.db.rpc("oidc_insert_identity", {
+			p_provider_id: row.provider_id, p_tenant_id: row.tenant_id,
+			p_subject: row.subject, p_auth_user_id: row.auth_user_id, p_email_claim: row.email_claim,
+			p_expected_issuer: provider.issuer, p_expected_client_id: provider.client_id,
+			p_expected_subject_claim: provider.subject_claim,
+		});
 		if (!error) return "ok";
 		return (error as { code?: string }).code === "23505" ? "conflict" : "error";
 	}
@@ -366,7 +374,7 @@ export class SupabaseOidcStore implements OidcStore {
 		if (increment.error) return "unavailable";
 		const { data, error } = await this.db.from("rate_limits").select("count").eq("key", key).eq("window_start", windowStart).maybeSingle();
 		const count = (data as Row | null)?.count;
-		if (error || typeof count !== "number") return "unavailable";
+		if (error || typeof count !== "number" || !Number.isSafeInteger(count) || count < 1) return "unavailable";
 		return count <= maximum ? "allowed" : "limited";
 	}
 }

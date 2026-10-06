@@ -1,9 +1,10 @@
 import { randomBytes,createHash } from 'node:crypto';
-import { frozen, hash, textBound, deny, integer } from '../enterprise/util.js';
+import { hash, textBound, deny, integer } from '../enterprise/util.js';
 import type { TenantState } from './state.js';
 import { PinnedJwtVerifier, type VerifiedClaims, type AuthenticatedPrincipal, type ContextResolver } from './identity.js';
 function token():string{return randomBytes(32).toString('base64url');}
 function opaque(t:unknown):string{if(typeof t!=='string'||!/^[a-zA-Z0-9_-]{43}$/.test(t))deny('OIDC_STATE');return t;}
+const MAX_PENDING_LOGINS=1000,MAX_PORTAL_SESSIONS=10000;
 export interface OidcOptions {
   readonly state:TenantState;readonly identity:ContextResolver;readonly idTokenVerifier:PinnedJwtVerifier;
   readonly clientId:string;readonly authorizationEndpoint:string;readonly tokenEndpoint:string;readonly redirectUri:string;
@@ -22,7 +23,7 @@ export class OidcSessionManager {
   #o:OidcOptions;
   constructor(o:OidcOptions){for(const raw of [o.authorizationEndpoint,o.tokenEndpoint,o.redirectUri]){const u=new URL(raw);if(u.protocol!=='https:'||u.username||u.password||u.hash)deny('OIDC_CONFIG');}if(o.state.tenantId==='')deny('OIDC_CONFIG');textBound(o.clientId,512);this.#o={...o};}
   begin():{location:string;browserCookie:string}{const now=(this.#o.clock??Date.now)(),state=token(),nonce=token(),verifier=token(),browser=token(),challenge=createHash('sha256').update(verifier).digest('base64url');
-    this.#o.state.transaction(tx=>tx.put('oidc-pending',hash(state),{state,nonce,verifier,browser:hash(browser),expiresAt:now+300000},null,now+300000));
+    this.#o.state.transaction(tx=>{integer(now);tx.purgeExpiredTransient('oidc-pending',now);tx.purgeExpiredTransient('portal-sessions',now);if(tx.count('oidc-pending',true)>=MAX_PENDING_LOGINS)deny('OIDC_BUSY');tx.put('oidc-pending',hash(state),{state,nonce,verifier,browser:hash(browser),expiresAt:now+300000},null,now+300000);});
     const u=new URL(this.#o.authorizationEndpoint);u.searchParams.set('response_type','code');u.searchParams.set('client_id',this.#o.clientId);u.searchParams.set('redirect_uri',this.#o.redirectUri);u.searchParams.set('scope',this.#o.scope??'openid profile');u.searchParams.set('state',state);u.searchParams.set('nonce',nonce);u.searchParams.set('code_challenge',challenge);u.searchParams.set('code_challenge_method','S256');return {location:u.toString(),browserCookie:browser};
   }
   async callback(state:string,code:string,browserCookie:string):Promise<{sessionCookie:string;csrf:string;expiresAt:number}> {
@@ -31,7 +32,7 @@ export class OidcSessionManager {
     const data=await this.#o.exchange(this.#o.tokenEndpoint,new URLSearchParams({grant_type:'authorization_code',code,redirect_uri:this.#o.redirectUri,client_id:this.#o.clientId,code_verifier:p.verifier}));
     const claims=this.#o.idTokenVerifier.verify(data.id_token,(this.#o.clock??Date.now)(),p.nonce),userToken=await this.#o.establishLocalSession(claims),principal=this.#o.identity.authenticate(userToken);
     const sessionCookie=token(),csrf=token(),expiresAt=Math.min(principal.expiresAt,claims.exp*1000,now+3600000);
-    this.#o.state.transaction(tx=>{tx.put('portal-sessions',hash(sessionCookie),{userToken,csrf,expiresAt},null,expiresAt);tx.event('PORTAL_LOGIN',principal.subjectId,principal.sessionId,(this.#o.clock??Date.now)());});return {sessionCookie,csrf,expiresAt};
+    this.#o.state.transaction(tx=>{tx.purgeExpiredTransient('portal-sessions',(this.#o.clock??Date.now)());if(tx.count('portal-sessions',true)>=MAX_PORTAL_SESSIONS)deny('OIDC_BUSY');tx.put('portal-sessions',hash(sessionCookie),{userToken,csrf,expiresAt},null,expiresAt);tx.event('PORTAL_LOGIN',principal.subjectId,principal.sessionId,(this.#o.clock??Date.now)());});return {sessionCookie,csrf,expiresAt};
   }
   authenticate(cookie:string):{principal:AuthenticatedPrincipal;csrf:string}{opaque(cookie);const now=(this.#o.clock??Date.now)(),r=this.#o.state.get<PortalSession>('portal-sessions',hash(cookie));if(!r||now>=r.value.expiresAt)deny('PORTAL_SESSION');const principal=this.#o.identity.authenticate(r.value.userToken);return {principal,csrf:r.value.csrf};}
   logout(cookie:string):void {opaque(cookie);this.#o.state.transaction(tx=>{const r=tx.get<PortalSession>('portal-sessions',hash(cookie));if(r)tx.remove('portal-sessions',hash(cookie),r.version);});}

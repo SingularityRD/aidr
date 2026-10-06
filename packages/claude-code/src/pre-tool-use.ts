@@ -5,7 +5,6 @@
  * Always exits 0. Input and hook failures emit a deny verdict.
  */
 
-import { readFileSync } from "node:fs";
 import {
 	type Artifact,
 	createHostObservation,
@@ -22,6 +21,7 @@ import { addPendingApproval } from "./approval-tracker.js";
 import { resolveAssetDir } from "./assets.js";
 import { loadProvisionedDetectorContext } from "./detector-provisioning.js";
 import { formatBlockReason } from "./format.js";
+import { readBoundedJson } from "./hook-input.js";
 
 // Initialize Sentry
 initSentry({ name: "aidr-claude-code-pre-tool-use" });
@@ -73,23 +73,18 @@ function writeInspectionFailure(): void {
 	);
 }
 
-function parseToolCall(rawInput: string): Record<string, unknown> | null {
-	try {
-		const parsed: unknown = JSON.parse(rawInput);
-		if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return null;
-		const fields = parsed as Record<string, unknown>;
-		if (
-			typeof fields.tool_name !== "string" ||
-			fields.tool_name.trim() === "" ||
-			(fields.tool_input != null &&
-				(typeof fields.tool_input !== "object" || Array.isArray(fields.tool_input)))
-		) {
-			return null;
-		}
-		return fields;
-	} catch {
+function parseToolCall(parsed: unknown): Record<string, unknown> | null {
+	if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+	const fields = parsed as Record<string, unknown>;
+	if (
+		typeof fields.tool_name !== "string" ||
+		fields.tool_name.trim() === "" ||
+		(fields.tool_input != null &&
+			(typeof fields.tool_input !== "object" || Array.isArray(fields.tool_input)))
+	) {
 		return null;
 	}
+	return fields;
 }
 
 async function main(): Promise<void> {
@@ -99,15 +94,15 @@ async function main(): Promise<void> {
 		logger,
 	});
 
-	let rawInput: string;
+	let input: ReturnType<typeof readBoundedJson>;
 	try {
-		rawInput = readFileSync(0, "utf-8");
+		input = readBoundedJson();
 	} catch {
 		writeInspectionFailure();
 		return;
 	}
 
-	const toolCall = parseToolCall(rawInput);
+	const toolCall = input.status === "parsed" ? parseToolCall(input.value) : null;
 	if (!toolCall) {
 		writeInspectionFailure();
 		return;

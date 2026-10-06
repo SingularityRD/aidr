@@ -1,4 +1,7 @@
 import { sign as cryptoSign, generateKeyPairSync } from "node:crypto";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
 	applyIngestResult,
@@ -6,6 +9,8 @@ import {
 	type EntitlementSnapshotV1,
 	type EntitlementSnapshotV2,
 	isPremiumUnlocked,
+	loadRevocationsCache,
+	parseSignedRevocationsFromControlPlaneBody,
 	type RevocationListV1,
 	verifyEd25519SignedEntitlementSnapshot,
 	verifyEd25519SignedRevocationList,
@@ -28,10 +33,11 @@ describe("server-signed entitlements (ed25519) + revocations", () => {
 	it("accepts ed25519-signed entitlement snapshot and unlocks premium", () => {
 		const { publicKey, privateKey } = generateKeyPairSync("ed25519");
 		const publicKeyPem = publicKey.export({ type: "spki", format: "pem" }).toString();
+		const issued = new Date();
 
 		const snapshot: EntitlementSnapshotV1 = {
 			schema_version: 1,
-			issued_at: new Date().toISOString(),
+			issued_at: issued.toISOString(),
 			expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
 			free_agents: 1,
 			extra_agents: 2,
@@ -67,7 +73,52 @@ describe("server-signed entitlements (ed25519) + revocations", () => {
 		expect(next.entitlement_key_id).toBe("test-k1");
 		expect(next.entitlement_sig).toBe(sig);
 		expect(next.entitlement?.allowed_agents).toBe(3);
+		expect(isPremiumUnlocked(next, new Date(issued.getTime() - 1))).toBe(false);
+		expect(isPremiumUnlocked(next, issued)).toBe(true);
 		expect(isPremiumUnlocked(next)).toBe(true);
+	});
+
+	it("accepts network and cached revocations only within their signed lifetime", async () => {
+		const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+		const publicKeyPem = publicKey.export({ type: "spki", format: "pem" }).toString();
+		const issued = Date.parse("2026-01-01T00:00:00.000Z");
+		const list: RevocationListV1 = {
+			schema_version: 1,
+			issued_at: new Date(issued).toISOString(),
+			expires_at: new Date(issued + 2_000).toISOString(),
+			revocation_epoch: 1,
+			revocations: {
+				artifact_ids: [],
+				pack_ids: [],
+				key_ids: [],
+				entitlement_serials: ["revoked-serial"],
+			},
+		};
+		const signed = {
+			alg: "ed25519",
+			sig_b64: cryptoSign(null, Buffer.from(canonicalJson(list)), privateKey).toString("base64"),
+			payload: list,
+		};
+		const directory = await mkdtemp(join(tmpdir(), "aidr-revocation-lifetime-"));
+		try {
+			const path = join(directory, "revocations.json");
+			await writeFile(path, JSON.stringify(signed));
+			for (const [offset, accepted] of [
+				[-1, false],
+				[0, true],
+				[1_000, true],
+				[2_000, false],
+				[2_001, false],
+			] as const) {
+				const now = issued + offset;
+				expect(
+					parseSignedRevocationsFromControlPlaneBody({ revocations_signed: signed }, now) !== null,
+				).toBe(accepted);
+				expect((await loadRevocationsCache(path, [publicKeyPem], now)) !== null).toBe(accepted);
+			}
+		} finally {
+			await rm(directory, { recursive: true, force: true });
+		}
 	});
 
 	it("applies signed revocations to disable premium and sync", () => {

@@ -18,8 +18,8 @@ export function getBundledDataDirs(): {
 	return {
 		pluginDir,
 		packageRoot,
-		threatsDir: join(packageRoot, "resources", "threats"),
-		allowlistsDir: join(packageRoot, "resources", "allowlists"),
+		threatsDir: join(pluginDir, "resources", "threats"),
+		allowlistsDir: join(pluginDir, "resources", "allowlists"),
 	};
 }
 

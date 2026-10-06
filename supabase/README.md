@@ -75,7 +75,7 @@ Commercial v1 (managed-first) requires additional secrets for signing and premiu
 
 - `AIDR_ENTITLEMENT_SIGNING_KEY_ID`
 - `AIDR_ENTITLEMENT_SIGNING_PRIVATE_KEY_PKCS8_B64`
-  - Base64 of the Ed25519 private key (PKCS8 PEM bytes).
+  - Base64 of the Ed25519 private key (PKCS8 DER bytes).
 - `AIDR_POLICY_SIGNING_KEY_ID`
 - `AIDR_POLICY_SIGNING_PRIVATE_KEY_PKCS8_B64`
   - Optional Ed25519 key (PKCS8 DER base64) that signs the `policy` function's `policy_signed` envelope.
@@ -91,6 +91,15 @@ Commercial v1 (managed-first) requires additional secrets for signing and premiu
 - `AIDR_REVOCATION_TTL_HOURS` (default `24`)
 - `AIDR_ENTITLEMENT_TTL_HOURS` (default `168`)
 - `AIDR_ENTITLEMENT_GRACE_HOURS` (default `72`)
+- `AIDR_RUNTIME_CAPABILITIES_BY_TENANT` (default `{}`): deployment/operator-only
+  JSON mapping exact tenant IDs to `runtime_detectors` and optionally
+  `behavioral_learning_v1`. Learning requires both names; wildcards and other
+  module names are rejected. Maximum 64 KiB, 256 tenants, two unique capabilities
+  per tenant. Missing or malformed maps grant no runtime capabilities.
+  `enroll` and every `ingest` refresh require an active, finite licensed admission
+  for the same tenant and the existing Ed25519 signer before adding these grants;
+  trial/pilot access and browser/request flags cannot mint them. Snapshots retain
+  the existing licensed/provider expiration cap.
 - `AIDR_PACK_URL_TTL_SECONDS` (default `600`; clamped to `60..3600`)
 - `AIDR_PACK_DOWNLOAD_GRANT_SECRET` (required by `packs-manifest` and `packs-download`; use an independently generated random secret of at least 32 bytes and set the same value on both functions)
 - `AIDR_PUBLIC_API_ORIGIN` (the customer/agent-reachable API origin for pack grant links; required when `SUPABASE_URL` is an internal HTTP service name; HTTPS except for explicit loopback development)
@@ -102,6 +111,17 @@ Operationally:
 
 - Rotate signing keys by rolling `*_KEY_ID` and updating client `licensing.public_keys_pem` / `intel_packs.trusted_keys_path`.
 - Treat `AIDR_PACK_MASTER_KEY_B64` as a crown-jewel secret; leaking it effectively leaks premium pack encryption for all tenants.
+- For an explicitly authorized tenant, set the same server-only
+  `AIDR_RUNTIME_CAPABILITIES_BY_TENANT={"TENANT_ID":["runtime_detectors","behavioral_learning_v1"]}`
+  on both `enroll` and `ingest`; keep the mapping in the operator change record.
+  Removing a tenant or its capabilities takes effect on the next signed
+  enrollment/ingest refresh; existing offline snapshots retain their bounded
+  expiry/grace until then. Use existing revocation controls for immediate
+  revocation. Enrollment audit detail records the issued runtime capabilities.
+  Grants alone do not activate learning: the tenant publisher must also install
+  a compatible signed detector policy with explicit learning consent and separate
+  execution/approval authority public keys. Private authority keys stay in their
+  separate operator custody.
 
 ## Migration history and tenant boundary
 

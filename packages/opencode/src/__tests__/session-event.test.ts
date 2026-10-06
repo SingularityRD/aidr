@@ -2,12 +2,14 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it, vi } from "vitest";
+import { createSessionScanHandler } from "../startup-scan.js";
 
 vi.mock("../startup-scan.js", () => ({
-	createSessionScanHandler:
+	createSessionScanHandler: vi.fn(
 		(_logger: unknown, _directory?: string, onResult?: (message: string) => void) => async () => {
 			onResult?.("synthetic security finding");
 		},
+	),
 }));
 
 it("delivers session scan findings to the SDK session.created id", async () => {
@@ -29,9 +31,16 @@ it("delivers session scan findings to the SDK session.created id", async () => {
 			directory: isolatedHome,
 			worktree: isolatedHome,
 		} as never);
+		expect(createSessionScanHandler).toHaveBeenNthCalledWith(1, expect.anything(), isolatedHome);
 		await hooks.event?.({
 			event: { type: "session.created", properties: { info: { id: "session-1" } } },
 		} as never);
+		expect(createSessionScanHandler).toHaveBeenNthCalledWith(
+			2,
+			expect.anything(),
+			isolatedHome,
+			expect.any(Function),
+		);
 		const output = {
 			messages: [
 				{ info: { role: "user", sessionID: "session-1", id: "message-1" }, parts: [] as unknown[] },

@@ -1,0 +1,560 @@
+{
+  "status": "OPEN_REVIEW_INPUT_NOT_ACCEPTED",
+  "recorded_at": "2026-10-06",
+  "source_inventory": ".tmp-test/production-followup-2026-10-06/bridge-system-libpq-security/final-crypto-50.0.2/native-runtime-inventory.json",
+  "source_inventory_sha256": "73078e38a5d057339775db8c0acb583a9fc46f4c577ff782d517d3b04cf5a461",
+  "source_lock_sha256": "af4cf84b33c07df728ddb2e8b9a0f10c1d4f8f309295cc18bf808b8377a5c598",
+  "runtime_binding_receipt": {
+    "source": ".tmp-test/production-followup-2026-10-06/bridge-system-libpq-security/final-crypto-50.0.2/runtime-security-receipt.json",
+    "sha256": "094a39b86087682bc3d2094793949395ecb5a650efd73387bbbbad46ea3e2624",
+    "image_id": "sha256:f3e9e8b6571b532e221ce27461b6fb09b735923eba7a771fcac70b52cb7d8a35",
+    "image_repo_digests": [
+      "aidr-bridge-system-libpq@sha256:f3e9e8b6571b532e221ce27461b6fb09b735923eba7a771fcac70b52cb7d8a35"
+    ],
+    "dockerfile_sha256": "4044126de8d664cd9882d9d3b3fec5d2a7596d89cc73ac1cda1b6424d9b4a65b",
+    "scope": "main AIG bridge pure psycopg system-libpq repair and cryptography embedded OpenSSL patch; not a full base-image CVE clearance or legal approval",
+    "status": "OPEN_REVIEW_INPUT_NOT_ACCEPTED"
+  },
+  "cryptography_static_native": {
+    "source": ".tmp-test/production-followup-2026-10-06/bridge-system-libpq-security/final-crypto-50.0.2/cryptography-static-native.json",
+    "sha256": "bd21b52cec5964145c28d50f4b1bb9ef1d9bbc7e2217ff6f4c046acb14d3dc36",
+    "locked_wheel": "cryptography-50.0.2-cp311-abi3-manylinux_2_34_x86_64.whl",
+    "locked_wheel_sha256": "9dab55f57c74c3cad24c323bacbbd04be4705ba6eb0d92e920b1fc4837ed5079",
+    "exact_module_matches_selected_wheel": true,
+    "record": {
+      "schema_version": 1,
+      "scope": "statically embedded cryptography OpenSSL; separate from17 system-libpq ldd paths",
+      "cryptography_version": "50.0.2",
+      "openssl_backend_version": "OpenSSL 4.0.3 29 Sep 2026",
+      "module_path": "/usr/local/lib/python3.12/site-packages/cryptography/hazmat/bindings/_rust.abi3.so",
+      "module_sha256": "1e5d23fa66915204b9b67202a46993844d81cda56f6ad52cead2def37617ee29",
+      "ldd": "\tlinux-vdso.so.1 (0x00007554185ea000)\n\tlibgcc_s.so.1 => /lib/x86_64-linux-gnu/libgcc_s.so.1 (0x0000755417aa4000)\n\tlibc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007554178b0000)\n\t/lib64/ld-linux-x86-64.so.2 (0x00007554185ec000)\n",
+      "primary_changelog": "https://cryptography.io/en/latest/changelog/#v50-0-2",
+      "app_crypto_use": "configured generic PEM public-key parse followed by RSA restriction and PKCS1v1.5/SHA256 verification; no demonstrated TLS, X509, DTLS,QUIC,CMP,SM2 application use"
+    }
+  },
+  "embedded_ssl_upstream_materials": {
+    "status": "OPEN_REVIEW_INPUT_NOT_ACCEPTED",
+    "upstream_tag": "openssl-4.0.3",
+    "listing_url": "https://api.github.com/repos/openssl/openssl/contents?ref=openssl-4.0.3",
+    "listing_sha256": "d54ba1e2e3876cc55cf74a53ab42aab50acd871a7c6edcd3e7f9364528125113",
+    "root_notice_files": [],
+    "materials": [
+      {
+        "file": "LICENSE.txt",
+        "url": "https://raw.githubusercontent.com/openssl/openssl/openssl-4.0.3/LICENSE.txt",
+        "sha256": "7d5450cb2d142651b8afa315b5f238efc805dad827d91ba367d8516bc9d49e7a",
+        "bytes": 10175,
+        "scope": "Exact tagged upstream source material; no binary build attestation or Legal disposition"
+      },
+      {
+        "file": "AUTHORS.md",
+        "url": "https://raw.githubusercontent.com/openssl/openssl/openssl-4.0.3/AUTHORS.md",
+        "sha256": "b9f638dfc06b59c2d3b808186c3b30f713805a5db390f5b77b1703ac58acb83e",
+        "bytes": 1022,
+        "scope": "Exact tagged upstream source material; no binary build attestation or Legal disposition"
+      },
+      {
+        "file": "README.md",
+        "url": "https://raw.githubusercontent.com/openssl/openssl/openssl-4.0.3/README.md",
+        "sha256": "ae4d7773db05353b31ce1a022bac002df03506d818e94ea087b23a80c8e4084f",
+        "bytes": 8586,
+        "scope": "Exact tagged upstream source material; no binary build attestation or Legal disposition"
+      }
+    ],
+    "limitations": [
+      "Primary upstream exact-version texts only; no inferred licence waiver",
+      "No NOTICE file at tag root does not establish that no notice or source obligation exists anywhere in the source/build",
+      "Binding to an embedded runtime OpenSSL version and candidate/source obligations requires separate measured evidence and Legal review"
+    ]
+  },
+  "limitations": [
+    "Exact runtime module bytes match the selected SHA-locked wheel; embedded SSL version is a measured runtime report",
+    "Upstream exact tagged texts do not establish full build/source provenance or Legal satisfaction",
+    "The root listing found no NOTICE-named file only at the tag root; this is not a whole-source absence claim",
+    "Full container/OS and other bundled/static third-party components require the selected delivery inventory and Legal review"
+  ],
+  "inventory": {
+    "schema_version": 1,
+    "scope": "actual bridge runtime system libpq dependency paths; not a full OS CVE audit",
+    "psycopg_version": "3.2.10",
+    "psycopg_implementation": "python",
+    "libpq_version": 170011,
+    "binary_module_installed": false,
+    "loaded_ssl_paths": [
+      "/usr/lib/x86_64-linux-gnu/libcrypto.so.3",
+      "/usr/lib/x86_64-linux-gnu/libpq.so.5.17",
+      "/usr/lib/x86_64-linux-gnu/libssl.so.3"
+    ],
+    "ldd": "linux-vdso.so.1 (0x000078063289a000)\n\tlibssl.so.3 => /lib/x86_64-linux-gnu/libssl.so.3 (0x0000780632726000)\n\tlibcrypto.so.3 => /lib/x86_64-linux-gnu/libcrypto.so.3 (0x00007806320eb000)\n\tlibgssapi_krb5.so.2 => /lib/x86_64-linux-gnu/libgssapi_krb5.so.2 (0x0000780632095000)\n\tlibm.so.6 => /lib/x86_64-linux-gnu/libm.so.6 (0x0000780631fa5000)\n\tlibldap.so.2 => /lib/x86_64-linux-gnu/libldap.so.2 (0x0000780631f3f000)\n\tlibc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x0000780631d4b000)\n\tlibz.so.1 => /lib/x86_64-linux-gnu/libz.so.1 (0x0000780631d2b000)\n\tlibzstd.so.1 => /lib/x86_64-linux-gnu/libzstd.so.1 (0x0000780631c61000)\n\tlibkrb5.so.3 => /lib/x86_64-linux-gnu/libkrb5.so.3 (0x0000780631b89000)\n\tlibk5crypto.so.3 => /lib/x86_64-linux-gnu/libk5crypto.so.3 (0x0000780631b5b000)\n\tlibcom_err.so.2 => /lib/x86_64-linux-gnu/libcom_err.so.2 (0x0000780631b53000)\n\tlibkrb5support.so.0 => /lib/x86_64-linux-gnu/libkrb5support.so.0 (0x0000780631b45000)\n\t/lib64/ld-linux-x86-64.so.2 (0x000078063289c000)\n\tliblber.so.2 => /lib/x86_64-linux-gnu/liblber.so.2 (0x0000780631b34000)\n\tlibsasl2.so.2 => /lib/x86_64-linux-gnu/libsasl2.so.2 (0x0000780631b18000)\n\tlibkeyutils.so.1 => /lib/x86_64-linux-gnu/libkeyutils.so.1 (0x0000780631b11000)\n\tlibresolv.so.2 => /lib/x86_64-linux-gnu/libresolv.so.2 (0x0000780631afd000)",
+    "libraries": [
+      {
+        "path": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "sha256": "9792e3cbb541c8f44c7acf5f14f4022ea62998ecc787d326bed4d8b6547dfd92",
+        "owner": "libc6:amd64",
+        "package_version": "2.41-12+deb13u4"
+      },
+      {
+        "path": "/usr/lib/x86_64-linux-gnu/libcom_err.so.2.1",
+        "sha256": "dc4828400674492839b630c001db424cd38e5cecfcf46dbf705a637647e04bea",
+        "owner": "libcom-err2:amd64",
+        "package_version": "1.47.2-3+b12"
+      },
+      {
+        "path": "/usr/lib/x86_64-linux-gnu/libcrypto.so.3",
+        "sha256": "8ae56f0a9481280a68c19f59809cd242a07a91ad7142944d21a878221992244b",
+        "owner": "libssl3t64:amd64",
+        "package_version": "3.5.7-1~deb13u3"
+      },
+      {
+        "path": "/usr/lib/x86_64-linux-gnu/libgssapi_krb5.so.2.2",
+        "sha256": "c290f761873ebeac539911010526e1c5db86218bfcb29672760da46841741de0",
+        "owner": "libgssapi-krb5-2:amd64",
+        "package_version": "1.21.3-5+deb13u1"
+      },
+      {
+        "path": "/usr/lib/x86_64-linux-gnu/libk5crypto.so.3.1",
+        "sha256": "c4c3221d0350f882cee0430b58d5fb289a5776c684d3156964864c8a9719dff1",
+        "owner": "libk5crypto3:amd64",
+        "package_version": "1.21.3-5+deb13u1"
+      },
+      {
+        "path": "/usr/lib/x86_64-linux-gnu/libkeyutils.so.1.10",
+        "sha256": "e5d5a7450d08eff7d4bbcaac75ef2b94d3447c81a1b2ddf3ab85d2de4709a9a8",
+        "owner": "libkeyutils1:amd64",
+        "package_version": "1.6.3-6"
+      },
+      {
+        "path": "/usr/lib/x86_64-linux-gnu/libkrb5.so.3.3",
+        "sha256": "c4ab64e6bc2874a83e649e4439be752465da027a0041e2bb5343f81c80f0882d",
+        "owner": "libkrb5-3:amd64",
+        "package_version": "1.21.3-5+deb13u1"
+      },
+      {
+        "path": "/usr/lib/x86_64-linux-gnu/libkrb5support.so.0.1",
+        "sha256": "f559f051ee5d39f151a57d79f2cde475c484030098b0c73f9f7035b421b187c4",
+        "owner": "libkrb5support0:amd64",
+        "package_version": "1.21.3-5+deb13u1"
+      },
+      {
+        "path": "/usr/lib/x86_64-linux-gnu/liblber.so.2.0.200",
+        "sha256": "ca319704dd4f58b5b3fc8510738850f03f18940544ba04bebf2fa8a23a798346",
+        "owner": "libldap2:amd64",
+        "package_version": "2.6.10+dfsg-1"
+      },
+      {
+        "path": "/usr/lib/x86_64-linux-gnu/libldap.so.2.0.200",
+        "sha256": "e8f34e65087f24f296fa7a65a8c65383f4a7e2b532c46e40463d4e59a206c20a",
+        "owner": "libldap2:amd64",
+        "package_version": "2.6.10+dfsg-1"
+      },
+      {
+        "path": "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "sha256": "6d567d53e895273ca14a1f9dc164fc6c8d39aed2f60aa46a733c2784228915f3",
+        "owner": "libc6:amd64",
+        "package_version": "2.41-12+deb13u4"
+      },
+      {
+        "path": "/usr/lib/x86_64-linux-gnu/libresolv.so.2",
+        "sha256": "d41dd4adacf5a35df426461dd8a92d7bdd5ba29bb61a1c3531bec0ada386f8dd",
+        "owner": "libc6:amd64",
+        "package_version": "2.41-12+deb13u4"
+      },
+      {
+        "path": "/usr/lib/x86_64-linux-gnu/libsasl2.so.2.0.25",
+        "sha256": "3f93968591811eb3972c3467c69c2968dd9cb2b51f7b7bb48de22ba8e17d13fd",
+        "owner": "libsasl2-2:amd64",
+        "package_version": "2.1.28+dfsg1-9"
+      },
+      {
+        "path": "/usr/lib/x86_64-linux-gnu/libssl.so.3",
+        "sha256": "9592038e92d1f41affcbb625334d0b6e788714c889104fa6d5b107cf9fd657f2",
+        "owner": "libssl3t64:amd64",
+        "package_version": "3.5.7-1~deb13u3"
+      },
+      {
+        "path": "/usr/lib/x86_64-linux-gnu/libz.so.1.3.1",
+        "sha256": "85590dd58edf5445e18bc7193e5ebc01ac5841f1ae187e97705a662e90c6421e",
+        "owner": "zlib1g:amd64",
+        "package_version": "1:1.3.dfsg+really1.3.1-1+b1"
+      },
+      {
+        "path": "/usr/lib/x86_64-linux-gnu/libzstd.so.1.5.7",
+        "sha256": "27f07c9a49c2c956bcfb64cd4712976586a66facbf15fc7f09bc37413b5f2b21",
+        "owner": "libzstd1:amd64",
+        "package_version": "1.5.7+dfsg-1"
+      },
+      {
+        "path": "/usr/lib/x86_64-linux-gnu/libpq.so.5.17",
+        "sha256": "f64dcec14657e4123621448442cd3d0795744d238e588774f5c864f592f4860d",
+        "owner": "libpq5:amd64",
+        "package_version": "17.11-0+deb13u1"
+      }
+    ],
+    "notice_materials": [
+      {
+        "package": "libc6:amd64",
+        "version": "2.41-12+deb13u4",
+        "source": "/usr/share/doc/libc6/copyright",
+        "file": "distro-notices/libc6-copyright",
+        "sha256": "f5788886720a2605a946e81d571e6c8162b09f58d2e2ceb8d36e5768fccd850d"
+      },
+      {
+        "package": "libcom-err2:amd64",
+        "version": "1.47.2-3+b12",
+        "source": "/usr/share/doc/libcom-err2/copyright",
+        "file": "distro-notices/libcom-err2-copyright",
+        "sha256": "2041b5febdc110151ca3372d01b16b85dda1888e33f3f60fce0f59940eed7d19"
+      },
+      {
+        "package": "libgssapi-krb5-2:amd64",
+        "version": "1.21.3-5+deb13u1",
+        "source": "/usr/share/doc/libgssapi-krb5-2/copyright",
+        "file": "distro-notices/libgssapi-krb5-2-copyright",
+        "sha256": "936728f4181718f42951b881c1e8f1386bf6b2723c4fbc533c374d6f42c71816"
+      },
+      {
+        "package": "libk5crypto3:amd64",
+        "version": "1.21.3-5+deb13u1",
+        "source": "/usr/share/doc/libk5crypto3/copyright",
+        "file": "distro-notices/libk5crypto3-copyright",
+        "sha256": "936728f4181718f42951b881c1e8f1386bf6b2723c4fbc533c374d6f42c71816"
+      },
+      {
+        "package": "libkeyutils1:amd64",
+        "version": "1.6.3-6",
+        "source": "/usr/share/doc/libkeyutils1/copyright",
+        "file": "distro-notices/libkeyutils1-copyright",
+        "sha256": "73f5682b0466f41cea2b9b7f1ff8a8052464f6c09fb29eeac4490512af09bd50"
+      },
+      {
+        "package": "libkrb5-3:amd64",
+        "version": "1.21.3-5+deb13u1",
+        "source": "/usr/share/doc/libkrb5-3/copyright",
+        "file": "distro-notices/libkrb5-3-copyright",
+        "sha256": "936728f4181718f42951b881c1e8f1386bf6b2723c4fbc533c374d6f42c71816"
+      },
+      {
+        "package": "libkrb5support0:amd64",
+        "version": "1.21.3-5+deb13u1",
+        "source": "/usr/share/doc/libkrb5support0/copyright",
+        "file": "distro-notices/libkrb5support0-copyright",
+        "sha256": "936728f4181718f42951b881c1e8f1386bf6b2723c4fbc533c374d6f42c71816"
+      },
+      {
+        "package": "libldap2:amd64",
+        "version": "2.6.10+dfsg-1",
+        "source": "/usr/share/doc/libldap2/copyright",
+        "file": "distro-notices/libldap2-copyright",
+        "sha256": "2656a8ac4f2fda614be8fe6fd7f649665a6ca3abcf19f6ac125e2ff165b60939"
+      },
+      {
+        "package": "libpq5:amd64",
+        "version": "17.11-0+deb13u1",
+        "source": "/usr/share/doc/libpq5/copyright",
+        "file": "distro-notices/libpq5-copyright",
+        "sha256": "afcc052a946b4117667527211b4ca303f07044f5585222f4c8f577e0764b2123"
+      },
+      {
+        "package": "libsasl2-2:amd64",
+        "version": "2.1.28+dfsg1-9",
+        "source": "/usr/share/doc/libsasl2-2/copyright",
+        "file": "distro-notices/libsasl2-2-copyright",
+        "sha256": "ddb128a81d3a140ef5b3574ae000a1a50d0cb9a2ec59917121a155f91b670166"
+      },
+      {
+        "package": "libssl3t64:amd64",
+        "version": "3.5.7-1~deb13u3",
+        "source": "/usr/share/doc/libssl3t64/copyright",
+        "file": "distro-notices/libssl3t64-copyright",
+        "sha256": "6a7da622fe0637a334d2a8fc470852d2ffb77d9a2b2f930f854e32a41ad6ef35"
+      },
+      {
+        "package": "libzstd1:amd64",
+        "version": "1.5.7+dfsg-1",
+        "source": "/usr/share/doc/libzstd1/copyright",
+        "file": "distro-notices/libzstd1-copyright",
+        "sha256": "5cec9fef4d3fa7e0371fbef4ec3fc416e0105dc2a9922117f84e825cb11f50f8"
+      },
+      {
+        "package": "openssl",
+        "version": "3.5.7-1~deb13u3",
+        "source": "/usr/share/doc/openssl/copyright",
+        "file": "distro-notices/openssl-copyright",
+        "sha256": "6a7da622fe0637a334d2a8fc470852d2ffb77d9a2b2f930f854e32a41ad6ef35"
+      },
+      {
+        "package": "openssl-provider-legacy",
+        "version": "3.5.7-1~deb13u3",
+        "source": "/usr/share/doc/openssl-provider-legacy/copyright",
+        "file": "distro-notices/openssl-provider-legacy-copyright",
+        "sha256": "6a7da622fe0637a334d2a8fc470852d2ffb77d9a2b2f930f854e32a41ad6ef35"
+      },
+      {
+        "package": "zlib1g:amd64",
+        "version": "1:1.3.dfsg+really1.3.1-1+b1",
+        "source": "/usr/share/doc/zlib1g/copyright",
+        "file": "distro-notices/zlib1g-copyright",
+        "sha256": "9e5b96d63773a5d177ba264254390f792be07e41748ebd94730981c6cac31cc6"
+      },
+      {
+        "source": "/usr/share/common-licenses/AGPL-3.0",
+        "file": "distro-notices/common-AGPL-3.0",
+        "sha256": "0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0"
+      },
+      {
+        "source": "/usr/share/common-licenses/Apache-2.0",
+        "file": "distro-notices/common-Apache-2.0",
+        "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+      },
+      {
+        "source": "/usr/share/common-licenses/Artistic",
+        "file": "distro-notices/common-Artistic",
+        "sha256": "dd90d4f42e4dcadf5a7c09eea0189d93c7b37ae560c91f0f6d5233ed3b9292a2"
+      },
+      {
+        "source": "/usr/share/common-licenses/Artistic-2.0",
+        "file": "distro-notices/common-Artistic-2.0",
+        "sha256": "5c29658b80a9cbb016dfe238ece8b86b5e63761355df8b872126d35bebce4303"
+      },
+      {
+        "source": "/usr/share/common-licenses/BSD",
+        "file": "distro-notices/common-BSD",
+        "sha256": "5d588eb3b157d52112afea935c88a7ff9efddc1e2d95a42c25d3b96ad9055008"
+      },
+      {
+        "source": "/usr/share/common-licenses/BSL-1.0",
+        "file": "distro-notices/common-BSL-1.0",
+        "sha256": "c9bff75738922193e67fa726fa225535870d2aa1059f91452c411736284ad566"
+      },
+      {
+        "source": "/usr/share/common-licenses/CC-BY-3.0",
+        "file": "distro-notices/common-CC-BY-3.0",
+        "sha256": "e6bc9e9c474700b708f568bac9e5a8a9bcb2b1dad53442f5ba449fcb848b8e76"
+      },
+      {
+        "source": "/usr/share/common-licenses/CC-BY-4.0",
+        "file": "distro-notices/common-CC-BY-4.0",
+        "sha256": "9ba9550ad48438d0836ddab3da480b3b69ffa0aac7b7878b5a0039e7ab429411"
+      },
+      {
+        "source": "/usr/share/common-licenses/CC-BY-SA-3.0",
+        "file": "distro-notices/common-CC-BY-SA-3.0",
+        "sha256": "3f941b3b89cf7b8370ceb83cc76d2120d471b58735d8ca60238a751a48d7f72f"
+      },
+      {
+        "source": "/usr/share/common-licenses/CC-BY-SA-4.0",
+        "file": "distro-notices/common-CC-BY-SA-4.0",
+        "sha256": "28a9529c7d0bb4dc51f4bf5c116a3d16ef247a052f7591466768ddf563fd1cf5"
+      },
+      {
+        "source": "/usr/share/common-licenses/CC0-1.0",
+        "file": "distro-notices/common-CC0-1.0",
+        "sha256": "a2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499"
+      },
+      {
+        "source": "/usr/share/common-licenses/GFDL",
+        "file": "distro-notices/common-GFDL",
+        "sha256": "110535522396708cea37c72a802c5e7e81391139f5f7985631c93ef242b206a4"
+      },
+      {
+        "source": "/usr/share/common-licenses/GFDL-1.1",
+        "file": "distro-notices/common-GFDL-1.1",
+        "sha256": "1040f0fffcf5a73398512aaa3f7cf89b7e4bb8feb13c661ad71184e015c7fcb6"
+      },
+      {
+        "source": "/usr/share/common-licenses/GFDL-1.2",
+        "file": "distro-notices/common-GFDL-1.2",
+        "sha256": "2652c22ba086f92e55ae4a9f9c890ad4766ffd7814a73d318e22a597edf857a4"
+      },
+      {
+        "source": "/usr/share/common-licenses/GFDL-1.3",
+        "file": "distro-notices/common-GFDL-1.3",
+        "sha256": "110535522396708cea37c72a802c5e7e81391139f5f7985631c93ef242b206a4"
+      },
+      {
+        "source": "/usr/share/common-licenses/GPL",
+        "file": "distro-notices/common-GPL",
+        "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+      },
+      {
+        "source": "/usr/share/common-licenses/GPL-1",
+        "file": "distro-notices/common-GPL-1",
+        "sha256": "49c007bafb5ad6dd9f9d4dae4d3ac0461975498150c05d684c551f0914ab486c"
+      },
+      {
+        "source": "/usr/share/common-licenses/GPL-2",
+        "file": "distro-notices/common-GPL-2",
+        "sha256": "edaef632cbb643e4e7a221717a6c441a4c1a7c918e6e4d56debc3d8739b233f6"
+      },
+      {
+        "source": "/usr/share/common-licenses/GPL-3",
+        "file": "distro-notices/common-GPL-3",
+        "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+      },
+      {
+        "source": "/usr/share/common-licenses/LGPL",
+        "file": "distro-notices/common-LGPL",
+        "sha256": "e3a994d82e644b03a792a930f574002658412f62407f5fee083f2555c5f23118"
+      },
+      {
+        "source": "/usr/share/common-licenses/LGPL-2",
+        "file": "distro-notices/common-LGPL-2",
+        "sha256": "cc535c21133c895b56b374c8a1dc1eb948d99003ed2b47372069456b62f42b24"
+      },
+      {
+        "source": "/usr/share/common-licenses/LGPL-2.1",
+        "file": "distro-notices/common-LGPL-2.1",
+        "sha256": "20e50fe7aae3e56378ebf0417d9de904f55a0e61e4df315333e632a4d3555d95"
+      },
+      {
+        "source": "/usr/share/common-licenses/LGPL-3",
+        "file": "distro-notices/common-LGPL-3",
+        "sha256": "e3a994d82e644b03a792a930f574002658412f62407f5fee083f2555c5f23118"
+      },
+      {
+        "source": "/usr/share/common-licenses/MPL-1.1",
+        "file": "distro-notices/common-MPL-1.1",
+        "sha256": "f849fc26a7a99981611a3a370e83078deb617d12a45776d6c4cada4d338be469"
+      },
+      {
+        "source": "/usr/share/common-licenses/MPL-2.0",
+        "file": "distro-notices/common-MPL-2.0",
+        "sha256": "fab3dd6bdab226f1c08630b1dd917e11fcb4ec5e1e020e2c16f83a0a13863e85"
+      },
+      {
+        "source": "/usr/share/common-licenses/OFL-1.1",
+        "file": "distro-notices/common-OFL-1.1",
+        "sha256": "1d361a8f8e8ce6e68457dcd93fb56e162e6baa3bbb7e7573a290d44399f6b57e"
+      }
+    ],
+    "debian_ssl_floor": "3.5.7-1~deb13u3",
+    "debian_security_advisory": "https://security-tracker.debian.org/tracker/DSA-6531-1",
+    "python_packages": [
+      {
+        "name": "annotated-doc",
+        "version": "0.0.5"
+      },
+      {
+        "name": "annotated-types",
+        "version": "0.8.0"
+      },
+      {
+        "name": "anyio",
+        "version": "4.15.1"
+      },
+      {
+        "name": "certifi",
+        "version": "2026.7.22"
+      },
+      {
+        "name": "cffi",
+        "version": "2.1.1"
+      },
+      {
+        "name": "click",
+        "version": "8.5.0"
+      },
+      {
+        "name": "cryptography",
+        "version": "50.0.2"
+      },
+      {
+        "name": "fastapi",
+        "version": "0.141.1"
+      },
+      {
+        "name": "h11",
+        "version": "0.16.0"
+      },
+      {
+        "name": "httpcore",
+        "version": "1.0.9"
+      },
+      {
+        "name": "httptools",
+        "version": "0.8.0"
+      },
+      {
+        "name": "httpx",
+        "version": "0.28.1"
+      },
+      {
+        "name": "idna",
+        "version": "3.20"
+      },
+      {
+        "name": "pip",
+        "version": "25.0.1"
+      },
+      {
+        "name": "prometheus_client",
+        "version": "0.21.1"
+      },
+      {
+        "name": "psycopg",
+        "version": "3.2.10"
+      },
+      {
+        "name": "pycparser",
+        "version": "3.0"
+      },
+      {
+        "name": "pydantic",
+        "version": "2.10.4"
+      },
+      {
+        "name": "pydantic-settings",
+        "version": "2.7.1"
+      },
+      {
+        "name": "pydantic_core",
+        "version": "2.27.2"
+      },
+      {
+        "name": "python-dotenv",
+        "version": "1.2.3"
+      },
+      {
+        "name": "python-multipart",
+        "version": "0.0.32"
+      },
+      {
+        "name": "PyYAML",
+        "version": "6.0.2"
+      },
+      {
+        "name": "starlette",
+        "version": "1.3.1"
+      },
+      {
+        "name": "tenacity",
+        "version": "9.0.0"
+      },
+      {
+        "name": "typing-inspection",
+        "version": "0.4.4"
+      },
+      {
+        "name": "typing_extensions",
+        "version": "4.16.0"
+      },
+      {
+        "name": "uvicorn",
+        "version": "0.34.0"
+      },
+      {
+        "name": "uvloop",
+        "version": "0.22.1"
+      },
+      {
+        "name": "watchfiles",
+        "version": "1.3.0"
+      },
+      {
+        "name": "websockets",
+        "version": "17.1"
+      }
+    ]
+  }
+}

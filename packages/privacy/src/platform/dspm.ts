@@ -13,11 +13,13 @@ export class DspmRepository {
  constructor(readonly state:TenantState,private identity:ContextResolver,private clock:()=>number=Date.now){}
  replace(p:AuthenticatedPrincipal,sourceId:string,generation:number,documents:readonly SourceDocument[],complete:boolean):void{
   this.identity.assertPrincipal(p,'security-admin');id(sourceId);integer(generation,1);if(!complete||documents.length>1000)deny('DSPM_INCOMPLETE');const seen=new Set<string>();let total=0;
-  const docs=documents.map(d=>{id(d.id);if(seen.has(d.id)||!['public','internal','confidential','restricted'].includes(d.classification)||d.groups.length>128||!d.groups.length)deny('DSPM_SCHEMA');seen.add(d.id);for(const g of d.groups)id(g);if(typeof d.text!=='string'||Buffer.byteLength(d.text)>524288||(total+=Buffer.byteLength(d.text))>8388608)deny('DSPM_LIMIT');return {...d,sourceId,generation,contentDigest:createHash('sha256').update(d.text).digest('hex')};});
+  const docs=documents.map(d=>{id(d.id);if(seen.has(d.id)||!['public','internal','confidential','restricted'].includes(d.classification)||!Array.isArray(d.groups)||d.groups.length>128||!d.groups.length||new Set(d.groups).size!==d.groups.length)deny('DSPM_SCHEMA');seen.add(d.id);for(const g of d.groups)id(g);if(typeof d.text!=='string'||Buffer.byteLength(d.text)>524288||(total+=Buffer.byteLength(d.text))>8388608)deny('DSPM_LIMIT');return {...d,sourceId,generation,contentDigest:createHash('sha256').update(d.text).digest('hex')};});
   this.state.transaction(tx=>{const old=tx.get<{generation:number;ids:string[]}>('dspm-sources',sourceId);if(old&&generation<=old.value.generation)deny('DSPM_GENERATION');
    for(const d of docs){const key=docKey(sourceId,d.id),row=tx.get('dspm-documents',key);tx.put('dspm-documents',key,d,row?.version??null);}
    for(const oldId of old?.value.ids??[])if(!seen.has(oldId)){const key=docKey(sourceId,oldId),row=tx.get('dspm-documents',key);if(row)tx.remove('dspm-documents',key,row.version);}
-   tx.put('dspm-sources',sourceId,{generation,ids:docs.map(d=>d.id)},old?.version??null);tx.event('SOURCE_SYNCHRONIZED',p.subjectId,sourceId,this.clock());
+   tx.put('dspm-sources',sourceId,{generation,ids:docs.map(d=>d.id)},old?.version??null);
+   const revision=tx.get<number>('dspm-policy','revision');tx.put('dspm-policy','revision',(revision?.value??0)+1,revision?.version??null);
+   tx.event('SOURCE_SYNCHRONIZED',p.subjectId,sourceId,this.clock());
   });
  }
  read(p:AuthenticatedPrincipal,sourceId:string,documentId:string):SourceRecord{

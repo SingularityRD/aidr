@@ -1,17 +1,17 @@
 {
   "schema_version": 1,
-  "generated_on": "2026-09-24",
+  "generated_on": "2026-10-06",
   "generation_timezone": "Europe/Istanbul",
   "generation_note": "Generated from the current worktree. source_commit identifies only the base commit; worktree_has_changes is explicit. This report is not candidate-bound release evidence. READINESS_BACKLOG.json is an older issue-ledger snapshot; its historical open IDs are not current verification results.",
   "decision": "NO-GO",
-  "source_commit": "0db9af4fb0b6d737eff8533f2f1a37743a1d6b7a",
+  "source_commit": "7f3ec0ad009abf5b032b8116b296d8604fee884e",
   "worktree_has_changes": true,
   "historical_issue_ledger": {
     "path": "READINESS_BACKLOG.json",
     "generated": "2026-09-22",
     "baseline_commit": "b4361fa7",
-    "last_reviewed": "2026-09-12",
-    "latest_verification_date": "2026-09-12"
+    "last_reviewed": "2026-10-06",
+    "latest_verification_date": "2026-10-06"
   },
   "scope": "All 71 inventoried capabilities, both deployment models, current code and local verification, enterprise operations and sales acceptance. This is not a proof that no undiscovered defect exists.",
   "feature_status_counts": {
@@ -28,6 +28,7 @@
       "title": "Gerçek host ve işletim sistemi kapsamı",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
       "implementation_update": "deploy/native/support-matrix.json satilan connector/OS/arch/context/interception matrisini ve bilinen bypass/unobserved listesini tanimliyor; deploy/native/run-support-matrix.mjs kurulu olmayan hostu HOST_UNAVAILABLE olarak NO-GO uretiyor, gercek host ve isimli kabul acik.",
+      "remaining_implementation": [],
       "feature_ids": [
         "CON-01",
         "CON-02",
@@ -60,6 +61,7 @@
       "title": "Bağlayıcılar arasında araç adı ve girdi normalizasyonu",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
       "implementation_update": "Ortak araç/girdi normalizasyonu evaluator öncesinde; Codex ve OpenClaw boş-artifact erken izin yolu kaldırıldı, named MCP çağrıları politikaya ulaşıyor.",
+      "remaining_implementation": [],
       "feature_ids": [
         "DET-12",
         "DET-11",
@@ -84,6 +86,7 @@
       "title": "Paket denetiminde hatanın sessiz kaybolması",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
       "implementation_update": "Paket, registry ve file-reputation hata/bozuk-200 yolları clean yerine unknown/unavailable üretiyor; gerçek 404 ve doğrulanmış clean ayrımı test edildi.",
+      "remaining_implementation": [],
       "feature_ids": [
         "DET-10",
         "DET-11",
@@ -106,7 +109,8 @@
       "priority": "P1",
       "title": "Model tüketiminden önce çıktı denetimi",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Çıktı tarayıcı 2 MiB UTF-8, 3000 ms best-effort ve 128 bulgu sınırında inspection_incomplete/critical fail-closed üretiyor; JSON/Unicode ve sınır payloadları test edildi. Her hostta aynı-tur blok kanıtı yok.",
+      "implementation_update": "Çıktı tarayıcı sınırlı UTF-8/JSON/Unicode kapsamı ve inspection_incomplete fail-closed davranışı uygular. İmzalı tenant DLP Claude/OpenCode/OpenClaw ve açık SDK runtime adapteri çıktılarına bağlandı; teslimde state/expiry/revocation yeniden doğrulanır. Ayrı privacy MCP metin/structuredContent/metadata ve birleştirilmiş metin parçalarını denetleyip hassas yanıtı saklar. Codex output API'si yok; Cursor/VS Code host kabiliyeti ve provider stream yolları için eksiksiz pre-consumption iddiası yapılmaz. Gerçek host kabulü açık.",
+      "remaining_implementation": [],
       "feature_ids": [
         "DET-06",
         "DET-07",
@@ -135,8 +139,9 @@
       "id": "T05",
       "priority": "P1",
       "title": "Davranış, novelty ve ML kararlarının ürün akışına bağlanması",
-      "status": "OPEN",
-      "implementation_update": "No authenticated post-execution receipt reaches the evaluator; learningAllowed remains false, the runtime starts cold, and baseline restore/persistence are intentionally disabled. DET-08 must not be sold as learned/personalized behavior detection until an authoritative execution boundary, anti-replay receipt, and persistence/retention rules are defined.",
+      "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
+      "implementation_update": "Gerçek foreground işlemden sonra ayrı execution imzası ve bağımsız onay hesabının benign/retention imzası gerekiyor. learning execute/approve/ingest akışı tenant, cihaz, çağrı, girdi ve güncel yetkiye bağlı tek kullanımlık kayıtları doğruluyor; kasa HMAC'li kalıcı journal/baseline ile 30 günlük fiziksel pruning var. Normal araç preflight'ı öğrenmiyor; issuer opt-in yetkisi ve imzalı corpus/ayrı public roller gerekiyor. Gerçek Windows işlemleri/DPAPI ve hesaplar arası akış test edildi. Exit zero iş başarısı veya süreç ağacı izolasyonu sayılmaz; müşteri corpus etkinliği, rol/key custody ve OS kabulü açık.",
+      "remaining_implementation": [],
       "feature_ids": [
         "DET-08",
         "DET-09"
@@ -160,6 +165,7 @@
       "title": "Reputation ve AI altyapı verisinin güncelliği",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
       "implementation_update": "İmzalı offline feed için publisher issued_at ve yerel fetched_at birlikte yaş sınırına bağlandı; canlı provider, dağıtım ve gecikme kabulü açık.",
+      "remaining_implementation": [],
       "feature_ids": [
         "DET-10",
         "DET-11",
@@ -187,6 +193,7 @@
       "title": "MCP keşfi ve kimlik normalizasyonunun kapsamı",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
       "implementation_update": "Yerel MCP keşfi konum/alias bazlı kararlı inventory_id ve merkezi stale/partial kapsam raporu üretiyor; ek host biçimleri/native kabul açık.",
+      "remaining_implementation": [],
       "feature_ids": [
         "MCP-01",
         "MCP-02",
@@ -212,6 +219,7 @@
       "title": "İmzalı MCP araç tanımı ve değişiklik onayı",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
       "implementation_update": "İmzalı MCP manifest key_id'yi imzaya bağlıyor, geçersiz saat ve legacy imza fail-closed; eski manifestler güvenilir yayıncı tarafından yeniden imzalanmalı.",
+      "remaining_implementation": [],
       "feature_ids": [
         "MCP-05"
       ],
@@ -233,6 +241,7 @@
       "title": "Kullanıcı–ajan–araç–kaynak ilişkisi ve delegasyon",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
       "implementation_update": "Ed25519 delegated lineage ve grant/introspection/revoke; geçersiz sayı ve Ed25519 olmayan EdDSA anahtarı reddediliyor. Gerçek IdP/tool provider kabulü açık.",
+      "remaining_implementation": [],
       "feature_ids": [
         "MCP-06",
         "TEN-06",
@@ -256,7 +265,8 @@
       "priority": "P1",
       "title": "MCP gateway ve taşıma güvenliği",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Loopback/stdio JSON-RPC geçidi DNS pinleme, gerçek stream sınırı, tekil framing ve bozuk yanıt reddi uyguluyor; binary, server-initiated ve zorunlu routing kabulü açık.",
+      "implementation_update": "DNS pinli JSON/SSE ve stdio tools geçidi incremental fatal UTF-8, gerçek bayt sınırı, 202/boş priming ve cancellation uygular. Legacy server callback ve modern MRTR continuation tek kullanımlık tenant/client/server/session/request bağlarıyla geri taşınır. Tam RPC metadata ve çıktı guard'ları kurulu imza doğrulanan ESM factory'de çalışır; private launcher gerçek mTLS tarayıcıya bağlıdır. Mandatory routing ayrı upstream credential ve unauthenticated/client-credential 401/403 negatif probu ister. Opaque format capable guard olmadan reddedilir; resources/prompts/subscriptions/unrelated GET kapsam dışı, host ağ sınırı ve gerçek müşteri kabulü açık.",
+      "remaining_implementation": [],
       "feature_ids": [
         "MCP-07"
       ],
@@ -277,7 +287,8 @@
       "priority": "P1",
       "title": "Sürekli kurum/filo keşfi",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Yerel tamamlama: aidr collect tek-seferlik OS scheduler çağrısı ve çakışmayan --interval döngüsü destekliyor; kimlikli/sequenced upload dedup edilmiş tenant envanterine gidiyor; authenticated summary/list/read ve reported_collectors_only freshness/alert-state dashboard tüketicisi tamamlandı. Dış kabul: müşteri cloud/MDM adaptörleri, izinli kapsam/credentials, etkin production schedule ve alert/paging teslimi ile canlı tool-provider ve saha kabulü açık.",
+      "implementation_update": "aidr collect AWS STS/SigV4 tagging, Azure Resource Graph, GCP signed OAuth Cloud Asset ve Intune device API adaptörlerini bounded pagination/scope/freshness ile çalıştırır. Collector credential yalnız açık provider+scope hash yetkisiyle typed provider_resources yükleyebilir; eski HTTP yetkisi cloud yetkisi vermez. Tenant dashboard, incomplete/complete reconcile, hold/offboarding ve gerçek PostgreSQL zinciri testlidir. Gerçek cloud hesapları/MDM lisansı, IAM kapsamı, production schedule ve paging teslimi açık.",
+      "remaining_implementation": [],
       "feature_ids": [
         "INF-03"
       ],
@@ -299,7 +310,8 @@
       "priority": "P1",
       "title": "Filo müdahalesi ve credential iptali",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "İmzalı revocation feed tenant+global kapsamı 5000 sınırından önce filtreliyor ve eksik/truncated seti imzalamıyor; native/provider iptali açık.",
+      "implementation_update": "Bağımsız Ed25519 exact-device/tenant/iid/current-key command envelope, ACK/result ve immutable queue kanıtı eklendi. Windows opt-in current-user worker dağıtımına ve Scheduled Task yaşam döngüsüne bağlandı; kalıcı pause tüm ortak denetim yollarında kasa HMAC'li journal'dan okunur. Windows isolation owned firewall block kuralları explicit control/recovery CIDR'lerini korur; sonuç/geri alma doğrulaması failure/unknown ile ayrıdır. Kod ve güvenli native fixture testleri gerçek üretim PC izolasyonu değildir. Onaylı Authenticode/key custody, Windows VM/MDM ve diğer OS/provider kabulü açık.",
+      "remaining_implementation": [],
       "feature_ids": [
         "RSP-04",
         "RSP-06"
@@ -321,7 +333,8 @@
       "priority": "P1",
       "title": "Response eylemlerinin güvenli uçtan uca işletimi",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Response-worker capability/önkoşul/TTL/idempotency/rollback makbuzu sözleşmesini uyguluyor; desteklenmeyen eylem reddediliyor ve geri alınamayan adım partial raporlanıyor. RSP-07 için owner/admin + AAL2 yetkili API ve dayanıklı, sabit iki adımlı pause-agent → isolate-network playbook'u eklendi; çalışan adapter/worker ayrıca kurulup doğrulanmadıkça yürütme başlamaz. Native OS/provider adapter, alarm tetikleyicisi, harici SOAR bağlayıcısı ve kurulu servis saha kabulü açık.",
+      "implementation_update": "İnsan owner/admin+AAL2 API ve ayrı süreli hash-only alarm/SOAR automation grant aynı sabit pause→isolate playbook'una bağlıdır. Exact target/template/source, creator/live revocation, TTL, event idempotency, hold/offboarding ve audit rollback gerçek PostgreSQL'de testlidir. Kurulu worker ayrı imzalı komutu doğrular; unverifiable OS etkisi başarı yazılmaz ve unsafe retry/rollback yapılmaz. Native signed Windows VM ve harici alarm/SOAR olay kaynağı kabulü açık.",
+      "remaining_implementation": [],
       "feature_ids": [
         "RSP-02",
         "RSP-03",
@@ -354,6 +367,7 @@
       "title": "YAML politika yazımı ile gerçek runtime ilişkisi",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
       "implementation_update": "Core/server dry-run unknown MCP fallback kararı runtime evaluator ile eşlendi; YAML/JSON compiler, parity ve dashboard publish akışı bağlı.",
+      "remaining_implementation": [],
       "feature_ids": [
         "POL-01",
         "POL-02"
@@ -377,6 +391,7 @@
       "title": "Politika dağıtımı saha kabulü ve ölçek sınırları",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
       "implementation_update": "Hedefli stage işlemi atomik revision precondition ile eski eşzamanlı güncellemeyi 409 reddediyor; gerçek filo/ölçek kabulü açık.",
+      "remaining_implementation": [],
       "feature_ids": [
         "POL-03",
         "POL-04",
@@ -400,7 +415,8 @@
       "priority": "P1",
       "title": "Endpoint sır saklama ve anahtar rotasyonu",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Windows config create/update/reuse yolu owner+SYSTEM+Administrators DACL kuruyor ve ACL hatasında credential yazmıyor; OS vault ve server-side revocation açık.",
+      "implementation_update": "Windows config create/update/reuse yolu özel DACL kuruyor ve ACL hatasında credential yazmıyor. DPAPI, macOS Keychain ve Linux Secret Service adapterleri ile vault-ref yönetilen credential yolu mevcut; bu, yalnız dosya izinleriyle sağlanan korumadan ayrıdır. Gerçek platform/service-account vault ve server-side revocation kabulü açık.",
+      "remaining_implementation": [],
       "feature_ids": [
         "CLI-02",
         "TEN-06"
@@ -424,6 +440,7 @@
       "title": "İmzalı filo kurulumu, güncelleme ve kaldırma",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
       "implementation_update": "Installer ile Windows/Unix uninstall yalnız AIDR işaretli nested hook'u kaldırıyor, aynı entry'deki müşteri hook'larını koruyor; gerçek MDM/yayıncı kabulü açık.",
+      "remaining_implementation": [],
       "feature_ids": [
         "CLI-01",
         "CLI-03",
@@ -446,8 +463,9 @@
       "id": "T18",
       "priority": "P0",
       "title": "Kurumsal giriş, MFA ve hesap kurtarma",
-      "status": "OPEN",
-      "implementation_update": "Recovery URL only accepts hosted HTTPS/loopback HTTP, rejects credential URLs and installs a global session barrier before password changes. Enterprise SAML policy administration is still absent: application code cannot set/clear required_saml_provider_id or perform the documented dual-approved cutover/rollback. The specification leaves approver identity/AAL2, rollback target, session-revocation scope, provider allowlist source, and approval expiry/replay rules undefined; do not invent these security semantics.",
+      "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
+      "implementation_update": "Normal iki-owner+AAL2 SAML CAS ve audit korunur. Bütün IdP oturumları bitmişken önceden bağımsız kaydedilmiş iki operator HMAC kanıtı, 5 dakikalık nonce, exact provider CAS ve aktif manuel Auth owner ile NULL rollback yapan ayrı offline helper/RPC vardır; session/MFA bariyerini, hold veya Auth credential'ını kaldırmaz. Service JWT ile doğrudan tablo mutasyonu da kapatıldı. Tam migration zincirinde recovery9 ve normal administration13 gerçek PostgreSQL testi geçti; gerçek IdP/Auth kurtarma operatörü ve saha kabulü açık.",
+      "remaining_implementation": [],
       "feature_ids": [
         "TEN-01",
         "TEN-04",
@@ -470,8 +488,11 @@
       "id": "T19",
       "priority": "P1",
       "title": "SCIM ve güvenilir directory grup eşlemesi",
-      "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "SCIM stale PATCH'i reddediyor, Remove members tüm üyeleri kaldırıyor ve büyük grup üyeliğini sayfalıyor. Dashboard scim-admin çağrısı sabit fonksiyon adı ve kodlanmış cursor sorgusuyla browser Edge sözleşme kapısına bağlı; gerçek Entra/Okta kabulü açık.",
+      "status": "OPEN",
+      "implementation_update": "Self-hosted SCIM stale update/role/credential lifecycle kontrolünü korur. Landing native Clerk SSO/Directory Sync SDK ve operator yapılandırmasına, actual ordered role-ID group mapping'e, bound fresh organization/admin kontrolüne ve deprovisioned/banned reddine bağlıdır. Native JIT ve ek identity linking kapatılır. Mevcut Clerk API her üyelik için seçilmiş directory active durumunu kanıtlayamıyor; manual/başka-directory grant kaynaklarının strict deny garantisi tamam değil. Gerçek Entra/Okta/Clerk kurum kabulü ve provider ayarları açık.",
+      "remaining_implementation": [
+        "Clerk native API seçili-directory-active bilgisini her grant için sağlamıyor; manual/başka-directory üyeliğin strict deny garantisi için desteklenen provider kabiliyeti veya kurum kontrolü gerekir."
+      ],
       "feature_ids": [
         "TEN-02",
         "TEN-04"
@@ -494,6 +515,7 @@
       "title": "Davet ve cihaz kayıt yaşam döngüsü",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
       "implementation_update": "Tenant kapsamlı invite list/revoke/resend token rotasyonu ile device-start/exchange temeli var; SMTP, gerçek browser/IdP ve ağ kesintisi kabulü açık.",
+      "remaining_implementation": [],
       "feature_ids": [
         "TEN-03",
         "TEN-05"
@@ -517,6 +539,7 @@
       "title": "Mevcut API anahtarında ekip ve üyelik iptali",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
       "implementation_update": "URL/file reputation ve pack manifest/issuance ortak API anahtarı sınırında aktif tenant, üyelik, admission ve revocation kontrol ediyor. Özel pack Storage bucket'ı migration ile oluşuyor; müşteri bağlantısı beyan edilen dış API kaynağını kullanıyor. İndirilen baytlar kısa ömürlü AIDR grant proxy üzerinden geliyor; her GET/HEAD isteğinde anahtar, üyelik, tenant ve entitlement yeniden doğrulanıyor. İzole self-hosted kurulumda gerçek paket baytlarıyla genişletilmiş HTTP smoke geçti; imzalı adayda cloud/self-hosted canlı negatif kabulü açık.",
+      "remaining_implementation": [],
       "feature_ids": [
         "TEN-01",
         "TEN-06",
@@ -545,6 +568,7 @@
       "title": "Tenant izolasyonu ve kaynak tüketim sınırları",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
       "implementation_update": "Edge byte/rate sınırı bozuk RPC'de 503 ve stalled stream'de 413 fail-closed üretiyor; müşteri yük/izolasyon kabulü açık.",
+      "remaining_implementation": [],
       "feature_ids": [
         "TEN-01",
         "OBS-01",
@@ -568,6 +592,7 @@
       "title": "Telemetri dayanıklılığı ve görünür veri kaybı",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
       "implementation_update": "Telemetry namespace and WAL now enforce and verify private NTFS ACLs before writes; ACL failure fails closed. A terminally dropped event is checkpointed out of the WAL immediately while loss counters remain. Focused Windows tests took 51.43 seconds, so real hook latency/p95 and long-outage durability acceptance remain open.",
+      "remaining_implementation": [],
       "feature_ids": [
         "OBS-01"
       ],
@@ -589,6 +614,7 @@
       "title": "SIEM ve yerel telemetry üretim teslimi",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
       "implementation_update": "SIEM durable state provider/endpoint/index routing fingerprint'e bağlı ve farklı hedefte reopen'i reddediyor. Windows'ta state dizini ve yeni/değişen dosya veri yazılmadan/okunmadan önce özel NTFS ACL ile korunuyor; gerçek SIEM alındısı/zamanlayıcı açık.",
+      "remaining_implementation": [],
       "feature_ids": [
         "OBS-04"
       ],
@@ -613,6 +639,7 @@
       "title": "Olay araştırması ve kanıt bütünlüğü",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
       "implementation_update": "incidents/evidence-receipt.ts candidate/policy/device/actor/incident/action bagli append-only receipt, Lamport mantik saati ile offline/skew siralamasi, duplicate/tamper reddi ve fail-closed arsiv adapteri ekliyor. Dis arsiv sahibi ve key custody acik. Eski: Olay receipt head sırası deterministik UTF-16 ve legacy doğrulama uyumlu; ayrı Ed25519 snapshot makbuzu var. Dış saklama, key custody ve güvenilir zaman açık.",
+      "remaining_implementation": [],
       "feature_ids": [
         "OBS-02",
         "RSP-05"
@@ -636,6 +663,7 @@
       "title": "Saklama, legal hold ve müşteri çıkışı",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
       "implementation_update": "Audit export ve özel aidr-packs nesneleri için offboarding yetkili, tam-yol/token bağlı Storage silme, birebir yanıt/yokluk doğrulama ve ACK makbuzları uygulandı. Paketler mevcut policy_configuration retention fazında, tenant kilidi altında, bounded batch ile siliniyor; orphan prefix nesneleri kapsanıyor, legacy/paylaşılan yollar güvenli biçimde durduruluyor. Legal hold, yarım kalan silme, tekrar deneme, geç metadata/yükleme ve kapanış korumaları izole PostgreSQL/HTTP testlerinde doğrulandı. Sentetik self-hosted gerçek Storage API çıkışı paket baytı/metadata artığını sıfırlayıp bir makbuz bıraktı; diğer retention sınıfları için tenant haklı olarak waiting_retention durumunda kaldı. Cloud/provider erasure, backup expiry/key-destruction ve müşteri saha kabulü açık.",
+      "remaining_implementation": [],
       "feature_ids": [
         "OBS-03",
         "OBS-06"
@@ -660,6 +688,7 @@
       "title": "Offsite yedekleme ve RPO/RTO",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
       "implementation_update": "Offsite commit zamanı authenticated manifest'e bağlı ve S3 lookup hatası fail-closed; izole restore aracı var. Bağımsız host/provider ve RPO/RTO açık.",
+      "remaining_implementation": [],
       "feature_ids": [
         "DEP-06"
       ],
@@ -680,7 +709,8 @@
       "priority": "P0",
       "title": "Gerçek cloud ve self-hosted üretim kurulumu",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Historical v6 self-hosted install evidence recorded execution of 33 migrations; it is not proof for the current source tree or candidate. The current source tree contains 122 canonical migration files, and no current candidate-bound install/upgrade acceptance exists. Prepare inputs are validated without creating secrets, and cloud preparation rejects public proxy/provider upstream loops. Live provider/TLS acceptance remains open.",
+      "implementation_update": "Historical v6 self-hosted install evidence recorded execution of 33 migrations; it is not proof for the current source tree or candidate. The current source tree contains 139 canonical migration files, and no current candidate-bound install/upgrade acceptance exists. Prepare inputs are validated without creating secrets, and cloud preparation rejects public proxy/provider upstream loops. Live provider/TLS acceptance remains open.",
+      "remaining_implementation": [],
       "feature_ids": [
         "DEP-01",
         "DEP-02"
@@ -703,6 +733,7 @@
       "title": "Kimliği doğrulanan dağıtım ve release provenance",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
       "implementation_update": "Release verifier receipt hedefini mutation öncesi doğruluyor ve bundle/state/policy çakışmasını reddediyor; resmi key custody/private registry açık.",
+      "remaining_implementation": [],
       "feature_ids": [
         "DEP-05",
         "DEP-08",
@@ -727,6 +758,7 @@
       "title": "HA, failover, kapasite ve SLA ölçümü",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
       "implementation_update": "Load harness her fault senaryosu için son hatadan sonra ardışık recovery ve tam gözlem istiyor; gerçek HA, kapasite ve aylık SLA açık.",
+      "remaining_implementation": [],
       "feature_ids": [
         "DEP-07"
       ],
@@ -748,6 +780,7 @@
       "title": "Migration, upgrade ve geri dönüş tatbikatı",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
       "implementation_update": "Kesilen rename resume yalnız kaynak/staged içerik preflight hash'leriyle eşleşirse devam ediyor; gerçek trafik cutover/rollback kabulü açık.",
+      "remaining_implementation": [],
       "feature_ids": [
         "DEP-03",
         "DEP-04"
@@ -770,6 +803,7 @@
       "title": "İzleme, alarm ve işletim sahipliği",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
       "implementation_update": "Per-instance scrape/readiness ve empty-discovery alertleri eklendi; kural YAML/testleri var. Canlı paging, isimli nöbet ve SLA açık.",
+      "remaining_implementation": [],
       "feature_ids": [
         "DEP-01",
         "DEP-02",
@@ -793,6 +827,7 @@
       "title": "Satılan fatura ve entitlement yaşam döngüsü",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
       "implementation_update": "billing-portal Edge Function provider-of-record durum makinesi, sunucu tarafi tenant/uyelik/rol/MFA cozumlemesi, istemci customer/tenant/subscription id reddi, TTL/idempotency, cancel/refund ve seat reconciliation uyguluyor; finance fixture ile test edildi, canli provider ve muhasebe onayi acik. Eski: Pending Finance sipariş sonucu tenant/request/quantity/quote alanlarına fail-closed bağlı; provider-of-record, ödeme makbuzu ve paid-to-entitlement yok.",
+      "remaining_implementation": [],
       "feature_ids": [
         "BIL-01",
         "BIL-02",
@@ -817,6 +852,7 @@
       "title": "Readiness kayıtlarının ve ürün iddialarının tutarlılığı",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
       "implementation_update": "71 özellik, 59 iş paketi, 10 release rootu ve claim candidate/expiry tutarlılığı otomatik kontrol ediliyor; 13 dış onay kapısı açık.",
+      "remaining_implementation": [],
       "feature_ids": [
         "EVAL-02",
         "EVAL-03",
@@ -840,7 +876,8 @@
       "priority": "P0",
       "title": "Test kapılarının kapsamı ve başarısızlığın saklanmaması",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Bu çalışma ağacında yerel test paketi geçti; ancak güncel ilk müşteri gate'i candidate digesti bulunmadığını ve release evidence indexindeki 30 kapının NOT_RUN olduğunu kaydediyor. Yerel test geçişi v8 adayını güncel/accepted yapmaz; native kör corpus açık.",
+      "implementation_update": "Bu çalışma ağacında yerel test paketi geçti; güncel candidate digesti ve v8-evidence-index.json bulunmuyor. 30 NOT_RUN kapısı yalnız 24 Eylül tarihsel snapshot'ıdır. Yerel test geçişi v8 adayını güncel/accepted yapmaz; native kör corpus, secret-history Security kabulü ve landing geliştirme zincirinin yamalanmamış braces açığı açık. Gerçek bridge OCI imajı tam OS/library Trivy taramasında PCRE2 güncellendi ve kullanılmayan pip/ensurepip kaldırıldı; aynı DB ile 7 giderilebilir bulgu kapandı. Kalan 241 package/advisory satırı, 111 benzersiz ID ve düzeltmesi olmayan 52 HIGH bulgu docs/production-readiness/bridge-image-security-2026-10-06.md içinde açıklanır; Security kabulü ve GA hâlâ NO-GO.",
+      "remaining_implementation": [],
       "feature_ids": [
         "EVAL-01",
         "CON-05"
@@ -864,6 +901,7 @@
       "title": "Operatör UI ve ilk müşteri kullanılabilirliği",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
       "implementation_update": "Onboarding stale token/tenant/error durumları fail-closed ve yapılandırılmış Azure/Entra login görünür; gerçek browser/IdP/erişilebilirlik kabulü açık.",
+      "remaining_implementation": [],
       "feature_ids": [
         "CLI-01",
         "TEN-07",
@@ -890,8 +928,11 @@
       "id": "T37",
       "priority": "P0",
       "title": "Gerçek veri akışı, redaksiyon ve gizlilik kanıtı",
-      "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Privacy verifier canary boyunca source hash kararlılığı ve temp support-bundle izolasyonu istiyor; 6 canary/13 bundle kontrolü geçti. Ingest now omits JWT/credential-shaped projected identifiers and rejects credential-shaped event IDs (10 focused regressions); legal retention, data-flow, region, and live acceptance remain open.",
+      "status": "OPEN",
+      "implementation_update": "Privacy platform gerçek HTTPS OIDC discovery/JWKS, PKCE/nonce/mTLS broker login, ayrı kurum-imzalı identity assertion ve durable revoke/refresh oturumuyla çalışır. Gerçek provider gönderimi final mTLS/lease/ACL sınırına bağlıdır; datasource/read label revision ve signed-group ACL kullanır. Kurulu aidr-privacy-mcp, imzalı public gateway ESM factory'de actual RPC input/output'u gerçek private mTLS protect servisine yönlendirir ve routingRequired zorunludur. OS vault ref, üç ayrı UID ve egress kuralı recipe'si vardır. Bütün native/browser/model yollarını kurum MDM/network kontrolü olmadan kapatan evrensel dağıtım yok; gerçek kurum authority/provider/region ve onaylı model kabulü açık.",
+      "remaining_implementation": [
+        "Kurulu broker/MCP/CLI gönderim yolları bağlıdır; bütün native/browser/model-provider alternatif yollarını kapatan kurum MDM/egress dağıtımı ve gerçek authority materyali henüz yok."
+      ],
       "feature_ids": [
         "OBS-01",
         "OBS-03",
@@ -915,8 +956,11 @@
       "id": "T38",
       "priority": "P1",
       "title": "Kuruma özel DLP ve veri etiketleri",
-      "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "DLP overlapping ve JSON Unicode-escaped secret spanlarını tam redact ediyor; malformed/mapping/oversize fail-closed. Versioned CAS storage/history/audit/offboarding ve owner/admin+MFA publish sınırı uygulandı; imzalı agent delivery ve müşteri label kabulü açık.",
+      "status": "OPEN",
+      "implementation_update": "Tenant DLP CAS/history/audit ve operatör imzalama bridge'i tüm desteklenen ortak input/output yollarına bağlıdır; gerçek issuer optional runtime_detectors/behavioral_learning_v1 yetkisini yalnız tenant operator opt-in ve aktif signed grant ile üretir. Private DSPM ACL, gerçek parser ile PDF/DOCX→sanitized TXT ve conservative PCM16 redaction vardır. Hash-pinned gerçek TR/EN modeller Windows/Linux offline CPU ile ölçüldü: iki candidate da temiz false alarm/type recall eşiklerini geçmedi ve approved:false kalır. Bu model/kurum label kabulü ile formatı koruyan Office/PDF, gerçek ASR zaman aralığı ve bütün frame'leri denetleyen video yolu açık.",
+      "remaining_implementation": [
+        "Gerçek TR/EN NER candidate'ları ölçülen type recall/temiz yanlış alarm eşiklerini geçmedi. Onaylı kurum corpus/model ile formatı koruyan Office/PDF, gerçek ASR timestamp ve tam-frame video yolları eksik."
+      ],
       "feature_ids": [
         "DET-07"
       ],
@@ -937,7 +981,8 @@
       "priority": "P1",
       "title": "Bağımsız etkinlik, performans ve rakip kıyaslaması",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Deterministik sentetik corpus, içerik-digest holdout manifesti, sold-scope coverage, confusion/P-R-F1/ROC-AUC, reason-coded unknown competitor hücreleri, trusted-key/duty-separation binding, ölçüm bütçesi, canonical digest ve byte-exact reproduce harness'ı uygulanıp test edildi. Gerçek müşteri benign corpus'u, competitor erişimi, bağımsız evaluator/trust kaydı ve bütçe onayı dış kanıt olarak açık.",
+      "implementation_update": "Deterministik sentetik corpus, içerik-digest holdout manifesti, sold-scope coverage, confusion/P-R-F1/ROC-AUC, reason-coded unknown competitor hücreleri, trusted-key/duty-separation binding, ölçüm bütçesi, canonical digest ve byte-exact reproduce harness'ı uygulanıp test edildi. Privacy model qualification dil başına temiz negatif kapsamı ve yapılandırılabilir observed false-alarm engineering sınırı ister; tüm temiz örnekleri engelleyen model artık qualified sayılmaz. Gerçek müşteri model/benign corpus'u, competitor erişimi, bağımsız evaluator/trust kaydı ve bütçe onayı dış kanıt olarak açık.",
+      "remaining_implementation": [],
       "feature_ids": [
         "EVAL-01",
         "EVAL-02",
@@ -961,6 +1006,7 @@
       "title": "Güvenlik güncellemesi ve müşteri destek işletimi",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
       "implementation_update": "Destek runbook'u, izinli/hashli bundle, escalation ve emergency update akışı hazır; gerçek kanal, nöbet ve ticket tatbikatı açık.",
+      "remaining_implementation": [],
       "feature_ids": [
         "DEP-05",
         "OBS-05"
@@ -983,6 +1029,7 @@
       "title": "İlk müşteri satış ve satın alma değerlendirme paketi",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
       "implementation_update": "İlk müşteri readiness gate'i NO-GO; v8 satış paketi tarihsel iç buyer-review taslağıdır ve kabul/teklif yetkisi vermez. Portable kit üreticisi mevcut olsa da temiz imzalı candidate, onaylı teklif ve satın alma kabulü açık.",
+      "remaining_implementation": [],
       "feature_ids": [
         "EVAL-02",
         "EVAL-03",
@@ -1007,6 +1054,7 @@
       "title": "Legacy RLS tenant yaşam döngüsü ve itibar satırı sahteciliği",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
       "implementation_update": "Eski izin verici RLS kaldırıldı; forged claim, expired member, suspended tenant ve service-role kontrolleri yerel PostgreSQL'de geçti. Saha migrationı açık.",
+      "remaining_implementation": [],
       "feature_ids": [
         "TEN-01",
         "DET-10",
@@ -1029,7 +1077,8 @@
       "priority": "P1",
       "title": "Enrollment exchange işlem bütünlüğü",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Atomik token/seat/key RPC ve lost-response sonucu unknown sözleşmesi var; plaintext-key recovery protokolü ve canlı HTTP kabulü açık.",
+      "implementation_update": "Atomik token/seat/key RPC korunur. Session-start ve evaluator bootstrap aynı private, exclusive enrollment-pending journal'ını kullanır; belirsiz/committed yanıt otomatik tekrar edilmez, credential diske kesin kaydedilmeden journal silinmez. Kayıp committed anahtar plaintext olarak geri açılamaz: yetkili revoke ve yeni insan onaylı aynı-iid eşleme gerçek PostgreSQL'de tek seat/agent ile doğrulandı. Canlı TLS/host ve operatör kabulü açık.",
+      "remaining_implementation": [],
       "feature_ids": [
         "TEN-05",
         "TEN-06"
@@ -1051,7 +1100,8 @@
       "priority": "P1",
       "title": "Entitlement grace ve eski imzalı önbellek geçişi",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Cache unsigned/unknown/schema-invalid entitlement'ı atıyor; kesin invalid_api_key signed state'i temizliyor, geçici hata grace'i koruyor. Canlı kabul açık.",
+      "implementation_update": "Cache unsigned/unknown/schema-invalid entitlement'ı atıyor; kesin invalid_api_key signed state'i temizliyor, geçici hata grace'i koruyor. Premium policy pack/cache artık mevcut doğrulanmış grant, tenant/serial/expiry/grace ve revocation durumuna bağlı; downgrade/revoke/expiry eski çözülmüş önbelleği devre dışı bırakır. Yerel operatör denylist'i ve ücretsiz detection korunur. Canlı kabul açık.",
+      "remaining_implementation": [],
       "feature_ids": [
         "TEN-05",
         "POL-04"
@@ -1075,6 +1125,7 @@
       "title": "Device-start güvenilir IP ve giriş yönlendirmesi",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
       "implementation_update": "Device-start signer placeholder/reused secret'i reddediyor; HMAC ingress/rate limit var. Gerçek public proxy/TLS routing ve müşteri yükü açık.",
+      "remaining_implementation": [],
       "feature_ids": [
         "TEN-05",
         "DEP-01",
@@ -1098,6 +1149,7 @@
       "title": "Device-poll onaydan kayda atomik geçiş",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
       "implementation_update": "Device-poll kayıp yanıt/eşzamanlı poll'da aynı hash-only tokenı geri buluyor, lookup hatasında 503 unknown dönüyor; canlı yarış kabulü açık.",
+      "remaining_implementation": [],
       "feature_ids": [
         "TEN-05"
       ],
@@ -1658,11 +1710,12 @@
       "source_paths": [
         "packages/core/src/dlp/scanner.ts",
         "packages/core/src/dlp/policy.ts",
-        "packages/claude-code/src/detector-provisioning.ts"
+        "packages/core/src/detector-provisioning.ts",
+        "packages/sdk/src/output-guard.ts"
       ],
-      "consumer": "Core evaluator and provisioned Claude hook",
-      "delivered": "Tenant labels, rules, owner-bound exceptions, redact/ask/block and signed tenant bundle verification",
-      "remaining": "Other connectors, trusted provisioning operations and customer label acceptance remain open",
+      "consumer": "Shared evaluator and supported connector result boundaries",
+      "delivered": "Tenant labels, owner-bound exceptions, redact/ask/block, signed policy and optional issuer-controlled runtime capability; supported output guards inspect before delivery where host APIs permit",
+      "remaining": "Real labels and TR/EN NER efficacy are unaccepted; later host callbacks cannot guarantee same-turn output blocking; unsupported opaque formats fail closed",
       "production_accepted": false,
       "gap_ids": [
         "T04",
@@ -1676,19 +1729,16 @@
       "status": "partial",
       "source_paths": [
         "packages/core/src/behavioral-orchestrator.ts",
-        "packages/core/src/behavioral-analyzer.ts",
+        "packages/core/src/behavioral-learning.ts",
+        "packages/core/src/behavioral-learning-receipt.ts",
         "packages/core/src/behavioral-baseline-store.ts",
-        "packages/core/src/detector-provisioning.ts",
         "packages/core/src/evaluator.ts",
-        "packages/claude-code/src/detector-provisioning.ts",
-        "packages/claude-code/src/pre-tool-use.ts",
-        "packages/claude-code/src/post-tool-use.ts",
-        "packages/opencode/src/tool-handler.ts",
-        "packages/opencode/src/output-handler.ts"
+        "packages/cli/src/commands/learning.ts",
+        "docs/runbooks/behavioral-learning.md"
       ],
-      "consumer": "Core evaluator and provisioned Claude/OpenCode preflight hooks",
-      "delivered": "Bounded behavior/novelty scoring and tenant/session-scoped baseline storage API; product preflight cannot promote candidates; cold baselines ask by default, signed policy can select visible degraded skip",
-      "remaining": "No host supplies a trusted, call-ID/input-digest-bound successful-execution receipt. DET-08 is not production ready; callback wiring and independent efficacy acceptance remain required",
+      "consumer": "Shared preflight scoring and explicit learning execute/approve/ingest CLI",
+      "delivered": "Bounded actual foreground execution, separate signed approval, one-use context-bound receipts, vault-authenticated durable baseline and 30-day pruning; ordinary calls never authorize learning",
+      "remaining": "Exit zero is not business success or process-tree isolation; real corpus efficacy, customer role custody and native OS acceptance remain required; OS owner can roll back the whole vault and journal",
       "production_accepted": false,
       "gap_ids": [
         "T05"
@@ -1884,11 +1934,13 @@
       "source_paths": [
         "packages/mcp-gateway/src/gateway.mjs",
         "packages/mcp-gateway/src/stdio.mjs",
-        "packages/core/src/mcp-transport.ts"
+        "packages/mcp-gateway/src/library.mjs",
+        "packages/core/src/mcp-transport.ts",
+        "packages/privacy/src/platform/mcp-serve.ts"
       ],
-      "consumer": "Opt-in loopback HTTP and stdio JSON-RPC gateway",
-      "delivered": "Signed tool approval, tenant-bound auth, initialized notifications, DNS pinning and bounded inline output inspection",
-      "remaining": "Binary output, server-initiated requests, forced routing of direct upstream access and customer native acceptance remain open",
+      "consumer": "Loopback HTTP/stdio tools gateway and signed installed ESM factory",
+      "delivered": "Bounded JSON/SSE, single-use owner-bound callbacks and modern continuations, signed tool approval, complete RPC input/output guards, DNS pinning and mandatory authenticated upstream probes; installed private launcher connects the real mTLS scanner",
+      "remaining": "Opaque data requires an actually capable guard and otherwise denies; resources/prompts/subscriptions and unrelated GET paths are outside tools scope; host egress controls and customer/native acceptance remain open",
       "production_accepted": false,
       "gap_ids": [
         "T04",
@@ -1936,12 +1988,16 @@
       "status": "partial",
       "source_paths": [
         "packages/cli/src/commands/collect.ts",
+        "packages/core/src/discovery-aws.ts",
+        "packages/core/src/discovery-microsoft.ts",
+        "packages/core/src/discovery-gcp.ts",
         "supabase/functions/discovery/index.ts",
-        "packages/dashboard/src/ui/pages/DiscoveryPage.tsx"
+        "packages/dashboard/src/ui/pages/DiscoveryPage.tsx",
+        "docs/runbooks/cloud-discovery.md"
       ],
-      "consumer": "Local collector, tenant-scoped central inventory API, and authenticated Discovery dashboard",
-      "delivered": "Authenticated operator or collector upload, sequenced/deduplicated cycles, tenant-scoped listing, and reported-only per-item freshness/alert-state display",
-      "remaining": "Cloud/MDM provider adapters, customer-approved scopes/credentials, customer-activated production scheduling and alert/paging delivery, and customer field acceptance remain open",
+      "consumer": "Bounded AWS/Azure/GCP/Intune collectors, tenant-scoped typed inventory and dashboard",
+      "delivered": "Real provider API adapters, explicit provider/scope-hash grants, sequenced reports, separate provider resources and reported-only freshness; incomplete reports preserve existing rows",
+      "remaining": "Actual customer cloud IAM/MDM licences, approved scopes, production schedules, paging and provider acceptance remain open; reported resources do not prove whole-estate coverage",
       "production_accepted": false,
       "gap_ids": [
         "T11"
@@ -2041,11 +2097,13 @@
       "source_paths": [
         "supabase/functions/revocations/index.ts",
         "packages/core/src/response-command-consumer-v6.ts",
-        "packages/core/src/response-command-worker-v6.ts"
+        "packages/core/src/windows-response-worker.ts",
+        "packages/core/src/response-barrier.ts",
+        "deploy/fleet/windows/README.md"
       ],
-      "consumer": "Managed sync and opt-in command API",
-      "delivered": "Signed entitlement, operator-authorized fleet queue, bounded receipt consumer and restart-safe journal worker library",
-      "remaining": "No installed endpoint service, verified OS isolation adapter, device attestation or cross-provider credential revocation",
+      "consumer": "Opt-in Windows same-enrolled-user worker and shared tool barrier",
+      "delivered": "Exact-device signed envelopes, stable vault-authenticated restart journal, installed task lifecycle, pause/resume and owned-rule Windows isolation/release with explicit recovery destinations",
+      "remaining": "Actual signed Windows VM/firewall/MDM acceptance remains open; non-Windows isolation and universal cloud credential revocation are unsupported; worker is not a SYSTEM impersonation service",
       "production_accepted": false,
       "gap_ids": [
         "T12"
@@ -2058,14 +2116,13 @@
       "status": "partial",
       "source_paths": [
         "supabase/functions/response-playbooks/index.ts",
-        "supabase/migrations/20260923000005_fleet_response_playbooks.sql",
+        "supabase/migrations/20261006004000_response_automation_grants.sql",
         "packages/core/src/response-command-consumer-v6.ts",
-        "supabase/functions/__tests__/response-playbooks-contract.test.ts",
         "docs/operations/response-playbooks.md"
       ],
-      "consumer": "Standalone owner/admin+AAL2 playbook API; not wired to AutoSecOps or an alert trigger",
-      "delivered": "One fixed typed, TTL-bound and idempotent run queues agent_pause then network_isolate only after the consumer records an adapter-verified succeeded receipt",
-      "remaining": "Not production accepted or connected to an alert/AutoSecOps trigger. A separately installed endpoint worker and verified host adapter are not provisioned or customer-validated; host permissions and native acceptance, external SOAR/provider connectors, credential revocation and rollback remain unsupported or open",
+      "consumer": "Human AAL2 API and separately scoped alarm/SOAR grant API to the installed Windows worker",
+      "delivered": "Audited expiring hash-only automation credential, exact target/template/source scope, idempotent event admission and pause-before-verified-isolation playbook; live creator/key/revocation checks",
+      "remaining": "External alarm source integration, real Windows permissions/effects, signed distribution, native rollback and customer incident acceptance remain open",
       "production_accepted": false,
       "gap_ids": [
         "T13"

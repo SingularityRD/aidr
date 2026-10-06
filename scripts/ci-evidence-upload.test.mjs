@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import test from "node:test";
+import { VSIX_PACKAGE_FILES } from "./lib/vsix-package-files.mjs";
 
 function readWorkflow(name) {
 	return readFileSync(new URL(`../.github/workflows/${name}`, import.meta.url), "utf8");
@@ -31,6 +32,14 @@ function uploadPaths(workflow, name) {
 		paths.push(line.trim());
 	}
 	return { upload: lines.join("\n"), paths };
+}
+
+function job(workflow, name) {
+	const marker = `  ${name}:\n`;
+	const start = workflow.indexOf(marker);
+	assert.notEqual(start, -1, `workflow job is missing: ${name}`);
+	const next = /\n {2}[A-Za-z0-9_-]+:/u.exec(workflow.slice(start + marker.length));
+	return workflow.slice(start, next ? start + marker.length + next.index : undefined);
 }
 
 function allArtifactUploads() {
@@ -69,6 +78,65 @@ test("CI artifacts exclude raw release evidence and credentials-bearing E2E outp
 	assert.doesNotMatch(quality.upload + connector.upload, /\.release-evidence|\.e2e-artifacts\/negative-credentials|\.secrets|\.env/);
 });
 
+test("Windows fleet lifecycle gates use native Windows runners and remain required for release signing", () => {
+	const ci = readWorkflow("ci.yml");
+	const rc = readWorkflow("release-rc.yml");
+	for (const [workflow, name] of [[ci, "quality-gate"], [rc, "build-rc"]]) {
+		const linux = job(workflow, name);
+		assert.match(linux, /runs-on: ubuntu-22\.04/u);
+		assert.match(linux, /pnpm verify:fleet:unix/u);
+		assert.doesNotMatch(linux, /verify:fleet:windows|verify-windows-fleet\.mjs/u);
+		assert.match(linux, /node --test scripts\/saml-outage-recovery\.test\.mjs scripts\/saml-outage-recovery-postgres\.test\.mjs/u);
+		assert.match(linux, /node --test scripts\/discovery-cloud-postgres\.test\.mjs/u);
+	}
+	const windows = job(ci, "fleet-windows");
+	assert.match(windows, /runs-on: windows-2022/u);
+	assert.match(windows, /pnpm install --frozen-lockfile --ignore-scripts/u);
+	assert.match(windows, /pnpm compile:aig/u);
+	assert.match(windows, /pnpm --filter @singularityrd\/aidr-core run build:release/u);
+	assert.match(windows, /pnpm --filter @singularityrd\/aidr-claude-code run build:release/u);
+	assert.match(windows, /node --test scripts\/windows-response-action\.test\.mjs scripts\/windows-response-worker-install\.test\.mjs/u);
+	assert.ok(windows.indexOf("Claude release build failed") < windows.indexOf("node scripts/verify-windows-fleet.mjs"));
+	assert.doesNotMatch(windows, /continue-on-error:|(?:^|\n)\s+if:/u);
+
+	const native = job(rc, "acceptance-windows-native");
+	assert.match(native, /runs-on: windows-2022/u);
+	assert.match(native, /node --test scripts\/windows-response-action\.test\.mjs scripts\/windows-response-worker-install\.test\.mjs/u);
+	assert.match(native, /name: aidr-signed-packages-/u);
+	assert.match(native, /& tar -xzf \$archive -C \$env:GITHUB_WORKSPACE packages\/claude-code\/dist/u);
+	assert.ok(native.indexOf("Signed Claude fleet input extraction failed") < native.indexOf("& node scripts/verify-windows-fleet.mjs"));
+	assert.match(native, /if \(\$LASTEXITCODE -ne 0\) \{ throw "Windows fleet lifecycle verification failed" \}/u);
+	assert.ok(native.indexOf("Windows fleet lifecycle verification failed") < native.indexOf("Upload Windows native package receipt"));
+	assert.doesNotMatch(native, /continue-on-error:/u);
+	assert.match(job(rc, "final-sign-publish"), /needs: \[build-rc, assemble-e2e, acceptance-e2e, acceptance-windows-native\]/u);
+});
+
+test("VSIX packaging keeps runtime rules inside the manifest-covered dist tree", () => {
+	assert.ok(VSIX_PACKAGE_FILES.includes("dist/resources/**"));
+	assert.ok(!VSIX_PACKAGE_FILES.includes("resources/**"));
+	for (const file of ["../.github/scripts/package-vsix.mjs", "../packages/extension/scripts/package-vscode-vsix.mjs"]) {
+		const packager = readFileSync(new URL(file, import.meta.url), "utf8");
+		assert.match(packager, /cp\(join\(extensionRoot, "dist"\), join\(stageDir, "dist"\)/u);
+		assert.doesNotMatch(packager, /cp\(join\(extensionRoot, "resources"\)/u);
+	}
+});
+
+test("CI and RC block on full-migration OIDC administration and offboarding regressions", () => {
+	const scripts = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).scripts;
+	assert.match(scripts["verify:offboarding"], /scripts\/oidc-scim-offboarding-postgres\.test\.mjs/u);
+	for (const [file, name] of [
+		["ci.yml", "Blocking reputation, offboarding and retention PostgreSQL gates"],
+		["release-rc.yml", "Blocking offboarding and retention PostgreSQL gates"],
+	]) {
+		const gate = step(readWorkflow(file), name);
+		const image = gate.indexOf("docker pull supabase/postgres:17.6.1.136");
+		const administration = gate.indexOf("node --test scripts/oidc-administration-postgres.test.mjs");
+		const offboarding = gate.indexOf("pnpm verify:offboarding");
+		assert.ok(image >= 0 && image < administration && administration < offboarding, `${file} must provision and require both OIDC suites`);
+		assert.doesNotMatch(gate, /continue-on-error:|(?:^|\n)\s+if:/u);
+	}
+});
+
 test("retained connector files come from the tested redacting release-E2E writer", () => {
 	const runner = readFileSync(new URL("./run-e2e-release.mjs", import.meta.url), "utf8");
 	const tests = readFileSync(new URL("./run-e2e-release.test.mjs", import.meta.url), "utf8");
@@ -96,6 +164,7 @@ test("every workflow artifact upload has an explicit reviewed file selection", (
 		]],
 		["release-promote.yml::Archive promotion evidence (pinned)", ["release-output/"]],
 		["release-rc.yml::Upload unsigned release inputs (pinned)", ["${{ runner.temp }}/prepared-release.tgz"]],
+		["release-rc.yml::Upload signed Windows inputs (pinned)", ["${{ runner.temp }}/windows-authenticode.tgz"]],
 		["release-rc.yml::Upload signed package inputs (pinned)", ["${{ runner.temp }}/signed-package-inputs.tgz"]],
 		["release-rc.yml::Upload exact unsigned outer bundle (pinned)", ["${{ runner.temp }}/exact-release-candidate.tgz"]],
 		["release-rc.yml::Upload Windows native package receipt (pinned)", ["${{ runner.temp }}/claude-native-candidate.json"]],
@@ -118,6 +187,18 @@ test("release input archives reject .env* paths before crossing the artifact bou
 		assert.match(archive, /\.release-evidence\/aidr-sbom\.cdx\.json(?:\.sha256)?/);
 		assert.doesNotMatch(archive, /\.release-evidence\/\s/);
 	}
+});
+
+test("prebuilt signing inventory is bound to the independent unsigned build job digest", () => {
+	const workflow = readWorkflow("release-rc.yml");
+	const archive = step(workflow, "Archive unsigned release inputs");
+	assert.match(archive, /id: prepared_inputs/u);
+	assert.match(archive, /GITHUB_OUTPUT, 'sbom_sha256='[\s\S]*createHash\('sha256'\)[\s\S]*readFileSync\('\.release-evidence\/aidr-sbom\.cdx\.json'\)/u);
+	assert.match(workflow, /sbom_sha256: \$\{\{ steps\.prepared_inputs\.outputs\.sbom_sha256 \}\}/u);
+	const signing = workflow.slice(workflow.indexOf("  package-signing:"), workflow.indexOf("  assemble-e2e:"));
+	assert.match(signing, /AIDR_EXPECTED_PREBUILT_SBOM_SHA256: \$\{\{ needs\.build-rc\.outputs\.sbom_sha256 \}\}/u);
+	assert.doesNotMatch(signing, /pnpm install|Setup pnpm/u);
+	assert.match(workflow, /VSCE_VERSION: 4\.0\.0/u);
 });
 
 test("broad release-output uploads follow exact signed-bundle verification", () => {

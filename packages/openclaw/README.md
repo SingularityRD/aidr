@@ -55,6 +55,13 @@ The scanner visits at most 256 KiB of primitive text with explicit node and
 depth ceilings. Output beyond those limits is reported as incompletely inspected
 and is withheld at the delivery boundary instead of being declared clean.
 
+These output boundaries also apply the output rules in a provisioned, signed
+tenant DLP policy. A matching policy action withholds the complete payload using
+the existing safe notice; this connector does not selectively redact fields.
+Asynchronous hooks refresh policy trust before inspection. Synchronous transcript
+persistence uses the validated snapshot initialized after artifact verification,
+and withholds output when that snapshot is unavailable, expired, or changed.
+
 ## Verdicts
 
 | Verdict | Behaviour                                                                 |

@@ -67,14 +67,17 @@ function checksum(header) {
 	if (actual !== expected) fail("header checksum mismatch");
 }
 
-function archivePath(header, type) {
-	const name = fieldText(header, 0, 100, "entry name");
-	const prefix = fieldText(header, 345, 155, "entry prefix");
-	let raw = prefix ? `${prefix}/${name}` : name;
-	if (/^[A-Za-z]:/.test(raw) || raw.startsWith("/") || raw.includes("\\") || /[\u0000-\u001f\u007f]/.test(raw)) {
-		fail(`entry path is absolute or non-portable: ${JSON.stringify(raw)}`);
+function archivePath(header, type, extendedPath) {
+	let raw = extendedPath;
+	if (raw === undefined) {
+		const name = fieldText(header, 0, 100, "entry name");
+		const prefix = fieldText(header, 345, 155, "entry prefix");
+		raw = prefix ? `${prefix}/${name}` : name;
 	}
 	while (raw.startsWith("./")) raw = raw.slice(2);
+	if (raw.includes(":") || raw.startsWith("/") || raw.includes("\\") || /[\u0000-\u001f\u007f]/.test(raw)) {
+		fail(`entry path is absolute or non-portable: ${JSON.stringify(raw)}`);
+	}
 	if (type === "directory") raw = raw.replace(/\/+$/, "");
 	if ((raw === "" || raw === ".") && type === "directory") return null;
 	const parts = raw.split("/");
@@ -82,6 +85,34 @@ function archivePath(header, type) {
 		fail(`entry path is not canonical: ${JSON.stringify(raw)}`);
 	}
 	return parts.join("/");
+}
+
+function extendedPath(type, bytes) {
+	if (type === "L") {
+		if (bytes.at(-1) !== 0 || bytes.subarray(0, -1).includes(0)) fail("invalid GNU long-name metadata");
+		try { return textDecoder.decode(bytes.subarray(0, -1)); } catch { fail("long entry name is not valid UTF-8"); }
+	}
+	let path;
+	const keys = new Set();
+	for (let offset = 0; offset < bytes.length;) {
+		const space = bytes.indexOf(0x20, offset);
+		const lengthText = space < 0 ? "" : bytes.subarray(offset, space).toString("ascii");
+		if (!/^[1-9][0-9]*$/.test(lengthText)) fail("invalid PAX record length");
+		const length = Number(lengthText);
+		const end = offset + length;
+		if (!Number.isSafeInteger(length) || end > bytes.length || end <= space + 1 || bytes[end - 1] !== 0x0a) fail("invalid PAX record boundary");
+		let record;
+		try { record = textDecoder.decode(bytes.subarray(space + 1, end - 1)); } catch { fail("PAX metadata is not valid UTF-8"); }
+		const separator = record.indexOf("=");
+		const key = record.slice(0, separator);
+		if (separator < 1 || keys.has(key)) fail("invalid or duplicate PAX field");
+		keys.add(key);
+		// Only a per-entry path and metadata that cannot change extraction layout.
+		if (key === "path") path = record.slice(separator + 1);
+		else if (!["mtime", "atime", "ctime", "uid", "gid", "uname", "gname"].includes(key)) fail(`unsupported PAX field: ${key}`);
+		offset = end;
+	}
+	return path;
 }
 
 function isZeroBlock(block) {
@@ -95,6 +126,10 @@ class TarBoundaryValidator extends Writable {
 	#zeroBlocks = 0;
 	#ended = false;
 	#entries = new Map();
+	#parentPaths = new Set();
+	#extension = null;
+	#extendedPath;
+	#pendingExtension = false;
 
 	_write(chunk, _encoding, done) {
 		try {
@@ -115,8 +150,14 @@ class TarBoundaryValidator extends Writable {
 	#consume() {
 		while (this.#buffer.length > 0) {
 			if (this.#remaining > 0) {
+				if (this.#extension) this.#extension.chunks.push(this.#buffer.subarray(0, Math.min(this.#remaining, this.#buffer.length)));
 				this.#remaining = this.#consumeBytes(this.#remaining);
 				if (this.#remaining > 0) return;
+				if (this.#extension) {
+					this.#extendedPath = extendedPath(this.#extension.type, Buffer.concat(this.#extension.chunks));
+					this.#extension = null;
+					this.#pendingExtension = true;
+				}
 				continue;
 			}
 			if (this.#padding > 0) {
@@ -128,6 +169,7 @@ class TarBoundaryValidator extends Writable {
 			const header = this.#buffer.subarray(0, BLOCK_SIZE);
 			this.#buffer = this.#buffer.subarray(BLOCK_SIZE);
 			if (isZeroBlock(header)) {
+				if (this.#pendingExtension) fail("long-name metadata has no following entry");
 				this.#zeroBlocks += 1;
 				if (this.#zeroBlocks >= 2) this.#ended = true;
 				continue;
@@ -135,20 +177,30 @@ class TarBoundaryValidator extends Writable {
 			if (this.#zeroBlocks > 0 || this.#ended) fail("non-zero content follows the end marker");
 			checksum(header);
 			const typeFlag = String.fromCharCode(header[156] || 0x30);
+			const size = octal(header, 124, 12, "entry size");
+			if (typeFlag === "L" || typeFlag === "x") {
+				if (this.#pendingExtension || size < 1 || size > 1024 * 1024 || fieldText(header, 157, 100, "link target") !== "") fail("invalid long-name metadata entry");
+				this.#extension = { type: typeFlag, chunks: [] };
+				this.#remaining = size;
+				this.#padding = (BLOCK_SIZE - (size % BLOCK_SIZE)) % BLOCK_SIZE;
+				continue;
+			}
 			const type = typeFlag === "0" ? "file" : typeFlag === "5" ? "directory" : null;
 			if (!type) fail(`entry type ${JSON.stringify(typeFlag)} is not a regular file or directory`);
 			if (fieldText(header, 157, 100, "link target") !== "") fail("regular entry carries a link target");
-			const size = octal(header, 124, 12, "entry size");
 			if (type === "directory" && size !== 0) fail("directory entry has a payload");
-			const path = archivePath(header, type);
+			const path = archivePath(header, type, this.#extendedPath);
+			this.#extendedPath = undefined;
+			this.#pendingExtension = false;
 			if (path !== null) {
 				if (this.#entries.has(path)) fail(`duplicate entry path: ${path}`);
 				const segments = path.split("/");
 				for (let index = 1; index < segments.length; index += 1) {
 					const parent = segments.slice(0, index).join("/");
 					if (this.#entries.get(parent) === "file") fail(`entry descends from a regular file: ${path}`);
+					this.#parentPaths.add(parent);
 				}
-				if (type === "file" && [...this.#entries.keys()].some((entry) => entry.startsWith(`${path}/`))) {
+				if (type === "file" && this.#parentPaths.has(path)) {
 					fail(`regular file replaces an existing directory path: ${path}`);
 				}
 				this.#entries.set(path, type);

@@ -4,7 +4,7 @@
 
 The TypeScript compilation, Node tests, Python artifact/offset tests, CLI and AIDR guard sample tests, core benchmark and default evaluation harness were executed locally. Exact results are recorded in `reports/TEST_REPORT.md`. The Node provider tests use `tests/fixtures/mock-ner.mjs`, an explicitly deterministic fake model. Python model fixture bytes are explicitly not loadable weights.
 
-No actual pretrained NER inference, training/fine-tuning, quantization, external API call, customer corpus evaluation or independent benchmark was run. Test coverage percentages measure executed code, not detection accuracy or absence of vulnerabilities.
+Pinned public pretrained NER CPU inference and fresh hash-locked dependency replays were executed on Windows x64 CPython 3.12.10/Node 24.18.1 and Linux x86_64 CPython 3.11.2/Node 22.16.0 on 2026-10-06. The Linux real-worker probe used Docker network mode `none` and read-only package/model mounts. The synthetic smoke cases expose a Turkish address miss and cross-language overmasking in the initial candidate pair; see `MODEL_PROVIDER.md` and `MODEL_PROVIDER_EVIDENCE.json` for exact revisions, limitations and the unqualified public-corpus comparison. No training/fine-tuning, quantization, customer corpus evaluation or institutional approval was performed. Test coverage percentages measure executed code, not detection accuracy or absence of vulnerabilities.
 
 ## Automated suites
 
@@ -31,6 +31,8 @@ No actual pretrained NER inference, training/fine-tuning, quantization, external
 `tests/property.test.mjs`: **10,000 generated cases**, using a fixed deterministic seed. These are iterations inside six Node test entries, not 10,000 separately reported Node tests: 2,000 TCKN, 2,000 Luhn, 1,500 Unicode/encoding variants, 3,000 interval unions and 1,500 Unicode source-map cases.
 
 `ner/test_artifacts.py`: manifest/file hashing, model/tokenizer presence, traversal/symlinks/unsafe format denial, label/window validation, BIO aggregation and code-point-to-UTF-16 offsets.
+
+`ner/test_install_models.py` and `ner/test_build_public_corpus.py`: immutable artifact pins, real configuration label checks, atomic hash/size-checked downloads, source annotation/placeholder agreement, rejection of generic LOC-to-ADDRESS mappings and conversion of source code-point gold to UTF-16.
 
 ## Reproduce
 
@@ -82,6 +84,8 @@ Create a separately held-out, appropriately authorized dataset covering Turkish 
 Stratify recall/leakage by PII type, language, input length, model window boundary, encoding, scenario and confidence. Report denominators and uncertainty; a small zero-leak sample is not a proof of zero production leakage. Never ship because only micro-averaged F1 looks high.
 
 Set release thresholds with the customer's security team, based on disclosure impact and blocking tolerance. Include non-sensitive workflow false-positive tests. Any known exploitable critical bypass must be fixed or the affected channel disabled before approval.
+
+The platform `qualification(report, requiredTypes, minGold=100, minRecallLower=0.95, minPrecisionLower=0.90, maxCleanFalseAlarmRate=0.05)` defaults are configurable engineering examples, not regulatory requirements or certification. It requires `minGold` positive spans per required type and language, and `minGold` fully annotated clean documents independently in TR and EN. Clean `block`, `review` and `redact` decisions count as false alarms; their observed fraction must not exceed `maxCleanFalseAlarmRate` either overall or in either language. This bound must be finite and in `[0, 1)`. The negative rate is an observed sample fraction, not a confidence bound or production guarantee; recall and precision still use their Wilson lower bounds. Reports without language-specific clean counts must be regenerated before qualification.
 
 Run end-to-end sink tests with packet/connector observations, NER outages, corrupt models, cancellation, worker crashes, queue saturation, CPU limits, memory pressure, model updates and policy rollbacks. Confirm no raw network send occurs before an allowed decision. Test actual target operating systems and the exact signed artifacts.
 

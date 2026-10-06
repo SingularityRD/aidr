@@ -187,6 +187,28 @@ class AggregationTests(unittest.TestCase):
         self.assertEqual(result[0]['score'], .01)
         self.assertEqual(result[0]['end'], 8)
 
+    def test_outer_whitespace_trim_preserves_content_internal_spaces_and_score(self):
+        result = self.run_aggregate([(0, 6), (6, 12)], ['B-PER', 'I-PER'], [.99, .01], text=' \tJane Doe \n')
+        self.assertEqual(result, [{'start': 2, 'end': 10, 'type': 'PERSON', 'score': .01}])
+        text = ' \t42 Main Road.\n '
+        result = self.run_aggregate([(0, len(text))], ['B-ADDR'], text=text)
+        self.assertEqual(text[result[0]['start']:result[0]['end']], '42 Main Road.')
+
+    def test_whitespace_begin_and_outside_tokens_still_split(self):
+        for labels in [['B-PER', 'B-PER', 'I-PER'], ['B-PER', 'O', 'I-PER']]:
+            with self.subTest(labels=labels):
+                result = self.run_aggregate([(0, 4), (4, 6), (6, 9)], labels, text='Jane  Doe')
+                self.assertEqual([(span['start'], span['end']) for span in result], [(0, 4), (6, 9)])
+
+    def test_non_whitespace_unicode_and_other_type_content_not_trimmed(self):
+        text = ' \u200bJo\u0301. '
+        result = self.run_aggregate([(0, len(text))], ['B-PER'], text=text)
+        self.assertEqual(text[result[0]['start']:result[0]['end']], '\u200bJo\u0301.')
+        for kind in ['SECRET', 'PRIVATE_KEY', 'INTERNAL']:
+            text = ' sensitive content \n'
+            result = aggregate_tokens(text, [(0, len(text))], ['B-' + kind], [.01], {'O': None, kind: kind})
+            self.assertEqual(result, [{'start': 0, 'end': len(text), 'type': kind, 'score': .01}])
+
     def test_begin_splits_entities(self):
         self.assertEqual(len(self.run_aggregate([(0, 4), (5, 8)], ['B-PER', 'B-PER'])), 2)
 

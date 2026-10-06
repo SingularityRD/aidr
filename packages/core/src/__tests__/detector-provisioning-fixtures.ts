@@ -97,7 +97,8 @@ export function syntheticBehavioralInput(
 		timestamp: Date.now(),
 		path,
 		classificationText: JSON.stringify({ file_path: path }),
-		// Provisioning/orchestrator tests model trusted post-execution observations.
+		// Caller consent is deliberately insufficient without signed execution and
+		// independent approval receipts; production provisioning must stay read-only.
 		learningAllowed: true,
 		...overrides,
 	};

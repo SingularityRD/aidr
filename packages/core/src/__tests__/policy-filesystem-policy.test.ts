@@ -86,4 +86,31 @@ describe("filesystem policy enforcement", () => {
 
 		expect(verdict).toMatchObject({ decision: "deny", matchedThreatId: "POL-DEFAULT-FILE-001" });
 	});
+
+	it("matches deny patterns against a directory symlink's resolved destination", async () => {
+		const dir = await mkdtemp(join(tmpdir(), "aidr-policy-deny-symlink-"));
+		try {
+			const protectedDir = join(dir, "protected-secrets");
+			await mkdir(protectedDir);
+			const link = join(dir, "ordinary-files");
+			await symlink(protectedDir, link, process.platform === "win32" ? "junction" : "dir");
+			const target = join(link, "secret.txt");
+			const config = ConfigSchema.parse({
+				policy: {
+					enabled: true,
+					filesystem: {
+						enabled: true,
+						allowed_write_roots: [dir],
+						deny_write_patterns: ["protected-secrets"],
+					},
+				},
+			});
+			expect(await evaluatePolicy("Write", [], config, { file_path: target })).toMatchObject({
+				decision: "deny",
+				matchedThreatId: "POL-FS-002",
+			});
+		} finally {
+			await rm(dir, { recursive: true, force: true });
+		}
+	});
 });

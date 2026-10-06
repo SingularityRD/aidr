@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
@@ -9,7 +9,11 @@ import {
 	McpToolDefinitionSchema,
 	mcpToolsetHash,
 } from "../../core/dist/mcp-attestation.js";
-import { fetchMcpEndpoint, McpTransportError } from "../../core/dist/mcp-transport.js";
+import {
+	fetchMcpEndpoint,
+	McpTransportError,
+	readMcpSseMessages,
+} from "../../core/dist/mcp-transport.js";
 import { scanModelOutput } from "../../core/dist/output-scanner.js";
 import { authenticateBearer, validateGatewayConfig } from "./config.mjs";
 import {
@@ -21,7 +25,9 @@ import {
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
 const SESSION = /^[\x21-\x7e]{8,256}$/;
+const PROTOCOL_VERSION = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_ACTIVE_PER_TENANT = 16;
+const MAX_ACTIVE_REQUESTS = 64;
 const MAX_SESSIONS = 10_000;
 const MAX_SESSIONS_PER_TENANT = 256;
 const SESSION_TTL_MS = 30 * 60 * 1000;
@@ -43,9 +49,15 @@ function upstreamHeaders(server, sessionId) {
 	const auth = resolvedUpstreamAuth(server);
 	return {
 		"content-type": "application/json",
-		accept: server.transport === "sse" ? "text/event-stream" : "application/json",
+		accept:
+			server.transport === "sse"
+				? "text/event-stream, application/json"
+				: "application/json, text/event-stream",
 		...(auth ? { authorization: `Bearer ${auth}` } : {}),
 		...(sessionId ? { "mcp-session-id": sessionId } : {}),
+		...(server.protocolVersion ? { "mcp-protocol-version": server.protocolVersion } : {}),
+		...(server.rpcMethod ? { "mcp-method": server.rpcMethod } : {}),
+		...(server.rpcName ? { "mcp-name": server.rpcName } : {}),
 	};
 }
 
@@ -490,31 +502,52 @@ function safeJson(value) {
 	return text;
 }
 
-async function readBody(request, maxBytes) {
+async function readBody(request, maxBytes, signal) {
 	const announced = request.headers["content-length"];
 	if (announced !== undefined && (!/^\d+$/.test(announced) || Number(announced) > maxBytes)) {
 		throw new Error("request_too_large");
 	}
 	const chunks = [];
 	let bytes = 0;
-	for await (const chunk of request) {
-		bytes += chunk.byteLength;
-		if (bytes > maxBytes) throw new Error("request_too_large");
-		chunks.push(chunk);
+	const abort = () => request.destroy(new Error("gateway_unavailable"));
+	signal.throwIfAborted();
+	signal.addEventListener("abort", abort, { once: true });
+	try {
+		for await (const chunk of request) {
+			bytes += chunk.byteLength;
+			if (bytes > maxBytes) throw new Error("request_too_large");
+			chunks.push(chunk);
+		}
+		signal.throwIfAborted();
+		return textDecoder.decode(Buffer.concat(chunks));
+	} finally {
+		signal.removeEventListener("abort", abort);
 	}
-	return textDecoder.decode(Buffer.concat(chunks));
 }
 
 function parseRequest(text) {
 	const rpc = JSON.parse(text);
+	if (
+		jsonObject(rpc) &&
+		rpc.jsonrpc === "2.0" &&
+		!Object.hasOwn(rpc, "method") &&
+		(typeof rpc.id === "string" || Number.isSafeInteger(rpc.id)) &&
+		Object.hasOwn(rpc, "result") !== Object.hasOwn(rpc, "error")
+	)
+		return rpc;
 	const notification = rpc?.method === "notifications/initialized";
 	if (
 		!jsonObject(rpc) ||
 		rpc.jsonrpc !== "2.0" ||
 		typeof rpc.method !== "string" ||
-		!["initialize", "ping", "tools/list", "tools/call", "notifications/initialized"].includes(
-			rpc.method,
-		) ||
+		![
+			"initialize",
+			"server/discover",
+			"ping",
+			"tools/list",
+			"tools/call",
+			"notifications/initialized",
+		].includes(rpc.method) ||
 		(notification
 			? Object.hasOwn(rpc, "id")
 			: typeof rpc.id !== "string" && typeof rpc.id !== "number") ||
@@ -526,26 +559,10 @@ function parseRequest(text) {
 	return rpc;
 }
 
-function parseSseEvent(event) {
-	if (!event.trim()) return null;
-	const data = [];
-	let eventType = "message";
-	for (const line of event.split("\n")) {
-		if (!line || line.startsWith(":")) continue;
-		if (line.startsWith("data:")) data.push(line.slice(5).trimStart());
-		else if (line.startsWith("event:")) eventType = line.slice(6).trim();
-		else if (line.startsWith("id:") || line.startsWith("retry:")) continue;
-		else throw new Error("invalid_sse_field");
-	}
-	if (data.length === 0) return null;
-	if (eventType !== "message") throw new Error("unsupported_sse_event");
-	return JSON.parse(data.join("\n"));
-}
-
 function serverInitiatedRefusal() {
 	return new McpGatewayRefusal(
 		"server_initiated_method",
-		"MCP server-initiated methods are outside the gateway response coverage and were refused",
+		"MCP server method is not permitted by the client capability and gateway policy",
 	);
 }
 
@@ -554,20 +571,8 @@ function rejectServerInitiated(value) {
 	return value;
 }
 
-function parseSse(text) {
-	let response = null;
-	for (const event of text.replace(/\r\n/g, "\n").split(/\n\n+/)) {
-		const parsed = rejectServerInitiated(parseSseEvent(event));
-		if (parsed === null) continue;
-		if (response !== null) throw new Error("multiple_sse_responses");
-		response = parsed;
-	}
-	if (response === null) throw new Error("missing_sse_response");
-	return response;
-}
-
-function parseUpstreamResponse(text, mode, expectedId) {
-	const rpc = rejectServerInitiated(mode === "sse" ? parseSse(text) : JSON.parse(text));
+function parseUpstreamResponse(text, expectedId) {
+	const rpc = rejectServerInitiated(JSON.parse(text));
 	if (
 		!jsonObject(rpc) ||
 		rpc.jsonrpc !== "2.0" ||
@@ -639,6 +644,7 @@ const BLOCK_REASONS = new Set([
 	"request_too_large",
 	"invalid_content_type",
 	"invalid_rpc_request",
+	"invalid_protocol_version",
 	"invalid_session",
 	"session_required",
 	"unexpected_session",
@@ -671,6 +677,8 @@ const BLOCK_REASONS = new Set([
 	"upstream_auth_unavailable",
 	"notification_response_body",
 	"invalid_notification_ack",
+	"tenant_busy",
+	"gateway_busy",
 ]);
 
 function safeReason(cause) {
@@ -682,7 +690,7 @@ function safeReason(cause) {
 
 const BINARY_OUTPUT_TYPES = new Set(["image", "audio"]);
 
-function validateToolResult(result) {
+function validateToolResult(result, opaqueAllowed = false, modern = false) {
 	if (
 		!jsonObject(result) ||
 		!Array.isArray(result.content) ||
@@ -702,6 +710,14 @@ function validateToolResult(result) {
 			);
 		}
 		if (BINARY_OUTPUT_TYPES.has(item.type)) {
+			if (
+				opaqueAllowed &&
+				typeof item.data === "string" &&
+				typeof item.mimeType === "string" &&
+				/^[A-Za-z0-9+/]*={0,2}$/.test(item.data) &&
+				Buffer.from(item.data, "base64").toString("base64") === item.data
+			)
+				continue;
 			throw new McpGatewayRefusal(
 				"unsupported_binary_output",
 				"MCP binary tool output is outside the gateway response coverage and was refused",
@@ -714,7 +730,7 @@ function validateToolResult(result) {
 			);
 		}
 	}
-	if (result.structuredContent !== undefined && !jsonObject(result.structuredContent)) {
+	if (!modern && result.structuredContent !== undefined && !jsonObject(result.structuredContent)) {
 		throw new McpGatewayRefusal(
 			"unsupported_structured_output",
 			"MCP structured tool output is outside the gateway response coverage and was refused",
@@ -722,12 +738,39 @@ function validateToolResult(result) {
 	}
 }
 
+function upstreamInitializeRequest(rpc) {
+	const params = rpc.params;
+	if (
+		!jsonObject(params) ||
+		typeof params.protocolVersion !== "string" ||
+		!PROTOCOL_VERSION.test(params.protocolVersion) ||
+		!jsonObject(params.capabilities) ||
+		!jsonObject(params.clientInfo) ||
+		typeof params.clientInfo.name !== "string" ||
+		params.clientInfo.name.length === 0 ||
+		params.clientInfo.name.length > 128 ||
+		typeof params.clientInfo.version !== "string" ||
+		params.clientInfo.version.length === 0 ||
+		params.clientInfo.version.length > 128
+	)
+		throw new Error("invalid_rpc_request");
+	return {
+		jsonrpc: "2.0",
+		id: rpc.id,
+		method: "initialize",
+		params: {
+			protocolVersion: params.protocolVersion,
+			capabilities: {},
+			clientInfo: { name: params.clientInfo.name, version: params.clientInfo.version },
+		},
+	};
+}
+
 function clientInitializeResult(result) {
 	if (
 		!jsonObject(result) ||
 		typeof result.protocolVersion !== "string" ||
-		result.protocolVersion.length === 0 ||
-		result.protocolVersion.length > 64 ||
+		!PROTOCOL_VERSION.test(result.protocolVersion) ||
 		!jsonObject(result.serverInfo) ||
 		typeof result.serverInfo.name !== "string" ||
 		result.serverInfo.name.length === 0 ||
@@ -747,6 +790,10 @@ function clientInitializeResult(result) {
 
 function send(response, status, body, extraHeaders = {}) {
 	if (response.writableEnded || response.destroyed) return;
+	if (response.headersSent) {
+		response.end(`event: message\ndata: ${safeJson(body)}\n\n`);
+		return;
+	}
 	response.writeHead(status, {
 		"content-type": "application/json; charset=utf-8",
 		"cache-control": "no-store",
@@ -778,6 +825,9 @@ export function createMcpGateway(input, dependencies = {}) {
 	const stores = new Map();
 	const sessions = new Map();
 	const inflight = new Map();
+	const pendingReplies = new Map();
+	const continuations = new Map();
+	const clientCapabilities = new Map();
 	const scanner = dependencies.scanner ?? scanModelOutput;
 	const lookup = dependencies.lookup;
 	const pinnedFetch = dependencies.pinnedFetch;
@@ -785,6 +835,8 @@ export function createMcpGateway(input, dependencies = {}) {
 	const onEvent = dependencies.onEvent ?? (() => undefined);
 	const directUpstreamCheck = dependencies.directUpstreamCheck ?? dependencies.checkDirectUpstream;
 	let startupCheckPromise;
+	let ready = false;
+	let activeRequests = 0;
 
 	async function emitEvent(event) {
 		try {
@@ -809,6 +861,319 @@ export function createMcpGateway(input, dependencies = {}) {
 
 	async function audit(tenantId, serverId, clientId, decision, reason) {
 		await emitEvent({ tenantId, serverId, clientId, decision, reason, at: now().toISOString() });
+	}
+
+	function owner(server, sessionId) {
+		return `${server.tenantId}\0${server.client.id}\0${server.id}\0${sessionId ?? ""}`;
+	}
+
+	function scopedCapabilities(server, requested = {}) {
+		const methods = server.client.allowedServerMethods?.[server.id] ?? [];
+		return Object.fromEntries(
+			[
+				["sampling", "sampling/createMessage"],
+				["elicitation", "elicitation/create"],
+				["roots", "roots/list"],
+			]
+				.filter(
+					([capability, method]) => methods.includes(method) && jsonObject(requested[capability]),
+				)
+				.map(([capability]) => [
+					capability,
+					capability === "elicitation"
+						? {
+								...(jsonObject(requested.elicitation.form) ||
+								(!Object.hasOwn(requested.elicitation, "form") &&
+									!Object.hasOwn(requested.elicitation, "url"))
+									? { form: {} }
+									: {}),
+								...(jsonObject(requested.elicitation.url) ? { url: {} } : {}),
+							}
+						: {},
+				]),
+		);
+	}
+
+	async function guardPayload(payload, server, sessionId, direction, method) {
+		inspect(payload, scanner, config.maxBodyBytes);
+		let opaque = false;
+		const visit = (value, depth = 0) => {
+			if (depth > 32) throw new Error("output_uninspectable");
+			if (!value || typeof value !== "object") return;
+			if (["image", "audio", "resource", "resource_link"].includes(value.type)) opaque = true;
+			for (const child of Object.values(value)) visit(child, depth + 1);
+		};
+		visit(payload);
+		const guard = direction === "to_upstream" ? dependencies.toolGuard : dependencies.outputGuard;
+		if (guard) {
+			let rejectGuard;
+			const aborted = new Promise((_, reject) => {
+				rejectGuard = () => reject(server.signal.reason ?? new Error("gateway_unavailable"));
+			});
+			server.signal.throwIfAborted();
+			server.signal.addEventListener("abort", rejectGuard, { once: true });
+			let verdict;
+			try {
+				verdict = await Promise.race([
+					guard({
+						payload: structuredClone(payload),
+						direction,
+						method,
+						signal: server.signal,
+						tenantId: server.tenantId,
+						clientId: server.client.id,
+						serverId: server.id,
+						requestId: server.requestId,
+						inputSha256: server.inputSha256,
+						payloadSha256: createHash("sha256").update(safeJson(payload), "utf8").digest("hex"),
+						runtime: "mcp-gateway",
+						sessionId: sessionId ?? null,
+						protocolVersion: server.protocolVersion,
+						toolsetHash: mcpToolsetHash(server.signedManifest.manifest.tools),
+					}),
+					aborted,
+				]);
+			} finally {
+				server.signal.removeEventListener("abort", rejectGuard);
+			}
+			server.signal?.throwIfAborted();
+			if (
+				verdict?.allowed !== true ||
+				verdict?.coverage !== "full" ||
+				(opaque && verdict?.opaqueInspected !== true)
+			)
+				throw new McpGatewayRefusal(
+					"output_uninspectable",
+					"Configured guard could not inspect the complete MCP payload",
+				);
+		} else if (opaque)
+			throw new McpGatewayRefusal(
+				"unsupported_binary_output",
+				"Opaque MCP content requires a capable approved content scanner",
+			);
+	}
+
+	function permittedServerMessage(message, server) {
+		const methods = server.client.allowedServerMethods?.[server.id] ?? [];
+		if (!methods.includes(message.method)) throw serverInitiatedRefusal();
+		const capability = {
+			"sampling/createMessage": "sampling",
+			"elicitation/create": "elicitation",
+			"roots/list": "roots",
+		}[message.method];
+		if (capability && !jsonObject(server.capabilities?.[capability]))
+			throw serverInitiatedRefusal();
+		if (message.params !== undefined && !jsonObject(message.params))
+			throw new Error("invalid_upstream_rpc");
+		if (
+			message.method === "sampling/createMessage" &&
+			(!Array.isArray(message.params?.messages) ||
+				message.params.messages.length === 0 ||
+				!Number.isSafeInteger(message.params.maxTokens) ||
+				message.params.maxTokens < 1 ||
+				message.params.tools !== undefined)
+		)
+			throw new Error("invalid_upstream_rpc");
+		if (message.method === "elicitation/create") {
+			if (typeof message.params?.message !== "string") throw new Error("invalid_upstream_rpc");
+			if (message.params.mode === "url") {
+				if (!jsonObject(server.capabilities.elicitation.url)) throw serverInitiatedRefusal();
+				let url;
+				try {
+					url = new URL(message.params.url);
+				} catch {
+					throw new Error("invalid_upstream_rpc");
+				}
+				if (
+					url.protocol !== "https:" ||
+					url.username ||
+					url.password ||
+					(server.protocolVersion !== "2026-07-28" &&
+						typeof message.params.elicitationId !== "string")
+				)
+					throw new Error("invalid_upstream_rpc");
+			} else {
+				if (!jsonObject(server.capabilities.elicitation.form)) throw serverInitiatedRefusal();
+				if (message.params.mode !== undefined && message.params.mode !== "form")
+					throw new Error("invalid_upstream_rpc");
+				if (!supportedJsonSchema(message.params.requestedSchema))
+					throw new Error("invalid_upstream_rpc");
+			}
+		}
+	}
+
+	function validateInputResponse(result, request) {
+		if (!jsonObject(result)) throw new Error("invalid_rpc_request");
+		if (
+			request.method === "roots/list" &&
+			(!Array.isArray(result.roots) ||
+				result.roots.some(
+					(root) =>
+						!jsonObject(root) || typeof root.uri !== "string" || !root.uri.startsWith("file://"),
+				))
+		)
+			throw new Error("invalid_rpc_request");
+		if (
+			request.method === "sampling/createMessage" &&
+			(result.role !== "assistant" ||
+				typeof result.model !== "string" ||
+				(!jsonObject(result.content) && !Array.isArray(result.content)))
+		)
+			throw new Error("invalid_rpc_request");
+		if (
+			request.method === "elicitation/create" &&
+			(!["accept", "decline", "cancel"].includes(result.action) ||
+				(result.action === "accept" &&
+					request.params.mode !== "url" &&
+					!matchesJsonSchema(result.content, request.params.requestedSchema)))
+		)
+			throw new Error("invalid_rpc_request");
+	}
+
+	async function relayServerMessage(message, server, sessionId, signal) {
+		const notification = message.method.startsWith("notifications/");
+		if (notification === Object.hasOwn(message, "id")) throw new Error("invalid_upstream_rpc");
+		if (server.protocolVersion === "2026-07-28" && !notification) throw serverInitiatedRefusal();
+		permittedServerMessage(message, server);
+		await guardPayload(message, server, sessionId, "to_client", message.method);
+		signal.throwIfAborted();
+		const response = server.response;
+		if (!response || !/text\/event-stream/i.test(server.request.headers.accept ?? ""))
+			throw serverInitiatedRefusal();
+		let delivered = message;
+		if (Object.hasOwn(message, "id")) {
+			if (pendingReplies.size >= 256 || server.replyIds.size >= 16)
+				throw new Error("gateway_unavailable");
+			if (
+				[...pendingReplies.values()].some(
+					(pending) =>
+						pending.owner === owner(server, sessionId) && pending.originalId === message.id,
+				)
+			)
+				throw new Error("invalid_upstream_rpc");
+			const id = `aidr-reply-${randomUUID()}`;
+			pendingReplies.set(id, {
+				owner: owner(server, sessionId),
+				originalId: message.id,
+				server,
+				sessionId,
+				method: message.method,
+				message,
+				signal,
+			});
+			server.replyIds.add(id);
+			delivered = { ...message, id };
+		}
+		if (!response.headersSent)
+			response.writeHead(200, {
+				"content-type": "text/event-stream",
+				"cache-control": "no-store",
+				"x-accel-buffering": "no",
+			});
+		await new Promise((resolve, reject) =>
+			response.write(`event: message\ndata: ${safeJson(delivered)}\n\n`, (cause) =>
+				cause ? reject(cause) : resolve(),
+			),
+		);
+	}
+
+	async function acceptReply(rpc, server, sessionId, signal) {
+		const pending = pendingReplies.get(rpc.id);
+		if (
+			!pending ||
+			pending.owner !== owner(server, sessionId) ||
+			pending.signal.aborted ||
+			pending.server.resolvedUpstreamAuth !== server.resolvedUpstreamAuth ||
+			(server.protocolVersion !== undefined &&
+				server.protocolVersion !== pending.server.protocolVersion)
+		)
+			throw new Error("invalid_session");
+		if (
+			Object.hasOwn(rpc, "error") &&
+			(!jsonObject(rpc.error) ||
+				!Number.isSafeInteger(rpc.error.code) ||
+				typeof rpc.error.message !== "string")
+		)
+			throw new Error("invalid_rpc_request");
+		if (Object.hasOwn(rpc, "result")) validateInputResponse(rpc.result, pending.message);
+		await guardPayload(rpc, pending.server, sessionId, "to_upstream", pending.method);
+		if (pendingReplies.get(rpc.id) !== pending || pending.signal.aborted)
+			throw new Error("invalid_session");
+		pendingReplies.delete(rpc.id);
+		pending.server.replyIds.delete(rpc.id);
+		await forward(
+			pending.server,
+			{ ...rpc, id: pending.originalId },
+			sessionId,
+			AbortSignal.any([signal, pending.signal]),
+		);
+		return { notification: true };
+	}
+
+	async function mrtrResult(result, rpc, server, sessionId) {
+		if (
+			!jsonObject(result) ||
+			(result.inputRequests === undefined && result.requestState === undefined) ||
+			(result.requestState !== undefined && typeof result.requestState !== "string") ||
+			(result.inputRequests !== undefined && !jsonObject(result.inputRequests))
+		)
+			throw new Error("invalid_tool_result");
+		const requests = result.inputRequests ?? {};
+		if (Object.keys(requests).length > 16) throw new Error("invalid_tool_result");
+		for (const request of Object.values(requests)) {
+			if (
+				!jsonObject(request) ||
+				!["sampling/createMessage", "elicitation/create", "roots/list"].includes(request.method)
+			)
+				throw serverInitiatedRefusal();
+			permittedServerMessage(request, server);
+		}
+		await guardPayload(result, server, sessionId, "to_client", "input_required");
+		for (const [id, saved] of continuations)
+			if (saved.expiresAt <= now().getTime()) continuations.delete(id);
+		if (continuations.size >= 256) throw new Error("gateway_unavailable");
+		const state = `aidr-mrtr-${randomUUID()}`;
+		continuations.set(state, {
+			owner: owner(server, sessionId),
+			upstreamAuth: server.resolvedUpstreamAuth,
+			id: rpc.id,
+			name: rpc.params.name,
+			arguments: structuredClone(rpc.params.arguments ?? {}),
+			requests,
+			upstreamState: result.requestState,
+			expiresAt: now().getTime() + 5 * 60_000,
+		});
+		return { ...result, requestState: state };
+	}
+
+	async function mrtrRetry(rpc, server, sessionId) {
+		if (rpc.params.inputResponses === undefined && rpc.params.requestState === undefined) return {};
+		const saved = continuations.get(rpc.params.requestState);
+		if (
+			!saved ||
+			saved.owner !== owner(server, sessionId) ||
+			saved.upstreamAuth !== server.resolvedUpstreamAuth ||
+			saved.id === rpc.id ||
+			saved.expiresAt <= now().getTime() ||
+			saved.name !== rpc.params.name ||
+			!isDeepStrictEqual(saved.arguments, rpc.params.arguments ?? {})
+		)
+			throw new Error("invalid_session");
+		const responses = rpc.params.inputResponses ?? {};
+		if (
+			!jsonObject(responses) ||
+			!isDeepStrictEqual(Object.keys(responses).sort(), Object.keys(saved.requests).sort())
+		)
+			throw new Error("invalid_rpc_request");
+		for (const [key, result] of Object.entries(responses))
+			validateInputResponse(result, saved.requests[key]);
+		await guardPayload(responses, server, sessionId, "to_upstream", "inputResponses");
+		if (continuations.get(rpc.params.requestState) !== saved) throw new Error("invalid_session");
+		continuations.delete(rpc.params.requestState);
+		return {
+			...(Object.keys(responses).length ? { inputResponses: responses } : {}),
+			...(saved.upstreamState !== undefined ? { requestState: saved.upstreamState } : {}),
+		};
 	}
 
 	async function emitCoverageForRefusal(refusal, context) {
@@ -894,6 +1259,59 @@ export function createMcpGateway(input, dependencies = {}) {
 	async function runStartupSelfCheck(gatewayAddress) {
 		const results = [];
 		for (const server of config.servers) {
+			if (config.routingRequired) {
+				const upstreamToken = resolvedUpstreamAuth(server);
+				if (authenticateBearer(`Bearer ${upstreamToken}`, config.clients))
+					throw startupBypassRefusal();
+				const tokens = [undefined];
+				for (const client of config.clients.filter(
+					(candidate) =>
+						candidate.tenantId === server.tenantId &&
+						Object.hasOwn(candidate.allowedTools, server.id),
+				)) {
+					const token = process.env[client.probeTokenEnv];
+					if (authenticateBearer(`Bearer ${token}`, config.clients) !== client)
+						throw new Error("upstream_auth_unavailable");
+					tokens.push(token);
+				}
+				for (const protocolVersion of server.protocolVersions)
+					for (const token of tokens)
+						await fetchMcpEndpoint(
+							server.url,
+							{
+								method: "POST",
+								headers: {
+									"content-type": "application/json",
+									accept: "application/json, text/event-stream",
+									"mcp-protocol-version": protocolVersion,
+									"mcp-method": "ping",
+									...(token ? { authorization: `Bearer ${token}` } : {}),
+								},
+								body: safeJson({
+									jsonrpc: "2.0",
+									id: `aidr-routing-${randomUUID()}`,
+									method: "ping",
+									params:
+										protocolVersion === "2026-07-28"
+											? {
+													_meta: {
+														"io.modelcontextprotocol/protocolVersion": protocolVersion,
+														"io.modelcontextprotocol/clientCapabilities": {},
+													},
+												}
+											: {},
+								}),
+								signal: AbortSignal.timeout(10_000),
+							},
+							{
+								lookup,
+								pinnedFetch,
+								allowedAddresses: server.pinnedAddresses,
+								maxBodyBytes: config.maxBodyBytes,
+								acceptUnauthorizedResponse: true,
+							},
+						);
+			}
 			const observation = await observeDirectUpstream(server, gatewayAddress);
 			const refusal = observation.status === "bypass" ? startupBypassRefusal() : null;
 			await emitEvent(
@@ -947,42 +1365,69 @@ export function createMcpGateway(input, dependencies = {}) {
 	}
 
 	async function forward(server, rpc, sessionId, signal) {
+		const reply = !Object.hasOwn(rpc, "method");
+		await guardPayload(rpc, server, sessionId, "to_upstream", rpc.method ?? "reply");
+		const headersServer = { ...server, rpcMethod: rpc.method, rpcName: rpc.params?.name };
 		const response = await fetchMcpEndpoint(
 			server.url,
 			{
 				method: "POST",
-				headers: upstreamHeaders(server, sessionId),
+				headers: upstreamHeaders(headersServer, sessionId),
 				body: safeJson(rpc),
 				signal,
 			},
 			{
-				mode: server.transport,
+				mode: "auto",
 				maxBodyBytes: config.maxBodyBytes,
 				lookup,
 				pinnedFetch,
+				allowedAddresses: server.pinnedAddresses,
 				acceptNotificationResponse: rpc.method === "notifications/initialized",
+				acceptJsonRpcResponse: reply,
 			},
 		);
 		const sessionHeader = response.headers.get("mcp-session-id");
 		if (rpc.method !== "initialize" && sessionHeader && sessionHeader !== sessionId) {
 			throw new Error("session_changed");
 		}
-		if (rpc.method === "notifications/initialized") {
+		if (rpc.method === "notifications/initialized" || reply) {
 			if (response.status !== 202) throw new Error("invalid_notification_ack");
 			return { result: undefined, sessionHeader };
 		}
+		if (/^text\/event-stream(?:\s*;|$)/i.test(response.headers.get("content-type") ?? "")) {
+			let result;
+			let messages = 0;
+			for await (const message of readMcpSseMessages(response, config.maxBodyBytes, signal)) {
+				if (++messages > 64) throw new Error("output_oversize");
+				if (typeof message.method === "string")
+					await relayServerMessage(message, server, sessionId, signal);
+				else {
+					result = parseUpstreamResponse(safeJson(message), rpc.id);
+					break;
+				}
+			}
+			if (result === undefined) throw new Error("missing_sse_response");
+			return { result, sessionHeader };
+		}
 		const text = textDecoder.decode(new Uint8Array(await response.arrayBuffer()));
-		return { result: parseUpstreamResponse(text, server.transport, rpc.id), sessionHeader };
+		return { result: parseUpstreamResponse(text, rpc.id), sessionHeader };
 	}
 
 	async function verifiedTools(server, sessionId, signal) {
-		const id = `aidr-list-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+		const id = `aidr-list-${randomUUID()}`;
 		const { result } = await forward(
 			server,
-			{ jsonrpc: "2.0", id, method: "tools/list", params: {} },
+			{
+				jsonrpc: "2.0",
+				id,
+				method: "tools/list",
+				params: server.meta ? { _meta: server.meta } : {},
+			},
 			sessionId,
 			signal,
 		);
+		if (server.protocolVersion === "2026-07-28" && result?.resultType !== "complete")
+			throw new Error("invalid_tool_list");
 		const observed = normalizeToolSet(result);
 		if (mcpToolsetHash(observed) !== mcpToolsetHash(server.signedManifest.manifest.tools)) {
 			throw new Error("toolset_drift");
@@ -1042,6 +1487,7 @@ export function createMcpGateway(input, dependencies = {}) {
 					maxBodyBytes: config.maxBodyBytes,
 					lookup,
 					pinnedFetch,
+					allowedAddresses: server.pinnedAddresses,
 					acceptSessionTerminationResponse: true,
 				},
 			);
@@ -1057,7 +1503,15 @@ export function createMcpGateway(input, dependencies = {}) {
 			pruneExpiredSessions();
 			if (!sessionCapacityAvailable(client.tenantId)) throw new Error("invalid_upstream_session");
 		}
-		const { result, sessionHeader } = await forward(server, rpc, undefined, signal);
+		const initialize = upstreamInitializeRequest(rpc);
+		initialize.params.capabilities = scopedCapabilities(server, rpc.params.capabilities);
+		if (
+			!server.protocolVersions.includes(initialize.params.protocolVersion) ||
+			initialize.params.protocolVersion === "2026-07-28"
+		)
+			throw new Error("invalid_protocol_version");
+		server.protocolVersion = initialize.params.protocolVersion;
+		const { result, sessionHeader } = await forward(server, initialize, undefined, signal);
 		const newSession =
 			typeof sessionHeader === "string" &&
 			SESSION.test(sessionHeader) &&
@@ -1066,6 +1520,19 @@ export function createMcpGateway(input, dependencies = {}) {
 			signal.throwIfAborted();
 			inspect(result, scanner, config.maxBodyBytes);
 			const clientResult = clientInitializeResult(result);
+			if (
+				!server.protocolVersions.includes(clientResult.protocolVersion) ||
+				clientResult.protocolVersion === "2026-07-28"
+			)
+				throw new Error("invalid_protocol_version");
+			server.protocolVersion = clientResult.protocolVersion;
+			await guardPayload(
+				clientResult,
+				server,
+				newSession ? sessionHeader : undefined,
+				"to_client",
+				"initialize",
+			);
 			if (server.sessionMode === "required") {
 				pruneExpiredSessions();
 				if (
@@ -1079,9 +1546,21 @@ export function createMcpGateway(input, dependencies = {}) {
 					clientId: client.id,
 					tenantId: client.tenantId,
 					serverId: server.id,
+					protocolVersion: clientResult.protocolVersion,
+					capabilities: initialize.params.capabilities,
 					expiresAt: now().getTime() + SESSION_TTL_MS,
 				});
 			} else if (sessionHeader) throw new Error("unexpected_upstream_session");
+			if (server.sessionMode === "stateless") {
+				for (const [key, saved] of clientCapabilities)
+					if (saved.expiresAt <= now().getTime()) clientCapabilities.delete(key);
+				if (clientCapabilities.size >= 10_000 && !clientCapabilities.has(owner(server)))
+					throw new Error("gateway_unavailable");
+				clientCapabilities.set(owner(server), {
+					capabilities: initialize.params.capabilities,
+					expiresAt: now().getTime() + SESSION_TTL_MS,
+				});
+			}
 			return { body: rpcResponse(rpc.id, clientResult), sessionHeader };
 		} catch (cause) {
 			if (newSession) await terminateUpstreamSession(server, sessionHeader);
@@ -1089,7 +1568,7 @@ export function createMcpGateway(input, dependencies = {}) {
 		}
 	}
 
-	function listTools(rpc, observed, allowed) {
+	function listTools(rpc, observed, allowed, modern = false) {
 		const tools = observed
 			.filter((tool) => allowed.has(tool.name))
 			.map((tool) => ({
@@ -1099,7 +1578,7 @@ export function createMcpGateway(input, dependencies = {}) {
 				...(tool.output_schema ? { outputSchema: tool.output_schema } : {}),
 				...(tool.annotations ? { annotations: tool.annotations } : {}),
 			}));
-		return { body: rpcResponse(rpc.id, { tools }) };
+		return { body: rpcResponse(rpc.id, { tools, ...(modern ? { resultType: "complete" } : {}) }) };
 	}
 
 	async function callTool(rpc, server, observed, allowed, sessionId, signal) {
@@ -1122,18 +1601,37 @@ export function createMcpGateway(input, dependencies = {}) {
 		if (tool.output_schema !== undefined && !supportedJsonSchema(tool.output_schema)) {
 			throw new Error("output_schema_mismatch");
 		}
+		const modern = server.protocolVersion === "2026-07-28";
+		const extra = modern ? await mrtrRetry(rpc, server, sessionId) : {};
+		if (
+			!modern &&
+			(rpc.params.inputResponses !== undefined || rpc.params.requestState !== undefined)
+		)
+			throw new Error("invalid_rpc_request");
 		const upstream = await forward(
 			server,
 			{
 				jsonrpc: "2.0",
 				id: rpc.id,
 				method: "tools/call",
-				params: { name: rpc.params.name, arguments: rpc.params.arguments ?? {} },
+				params: {
+					name: rpc.params.name,
+					arguments: rpc.params.arguments ?? {},
+					...extra,
+					...(server.meta ? { _meta: server.meta } : {}),
+				},
 			},
 			sessionId,
 			signal,
 		);
-		validateToolResult(upstream.result);
+		if (modern && upstream.result?.resultType === "input_required") {
+			return {
+				body: rpcResponse(rpc.id, await mrtrResult(upstream.result, rpc, server, sessionId)),
+			};
+		}
+		if (modern && upstream.result?.resultType !== "complete")
+			throw new Error("invalid_tool_result");
+		validateToolResult(upstream.result, typeof dependencies.outputGuard === "function", modern);
 		if (tool.output_schema !== undefined) {
 			const structured = upstream.result.structuredContent;
 			if (
@@ -1143,23 +1641,68 @@ export function createMcpGateway(input, dependencies = {}) {
 				throw new Error("output_schema_mismatch");
 			}
 		}
-		inspect(upstream.result, scanner, config.maxBodyBytes);
+		await guardPayload(upstream.result, server, sessionId, "to_client", "tools/call");
 		return { body: rpcResponse(rpc.id, upstream.result) };
 	}
 
 	async function processRpc(rpc, client, server, request, signal) {
 		if (rpc.method === "initialize") return initializeRpc(rpc, client, server, request, signal);
 		const sessionId = boundSession(request.headers["mcp-session-id"], client, server);
+		if (!Object.hasOwn(rpc, "method")) return acceptReply(rpc, server, sessionId, signal);
+		const negotiatedVersion = sessions.get(sessionId)?.protocolVersion;
+		if (negotiatedVersion && server.protocolVersion && server.protocolVersion !== negotiatedVersion)
+			throw new Error("invalid_protocol_version");
+		server.protocolVersion = negotiatedVersion ?? server.protocolVersion ?? "2025-03-26";
+		if (!server.protocolVersions.includes(server.protocolVersion))
+			throw new Error("invalid_protocol_version");
+		const modern = server.protocolVersion === "2026-07-28";
+		if (modern) {
+			const meta = rpc.params?._meta;
+			if (
+				!jsonObject(meta) ||
+				meta["io.modelcontextprotocol/protocolVersion"] !== server.protocolVersion ||
+				!jsonObject(meta["io.modelcontextprotocol/clientCapabilities"])
+			)
+				throw new Error("invalid_protocol_version");
+			server.capabilities = scopedCapabilities(
+				server,
+				meta["io.modelcontextprotocol/clientCapabilities"],
+			);
+			server.meta = { ...meta, "io.modelcontextprotocol/clientCapabilities": server.capabilities };
+		} else {
+			const saved = clientCapabilities.get(owner(server, sessionId));
+			server.capabilities =
+				sessions.get(sessionId)?.capabilities ??
+				(saved?.expiresAt > now().getTime() ? saved.capabilities : {});
+		}
+		if (rpc.method === "server/discover") {
+			if (!modern) throw new Error("invalid_rpc_request");
+			const { result } = await forward(
+				server,
+				{ ...rpc, params: { ...rpc.params, _meta: server.meta } },
+				sessionId,
+				signal,
+			);
+			await guardPayload(result, server, sessionId, "to_client", rpc.method);
+			if (!jsonObject(result) || result.resultType !== "complete")
+				throw new Error("invalid_upstream_rpc");
+			return { body: rpcResponse(rpc.id, { ...result, capabilities: { tools: {} } }) };
+		}
 		if (rpc.method === "notifications/initialized") {
+			if (modern) throw new Error("invalid_rpc_request");
 			await forward(server, rpc, sessionId, signal);
 			return { notification: true };
 		}
-		if (rpc.method === "ping") return { body: rpcResponse(rpc.id, {}) };
+		if (rpc.method === "ping")
+			return { body: rpcResponse(rpc.id, modern ? { resultType: "complete" } : {}) };
 		const observed = await verifiedTools(server, sessionId, signal);
 		const allowed = new Set(client.allowedTools[server.id]);
-		return rpc.method === "tools/list"
-			? listTools(rpc, observed, allowed)
-			: callTool(rpc, server, observed, allowed, sessionId, signal);
+		if (rpc.method === "tools/list") {
+			const result = listTools(rpc, observed, allowed, modern);
+			await guardPayload(result.body.result, server, sessionId, "to_client", "tools/list");
+			return result;
+		}
+		return callTool(rpc, server, observed, allowed, sessionId, signal);
 	}
 
 	async function handleAuthorized(request, response, client, upstream, serverId) {
@@ -1170,19 +1713,42 @@ export function createMcpGateway(input, dependencies = {}) {
 		});
 		let rpcId = null;
 		let rpcMethod;
+		let counted = false;
+		let requestUpstream;
 		try {
 			if (!/^application\/json(?:\s*;|$)/i.test(request.headers["content-type"] ?? "")) {
 				throw new Error("invalid_content_type");
 			}
-			const rpc = parseRequest(await readBody(request, config.maxBodyBytes));
+			const rpc = parseRequest(await readBody(request, config.maxBodyBytes, controller.signal));
 			rpcId = rpc.id ?? null;
 			rpcMethod = rpc.method;
+			if (rpc.method) {
+				const current = inflight.get(client.tenantId) ?? 0;
+				if (current >= MAX_ACTIVE_PER_TENANT) throw new Error("tenant_busy");
+				if (activeRequests >= MAX_ACTIVE_REQUESTS) throw new Error("gateway_busy");
+				inflight.set(client.tenantId, current + 1);
+				activeRequests++;
+				counted = true;
+			}
+			const protocolVersion = request.headers["mcp-protocol-version"];
+			if (protocolVersion !== undefined && !PROTOCOL_VERSION.test(protocolVersion))
+				throw new Error("invalid_protocol_version");
 			// Bind the credential snapshot used for attestation to the credential sent
 			// upstream. Reading process.env again after an async attestation creates a
 			// rotation race that could execute against an unapproved identity.
-			const requestUpstream = {
+			requestUpstream = {
 				...upstream,
 				resolvedUpstreamAuth: resolvedUpstreamAuth(upstream),
+				protocolVersion,
+				client,
+				request,
+				response,
+				requestId: rpc.id,
+				inputSha256: createHash("sha256")
+					.update(safeJson(rpc.params?.arguments ?? {}), "utf8")
+					.digest("hex"),
+				signal: controller.signal,
+				replyIds: new Set(),
 			};
 			await attest(requestUpstream);
 			const result = await processRpc(rpc, client, requestUpstream, request, controller.signal);
@@ -1200,7 +1766,13 @@ export function createMcpGateway(input, dependencies = {}) {
 					requestMethod: rpcMethod,
 				});
 			}
-			const status = reason === "request_too_large" ? 413 : rpcId === null ? 400 : 200;
+			const status = ["tenant_busy", "gateway_busy"].includes(cause?.message)
+				? 429
+				: reason === "request_too_large"
+					? 413
+					: rpcId === null
+						? 400
+						: 200;
 			send(
 				response,
 				status,
@@ -1210,10 +1782,15 @@ export function createMcpGateway(input, dependencies = {}) {
 					`AIDR blocked MCP request: ${reason}`,
 					refusal ? refusalPayload(refusal) : undefined,
 				),
+				status === 429 ? { connection: "close" } : {},
 			);
 		} finally {
 			clearTimeout(timeout);
-			inflight.set(client.tenantId, (inflight.get(client.tenantId) ?? 1) - 1);
+			for (const id of requestUpstream?.replyIds ?? []) pendingReplies.delete(id);
+			if (counted) {
+				inflight.set(client.tenantId, (inflight.get(client.tenantId) ?? 1) - 1);
+				activeRequests--;
+			}
 		}
 	}
 
@@ -1245,8 +1822,16 @@ export function createMcpGateway(input, dependencies = {}) {
 	}
 
 	const server = createServer(async (request, response) => {
+		if (!ready) {
+			send(response, 503, { error: "gateway_starting" });
+			return;
+		}
 		if (request.method === "GET" && request.url === "/healthz") {
 			send(response, 200, { status: "up" });
+			return;
+		}
+		if (request.headers.origin !== undefined) {
+			send(response, 403, { error: "origin_forbidden" });
 			return;
 		}
 		if (
@@ -1260,12 +1845,6 @@ export function createMcpGateway(input, dependencies = {}) {
 		const route = resolveRoute(request, response);
 		if (!route) return;
 		const { client, serverId, upstream } = route;
-		const current = inflight.get(client.tenantId) ?? 0;
-		if (current >= MAX_ACTIVE_PER_TENANT) {
-			send(response, 429, { error: "tenant_busy" });
-			return;
-		}
-		inflight.set(client.tenantId, current + 1);
 		await handleAuthorized(request, response, client, upstream, serverId);
 	});
 	server.maxConnections = 100;
@@ -1278,6 +1857,7 @@ export function createMcpGateway(input, dependencies = {}) {
 		config,
 		storeFor,
 		close() {
+			ready = false;
 			return new Promise((resolve) => server.close(resolve));
 		},
 		async approve({ tenantId, serverId, toolsetHash, bindingSha256, approvedBy, reason }) {
@@ -1308,6 +1888,7 @@ export function createMcpGateway(input, dependencies = {}) {
 					try {
 						if (!startupCheckPromise) startupCheckPromise = runStartupSelfCheck(address);
 						await startupCheckPromise;
+						ready = true;
 						resolve(address);
 					} catch (cause) {
 						server.close(() => reject(cause));

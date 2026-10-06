@@ -49,7 +49,7 @@ export class NativeSession {
           metadata={decision:r.decision,reasons:r.reasons,filename:r.filename,contentType:r.contentType,coverage:probe.audit.coverage,counts:r.counts as Partial<Record<EntityType,number>>};
           if(r.output!==null)this.#output=Buffer.from(r.output,'utf8');
         }
-        if(this.#abort.signal.aborted)reject();
+        if(this.#abort.signal.aborted){this.close();reject();}
         if(!this.#output){this.#state='done';return {...base,ok:true,...metadata,policyId:this.#services.policyId,policyDigest:this.#services.policyDigest,outputBytes:0};}
         const sha256=digest(this.#output);this.#state='output';
         return {...base,ok:true,...metadata,policyId:this.#services.policyId,policyDigest:this.#services.policyDigest,outputBytes:this.#output.length,sha256};

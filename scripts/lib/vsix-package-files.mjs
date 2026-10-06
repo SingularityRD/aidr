@@ -13,16 +13,17 @@ export const VSIX_PACKAGE_FILES = Object.freeze([
 	"dist/vscode_extension.js",
 	"dist/aidr-hook.cjs",
 	...VSIX_INTEGRITY_EVIDENCE_FILES,
-	"resources/**",
+	"dist/resources/**",
 	"aidr-icon.png",
 	"package.json",
 	"README.md",
 	"LICENSE",
 ]);
 
-export async function assertVsixIntegrityEvidence(extensionRoot) {
+export async function assertVsixIntegrityEvidence(extensionRoot, { requireSignature = true } = {}) {
 	const missing = [];
 	for (const relativePath of VSIX_INTEGRITY_EVIDENCE_FILES) {
+		if (!requireSignature && relativePath === "dist/aidr-artifact.manifest.sig") continue;
 		try {
 			await access(join(extensionRoot, relativePath));
 		} catch {

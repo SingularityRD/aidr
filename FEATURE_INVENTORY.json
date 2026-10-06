@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "generated_on": "2026-09-24",
+  "generated_on": "2026-10-06",
   "generation_timezone": "Europe/Istanbul",
-  "source_commit": "0db9af4fb0b6d737eff8533f2f1a37743a1d6b7a",
+  "source_commit": "7f3ec0ad009abf5b032b8116b296d8604fee884e",
   "worktree_has_changes": true,
   "decision": "NO-GO",
   "methodology": "Generated capability/consumer mapping; statuses do not imply production effectiveness. Wired means a callable implementation; partial means scope or delivery gaps; missing means no end-to-end consumer; external requires independent evidence. Includes proposed market capabilities and deployment/assurance requirements. Historical module-reachability counts are not feature counts.",
@@ -108,11 +108,12 @@
       "source_paths": [
         "packages/core/src/dlp/scanner.ts",
         "packages/core/src/dlp/policy.ts",
-        "packages/claude-code/src/detector-provisioning.ts"
+        "packages/core/src/detector-provisioning.ts",
+        "packages/sdk/src/output-guard.ts"
       ],
-      "consumer": "Core evaluator and provisioned Claude hook",
-      "delivered": "Tenant labels, rules, owner-bound exceptions, redact/ask/block and signed tenant bundle verification",
-      "remaining": "Other connectors, trusted provisioning operations and customer label acceptance remain open",
+      "consumer": "Shared evaluator and supported connector result boundaries",
+      "delivered": "Tenant labels, owner-bound exceptions, redact/ask/block, signed policy and optional issuer-controlled runtime capability; supported output guards inspect before delivery where host APIs permit",
+      "remaining": "Real labels and TR/EN NER efficacy are unaccepted; later host callbacks cannot guarantee same-turn output blocking; unsupported opaque formats fail closed",
       "production_accepted": false
     },
     {
@@ -122,19 +123,16 @@
       "status": "partial",
       "source_paths": [
         "packages/core/src/behavioral-orchestrator.ts",
-        "packages/core/src/behavioral-analyzer.ts",
+        "packages/core/src/behavioral-learning.ts",
+        "packages/core/src/behavioral-learning-receipt.ts",
         "packages/core/src/behavioral-baseline-store.ts",
-        "packages/core/src/detector-provisioning.ts",
         "packages/core/src/evaluator.ts",
-        "packages/claude-code/src/detector-provisioning.ts",
-        "packages/claude-code/src/pre-tool-use.ts",
-        "packages/claude-code/src/post-tool-use.ts",
-        "packages/opencode/src/tool-handler.ts",
-        "packages/opencode/src/output-handler.ts"
+        "packages/cli/src/commands/learning.ts",
+        "docs/runbooks/behavioral-learning.md"
       ],
-      "consumer": "Core evaluator and provisioned Claude/OpenCode preflight hooks",
-      "delivered": "Bounded behavior/novelty scoring and tenant/session-scoped baseline storage API; product preflight cannot promote candidates; cold baselines ask by default, signed policy can select visible degraded skip",
-      "remaining": "No host supplies a trusted, call-ID/input-digest-bound successful-execution receipt. DET-08 is not production ready; callback wiring and independent efficacy acceptance remain required",
+      "consumer": "Shared preflight scoring and explicit learning execute/approve/ingest CLI",
+      "delivered": "Bounded actual foreground execution, separate signed approval, one-use context-bound receipts, vault-authenticated durable baseline and 30-day pruning; ordinary calls never authorize learning",
+      "remaining": "Exit zero is not business success or process-tree isolation; real corpus efficacy, customer role custody and native OS acceptance remain required; OS owner can roll back the whole vault and journal",
       "production_accepted": false
     },
     {
@@ -288,11 +286,13 @@
       "source_paths": [
         "packages/mcp-gateway/src/gateway.mjs",
         "packages/mcp-gateway/src/stdio.mjs",
-        "packages/core/src/mcp-transport.ts"
+        "packages/mcp-gateway/src/library.mjs",
+        "packages/core/src/mcp-transport.ts",
+        "packages/privacy/src/platform/mcp-serve.ts"
       ],
-      "consumer": "Opt-in loopback HTTP and stdio JSON-RPC gateway",
-      "delivered": "Signed tool approval, tenant-bound auth, initialized notifications, DNS pinning and bounded inline output inspection",
-      "remaining": "Binary output, server-initiated requests, forced routing of direct upstream access and customer native acceptance remain open",
+      "consumer": "Loopback HTTP/stdio tools gateway and signed installed ESM factory",
+      "delivered": "Bounded JSON/SSE, single-use owner-bound callbacks and modern continuations, signed tool approval, complete RPC input/output guards, DNS pinning and mandatory authenticated upstream probes; installed private launcher connects the real mTLS scanner",
+      "remaining": "Opaque data requires an actually capable guard and otherwise denies; resources/prompts/subscriptions and unrelated GET paths are outside tools scope; host egress controls and customer/native acceptance remain open",
       "production_accepted": false
     },
     {
@@ -330,12 +330,16 @@
       "status": "partial",
       "source_paths": [
         "packages/cli/src/commands/collect.ts",
+        "packages/core/src/discovery-aws.ts",
+        "packages/core/src/discovery-microsoft.ts",
+        "packages/core/src/discovery-gcp.ts",
         "supabase/functions/discovery/index.ts",
-        "packages/dashboard/src/ui/pages/DiscoveryPage.tsx"
+        "packages/dashboard/src/ui/pages/DiscoveryPage.tsx",
+        "docs/runbooks/cloud-discovery.md"
       ],
-      "consumer": "Local collector, tenant-scoped central inventory API, and authenticated Discovery dashboard",
-      "delivered": "Authenticated operator or collector upload, sequenced/deduplicated cycles, tenant-scoped listing, and reported-only per-item freshness/alert-state display",
-      "remaining": "Cloud/MDM provider adapters, customer-approved scopes/credentials, customer-activated production scheduling and alert/paging delivery, and customer field acceptance remain open",
+      "consumer": "Bounded AWS/Azure/GCP/Intune collectors, tenant-scoped typed inventory and dashboard",
+      "delivered": "Real provider API adapters, explicit provider/scope-hash grants, sequenced reports, separate provider resources and reported-only freshness; incomplete reports preserve existing rows",
+      "remaining": "Actual customer cloud IAM/MDM licences, approved scopes, production schedules, paging and provider acceptance remain open; reported resources do not prove whole-estate coverage",
       "production_accepted": false
     },
     {
@@ -416,11 +420,13 @@
       "source_paths": [
         "supabase/functions/revocations/index.ts",
         "packages/core/src/response-command-consumer-v6.ts",
-        "packages/core/src/response-command-worker-v6.ts"
+        "packages/core/src/windows-response-worker.ts",
+        "packages/core/src/response-barrier.ts",
+        "deploy/fleet/windows/README.md"
       ],
-      "consumer": "Managed sync and opt-in command API",
-      "delivered": "Signed entitlement, operator-authorized fleet queue, bounded receipt consumer and restart-safe journal worker library",
-      "remaining": "No installed endpoint service, verified OS isolation adapter, device attestation or cross-provider credential revocation",
+      "consumer": "Opt-in Windows same-enrolled-user worker and shared tool barrier",
+      "delivered": "Exact-device signed envelopes, stable vault-authenticated restart journal, installed task lifecycle, pause/resume and owned-rule Windows isolation/release with explicit recovery destinations",
+      "remaining": "Actual signed Windows VM/firewall/MDM acceptance remains open; non-Windows isolation and universal cloud credential revocation are unsupported; worker is not a SYSTEM impersonation service",
       "production_accepted": false
     },
     {
@@ -430,14 +436,13 @@
       "status": "partial",
       "source_paths": [
         "supabase/functions/response-playbooks/index.ts",
-        "supabase/migrations/20260923000005_fleet_response_playbooks.sql",
+        "supabase/migrations/20261006004000_response_automation_grants.sql",
         "packages/core/src/response-command-consumer-v6.ts",
-        "supabase/functions/__tests__/response-playbooks-contract.test.ts",
         "docs/operations/response-playbooks.md"
       ],
-      "consumer": "Standalone owner/admin+AAL2 playbook API; not wired to AutoSecOps or an alert trigger",
-      "delivered": "One fixed typed, TTL-bound and idempotent run queues agent_pause then network_isolate only after the consumer records an adapter-verified succeeded receipt",
-      "remaining": "Not production accepted or connected to an alert/AutoSecOps trigger. A separately installed endpoint worker and verified host adapter are not provisioned or customer-validated; host permissions and native acceptance, external SOAR/provider connectors, credential revocation and rollback remain unsupported or open",
+      "consumer": "Human AAL2 API and separately scoped alarm/SOAR grant API to the installed Windows worker",
+      "delivered": "Audited expiring hash-only automation credential, exact target/template/source scope, idempotent event admission and pause-before-verified-isolation playbook; live creator/key/revocation checks",
+      "remaining": "External alarm source integration, real Windows permissions/effects, signed distribution, native rollback and customer incident acceptance remain open",
       "production_accepted": false
     },
     {

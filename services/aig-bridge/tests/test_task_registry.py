@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -193,3 +194,31 @@ def test_live_postgres_cross_instance_races():
                 ],
             ),
         )
+
+
+@pytest.mark.skipif(
+    not os.getenv("AIG_BRIDGE_TEST_POSTGRES_DSN"),
+    reason="set AIG_BRIDGE_TEST_POSTGRES_DSN for live PostgreSQL JWT replay races",
+)
+def test_live_postgres_jwt_replay_cross_instance_races():
+    from app.auth import ReplayStore
+    import psycopg
+
+    dsn = os.environ["AIG_BRIDGE_TEST_POSTGRES_DSN"]
+    migration = (
+        Path(__file__).resolve().parents[1]
+        / "migrations"
+        / "002_postgres_jwt_replay.sql"
+    ).read_text(encoding="utf-8")
+    with psycopg.connect(dsn) as connection:
+        connection.execute(migration)
+
+    jti = f"test-replay-{uuid.uuid4().hex}"
+    store = lambda: ReplayStore(postgres_dsn=dsn)
+    assert store().readiness() == (True, "shared postgres JWT replay store")
+    results = _race(8, lambda _index: store().consume(jti, int(time.time()) + 60))
+    assert results.count(True) == 1
+    assert results.count(False) == 7
+    assert store().consume(jti, int(time.time()) + 60) is False
+    with psycopg.connect(dsn) as connection:
+        connection.execute("DELETE FROM aig_bridge_jwt_replay WHERE jti = %s", (jti,))

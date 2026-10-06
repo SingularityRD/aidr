@@ -8,6 +8,7 @@ This release extends 0.4 rather than replacing it. Text redaction, screenshot OC
 
 - [Implemented vs. accepted: all 12 requested rows](docs/PLATFORM_FEATURE_STATUS.md)
 - [Merge and trust-boundary guide](docs/PLATFORM_MERGE.md)
+- [Narrow on-prem text service](docs/TEXT_SERVICE.md)
 - [Executed tests and limitations](reports/platform/TEST_REPORT.md)
 - [Threat models and unsupported modalities](docs/PLATFORM_THREAT_MODEL.md)
 - [Model card](models/MODEL_CARD.md)

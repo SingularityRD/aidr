@@ -2,26 +2,34 @@
   "schema_version": 1,
   "matrix_id": "aidr-privacy-data-flow-matrix",
   "status": "open",
-  "updated_at": "unknown",
-  "deployment_scope": "unknown",
+  "updated_at": "2026-10-06",
+  "deployment_scope": "Source inventory only: aidr self-hosted/Supabase, separately deployed aidr-landing Clerk/Firestore/Polar, optional privacy text service and MCP gateway; no deployed customer scope selected or accepted",
   "flows": [
     {
       "flow_id": "DF-001",
       "data_class": "local detection and evidence",
-      "fields": ["tool inputs", "extracted URLs and paths", "verdicts", "incident records"],
+      "fields": [
+        "tool inputs",
+        "extracted URLs and paths",
+        "verdicts",
+        "incident records"
+      ],
       "source": "packages/core/src/evaluator.ts; packages/core/src/audit-log.ts",
       "purpose": "local evaluation and evidence recording",
       "trigger": "tool evaluation or local audit configuration",
-      "destination": "local runtime and configured local files",
+      "destination": "Runtime process and configured local JSONL audit/incident files; remote paths recorded separately",
       "destination_domain": "unknown",
       "region": "unknown",
       "subprocessor": "unknown",
       "lawful_basis": "unknown",
       "retention": "unknown",
       "deletion": "unknown",
-      "access": "unknown",
+      "access": "Runtime OS user; actual host ACLs, backup readers and operator access require host evidence",
       "transfer_mechanism": "unknown",
-      "evidence": ["unknown"],
+      "evidence": [
+        "Source inspection only: packages/core/src/evaluator.ts",
+        "Source inspection only: packages/core/src/audit-log.ts"
+      ],
       "status": "inventory",
       "unknowns": [
         "destination_domain",
@@ -30,115 +38,130 @@
         "lawful_basis",
         "retention",
         "deletion",
-        "access",
-        "transfer_mechanism",
-        "evidence[0]"
+        "transfer_mechanism"
       ]
     },
     {
       "flow_id": "DF-002",
       "data_class": "managed telemetry",
-      "fields": ["installation and runtime identifiers", "verdict", "artifact hashes or summaries", "incident fields"],
-      "source": "packages/core/src/managed.ts; packages/core/src/clients/control-plane.ts",
+      "fields": [
+        "installation and runtime identifiers",
+        "verdict",
+        "artifact hashes or summaries",
+        "incident fields"
+      ],
+      "source": "packages/core/src/managed.ts; packages/core/src/clients/control-plane.ts; packages/core/src/telemetry-queue.ts; supabase/functions/ingest/events.ts",
       "purpose": "optional managed event synchronization",
       "trigger": "managed mode with audit synchronization enabled",
-      "destination": "unknown",
+      "destination": "Configured managed ingest API and tenant event/incident database after a durable installation-bound local queue",
       "destination_domain": "unknown",
       "region": "unknown",
       "subprocessor": "unknown",
       "lawful_basis": "unknown",
       "retention": "unknown",
       "deletion": "unknown",
-      "access": "unknown",
+      "access": "Device credential for ingest, tenant-scoped database/API access and privileged deployment operators; actual grants require live evidence",
       "transfer_mechanism": "unknown",
-      "evidence": ["unknown"],
-      "status": "unknown",
+      "evidence": [
+        "Source inspection only: packages/core/src/managed.ts",
+        "Source inspection only: packages/core/src/clients/control-plane.ts",
+        "Source inspection only: packages/core/src/telemetry-queue.ts",
+        "Source inspection only: supabase/functions/ingest/events.ts"
+      ],
+      "status": "inventory",
       "unknowns": [
-        "destination",
         "destination_domain",
         "region",
         "subprocessor",
         "lawful_basis",
         "retention",
         "deletion",
-        "access",
-        "transfer_mechanism",
-        "evidence[0]",
-        "status"
+        "transfer_mechanism"
       ]
     },
     {
       "flow_id": "DF-003",
       "data_class": "central discovery metadata",
-      "fields": ["tenant and collector identifiers", "cycle identifier", "origin", "reachability and error code"],
+      "fields": [
+        "tenant and collector identifiers",
+        "cycle identifier",
+        "origin",
+        "reachability and error code"
+      ],
       "source": "supabase/functions/discovery/logic.ts",
       "purpose": "optional central discovery collection",
       "trigger": "configured discovery collection or upload",
-      "destination": "unknown",
+      "destination": "Configured discovery API and tenant-scoped discovery tables; collector origins reject paths, query strings and embedded credentials",
       "destination_domain": "unknown",
       "region": "unknown",
       "subprocessor": "unknown",
       "lawful_basis": "unknown",
       "retention": "unknown",
       "deletion": "unknown",
-      "access": "unknown",
+      "access": "Authenticated tenant collector and configured dashboard tenant roles; actual grants require live evidence",
       "transfer_mechanism": "unknown",
-      "evidence": ["unknown"],
-      "status": "unknown",
+      "evidence": [
+        "Source inspection only: supabase/functions/discovery/logic.ts"
+      ],
+      "status": "inventory",
       "unknowns": [
-        "destination",
         "destination_domain",
         "region",
         "subprocessor",
         "lawful_basis",
         "retention",
         "deletion",
-        "access",
-        "transfer_mechanism",
-        "evidence[0]",
-        "status"
+        "transfer_mechanism"
       ]
     },
     {
       "flow_id": "DF-004",
       "data_class": "deep-scan input and result",
-      "fields": ["scan type", "target", "scan options", "result"],
+      "fields": [
+        "scan type",
+        "target and options",
+        "agent config and optional prompt",
+        "configured evaluation model/base URL/token",
+        "findings and task state"
+      ],
       "source": "packages/core/src/aig-scan-client.ts",
       "purpose": "optional deep scanning",
       "trigger": "operator-configured scan request",
-      "destination": "unknown",
+      "destination": "Configured AIG_BRIDGE_URL (source default http://localhost:8099), then configured AIG task service and any selected scan/model provider",
       "destination_domain": "unknown",
       "region": "unknown",
       "subprocessor": "unknown",
       "lawful_basis": "unknown",
       "retention": "unknown",
       "deletion": "unknown",
-      "access": "unknown",
+      "access": "Configured authenticated bridge caller, tenant task authorization, bridge/AIG service operators; upstream provider access unresolved",
       "transfer_mechanism": "unknown",
-      "evidence": ["unknown"],
-      "status": "unknown",
+      "evidence": [
+        "Source inspection only: packages/core/src/aig-scan-client.ts"
+      ],
+      "status": "inventory",
       "unknowns": [
-        "destination",
         "destination_domain",
         "region",
         "subprocessor",
         "lawful_basis",
         "retention",
         "deletion",
-        "access",
-        "transfer_mechanism",
-        "evidence[0]",
-        "status"
+        "transfer_mechanism"
       ]
     },
     {
       "flow_id": "DF-005",
       "data_class": "URL reputation lookup",
-      "fields": ["extracted URL", "product and runtime version", "optional authentication"],
+      "fields": [
+        "eligible extracted URL",
+        "product/runtime version",
+        "optional authentication header"
+      ],
       "source": "packages/core/src/clients/url-check.ts",
       "purpose": "optional URL reputation lookup",
       "trigger": "URL reputation feature enabled",
-      "destination": "unknown",
+      "destination": "Configured url_check.endpoint; source default https://aidr-proxy.svc.singularityrd.com/url-check. Eligible URL lookup may disclose hostname/path; credentials/fragments and non-opted-in query URLs are withheld",
       "destination_domain": "unknown",
       "region": "unknown",
       "subprocessor": "unknown",
@@ -147,10 +170,11 @@
       "deletion": "unknown",
       "access": "unknown",
       "transfer_mechanism": "unknown",
-      "evidence": ["unknown"],
-      "status": "unknown",
+      "evidence": [
+        "Source inspection only: packages/core/src/clients/url-check.ts"
+      ],
+      "status": "inventory",
       "unknowns": [
-        "destination",
         "destination_domain",
         "region",
         "subprocessor",
@@ -158,19 +182,22 @@
         "retention",
         "deletion",
         "access",
-        "transfer_mechanism",
-        "evidence[0]",
-        "status"
+        "transfer_mechanism"
       ]
     },
     {
       "flow_id": "DF-006",
       "data_class": "file and package reputation lookup",
-      "fields": ["SHA-256 hashes", "package names", "registry metadata"],
+      "fields": [
+        "SHA-256 file/package hashes",
+        "package name/version",
+        "registry response metadata",
+        "optional configured reputation authentication"
+      ],
       "source": "packages/core/src/clients/file-check.ts; packages/core/src/clients/package-registry.ts",
       "purpose": "optional file and package reputation lookup",
       "trigger": "file or package reputation feature enabled",
-      "destination": "unknown",
+      "destination": "Configured file reputation endpoint and public registry metadata APIs (registry.npmjs.org and pypi.org); signed local feed may be selected separately",
       "destination_domain": "unknown",
       "region": "unknown",
       "subprocessor": "unknown",
@@ -179,10 +206,12 @@
       "deletion": "unknown",
       "access": "unknown",
       "transfer_mechanism": "unknown",
-      "evidence": ["unknown"],
-      "status": "unknown",
+      "evidence": [
+        "Source inspection only: packages/core/src/clients/file-check.ts",
+        "Source inspection only: packages/core/src/clients/package-registry.ts"
+      ],
+      "status": "inventory",
       "unknowns": [
-        "destination",
         "destination_domain",
         "region",
         "subprocessor",
@@ -190,19 +219,22 @@
         "retention",
         "deletion",
         "access",
-        "transfer_mechanism",
-        "evidence[0]",
-        "status"
+        "transfer_mechanism"
       ]
     },
     {
       "flow_id": "DF-007",
       "data_class": "version check metadata",
-      "fields": ["AIDR and runtime versions", "OS and architecture", "installation identifier"],
+      "fields": [
+        "AIDR/runtime version",
+        "OS/version and architecture",
+        "optional installation ID",
+        "optional authentication header"
+      ],
       "source": "packages/core/src/version-check.ts",
       "purpose": "optional version update check",
       "trigger": "configured session-start or update check",
-      "destination": "unknown",
+      "destination": "Source default https://aidr-proxy.svc.singularityrd.com/v1/version-check; skipped for development versions or AIDR_SKIP_VERSION_CHECK=1",
       "destination_domain": "unknown",
       "region": "unknown",
       "subprocessor": "unknown",
@@ -211,10 +243,11 @@
       "deletion": "unknown",
       "access": "unknown",
       "transfer_mechanism": "unknown",
-      "evidence": ["unknown"],
-      "status": "unknown",
+      "evidence": [
+        "Source inspection only: packages/core/src/version-check.ts"
+      ],
+      "status": "inventory",
       "unknowns": [
-        "destination",
         "destination_domain",
         "region",
         "subprocessor",
@@ -222,19 +255,21 @@
         "retention",
         "deletion",
         "access",
-        "transfer_mechanism",
-        "evidence[0]",
-        "status"
+        "transfer_mechanism"
       ]
     },
     {
       "flow_id": "DF-008",
       "data_class": "runtime diagnostics",
-      "fields": ["scrubbed event attributes", "bounded request status and duration", "local audit context"],
-      "source": "packages/core/src/telemetry-redaction.ts; packages/core/src/evaluator.ts; deploy/dashboard/monitoring.mjs",
+      "fields": [
+        "scrubbed event attributes",
+        "bounded request status and duration",
+        "local audit context"
+      ],
+      "source": "packages/core/src/telemetry-redaction.ts; packages/core/src/sentry.ts; deploy/dashboard/monitoring.mjs",
       "purpose": "optional runtime reliability and security diagnostics",
-      "trigger": "runtime diagnostic sink explicitly configured",
-      "destination": "unknown",
+      "trigger": "Explicit runtime SENTRY_ENABLED and DSN, or operator-configured monitoring",
+      "destination": "Configured runtime Sentry sink only when explicitly enabled with DSN; deployment health probes use separately configured service endpoints",
       "destination_domain": "unknown",
       "region": "unknown",
       "subprocessor": "unknown",
@@ -243,10 +278,13 @@
       "deletion": "unknown",
       "access": "unknown",
       "transfer_mechanism": "unknown",
-      "evidence": ["unknown"],
-      "status": "unknown",
+      "evidence": [
+        "Source inspection only: packages/core/src/telemetry-redaction.ts",
+        "Source inspection only: packages/core/src/sentry.ts",
+        "Source inspection only: deploy/dashboard/monitoring.mjs"
+      ],
+      "status": "inventory",
       "unknowns": [
-        "destination",
         "destination_domain",
         "region",
         "subprocessor",
@@ -254,19 +292,21 @@
         "retention",
         "deletion",
         "access",
-        "transfer_mechanism",
-        "evidence[0]",
-        "status"
+        "transfer_mechanism"
       ]
     },
     {
       "flow_id": "DF-009",
       "data_class": "browser diagnostics",
-      "fields": ["browser events", "traces", "breadcrumbs and route context"],
+      "fields": [
+        "redacted browser events/traces/breadcrumbs",
+        "query-free request URL and HTTP method",
+        "route/error metadata; attached user/body/header fields omitted"
+      ],
       "source": "packages/dashboard/src/sentry.ts; packages/dashboard/src/main.tsx",
       "purpose": "optional browser reliability and security diagnostics",
       "trigger": "browser diagnostic sink explicitly configured",
-      "destination": "unknown",
+      "destination": "Configured browser Sentry DSN; absent DSN skips initialization, sendDefaultPii=false and trace sample rate defaults to zero",
       "destination_domain": "unknown",
       "region": "unknown",
       "subprocessor": "unknown",
@@ -275,10 +315,12 @@
       "deletion": "unknown",
       "access": "unknown",
       "transfer_mechanism": "unknown",
-      "evidence": ["unknown"],
-      "status": "unknown",
+      "evidence": [
+        "Source inspection only: packages/dashboard/src/sentry.ts",
+        "Source inspection only: packages/dashboard/src/main.tsx"
+      ],
+      "status": "inventory",
       "unknowns": [
-        "destination",
         "destination_domain",
         "region",
         "subprocessor",
@@ -286,19 +328,22 @@
         "retention",
         "deletion",
         "access",
-        "transfer_mechanism",
-        "evidence[0]",
-        "status"
+        "transfer_mechanism"
       ]
     },
     {
       "flow_id": "DF-010",
       "data_class": "response webhook data",
-      "fields": ["quarantine identifiers", "original path", "hash and size", "threat identifier"],
+      "fields": [
+        "quarantine identifiers",
+        "original path",
+        "hash and size",
+        "threat identifier"
+      ],
       "source": "packages/core/src/quarantine.ts",
       "purpose": "optional operator-configured response notification",
       "trigger": "configured response webhook or alert",
-      "destination": "unknown",
+      "destination": "Operator-configured response webhook/Slack destination; source does not select an operated channel",
       "destination_domain": "unknown",
       "region": "unknown",
       "subprocessor": "unknown",
@@ -307,10 +352,11 @@
       "deletion": "unknown",
       "access": "unknown",
       "transfer_mechanism": "unknown",
-      "evidence": ["unknown"],
-      "status": "unknown",
+      "evidence": [
+        "Source inspection only: packages/core/src/quarantine.ts"
+      ],
+      "status": "inventory",
       "unknowns": [
-        "destination",
         "destination_domain",
         "region",
         "subprocessor",
@@ -318,51 +364,128 @@
         "retention",
         "deletion",
         "access",
-        "transfer_mechanism",
-        "evidence[0]",
-        "status"
+        "transfer_mechanism"
       ]
     },
     {
       "flow_id": "DF-011",
       "data_class": "exports and support artifacts",
-      "fields": ["tenant audit records", "allowlisted diagnostic summary", "export metadata"],
+      "fields": [
+        "tenant audit records",
+        "allowlisted diagnostic summary",
+        "export metadata"
+      ],
       "source": "supabase/functions/audit-export/index.ts; scripts/support-bundle.mjs",
       "purpose": "customer-selected export or consent-gated support workflow",
       "trigger": "explicit export or support-bundle operation",
-      "destination": "unknown",
+      "destination": "Tenant audit-export Storage object and temporary signed download URL; support tool writes a consent-gated local metadata bundle and does not upload it",
       "destination_domain": "unknown",
       "region": "unknown",
       "subprocessor": "unknown",
       "lawful_basis": "unknown",
       "retention": "unknown",
-      "deletion": "unknown",
-      "access": "unknown",
+      "deletion": "Source audit-export expiry/reaper and offboarding use exact-path authorization, absence observation and ACK; local support bundle removal and recipient deletion need ticket evidence; provider physical erasure/backups not certified",
+      "access": "Authorized tenant audit exporter, expiring signed-URL holder, privileged Storage operators and explicitly consented support recipient",
       "transfer_mechanism": "unknown",
-      "evidence": ["unknown"],
-      "status": "unknown",
+      "evidence": [
+        "Source inspection only: supabase/functions/audit-export/index.ts",
+        "Source inspection only: scripts/support-bundle.mjs"
+      ],
+      "status": "inventory",
       "unknowns": [
-        "destination",
         "destination_domain",
         "region",
         "subprocessor",
         "lawful_basis",
         "retention",
-        "deletion",
-        "access",
-        "transfer_mechanism",
-        "evidence[0]",
-        "status"
+        "transfer_mechanism"
       ]
     },
     {
       "flow_id": "DF-012",
       "data_class": "persistence and disaster recovery",
-      "fields": ["managed events and incidents", "credentials", "queues", "database and object backups"],
+      "fields": [
+        "managed events and incidents",
+        "credentials",
+        "queues",
+        "database and object backups"
+      ],
       "source": "supabase/migrations; scripts/deployment-backup.mjs; scripts/deployment-backup-offsite.mjs",
       "purpose": "configured persistence, backup, and recovery workflow",
       "trigger": "managed persistence or operator-selected backup operation",
-      "destination": "unknown",
+      "destination": "Configured local queue/vault and database/Storage; encrypted backup plus separately configured offsite destination",
+      "destination_domain": "unknown",
+      "region": "unknown",
+      "subprocessor": "unknown",
+      "lawful_basis": "unknown",
+      "retention": "unknown",
+      "deletion": "Tenant offboarding and scheduled retention include hold checks and application receipts; local/remote backup expiry, replicas and provider erasure require separate evidence",
+      "access": "Runtime OS user, approved deployment/backup operators and selected provider administrators; actual roles/key custody unresolved",
+      "transfer_mechanism": "unknown",
+      "evidence": [
+        "Source inspection only: supabase/migrations",
+        "Source inspection only: scripts/deployment-backup.mjs",
+        "Source inspection only: scripts/deployment-backup-offsite.mjs"
+      ],
+      "status": "inventory",
+      "unknowns": [
+        "destination_domain",
+        "region",
+        "subprocessor",
+        "lawful_basis",
+        "retention",
+        "transfer_mechanism"
+      ]
+    },
+    {
+      "flow_id": "DF-013",
+      "data_class": "authentication and identity",
+      "fields": [
+        "email",
+        "auth user identifier",
+        "session and factor state",
+        "SAML provider identity"
+      ],
+      "source": "packages/dashboard/src/ui/pages/LoginPage.tsx; supabase/functions/identity-security/index.ts; supabase/functions/oidc-sso/index.ts",
+      "purpose": "user sign-in, MFA, SSO and recovery",
+      "trigger": "customer sign-in or identity-security action",
+      "destination": "Configured Supabase Auth and configured customer SAML/OIDC IdP",
+      "destination_domain": "unknown",
+      "region": "unknown",
+      "subprocessor": "unknown",
+      "lawful_basis": "unknown",
+      "retention": "unknown",
+      "deletion": "unknown",
+      "access": "Authenticated user/factor-qualified tenant identity; owner actions rechecked server-side; Auth/IdP operator access requires provider evidence",
+      "transfer_mechanism": "unknown",
+      "evidence": [
+        "Source inspection only: packages/dashboard/src/ui/pages/LoginPage.tsx",
+        "Source inspection only: supabase/functions/identity-security/index.ts",
+        "Source inspection only: supabase/functions/oidc-sso/index.ts"
+      ],
+      "status": "inventory",
+      "unknowns": [
+        "destination_domain",
+        "region",
+        "subprocessor",
+        "lawful_basis",
+        "retention",
+        "deletion",
+        "transfer_mechanism"
+      ]
+    },
+    {
+      "flow_id": "DF-014",
+      "data_class": "authentication email delivery",
+      "fields": [
+        "recipient email",
+        "one-time sign-in or recovery link",
+        "delivery metadata"
+      ],
+      "source": "packages/dashboard/src/ui/pages/LoginPage.tsx; packages/dashboard/src/ui/pages/RecoveryPage.tsx; Supabase Auth runtime configuration",
+      "purpose": "deliver sign-in and recovery messages",
+      "trigger": "one-time sign-in or account recovery request",
+      "destination": "Supabase Auth configured SMTP/email delivery service and recipient mailbox; provider is selected by runtime configuration",
       "destination_domain": "unknown",
       "region": "unknown",
       "subprocessor": "unknown",
@@ -371,10 +494,13 @@
       "deletion": "unknown",
       "access": "unknown",
       "transfer_mechanism": "unknown",
-      "evidence": ["unknown"],
-      "status": "unknown",
+      "evidence": [
+        "Source inspection only: packages/dashboard/src/ui/pages/LoginPage.tsx",
+        "Source inspection only: packages/dashboard/src/ui/pages/RecoveryPage.tsx",
+        "Source inspection only: Supabase Auth runtime configuration"
+      ],
+      "status": "inventory",
       "unknowns": [
-        "destination",
         "destination_domain",
         "region",
         "subprocessor",
@@ -382,55 +508,18 @@
         "retention",
         "deletion",
         "access",
-        "transfer_mechanism",
-        "evidence[0]",
-        "status"
+        "transfer_mechanism"
       ]
-    },
-    {
-      "flow_id": "DF-013",
-      "data_class": "authentication and identity",
-      "fields": ["email", "auth user identifier", "session and factor state", "SAML provider identity"],
-      "source": "packages/dashboard/src/ui/pages/LoginPage.tsx; supabase/functions/identity-security/index.ts",
-      "purpose": "user sign-in, MFA, SSO and recovery",
-      "trigger": "customer sign-in or identity-security action",
-      "destination": "unknown",
-      "destination_domain": "unknown",
-      "region": "unknown",
-      "subprocessor": "unknown",
-      "lawful_basis": "unknown",
-      "retention": "unknown",
-      "deletion": "unknown",
-      "access": "unknown",
-      "transfer_mechanism": "unknown",
-      "evidence": ["unknown"],
-      "status": "inventory",
-      "unknowns": ["destination", "destination_domain", "region", "subprocessor", "lawful_basis", "retention", "deletion", "access", "transfer_mechanism", "evidence[0]"]
-    },
-    {
-      "flow_id": "DF-014",
-      "data_class": "authentication email delivery",
-      "fields": ["recipient email", "one-time sign-in or recovery link", "delivery metadata"],
-      "source": "packages/dashboard/src/ui/pages/LoginPage.tsx; packages/dashboard/src/ui/pages/RecoveryPage.tsx; Supabase Auth runtime configuration",
-      "purpose": "deliver sign-in and recovery messages",
-      "trigger": "one-time sign-in or account recovery request",
-      "destination": "unknown",
-      "destination_domain": "unknown",
-      "region": "unknown",
-      "subprocessor": "unknown",
-      "lawful_basis": "unknown",
-      "retention": "unknown",
-      "deletion": "unknown",
-      "access": "unknown",
-      "transfer_mechanism": "unknown",
-      "evidence": ["unknown"],
-      "status": "inventory",
-      "unknowns": ["destination", "destination_domain", "region", "subprocessor", "lawful_basis", "retention", "deletion", "access", "transfer_mechanism", "evidence[0]"]
     },
     {
       "flow_id": "DF-015",
       "data_class": "trial legal acceptance record",
-      "fields": ["actor and tenant identifiers", "Terms and Privacy versions, hashes and URLs", "approval reference", "audit timestamp"],
+      "fields": [
+        "actor and tenant identifiers",
+        "Terms and Privacy versions, hashes and URLs",
+        "approval reference",
+        "audit timestamp"
+      ],
       "source": "supabase/migrations/20260923000041_ga_trial_legal_consent.sql; supabase/functions/pilot-status/index.ts",
       "purpose": "record exact legal-document acceptance before a trial starts",
       "trigger": "verified user starts a configured cloud trial",
@@ -439,62 +528,108 @@
       "region": "unknown",
       "subprocessor": "unknown",
       "lawful_basis": "unknown",
-      "retention": "unknown",
-      "deletion": "unknown",
-      "access": "unknown",
+      "retention": "Source uses tenant security-audit retention and hold/offboarding handling; default/allowed periods are in retention-holds.md. Actual customer policy and backup periods require approval",
+      "deletion": "Hold-aware tenant offboarding/retention; provider backups and legally required evidence exceptions need separate disposition",
+      "access": "Trial actor and tenant-scoped audit readers; privileged operators; actual deployed access review open",
       "transfer_mechanism": "unknown",
-      "evidence": ["unknown"],
+      "evidence": [
+        "Source inspection only: supabase/migrations/20260923000041_ga_trial_legal_consent.sql",
+        "Source inspection only: supabase/functions/pilot-status/index.ts"
+      ],
       "status": "inventory",
-      "unknowns": ["destination_domain", "region", "subprocessor", "lawful_basis", "retention", "deletion", "access", "transfer_mechanism", "evidence[0]"]
+      "unknowns": [
+        "destination_domain",
+        "region",
+        "subprocessor",
+        "lawful_basis",
+        "transfer_mechanism"
+      ]
     },
     {
       "flow_id": "DF-016",
       "data_class": "payment and entitlement evidence",
-      "fields": ["user and tenant identifiers", "seat count and selected plan", "provider customer, session, invoice, payment and refund identifiers"],
+      "fields": [
+        "user and tenant identifiers",
+        "seat count and selected plan",
+        "provider customer, session, invoice, payment and refund identifiers"
+      ],
       "source": "supabase/functions/billing-checkout/index.ts; supabase/functions/billing-portal/provider.ts; supabase/functions/stripe-webhook/index.ts",
       "purpose": "optional hosted checkout, settlement and entitlement reconciliation",
       "trigger": "explicitly enabled payment provider and customer purchase or refund",
-      "destination": "unknown",
+      "destination": "Selected enabled Supabase billing provider checkout/portal/webhook and tenant billing/settlement ledger; legacy Stripe/Paddle routes alone do not select the sold provider",
       "destination_domain": "unknown",
       "region": "unknown",
       "subprocessor": "unknown",
       "lawful_basis": "unknown",
-      "retention": "unknown",
+      "retention": "Source retains immutable settlement/idempotency evidence and uses tenant commercial-record policy; actual financial record obligation and expiry require Finance/Legal decision",
       "deletion": "unknown",
-      "access": "unknown",
+      "access": "Authenticated tenant billing actions, separately authorized Finance operators and verified provider webhooks; provider administrators require access review",
       "transfer_mechanism": "unknown",
-      "evidence": ["unknown"],
+      "evidence": [
+        "Source inspection only: supabase/functions/billing-checkout/index.ts",
+        "Source inspection only: supabase/functions/billing-portal/provider.ts",
+        "Source inspection only: supabase/functions/stripe-webhook/index.ts"
+      ],
       "status": "inventory",
-      "unknowns": ["destination", "destination_domain", "region", "subprocessor", "lawful_basis", "retention", "deletion", "access", "transfer_mechanism", "evidence[0]"]
+      "unknowns": [
+        "destination_domain",
+        "region",
+        "subprocessor",
+        "lawful_basis",
+        "deletion",
+        "transfer_mechanism"
+      ]
     },
     {
       "flow_id": "DF-017",
       "data_class": "enterprise directory provisioning",
-      "fields": ["user email and display name", "external identity and group identifiers", "group memberships", "provisioning token"],
+      "fields": [
+        "user email and display name",
+        "external identity and group identifiers",
+        "group memberships",
+        "provisioning token"
+      ],
       "source": "supabase/functions/scim/index.ts; supabase/functions/scim-admin/index.ts; supabase/functions/azure-ad-groups/index.ts",
       "purpose": "optional customer directory synchronization and role mapping",
       "trigger": "customer-configured SCIM or directory group operation",
-      "destination": "unknown",
+      "destination": "Configured Supabase SCIM/directory API, tenant membership/role mappings and customer-selected Entra/other directory provider; separate managed Clerk path is DF-020",
       "destination_domain": "unknown",
       "region": "unknown",
       "subprocessor": "unknown",
       "lawful_basis": "unknown",
       "retention": "unknown",
       "deletion": "unknown",
-      "access": "unknown",
+      "access": "Scoped provisioning token, permitted owner/admin directory actions and privileged operators; actual provider consent/grants unresolved",
       "transfer_mechanism": "unknown",
-      "evidence": ["unknown"],
+      "evidence": [
+        "Source inspection only: supabase/functions/scim/index.ts",
+        "Source inspection only: supabase/functions/scim-admin/index.ts",
+        "Source inspection only: supabase/functions/azure-ad-groups/index.ts"
+      ],
       "status": "inventory",
-      "unknowns": ["destination", "destination_domain", "region", "subprocessor", "lawful_basis", "retention", "deletion", "access", "transfer_mechanism", "evidence[0]"]
+      "unknowns": [
+        "destination_domain",
+        "region",
+        "subprocessor",
+        "lawful_basis",
+        "retention",
+        "deletion",
+        "transfer_mechanism"
+      ]
     },
     {
       "flow_id": "DF-018",
       "data_class": "cloud edge proxy traffic",
-      "fields": ["request URL and query", "HTTP headers and body", "client IP for device-start", "upstream response"],
+      "fields": [
+        "request URL and query",
+        "HTTP headers and body",
+        "client IP for device-start",
+        "upstream response"
+      ],
       "source": "deploy/cloudflare/worker.mjs; deploy/cloudflare/wrangler.jsonc",
       "purpose": "optional cloud dashboard asset and control-plane API delivery",
       "trigger": "request to a configured Cloudflare-hosted product origin",
-      "destination": "unknown",
+      "destination": "Optional Cloudflare Worker product ingress, configured Supabase/API upstream and dashboard assets; Cloudflare placement/log retention require runtime/provider evidence",
       "destination_domain": "unknown",
       "region": "unknown",
       "subprocessor": "unknown",
@@ -503,14 +638,31 @@
       "deletion": "unknown",
       "access": "unknown",
       "transfer_mechanism": "unknown",
-      "evidence": ["unknown"],
+      "evidence": [
+        "Source inspection only: deploy/cloudflare/worker.mjs",
+        "Source inspection only: deploy/cloudflare/wrangler.jsonc"
+      ],
       "status": "inventory",
-      "unknowns": ["destination", "destination_domain", "region", "subprocessor", "lawful_basis", "retention", "deletion", "access", "transfer_mechanism", "evidence[0]"]
+      "unknowns": [
+        "destination_domain",
+        "region",
+        "subprocessor",
+        "lawful_basis",
+        "retention",
+        "deletion",
+        "access",
+        "transfer_mechanism"
+      ]
     },
     {
       "flow_id": "DF-019",
       "data_class": "manual team invitation handoff",
-      "fields": ["recipient email", "team and role", "one-time invitation URL", "expiry"],
+      "fields": [
+        "recipient email",
+        "team and role",
+        "one-time invitation URL",
+        "expiry"
+      ],
       "source": "supabase/functions/team-invite/index.ts; packages/dashboard/src/enterprise/admin-panel.tsx",
       "purpose": "create an invitation for an operator to deliver through a separately chosen channel",
       "trigger": "team owner or admin creates or resends an invitation",
@@ -520,23 +672,254 @@
       "subprocessor": "unknown",
       "lawful_basis": "unknown",
       "retention": "unknown",
-      "deletion": "unknown",
-      "access": "unknown",
+      "deletion": "Source bounded reaper deletes expired unaccepted invitations only after identity_membership retention, active-tenant and no-hold checks; accepted invitation/membership and delivery-provider data follow separate records",
+      "access": "Tenant owner/admin invitation issuer and intended one-time-link recipient; manually selected transport provider unresolved",
       "transfer_mechanism": "unknown",
-      "evidence": ["unknown"],
+      "evidence": [
+        "Source inspection only: supabase/functions/team-invite/index.ts",
+        "Source inspection only: packages/dashboard/src/enterprise/admin-panel.tsx"
+      ],
       "status": "inventory",
-      "unknowns": ["destination_domain", "region", "subprocessor", "lawful_basis", "retention", "deletion", "access", "transfer_mechanism", "evidence[0]"]
+      "unknowns": [
+        "destination_domain",
+        "region",
+        "subprocessor",
+        "lawful_basis",
+        "retention",
+        "transfer_mechanism"
+      ]
+    },
+    {
+      "flow_id": "DF-020",
+      "data_class": "managed web identity and organizations",
+      "fields": [
+        "Clerk user/session/organization and current role identifiers",
+        "reciprocal organization-to-existing-tenant binding",
+        "policy requester and distinct approver identifiers"
+      ],
+      "source": "../aidr-landing/src/lib/control-plane/tenant-context.ts; ../aidr-landing/src/lib/control-plane/tenant-organization.ts; ../aidr-landing/src/lib/auth/session.ts",
+      "purpose": "Managed dashboard authentication, tenant access and dual-admin policy approval",
+      "trigger": "Managed Clerk sign-in or tenant request",
+      "destination": "Configured Clerk instance and Firestore organization/tenant mapping; no managed SCIM endpoint implied",
+      "destination_domain": "unknown",
+      "region": "unknown",
+      "subprocessor": "unknown",
+      "lawful_basis": "unknown",
+      "retention": "unknown",
+      "deletion": "unknown",
+      "access": "Current Clerk organization memberships rechecked for tenant requests; current administrators for policy writes; privileged operators and provider account access require review",
+      "transfer_mechanism": "unknown",
+      "evidence": [
+        "Source inspection only: ../aidr-landing/src/lib/control-plane/tenant-context.ts",
+        "Source inspection only: ../aidr-landing/src/lib/control-plane/tenant-organization.ts",
+        "Source inspection only: ../aidr-landing/src/lib/auth/session.ts"
+      ],
+      "status": "inventory",
+      "unknowns": [
+        "destination_domain",
+        "region",
+        "subprocessor",
+        "lawful_basis",
+        "retention",
+        "deletion",
+        "transfer_mechanism"
+      ]
+    },
+    {
+      "flow_id": "DF-021",
+      "data_class": "managed web control-plane persistence",
+      "fields": [
+        "installation and machine identifiers",
+        "minimized event/incident fields",
+        "signed policy and entitlement metadata",
+        "export and response delivery metadata"
+      ],
+      "source": "../aidr-landing/src/lib/control-plane/ingest.ts; ../aidr-landing/src/lib/control-plane/device-auth.ts; ../aidr-landing/src/lib/firebase/admin.ts",
+      "purpose": "Managed ingestion, policy, billing/agent administration and audit exports",
+      "trigger": "Enrolled agent or authenticated tenant API operation",
+      "destination": "Configured Firebase/Firestore project and selected server hosting; browser reads use tenant-scoped API",
+      "destination_domain": "unknown",
+      "region": "unknown",
+      "subprocessor": "unknown",
+      "lawful_basis": "unknown",
+      "retention": "unknown",
+      "deletion": "unknown",
+      "access": "Installation-scoped agent keys, current Clerk tenant roles and privileged Firebase/server operators; live Firestore rules acceptance open",
+      "transfer_mechanism": "unknown",
+      "evidence": [
+        "Source inspection only: ../aidr-landing/src/lib/control-plane/ingest.ts",
+        "Source inspection only: ../aidr-landing/src/lib/control-plane/device-auth.ts",
+        "Source inspection only: ../aidr-landing/src/lib/firebase/admin.ts"
+      ],
+      "status": "inventory",
+      "unknowns": [
+        "destination_domain",
+        "region",
+        "subprocessor",
+        "lawful_basis",
+        "retention",
+        "deletion",
+        "transfer_mechanism"
+      ]
+    },
+    {
+      "flow_id": "DF-022",
+      "data_class": "managed web payments",
+      "fields": [
+        "customer email and existing tenant ID",
+        "Polar product and seat quantity",
+        "subscription/order/customer/payment metadata",
+        "verified webhook and entitlement evidence"
+      ],
+      "source": "../aidr-landing/src/lib/billing/polar-client.ts; ../aidr-landing/src/lib/billing/entitlement-write.ts; ../aidr-landing/src/app/api/webhooks/polar/route.ts",
+      "purpose": "Configured recurring payment and finite managed entitlement reconciliation",
+      "trigger": "Enabled approved product checkout or verified provider webhook",
+      "destination": "Configured Polar sandbox/production account and Firestore billing records; not the Supabase legacy payment path",
+      "destination_domain": "unknown",
+      "region": "unknown",
+      "subprocessor": "unknown",
+      "lawful_basis": "unknown",
+      "retention": "unknown",
+      "deletion": "unknown",
+      "access": "Configured provider credential and verified webhook; tenant billing authorization; actual provider access and contracts require Finance review",
+      "transfer_mechanism": "unknown",
+      "evidence": [
+        "Source inspection only: ../aidr-landing/src/lib/billing/polar-client.ts",
+        "Source inspection only: ../aidr-landing/src/lib/billing/entitlement-write.ts",
+        "Source inspection only: ../aidr-landing/src/app/api/webhooks/polar/route.ts"
+      ],
+      "status": "inventory",
+      "unknowns": [
+        "destination_domain",
+        "region",
+        "subprocessor",
+        "lawful_basis",
+        "retention",
+        "deletion",
+        "transfer_mechanism"
+      ]
+    },
+    {
+      "flow_id": "DF-023",
+      "data_class": "landing contact submission and bot prevention",
+      "fields": [
+        "contact name/email/company/message",
+        "submission timing/honeypot",
+        "rate-limit subject",
+        "optional Turnstile token and remote IP"
+      ],
+      "source": "../aidr-landing/src/app/api/contact/route.ts; ../aidr-landing/src/lib/site/contact.ts",
+      "purpose": "Customer-selected sales contact delivery and abuse prevention",
+      "trigger": "Same-origin contact POST with valid bounded input; challenge only if configured",
+      "destination": "Configured contact webhook; optional challenges.cloudflare.com Turnstile validation; optional shared Firestore rate-limit record",
+      "destination_domain": "unknown",
+      "region": "unknown",
+      "subprocessor": "unknown",
+      "lawful_basis": "unknown",
+      "retention": "unknown",
+      "deletion": "unknown",
+      "access": "Configured contact recipient and server operators; restricted credentials; recipient retention/access requires approval",
+      "transfer_mechanism": "unknown",
+      "evidence": [
+        "Source inspection only: ../aidr-landing/src/app/api/contact/route.ts",
+        "Source inspection only: ../aidr-landing/src/lib/site/contact.ts"
+      ],
+      "status": "inventory",
+      "unknowns": [
+        "destination_domain",
+        "region",
+        "subprocessor",
+        "lawful_basis",
+        "retention",
+        "deletion",
+        "transfer_mechanism"
+      ]
+    },
+    {
+      "flow_id": "DF-024",
+      "data_class": "private text-service provider egress",
+      "fields": [
+        "tenant/user/device/provider identifiers and signed grant",
+        "bounded text input and sanitized output",
+        "redaction/vault audit metadata",
+        "provider response or withhold status"
+      ],
+      "source": "packages/privacy/src/platform/serve.ts; packages/privacy/src/platform/service.ts; packages/privacy/src/platform/egress.ts; packages/privacy/docs/TEXT_SERVICE.md",
+      "purpose": "Protect the explicitly routed text request and response with provisioned policy, approved NER and durable session broker",
+      "trigger": "Approved application sends POST /v1/egress through configured client mTLS and signed user/device/provider authorization",
+      "destination": "One fixed configured OpenAI Responses or Gemini generateContent provider, administrator-provisioned local session SQLite and approved local NER worker; no all-egress claim",
+      "destination_domain": "unknown",
+      "region": "unknown",
+      "subprocessor": "unknown",
+      "lawful_basis": "unknown",
+      "retention": "unknown",
+      "deletion": "unknown",
+      "access": "Enrolled device certificate, signed user/device/provider grant, approved broker session; service account/provider operators and vault key custody require actual host acceptance",
+      "transfer_mechanism": "unknown",
+      "evidence": [
+        "Source inspection only: packages/privacy/src/platform/serve.ts",
+        "Source inspection only: packages/privacy/src/platform/service.ts",
+        "Source inspection only: packages/privacy/src/platform/egress.ts",
+        "Source inspection only: packages/privacy/docs/TEXT_SERVICE.md"
+      ],
+      "status": "inventory",
+      "unknowns": [
+        "destination_domain",
+        "region",
+        "subprocessor",
+        "lawful_basis",
+        "retention",
+        "deletion",
+        "transfer_mechanism"
+      ]
+    },
+    {
+      "flow_id": "DF-025",
+      "data_class": "MCP gateway routed tool traffic",
+      "fields": [
+        "tenant/client/server/tool identifiers",
+        "bounded tool arguments and result",
+        "configured upstream MCP authentication",
+        "audit/attestation metadata"
+      ],
+      "source": "packages/mcp-gateway/src/gateway.mjs; packages/mcp-gateway/src/config.mjs; packages/mcp-gateway/src/stdio.mjs",
+      "purpose": "Authenticate and inspect explicitly routed supported MCP requests/responses",
+      "trigger": "Authorized configured MCP client uses loopback gateway/stdio route",
+      "destination": "Fixed configured MCP server endpoints and local audit state; binary/server-initiated method coverage must match accepted profile",
+      "destination_domain": "unknown",
+      "region": "unknown",
+      "subprocessor": "unknown",
+      "lawful_basis": "unknown",
+      "retention": "unknown",
+      "deletion": "unknown",
+      "access": "Tenant-bound client and server/tool/method allowlists plus configured upstream credentials; actual upstream processor roles remain open",
+      "transfer_mechanism": "unknown",
+      "evidence": [
+        "Source inspection only: packages/mcp-gateway/src/gateway.mjs",
+        "Source inspection only: packages/mcp-gateway/src/config.mjs",
+        "Source inspection only: packages/mcp-gateway/src/stdio.mjs"
+      ],
+      "status": "inventory",
+      "unknowns": [
+        "destination_domain",
+        "region",
+        "subprocessor",
+        "lawful_basis",
+        "retention",
+        "deletion",
+        "transfer_mechanism"
+      ]
     }
   ],
   "unknowns": [
-    "updated_at",
-    "deployment_scope",
-    "Each flow needs a deployment-specific destination, region, access owner, retention, deletion behavior, and evidence.",
-    "No live packet capture or customer configuration is included in this local template."
+    "Actual deployment scope, candidate digest and enabled optional features are not accepted.",
+    "Each configured destination/domain, provider legal entity, region, actual access owner, lawful basis, approved retention/erasure and transfer mechanism needs deployment/provider/Legal evidence.",
+    "Source facts and source paths are inventory evidence; no deployed payload or customer deletion receipt is supplied."
   ],
   "limitations": [
     "This is a source-grounded engineering inventory and a fill-in template, not a measurement of a deployed environment.",
     "Unknown values are intentionally preserved; they must not be converted into a no-data or local-only conclusion.",
-    "The validator checks schema shape, duplicate identifiers, explicit unknown declarations, and acceptance-state consistency only."
+    "The validator checks schema shape, duplicate identifiers, explicit unknown declarations, and acceptance-state consistency only.",
+    "The 2026-10-06 source expansion records 25 flows, including the sibling managed web app and narrow privacy/MCP routes. Optional flows are not automatically enabled. Source references are not runtime measurement or approval."
   ]
 }

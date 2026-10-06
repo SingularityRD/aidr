@@ -14,16 +14,17 @@
 // containment requires a separately verified native consumer and field test.
 
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.116.0";
-import { apiKeyMembershipActive } from "../_shared/api-key-auth.ts";
+import { authenticateTenantApiKey } from "../_shared/api-key-auth.ts";
 import { getBearerToken as getAccessToken } from "../_shared/auth.ts";
 import { configFailure, loadConfig, partialGroupError, runtimeEnv } from "../_shared/config.ts";
 import { corsJson, handleCors } from "../_shared/cors.ts";
 import { checkIdentityBarrier } from "../_shared/identity-barrier.ts";
+import { canonicalJson } from "../_shared/policy-signature.ts";
 import { consumeTenantRateLimit, rateLimitHeaders, readBoundedJson } from "../_shared/request-limits.ts";
 import { membershipActive } from "../_shared/runtime-policy.ts";
 import { loadRevocationRows } from "./feed.ts";
 import {
-	deviceCommandView,
+	commandSigningPayload,
 	effectiveCommandState,
 	isUuid,
 	parseDeviceResult,
@@ -46,10 +47,10 @@ const REVOCATION_SIGNING_PRIVATE_KEY_PKCS8_B64 = (
 const REVOCATION_EPOCH = Number(Deno.env.get("AIDR_REVOCATION_EPOCH") ?? "1");
 const REVOCATION_TTL_HOURS = Number(Deno.env.get("AIDR_REVOCATION_TTL_HOURS") ?? "24");
 
-function json(status: number, body: Record<string, unknown>) {
+function json(status: number, body: Record<string, unknown>, headers: Record<string, string> = {}) {
 	return new Response(JSON.stringify(body), {
 		status,
-		headers: { "Content-Type": "application/json" },
+		headers: { "Content-Type": "application/json", "Cache-Control": "no-store", ...headers },
 	});
 }
 
@@ -68,35 +69,31 @@ async function sha256Hex(input: string): Promise<string> {
 		.join("");
 }
 
-function canonicalizeForSigning(value: unknown): unknown {
-	if (Array.isArray(value)) return value.map((v) => canonicalizeForSigning(v));
-	if (!value || typeof value !== "object") return value;
-	const obj = value as Record<string, unknown>;
-	const out: Record<string, unknown> = {};
-	for (const key of Object.keys(obj).sort()) out[key] = canonicalizeForSigning(obj[key]);
-	return out;
-}
-
-function canonicalJson(value: unknown): string {
-	return JSON.stringify(canonicalizeForSigning(value));
-}
-
 function bytesToBase64(bytes: Uint8Array): string {
 	let bin = "";
 	for (const b of bytes) bin += String.fromCharCode(b);
 	return btoa(bin);
 }
 
-async function signEd25519Detached(payloadJson: string): Promise<string | null> {
-	if (!REVOCATION_SIGNING_KEY_ID || !REVOCATION_SIGNING_PRIVATE_KEY_PKCS8_B64) return null;
+async function revocationSigningKey(): Promise<CryptoKey | null> {
+	if (!/^[A-Za-z0-9._:-]{1,128}$/.test(REVOCATION_SIGNING_KEY_ID) || !REVOCATION_SIGNING_PRIVATE_KEY_PKCS8_B64) return null;
 	try {
 		const pkcs8 = Uint8Array.from(
 			atob(REVOCATION_SIGNING_PRIVATE_KEY_PKCS8_B64),
 			(c) => c.charCodeAt(0),
 		);
-		const key = await crypto.subtle.importKey("pkcs8", pkcs8, { name: "Ed25519" }, false, [
+		return await crypto.subtle.importKey("pkcs8", pkcs8, { name: "Ed25519" }, false, [
 			"sign",
 		]);
+	} catch {
+		return null;
+	}
+}
+
+async function signEd25519Detached(payloadJson: string, signingKey?: CryptoKey): Promise<string | null> {
+	try {
+		const key = signingKey ?? await revocationSigningKey();
+		if (!key) return null;
 		const sig = await crypto.subtle.sign("Ed25519", key, new TextEncoder().encode(payloadJson));
 		return bytesToBase64(new Uint8Array(sig));
 	} catch {
@@ -128,7 +125,7 @@ type RevocationsDatabase = {
 		};
 		Views: Record<string, never>;
 		Functions: {
-			poll_fleet_response_command: { Args: { p_key_hash: string; p_tenant_id: string; p_agent_id: string }; Returns: FleetCommandRow | null };
+			poll_bound_fleet_response_command: { Args: { p_key_hash: string; p_tenant_id: string; p_agent_id: string; p_installation_id: string }; Returns: { command: FleetCommandRow | null; tenant_id: string; agent_id: string; installation_id: string; key_hash: string } };
 			record_fleet_response_command: { Args: { p_key_hash: string; p_tenant_id: string; p_agent_id: string; p_command_id: string; p_stage: string; p_outcome: string; p_result_code: string | null }; Returns: FleetCommandRow };
 			cancel_fleet_response_command: { Args: { p_tenant_id: string; p_actor_user_id: string; p_command_id: string }; Returns: FleetCommandRow };
 			queue_bounded_fleet_response_command: { Args: { p_tenant_id: string; p_actor_user_id: string; p_agent_id: string; p_command_type: string; p_reason: string; p_idempotency_key: string; p_ttl_seconds: number; p_rollback_of: string | null }; Returns: FleetCommandRow };
@@ -200,31 +197,20 @@ async function agentContext(db: DatabaseClient, req: Request): Promise<AgentCont
 	const token = getAccessToken(req.headers.get("Authorization"));
 	if (!token) return corsJson(req, 401, { error: "missing_api_key" });
 	const keyHash = await sha256Hex(token);
-	const { data: key, error: keyError } = await db.from("api_keys")
-		.select("tenant_id,user_id,agent_id,revoked").eq("key_hash", keyHash).maybeSingle();
-	if (keyError) return corsJson(req, 503, { error: "authorization_unavailable" });
-	if (!key || key.revoked) return corsJson(req, 401, { error: "invalid_api_key" });
-	if (!isUuid(key.tenant_id) || !isUuid(key.agent_id)) {
+	const auth = await authenticateTenantApiKey(db, token);
+	if (!auth.ok) return corsJson(req, auth.status, { error: auth.error });
+	if (!isUuid(auth.tenantId) || !isUuid(auth.agentId)) {
 		return corsJson(req, 403, { error: "agent_bound_key_required" });
 	}
-	const [{ data: member, error: memberError }, { data: tenant, error: tenantError },
-		{ data: agent, error: agentError }] = await Promise.all([
-			db.from("tenant_members").select("role,expires_at")
-				.eq("tenant_id", key.tenant_id).eq("user_id", key.user_id).maybeSingle(),
-			db.from("tenants").select("status").eq("id", key.tenant_id).maybeSingle(),
-			db.from("agents").select("id,tenant_id,iid").eq("tenant_id", key.tenant_id)
-				.eq("id", key.agent_id).maybeSingle(),
-		]);
-	if (memberError || tenantError || agentError) {
-		return corsJson(req, 503, { error: "authorization_unavailable" });
-	}
-	if (!apiKeyMembershipActive(member) || tenant?.status !== "active" || !agent) {
-		return corsJson(req, 403, { error: "agent_access_denied" });
-	}
+	const { data: agent, error: agentError } = await db.from("agents").select("id,tenant_id,iid")
+		.eq("tenant_id", auth.tenantId).eq("id", auth.agentId).maybeSingle();
+	if (agentError) return corsJson(req, 503, { error: "authorization_unavailable" });
+	if (!agent) return corsJson(req, 403, { error: "agent_access_denied" });
 	if (typeof agent.iid !== "string" || agent.iid.trim().length === 0 || /[\u0000-\u001f\u007f\r\n]/.test(agent.iid)) {
 		return corsJson(req, 503, { error: "device_attestation_unavailable" });
 	}
-	return { tenantId: key.tenant_id, agentId: key.agent_id, installationId: agent.iid.trim(), keyHash };
+	// Keep the presented hash: the RPC rechecks the retired hash's expiry under its row lock.
+	return { tenantId: auth.tenantId, agentId: auth.agentId, installationId: agent.iid.trim(), keyHash };
 }
 
 export interface FleetCommandDeps {
@@ -279,16 +265,28 @@ async function handleFleetCommandRequest(req: Request, db: DatabaseClient): Prom
 			});
 			if (!rate.ok) return corsJson(req, rate.status, { error: rate.error }, rateLimitHeaders(rate));
 			if (action === "poll") {
-				const { data, error } = await db.rpc("poll_fleet_response_command", {
+				// Validate signing before leasing a command; no unsigned execution fallback.
+				const signingKey = await revocationSigningKey();
+				if (!signingKey) return corsJson(req, 503, { error: "fleet_command_signing_unavailable" });
+				const { data, error } = await db.rpc("poll_bound_fleet_response_command", {
 					p_key_hash: identity.keyHash,
 					p_tenant_id: identity.tenantId,
 					p_agent_id: identity.agentId,
+					p_installation_id: identity.installationId,
 				});
 				if (error) return commandError(req, error, "fleet_poll_unavailable");
-				return corsJson(req, 200, {
-					ok: true,
-					command: data ? deviceCommandView(data as Record<string, unknown>) : null,
-				});
+				if (!data || data.tenant_id !== identity.tenantId || data.agent_id !== identity.agentId ||
+					data.installation_id !== identity.installationId || data.key_hash !== identity.keyHash) {
+					return corsJson(req, 503, { error: "fleet_command_binding_unavailable" });
+				}
+				if (data.command === null) return corsJson(req, 200, { ok: true, command_signed: null });
+				const payload = commandSigningPayload(data.command, identity, REVOCATION_SIGNING_KEY_ID);
+				if (!payload) return corsJson(req, 503, { error: "fleet_command_binding_unavailable" });
+				const sig = await signEd25519Detached(canonicalJson(payload), signingKey);
+				if (!sig) return corsJson(req, 503, { error: "fleet_command_signing_unavailable" });
+				return corsJson(req, 200, { ok: true, command_signed: {
+					alg: "ed25519", key_id: REVOCATION_SIGNING_KEY_ID, sig_b64: sig, payload,
+				} });
 			}
 			const result = parseDeviceResult(values);
 			if (!result.ok) return corsJson(req, 400, { error: result.error });
@@ -444,25 +442,15 @@ Deno.serve(async (req) => {
 		auth: { persistSession: false },
 	});
 
-	// api_key -> user_id (hash-only)
-	const keyHash = await sha256Hex(apiKey);
-	const { data: keyRow, error: keyErr } = await supabase
-		.from("api_keys")
-		.select("user_id, tenant_id, revoked")
-		.eq("key_hash", keyHash)
-		.maybeSingle();
-	if (keyErr || !keyRow || keyRow.revoked) {
-		return json(401, { error: "invalid_api_key" });
-	}
-	const tenantId = typeof keyRow.tenant_id === "string" ? keyRow.tenant_id : "";
-	const userId = typeof keyRow.user_id === "string" ? keyRow.user_id : "";
+	// Use the same bounded renewal overlap and admission check as the other machine endpoints.
+	const auth = await authenticateTenantApiKey(supabase, apiKey);
+	if (!auth.ok) return json(auth.status, { error: auth.error });
+	const { tenantId, userId } = auth;
 	if (!isUuid(tenantId) || !isUuid(userId)) return json(403, { error: "agent_access_denied" });
-	const [{ data: member, error: memberError }, { data: tenant, error: tenantError }] = await Promise.all([
-		supabase.from("tenant_members").select("role,expires_at").eq("tenant_id", tenantId).eq("user_id", userId).maybeSingle(),
-		supabase.from("tenants").select("status").eq("id", tenantId).maybeSingle(),
-	]);
-	if (memberError || tenantError) return json(503, { error: "authorization_unavailable" });
-	if (!apiKeyMembershipActive(member) || tenant?.status !== "active") return json(403, { error: "agent_access_denied" });
+	const rate = await consumeTenantRateLimit(supabase, {
+		tenantId, subject: userId, endpoint: "revocations", perSubject: 300, perTenant: 10_000,
+	});
+	if (!rate.ok) return json(rate.status, { error: rate.error }, rateLimitHeaders(rate));
 
 	const loaded = await loadRevocationRows(supabase.from("revocations"), tenantId);
 	if (!loaded.ok) return json(503, { error: loaded.error });

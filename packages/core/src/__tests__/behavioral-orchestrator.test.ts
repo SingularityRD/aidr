@@ -189,6 +189,100 @@ describe("BehavioralDetectionOrchestrator", () => {
 		});
 	});
 
+	it("expires the learned baseline and fingerprint cap after the inclusive retention boundary", async () => {
+		let now = NOW;
+		const detector = new BehavioralDetectionOrchestrator(
+			{ minBaselineSamples: 2, maxEventAgeMs: 1_000, maxColdStartSamplesPerFingerprint: 2 },
+			{ mlModel: readyModel(), now: () => now },
+		);
+		await detector.evaluate(input());
+		await detector.evaluate(input());
+
+		now = NOW + 1_000;
+		const boundary = await detector.evaluate(input({ timestamp: now, learningAllowed: false }));
+		expect(boundary).toMatchObject({
+			outcome: "normal",
+			learning: { baselineSamplesBefore: 2, baselineSamplesAfter: 2 },
+		});
+
+		now++;
+		const expired = await detector.evaluate(input({ timestamp: now, learningAllowed: false }));
+		expect(expired).toMatchObject({
+			outcome: "learning",
+			learning: { baselineSamplesBefore: 0, baselineSamplesAfter: 0 },
+		});
+		const relearned = await detector.evaluate(input({ timestamp: now }));
+		expect(relearned.learning).toMatchObject({
+			accepted: true,
+			reason: "accepted",
+			baselineSamplesBefore: 0,
+			baselineSamplesAfter: 1,
+		});
+		expect(detector.getStats().totalBaselineSamples).toBe(1);
+	});
+
+	it("retains younger samples and rebuilds novelty without crossing tenant or session boundaries", async () => {
+		let now = NOW;
+		const detector = new BehavioralDetectionOrchestrator(
+			{ minBaselineSamples: 2, maxEventAgeMs: 1_000 },
+			{ mlModel: readyModel(), now: () => now },
+		);
+		// Accepted timestamps may arrive out of order; expiration must filter the full window.
+		await detector.evaluate(input({ command: "young-command", timestamp: NOW - 100 }));
+		await detector.evaluate(input({ command: "old-command", timestamp: NOW - 900 }));
+		await detector.evaluate(input({ command: "young-command", timestamp: NOW - 100 }));
+		for (const scope of [{ tenantId: "tenant-b" }, { sessionId: "session-b" }]) {
+			await detector.evaluate(input({ ...scope, command: "old-command", timestamp: NOW - 100 }));
+			await detector.evaluate(input({ ...scope, command: "old-command", timestamp: NOW - 100 }));
+		}
+
+		now = NOW + 500;
+		const oldCommand = await detector.evaluate(
+			input({ command: "old-command", timestamp: now, learningAllowed: false }),
+		);
+		expect(oldCommand).toMatchObject({
+			outcome: "anomalous",
+			learning: { baselineSamplesBefore: 2, baselineSamplesAfter: 2 },
+		});
+		expect(oldCommand.explanations).toContainEqual(
+			expect.objectContaining({ leg: "novelty", status: "ready", score: 100 }),
+		);
+		const youngCommand = await detector.evaluate(
+			input({ command: "young-command", timestamp: now, learningAllowed: false }),
+		);
+		expect(youngCommand.outcome).toBe("normal");
+		for (const scope of [{ tenantId: "tenant-b" }, { sessionId: "session-b" }]) {
+			const unaffected = await detector.evaluate(
+				input({ ...scope, command: "old-command", timestamp: now, learningAllowed: false }),
+			);
+			expect(unaffected).toMatchObject({
+				outcome: "normal",
+				learning: { baselineSamplesBefore: 2, baselineSamplesAfter: 2 },
+			});
+		}
+		expect(detector.getStats().totalBaselineSamples).toBe(6);
+	});
+
+	it("removes evicted observations from novelty and sample counters", async () => {
+		const detector = orchestrator({ maxEventsPerSession: 2 });
+		await detector.evaluate(input({ command: "old-command" }));
+		await detector.evaluate(input({ command: "retained-command" }));
+		const replacement = await detector.evaluate(input({ command: "retained-command" }));
+		expect(replacement.learning).toMatchObject({
+			accepted: true,
+			baselineSamplesBefore: 2,
+			baselineSamplesAfter: 2,
+		});
+		const evicted = await detector.evaluate(
+			input({ command: "old-command", learningAllowed: false }),
+		);
+		expect(evicted.outcome).toBe("anomalous");
+		expect(evicted.explanations).toContainEqual(
+			expect.objectContaining({ leg: "novelty", status: "ready", score: 100 }),
+		);
+		expect(detector.getStats().totalBaselineSamples).toBe(2);
+	});
+
 	it("does not learn high-risk, ML-matched, or repetitive cold-start poison", async () => {
 		const model = readyModel((text) =>
 			text.includes("known-malware")
@@ -458,5 +552,4 @@ describe("BehavioralDetectionOrchestrator", () => {
 			await rm(dir, { recursive: true, force: true });
 		}
 	});
-
 });

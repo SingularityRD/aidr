@@ -1,6 +1,6 @@
 # Support and security update operations (v7)
 
-**Status: operating procedure draft; T40 field acceptance open.** This document tells Support, SRE, Security, and Release Engineering how to handle a case and what evidence must exist before a support or security-update promise can be made. It does not establish an active ticket channel, a staffed on-call rota, a contractual response time, or a supported end-of-life date. The current customer candidate is **NO-GO** for production and supported sale; see the [v7 candidate record](../production-readiness/2026-09-13-customer-candidate-v7.md) and [T40 gap](../../PRODUCTION_SALES_GAPS.md).
+**Status: operating procedure draft; T40 field acceptance open. Source inventory updated 6 October 2026.** This document tells Support, SRE, Security, and Release Engineering how to handle a case and what evidence must exist before a support or security-update promise can be made. It does not establish an active ticket channel, a staffed on-call rota, a contractual response time, or a supported end-of-life date. Current production/supported sale remains **NO-GO**; see the [current release report](../../RELEASE_READINESS_REPORT.md) and [T40 gap](../../PRODUCTION_SALES_GAPS.md). The [September v7 candidate record](../production-readiness/2026-09-13-customer-candidate-v7.md) is historical.
 
 Use one opaque case ID to join the customer ticket, incident timeline, diagnostic consent, release/change record, and final acceptance. Record times in UTC and identify the exact source commit, release manifest digest, package/kit digest, deployment mode, and affected customer/host versions. Keep restricted customer and security records outside the release bundle.
 
@@ -87,3 +87,8 @@ Before Support signs off on T40, run these drills on the **same immutable candid
 | EOL notice | Approved version policy, affected account list, customer notification/acknowledgement, and supported migration rehearsal are recorded |
 
 The local support-bundle self-test can be run with `node scripts/verify-support-bundle.mjs --self-test`; it checks collection boundaries, not the customer ticket or support service. Attach candidate digests, UTC event times, owner names, reviewer decisions, customer acknowledgement, test outputs, and any failures or exceptions to the T40 acceptance record. Support, SRE, Security, Release Engineering, and the customer owner must sign the field result. Until the channels, rota, contracts, real drills, signed release, and customer acceptance exist, keep T40 `LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN` and production/supported-sales status **NO-GO**.
+
+The [support schedule](../production-readiness/support-sla-template.md) defines
+the redacted ticket-receipt fields and runnable
+`scripts/verify-support-ticket-drill.mjs`. Run it only after the operated drill;
+its self-test does not establish a reachable or staffed channel.

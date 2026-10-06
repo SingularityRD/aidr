@@ -1,0 +1,114 @@
+{
+  "version": 1,
+  "status": "unqualified-public-candidates",
+  "models": [
+    {
+      "repository": "ersanbil/kvkk-pii-ner",
+      "revision": "cb85fbd0839f92cff2ddc92c4f23ecf61cb769c2",
+      "license": "Apache-2.0",
+      "directory": "tr-kvkk",
+      "languages": [
+        "tr"
+      ],
+      "max_length": 384,
+      "stride": 96,
+      "label_map": {
+        "O": null,
+        "PERSON": "PERSON",
+        "ADDRESS": "ADDRESS",
+        "HEALTH_DATA": "INTERNAL",
+        "KVKK_SPECIAL": "INTERNAL"
+      },
+      "files": {
+        "config.json": {
+          "source": "config.json",
+          "size": 1121,
+          "sha256": "a3a136003fd74d9b73755cd5c1206c294dae71a34017c9868eb307500fdb9b7a"
+        },
+        "tokenizer.json": {
+          "source": "tokenizer.json",
+          "size": 754624,
+          "sha256": "65ef5a17a6dd815398d703d17a66a3ca5e1c87dd89baf69cba64f108f16a3cbd"
+        },
+        "tokenizer_config.json": {
+          "source": "tokenizer_config.json",
+          "size": 370,
+          "sha256": "4e5738ad97f034b944ce8b7b8c3165f7a6333b524b7b77044f7e9e9b963f4dea"
+        },
+        "model.safetensors": {
+          "source": "model.safetensors",
+          "size": 440158036,
+          "sha256": "cac7dbd5890a6fd392721ae51b27b573266e60a9fa1b7d9b168ea6425c689787"
+        },
+        "README.md": {
+          "source": "README.md",
+          "size": 3816,
+          "sha256": "3e9f0a59329a5e53b9ec4cce1ea68da709a4afaef85e8a0788bdd30ac7ca079d"
+        }
+      }
+    },
+    {
+      "repository": "seongyeon1/pii-deberta-v3-base-multi",
+      "revision": "9d83044fc56074f871ee811e7009778867beb7cf",
+      "license": "Apache-2.0",
+      "directory": "en-deberta",
+      "languages": [
+        "en"
+      ],
+      "max_length": 256,
+      "stride": 64,
+      "label_map": {
+        "O": null,
+        "NAME_STUDENT": "PERSON",
+        "STREET_ADDRESS": "ADDRESS",
+        "EMAIL": "EMAIL",
+        "USERNAME": "USERNAME",
+        "ID_NUM": "INTERNAL",
+        "PHONE_NUM": "PHONE",
+        "URL_PERSONAL": "INTERNAL"
+      },
+      "files": {
+        "README.md": {
+          "source": "README.md",
+          "size": 3753,
+          "sha256": "9182ec92696879301ad1994e9482608683b03186c9b0d4083456accf5b91f054"
+        },
+        "added_tokens.json": {
+          "source": "added_tokens.json",
+          "size": 23,
+          "sha256": "dc046d04c9b0ada7ae6f1dc89c465801799acdf0c9a6aab8c15a1b2d5ca4e91f"
+        },
+        "config.json": {
+          "source": "config.json",
+          "size": 1609,
+          "sha256": "dca4f483e7495a6b8ecf362a201eb02476371054880a52b9d2d49205fe048f9f"
+        },
+        "model.safetensors": {
+          "source": "model.safetensors",
+          "size": 735396724,
+          "sha256": "15b29afa36ae49d95cb49f6593446f5b1d9391b4cf3e1e196ab95af2978dd149"
+        },
+        "special_tokens_map.json": {
+          "source": "special_tokens_map.json",
+          "size": 286,
+          "sha256": "9463f61e1b109a8eb4688b829260d7c6b1e6dff04c98ff7269bb89e2b92369b9"
+        },
+        "spm.model": {
+          "source": "spm.model",
+          "size": 2464616,
+          "sha256": "c679fbf93643d19aab7ee10c0b99e460bdbc02fedf34b92b05af343b4af586fd"
+        },
+        "tokenizer.json": {
+          "source": "tokenizer.json",
+          "size": 8656889,
+          "sha256": "fa3cbe7ce1be7311df6b43a5a5cca547a2e86ce6c604b0505638ff054dfbe952"
+        },
+        "tokenizer_config.json": {
+          "source": "tokenizer_config.json",
+          "size": 1285,
+          "sha256": "2d4cb82493b36f48593a41fbcbd4a37c87e7dcf49d15a328d919847c5aced76c"
+        }
+      }
+    }
+  ]
+}

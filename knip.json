@@ -37,6 +37,8 @@
 				"scripts/run-ide-host-e2e.mjs",
 				"scripts/sign-artifact-manifest.mjs",
 				"scripts/verify-customer-kit.mjs",
+				"scripts/verify-codex-host-offline.mjs",
+				"scripts/verify-support-ticket-drill.mjs",
 				"scripts/verify-deployment-recovery.mjs",
 				"scripts/verify-enterprise-operations.mjs",
 				"scripts/verify-installation-tools.mjs",
@@ -97,7 +99,7 @@
 			"project": ["src/**/*.ts", "scripts/**/*.{js,mjs}", "*.{js,cjs,mjs,ts}"]
 		},
 		"packages/mcp-gateway": {
-			"entry": ["src/cli.mjs", "src/approve.mjs", "src/stdio-cli.mjs"],
+			"entry": ["src/cli.mjs", "src/approve.mjs", "src/stdio-cli.mjs", "src/library.mjs"],
 			"project": ["src/**/*.mjs", "scripts/**/*.mjs"]
 		},
 		"packages/openclaw": {
@@ -141,7 +143,8 @@
 				"scripts/**/*.mjs",
 				"tests/**/*.{mjs,js,ts}"
 			],
-			"ignoreBinaries": ["openssl"]
+			"ignoreBinaries": ["openssl"],
+			"ignoreIssues": { "package.json": ["optionalPeerDependencies"] }
 		},
 		"packages/sdk": {
 			"entry": ["src/index.ts"],

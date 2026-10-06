@@ -89,7 +89,18 @@ export class ToolCallGuard {
    * output as an authorization token. On executor failure, a consumed approval stays consumed. */
   async execute<T>(request:ToolRequest,context:ToolContext,executor:(args:unknown)=>Promise<T>,approvalToken?:string):Promise<T> {
     const epoch=this.#epoch;const r=await this.inspect(request,context,approvalToken);if(epoch!==this.#epoch)deny('TOOL_POLICY_CHANGED');if(r.decision!=='allow'||r.arguments===null)deny('TOOL_EXECUTION_DENIED');
-    if(this.#disposed)deny('TOOL_DISPOSED');return executor(r.arguments);
+    if(this.#disposed)deny('TOOL_DISPOSED');const output=await executor(r.arguments);
+    if(this.#disposed)deny('TOOL_DISPOSED');if(epoch!==this.#epoch)deny('TOOL_POLICY_CHANGED');return output;
+  }
+  /** Narrow MCP output boundary: any redaction/review/block withholds the entire result.
+   * A grant to execute an action never grants permission to release its returned content. */
+  async protectOutput(output:unknown):Promise<unknown> {
+    if(this.#disposed)deny('TOOL_DISPOSED');const epoch=this.#epoch,json=canonical(frozen(output));
+    if(inspectSignals(json).some(s=>s!=='SOURCE_CODE_HINT'))deny('TOOL_OUTPUT_UNSAFE');
+    const result=await this.#text.protectJson(json);
+    if(this.#disposed)deny('TOOL_DISPOSED');if(epoch!==this.#epoch)deny('TOOL_POLICY_CHANGED');
+    if(result.decision!=='allow'||typeof result.output!=='string')deny('TOOL_SENSITIVE_OUTPUT');
+    return frozen(parseJsonStrict(result.output,16,20000));
   }
   dispose():void{this.#disposed=true;this.#key.fill(0);this.#rules.clear();this.#epoch++;}
 }

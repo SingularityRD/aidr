@@ -4,7 +4,8 @@
 import { DatabaseSync } from 'node:sqlite';
 import { createCipheriv, createDecipheriv, createHmac, randomBytes, createHash } from 'node:crypto';
 import { constants, lstatSync, openSync, closeSync, chmodSync, realpathSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { dirname, resolve, join } from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { canonical, id, integer, frozen, deny, hash, equalHex } from '../enterprise/util.js';
 import { parseJsonStrict } from '../json.js';
 export interface TenantKey { readonly id:string; readonly key:Uint8Array; }
@@ -16,6 +17,12 @@ interface KeySet {active:string;keys:Map<string,Buffer>;}
 function digest(b:Uint8Array):string{return createHash('sha256').update(b).digest('hex');}
 function checkKey(k:TenantKey):Buffer{id(k.id);if(!(k.key instanceof Uint8Array)||k.key.length!==32)deny('STATE_KEY_INVALID');return Buffer.from(k.key);}
 const MAX_VALUE=1048576;
+/** POSIX mode bits do not represent Windows ACLs. Check the native discretionary ACL. */
+function assertPrivateAccess(path:string):void{
+  if(process.platform!=='win32'){if((lstatSync(path).mode&0o077)!==0)deny('STATE_DIRECTORY_PERMISSIONS');return;}
+  const script=`$ErrorActionPreference='Stop'; $path='${path.replace(/'/g,"''")}'; $acl=if([System.IO.Directory]::Exists($path)){[System.IO.Directory]::GetAccessControl($path)}else{[System.IO.File]::GetAccessControl($path)}; $allowed=@([System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value,'S-1-5-18','S-1-5-32-544'); if($allowed -notcontains $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value){exit 2}; $rules=@($acl.Access); if($rules.Count -eq 0){exit 2}; foreach($rule in $rules){if($rule.AccessControlType -eq 'Allow' -and $allowed -notcontains $rule.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value){exit 2}}`;
+  try{execFileSync(join(process.env.SystemRoot??'C:\\Windows','System32','WindowsPowerShell','v1.0','powershell.exe'),['-NoProfile','-NonInteractive','-EncodedCommand',Buffer.from(script,'utf16le').toString('base64')],{stdio:'ignore',windowsHide:true,timeout:15000});}catch{deny('STATE_DIRECTORY_PERMISSIONS');}
+}
 export class SqliteControlStore {
   #db:DatabaseSync;#keys=new Map<string,KeySet>();#inTransaction=false;#closed=false;
   constructor(readonly path:string,tenants:ReadonlyMap<string,Keyring>,options:{requirePrivateDirectory?:boolean;journalMode?:'delete'|'wal'}={}){
@@ -23,9 +30,9 @@ export class SqliteControlStore {
       const abs=resolve(path),parent=realpathSync(dirname(abs));
       if(parent!==dirname(abs))deny('STATE_PATH_SYMLINK');
       const dir=lstatSync(parent);
-      if(!dir.isDirectory()||options.requirePrivateDirectory!==false&&(dir.mode&0o077)!==0)deny('STATE_DIRECTORY_PERMISSIONS');
+      if(!dir.isDirectory())deny('STATE_DIRECTORY_PERMISSIONS');if(options.requirePrivateDirectory!==false)assertPrivateAccess(parent);
       const fd=openSync(abs,constants.O_RDWR|constants.O_CREAT|constants.O_NOFOLLOW,0o600);closeSync(fd);
-      const st=lstatSync(abs);if(!st.isFile()||st.nlink!==1||(st.mode&0o077)!==0)deny('STATE_FILE_UNSAFE');
+      const st=lstatSync(abs);if(!st.isFile()||st.nlink!==1||st.isSymbolicLink())deny('STATE_FILE_UNSAFE');assertPrivateAccess(abs);
       for(const suffix of ['-wal','-shm','-journal']){try{const s=lstatSync(abs+suffix);if(!s.isFile()||s.isSymbolicLink())deny('STATE_SIDECAR_UNSAFE');}catch(e){if((e as NodeJS.ErrnoException).code!=='ENOENT')throw e;}}
     }
     for(const [tenant,ring]of tenants){id(tenant);id(ring.active);const keys=new Map<string,Buffer>();for(const k of ring.keys){if(keys.has(k.id))deny('STATE_KEY_DUPLICATE');keys.set(k.id,checkKey(k));}if(!keys.has(ring.active)||keys.size>16)deny('STATE_KEY_INVALID');this.#keys.set(tenant,{active:ring.active,keys});}
@@ -53,31 +60,36 @@ export class SqliteControlStore {
   }
   _keyset(tenant:string):KeySet{const ring=this.#keys.get(tenant);if(!ring||this.#closed)deny('STATE_UNAVAILABLE');return ring;}
   _mac(tenant:string,keyId:string,domain:string,value:unknown):string{const k=this._keyset(tenant).keys.get(keyId);if(!k)deny('STATE_KEY_MISSING');return createHmac('sha256',k).update(canonical([domain,tenant,value])).digest('hex');}
-  #seal(tenant:string,namespace:string,key:string,version:number,value:unknown):string{
+  #seal(tenant:string,namespace:string,key:string,version:number,value:unknown,expiresAt:number|null):string{
     const ring=this._keyset(tenant),iv=randomBytes(12),cipher=createCipheriv('aes-256-gcm',ring.keys.get(ring.active)!,iv);
-    cipher.setAAD(Buffer.from(canonical(['aidr-state-v1',tenant,namespace,key,version,ring.active])));
-    const bytes=Buffer.from(canonical(value,MAX_VALUE));try{const body=Buffer.concat([cipher.update(bytes),cipher.final()]);return canonical({keyId:ring.active,iv:iv.toString('base64'),tag:cipher.getAuthTag().toString('base64'),body:body.toString('base64')},MAX_VALUE*2);}finally{bytes.fill(0);}
+    cipher.setAAD(Buffer.from(canonical(['aidr-state-v2',tenant,namespace,key,version,ring.active,expiresAt])));
+    const bytes=Buffer.from(canonical(value,MAX_VALUE));try{const body=Buffer.concat([cipher.update(bytes),cipher.final()]);return canonical({format:'aidr-state-v2',keyId:ring.active,iv:iv.toString('base64'),tag:cipher.getAuthTag().toString('base64'),body:body.toString('base64')},MAX_VALUE*2);}finally{bytes.fill(0);}
   }
-  #unseal(tenant:string,namespace:string,key:string,version:number,payload:string):unknown{
-    try{const p=parseJsonStrict(payload,4,32) as Record<string,string>;const k=this._keyset(tenant).keys.get(p.keyId!);if(!k)deny('STATE_KEY_MISSING');
-      const decipher=createDecipheriv('aes-256-gcm',k,Buffer.from(p.iv!,'base64'));decipher.setAAD(Buffer.from(canonical(['aidr-state-v1',tenant,namespace,key,version,p.keyId])));decipher.setAuthTag(Buffer.from(p.tag!,'base64'));
+  #unseal(tenant:string,namespace:string,key:string,version:number,payload:string,expiresAt:number|null):unknown{
+    try{const p=parseJsonStrict(payload,4,32) as Record<string,string>;if(p.format!=='aidr-state-v2')deny('STATE_LEGACY_FORMAT');const k=this._keyset(tenant).keys.get(p.keyId!);if(!k)deny('STATE_KEY_MISSING');
+      const decipher=createDecipheriv('aes-256-gcm',k,Buffer.from(p.iv!,'base64'));decipher.setAAD(Buffer.from(canonical(['aidr-state-v2',tenant,namespace,key,version,p.keyId,expiresAt])));decipher.setAuthTag(Buffer.from(p.tag!,'base64'));
       const bytes=Buffer.concat([decipher.update(Buffer.from(p.body!,'base64')),decipher.final()]);try{return frozen(parseJsonStrict(bytes.toString('utf8'),32,50000));}finally{bytes.fill(0);}
     }catch{deny('STATE_INTEGRITY');}
   }
   _read<T>(tenant:string,namespace:string,key:string):Cell<T>|null{
     this._keyset(tenant);id(namespace);id(key);const r=this.#db.prepare('SELECT version,expires,payload FROM cells WHERE tenant=? AND namespace=? AND key=? AND deleted=0').get(tenant,namespace,key);
-    if(!r)return null;return {value:this.#unseal(tenant,namespace,key,r.version as number,r.payload as string) as T,version:r.version as number,expiresAt:r.expires as number|null};
+    if(!r)return null;return {value:this.#unseal(tenant,namespace,key,r.version as number,r.payload as string,r.expires as number|null) as T,version:r.version as number,expiresAt:r.expires as number|null};
   }
   _write(tenant:string,namespace:string,key:string,value:unknown,expected:number|null,expiresAt:number|null):number{
     if(!this.#inTransaction)deny('STATE_TRANSACTION_REQUIRED');id(namespace);id(key);if(expiresAt!==null)integer(expiresAt);if(expected!==null)integer(expected,1);
     const old=this._read(tenant,namespace,key);if((old?.version??null)!==expected)deny('STATE_CONFLICT');const previous=this.#db.prepare('SELECT version FROM cells WHERE tenant=? AND namespace=? AND key=?').get(tenant,namespace,key);const version=(previous?.version as number??0)+1;
-    const payload=this.#seal(tenant,namespace,key,version,value);
+    const payload=this.#seal(tenant,namespace,key,version,value,expiresAt);
     this.#db.prepare('INSERT INTO cells(tenant,namespace,key,version,expires,payload) VALUES(?,?,?,?,?,?) ON CONFLICT(tenant,namespace,key) DO UPDATE SET version=excluded.version,expires=excluded.expires,payload=excluded.payload,deleted=0').run(tenant,namespace,key,version,expiresAt,payload);return version;
   }
   _remove(tenant:string,namespace:string,key:string,expected:number):void{
     if(!this.#inTransaction)deny('STATE_TRANSACTION_REQUIRED');id(namespace);id(key);integer(expected,1);
     const r=this.#db.prepare("UPDATE cells SET deleted=1,payload='' WHERE tenant=? AND namespace=? AND key=? AND version=? AND deleted=0").run(tenant,namespace,key,expected);if(r.changes!==1)deny('STATE_CONFLICT');
   }
+  _purgeExpiredTransient(tenant:string,namespace:'oidc-pending'|'portal-sessions',now:number,limit:number):number{
+    if(!this.#inTransaction)deny('STATE_TRANSACTION_REQUIRED');this._keyset(tenant);if(!['oidc-pending','portal-sessions'].includes(namespace))deny('STATE_TRANSIENT_NAMESPACE');integer(now);integer(limit,1,10000);
+    return Number(this.#db.prepare('DELETE FROM cells WHERE tenant=? AND namespace=? AND key IN (SELECT key FROM cells WHERE tenant=? AND namespace=? AND expires IS NOT NULL AND expires<=? ORDER BY key LIMIT ?)').run(tenant,namespace,tenant,namespace,now,limit).changes);
+  }
+  _count(tenant:string,namespace:string,includeDeleted=false):number{this._keyset(tenant);id(namespace);if(typeof includeDeleted!=='boolean')deny('STATE_COUNT');return Number(this.#db.prepare('SELECT COUNT(*) AS n FROM cells WHERE tenant=? AND namespace=? AND (?=1 OR deleted=0)').get(tenant,namespace,includeDeleted?1:0)?.n??0);}
   _list(tenant:string,namespace:string,limit:number,after:string):{key:string;cell:Cell}[]{
     id(namespace);integer(limit,1,10000);if(after)id(after);this._keyset(tenant);
     return this.#db.prepare('SELECT key FROM cells WHERE tenant=? AND namespace=? AND deleted=0 AND key>? ORDER BY key LIMIT ?').all(tenant,namespace,after,limit).map(r=>({key:r.key as string,cell:this._read(tenant,namespace,r.key as string)!}));
@@ -108,7 +120,7 @@ export class SqliteControlStore {
   }
   /** SQLite's online snapshot operation. Destination must not exist and its directory must be private. */
   snapshot(destination:string):void{
-    if(this.path===':memory:'||this.#inTransaction)deny('STATE_SNAPSHOT_UNAVAILABLE');const p=resolve(destination),dir=realpathSync(dirname(p));if(dir!==dirname(p)||(lstatSync(dir).mode&0o077)!==0)deny('STATE_DIRECTORY_PERMISSIONS');
+    if(this.path===':memory:'||this.#inTransaction)deny('STATE_SNAPSHOT_UNAVAILABLE');const p=resolve(destination),dir=realpathSync(dirname(p));if(dir!==dirname(p))deny('STATE_DIRECTORY_PERMISSIONS');assertPrivateAccess(dir);
     try{lstatSync(p);deny('STATE_SNAPSHOT_EXISTS');}catch(e){if((e as NodeJS.ErrnoException).code!=='ENOENT')throw e;}
     this.#db.prepare('VACUUM INTO ?').run(p);chmodSync(p,0o600);
   }
@@ -122,6 +134,9 @@ export class StateTransaction {
   get<T=unknown>(namespace:string,key:string):Cell<T>|null{this.#check();return this.store._read<T>(this.tenantId,namespace,key);}
   put(namespace:string,key:string,value:unknown,expected:number|null,expiresAt:number|null=null):number{this.#check();return this.store._write(this.tenantId,namespace,key,value,expected,expiresAt);}
   remove(namespace:string,key:string,expected:number):void{this.#check();this.store._remove(this.tenantId,namespace,key,expected);}
+  /** Only random-key transient login state may be physically purged; durable CAS tombstones remain. */
+  purgeExpiredTransient(namespace:'oidc-pending'|'portal-sessions',now:number,limit=1000):number{this.#check();return this.store._purgeExpiredTransient(this.tenantId,namespace,now,limit);}
+  count(namespace:string,includeDeleted=false):number{this.#check();return this.store._count(this.tenantId,namespace,includeDeleted);}
   list(namespace:string,limit=1000,after=''):{key:string;cell:Cell}[]{this.#check();return this.store._list(this.tenantId,namespace,limit,after);}
   event(kind:string,actor:string,resource:string,at=Date.now()):StateEvent{this.#check();return this.store._append(this.tenantId,kind,actor,resource,at);}
 }

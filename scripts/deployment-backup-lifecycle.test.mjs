@@ -5,6 +5,7 @@ import { delimiter, join, resolve } from "node:path";
 import { chmod, copyFile, link, mkdtemp, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { platform, tmpdir } from "node:os";
 import test from "node:test";
+import { gzipSync } from "node:zlib";
 import { assertRecoveryKeyFileAcl, hardenRecoveryKeyFile } from "./deployment-restore-drill.mjs";
 
 const SCRIPT = resolve("scripts/deployment-backup.mjs");
@@ -18,13 +19,14 @@ const BACKUP_README = resolve("deploy/backup/README.md");
 const FIRST_CUSTOMER_GUIDE = resolve("deploy/FIRST_CUSTOMER.md");
 const UPGRADE_GUIDE = resolve("deploy/UPGRADE.md");
 
-async function command(root, env = {}) {
+async function command(root, env = {}, existingJournal) {
 	const deployment = join(root, "deployment");
 	const output = join(root, "backup");
 	const key = join(root, "recovery.key");
 	const journal = join(root, "state", "recovery-journal.json");
 	await mkdir(deployment);
 	await mkdir(join(root, "state"), { mode: 0o700 });
+	if (existingJournal) await writeFile(journal, existingJournal, { mode: 0o600 });
 	for (const directory of ["auth-templates", "backup", "dashboard", "health", "ingress", "maintenance", "migrations", "volumes/functions"]) await mkdir(join(deployment, directory), { recursive: true });
 	const files = {
 		".env": "POSTGRES_PASSWORD=fixture\n",
@@ -48,7 +50,7 @@ async function command(root, env = {}) {
 		migrations: [{ name: "20260922000000_fixture.sql", sha256: sha256("migrations/20260922000000_fixture.sql") }],
 		artifacts: ["auth-templates/recovery.html", "backup/timer.service", "dashboard/index.html", "ingress/proxy.conf", "maintenance/readiness.service", "volumes/functions/index.ts"].map((path) => ({ path, sha256: sha256(path) })),
 	}));
-	await writeFile(key, `${"ab".repeat(32)}\n`);
+	await writeFile(key, `${"ab".repeat(32)}\n`, { mode: 0o600 });
 	await hardenRecoveryKeyFile(key);
 	const fake = await fakeCommands(root);
 	const state = join(root, "docker.state");
@@ -125,11 +127,11 @@ if (args[0] === "run") {
   if (process.env.FAKE_ARCHIVE_MARKER) await writeFile(process.env.FAKE_ARCHIVE_MARKER, "started");
   const delay = Number(process.env.FAKE_ARCHIVE_DELAY_MS || 0);
   if (delay) await new Promise((done) => setTimeout(done, delay));
-  process.stdout.write("archive"); process.exit(0);
+  process.stdout.write(process.env.FAKE_ARCHIVE_GZIP_BASE64 ? Buffer.from(process.env.FAKE_ARCHIVE_GZIP_BASE64, "base64") : "archive"); process.exit(0);
 }
 process.exit(71);
 `);
-	await writeFile(tarScript, `if (process.argv.includes("--version")) process.stdout.write("tar test\\n"); else process.stdout.write("archive");`);
+	await writeFile(tarScript, `if (process.argv.includes("--version")) process.stdout.write("tar test\\n"); else process.stdout.write(process.env.FAKE_ARCHIVE_GZIP_BASE64 ? Buffer.from(process.env.FAKE_ARCHIVE_GZIP_BASE64, "base64") : "archive");`);
 	if (platform() === "win32") {
 		const preload = join(bin, "fake-cli.cjs");
 		await writeFile(preload, `
@@ -137,10 +139,6 @@ const { appendFileSync, readFileSync, writeFileSync } = require("node:fs");
 const { basename } = require("node:path");
 const { spawnSync } = require("node:child_process");
 const kind = basename(process.execPath).toLowerCase();
-if (kind === "tar.exe") {
-  if (process.argv.includes("--version")) process.stdout.write("tar test\\n"); else process.stdout.write("archive");
-  process.exit(0);
-}
 if (kind !== "docker.exe") return;
 const args = process.argv.slice(1); args[0] = basename(args[0]);
 appendFileSync(process.env.FAKE_DOCKER_LOG, args.join(" ") + "\\n");
@@ -163,13 +161,15 @@ if (has("start")) { const services = state(); for (const service of args.slice(a
 if (args[0] === "run" && has("pg_controldata")) {
   if (process.env.FAKE_FAIL_AFTER_STOP === "1") process.exit(70);
   if (process.env.FAKE_BEFORE_ARCHIVE_MARKER) writeFileSync(process.env.FAKE_BEFORE_ARCHIVE_MARKER, "ready");
-  setTimeout(() => { process.stdout.write("Database cluster state: shut down\\n"); process.exit(0); }, Number(process.env.FAKE_PRE_ARCHIVE_DELAY_MS || 0));
-  return;
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number(process.env.FAKE_PRE_ARCHIVE_DELAY_MS || 0));
+  process.stdout.write("Database cluster state: shut down\\n"); process.exit(0);
 }
-if (args[0] === "run") { if (process.env.FAKE_ARCHIVE_MARKER) writeFileSync(process.env.FAKE_ARCHIVE_MARKER, "started"); setTimeout(() => { process.stdout.write("archive"); process.exit(0); }, Number(process.env.FAKE_ARCHIVE_DELAY_MS || 0)); return; }
+if (args[0] === "run") { if (process.env.FAKE_ARCHIVE_MARKER) writeFileSync(process.env.FAKE_ARCHIVE_MARKER, "started"); Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number(process.env.FAKE_ARCHIVE_DELAY_MS || 0)); process.stdout.write(process.env.FAKE_ARCHIVE_GZIP_BASE64 ? Buffer.from(process.env.FAKE_ARCHIVE_GZIP_BASE64, "base64") : "archive"); process.exit(0); }
 process.exit(71);
 `);
-		for (const name of ["docker.exe", "tar.exe"]) {
+		// Node parses tar's leading flags before preloads can run; use native tar
+		// on Windows so a nominally successful backup can be exercised end to end.
+		for (const name of ["docker.exe"]) {
 			try { await link(process.execPath, join(bin, name)); }
 			catch { await copyFile(process.execPath, join(bin, name)); }
 		}
@@ -216,6 +216,40 @@ test("handled failure restarts every originally running service and removes part
 	const log = await readFile(run.log, "utf8").catch(() => assert.fail(`docker was not invoked\n${run.stderr()}`));
 	for (const service of ["db", "storage", "api"]) assert.match(log, new RegExp(`start ${service}(?:\\r?\\n|$)`));
 	await assert.rejects(stat(run.output), /ENOENT/);
+});
+
+test("journal contention cannot restart services owned by another cold snapshot", async (t) => {
+	const root = await mkdtemp(join(tmpdir(), "aidr-backup-journal-contention-"));
+	t.after(() => rm(root, { recursive: true, force: true }));
+	const retainedJournal = '{"another_snapshot":"active"}\n';
+	const run = await command(root, {}, retainedJournal);
+	const completed = await exit(run.child);
+	assert.notEqual(completed.code, 0, run.stderr());
+	assert.match(run.stderr(), /interrupted backup journal exists/);
+	assert.doesNotMatch(await readFile(run.log, "utf8"), /(?:^|\s)(?:start|stop)(?:\s|$)/);
+	assert.equal(await readFile(run.journal, "utf8"), retainedJournal);
+	await assert.rejects(stat(run.output), /ENOENT/);
+});
+
+test("cold backup rejects unextractable archive streams before publishing success", async (t) => {
+	const root = await mkdtemp(join(tmpdir(), "aidr-backup-invalid-stream-"));
+	t.after(() => rm(root, { recursive: true, force: true }));
+	const run = await command(root);
+	assert.notEqual((await exit(run.child)).code, 0);
+	await assert.rejects(stat(run.output), /ENOENT/);
+	await assert.rejects(stat(run.journal), /ENOENT/);
+	assert.equal(await readFile(run.state, "utf8"), "api,db,storage");
+});
+
+test("cold backup validates and encrypts the same archive stream", async (t) => {
+	const root = await mkdtemp(join(tmpdir(), "aidr-backup-valid-stream-"));
+	t.after(() => rm(root, { recursive: true, force: true }));
+	const run = await command(root, { FAKE_ARCHIVE_GZIP_BASE64: gzipSync(Buffer.alloc(1024)).toString("base64") });
+	assert.equal((await exit(run.child)).code, 0, run.stderr());
+	const verified = spawnSync(process.execPath, [SCRIPT, "verify", "--backup", run.output, "--key-file", run.key], { encoding: "utf8", windowsHide: true });
+	assert.equal(verified.status, 0, verified.stderr);
+	await assert.rejects(stat(run.journal), /ENOENT/);
+	assert.equal(await readFile(run.state, "utf8"), "api,db,storage");
 });
 
 test("boot recovery restores the exact pre-stop services after an abrupt backup interruption", async (t) => {

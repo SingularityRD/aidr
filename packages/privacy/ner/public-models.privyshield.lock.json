@@ -1,0 +1,94 @@
+{
+  "version": 1,
+  "status": "unqualified-public-candidates",
+  "models": [
+    {
+      "repository": "ersanbil/kvkk-pii-ner",
+      "revision": "cb85fbd0839f92cff2ddc92c4f23ecf61cb769c2",
+      "license": "Apache-2.0",
+      "directory": "tr-kvkk",
+      "languages": [
+        "tr"
+      ],
+      "max_length": 384,
+      "stride": 96,
+      "label_map": {
+        "O": null,
+        "PERSON": "PERSON",
+        "ADDRESS": "ADDRESS",
+        "HEALTH_DATA": "INTERNAL",
+        "KVKK_SPECIAL": "INTERNAL"
+      },
+      "files": {
+        "config.json": {
+          "source": "config.json",
+          "size": 1121,
+          "sha256": "a3a136003fd74d9b73755cd5c1206c294dae71a34017c9868eb307500fdb9b7a"
+        },
+        "tokenizer.json": {
+          "source": "tokenizer.json",
+          "size": 754624,
+          "sha256": "65ef5a17a6dd815398d703d17a66a3ca5e1c87dd89baf69cba64f108f16a3cbd"
+        },
+        "tokenizer_config.json": {
+          "source": "tokenizer_config.json",
+          "size": 370,
+          "sha256": "4e5738ad97f034b944ce8b7b8c3165f7a6333b524b7b77044f7e9e9b963f4dea"
+        },
+        "model.safetensors": {
+          "source": "model.safetensors",
+          "size": 440158036,
+          "sha256": "cac7dbd5890a6fd392721ae51b27b573266e60a9fa1b7d9b168ea6425c689787"
+        },
+        "README.md": {
+          "source": "README.md",
+          "size": 3816,
+          "sha256": "3e9f0a59329a5e53b9ec4cce1ea68da709a4afaef85e8a0788bdd30ac7ca079d"
+        }
+      }
+    },
+    {
+      "repository": "aditrynacode/privyshield-ner",
+      "revision": "a3aa3695fb2998f32a750d581337610eafa079a3",
+      "license": "Apache-2.0",
+      "directory": "en-privyshield",
+      "languages": [
+        "en"
+      ],
+      "max_length": 384,
+      "stride": 96,
+      "label_map": {
+        "O": null,
+        "PERSON_NAME": "PERSON",
+        "ADDRESS": "ADDRESS"
+      },
+      "files": {
+        "config.json": {
+          "source": "ner_model/config.json",
+          "size": 903,
+          "sha256": "a9c6d1e6193fd7a4fc2bed1521bb691db0e7dc7ee9dc70d86ac10c1f666fe440"
+        },
+        "tokenizer.json": {
+          "source": "ner_model/tokenizer.json",
+          "size": 711396,
+          "sha256": "d241a60d5e8f04cc1b2b3e9ef7a4921b27bf526d9f6050ab90f9267a1f9e5c66"
+        },
+        "tokenizer_config.json": {
+          "source": "ner_model/tokenizer_config.json",
+          "size": 366,
+          "sha256": "71cd48543bec670f50e0c9c3556df16b1f58ea720ead6a1b4675f08870c60b17"
+        },
+        "model.safetensors": {
+          "source": "ner_model/model.safetensors",
+          "size": 265479244,
+          "sha256": "4e23152db53dc7c8ac1adb0c96519895e17c7cd3094c5266db52a3b15e8621df"
+        },
+        "README.md": {
+          "source": "README.md",
+          "size": 2527,
+          "sha256": "00bae9e5c2674ac2c26d9e954835c7d68013041b4489288aa044b952297a6005"
+        }
+      }
+    }
+  ]
+}

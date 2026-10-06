@@ -1,14 +1,14 @@
 /**
  * Unit coverage for the install gate's exported verification logic.
  *
- * The fixtures are minimal fabricated packages, so the suite never depends on
+ * Fixtures are fabricated packages or isolated source bundles; the suite never depends on
  * `pnpm build:release` having run, on the repository's `dist/` output, or on
  * the network.
  */
 
 import assert from "node:assert/strict";
-import { generateKeyPairSync } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash, generateKeyPairSync, verify } from "node:crypto";
+import { existsSync, linkSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -48,6 +48,7 @@ import {
 	verifyPackageInstall,
 } from "./verify-package-install.mjs";
 import { hasForbiddenArchiveEntry, isConsumerArchive } from "./lib/package-artifact-rules.mjs";
+import { buildGatewayPackageFixture } from "../packages/mcp-gateway/scripts/library-fixture.mjs";
 
 function fixtureRoot(label) {
 	const root = path.join(tmpdir(), `aidr-install-test-${label}-${process.pid.toString(36)}-${Date.now().toString(36)}`);
@@ -678,6 +679,108 @@ test("the signed OpenClaw clean-install run exercises register() and before_tool
 	}
 });
 
+test("gateway clean-install gate verifies the real installed factory and both integrity denials", async (t) => {
+	const workspace = createTempWorkspace("aidr-install-test-gateway-import-");
+	try {
+		const fixture = await buildGatewayPackageFixture(workspace.root);
+		const runtimeRoot = workspace.directory("runtime");
+		provisionNodeRuntime(runtimeRoot);
+		const pkg = JSON.parse(readFileSync(path.join(fixture.installed, "package.json"), "utf8"));
+		const run = RELEASE_PACKAGES.find((spec) => spec.key === "packages/mcp-gateway").runs.find((item) => item.kind === "gateway-signed-import");
+		const context = {
+			pkg, packageRoot: fixture.installed, consumerRoot: workspace.root, home: fixture.home,
+			installed: true, environment: sanitizedEnvironment({ home: fixture.home, emptyPathDir: runtimeRoot }),
+		};
+		const configPath = path.join(fixture.home, ".singularity-aidr", "config.json");
+		const manifestPath = path.join(fixture.dist, "aidr-artifact.manifest.json");
+		const signaturePath = path.join(fixture.dist, "aidr-artifact.manifest.sig");
+		const libraryPath = path.join(fixture.dist, "aidr-mcp-library.mjs");
+		const originalManifest = readFileSync(manifestPath);
+		const publisherSignature = readFileSync(signaturePath);
+		const originalLibrary = readFileSync(libraryPath);
+		const sharedLibrary = path.join(workspace.root, "package-store-library.mjs");
+		linkSync(libraryPath, sharedLibrary);
+		const publicKeyPem = JSON.parse(readFileSync(configPath, "utf8")).integrity.public_keys_pem[0];
+		await t.test("an existing signature is never replaced without independent trust", async () => {
+			const result = await defaultRunner(run, context);
+			assert.equal(result.status, FAIL);
+			assert.match(result.detail, /independently provisioned artifact trust key/);
+			assert.deepEqual(readFileSync(signaturePath), publisherSignature);
+		});
+		await t.test("independently trusted signed package loads and wrong trust or library tamper deny", async () => {
+			context.artifactTrust = provisionArtifactTrust({ packageDir: fixture.installed, home: fixture.home, options: { artifactPublicKeyPem: publicKeyPem } });
+			const trustedConfig = readFileSync(configPath);
+			const result = await defaultRunner(run, context);
+			assert.equal(result.status, PASS, result.detail ?? result.reason);
+			assert.deepEqual(readFileSync(signaturePath), publisherSignature);
+			assert.deepEqual(readFileSync(configPath), trustedConfig);
+			assert.deepEqual(readFileSync(libraryPath), originalLibrary);
+			assert.deepEqual(readFileSync(sharedLibrary), originalLibrary, "tampering must not change a package-manager hard link");
+			assert.notEqual(statSync(libraryPath, { bigint: true }).ino, statSync(sharedLibrary, { bigint: true }).ino, "tampering must detach the installed file from its package-manager hard link");
+		});
+		await t.test("wrong independently provisioned key fails without resigning", async () => {
+			const { publicKey } = generateKeyPairSync("ed25519");
+			context.artifactTrust = provisionArtifactTrust({ packageDir: fixture.installed, home: fixture.home, options: { artifactPublicKeyPem: publicKey.export({ type: "spki", format: "pem" }).toString() } });
+			const result = await defaultRunner(run, context);
+			assert.equal(result.status, FAIL);
+			assert.match(result.detail, /import of @singularityrd\/aidr-mcp-gateway/);
+			assert.deepEqual(readFileSync(signaturePath), publisherSignature);
+		});
+		await t.test("a signed candidate losing its installed signature is never resigned", async () => {
+			rmSync(signaturePath);
+			const configBefore = readFileSync(configPath);
+			const result = await defaultRunner(run, context);
+			assert.equal(result.status, FAIL);
+			assert.match(result.detail, /installed signature is missing/);
+			assert.equal(existsSync(signaturePath), false);
+			assert.deepEqual(readFileSync(configPath), configBefore);
+		});
+		await t.test("an unsigned disposable installation uses only an in-memory signing key", async () => {
+			context.artifactTrust = { signed: false };
+			const result = await defaultRunner(run, context);
+			assert.equal(result.status, PASS, result.detail ?? result.reason);
+			const key = JSON.parse(readFileSync(configPath, "utf8")).integrity.public_keys_pem[0];
+			assert.equal(verify(null, originalManifest, key, Buffer.from(readFileSync(signaturePath, "utf8").trim(), "base64")), true);
+			assert.deepEqual(readFileSync(manifestPath), originalManifest);
+			assert.deepEqual(readFileSync(libraryPath), originalLibrary);
+			assert.equal(listPackageEntries(workspace.root).some((file) => /private.*key|\.key$/iu.test(file)), false);
+		});
+		await t.test("an uninstalled package cannot be signed by this runner", async () => {
+			rmSync(signaturePath);
+			const result = await defaultRunner(run, { ...context, installed: false });
+			assert.equal(result.status, FAIL);
+			assert.match(result.detail, /disposable installed package/);
+			assert.equal(existsSync(signaturePath), false);
+		});
+		await t.test("an escaping library export cannot mutate files outside the package", async () => {
+			const escapingPkg = { ...pkg, exports: { ".": path.relative(fixture.installed, sharedLibrary) } };
+			const result = await defaultRunner(run, { ...context, pkg: escapingPkg });
+			assert.equal(result.status, FAIL);
+			assert.match(result.detail, /integrity target escapes/);
+			assert.equal(existsSync(signaturePath), false);
+			assert.deepEqual(readFileSync(sharedLibrary), originalLibrary);
+		});
+		await t.test("a path outside the disposable consumer cannot be signed", async () => {
+			const result = await defaultRunner(run, { ...context, consumerRoot: workspace.directory("other-consumer") });
+			assert.equal(result.status, FAIL);
+			assert.equal(existsSync(signaturePath), false);
+		});
+		await t.test("an import bypassing integrity cannot satisfy the negative probe", async () => {
+			const bypass = Buffer.from("export function createMcpGateway() {}\n");
+			writeFileSync(libraryPath, bypass);
+			const manifest = JSON.parse(originalManifest);
+			manifest.files.find((file) => file.path === "aidr-mcp-library.mjs").sha256 = createHash("sha256").update(bypass).digest("hex");
+			writeFileSync(manifestPath, JSON.stringify(manifest));
+			const result = await defaultRunner(run, context);
+			assert.equal(result.status, FAIL);
+			assert.match(result.detail, /trust-key tamper/);
+			assert.deepEqual(readFileSync(libraryPath), bypass);
+		});
+	} finally {
+		workspace.dispose();
+	}
+});
+
 test("the gate exports its per-package verification entry points for the ten release packages", () => {
 	assert.equal(typeof verifyPackageInstall, "function");
 	assert.equal(typeof verifyExtractedPackage, "function");
@@ -709,6 +812,11 @@ test("the gate exports its per-package verification entry points for the ten rel
 	assert.ok(
 		codex.runs.some((run) => run.kind === "codex-signed-bin" && run.bin === "aidr-codex-hook"),
 		"the clean-consumer gate must execute the installed commercial Codex hook",
+	);
+	const gateway = RELEASE_PACKAGES.find((spec) => spec.key === "packages/mcp-gateway");
+	assert.ok(
+		gateway.runs.some((run) => run.kind === "gateway-signed-import" && run.entry?.exports === "." && run.expected?.createMcpGateway === "function"),
+		"the clean-consumer gate must import the verified public MCP factory and exercise its integrity boundary",
 	);
 });
 

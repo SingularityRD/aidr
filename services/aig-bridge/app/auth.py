@@ -213,8 +213,10 @@ class ReplayStore:
     def consume(self, jti: str, expires_at: int) -> bool:
         now = int(time.time())
         with self._lock:
-            if self.postgres_dsn:
+            if self.postgres_dsn or self._postgres_connect_override is not None:
                 return self._consume_postgres(jti, expires_at, now)
+            if ha_is_required():
+                raise ReplayStoreUnavailable("shared JWT replay store is not configured")
             if self.path:
                 try:
                     with sqlite3.connect(self.path, timeout=5) as connection:
@@ -228,6 +230,8 @@ class ReplayStore:
                     return True
                 except sqlite3.IntegrityError:
                     return False
+                except sqlite3.Error as exc:
+                    raise ReplayStoreUnavailable("local JWT replay store is unavailable") from exc
             self._memory = {key: value for key, value in self._memory.items() if value > now}
             if jti in self._memory:
                 return False
@@ -257,14 +261,17 @@ def _verify_broker_token(request: Request) -> BrokerClaims:
     try:
         header_raw, payload_raw, signature_raw = token.strip().split(".")
         header = json.loads(_b64url_decode(header_raw))
-        payload = json.loads(_b64url_decode(payload_raw))
+        payload_bytes = _b64url_decode(payload_raw)
         signature = _b64url_decode(signature_raw)
         if not isinstance(header, dict) or header.get("alg") != "HS256" or header.get("typ", "JWT") != "JWT":
             raise ValueError("unsupported JWT algorithm")
         signed = f"{header_raw}.{payload_raw}".encode("ascii")
         expected = hmac.new(secret, signed, hashlib.sha256).digest()
-        if not hmac.compare_digest(signature, expected) or not isinstance(payload, dict):
+        if not hmac.compare_digest(signature, expected):
             raise ValueError("invalid JWT signature")
+        payload = json.loads(payload_bytes)
+        if not isinstance(payload, dict):
+            raise ValueError("invalid JWT payload")
         now = int(time.time())
         skew = int(os.getenv("BRIDGE_JWT_CLOCK_SKEW_SECONDS", "30"))
         exp = int(payload.get("exp"))
@@ -295,7 +302,7 @@ def _verify_broker_token(request: Request) -> BrokerClaims:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="broker replay protection is unavailable",
         ) from exc
-    except (ValueError, TypeError, KeyError, json.JSONDecodeError, UnicodeError, binascii.Error) as exc:
+    except (ValueError, TypeError, KeyError, RecursionError, json.JSONDecodeError, UnicodeError, binascii.Error) as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid broker token") from exc
 
 

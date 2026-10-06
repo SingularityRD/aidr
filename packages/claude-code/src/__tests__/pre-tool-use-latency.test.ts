@@ -96,6 +96,7 @@ describe("PreToolUse hook cold start on a fresh HOME", () => {
  * memoisation never survives a hook exit. After the first call the state is
  * verified with native tools instead, so a persistent HOME must not start it.
  */
+// AIDR-SKIP: AIDR-063 qa-owner - persistent HOME PowerShell-spawn checks require Windows NTFS ACL tooling; Unix permissions have separate coverage
 describe.skipIf(process.platform !== "win32")("blocked call on a persistent HOME (Windows)", () => {
 	it("starts PowerShell at most once, and not at all once the audit paths are private", () => {
 		const scratch = mkdtempSync(join(tmpdir(), "aidr-latency-ps-"));
@@ -174,7 +175,7 @@ describe("packaged threat rules", () => {
 		delete process.env.AIDR_THREATS_DIR;
 		try {
 			const dir = resolveAssetDir("threats");
-			expect(dir).toBe(resolve(__dirname, "..", "..", "resources", "threats"));
+			expect(dir).toBe(resolve(__dirname, "..", "..", "dist", "resources", "threats"));
 			const packaged = await loadThreats(dir);
 			const source = await loadThreats(resolve(__dirname, "..", "..", "..", "..", "threats"));
 			expect(packaged.length).toBeGreaterThan(0);

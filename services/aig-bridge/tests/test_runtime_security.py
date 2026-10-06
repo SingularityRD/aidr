@@ -7,6 +7,7 @@ import hashlib
 import hmac
 import io
 import json
+import sqlite3
 import time
 import zipfile
 
@@ -49,6 +50,7 @@ def _request(headers: dict[str, str]) -> Request:
 
 
 def test_broker_claim_binds_tenant_and_rejects_replay(monkeypatch):
+    monkeypatch.setenv("BRIDGE_HA_REQUIRED", "false")
     secret = "unit-test-broker-secret-at-least-32-bytes"
     monkeypatch.setenv("BRIDGE_JWT_SECRET", secret)
     monkeypatch.setenv("BRIDGE_AUTH_MODE", "broker")
@@ -74,6 +76,7 @@ def test_broker_claim_binds_tenant_and_rejects_replay(monkeypatch):
 
 
 def test_broker_tenant_header_mismatch_is_forbidden(monkeypatch):
+    monkeypatch.setenv("BRIDGE_HA_REQUIRED", "false")
     secret = "unit-test-broker-secret-at-least-32-bytes"
     monkeypatch.setenv("BRIDGE_JWT_SECRET", secret)
     monkeypatch.setenv("BRIDGE_JWT_ISSUER", "https://broker.example.test")
@@ -82,6 +85,7 @@ def test_broker_tenant_header_mismatch_is_forbidden(monkeypatch):
     payload = {
         "sub": "broker-worker",
         "tenant_id": "tenant-a",
+        "scope": "aig:read",
         "iss": "https://broker.example.test",
         "aud": "aidr-aig-bridge",
         "jti": "runtime-test-jti-2",
@@ -105,9 +109,48 @@ def test_broker_tenant_header_mismatch_is_forbidden(monkeypatch):
             )
         )
     assert mismatch.value.status_code == 403
+    assert mismatch.value.detail == "tenant header does not match broker claim"
 
 
-def test_multi_replica_replay_store_uses_shared_postgres_and_atomic_insert(monkeypatch, tmp_path):
+@pytest.mark.parametrize("backend", ["memory", "sqlite"])
+def test_ha_replay_store_refuses_replica_local_backends(monkeypatch, tmp_path, backend):
+    monkeypatch.setenv("BRIDGE_HA_REQUIRED", "true")
+    store = auth.ReplayStore(str(tmp_path / "replay.db") if backend == "sqlite" else None)
+    with pytest.raises(auth.ReplayStoreUnavailable, match="shared JWT replay store is not configured"):
+        store.consume("replica-local-jti", int(time.time()) + 60)
+
+
+def test_sqlite_replay_store_io_failure_is_unavailable(monkeypatch, tmp_path):
+    monkeypatch.setenv("BRIDGE_HA_REQUIRED", "false")
+    store = auth.ReplayStore(str(tmp_path / "replay.db"))
+
+    def unavailable_connection(*_args, **_kwargs):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(auth.sqlite3, "connect", unavailable_connection)
+    with pytest.raises(auth.ReplayStoreUnavailable, match="local JWT replay store is unavailable"):
+        store.consume("sqlite-io-jti", int(time.time()) + 60)
+
+
+@pytest.mark.parametrize("segment", ["header", "payload"])
+def test_deeply_nested_jwt_json_is_an_auth_failure(monkeypatch, segment):
+    secret = "unit-test-broker-secret-at-least-32-bytes"
+    monkeypatch.setenv("BRIDGE_JWT_SECRET", secret)
+    monkeypatch.setenv("BRIDGE_JWT_ISSUER", "https://broker.example.test")
+    monkeypatch.setenv("BRIDGE_JWT_AUDIENCE", "aidr-aig-bridge")
+    nested = base64.urlsafe_b64encode(("[" * 5_000 + "0" + "]" * 5_000).encode()).decode().rstrip("=")
+    header = nested if segment == "header" else base64.urlsafe_b64encode(b'{"alg":"HS256"}').decode().rstrip("=")
+    payload = nested if segment == "payload" else "e30"
+    signature = base64.urlsafe_b64encode(
+        hmac.new(secret.encode(), f"{header}.{payload}".encode(), hashlib.sha256).digest()
+    ).decode().rstrip("=")
+    with pytest.raises(HTTPException) as invalid:
+        auth._verify_broker_token(_request({"Authorization": f"Bearer {header}.{payload}.{signature}"}))
+    assert invalid.value.status_code == 401
+
+
+@pytest.mark.parametrize("postgres_dsn", ["postgresql://bridge:test@db.example.test/aidr", ""])
+def test_multi_replica_replay_store_uses_shared_postgres_and_atomic_insert(monkeypatch, tmp_path, postgres_dsn):
     monkeypatch.setenv("BRIDGE_HA_REQUIRED", "true")
     sqlite_store = auth.ReplayStore(str(tmp_path / "replay.db"))
     monkeypatch.setattr(auth, "_replay_store", sqlite_store)
@@ -155,7 +198,7 @@ def test_multi_replica_replay_store_uses_shared_postgres_and_atomic_insert(monke
 
     seen = set()
     shared_store = auth.ReplayStore(
-        postgres_dsn="postgresql://bridge:test@db.example.test/aidr",
+        postgres_dsn=postgres_dsn,
         postgres_connect=lambda: Connection(seen),
     )
     monkeypatch.setattr(auth, "_replay_store", shared_store)
@@ -225,7 +268,7 @@ def test_postgres_registry_requires_a_real_connection(monkeypatch):
 
 def test_content_addressed_upload_and_archive_traversal_rejection(tmp_path):
     stream = io.BytesIO(b"safe source")
-    path, digest, size = store_upload(stream, root=tmp_path, tenant_id="tenant-a")
+    path, digest, size, _archive = store_upload(stream, root=tmp_path, tenant_id="tenant-a")
     assert size == len(b"safe source")
     assert path.name == digest
     assert path.exists()
@@ -260,3 +303,19 @@ def test_result_adapter_is_typed_and_incident_boundary_is_redacted():
     assert adapted["incident_candidates"][0]["tenant_id"] == "tenant-a"
     assert "secret-token" not in json.dumps(adapted)
     assert build_incident_candidates(tenant_id="t", task_id="x", scan_type="mcp", findings=[] ) == []
+
+
+def test_free_text_urls_are_redacted_without_recursive_failure():
+    from app.redaction import safe_text
+
+    result = safe_text("See https://example.test/?token=secret-value and https://user:password@example.test/docs")
+    assert result.startswith("See https://example.test/")
+    assert "secret-value" not in result
+    assert "user:password" not in result
+    assert safe_text("Malformed http://[invalid/?token=secret-value") == "Malformed [REDACTED]"
+
+
+def test_infra_findings_are_bounded():
+    findings = [{"cve_id": "CVE-TEST", "package": "demo"}] * 500
+    result = adapt_infra_result("task-1", "tenant-a", {"status": "done", "findings": findings})
+    assert len(result["findings"]) == 200

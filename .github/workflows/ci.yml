@@ -109,7 +109,7 @@ jobs:
       - name: Supabase migration contract
         run: pnpm supabase:check
 
-      - name: Pinned Deno Edge typecheck (9-route security-critical slice)
+      - name: Pinned Deno Edge typecheck (security-critical slice)
         run: pnpm supabase:check:edge-typed-slice
 
       - name: Pinned local Supabase schema contract
@@ -168,6 +168,11 @@ jobs:
           node --test scripts/billing-resubscription-postgres.test.mjs
           node --test scripts/device-poll-membership-revocation-postgres.test.mjs
           docker pull supabase/postgres:17.6.1.136
+          node --test scripts/oidc-administration-postgres.test.mjs
+          node --test scripts/saml-administration-postgres.test.mjs
+          node --test scripts/saml-outage-recovery.test.mjs scripts/saml-outage-recovery-postgres.test.mjs
+          node --test scripts/discovery-cloud-postgres.test.mjs
+          node --test scripts/fleet-signed-delivery-postgres.test.mjs
           pnpm verify:offboarding
           pnpm verify:retention
           node --test scripts/tenant-rate-limit-postgres.test.mjs
@@ -182,8 +187,8 @@ jobs:
           pnpm --filter @singularityrd/aidr-mcp-gateway test
           pnpm exec vitest run --config vitest.config.ts packages/dashboard/supabase/functions/auth-callback/index.test.ts --reporter=dot
 
-      - name: Verify Windows and Unix fleet lifecycles
-        run: pnpm verify:fleet:windows && pnpm verify:fleet:unix
+      - name: Verify Unix fleet lifecycle
+        run: pnpm verify:fleet:unix
 
       - name: Install every packed consumer artifact
         run: pnpm verify:package-install
@@ -217,9 +222,109 @@ jobs:
           if-no-files-found: ignore
           retention-days: 30
 
+  privacy-platform:
+    name: Private privacy full and installed MCP gate
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository (pinned)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup pnpm (pinned)
+        uses: pnpm/action-setup@7088e561eb65bb68695d245aa206f005ef30921d # v4.1.0
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup private profile Node (pinned)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22.16.0"
+          cache: pnpm
+
+      - name: Setup private parser Python (pinned)
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12.8"
+
+      - name: Frozen install without postinstall mutation
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Provision isolated real parser dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends openssl libseccomp2
+          python -m venv --copies "${RUNNER_TEMP}/privacy-python"
+          "${RUNNER_TEMP}/privacy-python/bin/python" -m pip install --disable-pip-version-check --only-binary=:all: -r packages/privacy/parsers/requirements.txt
+          "${RUNNER_TEMP}/privacy-python/bin/python" -m pip check
+          echo "AIDR_PYTHON=${RUNNER_TEMP}/privacy-python/bin/python" >> "${GITHUB_ENV}"
+          echo "AIDR_TEST_PYTHON=${RUNNER_TEMP}/privacy-python/bin/python" >> "${GITHUB_ENV}"
+
+      - name: Map-free private build, complete Node suite and installed signed MCP
+        run: pnpm --filter @singularity/aidr-privacy test:ci:platform
+
+  fleet-windows:
+    name: Native Windows fleet lifecycle gate
+    runs-on: windows-2022
+    steps:
+      - name: Checkout repository (pinned)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup pnpm (pinned)
+        uses: pnpm/action-setup@7088e561eb65bb68695d245aa206f005ef30921d # v4.1.0
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js (pinned)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Frozen install without postinstall mutation
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Build native Claude fleet payload
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          pnpm compile:aig
+          if ($LASTEXITCODE -ne 0) { throw "AIG compilation failed" }
+          pnpm --filter @singularityrd/aidr-core run build:release
+          if ($LASTEXITCODE -ne 0) { throw "Core release build failed" }
+          pnpm --filter @singularityrd/aidr-claude-code run build:release
+          if ($LASTEXITCODE -ne 0) { throw "Claude release build failed" }
+
+      - name: Verify Windows fleet lifecycle
+        run: node scripts/verify-windows-fleet.mjs
+
+      - name: Verify Windows response actions and worker lifecycle
+        run: node --test scripts/windows-response-action.test.mjs scripts/windows-response-worker-install.test.mjs
+
   aig-bridge:
     name: AIG bridge dependency and contract gate
     runs-on: ubuntu-22.04
+    services:
+      postgres:
+        image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+        env:
+          POSTGRES_PASSWORD: bridge-ci
+          POSTGRES_DB: bridge_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d bridge_ci"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      AIG_BRIDGE_TEST_POSTGRES_DSN: postgresql://postgres:bridge-ci@127.0.0.1:5432/bridge_ci
+      PSYCOPG_IMPL: python
     steps:
       - name: Checkout repository (pinned)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -232,20 +337,22 @@ jobs:
         with:
           python-version: "3.12.8"
           cache: pip
-          cache-dependency-path: services/aig-bridge/requirements.txt
+          cache-dependency-path: services/aig-bridge/requirements-ci.lock
 
       - name: Install pinned bridge tooling and dependencies
         working-directory: services/aig-bridge
         run: |
-          python -m pip install --disable-pip-version-check --upgrade pip
-          python -m pip install --disable-pip-version-check pip-audit==2.9.0 pytest==8.4.1 pytest-asyncio==1.1.0
-          python -m pip install --disable-pip-version-check -r requirements.txt
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libpq5 libssl3
+          python -m pip install --disable-pip-version-check --require-hashes --only-binary=:all: -r requirements-ci.lock
           python -m pip check
+          python -m venv .audit-venv
+          .audit-venv/bin/python -m pip install --disable-pip-version-check pip-audit==2.9.0
 
       - name: Audit and test bridge
         working-directory: services/aig-bridge
         run: |
-          pip-audit -r requirements.txt
+          .audit-venv/bin/pip-audit --require-hashes -r requirements-runtime.lock
           PYTHONPATH=. pytest -q tests
 
   real-host-e2e:

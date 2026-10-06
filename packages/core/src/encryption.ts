@@ -23,8 +23,9 @@
  */
 
 import { createCipheriv, createDecipheriv, pbkdf2Sync, randomBytes } from "node:crypto";
-import { readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { hostname } from "node:os";
+import { atomicWriteText } from "./file-utils.js";
 
 // ── Constants ──────────────────────────────────────────────────────────
 
@@ -55,6 +56,8 @@ const PBKDF2_SALT = "aidr-encryption-v1";
  * Uses PBKDF2-SHA256 with 100 000 iterations.  The salt incorporates the
  * machine hostname so that the key is **both** installation-specific and
  * machine-specific.
+ * This legacy key uses public identifiers, so it only protects accidental
+ * disclosure; it is not a substitute for an OS vault or disk encryption.
  *
  * @param installationId - Persistent UUID obtained from `getInstallationId()`.
  * @returns A 32-byte Buffer suitable for AES-256-GCM.
@@ -146,9 +149,12 @@ export async function encryptFile(filePath: string, key: Buffer): Promise<void> 
 	const plaintext = await readFile(filePath);
 	if (isEncrypted(plaintext)) return; // already encrypted
 
-	const encrypted = encryptBuffer(plaintext, key);
-	const encoded = `${HEADER}${encrypted.toString("base64")}\n`;
-	await writeFile(filePath, encoded, { mode: 0o600 });
+	await atomicWriteText(filePath, encryptedFileContent(plaintext, key));
+}
+
+/** Encode before writing so an encrypted cache is never first persisted as plaintext. */
+export function encryptedFileContent(plaintext: Buffer, key: Buffer): string {
+	return `${HEADER}${encryptBuffer(plaintext, key).toString("base64")}\n`;
 }
 
 /**
@@ -188,23 +194,5 @@ export async function decryptFile(filePath: string, key: Buffer): Promise<string
  * @throws If the file cannot be read or written.
  */
 export async function migrateToEncrypted(filePath: string, key: Buffer): Promise<void> {
-	const raw = await readFile(filePath);
-	if (isEncrypted(raw)) return; // already encrypted
-
-	const encrypted = encryptBuffer(raw, key);
-	const encoded = `${HEADER}${encrypted.toString("base64")}\n`;
-
-	// Atomic write via temp file
-	const tmp = `${filePath}.${randomBytes(4).toString("hex")}.enc.tmp`;
-	try {
-		await writeFile(tmp, encoded, { mode: 0o600 });
-		await rename(tmp, filePath);
-	} catch (err) {
-		try {
-			await unlink(tmp);
-		} catch {
-			// best-effort cleanup
-		}
-		throw err;
-	}
+	return encryptFile(filePath, key);
 }

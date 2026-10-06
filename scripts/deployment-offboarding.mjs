@@ -42,7 +42,7 @@ if (!env.SERVICE_ROLE_KEY) throw new Error("Deployment service credential missin
 const base = new URL(manifest.supabase_url);
 if (
 	base.protocol !== "https:" &&
-	!(manifest.development && ["localhost", "127.0.0.1"].includes(base.hostname))
+	!(manifest.development && base.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(base.hostname))
 ) {
 	throw new Error("Offboarding requires HTTPS or an explicitly marked loopback development deployment");
 }

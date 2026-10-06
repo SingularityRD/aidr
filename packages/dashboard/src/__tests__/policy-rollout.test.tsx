@@ -37,7 +37,7 @@ describe("Policy rollout operator flow", () => {
     fireEvent.click(screen.getByRole("checkbox")); fireEvent.click(stage);
     await screen.findByText(/Version 4 assigned to 1 selected agents/);
     expect(invoke).toHaveBeenCalledWith("policy-management", { body: { action: "stage", tenant_id: "team-a", expected_version: 3, expected_revision_version: 3, agent_ids: ["agent-a"], policy: controls } });
-    expect(onChanged).toHaveBeenCalledOnce();
+    expect(onChanged).not.toHaveBeenCalled();
   });
   it("uses the newest staged revision rather than the tenant-wide version as its stage precondition", async () => {
     invoke.mockImplementation(async (_name, options) => {
@@ -61,6 +61,7 @@ describe("Policy rollout operator flow", () => {
     fireEvent.click(screen.getByRole("button", { name: "Publish version 2 to all enrolled agents" }));
     await screen.findByText(/Revision 2 republished as version 4/);
     expect(invoke).toHaveBeenCalledWith("policy-management", { body: { action: "restore", tenant_id: "team-a", expected_version: 3, target_version: 2 } });
+    expect(onChanged).toHaveBeenCalledOnce();
   });
   it("prevents a viewer from staging or publishing", async () => {
     team.canManageTeam = false; view(); await screen.findByText("Finance laptop");

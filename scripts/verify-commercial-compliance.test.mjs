@@ -84,7 +84,9 @@ test("shipped register and matrix are locally valid while remaining open", () =>
 	assert.equal(result.privacy.status, "open");
 	assert.ok(result.license.unknown_values > 0);
 	assert.ok(result.privacy.unknown_values > 0);
-	assert.equal(result.license.open_entries, 1);
+	assert.equal(result.license.open_entries, 2);
+	assert.deepEqual(artifacts.licenseRegister.entries.map(entry => entry.component), ["certifi", "psycopg"]);
+	assert.ok(artifacts.licenseRegister.entries.every(entry => entry.status === "open" && entry.owner === "unknown" && entry.approver === "unknown" && entry.expires_at === "unknown"), "source prefill must not grant a licence exception or invent a reviewer/expiry");
 	assert.equal(result.privacy.flows, artifacts.privacyMatrix.flows.length);
 	assert.equal(result.privacy.open_flows, result.privacy.flows, "every shipped privacy flow must remain open until accepted evidence exists");
 });
@@ -97,6 +99,16 @@ test("the shipped paths and schemas are the documented local artifacts", async (
 	}
 	assert.equal(artifacts.licenseSchema.$id, "https://singularityrd.dev/schemas/license-exception-register.schema.json");
 	assert.equal(artifacts.privacySchema.$id, "https://singularityrd.dev/schemas/privacy-data-flow-matrix.schema.json");
+});
+
+test("source-prefilled evidence cannot be relabelled as deployment measurement or acceptance", () => {
+	for (const status of ["measured", "accepted"]) {
+		const matrix = validPrivacyMatrix();
+		matrix.status = "open";
+		matrix.flows[0].status = status;
+		matrix.flows[0].evidence = ["Source inspection only: packages/core/src/evaluator.ts"];
+		assert.ok(validatePrivacyDataFlowMatrix(matrix).failures.some(failure => /source inspection alone/u.test(failure)));
+	}
 });
 
 test("a license exception must declare expires_at", () => {

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
+import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import { closeSync, copyFileSync, existsSync, ftruncateSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -48,7 +48,7 @@ const bashAvailable = process.platform === "win32" && existsSync(gitBash)
 check(required.every((path) => existsSync(join(root, path))), "all macOS, Jamf, PKG, Linux and systemd fleet templates exist");
 
 const shellTemplates = required.filter((path) => path.endsWith(".sh") || path.endsWith("/preinstall") || path.endsWith("/postinstall"));
-if (bashAvailable) run(bash, ["-n", ...shellTemplates.map((path) => join(root, path))]);
+if (bashAvailable) for (const path of shellTemplates) run(bash, ["-n", join(root, path)]);
 check(bashAvailable, "shell templates pass offline bash syntax validation");
 process.stderr.write("fleet verifier: syntax checked\n");
 for (const path of required.filter((path) => path.endsWith(".mjs"))) run(process.execPath, ["--check", join(root, path)]);
@@ -57,6 +57,25 @@ check(true, "fleet JavaScript helpers pass Node syntax validation");
 const manager = readFileSync(join(root, "deploy/fleet/unix/aidr-fleet.sh"), "utf8");
 check(manager.includes("openssl dgst -sha256 -verify") && manager.includes("artifact SHA-256 mismatch"), "lifecycle manager fails closed on SHA-256 and detached publisher signature");
 check(manager.includes("unsafe archive path") && manager.includes("regular files/directories") && manager.includes("536870912"), "lifecycle manager rejects traversal, links, special entries and oversized expansions before extraction");
+const archiveSizeGuard = manager.match(/LC_ALL=C tar -tvzf "\$ARTIFACT" \| awk '([^']+)'/);
+assert.ok(archiveSizeGuard, "the actual archive expanded-size guard must be available for the portable listing regression");
+for (const listing of [
+	"-rw-r--r-- root/root 42 2026-01-01 00:00 package/package.json\n",
+	"-rw-r--r-- 0 root wheel 42 Jan 1 00:00 package/package.json\n",
+]) run(bash, ["-c", 'awk "$1"', "bash", archiveSizeGuard[1]], { input: listing });
+for (const listing of [
+	"-rw-r--r-- root/root 536870913 2026-01-01 00:00 package/package.json\n",
+	"-rw-r--r-- 0 root wheel 536870913 Jan 1 00:00 package/package.json\n",
+	"lrwxrwxrwx 0 root wheel 1 Jan 1 00:00 package/link -> /etc/passwd\n",
+]) {
+	const result = spawnSync(bash, ["-c", 'awk "$1"', "bash", archiveSizeGuard[1]], { input: listing, encoding: "utf8" });
+	check(result.status !== 0, "GNU/BSD archive size/type guard rejects an oversized or linked entry");
+}
+check(true, "GNU and macOS BSD tar formats share the same working expanded-size guard");
+const macHomeParser = manager.match(/TARGET_HOME=\$\(dscl [^\n]+ \| sed -n '([^']+)'/);
+assert.ok(macHomeParser, "macOS home lookup parser must be available for its space-preservation regression");
+const parsedHome = run(bash, ["-c", 'sed -n "$1"', "bash", macHomeParser[1]], { input: "NFSHomeDirectory: /Volumes/Company Homes/fixture-user\n" });
+check(parsedHome.stdout.trim() === "/Volumes/Company Homes/fixture-user", "macOS directory-service home lookup preserves paths containing spaces");
 const rootGuard = manager.slice(manager.indexOf("require_root_for_changes()"), manager.indexOf("LOCK_HELD="));
 const runnerStart = manager.indexOf("run_for_user()");
 const userRunner = manager.slice(runnerStart, manager.indexOf("\n}", runnerStart));
@@ -97,7 +116,7 @@ try {
 	mkdirSync(join(packageRoot, "dist"), { recursive: true });
 	mkdirSync(join(packageRoot, "resources", "threats"), { recursive: true });
 	mkdirSync(join(packageRoot, "resources", "allowlists"), { recursive: true });
-	writeFileSync(join(packageRoot, "package.json"), '{"name":"fleet-fixture","version":"1.0.0"}\n');
+	writeFileSync(join(packageRoot, "package.json"), '{"name":"@singularityrd/aidr-claude-code","version":"1.0.0"}\n');
 	writeFileSync(join(packageRoot, "resources", "threats", "fixture.yaml"), "patterns: []\n");
 	writeFileSync(join(packageRoot, "resources", "allowlists", "fixture.yaml"), "domains: []\n");
 	writeFileSync(join(packageRoot, "dist", "pre-tool-use.cjs"), `let x="";process.stdin.on("data",d=>x+=d);process.stdin.on("end",()=>console.log(JSON.stringify({hookSpecificOutput:{permissionDecision:"deny",permissionDecisionReason:"🛡️ Singularity AIDR: Threat Blocked"},systemMessage:"Remote code execution via curl pipe to shell"})));\n`);
@@ -127,6 +146,29 @@ try {
 			copyFileSync(from, to);
 		}
 	}
+	const integrityKeys = generateKeyPairSync("ed25519");
+	const integrityPublicPem = integrityKeys.publicKey.export({ type: "spki", format: "pem" });
+	const signPackage = (version) => {
+		const files = [];
+		const walk = (directory, prefix) => {
+			for (const entry of readdirSync(directory, { withFileTypes: true })) {
+				const name = `${prefix}/${entry.name}`;
+				if (entry.isDirectory()) walk(join(directory, entry.name), name);
+				else files.push(name);
+			}
+		};
+		walk(join(packageRoot, "dist"), "dist");
+		walk(join(packageRoot, "resources"), "resources");
+		files.push("package.json");
+		const manifest = Buffer.from(`${JSON.stringify({
+			schema_version: 1, artifact_id: "claude-code/package", artifact_version: version,
+			key_fingerprint: createHash("sha256").update(integrityKeys.publicKey.export({ type: "spki", format: "der" })).digest("hex"),
+			files: files.sort().map((path) => ({ path, sha256: createHash("sha256").update(readFileSync(join(packageRoot, path))).digest("hex") })),
+		})}\n`);
+		writeFileSync(join(packageRoot, "aidr-artifact.manifest.json"), manifest);
+		writeFileSync(join(packageRoot, "aidr-artifact.manifest.sig"), `${sign(null, manifest, integrityKeys.privateKey).toString("base64")}\n`);
+	};
+	signPackage("1.0.0");
 	const artifact = join(work, "connector-v1.tgz");
 	const privateKey = join(work, "release-private.pem");
 	const publicKey = join(work, "release-public.pem");
@@ -135,7 +177,7 @@ try {
 	run(bash, ["-lc", 'openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$1" >/dev/null 2>&1 && openssl pkey -in "$1" -pubout -out "$2" >/dev/null 2>&1 && openssl dgst -sha256 -sign "$1" -out "$3" "$4"', "bash", toBash(privateKey), toBash(publicKey), toBash(signature), toBash(artifact)]);
 	const digest = createHash("sha256").update(readFileSync(artifact)).digest("hex");
 	const engine = toBash(join(root, "deploy/fleet/unix/aidr-fleet.sh"));
-	const baseEnv = { ...process.env, AIDR_DEVELOPMENT_MODE: "true", AIDR_FLEET_PLATFORM: "linux", AIDR_FLEET_TEST_ROOT: toBash(work), AIDR_NODE_BIN: toBash(process.execPath) };
+	const baseEnv = { ...process.env, AIDR_DEVELOPMENT_MODE: "false", AIDR_FLEET_PLATFORM: "linux", AIDR_FLEET_TEST_ROOT: toBash(work), AIDR_NODE_BIN: toBash(process.execPath) };
 	const common = ["--artifact", toBash(artifact), "--sha256", digest, "--signature", toBash(signature), "--public-key", toBash(publicKey)];
 	run(bash, [engine, "verify", ...common], { env: baseEnv });
 	check(true, "offline cryptographic fixture passes SHA-256, signature and archive checks");
@@ -172,18 +214,41 @@ try {
 	const stateRoot = join(work, "state");
 	mkdirSync(join(userHome, ".claude"), { recursive: true });
 	mkdirSync(join(userHome, ".singularity-aidr"), { recursive: true });
-	const originalConfig = '{"tenant":"preserve-me"}\n';
+	const originalConfig = `${JSON.stringify({ tenant: "preserve-me", integrity: { enabled: true, verify_on_start: true, public_keys_pem: [integrityPublicPem] } })}\n`;
 	writeFileSync(join(userHome, ".singularity-aidr", "config.json"), originalConfig);
 	writeFileSync(join(userHome, ".claude", "settings.json"), JSON.stringify({ hooks: { PreToolUse: [{ matcher: "*", hooks: [{ type: "command", command: "other-hook", statusMessage: "Customer hook" }] }] } }, null, 2));
 	const lifecycleBase = ["--user", "fixture-user", "--home", toBash(userHome), "--install-root", toBash(installRoot), "--state-root", toBash(stateRoot), "--endpoint-installer", toBash(join(root, "scripts/endpoint-install.mjs"))];
 	const lifecycle = [...lifecycleBase, ...common];
+	const optionUser = spawnSync(bash, [engine, "install", ...lifecycle.map((value) => value === "fixture-user" ? "-r" : value)], { encoding: "utf8", env: baseEnv });
+	check(optionUser.status !== 0 && optionUser.stderr.includes("unsafe user name") && !existsSync(installRoot), "option-like user names are rejected before any privileged lifecycle mutation");
+	const offlineBundle = join(work, "offline-bundle.tgz");
+	run(bash, [toBash(join(root, "deploy/fleet/linux/build-offline-bundle.sh")), toBash(artifact), digest, toBash(signature), toBash(publicKey), toBash(offlineBundle)], { env: baseEnv });
+	const offlineRoot = join(work, "offline");
+	mkdirSync(offlineRoot);
+	run(bash, ["-c", 'tar -xzf "$1" -C "$2"', "bash", toBash(offlineBundle), toBash(offlineRoot)]);
+	const offlineFleet = join(offlineRoot, "aidr-fleet");
+	check(readFileSync(join(offlineFleet, "libexec", "endpoint-install.mjs")).equals(readFileSync(join(root, "scripts/endpoint-install.mjs"))), "offline Linux bundle carries the standalone endpoint installer it will execute");
+	const systemdInstaller = readFileSync(join(offlineFleet, "linux", "install-systemd.sh"), "utf8");
+	const systemdProbe = join(offlineFleet, "linux", "helper-resolution-check.sh");
+	writeFileSync(systemdProbe, `#!/bin/sh\nset -eu\n${systemdInstaller.slice(systemdInstaller.indexOf("SCRIPT_DIR="), systemdInstaller.indexOf("\nINSTALL_ROOT="))}\n[ "$ENDPOINT_INSTALLER" = "$SCRIPT_DIR/../libexec/endpoint-install.mjs" ]\n`);
+	run(bash, [toBash(systemdProbe)]);
+	check(systemdInstaller.includes('"$ENDPOINT_INSTALLER" "$INSTALL_ROOT/libexec/endpoint-install.mjs"'), "systemd installer resolves and installs the helper from the extracted offline bundle");
+	check(systemdInstaller.includes('find "$STATE_ROOT/users" -type d -exec chgrp aidr-health') && systemdInstaller.includes('find "$STATE_ROOT/users" -type f -exec chgrp aidr-health'), "systemd timer installation gives its dedicated account read access to existing lifecycle state");
+	const offlineHome = join(work, "offline-home");
+	mkdirSync(join(offlineHome, ".singularity-aidr"), { recursive: true });
+	writeFileSync(join(offlineHome, ".singularity-aidr", "config.json"), originalConfig);
+	const offlineCommon = common.map((value) => value === toBash(artifact) ? toBash(join(offlineFleet, "payload", "connector.tgz")) : value === toBash(signature) ? toBash(join(offlineFleet, "payload", "connector.tgz.sig")) : value);
+	run(bash, [toBash(join(offlineFleet, "linux", "install.sh")), "--user", "fixture-user", "--home", toBash(offlineHome), "--install-root", toBash(join(work, "offline-install")), "--state-root", toBash(join(work, "offline-state")), ...offlineCommon], { env: baseEnv });
+	check(JSON.parse(readFileSync(join(offlineHome, ".singularity-aidr", "installation.json"))).package_integrity === "signature_verified", "extracted offline Linux bundle installs using its packaged helper and signed manifest without a source-checkout override");
 	run(bash, [engine, "install", ...lifecycle], { env: baseEnv });
 	process.stderr.write("fleet verifier: lifecycle install completed\n");
 	let settings = JSON.parse(readFileSync(join(userHome, ".claude", "settings.json"), "utf8"));
 	check(settings.hooks.PreToolUse.some((entry) => entry.hooks?.some((hook) => hook.statusMessage === "Customer hook")), "install preserves unrelated customer hooks");
 	check(readFileSync(join(userHome, ".singularity-aidr", "config.json"), "utf8") === originalConfig, "install preserves an existing agent configuration");
 
-	writeFileSync(join(packageRoot, "package.json"), '{"name":"fleet-fixture","version":"2.0.0"}\n');
+	check(JSON.parse(readFileSync(join(userHome, ".singularity-aidr", "installation.json"))).package_integrity === "signature_verified", "fleet activation verifies the signed package manifest with independently provisioned integrity trust");
+	writeFileSync(join(packageRoot, "package.json"), '{"name":"@singularityrd/aidr-claude-code","version":"2.0.0"}\n');
+	signPackage("2.0.0");
 	const artifact2 = join(work, "connector-v2.tgz");
 	const signature2 = `${artifact2}.sig`;
 	run(bash, ["-lc", 'tar -C "$1" -czf "$2" package && openssl dgst -sha256 -sign "$3" -out "$4" "$2"', "bash", toBash(dirname(packageRoot)), toBash(artifact2), toBash(privateKey), toBash(signature2)]);
@@ -211,6 +276,17 @@ try {
 	check(readFileSync(join(userHome, ".singularity-aidr", "config.json"), "utf8") === originalConfig, "upgrade and rollback preserve existing policy and agent configuration");
 	const health = run(process.execPath, [join(root, "deploy/fleet/unix/fleet-health.mjs"), "--state-root", stateRoot, "--install-root", installRoot]);
 	check(JSON.parse(health.stdout).healthy === true && JSON.parse(health.stdout).registered_users === 1, "fleet health evidence reports the active verified release without reading user secrets");
+	const activeSessionBundle = join(installRoot, "releases", digest, "package", "dist", "session-start.cjs");
+	const sessionBundleBytes = readFileSync(activeSessionBundle);
+	rmSync(activeSessionBundle);
+	const incompleteHealth = spawnSync(process.execPath, [join(root, "deploy/fleet/unix/fleet-health.mjs"), "--state-root", stateRoot, "--install-root", installRoot], { encoding: "utf8" });
+	check(incompleteHealth.status === 2 && JSON.parse(incompleteHealth.stdout).healthy === false, "fleet health rejects a partial installation missing any managed hook bundle");
+	writeFileSync(activeSessionBundle, sessionBundleBytes);
+	const activeStatePath = join(stateRoot, "users", stateKey, "release-state");
+	writeFileSync(activeStatePath, `${releaseState}current=${digest2}\n`);
+	const malformedHealth = spawnSync(process.execPath, [join(root, "deploy/fleet/unix/fleet-health.mjs"), "--state-root", stateRoot, "--install-root", installRoot], { encoding: "utf8" });
+	check(malformedHealth.status === 2 && JSON.parse(malformedHealth.stdout).healthy === false, "fleet health rejects malformed or duplicate release state records");
+	writeFileSync(activeStatePath, releaseState);
 	check(!existsSync(join(stateRoot, "users", stateKey, "pending")), "successful lifecycle operations clear their interruption marker");
 	const pendingPath = join(stateRoot, "users", stateKey, "pending");
 	writeFileSync(pendingPath, `action=upgrade\ntarget=${digest2}\n`);

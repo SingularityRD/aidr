@@ -7,6 +7,14 @@ This is an application-owned check boundary, not an AI-host connector. It only
 checks requests the application passes to it; wrapping a tool does not provide
 the native connectors' tool normalization or package/manifest inspection.
 
+The client also honors an operator-installed local response worker. A verified
+pause or unavailable required control state returns `deny` before cached allows
+or provider requests; a pause applied during provider I/O prevents a new allow.
+The installed endpoint's credential and issuer roots establish that authority.
+The SDK caller's remote `apiKey` and request context cannot replace it or bypass
+the pause. Without an installed or required worker, caller-owned SDK checks keep
+their existing scope; configuring an SDK API key does not enroll the host.
+
 ## Verdict enforcement is fail-closed
 
 Both middleware surfaces in this package share **one** enforcement rule,
@@ -105,6 +113,10 @@ map arguments explicitly with `createMiddleware(client).wrap(fn, requestFactory)
 or use and verify a supported native connector. Do not treat a generic wrapper
 as equivalent to native connector coverage.
 
+The tool wrapper executes a JSON snapshot of the inspected arguments. Custom
+prototypes, `toJSON` methods, and caller mutations cannot replace that checked
+snapshot with a different value before the tool runs.
+
 ### URL reputation and data sharing
 
 The SDK keeps URL reputation requests **off by default**. Fetch URLs are still
@@ -125,6 +137,11 @@ default; enabling `includeUrlQueryParameters: true` separately opts in to
 sending them. URLs withheld for these reasons are reported as unavailable,
 not clean. Avoid putting secrets in a URL even when reputation lookups are
 enabled.
+
+Set `baseUrl` to your reputation service's HTTPS API base (for example,
+`https://aidr.example.com/functions/v1`); the SDK calls its `/url-check` route
+with `apiKey` as a bearer credential. Configuration updates clear existing
+verdicts so a changed service or credential takes effect on the next check.
 
 Both middleware surfaces accept the same `onAsk` /
 `allowApprovalOfIndeterminateResults` options:
@@ -162,6 +179,16 @@ return guarded.output;
 Redaction replaces the complete result with a fixed marker so matched secrets or
 instructions cannot survive in an uninspected field. Hosts that return binary or
 streaming values must decode them to bounded text before calling the guard.
+
+For a host serving a locally provisioned connector profile, set
+`createGenericMiddleware(client, { agentRuntime: "cursor" })` to include that
+profile's signed tenant output DLP. Choose the runtime the host actually serves.
+The runtime is fixed when middleware is created; tool input and metadata cannot
+select or change it. Each result revalidates the local signed policy and managed
+entitlement before delivery. This also applies to the sync-compatible middleware
+and generic tool wrappers. The SDK API key does not select this local tenant
+profile, and the standalone synchronous guards continue to use the fixed output
+rules.
 
 ## Agent self-approval is not a thing in this SDK
 

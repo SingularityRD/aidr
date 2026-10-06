@@ -70,3 +70,10 @@ test('aborted hung child is terminated and not reused',async()=>{
 test('failed executable cannot create a ready provider',async()=>{await assert.rejects(LocalNerProcess.open({command:'/not/a/real/program',args:[],startupTimeoutMs:100}));});
 test('relative executable rejected (no PATH-based execution)',async()=>{await assert.rejects(LocalNerProcess.open({command:'python3',args:[]}));});
 test('startup handshake timeout terminates child',async()=>{await assert.rejects(LocalNerProcess.open({command:process.execPath,args:[resolve('tests/fixtures/mock-ner.mjs'),'no-ready'],startupTimeoutMs:20}));});
+test('startup abort terminates an unready child without waiting for its long timeout',async()=>{
+ const controller=new AbortController(),pending=LocalNerProcess.open({command:process.execPath,args:[resolve('tests/fixtures/mock-ner.mjs'),'no-ready'],startupTimeoutMs:120000},controller.signal);
+ controller.abort();await assert.rejects(pending,/NER_STARTUP_FAILURE/);
+});
+test('already aborted startup does not spawn a child',async()=>{
+ const controller=new AbortController();controller.abort();await assert.rejects(LocalNerProcess.open({command:'/not/a/real/program',args:[]},controller.signal),{name:'AbortError'});
+});

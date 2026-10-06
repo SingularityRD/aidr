@@ -157,10 +157,14 @@ function extract(tarball: string, destDir: string): void {
 	// GNU tar (the first `tar` on PATH under Git Bash on Windows) reads "C:\..." as
 	// host "C" ("Cannot connect to C: resolve failed") and mangles absolute
 	// backslash paths. bsdtar and Linux tar accept the relative form too.
-	execFileSync("tar", ["-xzf", relative(destDir, tarball).replaceAll("\\", "/"), "--strip-components=1"], {
-		cwd: destDir,
-		stdio: "pipe",
-	});
+	execFileSync(
+		"tar",
+		["-xzf", relative(destDir, tarball).replaceAll("\\", "/"), "--strip-components=1"],
+		{
+			cwd: destDir,
+			stdio: "pipe",
+		},
+	);
 	if (!existsSync(join(destDir, "package.json"))) {
 		throw new Error(`extraction of ${basename(tarball)} produced no package.json in ${destDir}`);
 	}
@@ -259,6 +263,7 @@ import type {
   MiddlewareFunction,
   MiddlewareOptions,
   SDKConfig,
+  SDKConfigInput,
   ToolOutputGuardOptions,
   ToolOutputGuardResult,
 } from "@singularityrd/aidr-sdk";
@@ -286,10 +291,14 @@ declare const retainedTypes: [
   MiddlewareFunction,
   MiddlewareOptions,
   SDKConfig,
+  SDKConfigInput,
   ToolOutputGuardOptions,
   ToolOutputGuardResult<unknown>,
 ];
 void retainedTypes;
+const minimalConfig: SDKConfigInput = { apiKey: "consumer-key" };
+const minimalClient = new AIDRClient(minimalConfig);
+void minimalClient;
 `;
 
 function typecheckConsumer(extension: "mts" | "cts"): void {

@@ -1,0 +1,1453 @@
+{
+  "schemaVersion": 1,
+  "recordedLocalDate": "2026-10-06",
+  "status": "boundary-fixed-public-candidates-still-unqualified",
+  "approved": false,
+  "customerCorpusEvaluated": false,
+  "goldTextIncluded": false,
+  "corpusSha256": "1c94a485923445a0c5a7b49919e5cb39fc619fbb2753e5c5768deecca85080a1",
+  "policy": {
+    "requiredTypes": [
+      "PERSON",
+      "ADDRESS"
+    ],
+    "minGold": 100,
+    "minRecallLower": 0.95,
+    "minPrecisionLower": 0.9,
+    "maxCleanFalseAlarmRate": 0.05
+  },
+  "method": {
+    "before": "Each of the three pinned actual models inferred all600 unchanged public documents before the source fix.",
+    "after": "Replay actual aggregate_tokens whitespace normalization over completed cached BIO entities; canonical deduplication and existing scoreDataset/qualification on identical gold.",
+    "liveWorkerValidation": "Three fixed real-worker cases after the source change; not a full runtime corpus rerun.",
+    "runtimeCorpusAfterFixEvaluated": false,
+    "routingImplemented": false
+  },
+  "sourceSha256": {
+    "ner/artifacts.py": "1d65a54470a008ba88ca045ae3a3ad1f21310489458901a326c9f9cddd4a45d2",
+    "ner/test_artifacts.py": "bea511633a6e714e1b3832ebfbb9736a1c2bcaa1b48189d9e132754663eabaca",
+    "ner/public-models.lock.json": "64b91d8d972e516b0ecfc46b62f800b9a0f872b49e006aa3b7dc1c94017cfd83",
+    "ner/public-models.privyshield.lock.json": "b93ee3acefac7758eb55fe773fa33c0031ec73e6bd059b30f95378f56c118c5e",
+    "ner/qualification-policy.example.json": "2cefc2afa09b9eef2ca2745b35e2a00488f241ac391fed3b4c2fa1554b5600a6"
+  },
+  "nonWhitespaceTypedCoveragePreserved": {
+    "verified": true,
+    "documentsPerModel": 600,
+    "models": 3,
+    "meaning": "All original non-whitespace characters covered by each predicted type remain covered; only outer whitespace changes."
+  },
+  "models": {
+    "tr-kvkk": {
+      "repository": "ersanbil/kvkk-pii-ner",
+      "revision": "cb85fbd0839f92cff2ddc92c4f23ecf61cb769c2",
+      "languages": [
+        "tr"
+      ],
+      "license": "Apache-2.0",
+      "changedSpans": 0
+    },
+    "en-privyshield": {
+      "repository": "aditrynacode/privyshield-ner",
+      "revision": "a3aa3695fb2998f32a750d581337610eafa079a3",
+      "languages": [
+        "en"
+      ],
+      "license": "Apache-2.0",
+      "changedSpans": 0
+    },
+    "en-deberta": {
+      "repository": "seongyeon1/pii-deberta-v3-base-multi",
+      "revision": "9d83044fc56074f871ee811e7009778867beb7cf",
+      "languages": [
+        "en"
+      ],
+      "license": "Apache-2.0",
+      "changedSpans": 684
+    }
+  },
+  "singleModelDeclaredLanguage": {
+    "tr-kvkk": {
+      "diagnosticOnly": true,
+      "routingImplemented": false,
+      "modelRevision": "cb85fbd0839f92cff2ddc92c4f23ecf61cb769c2",
+      "boundaryChanges": 0,
+      "before": {
+        "abstained": 0,
+        "blocked": 0,
+        "buckets": {
+          "tr:ADDRESS": {
+            "coverageRecall": 0,
+            "covered": 0,
+            "fn": 100,
+            "fp": 91,
+            "gold": 100,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 0,
+              "upper": 0.04050400392888021
+            },
+            "recall": 0,
+            "recallInterval": {
+              "lower": 3.469446951953614e-18,
+              "upper": 0.03699349820698568
+            },
+            "tp": 0
+          },
+          "tr:PERSON": {
+            "coverageRecall": 0.78,
+            "covered": 78,
+            "fn": 22,
+            "fp": 14,
+            "gold": 100,
+            "precision": 0.8478260869565217,
+            "precisionInterval": {
+              "lower": 0.7606348710244819,
+              "upper": 0.9071345972985638
+            },
+            "recall": 0.78,
+            "recallInterval": {
+              "lower": 0.6892964648501421,
+              "upper": 0.8499871761539459
+            },
+            "tp": 78
+          }
+        },
+        "cleanByLanguage": {
+          "en": {
+            "falseAlarm": 0,
+            "samples": 0
+          },
+          "tr": {
+            "falseAlarm": 2,
+            "samples": 100
+          }
+        },
+        "cleanFalseAlarm": 2,
+        "cleanSamples": 100,
+        "corpusDigest": "22c6634732ac8a27373dfa044581cadc1113a57035b3faa881b6e72242f7f4dc",
+        "independent": 0,
+        "samples": 300,
+        "synthetic": 300
+      },
+      "after": {
+        "abstained": 0,
+        "blocked": 0,
+        "buckets": {
+          "tr:ADDRESS": {
+            "coverageRecall": 0,
+            "covered": 0,
+            "fn": 100,
+            "fp": 91,
+            "gold": 100,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 0,
+              "upper": 0.04050400392888021
+            },
+            "recall": 0,
+            "recallInterval": {
+              "lower": 3.469446951953614e-18,
+              "upper": 0.03699349820698568
+            },
+            "tp": 0
+          },
+          "tr:PERSON": {
+            "coverageRecall": 0.78,
+            "covered": 78,
+            "fn": 22,
+            "fp": 14,
+            "gold": 100,
+            "precision": 0.8478260869565217,
+            "precisionInterval": {
+              "lower": 0.7606348710244819,
+              "upper": 0.9071345972985638
+            },
+            "recall": 0.78,
+            "recallInterval": {
+              "lower": 0.6892964648501421,
+              "upper": 0.8499871761539459
+            },
+            "tp": 78
+          }
+        },
+        "cleanByLanguage": {
+          "en": {
+            "falseAlarm": 0,
+            "samples": 0
+          },
+          "tr": {
+            "falseAlarm": 2,
+            "samples": 100
+          }
+        },
+        "cleanFalseAlarm": 2,
+        "cleanSamples": 100,
+        "corpusDigest": "22c6634732ac8a27373dfa044581cadc1113a57035b3faa881b6e72242f7f4dc",
+        "independent": 0,
+        "samples": 300,
+        "synthetic": 300
+      }
+    },
+    "en-privyshield": {
+      "diagnosticOnly": true,
+      "routingImplemented": false,
+      "modelRevision": "a3aa3695fb2998f32a750d581337610eafa079a3",
+      "boundaryChanges": 0,
+      "before": {
+        "abstained": 0,
+        "blocked": 0,
+        "buckets": {
+          "en:ADDRESS": {
+            "coverageRecall": 0.8317757009345794,
+            "covered": 89,
+            "fn": 71,
+            "fp": 5718,
+            "gold": 107,
+            "precision": 0.006256517205422315,
+            "precisionInterval": {
+              "lower": 0.0045227857400282345,
+              "upper": 0.008649070304133803
+            },
+            "recall": 0.3364485981308411,
+            "recallInterval": {
+              "lower": 0.2539726954082616,
+              "upper": 0.4302609805791796
+            },
+            "tp": 36
+          },
+          "en:PERSON": {
+            "coverageRecall": 0.32407407407407407,
+            "covered": 35,
+            "fn": 75,
+            "fp": 650,
+            "gold": 108,
+            "precision": 0.048316251830161056,
+            "precisionInterval": {
+              "lower": 0.0346081122713821,
+              "upper": 0.06707686600673732
+            },
+            "recall": 0.3055555555555556,
+            "recallInterval": {
+              "lower": 0.22660233791018655,
+              "upper": 0.39786607976903
+            },
+            "tp": 33
+          }
+        },
+        "cleanByLanguage": {
+          "en": {
+            "falseAlarm": 99,
+            "samples": 100
+          },
+          "tr": {
+            "falseAlarm": 0,
+            "samples": 0
+          }
+        },
+        "cleanFalseAlarm": 99,
+        "cleanSamples": 100,
+        "corpusDigest": "ef1c9443254831ba6236dd08784b151da90542aba22a34eb1c968484750e2e72",
+        "independent": 0,
+        "samples": 300,
+        "synthetic": 300
+      },
+      "after": {
+        "abstained": 0,
+        "blocked": 0,
+        "buckets": {
+          "en:ADDRESS": {
+            "coverageRecall": 0.8317757009345794,
+            "covered": 89,
+            "fn": 71,
+            "fp": 5718,
+            "gold": 107,
+            "precision": 0.006256517205422315,
+            "precisionInterval": {
+              "lower": 0.0045227857400282345,
+              "upper": 0.008649070304133803
+            },
+            "recall": 0.3364485981308411,
+            "recallInterval": {
+              "lower": 0.2539726954082616,
+              "upper": 0.4302609805791796
+            },
+            "tp": 36
+          },
+          "en:PERSON": {
+            "coverageRecall": 0.32407407407407407,
+            "covered": 35,
+            "fn": 75,
+            "fp": 650,
+            "gold": 108,
+            "precision": 0.048316251830161056,
+            "precisionInterval": {
+              "lower": 0.0346081122713821,
+              "upper": 0.06707686600673732
+            },
+            "recall": 0.3055555555555556,
+            "recallInterval": {
+              "lower": 0.22660233791018655,
+              "upper": 0.39786607976903
+            },
+            "tp": 33
+          }
+        },
+        "cleanByLanguage": {
+          "en": {
+            "falseAlarm": 99,
+            "samples": 100
+          },
+          "tr": {
+            "falseAlarm": 0,
+            "samples": 0
+          }
+        },
+        "cleanFalseAlarm": 99,
+        "cleanSamples": 100,
+        "corpusDigest": "ef1c9443254831ba6236dd08784b151da90542aba22a34eb1c968484750e2e72",
+        "independent": 0,
+        "samples": 300,
+        "synthetic": 300
+      }
+    },
+    "en-deberta": {
+      "diagnosticOnly": true,
+      "routingImplemented": false,
+      "modelRevision": "9d83044fc56074f871ee811e7009778867beb7cf",
+      "boundaryChanges": 684,
+      "before": {
+        "abstained": 0,
+        "blocked": 0,
+        "buckets": {
+          "en:ADDRESS": {
+            "coverageRecall": 0.48598130841121495,
+            "covered": 52,
+            "fn": 99,
+            "fp": 317,
+            "gold": 107,
+            "precision": 0.024615384615384615,
+            "precisionInterval": {
+              "lower": 0.012524656549836855,
+              "upper": 0.047812804826993335
+            },
+            "recall": 0.07476635514018691,
+            "recallInterval": {
+              "lower": 0.038370103103435346,
+              "upper": 0.14063745446391163
+            },
+            "tp": 8
+          },
+          "en:EMAIL": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 5,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 0,
+              "upper": 0.43448246478317476
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          },
+          "en:INTERNAL": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 541,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 0,
+              "upper": 0.00705059932298276
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          },
+          "en:PERSON": {
+            "coverageRecall": 0.8611111111111112,
+            "covered": 93,
+            "fn": 45,
+            "fp": 80,
+            "gold": 108,
+            "precision": 0.4405594405594406,
+            "precisionInterval": {
+              "lower": 0.36180170918312066,
+              "upper": 0.5224271718391086
+            },
+            "recall": 0.5833333333333334,
+            "recallInterval": {
+              "lower": 0.4890571088397164,
+              "upper": 0.6718849978691908
+            },
+            "tp": 63
+          },
+          "en:PHONE": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 6,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 2.7755575615628914e-17,
+              "upper": 0.3903342879021653
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          },
+          "en:USERNAME": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 8,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 0,
+              "upper": 0.32440756488388023
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          }
+        },
+        "cleanByLanguage": {
+          "en": {
+            "falseAlarm": 66,
+            "samples": 100
+          },
+          "tr": {
+            "falseAlarm": 0,
+            "samples": 0
+          }
+        },
+        "cleanFalseAlarm": 66,
+        "cleanSamples": 100,
+        "corpusDigest": "ef1c9443254831ba6236dd08784b151da90542aba22a34eb1c968484750e2e72",
+        "independent": 0,
+        "samples": 300,
+        "synthetic": 300
+      },
+      "after": {
+        "abstained": 0,
+        "blocked": 0,
+        "buckets": {
+          "en:ADDRESS": {
+            "coverageRecall": 0.07476635514018691,
+            "covered": 8,
+            "fn": 99,
+            "fp": 317,
+            "gold": 107,
+            "precision": 0.024615384615384615,
+            "precisionInterval": {
+              "lower": 0.012524656549836855,
+              "upper": 0.047812804826993335
+            },
+            "recall": 0.07476635514018691,
+            "recallInterval": {
+              "lower": 0.038370103103435346,
+              "upper": 0.14063745446391163
+            },
+            "tp": 8
+          },
+          "en:EMAIL": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 5,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 0,
+              "upper": 0.43448246478317476
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          },
+          "en:INTERNAL": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 541,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 0,
+              "upper": 0.00705059932298276
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          },
+          "en:PERSON": {
+            "coverageRecall": 0.5833333333333334,
+            "covered": 63,
+            "fn": 45,
+            "fp": 80,
+            "gold": 108,
+            "precision": 0.4405594405594406,
+            "precisionInterval": {
+              "lower": 0.36180170918312066,
+              "upper": 0.5224271718391086
+            },
+            "recall": 0.5833333333333334,
+            "recallInterval": {
+              "lower": 0.4890571088397164,
+              "upper": 0.6718849978691908
+            },
+            "tp": 63
+          },
+          "en:PHONE": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 6,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 2.7755575615628914e-17,
+              "upper": 0.3903342879021653
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          },
+          "en:USERNAME": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 8,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 0,
+              "upper": 0.32440756488388023
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          }
+        },
+        "cleanByLanguage": {
+          "en": {
+            "falseAlarm": 66,
+            "samples": 100
+          },
+          "tr": {
+            "falseAlarm": 0,
+            "samples": 0
+          }
+        },
+        "cleanFalseAlarm": 66,
+        "cleanSamples": 100,
+        "corpusDigest": "ef1c9443254831ba6236dd08784b151da90542aba22a34eb1c968484750e2e72",
+        "independent": 0,
+        "samples": 300,
+        "synthetic": 300
+      }
+    }
+  },
+  "combined": {
+    "initial": {
+      "before": {
+        "abstained": 0,
+        "blocked": 0,
+        "buckets": {
+          "en:ADDRESS": {
+            "coverageRecall": 0.8317757009345794,
+            "covered": 89,
+            "fn": 71,
+            "fp": 5722,
+            "gold": 107,
+            "precision": 0.006252170892671066,
+            "precisionInterval": {
+              "lower": 0.004519641529637756,
+              "upper": 0.008643070315650848
+            },
+            "recall": 0.3364485981308411,
+            "recallInterval": {
+              "lower": 0.2539726954082616,
+              "upper": 0.4302609805791796
+            },
+            "tp": 36
+          },
+          "en:PERSON": {
+            "coverageRecall": 0.32407407407407407,
+            "covered": 35,
+            "fn": 75,
+            "fp": 804,
+            "gold": 108,
+            "precision": 0.03942652329749104,
+            "precisionInterval": {
+              "lower": 0.02820967840770299,
+              "upper": 0.05485170978627225
+            },
+            "recall": 0.3055555555555556,
+            "recallInterval": {
+              "lower": 0.22660233791018655,
+              "upper": 0.39786607976903
+            },
+            "tp": 33
+          },
+          "tr:ADDRESS": {
+            "coverageRecall": 0.19,
+            "covered": 19,
+            "fn": 99,
+            "fp": 1076,
+            "gold": 100,
+            "precision": 0.0009285051067780873,
+            "precisionInterval": {
+              "lower": 0.0001639227581725529,
+              "upper": 0.005240624572078583
+            },
+            "recall": 0.01,
+            "recallInterval": {
+              "lower": 0.0017674320641406505,
+              "upper": 0.054486196178705315
+            },
+            "tp": 1
+          },
+          "tr:PERSON": {
+            "coverageRecall": 0.96,
+            "covered": 96,
+            "fn": 22,
+            "fp": 1157,
+            "gold": 100,
+            "precision": 0.06315789473684211,
+            "precisionInterval": {
+              "lower": 0.0508996553417748,
+              "upper": 0.07812529590005239
+            },
+            "recall": 0.78,
+            "recallInterval": {
+              "lower": 0.6892964648501421,
+              "upper": 0.8499871761539459
+            },
+            "tp": 78
+          }
+        },
+        "cleanByLanguage": {
+          "en": {
+            "falseAlarm": 100,
+            "samples": 100
+          },
+          "tr": {
+            "falseAlarm": 100,
+            "samples": 100
+          }
+        },
+        "cleanFalseAlarm": 200,
+        "cleanSamples": 200,
+        "corpusDigest": "f64449c5c8a18d7c599f327aa89e430e5b8ad2a3111f27cd6b2bd2b10641d6ce",
+        "independent": 0,
+        "samples": 600,
+        "synthetic": 600
+      },
+      "after": {
+        "abstained": 0,
+        "blocked": 0,
+        "buckets": {
+          "en:ADDRESS": {
+            "coverageRecall": 0.8317757009345794,
+            "covered": 89,
+            "fn": 71,
+            "fp": 5722,
+            "gold": 107,
+            "precision": 0.006252170892671066,
+            "precisionInterval": {
+              "lower": 0.004519641529637756,
+              "upper": 0.008643070315650848
+            },
+            "recall": 0.3364485981308411,
+            "recallInterval": {
+              "lower": 0.2539726954082616,
+              "upper": 0.4302609805791796
+            },
+            "tp": 36
+          },
+          "en:PERSON": {
+            "coverageRecall": 0.32407407407407407,
+            "covered": 35,
+            "fn": 75,
+            "fp": 804,
+            "gold": 108,
+            "precision": 0.03942652329749104,
+            "precisionInterval": {
+              "lower": 0.02820967840770299,
+              "upper": 0.05485170978627225
+            },
+            "recall": 0.3055555555555556,
+            "recallInterval": {
+              "lower": 0.22660233791018655,
+              "upper": 0.39786607976903
+            },
+            "tp": 33
+          },
+          "tr:ADDRESS": {
+            "coverageRecall": 0.19,
+            "covered": 19,
+            "fn": 99,
+            "fp": 1076,
+            "gold": 100,
+            "precision": 0.0009285051067780873,
+            "precisionInterval": {
+              "lower": 0.0001639227581725529,
+              "upper": 0.005240624572078583
+            },
+            "recall": 0.01,
+            "recallInterval": {
+              "lower": 0.0017674320641406505,
+              "upper": 0.054486196178705315
+            },
+            "tp": 1
+          },
+          "tr:PERSON": {
+            "coverageRecall": 0.96,
+            "covered": 96,
+            "fn": 22,
+            "fp": 1157,
+            "gold": 100,
+            "precision": 0.06315789473684211,
+            "precisionInterval": {
+              "lower": 0.0508996553417748,
+              "upper": 0.07812529590005239
+            },
+            "recall": 0.78,
+            "recallInterval": {
+              "lower": 0.6892964648501421,
+              "upper": 0.8499871761539459
+            },
+            "tp": 78
+          }
+        },
+        "cleanByLanguage": {
+          "en": {
+            "falseAlarm": 100,
+            "samples": 100
+          },
+          "tr": {
+            "falseAlarm": 100,
+            "samples": 100
+          }
+        },
+        "cleanFalseAlarm": 200,
+        "cleanSamples": 200,
+        "corpusDigest": "f64449c5c8a18d7c599f327aa89e430e5b8ad2a3111f27cd6b2bd2b10641d6ce",
+        "independent": 0,
+        "samples": 600,
+        "synthetic": 600
+      },
+      "beforeAcceptance": {
+        "qualified": false,
+        "reasons": [
+          "INDEPENDENT_CORPORATE_CORPUS_REQUIRED",
+          "CLEAN_FALSE_ALARM_RATE",
+          "CLEAN_FALSE_ALARM_RATE_tr",
+          "RECALL_tr_PERSON",
+          "PRECISION_tr_PERSON",
+          "RECALL_tr_ADDRESS",
+          "PRECISION_tr_ADDRESS",
+          "CLEAN_FALSE_ALARM_RATE_en",
+          "RECALL_en_PERSON",
+          "PRECISION_en_PERSON",
+          "RECALL_en_ADDRESS",
+          "PRECISION_en_ADDRESS"
+        ]
+      },
+      "afterAcceptance": {
+        "qualified": false,
+        "reasons": [
+          "INDEPENDENT_CORPORATE_CORPUS_REQUIRED",
+          "CLEAN_FALSE_ALARM_RATE",
+          "CLEAN_FALSE_ALARM_RATE_tr",
+          "RECALL_tr_PERSON",
+          "PRECISION_tr_PERSON",
+          "RECALL_tr_ADDRESS",
+          "PRECISION_tr_ADDRESS",
+          "CLEAN_FALSE_ALARM_RATE_en",
+          "RECALL_en_PERSON",
+          "PRECISION_en_PERSON",
+          "RECALL_en_ADDRESS",
+          "PRECISION_en_ADDRESS"
+        ]
+      }
+    },
+    "alternative": {
+      "before": {
+        "abstained": 0,
+        "blocked": 0,
+        "buckets": {
+          "en:ADDRESS": {
+            "coverageRecall": 0.48598130841121495,
+            "covered": 52,
+            "fn": 99,
+            "fp": 321,
+            "gold": 107,
+            "precision": 0.0243161094224924,
+            "precisionInterval": {
+              "lower": 0.012371757481222382,
+              "upper": 0.04724058435562484
+            },
+            "recall": 0.07476635514018691,
+            "recallInterval": {
+              "lower": 0.038370103103435346,
+              "upper": 0.14063745446391163
+            },
+            "tp": 8
+          },
+          "en:EMAIL": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 5,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 0,
+              "upper": 0.43448246478317476
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          },
+          "en:INTERNAL": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 541,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 0,
+              "upper": 0.00705059932298276
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          },
+          "en:PERSON": {
+            "coverageRecall": 0.8611111111111112,
+            "covered": 93,
+            "fn": 45,
+            "fp": 234,
+            "gold": 108,
+            "precision": 0.21212121212121213,
+            "precisionInterval": {
+              "lower": 0.16945548610778988,
+              "upper": 0.26213881385896276
+            },
+            "recall": 0.5833333333333334,
+            "recallInterval": {
+              "lower": 0.4890571088397164,
+              "upper": 0.6718849978691908
+            },
+            "tp": 63
+          },
+          "en:PHONE": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 6,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 2.7755575615628914e-17,
+              "upper": 0.3903342879021653
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          },
+          "en:USERNAME": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 8,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 0,
+              "upper": 0.32440756488388023
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          },
+          "tr:ADDRESS": {
+            "coverageRecall": 0.04,
+            "covered": 4,
+            "fn": 100,
+            "fp": 383,
+            "gold": 100,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 0,
+              "upper": 0.009930318307673144
+            },
+            "recall": 0,
+            "recallInterval": {
+              "lower": 3.469446951953614e-18,
+              "upper": 0.03699349820698568
+            },
+            "tp": 0
+          },
+          "tr:EMAIL": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 3,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 5.551115123125783e-17,
+              "upper": 0.5614970317550454
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          },
+          "tr:INTERNAL": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 173,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 0,
+              "upper": 0.02172261440451652
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          },
+          "tr:PERSON": {
+            "coverageRecall": 0.88,
+            "covered": 88,
+            "fn": 22,
+            "fp": 214,
+            "gold": 100,
+            "precision": 0.2671232876712329,
+            "precisionInterval": {
+              "lower": 0.21963806202045377,
+              "upper": 0.32065625459719127
+            },
+            "recall": 0.78,
+            "recallInterval": {
+              "lower": 0.6892964648501421,
+              "upper": 0.8499871761539459
+            },
+            "tp": 78
+          },
+          "tr:USERNAME": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 6,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 2.7755575615628914e-17,
+              "upper": 0.3903342879021653
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          }
+        },
+        "cleanByLanguage": {
+          "en": {
+            "falseAlarm": 94,
+            "samples": 100
+          },
+          "tr": {
+            "falseAlarm": 98,
+            "samples": 100
+          }
+        },
+        "cleanFalseAlarm": 192,
+        "cleanSamples": 200,
+        "corpusDigest": "f64449c5c8a18d7c599f327aa89e430e5b8ad2a3111f27cd6b2bd2b10641d6ce",
+        "independent": 0,
+        "samples": 600,
+        "synthetic": 600
+      },
+      "after": {
+        "abstained": 0,
+        "blocked": 0,
+        "buckets": {
+          "en:ADDRESS": {
+            "coverageRecall": 0.07476635514018691,
+            "covered": 8,
+            "fn": 99,
+            "fp": 321,
+            "gold": 107,
+            "precision": 0.0243161094224924,
+            "precisionInterval": {
+              "lower": 0.012371757481222382,
+              "upper": 0.04724058435562484
+            },
+            "recall": 0.07476635514018691,
+            "recallInterval": {
+              "lower": 0.038370103103435346,
+              "upper": 0.14063745446391163
+            },
+            "tp": 8
+          },
+          "en:EMAIL": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 5,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 0,
+              "upper": 0.43448246478317476
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          },
+          "en:INTERNAL": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 541,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 0,
+              "upper": 0.00705059932298276
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          },
+          "en:PERSON": {
+            "coverageRecall": 0.5833333333333334,
+            "covered": 63,
+            "fn": 45,
+            "fp": 234,
+            "gold": 108,
+            "precision": 0.21212121212121213,
+            "precisionInterval": {
+              "lower": 0.16945548610778988,
+              "upper": 0.26213881385896276
+            },
+            "recall": 0.5833333333333334,
+            "recallInterval": {
+              "lower": 0.4890571088397164,
+              "upper": 0.6718849978691908
+            },
+            "tp": 63
+          },
+          "en:PHONE": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 6,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 2.7755575615628914e-17,
+              "upper": 0.3903342879021653
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          },
+          "en:USERNAME": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 8,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 0,
+              "upper": 0.32440756488388023
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          },
+          "tr:ADDRESS": {
+            "coverageRecall": 0,
+            "covered": 0,
+            "fn": 100,
+            "fp": 380,
+            "gold": 100,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 0,
+              "upper": 0.010007930963206886
+            },
+            "recall": 0,
+            "recallInterval": {
+              "lower": 3.469446951953614e-18,
+              "upper": 0.03699349820698568
+            },
+            "tp": 0
+          },
+          "tr:EMAIL": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 3,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 5.551115123125783e-17,
+              "upper": 0.5614970317550454
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          },
+          "tr:INTERNAL": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 173,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 0,
+              "upper": 0.02172261440451652
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          },
+          "tr:PERSON": {
+            "coverageRecall": 0.82,
+            "covered": 82,
+            "fn": 18,
+            "fp": 209,
+            "gold": 100,
+            "precision": 0.281786941580756,
+            "precisionInterval": {
+              "lower": 0.23320131856613635,
+              "upper": 0.33605871525687414
+            },
+            "recall": 0.82,
+            "recallInterval": {
+              "lower": 0.7333264161369926,
+              "upper": 0.8829977450105364
+            },
+            "tp": 82
+          },
+          "tr:USERNAME": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 6,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 2.7755575615628914e-17,
+              "upper": 0.3903342879021653
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          }
+        },
+        "cleanByLanguage": {
+          "en": {
+            "falseAlarm": 94,
+            "samples": 100
+          },
+          "tr": {
+            "falseAlarm": 98,
+            "samples": 100
+          }
+        },
+        "cleanFalseAlarm": 192,
+        "cleanSamples": 200,
+        "corpusDigest": "f64449c5c8a18d7c599f327aa89e430e5b8ad2a3111f27cd6b2bd2b10641d6ce",
+        "independent": 0,
+        "samples": 600,
+        "synthetic": 600
+      },
+      "beforeAcceptance": {
+        "qualified": false,
+        "reasons": [
+          "INDEPENDENT_CORPORATE_CORPUS_REQUIRED",
+          "CLEAN_FALSE_ALARM_RATE",
+          "CLEAN_FALSE_ALARM_RATE_tr",
+          "RECALL_tr_PERSON",
+          "PRECISION_tr_PERSON",
+          "RECALL_tr_ADDRESS",
+          "PRECISION_tr_ADDRESS",
+          "CLEAN_FALSE_ALARM_RATE_en",
+          "RECALL_en_PERSON",
+          "PRECISION_en_PERSON",
+          "RECALL_en_ADDRESS",
+          "PRECISION_en_ADDRESS"
+        ]
+      },
+      "afterAcceptance": {
+        "qualified": false,
+        "reasons": [
+          "INDEPENDENT_CORPORATE_CORPUS_REQUIRED",
+          "CLEAN_FALSE_ALARM_RATE",
+          "CLEAN_FALSE_ALARM_RATE_tr",
+          "RECALL_tr_PERSON",
+          "PRECISION_tr_PERSON",
+          "RECALL_tr_ADDRESS",
+          "PRECISION_tr_ADDRESS",
+          "CLEAN_FALSE_ALARM_RATE_en",
+          "RECALL_en_PERSON",
+          "PRECISION_en_PERSON",
+          "RECALL_en_ADDRESS",
+          "PRECISION_en_ADDRESS"
+        ]
+      }
+    }
+  },
+  "liveProbe": {
+    "schemaVersion": 1,
+    "ready": true,
+    "modelRevision": "a5ce382e4b2a833845ac55e252fa1b2d3d9daae054b9229913c6f058504355ff",
+    "capabilities": {
+      "local": true,
+      "offsetUnit": "utf16",
+      "languages": [
+        "en",
+        "tr"
+      ],
+      "entities": [
+        "ADDRESS",
+        "EMAIL",
+        "INTERNAL",
+        "PERSON",
+        "PHONE",
+        "USERNAME"
+      ],
+      "revision": "a5ce382e4b2a833845ac55e252fa1b2d3d9daae054b9229913c6f058504355ff",
+      "entitiesByLanguage": {
+        "tr": [
+          "ADDRESS",
+          "INTERNAL",
+          "PERSON"
+        ],
+        "en": [
+          "ADDRESS",
+          "EMAIL",
+          "INTERNAL",
+          "PERSON",
+          "PHONE",
+          "USERNAME"
+        ]
+      }
+    },
+    "scope": "three synthetic real-inference smoke cases; not independent accuracy evidence",
+    "qualified": false,
+    "results": [
+      {
+        "id": "tr-person-address",
+        "language": "tr",
+        "decision": "review",
+        "reasons": [
+          "REVIEW_REQUIRED"
+        ],
+        "types": [
+          "ADDRESS",
+          "PERSON"
+        ],
+        "expected": [
+          {
+            "type": "PERSON",
+            "start": 0,
+            "end": 12
+          },
+          {
+            "type": "ADDRESS",
+            "start": 14,
+            "end": 54
+          }
+        ],
+        "modelTypes": [
+          "ADDRESS",
+          "PERSON"
+        ],
+        "modelSpans": [
+          {
+            "start": 0,
+            "end": 12,
+            "type": "PERSON",
+            "score": 0.7023367285728455
+          },
+          {
+            "start": 0,
+            "end": 5,
+            "type": "PERSON",
+            "score": 0.955686628818512
+          },
+          {
+            "start": 6,
+            "end": 12,
+            "type": "PERSON",
+            "score": 0.8625904321670532
+          },
+          {
+            "start": 14,
+            "end": 35,
+            "type": "ADDRESS",
+            "score": 0.6934093236923218
+          },
+          {
+            "start": 48,
+            "end": 54,
+            "type": "ADDRESS",
+            "score": 0.9156591296195984
+          }
+        ],
+        "modelExpectedTypesPresent": true,
+        "expectedTypesPresent": true,
+        "modelExactSpans": false,
+        "modelTypedCoverage": false,
+        "runtimeMaskCoverage": true,
+        "utf16OffsetsValid": true,
+        "elapsedMs": 139
+      },
+      {
+        "id": "en-person-address",
+        "language": "en",
+        "decision": "redact",
+        "reasons": [],
+        "types": [
+          "ADDRESS",
+          "PERSON"
+        ],
+        "expected": [
+          {
+            "type": "PERSON",
+            "start": 11,
+            "end": 23
+          },
+          {
+            "type": "ADDRESS",
+            "start": 38,
+            "end": 59
+          }
+        ],
+        "modelTypes": [
+          "ADDRESS",
+          "PERSON"
+        ],
+        "modelSpans": [
+          {
+            "start": 11,
+            "end": 23,
+            "type": "PERSON",
+            "score": 0.48055481910705566
+          },
+          {
+            "start": 11,
+            "end": 17,
+            "type": "PERSON",
+            "score": 0.9703376889228821
+          },
+          {
+            "start": 18,
+            "end": 23,
+            "type": "PERSON",
+            "score": 0.7007918357849121
+          },
+          {
+            "start": 38,
+            "end": 48,
+            "type": "ADDRESS",
+            "score": 0.9663597941398621
+          },
+          {
+            "start": 50,
+            "end": 59,
+            "type": "ADDRESS",
+            "score": 0.923106849193573
+          }
+        ],
+        "modelExpectedTypesPresent": true,
+        "expectedTypesPresent": true,
+        "modelExactSpans": false,
+        "modelTypedCoverage": false,
+        "runtimeMaskCoverage": true,
+        "utf16OffsetsValid": true,
+        "elapsedMs": 118
+      },
+      {
+        "id": "en-utf16",
+        "language": "en",
+        "decision": "review",
+        "reasons": [
+          "REVIEW_REQUIRED"
+        ],
+        "types": [
+          "PERSON"
+        ],
+        "expected": [
+          {
+            "type": "PERSON",
+            "start": 14,
+            "end": 26
+          }
+        ],
+        "modelTypes": [
+          "PERSON"
+        ],
+        "modelSpans": [
+          {
+            "start": 18,
+            "end": 26,
+            "type": "PERSON",
+            "score": 0.5177352428436279
+          },
+          {
+            "start": 14,
+            "end": 20,
+            "type": "PERSON",
+            "score": 0.9647333025932312
+          },
+          {
+            "start": 21,
+            "end": 26,
+            "type": "PERSON",
+            "score": 0.6357547640800476
+          }
+        ],
+        "modelExpectedTypesPresent": true,
+        "expectedTypesPresent": true,
+        "modelExactSpans": false,
+        "modelTypedCoverage": true,
+        "runtimeMaskCoverage": true,
+        "utf16OffsetsValid": true,
+        "elapsedMs": 107
+      }
+    ]
+  },
+  "checks": {
+    "python": {
+      "passed": 50,
+      "failed": 0,
+      "skipped": 0
+    },
+    "scopedDiffCheck": "passed"
+  },
+  "limits": [
+    "No training, model replacement, new dependency, threshold change or gold change.",
+    "Declared-language subsets are diagnostic only; no safe runtime language routing was introduced.",
+    "Turkish ADDRESS recognition remains0/100 for isolated KVKK; it predicts O across a representative actual address.",
+    "Foreign-language union amplifies false alarms; English candidates remain weak even on English-only records.",
+    "Whitespace-counting span coverage can decrease at B entity boundaries without revealing non-whitespace PII.",
+    "All600 corpus records remain synthetic, with previously documented public-source/train-overlap limitations."
+  ]
+}

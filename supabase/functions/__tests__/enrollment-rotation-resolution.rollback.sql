@@ -10,6 +10,9 @@ declare
   old_hash text;
   new_hash text;
   v_key_hash text;
+  v_replacement_key_hash text;
+  v_agent_id uuid;
+  v_old_key_id uuid;
   result jsonb;
 begin
   old_hash := encode(digest(u::text || ':old', 'sha256'), 'hex');
@@ -82,7 +85,64 @@ begin
      or (select count(*) from public.api_keys where tenant_id = u and key_hash = v_key_hash) <> 1 then
     raise exception 'consumed rotation token replayed or exchange did not commit key';
   end if;
+
+  -- An unknown committed enrollment is repaired by operator revocation and a
+  -- newly authorized token, keeping the original installation identity.
+  v_agent_id := (result->>'agent_id')::uuid;
+  select id into strict v_old_key_id from public.api_keys
+    where tenant_id = u and key_hash = v_key_hash;
+  result := public.revoke_api_key_with_audit(u, u, v_old_key_id);
+  if result->>'status' is distinct from 'revoked'
+     or not exists (select 1 from public.api_keys
+                    where id = v_old_key_id and revoked)
+     or (select count(*) from public.admin_audit_logs
+          where tenant_id = u and action = 'api_key.revoke'
+            and detail->>'id' = v_old_key_id::text) <> 1 then
+    raise exception 'operator did not revoke the committed enrollment key: %', result;
+  end if;
+  old_hash := encode(digest(u::text || ':operator-repair-token', 'sha256'), 'hex');
+  v_replacement_key_hash := encode(digest(u::text || ':operator-repair-key', 'sha256'), 'hex');
+  result := public.issue_enrollment_token_with_audit(u, u, 'operator-repair', 1, old_hash);
+  if result->>'status' is distinct from 'issued'
+     or public.resolve_enrollment_token(old_hash)->>'tenant_id' is distinct from u::text then
+    raise exception 'operator repair token was not authorized: %', result;
+  end if;
+  result := public.exchange_enrollment_token(old_hash, 'rotation-test', 'test', '2', v_replacement_key_hash);
+  if result->>'status' is distinct from 'enrolled'
+     or result->>'agent_id' is distinct from v_agent_id::text
+     or (select count(*) from public.agents where tenant_id = u) <> 1
+     or (select count(*) from public.api_keys where tenant_id = u) <> 2
+     or (select count(*) from public.api_keys where tenant_id = u and not revoked) <> 1
+     or not exists (select 1 from public.api_keys
+                    where tenant_id = u and key_hash = v_replacement_key_hash
+                      and agent_id = v_agent_id and not revoked)
+     or not exists (select 1 from public.api_keys where id = v_old_key_id and revoked) then
+    raise exception 'operator repair changed device cardinality or revived the old key: %', result;
+  end if;
+  if public.resolve_enrollment_token(old_hash) is not null
+     or (public.exchange_enrollment_token(old_hash, 'repair-replay', null, null,
+          encode(digest(u::text || ':repair-replay', 'sha256'), 'hex')))->>'status' is distinct from 'invalid_token'
+     or (select count(*) from public.agents where tenant_id = u) <> 1
+     or (select count(*) from public.api_keys where tenant_id = u) <> 2
+     or (select count(*) from public.api_keys where tenant_id = u and not revoked) <> 1 then
+    raise exception 'operator repair token replay created a device or key';
+  end if;
+  perform set_config('aidr.fixture.rotation_tenant', u::text, true);
   raise notice 'ENROLLMENT_ROTATION_RESOLUTION_OK';
 end;
 $checks$;
+
+select set_config('request.jwt.claim.sub', current_setting('aidr.fixture.rotation_tenant'), true);
+select set_config('request.jwt.claim.role', 'authenticated', true);
+set local role authenticated;
+do $seat_check$
+begin
+  if (select current_agents from public.seat_usage
+       where tenant_id = current_setting('aidr.fixture.rotation_tenant')::uuid) is distinct from 1 then
+    raise exception 'operator repair consumed more than one browser-visible seat';
+  end if;
+  raise notice 'ENROLLMENT_OPERATOR_REPAIR_ONE_SEAT_OK';
+end;
+$seat_check$;
+reset role;
 rollback;

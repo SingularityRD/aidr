@@ -52,6 +52,10 @@ vi.mock("node:os", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("node:os")>();
 	return { ...actual, homedir: () => testHome };
 });
+vi.mock("@singularityrd/aidr-core", async (importOriginal) => ({
+	...(await importOriginal<typeof import("@singularityrd/aidr-core")>()),
+	...(await vi.importActual<Record<string, unknown>>("../../../core/src/secret-store.js")),
+}));
 
 // These cases drive the store explicitly; the ambient selection must not leak in.
 delete process.env.AIDR_SECRET_STORE;
@@ -166,7 +170,7 @@ function dpapiRunner(): { runner: CommandRunner; calls: RecordedCall[] } {
 
 /** Simulates `security(1)`'s generic-password commands. */
 function keychainRunner(): { runner: CommandRunner; calls: RecordedCall[] } {
-	const items = new Map<string, string>();
+	const items = new Map<string, { secret: string; label: string; marker: string }>();
 	const calls: RecordedCall[] = [];
 	const notFound = {
 		status: 44,
@@ -178,11 +182,21 @@ function keychainRunner(): { runner: CommandRunner; calls: RecordedCall[] } {
 			case "list-keychains":
 				return { status: 0, stdout: '    "login.keychain-db"\n' };
 			case "add-generic-password":
-				items.set(account, args[args.indexOf("-w") + 1] ?? "");
+				items.set(account, {
+					secret: args[args.indexOf("-w") + 1] ?? "",
+					label: args[args.indexOf("-l") + 1] ?? "",
+					marker: args[args.indexOf("-G") + 1] ?? "",
+				});
 				return { status: 0 };
 			case "find-generic-password": {
-				const secret = items.get(account);
-				return secret === undefined ? notFound : { status: 0, stdout: `${secret}\n` };
+				const item = args.includes("-a")
+					? items.get(account)
+					: [...items.values()].find(
+							(value) =>
+								value.label === args[args.indexOf("-l") + 1] &&
+								value.marker === args[args.indexOf("-G") + 1],
+						);
+				return item === undefined ? notFound : { status: 0, stdout: `${item.secret}\n` };
 			}
 			case "delete-generic-password":
 				return items.delete(account) ? { status: 0 } : notFound;
@@ -192,8 +206,8 @@ function keychainRunner(): { runner: CommandRunner; calls: RecordedCall[] } {
 	};
 	const runner: CommandRunner = (command, args, request: CommandRequest): CommandResult => {
 		calls.push({ command, args, input: request.input });
-		if (command !== "security") return { status: 127, error: new Error("spawn ENOENT") };
-		return handle(args);
+		if (command !== "/usr/bin/security") return { status: 127, error: new Error("spawn ENOENT") };
+		return handle(args[0] === "-q" ? (request.input ?? "").replace(/\n$/, "").split(" ") : args);
 	};
 	return { runner, calls };
 }
@@ -270,12 +284,11 @@ describe("platform secret-store backends (injected command runner)", () => {
 		// Deleting something already gone is not an error.
 		expect(() => store.revoke("aidr-0000000000000002")).not.toThrow();
 
-		const added = calls.find((call) => call.args[0] === "add-generic-password");
-		expect(added?.args).toContain("singularity-aidr-cli");
-		// `security add-generic-password` has no stdin path for the value, so it is
-		// passed as an argument — the adapter documents that exposure instead of
-		// hiding it. Read and delete never put the credential on a command line.
-		expect(added?.args).toContain(secret);
+		const added = calls.find((call) => call.args[0] === "-q");
+		expect(added?.args).toEqual(["-q", "-i"]);
+		expect(added?.input).toContain(`-w ${Buffer.from(secret).toString("base64")} -U\n`);
+		for (const call of calls) expect(call.args.join(" ")).not.toContain(secret);
+		expect(calls.every((call) => call.command === "/usr/bin/security")).toBe(true);
 		const read = calls.find((call) => call.args[0] === "find-generic-password");
 		expect(read?.args.join(" ")).not.toContain(secret);
 	});
@@ -526,6 +539,7 @@ describe("config manager with a secret store", () => {
 	});
 
 	it("does not misidentify the separate managed API key as the CLI setup key", async () => {
+		process.env.AIDR_COMMERCIAL = "1";
 		const secrets = new Map<string, string>();
 		const store = fakeVault("windows-dpapi", secrets);
 		await createConfig(env, false, { secretStore: store });
@@ -536,9 +550,14 @@ describe("config manager with a secret store", () => {
 		);
 
 		rotateSecret({ secretStore: store });
-		expect((storedDocument().auth as { api_key: string }).api_key).toBe(managedKey);
+		const auth = storedDocument().auth as { api_key?: string; api_key_ref: { id: string } };
+		expect(auth.api_key).toBeUndefined();
+		expect(store.get(auth.api_key_ref.id)).toBe(managedKey);
 		revokeSecret({ secretStore: store });
-		expect((storedDocument().auth as { api_key: string }).api_key).toBe(managedKey);
+		expect((storedDocument().auth as { api_key_ref: { id: string } }).api_key_ref.id).toBe(
+			auth.api_key_ref.id,
+		);
+		expect(store.get(auth.api_key_ref.id)).toBe(managedKey);
 	});
 
 	it("keeps --force working on the explicitly selected file fallback", async () => {

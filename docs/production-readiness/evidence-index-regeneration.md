@@ -86,9 +86,10 @@ failure that looked like a product defect:
 - **The candidate is rebuilt before the claim records are rebound.** Claim records
   carry the candidate inventory digest they scanned; rebuilding the candidate
   afterwards invalidates the records the refresh just wrote.
-- **The kit gate's output is cleared immediately before it runs**, not at the
-  start. That gate refuses an existing output directory by design, and an earlier
-  gate can regenerate it.
+- **Prior evidence and kit outputs are preserved.** The runner checks its fixed
+  output paths before the build and checks the kit paths again before assembly.
+  It stops on a collision; retry from a fresh isolated worktree rather than
+  clearing, renaming or overwriting an earlier run.
 
 ### Guard agreement
 

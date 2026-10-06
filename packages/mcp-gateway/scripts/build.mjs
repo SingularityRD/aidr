@@ -20,6 +20,7 @@ await Promise.all([
   ["cli.mjs", "aidr-mcp-gateway.mjs"],
   ["approve.mjs", "aidr-mcp-approve.mjs"],
   ["stdio-cli.mjs", "aidr-mcp-stdio.mjs"],
+  ["library.mjs", "aidr-mcp-library.mjs"],
 ].map(async ([entry, output]) => {
   await build({
     entryPoints: [resolve(packageRoot, "src", entry)],

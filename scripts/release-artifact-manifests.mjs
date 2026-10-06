@@ -15,6 +15,7 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { resolveGitTreeSha256 } from "./lib/release-evidence-digests.mjs";
 import { assertReleaseSourceClean } from "./lib/release-source-clean.mjs";
+import { assertCurrentPrebuiltSbom, assertPrebuiltSbomDigest } from "./lib/prebuilt-sbom-validation.mjs";
 
 const repoRoot = process.cwd();
 const commercial = process.env.AIDR_RELEASE_MODE === "commercial" || process.env.AIDR_FINAL_RELEASE === "1";
@@ -204,15 +205,27 @@ async function prepareReleaseBundle(dir, packageDigestsValue, provenance) {
 async function reuseSbomEvidence(source, destination, bindings) {
 	const sourcePath = path.resolve(source);
 	if (!existsSync(sourcePath)) fail(`Prebuilt SBOM is missing: ${sourcePath}`);
+	const sourceBytes = await readFile(sourcePath);
+	const trusted = assertPrebuiltSbomDigest(sourceBytes, process.env.AIDR_EXPECTED_PREBUILT_SBOM_SHA256, { required: requireSbom });
+	if (!trusted) console.warn("WARN: Developer prebuilt SBOM has no trusted build-job digest; it is not accepted production evidence.");
 	let payload;
 	try {
-		payload = JSON.parse(await readFile(sourcePath, "utf8"));
+		payload = JSON.parse(sourceBytes.toString("utf8"));
 	} catch (error) {
 		fail(`Prebuilt SBOM is invalid: ${error instanceof Error ? error.message : String(error)}`);
 	}
-	if (payload?.bomFormat !== "CycloneDX" || payload?.specVersion !== "1.5" || !Array.isArray(payload?.components)) {
-		fail("Prebuilt SBOM is not a CycloneDX 1.5 document.");
-	}
+	assertCurrentPrebuiltSbom(payload, {
+		pnpmLockBytes: await readFile(path.join(repoRoot, "pnpm-lock.yaml")),
+		pythonLockBytes: await readFile(path.join(repoRoot, "services/aig-bridge/requirements-runtime.lock")),
+		pythonEvidenceJson: await readFile(path.join(repoRoot, "services/aig-bridge/pypi-runtime-licenses.json"), "utf8"),
+		sourceDigest: bindings.sourceDigest,
+		workspacePackages: (await Promise.all((await readdir(path.join(repoRoot, "packages"), { withFileTypes: true }))
+			.filter((entry) => entry.isDirectory())
+			.map(async (entry) => {
+				const packagePath = path.join(repoRoot, "packages", entry.name, "package.json");
+				return existsSync(packagePath) ? JSON.parse(await readFile(packagePath, "utf8")) : null;
+			}))).filter(Boolean),
+	});
 	const properties = Array.isArray(payload.metadata?.properties) ? payload.metadata.properties : [];
 	const rebound = properties.filter((entry) => entry?.name !== "aidr:source-digest" && entry?.name !== "aidr:data-digest");
 	rebound.push({ name: "aidr:source-digest", value: bindings.sourceDigest });

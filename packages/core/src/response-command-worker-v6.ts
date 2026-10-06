@@ -4,18 +4,24 @@ import {
 	FleetResponseCommandConsumer,
 	type FleetResponseConsumerOptions,
 	type FleetResponseCycleResult,
+	type FleetResponseSignedDelivery,
 } from "./response-command-consumer-v6.js";
 import {
 	type FleetJournalCurrent,
 	type FleetJournalState,
+	type FleetResponseControlHead,
 	FleetResponseJournal,
+	MAX_RECENT_FLEET_COMMANDS,
 	rememberCommand,
+	retainRecentCommands,
 } from "./response-command-journal-v6.js";
 
 export interface FleetResponseWorkerOptions extends FleetResponseConsumerOptions {
 	adapter: FleetResponseActionAdapter;
 	/** Absolute, host-private journal prefix. Two authenticated slots are used. */
 	statePath: string;
+	/** Canonical base64 random 32-byte MAC secret stored in the native secret vault. */
+	stableJournalKey?: string;
 	/** Service telemetry hook for every cycle, including uncertain outcomes. */
 	onCycle?: (result: FleetResponseCycleResult, signal?: AbortSignal) => void | Promise<void>;
 }
@@ -39,6 +45,8 @@ export class FleetResponseCommandWorker extends FleetResponseCommandConsumer {
 			options.identity,
 			options.apiKey,
 			options.installationId,
+			options.stableJournalKey,
+			options.now,
 		);
 		this.actionAdapter = options.adapter;
 		this.onCycle = options.onCycle;
@@ -49,12 +57,47 @@ export class FleetResponseCommandWorker extends FleetResponseCommandConsumer {
 		command: FleetResponseCommand,
 		phase: FleetJournalCurrent["phase"],
 		resultCode: string | null = null,
+		delivery: FleetResponseSignedDelivery | undefined = state.current?.delivery,
 	): Promise<FleetJournalState> {
-		return this.journal.save({ ...state, current: { command, phase, resultCode } });
+		if (!delivery) throw new Error("missing_fleet_command_delivery");
+		let control: FleetResponseControlHead = state.response_control;
+		if (phase === "result_pending" && resultCode === null) {
+			if (command.commandType === "agent_pause")
+				control = { status: "paused", pause_delivery: delivery, resume_delivery: null };
+			if (command.commandType === "agent_resume") {
+				if (this.controlError(state, command, delivery))
+					throw new Error("fleet_response_rollback_state_mismatch");
+				control = {
+					status: "running",
+					pause_delivery: state.response_control.pause_delivery,
+					resume_delivery: delivery,
+				};
+			}
+		}
+		return this.journal.save({
+			...state,
+			response_control: control,
+			current: { command, delivery, phase, resultCode },
+		});
+	}
+
+	private controlError(
+		state: FleetJournalState,
+		command: FleetResponseCommand,
+		delivery = state.current?.delivery,
+	): string | null {
+		if (command.commandType !== "agent_resume") return null;
+		const pause = state.response_control.pause_delivery;
+		return state.response_control.status === "paused" &&
+			pause?.payload.id === command.rollbackOf &&
+			Date.parse(String(delivery?.payload.created_at)) >=
+				Date.parse(String(pause.payload.created_at))
+			? null
+			: "rollback_state_mismatch";
 	}
 
 	private async finish(state: FleetJournalState, commandId: string): Promise<void> {
-		await this.journal.save(rememberCommand(state, commandId));
+		await this.journal.save(rememberCommand(state, commandId, this.now()));
 	}
 
 	private async resumeRejection(state: FleetJournalState): Promise<FleetResponseCycleResult> {
@@ -87,7 +130,8 @@ export class FleetResponseCommandWorker extends FleetResponseCommandConsumer {
 		let observed = false;
 		try {
 			const verification = await this.runBoundedAction(
-				(actionSignal) => this.actionAdapter.verify(current.command, actionSignal),
+				(actionSignal) =>
+					this.actionAdapter.verify(current.command, actionSignal, current.delivery),
 				signal,
 			);
 			observed = verification.observed;
@@ -119,6 +163,7 @@ export class FleetResponseCommandWorker extends FleetResponseCommandConsumer {
 			code = await this.executeAndVerify(
 				intent.current?.command ?? current.command,
 				this.actionAdapter,
+				intent.current?.delivery ?? current.delivery,
 				signal,
 			);
 		} catch (error) {
@@ -141,6 +186,16 @@ export class FleetResponseCommandWorker extends FleetResponseCommandConsumer {
 		const current = state.current;
 		if (!current)
 			return { status: "outcome_unknown", stage: "ack", reason: "journal_missing_command" };
+		const controlError = this.controlError(state, current.command);
+		if (controlError) {
+			const pending = await this.saveCurrent(
+				state,
+				current.command,
+				"result_pending",
+				controlError,
+			);
+			return this.resumeResult(pending);
+		}
 		// A service upgrade may remove an action from the installed adapter while
 		// an acknowledged command is waiting in the journal. Never apply it then.
 		if (!this.commandSupported(current.command, this.actionAdapter)) {
@@ -171,6 +226,16 @@ export class FleetResponseCommandWorker extends FleetResponseCommandConsumer {
 		const current = state.current;
 		if (!current)
 			return { status: "outcome_unknown", stage: "ack", reason: "journal_missing_command" };
+		if (Date.parse(current.command.expiresAt) <= this.now()) {
+			await this.finish(state, current.command.id);
+			return { status: "expired", commandId: current.command.id };
+		}
+		const controlError = this.controlError(state, current.command);
+		if (controlError) {
+			const result = await this.rejectUnsupported(current.command.id, controlError);
+			if (result.status === "rejected") await this.finish(state, current.command.id);
+			return result;
+		}
 		if (!this.commandSupported(current.command, this.actionAdapter)) {
 			const rejecting = await this.saveCurrent(state, current.command, "reject_intent");
 			return this.resumeRejection(rejecting);
@@ -199,6 +264,10 @@ export class FleetResponseCommandWorker extends FleetResponseCommandConsumer {
 		signal?: AbortSignal,
 	): Promise<FleetResponseCycleResult> {
 		const phase = state.current?.phase;
+		if (state.current && (phase === "polled" || phase === "acknowledged")) {
+			const error = this.deliveryError(state.current.command, state.current.delivery);
+			if (error) return { status: "invalid_command", reason: error };
+		}
 		if (phase === "polled") return this.resumePolled(state, signal);
 		if (phase === "reject_intent") return this.resumeRejection(state);
 		if (phase === "acknowledged") return this.resumeAcknowledged(state, signal);
@@ -210,17 +279,31 @@ export class FleetResponseCommandWorker extends FleetResponseCommandConsumer {
 	private async tickLocked(signal?: AbortSignal): Promise<FleetResponseCycleResult> {
 		let state = await this.journal.load();
 		if (state.current) return this.resume(state, signal);
+		state = retainRecentCommands(state, this.now());
+		if (state.recent_ids.length >= MAX_RECENT_FLEET_COMMANDS)
+			return { status: "outcome_unknown", stage: "poll", reason: "command_replay_cache_full" };
 		const polled = await this.pollCommand();
-		if ("status" in polled) return polled;
-		if (state.recent_ids.includes(polled.id)) {
+		if ("status" in polled && polled.status !== "idle") return polled;
+		if (!("status" in polled) && state.recent_ids.includes(polled.command.id)) {
 			return {
 				status: "outcome_unknown",
-				commandId: polled.id,
+				commandId: polled.command.id,
 				stage: "poll",
 				reason: "replayed_command_id",
 			};
 		}
-		state = await this.saveCurrent(state, polled, "polled");
+		const checkpointAt = this.now();
+		if (
+			state.last_successful_poll_at !== null &&
+			checkpointAt < Date.parse(state.last_successful_poll_at)
+		)
+			throw new Error("fleet_journal_clock_moved_backwards");
+		state = { ...state, last_successful_poll_at: new Date(checkpointAt).toISOString() };
+		if ("status" in polled) {
+			await this.journal.save(state);
+			return polled;
+		}
+		state = await this.saveCurrent(state, polled.command, "polled", null, polled.delivery);
 		return this.resume(state, signal);
 	}
 

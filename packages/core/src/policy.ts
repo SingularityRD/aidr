@@ -2,18 +2,20 @@ import { lstat, realpath } from "node:fs/promises";
 import { isIP } from "node:net";
 import { dirname, isAbsolute, join, parse, relative, sep } from "node:path";
 import { evaluateInfrastructurePolicy } from "./aig-policy.js";
+import { isCommercialBuild } from "./build-flavor.js";
 
 import { resolvePath } from "./config.js";
 import { getFileContent } from "./file-utils.js";
 import { matchPackageIntel } from "./intel/api.js";
 import { loadMergedIntelFromDisk } from "./intel/loader.js";
-import { loadRevocationsCache } from "./managed.js";
+import { isPremiumModuleEnabled, loadRevocationsCache, type ManagedState } from "./managed.js";
 import { inspectMcpServerInventory } from "./mcp-inventory.js";
 import {
 	legacyMcpToolSelector,
 	matchesMcpToolSelector,
 	mcpToolSelector,
 } from "./mcp-tool-identity.js";
+import { isPrivateIpAddress } from "./mcp-transport.js";
 import {
 	extractPackagesFromCommand,
 	extractPackagesFromManifest,
@@ -74,7 +76,10 @@ async function isUnderRoot(candidatePath: string, root: string): Promise<boolean
 function parseUrlHost(raw: string): { host: string; isIp: boolean } | null {
 	try {
 		const u = new URL(raw);
-		const host = u.hostname.trim();
+		const host = u.hostname
+			.trim()
+			.replace(/^\[|\]$/g, "")
+			.replace(/\.+$/, "");
 		if (!host) return null;
 		return { host, isIp: isIP(host) !== 0 };
 	} catch {
@@ -87,18 +92,6 @@ function isSubdomainOrExact(host: string, domain: string): boolean {
 	const d = domain.toLowerCase().replace(/^\.+/, "").replace(/\.+$/, "");
 	if (!d) return false;
 	return h === d || h.endsWith(`.${d}`);
-}
-
-function isPrivateIp(host: string): boolean {
-	// Minimal IPv4 private range checks; only enforce for literal IP hosts.
-	const parts = host.split(".").map((n) => Number.parseInt(n, 10));
-	if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) return false;
-	const [a, b] = parts;
-	if (a === 10) return true;
-	if (a === 127) return true;
-	if (a === 192 && b === 168) return true;
-	if (a === 172 && b !== undefined && b >= 16 && b <= 31) return true;
-	return false;
 }
 
 async function loadUrlDenylistHosts(path: string): Promise<Set<string>> {
@@ -120,13 +113,16 @@ async function loadUrlDenylistHosts(path: string): Promise<Set<string>> {
 
 type CachedIntel = {
 	loadedAt: number;
-	revocationIdentity: string;
+	identity: string;
 	merged: Awaited<ReturnType<typeof loadMergedIntelFromDisk>>;
 };
 
 let cachedIntel: CachedIntel | null = null;
 
-async function getMergedIntelCached(config: Config): Promise<CachedIntel["merged"]> {
+async function getMergedIntelCached(
+	config: Config,
+	managedState: ManagedState,
+): Promise<CachedIntel["merged"]> {
 	const now = Date.now();
 	const ttlMs = Math.max(0, Number(config.intel_packs?.cache_ttl_seconds ?? 60)) * 1000;
 
@@ -149,12 +145,25 @@ async function getMergedIntelCached(config: Config): Promise<CachedIntel["merged
 	} catch {
 		revocations = null;
 	}
-	const revocationIdentity = `${requireRevocations}:${JSON.stringify(revocations)}`;
-	if (
-		cachedIntel &&
-		cachedIntel.revocationIdentity === revocationIdentity &&
-		now - cachedIntel.loadedAt < ttlMs
-	)
+	const entitlement = managedState.entitlement;
+	const identity = JSON.stringify({
+		packsDir: resolvePath(config.intel_packs.packs_dir),
+		trustedKeysPath: resolvePath(config.intel_packs.trusted_keys_path),
+		entitlement:
+			entitlement?.schema_version === 2
+				? {
+						tenant: entitlement.tenant_id,
+						serial: entitlement.serial,
+						expiresAt: entitlement.expires_at,
+						graceUntil: entitlement.grace_until,
+						alg: managedState.entitlement_alg,
+						signature: managedState.entitlement_sig,
+					}
+				: null,
+		requireRevocations,
+		revocations,
+	});
+	if (cachedIntel && cachedIntel.identity === identity && now - cachedIntel.loadedAt < ttlMs)
 		return cachedIntel.merged;
 
 	const merged = await loadMergedIntelFromDisk({
@@ -163,7 +172,7 @@ async function getMergedIntelCached(config: Config): Promise<CachedIntel["merged
 		requireRevocations,
 		revocations,
 	});
-	cachedIntel = { loadedAt: now, revocationIdentity, merged };
+	cachedIntel = { loadedAt: now, identity, merged };
 	return merged;
 }
 
@@ -214,6 +223,8 @@ export async function evaluatePolicy(
 	artifacts: Artifact[],
 	config: Config,
 	toolInput?: Record<string, unknown>,
+	/** Current state after the caller verifies its signature and applies revocations. */
+	managedState: ManagedState = {},
 ): Promise<Verdict | null> {
 	if (!config.policy.enabled) return null;
 	const infrastructureVerdict = await evaluateInfrastructurePolicy(artifacts, config);
@@ -221,9 +232,15 @@ export async function evaluatePolicy(
 
 	// --- Intel: legacy denylist file + signed intel packs ---
 	// Back-compat: if `intel.enabled` is on, we also consider signed packs on disk.
-	const packsEnabled = config.intel_packs?.enabled === true || config.intel?.enabled === true;
-	const merged = packsEnabled ? await getMergedIntelCached(config).catch(() => null) : null;
-	const signedPacksEnabled = config.intel_packs?.enabled === true;
+	const packsConfigured = config.intel_packs?.enabled === true || config.intel?.enabled === true;
+	const enforcePremium = isCommercialBuild() || config.mode === "managed";
+	const packsEntitled = !enforcePremium || isPremiumModuleEnabled(managedState, "intel_packs");
+	if (packsConfigured && !packsEntitled) cachedIntel = null;
+	const merged =
+		packsConfigured && packsEntitled
+			? await getMergedIntelCached(config, managedState).catch(() => null)
+			: null;
+	const signedPacksEnabled = config.intel_packs?.enabled === true && packsEntitled;
 	if (signedPacksEnabled && !merged) {
 		return makeVerdict({
 			decision: "ask",
@@ -359,7 +376,11 @@ export async function evaluatePolicy(
 			const parsed = parseUrlHost(a.value);
 			if (!parsed) continue;
 
-			if (parsed.isIp && config.policy.network.deny_private_ips && isPrivateIp(parsed.host)) {
+			if (
+				parsed.isIp &&
+				config.policy.network.deny_private_ips &&
+				isPrivateIpAddress(parsed.host)
+			) {
 				const decision = config.policy.network.deny_action === "block" ? "deny" : "ask";
 				return makeVerdict({
 					decision,
@@ -443,10 +464,11 @@ export async function evaluatePolicy(
 					});
 				}
 
+				const resolvedFilePath = await resolvePolicyPath(filePath);
 				for (const pattern of config.policy.filesystem.deny_write_patterns ?? []) {
 					try {
 						const re = new RegExp(pattern, "i");
-						if (re.test(filePath)) {
+						if (re.test(filePath) || (resolvedFilePath && re.test(resolvedFilePath))) {
 							return makeVerdict({
 								decision: "deny",
 								category: "file_write",

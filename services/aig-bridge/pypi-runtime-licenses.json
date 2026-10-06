@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "source_lock": "services/aig-bridge/requirements-runtime.lock",
-  "source_lock_sha256": "e0b423c8014a33e47f730b2fcdcdfb95b77fd9a6915604c4f889980e98f9094b",
+  "source_lock_sha256": "af4cf84b33c07df728ddb2e8b9a0f10c1d4f8f309295cc18bf808b8377a5c598",
   "evidence_origin": "Core Metadata and dist-info licence files read from the SHA-256-verified wheels pinned by the lock",
   "packages": [
     {
@@ -136,9 +136,9 @@
     },
     {
       "name": "cryptography",
-      "version": "50.0.1",
-      "wheel": "cryptography-50.0.1-cp311-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
-      "wheel_sha256": "ff838d62ec1bfce4f9ba7fa16f4a7b554cd8d0c299e6be37502161a660c84eef",
+      "version": "50.0.2",
+      "wheel": "cryptography-50.0.2-cp311-abi3-manylinux_2_34_x86_64.whl",
+      "wheel_sha256": "9dab55f57c74c3cad24c323bacbbd04be4705ba6eb0d92e920b1fc4837ed5079",
       "core_metadata": {
         "license_expression": "Apache-2.0 OR BSD-3-Clause",
         "license_field": null,
@@ -355,44 +355,6 @@
         }
       ],
       "bundled_native_libraries": []
-    },
-    {
-      "name": "psycopg-binary",
-      "version": "3.2.10",
-      "wheel": "psycopg_binary-3.2.10-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
-      "wheel_sha256": "14bcbcac0cab465d88b2581e43ec01af4b01c9833e663f1352e05cb41be19e44",
-      "core_metadata": {
-        "license_expression": null,
-        "license_field": "GNU Lesser General Public License v3 (LGPLv3)",
-        "license_classifiers": [
-          "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)"
-        ],
-        "license_file_headers": [
-          "LICENSE.txt"
-        ]
-      },
-      "license_files": [
-        {
-          "path": "licenses/LICENSE.txt",
-          "sha256": "e3a994d82e644b03a792a930f574002658412f62407f5fee083f2555c5f23118"
-        }
-      ],
-      "bundled_native_libraries": [
-        "psycopg_binary.libs/libcom_err-2abe824b.so.2.1",
-        "psycopg_binary.libs/libcrypto-d18e4b18.so.3",
-        "psycopg_binary.libs/libgssapi_krb5-497db0c6.so.2.2",
-        "psycopg_binary.libs/libk5crypto-b1f99d5c.so.3.1",
-        "psycopg_binary.libs/libkeyutils-dfe70bd6.so.1.5",
-        "psycopg_binary.libs/libkrb5-fcafa220.so.3.3",
-        "psycopg_binary.libs/libkrb5support-d0bcff84.so.0.1",
-        "psycopg_binary.libs/liblber-b2a4ca0f.so.2.0.200",
-        "psycopg_binary.libs/libldap-7ba8ecde.so.2.0.200",
-        "psycopg_binary.libs/libpcre-9513aab5.so.1.2.0",
-        "psycopg_binary.libs/libpq-6a0c3ecd.so.5.17",
-        "psycopg_binary.libs/libsasl2-883649fd.so.3.0.0",
-        "psycopg_binary.libs/libselinux-0922c95c.so.1",
-        "psycopg_binary.libs/libssl-c434c5f0.so.3"
-      ]
     },
     {
       "name": "pycparser",

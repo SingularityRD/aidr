@@ -182,14 +182,13 @@ function quarantineValue(
 }
 
 function unavailableReplacement(inspection: Record<string, unknown>): Record<string, unknown> {
-	const { decision: _decision, ...withoutDecision } = inspection;
 	const specificOutput = inspection.hookSpecificOutput;
 	const fields =
 		specificOutput !== null && typeof specificOutput === "object"
 			? (specificOutput as Record<string, unknown>)
 			: {};
 	return {
-		...withoutDecision,
+		...inspection,
 		hookSpecificOutput: {
 			...fields,
 			hookEventName: "PostToolUse",

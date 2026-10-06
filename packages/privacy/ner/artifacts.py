@@ -86,7 +86,7 @@ def utf16_offsets(text: str) -> list[int]:
 
 def aggregate_tokens(text: str, offsets: list[tuple[int, int]], labels: list[str], scores: list[float],
                      label_map: dict[str, str | None]) -> list[dict[str, Any]]:
-    """Preserve all predicted non-O spans, including low confidence; never silently threshold them away."""
+    """Preserve predicted content and low confidence; normalize name/address whitespace after BIO grouping."""
     import math
     if not len(offsets) == len(labels) == len(scores):
         raise ArtifactError('INVALID_MODEL_OUTPUT')
@@ -113,4 +113,12 @@ def aggregate_tokens(text: str, offsets: list[tuple[int, int]], labels: list[str
             result.append(current)
         if label.startswith(('E-', 'L-', 'S-', 'U-')):
             current = None
-    return result
+    # SentencePiece offsets may include the space before a name/address token.
+    # Group first so whitespace-only B/O tokens still preserve entity boundaries.
+    for entity in result:
+        if entity['type'] in {'PERSON', 'ADDRESS'}:
+            while entity['start'] < entity['end'] and text[entity['start']].isspace():
+                entity['start'] += 1
+            while entity['end'] > entity['start'] and text[entity['end'] - 1].isspace():
+                entity['end'] -= 1
+    return [entity for entity in result if entity['start'] < entity['end']]

@@ -56,6 +56,48 @@ test("production first boot does not wait on readiness evidence that is installe
 	assert.match(airgap, /deployment-doctor\.mjs --deployment\s+\.aidr-deploy --online/);
 });
 
+test("operator runtime capability configuration is forwarded only to private function env", () => {
+	inTemporaryDirectory((directory) => {
+		const previous = process.env.AIDR_RUNTIME_CAPABILITIES_BY_TENANT;
+		try {
+			const mapping = { "tenant-approved": ["runtime_detectors", "behavioral_learning_v1"] };
+			process.env.AIDR_RUNTIME_CAPABILITIES_BY_TENANT = JSON.stringify(mapping, null, 2);
+			const output = join(directory, "capabilities");
+			const result = prepare(output, "--mode", "cloud", "--device-start-upstream-url", "https://project.supabase.co/functions/v1/device-start");
+			assert.equal(result.status, 0, result.stderr);
+			assert.ok(readFileSync(join(output, ".env.functions"), "utf8").split(/\r?\n/)
+				.includes(`AIDR_RUNTIME_CAPABILITIES_BY_TENANT=${JSON.stringify(mapping)}`));
+			assert.doesNotMatch(readFileSync(join(output, ".env"), "utf8"), /AIDR_RUNTIME_CAPABILITIES_BY_TENANT/);
+			assert.doesNotMatch(readFileSync(join(output, "compose.yml"), "utf8"), /AIDR_RUNTIME_CAPABILITIES_BY_TENANT/);
+			for (const [index, invalid] of ["{", "[]", '{"tenant-approved":["behavioral_learning_v1"]}', '{"tenant-approved":["*"]}'].entries()) {
+				process.env.AIDR_RUNTIME_CAPABILITIES_BY_TENANT = invalid;
+				const invalidOutput = join(directory, `invalid-capabilities-${index}`);
+				const invalidResult = prepare(invalidOutput, "--mode", "cloud", "--device-start-upstream-url", "https://project.supabase.co/functions/v1/device-start");
+				assert.notEqual(invalidResult.status, 0);
+				assert.match(invalidResult.stderr, /must be a bounded exact tenant capability map/);
+				assert.equal(existsSync(invalidOutput), false);
+			}
+		} finally {
+			if (previous === undefined) delete process.env.AIDR_RUNTIME_CAPABILITIES_BY_TENANT;
+			else process.env.AIDR_RUNTIME_CAPABILITIES_BY_TENANT = previous;
+		}
+	});
+});
+
+test("IPv6 development origins bind matching loopback ports and device ingress upstream", () => {
+	inTemporaryDirectory((directory) => {
+		const output = join(directory, "ipv6-loopback");
+		const result = prepare(output, "--development", "--dashboard-url", "http://[::1]:18080", "--supabase-url", "http://[::1]:18000");
+		assert.equal(result.status, 0, result.stderr);
+		const compose = parse(readFileSync(join(output, "compose.yml"), "utf8"));
+		assert.deepEqual(compose.services.dashboard.ports, ["[::1]:18080:8080"]);
+		assert.deepEqual(compose.services["api-gw"].ports, ["[::1]:18000:8000"]);
+		assert.match(readFileSync(join(output, ".env.ingress"), "utf8"), /^AIDR_DEVICE_START_UPSTREAM_URL=http:\/\/\[::1\]:18000\/functions\/v1\/device-start$/m);
+		const config = spawnSync("docker", ["compose", "--project-directory", output, "-f", join(output, "compose.yml"), "config", "--quiet"], { encoding: "utf8", timeout: 15_000 });
+		assert.equal(config.status, 0, config.stderr);
+	});
+});
+
 test("production preparation requires a readable valid artifact verification public key", () => {
 	inTemporaryDirectory((directory) => {
 		const missingOutput = join(directory, "missing-key");
@@ -303,6 +345,7 @@ test("generated self-hosted deployment wires protected monitoring without invent
 		assert.match(readinessEnv, /^AIDR_DELEGATION_SIGNING_KEY_EXPIRES_AT=\d{4}-\d{2}-\d{2}T/m);
 		assert.match(readinessEnv, /^AIDR_TELEMETRY_QUEUE_ROOTS=\/var\/lib\/aidr-telemetry$/m);
 		const functionEnv = readFileSync(join(output, ".env.functions"), "utf8");
+		assert.ok(functionEnv.split(/\r?\n/).includes(`AIDR_RUNTIME_CAPABILITIES_BY_TENANT=${JSON.stringify(JSON.parse(process.env.AIDR_RUNTIME_CAPABILITIES_BY_TENANT?.trim() || "{}"))}`));
 		assert.match(functionEnv, /^AIDR_ENTITLEMENT_SIGNING_PRIVATE_KEY_PKCS8_B64=\S+$/m);
 		assert.match(functionEnv, /^AIDR_REVOCATION_SIGNING_PRIVATE_KEY_PKCS8_B64=\S+$/m);
 		assert.match(functionEnv, /^AIDR_DELEGATION_SIGNING_PRIVATE_KEY_PKCS8_B64=\S+$/m);

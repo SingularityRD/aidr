@@ -18,6 +18,9 @@ export default defineConfig(({ mode }) => {
 		// OAuth/recovery entry points before React can start.
 		base: "/",
 		build: {
+			// esbuild 0.28 requires Safari 14.1 for destructuring. Keep the other
+			// Vite 6 browser minima while retaining the patched build toolchain.
+			target: ["es2020", "chrome87", "edge88", "firefox78", "safari14.1"],
 			sourcemap: false,
 		},
 		css: {

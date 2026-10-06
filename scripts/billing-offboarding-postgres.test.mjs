@@ -9,6 +9,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 import { test } from "node:test";
+import { authIdentityFixtureSql } from "./lib/postgres-auth-fixture.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const container = `aidr-billing-offboarding-${randomUUID()}`;
@@ -94,6 +95,7 @@ test("immutable settlement retention completes offboarding honestly on real Post
     assert.ok(ready, "disposable PostgreSQL must start");
     const bootstrap = await command(["exec", "-i", container, "psql", "-X", "-v", "ON_ERROR_STOP=1", "-U", "supabase_admin", "-d", "postgres"],
       `grant create on schema storage to postgres;
+       ${authIdentityFixtureSql}
        create function auth.jwt() returns jsonb language sql stable as $$
          select coalesce(nullif(current_setting('request.jwt.claims',true),''),'{}')::jsonb
        $$;`);

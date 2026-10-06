@@ -58,7 +58,7 @@ export interface IdentityOptions {
 }
 export class ContextResolver {
   #o:IdentityOptions;#principals=new WeakSet<object>();#contexts=new WeakSet<object>();#principalTokens=new WeakMap<object,string>();#contextTokens=new WeakMap<object,readonly string[]>();#transportBindings=new WeakMap<object,string>();
-  constructor(o:IdentityOptions){id(o.tenantId);if(o.state.tenantId!==o.tenantId)deny('TENANT_MISMATCH');for(const [role,groups]of Object.entries(o.roleGroups)){id(role);for(const g of groups)id(g);}for(const s of o.allowedScopes)id(s);this.#o={...o,roleGroups:frozen(o.roleGroups),allowedScopes:frozen(o.allowedScopes)};}
+  constructor(o:IdentityOptions){id(o.tenantId);if(o.state.tenantId!==o.tenantId)deny('TENANT_MISMATCH');for(const [role,groups]of Object.entries(o.roleGroups)){id(role);const gs=list(groups,128).map(id);if(new Set(gs).size!==gs.length)deny('AUTH_ROLE_GROUPS');}const scopes=list(o.allowedScopes,128).map(id);if(new Set(scopes).size!==scopes.length)deny('AUTH_SCOPES');this.#o={...o,roleGroups:frozen(o.roleGroups),allowedScopes:frozen(scopes)};}
   /** Mint binding only from a real, mutually authenticated TLS socket. Incoming JSON cannot mint it. */
   bindTlsCredentials(credentials:RequestCredentials,socket:TLSSocket):RequestCredentials {
     if(!(socket instanceof TLSSocket)||!socket.authorized||socket.destroyed)deny('AUTH_MTLS_REQUIRED');const cert=socket.getPeerCertificate();if(!cert.raw)deny('AUTH_MTLS_REQUIRED');

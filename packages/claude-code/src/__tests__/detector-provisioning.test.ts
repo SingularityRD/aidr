@@ -196,19 +196,22 @@ describe("Claude Code detector provisioning", () => {
 			{ enabled: true, learning_allowed: true, learning_capability: "unsupported" },
 		],
 		["v1 inline corpus", 1, { enabled: true, threat_corpus: syntheticThreatCorpus(tenantId) }],
-	])("rejects %s rather than treating it as an authorized durable workflow", async (_, version, behavioral) => {
-		mocked.loadManagedState.mockResolvedValue({
-			entitlement_alg: "ed25519",
-			entitlement_sig: "verified-by-core",
-			entitlement: entitlementSnapshot({
-				tenantId,
-				premiumModules: ["runtime_detectors", "behavioral_learning_v1"],
-			}),
-		});
-		await installPolicy(payload({ schema_version: version, behavioral }));
-		await expect(loadProvisionedDetectorContext("claude-code")).rejects.toThrow("invalid");
-		expect(mocked.createBehavioralDetectionOrchestrator).not.toHaveBeenCalled();
-	});
+	])(
+		"rejects %s rather than treating it as an authorized durable workflow",
+		async (_, version, behavioral) => {
+			mocked.loadManagedState.mockResolvedValue({
+				entitlement_alg: "ed25519",
+				entitlement_sig: "verified-by-core",
+				entitlement: entitlementSnapshot({
+					tenantId,
+					premiumModules: ["runtime_detectors", "behavioral_learning_v1"],
+				}),
+			});
+			await installPolicy(payload({ schema_version: version, behavioral }));
+			await expect(loadProvisionedDetectorContext("claude-code")).rejects.toThrow("invalid");
+			expect(mocked.createBehavioralDetectionOrchestrator).not.toHaveBeenCalled();
+		},
+	);
 
 	it("requires the verified entitlement capability even for an explicit signed v2 workflow", async () => {
 		await installPolicy(behavioralPolicyPayload(tenantId));
@@ -270,7 +273,7 @@ describe("Claude Code detector provisioning", () => {
 		await expect(loadProvisionedDetectorContext("claude-code")).resolves.toEqual({});
 	});
 
-	it("keeps behavioral baselines in memory but does not persist without verified receipts", async () => {
+	it("does not promote behavioral samples in memory or on disk without verified receipts", async () => {
 		const corpus = syntheticThreatCorpus(tenantId);
 		await installPolicy(behavioralPolicyPayload(tenantId, { threat_corpus: corpus }));
 		mocked.loadManagedState.mockResolvedValue({
@@ -302,12 +305,22 @@ describe("Claude Code detector provisioning", () => {
 					learningAllowed: first.runtimeDetectors?.behavioral?.learningAllowed,
 				}),
 			);
-			expect(result.learning.accepted).toBe(true);
+			expect(result.learning).toMatchObject({
+				accepted: false,
+				reason: "explicitly_disabled",
+				baselineSamplesBefore: 0,
+				baselineSamplesAfter: 0,
+			});
+			for (const leg of ["behavioral", "novelty"]) {
+				expect(result.explanations).toContainEqual(
+					expect.objectContaining({ leg, status: "learning" }),
+				);
+			}
 			expect(result.explanations).toContainEqual(
 				expect.objectContaining({ leg: "ml", status: "ready", score: 0 }),
 			);
 		}
-		expect(firstProcess.getStats().totalBaselineSamples).toBe(10);
+		expect(firstProcess.getStats().totalBaselineSamples).toBe(0);
 		const sessionId = syntheticBehavioralInput().sessionId;
 		expect(await dependencies.baselineStore?.load(tenantId, sessionId)).toBeNull();
 
@@ -325,8 +338,16 @@ describe("Claude Code detector provisioning", () => {
 
 		expect(result).toMatchObject({
 			outcome: "learning",
-			learning: { accepted: true, baselineSamplesBefore: 0, baselineSamplesAfter: 1 },
+			learning: {
+				accepted: false,
+				reason: "explicitly_disabled",
+				baselineSamplesBefore: 0,
+				baselineSamplesAfter: 0,
+			},
 		});
+		expect(result.explanations).toContainEqual(
+			expect.objectContaining({ leg: "ml", status: "ready", score: 0 }),
+		);
 		await expect(readdir(join(stateDir, "behavioral-baseline"))).rejects.toHaveProperty(
 			"code",
 			"ENOENT",
@@ -342,24 +363,24 @@ describe("Claude Code detector provisioning", () => {
 		expect(await dependencies.baselineStore?.load("tenant-b", sessionId)).toBeNull();
 	});
 
-	it.each([
-		undefined,
-		false,
-	])("keeps legacy learning %s compatible without a baseline store", async (learningAllowed) => {
-		await installPolicy(
-			payload({
-				behavioral: {
-					enabled: true,
-					...(learningAllowed === undefined ? {} : { learning_allowed: learningAllowed }),
-				},
-			}),
-		);
-		const context = await loadProvisionedDetectorContext("claude-code");
-		expect(context.runtimeDetectors?.behavioral?.learningAllowed).toBe(false);
-		expect(
-			mocked.createBehavioralDetectionOrchestrator.mock.calls.at(-1)?.[1].baselineStore,
-		).toBeUndefined();
-	});
+	it.each([undefined, false])(
+		"keeps legacy learning %s compatible without a baseline store",
+		async (learningAllowed) => {
+			await installPolicy(
+				payload({
+					behavioral: {
+						enabled: true,
+						...(learningAllowed === undefined ? {} : { learning_allowed: learningAllowed }),
+					},
+				}),
+			);
+			const context = await loadProvisionedDetectorContext("claude-code");
+			expect(context.runtimeDetectors?.behavioral?.learningAllowed).toBe(false);
+			expect(
+				mocked.createBehavioralDetectionOrchestrator.mock.calls.at(-1)?.[1].baselineStore,
+			).toBeUndefined();
+		},
+	);
 
 	it("does not let event consent override signed learning false with a ready corpus", async () => {
 		await installPolicy(behavioralPolicyPayload(tenantId, { learning_allowed: false }));
@@ -417,7 +438,7 @@ describe("Claude Code consumes the shared helper", () => {
 		});
 
 		// The facade consumes built core, so config, entitlement signature, model
-		// import and baseline persistence all run without the source-module mocks.
+		// import and the no-promotion boundary run without source-module mocks.
 		for (let index = 0; index < 10; index++) {
 			const context = await loadClaudeCodeProvisionedDetectorContext();
 			expect(context.runtimeDetectors?.tenantId).toBe(TEST_TENANT_ID);
@@ -446,23 +467,35 @@ describe("Claude Code consumes the shared helper", () => {
 		const restored = await loadClaudeCodeProvisionedDetectorContext();
 		const orchestrator = restored.runtimeDetectors?.behavioral?.orchestrator;
 		if (!orchestrator) throw new Error("Claude facade did not construct an orchestrator");
-		// These synthetic direct calls exercise only in-memory learning; there is
-		// no verified receipt path to authorize writing their observations to disk.
+		// Caller consent alone authorizes neither memory nor disk promotion.
+		// Signed execution plus independent approval warmup is exercised in core's
+		// behavioral-learning-lifecycle.test.ts with actual foreground executions.
 		for (let index = 0; index < 10; index++) {
 			const result = await orchestrator.evaluate(syntheticBehavioralInput(index));
 			expect(result.learning).toMatchObject({
-				accepted: true,
-				baselineSamplesAfter: index + 1,
+				accepted: false,
+				reason: "explicitly_disabled",
+				baselineSamplesBefore: 0,
+				baselineSamplesAfter: 0,
 			});
+			expect(result.explanations).toContainEqual(
+				expect.objectContaining({ leg: "ml", status: "ready", score: 0 }),
+			);
 		}
-		const normal = await orchestrator.evaluate(
+		const cold = await orchestrator.evaluate(
 			syntheticBehavioralInput(10, { learningAllowed: false }),
 		);
-		expect(normal.learning.baselineSamplesBefore).toBe(10);
-		expect(normal.outcome).toBe("normal");
-		for (const leg of ["behavioral", "novelty", "ml"]) {
-			expect(normal.explanations).toContainEqual(expect.objectContaining({ leg, status: "ready" }));
+		expect(cold.learning.baselineSamplesBefore).toBe(0);
+		expect(cold.learning.accepted).toBe(false);
+		expect(cold.outcome).toBe("learning");
+		for (const leg of ["behavioral", "novelty"]) {
+			expect(cold.explanations).toContainEqual(
+				expect.objectContaining({ leg, status: "learning" }),
+			);
 		}
+		expect(cold.explanations).toContainEqual(
+			expect.objectContaining({ leg: "ml", status: "ready", score: 0 }),
+		);
 		const matched = await orchestrator.evaluate(
 			syntheticBehavioralInput(10, {
 				classificationText: TEST_SYNTHETIC_THREAT_TEXT,
@@ -480,8 +513,8 @@ describe("Claude Code consumes the shared helper", () => {
 		);
 		expect(matched.learning).toMatchObject({
 			accepted: false,
-			reason: "anomaly_detected",
-			baselineSamplesAfter: 10,
+			reason: "explicitly_disabled",
+			baselineSamplesAfter: 0,
 		});
 		const verdict = await evaluateToolCall(
 			{
@@ -499,7 +532,7 @@ describe("Claude Code consumes the shared helper", () => {
 		);
 		expect(verdict).toMatchObject({ decision: "ask", source: "behavioral" });
 		expect(verdict.reasons).toContainEqual(expect.stringContaining("Behavioral anomaly detected"));
-		expect(orchestrator.getStats().totalBaselineSamples).toBe(10);
+		expect(orchestrator.getStats().totalBaselineSamples).toBe(0);
 		await expect(
 			readdir(join(realHome, ".singularity-aidr", "behavioral-baseline")),
 		).rejects.toHaveProperty("code", "ENOENT");

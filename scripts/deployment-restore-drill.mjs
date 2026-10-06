@@ -396,9 +396,10 @@ async function main() {
 	const project = `aidr-recovery-${randomBytes(8).toString("hex")}`;
 	await writeFile(join(workDir, ".recovery-project"), `${project}\n`, { mode: 0o600, flag: "wx" });
 	let failure = null;
+	let cleaningUp = false;
 	const interrupt = (signal) => {
 		requestedSignal ??= signal;
-		activeChild?.kill(signal);
+		if (!cleaningUp) activeChild?.kill(signal);
 	};
 	const onInterrupt = () => interrupt("SIGINT");
 	const onTerminate = () => interrupt("SIGTERM");
@@ -470,8 +471,7 @@ async function main() {
 		evidence.failure = error.message;
 		failure = error;
 	} finally {
-		process.removeListener("SIGINT", onInterrupt);
-		process.removeListener("SIGTERM", onTerminate);
+		cleaningUp = true;
 		try {
 			await cleanupRecoveredRun(workDir);
 			evidence.sensitive_material_removed = true;
@@ -482,7 +482,11 @@ async function main() {
 			failure ??= new Error("Recovered project, volumes or plaintext material could not be removed");
 		}
 		evidence.finished_at = new Date().toISOString();
-		await writeFile(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`, { mode: 0o600, flag: "wx" });
+		try { await writeFile(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`, { mode: 0o600, flag: "wx" }); }
+		finally {
+			process.removeListener("SIGINT", onInterrupt);
+			process.removeListener("SIGTERM", onTerminate);
+		}
 	}
 	if (requestedSignal) {
 		console.error(`AIDR restore drill interrupted by ${requestedSignal}; cleanup completed before exit.`);

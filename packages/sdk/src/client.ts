@@ -1,10 +1,17 @@
+import { createHash } from "node:crypto";
 import {
 	DecisionEngine,
+	getEffectiveManagedApiKey,
 	HeuristicsEngine,
+	inspectResponseBarrier,
 	type Logger,
+	loadConfig,
+	loadManagedState,
 	loadThreats,
 	loadTrustedDomains,
+	managedStatePath,
 	nullLogger,
+	type ResponseBarrierInspection,
 	type Threat,
 	type TrustedDomain,
 	UrlCheckClient,
@@ -19,9 +26,10 @@ import type {
 	ErrorEvent,
 	EventListener,
 	SDKConfig,
+	SDKConfigInput,
 	SDKEvent,
 } from "./config.js";
-import { CheckResultSchema, SDKConfigSchema } from "./config.js";
+import { CheckRequestSchema, CheckResultSchema, SDKConfigSchema } from "./config.js";
 import { INDETERMINATE_METADATA_KEY } from "./enforcement.js";
 
 export type { Logger };
@@ -51,7 +59,7 @@ export class AIDRClient {
 	private dataDirs?: DataDirResolution;
 	private initialized = false;
 
-	constructor(config: SDKConfig) {
+	constructor(config: SDKConfigInput) {
 		// Validate and default the configuration up front.
 		//
 		// Without this the SDK trusted its caller's object shape: a JavaScript
@@ -65,26 +73,35 @@ export class AIDRClient {
 		this.logger = this.config.logger ?? nullLogger;
 
 		// Initialize cache if enabled
-		if (this.config.cache) {
-			this.cache = new VerdictCache({
-				enabled: true,
-				ttl_malicious_seconds: Math.floor(this.config.cacheTtl / 1000),
-				ttl_clean_seconds: Math.floor(this.config.cacheTtl / 1000),
-				path: "~/.singularity-aidr/cache.json",
-			});
-		}
+		this.cache = this.createCache();
 
 		// Initialize core components
 		this.engine = new DecisionEngine("balanced");
 		this.urlClient = this.createUrlClient();
 	}
 
-	private createUrlClient(): UrlCheckClient {
-		return new UrlCheckClient({
-			enabled: this.config.urlReputationEnabled,
-			timeout_seconds: this.config.timeout / 1000,
-			include_query_parameters: this.config.includeUrlQueryParameters,
-		});
+	private createUrlClient(config = this.config, logger = this.logger): UrlCheckClient {
+		return new UrlCheckClient(
+			{
+				enabled: config.urlReputationEnabled,
+				endpoint: config.baseUrl ? `${config.baseUrl.replace(/\/+$/, "")}/url-check` : undefined,
+				timeout_seconds: config.timeout / 1000,
+				include_query_parameters: config.includeUrlQueryParameters,
+			},
+			logger,
+			config.apiKey,
+		);
+	}
+
+	private createCache(): VerdictCache | undefined {
+		return this.config.cache
+			? new VerdictCache({
+					enabled: true,
+					ttl_malicious_seconds: Math.floor(this.config.cacheTtl / 1000),
+					ttl_clean_seconds: Math.floor(this.config.cacheTtl / 1000),
+					path: "~/.singularity-aidr/cache.json",
+				})
+			: undefined;
 	}
 
 	/**
@@ -185,6 +202,7 @@ export class AIDRClient {
 	 * Perform a security check on an action
 	 */
 	async check(request: CheckRequest): Promise<CheckResult> {
+		request = CheckRequestSchema.parse(request);
 		// Ensure initialized
 		if (!this.initialized) {
 			await this.init();
@@ -242,6 +260,8 @@ export class AIDRClient {
 	 * Internal check implementation
 	 */
 	private async _performCheck(request: CheckRequest): Promise<CheckResult> {
+		const barrier = await this._responseControlResult();
+		if (barrier) return barrier;
 		// Check cache first
 		const cacheKey = this._getCacheKey(request);
 		/** Set when the reputation leg could not run, so the result is never clean. */
@@ -270,7 +290,8 @@ export class AIDRClient {
 		}> = [];
 		if (request.action === "fetch") {
 			if (!this.config.urlReputationEnabled) {
-				urlLegUnavailableReason = "disabled to avoid sending URLs to an external reputation provider";
+				urlLegUnavailableReason =
+					"disabled to avoid sending URLs to an external reputation provider";
 			} else {
 				try {
 					const results = await this.urlClient.checkUrls([request.resource]);
@@ -307,27 +328,77 @@ export class AIDRClient {
 			);
 			return indeterminate;
 		}
+		// A pause applied while reputation I/O was pending cannot escape as a new allow.
+		if (verdict.decision === "allow") {
+			const currentBarrier = await this._responseControlResult();
+			if (currentBarrier) return currentBarrier;
+		}
 
 		// An incomplete reputation result must not be cached as clean (or as if
 		// all enabled checks had completed).
 		if (this.cache && !urlLegUnavailableReason) {
 			const isMalicious = verdict.decision === "deny";
-			const verdictStr = isMalicious ? "deny" : verdict.decision === "allow" ? "clean" : "ask";
 			this.cache.putUrl(
 				cacheKey,
 				{
-					verdict: verdictStr as "allow" | "deny" | "ask",
+					verdict: verdict.decision,
 					severity: verdict.severity,
 					reasons: verdict.reasons,
 					source: verdict.source,
 				},
 				isMalicious,
-				urlCheckResults.find((result) => result.url === request.resource)?.cacheValidUntil,
+				request.action === "fetch"
+					? urlCheckResults.find((result) => result.url === request.resource)?.cacheValidUntil
+					: Date.now() + this.config.cacheTtl,
 			);
 			this.cacheEntryCount++;
 		}
 
 		return this._verdictToResult(verdict);
+	}
+
+	private async _responseControlResult(): Promise<CheckResult | undefined> {
+		const barrier = await this._inspectInstalledResponseBarrier();
+		if (barrier.status !== "paused" && barrier.status !== "unavailable") return undefined;
+		return {
+			allowed: false,
+			decision: "deny",
+			confidence: 1,
+			reason:
+				barrier.status === "paused"
+					? "Installed AIDR response controls paused this agent."
+					: "Installed AIDR response controls could not be verified; execution remains blocked.",
+			metadata: { responseControl: barrier.status },
+		};
+	}
+
+	/** Caller-owned remote API keys cannot authorize or bypass installed endpoint controls. */
+	private async _inspectInstalledResponseBarrier(): Promise<ResponseBarrierInspection> {
+		try {
+			const config = await loadConfig();
+			const options = {
+				required: config.control_plane.response_worker_required,
+				managedState: {},
+				apiKey: "",
+				publicKeysPem: config.licensing.public_keys_pem,
+			};
+			// Avoid reading a credential vault when no response worker is installed.
+			const installed = await inspectResponseBarrier({ ...options, required: false });
+			if (installed.status === "unconfigured") {
+				return options.required ? { status: "unavailable" } : installed;
+			}
+			const state = await loadManagedState(managedStatePath(), {
+				authToken: config.auth.api_key,
+				publicKeysPem: config.licensing.public_keys_pem,
+			});
+			return await inspectResponseBarrier({
+				...options,
+				managedState: state,
+				apiKey: getEffectiveManagedApiKey(config.auth.api_key, state),
+			});
+		} catch {
+			return { status: "unavailable" };
+		}
 	}
 
 	/**
@@ -402,13 +473,21 @@ export class AIDRClient {
 	 * Generate cache key for a request
 	 */
 	private _getCacheKey(request: CheckRequest): string {
-		return [
-			request.action,
-			request.resource,
-			JSON.stringify(request.artifacts ?? []),
-			String(this.config.urlReputationEnabled),
-			String(this.config.includeUrlQueryParameters),
-		].join(":");
+		// VerdictCache normalizes URL keys (including fragments and case). Hash the
+		// complete request so distinct commands or paths can never share a verdict.
+		return createHash("sha256")
+			.update(
+				JSON.stringify([
+					request.action,
+					request.resource,
+					request.artifacts ?? [],
+					this.config.baseUrl ?? "",
+					this.config.apiKey,
+					this.config.urlReputationEnabled,
+					this.config.includeUrlQueryParameters,
+				]),
+			)
+			.digest("hex");
 	}
 
 	/**
@@ -481,16 +560,8 @@ export class AIDRClient {
 	 * Clear the cache
 	 */
 	clearCache(): void {
-		// Since VerdictCache doesn't have a clear method, we'll create a new instance
-		if (this.cache && this.config.cache) {
-			this.cache = new VerdictCache({
-				enabled: true,
-				ttl_malicious_seconds: Math.floor(this.config.cacheTtl / 1000),
-				ttl_clean_seconds: Math.floor(this.config.cacheTtl / 1000),
-				path: "~/.singularity-aidr/cache.json",
-			});
-			this.cacheEntryCount = 0;
-		}
+		this.cache = this.createCache();
+		this.cacheEntryCount = 0;
 		this.logger.info("Cache cleared");
 	}
 
@@ -515,8 +586,13 @@ export class AIDRClient {
 	 * @throws {ZodError} when the merged configuration is invalid.
 	 */
 	updateConfig(updates: Partial<SDKConfig>): void {
-		this.config = SDKConfigSchema.parse({ ...this.config, ...updates });
-		this.urlClient = this.createUrlClient();
+		const config = SDKConfigSchema.parse({ ...this.config, ...updates });
+		const logger = config.logger ?? nullLogger;
+		const urlClient = this.createUrlClient(config, logger);
+		this.config = config;
+		this.logger = logger;
+		this.urlClient = urlClient;
+		this.clearCache();
 		this.logger.info(`Configuration updated: ${Object.keys(updates).join(", ")}`);
 	}
 

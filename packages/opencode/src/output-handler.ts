@@ -1,4 +1,4 @@
-import { scanModelOutput } from "@singularityrd/aidr-core";
+import { scanCachedProvisionedOutput, scanProvisionedOutput } from "@singularityrd/aidr-core";
 
 export const MAX_TOOL_OUTPUT_BYTES = 256 * 1024;
 
@@ -142,6 +142,17 @@ function hasOwnProperty(output: OpenCodeAfterToolOutput, key: string): boolean {
 		return Object.getOwnPropertyDescriptor(output, key) !== undefined;
 	} catch {
 		return false;
+	}
+}
+
+function hasUninspectableSidecar(output: OpenCodeAfterToolOutput): boolean {
+	try {
+		return ["title", "metadata"].some((key) => {
+			const descriptor = Object.getOwnPropertyDescriptor(output, key);
+			return descriptor !== undefined && !("value" in descriptor);
+		});
+	} catch {
+		return true;
 	}
 }
 
@@ -401,18 +412,8 @@ function serialiseOutput(value: unknown): SerializationResult {
  */
 function inspectionViews(text: string): string[] {
 	const canonical = text.normalize("NFKC").replace(/[\u200B-\u200D\u2060\uFEFF]/g, "");
-	const structuralJoin = canonical.replace(/["'`{},:[\]\\]/g, "");
-	return structuralJoin === canonical ? [canonical] : [canonical, structuralJoin];
-}
-
-function uniqueFindings(text: string, mcpText = ""): ReturnType<typeof scanModelOutput> {
-	const byRule = new Map<string, ReturnType<typeof scanModelOutput>[number]>();
-	for (const view of [...inspectionViews(text), ...(mcpText ? inspectionViews(mcpText) : [])]) {
-		for (const finding of scanModelOutput(view)) {
-			if (!byRule.has(finding.ruleId)) byRule.set(finding.ruleId, finding);
-		}
-	}
-	return [...byRule.values()];
+	const structuralJoin = canonical.replace(/:/g, " ").replace(/["'`{},:[\]\\]/g, "");
+	return [...new Set([text, canonical, structuralJoin])];
 }
 
 interface McpTextCollection {
@@ -532,100 +533,111 @@ export function createOutputHandlers(logger: StructuredLogger) {
 		input: OpenCodeAfterToolInput,
 		output: OpenCodeAfterToolOutput,
 	): Promise<void> => {
-		const rawMcpResult = isRawMcpResult(output);
-		if (!rawMcpResult && ownDataValue(output, "output") === undefined) {
-			quarantineInspectedOutput(
-				output,
-				"The host output shape could not be normalized, so inspection coverage is unavailable.",
-				input,
-				logger,
-				"quarantined_unsupported_output",
-				{ rawMcpResult: false },
-			);
-			return;
-		}
-		if (rawMcpResult && !Array.isArray(ownDataValue(output, "content"))) {
-			quarantineInspectedOutput(
-				output,
-				"The host returned malformed MCP content that could not be inspected; output was not classified as clean.",
-				input,
-				logger,
-				"quarantined_unsupported_output",
-				{ rawMcpResult: true },
-			);
-			return;
-		}
-		const serialisation = serialiseOutput(rawMcpResult ? output : ownDataValue(output, "output"));
-		const sidecarValue = rawMcpResult
-			? undefined
-			: Object.fromEntries(
-					(["title", "metadata"] as const)
-						.map((key) => [key, ownDataValue(output, key)] as const)
-						.filter((entry) => entry[1] !== undefined),
-				);
-		const sidecar = sidecarValue === undefined ? undefined : serialiseOutput(sidecarValue);
-		if (serialisation.status === "oversize" || sidecar?.status === "oversize") {
-			quarantineInspectedOutput(
-				output,
-				`Tool output exceeded the ${MAX_TOOL_OUTPUT_BYTES}-byte inspection limit and was not classified as clean.`,
-				input,
-				logger,
-				"quarantined_size_limit",
-				{ maxBytes: MAX_TOOL_OUTPUT_BYTES, rawMcpResult },
-			);
-			return;
-		}
-		if (serialisation.status === "unsupported" || sidecar?.status === "unsupported") {
-			quarantineInspectedOutput(
-				output,
-				"The host returned an unsupported output representation, so inspection coverage is unavailable.",
-				input,
-				logger,
-				"quarantined_unsupported_output",
-				{ rawMcpResult },
-			);
-			return;
-		}
-		const text = serialisation.text;
-		const sidecarText = sidecar?.text ?? "";
-
-		const bytes = Buffer.byteLength(text, "utf8") + Buffer.byteLength(sidecarText, "utf8");
-		if (bytes > MAX_TOOL_OUTPUT_BYTES) {
-			quarantineInspectedOutput(
-				output,
-				`Tool output exceeded the ${MAX_TOOL_OUTPUT_BYTES}-byte inspection limit and was not classified as clean.`,
-				input,
-				logger,
-				"quarantined_size_limit",
-				{ outputBytes: bytes, maxBytes: MAX_TOOL_OUTPUT_BYTES, rawMcpResult },
-			);
-			return;
-		}
-		const mcpText = collectMcpText(text);
-		const sidecarMcpText = sidecarText
-			? collectMcpText(sidecarText)
-			: { text: "", unsupported: false };
-		if (mcpText.unsupported || sidecarMcpText.unsupported) {
-			quarantineInspectedOutput(
-				output,
-				"The host returned unsupported or incomplete content that could not be inspected; output was not classified as clean.",
-				input,
-				logger,
-				"quarantined_unsupported_output",
-				{ rawMcpResult },
-			);
-			return;
-		}
-
+		let rawMcpResult = false;
 		try {
-			const findings = [
-				...new Map(
-					[
-						...uniqueFindings(text, mcpText.text),
-						...uniqueFindings(sidecarText, sidecarMcpText.text),
-					].map((finding) => [finding.ruleId, finding] as const),
-				).values(),
-			];
+			await scanProvisionedOutput([], "opencode");
+			rawMcpResult = isRawMcpResult(output);
+			if (!rawMcpResult && hasUninspectableSidecar(output)) {
+				quarantineInspectedOutput(
+					output,
+					"The host returned accessor-backed output fields that could not be inspected; output was not classified as clean.",
+					input,
+					logger,
+					"quarantined_unsupported_output",
+					{ rawMcpResult: false },
+				);
+				return;
+			}
+			if (!rawMcpResult && ownDataValue(output, "output") === undefined) {
+				quarantineInspectedOutput(
+					output,
+					"The host output shape could not be normalized, so inspection coverage is unavailable.",
+					input,
+					logger,
+					"quarantined_unsupported_output",
+					{ rawMcpResult: false },
+				);
+				return;
+			}
+			if (rawMcpResult && !Array.isArray(ownDataValue(output, "content"))) {
+				quarantineInspectedOutput(
+					output,
+					"The host returned malformed MCP content that could not be inspected; output was not classified as clean.",
+					input,
+					logger,
+					"quarantined_unsupported_output",
+					{ rawMcpResult: true },
+				);
+				return;
+			}
+			const serialisation = serialiseOutput(rawMcpResult ? output : ownDataValue(output, "output"));
+			const sidecarValue = rawMcpResult
+				? undefined
+				: Object.fromEntries(
+						(["title", "metadata"] as const)
+							.map((key) => [key, ownDataValue(output, key)] as const)
+							.filter((entry) => entry[1] !== undefined),
+					);
+			const sidecar = sidecarValue === undefined ? undefined : serialiseOutput(sidecarValue);
+			if (serialisation.status === "oversize" || sidecar?.status === "oversize") {
+				quarantineInspectedOutput(
+					output,
+					`Tool output exceeded the ${MAX_TOOL_OUTPUT_BYTES}-byte inspection limit and was not classified as clean.`,
+					input,
+					logger,
+					"quarantined_size_limit",
+					{ maxBytes: MAX_TOOL_OUTPUT_BYTES, rawMcpResult },
+				);
+				return;
+			}
+			if (serialisation.status === "unsupported" || sidecar?.status === "unsupported") {
+				quarantineInspectedOutput(
+					output,
+					"The host returned an unsupported output representation, so inspection coverage is unavailable.",
+					input,
+					logger,
+					"quarantined_unsupported_output",
+					{ rawMcpResult },
+				);
+				return;
+			}
+			const text = serialisation.text;
+			const sidecarText = sidecar?.text ?? "";
+
+			const bytes = Buffer.byteLength(text, "utf8") + Buffer.byteLength(sidecarText, "utf8");
+			if (bytes > MAX_TOOL_OUTPUT_BYTES) {
+				quarantineInspectedOutput(
+					output,
+					`Tool output exceeded the ${MAX_TOOL_OUTPUT_BYTES}-byte inspection limit and was not classified as clean.`,
+					input,
+					logger,
+					"quarantined_size_limit",
+					{ outputBytes: bytes, maxBytes: MAX_TOOL_OUTPUT_BYTES, rawMcpResult },
+				);
+				return;
+			}
+			const mcpText = collectMcpText(text);
+			const sidecarMcpText = sidecarText
+				? collectMcpText(sidecarText)
+				: { text: "", unsupported: false };
+			if (mcpText.unsupported || sidecarMcpText.unsupported) {
+				quarantineInspectedOutput(
+					output,
+					"The host returned unsupported or incomplete content that could not be inspected; output was not classified as clean.",
+					input,
+					logger,
+					"quarantined_unsupported_output",
+					{ rawMcpResult },
+				);
+				return;
+			}
+
+			const findings = scanCachedProvisionedOutput(
+				[text, mcpText.text, sidecarText, sidecarMcpText.text]
+					.filter(Boolean)
+					.flatMap(inspectionViews),
+				"opencode",
+			);
 			if (findings.length > 0) {
 				const ruleIds = findings.map((finding) => finding.ruleId).sort();
 				quarantineInspectedOutput(

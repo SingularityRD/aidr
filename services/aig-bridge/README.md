@@ -33,7 +33,7 @@ are safe; any dependency change must rerun the bridge and MCP contract tests.
 | `GET` | `/api/v1/health` | Health check + AIG connectivity status |
 | `GET` | `/api/v1/livez` | Process liveness (does not require AIG) |
 | `GET` | `/api/v1/readyz` | Readiness (AIG, auth, worker and dataset evidence required) |
-| `POST` | `/api/v1/uploads` | Store a tenant-scoped source file; return an opaque upload ID |
+| `POST` | `/api/v1/uploads` | Store a validated tenant-scoped ZIP or tar.gz archive; return an opaque upload ID |
 | `POST` | `/api/v1/scan/infra` | Submit AI infrastructure CVE scan |
 | `GET` | `/api/v1/scan/infra/{task_id}` | Poll infra scan results |
 | `POST` | `/api/v1/scan/mcp` | Submit MCP server security scan |
@@ -48,6 +48,29 @@ Docker and traffic admission use `/readyz`; `/livez` is process-only and must
 not be used to route scan traffic.
 
 ## Local Development
+
+PostgreSQL task and JWT replay stores use pure `psycopg==3.2.10` with the
+operating system's `libpq`, rather than the self-contained binary wheel. For
+local PostgreSQL tests, install `libpq5` on Debian/Ubuntu, `libpq` on macOS,
+or make the PostgreSQL client DLLs available on `PATH` on Windows. The SQLite
+and mocked paths import the PostgreSQL driver only when needed. Set
+`AIG_BRIDGE_TEST_POSTGRES_DSN` to a disposable migrated PostgreSQL database to
+run the live task quota, idempotency, lease and JWT replay race tests.
+
+The pinned Docker base is Debian 13 trixie. Its build explicitly updates
+`libpq5`, `libssl3t64` and `openssl`, rejects OpenSSL Debian packages older than
+`3.5.7-1~deb13u3`, and selects `PSYCOPG_IMPL=python`. This Debian revision
+[backports the September 2026 OpenSSL fixes](https://security-tracker.debian.org/tracker/DSA-6531-1);
+the upstream version displayed by `openssl version` remains 3.5.7.
+The separately pinned `cryptography==50.0.2` wheel
+[embeds OpenSSL 4.0.3](https://cryptography.io/en/latest/changelog/#v50-0-2);
+updating the operating system libraries does not replace this compiled copy.
+`CVE-2026-35189` is a potential PostgreSQL TLS certificate-parsing exposure;
+DTLS, QUIC, CMP and SM2 use have not been established for this application's
+libpq TCP client. Removing the bundled libraries and enforcing this specific
+Debian floor does not establish that every base-image dependency is CVE-free.
+The pure driver can be slower than its C extension; re-evaluate with actual
+PostgreSQL load if it becomes material.
 
 ```bash
 # Install dependencies
@@ -84,12 +107,12 @@ export AIG_BRIDGE_API_KEY="$BRIDGE_API_KEY"
 export AIG_TENANT_ID='demo-tenant'
 
 # Run tests
-python -m pip install -r requirements-test.txt
+python -m pip install --require-hashes --only-binary=:all: -r requirements-ci.lock
 PYTHONPATH=. pytest
 
 # Audit the pinned runtime dependency set (must report zero known vulnerabilities)
 python -m pip install pip-audit
-pip-audit -r requirements.txt
+pip-audit --require-hashes -r requirements-runtime.lock
 ```
 
 ### Source verification and release-signing reference

@@ -373,6 +373,13 @@ const UNKNOWN_FIELD_CASES = [
 		local: "Unsupported category default: network.",
 		server: "invalid_policy_document:category_defaults:unsupported_field:network",
 	},
+	{
+		file: "unknown-tool-selector-field.yaml",
+		path: "rules.0.condition.mcp_tool",
+		field: "pattern",
+		local: "Rule 1 mcp_tool has unsupported field: pattern.",
+		server: "invalid_policy_document:rules.0.condition.mcp_tool:unsupported_field:pattern",
+	},
 ] as const;
 
 /** Documents the local validator accepts and the compiler that enforces them does not. */
@@ -395,6 +402,54 @@ afterEach(() => {
 });
 
 describe("Policy document parity (B1)", () => {
+	it("accepts case-sensitive and structured MCP identities with a collision-free preview", async () => {
+		const yaml = fixture("valid-mcp-identities.yaml");
+		expect(localVerdict(yaml).ok).toBe(true);
+		const mocks = installParityServer(null);
+		renderPolicyRoute();
+		await screen.findByText("✓ Valid policy");
+		fireEvent.change(yamlEditor(), { target: { value: yaml } });
+		expect(screen.getByText(/MCP tool: \["a\.b","c"\]/)).toBeInTheDocument();
+		expect(screen.getByText(/MCP tool: \["a","b\.c"\]/)).toBeInTheDocument();
+		expect(screen.getByText(/MCP server: Enterprise\/Repo:Read/)).toBeInTheDocument();
+		fireEvent.click(saveButton());
+		await screen.findByText("Policy saved successfully");
+		expectDraftRequest(mocks, yaml, null);
+		expect(serverStore).toEqual({ content: yaml, version: 1, writes: 1 });
+	});
+
+	it("rejects ambiguous legacy MCP selectors before saving and in the server compiler", async () => {
+		const yaml = fixture("ambiguous-mcp-tool.yaml");
+		expect(localVerdict(yaml).ok).toBe(false);
+		installParityServer(null);
+		const { verdict } = await saveDocumentDraft(TEAM_ID, yaml, null);
+		expect(verdict).toMatchObject({
+			status: "refused",
+			code: "invalid_policy_document:rules.0.condition.mcp_tool:invalid_tool_id",
+		});
+		expect(serverStore.writes).toBe(0);
+	});
+
+	it.each([256, 257])(
+		"agrees with the server on %i-character MCP identity limits",
+		async (length) => {
+			const identity = "S".repeat(length);
+			const selectors = [
+				`      mcp_server: ${identity}`,
+				`      mcp_tool: ${identity}.${identity}`,
+				`      mcp_tool:\n        server: ${identity}\n        tool: ${identity}`,
+			];
+			for (const selector of selectors) {
+				const yaml = `version: "1.0"\ndefault_action: ask\nrules:\n  - name: Identifier boundary\n    condition:\n${selector}\n    action: deny\n    priority: 10\n`;
+				expect(localVerdict(yaml).ok).toBe(length === 256);
+				installParityServer(null);
+				const { verdict } = await saveDocumentDraft(TEAM_ID, yaml, null);
+				expect(verdict.status).toBe(length === 256 ? "compiled" : "refused");
+				expect(serverStore.writes).toBe(length === 256 ? 1 : 0);
+			}
+		},
+	);
+
 	it("rejects exactly the fields the runtime compiler rejects", async () => {
 		for (const testCase of UNKNOWN_FIELD_CASES) {
 			const yaml = fixture(testCase.file);

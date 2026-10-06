@@ -451,6 +451,7 @@ function ProtectedTeamProvider({
 					"No membership row was removed. The team database rejected the change (row not found, or your role does not permit it).",
 				);
 			}
+			if (userId === currentUserId) await refreshMemberships(currentTeam.tenant_id);
 			setMembers((prev) => prev.filter((m) => m.user_id !== userId));
 		} catch (err) {
 			const message = readErrorMessage(err, "Failed to remove member");
@@ -475,6 +476,7 @@ function ProtectedTeamProvider({
 					"No membership row was updated. The team database rejected the change (row not found, or your role does not permit it).",
 				);
 			}
+			if (userId === currentUserId) await refreshMemberships(currentTeam.tenant_id);
 			setMembers((prev) => prev.map((m) => (m.user_id === userId ? { ...m, role } : m)));
 		} catch (err) {
 			const message = readErrorMessage(err, "Failed to update role");

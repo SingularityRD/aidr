@@ -115,6 +115,7 @@ export {
 	type BehavioralOrchestratorDependencies,
 	type BehavioralOrchestratorStats,
 	createBehavioralDetectionOrchestrator,
+	behavioralObservationForInput,
 	LOCAL_EMBEDDER_MODEL_VERSION,
 } from "./behavioral-orchestrator.js";
 // Build flavor
@@ -243,6 +244,11 @@ export {
 	type DetectorProvisionedContext,
 	detectorPolicyPath,
 	loadProvisionedDetectorContext,
+	loadProvisionedLearningContext,
+	exportBrokerLearningAuthority,
+	loadProvisionedLearningApprovalContext,
+	type BrokerLearningAuthorityBundle,
+	type ProvisionedLearningContext,
 } from "./detector-provisioning.js";
 export type { DeviceAttestation, DeviceAttestationError } from "./device-attestation.js";
 // Device enrollment binding used by the fleet response transport. This is not
@@ -254,8 +260,9 @@ export {
 	hashDeviceKey,
 	parseDeviceAttestation,
 } from "./device-attestation.js";
-// Discovery providers: local collection is available; cloud and MDM adapters
-// remain explicit unconfigured boundaries until customer integrations exist.
+// Tenant-scoped local HTTP, cloud management and Intune discovery.
+export { type CloudDiscoveryConfig, parseCloudDiscoveryConfig } from "./discovery-cloud-config.js";
+export { type CloudDiscoveryEvidence, cloudDiscoveryScopeHash, CloudDiscoveryProvider, parseCloudDiscoveryEvidence } from "./discovery-cloud-provider.js";
 export {
 	createDiscoveryProvider,
 	type DiscoveryProvider,
@@ -596,6 +603,7 @@ export { createChildLogger, createLogger, getLogger, setLogger } from "./logger.
 export type { ManagedState } from "./managed.js";
 // Verified managed identity and entitlement state for connector provisioning.
 export {
+	getEffectiveManagedApiKey,
 	isEntitlementActive,
 	loadManagedState,
 	managedStatePath,
@@ -674,7 +682,7 @@ export type {
 export { LocalEmbeddingModel } from "./ml-model.js";
 export type { AnomalyEvent, BehaviorProfile } from "./novelty-detection.js";
 export { createNoveltyDetector, NoveltyDetector } from "./novelty-detection.js";
-export { scanModelOutput } from "./output-scanner.js";
+export { type OutputFinding, scanModelOutput } from "./output-scanner.js";
 export type { PackageCheckerConfig, PackageCheckInput } from "./package-checker.js";
 // Package checker
 export { PackageChecker } from "./package-checker.js";
@@ -717,6 +725,10 @@ export {
 	parsePolicyDocument,
 	simulateRuntimePolicy,
 } from "./policy-document.js";
+export {
+	scanCachedProvisionedOutput,
+	scanProvisionedOutput,
+} from "./provisioned-output-scanner.js";
 // Quarantine
 export {
 	AutoQuarantine,
@@ -804,12 +816,40 @@ export type {
 	FleetResponseConsumerOptions,
 	FleetResponseCycleResult,
 	FleetResponseIdentity,
+	FleetResponseSignedDelivery,
 } from "./response-command-consumer-v6.js";
-export { FleetResponseCommandConsumer } from "./response-command-consumer-v6.js";
+export {
+	FleetResponseCommandConsumer,
+	FleetResponseActionInterrupted,
+	verifyFleetResponseCommandDelivery,
+} from "./response-command-consumer-v6.js";
 export {
 	FleetResponseCommandWorker,
 	type FleetResponseWorkerOptions,
 } from "./response-command-worker-v6.js";
+export {
+	FleetResponseJournal,
+	type FleetJournalState,
+	type FleetResponseControlHead,
+} from "./response-command-journal-v6.js";
+export {
+	inspectResponseBarrier,
+	ResponseControlConfigSchema,
+	type ResponseControlConfig,
+	type ResponseBarrierInspection,
+	type ResponseBarrierOptions,
+} from "./response-barrier.js";
+export {
+	initializeInstalledWindowsResponseWorker,
+	loadInstalledWindowsResponseWorker,
+	runInstalledWindowsResponseWorker,
+	validateInstalledWindowsResponseRemoval,
+} from "./windows-response-worker.js";
+export * from "./behavioral-learning-receipt.js";
+export * from "./behavioral-learning.js";
+export * from "./authenticated-behavioral-baseline-store.js";
+export { preparePrivateLocalDirectory, preparePrivateLocalFile } from "./private-local-file.js";
+export { windowsTargetsAreAlreadyPrivate } from "./windows-private-acl-probe.js";
 // Response config
 export {
 	auditActionForMode,
@@ -921,13 +961,6 @@ export {
 	type SplunkHecSiemConfig,
 	type WebhookSiemConfig,
 } from "./siem-delivery.js";
-export {
-	classifySyslogAddress,
-	SIEM_SYSLOG_CONFIG_JSON_SCHEMA,
-	type SyslogAddressClass,
-	type SyslogSiemConfig,
-	type SyslogTransport,
-} from "./siem-syslog.js";
 // SIEM export (CEF, LEEF, JSON, RFC 5424 syslog)
 export {
 	exportToCEF,
@@ -940,6 +973,13 @@ export {
 	type SyslogFormatOptions,
 	SyslogMessageTooLargeError,
 } from "./siem-export.js";
+export {
+	classifySyslogAddress,
+	SIEM_SYSLOG_CONFIG_JSON_SCHEMA,
+	type SyslogAddressClass,
+	type SyslogSiemConfig,
+	type SyslogTransport,
+} from "./siem-syslog.js";
 export type {
 	DurableTelemetryEvent,
 	TelemetryDeliveryResult,

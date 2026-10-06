@@ -68,6 +68,134 @@ function renderPage() {
 }
 
 describe("tenant discovery dashboard", () => {
+	it("does not report an empty provider inventory while its request is pending", async () => {
+		let finish: (() => void) | undefined;
+		const pending = new Promise<never>((resolve) => {
+			finish = () =>
+				resolve(
+					response({
+						ok: true,
+						collector: { collector_id: COLLECTOR.collector_id },
+						provider_resources: [],
+						truncated: false,
+						next_resource: null,
+					}),
+				);
+		});
+		vi.mocked(supabase.functions.invoke).mockImplementation(async (_name, options) => {
+			const action = (options?.body as Record<string, unknown>).action;
+			if (action === "summary") return response({ ok: true, summary: SUMMARY });
+			if (action === "list")
+				return response({
+					ok: true,
+					coverage_scope: "reported_collectors_only",
+					truncated: false,
+					next_collector: null,
+					collectors: [
+						{
+							...COLLECTOR,
+							expected_targets: 0,
+							observed_targets: 0,
+							provider_evidence: {
+								provider: "aws",
+								scope_hash: "a".repeat(64),
+								coverage: "tagged_resources",
+								complete: true,
+								observed_at: COLLECTOR.reported_at,
+							},
+						},
+					],
+				});
+			if (action === "resources") return pending;
+			return response({
+				ok: true,
+				collector: { collector_id: COLLECTOR.collector_id },
+				items: [],
+				truncated: false,
+				next_target: null,
+			});
+		});
+		renderPage();
+		expect(await screen.findByText("Loading provider resources…")).toBeInTheDocument();
+		expect(
+			screen.queryByText("No resources reported within the configured scope."),
+		).not.toBeInTheDocument();
+		finish?.();
+		expect(
+			await screen.findByText("No resources reported within the configured scope."),
+		).toBeInTheDocument();
+	});
+	it("renders typed provider resources separately and keeps failed collection partial", async () => {
+		const provider = {
+			provider: "aws",
+			scope_hash: "a".repeat(64),
+			coverage: "tagged_resources",
+			complete: false,
+			observed_at: COLLECTOR.reported_at,
+		};
+		vi.mocked(supabase.functions.invoke).mockImplementation(async (_name, options) => {
+			const action = (options?.body as Record<string, unknown>).action;
+			if (action === "summary") return response({ ok: true, summary: SUMMARY });
+			if (action === "list")
+				return response({
+					ok: true,
+					coverage_scope: "reported_collectors_only",
+					collectors: [
+						{
+							...COLLECTOR,
+							expected_targets: 0,
+							observed_targets: 0,
+							complete: false,
+							state: "partial",
+							provider_evidence: provider,
+						},
+					],
+					truncated: false,
+					next_collector: null,
+				});
+			if (action === "resources")
+				return response({
+					ok: true,
+					collector: { collector_id: COLLECTOR.collector_id },
+					provider_resources: [
+						{
+							provider: "aws",
+							scope_hash: provider.scope_hash,
+							resource_id: "arn:aws:s3:::approved-bucket",
+							resource_type: "s3:bucket",
+							scope_id: "aws:123456789012:eu-central-1",
+							region: "eu-central-1",
+							observed_at: COLLECTOR.reported_at,
+							freshness: "stale",
+							alert_state: "collection_partial",
+						},
+					],
+					truncated: false,
+					next_resource: null,
+				});
+			return response({
+				ok: true,
+				collector: { collector_id: COLLECTOR.collector_id },
+				items: [],
+				truncated: false,
+				next_target: null,
+			});
+		});
+		renderPage();
+		expect(await screen.findByText("arn:aws:s3:::approved-bucket")).toBeInTheDocument();
+		expect(screen.getByText("collection_partial")).toBeInTheDocument();
+		expect(screen.queryByText("healthy")).not.toBeInTheDocument();
+		expect(screen.getByText(/Only the configured scope is reported/)).toBeInTheDocument();
+		expect(vi.mocked(supabase.functions.invoke)).toHaveBeenCalledWith("discovery", {
+			body: {
+				action: "resources",
+				collector_id: COLLECTOR.collector_id,
+				expected_sequence: COLLECTOR.sequence,
+				limit: 100,
+				tenant_id: TENANT_ID,
+			},
+		});
+	});
 	beforeEach(() => {
 		vi.mocked(useTeam).mockReturnValue({
 			currentTeam: { id: TENANT_ID, name: "Example tenant" },

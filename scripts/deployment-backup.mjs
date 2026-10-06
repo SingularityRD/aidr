@@ -211,7 +211,13 @@ async function encrypt(exe, args, name, signal) {
   const cipher = createCipheriv("aes-256-gcm", encKey, iv); cipher.setAAD(Buffer.from(name));
   const path = join(output, name);
 	const { proc, finished } = child(exe, args, signal); proc.stdin.end();
-  try { await Promise.all([pipeline(proc.stdout, cipher, createWriteStream(path, { flags: "wx", mode: 0o600 })), finished]); }
+  try {
+	await Promise.all([
+		pipeline(proc.stdout, cipher, createWriteStream(path, { flags: "wx", mode: 0o600 })),
+		pipeline(proc.stdout, createGunzip(), createTarBoundaryValidator()),
+		finished,
+	]);
+  }
   catch (error) { proc.kill(); throw error; }
   return { name, iv: iv.toString("hex"), tag: cipher.getAuthTag().toString("hex"), sha256: await digest(path) };
 }
@@ -306,11 +312,13 @@ if (action === "backup") {
 		failure = error;
 	} finally {
 		const restartFailures = [];
-		for (const service of running) {
+		// Only the invocation that owns the journal may resume the snapshot's
+		// services. A concurrent backup must not start them while another archives.
+		for (const service of journalIdentity ? running : []) {
 			try { command("docker", [...composeArgs(dir, project), "start", service]); }
 			catch { restartFailures.push(service); }
 		}
-		if (restartFailures.length === 0) {
+		if (journalIdentity && restartFailures.length === 0) {
 			try {
 				const active = new Set(command("docker", [...composeArgs(dir, project), "ps", "--services", "--status", "running"]).split(/\r?\n/).filter(Boolean));
 				restartFailures.push(...running.filter((service) => !active.has(service)));
@@ -331,7 +339,7 @@ if (action === "backup") {
 		}
 		if (restartFailures.length > 0) {
 			failure = new Error(`${failure?.message ?? "Backup completed"}; could not restart originally running services: ${restartFailures.join(", ")}`);
-		} else {
+		} else if (journalIdentity) {
 			console.log("Previously running source services restarted. Verify health before ending the maintenance window.");
 		}
 	}

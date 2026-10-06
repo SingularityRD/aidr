@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash, generateKeyPairSync, sign } from "node:crypto";
-import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
@@ -240,6 +240,22 @@ test("atomic settings replacement retries transient EPERM", () => {
 	assert.deepEqual(sleeps, [7, 7]);
 });
 
+test("installer refuses unsupported Node runtimes before changing the endpoint", (context) => {
+	const home = temporaryHome(context);
+	const preload = join(home, "node-version.cjs");
+	writeFileSync(preload, 'Object.defineProperty(process.versions, "node", { value: process.env.AIDR_TEST_NODE_VERSION });\n');
+	for (const version of ["20.20.0", "22.11.0"]) {
+		const result = spawnSync(process.execPath, ["--require", preload, installer, "--package-dir", packageDir, "--home", home], {
+			encoding: "utf8", timeout: 30000,
+			env: { ...process.env, AIDR_TEST_NODE_VERSION: version, AIDR_DEVELOPMENT_MODE: "false" },
+		});
+		assert.notEqual(result.status, 0);
+		assert.match(result.stderr, /Endpoint installation requires Node\.js >=22\.12\.0/);
+		assert.equal(existsSync(join(home, ".singularity-aidr")), false);
+		assert.equal(existsSync(join(home, ".claude", "settings.json")), false);
+	}
+});
+
 test("fleet-staged installer runs without source-checkout sibling modules", async (context) => {
 	const home = temporaryHome(context);
 	const sourcePackage = await buildEndpointPackageFixture();
@@ -302,6 +318,41 @@ test("unsigned packages are refused before any install side effect outside expli
 	assert.equal(existsSync(join(home, ".claude", "settings.json")), false);
 	assert.equal(existsSync(join(home, ".singularity-aidr", "connectors", "claude")), false);
 	assert.equal(existsSync(join(home, ".singularity-aidr", "installation.json")), false);
+});
+
+test("commercial installer refuses package-provided trust through a directory alias", async (context) => {
+	const fixture = temporaryHome(context);
+	const sourcePackage = await buildEndpointPackageFixture();
+	const signed = createSignedCommercialPackage(fixture, sourcePackage);
+	const packageAlias = join(fixture, "package-alias");
+	symlinkSync(signed.packageDir, packageAlias, process.platform === "win32" ? "junction" : "dir");
+	writeFileSync(join(signed.packageDir, "trust.json"), JSON.stringify({
+		integrity: { enabled: true, verify_on_start: true, public_keys_pem: [signed.publicKeyPem] },
+	}));
+	const home = join(fixture, "aliased-trust-home");
+	const result = runCommercialInstaller(signed.packageDir, home, join(packageAlias, "trust.json"));
+	assert.notEqual(result.status, 0);
+	assert.match(result.stderr, /Integrity trust configuration must be provisioned outside the endpoint package/);
+	assert.equal(existsSync(join(home, ".singularity-aidr", "connectors", "claude")), false);
+	assert.equal(existsSync(join(home, ".claude", "settings.json")), false);
+});
+
+test("commercial installer refuses redirected managed directories before writing outside the home", async (context) => {
+	const fixture = temporaryHome(context);
+	const signed = createSignedCommercialPackage(fixture, await buildEndpointPackageFixture());
+	const config = join(fixture, "trusted-config.json");
+	writeFileSync(config, JSON.stringify({ integrity: { enabled: true, verify_on_start: true, public_keys_pem: [signed.publicKeyPem] } }));
+	for (const managedDirectory of [".claude", ".singularity-aidr"]) {
+		const home = join(fixture, `${managedDirectory}-home`);
+		const redirected = join(fixture, `${managedDirectory}-redirected`);
+		mkdirSync(home);
+		mkdirSync(redirected);
+		symlinkSync(redirected, join(home, managedDirectory), process.platform === "win32" ? "junction" : "dir");
+		const result = runCommercialInstaller(signed.packageDir, home, config);
+		assert.notEqual(result.status, 0, `${managedDirectory} redirected the installer`);
+		assert.match(result.stderr, /Managed installation path contains a symlink/);
+		assert.deepEqual(readdirSync(redirected), [], `${managedDirectory} wrote outside the target home`);
+	}
 });
 
 test("commercial package tampering is refused before files are copied or hooks are registered", async (context) => {

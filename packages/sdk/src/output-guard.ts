@@ -1,4 +1,9 @@
-import { scanModelOutput } from "@singularityrd/aidr-core";
+import {
+	type AgentRuntime,
+	scanCachedProvisionedOutput,
+	scanModelOutput,
+	scanProvisionedOutput,
+} from "@singularityrd/aidr-core";
 
 /** Default maximum amount of tool output inspected before delivery (256 KiB). */
 export const DEFAULT_TOOL_OUTPUT_MAX_BYTES = 256 * 1024;
@@ -311,27 +316,23 @@ class BoundedOutputSerializer {
 }
 
 function serializeBounded(value: unknown, maxBytes: number): SerializationResult {
-	return new BoundedOutputSerializer(maxBytes).serialize(value);
-}
-
-/** Inspect a complete tool/framework result using the core output scanner. */
-export function scanToolOutput(
-	output: unknown,
-	options: Pick<ToolOutputGuardOptions, "maxBytes"> = {},
-): ToolOutputInspection {
-	const maxBytes = validateMaxBytes(options.maxBytes);
-	let serialized: SerializationResult;
 	try {
-		serialized = serializeBounded(output, maxBytes);
+		return new BoundedOutputSerializer(maxBytes).serialize(value);
 	} catch (error) {
 		return {
+			ok: false,
 			status: "unavailable",
-			findings: [],
-			inspectedBytes: 0,
-			maxBytes,
+			bytes: 0,
 			reason: `Tool output could not be read for inspection: ${error instanceof Error ? error.message : String(error)}`,
 		};
 	}
+}
+
+function outputInspection(
+	serialized: SerializationResult,
+	maxBytes: number,
+	findings: ToolOutputFinding[] = [],
+): ToolOutputInspection {
 	if (!serialized.ok) {
 		return {
 			status: serialized.status,
@@ -341,6 +342,25 @@ export function scanToolOutput(
 			reason: serialized.reason,
 		};
 	}
+	return {
+		status: findings.length > 0 ? "findings" : "clean",
+		findings,
+		inspectedBytes: serialized.bytes,
+		maxBytes,
+		...(findings.length > 0
+			? { reason: `Tool output matched ${findings.length} output security rule(s)` }
+			: {}),
+	};
+}
+
+/** Inspect a complete tool/framework result using the core output scanner. */
+export function scanToolOutput(
+	output: unknown,
+	options: Pick<ToolOutputGuardOptions, "maxBytes"> = {},
+): ToolOutputInspection {
+	const maxBytes = validateMaxBytes(options.maxBytes);
+	const serialized = serializeBounded(output, maxBytes);
+	if (!serialized.ok) return outputInspection(serialized, maxBytes);
 
 	try {
 		const byRule = new Map<string, ToolOutputFinding>();
@@ -349,16 +369,7 @@ export function scanToolOutput(
 				if (!byRule.has(finding.ruleId)) byRule.set(finding.ruleId, finding);
 			}
 		}
-		const findings = [...byRule.values()];
-		return {
-			status: findings.length > 0 ? "findings" : "clean",
-			findings,
-			inspectedBytes: serialized.bytes,
-			maxBytes,
-			...(findings.length > 0
-				? { reason: `Tool output matched ${findings.length} output security rule(s)` }
-				: {}),
-		};
+		return outputInspection(serialized, maxBytes, [...byRule.values()]);
 	} catch (error) {
 		return {
 			status: "unavailable",
@@ -378,7 +389,47 @@ export function guardToolOutput<T>(
 	output: T,
 	options: ToolOutputGuardOptions = {},
 ): ToolOutputGuardResult<T> {
-	const inspection = scanToolOutput(output, options);
+	return deliverToolOutput(output, scanToolOutput(output, options), options);
+}
+
+/** Internal async adapter path; the runtime must be fixed by the host at construction. */
+export async function guardProvisionedToolOutput<T>(
+	output: T,
+	agentRuntime: AgentRuntime,
+	options: ToolOutputGuardOptions = {},
+): Promise<ToolOutputGuardResult<T>> {
+	const maxBytes = validateMaxBytes(options.maxBytes);
+	let inspectedBytes = 0;
+	try {
+		// Refresh trust before reading mutable output; the final scan and delivery
+		// decision must use one uninterrupted snapshot after this await.
+		await scanProvisionedOutput([], agentRuntime);
+		const serialized = serializeBounded(output, maxBytes);
+		inspectedBytes = serialized.bytes;
+		const findings = serialized.ok
+			? scanCachedProvisionedOutput([serialized.text, serialized.mcpText], agentRuntime)
+			: [];
+		return deliverToolOutput(output, outputInspection(serialized, maxBytes, findings), options);
+	} catch {
+		return deliverToolOutput(
+			output,
+			{
+				status: "unavailable",
+				findings: [],
+				inspectedBytes,
+				maxBytes,
+				reason: "Provisioned tool output scanner is unavailable",
+			},
+			options,
+		);
+	}
+}
+
+function deliverToolOutput<T>(
+	output: T,
+	inspection: ToolOutputInspection,
+	options: ToolOutputGuardOptions,
+): ToolOutputGuardResult<T> {
 	if (inspection.status === "clean") {
 		return { inspection, delivery: "allow", output };
 	}

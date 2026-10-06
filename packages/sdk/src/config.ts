@@ -6,10 +6,10 @@ import { z } from "zod";
  */
 
 export const SDKConfigSchema = z.object({
-	apiKey: z.string().min(1, "API key is required"),
+	apiKey: z.string().trim().min(1, "API key is required"),
 	baseUrl: z.string().url().optional(),
 	timeout: z.number().min(1000).max(60000).default(5000),
-	retries: z.number().min(0).max(5).default(2),
+	retries: z.number().int().min(0).max(5).default(2),
 	cache: z.boolean().default(true),
 	cacheTtl: z.number().min(60000).max(86400000).default(300000), // 5 minutes
 	environment: z.enum(["production", "staging", "development"]).default("production"),
@@ -21,6 +21,8 @@ export const SDKConfigSchema = z.object({
 });
 
 export type SDKConfig = z.infer<typeof SDKConfigSchema>;
+/** Constructor input; fields with schema defaults may be omitted. */
+export type SDKConfigInput = z.input<typeof SDKConfigSchema>;
 
 /**
  * Security Check Request

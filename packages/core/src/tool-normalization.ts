@@ -569,29 +569,20 @@ export function normalizeToolEvaluationRequest(
 	}
 
 	const artifacts = [...request.artifacts];
-	if (
-		toolName === "Bash" ||
-		toolName === "Write" ||
-		toolName === "Edit" ||
-		toolName === "Read" ||
-		toolName === "Delete" ||
-		toolName === "WebFetch"
-	) {
-		// Connectors may extract before field normalization, or omit artifacts
-		// for an unfamiliar alias. Always include the canonical operation's inputs.
-		for (const artifact of extractFromToolCall(toolName, toolInput)) {
-			addArtifact(artifacts, artifact);
-		}
-		if (toolName === "Edit") {
-			const patchPayload = readFileEditPayload(toolInput);
-			if (patchPayload.patch && !patchPayload.parseFailed) {
-				for (const edit of patchPayload.edits ?? []) {
-					for (const artifact of extractFromToolCall("Edit", {
-						file_path: edit.filePath,
-						new_string: edit.content,
-					})) {
-						addArtifact(artifacts, artifact);
-					}
+	// Connectors may extract before field normalization, or omit artifacts
+	// for an unfamiliar alias. Always include the canonical operation's inputs.
+	for (const artifact of extractFromToolCall(toolName, toolInput)) {
+		addArtifact(artifacts, artifact);
+	}
+	if (toolName === "Edit") {
+		const patchPayload = readFileEditPayload(toolInput);
+		if (patchPayload.patch && !patchPayload.parseFailed) {
+			for (const edit of patchPayload.edits ?? []) {
+				for (const artifact of extractFromToolCall("Edit", {
+					file_path: edit.filePath,
+					new_string: edit.content,
+				})) {
+					addArtifact(artifacts, artifact);
 				}
 			}
 		}

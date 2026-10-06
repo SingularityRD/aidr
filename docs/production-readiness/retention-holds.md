@@ -70,7 +70,7 @@ This does not implement a person-wide DSAR export/deletion workflow. Public wait
 
 ## Legal-hold management API and dashboard (migrations `20261005101002` and `20261005101003`)
 
-Hold placement/release and retention-period changes no longer require operator SQL.
+For an active tenant, hold placement/release and retention-period changes use the API. Once offboarding changes the tenant to `closing`, tenant administration stays disabled; releasing a blocking hold requires the approved legal-operator procedure below.
 
 **Who.** The `retention-admin` Edge Function (`GET`/`POST`, `verify_jwt = true`, identity barrier, per-tenant/subject rate limit) allows an **active tenant owner or admin to read** and an **active tenant owner only to write**. Each write RPC (`admin_place_tenant_legal_hold`, `admin_release_tenant_legal_hold`, `admin_set_tenant_retention`) re-verifies the active owner inside the database, is granted to `service_role` only, validates input, takes the shared tenant lock (seed 2606) and writes its `admin_audit_logs` row (`legal_hold.placed`, `legal_hold.released`, `retention.policy.changed`) in the same transaction. The dashboard page is `/retention` ("Legal holds & retention"); admins see it read-only.
 
@@ -81,6 +81,61 @@ Hold placement/release and retention-period changes no longer require operator S
 **Per-tenant retention periods.** `tenant_data_retention_policies` (already the source for the telemetry reaper and offboarding eligibility) is now tunable per tenant within platform bounds in `public.retention_policy_bounds`: telemetry 7–3650, endpoint identity 30–3650, security intelligence 7–3650, policy configuration 30–3650, membership 30–3650, commercial records 2555–3650, security audit 365–3650 days. `temporary_exports`, `access_credentials` and `operational_ephemera` are platform-controlled. **Defaults are unchanged**: no existing row is modified and new tenants are still seeded from `tenants.retention_days` (30 by default). Old/new values and the reason are audited; setting the current value is a no-op without an audit row; changes are refused during offboarding. Shortening a period lets the next scheduled run delete data already older than the new period unless a hold is active; backups follow their separate retention.
 
 **Rollout.** Apply both migrations before deploying `retention-admin` and the dashboard. No worker change is needed. Operators must still run the maintenance reaper on its normal schedule. Not covered: dual-control (second approver) for release, hold-owner notification, and backup/replica retention.
+
+### Releasing a hold after offboarding starts
+
+`blocked_legal_hold` is a protective stop, not deletion completion. The dashboard and `admin_release_tenant_legal_hold` deliberately require an active tenant, so they cannot release a hold after the tenant becomes `closing`. Do not reopen the tenant or remove the hold row to bypass this boundary. Before offering an offboarding service, assign a named legal operator and database operator who can perform this procedure; their availability and approval are deployment acceptance prerequisites.
+
+Obtain written release approval from the tenant owner and the person responsible for the hold. Record the case, exact tenant/hold IDs, a current owner Auth user ID, the release reason, change reference, approval reference and the named operator. Fence the offboarding worker while reviewing the request. An authorized database operator then substitutes every placeholder below and runs this single transaction through an approved privileged database session. The current-owner check, closing-state check, immutable single release and append-only audit write either all commit or all roll back. The service role is used only inside this transaction; do not expose this procedure through an ordinary tenant API.
+
+```sql
+begin isolation level read committed;
+set local role service_role;
+do $release_offboarding_hold$
+declare
+  v_tenant uuid := '<tenant UUID>';
+  v_hold uuid := '<hold UUID>';
+  v_owner uuid := '<current owner Auth UUID>';
+  v_reason text := '<approved release reason>';
+  v_change text := '<change reference>';
+  v_approval text := '<written approval reference>';
+  v_operator text := '<named legal/database operator>';
+  v_released public.tenant_legal_holds;
+begin
+  if length(btrim(v_reason)) not between 1 and 2000
+     or length(btrim(v_change)) not between 1 and 200
+     or length(btrim(v_approval)) not between 1 and 200
+     or length(btrim(v_operator)) not between 1 and 200 then
+    raise exception 'approved hold-release details are required';
+  end if;
+  perform pg_advisory_xact_lock(hashtextextended(v_tenant::text, 2606));
+  perform 1 from public.tenants t join public.tenant_members m on m.tenant_id = t.id
+   where t.id = v_tenant and t.status = 'closing' and m.user_id = v_owner
+     and m.role = 'owner' and (m.expires_at is null or m.expires_at > clock_timestamp())
+   for share of t, m;
+  if not found then raise exception 'closing tenant and current owner required'; end if;
+  if not exists (select 1 from public.tenant_offboarding_runs
+                 where tenant_id = v_tenant and status <> 'completed') then
+    raise exception 'incomplete offboarding run required';
+  end if;
+  update public.tenant_legal_holds
+     set released_at = clock_timestamp(), released_by = v_owner, release_reason = v_reason
+   where tenant_id = v_tenant and id = v_hold and released_at is null
+   returning * into v_released;
+  if not found then raise exception 'active hold not found'; end if;
+  insert into public.admin_audit_logs(actor_user_id, tenant_id, action, detail)
+    values (v_owner, v_tenant, 'legal_hold.released', jsonb_build_object(
+      'hold_id', v_released.id, 'case_id', v_released.case_id,
+      'hold_owner', v_released.hold_owner, 'placed_at', v_released.placed_at,
+      'release_reason', v_reason, 'change_reference', v_change,
+      'approval_reference', v_approval, 'operator', v_operator,
+      'method', 'trusted_operator_offboarding'));
+end;
+$release_offboarding_hold$;
+commit;
+```
+
+Verify the exact hold now has its release timestamp and reason, and one matching `legal_hold.released` audit event containing the approval/operator references. Preserve the approved change record. Resume the existing offboarding command for the same run; it rechecks holds, retention clocks and outstanding Storage authorizations. Do not manually mark receipts or the run completed. This transaction records a legally authorized application-level release; it does not establish backup expiry, physical erasure or customer acceptance.
 
 ## Verification
 

@@ -10,30 +10,67 @@
  * contract, without packing real tarballs.
  */
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 import { cleanupDirectory } from "./release-candidate-cleanup.mjs";
+import { assertVsixIntegrityEvidence, VSIX_INTEGRITY_EVIDENCE_FILES } from "./lib/vsix-package-files.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SCRIPT = join(ROOT, "scripts", "build-release-candidate.mjs");
 
 /** Runs the assembler and captures status plus output instead of throwing. */
 function run(args, options = {}) {
+	const { script = SCRIPT, ...executionOptions } = options;
 	try {
-		const stdout = execFileSync(process.execPath, [SCRIPT, ...args], {
+		const stdout = execFileSync(process.execPath, [script, ...args], {
 			cwd: ROOT,
 			encoding: "utf8",
 			stdio: ["ignore", "pipe", "pipe"],
-			...options,
+			...executionOptions,
 		});
 		return { status: 0, output: stdout };
 	} catch (error) {
 		return { status: error.status ?? 1, output: `${error.stdout ?? ""}${error.stderr ?? ""}` };
 	}
+}
+
+/** A disposable checkout exercises actual packing without changing this worktree. */
+function candidateFixture(t) {
+	const root = mkdtempSync(join(tmpdir(), "aidr-candidate-fixture-"));
+	t.after(() => cleanupDirectory(root));
+	for (const file of [
+		"scripts/build-release-candidate.mjs", "scripts/release-candidate-cleanup.mjs",
+		"scripts/lib/claude-plugin-package.mjs", "scripts/lib/tar-path.mjs",
+		"scripts/lib/release-archive-inspection.mjs", "scripts/lib/package-artifact-rules.mjs",
+		"scripts/generate-provenance.mjs",
+		"packages/claude-code/scripts/ensure-dist.mjs",
+	]) {
+		mkdirSync(dirname(join(root, file)), { recursive: true });
+		copyFileSync(join(ROOT, file), join(root, file));
+	}
+	writeFileSync(join(root, "package.json"), JSON.stringify({ private: true, type: "module", version: "1.2.3" }));
+	writeFileSync(join(root, ".gitignore"), "packages/*/dist/\n.release-evidence/\n");
+	mkdirSync(join(root, ".release-evidence"), { recursive: true });
+	const sbom = JSON.stringify({ bomFormat: "CycloneDX", specVersion: "1.5", components: [] });
+	writeFileSync(join(root, ".release-evidence/aidr-sbom.cdx.json"), sbom);
+	writeFileSync(join(root, ".release-evidence/aidr-sbom.cdx.json.sha256"), `${createHash("sha256").update(sbom).digest("hex")}  aidr-sbom.cdx.json\n`);
+	writeFileSync(join(root, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+	for (const name of ["core", "claude-code", "opencode", "openclaw", "codex", "cli", "sdk", "mcp-gateway", "dashboard", "extension"]) {
+		const directory = join(root, "packages", name);
+		mkdirSync(join(directory, "dist"), { recursive: true });
+		writeFileSync(join(directory, "dist", "index.cjs"), "module.exports = {};\n");
+		writeFileSync(join(directory, "dist", "aidr-artifact.manifest.json"), JSON.stringify({ artifact_id: `${name}/dist` }));
+		writeFileSync(join(directory, "package.json"), JSON.stringify({ name: `@singularityrd/aidr-${name}`, version: "1.2.3", files: ["dist"] }));
+	}
+	for (const args of [["init", "--quiet"], ["add", "."], ["-c", "user.name=AIDR Test", "-c", "user.email=test@example.invalid", "commit", "--quiet", "-m", "fixture"]]) {
+		execFileSync("git", args, { cwd: root, stdio: "pipe" });
+	}
+	return { root, script: join(root, "scripts", "build-release-candidate.mjs") };
 }
 
 describe("release candidate cleanup", () => {
@@ -84,6 +121,42 @@ describe("release candidate cleanup", () => {
 });
 
 describe("release candidate assembler", () => {
+	it("VSIX evidence requires a signature by default and permits only its absence for unsigned preparation", async (t) => {
+		const root = mkdtempSync(join(tmpdir(), "aidr-vsix-evidence-"));
+		t.after(() => cleanupDirectory(root));
+		mkdirSync(join(root, "dist"));
+		for (const file of VSIX_INTEGRITY_EVIDENCE_FILES.filter((name) => !name.endsWith(".sig"))) writeFileSync(join(root, file), "fixture\n");
+		await assert.rejects(assertVsixIntegrityEvidence(root), /manifest\.sig/);
+		await assertVsixIntegrityEvidence(root, { requireSignature: false });
+		rmSync(join(root, "dist/aidr-sbom.cdx.json"));
+		await assert.rejects(assertVsixIntegrityEvidence(root, { requireSignature: false }), /aidr-sbom\.cdx\.json/);
+	});
+
+	it("rejects missing or changed mandatory SBOM evidence and cleans incomplete output", (t) => {
+		const fixture = candidateFixture(t);
+		const checksum = join(fixture.root, ".release-evidence/aidr-sbom.cdx.json.sha256");
+		rmSync(checksum);
+		const output = ".release-evidence/candidate";
+		let result = run(["--output", output], { script: fixture.script, cwd: fixture.root });
+		assert.equal(result.status, 1);
+		assert.match(result.output, /release SBOM evidence is missing/);
+		assert.equal(existsSync(join(fixture.root, output)), false);
+		writeFileSync(checksum, `${"a".repeat(64)}  aidr-sbom.cdx.json\n`);
+		result = run(["--output", output], { script: fixture.script, cwd: fixture.root });
+		assert.equal(result.status, 1);
+		assert.match(result.output, /SBOM checksum does not match/);
+		assert.equal(existsSync(join(fixture.root, output)), false);
+	});
+
+	it("requires every one of the ten artifact manifests for provenance before packing", (t) => {
+		const fixture = candidateFixture(t);
+		rmSync(join(fixture.root, "packages/mcp-gateway/dist/aidr-artifact.manifest.json"));
+		const output = ".release-evidence/candidate";
+		const result = run(["--output", output], { script: fixture.script, cwd: fixture.root });
+		assert.equal(result.status, 1);
+		assert.match(result.output, /required release provenance failed:.*artifact manifest is missing/s);
+		assert.equal(existsSync(join(fixture.root, output)), false);
+	});
 	it("documents its arguments", () => {
 		const result = run(["--help"]);
 		assert.equal(result.status, 0);
@@ -102,6 +175,35 @@ describe("release candidate assembler", () => {
 		const result = run(["--output", ".release-evidence/never-created", "--force"]);
 		assert.equal(result.status, 1);
 		assert.match(result.output, /unknown argument/);
+	});
+
+	it("rejects a release version containing path separators before creating output", () => {
+		const result = run(["--output", ".release-evidence/never-created", "--rc-version", "1.2.3/../../outside"]);
+		assert.equal(result.status, 1);
+		assert.match(result.output, /safe release version without path separators/);
+	});
+
+	it("refuses packed source maps and removes the incomplete candidate", (t) => {
+		const fixture = candidateFixture(t);
+		writeFileSync(join(fixture.root, "packages/core/dist/index.cjs.map"), "{}\n");
+		const output = ".release-evidence/candidate";
+		const result = run(["--output", output], { script: fixture.script, cwd: fixture.root });
+		assert.equal(result.status, 1);
+		assert.match(result.output, /packed consumer artifact contains forbidden files/);
+		assert.equal(existsSync(join(fixture.root, output)), false, "failed assembly must leave no incomplete candidate");
+	});
+
+	it("removes incomplete output when pnpm pack fails", (t) => {
+		const fixture = candidateFixture(t);
+		const manifest = join(fixture.root, "packages/core/package.json");
+		const pkg = JSON.parse(readFileSync(manifest, "utf8"));
+		pkg.scripts = { prepack: "node -e \"process.exit(7)\"" };
+		writeFileSync(manifest, JSON.stringify(pkg));
+		const output = ".release-evidence/candidate";
+		const result = run(["--output", output, "--allow-dirty"], { script: fixture.script, cwd: fixture.root });
+		assert.equal(result.status, 1);
+		assert.match(result.output, /pnpm pack failed/);
+		assert.equal(existsSync(join(fixture.root, output)), false, "failed packing must leave no incomplete candidate");
 	});
 
 	it("refuses an output directory outside the repository", () => {
@@ -145,6 +247,7 @@ describe("release candidate assembler", () => {
 				// A failure here must still be a real refusal, not a crash, and must
 				// leave no half-written candidate behind.
 				assert.match(result.output, /ERROR:/);
+				assert.equal(existsSync(absolute), false, "failed assembly must leave no half-written candidate");
 				return;
 			}
 			const metadata = JSON.parse(readFileSync(join(absolute, "release-metadata.json"), "utf8"));
@@ -155,13 +258,13 @@ describe("release candidate assembler", () => {
 				["artifacts", "git_sha", "release_tag", "release_version", "schema_version", "source_date_epoch", "worktree_dirty"],
 			);
 			assert.equal(metadata.worktree_dirty, true);
-			assert.equal(JSON.parse(result.stdout).status, "REHEARSAL");
+			assert.equal(JSON.parse(result.output).status, "REHEARSAL");
 			// The bundle itself may contain only metadata, inventory and artifacts;
 			// the assurance report must sit outside it.
 			const bundleEntries = readdirSync(absolute).sort();
 			for (const entry of bundleEntries) {
 				assert.ok(
-					["release-metadata.json", "release-inventory.json"].includes(entry) || /\.(tgz|tar\.gz|json)$/.test(entry),
+					["release-metadata.json", "release-inventory.json"].includes(entry) || /\.(tgz|tar\.gz|json|json\.sha256|vsix)$/.test(entry),
 					`unexpected file inside candidate bundle: ${entry}`,
 				);
 			}

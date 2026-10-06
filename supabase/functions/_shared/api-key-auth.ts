@@ -74,7 +74,7 @@ function membershipRow(value: unknown): MembershipRow | null {
 }
 
 /** API keys are write-capable tenant credentials, so read-only roles fail closed. */
-export function apiKeyMembershipActive(value: unknown, now = Date.now()): boolean {
+function apiKeyMembershipActive(value: unknown, now = Date.now()): boolean {
 	const membership = membershipRow(value);
 	return membershipActive(membership, now) && API_KEY_MEMBER_ROLES.has(membership?.role ?? "");
 }

@@ -1,11 +1,14 @@
 #!/usr/bin/env node
 // Installs a built Claude connector into a stable, digest-addressed local path.
 import { createHash, createPublicKey, verify as cryptoVerify } from "node:crypto";
-import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { spawnSync } from "node:child_process";
+
+const [nodeMajor, nodeMinor] = process.versions.node.split(".").map(Number);
+if (nodeMajor < 22 || (nodeMajor === 22 && nodeMinor < 12)) throw new Error("Endpoint installation requires Node.js >=22.12.0");
 
 const sleepSync = (milliseconds) => {
 	if (milliseconds <= 0) return;
@@ -42,6 +45,18 @@ const packageRootInfo = lstatSync(source);
 if (!packageRootInfo.isDirectory() || packageRootInfo.isSymbolicLink()) throw new Error("Endpoint package must be a regular directory");
 const settingsPath = join(userHome, ".claude/settings.json");
 const configPath = join(userHome, ".singularity-aidr/config.json");
+const receiptPath = join(userHome, ".singularity-aidr/installation.json");
+function assertNoManagedSymlinks(path) {
+	for (let current = path; ; current = dirname(current)) {
+		try {
+			if (lstatSync(current).isSymbolicLink()) throw new Error("Managed installation path contains a symlink; registration unchanged");
+		} catch (error) {
+			if (error.code !== "ENOENT") throw error;
+		}
+		if (current === userHome) return;
+	}
+}
+for (const path of [settingsPath, configPath, receiptPath]) assertNoManagedSymlinks(path);
 const readOptional = (path) => {
 	try { return readFileSync(path); }
 	catch (error) { if (error.code === "ENOENT") return null; throw error; }
@@ -55,17 +70,15 @@ if (Object.entries(settings.enabledPlugins || {}).some(([key, enabled]) => /aidr
 if (values.config && existsSync(configPath)) throw new Error("Existing agent configuration preserved. Merge managed settings explicitly before installing");
 const configSource = values.config ? resolve(values.config) : existsSync(configPath) ? configPath : null;
 if (configSource) {
-	const fromPackage = relative(source, configSource);
+	const configInfo = lstatSync(configSource);
+	if (!configInfo.isFile() || configInfo.isSymbolicLink()) throw new Error("Integrity trust configuration must be a regular file");
+	const fromPackage = relative(realpathSync(source), realpathSync(configSource));
 	if (fromPackage === "" || (!isAbsolute(fromPackage) && fromPackage !== ".." && !fromPackage.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`))) {
 		throw new Error("Integrity trust configuration must be provisioned outside the endpoint package");
 	}
 }
 const config = configSource ? JSON.parse(readFileSync(configSource, "utf8")) : null;
 if (config && (typeof config !== "object" || Array.isArray(config))) throw new Error("Invalid agent configuration");
-if (configSource) {
-	const configInfo = lstatSync(configSource);
-	if (!configInfo.isFile() || configInfo.isSymbolicLink()) throw new Error("Integrity trust configuration must be a regular file");
-}
 const packageIntegrity = verifyEndpointPackage(source, config);
 const hash = createHash("sha256");
 function files(dir, prefix = "") {
@@ -88,6 +101,8 @@ const shipped = [
 for (const file of shipped) hash.update(file.replaceAll("\\", "/")).update("\0").update(readFileSync(join(source, file)));
 const digest = hash.digest("hex");
 const target = join(userHome, ".singularity-aidr/connectors/claude", digest);
+assertNoManagedSymlinks(target);
+if (existsSync(target)) files(target);
 for (const file of shipped) {
 	const destination = join(target, file);
 	mkdirSync(dirname(destination), { recursive: true, mode: 0o700 });
@@ -196,7 +211,6 @@ try {
 	mkdirSync(dirname(settingsPath), { recursive: true, mode: 0o700 });
 	if (!unchanged(settingsPath, originalSettings)) throw new Error("Claude settings changed during installation; registration unchanged. Retry after closing other settings editors");
 	const receipt = { schema_version: 1, installed_at: new Date().toISOString(), connector: "claude-code", artifact_sha256: digest, package_integrity: installedPackageIntegrity.signed ? "signature_verified" : "development_unverified", ...(installedPackageIntegrity.manifest_sha256 ? { package_manifest_sha256: installedPackageIntegrity.manifest_sha256 } : {}), path: target, settings_path: settingsPath, local_canary: "deny", native_amsi_probe: nativeAmsiProbe, host_execution: "unverified" };
-	const receiptPath = join(userHome, ".singularity-aidr/installation.json");
 	receiptTemporary = `${receiptPath}.aidr-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.tmp`;
 	writeFileSync(receiptTemporary, `${JSON.stringify(receipt, null, 2)}\n`, { mode: 0o600, flag: "wx" });
 	if (!originalSettings || originalSettings.toString() !== rendered) {

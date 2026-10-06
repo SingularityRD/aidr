@@ -175,7 +175,9 @@ export function PolicyRollout({
 			);
 			setSelected([]);
 			setRefresh((value) => value + 1);
-			onChanged();
+			// Staging and canary rollout change agent targets, not the published
+			// tenant policy. Reloading that policy would discard the reviewed draft.
+			if (action === "restore") onChanged();
 		} catch (cause) {
 			if (selectedTeam.current === team) setError(readErrorMessage(cause, "Policy change failed."));
 		} finally {
@@ -201,7 +203,6 @@ export function PolicyRollout({
 				type="button"
 				onClick={() => {
 					setRefresh((value) => value + 1);
-					onChanged();
 				}}
 			>
 				Refresh deployment status

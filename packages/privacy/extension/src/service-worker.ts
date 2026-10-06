@@ -48,10 +48,13 @@ async function reload():Promise<void>{
     const nextDigest=await sha256(new TextEncoder().encode(JSON.stringify(next)));if(rev!==revision)return;
     const actions=Object.fromEntries(ENTITY_TYPES.map(t=>[t,next.textAction==='block'||['SECRET','PRIVATE_KEY','INTERNAL','CLASSIFIED'].includes(t)?'block':'redact'])) as Partial<Record<EntityType,'block'|'redact'>>;
     const engine=new BrowserPrivacyEngine({injectionAction:next.injectionAction,sourceCodeAction:next.sourceCodeAction,policyId:next.id,literals:next.literals,actions,maxInputBytes:Math.max(next.maxTextBytes,1048576)});
-    await chrome.declarativeNetRequest.updateDynamicRules({removeRuleIds:[91001,91002],addRules:blockedRules(next)});
-    if(rev!==revision)return;policy=next;digest=nextDigest;scanner=engine;healthy=true;
+    await auditQueue.catch(()=>{});
     const local=await chrome.storage.local.get('audit');await chrome.storage.local.set({audit:sanitizeAudit(local.audit,next.retentionDays)});
     await chrome.action.setBadgeText({text:next.mode==='block'?'BLK':''});
+    // Keep the network quarantine until every fallible initialization step succeeds.
+    if(rev!==revision)return;
+    await chrome.declarativeNetRequest.updateDynamicRules({removeRuleIds:[91001,91002],addRules:blockedRules(next)});
+    if(rev!==revision)return;policy=next;digest=nextDigest;scanner=engine;healthy=true;
   }catch{if(rev===revision){healthy=false;policy=null;await chrome.action.setBadgeText({text:'!'}).catch(()=>{});}}
   const tabs=await chrome.tabs.query({url:MATCHES}).catch(()=>[]);
   for(const tab of tabs)if(tab.id)void chrome.tabs.sendMessage(tab.id,{type:'POLICY_CHANGED',epoch},{frameId:0}).catch(()=>{});

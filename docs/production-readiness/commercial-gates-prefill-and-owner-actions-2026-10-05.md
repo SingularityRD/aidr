@@ -1,34 +1,39 @@
 # Commercial hard gates — repo pre-fill and owner action checklist (5 October 2026)
 
-**All 13 hard gates remain `open`. Nothing in this document marks, implies or recommends a PASS.** The receipts in [`commercial-gate-receipts.json`](./commercial-gate-receipts.json) were not edited. Re-confirmed on this branch: `node scripts/verify-commercial-gate-receipts.mjs` lists all 13 as open; `node docs/scripts/claim-check.mjs --mode=gate` exits FAIL by design (0 unapproved claim hits across 54 claim-facing files; candidate digest `unknown`); `node scripts/verify-commercial-compliance.mjs` reports templates valid-but-open (19 data flows, 200 unknown values; 1 licence exception with 15 unknown values); `node scripts/validate-backlog.mjs` and `node scripts/verify-repo-hygiene.mjs` pass.
+**Source status updated:** 6 October 2026. Release acceptance remains open.
+
+**All 13 hard gates remain `open`; the production profile uses 12 and excludes investor-only INV-001. Nothing in this document approves a gate.** The receipts' source/input descriptions were refreshed on 6 October; all decisions, REQUIRED human identity fields and null candidate/approval/evidence fields remain unchanged. Source base is `7f3ec0ad009abf5b032b8116b296d8604fee884e` plus uncommitted changes. No accepted signed candidate or current `.release-evidence/v8-evidence-index.json` is held. Earlier 0 unapproved claim hits / 54 files, 19 data flows / 200 unknowns and one licence row / 15 unknowns are historical. Current preparation has 25 source-inventory flows / 177 explicit unknowns and two OPEN licence reviews / 8 owner-approval-expiry unknowns. None are deployment or Legal acceptance. Use the [current release report](../../RELEASE_READINESS_REPORT.md) for current test/candidate evidence.
 
 What this document adds: for each gate, (a) what the repository can already supply, with paths, (b) what is still missing, and (c) a who/what/where action. Evidence must bind to **one signed Release Candidate** (`candidate_digest` = SHA-256 of `release-inventory.json`); no RC exists yet (`releaseCandidate: null`).
 
-Companion artifacts produced in this pass:
+The Supabase control plane in `aidr` and the managed web app in `aidr-landing` are separate deployment paths. The former has tenant/RBAC and SSO/SCIM source implementations. The latter uses Clerk, Firestore and Polar, with personal tenants and operator-bound Clerk organizations that preserve the existing tenant/storage anchor. Shared requests recheck current administrator/member roles, and policy publication requires two distinct current organization administrators. This source implementation still needs live organization, role-removal, two-account approval and Firestore-rule acceptance. Native Clerk enterprise SSO needs provider configuration and acceptance; no managed SCIM endpoint is shipped. Each path needs its own provider, data-flow and deployed acceptance evidence.
+
+Companion artifacts and their scope:
 
 | Artifact | Path |
 |---|---|
-| Vendor questionnaire answers (109 questions, cites code) | [`security-questionnaire-answers.md`](./security-questionnaire-answers.md) |
+| Vendor questionnaire draft, with source scope and acceptance limits | [`security-questionnaire-answers.md`](./security-questionnaire-answers.md) |
 | Secret-history triage + redacted ledger | [`secret-history-triage-2026-10-05.md`](./secret-history-triage-2026-10-05.md), [`evidence/secret-history-ledger-2026-10-05.csv`](./evidence/secret-history-ledger-2026-10-05.csv) |
-| Enterprise feature verification (VERIFIED / PARTIAL / MISSING) | [`enterprise-feature-verification-2026-10-05.md`](./enterprise-feature-verification-2026-10-05.md) |
+| Current enterprise implementation and earlier historical inspection | [`enterprise-feature-verification-2026-10-05.md`](./enterprise-feature-verification-2026-10-05.md) |
 | Tenant-isolation / auth security review | [`tenant-isolation-security-review-2026-10-05.md`](./tenant-isolation-security-review-2026-10-05.md) |
+| Exact wheel/native/dpkg notice review inputs, with current and historical snapshots separated | [`bridge-notice-review-pack-2026-10-06.md`](./bridge-notice-review-pack-2026-10-06.md) |
 | SBOM generator / licence report / release-signing proof | see "Offline supply-chain tooling" below |
 
 ## Offline supply-chain tooling (verified locally)
 
-| Capability | Command | Result on this branch |
+| Capability | Command | Recorded result and scope |
 |---|---|---|
-| CycloneDX SBOM (lockfile-derived, deterministic, no network) | `pnpm sbom` (`node scripts/generate-sbom.mjs [--output f]`) | 217 components (205 libraries). Non-commercial mode succeeds; `AIDR_RELEASE_MODE=commercial` deliberately exits non-zero because 31 PyPI runtime packages (`services/aig-bridge/requirements-runtime.lock`) have no licence metadata. |
-| Licence report (offline, from the SBOM; new) | `pnpm license:report -- [--markdown f] [--strict]` (`scripts/generate-license-report.mjs`, test `scripts/generate-license-report.test.mjs`) | 174 permissive (MIT 136, Apache-2.0 20, ISC 11, BSD-3 4, BSD-2 2, 0BSD 1), 0 copyleft/review-required among declared licences, **31 UNKNOWN** (the PyPI set). UNKNOWN is never assumed safe; `--strict` exits 1 while any exist. Engineering inventory only, not legal approval. |
-| Provenance (SLSA-style statement binding artifacts, SBOM, lockfile) | `scripts/generate-provenance.mjs`; `scripts/provenance.test.mjs` | 5 tests pass, including subject-digest mismatch, omitted manifest, lockfile and SBOM tamper detection. |
-| Release signing and verification (FCR-01) | `scripts/release-sign.mjs`, `scripts/release-verify.mjs`, `scripts/release-signing-lib.mjs`; tests `scripts/release-signing.test.mjs`, `scripts/release-key-isolation.test.mjs` | 26/26 tests pass using throwaway Ed25519 keys generated inside the test (`generateKeyPairSync`), no real key involved: signs exact release and runs installer only after verification; **artifact tamper** rejected before installer runs; **modified detached signature** rejected; **wrong signer / allow-list and revoked key id or fingerprint** rejected; **expired release and over-long validity window** rejected; **rollback and same-sequence equivocation** rejected (older candidate only when protected policy allows); anti-rollback state not advanced when installer fails; unsafe receipt destinations and concurrent-lock cases fail closed; private keys/trust policy kept outside the signed bundle. |
-| Production dependency audit | `pnpm audit --prod`, `node scripts/audit-production-deps.mjs` | Was 6 moderate advisories (`ip-address`, `hono`, `fast-uri`; no high/critical); fixed by raising `pnpm.overrides` in `package.json` (`ip-address` 10.7.3, `hono` 4.13.7, `fast-uri` 3.1.8). Now 0 advisories. |
+| CycloneDX SBOM (lockfile-derived, deterministic, no network) | `pnpm sbom` (`node scripts/generate-sbom.mjs [--output f]`) | The current local inventory has 216 components (204 libraries). All 30 selected SHA-locked PyPI wheels have metadata and shipped licence-file digests verified against official PyPI. The [metadata manifest](../../services/aig-bridge/pypi-runtime-licenses.json) is inventory evidence, not counsel approval or a signed candidate. |
+| Licence report (offline, from the SBOM) | `pnpm license:report -- [--markdown f] [--strict]` (`scripts/generate-license-report.mjs`, test `scripts/generate-license-report.test.mjs`) | 202 permissive, 2 review-required, **0 UNKNOWN** at the declared library-metadata level. Review is required for `certifi` (MPL-2.0) and pure `psycopg` (LGPLv3). The binary wheel is removed from current locks; its 14-library record is historical. [The current review pack](./bridge-notice-review-pack-2026-10-06.md) archives actual wheel texts and scoped system-libpq native copyright materials. The strict report exits 1 pending real licence review; no exception was fabricated. Full OS/image and candidate-bound source/notice obligations remain outside this declared-library report. |
+| Provenance (SLSA-style statement binding artifacts, SBOM, lockfile) | `scripts/generate-provenance.mjs`; `scripts/provenance.test.mjs` | The earlier inspection recorded 5 passing tests, including subject-digest mismatch, omitted manifest, lockfile and SBOM tamper detection. Re-run and bind the proof to the release candidate. |
+| Release signing and verification (FCR-01) | `scripts/release-sign.mjs`, `scripts/release-verify.mjs`, `scripts/release-signing-lib.mjs`; tests `scripts/release-signing.test.mjs`, `scripts/release-key-isolation.test.mjs` | The earlier inspection recorded 26/26 tests using throwaway Ed25519 keys generated inside the test (`generateKeyPairSync`), no real key involved: signs exact release and runs installer only after verification; **artifact tamper** rejected before installer runs; **modified detached signature** rejected; **wrong signer / allow-list and revoked key id or fingerprint** rejected; **expired release and over-long validity window** rejected; **rollback and same-sequence equivocation** rejected (older candidate only when protected policy allows); anti-rollback state not advanced when installer fails; unsafe receipt destinations and concurrent-lock cases fail closed; private keys/trust policy kept outside the signed bundle. These fixture tests are not production publisher acceptance. |
+| Production dependency audit | `pnpm audit --prod`, `node scripts/audit-production-deps.mjs` | The [current release report](../../RELEASE_READINESS_REPORT.md) records clean production/build audits for `aidr` and a clean runtime audit for `aidr-landing`. Landing's development ESLint chain retains one unpatched high advisory. A runtime audit result does not close that development-tool finding or the independent assessment gate. |
 
-Not done locally and requiring owners: production publisher key ceremony and HSM/KMS custody, signing of an actual candidate, SBOM/licence texts for the Python wheels and container images, CI-produced attestations.
+Still requiring owners and release acceptance: production publisher key custody and signing of an actual candidate, review of the two declared licences, scoped system-native terms and full container/OS licence inventories, and CI-produced attestations. Python wheel metadata extraction itself is no longer missing.
 
 ## Gate-by-gate
 
-Legend: **Pre-fill** = verifiable from the repository today. **Missing** = cannot be supplied by the repo. **Actions** = who / what / where.
+Legend: **Pre-fill** = source implementation or recorded local evidence, with its stated scope. **Missing** = remaining implementation, environment, measurement or owner acceptance. **Actions** = who / what / where.
 
 ### COM-001 — Commercial Release Manifest (Commercial/Sales + Finance/Billing)
 
@@ -41,27 +46,27 @@ Legend: **Pre-fill** = verifiable from the repository today. **Missing** = canno
 
 ### COM-002 — Licences, notices, chain of title (Legal + Engineering)
 
-- **Pre-fill:** root `LICENSE`, `NOTICE`, `THIRD_PARTY_NOTICES`; ten workspace manifests declare `Proprietary`; [`com-002-license-audit-2026-09-23.md`](./com-002-license-audit-2026-09-23.md); exception register [`license-exception-register.json`](./license-exception-register.json); new SBOM + licence report above (npm side fully declared and permissive; PyPI side unknown).
-- **Missing:** counsel approval; contributor/employee/contractor chain of title; Python wheel licence files (Core Metadata `License-Expression`/`License-File`); container base-image/OS and Supabase/upstream image notices; exception register owner/disposition/expiry; DRL 1.1 attribution check for `threats/`.
+- **Pre-fill:** root `LICENSE`, `NOTICE`, `THIRD_PARTY_NOTICES`; workspace licence declarations; historical [`com-002-license-audit-2026-09-23.md`](./com-002-license-audit-2026-09-23.md); exception register [`license-exception-register.json`](./license-exception-register.json); current SBOM and SHA-locked Python wheel metadata above. There are no UNKNOWN declared library licences in this local inventory; two require review. The current wheel/system-libpq [notice review archive](./bridge-notice-review-pack-2026-10-06.md) exists; full image scope and Legal/source obligations remain open.
+- **Missing:** counsel approval; contributor/employee/contractor chain of title; disposition of the two review-required libraries and current system/static-native terms; applicable obligations for the collected 110 dpkg package notices, selected non-dpkg/static and other Supabase/upstream-image inventories; exception register owner/disposition/expiry; DRL 1.1 attribution check for `threats/`.
 - **Actions:**
-  1. Engineering: after the RC wheels are built, extract wheel Core Metadata + licence files for the 31 packages, feed into the SBOM so `AIDR_RELEASE_MODE=commercial pnpm sbom` passes; generate image SBOMs for the compose images.
+  1. Engineering: bind the verified wheel metadata, measured native records and collected 110-package dpkg notice snapshot to exact RC artifacts; complete selected non-dpkg/static and other compose-image inventories. Legal reviews the applicable copyright/source obligations. An inventory pass does not grant distribution rights.
   2. Legal: review `THIRD_PARTY_NOTICES` against the full transitive npm/PyPI/image set (the file is a direct-dependency baseline); sign chain-of-title (contributor agreements, vendored AIG provenance under `vendor/ai-infra-guard/`).
   3. Legal: assign owner/reviewer/expiry in `license-exception-register.json`; record counsel approval bound to the RC digest.
 
 ### COM-003 — Privacy / data-flow truth (Privacy/DPO + Legal + Security)
 
-- **Pre-fill:** data-flow matrix [`privacy-data-flow-matrix.json`](./privacy-data-flow-matrix.json) (19 flows DF-001..DF-019, each with source files, purpose, fields; destinations/regions/retention deliberately `unknown`), register [`data-flow-privacy-v6.md`](./data-flow-privacy-v6.md), handoff [`com-003-privacy-acceptance-2026-09-23.md`](./com-003-privacy-acceptance-2026-09-23.md), local canary `scripts/privacy-verify.mjs` / `scripts/privacy-canary.test.mjs`. Questionnaire answers PRV-* cite code for what is and is not sent.
+- **Pre-fill:** data-flow matrix [`privacy-data-flow-matrix.json`](./privacy-data-flow-matrix.json), updated 6 October with 25 inventory flows DF-001..DF-025, source-known destination/access/deletion boundaries and separate managed Clerk/Firestore/Polar, contact, privacy text-service and MCP paths. Actual configured domains, region, lawful basis and approved retention remain explicit unknowns. Register [`data-flow-privacy-v6.md`](./data-flow-privacy-v6.md), historical handoff [`com-003-privacy-acceptance-2026-09-23.md`](./com-003-privacy-acceptance-2026-09-23.md), and local canary tooling are engineering inputs. Questionnaire PRV-* answers retain source/acceptance limits.
 - **Missing:** deployment-specific destinations, regions, access owners, retention and deletion per flow; exact-build packet capture and opt-out tests; DPA / TOM / SCC; subprocessor list; deletion/export receipt on a real tenant.
 - **Actions:**
   1. Security/QA: run exact-build egress capture for each enabled flow on the RC (managed, on-prem, air-gapped profiles); attach redacted reports.
-  2. Privacy/DPO: fill `destination`, `region`, `retention`, `owner` for DF-001..DF-019 (replace `unknown`), approve the notice text in `docs/privacy.md`.
-  3. Legal: execute DPA/TOM/SCC with the customer template; maintain subprocessor list (Supabase, Cloudflare, Stripe/Paddle, Sentry if enabled, email provider).
+  2. Privacy/DPO: verify the enabled flow subset and fill actual domains, regions, lawful basis, retention, access owner and transfer/deletion evidence for DF-001..DF-025; approve the notice text in `docs/privacy.md`. Source descriptions do not establish runtime values.
+  3. Legal: execute the applicable data-processing/security terms; maintain a separate enabled-provider list for each path. The Supabase control plane includes its selected hosting, SMTP and optional services; legacy Stripe/Paddle routes count only when enabled. The managed web app includes Clerk, Firebase/Firestore, Polar, selected hosting and optional services. Approval of one path does not approve the other.
 
 ### COM-004 — Billing and entitlements (Finance/Billing + Product)
 
-- **Pre-fill:** `supabase/functions/billing-checkout`, `billing-portal`, `invoice-entitlement`, `stripe-webhook`, `paddle-webhook` (legacy, disabled for direct GA per the isolation review), entitlement Ed25519 verification (`entitlements-ed25519.test.ts`), Postgres rehearsal scripts (`scripts/billing-*-postgres*.mjs`, `scripts/test-invoice-finance-postgres.mjs`).
-- **Missing:** provider-of-record decision, SKU/entitlement test run against a real provider test mode, invoice/reconciliation evidence, revocation and deletion receipt.
-- **Actions:** Finance decides provider of record; Engineering runs the Postgres billing suites against a disposable database and the provider's test mode (not live), stores logs; Finance signs reconciliation evidence.
+- **Pre-fill:** the Supabase path has `supabase/functions/billing-checkout`, `billing-portal`, `invoice-entitlement`, legacy `stripe-webhook`/`paddle-webhook`, entitlement Ed25519 verification and Postgres rehearsal scripts. The separate managed app has Polar checkout/webhook and entitlement code under `aidr-landing/src/lib/billing/`, with Clerk/Firestore account identity. Presence of legacy routes does not select a provider or enable them for direct GA.
+- **Missing:** an approved provider and SKU catalogue for each sold path, test-mode payment-to-entitlement/webhook acceptance, invoice/reconciliation evidence, revocation and deletion receipts.
+- **Actions:** Finance approves the provider and catalogue per path; Engineering runs its database and real provider test-mode journey, stores logs; Finance signs reconciliation evidence.
 
 ### COM-005 — Support operations (Support/CS + Operations)
 
@@ -95,15 +100,15 @@ Legend: **Pre-fill** = verifiable from the repository today. **Missing** = canno
 
 ### SEC-EXT-001 — Independent assessment (Security Lead + independent assessor)
 
-- **Pre-fill (this pass):** internal pre-assessment inputs an assessor can start from: [`tenant-isolation-security-review-2026-10-05.md`](./tenant-isolation-security-review-2026-10-05.md) (no critical/high; 2 medium fixed), [`security-questionnaire-answers.md`](./security-questionnaire-answers.md), SBOM, clean `pnpm audit --prod`, secret-history triage. Acceptance procedure in [`sec-ext-001-assessment-acceptance.md`](./sec-ext-001-assessment-acceptance.md). **An internal review is not an independent assessment.**
+- **Pre-fill:** internal pre-assessment inputs: [`tenant-isolation-security-review-2026-10-05.md`](./tenant-isolation-security-review-2026-10-05.md) for its recorded source scope, [`security-questionnaire-answers.md`](./security-questionnaire-answers.md), SBOM and dependency reports, and [`secret-history-triage-2026-10-05.md`](./secret-history-triage-2026-10-05.md). The pinned official history scan records 132 detections and the same two owner-confirm items; the earlier 184-row ledger is historical. Clean current-tree scans do not resolve those owner decisions. Acceptance procedure: [`sec-ext-001-assessment-acceptance.md`](./sec-ext-001-assessment-acceptance.md). **An internal review is not an independent assessment.**
 - **Missing:** engaged assessor, signed scope, report, remediation/retest letter.
 - **Actions:** Security Lead freezes a signed RC, contracts an independent assessor (scope: tenant isolation/RLS, identity and recovery, connectors, cloud and on-prem boundaries, update provenance, secrets), keeps the signed report under `.release-evidence/`, binds it via the manifest described in the acceptance doc.
 
 ### POV-001 — Customer acceptance run (Customer Success + Product + evaluator)
 
-- **Pre-fill:** [`pov-001-customer-acceptance-run-sheet.md`](./pov-001-customer-acceptance-run-sheet.md), [`controlled-demo-runbook.md`](./controlled-demo-runbook.md), [`customer-investor-validation-master-plan.md`](./customer-investor-validation-master-plan.md), [`first-customer-buyer-handoff-2026-09-23.md`](./first-customer-buyer-handoff-2026-09-23.md); this pass's questionnaire and feature verification give the evaluator an honest status per feature.
+- **Pre-fill:** [`pov-001-customer-acceptance-run-sheet.md`](./pov-001-customer-acceptance-run-sheet.md), [`controlled-demo-runbook.md`](./controlled-demo-runbook.md), [`customer-investor-validation-master-plan.md`](./customer-investor-validation-master-plan.md), historical [`first-customer-buyer-handoff-2026-09-23.md`](./first-customer-buyer-handoff-2026-09-23.md), and the questionnaire and feature verification with their stated source and local-test scopes.
 - **Missing:** named evaluator, signed charter, independent run, reservations log.
-- **Actions:** Customer Success schedules the evaluator (for example the target enterprise), executes the run sheet on the RC, records intervention/deviation log and the evaluator's written result; Product reviews limitations (SSO is not sale-ready until live Entra/Okta acceptance, OIDC is not offered, syslog transport not shipped).
+- **Actions:** Customer Success schedules the evaluator, executes the run sheet on the RC, records intervention/deviation log and the evaluator's written result. Product scopes each deployment separately: the Supabase control plane has tenant OIDC and TCP/TLS/UDP syslog transport, plus SAML policy request/approval source and dashboard UI in migration `20261005230000_saml_policy_administration.sql`; later local native PostgreSQL verification is recorded in the release report. Live IdP, SAML cutover/recovery, collector-side SIEM receipt and deployed acceptance remain open. The managed app now has operator-bound organization administration and two-administrator publication source; live Clerk/Firestore acceptance, native SSO configuration and managed directory/SCIM scope remain open. The separate privacy service supports one configured mTLS text route and requires real brokers, approved NER and selected-application routing; it does not establish coverage of every product exit. Source implementation and local tests are not customer acceptance receipts.
 
 ### INV-001 — Investor metric dictionary (Product + Finance + Legal)
 
@@ -113,8 +118,8 @@ Legend: **Pre-fill** = verifiable from the repository today. **Missing** = canno
 
 ### CLM-001 — Claim registry (Product/Marketing + Commercial + Legal)
 
-- **Pre-fill:** 14 registered claims; `claim-check --mode=gate` scans 54 claim-facing files with 0 unapproved pattern hits (this document and the questionnaire avoid the banned patterns such as "real-time", "local-only", certification wording, "launch-ready").
-- **Missing:** registry snapshot bound to the RC, build-output scan JSON of the final artifacts, "Sales Approved" review, landing-site scan (separate repository, not touched here).
+- **Pre-fill:** claim registry and automated source/build checks. The earlier inspection recorded 14 claims and 0 unapproved pattern hits across 54 claim-facing files; that snapshot does not attest the later worktree or deployed bytes. The current release report includes `aidr-landing` source and build checks with their limits.
+- **Missing:** registry snapshot bound to the RC, build-output scan JSON of the final artifacts and landing deployment, and "Sales Approved" review.
 - **Actions:** Marketing runs the gate scan on the built artifacts and landing build for the RC; Legal and Commercial sign off each claim; keep any claim that depends on an open gate blocked.
 
 ## Cross-cutting owner checklist (single list)
@@ -123,15 +128,15 @@ Legend: **Pre-fill** = verifiable from the repository today. **Missing** = canno
 |---|---|---|---|
 | 1 | Security Lead | Sign the 2 owner-confirm secret findings; rerun history + current-tree scans with pinned official gitleaks 8.30.1 on the RC | `secret-history-triage-2026-10-05.md` |
 | 2 | Security Lead | Contract independent assessor (SEC-EXT-001) | `sec-ext-001-assessment-acceptance.md` |
-| 3 | Release Eng | Production publisher key ceremony (HSM/KMS), sign RC, sign air-gap manifest, CI attestations | `scripts/release-sign.mjs`, `build-airgap-images.mjs` |
+| 3 | Release Eng | Approve production publisher-key custody and independent signer policy; sign RC and any selected air-gap manifest; preserve CI attestations | `scripts/release-sign.mjs`, `build-airgap-images.mjs`; no specific HSM/KMS product is mandated |
 | 4 | Release Eng | Provision authenticated private registry; entitlement and revocation test | COM-012 |
 | 5 | Legal | Counsel review of LICENSE/NOTICE/THIRD_PARTY_NOTICES; chain of title; exception register | COM-002 |
 | 6 | Legal + DPO | DPA/TOM/SCC, subprocessor list, notice approval, retention per flow | COM-003, COM-011 |
 | 7 | Finance | Provider of record, price/tax manifest, finance operator provisioning, reconciliation | COM-001, COM-004 |
 | 8 | Operations | Regional production projects, SLI month, HA/restore drill on a second host, status page, on-call | COM-011, COM-013, COM-005 |
 | 9 | Support | Publish SLA schedule; ticket and security mailboxes; drill | COM-005 |
-| 10 | QA | Real-host E2E for the five connectors; live Entra and Okta SAML/SCIM acceptance | COM-010, enterprise-feature doc |
-| 11 | Engineering | Wheel licence extraction so commercial SBOM passes; image SBOMs | COM-002 |
+| 10 | QA | Real-host E2E for the five connectors; Supabase OIDC/SAML/SCIM and SIEM acceptance; managed-app personal and organization/two-administrator provider journeys within the selected deployment scope | COM-010, enterprise-feature doc |
+| 11 | Engineering + Legal | Bind verified wheel metadata to the RC; review two library licences and scoped 17-path system-native inventory; full image SBOMs/notices | COM-002 |
 | 12 | Customer Success | Named evaluator, signed charter, run | POV-001 |
 | 13 | Product + Finance | Metric sources/reviewers | INV-001 |
 | 14 | Marketing + Commercial | Scan release artifacts and landing build; claim sign-off | CLM-001 |

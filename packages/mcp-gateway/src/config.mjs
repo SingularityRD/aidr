@@ -5,6 +5,21 @@ const ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
 const HEX = /^[0-9a-f]{64}$/;
 const ENV = /^[A-Z][A-Z0-9_]{0,127}$/;
 const HARD_MAX_BODY = 1024 * 1024;
+export const MCP_PROTOCOL_VERSIONS = Object.freeze([
+	"2025-03-26",
+	"2025-06-18",
+	"2025-11-25",
+	"2026-07-28",
+]);
+const MCP_SERVER_METHODS = Object.freeze([
+	"sampling/createMessage",
+	"elicitation/create",
+	"roots/list",
+	"ping",
+	"notifications/progress",
+	"notifications/message",
+	"notifications/tools/list_changed",
+]);
 
 function record(value) {
 	return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -28,7 +43,13 @@ function requireKeys(value, allowed, label) {
 }
 
 function validateClient(client, clientKeys, tokenHashes) {
-	requireKeys(client, ["id", "tenantId", "tokenSha256", "allowedTools"], "client");
+	requireKeys(
+		client,
+		["id", "tenantId", "tokenSha256", "allowedTools", "allowedServerMethods", "probeTokenEnv"],
+		"client",
+	);
+	if (client.probeTokenEnv !== undefined && !ENV.test(client.probeTokenEnv))
+		throw new Error("invalid probe token environment variable");
 	if (!validId(client.id) || !validId(client.tenantId) || !HEX.test(client.tokenSha256)) {
 		throw new Error("invalid client identity or token hash");
 	}
@@ -44,6 +65,19 @@ function validateClient(client, clientKeys, tokenHashes) {
 			new Set(names).size !== names.length
 		)
 			throw new Error("invalid client tool allowlist");
+	}
+	if (client.allowedServerMethods !== undefined) {
+		if (!record(client.allowedServerMethods)) throw new Error("invalid server method allowlist");
+		for (const [serverId, methods] of Object.entries(client.allowedServerMethods)) {
+			if (
+				!Object.hasOwn(client.allowedTools, serverId) ||
+				!Array.isArray(methods) ||
+				methods.length > MCP_SERVER_METHODS.length ||
+				new Set(methods).size !== methods.length ||
+				methods.some((method) => !MCP_SERVER_METHODS.includes(method))
+			)
+				throw new Error("invalid server method allowlist");
+		}
 	}
 	const key = `${client.tenantId}\0${client.id}`;
 	if (clientKeys.has(key) || tokenHashes.has(client.tokenSha256))
@@ -66,6 +100,8 @@ function validateServer(server, serverKeys) {
 			"trustedSigners",
 			"revokedKeyIds",
 			"upstreamAuthEnv",
+			"protocolVersions",
+			"pinnedAddresses",
 		],
 		"server",
 	);
@@ -92,6 +128,23 @@ function validateServer(server, serverKeys) {
 	}
 	if (url.username || url.password || url.hash || url.search)
 		throw new Error("server URL must not contain credentials, query, or fragment");
+	server.protocolVersions ??= MCP_PROTOCOL_VERSIONS.slice(0, 3);
+	if (
+		!Array.isArray(server.protocolVersions) ||
+		server.protocolVersions.length === 0 ||
+		server.protocolVersions.some((version) => !MCP_PROTOCOL_VERSIONS.includes(version))
+	)
+		throw new Error("invalid protocol versions");
+	if (server.protocolVersions.includes("2026-07-28") && server.sessionMode !== "stateless")
+		throw new Error("modern MCP requires stateless transport");
+	if (
+		server.pinnedAddresses !== undefined &&
+		(!Array.isArray(server.pinnedAddresses) ||
+			server.pinnedAddresses.length === 0 ||
+			server.pinnedAddresses.length > 16 ||
+			server.pinnedAddresses.some((address) => typeof address !== "string" || !address.trim()))
+	)
+		throw new Error("invalid pinned addresses");
 	const key = `${server.tenantId}\0${server.id}`;
 	if (serverKeys.has(key)) throw new Error("duplicate tenant server");
 	serverKeys.add(key);
@@ -117,7 +170,13 @@ export function validateGatewayConfig(input) {
 	// detached immutable snapshot so later mutations cannot widen tenant scope,
 	// replace an upstream, or alter a trusted manifest after startup.
 	input = structuredClone(input);
-	requireKeys(input, ["stateDir", "port", "maxBodyBytes", "clients", "servers"], "gateway config");
+	requireKeys(
+		input,
+		["stateDir", "port", "maxBodyBytes", "clients", "servers", "routingRequired"],
+		"gateway config",
+	);
+	if (input.routingRequired !== undefined && typeof input.routingRequired !== "boolean")
+		throw new Error("invalid routing requirement");
 	if (typeof input.stateDir !== "string" || !input.stateDir.trim())
 		throw new Error("invalid stateDir");
 	const port = input.port ?? 7789;
@@ -134,8 +193,24 @@ export function validateGatewayConfig(input) {
 	const serverKeys = new Set();
 	const clients = input.clients.map((client) => validateClient(client, clientKeys, tokenHashes));
 	const servers = input.servers.map((server) => validateServer(server, serverKeys));
+	if (
+		input.routingRequired &&
+		servers.some((server) => !server.upstreamAuthEnv || !server.pinnedAddresses)
+	)
+		throw new Error(
+			"mandatory routing requires isolated upstream credentials and pinned addresses",
+		);
+	if (input.routingRequired && clients.some((client) => !client.probeTokenEnv))
+		throw new Error("mandatory routing requires client credential negative probes");
 	validateScopes(clients, servers);
-	return freezeTree({ stateDir: resolve(input.stateDir), port, maxBodyBytes, clients, servers });
+	return freezeTree({
+		stateDir: resolve(input.stateDir),
+		port,
+		maxBodyBytes,
+		clients,
+		servers,
+		routingRequired: input.routingRequired === true,
+	});
 }
 
 export function authenticateBearer(header, clients) {

@@ -176,7 +176,9 @@ export const PLACEHOLDER_IDENTITIES = new Set([
  */
 const WIN_DRIVE_RE = /[A-Za-z]:\\{1,2}Users\\{1,2}[^\\/\s"'<>|,;)\]]+/g;
 /** POSIX absolute home path: `/home/<name>/...` or `/Users/<name>/...`. */
-const POSIX_HOME_RE = /\/(?:home|Users)\/[^/\s"'<>|,;)\]]+/g;
+// A complete bounded [^\s/] username class is detection data, including its
+// JSON-escaped spelling. It names no account; concrete paths still match.
+const POSIX_HOME_RE = /\/(?:home|Users)\/(?!\[\^\\{1,2}s\/\]\{\d+(?:,\d+)?\}\/)[^/\s"'<>|,;)\]]+/g;
 
 /*
  * A UNC rule (`\\host\share`) is deliberately NOT included. In tracked source, `\\` is the

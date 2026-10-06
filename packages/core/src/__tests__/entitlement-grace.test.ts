@@ -85,6 +85,16 @@ afterEach(() => {
 });
 
 describe("signed entitlement expiry and offline grace", () => {
+	it("keeps a future signed entitlement inactive until its issue time", () => {
+		const issued = new Date("2026-01-01T00:00:00.000Z");
+		const { state } = signedState(snapshotAt(issued, 72));
+		const beforeIssue = new Date(issued.getTime() - 1);
+		expect(isEntitlementActive(state, beforeIssue)).toBe(false);
+		expect(isPremiumModuleEnabled(state, "premium_intel", beforeIssue)).toBe(false);
+		expect(isEntitlementActive(state, issued)).toBe(true);
+		expect(isPremiumModuleEnabled(state, "premium_intel", issued)).toBe(true);
+	});
+
 	it("keeps premium available after online expiry and stops exactly at grace end", () => {
 		const issued = new Date("2026-01-01T00:00:00.000Z");
 		const snapshot = snapshotAt(issued, 72);
@@ -98,6 +108,26 @@ describe("signed entitlement expiry and offline grace", () => {
 		expect(isPremiumModuleEnabled(state, "premium_intel", new Date(snapshot.grace_until))).toBe(
 			false,
 		);
+	});
+
+	it("recognizes the signed server premium_intel capability and its legacy client name", () => {
+		const issued = new Date();
+		const snapshot = snapshotAt(issued, 72);
+		const { state } = signedState(snapshot);
+		expect(isPremiumModuleEnabled(state, "premium_intel", issued)).toBe(true);
+		expect(isPremiumModuleEnabled(state, "intel_packs", issued)).toBe(true);
+		expect(isPremiumModuleEnabled(state, "correlation", issued)).toBe(false);
+		expect(isPremiumModuleEnabled(state, "intel_packs", new Date(snapshot.grace_until))).toBe(
+			false,
+		);
+		expect(
+			isPremiumModuleEnabled({ ...state, entitlement_alg: "hmac-sha256" }, "intel_packs", issued),
+		).toBe(false);
+		const legacy = signedState({ ...snapshot, premium_modules: ["intel_packs"] }).state;
+		expect(isPremiumModuleEnabled(legacy, "premium_intel", issued)).toBe(true);
+		expect(isPremiumModuleEnabled(legacy, "intel_packs", issued)).toBe(true);
+		const unentitled = signedState({ ...snapshot, premium_modules: [] }).state;
+		expect(isPremiumModuleEnabled(unentitled, "intel_packs", issued)).toBe(false);
 	});
 
 	it("treats zero grace as online expiry and rejects reversed signed timestamps", () => {
@@ -121,16 +151,21 @@ describe("signed entitlement expiry and offline grace", () => {
 		const { publicKey, privateKey } = generateKeyPairSync("ed25519");
 		const publicKeyPem = publicKey.export({ type: "spki", format: "pem" }).toString();
 		const signSnapshot = (snapshot: EntitlementSnapshotV2) =>
-			sign(null, Buffer.from(JSON.stringify(canonicalize(snapshot))), privateKey).toString("base64");
+			sign(null, Buffer.from(JSON.stringify(canonicalize(snapshot))), privateKey).toString(
+				"base64",
+			);
 		const dir = await mkdtemp(join(tmpdir(), "aidr-old-entitlement-"));
 		try {
 			const path = join(dir, "managed.json");
-			await writeFile(path, JSON.stringify({
-				api_key: "cached-key",
-				entitlement: oldSnapshot,
-				entitlement_alg: "ed25519",
-				entitlement_sig: signSnapshot(oldSnapshot),
-			}));
+			await writeFile(
+				path,
+				JSON.stringify({
+					api_key: "cached-key",
+					entitlement: oldSnapshot,
+					entitlement_alg: "ed25519",
+					entitlement_sig: signSnapshot(oldSnapshot),
+				}),
+			);
 			const events: string[] = [];
 			const loaded = await loadManagedState(path, {
 				publicKeysPem: [publicKeyPem],
@@ -142,13 +177,22 @@ describe("signed entitlement expiry and offline grace", () => {
 			expect(isPremiumModuleEnabled(loaded, "premium_intel", issued)).toBe(false);
 
 			const fresh = snapshotAt(issued, 72);
-			const refreshed = applyIngestResult(loaded, {
-				ok: true,
-				status: 200,
-				body: {
-					entitlement_signed: { snapshot: fresh, sig_b64: signSnapshot(fresh), key_id: "test-key" },
+			const refreshed = applyIngestResult(
+				loaded,
+				{
+					ok: true,
+					status: 200,
+					body: {
+						entitlement_signed: {
+							snapshot: fresh,
+							sig_b64: signSnapshot(fresh),
+							key_id: "test-key",
+						},
+					},
 				},
-			}, 72, { publicKeysPem: [publicKeyPem] });
+				72,
+				{ publicKeysPem: [publicKeyPem] },
+			);
 			await saveManagedState(path, refreshed);
 			const reloaded = await loadManagedState(path, { publicKeysPem: [publicKeyPem] });
 			expect(isEntitlementActive(reloaded, new Date("2026-01-08T01:00:00.000Z"))).toBe(true);
@@ -162,11 +206,14 @@ describe("signed entitlement expiry and offline grace", () => {
 		const dir = await mkdtemp(join(tmpdir(), "aidr-unsigned-entitlement-"));
 		try {
 			const path = join(dir, "managed.json");
-			await writeFile(path, JSON.stringify({
-				api_key: "cached-key",
-				entitlement: snapshotAt(new Date(), 72),
-				entitlement_alg: "ed25519",
-			}));
+			await writeFile(
+				path,
+				JSON.stringify({
+					api_key: "cached-key",
+					entitlement: snapshotAt(new Date(), 72),
+					entitlement_alg: "ed25519",
+				}),
+			);
 			const events: string[] = [];
 			const loaded = await loadManagedState(path, {
 				onSecurityEvent: (event) => events.push(event.code),
@@ -187,12 +234,17 @@ describe("signed entitlement expiry and offline grace", () => {
 		expect(outage).toBe(cached);
 		expect(isEntitlementActive(outage)).toBe(true);
 
-		const rejected = applyIngestResult(cached, {
-			ok: false,
-			status: 401,
-			error: "invalid_api_key",
-			body: { error: "invalid_api_key" },
-		}, 72, { authToken: "invalid-key" });
+		const rejected = applyIngestResult(
+			cached,
+			{
+				ok: false,
+				status: 401,
+				error: "invalid_api_key",
+				body: { error: "invalid_api_key" },
+			},
+			72,
+			{ authToken: "invalid-key" },
+		);
 		expect(rejected.api_key).toBeUndefined();
 		expect(rejected.entitlement).toBeUndefined();
 		expect(rejected.entitlement_alg).toBeUndefined();
@@ -205,23 +257,32 @@ describe("signed entitlement expiry and offline grace", () => {
 			"tenant_not_admitted",
 			"entitlement_not_provisioned",
 			"agent_key_mismatch",
+			"agent_not_authorized",
 		]) {
-			const denied = applyIngestResult(cached, {
-				ok: false,
-				status: 403,
-				body: { error },
-			}, 72);
+			const denied = applyIngestResult(
+				cached,
+				{
+					ok: false,
+					status: 403,
+					body: { error },
+				},
+				72,
+			);
 			expect(denied.api_key).toBe("invalid-key");
 			expect(denied.sync_disabled_reason).toBe(error);
 			expect(isEntitlementActive(denied)).toBe(false);
 		}
 
 		const before = Date.now();
-		const overLimit = applyIngestResult(cached, {
-			ok: false,
-			status: 402,
-			body: { error: "agent_limit_exceeded", allowed_agents: 1, current_agents: 2 },
-		}, 72);
+		const overLimit = applyIngestResult(
+			cached,
+			{
+				ok: false,
+				status: 402,
+				body: { error: "agent_limit_exceeded", allowed_agents: 1, current_agents: 2 },
+			},
+			72,
+		);
 		expect(overLimit.seat_status).toBe("over_limit");
 		expect(isEntitlementActive(overLimit)).toBe(false);
 		const nextAttempt = Date.parse(overLimit.sync_disabled_until ?? "");
@@ -229,12 +290,63 @@ describe("signed entitlement expiry and offline grace", () => {
 		expect(nextAttempt).toBeLessThanOrEqual(Date.now() + 301_000);
 	});
 
+	it("persists an observed agent denial and clears pack keys without resurrecting offline grace", async () => {
+		const dir = await mkdtemp(join(tmpdir(), "aidr-agent-denial-"));
+		const previousHome = process.env.HOME;
+		process.env.HOME = dir;
+		try {
+			const aidrDir = join(dir, ".singularity-aidr");
+			const managedPath = join(aidrDir, "managed.json");
+			const { state, publicKeyPem } = signedState(snapshotAt(new Date(), 72));
+			const enrolled = { ...state, api_key: "paused-agent-key" };
+			await saveManagedState(managedPath, enrolled);
+			await saveEntitlementKeyringFromState(enrolled);
+			expect(
+				JSON.parse(await readFile(join(aidrDir, "entitlement.json"), "utf8")).intel_keys["pack-v1"],
+			).toBeDefined();
+
+			const denied = applyIngestResult(
+				enrolled,
+				{
+					ok: false,
+					status: 403,
+					body: { error: "agent_not_authorized" },
+				},
+				72,
+				{ authToken: enrolled.api_key },
+			);
+			await saveManagedState(managedPath, denied);
+			await saveEntitlementKeyringFromState(denied);
+			const reloaded = await loadManagedState(managedPath, { publicKeysPem: [publicKeyPem] });
+			expect(reloaded.api_key).toBe(enrolled.api_key);
+			expect(reloaded.sync_disabled_reason).toBe("agent_not_authorized");
+			expect(isEntitlementActive(reloaded)).toBe(false);
+			expect(isPremiumModuleEnabled(reloaded, "intel_packs")).toBe(false);
+			expect(
+				JSON.parse(await readFile(join(aidrDir, "entitlement.json"), "utf8")).intel_keys,
+			).toEqual({});
+			const offline = applyIngestResult(reloaded, { ok: false, status: 503 }, 72);
+			expect(isEntitlementActive(offline)).toBe(false);
+			// Pausing is reversible: retain the credential, require a new authority grant.
+			expect(offline.api_key).toBe(enrolled.api_key);
+		} finally {
+			if (previousHome === undefined) delete process.env.HOME;
+			else process.env.HOME = previousHome;
+			await rm(dir, { recursive: true, force: true });
+		}
+	});
+
 	it("does not reinterpret a delivered telemetry replay as a new entitlement", () => {
 		const { state } = signedState(snapshotAt(new Date(), 72));
-		const replay = applyIngestResult(state, {
-			ok: true,
-			body: { telemetry_queue: { deliveryState: "available" } },
-		}, 72, { authToken: "cached-key" });
+		const replay = applyIngestResult(
+			state,
+			{
+				ok: true,
+				body: { telemetry_queue: { deliveryState: "available" } },
+			},
+			72,
+			{ authToken: "cached-key" },
+		);
 		expect(replay).toBe(state);
 		expect(replay.entitlement_alg).toBe("ed25519");
 		expect(isPremiumModuleEnabled(replay, "premium_intel")).toBe(true);
@@ -271,11 +383,15 @@ describe("signed entitlement expiry and offline grace", () => {
 			await saveManagedState(managedPath, { ...state, entitlement_sig: "invalid-signature" });
 			expect((await loadIntelKeyring({ now: duringGrace })).size).toBe(0);
 			await saveManagedState(managedPath, state);
-			const admissionDenied = applyIngestResult(state, {
-				ok: false,
-				status: 403,
-				body: { error: "tenant_access_denied" },
-			}, 72);
+			const admissionDenied = applyIngestResult(
+				state,
+				{
+					ok: false,
+					status: 403,
+					body: { error: "tenant_access_denied" },
+				},
+				72,
+			);
 			await saveManagedState(managedPath, admissionDenied);
 			await saveEntitlementKeyringFromState(admissionDenied);
 			expect((await loadIntelKeyring({ now: duringGrace })).size).toBe(0);

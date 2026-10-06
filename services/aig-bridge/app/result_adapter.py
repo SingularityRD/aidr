@@ -41,7 +41,7 @@ def _int(value: Any, default: int = 0) -> int:
 
 def adapt_infra_result(task_id: str, tenant_id: str, result: dict[str, Any]) -> dict[str, Any]:
     findings: list[dict[str, Any]] = []
-    for raw in _list(result.get("findings")):
+    for raw in _list(result.get("findings"))[:200]:
         if not isinstance(raw, dict):
             continue
         if not isinstance(raw.get("cve_id"), str) or not isinstance(raw.get("package"), str):
@@ -56,7 +56,7 @@ def adapt_infra_result(task_id: str, tenant_id: str, result: dict[str, Any]) -> 
                 "remediation": safe_text(raw.get("remediation"), max_length=2_048),
             }
         )
-    evidence = [bounded_redacted(item, max_bytes=16_384) for item in _list(result.get("results")) if isinstance(item, dict)][:200]
+    evidence = [bounded_redacted(item, max_bytes=16_384) for item in _list(result.get("results"))[:200] if isinstance(item, dict)]
     incidents = build_incident_candidates(tenant_id=tenant_id, task_id=task_id, scan_type="infra", findings=findings)
     summary = result.get("summary") if isinstance(result.get("summary"), dict) else {}
     matched = result.get("total", len(findings))
@@ -81,17 +81,17 @@ def adapt_infra_result(task_id: str, tenant_id: str, result: dict[str, Any]) -> 
 
 def adapt_mcp_result(task_id: str, tenant_id: str, result: dict[str, Any]) -> dict[str, Any]:
     breakdown: list[dict[str, Any]] = []
-    for raw in _list(result.get("category_breakdown")):
+    for raw in _list(result.get("category_breakdown"))[:200]:
         if not isinstance(raw, dict):
             continue
         breakdown.append(
             {
                 "category": safe_text(raw.get("category") or raw.get("id") or "unknown", max_length=128),
                 "risk": safe_text(raw.get("risk") or raw.get("severity") or "none", max_length=32).lower(),
-                "findings": [safe_text(item, max_length=1_024) for item in _list(raw.get("findings")) if isinstance(item, (str, int, float))][:50],
+                "findings": [safe_text(item, max_length=1_024) for item in _list(raw.get("findings"))[:50] if isinstance(item, (str, int, float))],
             }
         )
-    evidence = [bounded_redacted(item, max_bytes=16_384) for item in _list(result.get("results")) if isinstance(item, dict)][:200]
+    evidence = [bounded_redacted(item, max_bytes=16_384) for item in _list(result.get("results"))[:200] if isinstance(item, dict)]
     incident_rows = [
         {**item, "severity": item.get("risk"), "category": item.get("category")}
         for item in breakdown
@@ -112,14 +112,14 @@ def adapt_mcp_result(task_id: str, tenant_id: str, result: dict[str, Any]) -> di
 
 def adapt_agent_result(task_id: str, tenant_id: str, result: dict[str, Any]) -> dict[str, Any]:
     raw_findings = _list(result.get("findings")) or _list(result.get("results"))
-    findings = [bounded_redacted(item, max_bytes=16_384) for item in raw_findings if isinstance(item, dict)][:200]
+    findings = [bounded_redacted(item, max_bytes=16_384) for item in raw_findings[:200] if isinstance(item, dict)]
     return {
         "task_id": task_id,
         "status": _status(result.get("status")),
         "score": max(0, min(100, _int(result.get("score", result.get("risk_score", 0))))),
         "summary": safe_text(result.get("summary") or result.get("report") or "", max_length=4_096),
         "findings": findings,
-        "evidence": [bounded_redacted(item, max_bytes=16_384) for item in _list(result.get("evidence")) if isinstance(item, dict)][:200],
+        "evidence": [bounded_redacted(item, max_bytes=16_384) for item in _list(result.get("evidence"))[:200] if isinstance(item, dict)],
         "incident_candidates": build_incident_candidates(
             tenant_id=tenant_id, task_id=task_id, scan_type="agent", findings=findings
         ),
@@ -128,7 +128,7 @@ def adapt_agent_result(task_id: str, tenant_id: str, result: dict[str, Any]) -> 
 
 def adapt_jailbreak_result(task_id: str, tenant_id: str, result: dict[str, Any]) -> dict[str, Any]:
     rows = _list(result.get("findings")) or _list(result.get("results"))
-    findings = [bounded_redacted(item, max_bytes=16_384) for item in rows if isinstance(item, dict)][:200]
+    findings = [bounded_redacted(item, max_bytes=16_384) for item in rows[:200] if isinstance(item, dict)]
     return {
         "task_id": task_id,
         "status": _status(result.get("status")),
@@ -138,7 +138,7 @@ def adapt_jailbreak_result(task_id: str, tenant_id: str, result: dict[str, Any])
         "failed": max(0, _int(result.get("failed"))),
         "summary": safe_text(result.get("summary") or result.get("report") or "", max_length=4_096),
         "findings": findings,
-        "evidence": [bounded_redacted(item, max_bytes=16_384) for item in _list(result.get("evidence")) if isinstance(item, dict)][:200],
+        "evidence": [bounded_redacted(item, max_bytes=16_384) for item in _list(result.get("evidence"))[:200] if isinstance(item, dict)],
         "incident_candidates": build_incident_candidates(
             tenant_id=tenant_id, task_id=task_id, scan_type="jailbreak", findings=findings
         ),

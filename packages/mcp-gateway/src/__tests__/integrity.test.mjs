@@ -13,6 +13,7 @@ const binaries = [
 	["cli.mjs", "aidr-mcp-gateway.mjs"],
 	["approve.mjs", "aidr-mcp-approve.mjs"],
 	["stdio-cli.mjs", "aidr-mcp-stdio.mjs"],
+	["library.mjs", "aidr-mcp-library.mjs"],
 ];
 
 test("commercial gateway binaries start only with a complete signed artifact and verifier key", async () => {
@@ -30,6 +31,19 @@ test("commercial gateway binaries start only with a complete signed artifact and
 					target: "node20",
 					format: "esm",
 					logLevel: "silent",
+					plugins: [
+						{
+							name: "core-source",
+							setup(builder) {
+								builder.onResolve({ filter: /core\/dist\/.*\.js$/ }, ({ path, resolveDir }) => ({
+									path: resolve(
+										resolveDir,
+										path.replace("/dist/", "/src/").replace(/\.js$/, ".ts"),
+									),
+								}));
+							},
+						},
+					],
 				}),
 			),
 		);
@@ -43,7 +57,9 @@ test("commercial gateway binaries start only with a complete signed artifact and
 			files: await Promise.all(
 				binaries.map(async ([, path]) => ({
 					path,
-					sha256: createHash("sha256").update(await readFile(join(dist, path))).digest("hex"),
+					sha256: createHash("sha256")
+						.update(await readFile(join(dist, path)))
+						.digest("hex"),
 				})),
 			),
 		})}\n`;
@@ -140,6 +156,7 @@ test("commercial gateway binaries start only with a complete signed artifact and
 		]);
 		const child = spawn(process.execPath, [executable, gatewayConfig], { env });
 		let stderr = "";
+		let gatewayPort;
 		child.stderr.on("data", (chunk) => {
 			stderr += chunk;
 		});
@@ -151,6 +168,7 @@ test("commercial gateway binaries start only with a complete signed artifact and
 				);
 				child.stdout.on("data", (chunk) => {
 					if (!chunk.toString().includes("AIDR MCP gateway listening")) return;
+					gatewayPort = /127\.0\.0\.1:(\d+)/.exec(chunk.toString())?.[1];
 					clearTimeout(timeout);
 					resolveStarted();
 				});
@@ -159,13 +177,31 @@ test("commercial gateway binaries start only with a complete signed artifact and
 					rejectStarted(new Error(`gateway exited with ${code}: ${stderr}`));
 				});
 			});
+			const response = await fetch(`http://127.0.0.1:${gatewayPort}/mcp/server-a`, {
+				method: "POST",
+				headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+				body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
+			});
+			assert.match((await response.json()).error.message, /manifest_quarantined/);
 		} finally {
 			await new Promise((resolveExit) => {
 				if (child.exitCode !== null) return resolveExit();
-				child.once("exit", resolveExit);
+				child.once("close", resolveExit);
 				child.kill();
 			});
 		}
+		const events = stderr
+			.split("\n")
+			.filter((line) => line.startsWith("{"))
+			.map(JSON.parse);
+		assert.ok(
+			events.some((event) => event.channel === "startup" && event.surface === "direct_upstream"),
+		);
+		assert.ok(
+			events.some((event) => event.decision === "deny" && event.reason === "manifest_quarantined"),
+		);
+		assert.ok(!stderr.includes(token));
+		assert.ok(!stderr.includes("https://mcp.example.test"));
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}

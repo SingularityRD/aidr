@@ -5,6 +5,9 @@
   "private": true,
   "type": "module",
   "files": ["dist", "dist/LICENSE", "README.md"],
+  "exports": {
+    ".": "./dist/aidr-mcp-library.mjs"
+  },
   "bin": {
     "aidr-mcp-gateway": "dist/aidr-mcp-gateway.mjs",
     "aidr-mcp-approve": "dist/aidr-mcp-approve.mjs",

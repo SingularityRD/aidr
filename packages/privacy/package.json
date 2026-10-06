@@ -37,13 +37,17 @@
   "bin": {
     "aidr-privacy": "./dist/cli.js",
     "aidr-visual": "./dist/visual/cli.js",
-    "aidr-native-host": "./dist/native/host.js"
+    "aidr-native-host": "./dist/native/host.js",
+    "aidr-privacy-service": "./dist/platform/serve.js",
+    "aidr-privacy-send": "./dist/platform/send-cli.js",
+    "aidr-privacy-mcp": "./dist/platform/mcp-serve.js"
   },
   "files": [
     "dist",
     "ner/*.py",
     "ner/requirements*.txt",
     "ner/*.md",
+    "ner/*.json",
     "docs",
     "README.md",
     "SECURITY.md",
@@ -67,13 +71,20 @@
     "models/MODEL_CARD.md",
     "models/LICENSE.txt",
     "examples/platform",
+    "scripts/platform/qualify-ner.mjs",
+    "scripts/platform/probe-ner.mjs",
     "reports/platform/TEST_REPORT.md",
+    "reports/platform/INTEGRATION-2026-10-06.md",
     "deployment/*.json",
     "deployment/*.reg",
+    "deployment/*.example",
+    "deployment/*.mjs",
+    "deployment/PRIVATE_INSTALL.md",
     "deployment/README.md"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json && tsc -p extension/tsconfig.json --noEmit && node scripts/build-extension.mjs",
+    "build:release": "node ../../scripts/rmrf.mjs dist && tsc -p tsconfig.json --sourceMap false --declarationMap false && tsc -p extension/tsconfig.json --noEmit && node scripts/build-extension.mjs && node ../../scripts/check-no-sourcemaps.mjs dist",
     "check": "tsc -p tsconfig.json --noEmit && tsc -p extension/tsconfig.json --noEmit",
     "test": "node --test tests/*.test.mjs tests/visual/*.test.mjs",
     "test:coverage": "node --experimental-test-coverage --test-coverage-include=\"dist/**/*.js\" --test tests/*.test.mjs tests/visual/*.test.mjs tests/browser/*.test.mjs tests/native/*.test.mjs tests/enterprise/*.test.mjs tests/platform/*.test.mjs",
@@ -97,6 +108,8 @@
     "benchmark:enterprise": "node scripts/enterprise/benchmark.mjs",
     "test:enterprise:visual": "node scripts/enterprise/visual-e2e.mjs",
     "test:platform": "node --test tests/platform/*.test.mjs",
+    "test:integration:mcp": "node --test tests/integration/mcp-installed.test.mjs",
+    "test:ci:platform": "node scripts/platform/ci-gate.mjs",
     "test:parser": "python3 -m unittest discover -s parsers -p \"test_*.py\" -v",
     "evaluate:platform": "node scripts/platform/evaluate-pii.mjs",
     "demo:platform": "node examples/platform/demo.mjs",
@@ -106,6 +119,12 @@
   "devDependencies": {
     "typescript": "^5.9.0",
     "@types/node": "^22.0.0"
+  },
+  "peerDependencies": {
+    "@singularityrd/aidr-mcp-gateway": "workspace:0.6.0"
+  },
+  "peerDependenciesMeta": {
+    "@singularityrd/aidr-mcp-gateway": {"optional": true}
   },
   "license": "UNLICENSED",
   "private": true

@@ -41,12 +41,21 @@ export async function atomicWriteJson(
 	data: unknown,
 	options: { mode?: number } = {},
 ): Promise<void> {
+	return atomicWriteText(path, `${JSON.stringify(data, null, 2)}\n`, options);
+}
+
+/** Atomically replace a text file without ever exposing partially written bytes. */
+export async function atomicWriteText(
+	path: string,
+	content: string,
+	options: { mode?: number } = {},
+): Promise<void> {
 	await fsPromises.mkdir(dirname(path), { recursive: true });
 	const tmp = `${path}.${randomBytes(6).toString("hex")}.tmp`;
 	try {
 		const handle = await fsPromises.open(tmp, "wx", 0o600);
 		try {
-			await handle.writeFile(`${JSON.stringify(data, null, 2)}\n`, "utf8");
+			await handle.writeFile(content, "utf8");
 			await handle.sync();
 		} finally {
 			await handle.close();

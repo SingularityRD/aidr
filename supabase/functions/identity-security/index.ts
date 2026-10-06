@@ -20,6 +20,7 @@ import {
 	jwtHasSamlProvider,
 	jwtSamlProviderId,
 	jwtIssuedAtMs,
+	jwtExpiresAtMs,
 	jwtSessionId,
 	normalizeEmail,
 	normalizeRecoveryCode,
@@ -32,9 +33,11 @@ import {
 
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "AIDR_DASHBOARD_URL"] as const;
 const MAX_BODY_BYTES = 8192;
+const SAML_POLICY_ACTIONS = ["request_saml_policy_change", "get_saml_policy_change", "approve_saml_policy_change"];
 
 type ReadTable<Row extends Record<string, unknown>> = { Row: Row; Insert: never; Update: never; Relationships: [] };
 type AuditValues = { actor_user_id: string | null; tenant_id: string | null; target_user_id: string | null; action: string; detail: Record<string, unknown> };
+type SamlSessionProof = { session_id: string; issued_at: string; expires_at: string; aal: "aal2"; saml_provider_id: string };
 // Keep the route's schema aligned with its reads and the RPC signatures in the migrations.
 type IdentityDatabase = {
 	public: {
@@ -62,6 +65,9 @@ type IdentityDatabase = {
 			begin_identity_global_revocation: { Args: { p_user_id: string; p_actor_user_id: string; p_session_id: string; p_access_token_issued_at: string }; Returns: boolean };
 			complete_identity_global_revocation: { Args: { p_user_id: string; p_actor_user_id: string; p_session_id: string }; Returns: boolean };
 			set_tenant_identity_policy: { Args: { p_tenant_id: string; p_actor_user_id: string; p_require_mfa: boolean; p_break_glass_enabled: boolean }; Returns: Record<string, unknown> };
+			request_tenant_saml_policy_change: { Args: { p_tenant_id: string; p_actor_user_id: string; p_new_provider_id: string | null; p_reason: string; p_change_ref: string; p_validated_session: SamlSessionProof }; Returns: Record<string, unknown> };
+			approve_tenant_saml_policy_change: { Args: { p_tenant_id: string; p_actor_user_id: string; p_request_id: string; p_validated_session: SamlSessionProof }; Returns: Record<string, unknown> };
+			get_tenant_saml_policy_change: { Args: { p_tenant_id: string; p_actor_user_id: string; p_request_id: string }; Returns: Record<string, unknown> };
 			scim_bind_saml_identity: { Args: { p_auth_user_id: string; p_provider_id: string }; Returns: string | null };
 			issue_identity_recovery_codes: { Args: { p_tenant_id: string; p_actor_user_id: string; p_target_user_id: string; p_code_hashes: string[]; p_expires_at: string }; Returns: Record<string, unknown> };
 		};
@@ -123,7 +129,7 @@ async function rateLimit(
 		.eq("key", key)
 		.eq("window_start", windowStart)
 		.maybeSingle();
-	if (error || typeof data?.count !== "number") return "unavailable";
+	if (error || typeof data?.count !== "number" || !Number.isSafeInteger(data.count) || data.count < 1) return "unavailable";
 	return data.count <= maximum ? "allowed" : "limited";
 }
 
@@ -189,6 +195,43 @@ async function audit(
 	return !error;
 }
 
+function samlPolicyError(req: Request, error: { message?: string }): Response {
+	const statuses: Record<string, number> = {
+		saml_policy_invalid_request: 400,
+		saml_policy_owner_required: 403,
+		saml_policy_aal2_required: 403,
+		saml_policy_session_invalid: 401,
+		saml_policy_session_revoked: 401,
+		saml_policy_provider_session_required: 403,
+		saml_policy_provider_unavailable: 409,
+		saml_policy_owners_not_verified: 409,
+		saml_policy_scim_identity_conflict: 409,
+		saml_policy_unsupported_transition: 409,
+		saml_policy_policy_conflict: 409,
+		saml_policy_request_expired: 409,
+		saml_policy_request_consumed: 409,
+		saml_policy_distinct_owner_required: 403,
+		saml_policy_request_not_found: 404,
+		saml_policy_request_pending_limit: 429,
+	};
+	const reason = error.message ?? "";
+	return Object.hasOwn(statuses, reason)
+		? corsJson(req, statuses[reason], { error: reason })
+		: corsJson(req, 503, { error: "saml_policy_unavailable" });
+}
+
+function samlPolicyResponse(req: Request, tenantId: string, data: unknown, notFound = false): Response {
+	if (data === null && notFound) return corsJson(req, 404, { error: "saml_policy_request_not_found" });
+	if (!data || typeof data !== "object" || Array.isArray(data)) return corsJson(req, 503, { error: "saml_policy_unavailable" });
+	const row = data as Record<string, unknown>;
+	if (!normalizeUuid(row.request_id) || normalizeUuid(row.tenant_id) !== tenantId) {
+		return corsJson(req, 503, { error: "saml_policy_unavailable" });
+	}
+	const keys = ["request_id", "tenant_id", "requested_by", "old_provider_id", "new_provider_id", "reason", "change_ref", "created_at", "expires_at", "approved_by", "approved_at"];
+	if (keys.some((key) => !Object.hasOwn(row, key))) return corsJson(req, 503, { error: "saml_policy_unavailable" });
+	return corsJson(req, 200, { ok: true, request: Object.fromEntries(keys.map((key) => [key, row[key]])) }, { "Cache-Control": "no-store" });
+}
+
 Deno.serve(async (req) => {
 	const preflight = handleCors(req);
 	if (preflight) return preflight;
@@ -230,6 +273,10 @@ Deno.serve(async (req) => {
 					? body.recovery_challenge
 					: null;
 			if (!recoveryChallenge) return corsJson(req, 400, { error: "invalid_request" });
+			// Caller-selected emails must not mint unlimited independent counter and audit rows.
+			const aggregate = await rateLimit(db, "identity-reset:aggregate", 10 * 60_000, 1000);
+			if (aggregate === "unavailable") return corsJson(req, 503, { error: "recovery_unavailable" });
+			if (aggregate === "limited") return corsJson(req, 429, { error: "rate_limited" });
 			const subjectHash = await sha256(email ?? "invalid-email");
 			const limit = await rateLimit(db, `identity-reset:${subjectHash}`, 10 * 60_000, 5);
 			if (limit === "unavailable") return corsJson(req, 503, { error: "recovery_unavailable" });
@@ -274,6 +321,9 @@ Deno.serve(async (req) => {
 				/^[0-9a-f]{64}$/.test(body.recovery_challenge)
 					? body.recovery_challenge
 					: null;
+			const aggregate = await rateLimit(db, "identity-break-glass:aggregate", 10 * 60_000, 300);
+			if (aggregate === "unavailable") return corsJson(req, 503, { error: "recovery_unavailable" });
+			if (aggregate === "limited") return corsJson(req, 429, { error: "rate_limited" });
 			const subjectHash = await sha256(email ?? "invalid-email");
 			const limit = await rateLimit(db, `identity-break-glass:${subjectHash}`, 10 * 60_000, 5);
 			if (limit === "unavailable") return corsJson(req, 503, { error: "recovery_unavailable" });
@@ -607,6 +657,29 @@ Deno.serve(async (req) => {
 			});
 		}
 
+		const samlAction = SAML_POLICY_ACTIONS.includes(body.action);
+		if (samlAction) {
+			const required = body.action === "request_saml_policy_change"
+				? ["action", "tenant_id", "new_provider_id", "reason", "change_ref"]
+				: ["action", "tenant_id", "request_id"];
+			const tenant = normalizeUuid(body.tenant_id);
+			const header = req.headers.get("X-AIDR-Tenant-ID");
+			if (!required.every((key) => Object.hasOwn(body, key)) || Object.keys(body).some((key) => !required.includes(key)) ||
+				!tenant || (header !== null && normalizeUuid(header) !== tenant)) {
+				return corsJson(req, 400, { error: "saml_policy_invalid_request" });
+			}
+			if (body.action === "request_saml_policy_change") {
+				if ((body.new_provider_id !== null && !normalizeUuid(body.new_provider_id)) ||
+					typeof body.reason !== "string" || body.reason.trim().length < 12 || body.reason.trim().length > 500 ||
+					typeof body.change_ref !== "string" || body.change_ref.trim().length < 1 || body.change_ref.trim().length > 200 ||
+					/[\u0000-\u001f\u007f]/.test(body.reason + body.change_ref)) {
+					return corsJson(req, 400, { error: "saml_policy_invalid_request" });
+				}
+			} else if (!normalizeUuid(body.request_id)) {
+				return corsJson(req, 400, { error: "saml_policy_invalid_request" });
+			}
+		}
+
 		const requestedTenant = normalizeUuid(body.tenant_id ?? req.headers.get("X-AIDR-Tenant-ID"));
 		const tenantId = requestedTenant ?? identity.user.id;
 		const member = await memberContext(db, identity.user.id, tenantId);
@@ -622,12 +695,52 @@ Deno.serve(async (req) => {
 			if (!oidcBound) return corsJson(req, 403, { error: "sso_required" });
 		}
 
+		if (samlAction) {
+			const barrier = await checkIdentityBarrier(db, identity.token, identity.user.id, tenantId);
+			if (!barrier.ok) return corsJson(req, barrier.status, { error: barrier.error });
+			if (member.role !== "owner") return corsJson(req, 403, { error: "saml_policy_owner_required" });
+			const sessionId = jwtSessionId(identity.token);
+			const issuedAt = jwtIssuedAtMs(identity.token);
+			const expiresAt = jwtExpiresAtMs(identity.token);
+			if (!sessionId || issuedAt === null || !Number.isSafeInteger(issuedAt) || issuedAt % 1000 !== 0 ||
+				!Number.isFinite(new Date(issuedAt).getTime()) || expiresAt === null || expiresAt <= Date.now() || expiresAt <= issuedAt) {
+				return corsJson(req, 401, { error: "saml_policy_session_invalid" });
+			}
+			if (body.action === "get_saml_policy_change") {
+				const { data, error } = await db.rpc("get_tenant_saml_policy_change", {
+					p_tenant_id: tenantId, p_actor_user_id: identity.user.id, p_request_id: normalizeUuid(body.request_id)!,
+				});
+				return error ? samlPolicyError(req, error) : samlPolicyResponse(req, tenantId, data, true);
+			}
+			if (identity.currentLevel !== "aal2") return corsJson(req, 403, { error: "saml_policy_aal2_required" });
+			const samlProviderId = jwtSamlProviderId(identity.token);
+			const newProviderId = body.new_provider_id === null ? null : normalizeUuid(body.new_provider_id);
+			if (!samlProviderId || (body.action === "request_saml_policy_change" && newProviderId !== null && newProviderId !== samlProviderId)) {
+				return corsJson(req, 403, { error: "saml_policy_provider_session_required" });
+			}
+			const proof: SamlSessionProof = {
+				session_id: sessionId, issued_at: new Date(issuedAt).toISOString(), expires_at: new Date(expiresAt).toISOString(),
+				aal: "aal2", saml_provider_id: samlProviderId,
+			};
+			const result = body.action === "request_saml_policy_change"
+				? await db.rpc("request_tenant_saml_policy_change", {
+					p_tenant_id: tenantId, p_actor_user_id: identity.user.id, p_new_provider_id: newProviderId,
+					p_reason: (body.reason as string).trim(), p_change_ref: (body.change_ref as string).trim(), p_validated_session: proof,
+				})
+				: await db.rpc("approve_tenant_saml_policy_change", {
+					p_tenant_id: tenantId, p_actor_user_id: identity.user.id, p_request_id: normalizeUuid(body.request_id)!, p_validated_session: proof,
+				});
+			return result.error ? samlPolicyError(req, result.error) : samlPolicyResponse(req, tenantId, result.data);
+		}
+
 		if (body.action === "status") {
 			return corsJson(req, 200, {
 				ok: true,
 				tenant_id: tenantId,
 				role: member.role,
 				require_mfa: member.requireMfa,
+				required_saml_provider_id: member.requiredSamlProviderId,
+				required_oidc_provider_id: member.requiredOidcProviderId,
 				break_glass_enabled: member.breakGlassEnabled,
 				current_assurance: identity.currentLevel,
 				next_assurance: identity.nextLevel,
@@ -707,6 +820,6 @@ Deno.serve(async (req) => {
 
 		return corsJson(req, 400, { error: "invalid_action" });
 	} catch {
-		return corsJson(req, 503, { error: "identity_operation_unavailable" });
+		return corsJson(req, 503, { error: SAML_POLICY_ACTIONS.includes(body.action) ? "saml_policy_unavailable" : "identity_operation_unavailable" });
 	}
 });

@@ -69,14 +69,6 @@ function readText(path: string): FileRead<string> {
 	}
 }
 
-function fileMentions(path: string, needles: string[]): boolean | null {
-	const read = readText(path);
-	if (read.unavailable) return null;
-	if (read.value === null) return false;
-	const raw = read.value.toLowerCase();
-	return needles.some((n) => raw.includes(n.toLowerCase()));
-}
-
 function listDirSafe(dir: string): FileRead<string[]> {
 	try {
 		return { value: readdirSync(dir) as string[], unavailable: false };
@@ -115,7 +107,7 @@ function detectClaudeCode(home: string): ConnectorStatus {
 	if (settingsRead.unavailable) return unavailableStatus("claude-code", "Claude Code", evidence);
 	const parsed = settingsRead.value as { disableAllHooks?: boolean; enabledPlugins?: Record<string, unknown>; hooks?: { PreToolUse?: Array<{ hooks?: Array<{ type?: string; command?: string }> }> } } | null;
 	const enabled = Object.entries(parsed?.enabledPlugins ?? {}).some(([name, value]) => /aidr|singularity/i.test(name) && value === true);
-	const hooked = Array.isArray(parsed?.hooks?.PreToolUse) && parsed.hooks.PreToolUse.some((entry) => Array.isArray(entry.hooks) && entry.hooks.some((hook) => hook.type === "command" && typeof hook.command === "string" && /aidr|singularity/i.test(hook.command)));
+	const hooked = Array.isArray(parsed?.hooks?.PreToolUse) && parsed.hooks.PreToolUse.some((entry) => Array.isArray(entry?.hooks) && entry.hooks.some((hook) => hook?.type === "command" && typeof hook.command === "string" && /aidr|singularity/i.test(hook.command)));
 	if (parsed?.disableAllHooks !== true && (enabled || hooked)) {
 		return {
 			id: "claude-code",
@@ -206,15 +198,32 @@ function detectEditor(
 function detectOpenClaw(home: string): ConnectorStatus {
 	const cfg = join(home, ".openclaw", "openclaw.json");
 	const evidence = [cfg];
-	const mentionsAidr = fileMentions(cfg, ["aidr", "singularity"]);
-	if (mentionsAidr === null) return unavailableStatus("openclaw", "OpenClaw", evidence);
-	if (mentionsAidr) {
+	const read = readJson(cfg);
+	if (read.unavailable) return unavailableStatus("openclaw", "OpenClaw", evidence);
+	const config = read.value as {
+		plugins?: {
+			enabled?: boolean;
+			allow?: string[];
+			deny?: string[];
+			entries?: Record<string, { enabled?: boolean } | null>;
+		};
+	} | null;
+	const plugins = config?.plugins;
+	const entry = plugins?.entries?.["aidr-openclaw"];
+	const registered = !!entry && typeof entry === "object" && !Array.isArray(entry);
+	const enabled = registered && plugins?.enabled !== false && entry.enabled !== false
+		&& (!Array.isArray(plugins?.allow) || plugins.allow.includes("aidr-openclaw"))
+		&& (!Array.isArray(plugins?.deny) || !plugins.deny.includes("aidr-openclaw"));
+	if (registered) {
 		return {
 			id: "openclaw",
 			label: "OpenClaw",
-			state: "installed",
-			detail: "AIDR plugin listed in ~/.openclaw/openclaw.json",
+			state: enabled ? "installed" : "installed_but_degraded",
+			detail: enabled
+				? "AIDR plugin enabled in ~/.openclaw/openclaw.json; host execution unverified"
+				: "AIDR plugin is registered but disabled by the OpenClaw plugin policy",
 			evidence,
+			...(!enabled ? { remedy: "Enable aidr-openclaw in plugins.entries and permit it in the OpenClaw allow/deny policy" } : {}),
 		};
 	}
 	if (existsSync(cfg)) {

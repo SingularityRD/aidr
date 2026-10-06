@@ -87,7 +87,8 @@ test("operator command reads protected token/key files and writes only a not-ver
 	}
 });
 
-test("saved DLP revision becomes a signed, tenant-bound managed runtime deny", async () => {
+for (const premiumModules of [["premium_intel"], ["runtime_detectors"]]) {
+test(`saved DLP revision enforces with signed entitlement modules ${premiumModules.join(",")}`, async () => {
 	const scratch = await mkdtemp(join(tmpdir(), "aidr-dlp-delivery-"));
 	const priorHome = process.env.HOME;
 	try {
@@ -103,7 +104,7 @@ test("saved DLP revision becomes a signed, tenant-bound managed runtime deny", a
 		const now = Date.now();
 		const entitlement = { schema_version: 2, tenant_id: TENANT, subscription_tier: "enterprise",
 			included_agents: 1, extra_agents: 0, allowed_agents: 1,
-			premium_modules: ["runtime_detectors"], issued_at: new Date(now - 60_000).toISOString(),
+			premium_modules: premiumModules, issued_at: new Date(now - 60_000).toISOString(),
 			expires_at: new Date(now + 600_000).toISOString(), grace_until: new Date(now + 900_000).toISOString(),
 			serial: "synthetic-signed-entitlement", revocation_epoch: 1 };
 		await writeFile(join(stateDir, "managed.json"), JSON.stringify({ entitlement, entitlement_alg: "ed25519",
@@ -135,3 +136,4 @@ test("saved DLP revision becomes a signed, tenant-bound managed runtime deny", a
 		await rm(canonicalScratch, { recursive: true, force: true });
 	}
 });
+}

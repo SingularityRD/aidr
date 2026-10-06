@@ -87,7 +87,7 @@ describe("MCP stdio bridge", () => {
 				id: 1,
 				method: "initialize",
 				params: {
-					protocolVersion: "2025-03-26",
+					protocolVersion: "2025-06-18",
 					capabilities: {},
 					clientInfo: { name: "test", version: "1" },
 				},
@@ -115,7 +115,7 @@ describe("MCP stdio bridge", () => {
 						id: rpc.id,
 						result:
 							rpc.method === "initialize"
-								? { capabilities: {} }
+								? { protocolVersion: "2025-06-18", capabilities: {} }
 								: { content: [{ type: "text", text: "clean" }] },
 					}),
 					{
@@ -132,6 +132,9 @@ describe("MCP stdio bridge", () => {
 		assert.equal(requests[1].headers["mcp-session-id"], "session-12345678");
 		assert.equal(requests[2].headers["mcp-session-id"], "session-12345678");
 		assert.equal(requests[0].headers.authorization, `Bearer ${token}`);
+		assert.equal(requests[0].headers["mcp-protocol-version"], undefined);
+		assert.equal(requests[1].headers["mcp-protocol-version"], "2025-06-18");
+		assert.equal(requests[2].headers["mcp-protocol-version"], "2025-06-18");
 	});
 
 	it("fails closed on oversized input or rejected notification", async () => {

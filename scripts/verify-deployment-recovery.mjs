@@ -12,7 +12,8 @@ const source = resolve(values.source); const recovered = resolve(values.recovere
 assert.notEqual(source, recovered);
 for (const dir of [source, recovered]) {
   const deployment = JSON.parse(readFileSync(join(dir, "deployment.json"), "utf8"));
-  assert.ok(deployment.development && ["localhost", "127.0.0.1"].includes(new URL(deployment.supabase_url).hostname), "Comparison requires isolated development data that has not changed since backup");
+  const endpoint = new URL(deployment.supabase_url);
+  assert.ok(deployment.development && ["http:", "https:"].includes(endpoint.protocol) && ["localhost", "127.0.0.1", "[::1]"].includes(endpoint.hostname), "Comparison requires isolated development data that has not changed since backup");
 }
 function docker(args) {
   const result = spawnSync("docker", args, { encoding: "utf8", timeout: 30000, maxBuffer: 64 * 1024 * 1024 });

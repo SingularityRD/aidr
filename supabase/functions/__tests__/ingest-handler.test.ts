@@ -1,4 +1,4 @@
-import { createHash, webcrypto } from "node:crypto";
+import { createHash, generateKeyPairSync, randomUUID, verify, webcrypto } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const sdk = vi.hoisted(() => ({ createClient: vi.fn() }));
@@ -7,6 +7,13 @@ vi.mock("npm:@supabase/supabase-js@2.116.0", () => ({ createClient: sdk.createCl
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 const TENANT_ID = "22222222-2222-4222-8222-222222222222";
 const AGENT_ID = "33333333-3333-4333-8333-333333333333";
+const RUNTIME_CAPS = ["runtime_detectors", "behavioral_learning_v1"];
+const signer = generateKeyPairSync("ed25519");
+
+function configureSigning() {
+	vi.stubEnv("AIDR_ENTITLEMENT_SIGNING_KEY_ID", "runtime-test-key");
+	vi.stubEnv("AIDR_ENTITLEMENT_SIGNING_PRIVATE_KEY_PKCS8_B64", signer.privateKey.export({ format: "der", type: "pkcs8" }).toString("base64"));
+}
 
 async function ingest(
 	failEventInsert: boolean | { code: string; message: string } = false,
@@ -82,11 +89,11 @@ async function ingest(
 	return { handler, rpc, reads, insertedEvents, insertedSnapshot };
 }
 
-function request() {
+function request(fields: Record<string, unknown> = {}) {
 	return new Request("https://project.supabase.co/functions/v1/ingest", {
 		method: "POST",
 		headers: { Authorization: "Bearer test-api-key", "Content-Type": "application/json" },
-		body: JSON.stringify({ iid: "host-1", events: [{ event_id: "evt-1", type: "runtime_verdict", verdict: "deny" }] }),
+		body: JSON.stringify({ iid: "host-1", events: [{ event_id: "evt-1", type: "runtime_verdict", verdict: "deny" }], ...fields }),
 	});
 }
 
@@ -242,5 +249,154 @@ describe("ingest delivery handler", () => {
 		expect(body.entitlement).toMatchObject({ extra_agents: 0, allowed_agents: 1 });
 		expect(Date.parse(body.entitlement.expires_at)).toBeLessThanOrEqual(Date.parse(trialEnd));
 		expect(Date.parse(body.entitlement.grace_until)).toBeLessThanOrEqual(Date.parse(trialEnd));
+	});
+
+	it("signs explicit runtime capabilities for the authenticated licensed tenant without extending its term", async () => {
+		configureSigning();
+		vi.stubEnv("AIDR_RUNTIME_CAPABILITIES_BY_TENANT", JSON.stringify({ [TENANT_ID]: RUNTIME_CAPS }));
+		const term = new Date(Date.now() + 2 * 3_600_000).toISOString();
+		const runtime = await ingest(false,
+			{ agent_id: AGENT_ID, seat_exceeded: false, allowed_agents: 2 },
+			{ data: { included_agents: 1, extra_agents: 1, premium_intel: false, premium_correlation: false, premium_pkg_plugin: false, revocation_epoch: 1 }, error: null },
+			undefined, { data: [{ extra_agents: 1, provider_valid_until: term }], error: null });
+		const response = await runtime.handler(request());
+		const body = await response.json();
+		expect(response.status).toBe(200);
+		const signed = body.entitlement_signed;
+		expect(signed).toMatchObject({ alg: "ed25519", key_id: "runtime-test-key", snapshot: {
+			tenant_id: TENANT_ID, subscription_tier: "pro", premium_modules: RUNTIME_CAPS,
+			allowed_agents: 2, revocation_epoch: 1, expires_at: term, grace_until: term,
+		} });
+		expect(verify(null, Buffer.from(JSON.stringify(signed.snapshot)), signer.publicKey, Buffer.from(signed.sig_b64, "base64"))).toBe(true);
+		expect(verify(null, Buffer.from(JSON.stringify({ ...signed.snapshot, premium_modules: [] })), signer.publicKey, Buffer.from(signed.sig_b64, "base64"))).toBe(false);
+		expect(body.entitlement).toEqual(signed.snapshot);
+		expect(runtime.insertedSnapshot).toHaveBeenCalledWith(expect.objectContaining({
+			tenant_id: TENANT_ID, entitlement: signed.snapshot, sig_b64: signed.sig_b64,
+		}), { onConflict: "tenant_id,iid" });
+		expect(runtime.rpc).toHaveBeenCalledWith("get_tenant_admission", { p_tenant_id: TENANT_ID, p_user_id: USER_ID });
+	});
+
+	it("uses licensed on-prem admission authority without changing the existing zero-extra-seat tier label", async () => {
+		configureSigning();
+		vi.stubEnv("AIDR_RUNTIME_CAPABILITIES_BY_TENANT", JSON.stringify({ [TENANT_ID]: RUNTIME_CAPS }));
+		const term = new Date(Date.now() + 3_600_000).toISOString();
+		const runtime = await ingest(false, undefined, undefined, undefined, undefined, {
+			mode: "onprem", status: "active", access_kind: "licensed", allowed_agents: 1, expires_at: term,
+		});
+		const response = await runtime.handler(request());
+		expect(response.status).toBe(200);
+		expect((await response.json()).entitlement_signed.snapshot).toMatchObject({
+			subscription_tier: "free", premium_modules: RUNTIME_CAPS, expires_at: term, grace_until: term,
+		});
+	});
+
+	it.each([
+		["disabled", ""],
+		["foreign tenant", JSON.stringify({ foreign: RUNTIME_CAPS })],
+		["malformed", "{"],
+		["wildcard", JSON.stringify({ "*": RUNTIME_CAPS })],
+		["unknown", JSON.stringify({ [TENANT_ID]: ["premium_intel"] })],
+		["learning without detector", JSON.stringify({ [TENANT_ID]: ["behavioral_learning_v1"] })],
+	] as const)("does not let %s operator configuration or client entitlement claims mint runtime capabilities", async (_name, config) => {
+		configureSigning();
+		vi.stubEnv("AIDR_RUNTIME_CAPABILITIES_BY_TENANT", config);
+		const runtime = await ingest();
+		const response = await runtime.handler(request({
+			tenant_id: "foreign", subscription_tier: "enterprise", premium_modules: RUNTIME_CAPS,
+			runtime_detectors: true, behavioral_learning_v1: true,
+			entitlement: { premium_modules: RUNTIME_CAPS },
+			entitlement_signed: { snapshot: { tenant_id: "foreign", premium_modules: RUNTIME_CAPS } },
+		}));
+		expect(response.status).toBe(200);
+		expect((await response.json()).entitlement_signed.snapshot).toMatchObject({
+			tenant_id: TENANT_ID, subscription_tier: "free", premium_modules: [],
+		});
+		expect(runtime.rpc).toHaveBeenCalledWith("register_agent_for_ingest", {
+			p_user_id: USER_ID, p_tenant_id: TENANT_ID, p_iid: "host-1", p_agent_runtime: null, p_agent_runtime_version: null,
+		});
+	});
+
+	it.each(["trial", "pilot"])("does not grant runtime capabilities for %s admission", async (kind) => {
+		configureSigning();
+		vi.stubEnv("AIDR_RUNTIME_CAPABILITIES_BY_TENANT", JSON.stringify({ [TENANT_ID]: RUNTIME_CAPS }));
+		const runtime = await ingest(false, undefined, undefined, undefined, undefined, {
+			mode: kind === "pilot" ? "pilot" : "cloud", status: "active", access_kind: kind,
+			allowed_agents: 1, expires_at: kind === "pilot" ? null : new Date(Date.now() + 3_600_000).toISOString(),
+		});
+		const response = await runtime.handler(request());
+		expect(response.status).toBe(200);
+		expect((await response.json()).entitlement_signed.snapshot.premium_modules).toEqual([]);
+	});
+
+	it.each([
+		["free", { access_kind: "free" }],
+		["expired", { expires_at: "2000-01-01T00:00:00.000Z" }],
+		["unbounded", { expires_at: null }],
+	] as const)("does not acknowledge events or issue a grant for %s admission", async (_name, patch) => {
+		configureSigning();
+		vi.stubEnv("AIDR_RUNTIME_CAPABILITIES_BY_TENANT", JSON.stringify({ [TENANT_ID]: RUNTIME_CAPS }));
+		const runtime = await ingest(false, undefined, undefined, undefined, undefined, {
+			mode: "cloud", status: "active", access_kind: "licensed", allowed_agents: 1,
+			expires_at: new Date(Date.now() + 3_600_000).toISOString(), ...patch,
+		});
+		const response = await runtime.handler(request());
+		expect(response.status).toBe(503);
+		expect(await response.json()).toEqual({ error: "admission_unavailable", retryable: true });
+		expect(runtime.insertedEvents).not.toHaveBeenCalled();
+		expect(runtime.insertedSnapshot).not.toHaveBeenCalled();
+	});
+
+	it("does not derive runtime capabilities from premium intelligence", async () => {
+		configureSigning();
+		vi.stubEnv("AIDR_RUNTIME_CAPABILITIES_BY_TENANT", "");
+		const runtime = await ingest(false, undefined, {
+			data: { included_agents: 1, extra_agents: 0, premium_intel: true, premium_correlation: false, premium_pkg_plugin: false, revocation_epoch: 1 }, error: null,
+		});
+		const response = await runtime.handler(request());
+		expect(response.status).toBe(200);
+		expect((await response.json()).entitlement_signed.snapshot.premium_modules).toEqual(["premium_intel"]);
+	});
+
+	it("does not publish runtime capabilities when signing is unconfigured", async () => {
+		vi.stubEnv("AIDR_ENTITLEMENT_SIGNING_KEY_ID", "");
+		vi.stubEnv("AIDR_ENTITLEMENT_SIGNING_PRIVATE_KEY_PKCS8_B64", "");
+		vi.stubEnv("AIDR_RUNTIME_CAPABILITIES_BY_TENANT", JSON.stringify({ [TENANT_ID]: RUNTIME_CAPS }));
+		const runtime = await ingest();
+		const response = await runtime.handler(request());
+		const body = await response.json();
+		expect(response.status).toBe(200);
+		expect(body.entitlement_signed).toBeNull();
+		expect(body.entitlement.premium_modules).toEqual([]);
+	});
+
+	it("fails closed before event insertion when a configured runtime grant signer cannot sign", async () => {
+		vi.stubEnv("AIDR_ENTITLEMENT_SIGNING_KEY_ID", "runtime-test-key");
+		vi.stubEnv("AIDR_ENTITLEMENT_SIGNING_PRIVATE_KEY_PKCS8_B64", `invalid-${randomUUID()}`);
+		vi.stubEnv("AIDR_RUNTIME_CAPABILITIES_BY_TENANT", JSON.stringify({ [TENANT_ID]: RUNTIME_CAPS }));
+		const runtime = await ingest();
+		const response = await runtime.handler(request());
+		expect(response.status).toBe(503);
+		expect(await response.json()).toEqual({ error: "entitlement_signing_unavailable", retryable: true });
+		expect(runtime.rpc).not.toHaveBeenCalled();
+		expect(runtime.reads).toEqual([]);
+		expect(runtime.insertedEvents).not.toHaveBeenCalled();
+		expect(runtime.insertedSnapshot).not.toHaveBeenCalled();
+	});
+
+	it("removes an operator grant on the next heartbeat without a function reload", async () => {
+		configureSigning();
+		vi.stubEnv("AIDR_RUNTIME_CAPABILITIES_BY_TENANT", JSON.stringify({ [TENANT_ID]: RUNTIME_CAPS }));
+		const runtime = await ingest();
+		const first = await runtime.handler(request({ events: [] }));
+		expect(first.status).toBe(200);
+		expect((await first.json()).entitlement_signed.snapshot.premium_modules).toEqual(RUNTIME_CAPS);
+		vi.stubEnv("AIDR_RUNTIME_CAPABILITIES_BY_TENANT", undefined);
+		const next = await runtime.handler(request({ events: [], premium_modules: RUNTIME_CAPS }));
+		const body = await next.json();
+		expect(next.status).toBe(200);
+		expect(body.entitlement_signed.snapshot.premium_modules).toEqual([]);
+		expect(verify(null, Buffer.from(JSON.stringify(body.entitlement_signed.snapshot)), signer.publicKey, Buffer.from(body.entitlement_signed.sig_b64, "base64"))).toBe(true);
+		expect(runtime.insertedEvents).not.toHaveBeenCalled();
+		expect(runtime.insertedSnapshot).toHaveBeenCalledTimes(2);
 	});
 });

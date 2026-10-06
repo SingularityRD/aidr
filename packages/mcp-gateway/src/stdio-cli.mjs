@@ -4,18 +4,29 @@ import { createMcpGateway } from "./gateway.mjs";
 import { requireGatewayIntegrity } from "./integrity.mjs";
 import { runStdioBridge } from "./stdio.mjs";
 
-const [configPath, tenantId, clientId, serverId, tokenEnv] = process.argv.slice(2);
-if (!configPath || !tenantId || !clientId || !serverId || !tokenEnv || process.argv.length !== 7) {
+const [configPath, tenantId, clientId, serverId, tokenEnv, routingFlag] = process.argv.slice(2);
+const requireRouting = routingFlag === "--require-routing";
+if (
+	!configPath ||
+	!tenantId ||
+	!clientId ||
+	!serverId ||
+	!tokenEnv ||
+	(process.argv.length !== 7 && !(process.argv.length === 8 && requireRouting))
+) {
 	process.stderr.write(
-		"usage: aidr-mcp-stdio <config.json> <tenantId> <clientId> <serverId> <tokenEnv>\n",
+		"usage: aidr-mcp-stdio <config.json> <tenantId> <clientId> <serverId> <tokenEnv> [--require-routing]\n",
 	);
 	process.exitCode = 2;
 } else {
 	try {
 		await requireGatewayIntegrity();
 		const config = JSON.parse(await readFile(configPath, "utf8"));
+		if (requireRouting) config.routingRequired = true;
 		await runStdioBridge({
-			gateway: createMcpGateway(config),
+			gateway: createMcpGateway(config, {
+				onEvent: (event) => process.stderr.write(`${JSON.stringify(event)}\n`),
+			}),
 			tenantId,
 			clientId,
 			serverId,

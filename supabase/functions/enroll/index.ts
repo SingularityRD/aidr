@@ -11,6 +11,7 @@ import { configFailure, loadConfig, partialGroupError, runtimeEnv } from "../_sh
 import { capEntitlementTimes, parseActiveAdmission, parseEffectiveSeats } from "../_shared/effective-seats.ts";
 import { readBoundedJson } from "../_shared/request-limits.ts";
 import { entitlementWindow, validateEnrollmentBody } from "./contract.ts";
+import { buildPremiumModules, tenantRuntimeCapabilities } from "../_shared/runtime-capabilities.ts";
 
 // Required configuration. Validated per request, before any auth or DB work, so
 // a missing variable answers with an explicit 500 that names it instead of
@@ -31,7 +32,10 @@ const MAX_ENROLL_BODY_BYTES = 8 * 1024;
 const ENROLL_RATE_LIMIT_PER_MIN = Number(Deno.env.get("AIDR_ENROLL_RL_PER_MIN") ?? "30");
 
 function json(status: number, body: Record<string, unknown>) {
-	return new Response(JSON.stringify(body), {
+	// Every error before exchange is safe to retry. Branches that may have
+	// committed explicitly override this; a consumed token never proves rollback.
+	const responseBody = status >= 400 ? { enrollment_outcome: "not_committed", ...body } : body;
+	return new Response(JSON.stringify(responseBody), {
 		status,
 		headers: { "Content-Type": "application/json" },
 	});
@@ -121,14 +125,6 @@ async function deriveTenantPackKeyB64(userId: string): Promise<string | null> {
 	}
 }
 
-function buildPremiumModules(entRow: Record<string, unknown> | null): string[] {
-	const out: string[] = [];
-	if (entRow && entRow.premium_intel === true) out.push("premium_intel");
-	if (entRow && entRow.premium_correlation === true) out.push("premium_correlation");
-	if (entRow && entRow.premium_pkg_plugin === true) out.push("premium_pkg_plugin");
-	return out;
-}
-
 Deno.serve(async (req) => {
 	if (req.method !== "POST") return json(405, { error: "method_not_allowed" });
 
@@ -171,7 +167,9 @@ Deno.serve(async (req) => {
 		? resolvedToken as Record<string, unknown> : null;
 	if (resolveError || !resolved || typeof resolved.tenant_id !== "string" || typeof resolved.user_id !== "string") {
 		if (resolveError) return json(503, { error: "enrollment_authorization_unavailable" });
-		return json(401, { error: "invalid_or_expired_enrollment_token" });
+		return json(401, {
+			error: "invalid_or_expired_enrollment_token", enrollment_outcome: "unknown",
+		});
 	}
 	const nowMin = Math.floor(Date.now() / 60000);
 	const rateKey = `enroll:${resolved.tenant_id}:${resolved.user_id}`;
@@ -271,7 +269,10 @@ Deno.serve(async (req) => {
 	}
 
 	// 4) Return signed entitlement snapshot (same contract as ingest).
-	const premiumModules = buildPremiumModules(exchange);
+	const capabilities = ENTITLEMENT_SIGNING_KEY_ID ? tenantRuntimeCapabilities(
+		tenantId, Deno.env.get("AIDR_RUNTIME_CAPABILITIES_BY_TENANT"), admissionData,
+	) : [];
+	const premiumModules = buildPremiumModules(exchange, capabilities);
 	const tenantPackKey = premiumModules.includes("premium_intel") ? await deriveTenantPackKeyB64(tenantId) : null;
 	const entitlement = {
 		schema_version: 2,
@@ -337,7 +338,7 @@ Deno.serve(async (req) => {
 			tenant_id: tenantId,
 			action: "enroll.consume_token",
 			target_user_id: userId,
-			detail: { iid },
+			detail: { iid, runtime_capabilities: capabilities },
 		});
 	} catch {
 		// Post-commit audit transport failure must not hide the plaintext key.

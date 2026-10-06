@@ -1,0 +1,2829 @@
+{
+  "schemaVersion": 1,
+  "recordedLocalDate": "2026-10-06",
+  "status": "real-provider-executed-candidates-unapproved-and-unqualified",
+  "customerCorpusEvaluated": false,
+  "institutionApproved": false,
+  "weightsIncludedInPackage": false,
+  "dependencyLockSha256": {
+    "public-models.lock.json": "64b91d8d972e516b0ecfc46b62f800b9a0f872b49e006aa3b7dc1c94017cfd83",
+    "public-models.privyshield.lock.json": "b93ee3acefac7758eb55fe773fa33c0031ec73e6bd059b30f95378f56c118c5e",
+    "public-corpora.lock.json": "0dddc8985e4d736995c67b1e0b6bca55316bb6ce69eddd0127003b1f7840f993",
+    "requirements.windows-py312.lock.txt": "a77bacb1be72d35a4e84c8495345a441d969c748ed6e4013ed4da17f54ecf89e",
+    "requirements.linux-py311.lock.txt": "3fbe0ee8e958cd354640fb7dc6a29c70ad2cb425e1cc80ef8559209922ee9dcc"
+  },
+  "platforms": {
+    "windows": {
+      "os": "Windows x64",
+      "python": "3.12.10",
+      "node": "24.18.1",
+      "offlineFreshWheelReplay": true,
+      "wheelCount": 36,
+      "osEgressDenyVerified": false
+    },
+    "linux": {
+      "platform": "Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.36",
+      "python": "3.11.2 (main, May 12 2026, 05:17:27) [GCC 12.2.0]",
+      "node": "v22.16.0",
+      "libraries": {
+        "torch": "2.14.1+cpu",
+        "transformers": "5.13.0",
+        "tokenizers": "0.22.2",
+        "safetensors": "0.8.0"
+      },
+      "networkMode": "none",
+      "rootReadOnly": true,
+      "modelMountReadOnly": true,
+      "freshHashLockedWheelInstallation": true,
+      "qualified": false
+    }
+  },
+  "linuxBaseImageId": "sha256:4448784b4671442a7bceacfde434c0315ead1c2dae622a799d1c2a41eacef483",
+  "publicCorpusProvenance": {
+    "schemaVersion": 1,
+    "purpose": "public-synthetic-comparison",
+    "independentCorporate": false,
+    "selection": "first eligible documents in source order; before inference; no text/span edits",
+    "counts": {
+      "tr:ADDRESS": 100,
+      "tr:PERSON": 100,
+      "tr:clean": 100,
+      "en:PERSON": 100,
+      "en:clean": 100,
+      "en:ADDRESS": 100
+    },
+    "privyRowsExcluded": 16323,
+    "splits": {
+      "trPositive": "BTX24 test",
+      "trClean": "yusuf-said train-labelled; not publisher heldout",
+      "en": "beki/privy test-small"
+    },
+    "trainingOverlap": "not verified against model publishers",
+    "datasets": [
+      {
+        "repository": "BTX24/turkish-privacy-pii-ner",
+        "revision": "45a8e18edb57224b14368c910f701e064dbb1326",
+        "license": "CC-BY-4.0",
+        "files": {
+          "btx-test.jsonl": {
+            "source": "test.jsonl",
+            "size": 1566967,
+            "sha256": "f2949df1b79d1243cc6dc7d8cb3ad529dcc31dbaa195fe10b6763b9209b3ec65"
+          },
+          "BTX24-README.md": {
+            "source": "README.md",
+            "size": 26280,
+            "sha256": "9ad4a4ff1c5bfcba413f49fcc16e0659990c875d065f3b1d3f7b38349ae1aa0d"
+          }
+        }
+      },
+      {
+        "repository": "beki/privy",
+        "revision": "dc137a6a976f6b5bb8768e9bb51ec58df930ccd1",
+        "license": "MIT",
+        "files": {
+          "privy-dataset.zip": {
+            "source": "privy-dataset.zip",
+            "size": 307518080,
+            "sha256": "ad4ffbc8f7102a92f01f8d8023ddf4f5244fea6b23c3f116641fe6bbd8cbbde4"
+          },
+          "beki-README.md": {
+            "source": "README.md",
+            "size": 6223,
+            "sha256": "321cf85250bfbede3aa4815e4ee6cf73a3f4a89e3e70087975a836e88f608ac5"
+          }
+        }
+      },
+      {
+        "repository": "yusuf-said/turkish-privacy-filter-dataset",
+        "revision": "fc2b9a3e197484d22a8201317cc722baacf053b7",
+        "license": "MIT",
+        "files": {
+          "tr_privacy_tr_curated.jsonl": {
+            "source": "tr_privacy_tr_curated.jsonl",
+            "size": 2407328,
+            "sha256": "fd39d832ad1d366d9c1f2bf11f5eab3f6a1a0ac18350af6cd6ee3a80bb3e70f2"
+          },
+          "yusuf-said-README.md": {
+            "source": "README.md",
+            "size": 9433,
+            "sha256": "af56373e571e9d9e6894301d7ffa6226500fbc3020e42decb3b8c1ad86b37761"
+          }
+        }
+      }
+    ],
+    "corpusSha256": "1c94a485923445a0c5a7b49919e5cb39fc619fbb2753e5c5768deecca85080a1"
+  },
+  "comparisons": {
+    "baseline": {
+      "schemaVersion": 1,
+      "mode": "offline-rules-and-learned-ner",
+      "profile": "defense",
+      "modelRevision": "ae86f6809e139363ebdd8b16f5624dec87c3abb50122df00ee20d844a02505b3",
+      "capabilities": {
+        "local": true,
+        "offsetUnit": "utf16",
+        "languages": [
+          "en",
+          "tr"
+        ],
+        "entities": [
+          "ADDRESS",
+          "INTERNAL",
+          "PERSON"
+        ],
+        "revision": "ae86f6809e139363ebdd8b16f5624dec87c3abb50122df00ee20d844a02505b3",
+        "entitiesByLanguage": {
+          "tr": [
+            "ADDRESS",
+            "INTERNAL",
+            "PERSON"
+          ],
+          "en": [
+            "ADDRESS",
+            "PERSON"
+          ]
+        }
+      },
+      "corpusSha256": "1c94a485923445a0c5a7b49919e5cb39fc619fbb2753e5c5768deecca85080a1",
+      "provenance": "operator-declared; not authenticated",
+      "trainingSplitCheck": "not-provided; publisher training overlap not verified",
+      "policy": {
+        "requiredTypes": [
+          "PERSON",
+          "ADDRESS"
+        ],
+        "minGold": 100,
+        "minRecallLower": 0.95,
+        "minPrecisionLower": 0.9,
+        "maxCleanFalseAlarmRate": 0.05
+      },
+      "report": {
+        "abstained": 517,
+        "blocked": 3,
+        "buckets": {
+          "en:ADDRESS": {
+            "coverageRecall": 0.8504672897196262,
+            "covered": 91,
+            "fn": 72,
+            "fp": 5663,
+            "gold": 107,
+            "precision": 0.006142506142506142,
+            "precisionInterval": {
+              "lower": 0.00442008202841343,
+              "upper": 0.00853037605674818
+            },
+            "recall": 0.32710280373831774,
+            "recallInterval": {
+              "lower": 0.245549576747442,
+              "upper": 0.42064030929642443
+            },
+            "tp": 35
+          },
+          "en:IBAN": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 1,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 0,
+              "upper": 0.7934506856227626
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          },
+          "en:PERSON": {
+            "coverageRecall": 0.32407407407407407,
+            "covered": 35,
+            "fn": 75,
+            "fp": 772,
+            "gold": 108,
+            "precision": 0.040993788819875775,
+            "precisionInterval": {
+              "lower": 0.029336700450878814,
+              "upper": 0.057010825456762296
+            },
+            "recall": 0.3055555555555556,
+            "recallInterval": {
+              "lower": 0.22660233791018655,
+              "upper": 0.39786607976903
+            },
+            "tp": 33
+          },
+          "en:SECRET": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 3,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 5.551115123125783e-17,
+              "upper": 0.5614970317550454
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          },
+          "en:US_SSN": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 2,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 0,
+              "upper": 0.6576197724933469
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          },
+          "tr:ADDRESS": {
+            "coverageRecall": 0.84,
+            "covered": 84,
+            "fn": 100,
+            "fp": 915,
+            "gold": 100,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 0,
+              "upper": 0.0041807634862542275
+            },
+            "recall": 0,
+            "recallInterval": {
+              "lower": 3.469446951953614e-18,
+              "upper": 0.03699349820698568
+            },
+            "tp": 0
+          },
+          "tr:PERSON": {
+            "coverageRecall": 0.93,
+            "covered": 93,
+            "fn": 98,
+            "fp": 925,
+            "gold": 100,
+            "precision": 0.002157497303128371,
+            "precisionInterval": {
+              "lower": 0.0005918631057671478,
+              "upper": 0.007832191008269266
+            },
+            "recall": 0.02,
+            "recallInterval": {
+              "lower": 0.00550196755016235,
+              "upper": 0.07001179072854388
+            },
+            "tp": 2
+          }
+        },
+        "cleanByLanguage": {
+          "en": {
+            "falseAlarm": 100,
+            "samples": 100
+          },
+          "tr": {
+            "falseAlarm": 100,
+            "samples": 100
+          }
+        },
+        "cleanFalseAlarm": 200,
+        "cleanSamples": 200,
+        "corpusDigest": "f64449c5c8a18d7c599f327aa89e430e5b8ad2a3111f27cd6b2bd2b10641d6ce",
+        "independent": 0,
+        "samples": 600,
+        "synthetic": 600
+      },
+      "modelReport": {
+        "abstained": 0,
+        "blocked": 0,
+        "buckets": {
+          "en:ADDRESS": {
+            "coverageRecall": 0.8317757009345794,
+            "covered": 89,
+            "fn": 71,
+            "fp": 5722,
+            "gold": 107,
+            "precision": 0.006252170892671066,
+            "precisionInterval": {
+              "lower": 0.004519641529637756,
+              "upper": 0.008643070315650848
+            },
+            "recall": 0.3364485981308411,
+            "recallInterval": {
+              "lower": 0.2539726954082616,
+              "upper": 0.4302609805791796
+            },
+            "tp": 36
+          },
+          "en:PERSON": {
+            "coverageRecall": 0.32407407407407407,
+            "covered": 35,
+            "fn": 75,
+            "fp": 804,
+            "gold": 108,
+            "precision": 0.03942652329749104,
+            "precisionInterval": {
+              "lower": 0.02820967840770299,
+              "upper": 0.05485170978627225
+            },
+            "recall": 0.3055555555555556,
+            "recallInterval": {
+              "lower": 0.22660233791018655,
+              "upper": 0.39786607976903
+            },
+            "tp": 33
+          },
+          "tr:ADDRESS": {
+            "coverageRecall": 0.19,
+            "covered": 19,
+            "fn": 99,
+            "fp": 1076,
+            "gold": 100,
+            "precision": 0.0009285051067780873,
+            "precisionInterval": {
+              "lower": 0.0001639227581725529,
+              "upper": 0.005240624572078583
+            },
+            "recall": 0.01,
+            "recallInterval": {
+              "lower": 0.0017674320641406505,
+              "upper": 0.054486196178705315
+            },
+            "tp": 1
+          },
+          "tr:PERSON": {
+            "coverageRecall": 0.96,
+            "covered": 96,
+            "fn": 22,
+            "fp": 1157,
+            "gold": 100,
+            "precision": 0.06315789473684211,
+            "precisionInterval": {
+              "lower": 0.0508996553417748,
+              "upper": 0.07812529590005239
+            },
+            "recall": 0.78,
+            "recallInterval": {
+              "lower": 0.6892964648501421,
+              "upper": 0.8499871761539459
+            },
+            "tp": 78
+          }
+        },
+        "cleanByLanguage": {
+          "en": {
+            "falseAlarm": 100,
+            "samples": 100
+          },
+          "tr": {
+            "falseAlarm": 100,
+            "samples": 100
+          }
+        },
+        "cleanFalseAlarm": 200,
+        "cleanSamples": 200,
+        "corpusDigest": "f64449c5c8a18d7c599f327aa89e430e5b8ad2a3111f27cd6b2bd2b10641d6ce",
+        "independent": 0,
+        "samples": 600,
+        "synthetic": 600
+      },
+      "runtimeCoverage": {
+        "tr": {
+          "goldSpans": 200,
+          "maskedGoldSpans": 187,
+          "positiveDocuments": 200,
+          "forwardedPositiveDocuments": 64,
+          "forwardedIncompleteGoldDocuments": 3,
+          "deniedPositiveDocuments": 136
+        },
+        "en": {
+          "goldSpans": 215,
+          "maskedGoldSpans": 169,
+          "positiveDocuments": 200,
+          "forwardedPositiveDocuments": 6,
+          "forwardedIncompleteGoldDocuments": 1,
+          "deniedPositiveDocuments": 194
+        }
+      },
+      "runtimeCoverageScope": "union of all reported masking intervals regardless of type; denied documents are counted separately, not as perfect recognition",
+      "modelDecisionScope": "span presence only; runtime block/review measured separately",
+      "runtimeAcceptance": {
+        "qualified": false,
+        "reasons": [
+          "INDEPENDENT_CORPORATE_CORPUS_REQUIRED",
+          "CLEAN_FALSE_ALARM_RATE",
+          "CLEAN_FALSE_ALARM_RATE_tr",
+          "RECALL_tr_PERSON",
+          "PRECISION_tr_PERSON",
+          "RECALL_tr_ADDRESS",
+          "PRECISION_tr_ADDRESS",
+          "CLEAN_FALSE_ALARM_RATE_en",
+          "RECALL_en_PERSON",
+          "PRECISION_en_PERSON",
+          "RECALL_en_ADDRESS",
+          "PRECISION_en_ADDRESS"
+        ]
+      },
+      "modelAcceptance": {
+        "qualified": false,
+        "reasons": [
+          "INDEPENDENT_CORPORATE_CORPUS_REQUIRED",
+          "CLEAN_FALSE_ALARM_RATE",
+          "CLEAN_FALSE_ALARM_RATE_tr",
+          "RECALL_tr_PERSON",
+          "PRECISION_tr_PERSON",
+          "RECALL_tr_ADDRESS",
+          "PRECISION_tr_ADDRESS",
+          "CLEAN_FALSE_ALARM_RATE_en",
+          "RECALL_en_PERSON",
+          "PRECISION_en_PERSON",
+          "RECALL_en_ADDRESS",
+          "PRECISION_en_ADDRESS"
+        ]
+      },
+      "acceptance": {
+        "qualified": false,
+        "reasons": [
+          "INDEPENDENT_CORPORATE_CORPUS_REQUIRED",
+          "CLEAN_FALSE_ALARM_RATE",
+          "CLEAN_FALSE_ALARM_RATE_tr",
+          "RECALL_tr_PERSON",
+          "PRECISION_tr_PERSON",
+          "RECALL_tr_ADDRESS",
+          "PRECISION_tr_ADDRESS",
+          "CLEAN_FALSE_ALARM_RATE_en",
+          "RECALL_en_PERSON",
+          "PRECISION_en_PERSON",
+          "RECALL_en_ADDRESS",
+          "PRECISION_en_ADDRESS",
+          "MODEL_INDEPENDENT_CORPORATE_CORPUS_REQUIRED",
+          "MODEL_CLEAN_FALSE_ALARM_RATE",
+          "MODEL_CLEAN_FALSE_ALARM_RATE_tr",
+          "MODEL_RECALL_tr_PERSON",
+          "MODEL_PRECISION_tr_PERSON",
+          "MODEL_RECALL_tr_ADDRESS",
+          "MODEL_PRECISION_tr_ADDRESS",
+          "MODEL_CLEAN_FALSE_ALARM_RATE_en",
+          "MODEL_RECALL_en_PERSON",
+          "MODEL_PRECISION_en_PERSON",
+          "MODEL_RECALL_en_ADDRESS",
+          "MODEL_PRECISION_en_ADDRESS"
+        ]
+      }
+    },
+    "alternative": {
+      "schemaVersion": 1,
+      "mode": "offline-rules-and-learned-ner",
+      "profile": "defense",
+      "modelRevision": "a5ce382e4b2a833845ac55e252fa1b2d3d9daae054b9229913c6f058504355ff",
+      "capabilities": {
+        "local": true,
+        "offsetUnit": "utf16",
+        "languages": [
+          "en",
+          "tr"
+        ],
+        "entities": [
+          "ADDRESS",
+          "EMAIL",
+          "INTERNAL",
+          "PERSON",
+          "PHONE",
+          "USERNAME"
+        ],
+        "revision": "a5ce382e4b2a833845ac55e252fa1b2d3d9daae054b9229913c6f058504355ff",
+        "entitiesByLanguage": {
+          "tr": [
+            "ADDRESS",
+            "INTERNAL",
+            "PERSON"
+          ],
+          "en": [
+            "ADDRESS",
+            "EMAIL",
+            "INTERNAL",
+            "PERSON",
+            "PHONE",
+            "USERNAME"
+          ]
+        }
+      },
+      "corpusSha256": "1c94a485923445a0c5a7b49919e5cb39fc619fbb2753e5c5768deecca85080a1",
+      "provenance": "operator-declared; not authenticated",
+      "trainingSplitCheck": "not-provided; publisher training overlap not verified",
+      "policy": {
+        "requiredTypes": [
+          "PERSON",
+          "ADDRESS"
+        ],
+        "minGold": 100,
+        "minRecallLower": 0.95,
+        "minPrecisionLower": 0.9,
+        "maxCleanFalseAlarmRate": 0.05
+      },
+      "report": {
+        "abstained": 178,
+        "blocked": 295,
+        "buckets": {
+          "en:ADDRESS": {
+            "coverageRecall": 0.5887850467289719,
+            "covered": 63,
+            "fn": 59,
+            "fp": 152,
+            "gold": 107,
+            "precision": 0.24,
+            "precisionInterval": {
+              "lower": 0.1860661599241369,
+              "upper": 0.30373340979204166
+            },
+            "recall": 0.4485981308411215,
+            "recallInterval": {
+              "lower": 0.3577733502112806,
+              "upper": 0.5429858050990581
+            },
+            "tp": 48
+          },
+          "en:EMAIL": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 5,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 0,
+              "upper": 0.43448246478317476
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          },
+          "en:INTERNAL": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 529,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 0,
+              "upper": 0.0072093842494842545
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          },
+          "en:IP_ADDRESS": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 2,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 0,
+              "upper": 0.6576197724933469
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          },
+          "en:PERSON": {
+            "coverageRecall": 0.8611111111111112,
+            "covered": 93,
+            "fn": 45,
+            "fp": 243,
+            "gold": 108,
+            "precision": 0.20588235294117646,
+            "precisionInterval": {
+              "lower": 0.16435886301190256,
+              "upper": 0.2546988683675306
+            },
+            "recall": 0.5833333333333334,
+            "recallInterval": {
+              "lower": 0.4890571088397164,
+              "upper": 0.6718849978691908
+            },
+            "tp": 63
+          },
+          "en:PHONE": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 4,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 0,
+              "upper": 0.4898908364545973
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          },
+          "en:SECRET": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 3,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 5.551115123125783e-17,
+              "upper": 0.5614970317550454
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          },
+          "en:USERNAME": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 8,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 0,
+              "upper": 0.32440756488388023
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          },
+          "tr:ADDRESS": {
+            "coverageRecall": 0.79,
+            "covered": 79,
+            "fn": 100,
+            "fp": 122,
+            "gold": 100,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 0,
+              "upper": 0.030526178389012868
+            },
+            "recall": 0,
+            "recallInterval": {
+              "lower": 3.469446951953614e-18,
+              "upper": 0.03699349820698568
+            },
+            "tp": 0
+          },
+          "tr:EMAIL": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 3,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 5.551115123125783e-17,
+              "upper": 0.5614970317550454
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          },
+          "tr:INTERNAL": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 173,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 0,
+              "upper": 0.02172261440451652
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          },
+          "tr:PERSON": {
+            "coverageRecall": 0.88,
+            "covered": 88,
+            "fn": 76,
+            "fp": 84,
+            "gold": 100,
+            "precision": 0.2222222222222222,
+            "precisionInterval": {
+              "lower": 0.15412547066351984,
+              "upper": 0.3094008403067896
+            },
+            "recall": 0.24,
+            "recallInterval": {
+              "lower": 0.16691325556948772,
+              "upper": 0.33232336349814473
+            },
+            "tp": 24
+          },
+          "tr:USERNAME": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 6,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 2.7755575615628914e-17,
+              "upper": 0.3903342879021653
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          }
+        },
+        "cleanByLanguage": {
+          "en": {
+            "falseAlarm": 96,
+            "samples": 100
+          },
+          "tr": {
+            "falseAlarm": 98,
+            "samples": 100
+          }
+        },
+        "cleanFalseAlarm": 194,
+        "cleanSamples": 200,
+        "corpusDigest": "f64449c5c8a18d7c599f327aa89e430e5b8ad2a3111f27cd6b2bd2b10641d6ce",
+        "independent": 0,
+        "samples": 600,
+        "synthetic": 600
+      },
+      "modelReport": {
+        "abstained": 0,
+        "blocked": 0,
+        "buckets": {
+          "en:ADDRESS": {
+            "coverageRecall": 0.48598130841121495,
+            "covered": 52,
+            "fn": 99,
+            "fp": 321,
+            "gold": 107,
+            "precision": 0.0243161094224924,
+            "precisionInterval": {
+              "lower": 0.012371757481222382,
+              "upper": 0.04724058435562484
+            },
+            "recall": 0.07476635514018691,
+            "recallInterval": {
+              "lower": 0.038370103103435346,
+              "upper": 0.14063745446391163
+            },
+            "tp": 8
+          },
+          "en:EMAIL": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 5,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 0,
+              "upper": 0.43448246478317476
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          },
+          "en:INTERNAL": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 541,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 0,
+              "upper": 0.00705059932298276
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          },
+          "en:PERSON": {
+            "coverageRecall": 0.8611111111111112,
+            "covered": 93,
+            "fn": 45,
+            "fp": 234,
+            "gold": 108,
+            "precision": 0.21212121212121213,
+            "precisionInterval": {
+              "lower": 0.16945548610778988,
+              "upper": 0.26213881385896276
+            },
+            "recall": 0.5833333333333334,
+            "recallInterval": {
+              "lower": 0.4890571088397164,
+              "upper": 0.6718849978691908
+            },
+            "tp": 63
+          },
+          "en:PHONE": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 6,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 2.7755575615628914e-17,
+              "upper": 0.3903342879021653
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          },
+          "en:USERNAME": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 8,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 0,
+              "upper": 0.32440756488388023
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          },
+          "tr:ADDRESS": {
+            "coverageRecall": 0.04,
+            "covered": 4,
+            "fn": 100,
+            "fp": 383,
+            "gold": 100,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 0,
+              "upper": 0.009930318307673144
+            },
+            "recall": 0,
+            "recallInterval": {
+              "lower": 3.469446951953614e-18,
+              "upper": 0.03699349820698568
+            },
+            "tp": 0
+          },
+          "tr:EMAIL": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 3,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 5.551115123125783e-17,
+              "upper": 0.5614970317550454
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          },
+          "tr:INTERNAL": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 173,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 0,
+              "upper": 0.02172261440451652
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          },
+          "tr:PERSON": {
+            "coverageRecall": 0.88,
+            "covered": 88,
+            "fn": 22,
+            "fp": 214,
+            "gold": 100,
+            "precision": 0.2671232876712329,
+            "precisionInterval": {
+              "lower": 0.21963806202045377,
+              "upper": 0.32065625459719127
+            },
+            "recall": 0.78,
+            "recallInterval": {
+              "lower": 0.6892964648501421,
+              "upper": 0.8499871761539459
+            },
+            "tp": 78
+          },
+          "tr:USERNAME": {
+            "coverageRecall": null,
+            "covered": 0,
+            "fn": 0,
+            "fp": 6,
+            "gold": 0,
+            "precision": 0,
+            "precisionInterval": {
+              "lower": 2.7755575615628914e-17,
+              "upper": 0.3903342879021653
+            },
+            "recall": null,
+            "recallInterval": null,
+            "tp": 0
+          }
+        },
+        "cleanByLanguage": {
+          "en": {
+            "falseAlarm": 94,
+            "samples": 100
+          },
+          "tr": {
+            "falseAlarm": 98,
+            "samples": 100
+          }
+        },
+        "cleanFalseAlarm": 192,
+        "cleanSamples": 200,
+        "corpusDigest": "f64449c5c8a18d7c599f327aa89e430e5b8ad2a3111f27cd6b2bd2b10641d6ce",
+        "independent": 0,
+        "samples": 600,
+        "synthetic": 600
+      },
+      "runtimeCoverage": {
+        "tr": {
+          "goldSpans": 200,
+          "maskedGoldSpans": 167,
+          "positiveDocuments": 200,
+          "forwardedPositiveDocuments": 69,
+          "forwardedIncompleteGoldDocuments": 11,
+          "deniedPositiveDocuments": 131
+        },
+        "en": {
+          "goldSpans": 215,
+          "maskedGoldSpans": 161,
+          "positiveDocuments": 200,
+          "forwardedPositiveDocuments": 31,
+          "forwardedIncompleteGoldDocuments": 0,
+          "deniedPositiveDocuments": 169
+        }
+      },
+      "runtimeCoverageScope": "union of all reported masking intervals regardless of type; denied documents are counted separately, not as perfect recognition",
+      "modelDecisionScope": "span presence only; runtime block/review measured separately",
+      "runtimeAcceptance": {
+        "qualified": false,
+        "reasons": [
+          "INDEPENDENT_CORPORATE_CORPUS_REQUIRED",
+          "CLEAN_FALSE_ALARM_RATE",
+          "CLEAN_FALSE_ALARM_RATE_tr",
+          "RECALL_tr_PERSON",
+          "PRECISION_tr_PERSON",
+          "RECALL_tr_ADDRESS",
+          "PRECISION_tr_ADDRESS",
+          "CLEAN_FALSE_ALARM_RATE_en",
+          "RECALL_en_PERSON",
+          "PRECISION_en_PERSON",
+          "RECALL_en_ADDRESS",
+          "PRECISION_en_ADDRESS"
+        ]
+      },
+      "modelAcceptance": {
+        "qualified": false,
+        "reasons": [
+          "INDEPENDENT_CORPORATE_CORPUS_REQUIRED",
+          "CLEAN_FALSE_ALARM_RATE",
+          "CLEAN_FALSE_ALARM_RATE_tr",
+          "RECALL_tr_PERSON",
+          "PRECISION_tr_PERSON",
+          "RECALL_tr_ADDRESS",
+          "PRECISION_tr_ADDRESS",
+          "CLEAN_FALSE_ALARM_RATE_en",
+          "RECALL_en_PERSON",
+          "PRECISION_en_PERSON",
+          "RECALL_en_ADDRESS",
+          "PRECISION_en_ADDRESS"
+        ]
+      },
+      "acceptance": {
+        "qualified": false,
+        "reasons": [
+          "INDEPENDENT_CORPORATE_CORPUS_REQUIRED",
+          "CLEAN_FALSE_ALARM_RATE",
+          "CLEAN_FALSE_ALARM_RATE_tr",
+          "RECALL_tr_PERSON",
+          "PRECISION_tr_PERSON",
+          "RECALL_tr_ADDRESS",
+          "PRECISION_tr_ADDRESS",
+          "CLEAN_FALSE_ALARM_RATE_en",
+          "RECALL_en_PERSON",
+          "PRECISION_en_PERSON",
+          "RECALL_en_ADDRESS",
+          "PRECISION_en_ADDRESS",
+          "MODEL_INDEPENDENT_CORPORATE_CORPUS_REQUIRED",
+          "MODEL_CLEAN_FALSE_ALARM_RATE",
+          "MODEL_CLEAN_FALSE_ALARM_RATE_tr",
+          "MODEL_RECALL_tr_PERSON",
+          "MODEL_PRECISION_tr_PERSON",
+          "MODEL_RECALL_tr_ADDRESS",
+          "MODEL_PRECISION_tr_ADDRESS",
+          "MODEL_CLEAN_FALSE_ALARM_RATE_en",
+          "MODEL_RECALL_en_PERSON",
+          "MODEL_PRECISION_en_PERSON",
+          "MODEL_RECALL_en_ADDRESS",
+          "MODEL_PRECISION_en_ADDRESS"
+        ]
+      }
+    }
+  },
+  "smoke": {
+    "windowsInitial": {
+      "schemaVersion": 1,
+      "ready": true,
+      "modelRevision": "ae86f6809e139363ebdd8b16f5624dec87c3abb50122df00ee20d844a02505b3",
+      "capabilities": {
+        "local": true,
+        "offsetUnit": "utf16",
+        "languages": [
+          "en",
+          "tr"
+        ],
+        "entities": [
+          "ADDRESS",
+          "INTERNAL",
+          "PERSON"
+        ],
+        "revision": "ae86f6809e139363ebdd8b16f5624dec87c3abb50122df00ee20d844a02505b3",
+        "entitiesByLanguage": {
+          "tr": [
+            "ADDRESS",
+            "INTERNAL",
+            "PERSON"
+          ],
+          "en": [
+            "ADDRESS",
+            "PERSON"
+          ]
+        }
+      },
+      "scope": "three synthetic real-inference smoke cases; not independent accuracy evidence",
+      "qualified": false,
+      "results": [
+        {
+          "id": "tr-person-address",
+          "language": "tr",
+          "decision": "redact",
+          "reasons": [],
+          "types": [
+            "ADDRESS"
+          ],
+          "expected": [
+            {
+              "type": "PERSON",
+              "start": 0,
+              "end": 12
+            },
+            {
+              "type": "ADDRESS",
+              "start": 14,
+              "end": 54
+            }
+          ],
+          "modelTypes": [
+            "ADDRESS",
+            "PERSON"
+          ],
+          "modelSpans": [
+            {
+              "start": 0,
+              "end": 12,
+              "type": "PERSON",
+              "score": 0.7023367285728455
+            },
+            {
+              "start": 0,
+              "end": 7,
+              "type": "PERSON",
+              "score": 0.742437481880188
+            },
+            {
+              "start": 7,
+              "end": 34,
+              "type": "ADDRESS",
+              "score": 0.922979474067688
+            },
+            {
+              "start": 36,
+              "end": 72,
+              "type": "ADDRESS",
+              "score": 0.9069778323173523
+            }
+          ],
+          "modelExpectedTypesPresent": true,
+          "expectedTypesPresent": false,
+          "modelExactSpans": false,
+          "modelTypedCoverage": false,
+          "runtimeMaskCoverage": true,
+          "utf16OffsetsValid": true,
+          "elapsedMs": 69
+        },
+        {
+          "id": "en-person-address",
+          "language": "en",
+          "decision": "redact",
+          "reasons": [],
+          "types": [
+            "ADDRESS",
+            "PERSON"
+          ],
+          "expected": [
+            {
+              "type": "PERSON",
+              "start": 11,
+              "end": 23
+            },
+            {
+              "type": "ADDRESS",
+              "start": 38,
+              "end": 59
+            }
+          ],
+          "modelTypes": [
+            "ADDRESS",
+            "PERSON"
+          ],
+          "modelSpans": [
+            {
+              "start": 11,
+              "end": 23,
+              "type": "PERSON",
+              "score": 0.9992412328720093
+            },
+            {
+              "start": 38,
+              "end": 59,
+              "type": "ADDRESS",
+              "score": 0.9980744123458862
+            }
+          ],
+          "modelExpectedTypesPresent": true,
+          "expectedTypesPresent": true,
+          "modelExactSpans": true,
+          "modelTypedCoverage": true,
+          "runtimeMaskCoverage": true,
+          "utf16OffsetsValid": true,
+          "elapsedMs": 55
+        },
+        {
+          "id": "en-utf16",
+          "language": "en",
+          "decision": "review",
+          "reasons": [
+            "REVIEW_REQUIRED"
+          ],
+          "types": [
+            "PERSON"
+          ],
+          "expected": [
+            {
+              "type": "PERSON",
+              "start": 14,
+              "end": 26
+            }
+          ],
+          "modelTypes": [
+            "PERSON"
+          ],
+          "modelSpans": [
+            {
+              "start": 18,
+              "end": 26,
+              "type": "PERSON",
+              "score": 0.5177352428436279
+            },
+            {
+              "start": 14,
+              "end": 26,
+              "type": "PERSON",
+              "score": 0.999278724193573
+            }
+          ],
+          "modelExpectedTypesPresent": true,
+          "expectedTypesPresent": true,
+          "modelExactSpans": true,
+          "modelTypedCoverage": true,
+          "runtimeMaskCoverage": true,
+          "utf16OffsetsValid": true,
+          "elapsedMs": 39
+        }
+      ]
+    },
+    "windowsAlternative": {
+      "schemaVersion": 1,
+      "ready": true,
+      "modelRevision": "a5ce382e4b2a833845ac55e252fa1b2d3d9daae054b9229913c6f058504355ff",
+      "capabilities": {
+        "local": true,
+        "offsetUnit": "utf16",
+        "languages": [
+          "en",
+          "tr"
+        ],
+        "entities": [
+          "ADDRESS",
+          "EMAIL",
+          "INTERNAL",
+          "PERSON",
+          "PHONE",
+          "USERNAME"
+        ],
+        "revision": "a5ce382e4b2a833845ac55e252fa1b2d3d9daae054b9229913c6f058504355ff",
+        "entitiesByLanguage": {
+          "tr": [
+            "ADDRESS",
+            "INTERNAL",
+            "PERSON"
+          ],
+          "en": [
+            "ADDRESS",
+            "EMAIL",
+            "INTERNAL",
+            "PERSON",
+            "PHONE",
+            "USERNAME"
+          ]
+        }
+      },
+      "scope": "three synthetic real-inference smoke cases; not independent accuracy evidence",
+      "qualified": false,
+      "results": [
+        {
+          "id": "tr-person-address",
+          "language": "tr",
+          "decision": "review",
+          "reasons": [
+            "REVIEW_REQUIRED"
+          ],
+          "types": [
+            "ADDRESS",
+            "PERSON"
+          ],
+          "expected": [
+            {
+              "type": "PERSON",
+              "start": 0,
+              "end": 12
+            },
+            {
+              "type": "ADDRESS",
+              "start": 14,
+              "end": 54
+            }
+          ],
+          "modelTypes": [
+            "ADDRESS",
+            "PERSON"
+          ],
+          "modelSpans": [
+            {
+              "start": 0,
+              "end": 12,
+              "type": "PERSON",
+              "score": 0.7023367285728455
+            },
+            {
+              "start": 0,
+              "end": 5,
+              "type": "PERSON",
+              "score": 0.955686628818512
+            },
+            {
+              "start": 5,
+              "end": 12,
+              "type": "PERSON",
+              "score": 0.8625904321670532
+            },
+            {
+              "start": 13,
+              "end": 35,
+              "type": "ADDRESS",
+              "score": 0.6934093236923218
+            },
+            {
+              "start": 47,
+              "end": 54,
+              "type": "ADDRESS",
+              "score": 0.9156591296195984
+            }
+          ],
+          "modelExpectedTypesPresent": true,
+          "expectedTypesPresent": true,
+          "modelExactSpans": false,
+          "modelTypedCoverage": false,
+          "runtimeMaskCoverage": true,
+          "utf16OffsetsValid": true,
+          "elapsedMs": 209
+        },
+        {
+          "id": "en-person-address",
+          "language": "en",
+          "decision": "redact",
+          "reasons": [],
+          "types": [
+            "ADDRESS",
+            "PERSON"
+          ],
+          "expected": [
+            {
+              "type": "PERSON",
+              "start": 11,
+              "end": 23
+            },
+            {
+              "type": "ADDRESS",
+              "start": 38,
+              "end": 59
+            }
+          ],
+          "modelTypes": [
+            "ADDRESS",
+            "PERSON"
+          ],
+          "modelSpans": [
+            {
+              "start": 11,
+              "end": 23,
+              "type": "PERSON",
+              "score": 0.48055481910705566
+            },
+            {
+              "start": 10,
+              "end": 17,
+              "type": "PERSON",
+              "score": 0.9703376889228821
+            },
+            {
+              "start": 17,
+              "end": 23,
+              "type": "PERSON",
+              "score": 0.7007918357849121
+            },
+            {
+              "start": 37,
+              "end": 48,
+              "type": "ADDRESS",
+              "score": 0.9663597941398621
+            },
+            {
+              "start": 49,
+              "end": 59,
+              "type": "ADDRESS",
+              "score": 0.923106849193573
+            }
+          ],
+          "modelExpectedTypesPresent": true,
+          "expectedTypesPresent": true,
+          "modelExactSpans": false,
+          "modelTypedCoverage": false,
+          "runtimeMaskCoverage": true,
+          "utf16OffsetsValid": true,
+          "elapsedMs": 146
+        },
+        {
+          "id": "en-utf16",
+          "language": "en",
+          "decision": "review",
+          "reasons": [
+            "REVIEW_REQUIRED"
+          ],
+          "types": [
+            "PERSON"
+          ],
+          "expected": [
+            {
+              "type": "PERSON",
+              "start": 14,
+              "end": 26
+            }
+          ],
+          "modelTypes": [
+            "PERSON"
+          ],
+          "modelSpans": [
+            {
+              "start": 18,
+              "end": 26,
+              "type": "PERSON",
+              "score": 0.5177352428436279
+            },
+            {
+              "start": 13,
+              "end": 20,
+              "type": "PERSON",
+              "score": 0.9647333025932312
+            },
+            {
+              "start": 20,
+              "end": 26,
+              "type": "PERSON",
+              "score": 0.6357547640800476
+            }
+          ],
+          "modelExpectedTypesPresent": true,
+          "expectedTypesPresent": true,
+          "modelExactSpans": false,
+          "modelTypedCoverage": true,
+          "runtimeMaskCoverage": true,
+          "utf16OffsetsValid": true,
+          "elapsedMs": 149
+        }
+      ]
+    },
+    "linuxAlternative": {
+      "schemaVersion": 1,
+      "ready": true,
+      "modelRevision": "a5ce382e4b2a833845ac55e252fa1b2d3d9daae054b9229913c6f058504355ff",
+      "capabilities": {
+        "local": true,
+        "offsetUnit": "utf16",
+        "languages": [
+          "en",
+          "tr"
+        ],
+        "entities": [
+          "ADDRESS",
+          "EMAIL",
+          "INTERNAL",
+          "PERSON",
+          "PHONE",
+          "USERNAME"
+        ],
+        "revision": "a5ce382e4b2a833845ac55e252fa1b2d3d9daae054b9229913c6f058504355ff",
+        "entitiesByLanguage": {
+          "tr": [
+            "ADDRESS",
+            "INTERNAL",
+            "PERSON"
+          ],
+          "en": [
+            "ADDRESS",
+            "EMAIL",
+            "INTERNAL",
+            "PERSON",
+            "PHONE",
+            "USERNAME"
+          ]
+        }
+      },
+      "scope": "three synthetic real-inference smoke cases; not independent accuracy evidence",
+      "qualified": false,
+      "results": [
+        {
+          "id": "tr-person-address",
+          "language": "tr",
+          "decision": "review",
+          "reasons": [
+            "REVIEW_REQUIRED"
+          ],
+          "types": [
+            "ADDRESS",
+            "PERSON"
+          ],
+          "expected": [
+            {
+              "type": "PERSON",
+              "start": 0,
+              "end": 12
+            },
+            {
+              "type": "ADDRESS",
+              "start": 14,
+              "end": 54
+            }
+          ],
+          "modelTypes": [
+            "ADDRESS",
+            "PERSON"
+          ],
+          "modelSpans": [
+            {
+              "start": 0,
+              "end": 12,
+              "type": "PERSON",
+              "score": 0.702336311340332
+            },
+            {
+              "start": 0,
+              "end": 5,
+              "type": "PERSON",
+              "score": 0.955686628818512
+            },
+            {
+              "start": 5,
+              "end": 12,
+              "type": "PERSON",
+              "score": 0.862590491771698
+            },
+            {
+              "start": 13,
+              "end": 35,
+              "type": "ADDRESS",
+              "score": 0.6934085488319397
+            },
+            {
+              "start": 47,
+              "end": 54,
+              "type": "ADDRESS",
+              "score": 0.9156592488288879
+            }
+          ],
+          "modelExpectedTypesPresent": true,
+          "expectedTypesPresent": true,
+          "modelExactSpans": false,
+          "modelTypedCoverage": false,
+          "runtimeMaskCoverage": true,
+          "utf16OffsetsValid": true,
+          "elapsedMs": 159
+        },
+        {
+          "id": "en-person-address",
+          "language": "en",
+          "decision": "redact",
+          "reasons": [],
+          "types": [
+            "ADDRESS",
+            "PERSON"
+          ],
+          "expected": [
+            {
+              "type": "PERSON",
+              "start": 11,
+              "end": 23
+            },
+            {
+              "type": "ADDRESS",
+              "start": 38,
+              "end": 59
+            }
+          ],
+          "modelTypes": [
+            "ADDRESS",
+            "PERSON"
+          ],
+          "modelSpans": [
+            {
+              "start": 11,
+              "end": 23,
+              "type": "PERSON",
+              "score": 0.48055553436279297
+            },
+            {
+              "start": 10,
+              "end": 17,
+              "type": "PERSON",
+              "score": 0.970337450504303
+            },
+            {
+              "start": 17,
+              "end": 23,
+              "type": "PERSON",
+              "score": 0.700792133808136
+            },
+            {
+              "start": 37,
+              "end": 48,
+              "type": "ADDRESS",
+              "score": 0.9663597941398621
+            },
+            {
+              "start": 49,
+              "end": 59,
+              "type": "ADDRESS",
+              "score": 0.9231067299842834
+            }
+          ],
+          "modelExpectedTypesPresent": true,
+          "expectedTypesPresent": true,
+          "modelExactSpans": false,
+          "modelTypedCoverage": false,
+          "runtimeMaskCoverage": true,
+          "utf16OffsetsValid": true,
+          "elapsedMs": 138
+        },
+        {
+          "id": "en-utf16",
+          "language": "en",
+          "decision": "review",
+          "reasons": [
+            "REVIEW_REQUIRED"
+          ],
+          "types": [
+            "PERSON"
+          ],
+          "expected": [
+            {
+              "type": "PERSON",
+              "start": 14,
+              "end": 26
+            }
+          ],
+          "modelTypes": [
+            "PERSON"
+          ],
+          "modelSpans": [
+            {
+              "start": 18,
+              "end": 26,
+              "type": "PERSON",
+              "score": 0.5177360773086548
+            },
+            {
+              "start": 13,
+              "end": 20,
+              "type": "PERSON",
+              "score": 0.9647333025932312
+            },
+            {
+              "start": 20,
+              "end": 26,
+              "type": "PERSON",
+              "score": 0.6357548832893372
+            }
+          ],
+          "modelExpectedTypesPresent": true,
+          "expectedTypesPresent": true,
+          "modelExactSpans": false,
+          "modelTypedCoverage": true,
+          "runtimeMaskCoverage": true,
+          "utf16OffsetsValid": true,
+          "elapsedMs": 132
+        }
+      ]
+    }
+  },
+  "cleanDiagnostic": {
+    "rows": [
+      {
+        "id": "yusuf-train-clean-1",
+        "sourceIdentifier": "tr_web_00382",
+        "split": "train",
+        "sourceAllNonOLabels": [],
+        "rawEntities": [
+          {
+            "start": 0,
+            "end": 10,
+            "type": "PERSON",
+            "score": 0.8979656100273132
+          },
+          {
+            "start": 12,
+            "end": 36,
+            "type": "PERSON",
+            "score": 0.8131905794143677
+          },
+          {
+            "start": 37,
+            "end": 49,
+            "type": "ADDRESS",
+            "score": 0.5268052220344543
+          },
+          {
+            "start": 52,
+            "end": 63,
+            "type": "PERSON",
+            "score": 0.9731342792510986
+          },
+          {
+            "start": 72,
+            "end": 86,
+            "type": "PERSON",
+            "score": 0.8097637891769409
+          },
+          {
+            "start": 94,
+            "end": 96,
+            "type": "PERSON",
+            "score": 0.44188469648361206
+          },
+          {
+            "start": 96,
+            "end": 119,
+            "type": "ADDRESS",
+            "score": 0.47210147976875305
+          },
+          {
+            "start": 120,
+            "end": 125,
+            "type": "PERSON",
+            "score": 0.7915045022964478
+          },
+          {
+            "start": 126,
+            "end": 130,
+            "type": "ADDRESS",
+            "score": 0.7307032942771912
+          },
+          {
+            "start": 133,
+            "end": 138,
+            "type": "PERSON",
+            "score": 0.7509105801582336
+          },
+          {
+            "start": 139,
+            "end": 161,
+            "type": "ADDRESS",
+            "score": 0.5285847187042236
+          },
+          {
+            "start": 161,
+            "end": 165,
+            "type": "PERSON",
+            "score": 0.5749662518501282
+          },
+          {
+            "start": 165,
+            "end": 166,
+            "type": "ADDRESS",
+            "score": 0.5184808969497681
+          },
+          {
+            "start": 166,
+            "end": 173,
+            "type": "PERSON",
+            "score": 0.6625548005104065
+          }
+        ],
+        "runtimeDecision": "review",
+        "runtimeReasons": [
+          "REVIEW_REQUIRED"
+        ],
+        "rulesOnly": {
+          "decision": "allow",
+          "reasons": [],
+          "findings": []
+        }
+      },
+      {
+        "id": "yusuf-train-clean-12",
+        "sourceIdentifier": "tr_web_10398",
+        "split": "train",
+        "sourceAllNonOLabels": [],
+        "rawEntities": [
+          {
+            "start": 0,
+            "end": 3,
+            "type": "PERSON",
+            "score": 0.9156548380851746
+          },
+          {
+            "start": 4,
+            "end": 10,
+            "type": "PERSON",
+            "score": 0.49464330077171326
+          },
+          {
+            "start": 12,
+            "end": 55,
+            "type": "PERSON",
+            "score": 0.5760543942451477
+          },
+          {
+            "start": 58,
+            "end": 69,
+            "type": "PERSON",
+            "score": 0.9791563749313354
+          },
+          {
+            "start": 78,
+            "end": 82,
+            "type": "ADDRESS",
+            "score": 0.8993703722953796
+          },
+          {
+            "start": 82,
+            "end": 88,
+            "type": "PERSON",
+            "score": 0.5129570960998535
+          },
+          {
+            "start": 89,
+            "end": 92,
+            "type": "ADDRESS",
+            "score": 0.8412402272224426
+          },
+          {
+            "start": 93,
+            "end": 95,
+            "type": "ADDRESS",
+            "score": 0.8267604112625122
+          },
+          {
+            "start": 96,
+            "end": 103,
+            "type": "ADDRESS",
+            "score": 0.5821364521980286
+          },
+          {
+            "start": 103,
+            "end": 112,
+            "type": "PERSON",
+            "score": 0.5171484351158142
+          },
+          {
+            "start": 112,
+            "end": 114,
+            "type": "ADDRESS",
+            "score": 0.5952430367469788
+          },
+          {
+            "start": 114,
+            "end": 116,
+            "type": "PERSON",
+            "score": 0.8517219424247742
+          },
+          {
+            "start": 117,
+            "end": 122,
+            "type": "PERSON",
+            "score": 0.9411585330963135
+          },
+          {
+            "start": 123,
+            "end": 127,
+            "type": "ADDRESS",
+            "score": 0.873252272605896
+          },
+          {
+            "start": 130,
+            "end": 145,
+            "type": "PERSON",
+            "score": 0.5212434530258179
+          },
+          {
+            "start": 145,
+            "end": 154,
+            "type": "ADDRESS",
+            "score": 0.8077543377876282
+          },
+          {
+            "start": 154,
+            "end": 170,
+            "type": "PERSON",
+            "score": 0.6191858053207397
+          }
+        ],
+        "runtimeDecision": "review",
+        "runtimeReasons": [
+          "REVIEW_REQUIRED"
+        ],
+        "rulesOnly": {
+          "decision": "allow",
+          "reasons": [],
+          "findings": []
+        }
+      },
+      {
+        "id": "yusuf-train-clean-13",
+        "sourceIdentifier": "tr_web_10389",
+        "split": "train",
+        "sourceAllNonOLabels": [],
+        "rawEntities": [
+          {
+            "start": 0,
+            "end": 9,
+            "type": "PERSON",
+            "score": 0.7946840524673462
+          },
+          {
+            "start": 11,
+            "end": 50,
+            "type": "ADDRESS",
+            "score": 0.8040156364440918
+          },
+          {
+            "start": 52,
+            "end": 60,
+            "type": "ADDRESS",
+            "score": 0.5625361204147339
+          },
+          {
+            "start": 62,
+            "end": 73,
+            "type": "PERSON",
+            "score": 0.9573978781700134
+          },
+          {
+            "start": 82,
+            "end": 96,
+            "type": "ADDRESS",
+            "score": 0.6797052621841431
+          },
+          {
+            "start": 104,
+            "end": 111,
+            "type": "ADDRESS",
+            "score": 0.7098050117492676
+          },
+          {
+            "start": 111,
+            "end": 116,
+            "type": "ADDRESS",
+            "score": 0.514418363571167
+          },
+          {
+            "start": 116,
+            "end": 117,
+            "type": "PERSON",
+            "score": 0.7238888740539551
+          },
+          {
+            "start": 117,
+            "end": 126,
+            "type": "ADDRESS",
+            "score": 0.6519088745117188
+          },
+          {
+            "start": 127,
+            "end": 132,
+            "type": "ADDRESS",
+            "score": 0.6693015098571777
+          },
+          {
+            "start": 133,
+            "end": 186,
+            "type": "ADDRESS",
+            "score": 0.6956347823143005
+          },
+          {
+            "start": 188,
+            "end": 212,
+            "type": "PERSON",
+            "score": 0.7478938698768616
+          }
+        ],
+        "runtimeDecision": "review",
+        "runtimeReasons": [
+          "REVIEW_REQUIRED"
+        ],
+        "rulesOnly": {
+          "decision": "allow",
+          "reasons": [],
+          "findings": []
+        }
+      },
+      {
+        "id": "privy-test-small-4",
+        "sourceIdentifier": 103249,
+        "split": "test-small",
+        "sourceAllNonOLabels": [],
+        "rawEntities": [
+          {
+            "start": 0,
+            "end": 2,
+            "type": "PERSON",
+            "score": 0.8395805954933167
+          },
+          {
+            "start": 8,
+            "end": 12,
+            "type": "ADDRESS",
+            "score": 0.8092329502105713
+          },
+          {
+            "start": 19,
+            "end": 24,
+            "type": "PERSON",
+            "score": 0.9554072022438049
+          },
+          {
+            "start": 27,
+            "end": 48,
+            "type": "ADDRESS",
+            "score": 0.7955617904663086
+          },
+          {
+            "start": 55,
+            "end": 56,
+            "type": "ADDRESS",
+            "score": 0.8507484793663025
+          },
+          {
+            "start": 56,
+            "end": 60,
+            "type": "ADDRESS",
+            "score": 0.9171700477600098
+          },
+          {
+            "start": 69,
+            "end": 73,
+            "type": "ADDRESS",
+            "score": 0.47262638807296753
+          },
+          {
+            "start": 76,
+            "end": 79,
+            "type": "PERSON",
+            "score": 0.583446204662323
+          },
+          {
+            "start": 85,
+            "end": 96,
+            "type": "ADDRESS",
+            "score": 0.544081449508667
+          },
+          {
+            "start": 101,
+            "end": 102,
+            "type": "ADDRESS",
+            "score": 0.49077045917510986
+          },
+          {
+            "start": 102,
+            "end": 106,
+            "type": "ADDRESS",
+            "score": 0.8292586207389832
+          },
+          {
+            "start": 109,
+            "end": 125,
+            "type": "PERSON",
+            "score": 0.9402183890342712
+          }
+        ],
+        "runtimeDecision": "review",
+        "runtimeReasons": [
+          "REVIEW_REQUIRED"
+        ],
+        "rulesOnly": {
+          "decision": "allow",
+          "reasons": [],
+          "findings": []
+        }
+      },
+      {
+        "id": "privy-test-small-13",
+        "sourceIdentifier": 13346,
+        "split": "test-small",
+        "sourceAllNonOLabels": [],
+        "rawEntities": [
+          {
+            "start": 0,
+            "end": 6,
+            "type": "PERSON",
+            "score": 0.9988710284233093
+          },
+          {
+            "start": 51,
+            "end": 52,
+            "type": "PERSON",
+            "score": 0.8736542463302612
+          },
+          {
+            "start": 54,
+            "end": 58,
+            "type": "PERSON",
+            "score": 0.909866988658905
+          },
+          {
+            "start": 69,
+            "end": 74,
+            "type": "PERSON",
+            "score": 0.9947086572647095
+          },
+          {
+            "start": 108,
+            "end": 111,
+            "type": "PERSON",
+            "score": 0.5435389876365662
+          },
+          {
+            "start": 22,
+            "end": 26,
+            "type": "ADDRESS",
+            "score": 0.5926989912986755
+          },
+          {
+            "start": 31,
+            "end": 52,
+            "type": "ADDRESS",
+            "score": 0.8159592151641846
+          },
+          {
+            "start": 59,
+            "end": 60,
+            "type": "ADDRESS",
+            "score": 0.6331554651260376
+          },
+          {
+            "start": 60,
+            "end": 67,
+            "type": "ADDRESS",
+            "score": 0.7020435929298401
+          },
+          {
+            "start": 86,
+            "end": 90,
+            "type": "ADDRESS",
+            "score": 0.5195893049240112
+          },
+          {
+            "start": 96,
+            "end": 107,
+            "type": "ADDRESS",
+            "score": 0.6985452175140381
+          },
+          {
+            "start": 113,
+            "end": 120,
+            "type": "ADDRESS",
+            "score": 0.5238248109817505
+          },
+          {
+            "start": 123,
+            "end": 130,
+            "type": "ADDRESS",
+            "score": 0.47485587000846863
+          }
+        ],
+        "runtimeDecision": "review",
+        "runtimeReasons": [
+          "REVIEW_REQUIRED"
+        ],
+        "rulesOnly": {
+          "decision": "allow",
+          "reasons": [],
+          "findings": []
+        }
+      }
+    ],
+    "perModel": [
+      {
+        "repository": "ersanbil/kvkk-pii-ner",
+        "declaredLanguages": [
+          "tr"
+        ],
+        "rows": [
+          {
+            "id": "yusuf-train-clean-1",
+            "language": "tr",
+            "entities": [
+              {
+                "start": 160,
+                "end": 161,
+                "type": "PERSON",
+                "score": 0.8376527428627014
+              }
+            ]
+          },
+          {
+            "id": "yusuf-train-clean-12",
+            "language": "tr",
+            "entities": []
+          },
+          {
+            "id": "yusuf-train-clean-13",
+            "language": "tr",
+            "entities": []
+          },
+          {
+            "id": "privy-test-small-4",
+            "language": "en",
+            "entities": [
+              {
+                "start": 0,
+                "end": 2,
+                "type": "PERSON",
+                "score": 0.8395805954933167
+              }
+            ]
+          },
+          {
+            "id": "privy-test-small-13",
+            "language": "en",
+            "entities": [
+              {
+                "start": 0,
+                "end": 6,
+                "type": "PERSON",
+                "score": 0.9988710284233093
+              },
+              {
+                "start": 51,
+                "end": 52,
+                "type": "PERSON",
+                "score": 0.8736542463302612
+              },
+              {
+                "start": 54,
+                "end": 58,
+                "type": "PERSON",
+                "score": 0.909866988658905
+              },
+              {
+                "start": 69,
+                "end": 74,
+                "type": "PERSON",
+                "score": 0.9947086572647095
+              },
+              {
+                "start": 108,
+                "end": 111,
+                "type": "PERSON",
+                "score": 0.5435389876365662
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "repository": "aditrynacode/privyshield-ner",
+        "declaredLanguages": [
+          "en"
+        ],
+        "rows": [
+          {
+            "id": "yusuf-train-clean-1",
+            "language": "tr",
+            "entities": [
+              {
+                "start": 0,
+                "end": 11,
+                "type": "PERSON",
+                "score": 0.9660623073577881
+              },
+              {
+                "start": 14,
+                "end": 43,
+                "type": "PERSON",
+                "score": 0.8762071132659912
+              },
+              {
+                "start": 44,
+                "end": 55,
+                "type": "ADDRESS",
+                "score": 0.5263059139251709
+              },
+              {
+                "start": 56,
+                "end": 68,
+                "type": "PERSON",
+                "score": 0.98861163854599
+              },
+              {
+                "start": 77,
+                "end": 79,
+                "type": "ADDRESS",
+                "score": 0.5797502994537354
+              },
+              {
+                "start": 79,
+                "end": 91,
+                "type": "PERSON",
+                "score": 0.7518641948699951
+              },
+              {
+                "start": 99,
+                "end": 108,
+                "type": "PERSON",
+                "score": 0.8370532393455505
+              },
+              {
+                "start": 108,
+                "end": 109,
+                "type": "ADDRESS",
+                "score": 0.7477244138717651
+              },
+              {
+                "start": 109,
+                "end": 115,
+                "type": "PERSON",
+                "score": 0.5202649235725403
+              },
+              {
+                "start": 115,
+                "end": 118,
+                "type": "ADDRESS",
+                "score": 0.5853482484817505
+              },
+              {
+                "start": 118,
+                "end": 124,
+                "type": "PERSON",
+                "score": 0.7053745985031128
+              },
+              {
+                "start": 125,
+                "end": 130,
+                "type": "PERSON",
+                "score": 0.9636709094047546
+              },
+              {
+                "start": 131,
+                "end": 135,
+                "type": "ADDRESS",
+                "score": 0.5239118933677673
+              },
+              {
+                "start": 138,
+                "end": 143,
+                "type": "PERSON",
+                "score": 0.8884211182594299
+              },
+              {
+                "start": 144,
+                "end": 146,
+                "type": "ADDRESS",
+                "score": 0.5117970705032349
+              },
+              {
+                "start": 146,
+                "end": 152,
+                "type": "PERSON",
+                "score": 0.6338850855827332
+              },
+              {
+                "start": 152,
+                "end": 158,
+                "type": "ADDRESS",
+                "score": 0.8772338032722473
+              },
+              {
+                "start": 158,
+                "end": 179,
+                "type": "PERSON",
+                "score": 0.8593211770057678
+              }
+            ]
+          },
+          {
+            "id": "yusuf-train-clean-12",
+            "language": "tr",
+            "entities": [
+              {
+                "start": 0,
+                "end": 11,
+                "type": "PERSON",
+                "score": 0.9681886434555054
+              },
+              {
+                "start": 14,
+                "end": 29,
+                "type": "PERSON",
+                "score": 0.9928967356681824
+              },
+              {
+                "start": 31,
+                "end": 58,
+                "type": "PERSON",
+                "score": 0.9468729496002197
+              },
+              {
+                "start": 59,
+                "end": 60,
+                "type": "ADDRESS",
+                "score": 0.49475425481796265
+              },
+              {
+                "start": 61,
+                "end": 73,
+                "type": "PERSON",
+                "score": 0.9957563281059265
+              },
+              {
+                "start": 82,
+                "end": 86,
+                "type": "ADDRESS",
+                "score": 0.513408362865448
+              },
+              {
+                "start": 86,
+                "end": 92,
+                "type": "PERSON",
+                "score": 0.8783104419708252
+              },
+              {
+                "start": 93,
+                "end": 96,
+                "type": "ADDRESS",
+                "score": 0.736992597579956
+              },
+              {
+                "start": 97,
+                "end": 99,
+                "type": "ADDRESS",
+                "score": 0.6050605773925781
+              },
+              {
+                "start": 100,
+                "end": 102,
+                "type": "ADDRESS",
+                "score": 0.5168811082839966
+              },
+              {
+                "start": 102,
+                "end": 106,
+                "type": "PERSON",
+                "score": 0.9153022766113281
+              },
+              {
+                "start": 107,
+                "end": 120,
+                "type": "PERSON",
+                "score": 0.9356222748756409
+              },
+              {
+                "start": 121,
+                "end": 126,
+                "type": "PERSON",
+                "score": 0.9892885684967041
+              },
+              {
+                "start": 127,
+                "end": 131,
+                "type": "ADDRESS",
+                "score": 0.7064200639724731
+              },
+              {
+                "start": 134,
+                "end": 153,
+                "type": "PERSON",
+                "score": 0.7795427441596985
+              },
+              {
+                "start": 153,
+                "end": 158,
+                "type": "ADDRESS",
+                "score": 0.5362740755081177
+              },
+              {
+                "start": 158,
+                "end": 175,
+                "type": "PERSON",
+                "score": 0.9731231927871704
+              }
+            ]
+          },
+          {
+            "id": "yusuf-train-clean-13",
+            "language": "tr",
+            "entities": [
+              {
+                "start": 0,
+                "end": 10,
+                "type": "PERSON",
+                "score": 0.9905497431755066
+              },
+              {
+                "start": 13,
+                "end": 33,
+                "type": "PERSON",
+                "score": 0.9259999990463257
+              },
+              {
+                "start": 34,
+                "end": 52,
+                "type": "PERSON",
+                "score": 0.5750336647033691
+              },
+              {
+                "start": 52,
+                "end": 60,
+                "type": "PERSON",
+                "score": 0.6887367367744446
+              },
+              {
+                "start": 62,
+                "end": 70,
+                "type": "PERSON",
+                "score": 0.5938087701797485
+              },
+              {
+                "start": 72,
+                "end": 83,
+                "type": "PERSON",
+                "score": 0.8968779444694519
+              },
+              {
+                "start": 92,
+                "end": 106,
+                "type": "PERSON",
+                "score": 0.5639436841011047
+              },
+              {
+                "start": 114,
+                "end": 120,
+                "type": "PERSON",
+                "score": 0.8333956599235535
+              },
+              {
+                "start": 121,
+                "end": 136,
+                "type": "PERSON",
+                "score": 0.9258777499198914
+              },
+              {
+                "start": 137,
+                "end": 142,
+                "type": "PERSON",
+                "score": 0.8000122308731079
+              },
+              {
+                "start": 143,
+                "end": 147,
+                "type": "ADDRESS",
+                "score": 0.503090500831604
+              },
+              {
+                "start": 148,
+                "end": 149,
+                "type": "PERSON",
+                "score": 0.7686798572540283
+              },
+              {
+                "start": 149,
+                "end": 171,
+                "type": "PERSON",
+                "score": 0.7233228087425232
+              },
+              {
+                "start": 171,
+                "end": 172,
+                "type": "ADDRESS",
+                "score": 0.8903310894966125
+              },
+              {
+                "start": 173,
+                "end": 186,
+                "type": "PERSON",
+                "score": 0.6057994961738586
+              },
+              {
+                "start": 186,
+                "end": 199,
+                "type": "ADDRESS",
+                "score": 0.5160496234893799
+              },
+              {
+                "start": 201,
+                "end": 227,
+                "type": "PERSON",
+                "score": 0.9917330741882324
+              }
+            ]
+          },
+          {
+            "id": "privy-test-small-4",
+            "language": "en",
+            "entities": [
+              {
+                "start": 8,
+                "end": 12,
+                "type": "ADDRESS",
+                "score": 0.8092329502105713
+              },
+              {
+                "start": 19,
+                "end": 24,
+                "type": "PERSON",
+                "score": 0.9554072022438049
+              },
+              {
+                "start": 27,
+                "end": 48,
+                "type": "ADDRESS",
+                "score": 0.7955617904663086
+              },
+              {
+                "start": 55,
+                "end": 56,
+                "type": "ADDRESS",
+                "score": 0.8507484793663025
+              },
+              {
+                "start": 56,
+                "end": 60,
+                "type": "ADDRESS",
+                "score": 0.9171700477600098
+              },
+              {
+                "start": 69,
+                "end": 73,
+                "type": "ADDRESS",
+                "score": 0.47262638807296753
+              },
+              {
+                "start": 76,
+                "end": 79,
+                "type": "PERSON",
+                "score": 0.583446204662323
+              },
+              {
+                "start": 85,
+                "end": 96,
+                "type": "ADDRESS",
+                "score": 0.544081449508667
+              },
+              {
+                "start": 101,
+                "end": 102,
+                "type": "ADDRESS",
+                "score": 0.49077045917510986
+              },
+              {
+                "start": 102,
+                "end": 106,
+                "type": "ADDRESS",
+                "score": 0.8292586207389832
+              },
+              {
+                "start": 109,
+                "end": 125,
+                "type": "PERSON",
+                "score": 0.9402183890342712
+              }
+            ]
+          },
+          {
+            "id": "privy-test-small-13",
+            "language": "en",
+            "entities": [
+              {
+                "start": 22,
+                "end": 26,
+                "type": "ADDRESS",
+                "score": 0.5926989912986755
+              },
+              {
+                "start": 31,
+                "end": 52,
+                "type": "ADDRESS",
+                "score": 0.8159592151641846
+              },
+              {
+                "start": 59,
+                "end": 60,
+                "type": "ADDRESS",
+                "score": 0.6331554651260376
+              },
+              {
+                "start": 60,
+                "end": 67,
+                "type": "ADDRESS",
+                "score": 0.7020435929298401
+              },
+              {
+                "start": 86,
+                "end": 90,
+                "type": "ADDRESS",
+                "score": 0.5195893049240112
+              },
+              {
+                "start": 96,
+                "end": 107,
+                "type": "ADDRESS",
+                "score": 0.6985452175140381
+              },
+              {
+                "start": 113,
+                "end": 120,
+                "type": "ADDRESS",
+                "score": 0.5238248109817505
+              },
+              {
+                "start": 123,
+                "end": 130,
+                "type": "ADDRESS",
+                "score": 0.47485587000846863
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "repository": "seongyeon1/pii-deberta-v3-base-multi",
+        "declaredLanguages": [
+          "en"
+        ],
+        "rows": [
+          {
+            "id": "yusuf-train-clean-1",
+            "language": "tr",
+            "entities": [
+              {
+                "start": 68,
+                "end": 135,
+                "type": "INTERNAL",
+                "score": 0.9480428099632263
+              },
+              {
+                "start": 148,
+                "end": 163,
+                "type": "INTERNAL",
+                "score": 0.8200250864028931
+              }
+            ]
+          },
+          {
+            "id": "yusuf-train-clean-12",
+            "language": "tr",
+            "entities": [
+              {
+                "start": 73,
+                "end": 131,
+                "type": "INTERNAL",
+                "score": 0.9466214179992676
+              },
+              {
+                "start": 144,
+                "end": 159,
+                "type": "INTERNAL",
+                "score": 0.91517174243927
+              }
+            ]
+          },
+          {
+            "id": "yusuf-train-clean-13",
+            "language": "tr",
+            "entities": [
+              {
+                "start": 83,
+                "end": 147,
+                "type": "INTERNAL",
+                "score": 0.9442499279975891
+              },
+              {
+                "start": 184,
+                "end": 199,
+                "type": "INTERNAL",
+                "score": 0.9269707798957825
+              }
+            ]
+          },
+          {
+            "id": "privy-test-small-4",
+            "language": "en",
+            "entities": [
+              {
+                "start": 27,
+                "end": 36,
+                "type": "INTERNAL",
+                "score": 0.8336196541786194
+              },
+              {
+                "start": 36,
+                "end": 48,
+                "type": "INTERNAL",
+                "score": 0.6065402626991272
+              }
+            ]
+          },
+          {
+            "id": "privy-test-small-13",
+            "language": "en",
+            "entities": [
+              {
+                "start": 31,
+                "end": 40,
+                "type": "INTERNAL",
+                "score": 0.8571422696113586
+              },
+              {
+                "start": 40,
+                "end": 52,
+                "type": "INTERNAL",
+                "score": 0.5229755640029907
+              },
+              {
+                "start": 96,
+                "end": 106,
+                "type": "INTERNAL",
+                "score": 0.7862634658813477
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "checks": {
+    "focusedNodeTests": {
+      "passed": 8,
+      "failed": 0
+    },
+    "noNetworkPythonTests": {
+      "passed": 47,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
+  "limits": [
+    "Public synthetic data; no independent corporate qualification.",
+    "Turkish clean source is train-labelled; publisher training overlap unverified.",
+    "Language declarations do not route models; cross-language contamination measured.",
+    "Any-type masking coverage does not establish exact typed recognition.",
+    "Allow/redact counts are forwardable outputs; no external network sends performed."
+  ]
+}

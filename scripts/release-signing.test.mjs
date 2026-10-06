@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash, generateKeyPairSync } from "node:crypto";
 import {
+	cp,
 	mkdtemp,
 	mkdir,
 	readdir,
@@ -23,6 +24,29 @@ afterEach(async () => {
 	await Promise.all(
 		temporaryDirectories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })),
 	);
+});
+
+test("artifact-only receiver verifies without the signer key, checkout, or package manager", async () => {
+	const fixture = await createFixture();
+	assert.equal(sign(fixture, { sequence: 7 }).status, 0);
+	const receiver = await mkdtemp(path.join(os.tmpdir(), "aidr-independent-release-fixture-"));
+	temporaryDirectories.push(receiver);
+	const bundle = path.join(receiver, "delivery");
+	await cp(fixture.bundle, bundle, { recursive: true });
+	for (const name of ["release-verify.mjs", "release-signing-lib.mjs"]) await cp(path.join(repoRoot, "scripts", name), path.join(receiver, name));
+	const policy = path.join(receiver, "independently-delivered-policy.json");
+	await cp(fixture.policy, policy);
+	await rm(fixture.privateKey);
+	const args = [path.join(receiver, "release-verify.mjs"), "--bundle", bundle, "--policy", policy, "--state", path.join(receiver, "protected-state.json"), "--record"];
+	const runReceiver = () => spawnSync(process.execPath, args, { cwd: receiver, env: { PATH: "" }, encoding: "utf8", windowsHide: true });
+	const checked = runReceiver();
+	assert.equal(checked.status, 0, checked.stderr);
+	assert.equal(JSON.parse(checked.stdout).artifacts_verified, 1);
+	assert.ok(!(await readdir(receiver)).some((name) => /private|node_modules|\.git/.test(name)));
+	await writeFile(path.join(bundle, "agent.tgz"), "changed after transfer\n");
+	const tampered = runReceiver();
+	assert.equal(tampered.status, 1);
+	assert.match(tampered.stderr, /digest|size|inventory/i);
 });
 
 test("signs an exact release and runs an installer only after verification", async () => {
