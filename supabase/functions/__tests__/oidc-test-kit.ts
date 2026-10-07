@@ -240,6 +240,14 @@ class MemoryStore implements OidcStore {
 		this.requests.set(row.state_hash, { ...row });
 		return true;
 	}
+	pendingLookups = 0;
+	failPendingLookup = false;
+	async pendingAuthRequest(stateHash: string, nowIso: string) {
+		this.pendingLookups += 1;
+		if (this.failPendingLookup) return "error" as const;
+		const row = this.requests.get(stateHash);
+		return !row || row.consumed_at || row.expires_at <= nowIso ? null : { provider_id: row.provider_id };
+	}
 	async consumeAuthRequest(stateHash: string, nowIso: string) {
 		const row = this.requests.get(stateHash);
 		if (!row || row.consumed_at || row.expires_at <= nowIso) return null;

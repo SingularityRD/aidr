@@ -43,12 +43,24 @@ import type {
 const MAX_BODY_BYTES = 16 * 1024;
 const AUTH_REQUEST_TTL_MS = 10 * 60_000;
 const LOGIN_TICKET_TTL_MS = 2 * 60_000;
-// Deployment-wide availability bounds, not security controls: state is 256-bit and single-use, so
-// guessing is infeasible. They only cap unauthenticated database writes. A fixed bound can be used
-// to starve sign-in, so it is deliberately far above any real login rate (see residual risks).
+// Availability bounds, not security controls: state is 256-bit and single-use, so guessing is
+// infeasible. No public action consumes a fixed deployment-wide bucket any more, because one
+// caller could use it to starve sign-in or recovery for every tenant:
+//  - start resolves the provider first (read-only); unknown providers/domains write nothing, and
+//    a known provider is bounded by its own bucket;
+//  - callback checks that the state exists and is pending (read-only) before counting, and then
+//    counts against the provider the state belongs to;
+//  - break-glass is bounded per email.
+// A caller whose IP the trusted ingress attested (see _shared/trusted-ingress.ts) is first limited
+// by its own bucket, and attested callers never share a bucket with unsigned direct callers.
 const START_LIMIT_PER_MINUTE = 600;
-const START_AGGREGATE_LIMIT_PER_MINUTE = 6_000;
 const CALLBACK_LIMIT_PER_MINUTE = 1_200;
+const CLIENT_START_LIMIT_PER_MINUTE = 60;
+const CLIENT_CALLBACK_LIMIT_PER_MINUTE = 120;
+const BREAK_GLASS_WINDOW_MS = 10 * 60_000;
+const BREAK_GLASS_PER_EMAIL = 5;
+const BREAK_GLASS_PER_CLIENT = 20;
+const BREAK_GLASS_UNSIGNED_AGGREGATE = 300;
 const SCOPES = ["openid", "email", "profile"] as const;
 const DOMAIN_TXT_LABEL = "_aidr-sso";
 const DOMAIN_TXT_PREFIX = "aidr-sso-verification=";
@@ -85,6 +97,32 @@ export function createOidcHandler(deps: OidcDeps): (req: Request) => Promise<Res
 	const nowIso = () => new Date(deps.now()).toISOString();
 	const random = (bytes: number) => base64UrlEncode(deps.randomBytes(bytes));
 
+	async function attestedClientIp(req: Request): Promise<string | null> {
+		return deps.clientIp ? await deps.clientIp(req) : null;
+	}
+
+	/**
+	 * Per-provider bound for a public action. An attested client is checked
+	 * against its own bucket first, and attested and unsigned callers use
+	 * separate per-provider buckets, so a direct caller cannot exhaust the budget
+	 * of clients arriving through the trusted ingress.
+	 */
+	async function publicLimit(
+		req: Request,
+		scope: "oidc-start" | "oidc-callback",
+		providerId: string,
+		windowMs: number,
+		perClient: number,
+		perProvider: number,
+	): Promise<"allowed" | "limited" | "unavailable"> {
+		const clientIp = await attestedClientIp(req);
+		if (clientIp) {
+			const client = await store.rateLimit(`${scope}:v2:client:${await sha256Hex(clientIp)}`, windowMs, perClient);
+			if (client !== "allowed") return client;
+		}
+		return store.rateLimit(`${scope}:v2:${clientIp ? "signed" : "unsigned"}:${providerId}`, windowMs, perProvider);
+	}
+
 	async function failLogin(
 		req: Request,
 		provider: OidcProviderRow | null,
@@ -117,14 +155,9 @@ export function createOidcHandler(deps: OidcDeps): (req: Request) => Promise<Res
 		if ((body.provider_id !== undefined && !providerId) || (!providerId && !domain))
 			return deps.json(req, 400, { error: "invalid_request" });
 
-		// Unknown caller-selected providers/domains must share a bounded write budget too.
-		const aggregate = await store.rateLimit("oidc-start:aggregate", 60_000, START_AGGREGATE_LIMIT_PER_MINUTE);
-		if (aggregate === "unavailable") return deps.json(req, 503, { error: "sso_unavailable" });
-		if (aggregate === "limited") return deps.json(req, 429, { error: "rate_limited" });
-		const limit = await store.rateLimit(`oidc-start:${await sha256Hex(providerId ?? domain ?? "")}`, 60_000, START_LIMIT_PER_MINUTE);
-		if (limit === "unavailable") return deps.json(req, 503, { error: "sso_unavailable" });
-		if (limit === "limited") return deps.json(req, 429, { error: "rate_limited" });
-
+		// Resolve first (read-only): an unknown provider/domain writes nothing, not
+		// even a counter row, so random identifiers cannot mint counters or starve
+		// other tenants' sign-in.
 		const provider = providerId
 			? await store.findProviderById(providerId)
 			: isDnsDomain(domain)
@@ -133,6 +166,10 @@ export function createOidcHandler(deps: OidcDeps): (req: Request) => Promise<Res
 		// One answer for unknown, disabled and un-discovered providers: no enumeration.
 		if (!provider || !provider.enabled || !provider.discovery)
 			return deps.json(req, 404, { error: "sso_not_available" });
+
+		const limit = await publicLimit(req, "oidc-start", provider.id, 60_000, CLIENT_START_LIMIT_PER_MINUTE, START_LIMIT_PER_MINUTE);
+		if (limit === "unavailable") return deps.json(req, 503, { error: "sso_unavailable" });
+		if (limit === "limited") return deps.json(req, 429, { error: "rate_limited" });
 
 		let linkUserId: string | null = null;
 		if (mode === "link") {
@@ -232,13 +269,20 @@ export function createOidcHandler(deps: OidcDeps): (req: Request) => Promise<Res
 		const bindingVerifier = isPkceVerifier(body.binding_verifier) ? body.binding_verifier : null;
 		if (!code || !state || !bindingVerifier) return deps.json(req, 400, { error: "invalid_request" });
 
-		const limit = await store.rateLimit("oidc-callback", 60_000, CALLBACK_LIMIT_PER_MINUTE);
+		// Cheap read-only existence check before counting: a random or replayed
+		// state is rejected without consuming any bucket, so it cannot starve
+		// callbacks for flows other users legitimately started.
+		const stateHash = await sha256Hex(state);
+		const pending = await store.pendingAuthRequest(stateHash, nowIso());
+		if (pending === "error") return deps.json(req, 503, { error: "sso_unavailable" });
+		if (!pending) return deps.json(req, 400, { error: "sso_login_failed", reason: "request_invalid" });
+		const limit = await publicLimit(req, "oidc-callback", pending.provider_id, 60_000, CLIENT_CALLBACK_LIMIT_PER_MINUTE, CALLBACK_LIMIT_PER_MINUTE);
 		if (limit === "unavailable") return deps.json(req, 503, { error: "sso_unavailable" });
 		if (limit === "limited") return deps.json(req, 429, { error: "rate_limited" });
 
 		// Single-use: the first presentation consumes the request, so a replayed
 		// state (or a second tab, or an attacker) finds nothing.
-		const authRequest = await store.consumeAuthRequest(await sha256Hex(state), nowIso());
+		const authRequest = await store.consumeAuthRequest(stateHash, nowIso());
 		if (!authRequest) return deps.json(req, 400, { error: "sso_login_failed", reason: "request_invalid" });
 
 		const provider = await store.findProviderById(authRequest.provider_id);
@@ -437,14 +481,20 @@ export function createOidcHandler(deps: OidcDeps): (req: Request) => Promise<Res
 	async function breakGlassSuspend(req: Request, body: Body): Promise<Response> {
 		const email = normalizeEmail(body.email);
 		const recoveryCode = normalizeRecoveryCode(body.recovery_code);
-		const aggregate = await store.rateLimit("oidc-break-glass:aggregate", 10 * 60_000, 300);
-		if (aggregate === "unavailable") return deps.json(req, 503, { error: "recovery_unavailable" });
-		if (aggregate === "limited") return deps.json(req, 429, { error: "rate_limited" });
-		const subjectHash = await sha256Hex(email ?? "invalid-email");
-		const limit = await store.rateLimit(`oidc-break-glass:${subjectHash}`, 10 * 60_000, 5);
+		// Malformed input never reaches the database, so it needs no counter.
+		if (!email || !recoveryCode) return deps.json(req, 401, { error: "invalid_or_expired_recovery_code" });
+		// An attested client is limited by its own bucket; unsigned direct callers
+		// share only an unsigned aggregate, so they cannot exhaust recovery for
+		// clients arriving through the ingress. Every caller is then bounded per email.
+		const clientIp = await attestedClientIp(req);
+		const client = clientIp
+			? await store.rateLimit(`oidc-break-glass:v2:client:${await sha256Hex(clientIp)}`, BREAK_GLASS_WINDOW_MS, BREAK_GLASS_PER_CLIENT)
+			: await store.rateLimit("oidc-break-glass:v2:unsigned-aggregate", BREAK_GLASS_WINDOW_MS, BREAK_GLASS_UNSIGNED_AGGREGATE);
+		if (client === "unavailable") return deps.json(req, 503, { error: "recovery_unavailable" });
+		if (client === "limited") return deps.json(req, 429, { error: "rate_limited" });
+		const limit = await store.rateLimit(`oidc-break-glass:v2:email:${await sha256Hex(email)}`, BREAK_GLASS_WINDOW_MS, BREAK_GLASS_PER_EMAIL);
 		if (limit === "unavailable") return deps.json(req, 503, { error: "recovery_unavailable" });
 		if (limit === "limited") return deps.json(req, 429, { error: "rate_limited" });
-		if (!email || !recoveryCode) return deps.json(req, 401, { error: "invalid_or_expired_recovery_code" });
 		const result = await store.breakGlassSuspend({
 			email,
 			codeHash: await sha256Hex(recoveryCode),
