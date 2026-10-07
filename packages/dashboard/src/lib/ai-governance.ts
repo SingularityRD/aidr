@@ -1,3 +1,4 @@
+import { readAllPages } from "./paged-read";
 import { supabase } from "./supabase";
 
 /**
@@ -212,6 +213,12 @@ export interface GovernanceData {
 	changes: PolicyChangeRequest[];
 	reviewers: string[];
 	settings: GovernanceSettings;
+	/**
+	 * Lists that were read only in part. The API caps a response at 1000 rows,
+	 * so the register and its evidence are paged up to an explicit bound; a
+	 * page must say when rows beyond that bound exist.
+	 */
+	truncated: { assets: boolean; evidence: boolean };
 }
 
 export type GovernanceResult<T> = { ok: true; value: T } | { ok: false; error: string };
@@ -229,8 +236,10 @@ export const CHANGE_COLUMNS =
 export const REASON_MAX = 500;
 export const TEXT_MAX = 1000;
 const LIMITS = {
-	assets: 2000,
-	evidence: 2000,
+	/** The register quota (`ai_governance_register_quota`): every asset is read. */
+	assets: 5000,
+	/** Evidence is bounded per asset server-side, not per tenant; read the newest 5000. */
+	evidence: 5000,
 	intake: 300,
 	exceptions: 300,
 	changes: 100,
@@ -455,58 +464,69 @@ export async function loadGovernance(
 	nowMs: number = Date.now(),
 ): Promise<GovernanceResult<GovernanceData>> {
 	try {
-		const [assets, evidence, intake, exceptions, changes, reviewers, settings] = await Promise.all([
-			supabase
-				.from("ai_assets")
-				.select(ASSET_COLUMNS)
-				.eq("tenant_id", tenantId)
-				.order("name", { ascending: true })
-				.limit(LIMITS.assets),
-			supabase
-				.from("ai_asset_evidence")
-				.select(EVIDENCE_COLUMNS)
-				.eq("tenant_id", tenantId)
-				.order("linked_at", { ascending: false })
-				.limit(LIMITS.evidence),
-			supabase
-				.from("ai_intake_requests")
-				.select(INTAKE_COLUMNS)
-				.eq("tenant_id", tenantId)
-				.order("created_at", { ascending: false })
-				.limit(LIMITS.intake),
-			supabase
-				.from("ai_governance_exceptions")
-				.select(EXCEPTION_COLUMNS)
-				.eq("tenant_id", tenantId)
-				.order("created_at", { ascending: false })
-				.limit(LIMITS.exceptions),
-			supabase
-				.from("policy_change_requests")
-				.select(CHANGE_COLUMNS)
-				.eq("tenant_id", tenantId)
-				.order("created_at", { ascending: false })
-				.limit(LIMITS.changes),
-			supabase
-				.from("ai_governance_reviewers")
-				.select("user_id")
-				.eq("tenant_id", tenantId)
-				.limit(LIMITS.reviewers),
-			supabase
-				.from("tenant_ai_governance_settings")
-				.select("policy_four_eyes,default_review_days")
-				.eq("tenant_id", tenantId)
-				.maybeSingle(),
-		]);
+		const [assetPages, evidencePages, intake, exceptions, changes, reviewers, settings] =
+			await Promise.all([
+				readAllPages(
+					(from, to) =>
+						supabase
+							.from("ai_assets")
+							.select(ASSET_COLUMNS, { count: "exact" })
+							.eq("tenant_id", tenantId)
+							.order("name", { ascending: true })
+							.order("id", { ascending: true })
+							.range(from, to),
+					LIMITS.assets,
+				),
+				readAllPages(
+					(from, to) =>
+						supabase
+							.from("ai_asset_evidence")
+							.select(EVIDENCE_COLUMNS, { count: "exact" })
+							.eq("tenant_id", tenantId)
+							.order("linked_at", { ascending: false })
+							.order("id", { ascending: true })
+							.range(from, to),
+					LIMITS.evidence,
+				),
+				supabase
+					.from("ai_intake_requests")
+					.select(INTAKE_COLUMNS)
+					.eq("tenant_id", tenantId)
+					.order("created_at", { ascending: false })
+					.limit(LIMITS.intake),
+				supabase
+					.from("ai_governance_exceptions")
+					.select(EXCEPTION_COLUMNS)
+					.eq("tenant_id", tenantId)
+					.order("created_at", { ascending: false })
+					.limit(LIMITS.exceptions),
+				supabase
+					.from("policy_change_requests")
+					.select(CHANGE_COLUMNS)
+					.eq("tenant_id", tenantId)
+					.order("created_at", { ascending: false })
+					.limit(LIMITS.changes),
+				supabase
+					.from("ai_governance_reviewers")
+					.select("user_id")
+					.eq("tenant_id", tenantId)
+					.limit(LIMITS.reviewers),
+				supabase
+					.from("tenant_ai_governance_settings")
+					.select("policy_four_eyes,default_review_days")
+					.eq("tenant_id", tenantId)
+					.maybeSingle(),
+			]);
 		if (
-			[assets, evidence, intake, exceptions, changes, reviewers, settings].some(
-				(result) => result.error,
-			)
+			!assetPages.ok ||
+			!evidencePages.ok ||
+			[intake, exceptions, changes, reviewers, settings].some((result) => result.error)
 		) {
 			return { ok: false, error: "governance_unavailable" };
 		}
 		const value = {
-			assets: parseAll(assets.data, parseAsset),
-			evidence: parseAll(evidence.data, parseEvidence),
+			assets: parseAll(assetPages.rows, parseAsset),
+			evidence: parseAll(evidencePages.rows, parseEvidence),
 			intake: parseAll(intake.data, (row) => parseIntake(row, nowMs)),
 			exceptions: parseAll(exceptions.data, (row) => parseException(row, nowMs)),
 			changes: parseAll(changes.data, (row) => parseChange(row, nowMs)),
@@ -529,7 +549,8 @@ export async function loadGovernance(
 		return {
 			ok: true,
 			value: {
-				...(value as Omit<GovernanceData, "settings">),
+				...(value as Omit<GovernanceData, "settings" | "truncated">),
+				truncated: { assets: assetPages.truncated, evidence: evidencePages.truncated },
 				settings: raw
 					? {
 							policyFourEyes: raw.policy_four_eyes as boolean,
