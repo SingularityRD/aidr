@@ -117,6 +117,74 @@ test("Windows notification dispatcher task is opt-in and mirrors its systemd uni
 	assert.match(uninstaller, /foreach \(\$definition in Get-AidrMaintenanceTaskDefinitions\)/);
 });
 
+test("Windows maintenance installer refuses registration over code a non-admin principal can replace", () => {
+	// Trusted writers are exactly SYSTEM, Administrators and TrustedInstaller.
+	assert.match(common, /\$script:AidrTrustedWriterSids = @\('S-1-5-18', 'S-1-5-32-544', 'S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464'\)/);
+	assert.match(common, /function Get-AidrUntrustedWriterFinding \{/);
+	assert.match(common, /function Assert-AidrTrustedWriterPaths \{/);
+	assert.match(common, /\$Security\.GetOwner\(\[Security\.Principal\.SecurityIdentifier\]\)/);
+	assert.match(common, /ReparsePoint\) \{ \$findings \+= "\$target is a symbolic link or junction" \}/);
+	// node.exe is resolved to one explicit absolute path; first-hit PATH lookup is gone.
+	assert.match(common, /Get-Command node\.exe -CommandType Application -All/);
+	assert.match(common, /\$NodePath -notmatch '\^\[A-Za-z\]:\\\\'/);
+	assert.doesNotMatch(installer, /Select-Object -First 1\)\.Source/);
+	// Every executed path is checked, before the installer runs node.exe or registers anything.
+	for (const path of ["$node, (Split-Path -Parent $node)", "$kit, (Join-Path $kit 'scripts'), $retentionScript", "$deployment, (Join-Path $deployment 'maintenance'), $worker, $readinessEnvPath", "if ($WithNotifications) { $taskCode += $notificationWorker }"]) {
+		assert.ok(installer.includes(path), `installer must check ${path}`);
+	}
+	const assertion = installer.indexOf("Assert-AidrTrustedWriterPaths -Path $taskCode");
+	assert.ok(assertion > 0);
+	assert.ok(assertion < installer.indexOf("& $node --version"));
+	assert.ok(assertion < installer.indexOf("Invoke-AidrIcacls @("));
+	assert.ok(assertion < installer.indexOf("Register-ScheduledTask "));
+	assert.ok(installer.indexOf("$notificationWorker = Join-Path") < assertion);
+});
+
+test("Windows maintenance ACL predicate rejects untrusted writers and accepts SYSTEM/Administrators-only ACLs", { skip: !powershellAvailable && "PowerShell is not available" }, (t) => {
+	const body = `param([string]$Directory)
+. (Join-Path $Directory 'AidrMaintenanceTasks.Common.ps1')
+function New-Acl([string]$Owner, [object[]]$Rules) {
+  $acl = [Security.AccessControl.DirectorySecurity]::new()
+  $acl.SetAccessRuleProtection($true, $false)
+  $acl.SetOwner([Security.Principal.SecurityIdentifier]::new($Owner))
+  foreach ($r in $Rules) {
+    $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new($r[0]), [Security.AccessControl.FileSystemRights]$r[1], [Security.AccessControl.InheritanceFlags]$r[2], [Security.AccessControl.PropagationFlags]$r[3], [Security.AccessControl.AccessControlType]$r[4]))
+  }
+  return $acl
+}
+$trusted = @(@('S-1-5-18', 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow'), @('S-1-5-32-544', 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow'), @('S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464', 'FullControl', 'None', 'None', 'Allow'), @('S-1-5-32-545', 'ReadAndExecute', 'ContainerInherit,ObjectInherit', 'None', 'Allow'), @('S-1-3-0', 'FullControl', 'ContainerInherit,ObjectInherit', 'InheritOnly', 'Allow'), @('S-1-5-32-545', 'Modify', 'None', 'None', 'Deny'))
+$cases = [ordered]@{
+  'trusted-target' = @(Get-AidrUntrustedWriterFinding -Security (New-Acl 'S-1-5-32-544' $trusted) -Path 'X:\\kit').Count
+  'user-owner' = @(Get-AidrUntrustedWriterFinding -Security (New-Acl 'S-1-5-32-545' $trusted) -Path 'X:\\kit').Count
+  'users-modify' = @(Get-AidrUntrustedWriterFinding -Security (New-Acl 'S-1-5-18' ($trusted + ,@('S-1-5-32-545', 'Modify', 'None', 'None', 'Allow'))) -Path 'X:\\kit') -join ' '
+  'users-createfiles' = @(Get-AidrUntrustedWriterFinding -Security (New-Acl 'S-1-5-18' ($trusted + ,@('S-1-5-11', 'CreateFiles', 'None', 'None', 'Allow'))) -Path 'X:\\kit').Count
+  'users-inheritonly-target' = @(Get-AidrUntrustedWriterFinding -Security (New-Acl 'S-1-5-18' ($trusted + ,@('S-1-5-32-545', 'Modify', 'ObjectInherit', 'InheritOnly', 'Allow'))) -Path 'X:\\kit').Count
+  'users-inheritonly-ancestor' = @(Get-AidrUntrustedWriterFinding -Security (New-Acl 'S-1-5-18' ($trusted + ,@('S-1-5-32-545', 'Modify', 'ObjectInherit', 'InheritOnly', 'Allow'))) -Path 'X:\\' -Ancestor).Count
+  'users-createdirs-ancestor' = @(Get-AidrUntrustedWriterFinding -Security (New-Acl 'S-1-5-18' ($trusted + ,@('S-1-5-11', 'CreateDirectories', 'None', 'None', 'Allow'))) -Path 'X:\\' -Ancestor).Count
+  'users-delete-ancestor' = @(Get-AidrUntrustedWriterFinding -Security (New-Acl 'S-1-5-18' ($trusted + ,@('S-1-5-11', 'DeleteSubdirectoriesAndFiles', 'None', 'None', 'Allow'))) -Path 'X:\\' -Ancestor).Count
+}
+$userWritable = Join-Path ([IO.Path]::GetTempPath()) ([Guid]::NewGuid().ToString('n'))
+[IO.Directory]::CreateDirectory($userWritable) | Out-Null
+try { Assert-AidrTrustedWriterPaths -Path @($userWritable); $cases['user-dir'] = 'accepted' } catch { $cases['user-dir'] = $_.Exception.Message } finally { Remove-Item -LiteralPath $userWritable -Force }
+try { Resolve-AidrNodeExecutable -NodePath 'node.exe' | Out-Null; $cases['relative-node'] = 'accepted' } catch { $cases['relative-node'] = $_.Exception.Message }
+$cases | ConvertTo-Json -Compress
+`;
+	const result = runPowerShell(t, body, [maintenance]);
+	assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+	const cases = JSON.parse(result.stdout.trim().split(/\r?\n/).at(-1));
+	assert.equal(cases["trusted-target"], 0);
+	assert.equal(cases["user-owner"], 1);
+	assert.match(cases["users-modify"], /^X:\\kit grants .*S-1-5-32-545\) Modify/);
+	assert.equal(cases["users-createfiles"], 1);
+	assert.equal(cases["users-inheritonly-target"], 1);
+	assert.equal(cases["users-inheritonly-ancestor"], 0);
+	assert.equal(cases["users-createdirs-ancestor"], 0);
+	assert.equal(cases["users-delete-ancestor"], 1);
+	assert.match(cases["user-dir"], /^Refusing to register tasks that run as LocalSystem or a gMSA/);
+	assert.match(cases["user-dir"], /is owned by|grants/);
+	assert.match(cases["relative-node"], /explicit absolute local path/);
+});
+
 test("Windows maintenance scripts parse without PowerShell syntax errors", { skip: !powershellAvailable && "PowerShell is not available" }, (t) => {
 	const body = `param([string]$Directory)
 $failed = $false
