@@ -11,6 +11,9 @@ on:
       - master
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   pii-scan:
     runs-on: ubuntu-22.04
@@ -25,9 +28,12 @@ jobs:
         with:
           python-version: '3.11.11'
 
-      - name: Install Presidio
+      - name: Install Presidio (hash-locked)
         run: |
-          pip install --disable-pip-version-check presidio-analyzer==2.2.358 presidio-anonymizer==2.2.358
+          # Presidio, its dependency closure and the spaCy model are all pinned by
+          # hash; regenerate with the uv command recorded in the lock header.
+          python -m pip install --disable-pip-version-check --require-hashes --only-binary=:all: --no-deps -r .github/requirements/pii-detection.lock
+          python -m pip check
 
       - name: Scan for PII in Code
         run: |

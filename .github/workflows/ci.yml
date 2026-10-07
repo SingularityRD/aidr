@@ -353,7 +353,7 @@ jobs:
           python -m pip install --disable-pip-version-check --require-hashes --only-binary=:all: -r requirements-ci.lock
           python -m pip check
           python -m venv .audit-venv
-          .audit-venv/bin/python -m pip install --disable-pip-version-check pip-audit==2.9.0
+          .audit-venv/bin/python -m pip install --disable-pip-version-check --require-hashes --only-binary=:all: --no-deps -r requirements-audit-tools.lock
 
       - name: Audit and test bridge
         working-directory: services/aig-bridge
@@ -392,15 +392,14 @@ jobs:
         with:
           python-version: "3.12.8"
           cache: pip
-          cache-dependency-path: services/aig-bridge/requirements.txt
+          cache-dependency-path: services/aig-bridge/requirements-ci.lock
 
       - name: Install pinned bridge E2E dependencies
         working-directory: services/aig-bridge
         run: |
           set -euo pipefail
-          python -m pip install --disable-pip-version-check --upgrade pip
-          python -m pip install --disable-pip-version-check pytest==8.4.1 pytest-asyncio==1.1.0
-          python -m pip install --disable-pip-version-check -r requirements.txt
+          # requirements-ci.lock = requirements.txt + pytest pins, hash-locked.
+          python -m pip install --disable-pip-version-check --require-hashes --only-binary=:all: -r requirements-ci.lock
           python -m pip check
 
       - name: Run positive and negative connector suites

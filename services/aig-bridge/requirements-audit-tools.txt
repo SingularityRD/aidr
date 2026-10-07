@@ -1,0 +1,2 @@
+# CI-only audit tooling, installed into an isolated venv from requirements-audit-tools.lock.
+pip-audit==2.10.1
