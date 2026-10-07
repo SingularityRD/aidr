@@ -52,6 +52,8 @@ import {
 	createBeforePromptBuildHandler,
 	createSessionScanHandler,
 	createStartupScanHandler,
+	hookSessionKey,
+	PendingScanFindings,
 } from "./startup-scan.js";
 import {
 	type BlockResult,
@@ -318,11 +320,9 @@ function registerGuarded(api: PluginApi): void {
 	const interval = setInterval(() => approvalStore.cleanup(), CLEANUP_INTERVAL_MS);
 	if (typeof interval.unref === "function") interval.unref();
 
-	// Shared state: scan findings waiting to be surfaced to the user
-	let pendingFindings: string | null = null;
-	const onFindings = (msg: string) => {
-		pendingFindings = msg;
-	};
+	// Scan findings waiting to be surfaced, keyed by the session that scanned
+	// them (startup findings go to the next prompt of any session).
+	const pendingFindings = new PendingScanFindings();
 
 	api.on("before_tool_call", integrityGatedToolCall(integrityReady, toolCallHandler), {
 		priority: 100,
@@ -418,11 +418,17 @@ function registerGuarded(api: PluginApi): void {
 	);
 	api.on(
 		"gateway_start",
-		afterIntegrity(requireIntegrity, createStartupScanHandler(logger, onFindings)),
+		afterIntegrity(
+			requireIntegrity,
+			createStartupScanHandler(logger, (msg) => pendingFindings.setGlobal(msg)),
+		),
 	);
 	api.on(
 		"session_start",
-		afterIntegrity(requireIntegrity, createSessionScanHandler(logger, onFindings)),
+		afterIntegrity(requireIntegrity, async (event?: unknown, ctx?: unknown) => {
+			const sessionKey = hookSessionKey(ctx, event);
+			await createSessionScanHandler(logger, (msg) => pendingFindings.set(sessionKey, msg))();
+		}),
 	);
 	// Prompt protection gate: blocks a prompt carrying secrets (or, per policy,
 	// personal data) before the model reads it. The host fails closed on a throw.
@@ -445,19 +451,18 @@ function registerGuarded(api: PluginApi): void {
 			error: error instanceof Error ? error.name : typeof error,
 		});
 	}
-	const surfaceScanFindings = createBeforePromptBuildHandler(
-		() => pendingFindings,
-		() => {
-			pendingFindings = null;
-		},
-		logger,
-	);
+	const surfaceScanFindings = (ctx?: PromptHookContext) =>
+		createBeforePromptBuildHandler(
+			() => pendingFindings.take(hookSessionKey(ctx)),
+			() => {},
+			logger,
+		)();
 	api.on(
 		"before_prompt_build",
 		afterIntegrity(
 			requireIntegrity,
 			async (event?: BeforePromptBuildEvent, ctx?: PromptHookContext) => {
-				const findings = surfaceScanFindings()?.prependContext;
+				const findings = surfaceScanFindings(ctx)?.prependContext;
 				// The prompt-protection warn notice; a block is left to the gate above.
 				let warning: string | undefined;
 				try {

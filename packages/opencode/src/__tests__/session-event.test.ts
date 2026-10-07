@@ -2,14 +2,13 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it, vi } from "vitest";
-import { createSessionScanHandler } from "../startup-scan.js";
+import { createCachedSessionScanner } from "../startup-scan.js";
 
-vi.mock("../startup-scan.js", () => ({
-	createSessionScanHandler: vi.fn(
-		(_logger: unknown, _directory?: string, onResult?: (message: string) => void) => async () => {
-			onResult?.("synthetic security finding");
-		},
-	),
+const scan = vi.hoisted(() => vi.fn(async () => "synthetic security finding"));
+
+vi.mock("../startup-scan.js", async (importOriginal) => ({
+	...(await importOriginal<typeof import("../startup-scan.js")>()),
+	createCachedSessionScanner: vi.fn(() => scan),
 }));
 
 it("delivers session scan findings to the SDK session.created id", async () => {
@@ -31,16 +30,14 @@ it("delivers session scan findings to the SDK session.created id", async () => {
 			directory: isolatedHome,
 			worktree: isolatedHome,
 		} as never);
-		expect(createSessionScanHandler).toHaveBeenNthCalledWith(1, expect.anything(), isolatedHome);
+		// One scanner per plugin instance; the startup scan runs through it.
+		expect(createCachedSessionScanner).toHaveBeenCalledOnce();
+		expect(createCachedSessionScanner).toHaveBeenCalledWith(expect.anything(), isolatedHome);
+		expect(scan).toHaveBeenCalledTimes(1);
 		await hooks.event?.({
 			event: { type: "session.created", properties: { info: { id: "session-1" } } },
 		} as never);
-		expect(createSessionScanHandler).toHaveBeenNthCalledWith(
-			2,
-			expect.anything(),
-			isolatedHome,
-			expect.any(Function),
-		);
+		expect(scan).toHaveBeenCalledTimes(2);
 		const output = {
 			messages: [
 				{ info: { role: "user", sessionID: "session-1", id: "message-1" }, parts: [] as unknown[] },
@@ -50,6 +47,14 @@ it("delivers session scan findings to the SDK session.created id", async () => {
 		expect(output.messages[0]?.parts).toEqual([
 			expect.objectContaining({ text: expect.stringContaining("synthetic security finding") }),
 		]);
+		// One-shot: a second transform adds nothing.
+		const again = {
+			messages: [
+				{ info: { role: "user", sessionID: "session-1", id: "message-2" }, parts: [] as unknown[] },
+			],
+		};
+		await hooks["experimental.chat.messages.transform"]?.({} as never, again as never);
+		expect(again.messages[0]?.parts).toEqual([]);
 	} finally {
 		for (const [name, value] of previous) {
 			if (value === undefined) delete process.env[name];
