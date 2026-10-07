@@ -124,8 +124,11 @@ describe("ingest signed entitlement timing", () => {
 		expect(source).not.toContain('detail: String(registrationErr.message');
 	});
 
-	it("uses the guarded helper in both success and seat-limit responses", () => {
-		expect(source.match(/buildEntitlementSnapshot\(\{/g)).toHaveLength(2);
+	it("signs entitlements only on success, never in the seat-limit response", () => {
+		expect(source.match(/buildEntitlementSnapshot\(\{/g)).toHaveLength(1);
+		const seatLimit = source.slice(source.indexOf("if (registration.seat_exceeded === true) {"), source.indexOf("if (!agentId) {"));
+		expect(seatLimit).toContain("agent_limit_exceeded");
+		expect(seatLimit).not.toMatch(/buildEntitlementSnapshot|signEd25519Detached|deriveTenantPackKeyB64|entitlement_sig|entitlement:|pack_keys/);
 		expect(source.indexOf("const timing = entitlementTiming();")).toBeLessThan(source.indexOf("const apiKey = getBearerToken(req);"));
 	});
 });

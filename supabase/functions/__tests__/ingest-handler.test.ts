@@ -163,6 +163,38 @@ describe("ingest delivery handler", () => {
 		expect(runtime.insertedSnapshot).not.toHaveBeenCalled();
 	});
 
+	it("returns only seat counts on seat_exceeded: no signed snapshot and no pack key", async () => {
+		configureSigning();
+		vi.stubEnv("AIDR_PACK_MASTER_KEY_B64", Buffer.alloc(32, 7).toString("base64"));
+		vi.stubEnv("AIDR_RUNTIME_CAPABILITIES_BY_TENANT", JSON.stringify({ [TENANT_ID]: RUNTIME_CAPS }));
+		const runtime = await ingest(false,
+			{ agent_id: null, seat_exceeded: true, current_agents: 3, allowed_agents: 2 },
+			{ data: { included_agents: 1, extra_agents: 1, premium_intel: true, premium_correlation: true, premium_pkg_plugin: true, revocation_epoch: 1 }, error: null },
+			undefined,
+			{ data: [{ extra_agents: 1, provider_valid_until: null }], error: null });
+		const response = await runtime.handler(request());
+		const text = await response.text();
+		expect(response.status).toBe(402);
+		expect(JSON.parse(text)).toEqual({ error: "agent_limit_exceeded", allowed_agents: 2, current_agents: 3 });
+		expect(text).not.toMatch(/entitlement_sig|pack_keys|key_b64|snapshot/);
+		expect(runtime.insertedEvents).not.toHaveBeenCalled();
+		expect(runtime.insertedSnapshot).not.toHaveBeenCalled();
+	});
+
+	it("caches a healthy signer per isolate instead of importing the key for every request", async () => {
+		configureSigning();
+		const importKey = vi.spyOn(webcrypto.subtle, "importKey");
+		try {
+			const runtime = await ingest();
+			for (let i = 0; i < 3; i++) expect((await runtime.handler(request({ events: [] }))).status).toBe(200);
+			const pkcs8Imports = importKey.mock.calls.filter(([format]) => format === "pkcs8").length;
+			// One healthcheck probe, then one real signature per response.
+			expect(pkcs8Imports).toBe(4);
+		} finally {
+			importKey.mockRestore();
+		}
+	});
+
 	it("does not mint free seats or insert events for a tenant without an entitlement row", async () => {
 		const runtime = await ingest(false, { agent_id: AGENT_ID, seat_exceeded: false, allowed_agents: 1 }, { data: null, error: null });
 		const response = await runtime.handler(request());
