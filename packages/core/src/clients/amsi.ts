@@ -85,6 +85,54 @@ interface AmsiBackend {
 // Koffi FFI backend (native, fast — requires koffi)
 // ---------------------------------------------------------------------------
 
+/* biome-ignore lint/suspicious/noExplicitAny: koffi FFI functions have dynamic signatures */
+type KoffiFn = (...args: any[]) => any;
+
+interface KoffiAmsiBindings {
+	AmsiInitialize: KoffiFn;
+	AmsiOpenSession: KoffiFn;
+	AmsiScanBuffer: KoffiFn;
+	AmsiCloseSession: KoffiFn;
+	AmsiUninitialize: KoffiFn;
+}
+
+/**
+ * The amsi.dll bindings, created once per process. koffi registers named types
+ * (`HAMSICONTEXT`, `HAMSISESSION`) in a process-wide registry, so defining them
+ * again for a second client throws "Duplicate type name". Without this cache
+ * every evaluation after the first in a long-lived process (OpenClaw, OpenCode)
+ * fell back to spawning PowerShell (~300-500 ms per call).
+ */
+let koffiAmsiBindings: Promise<KoffiAmsiBindings> | null = null;
+
+function loadKoffiAmsiBindings(): Promise<KoffiAmsiBindings> {
+	koffiAmsiBindings ??= (async () => {
+		const koffiModule = await loadKoffi();
+		// unwrap CJS module if needed
+		const koffi = koffiModule.default ?? koffiModule;
+		const lib = koffi.load("amsi.dll");
+		// define opaque handle types matching the Win32 AMSI API
+		koffi.pointer("HAMSICONTEXT", koffi.opaque());
+		koffi.pointer("HAMSISESSION", koffi.opaque());
+		return {
+			AmsiInitialize: lib.func(
+				"int32 __stdcall AmsiInitialize(str16 appName, _Out_ HAMSICONTEXT *ctx)",
+			),
+			AmsiOpenSession: lib.func(
+				"int32 __stdcall AmsiOpenSession(HAMSICONTEXT ctx, _Out_ HAMSISESSION *session)",
+			),
+			AmsiScanBuffer: lib.func(
+				"int32 __stdcall AmsiScanBuffer(HAMSICONTEXT ctx, void *buf, uint32 len, str16 contentName, HAMSISESSION session, _Out_ int32 *result)",
+			),
+			AmsiCloseSession: lib.func(
+				"void __stdcall AmsiCloseSession(HAMSICONTEXT ctx, HAMSISESSION session)",
+			),
+			AmsiUninitialize: lib.func("void __stdcall AmsiUninitialize(HAMSICONTEXT ctx)"),
+		};
+	})();
+	return koffiAmsiBindings;
+}
+
 class KoffiAmsiBackend implements AmsiBackend {
 	private readonly logger: Logger;
 	private context: unknown = null;
@@ -108,30 +156,11 @@ class KoffiAmsiBackend implements AmsiBackend {
 
 	async init(): Promise<void> {
 		try {
-			const koffiModule = await loadKoffi();
-			// unwrap CJS module if needed
-			const koffi = koffiModule.default ?? koffiModule;
-
-			const lib = koffi.load("amsi.dll");
-
-			// define opaque handle types matching the Win32 AMSI API
-			const _HAMSICONTEXT = koffi.pointer("HAMSICONTEXT", koffi.opaque());
-			const _HAMSISESSION = koffi.pointer("HAMSISESSION", koffi.opaque());
-
-			const AmsiInitialize = lib.func(
-				"int32 __stdcall AmsiInitialize(str16 appName, _Out_ HAMSICONTEXT *ctx)",
-			);
-			const AmsiOpenSession = lib.func(
-				"int32 __stdcall AmsiOpenSession(HAMSICONTEXT ctx, _Out_ HAMSISESSION *session)",
-			);
-
-			this.fnScanBuffer = lib.func(
-				"int32 __stdcall AmsiScanBuffer(HAMSICONTEXT ctx, void *buf, uint32 len, str16 contentName, HAMSISESSION session, _Out_ int32 *result)",
-			);
-			this.fnCloseSession = lib.func(
-				"void __stdcall AmsiCloseSession(HAMSICONTEXT ctx, HAMSISESSION session)",
-			);
-			this.fnUninitialize = lib.func("void __stdcall AmsiUninitialize(HAMSICONTEXT ctx)");
+			const bindings = await loadKoffiAmsiBindings();
+			const { AmsiInitialize, AmsiOpenSession } = bindings;
+			this.fnScanBuffer = bindings.AmsiScanBuffer;
+			this.fnCloseSession = bindings.AmsiCloseSession;
+			this.fnUninitialize = bindings.AmsiUninitialize;
 
 			const ctxOut: unknown[] = [null];
 			const hr = AmsiInitialize("Singularity AIDR", ctxOut);

@@ -14,6 +14,8 @@ export const VSIX_PACKAGE_FILES = Object.freeze([
 	"dist/aidr-hook.cjs",
 	...VSIX_INTEGRITY_EVIDENCE_FILES,
 	"dist/resources/**",
+	// Native AMSI addon (koffi, MIT) loaded by the hook runner; manifest-covered.
+	"dist/vendor/**",
 	"aidr-icon.png",
 	"package.json",
 	"README.md",

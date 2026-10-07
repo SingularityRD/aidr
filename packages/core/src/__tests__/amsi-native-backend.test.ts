@@ -9,10 +9,17 @@ const native = vi.hoisted(() => ({
 	spawn: vi.fn(),
 }));
 
+// Like real koffi, named types live in a process-wide registry and may only be
+// defined once.
+const registeredTypes = new Set<string>();
 vi.mock("koffi", () => ({
 	default: {
 		opaque: () => ({}),
-		pointer: () => ({}),
+		pointer: (name: string) => {
+			if (registeredTypes.has(name)) throw new Error(`Duplicate type name '${name}'`);
+			registeredTypes.add(name);
+			return {};
+		},
 		load: () => ({
 			func: (signature: string) => {
 				if (signature.includes("AmsiInitialize")) return native.initialize;
@@ -70,6 +77,20 @@ describe("native Windows AMSI backend", () => {
 		expect(client.backendKind).toBe("unavailable");
 		expect(native.close).toHaveBeenCalledOnce();
 		expect(native.uninitialize).toHaveBeenCalledOnce();
+	});
+
+	it("keeps the native backend for every client in a long-lived process", async () => {
+		// In-process connectors (OpenClaw, OpenCode) create one client per tool
+		// call; redefining koffi's named handle types used to throw and push every
+		// call after the first onto the PowerShell fallback.
+		for (let call = 0; call < 3; call++) {
+			const client = new AmsiClient(nullLogger);
+			await client.init();
+			expect(client.backendKind).toBe("native-koffi");
+			expect((await client.scanString(`call ${call}`, "Bash:command"))?.amsiResult).toBe(0);
+			client.close();
+		}
+		expect(native.spawn).not.toHaveBeenCalled();
 	});
 
 	it("preserves the native AMSI detection result", async () => {
