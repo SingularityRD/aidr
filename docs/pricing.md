@@ -107,7 +107,7 @@ Catalog features are enforced by the control plane, not only displayed
 
 | Feature | From | Enforced at |
 |---|---|---|
-| Browser Guard (`browser_privacy_guard`) | Team | `ingest` with an `ingest:browser_guard` key |
+| Browser Guard (`browser_privacy_guard`) | Team | `ingest` with an `ingest:browser_guard` key, the signed `browser-guard-policy` document |
 | Entra / OIDC / SAML SSO administration (`entra_sso`) | Team | `oidc-sso` admin actions, `identity-security` SAML policy actions, `azure-ad-groups` (sign-in itself is never gated) |
 | SIEM / audit export (`siem_export`) | Business | `audit-export` |
 | SCIM (`scim`) | Business | `scim`, `scim-admin` |

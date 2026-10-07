@@ -47,7 +47,14 @@ type Options = {
 	rate?: "deny" | "unavailable";
 	overlay?: unknown;
 	overlayError?: boolean;
+	/** tenant_plan_entitlements row; null = RPC error. Defaults to Team (browser_privacy_guard). */
+	plan?: Record<string, unknown> | null;
 };
+
+const teamPlan = (overrides: Record<string, unknown> = {}) => ({
+	tenant_id: TENANT, plan_id: "team", plan_source: "stripe_subscription", trial_active: false,
+	features: ["local_detection", "dashboard", "browser_privacy_guard", "entra_sso"], retention_days_max: 90, ...overrides,
+});
 
 const OVERLAY = {
 	mcp_deny_servers: ["shell-runner"],
@@ -86,6 +93,9 @@ function database(options: Options = {}) {
 		rpc: async (name: string, args: Record<string, unknown> = {}) => {
 			rpcCalls.push({ name, args });
 			if (name === "tenant_admission_capacity") return { data: 1, error: null };
+			if (name === "tenant_plan_entitlements") {
+				return options.plan === null ? { data: null, error: new Error("db_down") } : { data: options.plan ?? teamPlan(), error: null };
+			}
 			if (name === "increment_rate_limit") return { data: null, error: null };
 			if (name === "consume_tenant_rate_limit") {
 				rateSubjects.push(args.p_subject ?? args);
@@ -202,6 +212,24 @@ describe("browser-guard-policy", () => {
 			expect(response.status).toBe(503);
 			expect(await response.json()).toEqual({ error: "policy_unavailable" });
 		}
+	});
+
+	it("requires the Browser Guard plan feature (Team) before any budget or decision read", async () => {
+		const free = database({ plan: teamPlan({ plan_id: "free", features: ["local_detection", "dashboard"], retention_days_max: 7 }) });
+		const refused = await handler(free)(get());
+		expect(refused.status).toBe(402);
+		expect(await refused.json()).toEqual({
+			error: "plan_feature_required", feature: "browser_privacy_guard", plan_id: "free", required_plan: "team",
+		});
+		expect(free.rpcCalls.map((c) => c.name)).not.toContain("consume_tenant_rate_limit");
+		expect(free.rpcCalls.map((c) => c.name)).not.toContain("ai_governance_policy_overlay");
+		expect(free.rpcCalls.find((c) => c.name === "tenant_plan_entitlements")?.args).toEqual({ p_tenant_id: TENANT });
+
+		const unreadable = database({ plan: null });
+		const failed = await handler(unreadable)(get());
+		expect(failed.status).toBe(503);
+		expect(await failed.json()).toEqual({ error: "plan_entitlement_unavailable" });
+		expect(unreadable.rpcCalls.map((c) => c.name)).not.toContain("ai_governance_policy_overlay");
 	});
 
 	it("keeps deny over allow when a service is listed twice", () => {
