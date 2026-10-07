@@ -21,6 +21,7 @@ function fixture(
 	recoveredUserId: string | null = null,
 	failFirstBind = false,
 	oidcProviderId: string | null = null,
+	verifiedDomains: string[] | null = ["example.com"],
 ) {
 	const row: Record<string, unknown> = {
 		id: scimUserId, external_id: input.externalId, user_name: email, display_name: input.displayName,
@@ -29,6 +30,7 @@ function fixture(
 	const rpcCalls: { name: string; args: Record<string, unknown> }[] = [];
 	let authUserCreated = false;
 	let bindCalls = 0;
+	let domainLookups = 0;
 	const createUser = vi.fn(async (attributes: unknown) => {
 		if (createError || authUserCreated) return { data: { user: null }, error: { message: "User already registered" } };
 		authUserCreated = true;
@@ -38,6 +40,13 @@ function fixture(
 		from: (table: string) => {
 			if (table === "tenant_identity_policies") {
 				const query = { eq: () => query, maybeSingle: async () => ({ data: samlProviderId || oidcProviderId ? { required_saml_provider_id: samlProviderId, required_oidc_provider_id: oidcProviderId } : null, error: null }) };
+				return { select: () => query };
+			}
+			if (table === "oidc_tenant_domains") {
+				domainLookups++;
+				const query = { eq: () => query, not: async () => verifiedDomains
+					? { data: verifiedDomains.map((domain) => ({ domain })), error: null }
+					: { data: null, error: { message: "private domain lookup failure" } } };
 				return { select: () => query };
 			}
 			if (table !== "scim_users") throw new Error("unexpected table");
@@ -64,10 +73,43 @@ function fixture(
 		},
 		auth: { admin: { createUser } },
 	};
-	return { store: new SupabaseScimStore(db as never), rpcCalls, createUser };
+	return { store: new SupabaseScimStore(db as never), rpcCalls, createUser, get domainLookups() { return domainLookups; } };
 }
 
 describe("SCIM auth identity binding", () => {
+	it.each([
+		["an unverified domain", ["other.example"]],
+		["no verified domains", []],
+		["a parent of the verified domain", ["corp.example.com"]],
+	])("rejects creating a user for %s before claiming or creating any identity", async (_label, domains) => {
+		const fixtureState = fixture(() => null, false, null, null, false, null, domains);
+		await expect(fixtureState.store.createUser(tenantA, input)).rejects.toBeInstanceOf(ScimInvalidValueError);
+		await expect(fixtureState.store.createUser(tenantA, input)).rejects.toThrow("userName domain is not verified for this tenant");
+		expect(fixtureState.rpcCalls).toEqual([]);
+		expect(fixtureState.createUser).not.toHaveBeenCalled();
+	});
+
+	it("fails closed (non-SCIM error, mapped to 503) when the verified-domain lookup is unavailable", async () => {
+		const fixtureState = fixture(() => null, false, null, null, false, null, null);
+		await expect(fixtureState.store.createUser(tenantA, input)).rejects.toThrow("SCIM verified domain lookup unavailable");
+		expect(fixtureState.rpcCalls).toEqual([]);
+		expect(fixtureState.createUser).not.toHaveBeenCalled();
+	});
+
+	it("accepts a userName in a domain the tenant verified (case-insensitive)", async () => {
+		const fixtureState = fixture(() => null, false, null, null, false, null, ["example.com"]);
+		await expect(fixtureState.store.createUser(tenantA, { ...input, userName: "Person@Example.COM".toLowerCase() })).resolves.toMatchObject({ created: true });
+		expect(fixtureState.domainLookups).toBe(1);
+		expect(fixtureState.createUser).toHaveBeenCalledTimes(1);
+	});
+
+	it("does not require a verified domain when a required SSO provider binds identities after login", async () => {
+		const fixtureState = fixture(() => null, false, "33333333-3333-4333-8333-333333333333", null, false, null, []);
+		await expect(fixtureState.store.createUser(tenantA, input)).resolves.toMatchObject({ created: true });
+		expect(fixtureState.domainLookups).toBe(0);
+		expect(fixtureState.createUser).not.toHaveBeenCalled();
+	});
+
 	it("leaves a SAML tenant user pending without email lookup or Auth precreation", async () => {
 		const { store, rpcCalls, createUser } = fixture(() => authUserId, false, "33333333-3333-4333-8333-333333333333");
 		const result = await store.createUser(tenantA, input);
