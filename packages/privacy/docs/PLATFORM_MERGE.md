@@ -83,7 +83,7 @@ OIDC başlangıç kayıtları silinmiş kayıtlar dahil 1.000, portal oturum kay
 
 ## 6. Belge, keşif, DSPM ve model
 
-`DocumentCdr` yalnız yeni `aidr-sanitized.txt` üretir. PDF/Office arkasındaki gizli/aktif container'ı taşımayın. Kaynak dosya, thumbnail, attachment veya orijinal filename'i temiz TXT yanında iletmeyin. Linux libseccomp sonradan filesystem open/network/exec çağrılarını engeller; yine de readonly/no-network container ve native güncelleme disiplini gerekir. Desteklenmeyen içerik bloktur.
+`DocumentCdr` varsayılan olarak yalnız yeni `aidr-sanitized.txt` üretir. DOCX/XLSX/PPTX için `protect(input, kind, {output:'office'})` açıkça istenirse biçim koruyan `aidr-redacted.<kind>` üretilir (bkz. PLATFORM_FEATURE_STATUS.md, "Biçim koruyan Office redaction"); worker değiştiği için `workerSha256` pinini güncelleyin. PDF/Office arkasındaki gizli/aktif container'ı taşımayın. Kaynak dosya, thumbnail, attachment veya orijinal filename'i temiz TXT yanında iletmeyin. Linux libseccomp sonradan filesystem open/network/exec çağrılarını engeller; yine de readonly/no-network container ve native güncelleme disiplini gerekir. Desteklenmeyen içerik bloktur.
 
 `AuthorizedMcpCollector.watch(signal, intervalMs)` yalnız açıkça onaylı dosya yollarını izler ve metadata üretir; uygulama başlatmalıdır. Çıktı imzalı kurumsal collector ingest'e adapter ile bağlanır. Yeniden başlatma full snapshot üretir; sink `idempotencyKey` ile tekrarları ele almalıdır. Eksik/okunamayan kaynak “boş” kabul edilmez.
 

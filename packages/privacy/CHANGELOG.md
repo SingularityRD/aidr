@@ -1,3 +1,7 @@
+# Unreleased
+
+- `DocumentCdr` opt-in format-preserving DOCX/XLSX/PPTX redaction (`{output:'office'}`): in-place span redaction across runs, tracked changes, field codes, comments, headers/footers, notes and footnotes; metadata/thumbnail removal; every cached formula value blanked with recalculation on load; independent re-parse and re-scan, fail closed on any residual finding. Default output stays text-only; PDF unchanged. `parsers/worker.py` changed: update the configured `workerSha256` pin.
+
 # 0.5.0-rc.1 — 2026-09-24
 
 Added server-side platform modules, durable SQLite adapters, pinned JWT/OIDC and mTLS context, guarded egress, encrypted review workflow/portal, authorized local MCP watcher, local DSPM snapshot/ACL, strict Linux document text reconstruction, true synthetic-trained linear risk baseline, evaluation/qualification harness, safetensors/release inspection and PCM audio helpers. Prior browser/native and text/visual APIs retained. Twelve-row acceptance status and negative results are explicit in docs. No live corporate deployment or full multimodal completeness claim.
