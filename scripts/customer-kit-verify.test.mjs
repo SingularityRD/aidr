@@ -6,7 +6,8 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 import { test } from "node:test";
-import { CUSTOMER_KIT_REQUIRED_FILES, CUSTOMER_KIT_RENDERED_GUIDES, renderCustomerKitDoc } from "./customer-kit-contract.mjs";
+import { CUSTOMER_KIT_PRIVACY_GATEWAY_FILES, CUSTOMER_KIT_PRIVACY_GATEWAY_RUNTIME, CUSTOMER_KIT_REQUIRED_FILES, CUSTOMER_KIT_RENDERED_GUIDES, renderCustomerKitDoc } from "./customer-kit-contract.mjs";
+import { PRIVACY_GATEWAY_DEFINITION_FILES, PRIVACY_GATEWAY_REQUIRED_RUNTIME, privacyGatewayPackageEntries } from "../deploy/privacy-gateway/privacy-gateway.mjs";
 
 const repoRoot = resolve(import.meta.dirname, "..");
 const verifier = join(repoRoot, "scripts", "customer-kit-verify.mjs");
@@ -76,6 +77,7 @@ function createKit() {
 				inline_mcp_gateway_bundled: false,
 				inline_mcp_gateway_signature_present: false,
 				device_start_ingress_bundled: true,
+				privacy_gateway_runtime_bundled: false,
 				region_manifest_bundled: true,
 				tls_renewal_bundled: true,
 				provenance_tool_bundled: true,
@@ -449,6 +451,99 @@ test("gateway-free kit rejects an MCP gateway tarball in release inventory", () 
 			assert.notEqual(result.status, 0);
 			assert.match(result.stderr, /Gateway-free kit cannot contain an MCP gateway release artifact/);
 		}
+	} finally {
+		rmSync(kit, { recursive: true, force: true });
+	}
+});
+
+// --- Optional privacy gateway --------------------------------------------------------
+
+const privacyRuntimeBuilt = existsSync(join(repoRoot, "packages/privacy/dist/platform/serve.js"));
+
+function setReleaseSource(kit, patch) {
+	const path = join(kit, "release-source.json");
+	writeFileSync(path, `${JSON.stringify({ ...JSON.parse(readFileSync(path, "utf8")), ...patch }, null, 2)}\n`);
+}
+
+function addPrivacyRuntime(kit) {
+	for (const relative of privacyGatewayPackageEntries(repoRoot)) {
+		const target = join(kit, "packages/privacy", relative);
+		mkdirSync(resolve(target, ".."), { recursive: true });
+		copyFileSync(join(repoRoot, "packages/privacy", relative), target);
+	}
+	setReleaseSource(kit, { privacy_gateway_runtime_bundled: true });
+	writeChecksums(kit);
+}
+
+test("the kit contract pins the privacy gateway definition and runtime to the staging module", () => {
+	assert.deepEqual([...CUSTOMER_KIT_PRIVACY_GATEWAY_FILES], [...PRIVACY_GATEWAY_DEFINITION_FILES]);
+	assert.deepEqual([...CUSTOMER_KIT_PRIVACY_GATEWAY_RUNTIME], PRIVACY_GATEWAY_REQUIRED_RUNTIME.map((path) => `packages/privacy/${path}`));
+	for (const path of CUSTOMER_KIT_PRIVACY_GATEWAY_FILES) assert.ok(CUSTOMER_KIT_REQUIRED_FILES.includes(path), path);
+	const assembler = readFileSync(join(repoRoot, "scripts", "customer-kit.mjs"), "utf8");
+	assert.match(assembler, /for \(const relative of privacyGatewayPackageEntries\(root\)\) copy\(join\(root, "packages\/privacy", relative\)/);
+	assert.match(assembler, /privacy_gateway_runtime_bundled: true,/);
+});
+
+test("a kit without the privacy gateway runtime passes only when it declares none", () => {
+	const kit = createKit();
+	try {
+		const summary = JSON.parse(run(kit).stdout.trim().split(/\r?\n/).at(-1));
+		assert.equal(summary.privacy_gateway_runtime_bundled, false);
+		mkdirSync(join(kit, "packages/privacy"), { recursive: true });
+		writeFileSync(join(kit, "packages/privacy/package.json"), "{}\n");
+		writeChecksums(kit);
+		assert.match(run(kit).stderr, /Privacy gateway runtime files are present but release-source declares none/);
+		setReleaseSource(kit, { privacy_gateway_runtime_bundled: undefined });
+		writeChecksums(kit);
+		assert.match(run(kit).stderr, /privacy_gateway_runtime_bundled must be a boolean/);
+	} finally {
+		rmSync(kit, { recursive: true, force: true });
+	}
+});
+
+test("a declared privacy gateway runtime must be complete and compiled output only", { skip: privacyRuntimeBuilt ? false : "packages/privacy is not built" }, () => {
+	const kit = createKit();
+	try {
+		addPrivacyRuntime(kit);
+		assert.equal(run(kit).status, 0, run(kit).stderr);
+		assert.equal(JSON.parse(run(kit).stdout.trim().split(/\r?\n/).at(-1)).privacy_gateway_runtime_bundled, true);
+		writeFileSync(join(kit, "packages/privacy/dist/platform/serve.js.map"), "{}\n");
+		writeChecksums(kit);
+		assert.match(run(kit).stderr, /files outside its compiled package: packages\/privacy\/dist\/platform\/serve\.js\.map/);
+		unlinkSync(join(kit, "packages/privacy/dist/platform/serve.js.map"));
+		unlinkSync(join(kit, "packages/privacy/deployment/container-service-config.mjs"));
+		writeChecksums(kit);
+		assert.match(run(kit).stderr, /Privacy gateway runtime is missing: packages\/privacy\/deployment\/container-service-config\.mjs/);
+	} finally {
+		rmSync(kit, { recursive: true, force: true });
+	}
+});
+
+test("the kit refuses a privacy gateway image or guide that loses its hardening or honesty", () => {
+	const cases = [
+		["deploy/privacy-gateway/Dockerfile", (text) => text.replace(/@sha256:[a-f0-9]{64}/, ""), /pinned by digest/],
+		["deploy/privacy-gateway/Dockerfile", (text) => text.replace("USER 10001:10001", "USER root"), /numeric non-root user 10001/],
+		["deploy/privacy-gateway/Dockerfile", (text) => text.replace(/^HEALTHCHECK .*$/m, ""), /HEALTHCHECK/],
+		["deploy/privacy-gateway/Dockerfile", (text) => text.replaceAll("--require-hashes", ""), /hash-pinned Python wheels/],
+		["deploy/privacy-gateway/README.md", (text) => text.replaceAll(/not a transparent proxy/gi, "a proxy"), /not a transparent proxy/],
+	];
+	for (const [path, mutate, expected] of cases) {
+		const kit = createKit();
+		try {
+			writeFileSync(join(kit, path), mutate(readFileSync(join(kit, path), "utf8")));
+			writeChecksums(kit);
+			const result = run(kit);
+			assert.notEqual(result.status, 0, `${path} mutation passed`);
+			assert.match(result.stderr, expected);
+		} finally {
+			rmSync(kit, { recursive: true, force: true });
+		}
+	}
+	const kit = createKit();
+	try {
+		unlinkSync(join(kit, "deploy/privacy-gateway/privacy-gateway.mjs"));
+		writeChecksums(kit);
+		assert.match(run(kit).stderr, /Required customer acceptance artifact is missing: deploy\/privacy-gateway\/privacy-gateway\.mjs/);
 	} finally {
 		rmSync(kit, { recursive: true, force: true });
 	}

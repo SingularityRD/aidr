@@ -14,6 +14,7 @@ import {
   CUSTOMER_KIT_REQUIRED_FILES,
   CUSTOMER_KIT_REQUIRED_RELEASE_ARTIFACTS,
   isMcpGatewayReleaseArtifact,
+  privacyGatewayKitFailures,
 } from "./customer-kit-contract.mjs";
 
 try {
@@ -77,6 +78,8 @@ try {
 
   const source = JSON.parse(readFileSync(join(kit, "release-source.json"), "utf8"));
   verifyDeliveryStatus(source, inventory);
+  const privacyGatewayFailures = privacyGatewayKitFailures(new Set(inventory.keys()), (path) => readFileSync(join(kit, path), "utf8"), source);
+  if (privacyGatewayFailures.length) throw new Error(privacyGatewayFailures[0]);
   const gatewayRuntime = ["deploy/gateway/aidr-mcp-gateway.mjs", "deploy/gateway/aidr-mcp-approve.mjs", "deploy/gateway/aidr-mcp-stdio.mjs", "deploy/gateway/aidr-artifact.manifest.json", "deploy/gateway/README.md"];
   const gatewaySignaturePresent = inventory.has("deploy/gateway/aidr-artifact.manifest.sig");
   if (source.inline_mcp_gateway_signature_present !== gatewaySignaturePresent || (source.release_signed && source.inline_mcp_gateway_bundled && !gatewaySignaturePresent)) throw new Error("MCP gateway signature status does not match bundled runtime");
@@ -141,6 +144,7 @@ try {
     inline_mcp_gateway_bundled: source.inline_mcp_gateway_bundled,
     inline_mcp_gateway_signature: gatewaySignaturePresent ? "present_unverified" : "absent",
     device_start_ingress_bundled: source.device_start_ingress_bundled,
+    privacy_gateway_runtime_bundled: source.privacy_gateway_runtime_bundled,
     publisher_authenticated: false,
     note: "This extracted-kit check cannot authenticate the publisher. Region residency is only an operator declaration, not proof of provider location. Verify the signed outer envelope with an independently delivered policy before extraction.",
   }));

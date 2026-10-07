@@ -39,6 +39,64 @@ export const CUSTOMER_KIT_DELIVERY_FILES = Object.freeze({
 	release_evidence: "RELEASE-EVIDENCE.md",
 });
 
+// Optional privacy gateway (deploy/privacy-gateway). The image definition always
+// ships so deployment-prepare.mjs --with-privacy-gateway resolves from the kit; the
+// compiled runtime it packages ships when release-source.json says so. Kept as
+// literals so this contract stays importable on its own; a source test pins them
+// to deploy/privacy-gateway/privacy-gateway.mjs.
+export const CUSTOMER_KIT_PRIVACY_GATEWAY_FILES = Object.freeze([
+	"deploy/privacy-gateway/Dockerfile",
+	"deploy/privacy-gateway/healthcheck.mjs",
+	"deploy/privacy-gateway/privacy-gateway.mjs",
+	"deploy/privacy-gateway/README.md",
+]);
+export const CUSTOMER_KIT_PRIVACY_GATEWAY_RUNTIME = Object.freeze([
+	"package.json",
+	"LICENSE",
+	"NOTICE.md",
+	"ner/ner_worker.py",
+	"ner/artifacts.py",
+	"ner/bioes.py",
+	"ner/requirements.linux-py311.lock.txt",
+	"deployment/container-service-config.mjs",
+	"dist/platform/serve.js",
+	"dist/platform/service.js",
+	"dist/platform/index.js",
+].map((path) => `packages/privacy/${path}`));
+
+/**
+ * Check the privacy gateway delivery: a hardened image definition, an honest
+ * description of what the gateway does, and a runtime that matches the declared
+ * status and contains compiled output only. Returns failure messages.
+ */
+export function privacyGatewayKitFailures(paths, read, source) {
+	const failures = [];
+	for (const path of CUSTOMER_KIT_PRIVACY_GATEWAY_FILES) if (!paths.has(path)) failures.push(`Privacy gateway definition is missing: ${path}`);
+	if (failures.length) return failures;
+	const dockerfile = read("deploy/privacy-gateway/Dockerfile");
+	const bases = [...dockerfile.matchAll(/^FROM (\S+)/gm)].map((match) => match[1]);
+	if (!bases.length || bases.some((image) => !/@sha256:[a-f0-9]{64}$/.test(image))) failures.push("Privacy gateway image bases must be pinned by digest");
+	if (!/^USER 10001:10001$/m.test(dockerfile) || /^USER (root|0)\b/m.test(dockerfile)) failures.push("Privacy gateway image must run as the numeric non-root user 10001");
+	if (!/^HEALTHCHECK /m.test(dockerfile)) failures.push("Privacy gateway image must declare a HEALTHCHECK");
+	if (!/--require-hashes/.test(dockerfile)) failures.push("Privacy gateway image must install hash-pinned Python wheels");
+	if (!/deployment\/container-service-config\.mjs"\]$/m.test(dockerfile)) failures.push("Privacy gateway image must start with the container configuration");
+	if (!/not a transparent proxy/i.test(read("deploy/privacy-gateway/README.md"))) failures.push("Privacy gateway guide must state that it is not a transparent proxy");
+	if (typeof source.privacy_gateway_runtime_bundled !== "boolean") {
+		failures.push("release-source privacy_gateway_runtime_bundled must be a boolean");
+		return failures;
+	}
+	const runtime = [...paths].filter((path) => path.startsWith("packages/privacy/"));
+	if (!source.privacy_gateway_runtime_bundled) {
+		if (runtime.length) failures.push("Privacy gateway runtime files are present but release-source declares none");
+		return failures;
+	}
+	for (const path of CUSTOMER_KIT_PRIVACY_GATEWAY_RUNTIME) if (!paths.has(path)) failures.push(`Privacy gateway runtime is missing: ${path}`);
+	const allowed = new Set(CUSTOMER_KIT_PRIVACY_GATEWAY_RUNTIME);
+	const unexpected = runtime.filter((path) => !allowed.has(path) && !/^packages\/privacy\/dist\/[A-Za-z0-9_./-]+\.js$/.test(path));
+	if (unexpected.length) failures.push(`Privacy gateway runtime contains files outside its compiled package: ${unexpected[0]}`);
+	return failures;
+}
+
 // These are the files a customer must have to repeat the offline checks. The
 // SHA inventory remains the authority for the complete set and catches any
 // unlisted extra file; this list catches an assembler that silently omits a
@@ -122,6 +180,7 @@ export const CUSTOMER_KIT_REQUIRED_FILES = Object.freeze([
 	"deploy/saml-config.mjs",
 	...Object.values(CUSTOMER_KIT_DELIVERY_FILES),
 	...CUSTOMER_KIT_BENCHMARK_FILES,
+	...CUSTOMER_KIT_PRIVACY_GATEWAY_FILES,
 ]);
 
 // Top-level guides are renamed in the portable kit. Keep their local links

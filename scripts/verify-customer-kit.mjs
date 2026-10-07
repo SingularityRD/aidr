@@ -12,6 +12,7 @@ import {
   CUSTOMER_KIT_REQUIRED_FILES,
   CUSTOMER_KIT_REQUIRED_RELEASE_ARTIFACTS,
   isMcpGatewayReleaseArtifact,
+  privacyGatewayKitFailures,
 } from "./customer-kit-contract.mjs";
 const kit=resolve(process.argv[2]||".aidr-customer-kit"), checks=[];
 const inventory=readFileSync(join(kit,"SHA256SUMS"),"utf8").trim().split(/\r?\n/).map(line=>{
@@ -42,6 +43,9 @@ verifyTlsDelivery();
 verifyBenchmarkDelivery();
 const source=JSON.parse(readFileSync(join(kit,"release-source.json"),"utf8"));
 verifyDeliveryStatus(source);
+const privacyGatewayFailures=privacyGatewayKitFailures(expected,(path)=>readFileSync(join(kit,path),"utf8"),source);
+assert.deepEqual(privacyGatewayFailures,[],privacyGatewayFailures[0]);
+checks.push(`privacy gateway image definition is digest-pinned and non-root; runtime ${source.privacy_gateway_runtime_bundled?"bundled as compiled output only":"not bundled"}`);
 const gatewayRuntime=["deploy/gateway/aidr-mcp-gateway.mjs","deploy/gateway/aidr-mcp-approve.mjs","deploy/gateway/aidr-mcp-stdio.mjs","deploy/gateway/aidr-artifact.manifest.json","deploy/gateway/README.md"];
 const gatewaySignaturePresent=expected.has("deploy/gateway/aidr-artifact.manifest.sig");
 assert.equal(source.inline_mcp_gateway_signature_present,gatewaySignaturePresent,"MCP gateway signature status does not match bundled runtime");

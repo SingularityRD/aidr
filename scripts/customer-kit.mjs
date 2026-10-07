@@ -15,6 +15,7 @@ import {
   CUSTOMER_KIT_REQUIRED_RELEASE_ARTIFACTS,
   renderCustomerKitDoc,
 } from "./customer-kit-contract.mjs";
+import { privacyGatewayPackageEntries } from "../deploy/privacy-gateway/privacy-gateway.mjs";
 
 const { values } = parseArgs({ options: { output: { type: "string" }, "upstream-dir": { type: "string" }, "release-dir": { type: "string" }, "envelope-output": { type: "string" }, "windows-authenticode-receipt-sha256": { type: "string" }, "windows-code-signing-thumbprint": { type: "string" } } });
 if (!values.output || !values["upstream-dir"]) throw new Error("--output and --upstream-dir required");
@@ -53,6 +54,10 @@ for (const path of ["deploy/backup", "deploy/dashboard", "deploy/fleet", "deploy
 // checkout. Ship only the self-contained native operator assets here.
 for (const path of ["deploy/native/README.md", "deploy/native/support-matrix.json", "deploy/native/support-matrix.schema.json", "deploy/native/interception-matrix.json", "deploy/native/run-support-matrix.mjs", "deploy/native/scenarios/TEMPLATE.json", "deploy/native/scenarios/README.md"]) copy(join(root, path), join(output, path));
 copy(join(root, "scripts/benchmarks"), join(output, "scripts/benchmarks"));
+// Optional privacy gateway: the image definition plus only the compiled runtime
+// it packages, so deployment-prepare --with-privacy-gateway works from the kit.
+for (const file of ["Dockerfile", "healthcheck.mjs", "privacy-gateway.mjs", "README.md"]) copy(join(root, "deploy/privacy-gateway", file), join(output, "deploy/privacy-gateway", file));
+for (const relative of privacyGatewayPackageEntries(root)) copy(join(root, "packages/privacy", relative), join(output, "packages/privacy", relative));
 for (const file of [
   "deployment-prepare.mjs",
   "deployment-migrate.mjs",
@@ -217,6 +222,7 @@ writeFileSync(join(output, "release-source.json"), JSON.stringify({
   inline_mcp_gateway_bundled: gatewayBundled,
   inline_mcp_gateway_signature_present: gatewaySignaturePresent,
   device_start_ingress_bundled: true,
+  privacy_gateway_runtime_bundled: true,
   region_manifest_bundled: true,
   tls_renewal_bundled: true,
   provenance_tool_bundled: true,
