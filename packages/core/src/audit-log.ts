@@ -639,6 +639,47 @@ export async function logDashboardApprovalEvent(
 	}
 }
 
+/**
+ * One use of a detection exception: a rule match it removed from this call's
+ * decision. Identifiers only — the exception id, rule, subject kind, source and
+ * a digest of the artifact — never the tool input.
+ */
+export async function logDetectionExceptionUse(
+	config: LoggingConfig,
+	event: {
+		sessionId: string;
+		toolName: string;
+		exceptionId: string;
+		ruleId: string;
+		source: "local" | "managed";
+		subjectKind: string;
+		artifactSha256: string;
+		expiresAt: string;
+	},
+): Promise<void> {
+	if (!config.enabled) return;
+	const entry: Record<string, unknown> = {
+		type: "detection_exception",
+		source: "detection_exception",
+		timestamp: new Date().toISOString(),
+		event: "applied",
+		session_id: event.sessionId,
+		tool_name: event.toolName,
+		exception_id: event.exceptionId,
+		rule_id: event.ruleId,
+		exception_source: event.source,
+		subject_kind: event.subjectKind,
+		artifact_sha256: event.artifactSha256,
+		expires_at: event.expiresAt,
+	};
+	try {
+		await appendEntry(config, redactTelemetryData(entry));
+	} catch (error) {
+		// Fail-open for the audit write only; the decision is unaffected.
+		recordAuditWriteFailure(error);
+	}
+}
+
 export async function logIncident(
 	config: LoggingConfig,
 	entry: Record<string, unknown>,

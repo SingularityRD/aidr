@@ -20,7 +20,7 @@ import {
 	type Logger,
 	malformedShellCommandReason,
 	recordHostObservation,
-	resolveAskWithDashboardApproval,
+	resolveHostAsk,
 	snapshotBeforeAllowedToolCall,
 	type Verdict,
 	verifyArtifactIntegrityAndLog,
@@ -95,12 +95,17 @@ function warnedResponse(verdict: Verdict): Record<string, unknown> {
 	};
 }
 
-/** Managed-mode dashboard approval details for an `ask` (see `resolveAskWithDashboardApproval`). */
+/** How an `ask` must be answered (see `resolveHostAsk`). */
 interface DashboardNote {
 	/** User-facing request id / outcome line, or null when there is nothing to say. */
 	notice: string | null;
 	/** Only a dashboard approval may release the call: block instead of asking. */
 	dashboardOnly: boolean;
+	/**
+	 * `operator_approvals.mode: operator`: deny with this approval-reference
+	 * message; only `aidr approve` in the user's own terminal releases a retry.
+	 */
+	operatorHold?: string;
 }
 
 function makeResponse(
@@ -118,6 +123,20 @@ function makeResponse(
 	const banner = verdict.warnings?.length
 		? `${formatBlockReason(verdict)}\n${describeSecureCodeWarnings(verdict.warnings, false).userMessage}`
 		: formatBlockReason(verdict);
+
+	if (verdict.decision === "ask" && dashboard.operatorHold) {
+		// Operator mode: never show the native dialog. The deny reason carries the
+		// approval reference; the agent cannot approve it (no tool can, and
+		// CLT-SELF-007 denies the agent running `aidr approve`).
+		return {
+			systemMessage: `${banner}\n${dashboard.operatorHold}`,
+			hookSpecificOutput: {
+				hookEventName: "PreToolUse",
+				permissionDecision: "deny",
+				permissionDecisionReason: `🛡️ Singularity AIDR: blocked pending operator approval\n${dashboard.operatorHold}`,
+			},
+		};
+	}
 
 	if (verdict.decision === "ask" && dashboard.dashboardOnly) {
 		// operator_approvals.dashboard_only: the native dialog would let the local
@@ -242,6 +261,37 @@ async function readToolCall(): Promise<Record<string, unknown> | null> {
 	return toolCall;
 }
 
+/**
+ * Remember an ask the native dialog will show, so post-tool-use can offer to
+ * allowlist its artifacts once the user approved it there. Best effort.
+ */
+async function trackNativeApproval(
+	sessionId: string,
+	toolUseId: string,
+	artifacts: Artifact[],
+	verdict: Verdict,
+): Promise<void> {
+	if (!toolUseId) return;
+	const matched = artifacts
+		.filter((a) => a.type !== "content" && verdict.artifacts.includes(a.value))
+		.map((a) => ({ value: a.value, type: a.type }));
+	if (matched.length === 0) return;
+	try {
+		await addPendingApproval(
+			sessionId,
+			toolUseId,
+			{
+				threatId: verdict.matchedThreatId ?? "unknown",
+				threatTitle: verdict.reasons[0] ?? verdict.category,
+				artifacts: matched,
+			},
+			logger,
+		);
+	} catch {
+		// Best-effort — failure doesn't affect the verdict
+	}
+}
+
 async function main(): Promise<void> {
 	await verifyArtifactIntegrityAndLog({
 		artifactDir: __dirname,
@@ -291,9 +341,12 @@ async function main(): Promise<void> {
 
 	// Managed mode: submit the ask to the AIDR dashboard, or release it with a
 	// verified single-use approval token (this hook is one process per call, so
-	// the request id and the spent nonce are persisted by core). Bounded, and a
-	// failure leaves the verdict unchanged.
-	const resolution = await resolveAskWithDashboardApproval(
+	// the request id and the spent nonce are persisted by core). In
+	// `operator_approvals.mode: operator` a spent `aidr approve` releases the
+	// retry and an unapproved ask becomes a deny with its approval reference;
+	// otherwise the ask is listed in `aidr pending` as informational. Bounded,
+	// and a failure leaves the verdict unchanged.
+	const resolution = await resolveHostAsk(
 		{ sessionId, toolName, toolInput, artifacts },
 		evaluated,
 		{ agentRuntime: "claude-code", logger },
@@ -303,30 +356,14 @@ async function main(): Promise<void> {
 	const dashboard: DashboardNote = {
 		notice: formatDashboardApprovalNotice(resolution.dashboardApproval),
 		dashboardOnly: resolution.dashboardOnly,
+		operatorHold: resolution.operatorHold?.message,
 	};
 
 	// Only track approvals for allowlistable types (content varies per call, not meaningful to allowlist).
-	// Under dashboard_only the native dialog is never shown, so there is nothing to track.
-	if (verdict.decision === "ask" && toolUseId && !dashboard.dashboardOnly) {
-		const matched = artifacts
-			.filter((a) => a.type !== "content" && verdict.artifacts.includes(a.value))
-			.map((a) => ({ value: a.value, type: a.type }));
-		if (matched.length > 0) {
-			try {
-				await addPendingApproval(
-					sessionId,
-					toolUseId,
-					{
-						threatId: verdict.matchedThreatId ?? "unknown",
-						threatTitle: verdict.reasons[0] ?? verdict.category,
-						artifacts: matched,
-					},
-					logger,
-				);
-			} catch {
-				// Best-effort — failure doesn't affect the verdict
-			}
-		}
+	// Under dashboard_only or operator mode the native dialog is never shown, so
+	// there is nothing to track.
+	if (verdict.decision === "ask" && !dashboard.dashboardOnly && !dashboard.operatorHold) {
+		await trackNativeApproval(sessionId, toolUseId, artifacts, verdict);
 	}
 
 	// Pre-operation snapshot (opt-in: snapshot_before_destructive + protect_paths):

@@ -32,8 +32,8 @@ import {
 	recordHostObservation,
 	recordToolOutcome,
 	recordToolOutputCanaries,
-	resolveAskWithDashboardApproval,
 	resolveHookDeadlineMs,
+	resolveHostAsk,
 	resolvePromptInspectionDeadlineMs,
 	scanProvisionedOutput,
 	snapshotBeforeAllowedToolCall,
@@ -760,6 +760,12 @@ export interface HookEvaluation {
 	dashboardNotice: string | null;
 	/** `operator_approvals.dashboard_only`: an `ask` must block, not ask. */
 	dashboardOnly: boolean;
+	/**
+	 * `operator_approvals.mode: operator`: the `ask` is denied with this
+	 * approval-reference message; only `aidr approve` in the user's own
+	 * terminal releases one retry. Absent in the default `host_dialog` mode.
+	 */
+	operatorHold?: string;
 }
 
 async function evaluateNormalizedCall(
@@ -787,7 +793,10 @@ async function evaluateNormalizedCall(
 	});
 	// Managed mode: submit the ask to the AIDR dashboard or release it with a
 	// verified single-use approval token (persisted across hook processes by core).
-	const resolution = await resolveAskWithDashboardApproval(request, evaluated, {
+	// `operator_approvals.mode: operator`: a spent `aidr approve` releases the
+	// retry, otherwise the ask is held as a deny with its approval reference. The
+	// default mode lists the ask in `aidr pending` as informational only.
+	const resolution = await resolveHostAsk(request, evaluated, {
 		agentRuntime: mode,
 	});
 	// Pre-operation snapshot of a protected path before an allowed destructive call
@@ -802,6 +811,7 @@ async function evaluateNormalizedCall(
 		verdict: resolution.verdict,
 		dashboardNotice: formatDashboardApprovalNotice(resolution.dashboardApproval),
 		dashboardOnly: resolution.dashboardOnly,
+		operatorHold: resolution.operatorHold?.message,
 	};
 }
 
@@ -1225,7 +1235,8 @@ function withDashboardNotice(reason: string, evaluation: HookEvaluation): string
  * | `beforeReadFile`       | allow / deny           | deny               |
  * | `preToolUse`           | allow / deny           | deny               |
  *
- * Under `operator_approvals.dashboard_only` every event maps `ask` to deny.
+ * Under `operator_approvals.dashboard_only` or `operator_approvals.mode:
+ * operator` every event maps `ask` to deny.
  */
 const CURSOR_ASK_EVENTS: ReadonlySet<CursorEventName> = new Set([
 	"beforeShellExecution",
@@ -1251,6 +1262,18 @@ export function toCursorResponse(
 		return { decision: "allow", permission: "allow" };
 	}
 
+	if (verdict.decision === "ask" && evaluation.operatorHold) {
+		// Operator mode: deny on every event (never the native prompt); the reason
+		// carries the approval reference for the user's own terminal.
+		return {
+			decision: "deny",
+			permission: "deny",
+			reason: evaluation.operatorHold,
+			user_message: evaluation.operatorHold,
+			agent_message: evaluation.operatorHold,
+		};
+	}
+
 	// dashboard_only: a native "ask" would let the local user approve, so block.
 	// An event whose output schema has no "ask" gets an explicit deny instead of
 	// a permission value the host cannot enforce (see CURSOR_ASK_EVENTS).
@@ -1270,7 +1293,7 @@ export function toCursorResponse(
 	};
 }
 
-function toVsCodeResponse(evaluation: HookEvaluation): Record<string, unknown> {
+export function toVsCodeResponse(evaluation: HookEvaluation): Record<string, unknown> {
 	const { verdict } = evaluation;
 	if (verdict.decision === "allow") {
 		// Secure-code findings on an allowed write: `systemMessage` is the warning
@@ -1278,6 +1301,17 @@ function toVsCodeResponse(evaluation: HookEvaluation): Record<string, unknown> {
 		return verdict.warnings?.length
 			? { systemMessage: describeSecureCodeWarnings(verdict.warnings).userMessage }
 			: {};
+	}
+
+	if (verdict.decision === "ask" && evaluation.operatorHold) {
+		// Operator mode: deny, never the native dialog; see toCursorResponse.
+		return {
+			hookSpecificOutput: {
+				hookEventName: "PreToolUse",
+				permissionDecision: "deny",
+				permissionDecisionReason: evaluation.operatorHold,
+			},
+		};
 	}
 
 	return {

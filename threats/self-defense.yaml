@@ -94,8 +94,9 @@
   revoked: false
 
 # Self-approval: the agent invoking the operator-only approval CLI or forcing its
-# non-interactive mode. `aidr approve`, `aidr pending` and `aidr allowlist add`
-# are human-only, out-of-band actions, so this is a hard block (deny), never an
+# non-interactive mode. `aidr approve`, `aidr pending`, `aidr allowlist add` and
+# `aidr exception add` (a time-limited detection exception) are human-only,
+# out-of-band actions, so this is a hard block (deny), never an
 # ask: an ask would hand the agent an actionId the operator might approve.
 # The protection-weakening CLI commands are operator-only for the same reason:
 # `aidr config -s|--set` (heuristics off, disabled threats, lower sensitivity,
@@ -125,7 +126,7 @@
   severity: critical
   confidence: 0.99
   action: block
-  pattern: "\\baidr(?:-cli|-setup)?(?:@[\\w.^~-]{1,40})?(?:/[\\w.@-]{1,100}){0,8}(?:\\.exe|\\.cmd|\\.ps1|\\.js|\\.mjs|\\.cjs)?[\\s,\\[\\]]{1,20}(?:-{1,2}[\\w-]{1,40}(?:=\\S{0,200})?[\\s,\\[\\]]{1,20}){0,6}(?:approve|approvals|pending|allowlist[\\s,\\[\\]]{1,20}(?:-{1,2}[\\w-]{1,40}[\\s,\\[\\]]{1,20}){0,4}add|uninstall|config[\\s,\\[\\]]{1,20}(?:-{1,2}[\\w-]{1,40}(?:=\\S{0,200})?[\\s,\\[\\]]{1,20}(?:[^\\s,\\[\\]-][^\\s,\\[\\]]{0,200}[\\s,\\[\\]]{1,20})?){0,4}(?:--set|-[A-Za-z]{0,6}s[A-Za-z]{0,6})|setup[\\s,\\[\\]]{1,20}(?:-{1,2}[\\w-]{1,40}(?:=\\S{0,200})?[\\s,\\[\\]]{1,20}(?:[^\\s,\\[\\]-][^\\s,\\[\\]]{0,200}[\\s,\\[\\]]{1,20})?){0,4}(?:--force|-[A-Za-z]{0,6}f[A-Za-z]{0,6})|quarantine[\\s,\\[\\]]{1,20}(?:-{1,2}[\\w-]{1,40}[\\s,\\[\\]]{1,20}){0,4}(?:release|delete)|restore|audit[\\s,\\[\\]]{1,20}(?:-{1,2}[\\w-]{1,40}[\\s,\\[\\]]{1,20}){0,4}rotate-key)\\b|AIDR_OPERATOR_NONINTERACTIVE|\\baidr-mcp-approve\\b|aidr-mcp-gateway[\\\\/](?:[\\w.-]{1,100}[\\\\/]){0,4}(?:aidr-mcp-)?approve\\.[cm]?js\\b|mcp-gateway[\\\\/](?:src|dist)[\\\\/](?:aidr-mcp-)?approve\\.[cm]?js\\b"
+  pattern: "\\baidr(?:-cli|-setup)?(?:@[\\w.^~-]{1,40})?(?:/[\\w.@-]{1,100}){0,8}(?:\\.exe|\\.cmd|\\.ps1|\\.js|\\.mjs|\\.cjs)?[\\s,\\[\\]]{1,20}(?:-{1,2}[\\w-]{1,40}(?:=\\S{0,200})?[\\s,\\[\\]]{1,20}){0,6}(?:approve|approvals|pending|(?:allowlist|exceptions?)[\\s,\\[\\]]{1,20}(?:-{1,2}[\\w-]{1,40}[\\s,\\[\\]]{1,20}){0,4}add|uninstall|config[\\s,\\[\\]]{1,20}(?:-{1,2}[\\w-]{1,40}(?:=\\S{0,200})?[\\s,\\[\\]]{1,20}(?:[^\\s,\\[\\]-][^\\s,\\[\\]]{0,200}[\\s,\\[\\]]{1,20})?){0,4}(?:--set|-[A-Za-z]{0,6}s[A-Za-z]{0,6})|setup[\\s,\\[\\]]{1,20}(?:-{1,2}[\\w-]{1,40}(?:=\\S{0,200})?[\\s,\\[\\]]{1,20}(?:[^\\s,\\[\\]-][^\\s,\\[\\]]{0,200}[\\s,\\[\\]]{1,20})?){0,4}(?:--force|-[A-Za-z]{0,6}f[A-Za-z]{0,6})|quarantine[\\s,\\[\\]]{1,20}(?:-{1,2}[\\w-]{1,40}[\\s,\\[\\]]{1,20}){0,4}(?:release|delete)|restore|audit[\\s,\\[\\]]{1,20}(?:-{1,2}[\\w-]{1,40}[\\s,\\[\\]]{1,20}){0,4}rotate-key)\\b|AIDR_OPERATOR_NONINTERACTIVE|\\baidr-mcp-approve\\b|aidr-mcp-gateway[\\\\/](?:[\\w.-]{1,100}[\\\\/]){0,4}(?:aidr-mcp-)?approve\\.[cm]?js\\b|mcp-gateway[\\\\/](?:src|dist)[\\\\/](?:aidr-mcp-)?approve\\.[cm]?js\\b"
   case_insensitive: true
   match_on: command_normalized
   title: "Attempt to self-approve a Singularity AIDR block, forge an operator approval or weaken its protection"

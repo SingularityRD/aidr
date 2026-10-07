@@ -304,13 +304,26 @@ const ApprovalDiskSchema = z.object({
 	mac: z.string().regex(DIGEST),
 });
 
+/**
+ * An `ask` a host answered in its OWN confirmation dialog (Claude Code, Cursor /
+ * VS Code in the default `operator_approvals.mode: host_dialog`). Kept only so
+ * `aidr pending` shows every ask in one place. It is informational: it carries
+ * no MAC, is never read by {@link recordOperatorApproval} and therefore can
+ * never become an approval, whatever is written into it.
+ */
+const HostAskDiskSchema = PendingDiskSchema.omit({ mac: true }).extend({
+	channel: z.literal("host_dialog"),
+});
+
 type PendingDisk = z.infer<typeof PendingDiskSchema>;
 type ApprovalDisk = z.infer<typeof ApprovalDiskSchema>;
+type HostAskDisk = z.infer<typeof HostAskDiskSchema>;
 
 interface StoreDocument {
 	version: number;
 	pending: PendingDisk[];
 	approvals: ApprovalDisk[];
+	host_asks: HostAskDisk[];
 }
 
 function pendingFromDisk(record: PendingDisk): PendingAsk {
@@ -375,14 +388,23 @@ function canonicalJson(value: unknown): string {
 	return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`).join(",")}}`;
 }
 
-function computeMac(key: Buffer, kind: "pending" | "approval", record: object): string {
+/**
+ * What a MAC covers. The kind is part of the MAC input, so a record of one kind
+ * can never be replayed as another (a detection exception is not an approval).
+ */
+type MacKind = "pending" | "approval" | OperatorRecordKind;
+
+/** Operator-authored records other modules sign with the approval key. */
+export type OperatorRecordKind = "detection-exception";
+
+function computeMac(key: Buffer, kind: MacKind, record: object): string {
 	const { mac: _ignored, ...body } = record as Record<string, unknown>;
 	return createHmac("sha256", key)
 		.update(`${MAC_DOMAIN}\n${kind}\n${canonicalJson(body)}`)
 		.digest("hex");
 }
 
-function macMatches(key: Buffer, kind: "pending" | "approval", record: { mac: string }): boolean {
+function macMatches(key: Buffer, kind: MacKind, record: { mac: string }): boolean {
 	const expected = Buffer.from(computeMac(key, kind, record), "hex");
 	const actual = Buffer.from(record.mac, "hex");
 	return expected.length === actual.length && timingSafeEqual(expected, actual);
@@ -826,7 +848,7 @@ function nowMs(options: OperatorApprovalStoreOptions): number {
 }
 
 function emptyDocument(): StoreDocument {
-	return { version: STORE_VERSION, pending: [], approvals: [] };
+	return { version: STORE_VERSION, pending: [], approvals: [], host_asks: [] };
 }
 
 async function readDocument(path: string): Promise<StoreDocument> {
@@ -852,19 +874,24 @@ async function readDocument(path: string): Promise<StoreDocument> {
 	return parseDocument(raw);
 }
 
+function validEntries<T>(value: unknown, schema: z.ZodType<T>): T[] {
+	if (!Array.isArray(value)) return [];
+	const out: T[] = [];
+	for (const entry of value) {
+		const parsed = schema.safeParse(entry);
+		if (parsed.success) out.push(parsed.data);
+	}
+	return out;
+}
+
 /** The pending asks and approvals that match the disk schema; anything else is dropped. */
 function parseDocument(raw: unknown): StoreDocument {
 	const doc = emptyDocument();
 	if (typeof raw !== "object" || raw === null) return doc;
 	const record = raw as Record<string, unknown>;
-	for (const entry of Array.isArray(record.pending) ? record.pending : []) {
-		const parsed = PendingDiskSchema.safeParse(entry);
-		if (parsed.success) doc.pending.push(parsed.data);
-	}
-	for (const entry of Array.isArray(record.approvals) ? record.approvals : []) {
-		const parsed = ApprovalDiskSchema.safeParse(entry);
-		if (parsed.success) doc.approvals.push(parsed.data);
-	}
+	doc.pending = validEntries(record.pending, PendingDiskSchema);
+	doc.approvals = validEntries(record.approvals, ApprovalDiskSchema);
+	doc.host_asks = validEntries(record.host_asks, HostAskDiskSchema);
 	return doc;
 }
 
@@ -884,6 +911,10 @@ function pruneDocument(doc: StoreDocument, now: number): StoreDocument {
 			.filter(alive)
 			.sort(newestFirst<ApprovalDisk>((r) => r.approved_at))
 			.slice(0, MAX_APPROVALS),
+		host_asks: doc.host_asks
+			.filter(alive)
+			.sort(newestFirst<HostAskDisk>((r) => r.created_at))
+			.slice(0, MAX_PENDING),
 	};
 }
 
@@ -987,6 +1018,33 @@ function operatorText(value: string, max: number): string {
 	return boundTerminalText(redacted, max).text;
 }
 
+/** The display fields of a pending ask, shared by approvable and informational records. */
+function pendingAskFields(input: RecordPendingAskInput, now: number): Omit<PendingDisk, "mac"> {
+	const artifacts = input.artifacts.slice(0, MAX_ARTIFACTS_PER_RECORD);
+	return {
+		action_id: input.actionId,
+		artifact_digest: artifactSetDigest(input.artifacts),
+		tool: input.toolName.slice(0, 200),
+		connector: operatorText(input.connector ?? "unknown", 64),
+		session_digest: sha256(input.sessionId).slice(0, 16),
+		summary: operatorText(toolInputSummaryText(input.toolName, input.toolInput), 300),
+		artifacts: artifacts.map((a) => ({
+			type: operatorText(String(a.type), 32),
+			digest: artifactValueDigest(a.type, a.value),
+			preview: operatorText(a.value, 160),
+		})),
+		artifact_count: input.artifacts.length,
+		severity: operatorText(String(input.verdict.severity), 32),
+		category: operatorText(String(input.verdict.category), 100),
+		reasons: input.verdict.reasons.slice(0, 3).map((r) => operatorText(r, 300)),
+		threat_id: input.verdict.matchedThreatId
+			? operatorText(input.verdict.matchedThreatId, 100)
+			: null,
+		created_at: new Date(now).toISOString(),
+		expires_at: new Date(now + PENDING_ASK_TTL_MS).toISOString(),
+	};
+}
+
 /**
  * Record an `ask` so an operator can approve it by id. Called by the connector at
  * block time; the stored summary is redacted and escaped, and raw artifact values
@@ -1005,36 +1063,61 @@ export async function recordPendingAsk(
 		// rather than letting the operator approve something that cannot be spent.
 		requireAnchor(options);
 		const now = nowMs(options);
-		const artifacts = input.artifacts.slice(0, MAX_ARTIFACTS_PER_RECORD);
-		const unsigned: Omit<PendingDisk, "mac"> = {
-			action_id: input.actionId,
-			artifact_digest: artifactSetDigest(input.artifacts),
-			tool: input.toolName.slice(0, 200),
-			connector: operatorText(input.connector ?? "unknown", 64),
-			session_digest: sha256(input.sessionId).slice(0, 16),
-			summary: operatorText(toolInputSummaryText(input.toolName, input.toolInput), 300),
-			artifacts: artifacts.map((a) => ({
-				type: operatorText(String(a.type), 32),
-				digest: artifactValueDigest(a.type, a.value),
-				preview: operatorText(a.value, 160),
-			})),
-			artifact_count: input.artifacts.length,
-			severity: operatorText(String(input.verdict.severity), 32),
-			category: operatorText(String(input.verdict.category), 100),
-			reasons: input.verdict.reasons.slice(0, 3).map((r) => operatorText(r, 300)),
-			threat_id: input.verdict.matchedThreatId
-				? operatorText(input.verdict.matchedThreatId, 100)
-				: null,
-			created_at: new Date(now).toISOString(),
-			expires_at: new Date(now + PENDING_ASK_TTL_MS).toISOString(),
-		};
+		const unsigned = pendingAskFields(input, now);
 		const record: PendingDisk = { ...unsigned, mac: computeMac(key.key, "pending", unsigned) };
 		const doc = await readDocument(path);
 		doc.pending = doc.pending.filter((p) => p.action_id !== input.actionId);
+		doc.host_asks = doc.host_asks.filter((p) => p.action_id !== input.actionId);
 		doc.pending.push(record);
 		await writeDocument(path, doc, now);
 		return pendingFromDisk(record);
 	});
+}
+
+/**
+ * Record an `ask` the host answers in its own confirmation dialog, so `aidr
+ * pending` lists it. INFORMATIONAL ONLY: no key and no MAC, and the record is
+ * kept apart from approvable pending asks, so `aidr approve` refuses it. It needs
+ * no OS vault access, which keeps the default hook path fast. Throws when the
+ * store cannot be written; callers treat it as best effort.
+ */
+export async function recordHostDialogAsk(
+	input: RecordPendingAskInput,
+	options: OperatorApprovalStoreOptions = {},
+): Promise<HostDialogAsk> {
+	assertActionId(input.actionId);
+	const path = operatorApprovalStorePath(options);
+	return withStoreLock(path, async () => {
+		const now = nowMs(options);
+		const record: HostAskDisk = { ...pendingAskFields(input, now), channel: "host_dialog" };
+		const doc = await readDocument(path);
+		doc.host_asks = doc.host_asks.filter((p) => p.action_id !== input.actionId);
+		doc.host_asks.push(record);
+		await writeDocument(path, doc, now);
+		return hostAskFromDisk(record);
+	});
+}
+
+/** An informational host-dialog ask (see {@link recordHostDialogAsk}). Never approvable. */
+export interface HostDialogAsk extends PendingAsk {
+	channel: "host_dialog";
+}
+
+function hostAskFromDisk(record: HostAskDisk): HostDialogAsk {
+	const { channel: _channel, ...fields } = record;
+	return { ...pendingFromDisk({ ...fields, mac: "" }), channel: "host_dialog" };
+}
+
+/** Unexpired informational host-dialog asks, newest first. */
+export async function listHostDialogAsks(
+	options: OperatorApprovalStoreOptions = {},
+): Promise<HostDialogAsk[]> {
+	const doc = await readDocument(operatorApprovalStorePath(options));
+	const now = nowMs(options);
+	return doc.host_asks
+		.filter((p) => Date.parse(p.expires_at) > now)
+		.sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
+		.map(hostAskFromDisk);
 }
 
 export interface ListedPendingAsk extends PendingAsk {
@@ -1305,7 +1388,7 @@ export async function spendExternalApprovalToken(
 	options: OperatorApprovalStoreOptions = {},
 ): Promise<ExternalSpendResult> {
 	if (!domain || !id || !Number.isFinite(expiresAtMs)) return "unavailable";
-	const ledgerId = sha256(`external\n${domain}\n${id}`).slice(0, 32);
+	const ledgerId = externalLedgerId(domain, id);
 	try {
 		return await withStoreLock(operatorApprovalStorePath(options), async () =>
 			spendInLedger(requireAnchor(options), ledgerId, expiresAtMs, nowMs(options)),
@@ -1396,4 +1479,76 @@ export async function markOperatorAllowlistGrantUsed(
 	} catch {
 		return false;
 	}
+}
+
+// ── Other operator-authored records ─────────────────────────────────────
+
+/**
+ * Sign an operator-authored record (for example a detection exception) with the
+ * per-install approval key, creating the key on first use. OPERATOR ONLY: call
+ * it from a TTY-confirmed CLI command, never from a connector. Also requires a
+ * working consumption ledger, because revocations of such records are kept
+ * there. Throws {@link OperatorApprovalError} when either is unavailable.
+ */
+export function signOperatorRecord(
+	kind: OperatorRecordKind,
+	record: object,
+	options: OperatorApprovalStoreOptions = {},
+): string {
+	const key = requireKey(options, true);
+	readLedger(requireAnchor(options));
+	return computeMac(key.key, kind, record);
+}
+
+/**
+ * Whether an operator-authored record carries a valid MAC under the approval
+ * key. False when the key is unavailable (fail closed: an unverifiable record
+ * is never honoured).
+ */
+export function verifyOperatorRecord(
+	kind: OperatorRecordKind,
+	record: { mac: string },
+	options: OperatorApprovalStoreOptions = {},
+): boolean {
+	if (!DIGEST.test(record.mac)) return false;
+	const key = loadKey(options, false);
+	return !!key && macMatches(key.key, kind, record);
+}
+
+function externalLedgerId(domain: string, id: string): string {
+	return sha256(`external\n${domain}\n${id}`).slice(0, 32);
+}
+
+/**
+ * Record that an operator revoked the record `id` of `domain`, in the same
+ * OS-vault ledger that makes approvals single use. A restored copy of a store
+ * file therefore cannot bring a revoked record back. Remembered until
+ * `expiresAtMs`, after which the record is void on its own expiry anyway.
+ */
+export async function recordOperatorRevocation(
+	domain: string,
+	id: string,
+	expiresAtMs: number,
+	options: OperatorApprovalStoreOptions = {},
+): Promise<ExternalSpendResult> {
+	return spendExternalApprovalToken(domain, id, expiresAtMs, options);
+}
+
+/**
+ * Whether `id` of `domain` was revoked (see {@link recordOperatorRevocation}).
+ * Throws {@link OperatorApprovalError} when the ledger cannot be read; callers
+ * must then treat the record as not usable.
+ */
+export function isOperatorRevoked(
+	domain: string,
+	id: string,
+	options: OperatorApprovalStoreOptions = {},
+): boolean {
+	const ledger = readLedger(requireAnchor(options));
+	return Object.hasOwn(ledger.consumed, externalLedgerId(domain, id));
+}
+
+/** Run `fn` under the cross-process lock of the store file at `path`. */
+export function withOperatorFileLock<T>(path: string, fn: () => Promise<T>): Promise<T> {
+	return withStoreLock(path, fn);
 }

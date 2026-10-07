@@ -139,6 +139,8 @@ describe("OpenClaw approval authority", { timeout: 30_000 }, () => {
 		expect(names).not.toContain("aidr_approve");
 		// No tool whose name suggests approval authority.
 		expect(names.filter((name) => /approv/i.test(name))).toEqual([]);
+		// Nor one that could create a detection exception (operator CLI / dashboard only).
+		expect(names.filter((name) => /exception|except|waiv/i.test(name))).toEqual([]);
 		// No tool accepting an `approved` flag (the shape an approval tool needs).
 		for (const tool of registeredTools) {
 			const properties = (tool.parameters.properties ?? {}) as Record<string, unknown>;
@@ -164,7 +166,10 @@ describe("OpenClaw approval authority", { timeout: 30_000 }, () => {
 	it("an agent cannot self-approve: after trying every registered tool the retry stays blocked", async () => {
 		const session = { sessionKey: "adversarial-session" };
 
-		const blocked = await handler({ toolName: "exec", params: { command: BLOCKED_COMMAND } }, session);
+		const blocked = await handler(
+			{ toolName: "exec", params: { command: BLOCKED_COMMAND } },
+			session,
+		);
 		expect(blocked?.block).toBe(true);
 		const actionId = actionIdFrom(blocked?.blockReason ?? "");
 
@@ -192,7 +197,10 @@ describe("OpenClaw approval authority", { timeout: 30_000 }, () => {
 		);
 
 		// The retry is STILL blocked — this is the security property.
-		const retry = await handler({ toolName: "exec", params: { command: BLOCKED_COMMAND } }, session);
+		const retry = await handler(
+			{ toolName: "exec", params: { command: BLOCKED_COMMAND } },
+			session,
+		);
 		expect(retry?.block).toBe(true);
 		expect(retry?.blockReason).toContain("blocked it pending explicit user approval");
 

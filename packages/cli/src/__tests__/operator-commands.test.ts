@@ -26,6 +26,7 @@ import {
 	listOperatorApprovals,
 	OperatorApprovalError,
 	type OperatorApprovalStoreOptions,
+	recordHostDialogAsk,
 	recordPendingAsk,
 } from "@singularityrd/aidr-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -196,6 +197,46 @@ describe("aidr pending", () => {
 		expect(text).not.toContain("\u001b");
 		expect(text).toContain("safe\\x1b[2K\\rspoofed");
 		expect(text).toContain("integrity:  FAILED");
+	});
+
+	it("lists host-dialog asks as informational and refuses to approve them", async () => {
+		const id = actionId("host-dialog");
+		await recordHostDialogAsk(
+			{
+				actionId: id,
+				toolName: "Bash",
+				toolInput: { command: COMMAND },
+				artifacts: [{ type: "command", value: COMMAND }],
+				sessionId: "session-1",
+				verdict: {
+					severity: "warning",
+					category: "permissions",
+					reasons: ["World-writable permissions"],
+					matchedThreatId: "CLT-TEST-001",
+				},
+				connector: "claude-code",
+			},
+			store,
+		);
+		await pendingCommand({}, { store });
+		const text = out.join("\n");
+		expect(text).toContain("No Singularity AIDR asks are waiting");
+		expect(text).toContain("answered in the host's own dialog");
+		expect(text).toContain(id);
+
+		out.length = 0;
+		await pendingCommand({ json: true }, { store });
+		const report = JSON.parse(out.join("\n")) as {
+			pending: unknown[];
+			host_dialog: Array<Record<string, unknown>>;
+		};
+		expect(report.pending).toEqual([]);
+		expect(report.host_dialog[0]?.actionId).toBe(id);
+
+		await approveCommand(id, {}, { store, streams: ttyStreams("approve") });
+		expect(process.exitCode).toBe(1);
+		expect(err.join("\n")).toContain("cannot be approved here");
+		expect(await listOperatorApprovals(store)).toEqual([]);
 	});
 });
 

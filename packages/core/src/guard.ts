@@ -53,6 +53,7 @@ import {
 	findOperatorAllowlistGrant,
 	markOperatorAllowlistGrantUsed,
 	type OperatorApprovalStoreOptions,
+	recordHostDialogAsk,
 	recordPendingAsk,
 } from "./operator-approvals.js";
 import {
@@ -255,6 +256,270 @@ export async function resolveAskWithDashboardApproval(
 			error: error instanceof Error ? error.name : typeof error,
 		});
 		return unchanged;
+	}
+}
+
+// ── Host-dialog connectors (Claude Code, Cursor / VS Code) ─────────────
+
+/** How a host with its own confirmation dialog resolves an `ask`. */
+export type HostAskMode = "host_dialog" | "operator";
+
+/**
+ * Longest the default (`host_dialog`) path waits to list an ask in `aidr
+ * pending`. The record is informational, so it must never delay the hook.
+ */
+export const HOST_DIALOG_RECORD_BUDGET_MS = 1_500;
+
+/**
+ * The approval mode in force. `operator` only when the config asks for it AND
+ * `dashboard_only` is not in force (then only the dashboard may release a call).
+ */
+export function hostAskMode(config: Config | undefined): HostAskMode {
+	if (isDashboardOnly(config)) return "host_dialog";
+	return config?.operator_approvals?.mode === "operator" ? "operator" : "host_dialog";
+}
+
+export interface HostAskOptions {
+	/** Managed-mode dashboard approvals; `false` disables them (isolated tests). */
+	dashboardApprovals?: DashboardApprovalOptions | false;
+	/** The operator approval store; `false` disables it (isolated tests). */
+	operatorApprovals?: OperatorApprovalStoreOptions | false;
+}
+
+/** Result of {@link resolveHostAsk}. */
+export interface HostAskResolution {
+	/** The released allow verdict, or the unchanged input verdict. */
+	verdict: Verdict;
+	approvedBy?: "dashboard" | "operator";
+	dashboardApproval?: DashboardApprovalOutcome;
+	/** `operator_approvals.dashboard_only`: the host must block, not ask. */
+	dashboardOnly: boolean;
+	mode: HostAskMode;
+	/**
+	 * `operator` mode, unreleased ask: the host must DENY the call and show
+	 * `message` (the approval reference and how the user approves it out of band).
+	 * The host's own dialog must never be shown, since it would let the policed
+	 * session's user interface, not the operator CLI, release the call.
+	 */
+	operatorHold?: { actionId: string; pendingRecorded: boolean; message: string };
+	/** `host_dialog` mode: whether the ask was listed in `aidr pending` (informational). */
+	informationalRecorded?: boolean;
+}
+
+function withBudget<T>(work: Promise<T>, ms: number): Promise<T | "timeout"> {
+	let timer: NodeJS.Timeout | undefined;
+	const timeout = new Promise<"timeout">((resolve) => {
+		timer = setTimeout(() => resolve("timeout"), ms);
+		timer.unref?.();
+	});
+	return Promise.race([work, timeout]).finally(() => clearTimeout(timer));
+}
+
+/** Everything one `resolveHostAsk` call shares between its steps. */
+interface HostAskCall {
+	request: ToolEvaluationRequest;
+	verdict: Verdict;
+	config: Config;
+	logger: Logger;
+	connector: ToolEvaluationContext["agentRuntime"];
+	actionId: string;
+	operatorStore: OperatorApprovalStoreOptions | null;
+}
+
+function pendingAskInput(call: HostAskCall) {
+	return {
+		actionId: call.actionId,
+		toolName: call.request.toolName,
+		toolInput: call.request.toolInput,
+		artifacts: call.request.artifacts,
+		sessionId: call.request.sessionId,
+		verdict: call.verdict,
+		connector: call.connector,
+	};
+}
+
+/** Spend an operator approval for exactly this call; the released verdict, or null. */
+async function spendHostOperatorApproval(call: HostAskCall): Promise<Verdict | null> {
+	if (!call.operatorStore) return null;
+	const { request } = call;
+	const consumed = await consumeOperatorApproval(
+		{ actionId: call.actionId, tool: request.toolName, artifacts: request.artifacts },
+		call.operatorStore,
+	);
+	if (!consumed.approved) {
+		if (consumed.reason !== "not_found") {
+			call.logger.warn("Operator approval was not applied; the ask stays blocked", {
+				reason: consumed.reason,
+			});
+		}
+		return null;
+	}
+	const released = releasedVerdict(call.verdict, "operator_approval", "operator");
+	if (call.config.logging) {
+		await logVerdict(
+			call.config.logging,
+			request.sessionId,
+			request.toolName,
+			request.toolInput,
+			released,
+			true,
+		);
+	}
+	return released;
+}
+
+/** Operator mode: record the approvable pending ask and build the hold. */
+async function holdForOperator(
+	call: HostAskCall,
+	dashboardApproval?: DashboardApprovalOutcome,
+): Promise<NonNullable<HostAskResolution["operatorHold"]>> {
+	let pendingRecorded = false;
+	if (call.operatorStore) {
+		try {
+			await recordPendingAsk(pendingAskInput(call), call.operatorStore);
+			pendingRecorded = true;
+		} catch (error) {
+			call.logger.warn("Pending ask could not be recorded for operator approval", {
+				error: error instanceof Error ? error.name : typeof error,
+			});
+		}
+	}
+	return {
+		actionId: call.actionId,
+		pendingRecorded,
+		message: formatAskMessage(
+			call.actionId,
+			call.verdict,
+			call.request.artifacts,
+			undefined,
+			pendingRecorded,
+			dashboardApproval,
+		),
+	};
+}
+
+/** host_dialog mode: list the ask in `aidr pending` (informational), within a budget. */
+async function recordInformationalAsk(call: HostAskCall): Promise<boolean | undefined> {
+	if (!call.operatorStore) return undefined;
+	const recorded = await withBudget(
+		recordHostDialogAsk(pendingAskInput(call), call.operatorStore).then(
+			() => true,
+			() => false,
+		),
+		HOST_DIALOG_RECORD_BUDGET_MS,
+	);
+	return recorded === true;
+}
+
+async function resolveLoadedHostAsk(
+	call: HostAskCall,
+	mode: HostAskMode,
+	dashboardOnly: boolean,
+	dashboardOptions: DashboardApprovalOptions | false | undefined,
+): Promise<HostAskResolution> {
+	const base = { dashboardOnly, mode };
+	if (mode === "operator") {
+		const released = await spendHostOperatorApproval(call);
+		if (released) return { ...base, verdict: released, approvedBy: "operator" };
+	}
+	const step = await dashboardApprovalStep(
+		call.request,
+		call.actionId,
+		call.verdict,
+		call.config,
+		call.connector,
+		call.logger,
+		dashboardOptions,
+	);
+	const dashboardApproval = step.outcome ?? undefined;
+	if (step.released) {
+		return { ...base, verdict: step.released, approvedBy: "dashboard", dashboardApproval };
+	}
+	if (mode === "operator") {
+		return {
+			...base,
+			verdict: call.verdict,
+			dashboardApproval,
+			operatorHold: await holdForOperator(call, dashboardApproval),
+		};
+	}
+	return {
+		...base,
+		verdict: call.verdict,
+		dashboardApproval,
+		informationalRecorded: await recordInformationalAsk(call),
+	};
+}
+
+/**
+ * The `ask` path for connectors whose host has a native confirmation dialog
+ * (Claude Code PreToolUse, the Cursor / VS Code hook). Pass the verdict the
+ * evaluator returned; anything but an `ask` is returned unchanged.
+ *
+ * - `operator_approvals.mode: operator`: an unspent `aidr approve` for exactly
+ *   this call (same action id, tool and artifact set; HMAC under the OS-vault
+ *   key; spent once in the consumption ledger) releases it. Otherwise the ask is
+ *   recorded as an approvable pending ask and `operatorHold` tells the host to
+ *   deny with the approval reference. `paranoid` sensitivity turns the ask into
+ *   a plain deny, as on the soft-gated connectors.
+ * - `host_dialog` (default): behaviour is unchanged; the ask is additionally
+ *   listed in `aidr pending` as an informational, never-approvable record.
+ *
+ * Managed-mode dashboard approvals apply in both modes. Nothing here can create
+ * an approval: that is only `aidr approve` (TTY-confirmed) or the dashboard.
+ * Never throws: a failure keeps the verdict, and in operator mode keeps the hold.
+ */
+export async function resolveHostAsk(
+	request: ToolEvaluationRequest,
+	verdict: Verdict,
+	context: Pick<ToolEvaluationContext, "configPath" | "logger" | "agentRuntime">,
+	options: HostAskOptions = {},
+): Promise<HostAskResolution> {
+	const logger = context.logger ?? nullLogger;
+	const unchanged: HostAskResolution = { verdict, dashboardOnly: false, mode: "host_dialog" };
+	if (verdict.decision !== "ask") return unchanged;
+	const config = await loadConfig(context.configPath, logger).catch(() => null);
+	if (!config || isInvalidConfig(config)) return unchanged;
+	const dashboardOnly = isDashboardOnly(config);
+	const mode = hostAskMode(config);
+	if (mode === "operator" && config.sensitivity === "paranoid") {
+		// Same rule as the soft-gated connectors: a paranoid ask is a deny that no
+		// approval channel can release.
+		return { verdict: { ...verdict, decision: "deny" }, dashboardOnly, mode };
+	}
+	const call: HostAskCall = {
+		request,
+		verdict,
+		config,
+		logger,
+		connector: context.agentRuntime,
+		actionId: ApprovalStore.actionId(request.toolName, request.toolInput, request.sessionId),
+		operatorStore:
+			options.operatorApprovals === false
+				? null
+				: {
+						logger,
+						keyStorage: config.operator_approvals?.key_storage,
+						...options.operatorApprovals,
+					},
+	};
+	try {
+		return await resolveLoadedHostAsk(call, mode, dashboardOnly, options.dashboardApprovals);
+	} catch (error) {
+		logger.warn("Host ask resolution failed; the verdict is unchanged", {
+			error: error instanceof Error ? error.name : typeof error,
+		});
+		if (mode !== "operator") return { ...unchanged, dashboardOnly };
+		return {
+			verdict,
+			dashboardOnly,
+			mode,
+			operatorHold: {
+				actionId: call.actionId,
+				pendingRecorded: false,
+				message: formatAskMessage(call.actionId, verdict, request.artifacts, undefined, false),
+			},
+		};
 	}
 }
 
