@@ -358,6 +358,108 @@ test("closed signup mode blocks password signup and OTP requests that may create
 	assert.equal(calls, 0);
 });
 
+test("closed signup mode is an allowlist: user-creating and unknown auth routes never reach Auth", async () => {
+	let calls = 0;
+	const fetcher = async () => { calls++; return Response.json({ ok: true }); };
+	const json = { "content-type": "application/json" };
+	const blocked = [
+		["POST", "/auth/v1/signup"],
+		["POST", "/auth/v1/%2Fsignup"],
+		["POST", "/auth/v1//signup"],
+		["POST", "/auth/v1/SIGNUP"],
+		["POST", "/auth/v1/Signup/"],
+		["POST", "/auth/v1/%2573ignup"],
+		["POST", "/auth/v1/x/%2E%2E/signup"],
+		["POST", "/auth/v1/magiclink"],
+		["POST", "/auth/v1/invite"],
+		["POST", "/auth/v1/admin/users"],
+		["POST", "/auth/v1/sso"],
+		["GET", "/auth/v1/authorize?provider=google"],
+		["GET", "/auth/v1/authorize?provider=azure"],
+		["GET", "/auth/v1/callback?code=x"],
+		["GET", "/auth/v1/verify?token=x&type=signup"],
+		["POST", "/auth/v1"],
+		["POST", "/auth/v1/"],
+		["POST", "/auth/v1/token?grant_type=id_token"],
+		["POST", "/auth/v1/token?grant_type=ID_TOKEN"],
+		["POST", "/auth/v1/token"],
+		["POST", "/auth/v1/token?grant_type=password&grant_type=id_token"],
+		["POST", "/auth/v1/token?grant_type=password&provider=x"],
+		["POST", "/auth/v1/token%3Fgrant_type=password"],
+		["DELETE", "/auth/v1/user"],
+		["PUT", "/auth/v1/user"],
+		["GET", "/auth/v1/logout"],
+	];
+	for (const [method, path] of blocked) {
+		const response = await handle(new Request(`${site}${path}`, {
+			method, headers: json, body: ["GET", "HEAD"].includes(method) ? undefined : JSON.stringify({ email: "new@example.test", password: "secret", id_token: "x" }),
+		}), env, fetcher);
+		assert.equal(response.status, 403, `${method} ${path}`);
+		assert.deepEqual(await response.json(), { error: "signup_closed" });
+	}
+	// A form-encoded body could override the query grant_type in GoTrue.
+	const form = await handle(new Request(`${site}/auth/v1/token?grant_type=password`, {
+		method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: "grant_type=id_token&id_token=x",
+	}), env, fetcher);
+	assert.equal(form.status, 403);
+	// Go matches JSON keys case-insensitively; a shadowing key must not slip through.
+	const shadow = await handle(new Request(`${site}/auth/v1/otp`, {
+		method: "POST", headers: json, body: '{"email":"new@example.test","create_user":false,"Create_User":true}',
+	}), env, fetcher);
+	assert.equal(shadow.status, 403);
+	// Prefix variants an upstream might normalise to /auth/v1 never reach Auth:
+	// they are either static assets or refused by the closed-mode gate.
+	for (const path of ["/AUTH/v1/signup", "//auth/v1/signup", "/auth%2Fv1/signup", "/auth//v1/magiclink"]) {
+		await handle(new Request(`${site}${path}`, { method: "POST", headers: json, body: "{}" }), env, fetcher);
+	}
+	assert.equal(calls, 0);
+});
+
+test("closed signup mode forwards existing-user routes on their canonical path", async () => {
+	const forwarded = [];
+	const fetcher = async (url, init) => { forwarded.push([init.method, url]); return Response.json({ ok: true }); };
+	const factor = "0b6c9d3e-5f1a-4c2b-9e8d-7a6b5c4d3e2f";
+	const allowed = [
+		["POST", "/auth/v1/token?grant_type=password", "/auth/v1/token?grant_type=password"],
+		["POST", "/auth/v1/token?grant_type=refresh_token", "/auth/v1/token?grant_type=refresh_token"],
+		["POST", "/auth/v1/token?grant_type=pkce", "/auth/v1/token?grant_type=pkce"],
+		["POST", "/auth/v1/logout?scope=global", "/auth/v1/logout?scope=global"],
+		["GET", "/auth/v1/user", "/auth/v1/user"],
+		["POST", "/auth/v1/recover", "/auth/v1/recover"],
+		["POST", "/auth/v1/verify", "/auth/v1/verify"],
+		["GET", "/auth/v1/settings", "/auth/v1/settings"],
+		["GET", "/auth/v1/health", "/auth/v1/health"],
+		["POST", "/auth/v1/factors", "/auth/v1/factors"],
+		["POST", `/auth/v1/factors/${factor}/challenge`, `/auth/v1/factors/${factor}/challenge`],
+		["POST", `/auth/v1/factors/${factor}/verify`, `/auth/v1/factors/${factor}/verify`],
+		["POST", "/auth/v1//Token/?grant_type=password", "/auth/v1/token?grant_type=password"],
+	];
+	for (const [method, path] of allowed) {
+		const response = await handle(new Request(`${site}${path}`, {
+			method, headers: { "content-type": "application/json", authorization: "Bearer user-token" },
+			body: method === "GET" ? undefined : JSON.stringify({ email: "existing@example.test", password: "secret" }),
+		}), env, fetcher);
+		assert.equal(response.status, 200, `${method} ${path}`);
+	}
+	assert.deepEqual(forwarded, allowed.map(([method, , upstream]) => [method, `${provider}${upstream}`]));
+});
+
+test("closed signup mode allows OAuth authorize and SSO only for the configured opt-in", async () => {
+	const urls = [];
+	const fetcher = async (url) => { urls.push(url); return Response.json({ ok: true }); };
+	const azureEnv = { ...env, AIDR_ENABLE_AZURE_AUTH: "true" };
+	assert.equal((await handle(new Request(`${site}/auth/v1/authorize?provider=azure&redirect_to=x`), azureEnv, fetcher)).status, 200);
+	for (const query of ["provider=google", "provider=azure&provider=google", ""]) {
+		assert.equal((await handle(new Request(`${site}/auth/v1/authorize?${query}`), azureEnv, fetcher)).status, 403, query);
+	}
+	const samlEnv = { ...env, AIDR_SAML_DOMAIN: "company.example" };
+	const sso = await handle(new Request(`${site}/auth/v1/sso`, {
+		method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ domain: "company.example" }),
+	}), samlEnv, fetcher);
+	assert.equal(sso.status, 200);
+	assert.deepEqual(urls, [`${provider}/auth/v1/authorize?provider=azure&redirect_to=x`, `${provider}/auth/v1/sso`]);
+});
+
 test("closed signup mode preserves existing-user magic-link OTP", async () => {
 	const payload = { email: "existing@example.test", create_user: false, gotrue_meta_security: { captcha_token: "test-token" } };
 	let forwarded;

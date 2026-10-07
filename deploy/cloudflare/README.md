@@ -84,6 +84,23 @@ use [STAGING.md](STAGING.md). It does not route the existing landing page.
    fixed to the configured Supabase project. `/functions/v1/device-start`
    strips client-supplied AIDR forwarding headers and signs the canonical
    Cloudflare client IP; the provider function rejects unsigned direct calls.
+
+   With `AIDR_SIGNUP_MODE=closed` (the default) the Worker forwards only an
+   allowlist of `/auth/v1` routes an existing user needs and answers every
+   other Auth path with `403 {"error":"signup_closed"}`: `POST /token` with
+   exactly one `grant_type` of `password`, `refresh_token` or `pkce` and a JSON
+   body; `POST /otp` only with a JSON body whose `create_user` is `false`;
+   `POST /verify`, `/recover`, `/logout`, `/factors` and
+   `/factors/<uuid>/{challenge,verify}`; `GET /user`, `/settings` and `/health`.
+   `GET /authorize?provider=azure` is added only when `AIDR_ENABLE_AZURE_AUTH`
+   is `"true"`, and `POST /sso` only when a SAML provider or domain is
+   configured. Signup, magic-link, invite, admin, `id_token` grants and every
+   other route are refused. The path is percent-decoded once, lower-cased and
+   slash-collapsed before matching, ambiguous paths (double encoding, dot
+   segments, backslashes) are refused, and the canonical path is what is
+   forwarded. `AIDR_SIGNUP_MODE=cloud` proxies `/auth/v1` unchanged. This is a
+   defence in depth at the public origin only: the provider origin is still
+   reachable directly, so keep signups disabled in the Supabase Auth settings.
    Before inviting anyone, check the deployed origin itself: `/livez` and
    `/healthz` must return JSON `{"status":"alive"}`, `/version` must return
    the exact approved version and commit, and `/demo` must return a non-cached

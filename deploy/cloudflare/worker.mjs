@@ -242,25 +242,121 @@ function forwardHeaders(request) {
 	return headers;
 }
 
-async function proxy(request, config, fetcher) {
+// Closed signup mode is an allowlist: only the GoTrue routes an EXISTING user
+// needs are forwarded, and everything else under /auth/v1 (signup, magiclink,
+// invite, admin, id_token grants, OAuth authorize, SSO ...) is refused. Each
+// entry lists its permitted methods; OPTIONS is permitted wherever a route is.
+const FACTOR_ID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+const CLOSED_AUTH_ROUTES = [
+	{ path: /^\/token$/, methods: ["POST"], check: "token" },
+	{ path: /^\/otp$/, methods: ["POST"], check: "otp" },
+	{ path: /^\/verify$/, methods: ["POST"] },
+	{ path: /^\/recover$/, methods: ["POST"] },
+	{ path: /^\/logout$/, methods: ["POST"] },
+	{ path: /^\/user$/, methods: ["GET", "HEAD"] },
+	{ path: /^\/settings$/, methods: ["GET", "HEAD"] },
+	{ path: /^\/health$/, methods: ["GET", "HEAD"] },
+	{ path: /^\/factors$/, methods: ["POST"] },
+	{ path: new RegExp(`^/factors/${FACTOR_ID}/(?:challenge|verify)$`), methods: ["POST"] },
+	// Operator opt-ins, mirroring what /runtime-config.js advertises.
+	{ path: /^\/authorize$/, methods: ["GET", "HEAD"], check: "azure" },
+	{ path: /^\/sso$/, methods: ["POST"], check: "saml" },
+];
+// Existing users only ever need these grants (PKCE completes a flow that was
+// already authorised above). id_token and anything else can create users.
+const CLOSED_TOKEN_GRANTS = new Set(["password", "refresh_token", "pkce"]);
+const AUTH_PREFIX = "/auth/v1";
+
+/**
+ * Canonical form of an /auth/v1 path for allowlist matching and forwarding:
+ * percent-decoded once, lower-cased, duplicate and trailing slashes collapsed.
+ * Returns null for anything ambiguous (bad or double encoding, dot segments,
+ * backslashes, matrix parameters, control characters).
+ */
+function canonicalAuthPath(pathname) {
+	let decoded;
+	try { decoded = decodeURIComponent(pathname); } catch { return null; }
+	if (/[\\%;\u0000-\u001f\u007f]/.test(decoded)) return null;
+	const segments = decoded.toLowerCase().split("/").filter(Boolean);
+	if (segments.some((segment) => segment === "." || segment === "..")) return null;
+	return `/${segments.join("/")}`;
+}
+
+/**
+ * Whether a request path could reach GoTrue once the upstream normalises it:
+ * case, duplicate slashes and percent-encoded separators (`/AUTH/v1`,
+ * `//auth/v1`, `/auth%2Fv1`) all route to the closed-mode gate, which then
+ * refuses anything that is not canonical and allowlisted.
+ */
+function looksLikeAuthPath(pathname) {
+	let decoded = pathname;
+	try { decoded = decodeURIComponent(pathname); } catch { /* the raw path is still tested */ }
+	return [pathname, decoded].some((candidate) => /^[\\/]*auth[\\/]+v1(?:[\\/;%]|$)/i.test(candidate));
+}
+
+function jsonContentType(request) {
+	return /^application\/json(?:\s*;|$)/i.test(request.headers.get("content-type") ?? "");
+}
+
+function samlConfigured(env) {
+	try {
+		return Object.keys(parseSamlRuntimeConfig({ providers: env.AIDR_SAML_PROVIDERS, providerId: env.AIDR_SAML_PROVIDER_ID, domain: env.AIDR_SAML_DOMAIN })).length > 0;
+	} catch { return false; }
+}
+
+/**
+ * Closed-mode gate for /auth/v1. Returns { response } to refuse, or
+ * { path, body } with the canonical path to forward and, when the body had to
+ * be inspected, the buffered bytes to re-send.
+ */
+async function closedAuthGate(request, incoming, env) {
+	const refuse = { response: jsonError(403, "signup_closed", request) };
+	const canonical = canonicalAuthPath(incoming.pathname);
+	if (!canonical || !canonical.startsWith(`${AUTH_PREFIX}/`)) return refuse;
+	const route = canonical.slice(AUTH_PREFIX.length);
+	const entry = CLOSED_AUTH_ROUTES.find((candidate) => candidate.path.test(route));
+	if (!entry) return refuse;
+	if (request.method !== "OPTIONS" && !entry.methods.includes(request.method)) return refuse;
+	const params = incoming.searchParams;
+	if (entry.check === "azure") {
+		const providers = params.getAll("provider");
+		if (env.AIDR_ENABLE_AZURE_AUTH !== "true" || providers.length !== 1 || providers[0] !== "azure") return refuse;
+	}
+	if (entry.check === "saml" && !samlConfigured(env)) return refuse;
+	if (request.method === "OPTIONS") return { path: canonical };
+	if (entry.check === "token") {
+		// GoTrue reads grant_type with FormValue, where a form-encoded body would
+		// override the query string, so the body must be JSON and the query must
+		// be exactly one grant_type.
+		const grants = params.getAll("grant_type");
+		if ([...params.keys()].some((key) => key !== "grant_type") || grants.length !== 1 || !CLOSED_TOKEN_GRANTS.has(grants[0])) return refuse;
+		if (!jsonContentType(request)) return refuse;
+	}
+	if (entry.check === "otp") {
+		if (!jsonContentType(request)) return refuse;
+		const bytes = await boundedBody(request, MAX_AUTH_BODY);
+		if (!bytes) return { response: jsonError(413, "request_too_large", request) };
+		let payload;
+		try { payload = JSON.parse(new TextDecoder().decode(bytes)); }
+		catch { return refuse; }
+		if (!payload || typeof payload !== "object" || Array.isArray(payload) || payload.create_user !== false) return refuse;
+		// Go's JSON decoder matches keys case-insensitively, so a later
+		// "Create_User": true would win upstream; allow only the exact key.
+		if (Object.keys(payload).some((key) => key.toLowerCase() === "create_user" && key !== "create_user")) return refuse;
+		return { path: canonical, body: bytes };
+	}
+	return { path: canonical };
+}
+
+async function proxy(request, config, fetcher, env) {
 	const incoming = new URL(request.url);
 	let body = request.body;
-	if (config.signupMode === "closed" && request.method === "POST") {
-		let authPath = incoming.pathname;
-		try { authPath = decodeURIComponent(authPath); } catch { /* Leave malformed paths to the upstream router. */ }
-		authPath = authPath.replace(/\/+$/, "");
-		if (authPath === "/auth/v1/signup") return jsonError(403, "signup_closed", request);
-		if (authPath === "/auth/v1/otp") {
-			const contentType = request.headers.get("content-type") ?? "";
-			if (!/^application\/json(?:\s*;|$)/i.test(contentType)) return jsonError(403, "signup_closed", request);
-			const bytes = await boundedBody(request, MAX_AUTH_BODY);
-			if (!bytes) return jsonError(413, "request_too_large", request);
-			let payload;
-			try { payload = JSON.parse(new TextDecoder().decode(bytes)); }
-			catch { return jsonError(403, "signup_closed", request); }
-			if (!payload || payload.create_user !== false) return jsonError(403, "signup_closed", request);
-			body = bytes;
-		}
+	let upstreamPath = incoming.pathname;
+	if (config.signupMode === "closed" && looksLikeAuthPath(incoming.pathname)) {
+		const gate = await closedAuthGate(request, incoming, env);
+		if (gate.response) return gate.response;
+		upstreamPath = gate.path; // Forward exactly the path that was checked.
+		if (gate.body) body = gate.body;
 	}
 	const deviceStart = incoming.pathname === DEVICE_START;
 	const headers = forwardHeaders(request);
@@ -288,7 +384,7 @@ async function proxy(request, config, fetcher) {
 		const signature = await signedHeaders(request, config, "waitlist-signup:v1");
 		if (signature) for (const [name, value] of Object.entries(signature)) headers.set(name, value);
 	}
-	const upstream = `${config.provider}${incoming.pathname}${incoming.search}`;
+	const upstream = `${config.provider}${upstreamPath}${incoming.search}`;
 	let response;
 	try {
 		response = await fetcher(upstream, { method: request.method, headers, body: ["GET", "HEAD"].includes(request.method) ? undefined : body, redirect: "manual", duplex: "half" });
@@ -353,7 +449,7 @@ export async function handle(request, env, fetcher = fetch) {
 			headers: { "content-type": "application/javascript; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" },
 		});
 	}
-	return proxy(request, config, fetcher);
+	return proxy(request, config, fetcher, env);
 }
 
 // Workers supplies an execution context as the third argument. Keep it out of
