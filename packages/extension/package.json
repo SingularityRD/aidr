@@ -33,6 +33,7 @@
     "dist/aidr-sbom.cdx.json",
     "dist/aidr-sbom.cdx.json.sha256",
     "dist/resources/**",
+    "dist/vendor/**",
     "aidr-icon.png",
     "package.json",
     "README.md",
@@ -110,6 +111,7 @@
     "@types/vscode": "1.97.0",
     "@vscode/test-electron": "^2.5.2",
     "esbuild": "^0.28.2",
+    "koffi": "^2.15.2",
     "typescript": "^5.9.0",
     "vitest": "^4.1.11"
   }

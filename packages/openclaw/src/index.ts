@@ -14,11 +14,14 @@
 import {
 	ApprovalStore,
 	formatInitFailureMessage,
+	IN_PROCESS_TOOL_CALL_DEADLINE,
 	initFailureCode,
 	initSentry,
 	nullLogger,
+	resolveHookDeadlineMs,
 	scanProvisionedOutput,
 	verifyArtifactIntegrityAndLog,
+	withHookDeadline,
 } from "@singularityrd/aidr-core";
 import { createAllowlistAddTool, createAllowlistRemoveTool } from "./allowlist-tools.js";
 import { getBundledDataDirs } from "./bundled-dirs.js";
@@ -213,7 +216,10 @@ function integrityGatedToolCall(
 	integrityReady: Promise<unknown>,
 	handler: (event: ToolCallEvent, ctx?: ToolCallContext) => Promise<BlockResult | undefined>,
 ) {
-	return async (event: ToolCallEvent, ctx?: ToolCallContext): Promise<BlockResult | undefined> => {
+	const gated = async (
+		event: ToolCallEvent,
+		ctx?: ToolCallContext,
+	): Promise<BlockResult | undefined> => {
 		try {
 			await integrityReady;
 		} catch (error) {
@@ -221,6 +227,19 @@ function integrityGatedToolCall(
 		}
 		return await handler(event, ctx);
 	};
+	// In-process, so there is no process to exit: a call whose inspection (or
+	// the integrity wait) stalls past the deadline is blocked rather than held
+	// open (`AIDR_TOOL_CALL_DEADLINE_MS`, default 20 s).
+	return (event: ToolCallEvent, ctx?: ToolCallContext): Promise<BlockResult | undefined> =>
+		withHookDeadline(
+			gated(event, ctx),
+			resolveHookDeadlineMs(IN_PROCESS_TOOL_CALL_DEADLINE, process.env),
+			() => ({
+				block: true,
+				blockReason:
+					"Singularity AIDR could not finish evaluating this tool call in time; execution was denied.",
+			}),
+		);
 }
 
 /**

@@ -6,10 +6,12 @@
  */
 
 import {
+	exitAfterStdoutFlush,
 	type Logger,
 	recordToolOutcome,
 	recordToolOutputCanaries,
 	recordToolOutputFlow,
+	resolveHookDeadlineMs,
 	scanProvisionedOutput,
 	toolResultReportsFailure,
 	verifyArtifactIntegrityAndLog,
@@ -17,7 +19,7 @@ import {
 import pino from "pino";
 import { consumePendingApproval } from "./approval-tracker.js";
 import { approvedActionContext } from "./format.js";
-import { MAX_POST_TOOL_INPUT_BYTES, readBoundedJson } from "./hook-input.js";
+import { MAX_POST_TOOL_INPUT_BYTES, readStdinJson } from "./hook-input.js";
 import {
 	postToolInspectionUnavailable,
 	scanCachedProvisionedToolResponse,
@@ -43,9 +45,9 @@ async function main(): Promise<void> {
 		logger,
 	});
 
-	let input: ReturnType<typeof readBoundedJson>;
+	let input: Awaited<ReturnType<typeof readStdinJson>>;
 	try {
-		input = readBoundedJson();
+		input = await readStdinJson();
 	} catch {
 		reportUnavailableCoverage("Could not read PostToolUse input.");
 		return;
@@ -158,9 +160,38 @@ async function main(): Promise<void> {
 	}
 	let response: Record<string, unknown> = inspection ?? {};
 	if (approvalContext) response = appendPostToolContext(response, approvalContext);
+	// The watchdog already answered; never append a second response.
+	if (answered) return;
 	process.stdout.write(`${JSON.stringify(response)}\n`);
 }
 
-main().catch(() => {
-	reportUnavailableCoverage("Failed while processing PostToolUse input.");
-});
+/**
+ * Watchdog below the host's 5 s PostToolUse timeout: an inspection that has
+ * not answered by then reports unavailable coverage (never a clean result)
+ * instead of being killed silently. `AIDR_POST_TOOL_USE_DEADLINE_MS` overrides it.
+ */
+let answered = false;
+const watchdog = setTimeout(
+	() => {
+		if (answered) return;
+		answered = true;
+		reportUnavailableCoverage("PostToolUse inspection did not finish in time.");
+		exitAfterStdoutFlush(0);
+	},
+	resolveHookDeadlineMs(
+		{ envVar: "AIDR_POST_TOOL_USE_DEADLINE_MS", hostTimeoutMs: 5_000, defaultMs: 4_000 },
+		process.env,
+	),
+);
+
+main()
+	.catch(() => {
+		if (!answered) reportUnavailableCoverage("Failed while processing PostToolUse input.");
+	})
+	.finally(() => {
+		if (answered) return;
+		answered = true;
+		clearTimeout(watchdog);
+		// Exit once the answer is flushed; pending handles must not outlive it.
+		exitAfterStdoutFlush(0);
+	});

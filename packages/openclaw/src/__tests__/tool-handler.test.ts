@@ -298,3 +298,71 @@ describe("createToolCallHandler", () => {
 		expect(Object.keys(context)).not.toContain("reputationFeed");
 	});
 });
+
+describe("createToolCallHandler input shape, malformed commands and MCP identity", () => {
+	function handler() {
+		vi.clearAllMocks();
+		return createToolCallHandler(new ApprovalStore(), nullLogger, "/threats", "/allowlists");
+	}
+
+	it.each([
+		["string params", { toolName: "exec", params: "rm -rf /" }],
+		["array params", { toolName: "exec", params: ["rm"] }],
+		["null params", { toolName: "exec", params: null }],
+		["missing params", { toolName: "exec" }],
+		["missing tool name", { params: {} }],
+		["null event", null],
+	])("blocks a malformed call (%s) without evaluating it", async (_label, event) => {
+		const handle = handler();
+		const { guardToolCall } = await import("@singularityrd/aidr-core");
+		const result = await handle(event as never);
+		expect(result).toEqual({ block: true, blockReason: expect.stringContaining("identify") });
+		expect(guardToolCall).not.toHaveBeenCalled();
+	});
+
+	it.each(["rm -rf /tmp/x\u0000", "echo \ud800", "echo �"])(
+		"blocks an exec command with malformed text %j",
+		async (command) => {
+			const handle = handler();
+			const { guardToolCall } = await import("@singularityrd/aidr-core");
+			const result = await handle({ toolName: "exec", params: { command } });
+			expect(result).toEqual({ block: true, blockReason: expect.stringContaining("malformed") });
+			expect(guardToolCall).not.toHaveBeenCalled();
+		},
+	);
+
+	it("extracts an argv exec command instead of dropping it", async () => {
+		const handle = handler();
+		const { guardToolCall } = await import("@singularityrd/aidr-core");
+		await handle({ toolName: "exec", params: { command: ["curl", "https://example.test/x"] } });
+		const request = (guardToolCall as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0] as {
+			artifacts: { type: string; value: string }[];
+		};
+		expect(request.artifacts.some((artifact) => artifact.value.includes("example.test"))).toBe(
+			true,
+		);
+	});
+
+	it("evaluates a bundle MCP tool under the canonical mcp__ name", async () => {
+		const handle = handler();
+		const { guardToolCall } = await import("@singularityrd/aidr-core");
+		const params = { query: "x" };
+		await handle({ toolName: "vigil-harbor__memory_search", params });
+		expect(guardToolCall).toHaveBeenLastCalledWith(
+			expect.objectContaining({ toolName: "mcp__vigil-harbor__memory_search", toolInput: params }),
+			expect.anything(),
+			expect.anything(),
+		);
+	});
+
+	it("keeps built-in tool names unchanged", async () => {
+		const handle = handler();
+		const { guardToolCall } = await import("@singularityrd/aidr-core");
+		await handle({ toolName: "web_fetch", params: { url: "https://example.test" } });
+		expect(guardToolCall).toHaveBeenLastCalledWith(
+			expect.objectContaining({ toolName: "web_fetch" }),
+			expect.anything(),
+			expect.anything(),
+		);
+	});
+});

@@ -2,6 +2,7 @@ import * as esbuild from "esbuild";
 import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { stageWindowsKoffi } from "../../scripts/stage-windows-koffi.mjs";
 
 /**
  * Resolve paths against this file, not the process cwd.
@@ -112,5 +113,8 @@ await esbuild.build({
 
 stripSourceMappingUrl(join(packageRoot, "dist", "index.cjs"));
 removeReleaseSourceMaps(join(packageRoot, "dist"));
+// The plugin loads the native AMSI addon from dist/vendor/koffi (covered by the
+// dist integrity manifest) instead of the PowerShell fallback.
+stageWindowsKoffi(packageRoot, { isRelease });
 
 console.log("Build complete.");

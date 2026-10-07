@@ -1,7 +1,9 @@
 import { EventEmitter } from "node:events";
 import { readFileSync } from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import { runInNewContext } from "node:vm";
+import { isValidUtf8 } from "@singularityrd/aidr-core";
 import { transformSync } from "esbuild";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as outputInspection from "../output-inspection.js";
@@ -53,7 +55,9 @@ async function runHook(
 	const module = { exports: {} as { runCli?: (args: string[]) => Promise<void> } };
 	const modules: Record<string, unknown> = {
 		"node:path": path,
+		"node:os": os,
 		"@singularityrd/aidr-core": {
+			isValidUtf8,
 			createHostObservation: () => null,
 			recordHostObservation: vi.fn(),
 			verifyArtifactIntegrityAndLog: vi.fn().mockResolvedValue({ status: "skipped" }),

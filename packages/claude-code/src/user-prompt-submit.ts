@@ -42,6 +42,7 @@ import {
 	CANARY_PROMPT_BLOCK_MESSAGE,
 	checkPromptForCanaries,
 	DEFAULT_PROMPT_PROTECTION,
+	exitAfterStdoutFlush,
 	initSentry,
 	type Logger,
 	loadConfig,
@@ -57,7 +58,7 @@ import {
 } from "@singularityrd/aidr-core";
 import pino from "pino";
 import { loadProvisionedDetectorContext } from "./detector-provisioning.js";
-import { readBoundedJson, resolveUserPromptSubmitDeadlineMs } from "./hook-input.js";
+import { readStdinJson, resolveUserPromptSubmitDeadlineMs } from "./hook-input.js";
 
 /** Measured from module start: the host's timeout runs from process launch. */
 const deadlineAt = Date.now() + resolveUserPromptSubmitDeadlineMs(process.env);
@@ -178,8 +179,8 @@ function auditVerdict(result: PromptProtectionResult): Verdict {
 	};
 }
 
-function readPrompt(): { sessionId: string; prompt: string } | null {
-	const input = readBoundedJson<unknown>(0, MAX_PROMPT_HOOK_INPUT_BYTES);
+async function readPrompt(): Promise<{ sessionId: string; prompt: string } | null> {
+	const input = await readStdinJson<unknown>(MAX_PROMPT_HOOK_INPUT_BYTES);
 	if (input.status !== "parsed") return null;
 	const value = input.value;
 	if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
@@ -218,7 +219,7 @@ async function main(): Promise<void> {
 		const policy = config.prompt_protection ?? DEFAULT_PROMPT_PROTECTION;
 		fallback.secretsMode = policy.secrets;
 
-		const input = readPrompt();
+		const input = await readPrompt();
 		if (!input) {
 			writeInspectionFailure();
 			return;
@@ -297,4 +298,7 @@ main()
 	})
 	.finally(() => {
 		clearTimeout(deadline);
+		// The answer is written: exit once it is flushed so pending handles
+		// cannot keep the hook alive until the host kills it.
+		exitAfterStdoutFlush(0);
 	});

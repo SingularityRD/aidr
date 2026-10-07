@@ -53,12 +53,15 @@ async function runHook(toolResponse: unknown) {
 			recordToolOutputCanaries: vi.fn().mockResolvedValue(undefined),
 			recordToolOutputFlow: vi.fn().mockResolvedValue(undefined),
 			toolResultReportsFailure: () => false,
+			// The hook exits after answering; the sandbox has no process to end.
+			exitAfterStdoutFlush: vi.fn(),
+			resolveHookDeadlineMs: () => 4_000,
 		},
 		pino,
 		"./approval-tracker.js": { consumePendingApproval: async () => null },
 		"./format.js": { artifactTypeLabel: (value: string) => value },
 		"./hook-input.js": {
-			readBoundedJson: () => ({
+			readStdinJson: async () => ({
 				status: "parsed",
 				value: { tool_use_id: "tool-1", session_id: "session-1", tool_response: toolResponse },
 			}),
@@ -83,7 +86,9 @@ async function runHook(toolResponse: unknown) {
 				if (!Object.hasOwn(modules, name)) throw new Error(`Unexpected hook import: ${name}`);
 				return modules[name];
 			},
-			process: { stdout: { write: (chunk: string) => done(JSON.parse(chunk)) } },
+			process: { env: {}, stdout: { write: (chunk: string) => done(JSON.parse(chunk)) } },
+			setTimeout,
+			clearTimeout,
 			__dirname: "/test",
 		});
 	});

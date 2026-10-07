@@ -134,19 +134,19 @@ describe("Cursor output inspection", () => {
 		expect(response.additional_context).toContain("coverage is unavailable, not clean");
 	});
 
-	it("exits with the host blocking code without fabricating an output replacement for oversized input", async () => {
+	it("exits 0 without fabricating an output replacement for oversized input", async () => {
 		const { response, code } = await runHook("cursor", {
 			hook_event_name: "postToolUse",
 			tool_name: "MCP:fetch",
 			tool_output: "a".repeat(1024 * 1024),
 		});
 
-		expect(code).toBe(2);
+		expect(code).toBe(0);
 		expect(response.decision).toBeUndefined();
 		expect(response.permission).toBeUndefined();
 		expect(response.updated_mcp_tool_output).toBeUndefined();
-		expect(response.additional_context).toContain("event could not be identified");
-		expect(response.additional_context).toContain("no event-specific enforcement result");
+		expect(response.additional_context).toContain("processing limit");
+		expect(response.additional_context).toContain("not classified as clean");
 		expect(response.additional_context).toContain("original may remain available");
 	});
 
@@ -170,15 +170,20 @@ describe("Cursor output inspection", () => {
 
 describe("VS Code output inspection", () => {
 	it.each(["cursor", "vscode"] as const)(
-		"blocks oversized %s pre-execution payloads through exit code 2",
+		"denies oversized %s pre-execution payloads with a verdict and exit 0",
 		async (mode) => {
 			const { response, code } = await runHook(mode, {
 				hook_event_name: mode === "cursor" ? "preToolUse" : "PreToolUse",
 				tool_name: "Write",
 				tool_input: { file_path: "notes.txt", content: "a".repeat(1024 * 1024) },
 			});
-			expect(code).toBe(2);
+			expect(code).toBe(0);
 			expect(JSON.stringify(response)).toContain("processing limit");
+			expect(
+				mode === "cursor"
+					? response.permission
+					: (response.hookSpecificOutput as Record<string, unknown>).permissionDecision,
+			).toBe("deny");
 		},
 	);
 
@@ -259,13 +264,17 @@ describe("VS Code output inspection", () => {
 			tool_response: "a".repeat(1024 * 1024),
 		});
 
+		// The PostToolUse event name is recovered from the payload's edge, so the
+		// answer uses the PostToolUse shape, never a PreToolUse denial.
 		expect(response.decision).toBe("block");
 		expect(response.reason).toContain("hook input exceeds the 1048576-byte processing limit");
-		expect(response.reason).toContain("event could not be identified");
-		expect(response.reason).toContain("tool may already have completed");
+		expect(response.reason).toContain("tool already completed");
 		expect(response.reason).toContain("original may remain available");
 		expect(response.reason).toContain("not classified as clean");
-		expect(response.hookSpecificOutput).toBeUndefined();
+		expect(response.hookSpecificOutput).toEqual({
+			hookEventName: "PostToolUse",
+			additionalContext: response.reason,
+		});
 	});
 
 	it("allows a fully inspected clean response", async () => {

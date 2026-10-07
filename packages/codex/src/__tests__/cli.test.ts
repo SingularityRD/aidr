@@ -19,7 +19,7 @@
  * that leg is host-side and external to this repository.
  */
 
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { closeSync, existsSync, mkdtempSync, openSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -432,4 +432,123 @@ describe("Codex hook entry point (built bundle)", () => {
 			expect(evidence.health.reasonCodes).toContain("host_hook_failure_is_fail_open");
 		}
 	});
+});
+
+/**
+ * Run the hook with a stdin the host never closes, so the call can never be
+ * evaluated. Codex drops the output of a hook that outlives its `timeout`
+ * (fail-open), so the watchdog must block and exit first.
+ */
+function runHookWithOpenStdin(env: NodeJS.ProcessEnv): Promise<HookRun & { elapsedMs: number }> {
+	return new Promise((resolveRun, rejectRun) => {
+		const started = Date.now();
+		const child = spawn(process.execPath, [BUNDLE], {
+			stdio: ["pipe", "pipe", "pipe"],
+			env: hookEnv(env),
+		});
+		let stdout = "";
+		let stderr = "";
+		child.stdout.on("data", (chunk) => {
+			stdout += String(chunk);
+		});
+		child.stderr.on("data", (chunk) => {
+			stderr += String(chunk);
+		});
+		child.stdin.on("error", () => {});
+		child.stdin.write('{"hook_event_name":"PreToolUse",');
+		const guard = setTimeout(() => child.kill(), 15_000);
+		child.on("error", rejectRun);
+		child.on("close", (status) => {
+			clearTimeout(guard);
+			child.stdin.destroy();
+			resolveRun({ status, stdout, stderr, elapsedMs: Date.now() - started });
+		});
+	});
+}
+
+describe("Codex hook deadline and input hygiene (built bundle)", () => {
+	it("blocks and exits before the host timeout when stdin never closes", async () => {
+		const run = await runHookWithOpenStdin({ AIDR_CODEX_HOOK_DEADLINE_MS: "1500" });
+		expect(run.elapsedMs).toBeLessThan(9_000);
+		expectDeny(run);
+		expect(run.status).toBe(2);
+		expect(run.stderr.trim().length).toBeGreaterThan(0);
+		expect(run.stdout.trim().split("\n")).toHaveLength(1);
+		if (releaseBundle) return;
+		expect(parseWire(run).hookSpecificOutput?.permissionDecisionReason).toContain("in time");
+	}, 20_000);
+
+	it("exits promptly after an allow (empty stdout)", () => {
+		if (releaseBundle) return;
+		const started = Date.now();
+		const run = runHook(
+			JSON.stringify({
+				hook_event_name: "PreToolUse",
+				tool_name: "Bash",
+				tool_input: { command: "git log -n 2" },
+			}),
+		);
+		expect(run.status).toBe(0);
+		expect(run.stdout.trim()).toBe("");
+		expect(Date.now() - started).toBeLessThan(5_000);
+	});
+
+	it("blocks hook input that is not valid UTF-8", () => {
+		const run = toRun(
+			spawnSync(process.execPath, [BUNDLE], {
+				input: Buffer.concat([
+					Buffer.from(
+						'{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"ls ',
+					),
+					Buffer.from([0xff, 0xfe]),
+					Buffer.from('"}}'),
+				]),
+				encoding: "utf8",
+				env: hookEnv(),
+			}),
+		);
+		expectDeny(run);
+		expect(run.status).toBe(2);
+	});
+
+	it.each(["rm -rf /tmp/x\u0000", "echo \ud800", "echo �"])(
+		"denies a shell command with malformed text %j",
+		(command) => {
+			for (const toolName of ["Bash", "shell"]) {
+				const run = runHook(
+					JSON.stringify({
+						hook_event_name: "PreToolUse",
+						tool_name: toolName,
+						tool_input: { command },
+					}),
+				);
+				expectDeny(run);
+			}
+		},
+	);
+
+	it("inspects a legacy argv shell command instead of treating it as empty", () => {
+		const run = runHook(
+			JSON.stringify({
+				hook_event_name: "PreToolUse",
+				tool_name: "local_shell",
+				tool_input: { command: ["bash", "-lc", "rm -rf / --no-preserve-root"] },
+			}),
+		);
+		expectDeny(run);
+	});
+
+	it.each([[["bash", "-lc", 42]], [42], [{ cmd: "ls" }]])(
+		"denies a non-string, non-argv shell command %j",
+		(command) => {
+			const run = runHook(
+				JSON.stringify({
+					hook_event_name: "PreToolUse",
+					tool_name: "shell",
+					tool_input: { command },
+				}),
+			);
+			expectDeny(run);
+		},
+	);
 });

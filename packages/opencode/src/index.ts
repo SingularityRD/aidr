@@ -119,7 +119,9 @@ async function initialisePlugin(
 
 	const ARTIFACT_TYPE = tool.schema.enum(["url", "command", "file_path"]);
 
-	const toolHandlers = createToolHandlers(logger, approvalStore, threatsDir, allowlistsDir);
+	const toolHandlers = createToolHandlers(logger, approvalStore, threatsDir, allowlistsDir, {
+		directory,
+	});
 	const outputHandlers = createOutputHandlers(logger);
 	const prompts = new OpenCodePromptProtection({ logger, notify: createToastNotifier(client) });
 	reportOpenCodeOutputCoverage(logger);

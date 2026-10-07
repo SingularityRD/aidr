@@ -1,6 +1,12 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { runInNewContext } from "node:vm";
+import {
+	createHookResponder,
+	type HookResponderOptions,
+	isWellFormedToolCall,
+	malformedShellCommandReason,
+} from "@singularityrd/aidr-core";
 import { transformSync } from "esbuild";
 import { describe, expect, it, vi } from "vitest";
 import { MAX_PRE_TOOL_INPUT_BYTES, resolvePreToolUseDeadlineMs } from "../hook-input.js";
@@ -75,6 +81,21 @@ async function runHook(
 			dashboardOnly: false,
 		})),
 		formatDashboardApprovalNotice: () => null,
+		// Real implementations, wired to the sandbox's stdout and exit so the
+		// single-answer/exit-after-flush behaviour is exercised as shipped.
+		createHookResponder: (responderOptions: HookResponderOptions) =>
+			createHookResponder({
+				...responderOptions,
+				io: {
+					writeStdout: (text, done) => {
+						output.push(text);
+						done();
+					},
+					exit,
+				},
+			}),
+		isWellFormedToolCall,
+		malformedShellCommandReason,
 		initSentry: vi.fn(),
 		verifyArtifactIntegrityAndLog: vi.fn().mockResolvedValue({ status: "skipped" }),
 	};
@@ -82,7 +103,7 @@ async function runHook(
 	const modules: Record<string, unknown> = {
 		"./hook-input.js": {
 			MAX_PRE_TOOL_INPUT_BYTES,
-			readBoundedJson,
+			readStdinJson: async (maxBytes: number) => readBoundedJson(0, maxBytes),
 			resolvePreToolUseDeadlineMs,
 		},
 		"@singularityrd/aidr-core": core,
@@ -322,14 +343,64 @@ describe("PreToolUse bounded input and internal deadline", () => {
 		expect(exit).toHaveBeenCalledWith(0);
 	});
 
-	it("does not fire the deadline after a timely verdict", async () => {
+	it("exits after a timely verdict and never fires the deadline", async () => {
+		// Pending sockets from the evaluation must not keep the hook alive past
+		// the host timeout: the hook exits once its answer is flushed.
 		const input = JSON.stringify({ tool_name: "Bash", tool_input: { command: "ls" } });
 		const { output, exit } = await runHook(input, "allow", {
 			env: { AIDR_PRE_TOOL_USE_DEADLINE_MS: "100" },
 		});
 		await new Promise((resolve) => setTimeout(resolve, 200));
 		expect(output).toEqual(["{}\n"]);
-		expect(exit).not.toHaveBeenCalled();
+		expect(exit).toHaveBeenCalledOnce();
+		expect(exit).toHaveBeenCalledWith(0);
+	});
+
+	it("exits after a deny verdict too", async () => {
+		const input = JSON.stringify({ tool_name: "Bash", tool_input: { command: "ls" } });
+		const { response, exit } = await runHook(input, "deny");
+		expect(response.hookSpecificOutput).toMatchObject({ permissionDecision: "deny" });
+		expect(exit).toHaveBeenCalledWith(0);
+	});
+});
+
+describe("PreToolUse input shape and malformed commands", () => {
+	it.each([
+		['{"tool_name":"Bash"}', "missing tool_input"],
+		['{"tool_name":"Bash","tool_input":null}', "null tool_input"],
+		['{"tool_name":"Bash","tool_input":[]}', "array tool_input"],
+		['{"tool_name":"","tool_input":{}}', "empty tool name"],
+	])("denies %s (%s) without evaluating", async (input) => {
+		const { response, evaluate, exit } = await runHook(input, "allow");
+		expect(response.hookSpecificOutput).toMatchObject({ permissionDecision: "deny" });
+		expect(evaluate).not.toHaveBeenCalled();
+		expect(exit).toHaveBeenCalledWith(0);
+	});
+
+	it.each([
+		["NUL", "rm -rf /tmp/x\u0000 && echo ok"],
+		["unpaired surrogate", "echo \ud800"],
+		["replacement character (invalid UTF-8)", "echo �"],
+	])("denies a Bash command containing %s instead of asking", async (_label, command) => {
+		// The evaluator would have returned `ask`; the malformed text must deny first.
+		const { response, evaluate } = await runHook(
+			JSON.stringify({ tool_name: "Bash", tool_input: { command } }),
+			"ask",
+		);
+		expect(response.hookSpecificOutput).toMatchObject({
+			permissionDecision: "deny",
+			permissionDecisionReason: "Singularity AIDR malformed command",
+		});
+		expect(evaluate).not.toHaveBeenCalled();
+	});
+
+	it("denies a non-string Bash command", async () => {
+		const { response, evaluate } = await runHook(
+			JSON.stringify({ tool_name: "Bash", tool_input: { command: 42 } }),
+			"allow",
+		);
+		expect(response.hookSpecificOutput).toMatchObject({ permissionDecision: "deny" });
+		expect(evaluate).not.toHaveBeenCalled();
 	});
 });
 

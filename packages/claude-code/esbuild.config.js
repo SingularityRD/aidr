@@ -1,7 +1,8 @@
 import * as esbuild from "esbuild";
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { createRequire } from "node:module";
+import { copyFileSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { stageWindowsKoffi } from "../../scripts/stage-windows-koffi.mjs";
 
 const pkg = JSON.parse(readFileSync("../core/package.json", "utf-8"));
 const isRelease =
@@ -79,38 +80,6 @@ const outputs = [
 	"dist/user-prompt-submit.cjs",
 ];
 
-/**
- * The customer kit and endpoint installer intentionally omit node_modules.
- * Keep the small, platform-specific native AMSI dependency inside dist so the
- * release manifest and installer digest cover the exact bytes the hook loads.
- * Do not copy arbitrary dependency trees or follow links into the kit.
- */
-function stageWindowsKoffi() {
-	const require = createRequire(import.meta.url);
-	let source;
-	try {
-		source = dirname(require.resolve("koffi"));
-	} catch (error) {
-		if (isRelease || process.platform === "win32") {
-			throw new Error("Windows AMSI release requires the pinned koffi package", { cause: error });
-		}
-		return;
-	}
-	const nativeFiles = ["win32_x64", "win32_arm64", "win32_ia32"].map((arch) =>
-		join("build", "koffi", arch, "koffi.node"),
-	);
-	const shipped = ["index.js", "package.json", "LICENSE.txt", ...nativeFiles];
-	const vendor = join("dist", "vendor", "koffi");
-	for (const relative of shipped) {
-		const from = join(source, relative);
-		if (!existsSync(from) || !statSync(from).isFile()) {
-			throw new Error(`Windows AMSI release dependency is incomplete: koffi/${relative.replaceAll("\\", "/")}`);
-		}
-		const to = join(vendor, relative);
-		mkdirSync(dirname(to), { recursive: true });
-		copyFileSync(from, to);
-	}
-}
 
 await Promise.all([
 	esbuild.build({ ...shared, entryPoints: ["src/pre-tool-use.ts"], outfile: outputs[0] }),
@@ -122,7 +91,9 @@ await Promise.all([
 	esbuild.build({ ...shared, entryPoints: ["src/user-prompt-submit.ts"], outfile: outputs[6] }),
 ]);
 
-stageWindowsKoffi();
+// The customer kit and endpoint installer intentionally omit node_modules:
+// keep the native AMSI addon inside the manifest-covered dist.
+stageWindowsKoffi(dirname(fileURLToPath(import.meta.url)), { isRelease });
 // Keep the fixed native adapter inside the same integrity-verified connector.
 mkdirSync(join("dist", "native"), { recursive: true });
 for (const script of ["Invoke-AidrResponseAction.ps1", "Common.ps1"]) {

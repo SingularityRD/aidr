@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const integrity = vi.hoisted(() => ({ fail: true }));
+const integrity = vi.hoisted(() => ({ fail: true, hang: false }));
 
 vi.mock("@singularityrd/aidr-core", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("@singularityrd/aidr-core")>();
@@ -9,6 +9,7 @@ vi.mock("@singularityrd/aidr-core", async (importOriginal) => {
 		...actual,
 		initSentry: vi.fn(),
 		verifyArtifactIntegrityAndLog: vi.fn(async (params: { artifactId: string }) => {
+			if (integrity.hang) await new Promise(() => {});
 			if (integrity.fail) {
 				throw new actual.ArtifactIntegrityError(params.artifactId, { status: "hash_mismatch" });
 			}
@@ -52,6 +53,21 @@ async function flush(): Promise<void> {
 describe("OpenClaw integrity failure", () => {
 	afterEach(() => {
 		integrity.fail = true;
+		integrity.hang = false;
+		vi.unstubAllEnvs();
+	});
+
+	it("blocks a tool call whose gate does not finish before the deadline", async () => {
+		integrity.hang = true;
+		vi.stubEnv("AIDR_TOOL_CALL_DEADLINE_MS", "100");
+		const { handlers } = registerPlugin();
+		const started = Date.now();
+		const result = await handlers.get("before_tool_call")?.(
+			{ toolName: "exec", params: { command: "ls" } },
+			{},
+		);
+		expect(Date.now() - started).toBeGreaterThanOrEqual(90);
+		expect(result).toEqual({ block: true, blockReason: expect.stringContaining("in time") });
 	});
 
 	it("does not leave an unhandled rejection when no tool call arrives", async () => {

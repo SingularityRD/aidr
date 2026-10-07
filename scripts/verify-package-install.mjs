@@ -172,6 +172,17 @@ export const RELEASE_PACKAGES = [
 	{
 		key: "packages/extension",
 		display: "aidr-cursor",
+		// The hook runner loads the vendored native AMSI addon (see claude-code).
+		platformAssets: {
+			win32: [
+				"dist/vendor/koffi/index.js",
+				"dist/vendor/koffi/package.json",
+				"dist/vendor/koffi/LICENSE.txt",
+				"dist/vendor/koffi/build/koffi/win32_x64/koffi.node",
+				"dist/vendor/koffi/build/koffi/win32_arm64/koffi.node",
+				"dist/vendor/koffi/build/koffi/win32_ia32/koffi.node",
+			],
+		},
 		runs: [
 			{ id: "hook runner syntax", kind: "syntax", entry: { files: "dist/aidr-hook.cjs" } },
 			{ id: "extension entry syntax", kind: "syntax", entry: { main: true } },
@@ -181,6 +192,17 @@ export const RELEASE_PACKAGES = [
 		key: "packages/openclaw",
 		display: "@singularityrd/aidr-openclaw",
 		lifecycleDependencies: [{ name: "koffi", platforms: ["win32"] }],
+		// The plugin bundle loads the vendored native AMSI addon (see claude-code).
+		platformAssets: {
+			win32: [
+				"dist/vendor/koffi/index.js",
+				"dist/vendor/koffi/package.json",
+				"dist/vendor/koffi/LICENSE.txt",
+				"dist/vendor/koffi/build/koffi/win32_x64/koffi.node",
+				"dist/vendor/koffi/build/koffi/win32_arm64/koffi.node",
+				"dist/vendor/koffi/build/koffi/win32_ia32/koffi.node",
+			],
+		},
 		runs: [
 			{ id: "plugin CJS require", kind: "import", entry: { main: true }, format: "cjs", pluginDefault: true },
 			{ id: "openclaw.plugin.json", kind: "json", entry: { files: "openclaw.plugin.json" } },

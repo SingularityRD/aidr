@@ -75,6 +75,12 @@ async function build() {
 
 	for (const out of outputs) stripSourceMappingUrl(out);
 	removeReleaseSourceMaps("dist");
+
+	// The hook runner loads the native AMSI addon from dist/vendor/koffi; without
+	// it every Windows hook spawned PowerShell for AMSI (~400 ms per call). It is
+	// covered by the dist integrity manifest like every other dist file.
+	const { stageWindowsKoffi } = await import("../../scripts/stage-windows-koffi.mjs");
+	stageWindowsKoffi(__dirname, { isRelease });
 }
 
 build().then(
