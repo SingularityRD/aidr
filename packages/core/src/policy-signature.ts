@@ -41,6 +41,7 @@ type PolicySignatureFailure =
 	| "governance_mismatch"
 	| "not_yet_valid"
 	| "expired"
+	| "tenant_mismatch"
 	| "rollback";
 
 export type PolicySignatureResult =
@@ -151,6 +152,14 @@ export function verifySignedPolicy(input: {
 	now: number;
 	/** Fetch-time anti-rollback check. Omit when re-validating an already accepted policy. */
 	highWater?: PolicyHighWater | null;
+	/**
+	 * The tenant this installation verified through its signed entitlement.
+	 * When given, the signed envelope must carry the same `tenant_id`; a missing
+	 * or different tenant (or an unknown one, `null`) is rejected, so a validly
+	 * signed policy of another tenant can neither apply nor advance the
+	 * rollback high-water mark. Omit only where no tenant binding is available.
+	 */
+	expectedTenantId?: string | null;
 }): PolicySignatureResult {
 	if (input.publicKeysPem.length === 0) return { ok: false, reason: "no_trusted_keys" };
 	const signed = input.body?.policy_signed;
@@ -189,6 +198,11 @@ export function verifySignedPolicy(input: {
 				input.body.governance_sha256 !== envelope.governance_sha256))
 	) {
 		return { ok: false, reason: "governance_mismatch" };
+	}
+	if (input.expectedTenantId !== undefined) {
+		const expected = input.expectedTenantId?.trim().toLowerCase() ?? "";
+		const signedTenant = envelope.tenant_id?.trim().toLowerCase() ?? "";
+		if (!expected || signedTenant !== expected) return { ok: false, reason: "tenant_mismatch" };
 	}
 	const issuedAt = Date.parse(envelope.issued_at);
 	const expiresAt = Date.parse(envelope.expires_at);
