@@ -9,3 +9,10 @@ additional_redirect_urls = [
   "https://aidr-pilot.anill-yagiz.workers.dev/auth/recover",
 ]
 enable_signup = false
+
+# The hosted "Invite user" email template must link to
+#   {{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=invite
+# (source: supabase/templates/invite.html). The default {{ .ConfirmationURL }}
+# ends in an implicit-flow redirect with session tokens in the URL fragment,
+# which the dashboard rejects. Set it in Supabase Dashboard > Auth > Email
+# Templates > Invite user (requires custom SMTP on Free projects).

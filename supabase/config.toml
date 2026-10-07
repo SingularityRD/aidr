@@ -47,6 +47,13 @@ enable_signup = true
 subject = "Reset your AIDR password"
 content_path = "./supabase/templates/recovery.html"
 
+# Invites must use the server-verified, single-use token_hash flow. The default
+# {{ .ConfirmationURL }} template ends in an implicit-flow redirect that puts
+# session tokens in the URL fragment, which the dashboard rejects (login CSRF).
+[auth.email.template.invite]
+subject = "You have been invited to AIDR"
+content_path = "./supabase/templates/invite.html"
+
 [edge_runtime]
 enabled = true
 policy = "oneshot"
