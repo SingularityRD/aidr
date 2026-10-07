@@ -71,9 +71,12 @@ Create a credential:
   "action": "create_token",
   "tenant_id": "<tenant UUID>",
   "label": "Entra production",
+  "directory_id": "entra-production",
   "expires_at": "<optional RFC 3339 timestamp, within 365 days>"
 }
 ```
+
+`directory_id` is required and names the identity directory the credential provisions from (1–128 characters: letters, digits, `.`, `_`, `:`, `-`, starting with a letter or digit). It is stored on the credential, cannot be changed, and is inherited by rotations. A legacy credential issued before this field existed has no directory; bind it by passing `directory_id` on its `rotate_token`.
 
 The `201` response contains `scim_token` once and its `expires_at`. Copy the secret directly into the approved secret manager and configure the SCIM provider with that value; do not save it in project files, evidence, logs, or shell history. The database stores only its SHA-256 hash. Omitting `expires_at` gives a new credential a 90-day lifetime; an explicit expiry must be in the future and within 365 days. Explicit `null` is rejected. Record the expiry and schedule rotation before it; an expired token cannot provision users.
 
@@ -106,6 +109,32 @@ After SCIM has provisioned the provider’s group, bind its exact immutable exte
 IDs are preserved byte-for-byte after validation: whitespace, control characters, display-name substitutions, and unsupported roles are rejected. Updating a mapping replaces the old immutable row transactionally. If that would take over a manual team membership, the operation fails with `409 mapping_conflicts_with_manual_membership`; resolve the existing manual membership explicitly first. Removing a mapping uses `action: "remove_group_mapping"` with the same tenant and exact ID. Existing AIDR-managed access is then reconciled immediately; any remaining mapped group can still grant the user its own role.
 
 All successful token operations and mapping changes are recorded in `admin_audit_logs` with the tenant and actor. Mapping changes that reconcile existing groups and their audit events are in the same database transaction.
+
+## Directory-authoritative membership (TEN-04)
+
+By default (off) any tenant membership grants access: manual invitations, owner-added members, and memberships provisioned through any directory's credential. An owner can make one directory authoritative (`20261007000050_scim_directory_authoritative.sql`). While on:
+
+- A membership grants access only when an active SCIM-managed membership from that directory backs it **with the same role**, or the member is a designated break-glass owner. SCIM never grants owner, so every owner is a manual account.
+- This is enforced on write by deferred constraint triggers on `tenant_members`, `scim_managed_memberships`, `scim_users` and the break-glass table, so invitations, manual inserts, role escalations, and directory users deactivated without reconciliation are refused at commit (`directory_authority_membership_required`). Every reader that consults `tenant_members` (RLS helpers, definer RPCs, service-role Edge Functions) therefore observes it; `app.is_tenant_member*` re-check it on read.
+- Only the configured directory's credentials resolve, and no credential for another directory can be issued.
+- Owners cannot be added, removed or demoted. Turn the mode off, make the owner change, then turn it on again.
+
+Enable (requires an AAL2 owner session; audited as `scim.directory_authority.enabled`):
+
+```json
+{
+  "action": "enable_directory_authority",
+  "tenant_id": "<tenant UUID>",
+  "directory_id": "entra-production",
+  "break_glass_user_ids": ["<every active owner, one or two>"],
+  "adopt_existing_memberships": false,
+  "remove_unmanaged_members": false
+}
+```
+
+The database refuses unless: the tenant is an active team workspace not being offboarded; the directory holds an active credential and no other directory (including an unbound legacy credential) does; `break_glass_user_ids` equals the set of active owners (one or two, live, not SCIM-managed); and at least one owner or admin keeps access. `adopt_existing_memberships` asserts that existing SCIM-managed memberships came from this directory and is refused if a credential for any other known directory ever existed. Members the directory does not provision cause `409 directory_authority_unmanaged_members` with a count and no change, unless `remove_unmanaged_members` is `true`; each removal then runs the normal audited removal path (API keys, enrollments and delegations revoked). Owners are never removed by enabling.
+
+Break-glass: the designated owners keep access through a directory outage or mass deprovisioning, and the last one cannot be removed, demoted or deleted while the mode is on. If the tenant also enforces SAML, the existing dual-operator SAML outage recovery still applies to them. Disable with `{"action": "disable_directory_authority", "tenant_id": "<tenant UUID>"}` (AAL2 owner; audited as `scim.directory_authority.disabled`). Disabling only relaxes the rule; it grants nothing by itself. The setting is erased by tenant offboarding (phase 57, `identity_membership`).
 
 ## Acceptance boundary
 

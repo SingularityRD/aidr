@@ -14,7 +14,9 @@ const MAX_MAPPINGS = 500;
 const DEFAULT_TOKEN_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 const MAX_TOKEN_TTL_MS = 365 * 24 * 60 * 60 * 1000;
 const ROLES = new Set(["admin", "member", "viewer"]);
-const STEP_UP_ACTIONS: ReadonlySet<string> = new Set(["create_token", "rotate_token", "set_group_mapping", "remove_group_mapping"]);
+// Matches the scim_tokens / tenant_directory_authority check constraints.
+const DIRECTORY_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+const MAX_BREAK_GLASS_OWNERS = 2;
 
 type Row = Record<string, unknown>;
 type ReadTable<T extends Row> = { Row: T; Insert: never; Update: never; Relationships: [] };
@@ -23,15 +25,19 @@ type ScimAdminDatabase = {
 		Tables: {
 			tenant_members: ReadTable<{ tenant_id: string; user_id: string; role: string; expires_at: string | null }>;
 			tenants: ReadTable<{ id: string; status: string }>;
-			scim_tokens: ReadTable<{ id: string; tenant_id: string; label: string; rotated_from: string | null; created_at: string; expires_at: string | null; revoked_at: string | null; last_used_at: string | null }>;
+			scim_tokens: ReadTable<{ id: string; tenant_id: string; label: string; rotated_from: string | null; created_at: string; expires_at: string | null; revoked_at: string | null; last_used_at: string | null; directory_id: string | null }>;
+			tenant_directory_authority: ReadTable<{ tenant_id: string; enabled: boolean; directory_id: string | null; changed_by: string | null; changed_at: string }>;
+			tenant_directory_break_glass_owners: ReadTable<{ tenant_id: string; user_id: string; designated_by: string | null; designated_at: string }>;
 			scim_group_role_mappings: ReadTable<{ tenant_id: string; external_group_id: string; role: string; created_by: string; created_at: string }>;
 		};
 		Views: Record<string, never>;
 		Functions: {
-			scim_admin_create_token: { Args: { p_tenant_id: string; p_actor_user_id: string; p_token_hash: string; p_label: string; p_expires_at: string; p_rotated_from_id: string | null }; Returns: string };
+			scim_admin_create_token: { Args: { p_tenant_id: string; p_actor_user_id: string; p_token_hash: string; p_label: string; p_expires_at: string; p_rotated_from_id: string | null; p_directory_id: string | null }; Returns: string };
 			scim_admin_revoke_token: { Args: { p_tenant_id: string; p_actor_user_id: string; p_token_id: string }; Returns: boolean };
 			scim_admin_set_group_role_mapping: { Args: { p_tenant_id: string; p_actor_user_id: string; p_external_group_id: string; p_role: string }; Returns: boolean };
 			scim_admin_remove_group_role_mapping: { Args: { p_tenant_id: string; p_actor_user_id: string; p_external_group_id: string }; Returns: boolean };
+			scim_admin_enable_directory_authority: { Args: { p_tenant_id: string; p_actor_user_id: string; p_directory_id: string; p_break_glass_user_ids: string[]; p_adopt_existing: boolean; p_remove_unmanaged: boolean }; Returns: Record<string, unknown> };
+			scim_admin_disable_directory_authority: { Args: { p_tenant_id: string; p_actor_user_id: string }; Returns: boolean };
 		};
 		Enums: Record<string, never>;
 		CompositeTypes: Record<string, never>;
@@ -45,11 +51,32 @@ export interface ScimAdminDeps {
 }
 
 type Command =
-	| { action: "create_token"; tenantId: string; label: string; expiresAt: string }
-	| { action: "rotate_token"; tenantId: string; tokenId: string; label: string; expiresAt: string }
+	| { action: "create_token"; tenantId: string; label: string; expiresAt: string; directoryId: string }
+	| { action: "rotate_token"; tenantId: string; tokenId: string; label: string; expiresAt: string; directoryId: string | null }
 	| { action: "revoke_token"; tenantId: string; tokenId: string }
 	| { action: "set_group_mapping"; tenantId: string; externalGroupId: string; role: string }
-	| { action: "remove_group_mapping"; tenantId: string; externalGroupId: string };
+	| { action: "remove_group_mapping"; tenantId: string; externalGroupId: string }
+	| {
+		action: "enable_directory_authority";
+		tenantId: string;
+		directoryId: string;
+		breakGlassUserIds: string[];
+		adoptExisting: boolean;
+		removeUnmanaged: boolean;
+	}
+	| { action: "disable_directory_authority"; tenantId: string };
+
+/** Actions that change who can access the tenant require an AAL2 session. */
+// Every action that mints a provisioning credential, changes role mapping or
+// changes who the directory may grant access to requires an MFA (AAL2) session.
+const STEP_UP_ACTIONS = new Set<Command["action"]>([
+	"create_token",
+	"rotate_token",
+	"set_group_mapping",
+	"remove_group_mapping",
+	"enable_directory_authority",
+	"disable_directory_authority",
+]);
 
 function noStore(): Record<string, string> {
 	return { "Cache-Control": "no-store", Pragma: "no-cache" };
@@ -79,6 +106,17 @@ function groupId(value: unknown): string | null {
 	return value;
 }
 
+function directoryId(value: unknown): string | null {
+	return typeof value === "string" && DIRECTORY_ID.test(value) ? value : null;
+}
+
+function breakGlassUserIds(value: unknown): string[] | null {
+	if (!Array.isArray(value) || value.length < 1 || value.length > MAX_BREAK_GLASS_OWNERS) return null;
+	if (!value.every(uuid)) return null;
+	const ids = value.map((id) => id.toLowerCase());
+	return new Set(ids).size === ids.length ? ids : null;
+}
+
 function label(value: unknown): string | null {
 	if (typeof value !== "string") return null;
 	const normalized = value.trim();
@@ -92,17 +130,28 @@ function parseCommand(value: unknown): Command | null {
 	const tenantId = body.tenant_id;
 	switch (body.action) {
 		case "create_token": {
-			if (!exactKeys(body, ["action", "tenant_id", "label", ...(Object.hasOwn(body, "expires_at") ? ["expires_at"] : [])])) return null;
+			if (!exactKeys(body, ["action", "tenant_id", "label", "directory_id", ...(Object.hasOwn(body, "expires_at") ? ["expires_at"] : [])])) return null;
 			const tokenLabel = label(body.label);
 			const expiry = expiresAt(body.expires_at);
-			return tokenLabel && expiry !== undefined ? { action: body.action, tenantId, label: tokenLabel, expiresAt: expiry } : null;
+			const directory = directoryId(body.directory_id);
+			return tokenLabel && directory && expiry !== undefined
+				? { action: body.action, tenantId, label: tokenLabel, expiresAt: expiry, directoryId: directory }
+				: null;
 		}
 		case "rotate_token": {
-			if (!exactKeys(body, ["action", "tenant_id", "token_id", "label", ...(Object.hasOwn(body, "expires_at") ? ["expires_at"] : [])])) return null;
+			// A rotation inherits its parent's directory; directory_id is needed
+			// only to bind a legacy credential that predates directory provenance.
+			const optional = ["expires_at", "directory_id"].filter((key) => Object.hasOwn(body, key));
+			if (!exactKeys(body, ["action", "tenant_id", "token_id", "label", ...optional])) return null;
 			const tokenId = uuid(body.token_id) ? body.token_id : null;
 			const tokenLabel = label(body.label);
 			const expiry = expiresAt(body.expires_at);
-			return tokenId && tokenLabel && expiry !== undefined ? { action: body.action, tenantId, tokenId, label: tokenLabel, expiresAt: expiry } : null;
+			const hasDirectory = Object.hasOwn(body, "directory_id");
+			const directory = hasDirectory ? directoryId(body.directory_id) : null;
+			if (hasDirectory && !directory) return null;
+			return tokenId && tokenLabel && expiry !== undefined
+				? { action: body.action, tenantId, tokenId, label: tokenLabel, expiresAt: expiry, directoryId: directory }
+				: null;
 		}
 		case "revoke_token":
 			return exactKeys(body, ["action", "tenant_id", "token_id"]) && uuid(body.token_id)
@@ -119,6 +168,20 @@ function parseCommand(value: unknown): Command | null {
 				&& groupId(body.external_group_id) !== null
 				? { action: body.action, tenantId, externalGroupId: body.external_group_id as string }
 				: null;
+		case "enable_directory_authority": {
+			if (!exactKeys(body, ["action", "tenant_id", "directory_id", "break_glass_user_ids", "adopt_existing_memberships", "remove_unmanaged_members"])) return null;
+			const directory = directoryId(body.directory_id);
+			const breakGlass = breakGlassUserIds(body.break_glass_user_ids);
+			if (!directory || !breakGlass
+				|| typeof body.adopt_existing_memberships !== "boolean"
+				|| typeof body.remove_unmanaged_members !== "boolean") return null;
+			return {
+				action: body.action, tenantId, directoryId: directory, breakGlassUserIds: breakGlass,
+				adoptExisting: body.adopt_existing_memberships, removeUnmanaged: body.remove_unmanaged_members,
+			};
+		}
+		case "disable_directory_authority":
+			return exactKeys(body, ["action", "tenant_id"]) ? { action: body.action, tenantId } : null;
 		default:
 			return null;
 	}
@@ -131,10 +194,35 @@ function rawToken(): string {
 	return `aidr_scim_${btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "")}`;
 }
 
+/** Database refusals that map to fixed operator guidance (never raw detail). */
+const DIRECTORY_AUTHORITY_CONFLICTS = new Set([
+	"directory_authority_already_enabled",
+	"directory_authority_directory_token_required",
+	"directory_authority_foreign_token_active",
+	"directory_authority_adoption_ambiguous",
+	"directory_authority_break_glass_mismatch",
+	"directory_authority_break_glass_invalid",
+	"directory_authority_would_remove_all_administrators",
+	"directory_authority_tenant_unsupported",
+	"directory_authority_membership_required",
+	"directory_authority_break_glass_owner_required",
+	"scim_admin_directory_not_authoritative",
+]);
+
+function boundedCount(value: unknown): number | null {
+	return typeof value === "string" && /^\d{1,9}$/.test(value) ? Number(value) : null;
+}
+
 function rpcFailure(req: Request, error: unknown): Response {
-	const result = error && typeof error === "object" ? error as { code?: unknown; message?: unknown } : {};
+	const result = error && typeof error === "object" ? error as { code?: unknown; message?: unknown; details?: unknown } : {};
 	const code = typeof result.code === "string" ? result.code : "";
 	const message = typeof result.message === "string" ? result.message : "";
+	if (message === "directory_authority_unmanaged_members") {
+		const count = boundedCount(result.details);
+		return corsJson(req, 409, { error: message, ...(count === null ? {} : { unmanaged_member_count: count }) }, noStore());
+	}
+	if (DIRECTORY_AUTHORITY_CONFLICTS.has(message)) return corsJson(req, 409, { error: message }, noStore());
+	if (message === "scim_admin_directory_required" || message === "scim_admin_directory_mismatch") return corsJson(req, 400, { error: message }, noStore());
 	if (message === "scim_admin_owner_required") return corsJson(req, 403, { error: "owner_required" }, noStore());
 	if (message === "scim_admin_rotation_parent_unavailable") return corsJson(req, 404, { error: "token_not_found_or_inactive" }, noStore());
 	if (message === "scim_cannot_take_over_manual_membership") return corsJson(req, 409, { error: "mapping_conflicts_with_manual_membership" }, noStore());
@@ -177,7 +265,10 @@ function mappingCursor(url: URL): string | null | undefined {
 	return values.length === 1 && groupId(values[0]) !== null ? values[0] : undefined;
 }
 
-/** Owner-only API for provisioning SCIM secrets and exact immutable group-role mappings. */
+/**
+ * Owner-only API for provisioning SCIM secrets, exact immutable group-role
+ * mappings, and the tenant's directory-authoritative membership mode.
+ */
 export function createScimAdminHandler(deps: ScimAdminDeps = {}) {
 	return async function handle(req: Request): Promise<Response> {
 		const preflight = handleCors(req);
@@ -250,17 +341,21 @@ export function createScimAdminHandler(deps: ScimAdminDeps = {}) {
 				const tokenAfter = tokenCursor(url);
 				const mappingAfter = mappingCursor(url);
 				if (tokenAfter === undefined || mappingAfter === undefined) return corsJson(req, 400, { error: "invalid_pagination" }, noStore());
-				let tokenQuery = db.from("scim_tokens").select("id,label,rotated_from,created_at,expires_at,revoked_at,last_used_at")
+				let tokenQuery = db.from("scim_tokens").select("id,label,rotated_from,created_at,expires_at,revoked_at,last_used_at,directory_id")
 					.eq("tenant_id", tenantId);
 				if (tokenAfter) tokenQuery = tokenQuery.or(`created_at.lt.${tokenAfter.createdAt},and(created_at.eq.${tokenAfter.createdAt},id.gt.${tokenAfter.id})`);
 				let mappingQuery = db.from("scim_group_role_mappings").select("external_group_id,role,created_by,created_at")
 					.eq("tenant_id", tenantId);
 				if (mappingAfter !== null) mappingQuery = mappingQuery.gt("external_group_id", mappingAfter);
-				const [tokens, mappings] = await Promise.all([
+				const [tokens, mappings, authority, breakGlass] = await Promise.all([
 					tokenQuery.order("created_at", { ascending: false }).order("id", { ascending: true }).limit(MAX_TOKENS + 1),
 					mappingQuery.order("external_group_id", { ascending: true }).limit(MAX_MAPPINGS + 1),
+					db.from("tenant_directory_authority").select("enabled,directory_id,changed_by,changed_at")
+						.eq("tenant_id", tenantId).maybeSingle(),
+					db.from("tenant_directory_break_glass_owners").select("user_id,designated_by,designated_at")
+						.eq("tenant_id", tenantId).order("user_id", { ascending: true }).limit(MAX_BREAK_GLASS_OWNERS),
 				]);
-				if (tokens.error || mappings.error)
+				if (tokens.error || mappings.error || authority.error || breakGlass.error)
 					return corsJson(req, 503, { error: "scim_management_unavailable" }, noStore());
 				const tokenRows = tokens.data ?? [];
 				const mappingRows = mappings.data ?? [];
@@ -268,6 +363,14 @@ export function createScimAdminHandler(deps: ScimAdminDeps = {}) {
 					ok: true,
 					tokens: tokenRows.slice(0, MAX_TOKENS),
 					group_role_mappings: mappingRows.slice(0, MAX_MAPPINGS),
+					// No row means never configured, i.e. off (the backward-compatible default).
+					directory_authority: {
+						enabled: authority.data?.enabled === true,
+						directory_id: authority.data?.directory_id ?? null,
+						changed_by: authority.data?.changed_by ?? null,
+						changed_at: authority.data?.changed_at ?? null,
+						break_glass_owners: authority.data?.enabled === true ? breakGlass.data ?? [] : [],
+					},
 					next_token_cursor: tokenRows.length > MAX_TOKENS ? {
 						created_at: tokenRows[MAX_TOKENS - 1].created_at,
 						id: tokenRows[MAX_TOKENS - 1].id,
@@ -284,6 +387,7 @@ export function createScimAdminHandler(deps: ScimAdminDeps = {}) {
 				const { data, error } = await db.rpc("scim_admin_create_token", {
 					p_tenant_id: tenantId, p_actor_user_id: userId, p_token_hash: hash,
 					p_label: command.label, p_expires_at: command.expiresAt, p_rotated_from_id: rotatedFrom,
+					p_directory_id: command.directoryId,
 				});
 				if (error) return rpcFailure(req, error);
 				const id = uuidResult(data);
@@ -308,6 +412,34 @@ export function createScimAdminHandler(deps: ScimAdminDeps = {}) {
 				if (error) return rpcFailure(req, error);
 				if (typeof data !== "boolean") return corsJson(req, 503, { error: "scim_management_unavailable" }, noStore());
 				return corsJson(req, 200, { ok: true, changed: data }, noStore());
+			}
+
+			if (command?.action === "enable_directory_authority") {
+				const { data, error } = await db.rpc("scim_admin_enable_directory_authority", {
+					p_tenant_id: tenantId, p_actor_user_id: userId, p_directory_id: command.directoryId,
+					p_break_glass_user_ids: command.breakGlassUserIds, p_adopt_existing: command.adoptExisting,
+					p_remove_unmanaged: command.removeUnmanaged,
+				});
+				if (error) return rpcFailure(req, error);
+				if (!data || typeof data !== "object" || Array.isArray(data) || (data as Row).enabled !== true)
+					return corsJson(req, 503, { error: "scim_management_unavailable" }, noStore());
+				const result = data as Row;
+				return corsJson(req, 200, {
+					ok: true,
+					enabled: true,
+					directory_id: command.directoryId,
+					removed_count: typeof result.removed_count === "number" ? result.removed_count : null,
+					adopted_memberships: typeof result.adopted_memberships === "number" ? result.adopted_memberships : null,
+				}, noStore());
+			}
+
+			if (command?.action === "disable_directory_authority") {
+				const { data, error } = await db.rpc("scim_admin_disable_directory_authority", {
+					p_tenant_id: tenantId, p_actor_user_id: userId,
+				});
+				if (error) return rpcFailure(req, error);
+				if (typeof data !== "boolean") return corsJson(req, 503, { error: "scim_management_unavailable" }, noStore());
+				return corsJson(req, 200, { ok: true, enabled: false, changed: data }, noStore());
 			}
 
 			if (command?.action === "remove_group_mapping") {

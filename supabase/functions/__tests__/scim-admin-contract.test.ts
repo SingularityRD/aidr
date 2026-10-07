@@ -26,6 +26,7 @@ const USER = "22222222-2222-4222-8222-222222222222";
 const TOKEN_ID = "33333333-3333-4333-8333-333333333333";
 const NEW_TOKEN_ID = "44444444-4444-4444-8444-444444444444";
 const SESSION = "session-token";
+const DIRECTORY = "entra-prod";
 
 interface Options {
 	role?: string;
@@ -171,7 +172,7 @@ describe("SCIM tenant-owner management boundary", () => {
 		const fixture = fakeDb();
 		const before = Date.now();
 		const response = await createScimAdminHandler({ db: fixture.db as never })(request("POST", {
-			action: "create_token", tenant_id: TENANT, label: "Entra provisioning",
+			action: "create_token", tenant_id: TENANT, label: "Entra provisioning", directory_id: DIRECTORY,
 		}));
 		const after = Date.now();
 		const payload = await response.json();
@@ -180,7 +181,7 @@ describe("SCIM tenant-owner management boundary", () => {
 		expect(payload).toMatchObject({ ok: true, token_id: NEW_TOKEN_ID });
 		expect(payload.scim_token).toMatch(/^aidr_scim_[A-Za-z0-9_-]{43}$/);
 		const create = fixture.rpcCalls.find((call) => call.name === "scim_admin_create_token");
-		expect(create?.args).toMatchObject({ p_tenant_id: TENANT, p_actor_user_id: USER, p_label: "Entra provisioning", p_rotated_from_id: null });
+		expect(create?.args).toMatchObject({ p_tenant_id: TENANT, p_actor_user_id: USER, p_label: "Entra provisioning", p_rotated_from_id: null, p_directory_id: DIRECTORY });
 		expect(create?.args.p_token_hash).toMatch(/^[a-f0-9]{64}$/);
 		expect(create?.args.p_token_hash).not.toBe(payload.scim_token);
 		expect(JSON.stringify(create?.args)).not.toContain(payload.scim_token);
@@ -194,7 +195,7 @@ describe("SCIM tenant-owner management boundary", () => {
 		const fixture = fakeDb();
 		const expires = new Date(Date.now() + 364 * 24 * 60 * 60 * 1000).toISOString();
 		const response = await createScimAdminHandler({ db: fixture.db as never })(request("POST", {
-			action: "create_token", tenant_id: TENANT, label: "Entra provisioning", expires_at: expires,
+			action: "create_token", tenant_id: TENANT, label: "Entra provisioning", directory_id: DIRECTORY, expires_at: expires,
 		}));
 		expect(response.status).toBe(201);
 		expect((await response.json()).expires_at).toBe(expires);
@@ -315,12 +316,12 @@ describe("SCIM tenant-owner management boundary", () => {
 		{ action: "set_group_mapping", tenant_id: TENANT, external_group_id: " group ", role: "admin" },
 		{ action: "set_group_mapping", tenant_id: TENANT, external_group_id: "group", role: "Admin" },
 		{ action: "revoke_token", tenant_id: TENANT, token_id: "not-a-uuid" },
-		{ action: "create_token", tenant_id: TENANT, label: "bad\nlabel" },
-		{ action: "create_token", tenant_id: TENANT, label: "valid", expires_at: "not-a-time" },
-		{ action: "create_token", tenant_id: TENANT, label: "valid", expires_at: null },
-		{ action: "create_token", tenant_id: TENANT, label: "valid", expires_at: new Date(Date.now() + 366 * 24 * 60 * 60 * 1000).toISOString() },
+		{ action: "create_token", tenant_id: TENANT, directory_id: DIRECTORY, label: "bad\nlabel" },
+		{ action: "create_token", tenant_id: TENANT, directory_id: DIRECTORY, label: "valid", expires_at: "not-a-time" },
+		{ action: "create_token", tenant_id: TENANT, directory_id: DIRECTORY, label: "valid", expires_at: null },
+		{ action: "create_token", tenant_id: TENANT, directory_id: DIRECTORY, label: "valid", expires_at: new Date(Date.now() + 366 * 24 * 60 * 60 * 1000).toISOString() },
 		{ action: "rotate_token", tenant_id: TENANT, token_id: TOKEN_ID, label: "valid", expires_at: null },
-		{ action: "create_token", tenant_id: TENANT, label: "valid", unexpected: true },
+		{ action: "create_token", tenant_id: TENANT, directory_id: DIRECTORY, label: "valid", unexpected: true },
 	])("rejects malformed or ambiguous command %# before tenant data access", async (body) => {
 		const fixture = fakeDb();
 		const response = await createScimAdminHandler({ db: fixture.db as never })(request("POST", body));
@@ -338,7 +339,7 @@ describe("SCIM tenant-owner management boundary", () => {
 	])("rejects non-owner/inactive tenant access %#", async (options, expected) => {
 		const fixture = fakeDb(options);
 		const response = await createScimAdminHandler({ db: fixture.db as never })(request("POST", {
-			action: "create_token", tenant_id: TENANT, label: "bootstrap",
+			action: "create_token", tenant_id: TENANT, label: "bootstrap", directory_id: DIRECTORY,
 		}));
 		expect(response.status).toBe(403);
 		expect(await response.json()).toEqual({ error: expected });
@@ -348,7 +349,7 @@ describe("SCIM tenant-owner management boundary", () => {
 	it("rejects a cross-tenant header/body mismatch", async () => {
 		const fixture = fakeDb();
 		const response = await createScimAdminHandler({ db: fixture.db as never })(request("POST", {
-			action: "create_token", tenant_id: TENANT, label: "bootstrap",
+			action: "create_token", tenant_id: TENANT, label: "bootstrap", directory_id: DIRECTORY,
 		}, { "X-AIDR-Tenant-ID": "55555555-5555-4555-8555-555555555555" }));
 		expect(response.status).toBe(400);
 		expect(fixture.calls).not.toContain("tenant_members");
@@ -512,5 +513,204 @@ describe("SCIM tenant-owner management boundary", () => {
 		expect(EXPIRY_MIGRATION).toMatch(/v_expires_at\s*>\s*v_now\s*\+\s*interval '365 days'/i);
 		expect(EXPIRY_MIGRATION).toMatch(/values\s*\(p_tenant_id,\s*p_token_hash,\s*p_label,\s*v_expires_at,\s*p_rotated_from_id\)/i);
 		expect(EXPIRY_MIGRATION).not.toMatch(/update\s+public\.scim_tokens/i);
+	});
+});
+
+const AUTHORITY_MIGRATION = readFileSync(join(ROOT, "supabase", "migrations", "20261007000050_scim_directory_authoritative.sql"), "utf8");
+const OWNER_2 = "66666666-6666-4666-8666-666666666666";
+
+function enableBody(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+	return {
+		action: "enable_directory_authority", tenant_id: TENANT, directory_id: DIRECTORY,
+		break_glass_user_ids: [USER], adopt_existing_memberships: true, remove_unmanaged_members: false,
+		...overrides,
+	};
+}
+
+describe("SCIM directory-authoritative membership mode", () => {
+	it("binds every new credential to a directory and rejects an unbound or malformed one", async () => {
+		for (const body of [
+			{ action: "create_token", tenant_id: TENANT, label: "Entra provisioning" },
+			{ action: "create_token", tenant_id: TENANT, label: "Entra provisioning", directory_id: "" },
+			{ action: "create_token", tenant_id: TENANT, label: "Entra provisioning", directory_id: "entra prod" },
+			{ action: "create_token", tenant_id: TENANT, label: "Entra provisioning", directory_id: "-leading" },
+			{ action: "create_token", tenant_id: TENANT, label: "Entra provisioning", directory_id: "x".repeat(129) },
+			{ action: "rotate_token", tenant_id: TENANT, token_id: TOKEN_ID, label: "Entra", directory_id: null },
+		]) {
+			const fixture = fakeDb();
+			const response = await createScimAdminHandler({ db: fixture.db as never })(request("POST", body));
+			expect(response.status).toBe(400);
+			expect(fixture.rpcCalls.some((call) => call.name.startsWith("scim_admin_"))).toBe(false);
+		}
+	});
+
+	it("lets a rotation inherit its parent's directory or bind a legacy credential explicitly", async () => {
+		const inherit = fakeDb();
+		await createScimAdminHandler({ db: inherit.db as never })(request("POST", { action: "rotate_token", tenant_id: TENANT, token_id: TOKEN_ID, label: "Entra overlap" }));
+		expect(inherit.rpcCalls.find((call) => call.name === "scim_admin_create_token")?.args.p_directory_id).toBeNull();
+		const bind = fakeDb();
+		const response = await createScimAdminHandler({ db: bind.db as never })(request("POST", { action: "rotate_token", tenant_id: TENANT, token_id: TOKEN_ID, label: "Entra overlap", directory_id: DIRECTORY }));
+		expect(response.status).toBe(201);
+		expect(bind.rpcCalls.find((call) => call.name === "scim_admin_create_token")?.args.p_directory_id).toBe(DIRECTORY);
+	});
+
+	it.each([
+		["scim_admin_directory_required", 400],
+		["scim_admin_directory_mismatch", 400],
+		["scim_admin_directory_not_authoritative", 409],
+	])("maps the credential directory refusal %s", async (message, status) => {
+		const fixture = fakeDb({ rpcError: { code: "22023", message } });
+		const response = await createScimAdminHandler({ db: fixture.db as never })(request("POST", { action: "rotate_token", tenant_id: TENANT, token_id: TOKEN_ID, label: "Entra overlap" }));
+		expect(response.status).toBe(status);
+		expect(await response.json()).toEqual({ error: message });
+	});
+
+	it("reports the mode as off by default and lists each credential's directory", async () => {
+		const fixture = fakeDb();
+		fixture.rows.scim_tokens[0].directory_id = DIRECTORY;
+		const response = await createScimAdminHandler({ db: fixture.db as never })(request("GET", undefined, { "X-AIDR-Tenant-ID": TENANT }));
+		const payload = await response.json();
+		expect(response.status).toBe(200);
+		expect(payload.tokens[0].directory_id).toBe(DIRECTORY);
+		expect(payload.directory_authority).toEqual({ enabled: false, directory_id: null, changed_by: null, changed_at: null, break_glass_owners: [] });
+	});
+
+	it("reports the configured directory and its break-glass owners when the mode is on", async () => {
+		const fixture = fakeDb();
+		fixture.rows.tenant_directory_authority = [{ tenant_id: TENANT, enabled: true, directory_id: DIRECTORY, changed_by: USER, changed_at: "2026-10-07T00:00:00.000Z" }];
+		fixture.rows.tenant_directory_break_glass_owners = [{ tenant_id: TENANT, user_id: USER, designated_by: USER, designated_at: "2026-10-07T00:00:00.000Z" }];
+		const payload = await (await createScimAdminHandler({ db: fixture.db as never })(request("GET", undefined, { "X-AIDR-Tenant-ID": TENANT }))).json();
+		expect(payload.directory_authority).toEqual({
+			enabled: true, directory_id: DIRECTORY, changed_by: USER, changed_at: "2026-10-07T00:00:00.000Z",
+			break_glass_owners: [{ user_id: USER, designated_by: USER, designated_at: "2026-10-07T00:00:00.000Z" }],
+		});
+	});
+
+	it("fails closed when the mode cannot be read", async () => {
+		const fixture = fakeDb({ tableError: "tenant_directory_authority" });
+		const response = await createScimAdminHandler({ db: fixture.db as never })(request("GET", undefined, { "X-AIDR-Tenant-ID": TENANT }));
+		expect(response.status).toBe(503);
+		expect(await response.json()).toEqual({ error: "scim_management_unavailable" });
+	});
+
+	it("requires an AAL2 owner session to enable or disable the mode", async () => {
+		for (const body of [enableBody(), { action: "disable_directory_authority", tenant_id: TENANT }]) {
+			const fixture = fakeDb({ assurance: "aal1" });
+			const response = await createScimAdminHandler({ db: fixture.db as never })(request("POST", body));
+			expect(response.status).toBe(403);
+			expect(await response.json()).toEqual({ error: "mfa_required" });
+			expect(fixture.rpcCalls.some((call) => call.name.includes("directory_authority"))).toBe(false);
+		}
+		const admin = fakeDb({ role: "admin", assurance: "aal2" });
+		const denied = await createScimAdminHandler({ db: admin.db as never })(request("POST", enableBody()));
+		expect(denied.status).toBe(403);
+		expect(await denied.json()).toEqual({ error: "owner_required" });
+		expect(admin.rpcCalls.some((call) => call.name.includes("directory_authority"))).toBe(false);
+	});
+
+	it("passes the explicit break-glass owners and choices to the audited RPC", async () => {
+		const fixture = fakeDb({ assurance: "aal2", rpcData: { enabled: true, removed_count: 2, adopted_memberships: 5 } });
+		const response = await createScimAdminHandler({ db: fixture.db as never })(request("POST", enableBody({
+			break_glass_user_ids: [USER, OWNER_2.toUpperCase()], adopt_existing_memberships: false, remove_unmanaged_members: true,
+		})));
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({ ok: true, enabled: true, directory_id: DIRECTORY, removed_count: 2, adopted_memberships: 5 });
+		expect(fixture.rpcCalls.find((call) => call.name === "scim_admin_enable_directory_authority")?.args).toEqual({
+			p_tenant_id: TENANT, p_actor_user_id: USER, p_directory_id: DIRECTORY,
+			p_break_glass_user_ids: [USER, OWNER_2], p_adopt_existing: false, p_remove_unmanaged: true,
+		});
+	});
+
+	it.each([
+		enableBody({ break_glass_user_ids: [] }),
+		enableBody({ break_glass_user_ids: [USER, OWNER_2, TOKEN_ID] }),
+		enableBody({ break_glass_user_ids: [USER, USER.toUpperCase()] }),
+		enableBody({ break_glass_user_ids: ["not-a-uuid"] }),
+		enableBody({ break_glass_user_ids: USER }),
+		enableBody({ adopt_existing_memberships: "true" }),
+		enableBody({ remove_unmanaged_members: undefined }),
+		enableBody({ directory_id: "bad directory" }),
+		enableBody({ unexpected: true }),
+		{ action: "disable_directory_authority", tenant_id: TENANT, directory_id: DIRECTORY },
+	])("rejects a malformed mode command %# before tenant data access", async (body) => {
+		const fixture = fakeDb({ assurance: "aal2" });
+		const response = await createScimAdminHandler({ db: fixture.db as never })(request("POST", JSON.parse(JSON.stringify(body))));
+		expect(response.status).toBe(400);
+		expect(fixture.calls).not.toContain("tenant_members");
+		expect(fixture.rpcCalls.some((call) => call.name.includes("directory_authority"))).toBe(false);
+	});
+
+	it("refuses to strand unmanaged members silently and reports only a bounded count", async () => {
+		const fixture = fakeDb({ assurance: "aal2", rpcError: { code: "55000", message: "directory_authority_unmanaged_members", details: "3" } as never });
+		const response = await createScimAdminHandler({ db: fixture.db as never })(request("POST", enableBody()));
+		expect(response.status).toBe(409);
+		expect(await response.json()).toEqual({ error: "directory_authority_unmanaged_members", unmanaged_member_count: 3 });
+		const opaque = fakeDb({ assurance: "aal2", rpcError: { code: "55000", message: "directory_authority_unmanaged_members", details: "secret detail" } as never });
+		const hidden = await createScimAdminHandler({ db: opaque.db as never })(request("POST", enableBody()));
+		expect(await hidden.json()).toEqual({ error: "directory_authority_unmanaged_members" });
+	});
+
+	it.each([
+		"directory_authority_already_enabled",
+		"directory_authority_directory_token_required",
+		"directory_authority_foreign_token_active",
+		"directory_authority_adoption_ambiguous",
+		"directory_authority_break_glass_mismatch",
+		"directory_authority_break_glass_invalid",
+		"directory_authority_would_remove_all_administrators",
+		"directory_authority_tenant_unsupported",
+	])("maps the enable refusal %s to a fixed conflict", async (message) => {
+		const fixture = fakeDb({ assurance: "aal2", rpcError: { code: "55000", message } });
+		const response = await createScimAdminHandler({ db: fixture.db as never })(request("POST", enableBody()));
+		expect(response.status).toBe(409);
+		expect(await response.json()).toEqual({ error: message });
+	});
+
+	it("does not report success for an unexpected enable result", async () => {
+		const fixture = fakeDb({ assurance: "aal2", rpcData: { enabled: false } });
+		const response = await createScimAdminHandler({ db: fixture.db as never })(request("POST", enableBody()));
+		expect(response.status).toBe(503);
+	});
+
+	it("disables the mode through the audited RPC", async () => {
+		const fixture = fakeDb({ assurance: "aal2", rpcData: true });
+		const response = await createScimAdminHandler({ db: fixture.db as never })(request("POST", { action: "disable_directory_authority", tenant_id: TENANT }));
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({ ok: true, enabled: false, changed: true });
+		expect(fixture.rpcCalls.find((call) => call.name === "scim_admin_disable_directory_authority")?.args).toEqual({ p_tenant_id: TENANT, p_actor_user_id: USER });
+	});
+
+	it("enforces the mode in the database, not only in this endpoint", () => {
+		const sql = AUTHORITY_MIGRATION;
+		// Off by default; every new credential names its directory.
+		expect(sql).toMatch(/enabled boolean not null default false/);
+		expect(sql).toMatch(/new\.directory_id is null then\s+raise exception 'scim_token_directory_required'/);
+		// Only the configured directory's credential resolves.
+		expect(sql).toMatch(/create or replace function public\.scim_resolve_token[\s\S]*a\.directory_id is distinct from st\.directory_id/);
+		// RLS helpers and a commit-time write invariant over every backing row.
+		expect(sql).toMatch(/create or replace function app\.is_tenant_member\(p_tenant_id uuid\)[\s\S]*?app\.directory_membership_grants/);
+		expect(sql).toMatch(/create or replace function app\.is_tenant_member_with_role[\s\S]*?app\.directory_membership_grants/);
+		for (const table of ["tenant_members", "scim_managed_memberships", "scim_users", "tenant_directory_break_glass_owners", "tenant_directory_authority"]) {
+			expect(sql).toMatch(new RegExp(`create constraint trigger \\w+\\s+after [\\w ,]+ on public\\.${table}\\s+deferrable initially deferred`));
+		}
+		expect(sql).toMatch(/smm\.directory_id = a\.directory_id/);
+		expect(sql).toMatch(/smm\.role = p_role/);
+		expect(sql).toMatch(/b\.user_id = p_user_id and p_role = 'owner'/);
+		// Audited enable/disable; break-glass must be every active owner.
+		expect(sql).toContain("'scim.directory_authority.enabled'");
+		expect(sql).toContain("'scim.directory_authority.disabled'");
+		expect(sql).toContain("directory_authority_break_glass_mismatch");
+		expect(sql).toContain("directory_authority_would_remove_all_administrators");
+		expect(sql).toContain("directory_authority_break_glass_owner_required");
+		for (const signature of [
+			"scim_admin_enable_directory_authority\\(uuid, uuid, text, uuid\\[\\], boolean, boolean\\)",
+			"scim_admin_disable_directory_authority\\(uuid, uuid\\)",
+			"scim_admin_create_token\\(uuid, uuid, text, text, timestamptz, uuid, text\\)",
+		]) {
+			expect(sql).toMatch(new RegExp(`revoke all on function public\\.${signature}\\s+from public, anon, authenticated`));
+			expect(sql).toMatch(new RegExp(`grant execute on function public\\.${signature}\\s+to service_role`));
+		}
+		expect(sql).toMatch(/revoke all on public\.tenant_directory_authority, public\.tenant_directory_break_glass_owners\s+from public, anon, authenticated, service_role/);
+		expect(SOURCE).toMatch(/STEP_UP_ACTIONS\.has\(command\.action\)[\s\S]*?getAuthenticatorAssuranceLevel\(token\)/);
 	});
 });
