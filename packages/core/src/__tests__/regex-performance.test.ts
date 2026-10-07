@@ -340,3 +340,31 @@ describe("threat rules contain no unbounded gap quantifiers", () => {
 		expect(offenders).toEqual([]);
 	});
 });
+
+describe("threat rules do not backtrack on repeated option-like tokens", () => {
+	// `-{1,2}[\w-]+` let a dash belong to either quantifier, so `rm --a --a … x`
+	// split every option exponentially many ways (CLT-CMD-027/028: 116 chars took
+	// 18.9s, past the 15s hook timeout, and the call then ran uninspected).
+	const SHAPES = ["--a ", "-a ", "-- ", "--a=b ", "a- "];
+
+	it("matches every rule against repeated option shapes within a tight budget", async () => {
+		const threats = await loadThreats(THREATS_DIR);
+		const slow: string[] = [];
+		for (const threat of threats) {
+			const regex = threat.compiledPattern;
+			if (!regex) continue;
+			for (const shape of SHAPES) {
+				for (const verb of ["rm ", "git ", "curl ", ""]) {
+					const input = `${verb}${shape.repeat(200)}x`;
+					const start = process.hrtime.bigint();
+					regex.lastIndex = 0;
+					regex.test(input);
+					const ms = elapsedMsSince(start);
+					if (ms > 200)
+						slow.push(`${threat.id} ${JSON.stringify(verb + shape)} ${ms.toFixed(0)}ms`);
+				}
+			}
+		}
+		expect(slow).toEqual([]);
+	});
+});
