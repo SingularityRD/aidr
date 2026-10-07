@@ -43,6 +43,13 @@ model are not covered.
   `operator_approvals.dashboard_only: true` the dialog is replaced by a block so
   only the dashboard can release the call. See
   [dashboard approvals](../../docs/configuration.md#managed-mode-dashboard-approvals).
+- With `operator_approvals.mode: "operator"` an `ask` never opens the native
+  dialog: the call is denied with an approval reference, listed in `aidr pending`,
+  and exactly one retry is released after `aidr approve <actionId>` in your own
+  terminal (same store, OS-vault key and single-use ledger as OpenClaw/OpenCode/Codex).
+  In the default `host_dialog` mode the dialog decides and the ask is listed in
+  `aidr pending` for information only. See
+  [`operator_approvals`](../../docs/configuration.md#operator_approvals).
 - Loads the pinned native AMSI addon from `dist/vendor/koffi` on Windows so file
   and buffer reputation can use the host antimalware interface. The installer
   refuses to register hooks when that payload is missing.

@@ -12,9 +12,9 @@
 // rules, 30-day window) are repeated here and pinned by contract tests.
 
 export const DETECTION_EXCEPTIONS_MAX_BODY_BYTES = 8_192;
-export const DETECTION_EXCEPTION_MAX_DAYS = 30;
-export const DETECTION_EXCEPTION_MIN_MINUTES = 5;
-export const DETECTION_EXCEPTION_MAX_ENTRIES = 500;
+const DETECTION_EXCEPTION_MAX_DAYS = 30;
+const DETECTION_EXCEPTION_MIN_MINUTES = 5;
+const DETECTION_EXCEPTION_MAX_ENTRIES = 500;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const RULE_ID = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,99}$/;
@@ -24,7 +24,7 @@ const CONTROL = /[\u0000-\u001f\u007f]/;
 const PROTECTED_PREFIXES = ["CLT-SELF-", "CLT-CANARY-"];
 const DAY_MS = 86_400_000;
 
-export type DetectionExceptionSubjectKind = "user" | "agent" | "repo";
+type DetectionExceptionSubjectKind = "user" | "agent" | "repo";
 
 /** One exception as signed into the runtime policy (snake_case, strict). */
 export interface DetectionExceptionWire {
