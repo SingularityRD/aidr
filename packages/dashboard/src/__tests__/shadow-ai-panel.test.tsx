@@ -182,6 +182,152 @@ describe("Shadow AI panel", () => {
 	});
 });
 
+const POE_ASSET = "66666666-6666-4666-8666-666666666666";
+
+function installDecisions(options: {
+	role: "owner" | "admin" | "member" | "viewer";
+	assets?: { data: unknown; error: { message: string } | null };
+	reply?: { data: unknown; error: unknown };
+}) {
+	const mocks = installDashboardMocks({
+		rpcResults: {
+			privacy_guard_summary: { data: null, error: { code: "PGRST202", message: "missing" } },
+			shadow_ai_summary: { data: shadowSummary(30), error: null },
+		},
+		tableResults: {
+			events: { data: [], error: null },
+			agents: { data: [], error: null },
+			ai_assets: options.assets ?? {
+				data: [
+					{ id: POE_ASSET, identifier: "poe", status: "approved", version: 3 },
+					{
+						id: "77777777-7777-4777-8777-777777777777",
+						identifier: "chat.corp.example",
+						status: "banned",
+						version: 1,
+					},
+				],
+				error: null,
+			},
+		},
+	});
+	const invoke = mockedSupabase().functions.invoke;
+	const fallback = invoke.getMockImplementation() as
+		| ((name: string, request?: unknown) => Promise<unknown>)
+		| undefined;
+	invoke.mockImplementation(async (name: string, request?: unknown) =>
+		name === "ai-governance"
+			? (options.reply ?? {
+					data: { ok: true, asset_id: POE_ASSET, version: 4, status: "banned" },
+					error: null,
+				})
+			: fallback?.(name, request),
+	);
+	vi.mocked(useTeam).mockReturnValue({
+		currentTeam: { id: TEAM_ID, name: "Runtime team" },
+		currentRole: options.role,
+		isLoading: false,
+	} as never);
+	return mocks;
+}
+
+const governanceCalls = () =>
+	mockedSupabase()
+		.functions.invoke.mock.calls.filter(([name]) => name === "ai-governance")
+		.map(([, request]) => (request as { body: unknown }).body);
+
+describe("Shadow AI allow / block decisions", () => {
+	it("lets an administrator block a detected service through the audited governance register", async () => {
+		installDecisions({ role: "admin" });
+		renderPage();
+		const table = await screen.findByRole("table", { name: "Top AI services" });
+		const poe = within(table).getByRole("row", { name: /Poe/ });
+		await waitFor(() => expect(within(poe).getByText("allowed")).toBeInTheDocument());
+		expect(within(poe).getByRole("button", { name: "Allow Poe" })).toBeDisabled();
+
+		fireEvent.click(within(poe).getByRole("button", { name: "Block Poe" }));
+		await screen.findByText(
+			/Poe blocked\. Enrolled browsers apply it at their next policy refresh/,
+		);
+		// An existing register entry is updated with optimistic concurrency.
+		expect(governanceCalls()).toEqual([
+			{
+				action: "upsert_asset",
+				tenant_id: TEAM_ID,
+				asset_id: POE_ASSET,
+				expected_version: 3,
+				fields: { status: "banned" },
+			},
+		]);
+
+		// A service with no register entry is created as an ai_site with its catalog id.
+		const midjourney = within(table).getByRole("row", { name: /Midjourney/ });
+		fireEvent.click(within(midjourney).getByRole("button", { name: "Allow Midjourney" }));
+		await waitFor(() => expect(governanceCalls()).toHaveLength(2));
+		expect(governanceCalls()[1]).toEqual({
+			action: "upsert_asset",
+			tenant_id: TEAM_ID,
+			fields: {
+				asset_type: "ai_site",
+				identifier: "midjourney",
+				name: "Midjourney",
+				status: "approved",
+			},
+		});
+		// The GPO/MDM snippet stays available as the alternative.
+		expect(screen.getByLabelText("Shadow AI policy JSON")).toBeInTheDocument();
+	});
+
+	it("explains a refused decision (AAL2 step-up) and changes nothing", async () => {
+		installDecisions({
+			role: "owner",
+			reply: {
+				data: null,
+				error: {
+					context: new Response(JSON.stringify({ error: "mfa_required" }), { status: 403 }),
+				},
+			},
+		});
+		renderPage();
+		const table = await screen.findByRole("table", { name: "Top AI services" });
+		const chatgpt = within(table).getByRole("row", { name: /ChatGPT/ });
+		await waitFor(() =>
+			expect(within(chatgpt).getByRole("button", { name: "Block ChatGPT" })).toBeEnabled(),
+		);
+		fireEvent.click(within(chatgpt).getByRole("button", { name: "Block ChatGPT" }));
+		const alert = await screen.findByText(/Multi-factor verification \(AAL2\) is required/);
+		expect(alert).toHaveAttribute("role", "alert");
+		expect(within(chatgpt).queryByText("blocked")).toBeNull();
+		expect(within(alert).getByRole("link", { name: "Verify now" })).toHaveAttribute(
+			"href",
+			expect.stringContaining("/auth/dlp-step-up?tenant="),
+		);
+	});
+
+	it("is read-only for members and viewers", async () => {
+		for (const role of ["member", "viewer"] as const) {
+			installDecisions({ role });
+			renderPage();
+			const table = await screen.findByRole("table", { name: "Top AI services" });
+			await waitFor(() => expect(within(table).getByText("allowed")).toBeInTheDocument());
+			expect(within(table).queryByRole("button", { name: /^(Allow|Block) / })).toBeNull();
+			cleanup();
+		}
+	});
+
+	it("disables decisions when the register cannot be read, never showing them as undecided", async () => {
+		installDecisions({
+			role: "admin",
+			assets: { data: null, error: { message: "permission denied" } },
+		});
+		renderPage();
+		await screen.findByText("Allow/block decisions are unavailable.");
+		const table = screen.getByRole("table", { name: "Top AI services" });
+		expect(within(table).queryByRole("button", { name: /^(Allow|Block) / })).toBeNull();
+		expect(governanceCalls()).toEqual([]);
+	});
+});
+
 describe("Shadow AI read model", () => {
 	it("mirrors the Browser Guard catalog ids, names and categories", async () => {
 		// Imported by path: the extension package is outside this package's tsc rootDir.
