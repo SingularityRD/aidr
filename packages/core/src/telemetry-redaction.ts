@@ -16,20 +16,25 @@ const SENSITIVE_KEY_RE =
 // conservative: they target known credential forms and do not redact ordinary
 // URLs such as https://example.test/path.
 const BEARER_RE = /(\bBearer\s+)[^\s,;"']+/gi;
+// The optional prefix covers env-style names (ANTHROPIC_API_KEY, PGPASSWORD,
+// GITHUB_TOKEN) where the leading word characters defeat a plain \b anchor.
 const KEY_VALUE_RE =
-	/(\b(?:api[_-]?key|x-api-key|access[_-]?token|auth(?:orization|[_-]?token)?|client[_-]?secret|cookie|password|passwd|private[_-]?key|refresh[_-]?token|id[_-]?token|invite(?:[_-]?token)?|grant(?:[_-]?id)?|state|secret|session[_-]?token|signature|sig|token)\b\s*[:=]\s*)(["']?)([^\s,;&"']+)\2/gi;
+	/(\b[A-Za-z0-9_-]*?(?:api[_-]?key|x-api-key|access[_-]?token|auth(?:orization|[_-]?token)?|client[_-]?secret|cookie|password|passwd|private[_-]?key|refresh[_-]?token|id[_-]?token|invite(?:[_-]?token)?|grant(?:[_-]?id)?|state|secret|session[_-]?token|signature|sig|token)\b\s*[:=]\s*)(["']?)([^\s,;&"']+)\2/gi;
+// Database clients accept the password glued to the flag (mysql -pSECRET).
+const DB_CLIENT_PASSWORD_RE = /(\b(?:mysql|mysqldump|mysqladmin|mariadb)\b[^\n|;&]*?\s-p)(["']?)([^\s"']+)\2/gi;
 const URL_CREDENTIAL_RE = /(https?:\/\/)([^\s/@:]+):([^\s/@]+)@/gi;
 const URL_SECRET_QUERY_RE =
 	/([?&](?:api[_-]?key|x-api-key|access[_-]?token|auth(?:orization|[_-]?token)?|code|client[_-]?secret|password|passwd|refresh[_-]?token|id[_-]?token|invite(?:[_-]?token)?|grant(?:[_-]?id)?|state|secret|session[_-]?token|signature|sig|token)\s*=)[^&#\s]*/gi;
 const JWT_RE = /\beyJ[a-zA-Z0-9_-]{8,}\.[a-zA-Z0-9_-]{8,}\.[a-zA-Z0-9_-]{8,}\b/g;
 const KNOWN_SECRET_RE =
-	/\b(?:sk-[a-zA-Z0-9]{16,}|sk_live_[a-zA-Z0-9_-]{12,}|ghp_[a-zA-Z0-9]{20,}|github_pat_[a-zA-Z0-9_]{20,}|xox[baprs]-[a-zA-Z0-9-]{12,}|npm_[a-zA-Z0-9]{12,}|pypi-[a-zA-Z0-9_-]{12,}|AKIA[0-9A-Z]{16})\b/g;
+	/\b(?:sk-(?:ant-|proj-|svcacct-|admin-)?[a-zA-Z0-9_-]{16,}|hf_[a-zA-Z0-9]{30,}|glpat-[a-zA-Z0-9_-]{20,}|AIza[0-9A-Za-z_-]{35}|xai-[a-zA-Z0-9]{20,}|sk_live_[a-zA-Z0-9_-]{12,}|ghp_[a-zA-Z0-9]{20,}|github_pat_[a-zA-Z0-9_]{20,}|xox[baprs]-[a-zA-Z0-9-]{12,}|npm_[a-zA-Z0-9]{12,}|pypi-[a-zA-Z0-9_-]{12,}|AKIA[0-9A-Z]{16})\b/g;
 
 /** Redact credential material embedded in an arbitrary string. */
 export function redactTelemetryString(value: string, maxLength = 2000): string {
 	let safe = value
 		.replace(BEARER_RE, `$1${REDACTED_TELEMETRY_VALUE}`)
 		.replace(KEY_VALUE_RE, `$1${REDACTED_TELEMETRY_VALUE}`)
+		.replace(DB_CLIENT_PASSWORD_RE, `$1${REDACTED_TELEMETRY_VALUE}`)
 		.replace(URL_CREDENTIAL_RE, `$1$2:${REDACTED_TELEMETRY_VALUE}@`)
 		.replace(URL_SECRET_QUERY_RE, `$1${REDACTED_TELEMETRY_VALUE}`)
 		.replace(KNOWN_SECRET_RE, REDACTED_TELEMETRY_VALUE)
