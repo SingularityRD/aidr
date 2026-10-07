@@ -79,7 +79,7 @@ const result = {
 		"default hash/full remote event prompt minimization",
 		"direct ingest payload minimization before persistence",
 		"runtime and browser diagnostic credential and structured prompt scrub; OTLP endpoint sanitation",
-		"discovery target origin-only contract",
+		"discovery target pseudonym-only contract (addresses stay on device)",
 		"support bundle allowlist and canary self-test",
 	],
 	source_sha256: testedSourceHashes,

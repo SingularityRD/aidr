@@ -178,7 +178,8 @@ describe("privacy boundary canaries", () => {
 		assertAbsent(result, ["private_customer_secret", RAW_PROMPT]);
 	});
 
-	it("rejects secret-bearing central discovery targets", () => {
+	it("accepts only pseudonymous central discovery targets, never addresses", () => {
+		const pseudonym = `tid1_${"a".repeat(64)}`;
 		const base = {
 			action: "ingest",
 			tenant_id: DISCOVERY_TENANT,
@@ -188,10 +189,11 @@ describe("privacy boundary canaries", () => {
 			stale_after_ms: 60_000,
 			complete: true,
 			expected_targets: 1,
-			items: [{ target: "https://example.test/", reachable: true, attempts: 1, error_code: null }],
+			items: [{ target: pseudonym, reachable: true, attempts: 1, error_code: null }],
 		};
-		assert.equal(parseDiscoveryIngest(base)?.items[0]?.target, "https://example.test/");
+		assert.equal(parseDiscoveryIngest(base)?.items[0]?.target, pseudonym);
 		for (const target of [
+			"https://example.test/",
 			`https://example.test/private/${RAW_PROMPT}`,
 			`https://example.test/?token=${CREDENTIAL}`,
 			`https://user:${CREDENTIAL}@example.test/`,

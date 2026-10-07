@@ -495,7 +495,7 @@ describe("managed discovery upload", () => {
 		).toBe("collector");
 	});
 
-	it("sends only origin-level reachability and bounded status", () => {
+	it("sends only pseudonymous target reachability and bounded status", () => {
 		const local = remoteInventory({
 			reachability: "unreachable",
 			attempts: 3,
