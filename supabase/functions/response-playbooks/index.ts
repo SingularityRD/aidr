@@ -20,6 +20,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/;
 const PLAYBOOK_ID = "agent_containment_v1" as const;
 const AUTOMATION_SECRET = /^aidr_rsp_[a-f0-9]{64}$/;
+const AUTOMATION_RATE_ENDPOINT = "response-playbooks:automation";
 
 const readRuntimeEnv: EnvReader = (name) => {
 	try {
@@ -41,6 +42,7 @@ type ResponsePlaybooksDatabase = {
 		Tables: {
 			tenant_members: ReadTable<{ tenant_id: string; user_id: string; role: string; expires_at: string | null }>;
 			tenants: ReadTable<{ id: string; status: string }>;
+			delegated_credential_grants: ReadTable<{ id: string; tenant_id: string; automation_secret_hash: string | null }>;
 		};
 		Views: Record<string, never>;
 		Functions: {
@@ -302,13 +304,26 @@ export function createResponsePlaybooksHandler(deps: ResponsePlaybooksDeps = {})
 		try {
 			const db = makeClient(config.values.SUPABASE_URL, config.values.SUPABASE_SERVICE_ROLE_KEY);
 			if (request.request.action === "trigger_automation") {
-				// The tenant bucket also bounds random grant IDs and invalid secrets before any grant lookup.
-				const rate = await consumeTenantRateLimit(db, { tenantId: request.request.tenantId, subject: request.request.grantId,
-					endpoint: "response-playbooks", perSubject: 30, perTenant: 600 });
-				if (!rate.ok) return corsJson(req, rate.status, { error: rate.error }, rateLimitHeaders(rate));
+				// Authenticate the automation secret before touching any quota: an outsider
+				// who knows only a tenant UUID must not be able to drain a bucket that the
+				// grant holder (or the tenant's human operators) depend on.
 				if (!token || !AUTOMATION_SECRET.test(token)) return corsJson(req, 403, { error: "automation_forbidden" });
+				const hash = await secretHash(token);
+				// Primary-key lookup bound to tenant and secret digest; the RPC re-validates
+				// expiry, authority and revocation under a row lock.
+				const { data: grantRow, error: grantError } = await db.from("delegated_credential_grants").select("id")
+					.eq("id", request.request.grantId).eq("tenant_id", request.request.tenantId)
+					.eq("automation_secret_hash", hash).maybeSingle();
+				if (grantError) return corsJson(req, 503, { error: "response_playbook_unavailable" });
+				if (!isRecord(grantRow) || String(grantRow.id).toLowerCase() !== request.request.grantId.toLowerCase()) {
+					return corsJson(req, 403, { error: "automation_forbidden" });
+				}
+				// Automation has its own key so it never shares the operators' containment quota.
+				const rate = await consumeTenantRateLimit(db, { tenantId: request.request.tenantId, subject: request.request.grantId,
+					endpoint: AUTOMATION_RATE_ENDPOINT, perSubject: 30, perTenant: 600 });
+				if (!rate.ok) return corsJson(req, rate.status, { error: rate.error }, rateLimitHeaders(rate));
 				const { data, error } = await db.rpc("trigger_response_automation_playbook", {
-					p_tenant_id: request.request.tenantId, p_grant_id: request.request.grantId, p_secret_hash: await secretHash(token),
+					p_tenant_id: request.request.tenantId, p_grant_id: request.request.grantId, p_secret_hash: hash,
 					p_incident_id: request.request.incidentReference, p_reason: request.request.reason, p_ttl_seconds: request.request.ttlSeconds,
 				});
 				if (error) {
