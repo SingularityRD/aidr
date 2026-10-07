@@ -3,7 +3,7 @@
  * Hooks should normalize transport-specific payloads, then call this function.
  */
 
-import { isAbsolute } from "node:path";
+import { basename, isAbsolute } from "node:path";
 import {
 	type AgentProfileContext,
 	agentProfileFailureVerdict,
@@ -56,7 +56,7 @@ import {
 	type DelegatedCredentialVerificationContext,
 	verifyDelegatedCredential,
 } from "./delegated-credential.js";
-import { DetectionLegUnavailableError } from "./detection-leg.js";
+import { type DetectionLeg, DetectionLegUnavailableError } from "./detection-leg.js";
 import type { DlpPolicy } from "./dlp/policy.js";
 import { type DlpFinding, type DlpScanResult, scanDlpInput } from "./dlp/scanner.js";
 import { DecisionEngine } from "./engine.js";
@@ -90,9 +90,9 @@ import {
 	isSyncDisabled,
 	loadManagedState,
 	loadRevocationsCache,
-	revocationBindingForState,
 	managedStatePath,
 	parseSignedRevocationsFromControlPlaneBody,
+	revocationBindingForState,
 	saveEntitlementKeyringFromState,
 	saveManagedState,
 	saveRevocationsCache,
@@ -117,7 +117,7 @@ import type { TenantPromptSafetyPolicy } from "./prompt-safety.js";
 import { syncRemoteRuntimePolicy } from "./remote-policy.js";
 import type { ReputationFeedLoadOptions } from "./reputation-feed.js";
 import { inspectResponseBarrier } from "./response-barrier.js";
-import { loadThreatsFromDirs } from "./threat-loader.js";
+import { loadThreatsFromDirsWithReport, type ThreatLoadError } from "./threat-loader.js";
 import { normalizeToolEvaluationRequest, readFileEditPayload } from "./tool-normalization.js";
 import { applyToxicFlow } from "./toxic-flow.js";
 import { loadTrustedDomains } from "./trusted-domains.js";
@@ -133,7 +133,7 @@ import type {
 	UrlCheckResult,
 	Verdict,
 } from "./types.js";
-import { nullLogger, PoisoningProtectionConfigSchema } from "./types.js";
+import { LEG_TOTAL_BUDGET_SECONDS, nullLogger, PoisoningProtectionConfigSchema } from "./types.js";
 import { VERSION } from "./version.js";
 
 type CachedIntelMerged = { loadedAt: number; tag: string; merged: IntelMerged };
@@ -1071,6 +1071,68 @@ function invalidConfigVerdict(): Verdict {
 	};
 }
 
+/**
+ * Settle `work` within what is left of this call's remote-leg budget, or
+ * reject with an unavailable-leg error. The leg's own request may still be in
+ * flight; its answer is simply no longer waited for, so a slow provider cannot
+ * push the hook past the host timeout (Codex fails open on a killed hook).
+ */
+function withinLegBudget<T>(work: Promise<T>, deadline: number, leg: DetectionLeg): Promise<T> {
+	if (!Number.isFinite(deadline)) return work;
+	const remaining = deadline - performance.now();
+	const exceeded = () =>
+		new DetectionLegUnavailableError(
+			leg,
+			`exceeded the ${LEG_TOTAL_BUDGET_SECONDS}s remote detection budget`,
+		);
+	if (remaining <= 0) {
+		work.catch(() => undefined);
+		return Promise.reject(exceeded());
+	}
+	return new Promise<T>((resolve, reject) => {
+		const timer = setTimeout(() => reject(exceeded()), remaining);
+		work.then(
+			(value) => {
+				clearTimeout(timer);
+				resolve(value);
+			},
+			(error: unknown) => {
+				clearTimeout(timer);
+				reject(error);
+			},
+		);
+	});
+}
+
+/**
+ * Some bundled rule files did not load or verify, so their rules are missing
+ * from this inspection. That is a degraded inspection, never a clean one: an
+ * `allow` becomes an `ask` (a human decides), a stricter verdict is kept and
+ * carries the degradation as an extra reason.
+ */
+export function degradedRulesVerdict(
+	verdict: Verdict,
+	errors: readonly ThreatLoadError[],
+): Verdict {
+	const files = [...new Set(errors.map((error) => basename(error.file)))];
+	const shown =
+		files.slice(0, 5).join(", ") + (files.length > 5 ? `, +${files.length - 5} more` : "");
+	const reason = `Bundled threat rules did not load or verify (${shown}), so this call was NOT fully inspected. Reinstall the connector bundle.`;
+	if (verdict.decision !== "allow") {
+		return { ...verdict, reasons: [...verdict.reasons, reason] };
+	}
+	return {
+		decision: "ask",
+		category: "detection_degraded",
+		confidence: 1.0,
+		severity: "warning",
+		source: "detection_degraded",
+		artifacts: verdict.artifacts,
+		matchedThreatId: null,
+		reasons: [reason, "This is not a clean result."],
+	};
+}
+
 function uninspectablePatchVerdict(): Verdict {
 	return {
 		decision: "deny",
@@ -1148,7 +1210,14 @@ async function localHeuristicSignals(
 
 interface LoadedHeuristics {
 	engine: HeuristicsEngine;
+	/**
+	 * Bundled rules that loaded. The "no rules" safeguard is based on this, not
+	 * on the merged total: user rules in ~/.singularity-aidr/threats must not be
+	 * able to stand in for a missing or broken bundled rule set.
+	 */
 	threatsLoaded: number;
+	/** Bundled rule files or rules that failed to load or verify. */
+	bundledErrors: ThreatLoadError[];
 	/** The same rules, indexed for the code guard (`match_on: code:<language>`). */
 	codeRules: CodeRuleSet;
 	modelSources: TrustedModelSources;
@@ -1161,7 +1230,10 @@ async function loadHeuristics(
 	logger: Logger,
 ): Promise<LoadedHeuristics> {
 	const userThreatsDir = context.userThreatsDir ?? resolvePath("~/.singularity-aidr/threats");
-	let threats = await loadThreatsFromDirs([context.threatsDir, userThreatsDir], logger);
+	const report = await loadThreatsFromDirsWithReport([context.threatsDir, userThreatsDir], logger, {
+		manifest: { publicKeysPem: config.integrity?.public_keys_pem ?? [] },
+	});
+	let threats = report.threats;
 	if (config.disabled_threats.length > 0) {
 		const disabledSet = new Set(config.disabled_threats);
 		threats = threats.filter((t) => !disabledSet.has(t.id));
@@ -1174,7 +1246,8 @@ async function loadHeuristics(
 	);
 	return {
 		engine: new HeuristicsEngine(threats, trustedDomains, modelSources),
-		threatsLoaded: threats.length,
+		threatsLoaded: report.bundledCount,
+		bundledErrors: report.bundledErrors,
 		codeRules: new CodeRuleSet(threats, config.disabled_threats),
 		modelSources,
 	};
@@ -1255,12 +1328,15 @@ async function recheckRedactedInput(
 			return unsafe("could not be fully inspected");
 		}
 		if (!config.heuristics_enabled || rewritten.artifacts.length === 0) return verdict;
-		const { engine, threatsLoaded } = await loadHeuristics(
+		const { engine, threatsLoaded, bundledErrors } = await loadHeuristics(
 			context,
 			config,
 			context.logger ?? nullLogger,
 		);
 		if (threatsLoaded === 0) return unsafe("could not be checked against any threat rule");
+		if (bundledErrors.length > 0) {
+			return unsafe("could not be checked against the complete bundled threat rules");
+		}
 		const before = new Set(engine.match(request.artifacts).map((match) => match.threat.id));
 		const introduced = engine
 			.match(rewritten.artifacts)
@@ -1973,10 +2049,12 @@ async function runEvaluationPipeline(
 	// apart from "no rules were loaded at all".
 	let heuristicMatches: ReturnType<HeuristicsEngine["match"]> = [];
 	let threatsLoaded = 0;
+	let bundledRuleErrors: ThreatLoadError[] = [];
 	let codeGuard: CodeGuardResult = EMPTY_CODE_GUARD_RESULT;
 	if (config.heuristics_enabled) {
 		const loaded = await loadHeuristics(context, config, logger);
 		threatsLoaded = loaded.threatsLoaded;
+		bundledRuleErrors = loaded.bundledErrors;
 		heuristicMatches = loaded.engine.match(request.artifacts);
 		// Diff-aware agent-safety rules: what an edit adds to or removes from
 		// tests, CI and lint/coverage configuration (agent-safety/edit-views.ts).
@@ -1999,6 +2077,8 @@ async function runEvaluationPipeline(
 	let urlLegUnavailable = false;
 	let urlLegUnavailableReason = "the URL reputation leg did not run";
 	const urlsToCheck = cache ? uncachedUrls : urls;
+	// One budget for every remote leg of this call (see LEG_TOTAL_BUDGET_SECONDS).
+	const legDeadline = performance.now() + LEG_TOTAL_BUDGET_SECONDS * 1000;
 	if (urlsToCheck.length > 0 && providerInspectionAllowed) {
 		if (!config.url_check.enabled) {
 			urlLegUnavailable = true;
@@ -2010,7 +2090,11 @@ async function runEvaluationPipeline(
 					logger,
 					token,
 				);
-				urlCheckResults = await client.checkUrls(urlsToCheck);
+				urlCheckResults = await withinLegBudget(
+					client.checkUrls(urlsToCheck),
+					legDeadline,
+					"url_reputation",
+				);
 			} catch (error) {
 				if (error instanceof DetectionLegUnavailableError && error.leg === "url_reputation") {
 					urlLegUnavailable = true;
@@ -2022,13 +2106,19 @@ async function runEvaluationPipeline(
 						reason: error.reason,
 						uncheckedCount: error.uncheckedCount,
 					});
-				} else if (context.reputationFeed) {
-					// A configured signed feed must never be silently skipped, so any
-					// other failure while it is configured is still an unavailable leg.
+				} else {
+					// Any other failure - a misconfigured endpoint rejected by the client
+					// constructor (non-HTTPS, credentials in the URL, unparseable), a
+					// signed feed that failed to load, an unexpected exception - means
+					// these URLs were NOT checked. Swallowing it used to return a clean
+					// `allow` for every unknown URL.
 					urlLegUnavailable = true;
-					urlLegUnavailableReason = error instanceof Error ? error.message : String(error);
-					logger.warn("Configured signed URL feed did not provide complete inspection", {
+					urlLegUnavailableReason = `the URL reputation leg could not run (${
+						error instanceof Error ? error.message : String(error)
+					})`;
+					logger.warn("URL reputation leg failed; URLs were NOT checked", {
 						errorType: error instanceof Error ? error.name : typeof error,
+						signedFeed: Boolean(context.reputationFeed),
 					});
 				}
 			}
@@ -2046,6 +2136,7 @@ async function runEvaluationPipeline(
 		revocationsForIntel,
 		context.reputationFeed,
 		providerInspectionAllowed,
+		legDeadline,
 	);
 
 	// AMSI scan (Windows only)
@@ -2206,6 +2297,16 @@ async function runEvaluationPipeline(
 		logger.warn("Local detection unavailable: no threat rules loaded", {
 			threatsDir: context.threatsDir,
 			artifacts: request.artifacts.length,
+		});
+	} else if (
+		config.heuristics_enabled &&
+		bundledRuleErrors.length > 0 &&
+		request.artifacts.length > 0
+	) {
+		verdict = degradedRulesVerdict(verdict, bundledRuleErrors);
+		logger.warn("Local detection degraded: bundled threat rules failed to load or verify", {
+			threatsDir: context.threatsDir,
+			files: [...new Set(bundledRuleErrors.map((error) => error.file))],
 		});
 	}
 
@@ -2530,6 +2631,7 @@ async function checkPackages(
 	revocations: RevocationList | null,
 	reputationFeed: ReputationFeedLoadOptions | undefined,
 	allowProviderInspection: boolean,
+	legDeadline: number = Number.POSITIVE_INFINITY,
 ): Promise<PackageCheckResult[]> {
 	const results: PackageCheckResult[] = [];
 
@@ -2670,7 +2772,11 @@ async function checkPackages(
 				},
 				logger,
 			);
-			const checkResults = await checker.checkPackages(uncached);
+			const checkResults = await withinLegBudget(
+				checker.checkPackages(uncached),
+				legDeadline,
+				"file_reputation",
+			);
 			checked = validatePackageCheckResults(checkResults, uncached);
 		} catch (error) {
 			logger.warn("Package checker unavailable; package operation requires review", {

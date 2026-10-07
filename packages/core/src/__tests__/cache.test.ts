@@ -1,10 +1,15 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { VerdictCache } from "../cache.js";
 import type { CacheConfig, CachedVerdict } from "../types.js";
 import { hashCommand, normalizeUrl } from "../url-utils.js";
-import { makeTmpDir } from "./test-utils.js";
+import { makeTmpDir, writeSignedCacheFixture } from "./test-utils.js";
+
+/** Cache fixtures are written as the cache writes them: authenticated. */
+async function writeCacheFile(path: string, json: string, _encoding?: string): Promise<void> {
+	await writeSignedCacheFixture(path, JSON.parse(json));
+}
 
 function makeConfig(overrides: Partial<CacheConfig> = {}): CacheConfig {
 	return {
@@ -62,7 +67,7 @@ describe("VerdictCache", () => {
 			expiresAt: "9999-12-31T23:59:59Z",
 			sourceFreshUntil: "9999-12-31T23:59:59Z",
 		};
-		await writeFile(
+		await writeCacheFile(
 			cachePath,
 			JSON.stringify({
 				urls: { [normalizeUrl("https://malformed.test")]: malformed, nullEntry: null },
@@ -106,7 +111,7 @@ describe("VerdictCache", () => {
 
 	it("treats URL verdicts with invalid expiry as stale", async () => {
 		const cachePath = join(dir, "cache.json");
-		await writeFile(
+		await writeCacheFile(
 			cachePath,
 			JSON.stringify({
 				urls: {
@@ -131,7 +136,7 @@ describe("VerdictCache", () => {
 
 	it("rejects legacy clean URL entries without a source freshness deadline", async () => {
 		const cachePath = join(dir, "cache.json");
-		await writeFile(
+		await writeCacheFile(
 			cachePath,
 			JSON.stringify({
 				urls: {
@@ -227,7 +232,7 @@ describe("VerdictCache", () => {
 		const cachePath = join(dir, "cache.json");
 		// Write a cache file manually
 		const farFuture = "9999-12-31T23:59:59+00:00";
-		await writeFile(
+		await writeCacheFile(
 			cachePath,
 			JSON.stringify({
 				urls: {
@@ -281,7 +286,7 @@ describe("VerdictCache", () => {
 	it("ignores entries from an older AIDR version", async () => {
 		const cachePath = join(dir, "cache.json");
 		const farFuture = "9999-12-31T23:59:59+00:00";
-		await writeFile(
+		await writeCacheFile(
 			cachePath,
 			JSON.stringify({
 				urls: {
@@ -308,7 +313,7 @@ describe("VerdictCache", () => {
 	it("returns entries matching the current AIDR version", async () => {
 		const cachePath = join(dir, "cache.json");
 		const farFuture = "9999-12-31T23:59:59+00:00";
-		await writeFile(
+		await writeCacheFile(
 			cachePath,
 			JSON.stringify({
 				urls: {
@@ -337,7 +342,7 @@ describe("VerdictCache", () => {
 	it("ignores entries without aidrVersion when version is set", async () => {
 		const cachePath = join(dir, "cache.json");
 		const farFuture = "9999-12-31T23:59:59+00:00";
-		await writeFile(
+		await writeCacheFile(
 			cachePath,
 			JSON.stringify({
 				urls: {
@@ -376,7 +381,7 @@ describe("VerdictCache", () => {
 		const cachePath = join(dir, "cache.json");
 		const farFuture = "9999-12-31T23:59:59+00:00";
 		const hash = hashCommand("dangerous command");
-		await writeFile(
+		await writeCacheFile(
 			cachePath,
 			JSON.stringify({
 				urls: {},
@@ -403,7 +408,7 @@ describe("VerdictCache", () => {
 	it("ignores stale package entries from older version", async () => {
 		const cachePath = join(dir, "cache.json");
 		const farFuture = "9999-12-31T23:59:59+00:00";
-		await writeFile(
+		await writeCacheFile(
 			cachePath,
 			JSON.stringify({
 				urls: {},
@@ -429,7 +434,7 @@ describe("VerdictCache", () => {
 
 	it("ignores malformed package cache rows instead of returning unsafe verdicts", async () => {
 		const cachePath = join(dir, "cache.json");
-		await writeFile(
+		await writeCacheFile(
 			cachePath,
 			JSON.stringify({
 				urls: {},
@@ -463,7 +468,7 @@ describe("VerdictCache", () => {
 	it("dev version skips version check (wildcard)", async () => {
 		const cachePath = join(dir, "cache.json");
 		const farFuture = "9999-12-31T23:59:59+00:00";
-		await writeFile(
+		await writeCacheFile(
 			cachePath,
 			JSON.stringify({
 				urls: {
@@ -492,7 +497,7 @@ describe("VerdictCache", () => {
 	it("save prunes stale entries from disk", async () => {
 		const cachePath = join(dir, "cache.json");
 		const farFuture = "9999-12-31T23:59:59+00:00";
-		await writeFile(
+		await writeCacheFile(
 			cachePath,
 			JSON.stringify({
 				urls: {

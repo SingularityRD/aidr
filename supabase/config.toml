@@ -141,6 +141,11 @@ verify_jwt = false
 verify_jwt = false
 [functions.policy-ack]
 verify_jwt = false
+[functions.browser-guard-policy]
+# Signed Browser Guard policy (Shadow AI decisions). Browser Guard authenticates with
+# its hash-only telemetry key (scope ingest:browser_guard or tenant), not a Supabase
+# JWT; the handler verifies the key, tenant state and a rate limit before any read.
+verify_jwt = false
 [functions.policy-management]
 verify_jwt = true
 [functions.team-invite]

@@ -7,12 +7,12 @@
  */
 
 import type { Logger } from "../types.js";
-import { nullLogger } from "../types.js";
+import { clampLegTimeoutSeconds, DEFAULT_LEG_TIMEOUT_SECONDS, nullLogger } from "../types.js";
 
 const NPM_REGISTRY = "https://registry.npmjs.org";
 const NPM_DOWNLOADS_API = "https://api.npmjs.org/downloads/point/last-week";
 const PYPI_REGISTRY = "https://pypi.org/pypi";
-const DEFAULT_TIMEOUT = 5.0;
+const DEFAULT_TIMEOUT = DEFAULT_LEG_TIMEOUT_SECONDS;
 export const MAX_REGISTRY_RESPONSE_BYTES = 20 * 1024 * 1024;
 
 /** Package name validation — prevents SSRF via crafted names. */
@@ -119,7 +119,7 @@ export class RegistryClient {
 	private readonly logger: Logger;
 
 	constructor(config?: { timeout_seconds?: number }, logger: Logger = nullLogger) {
-		this.timeoutMs = (config?.timeout_seconds ?? DEFAULT_TIMEOUT) * 1000;
+		this.timeoutMs = clampLegTimeoutSeconds(config?.timeout_seconds, DEFAULT_TIMEOUT) * 1000;
 		this.logger = logger;
 	}
 

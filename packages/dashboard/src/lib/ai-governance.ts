@@ -33,6 +33,12 @@ const BROWSER_GUARD_SITES = [
 	"grok",
 ] as const;
 
+/**
+ * Browser Guard Shadow AI catalog id: a banned `ai_site` with such an identifier is
+ * delivered to enrolled browsers in the signed `browser-guard-policy` document.
+ */
+const SHADOW_AI_SERVICE_ID = /^[a-z0-9][a-z0-9-]{0,31}$/;
+
 export type AssetType = (typeof ASSET_TYPES)[number];
 export type AssetStatus = (typeof ASSET_STATUSES)[number];
 export type RiskTier = (typeof RISK_TIERS)[number];
@@ -135,13 +141,7 @@ export interface IntakeRequest {
 	decisionReason: string | null;
 }
 
-type ExceptionStatus =
-	| "pending"
-	| "approved"
-	| "rejected"
-	| "cancelled"
-	| "revoked"
-	| "expired";
+type ExceptionStatus = "pending" | "approved" | "rejected" | "cancelled" | "revoked" | "expired";
 
 export interface GovernanceException {
 	id: string;
@@ -218,8 +218,7 @@ export type GovernanceResult<T> = { ok: true; value: T } | { ok: false; error: s
 
 const ASSET_COLUMNS =
 	"id,asset_type,identifier,name,vendor,owner_user_id,business_purpose,data_categories,risk_tier,risk_score,status,review_due_at,last_reviewed_at,last_reviewed_by,source,first_observed_at,last_observed_at,version,updated_at";
-const EVIDENCE_COLUMNS =
-	"id,asset_id,evidence_kind,evidence_ref,label,observed_at,linked_at";
+const EVIDENCE_COLUMNS = "id,asset_id,evidence_kind,evidence_ref,label,observed_at,linked_at";
 const INTAKE_COLUMNS =
 	"id,asset_id,asset_type,identifier,name,vendor,business_purpose,data_categories,requested_status,status,requested_by,created_at,expires_at,decided_by,decided_at,decision_reason";
 const EXCEPTION_COLUMNS =
@@ -667,7 +666,8 @@ export function enforcementOf(
 	if (
 		asset.assetType === "ai_site" &&
 		asset.status === "banned" &&
-		(BROWSER_GUARD_SITES as readonly string[]).includes(asset.identifier)
+		((BROWSER_GUARD_SITES as readonly string[]).includes(asset.identifier) ||
+			SHADOW_AI_SERVICE_ID.test(asset.identifier))
 	)
 		return "browser_block";
 	return "none";
@@ -676,7 +676,8 @@ export function enforcementOf(
 export const ENFORCEMENT_LABEL: Record<Enforcement, string> = {
 	connector_deny: "Blocked by connectors",
 	connector_ask: "Connectors ask for approval",
-	browser_block: "Browser Guard blockedSites (deploy via browser management)",
+	browser_block:
+		"Blocked by Browser Guard (signed dashboard policy; built-in sites also via blockedSites)",
 	none: "Register only",
 };
 

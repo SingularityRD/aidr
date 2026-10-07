@@ -6,9 +6,14 @@ import { createHash } from "node:crypto";
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
-import { getFileContent } from "./file-utils.js";
+import { getFileContentRaw } from "./file-utils.js";
 import { loadFrameworkMappings, resolveRuleFrameworks } from "./framework-mappings.js";
 import { THREAT_PARSE_CACHE } from "./generated/threat-parse-cache.js";
+import {
+	checkCoveredFile,
+	loadResourceManifestCoverage,
+	type ResourceManifestCoverage,
+} from "./integrity/resource-manifest.js";
 import type { Logger, Threat } from "./types.js";
 import { nullLogger } from "./types.js";
 
@@ -72,6 +77,35 @@ export interface LoadThreatsOptions {
 	 * file on each call; the default parses all files.
 	 */
 	includeFile?: (content: string) => boolean;
+	/**
+	 * Check each rule file against the artifact manifest that ships with the
+	 * rule directory, when one is present (see `integrity/resource-manifest.ts`):
+	 * a listed file must match its digest and an unlisted file is ignored. When
+	 * `publicKeysPem` is non-empty the manifest signature is required too.
+	 * {@link loadThreatsFromDirsWithReport} applies it to the bundled directory only.
+	 */
+	manifest?: { publicKeysPem?: readonly string[] };
+}
+
+/** A rule file (or a rule inside one) that did not load as shipped. */
+export interface ThreatLoadError {
+	file: string;
+	kind:
+		| "read"
+		| "parse"
+		| "not_a_list"
+		| "empty"
+		| "invalid_rule"
+		| "integrity"
+		| "unlisted"
+		| "missing";
+	message: string;
+	threatId?: string;
+}
+
+export interface ThreatLoadReport {
+	threats: Threat[];
+	errors: ThreatLoadError[];
 }
 
 export async function loadThreats(
@@ -79,8 +113,36 @@ export async function loadThreats(
 	logger: Logger = nullLogger,
 	options: LoadThreatsOptions = {},
 ): Promise<Threat[]> {
+	return (await loadThreatsWithReport(threatDir, logger, options)).threats;
+}
+
+/**
+ * Load one rule directory and report every file or rule that did not load.
+ * A caller that enforces must treat errors in the bundled rules as degraded
+ * detection: the affected rules are simply absent from `threats`, so a corrupt
+ * or emptied file would otherwise look exactly like "nothing matched".
+ */
+export async function loadThreatsWithReport(
+	threatDir: string,
+	logger: Logger = nullLogger,
+	options: LoadThreatsOptions = {},
+): Promise<ThreatLoadReport> {
 	const threats: Threat[] = [];
-	const errors: string[] = [];
+	const errors: ThreatLoadError[] = [];
+	const fail = (error: ThreatLoadError, context: Record<string, unknown> = {}): void => {
+		errors.push(error);
+		logger.error(error.message, { file: error.file, ...context });
+	};
+	const ruleError = (filename: string, record: Record<string, unknown>, message: string) =>
+		fail(
+			{
+				file: filename,
+				kind: "invalid_rule",
+				message,
+				...(typeof record.id === "string" ? { threatId: record.id } : {}),
+			},
+			{ threatId: record.id },
+		);
 
 	let files: string[];
 	try {
@@ -95,15 +157,49 @@ export async function loadThreats(
 	// the loaded rules and is logged; it never stops a rule from loading.
 	const frameworkMappings = await loadFrameworkMappings(threatDir, logger);
 
+	const coverage: ResourceManifestCoverage = options.manifest
+		? await loadResourceManifestCoverage(threatDir, options.manifest)
+		: { status: "none" };
+	if (coverage.status === "invalid") {
+		fail({
+			file: coverage.manifestPath,
+			kind: "integrity",
+			message: `Rule files cannot be verified: ${coverage.reason}`,
+		});
+	} else if (coverage.status === "covered") {
+		// A shipped rule file that is gone takes its rules with it.
+		const present = new Set(files);
+		for (const listed of coverage.files.keys()) {
+			if (listed.endsWith(".yaml") && !listed.includes("/") && !present.has(listed)) {
+				fail({
+					file: listed,
+					kind: "missing",
+					message: `Rule file ${listed} is listed in the artifact manifest but missing`,
+				});
+			}
+		}
+	}
+
 	for (const filename of files) {
 		const filePath = join(threatDir, filename);
 		let content: string;
 		try {
-			content = await getFileContent(filePath);
+			const bytes = await getFileContentRaw(filePath);
+			const verified = checkCoveredFile(coverage, filename, bytes);
+			if (verified && !verified.ok) {
+				const unlisted = verified.reason === "unlisted";
+				fail({
+					file: filename,
+					kind: unlisted ? "unlisted" : "integrity",
+					message: unlisted
+						? `Ignoring ${filename}: not listed in the artifact manifest`
+						: `Ignoring ${filename}: does not verify against the artifact manifest (${verified.reason})`,
+				});
+				continue;
+			}
+			content = bytes.toString("utf8");
 		} catch (e) {
-			const errorMsg = `Failed to read ${filename}: ${String(e)}`;
-			errors.push(errorMsg);
-			logger.error(errorMsg, { file: filename, error: String(e) });
+			fail({ file: filename, kind: "read", message: `Failed to read ${filename}: ${String(e)}` });
 			continue;
 		}
 		if (options.includeFile && !options.includeFile(content)) continue;
@@ -112,22 +208,34 @@ export async function loadThreats(
 		try {
 			data = parseThreatYaml(content);
 		} catch (e2) {
-			const errorMsg = `Failed to parse ${filename}: ${String(e2)}`;
-			errors.push(errorMsg);
-			logger.error(errorMsg, { file: filename, error: String(e2) });
+			fail({
+				file: filename,
+				kind: "parse",
+				message: `Failed to parse ${filename}: ${String(e2)}`,
+			});
 			continue;
 		}
 
 		if (!Array.isArray(data)) {
-			const errorMsg = `Expected list in ${filename}, got ${typeof data}`;
-			errors.push(errorMsg);
-			logger.error(errorMsg, { file: filename });
+			fail({
+				file: filename,
+				kind: data == null ? "empty" : "not_a_list",
+				message: `Expected list in ${filename}, got ${data == null ? "an empty document" : typeof data}`,
+			});
+			continue;
+		}
+		if (data.length === 0) {
+			fail({ file: filename, kind: "empty", message: `Rule file ${filename} contains no rules` });
 			continue;
 		}
 
 		for (const entry of data) {
 			if (typeof entry !== "object" || entry === null) {
-				logger.warn(`Skipping non-object entry in ${filename}`);
+				fail({
+					file: filename,
+					kind: "invalid_rule",
+					message: `Skipping non-object entry in ${filename}`,
+				});
 				continue;
 			}
 
@@ -135,9 +243,11 @@ export async function loadThreats(
 			const keys = new Set(Object.keys(record));
 			const missing = [...REQUIRED_FIELDS].filter((f) => !keys.has(f));
 			if (missing.length > 0) {
-				const errorMsg = `Skipping threat in ${filename}: missing fields ${missing.join(", ")}`;
-				errors.push(errorMsg);
-				logger.error(errorMsg, { file: filename, threatId: record.id });
+				ruleError(
+					filename,
+					record,
+					`Skipping threat in ${filename}: missing fields ${missing.join(", ")}`,
+				);
 				continue;
 			}
 
@@ -147,9 +257,11 @@ export async function loadThreats(
 			// Validate confidence is within valid range (0-1)
 			const confidenceValue = Number(record.confidence);
 			if (Number.isNaN(confidenceValue) || confidenceValue < 0 || confidenceValue > 1) {
-				const errorMsg = `Skipping threat ${record.id} in ${filename}: confidence must be between 0 and 1, got ${record.confidence}`;
-				errors.push(errorMsg);
-				logger.error(errorMsg, { file: filename, threatId: record.id });
+				ruleError(
+					filename,
+					record,
+					`Skipping threat ${record.id} in ${filename}: confidence must be between 0 and 1, got ${record.confidence}`,
+				);
 				continue;
 			}
 
@@ -158,9 +270,11 @@ export async function loadThreats(
 				const flags = record.case_insensitive === true ? "i" : "";
 				compiledPattern = new RegExp(record.pattern as string, flags);
 			} catch (e) {
-				const errorMsg = `Skipping threat ${record.id}: invalid regex pattern - ${String(e)}`;
-				errors.push(errorMsg);
-				logger.error(errorMsg, { file: filename, threatId: record.id, error: String(e) });
+				ruleError(
+					filename,
+					record,
+					`Skipping threat ${record.id}: invalid regex pattern - ${String(e)}`,
+				);
 				continue;
 			}
 
@@ -175,9 +289,11 @@ export async function loadThreats(
 			// a rule error, never a silently widened rule.
 			const diff = record.diff;
 			if (diff !== undefined && !DIFF_MODES.has(diff as string)) {
-				const errorMsg = `Skipping threat ${record.id} in ${filename}: diff must be one of ${[...DIFF_MODES].join(", ")}`;
-				errors.push(errorMsg);
-				logger.error(errorMsg, { file: filename, threatId: record.id });
+				ruleError(
+					filename,
+					record,
+					`Skipping threat ${record.id} in ${filename}: diff must be one of ${[...DIFF_MODES].join(", ")}`,
+				);
 				continue;
 			}
 			const minMatches = record.min_matches;
@@ -187,9 +303,11 @@ export async function loadThreats(
 					(minMatches as number) < 1 ||
 					(minMatches as number) > 1000)
 			) {
-				const errorMsg = `Skipping threat ${record.id} in ${filename}: min_matches must be an integer between 1 and 1000`;
-				errors.push(errorMsg);
-				logger.error(errorMsg, { file: filename, threatId: record.id });
+				ruleError(
+					filename,
+					record,
+					`Skipping threat ${record.id} in ${filename}: min_matches must be an integer between 1 and 1000`,
+				);
 				continue;
 			}
 			const frameworks = frameworkMappings
@@ -223,25 +341,48 @@ export async function loadThreats(
 	if (errors.length > 0) {
 		logger.warn(`Loaded ${threats.length} threats from ${threatDir} with ${errors.length} errors`, {
 			path: threatDir,
-			errors,
+			errors: errors.map((error) => error.message),
 		});
 	} else {
 		logger.debug(`Loaded ${threats.length} threats from ${threatDir}`);
 	}
 
-	return threats;
+	return { threats, errors };
+}
+
+/** The merged rule set plus what the bundled (first) directory failed to load. */
+export interface MergedThreatLoadReport {
+	threats: Threat[];
+	/** Rules loaded from the bundled (first) directory. */
+	bundledCount: number;
+	/** Files or rules in the bundled directory that did not load or verify. */
+	bundledErrors: ThreatLoadError[];
+	/** Set when the bundled directory itself could not be read. */
+	bundledUnavailable?: string;
+	/** User rule ids that clashed with an already loaded id and were ignored. */
+	ignoredOverrides: string[];
 }
 
 /**
- * Load threats from multiple directories and merge them by threat ID.
- * Later directories win on ID collisions (override semantics).
+ * Load threats from multiple directories. The first directory holds the
+ * bundled rules; later directories (user rules in ~/.singularity-aidr/threats)
+ * are additive only. A later rule whose id is already loaded is ignored and
+ * logged: a writable user directory must not be able to replace a shipped rule
+ * (for example with a never-matching pattern) and so switch it off. Disabling
+ * a shipped rule is what `disabled_threats` is for.
  */
-export async function loadThreatsFromDirs(
+export async function loadThreatsFromDirsWithReport(
 	threatDirs: string[],
 	logger: Logger = nullLogger,
 	options: LoadThreatsOptions = {},
-): Promise<Threat[]> {
+): Promise<MergedThreatLoadReport> {
 	const merged = new Map<string, Threat>();
+	const report: MergedThreatLoadReport = {
+		threats: [],
+		bundledCount: 0,
+		bundledErrors: [],
+		ignoredOverrides: [],
+	};
 	for (const [index, dir] of threatDirs.entries()) {
 		if (!dir) continue;
 		// Only the first (primary) directory is mandatory. An absent optional
@@ -252,17 +393,44 @@ export async function loadThreatsFromDirs(
 			continue;
 		}
 		try {
-			const threats = await loadThreats(dir, logger, options);
-			for (const threat of threats) {
+			const loaded = await loadThreatsWithReport(
+				dir,
+				logger,
+				index === 0 ? options : { ...options, manifest: undefined },
+			);
+			if (index === 0) {
+				report.bundledCount = loaded.threats.length;
+				report.bundledErrors = loaded.errors;
+			}
+			for (const threat of loaded.threats) {
+				if (merged.has(threat.id)) {
+					report.ignoredOverrides.push(threat.id);
+					logger.warn(
+						`Ignoring rule ${threat.id} from ${dir}: a rule with this id is already loaded (user rules are additive only)`,
+						{ threatId: threat.id, path: dir },
+					);
+					continue;
+				}
 				merged.set(threat.id, threat);
 			}
 		} catch (error) {
+			if (index === 0) report.bundledUnavailable = String(error);
 			// Skip directories that don't exist (e.g., optional user threats dir)
 			// Only the first (primary) directory should be mandatory
 			logger.debug(`Skipping threat directory: ${dir}`, { error: String(error) });
 		}
 	}
-	return [...merged.values()];
+	report.threats = [...merged.values()];
+	return report;
+}
+
+/** {@link loadThreatsFromDirsWithReport}, returning only the merged rules. */
+export async function loadThreatsFromDirs(
+	threatDirs: string[],
+	logger: Logger = nullLogger,
+	options: LoadThreatsOptions = {},
+): Promise<Threat[]> {
+	return (await loadThreatsFromDirsWithReport(threatDirs, logger, options)).threats;
 }
 
 async function isDirectory(path: string): Promise<boolean> {

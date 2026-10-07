@@ -288,6 +288,24 @@ export interface GuardPolicy {
 	 * policies built before the notice existed stay valid; the worker always sets it.
 	 */
 	readonly acceptableUse?: AcceptableUseNotice | null;
+	/**
+	 * Trust anchor for Shadow AI decisions made in the AIDR dashboard (managed-only key
+	 * `dashboardPolicy`, see src/background/dashboard-policy.ts). Absent or null: dashboard
+	 * decisions are never fetched or applied. Optional for the same reason as `acceptableUse`.
+	 */
+	readonly dashboardPolicy?: DashboardPolicyTrust | null;
+}
+
+/**
+ * Keys that may sign the dashboard's Browser Guard policy document. Only an administrator
+ * can set it (chrome.storage.managed), so a user cannot make the extension trust a
+ * document of their own.
+ */
+export interface DashboardPolicyTrust {
+	/** 1-4 Ed25519 public keys, SPKI PEM (the connectors' `policy_public_keys_pem`). */
+	readonly publicKeysPem: readonly string[];
+	/** When set, a document signed for another tenant is refused. */
+	readonly tenantId: string | null;
 }
 
 /**

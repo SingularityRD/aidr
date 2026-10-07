@@ -279,6 +279,7 @@ the policy sets `allowUserOverrides: true` (see `deploy/browser-guard/README.md`
 | `telemetry` | `{ controlPlaneUrl, apiKey }` | none (no telemetry) |
 | `language` | `auto` \| `en` \| `tr` | `auto` |
 | `policyId` | string reported with telemetry | `aidr-browser-guard-default` |
+| `dashboardPolicy` | `{ publicKeysPem: [1-4 Ed25519 SPKI PEM], tenantId? }` (managed only) | none: dashboard Shadow AI decisions are not applied |
 | `allowUserOverrides` | boolean (managed only) | `false`: a managed policy locks the protection settings above |
 
 The authoritative schema is [`static/managed_schema.json`](static/managed_schema.json);
@@ -339,6 +340,31 @@ URL the user visits and shows a "Read your browsing history" warning, so it is n
 used. Services on a path of a general-purpose host (Notion AI, GitHub Copilot, Bing)
 are not in the catalog; blocking them by host would break the host product.
 
+#### Allow / block from the dashboard
+
+Owners and administrators can also allow or block a detected service from the
+dashboard (Browser Privacy Guard → Shadow AI; AAL2, audited). The decision is an AI
+governance register entry (`ai_site`, catalog id; `approved` or `banned`) and reaches
+enrolled browsers as a **signed** document from
+`GET {controlPlaneUrl}/functions/v1/browser-guard-policy`, authenticated with the
+telemetry key ([`src/background/dashboard-policy.ts`](src/background/dashboard-policy.ts)).
+The extension applies it only when the managed `dashboardPolicy` key pins the
+control plane's Ed25519 policy signing key(s): the signature must verify, the
+`policy_sha256` digest must match the document and the signed envelope, the tenant
+must match a pinned `tenantId`, and the sequence must not be lower than the last
+accepted one. An unsigned, tampered, foreign-key or replayed document is ignored and
+the last verified one stays in force. Refresh: startup, every managed-policy change and
+every 15 minutes (`aidr-dashboard-policy` alarm).
+
+Precedence is **most restrictive wins**: a dashboard block applies in every mode; a
+dashboard allow only marks a service sanctioned when the managed `shadowAi` does not
+block it (an MDM `blocked` id, or an unsanctioned service under MDM
+`block-unsanctioned`, stays blocked); the dashboard never changes `mode`. When the
+signed document expires (24 h by default) without a successful refresh, its blocks
+stay and its sanctions are dropped. Deploy `telemetry` through managed policy as well,
+so a user cannot disconnect the refresh. The GPO/MDM `shadowAi` snippet remains the
+alternative for fleets without a control plane.
+
 ### Exact data match
 
 `exactData` lets an organisation flag its own records (customer names, account
@@ -381,6 +407,9 @@ to regenerate the dataset with stable fingerprints.
   values, file names or URLs. With `shadowAi` on it also sends aggregated
   `shadow_ai_usage` events: catalog service id, visited/blocked, count and whether
   the service is sanctioned. Never the URL, host, path or page title.
+- With `telemetry` and the managed `dashboardPolicy` set, it also fetches the signed
+  dashboard policy (`GET /functions/v1/browser-guard-policy`, telemetry key only, no
+  body, no browsing data).
 - The optional native host (`useNativeHost`) runs on the same machine and is
   reached through native messaging; see [`docs/native-host.md`](docs/native-host.md).
 

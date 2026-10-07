@@ -1,5 +1,5 @@
 import { createHash, createPublicKey, verify as cryptoVerify } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { type ArtifactManifestV1, ArtifactManifestV1Schema } from "./schema.js";
@@ -16,6 +16,7 @@ export type IntegrityStatus =
 	| "path_traversal"
 	| "missing_file"
 	| "hash_mismatch"
+	| "unlisted_file"
 	| "io_error";
 
 export interface IntegrityMismatch {
@@ -31,8 +32,16 @@ export interface IntegrityCheckResult {
 	mismatches?: IntegrityMismatch[];
 }
 
-const DEFAULT_MANIFEST_NAME = "aidr-artifact.manifest.json";
-const DEFAULT_SIGNATURE_NAME = "aidr-artifact.manifest.sig";
+export const DEFAULT_MANIFEST_NAME = "aidr-artifact.manifest.json";
+export const DEFAULT_SIGNATURE_NAME = "aidr-artifact.manifest.sig";
+
+/**
+ * Directory names whose contents are runtime data (threat rules, allowlists).
+ * Any directory a manifest path enters through one of these names is a closed
+ * set: a file inside it that the manifest does not list changes verdicts just
+ * as surely as a modified one, so it is an integrity failure.
+ */
+const CLOSED_RESOURCE_DIR_NAMES = new Set(["resources", "threats", "allowlists"]);
 
 function sha256Hex(buf: Uint8Array): string {
 	return createHash("sha256").update(buf).digest("hex");
@@ -80,6 +89,41 @@ function toPublicKey(key: string) {
 		return createPublicKey({ key: Buffer.from(t, "base64"), format: "der", type: "spki" });
 	} catch {
 		return null;
+	}
+}
+
+/** Verify a base64 Ed25519 signature file's content over `message` against any of `publicKeys`. */
+export function verifyEd25519Signature(
+	message: Buffer,
+	signatureBase64: string,
+	publicKeys: string[],
+): boolean {
+	const sig = parseSignatureBase64(signatureBase64);
+	return sig !== null && verifyEd25519(message, sig, publicKeys);
+}
+
+/** The closed resource directories (relative, POSIX) a manifest's paths enter. */
+function closedResourceDirs(paths: readonly string[]): Set<string> {
+	const dirs = new Set<string>();
+	for (const p of paths) {
+		const parts = p.split("/");
+		const index = parts.slice(0, -1).findIndex((part) => CLOSED_RESOURCE_DIR_NAMES.has(part));
+		if (index >= 0) dirs.add(parts.slice(0, index + 1).join("/"));
+	}
+	return dirs;
+}
+
+async function listFilesRecursive(rootAbs: string, rel: string, out: string[]): Promise<void> {
+	let entries: import("node:fs").Dirent[];
+	try {
+		entries = await readdir(path.join(rootAbs, rel), { withFileTypes: true });
+	} catch {
+		return;
+	}
+	for (const entry of entries) {
+		const child = `${rel}/${entry.name}`;
+		if (entry.isDirectory()) await listFilesRecursive(rootAbs, child, out);
+		else out.push(child);
 	}
 }
 
@@ -177,6 +221,19 @@ export async function verifyArtifactIntegrity(params: {
 	if (mismatches.length > 0) {
 		return { status: missingCount > 0 ? "missing_file" : "hash_mismatch", manifest, mismatches };
 	}
+
+	// Resource directories are closed sets: an extra rule or allowlist file
+	// would be loaded and change verdicts even though every listed file matches.
+	const listed = new Set(manifest.files.map((f) => f.path.split("\\").join("/")));
+	const unlisted: IntegrityMismatch[] = [];
+	for (const dir of closedResourceDirs([...listed])) {
+		const present: string[] = [];
+		await listFilesRecursive(artifactDirAbs, dir, present);
+		for (const file of present) {
+			if (!listed.has(file)) unlisted.push({ path: file, expected: "", actual: null });
+		}
+	}
+	if (unlisted.length > 0) return { status: "unlisted_file", manifest, mismatches: unlisted };
 
 	return { status: "ok", manifest };
 }

@@ -215,6 +215,78 @@ export function shadowAiEventSummary(payload: Record<string, unknown> | null | u
 }
 
 /**
+ * Dashboard allow/block decision for one AI service. Decisions are AI governance register
+ * entries (`ai_assets`, asset_type `ai_site`, identifier = catalog id): `approved` is
+ * "allowed" and `banned` is "blocked". Enrolled Browser Guard installs receive them in a
+ * signed policy document (`browser-guard-policy`) and apply them under the enterprise
+ * policy, most restrictive wins.
+ */
+export type ShadowAiDecision = "allowed" | "blocked";
+
+export interface ShadowAiDecisionRow {
+	assetId: string;
+	serviceId: string;
+	status: string;
+	version: number;
+	decision: ShadowAiDecision | null;
+}
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const ASSET_STATUS = ["proposed", "approved", "restricted", "banned", "retired"];
+
+/** Register rows for catalogued services; malformed rows make the whole read unavailable. */
+export function parseShadowAiDecisions(value: unknown): Map<string, ShadowAiDecisionRow> {
+	if (!Array.isArray(value)) throw new Error("Malformed Shadow AI decisions.");
+	const out = new Map<string, ShadowAiDecisionRow>();
+	for (const row of value) {
+		if (
+			!isRecord(row) ||
+			typeof row.id !== "string" ||
+			!UUID_PATTERN.test(row.id) ||
+			typeof row.identifier !== "string" ||
+			typeof row.status !== "string" ||
+			!ASSET_STATUS.includes(row.status) ||
+			!Number.isSafeInteger(row.version)
+		)
+			throw new Error("Malformed Shadow AI decisions.");
+		// Hostnames and other register identifiers are not Browser Guard catalog ids.
+		if (!SERVICE_PATTERN.test(row.identifier)) continue;
+		out.set(row.identifier, {
+			assetId: row.id,
+			serviceId: row.identifier,
+			status: row.status,
+			version: row.version as number,
+			decision: row.status === "approved" ? "allowed" : row.status === "banned" ? "blocked" : null,
+		});
+	}
+	return out;
+}
+
+/** `ai-governance` upsert_asset payload that records `decision` for `serviceId`. */
+export function shadowAiDecisionPayload(
+	serviceId: string,
+	decision: ShadowAiDecision,
+	existing: ShadowAiDecisionRow | undefined,
+): Record<string, unknown> {
+	const status = decision === "allowed" ? "approved" : "banned";
+	if (existing) {
+		return {
+			asset_id: existing.assetId,
+			expected_version: existing.version,
+			fields: { status },
+		};
+	}
+	return {
+		fields: {
+			asset_type: "ai_site",
+			identifier: serviceId,
+			name: serviceName(serviceId).slice(0, 120),
+			status,
+		},
+	};
+}
+
+/**
  * Managed-policy fragment for Shadow AI and a custom internal site, shown next to the
  * enrollment snippet. Ids are catalog ids; hosts are exact HTTPS hostnames.
  */
