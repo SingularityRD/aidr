@@ -167,9 +167,32 @@ app.use(middleware.express());
 `AIDRClient.check()` on the `CheckRequest` returned by `requestFactory`. The
 caller must set its `action` and `resource` to the specific command, URL, or
 file path being checked; the SDK does not infer all security-relevant artifacts
-from arbitrary function arguments. The Express/Next.js helpers check the request
-URL/path. Express passes body and headers as context; Next.js passes headers but
-does not read the body. Neither extracts them as separate artifacts.
+from arbitrary function arguments.
+
+`AIDRClient.check()` also inspects `CheckRequest.context.body` when present: the
+body is walked by the core generic extractor (the one native connectors use for
+unknown tools), so URLs, commands, file paths and free text in it are checked.
+A body larger than `MAX_CONTEXT_BODY_CHARS` (1 MiB serialized) or one that
+cannot be serialized is **denied** as not fully inspected — never judged on a
+prefix. A `sessionId` enables the session layers: the runaway guard (loop, rate
+and budget limits from the installed `agent_safety.runaway` config) records the
+call and turns an `allow` into an `ask` when a limit is crossed; a guard that
+cannot run makes the result indeterminate, not clean.
+
+The Express/Next.js helpers check each request as action `http_request`
+(`HTTP_REQUEST_ACTION`): the route (path + query) is inspected as content with
+embedded URLs extracted — it is not treated as a local file path. Express
+inspects `req.body` (mount a body parser first); Next.js reads a bounded copy
+of the body from a clone, leaving the original stream for the handler.
+
+`createGenericMiddleware()` maps the tool name to a check type: shell and
+code-running tools (`bash`, `run_code`, `python`, `code_interpreter`, …) are
+checked as `execute`, and every string in their input is also checked as a
+command; read/write/file/path tools as `read`/`write` with the first file path
+as the resource; fetch/url/http/browse tools as `fetch` with the first URL as
+the resource. When `context.artifacts` is not supplied, the core generic
+extractor runs on the parsed input, so file-path, URL and command rules apply
+whatever the tool is called.
 
 `wrapToolWithMiddleware()` retains the serialized arguments and, for structured
 inputs, also adds typed artifacts extracted from common field names such as

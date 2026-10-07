@@ -17,8 +17,11 @@
  * earlier: `before_prompt_build` (which runs before the gate, on the same
  * request) inspects `currentUserMessage` (or `prompt` on hosts that do not
  * supply it) and prepends a notice for the model, asking it to tell the user.
- * Both hooks share one memoised inspection per prompt text, so a prompt is
- * scanned and audited once.
+ * Both hooks share one memoised inspection per session, prompt text and
+ * installed policy (config and managed-state fingerprint), so a prompt is
+ * scanned and audited once per request, a different session never reuses
+ * another session's result, and a policy change is never answered from a
+ * result computed under the old policy.
  *
  * Coverage boundary (OpenClaw docs): `before_agent_run` is implemented by the
  * embedded and CLI runners only; it is not an input gate for the Codex or
@@ -28,9 +31,13 @@
  */
 
 import { createHash } from "node:crypto";
+import { statSync } from "node:fs";
 import {
+	type Config,
 	inspectUserPrompt,
 	type Logger,
+	loadConfig,
+	managedStatePath,
 	type PromptInspectionOutcome,
 	resolvePromptInspectionDeadlineMs,
 } from "@singularityrd/aidr-core";
@@ -63,8 +70,24 @@ export interface PromptHookContext {
 	sessionId?: string;
 }
 
-function digest(text: string): string {
-	return createHash("sha256").update(text).digest("hex");
+function digest(...parts: string[]): string {
+	const hash = createHash("sha256");
+	for (const part of parts) hash.update(part).update("\0");
+	return hash.digest("hex");
+}
+
+function sessionKeyOf(ctx?: PromptHookContext): string {
+	return ctx?.sessionKey ?? ctx?.sessionId ?? "openclaw";
+}
+
+/** Changes whenever the managed state (tenant DLP / prompt-safety policy) is rewritten. */
+function managedStateFingerprint(): string {
+	try {
+		const stat = statSync(managedStatePath());
+		return `${stat.size}:${stat.mtimeMs}:${stat.ino}`;
+	} catch {
+		return "absent";
+	}
 }
 
 export function toInputGateDecision(outcome: PromptInspectionOutcome): InputGateDecision {
@@ -140,12 +163,28 @@ export class OpenClawPromptProtection {
 		return toInputGateDecision(outcome);
 	}
 
-	private inspect(prompt: unknown, ctx?: PromptHookContext): Promise<PromptInspectionOutcome> {
+	private async inspect(
+		prompt: unknown,
+		ctx?: PromptHookContext,
+	): Promise<PromptInspectionOutcome> {
+		const sessionId = sessionKeyOf(ctx);
+		// The inspection deadline counts from the hook call, config load included.
 		const now = this.now();
+		// The installed policy is part of the memo key: the config is loaded once
+		// here and handed to the inspection, so the key and the result agree.
+		let config: Config | undefined;
+		try {
+			config = await loadConfig(undefined, this.logger);
+		} catch {
+			config = undefined; // the inspection applies its own load-failure policy
+		}
 		for (const [key, entry] of this.memo) {
 			if (now - entry.at > MEMO_TTL_MS) this.memo.delete(key);
 		}
-		const key = typeof prompt === "string" ? digest(prompt) : undefined;
+		const key =
+			typeof prompt === "string" && config
+				? digest(sessionId, JSON.stringify(config), managedStateFingerprint(), prompt)
+				: undefined;
 		const cached = key ? this.memo.get(key) : undefined;
 		if (cached) return cached.outcome;
 
@@ -157,10 +196,11 @@ export class OpenClawPromptProtection {
 		const outcome = inspectUserPrompt({
 			runtime: "openclaw",
 			hookEvent: OPENCLAW_PROMPT_EVENT,
-			sessionId: ctx?.sessionKey ?? ctx?.sessionId ?? "openclaw",
+			sessionId,
 			prompt,
 			deadlineAt: now + deadlineMs,
 			logger: this.logger,
+			...(config ? { config } : {}),
 		});
 		if (key) {
 			const entry = { at: now, outcome };

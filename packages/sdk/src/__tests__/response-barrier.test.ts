@@ -37,6 +37,11 @@ vi.mock("@singularityrd/aidr-core", async () => {
 		loadThreats: vi.fn(),
 		loadTrustedDomains: vi.fn(),
 		nullLogger: { debug() {}, info() {}, warn() {}, error() {} },
+		extractFromUnknownTool: () => [],
+		extractUrls: () => [],
+		inspectionLimitsHit: () => [],
+		INPUT_NOT_FULLY_INSPECTED: "input_not_fully_inspected",
+		checkRunaway: async () => ({ status: "disabled" }),
 	};
 });
 

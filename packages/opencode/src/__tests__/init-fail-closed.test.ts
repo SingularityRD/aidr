@@ -19,9 +19,11 @@ vi.mock("@singularityrd/aidr-core", async (importOriginal) => {
 	};
 });
 
-vi.mock("../startup-scan.js", () => ({
-	createSessionScanHandler: () => async () => {
+vi.mock("../startup-scan.js", async (importOriginal) => ({
+	...(await importOriginal<typeof import("../startup-scan.js")>()),
+	createCachedSessionScanner: () => async () => {
 		if (failures.threatLoad) throw failures.threatLoad;
+		return undefined;
 	},
 }));
 

@@ -27,7 +27,7 @@ import { getBundledDataDirs } from "./bundled-dirs.js";
 import { AidrVerdictBlockError } from "./error.js";
 import { createOutputHandlers, reportOpenCodeOutputCoverage } from "./output-handler.js";
 import { createToastNotifier, OpenCodePromptProtection } from "./prompt-handler.js";
-import { createSessionScanHandler } from "./startup-scan.js";
+import { createCachedSessionScanner, PendingSessionFindings } from "./startup-scan.js";
 import { createToolHandlers } from "./tool-handler.js";
 
 const APPROVAL_STORE_CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
@@ -108,8 +108,11 @@ async function initialisePlugin(
 	const { threatsDir, allowlistsDir } = getBundledDataDirs();
 	const approvalStore = new ApprovalStore();
 
-	// State: track findings per session for one-shot injection
-	const pendingFindingsBySession = new Map<string, string>();
+	// State: findings per session for one-shot injection (bounded and expiring,
+	// so sessions that never prompt cannot grow it), and one session scanner
+	// that reuses its result while the plugin set is unchanged.
+	const pendingFindingsBySession = new PendingSessionFindings();
+	const sessionScan = createCachedSessionScanner(logger, directory);
 
 	// Set up the cron job that cleans up the approval store.
 	const interval = setInterval(() => {
@@ -125,7 +128,7 @@ async function initialisePlugin(
 	const outputHandlers = createOutputHandlers(logger);
 	const prompts = new OpenCodePromptProtection({ logger, notify: createToastNotifier(client) });
 	reportOpenCodeOutputCoverage(logger);
-	await createSessionScanHandler(logger, directory)();
+	await sessionScan();
 
 	return {
 		"tool.execute.before": toolHandlers["tool.execute.before"],
@@ -150,7 +153,7 @@ async function initialisePlugin(
 			if (!message) return;
 
 			const sessionID = message.info.sessionID;
-			const findings = pendingFindingsBySession.get(sessionID);
+			const findings = pendingFindingsBySession.take(sessionID);
 			if (!findings) return;
 
 			const textPart = {
@@ -170,7 +173,6 @@ async function initialisePlugin(
 			message.parts.push(textPart);
 
 			logger.info({ findings }, "Injected aidr plugin scan findings to user message");
-			pendingFindingsBySession.delete(sessionID);
 		},
 
 		// Event hook for session.created
@@ -181,9 +183,8 @@ async function initialisePlugin(
 				try {
 					logger.debug({ sessionID }, "Singularity AIDR: starting session scan");
 
-					await createSessionScanHandler(logger, directory, (msg) => {
-						pendingFindingsBySession.set(sessionID, msg);
-					})();
+					const findings = await sessionScan();
+					if (findings !== undefined) pendingFindingsBySession.set(sessionID, findings);
 				} catch (error) {
 					logger.error(
 						{ sessionID, error: String(error) },

@@ -144,6 +144,26 @@ describe("OpenClaw before_agent_run prompt gate", () => {
 		expect(decision.message).not.toContain(IBAN);
 	});
 
+	it("never answers a policy change from a result memoised under the old policy", async () => {
+		const prompt = `refund to IBAN ${IBAN} please`;
+		expect(await gate(prompt, "agent:main:policy")).toEqual({ outcome: "pass" });
+		await writeConfig({ prompt_protection: { secrets: "block", pii: "block" } });
+		const decision = (await gate(prompt, "agent:main:policy")) as Record<string, string>;
+		expect(decision.outcome).toBe("block");
+	});
+
+	it("does not reuse another session's inspection of the same prompt", async () => {
+		const prompt = `TCKN ${TC_KIMLIK} for session isolation`;
+		expect(await gate(prompt, "agent:main:session-a")).toEqual({ outcome: "pass" });
+		expect(await gate(prompt, "agent:main:session-b")).toEqual({ outcome: "pass" });
+		const entries = (await auditLog()).trim().split("\n");
+		expect(entries).toHaveLength(2);
+		expect(entries.map((entry) => JSON.parse(entry).session_id)).toEqual([
+			"agent:main:session-a",
+			"agent:main:session-b",
+		]);
+	});
+
 	it("fails closed on a missing prompt when secrets are blocked", async () => {
 		const decision = (await gate(undefined)) as Record<string, string>;
 		expect(isHostAcceptedDecision(decision)).toBe(true);

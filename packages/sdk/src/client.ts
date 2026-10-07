@@ -1,9 +1,15 @@
 import { createHash } from "node:crypto";
 import {
+	type Artifact,
 	type Config,
+	checkRunaway,
 	DecisionEngine,
+	extractFromUnknownTool,
+	extractUrls,
 	getEffectiveManagedApiKey,
 	HeuristicsEngine,
+	INPUT_NOT_FULLY_INSPECTED,
+	inspectionLimitsHit,
 	inspectResponseBarrier,
 	isInvalidConfig,
 	type Logger,
@@ -45,6 +51,53 @@ import {
 } from "./privacy-text.js";
 
 export type { Logger };
+
+/**
+ * Largest request body (`CheckRequest.context.body`, serialized) the SDK
+ * inspects. A larger body is never judged on a prefix: the check returns `deny`
+ * because the body could not be fully inspected.
+ */
+export const MAX_CONTEXT_BODY_CHARS = 1024 * 1024;
+
+/**
+ * Action for an HTTP request checked by the Express/Next.js helpers. The
+ * resource is the request route (path + query), inspected as content with any
+ * embedded URLs extracted; it is never treated as a local file path.
+ */
+export const HTTP_REQUEST_ACTION = "http_request";
+
+type UrlCheckResult = Awaited<ReturnType<UrlCheckClient["checkUrls"]>>[number];
+
+/** Most URLs one `fetch` check sends to the reputation provider. */
+const MAX_REPUTATION_URLS = 16;
+
+function earliest(values: ReadonlyArray<number | undefined>): number | undefined {
+	const defined = values.filter((value): value is number => typeof value === "number");
+	return defined.length > 0 ? Math.min(...defined) : undefined;
+}
+
+function withReasons(result: CheckResult, reasons: readonly string[]): CheckResult {
+	const extra = reasons.filter((reason) => !result.reason?.includes(reason));
+	if (extra.length === 0) return result;
+	return { ...result, reason: [result.reason, ...extra].filter(Boolean).join("; ") };
+}
+
+/** Same marker the core generic extractor emits for an input it could not fully walk. */
+function notFullyInspected(): Artifact {
+	return {
+		type: "content",
+		value: `${INPUT_NOT_FULLY_INSPECTED}:total_size`,
+		context: `aidr:${INPUT_NOT_FULLY_INSPECTED}`,
+	};
+}
+
+function serializeBody(body: unknown): string | undefined {
+	try {
+		return typeof body === "string" ? body : JSON.stringify(body);
+	} catch {
+		return undefined;
+	}
+}
 
 /** Render a candidate-path list for error messages. */
 function formatSearched(paths: string[]): string {
@@ -455,47 +508,35 @@ export class AIDRClient {
 				: barrier;
 		const privacy = await this._privacyRouteResult(request, installed);
 		if (privacy) return privacy;
+		// Extract artifacts from the request (resource, typed artifacts, body)
+		const artifacts = this._extractArtifacts(request);
+		const limits = inspectionLimitsHit(artifacts);
+		if (limits.length > 0) {
+			// Judging only the inspected part could pass an unsafe call: deny.
+			return {
+				allowed: false,
+				decision: "deny",
+				confidence: 1,
+				reason: `Input could not be fully inspected (${limits.join(", ")}); it was blocked rather than judged on a part.`,
+				metadata: { [INPUT_NOT_FULLY_INSPECTED]: limits },
+			};
+		}
+
 		// Check cache first
-		const cacheKey = this._getCacheKey(request);
-		/** Set when the reputation leg could not run, so the result is never clean. */
-		let urlLegUnavailableReason: string | undefined;
+		const cacheKey = this._getCacheKey(request, artifacts);
 		if (this.cache) {
 			const cached = this.cache.getUrl(cacheKey);
 			if (cached) {
 				this.logger.debug(`Cache hit for ${cacheKey}`);
-				return this._cachedVerdictToResult(cached);
+				return this._applySessionLayers(request, installed, this._cachedVerdictToResult(cached));
 			}
 		}
-
-		// Extract artifacts from the request
-		const artifacts = this._extractArtifacts(request);
 
 		// Run heuristics (heuristics is guaranteed to be initialized here)
 		const matches = this.heuristics?.match(artifacts);
 
-		// Run URL check if it's a fetch action
-		const urlCheckResults: Array<{
-			url: string;
-			isMalicious: boolean;
-			findings: Array<{ severityName: string; typeName: string }>;
-			flags: string[];
-			cacheValidUntil?: number;
-		}> = [];
-		if (request.action === "fetch") {
-			if (!this.config.urlReputationEnabled) {
-				urlLegUnavailableReason =
-					"disabled to avoid sending URLs to an external reputation provider";
-			} else {
-				try {
-					const results = await this.urlClient.checkUrls([request.resource]);
-					urlCheckResults.push(...results);
-				} catch (e) {
-					// A failed reputation lookup is an unavailable leg, not a clean URL.
-					urlLegUnavailableReason = e instanceof Error ? e.message : String(e);
-					this.logger.warn(`URL reputation lookup unavailable: ${urlLegUnavailableReason}`);
-				}
-			}
-		}
+		const { urlCheckResults, unavailableReason: urlLegUnavailableReason } =
+			await this._reputationLeg(request, artifacts);
 
 		// Get verdict from decision engine
 		const verdict = await this.engine.decide({
@@ -547,13 +588,100 @@ export class AIDRClient {
 				},
 				isMalicious,
 				request.action === "fetch"
-					? urlCheckResults.find((result) => result.url === request.resource)?.cacheValidUntil
+					? earliest(urlCheckResults.map((result) => result.cacheValidUntil))
 					: Date.now() + this.config.cacheTtl,
 			);
 			this.cacheEntryCount++;
 		}
 
-		return this._verdictToResult(verdict);
+		return this._applySessionLayers(request, current, this._verdictToResult(verdict));
+	}
+
+	/**
+	 * Session layers for a request that carries a `sessionId`: the runaway
+	 * guard (loop, rate and budget checks) records the call in that session and
+	 * turns an `allow` into an `ask` when a threshold is crossed. Applied after
+	 * the cache so a cached verdict is still counted. A guard that could not
+	 * run makes an `allow` indeterminate (never clean). A `deny` is not recorded:
+	 * that call will not run.
+	 */
+	private async _applySessionLayers(
+		request: CheckRequest,
+		config: Config,
+		result: CheckResult,
+	): Promise<CheckResult> {
+		if (!request.sessionId || result.decision === "deny") return result;
+		const outcome = await checkRunaway(
+			{
+				sessionId: request.sessionId,
+				toolName: request.action,
+				toolInput: { resource: request.resource, artifacts: request.artifacts ?? [] },
+			},
+			config,
+			{ agentRuntime: "sdk", logger: this.logger },
+		);
+		if (outcome.status === "disabled") return result;
+		if (outcome.status === "unavailable") {
+			if (result.decision !== "allow") return withReasons(result, [outcome.reason]);
+			return {
+				allowed: false,
+				decision: "ask",
+				confidence: 0.5,
+				reason: outcome.reason,
+				metadata: { [INDETERMINATE_METADATA_KEY]: true, leg: "runaway_guard" },
+			};
+		}
+		if (outcome.signals.length === 0) return result;
+		const reasons = outcome.signals.map(
+			(signal) => `Runaway guard paused this session for human review: ${signal.reason}`,
+		);
+		if (result.decision !== "allow") return withReasons(result, reasons);
+		return {
+			allowed: false,
+			decision: "ask",
+			confidence: 1,
+			reason: reasons.join("; "),
+			threatId: outcome.signals[0]?.id,
+			metadata: { session: "runaway_guard" },
+		};
+	}
+
+	/**
+	 * URL reputation for a `fetch` action: the resource and every URL found in
+	 * the structured input / body are verified, not only the resource. Returns
+	 * `unavailableReason` when the leg could not run, so the result is never clean.
+	 */
+	private async _reputationLeg(
+		request: CheckRequest,
+		artifacts: readonly Artifact[],
+	): Promise<{ urlCheckResults: UrlCheckResult[]; unavailableReason?: string }> {
+		if (request.action !== "fetch") return { urlCheckResults: [] };
+		if (!this.config.urlReputationEnabled) {
+			return {
+				urlCheckResults: [],
+				unavailableReason: "disabled to avoid sending URLs to an external reputation provider",
+			};
+		}
+		const urls = [
+			...new Set([
+				request.resource,
+				...artifacts.filter((artifact) => artifact.type === "url").map((a) => a.value),
+			]),
+		];
+		if (urls.length > MAX_REPUTATION_URLS) {
+			return {
+				urlCheckResults: [],
+				unavailableReason: `${urls.length} URLs exceed the ${MAX_REPUTATION_URLS}-URL verification limit`,
+			};
+		}
+		try {
+			return { urlCheckResults: await this.urlClient.checkUrls(urls) };
+		} catch (e) {
+			// A failed reputation lookup is an unavailable leg, not a clean URL.
+			const unavailableReason = e instanceof Error ? e.message : String(e);
+			this.logger.warn(`URL reputation lookup unavailable: ${unavailableReason}`);
+			return { urlCheckResults: [], unavailableReason };
+		}
 	}
 
 	private async _privacyRouteResult(
@@ -634,14 +762,8 @@ export class AIDRClient {
 	/**
 	 * Extract artifacts from the request
 	 */
-	private _extractArtifacts(
-		request: CheckRequest,
-	): Array<{ type: "url" | "command" | "file_path" | "content"; value: string; context?: string }> {
-		const artifacts: Array<{
-			type: "url" | "command" | "file_path" | "content";
-			value: string;
-			context?: string;
-		}> = [];
+	private _extractArtifacts(request: CheckRequest): Artifact[] {
+		const artifacts: Artifact[] = [];
 
 		// Add the resource as an artifact based on action type
 		switch (request.action) {
@@ -655,11 +777,48 @@ export class AIDRClient {
 			case "execute":
 				artifacts.push({ type: "command", value: request.resource });
 				break;
+			case HTTP_REQUEST_ACTION:
+				// A route is server-side input, not a local file path.
+				artifacts.push({ type: "content", value: request.resource, context: "http_route" });
+				for (const url of extractUrls(request.resource)) {
+					artifacts.push({ type: "url", value: url, context: "http_route:embedded_url" });
+				}
+				break;
 			default:
 				artifacts.push({ type: "content", value: request.resource });
 		}
 
-		return request.artifacts ? [...artifacts, ...request.artifacts] : artifacts;
+		if (request.artifacts) artifacts.push(...request.artifacts);
+		artifacts.push(...this._contextBodyArtifacts(request));
+		return artifacts;
+	}
+
+	/**
+	 * Artifacts from `request.context.body` (an HTTP request body, or any
+	 * structured payload a caller attaches). The body is walked by the same
+	 * generic extractor the native connectors use for unknown tools, so URLs,
+	 * commands, file paths and free text in it are all inspected. A body larger
+	 * than {@link MAX_CONTEXT_BODY_CHARS}, or one that cannot be serialized, is
+	 * reported as not fully inspected (the check then denies).
+	 */
+	private _contextBodyArtifacts(request: CheckRequest): Artifact[] {
+		const body = request.context?.body;
+		if (body === undefined || body === null || body === "") return [];
+		const serialized = serializeBody(body);
+		if (serialized === undefined || serialized.length > MAX_CONTEXT_BODY_CHARS) {
+			return [notFullyInspected()];
+		}
+		let snapshot: unknown;
+		try {
+			snapshot = JSON.parse(serialized);
+		} catch {
+			snapshot = serialized;
+		}
+		const input =
+			typeof snapshot === "object" && snapshot !== null && !Array.isArray(snapshot)
+				? (snapshot as Record<string, unknown>)
+				: { body: snapshot };
+		return extractFromUnknownTool("http_body", input);
 	}
 
 	/**
@@ -702,15 +861,16 @@ export class AIDRClient {
 	/**
 	 * Generate cache key for a request
 	 */
-	private _getCacheKey(request: CheckRequest): string {
+	private _getCacheKey(request: CheckRequest, artifacts: readonly Artifact[]): string {
 		// VerdictCache normalizes URL keys (including fragments and case). Hash the
-		// complete request so distinct commands or paths can never share a verdict.
+		// complete request (including artifacts extracted from the body) so
+		// distinct commands, paths or bodies can never share a verdict.
 		return createHash("sha256")
 			.update(
 				JSON.stringify([
 					request.action,
 					request.resource,
-					request.artifacts ?? [],
+					artifacts,
 					this.config.baseUrl ?? "",
 					this.config.apiKey,
 					this.config.urlReputationEnabled,

@@ -44,6 +44,11 @@ vi.mock("@singularityrd/aidr-core", async () => {
 		scanProvisionedOutput: mocks.provisionedScan,
 		scanCachedProvisionedOutput: mocks.cachedOutputScan,
 		nullLogger: { debug() {}, info() {}, warn() {}, error() {} },
+		extractFromUnknownTool: () => [],
+		extractUrls: () => [],
+		inspectionLimitsHit: () => [],
+		INPUT_NOT_FULLY_INSPECTED: "input_not_fully_inspected",
+		checkRunaway: async () => ({ status: "disabled" }),
 	};
 });
 vi.mock("../privacy-text.js", async (importOriginal) => ({

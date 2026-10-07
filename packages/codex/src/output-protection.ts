@@ -88,27 +88,45 @@ interface StringCollector {
 	nodes: number;
 }
 
+function pushText(text: string, out: StringCollector): void {
+	out.parts.push(text);
+	out.chars += text.length + 1;
+}
+
+/**
+ * Collect every string the model can read: string values, numbers and
+ * booleans, and object keys (a structured result such as MCP
+ * `structuredContent` can carry a payload in a key just as well as in a
+ * value), mirroring the Claude Code connector's bounded collector.
+ */
 function collectStrings(current: unknown, depth: number, out: StringCollector): void {
 	out.nodes += 1;
 	if (out.nodes > MAX_NODES || depth > MAX_DEPTH) throw new CollectLimitError();
 	if (out.chars > MAX_COLLECTED_CHARS) return;
 	if (typeof current === "string") {
-		out.parts.push(current);
-		out.chars += current.length + 1;
+		pushText(current, out);
+		return;
+	}
+	if (typeof current === "number" || typeof current === "boolean") {
+		pushText(String(current), out);
 		return;
 	}
 	if (current === null || typeof current !== "object") return;
-	for (const child of childValues(current)) collectStrings(child, depth + 1, out);
+	if (Array.isArray(current)) {
+		for (const child of current) collectStrings(child, depth + 1, out);
+		return;
+	}
+	for (const [key, child] of childEntries(current as Record<string, unknown>)) {
+		if (out.chars > MAX_COLLECTED_CHARS) return;
+		pushText(key, out);
+		collectStrings(child, depth + 1, out);
+	}
 }
 
-/** An array's items or a record's values, minus the payload of a binary content block. */
-function childValues(node: object): unknown[] {
-	if (Array.isArray(node)) return node;
-	const record = node as Record<string, unknown>;
+/** A record's entries, minus the payload of a binary content block. */
+function childEntries(record: Record<string, unknown>): Array<[string, unknown]> {
 	const binary = typeof record.type === "string" && BINARY_BLOCK_TYPES.has(record.type);
-	return Object.entries(record)
-		.filter(([key]) => !(binary && (key === "data" || key === "blob")))
-		.map(([, child]) => child);
+	return Object.entries(record).filter(([key]) => !(binary && (key === "data" || key === "blob")));
 }
 
 function blockedReason(ruleIds: string[]): string {

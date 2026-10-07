@@ -37,6 +37,13 @@ const MAX_ACTIVE_PER_TENANT = 16;
 const MAX_ACTIVE_REQUESTS = 64;
 const MAX_SESSIONS = 10_000;
 const MAX_SESSIONS_PER_TENANT = 256;
+// Server-initiated requests awaiting a client reply, and MRTR continuations
+// awaiting a retry: a global cap plus a per-tenant quota, so one tenant cannot
+// exhaust the shared capacity (mirrors sessionCapacityAvailable).
+const MAX_PENDING_REPLIES = 256;
+const MAX_PENDING_REPLIES_PER_TENANT = 64;
+const MAX_CONTINUATIONS = 256;
+const MAX_CONTINUATIONS_PER_TENANT = 64;
 const SESSION_TTL_MS = 30 * 60 * 1000;
 const UPSTREAM_TIMEOUT_MS = 15_000;
 const textDecoder = new TextDecoder("utf-8", { fatal: true });
@@ -1396,8 +1403,18 @@ export function createMcpGateway(input, dependencies = {}) {
 			throw serverInitiatedRefusal(category);
 		let delivered = message;
 		if (Object.hasOwn(message, "id")) {
-			if (pendingReplies.size >= 256 || server.replyIds.size >= 16)
-				throw new Error("gateway_unavailable");
+			if (server.replyIds.size >= 16) throw new Error("gateway_unavailable");
+			if (
+				!tenantCapacityAvailable(
+					pendingReplies,
+					server.tenantId,
+					MAX_PENDING_REPLIES,
+					MAX_PENDING_REPLIES_PER_TENANT,
+				)
+			)
+				throw new Error(
+					pendingReplies.size >= MAX_PENDING_REPLIES ? "gateway_busy" : "tenant_busy",
+				);
 			if (
 				[...pendingReplies.values()].some(
 					(pending) =>
@@ -1407,6 +1424,7 @@ export function createMcpGateway(input, dependencies = {}) {
 				throw new Error("invalid_upstream_rpc");
 			const id = gatewayNonce("aidr-reply");
 			pendingReplies.set(id, {
+				tenantId: server.tenantId,
 				owner: owner(server, sessionId),
 				originalId: message.id,
 				server,
@@ -1486,9 +1504,18 @@ export function createMcpGateway(input, dependencies = {}) {
 		await guardPayload(result, server, sessionId, "to_client", "input_required");
 		for (const [id, saved] of continuations)
 			if (saved.expiresAt <= now().getTime()) continuations.delete(id);
-		if (continuations.size >= 256) throw new Error("gateway_unavailable");
+		if (
+			!tenantCapacityAvailable(
+				continuations,
+				server.tenantId,
+				MAX_CONTINUATIONS,
+				MAX_CONTINUATIONS_PER_TENANT,
+			)
+		)
+			throw new Error(continuations.size >= MAX_CONTINUATIONS ? "gateway_busy" : "tenant_busy");
 		const state = gatewayNonce("aidr-mrtr");
 		continuations.set(state, {
+			tenantId: server.tenantId,
 			owner: owner(server, sessionId),
 			upstreamAuth: server.resolvedUpstreamAuth,
 			id: rpc.id,
@@ -1849,6 +1876,16 @@ export function createMcpGateway(input, dependencies = {}) {
 		for (const [id, session] of sessions) {
 			if (session.expiresAt <= current) sessions.delete(id);
 		}
+	}
+
+	/** Global cap and per-tenant quota for a map of entries carrying `tenantId`. */
+	function tenantCapacityAvailable(entries, tenantId, globalCap, tenantCap) {
+		if (entries.size >= globalCap) return false;
+		let tenantEntries = 0;
+		for (const entry of entries.values()) {
+			if (entry.tenantId === tenantId) tenantEntries += 1;
+		}
+		return tenantEntries < tenantCap;
 	}
 
 	function sessionCapacityAvailable(tenantId) {

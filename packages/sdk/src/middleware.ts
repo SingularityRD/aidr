@@ -1,4 +1,4 @@
-import type { AIDRClient } from "./client.js";
+import { type AIDRClient, HTTP_REQUEST_ACTION, MAX_CONTEXT_BODY_CHARS } from "./client.js";
 import type { CheckRequest, CheckResult, MiddlewareFn } from "./config.js";
 import { type ApprovalCallback, enforceCheckResult } from "./enforcement.js";
 import { assertPrivacyCallbacksAllowed } from "./privacy-text.js";
@@ -24,6 +24,31 @@ export interface MiddlewareEnforcementOptions {
 	 * broken check can never be turned into an approval.
 	 */
 	allowApprovalOfIndeterminateResults?: boolean;
+}
+
+/**
+ * Read at most `MAX_CONTEXT_BODY_CHARS + 1` characters of a fetch `Request`
+ * body from a clone, leaving the original body for the route handler. A body
+ * longer than the limit comes back longer than the limit, so the client check
+ * reports it as not fully inspected (deny) instead of judging a prefix.
+ */
+async function readBoundedBody(request: Request): Promise<string | undefined> {
+	if (!request.body || request.method === "GET" || request.method === "HEAD") return undefined;
+	const reader = request.clone().body?.getReader();
+	if (!reader) return undefined;
+	const decoder = new TextDecoder();
+	let text = "";
+	try {
+		while (text.length <= MAX_CONTEXT_BODY_CHARS) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			text += decoder.decode(value, { stream: true });
+		}
+		text += decoder.decode();
+	} finally {
+		await reader.cancel().catch(() => {});
+	}
+	return text.length > MAX_CONTEXT_BODY_CHARS ? text.slice(0, MAX_CONTEXT_BODY_CHARS + 1) : text;
 }
 
 /**
@@ -148,6 +173,12 @@ export function createMiddleware(client: AIDRClient, options: MiddlewareEnforcem
 		/**
 		 * Express/Connect compatible middleware.
 		 *
+		 * The request is checked as an `http_request`: `req.url` (route + query) is
+		 * inspected as content with embedded URLs extracted (never as a local file
+		 * path), and a parsed `req.body` is walked by the core generic extractor.
+		 * A body over `MAX_CONTEXT_BODY_CHARS` is denied as not fully inspected.
+		 * Mount a body parser before this middleware for bodies to be inspected.
+		 *
 		 * Responds 403 for anything that is not an explicit allow (deny, ask
 		 * without an approving `onAsk`, indeterminate/failed check, inconsistent
 		 * result). The response `reason` states which case applied.
@@ -160,7 +191,7 @@ export function createMiddleware(client: AIDRClient, options: MiddlewareEnforcem
 			): Promise<void> => {
 				try {
 					const checkRequest: CheckRequest = {
-						action: req.method === "GET" ? "read" : "write",
+						action: HTTP_REQUEST_ACTION,
 						resource: req.url,
 						context: {
 							method: req.method,
@@ -195,18 +226,24 @@ export function createMiddleware(client: AIDRClient, options: MiddlewareEnforcem
 		/**
 		 * Next.js API route middleware.
 		 *
+		 * Checked like `express()`: the path + query as an `http_request` route and,
+		 * for methods with a body, a bounded copy of the body read from a clone (the
+		 * handler still receives the original stream).
+		 *
 		 * Returns a 403 response for anything that is not an explicit allow (see
 		 * `express()` above), or `null` to continue to the route handler.
 		 */
 		nextjs: () => {
 			return async (request: Request): Promise<Response | null> => {
 				const url = new URL(request.url);
+				const body = await readBoundedBody(request);
 				const checkRequest: CheckRequest = {
-					action: request.method === "GET" ? "read" : "write",
-					resource: url.pathname,
+					action: HTTP_REQUEST_ACTION,
+					resource: `${url.pathname}${url.search}`,
 					context: {
 						method: request.method,
 						headers: Object.fromEntries(request.headers),
+						...(body === undefined ? {} : { body }),
 					},
 				};
 
