@@ -6,6 +6,7 @@ import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { getFileContent } from "./file-utils.js";
+import { unlistedResourceReason } from "./integrity/resource-gate.js";
 import type { Logger, TrustedDomain } from "./types.js";
 import { nullLogger } from "./types.js";
 
@@ -25,6 +26,13 @@ export async function loadTrustedDomains(
 
 	for (const filename of files) {
 		const filePath = join(allowlistsDir, filename);
+		// A trusted domain suppresses detections, so under enforced integrity
+		// only a file the verified manifest lists may add one.
+		const unlisted = unlistedResourceReason(filePath);
+		if (unlisted) {
+			logger.error(`Refusing allowlist file ${filename}: ${unlisted}`, { file: filename });
+			continue;
+		}
 		let content: string;
 		try {
 			content = await getFileContent(filePath);

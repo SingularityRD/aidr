@@ -21,6 +21,7 @@ import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { extractUrls } from "./extractors.js";
 import { getFileContent } from "./file-utils.js";
+import { unlistedResourceReason } from "./integrity/resource-gate.js";
 import type { AiSupplyChainConfig, Logger } from "./types.js";
 import { nullLogger } from "./types.js";
 
@@ -124,6 +125,13 @@ export async function loadTrustedModelSources(
 		});
 	}
 	for (const file of files) {
+		// Trusting a model source relaxes detection: under enforced integrity only
+		// a file the verified manifest lists may do it.
+		const unlisted = unlistedResourceReason(join(dir, file));
+		if (unlisted) {
+			logger.error(`Refusing trusted model-source file ${file}: ${unlisted}`, { file });
+			continue;
+		}
 		let data: unknown;
 		try {
 			data = parseYaml(await getFileContent(join(dir, file)));

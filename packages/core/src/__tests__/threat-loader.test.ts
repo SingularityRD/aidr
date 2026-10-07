@@ -164,7 +164,7 @@ describe("loadThreats", () => {
 		expect(ids.has("CLT-URL-001")).toBe(true);
 	});
 
-	it("merges threats from multiple directories with override semantics", async () => {
+	it("merges directories but never lets a user rule replace a bundled rule ID", async () => {
 		const baseDir = await makeTmpDir();
 		const userDir = await makeTmpDir();
 
@@ -198,12 +198,14 @@ describe("loadThreats", () => {
 `,
 		);
 
+		// User rules may add new IDs; a clashing ID is logged and ignored, so the
+		// bundled rule is kept as shipped.
 		const merged = await loadThreatsFromDirs([baseDir, userDir]);
 		expect(merged).toHaveLength(1);
 		expect(merged[0]?.id).toBe("CLT-OVERRIDE-001");
-		expect(merged[0]?.action).toBe("block");
-		expect(merged[0]?.severity).toBe("critical");
-		expect(merged[0]?.title).toBe("User override");
+		expect(merged[0]?.action).toBe("require_approval");
+		expect(merged[0]?.severity).toBe("high");
+		expect(merged[0]?.title).toBe("Base rule");
 	});
 
 	it("compiles case-insensitive regex when case_insensitive is true", async () => {

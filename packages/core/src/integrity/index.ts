@@ -2,6 +2,12 @@ export {
 	getDegradedSafeModeReason,
 	isDegradedSafeMode,
 } from "./degraded-safe-mode.js";
+export {
+	clearVerifiedManifest,
+	isResourceGateActive,
+	registerVerifiedManifest,
+	unlistedResourceReason,
+} from "./resource-gate.js";
 export { ArtifactIntegrityError, verifyArtifactIntegrityAndLog } from "./runtime.js";
 export { type ArtifactManifestV1, ArtifactManifestV1Schema } from "./schema.js";
 export {

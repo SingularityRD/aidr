@@ -39,9 +39,11 @@ function parseThreatYaml(content) {
 }
 
 const entries = {};
+const bundledFiles = [];
 for (const name of readdirSync(threatsDir)
 	.filter((f) => f.endsWith(".yaml"))
 	.sort()) {
+	bundledFiles.push(name);
 	const content = readFileSync(join(threatsDir, name), "utf-8");
 	const data = parseThreatYaml(content);
 	if (!Array.isArray(data)) continue;
@@ -55,6 +57,12 @@ const body = `/**
  * See that script for the safety model (YAML on disk stays authoritative).
  */
 export const THREAT_PARSE_CACHE: Readonly<Record<string, readonly unknown[]>> = ${JSON.stringify(entries)};
+
+/**
+ * Every rule file the bundle ships. A bundled rules directory that is missing
+ * one of them is an incomplete rule set, never a clean one (threat-loader.ts).
+ */
+export const BUNDLED_THREAT_FILES: readonly string[] = ${JSON.stringify(bundledFiles)};
 `;
 
 if (process.argv.includes("--check")) {

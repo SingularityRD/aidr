@@ -13,3 +13,9 @@ export function isDegradedSafeMode(): boolean {
 export function getDegradedSafeModeReason(): string | undefined {
 	return degradedReason;
 }
+
+/** Test hook: leave degraded safe mode (production code never leaves it). */
+export function resetDegradedSafeModeForTests(): void {
+	degradedSafeMode = false;
+	degradedReason = undefined;
+}

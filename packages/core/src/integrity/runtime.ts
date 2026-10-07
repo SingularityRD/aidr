@@ -5,6 +5,7 @@ import { loadRevocationBinding, loadRevocationsCache } from "../managed.js";
 import type { Logger } from "../types.js";
 import { nullLogger } from "../types.js";
 import { enterDegradedSafeMode } from "./degraded-safe-mode.js";
+import { clearVerifiedManifest, registerVerifiedManifest } from "./resource-gate.js";
 import { type IntegrityCheckResult, verifyArtifactIntegrity } from "./verify.js";
 
 export class ArtifactIntegrityError extends Error {
@@ -81,7 +82,18 @@ export async function verifyArtifactIntegrityAndLog(params: {
 		expectedArtifactId: params.artifactId,
 	});
 
-	if (result.status === "ok") return result;
+	if (result.status === "ok") {
+		// Integrity is enforced from here on: bundled resource loaders refuse any
+		// file this manifest does not list (see resource-gate.ts).
+		if (result.manifest) {
+			registerVerifiedManifest(
+				params.artifactDir,
+				result.manifest.files.map((file) => file.path),
+			);
+		}
+		return result;
+	}
+	clearVerifiedManifest();
 	if (!commercial && (result.status === "missing_manifest" || result.status === "no_public_keys"))
 		return result;
 
