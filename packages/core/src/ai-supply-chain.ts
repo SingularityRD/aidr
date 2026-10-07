@@ -20,7 +20,10 @@ import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { extractUrls } from "./extractors.js";
-import { getFileContent } from "./file-utils.js";
+import {
+	loadResourceManifestCoverage,
+	readShippedResourceText,
+} from "./integrity/resource-manifest.js";
 import type { AiSupplyChainConfig, Logger } from "./types.js";
 import { nullLogger } from "./types.js";
 
@@ -123,10 +126,23 @@ export async function loadTrustedModelSources(
 			path: dir,
 		});
 	}
+	// Shipped model-source lists are a closed set: when a manifest covers the
+	// allowlists directory, an unlisted or modified list is ignored, not trusted.
+	const coverage =
+		files.length > 0
+			? await loadResourceManifestCoverage(allowlistsDir)
+			: ({ status: "none" } as const);
 	for (const file of files) {
 		let data: unknown;
 		try {
-			data = parseYaml(await getFileContent(join(dir, file)));
+			const shipped = await readShippedResourceText(
+				coverage,
+				`${MODEL_SOURCES_SUBDIR}/${file}`,
+				join(dir, file),
+				logger,
+			);
+			if (shipped === null) continue;
+			data = parseYaml(shipped);
 		} catch (error) {
 			logger.warn(`Failed to read trusted model sources from ${file}`, { error: String(error) });
 			continue;

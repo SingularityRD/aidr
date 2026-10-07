@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useTeam } from "../../enterprise/team-provider";
+import { governanceAction, governanceErrorMessage, stepUpPath } from "../../lib/ai-governance";
 import { readErrorMessage } from "../../lib/errors";
 import { supabase, supabaseProjectUrl } from "../../lib/supabase";
 import {
@@ -20,9 +21,13 @@ import {
 } from "../privacy-guard";
 import {
 	categoryLabel,
+	parseShadowAiDecisions,
 	parseShadowAiSummary,
+	type ShadowAiDecision,
+	type ShadowAiDecisionRow,
 	type ShadowAiSummary,
 	serviceName,
+	shadowAiDecisionPayload,
 	shadowAiPolicySnippet,
 } from "../shadow-ai";
 
@@ -84,17 +89,23 @@ async function readInstalls(tenantId: string): Promise<Map<string, BrowserInstal
 }
 
 export function PrivacyGuardPage() {
-	const { currentTeam, isLoading } = useTeam();
+	const { currentTeam, currentRole, isLoading } = useTeam();
 	if (isLoading) return <div role="status">Resolving the managed tenant…</div>;
 	if (!currentTeam) return <div role="alert">Select a team to view Browser Privacy Guard.</div>;
-	return <TenantPrivacyGuardPage key={currentTeam.id} tenantId={currentTeam.id} />;
+	return (
+		<TenantPrivacyGuardPage
+			key={currentTeam.id}
+			tenantId={currentTeam.id}
+			canDecide={currentRole === "owner" || currentRole === "admin"}
+		/>
+	);
 }
 
 function numberText(value: number | undefined): string {
 	return value === undefined ? "—" : value.toLocaleString();
 }
 
-function TenantPrivacyGuardPage({ tenantId }: { tenantId: string }) {
+function TenantPrivacyGuardPage({ tenantId, canDecide }: { tenantId: string; canDecide: boolean }) {
 	const [windowDays, setWindowDays] = useState<PrivacyWindow>(30);
 	// null = not loaded yet; a failed read is kept as an error, never as zeros.
 	const [summaryRead, setSummaryRead] = useState<Read<PrivacySummary> | null>(null);
@@ -244,7 +255,12 @@ function TenantPrivacyGuardPage({ tenantId }: { tenantId: string }) {
 
 			<SeriesCard summary={summary} loaded={loaded} windowDays={windowDays} />
 
-			<ShadowAiPanel tenantId={tenantId} windowDays={windowDays} refreshTick={refreshTick} />
+			<ShadowAiPanel
+				tenantId={tenantId}
+				windowDays={windowDays}
+				refreshTick={refreshTick}
+				canDecide={canDecide}
+			/>
 
 			<section className="card" aria-labelledby="privacy-recent-heading">
 				<div className="panel-head">
@@ -466,21 +482,114 @@ async function readShadowAi(
 	}
 }
 
+const DECISIONS_UNAVAILABLE = "Allow/block decisions are unavailable.";
+
+/** The tenant's `ai_site` register entries (RLS: members read their tenant's rows). */
+async function readShadowAiDecisions(
+	tenantId: string,
+): Promise<Read<Map<string, ShadowAiDecisionRow>>> {
+	try {
+		const { data, error } = await supabase
+			.from("ai_assets")
+			.select("id,identifier,status,version")
+			.eq("tenant_id", tenantId)
+			.eq("asset_type", "ai_site")
+			.limit(2000);
+		if (error) throw new Error(DECISIONS_UNAVAILABLE);
+		return { ok: true, value: parseShadowAiDecisions(data) };
+	} catch {
+		return { ok: false, error: DECISIONS_UNAVAILABLE };
+	}
+}
+
+type DecisionNotice = { tone: "ok" | "error"; text: string; stepUp?: boolean };
+
+function DecisionNoticeLine({ notice, tenantId }: { notice: DecisionNotice; tenantId: string }) {
+	const ok = notice.tone === "ok";
+	return (
+		<p
+			className={ok ? "notice notice-success" : "notice notice-danger"}
+			role={ok ? "status" : "alert"}
+		>
+			{notice.text}
+			{notice.stepUp ? (
+				<>
+					{" "}
+					<Link to={stepUpPath(tenantId)}>Verify now</Link>
+				</>
+			) : null}
+		</p>
+	);
+}
+
+/** Register-backed allow/block decisions and the `upsert_asset` action that changes one. */
+function useShadowAiDecisions(tenantId: string, refreshTick: number) {
+	const [decisions, setDecisions] = useState<Read<Map<string, ShadowAiDecisionRow>> | null>(null);
+	const [busy, setBusy] = useState<string | null>(null);
+	const [notice, setNotice] = useState<DecisionNotice | null>(null);
+	const [decisionTick, setDecisionTick] = useState(0);
+
+	useEffect(() => {
+		let cancelled = false;
+		void readShadowAiDecisions(tenantId).then((next) => {
+			if (!cancelled) setDecisions(next);
+		});
+		return () => {
+			cancelled = true;
+		};
+		// refreshTick / decisionTick re-run the read on demand.
+	}, [tenantId, refreshTick, decisionTick]);
+
+	const decide = useCallback(
+		async (serviceId: string, decision: ShadowAiDecision) => {
+			if (!decisions?.ok) return;
+			setBusy(serviceId);
+			setNotice(null);
+			const result = await governanceAction(
+				tenantId,
+				"upsert_asset",
+				shadowAiDecisionPayload(serviceId, decision, decisions.value.get(serviceId)),
+			);
+			setBusy(null);
+			setDecisionTick((tick) => tick + 1);
+			setNotice(
+				result.ok
+					? {
+							tone: "ok",
+							text: `${serviceName(serviceId)} ${decision}. Enrolled browsers apply it at their next policy refresh (within about 15 minutes).`,
+						}
+					: {
+							tone: "error",
+							text: governanceErrorMessage(result.error),
+							stepUp: result.error === "mfa_required",
+						},
+			);
+		},
+		[tenantId, decisions],
+	);
+
+	return { decisions, busy, notice, decide };
+}
+
 /**
  * Shadow AI: which catalogued AI services managed browsers opened, sanctioned vs not,
  * and navigations the policy blocked. Loads on its own so an older control plane
- * without `shadow_ai_summary` only greys out this panel.
+ * without `shadow_ai_summary` only greys out this panel. Owners and administrators can
+ * allow or block a service here; enrolled browsers apply it from a signed policy.
  */
 function ShadowAiPanel({
 	tenantId,
 	windowDays,
 	refreshTick,
+	canDecide,
 }: {
 	tenantId: string;
 	windowDays: PrivacyWindow;
 	refreshTick: number;
+	canDecide: boolean;
 }) {
 	const [read, setRead] = useState<Read<ShadowAiSummary> | null>(null);
+	const { decisions, busy, notice, decide } = useShadowAiDecisions(tenantId, refreshTick);
 	const [policyMode, setPolicyMode] = useState<"monitor" | "block-unsanctioned">("monitor");
 
 	useEffect(() => {
@@ -552,10 +661,27 @@ function ShadowAiPanel({
 			</div>
 
 			<h3 style={{ marginTop: 16 }}>Top AI services</h3>
+			<p className="muted small">
+				{canDecide
+					? "Allow or block a service for every enrolled browser. Decisions are recorded in the AI governance register (audited, multi-factor verification required) and delivered to Browser Guard as a signed policy. Your browser management (MDM/GPO) policy still wins where it is stricter: a dashboard allow never unblocks a service it blocks."
+					: "Owners and administrators can allow or block a service here; enrolled browsers apply it from a signed policy."}
+			</p>
+			{decisions && !decisions.ok ? (
+				<p className="muted" role="status">
+					{decisions.error}
+				</p>
+			) : null}
+			{notice ? <DecisionNoticeLine notice={notice} tenantId={tenantId} /> : null}
 			{summary === null ? (
 				<p className="muted">{read ? "Unavailable right now." : "Loading…"}</p>
 			) : (
-				<ShadowAiServicesTable summary={summary} />
+				<ShadowAiServicesTable
+					summary={summary}
+					decisions={decisions?.ok ? decisions.value : null}
+					canDecide={canDecide && decisions?.ok === true}
+					busy={busy}
+					onDecide={(serviceId, decision) => void decide(serviceId, decision)}
+				/>
 			)}
 
 			{summary ? <ShadowAiTrend summary={summary} /> : null}
@@ -563,8 +689,11 @@ function ShadowAiPanel({
 			<details style={{ marginTop: 12 }}>
 				<summary className="small">Configure Shadow AI and internal AI sites</summary>
 				<p className="muted small">
-					Add these keys to the Browser Guard managed policy. <code>sanctioned</code> lists the
-					catalog ids you approve (prefilled from the services reported as sanctioned);
+					Alternative to dashboard decisions, or for browsers without a control plane: add these
+					keys to the Browser Guard managed policy. To apply dashboard decisions, the managed policy
+					also needs <code>telemetry</code> and <code>dashboardPolicy</code> (the control plane's
+					policy signing public key). <code>sanctioned</code> lists the catalog ids you approve
+					(prefilled from the services reported as sanctioned);
 					<code> block-unsanctioned</code> blocks every other catalogued AI service. Each user
 					grants the extension access to the AI service sites and internal hosts once, on its
 					options page.
@@ -600,7 +729,28 @@ function ShadowAiPanel({
 	);
 }
 
-function ShadowAiServicesTable({ summary }: { summary: ShadowAiSummary }) {
+function decisionBadge(row: ShadowAiDecisionRow | undefined) {
+	if (!row?.decision) return <span className="muted">—</span>;
+	return (
+		<span className={row.decision === "allowed" ? "badge badge-allow" : "badge badge-deny"}>
+			{row.decision}
+		</span>
+	);
+}
+
+function ShadowAiServicesTable({
+	summary,
+	decisions,
+	canDecide,
+	busy,
+	onDecide,
+}: {
+	summary: ShadowAiSummary;
+	decisions: Map<string, ShadowAiDecisionRow> | null;
+	canDecide: boolean;
+	busy: string | null;
+	onDecide: (serviceId: string, decision: ShadowAiDecision) => void;
+}) {
 	const services = summary.byService.slice(0, TOP_SERVICES);
 	if (services.length === 0) {
 		return (
@@ -622,30 +772,64 @@ function ShadowAiServicesTable({ summary }: { summary: ShadowAiSummary }) {
 						<th>Visits</th>
 						<th>Blocked</th>
 						<th aria-hidden="true" />
+						<th>Dashboard decision</th>
+						{canDecide ? <th>Change</th> : null}
 					</tr>
 				</thead>
 				<tbody>
-					{services.map((row) => (
-						<tr key={row.serviceId}>
-							<td>{serviceName(row.serviceId)}</td>
-							<td>{categoryLabel(row.category)}</td>
-							<td>
-								<span className={row.sanctioned ? "badge badge-allow" : "badge badge-ask"}>
-									{row.sanctioned ? "sanctioned" : "unsanctioned"}
-								</span>
-							</td>
-							<td>{row.visits.toLocaleString()}</td>
-							<td>{row.blocked.toLocaleString()}</td>
-							<td style={{ minWidth: 120 }}>
-								<div className="usage-bar" aria-hidden="true">
-									<div
-										className="usage-fill"
-										style={{ width: `${((row.visits + row.blocked) / max) * 100}%` }}
-									/>
-								</div>
-							</td>
-						</tr>
-					))}
+					{services.map((row) => {
+						const name = serviceName(row.serviceId);
+						const current = decisions?.get(row.serviceId);
+						const decidable = row.serviceId !== "other";
+						return (
+							<tr key={row.serviceId}>
+								<td>{name}</td>
+								<td>{categoryLabel(row.category)}</td>
+								<td>
+									<span className={row.sanctioned ? "badge badge-allow" : "badge badge-ask"}>
+										{row.sanctioned ? "sanctioned" : "unsanctioned"}
+									</span>
+								</td>
+								<td>{row.visits.toLocaleString()}</td>
+								<td>{row.blocked.toLocaleString()}</td>
+								<td style={{ minWidth: 120 }}>
+									<div className="usage-bar" aria-hidden="true">
+										<div
+											className="usage-fill"
+											style={{ width: `${((row.visits + row.blocked) / max) * 100}%` }}
+										/>
+									</div>
+								</td>
+								<td>{decisions ? decisionBadge(current) : "—"}</td>
+								{canDecide ? (
+									<td>
+										{decidable ? (
+											<div className="row" style={{ gap: 4, flexWrap: "nowrap" }}>
+												<button
+													type="button"
+													className="btn btn-sm"
+													aria-label={`Allow ${name}`}
+													disabled={busy !== null || current?.decision === "allowed"}
+													onClick={() => onDecide(row.serviceId, "allowed")}
+												>
+													Allow
+												</button>
+												<button
+													type="button"
+													className="btn btn-sm btn-danger"
+													aria-label={`Block ${name}`}
+													disabled={busy !== null || current?.decision === "blocked"}
+													onClick={() => onDecide(row.serviceId, "blocked")}
+												>
+													Block
+												</button>
+											</div>
+										) : null}
+									</td>
+								) : null}
+							</tr>
+						);
+					})}
 				</tbody>
 			</table>
 		</div>

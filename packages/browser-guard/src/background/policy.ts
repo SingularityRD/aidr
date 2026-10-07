@@ -12,6 +12,7 @@ import { CUSTOM_SITE_LIMITS, SELECTOR_FORBIDDEN } from "../sites/custom.js";
 import {
 	type AcceptableUseNotice,
 	type CustomSiteConfig,
+	type DashboardPolicyTrust,
 	ENTITY_TYPES,
 	type EntityType,
 	type ExactDataSet,
@@ -97,6 +98,7 @@ export const DEFAULT_POLICY: GuardPolicy = deepFreeze({
 	managedKeys: [],
 	policyId: "aidr-browser-guard-default",
 	acceptableUse: null,
+	dashboardPolicy: null,
 } satisfies GuardPolicy);
 
 type Validator = (raw: unknown) => { ok: true; value: unknown } | { ok: false };
@@ -430,6 +432,48 @@ const shadowAi: Validator = (raw) => {
 	return valid({ mode: raw.mode as ShadowAiMode, sanctioned, blocked } satisfies ShadowAiPolicy);
 };
 
+/** Ed25519 SubjectPublicKeyInfo DER prefix (RFC 8410); the raw key is the 32 bytes after it. */
+const ED25519_SPKI_PREFIX = [
+	0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00,
+];
+const PEM_PATTERN =
+	/^-----BEGIN PUBLIC KEY-----\s*([A-Za-z0-9+/=\s]{1,200})-----END PUBLIC KEY-----\s*$/;
+const TENANT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+export const DASHBOARD_POLICY_MAX_KEYS = 4;
+
+/** DER bytes of an Ed25519 SPKI PEM public key, or null for anything else. */
+export function ed25519SpkiFromPem(raw: unknown): Uint8Array<ArrayBuffer> | null {
+	if (typeof raw !== "string" || raw.length > 512) return null;
+	const match = PEM_PATTERN.exec(raw.trim());
+	if (!match) return null;
+	const b64 = (match[1] ?? "").replace(/\s+/g, "");
+	if (b64.length % 4 !== 0 || !BASE64_PATTERN.test(b64)) return null;
+	let der: Uint8Array<ArrayBuffer>;
+	try {
+		der = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+	} catch {
+		return null;
+	}
+	if (der.length !== ED25519_SPKI_PREFIX.length + 32) return null;
+	return ED25519_SPKI_PREFIX.every((byte, i) => der[i] === byte) ? der : null;
+}
+
+/** `dashboardPolicy`: 1-4 Ed25519 SPKI PEM keys and an optional tenant pin (managed only). */
+const dashboardPolicy: Validator = (raw) => {
+	if (!isPlainObject(raw)) return invalid;
+	if (Object.keys(raw).some((k) => k !== "publicKeysPem" && k !== "tenantId")) return invalid;
+	const { publicKeysPem, tenantId } = raw;
+	if (!Array.isArray(publicKeysPem) || publicKeysPem.length < 1) return invalid;
+	if (publicKeysPem.length > DASHBOARD_POLICY_MAX_KEYS) return invalid;
+	if (!publicKeysPem.every((pem) => ed25519SpkiFromPem(pem) !== null)) return invalid;
+	if (tenantId !== undefined && (typeof tenantId !== "string" || !TENANT_ID_PATTERN.test(tenantId)))
+		return invalid;
+	return valid({
+		publicKeysPem: [...new Set((publicKeysPem as string[]).map((pem) => pem.trim()))],
+		tenantId: (tenantId as string | undefined) ?? null,
+	} satisfies DashboardPolicyTrust);
+};
+
 type ManagedKey = Exclude<keyof GuardPolicy, "version" | "managedKeys">;
 
 const MANAGED_VALIDATORS: Readonly<Record<ManagedKey, Validator>> = {
@@ -456,6 +500,7 @@ const MANAGED_VALIDATORS: Readonly<Record<ManagedKey, Validator>> = {
 	language: oneOf(["auto", "en", "tr"]),
 	policyId,
 	acceptableUse,
+	dashboardPolicy,
 };
 
 const USER_VALIDATORS: Readonly<Record<keyof UserSettings, Validator>> = {

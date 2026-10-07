@@ -810,13 +810,24 @@ function responseLine(actions?: ResponseActionRecord[]): string | null {
 	return parts.length > 0 ? parts.join("; ") : null;
 }
 
+/**
+ * The severity line, and the rule line when a rule or policy decided the
+ * verdict. The label is the rule's own severity whenever one is known, so a
+ * `high` rule is never shown as `warning` next to its id.
+ */
+export function verdictRuleLines(verdict: Verdict): string[] {
+	const lines = [`Severity: ${verdict.ruleSeverity ?? verdict.severity}`];
+	if (verdict.matchedThreatId) lines.push(`Rule: ${verdict.matchedThreatId}`);
+	return lines;
+}
+
 export function formatDenyMessage(verdict: Verdict, actions?: ResponseActionRecord[]): string {
 	const reasons =
 		verdict.reasons.length > 0 ? verdict.reasons.slice(0, 5).join("; ") : verdict.category;
 
 	const lines = [
 		"Singularity AIDR blocked this action.",
-		`Severity: ${verdict.severity}`,
+		...verdictRuleLines(verdict),
 		`Category: ${verdict.category}`,
 		`Reason: ${reasons}`,
 	];
@@ -885,7 +896,7 @@ export function formatAskMessage(
 
 	const lines = [
 		"Singularity AIDR flagged this action and blocked it pending explicit user approval.",
-		`Severity: ${verdict.severity}`,
+		...verdictRuleLines(verdict),
 		`Category: ${verdict.category}`,
 		`Reason: ${reasons}`,
 		`Artifacts: ${summarizeArtifacts(artifacts)}`,

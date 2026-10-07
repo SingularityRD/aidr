@@ -17,7 +17,9 @@ export function artifactTypeLabel(type: string): string {
 
 /** Append category and artifact details to lines array. */
 function appendVerdictDetails(lines: string[], verdict: Verdict): void {
-	lines.push(kv("Severity", verdict.severity.toUpperCase()));
+	// The rule's own severity when a rule decided, so the label matches the rule id.
+	lines.push(kv("Severity", (verdict.ruleSeverity ?? verdict.severity).toUpperCase()));
+	if (verdict.matchedThreatId) lines.push(kv("Rule", verdict.matchedThreatId));
 	if (verdict.artifacts.length > 0) {
 		// biome-ignore lint/style/noNonNullAssertion: length check above guarantees index 0 exists
 		lines.push(kv("Artifact", verdict.artifacts[0]!));
@@ -37,7 +39,7 @@ function appendVerdictDetails(lines: string[], verdict: Verdict): void {
  */
 export function formatBlockReason(verdict: Verdict): string {
 	const isDeny = verdict.decision === "deny";
-	const emoji = severityEmoji(verdict.severity);
+	const emoji = severityEmoji(verdict.ruleSeverity ?? verdict.severity);
 	const reasonText = verdict.reasons.length > 0 ? verdict.reasons[0] : verdict.category;
 
 	if (isDeny) {

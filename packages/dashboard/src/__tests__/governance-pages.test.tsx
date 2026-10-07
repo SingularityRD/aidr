@@ -298,6 +298,13 @@ describe("governance library", () => {
 		expect(enforcementOf({ assetType: "ai_site", identifier: "deepseek", status: "banned" })).toBe(
 			"browser_block",
 		);
+		// Shadow AI catalog ids reach Browser Guard in the signed browser-guard-policy document.
+		expect(enforcementOf({ assetType: "ai_site", identifier: "poe", status: "banned" })).toBe(
+			"browser_block",
+		);
+		expect(enforcementOf({ assetType: "ai_site", identifier: "poe", status: "approved" })).toBe(
+			"none",
+		);
 		expect(
 			enforcementOf({ assetType: "ai_site", identifier: "chat.internal", status: "banned" }),
 		).toBe("none");

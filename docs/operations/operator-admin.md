@@ -12,7 +12,8 @@ operators — the people who run an AIDR control plane, not tenant owners or adm
 | `list_tenants` | `tenants …` | `operator_list_tenants` | — (read, keyset paged) |
 | `tenant_usage` | `usage --tenant ID` | `operator_tenant_usage` | `tenant_admission_capacity` |
 
-Browser code never calls this function, and no agent or MCP tool can reach it.
+The CLI below and the dashboard Operator console (`/operator`) are the only clients. Browser
+calls must come from an origin in `AIDR_ALLOWED_ORIGINS`; no agent or MCP tool can reach it.
 
 ## Authorization
 

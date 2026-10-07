@@ -11,10 +11,16 @@
 //
 // Licensed grants additionally require the tenant-scoped admission_operators
 // row enforced by grant_licensed_tenant_admission: platform-operator status
-// alone never admits a tenant. This endpoint is not called from browser code.
+// alone never admits a tenant.
+//
+// Callers: scripts/operator-admin.mjs and the dashboard Operator console
+// (/operator). Browser calls pass the shared CORS allowlist (AIDR_ALLOWED_ORIGINS);
+// the origin check is not an authorization control — every check above still
+// runs on each request, and an unlisted origin is refused before any of them.
 
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.116.0";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
+import { corsJson, handleCors } from "../_shared/cors.ts";
 import { checkIdentityBarrier } from "../_shared/identity-barrier.ts";
 import { readBoundedJson } from "../_shared/request-limits.ts";
 
@@ -73,12 +79,7 @@ type Rpc = { name: RpcName; args: Record<string, unknown> };
 type Invalid = { error: string };
 type Body = Record<string, unknown>;
 
-function json(status: number, body: Record<string, unknown>) {
-	return new Response(JSON.stringify(body), {
-		status,
-		headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
-	});
-}
+type Reply = (status: number, body: Record<string, unknown>) => Response;
 
 function getBearerToken(req: Request): string | null {
 	const header = req.headers.get("Authorization") ?? "";
@@ -244,7 +245,7 @@ const RPC_ERRORS: Record<string, readonly [number, string]> = {
 	invalid_page: [400, "invalid_page"],
 };
 
-function rpcFailure(action: OperatorAction, error: { message?: unknown; code?: unknown }) {
+function rpcFailure(json: Reply, action: OperatorAction, error: { message?: unknown; code?: unknown }) {
 	const mapped = typeof error.message === "string" ? RPC_ERRORS[error.message] : undefined;
 	if (mapped) return json(mapped[0], { error: mapped[1] });
 	// The legal-document table CHECK constraints are the authoritative bounds.
@@ -280,6 +281,9 @@ function validResult(action: OperatorAction, args: Record<string, unknown>, data
 
 export function createOperatorAdminHandler(deps: OperatorAdminDeps = {}) {
 	return async function handle(req: Request): Promise<Response> {
+		const preflight = handleCors(req);
+		if (preflight) return preflight;
+		const json: Reply = (status, body) => corsJson(req, status, body);
 		if (req.method !== "POST") return json(405, { error: "method_not_allowed" });
 
 		const config = loadConfig(runtimeEnv, REQUIRED_ENV);
@@ -330,7 +334,7 @@ export function createOperatorAdminHandler(deps: OperatorAdminDeps = {}) {
 		if ("error" in plan) return json(400, { error: plan.error });
 
 		const { data, error } = await supabase.rpc(plan.name, plan.args);
-		if (error) return rpcFailure(operatorAction, error);
+		if (error) return rpcFailure(json, operatorAction, error);
 		if (!validResult(operatorAction, plan.args, data)) {
 			return json(503, { error: "operator_action_unavailable" });
 		}

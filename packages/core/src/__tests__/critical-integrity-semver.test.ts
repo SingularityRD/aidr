@@ -193,6 +193,9 @@ describe("critical integrity and semver behavior", () => {
 			).rejects.toThrow(`${ARTIFACT_ID}: missing_manifest`);
 
 			const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+			// No trust keys provisioned (un-enrolled/offline): the signature cannot be
+			// checked, so startup proceeds on verified digests and local detection
+			// keeps enforcing; a tampered file still fails closed.
 			const noKeyDir = join(root, "no-key");
 			await writeArtifact({ dir: noKeyDir, privateKey, signature: "valid" });
 			await expect(
@@ -201,7 +204,18 @@ describe("critical integrity and semver behavior", () => {
 					artifactId: ARTIFACT_ID,
 					configPath: noKeyConfigPath,
 				}),
-			).rejects.toThrow(`${ARTIFACT_ID}: no_public_keys`);
+			).resolves.toMatchObject({
+				status: "no_public_keys",
+				reason: "signature_unverified_digests_ok",
+			});
+			await writeFile(join(noKeyDir, ARTIFACT_FILE), "tampered artifact payload\n", "utf8");
+			await expect(
+				verifyArtifactIntegrityAndLog({
+					artifactDir: noKeyDir,
+					artifactId: ARTIFACT_ID,
+					configPath: noKeyConfigPath,
+				}),
+			).rejects.toThrow(`${ARTIFACT_ID}: hash_mismatch`);
 
 			const publicKeyPem = publicKey.export({ type: "spki", format: "pem" }).toString();
 			const keyedConfigPath = join(root, "keyed-config.json");
