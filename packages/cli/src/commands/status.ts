@@ -49,11 +49,14 @@ export default async function statusCommand(options: { json?: boolean } = {}): P
 		&& !connectors.some((c) => c.state === "installed_but_degraded")
 		&& !connectors.some((c) => c.state === "unavailable")
 		&& (config.mode !== "managed" || (config.control_plane.enabled && !!config.control_plane.endpoint));
+	// control_plane.enabled defaults to true, but managed features only run in
+	// managed mode; a local-mode install must not be reported as managed.
+	const managedActive = config.mode === "managed" && config.control_plane.enabled;
 	const report = {
 		schema_version: 1, checked_at: new Date().toISOString(),
 		detection: { ok: detectionOk, rules: ruleCount, detail },
 		configuration: { state: configState, path, mode: config.mode },
-		managed: { enabled: config.control_plane.enabled, endpoint_configured: !!config.control_plane.endpoint, connectivity: "not_checked", fleet_adoption: "not_checked" },
+		managed: { active: managedActive, enabled: managedActive, control_plane_enabled: config.control_plane.enabled, endpoint_configured: !!config.control_plane.endpoint, connectivity: "not_checked", fleet_adoption: "not_checked" },
 		// Data loss is reported, never assumed away: an audit append that failed
 		// and a telemetry event that was dropped are both visible here.
 		data_loss: {
@@ -68,7 +71,11 @@ export default async function statusCommand(options: { json?: boolean } = {}): P
 		console.log(`Detection self-test: ${detectionOk ? "passed" : "FAILED"}; ${ruleCount} rules. ${detail}`);
 		console.log(`Configuration: ${configState}; mode: ${config.mode}`);
 		for (const connector of connectors) console.log(`  ${connector.label}: ${connector.state === "installed" ? "registration/package detected" : connector.state} — ${connector.detail}`);
-		console.log(`Managed: ${config.control_plane.enabled ? "enabled" : "disabled"}; endpoint ${config.control_plane.endpoint ? "configured" : "missing"}. Connectivity and fleet adoption have not been checked.`);
+		if (config.mode !== "managed") {
+			console.log(`Managed: inactive (mode: ${config.mode}); enforcement is local and no control plane is used.`);
+		} else {
+			console.log(`Managed: ${managedActive ? "enabled" : "disabled"}; endpoint ${config.control_plane.endpoint ? "configured" : "missing"}. Connectivity and fleet adoption have not been checked.`);
+		}
 		const unreadableTelemetryQueue =
 			telemetryLoss.state === "unavailable" ||
 			telemetryLoss.namespaces.some((entry: { state: string }) => entry.state === "unavailable");

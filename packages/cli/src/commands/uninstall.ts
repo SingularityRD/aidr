@@ -420,7 +420,7 @@ function refusalRemedy(code: UninstallRefusalCode): string {
 	switch (code) {
 		case "receipt_missing":
 		case "receipt_unreadable":
-			return "Run 'aidr status' to see what is registered. If AIDR was installed by hand or by an MDM, remove it with the same tool that installed it.";
+			return "Run 'aidr status' to see what is registered. A Claude Code marketplace install has no receipt: remove it with '/plugin uninstall aidr@aidr' and '/plugin marketplace remove aidr'. If AIDR was installed by hand or by an MDM, remove it with the same tool that installed it.";
 		case "settings_invalid_json":
 		case "settings_invalid_shape":
 			return "Repair or restore your agent settings file first; it was left untouched.";

@@ -146,3 +146,25 @@ describe("aidr config -s", () => {
 		expect(process.exitCode).toBe(1);
 	});
 });
+
+describe("aidr config -g", () => {
+	it("returns the effective default for a field absent from config.json", async () => {
+		const config = makeConfig() as unknown as Record<string, unknown>;
+		delete config.mode;
+		mocks.getConfig.mockReturnValue(config);
+		await configCommand({ get: "mode" });
+		expect(stdout.join("\n")).toBe("local");
+		expect(process.exitCode).not.toBe(1);
+	});
+
+	it("returns a stored value over the default", async () => {
+		mocks.getConfig.mockReturnValue({ ...makeConfig(), mode: "managed" });
+		await configCommand({ get: "mode" });
+		expect(stdout.join("\n")).toBe("managed");
+	});
+
+	it("still reports unknown fields as not set", async () => {
+		await configCommand({ get: "no_such_field" });
+		expect(stdout.join("\n")).toBe("(not set)");
+	});
+});

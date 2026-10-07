@@ -33,7 +33,10 @@ async function configCommand(options: ConfigOptions): Promise<void> {
 
 	if (options.get) {
 		try {
-			const value = getNestedValue(config, options.get);
+			// A field absent from config.json is still in effect at its schema
+			// default (e.g. `mode` is "local"), so report the effective value.
+			const value =
+				getNestedValue(config, options.get) ?? getNestedValue(effectiveConfig(config), options.get);
 			console.log(value !== undefined ? displayConfigValue(options.get, value) : "(not set)");
 		} catch {
 			console.error("Invalid configuration path.");
@@ -131,6 +134,12 @@ async function configCommand(options: ConfigOptions): Promise<void> {
 	console.log("  aidr config -s <key> <val> Set non-secret value");
 	console.log("  aidr config -s <secret-key> Enter secret at hidden prompt");
 	console.log("  aidr config -l             List all\n");
+}
+
+/** The config as the runtime sees it: stored values over schema defaults. */
+function effectiveConfig(config: Config): Config {
+	const parsed = ConfigSchema.safeParse(config);
+	return (parsed.success ? parsed.data : ConfigSchema.parse({})) as unknown as Config;
 }
 
 function getNestedValue(obj: Config, path: string): unknown {

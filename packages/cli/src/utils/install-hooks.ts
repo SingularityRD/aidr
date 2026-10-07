@@ -39,9 +39,12 @@ export async function installHooks(env: Environment): Promise<HookInstallResult>
 	switch (env.agent) {
 		case "claude":
 			followUp.push(
-				"  Claude Code:  verify the publisher-signed release bundle and extract the plugin, then",
+				"  Claude Code:  verify the publisher-signed release bundle and extract aidr-claude-plugin-<version>.tar.gz.",
+				"                Provision the release Ed25519 public key in ~/.singularity-aidr/config.json",
+				"                (commercial builds fail closed without it), then from the Claude Code prompt run",
 				"                /plugin marketplace add /absolute/path/to/extracted/aidr-claude-plugin",
 				"                /plugin install aidr@aidr",
+				"                Restart Claude Code and confirm the plugin is active (see docs/getting-started.md).",
 			);
 			break;
 		case "cursor":

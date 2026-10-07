@@ -214,7 +214,10 @@ aidr/
 ## Conventions
 
 - **Naming split:** YAML/JSON data uses `snake_case` (`threat_id`, `source_file`). TypeScript uses `camelCase` (`threatId`, `sourceFile`). Conversion functions handle the boundary.
-- **Fail-open:** Every internal error path must return an `allow` verdict. Extension hooks always exit with code `0`.
+- **Failure policy is per layer, not a blanket fail-open:**
+  - *Detection internals* (a threat rule that errors, an optional reputation lookup, cache/intel/policy load) skip that signal, log it and continue. This must never be reported to the user as a clean result.
+  - *Connector entry points* fail **closed**: Claude Code, OpenClaw, OpenCode, Codex and the Cursor/VS Code hook return a deny (or block) on an internal error rather than silently allowing the call. Extension hooks always exit with code `0` and emit a deny verdict.
+  - *Security controls* (auth, tenant isolation, rate limits, webhook signatures, approval) fail closed.
 - **Detection patterns are data.** No hardcoded patterns - all rules live in `threats/*.yaml`.
 - **Versioning:** See [Versioning](#versioning) below.
 

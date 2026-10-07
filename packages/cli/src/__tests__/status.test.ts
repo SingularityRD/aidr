@@ -128,4 +128,31 @@ describe("aidr status loss reporting", () => {
 		};
 		expect(report.data_loss?.telemetry?.state).toBe("unavailable");
 	});
+	it("reports managed features as inactive in local mode", async () => {
+		const output = await runStatusText();
+		expect(output).toContain("Managed: inactive (mode: local)");
+		expect(output).not.toMatch(/Managed: enabled/);
+		const report = (await runStatusJson()) as { managed?: Record<string, unknown> };
+		expect(report.managed).toMatchObject({
+			active: false,
+			enabled: false,
+			control_plane_enabled: true,
+		});
+	});
+
+	it("reports managed state only in managed mode", async () => {
+		const home = process.env.HOME as string;
+		writeFileSync(
+			join(home, ".singularity-aidr", "config.json"),
+			JSON.stringify({
+				mode: "managed",
+				control_plane: { enabled: true, endpoint: "https://cp.example.test" },
+			}),
+			"utf8",
+		);
+		const output = await runStatusText();
+		expect(output).toContain("Managed: enabled; endpoint configured.");
+		const report = (await runStatusJson()) as { managed?: Record<string, unknown> };
+		expect(report.managed).toMatchObject({ active: true, enabled: true });
+	});
 });
