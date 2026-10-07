@@ -30,7 +30,7 @@ import { scanText } from "../dlp/privacy-rules/rules.js";
 import { evaluateToolCall, recordCanaryTrigger } from "../evaluator.js";
 import { extractFromToolCall } from "../extractors.js";
 import { scanModelOutput } from "../output-scanner.js";
-import { makeTmpDir, removeTmpDir } from "./test-utils.js";
+import { isSymlinkPermissionError, makeTmpDir, removeTmpDir } from "./test-utils.js";
 
 const THREATS_DIR = resolve(__dirname, "..", "..", "..", "..", "threats");
 
@@ -181,11 +181,16 @@ describe("aidr canary deploy", () => {
 		expect(second.skipped.every((skip) => skip.reason.startsWith("already deployed"))).toBe(true);
 	});
 
-	it("never overwrites or follows an existing file, directory entry or symlink", () => {
+	it("never overwrites or follows an existing file, directory entry or symlink", (ctx) => {
 		const userEnv = join(project, ".env.backup");
 		writeFileSync(userEnv, "MY_REAL_SECRET=keep-me\n");
 		const target = join(root, "elsewhere.txt");
-		symlinkSync(target, join(project, ".env.production.bak"));
+		try {
+			symlinkSync(target, join(project, ".env.production.bak"));
+		} catch (error) {
+			if (isSymlinkPermissionError(error)) return ctx.skip();
+			throw error;
+		}
 		mkdirSync(join(home, ".aws"));
 		for (const candidate of CANARY_PLACEMENTS.aws.candidates) {
 			writeFileSync(join(home, candidate), "[default]\nuser-owned\n");

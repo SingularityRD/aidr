@@ -12,6 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { isSymlinkPermissionError } from "./test-utils.js";
 import {
 	artifactSetDigest,
 	clearOperatorApprovalKeyCache,
@@ -165,10 +166,15 @@ describe("pending asks", () => {
 		expect(readStore().pending.length).toBeLessThanOrEqual(200);
 	});
 
-	it("refuses to use a symlinked store", async () => {
+	it("refuses to use a symlinked store", async (ctx) => {
 		const target = join(dir, "elsewhere.json");
 		writeFileSync(target, "{}");
-		symlinkSync(target, options.path as string);
+		try {
+			symlinkSync(target, options.path as string);
+		} catch (error) {
+			if (isSymlinkPermissionError(error)) return ctx.skip();
+			throw error;
+		}
 		await expect(recordAsk(actionId("link"))).rejects.toMatchObject({ code: "unsafe_store" });
 		const consumed = await consumeOperatorApproval(
 			{ actionId: actionId("link"), tool: "bash", artifacts: [COMMAND] },

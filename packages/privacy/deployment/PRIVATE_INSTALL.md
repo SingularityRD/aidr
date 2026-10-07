@@ -4,12 +4,12 @@ This package prepares the implemented single-tenant Linux text route and optiona
 
 ## Install layout and preparation
 
-The supported prefix is `/opt/aidr-private`, containing installed packages under `node_modules`. Install the verified private `@singularity/aidr-privacy` artifact, matching commercial `@singularityrd/aidr-core` and its complete approved runtime dependencies. The optional `@singularityrd/aidr-mcp-gateway@0.6.0` must be the signed delivered artifact. The SDK host sample also requires its matching SDK package. Offline installation needs the complete approved dependency cache or a preinstalled, verified dependency tree; the three product tarballs alone cannot satisfy core's external npm dependencies. Node, Python/wheels, OpenSSL, nftables, Secret Service/DBus/secret-tool and libseccomp are separate approved host/runtime inputs. No registry credentials or signing private keys are bundled.
+The supported prefix is `/opt/aidr-private`, containing installed packages under `node_modules`. Install the verified private `@singularityrd/aidr-privacy` artifact, matching commercial `@singularityrd/aidr-core` and its complete approved runtime dependencies. The optional `@singularityrd/aidr-mcp-gateway@0.6.0` must be the signed delivered artifact. The SDK host sample also requires its matching SDK package. Offline installation needs the complete approved dependency cache or a preinstalled, verified dependency tree; the three product tarballs alone cannot satisfy core's external npm dependencies. Node, Python/wheels, OpenSSL, nftables, Secret Service/DBus/secret-tool and libseccomp are separate approved host/runtime inputs. No registry credentials or signing private keys are bundled.
 
 Run the installed reference preparation script with an absolute **new** destination:
 
 ```sh
-node /opt/aidr-private/node_modules/@singularity/aidr-privacy/deployment/prepare-private.mjs /var/tmp/aidr-private-operator
+node /opt/aidr-private/node_modules/@singularityrd/aidr-privacy/deployment/prepare-private.mjs /var/tmp/aidr-private-operator
 ```
 
 It creates only configuration references and the operator inventory, with restrictive permissions. Existing output directories are refused. Every `REPLACE_` value needs a reviewed real value. Keep executable `.mjs` configuration in the installed package tree so its package imports resolve. Copy only completed reference JSON to administrator-owned `/etc/aidr-privacy` and `/etc/aidr-mcp`; never copy modules there without a separately verified Node dependency installation.
@@ -40,7 +40,7 @@ The default units/firewall assume loopback `8443` and optional MCP `7789`. Chang
 ```sh
 export AIDR_PRIVACY_CLIENT_CONFIG=/etc/aidr-privacy/source-admin-client.json
 export AIDR_PRIVACY_SOURCE_CONFIG=/etc/aidr-privacy/source.json
-node /opt/aidr-private/node_modules/@singularity/aidr-privacy/examples/platform/source-sync.mjs
+node /opt/aidr-private/node_modules/@singularityrd/aidr-privacy/examples/platform/source-sync.mjs
 ```
 
 The source host uses the existing safe text-directory reader and submits a complete snapshot over mTLS. Unsupported files/incomplete listings deny the whole snapshot. Only `synchronized:true` reports success. A failed or interrupted request can have committed the generation; inspect durable state/audit and use a reviewed newer generation instead of automatically replaying.

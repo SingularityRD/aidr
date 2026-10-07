@@ -36,6 +36,7 @@ afterEach(() => {
 const DEVICE_CODE = "aidr_device_contract-secret";
 const DEVICE_HASH = createHash("sha256").update(DEVICE_CODE).digest("hex");
 const BUDGET_KEY = `device_start:v2:poll:${DEVICE_HASH}`;
+const AGGREGATE_KEY = "device_poll:v1:aggregate";
 const NOW = Date.parse("2026-09-25T10:00:30.000Z");
 const WINDOW = Math.floor(NOW / 60_000);
 
@@ -54,6 +55,9 @@ function harness(options: {
 } = {}) {
 	let nowMs = NOW;
 	const counters = new Map<string, number>();
+	// The deployment-wide aggregate bucket (bounds every lookup, invalid codes
+	// included) is tracked separately so per-device-code assertions stay exact.
+	const aggregateCounts = new Map<string, number>();
 	const rpcCalls: Array<{ name: string; args: Row }> = [];
 	const tables: string[] = [];
 	let clientCreations = 0;
@@ -73,8 +77,10 @@ function harness(options: {
 				async maybeSingle() {
 					if (table === "rate_limits") {
 						if (options.countError) return { data: null, error: { message: "counter unavailable" } };
+						const counterKey = `${filters.get("key")}:${filters.get("window_start")}`;
+						if (filters.get("key") === AGGREGATE_KEY) return { data: { count: aggregateCounts.get(counterKey) ?? 0 }, error: null };
 						if (options.countValue !== undefined) return { data: { count: options.countValue }, error: null };
-						return { data: { count: counters.get(`${filters.get("key")}:${filters.get("window_start")}`) ?? 0 }, error: null };
+						return { data: { count: counters.get(counterKey) ?? 0 }, error: null };
 					}
 					if (table === "device_sessions") {
 						return { data: filters.get("device_code_hash") === DEVICE_HASH ? session : null, error: null };
@@ -90,6 +96,13 @@ function harness(options: {
 			return query;
 		},
 		async rpc(name: string, args: Row) {
+			if (name === "increment_rate_limit" && args.p_key === AGGREGATE_KEY) {
+				if (options.incrementThrows) throw new Error("network failure");
+				if (options.incrementError) return { data: null, error: { message: "storage unavailable" } };
+				const key = `${args.p_key}:${args.p_window_start}`;
+				aggregateCounts.set(key, (aggregateCounts.get(key) ?? 0) + Number(args.p_delta));
+				return { data: null, error: null };
+			}
 			rpcCalls.push({ name, args });
 			if (name === "increment_rate_limit") {
 				if (options.incrementThrows) throw new Error("network failure");
@@ -132,6 +145,7 @@ function harness(options: {
 	return {
 		poll,
 		counters,
+		aggregateCounts,
 		rpcCalls,
 		tables,
 		get clientCreations() { return clientCreations; },
@@ -196,6 +210,8 @@ describe("device-poll states are preserved", () => {
 		expect(await app.poll("aidr_device_unknown")).toMatchObject({ status: 401, body: { error: "device_code_invalid" } });
 		expect(app.counters.size).toBe(0);
 		expect(app.rpcCalls).toEqual([]);
+		// Invalid codes are bounded by the single aggregate bucket instead.
+		expect([...app.aggregateCounts.keys()]).toEqual([`${AGGREGATE_KEY}:${WINDOW}`]);
 	});
 });
 

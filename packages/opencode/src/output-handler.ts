@@ -743,8 +743,8 @@ export function createOutputHandlers(logger: StructuredLogger) {
 				"opencode",
 			);
 			if (findings.length > 0) {
-				await feedSessionFlow(input, findings, logger);
 				const ruleIds = findings.map((finding) => finding.ruleId).sort();
+				// Quarantine in the same turn as the inspection, then feed session flow.
 				quarantineInspectedOutput(
 					output,
 					`Tool output matched security rules: ${ruleIds.join(", ")}.`,
@@ -758,6 +758,7 @@ export function createOutputHandlers(logger: StructuredLogger) {
 						rawMcpResult,
 					},
 				);
+				await feedSessionFlow(input, findings, logger);
 				return;
 			}
 
@@ -785,8 +786,12 @@ export function createOutputHandlers(logger: StructuredLogger) {
 		input: OpenCodeAfterToolInput,
 		output: OpenCodeAfterToolOutput,
 	): Promise<void> => {
-		await observeCompletedCall(input, output, logger);
-		await inspectToolOutput(input, output);
+		// Both start synchronously: the observation snapshots the original output
+		// before any await, and inspection begins its signed-trust warm-up at once
+		// so it decides on the current payload after warm-up. Neither throws.
+		const observed = observeCompletedCall(input, output, logger);
+		const inspected = inspectToolOutput(input, output);
+		await Promise.all([observed, inspected]);
 	};
 
 	return {

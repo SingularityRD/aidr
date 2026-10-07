@@ -101,10 +101,9 @@ async function main(): Promise<void> {
 		// Warm signed output-policy trust, then inspect and replace the current
 		// payload in the same turn after all async work.
 		await scanProvisionedOutput([], "claude-code");
-		scan =
-			hookInput.tool_response === undefined || hookInput.tool_response === null
-				? null
-				: scanCachedProvisionedToolResponse(hookInput.tool_response);
+		// An empty response still passes the signed scanner, so unavailable
+		// policy trust is never skipped as "nothing to inspect".
+		scan = scanCachedProvisionedToolResponse(hookInput.tool_response);
 		inspection = quarantineInspectedToolOutput(
 			toolResponseInspectionResult(scan),
 			hookInput.tool_response,

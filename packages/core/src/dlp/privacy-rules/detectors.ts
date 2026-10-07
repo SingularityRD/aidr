@@ -251,5 +251,5 @@ const SENSITIVE_KEYS:Readonly<Record<string,EntityType>>=Object.freeze({
 });
 export function keyType(key:string):EntityType|undefined {
   const k=key.normalize('NFKD').replace(/\p{M}/gu,'').replace(/[ıİ]/g,'i').toLowerCase().replace(/[^a-z0-9]/g,'');
-  return SENSITIVE_KEYS[k];
+  return Object.hasOwn(SENSITIVE_KEYS,k)?SENSITIVE_KEYS[k]:undefined;
 }

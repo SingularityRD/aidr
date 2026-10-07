@@ -262,7 +262,8 @@ describe("canary detection sees the path and token the shell sees", () => {
 			registryPath,
 		}).deployed[0];
 		if (!deployed) throw new Error("aws canary was not deployed");
-		decoy = deployed.path.slice(dir.length + 1);
+		// Shell spellings below use POSIX separators; normalise the Windows path.
+		decoy = deployed.path.slice(dir.length + 1).replaceAll("\\", "/");
 		keyId = /aws_access_key_id\s*=\s*(\S+)/.exec(readFileSync(deployed.path, "utf8"))?.[1] ?? "";
 	});
 	afterEach(async () => {

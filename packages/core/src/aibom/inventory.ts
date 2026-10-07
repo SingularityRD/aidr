@@ -180,11 +180,15 @@ export interface CollectAiInventoryOptions {
 	now?: Date;
 }
 
-/** Show the home directory as `~` so an exported BOM does not name the local user. */
+/**
+ * Show the home directory as `~` so an exported BOM does not name the local
+ * user. The home-relative part uses `/` on every platform, so the same
+ * installation produces the same BOM label on Windows and POSIX.
+ */
 export function displayPath(path: string): string {
 	const home = process.env.HOME?.trim() || homedir();
 	if (home && (path === home || path.startsWith(`${home}${sep}`)))
-		return `~${path.slice(home.length)}`;
+		return `~${path.slice(home.length).replaceAll(sep, "/")}`;
 	return path;
 }
 

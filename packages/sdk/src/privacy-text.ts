@@ -79,7 +79,7 @@ export async function loadPrivacyTextGateway(
 	options: PrivacyGatewayOptions,
 ): Promise<PrivacyTextGateway> {
 	try {
-		const packageId = "@singularity/aidr-privacy/platform";
+		const packageId = "@singularityrd/aidr-privacy/platform";
 		const platform = await import(packageId);
 		if (typeof platform.TextGatewayClient !== "function") throw new Error();
 		return new platform.TextGatewayClient({

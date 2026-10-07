@@ -1,6 +1,6 @@
 /** Session authorization codes enter stdin, never argv. The registered HTTPS callback must
  * be owned by the institution and show/forward code+state only to its authenticated operator. */
-import {TextGatewayClient} from '@singularity/aidr-privacy/platform';
+import {TextGatewayClient} from '@singularityrd/aidr-privacy/platform';
 import config,{saveCredentials} from './client-config.mjs';
 try{
  const [action]=process.argv.slice(2);if(!['begin','complete','refresh','revoke'].includes(action))throw new Error();

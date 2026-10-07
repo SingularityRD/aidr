@@ -11,7 +11,7 @@ UMask=0077
 Environment=AIDR_PRIVACY_CLIENT_CONFIG=/etc/aidr-mcp/client.json
 Environment=AIDR_PRIVACY_MCP_CONFIG=/etc/aidr-mcp/gateway.json
 EnvironmentFile=/etc/aidr-mcp/vault-session.env
-ExecStart=/usr/bin/node /opt/aidr-private/node_modules/@singularity/aidr-privacy/dist/platform/mcp-serve.js --config /opt/aidr-private/node_modules/@singularity/aidr-privacy/examples/platform/mcp-config.mjs
+ExecStart=/usr/bin/node /opt/aidr-private/node_modules/@singularityrd/aidr-privacy/dist/platform/mcp-serve.js --config /opt/aidr-private/node_modules/@singularityrd/aidr-privacy/examples/platform/mcp-config.mjs
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=20

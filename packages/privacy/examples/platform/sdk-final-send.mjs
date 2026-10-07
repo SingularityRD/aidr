@@ -1,7 +1,7 @@
 /** Host-owned final model-send function. No direct provider client or credential in this host.
  * The SDK generic middleware remains the separate tool/action control boundary. */
 import {createGenericMiddleware,composeMiddleware} from '@singularityrd/aidr-sdk';
-import {TextGatewayClient} from '@singularity/aidr-privacy/platform';
+import {TextGatewayClient} from '@singularityrd/aidr-privacy/platform';
 import config from './client-config.mjs';
 const gateway=new TextGatewayClient(config);
 export async function finalModelSend(text){

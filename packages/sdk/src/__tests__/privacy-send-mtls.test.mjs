@@ -153,7 +153,7 @@ async function sdkBundle(root, format) {
 }
 
 function installPrivate(root) {
-	const target = join(root, "node_modules/@singularity/aidr-privacy");
+	const target = join(root, "node_modules/@singularityrd/aidr-privacy");
 	mkdirSync(target, { recursive: true });
 	cpSync(join(privatePackage, "dist"), join(target, "dist"), { recursive: true });
 	cpSync(join(privatePackage, "models"), join(target, "models"), { recursive: true });

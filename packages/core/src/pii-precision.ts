@@ -87,11 +87,16 @@ function isPlausiblePhoneNumber(match: PiiMatch, text: string): boolean {
 	return /^(?:1[-\s.])?(?:\(\d{3}\)\s?|\d{3}[-\s.])\d{3}[-\s.]\d{4}$/.test(value);
 }
 
-/** Only the canonical dashed layout; nine bare digits are an id, not an SSN. */
+/**
+ * The canonical dashed layout; nine bare digits are an id, not an SSN. A 3-2-4
+ * grouping with one other uniform separator (space, tab) is accepted only next
+ * to an explicit SSN label, so `SSN: 123\t45\t6789` cannot evade the baseline.
+ */
 function isPlausibleSsn(match: PiiMatch, text: string, requireContext: boolean): boolean {
-	if (!/^\d{3}-\d{2}-\d{4}$/.test(match.value)) return false;
-	if (!requireContext) return true;
-	return SSN_CONTEXT.test(text.slice(Math.max(0, match.start - 48), match.start));
+	const labelled = () => SSN_CONTEXT.test(text.slice(Math.max(0, match.start - 48), match.start));
+	if (/^\d{3}-\d{2}-\d{4}$/.test(match.value)) return !requireContext || labelled();
+	const grouped = /^\d{3}([ \t])\d{2}\1\d{4}$/.test(match.value);
+	return grouped && labelled();
 }
 
 /** True when a raw `PiiDetectorImpl` match survives the precision checks for its type. */

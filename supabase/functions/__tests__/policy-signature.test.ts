@@ -44,7 +44,7 @@ function database(options: { agentBound?: boolean; updatedAt?: string | null; pu
 			eq: (_column: string, _value: unknown) => query,
 			maybeSingle: async () => {
 				switch (table) {
-					case "api_keys": return { data: { user_id: USER, tenant_id: TENANT, agent_id: bound ? AGENT : null, revoked: false }, error: null };
+					case "api_keys": return { data: { id: "key-1", user_id: USER, tenant_id: TENANT, agent_id: bound ? AGENT : null, revoked: false, scope: "tenant", install_limit: null }, error: null };
 					case "tenant_members": return { data: { role: "member", expires_at: null }, error: null };
 					case "tenants": return { data: { status: "active" }, error: null };
 					case "agent_policy_assignments": return { data: { version: 4, assigned_at: options.publishedAt ?? PUBLISHED }, error: null };
@@ -58,6 +58,8 @@ function database(options: { agentBound?: boolean; updatedAt?: string | null; pu
 	}
 	const rpc = async (name: string) => {
 		if (name === "tenant_admission_capacity") return { data: 1, error: null };
+		// No AI governance bans: the response carries no overlay.
+		if (name === "ai_governance_policy_overlay") return { data: { mcp_deny_servers: [], mcp_require_approval_servers: [] }, error: null };
 		return { data: { allowed: true, remaining: 299 }, error: null };
 	};
 	return { from, rpc };

@@ -301,11 +301,11 @@ jobs:
           python -m venv --copies "${RUNNER_TEMP}/privacy-python"
           "${RUNNER_TEMP}/privacy-python/bin/python" -m pip install --disable-pip-version-check --only-binary=:all: -r packages/privacy/parsers/requirements.txt
           "${RUNNER_TEMP}/privacy-python/bin/python" -m pip check
-          AIDR_PYTHON="${RUNNER_TEMP}/privacy-python/bin/python" AIDR_TEST_PYTHON="${RUNNER_TEMP}/privacy-python/bin/python" pnpm --filter @singularity/aidr-privacy test:ci:platform
+          AIDR_PYTHON="${RUNNER_TEMP}/privacy-python/bin/python" AIDR_TEST_PYTHON="${RUNNER_TEMP}/privacy-python/bin/python" pnpm --filter @singularityrd/aidr-privacy test:ci:platform
 
       - name: Mandatory SDK ESM and CJS mTLS input and output gate
         run: |
-          pnpm --filter @singularity/aidr-privacy build:release
+          pnpm --filter @singularityrd/aidr-privacy build:release
           node --test packages/sdk/src/__tests__/privacy-send-mtls.test.mjs
 
       - name: Deterministic commercial release build

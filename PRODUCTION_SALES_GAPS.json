@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "generated_on": "2026-10-06",
+  "generated_on": "2026-10-07",
   "generation_timezone": "Europe/Istanbul",
   "generation_note": "Generated from the current worktree. source_commit identifies only the base commit; worktree_has_changes is explicit. This report is not candidate-bound release evidence. READINESS_BACKLOG.json is an older issue-ledger snapshot; its historical open IDs are not current verification results.",
   "decision": "NO-GO",
-  "source_commit": "7f3ec0ad009abf5b032b8116b296d8604fee884e",
+  "source_commit": "ec922dc4e5a467e43d7451110de7fd866bb1dd95",
   "worktree_has_changes": true,
   "historical_issue_ledger": {
     "path": "READINESS_BACKLOG.json",
@@ -27,7 +27,7 @@
       "priority": "P0",
       "title": "Gerçek host ve işletim sistemi kapsamı",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "deploy/native/support-matrix.json satilan connector/OS/arch/context/interception matrisini ve bilinen bypass/unobserved listesini tanimliyor; deploy/native/run-support-matrix.mjs kurulu olmayan hostu HOST_UNAVAILABLE olarak NO-GO uretiyor, gercek host ve isimli kabul acik.",
+      "implementation_update": "deploy/native/support-matrix.json satilan connector/OS/arch/context/interception matrisini ve bilinen bypass/unobserved listesini tanimliyor; deploy/native/run-support-matrix.mjs kurulu olmayan hostu HOST_UNAVAILABLE olarak NO-GO uretiyor. pnpm test:e2e:real-host gercek Claude Code 2.1.282, Codex CLI 0.141.0, OpenCode 1.18.32 ve OpenClaw 2026.9.6 ikililerini betikli bir mock modelle surup docs/evidence/real-host/ altinda kabul kayitlari uretti; 2026-09-30 urun karariyla support matrisi pre-prompt'u Claude Code, Codex, OpenCode ve OpenClaw icin, OpenClaw'in model oncesi post-tool-output karantinasini da additionalInterceptionPoints ile satilan kapsama ekledi (dogrulayici bu alandaki bir noktayi yalniz gercek-host kaydiyla enforced ise kabul ediyor). Interception matrisi claude-code pre-tool/pre-prompt/post-tool-output, codex pre-tool/pre-prompt, opencode pre-tool/pre-prompt/post-tool-output ve openclaw pre-tool/pre-prompt/post-tool-output (yalniz embedded runner, plugins.entries.aidr-openclaw.enabled: true, Codex harness haric) satirlarini bu kayitlarla enforced olarak isaretliyor (11 enforced, 25 acik nokta), Claude Code icin oldurulen PreToolUse kancasinin fail-open oldugu gozlendi. Kayitlar yalniz linux/x64, gelistirme build'i ve mock model uzerinde; Cursor/VS Code kaydi, Windows/macOS/arm64, imzali artefact, gercek model ve isimli kabul acik, matris karari NO-GO.",
       "remaining_implementation": [],
       "feature_ids": [
         "CON-01",
@@ -62,7 +62,7 @@
       "priority": "P0",
       "title": "Bağlayıcılar arasında araç adı ve girdi normalizasyonu",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Ortak araç/girdi normalizasyonu evaluator öncesinde; Codex ve OpenClaw boş-artifact erken izin yolu kaldırıldı, named MCP çağrıları politikaya ulaşıyor.",
+      "implementation_update": "Ortak araç/girdi normalizasyonu evaluator öncesinde; Codex ve OpenClaw boş-artifact erken izin yolu kaldırıldı, named MCP çağrıları politikaya ulaşıyor. packages/core/src/__tests__/connector-parity.test.ts altı bağlayıcının derlenmiş giriş noktalarını (Claude Code, Codex, OpenCode, OpenClaw, Cursor, VS Code) tek payload matrisiyle sürüyor ve aynı engelleme sınıfını ve threat id'yi audit logdan doğruluyor; argv dizisi shell komutları normalize ediliyor, bozuk komut deny oluyor; matrisin bulduğu ev dizini silme boşluğu CLT-CMD-031 ile kapatıldı. OpenClaw/OpenCode başlatma hatasında kanca bırakmak yerine tüm çağrıları engelliyor. Extractor sınırlarını aşan araç girdisi artık sessizce kesilmiyor: kalan sınır input_not_fully_inspected işareti koyuyor ve evaluator çağrıyı deny ediyor. 2026-09-24 kaydındaki iki uzlaşmamış beklenti giderildi: DLP redact satırı input rewrite yapan bağlayıcılarda (Claude Code, OpenCode) redakte girdinin çalışmasını, diğerlerinde blok bekliyor; OpenClaw bütünlük hatası testi uyumlu. 2026-09-25'te yeniden derlenmiş bundle'larla parity paketi 27/27, OpenClaw init fail-closed 2/2 ve OpenCode 3/3 geçti. Kurulu native hostlarda parity kabulü açık.",
       "remaining_implementation": [],
       "feature_ids": [
         "DET-12",
@@ -273,7 +273,7 @@
       "priority": "P1",
       "title": "MCP gateway ve taşıma güvenliği",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "DNS pinli JSON/SSE ve stdio tools geçidi incremental fatal UTF-8, gerçek bayt sınırı, 202/boş priming ve cancellation uygular. Legacy server callback ve modern MRTR continuation tek kullanımlık tenant/client/server/session/request bağlarıyla geri taşınır. Tam RPC metadata ve çıktı guard'ları kurulu imza doğrulanan ESM factory'de çalışır; private launcher gerçek mTLS tarayıcıya bağlıdır. Mandatory routing ayrı upstream credential ve unauthenticated/client-credential 401/403 negatif probu ister. Opaque format capable guard olmadan reddedilir; resources/prompts/subscriptions/unrelated GET kapsam dışı, host ağ sınırı ve gerçek müşteri kabulü açık.",
+      "implementation_update": "DNS pinli JSON/SSE ve stdio tools geçidi incremental fatal UTF-8, gerçek bayt sınırı, 202/boş priming ve cancellation uygular. tools/call argümanları upstream çağrısından önce core evaluator'dan geçiyor (deny, ask=operatör onayı bekleyen blok, evaluator hatası=detection_unavailable); extractor sınırlarını aşan argümanlar input_not_fully_inspected ile reddediliyor. Legacy server callback ve modern MRTR continuation tek kullanımlık tenant/client/server/session/request bağlarıyla geri taşınır; allowedServerMethods dışındaki sunucu kaynaklı (server-initiated) istekler varsayılan deny politikasına bağlı. Tam RPC metadata ve çıktı guard'ları kurulu imza doğrulanan ESM factory'de çalışır; private launcher gerçek mTLS tarayıcıya bağlıdır. Image/audio/resource blob'ları MIME allowlist, kanonik base64, boyut, magic-byte ve sınırlı sıkıştırma açma ile inceleniyor; çıktı guard'ı varken guard tam opak inceleme onaylamadıkça ikili çıktı reddediliyor (standalone CLI/stdio ikili çıktıyı reddeder). Resources/prompts yalnız istemci kapsamıyla relay ediliyor; subscriptions ve ilişkisiz GET kapsam dışı. Mandatory routing ayrı upstream credential ve unauthenticated/client-credential 401/403 negatif probu ister; gateway'i atlayan doğrudan upstream erişiminin zorunlu yönlendirilmesi host ağ sınırında ve gerçek müşteri kabulü açık.",
       "remaining_implementation": [],
       "feature_ids": [
         "MCP-07"
@@ -527,7 +527,7 @@
       "priority": "P1",
       "title": "Davet ve cihaz kayıt yaşam döngüsü",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Tenant kapsamlı invite list/revoke/resend token rotasyonu ile device-start/exchange temeli var; SMTP, gerçek browser/IdP ve ağ kesintisi kabulü açık.",
+      "implementation_update": "Tenant kapsamlı invite list/revoke/resend token rotasyonu ile device-start/exchange temeli var. Atomik davet RPC'sinden sonra enjekte edilebilir mailer (Resend) HTML+text davet e-postası gönderiyor; alıcı, gövde, link ve anahtar loglanmıyor; mail yapılandırılmamışsa veya gönderim başarısızsa manuel link paylaşımına düşülüyor. Device-poll cihaz-kodu başına bütçe ve RFC 8628 slow_down uyguluyor, bütçe okunamazsa 503 ile kapanıyor. Canlı mail sağlayıcı hesabı, SPF/DKIM/DMARC, teslim edilebilirlik, gerçek browser/IdP ve ağ kesintisi kabulü açık.",
       "remaining_implementation": [],
       "feature_ids": [
         "TEN-03",
@@ -580,7 +580,7 @@
       "priority": "P0",
       "title": "Tenant izolasyonu ve kaynak tüketim sınırları",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Edge byte/rate sınırı bozuk RPC'de 503 ve stalled stream'de 413 fail-closed üretiyor; müşteri yük/izolasyon kabulü açık.",
+      "implementation_update": "Edge byte/rate sınırı bozuk RPC'de 503 ve stalled stream'de 413 fail-closed üretiyor. packs-manifest/packs-download API anahtarı ve tenant başına bütçe uyguluyor; waitlist Turnstile ve imzalı ingress IP bütçesi kullanıyor; operator-admin allowlist'li, süreli platform operatörü + AAL2 ve işlem içi yeniden denetim gerektiriyor. tenant_id taşıyan her RLS tablosunda kısıtlayıcı tenant identity barrier politikası var (posture_findings ve sonradan eklenen tablolar 20260925000060 ile kapsandı); scripts/lib/tenant-identity-barrier.mjs tüm migrationları statik yeniden oynatıp eksik barrier'ı supabase:check (CI) içinde reddediyor. Browser Guard için yalnız /v1/ingest'in kabul ettiği, anahtar başına hız ve kurulum sınırlı ingest:browser_guard anahtarları eklendi; diğer uçlar bu anahtarı api_key_scope_denied ile reddediyor. Tüm endpoint/rol/tenant negatif matrisi, müşteri yük/izolasyon kabulü ve bağımsız pentest açık.",
       "remaining_implementation": [],
       "feature_ids": [
         "TEN-01",
@@ -724,7 +724,7 @@
       "priority": "P0",
       "title": "Gerçek cloud ve self-hosted üretim kurulumu",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Historical v6 self-hosted install evidence recorded execution of 33 migrations; it is not proof for the current source tree or candidate. The current source tree contains 139 canonical migration files, and no current candidate-bound install/upgrade acceptance exists. Prepare inputs are validated without creating secrets, and cloud preparation rejects public proxy/provider upstream loops. Live provider/TLS acceptance remains open.",
+      "implementation_update": "Historical v6 self-hosted install evidence recorded execution of 33 migrations; it is not proof for the current source tree or candidate. The current source tree contains 168 canonical migration files, and no current candidate-bound install/upgrade acceptance exists. Prepare inputs are validated without creating secrets, and cloud preparation rejects public proxy/provider upstream loops. A Kubernetes Helm chart (deploy/helm/aidr) now exists beside the Compose bundle; pnpm verify:helm lints and renders it where Helm is installed (CI installs Helm, not kubeconform), but it has not been installed on a live cluster. Live provider/TLS acceptance remains open.",
       "remaining_implementation": [],
       "feature_ids": [
         "DEP-01",
@@ -749,7 +749,7 @@
       "priority": "P0",
       "title": "Kimliği doğrulanan dağıtım ve release provenance",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Release verifier receipt hedefini mutation öncesi doğruluyor ve bundle/state/policy çakışmasını reddediyor; resmi key custody/private registry açık.",
+      "implementation_update": "Release verifier receipt hedefini mutation öncesi doğruluyor ve bundle/state/policy çakışmasını reddediyor. packages/privacy/dist diğer dist'lerle birlikte imzalanıp provenance'a bağlanıyor; release-browser-guard iş akışı tekrarlanabilir zip + SHA256SUMS ve provenance attestation üretiyor. Vendor-imzalı aidr-license-v1 lisansları ve imzalı offline pack importu var, ancak dağıtılan açık anahtar kaydı boş ve fail-closed; deployment-bootstrap özel anahtar kaydını yalnız --allow-custom-license-keys ile kabul edip kayıt yolunu/SHA-256'sını makbuza yazıyor, emekli anahtarlar retired_at ve süre sınırlarına bağlı; lisans denetimi operatör tarafında, veritabanı imzayı yeniden doğrulamıyor. deploy/helm/aidr Helm chart'ı ve build-images.mjs air-gap için images.json çekme listesi üretiyor. İndirme merkezi yalnız doğrulanmış https manifesti gösteriyor ve yayınlanmış manifest yok. Resmi key custody, private registry, air-gap medya transfer tatbikatı ve canlı Kubernetes kurulumu açık.",
       "remaining_implementation": [],
       "feature_ids": [
         "DEP-05",
@@ -800,7 +800,7 @@
       "priority": "P0",
       "title": "Migration, upgrade ve geri dönüş tatbikatı",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Kesilen rename resume yalnız kaynak/staged içerik preflight hash'leriyle eşleşirse devam ediyor; gerçek trafik cutover/rollback kabulü açık.",
+      "implementation_update": "Kesilen rename resume yalnız kaynak/staged içerik preflight hash'leriyle eşleşirse devam ediyor. Upgrade adımları kendi süreç grubunda çalışıyor; SIGINT/SIGTERM'de salt-okur adımlar duruyor, durum değiştiren adımlar tamamlanıyor, şema commit'inden önce kayıtlı yazarlar yeniden başlatılıyor, interrupted_by ve devam edilebilir faz kaydediliyor, çıkış 130/143; pnpm verify:upgrade (43 kontrol, sinyal senaryoları dahil) onprem-deploy CI işinde çalışıyor. Gerçek önceki müşteri sürümünden upgrade, trafik cutover/rollback kabulü açık.",
       "remaining_implementation": [],
       "feature_ids": [
         "DEP-03",
@@ -848,7 +848,7 @@
       "priority": "P0",
       "title": "Satılan fatura ve entitlement yaşam döngüsü",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "billing-portal Edge Function provider-of-record durum makinesi, sunucu tarafi tenant/uyelik/rol/MFA cozumlemesi, istemci customer/tenant/subscription id reddi, TTL/idempotency, cancel/refund ve seat reconciliation uyguluyor; finance fixture ile test edildi, canli provider ve muhasebe onayi acik. Eski: Pending Finance sipariş sonucu tenant/request/quantity/quote alanlarına fail-closed bağlı; provider-of-record, ödeme makbuzu ve paid-to-entitlement yok.",
+      "implementation_update": "billing-portal Edge Function provider-of-record durum makinesi, sunucu tarafi tenant/uyelik/rol/MFA cozumlemesi, istemci customer/tenant/subscription id reddi, TTL/idempotency, cancel/refund ve seat reconciliation uyguluyor; finance fixture ile test edildi. Plan kataloğu (Free/Team/Business/Enterprise) ve fiyat haritasına bağlı, service-role-only Stripe plan admission'ı tenant admission kilidi altında eski/tekrar olayları reddediyor, başka lisansı veya operatör iptalini ezmiyor ve her kararı denetim kaydına yazıyor; self-service env ile kapalı. Liste fiyatları onaylı SKU değildir (COM-001); canli provider, vergi, mutabakat ve muhasebe onayi acik.",
       "remaining_implementation": [],
       "feature_ids": [
         "BIL-01",
@@ -874,7 +874,7 @@
       "priority": "P1",
       "title": "Readiness kayıtlarının ve ürün iddialarının tutarlılığı",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "71 özellik, 59 iş paketi, 10 release rootu ve claim candidate/expiry tutarlılığı otomatik kontrol ediliyor; 13 dış onay kapısı açık.",
+      "implementation_update": "109 özellik, 60 iş paketi, 11 release rootu ve claim candidate/expiry tutarlılığı otomatik kontrol ediliyor; 13 dış onay kapısı açık.",
       "remaining_implementation": [],
       "feature_ids": [
         "EVAL-02",
@@ -1068,7 +1068,7 @@
       "priority": "P1",
       "title": "İlk müşteri satış ve satın alma değerlendirme paketi",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "İlk müşteri readiness gate'i NO-GO; v8 satış paketi tarihsel iç buyer-review taslağıdır ve kabul/teklif yetkisi vermez. Portable kit üreticisi mevcut olsa da temiz imzalı candidate, onaylı teklif ve satın alma kabulü açık.",
+      "implementation_update": "İlk müşteri readiness gate'i NO-GO; v8 satış paketi tarihsel iç buyer-review taslağıdır ve kabul/teklif yetkisi vermez. TR/EN ürün özellik kılavuzu (docs/product/features, HTML/PDF render ve link/taşma kontrollü renderer) ile TR/EN broşür (docs/sales/brochure, sayısal iddiaları kaynaktan yeniden hesaplayan brochure-facts testi) eklendi; bunlar onaylı satış materyali değildir, iddia onayı CLM-001 ve fiyat onayı COM-001 açık. Portable kit üreticisi mevcut olsa da temiz imzalı candidate, onaylı teklif ve satın alma kabulü açık.",
       "remaining_implementation": [],
       "feature_ids": [
         "EVAL-02",
@@ -1188,7 +1188,7 @@
       "priority": "P1",
       "title": "Device-poll onaydan kayda atomik geçiş",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Device-poll kayıp yanıt/eşzamanlı poll'da aynı hash-only tokenı geri buluyor, lookup hatasında 503 unknown dönüyor; canlı yarış kabulü açık.",
+      "implementation_update": "Device-poll kayıp yanıt/eşzamanlı poll'da aynı hash-only tokenı geri buluyor, lookup hatasında 503 unknown dönüyor; cihaz-kodu başına poll bütçesi RFC 8628 slow_down ile uygulanıyor ve bütçe okunamazsa 503 ile kapanıyor. Canlı yarış kabulü açık.",
       "remaining_implementation": [],
       "feature_ids": [
         "TEN-05"
@@ -1211,6 +1211,7 @@
       "title": "Tarayıcı gizlilik koruması (Browser Guard) ve AIDR Privacy saha kabulü",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
       "implementation_update": "Yerel uygulama: content script gönderim yakalama, geri alınabilir placeholder vault, yanıt unmask, auto/confirm/block/monitor modları, CSV/TSV/JSON/.env dosya temizleme, exact-data HMAC eşleşmesi, yönetilen politika (RE2 uyumlu şema build sırasında denetleniyor), yalnız-sayım privacy_scan telemetrisi, /privacy-guard paneli ve release-browser-guard iş akışı (tekrarlanabilir zip + SHA256SUMS) mevcut. Güvenlik incelemesi düzeltmeleri: geri açılan değerler kapalı shadow root içinde CSS generated content olarak, miras sıfırlanmış, generic font ve sabit genişlikle çiziliyor (sayfa fontu/CSS/window.find/seçim göremiyor) ve bir placeholder yalnız bu sekmeden onu taşıyan gönderimden sonra eklenen içerikte açılıyor; UTF-8 olmayan metin dosyaları windows-1254/1252 olarak çözülüp taranıyor, NUL baytı blokluyor; her yönetilen politika koruma azaltan kullanıcı ayarlarını (allowUserOverrides yoksa) kilitliyor; blocked.html web-accessible değil; telemetri ingest-only browser_guard anahtarıyla gönderilebiliyor. Native host NER taramaya bağlandı (nativeMessaging izni kullanıcı jestiyle isteniyor, host yoksa görünür şekilde yalnız kurallara düşüyor), vault sekme/origin başına storage.session'da yeniden yüklemeden sonra korunuyor, disabledSites izleme (monitor) semantiğinde. Belge desteği OpenDocument (ODT/ODS/ODP/ODG) yerinde maskeleme ve boş küçük resimle genişledi; eski .doc/.xls/.ppt dosyaları bildiriliyor ve blok modunda engelleniyor; görseller yalnız isteğe bağlı native host OCR'ı ile inceleniyor ve hassas metinde engelleniyor, aksi halde 'incelenmedi' olarak raporlanıyor. Kayıtlı hermetik Chromium E2E koşusunda 22 senaryonun 21'i geçti, 1'i kasıtlı olarak atlandı; bu fixture kanıtıdır. Canlı site, mağaza/imzalı dağıtım, MDM rollout, native NER/OCR doğruluğu ve müşteri kabulü açık.",
+      "remaining_implementation": [],
       "feature_ids": [
         "PRV-01",
         "PRV-02",
@@ -3817,7 +3818,8 @@
     "AIDR-050",
     "AIDR-051",
     "AIDR-052",
-    "AIDR-070"
+    "AIDR-070",
+    "AIDR-080"
   ],
   "current_readiness_gate": "docs/production-readiness/first-customer-ready.md",
   "sales_packet_reference": "docs/production-readiness/first-customer-sales-packet-v8.md",

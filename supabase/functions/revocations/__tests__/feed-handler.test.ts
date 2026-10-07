@@ -29,7 +29,9 @@ async function feedWithSigningKey(privateKey: string, options: { previousHashExp
 			}
 			const row = table === "api_keys"
 				? { user_id: userId, tenant_id: tenantId, revoked: options.revoked === true,
+					id: "key-1",
 					scope: options.scope ?? "tenant",
+					install_limit: (options.scope ?? "tenant") === "tenant" ? null : 5,
 					previous_hash: createHash("sha256").update("enrolled-key").digest("hex"),
 					previous_hash_expires_at: options.previousHashExpiresAt }
 				: table === "tenant_members"

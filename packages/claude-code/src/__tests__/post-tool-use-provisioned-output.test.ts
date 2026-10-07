@@ -7,6 +7,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	inspectCachedProvisionedToolResponse,
 	postToolInspectionUnavailable,
+	scanCachedProvisionedToolResponse,
+	toolResponseInspectionResult,
 } from "../output-inspection.js";
 import {
 	appendPostToolContext,
@@ -46,6 +48,11 @@ async function runHook(toolResponse: unknown) {
 		"@singularityrd/aidr-core": {
 			verifyArtifactIntegrityAndLog: vi.fn().mockResolvedValue({ status: "skipped" }),
 			scanProvisionedOutput,
+			// Session-flow, canary and outcome feeds are observation only here.
+			recordToolOutcome: vi.fn().mockResolvedValue(undefined),
+			recordToolOutputCanaries: vi.fn().mockResolvedValue(undefined),
+			recordToolOutputFlow: vi.fn().mockResolvedValue(undefined),
+			toolResultReportsFailure: () => false,
 		},
 		pino,
 		"./approval-tracker.js": { consumePendingApproval: async () => null },
@@ -57,8 +64,9 @@ async function runHook(toolResponse: unknown) {
 			}),
 		},
 		"./output-inspection.js": {
-			inspectCachedProvisionedToolResponse,
 			postToolInspectionUnavailable,
+			scanCachedProvisionedToolResponse,
+			toolResponseInspectionResult,
 		},
 		"./tool-output-quarantine.js": {
 			appendPostToolContext,

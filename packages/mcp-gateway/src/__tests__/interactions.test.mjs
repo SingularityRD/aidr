@@ -49,6 +49,23 @@ function json(id, result) {
 	});
 }
 
+/**
+ * Admission-capacity suites issue dozens of concurrent calls in one session,
+ * which the core runaway guard rightly treats as a runaway agent. Those suites
+ * test request admission, not detection (covered by its own suites), so they
+ * inject an evaluator that allows every argument set.
+ */
+const allowArguments = async () => ({
+	decision: "allow",
+	category: "none",
+	confidence: 0,
+	severity: "info",
+	source: "test",
+	artifacts: [],
+	matchedThreatId: null,
+	reasons: [],
+});
+
 async function fixture({
 	modern = false,
 	peer,
@@ -335,6 +352,7 @@ test("nested replies remain admitted when all 16 tenant request slots are waitin
 	const streams = new Map();
 	let forwarded = 0;
 	const f = await fixture({
+		dependencies: { evaluateToolCall: allowArguments },
 		peer: (_request, rpc) => {
 			if (rpc.method === "tools/call")
 				return new Response(
@@ -477,6 +495,7 @@ test("global parent admission closes capacity rejections while 64 parents across
 	const streams = new Map();
 	const f = await fixture({
 		tenantCount: 5,
+		dependencies: { evaluateToolCall: allowArguments },
 		peer: (_request, rpc) => {
 			if (rpc.method === "tools/call")
 				return new Response(

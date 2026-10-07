@@ -41,7 +41,9 @@ function database(options: { revoked?: boolean; accessTokenValid?: boolean; prev
 			tableReads.push(table);
 			const row = table === "api_keys"
 				? { tenant_id: tenantId, user_id: userId, agent_id: agentId, revoked: options.revoked === true,
+					id: "key-1",
 					scope: options.scope ?? "tenant",
+					install_limit: (options.scope ?? "tenant") === "tenant" ? null : 5,
 					previous_hash: keyHash, previous_hash_expires_at: options.previousHashExpiresAt }
 				: table === "tenant_members"
 					? { role: "owner", expires_at: null }

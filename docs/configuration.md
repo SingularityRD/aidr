@@ -43,7 +43,7 @@ boundaries. The private MCP launcher remains the supported owned gateway route.
 
 The supported SDK model path is `AIDRClient.sendText`, configured with the
 constructor's separate `privacyGateway` options. It constructs the installed
-`@singularity/aidr-privacy/platform` client and sends bounded text only to the
+`@singularityrd/aidr-privacy/platform` client and sends bounded text only to the
 fixed mTLS service. Provider credentials remain on that service, which applies
 its signed policy before provider dispatch and before returning output. Missing
 service/package, invalid trust or credentials, unqualified model, review, unknown

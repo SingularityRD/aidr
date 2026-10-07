@@ -12,7 +12,7 @@ Group=aidr-privacy
 UMask=0077
 Environment=AIDR_PRIVACY_CONFIG=/etc/aidr-privacy/service.json
 EnvironmentFile=/etc/aidr-privacy/vault-session.env
-ExecStart=/usr/bin/node /opt/aidr-private/node_modules/@singularity/aidr-privacy/dist/platform/serve.js --config /opt/aidr-private/node_modules/@singularity/aidr-privacy/examples/platform/service-config.mjs
+ExecStart=/usr/bin/node /opt/aidr-private/node_modules/@singularityrd/aidr-privacy/dist/platform/serve.js --config /opt/aidr-private/node_modules/@singularityrd/aidr-privacy/examples/platform/service-config.mjs
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=20

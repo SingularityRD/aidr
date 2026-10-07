@@ -243,7 +243,8 @@ export async function scanCodePath(
 			continue;
 		}
 		report.filesScanned += 1;
-		const display = rootStats.isDirectory() ? relative(root, file) : file;
+		// Root-relative paths use `/` on every platform so reports are stable.
+		const display = rootStats.isDirectory() ? relative(root, file).replaceAll("\\", "/") : file;
 		const findings = fileFindings(display, content, rules, sources);
 		const room = maxFindings - report.findings.length;
 		if (findings.length > room) report.truncated = true;

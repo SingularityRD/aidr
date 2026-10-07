@@ -1,10 +1,10 @@
 # AIDR üretim ve satış hazırlığı: ayrıntılı eksik kaydı
 
-Otomatik rapor üretim tarihi: **2026-10-06** (Europe/Istanbul). Rapor bu çalışma ağacının kaynaklarından üretildi; source_commit yalnızca taban commit'i gösterir, çalışma ağacının değişmiş olduğu ayrıca işaretlenir. Bu rapor candidate-bound release evidence değildir. READINESS_BACKLOG.json issue-ledger kaydının tarihsel baseline ve doğrulama tarihleri aşağıdaki makine kaydında yer alır; açık finding ID'leri güncel checkout doğrulaması sayılmaz. **Karar: NO-GO.** Kurulabilir bir aday ve doğrulanmış yerel akışlar var; bütün ürünün üretim ve satış kabulü tamamlanmış değil.
+Otomatik rapor üretim tarihi: **2026-10-07** (Europe/Istanbul). Rapor bu çalışma ağacının kaynaklarından üretildi; source_commit yalnızca taban commit'i gösterir, çalışma ağacının değişmiş olduğu ayrıca işaretlenir. Bu rapor candidate-bound release evidence değildir. READINESS_BACKLOG.json issue-ledger kaydının tarihsel baseline ve doğrulama tarihleri aşağıdaki makine kaydında yer alır; açık finding ID'leri güncel checkout doğrulaması sayılmaz. **Karar: NO-GO.** Kurulabilir bir aday ve doğrulanmış yerel akışlar var; bütün ürünün üretim ve satış kabulü tamamlanmış değil.
 
 109 alt özellik: **66 bağlı/çalışan, 41 kısmi, 0 eksik, 2 dış kabule bağlı**. Çalışan bir özellikte de saha veya işletim kabulü açık olabilir. Bu raporda **47 teknik/operasyon iş paketi ve 13 ticari/dış kanıt kapısı** ayrıntılandırıldı. Bunlar benzersiz yazılım hatası sayısı veya tamamlanma yüzdesi değildir; örtüşen gereksinimler kimliklerle ilişkilidir. Makine kaydı: [PRODUCTION_SALES_GAPS.json](PRODUCTION_SALES_GAPS.json).
 
-43 teknik işte yerel uygulama ilerlemiş ve saha kabulü açık; 3 teknik iş uygulama/entegrasyon olarak açık. Başlangıç boşluğu tarihsel karşılaştırma için korunur; satırın güncel durumu ve kalan kabul koşulu esas alınmalıdır. Üretim ve destekli satış profillerinin her birinde **12 açık zorunlu dış kapı** var. Müşteri ortamı henüz bilinmiyor; cloud ve self-hosted kapsamları korunmuştur.
+44 teknik işte yerel uygulama ilerlemiş ve saha kabulü açık; 3 teknik iş uygulama/entegrasyon olarak açık. Başlangıç boşluğu tarihsel karşılaştırma için korunur; satırın güncel durumu ve kalan kabul koşulu esas alınmalıdır. Üretim ve destekli satış profillerinin her birinde **12 açık zorunlu dış kapı** var. Müşteri ortamı henüz bilinmiyor; cloud ve self-hosted kapsamları korunmuştur.
 
 ## Kanıt ve durum nasıl okunmalı?
 
@@ -72,6 +72,7 @@ Güncel pre-customer gate [docs/production-readiness/first-customer-ready.md](do
 | T44 | Entitlement grace ve eski imzalı önbellek geçişi | Saha/işletim kabulü |
 | T45 | Device-start güvenilir IP ve giriş yönlendirmesi | Saha/işletim kabulü |
 | T46 | Device-poll onaydan kayda atomik geçiş | Saha/işletim kabulü |
+| T47 | Tarayıcı gizlilik koruması (Browser Guard) ve AIDR Privacy saha kabulü | Saha/işletim kabulü |
 | COM-001 | Onaylı SKU, fiyat, teklif ve ticari sürüm manifesti | Ortam/ölçüm/isimli onay |
 | COM-002 | Lisans, fikri mülkiyet ve üçüncü taraf hakları | Ortam/ölçüm/isimli onay |
 | COM-003 | Veri işleme, DPA ve gizlilik onayı | Ortam/ölçüm/isimli onay |
@@ -234,7 +235,7 @@ Bu tek liste 59 iş paketini kapsar. Açık backlog kayıtları ve kısmi özell
 
 ### T10 — MCP gateway ve taşıma güvenliği (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** DNS pinli JSON/SSE ve stdio tools geçidi incremental fatal UTF-8, gerçek bayt sınırı, 202/boş priming ve cancellation uygular. Legacy server callback ve modern MRTR continuation tek kullanımlık tenant/client/server/session/request bağlarıyla geri taşınır. Tam RPC metadata ve çıktı guard'ları kurulu imza doğrulanan ESM factory'de çalışır; private launcher gerçek mTLS tarayıcıya bağlıdır. Mandatory routing ayrı upstream credential ve unauthenticated/client-credential 401/403 negatif probu ister. Opaque format capable guard olmadan reddedilir; resources/prompts/subscriptions/unrelated GET kapsam dışı, host ağ sınırı ve gerçek müşteri kabulü açık.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** DNS pinli JSON/SSE ve stdio tools geçidi incremental fatal UTF-8, gerçek bayt sınırı, 202/boş priming ve cancellation uygular. tools/call argümanları upstream çağrısından önce core evaluator'dan geçiyor (deny, ask=operatör onayı bekleyen blok, evaluator hatası=detection_unavailable); extractor sınırlarını aşan argümanlar input_not_fully_inspected ile reddediliyor. Legacy server callback ve modern MRTR continuation tek kullanımlık tenant/client/server/session/request bağlarıyla geri taşınır; allowedServerMethods dışındaki sunucu kaynaklı (server-initiated) istekler varsayılan deny politikasına bağlı. Tam RPC metadata ve çıktı guard'ları kurulu imza doğrulanan ESM factory'de çalışır; private launcher gerçek mTLS tarayıcıya bağlıdır. Image/audio/resource blob'ları MIME allowlist, kanonik base64, boyut, magic-byte ve sınırlı sıkıştırma açma ile inceleniyor; çıktı guard'ı varken guard tam opak inceleme onaylamadıkça ikili çıktı reddediliyor (standalone CLI/stdio ikili çıktıyı reddeder). Resources/prompts yalnız istemci kapsamıyla relay ediliyor; subscriptions ve ilişkisiz GET kapsam dışı. Mandatory routing ayrı upstream credential ve unauthenticated/client-credential 401/403 negatif probu ister; gateway'i atlayan doğrudan upstream erişiminin zorunlu yönlendirilmesi host ağ sınırında ve gerçek müşteri kabulü açık.
 
 **Başlangıç durumu:** Framing ve policy interception yardımcıları var; çalışan tam gateway tüketicisi yok. URL DNS kontrolünden sonra fetch yeniden çözümleme yapıyor; cevap sınırı Content-Length başlığına bakıyor.
 
@@ -524,7 +525,7 @@ Bu tek liste 59 iş paketini kapsar. Açık backlog kayıtları ve kısmi özell
 
 ### T28 — Gerçek cloud ve self-hosted üretim kurulumu (P0)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Historical v6 self-hosted install evidence recorded execution of 33 migrations; it is not proof for the current source tree or candidate. The current source tree contains 139 canonical migration files, and no current candidate-bound install/upgrade acceptance exists. Prepare inputs are validated without creating secrets, and cloud preparation rejects public proxy/provider upstream loops. Live provider/TLS acceptance remains open.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Historical v6 self-hosted install evidence recorded execution of 33 migrations; it is not proof for the current source tree or candidate. The current source tree contains 168 canonical migration files, and no current candidate-bound install/upgrade acceptance exists. Prepare inputs are validated without creating secrets, and cloud preparation rejects public proxy/provider upstream loops. A Kubernetes Helm chart (deploy/helm/aidr) now exists beside the Compose bundle; pnpm verify:helm lints and renders it where Helm is installed (CI installs Helm, not kubeconform), but it has not been installed on a live cluster. Live provider/TLS acceptance remains open.
 
 **Başlangıç durumu:** İki model için kurulum hazırlama ve yerel Docker prova var.
 

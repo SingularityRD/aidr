@@ -35,7 +35,7 @@ operation may have completed. Express/Next middleware owns its continuation
 decision and does not intercept the later host response.
 
 `sendText()` owns one bounded final text request through the operator-installed
-private `@singularity/aidr-privacy/platform` package's real `TextGatewayClient`.
+private `@singularityrd/aidr-privacy/platform` package's real `TextGatewayClient`.
 Install that approved private package beside this SDK and run its configured
 service with approved model, broker, tenant policy, durable state and mTLS.
 The second constructor argument is trusted host configuration; it is separate

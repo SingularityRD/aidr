@@ -151,7 +151,10 @@ describe("Browser Privacy Guard page", () => {
 		renderPage();
 
 		const counters = await screen.findByRole("region", { name: "Browser privacy counters" });
-		await waitFor(() => expect(within(counters).getByText("1,234")).toBeInTheDocument());
+		// Counts use the viewer's locale (1,234 in en-US, 1.234 in tr-TR).
+		await waitFor(() =>
+			expect(within(counters).getByText((1234).toLocaleString())).toBeInTheDocument(),
+		);
 		expect(within(counters).getByText("41")).toBeInTheDocument();
 		expect(within(counters).getByText("7")).toBeInTheDocument();
 		expect(within(counters).getByText("9")).toBeInTheDocument();

@@ -68,7 +68,7 @@ test("CI and RC require the owned SDK mTLS gate after the complete private profi
 		const full = step(workflow, gateName);
 		const sdk = step(workflow, "Mandatory SDK ESM and CJS mTLS input and output gate");
 		assert.match(full, /pnpm --filter @singularity\/aidr-privacy test:ci:platform/);
-		const build = sdk.indexOf("pnpm --filter @singularity/aidr-privacy build:release");
+		const build = sdk.indexOf("pnpm --filter @singularityrd/aidr-privacy build:release");
 		const check = sdk.indexOf("node --test packages/sdk/src/__tests__/privacy-send-mtls.test.mjs");
 		assert.ok(build >= 0 && check > build, `${file}: the SDK gate needs fresh private bytes`);
 		assert.ok(workflow.indexOf(full) < workflow.indexOf(sdk));

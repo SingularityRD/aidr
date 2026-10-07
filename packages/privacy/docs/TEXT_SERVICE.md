@@ -27,8 +27,8 @@ Missing or invalid configuration, model startup/inference, broker principal/sess
 Build only this package from the workspace root:
 
 ```sh
-pnpm --filter @singularity/aidr-privacy build:release
-node /opt/aidr-private/node_modules/@singularity/aidr-privacy/dist/platform/serve.js --config /opt/aidr-private/node_modules/@singularity/aidr-privacy/examples/platform/service-config.mjs
+pnpm --filter @singularityrd/aidr-privacy build:release
+node /opt/aidr-private/node_modules/@singularityrd/aidr-privacy/dist/platform/serve.js --config /opt/aidr-private/node_modules/@singularityrd/aidr-privacy/examples/platform/service-config.mjs
 ```
 
 An administrator configuration module has this shape. The imported runtime options, TLS material and broker adapter are deployment inputs, not bundled defaults:

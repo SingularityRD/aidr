@@ -3,8 +3,23 @@
  * after a tool executed and before its result enters the model context, so the
  * connector's replacement is what the same-turn model receives.
  */
-import type { Logger } from "@singularityrd/aidr-core";
+import { type Logger, scanCachedProvisionedOutput } from "@singularityrd/aidr-core";
 import { describe, expect, it, vi } from "vitest";
+
+// The signed tenant output policy is warmed by the plugin before this
+// synchronous boundary; with no tenant policy the built-in scanners apply.
+vi.mock("@singularityrd/aidr-core", async (importOriginal) => {
+	const core = await importOriginal<typeof import("@singularityrd/aidr-core")>();
+	return {
+		...core,
+		scanProvisionedOutput: vi.fn(async (views: readonly string[]) =>
+			views.flatMap(core.scanModelOutput),
+		),
+		scanCachedProvisionedOutput: vi.fn((views: readonly string[]) =>
+			views.flatMap(core.scanModelOutput),
+		),
+	};
+});
 import { OUTPUT_INSPECTION_MAX_CHARS } from "../output-inspection.js";
 import {
 	OpenClawOutputProtection,
@@ -154,18 +169,15 @@ describe("OpenClaw pre-model tool-result middleware", () => {
 	it("fails closed with a quarantine notice when inspection throws", () => {
 		const logger = testLogger();
 		const protection = new OpenClawOutputProtection(logger);
-		const hostile = new Proxy(
-			{},
-			{
-				ownKeys() {
-					throw new Error("hostile content");
-				},
-			},
-		);
+		// The bounded collector absorbs hostile shapes as incomplete coverage, so
+		// drive the throw path through the signed-policy scanner instead.
+		vi.mocked(scanCachedProvisionedOutput).mockImplementationOnce(() => {
+			throw new Error("hostile content");
+		});
 		const { replacement } = protection.toolResultMiddleware({
 			toolCallId: "call-hostile",
 			toolName: "exec",
-			result: { content: hostile },
+			result: textResult("aidr-benign-ok"),
 		});
 		expectHostAcceptedShape(replacement);
 		expect(replacement?.result.content[0]?.text).toBe(PRE_MODEL_INSPECTION_FAILURE_NOTICE);
@@ -177,14 +189,14 @@ describe("OpenClaw pre-model tool-result middleware", () => {
 		);
 	});
 
-	it("does not withhold the final response for output the model never received", () => {
+	it("does not withhold the final response for output the model never received", async () => {
 		const protection = new OpenClawOutputProtection(testLogger());
 		protection.toolResultMiddleware(
 			{ toolCallId: "call-q", toolName: "exec", result: textResult(`token ${GITHUB_TOKEN}`) },
 			{ runId: "run-q", sessionKey: "agent:main:q" },
 		);
 		// after_tool_call then observes the notice the host substituted.
-		protection.afterToolCall(
+		await protection.afterToolCall(
 			{
 				toolName: "exec",
 				params: {},
@@ -197,7 +209,7 @@ describe("OpenClaw pre-model tool-result middleware", () => {
 			{ runId: "run-q", sessionKey: "agent:main:q" },
 		);
 		expect(
-			protection.messageSending(
+			await protection.messageSending(
 				{ to: "user", content: "The file held a credential that was quarantined." },
 				{ runId: "run-q", sessionKey: "agent:main:q" },
 			),

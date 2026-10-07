@@ -9,7 +9,7 @@ import { loadTrustedModelSources, type TrustedModelSources } from "../ai-supply-
 import { scanCodePath } from "../code-scanner.js";
 import { loadThreats } from "../threat-loader.js";
 import type { Threat } from "../types.js";
-import { makeTmpDir } from "./test-utils.js";
+import { isSymlinkPermissionError, makeTmpDir } from "./test-utils.js";
 
 const THREATS_DIR = resolve(__dirname, "..", "..", "..", "..", "threats");
 const ALLOWLISTS_DIR = resolve(__dirname, "..", "..", "..", "..", "allowlists");
@@ -62,7 +62,7 @@ describe("scanCodePath", () => {
 		expect(report.findings[2]?.evidence).toBe('model = torch.load("model.pt")');
 	});
 
-	it("skips dependencies, build output, documentation and symbolic links", async () => {
+	it("skips dependencies, build output, documentation and symbolic links", async (ctx) => {
 		const root = await project({
 			"node_modules/pkg/index.js": "eval(req.query.code)",
 			"dist/bundle.js": "eval(req.query.code)",
@@ -70,7 +70,12 @@ describe("scanCodePath", () => {
 			"README.md": "Never call torch.load(path) on untrusted files.",
 			"real.py": "import os\n",
 		});
-		await symlink(join(root, "real.py"), join(root, "link.py"));
+		try {
+			await symlink(join(root, "real.py"), join(root, "link.py"));
+		} catch (error) {
+			if (isSymlinkPermissionError(error)) return ctx.skip();
+			throw error;
+		}
 		const report = await scanCodePath(root, threats);
 		expect(report.findings).toEqual([]);
 		expect(report.filesScanned).toBe(1);

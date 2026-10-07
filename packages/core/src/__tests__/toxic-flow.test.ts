@@ -26,7 +26,7 @@ import {
 	pathWithinDownload,
 } from "../toxic-flow-classify.js";
 import type { Config, Verdict } from "../types.js";
-import { makeTmpDir, removeTmpDir } from "./test-utils.js";
+import { isSymlinkPermissionError, makeTmpDir, removeTmpDir } from "./test-utils.js";
 
 const settings = resolveToxicFlowSettings({});
 const options: FlowClassifierOptions = settings;
@@ -576,7 +576,7 @@ describe("applyToxicFlow with a session store", () => {
 		).toBe("ok");
 	});
 
-	it("detects a record swapped in from another session, a deleted key and a symlinked record", async () => {
+	it("detects a record swapped in from another session, a deleted key and a symlinked record", async (ctx) => {
 		await run("WebSearch", { query: "x" }, base(), allowVerdict(), "session-a");
 		await run("WebSearch", { query: "x" }, base(), allowVerdict(), "session-b");
 		const key = (id: string) => resolveFlowSessionKey(id, "claude-code");
@@ -594,7 +594,13 @@ describe("applyToxicFlow with a session store", () => {
 		const freshProcess = new SessionFlowStore({ dir: join(dir, ".", "") + "/./" });
 		expect((await freshProcess.load(key("session-c"), clock)).status).toBe("tampered");
 
-		await symlink(fileOf("session-b"), join(dir, "link.json"));
+		try {
+			await symlink(fileOf("session-b"), join(dir, "link.json"));
+		} catch (error) {
+			// The swap and deleted-key cases above have already run.
+			if (isSymlinkPermissionError(error)) return ctx.skip();
+			throw error;
+		}
 		await unlink(fileOf("session-b"));
 		await symlink(join(dir, "link.json"), fileOf("session-b"));
 		expect((await store.load(key("session-b"), clock)).status).toBe("tampered");

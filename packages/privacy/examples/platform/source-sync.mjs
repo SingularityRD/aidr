@@ -3,7 +3,7 @@
 import {readFileSync} from 'node:fs';
 import {isAbsolute,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {readAuthorizedDirectory,TextGatewayClient} from '@singularity/aidr-privacy/platform';
+import {readAuthorizedDirectory,TextGatewayClient} from '@singularityrd/aidr-privacy/platform';
 
 export async function synchronizeDirectory(client,config){
  if(!config||Object.keys(config).sort().join(',')!=='classification,generation,groups,root,sourceId'

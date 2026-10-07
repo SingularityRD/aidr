@@ -249,8 +249,9 @@ describe("aidr scan --code", () => {
 					(finding) => `${finding.file}:${finding.line} ${finding.ruleId}`,
 				),
 			).toEqual([
-				`${join("src", "train.py")}:2 AISC-001`,
-				`${join("src", "train.py")}:3 SCG-TLS-001`,
+				// Report paths are root-relative with `/` on every platform.
+				"src/train.py:2 AISC-001",
+				"src/train.py:3 SCG-TLS-001",
 			]);
 			expect(result.exitCode).toBe(2);
 		} finally {

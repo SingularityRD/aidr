@@ -11,9 +11,11 @@ describe("bundled-dirs", () => {
 		expect(getAidrVersion()).toBe(pkg.version);
 	});
 
-	it("resolves bundled threat and allowlist directories under the package root", () => {
+	it("resolves bundled threat and allowlist directories next to the plugin entry", () => {
+		// sync-assets writes them to dist/resources, beside the shipped plugin.
 		const dirs = getBundledDataDirs();
-		expect(dirs.threatsDir).toBe(join(dirs.packageRoot, "resources", "threats"));
-		expect(dirs.allowlistsDir).toBe(join(dirs.packageRoot, "resources", "allowlists"));
+		expect(dirs.packageRoot).toBe(join(dirs.pluginDir, ".."));
+		expect(dirs.threatsDir).toBe(join(dirs.pluginDir, "resources", "threats"));
+		expect(dirs.allowlistsDir).toBe(join(dirs.pluginDir, "resources", "allowlists"));
 	});
 });

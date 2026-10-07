@@ -4,6 +4,15 @@ import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { vi } from "vitest";
 
+/**
+ * Windows refuses symlink creation without Developer Mode or elevation
+ * (`EPERM`). A test that needs a real symlink skips on such a host instead of
+ * failing; it still runs wherever symlinks can be created (Linux CI).
+ */
+export function isSymlinkPermissionError(error: unknown): boolean {
+	return process.platform === "win32" && (error as NodeJS.ErrnoException)?.code === "EPERM";
+}
+
 const CLEANUP_MAX_RETRIES = 30;
 const CLEANUP_INITIAL_DELAY_MS = 100;
 const CLEANUP_MAX_DELAY_MS = 1_000;

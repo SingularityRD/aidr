@@ -1,6 +1,6 @@
 # AIDR alt özellik envanteri
 
-Otomatik üretim tarihi: **2026-10-06**. 71 alt özellik ve teslimat gereksinimi eşlendi: 41 çalışan kod akışına bağlı, 28 kısmi, 0 eksik, 2 dış kanıta bağlı. Bu sayılar üretim kabulü veya tespit başarım oranı değildir. Satış/GA kararı **NO-GO** olarak korunur.
+Otomatik üretim tarihi: **2026-10-07**. 109 alt özellik ve teslimat gereksinimi eşlendi: 66 çalışan kod akışına bağlı, 41 kısmi, 0 eksik, 2 dış kanıta bağlı. Bu sayılar üretim kabulü veya tespit başarım oranı değildir. Satış/GA kararı **NO-GO** olarak korunur.
 
 Makine kaydı: [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json). Kaynaklar, tüketen bileşenler ve her satırın kalan işi bu dosyada bulunur. Önceki PRODUCT_SCOPE_AND_FEATURES.md dosyasındaki modül erişilebilirlik sayıları tarihsel bir ara denetime aittir.
 
@@ -20,7 +20,7 @@ Makine kaydı: [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json). Kaynaklar, tük
 | DET-03 | [Obfuscation and suspicious shell patterns](threats/obfuscation.yaml) | wired | Stateful multi-step command-chain analysis is not implemented |
 | DET-04 | [Credential access and exfiltration](threats/credentials.yaml) | wired | Customer secret types and benign workflow corpus need calibration |
 | DET-05 | [Cross-platform rules and mining](threats/mining.yaml) | wired | Native host matrix and mining workload acceptance remain external |
-| DET-06 | [Prompt injection inspection](packages/core/src/output-scanner.ts) | partial | Claude PostToolUse and OpenClaw after_tool_call cannot prove same-turn model blocking; provider streams and native host bypass need acceptance |
+| DET-06 | [Prompt injection inspection](packages/core/src/output-scanner.ts) | partial | The real-host records quarantine one secret-bearing Bash/exec result with a scripted model; prompt-injection payloads, MCP and non-text results, Cursor/VS Code and Codex (no output interception) are not host-accepted, and OpenClaw's pre-model quarantine covers only the explicitly enabled plugin on the embedded runner (not the Codex harness); provider streams and native host bypass need acceptance; the precision filter trades recall on unlabelled formats and needs customer benign/attack corpus calibration |
 | DET-07 | [Structured DLP and PII](packages/core/src/dlp/scanner.ts) | partial | Real labels and TR/EN NER efficacy are unaccepted; later host callbacks cannot guarantee same-turn output blocking; unsupported opaque formats fail closed |
 | DET-08 | [Behavioral and novelty analysis](packages/core/src/behavioral-orchestrator.ts) | partial | Exit zero is not business success or process-tree isolation; real corpus efficacy, customer role custody and native OS acceptance remain required; OS owner can roll back the whole vault and journal |
 | DET-09 | [ML classification and similarity](packages/core/src/behavioral-orchestrator.ts) | partial | No independently validated production model efficacy or broad runtime adoption |
@@ -55,6 +55,9 @@ Makine kaydı: [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json). Kaynaklar, tük
 | INF-01 | [Native fingerprint and CVE scanning](packages/core/src/aig-infra-scan.ts) | wired | Compiled dataset freshness and unsupported fingerprint rules constrain coverage |
 | INF-02 | [Scan report to runtime policy](packages/core/src/aig-policy.ts) | wired | Opt-in, scoped origins; report file is a trusted local administrative input |
 | INF-03 | [Continuous fleet discovery](packages/cli/src/commands/collect.ts) | partial | Actual customer cloud IAM/MDM licences, approved scopes, production schedules, paging and provider acceptance remain open; reported resources do not prove whole-estate coverage |
+| INF-04 | [AI security posture findings](threats/skill-scan.yaml) | wired | A deterministic pattern port of the AIG taxonomy, not AIG's model-driven scanner; coverage is limited to what an enrolled collector uploads, and detection efficacy on real customer skills/plugins is unmeasured |
+| INF-05 | [AI Bill of Materials (CycloneDX 1.6)](packages/core/src/aibom/cyclonedx.ts) | wired | Project root only (no nested workspaces or transitive lockfile-only packages), npm and PyPI only, MCP risk categories are name-based indicators, model files are not hashed, and a component outside the CVE index is marked not_in_cve_index rather than clean |
+| INF-06 | [Agent environment and autonomy posture](packages/core/src/agent-environment-posture.ts) | partial | A configuration snapshot, not proof of how a session was launched (a command-line flag can override config); Cursor/VS Code auto-run, OpenClaw sandbox and Gemini CLI/Aider autonomy settings are not read, and cloud credential privilege is not assessed |
 
 ## Response
 
@@ -67,6 +70,8 @@ Makine kaydı: [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json). Kaynaklar, tük
 | RSP-05 | [Signed response audit chain](packages/core/src/response-audit.ts) | wired | Disabled by default; independent key custody and storage/retention evidence remain external |
 | RSP-06 | [Fleet kill switch and credential revoke](supabase/functions/revocations/index.ts) | partial | Actual signed Windows VM/firewall/MDM acceptance remains open; non-Windows isolation and universal cloud credential revocation are unsupported; worker is not a SYSTEM impersonation service |
 | RSP-07 | [SOAR playbook orchestration](supabase/functions/response-playbooks/index.ts) | partial | External alarm source integration, real Windows permissions/effects, signed distribution, native rollback and customer incident acceptance remain open |
+| RSP-08 | [Out-of-band operator approvals and operator CLI](packages/core/src/operator-approvals.ts) | wired | Approval is local to one host and OS user: there is no central/multi-approver workflow. The agent runs as the same OS user, so separation rests on the OS vault's own access policy and on pattern-based self-defense rules, not on process isolation; a shell construct the normaliser does not model, or a vault that releases secrets to any process of the user without a prompt, can still expose the channel. Real macOS/Windows/Linux vault behaviour, operator usability and native host acceptance remain open |
+| RSP-09 | [Managed-mode dashboard approvals](packages/core/src/dashboard-approvals.ts) | wired | Requires managed enrollment and a published policy carrying approval_public_keys; not exercised against a deployed control plane or real approver workflow; polling latency and multi-approver (four-eyes) approval for tool calls are not provided |
 
 ## Policy
 

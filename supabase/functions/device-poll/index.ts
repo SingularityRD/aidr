@@ -234,7 +234,7 @@ export function createDevicePollHandler(deps: DevicePollDeps = {}) {
 		}
 		if (aggregate.status === "unavailable") {
 			return corsJson(req, 503, { error: "rate_limit_unavailable", enrollment_outcome: "unknown" }, {
-				"Retry-After": String(aggregate.retryAfterSeconds),
+				"Retry-After": String(settings.intervalSeconds),
 			});
 		}
 

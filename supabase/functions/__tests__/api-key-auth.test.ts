@@ -339,10 +339,11 @@ describe("ingest-only Browser Guard keys", () => {
 			if (source.includes("allowedScopes")) optingIn.push(name);
 		}
 		expect(optingIn).toEqual(["ingest"]);
+		// Revocations (feed and fleet commands) authenticate through the shared
+		// guard, whose default scope list is tenant-only, and never read api_keys
+		// directly.
 		const revocations = readFileSync(join(functionsDir, "revocations", "index.ts"), "utf8");
-		const directReads = revocations.match(/\.from\("api_keys"\)[\s\S]{0,200}?\.select\("[^"]*"\)/g) ?? [];
-		expect(directReads).toHaveLength(2);
-		for (const read of directReads) expect(read).toMatch(/scope/);
-		expect(revocations.match(/scope !== "tenant"/g)).toHaveLength(2);
+		expect(revocations.match(/\.from\("api_keys"\)/g) ?? []).toHaveLength(0);
+		expect(revocations.match(/authenticateTenantApiKey\(/g)).toHaveLength(2);
 	});
 });

@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import {isAbsolute} from 'node:path';
 import {createPublicKey} from 'node:crypto';
 import {resolveSecretStore,platformSecretStoreKind} from '@singularityrd/aidr-core';
-import {ConfiguredSessionBroker} from '@singularity/aidr-privacy/platform';
+import {ConfiguredSessionBroker} from '@singularityrd/aidr-privacy/platform';
 
 const path=process.env.AIDR_PRIVACY_CONFIG;if(!path||!isAbsolute(path))throw new Error('SERVICE_CONFIG_PATH');
 const config=JSON.parse(readFileSync(path,'utf8'));

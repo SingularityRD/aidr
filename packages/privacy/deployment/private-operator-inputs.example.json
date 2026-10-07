@@ -2,7 +2,7 @@
   "status": "NOT_CONFIGURED_OR_ACCEPTED",
   "profile": "single-tenant-linux-text-with-optional-signed-mcp",
   "installedPrefix": "/opt/aidr-private",
-  "configurationModuleRoot": "/opt/aidr-private/node_modules/@singularity/aidr-privacy/examples/platform",
+  "configurationModuleRoot": "/opt/aidr-private/node_modules/@singularityrd/aidr-privacy/examples/platform",
   "textListener": "127.0.0.1:8443",
   "mcpListener": "127.0.0.1:7789",
   "operatorInputs": {
