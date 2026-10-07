@@ -65,7 +65,7 @@ reliably find things that have no fixed shape:
 |---|---|---|
 | `PERSON` (a name in running text) | Only with context words or administrator literals | Detected from the model |
 | `ADDRESS` | Only with address cue words (e.g. "Adresim") | Street/building phrases without a cue |
-| `LOCATION` | Administrator literals only | Detected from the model |
+| `LOCATION` | After a location label (`Konum:`, `Şehir:`, `Location:`, `City:`...), or an address label while `ADDRESS` is disabled; administrator literals | Detected from the model |
 
 How much this helps depends entirely on the NER model the administrator installs.
 `packages/privacy` ships the host and the `LocalNerProcess` protocol, but **no model
