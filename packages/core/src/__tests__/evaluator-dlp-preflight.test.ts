@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BehavioralDetectionOrchestrator } from "../behavioral-orchestrator.js";
-import { VerdictCache } from "../cache.js";
+import { loadOrCreateCacheKey, signCacheStore, VerdictCache } from "../cache.js";
 import * as amsi from "../clients/amsi.js";
 import { UrlCheckClient } from "../clients/url-check.js";
 import { loadProvisionedDetectorContext } from "../detector-provisioning.js";
@@ -190,22 +190,30 @@ describe("signed tenant DLP before reputation lookup", () => {
 		const config = JSON.parse(await readFile(context.configPath as string, "utf8"));
 		config.cache = { enabled: true, path: cachePath };
 		await writeFile(context.configPath as string, JSON.stringify(config));
+		const cacheKey = await loadOrCreateCacheKey(cachePath);
+		if (!cacheKey) throw new Error("cache key unavailable");
 		await writeFile(
 			cachePath,
-			JSON.stringify({
-				urls: {},
-				commands: {},
-				packages: {
-					"npm:known-bad@1.0.0": {
-						verdict: "deny",
-						severity: "critical",
-						reasons: ["Known malicious package"],
-						source: "package_check",
-						expiresAt: new Date(Date.now() + 600_000).toISOString(),
-						aidrVersion: VERSION,
+			JSON.stringify(
+				signCacheStore(
+					{
+						urls: {},
+						commands: {},
+						packages: {
+							"npm:known-bad@1.0.0": {
+								verdict: "deny",
+								severity: "critical",
+								reasons: ["Known malicious package"],
+								source: "package_check",
+								expiresAt: new Date(Date.now() + 600_000).toISOString(),
+								aidrVersion: VERSION,
+								checkedAt: new Date().toISOString(),
+							},
+						},
 					},
-				},
-			}),
+					cacheKey,
+				),
+			),
 		);
 		const verdict = await evaluateToolCall(
 			request({

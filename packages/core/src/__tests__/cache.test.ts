@@ -1,8 +1,9 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { randomBytes } from "node:crypto";
+import { chmod, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { VerdictCache } from "../cache.js";
-import type { CacheConfig, CachedVerdict } from "../types.js";
+import { cacheKeyPath, loadOrCreateCacheKey, signCacheStore, VerdictCache } from "../cache.js";
+import type { CacheConfig, CachedVerdict, CacheStore } from "../types.js";
 import { hashCommand, normalizeUrl } from "../url-utils.js";
 import { makeTmpDir } from "./test-utils.js";
 
@@ -14,6 +15,18 @@ function makeConfig(overrides: Partial<CacheConfig> = {}): CacheConfig {
 		path: "/tmp/nonexistent-cache.json",
 		...overrides,
 	};
+}
+
+/** Persist a store the way the cache does: every entry authenticated with the installation key. */
+async function writeSignedCache(
+	cachePath: string,
+	store: Record<string, Record<string, unknown>>,
+	_encoding?: string,
+) {
+	const key = await loadOrCreateCacheKey(cachePath);
+	if (!key) throw new Error("cache key unavailable");
+	const full = { urls: {}, commands: {}, packages: {}, ...store } as unknown as CacheStore;
+	await writeFile(cachePath, JSON.stringify(signCacheStore(full, key)), "utf8");
 }
 
 function makeVerdict(overrides: Partial<CachedVerdict> = {}): CachedVerdict {
@@ -106,9 +119,9 @@ describe("VerdictCache", () => {
 
 	it("treats URL verdicts with invalid expiry as stale", async () => {
 		const cachePath = join(dir, "cache.json");
-		await writeFile(
+		await writeSignedCache(
 			cachePath,
-			JSON.stringify({
+			{
 				urls: {
 					[normalizeUrl("https://example.com")]: {
 						...makeVerdict(),
@@ -119,7 +132,7 @@ describe("VerdictCache", () => {
 				},
 				commands: {},
 				packages: {},
-			}),
+			},
 			"utf8",
 		);
 
@@ -131,9 +144,9 @@ describe("VerdictCache", () => {
 
 	it("rejects legacy clean URL entries without a source freshness deadline", async () => {
 		const cachePath = join(dir, "cache.json");
-		await writeFile(
+		await writeSignedCache(
 			cachePath,
-			JSON.stringify({
+			{
 				urls: {
 					[normalizeUrl("https://legacy-clean.example")]: {
 						...makeVerdict({ verdict: "allow", source: "url_check" }),
@@ -144,7 +157,7 @@ describe("VerdictCache", () => {
 				},
 				commands: {},
 				packages: {},
-			}),
+			},
 			"utf8",
 		);
 
@@ -227,22 +240,19 @@ describe("VerdictCache", () => {
 		const cachePath = join(dir, "cache.json");
 		// Write a cache file manually
 		const farFuture = "9999-12-31T23:59:59+00:00";
-		await writeFile(
-			cachePath,
-			JSON.stringify({
-				urls: {
-					"http://cached.com/": {
-						verdict: "deny",
-						severity: "critical",
-						reasons: ["cached reason"],
-						source: "test",
-						checkedAt: new Date().toISOString(),
-						expiresAt: farFuture,
-					},
+		await writeSignedCache(cachePath, {
+			urls: {
+				"http://cached.com/": {
+					verdict: "deny",
+					severity: "critical",
+					reasons: ["cached reason"],
+					source: "test",
+					checkedAt: new Date().toISOString(),
+					expiresAt: farFuture,
 				},
-				commands: {},
-			}),
-		);
+			},
+			commands: {},
+		});
 
 		const cache = new VerdictCache(makeConfig({ path: cachePath }));
 		await cache.load();
@@ -281,24 +291,21 @@ describe("VerdictCache", () => {
 	it("ignores entries from an older AIDR version", async () => {
 		const cachePath = join(dir, "cache.json");
 		const farFuture = "9999-12-31T23:59:59+00:00";
-		await writeFile(
-			cachePath,
-			JSON.stringify({
-				urls: {
-					"http://cached.com/": {
-						verdict: "deny",
-						severity: "critical",
-						reasons: ["old rule"],
-						source: "heuristic",
-						checkedAt: new Date().toISOString(),
-						expiresAt: farFuture,
-						aidrVersion: "0.5.0",
-					},
+		await writeSignedCache(cachePath, {
+			urls: {
+				"http://cached.com/": {
+					verdict: "deny",
+					severity: "critical",
+					reasons: ["old rule"],
+					source: "heuristic",
+					checkedAt: new Date().toISOString(),
+					expiresAt: farFuture,
+					aidrVersion: "0.5.0",
 				},
-				commands: {},
-				packages: {},
-			}),
-		);
+			},
+			commands: {},
+			packages: {},
+		});
 
 		const cache = new VerdictCache(makeConfig({ path: cachePath }), undefined, "0.6.0");
 		await cache.load();
@@ -308,24 +315,21 @@ describe("VerdictCache", () => {
 	it("returns entries matching the current AIDR version", async () => {
 		const cachePath = join(dir, "cache.json");
 		const farFuture = "9999-12-31T23:59:59+00:00";
-		await writeFile(
-			cachePath,
-			JSON.stringify({
-				urls: {
-					"http://cached.com/": {
-						verdict: "deny",
-						severity: "critical",
-						reasons: ["still valid"],
-						source: "heuristic",
-						checkedAt: new Date().toISOString(),
-						expiresAt: farFuture,
-						aidrVersion: "0.5.0",
-					},
+		await writeSignedCache(cachePath, {
+			urls: {
+				"http://cached.com/": {
+					verdict: "deny",
+					severity: "critical",
+					reasons: ["still valid"],
+					source: "heuristic",
+					checkedAt: new Date().toISOString(),
+					expiresAt: farFuture,
+					aidrVersion: "0.5.0",
 				},
-				commands: {},
-				packages: {},
-			}),
-		);
+			},
+			commands: {},
+			packages: {},
+		});
 
 		const cache = new VerdictCache(makeConfig({ path: cachePath }), undefined, "0.5.0");
 		await cache.load();
@@ -337,23 +341,20 @@ describe("VerdictCache", () => {
 	it("ignores entries without aidrVersion when version is set", async () => {
 		const cachePath = join(dir, "cache.json");
 		const farFuture = "9999-12-31T23:59:59+00:00";
-		await writeFile(
-			cachePath,
-			JSON.stringify({
-				urls: {
-					"http://cached.com/": {
-						verdict: "deny",
-						severity: "critical",
-						reasons: ["old unversioned"],
-						source: "heuristic",
-						checkedAt: new Date().toISOString(),
-						expiresAt: farFuture,
-					},
+		await writeSignedCache(cachePath, {
+			urls: {
+				"http://cached.com/": {
+					verdict: "deny",
+					severity: "critical",
+					reasons: ["old unversioned"],
+					source: "heuristic",
+					checkedAt: new Date().toISOString(),
+					expiresAt: farFuture,
 				},
-				commands: {},
-				packages: {},
-			}),
-		);
+			},
+			commands: {},
+			packages: {},
+		});
 
 		const cache = new VerdictCache(makeConfig({ path: cachePath }), undefined, "0.6.0");
 		await cache.load();
@@ -376,24 +377,21 @@ describe("VerdictCache", () => {
 		const cachePath = join(dir, "cache.json");
 		const farFuture = "9999-12-31T23:59:59+00:00";
 		const hash = hashCommand("dangerous command");
-		await writeFile(
-			cachePath,
-			JSON.stringify({
-				urls: {},
-				commands: {
-					[hash]: {
-						verdict: "deny",
-						severity: "critical",
-						reasons: ["old threat"],
-						source: "heuristic",
-						checkedAt: new Date().toISOString(),
-						expiresAt: farFuture,
-						aidrVersion: "0.4.0",
-					},
+		await writeSignedCache(cachePath, {
+			urls: {},
+			commands: {
+				[hash]: {
+					verdict: "deny",
+					severity: "critical",
+					reasons: ["old threat"],
+					source: "heuristic",
+					checkedAt: new Date().toISOString(),
+					expiresAt: farFuture,
+					aidrVersion: "0.4.0",
 				},
-				packages: {},
-			}),
-		);
+			},
+			packages: {},
+		});
 
 		const cache = new VerdictCache(makeConfig({ path: cachePath }), undefined, "0.5.0");
 		await cache.load();
@@ -403,24 +401,21 @@ describe("VerdictCache", () => {
 	it("ignores stale package entries from older version", async () => {
 		const cachePath = join(dir, "cache.json");
 		const farFuture = "9999-12-31T23:59:59+00:00";
-		await writeFile(
-			cachePath,
-			JSON.stringify({
-				urls: {},
-				commands: {},
-				packages: {
-					"npm:evil-pkg": {
-						verdict: "deny",
-						severity: "critical",
-						reasons: ["malicious"],
-						source: "package_check",
-						checkedAt: new Date().toISOString(),
-						expiresAt: farFuture,
-						aidrVersion: "0.4.0",
-					},
+		await writeSignedCache(cachePath, {
+			urls: {},
+			commands: {},
+			packages: {
+				"npm:evil-pkg": {
+					verdict: "deny",
+					severity: "critical",
+					reasons: ["malicious"],
+					source: "package_check",
+					checkedAt: new Date().toISOString(),
+					expiresAt: farFuture,
+					aidrVersion: "0.4.0",
 				},
-			}),
-		);
+			},
+		});
 
 		const cache = new VerdictCache(makeConfig({ path: cachePath }), undefined, "0.5.0");
 		await cache.load();
@@ -429,9 +424,9 @@ describe("VerdictCache", () => {
 
 	it("ignores malformed package cache rows instead of returning unsafe verdicts", async () => {
 		const cachePath = join(dir, "cache.json");
-		await writeFile(
+		await writeSignedCache(
 			cachePath,
-			JSON.stringify({
+			{
 				urls: {},
 				commands: {},
 				packages: {
@@ -450,7 +445,7 @@ describe("VerdictCache", () => {
 						expiresAt: "9999-12-31T23:59:59+00:00",
 					},
 				},
-			}),
+			},
 			"utf8",
 		);
 
@@ -463,24 +458,21 @@ describe("VerdictCache", () => {
 	it("dev version skips version check (wildcard)", async () => {
 		const cachePath = join(dir, "cache.json");
 		const farFuture = "9999-12-31T23:59:59+00:00";
-		await writeFile(
-			cachePath,
-			JSON.stringify({
-				urls: {
-					"http://cached.com/": {
-						verdict: "deny",
-						severity: "critical",
-						reasons: ["flagged"],
-						source: "heuristic",
-						checkedAt: new Date().toISOString(),
-						expiresAt: farFuture,
-						aidrVersion: "0.5.0",
-					},
+		await writeSignedCache(cachePath, {
+			urls: {
+				"http://cached.com/": {
+					verdict: "deny",
+					severity: "critical",
+					reasons: ["flagged"],
+					source: "heuristic",
+					checkedAt: new Date().toISOString(),
+					expiresAt: farFuture,
+					aidrVersion: "0.5.0",
 				},
-				commands: {},
-				packages: {},
-			}),
-		);
+			},
+			commands: {},
+			packages: {},
+		});
 
 		const cache = new VerdictCache(makeConfig({ path: cachePath }), undefined, "dev");
 		await cache.load();
@@ -492,33 +484,30 @@ describe("VerdictCache", () => {
 	it("save prunes stale entries from disk", async () => {
 		const cachePath = join(dir, "cache.json");
 		const farFuture = "9999-12-31T23:59:59+00:00";
-		await writeFile(
-			cachePath,
-			JSON.stringify({
-				urls: {
-					"http://old.com/": {
-						verdict: "deny",
-						severity: "critical",
-						reasons: ["old"],
-						source: "heuristic",
-						checkedAt: new Date().toISOString(),
-						expiresAt: farFuture,
-						aidrVersion: "0.4.0",
-					},
-					"http://current.com/": {
-						verdict: "deny",
-						severity: "critical",
-						reasons: ["current"],
-						source: "heuristic",
-						checkedAt: new Date().toISOString(),
-						expiresAt: farFuture,
-						aidrVersion: "0.5.0",
-					},
+		await writeSignedCache(cachePath, {
+			urls: {
+				"http://old.com/": {
+					verdict: "deny",
+					severity: "critical",
+					reasons: ["old"],
+					source: "heuristic",
+					checkedAt: new Date().toISOString(),
+					expiresAt: farFuture,
+					aidrVersion: "0.4.0",
 				},
-				commands: {},
-				packages: {},
-			}),
-		);
+				"http://current.com/": {
+					verdict: "deny",
+					severity: "critical",
+					reasons: ["current"],
+					source: "heuristic",
+					checkedAt: new Date().toISOString(),
+					expiresAt: farFuture,
+					aidrVersion: "0.5.0",
+				},
+			},
+			commands: {},
+			packages: {},
+		});
 
 		const cache = new VerdictCache(makeConfig({ path: cachePath }), undefined, "0.5.0");
 		await cache.load();
@@ -528,6 +517,107 @@ describe("VerdictCache", () => {
 		const data = JSON.parse(raw);
 		expect(data.urls["http://old.com/"]).toBeUndefined();
 		expect(data.urls["http://current.com/"]).toBeDefined();
+	});
+});
+
+describe("VerdictCache authentication", () => {
+	let dir: string;
+
+	beforeEach(async () => {
+		dir = await makeTmpDir();
+	});
+
+	const forged = {
+		verdict: "allow",
+		severity: "info",
+		reasons: ["forged"],
+		source: "url_check",
+		checkedAt: new Date().toISOString(),
+		expiresAt: "9999-12-31T23:59:59+00:00",
+		sourceFreshUntil: "9999-12-31T23:59:59+00:00",
+		aidrVersion: "dev",
+	};
+
+	it("treats a hand-written (unauthenticated) entry as absent", async () => {
+		const cachePath = join(dir, "cache.json");
+		// A genuine key exists, so only the entry itself is at fault.
+		expect(await loadOrCreateCacheKey(cachePath)).not.toBeNull();
+		await writeFile(
+			cachePath,
+			JSON.stringify({
+				urls: { [normalizeUrl("https://evil.test")]: forged },
+				commands: {},
+				packages: {},
+			}),
+		);
+		const cache = new VerdictCache(makeConfig({ path: cachePath }), undefined, "dev");
+		await cache.load();
+		expect(cache.getUrl("https://evil.test")).toBeNull();
+	});
+
+	it("rejects an entry whose MAC was computed under a different key", async () => {
+		const cachePath = join(dir, "cache.json");
+		await loadOrCreateCacheKey(cachePath);
+		const otherKey = randomBytes(32);
+		const store = signCacheStore(
+			{
+				urls: { [normalizeUrl("https://evil.test")]: forged as never },
+				commands: {},
+				packages: {},
+			},
+			otherKey,
+		);
+		await writeFile(cachePath, JSON.stringify(store));
+		const cache = new VerdictCache(makeConfig({ path: cachePath }), undefined, "dev");
+		await cache.load();
+		expect(cache.getUrl("https://evil.test")).toBeNull();
+	});
+
+	it("rejects an authenticated entry that was edited or moved to another key", async () => {
+		const cachePath = join(dir, "cache.json");
+		const cache = new VerdictCache(makeConfig({ path: cachePath }), undefined, "dev");
+		await cache.load();
+		cache.putUrl("https://evil.test", makeVerdict({ verdict: "deny", severity: "critical" }), true);
+		cache.putUrl(
+			"https://other.test",
+			makeVerdict({ verdict: "deny", severity: "critical" }),
+			true,
+		);
+		await cache.save();
+		const data = JSON.parse(await readFile(cachePath, "utf8"));
+		const evil = normalizeUrl("https://evil.test");
+		const other = normalizeUrl("https://other.test");
+		data.urls[evil].verdict = "allow";
+		data.urls[normalizeUrl("https://moved.test")] = data.urls[other];
+		await writeFile(cachePath, JSON.stringify(data));
+		const reloaded = new VerdictCache(makeConfig({ path: cachePath }), undefined, "dev");
+		await reloaded.load();
+		expect(reloaded.getUrl("https://evil.test")).toBeNull();
+		expect(reloaded.getUrl("https://moved.test")).toBeNull();
+		expect(reloaded.getUrl("https://other.test")).toMatchObject({ verdict: "deny" });
+	});
+
+	it("treats every persisted entry as absent when the key is missing", async () => {
+		const cachePath = join(dir, "cache.json");
+		const cache = new VerdictCache(makeConfig({ path: cachePath }), undefined, "dev");
+		cache.putCommand("h", makeVerdict({ verdict: "deny" }));
+		await cache.save();
+		await unlink(cacheKeyPath(cachePath));
+		const reloaded = new VerdictCache(makeConfig({ path: cachePath }), undefined, "dev");
+		await reloaded.load();
+		expect(reloaded.getCommand("h")).toBeNull();
+	});
+
+	it.skipIf(process.platform === "win32")("refuses a key file other users can read", async () => {
+		const cachePath = join(dir, "cache.json");
+		const cache = new VerdictCache(makeConfig({ path: cachePath }), undefined, "dev");
+		cache.putCommand("h", makeVerdict({ verdict: "deny" }));
+		await cache.save();
+		expect((await stat(cacheKeyPath(cachePath))).mode & 0o077).toBe(0);
+		await chmod(cacheKeyPath(cachePath), 0o644);
+		const reloaded = new VerdictCache(makeConfig({ path: cachePath }), undefined, "dev");
+		await reloaded.load();
+		expect(reloaded.getCommand("h")).toBeNull();
 	});
 });
 

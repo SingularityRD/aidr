@@ -10,6 +10,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { loadOrCreateCacheKey, signCacheStore } from "../../../core/src/cache.js";
 
 const PLUGIN_DIST = resolve(__dirname, "..", "..", "dist", "index.js");
 
@@ -434,7 +435,11 @@ describe("OpenCode AIDR contract", { timeout: 30_000 }, () => {
 				},
 			},
 		};
-		await writeFile(cachePath, JSON.stringify(cachedPackageDeny), "utf8");
+		// Persisted cache entries only count when they authenticate under the
+		// installation's cache key (core cache.ts).
+		const cacheKey = await loadOrCreateCacheKey(cachePath);
+		if (!cacheKey) throw new Error("cache key unavailable");
+		await writeFile(cachePath, JSON.stringify(signCacheStore(cachedPackageDeny, cacheKey)), "utf8");
 		const productionLikeConfig = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
 		productionLikeConfig.package_check = { enabled: true };
 		productionLikeConfig.cache = { enabled: true, path: cachePath };

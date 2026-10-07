@@ -1,11 +1,11 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
-import { VerdictCache } from "../cache.js";
+import { loadOrCreateCacheKey, signCacheStore, VerdictCache } from "../cache.js";
 import { evaluateToolCall } from "../evaluator.js";
 import { extractFromBash } from "../extractors.js";
 import { extractPackagesFromCommand } from "../package-extractor.js";
-import { ConfigSchema, nullLogger } from "../types.js";
+import { type CacheStore, ConfigSchema, nullLogger } from "../types.js";
 import { VERSION } from "../version.js";
 import { makeTmpDir } from "./test-utils.js";
 
@@ -29,25 +29,25 @@ async function packageConfig(
 	await mkdir(aidrDir, { recursive: true });
 	const cachePath = join(aidrDir, "cache.json");
 	const configPath = join(aidrDir, "config.json");
-	await writeFile(
-		cachePath,
-		JSON.stringify({
-			urls: {},
-			commands: {},
-			packages: {
-				[`${registry}:${packageName}@${version}`]: {
-					verdict,
-					severity: "critical",
-					reasons: ["Synthetic package intelligence deny"],
-					source: "package_check",
-					checkedAt: new Date().toISOString(),
-					expiresAt: NEVER_EXPIRES,
-					aidrVersion: VERSION,
-				},
+	// Persisted cache entries must authenticate under the installation key.
+	const cacheKey = await loadOrCreateCacheKey(cachePath);
+	if (!cacheKey) throw new Error("cache key unavailable");
+	const store: CacheStore = {
+		urls: {},
+		commands: {},
+		packages: {
+			[`${registry}:${packageName}@${version}`]: {
+				verdict,
+				severity: "critical",
+				reasons: ["Synthetic package intelligence deny"],
+				source: "package_check",
+				checkedAt: new Date().toISOString(),
+				expiresAt: NEVER_EXPIRES,
+				aidrVersion: VERSION,
 			},
-		}),
-		"utf8",
-	);
+		},
+	};
+	await writeFile(cachePath, JSON.stringify(signCacheStore(store, cacheKey)), "utf8");
 	await writeFile(
 		configPath,
 		JSON.stringify({
@@ -116,7 +116,9 @@ describe("normalized requests reach semantic evaluation legs", () => {
 	it("rechecks a legacy cached clean package before allowing installation", async () => {
 		const { configPath, dir } = await packageConfig("synthetic-aidr-package", "1.0.0", "allow");
 		const originalFetch = globalThis.fetch;
-		globalThis.fetch = async () => { throw new Error("synthetic registry outage"); };
+		globalThis.fetch = async () => {
+			throw new Error("synthetic registry outage");
+		};
 		try {
 			const command = "npm install synthetic-aidr-package@1.0.0";
 			const verdict = await evaluateToolCall(
