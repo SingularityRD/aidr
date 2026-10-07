@@ -4,6 +4,18 @@ import { readMcpSseMessages } from "../../core/dist/mcp-transport.js";
 
 const ENV_NAME = /^[A-Z][A-Z0-9_]{0,127}$/;
 const decoder = new TextDecoder("utf-8", { fatal: true });
+// Requests that may wait on the gateway while correlated client replies keep flowing.
+const CONCURRENT_METHODS = new Set([
+	"tools/call",
+	"tools/list",
+	"server/discover",
+	"ping",
+	"resources/list",
+	"resources/templates/list",
+	"resources/read",
+	"prompts/list",
+	"prompts/get",
+]);
 
 function object(value) {
 	return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -153,7 +165,11 @@ async function handleFrame(line, context) {
 		return writeLine(context.output, parsed.error, context.assertInstalledPrivacySupported);
 	const rpc = parsed.rpc;
 	if (!object(rpc))
-		return writeLine(context.output, bridgeError(null, "invalid_rpc_request"), context.assertInstalledPrivacySupported);
+		return writeLine(
+			context.output,
+			bridgeError(null, "invalid_rpc_request"),
+			context.assertInstalledPrivacySupported,
+		);
 	const notification = !Object.hasOwn(rpc, "id");
 	const serverResponse = !Object.hasOwn(rpc, "method");
 	if (serverResponse && !context.pendingServerIds.delete(rpc.id))
@@ -240,7 +256,7 @@ export async function runStdioBridge({
 			const frame = parseFrame(line).rpc;
 			if (frame?.method === "initialize" && tasks.size)
 				throw new Error("initialize during pending requests");
-			if (["tools/call", "tools/list", "server/discover", "ping"].includes(frame?.method)) {
+			if (CONCURRENT_METHODS.has(frame?.method)) {
 				if (tasks.size >= 16) throw new Error("stdio requests exceeded");
 				const task = handleFrame(line, context)
 					.catch((cause) => {

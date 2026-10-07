@@ -15,7 +15,7 @@ import {
 	readMcpSseMessages,
 } from "../../core/dist/mcp-transport.js";
 import { scanModelOutput } from "../../core/dist/output-scanner.js";
-import { authenticateBearer, validateGatewayConfig } from "./config.mjs";
+import { authenticateBearer, resourceUriAllowed, validateGatewayConfig } from "./config.mjs";
 import {
 	coverageDescriptor,
 	McpGatewayRefusal,
@@ -33,6 +33,26 @@ const MAX_SESSIONS_PER_TENANT = 256;
 const SESSION_TTL_MS = 30 * 60 * 1000;
 const UPSTREAM_TIMEOUT_MS = 15_000;
 const textDecoder = new TextDecoder("utf-8", { fatal: true });
+const RESOURCE_METHODS = new Set(["resources/list", "resources/templates/list", "resources/read"]);
+const PROMPT_METHODS = new Set(["prompts/list", "prompts/get"]);
+// Paginated context lists and the result field each one returns.
+const CONTEXT_LISTS = {
+	"resources/list": "resources",
+	"resources/templates/list": "resourceTemplates",
+	"prompts/list": "prompts",
+};
+// Long-lived resource subscriptions and list-change pushes have no correlated
+// request the gateway could hold back for inspection, so they stay refused.
+const REFUSED_METHODS = new Set([
+	"resources/subscribe",
+	"resources/unsubscribe",
+	"notifications/resources/updated",
+	"notifications/resources/list_changed",
+	"notifications/prompts/list_changed",
+]);
+const MAX_CURSOR_LENGTH = 1024;
+const MAX_PROMPT_ARGUMENTS = 256;
+const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
 
 function resolvedUpstreamAuth(server) {
 	const auth = Object.hasOwn(server, "resolvedUpstreamAuth")
@@ -75,6 +95,14 @@ function rpcResponse(id, result) {
 
 function jsonObject(value) {
 	return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function canonicalBase64(value) {
+	return (
+		typeof value === "string" &&
+		BASE64.test(value) &&
+		Buffer.from(value, "base64").toString("base64") === value
+	);
 }
 
 const JSON_SCHEMA_KEYWORDS = new Set([
@@ -530,6 +558,13 @@ function parseRequest(text) {
 	if (
 		jsonObject(rpc) &&
 		rpc.jsonrpc === "2.0" &&
+		REFUSED_METHODS.has(rpc.method) &&
+		(!Object.hasOwn(rpc, "id") || typeof rpc.id === "string" || Number.isSafeInteger(rpc.id))
+	)
+		return rpc;
+	if (
+		jsonObject(rpc) &&
+		rpc.jsonrpc === "2.0" &&
 		!Object.hasOwn(rpc, "method") &&
 		(typeof rpc.id === "string" || Number.isSafeInteger(rpc.id)) &&
 		Object.hasOwn(rpc, "result") !== Object.hasOwn(rpc, "error")
@@ -546,6 +581,8 @@ function parseRequest(text) {
 			"ping",
 			"tools/list",
 			"tools/call",
+			...RESOURCE_METHODS,
+			...PROMPT_METHODS,
 			"notifications/initialized",
 		].includes(rpc.method) ||
 		(notification
@@ -652,6 +689,11 @@ const BLOCK_REASONS = new Set([
 	"unexpected_upstream_session",
 	"session_changed",
 	"tool_not_allowed",
+	"resource_not_allowed",
+	"prompt_not_allowed",
+	"policy_blocked",
+	"invalid_context_list",
+	"invalid_context_result",
 	"arguments_schema_mismatch",
 	"output_schema_mismatch",
 	"schema_validation_budget_exhausted",
@@ -710,13 +752,7 @@ function validateToolResult(result, opaqueAllowed = false, modern = false) {
 			);
 		}
 		if (BINARY_OUTPUT_TYPES.has(item.type)) {
-			if (
-				opaqueAllowed &&
-				typeof item.data === "string" &&
-				typeof item.mimeType === "string" &&
-				/^[A-Za-z0-9+/]*={0,2}$/.test(item.data) &&
-				Buffer.from(item.data, "base64").toString("base64") === item.data
-			)
+			if (opaqueAllowed && canonicalBase64(item.data) && typeof item.mimeType === "string")
 				continue;
 			throw new McpGatewayRefusal(
 				"unsupported_binary_output",
@@ -766,7 +802,166 @@ function upstreamInitializeRequest(rpc) {
 	};
 }
 
-function clientInitializeResult(result) {
+/** Advertise only the context surfaces this client is scoped to and the upstream offers. */
+function advertisedCapabilities(server, upstream) {
+	const scoped = (field, capability) =>
+		server.client[field]?.[server.id] && jsonObject(upstream?.[capability])
+			? { [capability]: {} }
+			: {};
+	return {
+		tools: {},
+		...scoped("allowedResources", "resources"),
+		...scoped("allowedPrompts", "prompts"),
+	};
+}
+
+function contextRequest(rpc, client, server) {
+	const resource = RESOURCE_METHODS.has(rpc.method);
+	const scope = (resource ? client.allowedResources : client.allowedPrompts)?.[server.id];
+	if (!scope) throw new Error(resource ? "resource_not_allowed" : "prompt_not_allowed");
+	const params = rpc.params ?? {};
+	const fields =
+		rpc.method === "resources/read"
+			? ["uri"]
+			: rpc.method === "prompts/get"
+				? ["name", "arguments"]
+				: ["cursor"];
+	if (Object.keys(params).some((key) => key !== "_meta" && !fields.includes(key)))
+		throw new Error("invalid_rpc_request");
+	if (
+		params.cursor !== undefined &&
+		(typeof params.cursor !== "string" || params.cursor.length > MAX_CURSOR_LENGTH)
+	)
+		throw new Error("invalid_rpc_request");
+	if (rpc.method === "resources/read" && !resourceUriAllowed(params.uri, scope))
+		throw new Error("resource_not_allowed");
+	if (rpc.method === "prompts/get") {
+		if (typeof params.name !== "string" || !scope.includes(params.name))
+			throw new Error("prompt_not_allowed");
+		if (
+			params.arguments !== undefined &&
+			(!jsonObject(params.arguments) ||
+				Object.keys(params.arguments).length > MAX_PROMPT_ARGUMENTS ||
+				Object.values(params.arguments).some((value) => typeof value !== "string"))
+		)
+			throw new Error("invalid_rpc_request");
+	}
+	return {
+		scope,
+		params: Object.fromEntries(
+			fields.filter((key) => params[key] !== undefined).map((key) => [key, params[key]]),
+		),
+	};
+}
+
+function templateAllowed(uriTemplate, scope) {
+	const literal = uriTemplate.split("{")[0];
+	return scope.some((pattern) =>
+		pattern.endsWith("*") ? literal.startsWith(pattern.slice(0, -1)) : pattern === uriTemplate,
+	);
+}
+
+function contextListItemAllowed(method, item, scope) {
+	if (!jsonObject(item) || typeof item.name !== "string") throw new Error("invalid_context_list");
+	if (method === "prompts/list") return scope.includes(item.name);
+	if (method === "resources/templates/list") {
+		if (typeof item.uriTemplate !== "string" || item.uriTemplate.length > 2048)
+			throw new Error("invalid_context_list");
+		return templateAllowed(item.uriTemplate, scope);
+	}
+	if (typeof item.uri !== "string") throw new Error("invalid_context_list");
+	return resourceUriAllowed(item.uri, scope);
+}
+
+function unsupportedContextOutput() {
+	return new McpGatewayRefusal(
+		"unsupported_context_output",
+		"MCP resource or prompt content representation is unsupported and was refused",
+	);
+}
+
+function validateResourceContents(item) {
+	if (
+		!jsonObject(item) ||
+		typeof item.uri !== "string" ||
+		(item.mimeType !== undefined && typeof item.mimeType !== "string")
+	)
+		throw unsupportedContextOutput();
+	const text = typeof item.text === "string";
+	const blob = Object.hasOwn(item, "blob");
+	if (text === blob || (blob && (!canonicalBase64(item.blob) || typeof item.mimeType !== "string")))
+		throw unsupportedContextOutput();
+}
+
+function validatePromptContent(content) {
+	if (!jsonObject(content)) throw unsupportedContextOutput();
+	if (content.type === "text" && typeof content.text === "string") return;
+	if (
+		BINARY_OUTPUT_TYPES.has(content.type) &&
+		canonicalBase64(content.data) &&
+		typeof content.mimeType === "string"
+	)
+		return;
+	if (content.type === "resource") return validateResourceContents(content.resource);
+	if (
+		content.type === "resource_link" &&
+		typeof content.uri === "string" &&
+		typeof content.name === "string"
+	)
+		return;
+	throw unsupportedContextOutput();
+}
+
+/** Validate and minimize an upstream context result; list entries outside the client scope are dropped. */
+function contextResult(method, result, scope, modern) {
+	if (!jsonObject(result) || (modern && result.resultType !== "complete"))
+		throw new Error("invalid_context_result");
+	const tail = modern ? { resultType: "complete" } : {};
+	if (Object.hasOwn(CONTEXT_LISTS, method)) {
+		const field = CONTEXT_LISTS[method];
+		const items = result[field];
+		if (
+			!Array.isArray(items) ||
+			items.length > 4096 ||
+			(result.nextCursor !== undefined &&
+				(typeof result.nextCursor !== "string" || result.nextCursor.length > MAX_CURSOR_LENGTH))
+		)
+			throw new Error("invalid_context_list");
+		return {
+			[field]: items.filter((item) => contextListItemAllowed(method, item, scope)),
+			// Pagination cursors are opaque upstream state and are relayed unchanged.
+			...(result.nextCursor !== undefined ? { nextCursor: result.nextCursor } : {}),
+			...tail,
+		};
+	}
+	if (method === "resources/read") {
+		if (!Array.isArray(result.contents) || result.contents.length > 4096)
+			throw new Error("invalid_context_result");
+		for (const item of result.contents) {
+			validateResourceContents(item);
+			if (!resourceUriAllowed(item.uri, scope)) throw new Error("resource_not_allowed");
+		}
+		return { contents: result.contents, ...tail };
+	}
+	if (
+		!Array.isArray(result.messages) ||
+		result.messages.length > 4096 ||
+		(result.description !== undefined && typeof result.description !== "string")
+	)
+		throw new Error("invalid_context_result");
+	for (const message of result.messages) {
+		if (!jsonObject(message) || !["user", "assistant"].includes(message.role))
+			throw new Error("invalid_context_result");
+		validatePromptContent(message.content);
+	}
+	return {
+		...(result.description !== undefined ? { description: result.description } : {}),
+		messages: result.messages,
+		...tail,
+	};
+}
+
+function clientInitializeResult(result, server) {
 	if (
 		!jsonObject(result) ||
 		typeof result.protocolVersion !== "string" ||
@@ -783,7 +978,7 @@ function clientInitializeResult(result) {
 	}
 	return {
 		protocolVersion: result.protocolVersion,
-		capabilities: { tools: {} },
+		capabilities: advertisedCapabilities(server, result.capabilities),
 		serverInfo: { name: result.serverInfo.name, version: result.serverInfo.version },
 	};
 }
@@ -903,7 +1098,11 @@ export function createMcpGateway(input, dependencies = {}) {
 		const visit = (value, depth = 0) => {
 			if (depth > 32) throw new Error("output_uninspectable");
 			if (!value || typeof value !== "object") return;
-			if (["image", "audio", "resource", "resource_link"].includes(value.type)) opaque = true;
+			if (
+				["image", "audio", "resource", "resource_link"].includes(value.type) ||
+				Object.hasOwn(value, "blob")
+			)
+				opaque = true;
 			for (const child of Object.values(value)) visit(child, depth + 1);
 		};
 		visit(payload);
@@ -940,6 +1139,10 @@ export function createMcpGateway(input, dependencies = {}) {
 				server.signal.removeEventListener("abort", rejectGuard);
 			}
 			server.signal?.throwIfAborted();
+			// A policy `deny` or `ask` blocks release; `ask` waits for out-of-band
+			// operator approval and is never resolvable from the agent side.
+			if (verdict?.decision !== undefined && verdict.decision !== "allow")
+				throw new Error("policy_blocked");
 			if (
 				verdict?.allowed !== true ||
 				verdict?.coverage !== "full" ||
@@ -1373,7 +1576,11 @@ export function createMcpGateway(input, dependencies = {}) {
 	async function forward(server, rpc, sessionId, signal) {
 		const reply = !Object.hasOwn(rpc, "method");
 		await guardPayload(rpc, server, sessionId, "to_upstream", rpc.method ?? "reply");
-		const headersServer = { ...server, rpcMethod: rpc.method, rpcName: rpc.params?.name };
+		const headersServer = {
+			...server,
+			rpcMethod: rpc.method,
+			rpcName: rpc.params?.name ?? rpc.params?.uri,
+		};
 		await assertInstalledPrivacySupported();
 		const response = await fetchMcpEndpoint(
 			server.url,
@@ -1527,7 +1734,7 @@ export function createMcpGateway(input, dependencies = {}) {
 		try {
 			signal.throwIfAborted();
 			inspect(result, scanner, config.maxBodyBytes);
-			const clientResult = clientInitializeResult(result);
+			const clientResult = clientInitializeResult(result, server);
 			if (
 				!server.protocolVersions.includes(clientResult.protocolVersion) ||
 				clientResult.protocolVersion === "2026-07-28"
@@ -1653,6 +1860,29 @@ export function createMcpGateway(input, dependencies = {}) {
 		return { body: rpcResponse(rpc.id, upstream.result) };
 	}
 
+	async function contextRpc(rpc, request, server, sessionId, signal, modern) {
+		try {
+			const { result } = await forward(
+				server,
+				{
+					jsonrpc: "2.0",
+					id: rpc.id,
+					method: rpc.method,
+					params: { ...request.params, ...(server.meta ? { _meta: server.meta } : {}) },
+				},
+				sessionId,
+				signal,
+			);
+			const visible = contextResult(rpc.method, result, request.scope, modern);
+			await guardPayload(visible, server, sessionId, "to_client", rpc.method);
+			return { body: rpcResponse(rpc.id, visible) };
+		} catch (cause) {
+			if (cause instanceof McpGatewayRefusal && cause.surface === "tool_output")
+				cause.surface = RESOURCE_METHODS.has(rpc.method) ? "resource_output" : "prompt_output";
+			throw cause;
+		}
+	}
+
 	async function processRpc(rpc, client, server, request, signal) {
 		if (rpc.method === "initialize") return initializeRpc(rpc, client, server, request, signal);
 		const sessionId = boundSession(request.headers["mcp-session-id"], client, server);
@@ -1694,7 +1924,12 @@ export function createMcpGateway(input, dependencies = {}) {
 			await guardPayload(result, server, sessionId, "to_client", rpc.method);
 			if (!jsonObject(result) || result.resultType !== "complete")
 				throw new Error("invalid_upstream_rpc");
-			return { body: rpcResponse(rpc.id, { ...result, capabilities: { tools: {} } }) };
+			return {
+				body: rpcResponse(rpc.id, {
+					...result,
+					capabilities: advertisedCapabilities(server, result.capabilities),
+				}),
+			};
 		}
 		if (rpc.method === "notifications/initialized") {
 			if (modern) throw new Error("invalid_rpc_request");
@@ -1703,7 +1938,14 @@ export function createMcpGateway(input, dependencies = {}) {
 		}
 		if (rpc.method === "ping")
 			return { body: rpcResponse(rpc.id, modern ? { resultType: "complete" } : {}) };
+		// Context scope is checked before any upstream call; the signed toolset
+		// is still re-verified so a drifted server cannot serve resources/prompts.
+		const context =
+			RESOURCE_METHODS.has(rpc.method) || PROMPT_METHODS.has(rpc.method)
+				? contextRequest(rpc, client, server)
+				: null;
 		const observed = await verifiedTools(server, sessionId, signal);
+		if (context) return contextRpc(rpc, context, server, sessionId, signal, modern);
 		const allowed = new Set(client.allowedTools[server.id]);
 		if (rpc.method === "tools/list") {
 			const result = listTools(rpc, observed, allowed, modern);
@@ -1730,6 +1972,11 @@ export function createMcpGateway(input, dependencies = {}) {
 			const rpc = parseRequest(await readBody(request, config.maxBodyBytes, controller.signal));
 			rpcId = rpc.id ?? null;
 			rpcMethod = rpc.method;
+			if (REFUSED_METHODS.has(rpc.method))
+				throw new McpGatewayRefusal(
+					"resource_subscription_refused",
+					"MCP resource subscriptions and list-change notifications are outside the gateway scope and were refused",
+				);
 			if (rpc.method) {
 				const current = inflight.get(client.tenantId) ?? 0;
 				if (current >= MAX_ACTIVE_PER_TENANT) throw new Error("tenant_busy");
@@ -1753,7 +2000,14 @@ export function createMcpGateway(input, dependencies = {}) {
 				response,
 				requestId: rpc.id,
 				inputSha256: createHash("sha256")
-					.update(safeJson(rpc.params?.arguments ?? {}), "utf8")
+					.update(
+						safeJson(
+							rpc.method === "resources/read"
+								? { uri: rpc.params?.uri ?? null }
+								: (rpc.params?.arguments ?? {}),
+						),
+						"utf8",
+					)
 					.digest("hex"),
 				signal: controller.signal,
 				replyIds: new Set(),

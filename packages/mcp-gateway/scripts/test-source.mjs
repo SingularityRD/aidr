@@ -6,7 +6,7 @@ import { build } from "esbuild";
 
 const root = resolve(import.meta.dirname, "..");
 const entries = process.argv.slice(2).length ? process.argv.slice(2).map((path) => resolve(path)) :
-	["gateway.test.mjs", "stdio.test.mjs", "interactions.test.mjs"].map((name) => join(root, "src", "__tests__", name));
+	["gateway.test.mjs", "stdio.test.mjs", "interactions.test.mjs", "context.test.mjs"].map((name) => join(root, "src", "__tests__", name));
 const directory = await mkdtemp(join(tmpdir(), "aidr-mcp-source-tests-"));
 try {
 	const outputs = [];
