@@ -4,6 +4,7 @@ import {
 	constantTimeEqual,
 	DEFAULT_TOLERANCE_SECONDS,
 	hexToBytes,
+	MAX_TOLERANCE_SECONDS,
 	parseStripeSignatureHeader,
 	resolveToleranceSeconds,
 	verifyStripeWebhookSignature,
@@ -175,6 +176,24 @@ describe("stripe signature verification", () => {
 		expect(resolveToleranceSeconds("120")).toBe(120);
 		expect(resolveToleranceSeconds(0)).toBe(0);
 		expect(resolveToleranceSeconds("300")).toBe(300);
+		expect(resolveToleranceSeconds("3600")).toBe(MAX_TOLERANCE_SECONDS);
+		expect(resolveToleranceSeconds(3600)).toBe(3600);
+	});
+
+	it("refuses a tolerance above one hour instead of widening the replay window", async () => {
+		const timestamp = NOW - 7200;
+		const stale = `t=${timestamp},v1=${await computeStripeSignatureHex(SECRET, timestamp, BODY)}`;
+		for (const tolerance of ["3601", 3601, "86400", 1e9, "999999999999"]) {
+			expect(resolveToleranceSeconds(tolerance)).toBe(DEFAULT_TOLERANCE_SECONDS);
+			const result = await verifyStripeWebhookSignature({
+				rawBody: BODY,
+				signatureHeader: stale,
+				secret: SECRET,
+				toleranceSeconds: tolerance,
+				nowSeconds: NOW,
+			});
+			expect(result).toEqual({ ok: false, reason: "timestamp_out_of_tolerance" });
+		}
 	});
 
 	it("accepts when one of several v1 signatures matches", async () => {
