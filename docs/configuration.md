@@ -727,10 +727,10 @@ Each type is governed by its reserved rule id, so the policy stays in control:
 - A rule with that id and `"enabled": false`, or whose `directions` omit
   `"input"`: the baseline is off for that type.
 - A rule with that id: its `action` applies to the baseline finding (`ask`
-  asks for out-of-band approval; `block` and `redact` deny, because the baseline
-  itself never rewrites input; a baseline deny also takes precedence over a
-  tenant-rule redaction of the same call). Its matchers also run as an ordinary
-  rule, extending the baseline.
+  asks for out-of-band approval; `block` denies; `redact` masks the value, see
+  [Masking common PII](#masking-common-pii-redact) below; a baseline deny takes
+  precedence over a tenant-rule redaction of the same call). Its matchers also
+  run as an ordinary rule, extending the baseline.
 - An active exception whose `ruleId` is the reserved id suppresses matches:
   `scope: "rule"` for every match, `scope: "match"` for one value (fingerprint
   `sha256(tenantId + "\0" + ruleId + "\0" + value)`), `scope: "content"` for one
@@ -750,6 +750,48 @@ blocking, add this rule:
   "matchers": [{ "type": "keyword", "values": ["unused"] }]
 }
 ```
+
+#### Masking common PII (`redact`)
+
+Setting a reserved rule's `action` to `"redact"` (for example `pii-email`,
+`pii-tc_kimlik`) asks AIDR to mask that type instead of blocking. Without such a
+rule nothing changes: the baseline still blocks.
+
+When every surviving common-PII finding in a call is governed by a `redact`
+rule, and the connector executes a rewritten tool input, each detected value is
+replaced with a stable typed placeholder in the Browser Guard style: `[EMAIL_1]`,
+`[PHONE_1]`, `[TCKN_1]`, `[IBAN_1]`, `[CARD_1]`, `[SSN_1]` (the same value maps to
+the same placeholder within one call). The rewritten input is re-scanned under
+the full policy, in both the raw and escape-decoded views; if any PII or tenant
+rule match remains, the call is denied. It then passes the same threat-rule
+re-check as any other DLP redaction (`dlp_redaction_unsafe`).
+
+Masking is applied only where it changes the data a tool carries, not what the
+tool does. Anything else is denied (fail closed):
+
+| Field (by parameter name, any tool) | Behaviour |
+|-------|-----------|
+| Free-text string fields (`content`, `new_string`, `prompt`, `body`, MCP string arguments, ...) | Masked in place. |
+| A free-text field whose entire value is one PII value (a recipient, a lookup key) | Denied: masking would change the call's operand. |
+| Shell command fields (`command`, `cmd`, `script`) | Masked only inside plain quoted literals: `'...'`, or `"..."` that contains no `$` or backtick. A value in a bare word, `$'...'`, an expansion, a comment, an unquoted heredoc line, or a command that does not tokenize is denied. |
+| Locator fields (`file_path`, `path`, `notebook_path`, `cwd`, `url`, `uri`, `pattern`, `glob`, `old_string`, ...) | Denied: replacing a value would point the tool at a different target, and `[`/`]` are glob and regex syntax. |
+| Non-string values (a card or TCKN sent as a JSON number), object keys | Denied by the residual re-scan; they are never rewritten. |
+
+A `scope: "content"` exception is not honoured once masking applies (masking
+changes the fingerprinted payload), so a call that relies on one is denied.
+A `redact` finding combined with a tenant `ask` in the same call is denied: an
+approved call would run the original input.
+
+Connector support follows [DLP redaction of tool input](#dlp-redaction-of-tool-input):
+Claude Code (`updatedInput`) and OpenCode (`output.args`) run the masked input;
+Codex (rewrite deliberately not used, see above), OpenClaw (the connector's
+`before_tool_call` handler only returns a block), Cursor / VS Code (the extension
+hook returns a permission decision only), the CLI and the SDK deny with
+`Common PII (<type>) detected; tenant DLP policy requires redaction, but this
+connector cannot rewrite tool input.` None of those connectors declares
+`supportsInputRewrite`, and no input-rewrite path has been verified for their hosts.
+The audit log and verdict reasons record the placeholder type and count only
+(`Common PII masked before the tool ran: EMAIL x2, TCKN x1.`), never the values.
 
 ### Tool-output quarantine
 
