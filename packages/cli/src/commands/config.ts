@@ -1,4 +1,4 @@
-import { ConfigSchema } from "@singularityrd/aidr-core";
+import { ConfigSchema, escapeTerminalText } from "@singularityrd/aidr-core";
 import { type Config, getConfig, replaceConfig } from "../utils/config-manager.js";
 import {
 	configPathParts,
@@ -7,20 +7,32 @@ import {
 	isSecretConfigPath,
 	parseConfigValue,
 } from "../utils/config-values.js";
+import {
+	confirmOperatorAction,
+	type OperatorCommandDeps,
+	OperatorConfirmationError,
+} from "../utils/operator-confirm.js";
+import { isProtectionTightening } from "../utils/protection-change.js";
 import { readHiddenInput } from "../utils/secret-prompt.js";
 
 interface ConfigOptions {
 	get?: string;
 	set?: string[];
 	list?: boolean;
+	yes?: boolean;
 }
 
-async function configCommand(options: ConfigOptions): Promise<void> {
+async function configCommand(
+	options: ConfigOptions,
+	deps: OperatorCommandDeps = {},
+): Promise<void> {
 	let config: Config | null;
 	try {
 		config = getConfig();
 	} catch {
-		console.error("Local configuration could not be read. Check its permissions, JSON and credential store.");
+		console.error(
+			"Local configuration could not be read. Check its permissions, JSON and credential store.",
+		);
 		process.exitCode = 1;
 		return;
 	}
@@ -61,6 +73,17 @@ async function configCommand(options: ConfigOptions): Promise<void> {
 			return;
 		}
 
+		// The value in effect before the change (stored, else its schema default),
+		// captured before `setNestedValue` mutates the loaded config.
+		let before: unknown;
+		try {
+			before = getNestedValue(config, key) ?? getNestedValue(effectiveConfig(config), key);
+		} catch {
+			console.error("Invalid configuration path.");
+			process.exitCode = 1;
+			return;
+		}
+
 		let value: unknown;
 		if (secret) {
 			try {
@@ -73,7 +96,9 @@ async function configCommand(options: ConfigOptions): Promise<void> {
 		} else {
 			value = parseConfigValue(valueParts.join(" "));
 			if (containsSecretConfigValue(value)) {
-				console.error("Secret fields cannot be supplied inside object arguments. Set each secret field through its hidden prompt.");
+				console.error(
+					"Secret fields cannot be supplied inside object arguments. Set each secret field through its hidden prompt.",
+				);
 				process.exitCode = 1;
 				return;
 			}
@@ -91,10 +116,36 @@ async function configCommand(options: ConfigOptions): Promise<void> {
 			process.exitCode = 1;
 			return;
 		}
-		if (getNestedValue(checked.data as unknown as Config, key) === undefined) {
+		const after = getNestedValue(checked.data as unknown as Config, key);
+		if (after === undefined) {
 			console.error("Unknown configuration field; no changes saved.");
 			process.exitCode = 1;
 			return;
+		}
+		// Anything that is not provably a tightening (heuristics off, a disabled
+		// threat, a lower sensitivity, a check or policy off, a replaced endpoint
+		// or credential) is an operator-only change, confirmed exactly like
+		// `aidr allowlist add`, so an agent cannot switch protection off itself.
+		if (!isProtectionTightening(key, before, after)) {
+			try {
+				await confirmOperatorAction({
+					prompt: [
+						"Singularity AIDR — change a protection setting",
+						`  ${escapeTerminalText(key)}: ${describeForPrompt(key, before)} -> ${describeForPrompt(key, after)}`,
+						"This change may weaken what AIDR inspects or blocks.",
+					].join("\n"),
+					word: "change",
+					yes: options.yes,
+					env: deps.env,
+					streams: deps.streams,
+				});
+			} catch (error) {
+				console.error(
+					`${error instanceof OperatorConfirmationError ? error.message : String(error)} No changes saved.`,
+				);
+				process.exitCode = 1;
+				return;
+			}
 		}
 		// Persist only the schema-parsed runtime fields and the CLI's explicit
 		// metadata. Spreading the full input here would retain unknown root keys,
@@ -115,7 +166,9 @@ async function configCommand(options: ConfigOptions): Promise<void> {
 		try {
 			replaceConfig(normalized);
 		} catch {
-			console.error("Configuration could not be saved. Check its permissions and credential store, then retry.");
+			console.error(
+				"Configuration could not be saved. Check its permissions and credential store, then retry.",
+			);
 			process.exitCode = 1;
 			return;
 		}
@@ -136,6 +189,23 @@ async function configCommand(options: ConfigOptions): Promise<void> {
 	console.log("  aidr config -l             List all\n");
 }
 
+/**
+ * A value as the operator should see it in the confirmation: secrets redacted,
+ * arrays of plain values (e.g. `disabled_threats`) spelled out (bounded),
+ * other objects summarised — they may hold nested secrets — and control
+ * characters escaped.
+ */
+function describeForPrompt(key: string, value: unknown): string {
+	const plainArray =
+		Array.isArray(value) &&
+		value.every((item) => ["string", "number", "boolean"].includes(typeof item));
+	if (isSecretConfigPath(key) || !plainArray) {
+		return escapeTerminalText(displayConfigValue(key, value));
+	}
+	const json = JSON.stringify(value) ?? String(value);
+	return escapeTerminalText(json.length > 400 ? `${json.slice(0, 400)}…` : json);
+}
+
 /** The config as the runtime sees it: stored values over schema defaults. */
 function effectiveConfig(config: Config): Config {
 	const parsed = ConfigSchema.safeParse(config);
@@ -153,13 +223,19 @@ function getNestedValue(obj: Config, path: string): unknown {
 
 function setNestedValue(obj: Config, path: string, value: unknown): void {
 	const keys = configPathParts(path);
-	if (!Object.hasOwn(ConfigSchema.shape, keys[0])) throw new Error("Unknown or read-only configuration field");
+	if (!Object.hasOwn(ConfigSchema.shape, keys[0]))
+		throw new Error("Unknown or read-only configuration field");
 	const last = keys.pop();
 	if (last === undefined) return;
 	let current: Record<string, unknown> = obj as unknown as Record<string, unknown>;
 
 	for (const key of keys) {
-		if (!Object.hasOwn(current, key) || !current[key] || typeof current[key] !== "object" || Array.isArray(current[key])) {
+		if (
+			!Object.hasOwn(current, key) ||
+			!current[key] ||
+			typeof current[key] !== "object" ||
+			Array.isArray(current[key])
+		) {
 			current[key] = {};
 		}
 		current = current[key] as Record<string, unknown>;

@@ -1,7 +1,26 @@
-import { existsSync, lstatSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	lstatSync,
+	readFileSync,
+	realpathSync,
+	renameSync,
+	statSync,
+	unlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, parse, resolve, sep } from "node:path";
-import { recordHooksInstalled, ManagedHookError, removeManagedHooks } from "../utils/install-hooks.js";
+import { escapeTerminalText } from "@singularityrd/aidr-core";
+import {
+	ManagedHookError,
+	recordHooksInstalled,
+	removeManagedHooks,
+} from "../utils/install-hooks.js";
+import {
+	confirmOperatorAction,
+	type OperatorCommandDeps,
+	OperatorConfirmationError,
+} from "../utils/operator-confirm.js";
 
 /**
  * `aidr uninstall` — remove the hook registrations AIDR installed.
@@ -109,7 +128,8 @@ function samePath(left: string, right: string): boolean {
 function isStrictlyInside(child: string, parent: string): boolean {
 	const base = `${resolve(parent)}${sep}`;
 	const target = `${resolve(child)}${sep}`;
-	if (process.platform === "win32") return target.toLowerCase().startsWith(base.toLowerCase()) && target !== base;
+	if (process.platform === "win32")
+		return target.toLowerCase().startsWith(base.toLowerCase()) && target !== base;
 	return target.startsWith(base) && target !== base;
 }
 
@@ -131,7 +151,13 @@ function validateHome(home: string): string | null {
 	if (!stats.isDirectory()) return "Home is not a directory.";
 	if (target === parse(target).root) return "Home cannot be a filesystem root.";
 	if (process.platform === "win32") {
-		const forbidden = [process.env.windir, process.env.SystemRoot, process.env.ProgramData, process.env.ProgramFiles, process.env["ProgramFiles(x86)"]];
+		const forbidden = [
+			process.env.windir,
+			process.env.SystemRoot,
+			process.env.ProgramData,
+			process.env.ProgramFiles,
+			process.env["ProgramFiles(x86)"],
+		];
 		const actual = realpathSync(target);
 		for (const entry of forbidden) {
 			if (entry && existsSync(entry)) {
@@ -176,10 +202,18 @@ function verifyReceipt(
 	try {
 		stats = statSync(receiptPath);
 		if (!stats.isFile() || lstatSync(receiptPath).isSymbolicLink()) {
-			return { ok: false, code: "receipt_unreadable", detail: "The installation receipt is not a regular file." };
+			return {
+				ok: false,
+				code: "receipt_unreadable",
+				detail: "The installation receipt is not a regular file.",
+			};
 		}
 		if (stats.size > MAX_RECEIPT_BYTES) {
-			return { ok: false, code: "receipt_unreadable", detail: "The installation receipt is implausibly large." };
+			return {
+				ok: false,
+				code: "receipt_unreadable",
+				detail: "The installation receipt is implausibly large.",
+			};
 		}
 		raw = readFileSync(receiptPath, "utf8");
 	} catch (error) {
@@ -194,10 +228,18 @@ function verifyReceipt(
 	try {
 		parsed = JSON.parse(raw);
 	} catch {
-		return { ok: false, code: "receipt_invalid_json", detail: "The installation receipt is not valid JSON." };
+		return {
+			ok: false,
+			code: "receipt_invalid_json",
+			detail: "The installation receipt is not valid JSON.",
+		};
 	}
 	if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-		return { ok: false, code: "receipt_not_an_object", detail: "The installation receipt is not a JSON object." };
+		return {
+			ok: false,
+			code: "receipt_not_an_object",
+			detail: "The installation receipt is not a JSON object.",
+		};
 	}
 	const receipt = parsed as Record<string, unknown>;
 	if (receipt.schema_version !== RECEIPT_SCHEMA_VERSION) {
@@ -218,10 +260,14 @@ function verifyReceipt(
 		return {
 			ok: false,
 			code: "receipt_canary_not_passed",
-			detail: "The receipt does not record a passing local deny canary; the installation is unverified.",
+			detail:
+				"The receipt does not record a passing local deny canary; the installation is unverified.",
 		};
 	}
-	if (typeof receipt.artifact_sha256 !== "string" || !SHA256_PATTERN.test(receipt.artifact_sha256)) {
+	if (
+		typeof receipt.artifact_sha256 !== "string" ||
+		!SHA256_PATTERN.test(receipt.artifact_sha256)
+	) {
 		return {
 			ok: false,
 			code: "receipt_digest_invalid",
@@ -229,7 +275,11 @@ function verifyReceipt(
 		};
 	}
 	if (typeof receipt.path !== "string" || receipt.path === "") {
-		return { ok: false, code: "receipt_path_outside_managed_root", detail: "The receipt names no connector path." };
+		return {
+			ok: false,
+			code: "receipt_path_outside_managed_root",
+			detail: "The receipt names no connector path.",
+		};
 	}
 	// The connector lives at connectors/claude/<digest> (endpoint-install.mjs
 	// line 33), so a receipt pointing elsewhere is not this installation.
@@ -240,7 +290,9 @@ function verifyReceipt(
 			detail: `The receipt names a connector path outside ${connectorRoot}.`,
 		};
 	}
-	if (resolve(receipt.path).split(sep).pop()?.toLowerCase() !== receipt.artifact_sha256.toLowerCase()) {
+	if (
+		resolve(receipt.path).split(sep).pop()?.toLowerCase() !== receipt.artifact_sha256.toLowerCase()
+	) {
 		return {
 			ok: false,
 			code: "receipt_digest_path_mismatch",
@@ -297,7 +349,11 @@ function emptyReport(home: string, settingsPath: string, receiptPath: string): U
 	};
 }
 
-function refuse(report: UninstallReport, code: UninstallRefusalCode, detail: string): UninstallReport {
+function refuse(
+	report: UninstallReport,
+	code: UninstallRefusalCode,
+	detail: string,
+): UninstallReport {
 	report.outcome = "refused";
 	report.reason = { code, detail };
 	report.changed = false;
@@ -334,7 +390,11 @@ export async function uninstallAidr(options: UninstallAidrOptions = {}): Promise
 	}
 	try {
 		if (lstatSync(settingsPath).isSymbolicLink() || !statSync(settingsPath).isFile()) {
-			return refuse(report, "settings_not_a_regular_file", `${settingsPath} is not a regular file.`);
+			return refuse(
+				report,
+				"settings_not_a_regular_file",
+				`${settingsPath} is not a regular file.`,
+			);
 		}
 	} catch (error) {
 		return refuse(
@@ -358,14 +418,19 @@ export async function uninstallAidr(options: UninstallAidrOptions = {}): Promise
 	try {
 		parsed = JSON.parse(original.toString("utf8"));
 	} catch {
-		return refuse(report, "settings_invalid_json", `${settingsPath} is not valid JSON; it was not rewritten.`);
+		return refuse(
+			report,
+			"settings_invalid_json",
+			`${settingsPath} is not valid JSON; it was not rewritten.`,
+		);
 	}
 
 	let removal: ReturnType<typeof removeManagedHooks>;
 	try {
 		removal = removeManagedHooks(parsed);
 	} catch (error) {
-		if (error instanceof ManagedHookError) return refuse(report, "settings_invalid_shape", error.message);
+		if (error instanceof ManagedHookError)
+			return refuse(report, "settings_invalid_shape", error.message);
 		throw error;
 	}
 	report.preserved = {
@@ -385,10 +450,15 @@ export async function uninstallAidr(options: UninstallAidrOptions = {}): Promise
 	try {
 		writeFileSync(backupPath, original, { flag: "wx", mode: 0o600 });
 		backupWritten = true;
-		writeFileSync(temporary, `${JSON.stringify(removal.settings, null, 2)}\n`, { flag: "wx", mode: 0o600 });
+		writeFileSync(temporary, `${JSON.stringify(removal.settings, null, 2)}\n`, {
+			flag: "wx",
+			mode: 0o600,
+		});
 		// ponytail: Claude has no atomic compare-and-swap; check again immediately before replacement.
 		if (!readFileSync(settingsPath).equals(original)) {
-			throw new Error("Agent settings changed during uninstall; retry after closing other settings editors.");
+			throw new Error(
+				"Agent settings changed during uninstall; retry after closing other settings editors.",
+			);
 		}
 		renameSync(temporary, settingsPath);
 	} catch (error) {
@@ -408,7 +478,10 @@ export async function uninstallAidr(options: UninstallAidrOptions = {}): Promise
 		);
 	}
 
-	report.removed = removal.removed.map((record) => ({ event: record.event, command: record.command }));
+	report.removed = removal.removed.map((record) => ({
+		event: record.event,
+		command: record.command,
+	}));
 	report.backup_path = backupPath;
 	report.outcome = "removed";
 	report.changed = true;
@@ -462,7 +535,9 @@ export function printUninstallReport(report: UninstallReport): void {
 		`Left alone: ${report.preserved.entries} hook entr${report.preserved.entries === 1 ? "y" : "ies"} and ${report.preserved.hooks} non-AIDR hook registration(s).`,
 	);
 	if (report.preserved.events.length > 0) {
-		console.log(`Hook events left empty and therefore deleted: ${report.preserved.events.join(", ")}`);
+		console.log(
+			`Hook events left empty and therefore deleted: ${report.preserved.events.join(", ")}`,
+		);
 	}
 	console.log(`Backup of the previous settings: ${report.backup_path}`);
 	console.log(
@@ -471,11 +546,40 @@ export function printUninstallReport(report: UninstallReport): void {
 	console.log(
 		"The local CLI credential and its vault item are also preserved; use 'aidr config revoke-key' to remove that credential. Managed endpoint API keys are unchanged.",
 	);
-	console.log("Protection is NOT active for this agent now: AIDR no longer inspects its tool calls.");
-	console.log("Re-enable it with 'aidr setup' and the connector install for your agent (docs/getting-started.md).");
+	console.log(
+		"Protection is NOT active for this agent now: AIDR no longer inspects its tool calls.",
+	);
+	console.log(
+		"Re-enable it with 'aidr setup' and the connector install for your agent (docs/getting-started.md).",
+	);
 }
 
-async function uninstallCommand(options: { home?: string; json?: boolean } = {}): Promise<void> {
+async function uninstallCommand(
+	options: { home?: string; json?: boolean; yes?: boolean } = {},
+	deps: OperatorCommandDeps = {},
+): Promise<void> {
+	// Removing the hooks switches inspection off for the agent, so it is an
+	// operator-only action confirmed like `aidr allowlist add`: an agent tool
+	// call has no TTY and cannot set AIDR_OPERATOR_NONINTERACTIVE (CLT-SELF-007).
+	try {
+		await confirmOperatorAction({
+			prompt: [
+				"Singularity AIDR — uninstall the managed agent hooks",
+				`  Target home: ${escapeTerminalText(resolve(options.home ?? homedir()))}`,
+				"AIDR will no longer inspect this agent's tool calls.",
+			].join("\n"),
+			word: "uninstall",
+			yes: options.yes,
+			env: deps.env,
+			streams: deps.streams,
+		});
+	} catch (error) {
+		console.error(
+			`${error instanceof OperatorConfirmationError ? error.message : String(error)} Nothing was removed.`,
+		);
+		process.exitCode = 1;
+		return;
+	}
 	const report = await uninstallAidr({ home: options.home });
 	if (report.outcome === "removed" && options.home === undefined) {
 		// Record the measured state in the invoking user's config, the same flag

@@ -831,6 +831,17 @@ sent to the AIDR dashboard for an administrator to approve — see
 | `aidr doctor [--json]` | Check hosts, hook registration, rule count, core version, mode, DLP policy, agent permission profiles, the approval store and key custody, and the last verdict; exits non-zero on problems |
 | `aidr profile list\|show\|validate\|test` | Inspect, validate and dry-run agent permission profiles (see [Agent permission profiles](agent-profiles.md)) |
 
+The protection-weakening commands take the same operator confirmation as
+`aidr approve` (type the word in an interactive terminal, or `--yes` together
+with `AIDR_OPERATOR_NONINTERACTIVE=1`): `aidr config -s` for any change that is
+not provably a tightening (heuristics off, a rule added to `disabled_threats`, a
+lower `sensitivity` or prompt-protection mode, a check or policy switched off,
+an endpoint, path, credential or other value replaced), `aidr uninstall` and
+`aidr setup --force`. Turning a check on, raising sensitivity, removing rules
+from `disabled_threats`, `aidr config -g|-l` and a plain `aidr setup` need no
+confirmation. The self-defense rule CLT-SELF-007 also denies these commands when
+an agent runs them as a tool call.
+
 ### Key custody
 
 Every pending ask and approval carries an HMAC-SHA256 under a per-install key.
