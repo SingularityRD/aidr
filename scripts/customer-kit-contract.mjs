@@ -109,6 +109,7 @@ export const CUSTOMER_KIT_REQUIRED_FILES = Object.freeze([
 	"CANDIDATE-STATUS.md",
 	"supabase/config.toml",
 	"supabase/templates/recovery.html",
+	"supabase/templates/invite.html",
 	"deploy/saml-config.mjs",
 	...Object.values(CUSTOMER_KIT_DELIVERY_FILES),
 	...CUSTOMER_KIT_BENCHMARK_FILES,

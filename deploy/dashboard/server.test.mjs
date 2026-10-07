@@ -44,12 +44,13 @@ test("dashboard rejects a non-loopback HTTP Supabase URL", () => {
 	assert.match(invalid.stderr, /must use HTTPS/);
 });
 
-test("dashboard exposes configured auth, Sentry origin, metrics, and only the recovery template", async () => {
+test("dashboard exposes configured auth, Sentry origin, metrics, and only the recovery and invite templates", async () => {
 	const directory = mkdtempSync(join(tmpdir(), "aidr-dashboard-auth-"));
 	writeFileSync(join(directory, "index.html"), "<!doctype html><title>AIDR test</title>");
 	const templateDirectory = join(directory, "auth-templates");
 	mkdirSync(templateDirectory);
 	writeFileSync(join(templateDirectory, "recovery.html"), "<p>{{ .Token }}</p>");
+	writeFileSync(join(templateDirectory, "invite.html"), "<a href=\"{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=invite\">Accept</a>");
 	writeFileSync(join(templateDirectory, "private.html"), "must not be served");
 	const env = {
 		...process.env,
@@ -110,13 +111,28 @@ test("dashboard exposes configured auth, Sentry origin, metrics, and only the re
 		assert.match(csp, /script-src 'self' https:\/\/challenges\.cloudflare\.com/);
 		assert.match(csp, /frame-src https:\/\/challenges\.cloudflare\.com/);
 		assert.match(csp, /object-src 'none'/);
+		assert.match(csp, /upgrade-insecure-requests/);
+		assert.doesNotMatch(csp, /accounts\.google\.com|img-src[^;]*https:/);
 		const connectSources = csp.match(/connect-src ([^;]+)/)?.[1] ?? "";
 		assert.match(connectSources, /https:\/\/o123\.ingest\.sentry\.io/);
-		assert.doesNotMatch(connectSources, /public-key|\/456/);
+		assert.doesNotMatch(connectSources, /public-key|\/456|wss:/);
+		// Every non-connect-src header comes from the shared source of truth.
+		const { securityHeaders } = await import("./security-headers.mjs");
+		for (const [name, value] of securityHeaders()) {
+			if (name === "Content-Security-Policy") {
+				assert.equal(csp.replace(/connect-src [^;]+/, ""), value.replace(/connect-src [^;]+/, ""));
+			} else {
+				assert.equal(response.headers.get(name), value, name);
+			}
+		}
+		assert.match(response.headers.get("strict-transport-security") ?? "", /max-age=63072000/);
 
 		const recoveryTemplate = await fetch(`http://127.0.0.1:${port}/auth-templates/recovery.html`);
 		assert.equal(recoveryTemplate.status, 200);
 		assert.equal(await recoveryTemplate.text(), "<p>{{ .Token }}</p>");
+		const inviteTemplate = await fetch(`http://127.0.0.1:${port}/auth-templates/invite.html`);
+		assert.equal(inviteTemplate.status, 200);
+		assert.match(await inviteTemplate.text(), /\/auth\/callback\?token_hash=\{\{ \.TokenHash \}\}&type=invite/);
 		assert.equal((await fetch(`http://127.0.0.1:${port}/auth-templates/private.html`)).status, 404);
 
 		const anonymousMetrics = await fetch(`http://127.0.0.1:${port}/metrics`);

@@ -330,6 +330,11 @@ if (values.mode === "self-hosted") {
 	compose.services.functions.env_file = [".env.functions"];
 	compose.services.auth.environment.GOTRUE_MAILER_TEMPLATES_RECOVERY = "http://dashboard:8080/auth-templates/recovery.html";
 	compose.services.auth.environment.GOTRUE_MAILER_SUBJECTS_RECOVERY = "Reset your AIDR password";
+	// Invites must link to /auth/callback?token_hash=...&type=invite; the default
+	// GoTrue template delivers session tokens in the URL fragment, which the
+	// dashboard rejects (login CSRF).
+	compose.services.auth.environment.GOTRUE_MAILER_TEMPLATES_INVITE = "http://dashboard:8080/auth-templates/invite.html";
+	compose.services.auth.environment.GOTRUE_MAILER_SUBJECTS_INVITE = "You have been invited to AIDR";
 	compose.services.db.volumes = compose.services.db.volumes.map((v) => v.startsWith("./volumes/db/data:") ? "aidr-db:/var/lib/postgresql/data" : v);
 	compose.services.storage.volumes = ["aidr-storage:/var/lib/storage"];
 	compose.services.imgproxy.volumes = ["aidr-storage:/var/lib/storage:ro"];

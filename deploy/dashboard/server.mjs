@@ -3,6 +3,7 @@ import { timingSafeEqual } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { extname, isAbsolute, resolve, sep } from "node:path";
 import { createHttpRequestMetrics, createReadinessMonitor, loadReadinessConfig } from "./monitoring.mjs";
+import { securityHeaders, TURNSTILE_ORIGIN } from "./security-headers.mjs";
 import { parseOidcRuntimeConfig, parseSamlRuntimeConfig } from "../saml-config.mjs";
 
 const root = resolve(process.env.AIDR_STATIC_DIR || "/app/public");
@@ -50,14 +51,20 @@ if (!Number.isFinite(sentryTracesSampleRate) || sentryTracesSampleRate < 0 || se
 	throw new Error("SENTRY_TRACES_SAMPLE_RATE must be a number from 0 to 1");
 }
 
-let recoveryTemplate = null;
+// Only these Auth email templates are served (to GoTrue's mailer). The invite
+// template links to /auth/callback?token_hash=...&type=invite; GoTrue's default
+// invite template would deliver session tokens in the URL fragment instead.
+const AUTH_TEMPLATE_NAMES = ["recovery.html", "invite.html"];
+const authTemplates = new Map();
 const authTemplateDir = process.env.AIDR_AUTH_TEMPLATE_DIR?.trim();
 if (authTemplateDir) {
 	if (!isAbsolute(authTemplateDir) || authTemplateDir.includes("\0")) throw new Error("AIDR_AUTH_TEMPLATE_DIR must be an absolute path");
-	const templatePath = resolve(authTemplateDir, "recovery.html");
-	const templateStat = await stat(templatePath);
-	if (!templateStat.isFile()) throw new Error("AIDR recovery email template must be a regular file");
-	recoveryTemplate = await readFile(templatePath);
+	for (const name of AUTH_TEMPLATE_NAMES) {
+		const templatePath = resolve(authTemplateDir, name);
+		const templateStat = await stat(templatePath);
+		if (!templateStat.isFile()) throw new Error(`AIDR ${name} email template must be a regular file`);
+		authTemplates.set(`/auth-templates/${name}`, await readFile(templatePath));
+	}
 }
 
 const config = {
@@ -74,8 +81,12 @@ const config = {
 await stat(resolve(root, "index.html"));
 const types = { ".html": "text/html", ".js": "application/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon", ".woff2": "font/woff2" };
 const port = Number(process.env.PORT || 8080);
-const socketOrigin = url.origin.replace(/^http/, "ws");
-const connectSources = [...new Set(["'self'", url.origin, socketOrigin, "https://challenges.cloudflare.com", sentryDsn?.origin].filter(Boolean))].join(" ");
+// Exact configured origins instead of the static-hosting wildcards. The dashboard
+// does not use Supabase Realtime, so no ws(s): origin is allowed.
+const responseSecurityHeaders = securityHeaders({
+	connectSources: ["'self'", url.origin, TURNSTILE_ORIGIN, sentryDsn?.origin].filter(Boolean),
+	upgradeInsecureRequests: url.protocol === "https:",
+});
 const metricsToken = process.env.AIDR_METRICS_TOKEN?.trim() || null;
 const readiness = createReadinessMonitor(loadReadinessConfig());
 const requestMetrics = createHttpRequestMetrics();
@@ -97,10 +108,7 @@ const server = createServer(async (req, res) => {
 	if (!operationalPaths.has(observedPath)) {
 		res.once("finish", () => requestMetrics.observe(res.statusCode, Number(process.hrtime.bigint() - startedAt) / 1e9));
 	}
-	res.setHeader("X-Content-Type-Options", "nosniff");
-	res.setHeader("Referrer-Policy", "no-referrer");
-	res.setHeader("X-Frame-Options", "DENY");
-	res.setHeader("Content-Security-Policy", `default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src ${connectSources}; frame-src https://challenges.cloudflare.com; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'`);
+	for (const [name, value] of responseSecurityHeaders) res.setHeader(name, value);
 	res.setHeader("Cache-Control", "no-store");
 	if (!["GET", "HEAD"].includes(req.method)) { res.writeHead(405); res.end(); return; }
 	try {
@@ -124,10 +132,9 @@ const server = createServer(async (req, res) => {
 			res.end(req.method === "HEAD" ? undefined : `${await readiness.metrics()}${requestMetrics.renderPrometheus()}`);
 			return;
 		}
-		if (path === "/auth-templates/recovery.html") {
-			if (!recoveryTemplate) { res.writeHead(404); res.end(); return; }
+		if (authTemplates.has(path)) {
 			res.setHeader("Content-Type", "text/html; charset=utf-8");
-			res.end(req.method === "HEAD" ? undefined : recoveryTemplate);
+			res.end(req.method === "HEAD" ? undefined : authTemplates.get(path));
 			return;
 		}
 		if (path.startsWith("/auth-templates/")) { res.writeHead(404); res.end(); return; }
