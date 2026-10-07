@@ -778,10 +778,58 @@ export async function scanTarget(
 
 export interface AigInfraScanSummary {
 	targets: AigInfraTargetResult[];
+	/**
+	 * Legacy totals: every reported CVE, INCLUDING findings whose applicability
+	 * could not be confirmed (unknown version or opaque rule). Use the
+	 * `confirmed*` / `unconfirmed*` fields to tell the two apart.
+	 */
 	critical: number;
 	high: number;
 	cvesFound: number;
+	/** CVEs whose version rule was evaluated against a detected version and matched. */
+	confirmedCritical: number;
+	confirmedHigh: number;
+	confirmedFindings: number;
+	/** CVEs for a detected product whose applicability could not be confirmed. */
+	unconfirmedCritical: number;
+	unconfirmedHigh: number;
+	unconfirmedFindings: number;
 	scannedAt: string;
+}
+
+/** Severity counts for a scan, split by whether applicability was confirmed. */
+export function summarizeCveFindings(
+	results: readonly Pick<AigInfraTargetResult, "cves">[],
+): Omit<AigInfraScanSummary, "targets" | "scannedAt"> {
+	const counts = {
+		critical: 0,
+		high: 0,
+		cvesFound: 0,
+		confirmedCritical: 0,
+		confirmedHigh: 0,
+		confirmedFindings: 0,
+		unconfirmedCritical: 0,
+		unconfirmedHigh: 0,
+		unconfirmedFindings: 0,
+	};
+	for (const result of results) {
+		for (const cve of result.cves) {
+			const severity = cve.severity?.toLowerCase();
+			counts.cvesFound++;
+			if (severity === "critical") counts.critical++;
+			else if (severity === "high") counts.high++;
+			if (cve.evaluated === true) {
+				counts.confirmedFindings++;
+				if (severity === "critical") counts.confirmedCritical++;
+				else if (severity === "high") counts.confirmedHigh++;
+			} else {
+				counts.unconfirmedFindings++;
+				if (severity === "critical") counts.unconfirmedCritical++;
+				else if (severity === "high") counts.unconfirmedHigh++;
+			}
+		}
+	}
+	return counts;
 }
 
 /** Scan several targets with bounded concurrency. */
@@ -803,21 +851,9 @@ export async function scanTargets(
 	});
 	await Promise.all(workers);
 
-	let critical = 0;
-	let high = 0;
-	let cvesFound = 0;
-	for (const r of results) {
-		for (const cve of r.cves) {
-			cvesFound++;
-			if (cve.severity === "critical") critical++;
-			else if (cve.severity === "high") high++;
-		}
-	}
 	return {
 		targets: results,
-		critical,
-		high,
-		cvesFound,
+		...summarizeCveFindings(results),
 		scannedAt: new Date().toISOString(),
 	};
 }

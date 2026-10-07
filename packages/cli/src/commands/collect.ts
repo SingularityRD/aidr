@@ -410,14 +410,19 @@ export function collectTargetInputs(options: Pick<CollectOptions, "target" | "fi
 }
 
 export function fleetCollectionExitCode(inventory: FleetInventory): number {
+	// Same contract as `aidr scan`: 2 only for version-confirmed critical/high
+	// CVEs; unconfirmed applicability is an incomplete (1), never a clean, result.
 	if (
 		inventory.items.some((item) =>
-			item.scan.cves.some((cve) => cve.severity === "critical" || cve.severity === "high"),
+			item.scan.cves.some(
+				(cve) => cve.evaluated === true && (cve.severity === "critical" || cve.severity === "high"),
+			),
 		)
 	) {
 		return 2;
 	}
 	if (
+		inventory.items.some((item) => item.scan.cves.some((cve) => cve.evaluated !== true)) ||
 		(!inventory.providerEvidence && inventory.items.length === 0) ||
 		(inventory.providerEvidence &&
 			(!inventory.providerEvidence.complete ||

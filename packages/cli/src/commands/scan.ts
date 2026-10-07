@@ -113,7 +113,14 @@ function printHumanSummary(
 
 	for (const result of summary.targets) {
 		const findings = result.cves.length;
-		const marker = findings > 0 ? "!" : result.matched.length > 0 ? "✓" : "○";
+		// "!" = a version-confirmed CVE, "?" = CVEs whose applicability is unconfirmed.
+		const marker = result.cves.some((cve) => cve.evaluated)
+			? "!"
+			: findings > 0
+				? "?"
+				: result.matched.length > 0
+					? "✓"
+					: "○";
 		console.log(`${marker} ${result.url}`);
 		console.log(`    ${describe(result)}`);
 		if (findings > 0) {
@@ -135,8 +142,14 @@ function printHumanSummary(
 
 	console.log("");
 	console.log(
-		`Findings: ${summary.critical} critical, ${summary.high} high (${summary.cvesFound} total)`,
+		`Confirmed findings: ${summary.confirmedCritical} critical, ${summary.confirmedHigh} high (${summary.confirmedFindings} total, version-matched)`,
 	);
+	if (summary.unconfirmedFindings > 0) {
+		console.log(
+			`Unconfirmed findings: ${summary.unconfirmedCritical} critical, ${summary.unconfirmedHigh} high (${summary.unconfirmedFindings} total) - ` +
+				"applicability unconfirmed (version unknown or rule not evaluable); review required, not a clean result",
+		);
+	}
 
 	// Distinguish "inspected and found nothing" from "never inspected". Reporting
 	// the former when only the latter happened would invent a clean result.
@@ -162,13 +175,27 @@ function printHumanSummary(
 	}
 }
 
-function setExitCode(summary: Awaited<ReturnType<typeof scanTargets>>): void {
-	// Non-zero when a vulnerability was found, so this is usable in CI.
-	if (summary.critical > 0 || summary.high > 0) {
-		process.exitCode = 2;
-		return;
+/**
+ * Exit status contract (CI-usable):
+ *   2 - at least one version-confirmed critical or high CVE;
+ *   1 - the assessment is incomplete: a target could not be scanned, or a
+ *       detected product has CVEs whose applicability is unconfirmed;
+ *   0 - every target was scanned and nothing applicable was matched.
+ * Unconfirmed findings are never folded into 0: an unknown version is not clean.
+ */
+export function scanExitCode(summary: Awaited<ReturnType<typeof scanTargets>>): 0 | 1 | 2 {
+	if (summary.confirmedCritical > 0 || summary.confirmedHigh > 0) return 2;
+	if (
+		summary.unconfirmedFindings > 0 ||
+		summary.targets.some((target) => target.error !== null)
+	) {
+		return 1;
 	}
-	process.exitCode = summary.targets.some((target) => target.error !== null) ? 1 : 0;
+	return 0;
+}
+
+function setExitCode(summary: Awaited<ReturnType<typeof scanTargets>>): void {
+	process.exitCode = scanExitCode(summary);
 }
 
 export default scanCommand;

@@ -26,6 +26,7 @@ export {
 	resetAigScanCache,
 	scanTarget,
 	scanTargets,
+	summarizeCveFindings,
 } from "./aig-infra-scan.js";
 export { evaluateInfrastructurePolicy, inspectInfrastructurePolicy } from "./aig-policy.js";
 export type {
