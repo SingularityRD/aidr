@@ -1028,3 +1028,104 @@ test("denied initialization output is withheld and its upstream session is termi
 	);
 	assert.ok((await reused.json()).error);
 });
+
+test("pending server-initiated replies have a per-tenant quota alongside the global cap", {
+	timeout: 60_000,
+}, async () => {
+	const PER_CALL = 5;
+	const f = await fixture({
+		tenantCount: 2,
+		dependencies: { evaluateToolCall: allowArguments },
+		peer: (_request, rpc) => {
+			if (rpc.method === "tools/call")
+				return new Response(
+					new ReadableStream({
+						start(controller) {
+							for (let k = 0; k < PER_CALL; k++)
+								controller.enqueue(
+									Buffer.from(frame({ jsonrpc: "2.0", id: `s-${rpc.id}-${k}`, ...sample })),
+								);
+						},
+					}),
+					{ headers: { "content-type": "text/event-stream" } },
+				);
+		},
+	});
+	const sessions = [];
+	for (const [index, credential] of f.credentials.entries()) {
+		const initialized = await f.post(
+			{
+				jsonrpc: "2.0",
+				id: index + 100,
+				method: "initialize",
+				params: {
+					protocolVersion: "2025-11-25",
+					capabilities: { sampling: {} },
+					clientInfo: { name: "client", version: "1" },
+				},
+			},
+			{ credential },
+		);
+		sessions.push(initialized.headers.get("mcp-session-id"));
+		await initialized.json();
+	}
+	const open = [];
+	async function call(client, id, expected) {
+		const response = await f.post(
+			{ jsonrpc: "2.0", id, method: "tools/call", params: { name: "search", arguments: {} } },
+			{ credential: f.credentials[client], session: sessions[client] },
+		);
+		const events = readMcpSseMessages(response, 4096)[Symbol.asyncIterator]();
+		open.push(events);
+		const received = [];
+		for (let k = 0; k < expected; k++) received.push((await events.next()).value);
+		return { events, received };
+	}
+	// 12 calls x 5 pending replies = 60; the 13th call reaches the tenant quota (64).
+	for (let id = 1; id <= 12; id++) {
+		const { received } = await call(0, id, PER_CALL);
+		for (const message of received) assert.match(message.id, /^aidr-reply-/);
+	}
+	const capped = await call(0, 13, 4);
+	for (const message of capped.received) assert.match(message.id, /^aidr-reply-/);
+	const refusal = (await capped.events.next()).value;
+	assert.match(JSON.stringify(refusal ?? {}), /tenant_busy/);
+	// The other tenant is unaffected by tenant 0's backlog.
+	const other = await call(1, 50, 1);
+	assert.match(other.received[0].id, /^aidr-reply-/);
+	for (const events of open) await events.return();
+});
+
+test("MRTR continuations have a per-tenant quota so one tenant cannot exhaust the global cap", {
+	timeout: 60_000,
+}, async () => {
+	const f = await fixture({
+		modern: true,
+		tenantCount: 2,
+		dependencies: { evaluateToolCall: allowArguments },
+		peer: (_request, rpc) => {
+			if (rpc.method === "tools/call")
+				return json(rpc.id, {
+					resultType: "input_required",
+					inputRequests: { summary: sample },
+					requestState: "opaque-upstream-state",
+				});
+		},
+	});
+	const call = (id) => ({
+		jsonrpc: "2.0",
+		id,
+		method: "tools/call",
+		params: { name: "search", arguments: { query: `q${id}` }, _meta: metadata },
+	});
+	for (let id = 1; id <= 64; id++) {
+		const body = await (await f.post(call(id))).json();
+		assert.match(body.result.requestState, /^aidr-mrtr-/);
+	}
+	const overflow = await f.post(call(65));
+	assert.equal(overflow.status, 429);
+	assert.match((await overflow.json()).error.message, /tenant_busy/);
+	// Another tenant still gets a continuation.
+	const other = await (await f.post(call(66), { credential: f.credentials[1] })).json();
+	assert.match(other.result.requestState, /^aidr-mrtr-/);
+});
