@@ -129,6 +129,16 @@ describe("tenant storage byte quota", () => {
 			storage: { from: vi.fn(() => ({ upload, createSignedUrl })) },
 			rpc: vi.fn(async (name: string, args: Record<string, unknown>) => {
 				if (name === "consume_tenant_rate_limit") return { data: { allowed: true, remaining: 10 }, error: null };
+				// audit-export is a SIEM-export (Business) feature; this suite is about quotas.
+				if (name === "tenant_plan_entitlements") {
+					return {
+						data: {
+							tenant_id: args.p_tenant_id, plan_id: "business", plan_source: "team_record", trial_active: false,
+							features: ["local_detection", "dashboard", "siem_export"], retention_days_max: 365,
+						},
+						error: null,
+					};
+				}
 				rpcCalls.push({ name, args });
 				if (name === "register_audit_export_object") {
 					return options.quota ?? { data: [{ allowed: true, remaining_bytes: 1024 }], error: null };

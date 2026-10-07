@@ -81,7 +81,9 @@ describe("Administrative actions (admin_audit_logs)", () => {
 	it("shows an error rather than an empty trail when the RPC is refused", async () => {
 		rpc.mockResolvedValue({ data: null, error: { message: "admin_audit_access_denied" } });
 		render(<AdminAuditSection />);
-		expect(await screen.findByRole("alert")).toHaveTextContent("unavailable");
+		expect(
+			await screen.findByText(/Administrative audit records are unavailable/),
+		).toBeInTheDocument();
 		expect(
 			screen.queryByText("No administrative actions recorded for this team."),
 		).not.toBeInTheDocument();

@@ -157,7 +157,7 @@ export function AdminAuditSection() {
 				</button>
 			</div>
 			{exportState.error && (
-				<div className="notice notice-danger" role="alert">
+				<div className="notice notice-danger" role="status">
 					{exportState.error}
 				</div>
 			)}
@@ -171,7 +171,7 @@ export function AdminAuditSection() {
 			{loading ? (
 				<p className="muted">Loading administrative actions…</p>
 			) : error ? (
-				<div className="notice notice-danger" role="alert">
+				<div className="notice notice-danger" role="status">
 					Administrative audit records are unavailable. {error}
 				</div>
 			) : rows.length === 0 ? (
