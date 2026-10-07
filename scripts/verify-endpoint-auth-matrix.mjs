@@ -31,6 +31,8 @@ export const IDENTITY_BARRIER_MODULE = "../_shared/identity-barrier.ts";
 export const IDENTITY_BARRIER_CALL = "checkIdentityBarrier(";
 export const API_KEY_GUARD_MODULE = "../_shared/api-key-auth.ts";
 export const API_KEY_GUARD_CALL = "authenticateTenantApiKey(";
+// Same guard behind the per-endpoint unresolved-credential budget.
+export const API_KEY_BUDGETED_GUARD_CALL = "authenticateTenantApiKeyBudgeted(";
 
 /**
  * Routes with no Supabase user session and no tenant API key, by design.
@@ -145,7 +147,10 @@ export function guardsForRoute(source) {
 	if (source.includes(IDENTITY_BARRIER_MODULE) && source.includes(IDENTITY_BARRIER_CALL)) {
 		guards.push("identity-barrier");
 	}
-	if (source.includes(API_KEY_GUARD_MODULE) && source.includes(API_KEY_GUARD_CALL)) {
+	if (
+		source.includes(API_KEY_GUARD_MODULE) &&
+		(source.includes(API_KEY_GUARD_CALL) || source.includes(API_KEY_BUDGETED_GUARD_CALL))
+	) {
 		guards.push("api-key-auth");
 	}
 	return guards;

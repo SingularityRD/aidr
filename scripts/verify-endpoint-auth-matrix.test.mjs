@@ -46,16 +46,21 @@ test("a guarded route passes with either shared guard", () => {
 		'import { authenticateTenantApiKey } from "../_shared/api-key-auth.ts";',
 		"await authenticateTenantApiKey(db, apiKey);",
 	].join("\n");
+	const budgeted = [
+		'import { authenticateTenantApiKeyBudgeted } from "../_shared/api-key-auth.ts";',
+		'await authenticateTenantApiKeyBudgeted(db, apiKey, "ingest");',
+	].join("\n");
 	const report = evaluateAuthMatrix(
 		[
 			{ route: "supabase/functions/identity-route/index.ts", source: identity },
 			{ route: "supabase/functions/api-key-route/index.ts", source: apiKey },
+			{ route: "supabase/functions/budgeted-route/index.ts", source: budgeted },
 		],
 		[],
 		{ fileExists: () => true },
 	);
 	assert.deepEqual(report.failures, []);
-	assert.equal(report.guarded, 2);
+	assert.equal(report.guarded, 3);
 
 	// An allowlist entry may not silently cover a route that already has a guard:
 	// that is a stale exception, not a public route.

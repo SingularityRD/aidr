@@ -9,7 +9,7 @@
 // This is a self-hostable replacement for proprietary file hash reputation providers.
 
 import { createClient } from "npm:@supabase/supabase-js@2.116.0";
-import { authenticateTenantApiKey } from "../_shared/api-key-auth.ts";
+import { authenticateTenantApiKeyBudgeted } from "../_shared/api-key-auth.ts";
 import { getBearerToken } from "../_shared/auth.ts";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 import { isFreshReputationRow } from "../_shared/reputation-freshness.ts";
@@ -76,7 +76,7 @@ Deno.serve(async (req) => {
 	const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
 		auth: { persistSession: false },
 	});
-	const auth = await authenticateTenantApiKey(supabase, apiKey);
+	const auth = await authenticateTenantApiKeyBudgeted(supabase, apiKey, "file-check");
 	if (!auth.ok) {
 		return json(auth.status, { error: auth.error });
 	}

@@ -11,7 +11,7 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import { capEntitlementTimes, parseActiveAdmission, parseEffectiveSeats } from "../_shared/effective-seats.ts";
-import { authenticateTenantApiKey } from "../_shared/api-key-auth.ts";
+import { authenticateTenantApiKeyBudgeted } from "../_shared/api-key-auth.ts";
 import { configFailure, loadConfig, partialGroupError, runtimeEnv } from "../_shared/config.ts";
 import {
 	consumeTenantRateLimit,
@@ -222,7 +222,7 @@ Deno.serve(async (req) => {
 	const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
 		auth: { persistSession: false },
 	});
-	const tenantAuth = await authenticateTenantApiKey(supabase, apiKey);
+	const tenantAuth = await authenticateTenantApiKeyBudgeted(supabase, apiKey, "ingest");
 	if (!tenantAuth.ok) return json(tenantAuth.status, { error: tenantAuth.error });
 
 	const parsed = await readBoundedJson(req, MAX_BODY_BYTES);

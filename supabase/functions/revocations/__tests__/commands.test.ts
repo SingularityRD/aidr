@@ -98,7 +98,7 @@ describe("fleet response database and Edge wiring", () => {
 
 	it("requires an active tenant membership for the signed GET feed", () => {
 		expect(source).toContain('from "../_shared/api-key-auth.ts"');
-		expect(source).toContain("await authenticateTenantApiKey(supabase, apiKey)");
+		expect(source).toContain("await authenticateTenantApiKeyBudgeted(supabase, apiKey, \"revocations\")");
 		expect(source).toContain("await authenticateTenantApiKey(db, token)");
 		expect(source).not.toContain('.from("api_keys")');
 		expect(source).not.toContain('(keyRow.tenant_id as string | null) ?? (keyRow.user_id as string)');

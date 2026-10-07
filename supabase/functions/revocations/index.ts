@@ -14,7 +14,7 @@
 // containment requires a separately verified native consumer and field test.
 
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.116.0";
-import { authenticateTenantApiKey } from "../_shared/api-key-auth.ts";
+import { authenticateTenantApiKey, authenticateTenantApiKeyBudgeted } from "../_shared/api-key-auth.ts";
 import { getBearerToken as getAccessToken } from "../_shared/auth.ts";
 import { configFailure, loadConfig, partialGroupError, runtimeEnv } from "../_shared/config.ts";
 import { corsJson, handleCors } from "../_shared/cors.ts";
@@ -443,7 +443,7 @@ Deno.serve(async (req) => {
 	});
 
 	// Use the same bounded renewal overlap and admission check as the other machine endpoints.
-	const auth = await authenticateTenantApiKey(supabase, apiKey);
+	const auth = await authenticateTenantApiKeyBudgeted(supabase, apiKey, "revocations");
 	if (!auth.ok) return json(auth.status, { error: auth.error });
 	const { tenantId, userId } = auth;
 	if (!isUuid(tenantId) || !isUuid(userId)) return json(403, { error: "agent_access_denied" });

@@ -3,7 +3,13 @@ import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { authenticateTenantApiKey } from "../_shared/api-key-auth.ts";
+import {
+	authenticateTenantApiKey,
+	authenticateTenantApiKeyBudgeted,
+	DEFAULT_UNRESOLVED_API_KEY_LIMIT_PER_MINUTE,
+	unresolvedApiKeyBucket,
+	unresolvedApiKeyLimit,
+} from "../_shared/api-key-auth.ts";
 
 type StoredResult = { data: unknown; error: unknown };
 type QueryCall = { table: string; filters: Record<string, unknown> };
@@ -182,6 +188,66 @@ describe("tenant API key authorization", () => {
 	});
 });
 
+describe("unresolved API-key budget before credential lookup", () => {
+	const NOW = Date.UTC(2026, 9, 7, 12, 0, 30);
+	const WINDOW = Math.floor(NOW / 60_000);
+
+	it("checks the per-endpoint budget before any key lookup and charges only unresolved keys", async () => {
+		const { calls, client } = database({ rate_limits: { data: { count: 5 }, error: null } });
+		const result = await authenticateTenantApiKeyBudgeted(client, "garbage", "file-check", NOW);
+		expect(result).toEqual({ ok: false, status: 401, error: "invalid_api_key" });
+		expect(calls[0]).toEqual({ table: "rate_limits", filters: { key: unresolvedApiKeyBucket("file-check"), window_start: WINDOW } });
+		expect(calls.map((call) => call.table)).toEqual(["rate_limits", "api_keys", "api_keys", "increment_rate_limit"]);
+		expect(calls.at(-1)?.filters).toEqual({ p_key: "api-key:v1:unresolved:file-check", p_window_start: WINDOW, p_delta: 1 });
+	});
+
+	it("never charges the budget for a valid key", async () => {
+		const { calls, client } = database({ ...activeRows, rate_limits: { data: null, error: null } });
+		await expect(authenticateTenantApiKeyBudgeted(client, "secret-key", "ingest", NOW)).resolves.toMatchObject({ ok: true });
+		expect(calls.some((call) => call.table === "increment_rate_limit")).toBe(false);
+	});
+
+	it("answers 429 without any credential lookup once the budget is spent", async () => {
+		const { calls, client } = database({ ...activeRows, rate_limits: { data: { count: DEFAULT_UNRESOLVED_API_KEY_LIMIT_PER_MINUTE }, error: null } });
+		await expect(authenticateTenantApiKeyBudgeted(client, "secret-key", "policy", NOW))
+			.resolves.toEqual({ ok: false, status: 429, error: "rate_limited" });
+		expect(calls.map((call) => call.table)).toEqual(["rate_limits"]);
+	});
+
+	it.each([
+		[{ data: null, error: { message: "down" } }],
+		[{ data: { count: "5" }, error: null }],
+		[{ data: { count: -1 }, error: null }],
+		[{ data: { status: "active" }, error: null }],
+	])("fails closed with 503 before any key lookup on an unreadable budget %#", async (row) => {
+		const { calls, client } = database({ ...activeRows, rate_limits: row });
+		await expect(authenticateTenantApiKeyBudgeted(client, "secret-key", "policy-ack", NOW))
+			.resolves.toEqual({ ok: false, status: 503, error: "rate_limit_unavailable" });
+		expect(calls.map((call) => call.table)).toEqual(["rate_limits"]);
+	});
+
+	it("fails closed on an invalid configured budget or endpoint name", async () => {
+		expect(unresolvedApiKeyLimit("0")).toBeNull();
+		expect(unresolvedApiKeyLimit("abc")).toBeNull();
+		expect(unresolvedApiKeyLimit("2000000")).toBeNull();
+		expect(unresolvedApiKeyLimit("")).toBe(DEFAULT_UNRESOLVED_API_KEY_LIMIT_PER_MINUTE);
+		expect(unresolvedApiKeyLimit("300")).toBe(300);
+		const { calls, client } = database(activeRows);
+		await expect(authenticateTenantApiKeyBudgeted(client, "secret-key", "Bad Endpoint", NOW))
+			.resolves.toEqual({ ok: false, status: 503, error: "rate_limit_unavailable" });
+		expect(calls).toEqual([]);
+	});
+
+	it.each(["ingest", "file-check", "url-check", "policy", "policy-ack", "packs-manifest", "packs-download", "revocations"])(
+		"wires %s through the budgeted guard",
+		(name) => {
+			const source = readFileSync(join(resolve(dirname(fileURLToPath(import.meta.url)), ".."), name, "index.ts"), "utf8");
+			expect(source).toContain(`authenticateTenantApiKeyBudgeted(`);
+			expect(source).toMatch(new RegExp(`authenticateTenantApiKeyBudgeted\\([^)]*"${name}"\\)`));
+		},
+	);
+});
+
 describe("reputation endpoint authorization wiring", () => {
 	const functionsDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -191,7 +257,7 @@ describe("reputation endpoint authorization wiring", () => {
 	])("guards %s before an empty request can return success", (name, emptyRequestGuard) => {
 		const source = readFileSync(join(functionsDir, name, "index.ts"), "utf8");
 		const handler = source.slice(source.indexOf("Deno.serve("));
-		const authorization = handler.indexOf("await authenticateTenantApiKey(");
+		const authorization = handler.indexOf("await authenticateTenantApiKeyBudgeted(");
 		const emptySuccess = handler.indexOf(emptyRequestGuard);
 
 		expect(source).toContain('from "../_shared/api-key-auth.ts"');
@@ -205,7 +271,7 @@ describe("reputation endpoint authorization wiring", () => {
 		(name) => {
 			const source = readFileSync(join(functionsDir, name, "index.ts"), "utf8");
 			const handler = source.slice(source.indexOf("Deno.serve("));
-			const authorization = handler.indexOf("await authenticateTenantApiKey(");
+			const authorization = handler.indexOf("await authenticateTenantApiKeyBudgeted(");
 			const entitlementRead = handler.indexOf('.from("entitlements")');
 			const grant = handler.indexOf("signPackDownloadGrant(");
 

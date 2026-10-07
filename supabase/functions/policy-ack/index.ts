@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.116.0";
-import { authenticateTenantApiKey } from "../_shared/api-key-auth.ts";
+import { authenticateTenantApiKeyBudgeted } from "../_shared/api-key-auth.ts";
 import { getBearerToken } from "../_shared/auth.ts";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 import { consumeTenantRateLimit, rateLimitHeaders, readBoundedJson } from "../_shared/request-limits.ts";
@@ -41,7 +41,7 @@ export function createPolicyAckHandler(deps: PolicyAckDeps = {}) {
       if (typeof version !== "number" || !Number.isSafeInteger(version) || version < 1 || typeof policySha256 !== "string" || !/^[a-f0-9]{64}$/.test(policySha256)) return json(400, { error: "invalid_receipt" });
       const db = deps.db ?? createClient<PolicyAckDatabase>(config.values.SUPABASE_URL, config.values.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
       const hash = await sha256(token);
-      const tenantAuth = await authenticateTenantApiKey(db, token);
+      const tenantAuth = await authenticateTenantApiKeyBudgeted(db, token, "policy-ack");
       if (!tenantAuth.ok) return json(tenantAuth.status, { error: tenantAuth.error });
       const rate = await consumeTenantRateLimit(db, { tenantId: tenantAuth.tenantId, subject: tenantAuth.userId, endpoint: "policy-ack", perSubject: 300, perTenant: 10_000 });
       if (!rate.ok) return json(rate.status, { error: rate.error }, rateLimitHeaders(rate));

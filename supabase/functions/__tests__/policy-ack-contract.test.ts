@@ -222,12 +222,13 @@ describe("policy-ack authentication and receipt contract", () => {
 		const invalid = database({ key: null });
 		const invalidResponse = await createPolicyAckHandler({ db: invalid.db as never })(post(receiptBody()));
 		expect(invalidResponse.status).toBe(401);
-		expect(invalid.rpcCalls).toHaveLength(0);
+		// Only the unresolved-credential budget is charged; no receipt or quota RPC runs.
+		expect(invalid.rpcCalls.map(({ name }) => name)).toEqual(["increment_rate_limit"]);
 
 		const revoked = database({ key: { user_id: USER, tenant_id: TENANT, revoked: true } });
 		const revokedResponse = await createPolicyAckHandler({ db: revoked.db as never })(post(receiptBody()));
 		expect(revokedResponse.status).toBe(401);
-		expect(revoked.rpcCalls).toHaveLength(0);
+		expect(revoked.rpcCalls.map(({ name }) => name)).toEqual(["increment_rate_limit"]);
 
 		const unbound = database({ key: { user_id: USER, tenant_id: TENANT, agent_id: null, revoked: false } });
 		const unboundResponse = await createPolicyAckHandler({ db: unbound.db as never })(post(receiptBody()));

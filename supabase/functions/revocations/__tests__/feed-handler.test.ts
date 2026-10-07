@@ -19,6 +19,10 @@ async function feedWithSigningKey(privateKey: string, options: { previousHashExp
 			? { data: options.admission ?? 1, error: null }
 			: { data: { allowed: options.rateAllowed !== false, remaining: 100 }, error: null },
 		from(table: string) {
+			if (table === "rate_limits") {
+				const empty = { eq: () => empty, maybeSingle: async () => ({ data: null, error: null }) };
+				return { select: () => empty };
+			}
 			if (table === "revocations") {
 				runtime.feedReads += 1;
 				return {

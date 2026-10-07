@@ -59,6 +59,7 @@ function database(options: {
 		: { data: { signedUrl: `https://storage.example.test/${path}?token=short-lived` }, error: null });
 	const client = {
 		async rpc(name: string) {
+			if (name === "increment_rate_limit") return { data: null, error: null };
 			if (name !== "tenant_admission_capacity") throw new Error(`Unexpected RPC: ${name}`);
 			return { data: 1, error: null };
 		},
