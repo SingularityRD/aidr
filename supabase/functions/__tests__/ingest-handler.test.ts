@@ -60,12 +60,13 @@ async function ingest(
 			? { data: null, error: registrationError }
 			: { data: [registration], error: null };
 		if (name === "effective_tenant_seats") return effectiveResult;
+		if (name === "increment_rate_limit") return { data: null, error: null };
 		throw new Error(`Unexpected RPC: ${name}`);
 	});
 	const db = {
 		rpc,
 		from(table: string) {
-			if (!(table in rows) && table !== "events" && table !== "entitlement_snapshots") {
+			if (!(table in rows) && table !== "events" && table !== "entitlement_snapshots" && table !== "rate_limits") {
 				throw new Error(`Unexpected table: ${table}`);
 			}
 			const filters: Array<[string, unknown]> = [];

@@ -329,7 +329,8 @@ When at least one key is configured, a policy is applied only if all of these ho
 
 - the signature verifies against one configured key (several keys may be listed for rotation);
 - `key_id` (signed inside the envelope) is not in the signed revocation feed's `key_ids`
-  (`licensing.revocations_cache_path`, the same feed that revokes entitlement and pack keys);
+  (`licensing.revocations_cache_path`, the same feed that revokes entitlement and pack keys; the
+  feed is used only when its signed `tenant_id` matches the tenant of the verified entitlement);
 - the envelope's `policy_sha256` and `policy_version` equal the delivered ones, and the digest
   matches the delivered `runtime_policy`;
 - `issued_at` is not in the future (5 minute skew) and `expires_at` has not passed;

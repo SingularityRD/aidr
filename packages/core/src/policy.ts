@@ -8,7 +8,12 @@ import { resolvePath } from "./config.js";
 import { getFileContent } from "./file-utils.js";
 import { matchPackageIntel } from "./intel/api.js";
 import { loadMergedIntelFromDisk } from "./intel/loader.js";
-import { isPremiumModuleEnabled, loadRevocationsCache, type ManagedState } from "./managed.js";
+import {
+	isPremiumModuleEnabled,
+	loadRevocationsCache,
+	type ManagedState,
+	revocationBindingForState,
+} from "./managed.js";
 import { inspectMcpServerInventory } from "./mcp-inventory.js";
 import {
 	legacyMcpToolSelector,
@@ -139,6 +144,7 @@ async function getMergedIntelCached(
 			const signed = await loadRevocationsCache(
 				resolvePath(config.licensing.revocations_cache_path),
 				config.licensing.public_keys_pem,
+				revocationBindingForState(managedState),
 			);
 			if (signed?.payload?.revocations) {
 				revocations = {

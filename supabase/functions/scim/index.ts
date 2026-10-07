@@ -28,6 +28,13 @@ async function sha256(input: string): Promise<string> {
 	return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+export function scimUserNameDomain(userName: string): string | null {
+	const at = userName.lastIndexOf("@");
+	if (at < 1 || at === userName.length - 1) return null;
+	const domain = userName.slice(at + 1).trim().toLowerCase().replace(/\.$/, "");
+	return /^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(domain) ? domain : null;
+}
+
 function asIso(value: unknown): string {
 	return typeof value === "string" ? value : new Date(0).toISOString();
 }
@@ -103,7 +110,32 @@ export class SupabaseScimStore implements ScimStore {
 		return typeof result.data === "string" && result.data ? result.data : null;
 	}
 
+	/** Domains this tenant proved via DNS (shared with OIDC); null when unreadable. */
+	private async verifiedDomains(tenantId: string): Promise<string[] | null> {
+		const result = await this.db.from("oidc_tenant_domains").select("domain")
+			.eq("tenant_id", tenantId).not("verified_at", "is", null);
+		if (result.error || !Array.isArray(result.data)) return null;
+		return (result.data as Row[]).map((row) => String(row.domain).toLowerCase());
+	}
+
 	async createUser(tenantId: string, input: ScimCreateUser): Promise<{ user: ScimUser; created: boolean }> {
+		const identityPolicy = await this.db.from("tenant_identity_policies")
+			.select("required_saml_provider_id,required_oidc_provider_id").eq("tenant_id", tenantId).maybeSingle();
+		if (identityPolicy.error) throw new Error("SCIM identity policy unavailable");
+		const ssoBound = Boolean(identityPolicy.data?.required_saml_provider_id || identityPolicy.data?.required_oidc_provider_id);
+		if (!ssoBound) {
+			// Without a required SSO provider this path creates a confirmed Auth user
+			// (or binds an existing one) for the asserted email. A SCIM token must not
+			// mint identities for a domain its tenant never proved it controls, so the
+			// userName domain has to be one of the tenant's verified domains — the same
+			// check OIDC applies to an IdP-asserted email. Fail closed on lookup errors.
+			const domain = scimUserNameDomain(input.userName);
+			const domains = await this.verifiedDomains(tenantId);
+			if (!domains) throw new Error("SCIM verified domain lookup unavailable");
+			if (!domain || !domains.includes(domain)) {
+				throw new ScimInvalidValueError("userName domain is not verified for this tenant");
+			}
+		}
 		const claimed = await this.db.rpc("scim_claim_user", {
 			p_tenant_id: tenantId, p_external_id: input.externalId, p_user_name: input.userName,
 			p_display_name: input.displayName, p_active: input.active,
@@ -115,10 +147,7 @@ export class SupabaseScimStore implements ScimStore {
 		let rowResult = await this.db.from("scim_users").select("*").eq("tenant_id", tenantId).eq("id", scimId).single();
 		if (rowResult.error || !rowResult.data) throw new Error("SCIM claimed user unavailable");
 		let row = rowResult.data as Row;
-		const identityPolicy = await this.db.from("tenant_identity_policies")
-			.select("required_saml_provider_id,required_oidc_provider_id").eq("tenant_id", tenantId).maybeSingle();
-		if (identityPolicy.error) throw new Error("SCIM identity policy unavailable");
-		if (identityPolicy.data?.required_saml_provider_id || identityPolicy.data?.required_oidc_provider_id) {
+		if (ssoBound) {
 			// SAML/OIDC create a different Auth UUID; bind only after a verified provider/subject login.
 			return { user: asUser(row), created: claim.created === true };
 		}
@@ -242,9 +271,10 @@ export class SupabaseScimStore implements ScimStore {
 	}
 }
 
-// Per-minute SCIM limits. IdP provisioning bursts are bounded; an aggregate bucket
-// bounds unauthenticated token guessing, and a per-token bucket stops one tenant
-// credential from starving the others.
+// Per-minute SCIM limits. A deployment-wide bucket counts only failed bearer
+// authentications (bounding token guessing without ever throttling a valid
+// token), and a per-token bucket stops one tenant credential from starving the
+// others.
 const readScimRateLimits = (): ScimRateLimits => ({
 	globalPerMinute: Number(runtimeEnv("AIDR_SCIM_GLOBAL_RL_PER_MIN") ?? "6000"),
 	perTokenPerMinute: Number(runtimeEnv("AIDR_SCIM_TOKEN_RL_PER_MIN") ?? "600"),
@@ -256,7 +286,7 @@ Deno.serve(async (req) => {
 	const SCIM_RATE_LIMITS = readScimRateLimits();
 	const invalid: string[] = [];
 	if (!validRateLimit(SCIM_RATE_LIMITS.perTokenPerMinute, 100_000)) invalid.push("AIDR_SCIM_TOKEN_RL_PER_MIN");
-	if (!validRateLimit(SCIM_RATE_LIMITS.globalPerMinute, 1_000_000) || SCIM_RATE_LIMITS.globalPerMinute < SCIM_RATE_LIMITS.perTokenPerMinute) invalid.push("AIDR_SCIM_GLOBAL_RL_PER_MIN");
+	if (!validRateLimit(SCIM_RATE_LIMITS.globalPerMinute, 1_000_000)) invalid.push("AIDR_SCIM_GLOBAL_RL_PER_MIN");
 	if (invalid.length > 0) return new Response(JSON.stringify({ error: "server_misconfigured", invalid }), { status: 500, headers: { "Content-Type": "application/scim+json", "Cache-Control": "no-store" } });
 	const db = createClient<any, "public">(config.values.SUPABASE_URL, config.values.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
 	return createScimHandler(new SupabaseScimStore(db), SCIM_RATE_LIMITS)(req);

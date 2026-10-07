@@ -17,6 +17,13 @@
 /** Stripe's documented default replay tolerance. */
 export const DEFAULT_TOLERANCE_SECONDS = 300;
 
+/**
+ * Largest replay window an operator may configure. A larger value would let a
+ * captured signed delivery be replayed for hours or days, so it is refused (the
+ * default applies) rather than honoured.
+ */
+export const MAX_TOLERANCE_SECONDS = 3600;
+
 /** Upper bound for a plausible unix-seconds timestamp (12 digits). */
 const UNIX_SECONDS = /^\d{1,12}$/;
 
@@ -45,15 +52,15 @@ export interface ParsedStripeSignatureHeader {
 /**
  * Resolve the configured replay tolerance.
  *
- * Anything that is not a finite, non-negative number falls back to
- * `DEFAULT_TOLERANCE_SECONDS`. This is the guard against the "NaN disables the
+ * Anything that is not a finite, non-negative number of at most
+ * `MAX_TOLERANCE_SECONDS` falls back to `DEFAULT_TOLERANCE_SECONDS`. This is the guard against the "NaN disables the
  * replay window" defect: `Number.isFinite` is checked explicitly instead of
  * relying on a NaN comparison, which is always false and would therefore skip
  * the freshness check entirely.
  */
 export function resolveToleranceSeconds(value: unknown): number {
 	if (typeof value === "number") {
-		return Number.isFinite(value) && value >= 0
+		return Number.isFinite(value) && value >= 0 && value <= MAX_TOLERANCE_SECONDS
 			? Math.floor(value)
 			: DEFAULT_TOLERANCE_SECONDS;
 	}
@@ -63,7 +70,7 @@ export function resolveToleranceSeconds(value: unknown): number {
 		// tolerance must never be allowed to disable the replay window.
 		if (/^\d+(?:\.\d+)?$/.test(trimmed)) {
 			const parsed = Number(trimmed);
-			if (Number.isFinite(parsed) && parsed >= 0) return Math.floor(parsed);
+			if (Number.isFinite(parsed) && parsed >= 0 && parsed <= MAX_TOLERANCE_SECONDS) return Math.floor(parsed);
 		}
 	}
 	return DEFAULT_TOLERANCE_SECONDS;

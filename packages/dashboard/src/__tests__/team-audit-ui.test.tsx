@@ -33,6 +33,7 @@ function teamState(overrides: Record<string, unknown> = {}): ReturnType<typeof u
 			updated_at: "2026-09-23T00:00:00.000Z",
 		},
 		canViewAudit: true,
+		canManageTeam: true,
 		auditLogs: [],
 		auditLoaded: true,
 		auditError: null,
@@ -118,6 +119,21 @@ describe("Team audit customer UI", () => {
 		expect(screen.getByRole("button", { name: "Next audit page" })).toBeDisabled();
 		fireEvent.click(screen.getByRole("button", { name: "Previous audit page" }));
 		expect(screen.getByText("action-0")).toBeInTheDocument();
+	});
+
+	it("shows audit rows but no export controls to members and viewers", () => {
+		const exportAuditLogs = vi.fn();
+		useTeamMock.mockReturnValue(
+			teamState({ canManageTeam: false, exportAuditLogs, auditLogs: [makeRow(TEAM_A, 0)] }),
+		);
+		render(<TeamAuditPanel />);
+		expect(screen.getByText("action-0")).toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: "Prepare CSV export" })).toBeNull();
+		expect(screen.queryByRole("button", { name: "Prepare JSON export" })).toBeNull();
+		expect(
+			screen.getByText("Audit export is available to team owners and admins."),
+		).toBeInTheDocument();
+		expect(exportAuditLogs).not.toHaveBeenCalled();
 	});
 
 	it("offers a save link only for a completed tenant-scoped export", async () => {

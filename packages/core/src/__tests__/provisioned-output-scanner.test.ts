@@ -236,7 +236,9 @@ describe("provisioned output DLP", () => {
 	it("rejects a freshly signed revocation before allowing output", async () => {
 		const installed = await provision();
 		const payload = {
-			schema_version: 1,
+			schema_version: 2,
+			tenant_id: installed.entitlement.tenant_id,
+			agent_id: null,
 			issued_at: new Date(Date.now() - 1_000).toISOString(),
 			expires_at: new Date(Date.now() + 60_000).toISOString(),
 			revocation_epoch: 2,
@@ -268,7 +270,9 @@ describe("provisioned output DLP", () => {
 		const now = Date.now();
 		const installed = await provision();
 		const payload = {
-			schema_version: 1,
+			schema_version: 2,
+			tenant_id: installed.entitlement.tenant_id,
+			agent_id: null,
 			issued_at: new Date(now + 1_000).toISOString(),
 			expires_at: new Date(now + 60_000).toISOString(),
 			revocation_epoch: 2,

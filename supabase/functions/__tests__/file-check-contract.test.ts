@@ -5,6 +5,7 @@ const lookup = vi.hoisted(() => ({
 	result: { data: [] as unknown[], error: null as unknown },
 	authAccepted: true,
 	authCalls: [] as string[],
+	authEndpoints: [] as string[],
 	clientCalls: 0,
 	databaseCalls: [] as string[],
 }));
@@ -41,8 +42,10 @@ vi.mock("npm:@supabase/supabase-js@2.116.0", () => ({
 }));
 
 vi.mock("../_shared/api-key-auth.ts", () => ({
-	authenticateTenantApiKey: async (_db: unknown, key: string) => {
+	// The unresolved-credential budget itself is covered in api-key-auth.test.ts.
+	authenticateTenantApiKeyBudgeted: async (_db: unknown, key: string, endpoint: string) => {
 		lookup.authCalls.push(key);
+		lookup.authEndpoints.push(endpoint);
 		return lookup.authAccepted
 			? { ok: true, tenantId: "tenant-1", userId: "user-1" }
 			: { ok: false, status: 401, error: "invalid_api_key" };
@@ -70,6 +73,7 @@ describe("file-check reputation lookup", () => {
 		vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "test-service-role-key");
 		lookup.authAccepted = true;
 		lookup.authCalls = [];
+		lookup.authEndpoints = [];
 		lookup.clientCalls = 0;
 		lookup.databaseCalls = [];
 	});
@@ -93,6 +97,7 @@ describe("file-check reputation lookup", () => {
 		expect(response?.status).toBe(401);
 		expect(await response?.json()).toEqual({ error: "invalid_api_key" });
 		expect(lookup.authCalls).toEqual(["test-key"]);
+		expect(lookup.authEndpoints).toEqual(["file-check"]);
 		expect(lookup.databaseCalls).toEqual([]);
 	});
 

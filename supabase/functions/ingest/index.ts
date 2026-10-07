@@ -25,7 +25,7 @@ import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import { type ApprovalPublicKey, loadApprovalPublicKeys } from "../_shared/approval-token.ts";
 import { capEntitlementTimes, parseActiveAdmission, parseEffectiveSeats } from "../_shared/effective-seats.ts";
 import {
-	authenticateTenantApiKey,
+	authenticateTenantApiKeyBudgeted,
 	BROWSER_GUARD_INGEST_SCOPE,
 } from "../_shared/api-key-auth.ts";
 import { configFailure, loadConfig, partialGroupError, runtimeEnv } from "../_shared/config.ts";
@@ -263,7 +263,7 @@ Deno.serve(async (req) => {
 	const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
 		auth: { persistSession: false },
 	});
-	const tenantAuth = await authenticateTenantApiKey(supabase, apiKey, Date.now(), {
+	const tenantAuth = await authenticateTenantApiKeyBudgeted(supabase, apiKey, "ingest", Date.now(), {
 		allowedScopes: ["tenant", BROWSER_GUARD_INGEST_SCOPE],
 	});
 	if (!tenantAuth.ok) return json(tenantAuth.status, { error: tenantAuth.error });

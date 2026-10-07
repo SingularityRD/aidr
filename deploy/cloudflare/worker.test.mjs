@@ -464,8 +464,8 @@ test("waitlist signup forwards a route-bound signature of the Cloudflare client 
 	assert.equal(unsigned.headers.has("x-aidr-client-signature"), false);
 });
 
-test("device poll and identity recovery get a route-bound client IP proof while keeping user auth", async () => {
-	for (const [path, context] of [["device-poll", "device-poll:v1"], ["identity-security", "identity-security:v1"]]) {
+test("device poll, identity recovery and OIDC SSO get a route-bound client IP proof while keeping user auth", async () => {
+	for (const [path, context] of [["device-poll", "device-poll:v1"], ["identity-security", "identity-security:v1"], ["oidc-sso", "oidc-sso:v1"]]) {
 		let received;
 		const response = await handle(new Request(`${site}/functions/v1/${path}`, {
 			method: "POST",

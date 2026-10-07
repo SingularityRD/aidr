@@ -20,6 +20,7 @@ import {
 	isSyncDisabled,
 	loadManagedState,
 	loadRevocationsCache,
+	revocationBindingForState,
 	managedStatePath,
 	parseSignedRevocationsFromControlPlaneBody,
 	saveEntitlementKeyringFromState,
@@ -524,6 +525,7 @@ export async function runSessionStart(ctx: SessionStartContext): Promise<Session
 								? await loadRevocationsCache(
 										resolvePath(config.licensing.revocations_cache_path),
 										config.licensing.public_keys_pem,
+										revocationBindingForState(managedState),
 									)
 								: null;
 						const refreshMs =
@@ -539,7 +541,10 @@ export async function runSessionStart(ctx: SessionStartContext): Promise<Session
 						) {
 							const res = await client.fetchRevocations();
 							if (res.ok) {
-								const parsed = parseSignedRevocationsFromControlPlaneBody(res.body);
+								const parsed = parseSignedRevocationsFromControlPlaneBody(
+									res.body,
+									revocationBindingForState(managedState),
+								);
 								if (
 									parsed &&
 									verifyEd25519SignedRevocationList({

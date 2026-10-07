@@ -50,6 +50,7 @@ function database(options: { agentBound?: boolean; updatedAt?: string | null; pu
 					case "agent_policy_assignments": return { data: { version: 4, assigned_at: options.publishedAt ?? PUBLISHED }, error: null };
 					case "runtime_policy_revisions": return { data: { version: 4, policy: POLICY, created_at: "2026-09-01T00:00:00.000Z" }, error: null };
 					case "tenant_runtime_policies": return { data: { version: 3, policy: POLICY, ...(options.updatedAt === null ? {} : { updated_at: options.updatedAt ?? options.publishedAt ?? PUBLISHED }) }, error: null };
+					case "rate_limits": return { data: null, error: null };
 					default: throw new Error(`unexpected relation ${table}`);
 				}
 			},

@@ -12,6 +12,7 @@ import {
 	isPremiumModuleEnabled,
 	loadManagedState,
 	loadRevocationsCache,
+	loadRevocationBinding,
 	managedStatePath,
 } from "./managed.js";
 import {
@@ -129,13 +130,13 @@ export async function runSessionStartScan(
 			if (mayLoadPacks) {
 				const requireRevocations =
 					config.licensing.revocations_enabled && config.licensing.public_keys_pem.length > 0;
-				const signedRev =
-					requireRevocations
-						? await loadRevocationsCache(
-								resolvePath(config.licensing.revocations_cache_path),
-								config.licensing.public_keys_pem,
-							)
-						: null;
+				const signedRev = requireRevocations
+					? await loadRevocationsCache(
+							resolvePath(config.licensing.revocations_cache_path),
+							config.licensing.public_keys_pem,
+							await loadRevocationBinding(config.licensing.public_keys_pem),
+						)
+					: null;
 				revocationIdentity = createHash("sha256")
 					.update(JSON.stringify(signedRev ?? null))
 					.digest("hex");

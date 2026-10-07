@@ -61,6 +61,7 @@ function database(options: {
 	const rateCalls: Row[] = [];
 	const client = {
 		async rpc(name: string, args: Row = {}) {
+			if (name === "increment_rate_limit") return { data: null, error: null };
 			if (name === "consume_tenant_rate_limit") {
 				rateCalls.push(args);
 				if (options.rate === "error") return { data: null, error: { message: "rate storage unavailable" } };

@@ -136,7 +136,7 @@ describe("ingest signed entitlement timing", () => {
 describe("ingest API key binding", () => {
 	it("uses the active-or-overlap key returned by shared authentication", () => {
 		const authenticatedAt = source.indexOf(
-			"const tenantAuth = await authenticateTenantApiKey(supabase, apiKey, Date.now(), {",
+			"const tenantAuth = await authenticateTenantApiKeyBudgeted(supabase, apiKey, \"ingest\", Date.now(), {",
 		);
 		expect(authenticatedAt).toBeGreaterThanOrEqual(0);
 		const authorizedHandler = source.slice(authenticatedAt);

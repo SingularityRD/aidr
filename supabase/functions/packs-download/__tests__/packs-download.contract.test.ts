@@ -26,7 +26,8 @@ function harness(options: {
 	signValue?: unknown;
 	fetch?: typeof fetch;
 	env?: Record<string, string | undefined>;
-	rate?: "allowed" | "denied" | "error";
+	rateAllowed?: () => boolean;
+	rateError?: boolean;
 } = {}) {
 	const rows: Record<string, Row | null> = {
 		api_keys: options.key === undefined ? { id: API_KEY_ID, key_hash: KEY_HASH, user_id: "user-1", tenant_id: TENANT, revoked: false, scope: "tenant" } : options.key,
@@ -43,14 +44,15 @@ function harness(options: {
 		status: 200,
 		headers: { "Content-Type": "application/vnd.aidr.pack", "Content-Length": "10", "Accept-Ranges": "bytes" },
 	}));
-	const rateCalls: Row[] = [];
+	const rpcCalls: Array<{ name: string; args: Row }> = [];
 	const db = {
 		async rpc(name: string, args: Row = {}) {
+			rpcCalls.push({ name, args });
 			if (name === "consume_tenant_rate_limit") {
-				rateCalls.push(args);
-				if (options.rate === "error") return { data: null, error: { message: "rate storage unavailable" } };
-				return { data: [{ allowed: options.rate !== "denied", remaining: options.rate === "denied" ? 0 : 10 }], error: null };
+				if (options.rateError) return { data: null, error: { message: "rate storage unavailable" } };
+				return { data: { allowed: options.rateAllowed ? options.rateAllowed() : true, remaining: 10 }, error: null };
 			}
+			if (name === "increment_rate_limit") return { data: null, error: null };
 			if (name !== "tenant_admission_capacity") throw new Error(`Unexpected RPC: ${name}`);
 			return { data: 1, error: null };
 		},
@@ -99,7 +101,7 @@ function harness(options: {
 	}
 	load(ENTRY);
 	if (!handler) throw new Error("packs-download did not register a handler");
-	return { handler, queries, sign, fetch: fetchMock, rows, rateCalls };
+	return { handler, queries, sign, fetch: fetchMock, rows, rpcCalls };
 }
 
 function request(token: string | null = "customer-key", search = "pack_id=intel&version=1", method = "GET") {
@@ -114,41 +116,55 @@ function grantRequest(downloadUrl: string, method = "GET") {
 }
 
 describe("packs-download customer contract", () => {
-	it("budgets grant minting and byte streaming per API key and tenant", async () => {
+	it("charges one per-key bucket on both the grant-minting and the byte-streaming path", async () => {
 		const runtime = harness();
-		const issued = await runtime.handler(request());
-		const { download_url: downloadUrl } = await issued.json() as { download_url: string };
-		expect((await runtime.handler(grantRequest(downloadUrl))).status).toBe(200);
-		expect(runtime.rateCalls.map((call) => [call.p_tenant_id, call.p_subject, call.p_endpoint])).toEqual([
-			[TENANT, API_KEY_ID, "packs-download"],
-			[TENANT, API_KEY_ID, "packs-download:stream"],
+		const response = await runtime.handler(request());
+		expect(response.status).toBe(200);
+		const { download_url } = await response.json() as { download_url: string };
+		expect((await runtime.handler(grantRequest(download_url))).status).toBe(200);
+		const quota = runtime.rpcCalls.filter((call) => call.name === "consume_tenant_rate_limit");
+		expect(quota.map((call) => call.args)).toEqual([
+			expect.objectContaining({ p_tenant_id: TENANT, p_subject: API_KEY_ID, p_endpoint: "packs-download", p_subject_limit: 120, p_tenant_limit: 3000 }),
+			expect.objectContaining({ p_tenant_id: TENANT, p_subject: API_KEY_ID, p_endpoint: "packs-download", p_subject_limit: 120, p_tenant_limit: 3000 }),
 		]);
 	});
 
-	it.each([
-		["denied", 429, "rate_limited"],
-		["error", 503, "rate_limit_unavailable"],
-	] as const)("refuses a %s grant-mint budget before reading entitlements", async (rate, status, error) => {
-		const runtime = harness({ rate });
-		const response = await runtime.handler(request());
-		expect(response.status).toBe(status);
-		expect(await response.json()).toEqual({ error });
-		expect(response.headers.get("Retry-After")).toMatch(/^\d+$/);
-		expect(runtime.queries.some((query) => query.table === "entitlements")).toBe(false);
+	it("rejects a rate-limited key before reading entitlements or signing storage URLs, on both paths", async () => {
+		let allowed = true;
+		const runtime = harness({ rateAllowed: () => allowed });
+		const { download_url } = await (await runtime.handler(request())).json() as { download_url: string };
+		allowed = false;
+		const minted = await runtime.handler(request());
+		expect(minted.status).toBe(429);
+		expect(await minted.json()).toEqual({ error: "rate_limited" });
+		expect(minted.headers.get("Retry-After")).not.toBeNull();
+		const entitlementReads = runtime.queries.filter((query) => query.table === "entitlements").length;
+		const streamed = await runtime.handler(grantRequest(download_url));
+		expect(streamed.status).toBe(429);
+		expect(runtime.queries.filter((query) => query.table === "entitlements")).toHaveLength(entitlementReads);
 	});
 
-	it.each([
-		["denied", 429, "rate_limited"],
-		["error", 503, "rate_limit_unavailable"],
-	] as const)("refuses a %s stream budget before signing a Storage URL", async (rate, status, error) => {
+	it("fails closed with 503 when the per-key budget storage is unavailable, on both paths", async () => {
 		const issuer = harness();
-		const { download_url: downloadUrl } = await (await issuer.handler(request())).json() as { download_url: string };
-		const runtime = harness({ rate });
-		const response = await runtime.handler(grantRequest(downloadUrl));
-		expect(response.status).toBe(status);
-		expect(await response.json()).toEqual({ error });
+		const { download_url } = await (await issuer.handler(request())).json() as { download_url: string };
+		const runtime = harness({ rateError: true });
+		const minted = await runtime.handler(request());
+		expect(minted.status).toBe(503);
+		expect(await minted.json()).toEqual({ error: "rate_limit_unavailable" });
+		expect(runtime.queries.some((query) => query.table === "entitlements")).toBe(false);
+		const streamed = await runtime.handler(grantRequest(download_url));
+		expect(streamed.status).toBe(503);
+		expect(await streamed.json()).toEqual({ error: "rate_limit_unavailable" });
 		expect(runtime.sign).not.toHaveBeenCalled();
 		expect(runtime.fetch).not.toHaveBeenCalled();
+	});
+
+	it("checks the unresolved-credential budget before looking up a bearer key", async () => {
+		const runtime = harness({ key: null });
+		const response = await runtime.handler(request("unknown-key"));
+		expect(response.status).toBe(401);
+		expect(runtime.queries[0]?.table).toBe("rate_limits");
+		expect(runtime.rpcCalls.map((call) => call.name)).toEqual(["increment_rate_limit"]);
 	});
 
 	it("issues an externally reachable proxy URL when database access uses an internal origin", async () => {
@@ -303,7 +319,7 @@ describe("packs-download customer contract", () => {
 		const response = await runtime.handler(request());
 		expect(response.status).toBe(403);
 		expect(await response.json()).toEqual({ error: "api_key_scope_denied" });
-		expect(runtime.rateCalls).toEqual([]);
+		expect(runtime.rpcCalls.filter((call) => call.name === "consume_tenant_rate_limit")).toEqual([]);
 		expect(runtime.queries.some((query) => query.table === "entitlements")).toBe(false);
 		expect(runtime.sign).not.toHaveBeenCalled();
 	});

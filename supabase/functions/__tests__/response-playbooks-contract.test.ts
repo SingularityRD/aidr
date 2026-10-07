@@ -1,4 +1,7 @@
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("npm:@supabase/supabase-js@2.116.0", () => ({
@@ -7,6 +10,7 @@ vi.mock("npm:@supabase/supabase-js@2.116.0", () => ({
 	},
 }));
 
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const TENANT = "22222222-2222-4222-8222-222222222222";
 const USER = "11111111-1111-4111-8111-111111111111";
 const AGENT = "33333333-3333-4333-8333-333333333333";
@@ -65,6 +69,7 @@ interface DatabaseOptions {
 	automationError?: { code: string; message?: string };
 	grantResponse?: Record<string, unknown> | null;
 	automationRun?: Record<string, unknown> | null;
+	grantLookup?: "missing" | "error";
 }
 
 function database(options: DatabaseOptions = {}) {
@@ -100,6 +105,11 @@ function database(options: DatabaseOptions = {}) {
 						return { data: { role: options.role ?? "owner", expires_at: options.expiresAt ?? null }, error: null };
 					}
 					if (table === "tenants") return { data: { status: options.tenantStatus ?? "active" }, error: null };
+					if (table === "delegated_credential_grants") {
+						if (options.grantLookup === "error") return { data: null, error: new Error("private grant lookup failure") };
+						const known = filters.automation_secret_hash === createHash("sha256").update(AUTOMATION_SECRET).digest("hex");
+						return { data: known && options.grantLookup !== "missing" ? { id: filters.id } : null, error: null };
+					}
 					return { data: null, error: null };
 				},
 			};
@@ -462,21 +472,66 @@ describe("response playbook API contract", () => {
 			p_incident_id: INCIDENT, p_reason: AUTOMATION_BODY.reason, p_ttl_seconds: 300,
 		});
 		expect(rpcCalls[0]).toMatchObject({ name: "consume_tenant_rate_limit", args: {
-			p_tenant_id: TENANT, p_subject: GRANT, p_endpoint: "response-playbooks", p_subject_limit: 30, p_tenant_limit: 600,
+			p_tenant_id: TENANT, p_subject: GRANT, p_endpoint: "response-playbooks:automation", p_subject_limit: 30, p_tenant_limit: 600,
 		} });
 		expect(JSON.stringify(rpcCalls)).not.toContain(AUTOMATION_SECRET);
 		expect(db.auth.getUser).not.toHaveBeenCalled();
 		expect(db.auth.mfa.getAuthenticatorAssuranceLevel).not.toHaveBeenCalled();
-		expect(queriedTables).toEqual([]);
+		// The only table read is the grant-secret lookup that authenticates the caller.
+		expect(queriedTables).toEqual(["delegated_credential_grants"]);
 	});
 
-	it.each(["", "valid-token", HUMAN_JWT, "service-role-key", "aidr_live_machine_key", `aidr_rsp_${"A".repeat(64)}`, `aidr_rsp_${"a".repeat(63)}`])("rejects non-automation credentials after consuming the bounded anonymous quota %#", async (token) => {
-		const { handler, rpcCalls, db } = await handlerWith();
+	it.each(["", "valid-token", HUMAN_JWT, "service-role-key", "aidr_live_machine_key", `aidr_rsp_${"A".repeat(64)}`, `aidr_rsp_${"a".repeat(63)}`])("rejects non-automation credentials without consuming any tenant quota %#", async (token) => {
+		const { handler, rpcCalls, db, queriedTables } = await handlerWith();
 		const response = await handler(post(AUTOMATION_BODY, { Authorization: token ? `Bearer ${token}` : "" }));
 		expect(response.status).toBe(403);
 		expect(await response.json()).toEqual({ error: "automation_forbidden" });
-		expect(rpcCalls.map(call => call.name)).toEqual(["consume_tenant_rate_limit"]);
+		expect(rpcCalls).toEqual([]);
+		expect(queriedTables).toEqual([]);
 		expect(db.auth.getUser).not.toHaveBeenCalled();
+	});
+
+	it("rejects a well-formed but unknown automation secret before any quota, so outsiders cannot drain tenant buckets", async () => {
+		const { handler, rpcCalls } = await handlerWith();
+		for (let attempt = 0; attempt < 5; attempt++) {
+			const response = await handler(post(AUTOMATION_BODY, { Authorization: `Bearer aidr_rsp_${"b".repeat(64)}` }));
+			expect(response.status).toBe(403);
+			expect(await response.json()).toEqual({ error: "automation_forbidden" });
+		}
+		const missing = await handlerWith({ grantLookup: "missing" });
+		expect((await missing.handler(post(AUTOMATION_BODY, { Authorization: `Bearer ${AUTOMATION_SECRET}` }))).status).toBe(403);
+		expect([...rpcCalls, ...missing.rpcCalls]).toEqual([]);
+	});
+
+	it("fails closed without consuming quota when the grant lookup is unavailable", async () => {
+		const { handler, rpcCalls } = await handlerWith({ grantLookup: "error" });
+		const response = await handler(post(AUTOMATION_BODY, { Authorization: `Bearer ${AUTOMATION_SECRET}` }));
+		expect(response.status).toBe(503);
+		expect(await response.json()).toEqual({ error: "response_playbook_unavailable" });
+		expect(rpcCalls).toEqual([]);
+	});
+
+	it("keeps operator containment and machine automation on separate rate-limit keys", async () => {
+		const operator = await handlerWith();
+		expect((await operator.handler(post(START))).status).toBe(200);
+		const automation = await handlerWith();
+		expect((await automation.handler(post(AUTOMATION_BODY, { Authorization: `Bearer ${AUTOMATION_SECRET}` }))).status).toBe(200);
+		const endpoint = (calls: Array<{ name: string; args: Record<string, unknown> }>) =>
+			calls.filter(call => call.name === "consume_tenant_rate_limit").map(call => call.args.p_endpoint);
+		expect(endpoint(operator.rpcCalls)).toEqual(["response-playbooks"]);
+		expect(endpoint(automation.rpcCalls)).toEqual(["response-playbooks:automation"]);
+	});
+
+	it("disables gateway JWT checking so the aidr_rsp_ bearer reaches the handler, which re-verifies operators", () => {
+		const config = readFileSync(join(ROOT, "supabase", "config.toml"), "utf8");
+		const section = config.match(/\[functions\.response-playbooks\]([\s\S]*?)(?=\n\[)/)?.[1] ?? "";
+		expect(section).toMatch(/^\s*verify_jwt\s*=\s*false\s*$/m);
+		const source = readFileSync(join(ROOT, "supabase", "functions", "response-playbooks", "index.ts"), "utf8");
+		expect(source).toContain("await db.auth.getUser(token)");
+		expect(source).toContain("checkIdentityBarrier(db, token, userId, tenantId)");
+		expect(source).toMatch(/\["owner", "admin"\]/);
+		expect(source).toContain('assurance.currentLevel !== "aal2"');
+		expect(source).toMatch(/missing_access_token/);
 	});
 
 	it.each([
@@ -491,7 +546,7 @@ describe("response playbook API contract", () => {
 		expect(rpcCalls).toEqual([]);
 	});
 
-	it.each([[{ rateAllowed: false }, 429], [{ rateError: true }, 503]] as const)("fails closed before automation lookup when quota rejects %#", async (options, status) => {
+	it.each([[{ rateAllowed: false }, 429], [{ rateError: true }, 503]] as const)("fails closed before the automation RPC when quota rejects %#", async (options, status) => {
 		const { handler, rpcCalls } = await handlerWith(options);
 		const response = await handler(post(AUTOMATION_BODY, { Authorization: `Bearer ${AUTOMATION_SECRET}` }));
 		expect(response.status).toBe(status);

@@ -53,6 +53,7 @@ function database(options: Options = {}) {
 					case "agent_policy_assignments": return { data: options.assignment === null ? null : { version: options.assignment ?? 4 }, error: options.assignmentError ? new Error("db_down") : null };
 					case "tenant_runtime_policies": return { data: options.current === null ? null : { version: 3, policy: options.current ?? CURRENT }, error: options.currentError ? new Error("db_down") : null };
 					case "runtime_policy_revisions": return { data: options.revision === null ? null : { version: 4, policy: options.revision ?? STAGED }, error: options.revisionError ? new Error("db_down") : null };
+					case "rate_limits": return { data: null, error: null };
 					default: throw new Error(`unexpected relation ${table}`);
 				}
 			},
@@ -65,6 +66,7 @@ function database(options: Options = {}) {
 			rpcCalls.push(name);
 			rpcArgs.push(args);
 			if (name === "tenant_admission_capacity") return { data: 1, error: null };
+			if (name === "increment_rate_limit") return { data: null, error: null };
 			if (name === "ai_governance_policy_overlay") {
 				return options.governanceError ? { data: null, error: new Error("db_down") }
 					: { data: "governance" in options ? options.governance : { mcp_deny_servers: [], mcp_require_approval_servers: [], browser_guard_blocked_sites: [] }, error: null };

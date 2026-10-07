@@ -1,6 +1,6 @@
 import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import { getBearerToken } from "../_shared/auth.ts";
-import { authenticateTenantApiKey } from "../_shared/api-key-auth.ts";
+import { authenticateTenantApiKeyBudgeted } from "../_shared/api-key-auth.ts";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 import { consumeTenantRateLimit, rateLimitHeaders } from "../_shared/request-limits.ts";
 import { canonicalPolicy, sha256, validateRuntimePolicy } from "../_shared/runtime-policy.ts";
@@ -27,7 +27,7 @@ export function createPolicyHandler(deps: { db?: ReturnType<typeof createClient>
 			const db = deps.db ?? createClient(config.values.SUPABASE_URL, config.values.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 			// The shared hash-only API-key guard rejects revoked keys, expired
 			// memberships and non-active tenants before any tenant data is read.
-			const auth = await authenticateTenantApiKey(db, token);
+			const auth = await authenticateTenantApiKeyBudgeted(db, token, "policy");
 			if (!auth.ok) return json(auth.status, { error: auth.error });
 			const tenant = auth.tenantId;
 			// The shared guard returns the binding from the row that authenticated the

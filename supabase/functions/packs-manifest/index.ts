@@ -5,7 +5,7 @@
 // Returns revocable scoped download URLs for premium intel packs.
 
 import { createClient } from "npm:@supabase/supabase-js@2.116.0";
-import { authenticateTenantApiKey } from "../_shared/api-key-auth.ts";
+import { authenticateTenantApiKeyBudgeted } from "../_shared/api-key-auth.ts";
 import { getBearerToken } from "../_shared/auth.ts";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 import { consumeTenantRateLimit, rateLimitHeaders } from "../_shared/request-limits.ts";
@@ -74,7 +74,7 @@ Deno.serve(async (req) => {
 		auth: { persistSession: false },
 	});
 
-	const auth = await authenticateTenantApiKey(supabase, apiKey);
+	const auth = await authenticateTenantApiKeyBudgeted(supabase, apiKey, "packs-manifest");
 	if (!auth.ok) return json(auth.status, { error: auth.error });
 	if (!auth.apiKeyId) return json(503, { error: "authorization_unavailable" });
 	const { tenantId } = auth;

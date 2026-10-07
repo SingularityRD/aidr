@@ -9,7 +9,7 @@
 // This is a self-hostable replacement for proprietary URL reputation providers.
 
 import { createClient } from "npm:@supabase/supabase-js@2.116.0";
-import { authenticateTenantApiKey } from "../_shared/api-key-auth.ts";
+import { authenticateTenantApiKeyBudgeted } from "../_shared/api-key-auth.ts";
 import { getBearerToken } from "../_shared/auth.ts";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 import { isFreshReputationRow, reputationFreshUntil } from "../_shared/reputation-freshness.ts";
@@ -167,7 +167,7 @@ export function createUrlCheckHandler(deps: UrlCheckDeps = {}) {
 		const supabase = deps.db ?? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
 			auth: { persistSession: false },
 		});
-		const auth = await authenticateTenantApiKey(supabase, apiKey);
+		const auth = await authenticateTenantApiKeyBudgeted(supabase, apiKey, "url-check");
 		if (!auth.ok) {
 			return json(auth.status, { error: auth.error });
 		}

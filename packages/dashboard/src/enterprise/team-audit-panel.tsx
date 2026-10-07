@@ -8,6 +8,7 @@ export function TeamAuditPanel() {
 	const {
 		currentTeam,
 		canViewAudit,
+		canManageTeam,
 		auditLogs,
 		auditLoaded,
 		auditError,
@@ -39,7 +40,7 @@ export function TeamAuditPanel() {
 	}, [download]);
 
 	async function prepareExport(format: "csv" | "json") {
-		if (!currentTeam || !canViewAudit) return;
+		if (!currentTeam || !canViewAudit || !canManageTeam) return;
 		const teamId = currentTeam.id;
 		const isCurrent = () => mounted.current && selectedTeamId.current === teamId;
 		setExporting(true);
@@ -83,13 +84,28 @@ export function TeamAuditPanel() {
 						<button type="button" onClick={() => void refreshAuditLogs()}>
 							Refresh audit
 						</button>
-						<button type="button" disabled={exporting} onClick={() => void prepareExport("csv")}>
-							Prepare CSV export
-						</button>
-						<button type="button" disabled={exporting} onClick={() => void prepareExport("json")}>
-							Prepare JSON export
-						</button>
+						{canManageTeam && (
+							<>
+								<button
+									type="button"
+									disabled={exporting}
+									onClick={() => void prepareExport("csv")}
+								>
+									Prepare CSV export
+								</button>
+								<button
+									type="button"
+									disabled={exporting}
+									onClick={() => void prepareExport("json")}
+								>
+									Prepare JSON export
+								</button>
+							</>
+						)}
 					</div>
+					{!canManageTeam && (
+						<p className="muted">Audit export is available to team owners and admins.</p>
+					)}
 					{exportError && (
 						<div className="notice notice-danger" role="alert">
 							{exportError}

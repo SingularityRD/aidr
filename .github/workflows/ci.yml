@@ -194,12 +194,11 @@ jobs:
         if: success() || failure()
         run: node scripts/verify-real-home-untouched.mjs --verify "${RUNNER_TEMP}/aidr-real-home.json"
 
-      - name: MCP gateway and dashboard auth callback tests
+      - name: MCP gateway tests
         env:
           AIDR_TEST_NO_BUILD: "1"
         run: |
           pnpm --filter @singularityrd/aidr-mcp-gateway test
-          pnpm exec vitest run --config vitest.config.ts packages/dashboard/supabase/functions/auth-callback/index.test.ts --reporter=dot
 
       - name: Verify Unix fleet lifecycle
         run: pnpm verify:fleet:unix

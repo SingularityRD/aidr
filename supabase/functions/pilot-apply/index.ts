@@ -9,6 +9,10 @@ import { checkIdentityBarrier } from "../_shared/identity-barrier.ts";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 import { corsJson, handleCors } from "../_shared/cors.ts";
 import { readBoundedJson } from "../_shared/request-limits.ts";
+import { membershipActive } from "../_shared/runtime-policy.ts";
+
+// Same role set submit_pilot_application accepts.
+const APPLICANT_ROLES: ReadonlySet<string> = new Set(["owner", "admin", "member", "viewer", "support_jit"]);
 
 // Required configuration. Validated per request, before any auth or DB work, so
 // a missing variable answers with an explicit 500 that names it instead of
@@ -104,6 +108,17 @@ export function createPilotApplyHandler(deps: PilotApplyDeps = {}) {
 		if (!parsed.ok) return corsJson(req, parsed.status, { error: parsed.error });
 		const intake = parseIntake(parsed.value);
 		if (!intake.ok) return corsJson(req, intake.status, { error: intake.error });
+		// Membership first: get_tenant_admission is a service-role read, so a
+		// non-member must not learn a tenant's admission mode (pilot/cloud/trial)
+		// by probing tenant UUIDs. Mirrors submit_pilot_application's own check.
+		const [{ data: member, error: memberError }, { data: tenant, error: tenantError }] = await Promise.all([
+			supabase.from("tenant_members").select("role,expires_at").eq("tenant_id", tenantId).eq("user_id", userId).maybeSingle(),
+			supabase.from("tenants").select("status").eq("id", tenantId).maybeSingle(),
+		]);
+		if (memberError || tenantError) return corsJson(req, 503, { error: "pilot_application_unavailable" });
+		if (!membershipActive(member) || !APPLICANT_ROLES.has(String(member?.role ?? "")) || tenant?.status !== "active") {
+			return corsJson(req, 403, { error: "tenant_access_denied" });
+		}
 		const admission = await supabase.rpc("get_tenant_admission", { p_tenant_id: tenantId, p_user_id: userId });
 		if (admission.error || !admission.data || typeof admission.data !== "object" || Array.isArray(admission.data)
 			|| typeof admission.data.mode !== "string") {

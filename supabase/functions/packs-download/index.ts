@@ -3,10 +3,9 @@
 // rechecking the API key, membership, tenant and entitlement on every request.
 
 import { createClient } from "npm:@supabase/supabase-js@2.116.0";
-import { authenticateTenantApiKey, authenticateTenantApiKeyHash } from "../_shared/api-key-auth.ts";
+import { authenticateTenantApiKeyBudgeted, authenticateTenantApiKeyHash } from "../_shared/api-key-auth.ts";
 import { getBearerToken } from "../_shared/auth.ts";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
-import { consumeTenantRateLimit, rateLimitHeaders } from "../_shared/request-limits.ts";
 import { retiredSecretActive } from "../_shared/key-rotation.ts";
 import { packSigningTtlSeconds, packUrlTtlSeconds } from "../_shared/pack-delivery.ts";
 import {
@@ -18,6 +17,7 @@ import {
 	validPackDownloadGrantSecret,
 	verifyPackKeyFingerprint,
 } from "../_shared/pack-download-grant.ts";
+import { consumeTenantRateLimit, rateLimitHeaders } from "../_shared/request-limits.ts";
 import { sha256 } from "../_shared/runtime-policy.ts";
 
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "AIDR_PACK_DOWNLOAD_GRANT_SECRET"] as const;
@@ -38,17 +38,27 @@ type DownloadDatabase = {
 	};
 };
 
-// Per-API-key and per-tenant budgets for minting a download grant and for
-// streaming a granted pack (ranged resumes count once per request). Both sit
-// far above a compliant connector and bound storage egress by a leaked key.
-const GRANT_RATE_LIMIT = { endpoint: "packs-download", perSubject: 300, perTenant: 30_000 } as const;
-const STREAM_RATE_LIMIT = { endpoint: "packs-download:stream", perSubject: 300, perTenant: 30_000 } as const;
-
-function json(status: number, body: Record<string, unknown>, headers: Record<string, string> = {}) {
+function json(status: number, body: Record<string, unknown>, extra: Record<string, string> = {}) {
 	return new Response(JSON.stringify(body), {
 		status,
-		headers: { "Content-Type": "application/json", "Cache-Control": "no-store", ...headers },
+		headers: { "Content-Type": "application/json", "Cache-Control": "no-store", ...extra },
 	});
+}
+
+// One per-key bucket shared by both paths (grant minting and grant streaming), so
+// a single API key cannot drive unbounded signing, storage URLs or pack egress.
+const PACK_DOWNLOADS_PER_KEY_PER_MINUTE = 120;
+const PACK_DOWNLOADS_PER_TENANT_PER_MINUTE = 3000;
+
+async function consumePackDownloadQuota(supabase: unknown, tenantId: string, apiKeyId: string): Promise<Response | null> {
+	const rate = await consumeTenantRateLimit(supabase, {
+		tenantId,
+		subject: apiKeyId,
+		endpoint: "packs-download",
+		perSubject: PACK_DOWNLOADS_PER_KEY_PER_MINUTE,
+		perTenant: PACK_DOWNLOADS_PER_TENANT_PER_MINUTE,
+	});
+	return rate.ok ? null : json(rate.status, { error: rate.error }, rateLimitHeaders(rate));
 }
 
 function trustedStorageUrl(value: unknown, supabaseUrl: string): string | null {
@@ -120,13 +130,8 @@ async function streamGrantedPack(
 	if (auth.apiKeyId !== grant.key_id || auth.tenantId !== grant.tenant_id) {
 		return json(401, { error: "invalid_download_grant" });
 	}
-	const rate = await consumeTenantRateLimit(supabase, {
-		tenantId: auth.tenantId,
-		subject: grant.key_id,
-		...STREAM_RATE_LIMIT,
-		now,
-	});
-	if (!rate.ok) return json(rate.status, { error: rate.error }, rateLimitHeaders(rate));
+	const limited = await consumePackDownloadQuota(supabase, auth.tenantId, grant.key_id);
+	if (limited) return limited;
 
 	const { data: entRow, error: entError } = await db
 		.from("entitlements")
@@ -203,15 +208,11 @@ Deno.serve(async (req) => {
 	const version = (url.searchParams.get("version") ?? "").trim();
 	if (!packId || !version || packId.length > 256 || version.length > 256) return json(400, { error: "missing_pack_id_or_version" });
 
-	const auth = await authenticateTenantApiKey(supabase, apiKey);
+	const auth = await authenticateTenantApiKeyBudgeted(supabase, apiKey, "packs-download");
 	if (!auth.ok) return json(auth.status, { error: auth.error });
 	if (!auth.apiKeyId) return json(503, { error: "authorization_unavailable" });
-	const rate = await consumeTenantRateLimit(supabase, {
-		tenantId: auth.tenantId,
-		subject: auth.apiKeyId,
-		...GRANT_RATE_LIMIT,
-	});
-	if (!rate.ok) return json(rate.status, { error: rate.error }, rateLimitHeaders(rate));
+	const limited = await consumePackDownloadQuota(supabase, auth.tenantId, auth.apiKeyId);
+	if (limited) return limited;
 	const { data: entRow, error: entErr } = await supabase
 		.from("entitlements")
 		.select("premium_intel,premium_pkg_plugin")

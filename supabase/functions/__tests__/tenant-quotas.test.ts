@@ -128,6 +128,7 @@ describe("tenant storage byte quota", () => {
 			from: vi.fn((name: string) => table(name)),
 			storage: { from: vi.fn(() => ({ upload, createSignedUrl })) },
 			rpc: vi.fn(async (name: string, args: Record<string, unknown>) => {
+				if (name === "consume_tenant_rate_limit") return { data: { allowed: true, remaining: 10 }, error: null };
 				rpcCalls.push({ name, args });
 				if (name === "register_audit_export_object") {
 					return options.quota ?? { data: [{ allowed: true, remaining_bytes: 1024 }], error: null };

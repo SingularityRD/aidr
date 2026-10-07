@@ -268,3 +268,88 @@ export async function authenticateTenantApiKeyHash(
 		installLimit: key.install_limit,
 	};
 }
+
+// ---------------------------------------------------------------------------
+// Unresolved-credential budget for machine endpoints.
+//
+// Every machine endpoint hashes the bearer value and looks it up (up to two
+// indexed reads, then membership/tenant/admission reads). A flood of random
+// bearer values would otherwise turn into unbounded credential lookups. Before
+// the lookup, one cheap read checks a deployment-wide, per-endpoint budget of
+// *unresolved* credentials in the current minute; only a bearer value that
+// resolves to no key is charged to it. Valid keys never consume the budget, so
+// ordinary fleet traffic cannot exhaust it; under a flood larger than the budget
+// the endpoint answers 429 until the window rolls over (fail closed - a
+// documented availability trade-off, bounded per endpoint). Storage errors are
+// 503, never an implicit allow.
+
+export const UNRESOLVED_API_KEY_LIMIT_ENV = "AIDR_UNRESOLVED_API_KEY_RL_PER_MIN";
+export const DEFAULT_UNRESOLVED_API_KEY_LIMIT_PER_MINUTE = 6000;
+const UNRESOLVED_WINDOW_MS = 60_000;
+
+export type BudgetedApiKeyAuthResult =
+	| TenantApiKeyAuthResult
+	| { ok: false; status: 429 | 503; error: "rate_limited" | "rate_limit_unavailable" };
+
+function readEnv(name: string): string | undefined {
+	try {
+		const value = (globalThis as { Deno?: { env?: { get(name: string): string | undefined } } }).Deno?.env?.get(name);
+		if (value !== undefined && value !== null) return value;
+	} catch {
+		// Node contract tests fall back to process.env.
+	}
+	return (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.[name];
+}
+
+/** Configured per-endpoint budget; null when the configured value is invalid. */
+export function unresolvedApiKeyLimit(raw = readEnv(UNRESOLVED_API_KEY_LIMIT_ENV)): number | null {
+	if (raw === undefined || raw.trim() === "") return DEFAULT_UNRESOLVED_API_KEY_LIMIT_PER_MINUTE;
+	if (!/^\d{1,7}$/.test(raw.trim())) return null;
+	const value = Number(raw.trim());
+	return Number.isSafeInteger(value) && value >= 1 && value <= 1_000_000 ? value : null;
+}
+
+export function unresolvedApiKeyBucket(endpoint: string): string {
+	return `api-key:v1:unresolved:${endpoint}`;
+}
+
+/**
+ * authenticateTenantApiKey behind the unresolved-credential budget for
+ * `endpoint`. Returns 429 `rate_limited` before any key lookup once the budget
+ * is spent, and charges the budget only when the bearer value resolves to no key.
+ */
+export async function authenticateTenantApiKeyBudgeted(
+	database: unknown,
+	plaintextKey: string,
+	endpoint: string,
+	now = Date.now(),
+	options: TenantApiKeyAuthOptions = {},
+): Promise<BudgetedApiKeyAuthResult> {
+	const unavailable = { ok: false, status: 503, error: "rate_limit_unavailable" } as const;
+	const limit = unresolvedApiKeyLimit();
+	if (limit === null || !/^[a-z0-9-]{1,48}$/.test(endpoint) || !Number.isFinite(now)) return unavailable;
+	const db = database as DatabaseClient;
+	const key = unresolvedApiKeyBucket(endpoint);
+	const windowStart = Math.floor(now / UNRESOLVED_WINDOW_MS);
+	let spent: QueryResult;
+	try {
+		spent = await db.from("rate_limits").select("count").eq("key", key).eq("window_start", windowStart).maybeSingle();
+	} catch {
+		return unavailable;
+	}
+	if (spent.error) return unavailable;
+	const count = spent.data === null || spent.data === undefined ? 0 : (spent.data as { count?: unknown }).count;
+	if (typeof count !== "number" || !Number.isSafeInteger(count) || count < 0) return unavailable;
+	if (count >= limit) return { ok: false, status: 429, error: "rate_limited" };
+
+	const result = await authenticateTenantApiKey(database, plaintextKey, now, options);
+	if (!result.ok && result.status === 401) {
+		try {
+			const charged = await db.rpc("increment_rate_limit", { p_key: key, p_window_start: windowStart, p_delta: 1 });
+			if (charged.error) return unavailable;
+		} catch {
+			return unavailable;
+		}
+	}
+	return result;
+}

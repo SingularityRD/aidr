@@ -510,9 +510,30 @@ describe("pilot-apply intake contract", () => {
 		expect(response.status).toBe(403);
 		expect(await response.json()).toEqual({ error: "tenant_access_denied" });
 		expect(writes).toHaveLength(0);
-		expect(db.rpc).toHaveBeenCalledWith("submit_pilot_application", {
-			p_user_id: USER, p_tenant_id: TENANT, p_notes: INTENT.useCase,
-		});
+		// A non-member learns nothing about the tenant's admission mode: no admission
+		// read and no application RPC happen before membership is established.
+		expect(db.rpc).not.toHaveBeenCalled();
+	});
+
+	it("checks membership before reading tenant admission", async () => {
+		const { handle, db, queries } = await loadApply({ admission: { mode: "cloud" } });
+		const response = await handle(applyRequest(INTENT));
+		expect(response.status).toBe(403);
+		expect(await response.json()).toEqual({ error: "pilot_not_enabled" });
+		const memberQuery = queries.findIndex((query) => query.table === "tenant_members");
+		expect(memberQuery).toBeGreaterThanOrEqual(0);
+		expect(db.rpc.mock.calls.map((call) => call[0])).toEqual(["get_tenant_admission"]);
+		const nonMember = await loadApply({ memberships: [], admission: { mode: "cloud" } });
+		expect(await (await nonMember.handle(applyRequest(INTENT))).json()).toEqual({ error: "tenant_access_denied" });
+		expect(nonMember.db.rpc).not.toHaveBeenCalled();
+	});
+
+	it("fails closed without reading admission when membership storage is unavailable", async () => {
+		const { handle, db } = await loadApply({ membershipError: true });
+		const response = await handle(applyRequest(INTENT));
+		expect(response.status).toBe(503);
+		expect(await response.json()).toEqual({ error: "pilot_application_unavailable" });
+		expect(db.rpc).not.toHaveBeenCalled();
 	});
 
 	it.each([

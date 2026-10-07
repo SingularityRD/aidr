@@ -7,7 +7,7 @@
 // x-forwarded-for, cf-connecting-ip or x-real-ip: a direct caller controls those
 // headers and could mint a fresh rate-limit bucket per request. The per-route
 // context domain-separates signatures, so a proof minted for one endpoint
-// (device-start:v1, device-poll:v1, identity-security:v1, waitlist-signup:v1, …)
+// (device-start:v1, device-poll:v1, identity-security:v1, waitlist-signup:v1, oidc-sso:v1, …)
 // cannot be replayed against another.
 
 export const INGRESS_IP_HEADER = "x-aidr-client-ip";

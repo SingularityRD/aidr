@@ -3,7 +3,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { consumeRateLimit } from "../../_shared/rate-limit.ts";
-import { createScimHandler, type ScimRateLimitResult, type ScimStore, type ScimTenant } from "../scim.ts";
+import { createScimHandler, SCIM_AUTH_FAILURE_BUCKET, type ScimRateLimitResult, type ScimStore, type ScimTenant } from "../scim.ts";
 
 const tenants: Record<string, ScimTenant> = {
 	"token-a-with-at-least-thirty-two-bytes": { tenantId: "tenant-a", tokenId: "tok-a" },
@@ -43,16 +43,31 @@ describe("SCIM rate limiting", () => {
 		expect((await handle(get("token-b-with-at-least-thirty-two-bytes"))).status).toBe(200);
 	});
 
-	it("bounds unauthenticated guessing by the aggregate bucket before authentication", async () => {
+	it("bounds unauthenticated guessing by counting only failed authentications", async () => {
 		const s = store();
 		const handle = createScimHandler(s.impl, { globalPerMinute: 2, perTokenPerMinute: 2 });
 		expect((await handle(get("wrong-token-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))).status).toBe(401);
 		expect((await handle(get("wrong-token-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"))).status).toBe(401);
 		const limited = await handle(get("wrong-token-cccccccccccccccccccccccccccccccccc"));
 		expect(limited.status).toBe(429);
-		expect(s.authenticated).toBe(2);
+		expect(limited.headers.get("Retry-After")).toBe("17");
 		// Invalid credentials never create per-token counters.
-		expect([...s.counts.keys()]).toEqual(["scim:v1:aggregate"]);
+		expect([...s.counts.keys()]).toEqual([SCIM_AUTH_FAILURE_BUCKET]);
+	});
+
+	it("keeps valid tenant tokens working while garbage tokens exhaust the failure bucket", async () => {
+		const s = store();
+		const handle = createScimHandler(s.impl, { globalPerMinute: 3, perTokenPerMinute: 5 });
+		for (let attempt = 0; attempt < 20; attempt++) {
+			expect([401, 429]).toContain((await handle(get(`garbage-token-${String(attempt).padStart(30, "x")}`))).status);
+		}
+		expect(s.counts.get(SCIM_AUTH_FAILURE_BUCKET)).toBe(20);
+		expect((await handle(get("token-a-with-at-least-thirty-two-bytes"))).status).toBe(200);
+		expect((await handle(get("token-b-with-at-least-thirty-two-bytes"))).status).toBe(200);
+		// Successful authentications are charged to their own token only.
+		expect(s.counts.get(SCIM_AUTH_FAILURE_BUCKET)).toBe(20);
+		expect(s.counts.get("scim:v1:token:tok-a")).toBe(1);
+		expect(s.counts.get("scim:v1:token:tok-b")).toBe(1);
 	});
 
 	it("fails closed with 503 and Retry-After when counters are unavailable", async () => {
@@ -61,7 +76,8 @@ describe("SCIM rate limiting", () => {
 		const response = await handle(get("token-a-with-at-least-thirty-two-bytes"));
 		expect(response.status).toBe(503);
 		expect(response.headers.get("Retry-After")).toBe("5");
-		expect(s.authenticated).toBe(0);
+		const rejected = await handle(get("wrong-token-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+		expect(rejected.status).toBe(503);
 	});
 
 	it("is wired into the deployed entry point with validated limits", () => {

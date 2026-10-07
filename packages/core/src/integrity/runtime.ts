@@ -1,7 +1,7 @@
 import { logIncident } from "../audit-log.js";
 import { isCommercialBuild } from "../build-flavor.js";
 import { loadConfig, resolvePath } from "../config.js";
-import { loadRevocationsCache } from "../managed.js";
+import { loadRevocationBinding, loadRevocationsCache } from "../managed.js";
 import type { Logger } from "../types.js";
 import { nullLogger } from "../types.js";
 import { enterDegradedSafeMode } from "./degraded-safe-mode.js";
@@ -36,6 +36,7 @@ export async function verifyArtifactIntegrityAndLog(params: {
 			const signed = await loadRevocationsCache(
 				resolvePath(config.licensing.revocations_cache_path),
 				config.licensing.public_keys_pem,
+				await loadRevocationBinding(config.licensing.public_keys_pem),
 			);
 			const revoked = signed?.payload?.revocations?.artifact_ids ?? [];
 			if (Array.isArray(revoked) && revoked.includes(params.artifactId)) {

@@ -102,8 +102,17 @@ export function parseApprovalPublicKeys(input: unknown): ApprovalPublicKeyEntry[
 	return out;
 }
 
-export interface RevocationListV1 {
-	schema_version: 1;
+/**
+ * Signed revocation feed. Schema 2 binds the list to the tenant (and, when the
+ * API key is agent-bound, the agent) it was issued for, so one tenant's signed
+ * list cannot be replayed to another tenant's runtime. Unbound schema-1 lists
+ * are no longer accepted (no compatibility window): a runtime holding one simply
+ * refetches, and the control plane only issues schema 2.
+ */
+export interface RevocationList {
+	schema_version: 2;
+	tenant_id: string;
+	agent_id: string | null;
 	issued_at: string;
 	expires_at: string;
 	revocation_epoch: number;
@@ -113,6 +122,47 @@ export interface RevocationListV1 {
 		key_ids: string[];
 		entitlement_serials: string[];
 	};
+}
+
+/**
+ * Who this runtime is. A revocation list is usable only when its signed
+ * `tenant_id` equals `tenantId`; an unknown tenant (null) rejects every list.
+ * `agentId`, when known, must equal a non-null signed `agent_id`.
+ */
+export interface RevocationBinding {
+	tenantId: string | null | undefined;
+	agentId?: string | null;
+}
+
+// Control-plane tenant/agent ids are UUIDs; accept any bounded opaque identifier.
+const REVOCATION_IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+
+/** Binding derived from the verified (signed) entitlement in managed state. */
+export function revocationBindingForState(
+	state: ManagedState | null | undefined,
+): RevocationBinding {
+	const entitlement = state?.entitlement;
+	return {
+		tenantId:
+			entitlement?.schema_version === 2 && typeof entitlement.tenant_id === "string"
+				? entitlement.tenant_id
+				: null,
+	};
+}
+
+/** Fails closed: an unknown tenant or any mismatch rejects the list. */
+export function revocationListMatchesBinding(
+	list: RevocationList,
+	binding: RevocationBinding,
+): boolean {
+	const tenantId =
+		typeof binding.tenantId === "string" ? binding.tenantId.trim().toLowerCase() : "";
+	if (!REVOCATION_IDENTIFIER.test(tenantId) || list.tenant_id.toLowerCase() !== tenantId)
+		return false;
+	if (list.agent_id !== null && typeof binding.agentId === "string" && binding.agentId.trim()) {
+		return list.agent_id.toLowerCase() === binding.agentId.trim().toLowerCase();
+	}
+	return true;
 }
 
 export interface SignedEd25519<T> {
@@ -415,7 +465,7 @@ export function verifyEd25519CanonicalJson(params: {
 }
 
 export function verifyEd25519SignedRevocationList(params: {
-	list: RevocationListV1;
+	list: RevocationList;
 	sig_b64: string;
 	public_keys_pem: string[];
 }): boolean {
@@ -948,6 +998,38 @@ export async function loadManagedState(
 	}
 }
 
+/**
+ * Revocation binding for callers that have no loaded ManagedState. Reads only the
+ * signed entitlement from managed state (no credential/vault access) and trusts its
+ * tenant only after ed25519 verification; anything else yields an unknown tenant,
+ * which rejects every revocation list.
+ */
+export async function loadRevocationBinding(
+	publicKeysPem: string[],
+	path = managedStatePath(),
+): Promise<RevocationBinding> {
+	try {
+		const parsed = JSON.parse(await getFileContent(path, "utf-8")) as ManagedState;
+		const snapshot = validateEntitlementSnapshotV2Strict(parsed?.entitlement);
+		if (
+			!snapshot ||
+			parsed.entitlement_alg !== "ed25519" ||
+			typeof parsed.entitlement_sig !== "string" ||
+			publicKeysPem.length === 0 ||
+			!verifyEd25519SignedEntitlementSnapshot({
+				snapshot: parsed.entitlement as EntitlementSnapshotV2,
+				sig_b64: parsed.entitlement_sig,
+				public_keys_pem: publicKeysPem,
+			})
+		) {
+			return { tenantId: null };
+		}
+		return { tenantId: snapshot.tenant_id };
+	} catch {
+		return { tenantId: null };
+	}
+}
+
 export async function saveManagedState(
 	path: string,
 	state: ManagedState,
@@ -1345,19 +1427,22 @@ export function isPremiumModuleEnabled(
 export async function loadRevocationsCache(
 	path: string,
 	publicKeysPem: string[],
+	binding: RevocationBinding,
 	now = Date.now(),
 	source?: { raw: string | null },
-): Promise<SignedEd25519<RevocationListV1> | null> {
+): Promise<SignedEd25519<RevocationList> | null> {
 	try {
 		if (source?.raw === null) return null;
 		const raw = source ? (source.raw as string) : await getFileContent(path, "utf-8");
-		const parsed = JSON.parse(raw) as SignedEd25519<RevocationListV1>;
+		const parsed = JSON.parse(raw) as SignedEd25519<RevocationList>;
 		if (!parsed || typeof parsed !== "object") return null;
 		if (parsed.alg !== "ed25519") return null;
 		if (typeof parsed.sig_b64 !== "string") return null;
-		const list = validateRevocationListV1Strict(parsed.payload);
+		const list = validateRevocationListStrict(parsed.payload);
 		if (!list) return null;
 		if (!isRevocationListCurrent(list, now)) return null;
+		// A validly signed list for another tenant (or agent) is not ours.
+		if (!revocationListMatchesBinding(list, binding)) return null;
 
 		if (
 			publicKeysPem.length === 0 ||
@@ -1376,14 +1461,30 @@ export async function loadRevocationsCache(
 	}
 }
 
-function isRevocationListCurrent(list: RevocationListV1, now: number): boolean {
+function isRevocationListCurrent(list: RevocationList, now: number): boolean {
 	return Date.parse(list.issued_at) <= now && now < Date.parse(list.expires_at);
 }
 
-function validateRevocationListV1Strict(input: unknown): RevocationListV1 | null {
+/** Signed tenant/agent binding of a schema-2 list; null when absent or malformed. */
+function revocationListBinding(
+	obj: Record<string, unknown>,
+): { tenant_id: string; agent_id: string | null } | null {
+	// Unbound schema-1 lists are rejected: they could be replayed across tenants.
+	if (obj.schema_version !== 2 || !("agent_id" in obj)) return null;
+	const tenantId = obj.tenant_id;
+	const agentId = obj.agent_id;
+	if (typeof tenantId !== "string" || !REVOCATION_IDENTIFIER.test(tenantId)) return null;
+	if (agentId === null) return { tenant_id: tenantId, agent_id: null };
+	return typeof agentId === "string" && REVOCATION_IDENTIFIER.test(agentId)
+		? { tenant_id: tenantId, agent_id: agentId }
+		: null;
+}
+
+function validateRevocationListStrict(input: unknown): RevocationList | null {
 	if (!input || typeof input !== "object" || Array.isArray(input)) return null;
 	const obj = input as Record<string, unknown>;
-	if (obj.schema_version !== 1) return null;
+	const binding = revocationListBinding(obj);
+	if (!binding) return null;
 	if (!isIsoDateString(obj.issued_at) || !isIsoDateString(obj.expires_at)) return null;
 
 	const epoch =
@@ -1411,7 +1512,9 @@ function validateRevocationListV1Strict(input: unknown): RevocationListV1 | null
 	const entitlementSerials = parseStringArray(rev.entitlement_serials) ?? [];
 
 	return {
-		schema_version: 1,
+		schema_version: 2,
+		tenant_id: binding.tenant_id,
+		agent_id: binding.agent_id,
 		issued_at: obj.issued_at,
 		expires_at: obj.expires_at,
 		revocation_epoch: epoch,
@@ -1426,8 +1529,9 @@ function validateRevocationListV1Strict(input: unknown): RevocationListV1 | null
 
 export function parseSignedRevocationsFromControlPlaneBody(
 	body: Record<string, unknown> | undefined,
+	binding: RevocationBinding,
 	now = Date.now(),
-): SignedEd25519<RevocationListV1> | null {
+): SignedEd25519<RevocationList> | null {
 	if (!body) return null;
 	const candidate = body.revocations_signed ?? body;
 	if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return null;
@@ -1441,15 +1545,16 @@ export function parseSignedRevocationsFromControlPlaneBody(
 	const keyId = typeof obj.key_id === "string" ? obj.key_id : undefined;
 
 	const listRaw = obj.payload ?? obj.list ?? obj.revocations;
-	const list = validateRevocationListV1Strict(listRaw);
+	const list = validateRevocationListStrict(listRaw);
 	if (!list || !isRevocationListCurrent(list, now)) return null;
+	if (!revocationListMatchesBinding(list, binding)) return null;
 
 	return { alg: "ed25519", sig_b64: sigB64, key_id: keyId, payload: list };
 }
 
 export async function saveRevocationsCache(
 	path: string,
-	signed: SignedEd25519<RevocationListV1>,
+	signed: SignedEd25519<RevocationList>,
 ): Promise<void> {
 	try {
 		await atomicWriteJson(path, signed);
@@ -1461,7 +1566,7 @@ export async function saveRevocationsCache(
 export function applyRevocationsToManagedState(params: {
 	state: ManagedState;
 	iid?: string;
-	revocations: RevocationListV1 | null;
+	revocations: RevocationList | null;
 }): ManagedState {
 	const iid = params.iid?.trim();
 	const rev = params.revocations;

@@ -73,6 +73,8 @@ export interface OidcStore {
 	createAuthRequest(row: OidcAuthRequestRow): Promise<boolean>;
 	/** Single atomic UPDATE ... WHERE consumed_at IS NULL AND expires_at > now(); null when replayed/expired/unknown. */
 	consumeAuthRequest(stateHash: string, nowIso: string): Promise<OidcAuthRequestRow | null>;
+	/** Read-only: the provider of an unexpired, unconsumed request; null when unknown, "error" when unreadable. */
+	pendingAuthRequest(stateHash: string, nowIso: string): Promise<{ provider_id: string } | null | "error">;
 
 	groupMappings(tenantId: string): Promise<ReadonlyMap<string, MappedRole> | null>;
 	verifiedDomains(tenantId: string): Promise<string[] | null>;
@@ -170,4 +172,6 @@ export interface OidcDeps {
 		alg: OidcAlgorithm,
 	) => Promise<import("./oidc.ts").KeyLookup>;
 	invalidateJwks(jwksUri: string): void;
+	/** Client IP attested by the trusted ingress (HMAC proof), or null when absent/invalid. */
+	clientIp?(req: Request): Promise<string | null>;
 }

@@ -12,7 +12,7 @@
 // deployed Deno runtime. The behaviour of the guard itself is unit-tested in
 // ./config.test.ts.
 
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -378,69 +378,12 @@ describe("supabase/config.toml deployment contract", () => {
 });
 
 describe("dashboard-owned Edge Function tree", () => {
-	const DASHBOARD_FUNCTIONS = join(REPO_ROOT, "packages", "dashboard", "supabase", "functions");
-
-	it("carries a byte-identical copy of the shared helper", () => {
-		const canonical = readFileSync(join(FUNCTIONS_DIR, "_shared", "config.ts"), "utf8");
-		const dashboardShared = join(DASHBOARD_FUNCTIONS, "_shared");
-		expect(statSync(dashboardShared).isDirectory(), `${dashboardShared} must exist`).toBe(true);
-		const copy = readFileSync(join(dashboardShared, "config.ts"), "utf8");
-		expect(copy).toBe(canonical);
-	});
-
-	it("validates dashboard configuration, including the auth-callback exception", () => {
-		expect(statSync(DASHBOARD_FUNCTIONS).isDirectory(), `${DASHBOARD_FUNCTIONS} must exist`).toBe(true);
-		const functionDirs = readdirSync(DASHBOARD_FUNCTIONS).filter(
-			(entry) =>
-				!entry.startsWith("_") && statSync(join(DASHBOARD_FUNCTIONS, entry)).isDirectory(),
-		);
-		expect(functionDirs.length).toBeGreaterThan(0);
-		for (const name of functionDirs) {
-			const file = join(DASHBOARD_FUNCTIONS, name, "index.ts");
-			const functionSource = readFileSync(file, "utf8");
-
-			if (name === "auth-callback") {
-				// This browser-facing callback deliberately owns a tighter guard than
-				// ordinary dashboard functions: it validates callback configuration
-				// together with exact Origin and signed-state (HMAC) checks. Keep the
-				// exception narrow by asserting each part of that security boundary.
-				expect(functionSource, "auth-callback: missing required environment declaration").toContain(
-					"const REQUIRED_ENV = [",
-				);
-				for (const variable of [
-					"SUPABASE_URL",
-					"SUPABASE_ANON_KEY",
-					"GOOGLE_CLIENT_ID",
-					"GOOGLE_CLIENT_SECRET",
-					"AUTH_CALLBACK_ALLOWED_ORIGINS",
-					"AUTH_CALLBACK_STATE_SECRET",
-				]) {
-					expect(functionSource, `auth-callback: REQUIRED_ENV must contain ${variable}`).toContain(
-						`"${variable}"`,
-					);
-				}
-				expect(functionSource, "auth-callback: missing exact-origin validation").toMatch(
-					/allowedOrigins\(|requestOrigin\(|origin_not_allowed/,
-				);
-				expect(functionSource, "auth-callback: missing HMAC state validation").toMatch(
-					/verifyState\(|crypto\.subtle\.importKey|crypto\.subtle\.verify/,
-				);
-			} else {
-				expect(functionSource, `${name}: missing shared configuration import`).toContain(
-					'from "../_shared/config.ts"',
-				);
-				expect(functionSource, `${name}: missing shared configuration guard`).toContain(
-					"loadConfig(runtimeEnv,",
-				);
-			}
-			for (const match of functionSource.matchAll(
-				/Deno\.env\.get\(\s*"([A-Z0-9_]+)"\s*\)\s*\?\?\s*""/g,
-			)) {
-				expect(
-					DOCUMENTED_EMPTY_FALLBACKS[match[1] ?? ""],
-					`${name}: ${match[1]} is read with an empty-string fallback and has no documented reason`,
-				).toBeDefined();
-			}
-		}
+	it("stays removed: the orphaned auth-callback (no state minter, replayable state, full session JSON) must not return", () => {
+		const dashboardFunctions = join(REPO_ROOT, "packages", "dashboard", "supabase");
+		expect(existsSync(dashboardFunctions), `${dashboardFunctions} must not exist`).toBe(false);
+		const vitestConfig = readFileSync(join(REPO_ROOT, "vitest.config.ts"), "utf8");
+		const ci = readFileSync(join(REPO_ROOT, ".github", "workflows", "ci.yml"), "utf8");
+		const config = readFileSync(join(REPO_ROOT, "supabase", "config.toml"), "utf8");
+		for (const text of [vitestConfig, ci, config]) expect(text).not.toMatch(/(?<!o)auth-callback/);
 	});
 });

@@ -11,10 +11,19 @@ import {
 	isPremiumUnlocked,
 	loadRevocationsCache,
 	parseSignedRevocationsFromControlPlaneBody,
-	type RevocationListV1,
+	loadRevocationBinding,
+	type RevocationBinding,
+	type RevocationList,
+	revocationBindingForState,
 	verifyEd25519SignedEntitlementSnapshot,
 	verifyEd25519SignedRevocationList,
 } from "../managed.js";
+
+const TENANT = "11111111-1111-4111-8111-111111111111";
+const OTHER_TENANT = "22222222-2222-4222-8222-222222222222";
+const AGENT = "33333333-3333-4333-8333-333333333333";
+const OTHER_AGENT = "44444444-4444-4444-8444-444444444444";
+const BINDING: RevocationBinding = { tenantId: TENANT };
 
 function canonicalize(value: unknown): unknown {
 	if (Array.isArray(value)) return value.map((v) => canonicalize(v));
@@ -82,8 +91,10 @@ describe("server-signed entitlements (ed25519) + revocations", () => {
 		const { publicKey, privateKey } = generateKeyPairSync("ed25519");
 		const publicKeyPem = publicKey.export({ type: "spki", format: "pem" }).toString();
 		const issued = Date.parse("2026-01-01T00:00:00.000Z");
-		const list: RevocationListV1 = {
-			schema_version: 1,
+		const list: RevocationList = {
+			schema_version: 2,
+			tenant_id: TENANT,
+			agent_id: null,
 			issued_at: new Date(issued).toISOString(),
 			expires_at: new Date(issued + 2_000).toISOString(),
 			revocation_epoch: 1,
@@ -112,10 +123,119 @@ describe("server-signed entitlements (ed25519) + revocations", () => {
 			] as const) {
 				const now = issued + offset;
 				expect(
-					parseSignedRevocationsFromControlPlaneBody({ revocations_signed: signed }, now) !== null,
+					parseSignedRevocationsFromControlPlaneBody(
+						{ revocations_signed: signed },
+						BINDING,
+						now,
+					) !== null,
 				).toBe(accepted);
-				expect((await loadRevocationsCache(path, [publicKeyPem], now)) !== null).toBe(accepted);
+				expect((await loadRevocationsCache(path, [publicKeyPem], BINDING, now)) !== null).toBe(
+					accepted,
+				);
 			}
+		} finally {
+			await rm(directory, { recursive: true, force: true });
+		}
+	});
+
+	it("rejects validly signed revocation lists bound to another tenant, an unknown tenant or no tenant", async () => {
+		const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+		const publicKeyPem = publicKey.export({ type: "spki", format: "pem" }).toString();
+		const now = Date.parse("2026-01-01T00:00:01.000Z");
+		const sign = (payload: Record<string, unknown>) => ({
+			alg: "ed25519",
+			sig_b64: cryptoSign(null, Buffer.from(canonicalJson(payload)), privateKey).toString("base64"),
+			payload,
+		});
+		const base = {
+			issued_at: "2026-01-01T00:00:00.000Z",
+			expires_at: "2026-01-02T00:00:00.000Z",
+			revocation_epoch: 1,
+			revocations: { artifact_ids: [], pack_ids: [], key_ids: [], entitlement_serials: [] },
+		};
+		const ours = sign({ schema_version: 2, tenant_id: TENANT, agent_id: AGENT, ...base });
+		const theirs = sign({ schema_version: 2, tenant_id: OTHER_TENANT, agent_id: null, ...base });
+		const legacyUnbound = sign({ schema_version: 1, ...base });
+		const missingAgentKey = sign({ schema_version: 2, tenant_id: TENANT, ...base });
+		const directory = await mkdtemp(join(tmpdir(), "aidr-revocation-binding-"));
+		try {
+			const path = join(directory, "revocations.json");
+			const accepts = async (signed: unknown, binding: RevocationBinding) => {
+				await writeFile(path, JSON.stringify(signed));
+				const network = parseSignedRevocationsFromControlPlaneBody(
+					{ revocations_signed: signed },
+					binding,
+					now,
+				);
+				const cached = await loadRevocationsCache(path, [publicKeyPem], binding, now);
+				expect(network !== null).toBe(cached !== null);
+				return cached !== null;
+			};
+			expect(await accepts(ours, { tenantId: TENANT })).toBe(true);
+			expect(await accepts(ours, { tenantId: TENANT.toUpperCase(), agentId: AGENT })).toBe(true);
+			expect(await accepts(ours, { tenantId: TENANT, agentId: OTHER_AGENT })).toBe(false);
+			expect(await accepts(theirs, { tenantId: TENANT })).toBe(false);
+			expect(await accepts(ours, { tenantId: OTHER_TENANT })).toBe(false);
+			expect(await accepts(ours, { tenantId: null })).toBe(false);
+			expect(await accepts(ours, { tenantId: undefined })).toBe(false);
+			expect(await accepts(ours, { tenantId: " " })).toBe(false);
+			expect(await accepts(legacyUnbound, { tenantId: TENANT })).toBe(false);
+			expect(await accepts(missingAgentKey, { tenantId: TENANT })).toBe(false);
+		} finally {
+			await rm(directory, { recursive: true, force: true });
+		}
+		expect(
+			revocationBindingForState({ entitlement: { schema_version: 2, tenant_id: TENANT } as never }),
+		).toEqual({ tenantId: TENANT });
+		expect(revocationBindingForState({})).toEqual({ tenantId: null });
+		expect(revocationBindingForState(undefined)).toEqual({ tenantId: null });
+	});
+
+	it("derives the binding from managed state only after verifying the signed entitlement", async () => {
+		const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+		const publicKeyPem = publicKey.export({ type: "spki", format: "pem" }).toString();
+		const other = generateKeyPairSync("ed25519")
+			.publicKey.export({ type: "spki", format: "pem" })
+			.toString();
+		const entitlement: EntitlementSnapshotV2 = {
+			schema_version: 2,
+			tenant_id: TENANT,
+			subscription_tier: "pro",
+			included_agents: 1,
+			extra_agents: 0,
+			allowed_agents: 1,
+			premium_modules: [],
+			issued_at: "2026-01-01T00:00:00.000Z",
+			expires_at: "2026-01-02T00:00:00.000Z",
+			grace_until: "2026-01-02T00:00:00.000Z",
+			serial: "ser-binding",
+			revocation_epoch: 1,
+		};
+		const directory = await mkdtemp(join(tmpdir(), "aidr-revocation-binding-state-"));
+		try {
+			const path = join(directory, "managed.json");
+			const sig = cryptoSign(null, Buffer.from(canonicalJson(entitlement)), privateKey).toString(
+				"base64",
+			);
+			await writeFile(
+				path,
+				JSON.stringify({ entitlement, entitlement_alg: "ed25519", entitlement_sig: sig }),
+			);
+			expect(await loadRevocationBinding([publicKeyPem], path)).toEqual({ tenantId: TENANT });
+			expect(await loadRevocationBinding([other], path)).toEqual({ tenantId: null });
+			expect(await loadRevocationBinding([], path)).toEqual({ tenantId: null });
+			await writeFile(
+				path,
+				JSON.stringify({
+					entitlement: { ...entitlement, tenant_id: OTHER_TENANT },
+					entitlement_alg: "ed25519",
+					entitlement_sig: sig,
+				}),
+			);
+			expect(await loadRevocationBinding([publicKeyPem], path)).toEqual({ tenantId: null });
+			expect(await loadRevocationBinding([publicKeyPem], join(directory, "missing.json"))).toEqual({
+				tenantId: null,
+			});
 		} finally {
 			await rm(directory, { recursive: true, force: true });
 		}
@@ -140,8 +260,10 @@ describe("server-signed entitlements (ed25519) + revocations", () => {
 			revocation_epoch: 1,
 		};
 
-		const list: RevocationListV1 = {
-			schema_version: 1,
+		const list: RevocationList = {
+			schema_version: 2,
+			tenant_id: TENANT,
+			agent_id: null,
 			issued_at: new Date().toISOString(),
 			expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
 			revocation_epoch: 2,

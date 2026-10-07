@@ -42,6 +42,7 @@ import {
 	isEntitlementActive,
 	loadManagedState,
 	loadRevocationsCache,
+	revocationBindingForState,
 	type ManagedState,
 	managedStatePath,
 } from "./managed.js";
@@ -774,6 +775,7 @@ async function loadValidatedDetectorPolicy(
 		const revocations = await loadRevocationsCache(
 			resolvePath(config.licensing.revocations_cache_path),
 			config.licensing.public_keys_pem,
+			revocationBindingForState(state),
 			Date.now(),
 			sources ? { raw: sources.revocations } : undefined,
 		);
@@ -793,6 +795,7 @@ async function loadValidatedDetectorPolicy(
 					(await loadRevocationsCache(
 						resolvePath(config.licensing.revocations_cache_path),
 						config.licensing.public_keys_pem,
+						revocationBindingForState(state),
 						issuedAt,
 						{ raw: sources.revocations },
 					))
