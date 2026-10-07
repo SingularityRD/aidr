@@ -253,7 +253,8 @@
         "runAsUser": { "$ref": "#/definitions/uid" },
         "storageWaitSeconds": { "type": "integer", "minimum": 30, "maximum": 3600 },
         "backoffLimit": { "type": "integer", "minimum": 0 },
-        "activeDeadlineSeconds": { "type": "integer", "minimum": 60 }
+        "activeDeadlineSeconds": { "type": "integer", "minimum": 60 },
+        "allowWithoutBackup": { "type": "boolean" }
       }
     },
     "backup": {
@@ -262,6 +263,18 @@
         "enabled": { "type": "boolean" },
         "schedule": { "type": "string", "minLength": 9 },
         "retentionDays": { "type": "integer", "minimum": 1 },
+        "activeDeadlineSeconds": { "type": "integer", "minimum": 60 },
+        "preUpgrade": {
+          "type": "object",
+          "properties": { "enabled": { "type": "boolean" } }
+        },
+        "storage": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "acknowledgeNotBackedUp": { "type": "boolean" }
+          }
+        },
         "image": { "$ref": "#/definitions/image" },
         "resources": { "$ref": "#/definitions/resources" },
         "runAsUser": { "$ref": "#/definitions/uid" },

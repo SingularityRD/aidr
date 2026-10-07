@@ -1,3 +1,4 @@
+import { PassThrough } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../utils/config-manager.js", () => ({ createConfig: vi.fn() }));
@@ -12,6 +13,7 @@ import setupCommand from "../commands/setup.js";
 import { createConfig } from "../utils/config-manager.js";
 import { detectEnvironment } from "../utils/detect-env.js";
 import { installHooks } from "../utils/install-hooks.js";
+import { OPERATOR_NONINTERACTIVE_ENV } from "../utils/operator-confirm.js";
 import { loadBundledThreatCount, verifyDetection } from "../utils/test-protection.js";
 
 const stdout: string[] = [];
@@ -92,5 +94,54 @@ describe("aidr setup output streams", () => {
 		expect(stderr.join("\n")).toContain("Detecting environment...\nSetup failed: detection failed");
 		expect(stdout.join("\n")).toContain("AIDR Setup");
 		expect(stdout.join("\n")).not.toContain("Setup complete");
+	});
+});
+
+describe("aidr setup --force operator confirmation", () => {
+	function streams(isTTY: boolean, answer?: string) {
+		const input = Object.assign(new PassThrough(), { isTTY });
+		const output = Object.assign(new PassThrough(), { isTTY });
+		output.resume();
+		if (answer !== undefined) setTimeout(() => input.write(`${answer}\n`), 10);
+		return { input, output };
+	}
+
+	beforeEach(() => {
+		vi.mocked(createConfig).mockClear();
+	});
+
+	afterEach(() => {
+		process.exitCode = undefined;
+	});
+
+	it("refuses a forced re-setup without a TTY and changes nothing", async () => {
+		await setupCommand({ force: true }, { env: {}, streams: streams(false) });
+		expect(createConfig).not.toHaveBeenCalled();
+		expect(stderr.join("\n")).toContain("Nothing was changed");
+		expect(process.exitCode).toBe(1);
+	});
+
+	it("refuses --yes without the operator automation variable", async () => {
+		await setupCommand({ force: true, yes: true }, { env: {}, streams: streams(false) });
+		expect(createConfig).not.toHaveBeenCalled();
+		expect(stderr.join("\n")).toContain(OPERATOR_NONINTERACTIVE_ENV);
+	});
+
+	it("replaces the config after interactive confirmation", async () => {
+		await setupCommand({ force: true }, { env: {}, streams: streams(true, "replace") });
+		expect(createConfig).toHaveBeenCalledWith(expect.anything(), true, expect.anything());
+	});
+
+	it("accepts operator automation (--yes with the variable)", async () => {
+		await setupCommand(
+			{ force: true, yes: true },
+			{ env: { [OPERATOR_NONINTERACTIVE_ENV]: "1" }, streams: streams(false) },
+		);
+		expect(createConfig).toHaveBeenCalledWith(expect.anything(), true, expect.anything());
+	});
+
+	it("does not ask for a plain setup without --force", async () => {
+		await setupCommand({}, { env: {}, streams: streams(false) });
+		expect(createConfig).toHaveBeenCalledWith(expect.anything(), false, expect.anything());
 	});
 });

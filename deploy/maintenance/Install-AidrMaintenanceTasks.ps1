@@ -37,7 +37,13 @@ no gMSA is available; LocalSystem already has full access to the private
 deployment directory.
 
 .PARAMETER NodePath
-Node.js 24 or newer executable. Defaults to node.exe on PATH.
+Node.js 24 or newer executable, as an explicit absolute path. Defaults to
+node.exe on PATH only when PATH resolves to exactly one node.exe.
+
+Registration is refused unless node.exe, its directory, the kit and deployment
+directories, the scripts the tasks run, .env.readiness and every ancestor
+directory are writable (or replaceable) only by SYSTEM, BUILTIN\Administrators
+and TrustedInstaller.
 
 .PARAMETER WithNotifications
 Also register the alert notification dispatcher (aidr-notification-dispatch),
@@ -177,9 +183,18 @@ try {
         }
     }
 
-    if ([string]::IsNullOrWhiteSpace($NodePath)) { $NodePath = (Get-Command node.exe -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source }
-    $node = (Resolve-Path -LiteralPath $NodePath -ErrorAction Stop).ProviderPath
-    if ($node.Contains('"') -or [IO.Path]::GetFileName($node) -ne 'node.exe') { throw 'NodePath must name node.exe' }
+    $node = Resolve-AidrNodeExecutable -NodePath $NodePath
+    # The tasks run this code as LocalSystem or the gMSA, and this elevated
+    # installer runs node.exe itself next: refuse unless only SYSTEM,
+    # Administrators and TrustedInstaller can write or replace any of it.
+    # .env.readiness is included because --env-file can set NODE_OPTIONS.
+    $taskCode = @(
+        $node, (Split-Path -Parent $node),
+        $kit, (Join-Path $kit 'scripts'), $retentionScript,
+        $deployment, (Join-Path $deployment 'maintenance'), $worker, $readinessEnvPath
+    )
+    if ($WithNotifications) { $taskCode += $notificationWorker }
+    Assert-AidrTrustedWriterPaths -Path $taskCode
     $nodeVersion = [string](& $node --version)
     if ($LASTEXITCODE -ne 0 -or $nodeVersion -notmatch '^v(\d+)\.' -or [int]$Matches[1] -lt 24) { throw 'Node.js 24 or newer is required' }
 

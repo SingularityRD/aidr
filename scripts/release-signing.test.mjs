@@ -17,6 +17,13 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, test } from "node:test";
 
+import {
+	acquireRollbackLock,
+	createPrivateDirectory,
+	stageReleaseBundle,
+	verifyAndInstallRelease,
+} from "./release-signing-lib.mjs";
+
 const repoRoot = path.resolve(import.meta.dirname, "..");
 const signScript = path.join(repoRoot, "scripts", "release-sign.mjs");
 const verifyScript = path.join(repoRoot, "scripts", "release-verify.mjs");
@@ -440,6 +447,192 @@ test("fails closed when another installation holds the anti-rollback lock", asyn
 	assert.match(result.stderr, /holds the anti-rollback lock/);
 	await assert.rejects(stat(fixture.state), /ENOENT/);
 });
+
+test("installer runs from the verified private copy, unaffected by swaps in the delivered bundle", async () => {
+	const fixture = await createFixture();
+	assert.equal(sign(fixture, { sequence: 19 }).status, 0);
+	const original = await readFile(path.join(fixture.bundle, "agent.tgz"));
+	const swap = (label) => writeFile(path.join(fixture.bundle, "agent.tgz"), `attacker payload ${label}\n`);
+	let installed;
+	const status = await verifyAndInstallRelease(
+		{ bundle: fixture.bundle, policy: fixture.policy, state: fixture.state },
+		["installer"],
+		{
+			log: () => {},
+			// Swap once after the copy (before verification) and once after verification.
+			afterStage: () => swap("after-stage"),
+			afterVerification: () => swap("after-verification"),
+			runInstaller: async (_command, cwd, env) => {
+				installed = { cwd, env, bytes: await readFile(path.join(cwd, "agent.tgz")) };
+				return 0;
+			},
+		},
+	);
+	assert.equal(status, 0);
+	assert.ok(installed, "installer must run");
+	assert.notEqual(path.resolve(installed.cwd), path.resolve(fixture.bundle));
+	assert.ok(!path.resolve(installed.cwd).startsWith(path.resolve(fixture.bundle)));
+	assert.equal(installed.env.AIDR_VERIFIED_RELEASE_DIR, installed.cwd);
+	assert.deepEqual(installed.bytes, original);
+	assert.match(await readFile(path.join(fixture.bundle, "agent.tgz"), "utf8"), /attacker payload after-verification/);
+	await assert.rejects(stat(installed.cwd), /ENOENT/);
+	await assert.rejects(stat(`${fixture.state}.lock`), /ENOENT/);
+});
+
+test("CLI installer receives the private staging directory, which is removed afterwards", async () => {
+	const fixture = await createFixture();
+	assert.equal(sign(fixture, { sequence: 20 }).status, 0);
+	const installer = path.join(fixture.root, "record-cwd.mjs");
+	const marker = path.join(fixture.root, "cwd.json");
+	await writeFile(
+		installer,
+		`import { readFileSync, writeFileSync } from "node:fs";\nwriteFileSync(process.argv[2], JSON.stringify({ cwd: process.cwd(), dir: process.env.AIDR_VERIFIED_RELEASE_DIR, payload: readFileSync("agent.tgz", "utf8") }));\n`,
+	);
+	const result = verify(fixture, ["--", process.execPath, installer, marker]);
+	assert.equal(result.status, 0, result.stderr);
+	const recorded = JSON.parse(await readFile(marker, "utf8"));
+	assert.equal(path.resolve(recorded.cwd), path.resolve(recorded.dir));
+	assert.ok(!path.resolve(recorded.cwd).toLowerCase().startsWith(path.resolve(fixture.bundle).toLowerCase()));
+	assert.equal(recorded.payload, "signed release payload\n");
+	await assert.rejects(stat(recorded.dir), /ENOENT/);
+});
+
+test("refuses a symlinked artifact even when its target carries the signed bytes", async (t) => {
+	const fixture = await createFixture();
+	assert.equal(sign(fixture, { sequence: 21 }).status, 0);
+	const outside = path.join(fixture.root, "outside-agent.tgz");
+	await cp(path.join(fixture.bundle, "agent.tgz"), outside);
+	await rm(path.join(fixture.bundle, "agent.tgz"));
+	try {
+		await symlink(outside, path.join(fixture.bundle, "agent.tgz"), "file");
+	} catch (error) {
+		if (error?.code === "EPERM") return t.skip("creating file symlinks requires elevated rights on this host");
+		throw error;
+	}
+	await assert.rejects(stageReleaseBundle(fixture.bundle), /symbolic links are not allowed/);
+	const marker = path.join(fixture.root, "symlink-installer-marker");
+	const result = verify(fixture, [
+		"--",
+		process.execPath,
+		"-e",
+		`require("node:fs").writeFileSync(${JSON.stringify(marker)}, "ran")`,
+	]);
+	assert.equal(result.status, 1);
+	assert.match(result.stderr, /symbolic links are not allowed/);
+	await assert.rejects(stat(marker), /ENOENT/);
+	await assert.rejects(stat(fixture.state), /ENOENT/);
+});
+
+test("refuses a linked directory (symlink or junction) inside the bundle before staging", async () => {
+	const fixture = await createFixture();
+	assert.equal(sign(fixture, { sequence: 23 }).status, 0);
+	const outside = path.join(fixture.root, "outside-directory");
+	await mkdir(outside);
+	await symlink(outside, path.join(fixture.bundle, "linked"), "junction");
+	await assert.rejects(stageReleaseBundle(fixture.bundle), /symbolic links are not allowed/);
+	const result = verify(fixture, ["--record"]);
+	assert.equal(result.status, 1);
+	assert.match(result.stderr, /symbolic links are not allowed/);
+	await assert.rejects(stat(fixture.state), /ENOENT/);
+});
+
+test("private staging directory is owner-only (0700) on POSIX", { skip: process.platform === "win32" }, async () => {
+	const directory = await createPrivateDirectory("aidr-release-mode-test-");
+	temporaryDirectories.push(directory);
+	const info = await stat(directory);
+	assert.equal(info.mode & 0o777, 0o700);
+	const staged = await stageFixture();
+	try {
+		assert.equal((await stat(staged.path)).mode & 0o777, 0o700);
+		assert.equal((await stat(path.join(staged.path, "agent.tgz"))).mode & 0o077, 0);
+	} finally {
+		await staged.cleanup();
+	}
+});
+
+test("private staging directory has no inherited or shared ACEs on Windows", { skip: process.platform !== "win32" }, async () => {
+	const directory = await createPrivateDirectory("aidr-release-acl-test-");
+	temporaryDirectories.push(directory);
+	const systemRoot = process.env.SystemRoot || "C:\\Windows";
+	const acl = spawnSync(path.join(systemRoot, "System32", "icacls.exe"), [directory], { encoding: "utf8", windowsHide: true });
+	assert.equal(acl.status, 0, acl.stderr);
+	const entries = acl.stdout
+		.replace(directory, "")
+		.split(/\r?\n/)
+		.map((line) => line.trim())
+		.filter((line) => line.includes(":("));
+	assert.equal(entries.length, 1, acl.stdout);
+	assert.doesNotMatch(acl.stdout, /\(I\)|Everyone|BUILTIN\\Users|Authenticated Users/);
+	assert.match(entries[0], /\(OI\)\(CI\)\(F\)/);
+});
+
+test("anti-rollback lock is acquired before staging and verification and released last", async () => {
+	const fixture = await createFixture();
+	assert.equal(sign(fixture, { sequence: 22 }).status, 0);
+	const events = [];
+	const status = await verifyAndInstallRelease(
+		{ bundle: fixture.bundle, policy: fixture.policy, state: fixture.state },
+		["installer"],
+		{
+			log: () => {},
+			acquireLock: async (statePath) => {
+				const lock = await acquireRollbackLock(statePath);
+				events.push("lock");
+				return {
+					async release() {
+						events.push("unlock");
+						await lock.release();
+					},
+				};
+			},
+			stageBundle: async (bundlePath) => {
+				events.push("stage");
+				const staged = await stageReleaseBundle(bundlePath);
+				return {
+					...staged,
+					async cleanup() {
+						events.push("cleanup");
+						await staged.cleanup();
+					},
+				};
+			},
+			afterStage: () => events.push("verify"),
+			afterVerification: () => events.push("verified"),
+			runInstaller: async () => {
+				events.push("install");
+				return 0;
+			},
+		},
+	);
+	assert.equal(status, 0);
+	assert.deepEqual(events, ["lock", "stage", "verify", "verified", "install", "cleanup", "unlock"]);
+
+	// When the lock cannot be taken, nothing is staged or verified.
+	const blocked = [];
+	await assert.rejects(
+		verifyAndInstallRelease({ bundle: fixture.bundle, policy: fixture.policy, state: fixture.state }, ["installer"], {
+			log: () => {},
+			acquireLock: async () => {
+				throw new Error("lock held");
+			},
+			stageBundle: async () => {
+				blocked.push("stage");
+				throw new Error("must not stage");
+			},
+			runInstaller: async () => {
+				blocked.push("install");
+				return 0;
+			},
+		}),
+		/lock held/,
+	);
+	assert.deepEqual(blocked, []);
+});
+
+async function stageFixture() {
+	const fixture = await createFixture();
+	return await stageReleaseBundle(fixture.bundle);
+}
 
 async function createFixture() {
 	const root = await mkdtemp(path.join(os.tmpdir(), "aidr-release-signing-"));

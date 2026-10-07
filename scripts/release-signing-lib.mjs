@@ -1,3 +1,4 @@
+import { execFile, spawn } from "node:child_process";
 import {
 	createHash,
 	createPrivateKey,
@@ -6,17 +7,22 @@ import {
 	sign as cryptoSign,
 	verify as cryptoVerify,
 } from "node:crypto";
+import { constants as fsConstants } from "node:fs";
 import {
+	chmod,
 	lstat,
 	mkdir,
+	mkdtemp,
 	open,
 	readFile,
 	readdir,
 	realpath,
 	rename,
+	rm,
 	unlink,
 	writeFile,
 } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 
 export const RELEASE_MANIFEST_NAME = "aidr-release.manifest.json";
@@ -515,6 +521,240 @@ export async function acquireRollbackLock(statePath) {
 			await unlink(lockPath);
 		},
 	};
+}
+
+// Verification and installation of an untrusted bundle directory must not be
+// a check-then-use race: whoever can write the delivered directory could swap a
+// file between the digest check and the installer reading it. The whole flow
+// therefore holds the anti-rollback lock first, copies every bundle file once
+// into a freshly created owner-only directory, verifies the copies, and runs
+// the installer from that copy. The original paths are never read again.
+export async function verifyAndInstallRelease(options, installCommand = [], deps = {}) {
+	const {
+		acquireLock = acquireRollbackLock,
+		stageBundle = stageReleaseBundle,
+		runInstaller = runVerifiedInstaller,
+		afterStage = async () => {},
+		afterVerification = async () => {},
+		log = (line) => console.log(line),
+		logError = (line) => console.error(line),
+		env = process.env,
+	} = deps;
+	const sourceBundle = path.resolve(options.bundle);
+	const statePath = await resolveExternalControlPath(options.state, sourceBundle, "anti-rollback state");
+	// Serialize staging, verification, the state check, installer execution and
+	// state advancement. A second process fails closed rather than racing an
+	// older release over a newer one. A lock left by a killed process requires
+	// operator inspection.
+	const lock = await acquireLock(statePath);
+	try {
+		const staged = await stageBundle(sourceBundle);
+		try {
+			await afterStage(staged);
+			const bundle = await loadReleaseBundle(staged.path, { allowSignedControlFiles: true });
+			const policy = await loadSignerPolicy(options.policy, sourceBundle);
+			const manifestRecord = await readJsonFile(path.join(bundle.bundle, RELEASE_MANIFEST_NAME), "release manifest");
+			const signatureRecord = await readJsonFile(path.join(bundle.bundle, RELEASE_SIGNATURE_NAME), "release signature");
+			const manifest = manifestRecord.value;
+			const validated = validateReleaseManifest(manifest, bundle, policy);
+			verifyManifestSignature(manifestRecord.raw, signatureRecord.value, validated);
+			const manifestDigest = sha256(manifestRecord.raw);
+			const state = await loadRollbackState(statePath, sourceBundle);
+			const receiptPath = await validateReceiptPath(options.receipt, sourceBundle, state.path, policy.path);
+			enforceRollbackState(state, manifest, manifestDigest);
+			await afterVerification({ staged, bundle, manifestDigest });
+			const baseReceipt = {
+				schema_version: 1,
+				status: "verified",
+				verified_at: new Date().toISOString(),
+				policy_id: policy.policyId,
+				product_id: manifest.product_id,
+				channel: manifest.channel,
+				release_sequence: manifest.release_sequence,
+				release_version: manifest.release_version,
+				git_sha: manifest.git_sha,
+				manifest_sha256: manifestDigest,
+				key_id: validated.keyId,
+				fingerprint_sha256: validated.fingerprint,
+				artifacts_verified: bundle.artifacts.length,
+				expires_at: manifest.expires_at,
+			};
+
+			if (installCommand.length === 0) {
+				const shouldRecord = options.record === true;
+				if (shouldRecord) await recordRollbackState(state, manifest, manifestDigest);
+				await writeReceipt(receiptPath, { ...baseReceipt, anti_rollback_state_recorded: shouldRecord });
+				log(JSON.stringify({ ...baseReceipt, anti_rollback_state_recorded: shouldRecord }));
+				return 0;
+			}
+			// The installer runs from, and is told about, the verified private copy.
+			const status = await runInstaller(installCommand, bundle.bundle, {
+				...env,
+				AIDR_VERIFIED_RELEASE_DIR: bundle.bundle,
+				AIDR_VERIFIED_RELEASE_MANIFEST_SHA256: manifestDigest,
+				AIDR_VERIFIED_RELEASE_SEQUENCE: String(manifest.release_sequence),
+				AIDR_VERIFIED_RELEASE_VERSION: manifest.release_version,
+			});
+			if (status !== 0) {
+				logError(`Verified installer exited with status ${status}; anti-rollback state was not advanced.`);
+				return status;
+			}
+			await recordRollbackState(state, manifest, manifestDigest);
+			await writeReceipt(receiptPath, {
+				...baseReceipt,
+				status: "installed",
+				installer_exit_status: 0,
+				anti_rollback_state_recorded: true,
+			});
+			log(JSON.stringify({ ...baseReceipt, status: "installed", anti_rollback_state_recorded: true }));
+			return 0;
+		} finally {
+			await staged.cleanup();
+		}
+	} finally {
+		await lock.release();
+	}
+}
+
+export async function runVerifiedInstaller(command, cwd, env) {
+	const child = spawn(command[0], command.slice(1), {
+		cwd,
+		env,
+		stdio: "inherit",
+		shell: false,
+		windowsHide: true,
+	});
+	return await new Promise((resolve, reject) => {
+		child.once("error", reject);
+		child.once("close", (code, signal) => {
+			if (signal) reject(new Error(`installer was terminated by signal ${signal}`));
+			else resolve(code ?? 1);
+		});
+	});
+}
+
+async function validateReceiptPath(receiptPath, bundlePath, statePath, policyPath) {
+	if (!receiptPath) return;
+	const resolved = await resolveExternalControlPath(receiptPath, bundlePath, "verification receipt");
+	if (samePath(resolved, statePath)) throw new Error("verification receipt and anti-rollback state must use different paths");
+	if (samePath(resolved, policyPath)) throw new Error("verification receipt and signer policy must use different paths");
+	try {
+		const info = await lstat(resolved);
+		if (!info.isFile() || info.isSymbolicLink()) throw new Error("verification receipt must be a regular file path");
+	} catch (error) {
+		if (error?.code !== "ENOENT") throw error;
+	}
+	return resolved;
+}
+
+function samePath(left, right) {
+	return isWithin(left, right) && isWithin(right, left);
+}
+
+async function writeReceipt(receiptPath, receipt) {
+	if (!receiptPath) return;
+	await atomicJsonWrite(receiptPath, receipt, 0o600);
+}
+
+// Copy every regular file of the delivered bundle exactly once into a new
+// owner-only directory. Symbolic links and special files are refused, and each
+// file is opened without following links and checked to be the same inode the
+// listing saw, so a swap during staging fails instead of being copied.
+export async function stageReleaseBundle(bundlePath) {
+	const source = path.resolve(bundlePath);
+	const sourceInfo = await lstat(source);
+	if (!sourceInfo.isDirectory() || sourceInfo.isSymbolicLink()) {
+		throw new Error("release bundle must be a regular directory");
+	}
+	const { files, directories } = await listBundleTree(source);
+	const staged = await createPrivateDirectory("aidr-release-verified-");
+	try {
+		for (const directory of directories) {
+			await mkdir(path.join(staged, ...directory.split("/")), { mode: 0o700 });
+		}
+		for (const file of files) {
+			await copyRegularFileOnce(path.join(source, ...file.split("/")), path.join(staged, ...file.split("/")), file);
+		}
+	} catch (error) {
+		await rm(staged, { recursive: true, force: true });
+		throw error;
+	}
+	let removed = false;
+	return {
+		source,
+		path: staged,
+		async cleanup() {
+			if (removed) return;
+			removed = true;
+			await rm(staged, { recursive: true, force: true });
+		},
+	};
+}
+
+export async function createPrivateDirectory(prefix) {
+	const root = os.tmpdir();
+	if (!path.isAbsolute(root)) throw new Error("temporary directory root is not an absolute path");
+	const directory = await mkdtemp(path.join(root, prefix));
+	try {
+		if (process.platform === "win32") {
+			await restrictWindowsDirectoryToOwner(directory);
+		} else {
+			await chmod(directory, 0o700);
+			const info = await lstat(directory);
+			if (!info.isDirectory() || info.isSymbolicLink() || (info.mode & 0o077) !== 0) {
+				throw new Error("private staging directory permits group or world access");
+			}
+		}
+	} catch (error) {
+		await rm(directory, { recursive: true, force: true });
+		throw error;
+	}
+	return directory;
+}
+
+async function restrictWindowsDirectoryToOwner(directory) {
+	const systemRoot = process.env.SystemRoot || process.env.windir || "C:\\Windows";
+	const tool = (name) => path.win32.join(systemRoot, "System32", name);
+	const identity = await execFileText(tool("whoami.exe"), ["/user", "/fo", "csv", "/nh"]);
+	const sid = identity.match(/S-1-\d+(?:-\d+)+/)?.[0];
+	if (!sid) throw new Error("could not resolve the current user SID for the private staging directory");
+	// Drop inherited ACEs (for example Users on a shared temp root) and grant
+	// full control to the current user only, inherited by everything staged.
+	await execFileText(tool("icacls.exe"), [directory, "/inheritance:r", "/grant:r", `*${sid}:(OI)(CI)F`]);
+}
+
+function execFileText(file, args) {
+	return new Promise((resolve, reject) => {
+		execFile(file, args, { encoding: "utf8", timeout: 30_000, windowsHide: true }, (error, stdout) => {
+			if (error) reject(new Error(`${path.basename(file)} failed while restricting the staging directory: ${error.message}`));
+			else resolve(stdout);
+		});
+	});
+}
+
+const OPEN_NOFOLLOW = fsConstants.O_NOFOLLOW ?? 0;
+
+async function copyRegularFileOnce(source, destination, label) {
+	const listed = await lstat(source, { bigint: true });
+	if (!listed.isFile() || listed.isSymbolicLink()) throw new Error(`release bundle entry must be a regular file: ${label}`);
+	let handle;
+	try {
+		handle = await open(source, fsConstants.O_RDONLY | OPEN_NOFOLLOW);
+	} catch (error) {
+		if (error?.code === "ELOOP") throw new Error(`symbolic links are not allowed in release bundles: ${label}`);
+		throw error;
+	}
+	let bytes;
+	try {
+		const opened = await handle.stat({ bigint: true });
+		if (!opened.isFile() || opened.dev !== listed.dev || opened.ino !== listed.ino) {
+			throw new Error(`release bundle entry changed while it was being staged: ${label}`);
+		}
+		bytes = await handle.readFile();
+	} finally {
+		await handle.close();
+	}
+	await writeFile(destination, bytes, { flag: "wx", mode: 0o600 });
 }
 
 export async function atomicJsonWrite(filePath, value, mode = 0o600) {

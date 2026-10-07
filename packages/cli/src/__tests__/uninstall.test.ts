@@ -39,9 +39,11 @@ import {
 import { createRequire, syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { PassThrough } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import uninstallCommand, { uninstallAidr } from "../commands/uninstall.js";
 import { MANAGED_HOOK_MARKER } from "../utils/install-hooks.js";
+import { OPERATOR_NONINTERACTIVE_ENV } from "../utils/operator-confirm.js";
 
 const DIGEST = "3f".repeat(32);
 const CONNECTOR_BUNDLES = ["pre-tool-use.cjs", "post-tool-use.cjs", "session-start.cjs"] as const;
@@ -144,7 +146,9 @@ function createFixture(): Fixture {
 }
 
 function backupNames(home: string): string[] {
-	return readdirSync(join(home, ".claude")).filter((name) => name.startsWith("settings.json.aidr-uninstall-backup-"));
+	return readdirSync(join(home, ".claude")).filter((name) =>
+		name.startsWith("settings.json.aidr-uninstall-backup-"),
+	);
 }
 
 function readSettings(settingsPath: string): Record<string, unknown> {
@@ -159,7 +163,11 @@ async function runCommand(options: { home: string; json?: boolean }): Promise<st
 		lines.push(args.map((value) => String(value)).join(" "));
 	});
 	try {
-		await uninstallCommand(options);
+		// Operator automation: uninstall is confirmed like `aidr allowlist add`.
+		await uninstallCommand(
+			{ ...options, yes: true },
+			{ env: { [OPERATOR_NONINTERACTIVE_ENV]: "1" } },
+		);
 	} finally {
 		log.mockRestore();
 		process.exitCode = previousExitCode;
@@ -181,7 +189,9 @@ describe("aidr uninstall", () => {
 			"PreToolUse",
 			"SessionStart",
 		]);
-		expect(report.removed.every((record) => String(record.command).includes(fixture.connectorPath))).toBe(true);
+		expect(
+			report.removed.every((record) => String(record.command).includes(fixture.connectorPath)),
+		).toBe(true);
 
 		const settings = readSettings(fixture.settingsPath);
 		const hooks = settings.hooks as Record<string, unknown>;
@@ -200,7 +210,11 @@ describe("aidr uninstall", () => {
 		expect(readFileSync(fixture.settingsPath, "utf8")).not.toContain(MANAGED_HOOK_MARKER);
 
 		// The report's "left alone" numbers come from the same measurement.
-		expect(report.preserved).toEqual({ entries: 2, hooks: 2, events: ["PostToolUse", "SessionStart"] });
+		expect(report.preserved).toEqual({
+			entries: 2,
+			hooks: 2,
+			events: ["PostToolUse", "SessionStart"],
+		});
 
 		// Configuration, connector bytes and the receipt are preserved on purpose.
 		expect(readFileSync(fixture.configPath, "utf8")).toBe(ORIGINAL_CONFIG);
@@ -246,7 +260,9 @@ describe("aidr uninstall", () => {
 			{
 				name: "receipt names a different settings file",
 				prepare: (fixture) =>
-					writeReceipt(fixture.home, { settings_path: join(fixture.home, ".claude", "other.json") }),
+					writeReceipt(fixture.home, {
+						settings_path: join(fixture.home, ".claude", "other.json"),
+					}),
 				code: "receipt_settings_path_mismatch",
 			},
 			{
@@ -314,7 +330,8 @@ describe("aidr uninstall", () => {
 		const customerEdit = '{"customerChangedDuringUninstall":true}\n';
 		fs.writeFileSync = ((file, data, options) => {
 			const result = originalWrite(file, data, options);
-			if (String(file).endsWith(`.aidr-${process.pid}.tmp`)) originalWrite(fixture.settingsPath, customerEdit);
+			if (String(file).endsWith(`.aidr-${process.pid}.tmp`))
+				originalWrite(fixture.settingsPath, customerEdit);
 			return result;
 		}) as typeof fs.writeFileSync;
 		syncBuiltinESMExports();
@@ -334,21 +351,24 @@ describe("aidr uninstall", () => {
 	});
 
 	// AIDR-SKIP: AIDR-050 qa-owner - protected Windows directory semantics require a Windows runner.
-	it.skipIf(process.platform !== "win32")("rejects a home nested inside a protected Windows directory", async () => {
-		const protectedRoot = createHome();
-		const home = join(protectedRoot, "nested", "user");
-		mkdirSync(home, { recursive: true });
-		const previous = process.env.ProgramData;
-		process.env.ProgramData = protectedRoot;
-		try {
-			const report = await uninstallAidr({ home });
-			expect(report.outcome).toBe("refused");
-			expect(report.reason?.code).toBe("home_invalid");
-		} finally {
-			if (previous === undefined) delete process.env.ProgramData;
-			else process.env.ProgramData = previous;
-		}
-	});
+	it.skipIf(process.platform !== "win32")(
+		"rejects a home nested inside a protected Windows directory",
+		async () => {
+			const protectedRoot = createHome();
+			const home = join(protectedRoot, "nested", "user");
+			mkdirSync(home, { recursive: true });
+			const previous = process.env.ProgramData;
+			process.env.ProgramData = protectedRoot;
+			try {
+				const report = await uninstallAidr({ home });
+				expect(report.outcome).toBe("refused");
+				expect(report.reason?.code).toBe("home_invalid");
+			} finally {
+				if (previous === undefined) delete process.env.ProgramData;
+				else process.env.ProgramData = previous;
+			}
+		},
+	);
 
 	it("exits non-zero with a machine-readable refusal and changes nothing", async () => {
 		const fixture = createFixture();
@@ -356,7 +376,11 @@ describe("aidr uninstall", () => {
 
 		const output = await runCommand({ home: fixture.home, json: true });
 
-		const report = JSON.parse(output) as { outcome: string; reason?: { code: string }; changed: boolean };
+		const report = JSON.parse(output) as {
+			outcome: string;
+			reason?: { code: string };
+			changed: boolean;
+		};
 		expect(report.outcome).toBe("refused");
 		expect(report.reason?.code).toBe("receipt_missing");
 		expect(report.changed).toBe(false);
@@ -374,7 +398,9 @@ describe("aidr uninstall", () => {
 		for (const bundle of CONNECTOR_BUNDLES) {
 			expect(output).toContain(bundle);
 		}
-		expect(output).toContain("Hook events left empty and therefore deleted: PostToolUse, SessionStart");
+		expect(output).toContain(
+			"Hook events left empty and therefore deleted: PostToolUse, SessionStart",
+		);
 		// It must never report the customer's own hooks as removed.
 		expect(output).not.toContain("customer-command-a");
 		expect(output).not.toContain("customer-command-b");
@@ -388,13 +414,46 @@ describe("aidr uninstall", () => {
 		expect(output).toContain("Protection is NOT active for this agent now");
 	});
 
+	it("refuses without operator confirmation and leaves the hooks in place", async () => {
+		const fixture = createFixture();
+		const before = readFileSync(fixture.settingsPath, "utf8");
+		const output = new PassThrough();
+		output.resume();
+		const previousExitCode = process.exitCode;
+		const errors: string[] = [];
+		const error = vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+			errors.push(args.map(String).join(" "));
+		});
+		try {
+			// No TTY (an agent tool call) and no operator automation variable.
+			await uninstallCommand(
+				{ home: fixture.home },
+				{ env: {}, streams: { input: new PassThrough(), output } },
+			);
+			expect(process.exitCode).toBe(1);
+			// --yes alone is not enough either.
+			await uninstallCommand(
+				{ home: fixture.home, yes: true },
+				{ env: {}, streams: { input: new PassThrough(), output } },
+			);
+		} finally {
+			error.mockRestore();
+			process.exitCode = previousExitCode;
+		}
+		expect(errors.join("\n")).toContain("Nothing was removed");
+		expect(readFileSync(fixture.settingsPath, "utf8")).toBe(before);
+		expect(backupNames(fixture.home)).toHaveLength(0);
+	});
+
 	it("never prints a removal line when nothing was removed", async () => {
 		const fixture = createFixture();
 		await uninstallAidr({ home: fixture.home });
 
 		const output = await runCommand({ home: fixture.home });
 
-		expect(output).toContain("No AIDR-managed hook entries found; agent settings were left untouched.");
+		expect(output).toContain(
+			"No AIDR-managed hook entries found; agent settings were left untouched.",
+		);
 		expect(output).not.toMatch(/Removed \d+ AIDR-managed/);
 		expect(output).not.toContain("Backup of the previous settings:");
 	});

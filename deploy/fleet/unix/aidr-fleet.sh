@@ -75,17 +75,107 @@ require_root_for_changes() {
 	[ "$(id -u)" -eq 0 ] || fail "system installation actions require root"
 }
 
-LOCK_HELD= STAGING_PATH=
+# Lifecycle mutual exclusion. The lock is a directory (mkdir is atomic) holding
+# an "owner" record: pid, boot id, process start time and creation time. A lock
+# whose owner was SIGKILLed (or whose host rebooted) is recovered instead of
+# blocking every future run: it is stale only when its boot id differs from the
+# current boot, its pid is gone (ESRCH; EPERM means alive), or the pid was reused
+# (start time differs). A lock without a readable owner record (a crash between
+# mkdir and the record write) is stale only after LOCK_GRACE_MINUTES. Recovery is
+# serialized by a short-lived ".recovery" guard directory, re-checks staleness
+# under it, and atomically renames the stale lock to a unique tombstone before
+# deleting it, so a contender only ever deletes the directory it renamed.
+LOCK_HELD= STAGING_PATH= LOCK_DIR= STALE_REASON=
+LOCK_GRACE_MINUTES=1
+boot_id() {
+	if [ "${AIDR_FLEET_TEST_ROOT:-}" ] && [ -n "${AIDR_FLEET_TEST_BOOT_ID:-}" ]; then printf '%s\n' "$AIDR_FLEET_TEST_BOOT_ID"; return 0; fi
+	if [ -r /proc/sys/kernel/random/boot_id ]; then tr -d ' \n' < /proc/sys/kernel/random/boot_id 2>/dev/null || true; echo
+	elif [ "$PLATFORM" = macos ]; then sysctl -n kern.boottime 2>/dev/null | sed -n 's/^.*sec = \([0-9][0-9]*\),.*$/\1/p' | head -n 1
+	fi
+}
+process_start_time() {
+	if [ -r "/proc/$1/stat" ]; then sed 's/^.*) //' "/proc/$1/stat" 2>/dev/null | awk '{print $20}'
+	elif [ "$PLATFORM" = macos ]; then LC_ALL=C ps -o lstart= -p "$1" 2>/dev/null | tr -s ' ' | sed 's/^ //;s/ $//'
+	fi
+}
+# kill -0 cannot report ESRCH and EPERM apart by exit status; only an explicit
+# "No such process" counts as dead, anything else is treated as alive.
+pid_alive() {
+	kill_error=$(LC_ALL=C kill -0 "$1" 2>&1) && return 0
+	case "$kill_error" in *"o such process"*) return 1 ;; esac
+	return 0
+}
+older_than_grace() {
+	[ -n "$(find "$1" -prune -mmin +"$LOCK_GRACE_MINUTES" 2>/dev/null)" ]
+}
+lock_field() { sed -n "s/^$1=//p" "$LOCK_DIR/owner" 2>/dev/null | head -n 1; }
+lock_owner_pid() {
+	[ -f "$LOCK_DIR/owner" ] && [ ! -L "$LOCK_DIR/owner" ] || return 0
+	lock_field pid | sed -n 's/^\([0-9][0-9]*\)$/\1/p'
+}
+lock_is_stale() {
+	STALE_REASON=
+	owner_pid=$(lock_owner_pid)
+	if [ -z "$owner_pid" ]; then
+		if older_than_grace "$LOCK_DIR"; then STALE_REASON="no owner record after the grace period"; return 0; fi
+		return 1
+	fi
+	owner_boot=$(lock_field boot_id); owner_start=$(lock_field start_time); current_boot=$(boot_id)
+	if [ -n "$owner_boot" ] && [ -n "$current_boot" ] && [ "$owner_boot" != "$current_boot" ]; then STALE_REASON="owner pid $owner_pid ran in a previous boot"; return 0; fi
+	if [ "$owner_pid" = "$$" ]; then STALE_REASON="owner pid $owner_pid was reused by this process"; return 0; fi
+	if ! pid_alive "$owner_pid"; then STALE_REASON="owner pid $owner_pid is no longer running"; return 0; fi
+	current_start=$(process_start_time "$owner_pid")
+	if [ -n "$owner_start" ] && [ -n "$current_start" ] && [ "$owner_start" != "$current_start" ]; then STALE_REASON="owner pid $owner_pid was reused by another process"; return 0; fi
+	return 1
+}
+# Returns 0 when the caller should retry mkdir, 1 when the lock is legitimately held.
+recover_stale_lock() {
+	recovery_guard="$LOCK_DIR.recovery"
+	if ! mkdir -m 700 "$recovery_guard" 2>/dev/null; then
+		# A recovery guard is held for milliseconds; one older than the grace
+		# period was abandoned by a killed contender and is cleared (it is empty).
+		if older_than_grace "$recovery_guard" && rmdir "$recovery_guard" 2>/dev/null; then return 0; fi
+		return 1
+	fi
+	recovered=1
+	if [ -d "$LOCK_DIR" ] && lock_is_stale; then
+		tombstone="$LOCK_DIR.stale.$$.$(date +%s 2>/dev/null || echo 0)"
+		if [ ! -e "$tombstone" ] && mv "$LOCK_DIR" "$tombstone" 2>/dev/null; then
+			rm -rf "$tombstone"
+			echo "AIDR fleet: recovered a stale lifecycle lock ($STALE_REASON)" >&2
+			recovered=0
+		fi
+	elif [ ! -d "$LOCK_DIR" ]; then recovered=0
+	fi
+	rmdir "$recovery_guard" 2>/dev/null || true
+	return "$recovered"
+}
+write_lock_owner() {
+	owner_tmp="$LOCK_DIR/owner.tmp.$$"
+	printf 'pid=%s\nboot_id=%s\nstart_time=%s\ncreated=%s\n' "$$" "$(boot_id)" "$(process_start_time "$$")" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$owner_tmp"
+	mv "$owner_tmp" "$LOCK_DIR/owner"
+}
 release_lock() {
 	if [ -n "$STAGING_PATH" ] && [ -d "$STAGING_PATH" ]; then rm -rf "$STAGING_PATH"; STAGING_PATH=; fi
-	if [ -n "$LOCK_HELD" ]; then rmdir "$INSTALL_ROOT/.fleet-operation.lock" 2>/dev/null || true; LOCK_HELD=; fi
+	if [ -n "$LOCK_HELD" ]; then
+		# Only release a lock this process owns; a lock that was recovered from
+		# under us and re-acquired by another run is left alone.
+		if [ "$(lock_owner_pid)" = "$$" ]; then rm -f "$LOCK_DIR/owner" "$LOCK_DIR/owner.tmp.$$"; rmdir "$LOCK_DIR" 2>/dev/null || true; fi
+		LOCK_HELD=
+	fi
 }
 acquire_lock() {
 	mkdir -p "$INSTALL_ROOT"; chmod 755 "$INSTALL_ROOT"
-	mkdir -m 700 "$INSTALL_ROOT/.fleet-operation.lock" 2>/dev/null || fail "another AIDR fleet lifecycle operation is active; retry after it completes"
-	LOCK_HELD=1
+	LOCK_DIR="$INSTALL_ROOT/.fleet-operation.lock"
 	trap release_lock EXIT
 	trap 'release_lock; exit 1' HUP INT TERM
+	lock_attempts=0
+	until mkdir -m 700 "$LOCK_DIR" 2>/dev/null; do
+		lock_attempts=$((lock_attempts + 1))
+		[ "$lock_attempts" -le 3 ] && recover_stale_lock || fail "another AIDR fleet lifecycle operation is active; retry after it completes"
+	done
+	LOCK_HELD=1
+	write_lock_owner
 }
 
 check_public_key_permissions() {

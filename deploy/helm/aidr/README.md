@@ -75,6 +75,13 @@ Rendering fails, rather than producing a weaker install, when:
 - `postgresql.enabled=false` with `networkPolicy.enabled` and no
   `externalDatabase.networkPolicyCIDRs`.
 - `storage.replicaCount > 1` on a `ReadWriteOnce` file volume.
+- `backup.enabled` with `storage.backend=file` but neither `backup.storage.enabled`
+  nor `backup.storage.acknowledgeNotBackedUp` (the backups would silently miss every
+  stored object); `backup.storage.enabled` with `storage.backend=s3` or a
+  `ReadWriteOncePod` storage volume. See [Backups](#backups).
+- `helm upgrade` while the pre-upgrade migration would run without a fresh backup
+  (`backup.enabled` + `backup.preUpgrade.enabled`) and `migrations.allowWithoutBackup`
+  is not `true`.
 - `postureScanner.enabled` without its Secret, signing key, data ConfigMap, trust anchors or egress proxy.
 - Any value under the former `aig` key; see [AI Security Posture scanner](#ai-security-posture-scanner).
 - `privacyGateway.enabled` with `privacyGateway.mtls.enabled=false`, without its mTLS
@@ -125,7 +132,11 @@ Vault, sealed-secrets) as long as the Secret names match.
 | `externalDatabase.sslMode` | `require` | `require`, `verify-ca` or `verify-full` |
 | `storage.backend` | `file` | `file` (PVC, one replica) or `s3` |
 | `migrations.enabled` | `true` | Schema hook Job |
+| `migrations.allowWithoutBackup` | `false` | Let `helm upgrade` migrate without the pre-upgrade backup (only after your own backup) |
 | `backup.enabled` | `false` | Nightly `pg_dump` CronJob to a PVC |
+| `backup.preUpgrade.enabled` | `true` | Backup hook Job that must succeed before the pre-upgrade migration |
+| `backup.storage.enabled` | `false` | Also archive the `storage.backend=file` volume (tar.gz + SHA-256) |
+| `backup.storage.acknowledgeNotBackedUp` | `false` | Dev only: accept database-only backups with `storage.backend=file` |
 | `notifications.dispatcher.enabled` | `false` | Minute CronJob draining the alert outbox (needs the notification keys in the functions Secret) |
 | `ingress.certManager.*` | disabled | Adds the cert-manager issuer annotation |
 | `networkPolicy.enabled` | `true` | Default-deny plus per-component allows |
@@ -196,7 +207,22 @@ helm upgrade aidr deploy/helm/aidr --namespace aidr -f my-values.yaml
 
 The migrations Job runs as a `pre-upgrade` hook: the schema moves (atomically, with
 checksum verification) before any new pod rolls out, and a failed migration aborts the
-upgrade with the old pods still serving. Take a backup first.
+upgrade with the old pods still serving.
+
+With `backup.enabled` the chart takes that backup for you: a `pre-upgrade` hook Job
+(`<release>-backup-pre-upgrade`, `helm.sh/hook-weight: "-10"`) runs the same backup as the
+CronJob before the migrations Job (weight `"0"`). Helm runs hooks in ascending weight and
+waits for each Job, so a failed or timed-out backup aborts the upgrade before the schema
+changes; the artifacts are `aidr-<stamp>-pre-upgrade.*` on the backup volume. Without it
+(`backup.enabled=false` or `backup.preUpgrade.enabled=false`) `helm upgrade` refuses to
+render unless `migrations.allowWithoutBackup=true`; set that only after taking your own
+backup (for example a managed-database snapshot). Fresh installs are unaffected: the
+post-install migration has no existing data to lose.
+
+The backup hook mounts the existing backup volume. On the upgrade that **first** enables
+`backup.enabled`, that claim does not exist yet, so pass
+`--set backup.preUpgrade.enabled=false --set migrations.allowWithoutBackup=true` once (or
+pre-create a claim and set `backup.persistence.existingClaim`).
 
 ## Air-gapped installs
 
@@ -217,8 +243,49 @@ upgrade with the old pods still serving. Take a backup first.
 
 ## Backups
 
-`backup.enabled=true` adds a CronJob that writes `aidr-<UTC stamp>.dump` (custom format)
-and a `.sha256` file to a PVC and prunes dumps older than `backup.retentionDays`. It is a
-logical backup on the same cluster: replicate the volume off-site and rehearse restores
+`backup.enabled=true` adds a CronJob (and the pre-upgrade hook, see [Upgrade](#upgrade))
+that writes `aidr-<UTC stamp>.dump` (custom format) and a `.sha256` file to a PVC and
+prunes backup files older than `backup.retentionDays`. It is a logical backup on the same
+cluster: replicate the volume off-site and rehearse restores
 (`pg_restore --clean --if-exists`). With `externalDatabase`, prefer the provider's PITR
 and keep the CronJob as a second, logical copy.
+
+What is and is not backed up:
+
+| Data | Backed up by the chart |
+|---|---|
+| Database (all schemas, including `storage.objects` metadata) | Yes, `pg_dump` |
+| Stored objects, `storage.backend=file` | Only with `backup.storage.enabled=true` |
+| Stored objects, `storage.backend=s3` | **No**: use bucket versioning, replication or provider backups |
+| Secrets (`secrets.existingSecret`, functions Secret, S3 credentials) | **No**: keep the `generate-secrets.mjs` credential directory safe |
+| The backup volume itself | **No**: replicate it off-cluster |
+
+With `storage.backend=file` and `backup.enabled=true`, rendering fails until you choose:
+`backup.storage.enabled=true`, `storage.backend=s3`, or (dev only)
+`backup.storage.acknowledgeNotBackedUp=true`, which accepts that a restore loses every
+stored object.
+
+`backup.storage.enabled=true` mounts the storage volume **read-only** in the backup pod
+and, after the dump, writes `aidr-<stamp>.storage.tar.gz`, its `.sha256` and an
+`aidr-<stamp>.manifest` naming the dump and archive of that run. Limits:
+
+- **Volume access mode.** A `ReadWriteOnce` volume is mounted only on the node that
+  runs the storage pod, so the backup pod gets a required `podAffinity` to it: the storage
+  pod must be running, and the backup volume must be attachable on that node (same
+  zone). `ReadWriteMany` needs no affinity. `ReadWriteOncePod` is refused at render time;
+  use a CSI `VolumeSnapshot` instead.
+- **Consistency.** The archive is taken while Storage serves traffic. The dump runs
+  first, so an upload racing the backup leaves an orphan file rather than a database row
+  without its object. GNU tar fails the run when a file changes while it is read (retry);
+  busybox tar does not detect it. For an exactly consistent pair, scale Storage to zero
+  or snapshot both volumes.
+- **Extended attributes.** storage-api keeps an object's content type and cache control
+  in `user.*` xattrs. They are archived only when the backup image has GNU tar; the
+  default `aidr/migrations` image has busybox tar, and the manifest then records
+  `storage_xattrs=not-preserved` (the bytes and the database metadata are intact).
+
+Restore: stop Storage, verify the checksums (`sha256sum -c aidr-<stamp>.dump.sha256`
+and `aidr-<stamp>.storage.tar.gz.sha256`), `pg_restore --clean --if-exists` the dump, then
+extract the archive into an empty storage volume as the storage user
+(`tar -xzf aidr-<stamp>.storage.tar.gz -C <volume>`, adding `--xattrs` with GNU tar)
+and start Storage again.

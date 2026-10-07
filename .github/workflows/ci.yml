@@ -498,6 +498,7 @@ jobs:
           deploy/dashboard/server.test.mjs
           deploy/ingress/device-start.test.mjs
           deploy/monitoring/monitoring.test.mjs
+          deploy/privacy-gateway/privacy-gateway.test.mjs
 
       - name: Bootstrap, upgrade, backup, restore-drill and config-reference gates
         run: |

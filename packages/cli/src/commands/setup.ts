@@ -1,10 +1,42 @@
 import { createConfig } from "../utils/config-manager.js";
 import { detectEnvironment } from "../utils/detect-env.js";
 import { installHooks } from "../utils/install-hooks.js";
+import {
+	confirmOperatorAction,
+	type OperatorCommandDeps,
+	OperatorConfirmationError,
+} from "../utils/operator-confirm.js";
 import { loadBundledThreatCount, verifyDetection } from "../utils/test-protection.js";
 
-async function setupCommand(options: { force?: boolean; secretStore?: string }): Promise<void> {
+async function setupCommand(
+	options: { force?: boolean; secretStore?: string; yes?: boolean },
+	deps: OperatorCommandDeps = {},
+): Promise<void> {
 	console.log("\n🛡️  AIDR Setup\n");
+
+	if (options.force) {
+		// --force replaces the existing configuration and credential and resets
+		// the recorded hook state, so it is an operator-only action confirmed like
+		// `aidr allowlist add`. A plain `aidr setup` reuses the config unchanged.
+		try {
+			await confirmOperatorAction({
+				prompt: [
+					"Singularity AIDR — forced re-setup",
+					"The existing local configuration and CLI credential will be replaced.",
+				].join("\n"),
+				word: "replace",
+				yes: options.yes,
+				env: deps.env,
+				streams: deps.streams,
+			});
+		} catch (error) {
+			console.error(
+				`${error instanceof OperatorConfirmationError ? error.message : String(error)} Nothing was changed.`,
+			);
+			process.exitCode = 1;
+			return;
+		}
+	}
 
 	try {
 		console.error("Detecting environment...");

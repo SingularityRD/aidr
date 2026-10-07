@@ -57,9 +57,13 @@ program
 program
 	.command("setup")
 	.description("Configure AIDR and show connector setup guidance")
-	.option("-f, --force", "Replace an existing local configuration")
+	.option(
+		"-f, --force",
+		"Operator only: replace an existing local configuration (interactive confirmation)",
+	)
 	.option("--secret-store <kind>", SECRET_STORE_OPTION_DESCRIPTION)
-	.action(setupCommand);
+	.option("-y, --yes", "Skip the prompt; honoured only with AIDR_OPERATOR_NONINTERACTIVE=1")
+	.action((options) => setupCommand(options));
 
 const configProgram = program
 	.command("config")
@@ -70,7 +74,8 @@ const configProgram = program
 		"Set a dotted key/value; enter secrets at the hidden prompt, never as arguments",
 	)
 	.option("-l, --list", "Print all configuration values")
-	.action(configCommand);
+	.option("-y, --yes", "Skip the prompt; honoured only with AIDR_OPERATOR_NONINTERACTIVE=1")
+	.action((options) => configCommand(options));
 
 configProgram
 	.command("rotate-key")
@@ -227,7 +232,8 @@ program
 		"Target an explicit home directory (managed fleets and verification); defaults to the current user",
 	)
 	.option("--json", "Emit a machine-readable report")
-	.action(uninstallCommand);
+	.option("-y, --yes", "Skip the prompt; honoured only with AIDR_OPERATOR_NONINTERACTIVE=1")
+	.action((options) => uninstallCommand(options));
 
 const learningProgram = program
 	.command("learning")

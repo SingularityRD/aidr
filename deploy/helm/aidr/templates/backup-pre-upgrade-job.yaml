@@ -1,0 +1,29 @@
+{{- if and .Values.backup.enabled .Values.backup.preUpgrade.enabled }}
+{{- $component := "backup" -}}
+{{- $values := .Values.backup -}}
+# Pre-upgrade backup: the same database (and, with backup.storage.enabled,
+# storage volume) backup as the CronJob, run as a pre-upgrade hook with a LOWER
+# hook-weight than the migrations Job (weight "0"). Helm runs the hooks of one
+# phase in ascending weight and waits for each Job to complete; a failed or
+# timed-out backup aborts the upgrade before the schema is touched. Artifacts
+# are named aidr-<UTC stamp>-pre-upgrade.* on the backup volume.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "aidr.component" (dict "root" . "component" "backup-pre-upgrade") }}
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" $component) | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-upgrade
+    helm.sh/hook-weight: "-10"
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: {{ $values.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "aidr.labels" (dict "root" . "component" $component) | nindent 8 }}
+    spec:
+      {{- include "aidr.backup.podSpec" (dict "root" . "suffix" "-pre-upgrade") | nindent 6 }}
+{{- end }}

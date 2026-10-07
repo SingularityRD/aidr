@@ -176,7 +176,23 @@ it only reads `deployment.json`, `.env.functions` and its script under
 `maintenance`. No password is stored. `-RunAsSystem` runs as
 LocalSystem, matching the `root` user of the systemd units, and should be used
 only where no gMSA is available. `-NodePath` selects a Node.js 24+ `node.exe`
-when it is not on `PATH`.
+by explicit absolute path; without it, `PATH` must resolve to exactly one
+`node.exe`, otherwise the installer refuses to guess.
+
+Because the tasks run code as LocalSystem or the gMSA, the installer refuses to
+register them (and does not run `node.exe` itself) unless `node.exe`, its
+directory, `<kit>`, `<kit>\scripts`, `deployment-maintenance.mjs`,
+`<deployment>`, `<deployment>\maintenance`, the worker scripts and
+`.env.readiness` (which can set `NODE_OPTIONS`) are owned by and writable only
+by SYSTEM, BUILTIN\Administrators or TrustedInstaller, none of them is a
+symbolic link or junction, and no other principal can delete, rename, re-ACL or
+take ownership of any ancestor directory. The error names each offending path
+and identity. A directory created under `C:\ProgramData` inherits a *Users:
+Write* entry, and a deployment prepared by `scripts/deployment-prepare.mjs`
+carries an entry for the preparing user; remove them first, for example
+`icacls <path> /inheritance:d`, `icacls <path> /setowner *S-1-5-32-544 /T` and
+`icacls <path> /remove:g <identity> /T`. `node.exe` from the standard
+installer under `C:\Program Files\nodejs` passes as installed.
 
 The installer registers the SIEM and retention tasks, writes
 `<deployment>\windows-maintenance-tasks.json` (its `tasks` list names every task

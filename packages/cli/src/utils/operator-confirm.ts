@@ -2,7 +2,9 @@ import { userInfo } from "node:os";
 import { createInterface } from "node:readline";
 
 /**
- * Human confirmation for operator-only actions (`aidr approve`, `aidr allowlist add`).
+ * Human confirmation for operator-only actions (`aidr approve`, `aidr allowlist add`,
+ * and the protection-weakening `aidr config -s`, `aidr uninstall` and
+ * `aidr setup --force`).
  *
  * These commands widen what the policed agent may do, so they must not be
  * something the agent can run on its own. They therefore require one of:
@@ -45,6 +47,12 @@ export interface ConfirmOptions {
 }
 
 export type ConfirmationMode = "interactive" | "non-interactive";
+
+/** Injection points for an operator-confirmed command (tests). */
+export interface OperatorCommandDeps {
+	env?: NodeJS.ProcessEnv;
+	streams?: ConfirmationStreams;
+}
 
 function readLine(streams: ConfirmationStreams, query: string): Promise<string> {
 	return new Promise((resolve, reject) => {
