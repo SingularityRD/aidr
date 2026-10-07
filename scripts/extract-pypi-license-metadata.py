@@ -14,6 +14,12 @@ happens in scripts/lib/pypi-license-data.mjs, which refuses to guess.
 Usage:
   python scripts/extract-pypi-license-metadata.py --lock services/aig-bridge/requirements-runtime.lock \
       --wheels <dir> --output services/aig-bridge/pypi-runtime-licenses.json
+
+The privacy worker locks have their own evidence files, listed with their
+platform in scripts/lib/python-sbom-components.mjs (PRIVACY_PYTHON_SOURCES),
+e.g. --lock packages/privacy/parsers/requirements.lock.txt
+--output packages/privacy/sbom/parsers.pypi-licenses.json. Download the NER
+torch wheels with --extra-index-url https://download.pytorch.org/whl/cpu.
 """
 
 import argparse
@@ -41,10 +47,13 @@ def parse_lock(text: str) -> dict:
         if digest:
             current["hashes"].add(digest.group(1))
             continue
-        pin = re.fullmatch(r"([A-Za-z0-9][A-Za-z0-9._-]*)==(\S+)", line)
-        if not pin:
+        # Hashes may also sit on the pin line (compact privacy worker locks).
+        requirement, *options = line.split()
+        pin = re.fullmatch(r"([A-Za-z0-9][A-Za-z0-9._-]*)==(\S+)", requirement)
+        inline = [re.fullmatch(r"--hash=sha256:([a-f0-9]{64})", option) for option in options]
+        if not pin or not all(inline):
             raise SystemExit(f"unsupported lock entry: {line[:80]}")
-        current = {"name": canonical(pin.group(1)), "version": pin.group(2), "hashes": set()}
+        current = {"name": canonical(pin.group(1)), "version": pin.group(2), "hashes": {m.group(1) for m in inline}}
         packages[current["name"]] = current
     return packages
 

@@ -56,6 +56,7 @@
     "vision/worker.py",
     "vision/build_manifest.py",
     "vision/requirements.txt",
+    "vision/requirements.lock.txt",
     "vision/config.example.json",
     "native",
     "extension/chrome",
@@ -127,6 +128,6 @@
   "peerDependenciesMeta": {
     "@singularityrd/aidr-mcp-gateway": {"optional": true}
   },
-  "license": "UNLICENSED",
+  "license": "Proprietary",
   "private": true
 }

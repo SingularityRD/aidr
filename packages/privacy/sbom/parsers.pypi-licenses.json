@@ -1,0 +1,123 @@
+{
+  "schema_version": 1,
+  "source_lock": "packages/privacy/parsers/requirements.lock.txt",
+  "source_lock_sha256": "a135671316d846beaded696f6121589041c5b9ec7ee57e53eeb2f42eaff95566",
+  "evidence_origin": "Core Metadata and dist-info licence files read from the SHA-256-verified wheels pinned by the lock",
+  "packages": [
+    {
+      "name": "defusedxml",
+      "version": "0.7.1",
+      "wheel": "defusedxml-0.7.1-py2.py3-none-any.whl",
+      "wheel_sha256": "a352e7e428770286cc899e2542b6cdaedb2b4953ff269a210103ec58f6198a61",
+      "core_metadata": {
+        "license_expression": null,
+        "license_field": "PSFL",
+        "license_classifiers": [
+          "License :: OSI Approved :: Python Software Foundation License"
+        ],
+        "license_file_headers": []
+      },
+      "license_files": [
+        {
+          "path": "LICENSE",
+          "sha256": "b80ce9da8c42a1f91079627fbbe2bf27210ae108a0ffe5f077d5b08e076c24c8"
+        }
+      ],
+      "bundled_native_libraries": []
+    },
+    {
+      "name": "pillow",
+      "version": "12.3.0",
+      "wheel": "pillow-12.3.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+      "wheel_sha256": "78cb2c6865a35ab8ff8b75fd122f6033b92a62c82801110e48ddd6c936a45d91",
+      "core_metadata": {
+        "license_expression": "MIT-CMU",
+        "license_field": null,
+        "license_classifiers": [],
+        "license_file_headers": [
+          "LICENSE"
+        ]
+      },
+      "license_files": [
+        {
+          "path": "licenses/LICENSE",
+          "sha256": "dda12a98c1979cf3d94df1cff45d27a4cb3f04a60c76f76902ac54cac03ec0ce"
+        }
+      ],
+      "bundled_native_libraries": [
+        "pillow.libs/libXau-154567c4.so.6.0.0",
+        "pillow.libs/libavif-8a7f9d56.so.16.4.2",
+        "pillow.libs/libbrotlicommon-53534446.so.1.2.0",
+        "pillow.libs/libbrotlidec-7e5462ba.so.1.2.0",
+        "pillow.libs/libfreetype-9fc94c80.so.6.20.6",
+        "pillow.libs/libharfbuzz-172d1f63.so.0.61421.0",
+        "pillow.libs/libjpeg-31e2ca52.so.62.4.0",
+        "pillow.libs/liblcms2-dade1fbf.so.2.0.19",
+        "pillow.libs/liblzma-2be87c3e.so.5.8.3",
+        "pillow.libs/libopenjp2-b07f72ad.so.2.5.4",
+        "pillow.libs/libpng16-abb096d5.so.16.58.0",
+        "pillow.libs/libsharpyuv-0066295b.so.0.1.2",
+        "pillow.libs/libtiff-fc87e79d.so.6.2.0",
+        "pillow.libs/libwebp-51b0b3f7.so.7.2.0",
+        "pillow.libs/libwebpdemux-9fe2abcc.so.2.0.17",
+        "pillow.libs/libwebpmux-8fb1c9f6.so.3.1.2",
+        "pillow.libs/libxcb-ad31f5a3.so.1.1.0",
+        "pillow.libs/libzstd-44be1190.so.1.5.7"
+      ]
+    },
+    {
+      "name": "pypdf",
+      "version": "6.19.0",
+      "wheel": "pypdf-6.19.0-py3-none-any.whl",
+      "wheel_sha256": "7e5d6e730e7dae87d560a2cee218b852f6498c8be61966f3cd02ead971e48d14",
+      "core_metadata": {
+        "license_expression": "BSD-3-Clause",
+        "license_field": null,
+        "license_classifiers": [],
+        "license_file_headers": [
+          "LICENSE"
+        ]
+      },
+      "license_files": [
+        {
+          "path": "licenses/LICENSE",
+          "sha256": "a97ac230e5f33ef10a5367a850eb01f91f1a0b064e34742c7794d2294557f524"
+        }
+      ],
+      "bundled_native_libraries": []
+    },
+    {
+      "name": "pypdfium2",
+      "version": "5.14.0",
+      "wheel": "pypdfium2-5.14.0-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+      "wheel_sha256": "11f281613fa22313d9c7ab89947665e84eccf8ebe40e1198a84a88352305648d",
+      "core_metadata": {
+        "license_expression": null,
+        "license_field": "BSD-3-Clause, Apache-2.0, dependency licenses",
+        "license_classifiers": [],
+        "license_file_headers": [
+          "LICENSES/Apache-2.0.txt",
+          "LICENSES/BSD-3-Clause.txt",
+          "LICENSES/CC-BY-4.0.txt",
+          "data/linux_x64/BUILD_LICENSES/abseil.txt",
+          "data/linux_x64/BUILD_LICENSES/agg23.txt",
+          "data/linux_x64/BUILD_LICENSES/fast_float.txt",
+          "data/linux_x64/BUILD_LICENSES/freetype.txt",
+          "data/linux_x64/BUILD_LICENSES/icu.txt",
+          "data/linux_x64/BUILD_LICENSES/lcms.txt",
+          "data/linux_x64/BUILD_LICENSES/libjpeg_turbo.ijg",
+          "data/linux_x64/BUILD_LICENSES/libjpeg_turbo.md",
+          "data/linux_x64/BUILD_LICENSES/libopenjpeg.txt",
+          "data/linux_x64/BUILD_LICENSES/libpng.txt",
+          "data/linux_x64/BUILD_LICENSES/llvm-libc.txt",
+          "data/linux_x64/BUILD_LICENSES/pdfium-binaries.txt",
+          "data/linux_x64/BUILD_LICENSES/pdfium.txt",
+          "data/linux_x64/BUILD_LICENSES/simdutf.txt",
+          "data/linux_x64/BUILD_LICENSES/zlib.txt"
+        ]
+      },
+      "license_files": [],
+      "bundled_native_libraries": []
+    }
+  ]
+}

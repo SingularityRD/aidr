@@ -16,6 +16,7 @@ import path from "node:path";
 import { resolveGitTreeSha256 } from "./lib/release-evidence-digests.mjs";
 import { assertReleaseSourceClean } from "./lib/release-source-clean.mjs";
 import { assertCurrentPrebuiltSbom, assertPrebuiltSbomDigest } from "./lib/prebuilt-sbom-validation.mjs";
+import { PRIVACY_PYTHON_SOURCES, readPythonSources } from "./lib/python-sbom-components.mjs";
 
 const repoRoot = process.cwd();
 const commercial = process.env.AIDR_RELEASE_MODE === "commercial" || process.env.AIDR_FINAL_RELEASE === "1";
@@ -218,6 +219,7 @@ async function reuseSbomEvidence(source, destination, bindings) {
 		pnpmLockBytes: await readFile(path.join(repoRoot, "pnpm-lock.yaml")),
 		pythonLockBytes: await readFile(path.join(repoRoot, "services/aig-bridge/requirements-runtime.lock")),
 		pythonEvidenceJson: await readFile(path.join(repoRoot, "services/aig-bridge/pypi-runtime-licenses.json"), "utf8"),
+		extraPythonSources: readPythonSources(repoRoot, PRIVACY_PYTHON_SOURCES),
 		sourceDigest: bindings.sourceDigest,
 		workspacePackages: (await Promise.all((await readdir(path.join(repoRoot, "packages"), { withFileTypes: true }))
 			.filter((entry) => entry.isDirectory())

@@ -1,3 +1,4 @@
 # Exact versions exercised in this release; native OS libraries need a pinned deployment image too.
+# Install from the hash lock: python -m pip install --require-hashes --only-binary=:all: --no-deps -r vision/requirements.lock.txt
 Pillow==12.3.0
 pyzbar==0.1.9

@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "source_lock": "packages/privacy/vision/requirements.lock.txt",
+  "source_lock_sha256": "96bd52716fb464cc98c94f9ced8916b42d7ee4f870f96c9eadba2bc6d0e108b7",
+  "evidence_origin": "Core Metadata and dist-info licence files read from the SHA-256-verified wheels pinned by the lock",
+  "packages": [
+    {
+      "name": "pillow",
+      "version": "12.3.0",
+      "wheel": "pillow-12.3.0-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+      "wheel_sha256": "23d27a3e0307ec2244cc51e7287b919aa68d097504ebe19df4e76a98a3eea5bd",
+      "core_metadata": {
+        "license_expression": "MIT-CMU",
+        "license_field": null,
+        "license_classifiers": [],
+        "license_file_headers": [
+          "LICENSE"
+        ]
+      },
+      "license_files": [
+        {
+          "path": "licenses/LICENSE",
+          "sha256": "dda12a98c1979cf3d94df1cff45d27a4cb3f04a60c76f76902ac54cac03ec0ce"
+        }
+      ],
+      "bundled_native_libraries": [
+        "pillow.libs/libXau-154567c4.so.6.0.0",
+        "pillow.libs/libavif-8a7f9d56.so.16.4.2",
+        "pillow.libs/libbrotlicommon-53534446.so.1.2.0",
+        "pillow.libs/libbrotlidec-7e5462ba.so.1.2.0",
+        "pillow.libs/libfreetype-9fc94c80.so.6.20.6",
+        "pillow.libs/libharfbuzz-172d1f63.so.0.61421.0",
+        "pillow.libs/libjpeg-31e2ca52.so.62.4.0",
+        "pillow.libs/liblcms2-dade1fbf.so.2.0.19",
+        "pillow.libs/liblzma-2be87c3e.so.5.8.3",
+        "pillow.libs/libopenjp2-b07f72ad.so.2.5.4",
+        "pillow.libs/libpng16-abb096d5.so.16.58.0",
+        "pillow.libs/libsharpyuv-0066295b.so.0.1.2",
+        "pillow.libs/libtiff-fc87e79d.so.6.2.0",
+        "pillow.libs/libwebp-51b0b3f7.so.7.2.0",
+        "pillow.libs/libwebpdemux-9fe2abcc.so.2.0.17",
+        "pillow.libs/libwebpmux-8fb1c9f6.so.3.1.2",
+        "pillow.libs/libxcb-ad31f5a3.so.1.1.0",
+        "pillow.libs/libzstd-44be1190.so.1.5.7"
+      ]
+    },
+    {
+      "name": "pyzbar",
+      "version": "0.1.9",
+      "wheel": "pyzbar-0.1.9-py2.py3-none-any.whl",
+      "wheel_sha256": "4559628b8192feb25766d954b36a3753baaf5c97c03135aec7e4a026036b475d",
+      "core_metadata": {
+        "license_expression": null,
+        "license_field": "MIT",
+        "license_classifiers": [
+          "License :: OSI Approved :: MIT License"
+        ],
+        "license_file_headers": [
+          "LICENSE.txt"
+        ]
+      },
+      "license_files": [
+        {
+          "path": "LICENSE.txt",
+          "sha256": "c540b5daba66c22b26f91ad1e02a2cdb9b5f08442d0889a50d34b24c03f23b17"
+        }
+      ],
+      "bundled_native_libraries": []
+    }
+  ]
+}
