@@ -11,7 +11,14 @@ import { placeholderRegex } from "../content/unmask";
 import { editorAccess, insertAtSelection, isSyntheticEditorEvent } from "../dom/editor";
 import { createVault, newVaultTag, VAULT_TAG_RE } from "../engine/vault";
 import type { Finding, GuardMessage, PlaceholderVault } from "../types";
-import { ADAPTER, BASE_POLICY, EMAIL, fakeEngine, type Harness, setupGuard } from "./content-helpers";
+import {
+	ADAPTER,
+	BASE_POLICY,
+	EMAIL,
+	fakeEngine,
+	type Harness,
+	setupGuard,
+} from "./content-helpers";
 
 let h: Harness | undefined;
 
@@ -56,7 +63,9 @@ describe("vault tags", () => {
 	it("never restores another vault's placeholder with the same number", () => {
 		const ours = createVault({ neverRestore: [], tag: "aaaa" });
 		maskEmail(ours, EMAIL);
-		expect(ours.unmask("[EMAIL_1] [EMAIL_1_bbbb] EMAIL_1")).toBe("[EMAIL_1] [EMAIL_1_bbbb] EMAIL_1");
+		expect(ours.unmask("[EMAIL_1] [EMAIL_1_bbbb] EMAIL_1")).toBe(
+			"[EMAIL_1] [EMAIL_1_bbbb] EMAIL_1",
+		);
 		expect(ours.lookup("[EMAIL_1]")).toBeUndefined();
 	});
 

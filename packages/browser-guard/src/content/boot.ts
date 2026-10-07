@@ -20,6 +20,8 @@
  * Once a policy is applied, the administrator's acceptable-use notice (if any) is shown
  * unless this browser already acknowledged its version (./acceptable-use.ts).
  */
+
+import { newVaultTag } from "../engine/vault.js";
 import type {
 	CustomSiteConfig,
 	DetectionEngine,
@@ -31,7 +33,6 @@ import type {
 	SiteAdapter,
 	VaultSnapshot,
 } from "../types.js";
-import { newVaultTag } from "../engine/vault.js";
 import { createAcceptableUseNotice } from "./acceptable-use.js";
 import { type ContentGuard, type ContentGuardDeps, createContentGuard } from "./guard.js";
 import { resolveLanguage, STRINGS } from "./strings.js";

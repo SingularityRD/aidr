@@ -82,8 +82,7 @@ function boot(runtime: ReturnType<typeof fakeRuntime>) {
 			neverRestore: readonly never[] | readonly string[];
 			snapshot?: VaultSnapshot;
 			tag?: string;
-		}) =>
-			createVault(options as Parameters<typeof createVault>[0]),
+		}) => createVault(options as Parameters<typeof createVault>[0]),
 	);
 	const result = bootContentGuard({
 		window,

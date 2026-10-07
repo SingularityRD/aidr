@@ -10,13 +10,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { subtractPlaceholders } from "../content/guard";
 import { createDetectionEngine } from "../engine/detect";
 import { ENTITY_TYPES, type Finding, type GuardMessage } from "../types";
-import {
-	EMAIL,
-	FakeDataTransfer,
-	fakeEngine,
-	type Harness,
-	setupGuard,
-} from "./content-helpers";
+import { EMAIL, FakeDataTransfer, fakeEngine, type Harness, setupGuard } from "./content-helpers";
 
 (window as unknown as { DataTransfer: unknown }).DataTransfer = FakeDataTransfer;
 
@@ -74,9 +68,10 @@ describe("subtractPlaceholders", () => {
 			finding("PERSON", 16, 26),
 		]);
 		const around = "Ada [EMAIL_1] Lovelace";
-		expect(subtractPlaceholders(around, [finding("PERSON", 0, around.length)], [[4, 13]])).toEqual(
-			[finding("PERSON", 0, 3), finding("PERSON", 14, 22)],
-		);
+		expect(subtractPlaceholders(around, [finding("PERSON", 0, around.length)], [[4, 13]])).toEqual([
+			finding("PERSON", 0, 3),
+			finding("PERSON", 14, 22),
+		]);
 	});
 
 	it("drops remainders without a letter or digit and handles several placeholders", () => {
