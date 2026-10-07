@@ -9,6 +9,7 @@ import type {
 	HeuristicMatch,
 	PackageCheckResult,
 	PolicyMatch,
+	RuleSeverity,
 	SignalSources,
 	UrlCheckResult,
 	Verdict,
@@ -40,6 +41,42 @@ const ACTION_MAP: Record<string, Decision> = {
 	log: "allow",
 };
 
+/**
+ * Signal categories that are advisory by design: code-quality findings on code
+ * the agent writes (secure-code guardrails, insecure-coding skill hints). A
+ * sub-threshold `log` signal in one of these is not escalated to `ask`, so a
+ * routine edit does not need a human. Every other category, including any
+ * category this list does not know, is security-relevant and still escalates:
+ * an unrecognised category must never be rounded down to "clean".
+ */
+const ADVISORY_CATEGORY_PREFIXES = ["secure_code_"] as const;
+const ADVISORY_CATEGORIES: ReadonlySet<string> = new Set([
+	"skill_insecure_coding",
+	"informational",
+	"none",
+]);
+
+export function isSecurityRelevantCategory(category: string): boolean {
+	if (ADVISORY_CATEGORIES.has(category)) return false;
+	return !ADVISORY_CATEGORY_PREFIXES.some((prefix) => category.startsWith(prefix));
+}
+
+/** Rule severity rank, used to report the most severe of equal-decision signals. */
+const RULE_SEVERITY_RANK: Record<RuleSeverity, number> = {
+	low: 0,
+	medium: 1,
+	high: 2,
+	critical: 3,
+};
+
+function isRuleSeverity(value: unknown): value is RuleSeverity {
+	return typeof value === "string" && Object.hasOwn(RULE_SEVERITY_RANK, value);
+}
+
+function severityRank(severity: RuleSeverity | undefined): number {
+	return severity ? RULE_SEVERITY_RANK[severity] : -1;
+}
+
 /** Decision priority for merge precedence: deny > ask > allow. */
 const DECISION_PRIORITY: Record<string, number> = {
 	allow: 0,
@@ -57,6 +94,8 @@ interface Signal {
 	reason: string;
 	artifact: string;
 	frameworks?: FrameworkRefs;
+	/** The 4-level severity of the rule or policy that produced the signal. */
+	ruleSeverity?: RuleSeverity;
 }
 
 export class DecisionEngine {
@@ -79,8 +118,13 @@ export class DecisionEngine {
 			return this.allowVerdict();
 		}
 
+		// Strongest decision first; among equal decisions the most severe rule
+		// (stable otherwise), so the reported rule id and severity label describe
+		// the same, most significant finding.
 		signals.sort(
-			(a, b) => (DECISION_PRIORITY[b.decision] ?? 0) - (DECISION_PRIORITY[a.decision] ?? 0),
+			(a, b) =>
+				(DECISION_PRIORITY[b.decision] ?? 0) - (DECISION_PRIORITY[a.decision] ?? 0) ||
+				severityRank(b.ruleSeverity) - severityRank(a.ruleSeverity),
 		);
 		const top = signals[0];
 		if (!top) {
@@ -99,9 +143,17 @@ export class DecisionEngine {
 			if (decision === "deny") {
 				decision = "ask";
 			}
-			// Also escalate allow -> ask if there are any signals (even low confidence)
-			// This ensures suspicious activity gets reviewed even when confidence is borderline
-			if (decision === "allow" && signals.length > 0) {
+			// Escalate allow -> ask only for a sub-threshold signal in a
+			// security-relevant category. Advisory findings (secure-code hints on
+			// written code) are logged, not held for a human: holding routine edits
+			// for review trains users to approve blindly.
+			if (
+				decision === "allow" &&
+				signals.some(
+					(signal) =>
+						signal.confidence < this.threshold && isSecurityRelevantCategory(signal.category),
+				)
+			) {
 				decision = "ask";
 			}
 		}
@@ -115,6 +167,7 @@ export class DecisionEngine {
 			artifacts: allArtifacts,
 			matchedThreatId: top.threatId,
 			reasons: allReasons,
+			...(top.ruleSeverity ? { ruleSeverity: top.ruleSeverity } : {}),
 			...(top.frameworks ? { frameworks: top.frameworks } : {}),
 		};
 	}
@@ -138,6 +191,7 @@ export class DecisionEngine {
 				threatId: match.threat.id,
 				reason: match.threat.title,
 				artifact: match.artifact,
+				...(isRuleSeverity(match.threat.severity) ? { ruleSeverity: match.threat.severity } : {}),
 				...(match.threat.frameworks ? { frameworks: match.threat.frameworks } : {}),
 			});
 		}
@@ -158,6 +212,7 @@ export class DecisionEngine {
 					threatId: match.policyId,
 					reason: match.title,
 					artifact: match.artifact,
+					...(isRuleSeverity(match.severity) ? { ruleSeverity: match.severity } : {}),
 				});
 			}
 		}

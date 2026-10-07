@@ -185,13 +185,12 @@ describe("optional runtime detector wiring", () => {
 			const audit = await readFile(join(homeDir, ".singularity-aidr", "audit.jsonl"), "utf8");
 			// Local incident correlation may append derived `incident_record` lines
 			// after the verdict entry; assert on the verdict entry itself.
-			const entry =
-				audit
-					.trim()
-					.split("\n")
-					.map((line) => JSON.parse(line) as { type?: unknown; reasons: string[] })
-					.filter((parsed) => parsed.type !== "incident_record")
-					.at(-1) ?? { reasons: [] };
+			const entry = audit
+				.trim()
+				.split("\n")
+				.map((line) => JSON.parse(line) as { type?: unknown; reasons: string[] })
+				.filter((parsed) => parsed.type !== "incident_record")
+				.at(-1) ?? { reasons: [] };
 			expect(entry).toMatchObject({
 				verdict: "allow",
 				category: "dlp_redacted",
@@ -347,7 +346,8 @@ describe("optional runtime detector wiring", () => {
 			const config = JSON.parse(await readFile(configPath, "utf8"));
 			await writeFile(configPath, JSON.stringify({ ...config, heuristics_enabled: true }));
 
-			const rewrite = { ...redactContext(), userThreatsDir };
+			// Bundled rules: user rules alone no longer satisfy the no-rules safeguard.
+			const rewrite = { ...redactContext(), threatsDir: userThreatsDir };
 			const verdict = await evaluateToolCall(
 				{
 					sessionId: "session-a",

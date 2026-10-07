@@ -9,6 +9,7 @@ import {
 	provisionTenantDetectorPolicy,
 	TEST_DLP_MARKER,
 } from "../../../core/src/__tests__/detector-provisioning-fixtures.js";
+import { writeSignedCacheFixture } from "../../../core/src/__tests__/test-utils.js";
 import { VERSION } from "../../../core/src/version.js";
 
 const DIST_DIR = resolve(__dirname, "..", "..", "dist");
@@ -527,25 +528,20 @@ describe("VS Code hook integration", () => {
 		const packageManifest = '{"dependencies":{"synthetic-aidr-package":"1.0.0"}}';
 		const cachePath = join(home, ".singularity-aidr", "cache.json");
 		await mkdir(join(home, ".singularity-aidr"), { recursive: true });
-		await writeFile(
-			cachePath,
-			JSON.stringify({
-				urls: {},
-				commands: {},
-				packages: {
-					"npm:synthetic-aidr-package@1.0.0": {
-						verdict: "deny",
-						severity: "critical",
-						reasons: ["Synthetic package intelligence deny"],
-						source: "package_check",
-						checkedAt: new Date().toISOString(),
-						expiresAt: "9999-12-31T23:59:59.000Z",
-						aidrVersion: VERSION,
-					},
+		// The verdict cache only honours authenticated entries.
+		await writeSignedCacheFixture(cachePath, {
+			packages: {
+				"npm:synthetic-aidr-package@1.0.0": {
+					verdict: "deny",
+					severity: "critical",
+					reasons: ["Synthetic package intelligence deny"],
+					source: "package_check",
+					checkedAt: new Date().toISOString(),
+					expiresAt: "9999-12-31T23:59:59.000Z",
+					aidrVersion: VERSION,
 				},
-			}),
-			"utf8",
-		);
+			},
+		});
 		await writeRuntimeConfig(home, {
 			mode: "local",
 			control_plane: { enabled: false },
