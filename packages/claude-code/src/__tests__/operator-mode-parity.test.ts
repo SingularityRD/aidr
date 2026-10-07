@@ -108,7 +108,7 @@ function store(): OperatorApprovalStoreOptions {
 	};
 }
 
-function runHook(c: HostCase): Promise<Record<string, unknown>> {
+function runHook(c: HostCase, payload = c.payload): Promise<Record<string, unknown>> {
 	const env: Record<string, string | undefined> = {
 		...process.env,
 		HOME: home,
@@ -129,7 +129,7 @@ function runHook(c: HostCase): Promise<Record<string, unknown>> {
 			}
 			done(JSON.parse(stdout.trim() || "{}") as Record<string, unknown>);
 		});
-		child.stdin?.end(JSON.stringify(c.payload));
+		child.stdin?.end(JSON.stringify(payload));
 	});
 }
 
@@ -186,4 +186,48 @@ describe.each(CASES)("$host in host_dialog mode (default)", (c) => {
 			recordOperatorApproval(informational[0]?.actionId as string, { approver: "op" }, store()),
 		).rejects.toMatchObject({ code: "not_pending" });
 	}, 60_000);
+});
+
+/** A shell call in each host's own payload shape. */
+function shellPayload(host: Host, command: string): Record<string, unknown> {
+	if (host === "cursor") {
+		return {
+			hook_event_name: "beforeShellExecution",
+			conversation_id: "parity-session",
+			command,
+			cwd: home,
+		};
+	}
+	if (host === "vscode") {
+		return {
+			hook_event_name: "PreToolUse",
+			session_id: "parity-session",
+			tool_name: "Bash",
+			tool_input: { command },
+		};
+	}
+	return {
+		tool_name: "Bash",
+		tool_input: { command },
+		session_id: "parity-session",
+		tool_use_id: "toolu_shell",
+	};
+}
+
+describe.each(CASES)("$host: the agent cannot approve or create exceptions itself", (c) => {
+	it("hard-denies `aidr approve`, `aidr exception add` and writes to the exception store", async () => {
+		writeConfig("operator");
+		for (const command of [
+			`aidr approve ${"a".repeat(64)}`,
+			"aidr exception add CLT-CMD-011 --agent claude-code --expires 30d --reason x",
+			"AIDR_OPERATOR_NONINTERACTIVE=1 aidr exception add CLT-CMD-011 --agent cursor --expires 1d --reason x --yes",
+			"echo '{}' > ~/.singularity-aidr/detection-exceptions.json",
+		]) {
+			const response = await runHook(c, shellPayload(c.host, command));
+			expect(c.decision(response), `${c.host}: ${command}`).toBe("deny");
+			// A hard deny, never an approvable hold: no approval reference is handed out.
+			expect(c.text(response)).not.toMatch(/actionId: "/);
+		}
+		expect(await listPendingAsks(store())).toEqual([]);
+	}, 120_000);
 });

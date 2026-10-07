@@ -3,6 +3,7 @@ import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { ControlPlaneClient } from "./clients/control-plane.js";
 import { resolvePath } from "./config.js";
+import { type DetectionException, parseSignedDetectionExceptions } from "./detection-exceptions.js";
 import { loadRevocationBinding, loadRevocationsCache } from "./managed.js";
 import {
 	type PolicyHighWater,
@@ -108,14 +109,20 @@ function getGovernanceOverlay(
 	}
 	const raw = body?.governance;
 	const digest = body?.governance_sha256;
-	if (!isRecord(raw) || typeof digest !== "string" || !/^[a-f0-9]{64}$/.test(digest)) return { ok: false };
-	if (!Object.keys(raw).every((key) => key === "mcp_deny_servers" || key === "mcp_require_approval_servers")) {
+	if (!isRecord(raw) || typeof digest !== "string" || !/^[a-f0-9]{64}$/.test(digest))
+		return { ok: false };
+	if (
+		!Object.keys(raw).every(
+			(key) => key === "mcp_deny_servers" || key === "mcp_require_approval_servers",
+		)
+	) {
 		return { ok: false };
 	}
 	const deny = governanceServerList(raw.mcp_deny_servers);
 	const approval = governanceServerList(raw.mcp_require_approval_servers);
 	if (!deny || !approval) return { ok: false };
-	if (createHash("sha256").update(canonicalPolicy(raw)).digest("hex") !== digest) return { ok: false };
+	if (createHash("sha256").update(canonicalPolicy(raw)).digest("hex") !== digest)
+		return { ok: false };
 	return { ok: true, overlay: { mcp_deny_servers: deny, mcp_require_approval_servers: approval } };
 }
 
@@ -326,7 +333,69 @@ function getPersistablePolicyBody(
 		...(body?.governance !== undefined
 			? { governance: body.governance, governance_sha256: body.governance_sha256 }
 			: {}),
+		...(body?.detection_exceptions !== undefined
+			? {
+					detection_exceptions: body.detection_exceptions,
+					detection_exceptions_sha256: body.detection_exceptions_sha256,
+				}
+			: {}),
 	};
+}
+
+// ── Signed detection exceptions ────────────────────────────────────────
+
+/** Exceptions attached to the config object a verified policy produced. */
+const signedExceptionsByConfig = new WeakMap<Config, DetectionException[]>();
+
+/**
+ * Detection exceptions carried by a policy body, or [] unless ALL of these hold:
+ * signature trust is configured, the Ed25519 envelope verifies right now, the
+ * envelope's `detection_exceptions_sha256` equals the body's, the body's equals
+ * the canonical digest of the list, and every entry is well formed. An unsigned
+ * policy never carries exceptions: they only relax enforcement, so the digest
+ * over TLS that protects the rest of an unsigned policy is not enough here.
+ */
+export function signedDetectionExceptions(
+	body: Record<string, unknown> | undefined,
+	trust: { keys: string[]; revoked: ReadonlySet<string> },
+	now: number,
+): DetectionException[] {
+	if (!body || body.detection_exceptions === undefined || trust.keys.length === 0) return [];
+	const verified = verifySignedPolicy({
+		body,
+		publicKeysPem: trust.keys,
+		revokedKeyIds: trust.revoked,
+		now,
+	});
+	if (!verified.ok) return [];
+	const bound = (verified.envelope as Record<string, unknown>).detection_exceptions_sha256;
+	const digest = body.detection_exceptions_sha256;
+	if (typeof digest !== "string" || !/^[a-f0-9]{64}$/.test(digest) || bound !== digest) return [];
+	if (
+		createHash("sha256").update(canonicalPolicy(body.detection_exceptions)).digest("hex") !== digest
+	) {
+		return [];
+	}
+	return parseSignedDetectionExceptions(body.detection_exceptions) ?? [];
+}
+
+/** The verified managed exceptions of a config returned by `syncRemoteRuntimePolicy`. */
+export function signedDetectionExceptionsOf(config: Config): DetectionException[] {
+	return signedExceptionsByConfig.get(config) ?? [];
+}
+
+function withSignedExceptions(
+	original: Config,
+	merged: Config,
+	body: Record<string, unknown> | undefined,
+	trust: PolicyTrust,
+	now: number,
+): Config {
+	// An unapplied policy (same object back) carries nothing.
+	if (merged === original) return merged;
+	const exceptions = signedDetectionExceptions(body, trust, now);
+	if (exceptions.length > 0) signedExceptionsByConfig.set(merged, exceptions);
+	return merged;
 }
 
 async function readPersistentPolicyCache(input: {
@@ -658,7 +727,13 @@ export async function syncRemoteRuntimePolicy(
 			policyTrusted(cachedPolicy.body, trust, now) &&
 			(!config.control_plane.remote_policy_required || validRequiredPolicy(cachedPolicy.body))
 		) {
-			return applyRemoteRuntimePolicy(config, cachedPolicy.body);
+			return withSignedExceptions(
+				config,
+				applyRemoteRuntimePolicy(config, cachedPolicy.body),
+				cachedPolicy.body,
+				trust,
+				now,
+			);
 		}
 	}
 
@@ -671,7 +746,13 @@ export async function syncRemoteRuntimePolicy(
 			cachedAt: Date.parse(persisted.cached_at),
 			body: persisted.body,
 		};
-		return applyRemoteRuntimePolicy(config, persisted.body);
+		return withSignedExceptions(
+			config,
+			applyRemoteRuntimePolicy(config, persisted.body),
+			persisted.body,
+			trust,
+			now,
+		);
 	}
 	const stale = persisted
 		? {
@@ -696,7 +777,13 @@ export async function syncRemoteRuntimePolicy(
 			logger.warn("Using last-known central policy within its fixed offline grace", {
 				policyVersion: getPolicyVersion(stale.body),
 			});
-			return applyRemoteRuntimePolicy(config, stale.body);
+			return withSignedExceptions(
+				config,
+				applyRemoteRuntimePolicy(config, stale.body),
+				stale.body,
+				trust,
+				now,
+			);
 		}
 		throw new RemoteRuntimePolicyUnavailableError();
 	};
@@ -761,7 +848,13 @@ export async function syncRemoteRuntimePolicy(
 			);
 			if (!policyTrusted(body, trust, now, logger, known)) return unavailable(false);
 		}
-		const nextConfig = applyRemoteRuntimePolicy(config, body);
+		const nextConfig = withSignedExceptions(
+			config,
+			applyRemoteRuntimePolicy(config, body),
+			body,
+			trust,
+			now,
+		);
 		const cacheSeconds =
 			typeof result.body?.cache_seconds === "number" && Number.isFinite(result.body.cache_seconds)
 				? Math.max(5, Math.min(300, result.body.cache_seconds))

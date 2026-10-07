@@ -103,6 +103,14 @@ const EVASIONS = [
 	"secret-tool lookup service singularity-aidr-cli id aidr-operator-approval-key",
 	"secret-tool lookup service singularity-aidr-cli id aidr-operator-approval-ledger",
 	"security find-generic-password -a aidr-operator-approval-key -s singularity-aidr-cli -w",
+	// Time-limited detection exceptions are operator-only too (catalog item 80).
+	"aidr exception add CLT-CMD-011 --agent claude-code --expires 30d --reason x",
+	"aidr exceptions add CLT-CMD-011 --user bob --expires 7d --reason x",
+	"aidr 'exception' --json add CLT-CMD-011 --repo . --expires 1d --reason x",
+	"npx @singularityrd/aidr-cli exception add CLT-CMD-011 --agent cursor --expires 1d --reason x",
+	"AIDR_OPERATOR_NONINTERACTIVE=1 aidr exception add CLT-CMD-011 --agent cursor --expires 1d --reason x --yes",
+	"cat ~/.singularity-aidr/detection-exceptions.json",
+	"echo '{}' > ~/.singularity-aidr/detection-exceptions.json",
 ];
 
 describe("agent access to the operator approval channel is denied", () => {
@@ -142,6 +150,7 @@ describe("agent access to the operator approval channel is denied", () => {
 			"aidr status",
 			"aidr audit tail -n 20",
 			"aidr allowlist list",
+			"aidr exception list",
 			"git commit -m 'approve the design'",
 			"sed -e 's/.*//' notes.txt",
 			"grep -E '.*TODO' src/index.ts",

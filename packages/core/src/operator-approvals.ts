@@ -388,14 +388,23 @@ function canonicalJson(value: unknown): string {
 	return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`).join(",")}}`;
 }
 
-function computeMac(key: Buffer, kind: "pending" | "approval", record: object): string {
+/**
+ * What a MAC covers. The kind is part of the MAC input, so a record of one kind
+ * can never be replayed as another (a detection exception is not an approval).
+ */
+type MacKind = "pending" | "approval" | OperatorRecordKind;
+
+/** Operator-authored records other modules sign with the approval key. */
+export type OperatorRecordKind = "detection-exception";
+
+function computeMac(key: Buffer, kind: MacKind, record: object): string {
 	const { mac: _ignored, ...body } = record as Record<string, unknown>;
 	return createHmac("sha256", key)
 		.update(`${MAC_DOMAIN}\n${kind}\n${canonicalJson(body)}`)
 		.digest("hex");
 }
 
-function macMatches(key: Buffer, kind: "pending" | "approval", record: { mac: string }): boolean {
+function macMatches(key: Buffer, kind: MacKind, record: { mac: string }): boolean {
 	const expected = Buffer.from(computeMac(key, kind, record), "hex");
 	const actual = Buffer.from(record.mac, "hex");
 	return expected.length === actual.length && timingSafeEqual(expected, actual);
@@ -1379,7 +1388,7 @@ export async function spendExternalApprovalToken(
 	options: OperatorApprovalStoreOptions = {},
 ): Promise<ExternalSpendResult> {
 	if (!domain || !id || !Number.isFinite(expiresAtMs)) return "unavailable";
-	const ledgerId = sha256(`external\n${domain}\n${id}`).slice(0, 32);
+	const ledgerId = externalLedgerId(domain, id);
 	try {
 		return await withStoreLock(operatorApprovalStorePath(options), async () =>
 			spendInLedger(requireAnchor(options), ledgerId, expiresAtMs, nowMs(options)),
@@ -1470,4 +1479,76 @@ export async function markOperatorAllowlistGrantUsed(
 	} catch {
 		return false;
 	}
+}
+
+// ── Other operator-authored records ─────────────────────────────────────
+
+/**
+ * Sign an operator-authored record (for example a detection exception) with the
+ * per-install approval key, creating the key on first use. OPERATOR ONLY: call
+ * it from a TTY-confirmed CLI command, never from a connector. Also requires a
+ * working consumption ledger, because revocations of such records are kept
+ * there. Throws {@link OperatorApprovalError} when either is unavailable.
+ */
+export function signOperatorRecord(
+	kind: OperatorRecordKind,
+	record: object,
+	options: OperatorApprovalStoreOptions = {},
+): string {
+	const key = requireKey(options, true);
+	readLedger(requireAnchor(options));
+	return computeMac(key.key, kind, record);
+}
+
+/**
+ * Whether an operator-authored record carries a valid MAC under the approval
+ * key. False when the key is unavailable (fail closed: an unverifiable record
+ * is never honoured).
+ */
+export function verifyOperatorRecord(
+	kind: OperatorRecordKind,
+	record: { mac: string },
+	options: OperatorApprovalStoreOptions = {},
+): boolean {
+	if (!DIGEST.test(record.mac)) return false;
+	const key = loadKey(options, false);
+	return !!key && macMatches(key.key, kind, record);
+}
+
+function externalLedgerId(domain: string, id: string): string {
+	return sha256(`external\n${domain}\n${id}`).slice(0, 32);
+}
+
+/**
+ * Record that an operator revoked the record `id` of `domain`, in the same
+ * OS-vault ledger that makes approvals single use. A restored copy of a store
+ * file therefore cannot bring a revoked record back. Remembered until
+ * `expiresAtMs`, after which the record is void on its own expiry anyway.
+ */
+export async function recordOperatorRevocation(
+	domain: string,
+	id: string,
+	expiresAtMs: number,
+	options: OperatorApprovalStoreOptions = {},
+): Promise<ExternalSpendResult> {
+	return spendExternalApprovalToken(domain, id, expiresAtMs, options);
+}
+
+/**
+ * Whether `id` of `domain` was revoked (see {@link recordOperatorRevocation}).
+ * Throws {@link OperatorApprovalError} when the ledger cannot be read; callers
+ * must then treat the record as not usable.
+ */
+export function isOperatorRevoked(
+	domain: string,
+	id: string,
+	options: OperatorApprovalStoreOptions = {},
+): boolean {
+	const ledger = readLedger(requireAnchor(options));
+	return Object.hasOwn(ledger.consumed, externalLedgerId(domain, id));
+}
+
+/** Run `fn` under the cross-process lock of the store file at `path`. */
+export function withOperatorFileLock<T>(path: string, fn: () => Promise<T>): Promise<T> {
+	return withStoreLock(path, fn);
 }

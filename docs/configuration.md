@@ -896,7 +896,8 @@ The approval channel is protected by hard-deny rules (never `ask`, which would
 hand the agent an actionId to have approved):
 
 - `CLT-SELF-007` — an agent command that runs `aidr approve`, `aidr pending`,
-  `aidr allowlist add`, the MCP gateway's toolset approval `aidr-mcp-approve`, or
+  `aidr allowlist add`, `aidr exception add`, the MCP gateway's toolset approval
+  `aidr-mcp-approve`, or
   sets `AIDR_OPERATOR_NONINTERACTIVE`.
 - `CLT-SELF-008` — any agent reference to the AIDR state directory
   `.singularity-aidr`, in a shell command, a file-tool path, a Write/Edit body or
@@ -1016,6 +1017,59 @@ channel: `aidr approve` approvals are ignored, native dialogs become blocks, and
 the dashboard is unavailable (not enrolled, no signed entitlement, control plane
 unreachable) the call stays blocked with the reason in the message.
 
+## Detection exceptions
+
+A detection exception lifts **one detection rule** for **one subject** until it
+**expires**, then lifts itself automatically — there is nothing to clean up. Use it
+when a rule is right in general but a specific person, agent or repository needs
+it relaxed for a while; use `disabled_threats` only to switch a rule off for
+everyone, permanently.
+
+| Scope | Meaning |
+|-------|---------|
+| rule id (required) | e.g. `CLT-CMD-011`. Only matches of this rule are lifted; every other rule still decides. |
+| exact artifact (optional) | `--artifact "<exact command, URL or path>"`. Only that artifact; only its SHA-256 is stored. |
+| subject (exactly one) | `--user <OS account>`, `--agent <runtime>` (`claude-code`, `cursor`, `vscode`, `openclaw`, `opencode`, `codex`), or `--repo <root path or origin remote>` |
+| expiry (required) | `--expires 30m\|12h\|7d`, between 5 minutes and **30 days** |
+| reason (required) | Recorded with the exception and shown by `aidr exception list` |
+
+```bash
+aidr exception add CLT-CMD-011 --repo ~/src/deploy-tools --expires 7d --reason "release scripts set 777 on a scratch dir"
+aidr exception list [--all] [--json]
+aidr exception remove <id>
+```
+
+Guarantees:
+
+- **Operator only.** `aidr exception add` needs the same interactive confirmation as
+  `aidr approve` (type `except`; `--yes` only with `AIDR_OPERATOR_NONINTERACTIVE=1`),
+  and `CLT-SELF-007` hard-denies an agent command that runs it. No connector exposes
+  an exception tool to the agent.
+- **Integrity.** Each record is HMAC-signed with the operator approval key (OS vault
+  by default, see [Key custody](#key-custody)); an edited or forged record is ignored.
+  `aidr exception remove` records the revocation in the vault ledger first, so
+  restoring an old copy of `detection-exceptions.json` does not bring it back.
+  Without a working key or ledger, exceptions are disabled (nothing is lifted).
+- **Never for self-defense.** Rules in the `self_defense` category, `CLT-SELF-*` and
+  `CLT-CANARY-*` cannot be excepted; the CLI refuses them and the evaluator ignores
+  any record that names them.
+- **Audited.** Every time an exception removes a rule match from a decision, a
+  `detection_exception` entry (exception id, rule, subject kind, source, artifact
+  digest) is written to the audit log. Exceptions apply only while
+  `logging.enabled` is true.
+- **Exact scope.** A `user` subject matches the local OS account, an `agent` subject
+  the connector's runtime, a `repo` subject the git repository of the agent's working
+  directory (root path, or `origin` remote such as `github.com/acme/app`).
+
+**Managed tenants** create exceptions in the dashboard (**Governance → Detection
+exceptions**, owner or admin with MFA; every create and revoke is audited). They are
+delivered inside the Ed25519-signed runtime policy: the list travels as
+`detection_exceptions`, its digest is bound into the signed envelope as
+`detection_exceptions_sha256`, and a connector applies them only when that envelope
+verifies with the configured policy keys. An unsigned policy never carries
+exceptions. The control plane only sends a user or agent exception to the API key
+bound to that user or agent; repository exceptions are matched on the endpoint.
+
 ## Files on Disk
 
 | Path | Purpose |
@@ -1025,7 +1079,8 @@ unreachable) the call stays blocked with the reason in the message.
 | `~/.singularity-aidr/cache.json` | Verdict cache |
 | `~/.singularity-aidr/allowlist.json` | User allowlist |
 | `~/.singularity-aidr/audit.jsonl` | Audit log |
-| `~/.singularity-aidr/approvals.json` | Operator approval store: pending asks and `aidr approve` approvals (HMAC-protected, `0600`) |
+| `~/.singularity-aidr/approvals.json` | Operator approval store: pending asks and `aidr approve` approvals (HMAC-protected, `0600`), plus informational host-dialog asks (no MAC, never approvable) |
+| `~/.singularity-aidr/detection-exceptions.json` | Local [detection exceptions](#detection-exceptions) (HMAC-protected with the approval key, `0600`; expired records are dropped) |
 | `~/.singularity-aidr/operator-approval.key` | Approval HMAC key, only with the explicit `operator_approvals.key_storage: "file"` opt-in (`0600`) |
 | `~/.singularity-aidr/operator-approval-ledger.json` | Single-use consumption ledger, only with the `file` key storage (`0600`); otherwise it lives in the OS vault |
 | `~/.singularity-aidr/operator-approval-key.json` | Informational record of where the approval key lives; never makes AIDR read a key file |

@@ -23,6 +23,7 @@ import {
 	buildIncidentEntry,
 	buildRuntimeVerdictEntry,
 	getRecentEntries,
+	logDetectionExceptionUse,
 	logIncident,
 	logVerdict,
 } from "./audit-log.js";
@@ -56,6 +57,13 @@ import {
 	type DelegatedCredentialVerificationContext,
 	verifyDelegatedCredential,
 } from "./delegated-credential.js";
+import {
+	applyDetectionExceptions,
+	type DetectionException,
+	detectionExceptionArtifactDigest,
+	loadUsableLocalExceptions,
+	resolveDetectionExceptionSubjectContext,
+} from "./detection-exceptions.js";
 import { type DetectionLeg, DetectionLegUnavailableError } from "./detection-leg.js";
 import type { DlpPolicy } from "./dlp/policy.js";
 import { type DlpFinding, type DlpScanResult, scanDlpInput } from "./dlp/scanner.js";
@@ -114,7 +122,7 @@ import {
 import { evaluateCommonPiiBaseline } from "./pii-baseline.js";
 import { evaluatePolicy } from "./policy.js";
 import type { TenantPromptSafetyPolicy } from "./prompt-safety.js";
-import { syncRemoteRuntimePolicy } from "./remote-policy.js";
+import { signedDetectionExceptionsOf, syncRemoteRuntimePolicy } from "./remote-policy.js";
 import type { ReputationFeedLoadOptions } from "./reputation-feed.js";
 import { inspectResponseBarrier } from "./response-barrier.js";
 import { loadThreatsFromDirsWithReport, type ThreatLoadError } from "./threat-loader.js";
@@ -1254,6 +1262,58 @@ async function loadHeuristics(
 }
 
 /**
+ * Operator-created, time-limited detection exceptions (`detection-exceptions.ts`):
+ * drop the rule matches an active exception covers for exactly this subject.
+ *
+ * Only ever removes a match of a non-protected rule; self-defense and canary
+ * rules are always kept. Exceptions apply only while the audit log is enabled,
+ * because every use is audited — no audit, no exception. Never throws: a
+ * failure keeps every match.
+ */
+async function applyDetectionExceptionLeg(
+	request: ToolEvaluationRequest,
+	context: ToolEvaluationContext,
+	config: Config,
+	managed: readonly DetectionException[],
+	matches: ReturnType<HeuristicsEngine["match"]>,
+	logger: Logger,
+): Promise<ReturnType<HeuristicsEngine["match"]>> {
+	if (matches.length === 0 || !config.logging?.enabled) return matches;
+	try {
+		const ruleIds = new Set(matches.map((m) => m.threat.id));
+		const local = await loadUsableLocalExceptions(ruleIds, {
+			logger,
+			approvals: { logger, keyStorage: config.operator_approvals?.key_storage },
+		});
+		const candidates = [...managed.filter((e) => ruleIds.has(e.ruleId)), ...local];
+		if (candidates.length === 0) return matches;
+		const subject = resolveDetectionExceptionSubjectContext(
+			context.agentRuntime,
+			context.workingDirectory,
+		);
+		const { kept, applied } = applyDetectionExceptions(matches, candidates, subject, Date.now());
+		for (const use of applied) {
+			await logDetectionExceptionUse(config.logging, {
+				sessionId: request.sessionId,
+				toolName: request.toolName,
+				exceptionId: use.exception.id,
+				ruleId: use.ruleId,
+				source: use.exception.source,
+				subjectKind: use.exception.subject.kind,
+				artifactSha256: detectionExceptionArtifactDigest(use.artifact),
+				expiresAt: use.exception.expiresAt,
+			});
+		}
+		return kept;
+	} catch (error) {
+		logger.warn("Detection exceptions could not be evaluated; none applied", {
+			error: error instanceof Error ? error.name : typeof error,
+		});
+		return matches;
+	}
+}
+
+/**
  * The code-guard leg (AI supply-chain and secure-code rules over the code this
  * call writes or runs). A failure here is a detection-internal failure: the
  * signal is skipped and logged, never reported as a clean inspection.
@@ -1866,10 +1926,13 @@ async function runEvaluationPipeline(
 		}
 	}
 
+	// Exceptions delivered inside the signed runtime policy (empty unless it verified).
+	let managedDetectionExceptions: DetectionException[] = [];
 	// Sync remote runtime policy if control plane is enabled and we have a token
 	if ((config.control_plane.enabled && token) || config.control_plane.remote_policy_required) {
 		try {
 			const merged = await syncRemoteRuntimePolicy(config, token, logger);
+			managedDetectionExceptions = signedDetectionExceptionsOf(merged);
 			if (merged !== config) {
 				// Only assign if sync actually modified the config
 				config = { ...config, ...merged };
@@ -2065,6 +2128,14 @@ async function runEvaluationPipeline(
 		// are advisory and folded in after the decision (see below).
 		codeGuard = inspectCodeLeg(request, loaded, config, logger);
 		heuristicMatches = [...heuristicMatches, ...codeGuard.heuristicMatches];
+		heuristicMatches = await applyDetectionExceptionLeg(
+			request,
+			context,
+			config,
+			managedDetectionExceptions,
+			heuristicMatches,
+			logger,
+		);
 	}
 
 	let urlCheckResults: Awaited<ReturnType<UrlCheckClient["checkUrls"]>> = [];

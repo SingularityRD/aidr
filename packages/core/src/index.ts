@@ -458,6 +458,38 @@ export {
 	parseDelegatedCredentialClaims,
 	verifyDelegatedCredential,
 } from "./delegated-credential.js";
+// Operator-created, time-limited detection exceptions (local store + signed policy)
+export {
+	type AddDetectionExceptionInput,
+	type AppliedDetectionException,
+	addDetectionException,
+	applyDetectionExceptions,
+	DETECTION_EXCEPTION_MAX_ENTRIES,
+	DETECTION_EXCEPTION_MAX_TTL_MS,
+	DETECTION_EXCEPTION_MIN_TTL_MS,
+	DETECTION_EXCEPTION_REVOCATION_DOMAIN,
+	type DetectionException,
+	DetectionExceptionError,
+	type DetectionExceptionStoreOptions,
+	type DetectionExceptionSubject,
+	type DetectionExceptionSubjectContext,
+	type DetectionExceptionSubjectKind,
+	type DetectionExceptionWire,
+	DetectionExceptionWireSchema,
+	detectionExceptionArtifactDigest,
+	detectionExceptionStorePath,
+	exceptionActive,
+	findGitRepository,
+	isProtectedRule,
+	type ListedDetectionException,
+	listDetectionExceptions,
+	loadUsableLocalExceptions,
+	normalizeRepoRemote,
+	parseSignedDetectionExceptions,
+	removeDetectionException,
+	resolveDetectionExceptionSubjectContext,
+	subjectMatches,
+} from "./detection-exceptions.js";
 export type { DetectionLeg } from "./detection-leg.js";
 export { DetectionLegUnavailableError, describeHttpFailure } from "./detection-leg.js";
 // Signed tenant detector policy: the single provisioning implementation every
@@ -1066,6 +1098,7 @@ export {
 	findOperatorAllowlistGrant,
 	getPendingAsk,
 	type HostDialogAsk,
+	isOperatorRevoked,
 	type ListedPendingAsk,
 	listHostDialogAsks,
 	listOperatorApprovals,
@@ -1088,6 +1121,7 @@ export {
 	type OperatorKeyMaterial,
 	type OperatorKeyProvider,
 	type OperatorKeyStorage,
+	type OperatorRecordKind,
 	operatorApprovalStorePath,
 	PENDING_ASK_TTL_MS,
 	type PendingAsk,
@@ -1096,9 +1130,13 @@ export {
 	type RecordPendingAskInput,
 	recordHostDialogAsk,
 	recordOperatorApproval,
+	recordOperatorRevocation,
 	recordPendingAsk,
 	resolveOperatorKeyStorage,
+	signOperatorRecord,
 	spendExternalApprovalToken,
+	verifyOperatorRecord,
+	withOperatorFileLock,
 } from "./operator-approvals.js";
 export { type OutputFinding, scanModelOutput } from "./output-scanner.js";
 // High-precision credential / payment-card detection shared by output scanning and the CLI

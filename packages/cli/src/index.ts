@@ -28,6 +28,11 @@ import coverageCommand from "./commands/coverage.js";
 import discoverCommand from "./commands/discover.js";
 import doctorCommand from "./commands/doctor.js";
 import {
+	exceptionAddCommand,
+	exceptionListCommand,
+	exceptionRemoveCommand,
+} from "./commands/exceptions.js";
+import {
 	learningApproveCommand,
 	learningExecuteCommand,
 	learningExportAuthorityCommand,
@@ -356,6 +361,38 @@ allowlistProgram
 	.command("remove <type> <value>")
 	.description("Remove a url, command (text or hash) or file_path from the allowlist")
 	.action((type, value) => allowlistRemoveCommand(type, value));
+
+const exceptionProgram = program
+	.command("exception")
+	.description("Time-limited detection exceptions per user, agent or repository");
+
+exceptionProgram
+	.command("add <ruleId>")
+	.description(
+		"Operator only: lift one detection rule for one subject until it expires (max 30 days; interactive confirmation)",
+	)
+	.option("--user <name>", "Subject: this OS account")
+	.option("--agent <runtime>", "Subject: this agent runtime (claude-code, cursor, vscode, ...)")
+	.option("--repo <path|remote>", "Subject: this repository (root path or origin remote)")
+	.option("--expires <duration>", "Lifetime such as 30m, 12h or 7d (required; max 30d)")
+	.option("--reason <text>", "Why the exception is needed (required)")
+	.option("--artifact <value>", "Narrow to one exact command, URL or file path")
+	.option("-y, --yes", "Skip the prompt; honoured only with AIDR_OPERATOR_NONINTERACTIVE=1")
+	.option("--json", "Emit a machine-readable receipt")
+	.action((ruleId, options) => exceptionAddCommand(ruleId, options));
+
+exceptionProgram
+	.command("list")
+	.description("Show local detection exceptions")
+	.option("--all", "Include expired exceptions")
+	.option("--json", "Emit machine-readable JSON")
+	.action((options) => exceptionListCommand(options));
+
+exceptionProgram
+	.command("remove <id>")
+	.description("Revoke a local detection exception now")
+	.option("--json", "Emit a machine-readable receipt")
+	.action((id, options) => exceptionRemoveCommand(id, options));
 
 const complianceProgram = program
 	.command("compliance")
