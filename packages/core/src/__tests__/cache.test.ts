@@ -78,14 +78,13 @@ describe("VerdictCache", () => {
 		const cache = new VerdictCache(makeConfig({ path: cachePath }));
 		await cache.load();
 		expect(cache.getUrl("https://malformed.test")).toBeNull();
-		expect(cache.getCommand("malformed")).toBeNull();
 		expect(cache.getPackage("malformed")).toBeNull();
-		cache.putCommand("new", makeVerdict({ verdict: "deny" }));
+		cache.putPackage("new", makeVerdict({ verdict: "deny" }), null);
 		await cache.save();
 		expect(JSON.parse(await readFile(cachePath, "utf8"))).toMatchObject({
 			urls: {},
-			packages: {},
-			commands: { new: { verdict: "deny" } },
+			packages: { new: { verdict: "deny" } },
+			commands: {},
 		});
 	});
 
@@ -205,14 +204,10 @@ describe("VerdictCache", () => {
 		}
 	});
 
-	it("stores and retrieves command verdict", async () => {
+	it("does not expose a command verdict cache (it would outlive rule changes)", () => {
 		const cache = new VerdictCache(makeConfig({ path: join(dir, "cache.json") }));
-		await cache.load();
-		const hash = hashCommand("dangerous command");
-		cache.putCommand(hash, makeVerdict({ verdict: "deny" }));
-		const result = cache.getCommand(hash);
-		expect(result).not.toBeNull();
-		expect(result?.verdict).toBe("deny");
+		expect("getCommand" in cache).toBe(false);
+		expect("putCommand" in cache).toBe(false);
 	});
 
 	it("persists to disk", async () => {
@@ -377,7 +372,7 @@ describe("VerdictCache", () => {
 		expect(data.urls["http://test.com/"].aidrVersion).toBe("0.6.0");
 	});
 
-	it("ignores stale command entries from older version", async () => {
+	it("drops legacy command entries on save", async () => {
 		const cachePath = join(dir, "cache.json");
 		const farFuture = "9999-12-31T23:59:59+00:00";
 		const hash = hashCommand("dangerous command");
@@ -402,7 +397,9 @@ describe("VerdictCache", () => {
 
 		const cache = new VerdictCache(makeConfig({ path: cachePath }), undefined, "0.5.0");
 		await cache.load();
-		expect(cache.getCommand(hash)).toBeNull();
+		cache.putPackage("pkg", makeVerdict({ verdict: "deny" }), null);
+		await cache.save();
+		expect(JSON.parse(await readFile(cachePath, "utf8")).commands).toEqual({});
 	});
 
 	it("ignores stale package entries from older version", async () => {

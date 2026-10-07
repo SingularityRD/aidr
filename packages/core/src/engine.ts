@@ -118,50 +118,44 @@ export class DecisionEngine {
 			return this.allowVerdict();
 		}
 
+		// The confidence threshold is applied to each signal on its own, then
+		// the per-signal decisions are merged (deny > ask > allow). Using the
+		// maximum confidence across unrelated signals let one confident advisory
+		// finding keep a weak deny at deny, or suppress the escalation of a weak
+		// security signal.
+		const decided = signals.map((signal) => ({
+			signal,
+			decision: this.effectiveDecision(signal),
+		}));
+
 		// Strongest decision first; among equal decisions the most severe rule
 		// (stable otherwise), so the reported rule id and severity label describe
 		// the same, most significant finding.
-		signals.sort(
+		decided.sort(
 			(a, b) =>
 				(DECISION_PRIORITY[b.decision] ?? 0) - (DECISION_PRIORITY[a.decision] ?? 0) ||
-				severityRank(b.ruleSeverity) - severityRank(a.ruleSeverity),
+				severityRank(b.signal.ruleSeverity) - severityRank(a.signal.ruleSeverity),
 		);
-		const top = signals[0];
-		if (!top) {
+		const first = decided[0];
+		if (!first) {
 			return this.allowVerdict();
 		}
+		const top = first.signal;
+		const decision = first.decision;
 
 		const allArtifacts = [...new Map(signals.map((s) => [s.artifact, s.artifact])).values()];
 		const allReasons = [...new Map(signals.map((s) => [s.reason, s.reason])).values()];
-		const maxConfidence = Math.max(...signals.map((s) => s.confidence));
-
-		let decision = top.decision;
-		// Apply confidence threshold consistently across all decisions
-		// Low confidence signals should be escalated to "ask" regardless of original decision
-		if (maxConfidence < this.threshold) {
-			// Downgrade deny -> ask for low confidence
-			if (decision === "deny") {
-				decision = "ask";
-			}
-			// Escalate allow -> ask only for a sub-threshold signal in a
-			// security-relevant category. Advisory findings (secure-code hints on
-			// written code) are logged, not held for a human: holding routine edits
-			// for review trains users to approve blindly.
-			if (
-				decision === "allow" &&
-				signals.some(
-					(signal) =>
-						signal.confidence < this.threshold && isSecurityRelevantCategory(signal.category),
-				)
-			) {
-				decision = "ask";
-			}
-		}
+		// The reported confidence describes the signals that set the decision.
+		const confidence = Math.max(
+			...decided
+				.filter((entry) => entry.decision === decision)
+				.map((entry) => entry.signal.confidence),
+		);
 
 		return {
 			decision,
 			category: top.category,
-			confidence: maxConfidence,
+			confidence,
 			severity: top.severity,
 			source: top.source,
 			artifacts: allArtifacts,
@@ -170,6 +164,20 @@ export class DecisionEngine {
 			...(top.ruleSeverity ? { ruleSeverity: top.ruleSeverity } : {}),
 			...(top.frameworks ? { frameworks: top.frameworks } : {}),
 		};
+	}
+
+	/**
+	 * One signal's decision under the confidence threshold: a sub-threshold
+	 * deny is held for review (`ask`); a sub-threshold `log` signal in a
+	 * security-relevant category is escalated to `ask`. Advisory findings
+	 * (secure-code hints on written code) are logged, not held for a human:
+	 * holding routine edits for review trains users to approve blindly.
+	 */
+	private effectiveDecision(signal: Signal): Decision {
+		if (signal.confidence >= this.threshold) return signal.decision;
+		if (signal.decision === "deny") return "ask";
+		if (signal.decision === "allow" && isSecurityRelevantCategory(signal.category)) return "ask";
+		return signal.decision;
 	}
 
 	private collectSignals(

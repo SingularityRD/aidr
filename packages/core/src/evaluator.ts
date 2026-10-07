@@ -18,7 +18,7 @@ import {
 	RUNAWAY_UNAVAILABLE_CATEGORY,
 } from "./agent-safety/runaway-guard.js";
 import { loadTrustedModelSources, type TrustedModelSources } from "./ai-supply-chain.js";
-import { isAllowlisted, loadAllowlist } from "./allowlist.js";
+import { allowlistedArtifacts, isAllowlisted, loadAllowlist } from "./allowlist.js";
 import {
 	buildIncidentEntry,
 	buildRuntimeVerdictEntry,
@@ -882,6 +882,7 @@ async function contextPoisoningVerdict(
 			settings,
 			sensitivity: config.sensitivity,
 			allowlisted: baseVerdict.source === "allowlisted",
+			isPathAllowlisted: allowlistedPathByRequest.get(request),
 			mcpToolDescription: context.mcpToolDescription,
 		});
 	} catch (error) {
@@ -906,6 +907,12 @@ function mergeContextPoisoningVerdict(current: Verdict, poisoning: Verdict | nul
  * (`applyRuntimeDetectors`), so a skipped check is never reported as clean.
  */
 const canaryUnavailableByRequest = new WeakMap<ToolEvaluationRequest, string>();
+/**
+ * Allowlisted written paths of a partially allowlisted call: the
+ * context-poisoning path review is dropped for those paths only, while their
+ * content and every other artifact are still inspected.
+ */
+const allowlistedPathByRequest = new WeakMap<ToolEvaluationRequest, (path: string) => boolean>();
 
 /**
  * Canary check, run before any other leg: a call that touches a decoy is
@@ -1242,6 +1249,33 @@ export function degradedRulesVerdict(
 	};
 }
 
+/**
+ * Some loaded rules threw while matching this call, so their signal is
+ * missing. Like {@link degradedRulesVerdict}: an `allow` becomes an `ask`, a
+ * stricter verdict is kept and carries the gap as an extra reason.
+ */
+export function runtimeRuleFailureVerdict(
+	verdict: Verdict,
+	failures: ReadonlyArray<{ threatId: string }>,
+): Verdict {
+	const ids = [...new Set(failures.map((failure) => failure.threatId))];
+	const shown = ids.slice(0, 5).join(", ") + (ids.length > 5 ? `, +${ids.length - 5} more` : "");
+	const reason = `Threat rules failed while matching (${shown}), so this call was NOT fully inspected.`;
+	if (verdict.decision !== "allow") {
+		return { ...verdict, reasons: [...verdict.reasons, reason] };
+	}
+	return {
+		decision: "ask",
+		category: "detection_degraded",
+		confidence: 1.0,
+		severity: "warning",
+		source: "detection_degraded",
+		artifacts: verdict.artifacts,
+		matchedThreatId: null,
+		reasons: [reason, "This is not a clean result."],
+	};
+}
+
 function uninspectablePatchVerdict(): Verdict {
 	return {
 		decision: "deny",
@@ -1517,6 +1551,12 @@ async function recheckRedactedInput(
 	}
 }
 
+/** The connector-reported working directory when absolute, else this process's. */
+function reportedWorkingDirectory(context: ToolEvaluationContext): string {
+	const reported = context.workingDirectory?.trim();
+	return reported && isAbsolute(reported) ? reported : process.cwd();
+}
+
 /**
  * The agent permission profile outcome for this call, or null when no profile
  * restricts it. An unexpected evaluation failure is a deny: the profile is a
@@ -1528,8 +1568,7 @@ async function evaluateAgentProfileVerdict(
 ): Promise<Verdict | null> {
 	const profiles = context.agentProfiles;
 	if (!profiles || profiles.layers.length === 0) return null;
-	const reported = context.workingDirectory?.trim();
-	const workingDirectory = reported && isAbsolute(reported) ? reported : process.cwd();
+	const workingDirectory = reportedWorkingDirectory(context);
 	try {
 		const evaluation = await evaluateAgentProfiles(
 			profiles,
@@ -2032,7 +2071,11 @@ async function runEvaluationPipeline(
 	// Sync remote runtime policy if control plane is enabled and we have a token
 	if ((config.control_plane.enabled && token) || config.control_plane.remote_policy_required) {
 		try {
-			const merged = await syncRemoteRuntimePolicy(config, token, logger);
+			// A signed policy must belong to the tenant of this installation's
+			// verified entitlement; an unknown tenant accepts no signed policy.
+			const merged = await syncRemoteRuntimePolicy(config, token, logger, Date.now(), {
+				expectedTenantId: revocationBindingForState(managedState).tenantId ?? null,
+			});
 			managedDetectionExceptions = signedDetectionExceptionsOf(merged);
 			if (merged !== config) {
 				// Only assign if sync actually modified the config
@@ -2112,14 +2155,30 @@ async function runEvaluationPipeline(
 		request.toolInput,
 		managedState,
 	);
+	// An allowlist entry suppresses only the signals of the artifacts it names.
+	// The call takes the allowlisted fast path only when every artifact is
+	// covered; otherwise the remaining artifacts are still fully inspected.
 	let allowlisted: Verdict | null = null;
+	let inspectionArtifacts = request.artifacts;
 	try {
 		const allowlist = await loadAllowlist(config.allowlist, logger);
-		if (isAllowlisted(allowlist, request.artifacts) && policyVerdict?.decision !== "deny") {
-			allowlisted = allowVerdict("allowlisted");
+		const workingDirectory = reportedWorkingDirectory(context);
+		const covered = allowlistedArtifacts(allowlist, request.artifacts, workingDirectory);
+		if (covered.size > 0) {
+			allowlistedPathByRequest.set(request, (path) =>
+				isAllowlisted(allowlist, [{ type: "file_path", value: path }], workingDirectory),
+			);
+			if (
+				request.artifacts.every((artifact) => covered.has(artifact)) &&
+				policyVerdict?.decision !== "deny"
+			) {
+				allowlisted = allowVerdict("allowlisted");
+			} else {
+				inspectionArtifacts = request.artifacts.filter((artifact) => !covered.has(artifact));
+			}
 		}
 	} catch {
-		// Fail open if allowlist loading fails.
+		// An unreadable allowlist suppresses nothing: every artifact is inspected.
 	}
 
 	if (allowlisted) {
@@ -2136,56 +2195,17 @@ async function runEvaluationPipeline(
 		return finalVerdict;
 	}
 
-	if (policyVerdict) {
+	// A policy deny is final; nothing downstream can strengthen it, so the
+	// remaining artifacts are not sent to any reputation provider.
+	if (policyVerdict?.decision === "deny") {
 		const finalVerdict = await finalize(policyVerdict);
-		const durationMs = performance.now() - startTime;
-		const auditInput = auditToolInputForVerdict(request.toolInput, finalVerdict, context);
-		let incidentEntry: Record<string, unknown> | null = null;
-		if (
-			config.mode === "managed" &&
-			config.response.emit_incidents &&
-			(finalVerdict.decision === "ask" || finalVerdict.decision === "deny")
-		) {
-			try {
-				incidentEntry = buildIncidentEntry({
-					incidentId: `inc_${request.sessionId}_${Date.now()}`,
-					sessionId: request.sessionId,
-					toolName: request.toolName,
-					toolInput: auditInput,
-					verdict: finalVerdict,
-					recommendedActions: finalVerdict.decision === "deny" ? ["review", "block"] : ["review"],
-				});
-				await logIncident(config.logging, incidentEntry);
-			} catch {
-				incidentEntry = null;
-			}
-		}
-
-		try {
-			await logVerdict(
-				config.logging,
-				request.sessionId,
-				request.toolName,
-				auditInput,
-				finalVerdict,
-				false,
-				durationMs,
-			);
-		} catch {
-			// Fail open.
-		}
-
-		await ingestToControlPlaneIfEnabled(
-			request,
-			context,
-			config,
-			finalVerdict,
-			incidentEntry,
-			logger,
-			durationMs,
-		);
+		await recordPipelineVerdict(request, context, config, logger, startTime, finalVerdict);
 		return finalVerdict;
 	}
+	const inspected: ToolEvaluationRequest =
+		inspectionArtifacts === request.artifacts
+			? request
+			: { ...request, artifacts: inspectionArtifacts };
 
 	let cache: VerdictCache | null = null;
 	try {
@@ -2200,7 +2220,7 @@ async function runEvaluationPipeline(
 		cache = null;
 	}
 
-	const urls = request.artifacts
+	const urls = inspected.artifacts
 		.filter((artifact) => artifact.type === "url")
 		.map((artifact) => artifact.value);
 	// An older clean cache entry is not proof that a newly configured signed feed
@@ -2215,16 +2235,20 @@ async function runEvaluationPipeline(
 	let threatsLoaded = 0;
 	let bundledRuleErrors: ThreatLoadError[] = [];
 	let codeGuard: CodeGuardResult = EMPTY_CODE_GUARD_RESULT;
+	// Rules that threw while matching this call: their signal is skipped, so
+	// the inspection is degraded, never clean.
+	let failedRules: ReadonlyArray<{ threatId: string; reason: string }> = [];
 	if (config.heuristics_enabled) {
 		const loaded = await loadHeuristics(context, config, logger);
 		threatsLoaded = loaded.threatsLoaded;
 		bundledRuleErrors = loaded.bundledErrors;
-		heuristicMatches = loaded.engine.match(request.artifacts);
+		heuristicMatches = loaded.engine.match(inspected.artifacts);
 		// Diff-aware agent-safety rules: what an edit adds to or removes from
 		// tests, CI and lint/coverage configuration (agent-safety/edit-views.ts).
 		if (loaded.engine.hasEditViewRules) {
 			heuristicMatches.push(...loaded.engine.matchEditViews(await buildEditViews(request, logger)));
 		}
+		failedRules = [...loaded.engine.unavailableThreats];
 		// Model-loading rules decide like any heuristic; secure-code findings
 		// are advisory and folded in after the decision (see below).
 		codeGuard = inspectCodeLeg(request, loaded, config, logger);
@@ -2403,24 +2427,30 @@ async function runEvaluationPipeline(
 		amsiCheckResults: amsiCheckResults.length > 0 ? amsiCheckResults : undefined,
 	});
 
-	if (cachedUrlVerdicts.size > 0 && verdict.decision === "allow") {
-		for (const [url, cachedVerdict] of cachedUrlVerdicts) {
-			if (cachedVerdict.verdict === "allow") {
-				continue;
-			}
-			verdict = {
-				decision: cachedVerdict.verdict,
-				category: "network_egress",
-				confidence: 1.0,
-				severity: cachedVerdict.severity,
-				source: `cache(${cachedVerdict.source})`,
-				artifacts: [url],
-				matchedThreatId: null,
-				reasons: cachedVerdict.reasons,
-			};
-			break;
+	// The strongest cached URL decision applies whatever the live signals said:
+	// a cached deny must not be hidden behind a live ask (deny > ask > allow).
+	let strongestCached: Verdict | null = null;
+	for (const [url, cachedVerdict] of cachedUrlVerdicts) {
+		if (cachedVerdict.verdict === "allow") continue;
+		if (
+			strongestCached &&
+			DETECTOR_DECISION_RANK[cachedVerdict.verdict] <=
+				DETECTOR_DECISION_RANK[strongestCached.decision]
+		) {
+			continue;
 		}
+		strongestCached = {
+			decision: cachedVerdict.verdict,
+			category: "network_egress",
+			confidence: 1.0,
+			severity: cachedVerdict.severity,
+			source: `cache(${cachedVerdict.source})`,
+			artifacts: [url],
+			matchedThreatId: null,
+			reasons: cachedVerdict.reasons,
+		};
 	}
+	if (strongestCached) verdict = mergeVerdictsByPriority(verdict, strongestCached);
 	// An enabled AMSI leg that did not run is a gap in coverage, not a clean
 	// result. `amsi_check` is enabled by default, so on a Windows host where
 	// koffi and the PowerShell fallback are both unusable this used to be
@@ -2481,6 +2511,12 @@ async function runEvaluationPipeline(
 			files: [...new Set(bundledRuleErrors.map((error) => error.file))],
 		});
 	}
+	if (failedRules.length > 0) {
+		verdict = runtimeRuleFailureVerdict(verdict, failedRules);
+		logger.warn("Local detection degraded: threat rules failed while matching", {
+			threatIds: [...new Set(failedRules.map((failure) => failure.threatId))],
+		});
+	}
 
 	// A URL leg that did not run or covered only part of the requested URLs is a
 	// visible coverage gap, including when the operator chose not to share URLs
@@ -2500,11 +2536,49 @@ async function runEvaluationPipeline(
 	// Secure-code guardrails: a notice by default (`warn`), a review with
 	// `secure_code.action: "ask"`. Never a deny on their own.
 	verdict = applySecureCodeWarnings(verdict, codeGuard.warnings, config.secure_code);
-	verdict = await finalize(verdict);
-	const durationMs = performance.now() - startTime;
-	const auditInput = auditToolInputForVerdict(request.toolInput, verdict, context);
+	// A non-deny policy finding (approval required, unavailable intel, an
+	// invalid policy pattern) never replaces detection: both are merged, deny >
+	// ask > allow, with the reasons of both kept. On equal decisions the policy
+	// finding names the outcome.
+	verdict = await finalize(mergeVerdictsByPriority(policyVerdict, verdict));
 
 	await cacheUrlResults(urlCheckResults, context.reputationFeed ? null : cache);
+	await recordPipelineVerdict(request, context, config, logger, startTime, verdict);
+	return verdict;
+}
+
+/**
+ * Merge two verdicts by decision priority (deny > ask > allow). The stronger
+ * one wins; on a tie `primary` wins. The reasons of a non-allow loser are kept
+ * so a gap or an approval requirement is never silently dropped.
+ */
+export function mergeVerdictsByPriority(primary: Verdict | null, other: Verdict): Verdict {
+	if (!primary) return other;
+	const otherWins =
+		DETECTOR_DECISION_RANK[other.decision] > DETECTOR_DECISION_RANK[primary.decision];
+	const winner = otherWins ? other : primary;
+	const loser = otherWins ? primary : other;
+	if (loser.decision === "allow") return winner;
+	const reasons = [...winner.reasons];
+	for (const reason of loser.reasons) if (!reasons.includes(reason)) reasons.push(reason);
+	return reasons.length === winner.reasons.length ? winner : { ...winner, reasons };
+}
+
+/**
+ * Audit, incident, correlation and control-plane recording for a verdict
+ * that went through the full pipeline (already finalized). Every step is
+ * best effort and never changes the verdict.
+ */
+async function recordPipelineVerdict(
+	request: ToolEvaluationRequest,
+	context: ToolEvaluationContext,
+	config: Config,
+	logger: Logger,
+	startTime: number,
+	verdict: Verdict,
+): Promise<void> {
+	const durationMs = performance.now() - startTime;
+	const auditInput = auditToolInputForVerdict(request.toolInput, verdict, context);
 
 	try {
 		await logVerdict(
@@ -2520,13 +2594,10 @@ async function runEvaluationPipeline(
 		// Fail open.
 	}
 
+	const blocking = verdict.decision === "ask" || verdict.decision === "deny";
 	let incidentEntry: Record<string, unknown> | null = null;
 	// Minimal incidenting: open an incident for ask/deny verdicts (commercial managed mode by default).
-	if (
-		config.mode === "managed" &&
-		config.response.emit_incidents &&
-		(verdict.decision === "ask" || verdict.decision === "deny")
-	) {
+	if (config.mode === "managed" && config.response.emit_incidents && blocking) {
 		try {
 			incidentEntry = buildIncidentEntry({
 				incidentId: `inc_${request.sessionId}_${Date.now()}`,
@@ -2543,8 +2614,10 @@ async function runEvaluationPipeline(
 		}
 	}
 
-	// Optional: lightweight local correlation (builds a derived incident view from recent audit entries).
-	if (config.incident.enabled && config.incident.correlation_enabled) {
+	// Optional: lightweight local correlation (builds a derived incident view
+	// from recent audit entries). An allow adds nothing to correlate, so only a
+	// blocking verdict pays for reading the tail of the audit log.
+	if (blocking && config.incident.enabled && config.incident.correlation_enabled) {
 		try {
 			const recent = await getRecentEntries(config.logging, 200);
 			const signals = normalizeAuditEntriesToSignals(recent);
@@ -2569,8 +2642,6 @@ async function runEvaluationPipeline(
 		logger,
 		durationMs,
 	);
-
-	return verdict;
 }
 
 async function ingestToControlPlaneIfEnabled(

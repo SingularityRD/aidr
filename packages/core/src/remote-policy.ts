@@ -246,7 +246,12 @@ function verifiedPolicySha256(body: Record<string, unknown> | undefined): string
  * only the digest (over TLS) protects the policy. Revoked key ids come from the same signed
  * revocation feed that revokes entitlement and intel-pack keys.
  */
-type PolicyTrust = { keys: string[]; revoked: ReadonlySet<string> };
+type PolicyTrust = {
+	keys: string[];
+	revoked: ReadonlySet<string>;
+	/** Verified tenant the signed envelope must name; undefined skips the binding. */
+	expectedTenantId?: string | null;
+};
 
 async function loadPolicyTrust(config: Config): Promise<PolicyTrust> {
 	const licensingKeys = config.licensing.public_keys_pem;
@@ -281,6 +286,7 @@ function policyTrusted(
 		revokedKeyIds: trust.revoked,
 		now,
 		highWater,
+		...(trust.expectedTenantId !== undefined ? { expectedTenantId: trust.expectedTenantId } : {}),
 	});
 	if (!result.ok) {
 		logger?.warn("Remote runtime policy signature rejected", { reason: result.reason });
@@ -708,6 +714,15 @@ export async function syncRemoteRuntimePolicy(
 	token: string,
 	logger: Logger = nullLogger,
 	now = Date.now(),
+	options: {
+		/**
+		 * Tenant from this installation's verified entitlement. When set (or
+		 * `null` for "unknown"), a signed policy must name exactly this tenant;
+		 * a mismatch is rejected before it can apply or advance the high-water
+		 * mark.
+		 */
+		expectedTenantId?: string | null;
+	} = {},
 ): Promise<Config> {
 	const trimmedToken = token.trim();
 	if (!config.control_plane.enabled || !trimmedToken) {
@@ -718,7 +733,12 @@ export async function syncRemoteRuntimePolicy(
 
 	const cacheKey = `${config.control_plane.endpoint}|${trimmedToken}`;
 	const keyHash = cacheKeyHash(config.control_plane.endpoint, trimmedToken);
-	const trust = await loadPolicyTrust(config);
+	const trust: PolicyTrust = {
+		...(await loadPolicyTrust(config)),
+		...(options.expectedTenantId !== undefined
+			? { expectedTenantId: options.expectedTenantId }
+			: {}),
+	};
 	if (
 		cachedPolicy &&
 		!cachedPolicy.authorityRejected &&

@@ -8,10 +8,11 @@ import { chmod, open, rename, stat, unlink } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { appendChainedAuditRecord } from "./audit-chain.js";
 import { resolvePath } from "./config.js";
-import { getFileContent } from "./file-utils.js";
+import { atomicWriteJson, getFileContent } from "./file-utils.js";
 import { frameworkRefsToJson } from "./framework-mappings.js";
 import { preparePrivateLocalFile } from "./private-local-file.js";
 import type { ResponseActionRecord } from "./response-actions.js";
+import { SessionStateError, withExclusiveFileLock } from "./session-state-store.js";
 import { redactTelemetryData, redactTelemetryString } from "./telemetry-redaction.js";
 import type { LoggingConfig, Verdict } from "./types.js";
 
@@ -257,8 +258,16 @@ async function unlinkIfPresent(path: string): Promise<boolean> {
 	}
 }
 
+/** How long an append waits for another process's rotation before appending anyway. */
+const ROTATION_LOCK_TIMEOUT_MS = 2000;
+
 /**
  * Classic logrotate: shift numbered backups and rename active file to .1.
+ *
+ * Every hook invocation is its own process, so two processes can see the
+ * same oversized file. Rotation runs under a cross-process lock and re-checks
+ * the size once it holds the lock: without it, both processes shifted the
+ * backups, and the second rotation dropped a file the first had just created.
  * `beforeDrop` runs before the oldest backup is deleted (the signed chain anchors
  * the records it is about to lose).
  */
@@ -270,31 +279,108 @@ async function rotateIfNeeded(
 ): Promise<void> {
 	if (maxBytes <= 0 || maxFiles <= 0) return;
 
-	let size: number;
+	// The path was hardened immediately before this; any stat failure means
+	// the rotation state is unknown and must not be treated as clean.
+	if ((await stat(filePath)).size < maxBytes) return;
+
 	try {
-		const s = await stat(filePath);
-		size = s.size;
+		await withExclusiveFileLock(
+			filePath,
+			async () => {
+				// Another process may have rotated while this one waited.
+				let size: number;
+				try {
+					size = (await stat(filePath)).size;
+				} catch (error) {
+					if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+					throw error;
+				}
+				if (size < maxBytes) return;
+
+				// Delete oldest backup. A rotation that drops a file is data loss, so
+				// it is counted (in this process and in the persisted counter that
+				// `aidr status` reads) rather than performed silently; ENOENT means
+				// there was nothing to drop and is not a loss.
+				if (beforeDrop) await beforeDrop(`${filePath}.${maxFiles}`);
+				if (await unlinkIfPresent(`${filePath}.${maxFiles}`)) {
+					recordAuditRotationDrop();
+					await persistAuditRotationDrop(filePath);
+				}
+
+				// Shift .N-1 → .N down to .1 → .2
+				for (let i = maxFiles - 1; i >= 1; i--) {
+					await renameIfPresent(`${filePath}.${i}`, `${filePath}.${i + 1}`);
+				}
+
+				// Active → .1
+				await renameIfPresent(filePath, `${filePath}.1`);
+			},
+			{ timeoutMs: ROTATION_LOCK_TIMEOUT_MS },
+		);
 	} catch (error) {
-		// The path was hardened immediately before this; any stat failure means
-		// the rotation state is unknown and must not be treated as clean.
+		// Another process holds the rotation lock and is rotating this file; the
+		// entry is appended to whichever file is active once this returns.
+		if (error instanceof SessionStateError && error.code === "lock_timeout") return;
 		throw error;
 	}
+}
 
-	if (size < maxBytes) return;
+/** Sidecar file holding the cross-process rotation-drop counter. */
+function rotationLossPath(filePath: string): string {
+	return `${filePath}.loss.json`;
+}
 
-	// Delete oldest backup. A rotation that drops a file is data loss, so it is
-	// counted rather than performed silently; ENOENT means there was nothing to
-	// drop and is not a loss.
-	if (beforeDrop) await beforeDrop(`${filePath}.${maxFiles}`);
-	if (await unlinkIfPresent(`${filePath}.${maxFiles}`)) recordAuditRotationDrop();
+interface PersistedRotationLoss {
+	rotationDrops: number;
+	lastDropAt: number | null;
+}
 
-	// Shift .N-1 → .N down to .1 → .2
-	for (let i = maxFiles - 1; i >= 1; i--) {
-		await renameIfPresent(`${filePath}.${i}`, `${filePath}.${i + 1}`);
+async function readRotationLoss(filePath: string): Promise<PersistedRotationLoss> {
+	let raw: string;
+	try {
+		raw = await getFileContent(rotationLossPath(filePath));
+	} catch {
+		return { rotationDrops: 0, lastDropAt: null };
 	}
+	const parsed = JSON.parse(raw) as { rotation_drops?: unknown; last_drop_at?: unknown };
+	const drops = parsed.rotation_drops;
+	const at = parsed.last_drop_at;
+	if (typeof drops !== "number" || !Number.isSafeInteger(drops) || drops < 0) {
+		throw new Error("audit_loss_counter_corrupt");
+	}
+	return { rotationDrops: drops, lastDropAt: typeof at === "number" ? at : null };
+}
 
-	// Active → .1
-	await renameIfPresent(filePath, `${filePath}.1`);
+/** Called with the rotation lock held, so the read-modify-write is not lost. */
+async function persistAuditRotationDrop(filePath: string, now = Date.now()): Promise<void> {
+	let previous: PersistedRotationLoss;
+	try {
+		previous = await readRotationLoss(filePath);
+	} catch {
+		// A corrupt counter is restarted from this drop; the in-process counter
+		// still reports the loss.
+		previous = { rotationDrops: 0, lastDropAt: null };
+	}
+	await atomicWriteJson(rotationLossPath(filePath), {
+		rotation_drops: previous.rotationDrops + 1,
+		last_drop_at: now,
+	});
+}
+
+/**
+ * Rotation drops recorded by every process that wrote this audit log. The
+ * in-process counter only sees this process's rotations, while hooks rotate
+ * from short-lived processes. An unreadable counter is reported as such
+ * (`null`), never as zero.
+ */
+export async function readPersistedAuditLossState(
+	config: LoggingConfig,
+): Promise<PersistedRotationLoss | null> {
+	try {
+		return await readRotationLoss(resolvePath(config.path));
+	} catch {
+		return null;
+	}
 }
 
 async function appendEntry(config: LoggingConfig, entry: Record<string, unknown>): Promise<void> {
@@ -694,11 +780,46 @@ export async function logIncident(
 	}
 }
 
+/** Upper bound read per requested entry (entries are bounded summaries). */
+const TAIL_BYTES_PER_ENTRY = 8 * 1024;
+const MAX_TAIL_BYTES = 4 * 1024 * 1024;
+
+/**
+ * The last `maxBytes` of a file, starting at a line boundary. The audit log
+ * can grow to `max_bytes`; reading all of it on every call is wasted work.
+ */
+async function readTail(path: string, maxBytes: number): Promise<string> {
+	const handle = await open(path, "r");
+	try {
+		const { size } = await handle.stat();
+		const start = Math.max(0, size - maxBytes);
+		const buffer = Buffer.alloc(size - start);
+		let offset = 0;
+		while (offset < buffer.length) {
+			const { bytesRead } = await handle.read(
+				buffer,
+				offset,
+				buffer.length - offset,
+				start + offset,
+			);
+			if (bytesRead === 0) break;
+			offset += bytesRead;
+		}
+		const text = buffer.subarray(0, offset).toString("utf8");
+		if (start === 0) return text;
+		// Drop the partial first line.
+		const newline = text.indexOf("\n");
+		return newline === -1 ? "" : text.slice(newline + 1);
+	} finally {
+		await handle.close();
+	}
+}
+
 export async function getRecentEntries(config: LoggingConfig, limit = 100): Promise<unknown[]> {
 	const path = resolvePath(config.path);
 
 	try {
-		const content = await getFileContent(path);
+		const content = await readTail(path, Math.min(MAX_TAIL_BYTES, limit * TAIL_BYTES_PER_ENTRY));
 		const lines = content.trim().split("\n");
 		const recent = lines.slice(-limit);
 		const entries: unknown[] = [];

@@ -32,7 +32,6 @@ import { normalizeUrl } from "./url-utils.js";
 
 const ONE_HOUR = 3600;
 const TWENTY_FOUR_HOURS = 86400;
-const FAR_FUTURE = "9999-12-31T23:59:59+00:00";
 
 /** File name of the per-installation cache authentication key, next to the cache. */
 export const CACHE_KEY_FILE = "cache.key";
@@ -301,31 +300,6 @@ export class VerdictCache {
 		};
 	}
 
-	getCommand(commandHash: string): CachedVerdict | null {
-		if (!this.active) return null;
-		const entry = this.store.commands[commandHash];
-		if (!entry || this.isStale(entry)) return null;
-
-		return {
-			verdict: entry.verdict,
-			severity: entry.severity,
-			reasons: entry.reasons,
-			source: entry.source,
-		};
-	}
-
-	putCommand(commandHash: string, verdict: CachedVerdict): void {
-		if (!this.active) return;
-
-		const now = new Date();
-		this.store.commands[commandHash] = {
-			...verdict,
-			checkedAt: now.toISOString(),
-			expiresAt: FAR_FUTURE,
-			aidrVersion: this.version,
-		};
-	}
-
 	getPackage(key: string): CachedVerdict | null {
 		if (!this.active) return null;
 		const entry = this.store.packages[key];
@@ -420,9 +394,10 @@ export class VerdictCache {
 		for (const [key, entry] of Object.entries(this.store.urls)) {
 			if (this.isUrlStale(entry)) delete this.store.urls[key];
 		}
-		for (const [key, entry] of Object.entries(this.store.commands)) {
-			if (this.isStale(entry)) delete this.store.commands[key];
-		}
+		// Command verdicts are not cached: a cached command verdict would outlive
+		// a threat-rule change. The bucket stays in the file format for
+		// compatibility, and entries written by older versions are dropped.
+		this.store.commands = {};
 		for (const [key, entry] of Object.entries(this.store.packages)) {
 			if (this.isStale(entry)) delete this.store.packages[key];
 		}

@@ -54,6 +54,8 @@ function signedBody(
 		governance?: { mcp_deny_servers: string[]; mcp_require_approval_servers: string[] };
 		/** Whether the envelope binds governance_sha256 (current signer) or not (legacy signer). */
 		bindGovernance?: boolean;
+		/** Signed envelope tenant (default `tenant_1`); `null` omits it. */
+		tenantId?: string | null;
 	} = {},
 ) {
 	const policy = opts.policy ?? POLICY;
@@ -71,7 +73,7 @@ function signedBody(
 		sequence: opts.sequence ?? 1,
 		issued_at: new Date(opts.issuedAt ?? NOW - 60_000).toISOString(),
 		expires_at: new Date(opts.expiresAt ?? NOW + 3_600_000).toISOString(),
-		tenant_id: "tenant_1",
+		...(opts.tenantId === null ? {} : { tenant_id: opts.tenantId ?? "tenant_1" }),
 		...(opts.bindGovernance === false ? {} : { governance_sha256: overlayDigest }),
 	};
 	return {
@@ -168,6 +170,18 @@ describe("verifySignedPolicy", () => {
 			ok: false,
 			reason: "key_revoked",
 		});
+	});
+
+	it("binds the signed tenant to the installation's verified tenant", () => {
+		expect(verify(signedBody(), { expectedTenantId: "tenant_1" }).ok).toBe(true);
+		expect(verify(signedBody(), { expectedTenantId: "TENANT_1" }).ok).toBe(true);
+		for (const [body, expectedTenantId] of [
+			[signedBody({ tenantId: "tenant_2" }), "tenant_1"],
+			[signedBody({ tenantId: null }), "tenant_1"],
+			[signedBody(), null],
+		] as const) {
+			expect(verify(body, { expectedTenantId })).toEqual({ ok: false, reason: "tenant_mismatch" });
+		}
 	});
 
 	it("rejects rollback and conflicting replay at the same sequence, accepts refresh and advance", () => {
@@ -311,6 +325,39 @@ describe("syncRemoteRuntimePolicy with signed policy", () => {
 		const applied = await syncRemoteRuntimePolicy(config, "agent-token", logger, NOW);
 		expect(applied.policy.mcp.deny_servers).toContain("shell-runner");
 		expect(warnings.join(" | ")).toContain("not bound by its signature");
+	});
+
+	it("rejects another tenant's validly signed policy without advancing the high-water mark", async () => {
+		const { config } = await setup({ required: true });
+		// Each call is past the 60s cache window, so the policy is fetched again.
+		let clock = NOW;
+		const syncAs = (tenant: string | null) =>
+			syncRemoteRuntimePolicy(config, "agent-token", undefined, (clock += 120_000), {
+				expectedTenantId: tenant,
+			});
+
+		serve(signedBody({ sequence: 1 }));
+		expect((await syncAs("tenant_1")).policy.runtime_defaults.command_action).toBe("block");
+
+		// A validly signed, newer policy of another tenant: rejected.
+		clearRemoteRuntimePolicyCacheForTests();
+		serve(signedBody({ sequence: 5, tenantId: "tenant_2", policy: { command_default: "allow" } }));
+		await expect(syncAs("tenant_1")).rejects.toThrow("unavailable");
+
+		// An unknown local tenant accepts no signed policy at all.
+		clearRemoteRuntimePolicyCacheForTests();
+		serve(signedBody({ sequence: 2 }));
+		await expect(syncAs(null)).rejects.toThrow("unavailable");
+
+		// The rejected sequence 5 never became the rollback boundary: this
+		// tenant's sequence 2 is still accepted.
+		clearRemoteRuntimePolicyCacheForTests();
+		serve(signedBody({ sequence: 2 }));
+		expect((await syncAs("tenant_1")).policy.runtime_defaults.command_action).toBe("block");
+		const raw = await import("node:fs/promises").then((fs) =>
+			fs.readFile(config.control_plane.remote_policy_cache_path, "utf8"),
+		);
+		expect(JSON.parse(raw).body.policy_signed.envelope.sequence).toBe(2);
 	});
 
 	it("optional mode ignores a bad-signature policy instead of applying it", async () => {

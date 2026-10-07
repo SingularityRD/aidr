@@ -4,6 +4,7 @@
  * and file paths that the user has explicitly approved.
  */
 
+import { resolve } from "node:path";
 import { resolvePath } from "./config.js";
 import { atomicWriteJson, getFileContent } from "./file-utils.js";
 import type { Allowlist, AllowlistConfig, AllowlistEntry, Artifact, Logger } from "./types.js";
@@ -131,33 +132,76 @@ export async function saveAllowlist(
 	}
 }
 
-export function isAllowlisted(allowlist: Allowlist, artifacts: Artifact[]): boolean {
+/**
+ * A file path as the allowlist compares it: `~` expanded, normalized, and
+ * resolved against the working directory. A relative entry or artifact
+ * therefore names one file under that directory, never "any file with this
+ * relative name anywhere".
+ */
+function allowlistPathKey(raw: string, workingDirectory: string): string {
+	const resolved = resolve(workingDirectory, normalizeFilePath(raw));
+	return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+}
+
+/**
+ * The artifacts an allowlist entry covers. An entry suppresses only the
+ * signals of what it names:
+ *
+ * - a command (by hash) covers its own command artifacts and the URL/path
+ *   artifacts extracted from that command text;
+ * - a file path covers that file path artifact only (content written to it is
+ *   still inspected);
+ * - a URL covers that URL artifact only.
+ *
+ * Everything else stays subject to detection.
+ */
+export function allowlistedArtifacts(
+	allowlist: Allowlist,
+	artifacts: readonly Artifact[],
+	workingDirectory: string = process.cwd(),
+): Set<Artifact> {
+	const covered = new Set<Artifact>();
+	const allowlistedCommands: string[] = [];
 	for (const artifact of artifacts) {
-		if (artifact.type !== "command") {
-			continue;
-		}
-		const cmdHash = hashCommand(artifact.value);
-		if (cmdHash in allowlist.commands) {
-			return true;
+		if (artifact.type === "command" && hashCommand(artifact.value) in allowlist.commands) {
+			covered.add(artifact);
+			allowlistedCommands.push(artifact.value);
 		}
 	}
-
+	const filePathKeys = new Set(
+		Object.keys(allowlist.filePaths).map((key) => allowlistPathKey(key, workingDirectory)),
+	);
 	for (const artifact of artifacts) {
-		if (artifact.type !== "file_path") {
-			continue;
-		}
-		if (normalizeFilePath(artifact.value) in allowlist.filePaths) {
-			return true;
+		if (covered.has(artifact)) continue;
+		if (
+			(artifact.type === "url" || artifact.type === "file_path") &&
+			allowlistedCommands.some((command) => command.includes(artifact.value))
+		) {
+			covered.add(artifact);
+		} else if (
+			artifact.type === "file_path" &&
+			filePathKeys.has(allowlistPathKey(artifact.value, workingDirectory))
+		) {
+			covered.add(artifact);
+		} else if (artifact.type === "url" && normalizeUrl(artifact.value) in allowlist.urls) {
+			covered.add(artifact);
 		}
 	}
+	return covered;
+}
 
-	// URL allowlist entries only short-circuit when every extracted artifact is a URL.
-	// This prevents mixing a benign allowlisted URL with unrelated dangerous artifacts.
-	if (artifacts.length > 0 && artifacts.every((artifact) => artifact.type === "url")) {
-		return artifacts.every((artifact) => normalizeUrl(artifact.value) in allowlist.urls);
-	}
-
-	return false;
+/**
+ * True only when every artifact of the call is covered by an allowlist entry.
+ * One allowlisted artifact never clears the rest of the call.
+ */
+export function isAllowlisted(
+	allowlist: Allowlist,
+	artifacts: readonly Artifact[],
+	workingDirectory?: string,
+): boolean {
+	if (artifacts.length === 0) return false;
+	const covered = allowlistedArtifacts(allowlist, artifacts, workingDirectory);
+	return artifacts.every((artifact) => covered.has(artifact));
 }
 
 export function addUrl(
@@ -178,17 +222,27 @@ export function addCommand(
 	addEntry(allowlist.commands, hashCommand(command), reason, originalVerdict);
 }
 
+/**
+ * A relative path is stored resolved against the current working directory,
+ * so the entry names one file rather than every file with that relative name.
+ */
+function storedFilePathKey(filePath: string): string {
+	return normalizeFilePath(resolve(normalizeFilePath(filePath)));
+}
+
 export function addFilePath(
 	allowlist: Allowlist,
 	filePath: string,
 	reason: string,
 	originalVerdict: string,
 ): void {
-	addEntry(allowlist.filePaths, normalizeFilePath(filePath), reason, originalVerdict);
+	addEntry(allowlist.filePaths, storedFilePathKey(filePath), reason, originalVerdict);
 }
 
 export function removeFilePath(allowlist: Allowlist, filePath: string): boolean {
-	return removeEntry(allowlist.filePaths, normalizeFilePath(filePath));
+	// Also removes a legacy entry stored before relative paths were resolved.
+	const legacy = removeEntry(allowlist.filePaths, normalizeFilePath(filePath));
+	return removeEntry(allowlist.filePaths, storedFilePathKey(filePath)) || legacy;
 }
 
 export function removeUrl(allowlist: Allowlist, url: string): boolean {
