@@ -87,6 +87,13 @@ Commercial v1 (managed-first) requires additional secrets for signing and premiu
   - Base64 of a 32-byte master key used to derive per-tenant AES-256-GCM pack keys (HKDF-SHA256).
 - `AIDR_REVOCATION_SIGNING_KEY_ID`
 - `AIDR_REVOCATION_SIGNING_PRIVATE_KEY_PKCS8_B64`
+  - Required for `GET /revocations`: without a usable key the feed answers
+    `503 revocation_signing_unavailable` (never a `200` with `revocations_signed: null`). The signed
+    payload is schema 2 and carries `tenant_id` (and `agent_id` for agent-bound keys); runtimes accept
+    a list only when its signed `tenant_id` equals the tenant of their verified entitlement. Unbound
+    schema-1 lists are rejected with no compatibility window, so upgrade the control plane before (or
+    together with) runtimes: an older runtime cannot verify a schema-2 list and keeps running without
+    revocations until it is upgraded.
 - `AIDR_REVOCATION_EPOCH` (default `1`)
 - `AIDR_REVOCATION_TTL_HOURS` (default `24`)
 - `AIDR_ENTITLEMENT_TTL_HOURS` (default `168`)

@@ -41,7 +41,7 @@ import { getDegradedSafeModeReason, isDegradedSafeMode } from "./integrity/index
 import { loadMergedIntelFromDisk } from "./intel/loader.js";
 import type { IntelMerged } from "./intel/types.js";
 import { emptyIntelMerged } from "./intel/types.js";
-import type { ManagedState, RevocationListV1 } from "./managed.js";
+import type { ManagedState, RevocationList } from "./managed.js";
 import {
 	applyIngestResult,
 	applyRevocationsToManagedState,
@@ -52,6 +52,7 @@ import {
 	isSyncDisabled,
 	loadManagedState,
 	loadRevocationsCache,
+	revocationBindingForState,
 	managedStatePath,
 	parseSignedRevocationsFromControlPlaneBody,
 	saveEntitlementKeyringFromState,
@@ -100,7 +101,7 @@ let cachedPackageIntel: CachedIntelMerged | null = null;
 function intelCacheTag(
 	config: Config,
 	managedState: ManagedState,
-	revocations: RevocationListV1 | null,
+	revocations: RevocationList | null,
 ): string {
 	const packsDir = String(config.intel_packs?.packs_dir ?? "");
 	const trustedKeys = String(config.intel_packs?.trusted_keys_path ?? "");
@@ -116,7 +117,7 @@ function intelCacheTag(
 async function getPackageIntelMerged(
 	config: Config,
 	managedState: ManagedState,
-	revocations: RevocationListV1 | null,
+	revocations: RevocationList | null,
 ): Promise<IntelMerged | null> {
 	const packsEnabled = config.intel_packs?.enabled === true || config.intel?.enabled === true;
 	if (!packsEnabled) return null;
@@ -884,7 +885,7 @@ async function runEvaluationPipeline(
 	let token = (config.auth.api_key ?? "").trim();
 	let managedState: ManagedState = {};
 	let managedLoadFailure: { error: unknown } | null = null;
-	let revocationsForIntel: RevocationListV1 | null = null;
+	let revocationsForIntel: RevocationList | null = null;
 	// Set when a managed/commercial installation has not completed enrollment or
 	// entitlement acquisition. Managed-only features (signed intel packs, remote
 	// policy, control-plane sync, entitlement-enforced premium modules) stay
@@ -1087,6 +1088,7 @@ async function runEvaluationPipeline(
 					? await loadRevocationsCache(
 							resolvePath(config.licensing.revocations_cache_path),
 							config.licensing.public_keys_pem,
+							revocationBindingForState(managedState),
 						)
 					: null;
 			if (
@@ -1097,7 +1099,10 @@ async function runEvaluationPipeline(
 				const client = new ControlPlaneClient(config.control_plane, token, logger);
 				const res = await client.fetchRevocations();
 				if (res.ok) {
-					const parsed = parseSignedRevocationsFromControlPlaneBody(res.body);
+					const parsed = parseSignedRevocationsFromControlPlaneBody(
+						res.body,
+						revocationBindingForState(managedState),
+					);
 					if (
 						parsed &&
 						verifyEd25519SignedRevocationList({
@@ -1907,7 +1912,7 @@ async function checkPackages(
 	logger: Logger,
 	apiKey: string,
 	managedState: ManagedState,
-	revocations: RevocationListV1 | null,
+	revocations: RevocationList | null,
 	reputationFeed: ReputationFeedLoadOptions | undefined,
 	allowProviderInspection: boolean,
 ): Promise<PackageCheckResult[]> {

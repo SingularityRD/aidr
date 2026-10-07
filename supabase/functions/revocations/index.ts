@@ -447,6 +447,7 @@ Deno.serve(async (req) => {
 	if (!auth.ok) return json(auth.status, { error: auth.error });
 	const { tenantId, userId } = auth;
 	if (!isUuid(tenantId) || !isUuid(userId)) return json(403, { error: "agent_access_denied" });
+	const agentId = typeof auth.agentId === "string" && isUuid(auth.agentId) ? auth.agentId.toLowerCase() : null;
 	const rate = await consumeTenantRateLimit(supabase, {
 		tenantId, subject: userId, endpoint: "revocations", perSubject: 300, perTenant: 10_000,
 	});
@@ -472,8 +473,13 @@ Deno.serve(async (req) => {
 		else if (kind === "entitlement_serial") entitlementSerials.push(value);
 	}
 
+	// Schema 2 binds the signed list to this tenant (and agent, for agent-bound
+	// keys); runtimes reject a list signed for anyone else, so one tenant's list
+	// cannot be replayed to another tenant's runtime.
 	const payload = {
-		schema_version: 1,
+		schema_version: 2,
+		tenant_id: tenantId.toLowerCase(),
+		agent_id: agentId,
 		issued_at: new Date().toISOString(),
 		expires_at: addHoursIso(REVOCATION_TTL_HOURS),
 		revocation_epoch: Number.isFinite(REVOCATION_EPOCH) ? Math.max(1, Math.floor(REVOCATION_EPOCH)) : 1,
@@ -487,18 +493,16 @@ Deno.serve(async (req) => {
 
 	const payloadJson = canonicalJson(payload);
 	const sig = await signEd25519Detached(payloadJson);
-	if (REVOCATION_SIGNING_KEY_ID && !sig) {
-		return json(503, { error: "revocation_signing_unavailable" });
-	}
+	// Never answer 200 with an unsigned (null) feed: runtimes treat a missing list
+	// like "nothing revoked". An unconfigured or broken signer is an outage.
+	if (!sig) return json(503, { error: "revocation_signing_unavailable" });
 
 	return json(200, {
-		revocations_signed: sig
-			? {
-					alg: "ed25519",
-					key_id: REVOCATION_SIGNING_KEY_ID,
-					sig_b64: sig,
-					payload: JSON.parse(payloadJson),
-				}
-			: null,
+		revocations_signed: {
+			alg: "ed25519",
+			key_id: REVOCATION_SIGNING_KEY_ID,
+			sig_b64: sig,
+			payload: JSON.parse(payloadJson),
+		},
 	});
 });

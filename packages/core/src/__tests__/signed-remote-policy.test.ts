@@ -1,5 +1,5 @@
 import { createHash, sign as cryptoSign, generateKeyPairSync, type KeyObject } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -181,6 +181,7 @@ describe("syncRemoteRuntimePolicy with signed policy", () => {
 	const originalFetch = globalThis.fetch;
 	afterEach(async () => {
 		globalThis.fetch = originalFetch;
+		vi.unstubAllEnvs();
 		clearRemoteRuntimePolicyCacheForTests();
 		for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
 	});
@@ -289,13 +290,11 @@ describe("syncRemoteRuntimePolicy with signed policy", () => {
 		const { config } = await setup({ required: true });
 		serve(signedBody({ sequence: 2, version: "pol_2" }));
 		await sync(config);
-		globalThis.fetch = vi
-			.fn()
-			.mockResolvedValue({
-				ok: false,
-				status: 401,
-				json: async () => ({ error: "denied" }),
-			} as Response);
+		globalThis.fetch = vi.fn().mockResolvedValue({
+			ok: false,
+			status: 401,
+			json: async () => ({ error: "denied" }),
+		} as Response);
 		await expect(sync(config, NOW + 61_000)).rejects.toThrow("unavailable");
 		const rejected = JSON.parse(
 			await readFile(config.control_plane.remote_policy_cache_path, "utf8"),
@@ -348,8 +347,40 @@ describe("syncRemoteRuntimePolicy with signed policy", () => {
 	it("rejects a policy signed by a key listed in the signed revocation feed", async () => {
 		const licensing = newKey();
 		const { config, root } = await setup({ required: true, licensingKeys: [licensing.publicPem] });
+		// The revocation feed is bound to this runtime's tenant, which comes from
+		// the verified (signed) entitlement in managed state.
+		const entitlement = {
+			schema_version: 2,
+			tenant_id: "tenant_1",
+			subscription_tier: "pro",
+			included_agents: 1,
+			extra_agents: 0,
+			allowed_agents: 1,
+			premium_modules: [],
+			issued_at: new Date(Date.now() - 1000).toISOString(),
+			expires_at: new Date(Date.now() + 3_600_000).toISOString(),
+			grace_until: new Date(Date.now() + 3_600_000).toISOString(),
+			serial: "ser-policy",
+			revocation_epoch: 1,
+		};
+		vi.stubEnv("HOME", root);
+		await mkdir(join(root, ".singularity-aidr"), { recursive: true });
+		await writeFile(
+			join(root, ".singularity-aidr", "managed.json"),
+			JSON.stringify({
+				entitlement,
+				entitlement_alg: "ed25519",
+				entitlement_sig: cryptoSign(
+					null,
+					Buffer.from(canonicalJson(entitlement)),
+					licensing.privateKey,
+				).toString("base64"),
+			}),
+		);
 		const list = {
-			schema_version: 1,
+			schema_version: 2,
+			tenant_id: "tenant_1",
+			agent_id: null,
 			issued_at: new Date(Date.now() - 1000).toISOString(),
 			expires_at: new Date(Date.now() + 3_600_000).toISOString(),
 			revocation_epoch: 1,
