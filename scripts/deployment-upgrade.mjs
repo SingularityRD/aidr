@@ -765,7 +765,10 @@ function runUpgrade(state) {
 		saveState(state, "services_started");
 	}
 	if (!atLeast("doctor_passed")) {
-		command(process.execPath, [join(scriptDir, "deployment-doctor.mjs"), "--deployment", current, "--online"], { label: "online deployment doctor", timeout: 180_000 });
+		// The doctor refuses a development manifest as production evidence, so the
+		// installed manifest's own class decides which mode it is asked to verify.
+		const doctorMode = json(join(current, "deployment.json")).development === true ? ["--development"] : [];
+		command(process.execPath, [join(scriptDir, "deployment-doctor.mjs"), "--deployment", current, "--online", ...doctorMode], { label: "online deployment doctor", timeout: 180_000 });
 		saveState(state, "doctor_passed");
 	}
 	state.completed_at = new Date().toISOString();
