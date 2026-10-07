@@ -87,7 +87,8 @@ async function directorySignature(dir: string): Promise<string> {
 
 /**
  * Load the context-poisoning rules from the rule directories (later directories
- * override earlier ones by id, as for every other rule). Only files that declare
+ * are additive only: a clashing id keeps the earlier, bundled rule, as for
+ * every other rule). Only files that declare
  * one of the dedicated `match_on` values are parsed, and the result is cached
  * until a rule file changes, so the detector does not re-parse the whole rule
  * set on every tool call.

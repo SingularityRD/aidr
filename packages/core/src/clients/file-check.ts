@@ -8,10 +8,10 @@
 import { DetectionLegUnavailableError, describeHttpFailure } from "../detection-leg.js";
 import { loadReputationFeed, type ReputationFeedLoadOptions } from "../reputation-feed.js";
 import type { Logger } from "../types.js";
-import { nullLogger } from "../types.js";
+import { clampLegTimeoutSeconds, DEFAULT_LEG_TIMEOUT_SECONDS, nullLogger } from "../types.js";
 import { VERSION } from "../version.js";
 
-const DEFAULT_TIMEOUT = 5.0;
+const DEFAULT_TIMEOUT = DEFAULT_LEG_TIMEOUT_SECONDS;
 const SERVICE_NAME = "aidr";
 const MAX_HASHES_PER_REQUEST = 50;
 const MAX_CONCURRENT_BATCHES = 4;
@@ -125,7 +125,7 @@ export class FileCheckClient {
 			config?.endpoint ?? this.resolveEndpoint(),
 			config?.allow_insecure_loopback,
 		);
-		this.timeoutMs = (config?.timeout_seconds ?? DEFAULT_TIMEOUT) * 1000;
+		this.timeoutMs = clampLegTimeoutSeconds(config?.timeout_seconds, DEFAULT_TIMEOUT) * 1000;
 		this.apiKey = apiKey;
 		this.logger = logger;
 		this.reputationFeed = config?.reputationFeed;

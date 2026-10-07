@@ -1,8 +1,10 @@
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { vi } from "vitest";
+import { cacheEntryMac, loadOrCreateCacheKey } from "../cache.js";
+import type { CachedEntry } from "../types.js";
 
 /**
  * Windows refuses symlink creation without Developer Mode or elevation
@@ -30,6 +32,37 @@ export function advanceWallClock(ms: number): void {
 	if (!vi.isMockFunction(Date.now)) clockOffsetMs = 0;
 	clockOffsetMs += ms;
 	vi.spyOn(Date, "now").mockImplementation(() => realDateNow() + clockOffsetMs);
+}
+
+/**
+ * Write a verdict-cache fixture the way the cache itself would: every entry
+ * carries a MAC under the installation's cache key (created next to the file).
+ * A fixture written as plain JSON is, correctly, ignored by the cache.
+ */
+export async function writeSignedCacheFixture(
+	cachePath: string,
+	store: Partial<Record<"urls" | "commands" | "packages", Record<string, CachedEntry> | unknown>>,
+): Promise<void> {
+	await mkdir(dirname(cachePath), { recursive: true });
+	const key = await loadOrCreateCacheKey(dirname(cachePath));
+	const signed: Record<string, unknown> = {};
+	for (const kind of ["urls", "commands", "packages"] as const) {
+		const section = store[kind] ?? {};
+		// Malformed sections and entries are kept as they are (tests of rejection).
+		if (typeof section !== "object" || section === null) {
+			signed[kind] = section;
+			continue;
+		}
+		signed[kind] = Object.fromEntries(
+			Object.entries(section as Record<string, unknown>).map(([id, entry]) => [
+				id,
+				entry && typeof entry === "object"
+					? { ...entry, mac: cacheEntryMac(key, kind, id, entry as CachedEntry) }
+					: entry,
+			]),
+		);
+	}
+	await writeFile(cachePath, JSON.stringify(signed), "utf8");
 }
 
 export async function makeTmpDir(): Promise<string> {

@@ -7,7 +7,7 @@ import { extractFromBash } from "../extractors.js";
 import { extractPackagesFromCommand } from "../package-extractor.js";
 import { ConfigSchema, nullLogger } from "../types.js";
 import { VERSION } from "../version.js";
-import { makeTmpDir } from "./test-utils.js";
+import { makeTmpDir, writeSignedCacheFixture } from "./test-utils.js";
 
 const NEVER_EXPIRES = "9999-12-31T23:59:59.000Z";
 const previousHome = process.env.HOME;
@@ -29,25 +29,19 @@ async function packageConfig(
 	await mkdir(aidrDir, { recursive: true });
 	const cachePath = join(aidrDir, "cache.json");
 	const configPath = join(aidrDir, "config.json");
-	await writeFile(
-		cachePath,
-		JSON.stringify({
-			urls: {},
-			commands: {},
-			packages: {
-				[`${registry}:${packageName}@${version}`]: {
-					verdict,
-					severity: "critical",
-					reasons: ["Synthetic package intelligence deny"],
-					source: "package_check",
-					checkedAt: new Date().toISOString(),
-					expiresAt: NEVER_EXPIRES,
-					aidrVersion: VERSION,
-				},
+	await writeSignedCacheFixture(cachePath, {
+		packages: {
+			[`${registry}:${packageName}@${version}`]: {
+				verdict,
+				severity: "critical",
+				reasons: ["Synthetic package intelligence deny"],
+				source: "package_check",
+				checkedAt: new Date().toISOString(),
+				expiresAt: NEVER_EXPIRES,
+				aidrVersion: VERSION,
 			},
-		}),
-		"utf8",
-	);
+		},
+	});
 	await writeFile(
 		configPath,
 		JSON.stringify({
@@ -116,7 +110,9 @@ describe("normalized requests reach semantic evaluation legs", () => {
 	it("rechecks a legacy cached clean package before allowing installation", async () => {
 		const { configPath, dir } = await packageConfig("synthetic-aidr-package", "1.0.0", "allow");
 		const originalFetch = globalThis.fetch;
-		globalThis.fetch = async () => { throw new Error("synthetic registry outage"); };
+		globalThis.fetch = async () => {
+			throw new Error("synthetic registry outage");
+		};
 		try {
 			const command = "npm install synthetic-aidr-package@1.0.0";
 			const verdict = await evaluateToolCall(
