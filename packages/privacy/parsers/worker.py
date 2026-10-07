@@ -195,6 +195,10 @@ class Parser:
 #   * EVERY cached formula value <v> is removed and the workbook is marked fullCalcOnLoad, because
 #     a formula may derive a value from redacted content; a finding inside formula text itself,
 #     a defined name, a sheet name or any other text we cannot rewrite safely rejects the file;
+#   * attribute values are content too (w:tooltip, w:alias, w:tag, bookmark/shape names, number
+#     formats, sdt dates...): every attribute value that is not on the structural allowlist below
+#     (and not rewritten by scrub) becomes a protected unit, so a finding in it rejects the file
+#     and a residual one is visible to verify. Unknown attributes are scanned, never skipped;
 #   * after writing, the package must pass the original safety checks, the allowlist, internal
 #     relationship-target and content-type validation, or no output is produced.
 # ---------------------------------------------------------------------------------------------
@@ -222,6 +226,120 @@ SKIP_TEXT={(NS_W,'docVars'),(NS_S,'author')} # overwritten/removed by scrub(), n
 PRESERVE_SPACE={(NS_W,'t'),(NS_W,'delText'),(NS_W,'instrText'),(NS_S,'t')}
 ANON={'author':'AIDR','initials':'A','userId':'AIDR','providerId':'None','displayName':'AIDR'}
 REPLACEMENT=re.compile(r'^[\x20-\x7e]{0,200}$')
+# Attribute values. Every value is scanned, all values of one part together forming ONE protected
+# (non-editable) unit, UNLESS it is structural: an attribute whose local name is on STRUCT_ATTR (ids,
+# revision ids, geometry, styles, numbering, enumerations, booleans, timestamps), an r: relationship
+# id, xml:space, an mc: list naming only prefixes declared in the part, or a `val` on an element in
+# STRUCT_VAL (formatting enumerations/numbers; `val` on w:alias, w:tag, w:name, w:docPart,
+# w:lvlText, w:dateFormat... is free text and scanned). Attributes that scrub() rewrites or removes
+# (ANON, comment author names, drawing alt text) are not scanned: their values never leave.
+# Even a structural attribute is only skipped when its value has a structural SHAPE (a short token
+# without whitespace and without a run of 9+ digits, see STRUCT_VALUE), so free text, e-mail
+# addresses, card/phone/ID numbers can never ride in an allowlisted attribute unscanned.
+# Booleans and short numbers are skipped cheaply (TRIVIAL_VALUE). The allowlist is only a unit-count
+# optimisation: an attribute missing from it is scanned, and a clean scan simply passes.
+NS_R='http://schemas.openxmlformats.org/officeDocument/2006/relationships'
+NS_MC='http://schemas.openxmlformats.org/markup-compatibility/2006'
+STRUCT_VALUE=re.compile(r'(?!.*[0-9]{9})[A-Za-z0-9_.:+#%{}()\-]{0,64}')
+TRIVIAL_VALUE=re.compile(r'\s*|[01]|true|false|on|off|-?[0-9]{1,4}(?:\.[0-9]{1,4})?')
+STRUCT_ATTR=frozenset((
+ # identifiers and revision bookkeeping
+ 'id','idx','rsid','rsidR','rsidRPr','rsidRDefault','rsidP','rsidDel','rsidSect','rsidTr','paraId','textId','paraIdParent',
+ 'anchorId','editId','durableId','authorId','personId','parentId','threadId','numId','abstractNumId','ilvl','lvl','styleId',
+ 'xfId','fontId','fillId','borderId','numFmtId','dxfId','builtinId','sheetId','localSheetId','workbookViewId','iLevel','spid',
+ 'colFirst','colLast','displacedByCustomXml','lastIdx','clrIdx','lastIndex','count','uniqueCount','docId','storeItemID',
+ # types and enumerations
+ 'type','fldCharType','lineRule','hRule','vAlign','textDirection','orient','relativeFrom','prst','algn','fontAlgn','vert',
+ 'horzOverflow','vertOverflow','wrap','wrapText','anchorCtr','cap','cmpd','pattern','pitchFamily','charset','panose',
+ 'cs','ascii','hAnsi','eastAsia','asciiTheme','hAnsiTheme','eastAsiaTheme','cstheme','hint','bidi','lang','altLang',
+ 'themeColor','themeShade','themeTint','themeFill','themeFillShade','themeFillTint','fill','color','rgb','theme','indexed',
+ 'tint','lastClr','mod','state','view','mode','dirty','err','smtClean','noProof','sz','szCs','b','i','u','strike',
+ 'baseline','kern','spc','typeface','script','sym','fmt','layout','placement','fixed','defaultRowHeight','defaultColWidth',
+ 'shapeId','presetClass','presetID','presetSubtype','nodeType','grpId','dur','delay','accel','decel','autoRev','fill',
+ 'restart','evtFilter','calcmode','valueType','additive','accumulate','transition','advTm','advClick','spd','dir',
+ # geometry, spacing and page layout
+ 'w','h','x','y','cx','cy','l','t','r','s','left','right','top','bottom','header','footer','gutter','start','end','before',
+ 'after','line','firstLine','hanging','beforeLines','afterLines','beforeAutospacing','afterAutospacing','pos','leader',
+ 'linePitch','charSpace','num','space','distT','distB','distL','distR','relativeHeight','rot','flipH','flipV','ht',
+ 'customHeight','width','customWidth','bestFit','min','max','spans','outlineLevel','outlineLevelRow','outlineLevelCol',
+ 'dyDescent','zoomScale','zoomScaleNormal','xWindow','yWindow','windowWidth','windowHeight','firstSheet','activeTab',
+ 'tabRatio','activeCell','sqref','ref','topLeftCell','xSplit','ySplit','activePane','pane','marL','marR','indent',
+ 'defTabSz','lIns','tIns','rIns','bIns','numCol','spcCol','n','d','behindDoc','locked','layoutInCell','allowOverlap',
+ 'simplePos','hidden','tabSelected','showGridLines','rtl','eaLnBrk','latinLnBrk','hangingPunct','noChangeAspect',
+ 'noGrp','noRot','noSelect','noMove','noResize','noTextEdit','noChangeArrowheads','txBox','userDrawn','preserve',
+ 'showMasterSp','showMasterPhAnim','hasCustomPrompt','orient','firstSlideNum','saveSubsetFonts','autoCompressPictures',
+ 'gridSpacing','showSpecialPlsOnTitleSld','r1','r2','si','ca','aca','bx','dt2D','dtr','del1','del2','cm','vm','ph',
+ 'ht','thickTop','thickBot','collapsed','customFormat','applyFont','applyFill','applyBorder','applyAlignment',
+ 'applyNumberFormat','applyProtection','quotePrefix','pivotButton','horizontal','vertical','textRotation','shrinkToFit',
+ 'readingOrder','relativeIndent','justifyLastLine','date1904','defaultThemeVersion','filterPrivacy','codeName',
+ 'appName','lastEdited','lowestEdited','rupBuild','calcId','fullCalcOnLoad','iterate','iterateCount','iterateDelta',
+ # font signatures, colour mapping, effects and drawing geometry
+ 'usb0','usb1','usb2','usb3','csb0','csb1','bg1','bg2','t1','t2','tx1','tx2','accent1','accent2','accent3','accent4',
+ 'accent5','accent6','hyperlink','followedHyperlink','blurRad','dist','dir','rotWithShape','ang','scaled','path','sx','sy',
+ 'kx','ky','stA','stPos','endA','endPos','fadeDir','rad','prstMaterial','contourW','extrusionH','lat','lon','rev','lim',
+ 'spelling','grammar','uri','pitch','dpi','cstate','imgW','imgH','chOff','chExt','fov','zoom','showGuides',
+ 'snapToGrid','snapToObjects','showFormatting','showSpecialPlsOnTitleSld','autoAdjust','tblStyleId','bandRow','firstRow',
+ 'firstColumn','lastRow','lastColumn','noHBand','noVBand','bandCol','mainSeqNum','patternType','style','diagonalUp',
+ 'diagonalDown','auto','defaultTableStyle','defaultPivotStyle','defaultSlicerStyle','defaultTimelineStyle','mruColors',
+ # timestamps (comment/revision dates are metadata of the edit, not document content)
+ 'date','dT','dt','created',
+))
+STRUCT_VAL=frozenset((
+ 'pStyle','rStyle','tblStyle','numId','ilvl','jc','sz','szCs','color','highlight','u','vertAlign','lang','b','bCs','i',
+ 'iCs','strike','dstrike','caps','smallCaps','vanish','specVanish','webHidden','outline','shadow','emboss','imprint',
+ 'spacing','w','kern','position','shd','outlineLvl','keepNext','keepLines','pageBreakBefore','widowControl',
+ 'suppressAutoHyphens','suppressLineNumbers','snapToGrid','contextualSpacing','mirrorIndents','rtl','bidi',
+ 'textAlignment','textboxTightWrap','gridSpan','vMerge','hMerge','tblLayout','tblLook','vAlign','textDirection',
+ 'cnfStyle','tblStyleRowBandSize','tblStyleColBandSize','cantSplit','tblHeader','numFmt','start','lvlJc','nsid',
+ 'multiLevelType','tmpl','lvlRestart','isLgl','suff','type','titlePg','formProt','noProof','em','effect','zoom',
+ 'proofState','defaultTabStop','characterSpacingControl','evenAndOddHeaders','mirrorMargins','autoHyphenation',
+ 'trackRevisions','doNotTrackMoves','doNotTrackFormatting','rsidRoot','rsid','themeFontLang','decimalSymbol',
+ 'listSeparator','family','pitch','charset','notTrueType','divId','uiPriority','semiHidden','unhideWhenUsed','qFormat',
+ 'basedOn','next','link','autoRedefine','locked','id','showingPlcHdr','temporary','lock','calendar','storeMappedDataAs',
+ 'docPartUnique','ligatures','numForm','numSpacing','cntxtAlts','checked','checkedState','uncheckedState','appearance',
+ 'collapsed','docId','chartTrackingRefBased','creationId','modId','compatSetting','scheme','condense','extend','tab',
+ 'srgbClr','schemeClr','sysClr','prstClr','lumMod','lumOff','tint','shade','alpha','alphaModFix','satMod','sat','hueMod',
+ 'hue','lum','spcPct','spcPts','buSzPct','buSzPts','prstDash','numRestart','pos','bookFoldPrinting','doNotDisplayPageBoundaries','displayBackgroundShape',
+ 'embedTrueTypeFonts','saveSubsetFonts','alwaysShowPlaceholderText','hideSpellingErrors','hideGrammaticalErrors',
+ 'clickAndTypeStyle','defaultTableStyle','drawingGridHorizontalSpacing','drawingGridVerticalSpacing',
+ 'displayHorizontalDrawingGridEvery','displayVerticalDrawingGridEvery','doNotUseMarginsForDrawingGridOrigin',
+ 'noPunctuationKerning','optimizeForBrowser','allowPNG','pixelsPerInch','relyOnVML','doNotSaveAsSingleFile',
+ 'kinsoku','overflowPunct','topLinePunct','autoSpaceDE','autoSpaceDN','adjustRightInd','wordWrap','fitText',
+ 'percent','dropCap','lines','hyphenationZone','consecutiveHyphenLimit','doNotHyphenateCaps','gutterAtTop',
+ 'printTwoOnOne','updateFields','doNotShadeFormData','strictFirstAndLastChars','noLineBreaksAfter','noLineBreaksBefore',
+ # borders (style enumeration) and math properties
+ 'top','bottom','left','right','start','end','insideH','insideV','tl2br','tr2bl','between','bar','mathFont','brkBin',
+ 'brkBinSub','smallFrac','dispDef','lMargin','rMargin','defJc','wrapIndent','intLim','naryLim','panose1','tblInd',
+ 'tblCellSpacing','tblW','tcW','wAfter','wBefore','gridAfter','gridBefore','trHeight','noWrap','tcFitText','hideMark',
+ 'shapeLayoutLikeWW8','doNotExpandShiftReturn','useFELayout',
+))
+ATTR_SEPARATOR='\n'
+MC_TOKEN=re.compile(r'(?:([A-Za-z_][A-Za-z0-9_.-]{0,31}):)?[A-Za-z_*][A-Za-z0-9_.*-]{0,63}')
+
+def scanned_attributes(e,key,prefixes):
+    """The attribute keys of element e whose values must be scanned (see STRUCT_ATTR above)."""
+    out=[]
+    for k,v in e.attrib.items():
+        u,l=qn(k)
+        if u==NS_XML and l=='space':continue
+        if u==NS_MC:
+            # Markup-compatibility lists name namespace prefixes: structural only if every token
+            # is (a qualified name in) a prefix actually declared in this part.
+            tokens=v.split()
+            if tokens and all((mt:=MC_TOKEN.fullmatch(x)) and ((mt.group(1) or x) in prefixes) for x in tokens):continue
+            out.append(k);continue
+        # Rewritten or removed by scrub(), so never written back with the original value.
+        if u!=NS_XML and l in ANON:continue
+        if l=='name' and key[1] in ('cmAuthor','author'):continue
+        if l in ('descr','title') and key[1] in ('docPr','cNvPr'):continue
+        # Already their own units (protected sheet name, editable field instruction).
+        if key==(NS_S,'sheet') and k=='name':continue
+        if key==(NS_W,'fldSimple') and k=='{%s}instr'%NS_W:continue
+        if TRIVIAL_VALUE.fullmatch(v):continue
+        structural=u==NS_R or (key[1] in STRUCT_VAL if l=='val' else l in STRUCT_ATTR)
+        if structural and STRUCT_VALUE.fullmatch(v):continue
+        out.append(k)
+    return out
 
 def qn(tag):
     if not isinstance(tag,str):raise Rejected('REDACT_XML_NODE')
@@ -339,20 +457,30 @@ class OfficeDoc:
             elif not ok(name):raise Rejected('REDACT_UNSUPPORTED_PART')
             self.order.append(name);self.decls[name]=namespaces(data);self.parts[name]=parser.xml(data)
         for name in sorted(self.parts):
-            if name!='[Content_Types].xml' and not name.endswith('.rels'):self.collect(self.parts[name])
+            if name!='[Content_Types].xml' and not name.endswith('.rels'):self.collect(self.parts[name],{p for p,_ in self.decls[name]})
         self.units=[u for u in self.units if u.real()]
         if len(self.units)>MAX_UNITS:raise Rejected('REDACT_UNIT_LIMIT')
         if sum(len(t.encode('utf8')) for t in self.texts())>MAX_TEXT:raise Rejected('TEXT_LIMIT')
     def texts(self):return [u.text() for u in self.units]
     def digest(self):return hashlib.sha256(json.dumps(self.texts(),ensure_ascii=False).encode('utf8')).hexdigest()
-    def collect(self,root):
+    def collect(self,root,prefixes):
         units=self.units
         def new(editable=True,cell=None):
             u=Unit(editable,cell);units.append(u);return u
+        attr_unit=[]
+        def attributes(e,key):
+            # Every non-structural attribute value of the part goes into ONE protected unit (any
+            # finding rejects the file), separated by virtual line breaks. One unit per part keeps
+            # the unit count bounded on style-heavy packages.
+            for k in scanned_attributes(e,key,prefixes):
+                if attr_unit:attr_unit[0].nodes.append((None,ATTR_SEPARATOR))
+                else:attr_unit.append(new(False))
+                attr_unit[0].nodes.append((e,('attr',k)))
         def walk(e,unit,depth):
             if depth>MAX_XML_DEPTH:raise Rejected('REDACT_XML_DEPTH')
             key=qn(e.tag)
             if key in SKIP_TEXT:return
+            attributes(e,key)
             if key in CONTAINERS:unit=new()
             if key==(NS_S,'sheet') and e.attrib.get('name'):new(False).nodes.append((e,('attr','name')))
             if key==(NS_W,'fldSimple') and ('{%s}instr'%NS_W) in e.attrib:new().nodes.append((e,('attr','{%s}instr'%NS_W)))
@@ -364,11 +492,13 @@ class OfficeDoc:
                     if f.text and f.text.strip():new(False).nodes.append((f,'text'))
                     for c in e:
                         if qn(c.tag) not in ((NS_S,'f'),(NS_S,'v')):walk(c,unit,depth+1)
+                        else:attributes(c,qn(c.tag))
                     return
                 v=e.find('{%s}v'%NS_S)
                 if v is not None and v.text and e.attrib.get('t')!='s':new(True,e).nodes.append((v,'text'))
                 for c in e:
                     if qn(c.tag)!=(NS_S,'v'):walk(c,unit,depth+1)
+                    else:attributes(c,qn(c.tag))
                 return
             if e.text:
                 if key in RUN_TEXT:(unit if unit is not None else new()).nodes.append((e,'text'))
