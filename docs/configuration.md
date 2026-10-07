@@ -612,7 +612,8 @@ Relative `path` values are resolved under `~/.singularity-aidr`. Paths that esca
 
 Audit entries are scrubbed before they are written. The regular logger rotates
 and expires records according to the values above. For signed/tamper-evident
-response evidence, use `ResponseAuditor` with `{ signEntries: true }`; see
+response evidence, use `ResponseAuditor` with `{ signEntries: true }` (or set
+`response.audit.signed_chain: true`) and check it with `aidr audit verify`; see
 [`docs/privacy.md`](privacy.md#local-audit-retention-and-deletion-semantics)
 for checkpoint, deletion-manifest and external-archive requirements.
 
@@ -808,6 +809,7 @@ sent to the AIDR dashboard for an administrator to approve — see
 | `aidr allowlist list\|add\|remove` | Manage permanent exceptions (`add` is operator only) |
 | `aidr audit tail [-n N] [--json]` | Show recent audit entries, re-redacted |
 | `aidr audit export [--since 24h\|ISO] [--format jsonl\|csv] [-o file]` | Export redacted entries, including rotated files; the session id is replaced by a digest and CSV cells are neutralised against spreadsheet formulas |
+| `aidr audit verify [path] [--json]` | Verify the Ed25519-signed response-action chain (`response.audit.path` by default) offline and print the first broken link. Exit `0` intact, `1` broken (edited, reordered, deleted or truncated entry, forged signature, tampered retention manifest), `2` unverifiable (log or signing key missing). Never creates a signing key |
 | `aidr doctor [--json]` | Check hosts, hook registration, rule count, core version, mode, DLP policy, agent permission profiles, the approval store and key custody, and the last verdict; exits non-zero on problems |
 | `aidr profile list\|show\|validate\|test` | Inspect, validate and dry-run agent permission profiles (see [Agent permission profiles](agent-profiles.md)) |
 

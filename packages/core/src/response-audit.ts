@@ -129,6 +129,52 @@ interface RetentionDeletionRecord {
 	_signature?: string;
 }
 
+/** Where the signed chain first stops being trustworthy. */
+export interface ResponseChainBrokenLink {
+	/** 1-based JSONL line; 0 when the break is not tied to a line (key, log, manifest). */
+	line: number;
+	entryId?: string;
+	reason:
+		| "prev_hash_mismatch"
+		| "entry_hash_mismatch"
+		| "signature_missing"
+		| "signature_invalid"
+		| "malformed_line"
+		| "head_checkpoint_missing"
+		| "audit_log_tail_deleted"
+		| "audit_log_truncated"
+		| "retention_manifest_invalid"
+		| "audit_log_missing"
+		| "audit_log_unreadable"
+		| "signing_key_missing";
+}
+
+export interface ResponseChainVerification {
+	valid: boolean;
+	/** The first broken link's reason, or `unsigned_audit_chain_not_verified`. */
+	reason?: string;
+	/** Non-empty JSONL lines in the active log. */
+	entries: number;
+	/** Entries that extend the chain from GENESIS with a valid hash and signature. */
+	verifiedEntries: number;
+	firstBrokenLink?: ResponseChainBrokenLink;
+	tamperedEntries: string[];
+}
+
+function unverifiedChain(
+	reason: string,
+	link?: ResponseChainBrokenLink,
+): ResponseChainVerification {
+	return {
+		valid: false,
+		reason,
+		entries: 0,
+		verifiedEntries: 0,
+		firstBrokenLink: link,
+		tamperedEntries: link ? [link.entryId ?? link.reason] : [],
+	};
+}
+
 export interface ResponseAuditorOptions {
 	signEntries?: boolean;
 	retentionDays?: number;
@@ -572,82 +618,183 @@ export class ResponseAuditor {
 		reason?: string;
 		tamperedEntries?: string[];
 	}> {
-		await this.ensureSigningReady();
-		if (!this.signEntries) {
-			return { valid: false, reason: "unsigned_audit_chain_not_verified" };
+		const result = await this.verifyChain();
+		if (result.reason === "unsigned_audit_chain_not_verified") {
+			return { valid: false, reason: result.reason };
+		}
+		return {
+			valid: result.valid,
+			tamperedEntries: result.tamperedEntries.length > 0 ? result.tamperedEntries : undefined,
+		};
+	}
+
+	/**
+	 * Walk the signed chain and report the FIRST broken link, not only a boolean.
+	 *
+	 * `requireExistingKey` is for offline verification (`aidr audit verify`): a
+	 * verifier must never mint a fresh key pair, because a brand-new key would
+	 * "verify" nothing and would replace the evidence key. Without it, the auditor
+	 * keeps its historical behaviour of initialising signing on demand.
+	 */
+	async verifyChain(
+		options: { requireExistingKey?: boolean } = {},
+	): Promise<ResponseChainVerification> {
+		if (!this.signEntries) return unverifiedChain("unsigned_audit_chain_not_verified");
+		const keyFailure = await this.prepareVerificationKey(options.requireExistingKey === true);
+		if (keyFailure) return keyFailure;
+
+		let content: string;
+		try {
+			content = await readFile(resolvePath(this.auditLogPath), "utf-8");
+		} catch (error) {
+			const reason =
+				(error as NodeJS.ErrnoException).code === "ENOENT"
+					? "audit_log_missing"
+					: "audit_log_unreadable";
+			return unverifiedChain(reason, { line: 0, entryId: "audit-log-unreadable", reason });
 		}
 
-		const path = resolvePath(this.auditLogPath);
-		const tamperedEntries: string[] = [];
+		const lines = content.trim().split("\n").filter(Boolean);
+		const walk = this.walkChain(lines);
+		const breaks = [...walk.breaks];
+		// A hash chain alone cannot detect truncation of its tail. The local
+		// head checkpoint provides a best-effort deletion signal; operators
+		// should additionally export/anchor this checkpoint externally.
+		if (breaks.length === 0) {
+			const headBreak = this.headCheckpointBreak(
+				await this.readHeadCheckpoint(),
+				lines.length,
+				walk.lastVerifiedEntry,
+			);
+			if (headBreak) breaks.push(headBreak);
+		}
+		for (const id of await this.verifyRetentionManifest()) {
+			breaks.push({ line: 0, entryId: id, reason: "retention_manifest_invalid" });
+		}
 
-		try {
-			const content = await readFile(path, "utf-8");
-			const lines = content.trim().split("\n").filter(Boolean);
-			let expectedPrevHash = "GENESIS";
-			let lastVerifiedEntry: SerializedAuditEntry | undefined;
+		const firstBrokenLink = breaks[0];
+		return {
+			valid: breaks.length === 0,
+			reason: firstBrokenLink?.reason,
+			entries: lines.length,
+			verifiedEntries: walk.verifiedEntries,
+			firstBrokenLink,
+			tamperedEntries: breaks.map((link) => link.entryId ?? link.reason),
+		};
+	}
 
-			for (const [lineIndex, line] of lines.entries()) {
-				try {
-					const entry = JSON.parse(line) as SerializedAuditEntry;
+	/** Load (or, outside offline verification, create) the key; a failure result when absent. */
+	private async prepareVerificationKey(
+		requireExistingKey: boolean,
+	): Promise<ResponseChainVerification | undefined> {
+		if (!requireExistingKey) {
+			await this.ensureSigningReady();
+			return undefined;
+		}
+		if (await this.loadExistingSigningKey()) return undefined;
+		return unverifiedChain("signing_key_missing", {
+			line: 0,
+			entryId: "signing-key-missing",
+			reason: "signing_key_missing",
+		});
+	}
 
-					// Check hash chain
-					if (entry._prev_hash !== expectedPrevHash) {
-						tamperedEntries.push(entry.id);
-						continue;
-					}
-
-					// Check entry hash
-					const computedHash = this.computeEntryHash(entry);
-					if (entry._entry_hash !== computedHash) {
-						tamperedEntries.push(entry.id);
-						continue;
-					}
-
-					// Check signature - missing or invalid signature is tampering
-					if (!entry._signature) {
-						tamperedEntries.push(entry.id);
-						continue;
-					}
-					if (!this.verifySignature(entry)) {
-						tamperedEntries.push(entry.id);
-						continue;
-					}
-
-					expectedPrevHash = entry._entry_hash ?? expectedPrevHash;
-					lastVerifiedEntry = entry;
-				} catch {
-					// A malformed line is tampering/corruption, not an ignorable
-					// condition.  Returning valid=true here would make an audit
-					// trail appear immutable while silently dropping evidence.
-					tamperedEntries.push(`invalid-line-${lineIndex + 1}`);
-				}
+	/** Walk every line from GENESIS; each line that does not extend the chain is a break. */
+	private walkChain(lines: string[]): {
+		breaks: ResponseChainBrokenLink[];
+		verifiedEntries: number;
+		lastVerifiedEntry?: SerializedAuditEntry;
+	} {
+		const breaks: ResponseChainBrokenLink[] = [];
+		let expectedPrevHash = "GENESIS";
+		let lastVerifiedEntry: SerializedAuditEntry | undefined;
+		let verifiedEntries = 0;
+		for (const [lineIndex, line] of lines.entries()) {
+			const lineNumber = lineIndex + 1;
+			let entry: SerializedAuditEntry;
+			try {
+				entry = JSON.parse(line) as SerializedAuditEntry;
+			} catch {
+				// A malformed line is tampering/corruption, not an ignorable
+				// condition. Returning valid=true here would make an audit
+				// trail appear immutable while silently dropping evidence.
+				breaks.push({
+					line: lineNumber,
+					entryId: `invalid-line-${lineNumber}`,
+					reason: "malformed_line",
+				});
+				continue;
 			}
-
-			// A hash chain alone cannot detect truncation of its tail. The local
-			// head checkpoint provides a best-effort deletion signal; operators
-			// should additionally export/anchor this checkpoint externally.
-			if (tamperedEntries.length === 0) {
-				const head = await this.readHeadCheckpoint();
-				if (lines.length === 0) {
-					if (head) tamperedEntries.push("audit-log-truncated");
-				} else if (!head) {
-					tamperedEntries.push("head-checkpoint-missing");
-				} else if (
-					!lastVerifiedEntry ||
-					head.entry_id !== lastVerifiedEntry.id ||
-					head.entry_hash !== lastVerifiedEntry._entry_hash
-				) {
-					tamperedEntries.push("audit-log-tail-deleted");
-				}
+			const failure = this.linkFailure(entry, expectedPrevHash);
+			if (failure) {
+				breaks.push({ line: lineNumber, entryId: entry.id, reason: failure });
+				continue;
 			}
-			tamperedEntries.push(...(await this.verifyRetentionManifest()));
+			expectedPrevHash = entry._entry_hash ?? expectedPrevHash;
+			lastVerifiedEntry = entry;
+			verifiedEntries++;
+		}
+		return { breaks, verifiedEntries, lastVerifiedEntry };
+	}
 
+	private headCheckpointBreak(
+		head: AuditHeadCheckpoint | null,
+		lineCount: number,
+		lastVerifiedEntry: SerializedAuditEntry | undefined,
+	): ResponseChainBrokenLink | undefined {
+		if (lineCount === 0) {
+			return head
+				? { line: 0, entryId: "audit-log-truncated", reason: "audit_log_truncated" }
+				: undefined;
+		}
+		if (!head) {
 			return {
-				valid: tamperedEntries.length === 0,
-				tamperedEntries: tamperedEntries.length > 0 ? tamperedEntries : undefined,
+				line: lineCount,
+				entryId: "head-checkpoint-missing",
+				reason: "head_checkpoint_missing",
 			};
+		}
+		if (
+			!lastVerifiedEntry ||
+			head.entry_id !== lastVerifiedEntry.id ||
+			head.entry_hash !== lastVerifiedEntry._entry_hash
+		) {
+			return {
+				line: lineCount,
+				entryId: "audit-log-tail-deleted",
+				reason: "audit_log_tail_deleted",
+			};
+		}
+		return undefined;
+	}
+
+	/** Why this entry does not extend the chain, or undefined when it does. */
+	private linkFailure(
+		entry: SerializedAuditEntry,
+		expectedPrevHash: string,
+	): ResponseChainBrokenLink["reason"] | undefined {
+		if (entry._prev_hash !== expectedPrevHash) return "prev_hash_mismatch";
+		if (entry._entry_hash !== this.computeEntryHash(entry)) return "entry_hash_mismatch";
+		// A missing or invalid signature is tampering.
+		if (!entry._signature) return "signature_missing";
+		if (!this.verifySignature(entry)) return "signature_invalid";
+		return undefined;
+	}
+
+	/** Load the existing key pair without ever creating one; false when there is none. */
+	private async loadExistingSigningKey(): Promise<boolean> {
+		if (this.publicKey) return true;
+		try {
+			const keys = JSON.parse(await readFile(this.keyPath, "utf-8")) as {
+				privateKey?: unknown;
+				publicKey?: unknown;
+			};
+			if (typeof keys.publicKey !== "string" || keys.publicKey.length === 0) return false;
+			this.publicKey = keys.publicKey;
+			if (typeof keys.privateKey === "string") this.privateKey = keys.privateKey;
+			return true;
 		} catch {
-			return { valid: false, tamperedEntries: ["audit-log-unreadable"] };
+			return false;
 		}
 	}
 

@@ -1239,7 +1239,12 @@ export {
 	summarizeResponseActions,
 	targetPathFor,
 } from "./response-actions.js";
-export type { ResponseAuditEntry, ResponseAuditorOptions } from "./response-audit.js";
+export type {
+	ResponseAuditEntry,
+	ResponseAuditorOptions,
+	ResponseChainBrokenLink,
+	ResponseChainVerification,
+} from "./response-audit.js";
 // Response Audit — the tamper-evident signed chain.
 //
 // `ResponseAuditor.log` refuses to append without a valid Ed25519 signature, so a
