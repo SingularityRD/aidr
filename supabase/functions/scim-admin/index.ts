@@ -13,6 +13,7 @@ const MAX_MAPPINGS = 500;
 const DEFAULT_TOKEN_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 const MAX_TOKEN_TTL_MS = 365 * 24 * 60 * 60 * 1000;
 const ROLES = new Set(["admin", "member", "viewer"]);
+const STEP_UP_ACTIONS: ReadonlySet<string> = new Set(["create_token", "rotate_token", "set_group_mapping", "remove_group_mapping"]);
 
 type Row = Record<string, unknown>;
 type ReadTable<T extends Row> = { Row: T; Insert: never; Update: never; Relationships: [] };
@@ -220,6 +221,15 @@ export function createScimAdminHandler(deps: ScimAdminDeps = {}) {
 				.select("status").eq("id", tenantId).maybeSingle();
 			if (memberError || tenantError) return corsJson(req, 503, { error: "authorization_unavailable" }, noStore());
 			if (!activeOwner(member) || tenant?.status !== "active") return corsJson(req, 403, { error: "owner_required" }, noStore());
+			// Issuing a provisioning credential or changing which directory groups map
+			// to tenant roles is privilege-granting, so it requires a step-up (AAL2)
+			// session regardless of tenant MFA policy — the same bar as OIDC admin.
+			// Revocation stays available at AAL1 so a leaked token can be cut off fast.
+			if (command && STEP_UP_ACTIONS.has(command.action)) {
+				const { data: assurance, error: assuranceError } = await db.auth.mfa.getAuthenticatorAssuranceLevel(token);
+				if (assuranceError || !assurance) return corsJson(req, 503, { error: "assurance_unavailable" }, noStore());
+				if (assurance.currentLevel !== "aal2") return corsJson(req, 403, { error: "mfa_required" }, noStore());
+			}
 			const quota = await consumeTenantRateLimit(db, {
 				tenantId,
 				subject: userId,

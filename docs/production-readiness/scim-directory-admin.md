@@ -1,6 +1,6 @@
 # SCIM directory setup and owner operations
 
-`scim-admin` is the supported control-plane surface for bootstrapping an inbound SCIM connection. It requires a current Supabase user session and an active tenant `owner` membership; `admin`, `member`, and `viewer` cannot issue provisioning credentials or change group-role mappings. The shared identity revocation/MFA barrier is checked before tenant-owned SCIM data is read or changed.
+`scim-admin` is the supported control-plane surface for bootstrapping an inbound SCIM connection. It requires a current Supabase user session and an active tenant `owner` membership; `admin`, `member`, and `viewer` cannot issue provisioning credentials or change group-role mappings. The shared identity revocation/MFA barrier is checked before tenant-owned SCIM data is read or changed. Creating or rotating a SCIM token and setting or removing a group-role mapping additionally require an AAL2 (MFA step-up) session, as for OIDC administration; reads and token revocation remain available at AAL1 so a leaked token can be revoked quickly.
 
 This function does not connect to Microsoft Graph or read Azure token claims. Entra (or another SCIM provider) provisions users and groups into the tenant-scoped SCIM API at `/functions/v1/scim/v2`; AIDR reconciles memberships from the exact immutable `Group.externalId` value and a preconfigured role mapping. Group display names and user metadata never grant roles. Supported mapped roles are `admin`, `member`, and `viewer`; SCIM cannot grant `owner`.
 
