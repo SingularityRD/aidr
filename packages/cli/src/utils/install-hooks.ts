@@ -125,33 +125,129 @@ export async function installHooks(env: Environment): Promise<HookInstallResult>
 }
 
 /**
+ * Hook time budget: the bundle is killed and the call denied after this many
+ * milliseconds. Agent hosts commonly give a command hook 10 s (Codex's
+ * `timeout = 10`, Cursor's default), so this stays below that budget: the host
+ * must receive our explicit deny, never time out and fall back to its own
+ * (often fail-open) handling.
+ */
+export const GENERIC_HOOK_TIMEOUT_MS = 8_000;
+
+/**
+ * Source of the generic hook entry point. Exported for tests.
+ *
+ * It fails CLOSED: a missing, crashing (non-zero exit or signal), silent
+ * (empty or non-JSON stdout) or hanging bundle produces an explicit deny verdict
+ * instead of passing the tool call through uninspected. The process always exits
+ * 0 so the host reads the verdict rather than treating the exit as its own error.
+ */
+export function renderGenericHookTemplate(
+	hookBundlePath: string,
+	timeoutMs = GENERIC_HOOK_TIMEOUT_MS,
+): string {
+	return `#!/usr/bin/env node
+// Singularity AIDR generic hook.
+// Wire this into your agent's hook system: it reads a tool-call JSON payload on
+// stdin and writes the AIDR verdict JSON to stdout. Any failure of the AIDR hook
+// bundle is reported as an explicit deny (fail closed), never a pass-through.
+"use strict";
+const { spawnSync } = require("node:child_process");
+
+const HOOK_BUNDLE = ${JSON.stringify(hookBundlePath)};
+const TIMEOUT_MS = ${JSON.stringify(timeoutMs)};
+const STARTED = Date.now();
+
+let settled = false;
+function finish(output) {
+	if (settled) return;
+	settled = true;
+	process.stdout.write(output, () => process.exit(0));
+}
+
+function deny(detail) {
+	const reason = "Singularity AIDR could not inspect this tool call (" + detail + "); it was blocked.";
+	finish(
+		JSON.stringify({
+			decision: "deny",
+			permission: "deny",
+			reason,
+			user_message: reason,
+			agent_message: "Singularity AIDR internal error policy applied.",
+		}) + "\\n",
+	);
+}
+
+// Covers a stdin that never ends as well as the bundle itself.
+setTimeout(() => deny("hook timed out"), TIMEOUT_MS);
+
+const chunks = [];
+process.stdin.on("data", (c) => chunks.push(c));
+process.stdin.on("error", () => deny("hook input could not be read"));
+process.stdin.on("end", () => {
+	if (settled) return;
+	// One budget for reading stdin and running the bundle together.
+	const remaining = TIMEOUT_MS - (Date.now() - STARTED);
+	if (remaining <= 0) {
+		deny("hook timed out");
+		return;
+	}
+	let result;
+	try {
+		result = spawnSync(process.execPath, [HOOK_BUNDLE, "cursor"], {
+			input: Buffer.concat(chunks),
+			timeout: remaining,
+			killSignal: "SIGKILL",
+			maxBuffer: 16 * 1024 * 1024,
+			windowsHide: true,
+		});
+	} catch {
+		deny("hook bundle could not be started");
+		return;
+	}
+	if (result.error) {
+		deny(result.error.code === "ETIMEDOUT" ? "hook bundle timed out" : "hook bundle could not be started");
+		return;
+	}
+	if (result.signal) {
+		deny("hook bundle was killed by " + result.signal);
+		return;
+	}
+	if (result.status !== 0) {
+		deny("hook bundle exited with status " + result.status);
+		return;
+	}
+	const stdout = result.stdout ? result.stdout.toString("utf8").trim() : "";
+	if (stdout === "") {
+		deny("hook bundle produced no verdict");
+		return;
+	}
+	let verdict;
+	try {
+		verdict = JSON.parse(stdout);
+	} catch {
+		verdict = undefined;
+	}
+	if (!verdict || typeof verdict !== "object" || Array.isArray(verdict)) {
+		deny("hook bundle produced an unreadable verdict");
+		return;
+	}
+	finish(stdout + "\\n");
+});
+`;
+}
+
+/**
  * Writes a generic hook entry point for runtimes without a dedicated connector.
  * The script is self-contained: it invokes the packaged AIDR hook bundle rather
  * than a CLI subcommand that does not exist.
  */
-export function writeGenericHookTemplate(hookBundlePath: string): string {
-	const target = join(AIDR_DIR, "hooks", "generic-hook.cjs");
-	mkdirSync(join(AIDR_DIR, "hooks"), { recursive: true, mode: 0o700 });
-
-	const template = `#!/usr/bin/env node
-// Singularity AIDR generic hook.
-// Wire this into your agent's hook system: it reads a tool-call JSON payload on
-// stdin and writes the AIDR verdict JSON to stdout.
-const { spawnSync } = require("node:child_process");
-
-const HOOK_BUNDLE = ${JSON.stringify(hookBundlePath)};
-
-const chunks = [];
-process.stdin.on("data", (c) => chunks.push(c));
-process.stdin.on("end", () => {
-	const input = Buffer.concat(chunks);
-	const result = spawnSync(process.execPath, [HOOK_BUNDLE, "cursor"], { input });
-	if (result.stdout) process.stdout.write(result.stdout);
-	process.exit(0);
-});
-`;
-
-	writeFileSync(target, template, { mode: 0o700 });
+export function writeGenericHookTemplate(
+	hookBundlePath: string,
+	hooksDir = join(AIDR_DIR, "hooks"),
+): string {
+	const target = join(hooksDir, "generic-hook.cjs");
+	mkdirSync(hooksDir, { recursive: true, mode: 0o700 });
+	writeFileSync(target, renderGenericHookTemplate(hookBundlePath), { mode: 0o700 });
 	return target;
 }
 
