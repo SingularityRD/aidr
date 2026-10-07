@@ -410,39 +410,55 @@ export class SessionStateStore<T> {
 		}
 	}
 
-	private async withLock<R>(path: string, fn: () => Promise<R>): Promise<R> {
-		const lockPath = `${path}.lock`;
-		const deadline = Date.now() + this.lockTimeoutMs;
-		for (;;) {
-			try {
-				await writePrivateFile(lockPath, `${process.pid}\n`);
-				break;
-			} catch (error) {
-				if (errorCode(error) !== "EEXIST") {
-					throw new SessionStateError("io", `Session state lock failed (${errorCode(error)}).`);
-				}
+	private withLock<R>(path: string, fn: () => Promise<R>): Promise<R> {
+		return withExclusiveFileLock(path, fn, {
+			timeoutMs: this.lockTimeoutMs,
+			staleMs: this.lockStaleMs,
+		});
+	}
+}
+
+/**
+ * Run `fn` while holding a cross-process lock on `path` (an `O_EXCL`
+ * `<path>.lock` file holding the owner pid). A lock older than `staleMs` is
+ * taken over. Throws a {@link SessionStateError} with code `lock_timeout` when
+ * the lock is not acquired within `timeoutMs`, or `io` when the lock file
+ * cannot be created.
+ */
+export async function withExclusiveFileLock<R>(
+	path: string,
+	fn: () => Promise<R>,
+	options: { timeoutMs?: number; staleMs?: number } = {},
+): Promise<R> {
+	const lockPath = `${path}.lock`;
+	const staleMs = options.staleMs ?? DEFAULT_LOCK_STALE_MS;
+	const deadline = Date.now() + (options.timeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS);
+	for (;;) {
+		try {
+			await writePrivateFile(lockPath, `${process.pid}\n`);
+			break;
+		} catch (error) {
+			if (errorCode(error) !== "EEXIST") {
+				throw new SessionStateError("io", `State lock failed (${errorCode(error)}).`);
 			}
-			try {
-				const info = await stat(lockPath);
-				if (Date.now() - info.mtimeMs > this.lockStaleMs) {
-					await unlink(lockPath).catch(() => undefined);
-					continue;
-				}
-			} catch {
-				continue;
-			}
-			if (Date.now() > deadline) {
-				throw new SessionStateError(
-					"lock_timeout",
-					"Timed out waiting for the session state lock.",
-				);
-			}
-			await sleep(5 + Math.floor(Math.random() * 20));
 		}
 		try {
-			return await fn();
-		} finally {
-			await unlink(lockPath).catch(() => undefined);
+			const info = await stat(lockPath);
+			if (Date.now() - info.mtimeMs > staleMs) {
+				await unlink(lockPath).catch(() => undefined);
+				continue;
+			}
+		} catch {
+			continue;
 		}
+		if (Date.now() > deadline) {
+			throw new SessionStateError("lock_timeout", "Timed out waiting for the state lock.");
+		}
+		await sleep(5 + Math.floor(Math.random() * 20));
+	}
+	try {
+		return await fn();
+	} finally {
+		await unlink(lockPath).catch(() => undefined);
 	}
 }
