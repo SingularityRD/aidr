@@ -208,6 +208,25 @@ export {
 export type { ApprovedEntry, PendingEntry } from "./approval-store.js";
 // Approval store
 export { ApprovalStore } from "./approval-store.js";
+// Signed, hash-chained verdict log.
+export {
+	AUDIT_CHAIN_GENESIS,
+	AUDIT_CHAIN_KEY_STORAGE_ENV,
+	AUDIT_CHAIN_ROOT_VAULT_PREFIX,
+	type AuditChainField,
+	type AuditChainProblem,
+	type AuditChainProblemKind,
+	type AuditChainSettings,
+	type AuditChainVerification,
+	type AuditKeyRotationResult,
+	auditChainDir,
+	resetAuditChainCache,
+	resolveAuditChainKeyStorage,
+	rootFingerprint,
+	rotateAuditChainRootKey,
+	setAuditChainTestHooks,
+	verifyAuditChain,
+} from "./audit-chain.js";
 // Audit log
 export {
 	type AuditLogLossState,
@@ -218,6 +237,7 @@ export {
 	getRecentEntries,
 	logAllowedResponseActions,
 	logDashboardApprovalEvent,
+	logIncident,
 	logPluginScan,
 	logResponseActions,
 	logVerdict,
@@ -362,7 +382,13 @@ export {
 	type SOC2Report,
 } from "./compliance-report.js";
 // Config
-export { AIDR_DIR, isInvalidConfig, loadConfig, resolvePath } from "./config.js";
+export {
+	AIDR_DIR,
+	isInvalidConfig,
+	loadConfig,
+	resolveAuditSignedChain,
+	resolvePath,
+} from "./config.js";
 // Connector tool-name contract (aliases every connector's emitted tool names)
 export {
 	CONNECTOR_TOOL_SURFACES,
@@ -697,6 +723,19 @@ export type {
 } from "./federated.js";
 // Federated Learning (privacy-preserving threat sharing)
 export { FederatedLearning } from "./federated.js";
+// Post-tool quarantine of agent-written files classified as malicious.
+export {
+	classifyFileContent,
+	downloadTargetsFromCommand,
+	type FileContentFinding,
+	maliciousFindings,
+	openConfiguredQuarantine,
+	type PostToolQuarantineRequest,
+	type PostToolQuarantineResult,
+	type QuarantinedFileNotice,
+	quarantineAgentWrittenFiles,
+	writtenFilePaths,
+} from "./file-quarantine.js";
 // File utilities
 export {
 	atomicWriteJson,
@@ -781,6 +820,7 @@ export {
 // allowed the call and snapshotted the target, the connector runs the call, and
 // this wrapper rolls the target back if the call fails.
 export {
+	type AllowedCallSnapshotResult,
 	type AskApprovalResolution,
 	addToAllowlist,
 	approveAction,
@@ -797,6 +837,7 @@ export {
 	resolveAskWithDashboardApproval,
 	resolveGuardResponseSettings,
 	rollbackSnapshotFromGuardResult,
+	snapshotBeforeAllowedToolCall,
 	summarizeArtifacts,
 } from "./guard.js";
 // Health checks
@@ -1220,8 +1261,11 @@ export {
 	AutoQuarantine,
 	getDefaultQuarantineConfig,
 	type NotifyChannel,
+	QUARANTINE_PAYLOAD_SUFFIX,
 	type QuarantineConfig,
+	QuarantineDeleteError,
 	type QuarantinedItem,
+	QuarantineRefusedError,
 } from "./quarantine.js";
 export type {
 	ReputationFeedBundle,
@@ -1384,6 +1428,7 @@ export type {
 	SnapshotResult,
 	SnapshotRollbackResult,
 	SnapshotSkip,
+	StoredSnapshotInfo,
 } from "./rollback.js";
 // Auto-Rollback
 export {
@@ -1391,6 +1436,8 @@ export {
 	createAutoRollback,
 	DEFAULT_SNAPSHOT_OPTIONS,
 	DEFAULT_SNAPSHOTS_DIR,
+	RollbackRefusedError,
+	SnapshotIncompleteError,
 } from "./rollback.js";
 export type { RuleSyncConfig } from "./rule-sync.js";
 // Real-Time Rule Sync

@@ -41,7 +41,26 @@ function defaultResponseAuditPath(): string {
 	return join(resolvedAidrDir(), "response-audit.jsonl");
 }
 
-type StateFileField = "cache" | "allowlist" | "logging" | "response.audit";
+type StateFileField = "cache" | "allowlist" | "logging" | "response.audit" | "response.quarantine";
+
+function defaultQuarantineDir(): string {
+	return join(resolvedAidrDir(), "quarantine");
+}
+
+/**
+ * Whether the verdict log is hash-chained and signed.
+ *
+ * An explicit `audit.signed_chain` wins in a local build. Unset, managed mode
+ * turns it on (an enrolled install is the one whose evidence is used) and local
+ * mode leaves it off. A commercial build is managed-only and forces it on, the
+ * same way it forces integrity verification on.
+ */
+export function resolveAuditSignedChain(
+	config: Pick<Config, "mode"> & { audit?: Partial<Config["audit"]> },
+): boolean {
+	if (isCommercialBuild()) return true;
+	return config.audit?.signed_chain ?? config.mode === "managed";
+}
 
 /** Expand ~ to the user's home directory. */
 export function resolvePath(pathStr: string): string {
@@ -132,6 +151,21 @@ function sanitizeConfigPaths(config: Config, logger: Logger): Config {
 					logger,
 				),
 			},
+			// The vault holds hostile files and is protected by the self-defense
+			// rules only inside the AIDR state directory, so it cannot be moved out.
+			...(config.response?.quarantine
+				? {
+						quarantine: {
+							...config.response.quarantine,
+							dir: normalizeStateFilePath(
+								config.response.quarantine.dir,
+								defaultQuarantineDir(),
+								"response.quarantine",
+								logger,
+							),
+						},
+					}
+				: {}),
 		},
 	};
 
@@ -165,6 +199,16 @@ function sanitizeConfigPaths(config: Config, logger: Logger): Config {
 			control_plane: { ...next.control_plane, endpoint: DEFAULT_CONTROL_PLANE_ENDPOINT },
 		};
 	}
+
+	next = {
+		...next,
+		logging: {
+			...next.logging,
+			signed_chain: resolveAuditSignedChain(next),
+			chain_key_storage: next.audit?.key_storage ?? "os-vault",
+			chain_epoch_hours: next.audit?.epoch_hours ?? 24,
+		},
+	};
 
 	return next;
 }

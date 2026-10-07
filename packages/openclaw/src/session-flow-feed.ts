@@ -1,5 +1,6 @@
 import {
 	type Logger,
+	quarantineAgentWrittenFiles,
 	recordToolOutcome,
 	recordToolOutputCanaries,
 	recordToolOutputFlow,
@@ -109,6 +110,42 @@ export async function feedQuarantinedOutput(
  * command that keeps failing unchanged is paused for review on its next retry.
  * OpenClaw reports failures as `event.error`. Observation only; never throws.
  */
+/**
+ * File quarantine after a completed tool call (opt-in,
+ * `response.quarantine.enabled`): a file the call wrote or downloaded that the
+ * content scan classifies as malicious is moved into the quarantine vault.
+ * `after_tool_call` only observes, so the outcome is logged. Never throws.
+ */
+export async function feedFileQuarantine(
+	event: AfterToolCallEvent,
+	context: OutputHookContext | undefined,
+	threatsDir: string,
+	logger: Logger,
+): Promise<void> {
+	if (typeof event?.error === "string" && event.error.trim() !== "") return;
+	try {
+		const result = await quarantineAgentWrittenFiles({
+			sessionId: context?.sessionKey ?? "unknown",
+			toolName: typeof event.toolName === "string" ? event.toolName : "unknown",
+			toolInput:
+				event.params && typeof event.params === "object" && !Array.isArray(event.params)
+					? event.params
+					: {},
+			agentRuntime: "openclaw",
+			threatsDir,
+			logger,
+		});
+		if (result.agentNotice) {
+			logger.warn("AIDR: agent-written file quarantined after execution", {
+				quarantined: result.quarantined.map((item) => ({ id: item.id, threatId: item.threatId })),
+				failed: result.skipped.filter((skip) => skip.reason.startsWith("quarantine_failed")).length,
+			});
+		}
+	} catch {
+		// quarantineAgentWrittenFiles never throws; a hostile event shape must not either.
+	}
+}
+
 export async function feedToolOutcome(
 	event: AfterToolCallEvent,
 	context: OutputHookContext | undefined,

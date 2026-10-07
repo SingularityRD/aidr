@@ -284,6 +284,8 @@ function resolveResponseActions(config: Config): Partial<ResponseOptions> {
 		snapshotRootDir: actions?.snapshot_root_dir ?? DEFAULT_RESPONSE_OPTIONS.snapshotRootDir,
 		snapshotRetentionDays:
 			actions?.snapshot_retention_days ?? DEFAULT_RESPONSE_OPTIONS.snapshotRetentionDays,
+		snapshotMaxTotalBytes:
+			actions?.snapshot_max_total_bytes ?? DEFAULT_RESPONSE_OPTIONS.snapshotMaxTotalBytes,
 	};
 }
 
@@ -426,6 +428,103 @@ export async function rollbackSnapshotFromGuardResult(
 	}
 
 	return record;
+}
+
+/** Tools `runPreAllowedResponseActions` can find a destructive target for. */
+const SNAPSHOT_CANDIDATE_TOOLS = new Set([
+	"write",
+	"edit",
+	"multiedit",
+	"delete",
+	"notebookedit",
+	"remove",
+	"move",
+	"rename",
+	"bash",
+	"shell",
+	"execute",
+]);
+
+/** What `snapshotBeforeAllowedToolCall` did. */
+export interface AllowedCallSnapshotResult {
+	records: ResponseActionRecord[];
+	snapshot: PreOperationSnapshot | null;
+	signedChain?: ResponseChainWrite;
+}
+
+/**
+ * Pre-operation snapshot for connectors that evaluate with `evaluateToolCall`
+ * directly instead of `guardToolCall` (Claude Code, Cursor, VS Code): the same
+ * allowed-path response `guardToolCall` takes, so a destructive call on a
+ * protected path is snapshotted before it runs, whichever host ran it.
+ *
+ * Doubly opt-in exactly like the guard (`snapshot_before_destructive` plus a
+ * non-empty `protect_paths`); with either off this returns after reading the
+ * config and copies nothing. Never throws and never changes the verdict.
+ */
+export async function snapshotBeforeAllowedToolCall(
+	request: { toolName: string; toolInput: Record<string, unknown>; sessionId: string },
+	verdict: Verdict,
+	options: { configPath?: string; logger?: Logger; config?: Config } = {},
+): Promise<AllowedCallSnapshotResult> {
+	const logger = options.logger ?? nullLogger;
+	const none: AllowedCallSnapshotResult = { records: [], snapshot: null };
+	// Cheap gate first: most calls cannot destroy a file, and they must not pay
+	// for a config read on the hook's hot path.
+	if (
+		verdict.decision !== "allow" ||
+		!SNAPSHOT_CANDIDATE_TOOLS.has(request.toolName.toLowerCase())
+	) {
+		return none;
+	}
+	try {
+		const config = options.config ?? (await loadConfig(options.configPath, logger));
+		const actions = config.response?.actions;
+		if (!actions?.snapshot_before_destructive || (actions.protect_paths ?? []).length === 0) {
+			return none;
+		}
+		const settings = guardResponseSettingsFromConfig(config, logger);
+		const preAllowed = await runPreAllowedResponseActions(
+			verdict,
+			request,
+			settings.responseOptions,
+			logger,
+		);
+		if (preAllowed.records.length === 0) return preAllowed;
+		if (config.logging) {
+			await logAllowedResponseActions(
+				config.logging,
+				request.sessionId,
+				request.toolName,
+				verdict,
+				preAllowed.records,
+			);
+		}
+		let signedChain: ResponseChainWrite | undefined;
+		if (settings.auditor) {
+			signedChain = await logResponseActionToChain(
+				settings.auditor,
+				preAllowed.records,
+				{
+					decision: "allow",
+					toolName: request.toolName,
+					inputSummary: guardInputSummary(request.toolName, request.toolInput),
+					sessionId: request.sessionId,
+					verdict,
+					snapshotId: preAllowed.snapshot?.id,
+					snapshotTarget: preAllowed.snapshot?.target,
+				},
+				logger,
+			);
+		} else if (settings.chainUnavailableReason) {
+			signedChain = { written: false, reason: settings.chainUnavailableReason };
+		}
+		return { ...preAllowed, signedChain };
+	} catch (error) {
+		// A snapshot is a response, never a reason to change the decision.
+		logger.warn("Pre-operation snapshot could not be taken", { error: String(error) });
+		return none;
+	}
 }
 
 export async function guardToolCall(

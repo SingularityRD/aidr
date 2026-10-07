@@ -255,6 +255,57 @@ Offline intel packs used by the policy layer.
 | Field | Default | Description |
 |-------|---------|-------------|
 | `emit_incidents` | `true` | Emit incident entries (used by managed dashboards) |
+| `actions.snapshot_before_destructive` | `false` | Copy the target of an ALLOWED destructive call (write/edit/delete, `rm`/`mv`/`dd`/redirect) into the snapshot store before it runs. Needs a non-empty `protect_paths` too |
+| `actions.protect_paths` | `[]` | Path prefixes eligible for a pre-operation snapshot (empty = protect nothing) |
+| `actions.snapshot_root_dir` | `~/.singularity-aidr/snapshots` | Snapshot store |
+| `actions.snapshot_retention_days` | `7` | Snapshots older than this are pruned when a new one is taken (`0` keeps them) |
+| `actions.snapshot_max_total_bytes` | `268435456` | Size bound of the snapshot store; the oldest snapshots are pruned first, never the one just taken (`0` disables the bound) |
+| `quarantine.enabled` | `false` | Quarantine files an agent tool call wrote or downloaded that the content scan classifies as malicious |
+| `quarantine.dir` | `~/.singularity-aidr/quarantine` | Vault location (must stay under `~/.singularity-aidr`) |
+| `quarantine.retention_days` | `30` | Quarantined files older than this are deleted on the next quarantine (`0` keeps them) |
+| `quarantine.max_total_bytes` | `536870912` | Vault size bound; the oldest items are deleted first (`0` disables it) |
+| `quarantine.max_scan_bytes` | `2097152` | Larger files are not scanned; the skip is reported, never treated as clean |
+| `quarantine.min_severity` | `"high"` | Lowest rule severity that counts as malicious (`medium`, `high`, `critical`); only `block` rules qualify |
+
+#### File quarantine and pre-operation snapshots
+
+Both are off by default: they move or copy the user's files, which must be an
+explicit operator choice.
+
+**Quarantine.** After a tool call completes, the connector looks only at the
+paths the call itself named — the target of a write/edit tool, or the output of
+a recognised download command (`curl -o/-O/>`, `wget [-O|-P]`,
+`Invoke-WebRequest -OutFile`, `Start-BitsTransfer -Destination`,
+`certutil -urlcache`). Each file (up to `max_scan_bytes`) is read — never
+executed — and classified with the shipped rules: the command rules over the
+lines of a script (and the calls a JS/TS file makes) and the whole-file content
+rules. A `block` rule at or above `min_severity` makes the file malicious: it is
+moved into the vault (owner-only directory, payload renamed `<id>_<name>.quarantined`
+and made read-only/non-executable on POSIX), with its SHA-256, size, original
+path, original permission bits, matched rules, tool, agent runtime and time in
+the manifest, an audit entry (`type: "quarantine"`), and a response-chain record
+when `response.audit.signed_chain` is on. The agent is told the file is gone.
+Wired into Claude Code, Codex and VS Code `PostToolUse`, Cursor `postToolUse`,
+OpenCode `tool.execute.after` and OpenClaw `after_tool_call` (observation-only
+there, so the move is logged rather than told to the model).
+
+**Snapshots.** With `snapshot_before_destructive` and `protect_paths`, every
+connector snapshots the target of an allowed destructive call on a protected
+path before it runs (OpenClaw, OpenCode and Codex through `guardToolCall`;
+Claude Code, Cursor and VS Code through `snapshotBeforeAllowedToolCall`).
+
+**Operator commands** (interactive confirmation, or `--yes` with
+`AIDR_OPERATOR_NONINTERACTIVE=1`; the agent cannot run them — see
+[Self-defense rules](#self-defense-rules)):
+
+```bash
+aidr quarantine list [--json]
+aidr quarantine show <id>
+aidr quarantine release <id>   # verifies the hash; never overwrites an existing file
+aidr quarantine delete <id>
+aidr restore --list
+aidr restore <snapshot-id> [--overwrite-changed]   # a target changed since the snapshot is refused without the flag
+```
 
 ### `url_check`
 
@@ -612,9 +663,52 @@ Relative `path` values are resolved under `~/.singularity-aidr`. Paths that esca
 
 Audit entries are scrubbed before they are written. The regular logger rotates
 and expires records according to the values above. For signed/tamper-evident
-response evidence, use `ResponseAuditor` with `{ signEntries: true }`; see
+verdict records see [`audit`](#audit); for signed response evidence, use
+`response.audit.signed_chain` (`ResponseAuditor` with `{ signEntries: true }`); see
 [`docs/privacy.md`](privacy.md#local-audit-retention-and-deletion-semantics)
 for checkpoint, deletion-manifest and external-archive requirements.
+
+### `audit`
+
+Signed, hash-chained verdict log (`audit.jsonl`).
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `signed_chain` | unset | Hash-chain and Ed25519-sign every record. Unset means **off in local mode and on in managed mode**; a commercial build (managed-only) always forces it on, as it does integrity verification. An explicit value wins in a local build |
+| `key_storage` | `"os-vault"` | Where the ROOT signing key lives: the OS credential vault (Windows DPAPI, macOS Keychain, libsecret — the same store as the operator approval key), or `"file"`, an explicit reduced-protection opt-in to an owner-only key file. Overridden by `AIDR_AUDIT_CHAIN_KEY_STORAGE` |
+| `epoch_hours` | `24` | Lifetime of the epoch key that actually signs records |
+
+Each record gets a `_chain` field `{ v, seq, prev, hash, kid, sig }`: `hash` is
+SHA-256 over the sequence number, the previous record's hash and the canonical
+record; `sig` is an Ed25519 signature over `hash`. String values are passed
+through the shared telemetry redaction before hashing, and no key material is
+ever written to the log. The root key never signs records: it certifies a
+short-lived epoch key whose private half is an owner-only file in
+`~/.singularity-aidr/audit-chain/`, so a hook (a new process per tool call) does
+not pay a vault round trip per record — the vault is touched once per epoch.
+A stolen epoch key can forge records only inside its own window. A signed head
+(`head.json`) detects tail truncation, and when rotation deletes the oldest
+backup a signed anchor records the last sequence number it held.
+
+The audit write still fails open: when signing is impossible (no vault, a lock
+held too long) the record is written chained but with `unsigned: "<reason>"`,
+and `aidr audit verify` reports it as a failure — never as verified.
+
+```bash
+aidr audit verify [--json] [--expect-root SHA256:<hex>]   # exit 1 on the first broken/missing/reordered record
+aidr audit rotate-key                                      # operator only; new root endorsed by the old one
+```
+
+`aidr audit verify` also verifies the response-action chain when
+`response.audit.signed_chain` is on, and exits non-zero when neither chain is
+enabled (nothing verified is not a pass). Pin the root fingerprint it prints
+with `--expect-root` (for example in an external archive or SIEM) so a wholesale
+replacement of the chain state is detected too.
+
+Measured cost (Windows 11, Node 22, file system with fsync): `logVerdict` p50
+2.9 ms → 4.9 ms, p95 3.1 ms → 6.3 ms; the PreToolUse hook end to end (≈650 ms,
+dominated by process start and ACL hardening) showed no difference beyond run
+noise over 40 spawns per variant.
 
 ### `sensitivity`
 
@@ -872,13 +966,15 @@ The approval channel is protected by hard-deny rules (never `ask`, which would
 hand the agent an actionId to have approved):
 
 - `CLT-SELF-007` — an agent command that runs `aidr approve`, `aidr pending`,
-  `aidr allowlist add`, the MCP gateway's toolset approval `aidr-mcp-approve`, or
-  sets `AIDR_OPERATOR_NONINTERACTIVE`.
+  `aidr allowlist add`, `aidr quarantine release|delete`, `aidr restore`,
+  `aidr audit rotate-key`, the MCP gateway's toolset approval `aidr-mcp-approve`,
+  or sets `AIDR_OPERATOR_NONINTERACTIVE`.
 - `CLT-SELF-008` — any agent reference to the AIDR state directory
   `.singularity-aidr`, in a shell command, a file-tool path, a Write/Edit body or
   an MCP argument.
 - `CLT-SELF-009` — the vault entries and key/ledger file names
-  (`singularity-aidr-cli`, `aidr-operator-approval-*`, `operator-approval*.key|json`).
+  (`singularity-aidr-cli`, `aidr-operator-approval-*`, `aidr-audit-chain-*`,
+  `operator-approval*.key|json`).
 
 They match the **shell-normalized** view of the text (`match_on:
 command_normalized`, `file_path_normalized`, `content_normalized`), in which
@@ -893,7 +989,8 @@ state directory (`~/.singul*`, `.s?ngularity-aidr`, `~/.{singularity-aidr,x}`,
 `pty.spawn(['aidr','approve',…])`, `cat ~/.singularity-aidr/*.key` and
 `cd ~ && cat .s*/operator-approval.key` are all denied. AIDR's read-only
 diagnostics — `aidr doctor`, `aidr status`, `aidr audit tail`,
-`aidr allowlist list` — are not matched; there is no agent-facing exception for
+`aidr audit verify`, `aidr quarantine list|show`, `aidr allowlist list` — are
+not matched; there is no agent-facing exception for
 reading the directory itself. Because these rules deny any mention of
 `.singularity-aidr`, an agent editing files or docs that contain that path (for
 example, while developing AIDR itself) is blocked too; that is deliberate.
@@ -1001,6 +1098,9 @@ unreachable) the call stays blocked with the reason in the message.
 | `~/.singularity-aidr/cache.json` | Verdict cache |
 | `~/.singularity-aidr/allowlist.json` | User allowlist |
 | `~/.singularity-aidr/audit.jsonl` | Audit log |
+| `~/.singularity-aidr/audit-chain/` | Signed verdict-log state: public `keys.json` (root keys and endorsements), `epochs.jsonl` (root-signed epoch certificates), `anchors.jsonl` (rotation anchors), `head.json` (signed head), and the owner-only `epoch-key.json` (current epoch signing key). The root private key is in the OS vault (`aidr-audit-chain-root-<kid>`), or `root-<kid>.key` only with `audit.key_storage: "file"` |
+| `~/.singularity-aidr/quarantine/` | Quarantine vault: `manifest.json`, `<yyyy>/<mm>/<dd>/<id>_<name>.quarantined` payloads and their `.metadata.json` (owner-only) |
+| `~/.singularity-aidr/snapshots/` | Pre-operation snapshots (`<id>/metadata.json` + copies) |
 | `~/.singularity-aidr/approvals.json` | Operator approval store: pending asks and `aidr approve` approvals (HMAC-protected, `0600`) |
 | `~/.singularity-aidr/operator-approval.key` | Approval HMAC key, only with the explicit `operator_approvals.key_storage: "file"` opt-in (`0600`) |
 | `~/.singularity-aidr/operator-approval-ledger.json` | Single-use consumption ledger, only with the `file` key storage (`0600`); otherwise it lives in the OS vault |

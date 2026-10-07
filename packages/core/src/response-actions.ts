@@ -94,6 +94,8 @@ export interface ResponseOptions {
 	snapshotRootDir: string;
 	/** Age at which a pre-operation snapshot is pruned. 0 disables pruning. */
 	snapshotRetentionDays: number;
+	/** Size bound of the pre-operation snapshot store (oldest pruned first). 0 disables it. */
+	snapshotMaxTotalBytes: number;
 }
 
 export const DEFAULT_RESPONSE_OPTIONS: ResponseOptions = {
@@ -105,6 +107,7 @@ export const DEFAULT_RESPONSE_OPTIONS: ResponseOptions = {
 	protectPaths: [],
 	snapshotRootDir: DEFAULT_SNAPSHOTS_DIR,
 	snapshotRetentionDays: 7,
+	snapshotMaxTotalBytes: 256 * 1024 * 1024,
 };
 
 /** Verdict severities, ordered. `VerdictSeverity` is critical|warning|info. */
@@ -314,7 +317,8 @@ export async function runPreAllowedResponseActions(
 				outcome: "failure",
 				target: resolvePath(protectedPath),
 				reason: "multi_file_patch_not_snapshot_safe",
-				detail: "No rollback snapshot was taken: a multi-file patch cannot be fully restored by this action.",
+				detail:
+					"No rollback snapshot was taken: a multi-file patch cannot be fully restored by this action.",
 			});
 			return { records, snapshot: null };
 		}
@@ -378,7 +382,13 @@ export async function runPreAllowedResponseActions(
 
 		// Opportunistic retention: this path is the only one that creates these
 		// copies, so it is the only place that can keep them from accumulating.
-		await applySnapshotRetention(rollback, opts.snapshotRetentionDays, logger);
+		await applySnapshotRetention(
+			rollback,
+			opts.snapshotRetentionDays,
+			logger,
+			opts.snapshotMaxTotalBytes,
+			result.snapshot.id,
+		);
 
 		logger.info?.("Pre-operation snapshot taken before an allowed destructive call", {
 			target,
@@ -429,11 +439,16 @@ async function applySnapshotRetention(
 	rollback: AutoRollback,
 	retentionDays: number,
 	logger: Logger,
+	maxTotalBytes = 0,
+	keepId?: string,
 ): Promise<void> {
-	if (retentionDays <= 0) return;
-	const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
 	try {
-		await rollback.pruneOlderThan(cutoff);
+		if (retentionDays > 0) {
+			await rollback.pruneOlderThan(new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000));
+		}
+		// The snapshot just taken is never the one evicted: it protects the call
+		// that is about to run.
+		await rollback.pruneToTotalBytes(maxTotalBytes, keepId);
 	} catch (error) {
 		// Retention is housekeeping; failing it must not fail the response.
 		logger.debug?.("Snapshot retention sweep failed", { error: String(error) });

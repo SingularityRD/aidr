@@ -50,6 +50,14 @@ import { nullLogger } from "./types.js";
 /** Default location of pre-operation snapshots. */
 export const DEFAULT_SNAPSHOTS_DIR = "~/.singularity-aidr/snapshots";
 
+/** A snapshot found on disk, as `aidr restore --list` shows it. */
+export interface StoredSnapshotInfo {
+	id: string;
+	timestamp: Date;
+	files: Array<{ path: string; sha256?: string; bytes?: number }>;
+	totalBytes: number;
+}
+
 /** Content digest recorded for one copied file, so a restore can prove its provenance. */
 interface SnapshotFileDigest {
 	/** SHA-256 of the bytes stored in the vault for this path. */
@@ -726,6 +734,52 @@ export class AutoRollback {
 			timestamp: s.timestamp,
 			fileCount: s.files.size,
 		}));
+	}
+
+	/**
+	 * Every snapshot on disk (any process), newest first, with what it holds.
+	 * Read by `aidr restore --list`; snapshots whose metadata does not validate are
+	 * not listed (and cannot be restored).
+	 */
+	async listStoredSnapshots(): Promise<StoredSnapshotInfo[]> {
+		await this.loadAllSnapshots();
+		const out: StoredSnapshotInfo[] = [];
+		for (const snapshot of this.snapshots.values()) {
+			const files = Array.from(snapshot.files.keys()).map((path) => ({
+				path,
+				sha256: snapshot.digests.get(path)?.sha256,
+				bytes: snapshot.digests.get(path)?.size,
+			}));
+			out.push({
+				id: snapshot.id,
+				timestamp: snapshot.timestamp,
+				files,
+				totalBytes: files.reduce((sum, file) => sum + (file.bytes ?? 0), 0),
+			});
+		}
+		return out.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+	}
+
+	/**
+	 * Keep the snapshot store within `maxTotalBytes`, deleting the OLDEST snapshots
+	 * first. 0 disables the bound. Returns how many were removed.
+	 */
+	async pruneToTotalBytes(maxTotalBytes: number, keepId?: string): Promise<number> {
+		if (!(maxTotalBytes > 0)) return 0;
+		const stored = await this.listStoredSnapshots();
+		let total = stored.reduce((sum, snapshot) => sum + snapshot.totalBytes, 0);
+		let pruned = 0;
+		for (const snapshot of [...stored].reverse()) {
+			if (total <= maxTotalBytes) break;
+			if (snapshot.id === keepId) continue;
+			await this.cleanup(snapshot.id);
+			total -= snapshot.totalBytes;
+			pruned++;
+		}
+		if (pruned > 0) {
+			this.logger.info("Pruned snapshots over the size bound", { pruned, maxTotalBytes });
+		}
+		return pruned;
 	}
 
 	async prune(olderThanMs: number): Promise<number> {

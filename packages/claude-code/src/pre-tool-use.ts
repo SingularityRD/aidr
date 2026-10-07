@@ -21,6 +21,7 @@ import {
 	malformedShellCommandReason,
 	recordHostObservation,
 	resolveAskWithDashboardApproval,
+	snapshotBeforeAllowedToolCall,
 	type Verdict,
 	verifyArtifactIntegrityAndLog,
 } from "@singularityrd/aidr-core";
@@ -326,6 +327,18 @@ async function main(): Promise<void> {
 				// Best-effort — failure doesn't affect the verdict
 			}
 		}
+	}
+
+	// Pre-operation snapshot (opt-in: snapshot_before_destructive + protect_paths):
+	// an allowed destructive call on a protected path is copied before it runs, so
+	// the operator can `aidr restore` it. Never changes the verdict, never throws.
+	if (verdict.decision === "allow") {
+		await snapshotBeforeAllowedToolCall(
+			{ toolName, toolInput: verdict.transformedInput ?? toolInput, sessionId },
+			verdict,
+			{ logger },
+		);
+		if (responder.answered) return;
 	}
 
 	if (!respond(makeResponse(verdict, dashboard))) return;

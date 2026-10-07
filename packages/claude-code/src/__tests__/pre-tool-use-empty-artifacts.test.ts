@@ -81,6 +81,8 @@ async function runHook(
 			dashboardOnly: false,
 		})),
 		formatDashboardApprovalNotice: () => null,
+		// Pre-operation snapshots are off by default; the hook must not depend on them.
+		snapshotBeforeAllowedToolCall: vi.fn(async () => ({ records: [], snapshot: null })),
 		// Real implementations, wired to the sandbox's stdout and exit so the
 		// single-answer/exit-after-flush behaviour is exercised as shipped.
 		createHookResponder: (responderOptions: HookResponderOptions) =>

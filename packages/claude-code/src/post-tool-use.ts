@@ -8,6 +8,7 @@
 import {
 	exitAfterStdoutFlush,
 	type Logger,
+	quarantineAgentWrittenFiles,
 	recordToolOutcome,
 	recordToolOutputCanaries,
 	recordToolOutputFlow,
@@ -18,6 +19,7 @@ import {
 } from "@singularityrd/aidr-core";
 import pino from "pino";
 import { consumePendingApproval } from "./approval-tracker.js";
+import { resolveAssetDir } from "./assets.js";
 import { approvedActionContext } from "./format.js";
 import { MAX_POST_TOOL_INPUT_BYTES, readStdinJson } from "./hook-input.js";
 import {
@@ -158,8 +160,29 @@ async function main(): Promise<void> {
 			{ agentRuntime: "claude-code", logger },
 		);
 	}
+	// File quarantine (opt-in, `response.quarantine.enabled`): a file this call
+	// wrote or downloaded that the content scan classifies as malicious is moved
+	// into the quarantine vault, and Claude is told it is gone. Never throws.
+	const toolInputForQuarantine = hookInput.tool_input;
+	const fileQuarantine = await quarantineAgentWrittenFiles({
+		sessionId,
+		toolName: typeof hookInput.tool_name === "string" ? hookInput.tool_name : "unknown",
+		toolInput:
+			toolInputForQuarantine &&
+			typeof toolInputForQuarantine === "object" &&
+			!Array.isArray(toolInputForQuarantine)
+				? (toolInputForQuarantine as Record<string, unknown>)
+				: {},
+		workingDirectory: typeof hookInput.cwd === "string" ? hookInput.cwd : undefined,
+		agentRuntime: "claude-code",
+		threatsDir: resolveAssetDir("threats"),
+		logger,
+	});
 	let response: Record<string, unknown> = inspection ?? {};
 	if (approvalContext) response = appendPostToolContext(response, approvalContext);
+	if (fileQuarantine.agentNotice) {
+		response = appendPostToolContext(response, fileQuarantine.agentNotice);
+	}
 	// The watchdog already answered; never append a second response.
 	if (answered) return;
 	process.stdout.write(`${JSON.stringify(response)}\n`);

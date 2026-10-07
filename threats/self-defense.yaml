@@ -103,8 +103,14 @@
 # variables, package runners (`npx @singularityrd/aidr-cli approve`), interpreter
 # argv lists (`spawn('aidr', ['approve', id])`) and pty wrappers (`script -qc`,
 # `expect`, `unbuffer`, which all carry the inner command) do not hide it.
+# The commands that change files or evidence on the operator's behalf are
+# matched the same way: `aidr quarantine release|delete` (puts a file classified
+# as malicious back, or destroys the evidence), `aidr restore` (overwrites a
+# protected path from a snapshot) and `aidr audit rotate-key` (replaces the
+# verdict-log signing root).
 # Read-only diagnostics (`aidr doctor`, `aidr status`, `aidr audit tail`,
-# `aidr allowlist list|remove`) are not matched.
+# `aidr audit verify`, `aidr quarantine list|show`, `aidr allowlist list|remove`)
+# are not matched.
 # The MCP gateway's operator toolset approval (`aidr-mcp-approve`, its package
 # runner form and its approve.mjs script) is matched too: it accepts a
 # quarantined (changed, "rug-pulled") MCP toolset, so an agent running it would
@@ -114,7 +120,7 @@
   severity: critical
   confidence: 0.99
   action: block
-  pattern: "\\baidr(?:-cli|-setup)?(?:@[\\w.^~-]{1,40})?(?:/[\\w.@-]{1,100}){0,8}(?:\\.exe|\\.cmd|\\.ps1|\\.js|\\.mjs|\\.cjs)?[\\s,\\[\\]]{1,20}(?:-{1,2}[\\w-]{1,40}(?:=\\S{0,200})?[\\s,\\[\\]]{1,20}){0,6}(?:approve|approvals|pending|allowlist[\\s,\\[\\]]{1,20}(?:-{1,2}[\\w-]{1,40}[\\s,\\[\\]]{1,20}){0,4}add)\\b|AIDR_OPERATOR_NONINTERACTIVE|\\baidr-mcp-approve\\b|aidr-mcp-gateway[\\\\/](?:[\\w.-]{1,100}[\\\\/]){0,4}(?:aidr-mcp-)?approve\\.[cm]?js\\b|mcp-gateway[\\\\/](?:src|dist)[\\\\/](?:aidr-mcp-)?approve\\.[cm]?js\\b"
+  pattern: "\\baidr(?:-cli|-setup)?(?:@[\\w.^~-]{1,40})?(?:/[\\w.@-]{1,100}){0,8}(?:\\.exe|\\.cmd|\\.ps1|\\.js|\\.mjs|\\.cjs)?[\\s,\\[\\]]{1,20}(?:-{1,2}[\\w-]{1,40}(?:=\\S{0,200})?[\\s,\\[\\]]{1,20}){0,6}(?:approve|approvals|pending|allowlist[\\s,\\[\\]]{1,20}(?:-{1,2}[\\w-]{1,40}[\\s,\\[\\]]{1,20}){0,4}add|quarantine[\\s,\\[\\]]{1,20}(?:-{1,2}[\\w-]{1,40}[\\s,\\[\\]]{1,20}){0,4}(?:release|delete)|restore|audit[\\s,\\[\\]]{1,20}(?:-{1,2}[\\w-]{1,40}[\\s,\\[\\]]{1,20}){0,4}rotate-key)\\b|AIDR_OPERATOR_NONINTERACTIVE|\\baidr-mcp-approve\\b|aidr-mcp-gateway[\\\\/](?:[\\w.-]{1,100}[\\\\/]){0,4}(?:aidr-mcp-)?approve\\.[cm]?js\\b|mcp-gateway[\\\\/](?:src|dist)[\\\\/](?:aidr-mcp-)?approve\\.[cm]?js\\b"
   case_insensitive: true
   match_on: command_normalized
   title: "Attempt to self-approve a Singularity AIDR block or forge an operator approval"
@@ -156,7 +162,7 @@
   severity: critical
   confidence: 0.99
   action: block
-  pattern: "singularity-aidr-cli\\b|aidr-operator-approval|operator-approval(?:-key|-ledger)?\\.(?:key|json)"
+  pattern: "singularity-aidr-cli\\b|aidr-operator-approval|aidr-audit-chain|operator-approval(?:-key|-ledger)?\\.(?:key|json)"
   case_insensitive: true
   match_on:
     - command_normalized
