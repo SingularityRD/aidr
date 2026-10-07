@@ -190,16 +190,21 @@ export function createRetentionAdminHandler(deps: RetentionAdminDeps = {}) {
 			if (req.method === "GET") {
 				const cursor = holdCursor(new URL(req.url));
 				if (cursor === undefined) return corsJson(req, 400, { error: "invalid_pagination" }, noStore());
-				let holdQuery = db.from("tenant_legal_holds")
-					.select("id,hold_reference,case_id,hold_owner,reason,placed_by,placed_at,released_by,released_at,release_reason")
-					.eq("tenant_id", tenantId);
+				const holdColumns = "id,hold_reference,case_id,hold_owner,reason,placed_by,placed_at,released_by,released_at,release_reason";
+				let holdQuery = db.from("tenant_legal_holds").select(holdColumns).eq("tenant_id", tenantId);
 				if (cursor) holdQuery = holdQuery.or(`placed_at.lt.${cursor.placedAt},and(placed_at.eq.${cursor.placedAt},id.gt.${cursor.id})`);
-				const [holds, policies, bounds] = await Promise.all([
+				const [holds, activeHold, policies, bounds] = await Promise.all([
 					holdQuery.order("placed_at", { ascending: false }).order("id", { ascending: true }).limit(HOLD_PAGE + 1),
+					// The active hold is independent of which history page is shown: a hold
+					// placed long ago is still active on page 2 and must never read as "none".
+					db.from("tenant_legal_holds").select(holdColumns).eq("tenant_id", tenantId).is("released_at", null)
+						.order("placed_at", { ascending: false }).order("id", { ascending: true }).limit(1),
 					db.from("tenant_data_retention_policies").select("data_class,retention_days,updated_at,updated_by").eq("tenant_id", tenantId),
 					db.from("retention_policy_bounds").select("data_class,min_days,max_days,tenant_configurable"),
 				]);
-				if (holds.error || policies.error || bounds.error) return corsJson(req, 503, { error: "retention_management_unavailable" }, noStore());
+				if (holds.error || activeHold.error || policies.error || bounds.error || !Array.isArray(activeHold.data)) {
+					return corsJson(req, 503, { error: "retention_management_unavailable" }, noStore());
+				}
 				const holdRows = (holds.data ?? []) as Row[];
 				const boundsByClass = new Map(((bounds.data ?? []) as Row[]).map((row) => [String(row.data_class), row]));
 				const retention = ((policies.data ?? []) as Row[]).map((row) => {
@@ -218,7 +223,7 @@ export function createRetentionAdminHandler(deps: RetentionAdminDeps = {}) {
 				return corsJson(req, 200, {
 					ok: true,
 					holds: page,
-					active_hold: page.find((row) => row.released_at === null) ?? null,
+					active_hold: ((activeHold.data as Row[])[0]) ?? null,
 					next_hold_cursor: holdRows.length > HOLD_PAGE
 						? { placed_at: page[HOLD_PAGE - 1].placed_at, id: page[HOLD_PAGE - 1].id } : null,
 					retention_policies: retention,

@@ -30,6 +30,8 @@ interface Options {
 	rpcError?: { code?: string; message?: string };
 	rpcData?: unknown;
 	holdCount?: number;
+	/** The newest N holds are released; older ones stay active. */
+	releasedHolds?: number;
 	rateLimited?: boolean;
 }
 
@@ -47,7 +49,9 @@ function fakeDb(options: Options = {}) {
 			id: index === 0 ? HOLD : `33333333-3333-4333-8333-${index.toString(16).padStart(12, "0")}`,
 			hold_reference: "CASE-1", case_id: "CASE-1", hold_owner: "Counsel", reason: "preserve", placed_by: USER,
 			placed_at: new Date(Date.UTC(2026, 9, 1) - index * 1000).toISOString(),
-			released_by: null, released_at: null, release_reason: null,
+			...(index < (options.releasedHolds ?? 0)
+				? { released_by: USER, released_at: "2026-10-02T00:00:00.000Z", release_reason: "closed" }
+				: { released_by: null, released_at: null, release_reason: null }),
 		})),
 		tenant_data_retention_policies: [
 			{ tenant_id: TENANT, data_class: "telemetry", retention_days: 30, updated_at: "2026-10-01T00:00:00Z", updated_by: null },
@@ -65,6 +69,7 @@ function fakeDb(options: Options = {}) {
 		const builder = {
 			select: (value?: string) => { columns = typeof value === "string" ? value.split(",").map((column) => column.trim()) : null; return builder; },
 			eq: (column: string, value: unknown) => { filters.set(column, value); return builder; },
+			is: (column: string, value: unknown) => { filters.set(column, value); return builder; },
 			or: () => builder,
 			order: () => builder,
 			limit: (value: number) => { maxRows = value; return builder; },
@@ -250,6 +255,22 @@ describe("retention-admin legal hold and retention API", () => {
 		const paged = await (await handler(fakeDb({ holdCount: 60 }))(request("GET", undefined, { "X-AIDR-Tenant-ID": TENANT }))).json();
 		expect(paged.holds).toHaveLength(50);
 		expect(paged.next_hold_cursor).toMatchObject({ id: expect.any(String), placed_at: expect.any(String) });
+	});
+
+	it("reports the active hold even when it is not on the returned history page", async () => {
+		// 60 holds, the newest 55 released: page 1 (50 rows) holds only released
+		// rows, yet an older hold is still active and must be reported.
+		const paged = await (await handler(fakeDb({ holdCount: 60, releasedHolds: 55 }))(
+			request("GET", undefined, { "X-AIDR-Tenant-ID": TENANT }),
+		)).json();
+		expect(paged.holds).toHaveLength(50);
+		expect(paged.holds.every((row: { released_at: unknown }) => row.released_at !== null)).toBe(true);
+		expect(paged.active_hold).toMatchObject({ id: `33333333-3333-4333-8333-${(55).toString(16).padStart(12, "0")}`, released_at: null });
+
+		const none = await (await handler(fakeDb({ holdCount: 3, releasedHolds: 3 }))(
+			request("GET", undefined, { "X-AIDR-Tenant-ID": TENANT }),
+		)).json();
+		expect(none.active_hold).toBeNull();
 	});
 
 	it("is deployed with gateway JWT verification and the shared identity barrier", () => {
