@@ -3,6 +3,8 @@
  * Detects and handles personally identifiable information
  */
 
+import { luhnCheck } from "./dlp/pii-detector.js";
+
 const PII_PATTERNS = {
 	email: {
 		pattern: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g,
@@ -23,6 +25,9 @@ const PII_PATTERNS = {
 		pattern: /\b(?:\d[ -]*?){13,16}\b/g,
 		type: "credit_card",
 		severity: "critical",
+		// Any 13–16 digit run (UUID fragments, ids, timestamps) matches the
+		// pattern; only Luhn-valid numbers are reported as card numbers.
+		validate: luhnCheck,
 	},
 	ipAddress: {
 		pattern:
@@ -106,14 +111,14 @@ export function detectPII(text: string): PIIReport {
 	for (const [_name, config] of Object.entries(PII_PATTERNS)) {
 		const matches = text.matchAll(config.pattern);
 		for (const match of matches) {
-			if (match.index !== undefined) {
-				findings.push({
-					type: config.type,
-					value: match[0],
-					index: match.index,
-					severity: config.severity as PIIFinding["severity"],
-				});
-			}
+			if (match.index === undefined) continue;
+			if ("validate" in config && !config.validate(match[0])) continue;
+			findings.push({
+				type: config.type,
+				value: match[0],
+				index: match.index,
+				severity: config.severity as PIIFinding["severity"],
+			});
 		}
 	}
 	findings.sort((a, b) => a.index - b.index);
