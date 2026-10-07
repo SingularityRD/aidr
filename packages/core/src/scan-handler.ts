@@ -48,6 +48,7 @@ export async function runPluginScan(
 
 	logger.info(`Singularity AIDR plugin scan (${context}) complete`, {
 		findings: result.scanResults.length,
+		...(result.rulesIncomplete ? { rulesIncomplete: result.rulesIncomplete.files } : {}),
 		updateAvailable: result.versionCheck?.updateAvailable ?? false,
 	});
 

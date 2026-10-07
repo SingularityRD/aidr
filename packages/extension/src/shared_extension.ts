@@ -97,6 +97,10 @@ export function activateManagedHooksExtension(
 					void vscode.window.showInformationMessage(
 						`Singularity AIDR enabled for ${target.hostName}. Managed hooks configured at ${health.configPath}.`,
 					);
+					// Bundled rules that did not load or verify: protection is degraded, say so.
+					if (startup.rulesIncomplete) {
+						void vscode.window.showWarningMessage(formatSessionStartMessage(version, startup));
+					}
 					return;
 				}
 				if (startup.disabled_reason === "enrollment_repair_required") {

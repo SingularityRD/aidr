@@ -1090,7 +1090,8 @@ export interface PluginScanResult {
 
 export interface PluginScanUnavailableCheck {
 	/** Which verification check is incomplete or unavailable. */
-	check: "url_reputation" | "file_reputation" | "plugin_files";
+	/** `threat_rules`: bundled rule files did not load or verify, so rule matching was partial. */
+	check: "url_reputation" | "file_reputation" | "plugin_files" | "threat_rules";
 	/** Why it could not run, in operator-readable form. */
 	reason: string;
 	/** How many artifacts or paths went unchecked. */

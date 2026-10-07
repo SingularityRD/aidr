@@ -4,6 +4,7 @@
  */
 
 import { createHash } from "node:crypto";
+import { basename } from "node:path";
 import { logPluginScan } from "./audit-log.js";
 import { isCommercialBuild } from "./build-flavor.js";
 import { loadConfig, resolvePath } from "./config.js";
@@ -11,8 +12,8 @@ import { loadMergedIntelFromDisk } from "./intel/loader.js";
 import {
 	isPremiumModuleEnabled,
 	loadManagedState,
-	loadRevocationsCache,
 	loadRevocationBinding,
+	loadRevocationsCache,
 	managedStatePath,
 } from "./managed.js";
 import {
@@ -24,7 +25,7 @@ import {
 	storeResult,
 } from "./plugin-scan-cache.js";
 import { canReusePluginScanCache, scanPlugin } from "./plugin-scanner.js";
-import { loadThreats } from "./threat-loader.js";
+import { loadThreatsFromDirsWithReport } from "./threat-loader.js";
 import { loadTrustedDomains } from "./trusted-domains.js";
 import type {
 	Logger,
@@ -76,13 +77,76 @@ export function toAuditFindingData(finding: PluginFinding): Record<string, unkno
 	return rest;
 }
 
+/** Operator-facing headline for a session-start scan run against an incomplete rule set. */
+export const RULES_INCOMPLETE_MESSAGE = "rules incomplete — protection degraded";
+
+/**
+ * Bundled threat rules that did not load or verify for this scan. Their rules are absent, so
+ * "no finding" from this scan is not a clean result.
+ */
+export interface SessionStartRulesIncomplete {
+	message: typeof RULES_INCOMPLETE_MESSAGE;
+	/** Rule files (basenames) that failed to load or verify, or the unreadable directory. */
+	files: string[];
+	/** Operator-readable detail, including the remedy. */
+	reason: string;
+}
+
+export interface SessionStartScanReport {
+	/** Plugins with findings or unavailable checks (same contract as {@link runSessionStartScan}). */
+	results: PluginScanResult[];
+	/** Set when the bundled rules are incomplete; never omitted in that case. */
+	rulesIncomplete?: SessionStartRulesIncomplete;
+}
+
+function rulesIncompleteFrom(
+	report: Awaited<ReturnType<typeof loadThreatsFromDirsWithReport>>,
+	threatsDir: string,
+): SessionStartRulesIncomplete | undefined {
+	if (!report.bundledUnavailable && report.bundledErrors.length === 0) return undefined;
+	const files = report.bundledUnavailable
+		? [threatsDir]
+		: [...new Set(report.bundledErrors.map((error) => basename(error.file)))];
+	const shown =
+		files.slice(0, 5).join(", ") + (files.length > 5 ? `, +${files.length - 5} more` : "");
+	return {
+		message: RULES_INCOMPLETE_MESSAGE,
+		files,
+		reason: report.bundledUnavailable
+			? `Threat rule directory could not be read (${shown}); plugins were NOT scanned against the bundled rules. Reinstall the connector bundle.`
+			: `Bundled threat rules did not load or verify (${shown}); this scan is NOT complete. Reinstall the connector bundle.`,
+	};
+}
+
+/**
+ * Session-start plugin scan. When the bundled rules are incomplete every scanned plugin carries a
+ * `threat_rules` unavailable check, so no consumer of the result list can read it as clean.
+ * Use {@link runSessionStartScanWithReport} to also see the condition when no plugin is installed.
+ */
 export async function runSessionStartScan(
 	context: SessionStartScanContext,
 ): Promise<PluginScanResult[]> {
+	return (await runSessionStartScanWithReport(context)).results;
+}
+
+export async function runSessionStartScanWithReport(
+	context: SessionStartScanContext,
+): Promise<SessionStartScanReport> {
 	const logger = context.logger ?? nullLogger;
 	const config = await loadConfig(context.configPath, logger).catch(() => ConfigSchema.parse({}));
 
-	const threats = await loadThreats(context.threatsDir, logger);
+	const ruleReport = await loadThreatsFromDirsWithReport([context.threatsDir], logger, {
+		manifest: { publicKeysPem: config.integrity?.public_keys_pem ?? [] },
+	});
+	const threats = ruleReport.threats;
+	const rulesIncomplete = rulesIncompleteFrom(ruleReport, context.threatsDir);
+	if (rulesIncomplete) {
+		logger.warn(`Session-start scan: ${RULES_INCOMPLETE_MESSAGE}`, {
+			files: rulesIncomplete.files,
+		});
+	}
+	const withReport = (results: PluginScanResult[]): SessionStartScanReport =>
+		rulesIncomplete ? { results, rulesIncomplete } : { results };
 	const trustedDomains = await loadTrustedDomains(context.allowlistsDir, logger);
 
 	const plugins = context.plugins;
@@ -183,14 +247,18 @@ export async function runSessionStartScan(
 	const cache = await loadScanCache(configHash, context.scanCachePath, logger);
 	if (plugins.length === 0) {
 		await saveScanCache(cache, context.scanCachePath, logger);
-		return [];
+		return withReport([]);
 	}
 	const resultsWithFindings: PluginScanResult[] = [];
 	let cacheModified = false;
 
 	for (const plugin of plugins) {
 		const key = cacheKey(plugin.key, plugin.version, plugin.lastUpdated);
-		const cached = getCached(cache, plugin.key, plugin.version, plugin.lastUpdated);
+		// With incomplete rules a cached verdict cannot be reused as-is: every plugin is rescanned
+		// and reported with the degradation, and nothing is written back to the cache.
+		const cached = rulesIncomplete
+			? undefined
+			: getCached(cache, plugin.key, plugin.version, plugin.lastUpdated);
 		const cacheTreeIsComplete = cached ? await canReusePluginScanCache(plugin, logger) : true;
 		if (cached && !cacheTreeIsComplete) {
 			delete cache.entries[key];
@@ -216,6 +284,16 @@ export async function runSessionStartScan(
 			intelMerged,
 			logger,
 		});
+		if (rulesIncomplete) {
+			result.unavailableChecks = [
+				...(result.unavailableChecks ?? []),
+				{
+					check: "threat_rules",
+					reason: `${RULES_INCOMPLETE_MESSAGE}: ${rulesIncomplete.reason}`,
+					uncheckedCount: rulesIncomplete.files.length,
+				},
+			];
+		}
 
 		if ((result.unavailableChecks?.length ?? 0) === 0) {
 			storeResult(
@@ -251,5 +329,5 @@ export async function runSessionStartScan(
 		// Logging must never crash the hook.
 	}
 
-	return resultsWithFindings;
+	return withReport(resultsWithFindings);
 }
