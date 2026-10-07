@@ -225,6 +225,34 @@ function makeVerdict(params: {
 	};
 }
 
+/**
+ * Server/tool readings of an MCP call. `mcp__<server>__<tool>` is split at
+ * every `__` (first split first, the historical reading); the generic `MCP`
+ * tool reads `tool_input.server` / `tool_input.name`.
+ */
+function mcpPolicyIdentities(
+	toolName: string,
+	toolInput: Record<string, unknown> | undefined,
+): { server: string; tool: string }[] {
+	if (toolName.startsWith("mcp__")) {
+		const rest = toolName.slice("mcp__".length);
+		const identities: { server: string; tool: string }[] = [];
+		for (let index = rest.indexOf("__"); index !== -1; index = rest.indexOf("__", index + 1)) {
+			const server = rest.slice(0, index);
+			const tool = rest.slice(index + 2);
+			if (server && tool) identities.push({ server, tool });
+		}
+		return identities;
+	}
+	if (toolName === "MCP" && toolInput?.tool_input && typeof toolInput.tool_input === "object") {
+		const ti = toolInput.tool_input as Record<string, unknown>;
+		if (typeof ti.server === "string" && ti.server && typeof ti.name === "string" && ti.name) {
+			return [{ server: ti.server, tool: ti.name }];
+		}
+	}
+	return [];
+}
+
 function includesExactId(values: readonly string[], id: string): boolean {
 	return values.some((value) => value.trim() === id);
 }
@@ -654,17 +682,33 @@ export async function evaluatePolicy(
 
 	// --- MCP policy ---
 	if (config.policy.mcp.enabled) {
-		let mcpServerId: string | undefined;
-		let mcpToolName: string | undefined;
+		const isMcpCall = toolName.startsWith("mcp__") || toolName === "MCP";
+		const identities = mcpPolicyIdentities(toolName, toolInput);
+		const mcpServerId = identities[0]?.server;
+		const mcpToolName = identities[0]?.tool;
+		const anyIdentity = (
+			predicate: (server: string, tool: string) => boolean,
+		): { server: string; tool: string } | undefined =>
+			identities.find((identity) => predicate(identity.server, identity.tool));
 
-		if (toolName.startsWith("mcp__")) {
-			const parts = toolName.split("__");
-			mcpServerId = parts[1];
-			mcpToolName = parts.slice(2).join("__");
-		} else if (toolName === "MCP" && toolInput?.tool_input) {
-			const ti = toolInput.tool_input as Record<string, unknown>;
-			mcpServerId = typeof ti.server === "string" ? ti.server : undefined;
-			mcpToolName = typeof ti.name === "string" ? ti.name : undefined;
+		if (isMcpCall && (!mcpServerId || !mcpToolName)) {
+			// An MCP call whose server/tool cannot be identified cannot be matched
+			// against server or tool rules; treat it as an unknown server instead
+			// of skipping MCP policy altogether.
+			const unknownAction = config.policy.mcp.unknown_server_action ?? "require_approval";
+			if (unknownAction !== "allow") {
+				const blocked = unknownAction === "block";
+				return makeVerdict({
+					decision: blocked ? "deny" : "ask",
+					category: "mcp_tool_call",
+					severity: blocked ? "critical" : "warning",
+					source: "policy",
+					artifact: toolName,
+					threatId: "POL-MCP-001",
+					reasons: ["MCP server or tool could not be identified"],
+					confidence: 0.9,
+				});
+			}
 		}
 
 		if (mcpServerId && mcpToolName) {
@@ -672,7 +716,10 @@ export async function evaluatePolicy(
 				legacyMcpToolSelector(mcpServerId, mcpToolName) ??
 				mcpToolSelector(mcpServerId, mcpToolName);
 
-			if (matchesMcpToolSelector(config.policy.mcp.deny_tools, mcpServerId, mcpToolName)) {
+			// Deny and approval rules match any reading of an ambiguous
+			// `mcp__a__b__c` name (server `a` or `a__b`), so a server whose
+			// name contains the separator cannot slip past its own rule.
+			if (anyIdentity((server, tool) => matchesMcpToolSelector(config.policy.mcp.deny_tools, server, tool))) {
 				return makeVerdict({
 					decision: "deny",
 					category: "mcp_tool_call",
@@ -685,7 +732,7 @@ export async function evaluatePolicy(
 				});
 			}
 
-			if (includesExactId(config.policy.mcp.deny_servers, mcpServerId)) {
+			if (anyIdentity((server) => includesExactId(config.policy.mcp.deny_servers, server))) {
 				return makeVerdict({
 					decision: "deny",
 					category: "mcp_tool_call",
@@ -699,7 +746,9 @@ export async function evaluatePolicy(
 			}
 
 			if (
-				matchesMcpToolSelector(config.policy.mcp.require_approval_tools, mcpServerId, mcpToolName)
+				anyIdentity((server, tool) =>
+					matchesMcpToolSelector(config.policy.mcp.require_approval_tools, server, tool),
+				)
 			) {
 				return makeVerdict({
 					decision: "ask",
@@ -713,7 +762,9 @@ export async function evaluatePolicy(
 				});
 			}
 
-			if (includesExactId(config.policy.mcp.require_approval_servers, mcpServerId)) {
+			if (
+				anyIdentity((server) => includesExactId(config.policy.mcp.require_approval_servers, server))
+			) {
 				return makeVerdict({
 					decision: "ask",
 					category: "mcp_tool_call",
