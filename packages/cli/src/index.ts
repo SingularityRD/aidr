@@ -394,7 +394,9 @@ auditProgram
 		"Verify the Ed25519-signed response-action chain and report the first broken link (exit 1 broken, 2 unverifiable)",
 	)
 	.option("--json", "Emit a machine-readable result")
-	.action((path, options) => auditVerifyCommand(path, options));
+	.action(async (path, options) => {
+		await auditVerifyCommand(path, options);
+	});
 
 const profileProgram = program
 	.command("profile")

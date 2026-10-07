@@ -681,6 +681,9 @@ Local mode behaviour:
   policy only from signed bundles. If a signed bundle is installed in local
   mode, it is still validated and refused (tool calls are blocked) rather than
   silently replaced by the local file.
+- `aidr doctor` reports the effective DLP source per connector: `signed managed
+  bundle` or `local <path>` (unsigned). An invalid local file is reported as NOT
+  enforced, and a local file present in `managed` mode is reported as ignored.
 
 Minimal example:
 

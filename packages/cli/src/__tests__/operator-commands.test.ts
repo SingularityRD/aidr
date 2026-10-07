@@ -525,7 +525,7 @@ describe("aidr doctor", () => {
 		expect(byId.configuration?.summary).toContain("Mode: local");
 		expect(byId.detection?.status).toBe("ok");
 		expect(byId.dlp?.status).toBe("warn");
-		expect(byId.dlp?.summary).toContain("local mode has no DLP");
+		expect(byId.dlp?.summary).toContain("no local DLP policy was found");
 		expect(byId.operator_approvals?.summary).toContain("1 ask(s) pending");
 		expect(byId.operator_approvals?.summary).toContain("OS vault");
 		expect(byId.operator_approvals?.status).toBe("ok");
@@ -572,6 +572,100 @@ describe("aidr doctor", () => {
 		check = report.checks.find((c) => c.id === "operator_approvals");
 		expect(check?.status).toBe("warn");
 		expect(check?.summary).toContain("DISABLED");
+	});
+
+	describe("effective DLP source", () => {
+		const localPolicy = {
+			version: 1,
+			tenantId: "local",
+			supportedFormats: ["application/json"],
+			labels: [{ id: "internal", tenantId: "local", name: "Internal", sensitivity: "restricted" }],
+			rules: [
+				{
+					id: "codename",
+					tenantId: "local",
+					labelId: "internal",
+					name: "Project codename",
+					action: "block",
+					directions: ["input"],
+					matchers: [{ type: "keyword", values: ["CODENAME-7"], wholeWord: false }],
+				},
+			],
+		};
+
+		function writeLocalPolicy(body: string): string {
+			const path = join(home, ".singularity-aidr", "dlp-policy.json");
+			writeFileSync(path, body);
+			return path;
+		}
+
+		it("reports an enforcing local dlp-policy.json instead of claiming there is no DLP", async () => {
+			const path = writeLocalPolicy(JSON.stringify(localPolicy));
+			const { inspectLocalDlpPolicy } = await import("@singularityrd/aidr-core");
+			const state = await inspectLocalDlpPolicy(path);
+			if (state.status !== "loaded") throw new Error("fixture policy must load");
+			const report = await runDoctor({
+				connectors: () => [connector("installed")],
+				operatorApprovals: store,
+				localDlpPolicyPath: path,
+				loadDetectors: async () => ({
+					runtimeDetectors: { tenantId: "local", dlp: { enabled: true, policy: state.policy } },
+				}),
+			});
+			const dlp = report.checks.find((c) => c.id === "dlp");
+			expect(dlp?.status).toBe("ok");
+			expect(dlp?.summary).toContain(`opencode (local ${path})`);
+			expect(dlp?.summary).not.toContain("no DLP");
+			expect(dlp?.detail).toMatchObject({
+				sources: { opencode: "local_file" },
+				local_policy: { status: "loaded" },
+			});
+		});
+
+		it("reports the local file even before any connector hook is registered", async () => {
+			const path = writeLocalPolicy(JSON.stringify(localPolicy));
+			const report = await runDoctor({
+				connectors: () => [],
+				operatorApprovals: store,
+				localDlpPolicyPath: path,
+				loadDetectors: async () => ({}),
+			});
+			const dlp = report.checks.find((c) => c.id === "dlp");
+			expect(dlp?.status).toBe("ok");
+			expect(dlp?.summary).toContain("DLP policy loaded from local");
+		});
+
+		it("attributes a different (signed) policy to the managed bundle", async () => {
+			const path = writeLocalPolicy(JSON.stringify(localPolicy));
+			const report = await runDoctor({
+				connectors: () => [connector("installed")],
+				operatorApprovals: store,
+				localDlpPolicyPath: path,
+				loadDetectors: async () =>
+					({
+						runtimeDetectors: {
+							tenantId: "tenant-a",
+							dlp: { enabled: true, policy: { ...localPolicy, tenantId: "tenant-a" } },
+						},
+					}) as never,
+			});
+			const dlp = report.checks.find((c) => c.id === "dlp");
+			expect(dlp?.summary).toContain("opencode (signed managed bundle)");
+		});
+
+		it("warns that an invalid local policy is NOT enforced", async () => {
+			const path = writeLocalPolicy("{ not json");
+			const report = await runDoctor({
+				connectors: () => [connector("installed")],
+				operatorApprovals: store,
+				localDlpPolicyPath: path,
+				loadDetectors: async () => ({}),
+			});
+			const dlp = report.checks.find((c) => c.id === "dlp");
+			expect(dlp?.status).toBe("warn");
+			expect(dlp?.summary).toContain("INVALID");
+			expect(dlp?.summary).toContain("NOT enforced");
+		});
 	});
 
 	it("fails on an invalid configuration or an invalid detector policy", async () => {
