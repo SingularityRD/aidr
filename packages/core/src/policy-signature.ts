@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { verifyEd25519CanonicalJson } from "./managed.js";
 
 /**
@@ -11,6 +12,12 @@ import { verifyEd25519CanonicalJson } from "./managed.js";
  * recursive key-sorted JSON used for signed entitlements). The envelope binds the
  * policy digest, its version, a monotonic sequence and a validity window, and repeats
  * `key_id` inside the signed bytes so a key id cannot be relabelled to dodge revocation.
+ *
+ * `governance_sha256` (optional for compatibility with older signers) binds the AI
+ * governance overlay served next to the policy (MCP bans/restrictions). When present it
+ * must equal the SHA-256 of the canonical overlay the connector received, where an
+ * absent overlay counts as the empty overlay, so a stripped, swapped or injected
+ * overlay fails verification instead of silently relaxing enforcement.
  */
 type PolicyEnvelope = {
 	schema_version: 1;
@@ -21,6 +28,7 @@ type PolicyEnvelope = {
 	issued_at: string;
 	expires_at: string;
 	tenant_id?: string;
+	governance_sha256?: string;
 };
 
 type PolicySignatureFailure =
@@ -30,6 +38,7 @@ type PolicySignatureFailure =
 	| "bad_signature"
 	| "key_revoked"
 	| "binding_mismatch"
+	| "governance_mismatch"
 	| "not_yet_valid"
 	| "expired"
 	| "rollback";
@@ -53,7 +62,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function parseEnvelope(raw: unknown): PolicyEnvelope | null {
 	if (!isRecord(raw) || raw.schema_version !== 1) return null;
-	const { key_id, policy_version, policy_sha256, sequence, issued_at, expires_at, tenant_id } = raw;
+	const {
+		key_id,
+		policy_version,
+		policy_sha256,
+		sequence,
+		issued_at,
+		expires_at,
+		tenant_id,
+		governance_sha256,
+	} = raw;
 	if (typeof key_id !== "string" || !key_id.trim()) return null;
 	if (typeof policy_version !== "string" || !policy_version) return null;
 	if (typeof policy_sha256 !== "string" || !SHA256_HEX.test(policy_sha256)) return null;
@@ -71,7 +89,42 @@ function parseEnvelope(raw: unknown): PolicyEnvelope | null {
 	)
 		return null;
 	if (tenant_id !== undefined && typeof tenant_id !== "string") return null;
+	if (
+		governance_sha256 !== undefined &&
+		(typeof governance_sha256 !== "string" || !SHA256_HEX.test(governance_sha256))
+	)
+		return null;
 	return raw as PolicyEnvelope;
+}
+
+/** Recursive key-sorted JSON, identical to the Edge `canonicalPolicy`. */
+function canonicalJsonValue(value: unknown): string {
+	if (Array.isArray(value)) return `[${value.map(canonicalJsonValue).join(",")}]`;
+	if (isRecord(value)) {
+		return `{${Object.entries(value)
+			.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+			.map(([key, item]) => `${JSON.stringify(key)}:${canonicalJsonValue(item)}`)
+			.join(",")}}`;
+	}
+	return JSON.stringify(value) ?? "null";
+}
+
+const EMPTY_GOVERNANCE_OVERLAY = { mcp_deny_servers: [], mcp_require_approval_servers: [] };
+
+/**
+ * SHA-256 of the governance overlay a policy body actually carries, as the signer
+ * computes it: the canonical overlay, or the canonical empty overlay when absent.
+ */
+export function governanceOverlaySha256(body: Record<string, unknown> | undefined): string {
+	const overlay = body?.governance === undefined ? EMPTY_GOVERNANCE_OVERLAY : body.governance;
+	return createHash("sha256").update(canonicalJsonValue(overlay)).digest("hex");
+}
+
+/** True when a body carries an overlay that its signed envelope does not bind (legacy signer). */
+export function governanceUnboundBySignature(body: Record<string, unknown> | undefined): boolean {
+	const signed = body?.policy_signed;
+	const envelope = isRecord(signed) && isRecord(signed.envelope) ? signed.envelope : null;
+	return body?.governance !== undefined && envelope?.governance_sha256 === undefined;
 }
 
 /** Sequence of the signed envelope in a policy body, or null when unsigned/malformed (no signature check). */
@@ -126,6 +179,16 @@ export function verifySignedPolicy(input: {
 		envelope.policy_version !== input.body?.policy_version
 	) {
 		return { ok: false, reason: "binding_mismatch" };
+	}
+	// The governance overlay (MCP bans) is inside the signed envelope: whatever the
+	// connector received must hash to what was signed, or nothing is trusted.
+	if (
+		envelope.governance_sha256 !== undefined &&
+		(envelope.governance_sha256 !== governanceOverlaySha256(input.body) ||
+			(input.body?.governance_sha256 !== undefined &&
+				input.body.governance_sha256 !== envelope.governance_sha256))
+	) {
+		return { ok: false, reason: "governance_mismatch" };
 	}
 	const issuedAt = Date.parse(envelope.issued_at);
 	const expiresAt = Date.parse(envelope.expires_at);

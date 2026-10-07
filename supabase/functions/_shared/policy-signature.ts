@@ -25,6 +25,12 @@ type PolicyEnvelope = {
 	issued_at: string;
 	expires_at: string;
 	tenant_id: string;
+	/**
+	 * SHA-256 of the canonical AI governance overlay served next to the policy (the
+	 * empty overlay when none applies). Binding it here puts the MCP bans inside the
+	 * signed envelope: a connector refuses a policy whose overlay was stripped or swapped.
+	 */
+	governance_sha256?: string;
 };
 
 export type SignedPolicy = {
@@ -94,10 +100,11 @@ function bytesToBase64(bytes: Uint8Array): string {
 
 /** Returns null when the key is unusable or the sequence is not a positive safe integer. */
 export async function signRuntimePolicyEnvelope(
-	input: { tenantId: string; policyVersion: string; policySha256: string; sequence: number; now: Date },
+	input: { tenantId: string; policyVersion: string; policySha256: string; sequence: number; now: Date; governanceSha256?: string },
 	config: PolicySigningConfig,
 ): Promise<SignedPolicy | null> {
 	if (!Number.isSafeInteger(input.sequence) || input.sequence < 1) return null;
+	if (input.governanceSha256 !== undefined && !/^[a-f0-9]{64}$/.test(input.governanceSha256)) return null;
 	const envelope: PolicyEnvelope = {
 		schema_version: 1,
 		key_id: config.keyId,
@@ -107,6 +114,7 @@ export async function signRuntimePolicyEnvelope(
 		issued_at: input.now.toISOString(),
 		expires_at: new Date(input.now.getTime() + config.ttlHours * 3_600_000).toISOString(),
 		tenant_id: input.tenantId,
+		...(input.governanceSha256 !== undefined ? { governance_sha256: input.governanceSha256 } : {}),
 	};
 	try {
 		const pkcs8 = Uint8Array.from(atob(config.pkcs8B64), (c) => c.charCodeAt(0));

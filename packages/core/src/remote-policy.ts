@@ -5,6 +5,7 @@ import { ControlPlaneClient } from "./clients/control-plane.js";
 import { resolvePath } from "./config.js";
 import { loadRevocationBinding, loadRevocationsCache } from "./managed.js";
 import {
+	governanceUnboundBySignature,
 	type PolicyHighWater,
 	policyBodySequence,
 	verifySignedPolicy,
@@ -108,14 +109,20 @@ function getGovernanceOverlay(
 	}
 	const raw = body?.governance;
 	const digest = body?.governance_sha256;
-	if (!isRecord(raw) || typeof digest !== "string" || !/^[a-f0-9]{64}$/.test(digest)) return { ok: false };
-	if (!Object.keys(raw).every((key) => key === "mcp_deny_servers" || key === "mcp_require_approval_servers")) {
+	if (!isRecord(raw) || typeof digest !== "string" || !/^[a-f0-9]{64}$/.test(digest))
+		return { ok: false };
+	if (
+		!Object.keys(raw).every(
+			(key) => key === "mcp_deny_servers" || key === "mcp_require_approval_servers",
+		)
+	) {
 		return { ok: false };
 	}
 	const deny = governanceServerList(raw.mcp_deny_servers);
 	const approval = governanceServerList(raw.mcp_require_approval_servers);
 	if (!deny || !approval) return { ok: false };
-	if (createHash("sha256").update(canonicalPolicy(raw)).digest("hex") !== digest) return { ok: false };
+	if (createHash("sha256").update(canonicalPolicy(raw)).digest("hex") !== digest)
+		return { ok: false };
 	return { ok: true, overlay: { mcp_deny_servers: deny, mcp_require_approval_servers: approval } };
 }
 
@@ -274,8 +281,13 @@ function policyTrusted(
 		now,
 		highWater,
 	});
-	if (!result.ok)
+	if (!result.ok) {
 		logger?.warn("Remote runtime policy signature rejected", { reason: result.reason });
+	} else if (governanceUnboundBySignature(body)) {
+		// A legacy signer does not bind the overlay. It can only add restrictions,
+		// so it is still applied, but it is reported as unsigned rather than verified.
+		logger?.warn("Remote runtime policy governance overlay is not bound by its signature");
+	}
 	return result.ok;
 }
 

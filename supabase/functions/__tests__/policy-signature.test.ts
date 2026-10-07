@@ -2,7 +2,7 @@ import { generateKeyPairSync } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { verifyEd25519CanonicalJson } from "../../../packages/core/src/managed.ts";
-import { type PolicyHighWater, policyBodySequence, verifySignedPolicy } from "../../../packages/core/src/policy-signature.ts";
+import { governanceOverlaySha256, type PolicyHighWater, policyBodySequence, verifySignedPolicy } from "../../../packages/core/src/policy-signature.ts";
 
 vi.mock("npm:@supabase/supabase-js@2.116.0", () => ({
 	createClient: () => { throw new Error("policy signature test requires an injected database"); },
@@ -36,7 +36,10 @@ const POLICY_KEY = keypair();
 const OTHER_KEY = keypair();
 const ENTITLEMENT_KEY = keypair();
 
-function database(options: { agentBound?: boolean; updatedAt?: string | null; publishedAt?: string } = {}) {
+type Overlay = { mcp_deny_servers: string[]; mcp_require_approval_servers: string[] };
+const EMPTY_OVERLAY: Overlay = { mcp_deny_servers: [], mcp_require_approval_servers: [] };
+
+function database(options: { agentBound?: boolean; updatedAt?: string | null; publishedAt?: string; governance?: Overlay } = {}) {
 	const bound = options.agentBound ?? false;
 	function from(table: string) {
 		const query = {
@@ -59,8 +62,8 @@ function database(options: { agentBound?: boolean; updatedAt?: string | null; pu
 	}
 	const rpc = async (name: string) => {
 		if (name === "tenant_admission_capacity") return { data: 1, error: null };
-		// No AI governance bans: the response carries no overlay.
-		if (name === "ai_governance_policy_overlay") return { data: { mcp_deny_servers: [], mcp_require_approval_servers: [] }, error: null };
+		// No AI governance bans unless a test supplies some: then no overlay is served.
+		if (name === "ai_governance_policy_overlay") return { data: options.governance ?? EMPTY_OVERLAY, error: null };
 		return { data: { allowed: true, remaining: 299 }, error: null };
 	};
 	return { from, rpc };
@@ -245,6 +248,53 @@ describe("policy endpoint signed envelope verified by core verifySignedPolicy", 
 		// Same sequence with a different digest is a conflicting replay.
 		expect(verify(older, { highWater: { sequence: policyBodySequence(older)?.sequence ?? 0, policySha256: "c".repeat(64) } })).toEqual({ ok: false, reason: "rollback" });
 		expect(verify(older, { highWater: policyBodySequence(older) }).ok).toBe(true);
+	});
+
+	it("binds the governance overlay (MCP bans) inside the signed envelope", async () => {
+		useSigningKey();
+		const governance = { mcp_deny_servers: ["shell-runner"], mcp_require_approval_servers: ["github"] };
+		const { body } = await fetchPolicy({ governance });
+		const signed = body.policy_signed as { envelope: Record<string, unknown> };
+		expect(body.governance).toEqual(governance);
+		expect(signed.envelope.governance_sha256).toBe(body.governance_sha256);
+		expect(verify(body).ok).toBe(true);
+		expect(governanceOverlaySha256(body)).toBe(body.governance_sha256);
+	});
+
+	it("binds the empty overlay too, so an injected or stripped overlay is refused by core", async () => {
+		useSigningKey();
+		const empty = (await fetchPolicy()).body;
+		const emptyEnvelope = (empty.policy_signed as { envelope: Record<string, unknown> }).envelope;
+		expect(empty.governance).toBeUndefined();
+		expect(emptyEnvelope.governance_sha256).toBe(governanceOverlaySha256({}));
+		expect(verify(empty).ok).toBe(true);
+
+		const banned = (await fetchPolicy({ governance: { mcp_deny_servers: ["shell-runner"], mcp_require_approval_servers: [] } })).body;
+		// Stripping the bans (both fields) no longer matches the signed digest.
+		const { governance: _g, governance_sha256: _d, ...stripped } = banned;
+		expect(verify(stripped)).toEqual({ ok: false, reason: "governance_mismatch" });
+		// Swapping in a weaker overlay with a self-consistent digest is still refused.
+		const weaker = { mcp_deny_servers: [], mcp_require_approval_servers: ["shell-runner"] };
+		expect(verify({ ...banned, governance: weaker, governance_sha256: governanceOverlaySha256({ governance: weaker }) })).toEqual({ ok: false, reason: "governance_mismatch" });
+		// A body digest that disagrees with the signed one is refused even if the overlay matches.
+		expect(verify({ ...banned, governance_sha256: "d".repeat(64) })).toEqual({ ok: false, reason: "governance_mismatch" });
+		// Grafting the bans envelope onto a different overlay, or an empty one, fails too.
+		expect(verify({ ...empty, policy_signed: banned.policy_signed })).toEqual({ ok: false, reason: "governance_mismatch" });
+	});
+
+	it("rejects a malformed governance digest in the envelope", async () => {
+		useSigningKey();
+		const { body } = await fetchPolicy();
+		const signed = body.policy_signed as { envelope: Record<string, unknown> };
+		expect(verify({ ...body, policy_signed: { ...signed, envelope: { ...signed.envelope, governance_sha256: "not-hex" } } })).toEqual({ ok: false, reason: "malformed_signature" });
+	});
+
+	it("still verifies a legacy envelope without a governance binding", async () => {
+		const input = { tenantId: TENANT, policyVersion: "3", policySha256: "a".repeat(64), sequence: 5, now: NOW };
+		const legacy = await signRuntimePolicyEnvelope(input, { keyId: "k", pkcs8B64: POLICY_KEY.pkcs8B64, ttlHours: 24 });
+		expect(legacy?.envelope.governance_sha256).toBeUndefined();
+		expect(verify({ policy_version: "3", policy_sha256: "a".repeat(64), policy_signed: legacy }).ok).toBe(true);
+		expect(await signRuntimePolicyEnvelope({ ...input, governanceSha256: "xyz" }, { keyId: "k", pkcs8B64: POLICY_KEY.pkcs8B64, ttlHours: 24 })).toBeNull();
 	});
 
 	it("fails closed with 503 on a half-configured policy key, before authentication or any query", async () => {
