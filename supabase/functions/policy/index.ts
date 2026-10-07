@@ -6,6 +6,7 @@ import { consumeTenantRateLimit, rateLimitHeaders } from "../_shared/request-lim
 import { canonicalPolicy, sha256, validateRuntimePolicy } from "../_shared/runtime-policy.ts";
 import { POLICY_SIGNING_UNAVAILABLE, policySequence, resolvePolicySigning, type SignedPolicy, signRuntimePolicyEnvelope } from "../_shared/policy-signature.ts";
 import { overlayIsEmpty, validateGovernanceOverlay } from "../_shared/governance-overlay.ts";
+import { validateDetectionExceptionFeed } from "../_shared/detection-exceptions.ts";
 
 const json = (status: number, body: Record<string, unknown>, headers: Record<string, string> = {}) => new Response(JSON.stringify(body), {
 	status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store", ...headers },
@@ -56,22 +57,40 @@ export function createPolicyHandler(deps: { db?: ReturnType<typeof createClient>
 			const runtimePolicy = validateRuntimePolicy(policy.policy);
 			const policyVersion = String(policy.version);
 			const policySha256 = await sha256(canonicalPolicy(policy.policy));
+			const rpc = db as unknown as { rpc(name: string, args: Record<string, unknown>): PromiseLike<{ data: unknown; error: unknown }> };
 			// AI governance register bans/restrictions for this member or agent, on
 			// top of (never inside) the published policy document. An unreadable
 			// overlay fails closed: serving the policy without the bans would relax it.
-			const overlayRpc = db as unknown as { rpc(name: string, args: Record<string, unknown>): PromiseLike<{ data: unknown; error: unknown }> };
-			const overlayResult = await overlayRpc.rpc("ai_governance_policy_overlay", { p_tenant_id: tenant, p_user_id: auth.userId, p_agent_id: agentId });
+			const overlayResult = await rpc.rpc("ai_governance_policy_overlay", { p_tenant_id: tenant, p_user_id: auth.userId, p_agent_id: agentId });
 			if (overlayResult.error) return json(503, { error: "policy_unavailable" });
 			const governance = validateGovernanceOverlay(overlayResult.data);
 			// Digest of the overlay as served (the canonical empty overlay when none
 			// applies); the signed envelope binds it so the bans cannot be stripped.
 			const governanceSha256 = await sha256(canonicalPolicy(governance));
 			let policySigned: SignedPolicy | null = null;
+			let detectionExceptions: { list: unknown[]; sha256: string } | null = null;
 			if (signing.config) {
-				// Monotonic: publish (or assignment) time, so re-publishing older content still advances it.
-				const sequence = policySequence(policy.updated_at, policy.created_at, assignedAt);
+				// Time-limited detection exceptions for this principal (user- and
+				// agent-scoped ones only for the key bound to that user or agent).
+				// They only ever relax detection, so they are served ONLY inside a
+				// signed response: their digest is bound into the envelope. An
+				// unreadable feed fails closed, because dropping it would also drop
+				// its change time from the sequence and look like a rollback.
+				const feedResult = await rpc.rpc("detection_exceptions_for_principal", { p_tenant_id: tenant, p_user_id: auth.userId, p_agent_id: agentId });
+				if (feedResult.error) return json(503, { error: "policy_unavailable" });
+				const feed = validateDetectionExceptionFeed(feedResult.data);
+				if (!feed) return json(503, { error: "policy_unavailable" });
+				if (feed.exceptions.length > 0) {
+					detectionExceptions = { list: feed.exceptions, sha256: await sha256(canonicalPolicy(feed.exceptions)) };
+				}
+				// Monotonic: publish (or assignment) time, so re-publishing older content still advances it;
+				// an exception created or revoked later advances it too.
+				const sequence = policySequence(policy.updated_at, policy.created_at, assignedAt, feed.changedAt);
 				if (sequence === null) return json(503, { error: POLICY_SIGNING_UNAVAILABLE });
-				policySigned = await signRuntimePolicyEnvelope({ tenantId: tenant, policyVersion, policySha256, sequence, governanceSha256, now: (deps.now ?? (() => new Date()))() }, signing.config);
+				policySigned = await signRuntimePolicyEnvelope({
+					tenantId: tenant, policyVersion, policySha256, sequence, governanceSha256, now: (deps.now ?? (() => new Date()))(),
+					...(detectionExceptions ? { detectionExceptionsSha256: detectionExceptions.sha256 } : {}),
+				}, signing.config);
 				if (!policySigned) return json(503, { error: POLICY_SIGNING_UNAVAILABLE });
 			}
 			return json(200, {
@@ -79,6 +98,7 @@ export function createPolicyHandler(deps: { db?: ReturnType<typeof createClient>
 				policy_sha256: policySha256, agent_bound: !!agentId,
 				...(policySigned ? { policy_signed: policySigned } : {}),
 				...(overlayIsEmpty(governance) ? {} : { governance, governance_sha256: governanceSha256 }),
+				...(detectionExceptions ? { detection_exceptions: detectionExceptions.list, detection_exceptions_sha256: detectionExceptions.sha256 } : {}),
 			}, rateLimitHeaders(rate));
 		} catch {
 			return json(503, { error: "policy_unavailable" });

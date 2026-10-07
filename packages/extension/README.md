@@ -30,6 +30,13 @@ control-plane-signed, single-use token. `operator_approvals.dashboard_only: true
 turns every remaining `ask` into a deny so only the dashboard can release it. See
 [dashboard approvals](../../docs/configuration.md#managed-mode-dashboard-approvals).
 
+With `operator_approvals.mode: "operator"` every `ask` (on every Cursor and VS Code
+event) is denied with an approval reference instead of a native prompt, recorded
+for `aidr pending`, and exactly one retry is released after `aidr approve
+<actionId>` in your own terminal. The default `host_dialog` mode keeps the native
+behaviour and lists the ask in `aidr pending` for information only. See
+[`operator_approvals`](../../docs/configuration.md#operator_approvals).
+
 ### Prompt protection
 
 The managed hooks also inspect the user's prompt before it is sent to the model

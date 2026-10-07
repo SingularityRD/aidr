@@ -40,6 +40,10 @@
       "owner": "Platform Engineering",
       "tests": ["supabase/functions/__tests__/ai-governance-contract.test.ts", "supabase/functions/__tests__/policy-change-control-contract.test.ts"]
     },
+    "detection-exceptions": {
+      "owner": "Platform Engineering",
+      "tests": ["supabase/functions/__tests__/detection-exceptions-contract.test.ts"]
+    },
     "compliance-report": {
       "owner": "Platform Engineering",
       "tests": ["supabase/functions/__tests__/compliance-report-contract.test.ts"]
