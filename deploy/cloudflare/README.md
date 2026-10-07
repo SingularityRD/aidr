@@ -65,7 +65,9 @@ use [STAGING.md](STAGING.md). It does not route the existing landing page.
    `waitlist-signup:v1`; setting `AIDR_WAITLIST_INGRESS_SECRET` to the same value
    in the `waitlist-signup` function enables its per-client quota and makes the
    proof mandatory. Set `TURNSTILE_SECRET_KEY` there to require server-side
-   Cloudflare Turnstile verification. Do not commit
+   Cloudflare Turnstile verification. `version-check` POSTs are signed with
+   `version-check:v1`; the function adds a per-client quota whenever its
+   `AIDR_DEVICE_START_INGRESS_SECRET` matches. Do not commit
    or print secrets. In the same Cloudflare environment, set the non-secret
    Worker variables `AIDR_RELEASE_VERSION` and `AIDR_RELEASE_SHA` from the exact
    approved release tag and its 40-character source commit. `/version` returns

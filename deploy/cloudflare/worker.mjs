@@ -12,6 +12,7 @@ const SIGNED_IP_ROUTES = new Map([
 	["/functions/v1/device-poll", "device-poll:v1"],
 	["/functions/v1/identity-security", "identity-security:v1"],
 	["/functions/v1/oidc-sso", "oidc-sso:v1"],
+	["/functions/v1/version-check", "version-check:v1"],
 ]);
 const MAX_DEVICE_BODY = 4096;
 const MAX_AUTH_BODY = 16384;

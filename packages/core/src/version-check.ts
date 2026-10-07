@@ -5,6 +5,7 @@
  */
 
 import { release } from "node:os";
+import { controlPlaneUrl } from "./clients/control-plane-url.js";
 import { resolveEndpoint } from "./clients/url-check.js";
 import type { AgentRuntime, Logger } from "./types.js";
 import { nullLogger } from "./types.js";
@@ -22,6 +23,23 @@ export interface VersionCheckResult {
 	currentVersion: string;
 	latestVersion: string;
 	updateAvailable: boolean;
+}
+
+/**
+ * Where the version check is sent. A managed install with a control plane asks
+ * its own control plane (`<endpoint>/v1/version-check`, served by the
+ * `version-check` Edge Function), so an enrolled runtime's API key never leaves
+ * that control plane. Everything else uses the public AIDR gateway route.
+ */
+export function versionCheckEndpoint(config?: {
+	mode?: string;
+	control_plane?: { endpoint?: string };
+}): string {
+	const controlPlane = config?.control_plane?.endpoint?.trim();
+	if (config?.mode === "managed" && controlPlane) {
+		return controlPlaneUrl(controlPlane, "version-check");
+	}
+	return resolveEndpoint("/v1/version-check");
 }
 
 /**
@@ -58,6 +76,7 @@ export async function checkForUpdate(
 	timeoutMs: number = DEFAULT_TIMEOUT_MS,
 	context?: VersionCheckContext,
 	apiKey?: string,
+	endpoint: string = versionCheckEndpoint(),
 ): Promise<VersionCheckResult | null> {
 	if (currentVersion === "dev" || process.env.AIDR_SKIP_VERSION_CHECK === "1") {
 		logger.debug("Skipping version check");
@@ -73,7 +92,7 @@ export async function checkForUpdate(
 		if (token) {
 			headers.Authorization = `Bearer ${token}`;
 		}
-		const response = await fetch(resolveEndpoint("/v1/version-check"), {
+		const response = await fetch(endpoint, {
 			method: "POST",
 			signal: AbortSignal.timeout(timeoutMs),
 			headers,

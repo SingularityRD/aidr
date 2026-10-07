@@ -20,9 +20,9 @@ import {
 	isSyncDisabled,
 	loadManagedState,
 	loadRevocationsCache,
-	revocationBindingForState,
 	managedStatePath,
 	parseSignedRevocationsFromControlPlaneBody,
+	revocationBindingForState,
 	saveEntitlementKeyringFromState,
 	saveManagedState,
 	saveRevocationsCache,
@@ -45,7 +45,7 @@ import { inspectRemoteRuntimePolicyCache } from "./remote-policy.js";
 import { runSessionStartScan } from "./session-start-scan.js";
 import type { AgentRuntime, Logger, PluginInfo, PluginScanResult } from "./types.js";
 import { nullLogger } from "./types.js";
-import { checkForUpdate, type VersionCheckResult } from "./version-check.js";
+import { checkForUpdate, type VersionCheckResult, versionCheckEndpoint } from "./version-check.js";
 
 export interface SessionStartContext {
 	plugins: PluginInfo[];
@@ -642,6 +642,7 @@ export async function runSessionStart(ctx: SessionStartContext): Promise<Session
 							iid,
 						},
 						token,
+						versionCheckEndpoint(config),
 					),
 				)
 				.catch(() => null)

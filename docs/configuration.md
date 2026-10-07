@@ -333,6 +333,21 @@ the path-based review but never the content findings.
 |-------|---------|-------------|
 | `enabled` | `false` | Opt in to automatic startup/extension version checks. Sends version, runtime, OS/architecture, installation ID and, if enrolled, an Authorization bearer key to the update service. Direct API callers of `checkForUpdate()` are separate. |
 
+A managed install with `control_plane.endpoint` asks its own control plane
+(`<endpoint>/v1/version-check`); every other install asks the public AIDR
+gateway route `/v1/version-check`. Both are served by the `version-check` Edge
+Function, which answers `{ "version": "<latest>" }` from an Ed25519-verified
+release manifest (`AIDR_RELEASE_MANIFEST_B64` = base64 of the exact
+`aidr-release.manifest.json` bytes, `AIDR_RELEASE_MANIFEST_SIG` = the
+`aidr-release.manifest.sig` JSON, `AIDR_RELEASE_SIGNING_PUBLIC_KEY_B64` = the
+publisher's SPKI DER or raw Ed25519 key) or, without a manifest, from
+`AIDR_LATEST_RELEASE_VERSION`. An invalid, expired or half-configured manifest
+answers `503 latest_version_unavailable` rather than falling back. The function
+stores no request field and is rate limited (aggregate
+`AIDR_VERSION_CHECK_RATE_LIMIT_PER_MINUTE`, default 6000; per signed client IP
+`AIDR_VERSION_CHECK_CLIENT_RATE_LIMIT_PER_MINUTE`, default 30), failing closed
+when the limiter is unavailable.
+
 ### `amsi_check`
 
 | Field | Default | Description |
