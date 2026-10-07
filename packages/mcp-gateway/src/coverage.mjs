@@ -8,6 +8,17 @@ const REFUSALS = {
 		coverageStatus: "unsupported",
 		enforcement: "inline_refusal",
 	},
+	resource_subscription_refused: {
+		surface: "resource_subscription",
+		coverageStatus: "unsupported",
+		enforcement: "inline_refusal",
+	},
+	unsupported_context_output: {
+		surface: "context_output",
+		outputType: "unsupported",
+		coverageStatus: "unsupported",
+		enforcement: "inline_refusal",
+	},
 	unsupported_binary_output: {
 		surface: "tool_output",
 		outputType: "binary",

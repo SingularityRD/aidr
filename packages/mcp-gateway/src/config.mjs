@@ -21,6 +21,57 @@ const MCP_SERVER_METHODS = Object.freeze([
 	"notifications/tools/list_changed",
 ]);
 
+const PROMPT_NAME = /^[\x21-\x7e](?:[\x20-\x7e]{0,126}[\x21-\x7e])?$/;
+const MAX_CONTEXT_ENTRIES = 1024;
+
+/**
+ * A resource URI the gateway will compare literally: printable ASCII only,
+ * an explicit scheme, and no dot segments, backslashes or percent-encoded
+ * separators that a server could normalize into a different location.
+ */
+export function safeResourceUri(uri) {
+	if (
+		typeof uri !== "string" ||
+		uri.length === 0 ||
+		uri.length > 2048 ||
+		!/^[A-Za-z][A-Za-z0-9+.-]*:[\x21-\x7e]+$/.test(uri) ||
+		/\\|%2e|%2f|%5c|%00/i.test(uri)
+	)
+		return false;
+	return !uri.split(/[/?#]/).some((segment) => segment === "." || segment === "..");
+}
+
+/** Exact URI, or a literal prefix when the operator pattern ends in a single `*`. */
+export function resourceUriAllowed(uri, patterns) {
+	if (!safeResourceUri(uri) || !Array.isArray(patterns)) return false;
+	return patterns.some((pattern) =>
+		pattern.endsWith("*") ? uri.startsWith(pattern.slice(0, -1)) : uri === pattern,
+	);
+}
+
+function validResourcePattern(pattern) {
+	if (typeof pattern !== "string") return false;
+	const literal = pattern.endsWith("*") ? pattern.slice(0, -1) : pattern;
+	return !literal.includes("*") && safeResourceUri(literal);
+}
+
+function validateContextAllowlist(client, field, validEntry) {
+	const value = client[field];
+	if (value === undefined) return;
+	if (!record(value)) throw new Error(`invalid ${field}`);
+	for (const [serverId, entries] of Object.entries(value)) {
+		if (
+			!Object.hasOwn(client.allowedTools, serverId) ||
+			!Array.isArray(entries) ||
+			entries.length === 0 ||
+			entries.length > MAX_CONTEXT_ENTRIES ||
+			new Set(entries).size !== entries.length ||
+			!entries.every(validEntry)
+		)
+			throw new Error(`invalid ${field}`);
+	}
+}
+
 function record(value) {
 	return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -45,7 +96,16 @@ function requireKeys(value, allowed, label) {
 function validateClient(client, clientKeys, tokenHashes) {
 	requireKeys(
 		client,
-		["id", "tenantId", "tokenSha256", "allowedTools", "allowedServerMethods", "probeTokenEnv"],
+		[
+			"id",
+			"tenantId",
+			"tokenSha256",
+			"allowedTools",
+			"allowedServerMethods",
+			"allowedResources",
+			"allowedPrompts",
+			"probeTokenEnv",
+		],
 		"client",
 	);
 	if (client.probeTokenEnv !== undefined && !ENV.test(client.probeTokenEnv))
@@ -79,6 +139,12 @@ function validateClient(client, clientKeys, tokenHashes) {
 				throw new Error("invalid server method allowlist");
 		}
 	}
+	validateContextAllowlist(client, "allowedResources", validResourcePattern);
+	validateContextAllowlist(
+		client,
+		"allowedPrompts",
+		(name) => typeof name === "string" && PROMPT_NAME.test(name),
+	);
 	const key = `${client.tenantId}\0${client.id}`;
 	if (clientKeys.has(key) || tokenHashes.has(client.tokenSha256))
 		throw new Error("duplicate client or token");

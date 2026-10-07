@@ -1321,6 +1321,10 @@ describe("inline MCP gateway", () => {
 		);
 		assert.match(
 			(await rpc(base, f.tokenA, "resources/read")).body.error.message,
+			/resource_not_allowed/,
+		);
+		assert.match(
+			(await rpc(base, f.tokenA, "completion/complete")).body.error.message,
 			/invalid_rpc_request/,
 		);
 		assert.equal(f.upstreamCalls, 1);
