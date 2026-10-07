@@ -51,11 +51,16 @@ export function useGovernanceData(tenantId: string | null, refreshMs = 30_000) {
 	const [data, setData] = useState<GovernanceData | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const generation = useRef(0);
+	// The tenant this hook currently serves. A reload captured by an older
+	// closure (e.g. after an awaited action) must not paint the previous
+	// tenant's rows into the new tenant's view.
+	const currentTenant = useRef(tenantId);
+	currentTenant.current = tenantId;
 	const reload = useCallback(async () => {
-		if (!tenantId) return;
+		if (!tenantId || currentTenant.current !== tenantId) return;
 		const id = ++generation.current;
 		const result = await loadGovernance(tenantId);
-		if (id !== generation.current) return;
+		if (id !== generation.current || currentTenant.current !== tenantId) return;
 		if (result.ok) {
 			setData(result.value);
 			setError(null);
