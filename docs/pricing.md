@@ -91,6 +91,41 @@ capacity change only through one of these audited paths (see
 `public.get_tenant_plan(tenant)` is the member-only projection the Billing page
 uses to show the current plan, admission and usage against admitted agents.
 
+## Server-side feature enforcement
+
+Catalog features are enforced by the control plane, not only displayed
+(`20261007130000_plan_retention_and_feature_gating.sql`,
+`supabase/functions/_shared/plan-entitlements.ts`). One resolver,
+`app.tenant_plan_entitlements`, decides the effective edition:
+
+1. a granted Stripe subscription bound to the tenant's active licensed admission;
+2. otherwise the billing-managed team label, honoured only while the tenant holds
+   an active licensed admission or an approved pilot (a lapsed licence is Free,
+   `plan_source: admission_inactive`);
+3. an active verified trial evaluates **Team**;
+4. everything else is **Free**.
+
+| Feature | From | Enforced at |
+|---|---|---|
+| Browser Guard (`browser_privacy_guard`) | Team | `ingest` with an `ingest:browser_guard` key |
+| Entra / OIDC / SAML SSO administration (`entra_sso`) | Team | `oidc-sso` admin actions, `identity-security` SAML policy actions, `azure-ad-groups` (sign-in itself is never gated) |
+| SIEM / audit export (`siem_export`) | Business | `audit-export` |
+| SCIM (`scim`) | Business | `scim`, `scim-admin` |
+| AI Security Posture (`ai_security_posture`) | Business | posture uploads to `ingest`, `posture_findings` reads (restrictive RLS) |
+| Air-gapped deployment (`air_gapped_deployment`) | Enterprise | `scripts/license-verify.mjs` / `license-issue.mjs` refuse an `airgap` licence below Enterprise |
+
+A refusal is `402 {"error":"plan_feature_required","feature",...,"required_plan"}`;
+an unreadable plan is `503 plan_entitlement_unavailable` (fail closed). Local
+detection and the connector ingest of verdicts are never plan-gated. The
+dashboard shows an upgrade notice on gated pages using the same resolver
+(`get_tenant_plan_entitlements`); the server stays authoritative.
+
+**Event retention.** The effective telemetry retention is
+`min(tenant setting, plan term)`; a tenant that never set a value gets the plan
+term (Free 7, Team 90, Business 365 days; Enterprise is contractual and keeps the
+tenant setting). The telemetry reaper and `retention-admin` use the same rule,
+and a setting above the plan term is refused with `retention_days_exceeds_plan`.
+
 ## History
 
 An earlier draft priced each additional agent on top of one free agent, and a

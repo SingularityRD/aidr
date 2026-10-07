@@ -30,6 +30,8 @@ export type PostureUploadError =
 	| "not_enrolled"
 	| "missing_installation_id"
 	| "sync_disabled"
+	| "plan_feature_required"
+	| "plan_entitlement_unavailable"
 	| string;
 
 export type PostureUploadResult =
@@ -64,7 +66,24 @@ const QUEUED_ERRORS = new Set([
 	"entitlements_changed",
 	"admission_unavailable",
 	"agent_registration_unavailable",
+	"plan_entitlement_unavailable",
 ]);
+
+const PLAN_ERRORS = new Set(["plan_feature_required", "plan_entitlement_unavailable"]);
+
+/** The plan gate's refusal of the batch, from the error or a partial acknowledgement's `rejected_reason`. */
+function planRefusal(
+	error: string | undefined,
+	body: Record<string, unknown> | undefined,
+): string | undefined {
+	if (error && PLAN_ERRORS.has(error)) return error;
+	const reason = body?.rejected_reason;
+	const code =
+		reason && typeof reason === "object" && !Array.isArray(reason)
+			? (reason as Record<string, unknown>).error
+			: undefined;
+	return typeof code === "string" && PLAN_ERRORS.has(code) ? code : undefined;
+}
 
 function failure(
 	error: PostureUploadError,
@@ -155,7 +174,20 @@ async function sendInBatches(
 			events: batch,
 		});
 		if (!result.ok) {
-			const error = result.error ?? "telemetry_delivery_unavailable";
+			// The server refuses posture findings for a plan without AI Security
+			// Posture: a posture-only batch answers 402, and in a batch mixed with
+			// queued runtime events the findings come back unacknowledged under
+			// `rejected_reason`. Name the plan instead of a generic delivery error.
+			const planError = planRefusal(result.error, result.body);
+			if (planError === "plan_feature_required") {
+				return failure(planError, total, delivered, {
+					status: result.status,
+					// A 402 drops the batch from the queue; a partially acknowledged
+					// batch keeps the findings queued until their retries run out.
+					queued: result.status !== 402,
+				});
+			}
+			const error = planError ?? result.error ?? "telemetry_delivery_unavailable";
 			return failure(error, total, delivered, {
 				status: result.status,
 				queued: QUEUED_ERRORS.has(error) || (result.status !== undefined && result.status >= 500),
@@ -185,6 +217,10 @@ export function describePostureUploadError(error: PostureUploadError): string {
 			return "the tenant is not admitted (trial expired, revoked or not licensed)";
 		case "agent_limit_exceeded":
 			return "the tenant has no free agent seat for this installation";
+		case "plan_feature_required":
+			return "the tenant's plan does not include AI Security Posture (Business or Enterprise plan required)";
+		case "plan_entitlement_unavailable":
+			return "the control plane could not confirm the tenant's plan for AI Security Posture; try again later";
 		default:
 			return `delivery failed (${error})`;
 	}

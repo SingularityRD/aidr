@@ -62,6 +62,9 @@ describe("audit-export legal-hold barrier", () => {
 		publicationError?: boolean;
 		rows?: unknown[];
 		rateAllowed?: boolean;
+		/** tenant_plan_entitlements row; null = RPC error. Defaults to Business (siem_export). */
+		plan?: Record<string, unknown> | null;
+		adminRows?: unknown[];
 	}
 
 	/**
@@ -76,6 +79,7 @@ describe("audit-export legal-hold barrier", () => {
 		const inserts: Array<{ table: string; values: unknown }> = [];
 		const rpcs: Array<{ name: string; args: Record<string, unknown> }> = [];
 		const quotaCalls: Array<Record<string, unknown>> = [];
+		const planCalls: Array<Record<string, unknown>> = [];
 		const uploads: string[] = [];
 		const uploadContents: string[] = [];
 		const signedUrls: string[] = [];
@@ -117,7 +121,9 @@ describe("audit-export legal-hold barrier", () => {
 				// The rows query is awaited directly (not through `maybeSingle`).
 				then: (onFulfilled: (value: unknown) => unknown, onRejected?: (reason: unknown) => unknown) =>
 					Promise.resolve({
-						data: table === "audit_logs" ? (options.rows ?? [auditRow()]) : null,
+						data: table === "audit_logs"
+							? (options.rows ?? [auditRow()])
+							: table === "admin_audit_logs" ? (options.adminRows ?? []) : null,
 						error: null,
 					}).then(onFulfilled, onRejected),
 			};
@@ -136,6 +142,18 @@ describe("audit-export legal-hold barrier", () => {
 				rpc: async (name: string, args: Record<string, unknown>) => {
 					// The per-tenant export quota is recorded separately so the ledger
 					// assertions below keep addressing the export's own RPCs.
+					if (name === "tenant_plan_entitlements") {
+						planCalls.push(args);
+						if (options.plan === null) return { data: null, error: { code: "08006" } };
+						return {
+							data: options.plan ?? {
+								tenant_id: TENANT, plan_id: "business", plan_source: "team_record", trial_active: false,
+								features: ["local_detection", "dashboard", "browser_privacy_guard", "entra_sso", "siem_export", "scim", "ai_security_posture"],
+								retention_days_max: 365,
+							},
+							error: null,
+						};
+					}
 					if (name === "consume_tenant_rate_limit") {
 						quotaCalls.push(args);
 						return { data: { allowed: options.rateAllowed !== false, remaining: 10 }, error: null };
@@ -179,6 +197,7 @@ describe("audit-export legal-hold barrier", () => {
 			inserts,
 			rpcs,
 			quotaCalls,
+			planCalls,
 			uploads,
 			uploadContents,
 			signedUrls,
@@ -366,5 +385,73 @@ describe("audit-export legal-hold barrier", () => {
 		expect(inserts).toEqual([]);
 		expect(rpcs).toEqual([]);
 		expect(uploads).toEqual([]);
+	});
+
+	describe("plan gate (siem_export, BUSINESS and up)", () => {
+		it("refuses a plan without SIEM export with 402 before any audit read, quota or Storage", async () => {
+			const { handle, tables, rpcs, uploads, quotaCalls, planCalls } = await handlerWith({
+				plan: {
+					tenant_id: TENANT, plan_id: "team", plan_source: "stripe_subscription", trial_active: false,
+					features: ["local_detection", "dashboard", "browser_privacy_guard", "entra_sso"], retention_days_max: 90,
+				},
+			});
+			const response = await handle(post());
+			expect(response.status).toBe(402);
+			expect(await response.json()).toEqual({
+				error: "plan_feature_required", feature: "siem_export", plan_id: "team", required_plan: "business",
+			});
+			expect(planCalls).toEqual([{ p_tenant_id: TENANT }]);
+			expect(tables).not.toContain("audit_logs");
+			expect(tables).not.toContain("admin_audit_logs");
+			expect(quotaCalls).toEqual([]);
+			expect(rpcs).toEqual([]);
+			expect(uploads).toEqual([]);
+		});
+
+		it("fails closed with 503 when the plan cannot be read", async () => {
+			const { handle, tables, uploads } = await handlerWith({ plan: null });
+			const response = await handle(post());
+			expect(response.status).toBe(503);
+			expect(await response.json()).toEqual({ error: "plan_entitlement_unavailable" });
+			expect(tables).not.toContain("audit_logs");
+			expect(uploads).toEqual([]);
+		});
+
+		it("does not consult the plan for a caller who is not owner/admin", async () => {
+			const { handle, planCalls } = await handlerWith({ member: { role: "member", expires_at: null } });
+			expect((await handle(post())).status).toBe(403);
+			expect(planCalls).toEqual([]);
+		});
+	});
+
+	describe("administrative trail (source: admin)", () => {
+		const adminRow = {
+			id: 42, created_at: "2026-10-01T00:00:00.000Z", actor_user_id: USER, target_user_id: null,
+			action: "=retention.policy.changed", detail: { data_class: "telemetry", new_days: 90 },
+		};
+
+		it("exports tenant-scoped admin_audit_logs with its own columns, owner/admin only", async () => {
+			const { handle, tables, filters, uploadContents } = await handlerWith({ adminRows: [adminRow] });
+			const response = await handle(post({ team_id: TENANT, format: "csv", source: "admin" }));
+			expect(response.status).toBe(200);
+			expect(tables).toContain("admin_audit_logs");
+			expect(tables).not.toContain("audit_logs");
+			expect(filters).toContainEqual({ table: "admin_audit_logs", column: "tenant_id", value: TENANT });
+			const csv = uploadContents[0] ?? "";
+			expect(csv.split("\r\n")[0]).toBe("id,created_at,actor_user_id,target_user_id,action,detail");
+			// Spreadsheet formula injection is neutralised in the admin trail too.
+			expect(csv).toContain("\"'=retention.policy.changed\"");
+
+			const viewer = await handlerWith({ member: { role: "viewer", expires_at: null }, adminRows: [adminRow] });
+			expect((await viewer.handle(post({ team_id: TENANT, format: "json", source: "admin" }))).status).toBe(403);
+			expect(viewer.tables).not.toContain("admin_audit_logs");
+		});
+
+		it("rejects an unknown source", async () => {
+			const { handle, tables } = await handlerWith();
+			const response = await handle(post({ team_id: TENANT, format: "json", source: "everything" }));
+			expect(response.status).toBe(400);
+			expect(tables).not.toContain("audit_logs");
+		});
 	});
 });

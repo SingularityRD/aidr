@@ -206,3 +206,21 @@ describe("SCIM persistence errors", () => {
 		expect(rpc).toHaveBeenCalledWith("scim_update_user", expect.objectContaining({ p_expected_version: 1, p_active: false }));
 	});
 });
+
+describe("SupabaseScimStore plan entitlement", () => {
+	it("asks tenant_plan_entitlements for the authenticated tenant and requires the scim feature", async () => {
+		const rpc = vi.fn(async (_name: string, args: Record<string, unknown>) => ({
+			data: { tenant_id: args.p_tenant_id, plan_id: "team", plan_source: "team_record", trial_active: false, features: ["local_detection", "entra_sso"], retention_days_max: 90 },
+			error: null,
+		}));
+		const store = new SupabaseScimStore({ rpc } as never);
+		const decision = await store.requireScimFeature(tenantA);
+		expect(rpc).toHaveBeenCalledWith("tenant_plan_entitlements", { p_tenant_id: tenantA });
+		expect(decision).toEqual({ ok: false, status: 402, body: { error: "plan_feature_required", feature: "scim", plan_id: "team", required_plan: "business" } });
+	});
+
+	it("fails closed when the entitlement RPC errors", async () => {
+		const store = new SupabaseScimStore({ rpc: async () => ({ data: null, error: { message: "x" } }) } as never);
+		expect(await store.requireScimFeature(tenantA)).toEqual({ ok: false, status: 503, body: { error: "plan_entitlement_unavailable" } });
+	});
+});

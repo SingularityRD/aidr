@@ -41,6 +41,14 @@ interface Options {
 	mappingCount?: number;
 	rpcError?: { code?: string; message?: string };
 	rpcData?: unknown;
+	/** tenant_plan_entitlements result; defaults to an entitled Business plan. */
+	plan?: { data: unknown; error: unknown };
+}
+
+const ENTITLED_FEATURES = ["local_detection", "dashboard", "browser_privacy_guard", "entra_sso", "siem_export", "scim", "ai_security_posture"];
+
+function planRow(planId: string, features: string[], tenantId = TENANT) {
+	return { tenant_id: tenantId, plan_id: planId, plan_source: "stripe_subscription", trial_active: false, features, retention_days_max: 365 };
 }
 
 function fakeDb(options: Options = {}) {
@@ -129,6 +137,7 @@ function fakeDb(options: Options = {}) {
 			rpc: vi.fn(async (name: string, args: Record<string, unknown>) => {
 				rpcCalls.push({ name, args });
 				if (name === "consume_tenant_rate_limit") return { data: { allowed: true, remaining: 59 }, error: null };
+				if (name === "tenant_plan_entitlements") return options.plan ?? { data: planRow("business", ENTITLED_FEATURES, String(args.p_tenant_id)), error: null };
 				if (options.rpcError) return { data: null, error: options.rpcError };
 				if (options.rpcData !== undefined) return { data: options.rpcData, error: null };
 				if (name === "scim_admin_create_token") return { data: NEW_TOKEN_ID, error: null };
@@ -412,6 +421,70 @@ describe("SCIM tenant-owner management boundary", () => {
 		}));
 		expect(response.status).toBe(409);
 		expect(await response.json()).toEqual({ error: "mapping_conflicts_with_manual_membership" });
+	});
+
+	const gatedRequests: Array<[string, () => Request]> = [
+		["GET", () => request("GET", undefined, { "X-AIDR-Tenant-ID": TENANT })],
+		["create_token", () => request("POST", { action: "create_token", tenant_id: TENANT, label: "Entra provisioning" })],
+		["revoke_token", () => request("POST", { action: "revoke_token", tenant_id: TENANT, token_id: TOKEN_ID })],
+		["set_group_mapping", () => request("POST", { action: "set_group_mapping", tenant_id: TENANT, external_group_id: "entra-group-id", role: "viewer" })],
+	];
+
+	it.each(gatedRequests)("answers 402 plan_feature_required on a plan without SCIM and touches no SCIM data (%s)", async (_label, build) => {
+		const fixture = fakeDb({ plan: { data: planRow("team", ["local_detection", "dashboard", "browser_privacy_guard", "entra_sso"]), error: null } });
+		const response = await createScimAdminHandler({ db: fixture.db as never })(build());
+		expect(response.status).toBe(402);
+		expect(response.headers.get("Cache-Control")).toBe("no-store");
+		expect(await response.json()).toEqual({ error: "plan_feature_required", feature: "scim", plan_id: "team", required_plan: "business" });
+		expect(fixture.rpcCalls.find((call) => call.name === "tenant_plan_entitlements")?.args).toEqual({ p_tenant_id: TENANT });
+		const planIndex = fixture.rpcCalls.findIndex((call) => call.name === "tenant_plan_entitlements");
+		expect(fixture.rpcCalls.slice(planIndex + 1)).toEqual([]);
+		expect(fixture.calls).not.toContain("scim_tokens");
+		expect(fixture.calls).not.toContain("scim_group_role_mappings");
+	});
+
+	it.each([
+		["rpc error", { data: null, error: { message: "boom" } }],
+		["null result", { data: null, error: null }],
+		["other tenant", { data: planRow("enterprise", ENTITLED_FEATURES, "99999999-9999-4999-8999-999999999999"), error: null }],
+		["unknown plan", { data: planRow("platinum", ENTITLED_FEATURES), error: null }],
+		["bad features", { data: { ...planRow("business", ENTITLED_FEATURES), features: "scim" }, error: null }],
+	])("answers 503 plan_entitlement_unavailable when the plan cannot be read (%s)", async (_label, plan) => {
+		for (const [, build] of gatedRequests) {
+			const fixture = fakeDb({ plan });
+			const response = await createScimAdminHandler({ db: fixture.db as never })(build());
+			expect(response.status).toBe(503);
+			expect(await response.json()).toEqual({ error: "plan_entitlement_unavailable" });
+			expect(fixture.rpcCalls.some((call) => call.name.startsWith("scim_admin_"))).toBe(false);
+			expect(fixture.calls).not.toContain("scim_tokens");
+			expect(fixture.calls).not.toContain("scim_group_role_mappings");
+		}
+	});
+
+	it("fails closed with 503 when the plan RPC throws", async () => {
+		const fixture = fakeDb();
+		const original = fixture.db.rpc.getMockImplementation();
+		fixture.db.rpc.mockImplementation(async (name: string, args: Record<string, unknown>) => {
+			if (name === "tenant_plan_entitlements") throw new Error("network");
+			return original!(name, args);
+		});
+		const response = await createScimAdminHandler({ db: fixture.db as never })(request("GET", undefined, { "X-AIDR-Tenant-ID": TENANT }));
+		expect(response.status).toBe(503);
+		expect(await response.json()).toEqual({ error: "plan_entitlement_unavailable" });
+		expect(fixture.calls).not.toContain("scim_tokens");
+	});
+
+	it("checks the plan only after the owner check, and proceeds for an entitled plan", async () => {
+		const denied = fakeDb({ role: "admin" });
+		expect((await createScimAdminHandler({ db: denied.db as never })(request("GET", undefined, { "X-AIDR-Tenant-ID": TENANT }))).status).toBe(403);
+		expect(denied.rpcCalls.some((call) => call.name === "tenant_plan_entitlements")).toBe(false);
+
+		const fixture = fakeDb({ plan: { data: planRow("enterprise", [...ENTITLED_FEATURES, "air_gapped_deployment"]), error: null } });
+		const response = await createScimAdminHandler({ db: fixture.db as never })(request("POST", { action: "create_token", tenant_id: TENANT, label: "Entra provisioning" }));
+		expect(response.status).toBe(201);
+		expect(fixture.rpcCalls.map((call) => call.name)).toEqual(["consume_tenant_rate_limit", "tenant_plan_entitlements", "scim_admin_create_token"]);
+		expect(SOURCE.indexOf('requireFeature(db as unknown as PlanEntitlementDb, tenantId, "scim")')).toBeLessThan(SOURCE.indexOf('db.from("scim_tokens")'));
+		expect(SOURCE.indexOf("activeOwner(member)")).toBeLessThan(SOURCE.indexOf("requireFeature(db"));
 	});
 
 	it("keeps management RPCs service-role-only and records actor, tenant and no raw secret", () => {

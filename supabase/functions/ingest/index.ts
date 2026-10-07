@@ -20,6 +20,12 @@
 // the browser_guard runtime, is rate limited per key, registers at most its
 // `install_limit` installations, and never receives the signed entitlement
 // (which can carry the tenant pack key).
+//
+// Plan gating: an `ingest:browser_guard` key requires the tenant plan feature
+// `browser_privacy_guard` (Team and up), and AI Security Posture findings
+// (infra_scan_finding, mcp_inventory_finding, agent_posture_finding) require
+// `ai_security_posture` (Business and up). Verdict and runtime events from
+// connectors are never plan-gated.
 
 import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import { type ApprovalPublicKey, loadApprovalPublicKeys } from "../_shared/approval-token.ts";
@@ -35,6 +41,8 @@ import {
 	readBoundedJson,
 } from "../_shared/request-limits.ts";
 import { normalizeIngestEvents } from "./events.ts";
+import { partitionPostureEvents } from "./posture.ts";
+import { requireFeature } from "../_shared/plan-entitlements.ts";
 import { signerHealthy } from "../_shared/signing-health.ts";
 import { buildPremiumModules, tenantRuntimeCapabilities } from "../_shared/runtime-capabilities.ts";
 
@@ -100,6 +108,11 @@ function json(
 		status,
 		headers: { "Content-Type": "application/json", "Cache-Control": "no-store", ...headers },
 	});
+}
+
+/** A plan refusal body; an unreadable entitlement is retryable, a missing feature is not. */
+function planRefusal(status: 402 | 503, body: Record<string, unknown>): Record<string, unknown> {
+	return status === 503 ? { ...body, retryable: true } : body;
 }
 
 function getBearerToken(req: Request): string | null {
@@ -301,10 +314,40 @@ Deno.serve(async (req) => {
 		});
 	}
 	// An empty batch is a heartbeat that only updates last_seen.
-	const events = normalizedEvents.events;
+	let events = normalizedEvents.events;
 	if (browserKey && events.some((event) => !BROWSER_GUARD_EVENT_TYPES.has(String(event.type)))) {
 		return json(403, { error: "event_type_not_permitted" });
 	}
+
+	// Plan feature gates (../_shared/plan-entitlements.ts), after the key has
+	// bound the tenant and before any budget, seat or row is spent. The plan is
+	// resolved only for a Browser Guard key or a batch carrying posture
+	// findings: verdict and runtime ingest never reads or depends on a plan.
+	// Both gates fail closed (402 plan_feature_required, 503 unavailable).
+	let postureRejection: { eventIds: string[]; reason: Record<string, unknown> } | null = null;
+	if (browserKey) {
+		const decision = await requireFeature(supabase, tenantAuth.tenantId, "browser_privacy_guard");
+		if (!decision.ok) return json(decision.status, planRefusal(decision.status, decision.body));
+	} else {
+		const { posture, other } = partitionPostureEvents(events);
+		if (posture.length > 0) {
+			const decision = await requireFeature(supabase, tenantAuth.tenantId, "ai_security_posture");
+			if (!decision.ok) {
+				// A posture-only upload is refused outright. In a mixed batch the
+				// connector's verdicts still land; the posture findings are not
+				// written, not acknowledged, and named with the plan reason.
+				if (other.length === 0) return json(decision.status, planRefusal(decision.status, decision.body));
+				events = other;
+				postureRejection = {
+					eventIds: posture.map((event) => event.event_id),
+					reason: planRefusal(decision.status, decision.body),
+				};
+			}
+		}
+	}
+	const rejectedEvents = postureRejection
+		? { rejected_event_ids: postureRejection.eventIds, rejected_reason: postureRejection.reason }
+		: {};
 
 	// An ingest key is budgeted as one subject however many installs share it.
 	const rate = await consumeTenantRateLimit(supabase, {
@@ -480,6 +523,7 @@ Deno.serve(async (req) => {
 			ok: true,
 			acknowledged_event_ids: events.map((event) => event.event_id),
 			agent_id: agentId,
+			...rejectedEvents,
 		}, rateLimitHeaders(rate));
 	}
 
@@ -525,6 +569,7 @@ Deno.serve(async (req) => {
 	return json(200, {
 		ok: true,
 		acknowledged_event_ids: events.map((event) => event.event_id),
+		...rejectedEvents,
 		agent_id: agentId,
 		allowed_agents: allowedAgents,
 		entitlement: JSON.parse(entitlementJson),

@@ -20,6 +20,10 @@ type Policy = {
 	max_days: number | null;
 	configurable: boolean;
 	updated_at: string | null;
+	/** Period the reaper applies: the setting capped by the plan term (telemetry only). */
+	effective_retention_days: number;
+	/** Plan maximum for this class; null = not plan-bound or contractual. */
+	plan_max_days: number | null;
 };
 type HoldCursor = { placed_at: string; id: string };
 type Snapshot = { holds: Hold[]; policies: Policy[]; next: HoldCursor | null };
@@ -50,6 +54,8 @@ const SAFE_ERRORS: Record<string, string> = {
 		"That hold no longer exists or was already released. Refresh the list.",
 	retention_days_out_of_bounds:
 		"That retention period is outside the allowed range for this data class.",
+	retention_days_exceeds_plan:
+		"That event retention period is longer than your plan includes. Choose a shorter period or upgrade.",
 	retention_class_not_configurable:
 		"That data class is controlled by the platform and cannot be changed.",
 	retention_change_refused_offboarding:
@@ -99,6 +105,12 @@ function parsePolicy(value: unknown): Policy | null {
 		max_days: typeof value.max_days === "number" ? value.max_days : null,
 		configurable: value.configurable === true,
 		updated_at: str(value.updated_at),
+		effective_retention_days:
+			typeof value.effective_retention_days === "number" &&
+			Number.isSafeInteger(value.effective_retention_days)
+				? value.effective_retention_days
+				: value.retention_days,
+		plan_max_days: typeof value.plan_max_days === "number" ? value.plan_max_days : null,
 	};
 }
 
@@ -570,6 +582,7 @@ function TenantRetention({
 								<tr>
 									<th scope="col">Data class</th>
 									<th scope="col">Days</th>
+									<th scope="col">Effective</th>
 									<th scope="col">Allowed</th>
 									<th scope="col">Actions</th>
 								</tr>
@@ -579,6 +592,12 @@ function TenantRetention({
 									<tr key={policy.data_class}>
 										<td>{CLASS_LABELS[policy.data_class] ?? policy.data_class}</td>
 										<td>{policy.retention_days}</td>
+										<td>
+											{policy.effective_retention_days}
+											{policy.plan_max_days !== null ? (
+												<span className="muted"> (plan max {policy.plan_max_days})</span>
+											) : null}
+										</td>
 										<td>
 											{policy.configurable
 												? `${policy.min_days}–${policy.max_days}`

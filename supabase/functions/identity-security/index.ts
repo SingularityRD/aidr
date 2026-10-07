@@ -14,6 +14,7 @@ import { getRequestId } from "../_shared/response.ts";
 import { readBoundedJson } from "../_shared/request-limits.ts";
 import { INGRESS_SECRET_ENV, ingressIpBucket, validIngressSecret, verifiedIngressIp } from "../_shared/trusted-ingress.ts";
 import { membershipActive, sha256 } from "../_shared/runtime-policy.ts";
+import { type PlanEntitlementDb, requireFeature } from "../_shared/plan-entitlements.ts";
 import {
 	dashboardRecoveryUrl,
 	generateRecoveryCodes,
@@ -71,6 +72,7 @@ type IdentityDatabase = {
 			request_tenant_saml_policy_change: { Args: { p_tenant_id: string; p_actor_user_id: string; p_new_provider_id: string | null; p_reason: string; p_change_ref: string; p_validated_session: SamlSessionProof }; Returns: Record<string, unknown> };
 			approve_tenant_saml_policy_change: { Args: { p_tenant_id: string; p_actor_user_id: string; p_request_id: string; p_validated_session: SamlSessionProof }; Returns: Record<string, unknown> };
 			get_tenant_saml_policy_change: { Args: { p_tenant_id: string; p_actor_user_id: string; p_request_id: string }; Returns: Record<string, unknown> };
+			tenant_plan_entitlements: { Args: { p_tenant_id: string }; Returns: Record<string, unknown> };
 			scim_bind_saml_identity: { Args: { p_auth_user_id: string; p_provider_id: string }; Returns: string | null };
 			issue_identity_recovery_codes: { Args: { p_tenant_id: string; p_actor_user_id: string; p_target_user_id: string; p_code_hashes: string[]; p_expires_at: string }; Returns: Record<string, unknown> };
 		};
@@ -731,6 +733,11 @@ Deno.serve(async (req) => {
 			const barrier = await checkIdentityBarrier(db, identity.token, identity.user.id, tenantId);
 			if (!barrier.ok) return corsJson(req, barrier.status, { error: barrier.error });
 			if (member.role !== "owner") return corsJson(req, 403, { error: "saml_policy_owner_required" });
+			// Plan gate (fail closed): SAML policy administration is the catalog's
+			// SSO feature. Checked once the owner is bound to the tenant and before
+			// any SAML policy RPC; recovery and MFA actions are not gated.
+			const entitlement = await requireFeature(db as unknown as PlanEntitlementDb, tenantId, "entra_sso");
+			if (!entitlement.ok) return corsJson(req, entitlement.status, entitlement.body);
 			const sessionId = jwtSessionId(identity.token);
 			const issuedAt = jwtIssuedAtMs(identity.token);
 			const expiresAt = jwtExpiresAtMs(identity.token);

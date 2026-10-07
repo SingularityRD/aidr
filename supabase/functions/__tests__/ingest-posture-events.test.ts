@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { normalizeIngestEvents } from "../ingest/events.ts";
-import { projectPostureFields } from "../ingest/posture.ts";
+import { partitionPostureEvents, projectPostureFields } from "../ingest/posture.ts";
 
 const DIGEST = `sha256:${"a".repeat(64)}`;
 
@@ -194,5 +194,19 @@ describe("ingest posture finding projection", () => {
 				finding_count: -1,
 			}),
 		).toEqual({});
+	});
+
+	it("partitions only the plan-gated posture types; plugin scans and verdicts are never gated", () => {
+		const events = [
+			{ event_id: "a", type: "infra_scan_finding" },
+			{ event_id: "b", type: "runtime_verdict" },
+			{ event_id: "c", type: "mcp_inventory_finding" },
+			{ event_id: "d", type: "plugin_scan_finding" },
+			{ event_id: "e", type: "agent_posture_finding" },
+			{ event_id: "f", type: "incident" },
+		];
+		const { posture, other } = partitionPostureEvents(events);
+		expect(posture.map((event) => event.event_id)).toEqual(["a", "c", "e"]);
+		expect(other.map((event) => event.event_id)).toEqual(["b", "d", "f"]);
 	});
 });

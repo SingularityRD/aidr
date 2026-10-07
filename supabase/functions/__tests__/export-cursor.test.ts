@@ -23,6 +23,19 @@ describe("audit export cursor authorization", () => {
       await expect(readAuditCursor(token, "secret", binding, now)).rejects.toThrow();
     }
   });
+  it("binds the administrative trail: a cursor cannot cross between audit and admin trails", async () => {
+    const adminBinding = { ...binding, source: "admin" as const };
+    const adminCursor = { ...adminBinding, snapshot: cursor.snapshot, expires: cursor.expires, after: { created_at: cursor.after.created_at, id: "42" } };
+    const adminToken = await signAuditCursor(adminCursor, "secret");
+    expect(await readAuditCursor(adminToken, "secret", adminBinding, now)).toEqual(adminCursor);
+    await expect(readAuditCursor(adminToken, "secret", binding, now)).rejects.toThrow("invalid_or_expired");
+    const auditToken = await signAuditCursor(cursor, "secret");
+    await expect(readAuditCursor(auditToken, "secret", adminBinding, now)).rejects.toThrow("invalid_or_expired");
+    for (const id of ["0", "4.2", "42),id.gt.0", "1".repeat(20)]) {
+      const token = await signAuditCursor({ ...adminCursor, after: { ...adminCursor.after, id } }, "secret");
+      await expect(readAuditCursor(token, "secret", adminBinding, now)).rejects.toThrow("invalid_or_expired");
+    }
+  });
   it("rejects all noncanonical encodings of the same HMAC bytes", async () => {
     const token = await signAuditCursor(cursor, "secret");
     const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";

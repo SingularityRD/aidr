@@ -2,6 +2,7 @@
 // minter, a fake IdP and an in-memory OidcStore. No mocks of the code under
 // test: signatures are genuinely produced and genuinely verified.
 
+import { requireFeature } from "../_shared/plan-entitlements.ts";
 import { base64UrlEncode, type Jwk, type MappedRole, type OidcAlgorithm } from "../oidc-sso/oidc.ts";
 import type {
 	AuditValues,
@@ -17,6 +18,23 @@ import type {
 } from "../oidc-sso/types.ts";
 
 const encoder = new TextEncoder();
+
+/** A `tenant_plan_entitlements` row for a plan that includes SSO administration. */
+export function entitledPlan(tenantId: string, overrides: Record<string, unknown> = {}): Record<string, unknown> {
+	return {
+		tenant_id: tenantId,
+		plan_id: "team",
+		plan_source: "team_record",
+		trial_active: false,
+		features: ["local_detection", "dashboard", "browser_privacy_guard", "entra_sso"],
+		retention_days_max: 90,
+		...overrides,
+	};
+}
+
+export function freePlan(tenantId: string): Record<string, unknown> {
+	return entitledPlan(tenantId, { plan_id: "free", plan_source: "default", features: ["local_detection", "dashboard"], retention_days_max: 7 });
+}
 
 export interface TestKey {
 	kid: string;
@@ -337,6 +355,21 @@ class MemoryStore implements OidcStore {
 	}
 	async memberRole(userId: string, tenantId: string) {
 		return this.members.get(`${tenantId}:${userId}`) ?? null;
+	}
+	/** `tenant_plan_entitlements` RPC answer per tenant; unset = entitled Team plan. */
+	plans = new Map<string, { data: unknown; error: unknown }>();
+	planRpcCalls: string[] = [];
+	async requireSsoFeature(tenantId: string) {
+		// Runs the real shared resolver over a fake RPC so parsing and fail-closed
+		// behaviour are exercised exactly as in production.
+		return requireFeature({
+			rpc: async (name: string, args: Record<string, unknown>) => {
+				if (name !== "tenant_plan_entitlements") throw new Error(`unexpected rpc ${name}`);
+				const id = String(args.p_tenant_id);
+				this.planRpcCalls.push(id);
+				return this.plans.get(id) ?? { data: entitledPlan(id), error: null };
+			},
+		}, tenantId, "entra_sso");
 	}
 	async policy(tenantId: string) {
 		return this.policies.get(tenantId) ?? { required_oidc_provider_id: null, required_saml_provider_id: null, break_glass_enabled: false, require_mfa: false };

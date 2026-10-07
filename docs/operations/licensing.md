@@ -72,6 +72,10 @@ database checks are vendor-operated there.
   canonical JSON of `payload` (keys sorted, no whitespace). Reformatting the file
   is harmless; changing any term is not.
 - `deployment` is `onprem` or `airgap`. `grace_days` is 0..90.
+- `plan_id` is a catalog plan (`free`, `team`, `business`, `enterprise`), and an
+  `airgap` license requires `enterprise` (catalog feature `air_gapped_deployment`):
+  `license-issue.mjs` will not sign one for another plan and the verifier refuses
+  it with `plan_feature_required`.
 - Unknown fields are refused, so a term this verifier does not understand is
   never silently ignored.
 

@@ -66,6 +66,9 @@ const PUBLIC_INGEST_ERRORS = new Set([
 	"missing_api_key",
 	"missing_event_id",
 	"missing_iid",
+	// Plan feature gates (AI Security Posture, Browser Guard telemetry).
+	"plan_entitlement_unavailable",
+	"plan_feature_required",
 	"tenant_access_denied",
 	"tenant_not_admitted",
 ]);

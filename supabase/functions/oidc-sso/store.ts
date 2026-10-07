@@ -4,6 +4,7 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.116.0";
 import type { MappedRole, OidcAlgorithm, OidcDiscovery } from "./oidc.ts";
 import { SUPPORTED_ALGORITHMS } from "./oidc.ts";
+import { type FeatureDecision, requireFeature } from "../_shared/plan-entitlements.ts";
 import type {
 	AuditValues,
 	DomainRow,
@@ -330,6 +331,10 @@ export class SupabaseOidcStore implements OidcStore {
 		const tenant = await this.db.from("tenants").select("status").eq("id", tenantId).maybeSingle();
 		if (tenant.error || (tenant.data as Row | null)?.status !== "active") return null;
 		return typeof row.role === "string" ? row.role : null;
+	}
+
+	requireSsoFeature(tenantId: string): Promise<FeatureDecision> {
+		return requireFeature(this.db, tenantId, "entra_sso");
 	}
 
 	async policy(tenantId: string): Promise<OidcPolicyRow | null> {

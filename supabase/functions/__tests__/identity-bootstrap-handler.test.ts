@@ -45,6 +45,7 @@ function harness(options: {
 	samlError?: string;
 	samlThrows?: boolean;
 	samlData?: unknown;
+	plan?: { data: unknown; error: unknown };
 } = {}) {
 	const tables: Record<string, Row[]> = {
 		identity_user_session_state: [],
@@ -81,6 +82,13 @@ function harness(options: {
 	});
 	const rpc = vi.fn(async (name: string, parameters: Record<string, unknown>) => {
 		if (options.rpcError) return { data: null, error: { message: "private database error" } };
+		if (name === "tenant_plan_entitlements") {
+			// Entitled Team plan unless a test overrides the RPC answer.
+			return options.plan ?? { data: {
+				tenant_id: parameters.p_tenant_id, plan_id: "team", plan_source: "team_record", trial_active: false,
+				features: ["local_detection", "dashboard", "browser_privacy_guard", "entra_sso"], retention_days_max: 90,
+			}, error: null };
+		}
 		if (["request_tenant_saml_policy_change", "approve_tenant_saml_policy_change", "get_tenant_saml_policy_change"].includes(name)) {
 			if (options.samlThrows) throw new Error("private database credential");
 			return { data: options.samlData === undefined ? SAML_CHANGE : options.samlData,
@@ -547,6 +555,46 @@ describe("SAML policy change administration", () => {
 		const response = await runtime.handler(request(samlPolicyToken(), enable));
 		expect(response.status).toBe(401);
 		expect(runtime.rpc).not.toHaveBeenCalled();
+	});
+
+	describe("plan gating (entra_sso)", () => {
+		const FREE = { data: {
+			tenant_id: TEAM, plan_id: "free", plan_source: "default", trial_active: false,
+			features: ["local_detection", "dashboard"], retention_days_max: 7,
+		}, error: null };
+		const planCalls = (runtime: ReturnType<typeof harness>) => runtime.rpc.mock.calls.filter(([name]) => name === "tenant_plan_entitlements");
+
+		it.each([enable, approve, get])("answers 402 for $action on a free plan before any SAML policy RPC", async (body) => {
+			const runtime = harness({ current: "aal2", plan: FREE });
+			const response = await runtime.handler(request(samlPolicyToken(), body));
+			expect(response.status).toBe(402);
+			expect(await response.json()).toEqual({ error: "plan_feature_required", feature: "entra_sso", plan_id: "free", required_plan: "team" });
+			expect(planCalls(runtime)).toEqual([["tenant_plan_entitlements", { p_tenant_id: TEAM }]]);
+			expect(samlCalls(runtime)).toEqual([]);
+			expect(runtime.tables.admin_audit_logs).toEqual([]);
+		});
+
+		it.each([
+			["an RPC error", { data: null, error: { message: "private database error" } }],
+			["a malformed row", { data: { tenant_id: TEAM, plan_id: "platinum" }, error: null }],
+			["another tenant's row", { data: { ...FREE.data, tenant_id: OTHER, plan_id: "team", features: ["entra_sso"] }, error: null }],
+		])("fails closed with 503 on %s", async (_label, plan) => {
+			const runtime = harness({ current: "aal2", plan });
+			const response = await runtime.handler(request(samlPolicyToken(), enable));
+			expect(response.status).toBe(503);
+			expect(await response.json()).toEqual({ error: "plan_entitlement_unavailable" });
+			expect(samlCalls(runtime)).toEqual([]);
+		});
+
+		it("checks the plan only for a confirmed owner, and never for other identity actions", async () => {
+			const member = harness({ current: "aal2", plan: FREE });
+			member.tables.tenant_members[0].role = "admin";
+			expect((await member.handler(request(samlPolicyToken(), enable))).status).toBe(403);
+			expect(planCalls(member)).toEqual([]);
+			const status = harness({ current: "aal2", plan: FREE });
+			expect((await status.handler(request(samlPolicyToken(), { action: "status", tenant_id: TEAM }))).status).toBe(200);
+			expect(planCalls(status)).toEqual([]);
+		});
 	});
 });
 
