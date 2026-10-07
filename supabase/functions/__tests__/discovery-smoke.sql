@@ -33,7 +33,7 @@ begin
 
   v_result := public.ingest_tenant_discovery_cycle(
     v_tenant, v_actor, v_collector, v_first, 1, 60000, true, 1,
-    '[{"target":"https://example.test/","reachable":true,"attempts":1,"error_code":null}]'::jsonb
+    '[{"target":"tid1_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","reachable":true,"attempts":1,"error_code":null}]'::jsonb
   );
   if v_result->>'complete' <> 'true' then
     raise exception 'complete cycle not recorded';
@@ -59,24 +59,24 @@ begin
 
   v_result := public.ingest_tenant_discovery_cycle(
     v_tenant, v_actor, v_collector, v_third, 3, 60000, true, 1,
-    '[{"target":"https://replacement.example.test/","reachable":true,"attempts":1,"error_code":null}]'::jsonb
+    '[{"target":"tid1_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","reachable":true,"attempts":1,"error_code":null}]'::jsonb
   );
   select count(*) into v_count from public.tenant_discovery_items
   where tenant_id = v_tenant and collector_id = v_collector;
   if v_count <> 1 or exists (
     select 1 from public.tenant_discovery_items
     where tenant_id = v_tenant and collector_id = v_collector
-      and target = 'https://example.test/'
+      and target = 'tid1_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
   ) or not exists (
     select 1 from public.tenant_discovery_items
     where tenant_id = v_tenant and collector_id = v_collector
-      and target = 'https://replacement.example.test/'
+      and target = 'tid1_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
   ) then raise exception 'complete cycle did not reconcile omitted observations'; end if;
 
   begin
     perform public.ingest_tenant_discovery_cycle(
       v_tenant, v_actor, v_collector, v_first, 1, 60000, true, 1,
-      '[{"target":"https://example.test/","reachable":true,"attempts":1,"error_code":null}]'::jsonb
+      '[{"target":"tid1_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","reachable":true,"attempts":1,"error_code":null}]'::jsonb
     );
     raise exception 'replayed sequence was accepted';
   exception when sqlstate 'PT409' then null;

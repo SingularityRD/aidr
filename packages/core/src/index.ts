@@ -584,6 +584,11 @@ export {
 } from "./incidents/index.js";
 // Installation ID
 export { getInstallationId } from "./installation-id.js";
+export {
+	DISCOVERY_TARGET_ID_PATTERN,
+	discoveryTargetPseudonym,
+	getDiscoveryTargetKey,
+} from "./discovery-target-pseudonym.js";
 // Integrity (signed artifact manifest verification)
 export {
 	ArtifactIntegrityError,

@@ -4,7 +4,9 @@ import {
 	createDiscoveryProvider,
 	type DiscoveryProviderResult,
 	defaultFleetInventoryPath,
+	discoveryTargetPseudonym,
 	type FleetInventory,
+	getDiscoveryTargetKey,
 	getInstallationId,
 	loadFleetInventory,
 	normalizeFleetTargets,
@@ -95,6 +97,10 @@ export interface DiscoveryIngestPayload {
 	stale_after_ms: number;
 	complete: true;
 	expected_targets: number;
+	/**
+	 * `target` is a keyed, tenant-scoped pseudonym (`tid1_<hmac>`), never the
+	 * address: the HMAC key stays on this installation.
+	 */
 	items: Array<{ target: string; reachable: boolean; attempts: number; error_code: string | null }>;
 	provider_resources?: {
 		provider: "aws" | "azure" | "gcp" | "intune";
@@ -133,10 +139,15 @@ export function collectProviderConfig(path: string): ReturnType<typeof parseClou
 	}
 }
 
-/** Only origin-level reachability crosses the tenant boundary. Paths and scan findings stay local. */
+/**
+ * Only pseudonymous target reachability crosses the tenant boundary. Addresses,
+ * paths and scan findings stay local: each origin is replaced by an HMAC keyed
+ * with the per-installation `targetKey`, scoped to the tenant.
+ */
 export function discoveryIngestPayload(
 	inventory: FleetInventory,
 	sequence: number,
+	targetKey: Buffer,
 ): DiscoveryIngestPayload {
 	if (!UUID.test(inventory.tenantId) || !COLLECTOR_ID.test(inventory.collectorId)) {
 		throw new Error("discovery_upload_identity_invalid");
@@ -198,7 +209,12 @@ export function discoveryIngestPayload(
 					rawError === "collector_exception"
 				? rawError
 				: "other";
-		return { target, reachable, attempts: item.attempts, error_code };
+		return {
+			target: discoveryTargetPseudonym(targetKey, inventory.tenantId, target),
+			reachable,
+			attempts: item.attempts,
+			error_code,
+		};
 	});
 	const payload: DiscoveryIngestPayload = {
 		action: "ingest",
@@ -278,9 +294,13 @@ export async function publishDiscoveryInventory(
 	inventory: FleetInventory,
 	config: DiscoveryUploadConfig,
 	fetchImpl: typeof fetch = fetch,
+	targetKey?: Buffer,
 ): Promise<void> {
+	// Without the local pseudonym key nothing is uploaded; there is no fallback
+	// that would send the target address.
+	const key = targetKey ?? (await getDiscoveryTargetKey());
 	// Validate before any authenticated request, including the read call.
-	discoveryIngestPayload(inventory, 1);
+	discoveryIngestPayload(inventory, 1, key);
 	const current = await discoveryRequest(
 		config,
 		{
@@ -338,7 +358,7 @@ export async function publishDiscoveryInventory(
 				: `discovery_upload_http_${current.status}`,
 		);
 	}
-	const payload = discoveryIngestPayload(inventory, sequence);
+	const payload = discoveryIngestPayload(inventory, sequence, key);
 	const uploaded = await discoveryRequest(config, payload, fetchImpl);
 	if (uploaded.status !== 201) {
 		const code = uploaded.data?.error;
@@ -368,9 +388,10 @@ export async function publishDiscoveryCycle(
 	config: DiscoveryUploadConfig,
 	continuous: boolean,
 	publish: typeof publishDiscoveryInventory = publishDiscoveryInventory,
+	targetKey?: Buffer,
 ): Promise<boolean> {
 	try {
-		await publish(inventory, config);
+		await publish(inventory, config, fetch, targetKey);
 		return true;
 	} catch (error) {
 		if (!continuous) throw error;
@@ -444,18 +465,40 @@ export function fleetCollectionExitCode(inventory: FleetInventory): number {
 	return 0;
 }
 
+/** Local-only map from inventory target to the pseudonym the panel stores. */
+function localTargetIds(inventory: FleetInventory, targetKey: Buffer): Record<string, string> {
+	const ids: Record<string, string> = {};
+	for (const item of inventory.items) {
+		try {
+			ids[item.target] = discoveryTargetPseudonym(
+				targetKey,
+				inventory.tenantId,
+				`${new URL(item.target).origin}/`,
+			);
+		} catch {
+			/* Not an uploadable origin; it has no panel identifier. */
+		}
+	}
+	return ids;
+}
+
 function printInventory(
 	inventory: FleetInventory,
 	path: string,
 	json: boolean,
 	streaming: boolean,
 	result: DiscoveryProviderResult,
+	targetKey?: Buffer,
 ): void {
+	// Uploaded inventories carry pseudonyms only; this local mapping is how an
+	// operator correlates a panel row with an address. It is never uploaded.
+	const uploadTargetIds = targetKey ? localTargetIds(inventory, targetKey) : undefined;
 	const discovery = {
 		provider: result.provider,
 		status: result.status,
 		freshness: result.freshness,
 		reason: result.reason,
+		...(uploadTargetIds ? { upload_target_ids: uploadTargetIds } : {}),
 	};
 	if (json) {
 		// Keep existing inventory fields while exposing attempt status separately.
@@ -484,8 +527,9 @@ function printInventory(
 		`Targets: ${inventory.items.length}   Fresh: ${fresh}   Stale: ${stale}   Never seen: ${neverSeen}   Unreachable now: ${unreachable}   Scan errors: ${scanErrors}`,
 	);
 	for (const item of inventory.items) {
+		const id = uploadTargetIds?.[item.target];
 		console.log(
-			`  ${item.target}  ${item.freshness}/${item.reachability}  attempts=${item.attempts}  last_seen=${item.lastSeenAt ?? "never"}`,
+			`  ${item.target}  ${item.freshness}/${item.reachability}  attempts=${item.attempts}  last_seen=${item.lastSeenAt ?? "never"}${id ? `  panel_id=${id}` : ""}`,
 		);
 	}
 	if (stale > 0 || neverSeen > 0 || unreachable > 0 || scanErrors > 0) {
@@ -534,6 +578,9 @@ export default async function collectCommand(options: CollectOptions): Promise<v
 		}
 		if (upload && !UUID.test(options.tenant))
 			throw new Error("discovery_upload_tenant_uuid_required");
+		// Load (or create) the local pseudonym key before scanning so a missing or
+		// malformed key fails the run instead of an upload.
+		const targetKey = upload ? await getDiscoveryTargetKey() : undefined;
 
 		const intervalSeconds =
 			options.interval === undefined
@@ -586,7 +633,13 @@ export default async function collectCommand(options: CollectOptions): Promise<v
 			const inventory = result.inventory;
 			await saveFleetInventory(inventoryPath, inventory);
 			const uploaded = upload
-				? await publishDiscoveryCycle(inventory, upload, intervalSeconds !== null)
+				? await publishDiscoveryCycle(
+						inventory,
+						upload,
+						intervalSeconds !== null,
+						publishDiscoveryInventory,
+						targetKey,
+					)
 				: true;
 			printInventory(
 				inventory,
@@ -594,6 +647,7 @@ export default async function collectCommand(options: CollectOptions): Promise<v
 				Boolean(options.json),
 				intervalSeconds !== null,
 				result,
+				targetKey,
 			);
 			process.exitCode = Math.max(
 				uploaded && result.status === "ready" ? 0 : 1,

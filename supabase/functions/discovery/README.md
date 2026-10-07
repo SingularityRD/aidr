@@ -25,8 +25,24 @@ credential unusable until another owner/admin rotates it.
 
 The collector first calls `cursor` with only `tenant_id` and `collector_id`.
 The response contains its own `last_sequence` and `next_sequence`, with no
-targets, observations or other inventory. It then submits the existing bounded
-origin-only `ingest` payload at `next_sequence`. Replayed or out-of-order
+targets, observations or other inventory. It then submits the bounded
+`ingest` payload at `next_sequence`.
+
+Target addresses never reach the panel. Each item's `target` is a keyed,
+tenant-scoped pseudonym, `tid1_<hex HMAC-SHA256(key, "aidr-discovery-target-v1\0"
++ tenant_id + "\0" + origin)>`, where the 32-byte key is generated once per
+collector installation at `~/.singularity-aidr/discovery-target-key` and never
+leaves it. The handler and `ingest_tenant_discovery_cycle` accept only that
+form; a raw origin returns `400 target_address_not_accepted` (older collectors
+fail loudly rather than store an address). Rows stored before
+`20261007000000_discovery_target_pseudonyms.sql` keep their origin, are returned
+with `target_kind: "legacy_origin"`, and are removed by that collector's next
+complete cycle (outside a legal hold). Operators map an id back to an address
+with the local `panel_id` printed by `aidr collect`.
+
+Follow-up (not implemented): there is no panel ingest path for infrastructure
+CVE findings. When one is added it must carry only CVE id, severity, component,
+version and rule id, keyed to the target pseudonym, and stay opt-in. Replayed or out-of-order
 sequences return HTTP 409; retry by fetching a new cursor and producing a new
 cycle UUID. The tenant and credential are rechecked inside the ingest
 transaction, so a rotation or revocation between cursor and ingest denies the

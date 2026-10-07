@@ -12,10 +12,12 @@ import {
 	validCollectorCredential,
 } from "./credential.ts";
 import {
-	canonicalDiscoveryOrigin,
 	discoveryAlertState,
 	discoveryCollectorState,
 	discoveryFreshness,
+	discoveryIngestCarriesAddress,
+	discoveryTargetCursor,
+	discoveryTargetId,
 	parseDiscoveryIngest,
 	parseProviderScope,
 	validCollectorId,
@@ -66,6 +68,7 @@ Deno.serve(async (req) => {
 			if (action !== "ingest" && action !== "cursor") return corsJson(req, 403, { error: "collector_scope_forbidden" });
 			if (!validCollectorId(input.collector_id)) return corsJson(req, 400, { error: "invalid_collector" });
 			if (action === "cursor" && !exactKeys(input, ["action", "tenant_id", "collector_id"])) return corsJson(req, 400, { error: "invalid_request" });
+			if (action === "ingest" && discoveryIngestCarriesAddress(input)) return corsJson(req, 400, { error: "target_address_not_accepted" });
 			const cycle = action === "ingest" ? parseDiscoveryIngest(input) : null;
 			if (action === "ingest" && !cycle) return corsJson(req, 400, { error: "invalid_discovery_cycle" });
 			const tokenHash = await collectorCredentialHash(token);
@@ -179,6 +182,8 @@ Deno.serve(async (req) => {
 		}
 
 		if (action === "ingest") {
+			// Pre-pseudonym collectors fail loudly instead of having addresses stored.
+			if (discoveryIngestCarriesAddress(input)) return corsJson(req, 400, { error: "target_address_not_accepted" });
 			const cycle = parseDiscoveryIngest(input);
 			if (!cycle) return corsJson(req, 400, { error: "invalid_discovery_cycle" });
 			const result = await db.rpc("ingest_tenant_discovery_cycle", {
@@ -239,7 +244,7 @@ Deno.serve(async (req) => {
 		const resourceRead = action === "resources";
 		if (!exactKeys(input, ["action", "tenant_id", "collector_id"], resourceRead ? ["after_resource", "expected_sequence", "limit"] : ["after_target", "limit"]) || !validCollectorId(input.collector_id)) return corsJson(req, 400, { error: "invalid_request" });
 		if (input.limit !== undefined && (typeof input.limit !== "number" || !Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > 100)) return corsJson(req, 400, { error: "invalid_limit" });
-		const after = input.after_target === undefined ? null : canonicalDiscoveryOrigin(input.after_target);
+		const after = input.after_target === undefined ? null : discoveryTargetCursor(input.after_target);
 		if (input.after_target !== undefined && !after) return corsJson(req, 400, { error: "invalid_cursor" });
 		if (input.after_resource !== undefined && (typeof input.after_resource !== "string" || !input.after_resource.length || input.after_resource.length > 1024 || /[\u0000-\u001f\u007f]/.test(input.after_resource))) return corsJson(req, 400, { error: "invalid_cursor" });
 		if (input.expected_sequence !== undefined && (typeof input.expected_sequence !== "number" || !Number.isSafeInteger(input.expected_sequence) || input.expected_sequence < 1)
@@ -288,6 +293,9 @@ Deno.serve(async (req) => {
 			collector: { ...collectorRow, state: collectorState },
 			items: page.map((item) => ({
 				...item,
+				// `pseudonym`: keyed id; the address stays on the collector. `legacy_origin`:
+				// stored before pseudonymisation and replaced by the next complete cycle.
+				target_kind: discoveryTargetId(item.target) ? "pseudonym" : "legacy_origin",
 				freshness: discoveryFreshness(typeof item.last_reachable_at === "string" ? item.last_reachable_at : null, collectorRow.stale_after_ms, now),
 				alert_state: discoveryAlertState({
 					lastReachableAt: typeof item.last_reachable_at === "string" ? item.last_reachable_at : null,
