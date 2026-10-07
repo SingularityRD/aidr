@@ -3,9 +3,13 @@
  * evaluates them through guardToolCall, returns block/pass decisions.
  */
 
+import { homedir } from "node:os";
+import { join } from "node:path";
 import {
 	type ApprovalStore,
 	type Artifact,
+	canonicalMcpToolName,
+	commandFromValue,
 	createHostObservation,
 	extractFromBash,
 	extractFromEdit,
@@ -15,8 +19,12 @@ import {
 	formatAskMessage,
 	formatDenyMessage,
 	guardToolCall,
+	isWellFormedToolCall,
 	type Logger,
+	loadKnownMcpServers,
 	loadProvisionedDetectorContext,
+	malformedShellCommandReason,
+	mcpIdentityFromOpenClawName,
 	recordHostObservation,
 } from "@singularityrd/aidr-core";
 
@@ -49,8 +57,10 @@ function extractFilePaths(patch: string): Artifact[] {
 function mapToolToArtifacts(toolName: string, params: Record<string, unknown>): Artifact[] | null {
 	switch (toolName) {
 		case "exec": {
-			const command = (params.command ?? "") as string;
-			return command ? extractFromBash(command) : null;
+			// String or argv command; anything else yields no artifacts here and is
+			// denied as `malformed_command` by core's shell normalization.
+			const result = commandFromValue(params.command);
+			return result.ok && result.command ? extractFromBash(result.command) : null;
 		}
 		case "web_fetch":
 			return extractFromWebFetch({ url: params.url });
@@ -69,6 +79,19 @@ function mapToolToArtifacts(toolName: string, params: Record<string, unknown>): 
 		default:
 			return extractFromUnknownTool(`openclaw:${toolName || "unknown"}`, params);
 	}
+}
+
+/**
+ * OpenClaw registers bundle MCP tools as `<server>__<tool>` (server sanitized
+ * `[^A-Za-z0-9_-]` → `-`); built-in tools never contain `__`. Such a call is
+ * evaluated under the canonical `mcp__<server>__<tool>` name so MCP server and
+ * tool policy applies; the arguments are unchanged.
+ */
+async function policyToolName(toolName: string): Promise<string> {
+	if (!toolName.includes("__") || toolName.startsWith("mcp__")) return toolName;
+	const known = await loadKnownMcpServers([join(homedir(), ".openclaw", "openclaw.json")]);
+	const identity = mcpIdentityFromOpenClawName(toolName, known.names);
+	return identity ? canonicalMcpToolName(identity) : toolName;
 }
 
 export function createToolCallHandler(
@@ -90,12 +113,40 @@ export function createToolCallHandler(
 			event: "before_tool_call",
 			toolName,
 		});
-		try {
-			const params = event.params;
+		// A call without a tool name or with non-object params (a string, array,
+		// null or missing value) cannot be judged and is blocked, as every
+		// connector does (isWellFormedToolCall).
+		const params: unknown = event && typeof event === "object" ? event.params : undefined;
+		if (!isWellFormedToolCall(event?.toolName, params)) {
+			logger.error("tool-handler received a malformed tool call, failing closed");
+			return {
+				block: true,
+				blockReason: "Singularity AIDR could not identify this tool call; execution was denied.",
+			};
+		}
+		if (malformedShellCommandReason(toolName, params)) {
+			return {
+				block: true,
+				blockReason:
+					"Singularity AIDR blocked this command: it is malformed (not a string or argv, or it contains NUL or invalid UTF-8 text) and cannot be inspected reliably.",
+			};
+		}
+		// The deadline that blocks a hung evaluation wraps this handler in index.ts.
+		return evaluate(toolName, params, ctx);
+	}
 
+	async function evaluate(
+		toolName: string,
+		params: Record<string, unknown>,
+		ctx?: ToolCallContext,
+	): Promise<BlockResult | undefined> {
+		try {
 			// Core may find artifacts after normalizing connector-specific fields.
 			const artifacts = mapToolToArtifacts(toolName, params) ?? [];
 			const sessionId = ctx?.sessionKey ?? "unknown";
+			// OpenClaw bundle MCP tools are `<server>__<tool>`; evaluate them under
+			// the canonical `mcp__<server>__<tool>` name so MCP policy applies.
+			const evaluatedToolName = await policyToolName(toolName);
 
 			// Operator-provisioned tenant detector policy for this runtime. No
 			// provisioned policy means an empty context, exactly as before; a
@@ -105,7 +156,7 @@ export function createToolCallHandler(
 
 			const { verdict, actionId, responseActions, pendingRecorded, dashboardApproval } =
 				await guardToolCall(
-					{ sessionId, toolName, toolInput: params, artifacts },
+					{ sessionId, toolName: evaluatedToolName, toolInput: params, artifacts },
 					{ threatsDir, allowlistsDir, logger, agentRuntime: "openclaw", ...provisioned },
 					approvalStore,
 				);

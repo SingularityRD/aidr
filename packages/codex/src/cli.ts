@@ -25,13 +25,19 @@
  * with a non-empty stderr as a block).
  */
 
-import { readFileSync } from "node:fs";
 import {
 	ArtifactIntegrityError,
 	createHostObservation,
 	createLogger,
+	exitAfterStdoutFlush,
+	HOOK_HOST_TIMEOUT_MS,
+	isValidUtf8,
+	isWellFormedToolCall,
 	type Logger,
+	malformedShellCommandReason,
+	readBoundedStdinAsync,
 	recordHostObservation,
+	resolveHookDeadlineMs,
 	verifyArtifactIntegrityAndLog,
 } from "@singularityrd/aidr-core";
 import { getCodexConnectorCoverageEvidence } from "./coverage.js";
@@ -47,12 +53,35 @@ const startedAt = Date.now();
 const logger: Logger = createLogger({ name: "aidr-codex", level: "warn" });
 const hostObservation = createHostObservation();
 
+/**
+ * Codex drops the output of a hook that outlives its `timeout` (10 s as
+ * installed) and runs the call. The watchdog answers with a block first; once
+ * any answer is written, later writes are dropped, and the process exits after
+ * stdout flushes so lingering sockets cannot hold it open past the timeout.
+ * `AIDR_CODEX_HOOK_DEADLINE_MS` overrides the deadline (max 9 s).
+ */
+const CODEX_HOOK_DEADLINE = {
+	envVar: "AIDR_CODEX_HOOK_DEADLINE_MS",
+	hostTimeoutMs: HOOK_HOST_TIMEOUT_MS.codex,
+	defaultMs: 8_000,
+};
+let answered = false;
+/** Hook input ceiling (same as the Claude Code PreToolUse one). */
+const MAX_CODEX_HOOK_INPUT_BYTES = 8 * 1024 * 1024;
+/** Event being answered, so a deadline block uses that event's shape. */
+let currentEvent = "PreToolUse";
+
+function emit(text: string): void {
+	if (answered) return;
+	process.stdout.write(text);
+}
+
 function write(wire: CodexWireResult): void {
 	// Codex 0.141.0 treats a bare `permissionDecision: "allow"` as an
 	// unsupported output and fails open. Empty stdout is its documented no-op
 	// allow shape, so only deny decisions are written.
 	if (!wire.hookSpecificOutput) return;
-	process.stdout.write(`${JSON.stringify(wire)}\n`);
+	emit(`${JSON.stringify(wire)}\n`);
 }
 
 /**
@@ -61,6 +90,7 @@ function write(wire: CodexWireResult): void {
  * so a partially-broken stdout still blocks.
  */
 function blockOnBothChannels(stdoutPayload: object, reason: string): void {
+	if (answered) return;
 	try {
 		process.stdout.write(`${JSON.stringify(stdoutPayload)}\n`);
 	} catch {
@@ -96,7 +126,7 @@ function blockUnconditionally(reason: string): void {
 async function handleUserPromptSubmit(input: Record<string, unknown>): Promise<void> {
 	try {
 		const { outcome, wire } = await enforceCodexUserPromptSubmit(input, { startedAt, logger });
-		if (wire) process.stdout.write(`${JSON.stringify(wire)}\n`);
+		if (wire) emit(`${JSON.stringify(wire)}\n`);
 		recordHostObservation(hostObservation, {
 			connector: "codex",
 			event: CODEX_USER_PROMPT_SUBMIT,
@@ -117,7 +147,7 @@ async function handleUserPromptSubmit(input: Record<string, unknown>): Promise<v
 async function handlePostToolUse(input: Record<string, unknown>): Promise<void> {
 	try {
 		const result = await enforceCodexPostToolUse(input, { logger });
-		if (result.wire) process.stdout.write(`${JSON.stringify(result.wire)}\n`);
+		if (result.wire) emit(`${JSON.stringify(result.wire)}\n`);
 		recordHostObservation(hostObservation, {
 			connector: "codex",
 			event: CODEX_POST_TOOL_USE,
@@ -141,7 +171,25 @@ async function main(): Promise<void> {
 
 	let raw = "";
 	try {
-		raw = readFileSync(0, "utf-8");
+		// Asynchronous: a synchronous read would hold off the watchdog for as
+		// long as the host keeps stdin open, and Codex then drops the hook.
+		const input = await readBoundedStdinAsync(MAX_CODEX_HOOK_INPUT_BYTES);
+		if (input.status === "oversized") {
+			blockUnconditionally(
+				`${DENY_HEADLINE}\nSingularity AIDR could not inspect the tool call: its input exceeded the ${MAX_CODEX_HOOK_INPUT_BYTES}-byte limit, so it was blocked.`,
+			);
+			return;
+		}
+		const bytes = input.bytes;
+		// Codex serializes hook input as UTF-8 JSON. Invalid bytes would decode
+		// to U+FFFD and change what is inspected, so they are refused.
+		if (!isValidUtf8(bytes)) {
+			blockUnconditionally(
+				`${DENY_HEADLINE}\nSingularity AIDR received hook input that is not valid UTF-8, so it was blocked.`,
+			);
+			return;
+		}
+		raw = bytes.toString("utf-8");
 	} catch (error) {
 		// We could not even read the tool call, so we cannot judge it.
 		blockUnconditionally(
@@ -169,6 +217,7 @@ async function main(): Promise<void> {
 	// protection) and PostToolUse (tool output). Any other event means our
 	// configuration is wrong; blocking is the safe reading.
 	const event = typeof input.hook_event_name === "string" ? input.hook_event_name : "PreToolUse";
+	currentEvent = event;
 	if (event === CODEX_USER_PROMPT_SUBMIT) {
 		await handleUserPromptSubmit(input);
 		return;
@@ -191,15 +240,17 @@ async function main(): Promise<void> {
 	// payload falls through to the detection core, which correctly finds no
 	// artifacts and returns an allow, so Codex would run the call uninspected.
 	// This mirrors the shape check the Claude Code entry point performs.
-	if (
-		typeof input.tool_name !== "string" ||
-		input.tool_name.trim() === "" ||
-		input.tool_input === null ||
-		typeof input.tool_input !== "object" ||
-		Array.isArray(input.tool_input)
-	) {
+	if (!isWellFormedToolCall(input.tool_name, input.tool_input)) {
 		blockUnconditionally(
 			`${DENY_HEADLINE}\nSingularity AIDR could not identify the tool call, so it was blocked.`,
+		);
+		return;
+	}
+	// NUL, unpaired surrogates or U+FFFD in a shell command: the inspected text
+	// may differ from what runs, so it is denied rather than reviewed.
+	if (malformedShellCommandReason(input.tool_name as string, input.tool_input)) {
+		blockUnconditionally(
+			`${DENY_HEADLINE}\nSingularity AIDR blocked this command: it is malformed (not a string or argv, or it contains NUL or invalid UTF-8 text) and cannot be inspected reliably.`,
 		);
 		return;
 	}
@@ -222,12 +273,45 @@ async function main(): Promise<void> {
 	}
 }
 
-main().catch((error: unknown) => {
-	const integrityFailure =
-		error instanceof Error &&
-		(error instanceof ArtifactIntegrityError || error.name === "ArtifactIntegrityError");
-	const reason = integrityFailure
-		? `${DENY_HEADLINE}\n${(error as Error).message}; this tool call was blocked.`
-		: `${DENY_HEADLINE}\nSingularity AIDR failed to start, so the tool call was blocked.`;
-	blockUnconditionally(reason);
-});
+/** Deadline block in the shape of the event being answered, plus exit 2 + stderr. */
+function blockOnDeadline(): void {
+	if (currentEvent === CODEX_USER_PROMPT_SUBMIT || currentEvent === CODEX_POST_TOOL_USE) {
+		const reason =
+			currentEvent === CODEX_USER_PROMPT_SUBMIT
+				? "🛡️ Singularity AIDR could not finish inspecting this prompt in time, so it was not sent."
+				: "Singularity AIDR could not finish inspecting this tool output in time, so it was withheld from the model and not classified as clean.";
+		blockOnBothChannels({ decision: "block", reason }, reason);
+		return;
+	}
+	blockUnconditionally(
+		`${DENY_HEADLINE}\nSingularity AIDR could not finish inspecting this tool call in time, so it was blocked.`,
+	);
+}
+
+const watchdog = setTimeout(
+	() => {
+		if (answered) return;
+		blockOnDeadline();
+		answered = true;
+		exitAfterStdoutFlush(2);
+	},
+	Math.max(0, resolveHookDeadlineMs(CODEX_HOOK_DEADLINE, process.env) - (Date.now() - startedAt)),
+);
+
+main()
+	.catch((error: unknown) => {
+		const integrityFailure =
+			error instanceof Error &&
+			(error instanceof ArtifactIntegrityError || error.name === "ArtifactIntegrityError");
+		const reason = integrityFailure
+			? `${DENY_HEADLINE}\n${(error as Error).message}; this tool call was blocked.`
+			: `${DENY_HEADLINE}\nSingularity AIDR failed to start, so the tool call was blocked.`;
+		blockUnconditionally(reason);
+	})
+	.finally(() => {
+		if (answered) return;
+		answered = true;
+		clearTimeout(watchdog);
+		// The answer (or the empty allow) is written: exit once stdout flushes.
+		exitAfterStdoutFlush();
+	});

@@ -1,11 +1,14 @@
 #!/usr/bin/env node
 
+import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import {
 	type Artifact,
+	canonicalMcpToolName,
 	createHostObservation,
 	describeSecureCodeWarnings,
 	evaluateToolCall,
+	exitAfterStdoutFlush,
 	extractFromBash,
 	extractFromDelete,
 	extractFromEdit,
@@ -13,14 +16,23 @@ import {
 	extractFromToolCall,
 	extractFromWebFetch,
 	extractFromWrite,
+	fallbackMcpServerIdentity,
 	formatDashboardApprovalNotice,
+	HOOK_HOST_TIMEOUT_MS,
+	hasMalformedCommandText,
 	inspectUserPrompt,
+	isValidUtf8,
+	loadKnownMcpServers,
 	loadProvisionedDetectorContext,
+	malformedShellCommandReason,
+	matchMcpServerDeclaration,
+	mcpIdentityFromVsCodeName,
 	type PromptInspectionOutcome,
 	recordHostObservation,
 	recordToolOutcome,
 	recordToolOutputCanaries,
 	resolveAskWithDashboardApproval,
+	resolveHookDeadlineMs,
 	resolvePromptInspectionDeadlineMs,
 	scanProvisionedOutput,
 	toolResultReportsFailure,
@@ -46,15 +58,16 @@ const MAX_HOOK_INPUT_BYTES = 1024 * 1024;
  */
 const DEFAULT_PROMPT_DEADLINE_MS = 20_000;
 const MAX_PROMPT_DEADLINE_MS = 28_000;
-/** Bytes kept from each end of an oversized payload to identify a prompt event. */
+/** Bytes kept from each end of an oversized payload to identify its event. */
 const OVERSIZED_EVENT_SNIFF_BYTES = 16 * 1024;
-/** Prompt events: the only ones an oversized payload is answered for specifically. */
-const PROMPT_EVENTS: ReadonlySet<string> = new Set(["beforeSubmitPrompt", "UserPromptSubmit"]);
 
-/** Payload over MAX_HOOK_INPUT_BYTES: discarded, except a prompt event name found at either end. */
+/** Payload over MAX_HOOK_INPUT_BYTES: discarded, except an event name found at either end. */
 class OversizedHookInput {
-	constructor(readonly promptEvent: string | undefined) {}
+	constructor(readonly event: string | undefined) {}
 }
+
+/** Payload that is neither valid UTF-8 JSON nor UTF-16LE JSON. */
+class UndecodableHookInput {}
 const hostObservation = createHostObservation();
 const EDIT_FILE_PATH_FIELDS = [
 	"file_path",
@@ -127,11 +140,16 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<vo
 	await maybeVerifyIntegrity("extension/dist");
 	const payload = await readStdinJson();
 	if (payload instanceof OversizedHookInput) {
-		const promptHandled = await writeHookInputLimitResponse(mode, payload.promptEvent);
-		// Both hosts block permission hooks on exit 2, even when an oversized
-		// payload prevents selecting the event-specific response schema. An
-		// identified prompt event already carries its own prompt decision.
-		if (!promptHandled) process.exitCode = 2;
+		// Extension hooks always exit 0 with a verdict (CLAUDE.md): the oversized
+		// payload is answered with the sniffed event's block, or a deny that
+		// covers every event shape when the event cannot be identified.
+		await writeHookInputLimitResponse(mode, payload.event);
+		return;
+	}
+	if (payload instanceof UndecodableHookInput) {
+		const reason =
+			"Singularity AIDR received hook input that is not valid UTF-8 or UTF-16 JSON; it could not be inspected and execution was denied.";
+		writeJson(mode === "vscode" ? vsCodeUnknownEventBlock(reason) : cursorUnknownEventBlock(reason));
 		return;
 	}
 
@@ -172,9 +190,16 @@ async function handleCursor(payload: unknown): Promise<void> {
 		return;
 	}
 
-	const normalized = normalizeCursorCall(payload, eventName);
+	const normalized =
+		eventName === "beforeMCPExecution"
+			? await normalizeCursorMcpExecution(payload)
+			: normalizeCursorCall(payload, eventName);
 	if (!normalized) {
 		writeJson(internalCursorResponse("deny", "Singularity AIDR could not normalize hook payload."));
+		return;
+	}
+	if (malformedCommandReason(normalized)) {
+		writeJson(internalCursorResponse("deny", MALFORMED_COMMAND_REASON));
 		return;
 	}
 
@@ -197,16 +222,40 @@ async function handleCursor(payload: unknown): Promise<void> {
 	}
 }
 
+/**
+ * VS Code routing is by the explicit hook event name only. A payload's keys
+ * never select the event: a PreToolUse payload that also carries a
+ * `tool_response` key is still evaluated, never treated as completed output.
+ * Without an event name, a payload naming a tool is evaluated as PreToolUse
+ * (the fail-closed reading) and a tool-less prompt payload as UserPromptSubmit.
+ */
+function vsCodeEvent(
+	payload: unknown,
+): "UserPromptSubmit" | "PreToolUse" | "PostToolUse" | "unsupported" {
+	if (!payload || typeof payload !== "object" || Array.isArray(payload)) return "PreToolUse";
+	const input = payload as Record<string, unknown>;
+	if ("hook_event_name" in input || "hookEventName" in input) {
+		const name = input.hook_event_name ?? input.hookEventName;
+		return name === "UserPromptSubmit" || name === "PreToolUse" || name === "PostToolUse"
+			? name
+			: "unsupported";
+	}
+	return typeof input.prompt === "string" && input.tool_name === undefined
+		? "UserPromptSubmit"
+		: "PreToolUse";
+}
+
 async function handleVsCode(payload: unknown): Promise<void> {
-	if (isVsCodeUserPromptSubmit(payload)) {
-		await handleVsCodePrompt(payload);
+	const event = vsCodeEvent(payload);
+	if (event === "UserPromptSubmit") {
+		await handleVsCodePrompt(payload as Record<string, unknown>);
 		return;
 	}
-	if (hasExplicitVsCodeEvent(payload) && !isVsCodePreToolUse(payload)) {
-		if (isVsCodePostToolUse(payload)) {
-			await handleVsCodeToolOutput(payload);
-			return;
-		}
+	if (event === "PostToolUse") {
+		await handleVsCodeToolOutput(payload);
+		return;
+	}
+	if (event === "unsupported") {
 		writeJson(
 			internalVsCodeResponse(
 				"Singularity AIDR received an unsupported hook event; execution was denied.",
@@ -214,19 +263,20 @@ async function handleVsCode(payload: unknown): Promise<void> {
 		);
 		return;
 	}
-	if (isVsCodePostToolUse(payload)) {
-		await handleVsCodeToolOutput(payload);
-		return;
-	}
 	const normalized = normalizeVsCodeCall(payload);
 	if (!normalized) {
 		writeJson(internalVsCodeResponse("Singularity AIDR could not normalize hook payload."));
 		return;
 	}
+	if (malformedCommandReason(normalized)) {
+		writeJson(internalVsCodeResponse(MALFORMED_COMMAND_REASON));
+		return;
+	}
 
 	try {
+		const call = await withVsCodeMcpIdentity(normalized, payload as Record<string, unknown>);
 		const evaluation = await evaluateNormalizedCall(
-			{ ...normalized, workingDirectory: hostWorkingDirectory(payload) },
+			{ ...call, workingDirectory: hostWorkingDirectory(payload) },
 			"vscode",
 		);
 		writeJson(toVsCodeResponse(evaluation));
@@ -323,18 +373,6 @@ function recordPromptObservation(
 		event,
 		decision: outcome.decision === "block" ? "deny" : "allow",
 	});
-}
-
-/** Explicit `UserPromptSubmit`, or (no event name) a prompt payload that names no tool. */
-function isVsCodeUserPromptSubmit(payload: unknown): payload is Record<string, unknown> {
-	if (!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
-	const input = payload as Record<string, unknown>;
-	if ("hook_event_name" in input || "hookEventName" in input) {
-		return (
-			input.hook_event_name === "UserPromptSubmit" || input.hookEventName === "UserPromptSubmit"
-		);
-	}
-	return typeof input.prompt === "string" && input.tool_name === undefined;
 }
 
 async function handleCursorToolOutput(payload: unknown): Promise<void> {
@@ -551,29 +589,6 @@ function normalizeCursorPostToolCall(
 	return normalizeCursorCall(input, "postToolUse");
 }
 
-function hasExplicitVsCodeEvent(payload: unknown): payload is Record<string, unknown> {
-	return Boolean(
-		payload &&
-			typeof payload === "object" &&
-			!Array.isArray(payload) &&
-			("hook_event_name" in payload || "hookEventName" in payload),
-	);
-}
-
-function isVsCodePreToolUse(payload: Record<string, unknown>): boolean {
-	return payload.hook_event_name === "PreToolUse" || payload.hookEventName === "PreToolUse";
-}
-
-function isVsCodePostToolUse(payload: unknown): payload is Record<string, unknown> {
-	if (!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
-	const input = payload as Record<string, unknown>;
-	return (
-		input.hook_event_name === "PostToolUse" ||
-		input.hookEventName === "PostToolUse" ||
-		"tool_response" in input
-	);
-}
-
 function cursorSessionId(input: Record<string, unknown>): string {
 	return (
 		asString(input.conversation_id) ??
@@ -608,37 +623,85 @@ function quarantinedMcpOutput(reason: string): Record<string, unknown> {
 	};
 }
 
+/** Cursor events that run after the tool or response: they can annotate, not block. */
+const CURSOR_AFTER_EVENTS: ReadonlySet<string> = new Set(["postToolUse", "afterAgentResponse"]);
+
+/**
+ * Block for a Cursor payload whose event is unknown: every permission field
+ * denies, `continue: false` stops a prompt, and `additional_context` carries
+ * the reason for an after-the-fact event.
+ */
+function cursorUnknownEventBlock(reason: string): Record<string, unknown> {
+	return {
+		...internalCursorResponse("deny", reason),
+		continue: false,
+		additional_context: reason,
+	};
+}
+
+/**
+ * Block for a VS Code payload whose event is unknown: a PreToolUse deny plus
+ * the common `decision: "block"` / `continue: false` fields, so whichever event
+ * it was, the host stops rather than proceeding.
+ */
+function vsCodeUnknownEventBlock(reason: string): Record<string, unknown> {
+	return {
+		...internalVsCodeResponse(reason),
+		decision: "block",
+		reason,
+		continue: false,
+		stopReason: reason,
+	};
+}
+
 async function writeHookInputLimitResponse(
 	mode: HookMode | undefined,
-	promptEvent: string | undefined,
-): Promise<boolean> {
+	event: string | undefined,
+): Promise<void> {
 	// An oversized prompt cannot be inspected, which is never a clean result: the
 	// shared runner blocks it when secrets are in `block` mode (the default) and
 	// otherwise sends it with a "not inspected" notice.
-	if (mode === "cursor" && promptEvent === "beforeSubmitPrompt") {
-		const outcome = await inspectPrompt("cursor", promptEvent, "cursor", undefined);
+	if (mode === "cursor" && event === "beforeSubmitPrompt") {
+		const outcome = await inspectPrompt("cursor", event, "cursor", undefined);
 		writeJson(toCursorPromptResponse(outcome));
-		return true;
+		return;
 	}
-	if (mode === "vscode" && promptEvent === "UserPromptSubmit") {
-		const outcome = await inspectPrompt("vscode", promptEvent, "vscode", undefined);
+	if (mode === "vscode" && event === "UserPromptSubmit") {
+		const outcome = await inspectPrompt("vscode", event, "vscode", undefined);
 		writeJson(toVsCodePromptResponse(outcome));
-		return true;
+		return;
 	}
-	const reason = `Singularity AIDR hook input exceeds the ${MAX_HOOK_INPUT_BYTES}-byte processing limit. The event could not be identified, so no event-specific enforcement result was produced. If this was PostToolUse, the tool may already have completed; AIDR cannot verify or guarantee that its output was replaced, and the original may remain available. Treat it as untrusted; it was not classified as clean.`;
+	const limit = `Singularity AIDR hook input exceeds the ${MAX_HOOK_INPUT_BYTES}-byte processing limit and could not be inspected; it was not classified as clean.`;
 	if (mode === "vscode") {
-		// The oversized payload is intentionally discarded, so its hook event
-		// cannot be identified safely. Do not forge a PreToolUse denial for a
-		// possible PostToolUse callback whose tool has already completed.
-		writeJson({ decision: "block", reason });
-		return false;
+		if (event === "PostToolUse") {
+			const reason = `${limit} The tool already completed; AIDR cannot verify that its output was replaced, and the original may remain available. Treat it as untrusted.`;
+			writeJson({
+				decision: "block",
+				reason,
+				hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: reason },
+			});
+			return;
+		}
+		const reason = `${limit} Execution was denied.`;
+		writeJson(event === "PreToolUse" ? internalVsCodeResponse(reason) : vsCodeUnknownEventBlock(reason));
+		return;
 	}
-	writeJson({ additional_context: reason });
-	return false;
+	if (event && CURSOR_AFTER_EVENTS.has(event)) {
+		writeJson({
+			additional_context: `${limit} The tool or response already completed; AIDR cannot verify that its output was replaced, and the original may remain available. Treat it as untrusted.`,
+		});
+		return;
+	}
+	const reason = `${limit} Execution was denied.`;
+	writeJson(
+		event && isCursorEvent(event)
+			? internalCursorResponse("deny", reason)
+			: cursorUnknownEventBlock(reason),
+	);
 }
 
 /** A verdict plus the managed-mode dashboard approval details for an `ask`. */
-interface HookEvaluation {
+export interface HookEvaluation {
 	verdict: Verdict;
 	/** User-facing dashboard request line, or null when there is nothing to say. */
 	dashboardNotice: string | null;
@@ -772,12 +835,102 @@ function normalizeCursorCall(
 	};
 }
 
+const MALFORMED_COMMAND_REASON =
+	"Singularity AIDR blocked this command: it is malformed (not a string or argv, or it contains NUL or invalid UTF-8 text) and cannot be inspected reliably.";
+
+/**
+ * A shell command that is not a string/argv, or whose text holds NUL, an
+ * unpaired surrogate or U+FFFD, cannot be inspected as the shell will run it.
+ * Such a call is denied outright, never downgraded to a review prompt. The text
+ * check also covers a `command` field of non-shell tools.
+ */
+function malformedCommandReason(call: NormalizedHookCall): string | null {
+	const command = call.toolInput.command;
+	return (
+		malformedShellCommandReason(call.toolName, call.toolInput) ??
+		(typeof command === "string" && hasMalformedCommandText(command)
+			? "command contains malformed text"
+			: null)
+	);
+}
+
+/** Directories the host reports for the session: `cwd` and every workspace root. */
+function hostDirectories(input: Record<string, unknown>): string[] {
+	const roots = Array.isArray(input.workspace_roots)
+		? input.workspace_roots.filter((root): root is string => typeof root === "string" && !!root)
+		: [];
+	return [...new Set([...(typeof input.cwd === "string" && input.cwd ? [input.cwd] : []), ...roots])];
+}
+
+/** Cursor MCP configuration: the user file plus each workspace's `.cursor/mcp.json`. */
+function cursorMcpConfigPaths(input: Record<string, unknown>): string[] {
+	return [
+		join(homedir(), ".cursor", "mcp.json"),
+		...hostDirectories(input).map((dir) => join(dir, ".cursor", "mcp.json")),
+	];
+}
+
+/** VS Code MCP configuration: the user profile's `mcp.json` plus each workspace's `.vscode/mcp.json`. */
+function vsCodeMcpConfigPaths(input: Record<string, unknown>): string[] {
+	const home = homedir();
+	const userDirs =
+		process.platform === "win32"
+			? [join(process.env.APPDATA ?? join(home, "AppData", "Roaming"), "Code", "User")]
+			: process.platform === "darwin"
+				? [join(home, "Library", "Application Support", "Code", "User")]
+				: [join(process.env.XDG_CONFIG_HOME ?? join(home, ".config"), "Code", "User")];
+	return [
+		...userDirs.map((dir) => join(dir, "mcp.json")),
+		...hostDirectories(input).map((dir) => join(dir, ".vscode", "mcp.json")),
+	];
+}
+
+/**
+ * Cursor `beforeMCPExecution`: give core an explicit server identity so MCP
+ * server/tool policy applies. The host's server field is used when present;
+ * otherwise the declared server is matched by URL, command line, or the
+ * configuration key Cursor puts in `command`; as a last resort the URL host or
+ * command line is used (it never invents a configured name).
+ */
+async function normalizeCursorMcpExecution(payload: unknown): Promise<NormalizedHookCall | undefined> {
+	if (!payload || typeof payload !== "object" || Array.isArray(payload)) return undefined;
+	const input = payload as Record<string, unknown>;
+	const sessionId = cursorSessionId(input);
+	const declared = asString(input.mcp_server_name) ?? asString(input.server) ?? asString(input.server_name);
+	if (declared?.trim()) return normalizeCursorMcpCall(input, sessionId, declared);
+	const endpoint = {
+		command: asString(input.command),
+		url: asString(input.url) ?? asString(input.mcp_server_url),
+	};
+	const known = await loadKnownMcpServers(cursorMcpConfigPaths(input));
+	const server =
+		matchMcpServerDeclaration(known.declarations, endpoint) ?? fallbackMcpServerIdentity(endpoint);
+	return normalizeCursorMcpCall(input, sessionId, server ?? undefined);
+}
+
+/**
+ * VS Code names MCP tools `mcp_<server>_<tool>`. Server names may contain `_`,
+ * so the split uses the declared servers and the policy's server ids; the call
+ * is then evaluated under the canonical `mcp__<server>__<tool>` name with its
+ * arguments unchanged, exactly like a Claude Code MCP call.
+ */
+async function withVsCodeMcpIdentity(
+	call: NormalizedHookCall,
+	payload: Record<string, unknown>,
+): Promise<NormalizedHookCall> {
+	if (!call.toolName.startsWith("mcp_") || call.toolName.startsWith("mcp__")) return call;
+	const known = await loadKnownMcpServers(vsCodeMcpConfigPaths(payload));
+	const identity = mcpIdentityFromVsCodeName(call.toolName, known.names);
+	return identity ? { ...call, toolName: canonicalMcpToolName(identity) } : call;
+}
+
 function normalizeCursorMcpCall(
 	input: Record<string, unknown>,
 	sessionId: string,
+	resolvedServer?: string,
 ): NormalizedHookCall | undefined {
 	const parsedToolInput = parseUnknownObject(input.tool_input);
-	const serverName = asString(input.mcp_server_name) ?? asString(input.server);
+	const serverName = resolvedServer ?? asString(input.mcp_server_name) ?? asString(input.server);
 	const mcpToolName = asString(input.tool_name);
 	if (!mcpToolName?.trim() || !parsedToolInput) return undefined;
 	const toolInput: Record<string, unknown> = {
@@ -995,7 +1148,25 @@ function withDashboardNotice(reason: string, evaluation: HookEvaluation): string
 	return evaluation.dashboardNotice ? `${reason}\n${evaluation.dashboardNotice}` : reason;
 }
 
-function toCursorResponse(
+/**
+ * Cursor events whose response schema supports `permission: "ask"` (a native
+ * approval prompt), per Cursor's hook documentation:
+ *
+ * | Event                  | permission values      | AIDR `ask` maps to |
+ * |------------------------|------------------------|--------------------|
+ * | `beforeShellExecution` | allow / deny / ask     | ask                |
+ * | `beforeMCPExecution`   | allow / deny / ask     | ask                |
+ * | `beforeReadFile`       | allow / deny           | deny               |
+ * | `preToolUse`           | allow / deny           | deny               |
+ *
+ * Under `operator_approvals.dashboard_only` every event maps `ask` to deny.
+ */
+const CURSOR_ASK_EVENTS: ReadonlySet<CursorEventName> = new Set([
+	"beforeShellExecution",
+	"beforeMCPExecution",
+]);
+
+export function toCursorResponse(
 	evaluation: HookEvaluation,
 	eventName: CursorEventName,
 ): Record<string, unknown> {
@@ -1015,17 +1186,16 @@ function toCursorResponse(
 	}
 
 	// dashboard_only: a native "ask" would let the local user approve, so block.
+	// An event whose output schema has no "ask" gets an explicit deny instead of
+	// a permission value the host cannot enforce (see CURSOR_ASK_EVENTS).
 	const decision =
-		verdict.decision === "ask" && (eventName === "preToolUse" || evaluation.dashboardOnly)
+		verdict.decision === "ask" && (!CURSOR_ASK_EVENTS.has(eventName) || evaluation.dashboardOnly)
 			? "deny"
 			: verdict.decision;
 	const reason = withDashboardNotice(truncateReason(verdict), evaluation);
 	const agentMessage = `Singularity AIDR ${decision === "deny" ? "blocked" : "flagged"} this action (${verdict.severity}).`;
 
 	return {
-		// Cursor preToolUse does not support the Claude-style "ask" approval
-		// response. Explicitly deny review-required actions instead of returning a
-		// permission value the host cannot enforce.
 		decision,
 		permission: decision,
 		reason,
@@ -1154,10 +1324,10 @@ function parseUnknownObject(value: unknown): Record<string, unknown> | undefined
 /**
  * Top-level-looking `hook_event_name` values at either end of an oversized payload.
  * Inside a JSON string every quote is escaped, so `"hook_event_name":"…"` can only
- * match a real object key; a nested key could at worst make a tool event answer
- * like a blocked prompt, never let a prompt through.
+ * match a real object key. Only a single unambiguous event name is returned; a
+ * nested key could at worst select another event's block, never an allow.
  */
-function sniffPromptEvent(head: Buffer, tail: Buffer, tailOffset: number): string | undefined {
+function sniffEvent(head: Buffer, tail: Buffer, tailOffset: number): string | undefined {
 	const pattern = /"(?:hook_event_name|hookEventName)"\s*:\s*"([A-Za-z]+)"/g;
 	// UTF-16LE text must be decoded from an even byte offset.
 	const alignedTail = tailOffset % 2 === 0 ? tail : tail.subarray(1);
@@ -1170,8 +1340,7 @@ function sniffPromptEvent(head: Buffer, tail: Buffer, tailOffset: number): strin
 	const events = new Set(
 		texts.flatMap((text) => [...text.matchAll(pattern)].map((match) => match[1] ?? "")),
 	);
-	const prompt = [...events].filter((event) => PROMPT_EVENTS.has(event));
-	return prompt.length === 1 && events.size === 1 ? prompt[0] : undefined;
+	return events.size === 1 ? [...events][0] : undefined;
 }
 
 async function readStdinJson(): Promise<unknown> {
@@ -1207,7 +1376,7 @@ async function readStdinJson(): Promise<unknown> {
 		process.stdin.on("end", () =>
 			resolve(
 				exceeded
-					? new OversizedHookInput(sniffPromptEvent(head, tail, byteLength - tail.length))
+					? new OversizedHookInput(sniffEvent(head, tail, byteLength - tail.length))
 					: Buffer.concat(chunks),
 			),
 		);
@@ -1219,7 +1388,7 @@ async function readStdinJson(): Promise<unknown> {
 		return value.charCodeAt(0) === 0xfeff ? value.slice(1) : value;
 	}
 
-	function tryParseJson(value: string): unknown | undefined {
+	function tryParseJson(value: string): unknown {
 		const trimmed = stripBom(value).trim();
 		if (!trimmed) {
 			return {};
@@ -1231,36 +1400,84 @@ async function readStdinJson(): Promise<unknown> {
 		}
 	}
 
-	const asUtf8 = raw.toString("utf8");
-	const parsedUtf8 = tryParseJson(asUtf8);
-	if (parsedUtf8 !== undefined) {
-		return parsedUtf8;
+	// Only strictly valid UTF-8 is read as UTF-8: invalid bytes would decode to
+	// U+FFFD, so the text inspected would differ from what the host runs.
+	if (isValidUtf8(raw)) {
+		const parsedUtf8 = tryParseJson(raw.toString("utf8"));
+		if (parsedUtf8 !== undefined) {
+			return parsedUtf8;
+		}
 	}
 
 	const asUtf16le = raw.toString("utf16le");
-	const parsedUtf16le = tryParseJson(asUtf16le);
+	const parsedUtf16le = raw.length % 2 === 0 ? tryParseJson(asUtf16le) : undefined;
 	if (parsedUtf16le !== undefined) {
 		return parsedUtf16le;
 	}
 
-	return {};
+	return isValidUtf8(raw) ? {} : new UndecodableHookInput();
 }
 
+/** Each run answers once; a late answer after the watchdog's block is dropped. */
+let answered = false;
+
 function writeJson(payload: Record<string, unknown>): void {
+	if (answered) return;
+	answered = true;
 	process.stdout.write(`${JSON.stringify(payload)}\n`);
 }
 
+/**
+ * Hook watchdog. Both managed installers register the hook with a 30 s
+ * timeout; a hook killed by the host lets the call through uninspected, so the
+ * hook answers with a block first (default 25 s from launch,
+ * `AIDR_EXTENSION_HOOK_DEADLINE_MS` within [100, 29000]).
+ */
+function extensionHookDeadline() {
+	return {
+		envVar: "AIDR_EXTENSION_HOOK_DEADLINE_MS",
+		hostTimeoutMs: HOOK_HOST_TIMEOUT_MS.cursor,
+		defaultMs: 25_000,
+	};
+}
+
+/**
+ * Block for a run whose event is unknown or unanswered: it denies a tool call
+ * and, through the prompt-event stop fields (`continue: false`), also stops a
+ * prompt submission.
+ */
+function unansweredBlock(reason: string): Record<string, unknown> {
+	return process.argv[2] === "vscode"
+		? { ...internalVsCodeResponse(reason), continue: false, stopReason: reason }
+		: { ...internalCursorResponse("deny", reason), continue: false };
+}
+
 if (require.main === module) {
-	runCli().catch(() => {
-		// Protocol safety: emit valid JSON and never fail with non-JSON output. The
-		// failure can precede reading the payload (e.g. integrity verification), so
-		// the event is unknown: the response denies a tool call and, through the
-		// prompt-event stop fields (`continue: false`), also stops a prompt submission.
-		const reason = "Singularity AIDR hook failed; execution was denied.";
-		writeJson(
-			process.argv[2] === "vscode"
-				? { ...internalVsCodeResponse(reason), continue: false, stopReason: reason }
-				: { ...internalCursorResponse("deny", reason), continue: false },
-		);
-	});
+	const watchdog = setTimeout(
+		() => {
+			writeJson(
+				unansweredBlock(
+					"Singularity AIDR could not finish inspecting this action in time; execution was denied.",
+				),
+			);
+			exitAfterStdoutFlush(0);
+		},
+		Math.max(
+			0,
+			resolveHookDeadlineMs(extensionHookDeadline(), process.env) - (Date.now() - processStartedAt),
+		),
+	);
+	runCli()
+		.catch(() => {
+			// Protocol safety: emit valid JSON and never fail with non-JSON output. The
+			// failure can precede reading the payload (e.g. integrity verification), so
+			// the event is unknown.
+			writeJson(unansweredBlock("Singularity AIDR hook failed; execution was denied."));
+		})
+		.finally(() => {
+			clearTimeout(watchdog);
+			// Exit 0 once the answer is flushed: pending sockets or timers from the
+			// evaluation must not keep the hook alive until the host kills it.
+			exitAfterStdoutFlush(0);
+		});
 }

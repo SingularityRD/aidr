@@ -1,12 +1,22 @@
+import { homedir } from "node:os";
+import { join } from "node:path";
 import {
 	type ApprovalStore,
+	canonicalMcpToolName,
 	createHostObservation,
 	formatAskMessage,
 	formatDenyMessage,
 	guardToolCall,
+	IN_PROCESS_TOOL_CALL_DEADLINE,
+	isWellFormedToolCall,
 	type Logger,
+	loadKnownMcpServers,
 	loadProvisionedDetectorContext,
+	malformedShellCommandReason,
+	mcpIdentityFromOpenCodeName,
 	recordHostObservation,
+	resolveHookDeadlineMs,
+	withHookDeadline,
 } from "@singularityrd/aidr-core";
 import { AidrVerdictBlockError, AidrVerdictError } from "./error.js";
 import { extractFromOpenCodeTool } from "./extractors.js";
@@ -31,22 +41,93 @@ function applyRedactedArgs(
 	}
 }
 
+/** OpenCode MCP configuration: the user config and the project's config files. */
+export function openCodeMcpConfigPaths(directory?: string): string[] {
+	const userDir = join(process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config"), "opencode");
+	return [
+		join(userDir, "opencode.json"),
+		...(directory
+			? [join(directory, "opencode.json"), join(directory, ".opencode", "opencode.json")]
+			: []),
+	];
+}
+
+/**
+ * OpenCode names MCP tools `<server>_<tool>` (both sanitized, `[^A-Za-z0-9_-]`
+ * → `_`), and built-in and plugin tools also contain `_`. A tool is treated as
+ * MCP only when its name starts with a declared or policy-named server, and is
+ * then evaluated under the canonical `mcp__<server>__<tool>` name so MCP
+ * server/tool policy applies. The arguments are not changed.
+ */
+async function policyToolName(toolName: string, directory?: string): Promise<string> {
+	if (!toolName.includes("_")) return toolName;
+	const known = await loadKnownMcpServers(openCodeMcpConfigPaths(directory));
+	const identity = mcpIdentityFromOpenCodeName(toolName, known.names);
+	return identity ? canonicalMcpToolName(identity) : toolName;
+}
+
+const DEADLINE_MESSAGE =
+	"Singularity AIDR could not finish evaluating this tool call in time; execution was denied.";
+
 export function createToolHandlers(
 	logger: Logger,
 	approvalStore: ApprovalStore,
 	threatsDir: string,
 	allowlistsDir: string,
+	options: { directory?: string } = {},
 ) {
 	const hostObservation = createHostObservation();
 	const beforeToolUse = async (
 		input: { tool: string; sessionID: string; callID: string },
 		output: { args: Record<string, unknown> },
 	): Promise<void> => {
-		logger.debug(`tool.execute.before hook invoked (tool=${input.tool})`);
+		// Validate the host payload before touching it: a null input or output, a
+		// missing tool name, or non-object args (undefined, string, array) cannot
+		// be judged and is denied, as every connector does (isWellFormedToolCall).
+		const tool: unknown = input && typeof input === "object" ? input.tool : undefined;
+		const rawArgs: unknown = output && typeof output === "object" ? output.args : undefined;
+		if (!isWellFormedToolCall(tool, rawArgs)) {
+			logger.error("Singularity AIDR opencode hook received a malformed tool call");
+			throw new AidrVerdictBlockError(
+				"Singularity AIDR could not identify this tool call; execution was denied.",
+			);
+		}
+		const toolName = tool as string;
+		logger.debug(`tool.execute.before hook invoked (tool=${toolName})`);
+		if (malformedShellCommandReason(toolName, rawArgs)) {
+			throw new AidrVerdictBlockError(
+				"Singularity AIDR blocked this command: it is malformed (not a string or argv, or it contains NUL or invalid UTF-8 text) and cannot be inspected reliably.",
+			);
+		}
 
+		const deadlineMs = resolveHookDeadlineMs(IN_PROCESS_TOOL_CALL_DEADLINE, process.env);
+		const evaluation = evaluate(input, output, toolName);
+		// A hung evaluation blocks the call instead of stalling the agent; the
+		// late result is ignored (its own rejection is swallowed below).
+		evaluation.catch(() => undefined);
+		const timedOut = await withHookDeadline(
+			evaluation.then(() => false),
+			deadlineMs,
+			() => true,
+		);
+		if (timedOut) {
+			logger.error("Singularity AIDR opencode hook timed out, failing closed", {
+				tool: toolName,
+				deadlineMs,
+			});
+			throw new AidrVerdictBlockError(DEADLINE_MESSAGE);
+		}
+	};
+
+	const evaluate = async (
+		input: { tool: string; sessionID: string; callID: string },
+		output: { args: Record<string, unknown> },
+		toolName: string,
+	): Promise<void> => {
 		try {
-			const args = output.args ?? {};
-			const artifacts = extractFromOpenCodeTool(input.tool, args) ?? [];
+			const args = output.args;
+			const artifacts = extractFromOpenCodeTool(toolName, args) ?? [];
+			const evaluatedToolName = await policyToolName(toolName, options.directory);
 
 			// Operator-provisioned tenant detector policy for this runtime. An
 			// unprovisioned install yields an empty context, so evaluation is
@@ -59,7 +140,7 @@ export function createToolHandlers(
 				await guardToolCall(
 					{
 						sessionId: input.sessionID,
-						toolName: input.tool,
+						toolName: evaluatedToolName,
 						toolInput: args,
 						artifacts,
 					},
@@ -77,7 +158,7 @@ export function createToolHandlers(
 			recordHostObservation(hostObservation, {
 				connector: "opencode",
 				event: "tool.execute.before",
-				toolName: input.tool,
+				toolName,
 				decision: verdict.decision,
 			});
 
@@ -110,7 +191,7 @@ export function createToolHandlers(
 			if (error instanceof AidrVerdictError) throw error;
 			logger.error("Singularity AIDR opencode hook failed closed", {
 				error: String(error),
-				tool: input.tool,
+				tool: toolName,
 			});
 			throw new AidrVerdictBlockError(
 				"Singularity AIDR could not evaluate this tool call; execution was denied.",

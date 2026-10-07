@@ -1,7 +1,9 @@
 import { readSync } from "node:fs";
+import { readBoundedStdinAsync } from "@singularityrd/aidr-core";
 
 export const MAX_POST_TOOL_INPUT_BYTES = 1024 * 1024;
 const READ_CHUNK_BYTES = 64 * 1024;
+const STRICT_UTF8 = new TextDecoder("utf-8", { fatal: true });
 
 /** Read at most the configured limit plus one byte so oversized hook input is detectable. */
 export function readBoundedStdin(fd = 0, maxBytes = MAX_POST_TOOL_INPUT_BYTES): string | null {
@@ -15,7 +17,11 @@ export function readBoundedStdin(fd = 0, maxBytes = MAX_POST_TOOL_INPUT_BYTES): 
 	while (true) {
 		const length = Math.min(buffer.length, maxBytes + 1 - total);
 		const read = readSync(fd, buffer, 0, length, null);
-		if (read === 0) return Buffer.concat(chunks, total).toString("utf8");
+		// Strict decoding: hosts serialize hook input with JSON.stringify, which
+		// always yields valid UTF-8. Invalid bytes would decode to U+FFFD and
+		// change what is inspected relative to what the host executes, so they
+		// throw and the caller fails closed.
+		if (read === 0) return STRICT_UTF8.decode(Buffer.concat(chunks, total));
 		total += read;
 		if (total > maxBytes) return null;
 		chunks.push(Buffer.from(buffer.subarray(0, read)));
@@ -35,6 +41,25 @@ export function readBoundedJson<T = unknown>(
 ): BoundedJsonResult<T> {
 	const text = readBoundedStdin(fd, maxBytes);
 	if (text === null) return { status: "oversized" };
+	try {
+		return { status: "parsed", value: parse(text) };
+	} catch {
+		return { status: "invalid" };
+	}
+}
+
+/**
+ * The entry points' stdin reader: like {@link readBoundedJson}, but it does not
+ * block the event loop, so the internal deadline still fires when the host
+ * never closes stdin. Invalid UTF-8 throws (the caller fails closed).
+ */
+export async function readStdinJson<T = unknown>(
+	maxBytes = MAX_POST_TOOL_INPUT_BYTES,
+	parse: (text: string) => T = JSON.parse,
+): Promise<BoundedJsonResult<T>> {
+	const input = await readBoundedStdinAsync(maxBytes);
+	if (input.status === "oversized") return { status: "oversized" };
+	const text = STRICT_UTF8.decode(input.bytes);
 	try {
 		return { status: "parsed", value: parse(text) };
 	} catch {

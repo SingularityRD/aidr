@@ -9,13 +9,16 @@
 
 import {
 	type Artifact,
+	createHookResponder,
 	createHostObservation,
 	describeSecureCodeWarnings,
 	evaluateToolCall,
 	extractFromToolCall,
 	formatDashboardApprovalNotice,
 	initSentry,
+	isWellFormedToolCall,
 	type Logger,
+	malformedShellCommandReason,
 	recordHostObservation,
 	resolveAskWithDashboardApproval,
 	type Verdict,
@@ -28,7 +31,7 @@ import { loadProvisionedDetectorContext } from "./detector-provisioning.js";
 import { formatBlockReason } from "./format.js";
 import {
 	MAX_PRE_TOOL_INPUT_BYTES,
-	readBoundedJson,
+	readStdinJson,
 	resolvePreToolUseDeadlineMs,
 } from "./hook-input.js";
 
@@ -156,18 +159,27 @@ function makeResponse(
 }
 
 /**
- * The hook answers exactly once. After the deadline deny has been written, a
- * late evaluation result must not append a second (possibly allowing) response.
+ * The hook answers exactly once, then exits once stdout has flushed: pending
+ * sockets or timers from the evaluation must not keep the process alive past
+ * the host timeout. The internal deadline, shorter than the host's hook
+ * timeout, denies a hung evaluation (e.g. a stalled reputation lookup) instead
+ * of letting the host kill the hook, which would let the call through
+ * uninspected. A late evaluation result after the deadline is dropped.
  */
-let responded = false;
+const responder = createHookResponder({
+	deadlineMs: resolvePreToolUseDeadlineMs(process.env),
+	onDeadline: () => ({
+		stdout: `${JSON.stringify(
+			denyResponse(
+				"Singularity AIDR could not finish inspecting this tool call in time. The action was blocked.",
+				"Singularity AIDR inspection timed out",
+			),
+		)}\n`,
+	}),
+});
 
-function respond(response: Record<string, unknown>, onWritten?: () => void): boolean {
-	if (responded) return false;
-	responded = true;
-	const line = `${JSON.stringify(response)}\n`;
-	if (onWritten) process.stdout.write(line, onWritten);
-	else process.stdout.write(line);
-	return true;
+function respond(response: Record<string, unknown>): boolean {
+	return responder.answer({ stdout: `${JSON.stringify(response)}\n` });
 }
 
 /** Fixed deny response: never echo malformed input or exception details. */
@@ -191,28 +203,26 @@ function writeInspectionFailure(): void {
 	);
 }
 
+/**
+ * Claude Code always sends a tool name and an object `tool_input`. A payload
+ * missing either (or with a null/array/string input) is not something the host
+ * sends and cannot be judged, so it is denied (the shape check every connector
+ * shares, see `isWellFormedToolCall`).
+ */
 function parseToolCall(parsed: unknown): Record<string, unknown> | null {
 	if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return null;
 	const fields = parsed as Record<string, unknown>;
-	if (
-		typeof fields.tool_name !== "string" ||
-		fields.tool_name.trim() === "" ||
-		(fields.tool_input != null &&
-			(typeof fields.tool_input !== "object" || Array.isArray(fields.tool_input)))
-	) {
-		return null;
-	}
-	return fields;
+	return isWellFormedToolCall(fields.tool_name, fields.tool_input) ? fields : null;
 }
 
 /**
  * Read and validate the hook payload from stdin under the byte ceiling. On any
  * failure the fixed deny response has already been written and null returned.
  */
-function readToolCall(): Record<string, unknown> | null {
-	let input: ReturnType<typeof readBoundedJson>;
+async function readToolCall(): Promise<Record<string, unknown> | null> {
+	let input: Awaited<ReturnType<typeof readStdinJson>>;
 	try {
-		input = readBoundedJson(0, MAX_PRE_TOOL_INPUT_BYTES);
+		input = await readStdinJson(MAX_PRE_TOOL_INPUT_BYTES);
 	} catch {
 		writeInspectionFailure();
 		return null;
@@ -238,11 +248,22 @@ async function main(): Promise<void> {
 		logger,
 	});
 
-	const toolCall = readToolCall();
+	const toolCall = await readToolCall();
 	if (!toolCall) return;
 
 	const toolName = toolCall.tool_name as string;
-	const toolInput = (toolCall.tool_input ?? {}) as Record<string, unknown>;
+	const toolInput = toolCall.tool_input as Record<string, unknown>;
+	// NUL, unpaired surrogates or U+FFFD in a shell command mean the text we
+	// inspect may not be what the shell runs: deny, never downgrade to ask.
+	if (malformedShellCommandReason(toolName, toolInput)) {
+		respond(
+			denyResponse(
+				"Singularity AIDR blocked this command: it is malformed (not a string or argv, or it contains NUL or invalid UTF-8 text) and cannot be inspected reliably.",
+				"Singularity AIDR malformed command",
+			),
+		);
+		return;
+	}
 	const sessionId = typeof toolCall.session_id === "string" ? toolCall.session_id : "unknown";
 	const toolUseId = typeof toolCall.tool_use_id === "string" ? toolCall.tool_use_id : "";
 	// Host-reported session directory: selects repository-scoped agent profiles.
@@ -265,7 +286,7 @@ async function main(): Promise<void> {
 		},
 	);
 	// The deadline already denied this call; do not record approvals for it.
-	if (responded) return;
+	if (responder.answered) return;
 
 	// Managed mode: submit the ask to the AIDR dashboard, or release it with a
 	// verified single-use approval token (this hook is one process per call, so
@@ -276,7 +297,7 @@ async function main(): Promise<void> {
 		evaluated,
 		{ agentRuntime: "claude-code", logger },
 	);
-	if (responded) return;
+	if (responder.answered) return;
 	const verdict = resolution.verdict;
 	const dashboard: DashboardNote = {
 		notice: formatDashboardApprovalNotice(resolution.dashboardApproval),
@@ -313,7 +334,8 @@ async function main(): Promise<void> {
 	// the gate's environment contract is absent, so nothing is written. Inside
 	// one it records that this connector handled the case, which is the second of
 	// the three observations the gate requires. It never writes the side-effect
-	// sentinel, because only the host's own action may create that.
+	// sentinel, because only the host's own action may create that. The record
+	// is synchronous, so it completes before the flushed answer exits.
 	recordHostObservation(hostObservation, {
 		connector: "claude-code",
 		event: "PreToolUse",
@@ -322,26 +344,6 @@ async function main(): Promise<void> {
 	});
 }
 
-// Internal deadline, shorter than the host's hook timeout: a hung evaluation
-// (e.g. a stalled reputation lookup) is denied instead of being killed by the
-// host, which would let the call through uninspected.
-const deadline = setTimeout(() => {
-	const wrote = respond(
-		denyResponse(
-			"Singularity AIDR could not finish inspecting this tool call in time. The action was blocked.",
-			"Singularity AIDR inspection timed out",
-		),
-		// Pending evaluation work may keep the event loop alive past the host
-		// timeout; the deny is on stdout, so exit once it has been flushed.
-		() => process.exit(0),
-	);
-	if (!wrote) process.exit(0);
-}, resolvePreToolUseDeadlineMs(process.env));
-
-main()
-	.catch(() => {
-		writeInspectionFailure();
-	})
-	.finally(() => {
-		clearTimeout(deadline);
-	});
+main().catch(() => {
+	writeInspectionFailure();
+});

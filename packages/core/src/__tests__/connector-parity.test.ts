@@ -196,7 +196,7 @@ const HOST_DIALECT_NOTES = {
 	codexAskIsDeny:
 		"Codex has no working `ask` verb (it fails open), so an `ask` verdict is emitted as an explicit deny.",
 	cursorPreToolUseAskIsDeny:
-		"Cursor's preToolUse response cannot pause for review, so an `ask` verdict is emitted as deny.",
+		"Cursor's preToolUse and beforeReadFile responses only take allow/deny, so an `ask` verdict is emitted as deny there.",
 	pluginSingleBlockVerb:
 		"OpenCode (throw) and OpenClaw ({ block: true }) have one block verb; an `ask` blocks with the actionId in the reason for out-of-band approval.",
 	codexToolRouting:
@@ -225,10 +225,10 @@ function expectedHostVerb(
 		case "openclaw":
 			return "deny"; // HOST_DIALECT_NOTES.pluginSingleBlockVerb
 		case "cursor":
-			// Native beforeShellExecution / beforeReadFile / beforeMCPExecution can
-			// ask; the generic preToolUse event used for alias rows cannot
+			// Native beforeShellExecution / beforeMCPExecution can ask; preToolUse
+			// (alias rows) and beforeReadFile only take allow/deny
 			// (HOST_DIALECT_NOTES.cursorPreToolUseAskIsDeny).
-			return usesCursorPreToolUse(call) ? "deny" : "ask";
+			return usesCursorPreToolUse(call) || call.kind === "read" ? "deny" : "ask";
 		default:
 			return "ask";
 	}
