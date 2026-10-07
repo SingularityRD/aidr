@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,7 +10,7 @@ import {
 	scanTarget,
 } from "@singularityrd/aidr-core";
 import { describe, expect, it, vi } from "vitest";
-import scanCommand, { runScan, type ScanDependencies } from "../commands/scan.js";
+import scanCommand, { loadScanRules, runScan, type ScanDependencies } from "../commands/scan.js";
 
 /**
  * Regression tests for `aidr scan` (the native AI-infrastructure scanner).
@@ -332,6 +332,114 @@ describe("aidr scan --code", () => {
 			expect(result.exitCode).toBe(1);
 		} finally {
 			await rm(directory, { recursive: true, force: true });
+		}
+	});
+});
+
+describe("aidr scan - incomplete bundled rules are never a clean result", () => {
+	const repoThreats = join(
+		dirname(fileURLToPath(import.meta.url)),
+		"..",
+		"..",
+		"..",
+		"..",
+		"threats",
+	);
+
+	async function brokenThreatsDir(): Promise<string> {
+		const directory = await mkdtemp(join(tmpdir(), "aidr-cli-rules-"));
+		for (const name of ["skill-scan.yaml", "ai-supply-chain.yaml", "secure-code.yaml"]) {
+			await copyFile(join(repoThreats, name), join(directory, name));
+		}
+		await writeFile(join(directory, "broken.yaml"), "- id: [unterminated\n  : : :\n");
+		return directory;
+	}
+
+	async function run(options: Parameters<typeof runScan>[0], threatsDir: string) {
+		const previousExitCode = process.exitCode;
+		const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+		const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+		process.exitCode = 0;
+		try {
+			await runScan(options, { threatsDir, upload: vi.fn() });
+			return {
+				exitCode: process.exitCode,
+				stdout: log.mock.calls.map((call) => String(call[0])).join("\n"),
+				stderr: error.mock.calls.map((call) => String(call[0])).join("\n"),
+			};
+		} finally {
+			log.mockRestore();
+			error.mockRestore();
+			process.exitCode = previousExitCode;
+		}
+	}
+
+	it("reports which rule files failed to load", async () => {
+		const threatsDir = await brokenThreatsDir();
+		try {
+			const rules = await loadScanRules(threatsDir);
+			expect(rules.incomplete).toEqual(["broken.yaml"]);
+			expect(rules.threats.length).toBeGreaterThan(0);
+			expect((await loadScanRules(repoThreats)).incomplete).toEqual([]);
+		} finally {
+			await rm(threatsDir, { recursive: true, force: true });
+		}
+	});
+
+	it("exits non-zero with a degraded-protection message when a clean skill scan used partial rules", async () => {
+		const threatsDir = await brokenThreatsDir();
+		const skill = await mkdtemp(join(tmpdir(), "aidr-cli-skill-"));
+		await writeFile(join(skill, "SKILL.md"), "Summarise the changelog.\n");
+		try {
+			const human = await run({ skill: [skill] }, threatsDir);
+			expect(human.stdout).toContain("Skill findings: 0");
+			expect(human.stderr).toContain("Threat rules incomplete — protection degraded");
+			expect(human.stderr).toContain("broken.yaml");
+			expect(human.exitCode).toBe(1);
+
+			const json = await run({ skill: [skill], json: true }, threatsDir);
+			const report = JSON.parse(json.stdout) as {
+				rulesIncomplete?: string[];
+				skills: { rulesIncomplete: string[] };
+			};
+			expect(report.rulesIncomplete).toEqual(["broken.yaml"]);
+			expect(report.skills.rulesIncomplete).toEqual(["broken.yaml"]);
+			expect(json.exitCode).toBe(1);
+		} finally {
+			await rm(threatsDir, { recursive: true, force: true });
+			await rm(skill, { recursive: true, force: true });
+		}
+	});
+
+	it("flags a code scan with partial rules and keeps exit 2 for severe findings", async () => {
+		const threatsDir = await brokenThreatsDir();
+		const project = await mkdtemp(join(tmpdir(), "aidr-cli-code-"));
+		try {
+			await writeFile(join(project, "clean.py"), "print('hello')\n");
+			const clean = await run({ code: [project] }, threatsDir);
+			expect(clean.stderr).toContain("Threat rules incomplete — protection degraded");
+			expect(clean.exitCode).toBe(1);
+
+			await writeFile(join(project, "train.py"), 'import torch\nmodel = torch.load("model.pt")\n');
+			const severe = await run({ code: [project] }, threatsDir);
+			expect(severe.stderr).toContain("Threat rules incomplete — protection degraded");
+			expect(severe.exitCode).toBe(2);
+		} finally {
+			await rm(threatsDir, { recursive: true, force: true });
+			await rm(project, { recursive: true, force: true });
+		}
+	});
+
+	it("treats a missing rule directory as incomplete", async () => {
+		const skill = await mkdtemp(join(tmpdir(), "aidr-cli-skill-"));
+		await writeFile(join(skill, "SKILL.md"), "Summarise the changelog.\n");
+		try {
+			const missing = join(tmpdir(), "aidr-cli-no-such-threats");
+			const result = await run({ skill: [skill] }, missing);
+			expect(result.stderr).toContain("Threat rules incomplete — protection degraded");
+			expect(result.exitCode).toBe(1);
+		} finally {
+			await rm(skill, { recursive: true, force: true });
 		}
 	});
 });

@@ -4,7 +4,7 @@
  */
 
 import type { SessionStartCoverageFinding, SessionStartResult } from "./session-start.js";
-import type { PluginScanResult } from "./types.js";
+import type { PluginScanResult, PluginScanUnavailableCheck } from "./types.js";
 import type { VersionCheckResult } from "./version-check.js";
 
 export interface RemotePolicyCacheInfo {
@@ -112,6 +112,29 @@ function isEnforcementStopped(disabledReason: string | undefined): boolean {
 	return !LOCAL_ENFORCEMENT_ACTIVE_REASONS.has(disabledReason);
 }
 
+/** Banner lines for one check that could not run (or ran on partial rules) for a plugin. */
+function unavailableCheckLines(pluginKey: string, check: PluginScanUnavailableCheck): string[] {
+	if (check.check === "threat_rules") {
+		return [
+			`⚠️ ${`Plugin`.padEnd(PAD)}${pluginKey}`,
+			`⚠️ Threat rules incomplete — protection degraded (${check.uncheckedCount} rule file(s) missing or unverified).`,
+			kv("Reason", check.reason),
+		];
+	}
+	const label =
+		check.check === "url_reputation"
+			? "URL reputation"
+			: check.check === "file_reputation"
+				? "File reputation"
+				: "Plugin file inspection";
+	return [
+		check.check === "plugin_files"
+			? `⚠️ ${label} was incomplete for ${check.uncheckedCount} path(s).`
+			: `⚠️ ${label} was not verified for ${check.uncheckedCount} item(s).`,
+		kv("Reason", check.reason),
+	];
+}
+
 export function formatThreatBanner(
 	version: string,
 	results: PluginScanResult[],
@@ -169,18 +192,7 @@ export function formatThreatBanner(
 		for (const check of result.unavailableChecks ?? []) {
 			if (!first) lines.push("");
 			first = false;
-			const label =
-				check.check === "url_reputation"
-					? "URL reputation"
-					: check.check === "file_reputation"
-						? "File reputation"
-						: "Plugin file inspection";
-			lines.push(
-				check.check === "plugin_files"
-					? `⚠️ ${label} was incomplete for ${check.uncheckedCount} path(s).`
-					: `⚠️ ${label} was not verified for ${check.uncheckedCount} item(s).`,
-			);
-			lines.push(kv("Reason", check.reason));
+			lines.push(...unavailableCheckLines(result.plugin.key, check));
 		}
 	}
 
@@ -238,6 +250,19 @@ function mcpCoverageGapSection(findings: SessionStartCoverageFinding[]): string[
 	return lines;
 }
 
+/** The plugin-scan banner of an enabled session start. */
+function scanHeadline(version: string, result: SessionStartResult): string {
+	if (result.scanResults.length > 0) {
+		return formatThreatBanner(version, result.scanResults, result.versionCheck);
+	}
+	if (!result.rulesIncomplete) return formatStartupClean(version, result.versionCheck);
+	// Never "No threats found" when the rule set the scan used was partial.
+	const headline = `🛡️ Singularity AIDR v${version} — Review Required`;
+	return result.versionCheck?.updateAvailable
+		? `${headline}\n${formatUpdateNotice(result.versionCheck)}`
+		: headline;
+}
+
 export function formatSessionStartMessage(version: string, result: SessionStartResult): string {
 	if (result.enabled === false) {
 		const reason = result.disabled_reason ?? "disabled";
@@ -260,11 +285,11 @@ export function formatSessionStartMessage(version: string, result: SessionStartR
 		}
 		return lines.join("\n");
 	}
-	const message =
-		result.scanResults.length > 0
-			? formatThreatBanner(version, result.scanResults, result.versionCheck)
-			: formatStartupClean(version, result.versionCheck);
 	const sections: string[] = [];
+	const message = scanHeadline(version, result);
+	if (result.rulesIncomplete) {
+		sections.push(`⚠️ Threat ${result.rulesIncomplete.message}. ${result.rulesIncomplete.reason}`);
+	}
 	if (result.posture) {
 		sections.push(mcpInventorySection(result.posture));
 		sections.push(`AI infrastructure policy assessment: ${result.posture.infrastructure}.`);

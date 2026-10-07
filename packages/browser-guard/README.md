@@ -434,7 +434,10 @@ to regenerate the dataset with stable fingerprints.
 - Free-form names and addresses without a label ("Name:", "Adres:") need the
   optional native host (NER), which ships without model weights or accuracy
   evidence. Without it, rule detection covers structured identifiers, labelled
-  fields, organisation literals and exact-data sets. NER is applied to prompts
+  fields, organisation literals and exact-data sets. Usernames, health/insurance
+  numbers and places are found only after a label (`Kullanıcı adı:`, `SGK sicil
+  no:`, `NHS number:`, `Konum:`, `City:`...); licence plates as validated Turkish
+  plates (`34 ABC 123`) or after a plate label. NER is applied to prompts
   and pastes, not to uploaded files.
 - The restore mapping survives a reload of the same tab, but not a browser
   restart, another tab, or 4 hours without a save; if the worker does not answer

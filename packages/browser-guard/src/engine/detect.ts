@@ -48,6 +48,7 @@ import {
 	type SignalCode,
 } from "../types.js";
 import { createExactDataMatcher, type ExactDataMatcher } from "./exact-data.js";
+import { detectLabelled } from "./labelled.js";
 
 /** Largest supported `maxInputChars` (the privacy normaliser's own view limit). */
 const MAX_INPUT_CHARS_LIMIT = 1_048_576;
@@ -308,6 +309,19 @@ function isUrlHostEmail(f: RawFinding, urlCredentials: readonly RawFinding[]): b
 }
 
 /**
+ * The privacy layer's `name:` field rule also fires inside `username:` / `kullanıcı adı:` and
+ * reads the account name as a PERSON. When the labelled USERNAME detector (enabled) claims the
+ * same value, that contextual PERSON span is the same value under the wrong type.
+ */
+function isUsernameAsPerson(f: RawFinding, usernames: readonly RawFinding[]): boolean {
+	return (
+		f.type === "PERSON" &&
+		f.evidence === "context" &&
+		usernames.some((u) => u.start === f.start && u.end >= f.end)
+	);
+}
+
+/**
  * Tightens rule spans (source offsets) so a reversible placeholder replaces only the value:
  * - a labelled field (`Email: a@b.com, card ...`) runs to the end of the line in the privacy
  *   layer; when a validated/pattern value of the same type starts the field, clip the field to it
@@ -334,8 +348,10 @@ function refineSpans(text: string, raw: readonly RawFinding[]): RawFinding[] {
 		if (end <= start) return [];
 		return [start === f.start && end === f.end ? f : { ...f, start, end }];
 	};
+	const usernames = rules.filter((f) => f.type === "USERNAME");
 	return raw.flatMap((f) => {
 		if (f.source !== "rule") return [f];
+		if (isUsernameAsPerson(f, usernames)) return [];
 		return isUrlHostEmail(f, urlCredentials) ? [] : refine(f);
 	});
 }
@@ -444,6 +460,10 @@ class Scan {
 			// A rule aborted on this view; keep what was found and report the gap.
 			this.incomplete = true;
 		}
+		// Labelled free-text USERNAME / HEALTH_ID / LICENSE_PLATE / LOCATION (engine/labelled.ts).
+		detectLabelled(patched.text, enabled, (a, b, type, score, evidence) =>
+			this.pushView(view, [a, b], type, score, evidence, "rule"),
+		);
 		matcher?.scan(foldI(view.text), (a, b, type) =>
 			this.pushView(view, [a, b], type, 1, "dictionary", "literal"),
 		);

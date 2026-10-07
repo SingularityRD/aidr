@@ -1415,8 +1415,12 @@ export {
 // Session start scan pipeline
 export {
 	fromCachedFinding,
+	RULES_INCOMPLETE_MESSAGE,
 	runSessionStartScan,
+	runSessionStartScanWithReport,
+	type SessionStartRulesIncomplete,
 	type SessionStartScanContext,
+	type SessionStartScanReport,
 	toAuditFindingData,
 	toFindingData,
 } from "./session-start-scan.js";

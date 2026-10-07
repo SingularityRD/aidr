@@ -49,7 +49,7 @@ export {
 	resolveDataDirs,
 } from "./bundled-dirs.js";
 // SDK client and config exports
-export { AIDRClient } from "./client.js";
+export { AIDRClient, DEGRADED_METADATA_KEY } from "./client.js";
 export type {
 	CheckRequest,
 	CheckResult,

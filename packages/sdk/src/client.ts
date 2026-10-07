@@ -9,12 +9,13 @@ import {
 	type Logger,
 	loadConfig,
 	loadManagedState,
-	loadThreats,
+	loadThreatsWithReport,
 	loadTrustedDomains,
 	managedStatePath,
 	nullLogger,
 	type ResponseBarrierInspection,
 	type Threat,
+	type ThreatLoadError,
 	type TrustedDomain,
 	UrlCheckClient,
 	type Verdict,
@@ -52,6 +53,15 @@ function formatSearched(paths: string[]): string {
 		: "  (none)";
 }
 
+/** Metadata key set on every result produced while bundled rules are incomplete. */
+export const DEGRADED_METADATA_KEY = "degraded";
+const RULES_INCOMPLETE_REASON = "rules incomplete — protection degraded";
+
+/** Distinct rule file basenames named by load errors. */
+function ruleFiles(errors: readonly ThreatLoadError[]): string[] {
+	return [...new Set(errors.map((error) => error.file.split(/[\\/]/).pop() ?? error.file))];
+}
+
 /**
  * AIDRClient - Main SDK client for security checks
  */
@@ -66,6 +76,8 @@ export class AIDRClient {
 	private listeners: Map<string, Set<EventListener>> = new Map();
 	private retryDelays = [1000, 2000, 4000];
 	private threats: Threat[] = [];
+	/** Bundled rule files/rules that did not load or verify; non-empty means degraded. */
+	private ruleErrors: ThreatLoadError[] = [];
 	private trustedDomains: TrustedDomain[] = [];
 	private dataDirs?: DataDirResolution;
 	private initialized = false;
@@ -149,8 +161,15 @@ export class AIDRClient {
 		const searchedAllowlists = dataDirs.searchedPaths.allowlists;
 
 		let threats: Threat[];
+		let ruleErrors: ThreatLoadError[];
 		try {
-			threats = await loadThreats(dataDirs.threatsDir, this.logger);
+			// The reporting loader: a corrupt, emptied or unverified rule file is absent from
+			// `threats`, so it must be known here rather than look like "nothing matched".
+			const report = await loadThreatsWithReport(dataDirs.threatsDir, this.logger, {
+				manifest: {},
+			});
+			threats = report.threats;
+			ruleErrors = report.errors;
 		} catch (error) {
 			throw new AIDRInitError(
 				`Singularity AIDR cannot initialise: failed to load threat rules from ${dataDirs.threatsDir} ` +
@@ -191,7 +210,13 @@ export class AIDRClient {
 			);
 		}
 
+		if (ruleErrors.length > 0) {
+			this.logger.warn(
+				`AIDR client: ${RULES_INCOMPLETE_REASON} (${ruleFiles(ruleErrors).join(", ")}); every result is marked degraded`,
+			);
+		}
 		this.threats = threats;
+		this.ruleErrors = ruleErrors;
 		this.trustedDomains = trustedDomains;
 		this.heuristics = new HeuristicsEngine(this.threats, this.trustedDomains);
 		this.dataDirs = dataDirs;
@@ -210,6 +235,48 @@ export class AIDRClient {
 	 */
 	getDataDirs(): DataDirResolution | undefined {
 		return this.dataDirs;
+	}
+
+	/**
+	 * Bundled rule files (or rules) that did not load or verify at `init()`. Non-empty means
+	 * every check is degraded: results carry `metadata.degraded` and are never a clean `allow`.
+	 */
+	getRuleLoadErrors(): readonly ThreatLoadError[] {
+		return this.ruleErrors;
+	}
+
+	/** True when the bundled rules are incomplete ("rules incomplete — protection degraded"). */
+	isDegraded(): boolean {
+		return this.ruleErrors.length > 0;
+	}
+
+	/**
+	 * With incomplete rules a result cannot be clean: `allow` becomes `ask` (a human decides, the
+	 * same downgrade the evaluator applies) and every result carries the degraded flag.
+	 */
+	private _applyRuleDegradation(result: CheckResult): CheckResult {
+		if (this.ruleErrors.length === 0) return result;
+		const files = ruleFiles(this.ruleErrors);
+		const metadata = {
+			...result.metadata,
+			[DEGRADED_METADATA_KEY]: true,
+			rulesIncomplete: files,
+		};
+		const detail = `${RULES_INCOMPLETE_REASON}: bundled threat rules did not load or verify (${files.join(", ")}), so this action was NOT fully inspected.`;
+		if (result.decision !== "allow") {
+			return {
+				...result,
+				reason: result.reason ? `${result.reason} ${detail}` : detail,
+				metadata,
+			};
+		}
+		return {
+			allowed: false,
+			decision: "ask",
+			confidence: 1,
+			reason: `${detail} This is not a clean result.`,
+			metadata,
+		};
 	}
 
 	/**
@@ -320,7 +387,10 @@ export class AIDRClient {
 				heuristicMatches: this.heuristics?.match([{ type: "content", value: text }]) ?? [],
 				urlCheckResults: [],
 			});
-			if (verdict.decision !== "allow") throw new AIDRPrivacyTextError("PRIVACY_SEND_BLOCKED");
+			// Incomplete rules: this text was not fully inspected, so it is not sent.
+			if (verdict.decision !== "allow" || this.ruleErrors.length > 0) {
+				throw new AIDRPrivacyTextError("PRIVACY_SEND_BLOCKED");
+			}
 			this.#privacyGateway ??= loadPrivacyTextGateway({
 				...gatewayOptions,
 				credentials: async () => {
@@ -364,9 +434,14 @@ export class AIDRClient {
 	}
 
 	/**
-	 * Internal check implementation
+	 * Internal check implementation; every path (cache hits included) goes through the
+	 * incomplete-rules downgrade.
 	 */
 	private async _performCheck(request: CheckRequest): Promise<CheckResult> {
+		return this._applyRuleDegradation(await this._performRuleCheck(request));
+	}
+
+	private async _performRuleCheck(request: CheckRequest): Promise<CheckResult> {
 		let installed: Config;
 		try {
 			installed = await loadConfig();
@@ -458,8 +533,9 @@ export class AIDRClient {
 			return indeterminate;
 		}
 		// An incomplete reputation result must not be cached as clean (or as if
-		// all enabled checks had completed).
-		if (this.cache && !urlLegUnavailableReason) {
+		// all enabled checks had completed); neither may a verdict from incomplete rules,
+		// since the cache file is shared with clients that loaded the full rule set.
+		if (this.cache && !urlLegUnavailableReason && this.ruleErrors.length === 0) {
 			const isMalicious = verdict.decision === "deny";
 			this.cache.putUrl(
 				cacheKey,

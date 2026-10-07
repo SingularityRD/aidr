@@ -11,6 +11,7 @@ import {
 	type ScanResult,
 	type SignalCode,
 } from "../types.js";
+import { BENIGN_SNIPPETS } from "./helpers/benign-corpus.js";
 
 // Credential-shaped fixtures are assembled at runtime so repository secret scanners do not
 // mistake these obviously fake values for real credentials.
@@ -216,26 +217,7 @@ describe("detection engine: literals", () => {
 });
 
 describe("detection engine: false-positive guards", () => {
-	const negatives: Array<[string, string]> = [
-		["git sha", "fixed in commit 9fceb02d0ae598e95dc970b74767f19372d61af8 yesterday"],
-		["short sha", "see a1b2c3d for details"],
-		["uuid", "request id 550e8400-e29b-41d4-a716-446655440000 failed"],
-		["sha256", "sha256 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 ok"],
-		["unix epoch", "created_at 1727136000 and updated 1727136000123 ms"],
-		["epoch ms luhn-valid", "timestamp 1727136000125 recorded"],
-		["iso dates", "between 2026-09-24 and 2026-10-01T12:30:00Z the job ran"],
-		[
-			"prices and orders",
-			"Order #100234 total $1,299.99 (qty 3), invoice INV-2026-00042, 1.250,00 TL",
-		],
-		["semver", "upgrade from v1.2.3 to 2.10.0-beta.1 and node 22.12.0"],
-		[
-			"base64 blob",
-			`data:image/png;base64,${"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==".repeat(4)}`,
-		],
-		["long hex", `digest ${"ab12".repeat(32)} end`],
-	];
-	for (const [name, text] of negatives) {
+	for (const [name, text] of BENIGN_SNIPPETS) {
 		it(`does not flag ${name}`, async () => {
 			const result = await scan(text);
 			expect(spans(text, result)).toEqual([]);

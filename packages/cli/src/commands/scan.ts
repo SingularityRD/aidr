@@ -11,7 +11,7 @@ import {
 	describePostureUploadError,
 	fingerprintCount,
 	loadConfig,
-	loadThreatsFromDirs,
+	loadThreatsFromDirsWithReport,
 	loadTrustedModelSources,
 	newPostureScanId,
 	type PluginScanResult,
@@ -22,6 +22,7 @@ import {
 	scanPlugin,
 	scanTargets,
 	skillRiskTypeForThreatId,
+	type Threat,
 	uploadPostureEvents,
 } from "@singularityrd/aidr-core";
 import { resolveBundledDataDirs } from "../utils/test-protection.js";
@@ -101,13 +102,18 @@ export async function runScan(
 		targets.length > 0
 			? await scanTargets(targets, { timeoutMs, concurrency, allowPublicTargets: allowPublic })
 			: null;
-	const skillResults = skills.length > 0 ? await scanSkills(skills, dependencies.threatsDir) : null;
+	const skillResults =
+		skills.length > 0
+			? await scanSkills(skills, dependencies.threatsDir, dependencies.configPath)
+			: null;
 	const codeResults = codePaths.length > 0 ? await scanCode(codePaths, dependencies) : null;
 
 	if (summary && options.saveReport)
 		await atomicWriteJson(resolvePath(options.saveReport), summary);
 
 	printResults(Boolean(options.json), summary, skillResults, targets.length, codeResults);
+	// stderr in both modes, so --json stdout stays parseable.
+	warnRulesIncomplete(incompleteRules(skillResults, codeResults));
 	setExitCode(summary, skillResults, codeResults);
 
 	if (options.upload) {
@@ -118,38 +124,86 @@ export async function runScan(
 	}
 }
 
+/** `--json` output: the infra summary alone, or every leg plus any incomplete rule files. */
+function jsonReport(
+	summary: AigInfraScanSummary | null,
+	skillResults: SkillScanReport | null,
+	codeResults: CodeScanResults | null,
+): unknown {
+	if (!skillResults && !codeResults) return summary;
+	const rulesIncomplete = incompleteRules(skillResults, codeResults);
+	return {
+		infra: summary,
+		...(skillResults ? { skills: skillResults } : {}),
+		...(codeResults ? { code: codeResults.reports } : {}),
+		...(rulesIncomplete.length > 0 ? { rulesIncomplete } : {}),
+	};
+}
+
 function printResults(
 	json: boolean,
 	summary: AigInfraScanSummary | null,
 	skillResults: SkillScanReport | null,
 	targetCount: number,
-	codeResults: CodeScanReport[] | null = null,
+	codeResults: CodeScanResults | null = null,
 ): void {
 	if (json) {
-		const combined =
-			skillResults || codeResults
-				? {
-						infra: summary,
-						...(skillResults ? { skills: skillResults } : {}),
-						...(codeResults ? { code: codeResults } : {}),
-					}
-				: summary;
-		console.log(JSON.stringify(combined, null, 2));
+		console.log(JSON.stringify(jsonReport(summary, skillResults, codeResults), null, 2));
 		return;
 	}
 	if (summary) printHumanSummary(summary, targetCount);
 	if (skillResults) printSkillSummary(skillResults);
-	if (codeResults) printCodeSummary(codeResults);
+	if (codeResults) printCodeSummary(codeResults.reports);
 }
 
-async function scanCode(
-	paths: string[],
-	dependencies: ScanDependencies,
-): Promise<CodeScanReport[]> {
+/** The bundled rules a scan runs with, and the rule files that did not load or verify. */
+interface ScanRules {
+	threats: Threat[];
+	/** Rule files (or the unreadable directory) missing from `threats`; empty when complete. */
+	incomplete: string[];
+}
+
+/**
+ * Loads the bundled rules with the loader that reports load and integrity errors (the same one
+ * the evaluator uses). A rule file that is corrupt, emptied or fails the artifact manifest is
+ * absent from `threats`, so the scan must say so instead of reporting "no rule matched".
+ */
+export async function loadScanRules(threatsDir: string, configPath?: string): Promise<ScanRules> {
+	const config = await loadConfig(configPath).catch(() => null);
+	const report = await loadThreatsFromDirsWithReport([threatsDir], undefined, {
+		manifest: { publicKeysPem: config?.integrity?.public_keys_pem ?? [] },
+	});
+	const incomplete = report.bundledUnavailable
+		? [threatsDir]
+		: [...new Set(report.bundledErrors.map((error) => basename(error.file)))];
+	return { threats: report.threats, incomplete };
+}
+
+/** Rule files missing from either leg, for the warning and the exit status. */
+function incompleteRules(skills: SkillScanReport | null, code: CodeScanResults | null): string[] {
+	return [...new Set([...(skills?.rulesIncomplete ?? []), ...(code?.rulesIncomplete ?? [])])];
+}
+
+function warnRulesIncomplete(files: string[]): void {
+	if (files.length === 0) return;
+	const shown =
+		files.slice(0, 5).join(", ") + (files.length > 5 ? `, +${files.length - 5} more` : "");
+	console.error(
+		`⚠️  Threat rules incomplete — protection degraded: ${files.length} rule file(s) did not load or verify (${shown}).\n` +
+			"    These results are NOT complete and are not a clean result. Reinstall the AIDR CLI.\n",
+	);
+}
+
+interface CodeScanResults {
+	reports: CodeScanReport[];
+	rulesIncomplete: string[];
+}
+
+async function scanCode(paths: string[], dependencies: ScanDependencies): Promise<CodeScanResults> {
 	const bundled = resolveBundledDataDirs();
 	const threatsDir = dependencies.threatsDir ?? bundled.threatsDir;
 	const allowlistsDir = dependencies.allowlistsDir ?? bundled.allowlistsDir;
-	const threats = existsSync(threatsDir) ? await loadThreatsFromDirs([threatsDir]) : [];
+	const { threats, incomplete } = await loadScanRules(threatsDir, dependencies.configPath);
 	// An unreadable configuration falls back to the shipped defaults: no extra
 	// trusted model sources and no disabled rules (the stricter reading).
 	const config = await loadConfig(dependencies.configPath).catch(() => null);
@@ -163,7 +217,7 @@ async function scanCode(
 			}),
 		);
 	}
-	return reports;
+	return { reports, rulesIncomplete: incomplete };
 }
 
 function printCodeReport(report: CodeScanReport): void {
@@ -218,11 +272,17 @@ interface SkillScanReport {
 	/** Paths that could not be scanned at all; never presented as clean. */
 	missing: string[];
 	rules: number;
+	/** Bundled rule files that did not load or verify; never a clean result when non-empty. */
+	rulesIncomplete: string[];
 }
 
-async function scanSkills(paths: string[], threatsDirOverride?: string): Promise<SkillScanReport> {
+async function scanSkills(
+	paths: string[],
+	threatsDirOverride?: string,
+	configPath?: string,
+): Promise<SkillScanReport> {
 	const threatsDir = threatsDirOverride ?? resolveBundledDataDirs().threatsDir;
-	const threats = existsSync(threatsDir) ? await loadThreatsFromDirs([threatsDir]) : [];
+	const { threats, incomplete } = await loadScanRules(threatsDir, configPath);
 	const rules = threats.filter(
 		(threat) =>
 			threat.matchOn.has("plugin_content") || threat.matchOn.has("plugin_orphan_bytecode"),
@@ -243,7 +303,7 @@ async function scanSkills(paths: string[], threatsDirOverride?: string): Promise
 			),
 		);
 	}
-	return { results, missing, rules };
+	return { results, missing, rules, rulesIncomplete: incomplete };
 }
 
 function printUsage(): void {
@@ -447,10 +507,7 @@ function reportUpload(result: PostureUploadResult, json: boolean): void {
  */
 export function scanExitCode(summary: AigInfraScanSummary): 0 | 1 | 2 {
 	if (summary.confirmedCritical > 0 || summary.confirmedHigh > 0) return 2;
-	if (
-		summary.unconfirmedFindings > 0 ||
-		summary.targets.some((target) => target.error !== null)
-	) {
+	if (summary.unconfirmedFindings > 0 || summary.targets.some((target) => target.error !== null)) {
 		return 1;
 	}
 	return 0;
@@ -460,8 +517,9 @@ export function scanExitCode(summary: AigInfraScanSummary): 0 | 1 | 2 {
 function setExitCode(
 	summary: AigInfraScanSummary | null,
 	skills: SkillScanReport | null,
-	code: CodeScanReport[] | null = null,
+	codeResults: CodeScanResults | null = null,
 ): void {
+	const code = codeResults?.reports ?? null;
 	const skillSevere =
 		skills?.results.some((result) =>
 			result.findings.some(
@@ -490,7 +548,9 @@ function setExitCode(
 	const codeIncomplete =
 		code?.some((report) => !report.exists || report.filesSkipped > 0 || report.rules === 0) ??
 		false;
-	process.exitCode = infra === 1 || skillIncomplete || codeIncomplete ? 1 : 0;
+	// Bundled rules that did not load or verify: the scan is degraded, never a clean 0.
+	const rulesIncomplete = incompleteRules(skills, codeResults).length > 0;
+	process.exitCode = infra === 1 || skillIncomplete || codeIncomplete || rulesIncomplete ? 1 : 0;
 }
 
 export default scanCommand;

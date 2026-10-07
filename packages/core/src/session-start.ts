@@ -42,7 +42,11 @@ import {
 } from "./mcp-discovery.js";
 import type { McpInventoryCoverageStatus } from "./mcp-inventory.js";
 import { inspectRemoteRuntimePolicyCache } from "./remote-policy.js";
-import { runSessionStartScan } from "./session-start-scan.js";
+import {
+	runSessionStartScanWithReport,
+	type SessionStartRulesIncomplete,
+	type SessionStartScanReport,
+} from "./session-start-scan.js";
 import type { AgentRuntime, Logger, PluginInfo, PluginScanResult } from "./types.js";
 import { nullLogger } from "./types.js";
 import { checkForUpdate, type VersionCheckResult, versionCheckEndpoint } from "./version-check.js";
@@ -97,6 +101,11 @@ export interface SessionStartResult {
 		expires_at?: string;
 	};
 	scanResults: PluginScanResult[];
+	/**
+	 * Set when the bundled threat rules did not load or verify: "rules incomplete — protection
+	 * degraded". The session-start scan is then not a clean result even with no plugin findings.
+	 */
+	rulesIncomplete?: SessionStartRulesIncomplete;
 	versionCheck: VersionCheckResult | null;
 	posture?: {
 		mcpServers: number;
@@ -648,30 +657,8 @@ export async function runSessionStart(ctx: SessionStartContext): Promise<Session
 				.catch(() => null)
 		: Promise.resolve(null);
 
-	// Commercial build: enforce strict startup order by waiting for managed heartbeat
-	// (revocations + entitlement refresh) before scanning or loading packs.
-	if (commercial) {
-		await heartbeatPromise;
-		const [scanResults, versionCheck] = await Promise.all([
-			runSessionStartScan({
-				plugins: ctx.plugins,
-				threatsDir: ctx.threatsDir,
-				allowlistsDir: ctx.allowlistsDir,
-				aidrVersion: ctx.version,
-				logger,
-				configPath: ctx.configPath,
-				scanCachePath: ctx.scanCachePath,
-				checkUrls: ctx.checkUrls,
-				checkFileHashes: ctx.checkFileHashes,
-			}),
-			versionCheckPromise,
-		]);
-		return { enabled: true, scanResults, versionCheck, posture, coverageFindings };
-	}
-
-	// Parallel: scan + version check + managed heartbeat
-	const [scanResults, versionCheck] = await Promise.all([
-		runSessionStartScan({
+	const scan = () =>
+		runSessionStartScanWithReport({
 			plugins: ctx.plugins,
 			threatsDir: ctx.threatsDir,
 			allowlistsDir: ctx.allowlistsDir,
@@ -681,10 +668,28 @@ export async function runSessionStart(ctx: SessionStartContext): Promise<Session
 			scanCachePath: ctx.scanCachePath,
 			checkUrls: ctx.checkUrls,
 			checkFileHashes: ctx.checkFileHashes,
-		}),
-		versionCheckPromise,
-		heartbeatPromise,
-	]);
+		});
+	const finish = (
+		report: SessionStartScanReport,
+		versionCheck: VersionCheckResult | null,
+	): SessionStartResult => ({
+		enabled: true,
+		scanResults: report.results,
+		...(report.rulesIncomplete ? { rulesIncomplete: report.rulesIncomplete } : {}),
+		versionCheck,
+		posture,
+		coverageFindings,
+	});
 
-	return { enabled: true, scanResults, versionCheck, posture, coverageFindings };
+	// Commercial build: enforce strict startup order by waiting for managed heartbeat
+	// (revocations + entitlement refresh) before scanning or loading packs.
+	if (commercial) {
+		await heartbeatPromise;
+		const [report, versionCheck] = await Promise.all([scan(), versionCheckPromise]);
+		return finish(report, versionCheck);
+	}
+
+	// Parallel: scan + version check + managed heartbeat
+	const [report, versionCheck] = await Promise.all([scan(), versionCheckPromise, heartbeatPromise]);
+	return finish(report, versionCheck);
 }
