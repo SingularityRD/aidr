@@ -185,13 +185,12 @@ describe("optional runtime detector wiring", () => {
 			const audit = await readFile(join(homeDir, ".singularity-aidr", "audit.jsonl"), "utf8");
 			// Local incident correlation may append derived `incident_record` lines
 			// after the verdict entry; assert on the verdict entry itself.
-			const entry =
-				audit
-					.trim()
-					.split("\n")
-					.map((line) => JSON.parse(line) as { type?: unknown; reasons: string[] })
-					.filter((parsed) => parsed.type !== "incident_record")
-					.at(-1) ?? { reasons: [] };
+			const entry = audit
+				.trim()
+				.split("\n")
+				.map((line) => JSON.parse(line) as { type?: unknown; reasons: string[] })
+				.filter((parsed) => parsed.type !== "incident_record")
+				.at(-1) ?? { reasons: [] };
 			expect(entry).toMatchObject({
 				verdict: "allow",
 				category: "dlp_redacted",
@@ -328,6 +327,9 @@ describe("optional runtime detector wiring", () => {
 		it("denies when the rewritten input newly matches a threat rule", async () => {
 			const userThreatsDir = join(homeDir, "user-threats");
 			await mkdir(userThreatsDir, { recursive: true });
+			// An absent bundled rules directory is an incomplete rule set (every
+			// non-deny verdict is held for review); this test isolates the user rule.
+			await mkdir(join(homeDir, "empty-threats"), { recursive: true });
 			await writeFile(
 				join(userThreatsDir, "redaction.yaml"),
 				[

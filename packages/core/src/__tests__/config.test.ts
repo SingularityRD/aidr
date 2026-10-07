@@ -44,7 +44,10 @@ describe("loadConfig", () => {
 		expect(config.heuristics_enabled).toBe(true);
 		expect(config.url_check.enabled).toBe(false);
 		expect(config.url_check.include_query_parameters).toBe(false);
-		expect(config.url_check.timeout_seconds).toBe(5.0);
+		// Network legs are capped below the smallest host hook budget (Codex, 10 s).
+		expect(config.url_check.timeout_seconds).toBe(3);
+		expect(config.file_check.timeout_seconds).toBe(3);
+		expect(config.package_check.timeout_seconds).toBe(3);
 		expect(config.url_check.allow_insecure_loopback).toBe(false);
 		expect(config.file_check.allow_insecure_loopback).toBe(false);
 		expect(config.file_check.enabled).toBe(false);
@@ -90,13 +93,13 @@ describe("loadConfig", () => {
 			JSON.stringify({
 				sensitivity: "paranoid",
 				heuristics_enabled: false,
-				url_check: { timeout_seconds: 10 },
+				url_check: { timeout_seconds: 2 },
 			}),
 		);
 		const config = await loadConfig(configPath);
 		expect(config.sensitivity).toBe("paranoid");
 		expect(config.heuristics_enabled).toBe(false);
-		expect(config.url_check.timeout_seconds).toBe(10);
+		expect(config.url_check.timeout_seconds).toBe(2);
 		// Defaults preserved for unset fields
 		expect(config.url_check.enabled).toBe(false);
 		expect(config.cache.enabled).toBe(true);

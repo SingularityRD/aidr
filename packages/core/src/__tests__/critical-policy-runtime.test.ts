@@ -431,7 +431,7 @@ describe("critical policy and runtime security branches", () => {
 		}
 	});
 
-	it("gates commercial evaluation when signed entitlement verification fails", async () => {
+	it("turns managed features off, but keeps local evaluation, when signed entitlement verification fails", async () => {
 		const dir = await mkdtemp(join(tmpdir(), "aidr-critical-commercial-"));
 		try {
 			const aidrDir = join(dir, ".singularity-aidr");
@@ -490,8 +490,10 @@ describe("critical policy and runtime security branches", () => {
 				{ configPath, threatsDir: THREATS_DIR, allowlistsDir: ALLOWLISTS_DIR },
 			);
 
+			// Local detection (heuristics are off in this config) found nothing, so the
+			// local verdict is returned - labelled, never as a clean managed result.
 			expect(verdict).toMatchObject({
-				decision: "ask",
+				decision: "allow",
 				category: "managed_disabled",
 				source: "managed_disabled",
 			});

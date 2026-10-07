@@ -263,7 +263,7 @@ Offline intel packs used by the policy layer.
 | `enabled` | `false` | Explicit opt-in to send URLs without credentials, query, or fragment to the reputation provider. Withheld/disabled lookups require review; they are not reported clean. |
 | `endpoint` | (built-in) | Optional override for the URL reputation endpoint (use this for self-hosted deployments) |
 | `include_query_parameters` | `false` | Explicit opt-in to send URL query parameters. URLs containing queries are otherwise withheld and require review. User info and fragments are never sent. |
-| `timeout_seconds` | `5` | Request timeout |
+| `timeout_seconds` | `3` | Request timeout. Values above 3 s (or not positive) are clamped to 3 s; see [Detection time budget](#detection-time-budget) |
 
 Example (Supabase Edge Function):
 
@@ -275,13 +275,26 @@ Example (Supabase Edge Function):
 }
 ```
 
+### Detection time budget
+
+Every connector runs inside a host hook that the host kills or ignores once its
+deadline passes; the smallest such budget among the supported hosts is Codex's
+10 s `PreToolUse` timeout. The network detection legs are therefore bounded:
+
+- each leg (`url_check`, `file_check`, `package_check`) uses at most **3 s**
+  per request (`timeout_seconds` is clamped, never rejected), and
+- all network legs of one tool call share a **6 s** budget.
+
+A leg that runs out of time is reported as unavailable, so the call is held for
+review; it is never treated as a clean result.
+
 ### `file_check`
 
 | Field | Default | Description |
 |-------|---------|-------------|
 | `enabled` | `false` | Explicit opt-in to send file SHA-256 hashes to the reputation provider |
 | `endpoint` | (built-in) | Optional override for the file reputation endpoint (use this for self-hosted deployments) |
-| `timeout_seconds` | `5` | Request timeout |
+| `timeout_seconds` | `3` | Request timeout. Values above 3 s (or not positive) are clamped to 3 s; see [Detection time budget](#detection-time-budget) |
 
 Example (Supabase Edge Function):
 
@@ -298,7 +311,7 @@ Example (Supabase Edge Function):
 | Field | Default | Description |
 |-------|---------|-------------|
 | `enabled` | `false` | Explicit opt-in to send package names to npm/PyPI. Disabled package operations are marked unverified and require review. |
-| `timeout_seconds` | `5` | Request timeout |
+| `timeout_seconds` | `3` | Request timeout. Values above 3 s (or not positive) are clamped to 3 s; see [Detection time budget](#detection-time-budget) |
 | `new_package_days` | `30` | Slopsquatting window. A package first published fewer days ago than this, with low adoption, is held for review with a slopsquatting reason. Packages younger than 7 days are always held. `0` turns the low-adoption signal off. |
 | `low_adoption_weekly_downloads` | `1000` | npm packages below this many downloads last week count as low adoption inside the window. |
 | `low_adoption_max_versions` | `3` | When download counts are unavailable (PyPI, or the npm downloads API did not answer), a package with this many published versions or fewer counts as low adoption. |
@@ -589,6 +602,15 @@ Boolean, default `true`. Set to `false` to disable all local pattern matching.
 | `ttl_malicious_seconds` | `3600` | Cache TTL for malicious verdicts (1 hour) |
 | `ttl_clean_seconds` | `86400` | Cache TTL for clean verdicts (24 hours) |
 | `path` | `~/.singularity-aidr/cache.json` | Cache file location (must remain under `~/.singularity-aidr`) |
+
+Every persisted cache entry carries an HMAC-SHA256 under a random
+per-installation key stored next to the cache (`<path>.key`, owner-only
+permissions; on Windows a protected owner/SYSTEM/Administrators ACL). An entry
+whose MAC is missing or does not verify - a hand-edited or forged entry, or one
+written by an older version - is treated as absent and the call is inspected
+again. A key that other users can read is not trusted. Code running as the same
+OS user can still read the key; the self-defense rules that deny agent access to
+the AIDR state directory are the other half of that boundary.
 
 ### `allowlist`
 
@@ -997,8 +1019,8 @@ unreachable) the call stays blocked with the reason in the message.
 | Path | Purpose |
 |------|---------|
 | `~/.singularity-aidr/config.json` | Configuration |
-| `~/.singularity-aidr/threats/` | Custom threat rules (YAML, optional) |
-| `~/.singularity-aidr/cache.json` | Verdict cache |
+| `~/.singularity-aidr/threats/` | Custom threat rules (YAML, optional). They may add rules with new IDs; a rule whose ID matches a bundled rule is logged and ignored, so custom rules cannot replace or weaken a shipped detection |
+| `~/.singularity-aidr/cache.json` | Verdict cache (entries authenticated with `cache.json.key`) |
 | `~/.singularity-aidr/allowlist.json` | User allowlist |
 | `~/.singularity-aidr/audit.jsonl` | Audit log |
 | `~/.singularity-aidr/approvals.json` | Operator approval store: pending asks and `aidr approve` approvals (HMAC-protected, `0600`) |

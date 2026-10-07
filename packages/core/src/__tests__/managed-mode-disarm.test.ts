@@ -224,9 +224,9 @@ describe("managed mode never disarms local detection while un-enrolled", () => {
 
 	// CREDENTIAL PRESENT BUT NOT VALIDATED. Validation needs a reachable control
 	// plane, so a credential-plus-disabled-control-plane is a misconfigured
-	// *enrolled* install: it reaches the licensing gate and fails closed with `ask`
-	// before local detection runs. The rule pinned here is only that it must never
-	// become a silent `allow` - which is exactly what the old code returned.
+	// *enrolled* install: it reaches the licensing gate, which turns the managed
+	// features off; local detection still runs and decides. The rule pinned here
+	// is that a destructive command must never become a silent `allow`.
 	const UNVALIDATED_CREDENTIAL: Array<[string, unknown]> = [
 		["managed with a bogus api_key", { mode: "managed", auth: { api_key: "not-a-real-key" } }],
 		[
@@ -276,11 +276,9 @@ describe("managed mode never disarms local detection while un-enrolled", () => {
 	});
 
 	it("never returns a clean allow for that configuration in the default build either", async () => {
-		// The default (non-commercial) build reports an inert verdict here rather than
-		// `ask`, because `disabled()` only escalates to `ask` for commercial builds.
-		// That is a real limitation of this configuration and is recorded in
-		// READINESS_BACKLOG.json under AIDR-015 rather than hidden: what this test
-		// guarantees is that the verdict is never a clean, unexplained `allow`.
+		// A failed licensing gate turns the managed features off and returns the
+		// local verdict. For a benign command that is an allow, and this test
+		// guarantees it is never a clean, unexplained `allow`.
 		await writeConfig({
 			mode: "managed",
 			control_plane: { enabled: false },

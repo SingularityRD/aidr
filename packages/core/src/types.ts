@@ -285,6 +285,8 @@ export interface CachedEntry extends CachedVerdict {
 	/** Required on cached URL allows so they cannot outlive their source reputation row. */
 	sourceFreshUntil?: string;
 	aidrVersion?: string;
+	/** HMAC-SHA256 under the per-installation cache key (see cache.ts); persisted entries only. */
+	mac?: string;
 }
 
 export interface CacheStore {
@@ -607,13 +609,41 @@ const ResponseConfigSchema = z.object({
 		.default({}),
 });
 
+/**
+ * Detection time budget.
+ *
+ * Every connector runs inside a host hook with its own deadline, and a hook
+ * that overruns it is killed or ignored by the host. The smallest budget among
+ * the supported hosts is Codex's 10 s PreToolUse timeout, so each network
+ * detection leg (URL, file and package reputation) is capped at
+ * {@link MAX_DETECTION_LEG_TIMEOUT_SECONDS} and all of them together at
+ * {@link MAX_DETECTION_BUDGET_SECONDS}, leaving room for rule loading, audit
+ * logging and process start-up. A leg that runs out of time is reported as
+ * unavailable (review required), never as clean. Larger configured values are
+ * clamped, not rejected: a typo in a timeout must not invalidate the config.
+ */
+export const MAX_DETECTION_LEG_TIMEOUT_SECONDS = 3;
+export const MAX_DETECTION_BUDGET_SECONDS = 6;
+
+/** Clamp a configured per-leg timeout into (0, MAX_DETECTION_LEG_TIMEOUT_SECONDS]. */
+export function clampLegTimeoutSeconds(value: number | undefined): number {
+	if (value === undefined || !Number.isFinite(value) || value <= 0) {
+		return MAX_DETECTION_LEG_TIMEOUT_SECONDS;
+	}
+	return Math.min(value, MAX_DETECTION_LEG_TIMEOUT_SECONDS);
+}
+
+const legTimeoutSeconds = () =>
+	z.number().default(MAX_DETECTION_LEG_TIMEOUT_SECONDS).transform(clampLegTimeoutSeconds);
+
 export const UrlCheckConfigSchema = z.object({
 	endpoint: z.string().optional(),
 	/** Explicitly allow plaintext HTTP to a loopback endpoint for local development. */
 	allow_insecure_loopback: z.boolean().default(false),
 	/** Explicit opt-in to sending URL query parameters to the reputation provider. */
 	include_query_parameters: z.boolean().default(false),
-	timeout_seconds: z.number().default(5.0),
+	/** Clamped to MAX_DETECTION_LEG_TIMEOUT_SECONDS (see the detection time budget). */
+	timeout_seconds: legTimeoutSeconds(),
 	/** Explicit opt-in; unavailable checks are surfaced for human review. */
 	enabled: z.boolean().default(false),
 });
@@ -651,7 +681,8 @@ export const FileCheckConfigSchema = z.object({
 	endpoint: z.string().optional(),
 	/** Explicitly allow plaintext HTTP to a loopback endpoint for local development. */
 	allow_insecure_loopback: z.boolean().default(false),
-	timeout_seconds: z.number().default(5.0),
+	/** Clamped to MAX_DETECTION_LEG_TIMEOUT_SECONDS (see the detection time budget). */
+	timeout_seconds: legTimeoutSeconds(),
 	/** Explicit opt-in to sending file SHA-256 hashes to a reputation provider. */
 	enabled: z.boolean().default(false),
 });
@@ -664,7 +695,8 @@ const VersionCheckConfigSchema = z.object({
 export const PackageCheckConfigSchema = z.object({
 	/** Explicit opt-in to sending package names to public registries. */
 	enabled: z.boolean().default(false),
-	timeout_seconds: z.number().default(5.0),
+	/** Clamped to MAX_DETECTION_LEG_TIMEOUT_SECONDS (see the detection time budget). */
+	timeout_seconds: legTimeoutSeconds(),
 	/**
 	 * Slopsquatting window: a package first published fewer than this many days
 	 * ago is held for review when its adoption is also low. Packages younger than

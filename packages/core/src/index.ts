@@ -972,6 +972,12 @@ export {
 	writeMcpSignerHealthEvidence,
 } from "./mcp-attestation.js";
 export {
+	detectMcpConfigSecrets,
+	type McpSecretFinding,
+	type McpSecretKind,
+	type McpSecretLocation,
+} from "./mcp-config-secrets.js";
+export {
 	discoverMcpServers,
 	type McpDiscoveryAttestation,
 	type McpDiscoveryAttestationOptions,
@@ -980,12 +986,6 @@ export {
 	type McpDiscoveryServer,
 	type McpSignedManifestIndex,
 } from "./mcp-discovery.js";
-export {
-	detectMcpConfigSecrets,
-	type McpSecretFinding,
-	type McpSecretKind,
-	type McpSecretLocation,
-} from "./mcp-config-secrets.js";
 export {
 	defaultMcpConfigPaths,
 	type McpInventoryCoverage,
@@ -1133,6 +1133,7 @@ export {
 	type PostureUploadResult,
 	uploadPostureEvents,
 } from "./posture-upload.js";
+export { preparePrivateLocalDirectory, preparePrivateLocalFile } from "./private-local-file.js";
 // Connector-side prompt inspection runner (config, tenant DLP, deadline, audit, failure policy)
 export {
 	inspectUserPrompt,
@@ -1170,7 +1171,6 @@ export {
 	scanPromptSafety,
 	type TenantPromptSafetyPolicy,
 } from "./prompt-safety.js";
-export { preparePrivateLocalDirectory, preparePrivateLocalFile } from "./private-local-file.js";
 export {
 	scanCachedProvisionedOutput,
 	scanProvisionedOutput,
@@ -1454,7 +1454,14 @@ export {
 	TRUNCATION_MARKER,
 } from "./terminal-text.js";
 // Threat loader
-export { loadThreats, loadThreatsFromDirs } from "./threat-loader.js";
+export {
+	loadThreatDirectory,
+	loadThreatSet,
+	loadThreats,
+	loadThreatsFromDirs,
+	type ThreatDirectoryLoad,
+	type ThreatSetLoad,
+} from "./threat-loader.js";
 // Session toxic-flow ("lethal trifecta") and behavioral chain detection
 export {
 	recordToolOutputFlow,
@@ -1569,6 +1576,7 @@ export {
 	CacheConfigSchema,
 	ConfigSchema,
 	ControlPlaneConfigSchema,
+	clampLegTimeoutSeconds,
 	DecisionSchema,
 	FileCheckConfigSchema,
 	IncidentConfigSchema,
@@ -1576,6 +1584,8 @@ export {
 	IntelConfigSchema,
 	IntelPacksConfigSchema,
 	LoggingConfigSchema,
+	MAX_DETECTION_BUDGET_SECONDS,
+	MAX_DETECTION_LEG_TIMEOUT_SECONDS,
 	nullLogger,
 	PackageCheckConfigSchema,
 	PoisoningProtectionConfigSchema,

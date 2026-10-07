@@ -90,9 +90,9 @@ import {
 	isSyncDisabled,
 	loadManagedState,
 	loadRevocationsCache,
-	revocationBindingForState,
 	managedStatePath,
 	parseSignedRevocationsFromControlPlaneBody,
+	revocationBindingForState,
 	saveEntitlementKeyringFromState,
 	saveManagedState,
 	saveRevocationsCache,
@@ -117,7 +117,7 @@ import type { TenantPromptSafetyPolicy } from "./prompt-safety.js";
 import { syncRemoteRuntimePolicy } from "./remote-policy.js";
 import type { ReputationFeedLoadOptions } from "./reputation-feed.js";
 import { inspectResponseBarrier } from "./response-barrier.js";
-import { loadThreatsFromDirs } from "./threat-loader.js";
+import { loadThreatSet } from "./threat-loader.js";
 import { normalizeToolEvaluationRequest, readFileEditPayload } from "./tool-normalization.js";
 import { applyToxicFlow } from "./toxic-flow.js";
 import { loadTrustedDomains } from "./trusted-domains.js";
@@ -133,7 +133,12 @@ import type {
 	UrlCheckResult,
 	Verdict,
 } from "./types.js";
-import { nullLogger, PoisoningProtectionConfigSchema } from "./types.js";
+import {
+	clampLegTimeoutSeconds,
+	MAX_DETECTION_BUDGET_SECONDS,
+	nullLogger,
+	PoisoningProtectionConfigSchema,
+} from "./types.js";
 import { VERSION } from "./version.js";
 
 type CachedIntelMerged = { loadedAt: number; tag: string; merged: IntelMerged };
@@ -319,6 +324,44 @@ function detectorVerdict(
 		matchedThreatId,
 		reasons: [reason],
 	};
+}
+
+/** What is left of the shared network-leg budget (see MAX_DETECTION_BUDGET_SECONDS). */
+function remainingDetectionBudgetMs(startTime: number): number {
+	return MAX_DETECTION_BUDGET_SECONDS * 1000 - (performance.now() - startTime);
+}
+
+/** A leg's timeout: its clamped configured value, never more than the budget left. */
+function legTimeoutWithinBudget(configuredSeconds: number | undefined, budgetMs: number): number {
+	return Math.max(0.001, Math.min(clampLegTimeoutSeconds(configuredSeconds), budgetMs / 1000));
+}
+
+/**
+ * Settle `work` within `budgetMs`, or reject so the caller reports the leg as
+ * unavailable. The leg's own request timeout is already bounded; this also
+ * bounds legs that issue several sequential requests.
+ */
+async function withinDetectionBudget<T>(
+	work: Promise<T>,
+	budgetMs: number,
+	leg: string,
+): Promise<T> {
+	const exhausted = `the detection time budget (${MAX_DETECTION_BUDGET_SECONDS}s) ran out before the ${leg} check completed`;
+	if (budgetMs <= 0) {
+		work.catch(() => undefined);
+		throw new Error(exhausted);
+	}
+	let timer: NodeJS.Timeout | undefined;
+	const deadline = new Promise<never>((_, reject) => {
+		timer = setTimeout(() => reject(new Error(exhausted)), budgetMs);
+		timer.unref?.();
+	});
+	try {
+		return await Promise.race([work, deadline]);
+	} finally {
+		if (timer) clearTimeout(timer);
+		work.catch(() => undefined);
+	}
 }
 
 function behavioralUnavailableVerdict(action: "ask" | "deny" | "skip", reason: string): Verdict {
@@ -1058,7 +1101,37 @@ export async function evaluateToolCall(
 	// Redaction must rewrite the payload the connector will actually execute,
 	// not the alias-expanded copy the detectors inspect.
 	const rewriteSource = context.supportsInputRewrite === true ? request.toolInput : null;
-	return runEvaluationPipeline(normalizedRequest, context, startTime, rewriteSource);
+	const verdict = await runEvaluationPipeline(normalizedRequest, context, startTime, rewriteSource);
+	return withManagedUnavailableNotice(verdict, managedUnavailableByRequest.get(normalizedRequest));
+}
+
+/**
+ * Requests evaluated with managed features switched off because the managed
+ * licensing gate failed for an installation that holds credentials. Set by the
+ * pipeline, read once the verdict is settled.
+ */
+const managedUnavailableByRequest = new WeakMap<ToolEvaluationRequest, string>();
+
+/**
+ * Local detection ran; managed features did not. The verdict is the local
+ * evaluator's own, with the reason attached so neither an operator nor a
+ * caller logging only `category` can mistake it for a fully managed result:
+ * an allow is labelled `managed_disabled` (it is not a clean managed
+ * inspection), and an ask or deny keeps its detection category and gains the
+ * notice.
+ */
+function withManagedUnavailableNotice(verdict: Verdict, reason: string | undefined): Verdict {
+	if (!reason) return verdict;
+	const notice = `AIDR managed features are unavailable (${reason}); local detection ran and this verdict reflects local rules only.`;
+	if (verdict.decision !== "allow" || verdict.category !== "none") {
+		return { ...verdict, reasons: [...verdict.reasons, notice] };
+	}
+	return {
+		...verdict,
+		category: "managed_disabled",
+		source: "managed_disabled",
+		reasons: [...verdict.reasons, notice],
+	};
 }
 
 function invalidConfigVerdict(): Verdict {
@@ -1149,9 +1222,41 @@ async function localHeuristicSignals(
 interface LoadedHeuristics {
 	engine: HeuristicsEngine;
 	threatsLoaded: number;
+	/**
+	 * Why part of the bundled rule set did not load (a corrupt, empty, missing or
+	 * unlisted rule file). Non-empty means a match-free result is not clean.
+	 */
+	bundledRuleErrors: string[];
 	/** The same rules, indexed for the code guard (`match_on: code:<language>`). */
 	codeRules: CodeRuleSet;
 	modelSources: TrustedModelSources;
+}
+
+const RULES_INCOMPLETE_CATEGORY = "rules_incomplete";
+
+/**
+ * Degrade a verdict produced with an incomplete bundled rule set: an allow
+ * becomes an ask, an ask keeps its decision and gains the explanation, and a
+ * deny (real evidence from the rules that did load) is kept as is.
+ */
+function rulesIncompleteVerdict(
+	verdict: Verdict,
+	errors: string[],
+	threatsDir: string | undefined,
+	logger: Logger,
+): Verdict {
+	if (verdict.decision === "deny" || verdict.category === "detection_unavailable") return verdict;
+	logger.error("Bundled threat rules are incomplete; non-deny verdicts are held for review", {
+		threatsDir,
+		errorCount: errors.length,
+		errors: errors.slice(0, 10),
+	});
+	const reason = `Rules incomplete: ${errors.length} bundled threat-rule problem(s) in ${threatsDir ?? "(no threats directory supplied)"} (first: ${errors[0]}). Some local rules did NOT run, so this call was not fully inspected; reinstall the connector bundle.`;
+	if (verdict.decision === "ask") return { ...verdict, reasons: [...verdict.reasons, reason] };
+	return {
+		...detectorVerdict("ask", RULES_INCOMPLETE_CATEGORY, "detection_unavailable", reason),
+		artifacts: verdict.artifacts,
+	};
 }
 
 /** The local threat rules this call is matched against, honouring `disabled_threats`. */
@@ -1161,7 +1266,8 @@ async function loadHeuristics(
 	logger: Logger,
 ): Promise<LoadedHeuristics> {
 	const userThreatsDir = context.userThreatsDir ?? resolvePath("~/.singularity-aidr/threats");
-	let threats = await loadThreatsFromDirs([context.threatsDir, userThreatsDir], logger);
+	const ruleSet = await loadThreatSet([context.threatsDir, userThreatsDir], logger);
+	let threats = ruleSet.threats;
 	if (config.disabled_threats.length > 0) {
 		const disabledSet = new Set(config.disabled_threats);
 		threats = threats.filter((t) => !disabledSet.has(t.id));
@@ -1175,6 +1281,7 @@ async function loadHeuristics(
 	return {
 		engine: new HeuristicsEngine(threats, trustedDomains, modelSources),
 		threatsLoaded: threats.length,
+		bundledRuleErrors: ruleSet.bundledErrors,
 		codeRules: new CodeRuleSet(threats, config.disabled_threats),
 		modelSources,
 	};
@@ -1469,33 +1576,6 @@ async function runEvaluationPipeline(
 	// fast path below) and what that leg then checks.
 	const manifestEdits = manifestEditInputs(request);
 
-	// Managed-only commercial behavior: without a valid auth token + signed entitlement (or offline grace),
-	// the runtime does not enforce and becomes inert (allow-only).
-	const disabled = (reason: string): Verdict =>
-		mergeAgentProfileVerdict(disabledVerdict(reason), profileVerdict);
-	const disabledVerdict = (reason: string): Verdict => {
-		if (commercial) {
-			return {
-				decision: "ask",
-				category: "managed_disabled",
-				confidence: 1.0,
-				severity: "warning",
-				source: "managed_disabled",
-				artifacts: [],
-				matchedThreatId: null,
-				reasons: [reason],
-			};
-		}
-		return {
-			...allowVerdict("managed_disabled"),
-			// Keep the category consistent with the source. A licensing disable is not a
-			// clean inspection, and a caller that logs only `category` must be able to
-			// tell the two apart.
-			category: "managed_disabled",
-			reasons: [reason],
-		};
-	};
-
 	const managedOnly = commercial || config.mode === "managed";
 	const aidrDir = resolvePath("~/.singularity-aidr");
 	const managedPath = managedStatePath();
@@ -1554,13 +1634,50 @@ async function runEvaluationPipeline(
 		return verdict;
 	}
 	// Required response control precedes licensing, policy, cache and empty-input returns.
-	if (commercial && isDegradedSafeMode()) {
-		return disabled(
-			`AIDR disabled: degraded safe mode (${getDegradedSafeModeReason() ?? "integrity"}).`,
+	// An artifact whose integrity check failed (or was revoked) cannot be trusted
+	// to inspect anything, its own rules included: fail closed for every call.
+	if (isDegradedSafeMode()) {
+		const verdict = mergeAgentProfileVerdict(
+			detectorVerdict(
+				"deny",
+				"integrity_unverified",
+				"integrity",
+				`AIDR integrity verification failed (${getDegradedSafeModeReason() ?? "integrity"}); tool execution is blocked until the connector is reinstalled.`,
+			),
+			profileVerdict,
 		);
+		await recordEarlyVerdict(request, context, config, verdict, logger, startTime);
+		return verdict;
 	}
-	if (managedLoadFailure) throw managedLoadFailure.error;
-	if (managedOnly) {
+
+	// A managed-only feature that cannot be authorised (no signed entitlement, a
+	// revoked one, a broken credential vault, a missing installation id) turns
+	// the MANAGED features off. It never turns detection off and never blocks
+	// every call: the local evaluator below still runs, and its verdict is
+	// returned with a notice (see `withManagedUnavailableNotice`). Only an
+	// integrity failure (above) fails closed for every call.
+	let managedUnavailableReason: string | null = null;
+	if (managedLoadFailure) {
+		managedUnavailableReason = `managed state could not be loaded (${managedLoadFailure.error instanceof Error ? managedLoadFailure.error.message : String(managedLoadFailure.error)})`;
+	} else if (managedOnly) {
+		managedUnavailableReason = await runManagedGate();
+	}
+	if (managedUnavailableReason) {
+		logger.warn(
+			`Managed features unavailable: ${managedUnavailableReason}. Local detection still enforces.`,
+		);
+		managedState = {};
+		token = "";
+		revocationsForIntel = null;
+		managedUnavailableByRequest.set(request, managedUnavailableReason);
+	}
+
+	/**
+	 * The managed licensing gate. Returns why managed features are unavailable,
+	 * or null when they may be used. It may refresh `managedState`, `token` and
+	 * `revocationsForIntel`; a non-null result discards them.
+	 */
+	async function runManagedGate(): Promise<string | null> {
 		const apiKey = getEffectiveManagedApiKey(config.auth.api_key, managedState);
 		const enrollToken = (config.auth.enrollment_token ?? "").trim();
 
@@ -1628,9 +1745,9 @@ async function runEvaluationPipeline(
 		// below must not be evaluated against it.
 		//
 		// Note this DOES run for an installation holding a credential that has not
-		// validated yet. An enrolled commercial install that cannot produce a signed
-		// entitlement must fail closed (see the gates below) - that is a licensing
-		// control, and it is deliberately not relaxed here.
+		// validated yet. An enrolled install that cannot produce a signed entitlement
+		// loses its managed features (see the gates below) - that is a licensing
+		// control. Local detection keeps enforcing either way.
 		if (
 			hasCredentials &&
 			!isSyncDisabled(managedState) &&
@@ -1639,10 +1756,10 @@ async function runEvaluationPipeline(
 		) {
 			try {
 				const iid = await getInstallationId(aidrDir).catch(() => undefined);
-				if (!iid) return disabled("AIDR disabled: missing installation id (iid).");
+				if (!iid) return "missing installation id (iid)";
 
 				if (!config.control_plane.enabled) {
-					return disabled("AIDR disabled: control_plane.enabled=false (managed-only build).");
+					return "control_plane.enabled=false (managed-only build)";
 				}
 				managedState = { ...managedState, last_sync_attempt_at: new Date().toISOString() };
 				await saveManagedState(managedPath, managedState);
@@ -1677,7 +1794,8 @@ async function runEvaluationPipeline(
 			}
 		}
 
-		// Require server-signed entitlements when configured and keys are present; otherwise remain inert.
+		// Require server-signed entitlements when configured and keys are present;
+		// otherwise managed features stay off (local detection still runs).
 		// This is a licensing control and applies to any installation holding credentials.
 		if (
 			hasCredentials &&
@@ -1685,7 +1803,7 @@ async function runEvaluationPipeline(
 			config.licensing.public_keys_pem.length > 0
 		) {
 			if (managedState.entitlement_alg !== "ed25519" || !isEntitlementActive(managedState)) {
-				return disabled("AIDR disabled: missing or invalid server-signed entitlement (ed25519).");
+				return "missing or invalid server-signed entitlement (ed25519)";
 			}
 		}
 
@@ -1758,7 +1876,8 @@ async function runEvaluationPipeline(
 			// Fail open.
 		}
 
-		// If revocations disabled sync or invalidated the entitlement, stay inert.
+		// If revocations disabled sync or invalidated the entitlement, managed
+		// features stay off.
 		//
 		// This is safe for an installation that never enrolled: `loadManagedState`
 		// only returns state whose signature verified against the configured public
@@ -1768,9 +1887,7 @@ async function runEvaluationPipeline(
 		// same field, and that 24h backoff is explicitly documented as leaving local
 		// protection running.
 		if (isSyncDisabled(managedState)) {
-			return disabled(
-				`AIDR disabled: managed sync is disabled (${managedState.sync_disabled_reason ?? "unknown"}).`,
-			);
+			return `managed sync is disabled (${managedState.sync_disabled_reason ?? "unknown"})`;
 		}
 		// Both signed-entitlement gates require configured keys. Without a key there is
 		// no way to verify an ed25519 entitlement, so "no entitlement" carries no
@@ -1785,9 +1902,10 @@ async function runEvaluationPipeline(
 			config.licensing.public_keys_pem.length > 0
 		) {
 			if (managedState.entitlement_alg !== "ed25519" || !isEntitlementActive(managedState)) {
-				return disabled("AIDR disabled: entitlement revoked or no longer valid (ed25519).");
+				return "entitlement revoked or no longer valid (ed25519)";
 			}
 		}
+		return null;
 	}
 
 	// Sync remote runtime policy if control plane is enabled and we have a token
@@ -1973,10 +2091,12 @@ async function runEvaluationPipeline(
 	// apart from "no rules were loaded at all".
 	let heuristicMatches: ReturnType<HeuristicsEngine["match"]> = [];
 	let threatsLoaded = 0;
+	let bundledRuleErrors: string[] = [];
 	let codeGuard: CodeGuardResult = EMPTY_CODE_GUARD_RESULT;
 	if (config.heuristics_enabled) {
 		const loaded = await loadHeuristics(context, config, logger);
 		threatsLoaded = loaded.threatsLoaded;
+		bundledRuleErrors = loaded.bundledRuleErrors;
 		heuristicMatches = loaded.engine.match(request.artifacts);
 		// Diff-aware agent-safety rules: what an edit adds to or removes from
 		// tests, CI and lint/coverage configuration (agent-safety/edit-views.ts).
@@ -2005,12 +2125,21 @@ async function runEvaluationPipeline(
 			urlLegUnavailableReason = "disabled to avoid sending URLs to an external reputation provider";
 		} else {
 			try {
+				const budgetMs = remainingDetectionBudgetMs(startTime);
 				const client = new UrlCheckClient(
-					{ ...config.url_check, reputationFeed: context.reputationFeed },
+					{
+						...config.url_check,
+						timeout_seconds: legTimeoutWithinBudget(config.url_check.timeout_seconds, budgetMs),
+						reputationFeed: context.reputationFeed,
+					},
 					logger,
 					token,
 				);
-				urlCheckResults = await client.checkUrls(urlsToCheck);
+				urlCheckResults = await withinDetectionBudget(
+					client.checkUrls(urlsToCheck),
+					budgetMs,
+					"URL reputation",
+				);
 			} catch (error) {
 				if (error instanceof DetectionLegUnavailableError && error.leg === "url_reputation") {
 					urlLegUnavailable = true;
@@ -2022,13 +2151,17 @@ async function runEvaluationPipeline(
 						reason: error.reason,
 						uncheckedCount: error.uncheckedCount,
 					});
-				} else if (context.reputationFeed) {
-					// A configured signed feed must never be silently skipped, so any
-					// other failure while it is configured is still an unavailable leg.
+				} else {
+					// Anything else - the client constructor rejecting the configured
+					// endpoint (unparsable URL, plain HTTP, credentials in it), a
+					// signed-feed load error, an unexpected exception - means these
+					// URLs were NOT checked. A misconfigured leg is an unavailable leg,
+					// exactly like a disabled one; it is never a clean result.
 					urlLegUnavailable = true;
-					urlLegUnavailableReason = error instanceof Error ? error.message : String(error);
-					logger.warn("Configured signed URL feed did not provide complete inspection", {
+					urlLegUnavailableReason = `the URL reputation leg failed (${error instanceof Error ? error.message : String(error)})`;
+					logger.warn("URL reputation leg could not run; URLs were NOT checked", {
 						errorType: error instanceof Error ? error.name : typeof error,
+						signedFeed: context.reputationFeed !== undefined,
 					});
 				}
 			}
@@ -2046,6 +2179,7 @@ async function runEvaluationPipeline(
 		revocationsForIntel,
 		context.reputationFeed,
 		providerInspectionAllowed,
+		startTime,
 	);
 
 	// AMSI scan (Windows only)
@@ -2209,6 +2343,16 @@ async function runEvaluationPipeline(
 		});
 	}
 
+	// Part of the bundled rule set did not load: a corrupt, emptied, missing or
+	// integrity-unlisted rule file. The rules that did load still ran (a match
+	// is real evidence), but "nothing matched" no longer means "clean", because
+	// the rules that would have matched may be exactly the ones that are gone.
+	// Every non-deny verdict therefore becomes a blocking review; connectors
+	// whose host has no review path (Codex) map that ask to a deny.
+	if (config.heuristics_enabled && bundledRuleErrors.length > 0) {
+		verdict = rulesIncompleteVerdict(verdict, bundledRuleErrors, context.threatsDir, logger);
+	}
+
 	// A URL leg that did not run or covered only part of the requested URLs is a
 	// visible coverage gap, including when the operator chose not to share URLs
 	// with a provider. Local heuristics still run on the original artifacts.
@@ -2312,21 +2456,31 @@ async function ingestToControlPlaneIfEnabled(
 	if (config.mode !== "managed") return;
 	if (!config.control_plane.enabled) return;
 	if (!config.control_plane.send_audit_logs) return;
+	// Control-plane ingestion is a managed feature: off while the managed gate failed.
+	if (managedUnavailableByRequest.has(request)) return;
 
 	const rawToken = getAuthToken(config.auth);
 
 	if (verdict.decision === "allow" && !config.control_plane.send_clean_verdicts) return;
 
 	const managedPath = managedStatePath();
-	const managedState = await loadManagedState(managedPath, {
-		authToken: rawToken,
-		publicKeysPem: config.licensing.public_keys_pem,
-		onSecurityEvent: (event) =>
-			logger.warn(
-				"Managed state verification failure",
-				event as unknown as Record<string, unknown>,
-			),
-	});
+	let managedState: ManagedState;
+	try {
+		managedState = await loadManagedState(managedPath, {
+			authToken: rawToken,
+			publicKeysPem: config.licensing.public_keys_pem,
+			onSecurityEvent: (event) =>
+				logger.warn(
+					"Managed state verification failure",
+					event as unknown as Record<string, unknown>,
+				),
+		});
+	} catch (error) {
+		logger.warn("Verdict was not sent to the control plane: managed state is unavailable", {
+			errorType: error instanceof Error ? error.name : typeof error,
+		});
+		return;
+	}
 	const authToken = getEffectiveManagedApiKey(config.auth.api_key, managedState);
 	if (!authToken) return;
 	if (isSyncDisabled(managedState)) return;
@@ -2530,6 +2684,7 @@ async function checkPackages(
 	revocations: RevocationList | null,
 	reputationFeed: ReputationFeedLoadOptions | undefined,
 	allowProviderInspection: boolean,
+	startTime: number,
 ): Promise<PackageCheckResult[]> {
 	const results: PackageCheckResult[] = [];
 
@@ -2652,11 +2807,18 @@ async function checkPackages(
 	if (uncached.length > 0 && allowProviderInspection) {
 		let checked: PackageCheckResult[] = [];
 		try {
+			const budgetMs = remainingDetectionBudgetMs(startTime);
 			const checker = new PackageChecker(
 				{
-					registryTimeoutSeconds: config.package_check.timeout_seconds,
+					registryTimeoutSeconds: legTimeoutWithinBudget(
+						config.package_check.timeout_seconds,
+						budgetMs,
+					),
 					fileCheckEndpoint: config.file_check.endpoint,
-					fileCheckTimeoutSeconds: config.file_check.timeout_seconds,
+					fileCheckTimeoutSeconds: legTimeoutWithinBudget(
+						config.file_check.timeout_seconds,
+						budgetMs,
+					),
 					fileCheckEnabled: config.file_check.enabled,
 					fileCheckAllowInsecureLoopback: config.file_check.allow_insecure_loopback,
 					apiKey,
@@ -2670,7 +2832,13 @@ async function checkPackages(
 				},
 				logger,
 			);
-			const checkResults = await checker.checkPackages(uncached);
+			// Whatever did not finish inside the shared budget is reported below as
+			// unchecked (review required), never as clean.
+			const checkResults = await withinDetectionBudget(
+				checker.checkPackages(uncached),
+				budgetMs,
+				"package reputation",
+			);
 			checked = validatePackageCheckResults(checkResults, uncached);
 		} catch (error) {
 			logger.warn("Package checker unavailable; package operation requires review", {
