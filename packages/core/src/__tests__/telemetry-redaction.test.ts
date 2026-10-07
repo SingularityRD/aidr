@@ -147,7 +147,9 @@ describe("telemetry redaction boundary", () => {
 	});
 
 	it("keeps ordinary identifiers that merely resemble credential names", () => {
-		const safe = redactTelemetryString("pip install scikit-learn; TOKEN_COUNT=5; design=modern; author=Ada");
+		const safe = redactTelemetryString(
+			"pip install scikit-learn; TOKEN_COUNT=5; design=modern; author=Ada",
+		);
 		expect(safe).toBe("pip install scikit-learn; TOKEN_COUNT=5; design=modern; author=Ada");
 	});
 });
