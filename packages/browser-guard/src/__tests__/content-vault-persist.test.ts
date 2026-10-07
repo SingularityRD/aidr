@@ -109,6 +109,7 @@ function loadPage(runtime: RuntimeLike, history = "") {
 		adapterForUrl: () => ADAPTER,
 		createDetectionEngine: engine,
 		createVault,
+		vaultTag: "t3st",
 		findEditor: (_adapter, root) => {
 			const el = root.getElementById("editor");
 			return el ? editorAccess(el) : null;
@@ -148,9 +149,9 @@ describe("vault persistence across reloads", () => {
 		const first = loadPage(runtime);
 		await first.guard.ready;
 		first.send(`mail ${EMAIL} with key ${SECRET}`);
-		await expect.poll(() => first.sent).toEqual(["mail [EMAIL_1] with key [SECRET_1]"]);
+		await expect.poll(() => first.sent).toEqual(["mail [EMAIL_1_t3st] with key [SECRET_1_t3st]"]);
 		await settle();
-		expect(store.saved?.sent).toEqual(["[EMAIL_1]"]);
+		expect(store.saved?.sent).toEqual(["[EMAIL_1_t3st]"]);
 		// Secrets are never persisted.
 		expect(store.saved?.snapshot.entries.map((e) => e.type)).toEqual(["EMAIL"]);
 		expect(JSON.stringify(store.saved)).not.toContain(SECRET);
@@ -158,12 +159,12 @@ describe("vault persistence across reloads", () => {
 		// Reload: the SPA re-renders the conversation after the content script started.
 		const second = loadPage(runtime);
 		await second.guard.ready;
-		const answer = second.reply("I will write to [EMAIL_1] and keep [SECRET_1] private.");
+		const answer = second.reply("I will write to [EMAIL_1_t3st] and keep [SECRET_1_t3st] private.");
 		await settle();
 		second.guard.guard.unmasker.flush();
-		expect(visibleText(answer)).toBe(`I will write to ${EMAIL} and keep [SECRET_1] private.`);
+		expect(visibleText(answer)).toBe(`I will write to ${EMAIL} and keep [SECRET_1_t3st] private.`);
 		// The page itself still reads the placeholder.
-		expect(answer.textContent).toContain("[EMAIL_1]");
+		expect(answer.textContent).toContain("[EMAIL_1_t3st]");
 	});
 
 	it("restores history that was already rendered before the content script booted", async () => {
@@ -172,17 +173,17 @@ describe("vault persistence across reloads", () => {
 		const first = loadPage(runtime);
 		await first.guard.ready;
 		first.send(`mail ${EMAIL}`);
-		await expect.poll(() => store.saved?.sent).toEqual(["[EMAIL_1]"]);
+		await expect.poll(() => store.saved?.sent).toEqual(["[EMAIL_1_t3st]"]);
 
 		const second = loadPage(
 			runtime,
-			'<div data-role="assistant" id="old">Sent to [EMAIL_1], not [EMAIL_2].</div>',
+			'<div data-role="assistant" id="old">Sent to [EMAIL_1_t3st], not [EMAIL_2_t3st].</div>',
 		);
 		await second.guard.ready;
 		await settle();
 		second.guard.guard.unmasker.flush();
 		const old = document.getElementById("old") as HTMLElement;
-		expect(visibleText(old)).toBe(`Sent to ${EMAIL}, not [EMAIL_2].`);
+		expect(visibleText(old)).toBe(`Sent to ${EMAIL}, not [EMAIL_2_t3st].`);
 	});
 
 	it("does not restore placeholders that were masked but never sent", async () => {
@@ -191,7 +192,7 @@ describe("vault persistence across reloads", () => {
 		const first = loadPage(runtime);
 		await first.guard.ready;
 		first.send(`mail ${EMAIL}`);
-		await expect.poll(() => store.saved?.sent).toEqual(["[EMAIL_1]"]);
+		await expect.poll(() => store.saved?.sent).toEqual(["[EMAIL_1_t3st]"]);
 		// Masked (e.g. a paste) but the user never sent it.
 		first.editor.value = "";
 		const paste = new Event("paste", { bubbles: true, cancelable: true });
@@ -201,19 +202,19 @@ describe("vault persistence across reloads", () => {
 		first.editor.dispatchEvent(paste);
 		await expect
 			.poll(() => store.saved?.snapshot.entries.map((e) => e.placeholder))
-			.toEqual(["[EMAIL_1]", "[EMAIL_2]"]);
-		expect(store.saved?.sent).toEqual(["[EMAIL_1]"]);
+			.toEqual(["[EMAIL_1_t3st]", "[EMAIL_2_t3st]"]);
+		expect(store.saved?.sent).toEqual(["[EMAIL_1_t3st]"]);
 
 		const second = loadPage(runtime);
 		await second.guard.ready;
-		const answer = second.reply("[EMAIL_1] and [EMAIL_2]");
+		const answer = second.reply("[EMAIL_1_t3st] and [EMAIL_2_t3st]");
 		await settle();
 		second.guard.guard.unmasker.flush();
-		expect(visibleText(answer)).toBe(`${EMAIL} and [EMAIL_2]`);
+		expect(visibleText(answer)).toBe(`${EMAIL} and [EMAIL_2_t3st]`);
 
-		// New placeholders continue the numbering instead of reusing [EMAIL_2].
+		// New placeholders continue the numbering instead of reusing [EMAIL_2_t3st].
 		second.send(`also ${EMAIL} and third@example.net`);
-		await expect.poll(() => second.sent).toEqual([`also [EMAIL_1] and [EMAIL_3]`]);
+		await expect.poll(() => second.sent).toEqual([`also [EMAIL_1_t3st] and [EMAIL_3_t3st]`]);
 	});
 
 	it("starts with an empty vault when VAULT_LOAD fails, hangs or returns garbage", async () => {
@@ -239,7 +240,7 @@ describe("vault persistence across reloads", () => {
 		);
 		await garbage.guard.ready;
 		garbage.send(`mail ${EMAIL}`);
-		await expect.poll(() => garbage.sent).toEqual(["mail [EMAIL_1]"]);
+		await expect.poll(() => garbage.sent).toEqual(["mail [EMAIL_1_t3st]"]);
 		const failing = loadPage(
 			workerRuntime(store, {
 				load: () => {
@@ -256,9 +257,9 @@ describe("vault persistence across reloads", () => {
 		expect(extractVault({ ok: false, error: "NOT_ALLOWED" })).toBeNull();
 		expect(extractVault({ ok: true, snapshot: null, sent: [] })).toBeNull();
 		const snapshot = { version: 1, createdAt: 1, entries: [] };
-		expect(extractVault({ ok: true, snapshot, sent: ["[EMAIL_1]", 5] })).toEqual({
+		expect(extractVault({ ok: true, snapshot, sent: ["[EMAIL_1_t3st]", 5] })).toEqual({
 			snapshot,
-			sent: ["[EMAIL_1]"],
+			sent: ["[EMAIL_1_t3st]"],
 		});
 	});
 });

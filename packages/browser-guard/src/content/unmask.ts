@@ -109,13 +109,16 @@ const restoredSpans = new WeakMap<Element, RestoredSpan>();
 
 let placeholderSource: string | undefined;
 
-/** Global regex matching every vault placeholder shape, e.g. `[EMAIL_1]`, `[TAX_ID_12]`. */
+/**
+ * Global regex matching every vault placeholder shape, e.g. `[EMAIL_1]`, `[TAX_ID_12]`,
+ * and tagged ones such as `[EMAIL_1_k3f9]` (see ../engine/vault.ts).
+ */
 export function placeholderRegex(): RegExp {
 	if (placeholderSource === undefined) {
 		const prefixes = [...new Set(Object.values(PLACEHOLDER_PREFIX))].sort(
 			(a, b) => b.length - a.length,
 		);
-		placeholderSource = `\\[(?:${prefixes.join("|")})_\\d{1,6}\\]`;
+		placeholderSource = `\\[(?:${prefixes.join("|")})_\\d{1,6}(?:_[a-z0-9]{4,8})?\\]`;
 	}
 	return new RegExp(placeholderSource, "g");
 }

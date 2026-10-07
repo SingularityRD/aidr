@@ -71,5 +71,5 @@ export const PROFILES = {
 
 export const CLEAN_PROMPT = "Summarise the plot of Hamlet in three sentences.";
 
-/** Matches any vault placeholder, e.g. `[EMAIL_1]`, `[NATIONAL_ID_2]`. */
-export const ANY_PLACEHOLDER = /\[[A-Z][A-Z_]*_\d+\]/g;
+/** Matches any vault placeholder, e.g. `[EMAIL_1]`, `[NATIONAL_ID_2]`, `[EMAIL_1_k3f9]` (tagged). */
+export const ANY_PLACEHOLDER = /\[[A-Z][A-Z_]*_\d+(?:_[a-z0-9]{4,8})?\]/g;

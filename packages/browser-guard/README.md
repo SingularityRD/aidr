@@ -3,7 +3,7 @@
 Browser Guard is a Manifest V3 extension for Chrome, Edge and Firefox. It checks
 prompts, pastes and uploaded files for sensitive data before they reach AI chat
 products. Detected values are replaced with reversible placeholders such as
-`[EMAIL_1]` or `[TCKN_1]`, and the originals are restored locally, in your
+`[EMAIL_1_k3f9]` or `[TCKN_1_k3f9]` (type, number, per-page random tag), and the originals are restored locally, in your
 browser only, when the placeholders appear in the answer.
 
 Detection reuses the AIDR Privacy rule layer (`packages/privacy`): the same
@@ -68,7 +68,13 @@ administrator and end-user guide is [`docs/platform-guides/browser-guard.md`](..
      after that send; a page script that plants a placeholder elsewhere gets the
      placeholder back, not the value. The set of sent placeholders is persisted
      with the vault: after a reload, exactly those are restorable again (anywhere
-     in the re-rendered conversation), and nothing else.
+     in the re-rendered conversation), and nothing else;
+   - placeholders carry a random tag per page life (`[EMAIL_1_k3f9]`). Numbering
+     restarts in every tab and after every reload, so without the tag a placeholder
+     from another conversation or tab that is rendered after a send (for example
+     after an in-app navigation) could be restored with this tab's value. A foreign
+     placeholder now matches only if its tag collides (one in 36^4). Untagged
+     placeholders from a vault saved by an earlier version are still restored.
    The `restore-side-channels` E2E scenario attacks all of this from the page;
    `reload-restore` covers the reload, per-tab isolation and cleanup.
 5. **Pastes and files.** Pasted text is masked as it is pasted (`maskPaste`).

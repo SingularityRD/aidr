@@ -78,7 +78,11 @@ function boot(runtime: ReturnType<typeof fakeRuntime>) {
 		}
 	});
 	const createVaultSpy = vi.fn(
-		(options: { neverRestore: readonly never[] | readonly string[]; snapshot?: VaultSnapshot }) =>
+		(options: {
+			neverRestore: readonly never[] | readonly string[];
+			snapshot?: VaultSnapshot;
+			tag?: string;
+		}) =>
 			createVault(options as Parameters<typeof createVault>[0]),
 	);
 	const result = bootContentGuard({
@@ -89,6 +93,7 @@ function boot(runtime: ReturnType<typeof fakeRuntime>) {
 		adapterForUrl: () => ADAPTER,
 		createDetectionEngine: () => fakeEngine(),
 		createVault: createVaultSpy,
+		vaultTag: "t3st",
 		findEditor: (_adapter, root) => {
 			const el = root.getElementById("editor");
 			return el ? editorAccess(el) : null;
@@ -133,7 +138,7 @@ describe("bootContentGuard", () => {
 		await booted.ready;
 		editor.value = `to ${EMAIL}`;
 		enter();
-		await expect.poll(() => sent).toEqual(["to [EMAIL_1]"]);
+		await expect.poll(() => sent).toEqual(["to [EMAIL_1_t3st]"]);
 		const records = runtime.sendMessage.mock.calls
 			.map(([m]) => m as GuardMessage)
 			.filter((m) => m.type === "RECORD");
@@ -173,7 +178,7 @@ describe("bootContentGuard", () => {
 		expect(booted.policy()?.mode).toBe("block");
 		expect(createVaultSpy).toHaveBeenCalledTimes(3); // initial, first policy, neverRestore change
 		const lastCall = createVaultSpy.mock.calls.at(-1)?.[0];
-		expect(lastCall?.snapshot?.entries.map((e) => e.placeholder)).toEqual(["[EMAIL_1]"]);
+		expect(lastCall?.snapshot?.entries.map((e) => e.placeholder)).toEqual(["[EMAIL_1_t3st]"]);
 
 		for (const listener of runtime.listeners) {
 			listener({ type: "SET_RESTORE_VISIBLE", visible: false }, { id: "ext-id" });

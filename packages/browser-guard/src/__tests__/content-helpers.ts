@@ -137,6 +137,8 @@ export interface HarnessOptions {
 	readonly respond?: (message: GuardMessage) => unknown;
 	readonly nativeTimeoutMs?: number;
 	readonly nativeImageTimeoutMs?: number;
+	/** Vault placeholder tag (engine/vault.ts); omitted: untagged placeholders. */
+	readonly vaultTag?: string;
 }
 
 export function setupGuard(options: HarnessOptions = {}): Harness {
@@ -168,7 +170,10 @@ export function setupGuard(options: HarnessOptions = {}): Harness {
 	});
 
 	const engine = options.engine ?? fakeEngine();
-	const vault = createVault({ neverRestore: ["SECRET"] });
+	const vault = createVault({
+		neverRestore: ["SECRET"],
+		...(options.vaultTag ? { tag: options.vaultTag } : {}),
+	});
 	const sanitizeFile = vi.fn(
 		options.sanitizeFile ??
 			(async () => ({ action: "allow", counts: {}, reasons: [] }) as FileDecision),

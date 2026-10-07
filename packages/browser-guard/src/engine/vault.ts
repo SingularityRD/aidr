@@ -13,6 +13,12 @@
  *   - Placeholder numbers are never reused within a vault's lifetime (until `clear()`),
  *     so an old response that echoes an expired `[EMAIL_1]` can never be "restored"
  *     to a different person's value.
+ *   - A vault created with a `tag` (the content script uses a random one per page
+ *     life, see ../content/boot.ts) mints tagged placeholders such as `[EMAIL_1_k3f9]`.
+ *     Numbering restarts with every vault, so without the tag another conversation's
+ *     (or another tab's) `[EMAIL_1]` would be restored with this vault's value; with it
+ *     a foreign placeholder matches only by chance (one in 36^4). Untagged entries from
+ *     older snapshots stay valid and restorable.
  *   - Entity types in `neverRestore` are masked but never restored nor revealed by
  *     `lookup`.
  *   - Snapshots are validated strictly; a malformed snapshot makes `createVault`
@@ -38,6 +44,30 @@ export interface VaultOptions {
 	readonly snapshot?: VaultSnapshot;
 	/** Injectable clock in epoch milliseconds (tests). Defaults to `Date.now`. */
 	readonly now?: () => number;
+	/**
+	 * Per-vault tag appended to new placeholders (`[EMAIL_1_k3f9]`), see VAULT_TAG_RE and
+	 * newVaultTag. Omitted: untagged placeholders (`[EMAIL_1]`).
+	 */
+	readonly tag?: string;
+}
+
+/** A valid vault tag: lower-case letters and digits only, so it never reads as a prefix. */
+export const VAULT_TAG_RE = /^[a-z0-9]{4,8}$/;
+const TAG_LENGTH = 4;
+const TAG_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789";
+
+/** A fresh random vault tag (crypto.getRandomValues, uniform over 36^4 values). */
+export function newVaultTag(): string {
+	let tag = "";
+	while (tag.length < TAG_LENGTH) {
+		const bytes = new Uint8Array(TAG_LENGTH * 2);
+		globalThis.crypto.getRandomValues(bytes);
+		for (const byte of bytes) {
+			// Rejection sampling keeps the alphabet uniform (252 = 7 * 36).
+			if (byte < 252 && tag.length < TAG_LENGTH) tag += TAG_ALPHABET[byte % 36];
+		}
+	}
+	return tag;
 }
 
 /** Thrown for malformed snapshots. The message never contains snapshot values. */
@@ -69,8 +99,11 @@ const ENTITY_TYPE_SET: ReadonlySet<string> = new Set(ENTITY_TYPES);
 const TYPE_ORDER: ReadonlyMap<EntityType, number> = new Map(ENTITY_TYPES.map((t, i) => [t, i]));
 const PREFIX_SET: ReadonlySet<string> = new Set(Object.values(PLACEHOLDER_PREFIX));
 
-/** Placeholder name core, tolerating markdown-escaped underscores (`EMAIL\_1`). */
-const NAME_SRC = String.raw`[A-Z]+(?:\\?_[A-Z]+)*\\?_[1-9][0-9]{0,8}`;
+/**
+ * Placeholder name core, tolerating markdown-escaped underscores (`EMAIL\_1`), with the
+ * optional vault tag (`EMAIL_1_k3f9`).
+ */
+const NAME_SRC = String.raw`[A-Z]+(?:\\?_[A-Z]+)*\\?_[1-9][0-9]{0,8}(?:\\?_[a-z0-9]{4,8})?`;
 const NOT_WORD_BEFORE = String.raw`(?<![\p{L}\p{N}_\\])`;
 const NOT_WORD_AFTER = String.raw`(?![\p{L}\p{N}_])`;
 
@@ -89,8 +122,10 @@ const OCCURRENCE_RE = new RegExp(
 	"gu",
 );
 
-/** Canonical stored placeholder format. Group 1: prefix, group 2: number. */
-const PLACEHOLDER_RE = /^\[([A-Z]+(?:_[A-Z]+)*)_([1-9][0-9]{0,8})\]$/;
+/** Canonical stored placeholder format. Group 1: prefix, group 2: number, group 3: tag. */
+const PLACEHOLDER_RE = /^\[([A-Z]+(?:_[A-Z]+)*)_([1-9][0-9]{0,8})(?:_([a-z0-9]{4,8}))?\]$/;
+/** A placeholder name without brackets. Group 1: prefix. */
+const NAME_RE = /^([A-Z]+(?:_[A-Z]+)*)_[1-9][0-9]{0,8}(?:_[a-z0-9]{4,8})?$/;
 
 const DIGITS_ONLY_TYPES: ReadonlySet<EntityType> = new Set<EntityType>([
 	"PHONE",
@@ -199,6 +234,10 @@ export function createVault(options: VaultOptions): PlaceholderVault {
 		throw new RangeError("ttlMs must be a positive number");
 	}
 	const now = options.now ?? Date.now;
+	if (options.tag !== undefined && !VAULT_TAG_RE.test(options.tag)) {
+		throw new RangeError("tag must be 4-8 lower-case letters or digits");
+	}
+	const suffix = options.tag === undefined ? "" : `_${options.tag}`;
 	const neverRestore: ReadonlySet<EntityType> = new Set(options.neverRestore ?? []);
 
 	/** Placeholder -> entry, in least-recently-used-first order. */
@@ -263,8 +302,10 @@ export function createVault(options: VaultOptions): PlaceholderVault {
 			const raw = m[1] ?? m[3] ?? m[4];
 			if (raw === undefined) continue;
 			const name = placeholderName(raw);
-			const prefix = name.slice(0, name.lastIndexOf("_"));
-			if (PREFIX_SET.has(prefix) && !entries.has(`[${name}]`)) reserve(name);
+			const prefix = NAME_RE.exec(name)?.[1];
+			if (prefix !== undefined && PREFIX_SET.has(prefix) && !entries.has(`[${name}]`)) {
+				reserve(name);
+			}
 		}
 	}
 
@@ -278,8 +319,9 @@ export function createVault(options: VaultOptions): PlaceholderVault {
 		}
 		const prefix = PLACEHOLDER_PREFIX[type];
 		let n = (counters.get(type) ?? 0) + 1;
-		while (reserved.has(`${prefix}_${n}`) || entries.has(`[${prefix}_${n}]`)) n++;
-		const placeholder = `[${prefix}_${n}]`;
+		const nameFor = (k: number): string => `${prefix}_${k}${suffix}`;
+		while (reserved.has(nameFor(n)) || entries.has(`[${nameFor(n)}]`)) n++;
+		const placeholder = `[${nameFor(n)}]`;
 		insert({ placeholder, value, type, key, lastUsed: at });
 		return placeholder;
 	}
