@@ -169,6 +169,19 @@ function isOrigin(value: unknown): value is string {
 	}
 }
 
+/**
+ * Collectors report each target as a keyed, tenant-scoped pseudonym; the HMAC
+ * key and the address stay on the collector.
+ */
+function isTargetId(value: unknown): value is string {
+	return typeof value === "string" && /^tid1_[a-f0-9]{64}$/.test(value);
+}
+
+/** Pseudonyms, plus origin rows stored before pseudonymisation (read-only legacy). */
+function isReportedTarget(value: unknown): value is string {
+	return isTargetId(value) || isOrigin(value);
+}
+
 function isDiscoveryItem(value: unknown): value is DiscoveryItem {
 	const errorCodes = [
 		"timeout",
@@ -180,7 +193,7 @@ function isDiscoveryItem(value: unknown): value is DiscoveryItem {
 	];
 	return (
 		isRecord(value) &&
-		isOrigin(value.target) &&
+		isReportedTarget(value.target) &&
 		isTimestamp(value.last_reported_at) &&
 		(value.last_reachable_at === null || isTimestamp(value.last_reachable_at)) &&
 		typeof value.reachable === "boolean" &&
@@ -260,7 +273,7 @@ async function loadItems(
 		!Array.isArray(data.items) ||
 		!data.items.every(isDiscoveryItem) ||
 		typeof data.truncated !== "boolean" ||
-		(data.next_target !== null && !isOrigin(data.next_target))
+		(data.next_target !== null && !isReportedTarget(data.next_target))
 	) {
 		throw new Error("Malformed discovery target list.");
 	}
@@ -667,6 +680,10 @@ export function DiscoveryPage() {
 					<h2>Target freshness and alerts</h2>
 					{selectedCollector ? <span className="muted small">{selectedCollector}</span> : null}
 				</div>
+				<p className="muted small">
+					Targets are keyed pseudonyms: addresses stay on the collector. Match an id with the
+					local <code>panel_id</code> printed by <code>aidr collect</code>.
+				</p>
 				{itemsCheckedAt ? (
 					<p className="muted small">
 						Checked {timestamp(itemsCheckedAt)}. Refresh to recalculate freshness.
@@ -681,7 +698,7 @@ export function DiscoveryPage() {
 					<table className="table">
 						<thead>
 							<tr>
-								<th>Reported origin</th>
+								<th>Target</th>
 								<th>Reachability</th>
 								<th>Freshness</th>
 								<th>Alert state</th>
@@ -691,7 +708,18 @@ export function DiscoveryPage() {
 						<tbody>
 							{(items ?? []).map((item) => (
 								<tr key={item.target}>
-									<td className="mono">{item.target}</td>
+									<td className="mono">
+										{isTargetId(item.target) ? (
+											<span title="Keyed pseudonym; the address stays on the collector">
+												{item.target}
+											</span>
+										) : (
+											<>
+												{item.target}{" "}
+												<span className={badgeClass("stale")}>legacy origin</span>
+											</>
+										)}
+									</td>
 									<td>
 										<span className={badgeClass(item.reachable ? "healthy" : "unreachable")}>
 											{item.reachable ? "reachable" : (item.error_code ?? "unreachable")}

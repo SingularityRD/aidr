@@ -17,6 +17,8 @@ import collectCommand, {
 const TENANT = "123e4567-e89b-42d3-a456-426614174000";
 const DISCOVERY_URL = "https://tenant.example.test/functions/v1/discovery";
 const COLLECTOR_CREDENTIAL = `aidr_dc_${"a".repeat(43)}`;
+/** Fixed pseudonym key so tests never touch the real ~/.singularity-aidr key. */
+const TARGET_KEY = Buffer.alloc(32, 7);
 
 function remoteInventory(overrides: Partial<FleetInventory["items"][number]> = {}): FleetInventory {
 	const base = inventory(overrides);
@@ -218,7 +220,7 @@ describe("cloud collector wire and real CLI selection", () => {
 
 	it("uploads resource-only evidence as a separate bounded DTO and keeps scheduler states honest", () => {
 		const healthy = cloudInventory();
-		const payload = discoveryIngestPayload(healthy, 1);
+		const payload = discoveryIngestPayload(healthy, 1, TARGET_KEY);
 		expect(payload.items).toEqual([]);
 		expect(payload.expected_targets).toBe(0);
 		expect(payload.provider_resources).toEqual({
@@ -242,7 +244,7 @@ describe("cloud collector wire and real CLI selection", () => {
 			...healthy,
 			providerEvidence: { ...healthy.providerEvidence!, complete: false },
 		};
-		expect(discoveryIngestPayload(failed, 2).provider_resources).toMatchObject({
+		expect(discoveryIngestPayload(failed, 2, TARGET_KEY).provider_resources).toMatchObject({
 			complete: false,
 			items: [],
 		});
@@ -256,7 +258,11 @@ describe("cloud collector wire and real CLI selection", () => {
 		const base = cloudInventory();
 		const evidence = base.providerEvidence!;
 		expect(() =>
-			discoveryIngestPayload({ ...base, providerEvidence: { ...evidence, scopeHash: "bad" } }, 1),
+			discoveryIngestPayload(
+					{ ...base, providerEvidence: { ...evidence, scopeHash: "bad" } },
+					1,
+					TARGET_KEY,
+				),
 		).toThrow("discovery_upload_provider_evidence_invalid");
 		expect(() =>
 			discoveryIngestPayload(
@@ -268,6 +274,7 @@ describe("cloud collector wire and real CLI selection", () => {
 					},
 				},
 				1,
+				TARGET_KEY,
 			),
 		).toThrow("discovery_upload_provider_evidence_invalid");
 		expect(() =>
@@ -280,6 +287,7 @@ describe("cloud collector wire and real CLI selection", () => {
 					},
 				},
 				1,
+				TARGET_KEY,
 			),
 		).toThrow("discovery_upload_provider_evidence_invalid");
 	});
@@ -500,7 +508,7 @@ describe("managed discovery upload", () => {
 				requestsMade: 1,
 			},
 		});
-		const payload = discoveryIngestPayload(local, 2);
+		const payload = discoveryIngestPayload(local, 2, TARGET_KEY);
 		expect(payload).toMatchObject({
 			tenant_id: TENANT,
 			collector_id: "collector-a",
@@ -509,13 +517,16 @@ describe("managed discovery upload", () => {
 			expected_targets: 1,
 			items: [
 				{
-					target: "https://agent.example.test/",
+					target: core.discoveryTargetPseudonym(TARGET_KEY, TENANT, "https://agent.example.test/"),
 					reachable: false,
 					attempts: 3,
 					error_code: "collector_exception",
 				},
 			],
 		});
+		// The address itself never crosses the tenant boundary, only its keyed pseudonym.
+		expect(payload.items[0]?.target).toMatch(/^tid1_[a-f0-9]{64}$/);
+		expect(JSON.stringify(payload)).not.toContain("agent.example.test");
 		expect(JSON.stringify(payload)).not.toContain("private/tool");
 		expect(JSON.stringify(payload)).not.toContain("SecretError");
 		expect(() =>
@@ -528,8 +539,48 @@ describe("managed discovery upload", () => {
 					],
 				},
 				2,
+				TARGET_KEY,
 			),
 		).toThrow("discovery_upload_duplicate_origin");
+	});
+
+	it("derives stable pseudonyms that differ per tenant and per installation key", () => {
+		const id = core.discoveryTargetPseudonym(TARGET_KEY, TENANT, "https://agent.example.test/");
+		expect(core.discoveryTargetPseudonym(TARGET_KEY, TENANT, "https://agent.example.test/")).toBe(id);
+		expect(
+			core.discoveryTargetPseudonym(
+				TARGET_KEY,
+				"223e4567-e89b-42d3-a456-426614174000",
+				"https://agent.example.test/",
+			),
+		).not.toBe(id);
+		expect(
+			core.discoveryTargetPseudonym(Buffer.alloc(32, 8), TENANT, "https://agent.example.test/"),
+		).not.toBe(id);
+	});
+
+	it("uploads pseudonyms in the ingest request body, never target addresses", async () => {
+		const config = discoveryUploadConfig({
+			AIDR_DISCOVERY_URL: DISCOVERY_URL,
+			AIDR_DISCOVERY_COLLECTOR_CREDENTIAL: COLLECTOR_CREDENTIAL,
+			AIDR_DISCOVERY_ANON_KEY: "anon.key",
+		});
+		if (!config) throw new Error("test config missing");
+		const bodies: string[] = [];
+		const transport = vi.fn(async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+			const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+			bodies.push(String(init?.body));
+			if (body.action === "cursor")
+				return Response.json({ ok: true, collector_id: "collector-a", last_sequence: 1, next_sequence: 2 });
+			return Response.json(
+				{ ok: true, cycle: { collector_id: "collector-a", sequence: 2, cycle_id: body.cycle_id } },
+				{ status: 201 },
+			);
+		}) as unknown as typeof fetch;
+		await publishDiscoveryInventory(remoteInventory(), config, transport, TARGET_KEY);
+		expect(bodies).toHaveLength(2);
+		for (const body of bodies) expect(body).not.toContain("agent.example.test");
+		expect(bodies[1]).toMatch(/"target":"tid1_[a-f0-9]{64}"/);
 	});
 
 	it("does not publish a partially scanned reachable endpoint as healthy", () => {
@@ -540,9 +591,9 @@ describe("managed discovery upload", () => {
 				error: "deadline_exceeded",
 			},
 		});
-		expect(discoveryIngestPayload(local, 1).items).toEqual([
+		expect(discoveryIngestPayload(local, 1, TARGET_KEY).items).toEqual([
 			{
-				target: "https://agent.example.test/",
+				target: core.discoveryTargetPseudonym(TARGET_KEY, TENANT, "https://agent.example.test/"),
 				reachable: false,
 				attempts: 1,
 				error_code: "other",
@@ -569,7 +620,7 @@ describe("managed discovery upload", () => {
 				{ status: 201 },
 			);
 		});
-		await publishDiscoveryInventory(remoteInventory(), config, transport);
+		await publishDiscoveryInventory(remoteInventory(), config, transport, TARGET_KEY);
 		expect(calls.map((call) => call.action)).toEqual(["read", "ingest"]);
 		expect(calls[1]?.sequence).toBe(8);
 	});
@@ -593,7 +644,7 @@ describe("managed discovery upload", () => {
 				});
 			return Response.json({ error: "invalid_collector_credential" }, { status: 401 });
 		});
-		await expect(publishDiscoveryInventory(remoteInventory(), config, transport)).rejects.toThrow(
+		await expect(publishDiscoveryInventory(remoteInventory(), config, transport, TARGET_KEY)).rejects.toThrow(
 			"discovery_upload_invalid_collector_credential",
 		);
 		expect(actions).toEqual(["cursor", "ingest"]);

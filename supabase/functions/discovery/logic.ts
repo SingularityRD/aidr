@@ -75,7 +75,11 @@ export function validCollectorId(value: unknown): value is string {
 	return typeof value === "string" && COLLECTOR.test(value);
 }
 
-/** Central inventory records origins only; paths can carry tenant secrets. */
+/**
+ * Canonical origin form of rows stored before target pseudonymisation. New
+ * ingests never accept it (see `discoveryTargetId`); it is kept so read cursors
+ * can page over legacy rows.
+ */
 export function canonicalDiscoveryOrigin(value: unknown): string | null {
 	if (typeof value !== "string" || value.length < 8 || value.length > 512 || /[\u0000-\u001f\u007f]/.test(value)) return null;
 	try {
@@ -86,6 +90,32 @@ export function canonicalDiscoveryOrigin(value: unknown): string | null {
 	} catch {
 		return null;
 	}
+}
+
+const TARGET_ID = /^tid1_[a-f0-9]{64}$/;
+
+/**
+ * Collectors report a keyed, tenant-scoped pseudonym (`tid1_<hmac>`) of each
+ * target origin; the HMAC key never leaves the collector, so the panel cannot
+ * recover or dictionary-test the address.
+ */
+export function discoveryTargetId(value: unknown): string | null {
+	return typeof value === "string" && TARGET_ID.test(value) ? value : null;
+}
+
+/**
+ * Read cursors must address both stored forms: new pseudonyms and origins kept
+ * from collectors that reported before pseudonymisation (read-only legacy rows).
+ */
+export function discoveryTargetCursor(value: unknown): string | null {
+	return discoveryTargetId(value) ?? canonicalDiscoveryOrigin(value);
+}
+
+/** True when an ingest body carries a raw address where a pseudonym belongs. */
+export function discoveryIngestCarriesAddress(value: unknown): boolean {
+	if (!record(value) || !Array.isArray(value.items)) return false;
+	return value.items.some((item) => record(item) && typeof item.target === "string" && !TARGET_ID.test(item.target)
+		&& /^[a-z][a-z0-9+.-]*:/i.test(item.target));
 }
 
 export function parseDiscoveryIngest(value: unknown): DiscoveryIngest | null {
@@ -103,7 +133,8 @@ export function parseDiscoveryIngest(value: unknown): DiscoveryIngest | null {
 	const items: DiscoveryItem[] = [];
 	for (const item of value.items) {
 		if (!record(item) || !exactKeys(item, ["target", "reachable", "attempts", "error_code"])) return null;
-		const target = canonicalDiscoveryOrigin(item.target);
+		// Addresses stay on the device: only a pseudonymous target id is accepted.
+		const target = discoveryTargetId(item.target);
 		if (!target || seen.has(target) || typeof item.reachable !== "boolean" || typeof item.attempts !== "number" || !Number.isSafeInteger(item.attempts) || item.attempts < 1 || item.attempts > 5) return null;
 		if (item.reachable ? item.error_code !== null : typeof item.error_code !== "string" || !ERROR_CODE.test(item.error_code)) return null;
 		seen.add(target);

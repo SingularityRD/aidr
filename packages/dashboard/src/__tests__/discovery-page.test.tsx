@@ -284,6 +284,7 @@ describe("tenant discovery dashboard", () => {
 		const row = await screen.findByRole("row", { name: /agent\.example\.test/ });
 		expect(within(row).getAllByText("stale")).toHaveLength(2);
 		expect(within(row).getByText("reachable")).toBeInTheDocument();
+		expect(within(row).getByText("legacy origin")).toBeInTheDocument();
 		expect(screen.getByText("scope: reported_collectors_only")).toBeInTheDocument();
 		const calls = vi.mocked(supabase.functions.invoke).mock.calls as unknown as Array<
 			[string, { body?: unknown }?]
@@ -359,7 +360,8 @@ describe("tenant discovery dashboard", () => {
 	});
 
 	it("loads the next collector and target pages, then switches collector details", async () => {
-		const secondItem = { ...ITEM, target: "https://other.example.test/" };
+		// New collectors report keyed pseudonyms; legacy origin rows stay readable.
+		const secondItem = { ...ITEM, target: `tid1_${"c".repeat(64)}` };
 		vi.mocked(supabase.functions.invoke).mockImplementation(async (_name, options) => {
 			const body = options?.body as Record<string, unknown>;
 			if (body.action === "summary") return response({ ok: true, summary: SUMMARY });
@@ -384,7 +386,8 @@ describe("tenant discovery dashboard", () => {
 
 		fireEvent.click(await screen.findByRole("button", { name: "Load more collectors" }));
 		fireEvent.click(await screen.findByRole("button", { name: "Load more targets" }));
-		expect(await screen.findByRole("row", { name: /other\.example\.test/ })).toBeInTheDocument();
+		const pseudonymRow = await screen.findByRole("row", { name: /tid1_c{64}/ });
+		expect(within(pseudonymRow).queryByText("legacy origin")).not.toBeInTheDocument();
 		fireEvent.click(screen.getByRole("button", { name: "site-2" }));
 		await waitFor(() =>
 			expect(vi.mocked(supabase.functions.invoke)).toHaveBeenCalledWith("discovery", {

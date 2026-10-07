@@ -37,7 +37,7 @@ await import("../discovery/index.ts");
 function request(token = "aidr_collector_valid", body: Record<string, unknown> = {
 	action: "ingest", tenant_id: TENANT, collector_id: "collector-1", cycle_id: CYCLE,
 	sequence: 1, stale_after_ms: 60_000, complete: true, expected_targets: 1,
-	items: [{ target: "https://example.test/", reachable: true, attempts: 1, error_code: null }],
+	items: [{ target: `tid1_${"a".repeat(64)}`, reachable: true, attempts: 1, error_code: null }],
 }): Request {
 	return new Request("https://project.supabase.co/functions/v1/discovery", {
 		method: "POST",
@@ -97,6 +97,17 @@ describe("discovery machine handler", () => {
 			p_cycle_id: CYCLE, p_sequence: 1, p_complete: true, p_expected_targets: 1,
 		}));
 		expect(state.getUser).not.toHaveBeenCalled();
+	});
+
+	it("refuses a raw target address before any credential or ingest RPC", async () => {
+		const response = await handle?.(request("aidr_collector_valid", {
+			action: "ingest", tenant_id: TENANT, collector_id: "collector-1", cycle_id: CYCLE,
+			sequence: 1, stale_after_ms: 60_000, complete: true, expected_targets: 1,
+			items: [{ target: "https://example.test/", reachable: true, attempts: 1, error_code: null }],
+		}));
+		expect(response?.status).toBe(400);
+		expect(await response?.json()).toMatchObject({ error: "target_address_not_accepted" });
+		expect(state.rpcs).not.toHaveBeenCalledWith("ingest_tenant_discovery_cycle_machine", expect.anything());
 	});
 
 	it("rejects replayed cycles and invalid collector credentials", async () => {

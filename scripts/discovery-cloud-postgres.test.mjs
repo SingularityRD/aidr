@@ -80,10 +80,12 @@ update public.tenant_data_retention_policies set retention_days=0 where tenant_i
 			await sql(`set role service_role;
 select public.ingest_tenant_discovery_cycle(${literal(tenant)},${literal(owner)},'legacy-http',${literal(randomUUID())},1,60000,true,0,'[]'::jsonb,${literal(JSON.stringify(evidence([item("legacy")])))}::jsonb);
 select public.issue_tenant_discovery_credential(${literal(tenant)},${literal(owner)},'legacy-http',${literal(legacyTokenHash)},30,${literal(JSON.stringify({ provider: "aws", scope_hash: scopeHash }))}::jsonb);
-select public.ingest_tenant_discovery_cycle_machine(${literal(tenant)},'legacy-http',${literal(legacyTokenHash)},${literal(legacyCycle)},2,60000,true,1,'[{"target":"https://example.invalid/","reachable":true,"attempts":1,"error_code":null}]'::jsonb);`);
+select public.ingest_tenant_discovery_cycle_machine(${literal(tenant)},'legacy-http',${literal(legacyTokenHash)},${literal(legacyCycle)},2,60000,true,1,'[{"target":"tid1_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee","reachable":true,"attempts":1,"error_code":null}]'::jsonb);`);
 			assert.equal(await sql(`select provider_evidence is null from public.tenant_discovery_collectors where tenant_id=${literal(tenant)} and collector_id='legacy-http';`), "t");
 			assert.equal(await sql(`select count(*) from public.tenant_discovery_provider_resources where tenant_id=${literal(tenant)} and collector_id='legacy-http';`), "0");
-			assert.equal(await sql(`select target from public.tenant_discovery_items where tenant_id=${literal(tenant)} and collector_id='legacy-http';`), "https://example.invalid/");
+			assert.equal(await sql(`select target from public.tenant_discovery_items where tenant_id=${literal(tenant)} and collector_id='legacy-http';`), "tid1_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee");
+			// Addresses stay on the device: a raw origin is refused at the database boundary too.
+			await denied(`set role service_role;select public.ingest_tenant_discovery_cycle_machine(${literal(tenant)},'legacy-http',${literal(legacyTokenHash)},${literal(randomUUID())},3,60000,true,1,'[{"target":"https://example.invalid/","reachable":true,"attempts":1,"error_code":null}]'::jsonb);`, /invalid_discovery_item/);
 			await denied(`set role service_role;select public.ingest_tenant_discovery_cycle_machine(${literal(tenant)},'legacy-http',${literal(legacyTokenHash)},${literal(randomUUID())},3,60000,true,0,'[]'::jsonb);`, /invalid_discovery_cycle/);
 		});
 		await t.test("legal hold preserves completed omissions and actual endpoint phase erases dependent cloud rows", async () => {

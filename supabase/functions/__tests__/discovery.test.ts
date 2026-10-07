@@ -4,6 +4,9 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
 	canonicalDiscoveryOrigin,
+	discoveryIngestCarriesAddress,
+	discoveryTargetCursor,
+	discoveryTargetId,
 	discoveryAlertState,
 	discoveryCollectorState,
 	discoveryFreshness,
@@ -11,6 +14,8 @@ import {
 	parseProviderScope,
 } from "../discovery/logic.ts";
 
+const TARGET_A = `tid1_${"a".repeat(64)}`;
+const TARGET_B = `tid1_${"b".repeat(64)}`;
 const FUNCTIONS_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 	const REPO_ROOT = resolve(FUNCTIONS_DIR, "..", "..");
 	const TENANT = "123e4567-e89b-42d3-a456-426614174000";
@@ -27,8 +32,8 @@ function cycle(): Record<string, unknown> {
 		complete: true,
 		expected_targets: 2,
 		items: [
-			{ target: "https://example.test/", reachable: true, attempts: 1, error_code: null },
-			{ target: "http://127.0.0.1:8080/", reachable: false, attempts: 3, error_code: "timeout" },
+			{ target: TARGET_A, reachable: true, attempts: 1, error_code: null },
+			{ target: TARGET_B, reachable: false, attempts: 3, error_code: "timeout" },
 		],
 	};
 }
@@ -52,11 +57,29 @@ describe("managed discovery ingest boundary", () => {
 		expect(parseDiscoveryIngest({ ...input, provider_resources: { ...p, items: Array(1001).fill(p.items[0]) } })).toBeNull();
 		expect(parseProviderScope({ provider: "aws", scope_hash: "a".repeat(64), token: "synthetic" })).toBeNull();
 	});
-	it("accepts only a complete, bounded origin-level cycle", () => {
+	it("accepts only a complete, bounded cycle of pseudonymous targets", () => {
 		const parsed = parseDiscoveryIngest(cycle());
 		expect(parsed?.items).toHaveLength(2);
-		expect(parsed?.items[0]?.target).toBe("https://example.test/");
+		expect(parsed?.items[0]?.target).toBe(TARGET_A);
 		expect(parsed?.complete).toBe(true);
+	});
+
+	it("refuses target addresses; only keyed pseudonyms reach the panel", () => {
+		for (const target of ["https://example.test/", "http://127.0.0.1:8080/"]) {
+			const input = cycle();
+			(input.items as Record<string, unknown>[])[0].target = target;
+			expect(parseDiscoveryIngest(input)).toBeNull();
+			expect(discoveryIngestCarriesAddress(input)).toBe(true);
+		}
+		expect(discoveryIngestCarriesAddress(cycle())).toBe(false);
+		for (const target of [`tid1_${"A".repeat(64)}`, `tid1_${"a".repeat(63)}`, `tid2_${"a".repeat(64)}`])
+			expect(discoveryTargetId(target)).toBeNull();
+	});
+
+	it("pages over both pseudonyms and legacy origin rows", () => {
+		expect(discoveryTargetCursor(TARGET_A)).toBe(TARGET_A);
+		expect(discoveryTargetCursor("https://legacy.example.test")).toBe("https://legacy.example.test/");
+		expect(discoveryTargetCursor("https://legacy.example.test/path")).toBeNull();
 	});
 
 	it("preserves an incomplete cycle explicitly instead of treating it as healthy", () => {
@@ -83,7 +106,7 @@ describe("managed discovery ingest boundary", () => {
 
 	it("rejects duplicate origins, loose status, replay sequence and oversized inventories", () => {
 		const duplicate = cycle();
-		(duplicate.items as Record<string, unknown>[])[1].target = "https://example.test:443/";
+		(duplicate.items as Record<string, unknown>[])[1].target = TARGET_A;
 		expect(parseDiscoveryIngest(duplicate)).toBeNull();
 		const loose = cycle();
 		(loose.items as Record<string, unknown>[])[1].error_code = "timeout: Bearer secret";
@@ -168,6 +191,17 @@ describe("managed discovery server boundary", () => {
 		expect(offboarding).toContain("tenant_offboarding_purge_discovery");
 		expect(offboarding).toContain("new.phase <> 'agents'");
 		expect(offboarding).toContain("tenant_legal_holds");
+	});
+
+	it("stores pseudonyms only for new ingests while keeping legacy origin rows readable", () => {
+		const pseudonyms = readFileSync(join(REPO_ROOT, "supabase", "migrations", "20261007000000_discovery_target_pseudonyms.sql"), "utf8");
+		const constraint = pseudonyms.slice(0, pseudonyms.indexOf("create or replace function"));
+		expect(constraint).toContain("target ~ '^tid1_[a-f0-9]{64}$'");
+		expect(constraint).toContain("target ~ '^https?://[^/?#@[:space:]]+/$'");
+		const ingest = pseudonyms.slice(pseudonyms.indexOf("create or replace function public.ingest_tenant_discovery_cycle("));
+		expect(ingest).toContain("(item->>'target') !~ '^tid1_[a-f0-9]{64}$'");
+		expect(ingest).not.toContain("https?://");
+		expect(ingest).toContain("grant execute on function public.ingest_tenant_discovery_cycle");
 	});
 
 	it("removes omitted targets only after a complete cycle", () => {
