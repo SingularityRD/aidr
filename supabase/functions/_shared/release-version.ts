@@ -54,7 +54,8 @@ export function isNewerRelease(current: string, latest: string): boolean {
 		if (b[i]! > a[i]!) return true;
 		if (b[i]! < a[i]!) return false;
 	}
-	return false;
+	// Same core version: the final release outranks any of its pre-releases.
+	return current.includes("-") && !latest.includes("-");
 }
 
 function fromBase64(value: string): Uint8Array | null {

@@ -130,6 +130,11 @@ function loadKoffiAmsiBindings(): Promise<KoffiAmsiBindings> {
 			AmsiUninitialize: lib.func("void __stdcall AmsiUninitialize(HAMSICONTEXT ctx)"),
 		};
 	})();
+	// A transient load failure must not disable the native backend for the life of
+	// a long-running process: forget the rejected attempt so the next client retries.
+	koffiAmsiBindings.catch(() => {
+		koffiAmsiBindings = null;
+	});
 	return koffiAmsiBindings;
 }
 

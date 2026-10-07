@@ -2,6 +2,7 @@ import { PassThrough } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
 import {
 	createHookResponder,
+	EXIT_FLUSH_BACKSTOP_MS,
 	HOOK_HOST_TIMEOUT_MS,
 	hasMalformedCommandText,
 	isValidUtf8,
@@ -89,6 +90,19 @@ describe("createHookResponder", () => {
 		expect(t.written).toEqual(["deny\n"]);
 		expect(t.io.writeStderr).toHaveBeenCalledWith("late\n");
 		expect(t.exit).toHaveBeenCalledWith(2);
+	});
+
+	it("exits once via the backstop when the stdout flush never completes", async () => {
+		const t = io();
+		const responder = createHookResponder({
+			deadlineMs: 5_000,
+			onDeadline: () => ({ stdout: "deny\n" }),
+			io: { ...t.io, writeStdout: () => {} },
+		});
+		responder.answer({ stdout: "allow\n", exitCode: 0 });
+		await new Promise((resolve) => setTimeout(resolve, EXIT_FLUSH_BACKSTOP_MS + 100));
+		expect(t.exit).toHaveBeenCalledOnce();
+		expect(t.exit).toHaveBeenCalledWith(0);
 	});
 
 	it("still exits (fail closed via exit code) when the deadline answer throws", async () => {

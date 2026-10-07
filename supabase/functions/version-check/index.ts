@@ -88,8 +88,8 @@ export async function handleVersionCheck(req: Request): Promise<Response> {
 	const db = createClient(config.values.SUPABASE_URL!, config.values.SUPABASE_SERVICE_ROLE_KEY!, {
 		auth: { persistSession: false, autoRefreshToken: false },
 	}) as unknown as RateLimitDb;
-	const aggregate = await limited(db, AGGREGATE_RATE_LIMIT_KEY, aggregateLimit);
-	if (aggregate) return aggregate;
+	// Per-client first, so one attested caller is stopped before it can spend the
+	// deployment-wide budget every other install shares.
 	const ingressSecret = env(INGRESS_SECRET_ENV);
 	if (validIngressSecret(ingressSecret)) {
 		const ip = await verifiedIngressIp(req, ingressSecret, VERSION_CHECK_INGRESS_CONTEXT);
@@ -98,6 +98,8 @@ export async function handleVersionCheck(req: Request): Promise<Response> {
 			if (client) return client;
 		}
 	}
+	const aggregate = await limited(db, AGGREGATE_RATE_LIMIT_KEY, aggregateLimit);
+	if (aggregate) return aggregate;
 
 	const latest = await resolveLatestRelease(env);
 	if (!latest.ok) {

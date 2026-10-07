@@ -240,6 +240,9 @@ describe("release version helpers", () => {
 		expect(isNewerRelease("0.8.9", "0.9.0")).toBe(true);
 		expect(isNewerRelease("0.9.0", "0.9.0")).toBe(false);
 		expect(isNewerRelease("1.0.0", "0.9.9")).toBe(false);
+		// A pre-release is older than its own final release, never the reverse.
+		expect(isNewerRelease("1.4.0-rc.1", "1.4.0")).toBe(true);
+		expect(isNewerRelease("1.4.0", "1.4.0-rc.1")).toBe(false);
 	});
 
 	it("accepts a raw 32-byte public key as well as SPKI DER", async () => {

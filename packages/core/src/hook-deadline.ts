@@ -32,6 +32,8 @@ export const HOOK_HOST_TIMEOUT_MS = {
 export const MIN_HOOK_DEADLINE_MS = 100;
 /** Headroom kept between the internal deadline and the host timeout for write + exit. */
 export const HOOK_DEADLINE_HEADROOM_MS = 1_000;
+/** Longest wait for stdout to flush after an answer before the process exits anyway. */
+export const EXIT_FLUSH_BACKSTOP_MS = 500;
 
 export interface HookDeadlineSpec {
 	/** Environment variable that may override the deadline (integer milliseconds). */
@@ -125,10 +127,21 @@ export function createHookResponder(options: HookResponderOptions): HookResponde
 		} catch {
 			// stderr is only a secondary channel.
 		}
-		try {
-			writeStdout(answer.stdout, () => exit(code));
-		} catch {
+		// Backstop: a write whose callback never fires (host not draining stdout)
+		// must not keep the hook alive until the host kills it.
+		let exited = false;
+		const exitOnce = () => {
+			if (exited) return;
+			exited = true;
+			clearTimer(backstop);
 			exit(code);
+		};
+		const backstop = setTimer(exitOnce, EXIT_FLUSH_BACKSTOP_MS);
+		(backstop as { unref?: () => void } | undefined)?.unref?.();
+		try {
+			writeStdout(answer.stdout, exitOnce);
+		} catch {
+			exitOnce();
 		}
 		return true;
 	};
