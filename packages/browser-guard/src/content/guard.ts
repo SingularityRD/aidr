@@ -48,6 +48,7 @@ import {
 	type SiteAdapter,
 } from "../types.js";
 import { createFileGuard, type SanitizeFileFn } from "./file-guard.js";
+import { RELAY_SCAN } from "./file-relay.js";
 import {
 	formatCounts,
 	type Lang,
@@ -208,6 +209,22 @@ export function mergeNativeFindings(
 	return { ...result, findings, counts: countFindings(findings), native: use };
 }
 
+/** The parts of `finding` outside the (start-sorted) `holes`. */
+function remainders(
+	finding: Finding,
+	holes: readonly (readonly [number, number])[],
+): [number, number][] {
+	let cursor = finding.start;
+	const pieces: [number, number][] = [];
+	for (const [a, b] of holes) {
+		if (b <= cursor || a >= finding.end) continue;
+		if (a > cursor) pieces.push([cursor, a]);
+		cursor = Math.max(cursor, b);
+	}
+	if (cursor < finding.end) pieces.push([cursor, finding.end]);
+	return pieces;
+}
+
 /** At least one letter or digit: a remainder without one carries no data worth masking. */
 const MEANINGFUL = /[\p{L}\p{N}]/u;
 
@@ -228,15 +245,9 @@ export function subtractPlaceholders(
 	const holes = [...placeholders].sort((a, b) => a[0] - b[0]);
 	const out: Finding[] = [];
 	for (const finding of findings) {
-		let cursor = finding.start;
-		const pieces: [number, number][] = [];
-		for (const [a, b] of holes) {
-			if (b <= cursor || a >= finding.end) continue;
-			if (a > cursor) pieces.push([cursor, a]);
-			cursor = Math.max(cursor, b);
-		}
-		if (cursor < finding.end) pieces.push([cursor, finding.end]);
-		if (pieces.length === 1 && pieces[0]?.[0] === finding.start && pieces[0][1] === finding.end) {
+		const pieces = remainders(finding, holes);
+		const untouched = pieces.length === 1 && pieces[0]?.[0] === finding.start;
+		if (untouched && pieces[0]?.[1] === finding.end) {
 			out.push(finding);
 			continue;
 		}
@@ -244,8 +255,9 @@ export function subtractPlaceholders(
 			const slice = text.slice(start, end);
 			const lead = slice.length - slice.trimStart().length;
 			const trimmed = slice.trim();
-			if (!MEANINGFUL.test(trimmed)) continue;
-			out.push({ ...finding, start: start + lead, end: start + lead + trimmed.length });
+			if (MEANINGFUL.test(trimmed)) {
+				out.push({ ...finding, start: start + lead, end: start + lead + trimmed.length });
+			}
 		}
 	}
 	return out;
@@ -928,11 +940,13 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 	};
 
 	const onInput = (event: Event): void => {
-		const target = asElement(event.target);
-		if (target?.tagName === "INPUT" && (target as HTMLInputElement).type === "file") {
+		// composedPath()[0]: a file input in an open shadow root is retargeted to its host.
+		const inner = asElement(event.composedPath()[0] ?? event.target);
+		if (inner?.tagName === "INPUT" && (inner as HTMLInputElement).type === "file") {
 			fileGuard.onInputEvent(event);
 			return;
 		}
+		const target = asElement(event.target);
 		if (event.type !== "input" || !target || ignored(event)) return;
 		const editor = editorFor(target);
 		if (editor && contains(editor.element, target)) schedulePrescan();
@@ -1135,6 +1149,8 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 		["input", onInput],
 		["change", onInput],
 		["focusin", onFocusIn],
+		// Detached and shadow-DOM file inputs, routed by the page-world hook (./file-relay.ts).
+		[RELAY_SCAN, (event: Event) => fileGuard.onRelayScan(event)],
 	];
 
 	return {

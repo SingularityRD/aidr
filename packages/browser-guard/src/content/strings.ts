@@ -55,6 +55,7 @@ export interface Strings {
 	readonly legacyOfficeHint: string;
 	readonly fileScanFailed: string;
 	readonly fileReplaceUnsupported: string;
+	readonly fileInputUnguarded: string;
 	/** Native NER was enabled but gave no usable answer: this check was rules-only. */
 	readonly nativeUnavailable: string;
 	/** Acceptable-use notice (administrator text is shown verbatim; these are the controls). */
@@ -122,6 +123,8 @@ const EN: Strings = {
 	fileScanFailed: "AIDR could not check the file, so it was not uploaded.",
 	fileReplaceUnsupported:
 		"This browser cannot replace the file with a sanitized copy, so it was not uploaded.",
+	fileInputUnguarded:
+		"AIDR cannot check files chosen through this upload control on this page, so the selection was blocked.",
 	nativeUnavailable:
 		"Advanced name and address detection (native host) is unavailable: checked with built-in rules only.",
 	aupAcknowledge: "I understand",
@@ -186,6 +189,8 @@ const TR: Strings = {
 	fileScanFailed: "AIDR dosyayı kontrol edemedi; dosya yüklenmedi.",
 	fileReplaceUnsupported:
 		"Bu tarayıcı dosyayı temizlenmiş kopyasıyla değiştiremiyor; dosya yüklenmedi.",
+	fileInputUnguarded:
+		"AIDR bu sayfadaki bu yükleme alanından seçilen dosyaları denetleyemiyor; seçim engellendi.",
 	nativeUnavailable:
 		"Gelişmiş ad ve adres algılama (yerel yardımcı uygulama) kullanılamıyor: yalnızca yerleşik kurallarla kontrol edildi.",
 	aupAcknowledge: "Anladım",

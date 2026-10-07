@@ -242,7 +242,7 @@ node scripts/icons.mjs --check   # exit 1 if the committed icons are stale
 | `host_permissions` | the ten HTTPS hosts above | content script injection on supported sites only |
 | `optional_permissions` | `nativeMessaging` | requested on the options page (from the click that turns the native NER host on, or the **Grant permission** button when an administrator enabled it); never at install |
 | `optional_host_permissions` | `https://*/*` | never requested at install. The options page requests exact `https://<host>/*` origins, from a click, only for what the managed policy configures: the hosts of `customSites`, and the Shadow AI catalog origins when `shadowAi` is on (or the origins of explicitly blocked services). No `tabs`, `webNavigation`, `history` or `<all_urls>` permission is requested: the extension sees a tab's URL only on origins it was granted |
-| `content_scripts` | `run_at: document_start`, `all_frames: false` | intercept before the page's own handlers; top frame only |
+| `content_scripts` | `content.js` and `content-main.js` (`world: "MAIN"`), both `run_at: document_start`, `all_frames: false` | intercept before the page's own handlers; top frame only. `content-main.js` runs in the page's JavaScript world with no extension APIs and no data: it only hooks `<input type=file>` (`click`, `showPicker`, the `files` getter) so detached and shadow-DOM file inputs are handed to `content.js` for checking (see [Limitations](#limitations)). Custom sites get both scripts |
 | `web_accessible_resources` | none | nothing is exposed to web pages, so a page cannot fingerprint the extension by probing its resources. A site listed in `blockedSites` is refused by a declarativeNetRequest rule and the background worker then opens `blocked.html` in that tab itself (`tabs.update`, an extension-initiated navigation). A DNR redirect would need the page to be web accessible, and Chrome refuses DNR redirects to `use_dynamic_url` resources (verified by the `blocked-site` E2E scenario) |
 | `incognito` | `not_allowed` | the extension does not run in private windows |
 | CSP (`extension_pages`) | `default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https: http://localhost:* http://127.0.0.1:*; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'` | no remote code; `connect-src 'self'` so the options page can load the packaged `_locales` for the language override; `https:` because the control-plane URL is configurable per tenant; loopback HTTP for local development |
@@ -456,6 +456,21 @@ to regenerate the dataset with stable fingerprints.
   OpenDocument masking has the same scope (sheet and table names, named ranges
   and chart caches are not rewritten). Legacy binary formats (`.doc`, `.xls`,
   `.ppt`) are not parsed: they pass only with a warning, or are blocked (see above).
+- File inputs: inputs in the page's document are intercepted by the content script.
+  Inputs created without being attached (`createElement("input")` + `click()`) and
+  inputs inside shadow roots are covered by a small page-world script
+  (`content-main.js`) that holds their selection back (empty `files`, stopped
+  `input`/`change` events) until the content script has checked it, and clears it
+  when the check fails or does not answer. Limits: a page that submits such an input
+  through a native form submission or `new FormData(form)` reads the files without
+  that hook; a page script can remove or bypass a page-world hook (it runs in the
+  page's own JavaScript world), so this protects against upload code the guard
+  cannot see, not against a site that deliberately evades it; and an input in an
+  open shadow root without the page-world script is blocked (with a notice) rather
+  than checked, while one in a closed shadow root cannot be seen at all. The
+  Chromium and Firefox page-world relay is covered by unit tests (jsdom), not yet by
+  the real-browser E2E suite. `window.showOpenFilePicker()` (File System Access API)
+  is not intercepted.
 - Restoring works on text the site renders in the page. Content the site
   exports, copies to the clipboard itself, or shares by link contains the
   placeholders, not the originals.

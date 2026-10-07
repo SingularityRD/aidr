@@ -132,6 +132,7 @@ export interface RegisteredContentScript {
 	runAt?: "document_start" | "document_end" | "document_idle";
 	allFrames?: boolean;
 	persistAcrossSessions?: boolean;
+	world?: "ISOLATED" | "MAIN";
 }
 
 /** The global `chrome` namespace, when running inside an extension. */
