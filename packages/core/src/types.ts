@@ -889,6 +889,16 @@ const OperatorApprovalsConfigSchema = z.object({
 	 * VS Code) block instead of asking. Ignored in local mode.
 	 */
 	dashboard_only: z.boolean().default(false),
+	/**
+	 * How an `ask` is resolved on hosts that have their own confirmation dialog
+	 * (Claude Code, Cursor / VS Code hook). Hosts without one (OpenClaw, OpenCode,
+	 * Codex) always use the operator channel.
+	 * - `host_dialog` (default): the host's native dialog decides; the ask is also
+	 *   listed in `aidr pending` as informational (it cannot be `aidr approve`d).
+	 * - `operator`: the call is DENIED with an approval reference, recorded in the
+	 *   operator store, and released for one retry only after `aidr approve`.
+	 */
+	mode: z.enum(["host_dialog", "operator"]).default("host_dialog"),
 });
 
 /**

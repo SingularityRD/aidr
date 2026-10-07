@@ -2,7 +2,9 @@ import {
 	describeOperatorApprovalKey,
 	escapeTerminalText,
 	getPendingAsk,
+	type HostDialogAsk,
 	type ListedPendingAsk,
+	listHostDialogAsks,
 	listPendingAsks,
 	loadConfig,
 	OPERATOR_APPROVAL_DEFAULT_TTL_MS,
@@ -31,7 +33,7 @@ export interface ApprovalCommandDeps {
  * are stored; this second pass covers records from older versions and any
  * record that fails verification, so the terminal never interprets agent text.
  */
-function safePending(p: ListedPendingAsk): ListedPendingAsk {
+function safePending<T extends Omit<ListedPendingAsk, "verified">>(p: T): T {
 	const safe = escapeTerminalText;
 	return {
 		...p,
@@ -69,6 +71,27 @@ function describePending(pending: ListedPendingAsk): string[] {
 	return lines;
 }
 
+/** An informational ask the host's own dialog answered: shown, never approvable. */
+function describeHostDialogAsk(ask: HostDialogAsk): string[] {
+	const p = safePending(ask);
+	return [
+		`actionId:   ${p.actionId}`,
+		`connector:  ${p.connector}   tool: ${p.tool}   (answered in the host's own dialog)`,
+		`risk:       ${p.severity} ${p.category}${p.threatId ? ` (${p.threatId})` : ""}`,
+		`call:       ${p.summary}`,
+		`asked:      ${p.createdAt}`,
+	];
+}
+
+/** Informational host-dialog asks; an unreadable store lists none. */
+async function hostDialogAsks(store: OperatorApprovalStoreOptions): Promise<HostDialogAsk[]> {
+	try {
+		return await listHostDialogAsks(store);
+	} catch {
+		return [];
+	}
+}
+
 /** The store options with the configured key storage, unless a test injected a store. */
 async function storeOptions(deps: ApprovalCommandDeps): Promise<OperatorApprovalStoreOptions> {
 	if (deps.store) return deps.store;
@@ -87,6 +110,36 @@ function fail(message: string): void {
 	process.exitCode = 1;
 }
 
+function printApprovablePending(pending: ListedPendingAsk[]): void {
+	if (pending.length === 0) {
+		console.log("No Singularity AIDR asks are waiting for approval.");
+		return;
+	}
+	console.log(`${pending.length} ask(s) waiting for an operator decision (newest first):`);
+	for (const p of pending) {
+		console.log("");
+		for (const line of describePending(p)) console.log(`  ${line}`);
+	}
+	console.log("");
+	console.log("Approve one retry of a call with: aidr approve <actionId>");
+}
+
+function printHostDialogAsks(informational: HostDialogAsk[]): void {
+	if (informational.length === 0) return;
+	console.log("");
+	console.log(
+		`${informational.length} recent ask(s) answered in the host's own dialog (informational; not approvable here):`,
+	);
+	for (const ask of informational) {
+		console.log("");
+		for (const line of describeHostDialogAsk(ask)) console.log(`  ${line}`);
+	}
+	console.log("");
+	console.log(
+		'To route these through `aidr approve` instead, set operator_approvals.mode to "operator".',
+	);
+}
+
 /** `aidr pending` — list asks waiting for an operator decision. */
 export async function pendingCommand(
 	options: { json?: boolean } = {},
@@ -103,6 +156,7 @@ export async function pendingCommand(
 		);
 		return;
 	}
+	const informational = await hostDialogAsks(store);
 	if (options.json) {
 		console.log(
 			JSON.stringify(
@@ -111,6 +165,7 @@ export async function pendingCommand(
 					approvals_available: disabled === null,
 					...(disabled ? { approvals_disabled_reason: disabled } : {}),
 					pending: pending.map(safePending),
+					host_dialog: informational.map(safePending),
 				},
 				null,
 				2,
@@ -119,17 +174,8 @@ export async function pendingCommand(
 		return;
 	}
 	if (disabled) console.error(disabled);
-	if (pending.length === 0) {
-		console.log("No Singularity AIDR asks are waiting for approval.");
-		return;
-	}
-	console.log(`${pending.length} ask(s) waiting for an operator decision (newest first):`);
-	for (const p of pending) {
-		console.log("");
-		for (const line of describePending(p)) console.log(`  ${line}`);
-	}
-	console.log("");
-	console.log("Approve one retry of a call with: aidr approve <actionId>");
+	printApprovablePending(pending);
+	printHostDialogAsks(informational);
 }
 
 export interface ApproveOptions {
@@ -158,6 +204,13 @@ async function approvablePending(
 		return null;
 	}
 	if (!pending) {
+		const informational = (await hostDialogAsks(store)).some((a) => a.actionId === actionId);
+		if (informational) {
+			fail(
+				"This ask was answered in the host's own confirmation dialog (operator_approvals.mode: host_dialog). It is listed for information only and cannot be approved here.",
+			);
+			return null;
+		}
 		fail(
 			"No pending Singularity AIDR ask has this actionId (it may have expired or already been approved). Run `aidr pending` to list open asks.",
 		);

@@ -75,10 +75,11 @@ async function runHook(
 		recordHostObservation: vi.fn(),
 		evaluateToolCall: evaluate,
 		extractFromToolCall: extract,
-		// Local mode: the managed dashboard approval step leaves the verdict unchanged.
-		resolveAskWithDashboardApproval: vi.fn(async (_request: unknown, evaluated: unknown) => ({
+		// Local mode, default host_dialog: the ask step leaves the verdict unchanged.
+		resolveHostAsk: vi.fn(async (_request: unknown, evaluated: unknown) => ({
 			verdict: evaluated,
 			dashboardOnly: false,
+			mode: "host_dialog",
 		})),
 		formatDashboardApprovalNotice: () => null,
 		// Real implementations, wired to the sandbox's stdout and exit so the

@@ -636,6 +636,28 @@ the guard does not record or consume `aidr approve` approvals, and Claude Code a
 the VS Code / Cursor hooks block the call instead of opening their native
 confirmation dialog. Ignored in local mode.
 
+`mode`: `"host_dialog"` (default) or `"operator"`. How an `ask` is resolved on the
+hosts that have their own confirmation dialog — Claude Code and the Cursor /
+VS Code hooks. OpenClaw, OpenCode and Codex always use the operator channel.
+
+- `"host_dialog"`: unchanged behaviour — the host's native dialog decides. The ask
+  is also listed in `aidr pending` under "answered in the host's own dialog". That
+  record is informational only: it has no integrity MAC, is stored apart from
+  approvable asks, and `aidr approve` refuses it.
+- `"operator"`: the host's dialog is never shown. The call is **denied** with the
+  same approval reference the soft-gated connectors use (`actionId: "…"`, plus
+  "you cannot approve this action yourself"), the ask is recorded as an
+  approvable pending ask, and after `aidr approve <actionId>` in the user's own
+  terminal exactly **one** retry of the identical call is released — the same
+  HMAC-signed store, OS-vault key and single-use consumption ledger as every other
+  operator approval. In `paranoid` sensitivity the ask is a plain deny, as on the
+  soft-gated connectors. With managed `dashboard_only: true` the dashboard stays
+  the only channel and this setting has no effect.
+
+```json
+{ "operator_approvals": { "mode": "operator" } }
+```
+
 ### `disabled_threats`
 
 Array of threat IDs to skip during heuristic matching. Default: `[]`.
@@ -770,7 +792,9 @@ in the dashboard (AAL2, signed single-use token verified by the connector); see
 control plane needs the Edge secret `AIDR_APPROVAL_SIGNING_WRAP_KEY_B64` for it.
 
 OpenClaw, OpenCode and Codex cannot show a host-native confirmation dialog, so
-their `ask` verdicts go through a file-backed, operator-only approval channel:
+their `ask` verdicts go through a file-backed, operator-only approval channel.
+Claude Code and the Cursor / VS Code hooks use the same channel when
+`operator_approvals.mode` is `"operator"` (see [`operator_approvals`](#operator_approvals)):
 
 This is the approval channel in **local mode**. In managed mode an `ask` is also
 sent to the AIDR dashboard for an administrator to approve — see
