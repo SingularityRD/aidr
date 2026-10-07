@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 import { resolvePath } from "./config.js";
 import { getFileContent } from "./file-utils.js";
 import { parseJsonc } from "./jsonc.js";
+import { classifyMcpServer, type McpServerCategoryMatch } from "./mcp-aig-categories.js";
+import { detectMcpConfigSecrets, type McpSecretFinding } from "./mcp-config-secrets.js";
 
 export interface McpInventoryItem {
 	name: string;
@@ -10,6 +12,13 @@ export interface McpInventoryItem {
 	args: string[];
 	sourcePath: string;
 	riskHints: string[];
+	/**
+	 * Literal credentials written into the server's env, headers, args or URL.
+	 * Each finding names WHERE the value sits, never the value itself.
+	 */
+	secretFindings: McpSecretFinding[];
+	/** AIG MCP risk categories (mcp-01..mcp-14) this configuration maps to. */
+	aigCategories: McpServerCategoryMatch[];
 	configurationSha256: string;
 	status: "known" | "unknown";
 }
@@ -94,6 +103,14 @@ function inventoryItemFromEntry(
 	}
 	const args = [...commandParts.slice(1), ...explicitArgs];
 	const riskHints = riskHintsFor({ command, url, args });
+	const secretFindings = detectMcpConfigSecrets({
+		// `env` (Claude/Cursor/VS Code) and `environment` (OpenCode) both carry
+		// process environment for the server.
+		env: [rec.env, rec.environment],
+		headers: rec.headers,
+		args,
+		url,
+	});
 	return {
 		name,
 		command,
@@ -101,6 +118,8 @@ function inventoryItemFromEntry(
 		args,
 		sourcePath,
 		riskHints,
+		secretFindings,
+		aigCategories: classifyMcpServer({ name, command, args, riskHints, secretFindings }),
 		configurationSha256: createHash("sha256").update(JSON.stringify(rec)).digest("hex"),
 		status: riskHints.length > 0 ? "unknown" : "known",
 	};
