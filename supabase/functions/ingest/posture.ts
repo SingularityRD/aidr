@@ -13,6 +13,22 @@ export const POSTURE_EVENT_TYPES = [
 	"mcp_inventory_finding",
 	"agent_posture_finding",
 ] as const;
+const POSTURE_EVENT_TYPE_SET: ReadonlySet<string> = new Set(POSTURE_EVENT_TYPES);
+
+/**
+ * Split a normalized batch into AI Security Posture uploads and everything
+ * else. Only the posture types are plan-gated (`ai_security_posture`);
+ * plugin_scan_finding is produced by the connectors' own plugin scan and,
+ * like every verdict/runtime event, is never gated.
+ */
+export function partitionPostureEvents<T extends { type?: unknown }>(events: T[]): { posture: T[]; other: T[] } {
+	const posture: T[] = [];
+	const other: T[] = [];
+	for (const event of events) {
+		(typeof event.type === "string" && POSTURE_EVENT_TYPE_SET.has(event.type) ? posture : other).push(event);
+	}
+	return { posture, other };
+}
 
 const IDENTIFIER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const SENSITIVE_PATTERN =

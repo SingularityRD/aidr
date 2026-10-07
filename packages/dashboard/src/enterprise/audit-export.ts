@@ -13,9 +13,17 @@ function toHex(bytes: ArrayBuffer): string {
 	return Array.from(new Uint8Array(bytes), (value) => value.toString(16).padStart(2, "0")).join("");
 }
 
+/** CSV header of each export trail; must match the server's column list exactly. */
+export const AUDIT_EXPORT_HEADERS = {
+	audit: "id,created_at,user_id,action,verdict",
+	admin: "id,created_at,actor_user_id,target_user_id,action,detail",
+} as const;
+export type AuditExportSource = keyof typeof AUDIT_EXPORT_HEADERS;
+
 export async function collectAuditExport(
 	format: "json" | "csv",
 	getPage: (cursor?: string) => Promise<ExportPage>,
+	source: AuditExportSource = "audit",
 ): Promise<Blob> {
 	const parts: string[] = [];
 	const seen = new Set<string>();
@@ -98,7 +106,7 @@ export async function collectAuditExport(
 				throw new Error("Export row count mismatch. No file was produced.");
 			if (data.length) parts.push(JSON.stringify(data).slice(1, -1));
 		} else {
-			const header = "id,created_at,user_id,action,verdict";
+			const header = AUDIT_EXPORT_HEADERS[source];
 			if (
 				!content.startsWith(header) ||
 				(content.length > header.length && !content.startsWith(`${header}\r\n`))

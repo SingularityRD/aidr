@@ -948,6 +948,19 @@ export interface Database {
 				Args: { p_tenant_id: string };
 				Returns: unknown;
 			};
+			get_tenant_plan_entitlements: {
+				Args: { p_tenant_id: string };
+				Returns: unknown;
+			};
+			list_tenant_admin_audit_logs: {
+				Args: {
+					p_tenant_id: string;
+					p_limit?: number;
+					p_before_created_at?: string;
+					p_before_id?: number;
+				};
+				Returns: unknown;
+			};
 		};
 	};
 }

@@ -12,7 +12,7 @@ import {
 	normalizePostureSeverity,
 	projectPostureFields,
 } from "../posture-events.js";
-import { uploadPostureEvents } from "../posture-upload.js";
+import { describePostureUploadError, uploadPostureEvents } from "../posture-upload.js";
 import { ConfigSchema, type PluginScanResult } from "../types.js";
 
 const SCAN_ID = "20260924120000abcdef01";
@@ -354,5 +354,79 @@ describe("uploadPostureEvents", () => {
 			...paths(),
 		});
 		expect(result).toMatchObject({ ok: false, delivered: 0, total: 3, queued: true });
+	});
+
+	it("names a plan without AI Security Posture when the server refuses the upload (402)", async () => {
+		globalThis.fetch = vi.fn(
+			async () =>
+				new Response(
+					JSON.stringify({
+						error: "plan_feature_required",
+						feature: "ai_security_posture",
+						plan_id: "team",
+						required_plan: "business",
+					}),
+					{ status: 402, headers: { "Content-Type": "application/json" } },
+				),
+		) as typeof fetch;
+		const result = await uploadPostureEvents(buildInfraScanFindingEvents(INFRA_SUMMARY, SCAN_ID), {
+			config: config({ auth: { api_key: "aidr_live_key" } }),
+			...paths(),
+		});
+		expect(result).toEqual({
+			ok: false,
+			error: "plan_feature_required",
+			status: 402,
+			delivered: 0,
+			total: 3,
+			queued: false,
+		});
+		expect(describePostureUploadError("plan_feature_required")).toMatch(
+			/plan does not include AI Security Posture/,
+		);
+	});
+
+	it("never reports findings the server rejected for the plan as delivered", async () => {
+		globalThis.fetch = vi.fn(async (_url: unknown, init?: RequestInit) => {
+			const body = JSON.parse(String(init?.body)) as { events: Array<{ event_id: string }> };
+			return new Response(
+				JSON.stringify({
+					ok: true,
+					acknowledged_event_ids: [],
+					rejected_event_ids: body.events.map((event) => event.event_id),
+					rejected_reason: { error: "plan_feature_required", feature: "ai_security_posture" },
+				}),
+				{ status: 200, headers: { "Content-Type": "application/json" } },
+			);
+		}) as typeof fetch;
+		const result = await uploadPostureEvents(buildInfraScanFindingEvents(INFRA_SUMMARY, SCAN_ID), {
+			config: config({ auth: { api_key: "aidr_live_key" } }),
+			...paths(),
+		});
+		expect(result).toMatchObject({
+			ok: false,
+			error: "plan_feature_required",
+			delivered: 0,
+			total: 3,
+		});
+	});
+
+	it("keeps findings queued when the plan cannot be confirmed (503)", async () => {
+		globalThis.fetch = vi.fn(
+			async () =>
+				new Response(JSON.stringify({ error: "plan_entitlement_unavailable", retryable: true }), {
+					status: 503,
+					headers: { "Content-Type": "application/json" },
+				}),
+		) as typeof fetch;
+		const result = await uploadPostureEvents(buildInfraScanFindingEvents(INFRA_SUMMARY, SCAN_ID), {
+			config: config({ auth: { api_key: "aidr_live_key" } }),
+			...paths(),
+		});
+		expect(result).toMatchObject({
+			ok: false,
+			error: "plan_entitlement_unavailable",
+			queued: true,
+		});
 	});
 });

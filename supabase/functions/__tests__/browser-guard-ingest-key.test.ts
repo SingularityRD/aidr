@@ -47,12 +47,26 @@ function scan(overrides: Record<string, unknown> = {}): Record<string, unknown> 
 
 type RpcResult = { data: unknown; error: Record<string, unknown> | null };
 
+// tenant_plan_entitlements answer (catalog features of each plan).
+function planRow(planId: "free" | "team" | "business"): RpcResult {
+	const features = {
+		free: ["local_detection", "dashboard"],
+		team: ["local_detection", "dashboard", "browser_privacy_guard", "entra_sso"],
+		business: ["local_detection", "dashboard", "browser_privacy_guard", "entra_sso", "siem_export", "scim", "ai_security_posture"],
+	}[planId];
+	return {
+		data: { tenant_id: TENANT_ID, plan_id: planId, plan_source: "stripe_subscription", trial_active: false, features, retention_days_max: null },
+		error: null,
+	};
+}
+
 async function ingestHandler(options: {
 	key?: Record<string, unknown>;
 	registration?: Record<string, unknown>;
 	registrationError?: Record<string, unknown>;
 	rate?: RpcResult;
 	premium?: boolean;
+	plan?: RpcResult;
 } = {}) {
 	let handler: ((request: Request) => Promise<Response>) | undefined;
 	vi.stubEnv("SUPABASE_URL", "https://project.supabase.co");
@@ -115,6 +129,7 @@ async function ingestHandler(options: {
 		}
 		if (name === "effective_tenant_seats")
 			return { data: [{ extra_agents: 0, provider_valid_until: null }], error: null };
+		if (name === "tenant_plan_entitlements") return options.plan ?? planRow("business");
 		throw new Error(`Unexpected RPC: ${name}`);
 	});
 	const reads: string[] = [];
@@ -351,6 +366,47 @@ describe("ingest with an ingest:browser_guard key", () => {
 		expect(runtime.insertedEvents).not.toHaveBeenCalled();
 	});
 
+	it("requires the Team plan's Browser Guard feature before spending budget, seats or rows", async () => {
+		const runtime = await ingestHandler({ plan: planRow("free") });
+		const response = await runtime.handler(ingestRequest({}));
+		expect(response.status).toBe(402);
+		expect(await response.json()).toEqual({
+			error: "plan_feature_required",
+			feature: "browser_privacy_guard",
+			plan_id: "free",
+			required_plan: "team",
+		});
+		expect(runtime.rpc).toHaveBeenCalledWith("tenant_plan_entitlements", { p_tenant_id: TENANT_ID });
+		expect(rpcNames(runtime.rpc)).not.toContain("consume_tenant_rate_limit");
+		expect(rpcNames(runtime.rpc)).not.toContain("register_browser_guard_agent_for_ingest");
+		expect(runtime.insertedEvents).not.toHaveBeenCalled();
+		expect(runtime.insertedSnapshot).not.toHaveBeenCalled();
+		// A heartbeat from the same key is gated too.
+		const heartbeat = await runtime.handler(ingestRequest({ events: [] }));
+		expect(heartbeat.status).toBe(402);
+	});
+
+	it("accepts Browser Guard telemetry on the Team plan", async () => {
+		const runtime = await ingestHandler({ plan: planRow("team") });
+		expect((await runtime.handler(ingestRequest({}))).status).toBe(200);
+		expect(runtime.insertedEvents).toHaveBeenCalledOnce();
+	});
+
+	it.each([
+		["an RPC error", { data: null, error: { message: "private database detail" } }],
+		["a malformed row", { data: { tenant_id: TENANT_ID, plan_id: "platinum" }, error: null }],
+		["another tenant's row", { ...planRow("business"), data: { ...(planRow("business").data as object), tenant_id: USER_ID } }],
+	])("fails a browser key closed (503) on %s", async (_label, plan) => {
+		const runtime = await ingestHandler({ plan: plan as RpcResult });
+		const response = await runtime.handler(ingestRequest({}));
+		const text = await response.text();
+		expect(response.status).toBe(503);
+		expect(JSON.parse(text)).toEqual({ error: "plan_entitlement_unavailable", retryable: true });
+		expect(text).not.toContain("private database detail");
+		expect(rpcNames(runtime.rpc)).not.toContain("register_browser_guard_agent_for_ingest");
+		expect(runtime.insertedEvents).not.toHaveBeenCalled();
+	});
+
 	it("keeps a tenant key on the unchanged ingest path", async () => {
 		const runtime = await ingestHandler({
 			key: { ...BROWSER_KEY_ROW, scope: "tenant", install_limit: null },
@@ -366,6 +422,8 @@ describe("ingest with an ingest:browser_guard key", () => {
 			p_subject_limit: 1200,
 		}));
 		expect(rpcNames(runtime.rpc)).toContain("register_agent_for_ingest");
+		// Verdict ingest with a tenant key never resolves a plan.
+		expect(rpcNames(runtime.rpc)).not.toContain("tenant_plan_entitlements");
 	});
 });
 

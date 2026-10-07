@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { readErrorMessage } from "../lib/errors";
+import { AdminAuditSection } from "./admin-audit-section";
 import { useTeam } from "./team-provider";
 
 const PAGE_SIZE = 25;
@@ -175,6 +176,7 @@ export function TeamAuditPanel() {
 							</div>
 						</>
 					)}
+					<AdminAuditSection />
 				</>
 			)}
 		</section>

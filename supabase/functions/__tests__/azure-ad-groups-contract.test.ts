@@ -35,6 +35,14 @@ interface FakeOptions {
 	membershipExpiry?: unknown;
 	overflowMemberships?: boolean;
 	includeOtherTenant?: boolean;
+	/** tenant_plan_entitlements result per tenant; defaults to an entitled Business plan. */
+	plan?: (tenantId: string) => { data: unknown; error: unknown };
+}
+
+const ENTITLED_FEATURES = ["local_detection", "dashboard", "browser_privacy_guard", "entra_sso", "siem_export", "scim", "ai_security_posture"];
+
+function planRow(tenantId: string, planId = "business", features = ENTITLED_FEATURES) {
+	return { tenant_id: tenantId, plan_id: planId, plan_source: "stripe_subscription", trial_active: false, features, retention_days_max: 365 };
 }
 
 function fakeDb(options: FakeOptions = {}) {
@@ -97,10 +105,21 @@ function fakeDb(options: FakeOptions = {}) {
 		return builder;
 	}
 
+	const rpcCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
 	return {
 		calls,
+		rpcCalls,
 		db: {
 			from: (table: string) => query(table),
+			rpc: vi.fn(async (name: string, args: Record<string, unknown>) => {
+				calls.push(`rpc:${name}`);
+				rpcCalls.push({ name, args });
+				if (name === "tenant_plan_entitlements") {
+					const tenantId = String(args.p_tenant_id);
+					return options.plan ? options.plan(tenantId) : { data: planRow(tenantId), error: null };
+				}
+				return { data: null, error: { message: `unexpected rpc ${name}` } };
+			}),
 			auth: {
 				getUser: vi.fn(async () => ({ data: { user: { id: USER } }, error: null })),
 				mfa: {
@@ -201,6 +220,73 @@ describe("verified SCIM group read boundary", () => {
 		}));
 		expect(write.status).toBe(405);
 		expect(write.headers.get("Allow")).toBe("GET");
+	});
+
+	it("answers 402 plan_feature_required for a tenant without Entra sync and reads no SCIM data", async () => {
+		const fixture = fakeDb({ plan: (tenantId) => ({ data: planRow(tenantId, "free", ["local_detection", "dashboard"]), error: null }) });
+		const response = await createAzureAdGroupsHandler({ db: fixture.db as never })(getRequest({ "X-AIDR-Tenant-ID": TENANT }));
+		expect(response.status).toBe(402);
+		expect(response.headers.get("Cache-Control")).toBe("no-store");
+		expect(await response.json()).toEqual({ error: "plan_feature_required", feature: "entra_sso", plan_id: "free", required_plan: "team" });
+		expect(fixture.rpcCalls).toEqual([{ name: "tenant_plan_entitlements", args: { p_tenant_id: TENANT } }]);
+		expect(fixture.calls.at(-1)).toBe("rpc:tenant_plan_entitlements");
+		for (const table of ["scim_users", "scim_group_memberships", "scim_groups", "scim_group_role_mappings"]) expect(fixture.calls).not.toContain(table);
+
+		const all = fakeDb({ plan: (tenantId) => ({ data: planRow(tenantId, "free", ["local_detection", "dashboard"]), error: null }) });
+		const allResponse = await createAzureAdGroupsHandler({ db: all.db as never })(getRequest());
+		expect(allResponse.status).toBe(402);
+		expect(all.calls).not.toContain("scim_users");
+	});
+
+	it("leaves an unentitled tenant out of an all-tenant read", async () => {
+		const fixture = fakeDb({
+			includeOtherTenant: true,
+			plan: (tenantId) => ({ data: tenantId === OTHER_TENANT ? planRow(tenantId, "free", ["local_detection", "dashboard"]) : planRow(tenantId, "team", ["local_detection", "dashboard", "browser_privacy_guard", "entra_sso"]), error: null }),
+		});
+		const response = await createAzureAdGroupsHandler({ db: fixture.db as never })(getRequest());
+		expect(response.status).toBe(200);
+		const payload = await response.json();
+		expect(payload.groups).toHaveLength(1);
+		expect(payload.groups[0]).toMatchObject({ tenant_id: TENANT, role: "admin" });
+	});
+
+	it.each([
+		["rpc error", () => ({ data: null, error: { message: "boom" } })],
+		["null result", () => ({ data: null, error: null })],
+		["other tenant", () => ({ data: planRow(OTHER_TENANT), error: null })],
+		["unknown source", (tenantId: string) => ({ data: { ...planRow(tenantId), plan_source: "manual" }, error: null })],
+	])("answers 503 plan_entitlement_unavailable when the plan cannot be read (%s)", async (_label, plan) => {
+		for (const headers of [{}, { "X-AIDR-Tenant-ID": TENANT }]) {
+			const fixture = fakeDb({ plan });
+			const response = await createAzureAdGroupsHandler({ db: fixture.db as never })(getRequest(headers));
+			expect(response.status).toBe(503);
+			expect(await response.json()).toEqual({ error: "plan_entitlement_unavailable" });
+			expect(fixture.calls).not.toContain("scim_users");
+		}
+	});
+
+	it("fails the whole all-tenant read closed when any tenant's plan is unreadable", async () => {
+		const fixture = fakeDb({ includeOtherTenant: true, plan: (tenantId) => tenantId === OTHER_TENANT ? { data: null, error: { message: "boom" } } : { data: planRow(tenantId), error: null } });
+		const response = await createAzureAdGroupsHandler({ db: fixture.db as never })(getRequest());
+		expect(response.status).toBe(503);
+		expect(await response.json()).toEqual({ error: "plan_entitlement_unavailable" });
+		expect(fixture.calls).not.toContain("scim_users");
+	});
+
+	it("checks the plan only after membership and the identity barrier, and proceeds when entitled", async () => {
+		const denied = fakeDb();
+		expect((await createAzureAdGroupsHandler({ db: denied.db as never })(getRequest({ "X-AIDR-Tenant-ID": OTHER_TENANT }))).status).toBe(403);
+		expect(denied.rpcCalls).toEqual([]);
+		const mfa = fakeDb({ requireMfa: true });
+		expect((await createAzureAdGroupsHandler({ db: mfa.db as never })(getRequest())).status).toBe(403);
+		expect(mfa.rpcCalls).toEqual([]);
+
+		const fixture = fakeDb({ plan: (tenantId) => ({ data: planRow(tenantId, "team", ["local_detection", "dashboard", "browser_privacy_guard", "entra_sso"]), error: null }) });
+		const response = await createAzureAdGroupsHandler({ db: fixture.db as never })(getRequest({ "X-AIDR-Tenant-ID": TENANT }));
+		expect(response.status).toBe(200);
+		expect(fixture.calls.indexOf("rpc:tenant_plan_entitlements")).toBeGreaterThan(fixture.calls.indexOf("tenants"));
+		expect(fixture.calls.indexOf("rpc:tenant_plan_entitlements")).toBeLessThan(fixture.calls.indexOf("scim_users"));
+		expect(SOURCE.indexOf('requireFeature(db as unknown as PlanEntitlementDb, tenantId, "entra_sso")')).toBeLessThan(SOURCE.indexOf('db.from("scim_users")'));
 	});
 
 	it("has a read-only deployment contract", () => {

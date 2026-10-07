@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { type FeatureDecision, requireFeature } from "../../_shared/plan-entitlements.ts";
 import { collectMemberPages, MAX_SCIM_GROUP_MEMBERS, ScimMemberLimitError } from "../member-pages.ts";
 import {
 	createScimHandler,
@@ -22,6 +23,19 @@ const tenantA = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const tenantB = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const now = "2026-09-12T10:00:00.000Z";
 
+const ENTITLED_FEATURES = ["local_detection", "dashboard", "browser_privacy_guard", "entra_sso", "siem_export", "scim", "ai_security_posture"];
+
+function planDb(result: { data: unknown; error: unknown } | (() => never)) {
+	return { rpc: async (name: string) => {
+		if (name !== "tenant_plan_entitlements") throw new Error(`unexpected rpc ${name}`);
+		return typeof result === "function" ? result() : result;
+	} };
+}
+
+function entitledPlanDb(tenantId: string, planId = "business", features = ENTITLED_FEATURES) {
+	return planDb({ data: { tenant_id: tenantId, plan_id: planId, plan_source: "stripe_subscription", trial_active: false, features, retention_days_max: 365 }, error: null });
+}
+
 class MemoryStore implements ScimStore {
 	tokens = new Map<string, ScimTenant>([["new-secret-with-at-least-thirty-two-bytes", { tenantId: tenantA, tokenId: "token-new" }], ["tenant-b-secret-with-at-least-32-bytes", { tenantId: tenantB, tokenId: "token-b" }]]);
 	users = new Map<string, ScimUser>();
@@ -31,6 +45,9 @@ class MemoryStore implements ScimStore {
 	nextGroup = 1;
 
 	authenticate(token: string): Promise<ScimTenant | null> { return Promise.resolve(this.tokens.get(token) ?? null); }
+	planDecision: (tenantId: string) => Promise<FeatureDecision> = (tenantId) => requireFeature(entitledPlanDb(tenantId), tenantId, "scim");
+	planChecks: string[] = [];
+	requireScimFeature(tenantId: string): Promise<FeatureDecision> { this.planChecks.push(tenantId); return this.planDecision(tenantId); }
 	key(tenant: string, id: string): string { return `${tenant}:${id}`; }
 
 	listUsers(tenant: string, offset: number, limit: number, filter: ScimFilter | null): Promise<ScimList<ScimUser>> {
@@ -486,5 +503,72 @@ describe("SCIM persistence authorization contract", () => {
 		const source = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), "../index.ts"), "utf8");
 		expect(source).toContain('.eq("tenant_id", tenantId).eq("group_id", groupId)');
 		expect(source).toContain("membershipsByGroup.set(groupId, memberships)");
+	});
+});
+
+describe("SCIM plan feature gate", () => {
+	let store: MemoryStore; let handle: ReturnType<typeof createScimHandler>;
+	beforeEach(() => { store = new MemoryStore(); handle = createScimHandler(store); });
+
+	function spyData() {
+		const names = ["listUsers", "getUser", "createUser", "updateUser", "deactivateUser", "listGroups", "getGroup", "createGroup", "updateGroup", "deleteGroup"] as const;
+		return names.map((name) => vi.spyOn(store, name));
+	}
+
+	it("answers 402 plan_feature_required in a SCIM error envelope and reads or writes nothing", async () => {
+		store.planDecision = (tenantId) => requireFeature(entitledPlanDb(tenantId, "team", ["local_detection", "dashboard", "browser_privacy_guard", "entra_sso"]), tenantId, "scim");
+		const spies = spyData();
+		for (const req of [
+			request("Users"),
+			request("Users", { method: "POST", body: JSON.stringify({ userName: "a@example.com" }) }),
+			request("Groups/10000000-0000-4000-8000-000000000001", { method: "DELETE" }),
+		]) {
+			const response = await handle(req);
+			expect(response.status).toBe(402);
+			expect(response.headers.get("Content-Type")).toContain("application/scim+json");
+			const payload = await body(response);
+			expect(payload).toMatchObject({
+				schemas: ["urn:ietf:params:scim:api:messages:2.0:Error"], status: "402",
+				error: "plan_feature_required", feature: "scim", plan_id: "team", required_plan: "business",
+			});
+			expect(payload.detail).toContain("plan_feature_required");
+		}
+		expect(store.planChecks).toEqual([tenantA, tenantA, tenantA]);
+		for (const spy of spies) expect(spy).not.toHaveBeenCalled();
+		expect(store.users.size).toBe(0);
+	});
+
+	it("answers 503 plan_entitlement_unavailable when the plan RPC errors, throws or is malformed", async () => {
+		const spies = spyData();
+		const unavailable = [
+			planDb({ data: null, error: { message: "boom" } }),
+			planDb(() => { throw new Error("network"); }),
+			planDb({ data: { tenant_id: tenantB, plan_id: "enterprise", plan_source: "default", trial_active: false, features: ENTITLED_FEATURES, retention_days_max: null }, error: null }),
+			planDb({ data: { tenant_id: tenantA, plan_id: "platinum", plan_source: "default", trial_active: false, features: ENTITLED_FEATURES, retention_days_max: null }, error: null }),
+			planDb({ data: null, error: null }),
+		];
+		for (const db of unavailable) {
+			store.planDecision = (tenantId) => requireFeature(db, tenantId, "scim");
+			const response = await handle(request("Users"));
+			expect(response.status).toBe(503);
+			const payload = await body(response);
+			expect(payload).toMatchObject({ status: "503", error: "plan_entitlement_unavailable" });
+			expect(payload.detail).toContain("plan_entitlement_unavailable");
+		}
+		store.planDecision = () => Promise.reject(new Error("store failure"));
+		expect((await handle(request("Users"))).status).toBe(503);
+		for (const spy of spies) expect(spy).not.toHaveBeenCalled();
+	});
+
+	it("lets an entitled tenant provision and checks the authenticated tenant only", async () => {
+		const created = await handle(request("Users", { method: "POST", body: JSON.stringify({ userName: "a@example.com" }) }));
+		expect(created.status).toBe(201);
+		expect((await handle(request("Users", {}, "tenant-b-secret-with-at-least-32-bytes"))).status).toBe(200);
+		expect(store.planChecks).toEqual([tenantA, tenantB]);
+	});
+
+	it("does not consult the plan before the bearer token resolves to a tenant", async () => {
+		expect((await handle(request("Users", {}, "revoked-secret-with-at-least-32-bytes"))).status).toBe(401);
+		expect(store.planChecks).toEqual([]);
 	});
 });

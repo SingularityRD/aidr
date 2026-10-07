@@ -1,5 +1,6 @@
 import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
+import { type FeatureDecision, type PlanEntitlementDb, requireFeature } from "../_shared/plan-entitlements.ts";
 import { consumeRateLimit, type RateLimitDb, validRateLimit } from "../_shared/rate-limit.ts";
 import { collectMemberPages, MAX_SCIM_GROUP_MEMBERS, SCIM_MEMBER_PAGE_SIZE } from "./member-pages.ts";
 import {
@@ -74,6 +75,10 @@ export class SupabaseScimStore implements ScimStore {
 		if (result.error) throw new Error("SCIM authentication storage unavailable");
 		const row = (Array.isArray(result.data) ? result.data[0] : result.data) as Row | null;
 		return row?.tenant_id && row?.token_id ? { tenantId: String(row.tenant_id), tokenId: String(row.token_id) } : null;
+	}
+
+	requireScimFeature(tenantId: string): Promise<FeatureDecision> {
+		return requireFeature(this.db as unknown as PlanEntitlementDb, tenantId, "scim");
 	}
 
 	private async usersQuery(tenantId: string, offset: number, limit: number, filter: ScimFilter | null): Promise<ScimList<ScimUser>> {

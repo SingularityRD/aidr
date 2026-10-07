@@ -21,6 +21,7 @@ function store(unavailable = false) {
 			return count > limit ? { status: "limited", retryAfterSeconds: 17 } : { status: "allowed" };
 		},
 		async authenticate(token: string) { authenticated++; return tenants[token] ?? null; },
+		async requireScimFeature() { return { ok: true, entitlement: {} }; },
 	} as unknown as ScimStore;
 	return { impl, counts, get authenticated() { return authenticated; } };
 }

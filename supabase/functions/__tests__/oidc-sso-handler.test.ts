@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createOidcHandler } from "../oidc-sso/handler.ts";
 import { JwksCache } from "../oidc-sso/jwks.ts";
@@ -6,6 +6,8 @@ import { base64UrlEncode, pkceChallenge } from "../oidc-sso/oidc.ts";
 import {
 	baseClaims,
 	caller,
+	entitledPlan,
+	freePlan,
 	ISSUER_A,
 	ISSUER_B,
 	type IdpFixture,
@@ -885,6 +887,85 @@ describe("enforce-SSO and break-glass", () => {
 			ctx.world.store.breakGlassResult = "error";
 			expect((await attempt()).status).toBe(503);
 		});
+	});
+});
+
+describe("plan gating (entra_sso)", () => {
+	const adminActions: Array<Record<string, unknown>> = [
+		{ action: "get_config", tenant_id: TENANT_A },
+		{ action: "put_provider", tenant_id: TENANT_A, kind: "entra", display_name: "Contoso", issuer: ISSUER_A, client_id: "client-a", client_secret_ref: "TENANT_A" },
+		{ action: "refresh_discovery", tenant_id: TENANT_A },
+		{ action: "add_domain", tenant_id: TENANT_A, domain: "new-corp.test" },
+		{ action: "verify_domain", tenant_id: TENANT_A, domain: "a-corp.test" },
+		{ action: "remove_domain", tenant_id: TENANT_A, domain: "a-corp.test" },
+		{ action: "set_enforcement", tenant_id: TENANT_A, provider_id: null, reason: "Downgrade cleanup", change_ref: "CHG-1" },
+	];
+
+	function spyOnConfig() {
+		const store = ctx.world.store;
+		const methods = [
+			"findProviderByTenant", "listDomains", "verifiedDomains", "policy", "saveProvider", "addDomain",
+			"markDomainVerified", "removeDomain", "setEnforcement", "audit",
+		] as const;
+		const spies = methods.map((method) => vi.spyOn(store, method));
+		const fetches = vi.spyOn(ctx.world.deps, "fetchJson");
+		const dns = vi.spyOn(ctx.world.deps, "resolveTxt");
+		return () => [...spies, fetches, dns].reduce((total, spy) => total + spy.mock.calls.length, 0);
+	}
+
+	it.each(adminActions)("answers 402 for $action on a free plan before any SSO configuration is touched", async (body) => {
+		ctx.world.store.plans.set(TENANT_A, { data: freePlan(TENANT_A), error: null });
+		const touched = spyOnConfig();
+		const result = await call(ctx, body, "owner-a");
+		expect(result).toEqual({
+			status: 402,
+			json: { error: "plan_feature_required", feature: "entra_sso", plan_id: "free", required_plan: "team" },
+		});
+		expect(ctx.world.store.planRpcCalls).toEqual([TENANT_A]);
+		expect(touched()).toBe(0);
+		expect(ctx.world.store.enforcementCalls).toHaveLength(0);
+	});
+
+	it.each([
+		["an RPC error", { data: null, error: { message: "private database error" } }],
+		["a malformed row", { data: { tenant_id: TENANT_A, plan_id: "platinum" }, error: null }],
+		["another tenant's row", { data: entitledPlan(TENANT_B), error: null }],
+		["no row", { data: null, error: null }],
+	])("fails closed with 503 on %s", async (_label, answer) => {
+		ctx.world.store.plans.set(TENANT_A, answer);
+		const touched = spyOnConfig();
+		for (const body of [adminActions[0], adminActions[1]]) {
+			expect(await call(ctx, body, "owner-a")).toEqual({ status: 503, json: { error: "plan_entitlement_unavailable" } });
+		}
+		expect(touched()).toBe(0);
+	});
+
+	it("checks the plan only after authentication and owner authorization", async () => {
+		ctx.world.store.plans.set(TENANT_A, { data: freePlan(TENANT_A), error: null });
+		expect((await call(ctx, adminActions[0])).status).toBe(401);
+		expect(await call(ctx, adminActions[0], "member-a")).toMatchObject({ status: 403, json: { error: "owner_required" } });
+		expect(await call(ctx, adminActions[1], "owner-a-aal1")).toMatchObject({ status: 403, json: { error: "mfa_required" } });
+		expect(ctx.world.store.planRpcCalls).toEqual([]);
+	});
+
+	it("never gates the public sign-in and recovery actions of a downgraded tenant", async () => {
+		ctx.world.store.plans.set(TENANT_A, { data: freePlan(TENANT_A), error: null });
+		const started = await begin(ctx);
+		expect(started.params.get("client_id")).toBe("client-a");
+		ctx.world.store.breakGlassResult = { tenant_id: TENANT_A, user_id: OWNER_A };
+		const recovered = await call(ctx, {
+			action: "break_glass_suspend_enforcement",
+			email: "owner@a-corp.test",
+			recovery_code: "ABCDE-12345-ABCDE-12345-ABCDE-12345-ABCDE-12345",
+		});
+		expect(recovered.status).toBe(200);
+		expect(ctx.world.store.planRpcCalls).toEqual([]);
+	});
+
+	it("lets an entitled tenant administer SSO", async () => {
+		const result = await call(ctx, adminActions[0], "owner-a");
+		expect(result.status).toBe(200);
+		expect(ctx.world.store.planRpcCalls).toEqual([TENANT_A]);
 	});
 });
 

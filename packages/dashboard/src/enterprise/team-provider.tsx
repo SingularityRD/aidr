@@ -10,7 +10,7 @@ import {
 import type { Database } from "../lib/database.types";
 import { readErrorMessage } from "../lib/errors";
 import { supabase } from "../lib/supabase";
-import { collectAuditExport } from "./audit-export";
+import { type AuditExportSource, collectAuditExport } from "./audit-export";
 import { IdentityBootstrap } from "./identity-bootstrap";
 
 // Mirrors the database check constraint on public.team_members.role
@@ -143,7 +143,8 @@ interface TeamContextType {
 	refreshAuditLogs: () => Promise<void>;
 	/** Reflect a server-confirmed workspace rename in the loaded team list. */
 	applyWorkspaceName: (teamId: string, name: string) => void;
-	exportAuditLogs: (format: "csv" | "json") => Promise<string>;
+	/** `source: "admin"` exports the administrative trail (owner/admin, SIEM-export plans). */
+	exportAuditLogs: (format: "csv" | "json", source?: AuditExportSource) => Promise<string>;
 	canManageTeam: boolean;
 	canViewAudit: boolean;
 	canEditPolicy: boolean;
@@ -536,20 +537,32 @@ function ProtectedTeamProvider({
 		onSwitchTeam(teamId);
 	}
 
-	async function exportAuditLogs(format: "csv" | "json"): Promise<string> {
+	async function exportAuditLogs(
+		format: "csv" | "json",
+		source: AuditExportSource = "audit",
+	): Promise<string> {
 		if (!currentTeam || !currentRole || !isIdentityCurrent())
 			throw new Error("No accessible team selected");
 
 		try {
 			const teamId = currentTeam.id;
-			const file = await collectAuditExport(format, async (cursor) => {
-				const { data, error } = await supabase.functions.invoke("audit-export", {
-					body: { team_id: teamId, format, ...(cursor ? { cursor } : {}) },
-				});
-				if (error || data?.error)
-					throw new Error("Audit export failed. No partial file was produced.");
-				return data;
-			});
+			const file = await collectAuditExport(
+				format,
+				async (cursor) => {
+					const { data, error } = await supabase.functions.invoke("audit-export", {
+						body: {
+							team_id: teamId,
+							format,
+							...(source === "admin" ? { source } : {}),
+							...(cursor ? { cursor } : {}),
+						},
+					});
+					if (error || data?.error)
+						throw new Error("Audit export failed. No partial file was produced.");
+					return data;
+				},
+				source,
+			);
 			if (!isIdentityCurrent() || selectedTeam.current !== teamId) {
 				throw new Error(
 					"The selected team changed during audit export. Retry for the current team.",

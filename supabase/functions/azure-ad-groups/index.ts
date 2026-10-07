@@ -3,6 +3,7 @@ import { getBearerToken } from "../_shared/auth.ts";
 import { checkIdentityBarrier } from "../_shared/identity-barrier.ts";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 import { corsJson, handleCors } from "../_shared/cors.ts";
+import { type PlanEntitlementDb, requireFeature } from "../_shared/plan-entitlements.ts";
 import { membershipActive } from "../_shared/runtime-policy.ts";
 
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"] as const;
@@ -162,17 +163,40 @@ export function createAzureAdGroupsHandler(deps: AzureAdGroupsDeps = {}) {
 				if (!tenantIdentity.ok) return corsJson(req, tenantIdentity.status, { error: tenantIdentity.error }, noStore());
 			}
 
-			const usersQuery = db.from("scim_users").select("tenant_id,id").eq("auth_user_id", userId).eq("active", true).in("tenant_id", activeTenantIds).order("tenant_id", { ascending: true }).order("id", { ascending: true }).limit(MAX_GROUPS + 1);
+			// Plan gate: Entra group sync is a Team-edition feature, decided per
+			// tenant after membership, tenant status and the identity barrier, and
+			// before any SCIM directory read. An unreadable plan fails the whole
+			// response closed (503), like the barrier above. A tenant whose plan
+			// lacks the feature is left out of an all-tenant read; if no tenant
+			// qualifies (always the case for a requested single tenant), 402.
+			const syncTenantIds: string[] = [];
+			let planDenial: { status: number; body: Record<string, unknown> } | null = null;
+			for (const tenantId of activeTenantIds) {
+				const plan = await requireFeature(db as unknown as PlanEntitlementDb, tenantId, "entra_sso");
+				if (plan.ok) {
+					syncTenantIds.push(tenantId);
+					continue;
+				}
+				if (plan.status !== 402) return corsJson(req, plan.status, plan.body, noStore());
+				planDenial ??= { status: plan.status, body: plan.body };
+			}
+			if (syncTenantIds.length === 0) {
+				return planDenial
+					? corsJson(req, planDenial.status, planDenial.body, noStore())
+					: unavailable(req);
+			}
+
+			const usersQuery = db.from("scim_users").select("tenant_id,id").eq("auth_user_id", userId).eq("active", true).in("tenant_id", syncTenantIds).order("tenant_id", { ascending: true }).order("id", { ascending: true }).limit(MAX_GROUPS + 1);
 			const users = await usersQuery;
 			if (users.error || exceededLimit(users.data, MAX_GROUPS)) return unavailable(req);
 			const scimUsers = (users.data ?? []) as Row[];
-			if (scimUsers.some((row) => !isUuid(row.tenant_id) || !activeTenantIds.includes(String(row.tenant_id)) || !isUuid(row.id))) return unavailable(req);
+			if (scimUsers.some((row) => !isUuid(row.tenant_id) || !syncTenantIds.includes(String(row.tenant_id)) || !isUuid(row.id))) return unavailable(req);
 			const scimUserIds = [...new Set(scimUsers.map((row) => String(row.id)))];
 			if (scimUserIds.length === 0) return groupResponse(req, userId, []);
 
 			const membershipsResult = await db.from("scim_group_memberships")
 				.select("tenant_id,group_id,user_id")
-				.in("tenant_id", activeTenantIds)
+				.in("tenant_id", syncTenantIds)
 				.in("user_id", scimUserIds)
 				.order("tenant_id", { ascending: true })
 				.order("group_id", { ascending: true })
@@ -185,7 +209,7 @@ export function createAzureAdGroupsHandler(deps: AzureAdGroupsDeps = {}) {
 				membershipsRows.some(
 					(row) =>
 						!isUuid(row.tenant_id) ||
-						!activeTenantIds.includes(String(row.tenant_id)) ||
+						!syncTenantIds.includes(String(row.tenant_id)) ||
 						!isUuid(row.group_id) ||
 						!groupIds.includes(String(row.group_id)) ||
 						!isUuid(row.user_id) ||
@@ -199,7 +223,7 @@ export function createAzureAdGroupsHandler(deps: AzureAdGroupsDeps = {}) {
 
 			const groupsResult = await db.from("scim_groups")
 				.select("tenant_id,id,external_id,display_name")
-				.in("tenant_id", activeTenantIds)
+				.in("tenant_id", syncTenantIds)
 				.in("id", groupIds)
 				.order("tenant_id", { ascending: true })
 				.order("id", { ascending: true })
@@ -210,7 +234,7 @@ export function createAzureAdGroupsHandler(deps: AzureAdGroupsDeps = {}) {
 				groupRows.some(
 					(row) =>
 						!isUuid(row.tenant_id) ||
-						!activeTenantIds.includes(String(row.tenant_id)) ||
+						!syncTenantIds.includes(String(row.tenant_id)) ||
 						!isUuid(row.id) ||
 						!groupIds.includes(String(row.id)) ||
 						typeof row.display_name !== "string" ||
@@ -223,7 +247,7 @@ export function createAzureAdGroupsHandler(deps: AzureAdGroupsDeps = {}) {
 
 			const mappingsResult = await db.from("scim_group_role_mappings")
 				.select("tenant_id,external_group_id,role")
-				.in("tenant_id", activeTenantIds)
+				.in("tenant_id", syncTenantIds)
 				.in("external_group_id", groupExternalIds)
 				.order("tenant_id", { ascending: true })
 				.order("external_group_id", { ascending: true })
@@ -234,7 +258,7 @@ export function createAzureAdGroupsHandler(deps: AzureAdGroupsDeps = {}) {
 				const id = externalId(row.external_group_id);
 				const role = typeof row.role === "string" && VERIFIED_ROLES.has(row.role) ? row.role : null;
 				const tenantId = String(row.tenant_id);
-				if (!isUuid(row.tenant_id) || !activeTenantIds.includes(tenantId) || !id || !groupExternalIds.includes(id) || !role) return unavailable(req);
+				if (!isUuid(row.tenant_id) || !syncTenantIds.includes(tenantId) || !id || !groupExternalIds.includes(id) || !role) return unavailable(req);
 				roles.set(`${tenantId}:${id}`, role);
 			}
 

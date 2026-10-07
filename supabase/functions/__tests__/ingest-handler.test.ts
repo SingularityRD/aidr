@@ -10,6 +10,20 @@ const AGENT_ID = "33333333-3333-4333-8333-333333333333";
 const RUNTIME_CAPS = ["runtime_detectors", "behavioral_learning_v1"];
 const signer = generateKeyPairSync("ed25519");
 
+// Catalog features per plan (20260925000010_plan_catalog.sql).
+const PLAN_FEATURES: Record<string, string[]> = {
+	free: ["local_detection", "dashboard"],
+	team: ["local_detection", "dashboard", "browser_privacy_guard", "entra_sso"],
+	business: ["local_detection", "dashboard", "browser_privacy_guard", "entra_sso", "siem_export", "scim", "ai_security_posture"],
+	enterprise: ["local_detection", "dashboard", "browser_privacy_guard", "entra_sso", "siem_export", "scim", "ai_security_posture", "air_gapped_deployment"],
+};
+const planRow = (planId: string) => ({
+	data: { tenant_id: TENANT_ID, plan_id: planId, plan_source: "stripe_subscription", trial_active: false, features: PLAN_FEATURES[planId], retention_days_max: null },
+	error: null as Record<string, unknown> | null,
+});
+// Answer to the tenant_plan_entitlements RPC; reset to an entitled plan after each test.
+let planAnswer: { data: unknown; error: Record<string, unknown> | null } = planRow("enterprise");
+
 function configureSigning() {
 	vi.stubEnv("AIDR_ENTITLEMENT_SIGNING_KEY_ID", "runtime-test-key");
 	vi.stubEnv("AIDR_ENTITLEMENT_SIGNING_PRIVATE_KEY_PKCS8_B64", signer.privateKey.export({ format: "der", type: "pkcs8" }).toString("base64"));
@@ -61,6 +75,7 @@ async function ingest(
 			: { data: [registration], error: null };
 		if (name === "effective_tenant_seats") return effectiveResult;
 		if (name === "increment_rate_limit") return { data: null, error: null };
+		if (name === "tenant_plan_entitlements") return planAnswer;
 		throw new Error(`Unexpected RPC: ${name}`);
 	});
 	const db = {
@@ -99,6 +114,7 @@ function request(fields: Record<string, unknown> = {}) {
 }
 
 afterEach(() => {
+	planAnswer = planRow("enterprise");
 	vi.unstubAllEnvs();
 	vi.unstubAllGlobals();
 	sdk.createClient.mockReset();
@@ -431,5 +447,101 @@ describe("ingest delivery handler", () => {
 		expect(verify(null, Buffer.from(JSON.stringify(body.entitlement_signed.snapshot)), signer.publicKey, Buffer.from(body.entitlement_signed.sig_b64, "base64"))).toBe(true);
 		expect(runtime.insertedEvents).not.toHaveBeenCalled();
 		expect(runtime.insertedSnapshot).toHaveBeenCalledTimes(2);
+	});
+});
+
+describe("ingest plan gating for AI Security Posture", () => {
+	const posture = (id: string) => ({
+		event_id: id, type: "infra_scan_finding", finding_kind: "cve", vuln_id: "CVE-2024-37032", component: "ollama",
+	});
+	const verdict = { event_id: "evt-1", type: "runtime_verdict", verdict: "deny" };
+	const rpcNames = (rpc: ReturnType<typeof vi.fn>) => rpc.mock.calls.map(([name]) => name);
+	const storedTypes = (inserted: ReturnType<typeof vi.fn>) =>
+		((inserted.mock.calls[0] as unknown as [Array<{ type: string }>])[0] ?? []).map((row) => row.type);
+
+	it("accepts a verdict-only batch on the Free plan without resolving the plan", async () => {
+		planAnswer = planRow("free");
+		const runtime = await ingest();
+		const response = await runtime.handler(request({ events: [verdict, { event_id: "skill-1", type: "plugin_scan_finding" }] }));
+		const body = await response.json();
+		expect(response.status).toBe(200);
+		expect(body.acknowledged_event_ids).toEqual(["evt-1", "skill-1"]);
+		expect(body).not.toHaveProperty("rejected_event_ids");
+		expect(rpcNames(runtime.rpc)).not.toContain("tenant_plan_entitlements");
+	});
+
+	it("does not resolve the plan for a heartbeat or when the plan RPC is broken", async () => {
+		planAnswer = { data: null, error: { message: "boom" } };
+		const runtime = await ingest();
+		expect((await runtime.handler(request({ events: [] }))).status).toBe(200);
+		expect((await runtime.handler(request())).status).toBe(200);
+		expect(rpcNames(runtime.rpc)).not.toContain("tenant_plan_entitlements");
+	});
+
+	it("writes posture findings for a Business tenant", async () => {
+		planAnswer = planRow("business");
+		const runtime = await ingest();
+		const response = await runtime.handler(request({ events: [posture("infra-1"), verdict] }));
+		expect(response.status).toBe(200);
+		expect((await response.json()).acknowledged_event_ids).toEqual(["infra-1", "evt-1"]);
+		expect(runtime.rpc).toHaveBeenCalledWith("tenant_plan_entitlements", { p_tenant_id: TENANT_ID });
+		expect(storedTypes(runtime.insertedEvents)).toEqual(["infra_scan_finding", "runtime_verdict"]);
+	});
+
+	it("refuses a posture-only upload on the Team plan with 402 before any seat or write", async () => {
+		planAnswer = planRow("team");
+		const runtime = await ingest();
+		const response = await runtime.handler(request({
+			events: [posture("infra-1"), { event_id: "mcp-1", type: "mcp_inventory_finding" }, { event_id: "agent-1", type: "agent_posture_finding" }],
+		}));
+		expect(response.status).toBe(402);
+		expect(await response.json()).toEqual({
+			error: "plan_feature_required", feature: "ai_security_posture", plan_id: "team", required_plan: "business",
+		});
+		expect(rpcNames(runtime.rpc)).not.toContain("consume_tenant_rate_limit");
+		expect(rpcNames(runtime.rpc)).not.toContain("register_agent_for_ingest");
+		expect(runtime.insertedEvents).not.toHaveBeenCalled();
+		expect(runtime.insertedSnapshot).not.toHaveBeenCalled();
+	});
+
+	it("fails a posture-only upload closed (503) when the plan cannot be read", async () => {
+		planAnswer = { data: [{ tenant_id: "someone-else", plan_id: "enterprise" }], error: null };
+		const runtime = await ingest();
+		const response = await runtime.handler(request({ events: [posture("infra-1")] }));
+		expect(response.status).toBe(503);
+		expect(await response.json()).toEqual({ error: "plan_entitlement_unavailable", retryable: true });
+		expect(runtime.insertedEvents).not.toHaveBeenCalled();
+	});
+
+	it("keeps the verdicts of a mixed batch on the Team plan and reports the posture findings as rejected", async () => {
+		planAnswer = planRow("team");
+		const runtime = await ingest();
+		const response = await runtime.handler(request({ events: [posture("infra-1"), verdict, posture("infra-2")] }));
+		const body = await response.json();
+		expect(response.status).toBe(200);
+		expect(body).toMatchObject({
+			ok: true,
+			acknowledged_event_ids: ["evt-1"],
+			rejected_event_ids: ["infra-1", "infra-2"],
+			rejected_reason: { error: "plan_feature_required", feature: "ai_security_posture", plan_id: "team", required_plan: "business" },
+			entitlement: expect.any(Object),
+		});
+		expect(storedTypes(runtime.insertedEvents)).toEqual(["runtime_verdict"]);
+		expect(runtime.rpc).toHaveBeenCalledWith("consume_tenant_rate_limit", expect.objectContaining({ p_cost: 1 }));
+	});
+
+	it("keeps the verdicts of a mixed batch when the plan cannot be read", async () => {
+		planAnswer = { data: null, error: { message: "private database detail" } };
+		const runtime = await ingest();
+		const response = await runtime.handler(request({ events: [verdict, posture("infra-1")] }));
+		const text = await response.text();
+		expect(response.status).toBe(200);
+		expect(JSON.parse(text)).toMatchObject({
+			acknowledged_event_ids: ["evt-1"],
+			rejected_event_ids: ["infra-1"],
+			rejected_reason: { error: "plan_entitlement_unavailable", retryable: true },
+		});
+		expect(text).not.toContain("private database detail");
+		expect(storedTypes(runtime.insertedEvents)).toEqual(["runtime_verdict"]);
 	});
 });

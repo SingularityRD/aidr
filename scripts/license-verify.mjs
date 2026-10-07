@@ -69,6 +69,13 @@ const PAYLOAD_KEYS = [
 	"seats",
 ];
 export const DEPLOYMENTS = ["onprem", "airgap"];
+/** Catalog editions (public.plans, 20260925000010_plan_catalog.sql). */
+export const PLAN_IDS = ["free", "team", "business", "enterprise"];
+/**
+ * Air-gapped deployment is the catalog feature `air_gapped_deployment`, which
+ * only the Enterprise edition includes (supabase/functions/_shared/plan-entitlements.ts).
+ */
+export const AIRGAP_PLAN_IDS = ["enterprise"];
 export const MAX_GRACE_DAYS = 90;
 /** Longest term (issued_at .. expires_at) any license may carry: five years. */
 export const MAX_LICENSE_TERM_DAYS = 1830;
@@ -142,6 +149,9 @@ export function validateLicensePayload(payload) {
 	if (typeof payload.plan_id !== "string" || !PLAN_ID.test(payload.plan_id)) {
 		throw new LicenseError("invalid_payload", "plan_id must be 1..64 characters of [a-z0-9._-]");
 	}
+	if (!PLAN_IDS.includes(payload.plan_id)) {
+		throw new LicenseError("invalid_payload", `plan_id must be a catalog plan: ${PLAN_IDS.join(", ")}`);
+	}
 	if (!Number.isInteger(payload.seats) || payload.seats < 1 || payload.seats > 100000) {
 		throw new LicenseError("invalid_payload", "seats must be an integer between 1 and 100000");
 	}
@@ -155,6 +165,12 @@ export function validateLicensePayload(payload) {
 	}
 	if (!DEPLOYMENTS.includes(payload.deployment)) {
 		throw new LicenseError("invalid_payload", `deployment must be one of ${DEPLOYMENTS.join(", ")}`);
+	}
+	if (payload.deployment === "airgap" && !AIRGAP_PLAN_IDS.includes(payload.plan_id)) {
+		throw new LicenseError(
+			"plan_feature_required",
+			`air-gapped deployment (air_gapped_deployment) requires the ${AIRGAP_PLAN_IDS.join("/")} plan; plan_id ${payload.plan_id} may only be licensed for onprem`,
+		);
 	}
 	if (!Number.isInteger(payload.grace_days) || payload.grace_days < 0 || payload.grace_days > MAX_GRACE_DAYS) {
 		throw new LicenseError("invalid_payload", `grace_days must be an integer between 0 and ${MAX_GRACE_DAYS}`);

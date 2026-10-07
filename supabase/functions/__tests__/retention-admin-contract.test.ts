@@ -33,7 +33,14 @@ interface Options {
 	/** The newest N holds are released; older ones stay active. */
 	releasedHolds?: number;
 	rateLimited?: boolean;
+	/** Row returned by tenant_plan_entitlements; null = RPC error. Defaults to Team (90 days). */
+	plan?: Record<string, unknown> | null;
 }
+
+const teamPlan = (overrides: Record<string, unknown> = {}) => ({
+	tenant_id: TENANT, plan_id: "team", plan_source: "stripe_subscription", trial_active: false,
+	features: ["local_detection", "dashboard", "browser_privacy_guard", "entra_sso"], retention_days_max: 90, ...overrides,
+});
 
 function fakeDb(options: Options = {}) {
 	const rpcCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
@@ -93,6 +100,9 @@ function fakeDb(options: Options = {}) {
 					return options.rateLimited
 						? { data: { allowed: false, remaining: 0, retry_after_seconds: 30 }, error: null }
 						: { data: { allowed: true, remaining: 59 }, error: null };
+				}
+				if (name === "tenant_plan_entitlements") {
+					return options.plan === null ? { data: null, error: { message: "down" } } : { data: options.plan ?? teamPlan(), error: null };
 				}
 				if (options.rpcError) return { data: null, error: options.rpcError };
 				if (options.rpcData !== undefined) return { data: options.rpcData, error: null };
@@ -173,6 +183,36 @@ describe("retention-admin legal hold and retention API", () => {
 		expect(denied.status).toBe(403);
 		expect(await denied.json()).toEqual({ error: "owner_required" });
 		expect(writes(admin)).toEqual([]);
+	});
+
+	it("reports the plan-capped effective retention the reaper uses", async () => {
+		const read = async (options: Options) => {
+			const response = await handler(fakeDb(options))(request("GET", undefined, { "X-AIDR-Tenant-ID": TENANT }));
+			return { status: response.status, payload: await response.json() };
+		};
+		// Never configured (seeded): the plan term applies.
+		let { payload } = await read({});
+		expect(payload.plan).toEqual({ plan_id: "team", retention_days_max: 90 });
+		expect(payload.retention_policies.find((row: { data_class: string }) => row.data_class === "telemetry"))
+			.toMatchObject({ retention_days: 30, effective_retention_days: 90, plan_max_days: 90 });
+		expect(payload.retention_policies.find((row: { data_class: string }) => row.data_class === "access_credentials"))
+			.toMatchObject({ effective_retention_days: 0, plan_max_days: null });
+		// Free plan caps at 7 days; contractual (null) keeps the setting.
+		({ payload } = await read({ plan: teamPlan({ plan_id: "free", features: ["local_detection", "dashboard"], retention_days_max: 7 }) }));
+		expect(payload.retention_policies.find((row: { data_class: string }) => row.data_class === "telemetry")).toMatchObject({ effective_retention_days: 7 });
+		({ payload } = await read({ plan: teamPlan({ plan_id: "enterprise", retention_days_max: null }) }));
+		expect(payload.retention_policies.find((row: { data_class: string }) => row.data_class === "telemetry")).toMatchObject({ effective_retention_days: 30 });
+		// An unreadable plan fails closed rather than showing a period nobody enforces.
+		const unavailable = await read({ plan: null });
+		expect(unavailable.status).toBe(503);
+		expect(unavailable.payload).toEqual({ error: "retention_management_unavailable" });
+	});
+
+	it("maps a period above the plan term to a 400 from the authoritative RPC", async () => {
+		const fixture = fakeDb({ rpcError: { code: "22023", message: "retention_days_exceeds_plan" } });
+		const response = await handler(fixture)(request("POST", { action: "set_retention", tenant_id: TENANT, data_class: "telemetry", retention_days: 365, reason: "Policy" }));
+		expect(response.status).toBe(400);
+		expect(await response.json()).toEqual({ error: "retention_days_exceeds_plan" });
 	});
 
 	it("refuses members, viewers, non-members, expired memberships and inactive tenants before any RPC", async () => {

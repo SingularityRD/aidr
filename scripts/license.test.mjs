@@ -1,16 +1,18 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { generateKeyPairSync } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { generateKeyPairSync, sign } from "node:crypto";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { publicKeyEntry, signLicense } from "./license-issue.mjs";
+import { buildPayload, publicKeyEntry, signLicense } from "./license-issue.mjs";
 import {
 	canonicalJson,
 	DEFAULT_PUBLIC_KEYS_PATH,
+	LICENSE_FORMAT,
 	LicenseError,
+	licenseSigningMessage,
 	loadPublicKeyRegistry,
 	MAX_LICENSE_TERM_DAYS,
 	parsePublicKeyRegistry,
@@ -263,4 +265,54 @@ test("CLI issues from a restricted key file and never accepts a key on argv", (t
 	const shipped = run("2027-01-01T00:00:00Z", DEFAULT_PUBLIC_KEYS_PATH);
 	assert.equal(shipped.status, 1, "the empty shipped registry must fail closed");
 	assert.match(shipped.stderr, /no license public keys are configured/);
+});
+
+test("an air-gapped license requires the enterprise plan (catalog feature air_gapped_deployment)", () => {
+	const keys = registry([devEntry()]);
+	for (const plan_id of ["free", "team", "business"]) {
+		assert.throws(
+			() => signLicense(payload({ plan_id, deployment: "airgap" }), { privateKey: devKey, keyId: "aidr-license-dev-1" }),
+			(error) => error instanceof LicenseError && error.code === "plan_feature_required" && /requires the enterprise plan/.test(error.message),
+		);
+		// The same plan may still be licensed for a connected on-prem deployment.
+		const onprem = signLicense(payload({ plan_id, deployment: "onprem" }), { privateKey: devKey, keyId: "aidr-license-dev-1" });
+		assert.equal(verifyLicense(onprem, { publicKeys: keys, now: inTerm }).status, "valid");
+	}
+	assert.throws(
+		() => buildPayload({ licenseId: "LIC-1", customer: "Example", planId: "business", seats: "10", deployment: "airgap", issuedAt: "2026-09-01T00:00:00Z", expiresAt: "2027-09-01T00:00:00Z" }),
+		(error) => error.code === "plan_feature_required",
+	);
+	const airgap = signLicense(payload({ deployment: "airgap" }), { privateKey: devKey, keyId: "aidr-license-dev-1" });
+	assert.equal(verifyLicense(airgap, { publicKeys: keys, now: inTerm }).payload.deployment, "airgap");
+
+	// A license signed outside the issuer's validation is still refused by the verifier.
+	const forgedTerms = payload({ plan_id: "team", deployment: "airgap" });
+	const forged = {
+		format: LICENSE_FORMAT,
+		key_id: "aidr-license-dev-1",
+		payload: forgedTerms,
+		sig: sign(null, licenseSigningMessage(forgedTerms), devKey).toString("base64"),
+	};
+	assert.throws(() => verifyLicense(forged, { publicKeys: keys, now: inTerm }), (error) => error.code === "plan_feature_required");
+});
+
+test("plan_id must be a catalog plan", () => {
+	for (const plan_id of ["pro", "enterprise-plus", "Enterprise"]) {
+		assert.throws(
+			() => signLicense(payload({ plan_id }), { privateKey: devKey, keyId: "k" }),
+			(error) => error.code === "invalid_payload" && /plan_id/.test(error.message),
+		);
+	}
+});
+
+test("CLI refuses to issue an air-gapped license for a non-enterprise plan", (t) => {
+	const directory = mkdtempSync(join(tmpdir(), "aidr-license-airgap-"));
+	t.after(() => rmSync(directory, { recursive: true, force: true }));
+	const keyPath = join(directory, "license-signing.pem");
+	writeFileSync(keyPath, devKey.export({ type: "pkcs8", format: "pem" }), { mode: 0o600 });
+	const out = join(directory, "license.json");
+	const issued = spawnSync(process.execPath, [issueScript, "--key-id", "aidr-license-dev-1", "--license-id", "LIC-CLI-2", "--customer", "Example Customer AG", "--plan-id", "business", "--seats", "40", "--deployment", "airgap", "--issued-at", "2026-09-01T00:00:00Z", "--expires-at", "2027-09-01T00:00:00Z", "--out", out, "--private-key-file", keyPath], { encoding: "utf8" });
+	assert.equal(issued.status, 1);
+	assert.match(issued.stderr, /air-gapped deployment \(air_gapped_deployment\) requires the enterprise plan/);
+	assert.equal(existsSync(out), false, "no license file is written");
 });

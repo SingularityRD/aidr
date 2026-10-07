@@ -3,6 +3,7 @@ import { getBearerToken } from "../_shared/auth.ts";
 import { checkIdentityBarrier } from "../_shared/identity-barrier.ts";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 import { corsJson, handleCors } from "../_shared/cors.ts";
+import { type PlanEntitlementDb, requireFeature } from "../_shared/plan-entitlements.ts";
 import { consumeTenantRateLimit, rateLimitHeaders, readBoundedJson } from "../_shared/request-limits.ts";
 import { membershipActive, sha256 } from "../_shared/runtime-policy.ts";
 
@@ -238,6 +239,11 @@ export function createScimAdminHandler(deps: ScimAdminDeps = {}) {
 				perTenant: 300,
 			});
 			if (!quota.ok) return corsJson(req, quota.status, { error: quota.error }, { ...noStore(), ...rateLimitHeaders(quota) });
+			// Plan gate: SCIM is a Business-edition feature. Decided once the caller
+			// is an authorized owner of `tenantId`, before any SCIM token or mapping
+			// is read or written. Fails closed (402 / 503), never allow on error.
+			const plan = await requireFeature(db as unknown as PlanEntitlementDb, tenantId, "scim");
+			if (!plan.ok) return corsJson(req, plan.status, plan.body, noStore());
 
 			if (req.method === "GET") {
 				const url = new URL(req.url);

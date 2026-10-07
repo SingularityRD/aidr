@@ -32,6 +32,26 @@ async function requireSessionLoader({ request }: { request: Request }) {
 const routeErrorElement = <RouteErrorPage />;
 const loadAppLayout = async () => ({ Component: (await import("./ui/AppLayout")).AppLayout });
 
+/**
+ * A page behind a plan feature: the server refuses it with 402
+ * plan_feature_required; the dashboard shows an upgrade notice instead.
+ */
+function gatedPage(
+	feature: import("./billing/entitlements").GatedPlanFeature,
+	load: () => Promise<React.ComponentType>,
+) {
+	return async () => {
+		const [Page, { PlanGate }] = await Promise.all([load(), import("./ui/PlanGate")]);
+		return {
+			Component: () => (
+				<PlanGate feature={feature}>
+					<Page />
+				</PlanGate>
+			),
+		};
+	};
+}
+
 const router = createBrowserRouter([
 	{
 		path: "/",
@@ -182,7 +202,10 @@ const router = createBrowserRouter([
 		children: [
 			{
 				index: true,
-				lazy: async () => ({ Component: (await import("./ui/pages/PosturePage")).PosturePage }),
+				lazy: gatedPage(
+					"ai_security_posture",
+					async () => (await import("./ui/pages/PosturePage")).PosturePage,
+				),
 			},
 		],
 	},
@@ -306,7 +329,7 @@ const router = createBrowserRouter([
 		children: [
 			{
 				index: true,
-				lazy: async () => ({ Component: (await import("./ui/pages/ScimPage")).ScimPage }),
+				lazy: gatedPage("scim", async () => (await import("./ui/pages/ScimPage")).ScimPage),
 			},
 		],
 	},
@@ -318,9 +341,10 @@ const router = createBrowserRouter([
 		children: [
 			{
 				index: true,
-				lazy: async () => ({
-					Component: (await import("./ui/pages/PrivacyGuardPage")).PrivacyGuardPage,
-				}),
+				lazy: gatedPage(
+					"browser_privacy_guard",
+					async () => (await import("./ui/pages/PrivacyGuardPage")).PrivacyGuardPage,
+				),
 			},
 		],
 	},
@@ -429,7 +453,10 @@ const router = createBrowserRouter([
 		children: [
 			{
 				index: true,
-				lazy: async () => ({ Component: (await import("./ui/pages/OidcSsoPage")).OidcSsoPage }),
+				lazy: gatedPage(
+					"entra_sso",
+					async () => (await import("./ui/pages/OidcSsoPage")).OidcSsoPage,
+				),
 			},
 		],
 	},
@@ -441,7 +468,7 @@ const router = createBrowserRouter([
 		children: [
 			{
 				index: true,
-				lazy: async () => ({ Component: (await import("./ui/pages/SiemPage")).SiemPage }),
+				lazy: gatedPage("siem_export", async () => (await import("./ui/pages/SiemPage")).SiemPage),
 			},
 		],
 	},

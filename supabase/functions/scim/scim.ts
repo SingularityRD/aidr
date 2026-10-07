@@ -1,4 +1,5 @@
 import { getBearerToken } from "../_shared/auth.ts";
+import { type FeatureDecision, PLAN_ENTITLEMENT_UNAVAILABLE, PLAN_FEATURE_REQUIRED } from "../_shared/plan-entitlements.ts";
 import { readBoundedJson } from "../_shared/request-limits.ts";
 import { MAX_SCIM_GROUP_MEMBERS, ScimMemberLimitError } from "./member-pages.ts";
 
@@ -82,6 +83,11 @@ export interface ScimStore {
 	/** Fixed-window counter; callers fail closed on "unavailable". */
 	rateLimit?(key: string, limitPerMinute: number): Promise<ScimRateLimitResult>;
 	authenticate(token: string): Promise<ScimTenant | null>;
+	/**
+	 * Server-side plan gate: does the authenticated tenant's plan include the
+	 * "scim" feature? Must fail closed (402/503), never allow on error.
+	 */
+	requireScimFeature(tenantId: string): Promise<FeatureDecision>;
 	listUsers(tenantId: string, offset: number, limit: number, filter: ScimFilter | null): Promise<ScimList<ScimUser>>;
 	getUser(tenantId: string, id: string): Promise<ScimUser | null>;
 	createUser(tenantId: string, input: ScimCreateUser): Promise<{ user: ScimUser; created: boolean }>;
@@ -459,6 +465,26 @@ function rateLimitResponse(result: Exclude<ScimRateLimitResult, { status: "allow
 		: json(503, { schemas: [SCIM_ERROR_SCHEMA], status: "503", detail: "SCIM service unavailable" }, retry);
 }
 
+/** SCIM error envelope for a plan gate denial; the plan body stays machine-readable. */
+function planGateResponse(decision: Extract<FeatureDecision, { ok: false }>): Response {
+	const code = decision.body.error === PLAN_FEATURE_REQUIRED ? PLAN_FEATURE_REQUIRED : PLAN_ENTITLEMENT_UNAVAILABLE;
+	const detail = code === PLAN_FEATURE_REQUIRED
+		? `${PLAN_FEATURE_REQUIRED}: SCIM provisioning requires the ${String(decision.body.required_plan)} plan`
+		: `${PLAN_ENTITLEMENT_UNAVAILABLE}: the tenant plan could not be verified`;
+	return json(decision.status, { schemas: [SCIM_ERROR_SCHEMA], status: String(decision.status), detail, ...decision.body });
+}
+
+async function scimFeatureDecision(store: ScimStore, tenantId: string): Promise<FeatureDecision> {
+	const unavailable: FeatureDecision = { ok: false, status: 503, body: { error: PLAN_ENTITLEMENT_UNAVAILABLE } };
+	if (typeof store.requireScimFeature !== "function") return unavailable;
+	try {
+		const decision = await store.requireScimFeature(tenantId);
+		return decision && (decision.ok === true || decision.ok === false) ? decision : unavailable;
+	} catch {
+		return unavailable;
+	}
+}
+
 export function createScimHandler(store: ScimStore, limits?: ScimRateLimits): (req: Request) => Promise<Response> {
 	return async (req: Request): Promise<Response> => {
 		try {
@@ -480,6 +506,11 @@ export function createScimHandler(store: ScimStore, limits?: ScimRateLimits): (r
 				const perToken = await store.rateLimit(`scim:v1:token:${tenant.tokenId}`, limits.perTokenPerMinute);
 				if (perToken.status !== "allowed") return rateLimitResponse(perToken);
 			}
+			// Plan gate: SCIM is a Business-edition feature. Checked once the token
+			// is bound to a tenant (and rate limited), before any provisioning read
+			// or write. Fails closed: an unreadable plan is 503, never allow.
+			const plan = await scimFeatureDecision(store, tenant.tenantId);
+			if (!plan.ok) return planGateResponse(plan);
 			const parsed = parsePath(new URL(req.url).pathname);
 			if (!parsed) return error(404, "SCIM endpoint not found");
 			if (req.method === "GET" && parsed.resource.toLowerCase() === "serviceproviderconfig" && !parsed.id) return json(200, serviceProviderConfig());

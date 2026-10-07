@@ -2,6 +2,7 @@
 // handler is pure over these interfaces; index.ts binds them to Supabase and
 // the Edge runtime, and the tests bind them to in-memory fakes.
 
+import type { FeatureDecision } from "../_shared/plan-entitlements.ts";
 import type { MappedRole, OidcAlgorithm, OidcDiscovery } from "./oidc.ts";
 
 export type ProviderKind = "entra" | "okta" | "generic";
@@ -116,6 +117,11 @@ export interface OidcStore {
 	/** Returns the tenant id, null when the user is not a provisioned SCIM subject. Throws `scim_*` conflicts. */
 	bindScimIdentity(providerId: string, authUserId: string): Promise<string | null>;
 	memberRole(userId: string, tenantId: string): Promise<string | null>;
+	/**
+	 * Fail-closed plan gate for SSO administration (`requireFeature` in
+	 * _shared/plan-entitlements.ts). Never consulted by the public login actions.
+	 */
+	requireSsoFeature(tenantId: string): Promise<FeatureDecision>;
 	policy(tenantId: string): Promise<OidcPolicyRow | null>;
 	setEnforcement(input: {
 		tenantId: string;

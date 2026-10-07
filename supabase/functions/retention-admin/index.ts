@@ -19,6 +19,7 @@ import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 import { corsJson, handleCors } from "../_shared/cors.ts";
 import { consumeTenantRateLimit, rateLimitHeaders, readBoundedJson } from "../_shared/request-limits.ts";
 import { membershipActive } from "../_shared/runtime-policy.ts";
+import { effectiveRetentionDays, type PlanEntitlementDb, resolveTenantPlan } from "../_shared/plan-entitlements.ts";
 
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"] as const;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -102,6 +103,7 @@ function rpcFailure(req: Request, error: unknown): Response {
 		return corsJson(req, 400, { error: "invalid_request" }, noStore());
 	}
 	if (message.includes("retention_days_out_of_bounds")) return corsJson(req, 400, { error: "retention_days_out_of_bounds" }, noStore());
+	if (message.includes("retention_days_exceeds_plan")) return corsJson(req, 400, { error: "retention_days_exceeds_plan" }, noStore());
 	if (message.includes("retention_class_not_configurable")) return corsJson(req, 400, { error: "retention_class_not_configurable" }, noStore());
 	if (message.includes("legal_hold_already_active") || (code === "23505" && message.includes("legal_hold"))) {
 		return corsJson(req, 409, { error: "hold_already_active" }, noStore());
@@ -193,7 +195,7 @@ export function createRetentionAdminHandler(deps: RetentionAdminDeps = {}) {
 				const holdColumns = "id,hold_reference,case_id,hold_owner,reason,placed_by,placed_at,released_by,released_at,release_reason";
 				let holdQuery = db.from("tenant_legal_holds").select(holdColumns).eq("tenant_id", tenantId);
 				if (cursor) holdQuery = holdQuery.or(`placed_at.lt.${cursor.placedAt},and(placed_at.eq.${cursor.placedAt},id.gt.${cursor.id})`);
-				const [holds, activeHold, policies, bounds] = await Promise.all([
+				const [holds, activeHold, policies, bounds, plan] = await Promise.all([
 					holdQuery.order("placed_at", { ascending: false }).order("id", { ascending: true }).limit(HOLD_PAGE + 1),
 					// The active hold is independent of which history page is shown: a hold
 					// placed long ago is still active on page 2 and must never read as "none".
@@ -201,17 +203,27 @@ export function createRetentionAdminHandler(deps: RetentionAdminDeps = {}) {
 						.order("placed_at", { ascending: false }).order("id", { ascending: true }).limit(1),
 					db.from("tenant_data_retention_policies").select("data_class,retention_days,updated_at,updated_by").eq("tenant_id", tenantId),
 					db.from("retention_policy_bounds").select("data_class,min_days,max_days,tenant_configurable"),
+					resolveTenantPlan(db as unknown as PlanEntitlementDb, tenantId),
 				]);
-				if (holds.error || activeHold.error || policies.error || bounds.error || !Array.isArray(activeHold.data)) {
+				// The effective period depends on the plan; without it the page would
+				// show a period the reaper does not use, so fail closed.
+				if (holds.error || activeHold.error || policies.error || bounds.error || !Array.isArray(activeHold.data) || !plan) {
 					return corsJson(req, 503, { error: "retention_management_unavailable" }, noStore());
 				}
 				const holdRows = (holds.data ?? []) as Row[];
 				const boundsByClass = new Map(((bounds.data ?? []) as Row[]).map((row) => [String(row.data_class), row]));
 				const retention = ((policies.data ?? []) as Row[]).map((row) => {
 					const bound = boundsByClass.get(String(row.data_class));
+					// Only the telemetry (event) class carries the plan's retention term.
+					const planMax = row.data_class === "telemetry" ? plan.retentionDaysMax : null;
+					const configured = Number(row.retention_days);
 					return {
 						data_class: row.data_class,
 						retention_days: row.retention_days,
+						effective_retention_days: Number.isSafeInteger(configured)
+							? effectiveRetentionDays(configured, row.updated_by != null, planMax)
+							: null,
+						plan_max_days: planMax,
 						min_days: bound?.min_days ?? null,
 						max_days: bound?.max_days ?? null,
 						configurable: bound?.tenant_configurable === true,
@@ -227,6 +239,7 @@ export function createRetentionAdminHandler(deps: RetentionAdminDeps = {}) {
 					next_hold_cursor: holdRows.length > HOLD_PAGE
 						? { placed_at: page[HOLD_PAGE - 1].placed_at, id: page[HOLD_PAGE - 1].id } : null,
 					retention_policies: retention,
+					plan: { plan_id: plan.planId, retention_days_max: plan.retentionDaysMax },
 				}, noStore());
 			}
 

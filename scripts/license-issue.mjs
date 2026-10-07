@@ -8,6 +8,11 @@
  * holding the PEM) — never from a command argument, where it would land in shell
  * history and process listings.
  *
+ * Terms are validated with the verifier's own `validateLicensePayload`, so a
+ * license a customer's verifier would refuse is never issued: in particular
+ * `--deployment airgap` requires `--plan-id enterprise` (catalog feature
+ * `air_gapped_deployment`), refused with `plan_feature_required`.
+ *
  * The written license is self-verified against the public half of the signing
  * key and, with `--public-keys`, against the registry customers will ship, so a
  * license signed by an unregistered or retired key is caught before delivery.
@@ -18,11 +23,13 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import {
+	AIRGAP_PLAN_IDS,
 	DEPLOYMENTS,
 	LICENSE_FORMAT,
 	LicenseError,
 	licenseSigningMessage,
 	loadPublicKeyRegistry,
+	PLAN_IDS,
 	parsePublicKeyRegistry,
 	PUBLIC_KEYS_FORMAT,
 	validateLicensePayload,
@@ -109,6 +116,7 @@ export function buildPayload(options, now = Date.now()) {
 const USAGE = `Usage:
   node scripts/license-issue.mjs --key-id <id> --license-id <id> --customer <name> --plan-id <plan>
     --seats <n> --deployment ${DEPLOYMENTS.join("|")} --expires-at <ISO> [--features a,b] [--not-before <ISO>]
+    (--plan-id is one of ${PLAN_IDS.join("|")}; --deployment airgap requires --plan-id ${AIRGAP_PLAN_IDS.join("|")})
     [--issued-at <ISO>] [--grace-days <0..90, default 14>] [--public-keys <registry.json>] --out <license.json>
     (signing key: --private-key-file <0600 pem> | AIDR_LICENSE_SIGNING_KEY_FILE | AIDR_LICENSE_SIGNING_KEY)
   node scripts/license-issue.mjs --print-public-key-entry --key-id <id> [--not-before <ISO>]

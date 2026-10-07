@@ -21,6 +21,7 @@ import { authenticateTenantApiKeyBudgeted, BROWSER_GUARD_INGEST_SCOPE } from "..
 import { getBearerToken } from "../_shared/auth.ts";
 import { BROWSER_GUARD_POLICY_VERSION, browserGuardPolicyFromOverlay } from "../_shared/browser-guard-policy.ts";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
+import { type PlanEntitlementDb, requireFeature } from "../_shared/plan-entitlements.ts";
 import { POLICY_SIGNING_UNAVAILABLE, resolvePolicySigning, signRuntimePolicyEnvelope } from "../_shared/policy-signature.ts";
 import { consumeTenantRateLimit, rateLimitHeaders } from "../_shared/request-limits.ts";
 import { canonicalPolicy, sha256 } from "../_shared/runtime-policy.ts";
@@ -57,6 +58,11 @@ export function createBrowserGuardPolicyHandler(deps: { db?: ReturnType<typeof c
 			if (!auth.ok) return json(auth.status, { error: auth.error });
 			const browserKey = auth.scope === BROWSER_GUARD_INGEST_SCOPE;
 			if (browserKey && !auth.apiKeyId) return json(403, { error: "api_key_scope_denied" });
+			// Managed Browser Guard is a TEAM feature (_shared/plan-entitlements.ts):
+			// checked once the key has bound the tenant, before any budget or read.
+			// Fails closed: 402 plan_feature_required, 503 when the plan is unreadable.
+			const plan = await requireFeature(db as unknown as PlanEntitlementDb, auth.tenantId, "browser_privacy_guard");
+			if (!plan.ok) return json(plan.status, plan.body);
 			// One shared Browser Guard key is one subject however many installs use it.
 			const perSubject = browserKey ? Math.min(TENANT_REQUESTS_PER_MINUTE, Math.max(60, auth.installLimit ?? 60)) : 300;
 			const rate = await consumeTenantRateLimit(db, {

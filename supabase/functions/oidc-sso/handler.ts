@@ -9,6 +9,9 @@
 //   put_provider, refresh_discovery,
 //   add_domain, verify_domain,
 //   remove_domain, set_enforcement     - tenant owner at AAL2
+// Every owner action above (not start/callback/break-glass/bind_session) also
+// requires the plan feature `entra_sso` (402 plan_feature_required, or 503
+// plan_entitlement_unavailable when the plan cannot be resolved).
 //
 // Failure policy: authentication and authorization failures fail closed with a
 // coarse reason; audit failures on a success path deny the login.
@@ -523,6 +526,12 @@ export function createOidcHandler(deps: OidcDeps): (req: Request) => Promise<Res
 		if ((await store.memberRole(caller.userId, tenantId)) !== "owner")
 			return deps.json(req, 403, { error: "owner_required" });
 		if (options.requireAal2 && caller.assurance !== "aal2") return deps.json(req, 403, { error: "mfa_required" });
+		// Plan gate (fail closed) for SSO administration only, once the tenant is
+		// trusted and before any SSO configuration is read or written. The public
+		// login actions never reach this, so a downgraded tenant can still sign in
+		// and recover.
+		const entitlement = await store.requireSsoFeature(tenantId);
+		if (!entitlement.ok) return deps.json(req, entitlement.status, entitlement.body);
 		return { caller, tenantId };
 	}
 
