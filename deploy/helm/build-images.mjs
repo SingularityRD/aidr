@@ -10,6 +10,8 @@
  *   migrations      postgres client + the atomic plan rendered from supabase/migrations
  *   posture-scanner-server, posture-scanner-agent, posture-scanner-bridge
  *                   (optional AI Security Posture scanner)
+ *   privacy-gateway deploy/privacy-gateway/Dockerfile + compiled packages/privacy
+ *                   (optional; staged by deploy/privacy-gateway/privacy-gateway.mjs)
  *
  * Usage:
  *   node deploy/helm/build-images.mjs --output <new-dir> [--only dashboard,edge-functions,migrations]
@@ -29,6 +31,7 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { buildAtomicMigrationSql, MIGRATION_FILENAME_PATTERN } from "../../scripts/lib/migration-contract.mjs";
 import { compatibleInstalledHashes } from "../../scripts/lib/migration-hash-compat.mjs";
+import { stagePrivacyGatewayImage } from "../privacy-gateway/privacy-gateway.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "../..");
@@ -37,7 +40,7 @@ const { parse } = requireCore("yaml");
 
 /** Reviewed Supabase self-hosted release (same commit deployment-prepare verifies). */
 export const UPSTREAM_SHA = "8c7a4d9dbbaf8b552893822e89d7bf06f33f9220";
-export const COMPONENTS = ["dashboard", "edge-functions", "migrations", "posture-scanner-server", "posture-scanner-agent", "posture-scanner-bridge"];
+export const COMPONENTS = ["dashboard", "edge-functions", "migrations", "posture-scanner-server", "posture-scanner-agent", "posture-scanner-bridge", "privacy-gateway"];
 /** Component names used before the posture scanner rename; accepted with a note. */
 const LEGACY_COMPONENTS = { "aig-server": "posture-scanner-server", "aig-agent": "posture-scanner-agent", "aig-bridge": "posture-scanner-bridge" };
 const DEFAULT_COMPONENTS = ["dashboard", "edge-functions", "migrations"];
@@ -48,6 +51,7 @@ const REPOSITORIES = {
 	"posture-scanner-server": "aidr/posture-scanner-server",
 	"posture-scanner-agent": "aidr/posture-scanner-agent",
 	"posture-scanner-bridge": "aidr/posture-scanner-bridge",
+	"privacy-gateway": "aidr/privacy-gateway",
 };
 
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -150,6 +154,9 @@ function buildPlan({ components, output, upstreamDir, registry, tag }) {
 			steps.push({ component, ref: ref(component), context: join(root, "vendor/ai-infra-guard"), dockerfile: join(root, "vendor/ai-infra-guard/Dockerfile") });
 		} else if (component === "posture-scanner-bridge") {
 			steps.push({ component, ref: ref(component), context: join(root, "services/aig-bridge"), dockerfile: join(root, "services/aig-bridge/Dockerfile") });
+		} else if (component === "privacy-gateway") {
+			stagePrivacyGatewayImage(root, context);
+			steps.push({ component, ref: ref(component), context, dockerfile: join(context, "Dockerfile") });
 		} else if (component === "posture-scanner-agent") {
 			const base = `${ref(component).replace(/:[^:/]+$/, "")}-base:${tag}`;
 			steps.push({ component: "posture-scanner-agent-base", ref: base, context: join(root, "vendor/ai-infra-guard"), dockerfile: join(root, "vendor/ai-infra-guard/Dockerfile_Agent"), internal: true });

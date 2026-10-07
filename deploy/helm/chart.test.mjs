@@ -10,13 +10,14 @@ import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { PRIVACY_GATEWAY_LAYOUT } from "../privacy-gateway/privacy-gateway.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "../..");
 const chartDir = join(here, "aidr");
 const { parse, parseAllDocuments } = createRequire(join(root, "packages/core/package.json"))("yaml");
 const readYaml = (path) => parse(readFileSync(path, "utf8"));
-const CI_VALUES = ["default", "prod", "posture-scanner"];
+const CI_VALUES = ["default", "prod", "posture-scanner", "privacy-gateway"];
 const KUBE_VERSION = "1.30.0";
 
 function findHelm() {
@@ -120,7 +121,7 @@ test("every workload template applies resources and hardened security contexts",
 	}
 });
 
-test("helm lint passes for default, prod and posture-scanner values", { skip: helmSkip }, () => {
+test("helm lint passes for every CI values file", { skip: helmSkip }, () => {
 	for (const name of CI_VALUES) {
 		const result = runHelm(["lint", chartDir, "--strict", "--kube-version", KUBE_VERSION, "-f", join(chartDir, "ci", `${name}-values.yaml`)]);
 		assert.equal(result.status, 0, `${name}: ${result.stdout}${result.stderr}`);
@@ -309,5 +310,132 @@ test("rendered images give the complete air-gap pull list", { skip: helmSkip }, 
 	}
 	for (const expected of ["supabase/gotrue:v2.196.0", "postgrest/postgrest:v14.17", "supabase/storage-api:v1.74.0", "envoyproxy/envoy:v1.39.1", "supabase/postgres:17.6.1.136", "aidr/dashboard:0.6.0", "aidr/edge-functions:0.6.0", "aidr/migrations:0.6.0"]) {
 		assert.ok([...images].some((image) => image === `registry.example.internal/${expected}`), expected);
+	}
+});
+
+// --- Optional privacy gateway --------------------------------------------------------
+
+test("the privacy gateway is opt-in, mTLS-only and has no defaulted credentials, model or egress", () => {
+	const values = readYaml(join(chartDir, "values.yaml")).privacyGateway;
+	assert.equal(values.enabled, false);
+	assert.equal(values.mtls.enabled, true);
+	assert.equal(values.mtls.existingSecret, "");
+	assert.equal(values.existingSecret, "");
+	assert.equal(values.trustConfigMap, "");
+	assert.equal(values.models.existingClaim, "");
+	assert.deepEqual(values.egress.cidrs, []);
+	assert.deepEqual(values.serviceConfig, {});
+	assert.equal(values.service.type, "ClusterIP");
+	const schema = JSON.parse(readFileSync(join(chartDir, "values.schema.json"), "utf8")).properties.privacyGateway;
+	assert.deepEqual(schema.properties.service.properties.type.enum, ["ClusterIP", "LoadBalancer", "NodePort"]);
+	assert.equal(schema.properties.egress.properties.cidrs.$ref, "#/definitions/cidrList");
+});
+
+test("the privacy gateway template validates before rendering and meets the restricted Pod Security Standard", () => {
+	const template = readFileSync(join(chartDir, "templates", "privacy-gateway.yaml"), "utf8");
+	const body = template.replace(/^\{\{-? \/\*[\s\S]*?\*\/ -?\}\}\n/, "");
+	assert.match(body, /^\{\{- if \.Values\.privacyGateway\.enabled \}\}\n\{\{- include "aidr\.privacyGateway\.validate" \. \}\}/, "validation runs before any object renders");
+	assert.match(template, /replicas: 1\n\s+strategy:\n\s+type: Recreate/, "single writer for the SQLite ledger");
+	assert.match(template, /include "aidr\.podSecurityContext" \(dict "root" \. "runAsUser" 10001 "fsGroup" 10001\)/);
+	assert.match(template, /include "aidr\.containerSecurityContext" \(dict "root" \. "readOnlyRootFilesystem" true\)/);
+	for (const forbidden of [/hostPath/, /hostNetwork/, /hostPID/, /hostIPC/, /hostPort/, /privileged/, /allowPrivilegeEscalation: true/, /\bSYS_|NET_ADMIN|NET_RAW/]) {
+		assert.doesNotMatch(template, forbidden, `restricted PSS forbids ${forbidden}`);
+	}
+	// Secrets arrive only as read-only files, never as environment variables.
+	assert.doesNotMatch(template, /secretKeyRef|envFrom/);
+	assert.match(template, /- name: secrets\n\s+projected:\n\s+defaultMode: 0440/);
+	assert.match(template, /key: tls\.key\n\s+path: aidr-privacy-tls-key/);
+	for (const probe of ["startupProbe", "readinessProbe", "livenessProbe"]) assert.match(template, new RegExp(`${probe}:\\n\\s+tcpSocket:\\n\\s+port: mtls`), probe);
+	// The NetworkPolicy is part of the gateway contract and does not depend on networkPolicy.enabled.
+	assert.doesNotMatch(template, /\.Values\.networkPolicy\.enabled/);
+	assert.match(template, /kind: NetworkPolicy[\s\S]*policyTypes: \["Ingress", "Egress"\][\s\S]*port: 8443[\s\S]*include "aidr\.np\.cidrs" \(dict "cidrs" \$pg\.egress\.cidrs "port" 443\)/);
+	assert.match(template, /externalTrafficPolicy: Local/, "client source addresses survive for clientCIDRs");
+});
+
+test("privacy gateway validation fails closed on missing mutual TLS, secrets, model, egress and owned settings", () => {
+	const helpers = readFileSync(join(chartDir, "templates", "_helpers.tpl"), "utf8");
+	const validate = helpers.slice(helpers.indexOf('{{- define "aidr.privacyGateway.validate" -}}'), helpers.indexOf('{{- define "aidr.privacyGateway.serviceConfig" -}}'));
+	assert.ok(validate.length > 0);
+	for (const expected of [
+		/if not \$pg\.mtls\.enabled -\}\}\n\{\{- fail "privacyGateway\.mtls\.enabled=false is refused/,
+		/required "privacyGateway\.mtls\.existingSecret is required when privacyGateway\.enabled[^"]*mutual TLS is mandatory/,
+		/required "privacyGateway\.existingSecret is required/,
+		/required "privacyGateway\.trustConfigMap is required/,
+		/required "privacyGateway\.models\.existingClaim is required/,
+		/if empty \$pg\.egress\.cidrs -\}\}\n\{\{- fail "privacyGateway\.egress\.cidrs is required/,
+		/include "aidr\.privacyGateway\.cidrs" \(dict "name" "privacyGateway\.egress\.cidrs"/,
+		/list "tls" "host" "port" "secretStore" "databasePath" "documents"/,
+		/contains "REPLACE" \(toJson \$cfg\)/,
+		/"openai-responses" "https:\/\/api\.openai\.com" "gemini-generate-content" "https:\/\/generativelanguage\.googleapis\.com"/,
+		/regexMatch "\^\[a-f0-9\]\{64\}\$" \(toString \$ner\.manifestSha256\)/,
+		/service\.type=%s exposes the gateway outside the cluster/,
+	]) assert.match(validate, expected);
+	const cidrs = helpers.slice(helpers.indexOf('{{- define "aidr.privacyGateway.cidrs" -}}'), helpers.indexOf('{{- define "aidr.privacyGateway.trustPath" -}}'));
+	assert.match(cidrs, /ternary 16 8 \(contains ":" \$cidr\)/, "IPv4 /8 and IPv6 /16 minimum prefixes");
+	assert.match(cidrs, /169\\\\\.254\\\\\./, "cloud metadata link-local range refused");
+});
+
+test("the chart-owned service settings match the container layout the image enforces", () => {
+	const helpers = readFileSync(join(chartDir, "templates", "_helpers.tpl"), "utf8");
+	const render = helpers.slice(helpers.indexOf('{{- define "aidr.privacyGateway.serviceConfig" -}}'));
+	const L = PRIVACY_GATEWAY_LAYOUT;
+	assert.ok(render.includes(`"python" "${L.nerPython}"`));
+	assert.ok(render.includes(`set $cfg "secretStore" "mounted-files"`));
+	assert.ok(render.includes(`set $cfg "port" ${L.port}`));
+	assert.ok(render.includes(`"databasePath" "${L.database}"`));
+	assert.ok(render.includes(`"certPath" "${L.tlsCert}" "clientCaPath" "${L.tlsClientCa}" "keyRef" "${L.tlsKeyRef}"`));
+	const template = readFileSync(join(chartDir, "templates", "privacy-gateway.yaml"), "utf8");
+	assert.ok(template.includes(`value: ${L.config}`));
+	for (const path of [L.trust, L.tls, L.secrets, L.models, L.state]) assert.ok(template.includes(`mountPath: ${path}`), path);
+	assert.ok(template.includes(`mountPath: ${L.config.slice(0, L.config.lastIndexOf("/"))}`));
+	assert.ok(helpers.includes("^/etc/aidr-privacy/trust/") && helpers.includes('hasPrefix "/opt/aidr-models/"'));
+});
+
+test("rendered privacy-gateway values add a hardened gateway with an egress allow-list and no Secret objects", { skip: helmSkip }, () => {
+	const docs = renderDocs("privacy-gateway");
+	const deployment = docs.find((doc) => doc.kind === "Deployment" && doc.metadata.name === "aidr-privacy-gateway");
+	assert.ok(deployment);
+	const spec = deployment.spec.template.spec;
+	assert.equal(deployment.spec.replicas, 1);
+	assert.equal(spec.securityContext.runAsUser, 10001);
+	assert.equal(spec.containers[0].securityContext.readOnlyRootFilesystem, true);
+	assert.equal(spec.containers[0].image, "registry.example.internal/aidr/privacy-gateway:0.6.0");
+	assert.ok(!spec.containers[0].env.some((entry) => entry.valueFrom));
+	const config = JSON.parse(docs.find((doc) => doc.kind === "ConfigMap" && doc.metadata.name === "aidr-privacy-gateway").data["service.json"]);
+	assert.equal(config.secretStore, "mounted-files");
+	assert.equal(config.port, 8443);
+	assert.deepEqual(config.tls, { certPath: "/etc/aidr-privacy/tls/server.pem", clientCaPath: "/etc/aidr-privacy/tls/client-ca.pem", keyRef: "aidr-privacy-tls-key" });
+	const policy = docs.find((doc) => doc.kind === "NetworkPolicy" && doc.metadata.name === "aidr-privacy-gateway");
+	assert.deepEqual(policy.spec.policyTypes, ["Ingress", "Egress"]);
+	const egress443 = policy.spec.egress.find((rule) => rule.ports.some((port) => port.port === 443));
+	assert.deepEqual(egress443.to.map((peer) => peer.ipBlock.cidr), ["162.159.140.0/24", "10.50.0.10/32"]);
+	assert.ok(policy.spec.egress.every((rule) => rule.ports.every((port) => [53, 443].includes(port.port))));
+	assert.deepEqual(policy.spec.ingress[0].ports, [{ port: 8443, protocol: "TCP" }]);
+	assert.ok(!docs.some((doc) => doc.kind === "Secret"));
+	assert.ok(!renderDocs("default").some((doc) => doc.metadata?.name?.includes("privacy-gateway")), "disabled by default");
+});
+
+test("rendering refuses a weak privacy gateway configuration", { skip: helmSkip }, () => {
+	const base = join(chartDir, "ci", "privacy-gateway-values.yaml");
+	const cases = [
+		[["privacyGateway.mtls.enabled=false"], /privacyGateway\.mtls\.enabled=false is refused/],
+		[["privacyGateway.mtls.existingSecret="], /privacyGateway\.mtls\.existingSecret is required/],
+		[["privacyGateway.existingSecret="], /privacyGateway\.existingSecret is required/],
+		[["privacyGateway.models.existingClaim="], /privacyGateway\.models\.existingClaim is required/],
+		[["privacyGateway.egress.cidrs=null"], /privacyGateway\.egress\.cidrs is required/],
+		[["privacyGateway.egress.cidrs[0]=0.0.0.0/0"], /too broad/],
+		[["privacyGateway.egress.cidrs[0]=169.254.169.254/32"], /link-local/],
+		[["privacyGateway.serviceConfig.tls.certPath=/tmp/server.pem"], /serviceConfig\.tls must not be set/],
+		[["privacyGateway.serviceConfig.documents.python=/usr/bin/python3"], /serviceConfig\.documents must not be set/],
+		[["privacyGateway.serviceConfig.destination.origin=https://proxy.example.com"], /destination must be openai-responses/],
+		[["privacyGateway.serviceConfig.destination.model=REPLACE_WITH_MODEL"], /REPLACE placeholder/],
+		[["privacyGateway.serviceConfig.ner.manifestSha256=abc"], /manifestSha256 must be the independently approved/],
+		[["privacyGateway.serviceConfig.oidc.caPath=/etc/ssl/certs/ca.pem"], /oidc\.caPath must be \/etc\/aidr-privacy\/trust/],
+		[["privacyGateway.clientCIDRs=null", "privacyGateway.service.type=LoadBalancer"], /exposes the gateway outside the cluster/],
+	];
+	for (const [sets, message] of cases) {
+		const result = render([base], sets);
+		assert.notEqual(result.status, 0, `expected failure for ${sets.join(" ")}`);
+		assert.match(result.stderr, message, sets.join(" "));
 	}
 });

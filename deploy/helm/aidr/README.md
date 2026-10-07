@@ -77,6 +77,10 @@ Rendering fails, rather than producing a weaker install, when:
 - `storage.replicaCount > 1` on a `ReadWriteOnce` file volume.
 - `postureScanner.enabled` without its Secret, signing key, data ConfigMap, trust anchors or egress proxy.
 - Any value under the former `aig` key; see [AI Security Posture scanner](#ai-security-posture-scanner).
+- `privacyGateway.enabled` with `privacyGateway.mtls.enabled=false`, without its mTLS
+  Secret, gateway Secret, trust ConfigMap, model PVC or egress allow-list, with a default
+  route or link-local egress CIDR, or with weak or placeholder `serviceConfig`; see
+  [Privacy gateway](#privacy-gateway).
 
 ## Secrets
 
@@ -128,6 +132,7 @@ Vault, sealed-secrets) as long as the Secret names match.
 | `networkPolicy.*EgressCIDRs` | `[]` | Opt-in egress: functions (npm mirror/IdP/billing), SMTP, dashboard certificate probe, S3 |
 | `functions.npmRegistry` | `""` | npm mirror for the functions' `npm:` imports |
 | `postureScanner.enabled` | `false` | AI Security Posture scanner |
+| `privacyGateway.enabled` | `false` | Optional privacy gateway (explicit mTLS egress API) |
 
 `values.schema.json` validates types, enums and patterns at install time.
 
@@ -147,6 +152,26 @@ and relabel bridge clients with the new pod label. The Kubernetes objects are re
 too, so an upgrade creates new `posture-scanner-*` PersistentVolumeClaims; the old
 `*-aig-*` claims are kept (`helm.sh/resource-policy: keep`) and can be copied or
 deleted once the scanner is verified.
+
+## Privacy gateway
+
+`privacyGateway.enabled=true` adds `aidr-privacy-service` (packages/privacy) as one
+`privacy-gateway` Deployment with its ConfigMap, state PVC, Service and NetworkPolicy.
+It is an explicit egress API: clients call `POST /v1/egress` over mutual TLS and the
+gateway sends policy-checked text to one approved provider with a credential only it
+holds. It is **not a transparent proxy** and inspects nothing that is not addressed to
+it, so remove the clients' direct provider routes as well (NetworkPolicy, egress
+firewall, MDM).
+
+Create `privacyGateway.mtls.existingSecret` (`tls.crt`, `tls.key`, `ca.crt`),
+`privacyGateway.existingSecret` (one key per `*Ref`), `privacyGateway.trustConfigMap`
+and the model PVC `privacyGateway.models.existingClaim` first, set `serviceConfig` and
+`egress.cidrs` (see `ci/privacy-gateway-values.yaml`), and build the image with
+`node deploy/helm/build-images.mjs --only privacy-gateway`. The pod meets the
+`restricted` Pod Security Standard, reads secrets as files only, and its NetworkPolicy
+(ingress 8443 from `clientPodLabel` pods and `clientCIDRs`, egress DNS plus TCP 443 to
+`egress.cidrs`) renders even when `networkPolicy.enabled=false`. Details:
+[deploy/privacy-gateway/README.md](../../privacy-gateway/README.md).
 
 ## Security posture
 

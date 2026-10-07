@@ -1,0 +1,66 @@
+# Minimal install plus the optional privacy gateway. Every name and digest
+# below is a placeholder for rendering only; nothing here is a credential.
+global:
+  imageRegistry: registry.example.internal
+publicUrls:
+  dashboard: https://aidr.example.com
+  api: https://api.aidr.example.com
+secrets:
+  existingSecret: aidr-platform
+  functionsExistingSecret: aidr-functions
+ingress:
+  className: nginx
+  tlsSecretName: aidr-tls
+privacyGateway:
+  enabled: true
+  mtls:
+    enabled: true
+    existingSecret: aidr-privacy-gateway-mtls
+  existingSecret: aidr-privacy-gateway-secrets
+  trustConfigMap: aidr-privacy-gateway-trust
+  models:
+    existingClaim: aidr-privacy-models
+  clientCIDRs: ["10.40.0.0/16"]
+  egress:
+    cidrs: ["162.159.140.0/24", "10.50.0.10/32"]
+  serviceConfig:
+    tenantId: tenant-example
+    encryption:
+      active: data1
+      keys:
+        - id: data1
+          secretRef: aidr-privacy-data1
+    audit:
+      keyId: audit1
+      secretRef: aidr-privacy-audit1
+    oidc:
+      issuer: https://idp.example.com/realm
+      clientId: aidr-privacy-host
+      clientSecretRef: aidr-privacy-oidc
+      redirectUri: https://privacy-gateway.example.com/oauth/callback
+      caPath: /etc/aidr-privacy/trust/idp-ca.pem
+      scope: openid profile
+    broker:
+      issuer: https://broker.example.com
+      audience: aidr-platform
+      caPath: /etc/aidr-privacy/trust/broker-ca.pem
+      certPath: /etc/aidr-privacy/trust/broker-client.pem
+      keyRef: aidr-privacy-broker-key
+    destination:
+      id: approved-provider
+      kind: openai-responses
+      origin: https://api.openai.com
+      model: example-approved-model
+      secretRef: aidr-privacy-provider
+    roleGroups:
+      security-reviewer: ["reviewers-group-id"]
+      security-admin: ["admins-group-id"]
+    scopes: []
+    policy:
+      signedPath: /etc/aidr-privacy/trust/policy.signed.json
+      keys:
+        - id: policy1
+          path: /etc/aidr-privacy/trust/policy1.pub.pem
+    ner:
+      manifest: /opt/aidr-models/manifest.json
+      manifestSha256: "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0"

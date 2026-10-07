@@ -1,0 +1,229 @@
+{{- /*
+Optional privacy gateway (packages/privacy aidr-privacy-service).
+
+An explicit egress API: clients call POST /v1/egress over mutual TLS and the
+gateway applies the privacy policy before it sends text to one approved
+provider with a credential only the gateway holds. It does not intercept
+traffic that is not addressed to it; removing direct provider access is the
+operator's job (NetworkPolicy, egress firewall, MDM). See
+deploy/privacy-gateway/README.md.
+
+Rendering fails without mutual TLS, the gateway Secrets, the trust ConfigMap,
+an approved model volume or an egress allow-list (aidr.privacyGateway.validate).
+The pod satisfies the Kubernetes "restricted" Pod Security Standard.
+*/ -}}
+{{- if .Values.privacyGateway.enabled }}
+{{- include "aidr.privacyGateway.validate" . }}
+{{- $pg := .Values.privacyGateway -}}
+{{- $name := include "aidr.component" (dict "root" . "component" "privacy-gateway") -}}
+{{- $serviceConfig := include "aidr.privacyGateway.serviceConfig" . -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" "privacy-gateway") | nindent 4 }}
+data:
+  # References and paths only; every secret value is a file from privacyGateway.existingSecret.
+  service.json: |
+    {{- $serviceConfig | nindent 4 }}
+---
+{{- if not $pg.persistence.existingClaim }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $name }}-state
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" "privacy-gateway") | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: ["ReadWriteOnce"]
+  {{- with .Values.global.storageClass }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ $pg.persistence.size }}
+---
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" "privacy-gateway") | nindent 4 }}
+spec:
+  # Durable SQLite dispatch ledger on a RWO volume: exactly one replica.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "aidr.selectorLabels" (dict "root" . "component" "privacy-gateway") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "aidr.labels" (dict "root" . "component" "privacy-gateway") | nindent 8 }}
+      annotations:
+        checksum/config: {{ $serviceConfig | sha256sum }}
+    spec:
+      {{- include "aidr.podCommon" (dict "root" . "values" $pg) | nindent 6 }}
+      {{- include "aidr.podSecurityContext" (dict "root" . "runAsUser" 10001 "fsGroup" 10001) | nindent 6 }}
+      containers:
+        - name: privacy-gateway
+          image: {{ include "aidr.image" (dict "root" . "image" $pg.image "name" "privacyGateway.image" "defaultTag" true) }}
+          imagePullPolicy: {{ $pg.image.pullPolicy }}
+          {{- include "aidr.containerSecurityContext" (dict "root" . "readOnlyRootFilesystem" true) | nindent 10 }}
+          ports:
+            - name: mtls
+              containerPort: 8443
+              protocol: TCP
+          env:
+            - name: AIDR_PRIVACY_CONFIG
+              value: /etc/aidr-privacy/config/service.json
+          # The mTLS listener opens only after model, policy, broker and state are
+          # ready, so a TCP connect is the readiness signal (no client certificate,
+          # no request is sent).
+          startupProbe:
+            tcpSocket:
+              port: mtls
+            periodSeconds: 10
+            failureThreshold: 60
+          readinessProbe:
+            tcpSocket:
+              port: mtls
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            tcpSocket:
+              port: mtls
+            periodSeconds: 20
+            timeoutSeconds: 3
+          {{- include "aidr.resources" (dict "root" . "component" "privacyGateway" "override" $pg.resources) | nindent 10 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/aidr-privacy/config
+              readOnly: true
+            - name: trust
+              mountPath: /etc/aidr-privacy/trust
+              readOnly: true
+            - name: tls
+              mountPath: /etc/aidr-privacy/tls
+              readOnly: true
+            - name: secrets
+              mountPath: /run/secrets/aidr-privacy
+              readOnly: true
+            - name: models
+              mountPath: /opt/aidr-models
+              readOnly: true
+            - name: state
+              mountPath: /var/lib/aidr-privacy
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: {{ $name }}
+        - name: trust
+          configMap:
+            name: {{ $pg.trustConfigMap }}
+        - name: tls
+          secret:
+            secretName: {{ $pg.mtls.existingSecret }}
+            defaultMode: 0444
+            items:
+              - key: tls.crt
+                path: server.pem
+              - key: ca.crt
+                path: client-ca.pem
+        - name: secrets
+          projected:
+            defaultMode: 0440
+            sources:
+              - secret:
+                  name: {{ $pg.existingSecret }}
+              - secret:
+                  name: {{ $pg.mtls.existingSecret }}
+                  items:
+                    - key: tls.key
+                      path: aidr-privacy-tls-key
+        - name: models
+          persistentVolumeClaim:
+            claimName: {{ $pg.models.existingClaim }}
+            readOnly: true
+        - name: state
+          persistentVolumeClaim:
+            claimName: {{ default (printf "%s-state" $name) $pg.persistence.existingClaim }}
+        - name: tmp
+          emptyDir:
+            sizeLimit: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" "privacy-gateway") | nindent 4 }}
+  {{- with $pg.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ $pg.service.type }}
+  {{- if ne $pg.service.type "ClusterIP" }}
+  # Keep client source addresses so the NetworkPolicy clientCIDRs apply.
+  externalTrafficPolicy: Local
+  {{- end }}
+  selector:
+    {{- include "aidr.selectorLabels" (dict "root" . "component" "privacy-gateway") | nindent 4 }}
+  ports:
+    - name: mtls
+      port: {{ $pg.service.port }}
+      targetPort: mtls
+      protocol: TCP
+---
+# Rendered whenever the gateway is enabled, independent of networkPolicy.enabled:
+# the egress allow-list is part of the gateway's security contract.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" "network-policy") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "aidr.selectorLabels" (dict "root" . "component" "privacy-gateway") | nindent 6 }}
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- toYaml $pg.clientPodLabel | nindent 14 }}
+          {{- with $pg.clientNamespaceSelector }}
+          namespaceSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+        {{- range $pg.clientCIDRs }}
+        - ipBlock:
+            cidr: {{ . }}
+        {{- end }}
+      ports:
+        - port: 8443
+          protocol: TCP
+  egress:
+    - to:
+        - namespaceSelector:
+            {{- toYaml .Values.networkPolicy.dnsNamespaceSelector | nindent 12 }}
+          {{- with .Values.networkPolicy.dnsPodSelector }}
+          podSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    {{- include "aidr.np.cidrs" (dict "cidrs" $pg.egress.cidrs "port" 443) | nindent 4 }}
+{{- end }}

@@ -376,6 +376,56 @@
           }
         }
       }
+    },
+    "privacyGateway": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "image": { "$ref": "#/definitions/image" },
+        "resources": { "$ref": "#/definitions/resources" },
+        "mtls": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "existingSecret": { "type": "string" }
+          }
+        },
+        "existingSecret": { "type": "string" },
+        "trustConfigMap": { "type": "string" },
+        "models": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": { "existingClaim": { "type": "string" } }
+        },
+        "persistence": {
+          "type": "object",
+          "properties": {
+            "size": { "$ref": "#/definitions/quantity" },
+            "existingClaim": { "type": "string" }
+          }
+        },
+        "service": {
+          "type": "object",
+          "properties": {
+            "type": { "type": "string", "enum": ["ClusterIP", "LoadBalancer", "NodePort"] },
+            "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+            "annotations": { "type": "object" }
+          }
+        },
+        "clientPodLabel": { "type": "object", "minProperties": 1 },
+        "clientNamespaceSelector": { "type": "object" },
+        "clientCIDRs": { "$ref": "#/definitions/cidrList" },
+        "egress": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": { "cidrs": { "$ref": "#/definitions/cidrList" } }
+        },
+        "serviceConfig": { "type": "object" },
+        "nodeSelector": { "type": "object" },
+        "tolerations": { "type": "array" },
+        "affinity": { "type": "object" }
+      }
     }
   }
 }

@@ -38,3 +38,11 @@ WARNING: networkPolicy.enabled=false. Pods are reachable from every namespace.
 Posture scanner bridge (in-cluster only): http://{{ include "aidr.component" (dict "root" . "component" "posture-scanner-bridge") }}:8099
 Clients need the pod label(s): {{ toJson .Values.postureScanner.bridge.clientPodLabel }}
 {{- end }}
+{{- if .Values.privacyGateway.enabled }}
+
+Privacy gateway (mutual TLS, explicit egress API): https://{{ include "aidr.component" (dict "root" . "component" "privacy-gateway") }}:{{ .Values.privacyGateway.service.port }}/v1/egress
+  It inspects only requests sent to it. Configure clients to call it with an enrolled
+  client certificate, and remove their direct provider access (NetworkPolicy, egress
+  firewall or MDM); see deploy/privacy-gateway/README.md.
+  In-cluster callers need the pod label(s): {{ toJson .Values.privacyGateway.clientPodLabel }}
+{{- end }}

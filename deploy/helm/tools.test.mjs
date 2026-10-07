@@ -118,6 +118,26 @@ test("build-images stages the dashboard context the Dockerfile expects", { skip:
 	assert.doesNotMatch(result.stderr, /deprecated/);
 });
 
+test("build-images stages the optional privacy gateway image only on request, from compiled output", { skip: existsSync(join(root, "packages/privacy/dist/platform/serve.js")) ? false : "privacy package not built" }, (t) => {
+	const dir = scratch(t);
+	const output = join(dir, "images");
+	const result = node("build-images.mjs", ["--output", output, "--only", "privacy-gateway", "--registry", "registry.example.internal"]);
+	assert.equal(result.status, 0, result.stderr);
+	const context = join(output, "privacy-gateway");
+	assert.equal(readFileSync(join(context, "Dockerfile"), "utf8"), readFileSync(join(root, "deploy/privacy-gateway/Dockerfile"), "utf8"));
+	for (const file of ["healthcheck.mjs", "package/package.json", "package/dist/platform/serve.js", "package/deployment/container-service-config.mjs", "package/ner/requirements.linux-py311.lock.txt"]) {
+		assert.ok(existsSync(join(context, file)), file);
+	}
+	const manifest = JSON.parse(readFileSync(join(output, "images.json"), "utf8"));
+	assert.deepEqual(manifest.images.map((image) => image.ref), ["registry.example.internal/aidr/privacy-gateway:0.6.0"]);
+	assert.ok(!manifest.images[0].context_inventory.some((entry) => /\.(map|ts)$/.test(entry.path) || entry.path.startsWith("package/src/")));
+	assert.match(result.stdout, /docker build -f \S+Dockerfile -t registry\.example\.internal\/aidr\/privacy-gateway:0\.6\.0/);
+	// The default image set does not include the optional gateway.
+	const defaults = node("build-images.mjs", ["--output", join(dir, "defaults"), "--only", "migrations"]);
+	assert.equal(defaults.status, 0, defaults.stderr);
+	assert.doesNotMatch(defaults.stdout, /privacy-gateway/);
+});
+
 function generate(t, extra = []) {
 	const dir = scratch(t);
 	const { publicKey } = generateKeyPairSync("ed25519");

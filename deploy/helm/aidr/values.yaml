@@ -465,3 +465,74 @@ postureScanner:
     size: 10Gi
     accessModes: ["ReadWriteMany"]
     existingClaim: ""
+
+# ---------------------------------------------------------------------------
+# Privacy gateway (optional; packages/privacy aidr-privacy-service)
+#
+# An EXPLICIT egress API: clients send POST /v1/egress over mutual TLS and the
+# gateway applies the privacy policy before it calls ONE approved provider with a
+# credential only the gateway holds. It is not a transparent proxy and inspects
+# nothing that is not addressed to it: configure clients to use it and remove
+# their direct provider access with NetworkPolicy, an egress firewall or MDM.
+# The chart refuses to render it without mutual TLS, its Secrets, an approved
+# model volume and an egress allow-list. See deploy/privacy-gateway/README.md.
+# ---------------------------------------------------------------------------
+privacyGateway:
+  enabled: false
+  image:
+    registry: ""
+    repository: aidr/privacy-gateway
+    tag: ""            # defaults to the chart appVersion
+    digest: ""
+    pullPolicy: IfNotPresent
+  resources: {}
+  mtls:
+    # Must stay true. The service only serves mutually authenticated TLS; the
+    # chart fails rather than render a gateway without it.
+    enabled: true
+    # REQUIRED. Secret with keys tls.crt (server leaf), tls.key and ca.crt (the
+    # CA that issues enrolled client certificates).
+    existingSecret: ""
+  # REQUIRED. Secret whose keys are the *Ref names used in serviceConfig
+  # (provider API key, OIDC client secret, broker key, encryption/audit keys).
+  # Mounted read-only as files; never exported as environment variables.
+  existingSecret: ""
+  # REQUIRED. ConfigMap holding the public trust files that serviceConfig paths
+  # reference under /etc/aidr-privacy/trust (IdP/broker CAs, broker client
+  # certificate, signed policy and policy verification keys). Keys are file names.
+  trustConfigMap: ""
+  models:
+    # REQUIRED. PVC holding the independently approved NER model and manifest,
+    # mounted read-only at /opt/aidr-models.
+    existingClaim: ""
+  persistence:
+    # Durable SQLite control state (dispatch ledger, audit): one replica only.
+    size: 5Gi
+    existingClaim: ""
+  service:
+    # ClusterIP for in-cluster clients. LoadBalancer/NodePort expose the mTLS
+    # port directly (TLS passthrough); list the client ranges in clientCIDRs.
+    type: ClusterIP
+    port: 8443
+    annotations: {}
+  # In-cluster callers: pods with this label in namespaces matched by
+  # clientNamespaceSelector ({} = this release's namespace only).
+  clientPodLabel:
+    aidr.singularity/privacy-gateway-client: "true"
+  clientNamespaceSelector: {}
+  # Out-of-cluster callers (workstation ranges) allowed to reach port 8443.
+  clientCIDRs: []
+  egress:
+    # REQUIRED. CIDRs (TCP 443) of the provider, identity provider and session
+    # broker. Default routes and prefixes shorter than /8 are refused.
+    # NetworkPolicy is IP-based and provider addresses change: pair it with an
+    # FQDN-aware CNI policy or an SNI-filtering egress firewall.
+    cidrs: []
+  # The administrator service JSON (packages/privacy/examples/platform/
+  # service-config.example.json) WITHOUT tls, host, port, secretStore,
+  # databasePath and documents: the chart owns those. Paths must sit under
+  # /etc/aidr-privacy/trust (trustConfigMap) and /opt/aidr-models (models PVC).
+  serviceConfig: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
