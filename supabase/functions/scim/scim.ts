@@ -66,8 +66,13 @@ export type ScimRateLimitResult =
 	| { status: "limited"; retryAfterSeconds: number }
 	| { status: "unavailable"; retryAfterSeconds: number };
 
+export const SCIM_AUTH_FAILURE_BUCKET = "scim:v2:auth-failure";
+
 export interface ScimRateLimits {
-	/** Requests per minute across the whole deployment, counted before authentication. */
+	/**
+	 * Failed bearer authentications per minute across the whole deployment. Only
+	 * rejected tokens are counted; an authenticated tenant token never consumes it.
+	 */
 	globalPerMinute: number;
 	/** Requests per minute per SCIM token (tenant credential), counted after authentication. */
 	perTokenPerMinute: number;
@@ -457,16 +462,20 @@ function rateLimitResponse(result: Exclude<ScimRateLimitResult, { status: "allow
 export function createScimHandler(store: ScimStore, limits?: ScimRateLimits): (req: Request) => Promise<Response> {
 	return async (req: Request): Promise<Response> => {
 		try {
-			// Aggregate bucket first: it bounds unauthenticated token guessing without
-			// letting an attacker create per-credential counter rows.
-			if (limits && store.rateLimit) {
-				const aggregate = await store.rateLimit("scim:v1:aggregate", limits.globalPerMinute);
-				if (aggregate.status !== "allowed") return rateLimitResponse(aggregate);
-			}
 			const token = getBearerToken(req.headers.get("Authorization"));
 			if (!token) return error(401, "A bearer token is required", undefined);
+			// Authenticate first (one hash lookup). Only failed authentications are
+			// counted against the deployment-wide bucket, so garbage tokens can never
+			// exhaust a budget that valid tenants' provisioning/deprovisioning needs;
+			// authenticated tokens are bounded by their own per-token bucket only.
 			const tenant = await store.authenticate(token);
-			if (!tenant) return json(401, { schemas: [SCIM_ERROR_SCHEMA], status: "401", detail: "Invalid bearer token" }, { "WWW-Authenticate": "Bearer" });
+			if (!tenant) {
+				if (limits && store.rateLimit) {
+					const failures = await store.rateLimit(SCIM_AUTH_FAILURE_BUCKET, limits.globalPerMinute);
+					if (failures.status !== "allowed") return rateLimitResponse(failures);
+				}
+				return json(401, { schemas: [SCIM_ERROR_SCHEMA], status: "401", detail: "Invalid bearer token" }, { "WWW-Authenticate": "Bearer" });
+			}
 			if (limits && store.rateLimit) {
 				const perToken = await store.rateLimit(`scim:v1:token:${tenant.tokenId}`, limits.perTokenPerMinute);
 				if (perToken.status !== "allowed") return rateLimitResponse(perToken);
