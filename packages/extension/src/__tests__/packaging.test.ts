@@ -24,17 +24,37 @@ function packagedFiles(manifest: Record<string, unknown>): string[] {
 }
 
 describe("VSIX packaging evidence", () => {
-	it("does not declare signer-only evidence in an unsigned developer release", async () => {
+	it("ships signed evidence in the npm package that the release bundle packs", async () => {
+		// The release bundle packs this package with `pnpm pack` and requires the
+		// manifest, signature and SBOM inside it. A file list that omits them makes
+		// the bundle fail; an absent file (unsigned developer build) is simply not
+		// packed, so declaring them does not invent evidence.
 		const manifest = await baseManifest();
 		expect(packagedFiles(manifest)).toEqual(
 			expect.arrayContaining([
 				...REQUIRED_ENTRY_BUNDLES,
 				"dist/aidr-hook.cjs",
-				"dist/aidr-artifact.manifest.json",
+				...VSIX_INTEGRITY_EVIDENCE_FILES,
 			]),
 		);
-		for (const signedOnlyEvidence of VSIX_INTEGRITY_EVIDENCE_FILES.slice(1)) {
-			expect(packagedFiles(manifest)).not.toContain(signedOnlyEvidence);
+	});
+
+	it("does not declare signer-only evidence in an unsigned developer VSIX", async () => {
+		const root = await mkdtemp(join(tmpdir(), "aidr-vsix-unsigned-"));
+		try {
+			await mkdir(resolve(root, "dist"), { recursive: true });
+			for (const relativePath of VSIX_INTEGRITY_EVIDENCE_FILES) {
+				if (relativePath === "dist/aidr-artifact.manifest.sig") continue;
+				await writeFile(resolve(root, relativePath), "fixture\n", "utf8");
+			}
+			const files = await assertVsixIntegrityEvidence(root, { requireSignature: false });
+			expect(files).not.toContain("dist/aidr-artifact.manifest.sig");
+			expect(files).toEqual(expect.arrayContaining(["dist/aidr-artifact.manifest.json"]));
+			await expect(assertVsixIntegrityEvidence(root)).rejects.toThrow(
+				"dist/aidr-artifact.manifest.sig",
+			);
+		} finally {
+			await rm(root, { recursive: true, force: true });
 		}
 	});
 
