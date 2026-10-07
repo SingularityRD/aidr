@@ -12,13 +12,17 @@ vi.mock("npm:@supabase/supabase-js@2.116.0", () => ({ createClient: () => runtim
 const tenantId = "11111111-1111-4111-8111-111111111111";
 const userId = "22222222-2222-4222-8222-222222222222";
 
-async function feedWithSigningKey(privateKey: string, options: { previousHashExpiresAt?: string; revoked?: boolean; rateAllowed?: boolean; admission?: number } = {}) {
+async function feedWithSigningKey(privateKey: string, options: { previousHashExpiresAt?: string; revoked?: boolean; rateAllowed?: boolean; admission?: number; agentId?: string; unsigned?: boolean } = {}) {
 	runtime.feedReads = 0;
 	runtime.client = {
 		rpc: async (name: string) => name === "tenant_admission_capacity"
 			? { data: options.admission ?? 1, error: null }
 			: { data: { allowed: options.rateAllowed !== false, remaining: 100 }, error: null },
 		from(table: string) {
+			if (table === "rate_limits") {
+				const empty = { eq: () => empty, maybeSingle: async () => ({ data: null, error: null }) };
+				return { select: () => empty };
+			}
 			if (table === "revocations") {
 				runtime.feedReads += 1;
 				return {
@@ -30,7 +34,8 @@ async function feedWithSigningKey(privateKey: string, options: { previousHashExp
 			const row = table === "api_keys"
 				? { user_id: userId, tenant_id: tenantId, revoked: options.revoked === true,
 					previous_hash: createHash("sha256").update("enrolled-key").digest("hex"),
-					previous_hash_expires_at: options.previousHashExpiresAt }
+					previous_hash_expires_at: options.previousHashExpiresAt,
+					...(options.agentId ? { agent_id: options.agentId } : {}) }
 				: table === "tenant_members"
 					? { role: "owner", expires_at: null }
 					: { status: "active" };
@@ -45,8 +50,10 @@ async function feedWithSigningKey(privateKey: string, options: { previousHashExp
 	const env: Record<string, string> = {
 		SUPABASE_URL: "https://project.supabase.co",
 		SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
-		AIDR_REVOCATION_SIGNING_KEY_ID: "test-key",
-		AIDR_REVOCATION_SIGNING_PRIVATE_KEY_PKCS8_B64: privateKey,
+		...(options.unsigned ? {} : {
+			AIDR_REVOCATION_SIGNING_KEY_ID: "test-key",
+			AIDR_REVOCATION_SIGNING_PRIVATE_KEY_PKCS8_B64: privateKey,
+		}),
 	};
 	vi.stubGlobal("Deno", {
 		env: { get: (name: string) => env[name] },
@@ -76,7 +83,7 @@ describe("revocation feed signing", () => {
 			revocations_signed: {
 				alg: "ed25519",
 				key_id: "test-key",
-				payload: { revocations: { artifact_ids: [], pack_ids: [] } },
+				payload: { schema_version: 2, tenant_id: tenantId, agent_id: null, revocations: { artifact_ids: [], pack_ids: [] } },
 			},
 		});
 		expect(verify(
@@ -85,6 +92,26 @@ describe("revocation feed signing", () => {
 			publicKey,
 			Buffer.from(body.revocations_signed.sig_b64, "base64"),
 		)).toBe(true);
+	});
+
+	it("binds the signed payload to the agent of an agent-bound key", async () => {
+		const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+		const key = privateKey.export({ format: "der", type: "pkcs8" }).toString("base64");
+		const agentId = "33333333-3333-4333-8333-333333333333";
+		const response = await feedWithSigningKey(key, { agentId });
+		expect(response.status).toBe(200);
+		const body = await response.json();
+		expect(body.revocations_signed.payload).toMatchObject({ schema_version: 2, tenant_id: tenantId, agent_id: agentId });
+		expect(verify(null, Buffer.from(JSON.stringify(body.revocations_signed.payload)), publicKey,
+			Buffer.from(body.revocations_signed.sig_b64, "base64"))).toBe(true);
+	});
+
+	it("answers 503 instead of a 200 null feed when signing is not configured", async () => {
+		const response = await feedWithSigningKey("unused", { unsigned: true });
+		expect(response.status).toBe(503);
+		const body = await response.json();
+		expect(body).toEqual({ error: "revocation_signing_unavailable" });
+		expect(body).not.toHaveProperty("revocations_signed");
 	});
 
 	it("fails when a configured key cannot sign, without a successful null feed", async () => {

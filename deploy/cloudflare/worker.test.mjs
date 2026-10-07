@@ -426,8 +426,8 @@ test("device bootstrap signs the Cloudflare client IP and ignores spoofed AIDR h
 	assert.equal(response.headers.get("access-control-allow-origin"), site);
 });
 
-test("device poll and identity recovery get a route-bound client IP proof while keeping user auth", async () => {
-	for (const [path, context] of [["device-poll", "device-poll:v1"], ["identity-security", "identity-security:v1"]]) {
+test("device poll, identity recovery and OIDC SSO get a route-bound client IP proof while keeping user auth", async () => {
+	for (const [path, context] of [["device-poll", "device-poll:v1"], ["identity-security", "identity-security:v1"], ["oidc-sso", "oidc-sso:v1"]]) {
 		let received;
 		const response = await handle(new Request(`${site}/functions/v1/${path}`, {
 			method: "POST",

@@ -138,7 +138,7 @@ function fakeDb(options: Options = {}) {
 			}),
 			auth: {
 				getUser: vi.fn(async () => ({ data: { user: { id: USER } }, error: null })),
-				mfa: { getAuthenticatorAssuranceLevel: vi.fn(async () => ({ data: { currentLevel: options.assurance ?? "aal1" }, error: null })) },
+				mfa: { getAuthenticatorAssuranceLevel: vi.fn(async () => ({ data: { currentLevel: options.assurance ?? "aal2" }, error: null })) },
 			},
 		},
 	};
@@ -370,6 +370,39 @@ describe("SCIM tenant-owner management boundary", () => {
 		expect(await response.json()).toEqual({ error: "mfa_required" });
 		expect(fixture.calls).not.toContain("tenant_members");
 		expect(fixture.calls).not.toContain("scim_tokens");
+	});
+
+	it.each([
+		{ action: "create_token", tenant_id: TENANT, label: "Entra provisioning" },
+		{ action: "rotate_token", tenant_id: TENANT, token_id: TOKEN_ID, label: "Entra rotated" },
+		{ action: "set_group_mapping", tenant_id: TENANT, external_group_id: "entra-group-id", role: "admin" },
+		{ action: "remove_group_mapping", tenant_id: TENANT, external_group_id: "entra-group-immutable-id" },
+	])("requires an AAL2 session for privilege-granting action $action even without tenant MFA policy", async (body) => {
+		const fixture = fakeDb({ assurance: "aal1" });
+		const response = await createScimAdminHandler({ db: fixture.db as never })(request("POST", body));
+		expect(response.status).toBe(403);
+		expect(await response.json()).toEqual({ error: "mfa_required" });
+		expect(fixture.rpcCalls.map((call) => call.name)).toEqual([]);
+	});
+
+	it("fails closed when assurance cannot be read for a privilege-granting action", async () => {
+		const fixture = fakeDb();
+		fixture.db.auth.mfa.getAuthenticatorAssuranceLevel = vi.fn(async () => ({ data: null, error: new Error("auth down") })) as never;
+		const response = await createScimAdminHandler({ db: fixture.db as never })(request("POST", {
+			action: "create_token", tenant_id: TENANT, label: "Entra provisioning",
+		}));
+		expect(response.status).toBe(503);
+		expect(fixture.rpcCalls.some((call) => call.name === "scim_admin_create_token")).toBe(false);
+	});
+
+	it("keeps token revocation and reads available at AAL1 so a leaked token can be cut off quickly", async () => {
+		const revoke = fakeDb({ assurance: "aal1" });
+		const revoked = await createScimAdminHandler({ db: revoke.db as never })(request("POST", {
+			action: "revoke_token", tenant_id: TENANT, token_id: TOKEN_ID,
+		}));
+		expect(revoked.status).toBe(200);
+		const read = fakeDb({ assurance: "aal1" });
+		expect((await createScimAdminHandler({ db: read.db as never })(request("GET", undefined, { "X-AIDR-Tenant-ID": TENANT }))).status).toBe(200);
 	});
 
 	it("fails closed if mapping reconciliation would take over a manual team membership", async () => {

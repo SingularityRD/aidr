@@ -413,11 +413,18 @@ describe("critical policy and runtime security branches", () => {
 			await writeFile(malformedRevocationsPath, "[]", "utf8");
 
 			expect(await loadManagedState(malformedStatePath)).toEqual({});
-			expect(await loadRevocationsCache(malformedRevocationsPath, ["not-a-public-key"])).toBeNull();
 			expect(
-				parseSignedRevocationsFromControlPlaneBody({
-					revocations_signed: { alg: "ed25519", sig_b64: "", payload: {} },
+				await loadRevocationsCache(malformedRevocationsPath, ["not-a-public-key"], {
+					tenantId: "tenant-a",
 				}),
+			).toBeNull();
+			expect(
+				parseSignedRevocationsFromControlPlaneBody(
+					{
+						revocations_signed: { alg: "ed25519", sig_b64: "", payload: {} },
+					},
+					{ tenantId: "tenant-a" },
+				),
 			).toBeNull();
 		} finally {
 			await rm(dir, { recursive: true, force: true });

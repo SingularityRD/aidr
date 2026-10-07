@@ -26,6 +26,7 @@ function harness(options: {
 	signValue?: unknown;
 	fetch?: typeof fetch;
 	env?: Record<string, string | undefined>;
+	rateAllowed?: () => boolean;
 } = {}) {
 	const rows: Record<string, Row | null> = {
 		api_keys: options.key === undefined ? { id: API_KEY_ID, key_hash: KEY_HASH, user_id: "user-1", tenant_id: TENANT, revoked: false } : options.key,
@@ -42,8 +43,14 @@ function harness(options: {
 		status: 200,
 		headers: { "Content-Type": "application/vnd.aidr.pack", "Content-Length": "10", "Accept-Ranges": "bytes" },
 	}));
+	const rpcCalls: Array<{ name: string; args: Row }> = [];
 	const db = {
-		async rpc(name: string) {
+		async rpc(name: string, args: Row = {}) {
+			rpcCalls.push({ name, args });
+			if (name === "consume_tenant_rate_limit") {
+				return { data: { allowed: options.rateAllowed ? options.rateAllowed() : true, remaining: 10 }, error: null };
+			}
+			if (name === "increment_rate_limit") return { data: null, error: null };
 			if (name !== "tenant_admission_capacity") throw new Error(`Unexpected RPC: ${name}`);
 			return { data: 1, error: null };
 		},
@@ -92,7 +99,7 @@ function harness(options: {
 	}
 	load(ENTRY);
 	if (!handler) throw new Error("packs-download did not register a handler");
-	return { handler, queries, sign, fetch: fetchMock, rows };
+	return { handler, queries, sign, fetch: fetchMock, rows, rpcCalls };
 }
 
 function request(token: string | null = "customer-key", search = "pack_id=intel&version=1", method = "GET") {
@@ -107,6 +114,44 @@ function grantRequest(downloadUrl: string, method = "GET") {
 }
 
 describe("packs-download customer contract", () => {
+	it("charges one per-key bucket on both the grant-minting and the byte-streaming path", async () => {
+		const runtime = harness();
+		const response = await runtime.handler(request());
+		expect(response.status).toBe(200);
+		const { download_url } = await response.json() as { download_url: string };
+		expect((await runtime.handler(grantRequest(download_url))).status).toBe(200);
+		const quota = runtime.rpcCalls.filter((call) => call.name === "consume_tenant_rate_limit");
+		expect(quota.map((call) => call.args)).toEqual([
+			expect.objectContaining({ p_tenant_id: TENANT, p_subject: API_KEY_ID, p_endpoint: "packs-download", p_subject_limit: 120, p_tenant_limit: 3000 }),
+			expect.objectContaining({ p_tenant_id: TENANT, p_subject: API_KEY_ID, p_endpoint: "packs-download", p_subject_limit: 120, p_tenant_limit: 3000 }),
+		]);
+	});
+
+	it("rejects a rate-limited key before reading entitlements or signing storage URLs, on both paths", async () => {
+		let allowed = true;
+		const runtime = harness({ rateAllowed: () => allowed });
+		const { download_url } = await (await runtime.handler(request())).json() as { download_url: string };
+		allowed = false;
+		const minted = await runtime.handler(request());
+		expect(minted.status).toBe(429);
+		expect(await minted.json()).toEqual({ error: "rate_limited" });
+		expect(minted.headers.get("Retry-After")).not.toBeNull();
+		const entitlementReads = runtime.queries.filter((query) => query.table === "entitlements").length;
+		const streamed = await runtime.handler(grantRequest(download_url));
+		expect(streamed.status).toBe(429);
+		expect(runtime.queries.filter((query) => query.table === "entitlements")).toHaveLength(entitlementReads);
+		expect(runtime.sign).not.toHaveBeenCalled();
+		expect(runtime.fetch).not.toHaveBeenCalled();
+	});
+
+	it("checks the unresolved-credential budget before looking up a bearer key", async () => {
+		const runtime = harness({ key: null });
+		const response = await runtime.handler(request("unknown-key"));
+		expect(response.status).toBe(401);
+		expect(runtime.queries[0]?.table).toBe("rate_limits");
+		expect(runtime.rpcCalls.map((call) => call.name)).toEqual(["increment_rate_limit"]);
+	});
+
 	it("issues an externally reachable proxy URL when database access uses an internal origin", async () => {
 		const runtime = harness({ env: { SUPABASE_URL: "http://api-gw:8000", AIDR_PUBLIC_API_ORIGIN: "https://api.customer.example" } });
 		const response = await runtime.handler(request());

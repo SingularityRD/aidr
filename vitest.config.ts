@@ -9,7 +9,6 @@ export default defineConfig({
 			"packages/**/src/**/__tests__/**/*.test.ts",
 			"packages/**/src/**/__tests__/**/*.test.tsx",
 			"supabase/functions/**/__tests__/**/*.test.ts",
-			"packages/dashboard/supabase/functions/auth-callback/index.test.ts",
 		],
 		exclude: ["**/node_modules/**", "**/*.e2e.test.ts", "**/*e2e-integration*", "**/src/__tests__/e2e.test.ts"],
 		environment: "node",

@@ -50,6 +50,7 @@ function database(options: Options = {}) {
 					case "agent_policy_assignments": return { data: options.assignment === null ? null : { version: options.assignment ?? 4 }, error: options.assignmentError ? new Error("db_down") : null };
 					case "tenant_runtime_policies": return { data: options.current === null ? null : { version: 3, policy: options.current ?? CURRENT }, error: options.currentError ? new Error("db_down") : null };
 					case "runtime_policy_revisions": return { data: options.revision === null ? null : { version: 4, policy: options.revision ?? STAGED }, error: options.revisionError ? new Error("db_down") : null };
+					case "rate_limits": return { data: null, error: null };
 					default: throw new Error(`unexpected relation ${table}`);
 				}
 			},
@@ -61,6 +62,7 @@ function database(options: Options = {}) {
 		rpc: async (name: string) => {
 			rpcCalls.push(name);
 			if (name === "tenant_admission_capacity") return { data: 1, error: null };
+			if (name === "increment_rate_limit") return { data: null, error: null };
 			if (name !== "consume_tenant_rate_limit") throw new Error(`unexpected RPC ${name}`);
 			return options.rate === "unavailable" ? { data: null, error: new Error("db_down") }
 				: { data: { allowed: options.rate !== "deny", remaining: options.rate === "deny" ? 0 : 299 }, error: null };

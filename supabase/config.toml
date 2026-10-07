@@ -100,8 +100,12 @@ verify_jwt = true
 [functions.revocations]
 verify_jwt = false
 [functions.response-playbooks]
-# The handler also repeats session, owner/admin and AAL2 checks before SQL.
-verify_jwt = true
+# `trigger_automation` authenticates with an `aidr_rsp_` grant secret, which is
+# not a Supabase JWT, so gateway JWT checking would reject it before the handler.
+# Every operator action (start/trigger/status/grant/revoke) still verifies the
+# access token with getUser, runs the identity barrier and requires an active
+# owner/admin membership at AAL2 before any SQL.
+verify_jwt = false
 [functions.url-check]
 verify_jwt = false
 [functions.waitlist-signup]

@@ -45,7 +45,7 @@ not deployed and none of the Stripe secrets below are provisioned yet.**
 | `STRIPE_SECRET_KEY` | Payment processing / server-side Checkout Sessions | Production (not provisioned) | Quarterly |
 | `STRIPE_WEBHOOK_SECRET` | `Stripe-Signature` verification of webhook deliveries | Production (not provisioned) | On rotation |
 | `AIDR_STRIPE_EXTRA_AGENT_PRICE_ID` | Price id that may grant paid seats (non-secret config) | Production (not configured) | On price-book change |
-| `AIDR_STRIPE_WEBHOOK_TOLERANCE_SECONDS` | Replay-window seconds, default `300` (non-secret config) | Production (optional) | On review |
+| `AIDR_STRIPE_WEBHOOK_TOLERANCE_SECONDS` | Replay-window seconds, default `300`, maximum `3600` (a larger or invalid value is refused and the default applies; non-secret config) | Production (optional) | On review |
 | `AIDR_BILLING_PROVIDER` | Billing portal provider selector; set to `stripe` only when the shared self-service gate is enabled | Production (unset for direct GA) | On commercial decision |
 | `AIDR_ENABLE_LEGACY_SELF_SERVICE_BILLING` | Fail-closed gate for Paddle/Stripe self-service endpoints; keep `false` for direct GA | Production | On commercial decision |
 | `IYZICO_SECRET_KEY` | TR payments | Production | Quarterly |

@@ -61,6 +61,7 @@ describe("audit-export legal-hold barrier", () => {
 		publication?: "published" | "legal_hold_active" | "reservation_unavailable";
 		publicationError?: boolean;
 		rows?: unknown[];
+		rateAllowed?: boolean;
 	}
 
 	/**
@@ -74,6 +75,7 @@ describe("audit-export legal-hold barrier", () => {
 		const filters: Array<{ table: string; column: string; value: unknown }> = [];
 		const inserts: Array<{ table: string; values: unknown }> = [];
 		const rpcs: Array<{ name: string; args: Record<string, unknown> }> = [];
+		const quotaCalls: Array<Record<string, unknown>> = [];
 		const uploads: string[] = [];
 		const uploadContents: string[] = [];
 		const signedUrls: string[] = [];
@@ -132,6 +134,12 @@ describe("audit-export legal-hold barrier", () => {
 				},
 				from: vi.fn((table: string) => queryFor(table)),
 				rpc: async (name: string, args: Record<string, unknown>) => {
+					// The per-tenant export quota is recorded separately so the ledger
+					// assertions below keep addressing the export's own RPCs.
+					if (name === "consume_tenant_rate_limit") {
+						quotaCalls.push(args);
+						return { data: { allowed: options.rateAllowed !== false, remaining: 10 }, error: null };
+					}
 					rpcs.push({ name, args });
 					// `register_audit_export_object` is the reviewed byte reservation and
 					// it is the retention-ledger write: it inserts the export row under
@@ -170,6 +178,7 @@ describe("audit-export legal-hold barrier", () => {
 			filters,
 			inserts,
 			rpcs,
+			quotaCalls,
 			uploads,
 			uploadContents,
 			signedUrls,
@@ -252,6 +261,38 @@ describe("audit-export legal-hold barrier", () => {
 		expect(rpcs[0]?.args.p_path).toBe(uploads[0]?.replace("aidr-audit-exports/", ""));
 		expect(signedUrls).toHaveLength(1);
 		expect(String(body.url)).toContain("/storage/v1/object/sign/aidr-audit-exports/");
+	});
+
+	it.each(["viewer", "member", "support_jit"])("refuses an export for an active %s (owner/admin only)", async (role) => {
+		const { handle, tables, rpcs, uploads, signedUrls, quotaCalls } = await handlerWith({ member: { role, expires_at: null } });
+		const response = await handle(post());
+		expect(response.status).toBe(403);
+		expect(await response.json()).toEqual({ error: "audit_export_forbidden" });
+		expect(tables).not.toContain("audit_logs");
+		expect(quotaCalls).toEqual([]);
+		expect(rpcs).toEqual([]);
+		expect(uploads).toEqual([]);
+		expect(signedUrls).toEqual([]);
+	});
+
+	it("allows an active admin and charges the per-user/per-tenant export quota first", async () => {
+		const { handle, quotaCalls } = await handlerWith({ member: { role: "admin", expires_at: null } });
+		const response = await handle(post());
+		expect(response.status).toBe(200);
+		expect(quotaCalls).toEqual([expect.objectContaining({
+			p_tenant_id: TENANT, p_subject: USER, p_endpoint: "audit-export", p_subject_limit: 30, p_tenant_limit: 60,
+		})]);
+	});
+
+	it("refuses a rate-limited export before reading records or touching Storage", async () => {
+		const { handle, tables, rpcs, uploads } = await handlerWith({ rateAllowed: false });
+		const response = await handle(post());
+		expect(response.status).toBe(429);
+		expect(await response.json()).toEqual({ error: "rate_limited" });
+		expect(response.headers.get("Retry-After")).not.toBeNull();
+		expect(tables).not.toContain("audit_logs");
+		expect(rpcs).toEqual([]);
+		expect(uploads).toEqual([]);
 	});
 
 	it.each([

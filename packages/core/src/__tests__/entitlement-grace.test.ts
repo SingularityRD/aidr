@@ -12,7 +12,7 @@ import {
 	isPremiumModuleEnabled,
 	loadManagedState,
 	type ManagedState,
-	type RevocationListV1,
+	type RevocationList,
 	saveEntitlementKeyringFromState,
 	saveManagedState,
 } from "../managed.js";
@@ -398,8 +398,10 @@ describe("signed entitlement expiry and offline grace", () => {
 			await saveManagedState(managedPath, state);
 			await saveEntitlementKeyringFromState(state);
 
-			const revocations: RevocationListV1 = {
-				schema_version: 1,
+			const revocations: RevocationList = {
+				schema_version: 2,
+				tenant_id: snapshot.tenant_id,
+				agent_id: null,
 				issued_at: issued.toISOString(),
 				expires_at: snapshot.grace_until,
 				revocation_epoch: 2,

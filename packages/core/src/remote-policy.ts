@@ -3,7 +3,7 @@ import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { ControlPlaneClient } from "./clients/control-plane.js";
 import { resolvePath } from "./config.js";
-import { loadRevocationsCache } from "./managed.js";
+import { loadRevocationBinding, loadRevocationsCache } from "./managed.js";
 import {
 	type PolicyHighWater,
 	policyBodySequence,
@@ -209,6 +209,7 @@ async function loadPolicyTrust(config: Config): Promise<PolicyTrust> {
 		const signed = await loadRevocationsCache(
 			resolvePath(config.licensing.revocations_cache_path),
 			licensingKeys,
+			await loadRevocationBinding(licensingKeys),
 		);
 		for (const id of signed?.payload.revocations.key_ids ?? []) revoked.add(id);
 	}

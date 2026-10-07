@@ -190,7 +190,9 @@ describe("session-start plugin scan coverage and intel cache", () => {
 			alg: "ed25519" as const,
 			sig_b64: `signature-${epoch}`,
 			payload: {
-				schema_version: 1 as const,
+				schema_version: 2 as const,
+				tenant_id: "tenant-a",
+				agent_id: null,
 				issued_at: "2026-09-23T00:00:00.000Z",
 				expires_at: "2027-09-23T00:00:00.000Z",
 				revocation_epoch: epoch,

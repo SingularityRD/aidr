@@ -143,6 +143,20 @@ export class SupabaseOidcStore implements OidcStore {
 		return !error;
 	}
 
+	async pendingAuthRequest(stateHash: string, nowIso: string): Promise<{ provider_id: string } | null | "error"> {
+		// Unique-index lookup, no write: lets the callback reject unknown state before counting.
+		const { data, error } = await this.db
+			.from("oidc_auth_requests")
+			.select("provider_id")
+			.eq("state_hash", stateHash)
+			.is("consumed_at", null)
+			.gt("expires_at", nowIso)
+			.maybeSingle();
+		if (error) return "error";
+		const providerId = (data as Row | null)?.provider_id;
+		return typeof providerId === "string" ? { provider_id: providerId } : null;
+	}
+
 	async consumeAuthRequest(stateHash: string, nowIso: string): Promise<OidcAuthRequestRow | null> {
 		// One statement: only the first presenter of an unexpired, unconsumed state gets a row.
 		const { data, error } = await this.db
