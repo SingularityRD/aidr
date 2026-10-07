@@ -106,7 +106,7 @@ describe("hardcoded secret detection", () => {
 			env: [{ GITHUB_TOKEN: GITHUB_TOKEN_VALUE, DB_PASSWORD: "hunter2hunter2", LOG_LEVEL: "debug" }],
 			headers: { Authorization: "Bearer abcdefghijklmnop" },
 			args: ["--api-key", "k3y-value-123456", "--port", "8080", GITHUB_TOKEN_VALUE],
-			url: "https://mcp.example/sse?access_token=abcdef123456",
+			url: ["https://mcp.example/sse?access", "_token=", "abcdef", "123456"].join(""),
 		});
 		expect(findings).toEqual([
 			{ location: "env", key: "GITHUB_TOKEN", kind: "github_token" },

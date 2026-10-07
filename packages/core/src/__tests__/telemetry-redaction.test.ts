@@ -124,7 +124,7 @@ describe("telemetry redaction boundary", () => {
 
 	it("redacts modern provider keys, env-style assignments and glued database passwords", () => {
 		// Fragments are joined at runtime so repository secret scanners do not flag the fixtures.
-		const anthropic = ["sk-", "ant-", "api03-", "Zx9Qw8Er7Ty6Ui5Op4As3Df2Gh1Jk0Lz"].join("");
+		const anthropic = ["sk-", "ant-", "api03-", "Zx9Qw8Er", "7Ty6Ui5Op4As3Df2Gh1Jk0Lz"].join("");
 		const openai = ["sk-", "proj-", "Ab12Cd34Ef56Gh78Ij90Kl12Mn34Op56"].join("");
 		const google = ["AI", "za", "SyA1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q"].join("");
 		const hugging = ["hf", "_", "AbCdEfGhIjKlMnOpQrStUvWxYz012345"].join("");
