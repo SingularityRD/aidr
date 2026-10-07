@@ -290,12 +290,16 @@ describe("Core Integration - Full Flow", () => {
 			const cache = new VerdictCache(cacheConfig);
 			await cache.load();
 
-			cache.putCommand("hash123", {
-				verdict: "deny",
-				severity: "critical",
-				reasons: ["Test reason"],
-				source: "heuristic",
-			});
+			cache.putPackage(
+				"npm:pkg123",
+				{
+					verdict: "deny",
+					severity: "critical",
+					reasons: ["Test reason"],
+					source: "heuristic",
+				},
+				null,
+			);
 
 			await cache.save();
 
@@ -303,7 +307,7 @@ describe("Core Integration - Full Flow", () => {
 			const cache2 = new VerdictCache(cacheConfig);
 			await cache2.load();
 
-			const cached = cache2.getCommand("hash123");
+			const cached = cache2.getPackage("npm:pkg123");
 			expect(cached).not.toBeNull();
 			expect(cached?.verdict).toBe("deny");
 		});
