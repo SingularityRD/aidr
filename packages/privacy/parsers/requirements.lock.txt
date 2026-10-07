@@ -1,0 +1,19 @@
+# Hash-locked parser worker environment: pypdf, defusedxml, pypdfium2 and Pillow (none declares a runtime dependency).
+# Install: python -m pip install --require-hashes --only-binary=:all: --no-deps -r parsers/requirements.lock.txt
+# The hashes are the official PyPI wheel SHA-256 values (https://pypi.org/pypi/<name>/<version>/json) for
+# CPython 3.11-3.13 on manylinux x86_64 and win_amd64. Other platforms or Python versions need their own
+# measured hashes. This is reproducibility evidence only, not a vulnerability, licence or deployment approval.
+pypdf==6.19.0 \
+    --hash=sha256:7e5d6e730e7dae87d560a2cee218b852f6498c8be61966f3cd02ead971e48d14
+defusedxml==0.7.1 \
+    --hash=sha256:a352e7e428770286cc899e2542b6cdaedb2b4953ff269a210103ec58f6198a61
+pypdfium2==5.14.0 \
+    --hash=sha256:11f281613fa22313d9c7ab89947665e84eccf8ebe40e1198a84a88352305648d \
+    --hash=sha256:149fd5c6397b8df8bf7911a93506eff0be874f877afe7ac936cf5d37d21a6a06
+pillow==12.3.0 \
+    --hash=sha256:23d27a3e0307ec2244cc51e7287b919aa68d097504ebe19df4e76a98a3eea5bd \
+    --hash=sha256:8e95e1385e4998ae9694eeaa4730ba5457ff61185b3a55e2e7bea0880aef452a \
+    --hash=sha256:78cb2c6865a35ab8ff8b75fd122f6033b92a62c82801110e48ddd6c936a45d91 \
+    --hash=sha256:a2b55dd6b2a4c4b7d87ffa56bdb33fdc5fdb9a462173861a7bc097f17d91cb09 \
+    --hash=sha256:0847a763afefb695bc912d7c131e7e0632d4edc1d8698f58ddabec8e46b8b6d3 \
+    --hash=sha256:1cca606cd25738df4ed873d5ad46bbdb3d83b5cbca291f6b4ff13a4df6b0bbe8

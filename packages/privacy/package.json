@@ -65,6 +65,7 @@
     "reports/enterprise/TEST_REPORT.md",
     "parsers/worker.py",
     "parsers/requirements.txt",
+    "parsers/requirements.lock.txt",
     "portal",
     "models/risk-baseline.json",
     "models/risk-baseline.sha256",

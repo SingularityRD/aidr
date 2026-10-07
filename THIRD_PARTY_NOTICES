@@ -80,6 +80,36 @@ the upstream link https://github.com/Tencent/AI-Infra-Guard. AIDR's
 proprietary LICENSE does not relicense this vendor source. The exact pinned
 revision and checksum must be recorded in the Release Candidate SBOM.
 
+Privacy document parser Python dependencies
+-------------------------------------------
+
+The private `packages/privacy` document worker (`parsers/worker.py`) runs in a
+separately provisioned Python environment installed from the hash lock
+`packages/privacy/parsers/requirements.lock.txt` (`--require-hashes`, official
+PyPI wheels). These wheels are not bundled in npm or SEA artifacts; a
+deployment that ships the environment must carry the wheels' own licence
+files listed below.
+
+| Component | Locked version | Declared licence | Notice/source |
+|---|---|---|---|
+| pypdf | 6.19.0 | BSD-3-Clause | https://github.com/py-pdf/pypdf |
+| defusedxml | 0.7.1 | PSFL (Python Software Foundation License) | https://github.com/tiran/defusedxml |
+| pypdfium2 (Python bindings) | 5.14.0 | Apache-2.0 OR BSD-3-Clause (docs CC-BY-4.0) | https://github.com/pypdfium2-team/pypdfium2 |
+| PDFium (native library shipped inside the pypdfium2 wheel) | as bundled by pypdfium2 5.14.0 | BSD-3-Clause, with bundled third-party code under its own terms | https://pdfium.googlesource.com/pdfium/ ; binaries via https://github.com/bblanchon/pdfium-binaries |
+| Pillow | 12.3.0 | MIT-CMU (HPND-style) | https://github.com/python-pillow/Pillow |
+
+The pypdfium2 wheel carries `LICENSES/` plus per-platform
+`data/<platform>/BUILD_LICENSES/` texts for the code compiled into PDFium:
+abseil (Apache-2.0), AGG 2.3, fast_float, FreeType (FTL, chosen from its
+FTL/GPL-2.0 dual licence), ICU (Unicode licence), Little-CMS (MIT),
+libjpeg-turbo (IJG/BSD-3-Clause/Zlib), OpenJPEG (BSD-2-Clause), libpng,
+LLVM libc (Apache-2.0 WITH LLVM-exception), simdutf and zlib. The Pillow
+wheel's `LICENSE` likewise includes the terms of its bundled native libraries
+(for example brotli, FreeType, HarfBuzz, Little-CMS, libavif, libjpeg-turbo,
+libpng, libwebp, OpenJPEG, libtiff, xz and zlib-ng). Preserve those files
+with any distributed environment; this list is an inventory, not counsel
+approval.
+
 Attribution and distribution rules
 -----------------------------------
 
