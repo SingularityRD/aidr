@@ -646,6 +646,11 @@ export interface ContextPoisoningOptions {
 	sensitivity: string;
 	/** The call was allowlisted by the user: keep content findings, drop the path-only ask. */
 	allowlisted?: boolean;
+	/**
+	 * True for a written path the user allowlisted while other artifacts of the
+	 * call were not: the path-only ask is dropped for that path alone.
+	 */
+	isPathAllowlisted?: (path: string) => boolean;
 	/** MCP tool description, when the caller (for example the MCP gateway) has it. */
 	mcpToolDescription?: string;
 }
@@ -670,7 +675,7 @@ function controlFileMatches(
 		const pathRule = matchAgentControlPath(rules, target.path);
 		if (!pathRule) continue;
 		const label = normalizeControlPath(target.path);
-		if (pathReview) {
+		if (pathReview && !options.isPathAllowlisted?.(target.path)) {
 			const threat = withAction(pathRule, pathAction ?? pathRule.action);
 			matches.push({ threat, artifact: label, matchValue: label });
 		}

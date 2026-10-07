@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import {
 	ConfigSchema,
 	getAuditLogLossState,
+	readPersistedAuditLossState,
 	readTelemetryLossSummary,
 	resolvePath,
 } from "@singularityrd/aidr-core";
@@ -30,7 +31,18 @@ export default async function statusCommand(options: { json?: boolean } = {}): P
 		}
 	} catch { configState = "invalid"; }
 	const registered = connectors.filter((c) => c.state === "installed");
-	const auditLoss = getAuditLogLossState();
+	// Rotations happen in short-lived hook processes, so the persisted counter
+	// is the one that reflects them; an unreadable counter is not zero.
+	const persistedAuditLoss = await readPersistedAuditLossState(config.logging);
+	const auditLoss = {
+		...getAuditLogLossState(),
+		...(persistedAuditLoss
+			? {
+					rotationDrops: persistedAuditLoss.rotationDrops,
+					lastRotationDropAt: persistedAuditLoss.lastDropAt,
+				}
+			: { rotationDropsState: "unavailable" as const }),
+	};
 	let telemetryLoss: Awaited<ReturnType<typeof readTelemetryLossSummary>>;
 	try {
 		telemetryLoss = await readTelemetryLossSummary(resolvePath("~/.singularity-aidr/telemetry"));
@@ -85,7 +97,7 @@ export default async function statusCommand(options: { json?: boolean } = {}): P
 				(unreadableTelemetryQueue ? " — at least one queue could not be read." : "."),
 		);
 		const auditSummary =
-			`Audit log: ${auditLoss.writeFailures} append(s) could not be written, ${auditLoss.rotationDrops} rotation(s) dropped the oldest file.` +
+			`Audit log: ${auditLoss.writeFailures} append(s) could not be written, ${persistedAuditLoss ? auditLoss.rotationDrops : "an unknown number of"} rotation(s) dropped the oldest file.` +
 			(auditLoss.lastError ? ` Last error: ${auditLoss.lastError}.` : "");
 		console.log(auditSummary);
 		console.log(configurationReady ? "Local installation checks passed. Run an agent-host canary to confirm actual enforcement." : "Installation requires attention. Check configuration and connector registration above.");

