@@ -6,6 +6,7 @@
 import { lstatSync } from "node:fs";
 import { chmod, open, rename, stat, unlink } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
+import { appendChainedAuditRecord } from "./audit-chain.js";
 import { resolvePath } from "./config.js";
 import { getFileContent } from "./file-utils.js";
 import { frameworkRefsToJson } from "./framework-mappings.js";
@@ -256,8 +257,17 @@ async function unlinkIfPresent(path: string): Promise<boolean> {
 	}
 }
 
-/** Classic logrotate: shift numbered backups and rename active file to .1. */
-async function rotateIfNeeded(filePath: string, maxBytes: number, maxFiles: number): Promise<void> {
+/**
+ * Classic logrotate: shift numbered backups and rename active file to .1.
+ * `beforeDrop` runs before the oldest backup is deleted (the signed chain anchors
+ * the records it is about to lose).
+ */
+async function rotateIfNeeded(
+	filePath: string,
+	maxBytes: number,
+	maxFiles: number,
+	beforeDrop?: (path: string) => Promise<void>,
+): Promise<void> {
 	if (maxBytes <= 0 || maxFiles <= 0) return;
 
 	let size: number;
@@ -275,6 +285,7 @@ async function rotateIfNeeded(filePath: string, maxBytes: number, maxFiles: numb
 	// Delete oldest backup. A rotation that drops a file is data loss, so it is
 	// counted rather than performed silently; ENOENT means there was nothing to
 	// drop and is not a loss.
+	if (beforeDrop) await beforeDrop(`${filePath}.${maxFiles}`);
 	if (await unlinkIfPresent(`${filePath}.${maxFiles}`)) recordAuditRotationDrop();
 
 	// Shift .N-1 → .N down to .1 → .2
@@ -295,16 +306,34 @@ async function appendEntry(config: LoggingConfig, entry: Record<string, unknown>
 		// boundary as the runtime logger, including on Windows where chmod alone does
 		// not remove inherited NTFS read grants.
 		await prepareAuditPath(path);
-		await rotateIfNeeded(path, config.max_bytes, config.max_files);
-		const handle = await open(path, "a", PRIVATE_FILE_MODE);
-		try {
-			await handle.writeFile(`${JSON.stringify(entry)}\n`, "utf8");
-			// logVerdict resolves only after the record reached stable storage; callers
-			// still fail open, but a completed write is not merely in the OS cache.
-			await handle.sync();
-		} finally {
-			await handle.close();
+		const writeLine = async (line: string) => {
+			const handle = await open(path, "a", PRIVATE_FILE_MODE);
+			try {
+				await handle.writeFile(line, "utf8");
+				// logVerdict resolves only after the record reached stable storage; callers
+				// still fail open, but a completed write is not merely in the OS cache.
+				await handle.sync();
+			} finally {
+				await handle.close();
+			}
+		};
+		if (config.signed_chain) {
+			// Hash-chained and Ed25519-signed (audit-chain.ts). A signing problem never
+			// drops the record: it is written chained-but-unsigned and verify reports it.
+			await appendChainedAuditRecord(
+				path,
+				entry,
+				{ keyStorage: config.chain_key_storage, epochHours: config.chain_epoch_hours },
+				{
+					rotate: (beforeDrop) =>
+						rotateIfNeeded(path, config.max_bytes, config.max_files, beforeDrop),
+					write: writeLine,
+				},
+			);
+			return;
 		}
+		await rotateIfNeeded(path, config.max_bytes, config.max_files);
+		await writeLine(`${JSON.stringify(entry)}\n`);
 	});
 	const queued = result.then(
 		() => undefined,

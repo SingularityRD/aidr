@@ -56,8 +56,17 @@ async function runHook(toolResponse: unknown) {
 			// The hook exits after answering; the sandbox has no process to end.
 			exitAfterStdoutFlush: vi.fn(),
 			resolveHookDeadlineMs: () => 4_000,
+			// File quarantine is off by default and never changes this response.
+			quarantineAgentWrittenFiles: vi.fn().mockResolvedValue({
+				enabled: false,
+				scanned: [],
+				quarantined: [],
+				skipped: [],
+				agentNotice: null,
+			}),
 		},
 		pino,
+		"./assets.js": { resolveAssetDir: () => "/threats" },
 		"./approval-tracker.js": { consumePendingApproval: async () => null },
 		"./format.js": { artifactTypeLabel: (value: string) => value },
 		"./hook-input.js": {

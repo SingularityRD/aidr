@@ -9,7 +9,13 @@ import {
 	allowlistRemoveCommand,
 } from "./commands/allowlist.js";
 import { approveCommand, pendingCommand } from "./commands/approvals.js";
-import { auditExportCommand, auditTailCommand, auditVerifyCommand } from "./commands/audit.js";
+import {
+	auditExportCommand,
+	auditRotateKeyCommand,
+	auditTailCommand,
+	auditVerifyCommand,
+	auditVerifyResponseChainCommand,
+} from "./commands/audit.js";
 import {
 	canaryDeployCommand,
 	canaryListCommand,
@@ -41,6 +47,13 @@ import {
 	profileTestCommand,
 	profileValidateCommand,
 } from "./commands/profile.js";
+import {
+	quarantineDeleteCommand,
+	quarantineListCommand,
+	quarantineReleaseCommand,
+	quarantineShowCommand,
+	restoreCommand,
+} from "./commands/quarantine.js";
 import scanCommand from "./commands/scan.js";
 import setupCommand from "./commands/setup.js";
 import simulateCommand from "./commands/simulate.js";
@@ -57,13 +70,9 @@ program
 program
 	.command("setup")
 	.description("Configure AIDR and show connector setup guidance")
-	.option(
-		"-f, --force",
-		"Operator only: replace an existing local configuration (interactive confirmation)",
-	)
+	.option("-f, --force", "Replace an existing local configuration")
 	.option("--secret-store <kind>", SECRET_STORE_OPTION_DESCRIPTION)
-	.option("-y, --yes", "Skip the prompt; honoured only with AIDR_OPERATOR_NONINTERACTIVE=1")
-	.action((options) => setupCommand(options));
+	.action(setupCommand);
 
 const configProgram = program
 	.command("config")
@@ -74,8 +83,7 @@ const configProgram = program
 		"Set a dotted key/value; enter secrets at the hidden prompt, never as arguments",
 	)
 	.option("-l, --list", "Print all configuration values")
-	.option("-y, --yes", "Skip the prompt; honoured only with AIDR_OPERATOR_NONINTERACTIVE=1")
-	.action((options) => configCommand(options));
+	.action(configCommand);
 
 configProgram
 	.command("rotate-key")
@@ -232,8 +240,7 @@ program
 		"Target an explicit home directory (managed fleets and verification); defaults to the current user",
 	)
 	.option("--json", "Emit a machine-readable report")
-	.option("-y, --yes", "Skip the prompt; honoured only with AIDR_OPERATOR_NONINTERACTIVE=1")
-	.action((options) => uninstallCommand(options));
+	.action(uninstallCommand);
 
 const learningProgram = program
 	.command("learning")
@@ -395,14 +402,71 @@ auditProgram
 	.action((options) => auditExportCommand(options));
 
 auditProgram
-	.command("verify [path]")
+	.command("verify")
 	.description(
-		"Verify the Ed25519-signed response-action chain and report the first broken link (exit 1 broken, 2 unverifiable)",
+		"Verify the signed verdict log and the signed response-action chain; exits non-zero on the first broken, missing or reordered record",
+	)
+	.option("--expect-root <fingerprint>", "Pin the first root key (SHA256:<hex>)")
+	.option(
+		"--response-chain <path>",
+		"Verify only this response-action chain file (exit 1 broken, 2 unverifiable)",
 	)
 	.option("--json", "Emit a machine-readable result")
-	.action(async (path, options) => {
-		await auditVerifyCommand(path, options);
+	.action(async (options) => {
+		if (options.responseChain) {
+			await auditVerifyResponseChainCommand(options.responseChain, options);
+			return;
+		}
+		await auditVerifyCommand(options);
 	});
+
+auditProgram
+	.command("rotate-key")
+	.description("Operator only: replace the verdict-log root signing key (interactive confirmation)")
+	.option("-y, --yes", "Skip the prompt; honoured only with AIDR_OPERATOR_NONINTERACTIVE=1")
+	.option("--json", "Emit a machine-readable result")
+	.action((options) => auditRotateKeyCommand(options));
+
+const quarantineProgram = program
+	.command("quarantine")
+	.description("Inspect, release or delete files quarantined as malicious");
+
+quarantineProgram
+	.command("list")
+	.description("List quarantined files (newest first)")
+	.option("--json", "Emit machine-readable JSON")
+	.action((options) => quarantineListCommand(options));
+
+quarantineProgram
+	.command("show <id>")
+	.description("Show one quarantined file: original path, hash, reason, time")
+	.option("--json", "Emit machine-readable JSON")
+	.action((id, options) => quarantineShowCommand(id, options));
+
+quarantineProgram
+	.command("release <id>")
+	.description(
+		"Operator only: put a quarantined file back at its original path (interactive confirmation)",
+	)
+	.option("-y, --yes", "Skip the prompt; honoured only with AIDR_OPERATOR_NONINTERACTIVE=1")
+	.action((id, options) => quarantineReleaseCommand(id, options));
+
+quarantineProgram
+	.command("delete <id>")
+	.description("Operator only: permanently delete a quarantined file (interactive confirmation)")
+	.option("-y, --yes", "Skip the prompt; honoured only with AIDR_OPERATOR_NONINTERACTIVE=1")
+	.action((id, options) => quarantineDeleteCommand(id, options));
+
+program
+	.command("restore [snapshotId]")
+	.description(
+		"Operator only: restore a protected path from its pre-operation snapshot (interactive confirmation), or --list them",
+	)
+	.option("--list", "List stored snapshots")
+	.option("--overwrite-changed", "Also overwrite a target that changed after the snapshot")
+	.option("-y, --yes", "Skip the prompt; honoured only with AIDR_OPERATOR_NONINTERACTIVE=1")
+	.option("--json", "Emit machine-readable JSON (with --list)")
+	.action((snapshotId, options) => restoreCommand(snapshotId, options));
 
 const profileProgram = program
 	.command("profile")

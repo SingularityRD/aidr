@@ -28,6 +28,7 @@ import {
 	matchMcpServerDeclaration,
 	mcpIdentityFromVsCodeName,
 	type PromptInspectionOutcome,
+	quarantineAgentWrittenFiles,
 	recordHostObservation,
 	recordToolOutcome,
 	recordToolOutputCanaries,
@@ -35,6 +36,7 @@ import {
 	resolveHookDeadlineMs,
 	resolvePromptInspectionDeadlineMs,
 	scanProvisionedOutput,
+	snapshotBeforeAllowedToolCall,
 	toolResultReportsFailure,
 	type Verdict,
 	verifyArtifactIntegrityAndLog,
@@ -403,11 +405,12 @@ async function handleCursorToolOutput(payload: unknown): Promise<void> {
 	}
 	const input = payload as Record<string, unknown>;
 	await observeCompletedTool("cursor", input, input.tool_output);
+	const quarantineNotice = await quarantineCompletedToolFiles("cursor", input);
 	// Warm signed output-policy trust before the synchronous inspection.
 	await scanProvisionedOutput([], "cursor");
 	const result = inspectCachedProvisionedOutput(input.tool_output, "cursor");
 	if (result.status === "clean") {
-		writeJson({});
+		writeJson(quarantineNotice ? { additional_context: quarantineNotice } : {});
 		return;
 	}
 
@@ -423,7 +426,10 @@ async function handleCursorToolOutput(payload: unknown): Promise<void> {
 	});
 	writeJson({
 		...(isMcp ? { updated_mcp_tool_output: quarantinedMcpOutput(reason) } : {}),
-		additional_context: reason,
+		additional_context: quarantineNotice
+			? `${reason}
+${quarantineNotice}`
+			: reason,
 	});
 }
 
@@ -499,11 +505,21 @@ async function handleVsCodeToolOutput(payload: unknown): Promise<void> {
 	}
 	const input = payload as Record<string, unknown>;
 	await observeCompletedTool("vscode", input, input.tool_response);
+	const quarantineNotice = await quarantineCompletedToolFiles("vscode", input);
 	// Warm signed output-policy trust before the synchronous inspection.
 	await scanProvisionedOutput([], "vscode");
 	const result = inspectCachedProvisionedOutput(input.tool_response, "vscode");
 	if (result.status === "clean") {
-		writeJson({});
+		writeJson(
+			quarantineNotice
+				? {
+						hookSpecificOutput: {
+							hookEventName: "PostToolUse",
+							additionalContext: quarantineNotice,
+						},
+					}
+				: {},
+		);
 		return;
 	}
 	const toolName = asString(input.tool_name) ?? "Unknown";
@@ -520,7 +536,12 @@ async function handleVsCodeToolOutput(payload: unknown): Promise<void> {
 			? `Singularity AIDR detected untrusted VS Code tool output (${findingSummary}).`
 			: (result.reason ??
 				"Singularity AIDR could not fully inspect VS Code tool output; coverage is incomplete and it was not classified as clean.");
-	const coverageNotice = `${reason} The tool already completed. VS Code PostToolUse blocks further processing, but this hook does not replace output bytes; the original result may already be in the transcript.`;
+	const coverageNotice = `${reason} The tool already completed. VS Code PostToolUse blocks further processing, but this hook does not replace output bytes; the original result may already be in the transcript.${
+		quarantineNotice
+			? `
+${quarantineNotice}`
+			: ""
+	}`;
 	writeJson({
 		decision: "block",
 		reason: coverageNotice,
@@ -566,6 +587,34 @@ async function observeCompletedTool(
 		}
 	} catch {
 		// Observation only: the output-inspection response is written regardless.
+	}
+}
+
+/**
+ * File quarantine after a completed tool call (opt-in,
+ * `response.quarantine.enabled`): a file the call wrote or downloaded that the
+ * content scan classifies as malicious is moved into the quarantine vault. The
+ * returned notice tells the model the file is gone. Never throws.
+ */
+async function quarantineCompletedToolFiles(
+	mode: HookMode,
+	input: Record<string, unknown>,
+): Promise<string | null> {
+	try {
+		const call =
+			mode === "cursor" ? normalizeCursorPostToolCall(input) : normalizeVsCodeCall(input);
+		if (!call) return null;
+		const result = await quarantineAgentWrittenFiles({
+			sessionId: call.sessionId,
+			toolName: call.toolName,
+			toolInput: call.toolInput,
+			workingDirectory: call.workingDirectory ?? hostWorkingDirectory(input),
+			agentRuntime: mode,
+			threatsDir: getBundledDataDirs().threatsDir,
+		});
+		return result.agentNotice;
+	} catch {
+		return null;
 	}
 }
 
@@ -741,6 +790,14 @@ async function evaluateNormalizedCall(
 	const resolution = await resolveAskWithDashboardApproval(request, evaluated, {
 		agentRuntime: mode,
 	});
+	// Pre-operation snapshot of a protected path before an allowed destructive call
+	// (opt-in, the same response guardToolCall takes). Never changes the verdict.
+	if (resolution.verdict.decision === "allow") {
+		await snapshotBeforeAllowedToolCall(
+			{ toolName: call.toolName, toolInput: call.toolInput, sessionId: call.sessionId },
+			resolution.verdict,
+		);
+	}
 	return {
 		verdict: resolution.verdict,
 		dashboardNotice: formatDashboardApprovalNotice(resolution.dashboardApproval),

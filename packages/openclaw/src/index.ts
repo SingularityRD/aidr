@@ -43,6 +43,7 @@ import {
 	type PromptHookContext,
 } from "./prompt-protection.js";
 import {
+	feedFileQuarantine,
 	feedQuarantinedOutput,
 	feedToolOutcome,
 	feedToolOutputCanaries,
@@ -345,6 +346,10 @@ function registerGuarded(api: PluginApi): void {
 				}
 				// Runaway guard: a failed call counts towards the repeated-failure loop.
 				await feedToolOutcome(event, context, logger);
+				// File quarantine (opt-in): a file this call wrote or downloaded that the
+				// content scan classifies as malicious is moved into the vault. This hook
+				// only observes, so the move is logged rather than told to the model.
+				await feedFileQuarantine(event, context, threatsDir, logger);
 			},
 		),
 	);

@@ -15,6 +15,7 @@ import {
 	unlinkSync,
 } from "node:fs";
 import {
+	chmod,
 	copyFile,
 	link,
 	lstat,
@@ -136,6 +137,10 @@ interface QuarantineManifest {
 }
 
 const MANIFEST_VERSION = 1;
+/** Appended to every payload name so the original extension cannot launch it. */
+export const QUARANTINE_PAYLOAD_SUFFIX = ".quarantined";
+/** Owner read-only, never executable. */
+const QUARANTINE_PAYLOAD_MODE = 0o400;
 const MANIFEST_FILENAME = "manifest.json";
 const _METADATA_FILENAME = "metadata.json";
 const manifestMutationTails = new Map<string, Promise<void>>();
@@ -366,8 +371,10 @@ export class AutoQuarantine {
 		);
 		preparePrivateLocalDirectory(dateDir);
 
-		// Move file to quarantine (using copy + delete for cross-device safety)
-		const quarantineFilename = `${id}_${basename(resolvedPath)}`;
+		// Move file to quarantine (using copy + delete for cross-device safety). The
+		// `.quarantined` suffix keeps the payload from being launched by its original
+		// extension (`.exe`, `.sh`, `.ps1`, ...) from a file manager or a shell glob.
+		const quarantineFilename = `${id}_${basename(resolvedPath)}${QUARANTINE_PAYLOAD_SUFFIX}`;
 		const quarantinePath = join(dateDir, quarantineFilename);
 		await this.assertQuarantinePath(quarantinePath);
 		const metadataPath = join(dateDir, `${quarantineFilename}.metadata.json`);
@@ -377,7 +384,7 @@ export class AutoQuarantine {
 			quarantinePath,
 			timestamp: now,
 			threatId,
-			metadata: metadata ?? {},
+			metadata: { ...(metadata ?? {}), original_mode: Number(fileStats.mode) & 0o777 },
 			fileHash,
 			fileSize,
 			...(authorizedBy ? { authorizedBy } : {}),
@@ -486,6 +493,10 @@ export class AutoQuarantine {
 				throw error;
 			}
 			copied = true;
+			// Never executable, owner read-only. Not on Windows: a read-only attribute
+			// would make the later delete fail, and the vault directory ACL already
+			// limits it to the owner.
+			if (process.platform !== "win32") await chmod(item.quarantinePath, QUARANTINE_PAYLOAD_MODE);
 			if ((await this.computeFileHash(item.quarantinePath)) !== item.fileHash) {
 				throw new Error("Source file changed while it was being quarantined");
 			}
@@ -732,6 +743,16 @@ export class AutoQuarantine {
 	private async restoreOriginalCopy(item: QuarantinedItem, expectedHash: string): Promise<void> {
 		try {
 			await copyFile(item.quarantinePath, item.originalPath, constants.COPYFILE_EXCL);
+			// The payload was read-only and non-executable in the vault; give the
+			// released file back the permission bits it had when it was quarantined.
+			const originalMode = item.metadata.original_mode;
+			if (
+				process.platform !== "win32" &&
+				typeof originalMode === "number" &&
+				Number.isInteger(originalMode)
+			) {
+				await chmod(item.originalPath, originalMode & 0o777).catch(() => undefined);
+			}
 			return;
 		} catch (error) {
 			if ((error as NodeJS.ErrnoException)?.code !== "EEXIST") throw error;
@@ -865,6 +886,8 @@ export class AutoQuarantine {
 	 * @returns Array of IDs that were cleaned up
 	 */
 	async cleanupExpired(): Promise<string[]> {
+		// 0 means "keep everything"; without this every item would be "expired".
+		if (!(this.config.retentionDays > 0)) return [];
 		const now = new Date();
 		const retentionMs = this.config.retentionDays * 24 * 60 * 60 * 1000;
 		const expiredIds: string[] = [];
@@ -887,6 +910,38 @@ export class AutoQuarantine {
 		}
 
 		return expiredIds;
+	}
+
+	/** Total size of the tracked payloads, in bytes. */
+	totalBytes(): number {
+		let total = 0;
+		for (const item of this.items.values()) total += item.fileSize ?? 0;
+		return total;
+	}
+
+	/**
+	 * Keep the vault within `maxTotalBytes` by deleting the OLDEST items first.
+	 * 0 disables the bound. Returns the deleted ids; an item that cannot be deleted
+	 * stays tracked (and is reported by `delete`) rather than being forgotten.
+	 */
+	async enforceSizeLimit(maxTotalBytes: number): Promise<string[]> {
+		if (!(maxTotalBytes > 0)) return [];
+		const deleted: string[] = [];
+		const oldestFirst = Array.from(this.items.values()).sort(
+			(a, b) => a.timestamp.getTime() - b.timestamp.getTime(),
+		);
+		for (const item of oldestFirst) {
+			if (this.totalBytes() <= maxTotalBytes) break;
+			try {
+				await this.delete(item.id);
+				deleted.push(item.id);
+			} catch (error) {
+				this.logger.warn(`Failed to evict quarantined item over the size bound: ${item.id}`, {
+					error: String(error),
+				});
+			}
+		}
+		return deleted;
 	}
 
 	/**

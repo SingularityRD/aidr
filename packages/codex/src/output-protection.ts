@@ -36,6 +36,7 @@ import {
 	loadConfig,
 	logVerdict,
 	nullLogger,
+	quarantineAgentWrittenFiles,
 	recordToolOutputCanaries,
 	recordToolOutputFlow,
 	scanModelOutput,
@@ -170,6 +171,44 @@ async function auditBlockedOutput(
 	} catch {
 		// An audit failure cannot change the enforced result.
 	}
+}
+
+/**
+ * File quarantine after a Codex tool call (opt-in, `response.quarantine.enabled`):
+ * a file the call wrote or downloaded that the content scan classifies as
+ * malicious is moved into the quarantine vault. Codex's PostToolUse output has
+ * only `decision`/`reason`, so a quarantine is reported with the block shape: the
+ * model learns the file is gone instead of continuing as if it were there. Never
+ * throws; returns the (possibly unchanged) result.
+ */
+export async function applyCodexFileQuarantine(
+	input: Record<string, unknown>,
+	result: CodexPostToolUseResult,
+	options: { logger?: Logger; threatsDir: string },
+): Promise<CodexPostToolUseResult> {
+	const toolInput =
+		input.tool_input && typeof input.tool_input === "object" && !Array.isArray(input.tool_input)
+			? (input.tool_input as Record<string, unknown>)
+			: {};
+	const quarantine = await quarantineAgentWrittenFiles({
+		sessionId: typeof input.session_id === "string" ? input.session_id : "codex-session",
+		toolName: typeof input.tool_name === "string" ? input.tool_name : "unknown",
+		toolInput,
+		workingDirectory: typeof input.cwd === "string" ? input.cwd : undefined,
+		agentRuntime: "codex",
+		threatsDir: options.threatsDir,
+		logger: options.logger,
+	});
+	if (!quarantine.agentNotice) return result;
+	return {
+		...result,
+		wire: {
+			decision: "block",
+			reason: result.wire
+				? `${result.wire.reason}\n${quarantine.agentNotice}`
+				: quarantine.agentNotice,
+		},
+	};
 }
 
 /**

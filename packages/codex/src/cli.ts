@@ -40,9 +40,14 @@ import {
 	resolveHookDeadlineMs,
 	verifyArtifactIntegrityAndLog,
 } from "@singularityrd/aidr-core";
+import { resolveAssetDir } from "./assets.js";
 import { getCodexConnectorCoverageEvidence } from "./coverage.js";
 import { type CodexWireResult, DENY_HEADLINE, enforceCodexPreToolUse } from "./enforcement.js";
-import { CODEX_POST_TOOL_USE, enforceCodexPostToolUse } from "./output-protection.js";
+import {
+	applyCodexFileQuarantine,
+	CODEX_POST_TOOL_USE,
+	enforceCodexPostToolUse,
+} from "./output-protection.js";
 import { CODEX_USER_PROMPT_SUBMIT, enforceCodexUserPromptSubmit } from "./prompt-protection.js";
 
 /** Measured from process start: Codex's hook timeout runs from launch. */
@@ -146,7 +151,11 @@ async function handleUserPromptSubmit(input: Record<string, unknown>): Promise<v
  */
 async function handlePostToolUse(input: Record<string, unknown>): Promise<void> {
 	try {
-		const result = await enforceCodexPostToolUse(input, { logger });
+		const result = await applyCodexFileQuarantine(
+			input,
+			await enforceCodexPostToolUse(input, { logger }),
+			{ logger, threatsDir: resolveAssetDir("threats") },
+		);
 		if (result.wire) emit(`${JSON.stringify(result.wire)}\n`);
 		recordHostObservation(hostObservation, {
 			connector: "codex",

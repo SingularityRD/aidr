@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { lstat, readFile, writeFile } from "node:fs/promises";
 import {
+	type AuditChainProblem,
 	DEFAULT_RESPONSE_AUDIT_CONFIG,
 	frameworkRefLabels,
 	frameworkRefsFromJson,
@@ -12,7 +13,16 @@ import {
 	redactTelemetryData,
 	redactTelemetryString,
 	resolvePath,
+	responseAuditorFromConfig,
+	rotateAuditChainRootKey,
+	verifyAuditChain,
 } from "@singularityrd/aidr-core";
+import {
+	type ConfirmationStreams,
+	confirmOperatorAction,
+	OperatorConfirmationError,
+	operatorIdentity,
+} from "../utils/operator-confirm.js";
 
 /** Test seams; production callers pass nothing. */
 export interface AuditCommandDeps {
@@ -286,6 +296,217 @@ export async function auditExportCommand(
 	}
 }
 
+// ── aidr audit verify / rotate-key ─────────────────────────────────
+
+export interface AuditKeyDeps extends AuditCommandDeps {
+	env?: NodeJS.ProcessEnv;
+	streams?: ConfirmationStreams;
+}
+
+interface ChainReport {
+	chain: "verdict_log" | "response_actions";
+	enabled: boolean;
+	status: "verified" | "failed" | "not_enabled";
+	verified?: number;
+	legacy_unchained?: number;
+	first_seq?: number | null;
+	last_seq?: number | null;
+	roots?: Array<{ kid: string; fingerprint: string; retired: boolean }>;
+	first_problem?: AuditChainProblem | { detail: string };
+	problems?: number;
+}
+
+async function verifyVerdictChain(
+	logging: LoggingConfig,
+	expectRoot: string | undefined,
+): Promise<ChainReport> {
+	const result = await verifyAuditChain(logging.path, auditLogFiles(logging), { expectRoot });
+	const enabled = logging.signed_chain === true;
+	if (result.noChain && !enabled) return { chain: "verdict_log", enabled, status: "not_enabled" };
+	return {
+		chain: "verdict_log",
+		enabled,
+		status: result.ok ? "verified" : "failed",
+		verified: result.verified,
+		legacy_unchained: result.legacyUnchained,
+		first_seq: result.firstSeq,
+		last_seq: result.lastSeq,
+		roots: result.roots,
+		problems: result.problems.length,
+		...(result.problems[0] ? { first_problem: result.problems[0] } : {}),
+	};
+}
+
+async function verifyResponseChain(
+	config: Awaited<ReturnType<typeof loadConfig>>,
+): Promise<ChainReport> {
+	const audit = config.response?.audit;
+	if (!audit?.signed_chain) {
+		return { chain: "response_actions", enabled: false, status: "not_enabled" };
+	}
+	const { auditor, unavailableReason } = responseAuditorFromConfig(audit);
+	if (!auditor) {
+		return {
+			chain: "response_actions",
+			enabled: true,
+			status: "failed",
+			problems: 1,
+			first_problem: {
+				detail: `the response chain is unavailable (${unavailableReason ?? "unknown"})`,
+			},
+		};
+	}
+	// Offline walk: reports the first broken link and never mints a missing key.
+	const result = await auditor.verifyChain({ requireExistingKey: true });
+	if (result.valid) {
+		return {
+			chain: "response_actions",
+			enabled: true,
+			status: "verified",
+			verified: result.verifiedEntries,
+			problems: 0,
+		};
+	}
+	return {
+		chain: "response_actions",
+		enabled: true,
+		status: "failed",
+		problems: Math.max(1, result.tamperedEntries.length),
+		first_problem: {
+			detail: result.firstBrokenLink
+				? `first broken link: ${describeBrokenLink(result.firstBrokenLink)}`
+				: (result.reason ?? "the response chain did not verify"),
+		},
+	};
+}
+
+function problemLocation(problem: ChainReport["first_problem"]): string {
+	if (!problem || !("kind" in problem)) return "";
+	if (problem.file) {
+		return ` at ${problem.file}:${problem.line}${problem.seq !== undefined ? ` (seq ${problem.seq})` : ""}`;
+	}
+	return problem.seq !== undefined ? ` at seq ${problem.seq}` : "";
+}
+
+function printChainReport(report: ChainReport): void {
+	const name =
+		report.chain === "verdict_log" ? "Verdict log (audit.jsonl)" : "Response-action chain";
+	if (report.status === "not_enabled") {
+		console.log(`${name}: signing is not enabled; nothing to verify.`);
+		return;
+	}
+	if (report.status === "verified") {
+		const range =
+			report.first_seq != null && report.last_seq != null
+				? ` (seq ${report.first_seq}..${report.last_seq})`
+				: "";
+		const count =
+			report.verified !== undefined ? `, ${report.verified} signed record(s)${range}` : "";
+		console.log(`${name}: VERIFIED${count}.`);
+	} else {
+		console.log(`${name}: FAILED, ${report.problems ?? 1} problem(s).`);
+		const problem = report.first_problem;
+		if (problem) {
+			const kind = "kind" in problem ? `${problem.kind}: ` : "";
+			console.log(`  first problem${problemLocation(problem)}: ${kind}${problem.detail}`);
+		}
+	}
+	if (report.legacy_unchained) {
+		console.log(`  ${report.legacy_unchained} record(s) predate signing and are not covered.`);
+	}
+	for (const root of report.roots ?? []) {
+		console.log(`  root key ${root.kid}${root.retired ? " (retired)" : ""}: ${root.fingerprint}`);
+	}
+}
+
+/**
+ * `aidr audit verify [--json] [--expect-root <fingerprint>]`
+ *
+ * Verifies the signed verdict log and, when enabled, the signed response-action
+ * chain. Exits non-zero when any enabled chain fails, or when no chain is
+ * enabled at all (nothing was verified, which is not a pass).
+ */
+export async function auditVerifyCommand(
+	options: { json?: boolean; expectRoot?: string } = {},
+	deps: AuditCommandDeps = {},
+): Promise<void> {
+	let reports: ChainReport[];
+	try {
+		const config = await loadConfig(deps.configPath);
+		reports = [
+			await verifyVerdictChain(config.logging, options.expectRoot),
+			await verifyResponseChain(config),
+		];
+	} catch (error) {
+		fail(`Could not verify the audit chains: ${errorText(error)}`);
+		return;
+	}
+	const failed = reports.some((report) => report.status === "failed");
+	const nothing = reports.every((report) => report.status === "not_enabled");
+	if (options.json) {
+		console.log(JSON.stringify({ ok: !failed && !nothing, chains: reports }, null, 2));
+	} else {
+		for (const report of reports) printChainReport(report);
+		if (nothing) {
+			console.log(
+				"No signed chain is enabled, so nothing was verified. Enable audit.signed_chain (verdicts) or response.audit.signed_chain (responses).",
+			);
+		}
+	}
+	if (failed || nothing) process.exitCode = 1;
+}
+
+/** `aidr audit rotate-key` — operator only: replace the verdict-log root signing key. */
+export async function auditRotateKeyCommand(
+	options: { yes?: boolean; json?: boolean } = {},
+	deps: AuditKeyDeps = {},
+): Promise<void> {
+	let logging: LoggingConfig;
+	try {
+		logging = await loadLogging(deps);
+	} catch (error) {
+		fail(`Could not read the configuration: ${errorText(error)}`);
+		return;
+	}
+	let operator: string;
+	try {
+		const mode = await confirmOperatorAction({
+			prompt:
+				"Rotate the root key that certifies the verdict-log signing keys? The new root is endorsed by the old one, the old private key is removed from its store, and existing records stay verifiable.",
+			word: "rotate",
+			yes: options.yes,
+			env: deps.env,
+			streams: deps.streams,
+		});
+		operator = operatorIdentity(mode);
+	} catch (error) {
+		fail(error instanceof OperatorConfirmationError ? error.message : errorText(error));
+		return;
+	}
+	try {
+		const result = await rotateAuditChainRootKey(logging.path, {
+			keyStorage: logging.chain_key_storage,
+			epochHours: logging.chain_epoch_hours,
+		});
+		if (options.json) {
+			console.log(JSON.stringify({ ...result, rotated_by: operator }, null, 2));
+			return;
+		}
+		const from = result.previousRootKid ? ` ${result.previousRootKid}` : "";
+		console.log(
+			`Rotated the verdict-log root key${from} -> ${result.rootKid} (${result.storage}).`,
+		);
+		console.log(`New root fingerprint: ${result.fingerprint}`);
+		if (!result.endorsed) {
+			console.error(
+				"The previous root key could not be read, so the new root is NOT endorsed by it; `aidr audit verify` will report the break.",
+			);
+		}
+	} catch (error) {
+		fail(`Key rotation failed: ${errorText(error)}`);
+	}
+}
+
 /** Exit codes for `aidr audit verify`: 1 = the chain is broken, 2 = nothing could be verified. */
 export const AUDIT_VERIFY_BROKEN = 1;
 export const AUDIT_VERIFY_UNVERIFIABLE = 2;
@@ -313,14 +534,14 @@ async function responseChainPath(
 }
 
 /**
- * `aidr audit verify [path] [--json]`
+ * `aidr audit verify --response-chain <path> [--json]`
  *
  * Verifies the Ed25519-signed SHA-256 response-action chain offline, reports the
  * first broken link and exits non-zero on any failure. Verification never
  * creates a signing key: a chain without its key is reported as unverifiable,
  * never as valid.
  */
-export async function auditVerifyCommand(
+export async function auditVerifyResponseChainCommand(
 	path: string | undefined,
 	options: { json?: boolean } = {},
 	deps: AuditCommandDeps = {},

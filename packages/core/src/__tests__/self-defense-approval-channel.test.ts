@@ -117,8 +117,31 @@ const EVASIONS = [
 	"security find-generic-password -a aidr-operator-approval-key -s singularity-aidr-cli -w",
 ];
 
+/**
+ * Operator-only response commands: releasing or deleting a quarantined file,
+ * restoring a snapshot and rotating the verdict-log signing root.
+ */
+const RESPONSE_OPERATOR_COMMANDS = [
+	"aidr quarantine release 3f2a1b4c-0000-4000-8000-000000000000",
+	"aidr quarantine delete 3f2a1b4c",
+	"aidr quarantine --yes release 3f2a1b4c",
+	"aidr 'quarantine' \"release\" 3f2a1b4c",
+	"npx -y @singularityrd/aidr-cli quarantine release 3f2a1b4c",
+	"aidr restore allow-file_write-1a2b3c4d",
+	"aidr restore --overwrite-changed allow-file_write-1a2b3c4d",
+	"$(which aidr) restore allow-file_write-1a2b3c4d",
+	"aidr audit rotate-key",
+	"aidr audit --json rotate-key",
+	"secret-tool lookup service singularity-aidr-cli id aidr-audit-chain-root-0123456789abcdef",
+];
+
 describe("agent access to the operator approval channel is denied", () => {
-	for (const command of [...SELF_APPROVE, ...SELF_DEF, ...EVASIONS]) {
+	for (const command of [
+		...SELF_APPROVE,
+		...SELF_DEF,
+		...EVASIONS,
+		...RESPONSE_OPERATOR_COMMANDS,
+	]) {
 		it(`denies: ${command.slice(0, 100)}`, async () => {
 			const verdict = await decide("Bash", { command });
 			expect(verdict.decision).toBe("deny");
@@ -153,6 +176,10 @@ describe("agent access to the operator approval channel is denied", () => {
 			"aidr doctor",
 			"aidr status",
 			"aidr audit tail -n 20",
+			"aidr audit verify",
+			"aidr quarantine list",
+			"aidr quarantine show 3f2a1b4c",
+			"git restore src/index.ts",
 			"aidr allowlist list",
 			"aidr config --list",
 			"aidr config -l",

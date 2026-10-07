@@ -14,7 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	AUDIT_VERIFY_BROKEN,
 	AUDIT_VERIFY_UNVERIFIABLE,
-	auditVerifyCommand,
+	auditVerifyResponseChainCommand as auditVerifyCommand,
 } from "../commands/audit.js";
 
 const verdict: Verdict = {

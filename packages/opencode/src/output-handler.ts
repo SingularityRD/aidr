@@ -1,11 +1,13 @@
 import {
+	quarantineAgentWrittenFiles,
 	recordToolOutcome,
 	recordToolOutputCanaries,
 	recordToolOutputFlow,
-	type scanModelOutput,
 	scanCachedProvisionedOutput,
+	type scanModelOutput,
 	scanProvisionedOutput,
 } from "@singularityrd/aidr-core";
+import { getBundledDataDirs } from "./bundled-dirs.js";
 
 export const MAX_TOOL_OUTPUT_BYTES = 256 * 1024;
 
@@ -632,6 +634,47 @@ async function observeCompletedCall(
 	}
 }
 
+/**
+ * File quarantine after a completed call (opt-in, `response.quarantine.enabled`):
+ * a file the call wrote or downloaded that the content scan classifies as
+ * malicious is moved into the quarantine vault, and the model-visible output
+ * says so. Runs after output inspection so a quarantined output keeps its own
+ * notice. Never throws.
+ */
+async function quarantineWrittenFiles(
+	input: OpenCodeAfterToolInput,
+	output: OpenCodeAfterToolOutput,
+	logger: StructuredLogger,
+): Promise<void> {
+	try {
+		const args = input.args;
+		const result = await quarantineAgentWrittenFiles({
+			sessionId: input.sessionID,
+			toolName: input.tool,
+			toolInput:
+				args && typeof args === "object" && !Array.isArray(args)
+					? (args as Record<string, unknown>)
+					: {},
+			agentRuntime: "opencode",
+			threatsDir: getBundledDataDirs().threatsDir,
+		});
+		if (!result.agentNotice) return;
+		logger.warn(
+			{
+				event: "aidr.file_quarantine",
+				connector: "opencode",
+				tool: input.tool,
+				quarantined: result.quarantined.map((item) => item.id),
+			},
+			"Singularity AIDR quarantined a file this tool call wrote",
+		);
+		const current = ownDataValue(output, "output");
+		if (typeof current === "string") output.output = `${current}\n\n${result.agentNotice}`;
+	} catch {
+		// Observation only: never break the host's tool result.
+	}
+}
+
 export function createOutputHandlers(logger: StructuredLogger) {
 	const inspectToolOutput = async (
 		input: OpenCodeAfterToolInput,
@@ -792,6 +835,7 @@ export function createOutputHandlers(logger: StructuredLogger) {
 		const observed = observeCompletedCall(input, output, logger);
 		const inspected = inspectToolOutput(input, output);
 		await Promise.all([observed, inspected]);
+		await quarantineWrittenFiles(input, output, logger);
 	};
 
 	return {

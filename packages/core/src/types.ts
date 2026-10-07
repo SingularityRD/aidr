@@ -590,6 +590,53 @@ const ResponseConfigSchema = z.object({
 			 * taken, so stale copies cannot accumulate without bound.
 			 */
 			snapshot_retention_days: z.number().int().min(0).default(7),
+			/**
+			 * Upper bound on the total size of the pre-operation snapshot store. When a
+			 * new snapshot pushes the store past it, the OLDEST snapshots are pruned
+			 * first. 0 disables the size bound (retention days still apply).
+			 */
+			snapshot_max_total_bytes: z
+				.number()
+				.int()
+				.min(0)
+				.default(256 * 1024 * 1024),
+		})
+		.default({}),
+	/**
+	 * File quarantine: a file an agent tool call WROTE or DOWNLOADED that the
+	 * content scan then classifies as malicious is moved into a per-user vault
+	 * (owner-only, never executable, renamed so it cannot be launched by
+	 * extension) together with its hash, original path, reason and time.
+	 *
+	 * OFF by default: it moves a file the agent just produced, which is a
+	 * unilateral action on the user's workspace and must be an explicit opt-in.
+	 * Release and delete are operator-only (`aidr quarantine release|delete`, TTY
+	 * confirmation); no agent tool can call them.
+	 */
+	quarantine: z
+		.object({
+			enabled: z.boolean().default(false),
+			/** Vault location. Confined to the AIDR state directory. */
+			dir: z.string().default("~/.singularity-aidr/quarantine"),
+			/** Items older than this are deleted on the next quarantine. 0 keeps them. */
+			retention_days: z.number().int().min(0).default(30),
+			/** Vault size bound; the OLDEST items are deleted first. 0 disables it. */
+			max_total_bytes: z
+				.number()
+				.int()
+				.min(0)
+				.default(512 * 1024 * 1024),
+			/**
+			 * Files larger than this are not scanned (and so never quarantined); the
+			 * skip is reported, never treated as clean.
+			 */
+			max_scan_bytes: z
+				.number()
+				.int()
+				.positive()
+				.default(2 * 1024 * 1024),
+			/** Lowest rule severity that counts as malicious. Only `block` rules qualify. */
+			min_severity: z.enum(["medium", "high", "critical"]).default("high"),
 		})
 		.default({}),
 	/**
@@ -694,6 +741,39 @@ export const LoggingConfigSchema = z.object({
 		.min(0)
 		.default(5 * 1024 * 1024),
 	max_files: z.number().int().min(0).default(3),
+	/**
+	 * RESOLVED, not configured: whether every record is hash-chained and Ed25519
+	 * signed. `loadConfig` sets it from the top-level `audit` block (see
+	 * `AuditConfigSchema`) so every writer that only receives `logging` honours it.
+	 */
+	signed_chain: z.boolean().optional(),
+	/** RESOLVED from `audit.key_storage`. */
+	chain_key_storage: z.enum(["os-vault", "file"]).optional(),
+	/** RESOLVED from `audit.epoch_hours`. */
+	chain_epoch_hours: z.number().int().min(1).max(720).optional(),
+});
+
+/**
+ * Tamper-evident verdict log (`audit.jsonl`).
+ *
+ * With `signed_chain` every record gets a `_chain` field: a sequence number, the
+ * previous record's hash, its own SHA-256 hash and an Ed25519 signature.
+ * `aidr audit verify` reports the first broken, missing or reordered record.
+ *
+ * Default: OFF in local mode, ON in managed mode when `signed_chain` is not set
+ * explicitly, and always ON in a commercial build (which is managed-only and also
+ * forces integrity verification on). See docs/configuration.md.
+ *
+ * Keys: a long-lived ROOT key lives in the OS credential vault (`key_storage:
+ * os-vault`, the default, the same store as the operator approval key) and only
+ * certifies short-lived EPOCH keys; the epoch key that signs records is kept in an
+ * owner-only file so a hook does not pay a vault round trip per call. A stolen
+ * epoch key can forge records only inside its own window (`epoch_hours`).
+ */
+export const AuditConfigSchema = z.object({
+	signed_chain: z.boolean().optional(),
+	key_storage: z.enum(["os-vault", "file"]).default("os-vault"),
+	epoch_hours: z.number().int().min(1).max(720).default(24),
 });
 
 export const FileCheckConfigSchema = z.object({
@@ -963,6 +1043,7 @@ export const ConfigSchema = z.object({
 	cache: CacheConfigSchema.default({}),
 	allowlist: AllowlistConfigSchema.default({}),
 	logging: LoggingConfigSchema.default({}),
+	audit: AuditConfigSchema.default({}),
 	sensitivity: SensitivitySchema.default("balanced"),
 	disabled_threats: z.array(z.string()).default([]),
 	operator_approvals: OperatorApprovalsConfigSchema.default({}),
@@ -1026,6 +1107,8 @@ type EncryptionConfig = z.infer<typeof EncryptionConfigSchema>;
 export type CacheConfig = z.infer<typeof CacheConfigSchema>;
 export type AllowlistConfig = z.infer<typeof AllowlistConfigSchema>;
 export type LoggingConfig = z.infer<typeof LoggingConfigSchema>;
+export type AuditConfig = z.infer<typeof AuditConfigSchema>;
+export type QuarantineSettings = ResponseConfig["quarantine"];
 export type Config = z.infer<typeof ConfigSchema>;
 export type RunawayConfig = z.infer<typeof RunawayConfigSchema>;
 
