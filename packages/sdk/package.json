@@ -31,7 +31,7 @@
   ],
   "scripts": {
     "build": "pnpm run clean && pnpm run sync:assets && node esbuild.config.js && pnpm run build:types",
-    "build:release": "pnpm run clean && pnpm run sync:assets && node esbuild.config.js --release && pnpm run build:types && node ../../scripts/generate-artifact-manifest.mjs --dir dist --artifact-id @singularityrd/aidr-sdk && node ../../scripts/check-no-sourcemaps.mjs dist",
+    "build:release": "pnpm run clean && pnpm run sync:assets && node esbuild.config.js --release && pnpm run build:types && node ../../scripts/generate-artifact-manifest.mjs --dir dist --artifact-id sdk/dist && node ../../scripts/check-no-sourcemaps.mjs dist",
     "build:types": "tsc -p tsconfig.release.json --emitDeclarationOnly && node ../../scripts/copy-cjs-types.mjs dist/index.d.ts dist/index.d.cts",
     "clean": "node ../../scripts/rmrf.mjs dist tsconfig.tsbuildinfo tsconfig.release.tsbuildinfo",
     "sync:assets": "node scripts/sync-assets.mjs",

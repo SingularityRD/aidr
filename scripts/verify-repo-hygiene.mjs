@@ -157,6 +157,12 @@ export const ALLOWLIST = [
 			"The SSH credential detector deliberately matches any remote `/home/<account>/.ssh/` path with a regex character class; it does not contain a contributor's home directory.",
 	},
 	{
+		path: "packages/core/src/generated/threat-parse-cache.ts",
+		owner: "AIDR-012",
+		reason:
+			"Build-time parse cache of threats/*.yaml (scripts/compile-threat-cache.mjs): it embeds the same detection regexes as the allowlisted context-poisoning and mitre rules, such as the `/home/` and `/Users/` character-class patterns; it names no real account.",
+	},
+	{
 		path: "threats/context-poisoning.yaml",
 		owner: "AIDR-012",
 		reason:

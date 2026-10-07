@@ -141,6 +141,15 @@ check(siemTimerUnit.includes("Unit=aidr-siem-delivery.service") && /readiness-ev
 const windowsTaskPath = "\\AIDR\\";
 const windowsMaintenanceDeclaration = join(dir, "windows-maintenance-tasks.json");
 const windowsMaintenanceDeclared = existsSync(windowsMaintenanceDeclaration);
+// Opt-in tasks (the notification dispatcher, -WithNotifications) are required
+// only when the declaration lists them; an unreadable declaration lists none.
+const windowsDeclaredTasks = (() => {
+  if (!windowsMaintenanceDeclared) return [];
+  try {
+    const tasks = JSON.parse(readFileSync(windowsMaintenanceDeclaration, "utf8")).tasks;
+    return Array.isArray(tasks) ? tasks.filter((task) => typeof task === "string") : [];
+  } catch { return []; }
+})();
 const xmlText = (value) => value.replace(/&quot;/g, "\"").replace(/&apos;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
 function windowsTaskState(name, worker) {
   const task = `${windowsTaskPath}${name}`;
@@ -157,14 +166,20 @@ function windowsTaskState(name, worker) {
   const execCount = (xml.match(/<Exec>/g) ?? []).length;
   // The installer writes exactly these argument shapes; matching the whole
   // quoted path keeps C:\aidr from matching a task wired to C:\aidr-old.
-  const expected = (name === "aidr-siem-delivery" ? `"${dir}\\maintenance\\${worker}"` : `\\scripts\\${worker}" "${dir}" --apply`).toLowerCase();
+  const expected = (name === "aidr-siem-delivery" ? `"${dir}\\maintenance\\${worker}"`
+    : name === "aidr-notification-dispatch" ? `"${dir}\\maintenance\\${worker}" "${dir}"`
+    : `\\scripts\\${worker}" "${dir}" --apply`).toLowerCase();
   const wired = execCount === 1 && /(^|[\\/"])node(\.exe)?"?$/i.test(command) && args.toLowerCase().includes(expected);
   const enabled = !/<Enabled>false<\/Enabled>/.test(settings) && activeTrigger;
   return { task, found: true, enabled, wired };
 }
-function windowsSchedulerCheck(name, worker, label, unverifiedLabel) {
+function windowsSchedulerCheck(name, worker, label, unverifiedLabel, { optional = false } = {}) {
   const state = windowsTaskState(name, worker);
-  if (state.found) {
+  if (optional && !state.found && !windowsDeclaredTasks.includes(name)) {
+    // Neither installed nor declared: the opt-in task is not in use. Nothing is
+    // recorded as passed.
+    console.log(`INFO ${state.task} not installed (optional; not declared by windows-maintenance-tasks.json)`);
+  } else if (state.found) {
     const problem = !state.enabled ? "disabled or without an active trigger" : !state.wired ? "not wired to this deployment's maintenance worker" : "";
     check(!problem, `${label}${problem ? ` (${state.task} ${problem})` : ""}`);
   } else if (windowsMaintenanceDeclared) {
@@ -250,6 +265,14 @@ if (process.platform === "win32") {
 } else {
   unverified.push({ check: `retention reaper timer not verified: ${retentionReaperTimer}`, reason: `must be installed as a systemd timer or host scheduled task, which a ${process.platform} run cannot inspect` });
   console.log(`UNVERIFIED retention reaper timer not verified: ${retentionReaperTimer}`);
+}
+// The alert notification dispatcher is opt-in (install-systemd.sh
+// --with-notifications, Install-AidrMaintenanceTasks.ps1 -WithNotifications).
+// On Windows it is checked once declared or installed: a declared task that is
+// missing, and an installed task that is disabled or miswired, fail; an
+// undeclared absent task is reported as not in use, never as a pass.
+if (process.platform === "win32") {
+  windowsSchedulerCheck("aidr-notification-dispatch", "notification-dispatch.mjs", `notification dispatcher scheduled task installed and enabled: ${windowsTaskPath}aidr-notification-dispatch`, "notification dispatcher scheduled task not verified", { optional: true });
 }
 // Optional AI Security Posture scanner sidecar (prepared with
 // --with-posture-scanner). Every check reads the prepared files only; secrets are

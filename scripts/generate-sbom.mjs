@@ -21,8 +21,13 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { cycloneDxHashFromSri, parseLockIntegrities } from "./lib/release-evidence-digests.mjs";
-import { parseHashLockedRequirements } from "./lib/python-requirements-sbom.mjs";
-import { bindPypiLicenseEvidence, cycloneDxLicenses, resolvePypiLicense } from "./lib/pypi-license-data.mjs";
+import {
+	BRIDGE_PYTHON_SOURCE,
+	PRIVACY_PYTHON_SOURCES,
+	buildPythonSbomComponents,
+	pythonSourceProperties,
+	readPythonSources,
+} from "./lib/python-sbom-components.mjs";
 
 const exposedSigningMaterial = [
 	"AIDR_SIGNING_PRIVATE_KEY_PEM_PATH",
@@ -48,18 +53,15 @@ const lockfilePath = path.join(repoRoot, "pnpm-lock.yaml");
 const lockfileBytes = readFileSync(lockfilePath);
 const lockfileDigest = createHash("sha256").update(lockfileBytes).digest("hex");
 const lockIntegrities = parseLockIntegrities(lockfileBytes.toString("utf8"));
-const pythonLockfileBytes = readFileSync(path.join(repoRoot, "services/aig-bridge/requirements-runtime.lock"));
+// The AIG bridge image and the privacy workers each install an exact
+// hash-locked Python set; both are part of what AIDR ships.
+const [bridgePythonSource, ...privacyPythonSources] = readPythonSources(repoRoot, [BRIDGE_PYTHON_SOURCE, ...PRIVACY_PYTHON_SOURCES]);
+const pythonLockfileBytes = bridgePythonSource.lockBytes;
 const pythonLockfileDigest = createHash("sha256").update(pythonLockfileBytes).digest("hex");
-const pythonPackages = parseHashLockedRequirements(pythonLockfileBytes.toString("utf8"));
-const pythonLicenseEvidencePath = path.join(repoRoot, "services/aig-bridge/pypi-runtime-licenses.json");
-const pythonLicenseEvidenceJson = existsSync(pythonLicenseEvidencePath) ? readFileSync(pythonLicenseEvidencePath, "utf8") : "";
-const pythonLicenseEvidence = bindPypiLicenseEvidence(
-	pythonLicenseEvidenceJson,
-	pythonLockfileDigest,
-	pythonPackages,
-);
-const copyleftFindings = [];
-const licenseFlags = [];
+const pythonLicenseEvidenceJson = bridgePythonSource.evidenceJson;
+const python = buildPythonSbomComponents([bridgePythonSource, ...privacyPythonSources]);
+const copyleftFindings = [...python.copyleftFindings];
+const licenseFlags = [...python.licenseFlags];
 
 const pnpmCommand = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 const pnpmArgs = ["list", "--json", "--prod", "--recursive", "--depth", "Infinity", "--lockfile-only"];
@@ -107,7 +109,7 @@ for (const workspace of workspaceGraph) {
 const components = new Map();
 const dependencyEdges = new Map();
 const unresolved = [];
-const missingLicenses = [];
+const missingLicenses = [...python.missingLicenses];
 const missingIntegrities = [];
 const visited = new Set();
 
@@ -127,39 +129,21 @@ components.set(bridgeRef, {
 	"bom-ref": bridgeRef,
 	name: "AIDR AIG Bridge",
 	version: releaseVersion,
+	// First-party code, licensed like every other AIDR workspace package.
+	licenses: normalizeLicenses("Proprietary"),
 });
-const bridgeDependencies = new Set();
-for (const pkg of pythonPackages) {
-	const ref = `pkg:pypi/${pkg.name}@${encodeURIComponent(pkg.version)}`;
-	// The hash lock proves distribution identity, not licence terms. Terms come
-	// from the wheel's own metadata (pypi-runtime-licenses.json); a package that
-	// cannot be resolved stays unknown and fails commercial generation.
-	const evidence = pythonLicenseEvidence.byName.get(pkg.name);
-	const resolved = evidence ? resolvePypiLicense(evidence) : undefined;
-	const licenses = resolved ? cycloneDxLicenses(resolved) : undefined;
-	if (!licenses) missingLicenses.push(`${pkg.name}@${pkg.version} (PyPI runtime${resolved?.reason ? `: ${resolved.reason}` : ""})`);
-	if (resolved && resolved.obligation !== "permissive" && resolved.obligation !== "unknown") {
-		copyleftFindings.push(`${pkg.name}@${pkg.version}: ${resolved.obligation} (${resolved.expression ?? (resolved.spdx.join(", ") || resolved.name)})`);
-	}
-	for (const flag of resolved?.flags ?? []) licenseFlags.push(`${pkg.name}@${pkg.version}: ${flag}`);
-	components.set(ref, {
-		type: "library",
-		"bom-ref": ref,
-		name: pkg.name,
-		version: pkg.version,
-		purl: ref,
-		...(licenses ? { licenses } : {}),
-		hashes: pkg.hashes.map((content) => ({ alg: "SHA-256", content })),
-		properties: [
-			{ name: "aidr:source-lockfile", value: "services/aig-bridge/requirements-runtime.lock" },
-			{ name: "aidr:license-obligation", value: resolved?.obligation ?? "unknown" },
-			...(licenses ? [{ name: "aidr:license-basis", value: resolved.basis }] : []),
-			...(resolved?.flags.length ? [{ name: "aidr:license-flags", value: resolved.flags.join("; ") }] : []),
-		],
-	});
-	bridgeDependencies.add(ref);
+for (const [ref, component] of python.components) components.set(ref, component);
+dependencyEdges.set(bridgeRef, new Set(python.refsByLock.get(BRIDGE_PYTHON_SOURCE.lock)));
+// The privacy workers ship inside @singularityrd/aidr-privacy.
+const privacyVersion = workspaceByName.get("@singularityrd/aidr-privacy");
+if (privacyVersion) {
+	const privacyRef = npmPurl("@singularityrd/aidr-privacy", privacyVersion);
+	const edges = dependencyEdges.get(privacyRef) ?? new Set();
+	for (const source of PRIVACY_PYTHON_SOURCES) for (const ref of python.refsByLock.get(source.lock)) edges.add(ref);
+	dependencyEdges.set(privacyRef, edges);
+} else {
+	unresolved.push("@singularityrd/aidr-privacy: workspace package missing; privacy Python workers have no parent");
 }
-dependencyEdges.set(bridgeRef, bridgeDependencies);
 dependencyEdges.set("urn:aidr:workspace", new Set([
 	bridgeRef,
 	...workspaceGraph
@@ -173,12 +157,15 @@ if (unresolved.length > 0) {
 	for (const item of unique) console.error(`  - ${item}`);
 	if (commercial) process.exit(1);
 }
-for (const problem of pythonLicenseEvidence.problems) {
+for (const problem of python.problems) {
 	console.error(`Python licence evidence: ${problem}`);
 	if (commercial) process.exit(1);
 }
 if (copyleftFindings.length > 0) {
 	console.error(`Copyleft licences need Legal review before redistribution: ${copyleftFindings.sort(compareStrings).join("; ")}`);
+}
+if (python.pendingLicenseReview.length > 0) {
+	console.error(`Privacy worker licences pending owner review (recorded as unknown): ${python.pendingLicenseReview.sort(compareStrings).join(", ")}`);
 }
 if (licenseFlags.length > 0) {
 	console.error(`Licence flags needing owner review: ${licenseFlags.sort(compareStrings).join("; ")}`);
@@ -209,6 +196,7 @@ const payload = {
 			{ name: "aidr:lockfile-sha256", value: lockfileDigest },
 			{ name: "aidr:python-runtime-lockfile-sha256", value: pythonLockfileDigest },
 			{ name: "aidr:pypi-license-evidence-sha256", value: createHash("sha256").update(pythonLicenseEvidenceJson).digest("hex") },
+				...privacyPythonSources.flatMap(pythonSourceProperties),
 			{
 				name: "aidr:sbom-limitations",
 				value: "Container base/OS layers, upstream Supabase images, and AI-Infra-Guard server components are not included; image SBOM acceptance remains open",

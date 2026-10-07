@@ -70,8 +70,15 @@ if (!artifactId || !artifactVersion) {
 	console.error("Missing required args: --id <artifactId> --version <version>");
 	process.exit(2);
 }
+// Must match ARTIFACT_ID_RE in packages/core/src/integrity/schema.ts. A scoped
+// npm name (the old package-name fallback) can never validate at runtime, so a
+// connector would refuse to load; reject it here instead of shipping it.
+if (!/^[a-z0-9][a-z0-9/_-]{0,127}$/.test(artifactId)) {
+	console.error(`Invalid artifact id "${artifactId}": use the "<package>/dist" form consumers verify (e.g. core/dist).`);
+	process.exit(2);
+}
 
-const files = artifactId === "claude-code/package" ? await listEndpointPackageFiles(dir) : await listFilesRecursive(dir);
+const files =artifactId === "claude-code/package" ? await listEndpointPackageFiles(dir) : await listFilesRecursive(dir);
 const included = files
 	.map((abs) => path.relative(dir, abs).replace(/\\/g, "/"))
 	.filter((rel) => rel !== "aidr-artifact.manifest.json" && rel !== "aidr-artifact.manifest.sig");

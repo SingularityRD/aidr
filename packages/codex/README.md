@@ -296,12 +296,18 @@ than reporting a clean result it cannot support.
 
 ## Verifying an install
 
+From a repository checkout, the hook verifier exercises the built connector.
+It needs the release artifact manifest, which only the release build writes
+(a plain `pnpm build` does not), so build that first:
+
 ```bash
+pnpm --filter @singularityrd/aidr-codex build:release
 # Blocks a known threat and allows a benign command.
-node scripts/verify-codex-hook.mjs
+pnpm verify:codex        # = node scripts/verify-codex-hook.mjs
 ```
 
-The connector also emits machine-readable capability evidence:
+On an endpoint (no checkout), the installed connector emits machine-readable
+capability evidence:
 
 ```bash
 aidr-codex-hook --health

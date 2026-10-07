@@ -19,6 +19,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import {
+	CI_ONLY_STEPS,
 	CI_WORKFLOW_PATH,
 	GROUPS,
 	ONPREM_EXTRA_SUITE_PATTERNS,
@@ -88,8 +89,8 @@ test("drift: a new run: step in an existing job is reported", () => {
 test("drift: a ci.yml step listed in CI_ONLY_STEPS with a reason is accepted, a reasonless one is not", () => {
 	const changed = clone(workflow);
 	changed.jobs.privacy.steps.push({ name: "Hosted-only probe", run: "echo hosted" });
-	assert.deepEqual(computeDrift(changed, STEPS, { rootScripts, ciOnly: [{ job: "privacy", step: "Hosted-only probe", reason: "needs the hosted runner" }] }), []);
-	const problems = computeDrift(changed, STEPS, { rootScripts, ciOnly: [{ job: "privacy", step: "Hosted-only probe", reason: "" }] });
+	assert.deepEqual(computeDrift(changed, STEPS, { rootScripts, ciOnly: [...CI_ONLY_STEPS, { job: "privacy", step: "Hosted-only probe", reason: "needs the hosted runner" }] }), []);
+	const problems = computeDrift(changed, STEPS, { rootScripts, ciOnly: [...CI_ONLY_STEPS, { job: "privacy", step: "Hosted-only probe", reason: "" }] });
 	assert.ok(problems.some((problem) => problem.includes("needs a reason")), problems.join("\n"));
 	const stale = computeDrift(workflow, STEPS, { rootScripts, ciOnly: [{ job: "privacy", step: "Gone", reason: "x" }] });
 	assert.ok(stale.some((problem) => problem.includes("stale CI_ONLY_STEPS entry")), stale.join("\n"));

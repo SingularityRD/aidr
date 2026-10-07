@@ -72,6 +72,7 @@ import { copyFileSync, existsSync, linkSync, mkdirSync, readFileSync, readdirSyn
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { systemTar } from "./lib/tar-path.mjs";
 import { IGNORE_DIRS, SOURCE_MAPPING_DIRECTIVE_RE, SOURCE_URL_DIRECTIVE_RE, isSourceMapFile } from "./lib/package-artifact-rules.mjs";
 
 const modulePath = fileURLToPath(import.meta.url);
@@ -682,7 +683,7 @@ function spawnOptions({ cwd, env, timeout }) {
 }
 
 function runTar(args, { cwd, env }) {
-	return spawnSync("tar", args, spawnOptions({ cwd, env, timeout: RUN_TIMEOUT_MS }));
+	return spawnSync(systemTar(), args, spawnOptions({ cwd, env, timeout: RUN_TIMEOUT_MS }));
 }
 
 /* -------------------------------------------------------------------------- */

@@ -14,6 +14,29 @@ const { updateConfig } = await import("../utils/config-manager.js");
 afterAll(() => rmSync(testHome, { recursive: true, force: true }));
 
 describe("setup guidance for detected hosts", () => {
+	it("gives the documented Claude Code plugin install steps", async () => {
+		const result = await installHooks({
+			agent: "claude",
+			hasNode: true,
+			nodeVersion: process.version,
+			projectRoot: testHome,
+		});
+		const guidance = result.followUp.join("\n");
+		expect(guidance).toContain("Protection is NOT yet active");
+		expect(guidance).toContain("aidr-claude-plugin-<version>.tar.gz");
+		expect(guidance).toContain("Ed25519 public key");
+		// The exact commands documented in README.md and docs/getting-started.md.
+		const { readFileSync } = await import("node:fs");
+		const docs = readFileSync(join(__dirname, "../../../../docs/getting-started.md"), "utf8");
+		for (const command of [
+			"/plugin marketplace add /absolute/path/to/extracted/aidr-claude-plugin",
+			"/plugin install aidr@aidr",
+		]) {
+			expect(docs).toContain(command);
+			expect(guidance).toContain(command);
+		}
+	});
+
 	it.each(["openclaw", "opencode", "codex"] as const)(
 		"keeps %s protection inactive until its connector is installed",
 		async (agent) => {

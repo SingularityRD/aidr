@@ -5,8 +5,6 @@
  * Outputs status JSON and exits non-zero when protection cannot start.
  */
 
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import {
 	discoverPlugins,
 	getLogger,
@@ -16,25 +14,12 @@ import {
 	verifyArtifactIntegrityAndLog,
 } from "@singularityrd/aidr-core";
 import { pruneStaleSessionFiles } from "./approval-tracker.js";
-import { resolveAssetDir, resolvePluginRoot } from "./assets.js";
+import { resolveAssetDir, resolvePluginManifest, resolvePluginRoot } from "./assets.js";
 
 // Initialize Sentry
 initSentry({ name: "aidr-claude-code-session-start" });
 
 const logger: Logger = getLogger();
-
-function getPluginManifest(pluginRoot: string): { name: string | null; version: string } {
-	try {
-		const manifest = readFileSync(join(pluginRoot, ".claude-plugin", "plugin.json"), "utf-8");
-		const parsed = JSON.parse(manifest) as Record<string, unknown>;
-		return {
-			name: (parsed.name as string) ?? null,
-			version: (parsed.version as string) ?? "0.0.0",
-		};
-	} catch {
-		return { name: null, version: "0.0.0" };
-	}
-}
 
 async function main(): Promise<void> {
 	await verifyArtifactIntegrityAndLog({
@@ -47,7 +32,7 @@ async function main(): Promise<void> {
 	const pluginRoot = resolvePluginRoot();
 	const threatsDir = resolveAssetDir("threats");
 	const allowlistsDir = resolveAssetDir("allowlists");
-	const manifest = getPluginManifest(pluginRoot);
+	const manifest = resolvePluginManifest(pluginRoot);
 
 	// Discover plugins and filter out self
 	let plugins = await discoverPlugins(undefined, logger);

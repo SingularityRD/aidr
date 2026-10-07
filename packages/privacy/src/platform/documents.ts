@@ -12,18 +12,32 @@ export const OFFICE_MIME={
  pptx:'application/vnd.openxmlformats-officedocument.presentationml.presentation',
 } as const;
 export type OfficeKind=keyof typeof OFFICE_MIME;
-export type DocumentMime='text/plain'|typeof OFFICE_MIME[OfficeKind];
-export type DocumentFilename='aidr-sanitized.txt'|`aidr-redacted.${OfficeKind}`;
+export const PDF_MIME='application/pdf';
+export type DocumentMime='text/plain'|typeof OFFICE_MIME[OfficeKind]|typeof PDF_MIME;
+export type DocumentFilename='aidr-sanitized.txt'|`aidr-redacted.${OfficeKind|'pdf'}`;
 export interface DocumentResult {decision:'redact'|'block'|'review';output:Buffer|null;mime:DocumentMime;filename:DocumentFilename;reason:string;}
 /**
  * `text` (default): text-only reconstruction, the original container never passes through.
  * `office`: explicit opt-in, DOCX/XLSX/PPTX only. The original package is re-serialized with
  * detected spans redacted in place, metadata/thumbnails dropped and cached formula values removed,
  * then re-parsed and re-scanned; any remaining finding or validation failure yields no output.
+ * `pdf`: explicit opt-in, PDF only. Spans are detected on PDFium's per-page text (which must agree
+ * with the TXT-path pypdf text), each page is rasterized with opaque boxes over the span characters
+ * and re-assembled as an IMAGE-ONLY PDF (no text layer, no metadata). The output is re-opened in a
+ * fresh worker and must contain the same number of pages and no extractable text, else no output.
+ * Unlike `office`, the redacted raster cannot be re-scanned (that would need OCR): a span the
+ * detector misses stays visible in the image, and glyphs PDFium cannot extract as text (outlined
+ * text, Type3 glyph art) are reproduced unscanned. Inline/XObject images are rejected.
  */
-export type DocumentOutput='text'|'office';
+export type DocumentOutput='text'|'office'|'pdf';
 export interface DocumentProtectOptions {readonly output?:DocumentOutput;}
 const isOffice=(kind:string):kind is OfficeKind=>Object.hasOwn(OFFICE_MIME,kind);
+type PreservedKind=OfficeKind|'pdf';
+/** Worker reply formats per format-preserving pipeline (units / apply / verify). */
+const PRESERVE={
+ office:{units:'aidr-office-units-v1',apply:'aidr-office-redacted-v1',verify:'aidr-office-verify-v1'},
+ pdf:{units:'aidr-pdf-units-v1',apply:'aidr-pdf-redacted-v1',verify:'aidr-pdf-verify-v1'},
+} as const;
 const SANDBOX='linux-seccomp-no-network-filesystem-open-exec';
 const MAX_TEXT=524288;
 /** Units/views are joined like the TXT path joins segments, so detection context matches. */
@@ -88,15 +102,16 @@ export class DocumentCdr {
   return r;
  }
  async protect(input:Uint8Array,kind:string,options:DocumentProtectOptions={}):Promise<DocumentResult> {
-  const office=options.output==='office';
-  const mime:DocumentMime=office&&isOffice(kind)?OFFICE_MIME[kind]:'text/plain';
-  const filename:DocumentFilename=office&&isOffice(kind)?`aidr-redacted.${kind}`:'aidr-sanitized.txt';
+  const office=options.output==='office',pdf=options.output==='pdf';
+  const preserved:PreservedKind|null=office&&isOffice(kind)?kind:pdf&&kind==='pdf'?'pdf':null;
+  const mime:DocumentMime=preserved===null?'text/plain':preserved==='pdf'?PDF_MIME:OFFICE_MIME[preserved];
+  const filename:DocumentFilename=preserved===null?'aidr-sanitized.txt':`aidr-redacted.${preserved}`;
   const rejected=(reason:string,review=false):DocumentResult=>({decision:review?'review':'block',output:null,mime,filename,reason});
   if(this.#active>=2)return rejected('PARSER_BUSY');this.#active++;
   try{
    if(!(input instanceof Uint8Array)||input.length>8388608||!/^[a-z]{1,8}$/.test(kind))return rejected('PARSER_INPUT');
-   if(options.output!==undefined&&options.output!=='text'&&options.output!=='office')return rejected('PARSER_INPUT');
-   if(office)return isOffice(kind)?await this.#office(input,kind,rejected):rejected('FORMAT_PRESERVING_UNSUPPORTED');
+   if(options.output!==undefined&&options.output!=='text'&&options.output!=='office'&&options.output!=='pdf')return rejected('PARSER_INPUT');
+   if(office||pdf)return preserved!==null?await this.#preserve(input,preserved,rejected):rejected('FORMAT_PRESERVING_UNSUPPORTED');
    const r=await this.#run({kind,data:Buffer.from(input).toString('base64')},2097152,10000) as WorkerReply&{segments:unknown};
    if(!strings(r.segments,1000))return rejected('PARSER_RESPONSE');
    const text=r.segments.join(JOIN);if(Buffer.byteLength(text)>MAX_TEXT)return rejected('PARSER_TEXT_LIMIT');
@@ -107,11 +122,13 @@ export class DocumentCdr {
    return rejected(error instanceof ControlError&&/^[A-Z_]{1,64}$/.test(error.code)?error.code:'PARSER_FAILURE');
   }finally{this.#active--;}
  }
- async #office(input:Uint8Array,kind:OfficeKind,rejected:(reason:string,review?:boolean)=>DocumentResult):Promise<DocumentResult> {
-  const data=Buffer.from(input).toString('base64');
-  // 1. Units: every text node grouped by paragraph/string/cell, scanned by the SAME protector as TXT.
-  const u=await this.#run({kind,data,mode:'units'},4194304,60000) as WorkerReply&{units:unknown;unitsDigest:unknown};
-  if(u.format!=='aidr-office-units-v1'||!strings(u.units,20000)||typeof u.unitsDigest!=='string'||!/^[0-9a-f]{64}$/.test(u.unitsDigest))return rejected('PARSER_RESPONSE');
+ async #preserve(input:Uint8Array,kind:PreservedKind,rejected:(reason:string,review?:boolean)=>DocumentResult):Promise<DocumentResult> {
+  const data=Buffer.from(input).toString('base64'),isPdf=kind==='pdf',formats=PRESERVE[isPdf?'pdf':'office'];
+  // 1. Units, scanned by the SAME protector as TXT. Office: every text node grouped by
+  //    paragraph/string/cell. PDF: one unit per page, PDFium's text (the characters whose boxes get painted).
+  const u=await this.#run({kind,data,mode:'units'},4194304,60000) as WorkerReply&{units:unknown;unitsDigest:unknown;pages?:unknown};
+  if(u.format!==formats.units||!strings(u.units,20000)||typeof u.unitsDigest!=='string'||!/^[0-9a-f]{64}$/.test(u.unitsDigest))return rejected('PARSER_RESPONSE');
+  if(isPdf&&(u.pages!==u.units.length||u.units.length<1||u.units.length>50))return rejected('PARSER_RESPONSE');
   const text=u.units.join(JOIN);if(Buffer.byteLength(text)>MAX_TEXT)return rejected('PARSER_TEXT_LIMIT');
   const result=await this.options.protector.protect(text);
   if(result.output===null||!['allow','redact'].includes(result.decision))return rejected('DOCUMENT_POLICY',result.decision==='review');
@@ -121,18 +138,26 @@ export class DocumentCdr {
    const reps=alignReplacements(text,result.output,result.findings);if(!reps)return rejected('REDACTION_ALIGNMENT');
    edits=unitEdits(u.units,result.findings,reps);if(edits.length>20000)return rejected('REDACTION_LIMIT');
   }
-  // 2. Apply in place (worker re-derives units from the same bytes and checks the digest).
+  // 2. Apply (worker re-derives units from the same bytes and checks the digest). Office edits in place;
+  //    PDF paints the spans' character boxes on a raster and writes an image-only PDF.
   const a=await this.#run({kind,data,mode:'apply',edits,unitsDigest:u.unitsDigest},12582912,64) as WorkerReply&{data:unknown};
-  if(a.format!=='aidr-office-redacted-v1'||typeof a.data!=='string'||!/^[A-Za-z0-9+/]*={0,2}$/.test(a.data))return rejected('PARSER_RESPONSE');
+  if(a.format!==formats.apply||typeof a.data!=='string'||!/^[A-Za-z0-9+/]*={0,2}$/.test(a.data))return rejected('PARSER_RESPONSE');
   const out=Buffer.from(a.data,'base64');if(!out.length||out.length>8388608)return rejected('PARSER_RESPONSE');
-  // 3. Verify in a fresh worker: the unchanged TXT extractor and the unit extractor must both re-scan clean.
-  const v=await this.#run({kind,data:out.toString('base64'),mode:'verify'},4194304,60000) as WorkerReply&{segments:unknown;units:unknown};
-  if(v.format!=='aidr-office-verify-v1'||!strings(v.segments,1000)||!strings(v.units,20000))return rejected('PARSER_RESPONSE');
+  if(isPdf&&out.subarray(0,9).toString('latin1')!=='%PDF-1.4\n')return rejected('PARSER_RESPONSE');
+  // 3. Verify in a fresh worker. Office: the unchanged TXT extractor and the unit extractor must both
+  //    re-scan clean. PDF: pypdf and PDFium must both extract NO text and the page count must be kept.
+  const v=await this.#run({kind,data:out.toString('base64'),mode:'verify'},4194304,60000) as WorkerReply&{segments:unknown;units:unknown;pages?:unknown};
+  if(v.format!==formats.verify||!strings(v.segments,1000)||!strings(v.units,20000))return rejected('PARSER_RESPONSE');
+  if(isPdf){
+   if(v.pages!==u.units.length||v.units.length!==u.units.length)return rejected('REDACTION_VALIDATION');
+   if([...v.segments,...v.units].some(t=>t.trim()!==''))return rejected('REDACTION_RESIDUAL');
+   return {decision:'redact',output:out,mime:PDF_MIME,filename:'aidr-redacted.pdf',reason:'FORMAT_PRESERVING_REDACTION'};
+  }
   for(const view of [v.segments.join(JOIN),v.units.join(JOIN)]){
    if(Buffer.byteLength(view)>MAX_TEXT)return rejected('PARSER_TEXT_LIMIT');
    const rescan=await this.options.protector.protect(view);
    if(rescan.decision!=='allow'||rescan.output!==view||(rescan.findings?.length??0)>0)return rejected('REDACTION_RESIDUAL');
   }
-  return {decision:'redact',output:out,mime:OFFICE_MIME[kind],filename:`aidr-redacted.${kind}`,reason:'FORMAT_PRESERVING_REDACTION'};
+  return {decision:'redact',output:out,mime:OFFICE_MIME[kind as OfficeKind],filename:`aidr-redacted.${kind}`,reason:'FORMAT_PRESERVING_REDACTION'};
  }
 }

@@ -1,3 +1,7 @@
-# Exact versions exercised here, NOT a vulnerability approval or full transitive lock.
-pypdf==5.9.0
+# Direct parser worker pins. Install from the hash lock, never from this file:
+#   python -m pip install --require-hashes --only-binary=:all: --no-deps -r parsers/requirements.lock.txt
+# Exact versions exercised here, NOT a vulnerability approval.
+pypdf==6.19.0
 defusedxml==0.7.1
+pypdfium2==5.14.0
+pillow==12.3.0

@@ -129,6 +129,7 @@ Edge Functions runtime (`functions` service `env_file`). Holds the control-plane
 | `AIDR_DEVICE_START_INGRESS_SECRET` | always | generated secret | *(secret)* | Shared with `.env.ingress`; authenticates the device-start signer. |
 | `AIDR_NOTIFICATION_ENCRYPTION_KEYS` | always | generated secret | *(secret)* | Alert channel keyring `<key id>:<base64 32-byte key>[,…]`; the first key encrypts channel destinations, every listed key decrypts. |
 | `AIDR_NOTIFICATION_DISPATCH_TOKEN` | always | generated secret | *(secret)* | Bearer token the notification dispatcher timer presents to `notification-dispatch` (at least 32 characters). Each run also enqueues agent-offline and governance alerts. |
+| `AIDR_RUNTIME_CAPABILITIES_BY_TENANT` | always | operator | `{}` | Exact per-tenant runtime capability grants (`runtime_detectors`, `behavioral_learning_v1`) as a JSON map read from the preparing shell; `{}` grants none. `behavioral_learning_v1` requires `runtime_detectors`. |
 | `AIDR_MAIL_PROVIDER` | not written; optional override | operator | *(blank)* | Outbound mail for e-mail alert channels, invitations and the governance digest (`resend`); blank disables e-mail delivery (other channels still work). |
 | `RESEND_API_KEY` | not written; optional override | operator | *(blank)* | Resend API key for `AIDR_MAIL_PROVIDER=resend` (secret). |
 | `AIDR_MAIL_FROM` | not written; optional override | operator | *(blank)* | Sender address for AIDR e-mail (alerts, invitations, governance digest). |

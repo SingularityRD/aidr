@@ -26,7 +26,7 @@ env:
   # dashboard image and esbuild target node24); PRIVACY_NODE_VERSION is the
   # packages/privacy engine floor. Keep docs/development.md in sync.
   NODE_VERSION: 22.12.0
-  NODE_24_VERSION: 24.12.0
+  NODE_24_VERSION: 24.21.0
   PRIVACY_NODE_VERSION: 22.16.0
   PNPM_VERSION: 10.29.3
 
@@ -273,7 +273,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends openssl libseccomp2
           python -m venv --copies "${RUNNER_TEMP}/privacy-python"
-          "${RUNNER_TEMP}/privacy-python/bin/python" -m pip install --disable-pip-version-check --only-binary=:all: -r packages/privacy/parsers/requirements.txt
+          "${RUNNER_TEMP}/privacy-python/bin/python" -m pip install --disable-pip-version-check --require-hashes --only-binary=:all: --no-deps -r packages/privacy/parsers/requirements.lock.txt
           "${RUNNER_TEMP}/privacy-python/bin/python" -m pip check
           echo "AIDR_PYTHON=${RUNNER_TEMP}/privacy-python/bin/python" >> "${GITHUB_ENV}"
           echo "AIDR_TEST_PYTHON=${RUNNER_TEMP}/privacy-python/bin/python" >> "${GITHUB_ENV}"
@@ -366,7 +366,7 @@ jobs:
           python -m pip install --disable-pip-version-check --require-hashes --only-binary=:all: -r requirements-ci.lock
           python -m pip check
           python -m venv .audit-venv
-          .audit-venv/bin/python -m pip install --disable-pip-version-check pip-audit==2.9.0
+          .audit-venv/bin/python -m pip install --disable-pip-version-check --require-hashes --only-binary=:all: --no-deps -r requirements-audit-tools.lock
 
       - name: Audit and test bridge
         working-directory: services/aig-bridge
@@ -425,7 +425,7 @@ jobs:
       matrix:
         # Literal values: the strategy context cannot read env. The workflow
         # contract test keeps them equal to NODE_VERSION and NODE_24_VERSION.
-        node: ["22.12.0", "24.12.0"]
+        node: ["22.12.0", "24.21.0"]
     steps:
       - name: Checkout repository (pinned)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -768,15 +768,14 @@ jobs:
         with:
           python-version: "3.12.8"
           cache: pip
-          cache-dependency-path: services/aig-bridge/requirements.txt
+          cache-dependency-path: services/aig-bridge/requirements-ci.lock
 
       - name: Install pinned bridge E2E dependencies
         working-directory: services/aig-bridge
         run: |
           set -euo pipefail
-          python -m pip install --disable-pip-version-check --upgrade pip
-          python -m pip install --disable-pip-version-check pytest==8.4.1 pytest-asyncio==1.1.0
-          python -m pip install --disable-pip-version-check -r requirements.txt
+          # requirements-ci.lock = requirements.txt + pytest pins, hash-locked.
+          python -m pip install --disable-pip-version-check --require-hashes --only-binary=:all: -r requirements-ci.lock
           python -m pip check
 
       - name: Run positive and negative connector suites

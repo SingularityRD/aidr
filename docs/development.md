@@ -261,11 +261,11 @@ aidr/
 | Line | Where it runs | Why |
 |------|---------------|-----|
 | `NODE_VERSION` 22.12.0 | Quality gate (lint, types, every unit/integration suite, release build), Browser Guard, Helm, workflow lint | Minimum supported engine (`engines.node` in the root `package.json`) |
-| `NODE_24_VERSION` 24.12.0 | Second leg of the core build + test matrix; the on-prem deployment job | On-prem runtime line: the dashboard image is `node:24.12.0`, esbuild targets `node24`, and `deployment-doctor.mjs` refuses hosts older than Node 24 |
+| `NODE_24_VERSION` 24.21.0 | Second leg of the core build + test matrix; the on-prem deployment job | On-prem runtime line: the dashboard image is `node:24.21.0`, esbuild targets `node24`, and `deployment-doctor.mjs` refuses hosts older than Node 24 |
 | `PRIVACY_NODE_VERSION` 22.16.0 | `packages/privacy` build/tests and the privacy rule drift gate | `engines.node` floor of `@singularityrd/aidr-privacy` |
 
 The core matrix (`core-node-matrix`) runs the same build and suite on 22.12.0 and
-24.12.0, so a change that only works on one line fails CI. Raise a floor by
+24.21.0, so a change that only works on one line fails CI. Raise a floor by
 changing the `env` value, the matrix literal and the `engines` field together;
 `scripts/ci-workflows.test.mjs` fails when they disagree.
 
@@ -380,10 +380,10 @@ needs bash (Linux, macOS, WSL or Git Bash).
 ## Conventions
 
 - **Naming split:** YAML/JSON data uses `snake_case` (`threat_id`, `source_file`). TypeScript uses `camelCase` (`threatId`, `sourceFile`). Conversion functions handle the boundary.
-- **Failure policy is per layer, not blanket fail-open:**
-  - *Connector entry points* fail **closed**: an internal error in a hook or plugin returns a `deny` (or block), never a silent `allow`. Extension hooks always exit with code `0` and emit the deny verdict.
-  - *Detection internals* (an erroring rule, an optional reputation lookup, a cache, intel or policy load) skip that signal, log it and continue; a skipped signal must never be reported as a clean result.
-  - *Security controls* (auth, tenant isolation, rate limits, webhook signatures, approval) fail **closed**.
+- **Failure policy is per layer, not a blanket fail-open:**
+  - *Detection internals* (a threat rule that errors, an optional reputation lookup, cache/intel/policy load) skip that signal, log it and continue. This must never be reported to the user as a clean result.
+  - *Connector entry points* fail **closed**: Claude Code, OpenClaw, OpenCode, Codex and the Cursor/VS Code hook return a deny (or block) on an internal error rather than silently allowing the call. Extension hooks always exit with code `0` and emit a deny verdict.
+  - *Security controls* (auth, tenant isolation, rate limits, webhook signatures, approval) fail closed.
 - **Detection patterns are data.** No hardcoded patterns - all rules live in `threats/*.yaml`.
 - **Versioning:** See [Versioning](#versioning) below.
 
@@ -412,6 +412,37 @@ The workflow reads only the tag-signing secrets (`RELEASE_TAG_PGP_PUBLIC_KEY`,
 `RELEASE_TAG_PGP_FINGERPRINT`) from the `browser-guard-release` environment; store
 submission (Chrome Web Store, Edge Add-ons, AMO) stays a manual step with no store
 credentials in CI.
+
+## Standalone Binaries (SEA)
+
+`pnpm build:sea` runs `packages/claude-code/scripts/build-sea.mjs`, which builds
+Node.js [single executable applications](https://nodejs.org/api/single-executable-applications.html)
+for the Claude Code hooks on Linux, macOS and Windows:
+
+| Output (`bin/`, gitignored) | Entry bundle |
+|---|---|
+| `aidr-pre-tool-use` (`.exe` on Windows) | `packages/claude-code/dist/pre-tool-use.cjs` |
+| `aidr-session-start` (`.exe` on Windows) | `packages/claude-code/dist/session-start.cjs` |
+
+The script uses the documented flow, which works on every supported Node
+(>= 22.12; it does not depend on `node --build-sea`):
+
+1. bundle the entry points with `esbuild.config.js`;
+2. write `dist/sea-config-<entry>.json` and run `node --experimental-sea-config` to produce the blob (code cache disabled);
+3. copy `process.execPath` to the output binary;
+4. inject the blob with the locally pinned `postject` devDependency (no `npx`/network), using the
+   `NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2` sentinel. On macOS the signature is removed
+   first, the blob goes into the `NODE_SEA` Mach-O segment, and the binary is re-signed ad hoc.
+
+It fails fast when the running Node is older than 20, is a shared-libnode build, or lacks the
+SEA sentinel fuse (Homebrew builds) — use the official binary from nodejs.org, nvm/fnm/volta,
+or `actions/setup-node` in CI. Windows binaries are unsigned (postject prints
+`warning: The signature seems corrupted!`, which is expected); sign them with `signtool`
+before distribution. Smoke test:
+
+```bash
+echo '{"tool_name":"Bash","tool_input":{"command":"ls"},"session_id":"t","hook_event_name":"PreToolUse","cwd":"."}' | ./bin/aidr-pre-tool-use
+```
 
 ## Building the Extension
 

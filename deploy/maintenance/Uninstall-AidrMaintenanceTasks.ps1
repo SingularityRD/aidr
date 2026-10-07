@@ -3,8 +3,9 @@
 Removes the AIDR maintenance Scheduled Tasks registered by Install-AidrMaintenanceTasks.ps1.
 
 .DESCRIPTION
-Unregisters \AIDR\aidr-siem-delivery and \AIDR\aidr-export-retention, removes
-the \AIDR\ task folder when it is empty, revokes the file access granted to the
+Unregisters \AIDR\aidr-siem-delivery, \AIDR\aidr-export-retention and, when
+it was installed with -WithNotifications, \AIDR\aidr-notification-dispatch,
+removes the \AIDR\ task folder when it is empty, revokes the file access granted to the
 recorded service account, and deletes the deployment's Windows maintenance
 declaration. Evidence files are left in place: the dashboard's freshness
 checks turn them red once the workers stop. Running it again is a no-op.

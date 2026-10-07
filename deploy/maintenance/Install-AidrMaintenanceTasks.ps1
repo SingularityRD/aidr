@@ -11,6 +11,12 @@ evidence worker is run once through the task before the installer reports
 success; a missing key, queue or configuration fails closed and leaves the
 task disabled.
 
+With -WithNotifications it also registers \AIDR\aidr-notification-dispatch,
+the mirror of install-systemd.sh --with-notifications. The dispatcher token and
+notification encryption keys must be present in .env.functions, and the
+dispatcher is run once through its task, after the evidence worker, before the
+installer reports success.
+
 Re-running is idempotent: tasks are re-registered in place, access grants are
 replaced rather than duplicated, and the declaration file is rewritten.
 
@@ -32,6 +38,10 @@ deployment directory.
 
 .PARAMETER NodePath
 Node.js 24 or newer executable. Defaults to node.exe on PATH.
+
+.PARAMETER WithNotifications
+Also register the alert notification dispatcher (aidr-notification-dispatch),
+like install-systemd.sh --with-notifications. Off by default.
 #>
 [CmdletBinding(DefaultParameterSetName = 'ServiceAccount')]
 param(
@@ -41,7 +51,8 @@ param(
     [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9.-]{0,63}\\[A-Za-z0-9][A-Za-z0-9._-]{0,14}\$$')]
     [string]$ServiceAccount,
     [Parameter(Mandatory, ParameterSetName = 'System')][switch]$RunAsSystem,
-    [string]$NodePath
+    [string]$NodePath,
+    [switch]$WithNotifications
 )
 
 . (Join-Path $PSScriptRoot 'AidrMaintenanceTasks.Common.ps1')
@@ -51,7 +62,7 @@ function Read-AidrEnvironmentFile {
     $values = @{}
     foreach ($line in [IO.File]::ReadAllLines($Path)) {
         if ($line -match '^([A-Z][A-Z0-9_]*)=(.*)$') {
-            if ($values.ContainsKey($Matches[1])) { throw "Readiness configuration defines $($Matches[1]) more than once" }
+            if ($values.ContainsKey($Matches[1])) { throw "$([IO.Path]::GetFileName($Path)) defines $($Matches[1]) more than once" }
             $values[$Matches[1]] = $Matches[2]
         }
     }
@@ -142,6 +153,30 @@ try {
     }
     if ($queueRoots.Count -eq 0 -and $null -eq $siemConfig) { throw 'Configure at least one real durable queue source' }
 
+    # Same --with-notifications prerequisites as install-systemd.sh. The
+    # dispatcher reads deployment.json and .env.functions only, both already in
+    # the read grants below, and writes nothing.
+    $notificationWorker = Join-Path $deployment 'maintenance\notification-dispatch.mjs'
+    if ($WithNotifications) {
+        foreach ($required in @(
+            (Join-Path $deployment 'maintenance\aidr-notification-dispatch.service'),
+            (Join-Path $deployment 'maintenance\aidr-notification-dispatch.timer'),
+            $notificationWorker
+        )) {
+            if (-not (Test-Path -LiteralPath $required -PathType Leaf)) { throw "Prepared notification dispatcher input is missing: $required" }
+        }
+        $functions = Read-AidrEnvironmentFile (Join-Path $deployment '.env.functions')
+        if (-not $functions.ContainsKey('AIDR_NOTIFICATION_DISPATCH_TOKEN') -or $functions['AIDR_NOTIFICATION_DISPATCH_TOKEN'].Trim().Length -lt 32) {
+            throw 'AIDR_NOTIFICATION_DISPATCH_TOKEN (32+ characters) is missing from .env.functions'
+        }
+        if (-not $functions.ContainsKey('AIDR_NOTIFICATION_ENCRYPTION_KEYS') -or $functions['AIDR_NOTIFICATION_ENCRYPTION_KEYS'] -cnotmatch '^[a-z0-9][a-z0-9_-]*:') {
+            throw 'AIDR_NOTIFICATION_ENCRYPTION_KEYS is missing from .env.functions'
+        }
+        foreach ($name in @('AIDR_NOTIFICATION_DISPATCH_TOKEN', 'AIDR_NOTIFICATION_ENCRYPTION_KEYS')) {
+            if ($functions[$name] -match 'REPLACE_') { throw "Replace the $name placeholder in .env.functions before activation" }
+        }
+    }
+
     if ([string]::IsNullOrWhiteSpace($NodePath)) { $NodePath = (Get-Command node.exe -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source }
     $node = (Resolve-Path -LiteralPath $NodePath -ErrorAction Stop).ProviderPath
     if ($node.Contains('"') -or [IO.Path]::GetFileName($node) -ne 'node.exe') { throw 'NodePath must name node.exe' }
@@ -188,33 +223,61 @@ try {
     }
 
     # Persistent=true -> StartWhenAvailable; oneshot units never overlap -> IgnoreNew.
-    $definitions = Get-AidrMaintenanceTaskDefinitions
-    $start = [DateTime]::Now.AddMinutes(1)
-    foreach ($definition in $definitions) {
-        $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew -ExecutionTimeLimit $definition.TimeLimit -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
-        if ($definition.Name -eq 'aidr-siem-delivery') {
-            # OnBootSec=30s, OnUnitActiveSec=1min, EnvironmentFile=-/srv/aidr/.env.readiness, WorkingDirectory=/srv/aidr
-            $boot = New-ScheduledTaskTrigger -AtStartup
-            $boot.Delay = 'PT30S'
-            $triggers = @($boot, (New-ScheduledTaskTrigger -Once -At $start -RepetitionInterval (New-TimeSpan -Minutes 1)))
-            $action = New-ScheduledTaskAction -Execute $node -Argument "`"--env-file=$readinessEnvPath`" `"$worker`"" -WorkingDirectory $deployment
-        } else {
-            # OnCalendar=hourly, RandomizedDelaySec=5min, WorkingDirectory=/opt/aidr-kit
-            $triggers = @(New-ScheduledTaskTrigger -Once -At $start -RepetitionInterval (New-TimeSpan -Hours 1) -RandomDelay (New-TimeSpan -Minutes 5))
-            $action = New-ScheduledTaskAction -Execute $node -Argument "`"$retentionScript`" `"$deployment`" --apply" -WorkingDirectory $kit
+    function Register-AidrMaintenanceTask {
+        param([Parameter(Mandatory)]$Definition)
+        # The dispatcher is registered after the evidence run, so each task gets its own start.
+        $start = [DateTime]::Now.AddMinutes(1)
+        $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew -ExecutionTimeLimit $Definition.TimeLimit -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+        switch ($Definition.Name) {
+            'aidr-siem-delivery' {
+                # OnBootSec=30s, OnUnitActiveSec=1min, EnvironmentFile=-/srv/aidr/.env.readiness, WorkingDirectory=/srv/aidr
+                $boot = New-ScheduledTaskTrigger -AtStartup
+                $boot.Delay = 'PT30S'
+                $triggers = @($boot, (New-ScheduledTaskTrigger -Once -At $start -RepetitionInterval (New-TimeSpan -Minutes 1)))
+                $action = New-ScheduledTaskAction -Execute $node -Argument "`"--env-file=$readinessEnvPath`" `"$worker`"" -WorkingDirectory $deployment
+            }
+            'aidr-export-retention' {
+                # OnCalendar=hourly, RandomizedDelaySec=5min, WorkingDirectory=/opt/aidr-kit
+                $triggers = @(New-ScheduledTaskTrigger -Once -At $start -RepetitionInterval (New-TimeSpan -Hours 1) -RandomDelay (New-TimeSpan -Minutes 5))
+                $action = New-ScheduledTaskAction -Execute $node -Argument "`"$retentionScript`" `"$deployment`" --apply" -WorkingDirectory $kit
+            }
+            'aidr-notification-dispatch' {
+                # OnBootSec=45s, OnUnitActiveSec=1min, no EnvironmentFile, WorkingDirectory=/srv/aidr,
+                # ExecStart=node /srv/aidr/maintenance/notification-dispatch.mjs /srv/aidr
+                $boot = New-ScheduledTaskTrigger -AtStartup
+                $boot.Delay = 'PT45S'
+                $triggers = @($boot, (New-ScheduledTaskTrigger -Once -At $start -RepetitionInterval (New-TimeSpan -Minutes 1)))
+                $action = New-ScheduledTaskAction -Execute $node -Argument "`"$notificationWorker`" `"$deployment`"" -WorkingDirectory $deployment
+            }
+            default { throw "No Windows task mapping for $($Definition.Name)" }
         }
-        Register-ScheduledTask -TaskPath $script:AidrMaintenanceTaskPath -TaskName $definition.Name -Description $definition.Description `
+        Register-ScheduledTask -TaskPath $script:AidrMaintenanceTaskPath -TaskName $Definition.Name -Description $Definition.Description `
             -Action $action -Trigger $triggers -Settings $settings -Principal $principal -Force | Out-Null
-        Enable-ScheduledTask -TaskPath $script:AidrMaintenanceTaskPath -TaskName $definition.Name | Out-Null
+        Enable-ScheduledTask -TaskPath $script:AidrMaintenanceTaskPath -TaskName $Definition.Name | Out-Null
     }
 
+    $definitions = @(Get-AidrMaintenanceTaskDefinitions | Where-Object { -not $_.Optional })
+    $notificationDefinition = Get-AidrMaintenanceTaskDefinitions | Where-Object { $_.Name -eq 'aidr-notification-dispatch' }
+    $declaredTasks = @($definitions | ForEach-Object { $_.Name })
+    if ($WithNotifications) {
+        $declaredTasks += $notificationDefinition.Name
+    } elseif ($null -ne (Get-ScheduledTask -TaskPath $script:AidrMaintenanceTaskPath -TaskName $notificationDefinition.Name -ErrorAction SilentlyContinue)) {
+        # Like install-systemd.sh without --with-notifications, an existing
+        # dispatcher is left as it is; it stays declared so the doctor keeps checking it.
+        Write-Warning "$($notificationDefinition.Name) is already registered and was left unchanged; run Uninstall-AidrMaintenanceTasks.ps1 to remove it."
+        $declaredTasks += $notificationDefinition.Name
+    }
+    foreach ($definition in $definitions) { Register-AidrMaintenanceTask $definition }
+
     # Declares Windows maintenance to scripts/deployment-doctor.mjs: from now on a
-    # missing or disabled task is reported as a failure, not as unverified.
+    # missing or disabled task is reported as a failure, not as unverified. An
+    # opt-in task is declared before it is registered, so an aborted activation
+    # leaves the doctor red rather than silent.
     $declaration = [ordered]@{
         schema_version = 1
         scheduler = 'windows-task-scheduler'
         task_path = $script:AidrMaintenanceTaskPath
-        tasks = @($definitions | ForEach-Object { $_.Name })
+        tasks = $declaredTasks
         principal = $principalLabel
         granted_paths = @($grants | ForEach-Object { $_.Path })
         installed_at = [DateTimeOffset]::UtcNow.ToString('o')
@@ -226,6 +289,17 @@ try {
     if ($result -ne 0) {
         Disable-ScheduledTask -TaskPath $script:AidrMaintenanceTaskPath -TaskName 'aidr-siem-delivery' | Out-Null
         throw "Initial readiness evidence run failed (task result $result); aidr-siem-delivery was left disabled"
+    }
+
+    if ($WithNotifications) {
+        # install-systemd.sh: one supervised dispatch after the evidence worker;
+        # a missing function, token or key fails here.
+        Register-AidrMaintenanceTask $notificationDefinition
+        $result = Wait-AidrInitialRun -TaskName 'aidr-notification-dispatch' -Timeout $notificationDefinition.TimeLimit
+        if ($result -ne 0) {
+            Disable-ScheduledTask -TaskPath $script:AidrMaintenanceTaskPath -TaskName 'aidr-notification-dispatch' | Out-Null
+            throw "Initial notification dispatch failed (task result $result); aidr-notification-dispatch was left disabled"
+        }
     }
     Write-Output "AIDR maintenance tasks registered under $($script:AidrMaintenanceTaskPath) as $principalLabel. Run scripts/deployment-doctor.mjs to verify."
     exit 0

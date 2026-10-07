@@ -51,11 +51,23 @@ const DECOMPOSED_CI_STEP = Object.freeze({
 const CHAIN_SCRIPT = /^quality:/u;
 
 /**
- * ci.yml `run:` steps deliberately without a local counterpart. Empty today:
- * every run step maps to a local step. An entry needs a reason.
+ * ci.yml `run:` steps deliberately without a local counterpart. An entry needs a reason.
  * @type {ReadonlyArray<{job: string, step: string, reason: string}>}
  */
-const CI_ONLY_STEPS = Object.freeze([]);
+export const CI_ONLY_STEPS = Object.freeze([
+	{
+		job: "privacy-platform",
+		step: "Provision isolated real parser dependencies",
+		reason:
+			"Runner provisioning: installs apt packages with sudo and a hash-locked parser venv into RUNNER_TEMP; a developer host supplies its own AIDR_PYTHON instead of ci:local mutating the system.",
+	},
+	{
+		job: "fleet-windows",
+		step: "Build native Claude fleet payload",
+		reason:
+			"Windows-runner build preparation for the native lifecycle gate; locally the same release bytes come from the build-release step.",
+	},
+]);
 
 const MIN = 60_000;
 const DEFAULT_TIMEOUT_MS = 10 * MIN;
@@ -345,7 +357,7 @@ export const STEPS = Object.freeze([
 		id: "supabase-edge-typecheck",
 		group: "supabase",
 		name: "Pinned Deno Edge typecheck",
-		ci: ["quality-gate", "Pinned Deno Edge typecheck (9-route security-critical slice)"],
+		ci: ["quality-gate", "Pinned Deno Edge typecheck (security-critical slice)"],
 		requires: ["network"],
 		timeoutMs: 15 * MIN,
 	}),
@@ -419,6 +431,22 @@ export const STEPS = Object.freeze([
 		requires: ["node-privacy-floor"],
 		quick: true,
 		timeoutMs: 3 * MIN,
+	}),
+	step({
+		id: "privacy-platform",
+		group: "privacy",
+		name: "Private privacy platform build, complete Node suite and installed signed MCP",
+		ci: ["privacy-platform", "Map-free private build, complete Node suite and installed signed MCP"],
+		requires: ["node-privacy-floor"],
+		timeoutMs: 30 * MIN,
+	}),
+	step({
+		id: "privacy-sdk-mtls",
+		group: "privacy",
+		name: "Mandatory SDK ESM and CJS mTLS input and output gate",
+		ci: ["privacy-platform", "Mandatory SDK ESM and CJS mTLS input and output gate"],
+		requires: ["node-privacy-floor"],
+		timeoutMs: 15 * MIN,
 	}),
 
 	// ── mcp-gateway ─────────────────────────────────────────────────────────
@@ -565,8 +593,15 @@ export const STEPS = Object.freeze([
 		id: "fleet-windows",
 		group: "release",
 		name: "Windows fleet lifecycle (PowerShell fixtures)",
-		run: "pnpm verify:fleet:windows",
-		covers: [["quality-gate", "Verify Windows and Unix fleet lifecycles"]],
+		ci: ["fleet-windows", "Verify Windows fleet lifecycle"],
+		requires: ["pwsh"],
+		timeoutMs: 10 * MIN,
+	}),
+	step({
+		id: "fleet-windows-response",
+		group: "release",
+		name: "Windows response actions and worker lifecycle",
+		ci: ["fleet-windows", "Verify Windows response actions and worker lifecycle"],
 		requires: ["pwsh"],
 		timeoutMs: 10 * MIN,
 	}),
@@ -575,7 +610,7 @@ export const STEPS = Object.freeze([
 		group: "release",
 		name: "Unix fleet lifecycle",
 		run: "pnpm verify:fleet:unix",
-		covers: [["quality-gate", "Verify Windows and Unix fleet lifecycles"]],
+		covers: [["quality-gate", "Verify Unix fleet lifecycle"]],
 		// deploy/fleet/unix/aidr-fleet.sh refuses its test-root mode for uid 0 by design.
 		requires: ["non-root"],
 		timeoutMs: 10 * MIN,

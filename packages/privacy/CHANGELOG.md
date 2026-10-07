@@ -1,5 +1,7 @@
 # Unreleased
 
+- Parser dependencies: pypdf 5.9.0 -> 6.19.0 (DoS advisories fixed in the 6.x line) and new pypdfium2 5.14.0 (PDFium) + Pillow 12.3.0, hash-locked in `parsers/requirements.lock.txt`; CI installs it with `--require-hashes --no-deps`.
+- `DocumentCdr` opt-in raster PDF redaction (`{output:'pdf'}`): spans detected on PDFium page text (cross-checked against the TXT-path pypdf text), each page rasterized at 150 DPI with opaque boxes over the span characters and rewritten as an image-only PDF without text layer or metadata; independent re-parse with pypdf and PDFium must find the same page count and no text, else no output. `parsers/worker.py` changed: update the configured `workerSha256` pin.
 - `DocumentCdr` opt-in format-preserving DOCX/XLSX/PPTX redaction (`{output:'office'}`): in-place span redaction across runs, tracked changes, field codes, comments, headers/footers, notes and footnotes; metadata/thumbnail removal; every cached formula value blanked with recalculation on load; independent re-parse and re-scan, fail closed on any residual finding. Default output stays text-only; PDF unchanged. `parsers/worker.py` changed: update the configured `workerSha256` pin.
 # 0.6.0 — 2026-09-24
 

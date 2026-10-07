@@ -130,10 +130,24 @@ as a Windows Scheduled Task with a fixed name in the `\AIDR\` task folder:
 |------|----------------|----------|---------|-------------------|------------|
 | `\AIDR\aidr-siem-delivery` | `aidr-siem-delivery.timer` / `.service` | 30 s after boot, then every minute; missed runs start when available | `node.exe "--env-file=<deployment>\.env.readiness" "<deployment>\maintenance\readiness-evidence-worker.mjs"` | `<deployment>` | 5 min |
 | `\AIDR\aidr-export-retention` | `aidr-export-retention.timer` / `.service` | hourly with up to 5 min random delay; missed runs start when available | `node.exe "<kit>\scripts\deployment-maintenance.mjs" "<deployment>" --apply` | `<kit>` | 15 min |
+| `\AIDR\aidr-notification-dispatch` (opt-in, `-WithNotifications`) | `aidr-notification-dispatch.timer` / `.service` | 45 s after boot, then every minute; missed runs start when available | `node.exe "<deployment>\maintenance\notification-dispatch.mjs" "<deployment>"` | `<deployment>` | 2 min (`TimeoutStartSec=2min`) |
 
-Both tasks ignore a new start while a run is still in progress, like a oneshot
+Every task ignores a new start while a run is still in progress, like a oneshot
 unit. Do not rename them: `scripts/deployment-doctor.mjs` queries exactly these
 names.
+
+The notification dispatcher is registered only with `-WithNotifications`, the
+mirror of `install-systemd.sh --with-notifications`. The installer then refuses
+to continue unless the prepared `aidr-notification-dispatch.service`, `.timer`
+and `notification-dispatch.mjs` exist and `.env.functions` holds an
+`AIDR_NOTIFICATION_DISPATCH_TOKEN` of at least 32 characters and an
+`AIDR_NOTIFICATION_ENCRYPTION_KEYS` value with a key-id prefix (for example
+`k1:`); a value containing `REPLACE_` is also refused. Like the systemd unit,
+the task loads no environment file: the dispatcher reads the API origin from
+`deployment.json` and its token from `.env.functions` itself, and writes
+nothing. Re-running the installer without `-WithNotifications` leaves an
+already registered dispatcher unchanged and still declared; remove it with the
+uninstaller.
 
 Before activation, edit `<deployment>\.env.readiness` so
 `AIDR_DEPLOYMENT_DIR` names the deployment directory and
@@ -157,16 +171,23 @@ With `-ServiceAccount`, the account is granted only what the workers touch:
 read on `deployment.json`, `.env`, `.env.functions`, `.env.readiness`,
 `agent-config.json`, the `maintenance` directory and the kit; modify on
 `health`, `maintenance-evidence.json`, the configured telemetry queue roots and
-the SIEM state directory. No password is stored. `-RunAsSystem` runs as
+the SIEM state directory. The notification dispatcher needs no further grant:
+it only reads `deployment.json`, `.env.functions` and its script under
+`maintenance`. No password is stored. `-RunAsSystem` runs as
 LocalSystem, matching the `root` user of the systemd units, and should be used
 only where no gMSA is available. `-NodePath` selects a Node.js 24+ `node.exe`
 when it is not on `PATH`.
 
-The installer registers both tasks, writes `<deployment>\windows-maintenance-tasks.json`
-and then runs `aidr-siem-delivery` once through Task Scheduler as the chosen
-principal. If that first run fails, the task is left disabled and the installer
-exits non-zero. Re-running the installer is idempotent. Only the SIEM task is
-started immediately; the retention reaper waits for its first hourly trigger.
+The installer registers the SIEM and retention tasks, writes
+`<deployment>\windows-maintenance-tasks.json` (its `tasks` list names every task
+it installed, including the dispatcher when requested) and then runs
+`aidr-siem-delivery` once through Task Scheduler as the chosen principal. If
+that first run fails, the task is left disabled and the installer exits
+non-zero. With `-WithNotifications`, the dispatcher task is registered only
+after that run succeeds and is then run once itself, like the supervised
+`systemctl start` in `install-systemd.sh`; if its first dispatch fails, it is
+left disabled and the installer exits non-zero. Re-running the installer is
+idempotent. The retention reaper waits for its first hourly trigger.
 
 `windows-maintenance-tasks.json` is the declaration the doctor relies on. On a
 Windows host, `scripts/deployment-doctor.mjs` reads each task's definition with
@@ -179,6 +200,14 @@ an active trigger, and runs `node.exe` with this deployment's worker:
 - task absent and no declaration exists: UNVERIFIED, because the operator may
   schedule the workers by other means the doctor cannot inspect. UNVERIFIED
   still makes the doctor exit non-zero.
+
+The opt-in `aidr-notification-dispatch` task is checked only when the
+declaration's `tasks` list names it or the task is installed; then the same
+PASS/FAIL rules apply (it must run this deployment's
+`maintenance\notification-dispatch.mjs` with the deployment directory as its
+argument). Absent and undeclared, the doctor prints an INFO line and records
+nothing as passed. The Linux doctor does not inspect
+`aidr-notification-dispatch.timer`.
 
 To remove the tasks, the `\AIDR\` folder (when empty), the recorded service
 account's file grants and the declaration:

@@ -6,6 +6,13 @@ import { assertCurrentPrebuiltSbom, assertPrebuiltSbomDigest } from "./prebuilt-
 import { parseHashLockedRequirements } from "./python-requirements-sbom.mjs";
 import { cycloneDxLicenses, resolvePypiLicense } from "./pypi-license-data.mjs";
 import { parseLockIntegrities } from "./release-evidence-digests.mjs";
+import {
+	BRIDGE_PYTHON_SOURCE,
+	PRIVACY_PYTHON_SOURCES,
+	buildPythonSbomComponents,
+	pythonSourceProperties,
+	readPythonSources,
+} from "./python-sbom-components.mjs";
 
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const npmHash = { alg: "SHA-256", content: "ab".repeat(32) };
@@ -82,7 +89,7 @@ test("current exact wheel inventory passes without rewriting copyleft or native 
 	assert.doesNotThrow(() => assertCurrentPrebuiltSbom(payload, inputs));
 	assert.deepEqual(payload, original, "validation must precede and not perform the legitimate signed-data rebind");
 	assert.equal(python(payload, "psycopg").licenses[0].license.name, "GNU Lesser General Public License v3 (LGPLv3)");
-	assert.match(python(payload, "psycopg-binary").properties.find((entry) => entry.name === "aidr:license-flags").value, /14 native libraries/);
+	assert.match(python(payload, "cryptography").properties.find((entry) => entry.name === "aidr:license-flags").value, /native librar/);
 });
 
 test("stale, missing and duplicated lock, wheel-manifest or source bindings fail", () => {
@@ -141,7 +148,7 @@ test("application exemptions require actual workspace package identities and com
 test("Python licence, wheel hashes, basis, obligation and native flags must match current evidence", () => {
 	for (const mutation of ["license", "hash", "basis", "obligation", "flags"]) {
 		const payload = fixture();
-		const component = python(payload, "psycopg-binary");
+		const component = python(payload, "cryptography");
 		if (mutation === "license") component.licenses = [{ license: { id: "MIT" } }];
 		if (mutation === "hash") component.hashes.pop();
 		const propertyName = { basis: "aidr:license-basis", obligation: "aidr:license-obligation", flags: "aidr:license-flags" }[mutation];
@@ -196,4 +203,50 @@ test("release reuse validates before rebinding and SBOM generation includes the 
 	assert.match(reuse, /pypi-runtime-licenses\.json/);
 	const generator = readFileSync(new URL("../generate-sbom.mjs", import.meta.url), "utf8");
 	assert.match(generator, /name: "aidr:pypi-license-evidence-sha256", value: createHash\("sha256"\)\.update\(pythonLicenseEvidenceJson\)/);
+});
+
+test("privacy worker locks are bound, merged with the bridge set and validated like it", () => {
+	const repoRoot = new URL("../../", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
+	const extraPythonSources = readPythonSources(repoRoot, PRIVACY_PYTHON_SOURCES);
+	const all = buildPythonSbomComponents([
+		{ ...BRIDGE_PYTHON_SOURCE, lockBytes: inputs.pythonLockBytes, evidenceJson: inputs.pythonEvidenceJson },
+		...extraPythonSources,
+	]);
+	assert.deepEqual(all.problems, []);
+	assert.deepEqual(all.missingLicenses, [], "bridge licences stay mandatory");
+	// A package in both the bridge and a privacy lock is one component naming both locks.
+	const shared = all.components.get(`pkg:pypi/certifi@${encodeURIComponent(locked.find((pkg) => pkg.name === "certifi").version)}`);
+	assert.match(shared.properties[0].value, /requirements-runtime\.lock, packages\/privacy\/ner\//);
+	assert.ok(all.components.has("pkg:pypi/pypdf@6.19.0"));
+	const withPrivacy = () => {
+		const payload = fixture();
+		payload.components = payload.components.filter((component) => !component["bom-ref"].startsWith("pkg:pypi/"));
+		payload.components.push(...structuredClone([...all.components.values()]));
+		payload.dependencies[0].dependsOn = payload.components.map((entry) => entry["bom-ref"]);
+		payload.metadata.properties.push(...extraPythonSources.flatMap(pythonSourceProperties));
+		return payload;
+	};
+	const options = { ...inputs, extraPythonSources };
+	assert.doesNotThrow(() => assertCurrentPrebuiltSbom(withPrivacy(), options));
+	const tampered = withPrivacy();
+	tampered.components.find((component) => component.name === "pypdf").hashes.pop();
+	assert.throws(() => assertCurrentPrebuiltSbom(tampered, options), /integrity differs/);
+	const unbound = withPrivacy();
+	unbound.metadata.properties = unbound.metadata.properties.filter((entry) => !entry.name.endsWith("parsers/requirements.lock.txt"));
+	assert.throws(() => assertCurrentPrebuiltSbom(unbound, options), /missing, duplicated, or stale/);
+	const omitted = withPrivacy();
+	omitted.components = omitted.components.filter((component) => component.name !== "pypdf");
+	assert.throws(() => assertCurrentPrebuiltSbom(omitted, options), /missing/);
+	// Without the privacy sources the privacy-only components are unexpected.
+	assert.throws(() => assertCurrentPrebuiltSbom(withPrivacy(), inputs), /not in the Python runtime lock|differs|stale/);
+});
+
+test("generator and release reuse both bind the privacy worker locks", () => {
+	const generator = readFileSync(new URL("../generate-sbom.mjs", import.meta.url), "utf8");
+	assert.match(generator, /PRIVACY_PYTHON_SOURCES/);
+	assert.match(generator, /licenses: normalizeLicenses\("Proprietary"\)/);
+	const wrapper = readFileSync(new URL("../release-artifact-manifests.mjs", import.meta.url), "utf8");
+	assert.match(wrapper, /extraPythonSources: readPythonSources\(repoRoot, PRIVACY_PYTHON_SOURCES\)/);
+	const privacy = JSON.parse(readFileSync(new URL("../../packages/privacy/package.json", import.meta.url), "utf8"));
+	assert.equal(privacy.license, "Proprietary");
 });

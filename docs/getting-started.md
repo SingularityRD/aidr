@@ -113,3 +113,32 @@ Verify with the safe, non-executing deny canary in the host acceptance
 procedure in the [first-customer runbook](../deploy/FIRST_CUSTOMER.md). Do not
 run a live payload as an installation test. Record the host-side block and test
 the disabled, crashed, and timed-out hook cases too.
+
+## Uninstall
+
+How AIDR is removed depends on how it was installed:
+
+- **Endpoint / fleet install** (the endpoint installer or the Windows/Unix fleet
+  scripts): run `aidr uninstall` (add `--json` for a machine-readable report).
+  It removes only the AIDR-managed hook registrations from
+  `~/.claude/settings.json` and leaves your own hooks, configuration, connector
+  files and receipt in place. It **requires the installation receipt**
+  `~/.singularity-aidr/installation.json` written by that installer; if the
+  receipt is missing or does not verify, it refuses to change anything and
+  reports a reason code such as `receipt_missing`. Managed fleets should use the
+  fleet uninstall script (for Windows, `Uninstall-Aidr.ps1`; see
+  [deploy/fleet/windows/README.md](../deploy/fleet/windows/README.md)).
+- **Claude Code marketplace install** (`/plugin marketplace add` +
+  `/plugin install`): there is no receipt, so `aidr uninstall` refuses with
+  `receipt_missing`. Remove it from the Claude Code prompt instead:
+
+  ```
+  /plugin uninstall aidr@aidr
+  /plugin marketplace remove aidr
+  ```
+
+  then restart Claude Code. `~/.singularity-aidr/` (configuration, allowlists,
+  audit log) is kept; delete it yourself only if you no longer need it.
+- **Cursor / VS Code**: uninstall the extension from the Extensions panel.
+- **OpenClaw / OpenCode / Codex**: remove the package and its entry from the
+  host's plugin or hook configuration.

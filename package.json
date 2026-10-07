@@ -115,7 +115,7 @@
 		"verify:supabase-pilot-audit-live": "node scripts/pilot-application-atomic-audit-postgres.mjs && node --test scripts/pilot-decision-notes-postgres.test.mjs",
 		"verify:auth-delete-http:isolated": "node scripts/ga-trial-auth-delete-http.mjs",
 		"verify:device-membership-race:isolated": "node scripts/device-membership-token-concurrency-postgres.mjs",
-		"build:sea": "bash packages/claude-code/scripts/build-sea.sh",
+		"build:sea": "node packages/claude-code/scripts/build-sea.mjs",
 		"package:vsix:from-signed-dist": "pnpm -C packages/extension run package:vsix:from-signed-dist",
 		"clean": "pnpm -r run clean",
 		"changeset": "changeset",

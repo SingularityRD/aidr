@@ -47,3 +47,35 @@ updates:
     commit-message:
       prefix: "ci"
       include: "scope"
+
+  # Python: the AIG bridge and the privacy workers. Hash locks must be
+  # regenerated with the command in each lock header when a PR bumps a pin.
+  - package-ecosystem: "pip"
+    directories:
+      - "/services/aig-bridge"
+      - "/packages/privacy/ner"
+      - "/packages/privacy/vision"
+      - "/packages/privacy/parsers"
+      - "/.github/requirements"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "SingularityRD"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+
+  # Container base images.
+  - package-ecosystem: "docker"
+    directories:
+      - "/services/aig-bridge"
+      - "/deploy/dashboard"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "SingularityRD"
+    commit-message:
+      prefix: "deps"
+      include: "scope"

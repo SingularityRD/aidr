@@ -90,6 +90,28 @@ function afterIntegrity<TArgs extends unknown[], TResult>(
 	};
 }
 
+const INTEGRITY_BLOCK_REASON =
+	"Singularity AIDR could not verify its own installation integrity; tool calls are blocked until the plugin is reinstalled from a trusted release.";
+
+/**
+ * Gate the tool-call boundary on integrity. OpenClaw only enforces a block it
+ * receives as `{ block: true }`; a thrown error is reported as a hook failure,
+ * so an integrity failure is translated into an explicit block verdict.
+ */
+function blockUnlessIntegrity<TArgs extends unknown[], TResult>(
+	requireIntegrity: () => Promise<void>,
+	handler: (...args: TArgs) => TResult,
+) {
+	return async (...args: TArgs) => {
+		try {
+			await requireIntegrity();
+		} catch {
+			return { block: true as const, blockReason: INTEGRITY_BLOCK_REASON };
+		}
+		return await handler(...args);
+	};
+}
+
 function integrityGatedTool(
 	requireIntegrity: () => Promise<void>,
 	tool: Record<string, unknown>,
@@ -258,7 +280,11 @@ function registerGuarded(api: PluginApi): void {
 	});
 	// Every guarded surface awaits `integrityReady` and observes the rejection itself; this
 	// only stops Node from reporting it as unhandled before the first hook runs.
-	integrityReady.catch(() => undefined);
+	integrityReady.catch((error: unknown) => {
+		logger.error("Singularity AIDR integrity verification failed; guarded surfaces are blocked", {
+			error: error instanceof Error ? error.message : String(error),
+		});
+	});
 	const requireIntegrity = async () => {
 		// Do not convert a rejected commercial verification into a fulfilled
 		// readiness promise; every guarded surface must observe the failure.

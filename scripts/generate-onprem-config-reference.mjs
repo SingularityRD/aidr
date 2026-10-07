@@ -134,6 +134,7 @@ export const CATALOG = [
 	v(".env.functions", "AIDR_DEVICE_START_INGRESS_SECRET", "always", "generated-secret", "", "Shared with `.env.ingress`; authenticates the device-start signer."),
 	v(".env.functions", "AIDR_NOTIFICATION_ENCRYPTION_KEYS", "always", "generated-secret", "", "Alert channel keyring `<key id>:<base64 32-byte key>[,…]`; the first key encrypts channel destinations, every listed key decrypts."),
 	v(".env.functions", "AIDR_NOTIFICATION_DISPATCH_TOKEN", "always", "generated-secret", "", "Bearer token the notification dispatcher timer presents to `notification-dispatch` (at least 32 characters). Each run also enqueues agent-offline and governance alerts."),
+	v(".env.functions", "AIDR_RUNTIME_CAPABILITIES_BY_TENANT", "always", "operator", "{}", "Exact per-tenant runtime capability grants (`runtime_detectors`, `behavioral_learning_v1`) as a JSON map read from the preparing shell; `{}` grants none. `behavioral_learning_v1` requires `runtime_detectors`."),
 	v(".env.functions", "AIDR_MAIL_PROVIDER", "override", "operator", "", "Outbound mail for e-mail alert channels, invitations and the governance digest (`resend`); blank disables e-mail delivery (other channels still work)."),
 	v(".env.functions", "RESEND_API_KEY", "override", "operator", "", "Resend API key for `AIDR_MAIL_PROVIDER=resend` (secret)."),
 	v(".env.functions", "AIDR_MAIL_FROM", "override", "operator", "", "Sender address for AIDR e-mail (alerts, invitations, governance digest)."),

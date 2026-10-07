@@ -64,8 +64,8 @@ class WorkerTests(unittest.TestCase):
   from pypdf import PdfWriter
   w=PdfWriter();w.add_blank_page(width=100,height=100);w.add_attachment('secret.txt',b'secret');b=io.BytesIO();w.write(b);self.rejects(b.getvalue(),'pdf','ACTIVE')
  def test_28_pdf_real_text(self):
-  from reportlab.pdfgen.canvas import Canvas
-  b=io.BytesIO();c=Canvas(b);c.drawString(40,600,'Email: jane@example.com');c.save();p=m.Parser();p.parse(b.getvalue(),'pdf');self.assertIn('jane@example.com',''.join(p.segments))
+  from test_pdf_redaction import pdf # hand-written base-14 font PDF; no reportlab dependency
+  p=m.Parser();p.parse(pdf([['Email: jane@example.com']]),'pdf');self.assertIn('jane@example.com',''.join(p.segments));self.assertIn('meta.owner@example.com',''.join(p.segments))
  def test_29_office_mismatched_extension(self):self.rejects(office(),'xlsx','MISMATCH')
  def test_30_unsupported_old_office(self):self.rejects(b'\xd0\xcf\x11\xe0','doc','UNSUPPORTED')
  def test_31_limit_large_text(self):self.rejects(b'a'*(m.MAX_TEXT+1),'txt','TEXT_LIMIT')

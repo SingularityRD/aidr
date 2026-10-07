@@ -16,7 +16,7 @@ pnpm --filter @singularityrd/aidr-privacy test:parser
 pnpm --filter @singularityrd/aidr-privacy demo:platform
 ```
 
-Özgün tam kaynak ZIP'i geliştirme tarball'larını içeriyordu; bu çalışma alanı içe aktarımı onları ve derlenmiş çıktıları taşımaz. Derleme gerekli çıktıları üretir, ancak henüz bir müşteri npm paketi yayımlanmaz. Python/native ortam, Tesseract ve gerçek NER ağırlıkları ayrıca kurulmalıdır. `parsers/requirements.txt` testte kullanılan doğrudan sürümleri sabitler; tam transitive lock/CVE onayı değildir.
+Özgün tam kaynak ZIP'i geliştirme tarball'larını içeriyordu; bu çalışma alanı içe aktarımı onları ve derlenmiş çıktıları taşımaz. Derleme gerekli çıktıları üretir, ancak henüz bir müşteri npm paketi yayımlanmaz. Python/native ortam, Tesseract ve gerçek NER ağırlıkları ayrıca kurulmalıdır. `parsers/requirements.lock.txt` parser bağımlılıklarını (pypdf, defusedxml, pypdfium2, Pillow) PyPI wheel SHA-256 değerleriyle kilitler ve `--require-hashes` ile kurulur; CVE/lisans onayı değildir.
 
 ## 1. Kimlik ve cihazı güvenilir sunucu katmanında kurun
 
@@ -83,7 +83,7 @@ OIDC başlangıç kayıtları silinmiş kayıtlar dahil 1.000, portal oturum kay
 
 ## 6. Belge, keşif, DSPM ve model
 
-`DocumentCdr` varsayılan olarak yalnız yeni `aidr-sanitized.txt` üretir. DOCX/XLSX/PPTX için `protect(input, kind, {output:'office'})` açıkça istenirse biçim koruyan `aidr-redacted.<kind>` üretilir (bkz. PLATFORM_FEATURE_STATUS.md, "Biçim koruyan Office redaction"); worker değiştiği için `workerSha256` pinini güncelleyin. PDF/Office arkasındaki gizli/aktif container'ı taşımayın. Kaynak dosya, thumbnail, attachment veya orijinal filename'i temiz TXT yanında iletmeyin. Linux libseccomp sonradan filesystem open/network/exec çağrılarını engeller; yine de readonly/no-network container ve native güncelleme disiplini gerekir. Desteklenmeyen içerik bloktur.
+`DocumentCdr` varsayılan olarak yalnız yeni `aidr-sanitized.txt` üretir. DOCX/XLSX/PPTX için `protect(input, kind, {output:'office'})` açıkça istenirse biçim koruyan `aidr-redacted.<kind>` üretilir (bkz. PLATFORM_FEATURE_STATUS.md, "Biçim koruyan Office redaction"); PDF için `protect(input, 'pdf', {output:'pdf'})` metin katmanı ve metadata içermeyen, span'leri siyah kutuyla kapatılmış yalnız görüntü `aidr-redacted.pdf` üretir ("Biçim koruyan PDF redaction"); worker değiştiği için `workerSha256` pinini güncelleyin. PDF/Office arkasındaki gizli/aktif container'ı taşımayın. Kaynak dosya, thumbnail, attachment veya orijinal filename'i temiz TXT yanında iletmeyin. Linux libseccomp sonradan filesystem open/network/exec çağrılarını engeller; yine de readonly/no-network container ve native güncelleme disiplini gerekir. Desteklenmeyen içerik bloktur.
 
 `AuthorizedMcpCollector.watch(signal, intervalMs)` yalnız açıkça onaylı dosya yollarını izler ve metadata üretir; uygulama başlatmalıdır. Çıktı imzalı kurumsal collector ingest'e adapter ile bağlanır. Yeniden başlatma full snapshot üretir; sink `idempotencyKey` ile tekrarları ele almalıdır. Eksik/okunamayan kaynak “boş” kabul edilmez.
 

@@ -19,7 +19,7 @@
   ],
   "scripts": {
     "build": "node ../../scripts/rmrf.mjs dist tsconfig.tsbuildinfo && node scripts/compile-threat-cache.mjs && tsc && node scripts/embed-build-flavor.mjs development && node scripts/copy-generated.mjs && node ../../scripts/copy-package-license.mjs .",
-    "build:release": "node ../../scripts/rmrf.mjs dist tsconfig.tsbuildinfo tsconfig.release.tsbuildinfo && node scripts/compile-threat-cache.mjs && tsc -p tsconfig.release.json && node scripts/embed-build-flavor.mjs commercial && node scripts/copy-generated.mjs && node ../../scripts/copy-package-license.mjs . && node ../../scripts/generate-artifact-manifest.mjs --dir dist --artifact-id @singularityrd/aidr-core && node ../../scripts/check-no-sourcemaps.mjs .",
+    "build:release": "node ../../scripts/rmrf.mjs dist tsconfig.tsbuildinfo tsconfig.release.tsbuildinfo && node scripts/compile-threat-cache.mjs && tsc -p tsconfig.release.json && node scripts/embed-build-flavor.mjs commercial && node scripts/copy-generated.mjs && node ../../scripts/copy-package-license.mjs . && node ../../scripts/generate-artifact-manifest.mjs --dir dist --artifact-id core/dist && node ../../scripts/check-no-sourcemaps.mjs .",
     "clean": "node ../../scripts/rmrf.mjs dist tsconfig.tsbuildinfo tsconfig.release.tsbuildinfo",
     "prepack": "node ../../scripts/check-workspace-refs.mjs"
   },

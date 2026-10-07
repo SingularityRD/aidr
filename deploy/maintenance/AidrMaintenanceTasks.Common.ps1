@@ -8,19 +8,30 @@ $script:AidrMaintenanceTaskPath = '\AIDR\'
 $script:AidrMaintenanceDeclarationName = 'windows-maintenance-tasks.json'
 
 function Get-AidrMaintenanceTaskDefinitions {
-    # Each entry mirrors one <name>.timer / <name>.service pair.
+    # Each entry mirrors one <name>.timer / <name>.service pair. Optional tasks
+    # are registered only on request, like install-systemd.sh's opt-in flags.
     return @(
         [pscustomobject]@{
             Name = 'aidr-siem-delivery'
             Description = 'AIDR signing, durable queue and SIEM maintenance (mirrors aidr-siem-delivery.timer: 30s after boot, then every minute)'
             Worker = 'readiness-evidence-worker.mjs'
             TimeLimit = New-TimeSpan -Minutes 5
+            Optional = $false
         },
         [pscustomobject]@{
             Name = 'aidr-export-retention'
             Description = 'AIDR expired audit export cleanup (mirrors aidr-export-retention.timer: hourly with up to 5 minutes random delay)'
             Worker = 'deployment-maintenance.mjs'
             TimeLimit = New-TimeSpan -Minutes 15
+            Optional = $false
+        },
+        [pscustomobject]@{
+            # Opt-in: -WithNotifications, the mirror of install-systemd.sh --with-notifications.
+            Name = 'aidr-notification-dispatch'
+            Description = 'AIDR alert notification dispatcher (mirrors aidr-notification-dispatch.timer: 45s after boot, then every minute)'
+            Worker = 'notification-dispatch.mjs'
+            TimeLimit = New-TimeSpan -Minutes 2
+            Optional = $true
         }
     )
 }

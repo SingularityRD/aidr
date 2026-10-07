@@ -73,6 +73,50 @@ test("Windows maintenance scripts mirror the systemd schedules and commands", ()
 	assert.match(common, /TimeLimit = New-TimeSpan -Minutes 15/);
 });
 
+test("Windows notification dispatcher task is opt-in and mirrors its systemd units", () => {
+	const service = readFileSync(join(maintenance, "aidr-notification-dispatch.service"), "utf8");
+	const timer = readFileSync(join(maintenance, "aidr-notification-dispatch.timer"), "utf8");
+	const linuxInstaller = readFileSync(join(maintenance, "install-systemd.sh"), "utf8");
+	// Schedule: OnBootSec=45s, then every minute, never overlapping.
+	assert.match(timer, /^OnBootSec=45s$/m);
+	assert.match(timer, /^OnUnitActiveSec=1min$/m);
+	assert.match(installer, /'aidr-notification-dispatch' \{[\s\S]*?\$boot\.Delay = 'PT45S'[\s\S]*?-RepetitionInterval \(New-TimeSpan -Minutes 1\)/);
+	assert.match(installer, /-MultipleInstances IgnoreNew/);
+	// Command and working directory: ExecStart=node <dir>/maintenance/notification-dispatch.mjs <dir>, no EnvironmentFile.
+	assert.match(service, /^ExecStart=\/usr\/bin\/node \/srv\/aidr\/maintenance\/notification-dispatch\.mjs \/srv\/aidr$/m);
+	assert.match(service, /^WorkingDirectory=\/srv\/aidr$/m);
+	assert.doesNotMatch(service, /^EnvironmentFile=/m);
+	assert.match(installer, /\$notificationWorker = Join-Path \$deployment 'maintenance\\notification-dispatch\.mjs'/);
+	assert.match(installer, /-Argument "`"\$notificationWorker`" `"\$deployment`"" -WorkingDirectory \$deployment/);
+	// Time limit equals TimeoutStartSec=2min.
+	assert.match(service, /^TimeoutStartSec=2min$/m);
+	assert.match(common, /Name = 'aidr-notification-dispatch'[\s\S]*?TimeLimit = New-TimeSpan -Minutes 2\r?\n\s*Optional = \$true/);
+	assert.equal((common.match(/Optional = \$true/g) ?? []).length, 1, "only the notification dispatcher is opt-in");
+	// Opt-in like --with-notifications, with the same fail-closed prerequisites.
+	assert.match(linuxInstaller, /--with-notifications\) with_notifications=true/);
+	assert.match(installer, /\[switch\]\$WithNotifications/);
+	assert.match(installer, /Where-Object \{ -not \$_\.Optional \}/);
+	for (const marker of ["aidr-notification-dispatch.service", "aidr-notification-dispatch.timer", "AIDR_NOTIFICATION_DISPATCH_TOKEN (32+ characters) is missing from .env.functions", "-lt 32", "AIDR_NOTIFICATION_ENCRYPTION_KEYS is missing from .env.functions", "^[a-z0-9][a-z0-9_-]*:"]) {
+		assert.ok(installer.includes(marker), `installer must enforce ${marker}`);
+	}
+	assert.ok(linuxInstaller.includes("^AIDR_NOTIFICATION_ENCRYPTION_KEYS=[a-z0-9][a-z0-9_-]*:"));
+	// One supervised dispatch after the evidence worker; a failure disables the task and exits non-zero.
+	const siemRun = installer.indexOf("Wait-AidrInitialRun -TaskName 'aidr-siem-delivery'");
+	const dispatchRegistration = installer.indexOf("Register-AidrMaintenanceTask $notificationDefinition");
+	const dispatchRun = installer.indexOf("Wait-AidrInitialRun -TaskName 'aidr-notification-dispatch'");
+	assert.ok(siemRun > 0 && siemRun < dispatchRegistration && dispatchRegistration < dispatchRun);
+	assert.match(installer, /Disable-ScheduledTask -TaskPath \$script:AidrMaintenanceTaskPath -TaskName 'aidr-notification-dispatch'/);
+	// The declaration lists only installed tasks; the doctor checks the opt-in task only when declared or installed.
+	assert.match(installer, /tasks = \$declaredTasks/);
+	assert.match(doctorSource, /windowsSchedulerCheck\("aidr-notification-dispatch", "notification-dispatch\.mjs", .*\{ optional: true \}\)/);
+	assert.match(doctorSource, /optional && !state\.found && !windowsDeclaredTasks\.includes\(name\)/);
+	assert.match(doctorSource, /name === "aidr-notification-dispatch" \? `"\$\{dir\}\\\\maintenance\\\\\$\{worker\}" "\$\{dir\}"`/);
+	// No extra grant: the dispatcher only reads deployment.json and .env.functions, which are already granted read-only.
+	assert.match(installer, /\$secretFiles = @\('deployment\.json', '\.env', '\.env\.functions'/);
+	// The uninstaller iterates every definition, so the opt-in task is removed too.
+	assert.match(uninstaller, /foreach \(\$definition in Get-AidrMaintenanceTaskDefinitions\)/);
+});
+
 test("Windows maintenance scripts parse without PowerShell syntax errors", { skip: !powershellAvailable && "PowerShell is not available" }, (t) => {
 	const body = `param([string]$Directory)
 $failed = $false
@@ -99,4 +143,17 @@ test("Windows maintenance installer fails closed before registering anything for
 	const output = `${run.stdout}${run.stderr}`.replace(/\r?\n/g, "");
 	assert.match(output, /failed closed/);
 	assert.match(output, /must run on Windows|elevated administrator|Cannot find path|does not exist/);
+});
+
+test("Windows maintenance installer accepts -WithNotifications and still fails closed for a missing deployment", { skip: !powershellAvailable && "PowerShell is not available" }, (t) => {
+	const missing = join(tmpdir(), `aidr-missing-deployment-${process.pid}-notifications`);
+	const run = spawnSync(powershell, [
+		"-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+		"-File", join(maintenance, "Install-AidrMaintenanceTasks.ps1"),
+		"-DeploymentDirectory", missing, "-KitDirectory", missing, "-RunAsSystem", "-WithNotifications",
+	], { encoding: "utf8", timeout: 120_000 });
+	assert.equal(run.status, 1);
+	const output = `${run.stdout}${run.stderr}`.replace(/\r?\n/g, "");
+	assert.doesNotMatch(output, /parameter cannot be found|A parameter cannot be found/i);
+	assert.match(output, /failed closed/);
 });

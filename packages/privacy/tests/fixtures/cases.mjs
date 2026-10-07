@@ -73,7 +73,7 @@ export const positives = [
  ['API key field','api_key=demonstration_key_123','SECRET','demonstration_key_123'],
  ['Bearer field','Authorization: Bearer abcdefgh1234567890','SECRET','abcdefgh1234567890'],
  ['Basic field','Authorization: Basic dXNlcjpwYXNzd29yZA==','SECRET','dXNlcjpwYXNzd29yZA=='],
- ['GitHub shaped key','ghp_abcdefghijklmnopqrstuvwxyz1234567890','SECRET','ghp_abcdefghijklmnopqrstuvwxyz1234567890'],
+ ['GitHub shaped key','ghp'+'_abcdefghijklmnopqrstuvwxyz1234567890','SECRET','ghp'+'_abcdefghijklmnopqrstuvwxyz1234567890'],
  ['AWS shaped key','AKIAIOSFODNN7EXAMPLE','SECRET','AKIAIOSFODNN7EXAMPLE'],
  ['URL credentials','postgres://alice:password123@db.local/data','SECRET','alice:password123@'],
  ['private key','-----BEGIN PRIVATE KEY-----\nYWJjZGVm\n-----END PRIVATE KEY-----','PRIVATE_KEY','-----BEGIN PRIVATE KEY-----\nYWJjZGVm\n-----END PRIVATE KEY-----'],

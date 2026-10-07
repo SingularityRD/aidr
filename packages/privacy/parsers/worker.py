@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """One-shot, bounded CDR. By default it is text-only and never returns the original
 document container. The opt-in OOXML modes (units/apply/verify) re-serialize a DOCX/XLSX/PPTX
-package with detected spans redacted in place; see OfficeDoc below for the exact contract.
+package with detected spans redacted in place; see OfficeDoc below for the exact contract. The same
+modes with kind 'pdf' produce an image-only PDF with the spans painted over; see PdfDoc.
 Linux seccomp denies network/process creation after importing parsers. This is not
 filesystem virtualization: run inside the supplied read-only/no-network container.
 """
-import base64, binascii, ctypes, ctypes.util, encodings.cp437, encodings.utf_8_sig, errno, hashlib, io, json, os, posixpath, re, socket, stat, struct, sys, zipfile
+import base64, binascii, ctypes, ctypes.util, encodings.cp437, encodings.utf_8_sig, encodings.utf_16_le, errno, hashlib, io, json, os, posixpath, re, socket, stat, struct, sys, zipfile
 try:import resource
 except ImportError:resource=None # non-Linux: sandbox() refuses to run, unit tests still import the parser
 from email import policy
@@ -14,7 +15,14 @@ from html.parser import HTMLParser
 from pathlib import PurePosixPath
 import defusedxml.ElementTree as ET
 import xml.etree.ElementTree as WriteET # element construction/serialization only; all parsing goes through defusedxml
+import zlib
 from pypdf import PdfReader
+# Imported eagerly: after sandbox() no module (or plugin) file can be opened. Only Image.frombuffer/
+# tobytes and ImageDraw are used, which need no Pillow format plugin; ImageFile is otherwise imported
+# lazily by Image.frombuffer/tobytes.
+import pypdfium2 as pdfium
+import pypdfium2.raw as pdfium_c
+from PIL import Image, ImageDraw, ImageFile
 MAX_INPUT=8*1024*1024; MAX_TEXT=512*1024; MAX_FILES=100; MAX_EXPANDED=16*1024*1024
 class Rejected(Exception): pass
 
@@ -107,6 +115,7 @@ class Parser:
         if expected not in entries:raise Rejected('OFFICE_FORMAT_MISMATCH')
         return entries
     def pdf(self,b):
+        """Safety checks + per-page text. Returns the page texts (metadata is appended to segments only)."""
         r=PdfReader(io.BytesIO(b),strict=True)
         if r.is_encrypted:raise Rejected('PDF_ENCRYPTED')
         if len(r.pages)>50:raise Rejected('PDF_PAGE_LIMIT')
@@ -127,12 +136,13 @@ class Parser:
                     walk(v,depth+1)
             elif isinstance(obj,(list,tuple)):
                 for v in obj:walk(v,depth+1)
-        walk(r.trailer)
+        walk(r.trailer);pages=[]
         for page in r.pages:
             text=page.extract_text()
             if not text or not text.strip():raise Rejected('PDF_OCR_REQUIRED')
-            self.add(text)
+            self.add(text);pages.append(text)
         if r.metadata:self.add('\n'.join(str(v) for v in r.metadata.values()))
+        return pages
     def parse(self,b,kind,depth=0):
         if depth>2:raise Rejected('ARCHIVE_DEPTH')
         if len(b)>MAX_INPUT:raise Rejected('INPUT_LIMIT')
@@ -167,7 +177,7 @@ class Parser:
         else:raise Rejected('UNSUPPORTED_DOCUMENT')
 
 # ---------------------------------------------------------------------------------------------
-# Format-preserving OOXML redaction (DOCX/XLSX/PPTX). PDF is deliberately NOT supported here.
+# Format-preserving OOXML redaction (DOCX/XLSX/PPTX). PDF has its own raster path (PdfDoc below).
 #
 # Protocol (three separate one-shot invocations, each sandboxed exactly like the text path):
 #   units  -> every text-bearing node of the package grouped into "units" (a paragraph, a shared
@@ -437,7 +447,7 @@ class OfficeDoc:
         if not isinstance(edits,list) or len(edits)>MAX_EDITS:raise Rejected('REDACT_EDITS')
         grouped={}
         for x in edits:
-            if not isinstance(x,list) or len(x)!=4 or any(type(v) is not int for v in x[:3]) or not isinstance(x[3],str) or not REPLACEMENT.match(x[3]):raise Rejected('REDACT_EDITS')
+            if not isinstance(x,list) or len(x)!=4 or any(type(v) is not int for v in x[:3]) or not isinstance(x[3],str) or not REPLACEMENT.fullmatch(x[3]):raise Rejected('REDACT_EDITS')
             if not 0<=x[0]<len(self.units):raise Rejected('REDACT_EDITS')
             if not self.units[x[0]].editable:raise Rejected('REDACT_PROTECTED_TEXT')
             grouped.setdefault(x[0],[]).append((x[1],x[2],x[3]))
@@ -461,22 +471,207 @@ class OfficeDoc:
         OfficeDoc(Parser(),out,self.kind).check_package() # re-parse with the unchanged safety checks before release
         return out
 
+# ---------------------------------------------------------------------------------------------
+# Format-preserving PDF redaction (kind 'pdf', same units/apply/verify protocol as OOXML).
+#
+# The output is an IMAGE-ONLY PDF: each page is rasterized by PDFium at PDF_DPI, opaque black boxes
+# are painted over the characters of every redaction span, and the pages are re-assembled into a new
+# minimal PDF written here (one Flate RGB image per page, original page size, no text layer, no
+# /Info, no XMP, no /ID, no annotations, forms, outlines or any other original object).
+#
+# Mapping strategy: the spans must address exactly the characters whose boxes are painted, so the
+# units ARE PDFium's own per-page text (one unit per page, one code point per PDFium character index,
+# a UTF-16 surrogate pair counted as one code point). The independent pypdf extraction that the TXT
+# path uses must contain the same whitespace-separated tokens as PDFium's text (reading order may
+# differ, e.g. on rotated pages), otherwise the document is rejected (PDF_TEXT_MISMATCH): a
+# disagreement means the two views could detect different PII.
+#
+# Fail-closed decisions:
+#   * the unchanged Parser.pdf safety checks (encryption, JavaScript/actions/embedded files/forms,
+#     image XObjects, object/page limits, OCR-required blank pages) run first;
+#   * inline images and any other PDFium image object reject the file (they would be reproduced
+#     unscanned in the raster), annotations are never rendered;
+#   * a character PDFium cannot map to Unicode, a lone surrogate, a page larger than PDF_MAX_PIXELS,
+#     a span whose visible characters have no box, or a units digest change rejects the file;
+#   * the output is re-opened with pypdf AND PDFium and must have the same page count, no extractable
+#     text, no metadata and only the objects this writer creates, or no output is produced.
+# ---------------------------------------------------------------------------------------------
+PDF_DPI=150; PDF_SCALE=PDF_DPI/72; PDF_PAD=2; PDF_MAX_PIXELS=4096*4096
+PDF_CONTENT=re.compile(rb'q [0-9.]+ 0 0 [0-9.]+ 0 0 cm /Im0 Do Q')
+
+def pdf_number(v):
+    s=('%.4f'%v).rstrip('0').rstrip('.');return (s if s not in ('','-0') else '0').encode('ascii')
+
+def pdf_tokens(t):
+    """Order-insensitive token multiset: pypdf and PDFium may order lines differently (e.g. rotated
+    pages), but every token one extractor sees must be seen by the other."""
+    return sorted(t.split())
+
+class PdfDoc:
+    def __init__(self,parser,b):
+        if not b.startswith(b'%PDF-'):raise Rejected('FORMAT_MISMATCH')
+        reference=parser.pdf(b) # unchanged TXT-path safety checks and pypdf page text
+        self.doc=pdfium.PdfDocument(b)
+        if len(self.doc)!=len(reference):raise Rejected('PDF_PAGE_MISMATCH')
+        self.pages=[];self.index=[];texts=[]
+        for n in range(len(self.doc)):
+            page=self.doc[n];tp=page.get_textpage()
+            for obj in page.get_objects(max_depth=15):
+                if obj.type==pdfium_c.FPDF_PAGEOBJ_IMAGE:raise Rejected('PDF_ACTIVE_OR_IMAGE')
+            text,index=self.page_text(tp)
+            if pdf_tokens(text)!=pdf_tokens(reference[n]):raise Rejected('PDF_TEXT_MISMATCH')
+            self.pages.append((page,tp));self.index.append(index);texts.append(text)
+        self.units=texts
+        if sum(len(t.encode('utf8')) for t in texts)>MAX_TEXT:raise Rejected('TEXT_LIMIT')
+    @staticmethod
+    def page_text(tp):
+        """PDFium text with a code point -> character index map (surrogate pairs collapse to one code point)."""
+        n=tp.count_chars();chars=[];index=[];i=0
+        if n<0:raise Rejected('PDF_TEXT_UNMAPPABLE')
+        get=lambda k:pdfium_c.FPDFText_GetUnicode(tp,k)
+        while i<n:
+            if pdfium_c.FPDFText_HasUnicodeMapError(tp,i)!=0:raise Rejected('PDF_TEXT_UNMAPPABLE')
+            u=get(i)
+            if 0xD800<=u<=0xDBFF and i+1<n and 0xDC00<=get(i+1)<=0xDFFF and pdfium_c.FPDFText_HasUnicodeMapError(tp,i+1)==0:
+                chars.append(chr(0x10000+((u-0xD800)<<10)+(get(i+1)-0xDC00)));index.append((i,i+1));i+=2;continue
+            if u==0 or 0xD800<=u<=0xDFFF or u in (0xFFFE,0xFFFF) or u>0x10FFFF:raise Rejected('PDF_TEXT_UNMAPPABLE')
+            chars.append(chr(u));index.append((i,));i+=1
+        return ''.join(chars),index
+    def texts(self):return list(self.units)
+    def digest(self):return hashlib.sha256(json.dumps(self.units,ensure_ascii=False).encode('utf8')).hexdigest()
+    def close(self):
+        for page,tp in self.pages:tp.close();page.close()
+        self.doc.close()
+    def boxes(self,edits):
+        """[page, start, end, replacement] code point edits -> per-page lists of PDF-space char boxes."""
+        if not isinstance(edits,list) or len(edits)>MAX_EDITS:raise Rejected('REDACT_EDITS')
+        grouped={}
+        for x in edits:
+            if not isinstance(x,list) or len(x)!=4 or any(type(v) is not int for v in x[:3]) or not isinstance(x[3],str) or not REPLACEMENT.fullmatch(x[3]):raise Rejected('REDACT_EDITS')
+            if not 0<=x[0]<len(self.units) or not 0<=x[1]<x[2]<=len(self.units[x[0]]):raise Rejected('REDACT_EDITS')
+            grouped.setdefault(x[0],[]).append((x[1],x[2]))
+        out={}
+        for p,spans in grouped.items():
+            spans.sort();pos=0;tp=self.pages[p][1];text=self.units[p]
+            for s,e in spans:
+                if s<pos:raise Rejected('REDACT_EDITS')
+                pos=e;painted=0
+                for k in range(s,e):
+                    for ci in self.index[p][k]:
+                        if pdfium_c.FPDFText_IsGenerated(tp,ci)==1:continue # synthesized space/line break: no glyph
+                        l,bottom,r,top=tp.get_charbox(ci,loose=True)
+                        if not (r>l and top>bottom):
+                            if text[k].isspace():continue
+                            raise Rejected('PDF_REDACT_UNMAPPED')
+                        out.setdefault(p,[]).append((l,bottom,r,top));painted+=1
+                if not painted:raise Rejected('PDF_REDACT_UNMAPPED')
+        return out
+    def raster(self,p,boxes):
+        page=self.pages[p][0];w,h=page.get_size()
+        if not (w>0 and h>0) or (w*PDF_SCALE+1)*(h*PDF_SCALE+1)>PDF_MAX_PIXELS:raise Rejected('PDF_PAGE_TOO_LARGE')
+        bitmap=page.render(scale=PDF_SCALE,rotation=0,may_draw_forms=False,draw_annots=False,fill_color=(255,255,255,255),rev_byteorder=True)
+        try:
+            img=bitmap.to_pil()
+            img=img if img.mode=='RGB' else img.convert('RGB')
+            img.load()
+        finally:bitmap.close()
+        bw,bh=img.size;draw=ImageDraw.Draw(img);dx=ctypes.c_int();dy=ctypes.c_int()
+        for l,bottom,r,top in boxes:
+            xs=[];ys=[]
+            for x,y in ((l,bottom),(l,top),(r,bottom),(r,top)):
+                # Same device mapping PDFium's renderer uses (honours /Rotate and the crop box).
+                if not pdfium_c.FPDF_PageToDevice(page,0,0,bw,bh,0,ctypes.c_double(x),ctypes.c_double(y),ctypes.byref(dx),ctypes.byref(dy)):raise Rejected('PDF_REDACT_UNMAPPED')
+                xs.append(dx.value);ys.append(dy.value)
+            draw.rectangle((min(xs)-PDF_PAD,min(ys)-PDF_PAD,max(xs)+PDF_PAD,max(ys)+PDF_PAD),fill=(0,0,0))
+        return img,w,h
+    def redact(self,edits):
+        boxes=self.boxes(edits);objects=[];kids=[]
+        n=len(self.pages);first=3 # 1 catalog, 2 page tree, then 3 objects per page
+        for p in range(n):
+            img,w,h=self.raster(p,boxes.get(p,[]));raw=zlib.compress(img.tobytes(),6);img.close()
+            if len(raw)>MAX_INPUT:raise Rejected('REDACT_OUTPUT_LIMIT')
+            pid,cid,iid=first+3*p,first+3*p+1,first+3*p+2;kids.append(pid)
+            content=b'q '+pdf_number(w)+b' 0 0 '+pdf_number(h)+b' 0 0 cm /Im0 Do Q'
+            objects.append((pid,b'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 '+pdf_number(w)+b' '+pdf_number(h)+b'] /Resources << /XObject << /Im0 %d 0 R >> >> /Contents %d 0 R >>'%(iid,cid)))
+            objects.append((cid,b'<< /Length %d >>\nstream\n'%len(content)+content+b'\nendstream'))
+            objects.append((iid,b'<< /Type /XObject /Subtype /Image /Width %d /Height %d /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /Length %d >>\nstream\n'%(img.size[0],img.size[1],len(raw))+raw+b'\nendstream'))
+        objects[:0]=[(1,b'<< /Type /Catalog /Pages 2 0 R >>'),(2,b'<< /Type /Pages /Kids ['+b' '.join(b'%d 0 R'%k for k in kids)+b'] /Count %d >>'%n)]
+        out=io.BytesIO();out.write(b'%PDF-1.4\n%\xe2\xe3\xcf\xd3\n');offsets={}
+        for oid,body in objects:
+            offsets[oid]=out.tell();out.write(b'%d 0 obj\n'%oid+body+b'\nendobj\n')
+            if out.tell()>MAX_INPUT:raise Rejected('REDACT_OUTPUT_LIMIT')
+        xref=out.tell();out.write(b'xref\n0 %d\n0000000000 65535 f \n'%(len(objects)+1))
+        for oid in range(1,len(objects)+1):out.write(b'%010d 00000 n \n'%offsets[oid])
+        out.write(b'trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n'%(len(objects)+1,xref))
+        b=out.getvalue()
+        if len(b)>MAX_INPUT:raise Rejected('REDACT_OUTPUT_LIMIT')
+        segments,units=verify_pdf_output(b) # independent re-parse before release
+        if len(units)!=n or any(t.strip() for t in segments+units):raise Rejected('REDACTION_RESIDUAL')
+        return b
+
+def verify_pdf_output(b):
+    """Re-opens a redacted PDF with pypdf and PDFium. Its structure must be exactly what PdfDoc.redact
+    writes (image-only pages, no metadata). Returns both extractors' page texts for the caller to check."""
+    if len(b)>MAX_INPUT or not b.startswith(b'%PDF-1.4\n'):raise Rejected('REDACT_VALIDATION')
+    r=PdfReader(io.BytesIO(b),strict=True)
+    if r.is_encrypted or set(r.trailer.keys())!={'/Size','/Root'} or r.metadata is not None or r.xmp_metadata is not None:raise Rejected('REDACT_VALIDATION')
+    root=r.trailer['/Root'].get_object()
+    if set(root.keys())!={'/Type','/Pages'} or set(root['/Pages'].get_object().keys())!={'/Type','/Kids','/Count'}:raise Rejected('REDACT_VALIDATION')
+    n=len(r.pages);segments=[];units=[]
+    if not 0<n<=50:raise Rejected('REDACT_VALIDATION')
+    for page in r.pages:
+        if set(page.keys())!={'/Type','/Parent','/MediaBox','/Resources','/Contents'}:raise Rejected('REDACT_VALIDATION')
+        res=page['/Resources'].get_object()
+        if set(res.keys())!={'/XObject'} or set(res['/XObject'].get_object().keys())!={'/Im0'}:raise Rejected('REDACT_VALIDATION')
+        im=res['/XObject']['/Im0'].get_object()
+        # pypdf drops /Length from parsed stream dictionaries.
+        if im.get('/Subtype')!='/Image' or set(im.keys())!={'/Type','/Subtype','/Width','/Height','/ColorSpace','/BitsPerComponent','/Filter'}:raise Rejected('REDACT_VALIDATION')
+        if not PDF_CONTENT.fullmatch(page.get_contents().get_data()):raise Rejected('REDACT_VALIDATION')
+        segments.append(page.extract_text())
+    doc=pdfium.PdfDocument(b)
+    try:
+        if len(doc)!=n or any(v for v in doc.get_metadata_dict().values()):raise Rejected('REDACT_VALIDATION')
+        for i in range(n):
+            page=doc[i];tp=page.get_textpage()
+            try:
+                count=tp.count_chars()
+                if count<0:raise Rejected('REDACT_VALIDATION')
+                units.append(tp.get_text_range(0,count) if count else '')
+            finally:tp.close();page.close()
+    finally:doc.close()
+    return segments,units
+
 def handle(req,data):
     """Dispatch one request after the sandbox is in place."""
     mode=req.get('mode','text');sandbox_id='linux-seccomp-no-network-filesystem-open-exec'
     if mode=='text':
         if set(req)-{'kind','data','sandboxProbe','mode'}:raise Rejected('REQUEST_SCHEMA')
         p=Parser();p.parse(data,req['kind']);return {'ok':True,'format':'aidr-text-cdr-v1','segments':p.segments,'sandbox':sandbox_id,'inputBytes':len(data)}
+    pdf=req.get('kind')=='pdf'
     if mode=='units':
         if set(req)-{'kind','data','mode'}:raise Rejected('REQUEST_SCHEMA')
+        if pdf:
+            d=PdfDoc(Parser(),data)
+            try:return {'ok':True,'format':'aidr-pdf-units-v1','units':d.texts(),'unitsDigest':d.digest(),'pages':len(d.units),'sandbox':sandbox_id,'inputBytes':len(data)}
+            finally:d.close()
         d=OfficeDoc(Parser(),data,req['kind']);return {'ok':True,'format':'aidr-office-units-v1','units':d.texts(),'unitsDigest':d.digest(),'sandbox':sandbox_id,'inputBytes':len(data)}
     if mode=='apply':
         if set(req)-{'kind','data','mode','edits','unitsDigest'}:raise Rejected('REQUEST_SCHEMA')
+        if pdf:
+            d=PdfDoc(Parser(),data)
+            try:
+                if req.get('unitsDigest')!=d.digest():raise Rejected('REDACT_UNITS_CHANGED')
+                out=d.redact(req.get('edits'))
+            finally:d.close()
+            return {'ok':True,'format':'aidr-pdf-redacted-v1','data':base64.b64encode(out).decode('ascii'),'sandbox':sandbox_id,'inputBytes':len(data)}
         d=OfficeDoc(Parser(),data,req['kind'])
         if req.get('unitsDigest')!=d.digest():raise Rejected('REDACT_UNITS_CHANGED')
         out=d.redact(req.get('edits'));return {'ok':True,'format':'aidr-office-redacted-v1','data':base64.b64encode(out).decode('ascii'),'sandbox':sandbox_id,'inputBytes':len(data)}
     if mode=='verify':
         if set(req)-{'kind','data','mode'}:raise Rejected('REQUEST_SCHEMA')
+        if pdf:
+            # Only the image-only shape PdfDoc.redact writes is accepted; the caller requires both views empty.
+            segments,units=verify_pdf_output(data);return {'ok':True,'format':'aidr-pdf-verify-v1','pages':len(units),'segments':segments,'units':units,'sandbox':sandbox_id,'inputBytes':len(data)}
         p=Parser();d=OfficeDoc(p,data,req['kind']);d.check_package()
         return {'ok':True,'format':'aidr-office-verify-v1','segments':p.segments,'units':d.texts(),'sandbox':sandbox_id,'inputBytes':len(data)}
     raise Rejected('REQUEST_SCHEMA')

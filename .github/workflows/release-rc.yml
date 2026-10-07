@@ -299,7 +299,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends openssl libseccomp2
           python -m venv --copies "${RUNNER_TEMP}/privacy-python"
-          "${RUNNER_TEMP}/privacy-python/bin/python" -m pip install --disable-pip-version-check --only-binary=:all: -r packages/privacy/parsers/requirements.txt
+          "${RUNNER_TEMP}/privacy-python/bin/python" -m pip install --disable-pip-version-check --require-hashes --only-binary=:all: --no-deps -r packages/privacy/parsers/requirements.lock.txt
           "${RUNNER_TEMP}/privacy-python/bin/python" -m pip check
           AIDR_PYTHON="${RUNNER_TEMP}/privacy-python/bin/python" AIDR_TEST_PYTHON="${RUNNER_TEMP}/privacy-python/bin/python" pnpm --filter @singularityrd/aidr-privacy test:ci:platform
 

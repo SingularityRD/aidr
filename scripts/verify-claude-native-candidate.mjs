@@ -12,6 +12,7 @@ import { parseArgs } from "node:util";
 
 import { claudePluginRequiredFiles } from "./lib/claude-plugin-package.mjs";
 import { inspectReleaseArchive } from "./lib/release-archive-inspection.mjs";
+import { systemTar } from "./lib/tar-path.mjs";
 
 function fail(message) { throw new Error(message); }
 function run(command, args, options = {}) {
@@ -57,8 +58,8 @@ function candidateArchive(candidate, expectedDigest) {
 
 function inspectSafeArchive(file) {
 	inspectReleaseArchive(file, { requiredEntries: claudePluginRequiredFiles() });
-	const names = run("tar", ["-tf", basename(file)], { cwd: dirname(file) }).trimEnd().split(/\r?\n/u);
-	const details = run("tar", ["-tvf", basename(file)], { cwd: dirname(file) }).trimEnd().split(/\r?\n/u);
+	const names = run(systemTar(), ["-tf", basename(file)], { cwd: dirname(file) }).trimEnd().split(/\r?\n/u);
+	const details = run(systemTar(), ["-tvf", basename(file)], { cwd: dirname(file) }).trimEnd().split(/\r?\n/u);
 	if (names.length !== details.length || names.length === 0) fail("Claude plugin archive has an ambiguous entry listing");
 	for (let index = 0; index < names.length; index++) {
 		const name = names[index].replace(/\/$/u, "");
@@ -139,7 +140,7 @@ async function main() {
 		inspectSafeArchive(archiveFile);
 		const extracted = join(stage, "extracted");
 		mkdirSync(extracted);
-		run("tar", ["-xzf", archiveFile, "-C", extracted]);
+		run(systemTar(), ["-xzf", archiveFile, "-C", extracted]);
 		const root = join(extracted, "packages", "claude-code");
 		const native = join(root, "dist", "vendor", "koffi", "index.js");
 		const hook = join(root, "dist", "pre-tool-use.cjs");
