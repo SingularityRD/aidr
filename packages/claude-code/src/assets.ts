@@ -9,7 +9,7 @@
  * deployments and customer-specific rule stores.
  */
 
-import { existsSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
@@ -62,6 +62,44 @@ export function resolvePluginRoot(): string {
 	}
 
 	return packageRoot;
+}
+
+const CONNECTOR_PACKAGE_NAME = "@singularityrd/aidr-claude-code";
+
+function readJsonObject(file: string): Record<string, unknown> | null {
+	try {
+		const parsed = JSON.parse(readFileSync(file, "utf-8")) as unknown;
+		return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null;
+	} catch {
+		return null;
+	}
+}
+
+function nonEmptyString(value: unknown): string | null {
+	return typeof value === "string" && value.trim() ? value : null;
+}
+
+/**
+ * Plugin identity for startup status. The marketplace checkout carries
+ * `.claude-plugin/plugin.json`; an endpoint install only ships the connector
+ * package, so the version falls back to that package's own package.json
+ * (matched by name, so an unrelated package.json is never reported).
+ */
+export function resolvePluginManifest(
+	pluginRoot: string,
+	connectorRoot: string = packageRoot,
+): { name: string | null; version: string } {
+	const plugin = readJsonObject(join(pluginRoot, ".claude-plugin", "plugin.json"));
+	const name = nonEmptyString(plugin?.name);
+	const pluginVersion = nonEmptyString(plugin?.version);
+	if (pluginVersion) return { name, version: pluginVersion };
+
+	for (const root of new Set([connectorRoot, pluginRoot])) {
+		const pkg = readJsonObject(join(root, "package.json"));
+		const version = nonEmptyString(pkg?.version);
+		if (pkg?.name === CONNECTOR_PACKAGE_NAME && version) return { name, version };
+	}
+	return { name, version: "0.0.0" };
 }
 
 function isDirectory(candidate: string): boolean {
