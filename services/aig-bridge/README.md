@@ -34,9 +34,9 @@ are safe; any dependency change must rerun the bridge and MCP contract tests.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/api/v1/health` | Health check + AIG connectivity status |
-| `GET` | `/api/v1/livez` | Process liveness (does not require AIG) |
-| `GET` | `/api/v1/readyz` | Readiness (AIG, auth, worker and dataset evidence required) |
+| `GET` | `/api/v1/health` | **Authenticated** detailed readiness report (gate reasons, dataset provenance, `scan_ready`) |
+| `GET` | `/api/v1/livez` | Process liveness (public; does not contact AIG or any store) |
+| `GET` | `/api/v1/readyz` | Public readiness probe: `{"status":"ready"}` (200) or `{"status":"not_ready"}` (503) only |
 | `POST` | `/api/v1/uploads` | Store a validated tenant-scoped ZIP or tar.gz archive; return an opaque upload ID |
 | `POST` | `/api/v1/scan/infra` | Submit AI infrastructure CVE scan |
 | `GET` | `/api/v1/scan/infra/{task_id}` | Poll infra scan results |
@@ -50,6 +50,17 @@ are safe; any dependency change must rerun the bridge and MCP contract tests.
 
 Docker and traffic admission use `/readyz`; `/livez` is process-only and must
 not be used to route scan traffic.
+
+Kubelet and Docker probes cannot send credentials, so `/readyz` stays
+unauthenticated but reveals nothing beyond ready/not-ready: no versions,
+dataset identifiers, gate reasons or internal errors. The detailed report that
+names the failing gate is `/api/v1/health`, which uses the same authentication
+as the scan routes (API key in `api_key` mode; a broker token with the
+`aig:read` scope in `broker` mode; `503` when auth is required but not
+configured). Both endpoints share a probe cache of `BRIDGE_HEALTH_CACHE_SECONDS`
+(default `5`, clamped to `0`-`30`) and coalesce concurrent probes, so repeated
+or concurrent calls do not re-run the AIG, registry, replay-store and dataset
+checks. `?capability=` accepts only `infra`, `mcp`, `agent` or `jailbreak`.
 
 ## Local Development
 
@@ -242,6 +253,34 @@ its loopback port. Workers refuse to register until they can reach the
 configured proxy, so readiness cannot pass on a syntax-only proxy value. Set
 `BRIDGE_VALIDATE_DNS=false` only for a controlled offline test environment,
 never for a customer deployment.
+
+IP literals are normalised the way the C resolver reads them before the
+address policy is applied, so decimal (`2852039166`), hex (`0xa9fea9fe`),
+octal (`0251.0376.0251.0376`), short (`169.254.43518`, `127.1`) and
+IPv4-mapped IPv6 forms of a blocked address are rejected even with DNS
+validation disabled.
+
+Inline `agent_config` objects are walked in full (mapping keys and values,
+lists, lists of mappings) with a depth limit of 32 and a 20,000-element limit;
+exceeding either, or a non-JSON value type, is a `422`. URL keys (`url`,
+`base_url`, `api_base_url`, ...) must hold a validated http(s) URL and URLs in
+any other field are refused. Host-style keys (`host`, `hostname`, `ip`,
+`address`, `proxy`, ...) are validated as `host[:port]` in full. Every other
+string is scanned for host literals (`host:port`, `[v6]:port`, bare IPv6,
+`user@host`, `host/path` and the IPv4 notations above) and blocked
+destinations are refused. To avoid rejecting ordinary data, bare small
+numbers (`"1"`, `"10:30"`) and dotted numbers such as `"0.5"` or `"10.2.3"` are
+treated as addresses only when they are hex/octal, carry a port, exceed the
+range of a version component, or reach loopback/link-local.
+
+MCP URL targets: the pinned AIG worker clones a repository instead of
+connecting to a live MCP server whenever the target text contains the
+substring `github.com`. The bridge therefore decides that mode from the parsed
+URL: only `https://github.com/<owner>/<repo>[.git][/]` (exact lowercase host,
+no port, userinfo, query or extra path) is accepted as a repository target.
+Any other target that mentions `github.com` anywhere, including
+`www.github.com`, `github.com.<other>`, `<other>/github.com/...` and query
+strings, is rejected with `422`, as is any target containing whitespace.
 
 MCP source scans accept only the SHA-256 `upload_id` returned by `POST
 /api/v1/uploads`. The bridge resolves that opaque ID beneath

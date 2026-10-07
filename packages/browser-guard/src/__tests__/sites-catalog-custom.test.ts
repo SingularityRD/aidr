@@ -163,6 +163,7 @@ describe("content boot on a custom site", () => {
 			adapterForUrl,
 			createDetectionEngine: () => fakeEngine(),
 			createVault,
+			vaultTag: "t3st",
 			findEditor: (adapter, root) => {
 				const el = root.querySelector<HTMLElement>(adapter.editorSelectors[0] ?? "textarea");
 				return el ? editorAccess(el) : null;
@@ -179,7 +180,7 @@ describe("content boot on a custom site", () => {
 
 		composer.value = `please mail ${EMAIL}`;
 		sendButton.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
-		await expect.poll(() => delivered).toEqual(["please mail [EMAIL_1]"]);
+		await expect.poll(() => delivered).toEqual(["please mail [EMAIL_1_t3st]"]);
 		const records = runtime.sent.filter((m) => m.type === "RECORD");
 		expect(records).toEqual([
 			{ type: "RECORD", site: "custom", action: "masked", channel: "prompt", counts: { EMAIL: 1 } },

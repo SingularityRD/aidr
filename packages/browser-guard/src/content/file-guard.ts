@@ -6,6 +6,11 @@
  * Masked files replace the originals through a DataTransfer, and the original
  * event is replayed once so the site's own upload handler receives only sanitized
  * content. Anything that cannot be checked or replaced is blocked (fail closed).
+ *
+ * Window capture listeners only see inputs rooted in the document. Detached inputs
+ * (`createElement` + `click()`) and inputs in shadow roots are handled by the page-world
+ * hook (./file-input-hook.ts), which hands their selections to `onRelayScan`; a
+ * shadow-DOM selection seen here while that hook is missing is blocked.
  */
 
 import { type Counts, mergeCounts } from "../engine/counts.js";
@@ -19,6 +24,15 @@ import type {
 	PrivacyScanEvent,
 	SiteAdapter,
 } from "../types.js";
+import {
+	isDocumentRooted,
+	RELAY_ID_FORMAT,
+	RELAY_PING,
+	RELAY_RESULT,
+	RELAY_VERDICT_FORMAT,
+	relayData,
+	relayEvent,
+} from "./file-relay.js";
 import { formatCounts, type Strings } from "./strings.js";
 import type { GuardUi } from "./ui.js";
 
@@ -57,6 +71,8 @@ export interface FileGuardDeps {
 export interface FileGuard {
 	/** Capture listener for `input` and `change`. */
 	onInputEvent(event: Event): void;
+	/** Capture listener for RELAY_SCAN requests from the page-world file-input hook. */
+	onRelayScan(event: Event): void;
 	/** Capture listener for `drop`. */
 	onDrop(event: DragEvent): void;
 	/** Handles a paste that carries files. Returns true when it took over the event. */
@@ -128,6 +144,12 @@ const isFileInput = (node: EventTarget | null): node is HTMLInputElement =>
 	(node as Element).nodeType === 1 &&
 	(node as Element).tagName === "INPUT" &&
 	(node as HTMLInputElement).type === "file";
+
+/** The event's innermost target when it is a file input (an input in an open shadow root is retargeted to its host). */
+function fileInputOf(event: Event): HTMLInputElement | null {
+	const inner = event.composedPath()[0] ?? event.target;
+	return isFileInput(inner) ? inner : null;
+}
 
 function transferFiles(data: DataTransfer | null | undefined): File[] {
 	if (!data) return [];
@@ -355,25 +377,53 @@ export function createFileGuard(deps: FileGuardDeps): FileGuard {
 		}
 	};
 
+	/** True when the page-world hook (./file-input-hook.ts) answers the ping. */
+	const pageHookInstalled = (): boolean => {
+		try {
+			return !win.document.dispatchEvent(new win.Event(RELAY_PING, { cancelable: true }));
+		} catch {
+			return false;
+		}
+	};
+
+	/**
+	 * A shadow-DOM input's `input` event: its `change` never reaches this listener, so the
+	 * page-world hook handles it. Without the hook the selection cannot be guarded: block it.
+	 */
+	const onShadowInput = (event: Event, input: HTMLInputElement): void => {
+		if (pageHookInstalled()) return;
+		stop(event);
+		clearInput(input);
+		refuse(deps.strings().fileInputUnguarded);
+	};
+
 	const onInputEvent = (event: Event): void => {
-		if (replaying) return;
-		const input = event.target;
-		if (!isFileInput(input)) return;
+		const input = replaying ? null : fileInputOf(event);
+		if (!input) return;
+		if (!isDocumentRooted(input)) {
+			onShadowInput(event, input);
+			return;
+		}
 		if (inFlight.has(input)) {
 			event.stopImmediatePropagation();
 			return;
 		}
-		const files = input.files ? [...input.files] : [];
+		const files = [...(input.files ?? [])];
 		if (files.length === 0) return;
 		const verdict = gate(event, files);
-		if (verdict === null) return;
-		if (verdict === "blocked") {
-			clearInput(input);
-			return;
-		}
+		if (verdict === "blocked") clearInput(input);
+		else if (verdict !== null) replaceInputFiles(input, files, verdict);
+	};
+
+	/** Sanitises a document input's selection and replays it with the sanitised files. */
+	const replaceInputFiles = (
+		input: HTMLInputElement,
+		files: readonly File[],
+		policy: GuardPolicy,
+	): void => {
 		inFlight.add(input);
 		clearInput(input);
-		void sanitizeAll(files, verdict).then((outcome) => {
+		void sanitizeAll(files, policy).then((outcome) => {
 			try {
 				const replacement = settle(outcome);
 				if (!replacement) return;
@@ -433,8 +483,59 @@ export function createFileGuard(deps: FileGuardDeps): FileGuard {
 		return true;
 	};
 
+	/** Answers a page-world hook request with the files the page may see (or a block). */
+	const answerRelay = (id: string, files: readonly File[] | null): void => {
+		try {
+			const data = new win.DataTransfer();
+			for (const file of files ?? []) data.items.add(file);
+			data.setData(RELAY_ID_FORMAT, id);
+			data.setData(RELAY_VERDICT_FORMAT, files ? "ok" : "blocked");
+			win.document.dispatchEvent(relayEvent(win, RELAY_RESULT, data, false));
+		} catch {
+			// No answer: the hook times out and keeps the selection cleared (fail closed).
+		}
+	};
+
+	/**
+	 * A selection from a detached or shadow-DOM file input, handed over by the page-world
+	 * hook (./file-relay.ts). Same rules as a document input: organisation blocks, pass-
+	 * through for "allow"/monitor, otherwise sanitised; anything else is refused.
+	 */
+	const onRelayScan = (event: Event): void => {
+		const data = relayData(event);
+		const id = data?.getData(RELAY_ID_FORMAT);
+		if (!data || !id) return;
+		if (event.cancelable) event.preventDefault(); // accepted: the hook waits for RESULT
+		event.stopImmediatePropagation();
+		const files = transferFiles(data);
+		if (files.length === 0) {
+			answerRelay(id, []);
+			return;
+		}
+		const policy = deps.getPolicy();
+		if (!policy) {
+			refuse(deps.strings().policyMissing);
+			answerRelay(id, null);
+			return;
+		}
+		const blockMessage = blockedBy(policy, files);
+		if (blockMessage !== null) {
+			refuse(blockMessage);
+			answerRelay(id, null);
+			return;
+		}
+		if (passesThrough(event, files, policy)) {
+			answerRelay(id, files);
+			return;
+		}
+		void sanitizeAll(files, policy).then((outcome) => {
+			answerRelay(id, settle(outcome));
+		});
+	};
+
 	return {
 		onInputEvent,
+		onRelayScan,
 		onDrop(event) {
 			if (replaying || deps.ui.isOwnEvent(event)) return;
 			const files = transferFiles(event.dataTransfer);

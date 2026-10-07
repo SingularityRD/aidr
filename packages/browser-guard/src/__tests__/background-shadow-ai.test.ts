@@ -1,7 +1,11 @@
 import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
-import { CUSTOM_SCRIPT_ID, customSiteForUrl } from "../background/custom-sites.js";
+import {
+	CUSTOM_MAIN_SCRIPT_ID,
+	CUSTOM_SCRIPT_ID,
+	customSiteForUrl,
+} from "../background/custom-sites.js";
 import { DNR_RULE_IDS } from "../background/dnr.js";
 import { startBackground } from "../background/index.js";
 import {
@@ -489,6 +493,15 @@ describe("worker: custom sites", () => {
 				persistAcrossSessions: true,
 			}),
 		);
+		expect(t.fake.contentScripts.get(CUSTOM_MAIN_SCRIPT_ID)).toEqual({
+			id: CUSTOM_MAIN_SCRIPT_ID,
+			matches: [INTERNAL_ORIGIN],
+			js: ["content-main.js"],
+			runAt: "document_start",
+			allFrames: false,
+			persistAcrossSessions: true,
+			world: "MAIN",
+		});
 		expect((await t.access()).customSites[0]).toMatchObject({ granted: true, active: true });
 
 		t.fake.setOriginsGranted([INTERNAL_ORIGIN], false);
@@ -498,7 +511,7 @@ describe("worker: custom sites", () => {
 	it("drops the registration when the policy no longer lists the site", async () => {
 		const t = await setup({ managed: { customSites: [INTERNAL] } });
 		t.fake.setOriginsGranted([INTERNAL_ORIGIN], true);
-		await vi.waitFor(() => expect(t.fake.contentScripts.size).toBe(1));
+		await vi.waitFor(() => expect(t.fake.contentScripts.size).toBe(2));
 		await t.fake.managed.adminReplace({});
 		await vi.waitFor(() => expect(t.fake.contentScripts.size).toBe(0));
 	});

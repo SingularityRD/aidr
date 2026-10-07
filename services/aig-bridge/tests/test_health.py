@@ -1,6 +1,7 @@
 from pathlib import Path
 from types import SimpleNamespace
 
+import httpx
 import pytest
 import yaml
 
@@ -115,6 +116,224 @@ async def test_readiness_rejects_unverified_dataset_provenance(monkeypatch):
     assert report["ready"] is False
     assert report["dataset_ready"] is False
     assert report["dataset_reason"] == "signature verification failed"
+
+
+class CountingAIG(HealthyAIG):
+    def __init__(self) -> None:
+        self.health_calls = 0
+
+    async def health_check(self) -> bool:
+        self.health_calls += 1
+        return True
+
+
+class SecretLeakingAIG:
+    async def health_check(self) -> bool:
+        raise RuntimeError("internal error at /srv/aig/secret-path token=abc")
+
+
+@pytest.fixture
+def health_app(monkeypatch):
+    from app.main import app
+    from app.utils.aig_client import get_aig_client
+
+    monkeypatch.setenv("AIG_MIN_WORKERS", "1")
+    monkeypatch.setenv("BRIDGE_AUTH_REQUIRED", "true")
+    monkeypatch.setenv("BRIDGE_AUTH_MODE", "api_key")
+    monkeypatch.setenv("BRIDGE_API_KEY", "health-test-key")
+    monkeypatch.setattr(health, "replay_store_ready", lambda: True)
+    monkeypatch.setattr(health, "runtime_egress_ready", lambda: (True, "ready"))
+    monkeypatch.setattr(health, "task_registry", SimpleNamespace(readiness=lambda: (True, "ready")))
+    monkeypatch.setattr(
+        health,
+        "verify_dataset_provenance",
+        lambda _threats, _upstream: DatasetProvenance(
+            True, "verified", bundle_id="a" * 64, source_commit="b" * 40, release_sequence=1
+        ),
+    )
+    aig = CountingAIG()
+    health.reset_readiness_cache()
+    previous = app.dependency_overrides.copy()
+    app.dependency_overrides[get_aig_client] = lambda: aig
+    yield app, aig
+    app.dependency_overrides.clear()
+    app.dependency_overrides.update(previous)
+    health.reset_readiness_cache()
+
+
+async def _get(app, path, **kwargs):
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://bridge.test") as client:
+        return await client.get(path, **kwargs)
+
+
+@pytest.mark.asyncio
+async def test_unauthenticated_readyz_is_minimal(health_app):
+    app, _aig = health_app
+
+    response = await _get(app, "/api/v1/readyz")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ready"}
+    assert response.headers["cache-control"] == "no-store"
+
+
+@pytest.mark.asyncio
+async def test_unauthenticated_readyz_not_ready_hides_reasons_and_errors(health_app, monkeypatch):
+    app, _aig = health_app
+    from app.utils.aig_client import get_aig_client
+
+    app.dependency_overrides[get_aig_client] = lambda: SecretLeakingAIG()
+
+    response = await _get(app, "/api/v1/readyz")
+
+    assert response.status_code == 503
+    assert response.json() == {"status": "not_ready"}
+    assert "secret" not in response.text and "token" not in response.text
+
+
+@pytest.mark.asyncio
+async def test_readyz_rejects_unknown_capability_without_probing(health_app):
+    app, aig = health_app
+
+    response = await _get(app, "/api/v1/readyz", params={"capability": "not-a-capability"})
+
+    assert response.status_code == 422
+    assert aig.health_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_detailed_health_requires_bridge_authentication(health_app):
+    app, aig = health_app
+
+    missing = await _get(app, "/api/v1/health")
+    wrong = await _get(app, "/api/v1/health", headers={"X-API-Key": "wrong"})
+    valid = await _get(app, "/api/v1/health", headers={"X-API-Key": "health-test-key"})
+
+    assert missing.status_code == 401
+    assert wrong.status_code == 401
+    assert "dataset_bundle_id" not in missing.text
+    assert valid.status_code == 200
+    body = valid.json()
+    assert body["status"] == "ok"
+    assert body["scan_ready"] is True
+    assert body["dataset_bundle_id"] == "a" * 64
+    assert aig.health_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_detailed_health_fails_closed_when_auth_is_unconfigured(health_app, monkeypatch):
+    app, aig = health_app
+    monkeypatch.delenv("BRIDGE_API_KEY", raising=False)
+
+    response = await _get(app, "/api/v1/health")
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "bridge authentication is not configured"
+    assert aig.health_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_detailed_health_requires_read_scope_for_broker_tokens(health_app):
+    from app.auth import BrokerClaims, require_bridge_api_key
+
+    app, _aig = health_app
+
+    async def no_read_scope() -> BrokerClaims:
+        return BrokerClaims("svc", "tenant-a", frozenset({"aig:scan"}), None, "jti-1", 0, {})
+
+    app.dependency_overrides[require_bridge_api_key] = no_read_scope
+    response = await _get(app, "/api/v1/health")
+
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_probe_results_are_cached_and_shared(health_app, monkeypatch):
+    app, aig = health_app
+    monkeypatch.setenv("BRIDGE_HEALTH_CACHE_SECONDS", "5")
+
+    for _ in range(5):
+        assert (await _get(app, "/api/v1/readyz")).status_code == 200
+    assert (await _get(app, "/api/v1/health", headers={"X-API-Key": "health-test-key"})).status_code == 200
+    assert aig.health_calls == 1
+
+    # A capability-scoped probe is cached under its own key.
+    assert (await _get(app, "/api/v1/readyz", params={"capability": "mcp"})).status_code == 200
+    assert aig.health_calls == 2
+
+
+@pytest.mark.asyncio
+async def test_probe_cache_expires(health_app, monkeypatch):
+    app, aig = health_app
+    clock = [1000.0]
+    monkeypatch.setattr(health.time, "monotonic", lambda: clock[0])
+    monkeypatch.setenv("BRIDGE_HEALTH_CACHE_SECONDS", "5")
+
+    await _get(app, "/api/v1/readyz")
+    clock[0] += 4.0
+    await _get(app, "/api/v1/readyz")
+    assert aig.health_calls == 1
+    clock[0] += 2.0
+    await _get(app, "/api/v1/readyz")
+    assert aig.health_calls == 2
+
+
+@pytest.mark.asyncio
+async def test_concurrent_probes_are_coalesced(health_app):
+    import asyncio
+
+    app, aig = health_app
+    release = asyncio.Event()
+
+    async def slow_health() -> bool:
+        aig.health_calls += 1
+        await release.wait()
+        return True
+
+    aig.health_check = slow_health
+    calls = [asyncio.create_task(_get(app, "/api/v1/readyz")) for _ in range(10)]
+    await asyncio.sleep(0.05)
+    release.set()
+    responses = await asyncio.gather(*calls)
+
+    assert all(item.status_code == 200 for item in responses)
+    assert aig.health_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_livez_stays_public_and_does_not_probe(health_app):
+    app, aig = health_app
+
+    response = await _get(app, "/api/v1/livez")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "alive"}
+    assert aig.health_calls == 0
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [(None, 5.0), ("0", 0.0), ("2.5", 2.5), ("999", 30.0), ("-1", 0.0), ("nan", 5.0), ("bogus", 5.0)],
+)
+def test_cache_seconds_is_bounded(monkeypatch, raw, expected):
+    if raw is None:
+        monkeypatch.delenv("BRIDGE_HEALTH_CACHE_SECONDS", raising=False)
+    else:
+        monkeypatch.setenv("BRIDGE_HEALTH_CACHE_SECONDS", raw)
+    assert health._cache_seconds() == expected
+
+
+def test_probes_use_unauthenticated_readyz_and_livez():
+    dockerfile = (REPO_ROOT / "services" / "aig-bridge" / "Dockerfile").read_text(encoding="utf-8")
+    helm = (REPO_ROOT / "deploy" / "helm" / "aidr" / "templates" / "posture-scanner.yaml").read_text(encoding="utf-8")
+
+    assert "http://localhost:8099/api/v1/readyz" in dockerfile
+    assert "path: /api/v1/readyz" in helm
+    assert "path: /api/v1/livez" in helm
+    # Probes must never depend on the authenticated detailed endpoint.
+    assert "/api/v1/health" not in dockerfile
+    assert "path: /api/v1/health" not in helm
 
 
 def test_compose_separates_container_liveness_from_traffic_readiness():

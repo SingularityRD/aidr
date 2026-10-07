@@ -49,6 +49,7 @@ export const SITE_MATCHES = Object.freeze(SITE_HOSTS.map((host) => `https://${ho
 export const ENTRIES = Object.freeze([
 	{ source: "src/background/index.ts", output: "background.js" },
 	{ source: "src/content/index.ts", output: "content.js" },
+	{ source: "src/content/main-world.ts", output: "content-main.js" },
 	{ source: "src/ui/popup.ts", output: "popup.js" },
 	{ source: "src/ui/options.ts", output: "options.js" },
 ]);
@@ -150,6 +151,15 @@ export function createManifest(target, { version, contentCss = false, matches = 
 		run_at: "document_start",
 		all_frames: false,
 	};
+	// Page-world file-input hook (src/content/file-input-hook.ts): routes detached and
+	// shadow-DOM <input type=file> selections to content.js. No extension APIs, no data.
+	const mainWorldScript = {
+		matches: [...matches],
+		js: ["content-main.js"],
+		run_at: "document_start",
+		all_frames: false,
+		world: "MAIN",
+	};
 	const manifest = {
 		manifest_version: 3,
 		name: "__MSG_extName__",
@@ -161,7 +171,7 @@ export function createManifest(target, { version, contentCss = false, matches = 
 		optional_permissions: [...OPTIONAL_PERMISSIONS],
 		host_permissions: [...matches],
 		optional_host_permissions: [...OPTIONAL_HOST_PERMISSIONS],
-		content_scripts: [contentScript],
+		content_scripts: [contentScript, mainWorldScript],
 		action: {
 			default_title: "__MSG_extName__",
 			default_popup: "popup.html",

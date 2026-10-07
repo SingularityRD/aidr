@@ -48,6 +48,7 @@ import {
 	type SiteAdapter,
 } from "../types.js";
 import { createFileGuard, type SanitizeFileFn } from "./file-guard.js";
+import { RELAY_SCAN } from "./file-relay.js";
 import {
 	formatCounts,
 	type Lang,
@@ -208,6 +209,60 @@ export function mergeNativeFindings(
 	return { ...result, findings, counts: countFindings(findings), native: use };
 }
 
+/** The parts of `finding` outside the (start-sorted) `holes`. */
+function remainders(
+	finding: Finding,
+	holes: readonly (readonly [number, number])[],
+): [number, number][] {
+	let cursor = finding.start;
+	const pieces: [number, number][] = [];
+	for (const [a, b] of holes) {
+		if (b <= cursor || a >= finding.end) continue;
+		if (a > cursor) pieces.push([cursor, a]);
+		cursor = Math.max(cursor, b);
+	}
+	if (cursor < finding.end) pieces.push([cursor, finding.end]);
+	return pieces;
+}
+
+/** At least one letter or digit: a remainder without one carries no data worth masking. */
+const MEANINGFUL = /[\p{L}\p{N}]/u;
+
+/**
+ * Cuts `placeholders` (sorted or not, [start, end) offsets of our own vault
+ * placeholders in `text`) out of every finding. A finding wholly inside a placeholder
+ * is dropped (it is already masked); a finding that spans one - e.g. a labelled field
+ * such as `Name: [EMAIL_1] John Smith` - keeps every remaining sub-span, trimmed of
+ * whitespace, so the sensitive text around the placeholder is still masked. Remainders
+ * without a letter or digit (punctuation, separators) are dropped.
+ */
+export function subtractPlaceholders(
+	text: string,
+	findings: readonly Finding[],
+	placeholders: readonly (readonly [number, number])[],
+): Finding[] {
+	if (placeholders.length === 0) return [...findings];
+	const holes = [...placeholders].sort((a, b) => a[0] - b[0]);
+	const out: Finding[] = [];
+	for (const finding of findings) {
+		const pieces = remainders(finding, holes);
+		const untouched = pieces.length === 1 && pieces[0]?.[0] === finding.start;
+		if (untouched && pieces[0]?.[1] === finding.end) {
+			out.push(finding);
+			continue;
+		}
+		for (const [start, end] of pieces) {
+			const slice = text.slice(start, end);
+			const lead = slice.length - slice.trimStart().length;
+			const trimmed = slice.trim();
+			if (MEANINGFUL.test(trimmed)) {
+				out.push({ ...finding, start: start + lead, end: start + lead + trimmed.length });
+			}
+		}
+	}
+	return out;
+}
+
 /** Normalises editor text for equality checks (line endings, nbsp, outer whitespace). */
 export function normalizeText(text: string): string {
 	return text.replace(/\r\n?/g, "\n").replace(/ /g, " ").trim();
@@ -305,6 +360,28 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 		return entry.result;
 	};
 
+	/** [start, end) offsets of this vault's placeholders in `text`. */
+	const ownPlaceholderSpans = (text: string): [number, number][] => {
+		const spans: [number, number][] = [];
+		for (const m of text.matchAll(placeholderRegex())) {
+			if (vault.lookup(m[0]) !== undefined) spans.push([m.index, m.index + m[0].length]);
+		}
+		return spans;
+	};
+
+	/** `text` with this vault's placeholders replaced by spaces of the same length. */
+	const blankOwnPlaceholders = (text: string): string => {
+		const spans = ownPlaceholderSpans(text);
+		if (spans.length === 0) return text;
+		let out = "";
+		let cursor = 0;
+		for (const [a, b] of spans) {
+			out += text.slice(cursor, a) + " ".repeat(b - a);
+			cursor = b;
+		}
+		return out + text.slice(cursor);
+	};
+
 	/** The worker's reply to `message`, or undefined when none arrives within `ms`. */
 	const sendWithin = async (message: GuardMessage, ms: number): Promise<unknown> => {
 		let timer: ReturnType<typeof setTimeout> | undefined;
@@ -350,7 +427,11 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 	 */
 	const scan = async (text: string, policy: GuardPolicy | null): Promise<GuardScan | null> => {
 		try {
-			const [result, native] = await Promise.all([engine.scan(text), nativeScan(text, policy)]);
+			// Our own placeholders are blanked (same length, so offsets hold): a labelled
+			// field such as `password: [EMAIL_1] hunter2` must be judged on the value that
+			// follows the placeholder, not on the placeholder itself.
+			const input = blankOwnPlaceholders(text);
+			const [result, native] = await Promise.all([engine.scan(input), nativeScan(input, policy)]);
 			if (!result || result.incomplete) return null;
 			const merged = mergeNativeFindings(result, native.findings, native.use);
 			if (native.use === "used") nativeNoticeShown = false;
@@ -372,15 +453,12 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 		ui.toast(strings().nativeUnavailable, "warn");
 	};
 
-	/** Findings that are not already inside one of our own placeholders. */
-	const relevantFindings = (text: string, result: ScanResult): Finding[] => {
-		const spans: [number, number][] = [];
-		for (const m of text.matchAll(placeholderRegex())) {
-			if (vault.lookup(m[0]) !== undefined) spans.push([m.index, m.index + m[0].length]);
-		}
-		if (spans.length === 0) return [...result.findings];
-		return result.findings.filter((f) => !spans.some(([a, b]) => f.start < b && f.end > a));
-	};
+	/**
+	 * The findings with our own placeholders cut out (see subtractPlaceholders): a
+	 * placeholder is never re-masked, but sensitive text around it still is.
+	 */
+	const relevantFindings = (text: string, result: ScanResult): Finding[] =>
+		subtractPlaceholders(text, result.findings, ownPlaceholderSpans(text));
 
 	const activeSignals = (policy: GuardPolicy, result: ScanResult): SignalCode[] =>
 		policy.detectSignals && policy.signalAction !== "off" ? [...result.signals] : [];
@@ -862,11 +940,13 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 	};
 
 	const onInput = (event: Event): void => {
-		const target = asElement(event.target);
-		if (target?.tagName === "INPUT" && (target as HTMLInputElement).type === "file") {
+		// composedPath()[0]: a file input in an open shadow root is retargeted to its host.
+		const inner = asElement(event.composedPath()[0] ?? event.target);
+		if (inner?.tagName === "INPUT" && (inner as HTMLInputElement).type === "file") {
 			fileGuard.onInputEvent(event);
 			return;
 		}
+		const target = asElement(event.target);
 		if (event.type !== "input" || !target || ignored(event)) return;
 		const editor = editorFor(target);
 		if (editor && contains(editor.element, target)) schedulePrescan();
@@ -1069,6 +1149,8 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 		["input", onInput],
 		["change", onInput],
 		["focusin", onFocusIn],
+		// Detached and shadow-DOM file inputs, routed by the page-world hook (./file-relay.ts).
+		[RELAY_SCAN, (event: Event) => fileGuard.onRelayScan(event)],
 	];
 
 	return {

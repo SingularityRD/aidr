@@ -32,7 +32,7 @@ APP='<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/ex
 def root_rels(main):
  return rels([('officeDocument',main),('http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties','docProps/core.xml'),('extended-properties','docProps/app.xml'),('http://schemas.openxmlformats.org/package/2006/relationships/metadata/thumbnail','docProps/thumbnail.jpeg')])
 
-def docx(body=None,extra=None):
+def docx(body=None,extra=None,ignorable='w14'):
  body=body or ('<w:p><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">Contact: jane.doe@exa</w:t></w:r><w:r><w:rPr><w:i/></w:rPr><w:t>mple.com today</w:t></w:r></w:p>'
   '<w:p><w:ins w:id="1" w:author="Jane Doe" w:date="2026-01-01T00:00:00Z"><w:r><w:t>added ins.user@example.com</w:t></w:r></w:ins>'
   '<w:del w:id="2" w:author="Jane Doe" w:date="2026-01-01T00:00:00Z"><w:r><w:delText>deleted.user@example.com</w:delText></w:r></w:del></w:p>'
@@ -43,7 +43,7 @@ def docx(body=None,extra=None):
   '<w:p><w:r><w:drawing><wp:inline><wp:docPr id="1" name="Shape 1" descr="photo of jane.alt@example.com"/></wp:inline></w:drawing></w:r></w:p>'
   '<w:sectPr><w:headerReference w:type="default" r:id="rId3"/></w:sectPr>')
  doc=('<w:document xmlns:w="%s" xmlns:r="%s" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" '
-      'xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" mc:Ignorable="w14"><w:body>%s</w:body></w:document>')%(W,R,body)
+      'xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:wp14="http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing" mc:Ignorable="%s"><w:body>%s</w:body></w:document>')%(W,R,ignorable,body)
  wt='application/vnd.openxmlformats-officedocument.wordprocessingml.'
  return package([('[Content_Types].xml',types([('word/document.xml',wt+'document.main+xml'),('word/comments.xml',wt+'comments+xml'),('word/header1.xml',wt+'header+xml'),('word/footnotes.xml',wt+'footnotes+xml'),('word/settings.xml',wt+'settings+xml')])),
   ('_rels/.rels',root_rels('word/document.xml')),
@@ -69,14 +69,14 @@ def xlsx(sheet_name='Data',sheet=None,extra_wb=''):
   ('xl/worksheets/sheet1.xml','<worksheet xmlns="%s">%s</worksheet>'%(S,sheet)),
   ('docProps/core.xml',CORE),('docProps/app.xml',APP),('docProps/thumbnail.jpeg',b'\xff\xd8\xff\xe0thumb')])
 
-def pptx():
+def pptx(cnvpr='<p:cNvPr id="2" name="Title" descr="alt slide.alt@example.com"/>',run='<a:rPr b="1"/>'):
  pt='application/vnd.openxmlformats-officedocument.presentationml.'
  ns='xmlns:a="%s" xmlns:p="%s" xmlns:r="%s"'%(A,P,R)
  return package([('[Content_Types].xml',types([('ppt/presentation.xml',pt+'presentation.main+xml'),('ppt/slides/slide1.xml',pt+'slide+xml'),('ppt/notesSlides/notesSlide1.xml',pt+'notesSlide+xml'),('ppt/commentAuthors.xml',pt+'commentAuthors+xml'),('ppt/comments/comment1.xml',pt+'comments+xml')])),
   ('_rels/.rels',root_rels('ppt/presentation.xml')),
   ('ppt/presentation.xml','<p:presentation %s><p:sldIdLst><p:sldId id="256" r:id="rId1"/></p:sldIdLst></p:presentation>'%ns),
   ('ppt/_rels/presentation.xml.rels',rels([('slide','slides/slide1.xml'),('commentAuthors','commentAuthors.xml')])),
-  ('ppt/slides/slide1.xml','<p:sld %s><p:cSld><p:spTree><p:sp><p:nvSpPr><p:cNvPr id="2" name="Title" descr="alt slide.alt@example.com"/></p:nvSpPr><p:txBody><a:p><a:r><a:rPr b="1"/><a:t>Mail slide.user@exa</a:t></a:r><a:r><a:t>mple.com now</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld></p:sld>'%ns),
+  ('ppt/slides/slide1.xml','<p:sld %s><p:cSld><p:spTree><p:sp><p:nvSpPr>%s</p:nvSpPr><p:txBody><a:p><a:r>%s<a:t>Mail slide.user@exa</a:t></a:r><a:r><a:t>mple.com now</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld></p:sld>'%(ns,cnvpr,run)),
   ('ppt/slides/_rels/slide1.xml.rels',rels([('notesSlide','../notesSlides/notesSlide1.xml'),('comments','../comments/comment1.xml')])),
   ('ppt/notesSlides/notesSlide1.xml','<p:notes %s><p:cSld><p:spTree><p:sp><p:txBody><a:p><a:r><a:t>Speaker notes.user@example.com</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld></p:notes>'%ns),
   ('ppt/notesSlides/_rels/notesSlide1.xml.rels',rels([('slide','../slides/slide1.xml')])),
@@ -89,6 +89,9 @@ def edits_for(units,rep=lambda s:'[CREDIT_CARD]' if s.isdigit() else '[EMAIL]'):
  for i,t in enumerate(units):
   for x in DETECT.finditer(t):out.append([i,x.start(),x.end(),rep(x.group())])
  return out
+def attribute_units(d):
+ """Texts of the protected units made only of attribute values (and virtual separators)."""
+ return [u.text() for u in d.units if not u.editable and all(e is None or isinstance(w,tuple) for e,w in u.nodes)]
 def entries(b):
  with zipfile.ZipFile(io.BytesIO(b)) as z:return {n:z.read(n) for n in z.namelist()}
 def round_trip(b,kind):
@@ -204,5 +207,72 @@ class OfficeRedactionTests(unittest.TestCase):
 
  def test_14_output_is_deterministic(self):
   self.assertEqual(round_trip(docx(),'docx')[1],round_trip(docx(),'docx')[1])
+
+ # Attribute values are content: PII in a non-structural attribute must reject the file (it cannot
+ # be rewritten safely) and must be visible to the verify views if it ever survives.
+ ATTR_CASES={
+  'docx':[(docx,'<w:p><w:hyperlink w:anchor="sec1" w:tooltip="tooltip.user@example.com"><w:r><w:t>link</w:t></w:r></w:hyperlink></w:p>'),
+   (docx,'<w:sdt><w:sdtPr><w:alias w:val="alias.user@example.com"/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>x</w:t></w:r></w:p></w:sdtContent></w:sdt>'),
+   (docx,'<w:sdt><w:sdtPr><w:tag w:val="4111111111111111"/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>x</w:t></w:r></w:p></w:sdtContent></w:sdt>'),
+   (docx,'<w:sdt><w:sdtPr><w:date w:fullDate="dob.user@example.com"><w:dateFormat w:val="M/d/yyyy"/></w:date></w:sdtPr><w:sdtContent><w:p><w:r><w:t>x</w:t></w:r></w:p></w:sdtContent></w:sdt>'),
+   (docx,'<w:p><w:bookmarkStart w:id="0" w:name="bm.user@example.com"/><w:r><w:t>plain</w:t></w:r><w:bookmarkEnd w:id="0"/></w:p>'),
+   (docx,'<w:p><w:r><w:drawing><wp:inline><wp:docPr id="1" name="name.user@example.com"/></wp:inline></w:drawing></w:r></w:p>'),
+   # Structural attribute names do not exempt a value that is not shaped like a structural token.
+   (docx,'<w:p w:rsidR="rsid.user@example.com"><w:r><w:t>x</w:t></w:r></w:p>'),
+   (docx,'<w:p><w:r><w:rPr><w:sz w:val="4111111111111111"/></w:rPr><w:t>x</w:t></w:r></w:p>'),
+   (docx,'<w:p><w:r><w:rPr><w:unknownThing w:whatever="unknown.user@example.com"/></w:rPr><w:t>x</w:t></w:r></w:p>')],
+  'xlsx':[(lambda b:xlsx(sheet=b),'<sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>a</t></is></c></row></sheetData><hyperlinks><hyperlink ref="A1" location="Data!A1" display="disp.user@example.com"/></hyperlinks>'),
+   (lambda b:xlsx(sheet=b),'<sheetData><row r="1"><c r="A1"><f ref="4111111111111111">1+1</f></c></row></sheetData>'),
+   (lambda b:xlsx(extra_wb=b),'<definedNames><definedName name="x" comment="dn.comment@example.com">Data!$A$1</definedName></definedNames>')],
+  'pptx':[(lambda b:pptx(cnvpr=b),'<p:cNvPr id="2" name="shape.user@example.com"/>'),
+   (lambda b:pptx(run=b),'<a:rPr b="1"><a:hlinkClick r:id="" tooltip="tip.user@example.com"/></a:rPr>')],
+ }
+ def test_15_pii_in_non_structural_attribute_rejects(self):
+  for kind,cases in self.ATTR_CASES.items():
+   for build,markup in cases:
+    with self.subTest(kind=kind,markup=markup):
+     d=m.OfficeDoc(m.Parser(),build(markup),kind)
+     self.assertTrue(any(DETECT.search(t) for t in d.texts()),'attribute value not offered for scanning')
+     with self.assertRaises(m.Rejected) as c:d.redact(edits_for(d.texts()))
+     self.assertEqual(str(c.exception),'REDACT_PROTECTED_TEXT')
+
+ def test_16_residual_attribute_value_is_visible_to_verification(self):
+  for kind,cases in self.ATTR_CASES.items():
+   for build,markup in cases:
+    with self.subTest(kind=kind,markup=markup):
+     data=build(markup);d=m.OfficeDoc(m.Parser(),data,kind)
+     # Redact only the editable units, so the attribute value survives into the output.
+     edits=[x for x in edits_for(d.texts()) if d.units[x[0]].editable]
+     out=m.OfficeDoc(m.Parser(),data,kind).redact(edits)
+     v=m.handle({'kind':kind,'mode':'verify'},out)
+     self.assertTrue(any(DETECT.search(t) for t in v['segments']+v['units']),'residual attribute value invisible to verify')
+
+ def test_17_structural_attributes_do_not_create_units_or_false_rejects(self):
+  body=('<w:p w:rsidR="00A1B2C3" w:rsidRDefault="00A1B2C3" w:rsidP="00123456" w14:paraId="1A2B3C4D" w14:textId="77777777">'
+   '<w:pPr><w:pStyle w:val="Heading1"/><w:spacing w:before="240" w:after="120" w:line="276" w:lineRule="auto"/><w:jc w:val="center"/><w:ind w:left="720" w:hanging="360"/></w:pPr>'
+   '<w:r w:rsidRPr="00FF00AA"><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri"/><w:b/><w:color w:val="FF0000" w:themeColor="accent1"/><w:sz w:val="28"/><w:lang w:val="en-US" w:eastAsia="ja-JP"/></w:rPr><w:t>Hello jane.doe@example.com</w:t></w:r>'
+   '<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:bookmarkStart w:id="0" w:name="_GoBack"/><w:bookmarkEnd w:id="0"/></w:p>'
+   '<w:tbl><w:tblPr><w:tblStyle w:val="TableGrid"/><w:tblW w:w="5000" w:type="pct"/><w:tblLook w:val="04A0" w:firstRow="1"/></w:tblPr><w:tblGrid><w:gridCol w:w="4675"/></w:tblGrid>'
+   '<w:tr w:rsidR="00A1B2C3"><w:tc><w:tcPr><w:tcW w:w="4675" w:type="dxa"/><w:vMerge w:val="restart"/></w:tcPr><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+   '<w:p><w:r><w:drawing><wp:anchor distT="0" distB="0" distL="114300" distR="114300" simplePos="0" relativeHeight="251659264" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1" wp14:anchorId="0A1B2C3D" wp14:editId="4E5F6A7B">'
+   '<wp:extent cx="5943600" cy="3962400"/><wp:docPr id="1" name="Picture 1"/></wp:anchor></w:drawing></w:r></w:p>'
+   '<w:sectPr w:rsidR="00A1B2C3"><w:headerReference w:type="default" r:id="rId3"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr>')
+  d=m.OfficeDoc(m.Parser(),docx(body=body,ignorable='w14 wp14'),'docx')
+  # Only free-text values (bookmark/shape names) and a 9-digit number (fails the structural shape
+  # check, scanned clean) are offered; ids, rsids, formatting, fonts, sizes, borders, relationship
+  # ids and declared mc prefix lists are not. Default header/comment/footnote parts add nothing.
+  # All scanned values of one part share ONE protected unit, separated by virtual line breaks.
+  self.assertEqual(attribute_units(d),['_GoBack\n251659264\nPicture 1'])
+  out=d.redact(edits_for(d.texts()));self.assertClean(out,'docx')
+  doc=entries(out)['word/document.xml'].decode()
+  for kept in ('w:rsidR="00A1B2C3"','w14:paraId="1A2B3C4D"','<w:sz w:val="28"/>','r:id="rId3"','mc:Ignorable="w14 wp14"','wp14:anchorId="0A1B2C3D"','w:name="_GoBack"','w:ascii="Calibri"'):self.assertIn(kept,doc)
+  # pptx/xlsx defaults are clean of attribute findings and round-trip without a protected reject.
+  self.assertClean(round_trip(pptx(cnvpr='<p:cNvPr id="2" name="Title 1"/>',run='<a:rPr lang="en-US" sz="2400" b="1" dirty="0"><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill><a:latin typeface="Calibri"/></a:rPr>'),'pptx')[1],'pptx')
+
+ def test_18_mc_attribute_naming_undeclared_prefix_is_scanned(self):
+  d=m.OfficeDoc(m.Parser(),docx(ignorable='w14 ign.user@example.com'),'docx')
+  self.assertEqual(attribute_units(d),['w14 ign.user@example.com\nShape 1'])
+  with self.assertRaises(m.Rejected) as c:d.redact(edits_for(d.texts()))
+  self.assertEqual(str(c.exception),'REDACT_PROTECTED_TEXT')
 
 if __name__=='__main__':unittest.main()

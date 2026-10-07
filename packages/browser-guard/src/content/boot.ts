@@ -20,6 +20,8 @@
  * Once a policy is applied, the administrator's acceptable-use notice (if any) is shown
  * unless this browser already acknowledged its version (./acceptable-use.ts).
  */
+
+import { newVaultTag } from "../engine/vault.js";
 import type {
 	CustomSiteConfig,
 	DetectionEngine,
@@ -124,7 +126,11 @@ export interface BootDeps
 	createVault(options: {
 		neverRestore: readonly EntityType[];
 		snapshot?: VaultSnapshot;
+		/** Per-page-life placeholder tag (see engine/vault.ts); omitted: untagged placeholders. */
+		tag?: string;
 	}): PlaceholderVault;
+	/** Placeholder tag for this page life (tests); defaults to a fresh newVaultTag(). */
+	readonly vaultTag?: string;
 	/** Timer used between policy fetch retries (defaults to window.setTimeout). */
 	sleep?(ms: number): Promise<void>;
 }
@@ -187,7 +193,11 @@ export function bootContentGuard(deps: BootDeps): BootedGuard {
 			}));
 	let policy: GuardPolicy | null = null;
 	let engine: DetectionEngine | null = null;
-	let vault: PlaceholderVault = deps.createVault({ neverRestore: [] });
+	// One random tag per page life: placeholders minted here never collide with another
+	// conversation's or tab's `[EMAIL_1]`, so a foreign placeholder is never restored with
+	// this tab's value (engine/vault.ts). Entries imported from a snapshot keep their own.
+	const vaultTag = deps.vaultTag ?? newVaultTag();
+	let vault: PlaceholderVault = deps.createVault({ neverRestore: [], tag: vaultTag });
 	let vaultNeverRestore: readonly string[] | null = null;
 
 	// Stable facades so the guard keeps working across policy changes.
@@ -286,7 +296,7 @@ export function bootContentGuard(deps: BootDeps): BootedGuard {
 			);
 			if (!saved) return;
 			// Strict import: a malformed snapshot throws and the page starts empty.
-			vault = deps.createVault({ neverRestore: [], snapshot: saved.snapshot });
+			vault = deps.createVault({ neverRestore: [], snapshot: saved.snapshot, tag: vaultTag });
 			savedOnce = vault.size() > 0;
 			guard.unmasker.rehydrateSent(saved.sent.filter((p) => vault.lookup(p) !== undefined));
 		} catch {
@@ -318,6 +328,7 @@ export function bootContentGuard(deps: BootDeps): BootedGuard {
 			vault = deps.createVault({
 				neverRestore: next.neverRestore,
 				snapshot: vault.exportSession(),
+				tag: vaultTag,
 			});
 			vaultNeverRestore = [...next.neverRestore];
 		}

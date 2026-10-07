@@ -6,7 +6,8 @@
  * site the browser must first grant host access to its origins (optional host
  * permissions, requested from the options page: browsers only prompt from a user
  * gesture, and a managed policy cannot grant it silently). The worker then registers the
- * same content.js for exactly the granted hosts with chrome.scripting
+ * same content.js (plus the page-world file-input hook content-main.js, see
+ * ../content/file-input-hook.ts) for exactly the granted hosts with chrome.scripting
  * (`scripting` permission), and re-syncs whenever the policy or a grant changes. A host
  * without access gets no script: nothing is injected where the user did not allow it.
  */
@@ -14,7 +15,11 @@ import type { CustomSiteAccess, CustomSiteConfig } from "../types.js";
 import type { ChromeApi, RegisteredContentScript } from "./storage.js";
 
 export const CUSTOM_SCRIPT_ID = "aidr-custom-sites";
+/** The page-world (MAIN) companion script, registered and removed together with content.js. */
+export const CUSTOM_MAIN_SCRIPT_ID = "aidr-custom-sites-main";
 const CONTENT_SCRIPT_FILE = "content.js";
+const MAIN_WORLD_SCRIPT_FILE = "content-main.js";
+const SCRIPT_IDS = [CUSTOM_SCRIPT_ID, CUSTOM_MAIN_SCRIPT_ID];
 
 const originForHost = (host: string): string => `https://${host}/*`;
 
@@ -116,35 +121,54 @@ export class CustomSiteScripts {
 			if (matches.length > 0) this.log("custom sites: scripting API unavailable");
 			return;
 		}
-		let existing: RegisteredContentScript | undefined;
+		let existing: RegisteredContentScript[] = [];
 		try {
-			[existing] = await scripting.getRegisteredContentScripts({ ids: [CUSTOM_SCRIPT_ID] });
+			existing = await scripting.getRegisteredContentScripts({ ids: SCRIPT_IDS });
 		} catch {
-			existing = undefined;
+			existing = [];
 		}
-		const current = [...(existing?.matches ?? [])].sort();
-		if (existing && sameList(current, matches)) {
+		const isolated = existing.find((s) => s.id === CUSTOM_SCRIPT_ID);
+		const main = existing.find((s) => s.id === CUSTOM_MAIN_SCRIPT_ID);
+		const current = [...(isolated?.matches ?? [])].sort();
+		if (
+			isolated &&
+			main &&
+			sameList(current, matches) &&
+			sameList([...(main.matches ?? [])].sort(), matches)
+		) {
 			this.registered = current;
 			return;
 		}
 		try {
-			if (existing) await scripting.unregisterContentScripts({ ids: [CUSTOM_SCRIPT_ID] });
+			const stale = existing.map((s) => s.id);
+			if (stale.length > 0) await scripting.unregisterContentScripts({ ids: stale });
 			this.registered = [];
 			if (matches.length === 0) return;
-			const script: RegisteredContentScript = {
-				id: CUSTOM_SCRIPT_ID,
-				matches,
-				js: [CONTENT_SCRIPT_FILE],
+			const base = {
 				runAt: "document_start",
 				allFrames: false,
 				persistAcrossSessions: true,
-			};
+			} as const;
+			// The page-world hook is registered with content.js: without it, detached and
+			// shadow-DOM file inputs on the custom site would not be routed to the guard.
+			const scripts: RegisteredContentScript[] = [
+				{ ...base, matches: [...matches], id: CUSTOM_SCRIPT_ID, js: [CONTENT_SCRIPT_FILE] },
+				{
+					...base,
+					matches: [...matches],
+					id: CUSTOM_MAIN_SCRIPT_ID,
+					js: [MAIN_WORLD_SCRIPT_FILE],
+					world: "MAIN",
+				},
+			];
 			try {
-				await scripting.registerContentScripts([script]);
+				await scripting.registerContentScripts(scripts);
 			} catch {
 				// Browsers without persistent registrations: the worker re-registers on start-up.
-				const { persistAcrossSessions: _persist, ...transient } = script;
-				await scripting.registerContentScripts([transient]);
+				await scripting.unregisterContentScripts({ ids: SCRIPT_IDS }).catch(() => undefined);
+				await scripting.registerContentScripts(
+					scripts.map(({ persistAcrossSessions: _persist, ...transient }) => transient),
+				);
 			}
 			this.registered = matches;
 		} catch {

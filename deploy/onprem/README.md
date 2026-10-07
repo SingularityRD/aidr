@@ -197,7 +197,7 @@ keep their digests after `docker load`.
 | A container restarts with exit code 137 | It hit its memory limit. Move to a larger `--profile` or raise that service's `deploy.resources.limits.memory`. |
 | Dashboard stays `unhealthy` | Production health is `/readyz`. It stays unhealthy until the signing, queue, backup and TLS evidence exists (`/srv/aidr/health`). |
 | `meta` is `unhealthy` | The overlay probes TCP 8080 inside the container; check `docker compose logs meta` and the database health. |
-| `aig-bridge` is `unhealthy` | `curl -s http://127.0.0.1:8099/api/v1/readyz` names the failing gate: dataset signature, worker, registry or egress. |
+| `aig-bridge` is `unhealthy` | The public `/api/v1/readyz` only answers ready/not-ready. The authenticated `curl -s -H "Authorization: Bearer $AIG_BRIDGE_API_KEY" http://127.0.0.1:8099/api/v1/health` names the failing gate: dataset signature, worker, registry or egress. |
 | Remote posture scans fail | The destination is missing from `posture-scanner/egress/allowlist.txt` or resolves to a non-public address; check `docker compose logs aig-egress`. |
 | Doctor reports `UNVERIFIED` | The host scheduler or Docker could not be inspected from that shell; UNVERIFIED is never a pass. |
 | Logs fill the disk | Each container keeps at most 5 compressed 20 MiB files; check other writers under `/var/lib/docker`. |

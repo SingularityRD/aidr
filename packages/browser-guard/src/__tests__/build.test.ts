@@ -48,6 +48,7 @@ const STUB_ENTRIES: Record<string, string> = {
 		(globalThis as { __bg?: unknown }).__bg = BUILD;
 	`,
 	"src/content/index.ts": `(globalThis as { __content?: number }).__content = [1, 2, 3].reduce((a, b) => a + b, 0);`,
+	"src/content/main-world.ts": `(globalThis as { __main?: number }).__main = [4, 5].reduce((a, b) => a + b, 0);`,
 	"src/ui/popup.ts": `import { label } from "./shared"; document.title = label("popup");`,
 	"src/ui/options.ts": `import { label } from "./shared"; document.title = label("options");`,
 	"src/ui/shared.ts": `export function label(page: string): string { return \`AIDR \${page}\`; }`,
@@ -160,11 +161,12 @@ describe("release build with --zip (stub entries)", () => {
 		});
 	});
 
-	it("emits the four bundles and all static assets for both targets", () => {
+	it("emits the five bundles and all static assets for both targets", () => {
 		const expected = [
 			"_locales/en/messages.json",
 			"_locales/tr/messages.json",
 			"background.js",
+			"content-main.js",
 			"content.js",
 			"icons/icon-128.png",
 			"icons/icon-16.png",
@@ -230,6 +232,13 @@ describe("release build with --zip (stub entries)", () => {
 				run_at: "document_start",
 				all_frames: false,
 			},
+			{
+				matches: [...MATCH_PATTERNS],
+				js: ["content-main.js"],
+				run_at: "document_start",
+				all_frames: false,
+				world: "MAIN",
+			},
 		]);
 		expect(manifest).not.toHaveProperty("web_accessible_resources");
 		expect(manifest).not.toHaveProperty("externally_connectable");
@@ -269,7 +278,13 @@ describe("release build with --zip (stub entries)", () => {
 			expect(background).toContain('"1.2.3-rc.1"');
 			expect(background).toContain(`"${target}"`);
 			expect(background).not.toContain("__AIDR_VERSION__");
-			for (const name of ["background.js", "content.js", "popup.js", "options.js"]) {
+			for (const name of [
+				"background.js",
+				"content.js",
+				"content-main.js",
+				"popup.js",
+				"options.js",
+			]) {
 				const code = readFileSync(join(outDir, target, name), "utf8");
 				expect(code).not.toContain("sourceMappingURL");
 				expect(code).not.toMatch(/\bimport\s|\bexport\s/);

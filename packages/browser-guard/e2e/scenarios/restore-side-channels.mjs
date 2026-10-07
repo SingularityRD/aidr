@@ -220,7 +220,7 @@ export default [
 			for (const v of values) checks.excludes("page innerText never has the value", probe.pageText, v);
 
 			// Oracle attempts after the send.
-			const placeholders = [...new Set(body.match(/\[[A-Z_]+_\d+\]/g) ?? [])];
+			const placeholders = [...new Set(body.match(/\[[A-Z_]+_\d+(?:_[a-z0-9]{4,8})?\]/g) ?? [])];
 			await page.evaluate(
 				({ sentPh, unsentPh }) => {
 					document.getElementById("stale-answer").textContent = `stale ${sentPh}`;
