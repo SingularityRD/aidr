@@ -80,6 +80,10 @@
       "owner": "Identity Engineering",
       "tests": ["supabase/functions/__tests__/oauth-callback-contract.test.ts"]
     },
+    "operator-admin": {
+      "owner": "Platform Engineering",
+      "tests": ["supabase/functions/__tests__/operator-admin-contract.test.ts"]
+    },
     "oidc-sso": {
       "owner": "Identity Engineering",
       "tests": ["supabase/functions/__tests__/oidc-sso-handler.test.ts", "supabase/functions/__tests__/oidc-sso-protocol.test.ts"]
