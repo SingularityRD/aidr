@@ -255,7 +255,9 @@ guides. A universal MDM installer is still open.
   infrastructure assessment. Enable `policy.ai_infrastructure` with explicit
   target origins/report path to enforce confirmed critical CVEs; stale or missing
   reports require review by default. A successful HTTP response with a failed
-  probe is incomplete, not a clean scan.
+  probe is incomplete, not a clean scan. Exit status: `2` = version-confirmed
+  critical/high CVE, `1` = incomplete (a target was not scanned, or CVEs whose
+  applicability is unconfirmed), `0` = scanned with nothing applicable matched.
 - Audit exports use private downloads valid for 60 seconds. Each response
   contains up to 500 rows and returns a signed `next_cursor` for the next page;
   follow it until `complete` is true. Storage cleanup remains a required
