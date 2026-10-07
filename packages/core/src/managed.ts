@@ -1396,18 +1396,26 @@ function isRevocationListCurrent(list: RevocationList, now: number): boolean {
 	return Date.parse(list.issued_at) <= now && now < Date.parse(list.expires_at);
 }
 
+/** Signed tenant/agent binding of a schema-2 list; null when absent or malformed. */
+function revocationListBinding(
+	obj: Record<string, unknown>,
+): { tenant_id: string; agent_id: string | null } | null {
+	// Unbound schema-1 lists are rejected: they could be replayed across tenants.
+	if (obj.schema_version !== 2 || !("agent_id" in obj)) return null;
+	const tenantId = obj.tenant_id;
+	const agentId = obj.agent_id;
+	if (typeof tenantId !== "string" || !REVOCATION_IDENTIFIER.test(tenantId)) return null;
+	if (agentId === null) return { tenant_id: tenantId, agent_id: null };
+	return typeof agentId === "string" && REVOCATION_IDENTIFIER.test(agentId)
+		? { tenant_id: tenantId, agent_id: agentId }
+		: null;
+}
+
 function validateRevocationListStrict(input: unknown): RevocationList | null {
 	if (!input || typeof input !== "object" || Array.isArray(input)) return null;
 	const obj = input as Record<string, unknown>;
-	// Unbound schema-1 lists are rejected: they could be replayed across tenants.
-	if (obj.schema_version !== 2) return null;
-	if (typeof obj.tenant_id !== "string" || !REVOCATION_IDENTIFIER.test(obj.tenant_id)) return null;
-	if (!("agent_id" in obj)) return null;
-	if (
-		obj.agent_id !== null &&
-		(typeof obj.agent_id !== "string" || !REVOCATION_IDENTIFIER.test(obj.agent_id))
-	)
-		return null;
+	const binding = revocationListBinding(obj);
+	if (!binding) return null;
 	if (!isIsoDateString(obj.issued_at) || !isIsoDateString(obj.expires_at)) return null;
 
 	const epoch =
@@ -1436,8 +1444,8 @@ function validateRevocationListStrict(input: unknown): RevocationList | null {
 
 	return {
 		schema_version: 2,
-		tenant_id: obj.tenant_id,
-		agent_id: obj.agent_id as string | null,
+		tenant_id: binding.tenant_id,
+		agent_id: binding.agent_id,
 		issued_at: obj.issued_at,
 		expires_at: obj.expires_at,
 		revocation_epoch: epoch,
