@@ -114,21 +114,179 @@ function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
 const COMMAND_TOOL_SUFFIX =
 	/(?:^|_)(?:bash|batch(?:_file)?|cmd(?:_exe)?|command(?:_execution)?|execute_command|fish|powershell|pwsh|run_command|run_shell(?:_command)?|sh|shell(?:_command|_exec)?|terminal|zsh)$/;
 
-function requestAction(tool: string): string {
+/** Name tokens of tools that run code: every string they receive is treated as a command. */
+const CODE_TOKENS = new Set([
+	"code_interpreter",
+	"eval",
+	"evaluate",
+	"exec",
+	"execute",
+	"interpreter",
+	"javascript",
+	"jupyter",
+	"node",
+	"notebook",
+	"python",
+	"repl",
+	"ruby",
+	"sandbox",
+	"script",
+	"shell",
+	"subprocess",
+]);
+/** "run" alone is too generic; with one of these it is a code-running tool. */
+const RUN_OBJECT_TOKENS = new Set(["code", "js", "program", "py", "script", "snippet"]);
+const FETCH_TOKENS = new Set([
+	"browse",
+	"browser",
+	"crawl",
+	"curl",
+	"download",
+	"fetch",
+	"http",
+	"https",
+	"navigate",
+	"request",
+	"scrape",
+	"uri",
+	"url",
+	"urls",
+	"web",
+	"webpage",
+	"website",
+	"wget",
+]);
+const WRITE_TOKENS = new Set([
+	"append",
+	"create",
+	"delete",
+	"edit",
+	"mkdir",
+	"move",
+	"patch",
+	"remove",
+	"rename",
+	"replace",
+	"rm",
+	"save",
+	"upload",
+	"write",
+]);
+const READ_TOKENS = new Set([
+	"cat",
+	"dir",
+	"directory",
+	"file",
+	"files",
+	"glob",
+	"grep",
+	"head",
+	"list",
+	"load",
+	"ls",
+	"open",
+	"path",
+	"read",
+	"tail",
+	"view",
+]);
+
+function toolNameTokens(tool: string): string[] {
 	const normalized = tool
 		.trim()
+		.replace(/([a-z0-9])([A-Z])/g, "$1_$2")
 		.toLowerCase()
-		.replace(/[.\s-]+/g, "_")
+		.replace(/[.\s/:-]+/g, "_")
 		.replace(/_+/g, "_")
 		.replace(/^_|_$/g, "");
-	return COMMAND_TOOL_SUFFIX.test(normalized) ? "execute" : tool;
+	return normalized === "" ? [] : normalized.split("_");
 }
 
-function toCheckRequest(context: MiddlewareContext): CheckRequest {
+type ToolKind = "execute" | "fetch" | "write" | "read" | "other";
+
+/**
+ * Classify a tool by its name. Code-running tools are checked first so a name
+ * such as `run_python_file` is never downgraded to a plain file read; an
+ * unrecognised name keeps the tool name as the action and is checked as
+ * content plus every artifact the generic extractor finds in its input.
+ */
+function toolKind(tool: string): ToolKind {
+	const tokens = toolNameTokens(tool);
+	const joined = tokens.join("_");
+	if (COMMAND_TOOL_SUFFIX.test(joined)) return "execute";
+	if (joined.includes("code_interpreter")) return "execute";
+	if (tokens.some((token) => CODE_TOKENS.has(token))) return "execute";
+	if (tokens.includes("run") && tokens.some((token) => RUN_OBJECT_TOKENS.has(token))) {
+		return "execute";
+	}
+	if (tokens.some((token) => FETCH_TOKENS.has(token))) return "fetch";
+	if (tokens.some((token) => WRITE_TOKENS.has(token))) return "write";
+	if (tokens.some((token) => READ_TOKENS.has(token))) return "read";
+	return "other";
+}
+
+/** Parse the middleware input string into the object shape the extractor walks. */
+function parsedToolInput(input: string): Record<string, unknown> {
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(input);
+	} catch {
+		return { input };
+	}
+	if (Array.isArray(parsed)) {
+		const only = parsed.length === 1 ? parsed[0] : undefined;
+		return typeof only === "object" && only !== null && !Array.isArray(only)
+			? (only as Record<string, unknown>)
+			: { args: parsed };
+	}
+	return typeof parsed === "object" && parsed !== null
+		? (parsed as Record<string, unknown>)
+		: { input: parsed };
+}
+
+type Artifacts = NonNullable<CheckRequest["artifacts"]>;
+
+/**
+ * Build the check request for one tool call.
+ *
+ * - Typed artifacts: the caller's `context.artifacts`, or (when absent) the
+ *   core generic extractor run on the parsed input, so URL, command, file-path
+ *   and content rules all apply whatever the tool is called.
+ * - `fetch`/`read`/`write` tools: the first URL / file path becomes the
+ *   resource, so URL reputation and file-path rules run on that value.
+ * - Code-running tools (`execute`): every extracted string is also inspected
+ *   as a command, so `run_code({"code": "curl … | bash"})` is checked exactly
+ *   like a shell tool.
+ */
+export function toCheckRequest(context: MiddlewareContext): CheckRequest {
+	const kind = toolKind(context.tool);
+	const extracted: Artifacts =
+		context.artifacts ?? extractFromUnknownTool(context.tool, parsedToolInput(context.input));
+	let artifacts: Artifacts = extracted;
+	let action = context.tool;
+	let resource = context.input;
+
+	if (kind === "execute") {
+		action = "execute";
+		const asCommands: Artifacts = extracted
+			.filter((artifact) => artifact.type === "content" && !artifact.context?.startsWith("aidr:"))
+			.map((artifact) => ({ ...artifact, type: "command" as const }));
+		artifacts = [...extracted, ...asCommands];
+	} else if (kind !== "other") {
+		const wanted = kind === "fetch" ? "url" : "file_path";
+		const primary = extracted.find((artifact) => artifact.type === wanted);
+		if (primary) {
+			action = kind;
+			resource = primary.value;
+			// The raw input is still inspected as content.
+			artifacts = [...extracted, { type: "content", value: context.input, context: "tool_input" }];
+		}
+	}
+
 	return {
-		action: requestAction(context.tool),
-		resource: context.input,
-		artifacts: context.artifacts,
+		action,
+		resource,
+		artifacts,
 		sessionId: context.sessionId,
 		metadata: context.metadata,
 	};

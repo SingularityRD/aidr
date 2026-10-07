@@ -49,7 +49,7 @@ export {
 	resolveDataDirs,
 } from "./bundled-dirs.js";
 // SDK client and config exports
-export { AIDRClient } from "./client.js";
+export { AIDRClient, HTTP_REQUEST_ACTION, MAX_CONTEXT_BODY_CHARS } from "./client.js";
 export type {
 	CheckRequest,
 	CheckResult,
