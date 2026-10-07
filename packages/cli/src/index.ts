@@ -9,7 +9,7 @@ import {
 	allowlistRemoveCommand,
 } from "./commands/allowlist.js";
 import { approveCommand, pendingCommand } from "./commands/approvals.js";
-import { auditExportCommand, auditTailCommand } from "./commands/audit.js";
+import { auditExportCommand, auditTailCommand, auditVerifyCommand } from "./commands/audit.js";
 import {
 	canaryDeployCommand,
 	canaryListCommand,
@@ -387,6 +387,16 @@ auditProgram
 	.option("--format <format>", "jsonl or csv", "jsonl")
 	.option("-o, --output <file>", "Write to a new file (0600) instead of stdout")
 	.action((options) => auditExportCommand(options));
+
+auditProgram
+	.command("verify [path]")
+	.description(
+		"Verify the Ed25519-signed response-action chain and report the first broken link (exit 1 broken, 2 unverifiable)",
+	)
+	.option("--json", "Emit a machine-readable result")
+	.action(async (path, options) => {
+		await auditVerifyCommand(path, options);
+	});
 
 const profileProgram = program
 	.command("profile")

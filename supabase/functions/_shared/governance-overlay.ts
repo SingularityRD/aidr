@@ -5,6 +5,8 @@
 // minus approved, unexpired exceptions for the calling member or agent. The
 // overlay travels next to `runtime_policy` (never inside it) so the published
 // revision, its digest and agent load receipts stay exactly as published.
+// The signed runtime-policy envelope binds the same `governance_sha256` (see
+// policy-signature.ts), so the overlay is covered by the policy signature.
 // Connectors verify `governance_sha256` over the canonical overlay and add the
 // lists on top of the published policy.
 

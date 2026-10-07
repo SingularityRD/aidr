@@ -50,9 +50,18 @@ function signedBody(
 		issuedAt?: number;
 		expiresAt?: number;
 		version?: string;
+		/** Governance overlay served next to the policy (absent = none). */
+		governance?: { mcp_deny_servers: string[]; mcp_require_approval_servers: string[] };
+		/** Whether the envelope binds governance_sha256 (current signer) or not (legacy signer). */
+		bindGovernance?: boolean;
 	} = {},
 ) {
 	const policy = opts.policy ?? POLICY;
+	const overlayDigest = createHash("sha256")
+		.update(
+			canonicalJson(opts.governance ?? { mcp_deny_servers: [], mcp_require_approval_servers: [] }),
+		)
+		.digest("hex");
 	const keyId = opts.keyId ?? "policy-key-1";
 	const envelope = {
 		schema_version: 1,
@@ -63,6 +72,7 @@ function signedBody(
 		issued_at: new Date(opts.issuedAt ?? NOW - 60_000).toISOString(),
 		expires_at: new Date(opts.expiresAt ?? NOW + 3_600_000).toISOString(),
 		tenant_id: "tenant_1",
+		...(opts.bindGovernance === false ? {} : { governance_sha256: overlayDigest }),
 	};
 	return {
 		ok: true,
@@ -70,6 +80,7 @@ function signedBody(
 		policy_sha256: envelope.policy_sha256,
 		cache_seconds: 60,
 		runtime_policy: policy,
+		...(opts.governance ? { governance: opts.governance, governance_sha256: overlayDigest } : {}),
 		policy_signed: {
 			alg: "ed25519",
 			key_id: keyId,
@@ -254,6 +265,52 @@ describe("syncRemoteRuntimePolicy with signed policy", () => {
 			serve(body);
 			await expect(sync(config)).rejects.toThrow("unavailable");
 		}
+	});
+
+	it("applies signed governance bans and fails closed when they are stripped or swapped", async () => {
+		const governance = { mcp_deny_servers: ["shell-runner"], mcp_require_approval_servers: [] };
+		const { config } = await setup({ required: true });
+		serve(signedBody({ governance }));
+		expect((await sync(config)).policy.mcp.deny_servers).toContain("shell-runner");
+
+		for (const body of [
+			// Bans stripped in transit: the envelope still binds them.
+			(() => {
+				const { governance: _g, governance_sha256: _d, ...stripped } = signedBody({ governance });
+				return stripped;
+			})(),
+			// Bans swapped for a weaker, self-consistent overlay.
+			{
+				...signedBody({ governance }),
+				governance: { mcp_deny_servers: [], mcp_require_approval_servers: [] },
+				governance_sha256: createHash("sha256")
+					.update(canonicalJson({ mcp_deny_servers: [], mcp_require_approval_servers: [] }))
+					.digest("hex"),
+			},
+		]) {
+			clearRemoteRuntimePolicyCacheForTests();
+			await rm(config.control_plane.remote_policy_cache_path, { force: true });
+			serve(body);
+			await expect(sync(config)).rejects.toThrow("unavailable");
+		}
+	});
+
+	it("still applies (and warns about) an overlay from a legacy signer that does not bind it", async () => {
+		const governance = { mcp_deny_servers: ["shell-runner"], mcp_require_approval_servers: [] };
+		const { config } = await setup({ required: true });
+		serve(signedBody({ governance, bindGovernance: false }));
+		const warnings: string[] = [];
+		const logger = {
+			debug() {},
+			info() {},
+			warn(message: string) {
+				warnings.push(message);
+			},
+			error() {},
+		};
+		const applied = await syncRemoteRuntimePolicy(config, "agent-token", logger, NOW);
+		expect(applied.policy.mcp.deny_servers).toContain("shell-runner");
+		expect(warnings.join(" | ")).toContain("not bound by its signature");
 	});
 
 	it("optional mode ignores a bad-signature policy instead of applying it", async () => {

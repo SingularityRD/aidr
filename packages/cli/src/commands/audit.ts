@@ -1,10 +1,14 @@
 import { createHash } from "node:crypto";
 import { lstat, readFile, writeFile } from "node:fs/promises";
 import {
+	DEFAULT_RESPONSE_AUDIT_CONFIG,
 	frameworkRefLabels,
 	frameworkRefsFromJson,
 	type LoggingConfig,
 	loadConfig,
+	ResponseAuditor,
+	type ResponseChainBrokenLink,
+	type ResponseChainVerification,
 	redactTelemetryData,
 	redactTelemetryString,
 	resolvePath,
@@ -280,4 +284,86 @@ export async function auditExportCommand(
 	if (log.skipped > 0) {
 		console.error(`${log.skipped} unreadable audit line(s) were skipped.`);
 	}
+}
+
+/** Exit codes for `aidr audit verify`: 1 = the chain is broken, 2 = nothing could be verified. */
+export const AUDIT_VERIFY_BROKEN = 1;
+export const AUDIT_VERIFY_UNVERIFIABLE = 2;
+
+const UNVERIFIABLE_REASONS = new Set([
+	"audit_log_missing",
+	"audit_log_unreadable",
+	"signing_key_missing",
+]);
+
+function describeBrokenLink(link: ResponseChainBrokenLink): string {
+	const where = link.line > 0 ? `line ${link.line}` : "chain metadata";
+	const entry = link.entryId ? ` (${link.entryId})` : "";
+	return `${where}${entry}: ${link.reason}`;
+}
+
+/** Resolve the response-action chain path: explicit argument first, then config. */
+async function responseChainPath(
+	path: string | undefined,
+	deps: AuditCommandDeps,
+): Promise<string> {
+	if (path) return path;
+	const config = await loadConfig(deps.configPath);
+	return config.response?.audit?.path ?? DEFAULT_RESPONSE_AUDIT_CONFIG.path;
+}
+
+/**
+ * `aidr audit verify [path] [--json]`
+ *
+ * Verifies the Ed25519-signed SHA-256 response-action chain offline, reports the
+ * first broken link and exits non-zero on any failure. Verification never
+ * creates a signing key: a chain without its key is reported as unverifiable,
+ * never as valid.
+ */
+export async function auditVerifyCommand(
+	path: string | undefined,
+	options: { json?: boolean } = {},
+	deps: AuditCommandDeps = {},
+): Promise<ResponseChainVerification | null> {
+	let chainPath: string;
+	try {
+		chainPath = await responseChainPath(path, deps);
+	} catch (error) {
+		fail(`Could not resolve the response audit chain path: ${errorText(error)}`);
+		process.exitCode = AUDIT_VERIFY_UNVERIFIABLE;
+		return null;
+	}
+	const result = await new ResponseAuditor(chainPath, { signEntries: true }).verifyChain({
+		requireExistingKey: true,
+	});
+	const unverifiable = !result.valid && UNVERIFIABLE_REASONS.has(result.reason ?? "");
+	if (!result.valid) {
+		process.exitCode = unverifiable ? AUDIT_VERIFY_UNVERIFIABLE : AUDIT_VERIFY_BROKEN;
+	}
+
+	if (options.json) {
+		console.log(JSON.stringify({ path: resolvePath(chainPath), ...result }));
+		return result;
+	}
+	const target = resolvePath(chainPath);
+	if (result.valid) {
+		console.log(
+			`Response audit chain intact: ${result.verifiedEntries} signed entr${result.verifiedEntries === 1 ? "y" : "ies"} verified (${target}).`,
+		);
+		return result;
+	}
+	if (unverifiable) {
+		console.error(`Response audit chain NOT verified (${target}): ${result.reason}.`);
+		return result;
+	}
+	console.error(
+		`Response audit chain BROKEN (${target}): ${result.verifiedEntries}/${result.entries} entries verified before the first break.`,
+	);
+	if (result.firstBrokenLink) {
+		console.error(`First broken link: ${describeBrokenLink(result.firstBrokenLink)}`);
+	}
+	if (result.tamperedEntries.length > 1) {
+		console.error(`${result.tamperedEntries.length} link(s) fail verification in total.`);
+	}
+	return result;
 }

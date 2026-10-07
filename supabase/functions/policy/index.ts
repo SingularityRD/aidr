@@ -56,27 +56,29 @@ export function createPolicyHandler(deps: { db?: ReturnType<typeof createClient>
 			const runtimePolicy = validateRuntimePolicy(policy.policy);
 			const policyVersion = String(policy.version);
 			const policySha256 = await sha256(canonicalPolicy(policy.policy));
+			// AI governance register bans/restrictions for this member or agent, on
+			// top of (never inside) the published policy document. An unreadable
+			// overlay fails closed: serving the policy without the bans would relax it.
+			const overlayRpc = db as unknown as { rpc(name: string, args: Record<string, unknown>): PromiseLike<{ data: unknown; error: unknown }> };
+			const overlayResult = await overlayRpc.rpc("ai_governance_policy_overlay", { p_tenant_id: tenant, p_user_id: auth.userId, p_agent_id: agentId });
+			if (overlayResult.error) return json(503, { error: "policy_unavailable" });
+			const governance = validateGovernanceOverlay(overlayResult.data);
+			// Digest of the overlay as served (the canonical empty overlay when none
+			// applies); the signed envelope binds it so the bans cannot be stripped.
+			const governanceSha256 = await sha256(canonicalPolicy(governance));
 			let policySigned: SignedPolicy | null = null;
 			if (signing.config) {
 				// Monotonic: publish (or assignment) time, so re-publishing older content still advances it.
 				const sequence = policySequence(policy.updated_at, policy.created_at, assignedAt);
 				if (sequence === null) return json(503, { error: POLICY_SIGNING_UNAVAILABLE });
-				policySigned = await signRuntimePolicyEnvelope({ tenantId: tenant, policyVersion, policySha256, sequence, now: (deps.now ?? (() => new Date()))() }, signing.config);
+				policySigned = await signRuntimePolicyEnvelope({ tenantId: tenant, policyVersion, policySha256, sequence, governanceSha256, now: (deps.now ?? (() => new Date()))() }, signing.config);
 				if (!policySigned) return json(503, { error: POLICY_SIGNING_UNAVAILABLE });
 			}
-			// AI governance register bans/restrictions for this member or agent, on
-			// top of (never inside) the published policy. An unreadable overlay
-			// fails closed: serving the policy without the bans would relax it.
-			// The overlay is outside the signed runtime-policy envelope.
-			const overlayRpc = db as unknown as { rpc(name: string, args: Record<string, unknown>): PromiseLike<{ data: unknown; error: unknown }> };
-			const overlayResult = await overlayRpc.rpc("ai_governance_policy_overlay", { p_tenant_id: tenant, p_user_id: auth.userId, p_agent_id: agentId });
-			if (overlayResult.error) return json(503, { error: "policy_unavailable" });
-			const governance = validateGovernanceOverlay(overlayResult.data);
 			return json(200, {
 				policy_version: policyVersion, cache_seconds: 30, runtime_policy: runtimePolicy,
 				policy_sha256: policySha256, agent_bound: !!agentId,
 				...(policySigned ? { policy_signed: policySigned } : {}),
-				...(overlayIsEmpty(governance) ? {} : { governance, governance_sha256: await sha256(canonicalPolicy(governance)) }),
+				...(overlayIsEmpty(governance) ? {} : { governance, governance_sha256: governanceSha256 }),
 			}, rateLimitHeaders(rate));
 		} catch {
 			return json(503, { error: "policy_unavailable" });

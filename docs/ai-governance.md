@@ -84,7 +84,13 @@ How the MCP restrictions reach connectors: the control plane serves them as a
 with its own SHA-256 digest. Connectors verify the digest, add the lists on top
 of the published policy at their next policy refresh (about 30 seconds), and
 keep them in the local policy cache. A malformed or mismatching block makes the
-whole policy response unusable, exactly like a malformed policy. Requirements
+whole policy response unusable, exactly like a malformed policy. When the policy
+endpoint signs its runtime policy, the signed envelope also carries
+`governance_sha256` (the digest of the empty overlay when nothing is banned), so a
+connector configured with policy public keys refuses a response whose bans were
+stripped, swapped or injected (`governance_mismatch`). An overlay from an older
+signer that does not bind it is still applied, because it can only add
+restrictions, and the connector logs that it is not signature-bound. Requirements
 and limits:
 
 - The workspace must have published a runtime policy (Policies page); without

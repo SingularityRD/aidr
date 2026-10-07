@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resolveEndpoint } from "../clients/url-check.js";
-import { checkForUpdate, isNewerVersion, type VersionCheckContext } from "../version-check.js";
+import {
+	checkForUpdate,
+	isNewerVersion,
+	type VersionCheckContext,
+	versionCheckEndpoint,
+} from "../version-check.js";
 
 describe("isNewerVersion", () => {
 	it("detects newer major version", () => {
@@ -185,5 +190,50 @@ describe("checkForUpdate", () => {
 		);
 		expect(body.agent_runtime).toBe("claude-code");
 		expect(body.iid).toBeUndefined();
+	});
+});
+
+describe("versionCheckEndpoint", () => {
+	it("uses the public gateway route by default and in local mode", () => {
+		expect(versionCheckEndpoint()).toBe(resolveEndpoint("/v1/version-check"));
+		expect(
+			versionCheckEndpoint({ mode: "local", control_plane: { endpoint: "https://cp.example" } }),
+		).toBe(versionCheckEndpoint());
+	});
+
+	it("routes a managed install to its own control plane's version-check function", () => {
+		expect(
+			versionCheckEndpoint({
+				mode: "managed",
+				control_plane: { endpoint: "https://project.supabase.co/functions" },
+			}),
+		).toBe("https://project.supabase.co/functions/v1/version-check");
+		expect(
+			versionCheckEndpoint({
+				mode: "managed",
+				control_plane: { endpoint: "https://gw.example/v1/" },
+			}),
+		).toBe("https://gw.example/v1/version-check");
+	});
+
+	it("POSTs to the endpoint it is given", async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValue({ ok: true, json: async () => ({ version: "1.0.0" }) });
+		const originalFetch = globalThis.fetch;
+		globalThis.fetch = fetchMock;
+		try {
+			await checkForUpdate(
+				"0.4.0",
+				undefined,
+				undefined,
+				undefined,
+				undefined,
+				"https://cp.example/v1/version-check",
+			);
+			expect(fetchMock.mock.calls[0]?.[0]).toBe("https://cp.example/v1/version-check");
+		} finally {
+			globalThis.fetch = originalFetch;
+		}
 	});
 });

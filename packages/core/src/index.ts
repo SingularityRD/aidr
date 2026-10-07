@@ -1279,7 +1279,12 @@ export {
 	summarizeResponseActions,
 	targetPathFor,
 } from "./response-actions.js";
-export type { ResponseAuditEntry, ResponseAuditorOptions } from "./response-audit.js";
+export type {
+	ResponseAuditEntry,
+	ResponseAuditorOptions,
+	ResponseChainBrokenLink,
+	ResponseChainVerification,
+} from "./response-audit.js";
 // Response Audit — the tamper-evident signed chain.
 //
 // `ResponseAuditor.log` refuses to append without a valid Ed25519 signature, so a
@@ -1645,7 +1650,7 @@ export { hashCommand, normalizeFilePath, normalizeUrl } from "./url-utils.js";
 export { getVersion, VERSION } from "./version.js";
 export type { VersionCheckContext, VersionCheckResult } from "./version-check.js";
 // Version check
-export { checkForUpdate, isNewerVersion } from "./version-check.js";
+export { checkForUpdate, isNewerVersion, versionCheckEndpoint } from "./version-check.js";
 export { windowsTargetsAreAlreadyPrivate } from "./windows-private-acl-probe.js";
 export {
 	initializeInstalledWindowsResponseWorker,

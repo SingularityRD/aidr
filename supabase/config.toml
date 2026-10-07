@@ -134,6 +134,10 @@ verify_jwt = false
 verify_jwt = false
 [functions.waitlist-signup]
 verify_jwt = false
+[functions.version-check]
+# Public, rate-limited release lookup for `checkForUpdate()`. Callers carry no
+# Supabase JWT (an enrolled runtime may send an API-key bearer, which is ignored).
+verify_jwt = false
 
 [functions.stripe-webhook]
 verify_jwt = false

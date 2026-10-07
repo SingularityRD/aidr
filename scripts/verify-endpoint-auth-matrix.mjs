@@ -69,6 +69,13 @@ export const PUBLIC_ROUTE_ALLOWLIST = Object.freeze([
 			"Public waitlist intake: it creates no account, writes no tenant data and only inserts (never overwrites) a signup; it verifies a Cloudflare Turnstile token server-side when TURNSTILE_SECRET_KEY is set, is throttled by a fail-closed deployment-wide aggregate quota plus a per-client quota keyed by a signed ingress IP proof when AIDR_WAITLIST_INGRESS_SECRET is set (never by caller-supplied proxy headers), and echoes CORS headers only for allowlisted origins.",
 	},
 	{
+		route: "supabase/functions/version-check/index.ts",
+		rateLimited: true,
+		mechanism: "public read-only release lookup",
+		justification:
+			"Public update check for every connector, including local-mode installs with no account: it returns only the latest published release (from an Ed25519-verified release manifest or an operator-configured version), reads and writes no tenant data, stores no request field (the bounded body is parsed only to validate aidr_version), and is throttled by a fail-closed deployment-wide aggregate quota plus a per-client quota keyed by a signed ingress IP proof when the shared ingress secret is set.",
+	},
+	{
 		route: "supabase/functions/scim/index.ts",
 		rateLimited: true,
 		mechanism: "SCIM bearer token",

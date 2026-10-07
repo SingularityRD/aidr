@@ -5,11 +5,14 @@ import {
 	type Config,
 	describeOperatorApprovalKey,
 	inspectLocalAgentProfiles,
+	inspectLocalDlpPolicy,
 	isInvalidConfig,
+	type LocalDlpPolicyState,
 	listPendingAsks,
 	loadConfig,
 	loadProvisionedDetectorContext,
 	localAgentProfilesPath,
+	localDlpPolicyPath,
 	type OperatorApprovalStoreOptions,
 	operatorApprovalStorePath,
 	resolvePath,
@@ -49,6 +52,8 @@ export interface DoctorDeps {
 	agentEnvironment?: (connectors: ConnectorStatus[]) => AgentEnvironmentReport;
 	/** Local agent permission profile document location. */
 	agentProfilesPath?: string;
+	/** Local (unsigned) DLP policy location; defaults to `AIDR_DLP_POLICY_PATH` or the home file. */
+	localDlpPolicyPath?: string;
 }
 
 function message(error: unknown): string {
@@ -142,44 +147,126 @@ function checkConnectors(connectors: ConnectorStatus[]): DoctorCheck {
 	};
 }
 
-async function checkDlp(connectors: ConnectorStatus[], deps: DoctorDeps): Promise<DoctorCheck> {
+/**
+ * Where the effective DLP policy for one runtime comes from. A local-mode
+ * install with no signed bundle enforces the operator's unsigned
+ * `dlp-policy.json`; this check must say so rather than claim "no DLP".
+ */
+function dlpSourceFor(
+	context: Awaited<ReturnType<typeof loadProvisionedDetectorContext>>,
+	local: LocalDlpPolicyState,
+	mode: Config["mode"],
+): DlpSource {
+	const dlp = context.runtimeDetectors?.dlp;
+	if (!dlp?.enabled) return "none";
+	const fromLocalFile =
+		mode === "local" &&
+		local.status === "loaded" &&
+		JSON.stringify(dlp.policy) === JSON.stringify(local.policy);
+	return fromLocalFile ? "local_file" : "signed_bundle";
+}
+
+const DLP_SOURCE_LABEL = {
+	signed_bundle: "enabled (signed managed detector policy)",
+	local_file: "enabled (local dlp-policy.json, unsigned)",
+} as const;
+
+function localDlpNote(local: LocalDlpPolicyState, mode: Config["mode"]): string {
+	if (local.status === "invalid") {
+		return ` Local DLP policy ${local.path} is INVALID (${local.reason}) and is NOT enforced.`;
+	}
+	if (local.status === "loaded" && mode !== "local") {
+		return ` Local DLP policy ${local.path} is ignored in ${mode} mode; only signed bundles apply.`;
+	}
+	return "";
+}
+
+type DlpSource = "signed_bundle" | "local_file" | "none";
+
+function runtimeDlpState(
+	context: Awaited<ReturnType<typeof loadProvisionedDetectorContext>>,
+	source: DlpSource,
+): string {
+	if (source !== "none") return DLP_SOURCE_LABEL[source];
+	return context.runtimeDetectors ? "policy present, DLP disabled" : "not provisioned";
+}
+
+/** Summary when no installed runtime enforces DLP. */
+function inactiveDlpSummary(
+	runtimeCount: number,
+	local: LocalDlpPolicyState,
+	mode: Config["mode"],
+): { status: CheckStatus; summary: string } {
+	if (runtimeCount === 0 && mode === "local" && local.status === "loaded") {
+		// No hook to evaluate per runtime, but the file every local connector reads is valid.
+		return {
+			status: "ok",
+			summary: `DLP policy loaded from local ${local.path} (unsigned); it applies once a connector hook is registered.`,
+		};
+	}
+	const note = localDlpNote(local, mode);
+	if (local.status === "invalid") return { status: "warn", summary: `DLP is not active.${note}` };
+	const missing =
+		mode === "local"
+			? `DLP is not active: no signed detector policy is installed and no local DLP policy was found at ${local.path}.`
+			: "DLP is not active: managed mode requires a signed detector policy from the control plane.";
+	return { status: "warn", summary: `${missing}${note}` };
+}
+
+async function checkDlp(
+	connectors: ConnectorStatus[],
+	deps: DoctorDeps,
+	config: Config,
+): Promise<DoctorCheck> {
 	const load = deps.loadDetectors ?? loadProvisionedDetectorContext;
+	const local = await inspectLocalDlpPolicy(deps.localDlpPolicyPath ?? localDlpPolicyPath());
 	const runtimes = connectors
 		.filter((c) => c.state === "installed")
 		.map((c) => c.id as AgentRuntime);
 	const results: Record<string, string> = {};
+	const sources: Record<string, DlpSource> = {};
 	const failures: string[] = [];
 	for (const runtime of runtimes) {
 		try {
 			const context = await load(runtime);
-			const dlp = context.runtimeDetectors?.dlp;
-			results[runtime] = dlp?.enabled
-				? "enabled"
-				: context.runtimeDetectors
-					? "policy present, DLP disabled"
-					: "not provisioned";
+			const source = dlpSourceFor(context, local, config.mode);
+			sources[runtime] = source;
+			results[runtime] = runtimeDlpState(context, source);
 		} catch (error) {
 			results[runtime] = `invalid: ${message(error)}`;
 			failures.push(runtime);
 		}
 	}
+	const detail = {
+		runtimes: results,
+		sources,
+		mode: config.mode,
+		local_policy: { path: local.path, status: local.status },
+	};
 	if (failures.length > 0) {
 		return {
 			id: "dlp",
 			status: "fail",
 			summary: `Detector (DLP) policy invalid for ${failures.join(", ")}; those connectors block every call.`,
-			detail: { runtimes: results },
+			detail,
 		};
 	}
-	const enabled = Object.entries(results).filter(([, state]) => state === "enabled");
+	const enabled = Object.entries(sources).filter(([, source]) => source !== "none");
+	if (enabled.length === 0) {
+		return { id: "dlp", ...inactiveDlpSummary(runtimes.length, local, config.mode), detail };
+	}
+	const described = enabled
+		.map(([runtime, source]) =>
+			source === "local_file"
+				? `${runtime} (local ${local.path})`
+				: `${runtime} (signed managed bundle)`,
+		)
+		.join(", ");
 	return {
 		id: "dlp",
-		status: enabled.length > 0 ? "ok" : "warn",
-		summary:
-			enabled.length > 0
-				? `DLP enabled for ${enabled.map(([runtime]) => runtime).join(", ")}.`
-				: "DLP is not active: it requires a signed managed detector policy (local mode has no DLP).",
-		detail: { runtimes: results },
+		status: local.status === "invalid" ? "warn" : "ok",
+		summary: `DLP enabled for ${described}.${localDlpNote(local, config.mode)}`,
+		detail,
 	};
 }
 
@@ -396,7 +483,7 @@ export async function runDoctor(deps: DoctorDeps = {}): Promise<DoctorReport> {
 		? deps.connectors()
 		: detectConnectorStatuses(deps.home ?? resolvePath("~"));
 	checks.push(checkConnectors(connectors));
-	checks.push(await checkDlp(connectors, deps));
+	checks.push(await checkDlp(connectors, deps, config));
 	checks.push(await checkAgentProfiles(connectors, deps));
 	checks.push(await checkApprovals(deps, config));
 	checks.push(checkAgentEnvironment(connectors, deps));
