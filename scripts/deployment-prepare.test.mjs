@@ -827,7 +827,11 @@ test("--with-privacy-gateway adds an opt-in, mTLS-only gateway with a hardened i
 			assert.match(firewall, /^SUBNET='172\.31\.253\.0\/28'$/m);
 			assert.match(firewall, /-d '162\.159\.140\.0\/24' -p tcp --dport 443 -j RETURN/);
 			assert.match(firewall, /-d '10\.0\.0\.53\/32' -p udp --dport 53 -j RETURN/);
-			assert.match(firewall, /-A "\$CHAIN" -j REJECT\n/);
+			assert.match(firewall, /-A "\$NEW" -j REJECT\n/);
+			assert.match(firewall, /^set -euo pipefail$/m);
+			// Re-applying never flushes the live chain: the replacement chain is
+			// complete before DOCKER-USER jumps to it (behaviour: deploy/privacy-gateway/privacy-gateway.test.mjs).
+			assert.ok(firewall.indexOf('-A "$NEW" -j REJECT') < firewall.indexOf('-I DOCKER-USER 1 -s "$SUBNET" -j "$NEW"'));
 			assert.match(firewall, /DOCKER-USER -s "\$SUBNET"/);
 			assert.doesNotMatch(firewall, /0\.0\.0\.0\/0/);
 

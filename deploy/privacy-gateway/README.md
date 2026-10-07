@@ -129,7 +129,7 @@ node scripts/deployment-prepare.mjs --mode self-hosted --output /srv/aidr ... \
 
 ```bash
 sudo chown -R 10001:10001 /srv/aidr/privacy-gateway/secrets
-sudo sh /srv/aidr/privacy-gateway/egress-firewall.sh
+sudo bash /srv/aidr/privacy-gateway/egress-firewall.sh
 docker compose --project-directory /srv/aidr -f /srv/aidr/compose.yml --profile privacy-gateway up -d --build privacy-gateway
 ```
 
@@ -137,7 +137,13 @@ Docker does not filter container egress. `privacy-gateway/egress-firewall.sh`
 adds `DOCKER-USER` rules that allow the gateway subnet to reach only the listed
 CIDRs on TCP 443 (and DNS resolvers, when given) and reject everything else. It
 is prepared, not applied: re-run it after every Docker or host firewall restart
-(for example from a systemd unit ordered after `docker.service`).
+(for example from a systemd unit ordered after `docker.service`). Re-running
+is safe: the rules are built in the unused one of two chains
+(`AIDR-PRIVACY-GW-A` / `AIDR-PRIVACY-GW-B`), completed with the final reject,
+and only then swapped in at the top of `DOCKER-USER`; the previous chain is
+removed after nothing jumps to it, so the subnet is never left unfiltered. If a
+run fails before the swap, the previous rules stay in force. The single
+`AIDR-PRIVACY-GATEWAY` chain of earlier releases is migrated the same way.
 `deployment.json` records the mTLS fingerprints, destination and egress list.
 
 ## Kubernetes (Helm)
