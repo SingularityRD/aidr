@@ -7,6 +7,7 @@
 			"description": "Pilot and up to roughly 100 endpoints on one host",
 			"host": { "vcpu": 4, "memory_gib": 8, "disk_gib": 100 },
 			"posture_scanner_host_addition": { "vcpu": 4, "memory_gib": 6, "disk_gib": 40 },
+			"privacy_gateway_host_addition": { "vcpu": 2, "memory_gib": 4, "disk_gib": 20 },
 			"services": {
 				"db": { "cpus": "2", "memory": "2g", "reservation_cpus": "0.5", "reservation_memory": "1g", "pids": 1024 },
 				"studio": { "cpus": "0.5", "memory": "768m", "reservation_memory": "256m", "pids": 256 },
@@ -22,13 +23,15 @@
 				"aig-server": { "cpus": "1", "memory": "1g", "reservation_cpus": "0.25", "reservation_memory": "256m", "pids": 256 },
 				"aig-agent": { "cpus": "2", "memory": "3g", "reservation_cpus": "0.5", "reservation_memory": "1g", "pids": 1024 },
 				"aig-bridge": { "cpus": "0.5", "memory": "512m", "reservation_memory": "128m", "pids": 256 },
-				"aig-egress": { "cpus": "0.5", "memory": "256m", "reservation_memory": "64m", "pids": 256 }
+				"aig-egress": { "cpus": "0.5", "memory": "256m", "reservation_memory": "64m", "pids": 256 },
+				"privacy-gateway": { "cpus": "2", "memory": "4g", "reservation_cpus": "0.5", "reservation_memory": "2g", "pids": 256 }
 			}
 		},
 		"medium": {
 			"description": "Load-test starting point for roughly 1,000 endpoints on one host",
 			"host": { "vcpu": 8, "memory_gib": 16, "disk_gib": 250 },
 			"posture_scanner_host_addition": { "vcpu": 6, "memory_gib": 8, "disk_gib": 60 },
+			"privacy_gateway_host_addition": { "vcpu": 4, "memory_gib": 6, "disk_gib": 20 },
 			"services": {
 				"db": { "cpus": "4", "memory": "6g", "reservation_cpus": "1", "reservation_memory": "3g", "pids": 2048 },
 				"studio": { "cpus": "0.5", "memory": "1g", "reservation_memory": "256m", "pids": 256 },
@@ -44,13 +47,15 @@
 				"aig-server": { "cpus": "2", "memory": "2g", "reservation_cpus": "0.5", "reservation_memory": "512m", "pids": 512 },
 				"aig-agent": { "cpus": "4", "memory": "4g", "reservation_cpus": "1", "reservation_memory": "1g", "pids": 1024 },
 				"aig-bridge": { "cpus": "1", "memory": "512m", "reservation_memory": "128m", "pids": 256 },
-				"aig-egress": { "cpus": "0.5", "memory": "512m", "reservation_memory": "64m", "pids": 512 }
+				"aig-egress": { "cpus": "0.5", "memory": "512m", "reservation_memory": "64m", "pids": 512 },
+				"privacy-gateway": { "cpus": "4", "memory": "6g", "reservation_cpus": "1", "reservation_memory": "3g", "pids": 512 }
 			}
 		},
 		"large": {
 			"description": "Dedicated control-plane host for multi-thousand endpoint load tests",
 			"host": { "vcpu": 16, "memory_gib": 32, "disk_gib": 500 },
 			"posture_scanner_host_addition": { "vcpu": 8, "memory_gib": 12, "disk_gib": 100 },
+			"privacy_gateway_host_addition": { "vcpu": 8, "memory_gib": 8, "disk_gib": 40 },
 			"services": {
 				"db": { "cpus": "8", "memory": "14g", "reservation_cpus": "2", "reservation_memory": "8g", "pids": 4096 },
 				"studio": { "cpus": "1", "memory": "1g", "reservation_memory": "256m", "pids": 256 },
@@ -66,7 +71,8 @@
 				"aig-server": { "cpus": "2", "memory": "4g", "reservation_cpus": "1", "reservation_memory": "1g", "pids": 1024 },
 				"aig-agent": { "cpus": "6", "memory": "6g", "reservation_cpus": "2", "reservation_memory": "2g", "pids": 2048 },
 				"aig-bridge": { "cpus": "2", "memory": "1g", "reservation_memory": "256m", "pids": 512 },
-				"aig-egress": { "cpus": "1", "memory": "512m", "reservation_memory": "128m", "pids": 1024 }
+				"aig-egress": { "cpus": "1", "memory": "512m", "reservation_memory": "128m", "pids": 1024 },
+				"privacy-gateway": { "cpus": "8", "memory": "8g", "reservation_cpus": "2", "reservation_memory": "4g", "pids": 512 }
 			}
 		}
 	}

@@ -24,8 +24,10 @@ alongside the generated, pinned configuration.
 
 The [on-prem guide](onprem/README.md) is the short entry point for a customer
 host: sizing profiles (`--profile small|medium|large`), the optional AI
-Security Posture scanner (`--with-posture-scanner`), upgrade, backup, uninstall
-and troubleshooting.
+Security Posture scanner (`--with-posture-scanner`), the optional privacy
+gateway (`--with-privacy-gateway`: an explicit mutual-TLS egress API, not
+transparent interception; details in `deploy/privacy-gateway/README.md`),
+upgrade, backup, uninstall and troubleshooting.
 
 Build from the repository root on the release machine (skip this step when
 using an already built, independently verified customer kit):

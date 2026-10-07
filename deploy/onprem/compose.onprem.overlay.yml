@@ -5,7 +5,8 @@
 # is applied to every generated service, and each `services.<name>` entry is
 # deep-merged into that service (objects merge, lists and scalars replace).
 # Entries for the posture scanner's aig-* services apply only when preparation
-# runs with --with-posture-scanner.
+# runs with --with-posture-scanner; the privacy-gateway entry only with
+# --with-privacy-gateway.
 # Per-service CPU, memory and PID limits come from resource-profile.json
 # (--profile small|medium|large), not from this file.
 x-aidr-onprem:
@@ -55,3 +56,6 @@ services:
     stop_grace_period: 20s
   aig-egress:
     stop_grace_period: 10s
+  privacy-gateway:
+    # Let in-flight egress requests settle; the service closes its listener first.
+    stop_grace_period: 20s

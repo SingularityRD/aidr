@@ -117,6 +117,24 @@ Installations prepared by earlier releases keep working: their `.env`
 settings are still read as fallbacks, and the doctor still checks their
 staging directory and Compose profile.
 
+### Optional privacy gateway
+
+`--with-privacy-gateway` adds `aidr-privacy-service` as the `privacy-gateway`
+Compose service under the `privacy-gateway` profile. It is an explicit egress
+API (`POST /v1/egress` over mutual TLS), **not a transparent proxy**: it protects
+only the clients configured to call it, so direct provider access must be
+blocked separately. Preparation refuses it without mutual TLS material, the
+operator's service configuration, secret and trust files, an approved NER model
+whose manifest matches its digest, and an IPv4 egress allow-list; it generates
+no gateway credential. The service is not started by `docker compose up`, runs
+non-root on a read-only root filesystem on its own bridge network, reads its
+secrets as Compose secret files, and gets the `privacy-gateway` budget of the
+selected resource profile (add 2 vCPU/4 GiB on `small`, 4 vCPU/6 GiB on
+`medium`, 8 vCPU/8 GiB on `large`). Docker does not filter container egress:
+apply the prepared `privacy-gateway/egress-firewall.sh` before starting it. See
+[the privacy gateway guide](../privacy-gateway/README.md) for the inputs,
+the start commands and what the gateway does and does not do.
+
 ## Upgrade
 
 Never rerun preparation over `/srv/aidr`. Prepare the target release in a new
@@ -127,7 +145,11 @@ The upgrade tool does not carry the posture scanner's staged build contexts.
 When the current installation runs the scanner and the target was prepared
 with `--with-posture-scanner`, copy the target's `posture-scanner/` directory
 into `/srv/aidr` and set `COMPOSE_PROFILES=posture-scanner` in `/srv/aidr/.env`
-before restarting; the doctor's profile check fails until you do.
+before restarting; the doctor's profile check fails until you do. The same
+applies to the privacy gateway: copy the target's `privacy-gateway/` directory
+(image context, configuration, trust and secret files) into `/srv/aidr` and
+rebuild with `--profile privacy-gateway`. Its state volume
+(`<project>_aidr-privacy-state`) is not part of the AIDR backup either.
 
 ## Backup
 

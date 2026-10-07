@@ -689,3 +689,238 @@ test("the deprecated --with-aig spellings still select the posture scanner and s
 		}
 	});
 });
+
+// --- Optional privacy gateway (deploy/privacy-gateway) ---------------------------------
+
+const privacyGatewayRuntimeBuilt = existsSync(join(root, "packages/privacy/dist/platform/serve.js"));
+const gitOpenSsl = join(process.env.ProgramFiles ?? "C:\\Program Files", "Git", "usr", "bin", "openssl.exe");
+const openssl = process.env.AIDR_OPENSSL ?? (process.platform === "win32" && existsSync(gitOpenSsl) ? gitOpenSsl : "openssl");
+const opensslAvailable = spawnSync(openssl, ["version"], { encoding: "utf8" }).status === 0;
+const privacyGatewaySkip = !opensslAvailable ? "openssl is required to mint throwaway test certificates (set AIDR_OPENSSL)"
+	: !privacyGatewayRuntimeBuilt ? "packages/privacy is not built (pnpm --filter @singularityrd/aidr-privacy build)" : false;
+
+// Throwaway, locally generated test certificates; nothing here is a real credential.
+function opensslCertificate(directory, name, { ca = false, key = "ec" } = {}) {
+	const keyPath = join(directory, `${name}.key`);
+	const certPath = join(directory, `${name}.pem`);
+	const keyArgs = key === "ec" ? ["-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:P-256"] : ["-newkey", key];
+	execFileSync(openssl, ["req", "-x509", ...keyArgs, "-nodes", "-keyout", keyPath, "-out", certPath, "-days", "30",
+		"-subj", `/CN=${name}.aidr-test.invalid`, "-addext", `basicConstraints=critical,CA:${ca ? "TRUE" : "FALSE"}`], { stdio: "ignore" });
+	return { cert: certPath, key: keyPath };
+}
+
+function privacyGatewayFixture(directory) {
+	const base = join(directory, "privacy-gateway-input");
+	for (const sub of ["", "secrets", "trust", "trust/policy", "models"]) mkdirSync(join(base, sub), { recursive: true });
+	const server = opensslCertificate(base, "server");
+	const clientCa = opensslCertificate(base, "client-ca", { ca: true });
+	const secrets = {
+		"aidr-privacy-data1": randomKey(), "aidr-privacy-audit1": randomKey(), labels: randomKey(),
+		"aidr-privacy-oidc": "oidc-client-secret-fixture-value", "aidr-privacy-broker-key": readFileSync(clientCa.key, "utf8"),
+		"aidr-privacy-provider": "provider-api-key-fixture-value-0123456789",
+	};
+	for (const [name, value] of Object.entries(secrets)) writeFileSync(join(base, "secrets", name), `${value}\n`);
+	for (const name of ["idp-ca.pem", "broker-ca.pem", "broker-client.pem"]) copyFileSync(clientCa.cert, join(base, "trust", name));
+	writeFileSync(join(base, "trust/policy/policy.signed.json"), "{}\n");
+	writeFileSync(join(base, "trust/policy/policy1.pub.pem"), generateKeyPairSync("ed25519").publicKey.export({ type: "spki", format: "pem" }));
+	const manifest = Buffer.from(JSON.stringify({ approved: true, qualificationStatus: "qualified" }));
+	writeFileSync(join(base, "models/manifest.json"), manifest);
+	const example = JSON.parse(readFileSync(join(root, "packages/privacy/examples/platform/service-config.example.json"), "utf8"));
+	const { secretStore: _store, host: _host, port: _port, databasePath: _db, documents: _documents, tls: _tls, ...rest } = example;
+	const config = {
+		...rest,
+		tenantId: "tenant-fixture",
+		oidc: { ...rest.oidc, issuer: "https://idp.customer.example/realm", redirectUri: "https://host.customer.example/oauth/callback", caPath: "/etc/aidr-privacy/trust/idp-ca.pem" },
+		broker: { ...rest.broker, issuer: "https://broker.customer.example", caPath: "/etc/aidr-privacy/trust/broker-ca.pem", certPath: "/etc/aidr-privacy/trust/broker-client.pem" },
+		destination: { ...rest.destination, model: "approved-model-fixture" },
+		roleGroups: { "security-reviewer": ["group-reviewers"], "security-admin": ["group-admins"] },
+		policy: { signedPath: "/etc/aidr-privacy/trust/policy/policy.signed.json", keys: [{ id: "policy1", path: "/etc/aidr-privacy/trust/policy/policy1.pub.pem" }] },
+		ner: { manifest: "/opt/aidr-models/manifest.json", manifestSha256: createHash("sha256").update(manifest).digest("hex") },
+	};
+	const configFile = join(base, "service.json");
+	writeFileSync(configFile, JSON.stringify(config, null, 2));
+	const options = {
+		"tls-cert-file": server.cert, "tls-key-file": server.key, "client-ca-file": clientCa.cert,
+		"config-file": configFile, "secrets-dir": join(base, "secrets"), "trust-dir": join(base, "trust"), "models-dir": join(base, "models"),
+		"egress-cidrs": "162.159.140.0/24,10.20.30.0/24",
+	};
+	const args = (overrides = {}) => ["--mode", "self-hosted", "--with-privacy-gateway", ...Object.entries({ ...options, ...overrides })
+		.filter(([, value]) => value !== null).flatMap(([name, value]) => [`--privacy-gateway-${name}`, value])];
+	return { base, server, clientCa, secrets, config, configFile, args };
+}
+
+function randomKey() {
+	return createHash("sha256").update(Math.random().toString()).digest("base64");
+}
+
+test("--with-privacy-gateway adds an opt-in, mTLS-only gateway with a hardened image, file secrets and a restricted egress network", { skip: privacyGatewaySkip }, (t) => {
+	if (!dockerComposeAvailable) t.diagnostic("docker compose is not installed; the compose config check is skipped");
+	inTemporaryDirectory((directory) => {
+		const fixture = privacyGatewayFixture(directory);
+		for (const profile of ["small", "large"]) {
+			const output = join(directory, `privacy-gateway-${profile}`);
+			const result = prepare(output, "--profile", profile, ...fixture.args({ "dns-cidrs": "10.0.0.53/32" }));
+			assert.equal(result.status, 0, result.stderr);
+			const compose = parse(readFileSync(join(output, "compose.yml"), "utf8"));
+			const service = compose.services["privacy-gateway"];
+			assertBudget(service, resourceProfiles.profiles[profile].services["privacy-gateway"], `privacy-gateway ${profile}`);
+			if (profile === "large") continue;
+
+			// Opt-in, hardened runtime.
+			assert.deepEqual(service.profiles, ["privacy-gateway"]);
+			assert.equal(service.image, `aidr-privacy-gateway:${dashboardVersion}`);
+			assert.equal(service.build, "./privacy-gateway/image");
+			assert.equal(service.user, "10001:10001");
+			assert.equal(service.read_only, true);
+			assert.deepEqual(service.cap_drop, ["ALL"]);
+			assert.deepEqual(service.security_opt, ["no-new-privileges:true"]);
+			assert.match(service.tmpfs[0], /^\/tmp:.*noexec/);
+			assert.equal(service.restart, "unless-stopped");
+			assert.equal(service.stop_grace_period, "20s");
+			assert.deepEqual(service.healthcheck.test, ["CMD", "/usr/local/bin/node", "/opt/aidr-private/healthcheck.mjs"]);
+			assert.deepEqual(service.ports, ["127.0.0.1:8443:8443"], "only the mTLS listener, on loopback by default");
+			assert.equal(Object.hasOwn(service, "privileged"), false);
+			assert.equal(Object.hasOwn(service, "env_file"), false, "no gateway secret travels through environment files");
+			// Isolated network: no route to the database or other AIDR services.
+			assert.deepEqual(service.networks, ["privacy-gateway"]);
+			assert.deepEqual(compose.networks["privacy-gateway"].ipam.config, [{ subnet: "172.31.253.0/28" }]);
+			assert.equal(compose.networks["privacy-gateway"].driver_opts["com.docker.network.bridge.enable_icc"], "false");
+			for (const [name, other] of Object.entries(compose.services)) if (name !== "privacy-gateway") assert.ok(!(Array.isArray(other.networks) ? other.networks : Object.keys(other.networks ?? {})).includes("privacy-gateway"), `${name} must not join the gateway network`);
+			assert.equal(Object.keys(compose.services).filter((name) => compose.services[name].profiles?.includes("privacy-gateway")).length, 1);
+
+			// Secrets are files mounted by Compose, never values in compose.yml or .env.
+			const refs = [...Object.keys(fixture.secrets), "aidr-privacy-tls-key"].sort();
+			assert.deepEqual(service.secrets.map((entry) => entry.target).sort(), refs.map((ref) => `/run/secrets/aidr-privacy/${ref}`).sort());
+			for (const ref of refs) assert.deepEqual(compose.secrets[`privacy-gateway-${ref}`], { file: `./privacy-gateway/secrets/${ref}` });
+			const composeText = readFileSync(join(output, "compose.yml"), "utf8");
+			const envText = readFileSync(join(output, ".env"), "utf8");
+			for (const value of [...Object.values(fixture.secrets), readFileSync(fixture.server.key, "utf8")]) {
+				const needle = value.split("\n").find((line) => line.length > 20 && !line.startsWith("-----")) ?? value;
+				assert.equal(composeText.includes(needle), false, "secret value embedded in compose.yml");
+				assert.equal(envText.includes(needle), false, "secret value embedded in .env");
+			}
+			assert.doesNotMatch(envText, /PRIVACY|COMPOSE_PROFILES/, "the gateway is not started by default");
+			assert.equal(readFileSync(join(output, "privacy-gateway/secrets/aidr-privacy-tls-key"), "utf8"), readFileSync(fixture.server.key, "utf8"));
+			if (process.platform !== "win32") {
+				assert.equal(statSync(join(output, "privacy-gateway/secrets")).mode & 0o777, 0o700);
+				for (const ref of refs) assert.equal(statSync(join(output, "privacy-gateway/secrets", ref)).mode & 0o777, 0o600, ref);
+			}
+			const mounts = Object.fromEntries(service.volumes.map((volume) => [volume.target, volume]));
+			for (const target of ["/etc/aidr-privacy/config/service.json", "/etc/aidr-privacy/trust", "/etc/aidr-privacy/tls", "/opt/aidr-models"]) assert.equal(mounts[target].read_only, true, target);
+			assert.equal(mounts["/opt/aidr-models"].source, join(fixture.base, "models"));
+			assert.deepEqual(mounts["/var/lib/aidr-privacy"], { type: "volume", source: "aidr-privacy-state", target: "/var/lib/aidr-privacy" });
+			for (const volume of service.volumes.filter((entry) => entry.type === "bind" && entry.source.startsWith("."))) assert.ok(existsSync(join(output, volume.source)), `${volume.source} staged`);
+
+			// The deployment owns listener, mutual TLS, secret store and state path.
+			const staged = JSON.parse(readFileSync(join(output, "privacy-gateway/service.json"), "utf8"));
+			assert.equal(staged.secretStore, "mounted-files");
+			assert.equal(staged.host, "0.0.0.0");
+			assert.equal(staged.port, 8443);
+			assert.equal(staged.databasePath, "/var/lib/aidr-privacy/control.sqlite");
+			assert.deepEqual(staged.tls, { certPath: "/etc/aidr-privacy/tls/server.pem", clientCaPath: "/etc/aidr-privacy/tls/client-ca.pem", keyRef: "aidr-privacy-tls-key" });
+			assert.equal(staged.ner.python, "/opt/aidr-ner/bin/python3");
+			assert.equal(readFileSync(join(output, "privacy-gateway/tls/client-ca.pem"), "utf8"), readFileSync(fixture.clientCa.cert, "utf8"));
+			assert.ok(existsSync(join(output, "privacy-gateway/trust/policy/policy1.pub.pem")));
+
+			// Prepared (not applied) host egress firewall: only the allow-list, then reject.
+			const firewall = readFileSync(join(output, "privacy-gateway/egress-firewall.sh"), "utf8");
+			assert.match(firewall, /^SUBNET='172\.31\.253\.0\/28'$/m);
+			assert.match(firewall, /-d '162\.159\.140\.0\/24' -p tcp --dport 443 -j RETURN/);
+			assert.match(firewall, /-d '10\.0\.0\.53\/32' -p udp --dport 53 -j RETURN/);
+			assert.match(firewall, /-A "\$CHAIN" -j REJECT\n/);
+			assert.match(firewall, /DOCKER-USER -s "\$SUBNET"/);
+			assert.doesNotMatch(firewall, /0\.0\.0\.0\/0/);
+
+			// Staged image context: hardened Dockerfile and only the compiled runtime.
+			const image = join(output, "privacy-gateway/image");
+			assert.equal(readFileSync(join(image, "Dockerfile"), "utf8"), readFileSync(join(root, "deploy/privacy-gateway/Dockerfile"), "utf8"));
+			for (const file of ["package/dist/platform/serve.js", "package/deployment/container-service-config.mjs", "package/ner/ner_worker.py", "package/ner/requirements.linux-py311.lock.txt", "healthcheck.mjs", "wheelhouse/README.txt"]) assert.ok(existsSync(join(image, file)), file);
+			const stagedFiles = readdirSync(join(image, "package/dist"), { recursive: true }).map(String);
+			assert.ok(!stagedFiles.some((file) => file.endsWith(".map") || file.endsWith(".ts")), "no source maps or declarations in the image");
+			assert.equal(existsSync(join(image, "package/src")), false);
+			assert.equal(existsSync(join(image, "package/ner/test_ner_worker.py")), false);
+
+			const deployment = JSON.parse(readFileSync(join(output, "deployment.json"), "utf8"));
+			assert.equal(deployment.privacy_gateway.enabled, true);
+			assert.match(deployment.privacy_gateway.interface, /explicit egress API.*not transparent interception/);
+			assert.equal(deployment.privacy_gateway.mtls.required, true);
+			assert.match(deployment.privacy_gateway.mtls.client_ca_sha256, /^([0-9A-F]{2}:){31}[0-9A-F]{2}$/);
+			assert.deepEqual(deployment.privacy_gateway.egress.allowed_cidrs, ["162.159.140.0/24", "10.20.30.0/24"]);
+			assert.match(deployment.privacy_gateway.egress.enforcement, /not applied/);
+			assert.deepEqual(deployment.privacy_gateway.destination, { kind: "openai-responses", origin: "https://api.openai.com", model: "approved-model-fixture" });
+			assert.ok(deployment.artifacts.some((entry) => entry.path === "privacy-gateway/image/Dockerfile"));
+			assert.ok(!deployment.artifacts.some((entry) => entry.path.startsWith("privacy-gateway/secrets")), "secret files are not inventoried");
+			if (dockerComposeAvailable) assertComposeConfigResolves(output);
+		}
+	});
+});
+
+test("--with-privacy-gateway refuses missing mutual TLS, weak material, unrestricted egress and unapproved configuration", { skip: privacyGatewaySkip }, () => {
+	inTemporaryDirectory((directory) => {
+		const fixture = privacyGatewayFixture(directory);
+		const weak = opensslCertificate(directory, "weak-rsa", { key: "rsa:1024" });
+		const configWith = (name, patch) => {
+			const path = join(directory, `${name}.json`);
+			writeFileSync(path, JSON.stringify({ ...fixture.config, ...patch }));
+			return path;
+		};
+		const cases = [
+			[{ "client-ca-file": null }, /requires --privacy-gateway-client-ca-file .*mutual TLS and an egress allow-list are mandatory/],
+			[{ "tls-cert-file": null, "tls-key-file": null }, /requires --privacy-gateway-tls-cert-file, --privacy-gateway-tls-key-file/],
+			[{ "egress-cidrs": null }, /requires --privacy-gateway-egress-cidrs/],
+			[{ "client-ca-file": fixture.server.cert }, /client CA must be a CA certificate/],
+			[{ "tls-cert-file": fixture.clientCa.cert, "tls-key-file": fixture.clientCa.key }, /must be a leaf certificate, not a CA/],
+			[{ "tls-key-file": fixture.clientCa.key }, /server key does not match the server certificate/],
+			[{ "tls-cert-file": weak.cert, "tls-key-file": weak.key }, /server key is weak/],
+			[{ "egress-cidrs": "0.0.0.0/0" }, /too broad/],
+			[{ "egress-cidrs": "162.159.140.0/24,169.254.169.254/32" }, /link-local/],
+			[{ "egress-cidrs": "162.159.140.1/24" }, /host bits set/],
+			[{ "subnet": "8.8.8.0/28" }, /must be a private IPv4 network/],
+			[{ "bind-address": "localhost" }, /must be an IP address/],
+			[{ "config-file": configWith("owned-tls", { tls: { certPath: "/tmp/x", clientCaPath: "/tmp/y", keyRef: "k" } }) }, /must not set tls: the deployment owns/],
+			[{ "config-file": configWith("documents", { documents: { python: "/usr/bin/python3", workerSha256: "a".repeat(64) } }) }, /document parsing is not packaged/],
+			[{ "config-file": configWith("placeholder", { destination: { ...fixture.config.destination, model: "REPLACE_WITH_INSTITUTION_APPROVED_MODEL" } }) }, /REPLACE placeholder/],
+			[{ "config-file": configWith("provider", { destination: { ...fixture.config.destination, origin: "https://proxy.example" } }) }, /destination must be one of/],
+			[{ "config-file": configWith("digest", { ner: { ...fixture.config.ner, manifestSha256: "0".repeat(64) } }) }, /does not match the approved ner\.manifestSha256/],
+			[{ "config-file": configWith("trust-path", { oidc: { ...fixture.config.oidc, caPath: "/etc/ssl/certs/ca.pem" } }) }, /trust files must be paths under \/etc\/aidr-privacy\/trust/],
+			[{ "secrets-dir": join(fixture.base, "trust") }, /Privacy gateway secret .* is missing/],
+		];
+		for (const [index, [overrides, expected]] of cases.entries()) {
+			const output = join(directory, `privacy-gateway-refused-${index}`);
+			const result = prepare(output, ...fixture.args(overrides));
+			assert.notEqual(result.status, 0, `privacy gateway case ${index} unexpectedly succeeded`);
+			assert.match(result.stderr, expected, `privacy gateway case ${index}`);
+			assert.equal(existsSync(output), false, `privacy gateway case ${index} left a partial installation`);
+		}
+		for (const [index, options] of [["--mode", "cloud", "--device-start-upstream-url", "https://project.supabase.co/functions/v1/device-start", ...fixture.args().slice(2)], ["--mode", "self-hosted", "--privacy-gateway-egress-cidrs", "10.0.0.0/24"]].entries()) {
+			const output = join(directory, `privacy-gateway-mode-${index}`);
+			const result = prepare(output, ...options);
+			assert.notEqual(result.status, 0);
+			assert.match(result.stderr, index === 0 ? /only supported for self-hosted/ : /--privacy-gateway-egress-cidrs requires --with-privacy-gateway/);
+			assert.equal(existsSync(output), false);
+		}
+	});
+});
+
+test("the privacy gateway image definition is hardened and matches the in-image configuration contract", () => {
+	const dockerfile = readFileSync(join(root, "deploy/privacy-gateway/Dockerfile"), "utf8");
+	const from = [...dockerfile.matchAll(/^FROM (\S+)/gm)].map((match) => match[1]);
+	assert.ok(from.length >= 2);
+	for (const image of from) assert.match(image, /^[a-z0-9./-]+:[A-Za-z0-9_.-]+@sha256:[a-f0-9]{64}$/, `${image} must be pinned by digest`);
+	assert.match(dockerfile, /^USER 10001:10001$/m, "numeric non-root user");
+	assert.match(dockerfile, /^HEALTHCHECK .*healthcheck\.mjs/m);
+	assert.match(dockerfile, /--require-hashes/);
+	assert.doesNotMatch(dockerfile, /^USER (root|0)\b/m);
+	assert.doesNotMatch(dockerfile, /^(ADD|COPY) .*https?:/m, "no remote files in the image");
+	assert.match(dockerfile, /^ENTRYPOINT \[.*serve\.js", "--config", ".*deployment\/container-service-config\.mjs"\]$/m);
+	// The executable in-image configuration enforces the same fixed layout preparation stages.
+	const containerConfig = readFileSync(join(root, "packages/privacy/deployment/container-service-config.mjs"), "utf8");
+	const layout = readFileSync(join(root, "deploy/privacy-gateway/privacy-gateway.mjs"), "utf8");
+	for (const key of ["config", "secrets", "models", "state", "nerPython", "tlsCert", "tlsClientCa", "tlsKeyRef"]) {
+		const value = new RegExp(`\\b${key}: (['"])([^'"]+)\\1`).exec(layout)?.[2];
+		assert.ok(value, `layout ${key}`);
+		assert.ok(containerConfig.includes(`${key}: '${value}'`), `container-service-config ${key} must be ${value}`);
+	}
+	assert.match(containerConfig, /config\.secretStore !== 'mounted-files'/);
+	assert.match(containerConfig, /fail\('SERVICE_TLS_CONFIG'\)/);
+});
