@@ -125,6 +125,14 @@ const router = createBrowserRouter([
 		loader: requireSessionLoader,
 	},
 	{
+		// Platform-operator console. Outside AppLayout: operators are not tenant
+		// members. The operator-admin function alone decides access (operator row + AAL2).
+		path: "/operator",
+		lazy: async () => ({ Component: (await import("./ui/pages/OperatorPage")).OperatorPage }),
+		errorElement: routeErrorElement,
+		loader: requireSessionLoader,
+	},
+	{
 		path: "/onboarding",
 		lazy: loadAppLayout,
 		errorElement: routeErrorElement,

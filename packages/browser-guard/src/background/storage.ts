@@ -8,7 +8,9 @@
  * Storage layout:
  *   local   userSettings, installationId, telemetryQueue, telemetryState,
  *           aupAcknowledged (acceptable-use notice id -> highest acknowledged version),
- *           shadowAiUsage (per-day visit/block counts per catalog service id; no URLs)
+ *           shadowAiUsage (per-day visit/block counts per catalog service id; no URLs),
+ *           dashboardPolicy / dashboardPolicyHighWater (last signed dashboard document, re-verified
+ *           on every load, and the highest accepted sequence; see ./dashboard-policy.ts)
  *   session guardStats, pausedUntil, `vault:<tabId>:<origin>` (per-tab placeholder vault,
  *           see ./vault-store.ts; TRUSTED_CONTEXTS only, so page scripts cannot read it)
  *   managed administrator policy keys (static/managed_schema.json)

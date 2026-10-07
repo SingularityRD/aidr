@@ -16,10 +16,10 @@ import {
 	type ReputationFeedRecord,
 } from "../reputation-feed.js";
 import type { Logger, UrlCheckConfig, UrlCheckFinding, UrlCheckResult } from "../types.js";
-import { nullLogger } from "../types.js";
+import { clampLegTimeoutSeconds, DEFAULT_LEG_TIMEOUT_SECONDS, nullLogger } from "../types.js";
 import { VERSION } from "../version.js";
 
-const DEFAULT_TIMEOUT = 5.0;
+const DEFAULT_TIMEOUT = DEFAULT_LEG_TIMEOUT_SECONDS;
 const MAX_URLS_PER_REQUEST = 50;
 const MAX_CONCURRENT_BATCHES = 4;
 const MAX_RESPONSE_BYTES = 1024 * 1024;
@@ -184,7 +184,7 @@ export class UrlCheckClient {
 			config?.endpoint ?? resolveEndpoint("/url-check"),
 			config?.allow_insecure_loopback,
 		);
-		this.timeoutMs = (config?.timeout_seconds ?? DEFAULT_TIMEOUT) * 1000;
+		this.timeoutMs = clampLegTimeoutSeconds(config?.timeout_seconds, DEFAULT_TIMEOUT) * 1000;
 		this.apiKey = apiKey;
 		this.logger = logger;
 		this.reputationFeed = config?.reputationFeed;
@@ -295,7 +295,9 @@ export class UrlCheckClient {
 		if (failures.length > 0 || withheldUrls.length > 0) {
 			const reasons = [
 				...(withheldUrls.length > 0
-					? [`${withheldUrls.length} URL(s) withheld because query parameters, fragments, credentials, or an unsupported URL were not sent`]
+					? [
+							`${withheldUrls.length} URL(s) withheld because query parameters, fragments, credentials, or an unsupported URL were not sent`,
+						]
 					: []),
 				...(failures.length > 0
 					? [

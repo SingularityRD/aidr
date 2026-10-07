@@ -16,7 +16,7 @@ import {
 	syntheticDlpPolicy,
 	TEST_DLP_MARKER,
 } from "./detector-provisioning-fixtures.js";
-import { makeTmpDir } from "./test-utils.js";
+import { makeTmpDir, writeSignedCacheFixture } from "./test-utils.js";
 
 let homeDir: string;
 let context: ToolEvaluationContext;
@@ -190,23 +190,19 @@ describe("signed tenant DLP before reputation lookup", () => {
 		const config = JSON.parse(await readFile(context.configPath as string, "utf8"));
 		config.cache = { enabled: true, path: cachePath };
 		await writeFile(context.configPath as string, JSON.stringify(config));
-		await writeFile(
-			cachePath,
-			JSON.stringify({
-				urls: {},
-				commands: {},
-				packages: {
-					"npm:known-bad@1.0.0": {
-						verdict: "deny",
-						severity: "critical",
-						reasons: ["Known malicious package"],
-						source: "package_check",
-						expiresAt: new Date(Date.now() + 600_000).toISOString(),
-						aidrVersion: VERSION,
-					},
+		await writeSignedCacheFixture(cachePath, {
+			packages: {
+				"npm:known-bad@1.0.0": {
+					verdict: "deny",
+					severity: "critical",
+					reasons: ["Known malicious package"],
+					source: "package_check",
+					checkedAt: new Date().toISOString(),
+					expiresAt: new Date(Date.now() + 600_000).toISOString(),
+					aidrVersion: VERSION,
 				},
-			}),
-		);
+			},
+		});
 		const verdict = await evaluateToolCall(
 			request({
 				file_path: "/work/package.json",

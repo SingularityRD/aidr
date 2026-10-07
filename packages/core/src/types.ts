@@ -144,6 +144,8 @@ export const VerdictSeveritySchema = z.enum(["info", "warning", "critical"]);
 
 export type Decision = z.infer<typeof DecisionSchema>;
 export type VerdictSeverity = z.infer<typeof VerdictSeveritySchema>;
+/** The 4-level severity a threat rule or policy declares. */
+export type RuleSeverity = "critical" | "high" | "medium" | "low";
 
 /**
  * Verified `user -> agent -> tool -> resource` lineage carried by an
@@ -177,6 +179,13 @@ export interface Verdict {
 	artifacts: string[];
 	matchedThreatId: string | null;
 	reasons: string[];
+	/**
+	 * The severity the matched rule (or policy) itself declares. `severity` is
+	 * the 3-level user-facing bucket (a `high` rule maps to `warning`); messages
+	 * that name the rule show this label so the two never disagree. Absent when
+	 * no rule or policy decided the verdict.
+	 */
+	ruleSeverity?: RuleSeverity;
 	/**
 	 * Framework items of the matched rule (OWASP LLM 2025, OWASP Agentic 2026,
 	 * MITRE ATLAS). Enrichment only: absent when no rule matched or the rule has
@@ -285,6 +294,11 @@ export interface CachedEntry extends CachedVerdict {
 	/** Required on cached URL allows so they cannot outlive their source reputation row. */
 	sourceFreshUntil?: string;
 	aidrVersion?: string;
+	/**
+	 * HMAC-SHA256 over the entry, its kind and its key, under the per-installation
+	 * cache key (see `cache.ts`). Entries without a valid MAC are ignored on load.
+	 */
+	mac?: string;
 }
 
 export interface CacheStore {
@@ -346,7 +360,7 @@ export const ControlPlaneConfigSchema = z.object({
 	/** Explicitly allow plaintext HTTP to a loopback endpoint for local development. */
 	allow_insecure_loopback: z.boolean().default(false),
 	/** Request timeout for control-plane calls. */
-	timeout_seconds: z.number().default(0.5),
+	timeout_seconds: legTimeoutSchema(0.5),
 	/** Send runtime verdict events to the control plane for the dashboard. */
 	send_audit_logs: z.boolean().default(true),
 	/** Also send clean (allow) verdicts. */
@@ -607,13 +621,48 @@ const ResponseConfigSchema = z.object({
 		.default({}),
 });
 
+/**
+ * Hook budget for remote detection legs. The strictest host is Codex, which
+ * kills a PreToolUse hook after 10 s and then FAILS OPEN; a killed hook never
+ * gets to deny. Process start-up, config/rule loading and local detection need
+ * their share, so remote legs get a fixed slice of that budget: each leg is
+ * capped at MAX_LEG_TIMEOUT_SECONDS and all of a call's remote legs together
+ * at LEG_TOTAL_BUDGET_SECONDS (enforced by the evaluator). A leg that runs out
+ * of time is an unavailable leg, never a clean result.
+ */
+export const MAX_LEG_TIMEOUT_SECONDS = 3;
+export const LEG_TOTAL_BUDGET_SECONDS = 6;
+export const DEFAULT_LEG_TIMEOUT_SECONDS = 2;
+
+/**
+ * Clamp a configured leg timeout into (0, MAX_LEG_TIMEOUT_SECONDS]. A
+ * non-positive or non-finite value falls back to `fallback`. Clamping (rather
+ * than rejecting the whole config, which fails closed on every call) keeps an
+ * existing `timeout_seconds: 5` working within the budget.
+ */
+export function clampLegTimeoutSeconds(
+	value: number | undefined,
+	fallback = DEFAULT_LEG_TIMEOUT_SECONDS,
+): number {
+	const seconds =
+		typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
+	return Math.min(seconds, MAX_LEG_TIMEOUT_SECONDS);
+}
+
+function legTimeoutSchema(defaultSeconds: number) {
+	return z
+		.number()
+		.default(defaultSeconds)
+		.transform((value) => clampLegTimeoutSeconds(value, defaultSeconds));
+}
+
 export const UrlCheckConfigSchema = z.object({
 	endpoint: z.string().optional(),
 	/** Explicitly allow plaintext HTTP to a loopback endpoint for local development. */
 	allow_insecure_loopback: z.boolean().default(false),
 	/** Explicit opt-in to sending URL query parameters to the reputation provider. */
 	include_query_parameters: z.boolean().default(false),
-	timeout_seconds: z.number().default(5.0),
+	timeout_seconds: legTimeoutSchema(DEFAULT_LEG_TIMEOUT_SECONDS),
 	/** Explicit opt-in; unavailable checks are surfaced for human review. */
 	enabled: z.boolean().default(false),
 });
@@ -651,7 +700,7 @@ export const FileCheckConfigSchema = z.object({
 	endpoint: z.string().optional(),
 	/** Explicitly allow plaintext HTTP to a loopback endpoint for local development. */
 	allow_insecure_loopback: z.boolean().default(false),
-	timeout_seconds: z.number().default(5.0),
+	timeout_seconds: legTimeoutSchema(DEFAULT_LEG_TIMEOUT_SECONDS),
 	/** Explicit opt-in to sending file SHA-256 hashes to a reputation provider. */
 	enabled: z.boolean().default(false),
 });
@@ -664,7 +713,7 @@ const VersionCheckConfigSchema = z.object({
 export const PackageCheckConfigSchema = z.object({
 	/** Explicit opt-in to sending package names to public registries. */
 	enabled: z.boolean().default(false),
-	timeout_seconds: z.number().default(5.0),
+	timeout_seconds: legTimeoutSchema(DEFAULT_LEG_TIMEOUT_SECONDS),
 	/**
 	 * Slopsquatting window: a package first published fewer than this many days
 	 * ago is held for review when its adoption is also low. Packages younger than

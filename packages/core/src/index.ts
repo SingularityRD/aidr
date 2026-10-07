@@ -972,6 +972,12 @@ export {
 	writeMcpSignerHealthEvidence,
 } from "./mcp-attestation.js";
 export {
+	detectMcpConfigSecrets,
+	type McpSecretFinding,
+	type McpSecretKind,
+	type McpSecretLocation,
+} from "./mcp-config-secrets.js";
+export {
 	discoverMcpServers,
 	type McpDiscoveryAttestation,
 	type McpDiscoveryAttestationOptions,
@@ -980,12 +986,6 @@ export {
 	type McpDiscoveryServer,
 	type McpSignedManifestIndex,
 } from "./mcp-discovery.js";
-export {
-	detectMcpConfigSecrets,
-	type McpSecretFinding,
-	type McpSecretKind,
-	type McpSecretLocation,
-} from "./mcp-config-secrets.js";
 export {
 	defaultMcpConfigPaths,
 	type McpInventoryCoverage,
@@ -1133,6 +1133,7 @@ export {
 	type PostureUploadResult,
 	uploadPostureEvents,
 } from "./posture-upload.js";
+export { preparePrivateLocalDirectory, preparePrivateLocalFile } from "./private-local-file.js";
 // Connector-side prompt inspection runner (config, tenant DLP, deadline, audit, failure policy)
 export {
 	inspectUserPrompt,
@@ -1170,7 +1171,6 @@ export {
 	scanPromptSafety,
 	type TenantPromptSafetyPolicy,
 } from "./prompt-safety.js";
-export { preparePrivateLocalDirectory, preparePrivateLocalFile } from "./private-local-file.js";
 export {
 	scanCachedProvisionedOutput,
 	scanProvisionedOutput,
@@ -1459,7 +1459,15 @@ export {
 	TRUNCATION_MARKER,
 } from "./terminal-text.js";
 // Threat loader
-export { loadThreats, loadThreatsFromDirs } from "./threat-loader.js";
+export {
+	loadThreats,
+	loadThreatsFromDirs,
+	loadThreatsFromDirsWithReport,
+	loadThreatsWithReport,
+	type MergedThreatLoadReport,
+	type ThreatLoadError,
+	type ThreatLoadReport,
+} from "./threat-loader.js";
 // Session toxic-flow ("lethal trifecta") and behavioral chain detection
 export {
 	recordToolOutputFlow,
@@ -1548,6 +1556,7 @@ export type {
 	PromptContentSafetyConfig,
 	PromptProtectionConfig,
 	PromptProtectionMode,
+	RuleSeverity,
 	RunawayConfig,
 	SecureCodeConfig,
 	SignalSources,

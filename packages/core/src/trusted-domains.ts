@@ -5,7 +5,10 @@
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
-import { getFileContent } from "./file-utils.js";
+import {
+	loadResourceManifestCoverage,
+	readShippedResourceText,
+} from "./integrity/resource-manifest.js";
 import type { Logger, TrustedDomain } from "./types.js";
 import { nullLogger } from "./types.js";
 
@@ -22,12 +25,17 @@ export async function loadTrustedDomains(
 	}
 
 	const domains: TrustedDomain[] = [];
+	// Shipped allowlists are a closed set: when a manifest covers this
+	// directory, an unlisted or modified file is ignored rather than trusted.
+	const coverage = await loadResourceManifestCoverage(allowlistsDir);
 
 	for (const filename of files) {
 		const filePath = join(allowlistsDir, filename);
 		let content: string;
 		try {
-			content = await getFileContent(filePath);
+			const shipped = await readShippedResourceText(coverage, filename, filePath, logger);
+			if (shipped === null) continue;
+			content = shipped;
 		} catch (e) {
 			logger.warn(`Failed to read ${filename}`, { error: String(e) });
 			continue;

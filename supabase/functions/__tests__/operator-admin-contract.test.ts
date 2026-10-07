@@ -184,6 +184,41 @@ describe("operator-admin authorization", () => {
 		expect(rpc).not.toHaveBeenCalled();
 	});
 
+	it("answers the dashboard preflight only for an allowlisted origin", async () => {
+		vi.stubEnv("AIDR_ALLOWED_ORIGINS", "https://console.aidr.example");
+		const { handle, db } = await handler();
+		const preflight = await handle(new Request("https://project.supabase.co/functions/v1/operator-admin", {
+			method: "OPTIONS",
+			headers: { Origin: "https://console.aidr.example" },
+		}));
+		expect(preflight.status).toBe(200);
+		expect(preflight.headers.get("Access-Control-Allow-Origin")).toBe("https://console.aidr.example");
+
+		const foreign = await handle(new Request("https://project.supabase.co/functions/v1/operator-admin", {
+			method: "POST",
+			headers: { Origin: "https://evil.example", Authorization: `Bearer ${TOKEN}` },
+			body: JSON.stringify({ action: "list_tenants" }),
+		}));
+		expect(foreign.status).toBe(403);
+		expect(await foreign.json()).toEqual({ error: "origin_not_allowed" });
+		expect(db.auth.getUser).not.toHaveBeenCalled();
+	});
+
+	it("still runs every authorization check on an allowlisted browser call", async () => {
+		vi.stubEnv("AIDR_ALLOWED_ORIGINS", "https://console.aidr.example");
+		const { handle, rpc } = await handler({ level: "aal1" });
+		const response = await handle(new Request("https://project.supabase.co/functions/v1/operator-admin", {
+			method: "POST",
+			headers: { Origin: "https://console.aidr.example", Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" },
+			body: JSON.stringify({ action: "list_tenants" }),
+		}));
+		expect(response.status).toBe(403);
+		expect(response.headers.get("Access-Control-Allow-Origin")).toBe("https://console.aidr.example");
+		expect(response.headers.get("Cache-Control")).toBe("no-store");
+		expect(await response.json()).toEqual({ error: "mfa_required" });
+		expect(rpc).not.toHaveBeenCalled();
+	});
+
 	it("requires a bearer token", async () => {
 		const { handle, db } = await handler();
 		const response = await handle(request({ action: "list_tenants" }, { token: null }));

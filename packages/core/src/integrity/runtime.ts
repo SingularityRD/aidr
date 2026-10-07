@@ -74,7 +74,7 @@ export async function verifyArtifactIntegrityAndLog(params: {
 	}
 
 	const publicKeysPem = config.integrity.public_keys_pem ?? [];
-	const result = await verifyArtifactIntegrity({
+	let result = await verifyArtifactIntegrity({
 		artifactDir: params.artifactDir,
 		publicKeysPem,
 		verifySignatures: commercial || publicKeysPem.length > 0,
@@ -82,6 +82,35 @@ export async function verifyArtifactIntegrityAndLog(params: {
 	});
 
 	if (result.status === "ok") return result;
+
+	// A commercial install that is not enrolled (or has not been provisioned with
+	// the integrity trust keys yet, e.g. offline) has nothing to verify the
+	// manifest signature against. That is a missing managed capability, not
+	// evidence of tampering: refusing to start here turned every un-enrolled
+	// commercial install into a blanket deny, contrary to the local-enforcement
+	// default. The shipped bytes are still checked against the manifest digests
+	// (including the closed resource directories); any mismatch is a genuine
+	// local integrity failure and still fails closed below.
+	if (commercial && result.status === "no_public_keys") {
+		const unsigned = await verifyArtifactIntegrity({
+			artifactDir: params.artifactDir,
+			publicKeysPem: [],
+			verifySignatures: false,
+			expectedArtifactId: params.artifactId,
+		});
+		if (unsigned.status === "ok") {
+			logger.warn(
+				"Artifact signature not verifiable: no integrity public keys are provisioned (managed status unavailable). File digests verified; local detection continues.",
+				{ artifactId: params.artifactId },
+			);
+			return {
+				status: "no_public_keys",
+				manifest: unsigned.manifest,
+				reason: "signature_unverified_digests_ok",
+			};
+		}
+		result = unsigned;
+	}
 	if (!commercial && (result.status === "missing_manifest" || result.status === "no_public_keys"))
 		return result;
 

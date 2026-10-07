@@ -22,6 +22,7 @@ redacted events they send.
 | Device enrollment by short-lived device code (start, verify, poll) | `supabase/functions/device-start`, `device-verify`, `device-poll` |
 | Tenant API keys, stored as hashes only | `supabase/functions/api-keys` |
 | Signed runtime policy for agent connectors, with staged rollout and acknowledgement | `supabase/functions/policy`, `policy-management`, `policy-ack`; dashboard `src/enterprise/policy-rollout.tsx` |
+| Signed Browser Guard policy: Shadow AI allow/block decisions from the dashboard (needs the policy signing key; extensions pin its public key in managed `dashboardPolicy`) | `supabase/functions/browser-guard-policy`; dashboard Browser Privacy Guard → Shadow AI |
 | Signed rule and intel packs | `supabase/functions/packs-manifest`, `packs-download` |
 | Event ingest for agent verdicts, and Browser Guard `privacy_scan` counts per the [telemetry contract](../contracts/privacy-telemetry.md) | `supabase/functions/ingest` |
 | Incidents, response playbooks and AutoSecOps views | dashboard `/incidents`, `/autosecops` |

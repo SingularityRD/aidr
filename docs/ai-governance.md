@@ -75,6 +75,8 @@ policy. It never relaxes a policy an administrator published.
 | MCP server | banned | Blocked by every managed connector (deny, `POL-MCP-006`) |
 | MCP server | restricted | Each call needs out-of-band approval (`ask`) |
 | AI chat site with a Browser Guard site id | banned | Listed in the Browser Guard managed-policy snippet (`blockedSites`) |
+| AI site with a Browser Guard Shadow AI catalog id (`poe`, `midjourney`, …) | banned | Blocked by enrolled Browser Guard installs (signed dashboard policy, below) |
+| AI site with a Browser Guard Shadow AI catalog id | approved | Reported as sanctioned by enrolled Browser Guard installs, unless their managed policy blocks it |
 | Anything else | any | Recorded in the register only |
 
 How the MCP restrictions reach connectors: the control plane serves them as a
@@ -98,9 +100,28 @@ and limits:
 - The published revision, its digest and agent load receipts are unchanged:
   load receipts confirm the published policy version, not the governance block.
 
-Browser Guard does not fetch policy from the control plane. The register page
-shows the managed-policy JSON for banned AI chat sites; deploy it through your
+Browser Guard and the `blockedSites` key: the register page shows the
+managed-policy JSON for banned built-in AI chat sites; deploy it through your
 browser management (Chrome/Edge policy for the extension).
+
+Shadow AI allow/block from the dashboard: owners and administrators allow or
+block a detected AI service on Browser Privacy Guard → Shadow AI (or here, as an
+`ai_site` entry with the catalog id). Each decision is an `upsert_asset` call:
+AAL2, audited (`ai_asset.created` / `ai_asset.status_changed`), optimistic
+versioning, and four-eyes when relaxing a ban with four-eyes on. Enrolled
+Browser Guard installs fetch `GET /functions/v1/browser-guard-policy` with
+their telemetry key; the response carries `browser_guard.shadow_ai`
+(`blocked`, `sanctioned`) inside the runtime-policy Ed25519 envelope
+(`policy_version` `browser-guard/v1`, document digest, tenant, sequence,
+expiry). The extension applies it only when its managed `dashboardPolicy` key
+pins the signing public key; unsigned, tampered or replayed documents are
+ignored. Precedence is **most restrictive wins**: a dashboard block always
+applies, a dashboard allow never unblocks what the browser's managed `shadowAi`
+blocks, and an expired document keeps its blocks only. The endpoint refuses to
+serve (503) without a provisioned policy signing key. Browser Guard keys carry
+no member identity, so only tenant-wide exceptions waive a ban for browsers.
+The `shadowAi` managed-policy snippet remains the alternative for browsers
+without a control plane.
 
 At most 500 MCP servers can be banned or restricted per workspace.
 

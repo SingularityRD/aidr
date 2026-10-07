@@ -10,7 +10,7 @@
 	],
 	"routes": {
 		"public": ["/", "/pilot", "/pricing", "/verify", "/login", "/auth/callback", "/auth/recover", "/auth/oidc/callback", "/auth/sso-recovery", "/enterprise", "/support", "/status", "/privacy", "/security", "/terms"],
-		"protected": ["/auth/dlp-step-up", "/onboarding", "/downloads", "/dashboard", "/events", "/discovery", "/posture", "/settings", "/agents", "/autosecops", "/agents/:agentId", "/incidents", "/api-keys", "/billing", "/team", "/scim", "/retention", "/sso", "/siem", "/policies", "/privacy-guard", "/approvals", "/compliance", "/governance", "/governance/register", "/governance/requests", "/governance/change-control"],
+		"protected": ["/auth/dlp-step-up", "/operator", "/onboarding", "/downloads", "/dashboard", "/events", "/discovery", "/posture", "/settings", "/agents", "/autosecops", "/agents/:agentId", "/incidents", "/api-keys", "/billing", "/team", "/scim", "/retention", "/sso", "/siem", "/policies", "/privacy-guard", "/approvals", "/compliance", "/governance", "/governance/register", "/governance/requests", "/governance/change-control"],
 		"legacy": ["/demo"]
 	},
 	"scenarios": [
