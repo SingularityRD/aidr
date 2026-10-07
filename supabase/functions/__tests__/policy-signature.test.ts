@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { verifyEd25519CanonicalJson } from "../../../packages/core/src/managed.ts";
 import { type PolicyHighWater, policyBodySequence, verifySignedPolicy } from "../../../packages/core/src/policy-signature.ts";
+import { signedDetectionExceptions } from "../../../packages/core/src/remote-policy.ts";
 
 vi.mock("npm:@supabase/supabase-js@2.116.0", () => ({
 	createClient: () => { throw new Error("policy signature test requires an injected database"); },
@@ -36,7 +37,17 @@ const POLICY_KEY = keypair();
 const OTHER_KEY = keypair();
 const ENTITLEMENT_KEY = keypair();
 
-function database(options: { agentBound?: boolean; updatedAt?: string | null; publishedAt?: string } = {}) {
+function database(
+	options: {
+		agentBound?: boolean;
+		updatedAt?: string | null;
+		publishedAt?: string;
+		/** `detection_exceptions_for_principal` result; default: none. */
+		exceptionFeed?: unknown;
+		exceptionFeedError?: boolean;
+		rpcCalls?: string[];
+	} = {},
+) {
 	const bound = options.agentBound ?? false;
 	function from(table: string) {
 		const query = {
@@ -57,8 +68,14 @@ function database(options: { agentBound?: boolean; updatedAt?: string | null; pu
 		};
 		return query;
 	}
-	const rpc = async (name: string) => {
+	const rpc = async (name: string, args?: Record<string, unknown>) => {
+		options.rpcCalls?.push(name);
 		if (name === "tenant_admission_capacity") return { data: 1, error: null };
+		if (name === "detection_exceptions_for_principal") {
+			if (args?.p_tenant_id !== TENANT) throw new Error("exception feed queried for another tenant");
+			if (options.exceptionFeedError) return { data: null, error: { message: "boom" } };
+			return { data: options.exceptionFeed ?? { exceptions: [], changed_at: null }, error: null };
+		}
 		// No AI governance bans: the response carries no overlay.
 		if (name === "ai_governance_policy_overlay") return { data: { mcp_deny_servers: [], mcp_require_approval_servers: [] }, error: null };
 		return { data: { allowed: true, remaining: 299 }, error: null };
@@ -271,5 +288,78 @@ describe("policy endpoint signed envelope verified by core verifySignedPolicy", 
 		const unstamped = await fetchPolicy({ updatedAt: null });
 		expect(unstamped.response.status).toBe(503);
 		expect(unstamped.body).toEqual({ error: "policy_signing_unavailable" });
+	});
+});
+
+describe("policy endpoint: signed detection exceptions", () => {
+	const trust = { keys: [POLICY_KEY.publicPem], revoked: new Set<string>() };
+	const EXCEPTION = {
+		id: "5b5b5b5b-5b5b-45b5-85b5-5b5b5b5b5b5b",
+		rule_id: "CLT-CMD-011",
+		artifact_sha256: null,
+		subject_kind: "agent",
+		subject_value: AGENT,
+		created_at: "2026-10-04T12:00:00+00:00",
+		expires_at: "2026-10-11T12:00:00+00:00",
+		created_by: USER,
+		reason: "deploy scripts",
+	};
+	const CHANGED = "2026-10-04T12:00:00.000Z";
+
+	it("serves exceptions only inside a signed response, bound into the envelope core verifies", async () => {
+		useSigningKey();
+		const { response, body } = await fetchPolicy({
+			agentBound: true,
+			exceptionFeed: { exceptions: [EXCEPTION], changed_at: CHANGED },
+		});
+		expect(response.status).toBe(200);
+		expect(verify(body).ok).toBe(true);
+		const envelope = (body.policy_signed as { envelope: Record<string, unknown> }).envelope;
+		expect(envelope.detection_exceptions_sha256).toBe(body.detection_exceptions_sha256);
+		// The exception change time advances the sequence (a revocation is never a rollback).
+		expect(envelope.sequence).toBe(Date.parse(CHANGED));
+		const applied = signedDetectionExceptions(body, trust, NOW.getTime());
+		expect(applied).toHaveLength(1);
+		expect(applied[0]).toMatchObject({
+			ruleId: "CLT-CMD-011",
+			source: "managed",
+			expiresAt: "2026-10-11T12:00:00.000Z",
+		});
+		// Tampering with the served list breaks the binding.
+		const tampered = { ...body, detection_exceptions: [{ ...EXCEPTION, rule_id: "CLT-CMD-001" }] };
+		expect(signedDetectionExceptions(tampered, trust, NOW.getTime())).toEqual([]);
+	});
+
+	it("never queries or serves exceptions on an unsigned policy", async () => {
+		const calls: string[] = [];
+		const { body } = await fetchPolicy({
+			exceptionFeed: { exceptions: [EXCEPTION], changed_at: CHANGED },
+			rpcCalls: calls,
+		});
+		expect(body.detection_exceptions).toBeUndefined();
+		expect(calls).not.toContain("detection_exceptions_for_principal");
+	});
+
+	it("omits the field and the envelope binding when there are none", async () => {
+		useSigningKey();
+		const { body } = await fetchPolicy();
+		expect(body.detection_exceptions).toBeUndefined();
+		const envelope = (body.policy_signed as { envelope: Record<string, unknown> }).envelope;
+		expect(envelope.detection_exceptions_sha256).toBeUndefined();
+	});
+
+	it("fails closed when the feed is unreadable or malformed, or names a self-defense rule", async () => {
+		useSigningKey();
+		expect((await fetchPolicy({ exceptionFeedError: true })).response.status).toBe(503);
+		for (const feed of [
+			{ exceptions: "nope", changed_at: null },
+			{ exceptions: [{ ...EXCEPTION, rule_id: "CLT-SELF-007" }], changed_at: CHANGED },
+			{ exceptions: [{ ...EXCEPTION, expires_at: "2026-12-01T00:00:00+00:00" }], changed_at: CHANGED },
+			{ exceptions: [{ ...EXCEPTION, subject_value: "not-a-uuid" }], changed_at: CHANGED },
+		]) {
+			const { response, body } = await fetchPolicy({ exceptionFeed: feed });
+			expect(response.status, JSON.stringify(feed)).toBe(503);
+			expect(body).toEqual({ error: "policy_unavailable" });
+		}
 	});
 });

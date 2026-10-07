@@ -171,6 +171,11 @@ verify_jwt = true
 # membership/role, AAL2 for decisions and a tenant rate limit, and every RPC
 # re-checks under row locks.
 verify_jwt = true
+[functions.detection-exceptions]
+# Time-limited detection exceptions. Dashboard sessions only; the handler
+# repeats session, identity barrier, owner/admin role, AAL2 and a tenant rate
+# limit, and every RPC re-checks under a tenant lock and writes the audit row.
+verify_jwt = true
 [functions.governance-digest]
 # Scheduled governance summary. The dispatch path requires the deployment
 # service credential (compared in constant time); the test-send path repeats

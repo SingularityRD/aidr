@@ -25,6 +25,12 @@ type PolicyEnvelope = {
 	issued_at: string;
 	expires_at: string;
 	tenant_id: string;
+	/**
+	 * Digest of the `detection_exceptions` list served next to the policy.
+	 * Connectors apply exceptions only when this signed value matches the list
+	 * they received; absent means the response carries no exceptions.
+	 */
+	detection_exceptions_sha256?: string;
 };
 
 export type SignedPolicy = {
@@ -94,7 +100,14 @@ function bytesToBase64(bytes: Uint8Array): string {
 
 /** Returns null when the key is unusable or the sequence is not a positive safe integer. */
 export async function signRuntimePolicyEnvelope(
-	input: { tenantId: string; policyVersion: string; policySha256: string; sequence: number; now: Date },
+	input: {
+		tenantId: string;
+		policyVersion: string;
+		policySha256: string;
+		sequence: number;
+		now: Date;
+		detectionExceptionsSha256?: string;
+	},
 	config: PolicySigningConfig,
 ): Promise<SignedPolicy | null> {
 	if (!Number.isSafeInteger(input.sequence) || input.sequence < 1) return null;
@@ -107,6 +120,7 @@ export async function signRuntimePolicyEnvelope(
 		issued_at: input.now.toISOString(),
 		expires_at: new Date(input.now.getTime() + config.ttlHours * 3_600_000).toISOString(),
 		tenant_id: input.tenantId,
+		...(input.detectionExceptionsSha256 ? { detection_exceptions_sha256: input.detectionExceptionsSha256 } : {}),
 	};
 	try {
 		const pkcs8 = Uint8Array.from(atob(config.pkcs8B64), (c) => c.charCodeAt(0));

@@ -40,7 +40,9 @@ function TeamNavLinks() {
 		<>
 			<NavLink to="/team">Team</NavLink>
 			{currentRole === "owner" ? <NavLink to="/scim">Directory provisioning</NavLink> : null}
-			{currentRole === "owner" || currentRole === "admin" ? <NavLink to="/retention">Legal holds & retention</NavLink> : null}
+			{currentRole === "owner" || currentRole === "admin" ? (
+				<NavLink to="/retention">Legal holds & retention</NavLink>
+			) : null}
 			{currentRole === "owner" ? <NavLink to="/sso">Single sign-on</NavLink> : null}
 			{!roleResolved || canEditPolicy ? <NavLink to="/policies">Policies</NavLink> : null}
 			{canEditPolicy ? <NavLink to="/siem">SIEM export</NavLink> : null}
@@ -49,6 +51,9 @@ function TeamNavLinks() {
 			) : null}
 			{currentRole === "owner" || currentRole === "admin" ? (
 				<NavLink to="/governance">Governance</NavLink>
+			) : null}
+			{currentRole === "owner" || currentRole === "admin" ? (
+				<NavLink to="/governance/detection-exceptions">Detection exceptions</NavLink>
 			) : null}
 			<NavLink to="/governance/register">AI register</NavLink>
 		</>

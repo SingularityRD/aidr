@@ -72,12 +72,16 @@ const router = createBrowserRouter([
 	},
 	{
 		path: "/auth/oidc/callback",
-		lazy: async () => ({ Component: (await import("./ui/pages/OidcCallbackPage")).OidcCallbackPage }),
+		lazy: async () => ({
+			Component: (await import("./ui/pages/OidcCallbackPage")).OidcCallbackPage,
+		}),
 		errorElement: routeErrorElement,
 	},
 	{
 		path: "/auth/sso-recovery",
-		lazy: async () => ({ Component: (await import("./ui/pages/OidcBreakGlassPage")).OidcBreakGlassPage }),
+		lazy: async () => ({
+			Component: (await import("./ui/pages/OidcBreakGlassPage")).OidcBreakGlassPage,
+		}),
 		errorElement: routeErrorElement,
 	},
 	{
@@ -377,6 +381,20 @@ const router = createBrowserRouter([
 		],
 	},
 	{
+		path: "/governance/detection-exceptions",
+		lazy: loadAppLayout,
+		errorElement: routeErrorElement,
+		loader: requireSessionLoader,
+		children: [
+			{
+				index: true,
+				lazy: async () => ({
+					Component: (await import("./ui/pages/DetectionExceptionsPage")).DetectionExceptionsPage,
+				}),
+			},
+		],
+	},
+	{
 		path: "/governance/change-control",
 		lazy: loadAppLayout,
 		errorElement: routeErrorElement,
@@ -396,21 +414,36 @@ const router = createBrowserRouter([
 		lazy: loadAppLayout,
 		errorElement: routeErrorElement,
 		loader: requireSessionLoader,
-		children: [{ index: true, lazy: async () => ({ Component: (await import("./ui/pages/RetentionPage")).RetentionPage }) }],
+		children: [
+			{
+				index: true,
+				lazy: async () => ({ Component: (await import("./ui/pages/RetentionPage")).RetentionPage }),
+			},
+		],
 	},
 	{
 		path: "/sso",
 		lazy: loadAppLayout,
 		errorElement: routeErrorElement,
 		loader: requireSessionLoader,
-		children: [{ index: true, lazy: async () => ({ Component: (await import("./ui/pages/OidcSsoPage")).OidcSsoPage }) }],
+		children: [
+			{
+				index: true,
+				lazy: async () => ({ Component: (await import("./ui/pages/OidcSsoPage")).OidcSsoPage }),
+			},
+		],
 	},
 	{
 		path: "/siem",
 		lazy: loadAppLayout,
 		errorElement: routeErrorElement,
 		loader: requireSessionLoader,
-		children: [{ index: true, lazy: async () => ({ Component: (await import("./ui/pages/SiemPage")).SiemPage }) }],
+		children: [
+			{
+				index: true,
+				lazy: async () => ({ Component: (await import("./ui/pages/SiemPage")).SiemPage }),
+			},
+		],
 	},
 	{
 		path: "/policies",
