@@ -111,7 +111,14 @@ import {
 	isPackageManifestPath,
 	type ParsedPackage,
 } from "./package-extractor.js";
-import { evaluateCommonPiiBaseline } from "./pii-baseline.js";
+import {
+	COMMON_PII_PLACEHOLDER_LABEL,
+	COMMON_PII_TYPES,
+	type CommonPiiBaselineFinding,
+	commonPiiRuleId,
+	evaluateCommonPiiBaseline,
+	maskCommonPiiInToolInput,
+} from "./pii-baseline.js";
 import { evaluatePolicy } from "./policy.js";
 import type { TenantPromptSafetyPolicy } from "./prompt-safety.js";
 import { syncRemoteRuntimePolicy } from "./remote-policy.js";
@@ -388,51 +395,104 @@ function sameKeys(left: Record<string, unknown>, right: Record<string, unknown>)
 	);
 }
 
+/** No common PII the policy acts on, in the raw or escape-decoded view. */
+function commonPiiClear(policy: DlpPolicy, content: string): boolean {
+	return (
+		evaluateCommonPiiBaseline(policy, content).finding === null &&
+		evaluateCommonPiiBaseline(policy, canonicalOutput(content)).finding === null
+	);
+}
+
+/**
+ * The input after tenant `redact` rules: the parsed transformed payload when it
+ * keeps every top-level parameter, the original when the tenant rules allow it
+ * and common PII masking will follow, otherwise null.
+ */
+function tenantRedactedInput(
+	scan: DlpScanResult,
+	original: Record<string, unknown>,
+	maskCommonPii: boolean,
+): Record<string, unknown> | null {
+	if (scan.status !== "inspected") return null;
+	if (scan.action === "allow") return maskCommonPii ? original : null;
+	if (scan.action !== "redact" || typeof scan.transformedContent !== "string") return null;
+	const transformed: unknown = JSON.parse(scan.transformedContent);
+	return isPlainObject(transformed) && sameKeys(original, transformed) ? transformed : null;
+}
+
+interface RedactedToolInput {
+	input: Record<string, unknown>;
+	/** Masked common-PII occurrences per placeholder label (counts only). */
+	piiCounts: Record<string, number>;
+}
+
 /**
  * Redact the connector's original tool input under the tenant policy.
  *
- * Returns the replacement input only when every check holds: the original
- * payload itself scans to `redact`, the redacted text is a JSON object with the
- * same top-level parameters (a rule may not rename or drop a parameter), and a
+ * Tenant `redact` rules rewrite their matches first (inert `REDACTED_<LABEL>`
+ * words). With `maskCommonPii`, common PII governed by a `redact` rule is then
+ * masked with typed placeholders (`[EMAIL_1]`) in the fields that can be
+ * rewritten safely (see dlp/pii-masking.ts). The replacement input is returned
+ * only when every check holds: the redacted text is a JSON object with the same
+ * top-level parameters (a rule may not rename or drop a parameter), and a
  * rescan of the result under the same policy finds nothing left to act on and
- * no common PII. Anything else returns null and the caller denies.
+ * no common PII in either the raw or escape-decoded view. Anything else returns
+ * null and the caller denies.
  */
 function redactToolInput(
 	detector: DlpDetectorContext,
 	tenantId: string,
 	original: Record<string, unknown>,
-): Record<string, unknown> | null {
+	maskCommonPii: boolean,
+): RedactedToolInput | null {
 	const contentType = detector.contentType ?? "application/json";
-	// The rewritten input is executed, so replacements must be inert words
-	// (`REDACTED_EMAIL`), never display placeholders that a shell globs.
+	// The rewritten input is executed, so tenant replacements must be inert
+	// words (`REDACTED_EMAIL`). Common-PII placeholders are only written into
+	// fields where brackets are inert (see dlp/pii-masking.ts).
 	const scan = scanDlpInput(detector.policy, {
 		tenantId,
 		content: JSON.stringify(original),
 		contentType,
 		replacementStyle: "shell_inert",
 	});
-	if (
-		scan.status !== "inspected" ||
-		scan.action !== "redact" ||
-		typeof scan.transformedContent !== "string"
-	) {
-		return null;
+	let current = tenantRedactedInput(scan, original, maskCommonPii);
+	if (!current) return null;
+	let piiCounts: Record<string, number> = {};
+	if (maskCommonPii) {
+		const masked = maskCommonPiiInToolInput(detector.policy, current);
+		if (!masked || !sameKeys(original, masked.input)) return null;
+		current = masked.input;
+		piiCounts = masked.counts;
 	}
-	const transformed: unknown = JSON.parse(scan.transformedContent);
-	if (!isPlainObject(transformed) || !sameKeys(original, transformed)) return null;
-	const recheckContent = JSON.stringify(transformed);
+	const recheckContent = JSON.stringify(current);
 	const recheck = scanDlpInput(detector.policy, { tenantId, content: recheckContent, contentType });
 	if (recheck.status !== "inspected" || recheck.action !== "allow") return null;
-	if (evaluateCommonPiiBaseline(detector.policy, recheckContent).finding !== null) return null;
-	return transformed;
+	if (!commonPiiClear(detector.policy, recheckContent)) return null;
+	return { input: current, piiCounts };
 }
 
-function dlpRedactedVerdict(
-	findings: DlpFinding[],
-	transformedInput: Record<string, unknown>,
-): Verdict {
+function piiRuleIdForLabel(label: string): string | null {
+	const type = COMMON_PII_TYPES.find(
+		(candidate) => COMMON_PII_PLACEHOLDER_LABEL[candidate] === label,
+	);
+	return type ? commonPiiRuleId(type) : null;
+}
+
+function dlpRedactedVerdict(findings: DlpFinding[], redacted: RedactedToolInput): Verdict {
 	const ruleIds = [...new Set(findings.map((finding) => finding.ruleId))];
 	const labels = [...new Set(findings.map((finding) => finding.labelName))];
+	const piiLabels = Object.keys(redacted.piiCounts).sort();
+	const reasons: string[] = [];
+	if (findings.length > 0) {
+		reasons.push(
+			`DLP redaction applied: ${findings.length} value(s) matching ${labels.join(", ")} (rule ${ruleIds.join(", ")}) were replaced before the tool ran.`,
+		);
+	}
+	if (piiLabels.length > 0) {
+		// Types and counts only; never the masked values.
+		const summary = piiLabels.map((label) => `${label} x${redacted.piiCounts[label]}`).join(", ");
+		reasons.push(`Common PII masked before the tool ran: ${summary}.`);
+	}
 	return {
 		decision: "allow",
 		category: "dlp_redacted",
@@ -440,11 +500,9 @@ function dlpRedactedVerdict(
 		severity: "warning",
 		source: "dlp",
 		artifacts: [],
-		matchedThreatId: ruleIds[0] ?? null,
-		reasons: [
-			`DLP redaction applied: ${findings.length} value(s) matching ${labels.join(", ")} (rule ${ruleIds.join(", ")}) were replaced before the tool ran.`,
-		],
-		transformedInput,
+		matchedThreatId: ruleIds[0] ?? (piiLabels[0] ? piiRuleIdForLabel(piiLabels[0]) : null),
+		reasons,
+		transformedInput: redacted.input,
 	};
 }
 
@@ -473,7 +531,9 @@ function tenantDlpVerdict(
 		// Only a connector that executes the rewritten payload may receive an
 		// allow here. Passing a redact result through anywhere else would
 		// disclose the original value, so it is enforced as a deny.
-		const transformed = rewriteSource ? redactToolInput(detector, tenantId, rewriteSource) : null;
+		const transformed = rewriteSource
+			? redactToolInput(detector, tenantId, rewriteSource, false)
+			: null;
 		if (transformed) return dlpRedactedVerdict(dlp.findings, transformed);
 		return detectorVerdict(
 			"deny",
@@ -494,6 +554,41 @@ function tenantDlpVerdict(
 	);
 }
 
+/**
+ * Common PII whose governing rules all say `redact`. The values are masked in
+ * the connector's real input when it executes a rewritten payload; otherwise,
+ * or when masking is unsafe or leaves anything behind, the call is denied.
+ * Tenant rules still apply: a tenant deny wins, and a tenant ask cannot be
+ * combined with masking (an approved call would run the original), so it denies.
+ */
+function commonPiiRedactionVerdict(
+	baseline: CommonPiiBaselineFinding,
+	dlp: DlpScanResult,
+	detector: DlpDetectorContext,
+	tenantId: string,
+	rewriteSource: Record<string, unknown> | null,
+): Verdict {
+	const deny = (reason: string) =>
+		detectorVerdict(
+			"deny",
+			"dlp",
+			"dlp",
+			`Common PII (${baseline.type}) detected; tenant DLP policy requires redaction, ${reason}`,
+			baseline.ruleId,
+		);
+	if (dlp.status !== "inspected" || (dlp.action !== "allow" && dlp.action !== "redact")) {
+		const tenant = tenantDlpVerdict(dlp, detector, tenantId, rewriteSource);
+		return tenant?.decision === "deny"
+			? tenant
+			: deny("but another DLP rule requires approval; the call was blocked.");
+	}
+	if (!rewriteSource) return deny("but this connector cannot rewrite tool input.");
+	const redacted = redactToolInput(detector, tenantId, rewriteSource, true);
+	return redacted
+		? dlpRedactedVerdict(dlp.findings, redacted)
+		: deny("but the value could not be masked safely; the call was blocked.");
+}
+
 function evaluateDlpDetector(
 	detector: DlpDetectorContext,
 	tenantId: string,
@@ -508,14 +603,20 @@ function evaluateDlpDetector(
 		});
 		// Built-in common-PII baseline, governed by the tenant policy's reserved
 		// `pii-<type>` rules and exceptions (see pii-baseline.ts). Oversized input
-		// is reported as unavailable rather than partially scanned.
-		const baseline =
+		// is reported as unavailable rather than partially scanned. The canonical
+		// (escape-decoded) view catches PII hidden behind JSON or Unicode escapes
+		// in the serialized tool input.
+		const views =
 			dlp.status === "unavailable" && dlp.unavailable.reason === "oversize"
-				? null
-				: // The canonical (escape-decoded) view catches PII hidden behind JSON
-					// or Unicode escapes in the serialized tool input.
-					(evaluateCommonPiiBaseline(detector.policy, content).finding ??
-					evaluateCommonPiiBaseline(detector.policy, canonicalOutput(content)).finding);
+				? []
+				: [
+						evaluateCommonPiiBaseline(detector.policy, content),
+						evaluateCommonPiiBaseline(detector.policy, canonicalOutput(content)),
+					];
+		const baseline = views.find((view) => view.finding !== null)?.finding ?? null;
+		if (baseline && views.every((view) => view.finding === null || view.redactOnly)) {
+			return commonPiiRedactionVerdict(baseline, dlp, detector, tenantId, rewriteSource);
+		}
 		const baselineVerdict = baseline
 			? detectorVerdict(
 					baseline.decision,

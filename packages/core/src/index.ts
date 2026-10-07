@@ -1102,12 +1102,14 @@ export type { ParsedPackage } from "./package-extractor.js";
 export { extractPackagesFromCommand, extractPackagesFromManifest } from "./package-extractor.js";
 // Built-in common-PII baseline governed by tenant DLP policy
 export {
+	COMMON_PII_PLACEHOLDER_LABEL,
 	COMMON_PII_TYPES,
 	type CommonPiiBaselineFinding,
 	type CommonPiiBaselineResult,
 	type CommonPiiType,
 	commonPiiRuleId,
 	evaluateCommonPiiBaseline,
+	maskCommonPiiInToolInput,
 } from "./pii-baseline.js";
 // PII Detector (privacy protection)
 export {

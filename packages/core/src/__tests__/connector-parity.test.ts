@@ -826,9 +826,14 @@ function tenantDlpPolicyWithAllActions(): Record<string, unknown> {
 			blockRule,
 			rule("tenant-redact-rule", "redact", REDACT_MARKER),
 			rule("tenant-ask-rule", "ask", ASK_MARKER),
+			// Reserved rule: built-in email PII is masked rather than blocked.
+			{ ...rule("pii-email", "redact", "NEVER-PRESENT-MARKER"), name: "Email addresses" },
 		],
 	};
 }
+
+/** Synthetic example.com address for the common-PII masking rows. */
+const PII_EMAIL = "jane.doe@example.com";
 
 const DLP_MATRIX: ParityCase[] = [
 	{
@@ -849,6 +854,22 @@ const DLP_MATRIX: ParityCase[] = [
 		threatId: "tenant-redact-rule",
 	},
 	{
+		// Common PII under a `redact` reserved rule, inside a quoted literal:
+		// masked on rewriting connectors, blocked everywhere else.
+		id: "dlp-pii-redact-quoted",
+		call: { kind: "shell", field: "command", command: `echo 'contact ${PII_EMAIL}'` },
+		expect: "blocked",
+		threatId: "pii-email",
+	},
+	{
+		// A bare shell word cannot be masked without changing what runs: every
+		// connector blocks, including the rewriting ones.
+		id: "dlp-pii-redact-bare",
+		call: { kind: "shell", field: "command", command: `echo ${PII_EMAIL}` },
+		expect: "blocked",
+		threatId: "pii-email",
+	},
+	{
 		id: "dlp-ask-rule",
 		call: { kind: "shell", field: "command", command: `echo ${ASK_MARKER}` },
 		expect: "blocked",
@@ -865,6 +886,8 @@ const DLP_MATRIX: ParityCase[] = [
 const EXPECTED_DLP_VERDICT: Record<string, "deny" | "ask" | "allow"> = {
 	"dlp-block-rule": "deny",
 	"dlp-redact-rule": "deny",
+	"dlp-pii-redact-quoted": "deny",
+	"dlp-pii-redact-bare": "deny",
 	"dlp-ask-rule": "ask",
 	"dlp-clean": "allow",
 };
@@ -882,11 +905,17 @@ function expectedDlpOutcome(
 	c: ParityCase,
 	connector: Connector,
 ): { blocked: boolean; verdict: "deny" | "ask" | "allow" | undefined } {
-	if (c.id === "dlp-redact-rule" && REDACTING_CONNECTORS.has(connector)) {
+	if (REWRITTEN_CASES.has(c.id) && REDACTING_CONNECTORS.has(connector)) {
 		return { blocked: false, verdict: "allow" };
 	}
 	return { blocked: c.expect === "blocked", verdict: EXPECTED_DLP_VERDICT[c.id] };
 }
+
+/** Rows a rewriting connector runs with a rewritten input, and the value that must be gone. */
+const REWRITTEN_CASES: ReadonlyMap<string, string> = new Map([
+	["dlp-redact-rule", REDACT_MARKER],
+	["dlp-pii-redact-quoted", PII_EMAIL],
+]);
 
 async function provisionHome(
 	home: string,
@@ -947,25 +976,33 @@ describe("signed tenant DLP bundle parity (built entry points)", () => {
 	}
 
 	it("runs a redact-rule call only with the value redacted, and only on hosts that execute the rewrite", () => {
-		for (const o of observations.filter((x) => x.caseId === "dlp-redact-rule")) {
-			if (REDACTING_CONNECTORS.has(o.connector)) {
+		for (const o of observations) {
+			const secret = REWRITTEN_CASES.get(o.caseId);
+			const label = `${o.caseId} via ${o.connector}`;
+			if (secret !== undefined && REDACTING_CONNECTORS.has(o.connector)) {
 				// The allow is safe only because the host runs the rewritten input,
 				// which keeps the parameter name and no longer carries the value.
-				expect(o.host.rewrittenInput, o.connector).toBeDefined();
-				expect(Object.keys(o.host.rewrittenInput ?? {}), o.connector).toEqual(["command"]);
-				expect(JSON.stringify(o.host.rewrittenInput), o.connector).not.toContain(REDACT_MARKER);
+				expect(o.host.rewrittenInput, label).toBeDefined();
+				expect(Object.keys(o.host.rewrittenInput ?? {}), label).toEqual(["command"]);
+				expect(JSON.stringify(o.host.rewrittenInput), label).not.toContain(secret);
 			} else {
-				expect(o.host.rewrittenInput, o.connector).toBeUndefined();
+				expect(o.host.rewrittenInput, label).toBeUndefined();
 			}
 		}
-		for (const o of observations.filter((x) => x.caseId !== "dlp-redact-rule")) {
-			expect(o.host.rewrittenInput, `${o.caseId} via ${o.connector}`).toBeUndefined();
+	});
+
+	it("masks common PII with a typed placeholder inside the quoted literal", () => {
+		for (const o of observations.filter((x) => x.caseId === "dlp-pii-redact-quoted")) {
+			if (!REDACTING_CONNECTORS.has(o.connector)) continue;
+			expect(o.host.rewrittenInput, o.connector).toEqual({ command: "echo 'contact [EMAIL_1]'" });
 		}
 	});
 
 	it("never sends the redacted value back to the model in a block reason", () => {
-		for (const o of observations.filter((x) => x.caseId === "dlp-redact-rule")) {
-			expect(o.host.message, o.connector).not.toContain(REDACT_MARKER);
+		for (const o of observations) {
+			const secret =
+				REWRITTEN_CASES.get(o.caseId) ?? (o.caseId === "dlp-pii-redact-bare" ? PII_EMAIL : null);
+			if (secret) expect(o.host.message, `${o.caseId} via ${o.connector}`).not.toContain(secret);
 		}
 	});
 });

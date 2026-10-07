@@ -173,6 +173,7 @@ describe("built-in common-PII baseline respects tenant DLP policy", () => {
 		});
 		expect(evaluateCommonPiiBaseline(dlpPolicy, content)).toEqual({
 			finding: null,
+			redactOnly: false,
 			appliedExceptionIds: ["exc-content"],
 		});
 		expect(
