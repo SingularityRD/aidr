@@ -234,9 +234,9 @@ describe("Cursor ask support per event", () => {
 	});
 
 	it("maps ask to deny everywhere under dashboard_only", () => {
-		expect(toCursorResponse({ ...ask, dashboardOnly: true }, "beforeShellExecution").permission).toBe(
-			"deny",
-		);
+		expect(
+			toCursorResponse({ ...ask, dashboardOnly: true }, "beforeShellExecution").permission,
+		).toBe("deny");
 	});
 });
 

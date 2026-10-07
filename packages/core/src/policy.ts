@@ -719,7 +719,11 @@ export async function evaluatePolicy(
 			// Deny and approval rules match any reading of an ambiguous
 			// `mcp__a__b__c` name (server `a` or `a__b`), so a server whose
 			// name contains the separator cannot slip past its own rule.
-			if (anyIdentity((server, tool) => matchesMcpToolSelector(config.policy.mcp.deny_tools, server, tool))) {
+			if (
+				anyIdentity((server, tool) =>
+					matchesMcpToolSelector(config.policy.mcp.deny_tools, server, tool),
+				)
+			) {
 				return makeVerdict({
 					decision: "deny",
 					category: "mcp_tool_call",

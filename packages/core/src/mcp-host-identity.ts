@@ -167,7 +167,10 @@ export function matchMcpServerDeclaration(
  * matched: the URL's host, else the command line. It will not match a policy
  * id written for the configured name, but it never invents a configured name.
  */
-export function fallbackMcpServerIdentity(payload: { command?: string; url?: string }): string | null {
+export function fallbackMcpServerIdentity(payload: {
+	command?: string;
+	url?: string;
+}): string | null {
 	if (payload.url?.trim()) {
 		try {
 			return new URL(payload.url.trim()).host || payload.url.trim();
@@ -238,7 +241,9 @@ export interface KnownMcpServers {
  * host's default split, and an unidentifiable call is handled by policy as
  * an unknown server).
  */
-export async function loadKnownMcpServers(configPaths: readonly string[]): Promise<KnownMcpServers> {
+export async function loadKnownMcpServers(
+	configPaths: readonly string[],
+): Promise<KnownMcpServers> {
 	const declarations: McpServerDeclaration[] = [];
 	const names = new Set<string>();
 	try {

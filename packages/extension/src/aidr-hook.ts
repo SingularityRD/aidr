@@ -149,7 +149,9 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<vo
 	if (payload instanceof UndecodableHookInput) {
 		const reason =
 			"Singularity AIDR received hook input that is not valid UTF-8 or UTF-16 JSON; it could not be inspected and execution was denied.";
-		writeJson(mode === "vscode" ? vsCodeUnknownEventBlock(reason) : cursorUnknownEventBlock(reason));
+		writeJson(
+			mode === "vscode" ? vsCodeUnknownEventBlock(reason) : cursorUnknownEventBlock(reason),
+		);
 		return;
 	}
 
@@ -683,7 +685,9 @@ async function writeHookInputLimitResponse(
 			return;
 		}
 		const reason = `${limit} Execution was denied.`;
-		writeJson(event === "PreToolUse" ? internalVsCodeResponse(reason) : vsCodeUnknownEventBlock(reason));
+		writeJson(
+			event === "PreToolUse" ? internalVsCodeResponse(reason) : vsCodeUnknownEventBlock(reason),
+		);
 		return;
 	}
 	if (event && CURSOR_AFTER_EVENTS.has(event)) {
@@ -859,7 +863,9 @@ function hostDirectories(input: Record<string, unknown>): string[] {
 	const roots = Array.isArray(input.workspace_roots)
 		? input.workspace_roots.filter((root): root is string => typeof root === "string" && !!root)
 		: [];
-	return [...new Set([...(typeof input.cwd === "string" && input.cwd ? [input.cwd] : []), ...roots])];
+	return [
+		...new Set([...(typeof input.cwd === "string" && input.cwd ? [input.cwd] : []), ...roots]),
+	];
 }
 
 /** Cursor MCP configuration: the user file plus each workspace's `.cursor/mcp.json`. */
@@ -892,11 +898,14 @@ function vsCodeMcpConfigPaths(input: Record<string, unknown>): string[] {
  * configuration key Cursor puts in `command`; as a last resort the URL host or
  * command line is used (it never invents a configured name).
  */
-async function normalizeCursorMcpExecution(payload: unknown): Promise<NormalizedHookCall | undefined> {
+async function normalizeCursorMcpExecution(
+	payload: unknown,
+): Promise<NormalizedHookCall | undefined> {
 	if (!payload || typeof payload !== "object" || Array.isArray(payload)) return undefined;
 	const input = payload as Record<string, unknown>;
 	const sessionId = cursorSessionId(input);
-	const declared = asString(input.mcp_server_name) ?? asString(input.server) ?? asString(input.server_name);
+	const declared =
+		asString(input.mcp_server_name) ?? asString(input.server) ?? asString(input.server_name);
 	if (declared?.trim()) return normalizeCursorMcpCall(input, sessionId, declared);
 	const endpoint = {
 		command: asString(input.command),

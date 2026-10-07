@@ -1,13 +1,13 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { runInNewContext } from "node:vm";
-import { transformSync } from "esbuild";
 import {
 	createHookResponder,
 	type HookResponderOptions,
 	isWellFormedToolCall,
 	malformedShellCommandReason,
 } from "@singularityrd/aidr-core";
+import { transformSync } from "esbuild";
 import { describe, expect, it, vi } from "vitest";
 import { MAX_PRE_TOOL_INPUT_BYTES, resolvePreToolUseDeadlineMs } from "../hook-input.js";
 

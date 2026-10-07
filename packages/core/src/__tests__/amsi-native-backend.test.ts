@@ -49,17 +49,19 @@ describe("native Windows AMSI backend", () => {
 			session[0] = { session: true };
 			return 0;
 		});
-		native.scan.mockImplementation((
-			_context: unknown,
-			_content: Buffer,
-			_length: number,
-			_name: string,
-			_session: unknown,
-			result: number[],
-		) => {
-			result[0] = 0;
-			return 0;
-		});
+		native.scan.mockImplementation(
+			(
+				_context: unknown,
+				_content: Buffer,
+				_length: number,
+				_name: string,
+				_session: unknown,
+				result: number[],
+			) => {
+				result[0] = 0;
+				return 0;
+			},
+		);
 	});
 	afterEach(() => vi.restoreAllMocks());
 
@@ -94,17 +96,19 @@ describe("native Windows AMSI backend", () => {
 	});
 
 	it("preserves the native AMSI detection result", async () => {
-		native.scan.mockImplementation((
-			_context: unknown,
-			_content: Buffer,
-			_length: number,
-			_name: string,
-			_session: unknown,
-			result: number[],
-		) => {
-			result[0] = 32768;
-			return 0;
-		});
+		native.scan.mockImplementation(
+			(
+				_context: unknown,
+				_content: Buffer,
+				_length: number,
+				_name: string,
+				_session: unknown,
+				result: number[],
+			) => {
+				result[0] = 32768;
+				return 0;
+			},
+		);
 		const client = new AmsiClient(nullLogger);
 		await client.init();
 		const result = await client.scanString("test detection marker", "Bash:command");

@@ -819,6 +819,28 @@ export {
 	inspectHiddenUnicode,
 	renderInvisibleCharacters,
 } from "./hidden-unicode.js";
+// Connector entry-point deadlines, exit-after-answer and input hygiene.
+export {
+	type BoundedStdinResult,
+	createHookResponder,
+	exitAfterStdoutFlush,
+	HOOK_DEADLINE_EXCEEDED,
+	HOOK_DEADLINE_HEADROOM_MS,
+	HOOK_HOST_TIMEOUT_MS,
+	type HookAnswer,
+	type HookDeadlineSpec,
+	type HookResponder,
+	type HookResponderOptions,
+	hasMalformedCommandText,
+	IN_PROCESS_TOOL_CALL_DEADLINE,
+	isValidUtf8,
+	isWellFormedToolCall,
+	MIN_HOOK_DEADLINE_MS,
+	malformedShellCommandReason,
+	readBoundedStdinAsync,
+	resolveHookDeadlineMs,
+	withHookDeadline,
+} from "./hook-deadline.js";
 // Native-host acceptance observations (inert outside a gate run)
 export {
 	createHostObservation,
@@ -986,6 +1008,24 @@ export {
 	type McpDiscoveryServer,
 	type McpSignedManifestIndex,
 } from "./mcp-discovery.js";
+// Host MCP tool naming → canonical `mcp__<server>__<tool>` identity.
+export {
+	CANONICAL_MCP_PREFIX,
+	canonicalMcpToolName,
+	fallbackMcpServerIdentity,
+	type KnownMcpServers,
+	loadKnownMcpServers,
+	type McpServerDeclaration,
+	type McpToolIdentity,
+	matchMcpServerDeclaration,
+	mcpIdentityFromCanonicalName,
+	mcpIdentityFromOpenClawName,
+	mcpIdentityFromOpenCodeName,
+	mcpIdentityFromVsCodeName,
+	mcpPolicyServerIds,
+	sanitizeOpenClawMcpName,
+	sanitizeOpenCodeMcpName,
+} from "./mcp-host-identity.js";
 export {
 	defaultMcpConfigPaths,
 	type McpInventoryCoverage,
@@ -1613,43 +1653,3 @@ export {
 	runInstalledWindowsResponseWorker,
 	validateInstalledWindowsResponseRemoval,
 } from "./windows-response-worker.js";
-// Connector entry-point deadlines, exit-after-answer and input hygiene.
-export {
-	type BoundedStdinResult,
-	createHookResponder,
-	exitAfterStdoutFlush,
-	HOOK_DEADLINE_EXCEEDED,
-	HOOK_DEADLINE_HEADROOM_MS,
-	HOOK_HOST_TIMEOUT_MS,
-	type HookAnswer,
-	type HookDeadlineSpec,
-	type HookResponder,
-	type HookResponderOptions,
-	hasMalformedCommandText,
-	IN_PROCESS_TOOL_CALL_DEADLINE,
-	isValidUtf8,
-	isWellFormedToolCall,
-	MIN_HOOK_DEADLINE_MS,
-	malformedShellCommandReason,
-	readBoundedStdinAsync,
-	resolveHookDeadlineMs,
-	withHookDeadline,
-} from "./hook-deadline.js";
-// Host MCP tool naming → canonical `mcp__<server>__<tool>` identity.
-export {
-	CANONICAL_MCP_PREFIX,
-	canonicalMcpToolName,
-	fallbackMcpServerIdentity,
-	type KnownMcpServers,
-	loadKnownMcpServers,
-	type McpServerDeclaration,
-	type McpToolIdentity,
-	matchMcpServerDeclaration,
-	mcpIdentityFromCanonicalName,
-	mcpIdentityFromOpenClawName,
-	mcpIdentityFromOpenCodeName,
-	mcpIdentityFromVsCodeName,
-	mcpPolicyServerIds,
-	sanitizeOpenClawMcpName,
-	sanitizeOpenCodeMcpName,
-} from "./mcp-host-identity.js";

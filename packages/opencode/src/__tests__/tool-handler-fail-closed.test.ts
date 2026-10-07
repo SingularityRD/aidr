@@ -112,10 +112,7 @@ describe("OpenCode tool handler failure policy", () => {
 
 	it("keeps a built-in tool name when no server matches", async () => {
 		vi.mocked(guardToolCall).mockResolvedValueOnce(allowVerdict as never);
-		await handlers()(
-			{ tool: "plan_exit", sessionID: "s", callID: "c" },
-			{ args: {} },
-		);
+		await handlers()({ tool: "plan_exit", sessionID: "s", callID: "c" }, { args: {} });
 		expect(guardToolCall).toHaveBeenLastCalledWith(
 			expect.objectContaining({ toolName: "plan_exit" }),
 			expect.anything(),

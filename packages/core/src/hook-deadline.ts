@@ -120,7 +120,8 @@ export function createHookResponder(options: HookResponderOptions): HookResponde
 		clearTimer(timer);
 		const code = answer.exitCode ?? 0;
 		try {
-			if (answer.stderr) writeStderr(answer.stderr.endsWith("\n") ? answer.stderr : `${answer.stderr}\n`);
+			if (answer.stderr)
+				writeStderr(answer.stderr.endsWith("\n") ? answer.stderr : `${answer.stderr}\n`);
 		} catch {
 			// stderr is only a secondary channel.
 		}
@@ -136,7 +137,11 @@ export function createHookResponder(options: HookResponderOptions): HookResponde
 		try {
 			deadlineAnswer = options.onDeadline();
 		} catch {
-			deadlineAnswer = { stdout: "", exitCode: 2, stderr: "Singularity AIDR inspection timed out." };
+			deadlineAnswer = {
+				stdout: "",
+				exitCode: 2,
+				stderr: "Singularity AIDR inspection timed out.",
+			};
 		}
 		write(deadlineAnswer);
 	}, options.deadlineMs);
@@ -307,7 +312,9 @@ export function malformedShellCommandReason(
 		const parts =
 			typeof value === "string"
 				? [value]
-				: Array.isArray(value) && value.length > 0 && value.every((part) => typeof part === "string")
+				: Array.isArray(value) &&
+						value.length > 0 &&
+						value.every((part) => typeof part === "string")
 					? (value as string[])
 					: null;
 		if (!parts) return `shell ${field} is neither a string nor a string argv`;

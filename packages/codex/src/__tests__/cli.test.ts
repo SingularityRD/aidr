@@ -497,7 +497,9 @@ describe("Codex hook deadline and input hygiene (built bundle)", () => {
 		const run = toRun(
 			spawnSync(process.execPath, [BUNDLE], {
 				input: Buffer.concat([
-					Buffer.from('{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"ls '),
+					Buffer.from(
+						'{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"ls ',
+					),
 					Buffer.from([0xff, 0xfe]),
 					Buffer.from('"}}'),
 				]),
@@ -514,7 +516,11 @@ describe("Codex hook deadline and input hygiene (built bundle)", () => {
 		(command) => {
 			for (const toolName of ["Bash", "shell"]) {
 				const run = runHook(
-					JSON.stringify({ hook_event_name: "PreToolUse", tool_name: toolName, tool_input: { command } }),
+					JSON.stringify({
+						hook_event_name: "PreToolUse",
+						tool_name: toolName,
+						tool_input: { command },
+					}),
 				);
 				expectDeny(run);
 			}
@@ -532,14 +538,17 @@ describe("Codex hook deadline and input hygiene (built bundle)", () => {
 		expectDeny(run);
 	});
 
-	it.each([
-		[["bash", "-lc", 42]],
-		[42],
-		[{ cmd: "ls" }],
-	])("denies a non-string, non-argv shell command %j", (command) => {
-		const run = runHook(
-			JSON.stringify({ hook_event_name: "PreToolUse", tool_name: "shell", tool_input: { command } }),
-		);
-		expectDeny(run);
-	});
+	it.each([[["bash", "-lc", 42]], [42], [{ cmd: "ls" }]])(
+		"denies a non-string, non-argv shell command %j",
+		(command) => {
+			const run = runHook(
+				JSON.stringify({
+					hook_event_name: "PreToolUse",
+					tool_name: "shell",
+					tool_input: { command },
+				}),
+			);
+			expectDeny(run);
+		},
+	);
 });
