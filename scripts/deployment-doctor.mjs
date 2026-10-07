@@ -5,7 +5,10 @@ import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { parseArgs } from "node:util";
 
-const { values } = parseArgs({ options: { deployment: { type: "string", default: ".aidr-deploy" }, online: { type: "boolean", default: false } } });
+// --development acknowledges a loopback rehearsal: the evidence is then marked
+// development-only. Without it, an online run refuses a development manifest so
+// a rehearsal can never be filed as production deployment evidence.
+const { values } = parseArgs({ options: { deployment: { type: "string", default: ".aidr-deploy" }, online: { type: "boolean", default: false }, development: { type: "boolean", default: false } } });
 const dir = resolve(values.deployment);
 const manifest = JSON.parse(readFileSync(join(dir, "deployment.json"), "utf8"));
 const checks = []; const failures = []; const unverified = [];
@@ -98,16 +101,63 @@ const readMaintenanceUnit = (name) => {
 const siemServiceUnit = readMaintenanceUnit("aidr-siem-delivery.service");
 const siemTimerUnit = readMaintenanceUnit("aidr-siem-delivery.timer");
 check(siemTimerUnit.includes("Unit=aidr-siem-delivery.service") && /readiness-evidence-worker\.mjs/.test(siemServiceUnit), "shared readiness and SIEM timer present and wired to the maintenance worker");
+// On Windows the timers are mirrored by Install-AidrMaintenanceTasks.ps1 as
+// scheduled tasks under fixed names in the \AIDR\ folder. The installer leaves a
+// declaration file; once it exists a missing or disabled task is a failure, not
+// an unknown. Without it the operator may schedule the workers some other way,
+// so an absent task stays UNVERIFIED instead of being guessed either way. The
+// task XML is read rather than the CSV listing because its element names are
+// not localized.
+const windowsTaskPath = "\\AIDR\\";
+const windowsMaintenanceDeclaration = join(dir, "windows-maintenance-tasks.json");
+const windowsMaintenanceDeclared = existsSync(windowsMaintenanceDeclaration);
+const xmlText = (value) => value.replace(/&quot;/g, "\"").replace(/&apos;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+function windowsTaskState(name, worker) {
+  const task = `${windowsTaskPath}${name}`;
+  const schtasks = join(process.env.SystemRoot || "C:\\Windows", "System32", "schtasks.exe");
+  const probe = spawnSync(schtasks, ["/Query", "/TN", task, "/XML"], { encoding: "utf8", timeout: 15000, windowsHide: true });
+  if (probe.error) return { task, found: false, reason: `schtasks is not available on this host (${probe.error.code ?? "error"})` };
+  const xml = probe.status === 0 ? String(probe.stdout ?? "") : "";
+  if (!xml.includes("<Task")) return { task, found: false, reason: `scheduled task ${task} is not available (absent or unreadable)` };
+  const settings = /<Settings>([\s\S]*?)<\/Settings>/.exec(xml)?.[1] ?? "";
+  const triggers = /<Triggers>([\s\S]*?)<\/Triggers>/.exec(xml)?.[1] ?? "";
+  const activeTrigger = [...triggers.matchAll(/<(\w+Trigger)>([\s\S]*?)<\/\1>/g)].some((match) => !/<Enabled>false<\/Enabled>/.test(match[2]));
+  const command = xmlText(/<Command>([\s\S]*?)<\/Command>/.exec(xml)?.[1] ?? "").trim();
+  const args = xmlText(/<Arguments>([\s\S]*?)<\/Arguments>/.exec(xml)?.[1] ?? "");
+  const execCount = (xml.match(/<Exec>/g) ?? []).length;
+  // The installer writes exactly these argument shapes; matching the whole
+  // quoted path keeps C:\aidr from matching a task wired to C:\aidr-old.
+  const expected = (name === "aidr-siem-delivery" ? `"${dir}\\maintenance\\${worker}"` : `\\scripts\\${worker}" "${dir}" --apply`).toLowerCase();
+  const wired = execCount === 1 && /(^|[\\/"])node(\.exe)?"?$/i.test(command) && args.toLowerCase().includes(expected);
+  const enabled = !/<Enabled>false<\/Enabled>/.test(settings) && activeTrigger;
+  return { task, found: true, enabled, wired };
+}
+function windowsSchedulerCheck(name, worker, label, unverifiedLabel) {
+  const state = windowsTaskState(name, worker);
+  if (state.found) {
+    const problem = !state.enabled ? "disabled or without an active trigger" : !state.wired ? "not wired to this deployment's maintenance worker" : "";
+    check(!problem, `${label}${problem ? ` (${state.task} ${problem})` : ""}`);
+  } else if (windowsMaintenanceDeclared) {
+    check(false, `${label} (${state.reason}; declared by windows-maintenance-tasks.json)`);
+  } else {
+    const reason = `${state.reason}; no Windows maintenance declaration exists, so the host scheduler cannot inspect another scheduling method`;
+    unverified.push({ check: unverifiedLabel, reason });
+    console.log(`UNVERIFIED ${unverifiedLabel} (${reason})`);
+  }
+}
+const siemSchedulerLabel = "shared readiness and SIEM timer is enabled in the host scheduler";
 const siemScheduler = (() => {
+  if (process.platform === "win32") return { windows: true };
   if (process.platform !== "linux") return { determinable: false, reason: `systemd timers are unavailable on ${process.platform}` };
   const probe = spawnSync("systemctl", ["is-enabled", "aidr-siem-delivery.timer"], { encoding: "utf8", timeout: 15000 });
   if (probe.error) return { determinable: false, reason: "systemctl is not available on this host" };
   return { determinable: true, enabled: probe.status === 0 };
 })();
-if (siemScheduler.determinable) check(siemScheduler.enabled, "shared readiness and SIEM timer is enabled in the host scheduler");
+if (siemScheduler.windows) windowsSchedulerCheck("aidr-siem-delivery", "readiness-evidence-worker.mjs", siemSchedulerLabel, siemSchedulerLabel);
+else if (siemScheduler.determinable) check(siemScheduler.enabled, siemSchedulerLabel);
 else {
-	unverified.push({ check: "shared readiness and SIEM timer is enabled in the host scheduler", reason: siemScheduler.reason });
-	console.log(`UNVERIFIED shared readiness and SIEM timer is enabled in the host scheduler (${siemScheduler.reason})`);
+	unverified.push({ check: siemSchedulerLabel, reason: siemScheduler.reason });
+	console.log(`UNVERIFIED ${siemSchedulerLabel} (${siemScheduler.reason})`);
 }
 for (const url of [manifest.dashboard_url, manifest.supabase_url]) {
   const parsed = new URL(url);
@@ -138,15 +188,27 @@ const developmentEndpointsLoopback = !manifest.development || [manifest.dashboar
 	try { return loopbackHosts.has(new URL(value).hostname); } catch { return false; }
 });
 check(developmentEndpointsLoopback, "development mode uses loopback dashboard and Supabase endpoints");
+// A `--development` manifest never configures a certificate and produces signing,
+// backup and queue evidence only if the maintenance units happen to run, so its
+// online result is a rehearsal. An online run must not file it as production
+// evidence unless the operator explicitly asked for a development run, and a
+// development run must not be pointed at a production manifest.
+const developmentManifest = manifest.development !== false;
+if (values.online || values.development) {
+  check(typeof manifest.development === "boolean", "deployment manifest declares whether it is a development deployment");
+  if (values.development) check(developmentManifest, "--development run targets a development manifest");
+  else check(!developmentManifest, "production evidence requires a production manifest (development manifests need --development)");
+}
 // Nothing else in the repository verifies that the host armed the retention
 // reaper, so an expired private export can silently outlive its retention
 // window. Only the host's own scheduler can answer this: on a systemd host the
 // timer must be installed and enabled, and where the scheduler cannot be read
-// (non-systemd init, including Windows where the operator may register a
-// scheduled task under any name) the result is recorded as UNVERIFIED rather
-// than assumed installed.
+// (non-systemd init, or Windows without the declared \AIDR\ scheduled tasks)
+// the result is recorded as UNVERIFIED rather than assumed installed.
 const retentionReaperTimer = "aidr-export-retention.timer";
-if (process.platform === "linux" && existsSync("/run/systemd/system")) {
+if (process.platform === "win32") {
+  windowsSchedulerCheck("aidr-export-retention", "deployment-maintenance.mjs", `retention reaper scheduled task installed and enabled: ${windowsTaskPath}aidr-export-retention`, `retention reaper timer not verified: ${retentionReaperTimer}`);
+} else if (process.platform === "linux" && existsSync("/run/systemd/system")) {
   const probe = spawnSync("systemctl", ["is-enabled", retentionReaperTimer], { encoding: "utf8", timeout: 15000 });
   const state = (probe.stdout ?? "").trim().split(/\r?\n/)[0] ?? "";
   if (probe.error) {
@@ -191,7 +253,13 @@ if (values.online) {
   try {
     const response = await fetch(`${manifest.dashboard_url}/readyz`, { headers: { apikey: env.ANON_KEY }, signal: AbortSignal.timeout(10000) });
     const readiness = await response.json();
-    check(response.ok && readiness?.status === "ready", "dashboard readiness");
+    const ready = response.ok && readiness?.status === "ready";
+    // Name the failing readiness checks so the operator knows which evidence
+    // source (signing, backup, queue, certificate, ...) to repair. Only short
+    // known-shape names are echoed; anything else keeps the bare label.
+    const reported = readiness?.checks && typeof readiness.checks === "object" && !Array.isArray(readiness.checks) ? Object.entries(readiness.checks) : [];
+    const notOk = reported.filter(([name, state]) => /^[a-z][a-z0-9_]{0,31}$/.test(name) && state !== "ok").map(([name]) => name).slice(0, 16);
+    check(ready, ready || notOk.length === 0 ? "dashboard readiness" : `dashboard readiness (not ok: ${notOk.join(", ")})`);
   } catch { check(false, "dashboard readiness"); }
   try { const response = await fetch(`${manifest.supabase_url}/auth/v1/health`, { headers: { apikey: env.ANON_KEY }, signal: AbortSignal.timeout(10000) }); check(response.ok, "authentication health"); }
   catch { check(false, "authentication health"); }
@@ -203,5 +271,5 @@ if (values.online) {
 }
 if (unverified.length) console.log(`${unverified.length} check(s) UNVERIFIED on this host; none of them was reported as PASS`);
 const passed = failures.length === 0 && unverified.length === 0;
-writeFileSync(join(dir, "doctor-evidence.json"), JSON.stringify({ checked_at: new Date().toISOString(), passed, mode: manifest.mode, online: values.online, checks, failures, unverified, scope: "Operational preflight only. Residency is an operator declaration, not verification of actual provider location. Unverified checks were not confirmed on this host. Customer login, host enforcement, backup restore, TLS routing and business acceptance are separate. Entries under unverified could not be determined on this host and are not evidence of success. No unverified check is recorded as passed." }, null, 2));
+writeFileSync(join(dir, "doctor-evidence.json"), JSON.stringify({ checked_at: new Date().toISOString(), passed, mode: manifest.mode, online: values.online, evidence_class: developmentManifest ? "development" : "production", checks, failures, unverified, scope: "Operational preflight only. Residency is an operator declaration, not verification of actual provider location. Unverified checks were not confirmed on this host. Customer login, host enforcement, backup restore, TLS routing and business acceptance are separate. Entries under unverified could not be determined on this host and are not evidence of success. No unverified check is recorded as passed." }, null, 2));
 if (!passed) process.exitCode = 1;

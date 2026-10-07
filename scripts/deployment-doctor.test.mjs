@@ -119,7 +119,7 @@ globalThis.fetch = async (input) => String(input).endsWith("/auth/v1/settings")
 	});
 }
 
-function stubbedOnlineDoctor(directory, dashboardResponse, signupDisabled = true, dashboardSignupMode = "closed") {
+function stubbedOnlineDoctor(directory, dashboardResponse, signupDisabled = true, dashboardSignupMode = "closed", extraArgs = []) {
 	const fetchLog = join(directory, "fetch.log");
 	const preload = join(directory, "fetch-stub.mjs");
 	writeFileSync(preload, `
@@ -140,7 +140,7 @@ globalThis.fetch = async (input) => {
 	return new Response("{}", { status: 200 });
 };
 `);
-	const result = doctor(directory, ["--online"], {
+	const result = doctor(directory, ["--online", ...extraArgs], {
 		...process.env,
 		AIDR_DOCTOR_FETCH_LOG: fetchLog,
 		NODE_OPTIONS: `--import=${pathToFileURL(preload).href}`,
@@ -423,4 +423,179 @@ test("deployment doctor fails a deployment that contains no SIEM delivery timer"
 	const evidence = JSON.parse(readFileSync(join(deployment, "doctor-evidence.json"), "utf8"));
 	assert.ok(evidence.failures.includes(shippedUnitsLabel));
 	assert.equal(evidence.passed, false);
+});
+
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\-]/g, "\\$&");
+
+test("online doctor names the dashboard readiness checks that are not ok", (t) => {
+	const directory = deploymentDirectory(t);
+	const { result } = stubbedOnlineDoctor(directory, {
+		body: JSON.stringify({ status: "not_ready", checks: { database: "ok", signing: "failed", backup: "failed", certificate: "failed" } }),
+		status: 503,
+		contentType: "application/json",
+	});
+	assert.equal(result.status, 1);
+	assert.match(result.stdout, /^FAIL dashboard readiness \(not ok: signing, backup, certificate\)$/m);
+	const evidence = JSON.parse(readFileSync(join(directory, "doctor-evidence.json"), "utf8"));
+	assert.ok(evidence.failures.includes("dashboard readiness (not ok: signing, backup, certificate)"));
+});
+
+test("online doctor never echoes unexpected readiness check names", (t) => {
+	for (const checks of [{ "x\nPASS forged": "failed" }, ["signing"], "signing", null]) {
+		const directory = deploymentDirectory(t);
+		const { result } = stubbedOnlineDoctor(directory, {
+			body: JSON.stringify({ status: "not_ready", checks }),
+			status: 503,
+			contentType: "application/json",
+		});
+		assert.match(result.stdout, /^FAIL dashboard readiness$/m);
+		assert.doesNotMatch(result.stdout, /^PASS forged/m);
+	}
+});
+
+const readyResponse = { body: JSON.stringify({ status: "ready" }), status: 200, contentType: "application/json" };
+const productionEvidencePattern = (outcome) => new RegExp(`^${outcome} ${escapeRegExp("production evidence requires a production manifest (development manifests need --development)")}$`, "m");
+
+test("online doctor refuses a development manifest as production evidence", (t) => {
+	const directory = deploymentDirectory(t, { development: true, dashboard_url: "http://localhost:8080", supabase_url: "http://127.0.0.1:8000" });
+	const { result } = stubbedOnlineDoctor(directory, readyResponse);
+	assert.equal(result.status, 1);
+	assert.match(result.stdout, productionEvidencePattern("FAIL"));
+	const evidence = JSON.parse(readFileSync(join(directory, "doctor-evidence.json"), "utf8"));
+	assert.equal(evidence.passed, false);
+	assert.equal(evidence.evidence_class, "development");
+
+	const acknowledged = stubbedOnlineDoctor(directory, readyResponse, true, "closed", ["--development"]).result;
+	assert.match(acknowledged.stdout, /^PASS --development run targets a development manifest$/m);
+	assert.doesNotMatch(acknowledged.stdout, productionEvidencePattern("FAIL"));
+	assert.equal(JSON.parse(readFileSync(join(directory, "doctor-evidence.json"), "utf8")).evidence_class, "development");
+});
+
+test("online doctor accepts a production manifest and rejects --development against it", (t) => {
+	const directory = deploymentDirectory(t);
+	const { result } = stubbedOnlineDoctor(directory, readyResponse);
+	assert.match(result.stdout, productionEvidencePattern("PASS"));
+	assert.equal(JSON.parse(readFileSync(join(directory, "doctor-evidence.json"), "utf8")).evidence_class, "production");
+	const mismatched = stubbedOnlineDoctor(directory, readyResponse, true, "closed", ["--development"]).result;
+	assert.equal(mismatched.status, 1);
+	assert.match(mismatched.stdout, /^FAIL --development run targets a development manifest$/m);
+});
+
+test("online doctor fails closed when the manifest does not declare its development flag", (t) => {
+	const directory = deploymentDirectory(t, { development: "no" });
+	const { result } = stubbedOnlineDoctor(directory, readyResponse);
+	assert.match(result.stdout, /^FAIL deployment manifest declares whether it is a development deployment$/m);
+	assert.match(result.stdout, productionEvidencePattern("FAIL"));
+});
+
+/*
+ * Windows maintenance tasks. The preload pretends to be win32 and answers
+ * `schtasks /Query /XML` from a fixture map, so this branch runs on every CI host.
+ */
+const retentionTaskLabel = "retention reaper scheduled task installed and enabled: \\AIDR\\aidr-export-retention";
+
+function taskXml(directory, worker, { enabled = true, triggerEnabled = true, command = "C:\\Program Files\\nodejs\\node.exe", deployment = directory } = {}) {
+	const args = worker === "readiness-evidence-worker.mjs"
+		? `"--env-file=${deployment}\\.env.readiness" "${deployment}\\maintenance\\${worker}"`
+		: `"C:\\aidr-kit\\scripts\\${worker}" "${deployment}" --apply`;
+	return `<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <Triggers>
+    <TimeTrigger>
+      <Repetition><Interval>PT1M</Interval><StopAtDurationEnd>false</StopAtDurationEnd></Repetition>
+      <StartBoundary>2026-10-07T10:00:00</StartBoundary>
+      ${triggerEnabled ? "" : "<Enabled>false</Enabled>"}
+    </TimeTrigger>
+  </Triggers>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    ${enabled ? "" : "<Enabled>false</Enabled>"}
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>${command}</Command>
+      <Arguments>${args.replaceAll("&", "&amp;")}</Arguments>
+    </Exec>
+  </Actions>
+</Task>`;
+}
+
+function windowsTaskDoctor(directory, tasks) {
+	const preload = join(directory, "schtasks-stub.mjs");
+	writeFileSync(preload, `
+import childProcess from "node:child_process";
+import { syncBuiltinESMExports } from "node:module";
+Object.defineProperty(process, "platform", { value: "win32" });
+const tasks = JSON.parse(process.env.AIDR_DOCTOR_TASKS);
+const original = childProcess.spawnSync;
+childProcess.spawnSync = (command, args, options) => {
+	if (!/schtasks\\.exe$/i.test(String(command))) return original(command, args, options);
+	const xml = tasks[args[args.indexOf("/TN") + 1]];
+	return xml ? { status: 0, stdout: xml, stderr: "" } : { status: 1, stdout: "", stderr: "ERROR: not found" };
+};
+syncBuiltinESMExports();
+`);
+	return doctor(directory, [], { ...process.env, AIDR_DOCTOR_TASKS: JSON.stringify(tasks), NODE_OPTIONS: `--import=${pathToFileURL(preload).href}` });
+}
+
+function installedTasks(directory, options = {}) {
+	return {
+		"\\AIDR\\aidr-siem-delivery": taskXml(directory, "readiness-evidence-worker.mjs", options.siem),
+		"\\AIDR\\aidr-export-retention": taskXml(directory, "deployment-maintenance.mjs", options.retention),
+	};
+}
+
+function declareWindowsMaintenance(directory) {
+	writeFileSync(join(directory, "windows-maintenance-tasks.json"), JSON.stringify({ schema_version: 1, scheduler: "windows-task-scheduler", task_path: "\\AIDR\\" }));
+}
+
+test("windows doctor keeps absent maintenance tasks unverified when no Windows maintenance is declared", (t) => {
+	const directory = deploymentDirectory(t);
+	const result = windowsTaskDoctor(directory, {});
+	assert.match(result.stdout, new RegExp(`^UNVERIFIED ${schedulerLabel} \\(scheduled task .*not available`, "m"));
+	assert.match(result.stdout, /^UNVERIFIED retention reaper timer not verified: aidr-export-retention\.timer/m);
+	assert.doesNotMatch(result.stdout, new RegExp(`^(PASS|FAIL) ${schedulerLabel}`, "m"));
+	const evidence = JSON.parse(readFileSync(join(directory, "doctor-evidence.json"), "utf8"));
+	assert.equal(evidence.passed, false);
+	assert.ok(evidence.unverified.some((entry) => entry.check === schedulerLabel));
+});
+
+test("windows doctor fails declared maintenance tasks that are missing", (t) => {
+	const directory = deploymentDirectory(t);
+	declareWindowsMaintenance(directory);
+	const result = windowsTaskDoctor(directory, {});
+	assert.equal(result.status, 1);
+	assert.match(result.stdout, new RegExp(`^FAIL ${schedulerLabel} \\(.*declared by windows-maintenance-tasks\\.json\\)$`, "m"));
+	assert.match(result.stdout, new RegExp(`^FAIL ${escapeRegExp(retentionTaskLabel)} \\(`, "m"));
+	assert.doesNotMatch(result.stdout, /^UNVERIFIED .*(SIEM timer|retention reaper)/m);
+});
+
+test("windows doctor passes enabled maintenance tasks wired to this deployment", (t) => {
+	const directory = deploymentDirectory(t);
+	declareWindowsMaintenance(directory);
+	const result = windowsTaskDoctor(directory, installedTasks(directory));
+	assert.match(result.stdout, new RegExp(`^PASS ${schedulerLabel}$`, "m"));
+	assert.match(result.stdout, new RegExp(`^PASS ${escapeRegExp(retentionTaskLabel)}$`, "m"));
+	const evidence = JSON.parse(readFileSync(join(directory, "doctor-evidence.json"), "utf8"));
+	assert.ok(evidence.checks.includes(schedulerLabel));
+	assert.ok(evidence.checks.includes(retentionTaskLabel));
+	assert.equal((evidence.unverified ?? []).some((entry) => /SIEM timer|retention reaper/.test(entry.check)), false);
+});
+
+test("windows doctor fails disabled, trigger-less or miswired maintenance tasks even without a declaration", (t) => {
+	const cases = [
+		[{ siem: { enabled: false } }, "disabled or without an active trigger"],
+		[{ siem: { triggerEnabled: false } }, "disabled or without an active trigger"],
+		[{ siem: { deployment: "C:\\other-deployment" } }, "not wired to this deployment's maintenance worker"],
+		[(directory) => ({ siem: { deployment: `${directory}-old` } }), "not wired to this deployment's maintenance worker"],
+		[{ siem: { command: "C:\\Windows\\System32\\cmd.exe" } }, "not wired to this deployment's maintenance worker"],
+	];
+	for (const [options, problem] of cases) {
+		const directory = deploymentDirectory(t);
+		const result = windowsTaskDoctor(directory, installedTasks(directory, typeof options === "function" ? options(directory) : options));
+		assert.equal(result.status, 1);
+		assert.match(result.stdout, new RegExp(`^FAIL ${schedulerLabel} \\(${escapeRegExp(`\\AIDR\\aidr-siem-delivery ${problem}`)}\\)$`, "m"));
+		assert.match(result.stdout, new RegExp(`^PASS ${escapeRegExp(retentionTaskLabel)}$`, "m"));
+	}
 });

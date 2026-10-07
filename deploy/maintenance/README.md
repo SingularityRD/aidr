@@ -99,3 +99,86 @@ only after `/etc/aidr/backup-offsite.env` and
 `/etc/aidr/aidr-recovery.key` are installed; the same command then enables the
 backup timer. The installer fails instead of claiming activation when required
 queue or backup inputs are missing.
+
+## Windows hosts (Task Scheduler)
+
+`Install-AidrMaintenanceTasks.ps1` mirrors every systemd timer in this directory
+as a Windows Scheduled Task with a fixed name in the `\AIDR\` task folder:
+
+| Task | systemd source | Schedule | Command | Working directory | Time limit |
+|------|----------------|----------|---------|-------------------|------------|
+| `\AIDR\aidr-siem-delivery` | `aidr-siem-delivery.timer` / `.service` | 30 s after boot, then every minute; missed runs start when available | `node.exe "--env-file=<deployment>\.env.readiness" "<deployment>\maintenance\readiness-evidence-worker.mjs"` | `<deployment>` | 5 min |
+| `\AIDR\aidr-export-retention` | `aidr-export-retention.timer` / `.service` | hourly with up to 5 min random delay; missed runs start when available | `node.exe "<kit>\scripts\deployment-maintenance.mjs" "<deployment>" --apply` | `<kit>` | 15 min |
+
+Both tasks ignore a new start while a run is still in progress, like a oneshot
+unit. Do not rename them: `scripts/deployment-doctor.mjs` queries exactly these
+names.
+
+Before activation, edit `<deployment>\.env.readiness` so
+`AIDR_DEPLOYMENT_DIR` names the deployment directory and
+`AIDR_HEALTH_STATE_DIR` names `<deployment>\health`; the prepared values are the
+Linux `/srv/aidr` paths, and a scheduled task cannot override them. The
+installer checks the same inputs as `install-systemd.sh` (signing key expiries,
+no `REPLACE_` placeholders, at least one real queue source whose roots already
+contain a fleet-aggregated namespace, a readable SIEM configuration) and stops
+on the first failure.
+
+From an elevated PowerShell session, preferably with a dedicated group managed
+service account that holds the *Log on as a batch job* right:
+
+```powershell
+.\maintenance\Install-AidrMaintenanceTasks.ps1 `
+  -DeploymentDirectory D:\aidr\deployment -KitDirectory D:\aidr\kit `
+  -ServiceAccount 'CONTOSO\aidr-maint$'
+```
+
+With `-ServiceAccount`, the account is granted only what the workers touch:
+read on `deployment.json`, `.env`, `.env.functions`, `.env.readiness`,
+`agent-config.json`, the `maintenance` directory and the kit; modify on
+`health`, `maintenance-evidence.json`, the configured telemetry queue roots and
+the SIEM state directory. No password is stored. `-RunAsSystem` runs as
+LocalSystem, matching the `root` user of the systemd units, and should be used
+only where no gMSA is available. `-NodePath` selects a Node.js 24+ `node.exe`
+when it is not on `PATH`.
+
+The installer registers both tasks, writes `<deployment>\windows-maintenance-tasks.json`
+and then runs `aidr-siem-delivery` once through Task Scheduler as the chosen
+principal. If that first run fails, the task is left disabled and the installer
+exits non-zero. Re-running the installer is idempotent. Only the SIEM task is
+started immediately; the retention reaper waits for its first hourly trigger.
+
+`windows-maintenance-tasks.json` is the declaration the doctor relies on. On a
+Windows host, `scripts/deployment-doctor.mjs` reads each task's definition with
+`schtasks /Query /TN \AIDR\<name> /XML` and checks that the task is enabled, has
+an active trigger, and runs `node.exe` with this deployment's worker:
+
+- task present, enabled and wired to this deployment: PASS;
+- task present but disabled, without an active trigger, or pointing elsewhere: FAIL;
+- task absent or unreadable and the declaration exists: FAIL;
+- task absent and no declaration exists: UNVERIFIED, because the operator may
+  schedule the workers by other means the doctor cannot inspect. UNVERIFIED
+  still makes the doctor exit non-zero.
+
+To remove the tasks, the `\AIDR\` folder (when empty), the recorded service
+account's file grants and the declaration:
+
+```powershell
+.\maintenance\Uninstall-AidrMaintenanceTasks.ps1 -DeploymentDirectory D:\aidr\deployment
+```
+
+Evidence files remain on disk after removal and go stale, so the dashboard's
+freshness checks turn them red. The backup timers in `deploy/backup` are not
+covered by these scripts.
+
+## Development manifests and the doctor
+
+A deployment prepared with `--development` never configures a certificate, and
+it only has signing, backup and queue evidence when the maintenance units above
+actually run. Its readiness is a rehearsal. `deployment-doctor.mjs --online`
+therefore fails a development manifest with *production evidence requires a
+production manifest*. Pass `--development` to run the doctor against a loopback
+rehearsal on purpose. `doctor-evidence.json` then records
+`"evidence_class": "development"`, and passing `--development` with a
+production manifest is a failure. When `/readyz` is not ready, the doctor names
+the failing readiness checks, for example
+`FAIL dashboard readiness (not ok: signing, backup, certificate)`.
