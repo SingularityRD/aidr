@@ -309,7 +309,16 @@ function RevisionHistory({
 	);
 }
 
+/**
+ * Keyed by tenant: switching team remounts the page, so a request or decision
+ * still in flight for the previous tenant can never write into the new view.
+ */
 export function GovernanceChangeControlPage() {
+	const { currentTeam } = useTeam();
+	return <TenantGovernanceChangeControlPage key={currentTeam?.id ?? "no-tenant"} />;
+}
+
+function TenantGovernanceChangeControlPage() {
 	const { currentTeam, currentRole, roleResolved, members, currentUserId } = useTeam();
 	const tenantId = currentTeam?.id ?? null;
 	const { data, error, reload } = useGovernanceData(tenantId, 15_000);

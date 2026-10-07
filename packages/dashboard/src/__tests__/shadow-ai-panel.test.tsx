@@ -237,6 +237,50 @@ const governanceCalls = () =>
 		.map(([, request]) => (request as { body: unknown }).body);
 
 describe("Shadow AI allow / block decisions", () => {
+	it("reads decisions only for catalogued services, so >1000 register hostnames cannot hide one", async () => {
+		// 1500 hostname entries sort ahead of the catalogued service. An unfiltered
+		// read is capped at 1000 rows by the API and would miss Poe's decision; the
+		// read must be filtered to catalog ids so that row is always returned.
+		const hostnames = Array.from({ length: 1500 }, (_, index) => ({
+			id: `77777777-7777-4777-8777-${index.toString(16).padStart(12, "0")}`,
+			identifier: `host-${index}.corp.example`,
+			status: "banned",
+			version: 1,
+		}));
+		const poe = { id: POE_ASSET, identifier: "poe", status: "approved", version: 3 };
+		installDecisions({ role: "admin" });
+		const base = mockedSupabase().from.getMockImplementation() as (table: string) => unknown;
+		mockedSupabase().from.mockImplementation((table: string) => {
+			if (table !== "ai_assets") return base(table);
+			const filters: unknown[][] = [];
+			const chain: Record<string, unknown> = {};
+			for (const method of ["select", "eq", "in", "order", "limit", "range"]) {
+				chain[method] = vi.fn((...args: unknown[]) => {
+					filters.push([method, ...args]);
+					return chain;
+				});
+			}
+			chain.then = (resolve: (value: unknown) => unknown) => {
+				const ids = filters.find(
+					([method, column]) => method === "in" && column === "identifier",
+				)?.[2] as string[] | undefined;
+				const rows = [...hostnames, poe].filter((row) => !ids || ids.includes(row.identifier));
+				return Promise.resolve({ data: rows.slice(0, 1000), error: null }).then(resolve);
+			};
+			return chain;
+		});
+		renderPage();
+		const table = await screen.findByRole("table", { name: "Top AI services" });
+		const row = within(table).getByRole("row", { name: /Poe/ });
+		await waitFor(() => expect(within(row).getByText("allowed")).toBeInTheDocument());
+		const assetChain = mockedSupabase()
+			.from.mock.results.filter(
+				(_, index) => mockedSupabase().from.mock.calls[index]?.[0] === "ai_assets",
+			)
+			.map((result) => result.value as { in: ReturnType<typeof vi.fn> })[0];
+		expect(assetChain?.in).toHaveBeenCalledWith("identifier", Object.keys(SHADOW_AI_SERVICES));
+	});
+
 	it("lets an administrator block a detected service through the audited governance register", async () => {
 		installDecisions({ role: "admin" });
 		renderPage();

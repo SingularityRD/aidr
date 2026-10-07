@@ -36,7 +36,9 @@ export type ApprovalResult<T> = { ok: true; value: T } | { ok: false; error: str
 
 export const APPROVAL_COLUMNS =
 	"id,iid,agent_id,agent_runtime,action_id,artifact_digest,tool,threat_ids,summary,status,decided_by,decided_at,reason,key_id,expires_at,created_at";
-const APPROVAL_LIST_LIMIT = 200;
+/** The server refuses new requests once a tenant has 500 live pending ones. */
+export const APPROVAL_PENDING_LIMIT = 500;
+export const APPROVAL_HISTORY_LIMIT = 200;
 export const APPROVAL_REASON_MAX = 500;
 
 const STATUSES: readonly ApprovalStatus[] = ["pending", "approved", "denied", "expired"];
@@ -108,22 +110,65 @@ export function parseApprovalRow(value: unknown, nowMs: number): ApprovalRequest
 	};
 }
 
-/** The most recent requests for a tenant, newest first. */
+function parseRows(data: unknown, nowMs: number): ApprovalRequest[] | null {
+	if (!Array.isArray(data)) return null;
+	const rows = data.map((row) => parseApprovalRow(row, nowMs));
+	return rows.some((row) => row === null) ? null : (rows as ApprovalRequest[]);
+}
+
+export interface ApprovalQueue {
+	/** Every live (pending, unexpired) request, soonest deadline first. */
+	pending: ApprovalRequest[];
+	/** Server-side count of live requests matching the pending read. */
+	pendingTotal: number;
+	/** The newest decided, expired or lapsed requests. */
+	history: ApprovalRequest[];
+	/** True when older history exists beyond {@link APPROVAL_HISTORY_LIMIT}. */
+	historyTruncated: boolean;
+}
+
+/**
+ * Read the queue as two queries. The pending read uses the same filter as the
+ * navigation badge and the server's quota (status = pending, expires_at > now),
+ * so the list can never be a subset of a mixed "newest N" window.
+ */
 export async function loadApprovals(
 	tenantId: string,
 	nowMs: number = Date.now(),
-): Promise<ApprovalResult<ApprovalRequest[]>> {
+): Promise<ApprovalResult<ApprovalQueue>> {
+	const nowIso = new Date(nowMs).toISOString();
 	try {
-		const { data, error } = await supabase
-			.from("approval_requests")
-			.select(APPROVAL_COLUMNS)
-			.eq("tenant_id", tenantId)
-			.order("created_at", { ascending: false })
-			.limit(APPROVAL_LIST_LIMIT);
-		if (error || !Array.isArray(data)) return { ok: false, error: "approvals_unavailable" };
-		const rows = data.map((row) => parseApprovalRow(row, nowMs));
-		if (rows.some((row) => row === null)) return { ok: false, error: "approvals_unavailable" };
-		return { ok: true, value: rows as ApprovalRequest[] };
+		const [pendingRead, historyRead] = await Promise.all([
+			supabase
+				.from("approval_requests")
+				.select(APPROVAL_COLUMNS, { count: "exact" })
+				.eq("tenant_id", tenantId)
+				.eq("status", "pending")
+				.gt("expires_at", nowIso)
+				.order("expires_at", { ascending: true })
+				.limit(APPROVAL_PENDING_LIMIT),
+			supabase
+				.from("approval_requests")
+				.select(APPROVAL_COLUMNS, { count: "exact" })
+				.eq("tenant_id", tenantId)
+				.or(`status.neq.pending,expires_at.lte.${nowIso}`)
+				.order("created_at", { ascending: false })
+				.limit(APPROVAL_HISTORY_LIMIT),
+		]);
+		if (pendingRead.error || historyRead.error)
+			return { ok: false, error: "approvals_unavailable" };
+		const pending = parseRows(pendingRead.data, nowMs);
+		const history = parseRows(historyRead.data, nowMs);
+		if (!pending || !history) return { ok: false, error: "approvals_unavailable" };
+		const pendingTotal =
+			typeof pendingRead.count === "number" && Number.isSafeInteger(pendingRead.count)
+				? Math.max(pendingRead.count, pending.length)
+				: pending.length;
+		const historyTruncated =
+			typeof historyRead.count === "number"
+				? historyRead.count > history.length
+				: history.length >= APPROVAL_HISTORY_LIMIT;
+		return { ok: true, value: { pending, pendingTotal, history, historyTruncated } };
 	} catch {
 		return { ok: false, error: "approvals_unavailable" };
 	}
@@ -140,7 +185,7 @@ export async function countPendingApprovals(
 			.select("id", { count: "exact", head: true })
 			.eq("tenant_id", tenantId)
 			.eq("status", "pending")
-			.gte("expires_at", new Date(nowMs).toISOString());
+			.gt("expires_at", new Date(nowMs).toISOString());
 		if (error || typeof count !== "number" || !Number.isSafeInteger(count) || count < 0)
 			return null;
 		return count;

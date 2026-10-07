@@ -4,6 +4,7 @@ import { useTeam } from "../../enterprise/team-provider";
 import {
 	APPROVAL_REASON_MAX,
 	type ApprovalDecision,
+	type ApprovalQueue,
 	type ApprovalRequest,
 	type ApprovalStatus,
 	decideApproval,
@@ -394,23 +395,43 @@ function PendingList({
 	);
 }
 
-/** Live pending requests, and everything else (decided, expired or lapsed). */
+/**
+ * Live pending requests, and everything else (decided, expired or lapsed).
+ * A pending row whose deadline passes between refreshes moves to history on
+ * the clock tick rather than waiting for the next read.
+ */
 export function splitQueue(
-	rows: ApprovalRequest[],
+	queue: Pick<ApprovalQueue, "pending" | "history">,
 	now: number,
 ): { pending: ApprovalRequest[]; history: ApprovalRequest[] } {
 	const live = (row: ApprovalRequest) =>
 		row.status === "pending" && Date.parse(row.expiresAt) > now;
-	return { pending: rows.filter(live), history: rows.filter((row) => !live(row)) };
+	const lapsed = queue.pending
+		.filter((row) => !live(row))
+		.map((row) => ({ ...row, status: "expired" as const }));
+	const lapsedIds = new Set(lapsed.map((row) => row.id));
+	const history = [...lapsed, ...queue.history.filter((row) => !lapsedIds.has(row.id))].sort(
+		(a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt),
+	);
+	return { pending: queue.pending.filter(live), history };
 }
 
+/**
+ * Keyed by tenant: switching team remounts the page, so a request or decision
+ * still in flight for the previous tenant can never write into the new view.
+ */
 export function ApprovalsPage() {
+	const { currentTeam } = useTeam();
+	return <TenantApprovalsPage key={currentTeam?.id ?? "no-tenant"} />;
+}
+
+function TenantApprovalsPage() {
 	const { currentTeam, currentRole, roleResolved } = useTeam();
 	const tenantId = currentTeam?.id ?? null;
 	const canDecide = roleResolved && (currentRole === "owner" || currentRole === "admin");
 	const now = useClock(1000);
 	const [tab, setTab] = useState<Tab>("pending");
-	const [rows, setRows] = useState<ApprovalRequest[] | null>(null);
+	const [rows, setRows] = useState<ApprovalQueue | null>(null);
 	const [loadError, setLoadError] = useState<string | null>(null);
 	const [notice, setNotice] = useState<Notice | null>(null);
 	const [busyId, setBusyId] = useState<string | null>(null);
@@ -470,7 +491,10 @@ export function ApprovalsPage() {
 		);
 	}
 
-	const { pending, history } = splitQueue(rows ?? [], now);
+	const { pending, history } = splitQueue(rows ?? { pending: [], history: [] }, now);
+	// The pending read is bounded by the server's live-request quota; say so if
+	// the server ever reports more than was returned instead of hiding them.
+	const pendingHidden = rows ? Math.max(0, rows.pendingTotal - rows.pending.length) : 0;
 
 	return (
 		<div className="stack">
@@ -510,6 +534,13 @@ export function ApprovalsPage() {
 			) : null}
 			{!rows && !loadError ? <p className="muted">Loading approval requests…</p> : null}
 
+			{rows && tab === "pending" && pendingHidden > 0 ? (
+				<div className="notice notice-warning" role="note" data-testid="approval-pending-truncated">
+					Showing the {rows.pending.length} requests that expire soonest; {pendingHidden} more
+					pending {pendingHidden === 1 ? "request is" : "requests are"} not shown. Decide or let
+					these expire, then refresh.
+				</div>
+			) : null}
 			{rows && tab === "pending" ? (
 				<PendingList
 					rows={pending}
@@ -523,6 +554,12 @@ export function ApprovalsPage() {
 				<div className="card">
 					<h2>History</h2>
 					<HistoryTable rows={history} />
+					{rows.historyTruncated ? (
+						<p className="muted small" data-testid="approval-history-truncated">
+							Showing the newest {rows.history.length} decided or expired requests; older entries
+							are not listed here.
+						</p>
+					) : null}
 				</div>
 			) : null}
 

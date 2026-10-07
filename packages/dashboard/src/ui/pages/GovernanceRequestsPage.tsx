@@ -636,7 +636,16 @@ function scopeText(
 		.join(", ");
 }
 
+/**
+ * Keyed by tenant: switching team remounts the page, so a request or decision
+ * still in flight for the previous tenant can never write into the new view.
+ */
 export function GovernanceRequestsPage() {
+	const { currentTeam } = useTeam();
+	return <TenantGovernanceRequestsPage key={currentTeam?.id ?? "no-tenant"} />;
+}
+
+function TenantGovernanceRequestsPage() {
 	const { currentTeam, currentRole, roleResolved, members, currentUserId } = useTeam();
 	const tenantId = currentTeam?.id ?? null;
 	const { data, error, reload } = useGovernanceData(tenantId);
@@ -652,6 +661,8 @@ export function GovernanceRequestsPage() {
 
 	useEffect(() => {
 		setNotice(null);
+		// Never offer the previous tenant's (or a failed read's) agents as scope targets.
+		setAgents([]);
 		if (!tenantId) return;
 		let cancelled = false;
 		void (async () => {
@@ -662,7 +673,11 @@ export function GovernanceRequestsPage() {
 					.eq("tenant_id", tenantId)
 					.order("iid", { ascending: true })
 					.limit(200);
-				if (cancelled || agentsError || !Array.isArray(rows)) return;
+				if (cancelled) return;
+				if (agentsError || !Array.isArray(rows)) {
+					setAgents([]);
+					return;
+				}
 				setAgents(
 					(rows as Array<{ id: string; iid: string; display_name: string | null }>).map((row) => ({
 						id: row.id,

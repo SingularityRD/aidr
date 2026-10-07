@@ -588,7 +588,16 @@ function EnforcementCard({ tenantId }: { tenantId: string }) {
 	);
 }
 
+/**
+ * Keyed by tenant: switching team remounts the page, so a request or decision
+ * still in flight for the previous tenant can never write into the new view.
+ */
 export function GovernanceRegisterPage() {
+	const { currentTeam } = useTeam();
+	return <TenantGovernanceRegisterPage key={currentTeam?.id ?? "no-tenant"} />;
+}
+
+function TenantGovernanceRegisterPage() {
 	const { currentTeam, currentRole, roleResolved, members, currentUserId } = useTeam();
 	const tenantId = currentTeam?.id ?? null;
 	const { data, error, reload } = useGovernanceData(tenantId);
@@ -675,6 +684,17 @@ export function GovernanceRegisterPage() {
 				</div>
 			) : null}
 			{!data && !error ? <div role="status">Loading the register…</div> : null}
+			{data && (data.truncated.assets || data.truncated.evidence) ? (
+				<div className="notice notice-warning" role="note" data-testid="register-truncated">
+					{data.truncated.assets
+						? `Only the first ${assets.length.toLocaleString()} register entries could be read; counts and lists below are incomplete.`
+						: null}
+					{data.truncated.assets && data.truncated.evidence ? " " : null}
+					{data.truncated.evidence
+						? `Only the newest ${data.evidence.length.toLocaleString()} evidence links were read; older links are not shown.`
+						: null}
+				</div>
+			) : null}
 			{data ? (
 				<>
 					<div className="grid">

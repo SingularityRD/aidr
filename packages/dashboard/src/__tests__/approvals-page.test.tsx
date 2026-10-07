@@ -37,7 +37,13 @@ import {
 } from "../lib/approvals";
 import { ApprovalsPage } from "../ui/pages/ApprovalsPage";
 import { usePendingApprovalCount } from "../ui/use-pending-approvals";
-import { installDashboardMocks, mockedSupabase, TEAM_ID } from "./helpers/dashboard-mocks";
+import {
+	installDashboardMocks,
+	mockedSupabase,
+	type QueryCall,
+	type QueryResolver,
+	TEAM_ID,
+} from "./helpers/dashboard-mocks";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
 const PENDING_ID = "a0000000-0000-4000-8000-000000000001";
@@ -99,6 +105,34 @@ function httpError(status: number, error: string) {
 
 type Invoke = (name: string, request?: { body?: Record<string, unknown> }) => unknown;
 
+const isPendingRead = (calls: QueryCall[]) =>
+	calls.some(([method, args]) => method === "eq" && args[0] === "status" && args[1] === "pending");
+
+/**
+ * Answer the page's two reads like PostgREST would: the pending read gets the
+ * live pending rows, the history read everything else.
+ */
+function queueResolver(
+	data: unknown,
+	error: { message: string } | null = null,
+	options: { pendingCount?: number } = {},
+): QueryResolver {
+	return (calls) => {
+		if (error || !Array.isArray(data)) return { data: error ? null : data, error };
+		const live = (item: Record<string, unknown>) =>
+			item.status === "pending" && Date.parse(String(item.expires_at)) > Date.now();
+		const pending = isPendingRead(calls);
+		const rowsForRead = (data as Record<string, unknown>[]).filter((item) =>
+			pending ? live(item) : !live(item),
+		);
+		return {
+			data: rowsForRead,
+			error: null,
+			count: pending ? (options.pendingCount ?? rowsForRead.length) : rowsForRead.length,
+		};
+	};
+}
+
 function setup(
 	options: {
 		role?: string;
@@ -109,7 +143,7 @@ function setup(
 ) {
 	const mocks = installDashboardMocks({
 		tableResults: {
-			approval_requests: { data: options.data ?? rows(), error: options.error ?? null },
+			approval_requests: queueResolver(options.data ?? rows(), options.error ?? null),
 		},
 	});
 	const original = mocks.invoke.getMockImplementation() as Invoke | undefined;
@@ -162,7 +196,7 @@ describe("ApprovalsPage", () => {
 			select: ReturnType<typeof vi.fn>;
 			eq: ReturnType<typeof vi.fn>;
 		};
-		expect(chain.select).toHaveBeenCalledWith(APPROVAL_COLUMNS);
+		expect(chain.select).toHaveBeenCalledWith(APPROVAL_COLUMNS, { count: "exact" });
 		expect(APPROVAL_COLUMNS).not.toMatch(/\btoken\b|token_nonce/);
 		expect(chain.eq).toHaveBeenCalledWith("tenant_id", TEAM_ID);
 	});
@@ -280,6 +314,173 @@ describe("ApprovalsPage", () => {
 			}),
 		);
 		expect(await screen.findByRole("status")).toHaveTextContent(`New key apk_${"3".repeat(32)}`);
+	});
+});
+
+describe("approvals queue reads and tenant isolation", () => {
+	const OTHER_TEAM_ID = "99999999-9999-4999-8999-999999999999";
+
+	function pendingRow(index: number, overrides: Record<string, unknown> = {}) {
+		const hex = index.toString(16).padStart(12, "0");
+		return row({
+			id: `a0000000-0000-4000-8000-${hex}`,
+			action_id: `act-${hex}`,
+			expires_at: new Date(Date.now() + (10 + index) * 60_000).toISOString(),
+			created_at: new Date(Date.now() - index * 1_000).toISOString(),
+			...overrides,
+		});
+	}
+
+	function mockTeam(id: string, name: string) {
+		vi.mocked(useTeam).mockReturnValue({
+			currentTeam: { id, name },
+			currentRole: "admin",
+			roleResolved: true,
+		} as unknown as ReturnType<typeof useTeam>);
+	}
+
+	it("reads pending requests on their own (status, deadline, 500 cap) so newer history cannot crowd them out", async () => {
+		// 300 decided requests newer than 260 live ones: a single "newest 200"
+		// read would have shown none of the pending requests.
+		const decided = Array.from({ length: 300 }, (_, index) =>
+			pendingRow(1000 + index, {
+				status: "approved",
+				created_at: new Date(Date.now() - index).toISOString(),
+			}),
+		);
+		const live = Array.from({ length: 260 }, (_, index) =>
+			pendingRow(index, { created_at: new Date(Date.now() - 3_600_000).toISOString() }),
+		);
+		installDashboardMocks({
+			tableResults: { approval_requests: queueResolver([...decided, ...live]) },
+		});
+		mockTeam(TEAM_ID, "Runtime team");
+		render(
+			<MemoryRouter>
+				<ApprovalsPage />
+			</MemoryRouter>,
+		);
+		expect(await screen.findAllByTestId("approval-pending")).toHaveLength(260);
+		expect(screen.getByRole("tab", { name: "Pending (260)" })).toBeInTheDocument();
+		expect(screen.queryByTestId("approval-pending-truncated")).not.toBeInTheDocument();
+
+		const chains = mockedSupabase()
+			.from.mock.results.filter((result) => result.type === "return")
+			.map((result) => result.value as { calls: QueryCall[] });
+		const pendingChain = chains.find((chain) => isPendingRead(chain.calls));
+		expect(pendingChain?.calls).toEqual(
+			expect.arrayContaining([
+				["eq", ["tenant_id", TEAM_ID]],
+				["eq", ["status", "pending"]],
+				["gt", ["expires_at", expect.any(String)]],
+				["order", ["expires_at", { ascending: true }]],
+				["limit", [500]],
+			]),
+		);
+		const historyChain = chains.find((chain) => !isPendingRead(chain.calls));
+		expect(historyChain?.calls).toEqual(
+			expect.arrayContaining([
+				["order", ["created_at", { ascending: false }]],
+				["limit", [200]],
+			]),
+		);
+	});
+
+	it("says so when the server reports more live requests than were returned", async () => {
+		installDashboardMocks({
+			tableResults: {
+				approval_requests: queueResolver([pendingRow(1), pendingRow(2)], null, { pendingCount: 7 }),
+			},
+		});
+		mockTeam(TEAM_ID, "Runtime team");
+		render(
+			<MemoryRouter>
+				<ApprovalsPage />
+			</MemoryRouter>,
+		);
+		expect(await screen.findByTestId("approval-pending-truncated")).toHaveTextContent(
+			"5 more pending requests are not shown",
+		);
+	});
+
+	it("keeps the badge filter identical to the pending list (live = expires_at > now)", async () => {
+		installDashboardMocks({
+			tableResults: { approval_requests: { data: null, error: null, count: 2 } },
+		});
+		expect(await countPendingApprovals(TEAM_ID)).toBe(2);
+		const chain = mockedSupabase().from.mock.results[0]?.value as { calls: QueryCall[] };
+		expect(chain.calls).toEqual(
+			expect.arrayContaining([
+				["eq", ["status", "pending"]],
+				["gt", ["expires_at", expect.any(String)]],
+			]),
+		);
+	});
+
+	it("never renders tenant A's queue or decision result after switching to tenant B mid-decision", async () => {
+		const tenantRows: Record<string, unknown[]> = {
+			[TEAM_ID]: [pendingRow(1, { tool: "TenantA-Bash", iid: "host-tenant-a" })],
+			[OTHER_TEAM_ID]: [pendingRow(2, { tool: "TenantB-Write", iid: "host-tenant-b" })],
+		};
+		installDashboardMocks({
+			tableResults: {
+				approval_requests: (calls) => {
+					const tenant = calls.find(
+						([method, args]) => method === "eq" && args[0] === "tenant_id",
+					)?.[1][1];
+					return queueResolver(tenantRows[String(tenant)] ?? [])(calls);
+				},
+			},
+		});
+		let finishDecision: (value: unknown) => void = () => undefined;
+		const original = mockedSupabase().functions.invoke.getMockImplementation() as Invoke;
+		mockedSupabase().functions.invoke.mockImplementation(
+			(name: string, request?: { body?: Record<string, unknown> }) =>
+				name === "approval-requests"
+					? new Promise((resolve) => {
+							finishDecision = resolve;
+						})
+					: original(name, request),
+		);
+		mockTeam(TEAM_ID, "Tenant A");
+		const view = render(
+			<MemoryRouter>
+				<ApprovalsPage />
+			</MemoryRouter>,
+		);
+		const card = (await screen.findAllByTestId("approval-pending"))[0] as HTMLElement;
+		expect(within(card).getByText("TenantA-Bash")).toBeInTheDocument();
+		fireEvent.change(within(card).getByLabelText("Reason (recorded in the audit log)"), {
+			target: { value: "Expected" },
+		});
+		fireEvent.click(within(card).getByRole("button", { name: "Approve" }));
+
+		// Switch tenant while tenant A's decision is still in flight.
+		mockTeam(OTHER_TEAM_ID, "Tenant B");
+		view.rerender(
+			<MemoryRouter>
+				<ApprovalsPage />
+			</MemoryRouter>,
+		);
+		expect(await screen.findByText("TenantB-Write")).toBeInTheDocument();
+
+		finishDecision({
+			data: {
+				ok: true,
+				request_id: (tenantRows[TEAM_ID]?.[0] as { id: string }).id,
+				status: "approved",
+				decided_at: new Date().toISOString(),
+				key_id: `apk_${"2".repeat(32)}`,
+				token_expires_at: new Date(Date.now() + 15 * 60_000).toISOString(),
+			},
+			error: null,
+		});
+		// Let the stale decision's continuation (notice + reload) run.
+		await new Promise((resolve) => setTimeout(resolve, 50));
+		expect(screen.getByText("TenantB-Write")).toBeInTheDocument();
+		expect(screen.queryByText("TenantA-Bash")).not.toBeInTheDocument();
+		expect(screen.queryByText(/Approved TenantA-Bash/)).not.toBeInTheDocument();
+		expect(screen.queryByText("host-tenant-a (claude-code)")).not.toBeInTheDocument();
 	});
 });
 

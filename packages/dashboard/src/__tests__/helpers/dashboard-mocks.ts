@@ -43,6 +43,13 @@ const TEAM = {
 type QueryError = { message: string; code?: string };
 /** `count` models a `select(..., { count: "exact", head: true })` answer. */
 type QueryResult = { data: unknown; error: QueryError | null; count?: number | null };
+/** One recorded builder call, e.g. `["eq", ["status", "pending"]]`. */
+export type QueryCall = [method: string, args: unknown[]];
+/**
+ * A table answer that depends on the query that was built (filters, range),
+ * for suites that need different rows per query or a paged read.
+ */
+export type QueryResolver = (calls: QueryCall[]) => QueryResult;
 type MockFn = ReturnType<typeof vi.fn>;
 
 interface MockQueryChain {
@@ -55,8 +62,14 @@ interface MockQueryChain {
 	in: MockFn;
 	order: MockFn;
 	limit: MockFn;
+	range: MockFn;
+	gt: MockFn;
 	gte: MockFn;
+	lt: MockFn;
 	lte: MockFn;
+	is: MockFn;
+	or: MockFn;
+	calls: QueryCall[];
 	maybeSingle: MockFn;
 	single: MockFn;
 	then: (
@@ -88,23 +101,45 @@ function firstRow(data: unknown): unknown {
 	return Array.isArray(data) ? (data[0] ?? null) : (data ?? null);
 }
 
-function chainFor(result: QueryResult): MockQueryChain {
+function chainFor(answer: QueryResult | QueryResolver): MockQueryChain {
 	const chain = {} as MockQueryChain;
-	const self = () => chain;
-	chain.select = vi.fn(self);
-	chain.insert = vi.fn(self);
-	chain.update = vi.fn(self);
-	chain.delete = vi.fn(self);
-	chain.eq = vi.fn(self);
-	chain.neq = vi.fn(self);
-	chain.in = vi.fn(self);
-	chain.order = vi.fn(self);
-	chain.limit = vi.fn(self);
-	chain.gte = vi.fn(self);
-	chain.lte = vi.fn(self);
-	chain.maybeSingle = vi.fn(async () => ({ data: firstRow(result.data), error: result.error }));
-	chain.single = vi.fn(async () => ({ data: firstRow(result.data), error: result.error }));
-	chain.then = (resolve, reject) => Promise.resolve(result).then(resolve, reject);
+	chain.calls = [];
+	const recorded =
+		(method: string) =>
+		(...args: unknown[]) => {
+			chain.calls.push([method, args]);
+			return chain;
+		};
+	const result = (): QueryResult => (typeof answer === "function" ? answer(chain.calls) : answer);
+	for (const method of [
+		"select",
+		"insert",
+		"update",
+		"delete",
+		"eq",
+		"neq",
+		"in",
+		"order",
+		"limit",
+		"range",
+		"gt",
+		"gte",
+		"lt",
+		"lte",
+		"is",
+		"or",
+	] as const) {
+		chain[method] = vi.fn(recorded(method));
+	}
+	chain.maybeSingle = vi.fn(async () => {
+		const { data, error } = result();
+		return { data: firstRow(data), error };
+	});
+	chain.single = vi.fn(async () => {
+		const { data, error } = result();
+		return { data: firstRow(data), error };
+	});
+	chain.then = (resolve, reject) => Promise.resolve(result()).then(resolve, reject);
 	return chain;
 }
 
@@ -139,7 +174,7 @@ export interface MockOptions {
 	/** Results for additional RPCs, keyed by function name (e.g. privacy_guard_summary). */
 	rpcResults?: Record<string, QueryResult>;
 	/** Results for reads of additional tables, keyed by table name. */
-	tableResults?: Record<string, QueryResult>;
+	tableResults?: Record<string, QueryResult | QueryResolver>;
 }
 
 export interface InstalledMocks {

@@ -23,6 +23,7 @@ import {
 	categoryLabel,
 	parseShadowAiDecisions,
 	parseShadowAiSummary,
+	SHADOW_AI_SERVICES,
 	type ShadowAiDecision,
 	type ShadowAiDecisionRow,
 	type ShadowAiSummary,
@@ -483,8 +484,15 @@ async function readShadowAi(
 }
 
 const DECISIONS_UNAVAILABLE = "Allow/block decisions are unavailable.";
+const SHADOW_AI_SERVICE_IDS = Object.keys(SHADOW_AI_SERVICES);
 
-/** The tenant's `ai_site` register entries (RLS: members read their tenant's rows). */
+/**
+ * The tenant's `ai_site` register entries for catalogued services (RLS: members
+ * read their tenant's rows). The read is filtered to the catalog ids rather
+ * than taking the first N `ai_site` rows: the register can hold far more
+ * hostnames than one API page (max_rows = 1000), and an unfiltered read could
+ * silently leave out a catalogued service's decision.
+ */
 async function readShadowAiDecisions(
 	tenantId: string,
 ): Promise<Read<Map<string, ShadowAiDecisionRow>>> {
@@ -494,7 +502,7 @@ async function readShadowAiDecisions(
 			.select("id,identifier,status,version")
 			.eq("tenant_id", tenantId)
 			.eq("asset_type", "ai_site")
-			.limit(2000);
+			.in("identifier", SHADOW_AI_SERVICE_IDS);
 		if (error) throw new Error(DECISIONS_UNAVAILABLE);
 		return { ok: true, value: parseShadowAiDecisions(data) };
 	} catch {
@@ -780,7 +788,8 @@ function ShadowAiServicesTable({
 					{services.map((row) => {
 						const name = serviceName(row.serviceId);
 						const current = decisions?.get(row.serviceId);
-						const decidable = row.serviceId !== "other";
+						// Decisions are read for catalogued services only (see readShadowAiDecisions).
+						const decidable = Object.hasOwn(SHADOW_AI_SERVICES, row.serviceId);
 						return (
 							<tr key={row.serviceId}>
 								<td>{name}</td>
@@ -800,7 +809,7 @@ function ShadowAiServicesTable({
 										/>
 									</div>
 								</td>
-								<td>{decisions ? decisionBadge(current) : "—"}</td>
+								<td>{decisions && decidable ? decisionBadge(current) : "—"}</td>
 								{canDecide ? (
 									<td>
 										{decidable ? (
