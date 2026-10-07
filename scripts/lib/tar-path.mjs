@@ -13,3 +13,13 @@ import path from "node:path";
 export function tarDirectory(directory) {
 	return path.sep === "/" ? directory : directory.split(path.sep).join("/");
 }
+
+/**
+ * The tar executable to spawn. On Windows this is the inbox bsdtar by absolute
+ * path (%SystemRoot%\System32\tar.exe): from Git Bash a bare `tar`/`tar.exe`
+ * resolves to Git's GNU tar, which treats `C:\...` archive paths as remote hosts.
+ */
+export function systemTar({ platform = process.platform, env = process.env } = {}) {
+	if (platform !== "win32") return "tar";
+	return path.win32.join(env.SystemRoot || env.windir || "C:\\Windows", "System32", "tar.exe");
+}

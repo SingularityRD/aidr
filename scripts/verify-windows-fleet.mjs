@@ -6,12 +6,13 @@ import { closeSync, copyFileSync, existsSync, ftruncateSync, mkdirSync, mkdtempS
 import { tmpdir } from "node:os";
 import { dirname, join, parse, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { systemTar } from "./lib/tar-path.mjs";
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const sourceRoot = repo;
 const fleet = join(repo, "deploy", "fleet", "windows");
 const powershell = process.platform === "win32" ? "powershell.exe" : "pwsh";
-const tar = process.platform === "win32" ? "tar.exe" : "tar";
+const tar = systemTar();
 const parentDevelopmentMode = process.env.AIDR_DEVELOPMENT_MODE;
 const fleetFixtureEnv = Object.freeze({ AIDR_DEVELOPMENT_MODE: "true" });
 const required = [
@@ -80,7 +81,9 @@ try {
 	], false);
 	assert.notEqual(rejectedPreflight.status, 0);
 	assert.match(
-		`${rejectedPreflight.stdout}\n${rejectedPreflight.stderr}`,
+		// Windows PowerShell hard-wraps error records at the host width, which can
+		// split a token such as "NotSigned" across lines; match the unwrapped text.
+		`${rejectedPreflight.stdout}\n${rejectedPreflight.stderr}`.replace(/\r?\n/g, ""),
 		process.platform === "win32" ? /NotSigned|pinned management-script certificate|Could not inspect Authenticode/ : /must run on Windows/,
 	);
 	checks.push("Authenticode preflight failed closed for unsigned, unpinned, or unavailable signatures");

@@ -5,6 +5,7 @@ import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { systemTar } from "./lib/tar-path.mjs";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -125,7 +126,7 @@ export async function verifyProvenance(bundle, lockfile, options) {
 	const actualSubjects = new Map();
 	for (const archive of archives) {
 		if (!/^[a-zA-Z0-9._-]+\.tgz$/.test(archive.staged_path)) throw new Error("release package archive path is invalid");
-		const result = spawnSync("tar", ["-xOzf", path.join(bundle, archive.staged_path), "package/dist/aidr-artifact.manifest.json"], {
+		const result = spawnSync(systemTar(), ["-xOzf", path.join(bundle, archive.staged_path), "package/dist/aidr-artifact.manifest.json"], {
 			encoding: null,
 			maxBuffer: 1024 * 1024,
 		});

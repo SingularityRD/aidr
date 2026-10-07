@@ -502,7 +502,10 @@ function Assert-AidrManifestPayload {
 function Expand-AidrVerifiedArchive {
     param([Parameter(Mandatory)][string]$Archive, [Parameter(Mandatory)][string]$Destination)
     if ((Get-Item -LiteralPath $Archive).Length -gt 536870912) { throw "Artifact archive exceeds the 512 MiB fleet limit" }
-    $tar = (Get-Command tar.exe -ErrorAction Stop).Source
+    # Use the inbox bsdtar by absolute path: a PATH lookup can resolve Git for
+    # Windows' GNU tar (which parses "C:\..." as a remote host) or a planted binary.
+    $tar = Join-Path $env:SystemRoot 'System32\tar.exe'
+    if (-not (Test-Path -LiteralPath $tar -PathType Leaf)) { throw "Windows tar.exe was not found at $tar" }
     $entries = @(& $tar -tf $Archive 2>$null)
     if ($LASTEXITCODE -ne 0 -or $entries.Count -eq 0 -or $entries.Count -gt 20000) { throw "Artifact archive cannot be safely listed" }
     foreach ($entry in $entries) {
