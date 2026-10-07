@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import ts from "typescript";
 import { readDeviceCode } from "../_shared/auth.ts";
 import { evaluateDevicePollState } from "../_shared/device-auth.ts";
+import { INGRESS_SECRET_ENV, ingressIpBucket, validIngressSecret, verifiedIngressIp } from "../_shared/trusted-ingress.ts";
 
 type Session = {
 	id: string;
@@ -94,7 +95,8 @@ function harness(options: {
 		},
 	};
 	new Function("Deno", "createClient", "readDeviceCode", "configFailure", "loadConfig",
-		"runtimeEnv", "corsJson", "handleCors", "evaluateDevicePollState", "consumeRateLimit", "validRateLimit", compiled)(
+		"runtimeEnv", "corsJson", "handleCors", "evaluateDevicePollState", "consumeRateLimit", "validRateLimit",
+		"INGRESS_SECRET_ENV", "ingressIpBucket", "validIngressSecret", "verifiedIngressIp", compiled)(
 		{ env: { get: () => undefined }, serve: (fn: typeof handler) => { handler = fn; } },
 		() => { clientCreations++; return client; },
 		readDeviceCode,
@@ -106,6 +108,7 @@ function harness(options: {
 		evaluateDevicePollState,
 		async () => ({ status: "allowed" }),
 		() => true,
+		INGRESS_SECRET_ENV, ingressIpBucket, validIngressSecret, verifiedIngressIp,
 	);
 	if (!handler) throw new Error("device-poll handler was not registered");
 	const poll = async (request = new Request("https://test.invalid/device-poll", {

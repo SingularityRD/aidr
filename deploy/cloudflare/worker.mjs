@@ -4,6 +4,13 @@ import { parseOidcRuntimeConfig, parseSamlRuntimeConfig } from "../saml-config.m
 
 const API_PREFIXES = ["/auth/v1", "/rest/v1", "/storage/v1", "/realtime/v1", "/functions/v1"];
 const DEVICE_START = "/functions/v1/device-start";
+// Public, globally throttled routes that rate-limit per attested client IP when
+// a signed proof is present. Each route has its own HMAC context.
+const SIGNED_IP_ROUTES = new Map([
+	[DEVICE_START, "device-start:v1"],
+	["/functions/v1/device-poll", "device-poll:v1"],
+	["/functions/v1/identity-security", "identity-security:v1"],
+]);
 const MAX_DEVICE_BODY = 4096;
 const MAX_AUTH_BODY = 16384;
 const MAX_DEVICE_RESPONSE = 16384;
@@ -209,12 +216,12 @@ async function readiness(request, env, fetcher) {
 	});
 }
 
-async function signedHeaders(request, config) {
+async function signedHeaders(request, config, context) {
 	const ip = canonicalIp(request.headers.get("cf-connecting-ip"));
 	if (!ip) return null; // Never fall back to client-supplied forwarding headers.
 	const timestamp = String(Math.floor(Date.now() / 1000));
 	const key = await crypto.subtle.importKey("raw", encoder.encode(config.secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-	const signed = await crypto.subtle.sign("HMAC", key, encoder.encode(`device-start:v1\n${timestamp}\n${ip}`));
+	const signed = await crypto.subtle.sign("HMAC", key, encoder.encode(`${context}\n${timestamp}\n${ip}`));
 	return {
 		"x-aidr-client-ip": ip,
 		"x-aidr-client-timestamp": timestamp,
@@ -259,13 +266,17 @@ async function proxy(request, config, fetcher) {
 		const bytes = await boundedBody(request);
 		if (!bytes) return jsonError(413, "request_too_large");
 		if (request.method === "OPTIONS" && bytes.length) return jsonError(400, "preflight_body_not_allowed");
-		const signature = await signedHeaders(request, config);
+		const signature = await signedHeaders(request, config, SIGNED_IP_ROUTES.get(DEVICE_START));
 		if (!signature) return jsonError(403, "trusted_edge_ip_required");
 		for (const [name, value] of Object.entries(signature)) headers.set(name, value);
 		headers.set("apikey", config.anonKey);
 		headers.set("authorization", `Bearer ${config.anonKey}`);
 		headers.set("content-type", "application/json");
 		body = request.method === "POST" ? bytes : null;
+	} else if (SIGNED_IP_ROUTES.has(incoming.pathname)) {
+		// Optional here: without a proof the function falls back to its unsigned aggregate.
+		const signature = await signedHeaders(request, config, SIGNED_IP_ROUTES.get(incoming.pathname));
+		if (signature) for (const [name, value] of Object.entries(signature)) headers.set(name, value);
 	}
 	const upstream = `${config.provider}${incoming.pathname}${incoming.search}`;
 	let response;
