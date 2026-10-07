@@ -167,6 +167,53 @@ async def test_mcp_route_rejects_ssrf_target_before_upstream_submission(bridge):
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "target",
+    [
+        "https://evil.example/github.com/owner/repo",
+        "https://github.com.evil.example/owner/repo",
+        "https://github.com@evil.example/owner/repo",
+        "https://evil.example/sse?ref=github.com",
+        "https://www.github.com/owner/repo",
+    ],
+)
+async def test_mcp_route_rejects_github_substring_on_non_github_host(bridge, target):
+    app, aig, _registry = bridge
+    response = await request(app, "POST", "/api/v1/scan/mcp", json={"target_type": "url", "target": target})
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    # Userinfo is already refused by the generic URL validator.
+    assert "github.com" in detail or detail == "target must not contain URL credentials"
+    assert aig.submissions == []
+
+
+@pytest.mark.asyncio
+async def test_mcp_route_forwards_exact_github_repository_and_live_urls(bridge):
+    app, aig, _registry = bridge
+    github = await request(
+        app,
+        "POST",
+        "/api/v1/scan/mcp",
+        headers={"Idempotency-Key": "mcp-github-1"},
+        json={"target_type": "url", "target": "https://github.com/owner/repo"},
+    )
+    live = await request(
+        app,
+        "POST",
+        "/api/v1/scan/mcp",
+        headers={"Idempotency-Key": "mcp-live-1"},
+        json={"target_type": "url", "target": "https://mcp.example.com/sse"},
+    )
+
+    assert github.status_code == live.status_code == 200
+    assert aig.submissions[0][1]["prompt"] == "https://github.com/owner/repo"
+    assert aig.submissions[0][1]["target_policy"]["host"] == "github.com"
+    assert aig.submissions[1][1]["prompt"] == "https://mcp.example.com/sse"
+    assert "github.com" not in aig.submissions[1][1]["prompt"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "target",
     ["127.0.0.1", "169.254.169.254", "metadata.google.internal", "0.0.0.0/0", "package:latest"],
 )
 async def test_infra_route_rejects_non_url_targets(bridge, target):
@@ -224,6 +271,23 @@ async def test_agent_scan_fails_closed_without_runtime_egress(bridge, monkeypatc
 
     assert response.status_code == 503
     assert response.json()["detail"] == "runtime egress proxy is not configured"
+    assert aig.submissions == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "agent_config",
+    [
+        {"provider": "custom", "fallbacks": ["169.254.169.254:80"]},
+        {"provider": "custom", "nodes": [{"targets": ["[::ffff:169.254.169.254]:80"]}]},
+        {"provider": "custom", "hosts": [{"host": "2852039166"}]},
+    ],
+)
+async def test_agent_route_rejects_metadata_hidden_in_lists(bridge, agent_config):
+    app, aig, _registry = bridge
+    response = await request(app, "POST", "/api/v1/scan/agent", json={"agent_config": agent_config})
+
+    assert response.status_code == 422
     assert aig.submissions == []
 
 

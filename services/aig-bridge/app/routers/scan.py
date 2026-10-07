@@ -49,6 +49,7 @@ from app.result_adapter import (
 )
 from app.validation import (
     assert_source_path_safe,
+    mcp_url_transport,
     runtime_egress_ready,
     validate_forward_headers,
     validate_agent_config_targets,
@@ -371,6 +372,11 @@ async def scan_mcp(
     remote_policy = None
     if request.target_type == "url":
         target = validate_remote_url(target, field="target")
+        # AIG switches to `git clone <prompt>` on a raw "github.com" substring
+        # match. Decide the transport from the parsed host and reject every
+        # target where the two could disagree (see mcp_url_transport).
+        transport = mcp_url_transport(target, field="target")
+        logger.info("MCP URL target transport=%s", transport)
         remote_policy = target_policy(target, field="target")
         target_headers = validate_forward_headers(target_headers)
     else:
