@@ -234,6 +234,37 @@ This project uses [Changesets](https://github.com/changesets/changesets) with **
 
 **Pre-commit hook:** A `changeset-check` pre-commit hook warns when staged files affect shipped artifacts (source code, threat definitions, allowlists, hooks, skills, plugin manifests) without a corresponding changeset. Bypass with `git commit --no-verify`.
 
+## Standalone Binaries (SEA)
+
+`pnpm build:sea` runs `packages/claude-code/scripts/build-sea.mjs`, which builds
+Node.js [single executable applications](https://nodejs.org/api/single-executable-applications.html)
+for the Claude Code hooks on Linux, macOS and Windows:
+
+| Output (`bin/`, gitignored) | Entry bundle |
+|---|---|
+| `aidr-pre-tool-use` (`.exe` on Windows) | `packages/claude-code/dist/pre-tool-use.cjs` |
+| `aidr-session-start` (`.exe` on Windows) | `packages/claude-code/dist/session-start.cjs` |
+
+The script uses the documented flow, which works on every supported Node
+(>= 22.12; it does not depend on `node --build-sea`):
+
+1. bundle the entry points with `esbuild.config.js`;
+2. write `dist/sea-config-<entry>.json` and run `node --experimental-sea-config` to produce the blob (code cache disabled);
+3. copy `process.execPath` to the output binary;
+4. inject the blob with the locally pinned `postject` devDependency (no `npx`/network), using the
+   `NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2` sentinel. On macOS the signature is removed
+   first, the blob goes into the `NODE_SEA` Mach-O segment, and the binary is re-signed ad hoc.
+
+It fails fast when the running Node is older than 20, is a shared-libnode build, or lacks the
+SEA sentinel fuse (Homebrew builds) — use the official binary from nodejs.org, nvm/fnm/volta,
+or `actions/setup-node` in CI. Windows binaries are unsigned (postject prints
+`warning: The signature seems corrupted!`, which is expected); sign them with `signtool`
+before distribution. Smoke test:
+
+```bash
+echo '{"tool_name":"Bash","tool_input":{"command":"ls"},"session_id":"t","hook_event_name":"PreToolUse","cwd":"."}' | ./bin/aidr-pre-tool-use
+```
+
 ## Building the Extension
 
 See [Building the Extension](../doc/build_extension.md) for Cursor/VS Code VSIX packaging instructions.
