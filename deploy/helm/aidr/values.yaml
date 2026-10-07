@@ -203,7 +203,8 @@ storage:
   runAsUser: 1000      # "node" user of the image (upstream runs it as root)
   fileSizeLimit: 52428800
   # "file" keeps objects on a PVC (single replica). "s3" uses an S3-compatible
-  # bucket and allows several replicas.
+  # bucket and allows several replicas. backup.* covers the "file" volume only
+  # with backup.storage.enabled; an S3 bucket is never backed up by this chart.
   backend: file
   replicaCount: 1
   persistence:
@@ -307,14 +308,47 @@ migrations:
   storageWaitSeconds: 600
   backoffLimit: 3
   activeDeadlineSeconds: 1800
+  # `helm upgrade` refuses to render while the pre-upgrade migration would run
+  # without a fresh backup (backup.enabled + backup.preUpgrade.enabled). Set
+  # true ONLY after taking your own backup (e.g. a managed-database snapshot).
+  # Fresh installs are unaffected: the post-install run has nothing to lose.
+  allowWithoutBackup: false
 
 # ---------------------------------------------------------------------------
-# Optional pg_dump backup CronJob (writes custom-format dumps to a PVC)
+# Optional backups: pg_dump (+ file storage archive) CronJob and pre-upgrade hook
 # ---------------------------------------------------------------------------
+# Backed up: the database (custom-format pg_dump) and, with storage.enabled,
+# the storage.backend=file object volume (tar.gz). NOT backed up: an S3 bucket
+# (use bucket versioning/replication), the Secrets the chart consumes (keep
+# the credential directory from generate-secrets.mjs), and the backup volume
+# itself (replicate it off-cluster). Every artifact has a .sha256 sidecar.
 backup:
   enabled: false
   schedule: "17 2 * * *"
   retentionDays: 14
+  # Deadline for one backup run (CronJob run and pre-upgrade hook).
+  activeDeadlineSeconds: 3600
+  preUpgrade:
+    # Pre-upgrade hook Job (hook-weight -10, before the migrations Job at 0):
+    # a failed backup aborts `helm upgrade` before the schema changes. The
+    # backup volume must already exist: on the upgrade that FIRST enables
+    # backup.enabled, set preUpgrade.enabled=false and
+    # migrations.allowWithoutBackup=true once (or point persistence.existingClaim
+    # at a pre-created claim).
+    enabled: true
+  storage:
+    # Archive the storage.backend=file volume (mounted read-only) next to the
+    # dump. A ReadWriteOnce volume can only be mounted on the node that runs the
+    # storage pod, so the backup pod gets a required podAffinity to it (the
+    # backup volume must be attachable on that node/zone too); ReadWriteMany
+    # needs no affinity; ReadWriteOncePod is refused. Only GNU tar keeps the
+    # objects' user.* xattrs (content-type/cache-control); the default
+    # aidr/migrations image has busybox tar, which the .manifest records.
+    enabled: false
+    # With backup.enabled and storage.backend=file, rendering fails unless
+    # storage.enabled or this acknowledgement is set (dev/evaluation only:
+    # a restore then loses every stored object).
+    acknowledgeNotBackedUp: false
   image:
     registry: ""
     repository: aidr/migrations   # ships pg_dump matching the server major version

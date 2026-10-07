@@ -35,11 +35,17 @@ function runHelm(args) {
 	return spawnSync(helm, args, { encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
 }
 
-function render(valuesFiles, setArgs = []) {
-	const args = ["template", "aidr", chartDir, "--namespace", "aidr", "--kube-version", KUBE_VERSION];
+function render(valuesFiles, setArgs = [], extraArgs = []) {
+	const args = ["template", "aidr", chartDir, "--namespace", "aidr", "--kube-version", KUBE_VERSION, ...extraArgs];
 	for (const file of valuesFiles) args.push("-f", file);
 	for (const entry of setArgs) args.push("--set", entry);
 	return runHelm(args);
+}
+
+function renderOk(valuesFiles, setArgs = [], extraArgs = []) {
+	const result = render(valuesFiles, setArgs, extraArgs);
+	assert.equal(result.status, 0, `${setArgs.join(" ")} ${extraArgs.join(" ")}: ${result.stderr}`);
+	return parseAllDocuments(result.stdout).map((doc) => doc.toJSON()).filter(Boolean);
 }
 
 function renderDocs(valuesName) {
@@ -199,6 +205,141 @@ test("rendered production values use the external database and backups", { skip:
 	assert.equal(dbUrl, "postgres://supabase_auth_admin:$(POSTGRES_PASSWORD)@aidr-db.internal.example.com:5432/postgres?sslmode=verify-full");
 	const ingress = docs.find((doc) => doc.kind === "Ingress");
 	assert.equal(ingress.metadata.annotations["cert-manager.io/cluster-issuer"], "letsencrypt-prod");
+});
+
+// ---------------------------------------------------------------------------
+// Backups: stored objects are covered (or the gap is explicit) and the
+// pre-upgrade migration never runs without a fresh backup.
+// ---------------------------------------------------------------------------
+const hookWeight = (text) => Number(text.match(/helm\.sh\/hook-weight: "(-?\d+)"/)?.[1]);
+
+test("backup defaults gate upgrades and never silently skip stored objects", () => {
+	const values = readYaml(join(chartDir, "values.yaml"));
+	assert.equal(values.backup.preUpgrade.enabled, true, "a pre-upgrade backup is on whenever backups are");
+	assert.equal(values.backup.storage.enabled, false);
+	assert.equal(values.backup.storage.acknowledgeNotBackedUp, false, "accepting a database-only backup must be explicit");
+	assert.equal(values.migrations.allowWithoutBackup, false, "migrating without a backup must be explicit");
+	assert.ok(values.backup.activeDeadlineSeconds >= 60);
+	const schema = JSON.parse(readFileSync(join(chartDir, "values.schema.json"), "utf8"));
+	assert.equal(schema.properties.migrations.properties.allowWithoutBackup.type, "boolean");
+	assert.equal(schema.properties.backup.properties.preUpgrade.properties.enabled.type, "boolean");
+	assert.deepEqual(Object.keys(schema.properties.backup.properties.storage.properties).sort(), ["acknowledgeNotBackedUp", "enabled"]);
+});
+
+test("the backup guards fail rendering for uncovered file storage and unguarded upgrades", () => {
+	const helpers = readFileSync(join(chartDir, "templates", "_backup.tpl"), "utf8");
+	const validate = helpers.slice(helpers.indexOf('define "aidr.backup.validate"'), helpers.indexOf('define "aidr.backup.podSpec"'));
+	assert.match(validate, /if and \$backup\.enabled \(eq \$storage\.backend "file"\) \(not \$storageBackup\) \(not \$backup\.storage\.acknowledgeNotBackedUp\) -\}\}\s*\{\{- fail /);
+	assert.match(validate, /if and \$storageBackup \(ne \$storage\.backend "file"\) -\}\}\s*\{\{- fail /);
+	assert.match(validate, /has "ReadWriteOncePod" \$storage\.persistence\.accessModes\) -\}\}\s*\{\{- fail /);
+	assert.match(validate, /if and \.Release\.IsUpgrade \.Values\.migrations\.enabled \(not \(and \$backup\.enabled \$backup\.preUpgrade\.enabled\)\) \(not \.Values\.migrations\.allowWithoutBackup\) -\}\}\s*\{\{- fail /);
+	// The guard runs on every render, not only when backups are enabled.
+	const cron = readFileSync(join(chartDir, "templates", "backup-cronjob.yaml"), "utf8");
+	assert.match(cron, /^\{\{- include "aidr\.backup\.validate" \. \}\}\n\{\{- if \.Values\.backup\.enabled \}\}/);
+});
+
+test("the pre-upgrade backup hook reuses the CronJob pod spec and runs before the migrations hook", () => {
+	const cron = readFileSync(join(chartDir, "templates", "backup-cronjob.yaml"), "utf8");
+	const preUpgrade = readFileSync(join(chartDir, "templates", "backup-pre-upgrade-job.yaml"), "utf8");
+	const migrations = readFileSync(join(chartDir, "templates", "migrations-job.yaml"), "utf8");
+	assert.match(cron, /include "aidr\.backup\.podSpec" \(dict "root" \. "suffix" ""\)/);
+	assert.match(preUpgrade, /include "aidr\.backup\.podSpec" \(dict "root" \. "suffix" "-pre-upgrade"\)/);
+	assert.match(preUpgrade, /^\{\{- if and \.Values\.backup\.enabled \.Values\.backup\.preUpgrade\.enabled \}\}/);
+	assert.match(preUpgrade, /helm\.sh\/hook: pre-upgrade\n/);
+	assert.match(preUpgrade, /backoffLimit: 0/);
+	assert.match(migrations, /helm\.sh\/hook: post-install,pre-upgrade/);
+	assert.ok(hookWeight(preUpgrade) < hookWeight(migrations), "backup hook-weight must sort before the migrations hook");
+});
+
+test("the shared backup pod archives file storage read-only with a checksum and hardened container", () => {
+	const helpers = readFileSync(join(chartDir, "templates", "_backup.tpl"), "utf8");
+	const podSpec = helpers.slice(helpers.indexOf('define "aidr.backup.podSpec"'));
+	assert.equal((podSpec.match(/^\s+- name: [a-z-]+\n\s+image: /gm) ?? []).length, 1);
+	assert.match(podSpec, /include "aidr\.resources"/);
+	assert.match(podSpec, /include "aidr\.containerSecurityContext"/);
+	assert.match(podSpec, /include "aidr\.podSecurityContext"/);
+	assert.match(podSpec, /- name: storage-data\n\s+mountPath: \/storage-data\n\s+readOnly: true/);
+	assert.match(podSpec, /- name: storage-data\n\s+persistentVolumeClaim:\n\s+claimName: [^\n]+\n\s+readOnly: true/);
+	assert.match(podSpec, /sha256sum "\$\{base\}\.dump\.partial"/);
+	assert.match(podSpec, /sha256sum "\$\{base\}\.storage\.tar\.gz\.partial"/);
+	assert.match(podSpec, /tar -tzf "\$\{base\}\.storage\.tar\.gz\.partial"/, "the archive is verified before it is published");
+	// The database dump is taken before the archive (see README "Consistency").
+	assert.ok(podSpec.indexOf("pg_dump") < podSpec.indexOf("/storage-data -czf"));
+	assert.match(podSpec, /"topologyKey" "kubernetes\.io\/hostname"/, "RWO storage volumes are mounted next to the storage pod");
+});
+
+test("the chart README states what is and is not backed up", () => {
+	const readme = readFileSync(join(chartDir, "README.md"), "utf8");
+	for (const needle of ["backup.storage.enabled", "backup.storage.acknowledgeNotBackedUp", "migrations.allowWithoutBackup", "backup.preUpgrade.enabled", "ReadWriteOncePod", "storage.backend=s3`"]) {
+		assert.ok(readme.includes(needle), needle);
+	}
+	assert.match(readme, /\| Stored objects, `storage\.backend=s3` \| \*\*No\*\*/);
+	assert.match(readme, /\| Stored objects, `storage\.backend=file` \| Only with `backup\.storage\.enabled=true` \|/);
+});
+
+test("rendering refuses backups that miss file storage objects", { skip: helmSkip }, () => {
+	const base = join(chartDir, "ci", "default-values.yaml");
+	const prod = join(chartDir, "ci", "prod-values.yaml");
+	const cases = [
+		[[base], ["backup.enabled=true"], /does not cover stored objects/],
+		[[prod], ["backup.storage.enabled=true"], /backup\.storage\.enabled archives the storage\.backend=file volume/],
+		[[base], ["backup.enabled=true", "backup.storage.enabled=true", "storage.persistence.accessModes={ReadWriteOncePod}"], /ReadWriteOncePod/],
+	];
+	for (const [files, sets, message] of cases) {
+		const result = render(files, sets);
+		assert.notEqual(result.status, 0, `expected failure for ${sets.join(" ")}`);
+		assert.match(result.stderr, message, sets.join(" "));
+	}
+	const acknowledged = renderOk([base], ["backup.enabled=true", "backup.storage.acknowledgeNotBackedUp=true"]);
+	const cron = acknowledged.find((doc) => doc.kind === "CronJob" && doc.metadata.name === "aidr-backup");
+	assert.ok(!cron.spec.jobTemplate.spec.template.spec.volumes.some((volume) => volume.name === "storage-data"));
+});
+
+test("rendered storage backup mounts the file volume read-only next to the storage pod", { skip: helmSkip }, () => {
+	const base = join(chartDir, "ci", "default-values.yaml");
+	const docs = renderOk([base], ["backup.enabled=true", "backup.storage.enabled=true"]);
+	for (const name of ["aidr-backup", "aidr-backup-pre-upgrade"]) {
+		const doc = docs.find((item) => ["CronJob", "Job"].includes(item.kind) && item.metadata.name === name);
+		assert.ok(doc, name);
+		const spec = doc.kind === "CronJob" ? doc.spec.jobTemplate.spec.template.spec : doc.spec.template.spec;
+		const volume = spec.volumes.find((item) => item.name === "storage-data");
+		assert.deepEqual(volume.persistentVolumeClaim, { claimName: "aidr-storage", readOnly: true });
+		const mount = spec.containers[0].volumeMounts.find((item) => item.name === "storage-data");
+		assert.equal(mount.readOnly, true);
+		const term = spec.affinity.podAffinity.requiredDuringSchedulingIgnoredDuringExecution[0];
+		assert.equal(term.topologyKey, "kubernetes.io/hostname");
+		assert.equal(term.labelSelector.matchLabels["app.kubernetes.io/component"], "storage");
+		assert.deepEqual(spec.securityContext.supplementalGroups, [1000]);
+		const script = spec.containers[0].command[2];
+		assert.match(script, /\.storage\.tar\.gz\.sha256/);
+		assert.match(script, /\.dump\.sha256/);
+	}
+	const rwx = renderOk([base], ["backup.enabled=true", "backup.storage.enabled=true", "storage.persistence.accessModes={ReadWriteMany}"]);
+	const cron = rwx.find((doc) => doc.kind === "CronJob" && doc.metadata.name === "aidr-backup");
+	assert.equal(cron.spec.jobTemplate.spec.template.spec.affinity, undefined, "ReadWriteMany needs no co-location");
+});
+
+test("rendered upgrades run the backup hook before migrations and refuse to migrate without one", { skip: helmSkip }, () => {
+	const base = join(chartDir, "ci", "default-values.yaml");
+	const prod = join(chartDir, "ci", "prod-values.yaml");
+	const docs = renderOk([prod], [], ["--is-upgrade"]);
+	const backup = docs.find((doc) => doc.kind === "Job" && doc.metadata.name === "aidr-backup-pre-upgrade");
+	const migrations = docs.find((doc) => doc.kind === "Job" && doc.metadata.name === "aidr-migrations");
+	assert.equal(backup.metadata.annotations["helm.sh/hook"], "pre-upgrade");
+	assert.match(migrations.metadata.annotations["helm.sh/hook"], /pre-upgrade/);
+	assert.ok(Number(backup.metadata.annotations["helm.sh/hook-weight"]) < Number(migrations.metadata.annotations["helm.sh/hook-weight"]));
+	assert.equal(backup.spec.backoffLimit, 0);
+	assert.match(backup.spec.template.spec.containers[0].command[2], /-pre-upgrade"/);
+
+	for (const [files, sets] of [[[base], []], [[prod], ["backup.preUpgrade.enabled=false"]], [[prod], ["backup.enabled=false"]]]) {
+		const refused = render(files, sets, ["--is-upgrade"]);
+		assert.notEqual(refused.status, 0, `expected the upgrade to be refused: ${sets.join(" ")}`);
+		assert.match(refused.stderr, /refusing to upgrade/);
+	}
+	renderOk([base], ["migrations.allowWithoutBackup=true"], ["--is-upgrade"]);
+	renderOk([base], ["migrations.enabled=false"], ["--is-upgrade"]);
+	// A fresh install has nothing to back up and is not gated.
+	assert.ok(!renderOk([base]).some((doc) => doc.metadata.name === "aidr-backup-pre-upgrade"));
 });
 
 test("the notification dispatcher CronJob is opt-in, token-authenticated and never sees the service-role key", () => {

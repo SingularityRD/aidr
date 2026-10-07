@@ -28,6 +28,16 @@ NOTE: postgresql.enabled=true runs ONE in-cluster Postgres instance with no fail
 {{- if not .Values.backup.enabled }}
 
 NOTE: backup.enabled=false. Configure database backups before storing production data.
+      `helm upgrade` refuses to run the schema migration without a backup unless
+      migrations.allowWithoutBackup=true.
+{{- else if and (eq .Values.storage.backend "file") (not .Values.backup.storage.enabled) }}
+
+WARNING: backup.storage.acknowledgeNotBackedUp=true. Backups hold the database only;
+         a restore loses every object on the storage volume.
+{{- end }}
+{{- if eq .Values.storage.backend "s3" }}
+
+NOTE: storage.backend=s3. The chart does not back up the bucket; enable versioning or replication.
 {{- end }}
 {{- if not .Values.networkPolicy.enabled }}
 

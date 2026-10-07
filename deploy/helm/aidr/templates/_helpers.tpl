@@ -137,6 +137,11 @@ imagePullSecrets:
 {{- if .fsGroup -}}
 {{- $_ := set $ctx "fsGroup" (int .fsGroup) -}}
 {{- end -}}
+{{- with .supplementalGroups -}}
+{{- $groups := list -}}
+{{- range . }}{{ $groups = append $groups (int .) }}{{ end -}}
+{{- $_ := set $ctx "supplementalGroups" $groups -}}
+{{- end -}}
 {{- if not (hasKey $ctx "seccompProfile") -}}
 {{- $_ := set $ctx "seccompProfile" (dict "type" "RuntimeDefault") -}}
 {{- end -}}
