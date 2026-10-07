@@ -32,6 +32,12 @@ import type {
 	UserSettings,
 } from "../types.js";
 import { CustomSiteScripts, customSiteForUrl, originGranted } from "./custom-sites.js";
+import {
+	DASHBOARD_POLICY_ALARM,
+	DASHBOARD_POLICY_LIMITS,
+	DashboardPolicyClient,
+	withDashboardShadowAi,
+} from "./dashboard-policy.js";
 import { applyBlockedSites, redirectBlockedTab, siteForUrl, updatedTabUrl } from "./dnr.js";
 import { createNativeBridge, NATIVE_MAX_IMAGE_BYTES } from "./native.js";
 import {
@@ -130,9 +136,11 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 	const shadowUsage = new ShadowAiUsageStore(storage, now);
 	const shadowMonitor = new ShadowAiMonitor({ chrome, usage: shadowUsage, now });
 	const customScripts = new CustomSiteScripts(chrome, log);
+	const fetchImpl: typeof fetch = options.fetch ?? ((...args) => globalThis.fetch(...args));
+	const dashboard = new DashboardPolicyClient({ storage, fetch: fetchImpl, now, log });
 	const telemetry = new TelemetryClient({
 		storage,
-		fetch: options.fetch ?? ((...args) => globalThis.fetch(...args)),
+		fetch: fetchImpl,
 		now,
 		random: options.random ?? Math.random,
 		navigator: options.navigator ?? (globalThis.navigator as NavigatorLike | undefined),
@@ -227,16 +235,31 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 		}
 	}
 
+	/**
+	 * Signed dashboard decisions, only with an administrator-pinned trust anchor; they can
+	 * tighten the enterprise Shadow AI policy, never relax it (./dashboard-policy.ts).
+	 */
+	async function applyDashboardDecisions(
+		policy: GuardPolicy,
+		warnings: string[],
+	): Promise<GuardPolicy> {
+		const trust = policy.dashboardPolicy ?? null;
+		const decisions = trust ? await dashboard.stored(trust) : null;
+		if (decisions?.expired)
+			warnings.push("dashboard: Shadow AI decisions expired; blocks kept, sanctions dropped");
+		return withDashboardShadowAi(policy, decisions);
+	}
+
 	async function loadPolicy(broadcast: boolean): Promise<GuardPolicy> {
 		const managed = await storage.readManaged();
 		// If managed policy state is unknown, user settings must not weaken the defaults.
 		const user = managed.status === "error" ? undefined : await storage.readUserSettings();
 		const evaluation = evaluatePolicy(managed.status === "ok" ? managed.value : undefined, user);
-		current = evaluation.policy;
-		currentWarnings =
-			managed.status === "error"
-				? [...evaluation.warnings, "managed: policy storage unavailable; user settings suspended"]
-				: evaluation.warnings;
+		const warnings = [...evaluation.warnings];
+		if (managed.status === "error")
+			warnings.push("managed: policy storage unavailable; user settings suspended");
+		current = await applyDashboardDecisions(evaluation.policy, warnings);
+		currentWarnings = warnings;
 		for (const warning of currentWarnings) log(`policy: ${warning}`);
 
 		if (bridgeEnabled !== current.useNativeHost) resetBridge();
@@ -288,6 +311,37 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 			},
 			customSites,
 		};
+	}
+
+	let dashboardChain: Promise<unknown> = Promise.resolve();
+
+	/**
+	 * Fetches the signed dashboard document (one at a time) and reloads the effective
+	 * policy when a new verified one was stored. Needs the managed trust anchor and a
+	 * telemetry endpoint; without them the stored document (if any) stays as it is.
+	 */
+	function refreshDashboardPolicy(): Promise<void> {
+		const task = async () => {
+			const trust = current.dashboardPolicy ?? null;
+			const endpoint = current.telemetry;
+			if (!trust || !endpoint) return;
+			if (await dashboard.refresh(trust, endpoint)) await reload(true);
+		};
+		const next = dashboardChain.then(task, task);
+		dashboardChain = next.catch(() => log("dashboard policy: refresh failed"));
+		return dashboardChain as Promise<void>;
+	}
+
+	async function ensureDashboardAlarm(): Promise<void> {
+		try {
+			const existing = await chrome.alarms.get?.(DASHBOARD_POLICY_ALARM);
+			if (!existing)
+				await chrome.alarms.create(DASHBOARD_POLICY_ALARM, {
+					periodInMinutes: DASHBOARD_POLICY_LIMITS.refreshMinutes,
+				});
+		} catch {
+			log("alarms: dashboard policy refresh alarm unavailable");
+		}
 	}
 
 	function reload(broadcast: boolean): Promise<GuardPolicy> {
@@ -583,11 +637,12 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 		void ensureTelemetryAlarm();
 	});
 	chrome.storage.onChanged.addListener((changes: Record<string, StorageChange>, area: string) => {
-		if (area === "managed" || (area === "local" && STORAGE_KEYS.userSettings in changes))
-			void reload(true);
+		if (area === "managed") void reload(true).then(() => refreshDashboardPolicy());
+		else if (area === "local" && STORAGE_KEYS.userSettings in changes) void reload(true);
 	});
 	chrome.alarms.onAlarm.addListener((alarm) => {
-		if (alarm.name === TELEMETRY_ALARM) {
+		if (alarm.name === DASHBOARD_POLICY_ALARM) void ready.then(() => refreshDashboardPolicy());
+		else if (alarm.name === TELEMETRY_ALARM) {
 			void queueShadowTelemetry()
 				.catch(() => log("telemetry: failed to queue Shadow AI counts"))
 				.then(() => telemetry.flush());
@@ -637,8 +692,12 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 		await storage.restrictSessionAccess();
 		await reload(false).catch(() => log("policy: initial load failed; defaults in force"));
 		await ensureTelemetryAlarm();
+		await ensureDashboardAlarm();
 		await vaults.sweep();
 	})();
+	// Not awaited by `ready`: the stored dashboard document is already applied, and a slow
+	// control plane must not delay message handling.
+	void ready.then(() => refreshDashboardPolicy());
 
 	return {
 		ready,

@@ -519,7 +519,9 @@ function ExceptionForm({
 					Effect:{" "}
 					{enforcementOf(asset) === "connector_deny" || enforcementOf(asset) === "connector_ask"
 						? "lifts the connector restriction for this scope until the end date"
-						: `recorded only (${ENFORCEMENT_LABEL[enforcementOf(asset)]})`}
+						: enforcementOf(asset) === "browser_block"
+							? "a tenant-wide exception lifts the Browser Guard block until the end date (browsers carry no member identity, so member-scoped exceptions do not reach them)"
+							: `recorded only (${ENFORCEMENT_LABEL[enforcementOf(asset)]})`}
 					.
 				</p>
 			) : null}
