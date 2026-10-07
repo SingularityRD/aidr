@@ -10,7 +10,10 @@
  * - A policy rule with that id overrides the baseline for its type. A disabled
  *   rule, or one whose `directions` exclude the scanned direction, turns the
  *   baseline for that type off; otherwise the rule's `action` applies
- *   (`ask` asks, `block` and `redact` deny — a verdict cannot rewrite input).
+ *   (`ask` asks, `block` denies). `redact` masks the value with a typed
+ *   placeholder (`maskCommonPiiInToolInput`) when the connector executes a
+ *   rewritten input and every surviving finding is `redact`; anywhere else a
+ *   `redact` finding denies, because passing the original would disclose it.
  * - An active exception for that rule id (scope `rule`, `content` or `match`,
  *   using the same fingerprints as tenant rules) suppresses the finding.
  * - With no such rule the baseline blocks.
@@ -18,6 +21,8 @@
  * Matches pass the precision checks in `pii-precision.ts` first, so an epoch
  * timestamp or an order id is never reported as a phone number or SSN.
  */
+
+import { maskPiiInToolInput, type PiiMaskResult, type PiiMaskSpan } from "./dlp/pii-masking.js";
 import {
 	type DlpDirection,
 	type DlpException,
@@ -55,8 +60,20 @@ export interface CommonPiiBaselineFinding {
 export interface CommonPiiBaselineResult {
 	/** Strongest surviving finding, or null when every match is allowed by policy. */
 	finding: CommonPiiBaselineFinding | null;
+	/** True when there is a finding and every surviving finding's rule action is `redact`. */
+	redactOnly: boolean;
 	appliedExceptionIds: string[];
 }
+
+/** Browser Guard placeholder prefixes, e.g. `[TCKN_1]`. */
+export const COMMON_PII_PLACEHOLDER_LABEL: Readonly<Record<CommonPiiType, string>> = {
+	ssn: "SSN",
+	credit_card: "CARD",
+	email: "EMAIL",
+	phone: "PHONE",
+	tc_kimlik: "TCKN",
+	iban: "IBAN",
+};
 
 function isCommonPiiType(type: string): type is CommonPiiType {
 	return (COMMON_PII_TYPES as readonly string[]).includes(type);
@@ -68,6 +85,24 @@ function isBaselineTypeDisabled(rule: DlpRule | undefined, direction: DlpDirecti
 		rule !== undefined &&
 		(rule.enabled === false || !(rule.directions ?? ["input", "output"]).includes(direction))
 	);
+}
+
+interface GovernedMatch {
+	type: CommonPiiType;
+	ruleId: string;
+	rule: DlpRule | undefined;
+}
+
+/** The reserved rule governing `match`, or null when its type is not checked here. */
+function governingRule(
+	rules: ReadonlyMap<string, DlpRule>,
+	match: { type: string },
+	direction: DlpDirection,
+): GovernedMatch | null {
+	if (!isCommonPiiType(match.type)) return null;
+	const ruleId = commonPiiRuleId(match.type);
+	const rule = rules.get(ruleId);
+	return isBaselineTypeDisabled(rule, direction) ? null : { type: match.type, ruleId, rule };
 }
 
 /** Same scopes and fingerprints as `scanDlpContent` uses for tenant rules. */
@@ -89,25 +124,51 @@ function findException(
 	);
 }
 
-/** `deny` outranks `ask`; the earlier finding wins a tie. */
+/**
+ * `deny` outranks `ask`, and a `block` deny outranks a `redact` deny (which a
+ * rewriting connector may resolve by masking); the earlier finding wins a tie.
+ */
 function stronger(
 	current: CommonPiiBaselineFinding | null,
 	candidate: CommonPiiBaselineFinding,
 ): CommonPiiBaselineFinding {
-	return !current || (current.decision === "ask" && candidate.decision === "deny")
+	return !current ||
+		(current.decision === "ask" && candidate.decision === "deny") ||
+		(candidate.decision === "deny" && current.action === "redact" && candidate.action === "block")
 		? candidate
 		: current;
 }
 
+interface CommonPiiMatch {
+	type: string;
+	value: string;
+	start: number;
+	end: number;
+}
+
 /** Precise common PII plus checksum-validated TC Kimlik / IBAN (mod-97). */
-function commonPiiMatches(content: string): Array<{ type: string; value: string }> {
-	const matches: Array<{ type: string; value: string }> = detectPreciseCommonPii(content).map(
-		(match) => ({ type: match.type, value: match.value }),
-	);
-	for (const match of scanPrivacyDetectors(content, ["tc_kimlik", "iban"]).matches) {
-		matches.push({ type: match.detector, value: content.slice(match.start, match.end) });
+function commonPiiMatches(content: string): { matches: CommonPiiMatch[]; incomplete: boolean } {
+	const matches: CommonPiiMatch[] = detectPreciseCommonPii(content).map((match) => ({
+		type: match.type,
+		value: match.value,
+		start: match.start,
+		end: match.end,
+	}));
+	const privacy = scanPrivacyDetectors(content, ["tc_kimlik", "iban"]);
+	for (const match of privacy.matches) {
+		matches.push({
+			type: match.detector,
+			value: content.slice(match.start, match.end),
+			start: match.start,
+			end: match.end,
+		});
 	}
-	return matches;
+	return { matches, incomplete: privacy.incomplete };
+}
+
+/** Normalized value so that repeats of one value share a placeholder. */
+function placeholderKey(type: CommonPiiType, value: string): string {
+	return type === "email" ? value.toLowerCase() : value.replace(/[^0-9A-Za-z]/g, "").toUpperCase();
 }
 
 /**
@@ -133,12 +194,12 @@ export function evaluateCommonPiiBaseline(
 	};
 	const applied = new Set<string>();
 	let strongest: CommonPiiBaselineFinding | null = null;
+	let redactOnly = true;
 
-	for (const match of commonPiiMatches(content)) {
-		if (!isCommonPiiType(match.type)) continue;
-		const ruleId = commonPiiRuleId(match.type);
-		const rule = rules.get(ruleId);
-		if (isBaselineTypeDisabled(rule, direction)) continue;
+	for (const match of commonPiiMatches(content).matches) {
+		const governed = governingRule(rules, match, direction);
+		if (!governed) continue;
+		const { type, ruleId, rule } = governed;
 		const exception = findException(
 			exceptions,
 			policy.tenantId,
@@ -151,12 +212,66 @@ export function evaluateCommonPiiBaseline(
 			continue;
 		}
 		const action = rule?.action ?? "block";
+		if (action !== "redact") redactOnly = false;
 		strongest = stronger(strongest, {
 			decision: action === "ask" ? "ask" : "deny",
-			type: match.type,
+			type,
 			ruleId,
 			action,
 		});
 	}
-	return { finding: strongest, appliedExceptionIds: [...applied].sort() };
+	return {
+		finding: strongest,
+		redactOnly: strongest !== null && redactOnly,
+		appliedExceptionIds: [...applied].sort(),
+	};
+}
+
+/**
+ * Mask the common PII that `policy` says to redact in a tool input (see
+ * `dlp/pii-masking.ts` for which fields may be rewritten). Values whose type is
+ * disabled for input or covered by a rule- or match-scoped exception are left
+ * alone, as the baseline allows them. Returns null when the input cannot be
+ * rewritten safely, a value is governed by a non-`redact` action, or detection
+ * was incomplete. The caller must re-scan the result before using it.
+ */
+export function maskCommonPiiInToolInput(
+	policy: DlpPolicy,
+	input: Record<string, unknown>,
+	options: { now?: Date } = {},
+): PiiMaskResult | null {
+	const now = options.now ?? new Date();
+	const rules = new Map(policy.rules.map((rule) => [rule.id, rule]));
+	const exceptions = (policy.exceptions ?? []).filter(
+		(exception) => isDlpExceptionActive(exception, now) && exception.scope !== "content",
+	);
+	let blocked = false;
+	const result = maskPiiInToolInput(input, (text) => {
+		const { matches, incomplete } = commonPiiMatches(text);
+		if (incomplete) return null;
+		const spans: PiiMaskSpan[] = [];
+		for (const match of matches) {
+			const governed = governingRule(rules, match, "input");
+			// Content-scoped exceptions fingerprint the whole call; masking changes
+			// it, so they are not honoured here and the residual re-scan decides.
+			if (
+				!governed ||
+				findException(exceptions, policy.tenantId, governed.ruleId, match.value, () => "")
+			) {
+				continue;
+			}
+			if (governed.rule?.action !== "redact") {
+				blocked = true;
+				continue;
+			}
+			spans.push({
+				start: match.start,
+				end: match.end,
+				label: COMMON_PII_PLACEHOLDER_LABEL[governed.type],
+				key: placeholderKey(governed.type, match.value),
+			});
+		}
+		return spans;
+	});
+	return blocked ? null : result;
 }
