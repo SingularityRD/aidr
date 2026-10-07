@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { createServer } from "node:http";
 import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
@@ -60,6 +60,20 @@ const REFUSED_METHODS = new Set([
 const MAX_CURSOR_LENGTH = 1024;
 const MAX_PROMPT_ARGUMENTS = 256;
 const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
+
+// Gateway-minted JSON-RPC ids and continuation states travel through the same
+// payload inspection as untrusted content. A UUID's hex digits periodically form
+// a 13-16 digit run the PII scanner rightly reads as a card number (~0.1% of
+// UUIDs), which made the gateway block its own toolset re-verification. Encode
+// 128 random bits with letters only so the gateway never trips its own scanner.
+const NONCE_ALPHABET = "abcdefghjkmnpqrs";
+
+export function gatewayNonce(prefix) {
+	let suffix = "";
+	for (const byte of randomBytes(16))
+		suffix += NONCE_ALPHABET[byte >> 4] + NONCE_ALPHABET[byte & 15];
+	return `${prefix}-${suffix}`;
+}
 
 function resolvedUpstreamAuth(server) {
 	const auth = Object.hasOwn(server, "resolvedUpstreamAuth")
@@ -1391,7 +1405,7 @@ export function createMcpGateway(input, dependencies = {}) {
 				)
 			)
 				throw new Error("invalid_upstream_rpc");
-			const id = `aidr-reply-${randomUUID()}`;
+			const id = gatewayNonce("aidr-reply");
 			pendingReplies.set(id, {
 				owner: owner(server, sessionId),
 				originalId: message.id,
@@ -1473,7 +1487,7 @@ export function createMcpGateway(input, dependencies = {}) {
 		for (const [id, saved] of continuations)
 			if (saved.expiresAt <= now().getTime()) continuations.delete(id);
 		if (continuations.size >= 256) throw new Error("gateway_unavailable");
-		const state = `aidr-mrtr-${randomUUID()}`;
+		const state = gatewayNonce("aidr-mrtr");
 		continuations.set(state, {
 			owner: owner(server, sessionId),
 			upstreamAuth: server.resolvedUpstreamAuth,
@@ -1632,7 +1646,7 @@ export function createMcpGateway(input, dependencies = {}) {
 								},
 								body: safeJson({
 									jsonrpc: "2.0",
-									id: `aidr-routing-${randomUUID()}`,
+									id: gatewayNonce("aidr-routing"),
 									method: "ping",
 									params:
 										protocolVersion === "2026-07-28"
@@ -1763,7 +1777,7 @@ export function createMcpGateway(input, dependencies = {}) {
 	}
 
 	async function verifiedTools(server, sessionId, signal) {
-		const id = `aidr-list-${randomUUID()}`;
+		const id = gatewayNonce("aidr-list");
 		const { result } = await forward(
 			server,
 			{

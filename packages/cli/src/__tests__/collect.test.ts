@@ -115,6 +115,31 @@ describe("fleet collector CLI helpers", () => {
 		).toBe(2);
 	});
 
+	it("treats an applicability-unconfirmed critical CVE as incomplete, not confirmed or clean", () => {
+		const healthyScan = inventory().items[0]?.scan;
+		if (!healthyScan) throw new Error("test inventory is missing its scan result");
+		expect(
+			fleetCollectionExitCode(
+				inventory({
+					scan: {
+						...healthyScan,
+						cves: [
+							{
+								cveId: "CVE-2099-0002",
+								product: "test",
+								severity: "critical",
+								cvss: 9.8,
+								rule: 'version < "2"',
+								ruleStatus: "semver",
+								evaluated: false,
+							},
+						],
+					},
+				}),
+			),
+		).toBe(1);
+	});
+
 	it.each(["cloud", "mdm", "vendor", ""])(
 		"fails closed before local target validation for unconfigured provider %s",
 		async (provider) => {

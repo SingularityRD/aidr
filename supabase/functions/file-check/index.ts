@@ -37,15 +37,19 @@ function json(
 	});
 }
 
+const SHA256_HEX = /^[0-9a-f]{64}$/;
+
+// Returns the normalized digest, or null for any entry that is not exactly
+// `{ key: { sha256: <64 hex> } }`. Only validated digests may reach the
+// PostgREST `.in()` filter, which is built from these strings.
 function extractSha256(reqEntry: unknown): string | null {
 	if (!reqEntry || typeof reqEntry !== "object" || Array.isArray(reqEntry)) return null;
-	const r = reqEntry as Record<string, unknown>;
-	const key = r.key;
-	if (key && typeof key === "object" && !Array.isArray(key)) {
-		const sha256 = (key as Record<string, unknown>).sha256;
-		if (typeof sha256 === "string" && sha256.trim()) return sha256.trim().toLowerCase();
-	}
-	return null;
+	const key = (reqEntry as Record<string, unknown>).key;
+	if (!key || typeof key !== "object" || Array.isArray(key)) return null;
+	const sha256 = (key as Record<string, unknown>).sha256;
+	if (typeof sha256 !== "string") return null;
+	const normalized = sha256.trim().toLowerCase();
+	return SHA256_HEX.test(normalized) ? normalized : null;
 }
 
 type FileRepRow = {
@@ -89,9 +93,9 @@ Deno.serve(async (req) => {
 	if (rawRequests.length > MAX_REQUESTS) {
 		return json(413, { error: "request_limit_exceeded", max_requests: MAX_REQUESTS });
 	}
-	const hashes = rawRequests
-		.map((r) => extractSha256(r))
-		.filter((h): h is string => Boolean(h));
+	const extracted = rawRequests.map((r) => extractSha256(r));
+	if (extracted.some((h) => h === null)) return json(400, { error: "invalid_sha256" });
+	const hashes = extracted as string[];
 
 	const rate = await consumeTenantRateLimit(supabase, {
 		tenantId,

@@ -89,6 +89,10 @@ export const PUBLIC_ROUTE_ALLOWLIST = Object.freeze([
 	},
 	{
 		route: "supabase/functions/notification-dispatch/index.ts",
+		// Like a signature-verified webhook: a 32+ char shared secret compared in
+		// constant time is required before any work, so there is no anonymous
+		// caller to rate limit. Not application rate limited (declared honestly).
+		rateLimited: false,
 		mechanism: "dedicated dispatcher bearer token",
 		justification:
 			"Scheduler-only outbox dispatcher: POST with `Authorization: Bearer <AIDR_NOTIFICATION_DISPATCH_TOKEN>` (at least 32 chars, compared in constant time) before any row is read; it has no user or tenant caller, fails closed when the token or keyring is unset, and never accepts the service-role key.",

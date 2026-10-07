@@ -61,6 +61,8 @@ async function enroll(
 		from(table: string) {
 			if (table === "rate_limits") {
 				const query = { select: () => query, eq: () => query,
+					// Unresolved-token budget (read before resolution): empty window.
+					maybeSingle: async () => ({ data: null, error: null }),
 					single: async () => ({
 						data: rateFailure === "missing" ? null : { count: rateFailure === "over-limit" ? 999 : 1 },
 						error: rateFailure === "read" ? { message: "rate store unavailable" } : null,

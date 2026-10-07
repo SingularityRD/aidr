@@ -475,6 +475,96 @@ export function classifyMcpTool(
 	return { matchedCategories: matched, riskLevel };
 }
 
+/** One AIG MCP category a discovered server configuration maps to. */
+export interface McpServerCategoryMatch {
+	/** Category id from the AIG index, e.g. "mcp-01". */
+	id: string;
+	name: string;
+	risk: AigRiskLevel;
+	aidr_policy_action: AigPolicyAction;
+	/**
+	 * `evidence`: a concrete configuration finding (hardcoded secret, shell
+	 * wrapper, broad filesystem argument). `keyword`: the category's detection
+	 * pattern occurs in the server name, command or arguments; indicative only.
+	 */
+	basis: "evidence" | "keyword";
+	/** Machine-readable reasons; never contains configuration values. */
+	evidence: string[];
+}
+
+export interface McpServerClassificationInput {
+	name: string;
+	command: string | null;
+	args: readonly string[];
+	riskHints: readonly string[];
+	secretFindings: ReadonlyArray<{ location: string; key: string; kind: string }>;
+}
+
+/** Inventory risk hints that are direct evidence for an AIG category. */
+const RISK_HINT_CATEGORIES: Readonly<Record<string, string>> = {
+	shell_wrapper_command: "mcp-05",
+	broad_filesystem_access_arg: "mcp-02",
+};
+
+/**
+ * Map a discovered MCP server configuration to the AIG MCP risk categories.
+ *
+ * Evidence-based categories come from concrete findings: a literal credential in
+ * env/headers/args/URL is mcp-01 (Token Mismanagement & Secret Exposure), a
+ * shell-wrapper launch command is mcp-05 and a broad filesystem argument is
+ * mcp-02. The category detection patterns are additionally applied to the
+ * server name, command and arguments through `classifyMcpTool`; those matches are
+ * labelled `keyword`. Env values, URLs and source paths are not keyword-matched:
+ * an env var reference (`${GITHUB_TOKEN}`) is good practice, not exposure.
+ *
+ * An empty result means no category matched, not that the server is safe.
+ */
+export function classifyMcpServer(input: McpServerClassificationInput): McpServerCategoryMatch[] {
+	const categories = new Map(loadAigMcpCategories().map((category) => [category.id, category]));
+	const matches = new Map<string, McpServerCategoryMatch>();
+	const add = (id: string, basis: McpServerCategoryMatch["basis"], evidence: string) => {
+		const category = categories.get(id);
+		if (!category) return;
+		const existing = matches.get(id);
+		if (existing) {
+			if (basis === "evidence") existing.basis = "evidence";
+			if (!existing.evidence.includes(evidence)) existing.evidence.push(evidence);
+			return;
+		}
+		matches.set(id, {
+			id: category.id,
+			name: category.name,
+			risk: category.risk,
+			aidr_policy_action: category.aidr_policy_action,
+			basis,
+			evidence: [evidence],
+		});
+	};
+
+	for (const finding of input.secretFindings) {
+		add("mcp-01", "evidence", `hardcoded_secret:${finding.location}:${finding.key}:${finding.kind}`);
+	}
+	for (const hint of input.riskHints) {
+		const id = RISK_HINT_CATEGORIES[hint];
+		if (id) add(id, "evidence", hint);
+	}
+
+	const commandName = (input.command ?? "").split(/[\\/]/).pop() ?? "";
+	const { matchedCategories } = classifyMcpTool(
+		input.name,
+		[commandName, ...input.args].join(" "),
+		{},
+	);
+	for (const category of matchedCategories) {
+		// A credential-shaped keyword ("token", "password") in arguments is only
+		// exposure when a literal value was found; that case is already evidence.
+		if (category.id === "mcp-01") continue;
+		add(category.id, "keyword", "detection_pattern");
+	}
+
+	return [...matches.values()].sort((a, b) => a.id.localeCompare(b.id));
+}
+
 /**
  * Map an AIG risk level to the corresponding AIDR policy action.
  */

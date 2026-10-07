@@ -70,6 +70,57 @@ describe("aidr scan - a scan that did not happen is never reported as clean", ()
 		expect(result.requestsMade).toBe(0);
 	});
 
+	it("separates confirmed from unconfirmed findings in the summary and exit status", async () => {
+		const { createServer } = await import("node:http");
+		// Ollama detected on `/`; `/api/version` is served only when a version is set.
+		const startOllama = async (version: string | null) => {
+			const server = createServer((req, res) => {
+				if (req.url === "/") {
+					res.writeHead(200);
+					res.end("Ollama is running");
+				} else if (req.url === "/api/version" && version) {
+					res.writeHead(200, { "content-type": "application/json" });
+					res.end(JSON.stringify({ version }));
+				} else {
+					res.writeHead(404);
+					res.end("not found");
+				}
+			});
+			await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+			const address = server.address();
+			if (!address || typeof address === "string") throw new Error("no server address");
+			return { server, url: `http://127.0.0.1:${address.port}` };
+		};
+		const previousExitCode = process.exitCode;
+		const output = vi.spyOn(console, "log").mockImplementation(() => undefined);
+		const unknown = await startOllama(null);
+		const vulnerable = await startOllama("0.1.30");
+		resetAigScanCache();
+		try {
+			process.exitCode = 0;
+			await scanCommand({ target: [unknown.url] });
+			const unknownText = output.mock.calls.map((call) => String(call[0])).join("\n");
+			expect(unknownText).toContain("Confirmed findings: 0 critical, 0 high");
+			expect(unknownText).toMatch(/Unconfirmed findings: [1-9]\d* critical/);
+			expect(unknownText).toContain("applicability unconfirmed");
+			// Unconfirmed is incomplete (1): never clean (0), never a confirmed hit (2).
+			expect(process.exitCode).toBe(1);
+
+			output.mockClear();
+			process.exitCode = 0;
+			await scanCommand({ target: [vulnerable.url], json: true });
+			const summary = JSON.parse(String(output.mock.calls[0]?.[0])) as Record<string, number>;
+			expect(summary.confirmedCritical).toBeGreaterThan(0);
+			expect(summary.critical).toBe(summary.confirmedCritical + summary.unconfirmedCritical);
+			expect(process.exitCode).toBe(2);
+		} finally {
+			output.mockRestore();
+			process.exitCode = previousExitCode;
+			await new Promise<void>((resolve) => unknown.server.close(() => resolve()));
+			await new Promise<void>((resolve) => vulnerable.server.close(() => resolve()));
+		}
+	});
+
 	it("returns a nonzero CLI status when its dataset is missing", async () => {
 		const previousDirectory = process.env.AIG_GENERATED_DIR;
 		const previousExitCode = process.exitCode;

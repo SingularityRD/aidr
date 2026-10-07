@@ -158,6 +158,7 @@ export {
 	resetAigScanCache,
 	scanTarget,
 	scanTargets,
+	summarizeCveFindings,
 } from "./aig-infra-scan.js";
 export {
 	evaluateInfrastructurePolicy,
@@ -923,9 +924,12 @@ export type {
 	AigMcpDataStatus,
 	AigPolicyAction,
 	AigRiskLevel,
+	McpServerCategoryMatch,
+	McpServerClassificationInput,
 } from "./mcp-aig-categories.js";
 export {
 	aigRiskToPolicyAction,
+	classifyMcpServer,
 	classifyMcpTool,
 	getAigMcpDataStatus,
 	getAllCategories,
@@ -976,6 +980,12 @@ export {
 	type McpDiscoveryServer,
 	type McpSignedManifestIndex,
 } from "./mcp-discovery.js";
+export {
+	detectMcpConfigSecrets,
+	type McpSecretFinding,
+	type McpSecretKind,
+	type McpSecretLocation,
+} from "./mcp-config-secrets.js";
 export {
 	defaultMcpConfigPaths,
 	type McpInventoryCoverage,

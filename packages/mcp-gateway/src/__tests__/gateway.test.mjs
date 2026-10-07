@@ -2,7 +2,8 @@ import "./helpers/isolated-home.mjs";
 import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
 import { describe, it } from "node:test";
-import { mcpToolsetHash } from "@singularityrd/aidr-core";
+import { mcpToolsetHash, scanModelOutput } from "@singularityrd/aidr-core";
+import { gatewayNonce } from "../gateway.mjs";
 import { fixture, rpc } from "./helpers/gateway-fixture.mjs";
 
 describe("inline MCP gateway", () => {
@@ -354,6 +355,51 @@ describe("inline MCP gateway", () => {
 		assert.equal(coverage.decision, "deny");
 		assert.equal(coverage.refusal.code, "server_initiated_method");
 		assert.ok(!JSON.stringify(coverage).includes("hidden server request"));
+	});
+
+	it("mints gateway request ids that its own output scanner never blocks", async () => {
+		// Regression: ids were `aidr-list-${randomUUID()}`. About 0.1% of UUIDs carry a
+		// 13-16 digit run the PII scanner flags as a card number, so the gateway's own
+		// toolset re-verification was intermittently refused with output_blocked.
+		// (The merged scanner's precision filters no longer flag that example UUID,
+		// but nonces stay letter-only so no digit run can ever reach the scanner.)
+		for (const prefix of ["aidr-list", "aidr-reply", "aidr-mrtr", "aidr-routing"]) {
+			for (let index = 0; index < 5_000; index++) {
+				const id = gatewayNonce(prefix);
+				assert.match(id, new RegExp(`^${prefix}-[a-z]{32}$`));
+				const payload = JSON.stringify({ jsonrpc: "2.0", id, method: "tools/list", params: {} });
+				assert.deepEqual(scanModelOutput(`${payload}\n2.0 ${id} tools/list`), []);
+			}
+		}
+		const ids = [];
+		const f = fixture({
+			// Twenty identical calls in one session would trip the core runaway
+			// guard (covered by its own suites); this test is about request ids.
+			evaluateToolCall: async () => ({
+				decision: "allow",
+				category: "none",
+				confidence: 0,
+				severity: "info",
+				source: "test",
+				artifacts: [],
+				matchedThreatId: null,
+				reasons: [],
+			}),
+			beforeUpstream: (_request, rpc) => {
+				if (rpc.method === "tools/list") ids.push(rpc.id);
+			},
+		});
+		const base = await f.start();
+		await rpc(base, f.tokenA);
+		await f.approve();
+		for (let id = 1; id <= 20; id++)
+			assert.equal(
+				(await rpc(base, f.tokenA, "tools/call", id)).body.result.content[0].text,
+				"Normal result",
+			);
+		assert.ok(ids.length >= 20);
+		for (const id of ids) assert.match(id, /^aidr-list-[a-z]{32}$/);
+		assert.equal(new Set(ids).size, ids.length);
 	});
 
 	it("keeps tenant approvals separate for the same server ID", async () => {

@@ -1,5 +1,6 @@
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
+import { clearInvitePending, isInvitePending } from "./invite-pending";
 
 /**
  * Client-side session lifetime.
@@ -164,6 +165,15 @@ export async function readSession(): Promise<SessionSnapshot> {
 	const session = data.session ?? null;
 	const userId = session?.user?.id;
 	if (!session || !userId) {
+		clearActivity();
+		return { status: signedOutStatus(), session: null };
+	}
+	if (isInvitePending(userId)) {
+		// An invite link was verified but its workspace/role confirmation was
+		// never accepted. That session must not reach a protected route.
+		const { error: signOutError } = await supabase.auth.signOut({ scope: "local" });
+		if (signOutError) throw signOutError;
+		clearInvitePending();
 		clearActivity();
 		return { status: signedOutStatus(), session: null };
 	}

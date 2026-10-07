@@ -96,6 +96,37 @@ describe("file-check reputation lookup", () => {
 		expect(lookup.databaseCalls).toEqual([]);
 	});
 
+	it.each([
+		["PostgREST filter syntax", `${"a".repeat(64)}),sha256.neq.(x`],
+		["short digest", "a".repeat(63)],
+		["non-hex digest", "g".repeat(64)],
+		["non-string digest", 42],
+		["missing key", undefined],
+	])("rejects a %s with 400 before any quota or reputation query", async (_name, sha256) => {
+		const response = await handle?.(new Request("https://project.supabase.co/functions/v1/file-check", {
+			method: "POST",
+			headers: { Authorization: "Bearer test-key", "Content-Type": "application/json" },
+			body: JSON.stringify({ requests: [
+				{ key: { sha256: "b".repeat(64) } },
+				sha256 === undefined ? {} : { key: { sha256 } },
+			] }),
+		}));
+		expect(response?.status).toBe(400);
+		expect(await response?.json()).toEqual({ error: "invalid_sha256" });
+		expect(lookup.databaseCalls).toEqual([]);
+	});
+
+	it("accepts an upper-case digest in its normalized lower-case form", async () => {
+		lookup.result = { data: [{ sha256: "a".repeat(64), provenance_verified: true, created_at: new Date().toISOString(), severity: "SEVERITY_UNKNOWN", malware_name: [] }], error: null };
+		const response = await handle?.(new Request("https://project.supabase.co/functions/v1/file-check", {
+			method: "POST",
+			headers: { Authorization: "Bearer test-key", "Content-Type": "application/json" },
+			body: JSON.stringify({ requests: [{ key: { sha256: "A".repeat(64) } }] }),
+		}));
+		expect(response?.status).toBe(200);
+		expect((await response?.json()).responses[0].key.sha256).toBe("a".repeat(64));
+	});
+
 	it("treats a database failure as an unavailable reputation leg", async () => {
 		lookup.result = { data: null as unknown as unknown[], error: new Error("offline") };
 		const response = await handle?.(request());

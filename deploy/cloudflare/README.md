@@ -132,7 +132,12 @@ projects can pause for low activity and have a 500 MB database limit. Supabase's
 built-in email provider permits only two Auth emails per hour per project and
 is best-effort; new Free projects cannot customize its email templates. Use a
 verified custom SMTP provider before onboarding pilot users, then test actual
-invite, sign-in, recovery and delivery-failure flows. These
+invite, sign-in, recovery and delivery-failure flows. Replace the hosted
+"Invite user" template with `supabase/templates/invite.html`: its link must be
+`{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=invite`. The
+dashboard verifies that single-use hash server-side, asks the invitee to
+confirm the account, workspace and role, and rejects the default
+`{{ .ConfirmationURL }}` flow, which delivers session tokens in the URL fragment. These
 plans are suitable for our **internal or explicitly limited pilot**, not an
 uninterrupted paid security service or an SLA. Track request rate, storage,
 delivery failures and quota headroom before inviting a pilot. Upgrade plans

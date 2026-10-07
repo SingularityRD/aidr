@@ -35,6 +35,7 @@ import {
 	readBoundedJson,
 } from "../_shared/request-limits.ts";
 import { normalizeIngestEvents } from "./events.ts";
+import { signerHealthy } from "../_shared/signing-health.ts";
 import { buildPremiumModules, tenantRuntimeCapabilities } from "../_shared/runtime-capabilities.ts";
 
 // Required configuration. Validated per request, before any auth or DB work, so
@@ -246,7 +247,10 @@ Deno.serve(async (req) => {
 		AIDR_ENTITLEMENT_SIGNING_PRIVATE_KEY_PKCS8_B64: ENTITLEMENT_SIGNING_PRIVATE_KEY_PKCS8_B64,
 	});
 	if (signingProblem) return configFailure("ingest", signingProblem, json);
-	if (ENTITLEMENT_SIGNING_KEY_ID && !(await signEd25519Detached("aidr-signing-healthcheck"))) {
+	if (ENTITLEMENT_SIGNING_KEY_ID && !(await signerHealthy(
+		`${ENTITLEMENT_SIGNING_KEY_ID}\n${ENTITLEMENT_SIGNING_PRIVATE_KEY_PKCS8_B64}`,
+		async () => (await signEd25519Detached("aidr-signing-healthcheck")) !== null,
+	))) {
 		return json(503, { error: "entitlement_signing_unavailable", retryable: true });
 	}
 	const timing = entitlementTiming();
@@ -431,42 +435,13 @@ Deno.serve(async (req) => {
 		return json(503, { error: "entitlements_changed", retryable: true });
 	}
 	if (registration.seat_exceeded === true) {
-		const current = Number(registration.current_agents ?? 0);
-		if (browserKey) {
-			return json(402, {
-				error: "agent_limit_exceeded",
-				allowed_agents: Number(registration.allowed_agents ?? allowedAgents),
-				current_agents: current,
-			});
-		}
-		const tenantPackKey = premiumModules.includes("premium_intel")
-			? await deriveTenantPackKeyB64(tenantId)
-			: null;
-		const entitlement = buildEntitlementSnapshot({
-			tenantId, includedAgents, extraAgents, allowedAgents, premiumModules,
-			tenantPackKey, revocationEpoch, timing, providerValidUntilMs,
-			approvalPublicKeys: await loadApprovalPublicKeys(supabase, tenantId, Date.now()),
-		});
-		if (!entitlement) return json(503, { error: "entitlements_unavailable", retryable: true });
-		const entitlementJson = canonicalJson(entitlement);
-		const sig = await signEd25519Detached(entitlementJson);
-		if (ENTITLEMENT_SIGNING_KEY_ID && !sig) return json(503, { error: "entitlement_signing_unavailable", retryable: true });
+		// Over the seat limit: report the counts only. A signed snapshot or a
+		// derived pack key here would let one unbound API key collect
+		// entitlements for unlimited agents (matches /enroll's seat_exceeded).
 		return json(402, {
 			error: "agent_limit_exceeded",
 			allowed_agents: Number(registration.allowed_agents ?? allowedAgents),
-			current_agents: current,
-			entitlement: JSON.parse(entitlementJson),
-			entitlement_signed: sig
-				? {
-						alg: "ed25519",
-						key_id: ENTITLEMENT_SIGNING_KEY_ID,
-						sig_b64: sig,
-						snapshot: JSON.parse(entitlementJson),
-					}
-				: null,
-			entitlement_sig_alg: sig ? "ed25519" : null,
-			entitlement_key_id: sig ? ENTITLEMENT_SIGNING_KEY_ID : null,
-			entitlement_sig: sig,
+			current_agents: Number(registration.current_agents ?? 0),
 		});
 	}
 	if (!agentId) {

@@ -8,6 +8,8 @@ const state = vi.hoisted(() => ({
 	rpcs: vi.fn(), getUser: vi.fn(), from: vi.fn(), ingestError: null as null | { code: string },
 	cursor: null as null | Record<string, unknown>,
 	membership: null as null | Record<string, unknown>,
+	credential: null as null | Record<string, unknown>,
+	credentialError: null as null | { code: string },
 }));
 
 vi.mock("npm:@supabase/supabase-js@2.116.0", () => ({
@@ -51,6 +53,8 @@ describe("discovery machine handler", () => {
 		state.ingestError = null;
 		state.cursor = { credential_id: CREDENTIAL, collector_id: "collector-1", last_sequence: 0, next_sequence: 1 };
 		state.membership = { role: "member", expires_at: null };
+		state.credential = { tenant_id: TENANT, collector_id: "collector-1", revoked_at: null, expires_at: new Date(Date.now() + 86_400_000).toISOString() };
+		state.credentialError = null;
 		state.getUser.mockReset();
 		state.from.mockReset().mockImplementation((table: string) => {
 			const query = {
@@ -61,8 +65,10 @@ describe("discovery machine handler", () => {
 						? state.membership
 						: table === "tenants"
 							? { status: "active" }
-							: null,
-					error: null,
+							: table === "tenant_discovery_credentials"
+								? state.credential
+								: null,
+					error: table === "tenant_discovery_credentials" ? state.credentialError : null,
 				}),
 			};
 			return query;
@@ -102,6 +108,44 @@ describe("discovery machine handler", () => {
 		state.rpcs.mockClear();
 		const invalid = await handle?.(request("aidr_collector_invalid"));
 		expect(invalid?.status).toBe(401);
+		expect(state.rpcs).not.toHaveBeenCalled();
+	});
+
+	it("authenticates both credential kinds before reading the request body", async () => {
+		const large = { action: "summary", tenant_id: TENANT, padding: "x".repeat(400_000) };
+		state.credential = null;
+		const unknownCollector = request("aidr_collector_valid", large);
+		const collectorResponse = await handle?.(unknownCollector);
+		expect(collectorResponse?.status).toBe(401);
+		expect(await collectorResponse?.json()).toEqual({ error: "invalid_collector_credential" });
+		expect(unknownCollector.bodyUsed).toBe(false);
+		expect(state.rpcs).not.toHaveBeenCalled();
+
+		state.getUser.mockResolvedValueOnce({ data: { user: null }, error: new Error("invalid token") });
+		const invalidSession = request("invalid-user-session", large);
+		const sessionResponse = await handle?.(invalidSession);
+		expect(sessionResponse?.status).toBe(401);
+		expect(await sessionResponse?.json()).toEqual({ error: "invalid_access_token" });
+		expect(invalidSession.bodyUsed).toBe(false);
+	});
+
+	it.each([
+		["revoked", { revoked_at: new Date().toISOString() }],
+		["expired", { expires_at: new Date(Date.now() - 1_000).toISOString() }],
+		["bound to another tenant", { tenant_id: CREDENTIAL }],
+		["bound to another collector", { collector_id: "collector-2" }],
+	])("rejects a %s collector credential without any RPC", async (_name, patch) => {
+		state.credential = { ...state.credential, ...patch };
+		const response = await handle?.(request());
+		expect(response?.status).toBe(401);
+		expect(await response?.json()).toEqual({ error: "invalid_collector_credential" });
+		expect(state.rpcs).not.toHaveBeenCalled();
+	});
+
+	it("fails closed when the collector credential lookup is unavailable", async () => {
+		state.credentialError = { code: "08006" };
+		const response = await handle?.(request());
+		expect(response?.status).toBe(503);
 		expect(state.rpcs).not.toHaveBeenCalled();
 	});
 

@@ -464,6 +464,42 @@ test("waitlist signup forwards a route-bound signature of the Cloudflare client 
 	assert.equal(unsigned.headers.has("x-aidr-client-signature"), false);
 });
 
+test("device poll and identity recovery get a route-bound client IP proof while keeping user auth", async () => {
+	for (const [path, context] of [["device-poll", "device-poll:v1"], ["identity-security", "identity-security:v1"]]) {
+		let received;
+		const response = await handle(new Request(`${site}/functions/v1/${path}`, {
+			method: "POST",
+			headers: {
+				authorization: "Bearer caller-credential",
+				"cf-connecting-ip": "198.51.100.20",
+				"x-aidr-client-ip": "203.0.113.99",
+				"x-aidr-client-signature": "forged",
+			},
+			body: "{}",
+		}), env, async (url, init) => {
+			received = { url, init };
+			return Response.json({ ok: true });
+		});
+		assert.equal(response.status, 200);
+		assert.equal(received.init.headers.get("authorization"), "Bearer caller-credential");
+		assert.equal(received.init.headers.get("x-aidr-client-ip"), "198.51.100.20");
+		assert.equal(received.init.headers.has("cf-connecting-ip"), false);
+		const timestamp = received.init.headers.get("x-aidr-client-timestamp");
+		const expected = createHmac("sha256", secret).update(`${context}\n${timestamp}\n198.51.100.20`).digest("hex");
+		assert.equal(received.init.headers.get("x-aidr-client-signature"), expected);
+
+		// Without an edge IP the call is forwarded unsigned (the function's unsigned aggregate applies).
+		const unsigned = await handle(new Request(`${site}/functions/v1/${path}`, {
+			method: "POST", headers: { "x-aidr-client-signature": "forged" }, body: "{}",
+		}), env, async (url, init) => {
+			received = { url, init };
+			return Response.json({ ok: true });
+		});
+		assert.equal(unsigned.status, 200);
+		assert.equal(received.init.headers.has("x-aidr-client-signature"), false);
+	}
+});
+
 test("device bootstrap rejects missing edge IP, oversized body, redirects, and oversized responses", async () => {
 	const url = `${site}/functions/v1/device-start`;
 	const forbidden = await handle(new Request(url, { method: "POST", body: "{}", headers: { "x-forwarded-for": "198.51.100.20" } }), env);

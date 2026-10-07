@@ -9,6 +9,8 @@ import {
 	type SignedMcpToolManifestV1,
 	verifySignedMcpToolManifest,
 } from "./mcp-attestation.js";
+import type { McpServerCategoryMatch } from "./mcp-aig-categories.js";
+import type { McpSecretFinding } from "./mcp-config-secrets.js";
 import { inspectMcpServerInventory, type McpInventoryItem } from "./mcp-inventory.js";
 import { redactMcpLaunch } from "./mcp-launch-redaction.js";
 import type { Threat } from "./types.js";
@@ -125,6 +127,10 @@ export interface McpDiscoveryServer {
 	transport: "remote" | "stdio";
 	endpoint: string | null;
 	risk_hints: string[];
+	/** AIG MCP risk categories (mcp-01..mcp-14) matched by this configuration. */
+	aig_categories: McpServerCategoryMatch[];
+	/** Locations of literal credentials in the configuration; values are never included. */
+	secret_findings: McpSecretFinding[];
 	configuration_sha256: string;
 	attestation: McpDiscoveryAttestation;
 	/** Present only when a manifest and tool-metadata rules were both supplied. */
@@ -357,6 +363,8 @@ export async function discoverMcpServers(paths?: string[], options: McpDiscovery
 				transport: item.url ? ("remote" as const) : ("stdio" as const),
 				endpoint,
 				risk_hints: item.riskHints,
+				aig_categories: item.aigCategories,
+				secret_findings: item.secretFindings,
 				configuration_sha256: item.configurationSha256,
 				attestation: await attestDiscoveredServer(item, id, attestationOptions),
 				...toolMetadataEvidence(item, id, attestationOptions, options.toolMetadataRules),

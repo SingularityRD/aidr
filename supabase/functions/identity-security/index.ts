@@ -12,6 +12,7 @@ import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 import { corsJson, handleCors } from "../_shared/cors.ts";
 import { getRequestId } from "../_shared/response.ts";
 import { readBoundedJson } from "../_shared/request-limits.ts";
+import { INGRESS_SECRET_ENV, ingressIpBucket, validIngressSecret, verifiedIngressIp } from "../_shared/trusted-ingress.ts";
 import { membershipActive, sha256 } from "../_shared/runtime-policy.ts";
 import {
 	dashboardRecoveryUrl,
@@ -33,6 +34,8 @@ import {
 
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "AIDR_DASHBOARD_URL"] as const;
 const MAX_BODY_BYTES = 8192;
+// Domain-separated trusted-ingress proof for the public recovery actions.
+const INGRESS_CONTEXT = "identity-security:v1";
 const SAML_POLICY_ACTIONS = ["request_saml_policy_change", "get_saml_policy_change", "approve_saml_policy_change"];
 
 type ReadTable<Row extends Record<string, unknown>> = { Row: Row; Insert: never; Update: never; Relationships: [] };
@@ -131,6 +134,30 @@ async function rateLimit(
 		.maybeSingle();
 	if (error || typeof data?.count !== "number" || !Number.isSafeInteger(data.count) || data.count < 1) return "unavailable";
 	return data.count <= maximum ? "allowed" : "limited";
+}
+
+const RECOVERY_WINDOW_MS = 10 * 60_000;
+// Per signed client IP, per public recovery action, per 10-minute window.
+const RECOVERY_CLIENT_LIMIT = 20;
+
+// Public recovery throttling. A caller whose IP the trusted ingress attested
+// is checked against its own bucket first, so one client cannot drain the
+// shared budget after reaching its quota; signed callers then share a signed
+// aggregate as a backstop. Unsigned callers (no ingress, or a forged/stale
+// proof) only ever consume the legacy unsigned aggregate, so a direct caller
+// can no longer exhaust recovery for clients that arrive through the ingress.
+async function publicRecoveryLimit(
+	db: DatabaseClient,
+	req: Request,
+	scope: "identity-reset" | "identity-break-glass",
+	aggregateLimit: number,
+	ingressSecret: string,
+): Promise<"allowed" | "limited" | "unavailable"> {
+	const clientIp = ingressSecret ? await verifiedIngressIp(req, ingressSecret, INGRESS_CONTEXT) : null;
+	if (!clientIp) return rateLimit(db, `${scope}:aggregate`, RECOVERY_WINDOW_MS, aggregateLimit);
+	const client = await rateLimit(db, `${scope}:v2:client:${await ingressIpBucket(clientIp)}`, RECOVERY_WINDOW_MS, RECOVERY_CLIENT_LIMIT);
+	if (client !== "allowed") return client;
+	return rateLimit(db, `${scope}:v2:signed-aggregate`, RECOVERY_WINDOW_MS, aggregateLimit);
 }
 
 async function authenticate(db: DatabaseClient, req: Request): Promise<AuthContext | Response> {
@@ -259,6 +286,11 @@ Deno.serve(async (req) => {
 	} catch {
 		return corsJson(req, 500, { error: "server_misconfigured" });
 	}
+	// Optional: without it every public recovery caller shares the unsigned aggregate.
+	const ingressSecret = Deno.env.get(INGRESS_SECRET_ENV) ?? "";
+	if (ingressSecret && !validIngressSecret(ingressSecret)) {
+		return corsJson(req, 500, { error: "server_misconfigured", invalid: [INGRESS_SECRET_ENV] });
+	}
 	const db = createClient<IdentityDatabase>(config.values.SUPABASE_URL, config.values.SUPABASE_SERVICE_ROLE_KEY, {
 		auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
 	});
@@ -274,7 +306,7 @@ Deno.serve(async (req) => {
 					: null;
 			if (!recoveryChallenge) return corsJson(req, 400, { error: "invalid_request" });
 			// Caller-selected emails must not mint unlimited independent counter and audit rows.
-			const aggregate = await rateLimit(db, "identity-reset:aggregate", 10 * 60_000, 1000);
+			const aggregate = await publicRecoveryLimit(db, req, "identity-reset", 1000, ingressSecret);
 			if (aggregate === "unavailable") return corsJson(req, 503, { error: "recovery_unavailable" });
 			if (aggregate === "limited") return corsJson(req, 429, { error: "rate_limited" });
 			const subjectHash = await sha256(email ?? "invalid-email");
@@ -321,7 +353,7 @@ Deno.serve(async (req) => {
 				/^[0-9a-f]{64}$/.test(body.recovery_challenge)
 					? body.recovery_challenge
 					: null;
-			const aggregate = await rateLimit(db, "identity-break-glass:aggregate", 10 * 60_000, 300);
+			const aggregate = await publicRecoveryLimit(db, req, "identity-break-glass", 300, ingressSecret);
 			if (aggregate === "unavailable") return corsJson(req, 503, { error: "recovery_unavailable" });
 			if (aggregate === "limited") return corsJson(req, 429, { error: "rate_limited" });
 			const subjectHash = await sha256(email ?? "invalid-email");

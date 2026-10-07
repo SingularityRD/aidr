@@ -7,7 +7,9 @@ vi.mock("npm:@supabase/supabase-js@2.116.0", () => ({ createClient: sdk.createCl
 type RpcResult = { data: unknown; error: unknown };
 const resolved = { data: { user_id: "user-1", tenant_id: "tenant-1" }, error: null };
 
-async function enrollmentHandler(exchangeResult: RpcResult, resolution: RpcResult = resolved) {
+type UnresolvedBudget = { count?: number | null; readError?: boolean; updateError?: boolean };
+
+async function enrollmentHandler(exchangeResult: RpcResult, resolution: RpcResult = resolved, unresolved: UnresolvedBudget = {}) {
 	let handler: ((request: Request) => Promise<Response>) | undefined;
 	vi.stubEnv("SUPABASE_URL", "https://test.invalid");
 	vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "test-service-role");
@@ -16,9 +18,12 @@ async function enrollmentHandler(exchangeResult: RpcResult, resolution: RpcResul
 		env: { get: (name: string) => process.env[name] },
 		serve: (fn: typeof handler) => { handler = fn; },
 	});
-	const rpc = vi.fn(async (name: string) => {
+	const rpc = vi.fn(async (name: string, args?: Record<string, unknown>) => {
 		if (name === "resolve_enrollment_token") return resolution;
-		if (name === "increment_rate_limit") return { data: null, error: null };
+		if (name === "increment_rate_limit") return {
+			data: null,
+			error: unresolved.updateError && args?.p_key === "enroll:v1:unresolved" ? { message: "rate store unavailable" } : null,
+		};
 		if (name === "exchange_enrollment_token") return exchangeResult;
 		throw new Error(`unexpected RPC: ${name}`);
 	});
@@ -26,9 +31,16 @@ async function enrollmentHandler(exchangeResult: RpcResult, resolution: RpcResul
 		rpc,
 		from: (table: string) => {
 			if (table !== "rate_limits") throw new Error(`unexpected table: ${table}`);
+			let key = "";
 			const query = {
-				select: () => query, eq: () => query,
+				select: () => query,
+				eq: (column: string, value: unknown) => { if (column === "key") key = String(value); return query; },
 				single: async () => ({ data: { count: 1 }, error: null }),
+				maybeSingle: async () => {
+					if (key !== "enroll:v1:unresolved") throw new Error(`unexpected optional rate key: ${key}`);
+					if (unresolved.readError) return { data: null, error: { message: "rate store unavailable" } };
+					return { data: unresolved.count == null ? null : { count: unresolved.count }, error: null };
+				},
 			};
 			return query;
 		},
@@ -60,7 +72,37 @@ describe("enrollment retry outcome", () => {
 		expect(await response.json()).toEqual({
 			error: "invalid_or_expired_enrollment_token", enrollment_outcome: "unknown",
 		});
-		expect(app.rpc.mock.calls.map(([name]) => name)).toEqual(["resolve_enrollment_token"]);
+		expect(app.rpc.mock.calls.map(([name]) => name)).toEqual(["resolve_enrollment_token", "increment_rate_limit"]);
+		expect(app.rpc).toHaveBeenLastCalledWith("increment_rate_limit", expect.objectContaining({ p_key: "enroll:v1:unresolved", p_delta: 1 }));
+	});
+
+	it("stops resolving bearer values once the deployment-wide unresolved budget is spent", async () => {
+		const app = await enrollmentHandler({ data: null, error: null }, { data: null, error: null }, { count: 300 });
+		const response = await app.handler(request());
+		expect(response.status).toBe(429);
+		expect(await response.json()).toEqual({ error: "rate_limited", enrollment_outcome: "not_committed" });
+		expect(app.rpc).not.toHaveBeenCalled();
+	});
+
+	it("still resolves while the unresolved budget has room", async () => {
+		const app = await enrollmentHandler({ data: { status: "invalid_token" }, error: null }, resolved, { count: 299 });
+		const response = await app.handler(request());
+		expect(response.status).toBe(401);
+		expect(app.rpc).toHaveBeenCalledWith("resolve_enrollment_token", expect.anything());
+	});
+
+	it("fails closed when the unresolved budget cannot be read or recorded", async () => {
+		const unreadable = await enrollmentHandler({ data: null, error: null }, { data: null, error: null }, { readError: true });
+		const blocked = await unreadable.handler(request());
+		expect(blocked.status).toBe(503);
+		expect(await blocked.json()).toEqual({ error: "enrollment_rate_limit_unavailable", enrollment_outcome: "not_committed" });
+		expect(unreadable.rpc).not.toHaveBeenCalled();
+
+		const unrecorded = await enrollmentHandler({ data: null, error: null }, { data: null, error: null }, { updateError: true });
+		const response = await unrecorded.handler(request());
+		expect(response.status).toBe(503);
+		expect(await response.json()).toEqual({ error: "enrollment_rate_limit_unavailable", enrollment_outcome: "not_committed" });
+		expect(unrecorded.rpc).not.toHaveBeenCalledWith("exchange_enrollment_token", expect.anything());
 	});
 
 	it("keeps an actual lost exchange RPC response explicitly uncertain", async () => {

@@ -11,10 +11,16 @@
 // `slow_down` error with an interval raised by five seconds. Rate-limit storage
 // failures fail closed (no token is issued while the budget cannot be read).
 //
-// The device poll has no trusted ingress proof, so caller IP headers are not
-// used as a key (they are caller-controlled and would let an attacker mint
-// unbounded counter rows). One aggregate bucket therefore bounds every lookup,
-// including invalid codes, before the per-device-code budget applies.
+// Raw caller IP headers are never used as a key (they are caller-controlled and
+// would let an attacker mint unbounded counter rows). When the trusted ingress
+// attests the client IP (HMAC proof, context device-poll:v1, shared secret with
+// device-start), that client gets its own bucket checked first, so one caller
+// cannot drain the shared budget after reaching its quota; signed callers then
+// share a signed aggregate as a backstop. Unsigned callers (no ingress, or a
+// forged/stale proof) consume only the unsigned aggregate, so a direct caller
+// cannot exhaust polling for clients that arrive through the ingress. Either
+// aggregate bounds every lookup, invalid codes included, before the
+// per-device-code budget applies.
 
 import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import { readDeviceCode } from "../_shared/auth.ts";
@@ -22,6 +28,7 @@ import { configFailure, type EnvReader, loadConfig, runtimeEnv } from "../_share
 import { corsJson, handleCors } from "../_shared/cors.ts";
 import { evaluateDevicePollState } from "../_shared/device-auth.ts";
 import { consumeRateLimit, type RateLimitDb, validRateLimit } from "../_shared/rate-limit.ts";
+import { INGRESS_SECRET_ENV, ingressIpBucket, validIngressSecret, verifiedIngressIp } from "../_shared/trusted-ingress.ts";
 
 // Required configuration. Validated per request, before any auth or DB work, so
 // a missing variable answers with an explicit 500 that names it instead of
@@ -49,10 +56,15 @@ type DevicePollSettings = {
 	enrollmentTokenTtlHours: number;
 	pollsPerMinute: number;
 	aggregatePerMinute: number;
+	clientPerMinute: number;
+	ingressSecret: string | null;
 	invalid: string[];
 };
 
 const DEVICE_POLL_AGGREGATE_KEY = "device_poll:v1:aggregate";
+const DEVICE_POLL_SIGNED_AGGREGATE_KEY = "device_poll:v2:signed-aggregate";
+const DEVICE_POLL_CLIENT_PREFIX = "device_poll:v2:client:";
+const INGRESS_CONTEXT = "device-poll:v1";
 
 function readSettings(env: EnvReader): DevicePollSettings {
 	const intervalRaw = Number(env("AIDR_DEVICE_POLL_INTERVAL_SECONDS") ?? "3");
@@ -73,7 +85,21 @@ function readSettings(env: EnvReader): DevicePollSettings {
 	if (!validRateLimit(aggregatePerMinute, 1_000_000) || aggregatePerMinute < pollsPerMinute) {
 		invalid.push("AIDR_DEVICE_POLL_GLOBAL_RL_PER_MIN");
 	}
-	return { intervalSeconds, enrollmentTokenTtlHours, pollsPerMinute, aggregatePerMinute, invalid };
+	const clientPerMinute = Number(env("AIDR_DEVICE_POLL_CLIENT_RL_PER_MIN") ?? "120");
+	if (!validRateLimit(clientPerMinute, 100_000)) invalid.push("AIDR_DEVICE_POLL_CLIENT_RL_PER_MIN");
+	// Optional: without it every caller shares the unsigned aggregate.
+	const rawSecret = env(INGRESS_SECRET_ENV) ?? "";
+	if (rawSecret && !validIngressSecret(rawSecret)) invalid.push(INGRESS_SECRET_ENV);
+	const ingressSecret = rawSecret || null;
+	return {
+		intervalSeconds,
+		enrollmentTokenTtlHours,
+		pollsPerMinute,
+		aggregatePerMinute,
+		clientPerMinute,
+		ingressSecret,
+		invalid,
+	};
 }
 
 type DeviceSessionRow = {
@@ -220,23 +246,37 @@ export function createDevicePollHandler(deps: DevicePollDeps = {}) {
 
 		const supabase = connect(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-		// Aggregate bound on all lookups (invalid codes included); fails closed.
+		const limiter = supabase as unknown as RateLimitDb;
+		const limitedResponse = (result: { status: "limited" | "unavailable"; retryAfterSeconds: number }) =>
+			result.status === "limited"
+				? corsJson(req, 429, { error: "rate_limited", retry_after_seconds: result.retryAfterSeconds }, {
+						"Retry-After": String(result.retryAfterSeconds),
+					})
+				: corsJson(req, 503, { error: "rate_limit_unavailable", enrollment_outcome: "unknown" }, {
+						"Retry-After": String(settings.intervalSeconds),
+					});
+
+		// Attested client first (its own quota), then the matching aggregate, which
+		// bounds every lookup, invalid codes included. All buckets fail closed.
+		const clientIp = settings.ingressSecret
+			? await verifiedIngressIp(req, settings.ingressSecret, INGRESS_CONTEXT, now())
+			: null;
+		if (clientIp) {
+			const perClient = await consumeRateLimit(
+				limiter,
+				`${DEVICE_POLL_CLIENT_PREFIX}${await ingressIpBucket(clientIp)}`,
+				settings.clientPerMinute,
+				now(),
+			);
+			if (perClient.status !== "allowed") return limitedResponse(perClient);
+		}
 		const aggregate = await consumeRateLimit(
-			supabase as unknown as RateLimitDb,
-			DEVICE_POLL_AGGREGATE_KEY,
+			limiter,
+			clientIp ? DEVICE_POLL_SIGNED_AGGREGATE_KEY : DEVICE_POLL_AGGREGATE_KEY,
 			settings.aggregatePerMinute,
 			now(),
 		);
-		if (aggregate.status === "limited") {
-			return corsJson(req, 429, { error: "rate_limited", retry_after_seconds: aggregate.retryAfterSeconds }, {
-				"Retry-After": String(aggregate.retryAfterSeconds),
-			});
-		}
-		if (aggregate.status === "unavailable") {
-			return corsJson(req, 503, { error: "rate_limit_unavailable", enrollment_outcome: "unknown" }, {
-				"Retry-After": String(settings.intervalSeconds),
-			});
-		}
+		if (aggregate.status !== "allowed") return limitedResponse(aggregate);
 
 		const deviceHash = await sha256Hex(deviceCode);
 		const { data: row, error } = await supabase

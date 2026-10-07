@@ -101,6 +101,12 @@ export interface AigFingerprintMatch {
 	description: string;
 	version: string | null;
 	probePath: string;
+	/**
+	 * Path the version was read from, or null when no version was obtained (the
+	 * extractor endpoint was absent, refused, failed or did not match), in which
+	 * case every CVE for the product stays applicability-unconfirmed.
+	 */
+	versionPath?: string | null;
 }
 
 export interface AigCveFinding {
@@ -334,39 +340,24 @@ export function evaluateVersionRule(
 	// needs to know the rule was opaque.
 	let anyEvaluated = false;
 	for (const rawBranch of branches) {
-		const branch = rawBranch.replace(/^\s*\(|\)\s*$/g, "").trim();
-		if (!branch) continue;
-		const comparisons = branch.split(/\s*&&\s*/);
+		const comparisons = parseComparators(rawBranch);
+		if (comparisons === null || comparisons.length === 0) continue;
 		let branchMatched = true;
 		let branchEvaluated = true;
-		for (const comparison of comparisons) {
-			const m = comparison
-				.trim()
-				.match(/^version\s*(<=|>=|<|>|==|=)\s*["']?([^"']+?)["']?$/i);
-			if (!m) {
-				branchEvaluated = false;
-				break;
-			}
-			const operator = m[1];
-			const bound = m[2];
-			if (!operator || !bound) {
-				branchEvaluated = false;
-				break;
-			}
+		for (const { operator, bound } of comparisons) {
 			const cmp = compareVersions(version, bound);
 			if (cmp === null) {
 				branchEvaluated = false;
 				break;
 			}
-			const op = operator === "==" ? "=" : operator;
 			const ok =
-				op === "<"
+				operator === "<"
 					? cmp < 0
-					: op === "<="
+					: operator === "<="
 						? cmp <= 0
-						: op === ">"
+						: operator === ">"
 							? cmp > 0
-							: op === ">="
+							: operator === ">="
 								? cmp >= 0
 								: cmp === 0;
 			if (!ok) {
@@ -383,6 +374,33 @@ export function evaluateVersionRule(
 	return { matched: false, evaluated: anyEvaluated };
 }
 
+type VersionOperator = "<" | "<=" | ">" | ">=" | "=";
+
+/**
+ * Parse one `||` branch into its AND-ed comparators.
+ *
+ * Two spellings reach this point: AIG's source expression
+ * (`version >= "1.0" && version < "2.0"`) and the compiled node-semver range the
+ * CVE index stores in `r` (`>=1.0 <2.0`). Both reduce to the same comparator
+ * list. Any residue that is not a comparator, a `&&`, whitespace or a wrapping
+ * parenthesis makes the branch opaque (`null`), so an unrecognised rule is never
+ * read as "not vulnerable".
+ */
+function parseComparators(
+	branch: string,
+): Array<{ operator: VersionOperator; bound: string }> | null {
+	const comparator = /(?:\bversion\s*)?(<=|>=|==|<|>|=)\s*["']?([0-9A-Za-z][0-9A-Za-z.+-]*)["']?/gi;
+	const comparisons: Array<{ operator: VersionOperator; bound: string }> = [];
+	for (const match of branch.matchAll(comparator)) {
+		const operator = match[1] === "==" ? "=" : (match[1] as VersionOperator);
+		const bound = match[2];
+		if (!bound) return null;
+		comparisons.push({ operator, bound });
+	}
+	const residue = branch.replace(comparator, "").replace(/&&|[()\s]/g, "");
+	return residue.length > 0 ? null : comparisons;
+}
+
 /** Alias index: canonical product + aliases (lower-cased) -> CVEs. */
 let _cveByAlias: Map<string, CompiledCve[]> | null = null;
 
@@ -390,6 +408,9 @@ function cveByAlias(): Map<string, CompiledCve[]> {
 	if (_cveByAlias === null) {
 		const map = new Map<string, CompiledCve[]>();
 		for (const cve of cves()) {
+			// A malformed index row cannot be attributed to a product; skip it
+			// rather than abort the whole scan.
+			if (typeof cve?.p !== "string") continue;
 			const keys = new Set<string>([
 				cve.p.toLowerCase(),
 				...(cve.a ?? []).map((a) => a.toLowerCase()),
@@ -556,6 +577,91 @@ async function fetchBounded(
 	}
 }
 
+/** Version endpoints are read-only lookups; never send a state-changing verb. */
+const VERSION_METHODS = new Set(["GET", "HEAD"]);
+/** Upper bound on extra version requests per detected fingerprint. */
+const MAX_VERSION_REQUESTS = 3;
+
+interface VersionContext {
+	base: URL;
+	deadline: number;
+	timeoutMs: number;
+	fetchImpl: typeof fetch;
+	signal?: AbortSignal;
+}
+
+type BoundedResponse = { status: number; body: string; headers: Headers };
+
+/**
+ * Obtain the detected product's version from the fingerprint's own extractor
+ * endpoints. The detection response is reused when an extractor targets the same
+ * request; every other path is fetched once, under the probe safety rules:
+ * same origin as the target, GET/HEAD only, the per-request timeout and overall
+ * deadline, the response size cap and no redirect following. Only a 2xx
+ * response is matched, so an error page cannot donate a version string.
+ */
+async function extractFingerprintVersion(
+	fingerprint: CompiledFingerprint,
+	probe: CompiledProbe,
+	probeResponse: BoundedResponse,
+	context: VersionContext,
+): Promise<{
+	version: string | null;
+	versionPath: string | null;
+	requestsMade: number;
+	aborted: boolean;
+}> {
+	const responses = new Map<string, BoundedResponse | null>([
+		[`${probe.method.toUpperCase()} ${probe.path}`, probeResponse],
+	]);
+	let requestsMade = 0;
+	for (const extractor of fingerprint.ver ?? []) {
+		const method = extractor.method.toUpperCase();
+		const key = `${method} ${extractor.path}`;
+		let response = responses.get(key);
+		if (response === undefined) {
+			response = null;
+			const url = sameOriginUrl(extractor.path, context.base);
+			if (
+				url &&
+				VERSION_METHODS.has(method) &&
+				requestsMade < MAX_VERSION_REQUESTS &&
+				Date.now() < context.deadline
+			) {
+				const fetched = await fetchBounded(
+					url,
+					method,
+					Math.max(1, Math.min(context.timeoutMs, context.deadline - Date.now())),
+					context.fetchImpl,
+					context.signal,
+				);
+				requestsMade++;
+				if ("error" in fetched) {
+					if (fetched.error === "scan_aborted") {
+						return { version: null, versionPath: null, requestsMade, aborted: true };
+					}
+				} else if (fetched.status >= 200 && fetched.status < 300) {
+					response = fetched;
+				}
+			}
+			responses.set(key, response);
+		}
+		if (!response) continue;
+		const version = extractVersion(extractor, response.body, response.headers);
+		if (version) return { version, versionPath: extractor.path, requestsMade, aborted: false };
+	}
+	return { version: null, versionPath: null, requestsMade, aborted: false };
+}
+
+function sameOriginUrl(path: string, base: URL): string | null {
+	try {
+		const url = new URL(path, base);
+		return url.origin === base.origin ? url.toString() : null;
+	} catch {
+		return null;
+	}
+}
+
 /**
  * Scan one target. Never throws: an unreachable target or a failed probe is
  * reported via `error`/`reachable` so that a caller can never mistake "we could
@@ -632,13 +738,23 @@ export async function scanTarget(
 			result.reachable = true;
 			if (!probeMatches(probe, response.body, response.headers, response.status)) continue;
 
-			// Detected. Extract a version if the fingerprint declares one.
-			let version: string | null = null;
-			for (const extractor of fingerprint.ver ?? []) {
-				if (extractor.path !== probe.path) continue;
-				version = extractVersion(extractor, response.body, response.headers);
-				if (version) break;
+			// Detected. Extract a version if the fingerprint declares one. Most
+			// extractors read a dedicated endpoint (Ollama `/api/version`, MLflow
+			// `/version`, ...) rather than the detection page, so those paths are
+			// fetched here under the same origin, timeout, size and redirect rules.
+			const extracted = await extractFingerprintVersion(fingerprint, probe, response, {
+				base,
+				deadline,
+				timeoutMs,
+				fetchImpl,
+				signal,
+			});
+			result.requestsMade += extracted.requestsMade;
+			if (extracted.aborted) {
+				lastError = "scan_aborted";
+				break fingerprintLoop;
 			}
+			const version = extracted.version;
 
 			result.matched.push({
 				product: fingerprint.p || fingerprint.n,
@@ -648,6 +764,7 @@ export async function scanTarget(
 				description: fingerprint.desc,
 				version,
 				probePath: probe.path,
+				versionPath: extracted.versionPath,
 			});
 			result.cves.push(...lookupCvesForProduct(fingerprint.p || fingerprint.n, version));
 			break; // one probe per fingerprint is enough to identify it
@@ -661,10 +778,58 @@ export async function scanTarget(
 
 export interface AigInfraScanSummary {
 	targets: AigInfraTargetResult[];
+	/**
+	 * Legacy totals: every reported CVE, INCLUDING findings whose applicability
+	 * could not be confirmed (unknown version or opaque rule). Use the
+	 * `confirmed*` / `unconfirmed*` fields to tell the two apart.
+	 */
 	critical: number;
 	high: number;
 	cvesFound: number;
+	/** CVEs whose version rule was evaluated against a detected version and matched. */
+	confirmedCritical: number;
+	confirmedHigh: number;
+	confirmedFindings: number;
+	/** CVEs for a detected product whose applicability could not be confirmed. */
+	unconfirmedCritical: number;
+	unconfirmedHigh: number;
+	unconfirmedFindings: number;
 	scannedAt: string;
+}
+
+/** Severity counts for a scan, split by whether applicability was confirmed. */
+export function summarizeCveFindings(
+	results: readonly Pick<AigInfraTargetResult, "cves">[],
+): Omit<AigInfraScanSummary, "targets" | "scannedAt"> {
+	const counts = {
+		critical: 0,
+		high: 0,
+		cvesFound: 0,
+		confirmedCritical: 0,
+		confirmedHigh: 0,
+		confirmedFindings: 0,
+		unconfirmedCritical: 0,
+		unconfirmedHigh: 0,
+		unconfirmedFindings: 0,
+	};
+	for (const result of results) {
+		for (const cve of result.cves) {
+			const severity = cve.severity?.toLowerCase();
+			counts.cvesFound++;
+			if (severity === "critical") counts.critical++;
+			else if (severity === "high") counts.high++;
+			if (cve.evaluated === true) {
+				counts.confirmedFindings++;
+				if (severity === "critical") counts.confirmedCritical++;
+				else if (severity === "high") counts.confirmedHigh++;
+			} else {
+				counts.unconfirmedFindings++;
+				if (severity === "critical") counts.unconfirmedCritical++;
+				else if (severity === "high") counts.unconfirmedHigh++;
+			}
+		}
+	}
+	return counts;
 }
 
 /** Scan several targets with bounded concurrency. */
@@ -686,21 +851,9 @@ export async function scanTargets(
 	});
 	await Promise.all(workers);
 
-	let critical = 0;
-	let high = 0;
-	let cvesFound = 0;
-	for (const r of results) {
-		for (const cve of r.cves) {
-			cvesFound++;
-			if (cve.severity === "critical") critical++;
-			else if (cve.severity === "high") high++;
-		}
-	}
 	return {
 		targets: results,
-		critical,
-		high,
-		cvesFound,
+		...summarizeCveFindings(results),
 		scannedAt: new Date().toISOString(),
 	};
 }

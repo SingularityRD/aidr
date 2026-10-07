@@ -3,6 +3,8 @@
  * Detects and handles personally identifiable information
  */
 
+import { luhnCheck } from "./dlp/pii-detector.js";
+
 const PII_PATTERNS = {
 	email: {
 		// RFC 5321 length limits (64-char local part, 253-char domain, 63-char
@@ -26,6 +28,9 @@ const PII_PATTERNS = {
 		pattern: /\b(?:\d[ -]*?){13,16}\b/g,
 		type: "credit_card",
 		severity: "critical",
+		// Any 13–16 digit run (UUID fragments, ids, timestamps) matches the
+		// pattern; only Luhn-valid numbers are reported as card numbers.
+		validate: luhnCheck,
 	},
 	ipAddress: {
 		pattern:
@@ -110,12 +115,15 @@ export interface PIIReport {
 /**
  * Lazily yield findings pattern by pattern (unsorted). `types` restricts the
  * scan to those finding types, so a caller that only needs credentials does not
- * run the email, phone and card patterns at all.
+ * run the email, phone and card patterns at all. Patterns with a validator
+ * (card numbers: Luhn) yield only validated matches.
  */
 export function* matchPII(text: string, types?: ReadonlySet<string>): Generator<PIIFinding> {
 	for (const config of Object.values(PII_PATTERNS)) {
 		if (types && !types.has(config.type)) continue;
 		for (const match of text.matchAll(config.pattern)) {
+			if (match.index === undefined) continue;
+			if ("validate" in config && !config.validate(match[0])) continue;
 			yield {
 				type: config.type,
 				value: match[0],

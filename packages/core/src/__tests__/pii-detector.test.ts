@@ -22,8 +22,21 @@ describe("PII Detection", () => {
 	});
 
 	it("should detect credit card numbers", () => {
-		const result = detectPII("Card: 4532-1234-5678-9012");
+		const result = detectPII("Card: 4111-1111-1111-1111");
 		expect(result.hasCritical).toBe(true);
+	});
+
+	it("reports only Luhn-valid digit runs as card numbers", () => {
+		// 4111 1111 1111 1111 is the public Visa test number (Luhn-valid).
+		expect(
+			detectPII("Card: 4111 1111 1111 1111").findings.some((f) => f.type === "credit_card"),
+		).toBe(true);
+		// A UUID whose digit run once made the MCP gateway block its own request id.
+		const uuid = detectPII("aidr-list-80603057-4456-4755-8776-0272150cd499");
+		expect(uuid.findings.some((f) => f.type === "credit_card")).toBe(false);
+		expect(detectPII("order 1234567890123").findings.some((f) => f.type === "credit_card")).toBe(
+			false,
+		);
 	});
 
 	it("should detect API keys", () => {
@@ -82,7 +95,8 @@ describe("PII Detection", () => {
 	});
 
 	it("redacts every finding detectPII reports without leaving fragments", () => {
-		const text = "Card 4532 1234 5678 9012 and SSN 123-45-6789";
+		// Luhn-valid public Visa test number: only validated card numbers are findings.
+		const text = "Card 4111 1111 1111 1111 and SSN 123-45-6789";
 		const { redacted } = detectPII(text);
 		expect(redacted).not.toMatch(/\d{3}/);
 	});

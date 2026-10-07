@@ -321,7 +321,14 @@ function printCves(result: AigInfraTargetResult): void {
 
 function printTarget(result: AigInfraTargetResult): void {
 	const findings = result.cves.length;
-	const marker = findings > 0 ? "!" : result.matched.length > 0 ? "✓" : "○";
+	// "!" = a version-confirmed CVE, "?" = CVEs whose applicability is unconfirmed.
+	const marker = result.cves.some((cve) => cve.evaluated)
+		? "!"
+		: findings > 0
+			? "?"
+			: result.matched.length > 0
+				? "✓"
+				: "○";
 	console.log(`${marker} ${result.url}`);
 	console.log(`    ${describe(result)}`);
 	if (findings > 0) printCves(result);
@@ -341,8 +348,14 @@ function printHumanSummary(summary: AigInfraScanSummary, targetCount: number): v
 
 	console.log("");
 	console.log(
-		`Findings: ${summary.critical} critical, ${summary.high} high (${summary.cvesFound} total)`,
+		`Confirmed findings: ${summary.confirmedCritical} critical, ${summary.confirmedHigh} high (${summary.confirmedFindings} total, version-matched)`,
 	);
+	if (summary.unconfirmedFindings > 0) {
+		console.log(
+			`Unconfirmed findings: ${summary.unconfirmedCritical} critical, ${summary.unconfirmedHigh} high (${summary.unconfirmedFindings} total) - ` +
+				"applicability unconfirmed (version unknown or rule not evaluable); review required, not a clean result",
+		);
+	}
 
 	// Distinguish "inspected and found nothing" from "never inspected". Reporting
 	// the former when only the latter happened would invent a clean result.
@@ -424,6 +437,26 @@ function reportUpload(result: PostureUploadResult, json: boolean): void {
 	if (!process.exitCode) process.exitCode = 1;
 }
 
+/**
+ * Exit status contract for the infrastructure leg (CI-usable):
+ *   2 - at least one version-confirmed critical or high CVE;
+ *   1 - the assessment is incomplete: a target could not be scanned, or a
+ *       detected product has CVEs whose applicability is unconfirmed;
+ *   0 - every target was scanned and nothing applicable was matched.
+ * Unconfirmed findings are never folded into 0: an unknown version is not clean.
+ */
+export function scanExitCode(summary: AigInfraScanSummary): 0 | 1 | 2 {
+	if (summary.confirmedCritical > 0 || summary.confirmedHigh > 0) return 2;
+	if (
+		summary.unconfirmedFindings > 0 ||
+		summary.targets.some((target) => target.error !== null)
+	) {
+		return 1;
+	}
+	return 0;
+}
+
+/** Combined exit status: the infrastructure contract above plus skill and code scans. */
 function setExitCode(
 	summary: AigInfraScanSummary | null,
 	skills: SkillScanReport | null,
@@ -441,12 +474,12 @@ function setExitCode(
 				(finding) => finding.severity === "critical" || finding.severity === "high",
 			),
 		) ?? false;
+	const infra = summary ? scanExitCode(summary) : 0;
 	// Non-zero when a vulnerability was found, so this is usable in CI.
-	if ((summary && (summary.critical > 0 || summary.high > 0)) || skillSevere || codeSevere) {
+	if (infra === 2 || skillSevere || codeSevere) {
 		process.exitCode = 2;
 		return;
 	}
-	const infraIncomplete = summary?.targets.some((target) => target.error !== null) ?? false;
 	const skillIncomplete = skills
 		? skills.missing.length > 0 ||
 			skills.rules === 0 ||
@@ -457,7 +490,7 @@ function setExitCode(
 	const codeIncomplete =
 		code?.some((report) => !report.exists || report.filesSkipped > 0 || report.rules === 0) ??
 		false;
-	process.exitCode = infraIncomplete || skillIncomplete || codeIncomplete ? 1 : 0;
+	process.exitCode = infra === 1 || skillIncomplete || codeIncomplete ? 1 : 0;
 }
 
 export default scanCommand;
