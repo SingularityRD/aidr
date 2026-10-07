@@ -188,7 +188,8 @@ export async function createDetectionException(
 		subject_kind: draft.subjectKind,
 		subject_value: draft.subject.trim(),
 		expires_at: new Date(`${draft.endDate}T00:00:00.000Z`).toISOString(),
-		reason: draft.reason.trim(),
+		// Single line: the service refuses control characters, newlines included.
+		reason: draft.reason.replace(/\s+/g, " ").trim(),
 		...(digest ? { artifact_sha256: digest } : {}),
 	});
 }
@@ -198,7 +199,10 @@ export async function revokeDetectionException(
 	exceptionId: string,
 	reason: string,
 ): Promise<ExceptionsResult<Record<string, unknown>>> {
-	return invoke(tenantId, "revoke", { exception_id: exceptionId, reason: reason.trim() });
+	return invoke(tenantId, "revoke", {
+		exception_id: exceptionId,
+		reason: reason.replace(/\s+/g, " ").trim(),
+	});
 }
 
 export function exceptionErrorMessage(code: string): string {
