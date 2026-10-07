@@ -245,7 +245,7 @@ describe("unresolved API-key budget before credential lookup", () => {
 		(name) => {
 			const source = readFileSync(join(resolve(dirname(fileURLToPath(import.meta.url)), ".."), name, "index.ts"), "utf8");
 			expect(source).toContain(`authenticateTenantApiKeyBudgeted(`);
-			expect(source).toMatch(new RegExp(`authenticateTenantApiKeyBudgeted\\([^)]*"${name}"\\)`));
+			expect(source).toMatch(new RegExp(`authenticateTenantApiKeyBudgeted\\([^)]*"${name}"[,)]`));
 		},
 	);
 });
@@ -410,6 +410,6 @@ describe("ingest-only Browser Guard keys", () => {
 		// directly.
 		const revocations = readFileSync(join(functionsDir, "revocations", "index.ts"), "utf8");
 		expect(revocations.match(/\.from\("api_keys"\)/g) ?? []).toHaveLength(0);
-		expect(revocations.match(/authenticateTenantApiKey\(/g)).toHaveLength(2);
+		expect(revocations.match(/authenticateTenantApiKey(?:Budgeted)?\(/g)).toHaveLength(2);
 	});
 });

@@ -58,7 +58,8 @@ async function consumePackDownloadQuota(supabase: unknown, tenantId: string, api
 		perSubject: PACK_DOWNLOADS_PER_KEY_PER_MINUTE,
 		perTenant: PACK_DOWNLOADS_PER_TENANT_PER_MINUTE,
 	});
-	return rate.ok ? null : json(rate.status, { error: rate.error }, rateLimitHeaders(rate));
+	if (!rate.ok) return json(rate.status, { error: rate.error }, rateLimitHeaders(rate));
+	return null;
 }
 
 function trustedStorageUrl(value: unknown, supabaseUrl: string): string | null {

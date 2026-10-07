@@ -90,7 +90,7 @@
   ],
   "scripts": {
     "build": "node ../../scripts/rmrf.mjs dist && tsc -p tsconfig.json && tsc -p extension/tsconfig.json --noEmit && node scripts/build-extension.mjs",
-    "build:release": "node ../../scripts/rmrf.mjs dist && tsc -p tsconfig.json --sourceMap false --declarationMap false && tsc -p extension/tsconfig.json --noEmit && node scripts/build-extension.mjs && node ../../scripts/generate-artifact-manifest.mjs --dir dist --artifact-id @singularityrd/aidr-privacy && node ../../scripts/check-no-sourcemaps.mjs dist",
+    "build:release": "node ../../scripts/rmrf.mjs dist && tsc -p tsconfig.json --sourceMap false --declarationMap false && tsc -p extension/tsconfig.json --noEmit && node scripts/build-extension.mjs && node ../../scripts/generate-artifact-manifest.mjs --dir dist --artifact-id privacy/dist && node ../../scripts/check-no-sourcemaps.mjs dist",
     "check": "tsc -p tsconfig.json --noEmit && tsc -p extension/tsconfig.json --noEmit",
     "test": "node --test tests/*.test.mjs tests/visual/*.test.mjs tests/browser/*.test.mjs tests/native/*.test.mjs tests/enterprise/*.test.mjs tests/platform/*.test.mjs",
     "test:coverage": "node --experimental-test-coverage --test-coverage-include=\"dist/**/*.js\" --test tests/*.test.mjs tests/visual/*.test.mjs tests/browser/*.test.mjs tests/native/*.test.mjs tests/enterprise/*.test.mjs tests/platform/*.test.mjs",
