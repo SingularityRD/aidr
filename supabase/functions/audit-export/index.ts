@@ -6,7 +6,7 @@ import { corsJson, handleCors } from "../_shared/cors.ts";
 import { membershipActive } from "../_shared/runtime-policy.ts";
 import { serializeAuditExport } from "../_shared/audit-export.ts";
 import { readAuditCursor, signAuditCursor } from "../_shared/export-cursor.ts";
-import { readBoundedJson } from "../_shared/request-limits.ts";
+import { consumeTenantRateLimit, rateLimitHeaders, readBoundedJson } from "../_shared/request-limits.ts";
 import {
 	AUDIT_EXPORT_MAX_OBJECT_BYTES,
 	registerAuditExportObject,
@@ -15,6 +15,9 @@ import {
 
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"] as const;
 const MAX_BODY_BYTES = 8 * 1024;
+const AUDIT_EXPORT_ROLES: ReadonlySet<string> = new Set(["owner", "admin"]);
+const AUDIT_EXPORT_PER_USER_PER_MINUTE = 30;
+const AUDIT_EXPORT_PER_TENANT_PER_MINUTE = 60;
 
 export interface AuditExportDeps {
 	/** Overrides the service-role client; used by the contract suite. */
@@ -44,9 +47,25 @@ export function createAuditExportHandler(deps: AuditExportDeps = {}) {
 			const { data: member, error: memberError } = await db.from("tenant_members").select("role,expires_at").eq("tenant_id", body.team_id).eq("user_id", auth.user.id).maybeSingle();
 			if (memberError) return corsJson(req, 503, { error: "authorization_unavailable" });
 			if (!membershipActive(member)) return corsJson(req, 403, { error: "team_forbidden" });
+			// Product decision: bulk audit export (a copy of the whole tenant audit
+			// trail) is an owner/admin capability. Viewers and members keep in-app
+			// read access but cannot export.
+			if (!AUDIT_EXPORT_ROLES.has(String((member as { role?: unknown } | null)?.role ?? ""))) {
+				return corsJson(req, 403, { error: "audit_export_forbidden" });
+			}
 			const { data: tenant, error: tenantError } = await db.from("tenants").select("status").eq("id", body.team_id).maybeSingle();
 			if (tenantError) return corsJson(req, 503, { error: "authorization_unavailable" });
 			if ((tenant as { status?: string } | null)?.status !== "active") return corsJson(req, 403, { error: "tenant_inactive" });
+			// Each page signs a cursor, uploads an object and mints a URL; bound it per
+			// exporter and per tenant before any audit read or Storage work.
+			const rate = await consumeTenantRateLimit(db, {
+				tenantId: body.team_id,
+				subject: auth.user.id,
+				endpoint: "audit-export",
+				perSubject: AUDIT_EXPORT_PER_USER_PER_MINUTE,
+				perTenant: AUDIT_EXPORT_PER_TENANT_PER_MINUTE,
+			});
+			if (!rate.ok) return corsJson(req, rate.status, { error: rate.error }, rateLimitHeaders(rate));
 			// An active legal hold preserves this tenant's records for litigation, so
 			// no export may copy them out until the hold is released. This barrier is
 			// unconditional: it is not a plan, flag or configuration toggle, and an
