@@ -12,6 +12,10 @@
       "owner": "Identity Engineering",
       "tests": ["supabase/functions/__tests__/api-key-auth.test.ts"]
     },
+    "approval-requests": {
+      "owner": "Identity Engineering",
+      "tests": ["supabase/functions/__tests__/approval-requests-contract.test.ts"]
+    },
     "audit-export": {
       "owner": "Platform Engineering",
       "tests": ["supabase/functions/__tests__/audit-export.test.ts", "supabase/functions/__tests__/audit-export-legal-hold.test.ts", "supabase/functions/__tests__/export-cursor.test.ts"]
@@ -31,6 +35,18 @@
     "billing-portal": {
       "owner": "Billing Engineering",
       "tests": ["supabase/functions/__tests__/billing-portal.test.ts"]
+    },
+    "ai-governance": {
+      "owner": "Platform Engineering",
+      "tests": ["supabase/functions/__tests__/ai-governance-contract.test.ts", "supabase/functions/__tests__/policy-change-control-contract.test.ts"]
+    },
+    "compliance-report": {
+      "owner": "Platform Engineering",
+      "tests": ["supabase/functions/__tests__/compliance-report-contract.test.ts"]
+    },
+    "governance-digest": {
+      "owner": "Platform Engineering",
+      "tests": ["supabase/functions/__tests__/governance-digest-contract.test.ts"]
     },
     "device-poll": {
       "owner": "Identity Engineering",
@@ -72,13 +88,17 @@
       "owner": "Product Engineering",
       "tests": ["supabase/functions/__tests__/pilot-intake-contract.test.ts"]
     },
+    "notification-channels": {
+      "owner": "Platform Engineering",
+      "tests": ["supabase/functions/__tests__/notification-channels-contract.test.ts", "supabase/functions/__tests__/notification-delivery.test.ts"]
+    },
     "pilot-status": {
       "owner": "Product Engineering",
       "tests": ["supabase/functions/__tests__/pilot-intake-contract.test.ts"]
     },
     "policy-management": {
       "owner": "Detection Engineering",
-      "tests": ["supabase/functions/__tests__/policy-document.test.ts", "supabase/functions/__tests__/policy-management-contract.test.ts"]
+      "tests": ["supabase/functions/__tests__/policy-document.test.ts", "supabase/functions/__tests__/policy-management-contract.test.ts", "supabase/functions/__tests__/policy-history-profiles-contract.test.ts"]
     },
     "retention-admin": {
       "owner": "Platform Engineering",
@@ -90,7 +110,11 @@
     },
     "team-invite": {
       "owner": "Identity Engineering",
-      "tests": ["supabase/functions/__tests__/team-invite-contract.test.ts"]
+      "tests": ["supabase/functions/__tests__/team-invite-contract.test.ts", "supabase/functions/__tests__/mailer.test.ts"]
+    },
+    "tenant-settings": {
+      "owner": "Identity Engineering",
+      "tests": ["supabase/functions/__tests__/tenant-settings-contract.test.ts"]
     }
   }
 }

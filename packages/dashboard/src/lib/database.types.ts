@@ -540,7 +540,7 @@ export interface Database {
 					name: string;
 					github_org: string | null;
 					gitlab_group: string | null;
-					plan: "free" | "pro" | "enterprise";
+					plan: "free" | "pro" | "team" | "business" | "enterprise";
 					created_at: string;
 					updated_at: string;
 				};
@@ -550,7 +550,7 @@ export interface Database {
 					name: string;
 					github_org?: string | null;
 					gitlab_group?: string | null;
-					plan?: "free" | "pro" | "enterprise";
+					plan?: "free" | "pro" | "team" | "business" | "enterprise";
 					created_at?: string;
 					updated_at?: string;
 				};
@@ -560,7 +560,7 @@ export interface Database {
 					name?: string;
 					github_org?: string | null;
 					gitlab_group?: string | null;
-					plan?: "free" | "pro" | "enterprise";
+					plan?: "free" | "pro" | "team" | "business" | "enterprise";
 					created_at?: string;
 					updated_at?: string;
 				};
@@ -646,6 +646,217 @@ export interface Database {
 					updated_by?: string | null;
 				};
 			};
+			// Read-only for the browser: rows are written only by the ingest projection.
+			posture_findings: {
+				Row: {
+					id: number;
+					tenant_id: string;
+					event_row_id: number;
+					agent_id: string;
+					source: "infra_scan" | "mcp_inventory" | "skill_scan" | "agent_environment";
+					finding_kind:
+						| "cve"
+						| "advisory"
+						| "exposed_component"
+						| "mcp_server"
+						| "skill_rule"
+						| "agent_config";
+					severity: "critical" | "high" | "medium" | "low" | "info" | "unknown";
+					cvss: number | string | null;
+					vuln_id: string | null;
+					component: string | null;
+					component_version: string | null;
+					applicability: "confirmed" | "unconfirmed" | null;
+					target_digest: string | null;
+					mcp_server_name: string | null;
+					mcp_transport: "remote" | "stdio" | null;
+					risk_categories: string[];
+					attestation_status: string | null;
+					subject_digest: string | null;
+					plugin_key: string | null;
+					rule_id: string | null;
+					skill_risk_type: string | null;
+					scan_id: string | null;
+					agent_host: string | null;
+					check_id: string | null;
+					finding_count: number | null;
+					observed_at: string;
+					created_at: string;
+				};
+				Insert: Record<string, never>;
+				Update: Record<string, never>;
+			};
+			// Read-only for the browser (column grants exclude token material);
+			// written only by the approval-requests Edge Function RPCs.
+			approval_requests: {
+				Row: {
+					id: string;
+					tenant_id: string;
+					iid: string;
+					agent_id: string | null;
+					agent_runtime: string | null;
+					action_id: string;
+					artifact_digest: string;
+					tool: string;
+					threat_ids: string[];
+					summary: string;
+					status: "pending" | "approved" | "denied" | "expired";
+					decided_by: string | null;
+					decided_at: string | null;
+					reason: string | null;
+					key_id: string | null;
+					token_expires_at: string | null;
+					token_delivered_at: string | null;
+					expires_at: string;
+					created_at: string;
+				};
+				Insert: Record<string, never>;
+				Update: Record<string, never>;
+			};
+			// AI governance (docs/ai-governance.md). Read-only for the browser; every
+			// write is an ai-governance Edge Function RPC.
+			tenant_ai_governance_settings: {
+				Row: {
+					tenant_id: string;
+					policy_four_eyes: boolean;
+					default_review_days: number;
+					updated_by: string | null;
+					updated_at: string;
+				};
+				Insert: Record<string, never>;
+				Update: Record<string, never>;
+			};
+			ai_governance_reviewers: {
+				Row: { tenant_id: string; user_id: string; designated_by: string; designated_at: string };
+				Insert: Record<string, never>;
+				Update: Record<string, never>;
+			};
+			ai_assets: {
+				Row: {
+					id: string;
+					tenant_id: string;
+					asset_type: "coding_agent" | "mcp_server" | "ai_site" | "model_service";
+					identifier: string;
+					name: string;
+					vendor: string | null;
+					owner_user_id: string | null;
+					business_purpose: string | null;
+					data_categories: string[];
+					risk_tier: "unassessed" | "minimal" | "limited" | "high" | "prohibited";
+					risk_score: number | null;
+					status: "proposed" | "approved" | "restricted" | "banned" | "retired";
+					review_due_at: string | null;
+					last_reviewed_at: string | null;
+					last_reviewed_by: string | null;
+					source: string;
+					first_observed_at: string | null;
+					last_observed_at: string | null;
+					version: number;
+					created_by: string | null;
+					created_at: string;
+					updated_by: string | null;
+					updated_at: string;
+				};
+				Insert: Record<string, never>;
+				Update: Record<string, never>;
+			};
+			ai_asset_evidence: {
+				Row: {
+					id: string;
+					tenant_id: string;
+					asset_id: string;
+					evidence_kind: "posture_finding" | "incident" | "approval_request";
+					evidence_ref: string;
+					label: string;
+					observed_at: string | null;
+					linked_by: string;
+					linked_at: string;
+				};
+				Insert: Record<string, never>;
+				Update: Record<string, never>;
+			};
+			ai_intake_requests: {
+				Row: {
+					id: string;
+					tenant_id: string;
+					asset_id: string | null;
+					asset_type: "coding_agent" | "mcp_server" | "ai_site" | "model_service";
+					identifier: string;
+					name: string;
+					vendor: string | null;
+					business_purpose: string;
+					data_categories: string[];
+					requested_status: "approved" | "restricted";
+					status: "pending" | "approved" | "rejected" | "cancelled" | "expired";
+					requested_by: string;
+					created_at: string;
+					expires_at: string;
+					decided_by: string | null;
+					decided_at: string | null;
+					decision_reason: string | null;
+					closed_at: string | null;
+					resulting_asset_id: string | null;
+				};
+				Insert: Record<string, never>;
+				Update: Record<string, never>;
+			};
+			ai_governance_exceptions: {
+				Row: {
+					id: string;
+					tenant_id: string;
+					asset_id: string;
+					scope_kind: "tenant" | "members" | "agents";
+					scope_user_ids: string[];
+					scope_agent_ids: string[];
+					justification: string;
+					status: "pending" | "approved" | "rejected" | "cancelled" | "revoked" | "expired";
+					requested_by: string;
+					created_at: string;
+					expires_at: string;
+					starts_at: string | null;
+					decided_by: string | null;
+					decided_at: string | null;
+					decision_reason: string | null;
+					revoked_by: string | null;
+					revoked_at: string | null;
+					revoke_reason: string | null;
+					closed_at: string | null;
+				};
+				Insert: Record<string, never>;
+				Update: Record<string, never>;
+			};
+			// Column grants exclude `payload` (DLP payloads carry sensitive matchers).
+			policy_change_requests: {
+				Row: {
+					id: string;
+					tenant_id: string;
+					change_kind: string;
+					base_version: number;
+					expected_revision_version: number | null;
+					target_version: number | null;
+					payload_sha256: string;
+					summary: Record<string, number>;
+					status:
+						| "pending"
+						| "approved"
+						| "rejected"
+						| "cancelled"
+						| "superseded"
+						| "failed"
+						| "expired";
+					requested_by: string;
+					created_at: string;
+					expires_at: string;
+					decided_by: string | null;
+					decided_at: string | null;
+					decision_reason: string | null;
+					closed_at: string | null;
+					applied_version: number | null;
+					outcome_code: string | null;
+				};
+				Insert: Record<string, never>;
+				Update: Record<string, never>;
+			};
 		}>;
 		Views: AddRelationships<{
 			user_subscription_summary: {
@@ -703,6 +914,39 @@ export interface Database {
 			billing_checkout: {
 				Args: Record<string, never>;
 				Returns: { url: string };
+			};
+			/** Browser Guard privacy telemetry aggregates (migration 20260925000001). */
+			privacy_guard_summary: {
+				Args: { p_tenant_id: string; p_days: number };
+				Returns: Record<string, unknown>;
+			};
+			/** Browser Guard Shadow AI aggregates (20260926000010). */
+			shadow_ai_summary: {
+				Args: { p_tenant_id: string; p_days: number };
+				Returns: Record<string, unknown>;
+			};
+			/** Owner/admin AI governance scorecard, counts only (20260927000060). */
+			governance_scorecard: {
+				Args: { p_tenant_id: string; p_days: number };
+				Returns: unknown;
+			};
+			/** Owner/admin governance summary schedule and oversight thresholds (20260927000060). */
+			set_governance_settings: {
+				Args: {
+					p_tenant_id: string;
+					p_digest_enabled: boolean;
+					p_digest_cadence: string;
+					p_digest_recipients: string;
+					p_oversight_fast_seconds: number;
+					p_oversight_min_decisions: number;
+					p_oversight_fast_share: number;
+				};
+				Returns: unknown;
+			};
+			/** Member-only plan/admission/usage projection (20260925000012). */
+			get_tenant_plan: {
+				Args: { p_tenant_id: string };
+				Returns: unknown;
 			};
 		};
 	};

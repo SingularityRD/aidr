@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 const packageDistDirs = [
 	"core", "claude-code", "extension", "openclaw", "opencode",
-	"cli", "sdk", "dashboard", "codex", "mcp-gateway",
+	"cli", "sdk", "dashboard", "codex", "mcp-gateway", "privacy",
 ].map((name) => `packages/${name}/dist/`);
 
 function releaseOutputName(value) {

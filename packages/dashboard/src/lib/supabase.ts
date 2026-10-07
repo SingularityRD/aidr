@@ -16,6 +16,8 @@ declare global {
 			sentryDsn?: string | null;
 			sentryEnvironment?: string;
 			sentryTracesSampleRate?: number;
+			/** Download-center manifest: same-origin path or HTTPS URL; null when not published. */
+			releaseManifestUrl?: string | null;
 		};
 	}
 }
@@ -23,6 +25,9 @@ const runtime = typeof window !== "undefined" ? window.__AIDR_CONFIG__ : undefin
 const url = runtime?.supabaseUrl ?? (import.meta.env.VITE_SUPABASE_URL as string | undefined);
 const anonKey =
 	runtime?.supabaseAnonKey ?? (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined);
+
+/** Control-plane base URL (the Supabase project URL) shown in enrollment templates. */
+export const supabaseProjectUrl: string | null = url ? url.replace(/\/+$/, "") : null;
 
 export const supabaseEnvError =
 	!url || !anonKey

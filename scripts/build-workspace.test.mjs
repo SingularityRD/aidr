@@ -254,7 +254,7 @@ test("release build still fails when a connector leaves a map behind after its o
 });
 
 test("release source-map guard covers every published package, not only core", () => {
-	for (const packageName of ["core", "cli", "opencode", "claude-code", "extension", "sdk", "codex", "openclaw", "dashboard", "mcp-gateway"]) {
+	for (const packageName of ["core", "cli", "opencode", "claude-code", "extension", "sdk", "codex", "openclaw", "dashboard", "mcp-gateway", "privacy"]) {
 		const root = mkdtempSync(join(tmpdir(), "aidr-release-maps-"));
 		try {
 			mkdirSync(join(root, "packages", packageName, "dist"), { recursive: true });

@@ -73,6 +73,12 @@ const packageDirs = [
 	"packages/codex",
 	"packages/mcp-gateway",
 ];
+// Signed dist directories that ship as a plain archive instead of an npm tarball.
+// The privacy package carries its own version line, so it is archived under that
+// version rather than the stable AIDR base version the npm packages must match.
+const privacyVersion = JSON.parse(readFileSync(join(repoRoot, "packages/privacy/package.json"), "utf8")).version;
+if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(privacyVersion ?? "")) fail(`packages/privacy has an invalid version: ${privacyVersion}`);
+const archiveOnlyDirs = ["packages/privacy"];
 
 // Locally constructed in-toto/SLSA-style provenance for the artifact manifests
 // promoted from this build, bound to the lockfile and to the SBOM copied above.
@@ -81,11 +87,11 @@ const packageDirs = [
 // with the manifests, lockfile, or SBOM it accompanies.
 const provenanceOutput = join(outputDir, "aidr-provenance.intoto.json");
 try {
-	assertPackageReleaseEvidence(repoRoot, packageDirs);
+	assertPackageReleaseEvidence(repoRoot, [...packageDirs, ...archiveOnlyDirs]);
 } catch (error) {
 	fail(error instanceof Error ? error.message : String(error));
 }
-const provenanceDirs = packageDirs.map((packageDir) => join(repoRoot, packageDir, "dist"));
+const provenanceDirs = [...packageDirs, ...archiveOnlyDirs].map((packageDir) => join(repoRoot, packageDir, "dist"));
 const provenanceArguments = [
 	...provenanceDirs.flatMap((manifestDir) => ["--artifact-dir", manifestDir]),
 	"--lockfile",
@@ -150,6 +156,14 @@ inspectConsumerArchive(
 inspectConsumerArchive(
 	join(outputDir, `aidr-dashboard-dist-${releaseVersion}.tar.gz`),
 	evidenceFiles.map((name) => `packages/dashboard/dist/${name}`),
+);
+createTarball(
+	join(outputDir, `aidr-privacy-dist-${privacyVersion}.tar.gz`),
+	["packages/privacy/dist", "packages/privacy/package.json", "packages/privacy/LICENSE"],
+);
+inspectConsumerArchive(
+	join(outputDir, `aidr-privacy-dist-${privacyVersion}.tar.gz`),
+	evidenceFiles.map((name) => `packages/privacy/dist/${name}`),
 );
 
 const artifacts = [];

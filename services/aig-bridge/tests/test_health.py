@@ -118,14 +118,14 @@ async def test_readiness_rejects_unverified_dataset_provenance(monkeypatch):
 
 
 def test_compose_separates_container_liveness_from_traffic_readiness():
-    compose = yaml.safe_load((REPO_ROOT / "docker-compose.aig.yml").read_text(encoding="utf-8"))
+    compose = yaml.safe_load((REPO_ROOT / "docker-compose.posture-scanner.yml").read_text(encoding="utf-8"))
     probe = compose["services"]["aig-bridge"]["healthcheck"]["test"]
 
     assert probe[-1] == "http://localhost:8099/api/v1/readyz"
 
 
 def test_compose_keeps_raw_aig_private_and_worker_egress_isolated():
-    compose = yaml.safe_load((REPO_ROOT / "docker-compose.aig.yml").read_text(encoding="utf-8"))
+    compose = yaml.safe_load((REPO_ROOT / "docker-compose.posture-scanner.yml").read_text(encoding="utf-8"))
     server = compose["services"]["aig-server"]
     agent = compose["services"]["aig-agent"]
 
@@ -139,7 +139,7 @@ def test_compose_keeps_raw_aig_private_and_worker_egress_isolated():
 
 
 def test_compose_mounts_dataset_and_public_key_read_only():
-    compose = yaml.safe_load((REPO_ROOT / "docker-compose.aig.yml").read_text(encoding="utf-8"))
+    compose = yaml.safe_load((REPO_ROOT / "docker-compose.posture-scanner.yml").read_text(encoding="utf-8"))
     bridge = compose["services"]["aig-bridge"]
     server = compose["services"]["aig-server"]
 

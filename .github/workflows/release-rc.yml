@@ -334,7 +334,7 @@ jobs:
           node -e "const fs = require('node:fs'); const crypto = require('node:crypto'); fs.appendFileSync(process.env.GITHUB_OUTPUT, 'sbom_sha256=' + crypto.createHash('sha256').update(fs.readFileSync('.release-evidence/aidr-sbom.cdx.json')).digest('hex') + '\n');"
           if find packages/core/dist packages/claude-code/dist packages/claude-code/resources packages/extension/dist \
             packages/openclaw/dist packages/opencode/dist packages/cli/dist packages/sdk/dist \
-            packages/dashboard/dist packages/codex/dist packages/mcp-gateway/dist \
+            packages/dashboard/dist packages/codex/dist packages/mcp-gateway/dist packages/privacy/dist \
             -name '.env*' -print -quit | grep -q .; then
             echo "Release inputs contain a forbidden .env* path." >&2
             exit 1
@@ -344,7 +344,7 @@ jobs:
             .release-evidence/aidr-sbom.cdx.json.sha256 \
             packages/core/dist packages/claude-code/dist packages/claude-code/resources packages/extension/dist \
             packages/openclaw/dist packages/opencode/dist packages/cli/dist \
-            packages/sdk/dist packages/dashboard/dist packages/codex/dist packages/mcp-gateway/dist
+            packages/sdk/dist packages/dashboard/dist packages/codex/dist packages/mcp-gateway/dist packages/privacy/dist
           echo "prepared_archive_sha256=$(sha256sum "${RUNNER_TEMP}/prepared-release.tgz" | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
 
       - name: Upload unsigned release inputs (pinned)
@@ -670,7 +670,7 @@ jobs:
           artifact_dirs=(
             packages/core/dist packages/claude-code/dist packages/extension/dist
             packages/openclaw/dist packages/opencode/dist packages/cli/dist
-            packages/sdk/dist packages/dashboard/dist packages/codex/dist packages/mcp-gateway/dist
+            packages/sdk/dist packages/dashboard/dist packages/codex/dist packages/mcp-gateway/dist packages/privacy/dist
           )
           for artifact_dir in "${artifact_dirs[@]}"; do
             node scripts/sign-artifact-manifest.mjs --dir "${artifact_dir}" --key "${private_path}"
@@ -696,7 +696,7 @@ jobs:
           set -euo pipefail
           if find packages/core/dist packages/claude-code/dist packages/claude-code/resources packages/extension/dist \
             packages/openclaw/dist packages/opencode/dist packages/cli/dist packages/sdk/dist \
-            packages/dashboard/dist packages/codex/dist packages/mcp-gateway/dist \
+            packages/dashboard/dist packages/codex/dist packages/mcp-gateway/dist packages/privacy/dist \
             -name '.env*' -print -quit | grep -q .; then
             echo "Release inputs contain a forbidden .env* path." >&2
             exit 1
@@ -707,7 +707,7 @@ jobs:
             .release-evidence/aidr-sbom.cdx.json.sha256 \
             packages/core/dist packages/claude-code/package.json packages/claude-code/aidr-artifact.manifest.json packages/claude-code/aidr-artifact.manifest.sig packages/claude-code/dist packages/claude-code/resources packages/extension/dist \
             packages/openclaw/dist packages/opencode/dist packages/cli/dist \
-            packages/sdk/dist packages/dashboard/dist packages/codex/dist packages/mcp-gateway/dist
+            packages/sdk/dist packages/dashboard/dist packages/codex/dist packages/mcp-gateway/dist packages/privacy/dist
 
       - name: Upload signed package inputs (pinned)
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -790,7 +790,7 @@ jobs:
             --dirs \
               packages/core/dist packages/claude-code/dist packages/extension/dist \
               packages/openclaw/dist packages/opencode/dist packages/cli/dist \
-              packages/sdk/dist packages/dashboard/dist packages/codex/dist packages/mcp-gateway/dist \
+              packages/sdk/dist packages/dashboard/dist packages/codex/dist packages/mcp-gateway/dist packages/privacy/dist \
               packages/claude-code
           cleanup
           trap - EXIT
@@ -832,7 +832,7 @@ jobs:
           printf '%s\n' "${SIGNING_PUBLIC_KEY}" > "${public_path}"
           unset SIGNING_PUBLIC_KEY
           AIDR_SIGNING_PUBLIC_KEY_PEM_PATH="${public_path}" \
-            node scripts/verify-package-install.mjs --tarball-dir release-output
+            node scripts/verify-package-install.mjs --require-signed --tarball-dir release-output
           cleanup
           trap - EXIT
 
@@ -1187,7 +1187,7 @@ jobs:
             --dirs \
               packages/core/dist packages/claude-code/dist packages/extension/dist \
               packages/openclaw/dist packages/opencode/dist packages/cli/dist \
-              packages/sdk/dist packages/dashboard/dist packages/codex/dist packages/mcp-gateway/dist \
+              packages/sdk/dist packages/dashboard/dist packages/codex/dist packages/mcp-gateway/dist packages/privacy/dist \
               packages/claude-code
           cleanup
           trap - EXIT

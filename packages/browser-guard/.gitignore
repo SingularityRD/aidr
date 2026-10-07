@@ -1,0 +1,6 @@
+dist/
+node_modules/
+# Signing material for self-hosted CRX / unlisted XPI builds must never be committed.
+*.pem
+*.crx
+*.xpi

@@ -63,6 +63,7 @@ try {
 	assert(JSON.stringify(pkg.openclaw?.extensions) === JSON.stringify(["./dist/index.cjs"]), "packed package must declare openclaw.extensions");
 	assert(!pkg.dependencies?.["@singularityrd/aidr-core"], "packed plugin must not declare bundled core as a runtime dependency");
 	assert(JSON.stringify(manifest.contracts?.tools) === JSON.stringify(["aidr_allowlist_add", "aidr_allowlist_remove"]), "plugin manifest tools contract does not match registration");
+	assert(JSON.stringify(manifest.contracts?.agentToolResultMiddleware) === JSON.stringify(["openclaw"]), "plugin manifest must declare the pre-model tool-result middleware for the openclaw runtime");
 
 	const port = options.port ?? 19_000 + (process.pid % 1_000);
 	writeFileSync(path.join(state, "openclaw.json"), `${JSON.stringify({
@@ -77,7 +78,7 @@ try {
 	assert(inspection?.plugin?.status === "loaded" || inspection?.status === "loaded", "OpenClaw did not report the plugin loaded");
 	const inspectionText = `${inspect.stdout}\n${inspect.stderr}`;
 	for (const required of ["aidr_allowlist_add", "aidr_allowlist_remove", "before_tool_call", "before_prompt_build"]) assert(inspectionText.includes(required), `runtime inspection omitted ${required}`);
-	for (const forbidden of ["required dependencies are missing", "plugin must declare contracts.tools", "unknown typed hook"]) assert(!inspectionText.includes(forbidden), `runtime inspection reported: ${forbidden}`);
+	for (const forbidden of ["required dependencies are missing", "plugin must declare contracts.tools", "plugin must declare contracts.agentToolResultMiddleware", "explicitly enabled to register agent tool result middleware", "unknown typed hook"]) assert(!inspectionText.includes(forbidden), `runtime inspection reported: ${forbidden}`);
 
 	gateway = spawn(node, [cli, "gateway", "run", "--port", String(port), "--bind", "loopback", "--auth", "none"], {
 		cwd: consumer,

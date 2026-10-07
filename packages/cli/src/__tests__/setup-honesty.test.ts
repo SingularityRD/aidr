@@ -188,8 +188,12 @@ describe("no module rewrites the user's editor settings", () => {
 	it("uses approved release artifacts and exact package-version guidance", () => {
 		const code = codeOnly(readFileSync(join(cliSrc, "utils", "install-hooks.ts"), "utf-8"));
 		expect(code).toMatch(/verified release bundle/i);
-		expect(code).toMatch(/openclaw plugins install npm:@singularityrd\/aidr-openclaw@VERSION/);
-		expect(code).toMatch(/exact version in the approved release record/i);
+		// The guidance pins the CLI's own release version, never a literal
+		// `VERSION` placeholder the user has to substitute.
+		expect(code).toMatch(/openclaw plugins install npm:@singularityrd\/aidr-openclaw@\$\{VERSION\}/);
+		expect(code).not.toMatch(/@singularityrd\/aidr-[a-z]+@VERSION\b/);
+		expect(code).not.toMatch(/"VERSION"/);
+		expect(code).toMatch(/confirm it against the approved release record/i);
 		expect(code).not.toMatch(/build and install the VSIX/i);
 		expect(code).not.toMatch(/plugins install @singularityrd\/aidr-openclaw(?:["'\s]|$)/);
 	});

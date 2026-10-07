@@ -1,11 +1,14 @@
 #!/usr/bin/env node
 import { createHash, createPrivateKey, createPublicKey, sign, verify } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { createRequire } from "node:module";
+import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { deploymentCredentialFailures } from "./lib/deployment-credentials.mjs";
 
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 // --development acknowledges a loopback rehearsal: the evidence is then marked
 // development-only. Without it, an online run refuses a development manifest so
 // a rehearsal can never be filed as production deployment evidence.
@@ -83,6 +86,31 @@ try {
   delegationKeyPairValid = verify(null, challenge, publicKey, sign(null, challenge, privateKey));
 } catch { /* recorded below without exposing key material */ }
 check(delegationKeyPairValid, "delegated credential signing and verification keys match");
+const base64Bytes = (value) => typeof value === "string" && /^[A-Za-z0-9+/]+={0,2}$/.test(value) ? Buffer.from(value, "base64").length : 0;
+check(base64Bytes(functionEnv.AIDR_APPROVAL_SIGNING_WRAP_KEY_B64) === 32, "dashboard approval signing key wrap key configured (32 bytes)");
+check(typeof functionEnv.AIDR_NOTIFICATION_ENCRYPTION_KEYS === "string" && functionEnv.AIDR_NOTIFICATION_ENCRYPTION_KEYS.split(",").length > 0 &&
+  functionEnv.AIDR_NOTIFICATION_ENCRYPTION_KEYS.split(",").every((entry) => /^[a-z0-9][a-z0-9_-]{0,31}:/.test(entry) && base64Bytes(entry.slice(entry.indexOf(":") + 1)) === 32),
+"alert channel encryption keyring configured");
+check(typeof functionEnv.AIDR_NOTIFICATION_DISPATCH_TOKEN === "string" && functionEnv.AIDR_NOTIFICATION_DISPATCH_TOKEN.trim().length >= 32, "alert dispatcher token configured (drives agent-offline and governance alerts)");
+// Compliance report signing is optional (reports then carry a sha256 digest
+// only); when configured it must be a real Ed25519 key matching the public key
+// recorded for auditors.
+if (functionEnv.AIDR_COMPLIANCE_SIGNING_KEY_ID || functionEnv.AIDR_COMPLIANCE_SIGNING_PRIVATE_KEY_PKCS8_B64) {
+  let complianceKeyValid = false;
+  try {
+    const privateKey = createPrivateKey({ key: Buffer.from(functionEnv.AIDR_COMPLIANCE_SIGNING_PRIVATE_KEY_PKCS8_B64 ?? "", "base64"), format: "der", type: "pkcs8" });
+    const recorded = manifest.compliance_signing?.public_key_pem;
+    const challenge = Buffer.from("aidr-compliance-key-health-v1", "utf8");
+    complianceKeyValid = privateKey.asymmetricKeyType === "ed25519" &&
+      /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(functionEnv.AIDR_COMPLIANCE_SIGNING_KEY_ID ?? "") &&
+      (!recorded || (manifest.compliance_signing?.key_id === functionEnv.AIDR_COMPLIANCE_SIGNING_KEY_ID &&
+        verify(null, challenge, createPublicKey(recorded), sign(null, challenge, privateKey))));
+  } catch { /* recorded below without exposing key material */ }
+  check(complianceKeyValid, "compliance report signing key is Ed25519 and matches the auditor public key");
+} else {
+  // Optional control, so not a failure; said out loud rather than passed.
+  console.log("INFO compliance report signing key not configured: reports carry a sha256 digest but no Ed25519 signature");
+}
 const signupMode = manifest.mode === "cloud" ? env.AIDR_SIGNUP_MODE : "closed";
 check(manifest.mode === "cloud" ? ["closed", "cloud"].includes(signupMode) : env.DISABLE_SIGNUP === "true", manifest.mode === "cloud" ? "cloud signup mode is explicit and valid" : "public signup disabled");
 check(typeof env.S3_PROTOCOL_ACCESS_KEY_SECRET === "string" && env.S3_PROTOCOL_ACCESS_KEY_SECRET.length >= 32 && !credentialFailures.includes("S3_PROTOCOL_ACCESS_KEY_SECRET"), "S3 protocol credential is private and differs from the upstream demonstration secret");
@@ -222,6 +250,79 @@ if (process.platform === "win32") {
 } else {
   unverified.push({ check: `retention reaper timer not verified: ${retentionReaperTimer}`, reason: `must be installed as a systemd timer or host scheduled task, which a ${process.platform} run cannot inspect` });
   console.log(`UNVERIFIED retention reaper timer not verified: ${retentionReaperTimer}`);
+}
+// Optional AI Security Posture scanner sidecar (prepared with
+// --with-posture-scanner). Every check reads the prepared files only; secrets are
+// compared, never printed. Installations prepared before the rename record the
+// scanner under `aig`, stage it in `aig/` and use AIG_* settings; they are still
+// checked.
+const legacyPostureScanner = manifest.posture_scanner === undefined && manifest.aig !== undefined;
+const postureScannerManifest = legacyPostureScanner ? manifest.aig : manifest.posture_scanner;
+const postureScannerEnabled = postureScannerManifest?.enabled === true;
+const postureScannerServices = ["aig-server", "aig-agent", "aig-bridge", "aig-egress"];
+if (postureScannerEnabled) {
+  const scannerDir = join(dir, legacyPostureScanner ? "aig" : "posture-scanner");
+  const scannerEnv = (name) => env[`POSTURE_SCANNER_${name}`] || env[`AIG_${name}`];
+  const privateSecret = (value) => typeof value === "string" && value.length >= 32 && !/^(REPLACE|replace-with)/.test(value);
+  check(privateSecret(scannerEnv("AGENT_SHARED_SECRET")), "Posture scanner worker shared secret configured (at least 32 characters)");
+  const bridgeAuthMode = env.BRIDGE_AUTH_MODE || "broker";
+  check(
+    bridgeAuthMode === "api_key"
+      ? privateSecret(env.BRIDGE_API_KEY) && env.BRIDGE_API_KEY !== scannerEnv("AGENT_SHARED_SECRET")
+      : bridgeAuthMode === "broker" && Buffer.byteLength(env.BRIDGE_JWT_SECRET ?? "", "utf8") >= 32 && !!env.BRIDGE_JWT_ISSUER && !!env.BRIDGE_JWT_AUDIENCE,
+    `Posture scanner bridge authentication configured (${bridgeAuthMode === "api_key" ? "isolated API key independent from the worker secret" : "broker JWT secret, issuer and audience"})`,
+  );
+  let signingKeyFingerprint = null;
+  try {
+    const key = createPublicKey(readFileSync(join(scannerDir, legacyPostureScanner ? "aig-signing-public.pem" : "signing-public.pem"), "utf8"));
+    if (key.asymmetricKeyType === "rsa" && (key.asymmetricKeyDetails?.modulusLength ?? 0) >= 2048) {
+      signingKeyFingerprint = createHash("sha256").update(key.export({ type: "spki", format: "der" })).digest("hex");
+    }
+  } catch { /* recorded below */ }
+  check(!!signingKeyFingerprint && signingKeyFingerprint === scannerEnv("TRUSTED_SIGNING_PUBLIC_KEY_SHA256") && signingKeyFingerprint === postureScannerManifest.signing_public_key_sha256, "Posture scanner data signing public key matches the pinned SPKI fingerprint");
+  let scannerData = null;
+  try { scannerData = JSON.parse(readFileSync(join(scannerDir, "generated", "aig-data-manifest.json"), "utf8")); } catch { /* recorded below */ }
+  check(!!scannerData && scannerData.bundle_id === scannerEnv("EXPECTED_DATA_BUNDLE_ID") && scannerData.source?.commit === scannerEnv("EXPECTED_SOURCE_COMMIT"), "Posture scanner bundle and source commit pins match the staged data manifest");
+  check(!!scannerData?.signature, "Posture scanner data manifest carries a release signature (an unsigned manifest keeps bridge readiness closed)");
+  const taskBackend = env.BRIDGE_TASK_BACKEND || "sqlite";
+  const haRequired = /^(1|true|yes|on)$/i.test(env.BRIDGE_HA_REQUIRED ?? "false");
+  if (taskBackend === "postgres") {
+    let dsnValid = false;
+    try { dsnValid = ["postgres:", "postgresql:"].includes(new URL(env.BRIDGE_TASK_POSTGRES_DSN).protocol); } catch { /* recorded below */ }
+    check(dsnValid, "Posture scanner bridge PostgreSQL task registry DSN configured for HA");
+  } else {
+    check(taskBackend === "sqlite" && !haRequired, "Posture scanner bridge task registry is single-host SQLite with HA not required");
+  }
+  const egressDir = join(scannerDir, "egress");
+  const allowlistLines = existsSync(join(egressDir, "allowlist.txt"))
+    ? readFileSync(join(egressDir, "allowlist.txt"), "utf8").split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith("#"))
+    : null;
+  const allowlistValid = Array.isArray(allowlistLines) && allowlistLines.every((line) => /^\.?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i.test(line));
+  const accessRules = existsSync(join(egressDir, "squid.conf"))
+    ? readFileSync(join(egressDir, "squid.conf"), "utf8").split(/\r?\n/).map((line) => line.trim()).filter((line) => line.startsWith("http_access"))
+    : [];
+  const denyByDefault = accessRules.includes("http_access deny non_public_dst") && accessRules.at(-1) === "http_access deny all";
+  check(env.BRIDGE_EGRESS_PROXY_URL === "http://aig-egress:3128" && denyByDefault && allowlistValid, "Posture scanner remote scans leave only through the deny-by-default egress gateway with a valid allowlist");
+  if (allowlistValid) console.log(`INFO Posture scanner egress allowlist names ${allowlistLines.length} destination domain(s)${allowlistLines.length === 0 ? "; every remote scan is refused until one is added" : ""}`);
+  let topologyIsolated = false;
+  try {
+    const requireCore = createRequire(join(root, "packages/core/package.json"));
+    const { parse } = existsSync(join(root, "deploy/vendor/yaml.cjs")) ? requireCore(join(root, "deploy/vendor/yaml.cjs")) : requireCore("yaml");
+    const compose = parse(readFileSync(join(dir, "compose.yml"), "utf8"));
+    const networks = compose.networks ?? {};
+    const serviceNetworks = (name) => { const value = compose.services?.[name]?.networks; return Array.isArray(value) ? value : Object.keys(value ?? {}); };
+    const internal = (name) => networks[name]?.internal === true;
+    const noMasquerade = (name) => String(networks[name]?.driver_opts?.["com.docker.network.bridge.enable_ip_masquerade"]) === "false";
+    topologyIsolated = postureScannerServices.every((name) => compose.services?.[name])
+      && ["aig-server", "aig-agent"].every((name) => serviceNetworks(name).length > 0 && serviceNetworks(name).every(internal) && !compose.services[name].ports)
+      && !compose.services["aig-egress"].ports
+      && serviceNetworks("aig-bridge").some(internal) && serviceNetworks("aig-bridge").every((name) => internal(name) || noMasquerade(name))
+      && (compose.services["aig-bridge"].ports ?? []).every((port) => /^\$\{POSTURE_SCANNER_BIND_ADDRESS:-\$\{AIG_BIND_ADDRESS:-127\.0\.0\.1\}\}:|^\$\{AIG_BIND_ADDRESS:-127\.0\.0\.1\}:|^127\.0\.0\.1:/.test(String(port)));
+  } catch { /* recorded below */ }
+  check(topologyIsolated, "Posture scanner control network is internal and only the authenticated bridge publishes a loopback port");
+  const scannerProfile = legacyPostureScanner ? "aig" : "posture-scanner";
+  check((env.COMPOSE_PROFILES ?? "").split(",").map((value) => value.trim()).includes(scannerProfile), `Posture scanner Compose profile (${scannerProfile}) is active for this installation`);
+  requiredComposeServices.push(...postureScannerServices);
 }
 if (manifest.mode === "self-hosted") {
   const config = spawnSync("docker", ["compose", "--project-directory", dir, "-f", join(dir, "compose.yml"), "config", "--quiet"], { encoding: "utf8", timeout: 15000 });

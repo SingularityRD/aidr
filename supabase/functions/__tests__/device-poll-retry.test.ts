@@ -1,10 +1,32 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
-import ts from "typescript";
-import { readDeviceCode } from "../_shared/auth.ts";
-import { evaluateDevicePollState } from "../_shared/device-auth.ts";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+
+// The Edge Function imports Supabase through Deno's `npm:` specifier, which the
+// Node runner cannot resolve. The suite always injects `createDb`, so the
+// runtime factory must never be reached.
+vi.mock("npm:@supabase/supabase-js@2.116.0", () => ({
+	createClient: () => {
+		throw new Error("createClient must be injected through DevicePollDeps.createDb");
+	},
+}));
+
+(globalThis as unknown as { Deno: unknown }).Deno = {
+	env: { get: (name: string) => process.env[name] },
+	serve: () => undefined,
+};
+
+type DevicePollModule = typeof import("../device-poll/index.ts");
+let createDevicePollHandler: DevicePollModule["createDevicePollHandler"];
+beforeAll(async () => {
+	vi.stubEnv("SUPABASE_URL", "https://test.invalid");
+	vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "test");
+	({ createDevicePollHandler } = await import("../device-poll/index.ts"));
+});
+afterAll(() => {
+	vi.unstubAllEnvs();
+});
 
 type Session = {
 	id: string;
@@ -25,10 +47,7 @@ type Token = {
 };
 
 const sourcePath = join(dirname(fileURLToPath(import.meta.url)), "..", "device-poll", "index.ts");
-const source = readFileSync(sourcePath, "utf8").replace(/^import .*;\r?\n/gm, "");
-const compiled = ts.transpileModule(source, {
-	compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
-}).outputText;
+const source = readFileSync(sourcePath, "utf8");
 
 function harness(options: {
 	lostFirstRpcResponse?: boolean;
@@ -42,12 +61,12 @@ function harness(options: {
 		expires_at: new Date(Date.now() + 600_000).toISOString(), user_code: "USERCODE",
 	};
 	const tokens: Token[] = [];
+	const counters = new Map<string, number>();
 	let rpcCalls = 0;
 	let sessionReads = 0;
 	let clientCreations = 0;
 	let releaseReads: (() => void) | undefined;
 	const bothReads = new Promise<void>((resolve) => { releaseReads = resolve; });
-	let handler: ((request: Request) => Promise<Response>) | undefined;
 	const client = {
 		from(table: string) {
 			const filters = new Map<string, unknown>();
@@ -56,6 +75,9 @@ function harness(options: {
 				eq(column: string, value: unknown) { filters.set(column, value); return query; },
 				limit(_count: number) { return query; },
 				async maybeSingle() {
+					if (table === "rate_limits") {
+						return { data: { count: counters.get(`${filters.get("key")}:${filters.get("window_start")}`) ?? 0 }, error: null };
+					}
 					if (table === "device_sessions") {
 						if (options.lookupError) return { data: null, error: { message: "database unavailable" } };
 						const snapshot = { ...session };
@@ -77,6 +99,11 @@ function harness(options: {
 			return query;
 		},
 		async rpc(name: string, args: Record<string, string>) {
+			if (name === "increment_rate_limit") {
+				const key = `${args.p_key}:${args.p_window_start}`;
+				counters.set(key, (counters.get(key) ?? 0) + Number(args.p_delta));
+				return { data: null, error: null };
+			}
 			if (name === "tenant_admission_capacity") return options.approvalError
 				? { data: null, error: { message: "database unavailable" } }
 				: { data: 1, error: null };
@@ -93,25 +120,13 @@ function harness(options: {
 			return { data: { status: "issued" }, error: null };
 		},
 	};
-	new Function("Deno", "createClient", "readDeviceCode", "configFailure", "loadConfig",
-		"runtimeEnv", "corsJson", "handleCors", "evaluateDevicePollState", "consumeRateLimit", "validRateLimit", compiled)(
-		{ env: { get: () => undefined }, serve: (fn: typeof handler) => { handler = fn; } },
-		() => { clientCreations++; return client; },
-		readDeviceCode,
-		() => { throw new Error("unexpected config failure"); },
-		() => ({ ok: true, values: { SUPABASE_URL: "https://test.invalid", SUPABASE_SERVICE_ROLE_KEY: "test" } }),
-		{},
-		(_request: Request, status: number, body: unknown) => Response.json(body, { status }),
-		() => null,
-		evaluateDevicePollState,
-		async () => ({ status: "allowed" }),
-		() => true,
-	);
-	if (!handler) throw new Error("device-poll handler was not registered");
+	const handler = createDevicePollHandler({
+		createDb: () => { clientCreations++; return client as never; },
+	});
 	const poll = async (request = new Request("https://test.invalid/device-poll", {
 		method: "POST", headers: { Authorization: "Bearer aidr_device_test-secret" },
 	})) => {
-		const response = await handler!(request);
+		const response = await handler(request);
 		return { status: response.status, body: await response.json() as Record<string, unknown> };
 	};
 	return { poll, session, tokens, get rpcCalls() { return rpcCalls; }, get clientCreations() { return clientCreations; } };

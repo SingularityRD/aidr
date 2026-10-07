@@ -53,6 +53,18 @@ export interface VisualAudit {
   readonly textCoverage: 'unknown' | 'rules-only' | 'rules-and-ner';
   readonly verification: 'not-released' | 'pixel-and-residual-scan';
 }
+/**
+ * Decision-only OCR inspection (`VisualPrivacyEngine.inspect`): no image bytes are produced.
+ * `allow` = every OCR word was inspected and no sensitive text was found; `block` = sensitive text
+ * (see `counts`) or a policy that blocks images/all text; `review` = not fully inspected, never clean.
+ */
+export interface VisualInspection {
+  readonly decision: 'allow' | 'block' | 'review';
+  /** Findings per entity type in the OCR text (counts only; never text or positions). */
+  readonly counts: Readonly<Partial<Record<EntityType, number>>>;
+  readonly reasons: readonly string[];
+  readonly audit: VisualAudit;
+}
 export interface VisualResult {
   readonly decision: 'allow' | 'redact' | 'review' | 'block';
   /** The ONLY image bytes allowed to be forwarded. Original input is NEVER a fallback. */

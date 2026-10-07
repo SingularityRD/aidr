@@ -1,0 +1,112 @@
+# KVKK (Turkish Personal Data Protection Law No. 6698) and GDPR (Regulation (EU)
+# 2016/679): articles the compliance evidence report (docs/compliance-report.md)
+# already provides evidence for, and how the product supports them. Coverage
+# values: see nist-ai-rmf.yaml. The product is designed to support these
+# obligations; conclusions about compliance remain with the DPO and counsel.
+
+framework:
+  id: kvkk-gdpr
+  name: KVKK and GDPR
+  version: "KVKK Law No. 6698; GDPR Regulation (EU) 2016/679"
+  reference: docs/compliance-report.md
+  scope: >-
+    Articles where the compliance evidence report and the product's privacy capabilities
+    provide evidence about AI tool use. This is not a statement that an organisation meets
+    either law.
+
+controls:
+  - id: GDPR Art. 5(1)(c)
+    group: GDPR
+    title: Data minimisation
+    capabilities: [browser-guard-masking, prompt-dlp-protection]
+    evidence: [events.privacy_scan, compliance-report.data_protection_activity]
+    coverage: partial
+    note: >-
+      Personal data is masked or blocked before prompts reach AI services, and telemetry is
+      counts only. A masked send still sends the redacted text; monitor-mode and allowed
+      sends go unchanged.
+  - id: GDPR Art. 5(2)
+    group: GDPR
+    title: Accountability
+    capabilities: [compliance-evidence-report, governance-scorecard, audit-logging]
+    evidence: [compliance-report.policy_inventory, admin_audit_logs, governance-scorecard]
+    coverage: partial
+    note: >-
+      Signed evidence reports, the audit log and the scorecard help demonstrate the
+      measures in place for AI tool use. Accountability for the processing as a whole
+      remains the controller's.
+  - id: GDPR Art. 25
+    group: GDPR
+    title: Data protection by design and by default
+    capabilities: [browser-guard-masking, prompt-dlp-protection, runtime-policy-management]
+    evidence: [compliance-report.data_protection_activity, tenant_dlp_policies]
+    coverage: partial
+    note: >-
+      Masking is on by default in Browser Guard and DLP policy applies to agent prompts
+      and tool inputs, so protection does not depend on each user's choice.
+  - id: GDPR Art. 30
+    group: GDPR
+    title: Records of processing activities
+    capabilities: [data-flow-inventory, compliance-evidence-report]
+    evidence: [privacy-data-flow-matrix, compliance-report.data_flows]
+    coverage: customer-responsibility
+    note: >-
+      The data-flow inventory is input for the controller's records; values marked unknown
+      must be completed for the deployment.
+  - id: GDPR Art. 32
+    group: GDPR
+    title: Security of processing
+    capabilities: [runtime-enforcement, identity-access-control, tenant-isolation, audit-logging, browser-guard-masking]
+    evidence: [compliance-report.access_identity, compliance-report.protection_coverage, events.runtime_verdict, tenant_identity_policies]
+    coverage: partial
+    note: >-
+      Technical measures around AI tool use: inline enforcement, masking, MFA/SSO,
+      tenant isolation and logging. Organisational measures and the rest of the estate are
+      outside the product.
+  - id: GDPR Art. 33
+    group: GDPR
+    title: Notification of a personal data breach to the supervisory authority
+    capabilities: [incident-management]
+    evidence: [events.incident, compliance-report.incidents]
+    coverage: customer-responsibility
+    note: >-
+      Incidents give the timeline input; deciding whether an incident is a personal data
+      breach and notifying within 72 hours is the controller's.
+  - id: KVKK Art. 4
+    group: KVKK
+    title: General principles (processing that is relevant, limited and proportionate)
+    capabilities: [browser-guard-masking, prompt-dlp-protection]
+    evidence: [events.privacy_scan, compliance-report.data_protection_activity]
+    coverage: partial
+    note: >-
+      Masking and DLP limit the personal data sent to AI services to what the prompt needs.
+      Lawfulness of the underlying processing is the controller's assessment.
+  - id: KVKK Art. 7
+    group: KVKK
+    title: Erasure, destruction or anonymisation of personal data
+    capabilities: [retention-legal-hold]
+    evidence: [tenant_data_retention_policies, tenant_legal_holds, tenant_offboarding_runs, compliance-report.retention_deletion]
+    coverage: partial
+    note: >-
+      Product telemetry is deleted according to the workspace retention policy, legal holds
+      pause deletion, and offboarding leaves phase receipts. Backups follow a separate
+      expiry and are outside the live-data receipts.
+  - id: KVKK Art. 9
+    group: KVKK
+    title: Transfer of personal data abroad
+    capabilities: [data-flow-inventory]
+    evidence: [privacy-data-flow-matrix, compliance-report.data_flows]
+    coverage: customer-responsibility
+    note: >-
+      The inventory lists destinations, regions and transfer mechanisms for product data
+      flows; the transfer assessment and its legal basis are the controller's.
+  - id: KVKK Art. 12
+    group: KVKK
+    title: Obligations concerning data security
+    capabilities: [runtime-enforcement, browser-guard-masking, identity-access-control, tenant-isolation, audit-logging]
+    evidence: [compliance-report.access_identity, compliance-report.data_protection_activity, admin_audit_logs, tenant_identity_policies]
+    coverage: partial
+    note: >-
+      Technical measures to prevent unlawful disclosure of personal data through AI tools,
+      with access control and audit evidence. Administrative measures and audits are the
+      controller's.

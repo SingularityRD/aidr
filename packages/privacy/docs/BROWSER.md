@@ -130,6 +130,8 @@ Saklama 0–30 gün ayarlanabilir. Süresi geçen sayaçlar yeni olay, politika 
 
 Native bağlantı localhost HTTP açmaz. Chrome'un length-prefixed UTF-8 JSON stdio kanalı kullanılır. Veriler 192 KiB parçalara bölünür, sıralı offset, toplam uzunluk, kaynak/çıktı SHA-256, yanıt kimliği ve politika hash'i kontrol edilir. Bu hash'ler geçici protokol/bellek içindir, audit değildir. Başarısızlıkta orijinal içerik gönderilmez. [R2]
 
+**Yalnız karar veren OCR (`image-scan`).** `begin{kind:"image-scan"}` ile gönderilen görsel (en çok 8 MiB) OCR'dan geçirilir ve metin motoruyla taranır; `commit` yanıtı yalnız `{decision: allow|block|review, reasons, counts, coverage, outputBytes: 0}` içerir. Piksel, OCR metni veya konum döndürülmez ve `read` yapılamaz. `allow`: tüm OCR kelimeleri incelendi, hassas veri yok; `block`: hassas metin (türe göre sayılar) ya da görselleri engelleyen politika; `review`: tam incelenemedi (metin yok, belirsiz kelime, çözülmeyen barkod, sınır, zaman aşımı, OCR hatası) ve hiçbir zaman temiz sayılmaz. Host'ta `visual` yapılandırması yoksa yanıt `review` / `NATIVE_OCR_UNAVAILABLE` olur. Browser Guard bu işlemi yüklenen görseller ve Office/OpenDocument içindeki resimler için kullanır (`VisualPrivacyEngine.inspect`).
+
 ## 7. Yeniden derleme ve test
 
 Tam kaynak ZIP'i geliştirme bağımlılıklarını `tools/vendor` içinde içerir. Bunlar runtime Chrome ZIP'inde yoktur.

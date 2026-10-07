@@ -1,0 +1,423 @@
+{{- /* The values key was renamed from `aig`; refuse stale values instead of silently ignoring them. */ -}}
+{{- if .Values.aig }}
+{{- fail "values key `aig` was renamed to `postureScanner` (for example aig.enabled -> postureScanner.enabled); move these settings under postureScanner. See the chart README, \"AI Security Posture scanner\"." }}
+{{- end }}
+{{- if .Values.postureScanner.enabled }}
+{{- $scanner := .Values.postureScanner -}}
+{{- $secret := required "postureScanner.existingSecret is required when postureScanner.enabled (keys: agent-shared-secret, task-postgres-dsn, bridge-api-key or bridge-jwt-secret)" $scanner.existingSecret -}}
+{{- $signingSecret := required "postureScanner.signingPublicKeySecret is required when postureScanner.enabled (key: signing-public.pem)" $scanner.signingPublicKeySecret -}}
+{{- $dataConfigMap := required "postureScanner.dataConfigMap is required when postureScanner.enabled (kubectl create configmap ... --from-file=packages/core/src/generated/)" $scanner.dataConfigMap -}}
+{{- $proxy := required "postureScanner.egressProxy.url is required when postureScanner.enabled: remote scan traffic must traverse a reviewed egress proxy" $scanner.egressProxy.url -}}
+{{- if not (has $scanner.bridge.authMode (list "broker" "api_key")) -}}
+{{- fail "postureScanner.bridge.authMode must be broker or api_key" -}}
+{{- end -}}
+{{- $server := include "aidr.component" (dict "root" . "component" "posture-scanner-server") -}}
+{{- $agent := include "aidr.component" (dict "root" . "component" "posture-scanner-agent") -}}
+{{- $bridge := include "aidr.component" (dict "root" . "component" "posture-scanner-bridge") -}}
+{{- $trust := list
+  (list "AIG_TRUSTED_SIGNING_KEY_ID" (required "postureScanner.trustedSigningKeyId is required" $scanner.trustedSigningKeyId))
+  (list "AIG_TRUSTED_SIGNING_PUBLIC_KEY_SHA256" (required "postureScanner.trustedSigningPublicKeySha256 is required" $scanner.trustedSigningPublicKeySha256))
+  (list "AIG_EXPECTED_DATA_BUNDLE_ID" (required "postureScanner.expectedDataBundleId is required" $scanner.expectedDataBundleId))
+  (list "AIG_EXPECTED_SOURCE_COMMIT" (required "postureScanner.expectedSourceCommit is required" $scanner.expectedSourceCommit)) -}}
+{{- range $pvc := list (list "posture-scanner-db" $scanner.server.persistence.dbSize (list "ReadWriteOnce")) (list "posture-scanner-logs" $scanner.server.persistence.logsSize (list "ReadWriteOnce")) (list "posture-scanner-checker-data" $scanner.agent.checkerDataSize (list "ReadWriteOnce")) (list "posture-scanner-bridge-state" $scanner.bridge.stateSize (list "ReadWriteOnce")) (list "posture-scanner-uploads" $scanner.uploads.size $scanner.uploads.accessModes) }}
+{{- if not (and (eq (index $pvc 0) "posture-scanner-uploads") $scanner.uploads.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "aidr.component" (dict "root" $ "component" (index $pvc 0)) }}
+  labels:
+    {{- include "aidr.labels" (dict "root" $ "component" (index $pvc 0)) | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes:
+    {{- toYaml (index $pvc 2) | nindent 4 }}
+  {{- with $.Values.global.storageClass }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ index $pvc 1 }}
+---
+{{- end }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $server }}
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" "posture-scanner-server") | nindent 4 }}
+spec:
+  # SQLite task store on a RWO volume: exactly one server.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "aidr.selectorLabels" (dict "root" . "component" "posture-scanner-server") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "aidr.labels" (dict "root" . "component" "posture-scanner-server") | nindent 8 }}
+    spec:
+      {{- include "aidr.podCommon" (dict "root" . "values" (dict)) | nindent 6 }}
+      {{- include "aidr.podSecurityContext" (dict "root" . "runAsUser" 1000 "fsGroup" 1000) | nindent 6 }}
+      containers:
+        - name: posture-scanner-server
+          image: {{ include "aidr.image" (dict "root" . "image" $scanner.server.image "name" "postureScanner.server.image" "defaultTag" true) }}
+          imagePullPolicy: {{ $scanner.server.image.pullPolicy }}
+          command:
+            - /bin/sh
+            - -c
+            - mkdir -p /app/db /app/uploads /app/logs && touch /app/logs/trpc.log && exec /app/ai-infra-guard webserver --server 0.0.0.0:8088
+          {{- include "aidr.containerSecurityContext" (dict "root" .) | nindent 10 }}
+          ports:
+            - name: http
+              containerPort: 8088
+              protocol: TCP
+          env:
+            - name: APP_ENV
+              value: production
+            - name: UPLOAD_DIR
+              value: /app/uploads
+            - name: DB_PATH
+              value: /app/db/tasks.db
+            - name: TZ
+              value: {{ $scanner.timezone | quote }}
+            - name: AIG_AGENT_SHARED_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secret }}
+                  key: agent-shared-secret
+            - name: AIG_DATA_ROOT
+              value: /app/data
+            - name: AIG_DATA_MANIFEST_PATH
+              value: /app/aig-manifest/aig-data-manifest.json
+            - name: AIG_SIGNING_PUBLIC_KEY_PATH
+              value: /run/secrets/aig-signing-public.pem
+            {{- range $trust }}
+            - name: {{ index . 0 }}
+              value: {{ index . 1 | quote }}
+            {{- end }}
+          # The signed runtime dataset must verify, not just the UI answer.
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - 'curl -fsS -H "X-AIG-Agent-Token: ${AIG_AGENT_SHARED_SECRET}" http://127.0.0.1:8088/api/v1/internal/readiness'
+            periodSeconds: 30
+            timeoutSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          {{- include "aidr.resources" (dict "root" . "component" "postureScannerServer" "override" $scanner.server.resources) | nindent 10 }}
+          volumeMounts:
+            - name: db
+              mountPath: /app/db
+            - name: logs
+              mountPath: /app/logs
+            - name: uploads
+              mountPath: /app/uploads
+            - name: manifest
+              mountPath: /app/aig-manifest
+              readOnly: true
+            - name: signing
+              mountPath: /run/secrets/aig-signing-public.pem
+              subPath: signing-public.pem
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: db
+          persistentVolumeClaim:
+            claimName: {{ include "aidr.component" (dict "root" . "component" "posture-scanner-db") }}
+        - name: logs
+          persistentVolumeClaim:
+            claimName: {{ include "aidr.component" (dict "root" . "component" "posture-scanner-logs") }}
+        - name: uploads
+          persistentVolumeClaim:
+            claimName: {{ default (include "aidr.component" (dict "root" . "component" "posture-scanner-uploads")) $scanner.uploads.existingClaim }}
+        - name: manifest
+          configMap:
+            name: {{ $dataConfigMap }}
+        - name: signing
+          secret:
+            secretName: {{ $signingSecret }}
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $server }}
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" "posture-scanner-server") | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "aidr.selectorLabels" (dict "root" . "component" "posture-scanner-server") | nindent 4 }}
+  ports:
+    - name: http
+      port: 8088
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $agent }}
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" "posture-scanner-agent") | nindent 4 }}
+spec:
+  replicas: {{ $scanner.agent.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "aidr.selectorLabels" (dict "root" . "component" "posture-scanner-agent") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "aidr.labels" (dict "root" . "component" "posture-scanner-agent") | nindent 8 }}
+    spec:
+      {{- include "aidr.podCommon" (dict "root" . "values" (dict)) | nindent 6 }}
+      {{- include "aidr.podSecurityContext" (dict "root" . "runAsUser" 1000 "fsGroup" 1000) | nindent 6 }}
+      containers:
+        - name: posture-scanner-agent
+          image: {{ include "aidr.image" (dict "root" . "image" $scanner.agent.image "name" "postureScanner.agent.image" "defaultTag" true) }}
+          imagePullPolicy: {{ $scanner.agent.image.pullPolicy }}
+          {{- include "aidr.containerSecurityContext" (dict "root" .) | nindent 10 }}
+          env:
+            - name: TZ
+              value: {{ $scanner.timezone | quote }}
+            - name: AIG_SERVER
+              value: {{ printf "%s:8088" $server | quote }}
+            - name: AIG_AGENT_VERSION
+              value: {{ $scanner.sourceVersion | quote }}
+            - name: AIG_AGENT_SHARED_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secret }}
+                  key: agent-shared-secret
+            - name: AIG_UPLOAD_ROOT
+              value: /app/uploads
+            - name: AIG_WORK_DIR
+              value: /work
+            - name: HTTP_PROXY
+              value: {{ $proxy | quote }}
+            - name: HTTPS_PROXY
+              value: {{ $proxy | quote }}
+            - name: NO_PROXY
+              value: {{ printf "%s,localhost,127.0.0.1" $server | quote }}
+            - name: PYTHONPATH
+              value: /app/aig-compat
+          {{- include "aidr.resources" (dict "root" . "component" "postureScannerAgent" "override" $scanner.agent.resources) | nindent 10 }}
+          volumeMounts:
+            - name: uploads
+              mountPath: /app/uploads
+              readOnly: true
+            - name: checker-data
+              mountPath: /api-checker-data
+            - name: tmp
+              mountPath: /tmp
+            - name: run
+              mountPath: /run
+            - name: work
+              mountPath: /work
+            - name: shm
+              mountPath: /dev/shm
+      volumes:
+        - name: uploads
+          persistentVolumeClaim:
+            claimName: {{ default (include "aidr.component" (dict "root" . "component" "posture-scanner-uploads")) $scanner.uploads.existingClaim }}
+            readOnly: true
+        - name: checker-data
+          persistentVolumeClaim:
+            claimName: {{ include "aidr.component" (dict "root" . "component" "posture-scanner-checker-data") }}
+        - name: tmp
+          emptyDir:
+            sizeLimit: 2Gi
+        - name: run
+          emptyDir:
+            sizeLimit: 64Mi
+        - name: work
+          emptyDir:
+            sizeLimit: 2Gi
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $bridge }}
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" "posture-scanner-bridge") | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "aidr.selectorLabels" (dict "root" . "component" "posture-scanner-bridge") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "aidr.labels" (dict "root" . "component" "posture-scanner-bridge") | nindent 8 }}
+    spec:
+      {{- include "aidr.podCommon" (dict "root" . "values" (dict)) | nindent 6 }}
+      {{- include "aidr.podSecurityContext" (dict "root" . "runAsUser" 1000 "fsGroup" 1000) | nindent 6 }}
+      containers:
+        - name: posture-scanner-bridge
+          image: {{ include "aidr.image" (dict "root" . "image" $scanner.bridge.image "name" "postureScanner.bridge.image" "defaultTag" true) }}
+          imagePullPolicy: {{ $scanner.bridge.image.pullPolicy }}
+          {{- include "aidr.containerSecurityContext" (dict "root" .) | nindent 10 }}
+          ports:
+            - name: http
+              containerPort: 8099
+              protocol: TCP
+          env:
+            - name: BRIDGE_HOST
+              value: 0.0.0.0
+            - name: BRIDGE_PORT
+              value: "8099"
+            - name: TZ
+              value: {{ $scanner.timezone | quote }}
+            - name: BRIDGE_AIG_URL
+              value: {{ printf "http://%s:8088" $server | quote }}
+            - name: AIG_SOURCE_VERSION
+              value: {{ $scanner.sourceVersion | quote }}
+            - name: AIG_AGENT_SHARED_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secret }}
+                  key: agent-shared-secret
+            - name: AIG_MIN_WORKERS
+              value: {{ $scanner.bridge.minWorkers | quote }}
+            - name: AIG_DATA_MANIFEST_PATH
+              value: /app/aig-data/aig-data-manifest.json
+            - name: AIG_SIGNING_PUBLIC_KEY_PATH
+              value: /run/secrets/aig-signing-public.pem
+            {{- range $trust }}
+            - name: {{ index . 0 }}
+              value: {{ index . 1 | quote }}
+            {{- end }}
+            - name: BRIDGE_AUTH_MODE
+              value: {{ $scanner.bridge.authMode | quote }}
+            - name: BRIDGE_AUTH_REQUIRED
+              value: "true"
+            {{- if eq $scanner.bridge.authMode "api_key" }}
+            - name: BRIDGE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secret }}
+                  key: bridge-api-key
+            {{- else }}
+            - name: BRIDGE_JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secret }}
+                  key: bridge-jwt-secret
+            - name: BRIDGE_JWT_ISSUER
+              value: {{ required "postureScanner.bridge.jwtIssuer is required in broker mode" $scanner.bridge.jwtIssuer | quote }}
+            - name: BRIDGE_JWT_AUDIENCE
+              value: {{ required "postureScanner.bridge.jwtAudience is required in broker mode" $scanner.bridge.jwtAudience | quote }}
+            {{- end }}
+            - name: BRIDGE_JWT_REPLAY_DB
+              value: /app/state/jwt-replay.db
+            - name: BRIDGE_TENANT_REQUIRED
+              value: "true"
+            - name: BRIDGE_HA_REQUIRED
+              value: "true"
+            - name: BRIDGE_TASK_BACKEND
+              value: postgres
+            - name: BRIDGE_TASK_POSTGRES_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secret }}
+                  key: task-postgres-dsn
+            - name: BRIDGE_REQUIRE_IDEMPOTENCY
+              value: "true"
+            - name: BRIDGE_RUNTIME_EGRESS_REQUIRED
+              value: "true"
+            - name: BRIDGE_EGRESS_PROXY_URL
+              value: {{ $proxy | quote }}
+            - name: BRIDGE_UPLOAD_ENABLED
+              value: "true"
+            - name: BRIDGE_UPLOAD_ROOT
+              value: /app/uploads
+            - name: BRIDGE_CORS_ORIGINS
+              value: {{ $scanner.bridge.corsOrigins | quote }}
+            - name: BRIDGE_DOCS_ENABLED
+              value: "false"
+            - name: BRIDGE_MAX_BODY_BYTES
+              value: "52428800"
+            - name: BRIDGE_ALLOW_PRIVATE_TARGETS
+              value: "false"
+            - name: BRIDGE_VALIDATE_DNS
+              value: "true"
+            - name: BRIDGE_SOURCE_ROOT
+              value: /app/uploads
+            - name: BRIDGE_TASK_DB
+              value: /app/state/tasks.db
+          readinessProbe:
+            httpGet:
+              path: /api/v1/readyz
+              port: http
+            periodSeconds: 15
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /api/v1/livez
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          {{- include "aidr.resources" (dict "root" . "component" "postureScannerBridge" "override" $scanner.bridge.resources) | nindent 10 }}
+          volumeMounts:
+            - name: uploads
+              mountPath: /app/uploads
+            - name: state
+              mountPath: /app/state
+            - name: data
+              mountPath: /app/aig-data
+              readOnly: true
+            - name: signing
+              mountPath: /run/secrets/aig-signing-public.pem
+              subPath: signing-public.pem
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: uploads
+          persistentVolumeClaim:
+            claimName: {{ default (include "aidr.component" (dict "root" . "component" "posture-scanner-uploads")) $scanner.uploads.existingClaim }}
+        - name: state
+          persistentVolumeClaim:
+            claimName: {{ include "aidr.component" (dict "root" . "component" "posture-scanner-bridge-state") }}
+        - name: data
+          configMap:
+            name: {{ $dataConfigMap }}
+        - name: signing
+          secret:
+            secretName: {{ $signingSecret }}
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $bridge }}
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" "posture-scanner-bridge") | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "aidr.selectorLabels" (dict "root" . "component" "posture-scanner-bridge") | nindent 4 }}
+  ports:
+    - name: http
+      port: 8099
+      targetPort: http
+{{- end }}

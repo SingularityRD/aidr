@@ -10,6 +10,8 @@
 import { z } from "zod";
 import type { Logger } from "../types.js";
 import { nullLogger } from "../types.js";
+import type { DlpDetector } from "./policy.js";
+import { scanPrivacyDetectors } from "./privacy-detectors.js";
 
 // ── Zod Schemas ─────────────────────────────────────────────────────────
 
@@ -22,6 +24,18 @@ export const PiiTypeSchema = z.enum([
 	"ip_address",
 	"aws_key",
 	"api_key",
+	// AIDR Privacy TR/EN detectors (vendored rule layer, see ./privacy-detectors.ts).
+	"tc_kimlik",
+	"iban",
+	"address",
+	"person",
+	"date_of_birth",
+	"passport",
+	"national_id",
+	"tax_id",
+	"bank_account",
+	"secret",
+	"private_key",
 ]);
 
 /** Severity levels for detected PII. */
@@ -46,6 +60,33 @@ export const PiiDetectorConfigSchema = z.object({
 	enableIpAddress: z.boolean().optional().default(true),
 	enableAwsKey: z.boolean().optional().default(true),
 	enableApiKey: z.boolean().optional().default(true),
+	/** Turkish national ID: 11-digit checksum, or any value after an explicit TC/TCKN label. */
+	enableTcKimlik: z.boolean().optional().default(true),
+	/** IBAN with ISO 13616 mod-97 across the full SWIFT registry, or after an IBAN label. */
+	enableIban: z.boolean().optional().default(true),
+	/**
+	 * Credential tokens (sk-proj, sk-ant-api, github_pat_, glpat-, JWT, Bearer, URL userinfo)
+	 * and `password=`/`şifre=` values. Opt-in: the key=value half is contextual and fires on
+	 * source code; the token formats overlap the default-on `api_key`/`aws_key` patterns.
+	 */
+	enableSecret: z.boolean().optional().default(false),
+	/** Complete PEM private-key blocks. */
+	enablePrivateKey: z.boolean().optional().default(true),
+	/**
+	 * Contextual types are opt-in: they fire on labels such as `Adres:` or `name:`,
+	 * which also appear in source code and schemas.
+	 */
+	enableAddress: z.boolean().optional().default(false),
+	/** Person names only next to an explicit label or phrase (`Ad Soyad:`, `my name is`). */
+	enablePerson: z.boolean().optional().default(false),
+	/** Labelled TR/EN fields: date of birth, passport, national ID, tax ID, bank account. */
+	enableLabelledFields: z.boolean().optional().default(false),
+	/**
+	 * false limits detection to the core patterns above and skips the vendored AIDR
+	 * Privacy rules entirely, whatever the per-type flags say. For callers that run the
+	 * privacy rules themselves (e.g. prompt protection scans them in bounded windows).
+	 */
+	enablePrivacyRules: z.boolean().optional().default(true),
 	minConfidence: z.number().min(0).max(1).optional().default(0.5),
 	entropyThreshold: z.number().min(0).max(8).optional().default(4.5),
 });
@@ -100,6 +141,110 @@ interface PiiDetector {
 
 // ── Internal Pattern Definitions ────────────────────────────────────────
 
+type PiiSeverity = "low" | "medium" | "high" | "critical";
+
+/** How each privacy detector surfaces as a core PII type, and the flag that enables it. */
+interface PrivacyTypeDef {
+	readonly detector: DlpDetector;
+	readonly type: PiiType;
+	readonly severity: PiiSeverity;
+	readonly flag: keyof PiiDetectorConfig;
+}
+
+const PRIVACY_TYPES: readonly PrivacyTypeDef[] = Object.freeze([
+	{ detector: "tc_kimlik", type: "tc_kimlik", severity: "critical", flag: "enableTcKimlik" },
+	{ detector: "iban", type: "iban", severity: "high", flag: "enableIban" },
+	// TR mobile/landline, international and labelled phone numbers.
+	{ detector: "phone", type: "phone", severity: "high", flag: "enablePhone" },
+	{ detector: "secret", type: "secret", severity: "critical", flag: "enableSecret" },
+	{ detector: "private_key", type: "private_key", severity: "critical", flag: "enablePrivateKey" },
+	{ detector: "address", type: "address", severity: "medium", flag: "enableAddress" },
+	{ detector: "person", type: "person", severity: "medium", flag: "enablePerson" },
+	{
+		detector: "date_of_birth",
+		type: "date_of_birth",
+		severity: "medium",
+		flag: "enableLabelledFields",
+	},
+	{ detector: "passport", type: "passport", severity: "high", flag: "enableLabelledFields" },
+	{ detector: "national_id", type: "national_id", severity: "high", flag: "enableLabelledFields" },
+	{ detector: "tax_id", type: "tax_id", severity: "high", flag: "enableLabelledFields" },
+	{
+		detector: "bank_account",
+		type: "bank_account",
+		severity: "high",
+		flag: "enableLabelledFields",
+	},
+]);
+
+const SEVERITY_RANK: Record<PiiSeverity, number> = { low: 0, medium: 1, high: 2, critical: 3 };
+
+/** A privacy match that overlaps an existing match of an equivalent type is a duplicate. */
+const EQUIVALENT_TYPES: Partial<Record<PiiType, readonly PiiType[]>> = {
+	secret: ["secret", "api_key", "aws_key"],
+};
+
+/**
+ * Spans of one type sorted by start, with the running maximum end, so "does
+ * any span overlap [start, end)" is a binary search instead of a full scan.
+ */
+interface SpanIndex {
+	readonly starts: number[];
+	readonly maxEnds: number[];
+}
+
+function indexSpansByType(matches: readonly PiiMatch[]): Map<PiiType, SpanIndex> {
+	const byType = new Map<PiiType, PiiMatch[]>();
+	for (const match of matches) {
+		const list = byType.get(match.type);
+		if (list) list.push(match);
+		else byType.set(match.type, [match]);
+	}
+	const index = new Map<PiiType, SpanIndex>();
+	for (const [type, list] of byType) {
+		list.sort((a, b) => a.start - b.start);
+		const starts: number[] = [];
+		const maxEnds: number[] = [];
+		let maxEnd = Number.NEGATIVE_INFINITY;
+		for (const match of list) {
+			maxEnd = Math.max(maxEnd, match.end);
+			starts.push(match.start);
+			maxEnds.push(maxEnd);
+		}
+		index.set(type, { starts, maxEnds });
+	}
+	return index;
+}
+
+/** true when a span that starts before `end` reaches past `start`. */
+function spanIndexOverlaps(index: SpanIndex, start: number, end: number): boolean {
+	let low = 0;
+	let high = index.starts.length;
+	while (low < high) {
+		const mid = (low + high) >>> 1;
+		if ((index.starts[mid] ?? 0) < end) low = mid + 1;
+		else high = mid;
+	}
+	return low > 0 && (index.maxEnds[low - 1] ?? 0) > start;
+}
+
+function overlapsEquivalent(index: ReadonlyMap<PiiType, SpanIndex>, candidate: PiiMatch): boolean {
+	const equivalent = EQUIVALENT_TYPES[candidate.type] ?? [candidate.type];
+	return equivalent.some((type) => {
+		const spans = index.get(type);
+		return spans !== undefined && spanIndexOverlaps(spans, candidate.start, candidate.end);
+	});
+}
+
+/** Result of {@link PiiDetectorImpl.detectWithCoverage}. */
+export interface PiiDetection {
+	readonly matches: PiiMatch[];
+	/** true when the privacy rules could not inspect all input; matches are a lower bound. */
+	readonly incomplete: boolean;
+	/** Static reason codes (never input text). */
+	readonly reasons: readonly string[];
+}
+
 /** Internal descriptor for a single detection pattern. */
 interface PatternDef {
 	readonly type: PiiType;
@@ -108,6 +253,75 @@ interface PatternDef {
 	readonly confidenceBase: number;
 	/** Optional post-match validation (e.g. Luhn check). */
 	readonly validate?: (value: string) => boolean;
+	/**
+	 * Optional match finder yielding exactly what a global exec loop over `regex`
+	 * would, for patterns that can find those matches more cheaply.
+	 */
+	readonly find?: (input: string) => Iterable<RegExpExecArray>;
+}
+
+/**
+ * Email: RFC 5322 simplified — covers the vast majority of real-world addresses.
+ * RFC 5321 length limits (64-char local part, 253-char domain, 63-char label)
+ * keep every attempt bounded: with unbounded runs a long `a.a.a…` or `%41%41…`
+ * text is rescanned from every word boundary (quadratic).
+ */
+const EMAIL_SOURCE = String.raw`\b[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,253}\.[A-Za-z]{2,63}\b`;
+const EMAIL_MAX_LOCAL = 64;
+/** Sticky form of the email pattern: one attempt at exactly `lastIndex`. */
+const EMAIL_AT = new RegExp(EMAIL_SOURCE, "y");
+
+/** A character of the email pattern's local-part class `[A-Za-z0-9._%+-]`. */
+function isEmailLocalChar(code: number): boolean {
+	return (
+		(code >= 0x61 && code <= 0x7a) || // a-z
+		(code >= 0x41 && code <= 0x5a) || // A-Z
+		(code >= 0x30 && code <= 0x39) || // 0-9
+		code === 0x2e || // .
+		code === 0x5f || // _
+		code === 0x25 || // %
+		code === 0x2b || // +
+		code === 0x2d // -
+	);
+}
+
+/**
+ * The matches of a global exec loop over the email pattern, found from each `@`
+ * instead of from every word boundary. A match contains exactly one `@` (neither
+ * the local part nor the domain allows one), and its local part is the at most
+ * 64 local-part characters right before it, so the only starts that can match
+ * lie in that run. Trying just those starts, in order, from the end of the
+ * previous match yields the same matches; a long digit or dotted run with no
+ * `@` (which the plain loop rescans from every boundary, 64 characters at a
+ * time) costs one `indexOf`.
+ */
+function* findEmails(input: string): Generator<RegExpExecArray> {
+	let from = 0;
+	for (let at = input.indexOf("@"); at !== -1; at = input.indexOf("@", at + 1)) {
+		const floor = Math.max(from, at - EMAIL_MAX_LOCAL);
+		let start = at;
+		while (start > floor && isEmailLocalChar(input.charCodeAt(start - 1))) start--;
+		for (let candidate = start; candidate < at; candidate++) {
+			EMAIL_AT.lastIndex = candidate;
+			const match = EMAIL_AT.exec(input);
+			if (match !== null) {
+				from = candidate + match[0].length;
+				yield match;
+				break;
+			}
+		}
+	}
+}
+
+/** The matches of `def` in `input`, in position order. */
+function* patternMatches(def: PatternDef, input: string): Generator<RegExpExecArray> {
+	if (def.find) {
+		yield* def.find(input);
+		return;
+	}
+	def.regex.lastIndex = 0;
+	let match: RegExpExecArray | null;
+	while ((match = def.regex.exec(input)) !== null) yield match;
 }
 
 const PATTERNS: readonly PatternDef[] = Object.freeze([
@@ -135,10 +349,10 @@ const PATTERNS: readonly PatternDef[] = Object.freeze([
 	// ── Email ────────────────────────────────────────────────────────────
 	{
 		type: "email",
-		// RFC 5322 simplified — covers the vast majority of real-world addresses.
-		regex: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g,
+		regex: new RegExp(EMAIL_SOURCE, "g"),
 		severity: "high",
 		confidenceBase: 0.9,
+		find: findEmails,
 	},
 
 	// ── Phone Number (US / International) ────────────────────────────────
@@ -268,8 +482,11 @@ export function calculateConfidence(
 ): number {
 	let confidence = def.confidenceBase;
 
-	// Entropy bonus — high-entropy values are more likely genuine secrets
-	const entropy = shannonEntropy(value);
+	// Entropy bonus — high-entropy values are more likely genuine secrets. The
+	// entropy of n symbols is at most log2(n), so a value too short to exceed
+	// the threshold skips the per-character count (most card, phone and SSN
+	// candidates, which a long digit run produces by the hundred thousand).
+	const entropy = Math.log2(value.length) > entropyThreshold ? shannonEntropy(value) : 0;
 	if (entropy > entropyThreshold) {
 		const bonus = Math.min(0.15, (entropy - entropyThreshold) * 0.04);
 		confidence += bonus;
@@ -292,8 +509,11 @@ export function calculateConfidence(
 /**
  * PII detector that scans text for personally identifiable information.
  *
- * Supports seven PII categories:
- *  - SSN, credit-card numbers, email, phone, IP addresses, AWS keys, generic API keys.
+ * Supports the core categories (SSN, credit-card numbers, email, phone, IP
+ * addresses, AWS keys, generic API keys) plus the AIDR Privacy TR/EN detectors:
+ * TC Kimlik, IBAN (mod-97, all registry countries), TR phones, PEM private keys
+ * and — opt-in — credential tokens, addresses, contextual person names and
+ * labelled identity fields.
  *
  * Each detection is scored with a confidence value based on pattern specificity,
  * Shannon entropy, and optional post-match validation (e.g. Luhn for credit cards).
@@ -309,6 +529,7 @@ export class PiiDetectorImpl implements PiiDetector {
 	private readonly config: PiiDetectorConfig;
 	private readonly logger: Logger;
 	private readonly enabledPatterns: readonly PatternDef[];
+	private readonly enabledPrivacyTypes: readonly PrivacyTypeDef[];
 
 	/**
 	 * @param config - Partial configuration (unspecified fields use defaults).
@@ -318,11 +539,15 @@ export class PiiDetectorImpl implements PiiDetector {
 		this.config = PiiDetectorConfigSchema.parse(config);
 		this.logger = logger;
 		this.enabledPatterns = this.buildEnabledPatterns();
+		this.enabledPrivacyTypes = this.config.enablePrivacyRules
+			? PRIVACY_TYPES.filter((def) => this.config[def.flag] === true)
+			: [];
 	}
 
 	/** Filter PATTERNS down to those the user has enabled. */
 	private buildEnabledPatterns(): PatternDef[] {
-		const flagMap: Record<PiiType, keyof PiiDetectorConfig> = {
+		// Privacy-rule types are enabled separately (PRIVACY_TYPES).
+		const flagMap: Partial<Record<PiiType, keyof PiiDetectorConfig>> = {
 			ssn: "enableSsn",
 			credit_card: "enableCreditCard",
 			email: "enableEmail",
@@ -334,7 +559,7 @@ export class PiiDetectorImpl implements PiiDetector {
 
 		return PATTERNS.filter((p) => {
 			const flag = flagMap[p.type];
-			return this.config[flag] === true;
+			return flag !== undefined && this.config[flag] === true;
 		});
 	}
 
@@ -348,23 +573,34 @@ export class PiiDetectorImpl implements PiiDetector {
 	 * @returns Ordered list of PII matches exceeding `minConfidence`.
 	 */
 	detect(input: string): PiiMatch[] {
+		const detection = this.detectWithCoverage(input);
+		if (detection.incomplete) {
+			this.logger.warn("PiiDetector privacy rules could not inspect all input", {
+				reasons: detection.reasons,
+			});
+		}
+		return detection.matches;
+	}
+
+	/**
+	 * Like {@link detect}, but also reports whether the vendored AIDR Privacy rules
+	 * inspected the whole input. An incomplete result is a lower bound, not a clean one.
+	 */
+	detectWithCoverage(input: string): PiiDetection {
 		if (typeof input !== "string") {
 			this.logger.warn("PiiDetector.detect received non-string input", {
 				type: typeof input,
 			});
-			return [];
+			return { matches: [], incomplete: false, reasons: [] };
 		}
 
 		const matches: PiiMatch[] = [];
 		const { minConfidence, entropyThreshold } = this.config;
 
+		// Spans cannot repeat: each type has one pattern, and one pattern's matches
+		// are non-empty and non-overlapping, so no per-span dedupe set is needed.
 		for (const def of this.enabledPatterns) {
-			let match: RegExpExecArray | null;
-
-			// Reset lastIndex for global regexes
-			def.regex.lastIndex = 0;
-
-			while ((match = def.regex.exec(input)) !== null) {
+			for (const match of patternMatches(def, input)) {
 				const value = match[0];
 				const start = match.index;
 				const end = start + value.length;
@@ -372,12 +608,6 @@ export class PiiDetectorImpl implements PiiDetector {
 				const confidence = calculateConfidence(value, def, entropyThreshold);
 
 				if (confidence < minConfidence) continue;
-
-				// Deduplicate by exact position span
-				const isDuplicate = matches.some(
-					(m) => m.start === start && m.end === end && m.type === def.type,
-				);
-				if (isDuplicate) continue;
 
 				matches.push({
 					type: def.type,
@@ -390,8 +620,39 @@ export class PiiDetectorImpl implements PiiDetector {
 			}
 		}
 
-		matches.sort((a, b) => a.start - b.start);
-		return matches;
+		const privacy = this.detectPrivacyTypes(input, matches);
+		// Same start: the more severe (more specific) type first, e.g. a checksum-valid
+		// TC Kimlik ahead of the generic phone pattern matching the same digits.
+		matches.sort(
+			(a, b) => a.start - b.start || SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity],
+		);
+		return { matches, incomplete: privacy.incomplete, reasons: privacy.reasons };
+	}
+
+	/** Append vendored privacy-rule matches that the core patterns did not already report. */
+	private detectPrivacyTypes(
+		input: string,
+		matches: PiiMatch[],
+	): { incomplete: boolean; reasons: readonly string[] } {
+		if (this.enabledPrivacyTypes.length === 0) return { incomplete: false, reasons: [] };
+		const byDetector = new Map(this.enabledPrivacyTypes.map((def) => [def.detector, def]));
+		const scan = scanPrivacyDetectors(input, [...byDetector.keys()]);
+		const existing = indexSpansByType(matches);
+		for (const found of scan.matches) {
+			const def = byDetector.get(found.detector);
+			if (!def || found.score < this.config.minConfidence) continue;
+			const match: PiiMatch = {
+				type: def.type,
+				value: input.slice(found.start, found.end),
+				start: found.start,
+				end: found.end,
+				confidence: found.score,
+				severity: def.severity,
+			};
+			if (overlapsEquivalent(existing, match)) continue;
+			matches.push(match);
+		}
+		return { incomplete: scan.incomplete, reasons: scan.reasons };
 	}
 
 	/**

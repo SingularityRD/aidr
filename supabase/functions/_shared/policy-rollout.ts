@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.116.0";
 import { corsJson } from "./cors.ts";
+import { isFourEyesRefusal, readPolicyFourEyes, submitPolicyChange } from "./policy-change-control.ts";
 import { validateRuntimePolicy } from "./runtime-policy.ts";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -58,11 +59,21 @@ export async function dispatchPolicyRollout(req: Request, db: SupabaseClient, bo
 		const message = error instanceof Error ? error.message : "invalid_rollout";
 		return corsJson(req, message === "rollout_too_large" ? 413 : 400, { error: message });
 	}
+	// Four-eyes change control: a second owner/admin approves the plan first.
+	const fourEyes = await readPolicyFourEyes(db, tenant);
+	if (!fourEyes.ok) return corsJson(req, 503, { error: "rollout_failed" });
+	if (fourEyes.enabled) {
+		return await submitPolicyChange(req, db, {
+			tenantId: tenant, userId, kind: "runtime_rollout", baseVersion: Number(body.expected_version),
+			expectedRevisionVersion: Number(body.expected_revision_version), payload: { policy, rings },
+		});
+	}
 	const result = await db.rpc("create_policy_rollout", {
 		p_tenant_id: tenant, p_user_id: userId, p_expected_version: body.expected_version,
 		p_expected_revision_version: body.expected_revision_version, p_policy: policy, p_rings: rings,
 	});
 	if (result.error) {
+		if (isFourEyesRefusal(result.error)) return corsJson(req, 409, { error: "policy_four_eyes_required" });
 		const code = result.error.code;
 		return corsJson(req, code === "PT409" ? 409 : code === "42501" ? 403 : code === "22023" ? 400 : 503, {
 			error: code === "PT409" ? "rollout_conflict" : code === "42501" ? "policy_forbidden" : "rollout_failed",

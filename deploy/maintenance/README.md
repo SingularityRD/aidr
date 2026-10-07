@@ -86,6 +86,25 @@ counts, and validate visibility in the customer's SIEM during acceptance.
 When capacity is exhausted AIDR refuses new queue entries; do not delete the
 state file to recover capacity or clear a failure.
 
+## Alert notification dispatcher (optional)
+
+Settings → Notifications channels (Slack, Teams, signed webhooks, e-mail) are
+delivered by the `notification-dispatch` Edge Function. On Compose it is driven
+by `aidr-notification-dispatch.timer`, which runs
+`maintenance/notification-dispatch.mjs` once a minute: it POSTs to
+`<supabase_url>/functions/v1/notification-dispatch` with
+`AIDR_NOTIFICATION_DISPATCH_TOKEN` from the owner-only `.env.functions` and
+prints delivery counts only (never the token, a destination or a payload).
+`deployment-prepare.mjs` generates that token and
+`AIDR_NOTIFICATION_ENCRYPTION_KEYS`; for an installation prepared before alert
+integrations, add both to `.env.functions` (a `k1:` prefixed base64 32-byte key
+and a random token of at least 32 characters), then recreate the `functions`
+service. Enable the timer with `--with-notifications`; the installer refuses
+when either variable is missing and runs one supervised dispatch before
+enabling the schedule. Deliveries leave from the `functions` container, so the
+host firewall or egress proxy must allow Slack, Teams, the webhook receivers
+and the mail provider.
+
 Install on the production Linux host:
 
 ```sh
@@ -184,3 +203,11 @@ rehearsal on purpose. `doctor-evidence.json` then records
 production manifest is a failure. When `/readyz` is not ready, the doctor names
 the failing readiness checks, for example
 `FAIL dashboard readiness (not ok: signing, backup, certificate)`.
+## Governance summaries
+
+`aidr-export-retention.timer` runs `scripts/deployment-maintenance.mjs --apply` hourly.
+After the retention steps it calls the `governance-digest` Edge Function with the
+deployment service credential, which sends due weekly/monthly governance summaries
+(counts only) to each workspace's owners/admins through the configured mailer and
+records a receipt. The dispatch counts are written to `maintenance-evidence.json`
+under `governance_digest`. See `docs/ai-governance-frameworks.md`.

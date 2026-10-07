@@ -9,6 +9,8 @@
 				"deploy/fleet/unix/aidr-remediate.mjs",
 				"deploy/fleet/unix/fleet-health.mjs",
 				"deploy/fleet/unix/remove-managed-hooks.mjs",
+				"deploy/helm/build-images.mjs",
+				"deploy/helm/generate-secrets.mjs",
 				"docs/scripts/claim-check.mjs",
 				"scripts/benchmarks/generate-corpus.mjs",
 				"scripts/benchmarks/split-corpus.mjs",
@@ -35,7 +37,9 @@
 				"scripts/resource-profile.mjs",
 				"scripts/run-evidence-gates.mjs",
 				"scripts/run-ide-host-e2e.mjs",
+				"scripts/real-host-e2e/crash-hook.mjs",
 				"scripts/sign-artifact-manifest.mjs",
+				"scripts/sync-governance-frameworks.mjs",
 				"scripts/verify-customer-kit.mjs",
 				"scripts/verify-codex-host-offline.mjs",
 				"scripts/verify-support-ticket-drill.mjs",
@@ -65,8 +69,8 @@
 				"*.{js,cjs,mjs,ts}"
 			],
 			"ignore": ["deploy/upstream/**", "vendor/**"],
-			"ignoreDependencies": ["npm"],
-			"ignoreBinaries": ["bash", "docker", "gh", "gitleaks", "go", "icacls.exe", "where.exe", "wrangler"]
+			"ignoreDependencies": ["npm", "playwright-core"],
+			"ignoreBinaries": ["bash", "docker", "gh", "gitleaks", "go", "icacls.exe", "psql", "where.exe", "wrangler"]
 		},
 		"packages/core": {
 			"entry": ["src/index.ts"],
@@ -81,6 +85,16 @@
 				"src/health.ts"
 			],
 			"project": ["src/**/*.ts", "scripts/**/*.{js,mjs}", "*.{js,mjs,ts}"]
+		},
+		"packages/browser-guard": {
+			"entry": [
+				"src/background/index.ts",
+				"src/content/index.ts",
+				"src/ui/popup.ts",
+				"src/ui/options.ts",
+				"e2e/fixtures/kit.js"
+			],
+			"project": ["src/**/*.ts", "scripts/**/*.mjs", "e2e/**/*.{js,mjs}"]
 		},
 		"packages/cli": {
 			"entry": ["src/index.ts"],
@@ -153,6 +167,8 @@
 	},
 	"ignoreIssues": {
 		"packages/opencode/src/index.ts": ["duplicates"],
-		"scripts/sync-dlp-edge-schema.mjs": ["unlisted"]
+		"scripts/sync-dlp-edge-schema.mjs": ["unlisted"],
+		"scripts/sync-agent-profile-edge-schema.mjs": ["unlisted"],
+		"packages/core/src/dlp/privacy-rules/**": ["exports", "types"]
 	}
 }

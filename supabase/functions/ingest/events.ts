@@ -1,3 +1,5 @@
+import { POSTURE_EVENT_TYPES, projectPostureFields } from "./posture.ts";
+
 export const MAX_INGEST_EVENTS = 200;
 const MAX_INGEST_EVENT_BYTES = 256 * 1024;
 const MAX_INGEST_BATCH_BYTES = 4 * 1024 * 1024;
@@ -17,6 +19,9 @@ const EVENT_TYPES = new Set([
 	"plugin_scan",
 	"plugin_scan_finding",
 	"runtime_policy_cache",
+	"privacy_scan",
+	"aup_acknowledgement",
+	"shadow_ai_usage",
 ]);
 const DECISIONS = new Set(["allow", "ask", "deny"]);
 const SEVERITIES = new Set(["info", "warning", "high", "critical"]);
@@ -30,6 +35,218 @@ const RECOMMENDED_ACTIONS = new Set([
 	"notify",
 ]);
 const REDACTED = "[Redacted]";
+// AI security posture findings (aidr scan/discover --upload); fields in ./posture.ts.
+for (const type of POSTURE_EVENT_TYPES) EVENT_TYPES.add(type);
+
+/**
+ * Browser Guard privacy telemetry (docs/contracts/privacy-telemetry.md).
+ * Keys mirror packages/privacy/src/types.ts ENTITY_TYPES; the edge runtime
+ * cannot import that package, so the contract suite pins the two lists.
+ */
+export const PRIVACY_ENTITY_TYPES = [
+	"PERSON", "EMAIL", "PHONE", "TC_KIMLIK", "IBAN", "CREDIT_CARD", "ADDRESS",
+	"US_SSN", "DATE_OF_BIRTH", "PASSPORT", "NATIONAL_ID", "TAX_ID", "BANK_ACCOUNT",
+	"IP_ADDRESS", "MAC_ADDRESS", "SECRET", "PRIVATE_KEY", "INTERNAL", "CLASSIFIED",
+	"LOCATION", "USERNAME", "HEALTH_ID", "LICENSE_PLATE",
+] as const;
+export const PRIVACY_SITES = [
+	"chatgpt", "gemini", "claude", "copilot", "perplexity", "deepseek", "mistral", "grok", "custom",
+	"other",
+] as const;
+const PRIVACY_CHANNELS = ["prompt", "paste", "file"] as const;
+/** Generic decision for each guard action: a masked send left redacted, so it was allowed. */
+export const PRIVACY_ACTION_DECISIONS = {
+	masked: "allow",
+	warned: "ask",
+	blocked: "deny",
+	allowed: "allow",
+} as const;
+export const MAX_PRIVACY_ENTITY_KEYS = 32;
+const MAX_PRIVACY_ENTITY_COUNT = 100_000;
+const PRIVACY_ENTITY_TYPE_SET = new Set<string>(PRIVACY_ENTITY_TYPES);
+const PRIVACY_SITE_SET = new Set<string>(PRIVACY_SITES);
+const PRIVACY_CHANNEL_SET = new Set<string>(PRIVACY_CHANNELS);
+
+/**
+ * Browser Guard Shadow AI usage (docs/contracts/privacy-telemetry.md): aggregated
+ * visit/block counts per catalogued AI service. Keys and categories mirror the catalog in
+ * packages/browser-guard/src/sites/catalog.ts (pinned by the contract suite); a
+ * well-formed id this server does not know yet is filed under "other".
+ */
+export const SHADOW_AI_SERVICE_CATEGORIES: Readonly<Record<string, string>> = {
+	chatgpt: "chat", gemini: "chat", claude: "chat", copilot: "chat", perplexity: "search",
+	deepseek: "chat", mistral: "chat", grok: "chat", poe: "chat", "character-ai": "chat",
+	huggingface: "chat", "meta-ai": "chat", pi: "chat", "duck-ai": "chat", kimi: "chat",
+	qwen: "chat", doubao: "chat", ernie: "chat", chatglm: "chat", yuanbao: "chat",
+	cohere: "chat", groq: "chat", openrouter: "chat", together: "chat", lmarena: "chat",
+	monica: "chat", replika: "chat", chatpdf: "chat", notebooklm: "chat", you: "search",
+	consensus: "search", elicit: "search", phind: "coding", "ai-studio": "coding",
+	"openai-platform": "coding", "anthropic-console": "coding", "azure-ai-foundry": "coding",
+	cursor: "coding", v0: "coding", bolt: "coding", lovable: "coding", replit: "coding",
+	windsurf: "coding", tabnine: "coding", blackbox: "coding", devin: "agent", manus: "agent",
+	genspark: "agent", jasper: "writing", writesonic: "writing", "copy-ai": "writing",
+	quillbot: "writing", deepl: "writing", grammarly: "writing", wordtune: "writing",
+	rytr: "writing", gamma: "writing", tome: "writing", "beautiful-ai": "writing",
+	midjourney: "image", leonardo: "image", ideogram: "image", runway: "image",
+	elevenlabs: "image", suno: "image", pika: "image", krea: "image", firefly: "image",
+	heygen: "image", synthesia: "image", otter: "meeting", fireflies: "meeting",
+	tldv: "meeting", fathom: "meeting", "read-ai": "meeting",
+};
+export const SHADOW_AI_ACTION_DECISIONS = { visited: "allow", blocked: "deny" } as const;
+export const MAX_SHADOW_AI_COUNT = 100_000;
+const SHADOW_AI_SERVICE_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,31}$/;
+
+function shadowAiAction(value: unknown): keyof typeof SHADOW_AI_ACTION_DECISIONS | undefined {
+	return typeof value === "string" && Object.hasOwn(SHADOW_AI_ACTION_DECISIONS, value)
+		? (value as keyof typeof SHADOW_AI_ACTION_DECISIONS)
+		: undefined;
+}
+
+function isShadowAiCount(value: unknown): value is number {
+	return typeof value === "number" && Number.isInteger(value) && value >= 1 &&
+		value <= MAX_SHADOW_AI_COUNT;
+}
+
+/** Reject a Shadow AI event whose required fields cannot be projected faithfully. */
+function shadowAiEventProblem(event: Record<string, unknown>): string | undefined {
+	if (!shadowAiAction(event.action)) return "action";
+	if (typeof event.service_id !== "string" || !SHADOW_AI_SERVICE_ID_PATTERN.test(event.service_id)) {
+		return "service_id";
+	}
+	if (!isShadowAiCount(event.count)) return "count";
+	if (event.sanctioned !== undefined && typeof event.sanctioned !== "boolean") return "sanctioned";
+	return undefined;
+}
+
+/**
+ * Counts-only projection of a Shadow AI usage event: a catalog id (or "other"), its
+ * category, visited|blocked, a bounded count and the sanctioned flag. URLs, hosts, paths
+ * and titles are dropped even when a client sends them.
+ */
+function projectShadowAiEvent(event: Record<string, unknown> & { event_id: string }) {
+	const action = shadowAiAction(event.action) ?? "visited";
+	const serviceId = typeof event.service_id === "string" &&
+			Object.hasOwn(SHADOW_AI_SERVICE_CATEGORIES, event.service_id)
+		? event.service_id
+		: "other";
+	const projected: Record<string, unknown> & { event_id: string } = {
+		event_id: event.event_id,
+		type: "shadow_ai_usage",
+	};
+	const timestamp = safeTimestamp(event.timestamp);
+	if (timestamp) projected.timestamp = timestamp;
+	projected.service_id = serviceId;
+	projected.category = SHADOW_AI_SERVICE_CATEGORIES[serviceId] ?? "other";
+	projected.action = action;
+	projected.decision = SHADOW_AI_ACTION_DECISIONS[action];
+	projected.count = isShadowAiCount(event.count) ? event.count : 1;
+	projected.sanctioned = event.sanctioned === true;
+	const policyId = safeIdentifier(event.policy_id);
+	if (policyId) projected.policy_id = policyId;
+	return projected;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function privacyAction(value: unknown): keyof typeof PRIVACY_ACTION_DECISIONS | undefined {
+	return typeof value === "string" && Object.hasOwn(PRIVACY_ACTION_DECISIONS, value)
+		? (value as keyof typeof PRIVACY_ACTION_DECISIONS)
+		: undefined;
+}
+
+/**
+ * Browser Guard acceptable-use acknowledgement (docs/contracts/privacy-telemetry.md):
+ * one event per install and notice version, carrying the notice identifier and
+ * version only. The notice text never leaves the browser.
+ */
+export const AUP_NOTICE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/;
+export const MAX_AUP_NOTICE_VERSION = 999_999;
+
+function aupEventProblem(event: Record<string, unknown>): string | undefined {
+	if (typeof event.notice_id !== "string" || !AUP_NOTICE_ID_PATTERN.test(event.notice_id) ||
+		isSensitiveIdentifier(event.notice_id)) {
+		return "notice_id";
+	}
+	const version = event.notice_version;
+	if (typeof version !== "number" || !Number.isInteger(version) || version < 1 || version > MAX_AUP_NOTICE_VERSION) {
+		return "notice_version";
+	}
+	return undefined;
+}
+
+/** Counts-only projection: the site enum, notice id and version survive; nothing else. */
+function projectAupEvent(event: Record<string, unknown> & { event_id: string }) {
+	const projected: Record<string, unknown> & { event_id: string } = {
+		event_id: event.event_id,
+		type: "aup_acknowledgement",
+	};
+	const timestamp = safeTimestamp(event.timestamp);
+	if (timestamp) projected.timestamp = timestamp;
+	projected.site = safeEnum(event.site, PRIVACY_SITE_SET) ?? "other";
+	projected.notice_id = event.notice_id;
+	projected.notice_version = event.notice_version;
+	return projected;
+}
+
+/**
+ * Resolve the event type from `type` or its contract alias `event_type`.
+ * Returns null when the two disagree or name an unknown type.
+ */
+function resolveEventType(event: Record<string, unknown>): string | null {
+	const declared = [event.type, event.event_type].filter((value) => value !== undefined);
+	if (declared.length === 0) return "runtime_verdict";
+	const type = safeEnum(declared[0], EVENT_TYPES);
+	if (!type || declared.some((value) => value !== type)) return null;
+	return type;
+}
+
+/** Reject a privacy event whose required fields cannot be projected faithfully. */
+function privacyEventProblem(event: Record<string, unknown>): string | undefined {
+	if (!privacyAction(event.action)) return "action";
+	if (safeEnum(event.channel, PRIVACY_CHANNEL_SET) === undefined) return "channel";
+	if (event.entity_counts !== undefined) {
+		if (!isPlainObject(event.entity_counts)) return "entity_counts";
+		if (Object.keys(event.entity_counts).length > MAX_PRIVACY_ENTITY_KEYS) return "entity_counts";
+	}
+	return undefined;
+}
+
+/**
+ * Counts-only projection of a Browser Guard scan. Nothing but enums, bounded
+ * integers and an optional policy identifier survives: raw prompt text, masked
+ * text, matched values and page URLs are dropped even when a client sends them.
+ */
+function projectPrivacyEvent(event: Record<string, unknown> & { event_id: string }) {
+	const action = privacyAction(event.action) ?? "allowed";
+	const projected: Record<string, unknown> & { event_id: string } = {
+		event_id: event.event_id,
+		type: "privacy_scan",
+	};
+	const timestamp = safeTimestamp(event.timestamp);
+	if (timestamp) projected.timestamp = timestamp;
+	// A site this server does not know yet is still a real send: keep it as "other".
+	projected.site = safeEnum(event.site, PRIVACY_SITE_SET) ?? "other";
+	projected.action = action;
+	projected.channel = safeEnum(event.channel, PRIVACY_CHANNEL_SET);
+	projected.decision = PRIVACY_ACTION_DECISIONS[action];
+	const counts: Record<string, number> = {};
+	if (isPlainObject(event.entity_counts)) {
+		for (const [key, value] of Object.entries(event.entity_counts)) {
+			if (!PRIVACY_ENTITY_TYPE_SET.has(key)) continue;
+			if (typeof value !== "number" || !Number.isInteger(value)) continue;
+			if (value < 1 || value > MAX_PRIVACY_ENTITY_COUNT) continue;
+			counts[key] = value;
+		}
+	}
+	projected.entity_counts = counts;
+	const findingsCount = safeBoundedCount(event.findings_count);
+	if (findingsCount !== undefined) projected.findings_count = findingsCount;
+	const policyId = safeIdentifier(event.policy_id);
+	if (policyId) projected.policy_id = policyId;
+	return projected;
+}
 
 function isSensitiveIdentifier(value: string): boolean {
 	return SENSITIVE_IDENTIFIER_PATTERN.test(value) ||
@@ -75,13 +292,17 @@ function safeDigestOrMarker(value: unknown): string {
  * nested copy of those values. Unknown fields are omitted, and the only
  * nested object we accept is the bounded runtime-policy-cache summary.
  */
-function projectEvent(event: Record<string, unknown> & { event_id: string }) {
+function projectEvent(event: Record<string, unknown> & { event_id: string }, type: string) {
+	if (type === "privacy_scan") return projectPrivacyEvent(event);
+	if (type === "aup_acknowledgement") return projectAupEvent(event);
+	if (type === "shadow_ai_usage") return projectShadowAiEvent(event);
 	const projected: Record<string, unknown> & { event_id: string } = {
 		event_id: event.event_id,
-		type: safeEnum(event.type, EVENT_TYPES) ?? "runtime_verdict",
+		type,
 	};
 	const timestamp = safeTimestamp(event.timestamp);
 	if (timestamp) projected.timestamp = timestamp;
+	Object.assign(projected, projectPostureFields(event));
 
 	for (const key of ["session_id", "incident_id", "tool_name", "source", "matched_threat_id", "plugin_key"] as const) {
 		const safe = safeIdentifier(event[key]);
@@ -170,8 +391,24 @@ export function normalizeIngestEvents(value: unknown): NormalizedIngestEvents {
 		if (isSensitiveIdentifier(event.event_id)) {
 			return { ok: false, status: 400, error: "invalid_event", detail: `events[${index}].event_id` };
 		}
-		if (event.type !== undefined && safeEnum(event.type, EVENT_TYPES) === undefined) {
+		const type = resolveEventType(event);
+		if (type === null) {
 			return { ok: false, status: 400, error: "invalid_event", detail: `events[${index}].type` };
+		}
+		const privacyProblem = type === "privacy_scan"
+			? privacyEventProblem(event)
+			: type === "shadow_ai_usage"
+				? shadowAiEventProblem(event)
+				: type === "aup_acknowledgement"
+					? aupEventProblem(event)
+					: undefined;
+		if (privacyProblem) {
+			return {
+				ok: false,
+				status: 400,
+				error: "invalid_event",
+				detail: `events[${index}].${privacyProblem}`,
+			};
 		}
 		if (seen.has(event.event_id)) {
 			return {
@@ -202,7 +439,7 @@ export function normalizeIngestEvents(value: unknown): NormalizedIngestEvents {
 		if (batchBytes > MAX_INGEST_BATCH_BYTES) {
 			return { ok: false, status: 413, error: "events_batch_too_large" };
 		}
-		events.push(projectEvent(event as Record<string, unknown> & { event_id: string }));
+		events.push(projectEvent(event as Record<string, unknown> & { event_id: string }, type));
 	}
 	return { ok: true, events };
 }

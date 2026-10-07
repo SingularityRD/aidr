@@ -84,6 +84,8 @@ async function fixture(options: Options = {}) {
 							? { role: options.role ?? "owner", expires_at: options.expiresAt ?? null } : null, error: null,
 					};
 					if (table === "tenants") return { data: { status: options.status ?? "active" }, error: null };
+					// Four-eyes change control is off for this tenant (policy-change-control-contract covers it on).
+					if (table === "tenant_ai_governance_settings") return { data: null, error: null };
 					if (table === "tenant_dlp_policies") return {
 						data: filters.tenant_id === TENANT
 							? ("readResult" in options ? options.readResult : stored)

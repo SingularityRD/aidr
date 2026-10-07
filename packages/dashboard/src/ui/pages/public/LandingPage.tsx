@@ -1,17 +1,62 @@
 import { Link } from "react-router-dom";
+import {
+	AGENT_CONNECTORS,
+	AIG_AI_COMPONENTS,
+	AIG_CVE_RULES_FLOOR,
+	BROWSER_GUARD_BROWSERS,
+	BROWSER_GUARD_SITES,
+	POSTURE_MCP_RISK_CATEGORIES,
+	POSTURE_SKILL_RISK_CODES,
+	SHIPPED_THREAT_RULES,
+	THREAT_RULE_FILES,
+} from "./product-facts";
 
 const launchLinks = [
 	{ name: "Get started", href: "/login?returnTo=%2Fonboarding", desc: "Enroll a supported agent." },
 	{ name: "Sign in", href: "/login?returnTo=%2Fdashboard", desc: "Open your workspace." },
-	{ name: "View Pricing", href: "/pricing", desc: "Evaluation and scoped enterprise terms." },
+	{ name: "View Editions", href: "/pricing", desc: "Compare editions and request a quote." },
 	{ name: "Request Pilot", href: "/pilot", desc: "Start with an approval-gated pilot." },
 ];
 
-const _highlights = [
-	"Tool-call inspection: shell, file, network, MCP/plugin actions",
-	"Local enforcement with managed visibility",
-	"Auth-first model with offline grace after enrollment",
-	"Prompt-install onboarding for Claude/Cursor/VS Code/OpenClaw/OpenCode",
+const productLines = [
+	{
+		title: "AIDR for AI coding agents",
+		desc: `Connectors for ${AGENT_CONNECTORS.join(", ")} check commands, file writes and URLs against ${SHIPPED_THREAT_RULES} YAML threat rules before the host acts. Includes an MCP gateway, an SDK and a CLI.`,
+	},
+	{
+		title: "AIDR Browser Guard",
+		desc: `A ${BROWSER_GUARD_BROWSERS.join(", ")} extension that masks personal data and secrets before prompts, pastes and files reach AI chat products.`,
+	},
+	{
+		title: "AIDR Privacy engine",
+		desc: "Turkish and English detection with checksum validation. Optional endpoint NER/OCR host and enterprise gateway.",
+	},
+	{
+		title: "AI Security Posture",
+		desc: `AI infrastructure vulnerability scanning with ${AIG_AI_COMPONENTS} AI component fingerprints and ${AIG_CVE_RULES_FLOOR.toLocaleString("en-US")}+ CVE rules rated by severity and CVSS, MCP server risk analysis across ${POSTURE_MCP_RISK_CATEGORIES} risk categories, ${POSTURE_SKILL_RISK_CODES[0]}–${POSTURE_SKILL_RISK_CODES[POSTURE_SKILL_RISK_CODES.length - 1]} skill and plugin scanning, and a dashboard posture view. Uploads carry identifiers and digests only.`,
+	},
+];
+
+const browserGuardPoints = [
+	"TR/EN personal data: T.C. kimlik, IBAN, phone numbers, email addresses, payment cards",
+	"Secrets and API keys, custom terms and exact-data-match fingerprints",
+	"Reversible placeholders such as [EMAIL_1]; originals are restored only on your screen",
+	"Administrator-managed policy and counts-only telemetry, never prompt text",
+];
+
+const deploymentOptions = [
+	{
+		title: "Local mode (free)",
+		desc: "Connectors and Browser Guard evaluate on the device. No account needed for detection.",
+	},
+	{
+		title: "Cloud",
+		desc: "Hosted dashboard, device enrollment, central policy, audit export, SSO and SCIM.",
+	},
+	{
+		title: "On-premises",
+		desc: "Docker Compose or Kubernetes (Helm), including air-gapped installs with a signed offline license.",
+	},
 ];
 
 const featurePillars = [
@@ -57,12 +102,13 @@ export function LandingPage() {
 						marginBottom: 12,
 					}}
 				>
-					Security layer for AI agents.
+					Security layer for AI agents and AI chat.
 				</h1>
 				<p style={{ color: "var(--text-secondary)", maxWidth: 720, lineHeight: "27px" }}>
-					Singularity AIDR inspects supported agent actions locally. Managed visibility and browser
-					enrollment require a configured control plane. Sign in to begin onboarding or request an
-					assisted pilot for your runtime and deployment.
+					Singularity AIDR inspects supported agent actions on the device and masks personal data
+					before prompts reach AI chat products. Managed visibility and device enrollment require a
+					configured control plane. Sign in to begin onboarding or request an assisted pilot for
+					your runtime and deployment.
 				</p>
 				<div className="row" style={{ marginTop: 20 }}>
 					<Link className="button button-lg" to="/pilot">
@@ -84,6 +130,46 @@ export function LandingPage() {
 				))}
 			</section>
 
+			{/* Product Lines */}
+			<section className="card" aria-labelledby="product-lines-heading">
+				<div className="pill" style={{ marginBottom: 12 }}>
+					Product Lines
+				</div>
+				<h2 id="product-lines-heading" style={{ fontSize: 28, lineHeight: 1.08, marginBottom: 16 }}>
+					One policy plane for agents and people.
+				</h2>
+				<div className="feature-grid">
+					{productLines.map((line) => (
+						<article key={line.title} className="feature-card">
+							<div className="feature-card-title">{line.title}</div>
+							<div className="feature-card-desc">{line.desc}</div>
+						</article>
+					))}
+				</div>
+			</section>
+
+			{/* Browser Guard */}
+			<section className="card" aria-labelledby="browser-guard-heading">
+				<div className="pill" style={{ marginBottom: 12 }}>
+					Browser Guard
+				</div>
+				<h2 id="browser-guard-heading" style={{ fontSize: 28, lineHeight: 1.08, marginBottom: 10 }}>
+					Mask sensitive data before it reaches AI chat.
+				</h2>
+				<p style={{ color: "var(--text-secondary)", lineHeight: "26px", marginBottom: 16 }}>
+					Works on {BROWSER_GUARD_SITES.join(", ")}. Detection runs in the browser; the AI provider
+					receives placeholders.
+				</p>
+				<div className="bullet-list">
+					{browserGuardPoints.map((item) => (
+						<div key={item} className="bullet-item">
+							<span className="bullet-dot" />
+							<span style={{ color: "var(--text-secondary)" }}>{item}</span>
+						</div>
+					))}
+				</div>
+			</section>
+
 			{/* Security Showcase */}
 			<section className="security-showcase">
 				<div className="card">
@@ -102,8 +188,9 @@ export function LandingPage() {
 					</h2>
 					<p style={{ color: "var(--text-secondary)", lineHeight: "26px", marginBottom: 16 }}>
 						Local detection, incident correlation, and package and plugin checks are available for
-						supported runtimes. Device enrollment and central visibility depend on the pilot
-						deployment.
+						supported runtimes: {AGENT_CONNECTORS.join(", ")}. The engine ships{" "}
+						{SHIPPED_THREAT_RULES} YAML threat rules in {THREAT_RULE_FILES} files. Device enrollment
+						and central visibility depend on the pilot deployment.
 					</p>
 					<div className="bullet-list">
 						{[
@@ -211,6 +298,24 @@ export function LandingPage() {
 						<circle cx="146" cy="104" r="3" fill="var(--accent)" />
 						<circle cx="242" cy="184" r="3" fill="var(--accent)" />
 					</svg>
+				</div>
+			</section>
+
+			{/* Deployment Options */}
+			<section className="card" aria-labelledby="deployment-heading">
+				<div className="pill" style={{ marginBottom: 12 }}>
+					Deployment
+				</div>
+				<h2 id="deployment-heading" style={{ fontSize: 24, marginBottom: 16 }}>
+					Run it where your data has to stay.
+				</h2>
+				<div className="feature-grid">
+					{deploymentOptions.map((option) => (
+						<article key={option.title} className="feature-card">
+							<div className="feature-card-title">{option.title}</div>
+							<div className="feature-card-desc">{option.desc}</div>
+						</article>
+					))}
 				</div>
 			</section>
 

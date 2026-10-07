@@ -17,6 +17,12 @@ import { createHash, createPublicKey, randomBytes, verify } from "node:crypto";
 import { lstat, open, readFile, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
+import {
+	buildAgentProfileContext,
+	inspectLocalAgentProfiles,
+	localAgentProfileLayer,
+	managedAgentProfileLayer,
+} from "./agent-profile-loader.js";
 import { FileAuthenticatedBehavioralBaselineStore } from "./authenticated-behavioral-baseline-store.js";
 import { createBehavioralBaselineStore } from "./behavioral-baseline-store.js";
 import { BehavioralCorpusSchema, LOCAL_EMBEDDER_MODEL_VERSION } from "./behavioral-corpus.js";
@@ -31,6 +37,7 @@ import { isInvalidConfig, loadConfig, resolvePath } from "./config.js";
 import { DlpPolicySchema } from "./dlp/index.js";
 import type { ToolEvaluationContext } from "./evaluator.js";
 import { getInstallationId } from "./installation-id.js";
+import { inspectLocalDlpPolicy } from "./local-dlp-policy.js";
 import {
 	isEntitlementActive,
 	loadManagedState,
@@ -41,7 +48,12 @@ import {
 import { LocalEmbeddingModel } from "./ml-model.js";
 import { preparePrivateLocalDirectory, preparePrivateLocalFile } from "./private-local-file.js";
 import { resolveSecretStore } from "./secret-store.js";
-import type { AgentRuntime, Config } from "./types.js";
+import {
+	type AgentRuntime,
+	type Config,
+	type Logger,
+	PromptProtectionModeSchema,
+} from "./types.js";
 
 const MAX_BUNDLE_BYTES = 8 * 1024 * 1024;
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
@@ -73,6 +85,25 @@ const DetectorPolicyPayloadSchema = z
 			})
 			.strict()
 			.optional(),
+		// Tenant floor for prompt jailbreak / content-safety actions. It can only
+		// tighten the local `prompt_protection` settings (see prompt-safety.ts).
+		prompt_safety: z
+			.object({
+				jailbreak: PromptProtectionModeSchema.optional(),
+				content_safety: z
+					.object({
+						malware: PromptProtectionModeSchema.optional(),
+						phishing_kit: PromptProtectionModeSchema.optional(),
+						weapons_cbrn: PromptProtectionModeSchema.optional(),
+						self_harm: PromptProtectionModeSchema.optional(),
+						hate_harassment: PromptProtectionModeSchema.optional(),
+						sexual_minors: PromptProtectionModeSchema.optional(),
+					})
+					.strict()
+					.optional(),
+			})
+			.strict()
+			.optional(),
 		reputation_feed: z
 			.object({
 				feed_id: z.string().regex(FEED_ID),
@@ -86,6 +117,10 @@ const DetectorPolicyPayloadSchema = z
 			})
 			.strict()
 			.optional(),
+		// Agent permission profiles. Validated separately (after the signature
+		// check) so a malformed section denies calls with a reason that names the
+		// profile problem instead of failing the whole bundle generically.
+		agent_profiles: z.unknown().optional(),
 	})
 	.strict()
 	.refine(
@@ -107,9 +142,15 @@ const DetectorPolicyPayloadSchema = z
 		},
 		{ message: "Behavioral provisioning requires an explicit supported V2 workflow" },
 	)
-	.refine((value) => value.dlp || value.behavioral || value.reputation_feed, {
-		message: "At least one provisioned detector is required",
-	});
+	.refine(
+		(value) =>
+			value.dlp ||
+			value.behavioral ||
+			value.reputation_feed ||
+			value.prompt_safety ||
+			value.agent_profiles !== undefined,
+		{ message: "At least one provisioned detector is required" },
+	);
 
 const SignedDetectorPolicySchema = z
 	.object({
@@ -120,7 +161,7 @@ const SignedDetectorPolicySchema = z
 	.strict();
 
 export type DetectorProvisionedContext = Partial<
-	Pick<ToolEvaluationContext, "runtimeDetectors" | "reputationFeed">
+	Pick<ToolEvaluationContext, "runtimeDetectors" | "reputationFeed" | "agentProfiles">
 >;
 type SignedDetectorPolicy = z.infer<typeof SignedDetectorPolicySchema>;
 interface DetectorPolicySources {
@@ -335,6 +376,7 @@ function validateFeedKeyring(feed: SignedDetectorPolicy["payload"]["reputation_f
 
 async function detectorContext(
 	payload: SignedDetectorPolicy["payload"],
+	agentRuntime: AgentRuntime,
 	learning?: { receiptContext: LearningReceiptContext; authenticationKey: Buffer },
 ): Promise<DetectorProvisionedContext> {
 	const context: DetectorProvisionedContext = {};
@@ -345,11 +387,12 @@ async function detectorContext(
 				authenticationKey: learning.authenticationKey,
 			})
 		: undefined;
-	if (payload.dlp || payload.behavioral) {
+	if (payload.dlp || payload.behavioral || payload.prompt_safety) {
 		const runtimeDetectors: NonNullable<ToolEvaluationContext["runtimeDetectors"]> = {
 			tenantId: payload.tenant_id,
 		};
 		if (payload.dlp) runtimeDetectors.dlp = { enabled: true, policy: payload.dlp.policy };
+		if (payload.prompt_safety) runtimeDetectors.promptSafety = payload.prompt_safety;
 		if (payload.behavioral) {
 			const corpus = payload.behavioral.threat_corpus;
 			// Import only after signature, entitlement, tenant, digest and model
@@ -383,6 +426,10 @@ async function detectorContext(
 		}
 		context.runtimeDetectors = runtimeDetectors;
 	}
+	if (payload.agent_profiles !== undefined) {
+		const layer = managedAgentProfileLayer(payload.agent_profiles, "signed tenant detector bundle");
+		context.agentProfiles = buildAgentProfileContext(agentRuntime, [layer]);
+	}
 	const feed = payload.reputation_feed;
 	if (feed) {
 		context.reputationFeed = {
@@ -395,22 +442,114 @@ async function detectorContext(
 	return context;
 }
 
+/** Warn once per process and reason: hooks and plugins evaluate many calls. */
+const reportedLocalPolicyWarnings = new Set<string>();
+
+const stderrLogger: Logger = {
+	debug() {},
+	info() {},
+	warn(message, data) {
+		process.stderr.write(
+			`[singularity-aidr] ${message}${data ? ` ${JSON.stringify(data)}` : ""}\n`,
+		);
+	},
+	error(message, data) {
+		process.stderr.write(
+			`[singularity-aidr] ${message}${data ? ` ${JSON.stringify(data)}` : ""}\n`,
+		);
+	},
+};
+
 /**
- * Load the signed tenant detector policy for one agent runtime.
+ * Local-mode DLP: an optional, unsigned operator policy file. Missing means
+ * off; invalid is skipped and logged (and reported by the health check), never
+ * treated as an enforced policy.
+ */
+async function localDlpContext(logger: Logger): Promise<DetectorProvisionedContext> {
+	const state = await inspectLocalDlpPolicy();
+	if (state.status === "absent") return {};
+	if (state.status === "invalid") {
+		const key = `${state.path}\0${state.reason}`;
+		if (!reportedLocalPolicyWarnings.has(key)) {
+			reportedLocalPolicyWarnings.add(key);
+			logger.warn("Local DLP policy is invalid and was skipped; local DLP is NOT enforced.", {
+				path: state.path,
+				reason: state.reason,
+			});
+		}
+		return {};
+	}
+	return {
+		runtimeDetectors: {
+			tenantId: state.policy.tenantId,
+			dlp: { enabled: true, policy: state.policy },
+		},
+	};
+}
+
+/**
+ * The operator's local agent profile document. Valid: enforced in every mode
+ * (it can only narrow a managed profile). Invalid: refused, warned once, and
+ * reported by `aidr doctor` — never enforced as if it were valid.
+ */
+async function withLocalAgentProfiles(
+	agentRuntime: AgentRuntime,
+	context: DetectorProvisionedContext,
+	logger: Logger,
+): Promise<DetectorProvisionedContext> {
+	const state = await inspectLocalAgentProfiles();
+	if (state.status === "invalid") {
+		const key = `profiles\0${state.path}\0${state.reason}`;
+		if (!reportedLocalPolicyWarnings.has(key)) {
+			reportedLocalPolicyWarnings.add(key);
+			logger.warn(
+				"Local agent permission profiles are invalid and were NOT loaded; run `aidr profile validate`.",
+				{ path: state.path, reason: state.reason },
+			);
+		}
+	}
+	const local = localAgentProfileLayer(state);
+	if (!local) return context;
+	const agentProfiles = buildAgentProfileContext(agentRuntime, [
+		...(context.agentProfiles?.layers ?? []),
+		local,
+	]);
+	return { ...context, agentProfiles };
+}
+
+/**
+ * Load the detector policy for one agent runtime.
  *
  * `agentRuntime` selects a fixed file for that runtime only. It must come from
  * the runtime the connector is actually serving — never from a tool payload.
+ *
+ * Managed mode accepts only the signed, entitlement-bound bundle. Local mode
+ * additionally reads the optional unsigned `dlp-policy.json` when no signed
+ * bundle is installed (see `local-dlp-policy.ts`). Agent permission profiles
+ * come from the signed bundle's `agent_profiles` section and, in every mode,
+ * from the local `agent-profiles.json` (see `agent-profile-loader.ts`).
  */
 export async function loadProvisionedDetectorContext(
 	agentRuntime: AgentRuntime,
+	options: { logger?: Logger } = {},
 ): Promise<DetectorProvisionedContext> {
+	const logger = options.logger ?? stderrLogger;
 	const installed = await loadValidatedDetectorPolicy(agentRuntime);
-	if (!installed) return {};
+	if (!installed) {
+		// loadValidatedDetectorPolicy already refused an invalid configuration.
+		const config = await loadConfig();
+		const base = config.mode === "local" ? await localDlpContext(logger) : {};
+		return withLocalAgentProfiles(agentRuntime, base, logger);
+	}
 	const receiptContext = await learningReceiptContext(installed, agentRuntime);
 	const learning = receiptContext
 		? { receiptContext, authenticationKey: await learningAuthenticationKey(receiptContext) }
 		: undefined;
-	return detectorContext(installed.signed.payload, learning);
+	return withLocalAgentProfiles(
+		agentRuntime,
+		await detectorContext(installed.signed.payload, agentRuntime, learning),
+		logger,
+	);
 }
 
 export interface ProvisionedLearningContext {
@@ -429,7 +568,7 @@ export async function loadProvisionedLearningContext(
 	const receiptContext = installed ? await learningReceiptContext(installed, agentRuntime) : null;
 	if (!installed || !receiptContext)
 		throw new Error("Signed behavioral learning is not provisioned for this runtime");
-	const context = await detectorContext(installed.signed.payload, {
+	const context = await detectorContext(installed.signed.payload, agentRuntime, {
 		receiptContext,
 		authenticationKey: await learningAuthenticationKey(receiptContext),
 	});

@@ -477,6 +477,7 @@ describe("legacy caller-key rate limiter", () => {
 	// new scope) fails this suite until the database allowlist is reviewed.
 	const LEGACY_CALLERS = new Map<string, string[]>([
 		["api-keys", ["apikey_create"]],
+		["device-poll", ["device_start"]],
 		["device-start", ["device_start"]],
 		["device-verify", ["device_start"]],
 		["enroll", ["enroll"]],

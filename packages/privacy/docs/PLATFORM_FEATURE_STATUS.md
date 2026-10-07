@@ -33,4 +33,4 @@ Sınırlar: PDF yok. İzinli part'lardaki bilinmeyen attribute değerleri (ör. 
 
 Kurum verisi olmadan saha doğruluğu gösterilemez. Kurumun oturum/cihaz broker'ları olmadan gerçek provider hesabı doğrulanamaz. Son çıkış noktaları ve ağ kısıtları ana ürüne uygulanmadan “hiçbir yol atlanamaz” söylenemez. Bunlar başka bir regex veya daha fazla sentetik test ile kapanmaz.
 
-Mevcut Chrome içerik betikleri ve native protokolü korunmuştur. Yeni sunucu oturumları ve gateway, tarayıcıdaki tüm yükleme yollarına otomatik olarak bağlanmış değildir. Bu pakette yeni katman `@singularity/aidr-privacy/platform` export'udur.
+Mevcut Chrome içerik betikleri ve native protokolü korunmuştur. Yeni sunucu oturumları ve gateway, tarayıcıdaki tüm yükleme yollarına otomatik olarak bağlanmış değildir. Bu pakette yeni katman `@singularityrd/aidr-privacy/platform` export'udur.

@@ -86,6 +86,9 @@ function readyDeploymentDirectory(t) {
 		"AIDR_DELEGATION_SIGNING_KEY_ID=aidr-delegation-abcdef123456",
 		`AIDR_DELEGATION_SIGNING_PRIVATE_KEY_PKCS8_B64=${delegationKeys.privateKey.export({ type: "pkcs8", format: "der" }).toString("base64")}`,
 		`AIDR_DELEGATION_SIGNING_PUBLIC_KEY_SPKI_B64=${delegationKeys.publicKey.export({ type: "spki", format: "der" }).toString("base64")}`,
+		`AIDR_APPROVAL_SIGNING_WRAP_KEY_B64=${Buffer.alloc(32, 7).toString("base64")}`,
+		`AIDR_NOTIFICATION_ENCRYPTION_KEYS=k1:${Buffer.alloc(32, 9).toString("base64")}`,
+		`AIDR_NOTIFICATION_DISPATCH_TOKEN=${"d".repeat(43)}`,
 	].join("\n") + "\n");
 	mkdirSync(join(directory, "ingress"), { recursive: true });
 	writeFileSync(join(directory, "ingress", "device-start.mjs"), "// fixture\n");
@@ -442,6 +445,167 @@ test("deployment doctor rejects missing or changed deployed maintenance units", 
 	const changed = deploymentDirectory(t);
 	writeFileSync(join(changed, "maintenance", "aidr-siem-delivery.service"), "[Service]\nExecStart=/bin/false\n");
 	assert.match(doctor(changed).stdout, new RegExp(`^FAIL ${shippedUnitsLabel}$`, "m"));
+});
+
+const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const SCANNER_LABELS = {
+	workerSecret: "Posture scanner worker shared secret configured (at least 32 characters)",
+	bridgeAuth: "Posture scanner bridge authentication configured (isolated API key independent from the worker secret)",
+	signingKey: "Posture scanner data signing public key matches the pinned SPKI fingerprint",
+	pins: "Posture scanner bundle and source commit pins match the staged data manifest",
+	signature: "Posture scanner data manifest carries a release signature (an unsigned manifest keeps bridge readiness closed)",
+	sqlite: "Posture scanner bridge task registry is single-host SQLite with HA not required",
+	postgres: "Posture scanner bridge PostgreSQL task registry DSN configured for HA",
+	egress: "Posture scanner remote scans leave only through the deny-by-default egress gateway with a valid allowlist",
+	topology: "Posture scanner control network is internal and only the authenticated bridge publishes a loopback port",
+	profile: "Posture scanner Compose profile (posture-scanner) is active for this installation",
+	legacyProfile: "Posture scanner Compose profile (aig) is active for this installation",
+};
+const SCANNER_WORKER_SECRET = "w".repeat(64);
+const SCANNER_BRIDGE_KEY = "k".repeat(64);
+
+function scannerCompose({ serverPorts = false, legacy = false } = {}) {
+	const bridgePort = legacy
+		? "${AIG_BIND_ADDRESS:-127.0.0.1}:${AIG_BRIDGE_PORT:-8099}:8099"
+		: "${POSTURE_SCANNER_BIND_ADDRESS:-${AIG_BIND_ADDRESS:-127.0.0.1}}:${POSTURE_SCANNER_BRIDGE_PORT:-${AIG_BRIDGE_PORT:-8099}}:8099";
+	return [
+		"services:",
+		"  aig-server:",
+		"    networks: [aidr-aig-network]",
+		...(serverPorts ? ["    ports: ['0.0.0.0:8088:8088']"] : []),
+		"  aig-agent:",
+		"    networks: [aidr-aig-network]",
+		"  aig-bridge:",
+		"    networks: [aidr-aig-network, aidr-aig-edge]",
+		`    ports: ['${bridgePort}']`,
+		"  aig-egress:",
+		"    networks: [aidr-aig-network, aidr-aig-egress]",
+		"networks:",
+		"  aidr-aig-network:",
+		"    internal: true",
+		"  aidr-aig-edge:",
+		"    driver_opts:",
+		"      com.docker.network.bridge.enable_ip_masquerade: 'false'",
+		"  aidr-aig-egress: {}",
+		"",
+	].join("\n");
+}
+
+/**
+ * A prepared posture scanner installation. `legacy` reproduces the layout of
+ * releases before the rename: an `aig` manifest block, the `aig/` staging
+ * directory, the `aig` Compose profile and AIG_* settings.
+ */
+function scannerDeploymentDirectory(t, { env = {}, signed = false, legacy = false } = {}) {
+	const releaseKey = generateKeyPairSync("rsa", { modulusLength: 2048 }).publicKey;
+	const fingerprint = createHash("sha256").update(releaseKey.export({ type: "spki", format: "der" })).digest("hex");
+	const block = { enabled: true, signing_public_key_sha256: fingerprint };
+	const directory = deploymentDirectory(t, { mode: "self-hosted", ...(legacy ? { aig: block } : { posture_scanner: block }) });
+	const stage = join(directory, legacy ? "aig" : "posture-scanner");
+	mkdirSync(join(stage, "generated"), { recursive: true });
+	mkdirSync(join(stage, "egress"), { recursive: true });
+	writeFileSync(join(stage, legacy ? "aig-signing-public.pem" : "signing-public.pem"), releaseKey.export({ type: "spki", format: "pem" }));
+	const dataManifest = JSON.parse(readFileSync(join(repositoryRoot, "packages/core/src/generated/aig-data-manifest.json"), "utf8"));
+	if (signed) dataManifest.signature = { algorithm: "RSA-SHA256", key_id: "scanner-release-2026", value: "fixture" };
+	writeFileSync(join(stage, "generated", "aig-data-manifest.json"), JSON.stringify(dataManifest));
+	for (const name of ["squid.conf", "allowlist.txt"]) copyFileSync(join(repositoryRoot, "deploy/onprem/egress", name), join(stage, "egress", name));
+	writeFileSync(join(directory, "compose.yml"), scannerCompose({ legacy }));
+	const prefix = legacy ? "AIG_" : "POSTURE_SCANNER_";
+	const values = {
+		ANON_KEY: "fixture", SERVICE_ROLE_KEY: "fixture",
+		COMPOSE_PROFILES: legacy ? "aig" : "posture-scanner",
+		[`${prefix}AGENT_SHARED_SECRET`]: SCANNER_WORKER_SECRET,
+		[`${prefix}TRUSTED_SIGNING_PUBLIC_KEY_SHA256`]: fingerprint,
+		[`${prefix}EXPECTED_DATA_BUNDLE_ID`]: dataManifest.bundle_id,
+		[`${prefix}EXPECTED_SOURCE_COMMIT`]: dataManifest.source.commit,
+		BRIDGE_AUTH_MODE: "api_key", BRIDGE_API_KEY: SCANNER_BRIDGE_KEY,
+		BRIDGE_TASK_BACKEND: "sqlite", BRIDGE_HA_REQUIRED: "false",
+		BRIDGE_EGRESS_PROXY_URL: "http://aig-egress:3128",
+		...env,
+	};
+	writeFileSync(join(directory, ".env"), `${Object.entries(values).filter(([, value]) => value !== undefined).map(([name, value]) => `${name}=${value}`).join("\n")}\n`);
+	return directory;
+}
+
+const line = (state, label) => new RegExp(`^${state} ${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "m");
+
+test("doctor verifies a prepared posture scanner sidecar without printing its secrets", (t) => {
+	const directory = scannerDeploymentDirectory(t);
+	const result = doctor(directory);
+	for (const key of ["workerSecret", "bridgeAuth", "signingKey", "pins", "sqlite", "egress", "topology", "profile"]) {
+		assert.match(result.stdout, line("PASS", SCANNER_LABELS[key]), key);
+	}
+	// The committed data manifest is unsigned, so the doctor must fail closed.
+	assert.match(result.stdout, line("FAIL", SCANNER_LABELS.signature));
+	assert.equal(result.status, 1);
+	assert.match(result.stdout, /^INFO Posture scanner egress allowlist names 0 destination domain\(s\); every remote scan is refused until one is added$/m);
+	for (const secret of [SCANNER_WORKER_SECRET, SCANNER_BRIDGE_KEY]) {
+		assert.equal(result.stdout.includes(secret), false);
+		assert.equal(readFileSync(join(directory, "doctor-evidence.json"), "utf8").includes(secret), false);
+	}
+
+	const signed = scannerDeploymentDirectory(t, { signed: true });
+	assert.match(doctor(signed).stdout, line("PASS", SCANNER_LABELS.signature));
+});
+
+test("doctor still verifies an installation prepared before the posture scanner rename", (t) => {
+	const legacy = doctor(scannerDeploymentDirectory(t, { legacy: true, signed: true }));
+	for (const key of ["workerSecret", "bridgeAuth", "signingKey", "pins", "signature", "sqlite", "egress", "topology", "legacyProfile"]) {
+		assert.match(legacy.stdout, line("PASS", SCANNER_LABELS[key]), key);
+	}
+	// The legacy layout is only accepted as a whole: a renamed profile without the new manifest block fails.
+	const mixed = doctor(scannerDeploymentDirectory(t, { legacy: true, env: { COMPOSE_PROFILES: "posture-scanner" } }));
+	assert.match(mixed.stdout, line("FAIL", SCANNER_LABELS.legacyProfile));
+});
+
+test("doctor fails misconfigured posture scanner trust, registry, egress and topology settings", (t) => {
+	const cases = [
+		[{ env: { POSTURE_SCANNER_TRUSTED_SIGNING_PUBLIC_KEY_SHA256: "0".repeat(64) } }, "signingKey"],
+		[{ env: { POSTURE_SCANNER_EXPECTED_DATA_BUNDLE_ID: "1".repeat(64) } }, "pins"],
+		[{ env: { POSTURE_SCANNER_AGENT_SHARED_SECRET: "short" } }, "workerSecret"],
+		[{ env: { BRIDGE_API_KEY: SCANNER_WORKER_SECRET } }, "bridgeAuth"],
+		[{ env: { BRIDGE_HA_REQUIRED: "true" } }, "sqlite"],
+		[{ env: { BRIDGE_TASK_BACKEND: "postgres" } }, "postgres"],
+		[{ env: { BRIDGE_EGRESS_PROXY_URL: "http://egress.customer.example:8080" } }, "egress"],
+		[{ env: { COMPOSE_PROFILES: "" } }, "profile"],
+		[{ env: { COMPOSE_PROFILES: "aig" } }, "profile"],
+	];
+	for (const [options, key] of cases) {
+		const result = doctor(scannerDeploymentDirectory(t, options));
+		assert.equal(result.status, 1);
+		assert.match(result.stdout, line("FAIL", SCANNER_LABELS[key]), key);
+	}
+
+	const postgres = scannerDeploymentDirectory(t, { env: { BRIDGE_TASK_BACKEND: "postgres", BRIDGE_HA_REQUIRED: "true", BRIDGE_TASK_POSTGRES_DSN: "postgresql://bridge:secret@postgres.internal/aidr?sslmode=verify-full" } });
+	assert.match(doctor(postgres).stdout, line("PASS", SCANNER_LABELS.postgres));
+
+	const openProxy = scannerDeploymentDirectory(t);
+	writeFileSync(join(openProxy, "posture-scanner", "egress", "squid.conf"), `${readFileSync(join(openProxy, "posture-scanner", "egress", "squid.conf"), "utf8")}http_access allow all\n`);
+	assert.match(doctor(openProxy).stdout, line("FAIL", SCANNER_LABELS.egress));
+
+	const badAllowlist = scannerDeploymentDirectory(t);
+	writeFileSync(join(badAllowlist, "posture-scanner", "egress", "allowlist.txt"), "models.customer.example\n10.0.0.0/8\n");
+	assert.match(doctor(badAllowlist).stdout, line("FAIL", SCANNER_LABELS.egress));
+
+	const allowlisted = scannerDeploymentDirectory(t);
+	writeFileSync(join(allowlisted, "posture-scanner", "egress", "allowlist.txt"), "# reviewed\nmodels.customer.example\n.mcp.customer.example\n");
+	const allowlistedResult = doctor(allowlisted).stdout;
+	assert.match(allowlistedResult, line("PASS", SCANNER_LABELS.egress));
+	assert.match(allowlistedResult, /^INFO Posture scanner egress allowlist names 2 destination domain\(s\)$/m);
+
+	const published = scannerDeploymentDirectory(t);
+	writeFileSync(join(published, "compose.yml"), scannerCompose({ serverPorts: true }));
+	assert.match(doctor(published).stdout, line("FAIL", SCANNER_LABELS.topology));
+});
+
+test("online doctor requires the posture scanner services to be running and healthy when it is enabled", (t) => {
+	const directory = scannerDeploymentDirectory(t);
+	const base = requiredComposeServices.map((Service) => ({ Service, State: "running", Health: "healthy" }));
+	const scanner = ["aig-server", "aig-agent", "aig-bridge", "aig-egress"].map((Service) => ({ Service, State: "running", Health: "healthy" }));
+	assert.match(stubbedComposeDoctor(directory, base).stdout, /^FAIL all required deployment services running and healthy$/m);
+	assert.match(stubbedComposeDoctor(directory, [...base, ...scanner]).stdout, /^PASS all required deployment services running and healthy$/m);
+	const unhealthyBridge = scanner.map((row) => row.Service === "aig-bridge" ? { ...row, Health: "unhealthy" } : row);
+	assert.match(stubbedComposeDoctor(directory, [...base, ...unhealthyBridge]).stdout, /^FAIL all required deployment services running and healthy$/m);
 });
 
 test("deployment doctor fails a deployment that contains no SIEM delivery timer", (t) => {

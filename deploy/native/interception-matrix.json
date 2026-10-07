@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "kind": "aidr-interception-matrix",
-  "reviewedAt": "2026-09-24",
+  "reviewedAt": "2026-09-30",
   "decision": "NO-GO",
-  "decisionMeaning": "MKT-03. This manifest declares, for every sold connector, the pre-prompt / pre-tool / post-tool-output / pre-delivery-response / model-stream / network interception points, the tamper posture and the outcome of the plugin-disabled, crashed, offline and large-binary-response conditions. A status of `enforced` requires a named real-host acceptance record in the row evidence. No connector has one (deploy/native/support-matrix.json carries an empty `acceptanceEvidence` array for every row), so no row is `enforced` and this file is not evidence that any interception point was accepted on a real host.",
+  "decisionMeaning": "MKT-03. This manifest declares, for every sold connector, the pre-prompt / pre-tool / post-tool-output / pre-delivery-response / model-stream / network interception points, the tamper posture and the outcome of the plugin-disabled, crashed, offline and large-binary-response conditions. A status of `enforced` requires a named real-host acceptance record in the row evidence. The records under docs/evidence/real-host/ are written by `pnpm test:e2e:real-host`: the real, unmodified host binary (Claude Code 2.1.282, Codex CLI 0.141.0, OpenCode 1.18.32, OpenClaw 2026.9.6) runs one non-interactive turn per scenario against a scripted loopback mock model, with AIDR installed from the development build in a disposable HOME on linux/x64. A row is `enforced` only where such a record proves the point for that host version on that platform and the support matrix sells the point. Since 2026-09-30 the support matrix sells pre-prompt for Claude Code, Codex, OpenCode and OpenClaw and OpenClaw's pre-model post-tool-output (additionalInterceptionPoints), so those rows are `enforced` on their records; OpenClaw's pre-delivery-response stays `declared-not-proven` because no record exercises channel delivery. Cursor and VS Code have no record (their hosts could not be installed in the evidence environment), and no record covers Windows, macOS, arm64, a signed commercial artefact or a real model, so the decision stays NO-GO.",
   "soldConnectorSource": "./support-matrix.json",
   "supportMatrixMapping": {
     "interceptionPoint": {
@@ -18,6 +18,12 @@
       "tool-output-inspection": ["post-tool-output"],
       "post-tool-call": ["post-tool-output"],
       "none": []
+    },
+    "additionalInterceptionPoints": {
+      "pre-prompt": ["pre-prompt"],
+      "post-tool-output": ["post-tool-output"],
+      "pre-delivery-response": ["pre-delivery-response"],
+      "network-egress": ["network"]
     }
   },
   "outputSidePoints": ["post-tool-output", "pre-delivery-response", "model-stream"],
@@ -30,18 +36,41 @@
     {
       "connector": "claude-code",
       "point": "pre-prompt",
-      "status": "unsupported",
-      "hostBoundary": null,
-      "reason": "The connector registers no pre-prompt hook. hooks/hooks.json registers PreToolUse, PostToolUse and SessionStart only, and session-start.ts emits a user-facing systemMessage rather than inspecting or gating the prompt.",
-      "evidence": [],
+      "status": "enforced",
+      "hostBoundary": "UserPromptSubmit",
+      "reason": null,
+      "evidence": [
+        {
+          "kind": "prompt-boundary",
+          "path": "hooks/hooks.json",
+          "contains": ["\"UserPromptSubmit\"", "user-prompt-submit.cjs"]
+        },
+        {
+          "kind": "prompt-boundary",
+          "path": "packages/claude-code/src/user-prompt-submit.ts",
+          "contains": ["scanPrompt", "decision: \"block\""]
+        },
+        {
+          "kind": "test",
+          "path": "packages/claude-code/src/__tests__/prompt-protection-bundle.test.ts",
+          "contains": ["UserPromptSubmit"]
+        },
+        {
+          "kind": "acceptance-record",
+          "path": "docs/evidence/real-host/claude-code.json",
+          "contains": ["\"connector\": \"claude-code\"", "\"pre-prompt\": \"passed\""]
+        }
+      ],
       "limitations": [
-        "No prompt-submission interception is implemented for this connector, so nothing inspects or blocks user input before the model sees it."
+        "Prompt protection (secrets block, personal data warns by default) inspects the prompt text only; a hook process killed before it answers cannot block, which is a Claude Code host limitation.",
+        "Real-host acceptance: Claude Code 2.1.282 on linux/x64 stopped a prompt carrying a GitHub token at UserPromptSubmit before any model request, and the audit entry records kinds only (scripted mock model, docs/evidence/real-host/claude-code.json). Other host versions and platforms are not covered.",
+        "Sold since 2026-09-30 (deploy/native/support-matrix.json additionalInterceptionPoints). `enforced` rests on that one real-host record only: Claude Code 2.1.282 (`claude -p`), linux/x64, the development build and a scripted mock model. Windows, macOS, arm64, a signed commercial artefact, a real model and other host versions are not covered."
       ]
     },
     {
       "connector": "claude-code",
       "point": "pre-tool",
-      "status": "declared-not-proven",
+      "status": "enforced",
       "hostBoundary": "PreToolUse",
       "reason": null,
       "evidence": [
@@ -59,18 +88,23 @@
           "kind": "test",
           "path": "packages/claude-code/src/__tests__/integration.test.ts",
           "contains": ["PreToolUse hook integration"]
+        },
+        {
+          "kind": "acceptance-record",
+          "path": "docs/evidence/real-host/claude-code.json",
+          "contains": ["\"connector\": \"claude-code\"", "\"pre-tool\": \"passed\""]
         }
       ],
       "limitations": [
-        "No named real-host acceptance record exists for this connector, so the verdict path is source-declared only.",
-        "The hook always exits 0; a host that ignores the deny field, or a hook process killed before it writes a verdict, is not covered by this row.",
-        "No same-turn file/process/network side-effect observation exists on a real Claude host."
+        "Real-host acceptance covers Claude Code 2.1.282 on linux/x64 with a scripted mock model: a curl-pipe-to-shell Bash call and a Read of a private-key canary were refused with no side effect and nothing of the canary reached the model, a benign call ran, and the same malicious call ran when the plugin was absent (docs/evidence/real-host/claude-code.json). Other host versions, platforms and real-model turns are not covered.",
+        "The hook always exits 0. A hook process killed before it writes a verdict fails open on this host (see failureConditions crashed-hook); the connector's own inspection deadline was observed to deny instead.",
+        "An `ask` verdict was observed only in non-interactive `-p` mode, where the host refuses the call; the interactive approval dialog is not exercised."
       ]
     },
     {
       "connector": "claude-code",
       "point": "post-tool-output",
-      "status": "declared-not-proven",
+      "status": "enforced",
       "hostBoundary": "PostToolUse",
       "reason": null,
       "evidence": [
@@ -83,12 +117,17 @@
           "kind": "output-inspection",
           "path": "packages/claude-code/src/tool-output-quarantine.ts",
           "contains": ["updatedToolOutput"]
+        },
+        {
+          "kind": "acceptance-record",
+          "path": "docs/evidence/real-host/claude-code.json",
+          "contains": ["\"connector\": \"claude-code\"", "\"post-tool-output\": \"passed\""]
         }
       ],
       "limitations": [
         "The host boundary is PostToolUse, so the tool has already executed; this is a tool-result boundary and not a refusal of the action.",
         "Only the updatedToolOutput replacement path is claimed; a PostToolUse block without replacement still exposes the original result to the model.",
-        "No named real-host acceptance record exists, so same-turn model blocking is unproven."
+        "Real-host acceptance: on Claude Code 2.1.282 a Bash result carrying a GitHub token reached the model only as AIDR's quarantine notice (docs/evidence/real-host/claude-code.json). That run found and fixed a Bash result-shape mismatch (`noOutputExpected`); MCP and other tool result shapes are not host-accepted."
       ]
     },
     {
@@ -117,12 +156,29 @@
     {
       "connector": "cursor",
       "point": "pre-prompt",
-      "status": "unsupported",
-      "hostBoundary": null,
-      "reason": "The Cursor hook installer registers no pre-prompt event; cursor_hook_installer.ts registers beforeShellExecution, preToolUse, postToolUse, afterAgentResponse, beforeMCPExecution and beforeReadFile only.",
-      "evidence": [],
+      "status": "declared-not-proven",
+      "hostBoundary": "beforeSubmitPrompt",
+      "reason": null,
+      "evidence": [
+        {
+          "kind": "prompt-boundary",
+          "path": "packages/extension/src/cursor_hook_installer.ts",
+          "contains": ["{ event: \"beforeSubmitPrompt\" }", "failClosed: true"]
+        },
+        {
+          "kind": "prompt-boundary",
+          "path": "packages/extension/src/aidr-hook.ts",
+          "contains": ["handleCursorPrompt", "continue: outcome.decision !== \"block\""]
+        },
+        {
+          "kind": "test",
+          "path": "packages/extension/src/__tests__/prompt-protection.test.ts",
+          "contains": ["Cursor beforeSubmitPrompt"]
+        }
+      ],
       "limitations": [
-        "No prompt-submission interception is implemented for this connector."
+        "beforeSubmitPrompt has no model-context field: a personal-data warning sends the prompt with the notice in user_message (Cursor documents it for blocked prompts) and the audit log only.",
+        "Attachments are not inspected; only the prompt text is. No named real-host acceptance record exists."
       ]
     },
     {
@@ -135,7 +191,7 @@
         {
           "kind": "hook-registration",
           "path": "packages/extension/src/cursor_hook_installer.ts",
-          "contains": ["hooks.preToolUse", "hooks.beforeShellExecution", "hooks.beforeMCPExecution", "hooks.beforeReadFile", "failClosed: true"]
+          "contains": ["{ event: \"preToolUse\"", "{ event: \"beforeShellExecution\" }", "{ event: \"beforeMCPExecution\" }", "{ event: \"beforeReadFile\" }", "failClosed: true"]
         },
         {
           "kind": "hook-registration",
@@ -200,12 +256,29 @@
     {
       "connector": "vscode",
       "point": "pre-prompt",
-      "status": "unsupported",
-      "hostBoundary": null,
-      "reason": "The VS Code hook installer registers no pre-prompt event; vscode_hook_installer.ts registers PreToolUse and PostToolUse only.",
-      "evidence": [],
+      "status": "declared-not-proven",
+      "hostBoundary": "UserPromptSubmit",
+      "reason": null,
+      "evidence": [
+        {
+          "kind": "prompt-boundary",
+          "path": "packages/extension/src/vscode_hook_installer.ts",
+          "contains": ["hooks.UserPromptSubmit = appendManaged"]
+        },
+        {
+          "kind": "prompt-boundary",
+          "path": "packages/extension/src/aidr-hook.ts",
+          "contains": ["handleVsCodePrompt", "continue: false, stopReason"]
+        },
+        {
+          "kind": "test",
+          "path": "packages/extension/src/__tests__/prompt-protection.test.ts",
+          "contains": ["VS Code Local UserPromptSubmit"]
+        }
+      ],
       "limitations": [
-        "No prompt-submission interception is implemented for this connector."
+        "VS Code Local UserPromptSubmit supports the common output only: a block stops the request with continue:false, a personal-data warning reaches the user (systemMessage) but not the model.",
+        "Requires chat.useClaudeHooks for the Claude-format settings file; Agent Host harnesses (Copilot, Claude, Codex sessions) do not run Local hooks. No named real-host acceptance record exists."
       ]
     },
     {
@@ -281,30 +354,46 @@
     {
       "connector": "openclaw",
       "point": "pre-prompt",
-      "status": "declared-not-proven",
-      "hostBoundary": "before_prompt_build",
+      "status": "enforced",
+      "hostBoundary": "before_agent_run",
       "reason": null,
       "evidence": [
+        {
+          "kind": "prompt-boundary",
+          "path": "packages/openclaw/src/index.ts",
+          "contains": ["\"before_agent_run\"", "prompts.beforeAgentRun", "before_prompt_build"]
+        },
+        {
+          "kind": "prompt-boundary",
+          "path": "packages/openclaw/src/prompt-protection.ts",
+          "contains": ["toInputGateDecision", "outcome: \"block\""]
+        },
         {
           "kind": "prompt-boundary",
           "path": "packages/openclaw/src/startup-scan.ts",
           "contains": ["createBeforePromptBuildHandler", "prependContext"]
         },
         {
-          "kind": "prompt-boundary",
-          "path": "packages/openclaw/src/index.ts",
-          "contains": ["before_prompt_build"]
+          "kind": "test",
+          "path": "packages/openclaw/src/__tests__/prompt-protection.test.ts",
+          "contains": ["OpenClaw before_agent_run prompt gate"]
+        },
+        {
+          "kind": "acceptance-record",
+          "path": "docs/evidence/real-host/openclaw.json",
+          "contains": ["\"connector\": \"openclaw\"", "\"pre-prompt\": \"passed\""]
         }
       ],
       "limitations": [
-        "The handler is a one-shot advisory injection of plugin-scan findings; it neither inspects the user prompt nor blocks it, so no prompt-side enforcement is claimed.",
-        "No named real-host acceptance record exists."
+        "before_agent_run is implemented by OpenClaw's embedded and CLI runners only; it is not an input gate for the Codex or Copilot harnesses, and a host without the hook ignores the registration.",
+        "A non-bundled plugin needs plugins.entries.aidr-openclaw.hooks.allowConversationAccess: true. Personal-data warnings reach the model through before_prompt_build context only. Real-host acceptance: OpenClaw 2026.9.6 (`openclaw agent --local`, linux/x64, scripted mock model) sent no model request for a prompt carrying a GitHub token (docs/evidence/real-host/openclaw.json); the gateway and channel paths are not exercised.",
+        "Sold since 2026-09-30 (deploy/native/support-matrix.json additionalInterceptionPoints). `enforced` rests on that one real-host record only: the OpenClaw 2026.9.6 embedded runner (`openclaw agent --local`; not the gateway, channel delivery or the Codex/Copilot harnesses), linux/x64, the development build and a scripted mock model. Windows, macOS, arm64, a signed commercial artefact, a real model and other host versions are not covered."
       ]
     },
     {
       "connector": "openclaw",
       "point": "pre-tool",
-      "status": "declared-not-proven",
+      "status": "enforced",
       "hostBoundary": "before_tool_call",
       "reason": null,
       "evidence": [
@@ -322,34 +411,56 @@
           "kind": "test",
           "path": "packages/openclaw/src/__tests__/e2e-integration.test.ts",
           "contains": ["before_tool_call handler was not registered"]
+        },
+        {
+          "kind": "acceptance-record",
+          "path": "docs/evidence/real-host/openclaw.json",
+          "contains": ["\"connector\": \"openclaw\"", "\"pre-tool\": \"passed\""]
         }
       ],
       "limitations": [
         "The connector is an in-process plugin callback; a removed plugin means no interception at all.",
-        "No named real-host acceptance record exists, and same-turn model blocking on a real gateway is an open unobserved action."
+        "Real-host acceptance: the OpenClaw 2026.9.6 embedded runner (`openclaw agent --local`, linux/x64) refused a curl-pipe-to-shell exec and a private-key read with no side effect, while a benign exec ran and the same exec ran without the plugin (scripted mock model, docs/evidence/real-host/openclaw.json). The gateway process and channel deliveries are not exercised."
       ]
     },
     {
       "connector": "openclaw",
       "point": "post-tool-output",
-      "status": "declared-not-proven",
-      "hostBoundary": "message_sending|reply_payload_sending",
+      "status": "enforced",
+      "hostBoundary": "registerAgentToolResultMiddleware|tool_result_persist",
       "reason": null,
       "evidence": [
         {
           "kind": "output-inspection",
+          "path": "packages/openclaw/src/index.ts",
+          "contains": ["registerAgentToolResultMiddleware", "TOOL_RESULT_MIDDLEWARE_RUNTIMES = [\"openclaw\"]"]
+        },
+        {
+          "kind": "output-inspection",
           "path": "packages/openclaw/src/output-protection.ts",
-          "contains": ["messageSending", "replyPayloadSending", "pre_delivery_response_rewrite"]
+          "contains": ["toolResultMiddleware(", "pre_model_tool_result", "PRE_MODEL_INSPECTION_FAILURE_NOTICE"]
         },
         {
           "kind": "output-inspection",
           "path": "packages/openclaw/src/output-inspection.ts",
           "contains": ["OUTPUT_INSPECTION_MAX_CHARS", "requiresOutputProtection"]
+        },
+        {
+          "kind": "test",
+          "path": "packages/openclaw/src/__tests__/tool-result-quarantine-bundle.test.ts",
+          "contains": ["returns AIDR's quarantine notice in place of a secret-bearing result", "agentToolResultMiddleware"]
+        },
+        {
+          "kind": "acceptance-record",
+          "path": "docs/evidence/real-host/openclaw.json",
+          "contains": ["\"connector\": \"openclaw\"", "\"post-tool-output\": \"passed\""]
         }
       ],
       "limitations": [
-        "after_tool_call and tool_result_persist run after the tool has executed; the sold support matrix advertises `post-tool-call` as this connector's output interception point, so same-turn model blocking is not proven.",
-        "No named real-host acceptance record exists."
+        "The boundary is OpenClaw's agent tool-result middleware: the tool has already executed, and the embedded runner replaces its result before the model context. Only the `openclaw` runtime is registered; OpenClaw's Codex native-hook relay forwards a middleware result to after_tool_call, not to the model, so the Codex harness is not covered.",
+        "OpenClaw accepts the middleware from an installed plugin only with contracts.agentToolResultMiddleware in the manifest and plugins.entries.aidr-openclaw.enabled: true; otherwise it drops the registration with a registry diagnostic and the connector logs the boundary as enforced: false.",
+        "Real-host acceptance: on the OpenClaw 2026.9.6 embedded runner (`openclaw agent --local`, linux/x64, scripted mock model) an exec result carrying a GitHub token reached the model only as AIDR's quarantine notice (docs/evidence/real-host/openclaw.json). The earlier record showed this as a gap while only after_tool_call/tool_result_persist were registered. Non-text, MCP and gateway/channel paths are not host-accepted.",
+        "Sold since 2026-09-30 (deploy/native/support-matrix.json additionalInterceptionPoints, next to the `pre-delivery-response` output point). `enforced` rests on that one real-host record only: the OpenClaw 2026.9.6 embedded runner with plugins.entries.aidr-openclaw.enabled: true, linux/x64, the development build and a scripted mock model. The Codex harness, the gateway process, Windows, macOS, a signed commercial artefact and a real model are not covered."
       ]
     },
     {
@@ -377,25 +488,41 @@
     {
       "connector": "opencode",
       "point": "pre-prompt",
-      "status": "declared-not-proven",
-      "hostBoundary": "experimental.chat.messages.transform",
+      "status": "enforced",
+      "hostBoundary": "chat.message",
       "reason": null,
       "evidence": [
         {
           "kind": "prompt-boundary",
           "path": "packages/opencode/src/index.ts",
-          "contains": ["experimental.chat.messages.transform", "<system-reminder>"]
+          "contains": ["\"chat.message\": prompts.chatMessage", "experimental.chat.messages.transform"]
+        },
+        {
+          "kind": "prompt-boundary",
+          "path": "packages/opencode/src/prompt-handler.ts",
+          "contains": ["throw new AidrVerdictBlockError(outcome.userMessage)"]
+        },
+        {
+          "kind": "test",
+          "path": "packages/opencode/src/__tests__/prompt-protection.test.ts",
+          "contains": ["OpenCode chat.message prompt protection"]
+        },
+        {
+          "kind": "acceptance-record",
+          "path": "docs/evidence/real-host/opencode.json",
+          "contains": ["\"connector\": \"opencode\"", "\"pre-prompt\": \"passed\""]
         }
       ],
       "limitations": [
-        "The hook appends a synthetic system-reminder carrying plugin-scan findings to the first user message; it neither inspects nor blocks the user prompt, so no prompt-side enforcement is claimed.",
-        "The hook is experimental host API and no named real-host acceptance record exists."
+        "Only the user's own text parts are inspected; synthetic parts OpenCode generates (such as attached file contents) are not.",
+        "A block replaces the text parts and throws from chat.message. Real-host acceptance: on OpenCode 1.18.32 (`opencode run`, linux/x64, scripted mock model) no model request carried a prompted GitHub token (docs/evidence/real-host/opencode.json); how the interactive TUI presents the thrown error is not verified.",
+        "Sold since 2026-09-30 (deploy/native/support-matrix.json additionalInterceptionPoints). `enforced` rests on that one real-host record only: OpenCode 1.18.32 (`opencode run`), linux/x64, the development build and a scripted mock model. Windows, macOS, arm64, a signed commercial artefact, a real model and other host versions are not covered."
       ]
     },
     {
       "connector": "opencode",
       "point": "pre-tool",
-      "status": "declared-not-proven",
+      "status": "enforced",
       "hostBoundary": "tool.execute.before",
       "reason": null,
       "evidence": [
@@ -408,17 +535,22 @@
           "kind": "hook-registration",
           "path": "packages/opencode/src/tool-handler.ts",
           "contains": ["guardToolCall", "failed closed"]
+        },
+        {
+          "kind": "acceptance-record",
+          "path": "docs/evidence/real-host/opencode.json",
+          "contains": ["\"connector\": \"opencode\"", "\"pre-tool\": \"passed\""]
         }
       ],
       "limitations": [
         "The connector is an in-process plugin; a removed plugin means no interception at all.",
-        "No named real-host acceptance record exists, and same-turn output blocking on a real host is an open unobserved action."
+        "Real-host acceptance: OpenCode 1.18.32 on linux/x64 refused a curl-pipe-to-shell bash call and a private-key read with no side effect, while a benign call ran and the same call ran without the plugin (scripted mock model, docs/evidence/real-host/opencode.json). The plugin was loaded from a local file:// path, not the signed registry package."
       ]
     },
     {
       "connector": "opencode",
       "point": "post-tool-output",
-      "status": "declared-not-proven",
+      "status": "enforced",
       "hostBoundary": "tool.execute.after",
       "reason": null,
       "evidence": [
@@ -426,11 +558,16 @@
           "kind": "output-inspection",
           "path": "packages/opencode/src/output-handler.ts",
           "contains": ["tool.execute.after", "MAX_TOOL_OUTPUT_BYTES", "quarantine"]
+        },
+        {
+          "kind": "acceptance-record",
+          "path": "docs/evidence/real-host/opencode.json",
+          "contains": ["\"connector\": \"opencode\"", "\"post-tool-output\": \"passed\""]
         }
       ],
       "limitations": [
         "The tool has already executed when this hook runs; the result is replaced before model consumption rather than the action being refused.",
-        "No named real-host acceptance record exists, and cases that require a live model provider credential remain unobserved."
+        "Real-host acceptance: on OpenCode 1.18.32 a bash result carrying a GitHub token reached the model only as AIDR's quarantine notice (scripted mock model, docs/evidence/real-host/opencode.json). MCP and opaque result shapes are not host-accepted."
       ]
     },
     {
@@ -464,18 +601,41 @@
     {
       "connector": "codex",
       "point": "pre-prompt",
-      "status": "unsupported",
-      "hostBoundary": null,
-      "reason": "The Codex connector is a native PreToolUse hook only; no pre-prompt hook is implemented or documented for it.",
-      "evidence": [],
+      "status": "enforced",
+      "hostBoundary": "UserPromptSubmit",
+      "reason": null,
+      "evidence": [
+        {
+          "kind": "prompt-boundary",
+          "path": "packages/codex/src/cli.ts",
+          "contains": ["event === CODEX_USER_PROMPT_SUBMIT", "handleUserPromptSubmit"]
+        },
+        {
+          "kind": "prompt-boundary",
+          "path": "packages/codex/src/prompt-protection.ts",
+          "contains": ["decision: \"block\", reason: outcome.userMessage"]
+        },
+        {
+          "kind": "test",
+          "path": "packages/codex/src/__tests__/prompt-protection.test.ts",
+          "contains": ["Codex UserPromptSubmit hook (built bundle)"]
+        },
+        {
+          "kind": "acceptance-record",
+          "path": "docs/evidence/real-host/codex.json",
+          "contains": ["\"connector\": \"codex\"", "\"pre-prompt\": \"passed\""]
+        }
+      ],
       "limitations": [
-        "No prompt-submission interception is implemented for this connector."
+        "Codex fails open when the UserPromptSubmit hook is untrusted, crashes, times out or answers malformed output; the connector answers every path it controls with an explicit block or exit 2 with stderr.",
+        "The handler must be registered and trusted separately from PreToolUse. Real-host acceptance: Codex CLI 0.141.0 on linux/x64 ended the turn before any model request for a prompt carrying a GitHub token (scripted mock model, hook trust bypassed with --dangerously-bypass-hook-trust, docs/evidence/real-host/codex.json); `codex exec` surfaces no reason text for the block.",
+        "Sold since 2026-09-30 (deploy/native/support-matrix.json additionalInterceptionPoints). `enforced` rests on that one real-host record only: Codex CLI 0.141.0 (`codex exec`, hook trust bypassed; the handler must be registered and trusted in a deployment), linux/x64, the development build and a scripted mock model. Windows, macOS, arm64, a signed commercial artefact, a real model and other host versions are not covered."
       ]
     },
     {
       "connector": "codex",
       "point": "pre-tool",
-      "status": "declared-not-proven",
+      "status": "enforced",
       "hostBoundary": "PreToolUse",
       "reason": null,
       "evidence": [
@@ -493,12 +653,17 @@
           "kind": "hook-registration",
           "path": "packages/codex/src/cli.ts",
           "contains": ["blockUnconditionally", "process.exitCode = 2"]
+        },
+        {
+          "kind": "acceptance-record",
+          "path": "docs/evidence/real-host/codex.json",
+          "contains": ["\"connector\": \"codex\"", "\"pre-tool\": \"passed\""]
         }
       ],
       "limitations": [
         "The host fails open when the hook is not registered or not trusted, crashes, times out or emits malformed output; only a well-formed explicit deny blocks.",
         "The connector maps ask to deny because Codex rejects the ask verb, so approval is operator-held and out-of-band.",
-        "No named real-host acceptance record exists, and no verification against a Codex release newer than 0.141.0 exists."
+        "Real-host acceptance: Codex CLI 0.141.0 on linux/x64 refused a curl-pipe-to-shell command and a private-key read with no side effect, while a benign command ran and the same command ran without the hook (scripted mock model, docs/evidence/real-host/codex.json). Hook trust was bypassed with --dangerously-bypass-hook-trust, and no Codex release newer than 0.141.0 is verified."
       ]
     },
     {
@@ -580,7 +745,7 @@
           "contains": ["messageSending", "replyPayloadSending", "pre_delivery_response_rewrite"]
         }
       ],
-      "limitations": ["The code attempts response rewriting before channel delivery, but no real-host acceptance exists; this does not block the same-turn model from consuming tool output."]
+      "limitations": ["The code attempts response rewriting before channel delivery, but no real-host acceptance exists; this does not block the same-turn model from consuming tool output.", "Not exercised by the real-host tier: `openclaw agent --local` does not deliver through a channel, so message_sending never runs there."]
     },
     {
       "connector": "opencode",
@@ -693,19 +858,33 @@
       "condition": "disabled-hook",
       "outcome": "fail-open",
       "reason": "A disabled or unregistered plugin means the host never starts the PreToolUse process, so no verdict is produced and the tool call proceeds.",
-      "evidence": [],
+      "evidence": [
+        {
+          "kind": "acceptance-record",
+          "path": "docs/evidence/real-host/claude-code.json",
+          "contains": ["\"connector\": \"claude-code\"", "\"disabled-hook\": \"fail-open\""]
+        }
+      ],
       "limitations": [
-        "This is the host's behaviour, not a connector guarantee; the connector cannot fail closed when it is not invoked."
+        "This is the host's behaviour, not a connector guarantee; the connector cannot fail closed when it is not invoked.",
+        "Observed on Claude Code 2.1.282 (linux/x64): with AIDR not registered, the same curl-pipe-to-shell call that AIDR refuses executed (docs/evidence/real-host/claude-code.json)."
       ]
     },
     {
       "connector": "claude-code",
       "condition": "crashed-hook",
-      "outcome": "unobserved",
-      "reason": "In-process errors are converted into an explicit deny, but the host's treatment of a hook process killed before it writes any verdict is not recorded by any evidence in this repository.",
-      "evidence": [],
+      "outcome": "fail-open",
+      "reason": "Observed on Claude Code 2.1.282 (linux/x64): a PreToolUse hook process SIGKILLed before it writes a verdict is treated as a non-blocking hook error and the tool call runs. In-process errors are converted into an explicit deny; the connector's inspection deadline and integrity-failure paths were observed to block on the same host.",
+      "evidence": [
+        {
+          "kind": "acceptance-record",
+          "path": "docs/evidence/real-host/claude-code.json",
+          "contains": ["\"connector\": \"claude-code\"", "\"crashed-hook\": \"fail-open\""]
+        }
+      ],
       "limitations": [
-        "No real-host crash case has been run for this connector."
+        "The connector cannot fail closed once its process is killed; this is the host's hook policy.",
+        "Observed with a stand-in hook process (scripts/real-host-e2e/crash-hook.mjs) that is killed after reading its payload."
       ]
     },
     {
@@ -864,9 +1043,16 @@
       "condition": "disabled-hook",
       "outcome": "fail-open",
       "reason": "A removed or unloaded plugin registers no callback, so the gateway enforces nothing for the tool call.",
-      "evidence": [],
+      "evidence": [
+        {
+          "kind": "acceptance-record",
+          "path": "docs/evidence/real-host/openclaw.json",
+          "contains": ["\"connector\": \"openclaw\"", "\"disabled-hook\": \"fail-open\""]
+        }
+      ],
       "limitations": [
-        "Plugin removed or the gateway started without it is a documented bypass in deploy/native/support-matrix.json."
+        "Plugin removed or the gateway started without it is a documented bypass in deploy/native/support-matrix.json.",
+        "Observed on OpenClaw 2026.9.6 (linux/x64): with AIDR not registered, the same curl-pipe-to-shell call that AIDR refuses executed (docs/evidence/real-host/openclaw.json)."
       ]
     },
     {
@@ -899,7 +1085,7 @@
       "connector": "openclaw",
       "condition": "large-binary-response",
       "outcome": "explicitly-unsupported",
-      "reason": "Opaque binary output is marked incomplete; post-execution protection can replace persisted output and withhold a correlated outbound response, but cannot prove the same-turn model did not receive the original result.",
+      "reason": "Opaque binary output is not decoded or inspected; it is marked incomplete, so the pre-model tool-result middleware quarantines it on the embedded runner (unit-tested, not host-accepted with a binary result), the transcript copy is replaced and a correlated outbound response is withheld.",
       "evidence": [
         {
           "kind": "failure-policy",
@@ -915,10 +1101,15 @@
           "kind": "test",
           "path": "packages/openclaw/src/__tests__/output-protection.test.ts",
           "contains": ["fails closed for opaque binary output", "redacts binary output blocks and withholds the correlated response as uninspected"]
+        },
+        {
+          "kind": "test",
+          "path": "packages/openclaw/src/__tests__/tool-result-quarantine.test.ts",
+          "contains": ["quarantines content it cannot inspect instead of declaring it clean"]
         }
       ],
       "limitations": [
-        "Opaque binary bytes are not decoded or inspected. Persisted output replacement and outbound-response withholding run after tool execution; carrying a finding into a later response depends on OpenClaw providing matching tool-call, run, or session correlation."
+        "Opaque binary bytes are not decoded or inspected. The pre-model quarantine needs the embedded runner and an explicitly enabled plugin; persisted output replacement and outbound-response withholding run after tool execution, and carrying a finding into a later response depends on OpenClaw providing matching tool-call, run, or session correlation."
       ]
     },
     {
@@ -926,9 +1117,16 @@
       "condition": "disabled-hook",
       "outcome": "fail-open",
       "reason": "A removed plugin registers no hook, so the CLI enforces nothing for the tool call.",
-      "evidence": [],
+      "evidence": [
+        {
+          "kind": "acceptance-record",
+          "path": "docs/evidence/real-host/opencode.json",
+          "contains": ["\"connector\": \"opencode\"", "\"disabled-hook\": \"fail-open\""]
+        }
+      ],
       "limitations": [
-        "Plugin removed or the plugin path overridden is a documented bypass in deploy/native/support-matrix.json."
+        "Plugin removed or the plugin path overridden is a documented bypass in deploy/native/support-matrix.json.",
+        "Observed on OpenCode 1.18.32 (linux/x64): with AIDR not registered, the same curl-pipe-to-shell call that AIDR refuses executed (docs/evidence/real-host/opencode.json)."
       ]
     },
     {
@@ -983,10 +1181,16 @@
           "kind": "failure-policy",
           "path": "packages/codex/src/coverage.ts",
           "contains": ["fail_open_if_hook_is_not_invoked_or_does_not_emit_a_valid_deny"]
+        },
+        {
+          "kind": "acceptance-record",
+          "path": "docs/evidence/real-host/codex.json",
+          "contains": ["\"connector\": \"codex\"", "\"disabled-hook\": \"fail-open\""]
         }
       ],
       "limitations": [
-        "Host fails open when hook execution is unavailable; this is a documented bypass in deploy/native/support-matrix.json."
+        "Host fails open when hook execution is unavailable; this is a documented bypass in deploy/native/support-matrix.json.",
+        "Observed on Codex CLI 0.141.0 (linux/x64): with AIDR not registered, the same curl-pipe-to-shell call that AIDR refuses executed (docs/evidence/real-host/codex.json)."
       ]
     },
     {
@@ -999,10 +1203,16 @@
           "kind": "failure-policy",
           "path": "packages/codex/src/coverage.ts",
           "contains": ["hook_process_crash_or_timeout", "fail_open_if_hook_is_not_invoked_or_does_not_emit_a_valid_deny"]
+        },
+        {
+          "kind": "acceptance-record",
+          "path": "docs/evidence/real-host/codex.json",
+          "contains": ["\"connector\": \"codex\"", "\"crashed-hook\": \"fail-open\""]
         }
       ],
       "limitations": [
-        "Only a well-formed explicit deny blocks; the connector cannot override the host boundary."
+        "Only a well-formed explicit deny blocks; the connector cannot override the host boundary.",
+        "Observed on Codex CLI 0.141.0 (linux/x64): a PreToolUse hook process SIGKILLed after reading its payload let the command run (docs/evidence/real-host/codex.json)."
       ]
     },
     {

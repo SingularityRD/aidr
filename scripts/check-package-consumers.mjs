@@ -185,6 +185,10 @@ async function checkOpenClaw() {
 	if (JSON.stringify(manifest.contracts?.tools) !== JSON.stringify(expectedTools)) {
 		throw new Error("openclaw.plugin.json contracts.tools does not match registered tools");
 	}
+	// OpenClaw rejects the pre-model tool-result middleware without this contract.
+	if (JSON.stringify(manifest.contracts?.agentToolResultMiddleware) !== JSON.stringify(["openclaw"])) {
+		throw new Error("openclaw.plugin.json must declare contracts.agentToolResultMiddleware for openclaw");
+	}
 
 	const entry = artifact("packages/openclaw/dist/index.cjs");
 	const result = runNode([

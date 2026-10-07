@@ -39,14 +39,22 @@
  *      `.env`, `node_modules` or `.map` content shipped with the package.
  *
  * Usage:
- *   node scripts/verify-package-install.mjs [--keep] [--strict-files] [--no-install]
- *     [--tarball-dir <dir>] [packageDir ...]
+ *   node scripts/verify-package-install.mjs [--keep] [--strict-files] [--require-signed]
+ *     [--no-install] [--tarball-dir <dir>] [packageDir ...]
  *
  * Flags:
  *   --keep          keep the temporary directories (their paths are printed)
  *   --strict-files  treat a declared `files` documentation entry (README,
  *                   LICENSE, CHANGELOG, NOTICE) that matches nothing in the
  *                   tarball as a failure instead of an explicit skip
+ *   --require-signed
+ *                   signed-release mode: every declared signed-release evidence
+ *                   entry (package-level `aidr-artifact.manifest.json`, any
+ *                   `aidr-artifact.manifest.sig`) must ship. Also on whenever
+ *                   AIDR_SIGNING_PUBLIC_KEY_PEM_PATH is set, as in the signed
+ *                   release-rc gate. Without it (ci.yml's unsigned quality gate, a
+ *                   local `pnpm build:release`) an absent complete set is an
+ *                   explicit skip; a partial set always fails
  *   --no-install    skip the package-manager install step
  *   --tarball-dir   install and exercise already-packed release tarballs from
  *                   this directory instead of packing sibling artifacts
@@ -104,6 +112,18 @@ for (const name of IGNORE_DIRS) {
  * explicitly instead of failing the gate — unless `--strict-files` is set.
  */
 const DOCUMENTATION_ENTRY_RE = /^(?:readme|licen[cs]e|licence|changelog|notice|third[_-]party[_-]notices)(?:\.(?:md|markdown|txt|rst))?$/i;
+
+/**
+ * Signed-release evidence: a package-level `aidr-artifact.manifest.json` and any
+ * detached `aidr-artifact.manifest.sig`. Only the signing release workflow writes
+ * them (release-rc.yml: generate-artifact-manifest --id claude-code/package, then
+ * sign-artifact-manifest); `pnpm build:release` writes unsigned `dist/` manifests,
+ * which stay ordinary required entries. An unsigned build therefore cannot contain
+ * this evidence, so outside --require-signed a package that declares it and ships
+ * none of it is reported as an explicit skip, never as a pass. Shipping only part
+ * of the set is incomplete signing evidence and always fails.
+ */
+export const SIGNED_RELEASE_EVIDENCE_RE = /^(?:\.\/)?(?:aidr-artifact\.manifest\.json|(?:[^*?]+\/)?aidr-artifact\.manifest\.sig)$/;
 
 const SOURCE_FILE_RE = /\.(?:ts|tsx|mts|cts)$/i;
 const DECLARATION_FILE_RE = /\.d\.(?:ts|mts|cts)$/i;
@@ -227,11 +247,20 @@ if (invokedDirectly) {
 /* -------------------------------------------------------------------------- */
 
 export function parseArguments(argv) {
-	const options = { keep: false, strictFiles: false, install: true, tarballDir: undefined, requested: [], unknown: [] };
+	const options = {
+		keep: false,
+		strictFiles: false,
+		requireSigned: Boolean(process.env.AIDR_SIGNING_PUBLIC_KEY_PEM_PATH),
+		install: true,
+		tarballDir: undefined,
+		requested: [],
+		unknown: [],
+	};
 	for (let index = 0; index < argv.length; index += 1) {
 		const value = argv[index];
 		if (value === "--keep") options.keep = true;
 		else if (value === "--strict-files") options.strictFiles = true;
+		else if (value === "--require-signed") options.requireSigned = true;
 		else if (value === "--no-install") options.install = false;
 		else if (value === "--tarball-dir") {
 			const directory = argv[index + 1];
@@ -699,7 +728,7 @@ function collectExportTargets(value, subpath, artifacts) {
  * Verify one extracted package: declarations, version/license, forbidden
  * content, then the declared runs through the injected `runner`.
  */
-export async function verifyExtractedPackage({ packageDir, runs = [], runner, strictFiles = false, platformAssets = {}, context = {} }) {
+export async function verifyExtractedPackage({ packageDir, runs = [], runner, strictFiles = false, requireSigned = false, platformAssets = {}, context = {} }) {
 	const failures = [];
 	const skips = [];
 	const runResults = [];
@@ -720,10 +749,17 @@ export async function verifyExtractedPackage({ packageDir, runs = [], runner, st
 	const files = listPackageEntries(packageDir);
 	let verified = 0;
 	let artefactSkips = 0;
+	const signedEvidence = { shipped: [], missing: [] };
 	for (const artifact of declared) {
 		const problem = checkDeclaredArtifact(artifact, packageDir, files);
+		const isSignedEvidence = artifact.kind === "files" && SIGNED_RELEASE_EVIDENCE_RE.test(artifact.target);
 		if (!problem) {
 			verified += 1;
+			if (isSignedEvidence) signedEvidence.shipped.push(artifact.target);
+			continue;
+		}
+		if (problem.code === "MISSING_FILES_ENTRY" && isSignedEvidence) {
+			signedEvidence.missing.push({ artifact, problem });
 			continue;
 		}
 		if (problem.code === "MISSING_FILES_ENTRY" && !strictFiles && DOCUMENTATION_ENTRY_RE.test(artifact.target)) {
@@ -736,6 +772,21 @@ export async function verifyExtractedPackage({ packageDir, runs = [], runner, st
 			continue;
 		}
 		failures.push({ code: problem.code, detail: problem.detail });
+	}
+	if (signedEvidence.missing.length > 0) {
+		if (requireSigned || signedEvidence.shipped.length > 0) {
+			const why = requireSigned
+				? "signed-release mode requires it"
+				: `incomplete signing evidence: ${signedEvidence.shipped.join(", ")} shipped without it`;
+			for (const { problem } of signedEvidence.missing) failures.push({ code: problem.code, detail: `${problem.detail} (${why})` });
+		} else {
+			artefactSkips += signedEvidence.missing.length;
+			skips.push({
+				id: "signed-release evidence",
+				scope: "artefact",
+				reason: `unsigned build: ${signedEvidence.missing.map(({ artifact }) => artifact.target).join(", ")} not shipped (only the signing release workflow writes it); pass --require-signed (or set AIDR_SIGNING_PUBLIC_KEY_PEM_PATH) to require it`,
+			});
+		}
 	}
 
 	// Platform-specific native payloads, verified by path rather than by glob.
@@ -1178,6 +1229,7 @@ export async function verifyPackageInstall({ spec, workspace, options, available
 		runs: buildRuns(spec),
 		runner: defaultRunner,
 		strictFiles: options.strictFiles,
+		requireSigned: options.requireSigned,
 		platformAssets: spec.platformAssets,
 		context,
 	});

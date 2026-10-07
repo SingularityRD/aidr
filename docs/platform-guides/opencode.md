@@ -33,7 +33,8 @@ Singularity AIDR uses OpenCode plugin hooks:
 
 - `tool.execute.before` - extracts artifacts and runs the Singularity AIDR evaluator before tool execution
 - `tool.execute.after` - inspects completed tool output and replaces risky, oversized, or unsupported output with a quarantine notice before model consumption; it runs after the tool action, so it cannot undo that action
-- `experimental.chat.messages.transform` - adds queued plugin-scan findings to the first user message; this is advisory context, not prompt inspection or a provider-stream gate
+- `chat.message` - prompt protection: inspects the user's message before it is stored or sent; secrets block (text replaced, hook throws), personal data warns (see [configuration](../configuration.md#prompt_protection))
+- `experimental.chat.messages.transform` - adds queued plugin-scan findings to the first user message and prompt-protection warning notices to the message they concern; this is advisory context, not a provider-stream gate
 - `tool` - registers the allowlist tools (`aidr_allowlist_add`, `aidr_allowlist_remove`)
 
 OpenCode exposes no pre-consumption hook for arbitrary provider streams or
@@ -102,3 +103,24 @@ pnpm --filter @singularityrd/aidr-opencode run build
 pnpm test -- packages/opencode/src/__tests__/integration.test.ts
 pnpm test:e2e:opencode
 ```
+
+## Real-host acceptance
+
+Recorded by `pnpm test:e2e:real-host` (see [development](../development.md#real-host-e2e-with-a-scripted-mock-model)): the real host binary on linux/x64, AIDR installed from the development build in a disposable HOME, and a scripted loopback mock model in place of a real one. It proves what the host does with AIDR's answer at each boundary, not how a real model behaves or how broad detection is. Record: [`docs/evidence/real-host/opencode.json`](../evidence/real-host/opencode.json)
+(OpenCode 1.18.32, `opencode run`, plugin loaded from a local `file://` path).
+
+- `tool.execute.before`: `curl … | sh` and a read of `~/.ssh/id_rsa` were refused with no
+  side effect; a benign bash call ran; the same call ran with the plugin absent.
+- `chat.message`: a prompt carrying a token never reached the model.
+- `tool.execute.after`: a token in bash output reached the model only as AIDR's
+  quarantine notice.
+- A plugin initialisation failure (integrity check) blocked the prompt.
+
+How the interactive TUI presents a blocked prompt is not covered.
+
+`tool.execute.before`, `chat.message` (prompt protection, sold since 2026-09-30) and
+`tool.execute.after` are part of the sold support matrix
+(`deploy/native/support-matrix.json`) and are `enforced` in
+`deploy/native/interception-matrix.json` on this record only: OpenCode 1.18.32 on
+linux/x64, the development build and a scripted mock model. Prompt protection inspects the
+user's own text parts; synthetic parts such as attached file contents are not inspected.

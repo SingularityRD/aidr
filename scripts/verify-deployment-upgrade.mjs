@@ -30,6 +30,8 @@ const args=process.argv.slice(2), action=args[0], value=(name)=>args[args.indexO
 const marker=process.env.AIDR_TEST_BACKUP_FAILURE;
 if(marker&&existsSync(marker)) process.exit(41);
 if(!existsSync(value("--key-file"))||!existsSync(join(value("--backup"),"backup.json"))) process.exit(42);
+const signal=process.env.AIDR_TEST_BACKUP_SIGNAL;
+if(signal&&action==="verify"){process.kill(process.ppid,signal);await new Promise((done)=>setTimeout(done,5000));writeFileSync(process.env.AIDR_TEST_BACKUP_SIGNAL_MARKER,"verifier was not stopped");}
 if(action==="recover") { const output=value("--output"); if(existsSync(output)) process.exit(43); mkdirSync(output,{recursive:true}); writeFileSync(join(output,"recovery-receipt.json"),JSON.stringify({services_started:false})); }
 else if(action!=="verify") process.exit(44);
 `;
@@ -39,6 +41,8 @@ const deployment=process.argv[2], count=process.env.AIDR_TEST_MIGRATE_COUNT;
 writeFileSync(count,String((Number(existsSync(count)?readFileSync(count,"utf8"):"0")||0)+1));
 const fail=process.env.AIDR_TEST_MIGRATE_FAILURE;
 if(fail&&existsSync(fail)){unlinkSync(fail);process.exit(51)}
+const signal=process.env.AIDR_TEST_MIGRATE_SIGNAL;
+if(signal){process.kill(process.ppid,signal);await new Promise((done)=>setTimeout(done,300));}
 const manifest=JSON.parse(readFileSync(deployment+"/deployment.json","utf8"));
 if(!manifest.migrations?.length) process.exit(52);
 `;
@@ -376,16 +380,22 @@ writeFileSync(dockerLog, "");
 if (process.platform === "win32") {
 	const upgradeSource = readFileSync("scripts/deployment-upgrade.mjs", "utf8");
 	assert.match(upgradeSource, /process\.on\(signal/);
-	assert.match(upgradeSource, /throwIfInterrupted\(state\);\s*saveState\(state, "migration_dry_run"\)/);
+	assert.match(upgradeSource, /throwIfInterrupted\(\);\s*saveState\(state, "migration_dry_run"\)/);
 	checks.push("SIGINT/SIGTERM hooks share the tested pre-commit writer restart path (static assertion on Windows)");
 } else {
-	run(dryRunSignal, "apply", false, { AIDR_TEST_DRY_RUN_SIGNAL: "SIGTERM" });
+	const signalRun = run(dryRunSignal, "apply", false, { AIDR_TEST_DRY_RUN_SIGNAL: "SIGTERM" });
+	assert.equal(signalRun.status, 143);
+	assert.match(signalRun.stderr, /Upgrade interrupted by SIGTERM/);
 	const signalCalls = readFileSync(dockerLog, "utf8").trim().split(/\r?\n/);
 	assert.ok(signalCalls.findIndex((line) => line.includes(" start ")) > signalCalls.findIndex((line) => line.includes(" psql ")));
+	assert.match(signalCalls.find((line) => line.includes(" start ")), / start dashboard functions$/);
 	const signalState = JSON.parse(readFileSync(join(dryRunSignal.current, ".aidr-upgrade/state.json"), "utf8"));
+	assert.equal(signalState.status, "failed");
 	assert.equal(signalState.last_completed_phase, "preflight");
 	assert.equal(signalState.requires_restore, false);
-	checks.push("SIGTERM during the drained dry-run restarts the original writers before exit");
+	assert.equal(signalState.interrupted_by, "SIGTERM");
+	assert.equal(readFileSync(join(dryRunSignal.current, "dashboard/version.txt"), "utf8"), "current\n");
+	checks.push("SIGTERM during the drained dry-run restarts the original writers and exits 143 with resumable state");
 }
 
 run(dryRunFailure, "resume");
@@ -643,6 +653,41 @@ for (const phase of ["writers_stopped", "migration_dry_run"]) {
 	assert.doesNotMatch(dockerCalls, / stop /);
 	assert.equal(dockerCalls.includes(" psql "), phase === "writers_stopped");
 	checks.push(`${phase} resume revalidates and completes without repeating writer drain`);
+}
+
+if (process.platform !== "win32") {
+	const verifySignal = createScenario("backup-reverify-signal");
+	run(verifySignal, "preflight");
+	const verifierMarker = join(root, "backup-verifier-not-stopped");
+	writeFileSync(dockerLog, "");
+	const verifySignalRun = run(verifySignal, "apply", false, { AIDR_TEST_BACKUP_SIGNAL: "SIGINT", AIDR_TEST_BACKUP_SIGNAL_MARKER: verifierMarker });
+	assert.equal(verifySignalRun.status, 130);
+	assert.equal(existsSync(verifierMarker), false);
+	assert.equal(readFileSync(dockerLog, "utf8"), "");
+	const verifySignalState = JSON.parse(readFileSync(join(verifySignal.current, ".aidr-upgrade/state.json"), "utf8"));
+	assert.equal(verifySignalState.last_completed_phase, "preflight");
+	assert.equal(verifySignalState.requires_restore, false);
+	checks.push("SIGINT during backup re-verification stops the verifier and exits 130 before any Docker call or writer drain");
+
+	const migrationSignal = createScenario("migration-signal");
+	run(migrationSignal, "preflight");
+	writeFileSync(dockerLog, "");
+	const migrationsBeforeSignal = Number(migrationRuns());
+	const migrationSignalRun = run(migrationSignal, "apply", false, { AIDR_TEST_MIGRATE_SIGNAL: "SIGTERM" });
+	assert.equal(migrationSignalRun.status, 143);
+	assert.equal(Number(migrationRuns()), migrationsBeforeSignal + 1);
+	const migrationSignalCalls = readFileSync(dockerLog, "utf8");
+	assert.doesNotMatch(migrationSignalCalls, / up /);
+	assert.doesNotMatch(migrationSignalCalls, / start /);
+	const migrationSignalState = JSON.parse(readFileSync(join(migrationSignal.current, ".aidr-upgrade/state.json"), "utf8"));
+	assert.equal(migrationSignalState.last_completed_phase, "database_migrated");
+	assert.equal(migrationSignalState.requires_restore, false);
+	assert.equal(migrationSignalState.interrupted_by, "SIGTERM");
+	assert.equal(readFileSync(join(migrationSignal.current, "dashboard/version.txt"), "utf8"), "current\n");
+	run(migrationSignal, "resume");
+	assert.equal(Number(migrationRuns()), migrationsBeforeSignal + 1);
+	assert.equal(JSON.parse(readFileSync(join(migrationSignal.current, ".aidr-upgrade/state.json"), "utf8")).status, "complete");
+	checks.push("SIGTERM during the atomic migration lets it finish, keeps writers drained, exits 143 and resumes without re-migrating");
 }
 
 const evidence = { passed: true, checked_at: new Date().toISOString(), checks, scope: "Isolated deterministic upgrade orchestration tests with process doubles; not a customer database or traffic cutover." };

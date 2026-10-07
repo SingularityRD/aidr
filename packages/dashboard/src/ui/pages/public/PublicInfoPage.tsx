@@ -122,8 +122,8 @@ export function PublicInfoPage({ kind }: { kind: InfoKind }) {
 			<div className="card">
 				<h1>{label}</h1>
 				<p className="muted">
-					Review the configured deployment document before sending managed telemetry, AIG scan data,
-					or customer content to this service.
+					Review the configured deployment document before sending managed telemetry, AI Security
+					Posture scan data, or customer content to this service.
 				</p>
 				{externalLink ? (
 					<div className="row" style={{ marginTop: 16 }}>

@@ -8,12 +8,12 @@ Node 22.16.0 üzerinde derlendi/test edildi; kullanılan `node:sqlite` bu sürü
 
 ```bash
 pnpm install --frozen-lockfile --ignore-scripts
-pnpm --filter @singularity/aidr-privacy build
-pnpm --filter @singularity/aidr-privacy test:all
-pnpm --filter @singularity/aidr-privacy test:python
-pnpm --filter @singularity/aidr-privacy test:vision-python
-pnpm --filter @singularity/aidr-privacy test:parser
-pnpm --filter @singularity/aidr-privacy demo:platform
+pnpm --filter @singularityrd/aidr-privacy build
+pnpm --filter @singularityrd/aidr-privacy test:all
+pnpm --filter @singularityrd/aidr-privacy test:python
+pnpm --filter @singularityrd/aidr-privacy test:vision-python
+pnpm --filter @singularityrd/aidr-privacy test:parser
+pnpm --filter @singularityrd/aidr-privacy demo:platform
 ```
 
 Özgün tam kaynak ZIP'i geliştirme tarball'larını içeriyordu; bu çalışma alanı içe aktarımı onları ve derlenmiş çıktıları taşımaz. Derleme gerekli çıktıları üretir, ancak henüz bir müşteri npm paketi yayımlanmaz. Python/native ortam, Tesseract ve gerçek NER ağırlıkları ayrıca kurulmalıdır. `parsers/requirements.txt` testte kullanılan doğrudan sürümleri sabitler; tam transitive lock/CVE onayı değildir.
@@ -29,7 +29,7 @@ Varsayılan cihaz bağlama aktiftir. TLS peer sertifikasının SHA-256 değeri, 
 ## 2. Tek tenant runtime fabrikası
 
 ```ts
-import { createPlatformRuntime, listenPlatform } from '@singularity/aidr-privacy/platform';
+import { createPlatformRuntime, listenPlatform } from '@singularityrd/aidr-privacy/platform';
 
 // options: onaylı veritabanı yolu, KMS'ten alınan tenant/audit anahtarları,
 // sabit issuer/public keys, imzalı politika ve sabit provider konfigürasyonları.

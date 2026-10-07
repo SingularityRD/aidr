@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { authenticateBearer, validateGatewayConfig } from "../config.mjs";
+import { authenticateBearer, GatewayConfigError, validateGatewayConfig } from "../config.mjs";
 
 const packageRoot = resolve(fileURLToPath(new URL("../../", import.meta.url)));
 
@@ -95,10 +95,112 @@ describe("MCP gateway configuration and bearer authentication", () => {
 	});
 });
 
+describe("MCP gateway detection, binary output and server-initiated policy config", () => {
+	function dlpPolicy(tenantId = "tenant-a") {
+		return {
+			version: 1,
+			tenantId,
+			labels: [{ id: "label-secret", tenantId, name: "Secret", sensitivity: "restricted" }],
+			rules: [
+				{
+					id: "rule-project",
+					tenantId,
+					labelId: "label-secret",
+					name: "Project codename",
+					directions: ["input"],
+					action: "block",
+					matchers: [{ type: "keyword", values: ["BLUEHERON"] }],
+				},
+			],
+		};
+	}
+
+	it("applies fail-closed defaults when the optional sections are absent", () => {
+		const validated = validateGatewayConfig(config());
+		assert.deepEqual(validated.detection, {});
+		assert.deepEqual(validated.serverInitiated, {
+			sampling: "deny",
+			elicitation: "deny",
+			roots: "deny",
+			notifications: "deny",
+		});
+		assert.deepEqual(validated.binaryOutput.allowedMimeTypes, [
+			"image/png",
+			"image/jpeg",
+			"image/gif",
+			"image/webp",
+		]);
+		assert.equal(validated.binaryOutput.maxDecodedBytes, 256 * 1024);
+	});
+
+	it("accepts only sniffable binary types and a size limit within the body limit", () => {
+		const accepted = config();
+		accepted.binaryOutput = { maxDecodedBytes: 1024, allowedMimeTypes: ["application/pdf"] };
+		assert.deepEqual(validateGatewayConfig(accepted).binaryOutput, {
+			maxDecodedBytes: 1024,
+			allowedMimeTypes: ["application/pdf"],
+		});
+		for (const binaryOutput of [
+			{ allowedMimeTypes: ["application/octet-stream"] },
+			{ allowedMimeTypes: ["image/png", "image/png"] },
+			{ maxDecodedBytes: 2 * 1024 * 1024 },
+			{ maxDecodedBytes: -1 },
+			{ unknown: true },
+		]) {
+			const candidate = config();
+			candidate.binaryOutput = binaryOutput;
+			assert.throws(() => validateGatewayConfig(candidate), GatewayConfigError);
+		}
+	});
+
+	it("accepts deny or ignore per server-initiated category and nothing else", () => {
+		const accepted = config();
+		accepted.serverInitiated = { notifications: "ignore" };
+		assert.equal(validateGatewayConfig(accepted).serverInitiated.notifications, "ignore");
+		assert.equal(validateGatewayConfig(accepted).serverInitiated.sampling, "deny");
+		for (const serverInitiated of [{ sampling: "allow" }, { tools: "ignore" }]) {
+			const candidate = config();
+			candidate.serverInitiated = serverInitiated;
+			assert.throws(() => validateGatewayConfig(candidate), /server initiated policy/);
+		}
+	});
+
+	it("requires absolute detection paths", () => {
+		const accepted = config();
+		accepted.detection = { threatsDir: "/opt/aidr/threats", agentConfigPath: "/etc/aidr.json" };
+		// Paths are normalised with path.resolve (a drive letter is added on Windows).
+		assert.deepEqual(validateGatewayConfig(accepted).detection, {
+			threatsDir: resolve("/opt/aidr/threats"),
+			agentConfigPath: resolve("/etc/aidr.json"),
+		});
+		const relative = config();
+		relative.detection = { threatsDir: "threats" };
+		assert.throws(() => validateGatewayConfig(relative), /detection paths must be absolute/);
+	});
+
+	it("binds a validated DLP policy to its own tenant only", () => {
+		const accepted = config();
+		accepted.servers[0].dlpPolicy = dlpPolicy();
+		const validated = validateGatewayConfig(accepted);
+		assert.equal(validated.servers[0].dlpPolicy.tenantId, "tenant-a");
+		assert.equal(validated.servers[0].dlpPolicy.unavailableAction, "block");
+
+		const foreign = config();
+		foreign.servers[0].dlpPolicy = dlpPolicy("tenant-b");
+		assert.throws(() => validateGatewayConfig(foreign), /dlp policy tenant mismatch/);
+		const malformed = config();
+		malformed.servers[0].dlpPolicy = { version: 1 };
+		assert.throws(
+			() => validateGatewayConfig(malformed),
+			(error) => error instanceof GatewayConfigError && error.code === "invalid_server_dlp_policy",
+		);
+	});
+});
+
 describe("MCP gateway runtime contract", () => {
 	it("keeps the manifest, bundle target and deployment guide on Node 22.12", () => {
 		const manifest = JSON.parse(readFileSync(resolve(packageRoot, "package.json"), "utf8"));
-		const build = readFileSync(resolve(packageRoot, "scripts/build.mjs"), "utf8");
+		const build = readFileSync(resolve(packageRoot, "scripts/bundle-options.mjs"), "utf8");
 		const readme = readFileSync(resolve(packageRoot, "README.md"), "utf8");
 
 		assert.equal(manifest.engines?.node, ">=22.12.0");

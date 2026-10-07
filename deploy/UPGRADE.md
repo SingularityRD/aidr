@@ -177,6 +177,15 @@ recognizes components already at their target hash, and never reapplies an alrea
 recorded migration. A completed resume is a no-op. Do not edit the state, payload,
 previous-component or receipt files.
 
+On `SIGINT` or `SIGTERM` the tool stops at the next safe point instead of dying
+mid-step. Read-only and rollback-only steps (backup verification, the migration
+dry-run, the online doctor) are cut short; writer stop/start, the atomic migration
+and recovery run to completion so their outcome is known. Before the schema commit
+it restarts exactly the services that were running before maintenance; after the
+commit it keeps target services drained. It then records `interrupted_by` and the
+resumable phase in the state file and exits with 130 (`SIGINT`) or 143 (`SIGTERM`).
+Send the signal once and wait for the process to exit; do not `SIGKILL` it.
+
 ## Failure and recovery
 
 Every failed apply writes `.aidr-upgrade/rollback-plan.json`. A failure before the

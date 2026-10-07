@@ -4,7 +4,7 @@
  */
 
 import { createScanHandler as coreScanHandler, type Logger } from "@singularityrd/aidr-core";
-import { getBundledDataDirs, getSageVersion } from "./bundled-dirs.js";
+import { getAidrVersion, getBundledDataDirs } from "./bundled-dirs.js";
 import { discoverOpenCodePlugins } from "./plugin-discovery.js";
 
 export function createSessionScanHandler(
@@ -13,7 +13,7 @@ export function createSessionScanHandler(
 	onResult?: (msg: string) => void,
 ): () => Promise<void> {
 	const { threatsDir, allowlistsDir } = getBundledDataDirs();
-	const version = getSageVersion();
+	const version = getAidrVersion();
 
 	return coreScanHandler({
 		logger,

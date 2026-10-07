@@ -43,6 +43,26 @@ additional_redirect_urls = [
 ]
 enable_signup = true
 
+# Email/password sign-ups must confirm the address before a session is issued.
+# Locally the confirmation mail is captured by Inbucket (http://localhost:54324),
+# so the sign-up flow still works without an SMTP provider.
+[auth.email]
+enable_signup = true
+double_confirm_changes = true
+enable_confirmations = true
+
+# Cloudflare Turnstile bot protection for sign-up, sign-in and magic links.
+# Off for local development. A deployed project enables it through the Supabase
+# CLI environment overrides (never by editing this file):
+#   SUPABASE_AUTH_CAPTCHA_ENABLED=true
+#   SUPABASE_AUTH_CAPTCHA_SECRET=<Turnstile secret key>
+# and builds the dashboard with the matching VITE_TURNSTILE_SITE_KEY, which
+# makes LoginPage send a captchaToken with every Auth request.
+[auth.captcha]
+enabled = false
+provider = "turnstile"
+secret = "env(SUPABASE_AUTH_CAPTCHA_SECRET)"
+
 [auth.email.template.recovery]
 subject = "Reset your AIDR password"
 content_path = "./supabase/templates/recovery.html"
@@ -84,6 +104,10 @@ verify_jwt = false
 verify_jwt = false
 [functions.paddle-webhook]
 verify_jwt = false
+[functions.operator-admin]
+# Platform-operator surface (admission mode, legal documents, licenses). The
+# handler repeats session revocation, operator allowlist and AAL2 checks.
+verify_jwt = true
 [functions.pilot-admin]
 verify_jwt = true
 [functions.pilot-apply]
@@ -110,6 +134,43 @@ verify_jwt = false
 verify_jwt = true
 [functions.team-invite]
 verify_jwt = true
+[functions.tenant-settings]
+# Workspace rename, retention and closure. The handler repeats session, identity
+# barrier, membership/role and AAL2 checks, and the RPCs re-check under locks.
+verify_jwt = true
+[functions.approval-requests]
+# Managed-mode dashboard approvals. Connectors authenticate with a hash-only
+# tenant API key (not a Supabase JWT), so gateway JWT verification is off; the
+# handler verifies the API key (scope tenant) for create/poll and, for
+# decisions, the Supabase session, identity barrier, owner/admin role and AAL2.
+verify_jwt = false
+
+[functions.compliance-report]
+# Compliance evidence report. The handler repeats session, identity barrier,
+# owner/admin role, AAL2 and a tenant rate limit; the SQL re-checks under locks.
+verify_jwt = true
+[functions.ai-governance]
+# AI governance register, intake, exceptions and four-eyes change control.
+# Dashboard sessions only; the handler repeats session, identity barrier,
+# membership/role, AAL2 for decisions and a tenant rate limit, and every RPC
+# re-checks under row locks.
+verify_jwt = true
+[functions.governance-digest]
+# Scheduled governance summary. The dispatch path requires the deployment
+# service credential (compared in constant time); the test-send path repeats
+# session, identity barrier, owner/admin role and a tenant rate limit, and the
+# SQL re-checks under locks.
+verify_jwt = true
+
+[functions.notification-channels]
+# Tenant alert channels (Settings -> Notifications). The handler repeats session,
+# identity barrier, owner/admin and AAL2 checks; destinations are write-only.
+verify_jwt = true
+
+[functions.notification-dispatch]
+# Outbox dispatcher, invoked by the deployment scheduler with the dedicated
+# AIDR_NOTIFICATION_DISPATCH_TOKEN bearer (not a JWT); never browser-facing.
+verify_jwt = false
 [functions.oauth-callback]
 verify_jwt = true
 [functions.audit-export]

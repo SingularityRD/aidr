@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { build } from "esbuild";
+import { coreSourcePlugin, gatewayBundleOptions, readRuleSets } from "./bundle-options.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const entries = process.argv.slice(2).length ? process.argv.slice(2).map((path) => resolve(path)) :
@@ -10,12 +11,11 @@ const entries = process.argv.slice(2).length ? process.argv.slice(2).map((path) 
 const directory = await mkdtemp(join(tmpdir(), "aidr-mcp-source-tests-"));
 try {
 	const outputs = [];
+	const bundleOptions = gatewayBundleOptions({ ruleSets: await readRuleSets() });
 	for (const [index, entry] of entries.entries()) {
 		const output = join(directory, `${index}.test.mjs`);
-		await build({ entryPoints: [entry], outfile: output, bundle: true, platform: "node", format: "esm", target: "node22.12",
-			plugins: [{ name: "core-source", setup(builder) {
-				builder.onResolve({ filter: /core\/dist\/.*\.js$/ }, ({ path, resolveDir }) => ({ path: resolve(resolveDir, path.replace("/dist/", "/src/").replace(/\.js$/, ".ts")) }));
-			} }], logLevel: "silent" });
+		await build({ ...bundleOptions, entryPoints: [entry], outfile: output, external: [...bundleOptions.external, "esbuild"],
+			plugins: [...bundleOptions.plugins, coreSourcePlugin()], logLevel: "silent" });
 		outputs.push(output);
 	}
 	const pattern = process.env.AIDR_MCP_TEST_PATTERN;

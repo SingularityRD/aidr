@@ -50,8 +50,12 @@ export async function createCheckout(
 	_referralCode?: string,
 	tenantId?: string,
 	requestId?: string,
+	catalogPlan?: "team" | "business",
 ): Promise<CheckoutResult> {
 	assertSelfServiceEnabled();
+	if (catalogPlan !== undefined && catalogPlan !== "team" && catalogPlan !== "business") {
+		throw new Error("Invalid catalog plan");
+	}
 	if (
 		!tenantId ||
 		!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId)
@@ -62,7 +66,13 @@ export async function createCheckout(
 	if (!/^[a-zA-Z0-9_-]{16,80}$/.test(stableRequestId))
 		throw new Error("Invalid checkout request ID");
 	const { data, error } = await supabase.functions.invoke("billing-checkout", {
-		body: { tenant_id: tenantId, seats, plan, request_id: stableRequestId },
+		body: {
+			tenant_id: tenantId,
+			seats,
+			plan,
+			request_id: stableRequestId,
+			...(catalogPlan ? { catalog_plan: catalogPlan } : {}),
+		},
 	});
 	let failure = data;
 	if (error && (!failure || typeof failure !== "object")) {

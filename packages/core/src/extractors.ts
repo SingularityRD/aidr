@@ -2,6 +2,7 @@
  * Extract security-relevant artifacts from tool inputs.
  */
 
+import { commandFromValue } from "./command-argv.js";
 import type { Artifact } from "./types.js";
 
 /** Regex for extracting URLs — matches http/https followed by non-whitespace, non-quote chars. */
@@ -32,13 +33,100 @@ export const MAX_ARTIFACT_SIZE = 64 * 1024;
 /** Alias kept for readability at the file/content call sites. */
 const MAX_CONTENT_SIZE = MAX_ARTIFACT_SIZE;
 
-const MAX_GENERIC_STRINGS = 200;
-const MAX_GENERIC_DEPTH = 4;
-const MAX_GENERIC_ARTIFACTS = 250;
+/**
+ * Inspection limits for one tool call.
+ *
+ * Every limit is fail-closed: when an input exceeds one of them the extractor
+ * appends an `input_not_fully_inspected` marker artifact (see
+ * {@link inspectionLimitsHit}) and the evaluator denies the call, because a
+ * verdict over part of the input is not a verdict over the call. Silently
+ * stopping at a limit let `curl … | bash` hide five levels deep, after 200
+ * filler strings, or behind 64 KiB of padding in an MCP argument.
+ *
+ * - Nesting depth (16) and string count (1024) are far above realistic tool
+ *   arguments; depth also bounds recursion.
+ * - A free-text string longer than {@link MAX_ARTIFACT_SIZE} is scanned in full
+ *   as overlapping windows instead of being cut. Command, URL and path fields
+ *   are not windowed: a window of a command is not the command, so an oversized
+ *   one fails closed exactly like an oversized `Bash` command does.
+ * - {@link MAX_INSPECTED_CHARS} (4 MiB) caps the total text scanned per call so
+ *   the synchronous matcher stays well inside the PreToolUse hook budget.
+ */
+const MAX_GENERIC_STRINGS = 1024;
+const MAX_GENERIC_DEPTH = 16;
+const MAX_GENERIC_ARTIFACTS = 2048;
+export const MAX_INSPECTED_CHARS = 4 * 1024 * 1024;
 
-/** A bounded extraction must never be mistaken for a complete clean inspection. */
-function incompleteInspectionArtifact(): Artifact {
-	return { type: "content", value: "[UNINSPECTED_INPUT]", context: "inspection_incomplete" };
+/**
+ * Overlap between consecutive content windows. Threat rules bound every gap to
+ * 300 characters (see MAX_GAP), so a match that straddles a window boundary is
+ * still wholly contained in one window.
+ */
+const WINDOW_OVERLAP = 4 * 1024;
+
+/** Which inspection limit an input exceeded. */
+export type InspectionLimit =
+	| "depth"
+	| "string_count"
+	| "string_size"
+	| "artifact_count"
+	| "total_size";
+
+/** Reason code and marker-artifact context for an input that was not fully inspected. */
+export const INPUT_NOT_FULLY_INSPECTED = "input_not_fully_inspected";
+const INPUT_NOT_FULLY_INSPECTED_CONTEXT = `aidr:${INPUT_NOT_FULLY_INSPECTED}`;
+
+const INSPECTION_LIMITS: readonly InspectionLimit[] = [
+	"depth",
+	"string_count",
+	"string_size",
+	"artifact_count",
+	"total_size",
+];
+
+function inspectionLimitMarker(limit: InspectionLimit): Artifact {
+	return {
+		type: "content",
+		value: `${INPUT_NOT_FULLY_INSPECTED}:${limit}`,
+		context: INPUT_NOT_FULLY_INSPECTED_CONTEXT,
+	};
+}
+
+/**
+ * The inspection limits an extraction reported, read from its marker
+ * artifacts. Empty when the whole input was inspected. The marker travels in
+ * the artifact list itself so every connector that forwards extractor output to
+ * the evaluator carries it without any connector-specific plumbing.
+ */
+export function inspectionLimitsHit(artifacts: readonly Artifact[]): InspectionLimit[] {
+	const limits = new Set<InspectionLimit>();
+	for (const artifact of artifacts) {
+		if (artifact.context !== INPUT_NOT_FULLY_INSPECTED_CONTEXT) continue;
+		const limit = artifact.value.slice(INPUT_NOT_FULLY_INSPECTED.length + 1) as InspectionLimit;
+		limits.add(INSPECTION_LIMITS.includes(limit) ? limit : "total_size");
+	}
+	return [...limits];
+}
+
+/**
+ * Split free text into overlapping windows of at most {@link MAX_ARTIFACT_SIZE}
+ * characters that together cover the whole string. Each later window starts at
+ * a line start when one lies inside the overlap, so line-anchored rules do not
+ * see a mid-line fragment as a line start.
+ */
+export function contentWindows(value: string): string[] {
+	if (value.length <= MAX_CONTENT_SIZE) return [value];
+	const windows: string[] = [];
+	let start = 0;
+	for (;;) {
+		const end = Math.min(start + MAX_CONTENT_SIZE, value.length);
+		windows.push(value.slice(start, end));
+		if (end === value.length) return windows;
+		let next = end - WINDOW_OVERLAP;
+		const lineBreak = value.lastIndexOf("\n", next);
+		if (lineBreak >= end - 2 * WINDOW_OVERLAP) next = lineBreak + 1;
+		start = next;
+	}
 }
 
 /**
@@ -100,11 +188,7 @@ function escapeRegExp(str: string): string {
  * be silent: a partial evaluation that reports "allow" would otherwise be
  * indistinguishable from a full clean result.
  */
-function warnTruncatedInput(
-	source: string,
-	originalLength: number,
-	evaluatedLength: number,
-): void {
+function warnTruncatedInput(source: string, originalLength: number, evaluatedLength: number): void {
 	console.warn(
 		`AIDR: ${source} truncated for inspection — ${originalLength} chars reduced to the first ` +
 			`${evaluatedLength} chars. The trailing text was NOT inspected; the verdict covers the ` +
@@ -326,15 +410,22 @@ function extractFileArtifacts(
 	}
 
 	const content = toolInput[contentKey];
-	if (typeof content === "string" && content.length > MAX_CONTENT_SIZE) {
-		artifacts.push(incompleteInspectionArtifact());
-	}
 	if (content && typeof content === "string" && content.trim()) {
-		const capped = content.slice(0, MAX_CONTENT_SIZE);
-		artifacts.push({ type: "content", value: capped, context: contextName });
-
-		for (const url of extractUrls(capped)) {
+		// File content is scanned in full (as overlapping windows) up to the
+		// per-call budget. Content beyond the budget fails closed like every
+		// other inspection limit; no agent emits 4 MiB in one tool call, so
+		// ordinary large writes and edits are unaffected.
+		const inspected = content.slice(0, MAX_INSPECTED_CHARS);
+		const urls = new Set<string>();
+		for (const window of contentWindows(inspected)) {
+			artifacts.push({ type: "content", value: window, context: contextName });
+			for (const url of extractUrls(window)) urls.add(url);
+		}
+		for (const url of urls) {
 			artifacts.push({ type: "url", value: url, context: urlContextName });
+		}
+		if (content.length > MAX_INSPECTED_CHARS) {
+			artifacts.push(inspectionLimitMarker("total_size"));
 		}
 	}
 
@@ -359,10 +450,6 @@ export function extractFromDelete(toolInput: Record<string, unknown>): Artifact[
 		return [{ type: "file_path", value: filePath, context: "delete" }];
 	}
 	return [];
-}
-
-function asString(value: unknown): string | null {
-	return typeof value === "string" ? value : null;
 }
 
 function looksLikePath(value: string): boolean {
@@ -397,37 +484,148 @@ function fieldTypeForKey(key: string): Artifact["type"] | null {
 	return null;
 }
 
+interface StringField {
+	path: string;
+	key: string;
+	value: string;
+}
+
+/** Walk state shared by one generic extraction. */
+interface GenericWalk {
+	fields: StringField[];
+	chars: number;
+	limits: Set<InspectionLimit>;
+}
+
+/**
+ * Object keys that are plain identifiers carry no payload of their own. Any
+ * other key (whitespace, shell metacharacters, very long) is inspected like a
+ * value, because a server may act on it.
+ */
+const PLAIN_KEY = /^[\w.$@:-]{1,64}$/;
+
+function hasInspectableContent(value: unknown): boolean {
+	if (typeof value === "string") return value.trim() !== "";
+	if (Array.isArray(value)) return value.length > 0;
+	return value !== null && typeof value === "object" && Object.keys(value).length > 0;
+}
+
+function addStringField(walk: GenericWalk, field: StringField): boolean {
+	if (field.value.trim() === "") return true;
+	if (walk.fields.length >= MAX_GENERIC_STRINGS) {
+		walk.limits.add("string_count");
+		return false;
+	}
+	if (walk.chars + field.value.length > MAX_INSPECTED_CHARS) {
+		walk.limits.add("total_size");
+		return false;
+	}
+	walk.chars += field.value.length;
+	walk.fields.push(field);
+	return true;
+}
+
+function collectObjectFields(
+	value: Record<string, unknown>,
+	path: string,
+	depth: number,
+	walk: GenericWalk,
+): boolean {
+	for (const [key, child] of Object.entries(value)) {
+		const childPath = path ? `${path}.${key}` : key;
+		if (
+			!PLAIN_KEY.test(key) &&
+			!addStringField(walk, { path: `${childPath}#key`, key: "", value: key })
+		) {
+			return false;
+		}
+		if (!collectStringFields(child, childPath, depth + 1, walk)) return false;
+	}
+	return true;
+}
+
+/**
+ * Collect every string in the tool input. Returns false once a limit stops the
+ * walk; the limit is recorded in `walk.limits` so the caller can fail closed.
+ */
 function collectStringFields(
 	value: unknown,
 	path: string,
 	depth: number,
-	out: Array<{ path: string; key: string; value: string }>,
+	walk: GenericWalk,
 ): boolean {
-	if (value === null || (typeof value !== "string" && typeof value !== "object")) return true;
-	if (out.length >= MAX_GENERIC_STRINGS || depth > MAX_GENERIC_DEPTH) return false;
-
+	if (depth > MAX_GENERIC_DEPTH) {
+		if (hasInspectableContent(value)) walk.limits.add("depth");
+		return true;
+	}
 	if (typeof value === "string") {
-		out.push({
-			path,
-			key: path.split(".").slice(-1)[0] ?? "",
-			value: value.slice(0, MAX_CONTENT_SIZE),
-		});
-		return value.length <= MAX_CONTENT_SIZE;
+		return addStringField(walk, { path, key: path.split(".").slice(-1)[0] ?? "", value });
+	}
+	if (Array.isArray(value)) {
+		return value.every((item, i) => collectStringFields(item, `${path}[${i}]`, depth + 1, walk));
+	}
+	if (value && typeof value === "object") {
+		return collectObjectFields(value as Record<string, unknown>, path, depth, walk);
+	}
+	return true;
+}
+
+/** Deduplicating artifact list for one generic extraction, capped at MAX_GENERIC_ARTIFACTS. */
+class GenericArtifacts {
+	readonly items: Artifact[] = [];
+	private readonly seen = new Set<string>();
+
+	private readonly limits: Set<InspectionLimit>;
+
+	constructor(limits: Set<InspectionLimit>) {
+		this.limits = limits;
 	}
 
-	if (Array.isArray(value)) {
-		for (let i = 0; i < value.length; i++) {
-			if (!collectStringFields(value[i], `${path}[${i}]`, depth + 1, out)) return false;
+	/** Add an artifact and the URLs embedded in it; false once the cap is reached. */
+	add(artifact: Artifact): boolean {
+		if (!this.push(artifact)) return false;
+		for (const url of extractUrls(artifact.value)) {
+			if (!this.push({ type: "url", value: url, context: `${artifact.context}:embedded_url` })) {
+				return false;
+			}
 		}
 		return true;
 	}
 
-	if (value && typeof value === "object") {
-		for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-			if (!collectStringFields(v, path ? `${path}.${k}` : k, depth + 1, out)) return false;
+	private push(artifact: Artifact): boolean {
+		const key = `${artifact.type}:${artifact.value}`;
+		if (this.seen.has(key)) return true;
+		if (this.items.length >= MAX_GENERIC_ARTIFACTS) {
+			this.limits.add("artifact_count");
+			return false;
 		}
+		this.seen.add(key);
+		this.items.push(artifact);
+		return true;
 	}
-	return true;
+}
+
+/** Turn one collected string into artifacts; false once the artifact cap is reached. */
+function addFieldArtifacts(
+	toolName: string,
+	field: StringField,
+	out: GenericArtifacts,
+	limits: Set<InspectionLimit>,
+): boolean {
+	const value = field.value.trim();
+	const context = `tool:${toolName}:${field.path || field.key || "value"}`;
+	const type = fieldTypeForKey(field.key) ?? (looksLikePath(value) ? "file_path" : "content");
+
+	if (type === "content") {
+		return contentWindows(value).every((window) => out.add({ type, value: window, context }));
+	}
+	// A window of a command, URL or path is not that value; an oversized one
+	// cannot be judged and fails closed.
+	if (value.length > MAX_ARTIFACT_SIZE) {
+		limits.add("string_size");
+		return true;
+	}
+	return out.add({ type, value, context });
 }
 
 /**
@@ -435,62 +633,24 @@ function collectStringFields(
  * Recursively scans the tool input for string fields, extracting:
  * - explicit URLs / commands / file paths based on common key names
  * - URLs found inside any collected strings
- * - generic content strings for heuristic matching (capped)
+ * - generic content strings for heuristic matching (windowed, never cut)
+ *
+ * When the input exceeds an inspection limit the result ends with an
+ * `input_not_fully_inspected` marker artifact (see {@link inspectionLimitsHit});
+ * the evaluator denies such a call instead of judging only the inspected part.
  */
 export function extractFromUnknownTool(
 	toolName: string,
 	toolInput: Record<string, unknown>,
 ): Artifact[] {
-	const artifacts: Artifact[] = [];
-	const fields: Array<{ path: string; key: string; value: string }> = [];
-	let complete = collectStringFields(toolInput, "", 0, fields);
+	const walk: GenericWalk = { fields: [], chars: 0, limits: new Set() };
+	collectStringFields(toolInput, "", 0, walk);
 
-	for (const field of fields) {
-		const raw = field.value;
-		const trimmed = raw.trim();
-		if (!trimmed) continue;
-
-		const keyType = fieldTypeForKey(field.key);
-		const context = `tool:${toolName}:${field.path || field.key || "value"}`;
-
-		if (keyType === "url") {
-			artifacts.push({ type: "url", value: trimmed, context });
-		} else if (keyType === "command") {
-			artifacts.push({ type: "command", value: trimmed, context });
-		} else if (keyType === "file_path") {
-			artifacts.push({ type: "file_path", value: trimmed, context });
-		} else if (keyType === "content") {
-			artifacts.push({ type: "content", value: trimmed.slice(0, MAX_CONTENT_SIZE), context });
-		} else {
-			// Heuristic: promote obvious paths to file_path
-			if (looksLikePath(trimmed)) {
-				artifacts.push({ type: "file_path", value: trimmed, context });
-			} else {
-				artifacts.push({ type: "content", value: trimmed.slice(0, MAX_CONTENT_SIZE), context });
-			}
-		}
-
-		for (const url of extractUrls(trimmed)) {
-			artifacts.push({ type: "url", value: url, context: `${context}:embedded_url` });
-		}
-
-		if (artifacts.length >= MAX_GENERIC_ARTIFACTS) {
-			complete = false;
-			break;
-		}
+	const out = new GenericArtifacts(walk.limits);
+	for (const field of walk.fields) {
+		if (!addFieldArtifacts(toolName, field, out, walk.limits)) break;
 	}
-
-	const seen = new Set<string>();
-	const deduped: Artifact[] = [];
-	for (const a of artifacts) {
-		const key = `${a.type}:${a.value}`;
-		if (seen.has(key)) continue;
-		seen.add(key);
-		deduped.push(a);
-		if (deduped.length >= MAX_GENERIC_ARTIFACTS) break;
-	}
-	if (!complete) deduped.push(incompleteInspectionArtifact());
-	return deduped;
+	return [...out.items, ...[...walk.limits].map(inspectionLimitMarker)];
 }
 
 /**
@@ -504,8 +664,10 @@ export function extractFromToolCall(
 	switch (toolName) {
 		case "Bash":
 		case "Shell": {
-			const command = asString(toolInput.command) ?? "";
-			return command ? extractFromBash(command) : [];
+			// Hosts may send an argv array (`["bash", "-lc", "curl … | sh"]`)
+			// instead of a command line; both shapes are inspected.
+			const result = commandFromValue(toolInput.command);
+			return result.ok && result.command ? extractFromBash(result.command) : [];
 		}
 		case "WebFetch":
 			return extractFromWebFetch(toolInput);

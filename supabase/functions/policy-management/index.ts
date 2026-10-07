@@ -1,13 +1,15 @@
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.116.0";
 import { parseDocument } from "npm:yaml@2.8.3";
 import { getBearerToken } from "../_shared/auth.ts";
-import { handleDlpPolicyAction } from "../_shared/dlp-policy-store.ts";
+import { handleAgentProfileAction, isAgentProfileAction } from "../_shared/agent-profile-store.ts";
+import { handleDlpPolicyAction, isDlpPolicyAction } from "../_shared/dlp-policy-store.ts";
 import { checkIdentityBarrier } from "../_shared/identity-barrier.ts";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 import { corsJson, handleCors } from "../_shared/cors.ts";
 import { compileRuntimePolicyDocument, compileRuntimePolicyDraft, simulateCompiledRuntimePolicy, type RuntimePolicyDocumentCompilation } from "../_shared/policy-document.ts";
 import { consumeTenantRateLimit, rateLimitHeaders, readBoundedJson } from "../_shared/request-limits.ts";
 import { membershipActive, validateRuntimePolicy } from "../_shared/runtime-policy.ts";
+import { isFourEyesRefusal, readPolicyFourEyes, submitPolicyChange } from "../_shared/policy-change-control.ts";
 import {
 	dispatchPolicyRollout,
 	isPolicyRolloutAction,
@@ -101,7 +103,7 @@ export function createPolicyManagementHandler(deps: PolicyManagementDeps = {}) {
 			const action = typeof body.action === "string" ? body.action : "";
 			const expectedDocument = isPolicyDocumentPrecondition(body.expected_document) ? body.expected_document : null;
 			if (action === "publish_document" && !expectedDocument) return corsJson(req, 400, { error: "invalid_document_precondition" });
-			const workCost = ["adoption", "rollout_progress", "rollout", "create_rollout"].includes(action) ? 5 : action === "history" ? 2 : 1;
+			const workCost = ["adoption", "rollout_progress", "rollout", "create_rollout"].includes(action) ? 5 : ["history", "dlp_policy_history", "agent_profile_history"].includes(action) ? 2 : 1;
 			const rate = await consumeTenantRateLimit(db, {
 				tenantId: tenant,
 				subject: auth.user.id,
@@ -113,8 +115,11 @@ export function createPolicyManagementHandler(deps: PolicyManagementDeps = {}) {
 			if (!rate.ok) {
 				return corsJson(req, rate.status, { error: rate.error }, rateLimitHeaders(rate));
 			}
-			if (action === "read_dlp_policy" || action === "publish_dlp_policy") {
+			if (isDlpPolicyAction(action)) {
 				return await handleDlpPolicyAction(req, db, body, { tenant, userId: auth.user.id, role: member.role, token });
+			}
+			if (isAgentProfileAction(action)) {
+				return await handleAgentProfileAction(req, db, body, { tenant, userId: auth.user.id, role: member.role, token });
 			}
 			if (body.action === "read") {
 				const { data, error } = await db.from("tenant_runtime_policies").select("version,policy,updated_at").eq("tenant_id", tenant).maybeSingle();
@@ -239,6 +244,29 @@ export function createPolicyManagementHandler(deps: PolicyManagementDeps = {}) {
 				if (!Array.isArray(body.agent_ids) || body.agent_ids.length < 1 || body.agent_ids.length > 200 || body.agent_ids.some((id) => typeof id !== "string" || !/^[0-9a-f-]{36}$/i.test(id))) return corsJson(req, 400, { error: "invalid_stage_agents" });
 				if (!Number.isSafeInteger(body.expected_revision_version) || Number(body.expected_revision_version) < Number(body.expected_version)) return corsJson(req, 400, { error: "invalid_revision_version" });
 			}
+			// Four-eyes change control: file the change for a second owner/admin
+			// instead of publishing. The database refuses a direct publication
+			// while four-eyes is on, so this branch is the only way forward.
+			const fourEyes = await readPolicyFourEyes(db, tenant);
+			if (!fourEyes.ok) return corsJson(req, 503, { error: "policy_unavailable" });
+			if (fourEyes.enabled) {
+				const kind = body.action === "stage" ? "runtime_stage"
+					: body.action === "publish_document" ? "runtime_publish_document"
+					: body.action === "restore" ? "runtime_restore" : "runtime_publish";
+				return await submitPolicyChange(req, db, {
+					tenantId: tenant,
+					userId: auth.user.id,
+					kind,
+					baseVersion: Number(body.expected_version),
+					expectedRevisionVersion: kind === "runtime_stage" ? Number(body.expected_revision_version) : null,
+					targetVersion: kind === "runtime_restore" ? Number(body.target_version) : null,
+					payload: kind === "runtime_stage"
+						? { policy, agent_ids: (body.agent_ids as string[]).map((id) => id.toLowerCase()) }
+						: kind === "runtime_publish_document"
+							? { policy, expected_document: expectedDocument }
+							: { policy },
+				});
+			}
 			const { data, error } = body.action === "stage"
 				? await db.rpc("stage_runtime_policy", { p_tenant_id: tenant, p_user_id: auth.user.id, p_expected_version: Number(body.expected_version), p_expected_revision_version: Number(body.expected_revision_version), p_policy: policy, p_agent_ids: body.agent_ids as string[] })
 				: body.action === "publish_document"
@@ -249,6 +277,7 @@ export function createPolicyManagementHandler(deps: PolicyManagementDeps = {}) {
 						})
 					: await db.rpc("publish_runtime_policy", { p_tenant_id: tenant, p_user_id: auth.user.id, p_expected_version: Number(body.expected_version), p_policy: policy });
 			if (error) {
+				if (isFourEyesRefusal(error)) return corsJson(req, 409, { error: "policy_four_eyes_required" });
 				const documentConflict = body.action === "publish_document" && error.code === "PT409" && String(error.message).includes("policy_document_conflict");
 				return corsJson(req, error.code === "PT409" ? 409 : error.code === "42501" ? 403 : error.code === "22023" ? 400 : 503, {
 					error: documentConflict ? "policy_document_conflict" : error.code === "PT409" ? "policy_version_conflict" : "policy_publish_failed",

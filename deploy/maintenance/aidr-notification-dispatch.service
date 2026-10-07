@@ -1,0 +1,17 @@
+[Unit]
+Description=AIDR alert notification dispatcher (outbox drain)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/srv/aidr
+ExecStart=/usr/bin/node /srv/aidr/maintenance/notification-dispatch.mjs /srv/aidr
+TimeoutStartSec=2min
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadOnlyPaths=/srv/aidr
+UMask=0077

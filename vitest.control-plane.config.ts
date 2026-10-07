@@ -14,6 +14,7 @@ export default defineConfig({
 			"supabase/functions/__tests__/identity-security.test.ts",
 			"supabase/functions/__tests__/identity-bootstrap-handler.test.ts",
 			"supabase/functions/__tests__/device-code.test.ts",
+			"supabase/functions/__tests__/device-poll-contract.test.ts",
 		],
 		maxWorkers: 1,
 		pool: "forks",

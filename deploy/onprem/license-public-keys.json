@@ -1,0 +1,14 @@
+{
+  "format": "aidr-license-public-keys-v1",
+  "schema_version": 1,
+  "instructions": [
+    "Trust root for vendor-signed aidr-license-v1 on-prem and air-gapped licenses (scripts/license-verify.mjs).",
+    "This shipped file is intentionally empty: with no keys every license is refused (fail closed).",
+    "Replace it only with the registry published by Singularity R&D for your release, delivered with the signed customer kit, and compare its SHA-256 with the value in the release notes before installing it.",
+    "Each key entry: { key_id, algorithm: \"ed25519\", public_key_pem, not_before, not_after (null while in use), status: active | retired | revoked }.",
+    "Rotation: a new key is added as active; the previous key becomes retired and still verifies licenses issued inside its not_before..not_after window; a compromised key becomes revoked and verifies nothing.",
+    "Never place a private key in this file. Development test keys exist only inside test fixtures and must never be added here.",
+    "See docs/operations/licensing.md."
+  ],
+  "keys": []
+}

@@ -20,6 +20,44 @@ import { IdentityBootstrap } from "./identity-bootstrap";
 // people who own the team.
 export type TeamRole = "owner" | "admin" | "member" | "viewer";
 
+/**
+ * How the service delivered a confirmed invitation. `email` is reported only
+ * when the mail provider accepted the message, and then no link is returned.
+ * Otherwise the operator receives the link to share, and `emailFailed` says a
+ * configured mail attempt did not go through.
+ */
+export type InvitationDelivery =
+	| { delivery: "email" }
+	| { delivery: "manual"; inviteUrl: string; emailFailed: boolean };
+
+/** Accept only a link this deployment issued for its invitation route. */
+function readInvitationLink(value: unknown): string {
+	if (typeof value !== "string")
+		throw new Error("The invitation service returned no shareable link.");
+	const inviteUrl = new URL(value);
+	if (
+		inviteUrl.origin !== window.location.origin ||
+		inviteUrl.pathname !== "/enterprise" ||
+		!inviteUrl.searchParams.get("invite")
+	)
+		throw new Error("The invitation service returned an invalid link.");
+	return inviteUrl.toString();
+}
+
+/** Project a confirmed `team-invite` response onto its delivery outcome. */
+export function readInvitationDelivery(response: {
+	delivery?: unknown;
+	invite_url?: unknown;
+	email_delivery?: unknown;
+}): InvitationDelivery {
+	if (response.delivery === "email") return { delivery: "email" };
+	return {
+		delivery: "manual",
+		inviteUrl: readInvitationLink(response.invite_url),
+		emailFailed: response.email_delivery === "failed",
+	};
+}
+
 export interface TeamMember {
 	id: string;
 	user_id: string;
@@ -36,7 +74,7 @@ interface Team {
 	name: string;
 	github_org?: string;
 	gitlab_group?: string;
-	plan: "free" | "pro" | "enterprise";
+	plan: "free" | "pro" | "team" | "business" | "enterprise";
 	created_at: string;
 	updated_at: string;
 }
@@ -98,11 +136,13 @@ interface TeamContextType {
 	/** True once the caller's role has been resolved (or proven absent). */
 	roleResolved: boolean;
 	createTeam: (name: string, requestId: string) => Promise<void>;
-	inviteMember: (email: string, role: TeamRole) => Promise<string>;
+	inviteMember: (email: string, role: TeamRole) => Promise<InvitationDelivery>;
 	removeMember: (userId: string) => Promise<void>;
 	updateMemberRole: (userId: string, role: TeamRole) => Promise<void>;
 	switchTeam: (teamId: string) => void;
 	refreshAuditLogs: () => Promise<void>;
+	/** Reflect a server-confirmed workspace rename in the loaded team list. */
+	applyWorkspaceName: (teamId: string, name: string) => void;
 	exportAuditLogs: (format: "csv" | "json") => Promise<string>;
 	canManageTeam: boolean;
 	canViewAudit: boolean;
@@ -219,7 +259,11 @@ function ProtectedTeamProvider({
 						if (!m.teams) continue;
 						const planValue = m.teams.plan;
 						const validPlan: Team["plan"] =
-							planValue === "free" || planValue === "pro" || planValue === "enterprise"
+							planValue === "free" ||
+							planValue === "pro" ||
+							planValue === "team" ||
+							planValue === "business" ||
+							planValue === "enterprise"
 								? planValue
 								: "free";
 						mappedTeams.push({
@@ -392,6 +436,11 @@ function ProtectedTeamProvider({
 		}
 	}
 
+	function applyWorkspaceName(teamId: string, name: string) {
+		setTeams((prev) => prev.map((team) => (team.id === teamId ? { ...team, name } : team)));
+		setCurrentTeam((prev) => (prev && prev.id === teamId ? { ...prev, name } : prev));
+	}
+
 	async function inviteMember(email: string, role: TeamRole) {
 		if (!currentTeam) throw new Error("No team selected");
 
@@ -407,7 +456,9 @@ function ProtectedTeamProvider({
 			const response = (data ?? null) as {
 				ok?: unknown;
 				error?: unknown;
+				delivery?: unknown;
 				invite_url?: unknown;
+				email_delivery?: unknown;
 			} | null;
 			if (response?.error) throw new Error(String(response.error));
 
@@ -419,12 +470,7 @@ function ProtectedTeamProvider({
 					'the "team-invite" Edge Function did not confirm the invitation (expected {"ok":true}). No invitation was sent.',
 				);
 			}
-			if (typeof response.invite_url !== "string")
-				throw new Error("The invitation service returned no shareable link.");
-			const inviteUrl = new URL(response.invite_url);
-			if (inviteUrl.origin !== window.location.origin || inviteUrl.pathname !== "/enterprise")
-				throw new Error("The invitation service returned an invalid link.");
-			return inviteUrl.toString();
+			return readInvitationDelivery(response);
 		} catch (err) {
 			const message = readErrorMessage(err, "Failed to invite member");
 			throw new Error(message);
@@ -546,6 +592,7 @@ function ProtectedTeamProvider({
 				updateMemberRole,
 				switchTeam,
 				refreshAuditLogs,
+				applyWorkspaceName,
 				exportAuditLogs,
 				canManageTeam,
 				canViewAudit,

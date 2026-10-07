@@ -54,3 +54,17 @@ test("T28 distinguishes historical migration proof from current candidate accept
   assert.match(report, /Historical v6 self-hosted install evidence recorded execution of 33 migrations/i);
   assert.match(report, /no current candidate-bound install\/upgrade acceptance exists/i);
 });
+
+test("branch capabilities map to field-acceptance work without closing forced routing", () => {
+  const inventory = JSON.parse(readFileSync(new URL("../FEATURE_INVENTORY.json", import.meta.url), "utf8"));
+  const gaps = JSON.parse(readFileSync(new URL("../PRODUCTION_SALES_GAPS.json", import.meta.url), "utf8"));
+  const byId = new Map(gaps.engineering_and_operations.map(work => [work.id, work]));
+  const browserPrivacy = inventory.features.filter(feature => feature.id.startsWith("PRV-")).map(feature => feature.id);
+  assert.ok(browserPrivacy.length > 0);
+  assert.deepEqual(byId.get("T47")?.feature_ids, browserPrivacy);
+  assert.equal(byId.get("T47")?.status, "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN");
+  assert.match(byId.get("T10")?.implementation_update ?? "", /server-initiated/);
+  assert.match(byId.get("T10")?.implementation_update ?? "", /zorunlu yönlendirilmesi[^.]*açık/);
+  assert.match(byId.get("T34")?.implementation_update ?? "", new RegExp(`^${inventory.features.length} özellik, ${gaps.work_package_count} iş paketi`));
+  assert.equal(gaps.feature_coverage.length, inventory.features.length);
+});

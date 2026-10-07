@@ -234,7 +234,10 @@ describe("AutoRollback", () => {
 			let pruned = await rollback.prune(3600 * 1000); // 1 hour
 			expect(pruned).toBe(0);
 
-			// All snapshots should be pruned if threshold is 0
+			// All snapshots should be pruned if threshold is 0. "Older than" is strict,
+			// so let the clock move past the snapshot's millisecond first; otherwise a
+			// fast run creates and prunes within one millisecond and nothing is older.
+			await new Promise((resolve) => setTimeout(resolve, 5));
 			pruned = await rollback.prune(0);
 			expect(pruned).toBe(1);
 

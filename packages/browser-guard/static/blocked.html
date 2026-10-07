@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="color-scheme" content="light dark" />
+		<title data-i18n="blocked_page_title">Blocked by your organization</title>
+		<link rel="stylesheet" href="ui.css" />
+		<script src="popup.js" defer></script>
+	</head>
+	<body class="page page--blocked">
+		<main class="blocked">
+			<div class="blocked__card">
+				<span class="brand__logo brand__logo--large" aria-hidden="true"></span>
+				<p class="brand__eyebrow">Singularity AIDR Browser Guard</p>
+				<h1 class="blocked__title" id="blocked-title" data-i18n="blocked_title">
+					This AI service is blocked by your organization
+				</h1>
+				<p class="blocked__body" id="blocked-detail" data-i18n="blocked_body">
+					Your organization's policy does not allow this AI service in this browser, so Browser
+					Guard stopped the page from loading.
+				</p>
+				<p class="blocked__body" data-i18n="blocked_help">
+					If you need it for your work, contact your IT or security team. They can review the
+					policy or suggest an approved alternative.
+				</p>
+				<p class="blocked__foot" data-i18n="blocked_footer">
+					This decision was made by a policy set by your organization, not by the website.
+				</p>
+			</div>
+		</main>
+	</body>
+</html>

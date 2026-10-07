@@ -1,0 +1,140 @@
+{{- $component := "auth" -}}
+{{- $name := include "aidr.component" (dict "root" . "component" $component) -}}
+{{- $values := .Values.auth -}}
+{{- $dashboardUrl := include "aidr.dashboardUrl" . -}}
+{{- $apiUrl := include "aidr.apiUrl" . -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" $component) | nindent 4 }}
+spec:
+  replicas: {{ $values.replicaCount }}
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      {{- include "aidr.selectorLabels" (dict "root" . "component" $component) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "aidr.labels" (dict "root" . "component" $component) | nindent 8 }}
+      {{- with $values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- include "aidr.podCommon" (dict "root" . "values" $values) | nindent 6 }}
+      {{- include "aidr.podSecurityContext" (dict "root" . "runAsUser" $values.runAsUser) | nindent 6 }}
+      containers:
+        - name: auth
+          image: {{ include "aidr.image" (dict "root" . "image" $values.image "name" "auth.image") }}
+          imagePullPolicy: {{ $values.image.pullPolicy }}
+          {{- include "aidr.containerSecurityContext" (dict "root" .) | nindent 10 }}
+          ports:
+            - name: http
+              containerPort: 9999
+              protocol: TCP
+          env:
+            {{- include "aidr.postgresPasswordEnv" . | nindent 12 }}
+            {{- include "aidr.secretEnv" (dict "root" . "env" "GOTRUE_JWT_SECRET" "key" "jwt-secret") | nindent 12 }}
+            - name: GOTRUE_API_HOST
+              value: 0.0.0.0
+            - name: GOTRUE_API_PORT
+              value: "9999"
+            - name: API_EXTERNAL_URL
+              value: {{ printf "%s/auth/v1" $apiUrl | quote }}
+            - name: GOTRUE_DB_DRIVER
+              value: postgres
+            - name: GOTRUE_DB_DATABASE_URL
+              value: {{ include "aidr.dbUrl" (dict "root" . "user" "supabase_auth_admin") | quote }}
+            - name: GOTRUE_SITE_URL
+              value: {{ $dashboardUrl | quote }}
+            - name: GOTRUE_URI_ALLOW_LIST
+              value: {{ printf "%s/auth/callback,%s/auth/recover" $dashboardUrl $dashboardUrl | quote }}
+            - name: GOTRUE_DISABLE_SIGNUP
+              value: {{ $values.disableSignup | quote }}
+            - name: GOTRUE_JWT_ADMIN_ROLES
+              value: service_role
+            - name: GOTRUE_JWT_AUD
+              value: authenticated
+            - name: GOTRUE_JWT_DEFAULT_GROUP_NAME
+              value: authenticated
+            - name: GOTRUE_JWT_EXP
+              value: {{ $values.jwtExpirySeconds | quote }}
+            - name: GOTRUE_JWT_ISSUER
+              value: {{ printf "%s/auth/v1" $apiUrl | quote }}
+            - name: GOTRUE_EXTERNAL_EMAIL_ENABLED
+              value: "true"
+            - name: GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED
+              value: "false"
+            - name: GOTRUE_MAILER_AUTOCONFIRM
+              value: "false"
+            - name: GOTRUE_EXTERNAL_PHONE_ENABLED
+              value: "false"
+            - name: GOTRUE_SMS_AUTOCONFIRM
+              value: "false"
+            - name: GOTRUE_MAILER_URLPATHS_INVITE
+              value: /auth/v1/verify
+            - name: GOTRUE_MAILER_URLPATHS_CONFIRMATION
+              value: /auth/v1/verify
+            - name: GOTRUE_MAILER_URLPATHS_RECOVERY
+              value: /auth/v1/verify
+            - name: GOTRUE_MAILER_URLPATHS_EMAIL_CHANGE
+              value: /auth/v1/verify
+            - name: GOTRUE_MAILER_TEMPLATES_RECOVERY
+              value: {{ printf "http://%s:8080/auth-templates/recovery.html" (include "aidr.component" (dict "root" . "component" "dashboard")) | quote }}
+            - name: GOTRUE_MAILER_SUBJECTS_RECOVERY
+              value: Reset your AIDR password
+            - name: GOTRUE_SMTP_HOST
+              value: {{ $values.smtp.host | quote }}
+            - name: GOTRUE_SMTP_PORT
+              value: {{ $values.smtp.port | quote }}
+            - name: GOTRUE_SMTP_USER
+              value: {{ $values.smtp.user | quote }}
+            {{- if $values.smtp.passwordKey }}
+            {{- include "aidr.secretEnv" (dict "root" . "env" "GOTRUE_SMTP_PASS" "key" $values.smtp.passwordKey) | nindent 12 }}
+            {{- end }}
+            - name: GOTRUE_SMTP_ADMIN_EMAIL
+              value: {{ $values.smtp.adminEmail | quote }}
+            - name: GOTRUE_SMTP_SENDER_NAME
+              value: {{ $values.smtp.senderName | quote }}
+            {{- with $values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          {{- include "aidr.resources" (dict "root" . "component" "auth" "override" $values.resources) | nindent 10 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 16Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" $component) | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "aidr.selectorLabels" (dict "root" . "component" $component) | nindent 4 }}
+  ports:
+    - name: http
+      port: 9999
+      targetPort: http
+      protocol: TCP
+{{- include "aidr.pdbAndHpa" (dict "root" . "component" $component "values" $values) }}

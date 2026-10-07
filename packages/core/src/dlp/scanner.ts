@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import {
+	type DlpDetector,
 	type DlpDirection,
 	DlpDirectionSchema,
 	type DlpException,
@@ -13,6 +14,12 @@ import {
 	isDlpExceptionActive,
 	pruneExpiredExceptions,
 } from "./policy.js";
+import {
+	detectorForKey,
+	isPlausibleDetectorValue,
+	privacyDetectorPlaceholder,
+	scanPrivacyDetectors,
+} from "./privacy-detectors.js";
 
 export const DlpScanRequestSchema = z
 	.object({
@@ -21,8 +28,29 @@ export const DlpScanRequestSchema = z
 		content: z.string(),
 		contentType: z.string().trim().min(1).max(255),
 		scannedAt: z.string().datetime({ offset: true }).optional(),
+		/**
+		 * `display` (default) keeps the configured placeholders, e.g. `[REDACTED]`.
+		 * `shell_inert` is for content that will be executed as a rewritten tool
+		 * input: every replacement becomes a `REDACTED_<TYPE>` word (see
+		 * {@link shellInertRedactionToken}).
+		 */
+		replacementStyle: z.enum(["display", "shell_inert"]).optional(),
 	})
 	.strict();
+
+/**
+ * Replacement token for text a tool will execute. A display placeholder such
+ * as `[REDACTED]` or `[TC_KIMLIK]` is a shell glob (`rm ./tmp/[REDACTED]`
+ * removes every file named `R`, `E`, `D`, `A`, `C` or `T`), and an operator
+ * token may carry spaces, quotes or a leading dash. The inert form keeps only
+ * `[A-Za-z0-9_]` and always starts with `REDACTED`, so it is one literal word
+ * in a shell, a path, a URL or a query string.
+ */
+export function shellInertRedactionToken(token: string): string {
+	const word = token.replace(/[^A-Za-z0-9_]+/g, "_").replace(/^_+|_+$/g, "");
+	if (!word) return "REDACTED";
+	return /^REDACTED(?:_|$)/.test(word) ? word : `REDACTED_${word}`;
+}
 
 export type DlpScanRequest = z.infer<typeof DlpScanRequestSchema>;
 export type DlpScanAction = "allow" | DlpRuleAction;
@@ -30,7 +58,9 @@ export type DlpUnavailableReason =
 	| "unsupported_format"
 	| "oversize"
 	| "malformed_format"
-	| "transformation_failed";
+	| "transformation_failed"
+	/** A built-in detector could not inspect all of the content (input limit, malformed field). */
+	| "incomplete_inspection";
 
 export interface DlpFinding {
 	ruleId: string;
@@ -38,6 +68,8 @@ export interface DlpFinding {
 	labelName: string;
 	sensitivity: DlpLabel["sensitivity"];
 	action: DlpRuleAction;
+	/** Built-in detector that produced the match; absent for keyword/regex matchers. */
+	detector?: DlpDetector;
 	start: number;
 	end: number;
 	/** Tenant- and rule-bound SHA-256; the raw sensitive match is never returned. */
@@ -86,7 +118,15 @@ interface InternalMatch {
 	start: number;
 	end: number;
 	value: string;
+	detector?: DlpDetector;
+	/** A JSON number/literal outside any string: its replacement must be a JSON string. */
+	jsonLiteral?: boolean;
 }
+
+/** Why a rule's matches could not be produced; both fail closed as unavailable. */
+type RuleMatchFailure = "unmapped" | "incomplete";
+
+type DetectorMatcher = Extract<DlpMatcher, { type: "detector" }>;
 
 interface JsonStringToken {
 	decoded: string;
@@ -229,10 +269,213 @@ function regexMatches(
 	}));
 }
 
-function matcherMatches(content: string, matcher: DlpMatcher): InternalMatch[] {
+function matcherMatches(
+	content: string,
+	matcher: Exclude<DlpMatcher, DetectorMatcher>,
+): InternalMatch[] {
 	return matcher.type === "keyword"
 		? keywordMatches(content, matcher)
 		: regexMatches(content, matcher);
+}
+
+/**
+ * Map a half-open span inside a decoded JSON string back to raw content offsets.
+ * Returns undefined when the span cannot be mapped inside the string literal.
+ */
+function jsonRawSpan(
+	token: JsonStringToken,
+	start: number,
+	end: number,
+): { start: number; end: number } | undefined {
+	const rawStart = jsonRawBoundary(token, start);
+	const rawEnd = jsonRawBoundary(token, end);
+	if (
+		rawStart === undefined ||
+		rawEnd === undefined ||
+		rawStart < token.rawStart ||
+		rawEnd > token.rawEnd ||
+		rawStart >= rawEnd
+	) {
+		return undefined;
+	}
+	return { start: rawStart, end: rawEnd };
+}
+
+/**
+ * Content-level inputs shared by every detector matcher in one scan. `jsonTokens` is
+ * undefined for non-JSON content; rules sharing a detector set reuse one scan.
+ */
+interface DetectorScanContext {
+	content: string;
+	jsonTokens: JsonStringToken[] | undefined;
+	cache: Map<string, InternalMatch[] | RuleMatchFailure>;
+}
+
+function detectorMatches(
+	matcher: DetectorMatcher,
+	context: DetectorScanContext,
+): InternalMatch[] | RuleMatchFailure {
+	const key = [...matcher.detectors].sort().join(",");
+	let result = context.cache.get(key);
+	if (result === undefined) {
+		result = context.jsonTokens
+			? jsonDetectorMatches(context.content, matcher.detectors, context.jsonTokens)
+			: textDetectorMatches(context.content, matcher.detectors);
+		context.cache.set(key, result);
+	}
+	return result;
+}
+
+function textDetectorMatches(
+	content: string,
+	detectors: readonly DlpDetector[],
+): InternalMatch[] | RuleMatchFailure {
+	const scan = scanPrivacyDetectors(content, detectors);
+	if (scan.incomplete) return "incomplete";
+	return scan.matches.map((match) => ({
+		start: match.start,
+		end: match.end,
+		value: content.slice(match.start, match.end),
+		detector: match.detector,
+	}));
+}
+
+/**
+ * Separates JSON scan segments. No privacy rule crosses a NUL (it is neither `\s`, a
+ * letter, a digit nor a field delimiter), so a label in one string never claims text
+ * from the next and an unquoted field value stops at its own string.
+ */
+const JSON_SEGMENT_SEPARATOR = "\n\u0000\n";
+
+interface JsonScanSegment {
+	start: number;
+	end: number;
+	/** Absent for the skeleton segment, whose offsets are raw content offsets. */
+	token?: JsonStringToken;
+}
+
+/**
+ * JSON-aware detector scan. Each decoded string is its own segment (labels and values
+ * never bleed across string boundaries or into JSON structure), numbers and literals are
+ * scanned in a skeleton with every string blanked, and a sensitive key such as `tckn`,
+ * `iban` or `password` marks its whole string or number value. Every span is mapped back
+ * to raw content offsets; a span that cannot be mapped fails the inspection.
+ */
+function jsonDetectorMatches(
+	content: string,
+	detectors: readonly DlpDetector[],
+	tokens: JsonStringToken[],
+): InternalMatch[] | RuleMatchFailure {
+	const skeleton: string[] = [];
+	let position = 0;
+	for (const token of tokens) {
+		// Blank the literal including its quotes so offsets stay raw offsets.
+		skeleton.push(content.slice(position, token.rawStart - 1));
+		skeleton.push(" ".repeat(token.rawEnd - token.rawStart + 2));
+		position = token.rawEnd + 1;
+	}
+	skeleton.push(content.slice(position));
+
+	const parts = [skeleton.join("")];
+	const segments: JsonScanSegment[] = [{ start: 0, end: content.length }];
+	let offset = content.length;
+	for (const token of tokens) {
+		offset += JSON_SEGMENT_SEPARATOR.length;
+		parts.push(token.decoded);
+		segments.push({ start: offset, end: offset + token.decoded.length, token });
+		offset += token.decoded.length;
+	}
+	const combined = parts.join(JSON_SEGMENT_SEPARATOR);
+	const scan = scanPrivacyDetectors(combined, detectors);
+	if (scan.incomplete) return "incomplete";
+
+	const matches: InternalMatch[] = [];
+	for (const match of scan.matches) {
+		for (const segment of overlappingSegments(segments, match.start, match.end)) {
+			// Clip to each segment: over-redacting both parts is safe, spanning is not.
+			const start = Math.max(match.start, segment.start) - segment.start;
+			const end = Math.min(match.end, segment.end) - segment.start;
+			if (start >= end) continue;
+			if (!segment.token) {
+				const value = content.slice(start, end);
+				matches.push({ start, end, value, detector: match.detector, jsonLiteral: true });
+				continue;
+			}
+			const span = jsonRawSpan(segment.token, start, end);
+			if (!span) return "unmapped";
+			matches.push({
+				...span,
+				value: segment.token.decoded.slice(start, end),
+				detector: match.detector,
+			});
+		}
+	}
+	matches.push(...jsonKeyedMatches(content, detectors, tokens));
+	return matches;
+}
+
+function overlappingSegments(
+	segments: JsonScanSegment[],
+	start: number,
+	end: number,
+): JsonScanSegment[] {
+	let low = 0;
+	let high = segments.length;
+	while (low < high) {
+		const middle = (low + high) >>> 1;
+		if ((segments[middle]?.end ?? 0) <= start) low = middle + 1;
+		else high = middle;
+	}
+	const overlapping: JsonScanSegment[] = [];
+	for (let index = low; index < segments.length; index++) {
+		const segment = segments[index];
+		if (!segment || segment.start >= end) break;
+		overlapping.push(segment);
+	}
+	return overlapping;
+}
+
+const JSON_NUMBER = /-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?/y;
+
+function skipJsonWhitespace(content: string, index: number): number {
+	let position = index;
+	while (position < content.length && /[ \t\r\n]/.test(content[position] ?? "")) position++;
+	return position;
+}
+
+/** Whole string or number values of object keys that name a sensitive field. */
+function jsonKeyedMatches(
+	content: string,
+	detectors: readonly DlpDetector[],
+	tokens: JsonStringToken[],
+): InternalMatch[] {
+	const matches: InternalMatch[] = [];
+	for (const [index, token] of tokens.entries()) {
+		const colon = skipJsonWhitespace(content, token.rawEnd + 1);
+		if (content[colon] !== ":") continue;
+		const detector = detectorForKey(token.decoded, detectors);
+		if (!detector) continue;
+		const valueStart = skipJsonWhitespace(content, colon + 1);
+		const next = tokens[index + 1];
+		if (content[valueStart] === '"' && next?.rawStart === valueStart + 1) {
+			if (next.rawEnd > next.rawStart && isPlausibleDetectorValue(detector, next.decoded)) {
+				matches.push({ start: next.rawStart, end: next.rawEnd, value: next.decoded, detector });
+			}
+			continue;
+		}
+		JSON_NUMBER.lastIndex = valueStart;
+		const number = JSON_NUMBER.exec(content)?.[0];
+		if (number && isPlausibleDetectorValue(detector, number)) {
+			matches.push({
+				start: valueStart,
+				end: valueStart + number.length,
+				value: number,
+				detector,
+				jsonLiteral: true,
+			});
+		}
+	}
+	return matches;
 }
 
 function deduplicateMatches(matches: InternalMatch[]): InternalMatch[] {
@@ -249,25 +492,23 @@ function ruleMatches(
 	content: string,
 	rule: DlpRule,
 	jsonTokens: JsonStringToken[],
-): InternalMatch[] | undefined {
+	detectorContext: DetectorScanContext,
+): InternalMatch[] | RuleMatchFailure {
 	const matcherResults: InternalMatch[][] = [];
 	for (const matcher of rule.matchers) {
+		if (matcher.type === "detector") {
+			const matches = detectorMatches(matcher, detectorContext);
+			if (typeof matches === "string") return matches;
+			matcherResults.push(matches);
+			continue;
+		}
 		const matches = matcherMatches(content, matcher);
 		for (const token of jsonTokens) {
 			for (const decodedMatch of matcherMatches(token.decoded, matcher)) {
 				if (decodedMatch.start === decodedMatch.end) continue;
-				const start = jsonRawBoundary(token, decodedMatch.start);
-				const end = jsonRawBoundary(token, decodedMatch.end);
-				if (
-					start === undefined ||
-					end === undefined ||
-					start < token.rawStart ||
-					end > token.rawEnd ||
-					start >= end
-				) {
-					return undefined;
-				}
-				matches.push({ start, end, value: decodedMatch.value });
+				const span = jsonRawSpan(token, decodedMatch.start, decodedMatch.end);
+				if (!span) return "unmapped";
+				matches.push({ ...span, value: decodedMatch.value });
 			}
 		}
 		matcherResults.push(matches);
@@ -341,11 +582,35 @@ function redact(content: string, matched: MatchedFinding[]): string {
 		}
 	}
 
-	let transformed = content;
-	for (const span of spans.reverse()) {
-		transformed = `${transformed.slice(0, span.start)}${span.winner.replacement}${transformed.slice(span.end)}`;
+	// Spans are sorted and disjoint: build the output in one pass instead of
+	// re-copying the whole content once per span.
+	const chunks: string[] = [];
+	let position = 0;
+	for (const span of spans) {
+		chunks.push(content.slice(position, span.start), span.winner.replacement);
+		position = span.end;
 	}
-	return transformed;
+	chunks.push(content.slice(position));
+	return chunks.join("");
+}
+
+/**
+ * An explicit rule replacement wins; detector matches otherwise get a constant type
+ * placeholder such as [TC_KIMLIK]; else the label token. A JSON number replaced in
+ * place becomes a JSON string so the redacted document stays valid. The
+ * `shell_inert` style rewrites whichever token applies to its inert form.
+ */
+function replacementFor(
+	rule: DlpRule,
+	label: DlpLabel,
+	match: InternalMatch,
+	style: DlpScanRequest["replacementStyle"],
+): string {
+	const token =
+		rule.replacement ??
+		(match.detector ? privacyDetectorPlaceholder(match.detector) : label.redactionToken);
+	const replacement = style === "shell_inert" ? shellInertRedactionToken(token) : token;
+	return match.jsonLiteral ? JSON.stringify(replacement) : replacement;
 }
 
 /**
@@ -419,6 +684,11 @@ export function scanDlpContent(
 	const labels = new Map(policy.labels.map((label) => [label.id, label]));
 	const matchedFindings: MatchedFinding[] = [];
 	const appliedExceptionIds = new Set<string>();
+	const detectorContext: DetectorScanContext = {
+		content: request.content,
+		jsonTokens: jsonContent ? jsonTokens : undefined,
+		cache: new Map(),
+	};
 
 	const rules = policy.rules
 		.filter((rule) => rule.enabled && rule.directions.includes(request.direction))
@@ -427,14 +697,25 @@ export function scanDlpContent(
 	for (const rule of rules) {
 		const label = labels.get(rule.labelId);
 		if (!label) continue;
-		const matches = ruleMatches(request.content, rule, jsonTokens);
-		if (!matches) {
+		const matches = ruleMatches(request.content, rule, jsonTokens, detectorContext);
+		if (matches === "unmapped") {
 			return {
 				...unavailableBase,
 				status: "unavailable",
 				unavailable: {
 					reason: "malformed_format",
 					detail: "JSON match could not be mapped to raw content",
+				},
+			};
+		}
+		if (matches === "incomplete") {
+			// Detector findings would only be a lower bound: never report that as clean.
+			return {
+				...unavailableBase,
+				status: "unavailable",
+				unavailable: {
+					reason: "incomplete_inspection",
+					detail: "built-in detectors could not inspect all of the content",
 				},
 			};
 		}
@@ -459,13 +740,14 @@ export function scanDlpContent(
 					labelName: label.name,
 					sensitivity: label.sensitivity,
 					action: rule.action,
+					...(match.detector ? { detector: match.detector } : {}),
 					start: match.start,
 					end: match.end,
 					matchFingerprint,
 					maskedPreview: maskedPreview(match.value),
 				},
 				rule,
-				replacement: rule.replacement ?? label.redactionToken,
+				replacement: replacementFor(rule, label, match, request.replacementStyle),
 			});
 		}
 	}

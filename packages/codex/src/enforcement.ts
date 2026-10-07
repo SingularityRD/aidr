@@ -29,6 +29,7 @@ import {
 	type Artifact,
 	formatAskMessage,
 	formatDenyMessage,
+	type GuardResult,
 	guardToolCall,
 	type Logger,
 	loadProvisionedDetectorContext,
@@ -42,7 +43,9 @@ import { extractFromCodexTool } from "./extractors.js";
  * survive from the blocked call to the retry. This store therefore exists for
  * API compatibility with `guardToolCall`; it is intentionally NOT a working
  * approval channel. The real, persistent, operator-controlled channel is the
- * allowlist, which the block message points at.
+ * file-backed operator approval store that `guardToolCall` writes every ask to:
+ * the operator runs `aidr approve <actionId>` in their own terminal and the
+ * next identical call (same tool, input and Codex session) is released once.
  */
 const EPHEMERAL_APPROVALS = new ApprovalStoreClass();
 
@@ -110,6 +113,57 @@ export function toWireOutput(decision: "allow" | "deny" | "ask", message: string
 	};
 }
 
+/** Translate a guard result into Codex's decision and wire output. */
+function resultForGuard(guard: GuardResult, artifacts: Artifact[]): CodexEnforcementResult {
+	const { verdict, actionId, responseActions } = guard;
+	if (verdict.decision === "allow" && verdict.transformedInput) {
+		// Unreachable while supportsInputRewrite is unset; never run the
+		// original input if a redacted replacement was produced anyway.
+		return {
+			decision: "deny",
+			reasonCode: "dlp",
+			wire: toWireOutput(
+				"deny",
+				`${DENY_HEADLINE}\nDLP redaction required; Codex cannot safely rewrite tool input.`,
+			),
+		};
+	}
+
+	if (verdict.decision === "allow") {
+		return {
+			decision: "allow",
+			reasonCode: "allowed",
+			wire: toWireOutput("allow", ""),
+		};
+	}
+
+	if (verdict.decision === "deny") {
+		return {
+			decision: "deny",
+			reasonCode: verdict.category || "aidr_denied",
+			wire: toWireOutput("deny", formatDenyMessage(verdict, responseActions)),
+		};
+	}
+
+	// ask -> explicit deny. The banner already tells the operator what to do
+	// and states that the model cannot approve its own action.
+	return {
+		decision: "ask",
+		reasonCode: "aidr_requires_approval",
+		wire: toWireOutput(
+			"ask",
+			formatAskMessage(
+				actionId as string,
+				verdict,
+				artifacts,
+				responseActions,
+				guard.pendingRecorded,
+				guard.dashboardApproval,
+			),
+		),
+	};
+}
+
 /**
  * Evaluate one Codex PreToolUse payload and return the decision plus the exact
  * object to print on stdout.
@@ -133,46 +187,34 @@ export async function enforceCodexPreToolUse(
 		// invalid policy throws and the catch below converts it into an explicit
 		// deny, which is the only reliable block Codex offers.
 		const provisioned = await loadProvisionedDetectorContext("codex");
+		// DLP redaction is deliberately NOT applied through Codex `updatedInput`,
+		// so `supportsInputRewrite` is not set and core enforces a redact outcome
+		// as a deny. Codex 0.141.0 documents `permissionDecision:"allow"` +
+		// `updatedInput`, but (CODEX_HOOKS_0.141.0_REFERENCE.md §4.4, §4.7, §8):
+		//   - a rewrite Codex rejects (e.g. a Bash/apply_patch input without a
+		//     string `command`) marks the hook Failed and the ORIGINAL input runs;
+		//   - competing rewrites resolve by completion order, so another hook's
+		//     rewrite, built from the original input, can replace ours;
+		//   - the rewrite round trip has not been observed in a live session.
+		// Each of those would release the unredacted value, so a deny is the only
+		// enforcement Codex offers for a redaction today.
 		// Core normalizes connector aliases before deciding whether the call has
 		// inspectable artifacts. An empty connector result is not an allow verdict.
-		const { verdict, actionId, responseActions } = await guardToolCall(
+		const guardResult = await guardToolCall(
 			{ sessionId, toolName, toolInput, artifacts },
 			{
 				threatsDir: options.threatsDir ?? resolveAssetDir("threats"),
 				allowlistsDir: options.allowlistsDir ?? resolveAssetDir("allowlists"),
 				logger,
 				agentRuntime: "codex",
+				// Codex reports the session directory; it selects repository-scoped profiles.
+				workingDirectory: typeof input.cwd === "string" ? input.cwd : undefined,
 				...provisioned,
 			},
 			options.approvalStore ?? EPHEMERAL_APPROVALS,
 		);
 
-		if (verdict.decision === "allow") {
-			return {
-				decision: "allow",
-				reasonCode: "allowed",
-				wire: toWireOutput("allow", ""),
-			};
-		}
-
-		if (verdict.decision === "deny") {
-			return {
-				decision: "deny",
-				reasonCode: verdict.category || "aidr_denied",
-				wire: toWireOutput("deny", formatDenyMessage(verdict, responseActions)),
-			};
-		}
-
-		// ask -> explicit deny. The banner already tells the operator what to do
-		// and states that the model cannot approve its own action.
-		return {
-			decision: "ask",
-			reasonCode: "aidr_requires_approval",
-			wire: toWireOutput(
-				"ask",
-				formatAskMessage(actionId as string, verdict, artifacts, responseActions),
-			),
-		};
+		return resultForGuard(guardResult, artifacts);
 	} catch (error) {
 		// Fail closed. An explicit deny is the only reliable block Codex offers,
 		// so an internal error must produce one even if diagnostic logging fails.

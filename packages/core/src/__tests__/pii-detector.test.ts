@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { detectPII, maskPII, validateNoPII } from "../pii-detector.js";
+import { detectPII, maskPII, redactPII, validateNoPII } from "../pii-detector.js";
 
 describe("PII Detection", () => {
 	it("should detect email addresses", () => {
@@ -50,8 +50,41 @@ describe("PII Detection", () => {
 		expect(result.redacted).toContain("[REDACTED_PHONE]");
 	});
 
-	it("should mask PII partially", () => {
-		expect(maskPII("secretpassword123", "password")).toBe("se*************23");
+	it("masks PII with a fixed placeholder that reveals no characters", () => {
+		expect(maskPII("secretpassword123", "password")).toBe("[MASKED_PASSWORD]");
+		expect(maskPII("x", "password")).toBe("[MASKED_PASSWORD]");
+	});
+
+	it("redacts overlapping findings as one merged span", () => {
+		const text = "pay 4111-1111-1111-1111 now";
+		const findings = [
+			{
+				type: "credit_card",
+				value: "4111-1111-1111-1111",
+				index: 4,
+				severity: "critical" as const,
+			},
+			{ type: "phone", value: "1111-1111", index: 9, severity: "high" as const },
+			{ type: "ssn", value: "111-1111-1111", index: 10, severity: "critical" as const },
+		];
+		expect(redactPII(text, findings)).toBe("pay [REDACTED_CREDIT_CARD] now");
+		// Order of the input list must not matter.
+		expect(redactPII(text, [...findings].reverse())).toBe("pay [REDACTED_CREDIT_CARD] now");
+	});
+
+	it("covers the union of partially overlapping findings", () => {
+		const text = "abcdefghij";
+		const redacted = redactPII(text, [
+			{ type: "phone", value: "cdef", index: 2, severity: "high" },
+			{ type: "api_key", value: "efgh", index: 4, severity: "critical" },
+		]);
+		expect(redacted).toBe("ab[REDACTED_API_KEY]ij");
+	});
+
+	it("redacts every finding detectPII reports without leaving fragments", () => {
+		const text = "Card 4532 1234 5678 9012 and SSN 123-45-6789";
+		const { redacted } = detectPII(text);
+		expect(redacted).not.toMatch(/\d{3}/);
 	});
 
 	it("should throw on critical PII validation", () => {

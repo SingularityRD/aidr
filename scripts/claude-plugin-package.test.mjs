@@ -59,7 +59,7 @@ function fixture() {
 test("the packaged marketplace resolves every hook, MCP and signed-evidence path", () => {
 	const workspace = fixture();
 	try {
-		assert.deepEqual(assertClaudePluginPackage(workspace.root), { plugin: "aidr", referencedFiles: 18 });
+		assert.deepEqual(assertClaudePluginPackage(workspace.root), { plugin: "aidr", referencedFiles: 19 });
 		assert.doesNotThrow(() => assertClaudePluginResourcesCanonical(workspace.root));
 	} finally {
 		workspace.dispose();
@@ -91,7 +91,7 @@ test("the release archive extracts to a complete, hygienic marketplace root", ()
 		assert.equal(inspection.entries.has("packages/claude-code/dist/mcp-server.cjs"), true);
 		const unpacked = spawnSync("tar", ["-xzf", path.basename(archive), "-C", tarDirectory(extracted)], { cwd: output, encoding: "utf8" });
 		assert.equal(unpacked.status, 0, unpacked.stderr);
-		assert.deepEqual(assertClaudePluginPackage(extracted), { plugin: "aidr", referencedFiles: 18 });
+		assert.deepEqual(assertClaudePluginPackage(extracted), { plugin: "aidr", referencedFiles: 19 });
 	} finally {
 		workspace.dispose();
 	}

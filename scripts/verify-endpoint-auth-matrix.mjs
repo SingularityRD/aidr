@@ -50,7 +50,7 @@ export const PUBLIC_ROUTE_ALLOWLIST = Object.freeze([
 		rateLimited: true,
 		mechanism: "device code",
 		justification:
-			"Public device-code poll: the 256-bit device code in the request is the credential, and it can only read the session it names.",
+			"Public device-code poll: the 256-bit device code in the request is the credential, it can only read the session it names, and each live code has a fail-closed per-minute poll budget answered with RFC 8628 slow_down.",
 	},
 	{
 		route: "supabase/functions/enroll/index.ts",
@@ -64,7 +64,7 @@ export const PUBLIC_ROUTE_ALLOWLIST = Object.freeze([
 		rateLimited: true,
 		mechanism: "public intake",
 		justification:
-			"Public waitlist intake: it creates no account and writes no tenant data, is throttled by a fail-closed deployment-wide aggregate quota (not caller IP), and echoes CORS headers only for allowlisted origins.",
+			"Public waitlist intake: it creates no account, writes no tenant data and only inserts (never overwrites) a signup; it verifies a Cloudflare Turnstile token server-side when TURNSTILE_SECRET_KEY is set, is throttled by a fail-closed deployment-wide aggregate quota plus a per-client quota keyed by a signed ingress IP proof when AIDR_WAITLIST_INGRESS_SECRET is set (never by caller-supplied proxy headers), and echoes CORS headers only for allowlisted origins.",
 	},
 	{
 		route: "supabase/functions/scim/index.ts",
@@ -86,6 +86,12 @@ export const PUBLIC_ROUTE_ALLOWLIST = Object.freeze([
 		mechanism: "webhook HMAC signature",
 		justification:
 			"Stripe webhook: the `Stripe-Signature` header is verified over the raw body before any billing state is read or written.",
+	},
+	{
+		route: "supabase/functions/notification-dispatch/index.ts",
+		mechanism: "dedicated dispatcher bearer token",
+		justification:
+			"Scheduler-only outbox dispatcher: POST with `Authorization: Bearer <AIDR_NOTIFICATION_DISPATCH_TOKEN>` (at least 32 chars, compared in constant time) before any row is read; it has no user or tenant caller, fails closed when the token or keyring is unset, and never accepts the service-role key.",
 	},
 ]);
 

@@ -7,6 +7,7 @@ import { inspectInfrastructurePolicy } from "./aig-policy.js";
 import { isCommercialBuild } from "./build-flavor.js";
 import { ControlPlaneClient } from "./clients/control-plane.js";
 import { isInvalidConfig, loadConfig, resolvePath } from "./config.js";
+import { loadContextPoisoningRules } from "./context-poisoning.js";
 import { pruneOrphanedTmpFiles } from "./file-utils.js";
 import { getInstallationId } from "./installation-id.js";
 import { getDegradedSafeModeReason, isDegradedSafeMode } from "./integrity/index.js";
@@ -100,6 +101,8 @@ export interface SessionStartResult {
 		mcpServers: number;
 		riskyMcpServers: number;
 		unverifiedMcpServers: number;
+		/** Servers whose supplied tool manifest carries tool-poisoning findings. */
+		poisonedMcpServers?: number;
 		invalidSources: number;
 		/** Aggregate readability of the MCP inventory sources; never claims a
 		 * complete inventory when a configured source could not be read. */
@@ -195,8 +198,16 @@ export async function runSessionStart(ctx: SessionStartContext): Promise<Session
 		};
 	}
 	const commercial = isCommercialBuild();
+	// Tool-poisoning rules for the supplied MCP manifests; a load failure only
+	// leaves the manifests unscanned (the report then omits `tool_metadata`).
+	const toolMetadataRules = ctx.mcpAttestation?.manifests
+		? await loadContextPoisoningRules([ctx.threatsDir], logger).catch(() => [])
+		: [];
 	const [inventory, infrastructure] = await Promise.all([
-		discoverMcpServers(config.policy.mcp.inventory_paths, { attestation: ctx.mcpAttestation }),
+		discoverMcpServers(config.policy.mcp.inventory_paths, {
+			attestation: ctx.mcpAttestation,
+			toolMetadataRules,
+		}),
 		inspectInfrastructurePolicy(config),
 	]);
 	const coverageFindings = mcpToolManifestCoverageFindings(inventory.servers);
@@ -204,6 +215,8 @@ export async function runSessionStart(ctx: SessionStartContext): Promise<Session
 		mcpServers: inventory.servers.length,
 		riskyMcpServers: inventory.servers.filter((s) => s.risk_hints.length > 0).length,
 		unverifiedMcpServers: coverageFindings.length,
+		poisonedMcpServers: inventory.servers.filter((s) => s.tool_metadata?.status === "findings")
+			.length,
 		invalidSources: inventory.sources.filter((s) => s.status === "invalid").length,
 		mcpCoverage: inventory.coverage.status,
 		mcpServersNotEnumerated: inventory.coverage.servers_not_enumerated,

@@ -1,0 +1,83 @@
+{{- if .Values.ingress.enabled }}
+{{- $values := .Values.ingress -}}
+{{- $dashboardHost := include "aidr.hostOf" (include "aidr.dashboardUrl" .) -}}
+{{- $apiHost := include "aidr.hostOf" (include "aidr.apiUrl" .) -}}
+{{- $dashboard := include "aidr.component" (dict "root" . "component" "dashboard") -}}
+{{- $gateway := include "aidr.component" (dict "root" . "component" "api-gw") -}}
+{{- $tlsSecret := required "ingress.tlsSecretName is required: TLS is mandatory (cert-manager fills it when ingress.certManager.enabled)" $values.tlsSecretName -}}
+{{- if and $values.certManager.enabled (not (or $values.certManager.clusterIssuer $values.certManager.issuer)) -}}
+{{- fail "ingress.certManager.enabled requires ingress.certManager.clusterIssuer or ingress.certManager.issuer" -}}
+{{- end -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "aidr.fullname" . }}
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" "ingress") | nindent 4 }}
+  {{- $annotations := deepCopy (default (dict) $values.annotations) }}
+  {{- if $values.certManager.enabled }}
+  {{- if $values.certManager.clusterIssuer }}
+  {{- $_ := set $annotations "cert-manager.io/cluster-issuer" $values.certManager.clusterIssuer }}
+  {{- else }}
+  {{- $_ := set $annotations "cert-manager.io/issuer" $values.certManager.issuer }}
+  {{- end }}
+  {{- end }}
+  {{- with $annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with $values.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  tls:
+    - secretName: {{ $tlsSecret }}
+      hosts:
+        - {{ $dashboardHost | quote }}
+        {{- if ne $apiHost $dashboardHost }}
+        - {{ $apiHost | quote }}
+        {{- end }}
+  rules:
+    {{- if eq $apiHost $dashboardHost }}
+    - host: {{ $dashboardHost | quote }}
+      http:
+        paths:
+          {{- range $prefix := list "/auth/v1/" "/rest/v1/" "/storage/v1/" "/functions/v1/" "/.well-known/oauth-authorization-server" }}
+          - path: {{ $prefix }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $gateway }}
+                port:
+                  name: http
+          {{- end }}
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $dashboard }}
+                port:
+                  name: http
+    {{- else }}
+    - host: {{ $dashboardHost | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $dashboard }}
+                port:
+                  name: http
+    - host: {{ $apiHost | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $gateway }}
+                port:
+                  name: http
+    {{- end }}
+{{- end }}

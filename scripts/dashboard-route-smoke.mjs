@@ -55,9 +55,11 @@ const legacyRoutes = ["/demo"];
 const protectedRoutes = [
 	"/auth/dlp-step-up",
 	"/onboarding",
+	"/downloads",
 	"/dashboard",
 	"/events",
 	"/discovery",
+	"/posture",
 	"/settings",
 	"/agents",
 	"/autosecops",
@@ -71,6 +73,13 @@ const protectedRoutes = [
 	"/sso",
 	"/siem",
 	"/policies",
+	"/privacy-guard",
+	"/approvals",
+	"/compliance",
+	"/governance",
+	"/governance/register",
+	"/governance/requests",
+	"/governance/change-control",
 ];
 const routes = [...publicRoutes, ...protectedRoutes, ...legacyRoutes];
 

@@ -15,10 +15,17 @@
  *   3. Agreement with the sold support matrix: a point the support matrix
  *      advertises for a connector may not be `unsupported` here, output-side
  *      points may not be claimed where the support matrix declares `none`, and
- *      nothing may be `enforced` that is not part of the sold matrix.
+ *      nothing may be `enforced` that is not part of the sold matrix. A row's
+ *      `additionalInterceptionPoints` (sold points beyond its primary input and
+ *      output point) must each be `enforced` here, so the sold scope only grows
+ *      where a real-host acceptance record proves the point.
  *
  * `enforced` additionally requires a named real-host acceptance record in the
  * row evidence, so a row can never round up to enforced on source code alone.
+ * An acceptance record is a JSON file under `docs/evidence/real-host/` written by
+ * `pnpm test:e2e:real-host` (scripts/real-host-e2e/run.mjs): the gate parses it
+ * and requires that it names the row's connector, passed, and proves exactly the
+ * point (or observed exactly the failure-condition outcome) the row cites it for.
  *
  * A structurally valid matrix that is still NO-GO (open points, unobserved
  * conditions) passes this gate: validity and readiness are reported separately.
@@ -119,7 +126,29 @@ export const SUPPORT_MATRIX_MAPPING = {
 		"post-tool-call": ["post-tool-output"],
 		none: [],
 	},
+	additionalInterceptionPoints: {
+		"pre-prompt": ["pre-prompt"],
+		"post-tool-output": ["post-tool-output"],
+		"pre-delivery-response": ["pre-delivery-response"],
+		"network-egress": ["network"],
+	},
 };
+
+/**
+ * Support-matrix fields that hold a list of points rather than one. A point in
+ * `additionalInterceptionPoints` widens the sold scope beyond the row's primary
+ * input/output points, so the gate accepts it only where this matrix records
+ * that point as `enforced` with a real-host acceptance record.
+ */
+const SUPPORT_MATRIX_LIST_FIELDS = new Set(["additionalInterceptionPoints"]);
+
+/**
+ * Real-host acceptance records are not connector source, so they live in one
+ * shared evidence directory instead of a connector's source root. A record is
+ * only accepted from here.
+ */
+export const ACCEPTANCE_RECORD_ROOT = "docs/evidence/real-host/";
+export const ACCEPTANCE_RECORD_KIND = "aidr-real-host-acceptance";
 
 const STATUS_OUTCOMES_REQUIRING_EVIDENCE = new Set(["fail-closed", "explicitly-unsupported"]);
 const TAMPER_POSTURES_REQUIRING_EVIDENCE = new Set(["tamper-evident-only", "fail-closed-on-tamper"]);
@@ -188,7 +217,9 @@ function report(options = {}) {
  * can require "at least one entry of the expected kind".
  */
 function checkEvidence(entry, context) {
-	const { state, connector, point, repoRoot, roots, label } = context;
+	const { state, connector, point, repoRoot, label } = context;
+	const acceptance = entry?.kind === "acceptance-record";
+	const roots = acceptance ? [ACCEPTANCE_RECORD_ROOT] : context.roots;
 	if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
 		state.add("EVIDENCE_NOT_OBJECT", connector, point, label);
 		return;
@@ -232,6 +263,45 @@ function checkEvidence(entry, context) {
 		if (!content.includes(marker)) {
 			state.add("EVIDENCE_MARKER_MISSING", connector, point, `${entry.path} lacks ${JSON.stringify(marker)}`);
 		}
+	}
+	if (acceptance) checkAcceptanceRecord(content, { ...context, path: entry.path });
+}
+
+/**
+ * An acceptance record must be evidence for the claim that cites it: the same
+ * connector, an overall pass, and either the cited point proven (`passed`) or the
+ * cited failure condition observed with the outcome the row declares.
+ */
+function checkAcceptanceRecord(content, { state, connector, point, path, claim }) {
+	let record;
+	try {
+		record = JSON.parse(content);
+	} catch (error) {
+		state.add("ACCEPTANCE_RECORD_INVALID", connector, point, `${path}: ${error instanceof Error ? error.message : String(error)}`);
+		return;
+	}
+	if (record?.kind !== ACCEPTANCE_RECORD_KIND || record?.schemaVersion !== 1) {
+		state.add("ACCEPTANCE_RECORD_INVALID", connector, point, `${path} is not an ${ACCEPTANCE_RECORD_KIND} v1 record`);
+		return;
+	}
+	if (record.connector !== connector) {
+		state.add("ACCEPTANCE_RECORD_CONNECTOR_MISMATCH", connector, point, `${path} records ${String(record.connector)}`);
+		return;
+	}
+	if (record.passed !== true) {
+		state.add("ACCEPTANCE_RECORD_NOT_PASSED", connector, point, path);
+		return;
+	}
+	if (claim?.type === "point" && record.proves?.points?.[claim.point] !== "passed") {
+		state.add("ACCEPTANCE_RECORD_DOES_NOT_PROVE", connector, point, `${path} does not prove ${claim.point}`);
+	}
+	if (claim?.type === "condition" && record.proves?.conditions?.[claim.condition] !== claim.outcome) {
+		state.add(
+			"ACCEPTANCE_RECORD_DOES_NOT_PROVE",
+			connector,
+			point,
+			`${path} observed ${claim.condition}=${String(record.proves?.conditions?.[claim.condition])}, row declares ${claim.outcome}`,
+		);
 	}
 }
 
@@ -331,7 +401,15 @@ export function verifyInterceptionMatrix(options = {}) {
 		let matching = 0;
 		for (const entry of row.evidence) {
 			if (entry && typeof entry === "object" && entry.kind === requiredKind) matching += 1;
-			checkEvidence(entry, { state, connector, point, repoRoot, roots, label: `${key} evidence` });
+			checkEvidence(entry, {
+				state,
+				connector,
+				point,
+				repoRoot,
+				roots,
+				label: `${key} evidence`,
+				claim: { type: "point", point },
+			});
 		}
 
 		if (row.status === "unsupported") {
@@ -484,6 +562,7 @@ function checkFailureConditions(matrix, soldConnectors, soldSet, repoRoot, state
 				repoRoot,
 				roots: null,
 				label: `${key} evidence`,
+				claim: { type: "condition", condition, outcome: row.outcome },
 			});
 		}
 		if (STATUS_OUTCOMES_REQUIRING_EVIDENCE.has(row.outcome) && (row.evidence.length === 0 || matching === 0)) {
@@ -520,23 +599,46 @@ function checkSupportMatrixAgreement({ matrix, support, soldConnectors, byConnec
 
 	for (const [connector, supportRow] of supportByConnector) {
 		const declared = [];
+		const additional = [];
 		for (const [field, mapping] of Object.entries(SUPPORT_MATRIX_MAPPING)) {
-			const value = supportRow[field];
-			if (value === null || value === undefined) continue;
-			if (!Object.hasOwn(mapping, value)) {
-				state.add("UNMAPPED_SUPPORT_MATRIX_POINT", connector, null, `${field}=${String(value)}`);
+			const raw = supportRow[field];
+			if (raw === null || raw === undefined) continue;
+			const listField = SUPPORT_MATRIX_LIST_FIELDS.has(field);
+			if (listField !== Array.isArray(raw)) {
+				state.add("UNMAPPED_SUPPORT_MATRIX_POINT", connector, null, `${field} must be ${listField ? "an array" : "a single value"}`);
 				continue;
 			}
-			const mapped = mapping[value];
-			if (mapped.length === 0 && field === "outputInterceptionPoint") {
-				for (const point of OUTPUT_SIDE_POINTS) {
-					const row = byConnectorPoint.get(`${connector}/${point}`);
-					if (row && row.status !== "unsupported") {
-						state.add("SUPPORT_MATRIX_OUTPUT_NONE", connector, point, `support matrix declares ${field}=${value}`);
+			for (const value of listField ? raw : [raw]) {
+				if (typeof value !== "string" || !Object.hasOwn(mapping, value)) {
+					state.add("UNMAPPED_SUPPORT_MATRIX_POINT", connector, null, `${field}=${String(value)}`);
+					continue;
+				}
+				const mapped = mapping[value];
+				if (mapped.length === 0 && field === "outputInterceptionPoint") {
+					for (const point of OUTPUT_SIDE_POINTS) {
+						const row = byConnectorPoint.get(`${connector}/${point}`);
+						if (row && row.status !== "unsupported") {
+							state.add("SUPPORT_MATRIX_OUTPUT_NONE", connector, point, `support matrix declares ${field}=${value}`);
+						}
 					}
 				}
+				for (const point of mapped) {
+					declared.push(point);
+					if (listField) additional.push(point);
+				}
 			}
-			for (const point of mapped) declared.push(point);
+		}
+
+		for (const point of additional) {
+			const row = byConnectorPoint.get(`${connector}/${point}`);
+			if (row && row.status !== "enforced") {
+				state.add(
+					"ADDITIONAL_POINT_NOT_ENFORCED",
+					connector,
+					point,
+					"additionalInterceptionPoints sells a point only where a real-host acceptance record makes it enforced",
+				);
+			}
 		}
 
 		for (const point of declared) {
@@ -598,6 +700,7 @@ function finish(state, matrixFile, supportFile, byConnectorPoint) {
 		limitations: [
 			"A structurally valid matrix is not host acceptance: every non-enforced row stays open until a named real-host record exists.",
 			"Source markers prove that the guard is declared in the repository, not that a host loaded, trusted or honoured it.",
+			"An `enforced` row rests on a real-host acceptance record for the recorded host version and platform only; the records in docs/evidence/real-host/ drive the real host binary with a scripted mock model.",
 		],
 	};
 }

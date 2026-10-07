@@ -3,10 +3,10 @@
  */
 
 import { createHash } from "node:crypto";
-import { constants } from "node:fs";
+import { constants, type Stats } from "node:fs";
 import { lstat, open, readdir, realpath } from "node:fs/promises";
 import { homedir } from "node:os";
-import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { FileCheckBatchResult } from "./clients/file-check.js";
 import { FileCheckClient } from "./clients/file-check.js";
 import { UrlCheckClient } from "./clients/url-check.js";
@@ -18,6 +18,7 @@ import type { IntelMerged } from "./intel/types.js";
 import type {
 	Artifact,
 	Logger,
+	PluginFinding,
 	PluginInfo,
 	PluginScanResult,
 	PluginScanUnavailableCheck,
@@ -120,7 +121,16 @@ const SCANNABLE_EXTENSIONS = new Set([
 	".conf",
 ]);
 
-const SKIP_DIRS = new Set(["node_modules", ".git", "__pycache__"]);
+const SKIP_DIRS = new Set(["node_modules", ".git"]);
+
+/**
+ * Python bytecode caches are not text-inspected, but they are walked so that
+ * bytecode shipped without its source (AIG Skill-Scan T04) can be reported.
+ * Bytecode beside its source is the interpreter's normal cache and is neither a
+ * finding nor an incomplete path.
+ */
+const BYTECODE_CACHE_DIR = "__pycache__";
+const BYTECODE_EXTENSIONS = new Set([".pyc", ".pyo"]);
 
 /** Max file size to scan (skip large files). */
 const MAX_FILE_SIZE = 512 * 1024;
@@ -216,68 +226,80 @@ async function readPluginFileSafely(filePath: string, realRoot: string): Promise
 	}
 }
 
-async function walkPluginFiles(
-	installPath: string,
-	logger: Logger,
-): Promise<{ files: string[]; incompletePaths: number; realRoot: string | null }> {
+interface PluginWalk {
+	files: string[];
+	/** Every regular file seen in the tree, including non-scannable ones. */
+	allFiles: Set<string>;
+	/** Python bytecode files, inside or outside `__pycache__`. */
+	bytecodeFiles: string[];
+	incompletePaths: number;
+	realRoot: string | null;
+}
+
+async function walkPluginFiles(installPath: string, logger: Logger): Promise<PluginWalk> {
 	const files: string[] = [];
+	const allFiles = new Set<string>();
+	const bytecodeFiles: string[] = [];
 	let incompletePaths = 0;
 	const rootPath = resolve(installPath);
+	const unavailable = (): PluginWalk => ({
+		files,
+		allFiles,
+		bytecodeFiles,
+		incompletePaths: 1,
+		realRoot: null,
+	});
 	let realRoot: string;
 	try {
 		const rootStats = await lstat(rootPath);
-		if (rootStats.isSymbolicLink()) return { files, incompletePaths: 1, realRoot: null };
+		if (rootStats.isSymbolicLink()) return unavailable();
 		realRoot = await realpath(rootPath);
 	} catch {
-		return { files, incompletePaths: 1, realRoot: null };
+		return unavailable();
 	}
 
-	async function walk(dirOrFile: string): Promise<void> {
-		let stats: Awaited<ReturnType<typeof lstat>>;
+	/**
+	 * The path's own (unfollowed) stats when it can be inspected: not a symlink and
+	 * resolving inside the plugin root. Anything else counts as an incomplete path.
+	 */
+	async function inspectable(dirOrFile: string): Promise<Stats | null> {
+		const stats = await lstat(dirOrFile).catch(() => null);
+		const resolved =
+			stats && !stats.isSymbolicLink() ? await realpath(dirOrFile).catch(() => null) : null;
+		if (stats && resolved !== null && isWithinPath(realRoot, resolved)) return stats;
+		incompletePaths += 1;
+		return null;
+	}
+
+	function addFile(file: string, size: number, inBytecodeCache: boolean): void {
+		const extension = extname(file).toLowerCase();
+		allFiles.add(file);
+		if (BYTECODE_EXTENSIONS.has(extension)) bytecodeFiles.push(file);
+		// Only bytecode is of interest inside an interpreter cache directory.
+		if (inBytecodeCache) return;
+		if (SCANNABLE_EXTENSIONS.has(extension) && size <= MAX_FILE_SIZE) files.push(file);
+		else incompletePaths += 1;
+	}
+
+	async function walkDirectory(dir: string, inBytecodeCache: boolean): Promise<void> {
+		let entries: string[];
 		try {
-			stats = await lstat(dirOrFile);
+			entries = await readdir(dir);
 		} catch {
 			incompletePaths += 1;
 			return;
 		}
-		if (stats.isSymbolicLink()) {
-			incompletePaths += 1;
-			return;
+		for (const entry of entries) {
+			if (SKIP_DIRS.has(entry)) continue;
+			await walk(join(dir, entry), inBytecodeCache || entry === BYTECODE_CACHE_DIR);
 		}
-		let resolvedPath: string;
-		try {
-			resolvedPath = await realpath(dirOrFile);
-		} catch {
-			incompletePaths += 1;
-			return;
-		}
-		if (!isWithinPath(realRoot, resolvedPath)) {
-			incompletePaths += 1;
-			return;
-		}
-		// Handle file: check if scannable and add to results
-		if (stats.isFile()) {
-			if (SCANNABLE_EXTENSIONS.has(extname(dirOrFile).toLowerCase())) {
-				if (stats.size <= MAX_FILE_SIZE) files.push(dirOrFile);
-				else incompletePaths += 1;
-			} else incompletePaths += 1;
-			return;
-		}
-		// Handle directory: recursively walk entries
-		if (stats.isDirectory()) {
-			let entries: string[];
-			try {
-				entries = await readdir(dirOrFile);
-			} catch {
-				incompletePaths += 1;
-				return;
-			}
-			for (const entry of entries) {
-				if (SKIP_DIRS.has(entry)) continue;
-				const fullPath = join(dirOrFile, entry);
-				await walk(fullPath);
-			}
-		}
+	}
+
+	async function walk(dirOrFile: string, inBytecodeCache = false): Promise<void> {
+		const stats = await inspectable(dirOrFile);
+		if (!stats) return;
+		if (stats.isFile()) addFile(dirOrFile, stats.size, inBytecodeCache);
+		else if (stats.isDirectory()) await walkDirectory(dirOrFile, inBytecodeCache);
 	}
 	try {
 		await walk(rootPath);
@@ -285,7 +307,7 @@ async function walkPluginFiles(
 		logger.warn(`Error walking plugin path ${installPath}`, { error: String(e) });
 		incompletePaths += 1;
 	}
-	return { files, incompletePaths, realRoot };
+	return { files, allFiles, bytecodeFiles, incompletePaths, realRoot };
 }
 
 /** A cached verdict is safe only while the current plugin tree is fully inspectable. */
@@ -483,6 +505,131 @@ function extractArtifactsFromFile(filePath: string, content: string): Artifact[]
 	return artifacts;
 }
 
+// ── Skill / plugin package rules (AIG Skill-Scan T01–T09) ─────────────
+
+export { SKILL_RISK_TYPES, skillRiskTypeForThreatId } from "./skill-risk-types.js";
+
+/** match_on value for rules evaluated against the whole text of a plugin file. */
+const PLUGIN_CONTENT_MATCH = "plugin_content";
+/** match_on value for rules evaluated against bytecode shipped without source. */
+const PLUGIN_ORPHAN_BYTECODE_MATCH = "plugin_orphan_bytecode";
+
+/** Categories whose matched text is a credential and must never be echoed. */
+const SECRET_BEARING_CATEGORIES = new Set(["skill_hardcoded_secret"]);
+const MAX_CONTENT_EVIDENCE = 160;
+const INVISIBLE_CHARACTERS = /[​-‍⁠-⁤‪-‮⁦-⁩﻿]|\uDB40[\uDC00-\uDC7F]/g;
+
+function lineNumberAt(content: string, index: number): number {
+	let line = 1;
+	for (let position = content.indexOf("\n"); position !== -1 && position < index; ) {
+		line += 1;
+		position = content.indexOf("\n", position + 1);
+	}
+	return line;
+}
+
+/**
+ * Evidence for a content finding: a line number and the matched text with
+ * invisible characters rendered as code points, so smuggled text is visible to
+ * the reviewer. Credentials are replaced by a short digest.
+ */
+function contentEvidence(threat: Threat, content: string, index: number, matched: string): string {
+	const line = lineNumberAt(content, index);
+	if (SECRET_BEARING_CATEGORIES.has(threat.category)) {
+		const digest = createHash("sha256").update(matched).digest("hex").slice(0, 12);
+		return `line ${line}: [credential redacted, sha256:${digest}]`;
+	}
+	const visible = matched
+		.replace(
+			INVISIBLE_CHARACTERS,
+			(character) =>
+				`<U+${(character.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, "0")}>`,
+		)
+		.replace(/\s+/g, " ")
+		.trim();
+	const bounded =
+		visible.length > MAX_CONTENT_EVIDENCE ? `${visible.slice(0, MAX_CONTENT_EVIDENCE)}…` : visible;
+	return `line ${line}: ${bounded}`;
+}
+
+function statelessPattern(threat: Threat): RegExp {
+	return threat.compiledPattern.global || threat.compiledPattern.sticky
+		? new RegExp(threat.compiledPattern.source, threat.compiledPattern.flags.replace(/[gy]/g, ""))
+		: threat.compiledPattern;
+}
+
+/**
+ * Evaluate whole-file content rules. One finding per rule per file keeps a
+ * repeated pattern from flooding the report; the first line is enough to
+ * direct a review.
+ */
+export function matchPluginContent(
+	content: string,
+	threats: Threat[],
+	sourceFile: string,
+): { findings: PluginFinding[]; failedThreatIds: string[] } {
+	const findings: PluginFinding[] = [];
+	const failedThreatIds: string[] = [];
+	for (const threat of threats) {
+		let match: RegExpExecArray | null;
+		try {
+			match = statelessPattern(threat).exec(content);
+		} catch {
+			failedThreatIds.push(threat.id);
+			continue;
+		}
+		if (!match) continue;
+		findings.push({
+			threatId: threat.id,
+			title: threat.title,
+			severity: threat.severity,
+			confidence: threat.confidence,
+			action: threat.action,
+			artifact: contentEvidence(threat, content, match.index, match[0]),
+			sourceFile,
+		});
+	}
+	return { findings, failedThreatIds };
+}
+
+/** Where CPython would have compiled a bytecode file from. */
+function bytecodeSourcePath(bytecodePath: string): string {
+	const directory = dirname(bytecodePath);
+	const stem = basename(bytecodePath).replace(/\.py[co]$/i, "");
+	// __pycache__/name.cpython-312.pyc is compiled from ../name.py; module names
+	// cannot contain dots, so the interpreter tag is everything after the first.
+	if (basename(directory) === BYTECODE_CACHE_DIR) {
+		return join(dirname(directory), `${stem.split(".")[0]}.py`);
+	}
+	return join(directory, `${stem}.py`);
+}
+
+function orphanBytecodeFindings(
+	plugin: PluginInfo,
+	walk: PluginWalk,
+	threats: Threat[],
+): PluginFinding[] {
+	const findings: PluginFinding[] = [];
+	if (threats.length === 0) return findings;
+	for (const bytecodePath of walk.bytecodeFiles) {
+		if (walk.allFiles.has(bytecodeSourcePath(bytecodePath))) continue;
+		const sourceFile = relative(plugin.installPath, bytecodePath);
+		for (const threat of threats) {
+			if (!statelessPattern(threat).test(bytecodePath)) continue;
+			findings.push({
+				threatId: threat.id,
+				title: threat.title,
+				severity: threat.severity,
+				confidence: threat.confidence,
+				action: threat.action,
+				artifact: sourceFile,
+				sourceFile,
+			});
+		}
+	}
+	return findings;
+}
+
 export async function scanPlugin(
 	plugin: PluginInfo,
 	threats: Threat[],
@@ -514,6 +661,15 @@ export async function scanPlugin(
 	const walk = await walkPluginFiles(plugin.installPath, logger);
 	const files = walk.files;
 	let unreadableFiles = 0;
+	const contentThreats = threats.filter((t) => t.matchOn.has(PLUGIN_CONTENT_MATCH));
+	const failedContentThreats = new Set<string>();
+	result.findings.push(
+		...orphanBytecodeFindings(
+			plugin,
+			walk,
+			threats.filter((t) => t.matchOn.has(PLUGIN_ORPHAN_BYTECODE_MATCH)),
+		),
+	);
 	if (files.length === 0) {
 		markUnavailable(result, {
 			check: "plugin_files",
@@ -561,6 +717,16 @@ export async function scanPlugin(
 			}
 		}
 
+		if (contentThreats.length > 0) {
+			const contentMatches = matchPluginContent(
+				content,
+				contentThreats,
+				relative(plugin.installPath, filePath),
+			);
+			result.findings.push(...contentMatches.findings);
+			for (const threatId of contentMatches.failedThreatIds) failedContentThreats.add(threatId);
+		}
+
 		// Collect URLs for URL check
 		allUrls.push(...extractUrls(content));
 
@@ -574,6 +740,17 @@ export async function scanPlugin(
 				hashToFiles.set(sha256, [filePath]);
 			}
 		}
+	}
+	if (failedContentThreats.size > 0) {
+		// A rule that failed to evaluate is a skipped signal, never a clean one.
+		markUnavailable(result, {
+			check: "plugin_files",
+			reason: `Content rules could not be evaluated: ${[...failedContentThreats].sort().join(", ")}`,
+			uncheckedCount: failedContentThreats.size,
+		});
+		logger.warn("Plugin scan: content rules failed to evaluate", {
+			threatIds: [...failedContentThreats],
+		});
 	}
 	const incompletePaths = walk.incompletePaths + unreadableFiles;
 	if (incompletePaths > 0) {

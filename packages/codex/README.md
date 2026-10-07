@@ -3,8 +3,13 @@
 Singularity AIDR's `PreToolUse` connector for the **OpenAI Codex CLI** (`codex`)
 evaluates named `Bash` and `apply_patch` calls only when an enabled, trusted hook
 forwards them and returns a verdict. Codex enforces that verdict; disabled,
-untrusted, crashed, timed-out, or out-of-matcher paths can proceed. Real-host
-side-effect prevention for a customer release has not been accepted.
+untrusted, crashed, timed-out, or out-of-matcher paths can proceed. The same hook,
+registered for `UserPromptSubmit`, also provides prompt protection (secrets block,
+personal data warns) before a prompt reaches the model. A real-host acceptance record
+([`docs/evidence/real-host/codex.json`](../../docs/evidence/real-host/codex.json):
+`codex exec` 0.141.0, linux/x64, development build, scripted mock model) shows both
+boundaries holding for the scripted cases; a signed customer release, other versions and
+platforms have not been accepted.
 
 Verified against `codex-cli 0.141.0`.
 
@@ -54,6 +59,24 @@ matcher = "^(Bash|apply_patch)$"
 type = "command"
 command = "aidr-codex-hook"
 timeout = 10
+
+# Prompt protection (see "Prompt protection" below). No matcher: Codex ignores
+# matchers for this event.
+[[hooks.UserPromptSubmit]]
+
+[[hooks.UserPromptSubmit.hooks]]
+type = "command"
+command = "aidr-codex-hook"
+timeout = 10
+
+# Tool-output inspection (see "Tool-output inspection" below).
+[[hooks.PostToolUse]]
+matcher = "^(Bash|mcp__.+)$"
+
+[[hooks.PostToolUse.hooks]]
+type = "command"
+command = "aidr-codex-hook"
+timeout = 10
 ```
 
 Or equivalently, in `~/.codex/hooks.json`:
@@ -66,10 +89,23 @@ Or equivalently, in `~/.codex/hooks.json`:
         "matcher": "^(Bash|apply_patch)$",
         "hooks": [{ "type": "command", "command": "aidr-codex-hook", "timeout": 10 }]
       }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [{ "type": "command", "command": "aidr-codex-hook", "timeout": 10 }]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "^(Bash|mcp__.+)$",
+        "hooks": [{ "type": "command", "command": "aidr-codex-hook", "timeout": 10 }]
+      }
     ]
   }
 }
 ```
+
+Each handler is trusted separately: review and trust all three with `/hooks`.
 
 The event name is **PascalCase** (`hooks.PreToolUse`). A lower-case
 `hooks.pre_tool_use` table was accepted by the TOML parser but ignored by the
@@ -121,6 +157,62 @@ written to give Codex the only answer it honours:
 The one remaining fail-open path is the process being killed before it writes
 anything. That is a property of the host and is recorded, not hidden.
 
+## Prompt protection (`UserPromptSubmit`)
+
+The same `aidr-codex-hook` command, registered for `UserPromptSubmit`, inspects the
+user's prompt before Codex starts a turn with it (Codex 0.141.0,
+`codex-rs/hooks/src/events/user_prompt_submit.rs` at `rust-v0.141.0`):
+
+| Outcome | Output | Codex result |
+|---|---|---|
+| Secret found (`prompt_protection.secrets: block`, the default) | `{"decision":"block","reason":"…"}` | Turn stopped; the reason names the kind of data, never the value |
+| Personal data (`prompt_protection.pii: warn`, the default), incl. TC Kimlik, IBAN, TR phones | `systemMessage` + `hookSpecificOutput.additionalContext` | Prompt sent; the user sees a warning, the model a "do not repeat" note |
+| Clean | empty stdout | Prompt sent |
+| Uninspectable prompt or internal error | block when secrets are `block`, else a "not inspected" warning; a failure outside the inspection exits 2 with a stderr reason | — |
+
+The hook answers before its 10 s timeout: after 7 s an unfinished inspection blocks when
+secrets are `block` or a tenant DLP policy is provisioned, and otherwise sends the prompt
+with a "not fully inspected" warning (`AIDR_PROMPT_INSPECTION_DEADLINE_MS`, 100–9000). A
+provisioned tenant DLP policy (`~/.singularity-aidr/detectors/codex.json`) applies to the
+prompt; any tenant action other than `allow` blocks. Audit entries use
+`tool_name: "UserPromptSubmit"` and record kinds and counts only.
+
+Codex's fail-open behaviour applies here too: an untrusted, crashed or timed-out
+`UserPromptSubmit` hook lets the prompt through. `aidr-codex-hook --health` reports
+`promptInspection` and `inlinePromptBlocking` for the declared configuration; it does
+not prove the handler is registered or trusted on the endpoint.
+
+A prompt that carries a canary credential value (`aidr canary deploy`) is always
+blocked and recorded as a canary incident (`tool_name: "UserPromptSubmit"`, canary
+ids only), whatever the `prompt_protection` settings.
+
+## Tool-output inspection (`PostToolUse`)
+
+Registered for `PostToolUse`, the same command inspects a tool's result
+(`tool_response`: the command output for `Bash`, the `CallToolResult` for an MCP
+tool) with the shared output scanner: hidden Unicode payloads, poisoned or
+injected instructions, leaked secrets and canary values.
+
+| Outcome | Output |
+|---|---|
+| Clean | empty stdout |
+| Finding | `{"decision":"block","reason":"…"}`; the reason names rule ids only, never content |
+| Missing or uninspectable result, internal error | block with a "could not inspect" reason; a failure outside the inspection exits 2 with a stderr reason |
+
+In codex-cli 0.141.0's source (`codex-rs/core/src/tools/registry.rs` at
+`rust-v0.141.0`) a `PostToolUse` block makes Codex hand the model the reason in
+place of the tool result; the tool itself already ran. That replacement has not
+been observed in a live Codex session, so `--health` keeps reporting output
+inspection as `post_execution_observation` and `inlineOutputBlocking: false`.
+
+Findings also feed session-level detection: secrets become private data and
+injection payloads untrusted content for toxic-flow chains
+(`docs/toxic-flow.md`), a canary value is recorded as a canary incident, and the
+block is written to the audit log (`source: "codex-output-inspection"`, rule ids
+and sizes only). Codex runs `PostToolUse` only for calls that succeeded and
+`Bash` results carry no exit code, so this hook cannot report failed calls to the
+runaway guard's repeated-failure signal.
+
 ## `apply_patch` is inspected too
 
 Codex sends patch bodies in `tool_input.command`, whereas Claude Code's
@@ -136,9 +228,25 @@ Approval is **operator-held**. There is no agent-callable approval tool, by
 design: the model receives the approval reference in the block reason, so an
 agent-invokable approval would let a prompt-injected agent approve its own block.
 
-Note that Codex runs each hook in a **fresh process**, so an in-memory approval
-cannot survive from the blocked call to the retry. A blocked `ask` therefore
-stays blocked until an operator records the artifact in the allowlist.
+Codex runs each hook in a **fresh process**, so an in-memory approval cannot
+survive from the blocked call to the retry. The connector therefore records every
+`ask` in the file-backed operator approval store
+(`~/.singularity-aidr/approvals.json`). In their own terminal the operator runs
+`aidr pending` and `aidr approve <actionId>` (interactive confirmation); the next
+identical call — same tool, input and Codex session — is then released once,
+within 15 minutes by default. A permanent exception is `aidr allowlist add`.
+Residual risk and the key handling are described in
+[docs/configuration.md](../../docs/configuration.md#operator-approvals).
+
+**Managed mode.** When the installation is enrolled, every `ask` is also submitted
+to the AIDR dashboard and the deny reason says
+`Approval requested in the AIDR dashboard: <request_id>`. An administrator (a
+different, MFA-authenticated person) approves it there; the next identical call
+polls the request, verifies the control-plane-signed token against the approval
+keys in the signed entitlement and spends its nonce, so exactly one retry runs —
+across Codex's one-process-per-hook model. The agent cannot mint or replay a
+token. `operator_approvals.dashboard_only: true` makes this the only channel. See
+[dashboard approvals](../../docs/configuration.md#managed-mode-dashboard-approvals).
 
 ## Provisioned tenant detector policy
 
@@ -199,11 +307,11 @@ The connector also emits machine-readable capability evidence:
 aidr-codex-hook --health
 ```
 
-The shipped configuration registers only `PreToolUse`. Its health output
-therefore reports input inspection as inline blocking, output inspection as
-unavailable, and `inlineOutputBlocking: false`. Adding `PostToolUse` would make
-tool output observable only after execution; it still would not prove that the
-output was blocked before model consumption. The evidence also records Codex's
+The shipped configuration registers `PreToolUse`, `UserPromptSubmit` and
+`PostToolUse`. Its health output therefore reports tool input and prompt
+inspection as inline blocking, output inspection as post-execution observation,
+and `inlineOutputBlocking: false`: the output replacement described above is
+taken from the host source, not proven by a live run. The evidence also records Codex's
 host-owned fail-open boundary and does not claim that registration or trust was
 verified on the endpoint.
 

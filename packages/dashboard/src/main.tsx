@@ -65,7 +65,9 @@ const router = createBrowserRouter([
 	},
 	{
 		path: "/auth/callback",
-		lazy: async () => ({ Component: (await import("./ui/pages/AuthCallbackPage")).AuthCallbackPage }),
+		lazy: async () => ({
+			Component: (await import("./ui/pages/AuthCallbackPage")).AuthCallbackPage,
+		}),
 		errorElement: routeErrorElement,
 	},
 	{
@@ -103,91 +105,283 @@ const router = createBrowserRouter([
 		lazy: loadAppLayout,
 		errorElement: routeErrorElement,
 		loader: requireSessionLoader,
-		children: [{ index: true, lazy: async () => ({ Component: (await import("./ui/pages/OnboardingPage")).OnboardingPage }) }],
+		children: [
+			{
+				index: true,
+				lazy: async () => ({
+					Component: (await import("./ui/pages/OnboardingPage")).OnboardingPage,
+				}),
+			},
+		],
+	},
+	{
+		path: "/downloads",
+		lazy: loadAppLayout,
+		errorElement: routeErrorElement,
+		loader: requireSessionLoader,
+		children: [
+			{
+				index: true,
+				lazy: async () => ({ Component: (await import("./ui/pages/DownloadsPage")).DownloadsPage }),
+			},
+		],
 	},
 	{
 		path: "/dashboard",
 		lazy: loadAppLayout,
 		errorElement: routeErrorElement,
 		loader: requireSessionLoader,
-		children: [{ index: true, lazy: async () => ({ Component: (await import("./ui/pages/DashboardPage")).DashboardPage }) }],
+		children: [
+			{
+				index: true,
+				lazy: async () => ({ Component: (await import("./ui/pages/DashboardPage")).DashboardPage }),
+			},
+		],
 	},
 	{
 		path: "/events",
 		lazy: loadAppLayout,
 		errorElement: routeErrorElement,
 		loader: requireSessionLoader,
-		children: [{ index: true, lazy: async () => ({ Component: (await import("./ui/pages/EventsPage")).EventsPage }) }],
+		children: [
+			{
+				index: true,
+				lazy: async () => ({ Component: (await import("./ui/pages/EventsPage")).EventsPage }),
+			},
+		],
 	},
 	{
 		path: "/discovery",
 		lazy: loadAppLayout,
 		errorElement: routeErrorElement,
 		loader: requireSessionLoader,
-		children: [{ index: true, lazy: async () => ({ Component: (await import("./ui/pages/DiscoveryPage")).DiscoveryPage }) }],
+		children: [
+			{
+				index: true,
+				lazy: async () => ({ Component: (await import("./ui/pages/DiscoveryPage")).DiscoveryPage }),
+			},
+		],
+	},
+	{
+		path: "/posture",
+		lazy: loadAppLayout,
+		errorElement: routeErrorElement,
+		loader: requireSessionLoader,
+		children: [
+			{
+				index: true,
+				lazy: async () => ({ Component: (await import("./ui/pages/PosturePage")).PosturePage }),
+			},
+		],
+	},
+	{
+		path: "/approvals",
+		lazy: loadAppLayout,
+		errorElement: routeErrorElement,
+		loader: requireSessionLoader,
+		children: [
+			{
+				index: true,
+				lazy: async () => ({ Component: (await import("./ui/pages/ApprovalsPage")).ApprovalsPage }),
+			},
+		],
 	},
 	{
 		path: "/settings",
 		lazy: loadAppLayout,
 		errorElement: routeErrorElement,
 		loader: requireSessionLoader,
-		children: [{ index: true, lazy: async () => ({ Component: (await import("./ui/pages/SettingsPage")).SettingsPage }) }],
+		children: [
+			{
+				index: true,
+				lazy: async () => ({ Component: (await import("./ui/pages/SettingsPage")).SettingsPage }),
+			},
+		],
 	},
 	{
 		path: "/agents",
 		lazy: loadAppLayout,
 		errorElement: routeErrorElement,
 		loader: requireSessionLoader,
-		children: [{ index: true, lazy: async () => ({ Component: (await import("./ui/pages/AgentsPage")).AgentsPage }) }],
+		children: [
+			{
+				index: true,
+				lazy: async () => ({ Component: (await import("./ui/pages/AgentsPage")).AgentsPage }),
+			},
+		],
 	},
 	{
 		path: "/autosecops",
 		lazy: loadAppLayout,
 		errorElement: routeErrorElement,
 		loader: requireSessionLoader,
-		children: [{ index: true, lazy: async () => ({ Component: (await import("./ui/pages/AutoSecOpsPage")).AutoSecOpsPage }) }],
+		children: [
+			{
+				index: true,
+				lazy: async () => ({
+					Component: (await import("./ui/pages/AutoSecOpsPage")).AutoSecOpsPage,
+				}),
+			},
+		],
 	},
 	{
 		path: "/agents/:agentId",
 		lazy: loadAppLayout,
 		errorElement: routeErrorElement,
 		loader: requireSessionLoader,
-		children: [{ index: true, lazy: async () => ({ Component: (await import("./ui/pages/AgentDetailPage")).AgentDetailPage }) }],
+		children: [
+			{
+				index: true,
+				lazy: async () => ({
+					Component: (await import("./ui/pages/AgentDetailPage")).AgentDetailPage,
+				}),
+			},
+		],
 	},
 	{
 		path: "/incidents",
 		lazy: loadAppLayout,
 		errorElement: routeErrorElement,
 		loader: requireSessionLoader,
-		children: [{ index: true, lazy: async () => ({ Component: (await import("./ui/pages/IncidentsPage")).IncidentsPage }) }],
+		children: [
+			{
+				index: true,
+				lazy: async () => ({ Component: (await import("./ui/pages/IncidentsPage")).IncidentsPage }),
+			},
+		],
 	},
 	{
 		path: "/api-keys",
 		lazy: loadAppLayout,
 		errorElement: routeErrorElement,
 		loader: requireSessionLoader,
-		children: [{ index: true, lazy: async () => ({ Component: (await import("./ui/pages/ApiKeysPage")).ApiKeysPage }) }],
+		children: [
+			{
+				index: true,
+				lazy: async () => ({ Component: (await import("./ui/pages/ApiKeysPage")).ApiKeysPage }),
+			},
+		],
 	},
 	{
 		path: "/billing",
 		lazy: loadAppLayout,
 		errorElement: routeErrorElement,
 		loader: requireSessionLoader,
-		children: [{ index: true, lazy: async () => ({ Component: (await import("./ui/pages/BillingPage")).BillingPage }) }],
+		children: [
+			{
+				index: true,
+				lazy: async () => ({ Component: (await import("./ui/pages/BillingPage")).BillingPage }),
+			},
+		],
 	},
 	{
 		path: "/team",
 		lazy: loadAppLayout,
 		errorElement: routeErrorElement,
 		loader: requireSessionLoader,
-		children: [{ index: true, lazy: async () => ({ Component: (await import("./ui/pages/TeamPage")).TeamPage }) }],
+		children: [
+			{
+				index: true,
+				lazy: async () => ({ Component: (await import("./ui/pages/TeamPage")).TeamPage }),
+			},
+		],
 	},
 	{
 		path: "/scim",
 		lazy: loadAppLayout,
 		errorElement: routeErrorElement,
 		loader: requireSessionLoader,
-		children: [{ index: true, lazy: async () => ({ Component: (await import("./ui/pages/ScimPage")).ScimPage }) }],
+		children: [
+			{
+				index: true,
+				lazy: async () => ({ Component: (await import("./ui/pages/ScimPage")).ScimPage }),
+			},
+		],
+	},
+	{
+		path: "/privacy-guard",
+		lazy: loadAppLayout,
+		errorElement: routeErrorElement,
+		loader: requireSessionLoader,
+		children: [
+			{
+				index: true,
+				lazy: async () => ({
+					Component: (await import("./ui/pages/PrivacyGuardPage")).PrivacyGuardPage,
+				}),
+			},
+		],
+	},
+	{
+		path: "/compliance",
+		lazy: loadAppLayout,
+		errorElement: routeErrorElement,
+		loader: requireSessionLoader,
+		children: [
+			{
+				index: true,
+				lazy: async () => ({
+					Component: (await import("./ui/pages/CompliancePage")).CompliancePage,
+				}),
+			},
+		],
+	},
+	{
+		path: "/governance",
+		lazy: loadAppLayout,
+		errorElement: routeErrorElement,
+		loader: requireSessionLoader,
+		children: [
+			{
+				index: true,
+				lazy: async () => ({
+					Component: (await import("./ui/pages/GovernancePage")).GovernancePage,
+				}),
+			},
+		],
+	},
+	{
+		path: "/governance/register",
+		lazy: loadAppLayout,
+		errorElement: routeErrorElement,
+		loader: requireSessionLoader,
+		children: [
+			{
+				index: true,
+				lazy: async () => ({
+					Component: (await import("./ui/pages/GovernanceRegisterPage")).GovernanceRegisterPage,
+				}),
+			},
+		],
+	},
+	{
+		path: "/governance/requests",
+		lazy: loadAppLayout,
+		errorElement: routeErrorElement,
+		loader: requireSessionLoader,
+		children: [
+			{
+				index: true,
+				lazy: async () => ({
+					Component: (await import("./ui/pages/GovernanceRequestsPage")).GovernanceRequestsPage,
+				}),
+			},
+		],
+	},
+	{
+		path: "/governance/change-control",
+		lazy: loadAppLayout,
+		errorElement: routeErrorElement,
+		loader: requireSessionLoader,
+		children: [
+			{
+				index: true,
+				lazy: async () => ({
+					Component: (await import("./ui/pages/GovernanceChangeControlPage"))
+						.GovernanceChangeControlPage,
+				}),
+			},
+		],
 	},
 	{
 		path: "/retention",
@@ -215,7 +409,12 @@ const router = createBrowserRouter([
 		lazy: loadAppLayout,
 		errorElement: routeErrorElement,
 		loader: requireSessionLoader,
-		children: [{ index: true, lazy: async () => ({ Component: (await import("./ui/pages/PolicyPage")).PolicyPage }) }],
+		children: [
+			{
+				index: true,
+				lazy: async () => ({ Component: (await import("./ui/pages/PolicyPage")).PolicyPage }),
+			},
+		],
 	},
 ]);
 

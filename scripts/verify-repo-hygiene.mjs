@@ -79,6 +79,12 @@ export const ALLOWLIST = [
 			"Product documentation examples use the anonymous placeholder identities `/home/u/`, `/Users/User/` and `/home/user/` to illustrate behaviour. They identify no real machine or contributor, and rewriting them would make the documented examples less readable.",
 	},
 	{
+		path: "deploy/helm/images/edge-functions.Dockerfile",
+		owner: "AIDR-012",
+		reason:
+			"`/home/deno/functions` is the in-container path the pinned supabase/edge-runtime image and its upstream router hard-code for function sources; it is an image filesystem path, not a host or contributor path.",
+	},
+	{
 		path: "deploy/fleet/windows/README.md",
 		owner: "AIDR-012",
 		reason:
@@ -149,6 +155,12 @@ export const ALLOWLIST = [
 		owner: "AIDR-012",
 		reason:
 			"The SSH credential detector deliberately matches any remote `/home/<account>/.ssh/` path with a regex character class; it does not contain a contributor's home directory.",
+	},
+	{
+		path: "threats/context-poisoning.yaml",
+		owner: "AIDR-012",
+		reason:
+			"The poisoning rules match instructions to read another user's files with regex character classes such as `/home/[^/\\s]{1,64}` and `/Users/[^/\\s]{1,64}`; they name no real account.",
 	},
 ];
 

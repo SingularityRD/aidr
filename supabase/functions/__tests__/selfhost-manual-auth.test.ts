@@ -7,8 +7,14 @@ type Route =
 	| "azure-ad-groups"
 	| "device-verify"
 	| "pilot-admin"
+	| "operator-admin"
 	| "response-playbooks"
-	| "audit-export";
+	| "audit-export"
+	| "tenant-settings"
+	| "approval-requests"
+	| "compliance-report"
+	| "governance-digest"
+	| "ai-governance";
 
 const TENANT = "22222222-2222-4222-8222-222222222222";
 const USER = "11111111-1111-4111-8111-111111111111";
@@ -50,6 +56,7 @@ async function loadHandler(route: Route) {
 	const { db, getUser, privilegedCalls } = database();
 	vi.stubEnv("SUPABASE_URL", "https://project.supabase.co");
 	vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "synthetic-service-role-key");
+	vi.stubEnv("AIDR_APPROVAL_SIGNING_WRAP_KEY_B64", Buffer.alloc(32, 1).toString("base64"));
 	vi.stubGlobal("Deno", {
 		env: { get: (name: string) => process.env[name] },
 		serve: (handler: Handler) => served.push(handler),
@@ -64,8 +71,14 @@ async function loadHandler(route: Route) {
 		case "azure-ad-groups": await import("../azure-ad-groups/index.ts"); break;
 		case "device-verify": await import("../device-verify/index.ts"); break;
 		case "pilot-admin": await import("../pilot-admin/index.ts"); break;
+		case "operator-admin": await import("../operator-admin/index.ts"); break;
 		case "response-playbooks": await import("../response-playbooks/index.ts"); break;
 		case "audit-export": await import("../audit-export/index.ts"); break;
+		case "tenant-settings": await import("../tenant-settings/index.ts"); break;
+		case "approval-requests": await import("../approval-requests/index.ts"); break;
+		case "compliance-report": await import("../compliance-report/index.ts"); break;
+		case "governance-digest": await import("../governance-digest/index.ts"); break;
+		case "ai-governance": await import("../ai-governance/index.ts"); break;
 	}
 	const handler = served[0];
 	if (!handler) throw new Error(`${route} did not register its Edge handler`);
@@ -81,6 +94,7 @@ function request(route: Route, token?: string): Request {
 		"azure-ad-groups": undefined,
 		"device-verify": { user_code: "ABCD-EFGH" },
 		"pilot-admin": { action: "approve", user_id: USER },
+		"operator-admin": { action: "list_tenants" },
 		"response-playbooks": {
 			action: "start",
 			tenant_id: TENANT,
@@ -92,12 +106,23 @@ function request(route: Route, token?: string): Request {
 			ttl_seconds: 300,
 		},
 		"audit-export": { team_id: TENANT, format: "json" },
+		"tenant-settings": { tenant_id: TENANT, action: "close", confirm_name: "Acme" },
+		"approval-requests": {
+			action: "decide",
+			tenant_id: TENANT,
+			request_id: INCIDENT,
+			decision: "approve",
+			reason: "Auth regression fixture",
+		},
+		"compliance-report": { tenant_id: TENANT, from: "2026-09-01T00:00:00.000Z", to: "2026-09-02T00:00:00.000Z" },
+		"governance-digest": { action: "send_test", tenant_id: TENANT },
+		"ai-governance": { action: "enforcement_preview", tenant_id: TENANT },
 	};
-	const method = route === "azure-ad-groups" ? "GET" : "POST";
+	const method = route === "azure-ad-groups" ? "GET" : route === "tenant-settings" ? "PATCH" : "POST";
 	return new Request(`https://project.supabase.co/functions/v1/${route}`, {
 		method,
 		headers,
-		...(method === "POST" ? { body: JSON.stringify(bodies[route]) } : {}),
+		...(method !== "GET" ? { body: JSON.stringify(bodies[route]) } : {}),
 	});
 }
 
@@ -115,8 +140,14 @@ describe("manual session guards when the self-host gateway JWT check is disabled
 		"azure-ad-groups",
 		"device-verify",
 		"pilot-admin",
+		"operator-admin",
 		"response-playbooks",
 		"audit-export",
+		"tenant-settings",
+		"approval-requests",
+		"compliance-report",
+		"governance-digest",
+		"ai-governance",
 	] satisfies Route[])("%s rejects a missing bearer before privileged access", async (route) => {
 		const { handler, getUser, privilegedCalls } = await loadHandler(route);
 		const response = await handler(request(route));
@@ -133,8 +164,14 @@ describe("manual session guards when the self-host gateway JWT check is disabled
 		"azure-ad-groups",
 		"device-verify",
 		"pilot-admin",
+		"operator-admin",
 		"response-playbooks",
 		"audit-export",
+		"tenant-settings",
+		"approval-requests",
+		"compliance-report",
+		"governance-digest",
+		"ai-governance",
 	] satisfies Route[])("%s rejects an Auth-rejected bearer before privileged access", async (route) => {
 		const { handler, getUser, privilegedCalls } = await loadHandler(route);
 		const response = await handler(request(route, "not-a-valid-supabase-jwt"));

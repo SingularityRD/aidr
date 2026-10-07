@@ -111,6 +111,7 @@ async function runFixture(label, options = {}, verification = {}) {
 			runs: verification.runs ?? [],
 			runner: verification.runner,
 			strictFiles: verification.strictFiles,
+			requireSigned: verification.requireSigned,
 			platformAssets: verification.platformAssets,
 		});
 	} finally {
@@ -267,6 +268,81 @@ test("--strict-files turns a declared documentation files entry into a failure",
 		result.failures.map((failure) => failure.code),
 		["MISSING_FILES_ENTRY"],
 	);
+});
+
+const SIGNED_EVIDENCE_FILES = ["dist/**", "aidr-artifact.manifest.json", "aidr-artifact.manifest.sig"];
+
+test("an unsigned build reports absent signed-release evidence as a skip, not a pass", async () => {
+	const result = await runFixture("unsigned-evidence", { files: SIGNED_EVIDENCE_FILES });
+	assert.equal(result.status, PASS);
+	assert.deepEqual(result.failures, []);
+	const skip = result.skips.find((entry) => entry.id === "signed-release evidence");
+	assert.ok(skip, "expected an explicit signed-release evidence skip");
+	assert.match(skip.reason, /unsigned build: aidr-artifact\.manifest\.json, aidr-artifact\.manifest\.sig not shipped \(only the signing release workflow writes it\)/);
+	assert.match(skip.reason, /--require-signed/);
+});
+
+test("--require-signed fails when the signed-release evidence is not shipped", async () => {
+	const result = await runFixture("required-evidence", { files: SIGNED_EVIDENCE_FILES }, { requireSigned: true });
+	assert.equal(result.status, FAIL);
+	assert.deepEqual(
+		result.failures.map((failure) => failure.code),
+		["MISSING_FILES_ENTRY", "MISSING_FILES_ENTRY"],
+	);
+	assert.match(result.failures[0].detail, /signed-release mode requires it/);
+});
+
+test("a partial signed-release evidence set fails even without --require-signed", async () => {
+	const result = await runFixture("partial-evidence", {
+		files: SIGNED_EVIDENCE_FILES,
+		prepare: (root) => writeFileSync(path.join(root, "aidr-artifact.manifest.json"), "{}\n", "utf8"),
+	});
+	assert.equal(result.status, FAIL);
+	assert.deepEqual(
+		result.failures.map((failure) => failure.code),
+		["MISSING_FILES_ENTRY"],
+	);
+	assert.match(result.failures[0].detail, /aidr-artifact\.manifest\.sig.*incomplete signing evidence/);
+});
+
+test("a complete signed-release evidence set passes in signed-release mode", async () => {
+	const result = await runFixture(
+		"signed-evidence",
+		{
+			files: SIGNED_EVIDENCE_FILES,
+			prepare: (root) => {
+				writeFileSync(path.join(root, "aidr-artifact.manifest.json"), "{}\n", "utf8");
+				writeFileSync(path.join(root, "aidr-artifact.manifest.sig"), "c2ln\n", "utf8");
+			},
+		},
+		{ requireSigned: true },
+	);
+	assert.equal(result.status, PASS);
+	assert.deepEqual(result.failures, []);
+	assert.equal(result.skips.length, 0);
+});
+
+test("an unsigned dist manifest stays an ordinary required files entry", async () => {
+	const result = await runFixture("dist-manifest", { files: ["dist/**", "dist/aidr-artifact.manifest.json"] });
+	assert.equal(result.status, FAIL);
+	assert.deepEqual(
+		result.failures.map((failure) => failure.code),
+		["MISSING_FILES_ENTRY"],
+	);
+});
+
+test("--require-signed and the signed gate's public-key path select signed-release mode", () => {
+	const saved = process.env.AIDR_SIGNING_PUBLIC_KEY_PEM_PATH;
+	try {
+		delete process.env.AIDR_SIGNING_PUBLIC_KEY_PEM_PATH;
+		assert.equal(parseArguments([]).requireSigned, false);
+		assert.equal(parseArguments(["--require-signed"]).requireSigned, true);
+		process.env.AIDR_SIGNING_PUBLIC_KEY_PEM_PATH = path.resolve("public.pem");
+		assert.equal(parseArguments([]).requireSigned, true);
+	} finally {
+		if (saved === undefined) delete process.env.AIDR_SIGNING_PUBLIC_KEY_PEM_PATH;
+		else process.env.AIDR_SIGNING_PUBLIC_KEY_PEM_PATH = saved;
+	}
 });
 
 test("a run that fails produces a machine-readable failure", async () => {

@@ -1,8 +1,6 @@
 #!/usr/bin/env node
-import { readFile } from "node:fs/promises";
-import { createMcpGateway } from "./gateway.mjs";
-import { requireGatewayIntegrity } from "./integrity.mjs";
-import { requireStandaloneProfile, standalonePayloadGuard } from "./standalone.mjs";
+import { reportFailure, stage } from "./diagnostics.mjs";
+import { openVerifiedGateway } from "./operator-startup.mjs";
 
 const configPath = process.argv[2];
 const requireRouting = process.argv[3] === "--require-routing";
@@ -11,21 +9,10 @@ if (!configPath || (process.argv.length !== 3 && !(process.argv.length === 4 && 
 	process.exitCode = 2;
 } else {
 	try {
-		await requireStandaloneProfile();
-		await requireGatewayIntegrity();
-		const config = JSON.parse(await readFile(configPath, "utf8"));
-		if (requireRouting) config.routingRequired = true;
-		await requireStandaloneProfile();
-		const gateway = createMcpGateway(config, {
-			assertInstalledPrivacySupported: requireStandaloneProfile,
-			toolGuard: standalonePayloadGuard,
-			outputGuard: standalonePayloadGuard,
-			onEvent: (event) => process.stderr.write(`${JSON.stringify(event)}\n`),
-		});
-		const address = await gateway.listen();
+		const gateway = await openVerifiedGateway(configPath, { standalone: true, requireRouting });
+		const address = await stage("startup_failed", () => gateway.listen());
 		process.stdout.write(`AIDR MCP gateway listening on 127.0.0.1:${address.port}\n`);
-	} catch {
-		process.stderr.write("AIDR MCP gateway configuration or startup failed\n");
-		process.exitCode = 1;
+	} catch (error) {
+		process.exitCode = reportFailure("AIDR MCP gateway", error);
 	}
 }

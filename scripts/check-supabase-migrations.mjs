@@ -6,6 +6,7 @@ import {
 	MIGRATION_FILENAME_PATTERN,
 } from "./lib/migration-contract.mjs";
 import { SEARCH_PATH_HARDENING_VERSION, securityDefinerWithoutPgTemp } from "./lib/security-definer-scan.mjs";
+import { analyzeIdentityBarrier } from "./lib/tenant-identity-barrier.mjs";
 
 const root = process.cwd();
 const migrationsDir = path.join(root, "supabase", "migrations");
@@ -139,6 +140,18 @@ for (const [name, sql] of contents) {
 	for (const finding of securityDefinerWithoutPgTemp(sql)) {
 		errors.push(`${name}:${finding.line}: SECURITY DEFINER function ${finding.name} must set search_path with an explicit pg_temp`);
 	}
+}
+
+// Every RLS tenant table must end up with the restrictive identity barrier
+// (public.tenant_identity_access_allowed). See scripts/lib/tenant-identity-barrier.mjs.
+const identityBarrier = analyzeIdentityBarrier(parsed.map(({ name }) => ({ name, sql: contents.get(name) })));
+for (const { table, createdIn } of identityBarrier.missing) {
+	errors.push(
+		`public.${table} (created ${createdIn}): RLS tenant table lacks the restrictive tenant_identity_access_restrict policy`,
+	);
+}
+for (const table of identityBarrier.staleExceptions) {
+	errors.push(`IDENTITY_BARRIER_EXCEPTIONS.${table} is no longer needed; remove it`);
 }
 
 if (errors.length) {

@@ -7,6 +7,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 import { corsJson, handleCors } from "../_shared/cors.ts";
+import { validIngressSecret, verifiedIngressIp } from "../_shared/trusted-ingress.ts";
 
 // Required configuration. Validated per request, before any auth or DB work, so
 // a missing variable answers with an explicit 500 that names it instead of
@@ -27,11 +28,7 @@ const DEVICE_POLL_INTERVAL_SECONDS = Number(Deno.env.get("AIDR_DEVICE_POLL_INTER
 const DEVICE_START_RL_PER_MIN = Number(Deno.env.get("AIDR_DEVICE_START_RL_PER_MIN") ?? "30");
 const DEVICE_START_GLOBAL_RL_PER_MIN = Number(Deno.env.get("AIDR_DEVICE_START_GLOBAL_RL_PER_MIN") ?? "300");
 
-const INGRESS_IP_HEADER = "x-aidr-client-ip";
-const INGRESS_TIMESTAMP_HEADER = "x-aidr-client-timestamp";
-const INGRESS_SIGNATURE_HEADER = "x-aidr-client-signature";
 const INGRESS_CONTEXT = "device-start:v1";
-const MAX_CLOCK_SKEW_SECONDS = 60;
 
 function dashboardVerifyUrl(dashboardRaw: string, verifyRaw: string): URL | null {
 	try {
@@ -47,52 +44,6 @@ function dashboardVerifyUrl(dashboardRaw: string, verifyRaw: string): URL | null
 	} catch {
 		return null;
 	}
-}
-
-function canonicalIp(value: string | null): string | null {
-	if (!value || value.length > 45 || value !== value.trim()) return null;
-	if (/^(?:\d{1,3}\.){3}\d{1,3}$/.test(value)) {
-		const parts = value.split(".");
-		if (parts.some((part) => Number(part) > 255 || (part.length > 1 && part.startsWith("0")))) return null;
-		return value;
-	}
-	if (!value.includes(":") || !/^[0-9a-fA-F:]+$/.test(value)) return null;
-	try {
-		const hostname = new URL(`http://[${value}]/`).hostname;
-		return hostname.slice(1, -1).toLowerCase();
-	} catch {
-		return null;
-	}
-}
-
-function constantTimeHexEqual(actual: string, expected: string): boolean {
-	if (!/^[a-f0-9]{64}$/.test(actual) || expected.length !== 64) return false;
-	let difference = 0;
-	for (let i = 0; i < 64; i++) difference |= actual.charCodeAt(i) ^ expected.charCodeAt(i);
-	return difference === 0;
-}
-
-async function verifiedIngressIp(req: Request, secret: string): Promise<string | null> {
-	const ip = canonicalIp(req.headers.get(INGRESS_IP_HEADER));
-	const timestamp = req.headers.get(INGRESS_TIMESTAMP_HEADER);
-	const signature = req.headers.get(INGRESS_SIGNATURE_HEADER);
-	if (!ip || !timestamp || !signature || !/^(0|[1-9]\d{0,15})$/.test(timestamp)) return null;
-	const seconds = Number(timestamp);
-	if (!Number.isSafeInteger(seconds) || Math.abs(Math.floor(Date.now() / 1000) - seconds) > MAX_CLOCK_SKEW_SECONDS) return null;
-	const key = await crypto.subtle.importKey(
-		"raw",
-		new TextEncoder().encode(secret),
-		{ name: "HMAC", hash: "SHA-256" },
-		false,
-		["sign"],
-	);
-	const signed = await crypto.subtle.sign(
-		"HMAC",
-		key,
-		new TextEncoder().encode(`${INGRESS_CONTEXT}\n${timestamp}\n${ip}`),
-	);
-	const expected = Array.from(new Uint8Array(signed), (byte) => byte.toString(16).padStart(2, "0")).join("");
-	return constantTimeHexEqual(signature, expected) ? ip : null;
 }
 
 async function sha256Hex(input: string): Promise<string> {
@@ -188,13 +139,13 @@ Deno.serve(async (req) => {
 	const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, AIDR_DEVICE_START_INGRESS_SECRET, AIDR_DASHBOARD_URL, AIDR_DASHBOARD_VERIFY_URL } = config.values;
 	const verifyUrl = dashboardVerifyUrl(AIDR_DASHBOARD_URL, AIDR_DASHBOARD_VERIFY_URL);
 	const invalid: string[] = [];
-	if (new TextEncoder().encode(AIDR_DEVICE_START_INGRESS_SECRET).length < 32) invalid.push("AIDR_DEVICE_START_INGRESS_SECRET");
+	if (!validIngressSecret(AIDR_DEVICE_START_INGRESS_SECRET)) invalid.push("AIDR_DEVICE_START_INGRESS_SECRET");
 	if (!Number.isSafeInteger(DEVICE_START_RL_PER_MIN) || DEVICE_START_RL_PER_MIN < 1 || DEVICE_START_RL_PER_MIN > 10000) invalid.push("AIDR_DEVICE_START_RL_PER_MIN");
 	if (!Number.isSafeInteger(DEVICE_START_GLOBAL_RL_PER_MIN) || DEVICE_START_GLOBAL_RL_PER_MIN < DEVICE_START_RL_PER_MIN || DEVICE_START_GLOBAL_RL_PER_MIN > 100000) invalid.push("AIDR_DEVICE_START_GLOBAL_RL_PER_MIN");
 	if (!verifyUrl) invalid.push("AIDR_DASHBOARD_VERIFY_URL");
 	if (invalid.length > 0) return corsJson(req, 500, { error: "server_misconfigured", invalid });
 
-	const ip = await verifiedIngressIp(req, AIDR_DEVICE_START_INGRESS_SECRET);
+	const ip = await verifiedIngressIp(req, AIDR_DEVICE_START_INGRESS_SECRET, INGRESS_CONTEXT);
 	if (!ip) return corsJson(req, 403, { error: "trusted_ingress_required" });
 
 	const supabase = createClient<any>(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {

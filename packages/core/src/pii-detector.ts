@@ -5,7 +5,10 @@
 
 const PII_PATTERNS = {
 	email: {
-		pattern: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g,
+		// RFC 5321 length limits (64-char local part, 253-char domain, 63-char
+		// label) keep every attempt bounded: with unbounded runs a long `a.a.a…`
+		// or `%41%41…` text is rescanned from every word boundary (quadratic).
+		pattern: /\b[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,253}\.[A-Za-z]{2,63}\b/g,
 		type: "email",
 		severity: "high",
 	},
@@ -46,7 +49,10 @@ const PII_PATTERNS = {
 		severity: "critical",
 	},
 	jwt: {
-		pattern: /\beyJ[a-zA-Z0-9_-]+\.eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\b/g,
+		// Starts only where a run of token characters starts. A `\b` start also
+		// fired after `-`, so `eyJ-eyJ-…` rescanned the rest of the run from every
+		// `eyJ` (quadratic).
+		pattern: /(?<![A-Za-z0-9_-])eyJ[a-zA-Z0-9_-]+\.eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\b/g,
 		type: "jwt_token",
 		severity: "critical",
 	},
@@ -101,21 +107,27 @@ export interface PIIReport {
 	redacted: string;
 }
 
-export function detectPII(text: string): PIIReport {
-	const findings: PIIFinding[] = [];
-	for (const [_name, config] of Object.entries(PII_PATTERNS)) {
-		const matches = text.matchAll(config.pattern);
-		for (const match of matches) {
-			if (match.index !== undefined) {
-				findings.push({
-					type: config.type,
-					value: match[0],
-					index: match.index,
-					severity: config.severity as PIIFinding["severity"],
-				});
-			}
+/**
+ * Lazily yield findings pattern by pattern (unsorted). `types` restricts the
+ * scan to those finding types, so a caller that only needs credentials does not
+ * run the email, phone and card patterns at all.
+ */
+export function* matchPII(text: string, types?: ReadonlySet<string>): Generator<PIIFinding> {
+	for (const config of Object.values(PII_PATTERNS)) {
+		if (types && !types.has(config.type)) continue;
+		for (const match of text.matchAll(config.pattern)) {
+			yield {
+				type: config.type,
+				value: match[0],
+				index: match.index,
+				severity: config.severity as PIIFinding["severity"],
+			};
 		}
 	}
+}
+
+export function detectPII(text: string): PIIReport {
+	const findings = [...matchPII(text)];
 	findings.sort((a, b) => a.index - b.index);
 	return {
 		findings,
@@ -125,20 +137,69 @@ export function detectPII(text: string): PIIReport {
 	};
 }
 
+const SEVERITY_RANK: Record<PIIFinding["severity"], number> = {
+	low: 0,
+	medium: 1,
+	high: 2,
+	critical: 3,
+};
+
+/**
+ * Replace every finding with a `[REDACTED_<TYPE>]` token.
+ *
+ * Overlapping or nested findings (a phone number inside a card number, an API
+ * key inside a secret assignment) are merged into one span covering their
+ * union, so no suffix of a longer match survives and no token is spliced into
+ * the middle of another. The merged span is labelled with its most severe
+ * finding (then the longest, then the earliest).
+ */
 export function redactPII(text: string, findings: PIIFinding[]): string {
-	let result = text;
-	for (const finding of [...findings].reverse()) {
-		const before = result.slice(0, finding.index);
-		const after = result.slice(finding.index + finding.value.length);
-		result = `${before}[REDACTED_${finding.type.toUpperCase()}]${after}`;
+	const spans: Array<{ start: number; end: number; label: PIIFinding }> = [];
+	const ordered = findings
+		.map((finding) => ({
+			finding,
+			start: Math.max(0, Math.min(text.length, finding.index)),
+			end: Math.max(0, Math.min(text.length, finding.index + finding.value.length)),
+		}))
+		.filter((candidate) => candidate.end > candidate.start)
+		.sort((left, right) => left.start - right.start || right.end - left.end);
+	for (const candidate of ordered) {
+		const current = spans[spans.length - 1];
+		if (!current || candidate.start >= current.end) {
+			spans.push({ start: candidate.start, end: candidate.end, label: candidate.finding });
+			continue;
+		}
+		current.end = Math.max(current.end, candidate.end);
+		const rank = SEVERITY_RANK[candidate.finding.severity] ?? 0;
+		const currentRank = SEVERITY_RANK[current.label.severity] ?? 0;
+		if (
+			rank > currentRank ||
+			(rank === currentRank && candidate.finding.value.length > current.label.value.length)
+		) {
+			current.label = candidate.finding;
+		}
 	}
-	return result;
+	let result = "";
+	let cursor = 0;
+	for (const span of spans) {
+		result += `${text.slice(cursor, span.start)}${redactionToken(span.label.type)}`;
+		cursor = span.end;
+	}
+	return result + text.slice(cursor);
 }
 
-export function maskPII(value: string, _type: string): string {
-	if (value.length <= 8) return "*".repeat(value.length);
-	const visible = 2;
-	return value.slice(0, visible) + "*".repeat(value.length - visible * 2) + value.slice(-visible);
+function redactionToken(type: string): string {
+	const label = type.toUpperCase().replace(/[^A-Z0-9_]/g, "_");
+	return `[REDACTED_${label || "PII"}]`;
+}
+
+/**
+ * Mask a sensitive value for display. The result is a fixed placeholder that
+ * reveals none of the value's characters and not its length.
+ */
+export function maskPII(_value: string, type: string): string {
+	const label = type.toUpperCase().replace(/[^A-Z0-9_]/g, "_");
+	return label ? `[MASKED_${label}]` : "[MASKED]";
 }
 
 export function validateNoPII(text: string, context: string): void {

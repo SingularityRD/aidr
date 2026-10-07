@@ -73,3 +73,120 @@ condition = "AND"
 regexTarget = "match"
 regexes = ['''YWJjZGVm''']
 paths = ['''^packages/privacy/tests/fixtures/cases\.mjs$''']
+
+# Synthetic credentials the detection suites feed to the scanners under test.
+# Each entry is scoped to the rule, the file and the exact fixture value, so a
+# real credential added to the same file is still reported.
+[[allowlists]]
+description = "Browser Guard unit-test fixtures: synthetic managed-policy API keys and HMAC keys"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''aidr_test_key_123456|aidr_12345678|aidr_other_key_987654|aidr_live_0123456789|"key-12345678"|"saved-key-1234"|c2VjcmV0LWtleS0xMjM0NTY3OA==|secret-key-12345678''']
+paths = ['''^packages/browser-guard/src/__tests__/(background-worker|background-telemetry|background-policy|ui-pages|ui-model)\.test\.ts$''']
+
+[[allowlists]]
+description = "Browser Guard E2E fixture: synthetic OpenAI-style key typed into the hermetic chat fixtures"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''sk-proj-Q7vX2mN9pL4kR8tW1yB6cD3fG5hJ0sAaZe''']
+paths = ['''^packages/browser-guard/e2e/lib/data\.mjs$''']
+
+[[allowlists]]
+description = "Browser Guard managed-policy examples: documented exact-data HMAC key for the example dataset"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''o6J5dv/ZMVjrraODjOrMuCsIQzqswQczrGPSl/aB6bU=''']
+paths = ['''^deploy/browser-guard/(chrome-managed-policy|firefox-policies)\.example\.json$''']
+
+[[allowlists]]
+description = "Documented AWS example-shaped access key IDs in scanner tests"
+targetRules = ["aws-access-token"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''AKIAQWERTYUIOPASDFGH|AKIAABCDEFGHIJKLMNOP''']
+paths = ['''^packages/core/src/__tests__/(output-scanner|toxic-flow)\.test\.ts$''', '''^packages/browser-guard/src/__tests__/vault\.test\.ts$''']
+
+[[allowlists]]
+description = "Synthetic GitLab PAT and truncated PEM fixtures in the privacy detector suites"
+targetRules = ["gitlab-pat", "private-key"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''glpat-abcdefghijklmnop1234|MIIBVQIBADANBgkq''']
+paths = ['''^packages/core/src/__tests__/dlp/privacy-detectors\.test\.ts$''', '''^packages/privacy/tests/rules\.test\.mjs$''']
+
+[[allowlists]]
+description = "Prompt-protection tests list PEM header lines only (no key material)"
+targetRules = ["private-key"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''PRIVATE KEY-----",\s+"-----BEGIN''', '''PRIVATE KEY BLOCK-----",\s+\]''']
+paths = ['''^packages/core/src/__tests__/prompt-protection\.test\.ts$''']
+
+[[allowlists]]
+description = "CLI privacy-scan tests: synthetic RSA key body assembled from a template"
+targetRules = ["generic-api-key", "private-key"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''7Qx3Fv0rX9yJ2cZkqLpM4nB8sT1uV6wH0aR5eD2gK9jF3lN7oP1qW4xY8zA2bC5dE6fG7|\$\{KEY_BODY\}''']
+paths = ['''^packages/cli/src/__tests__/privacy-scan\.test\.ts$''']
+
+[[allowlists]]
+description = "Output-scanner precision tests: synthetic key-shaped strings"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''Zq8Xw7Vu6Ts5Rq4Po3Nm2Lk1Ji0Hg|qwertyuiopasdfghjkl''']
+paths = ['''^packages/core/src/__tests__/output-scanner-precision\.test\.ts$''']
+
+[[allowlists]]
+description = "Privacy telemetry contract test: synthetic Stripe-shaped secret proving it is never stored"
+targetRules = ["stripe-access-token"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''sk_live_abcdefghijklmnop''']
+paths = ['''^supabase/functions/__tests__/privacy-telemetry-contract\.test\.ts$''']
+
+[[allowlists]]
+description = "Feature inventory prose ('keys, RE2-compatible ...'), not a credential"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''keys, RE2-compatible''']
+paths = ['''^scripts/generate-feature-inventory\.mjs$''', '''^FEATURE_INVENTORY\.json$''', '''^PRODUCTION_SALES_GAPS\.json$''']
+
+[[allowlists]]
+description = "AI-BOM and MCP-discovery redaction tests: synthetic credentials proving they never reach the inventory"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''querytoken987|sk-live1234567890abcdefgh|sk-private-123|hunter2-private''']
+paths = ['''^packages/core/src/__tests__/(aibom|mcp-discovery)\.test\.ts$''']
+
+[[allowlists]]
+description = "Compliance-report tests: the public signing key ID 'compliance-2026-09' and the 'attacker.pkcs8B64' variable reference (a key generated at runtime)"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''compliance-2026-09''', '''privateKeyPkcs8B64: attacker\.pkcs8B64''']
+paths = ['''^scripts/compliance-report-postgres\.test\.mjs$''', '''^supabase/functions/__tests__/compliance-report-contract\.test\.ts$''']
+
+# Names of environment variables and SQL parameters that carry key material at
+# runtime; the matched text is the identifier, never a value.
+[[allowlists]]
+description = "Edge Function environment-variable names for the approval and compliance signing keys"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''"AIDR_COMPLIANCE_SIGNING_PRIVATE_KEY_PKCS8_B64"''', '''"AIDR_APPROVAL_SIGNING_WRAP_KEY_B64"''']
+paths = ['''^supabase/functions/(compliance-report|approval-requests)/index\.ts$''']
+
+[[allowlists]]
+description = "Approval signing-key migration: the p_private_key_ciphertext_b64 parameter name"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''p_private_key_ciphertext_b64 text''']
+paths = ['''^supabase/migrations/20260926000001_dashboard_approval_requests\.sql$''']

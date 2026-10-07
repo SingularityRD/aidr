@@ -1,0 +1,215 @@
+{{- if .Values.postgresql.enabled }}
+{{- $component := "db" -}}
+{{- $name := include "aidr.component" (dict "root" . "component" $component) -}}
+{{- $values := .Values.postgresql -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}-init
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" $component) | nindent 4 }}
+data:
+  # Equivalent of the upstream docker/volumes/db/roles.sql and jwt.sql init
+  # scripts. Values come from the container environment, never from this file.
+  99-roles.sql: |
+    \set pgpass `echo "$POSTGRES_PASSWORD"`
+    ALTER USER authenticator WITH PASSWORD :'pgpass';
+    ALTER USER pgbouncer WITH PASSWORD :'pgpass';
+    ALTER USER supabase_auth_admin WITH PASSWORD :'pgpass';
+    ALTER USER supabase_functions_admin WITH PASSWORD :'pgpass';
+    ALTER USER supabase_storage_admin WITH PASSWORD :'pgpass';
+  99-jwt.sql: |
+    \set jwt_secret `echo "$JWT_SECRET"`
+    \set jwt_exp `echo "$JWT_EXP"`
+    ALTER DATABASE postgres SET "app.settings.jwt_secret" TO :'jwt_secret';
+    ALTER DATABASE postgres SET "app.settings.jwt_exp" TO :'jwt_exp';
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" $component) | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "aidr.selectorLabels" (dict "root" . "component" $component) | nindent 4 }}
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+      protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}-headless
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" $component) | nindent 4 }}
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    {{- include "aidr.selectorLabels" (dict "root" . "component" $component) | nindent 4 }}
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" $component) | nindent 4 }}
+spec:
+  serviceName: {{ $name }}-headless
+  replicas: 1
+  podManagementPolicy: OrderedReady
+  selector:
+    matchLabels:
+      {{- include "aidr.selectorLabels" (dict "root" . "component" $component) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "aidr.labels" (dict "root" . "component" $component) | nindent 8 }}
+      {{- with $values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- include "aidr.podCommon" (dict "root" . "values" $values) | nindent 6 }}
+      {{- include "aidr.podSecurityContext" (dict "root" . "runAsUser" $values.runAsUser "runAsGroup" $values.fsGroup "fsGroup" $values.fsGroup) | nindent 6 }}
+      terminationGracePeriodSeconds: 60
+      initContainers:
+        # 1. Creates the data directory as the postgres user so the subPath
+        #    mount is owned by it (kubelet would create a root-owned one) and
+        #    the volume's lost+found never sits inside PGDATA.
+        # 2. Seeds the config volume with the image's /etc/postgresql-custom
+        #    files once (a Docker named volume does this implicitly; a PVC
+        #    does not). Existing files, including the pgsodium key, are kept.
+        - name: prepare-data
+          image: {{ include "aidr.image" (dict "root" . "image" $values.image "name" "postgresql.image") }}
+          imagePullPolicy: {{ $values.image.pullPolicy }}
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              mkdir -p /data/pgdata
+              chmod 0750 /data/pgdata
+              if [ -d /etc/postgresql-custom ]; then cp -R -n /etc/postgresql-custom/. /config/; fi
+          {{- include "aidr.containerSecurityContext" (dict "root" .) | nindent 10 }}
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: config
+              mountPath: /config
+      containers:
+        - name: postgres
+          image: {{ include "aidr.image" (dict "root" . "image" $values.image "name" "postgresql.image") }}
+          imagePullPolicy: {{ $values.image.pullPolicy }}
+          args:
+            - postgres
+            - -c
+            - config_file=/etc/postgresql/postgresql.conf
+            - -c
+            - log_min_messages=fatal
+          # Postgres writes its socket, PID and config includes under the image
+          # tree, so the root filesystem stays writable for this one container.
+          {{- include "aidr.containerSecurityContext" (dict "root" . "readOnlyRootFilesystem" false) | nindent 10 }}
+          ports:
+            - name: postgres
+              containerPort: 5432
+              protocol: TCP
+          env:
+            {{- include "aidr.postgresPasswordEnv" . | nindent 12 }}
+            {{- include "aidr.secretEnv" (dict "root" . "env" "JWT_SECRET" "key" "jwt-secret") | nindent 12 }}
+            - name: PGPASSWORD
+              value: $(POSTGRES_PASSWORD)
+            - name: POSTGRES_HOST
+              value: /var/run/postgresql
+            - name: PGPORT
+              value: "5432"
+            - name: POSTGRES_PORT
+              value: "5432"
+            - name: POSTGRES_DB
+              value: postgres
+            - name: PGDATABASE
+              value: postgres
+            - name: JWT_EXP
+              value: {{ .Values.auth.jwtExpirySeconds | quote }}
+          startupProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres", "-h", "localhost"]
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres", "-h", "localhost"]
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres", "-h", "localhost"]
+            periodSeconds: 20
+            failureThreshold: 6
+          {{- include "aidr.resources" (dict "root" . "component" "postgresql" "override" $values.resources) | nindent 10 }}
+          volumeMounts:
+            # subPath keeps the volume's lost+found out of the data directory.
+            - name: data
+              mountPath: /var/lib/postgresql/data
+              subPath: pgdata
+            - name: config
+              mountPath: /etc/postgresql-custom
+            - name: init
+              mountPath: /docker-entrypoint-initdb.d/init-scripts/99-roles.sql
+              subPath: 99-roles.sql
+              readOnly: true
+            - name: init
+              mountPath: /docker-entrypoint-initdb.d/init-scripts/99-jwt.sql
+              subPath: 99-jwt.sql
+              readOnly: true
+            - name: shm
+              mountPath: /dev/shm
+      volumes:
+        - name: init
+          configMap:
+            name: {{ $name }}-init
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 256Mi
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "aidr.selectorLabels" (dict "root" . "component" $component) | nindent 10 }}
+      spec:
+        accessModes:
+          {{- toYaml $values.persistence.accessModes | nindent 10 }}
+        {{- with .Values.global.storageClass }}
+        storageClassName: {{ . }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ $values.persistence.size }}
+    # pgsodium root key and generated config includes (compose volume db-config).
+    - metadata:
+        name: config
+        labels:
+          {{- include "aidr.selectorLabels" (dict "root" . "component" $component) | nindent 10 }}
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- with .Values.global.storageClass }}
+        storageClassName: {{ . }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ $values.configPersistence.size }}
+{{- end }}

@@ -234,7 +234,10 @@ async function main() {
 
 	const email = `customer-${randomBytes(8).toString("hex")}@example.test`;
 	const password = randomBytes(32).toString("base64url");
-	const args = [bootstrapScript, "--deployment", fixtureDirectory, "--email", email, "--name", "Customer acceptance fixture", "--seats", "5"];
+	// A disposable acceptance fixture has no vendor-signed license: it uses the
+	// explicitly labelled unsigned pilot terms, which the receipt records as such.
+	const licenseExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+	const args = [bootstrapScript, "--deployment", fixtureDirectory, "--email", email, "--name", "Customer acceptance fixture", "--seats", "5", "--license-expires-at", licenseExpiresAt, "--license-reference", "CUSTOMER-ACCEPTANCE-FIXTURE", "--unsigned-license-for-pilot"];
 	function bootstrap(extra = [], expected = 0) {
 		const run = spawnSync(process.execPath, [...args, ...extra], { input: password, encoding: "utf8", timeout: 60000 });
 		assert.equal(run.status, expected, run.stderr || run.error?.message || `bootstrap exited with ${run.status}`); assert.ok(!`${run.stdout}${run.stderr}`.includes(password));

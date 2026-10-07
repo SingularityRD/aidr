@@ -9,6 +9,17 @@
  * agent that can approve its own blocked action defeats the gate entirely,
  * because it already receives the actionId in the block message. Approvals must
  * come from an out-of-band, human-only action (see `formatAskMessage`).
+ *
+ * The persistent out-of-band channel is `operator-approvals.ts`: every `ask`
+ * issued here is recorded as a pending ask, the operator approves it with the
+ * `aidr approve <actionId>` CLI (interactive confirmation), and the retry of the
+ * exact same call spends that approval once. Nothing in this module can create
+ * an approval.
+ *
+ * In MANAGED mode an `ask` is additionally submitted to the AIDR dashboard
+ * (`dashboard-approvals.ts`): an administrator approves it there and the retry is
+ * released by a control-plane-signed, single-use token. With
+ * `operator_approvals.dashboard_only` that is the ONLY channel.
  */
 
 import {
@@ -25,11 +36,25 @@ import { ApprovalStore } from "./approval-store.js";
 import {
 	logAllowedResponseActions,
 	logResponseActions,
+	logVerdict,
 	toolInputSummaryForAudit,
 } from "./audit-log.js";
 import { isInvalidConfig, loadConfig } from "./config.js";
+import {
+	DASHBOARD_APPROVAL_SOURCE,
+	type DashboardApprovalOptions,
+	type DashboardApprovalOutcome,
+	processDashboardApproval,
+} from "./dashboard-approvals.js";
 import type { ToolEvaluationContext, ToolEvaluationRequest } from "./evaluator.js";
 import { allowVerdict, evaluateToolCall } from "./evaluator.js";
+import {
+	consumeOperatorApproval,
+	findOperatorAllowlistGrant,
+	markOperatorAllowlistGrantUsed,
+	type OperatorApprovalStoreOptions,
+	recordPendingAsk,
+} from "./operator-approvals.js";
 import {
 	DEFAULT_RESPONSE_OPTIONS,
 	type PreOperationSnapshot,
@@ -48,7 +73,7 @@ import {
 	responseAuditorFromConfig,
 } from "./response-audit.js";
 import { normalizeToolEvaluationRequest } from "./tool-normalization.js";
-import type { Artifact, Config, Logger, Verdict } from "./types.js";
+import type { Allowlist, Artifact, Config, Logger, Verdict } from "./types.js";
 import { nullLogger } from "./types.js";
 import { hashCommand, normalizeFilePath, normalizeUrl } from "./url-utils.js";
 
@@ -82,6 +107,155 @@ export interface GuardResult {
 	 * failed restore, which remains retryable and is recorded in the response audit.
 	 */
 	finalizeSnapshot?: (outcome: "success" | "failure") => Promise<{ rolledBack: boolean }>;
+	/**
+	 * For an `ask`: whether the pending ask reached the operator approval store,
+	 * so `aidr pending` / `aidr approve` can see it. False means the block stands
+	 * but the operator cannot approve this call until the store is repaired.
+	 */
+	pendingRecorded?: boolean;
+	/** Set when an `ask` was released by an operator or a dashboard approval. */
+	approvedBy?: "operator" | "dashboard";
+	/**
+	 * Managed mode: what happened with the dashboard approval for this `ask`
+	 * (request submitted, still pending, denied, ...). Absent in local mode.
+	 */
+	dashboardApproval?: DashboardApprovalOutcome;
+}
+
+/** Guard options that are not detection context. */
+export interface GuardOptions {
+	/**
+	 * Where the file-backed operator approval channel lives. `false` disables it
+	 * (callers that already have a host-native confirmation, and isolated tests).
+	 */
+	operatorApprovals?: OperatorApprovalStoreOptions | false;
+	/**
+	 * Managed-mode dashboard approvals. `false` disables them (isolated tests);
+	 * the default uses the real control plane, state file and nonce ledger.
+	 */
+	dashboardApprovals?: DashboardApprovalOptions | false;
+}
+
+/** Whether `operator_approvals.dashboard_only` is in force (managed mode only). */
+function isDashboardOnly(config: Config | undefined): boolean {
+	return config?.mode === "managed" && config.operator_approvals?.dashboard_only === true;
+}
+
+/** The released verdict for an `ask` an approval channel let through. */
+function releasedVerdict(verdict: Verdict, source: string, by: string): Verdict {
+	return {
+		...allowVerdict(source),
+		artifacts: verdict.artifacts,
+		matchedThreatId: verdict.matchedThreatId,
+		reasons: [`Released by ${by} approval of ${verdict.category}`],
+	};
+}
+
+/**
+ * Run the managed dashboard approval step for an `ask` and, when a verified
+ * token released it, audit the override. Never throws; null in local mode.
+ */
+async function dashboardApprovalStep(
+	request: ToolEvaluationRequest,
+	actionId: string,
+	verdict: Verdict,
+	config: Config,
+	connector: string | undefined,
+	logger: Logger,
+	options: DashboardApprovalOptions | false | undefined,
+): Promise<{ outcome: DashboardApprovalOutcome | null; released: Verdict | null }> {
+	if (options === false || config.mode !== "managed") return { outcome: null, released: null };
+	const outcome = await processDashboardApproval(
+		{
+			actionId,
+			toolName: request.toolName,
+			toolInput: request.toolInput,
+			artifacts: request.artifacts,
+			sessionId: request.sessionId,
+			verdict,
+			connector,
+		},
+		config,
+		{ logger, ...options },
+	);
+	if (!outcome) return { outcome: null, released: null };
+	if (isDashboardOnly(config)) outcome.dashboardOnly = true;
+	if (outcome.status !== "released") return { outcome, released: null };
+	const released = releasedVerdict(verdict, DASHBOARD_APPROVAL_SOURCE, "dashboard");
+	if (config.logging) {
+		await logVerdict(
+			config.logging,
+			request.sessionId,
+			request.toolName,
+			request.toolInput,
+			released,
+			true,
+		);
+	}
+	return { outcome, released };
+}
+
+/** Result of {@link resolveAskWithDashboardApproval}. */
+export interface AskApprovalResolution {
+	/** The released allow verdict, or the unchanged input verdict. */
+	verdict: Verdict;
+	approvedBy?: "dashboard";
+	dashboardApproval?: DashboardApprovalOutcome;
+	/**
+	 * `operator_approvals.dashboard_only` is in force: a host with its own
+	 * confirmation dialog must BLOCK instead of asking, since only a dashboard
+	 * approval may release the call.
+	 */
+	dashboardOnly: boolean;
+}
+
+/**
+ * Dashboard approvals for connectors that call `evaluateToolCall` directly and
+ * have a native confirmation dialog (Claude Code, Cursor / VS Code hook).
+ *
+ * Pass the verdict the evaluator returned. For an `ask` in managed mode this
+ * submits or polls the dashboard request and releases the call when a verified,
+ * unspent token for exactly this call exists. Everything else is returned
+ * unchanged. Never throws: a failure keeps the verdict.
+ */
+export async function resolveAskWithDashboardApproval(
+	request: ToolEvaluationRequest,
+	verdict: Verdict,
+	context: Pick<ToolEvaluationContext, "configPath" | "logger" | "agentRuntime">,
+	options: DashboardApprovalOptions | false = {},
+): Promise<AskApprovalResolution> {
+	const logger = context.logger ?? nullLogger;
+	const unchanged: AskApprovalResolution = { verdict, dashboardOnly: false };
+	if (verdict.decision !== "ask") return unchanged;
+	try {
+		const config = await loadConfig(context.configPath, logger);
+		if (!config || isInvalidConfig(config)) return unchanged;
+		const dashboardOnly = isDashboardOnly(config);
+		const actionId = ApprovalStore.actionId(request.toolName, request.toolInput, request.sessionId);
+		const { outcome, released } = await dashboardApprovalStep(
+			request,
+			actionId,
+			verdict,
+			config,
+			context.agentRuntime,
+			logger,
+			options,
+		);
+		if (released) {
+			return {
+				verdict: released,
+				approvedBy: "dashboard",
+				dashboardApproval: outcome ?? undefined,
+				dashboardOnly,
+			};
+		}
+		return { verdict, dashboardApproval: outcome ?? undefined, dashboardOnly };
+	} catch (error) {
+		logger.warn("Dashboard approval resolution failed; the verdict is unchanged", {
+			error: error instanceof Error ? error.name : typeof error,
+		});
+		return unchanged;
+	}
 }
 
 /**
@@ -258,6 +432,7 @@ export async function guardToolCall(
 	request: ToolEvaluationRequest,
 	context: ToolEvaluationContext,
 	approvalStore: ApprovalStore,
+	options: GuardOptions = {},
 ): Promise<GuardResult> {
 	const actionId = ApprovalStore.actionId(request.toolName, request.toolInput, request.sessionId);
 	// Consume synchronously before awaiting evaluation so concurrent identical
@@ -277,19 +452,72 @@ export async function guardToolCall(
 	if (verdict.decision === "ask" && config.sensitivity === "paranoid") {
 		effective = { ...verdict, decision: "deny" };
 	}
-	if (
-		hasApproval &&
-		effective.decision === "ask" &&
-		loadedConfig &&
-		!isInvalidConfig(loadedConfig)
-	) {
+	const operatorStore =
+		options.operatorApprovals === false
+			? null
+			: {
+					logger,
+					keyStorage: config.operator_approvals?.key_storage,
+					...options.operatorApprovals,
+				};
+	const approvable = effective.decision === "ask" && loadedConfig && !isInvalidConfig(loadedConfig);
+	// Managed + dashboard_only: the local operator CLI is not an approval channel.
+	const dashboardOnly = isDashboardOnly(config);
+	let approvedBy: GuardResult["approvedBy"];
+	let dashboardApproval: DashboardApprovalOutcome | undefined;
+	if (approvable && hasApproval) {
 		effective = allowVerdict("approved");
+	} else if (approvable && operatorStore && !dashboardOnly) {
+		// The persistent operator channel. It only ever releases an `ask` (never a
+		// deny or a paranoid-promoted ask), only for the exact tool and artifact set
+		// the operator saw, and it never throws: any failure keeps the block.
+		const consumed = await consumeOperatorApproval(
+			{ actionId, tool: request.toolName, artifacts: request.artifacts },
+			operatorStore,
+		);
+		if (consumed.approved) {
+			effective = releasedVerdict(verdict, "operator_approval", "operator");
+			approvedBy = "operator";
+			// The release is an operator override of a flagged call: record it.
+			if (config.logging) {
+				await logVerdict(
+					config.logging,
+					request.sessionId,
+					request.toolName,
+					request.toolInput,
+					effective,
+					true,
+				);
+			}
+		} else if (consumed.reason !== "not_found") {
+			logger.warn("Operator approval was not applied; the ask stays blocked", {
+				reason: consumed.reason,
+			});
+		}
+	}
+	if (approvable && effective.decision === "ask") {
+		// Managed mode: the dashboard channel (submit, poll, verify, spend once).
+		const step = await dashboardApprovalStep(
+			request,
+			actionId,
+			verdict,
+			config,
+			context.agentRuntime,
+			logger,
+			options.dashboardApprovals,
+		);
+		dashboardApproval = step.outcome ?? undefined;
+		if (step.released) {
+			effective = step.released;
+			approvedBy = "dashboard";
+		}
 	}
 
 	const responseOptions = resolveResponseActions(config);
 	const normalizedRequest = normalizeToolEvaluationRequest(request);
 	const responseRequest =
 		normalizedRequest.toolInput.__aidr_input_normalization_failed === true ||
+		normalizedRequest.toolInput.__aidr_malformed_command === true ||
 		normalizedRequest.toolInput.__aidr_patch_parse_failed === true
 			? { toolName: "unknown", toolInput: {} }
 			: normalizedRequest;
@@ -348,7 +576,39 @@ export async function guardToolCall(
 			createdAt: Date.now(),
 		});
 
-		return { verdict: effective, actionId, responseActions, signedChain };
+		let pendingRecorded: boolean | undefined;
+		if (operatorStore && !dashboardOnly) {
+			try {
+				await recordPendingAsk(
+					{
+						actionId,
+						toolName: request.toolName,
+						toolInput: request.toolInput,
+						artifacts: request.artifacts,
+						sessionId: request.sessionId,
+						verdict: effective,
+						connector: context.agentRuntime,
+					},
+					operatorStore,
+				);
+				pendingRecorded = true;
+			} catch (error) {
+				// The call stays blocked either way; only the approval path is lost.
+				pendingRecorded = false;
+				logger.warn("Pending ask could not be recorded for operator approval", {
+					error: error instanceof Error ? error.name : typeof error,
+				});
+			}
+		}
+
+		return {
+			verdict: effective,
+			actionId,
+			responseActions,
+			signedChain,
+			pendingRecorded,
+			dashboardApproval,
+		};
 	}
 
 	// ── Allowed path ────────────────────────────────────────────────
@@ -373,7 +633,7 @@ export async function guardToolCall(
 	);
 
 	if (preAllowed.records.length === 0) {
-		return { verdict: effective, responseActions: [], signedChain };
+		return { verdict: effective, responseActions: [], signedChain, approvedBy };
 	}
 
 	if (config.logging) {
@@ -416,6 +676,7 @@ export async function guardToolCall(
 		responseActions: preAllowed.records,
 		snapshot: snapshot ?? undefined,
 		signedChain,
+		approvedBy,
 	};
 
 	if (snapshot) {
@@ -566,11 +827,58 @@ export function formatDenyMessage(verdict: Verdict, actions?: ResponseActionReco
 	return lines.join("\n");
 }
 
+/**
+ * The user-facing lines about a managed-mode dashboard approval, or null when
+ * there is nothing to say (local mode, or the call was released). Shared by
+ * every connector so the wording is the same everywhere; it names the request
+ * id and never offers the agent a way to approve.
+ */
+export function formatDashboardApprovalNotice(
+	outcome: DashboardApprovalOutcome | undefined,
+): string | null {
+	if (!outcome) return null;
+	const id = outcome.requestId;
+	switch (outcome.status) {
+		case "released":
+			return null;
+		case "requested":
+		case "pending":
+			return [
+				`Approval requested in the AIDR dashboard: ${id}`,
+				"(For the user: an AIDR administrator must approve this request in the dashboard; the",
+				"approval then covers one retry of this exact call.)",
+			].join("\n");
+		case "denied":
+			return `The AIDR dashboard approval request ${id} was denied; the action stays blocked.`;
+		case "expired":
+			return `The AIDR dashboard approval request ${id} expired; the action stays blocked.`;
+		case "rejected":
+			return `The AIDR dashboard approval for request ${id} could not be verified (${outcome.reason ?? "unknown"}); the action stays blocked.`;
+		case "request_failed":
+			return `The approval request could not be sent to the AIDR dashboard (${outcome.reason ?? "unknown"}); the action stays blocked.`;
+		case "unavailable":
+			// Only worth saying when the dashboard is the sole channel; otherwise the
+			// local operator channel below still applies.
+			return outcome.dashboardOnly
+				? `AIDR dashboard approvals are unavailable (${outcome.reason ?? "unknown"}); the action stays blocked.`
+				: null;
+	}
+}
+
+/**
+ * The block message for an `ask`. Pass `pendingRecorded` from the
+ * {@link GuardResult}: when it is `false` the ask never reached the operator
+ * approval store (approvals disabled, or the store is broken), and the message
+ * says so instead of sending the user to `aidr approve`. Pass
+ * `dashboardApproval` too, so a managed-mode request id reaches the user.
+ */
 export function formatAskMessage(
 	actionId: string,
 	verdict: Verdict,
 	artifacts: Artifact[],
 	actions?: ResponseActionRecord[],
+	pendingRecorded?: boolean,
+	dashboardApproval?: DashboardApprovalOutcome,
 ): string {
 	const reasons =
 		verdict.reasons.length > 0 ? verdict.reasons.slice(0, 3).join("; ") : verdict.category;
@@ -594,6 +902,24 @@ export function formatAskMessage(
 		"stop here: do NOT retry this tool call and do NOT try to work around the block. The action",
 		"stays blocked until the user approves it out of band or permanently allowlists the artifact.",
 	);
+	const dashboardNotice = formatDashboardApprovalNotice(dashboardApproval);
+	if (dashboardNotice) lines.push(dashboardNotice);
+	if (dashboardApproval?.dashboardOnly) {
+		// The local CLI is not an approval channel under dashboard_only.
+		if (!dashboardNotice)
+			lines.push("(For the user: only an AIDR dashboard approval can release it.)");
+	} else if (pendingRecorded === false) {
+		lines.push(
+			"(For the user: this ask could NOT be recorded for operator approval — operator approvals",
+			"are disabled or the approval store is unavailable, so `aidr approve` cannot release it.",
+			"Run `aidr doctor` in your own terminal to see why.)",
+		);
+	} else {
+		lines.push(
+			"(For the user: review it with `aidr pending` and approve it with `aidr approve <actionId>`",
+			"in your own terminal; the approval covers one retry of this exact call for 15 minutes.)",
+		);
+	}
 
 	return lines.join("\n");
 }
@@ -620,6 +946,41 @@ export async function approveAction(store: ApprovalStore, actionId: string): Pro
 	].join("\n");
 }
 
+/** The operator approval store `addToAllowlist` checks, or null when disabled (`false`). */
+function operatorApprovalStore(
+	config: Config,
+	logger: Logger,
+	operatorApprovals: OperatorApprovalStoreOptions | false,
+): OperatorApprovalStoreOptions | null {
+	if (operatorApprovals === false) return null;
+	return {
+		logger,
+		// Read defensively: a config read that yields nothing must not crash here.
+		keyStorage: (config as Config | undefined)?.operator_approvals?.key_storage,
+		...operatorApprovals,
+	};
+}
+
+function addAllowlistEntry(
+	allowlist: Allowlist,
+	type: "url" | "command" | "file_path",
+	value: string,
+	reason: string,
+): void {
+	if (type === "url") addUrl(allowlist, value, reason, "ask");
+	else if (type === "command") addCommand(allowlist, value, reason, "ask");
+	else addFilePath(allowlist, value, reason, "ask");
+}
+
+/**
+ * Turn an out-of-band approval into a permanent allowlist entry.
+ *
+ * Succeeds only when a human already approved this exact artifact: either an
+ * in-process approval (`ApprovalStore`) or an operator approval recorded with
+ * `aidr approve <actionId> --permit-allowlist`. One operator grant yields one
+ * entry per artifact. The agent can call this, but it cannot create either kind
+ * of approval, so it cannot widen the allowlist on its own.
+ */
 export async function addToAllowlist(
 	store: ApprovalStore,
 	type: "url" | "command" | "file_path",
@@ -627,28 +988,48 @@ export async function addToAllowlist(
 	reason?: string,
 	configPath?: string,
 	logger: Logger = nullLogger,
+	operatorApprovals: OperatorApprovalStoreOptions | false = {},
 ): Promise<string> {
-	if (!store.hasApprovedArtifact(type, value)) {
-		return "Cannot add to allowlist: no recent user approval found for this artifact.";
+	const config = await loadConfig(configPath, logger);
+	const operatorStore = operatorApprovalStore(config, logger, operatorApprovals);
+	const inProcess = store.hasApprovedArtifact(type, value);
+	const operatorGrant =
+		!inProcess && operatorStore
+			? await findOperatorAllowlistGrant(type, value, operatorStore)
+			: null;
+	if (!inProcess && !operatorGrant) {
+		return [
+			"Cannot add to allowlist: no recent user approval found for this artifact.",
+			"Only the user can grant one, out of band, with `aidr approve <actionId> --permit-allowlist`",
+			"or `aidr allowlist add` in their own terminal.",
+		].join(" ");
 	}
 
-	const config = await loadConfig(configPath, logger);
 	const allowlist = await loadAllowlist(config.allowlist, logger);
-	const entryReason = reason ?? "Approved by user (out-of-band approval)";
+	const entryReason =
+		reason ??
+		(operatorGrant
+			? `Approved by operator (aidr approve ${operatorGrant.slice(0, 12)})`
+			: "Approved by user (out-of-band approval)");
 
-	if (type === "url") {
-		addUrl(allowlist, value, entryReason, "ask");
-	} else if (type === "command") {
-		addCommand(allowlist, value, entryReason, "ask");
-	} else {
-		addFilePath(allowlist, value, entryReason, "ask");
+	addAllowlistEntry(allowlist, type, value, entryReason);
+
+	if (operatorGrant && operatorStore) {
+		// Spend the grant before writing, so a concurrent second call cannot also
+		// use it. A failed save then costs the grant, never widens the allowlist.
+		const spent = await markOperatorAllowlistGrantUsed(operatorGrant, type, value, operatorStore);
+		if (!spent) {
+			return "Cannot add to allowlist: the operator approval was already used or has expired.";
+		}
 	}
 
 	const saved = await saveAllowlist(allowlist, config.allowlist, logger);
 	if (!saved) {
-		return "Failed to save allowlist. Approval preserved — retry is safe.";
+		return operatorGrant
+			? "Failed to save allowlist. The operator approval was spent; ask the user to approve again."
+			: "Failed to save allowlist. Approval preserved — retry is safe.";
 	}
-	store.consumeApprovedArtifact(type, value);
+	if (inProcess) store.consumeApprovedArtifact(type, value);
 	return `Added ${type} to Singularity AIDR allowlist.`;
 }
 

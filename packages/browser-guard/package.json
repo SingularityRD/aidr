@@ -1,0 +1,26 @@
+{
+	"name": "@singularityrd/aidr-browser-guard",
+	"version": "1.0.0",
+	"description": "Singularity AIDR Browser Guard: masks sensitive data before it reaches ChatGPT, Gemini, Claude and other AI chat products, and restores it locally in responses",
+	"license": "Proprietary",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"build": "node scripts/build.mjs",
+		"build:release": "node scripts/build.mjs --release --zip",
+		"check": "tsc -p tsconfig.json --noEmit",
+		"icons": "node scripts/icons.mjs",
+		"icons:check": "node scripts/icons.mjs --check",
+		"fingerprint": "node scripts/fingerprint-dataset.mjs",
+		"test:e2e": "node scripts/build.mjs && node e2e/run.mjs"
+	},
+	"devDependencies": {
+		"esbuild": "^0.28.2",
+		"jsdom": "^26.1.0",
+		"playwright-core": "1.56.1",
+		"typescript": "^5.9.0"
+	},
+	"engines": {
+		"node": ">=22.12.0"
+	}
+}

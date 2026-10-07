@@ -1342,6 +1342,23 @@ select.input {
 	margin-left: auto;
 }
 
+.navcard a .nav-count {
+	margin-left: 6px;
+	padding: 0 6px;
+	letter-spacing: 0;
+}
+
+.approval-summary {
+	margin: 6px 0 0;
+	padding: 8px 10px;
+	border-radius: var(--radius-md);
+	background: var(--surface-soft);
+	font-family: var(--font-mono, ui-monospace, monospace);
+	font-size: var(--text-sm);
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
 /* ============================================
    12. PUBLIC SHELL & LANDING
    ============================================ */
@@ -1756,6 +1773,65 @@ select.input {
 	transition: width var(--transition-slow);
 }
 
+/* Browser Privacy Guard page */
+.privacy-breakdown {
+	list-style: none;
+	margin: 10px 0 0;
+	padding: 0;
+	display: grid;
+	gap: 10px;
+}
+
+.privacy-series {
+	display: flex;
+	align-items: flex-end;
+	gap: 2px;
+	height: 120px;
+	margin-top: 12px;
+	padding-bottom: 2px;
+	border-bottom: 1px solid var(--border-primary);
+}
+
+.privacy-series-day {
+	flex: 1 1 0;
+	min-width: 0;
+	height: 100%;
+	display: flex;
+	align-items: flex-end;
+}
+
+.privacy-series-stack {
+	width: 100%;
+	display: flex;
+	flex-direction: column;
+	border-radius: 2px 2px 0 0;
+	overflow: hidden;
+}
+
+.privacy-series-masked {
+	background: var(--success-600);
+}
+
+.privacy-series-warned {
+	background: var(--warning-500);
+}
+
+.privacy-series-blocked {
+	background: var(--sev-critical);
+}
+
+.privacy-series-allowed {
+	background: var(--border-strong);
+}
+
+.privacy-key {
+	display: inline-block;
+	width: 10px;
+	height: 10px;
+	border-radius: 2px;
+	vertical-align: middle;
+}
+
 .payment-provider-selector {
 	display: grid;
 	gap: 12px;
@@ -1782,6 +1858,13 @@ select.input {
 
 .referral-card {
 	border-color: var(--border-strong);
+}
+
+.plan-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+	gap: 14px;
+	align-items: stretch;
 }
 
 /* ============================================
@@ -1946,4 +2029,48 @@ select.input {
 		transition-duration: 0.01ms !important;
 		scroll-behavior: auto !important;
 	}
+}
+
+/* Compliance report: definition list of report facts. */
+.kv {
+	display: grid;
+	grid-template-columns: max-content 1fr;
+	gap: 4px 16px;
+	margin: 8px 0;
+}
+
+.kv dt {
+	font-weight: 600;
+	color: var(--text-primary);
+}
+
+.kv dd {
+	margin: 0;
+	min-width: 0;
+}
+
+/* AI governance: policy diff view (four-eyes review and revision history). */
+.diff-view {
+	margin: 6px 0 0;
+	padding: 8px 10px;
+	max-height: 420px;
+	overflow: auto;
+	border-radius: var(--radius-md);
+	background: var(--surface-soft);
+	font-family: var(--font-mono, ui-monospace, monospace);
+	font-size: var(--text-sm);
+	white-space: pre;
+}
+
+.diff-view .diff-add {
+	background: color-mix(in srgb, #16a34a 16%, transparent);
+}
+
+.diff-view .diff-del {
+	background: color-mix(in srgb, #dc2626 16%, transparent);
+}
+
+nav[aria-label="AI governance"] a.active {
+	border-color: var(--accent, #3862e8);
+	font-weight: 600;
 }

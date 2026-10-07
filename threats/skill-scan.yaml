@@ -1,0 +1,333 @@
+# Skill / plugin package scan rules for Singularity AIDR
+# Author: SingularityRD
+# License: DRL-1.1 (see threats/LICENSE)
+#
+# Deterministic port of the AI-Infra-Guard Skill-Scan taxonomy (SkillTrustBench
+# T01-T09, vendor/ai-infra-guard/skill-scan). AIG runs an LLM audit on top of a
+# regex pre-scan; AIDR ships only the deterministic part, so every rule here is
+# a plain, bounded regular expression that can be reviewed and tested.
+#
+# The taxonomy code is carried in the rule id (SKILL-Txx-nnn) and mapped to its
+# name by packages/core/src/plugin-scanner.ts (SKILL_RISK_TYPES).
+#
+# match_on values used only by the plugin/skill scanner:
+#   plugin_content          - whole text of every readable plugin/skill file;
+#                             one finding per rule per file, with a line number
+#   plugin_orphan_bytecode  - relative path of a Python bytecode file whose
+#                             .py source is absent from the package
+# The runtime tool-call engine never produces these artifact types, so these
+# rules cannot affect allow/ask/deny verdicts for agent tool calls.
+#
+# Every quantifier is bounded (no unbounded `.*` spans) to keep matching linear
+# on the 512 KB per-file cap.
+
+# ── T01 Skill instruction hijacking (hidden instructions) ─────────────────
+
+- id: "SKILL-T01-001"
+  category: skill_instruction_hijack
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "(?:ignore|disregard|override)\\s{1,4}(?:all\\s{1,4}|any\\s{1,4})?(?:previous|prior|above|earlier|your)\\s{1,4}(?:instructions|rules|guidelines|system\\s{1,4}prompt|safety\\s{1,4}(?:rules|guidelines))"
+  case_insensitive: true
+  match_on: plugin_content
+  title: "Skill text overrides the agent's prior instructions or safety rules"
+  expires_at: null
+  revoked: false
+
+- id: "SKILL-T01-002"
+  category: skill_instruction_hijack
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "(?:do\\s{1,4}not|don't|never)\\s{1,4}(?:tell|inform|notify|alert|reveal\\s{1,4}(?:this\\s{1,4})?to)\\s{1,4}the\\s{1,4}user|without\\s{1,4}(?:the\\s{1,4})?user'?s?\\s{1,4}(?:knowledge|consent|awareness)|(?:keep|hide)\\s{1,4}this\\s{1,4}(?:secret\\s{1,4}|hidden\\s{1,4})?from\\s{1,4}the\\s{1,4}user"
+  case_insensitive: true
+  match_on: plugin_content
+  title: "Skill instructs the agent to conceal actions from the user"
+  expires_at: null
+  revoked: false
+
+- id: "SKILL-T01-003"
+  category: skill_instruction_hijack
+  severity: medium
+  confidence: 0.75
+  action: require_approval
+  pattern: "<!--[^>]{0,400}?(?:ignore\\s{1,4}(?:all|previous|prior)|you\\s{1,4}(?:must|should)\\s{1,4}(?:now\\s{1,4})?(?:run|execute|send|call|fetch|upload)|as\\s{1,4}the\\s{1,4}(?:ai|assistant|agent)\\b|system\\s{1,4}prompt)"
+  case_insensitive: true
+  match_on: plugin_content
+  title: "Hidden HTML comment carries agent-directed instructions"
+  expires_at: null
+  revoked: false
+
+- id: "SKILL-T01-004"
+  category: skill_unicode_smuggling
+  severity: high
+  confidence: 0.9
+  action: require_approval
+  pattern: "[\\u200B-\\u200D\\u2060-\\u2064]|\\uDB40[\\uDC00-\\uDC7F]"
+  match_on: plugin_content
+  title: "Zero-width or Unicode tag characters can smuggle invisible instructions"
+  expires_at: null
+  revoked: false
+
+- id: "SKILL-T01-005"
+  category: skill_unicode_smuggling
+  severity: high
+  confidence: 0.9
+  action: require_approval
+  pattern: "[\\u202A-\\u202E\\u2066-\\u2069]"
+  match_on: plugin_content
+  title: "Bidirectional control characters can disguise text or code (Trojan Source)"
+  expires_at: null
+  revoked: false
+
+# ── T02 Agent memory poisoning ────────────────────────────────────────────
+
+- id: "SKILL-T02-001"
+  category: skill_memory_poisoning
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "(?:>>?|\\btee(?:\\s{1,4}-a)?|writeFile(?:Sync)?\\(|appendFile(?:Sync)?\\(|\\bopen\\()[^\\n]{0,120}?(?:CLAUDE\\.md|AGENTS\\.md|GEMINI\\.md|\\.cursorrules|\\.windsurfrules|copilot-instructions\\.md|\\.claude/memory|MEMORY\\.md)"
+  match_on: plugin_content
+  title: "Skill writes into persistent agent memory or instruction files"
+  expires_at: null
+  revoked: false
+
+- id: "SKILL-T02-002"
+  category: skill_memory_poisoning
+  severity: medium
+  confidence: 0.75
+  action: require_approval
+  pattern: "(?:remember|store|save|memorize)\\s{1,4}(?:this|these|the\\s{1,4}following)\\s{1,4}(?:rules?|instructions?|directives?)\\s{1,4}(?:permanently|forever|for\\s{1,4}(?:all|every)\\s{1,4}(?:future\\s{1,4})?(?:sessions?|conversations?))|in\\s{1,4}(?:all|every)\\s{1,4}future\\s{1,4}(?:sessions?|conversations?),?\\s{1,4}(?:always|never)\\b"
+  case_insensitive: true
+  match_on: plugin_content
+  title: "Skill asks the agent to persist attacker-controlled rules across sessions"
+  expires_at: null
+  revoked: false
+
+# ── T03 Remote payload retrieval and execution ────────────────────────────
+
+- id: "SKILL-T03-001"
+  category: skill_remote_payload
+  severity: critical
+  confidence: 0.9
+  action: block
+  pattern: "\\b(?:curl|wget)\\s[^\\n|]{0,300}\\|\\s{0,4}(?:sudo\\s{1,4})?(?:(?:ba|z|k|da)?sh|python3?|node|perl|ruby)\\b"
+  match_on: plugin_content
+  title: "Remote script piped straight into an interpreter"
+  expires_at: null
+  revoked: false
+
+- id: "SKILL-T03-002"
+  category: skill_remote_payload
+  severity: critical
+  confidence: 0.9
+  action: block
+  pattern: "\\b(?:iex|Invoke-Expression)\\s{0,4}\\(?\\s{0,4}(?:\\(\\s{0,4})?(?:New-Object\\s{1,4}(?:System\\.)?Net\\.WebClient|iwr\\b|irm\\b|Invoke-WebRequest|Invoke-RestMethod)"
+  case_insensitive: true
+  match_on: plugin_content
+  title: "PowerShell downloads and executes a remote payload"
+  expires_at: null
+  revoked: false
+
+- id: "SKILL-T03-003"
+  category: skill_remote_payload
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "\\b(?:exec|eval)\\s{0,4}\\(\\s{0,4}(?:requests\\.get|urllib\\.request\\.urlopen|urlopen|await\\s{1,4}fetch|\\(await\\s{1,4}fetch)\\s{0,4}\\(|\\bimport\\s{0,4}\\(\\s{0,4}[\"'`]https?://"
+  match_on: plugin_content
+  title: "Code fetched from the network is evaluated at run time"
+  expires_at: null
+  revoked: false
+
+# ── T04 Embedded malicious code ───────────────────────────────────────────
+
+- id: "SKILL-T04-001"
+  category: skill_embedded_code
+  severity: high
+  confidence: 0.8
+  action: require_approval
+  pattern: "\\.py[co]$"
+  match_on: plugin_orphan_bytecode
+  title: "Python bytecode shipped without its source cannot be reviewed"
+  expires_at: null
+  revoked: false
+
+- id: "SKILL-T04-002"
+  category: skill_embedded_code
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "(?:base64\\.b64decode|\\batob\\(|Buffer\\.from\\([^)\\n]{0,200}[\"']base64[\"']\\))[^\\n]{0,200}?\\b(?:exec|eval|system|popen|spawn|Function)\\s{0,4}\\(|\\b(?:exec|eval)\\s{0,4}\\(\\s{0,4}(?:base64\\.b64decode|atob|Buffer\\.from|codecs\\.decode|zlib\\.decompress)"
+  match_on: plugin_content
+  title: "Encoded payload is decoded and executed"
+  expires_at: null
+  revoked: false
+
+- id: "SKILL-T04-003"
+  category: skill_embedded_code
+  severity: critical
+  confidence: 0.9
+  action: block
+  pattern: "\\b(?:ba)?sh\\s{1,4}-i\\s{1,4}>&\\s{0,4}/dev/tcp/|/dev/tcp/\\d{1,3}(?:\\.\\d{1,3}){3}/\\d{1,5}|\\bnc(?:at)?\\s{1,4}(?:[^\\n]{0,80}\\s)?-[ec]\\s{1,4}/bin/(?:ba)?sh"
+  match_on: plugin_content
+  title: "Reverse shell"
+  expires_at: null
+  revoked: false
+
+- id: "SKILL-T04-004"
+  category: skill_credential_exfiltration
+  severity: critical
+  confidence: 0.85
+  action: block
+  pattern: "\\b(?:curl|wget)\\s[^\\n]{0,200}?(?:-d|--data(?:-binary|-raw|-urlencode)?|-F|--form|-T|--upload-file|--post-file)[= ]\\s{0,4}[\"']?@?[^\\s\"']{0,40}?(?:\\.ssh/|\\.aws/credentials|id_rsa|id_ed25519|\\.netrc|\\.npmrc|\\.pypirc|\\.kube/config|\\.env\\b|\\$\\{?[A-Z_]{0,40}(?:TOKEN|SECRET|PASSWORD|API_KEY)\\b)|\\b(?:requests\\.(?:post|put)|axios\\.(?:post|put)|urlopen|fetch)\\s{0,4}\\([^\\n]{0,300}?(?:\\.ssh/|\\.aws/credentials|id_rsa|\\.netrc|os\\.environ\\b(?!\\.get\\([\"'](?:HOME|PATH|LANG)))"
+  match_on: plugin_content
+  title: "Credential files or secret environment values are sent over the network"
+  expires_at: null
+  revoked: false
+
+# ── T05 Unauthorized access and privilege escalation ──────────────────────
+
+- id: "SKILL-T05-001"
+  category: skill_excessive_permissions
+  severity: high
+  confidence: 0.9
+  action: require_approval
+  pattern: "--dangerously-skip-permissions|--dangerously-bypass-approvals-and-sandbox|\"defaultMode\"\\s{0,4}:\\s{0,4}\"bypassPermissions\"|\\bpermission[-_]mode[= ]\\s{0,4}bypassPermissions\\b"
+  match_on: plugin_content
+  title: "Skill disables the agent's permission prompts or sandbox"
+  expires_at: null
+  revoked: false
+
+- id: "SKILL-T05-002"
+  category: skill_excessive_permissions
+  severity: medium
+  confidence: 0.75
+  action: require_approval
+  pattern: "allowed[-_]tools\\s{0,4}:[^\\n]{0,200}?(?:Bash\\(\\*(?::\\*)?\\)|[\\s,\\[\"']\\*[\\s,\\]\"'])|\"allow\"\\s{0,4}:\\s{0,4}\\[[^\\]]{0,400}?\"(?:Bash\\(\\*(?::\\*)?\\)|\\*)\""
+  match_on: plugin_content
+  title: "Skill grants itself unrestricted tool or shell access"
+  expires_at: null
+  revoked: false
+
+- id: "SKILL-T05-003"
+  category: skill_privilege_escalation
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "\\bsudo\\s{1,4}(?:-S\\s{1,4})?(?:chmod|chown|visudo|tee\\s{1,4}/etc/)|\\bchmod\\s{1,4}(?:-R\\s{1,4})?(?:[ug]\\+s|[2-7]?777)\\b|NOPASSWD\\s{0,4}:"
+  match_on: plugin_content
+  title: "Skill escalates privileges or weakens file permissions"
+  expires_at: null
+  revoked: false
+
+- id: "SKILL-T05-004"
+  category: skill_credential_access
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "169\\.254\\.169\\.254|metadata\\.google\\.internal|metadata\\.azure\\.com|fd00:ec2::254"
+  case_insensitive: true
+  match_on: plugin_content
+  title: "Skill reads the cloud instance metadata service (temporary credentials)"
+  expires_at: null
+  revoked: false
+
+# ── T06 System persistence ────────────────────────────────────────────────
+
+- id: "SKILL-T06-001"
+  category: skill_persistence
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "\\bcrontab\\s{1,4}-(?:\\s|$)|\\|\\s{0,4}crontab\\b|/etc/cron\\.(?:d|daily|hourly)/|\\bsystemctl\\s{1,4}(?:--user\\s{1,4})?enable\\b|\\blaunchctl\\s{1,4}(?:load|bootstrap)\\b|\\bschtasks(?:\\.exe)?\\s{1,4}/create\\b|CurrentVersion\\\\+Run\\b"
+  case_insensitive: true
+  match_on: plugin_content
+  title: "Skill installs a scheduled task, service or autorun entry"
+  expires_at: null
+  revoked: false
+
+- id: "SKILL-T06-002"
+  category: skill_persistence
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "(?:>>|\\btee\\s{1,4}-a)\\s{0,4}[\"']?(?:~|\\$HOME|\\$\\{HOME\\})/\\.(?:bashrc|zshrc|bash_profile|profile|zprofile|zshenv)\\b"
+  match_on: plugin_content
+  title: "Skill appends to a shell startup file"
+  expires_at: null
+  revoked: false
+
+# ── T07 Tool hijacking and spoofing ───────────────────────────────────────
+
+- id: "SKILL-T07-001"
+  category: skill_tool_hijack
+  severity: high
+  confidence: 0.8
+  action: require_approval
+  pattern: "\\balias\\s{1,4}(?:git|npm|npx|pip3?|curl|ssh|sudo|python3?|node|claude|codex|cursor)=|\\bexport\\s{1,4}PATH=[\"']?(?:/tmp|/var/tmp|/dev/shm|\\.)[^:\\n]{0,80}:\\$\\{?PATH\\b"
+  match_on: plugin_content
+  title: "Skill shadows common tools with an alias or a writable PATH prefix"
+  expires_at: null
+  revoked: false
+
+- id: "SKILL-T07-002"
+  category: skill_tool_hijack
+  severity: high
+  confidence: 0.8
+  action: require_approval
+  pattern: "(?:>>?|writeFile(?:Sync)?\\(|json\\.dump\\(|\\btee\\b)[^\\n]{0,160}?(?:\\.claude/settings(?:\\.local)?\\.json|\\.cursor/hooks\\.json|\\.cursor/mcp\\.json|\\.codex/config\\.toml|claude_desktop_config\\.json)"
+  match_on: plugin_content
+  title: "Skill rewrites agent hook, MCP or permission configuration"
+  expires_at: null
+  revoked: false
+
+# ── T08 Insecure dependencies ─────────────────────────────────────────────
+
+- id: "SKILL-T08-001"
+  category: skill_insecure_dependency
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "\\bpip3?\\s{1,4}install\\s[^\\n]{0,200}?(?:(?:--index-url|--extra-index-url|-i)[= ]\\s{0,4}http://|--trusted-host\\b|git\\+http://)|\\b(?:npm|pnpm|yarn)\\s{1,4}(?:install|add|i)\\s[^\\n]{0,200}?--registry[= ]\\s{0,4}http://"
+  match_on: plugin_content
+  title: "Dependencies installed from an unauthenticated (plain HTTP or trusted-host) index"
+  expires_at: null
+  revoked: false
+
+- id: "SKILL-T08-002"
+  category: skill_insecure_dependency
+  severity: medium
+  confidence: 0.75
+  action: require_approval
+  pattern: "\\b(?:npm|pnpm|yarn)\\s{1,4}(?:install|add|i)\\s[^\\n]{0,200}?https?://[^\\s\"']{1,200}\\.(?:tgz|tar\\.gz)\\b|\\bpip3?\\s{1,4}install\\s[^\\n]{0,200}?https?://[^\\s\"']{1,200}\\.(?:whl|tar\\.gz|zip)\\b"
+  match_on: plugin_content
+  title: "Dependency installed from a direct archive URL outside the package registry"
+  expires_at: null
+  revoked: false
+
+# ── T09 Insecure skill coding practices ───────────────────────────────────
+
+- id: "SKILL-T09-001"
+  category: skill_hardcoded_secret
+  severity: critical
+  confidence: 0.9
+  action: block
+  pattern: "\\bAKIA[0-9A-Z]{16}\\b|\\bghp_[A-Za-z0-9]{36}\\b|\\bgithub_pat_[A-Za-z0-9_]{22,255}|\\bxox[baprs]-[A-Za-z0-9-]{10,200}|\\bsk-(?:ant-|proj-)?[A-Za-z0-9_-]{32,200}|-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----"
+  match_on: plugin_content
+  title: "Hard-coded credential in the skill package"
+  expires_at: null
+  revoked: false
+
+- id: "SKILL-T09-002"
+  category: skill_insecure_coding
+  severity: medium
+  confidence: 0.75
+  action: log
+  pattern: "\\bshell\\s{0,4}=\\s{0,4}True\\b|\\bverify\\s{0,4}=\\s{0,4}False\\b|\\brejectUnauthorized\\s{0,4}:\\s{0,4}false\\b|NODE_TLS_REJECT_UNAUTHORIZED\\s{0,4}=\\s{0,4}[\"']?0"
+  match_on: plugin_content
+  title: "Shell injection or disabled TLS verification in skill code"
+  expires_at: null
+  revoked: false

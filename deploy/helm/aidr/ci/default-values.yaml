@@ -1,0 +1,12 @@
+# Minimal install: only the inputs the chart refuses to guess.
+global:
+  imageRegistry: registry.example.internal
+publicUrls:
+  dashboard: https://aidr.example.com
+  api: https://api.aidr.example.com
+secrets:
+  existingSecret: aidr-platform
+  functionsExistingSecret: aidr-functions
+ingress:
+  className: nginx
+  tlsSecretName: aidr-tls

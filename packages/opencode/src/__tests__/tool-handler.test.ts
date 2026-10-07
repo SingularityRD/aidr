@@ -136,6 +136,71 @@ describe("createToolHandlers", () => {
 		);
 	});
 
+	describe("DLP redaction", () => {
+		function redactedVerdict(transformedInput: Record<string, unknown>) {
+			return {
+				verdict: {
+					decision: "allow",
+					category: "dlp_redacted",
+					confidence: 1,
+					severity: "warning",
+					source: "dlp",
+					artifacts: [],
+					matchedThreatId: "rule-1",
+					reasons: ["DLP redaction applied"],
+					transformedInput,
+				},
+			};
+		}
+
+		it("declares rewrite support and rewrites the executed args object in place", async () => {
+			const approvalStore = new ApprovalStore();
+			const handlers = createToolHandlers(nullLogger, approvalStore, "/threats", "/allowlists");
+			const { guardToolCall } = await import("@singularityrd/aidr-core");
+			(guardToolCall as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+				redactedVerdict({ command: "echo [REDACTED]" }),
+			);
+			const args: Record<string, unknown> = { command: "echo secret-value", stale: true };
+			const output = { args };
+
+			await handlers["tool.execute.before"](
+				{ tool: "bash", sessionID: "s1", callID: "c1" },
+				output,
+			);
+
+			expect(guardToolCall).toHaveBeenCalledWith(
+				expect.anything(),
+				expect.objectContaining({ supportsInputRewrite: true }),
+				approvalStore,
+			);
+			// OpenCode keeps its own reference to args, so the same object must change.
+			expect(output.args).toBe(args);
+			expect(args).toEqual({ command: "echo [REDACTED]" });
+		});
+
+		it("blocks when the args object cannot be rewritten", async () => {
+			const handlers = createToolHandlers(
+				nullLogger,
+				new ApprovalStore(),
+				"/threats",
+				"/allowlists",
+			);
+			const { guardToolCall } = await import("@singularityrd/aidr-core");
+			(guardToolCall as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+				redactedVerdict({ command: "echo [REDACTED]" }),
+			);
+			const args = Object.freeze({ command: "echo secret-value" });
+
+			await expect(
+				handlers["tool.execute.before"](
+					{ tool: "bash", sessionID: "s1", callID: "c1" },
+					{ args: args as Record<string, unknown> },
+				),
+			).rejects.toThrow(/could not evaluate this tool call; execution was denied/);
+			expect(args.command).toBe("echo secret-value");
+		});
+	});
+
 	it("leaves the evaluator context unchanged when nothing is provisioned", async () => {
 		const approvalStore = new ApprovalStore();
 		const handlers = createToolHandlers(nullLogger, approvalStore, "/threats", "/allowlists");

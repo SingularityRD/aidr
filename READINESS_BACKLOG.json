@@ -470,6 +470,12 @@
           "evidencePath": "docs/production-readiness/edge-function-contract-manifest.json",
           "command": "node scripts/check-supabase-edge-contracts.mjs",
           "verifiedBy": "this session, exit 0 (16 functions + shared helper, 32/32 config-guarded)"
+        },
+        {
+          "claim": "The public device-poll endpoint spends a per-device-code poll budget through the reviewed increment_rate_limit RPC, answers RFC 8628 slow_down (interval +5 s, Retry-After) and fails closed with 503 when the budget cannot be read; pending/expired/denied answers are unchanged. This hardens the device flow locally; it does not provide the reachable control-plane endpoint this finding is blocked on.",
+          "evidencePath": "supabase/functions/device-poll/index.ts",
+          "command": "pnpm test -- supabase/functions/__tests__/device-poll-contract.test.ts",
+          "verifiedBy": "2026-09-24 records review: targeted Vitest run 22/22 passed against the prebuilt workspace"
         }
       ],
       "remainingExternal": "A reachable control-plane endpoint (DNS + TLS + a deployed device-start/device-poll/enroll/ingest/policy surface) so the documented device flow returns user_code/verification_url and polling writes managed.json. The finding's verificationMethod (POST {endpoint}/v1/device-start) cannot be executed from this workspace; managed features therefore still cannot activate, and no local change can satisfy the primary branch. Status stays BLOCKED_EXTERNAL.",
@@ -1333,6 +1339,36 @@
           "evidencePath": "packages/claude-code/src/__tests__/integration.test.ts",
           "command": "pnpm test",
           "verifiedBy": "Claude Code integration 30/30 passed; package TypeScript check passed"
+        },
+        {
+          "claim": "The cross-connector parity suite drives the built entry points of Claude Code, Codex, OpenCode, OpenClaw, Cursor and VS Code with one payload matrix and asserts the same blocked class and threat id; the signed tenant DLP bundle block/ask rows and the untrusted/edited/missing-bundle fail-closed rows pass, and the DLP redact row now expects the input-rewriting connectors (Claude Code, OpenCode) to run the redacted input and the others to block. This is built-bundle evidence, not native host acceptance.",
+          "evidencePath": "packages/core/src/__tests__/connector-parity.test.ts",
+          "command": "pnpm test -- packages/core/src/__tests__/connector-parity.test.ts",
+          "verifiedBy": "2026-09-25 records review: 27/27 passed against bundles rebuilt from this tree (the 2026-09-24 redact-row failure is reconciled)"
+        },
+        {
+          "claim": "OpenCode and OpenClaw register a deny-all tool gate when plugin initialisation fails instead of registering no hooks; on an integrity failure OpenClaw blocks every call with the expected reason code.",
+          "evidencePath": "packages/opencode/src/__tests__/init-fail-closed.test.ts",
+          "command": "pnpm test -- packages/opencode/src/__tests__/init-fail-closed.test.ts packages/openclaw/src/__tests__/init-fail-closed.test.ts",
+          "verifiedBy": "2026-09-25 records review: OpenCode 3/3 and OpenClaw 2/2 passed (the 2026-09-24 reason-code mismatch is reconciled)"
+        },
+        {
+          "claim": "The on-prem Compose bundle (resource profiles, restart/log-rotation overlay, AIG sidecar behind a digest-pinned deny-by-default egress proxy) renders a fail-closed AIG compose and a drift-checked configuration reference. It is a single-host bundle; the Kubernetes Helm chart is recorded separately.",
+          "evidencePath": "deploy/onprem/README.md",
+          "command": "node --test scripts/onprem-aig-compose.test.mjs scripts/onprem-config-reference.test.mjs",
+          "verifiedBy": "2026-09-25 records review: 8/8 node tests passed; no customer-host install"
+        },
+        {
+          "claim": "A Kubernetes Helm chart (deploy/helm/aidr) deploys the self-hosted control plane with operator-created Secrets only, fails rendering on missing secrets, non-HTTPS origins, missing TLS, latest tags and incomplete AIG input, and runs hardened pods behind a default-deny NetworkPolicy. pnpm verify:helm runs helm lint --strict and helm template on three value sets and kubeconform against the Kubernetes 1.25/1.30 schemas when those binaries are present; the CI helm job installs signature-verified Helm 3.19.0 but not kubeconform. The chart has not been installed on a live cluster.",
+          "evidencePath": "deploy/helm/aidr/Chart.yaml",
+          "command": "pnpm verify:helm",
+          "verifiedBy": "2026-09-25 records review: 20 checks, 10 passed and 10 skipped because Helm/kubeconform are not installed in this workspace; rendered and schema checks are recorded from development and the CI helm job, not re-run here"
+        },
+        {
+          "claim": "The self-hosted upgrade is signal-safe: steps run in their own process group, read-only steps stop on SIGINT/SIGTERM, state-changing steps finish, recorded writers are restarted before the schema commit, the interruption and resumable phase are recorded and the process exits 130/143. The verifier runs in the onprem-deploy CI job. No upgrade from a real previous customer version has been performed.",
+          "evidencePath": "scripts/verify-deployment-upgrade.mjs",
+          "command": "pnpm verify:upgrade",
+          "verifiedBy": "2026-09-25 records review: 43 deployment-upgrade checks passed, including signal-during-backup-verify and signal-during-migration scenarios"
         }
       ],
       "remainingExternal": "Repository-side connector observation instrumentation is complete. Closure still requires a clean candidate-bound persisted probe plus licensed installs on the real host/OS/architecture matrix, an agreed OS build list, customer/cloud HTTPS onboarding, SMTP/IdP, failover evidence and named acceptance per row (T01). Those systems, licenses and accountable approvers are outside this workspace, so the status is BLOCKED_EXTERNAL."
@@ -1361,6 +1397,18 @@
           "evidencePath": "scripts/verify-unix-fleet-delivery.mjs",
           "command": "pnpm verify:fleet:unix",
           "verifiedBy": "this session, exit 0 (25 checks, passed: true)"
+        },
+        {
+          "claim": "Browser Guard ships one managed policy as Chrome/Linux JSON, a Windows .reg (Chrome + Edge), an Edge Intune profile, Firefox policies.json and a macOS Jamf profile; any managed policy locks the protection-reducing user settings unless it sets allowUserOverrides: true. The build-tools suite checks those examples for consistency and covers the deterministic zip writer and dataset fingerprinting, and the policy suite covers managed-over-user precedence and the locks.",
+          "evidencePath": "deploy/browser-guard/README.md",
+          "command": "pnpm test -- packages/browser-guard/src/__tests__/build-tools.test.ts packages/browser-guard/src/__tests__/background-policy.test.ts",
+          "verifiedBy": "2026-09-25 records review: 46/46 focused tests; no real GPO/Intune/Jamf rollout"
+        },
+        {
+          "claim": "Vendor-signed aidr-license-v1 licences and signed offline intel packs are verified offline (signature, key id, expiry, hashes, rollback/equivocation, unsafe paths) before bootstrap admission or pack install; retired keys verify only licences issued before retirement and within bounded terms; the shipped public-key registry is empty and fails closed until a vendor key is custodied, and deployment-bootstrap accepts a custom registry only with --allow-custom-license-keys and records its digest.",
+          "evidencePath": "scripts/license-verify.mjs",
+          "command": "node --test scripts/license.test.mjs scripts/import-offline-pack.test.mjs",
+          "verifiedBy": "2026-09-25 records review: 14/14 node tests passed; no vendor key custody or customer air-gap drill"
         }
       ],
       "remainingExternal": "A real MDM test tenant (Intune/Jamf/SCCM) to distribute and drive the packages, an official publisher signing identity, and per-host execution acceptance on the supported OS matrix. The local verifiers cover templates and local lifecycle only and say so; the finding therefore moves from IN_PROGRESS to BLOCKED_EXTERNAL."
@@ -1401,6 +1449,12 @@
           "evidencePath": "packages/dashboard/src/ui/pages/DiscoveryPage.tsx",
           "command": "pnpm test -- packages/dashboard/src/__tests__/discovery-page.test.tsx supabase/functions/__tests__/discovery.test.ts",
           "verifiedBy": "this session, targeted Vitest run (14/14 passed)"
+        },
+        {
+          "claim": "Posture findings (infra CVEs, MCP inventory risks, skill/plugin scan results) are built as ids/enums/CVSS/digests only, uploaded with the enrolled key, strictly projected by ingest and rendered on /posture with explicit empty and error states. The posture_findings table carries the restrictive tenant identity barrier (migration 20260925000060), which the supabase:check migration replay enforces.",
+          "evidencePath": "packages/core/src/posture-upload.ts",
+          "command": "pnpm test -- packages/core/src/__tests__/posture-events.test.ts supabase/functions/__tests__/ingest-posture-events.test.ts packages/dashboard/src/__tests__/posture-page.test.tsx",
+          "verifiedBy": "2026-09-24 records review: 20/20 focused tests; the PostgreSQL posture_findings RLS test was not run here"
         }
       ],
       "implementationNote": "Local implementation is complete for a bounded read-only tenant Discovery dashboard: it uses the existing authenticated summary/read contracts plus a new cursor-paginated list action, displays collector and per-target freshness/alert state, and labels coverage as reported_collectors_only. The Edge list branch runs only after active membership, tenant, identity-barrier and rate-limit checks, scopes queries to the authorized tenant, and is unavailable to collector machine credentials. The CLI retains its one-shot OS-scheduler and non-overlapping --interval contract. This closes the local dashboard visibility gap only; it does not certify provider coverage or field operations.",
@@ -1442,6 +1496,12 @@
           "evidencePath": "scripts/verify-noisy-neighbor-live.mjs",
           "command": "node --test scripts/verify-noisy-neighbor-live.test.mjs",
           "verifiedBy": "this session, exit 0 (16 tests passed, including candidate/evidence-dir integration, cleanup registration before INSERT, and fail-closed shim proof)"
+        },
+        {
+          "claim": "Pack manifest and download endpoints spend per-API-key and per-tenant rate-limit budgets before entitlement reads or Storage signing, bounding one tenant's pack traffic at the edge.",
+          "evidencePath": "supabase/functions/packs-download/index.ts",
+          "command": "pnpm test -- supabase/functions/__tests__/pack-delivery-limits.test.ts supabase/functions/__tests__/packs-manifest-handler.test.ts",
+          "verifiedBy": "2026-09-24 records review: 15/15 focused tests; no load or noisy-neighbour measurement"
         }
       ],
       "remainingExternal": "The repo-side candidate/provenance and cleanup harness is implemented and locally tested, but no fresh candidate-bound live run has replaced the failing historical signal. Closure still requires sized host allocation and a controlled environment for a defined workload, an observation window of at least 8 hours, HA/failover infrastructure, multi-tenant noisy-neighbour tests on independent hosts, and a customer-agreed availability SLI/SLA. The historical run measured roughly 170x p95 degradation for the baseline tenant; the two tenants shared one database and one edge-function process, so the result does not extend to cross-host isolation. Status is BLOCKED_EXTERNAL until real infrastructure and accepted candidate-bound evidence exist."

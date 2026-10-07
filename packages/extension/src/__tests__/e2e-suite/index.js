@@ -13,6 +13,7 @@ const REQUIRED_COMMANDS = [
 ];
 
 const REQUIRED_CURSOR_EVENTS = [
+	"beforeSubmitPrompt",
 	"beforeShellExecution",
 	"preToolUse",
 	"postToolUse",
@@ -318,7 +319,7 @@ function verifyCursorManagedHooks(config) {
 
 function verifyVsCodeManagedHooks(config) {
 	const hooks = asObject(config.hooks);
-	for (const eventName of ["PreToolUse", "PostToolUse"]) {
+	for (const eventName of ["UserPromptSubmit", "PreToolUse", "PostToolUse"]) {
 		const eventHooks = Array.isArray(hooks[eventName]) ? hooks[eventName] : [];
 		assert.ok(eventHooks.length > 0, `Expected ${eventName} entries in VS Code settings hooks`);
 

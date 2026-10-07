@@ -39,7 +39,19 @@ async function fixture(t, failure) {
       { tenant: noPolicyTenant, expired: true, retentionElapsed: true, active: true, hasPolicy: false, accepted: false },
     ],
     rateLimits: [{ expired: true }, { expired: true, tenant: freeTenant }, { expired: false }],
+    governance: [
+      { tenant: heldTenant, lapsed: false, due: true },
+      { tenant: freeTenant, lapsed: true, due: false },
+      { tenant: freeTenant, lapsed: false, due: true },
+    ],
+    approvals: [
+      { tenant: heldTenant, due: true },
+      { tenant: freeTenant, due: true },
+      { tenant: freeTenant, due: false },
+    ],
     pending: new Map(),
+    digestsDue: 1,
+    digestCalls: [],
   };
   const heldPath = state.exports[0].path, freePath = state.exports[1].path, currentPath = state.exports[2].path;
   state.stored = new Set(state.exports.map(row => row.path));
@@ -125,6 +137,32 @@ async function fixture(t, failure) {
         held_tenants_present: held.size, held_tenants_truncated: false,
         inactive_tenant_rows_present: inactive.size, inactive_tenant_rows_truncated: false });
     }
+    if (req.url === "/rest/v1/rpc/prune_expired_approval_requests") {
+      if (failure === "approval-prune-invalid") return reply(200, { eligible: 1, deleted: 2, remaining: 0, applied: body.p_apply });
+      const due = state.approvals.filter(row => row.due && !isHeld(row)).slice(0, body.p_limit);
+      const held = new Set(state.approvals.filter(row => row.due && isHeld(row)).map(row => row.tenant));
+      if (body.p_apply) state.approvals = state.approvals.filter(row => !due.includes(row));
+      return reply(200, { applied: body.p_apply, cutoff: new Date().toISOString(), eligible: due.length,
+        deleted: body.p_apply ? due.length : 0,
+        remaining: state.approvals.some(row => row.due && !isHeld(row)) ? 1 : 0,
+        contended_tenants: 0, hold_race_skips: 0, active_tenants_missing_policy: 0,
+        missing_policy_tenants_truncated: false, held_tenants_present: held.size, held_tenants_truncated: false });
+    }
+    if (req.url === "/rest/v1/rpc/run_ai_governance_maintenance") {
+      if (failure === "governance-invalid") return reply(200, { expired: 0, eligible: 1, deleted: 2, remaining: 0, applied: body.p_apply });
+      const lapsed = state.governance.filter(row => row.lapsed);
+      const due = state.governance.filter(row => row.due && !isHeld(row)).slice(0, body.p_limit);
+      const held = new Set(state.governance.filter(row => row.due && isHeld(row)).map(row => row.tenant));
+      if (body.p_apply) {
+        for (const row of lapsed) row.lapsed = false;
+        state.governance = state.governance.filter(row => !due.includes(row));
+      }
+      return reply(200, { applied: body.p_apply, cutoff: new Date().toISOString(), expired: lapsed.length,
+        expiry_remaining: false, eligible: due.length, deleted: body.p_apply ? due.length : 0,
+        remaining: state.governance.some(row => row.due && !isHeld(row)) ? 1 : 0,
+        contended_tenants: 0, hold_race_skips: 0, active_tenants_missing_policy: 0,
+        missing_policy_tenants_truncated: false, held_tenants_present: held.size, held_tenants_truncated: false });
+    }
     if (req.url === "/rest/v1/rpc/prune_expired_rate_limits") {
       if (failure === "rate-prune-invalid") return reply(200, { eligible: 1, deleted: 2, remaining: 0, applied: body.p_apply });
       const due = state.rateLimits.filter(row => row.expired).slice(0, body.p_limit);
@@ -133,6 +171,18 @@ async function fixture(t, failure) {
         remaining: state.rateLimits.some(row => row.expired) ? 1 : 0,
         applied: body.p_apply, cutoff: new Date(Date.now() - 15 * 60_000).toISOString(),
         contended_tenants: 0, held_tenants_present: 0, inactive_tenant_rows_present: 0 });
+    }
+    if (req.url === "/functions/v1/governance-digest" && req.method === "POST") {
+      assert.equal(req.headers.authorization, "Bearer private-fixture-key", "dispatch uses the deployment credential");
+      assert.deepEqual(Object.keys(body).sort(), ["action", "apply", "limit"]);
+      assert.equal(body.action, "dispatch");
+      state.digestCalls.push(body);
+      if (failure === "digest-down") return reply(503, { error: "governance_digest_unavailable" });
+      if (failure === "digest-invalid") return reply(200, { ok: true, applied: body.apply, due: 1, processed: 1, sent: 0 });
+      const due = state.digestsDue;
+      if (body.apply) state.digestsDue = 0;
+      return reply(200, { ok: true, applied: body.apply, due, processed: body.apply ? due : 0, mail_transport: "resend",
+        sent: body.apply ? due : 0, partial: 0, failed: 0, no_transport: 0, no_recipients: 0, errors: 0 });
     }
     reply(500, { error: `unsupported route ${req.method} ${req.url}; direct ledger access is forbidden` });
   });
@@ -171,6 +221,12 @@ test("held/unheld exports and billing: dry-run, apply, release-then-prune, repea
   assert.equal(f.evidence().team_invitation_retention.eligible_observed, 1);
   assert.equal(f.evidence().team_invitation_retention.remaining, 1);
   assert.equal(f.state.invitations.length, 7, "dry-run never removes invitation PII");
+  assert.equal(f.evidence().approval_request_retention.eligible_observed, 1);
+  assert.equal(f.evidence().ai_governance_maintenance.expired, 1, "dry-run reports lapsed governance requests");
+  assert.equal(f.evidence().ai_governance_maintenance.deleted, 0);
+  assert.equal(f.state.governance.length, 3, "dry-run never removes governance records");
+  assert.equal(f.evidence().approval_request_retention.deleted, 0);
+  assert.equal(f.state.approvals.length, 3, "dry-run never removes approval requests");
   result = await f.run();
   assert.equal(result.code, 2, result.stderr);
   assert.deepEqual(f.state.storageDeletes, [[f.freePath]]);
@@ -195,6 +251,10 @@ test("held/unheld exports and billing: dry-run, apply, release-then-prune, repea
   assert.equal(f.evidence().rate_limit_pruning.deleted, 2);
   assert.equal(f.evidence().rate_limit_pruning.remaining, 0);
   assert.equal(f.state.rateLimits.length, 1);
+  assert.equal(f.evidence().approval_request_retention.deleted, 1);
+  assert.equal(f.evidence().approval_request_retention.held_tenants_present, 1);
+  assert.equal(f.evidence().approval_request_retention.complete, true);
+  assert.equal(f.state.approvals.length, 2, "held and not-yet-due approval requests remain");
   assert.equal(f.evidence().telemetry_retention.held_tenants, 1);
   assert.equal(f.evidence().telemetry_retention.active_tenants_missing_policy, 1);
   assert.equal(f.state.telemetry.length, 4);
@@ -215,6 +275,8 @@ test("held/unheld exports and billing: dry-run, apply, release-then-prune, repea
   assert.equal(f.evidence().billing_retention.webhook_events, 1);
   assert.equal(f.evidence().telemetry_retention.events_deleted, 1);
   assert.equal(f.evidence().team_invitation_retention.deleted, 1, "held invitation becomes eligible only after release");
+  assert.equal(f.evidence().approval_request_retention.deleted, 1, "held approval request becomes eligible only after release");
+  assert.equal(f.state.approvals.length, 1);
   assert.equal(f.state.invitations.length, 5);
   assert.equal(f.evidence().telemetry_retention.complete, false);
   assert.equal(f.state.telemetry.length, 3, "unexpired, non-active, and policy-less events are preserved");
@@ -228,6 +290,64 @@ test("held/unheld exports and billing: dry-run, apply, release-then-prune, repea
   assert.equal(f.state.invitations.length, 4, "only retained accepted, young, unexpired, and inactive invitations remain");
   assert.equal(f.state.telemetry.length, 2, "retention resumes when the missing policy is configured");
   assert.equal(f.evidence().rate_limit_pruning.deleted, 0, "repeated maintenance is idempotent");
+});
+
+test("invalid AI governance maintenance receipt cannot complete maintenance", async t => {
+  const f = await fixture(t, "governance-invalid");
+  const result = await f.run();
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /Invalid AI governance maintenance response/);
+});
+
+test("AI governance maintenance expires lapsed requests and prunes only unheld closed records", async t => {
+  const f = await fixture(t);
+  await f.run();
+  const governance = f.evidence().ai_governance_maintenance;
+  assert.equal(governance.expired, 1);
+  assert.equal(governance.deleted, 1);
+  assert.equal(governance.held_tenants_present, 1);
+  assert.equal(governance.complete, true);
+  assert.equal(f.state.governance.length, 2);
+  assert.equal(f.state.governance.some(row => row.tenant === f.heldTenant && row.due), true, "held tenant records are retained");
+});
+
+test("due governance summaries are dispatched after retention and recorded in the evidence", async t => {
+  const f = await fixture(t);
+  let result = await f.run(false);
+  assert.equal(result.code, 0, result.stderr);
+  assert.deepEqual(f.state.digestCalls, [{ action: "dispatch", apply: false, limit: 50 }]);
+  assert.equal(f.evidence().governance_digest.due, 1);
+  assert.equal(f.evidence().governance_digest.sent, 0, "a dry run never sends");
+  assert.equal(f.evidence().governance_digest.complete, true);
+  assert.equal(f.state.digestsDue, 1);
+  result = await f.run();
+  assert.equal(f.evidence().governance_digest.sent, 1);
+  assert.equal(f.evidence().governance_digest.mail_transport, "resend");
+  assert.equal(f.evidence().governance_digest.error, null);
+  result = await f.run();
+  assert.equal(f.evidence().governance_digest.due, 0, "a delivered summary is not sent again");
+});
+
+for (const [failure, error] of [["digest-down", "dispatch_unavailable"], ["digest-invalid", "invalid_dispatch_response"]]) {
+  test(`${failure}: a governance dispatch failure keeps the retention receipts but marks the run incomplete`, async t => {
+    const f = await fixture(t, failure);
+    const result = await f.run();
+    assert.equal(result.code, 2, result.stderr);
+    const evidence = f.evidence();
+    assert.equal(evidence.governance_digest.error, error);
+    assert.equal(evidence.governance_digest.complete, false);
+    assert.equal(evidence.status, "incomplete");
+    assert.equal(evidence.complete, false);
+    assert.equal(evidence.telemetry_retention.events_deleted, 1, "retention results are still recorded");
+    assert.equal(evidence.removed, 1);
+  });
+}
+
+test("invalid approval-request deletion receipt cannot complete maintenance", async t => {
+  const f = await fixture(t, "approval-prune-invalid");
+  const result = await f.run();
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /Invalid approval-request retention response/);
 });
 
 test("invalid rate-limit deletion receipt cannot complete maintenance", async t => {

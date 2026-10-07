@@ -4,6 +4,7 @@ import { type EvidenceAuditRow, EvidenceView } from "../../enterprise/evidence-v
 import { useTeam } from "../../enterprise/team-provider";
 import { readErrorMessage } from "../../lib/errors";
 import { supabase } from "../../lib/supabase";
+import { FrameworkTags } from "../framework-coverage";
 
 type AgentRow = {
 	id: string;
@@ -44,6 +45,17 @@ function isIncidentLikeEvent(e: EventRow): boolean {
 	if (e.type === "incident_record") return true;
 
 	return false;
+}
+
+const CANARY_RULE_ID = /^(?:AIDR|OUT)-CANARY-\d{3}$/;
+
+/**
+ * Canary credential triggers arrive as ordinary verdict/incident events; the
+ * ingest projection keeps `source` and `matched_threat_id`, which name them.
+ */
+export function isCanaryTrigger(e: Pick<EventRow, "payload">): boolean {
+	const rule = e.payload?.matched_threat_id;
+	return e.payload?.source === "canary" || (typeof rule === "string" && CANARY_RULE_ID.test(rule));
 }
 
 function summarize(e: EventRow): string {
@@ -271,8 +283,18 @@ function TenantIncidentsPage({ tenantId }: { tenantId: string }) {
 										</td>
 										<td>
 											<span className="badge badge-neutral badge-plain mono">{e.type}</span>
+											{isCanaryTrigger(e) ? (
+												<div>
+													<span className="badge badge-deny">Canary triggered</span>
+												</div>
+											) : null}
 										</td>
-										<td className="mono">{summarize(e)}</td>
+										<td className="mono">
+											{summarize(e)}
+											{e.type === "runtime_verdict" || e.type === "incident" ? (
+												<FrameworkTags ruleId={e.payload?.matched_threat_id} />
+											) : null}
+										</td>
 									</tr>
 								);
 							})}

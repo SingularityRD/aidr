@@ -1,0 +1,205 @@
+name: Browser Guard Release
+
+# Builds, tests and publishes the Browser Guard extension zips for a protected,
+# signed browser-guard-vX.Y.Z tag. The output is a draft GitHub release with the
+# zips, SHA256SUMS and a build-provenance attestation. Store submission (Chrome
+# Web Store, Edge Add-ons, AMO) is a separate, manual step: this workflow holds
+# no store credentials.
+
+on:
+  push:
+    tags:
+      - "browser-guard-v*"
+
+concurrency:
+  group: release-browser-guard-${{ github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: 22.12.0
+  PNPM_VERSION: 10.29.3
+
+jobs:
+  build:
+    name: Build, test and package Browser Guard
+    runs-on: ubuntu-22.04
+    environment: browser-guard-release
+    outputs:
+      version: ${{ steps.identity.outputs.version }}
+      sha: ${{ steps.identity.outputs.sha }}
+    steps:
+      - name: Checkout protected tag (pinned)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup pnpm (pinned)
+        uses: pnpm/action-setup@7088e561eb65bb68695d245aa206f005ef30921d # v4.1.0
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js (pinned)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Resolve and verify immutable release identity
+        id: identity
+        shell: bash
+        env:
+          TAG: ${{ github.ref_name }}
+          TAG_PGP_PUBLIC_KEY: ${{ secrets.RELEASE_TAG_PGP_PUBLIC_KEY }}
+          TAG_PGP_FINGERPRINT: ${{ secrets.RELEASE_TAG_PGP_FINGERPRINT }}
+        run: |
+          set -euo pipefail
+          [[ "${TAG}" =~ ^browser-guard-v([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?)$ ]] || {
+            echo "Tag must be browser-guard-vX.Y.Z[-prerelease]." >&2
+            exit 1
+          }
+          version="${BASH_REMATCH[1]}"
+          [[ "${GITHUB_REF_PROTECTED}" == "true" ]] || { echo "The release tag must be protected by a repository ruleset." >&2; exit 1; }
+          tag_sha="$(git rev-list -n 1 "${TAG}^{commit}")"
+          [[ "${tag_sha}" == "${GITHUB_SHA}" ]] || { echo "Tag does not point at the workflow commit." >&2; exit 1; }
+          [[ "$(git cat-file -t "${TAG}")" == "tag" ]] || { echo "Release tag must be annotated." >&2; exit 1; }
+          [[ -n "${TAG_PGP_PUBLIC_KEY}" && -n "${TAG_PGP_FINGERPRINT}" ]] || {
+            echo "RELEASE_TAG_PGP_PUBLIC_KEY and RELEASE_TAG_PGP_FINGERPRINT are required." >&2
+            exit 1
+          }
+          GNUPGHOME="$(mktemp -d)"
+          export GNUPGHOME
+          printf '%s\n' "${TAG_PGP_PUBLIC_KEY}" | gpg --batch --import
+          verification="${RUNNER_TEMP}/tag-verification.txt"
+          git verify-tag --raw "${TAG}" >"${verification}" 2>&1 || { cat "${verification}" >&2; exit 1; }
+          actual="$(awk '$1 == "[GNUPG:]" && $2 == "VALIDSIG" {print toupper($3); exit}' "${verification}")"
+          expected="$(printf '%s' "${TAG_PGP_FINGERPRINT}" | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')"
+          [[ -n "${actual}" && "${actual}" == "${expected}" ]] || { echo "Release tag signer fingerprint mismatch." >&2; exit 1; }
+          rm -rf "${GNUPGHOME}"
+          package_version="$(node -p 'require("./packages/browser-guard/package.json").version')"
+          [[ "${package_version}" == "${version}" ]] || {
+            echo "packages/browser-guard/package.json is ${package_version}; tag says ${version}." >&2
+            exit 1
+          }
+          {
+            echo "version=${version}"
+            echo "sha=${tag_sha}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Frozen dependency install (no lifecycle mutation)
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Install Chromium pinned to the browser-guard playwright-core version
+        shell: bash
+        run: |
+          set -euo pipefail
+          pinned="$(node -p 'require("./packages/browser-guard/package.json").devDependencies["playwright-core"]')"
+          [[ "${pinned}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "playwright-core must be an exact version pin, found ${pinned}" >&2; exit 1; }
+          installed="$(node -p 'require(require.resolve("playwright-core/package.json", { paths: ["packages/browser-guard"] })).version')"
+          [[ "${installed}" == "${pinned}" ]] || { echo "Installed playwright-core ${installed} != pinned ${pinned}" >&2; exit 1; }
+          echo "PLAYWRIGHT_BROWSERS_PATH=${RUNNER_TEMP}/pw-browsers" >> "${GITHUB_ENV}"
+          PLAYWRIGHT_BROWSERS_PATH="${RUNNER_TEMP}/pw-browsers" \
+            node packages/browser-guard/node_modules/playwright-core/cli.js install --with-deps --no-shell chromium
+
+      - name: Type check and unit tests
+        run: |
+          set -euo pipefail
+          pnpm -C packages/browser-guard check
+          pnpm exec vitest run --config vitest.browser-guard.config.ts --reporter=dot
+
+      - name: Real-browser E2E (hermetic fixtures)
+        run: pnpm test:e2e:browser-guard
+
+      - name: Release build, zips and reproducibility check
+        shell: bash
+        env:
+          VERSION: ${{ steps.identity.outputs.version }}
+        run: |
+          set -euo pipefail
+          dist=packages/browser-guard/dist
+          pnpm package:browser-guard
+          first="$(cat "${dist}/SHA256SUMS")"
+          pnpm package:browser-guard
+          [[ "$(cat "${dist}/SHA256SUMS")" == "${first}" ]] || {
+            echo "Browser Guard release zips are not reproducible across two builds." >&2
+            exit 1
+          }
+          (cd "${dist}" && sha256sum --check --strict SHA256SUMS)
+          output="${GITHUB_WORKSPACE}/release-output-browser-guard"
+          mkdir "${output}"
+          for target in chrome firefox; do
+            zip="aidr-browser-guard-${target}-${VERSION}.zip"
+            [[ -f "${dist}/${zip}" ]] || { echo "Missing ${zip}" >&2; exit 1; }
+            cp "${dist}/${zip}" "${output}/"
+          done
+          cp "${dist}/SHA256SUMS" "${output}/SHA256SUMS"
+          # SHA256SUMS must list exactly the staged zips, nothing more.
+          listed="$(awk '{print $2}' "${output}/SHA256SUMS" | sort)"
+          staged="$(cd "${output}" && ls ./*.zip | sed 's#^\./##' | sort)"
+          [[ "${listed}" == "${staged}" ]] || { echo "SHA256SUMS does not match the staged zips." >&2; exit 1; }
+          (cd "${output}" && sha256sum --check --strict SHA256SUMS)
+
+      - name: Clean-source gate after release build
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          git diff --exit-code
+          untracked="$(git ls-files --others --exclude-standard -- ':!release-output-browser-guard')"
+          [[ -z "${untracked}" ]] || { echo "Build created untracked files:" >&2; echo "${untracked}" >&2; exit 1; }
+
+      - name: Upload Browser Guard release bundle (pinned)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: aidr-browser-guard-${{ steps.identity.outputs.version }}
+          path: release-output-browser-guard/
+          if-no-files-found: error
+          retention-days: 1
+
+  attest-publish:
+    name: Attest and publish Browser Guard draft release
+    needs: build
+    runs-on: ubuntu-22.04
+    environment: browser-guard-release
+    permissions:
+      contents: write
+      attestations: write
+      id-token: write
+    steps:
+      - name: Download Browser Guard release bundle (pinned)
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aidr-browser-guard-${{ needs.build.outputs.version }}
+          path: release-output-browser-guard
+
+      - name: Recheck bundle across the runner boundary
+        shell: bash
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          cd release-output-browser-guard
+          sha256sum --check --strict SHA256SUMS
+          expected="$(printf '%s\n' "aidr-browser-guard-chrome-${VERSION}.zip" "aidr-browser-guard-firefox-${VERSION}.zip" SHA256SUMS | sort)"
+          [[ "$(ls -1 | sort)" == "${expected}" ]] || { echo "Unexpected files in the release bundle." >&2; ls -la >&2; exit 1; }
+
+      - name: Attest the Browser Guard zips (pinned)
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: release-output-browser-guard/*
+
+      - name: Publish draft release (pinned)
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: AIDR Browser Guard ${{ needs.build.outputs.version }}
+          prerelease: ${{ contains(needs.build.outputs.version, '-') }}
+          draft: true
+          generate_release_notes: false
+          files: release-output-browser-guard/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

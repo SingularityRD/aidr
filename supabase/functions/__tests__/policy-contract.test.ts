@@ -25,6 +25,8 @@ type Options = {
 	keyRevoked?: boolean;
 	tenantStatus?: string;
 	rate?: "deny" | "unavailable";
+	governance?: unknown;
+	governanceError?: boolean;
 	assignment?: number | null;
 	assignmentError?: boolean;
 	current?: unknown;
@@ -36,6 +38,7 @@ type Options = {
 function database(options: Options = {}) {
 	const queries: Array<{ table: string; filters: Record<string, unknown> }> = [];
 	const rpcCalls: string[] = [];
+	const rpcArgs: Record<string, unknown>[] = [];
 	function from(table: string) {
 		const filters: Record<string, unknown> = {};
 		const query = {
@@ -44,7 +47,7 @@ function database(options: Options = {}) {
 			maybeSingle: async () => {
 				queries.push({ table, filters: { ...filters } });
 				switch (table) {
-					case "api_keys": return { data: options.keyRevoked ? { user_id: USER, tenant_id: TENANT, agent_id: AGENT, revoked: true } : { user_id: USER, tenant_id: TENANT, agent_id: options.agentId === undefined ? AGENT : options.agentId, revoked: false }, error: null };
+					case "api_keys": return { data: options.keyRevoked ? { user_id: USER, tenant_id: TENANT, agent_id: AGENT, revoked: true, scope: "tenant" } : { user_id: USER, tenant_id: TENANT, agent_id: options.agentId === undefined ? AGENT : options.agentId, revoked: false, scope: "tenant" }, error: null };
 					case "tenant_members": return { data: { role: "member", expires_at: null }, error: null };
 					case "tenants": return { data: { status: options.tenantStatus ?? "active" }, error: null };
 					case "agent_policy_assignments": return { data: options.assignment === null ? null : { version: options.assignment ?? 4 }, error: options.assignmentError ? new Error("db_down") : null };
@@ -58,15 +61,20 @@ function database(options: Options = {}) {
 	}
 	const db = {
 		from,
-		rpc: async (name: string) => {
+		rpc: async (name: string, args: Record<string, unknown> = {}) => {
 			rpcCalls.push(name);
+			rpcArgs.push(args);
 			if (name === "tenant_admission_capacity") return { data: 1, error: null };
+			if (name === "ai_governance_policy_overlay") {
+				return options.governanceError ? { data: null, error: new Error("db_down") }
+					: { data: "governance" in options ? options.governance : { mcp_deny_servers: [], mcp_require_approval_servers: [], browser_guard_blocked_sites: [] }, error: null };
+			}
 			if (name !== "consume_tenant_rate_limit") throw new Error(`unexpected RPC ${name}`);
 			return options.rate === "unavailable" ? { data: null, error: new Error("db_down") }
 				: { data: { allowed: options.rate !== "deny", remaining: options.rate === "deny" ? 0 : 299 }, error: null };
 		},
 	};
-	return { db, queries, rpcCalls };
+	return { db, queries, rpcCalls, rpcArgs };
 }
 
 function get(token = KEY) {
@@ -108,7 +116,7 @@ describe("policy fetch", () => {
 		expect(response.headers.get("Cache-Control")).toBe("no-store");
 		expect(fake.queries.find((q) => q.table === "agent_policy_assignments")?.filters).toEqual({ tenant_id: TENANT, agent_id: AGENT });
 		expect(fake.queries.find((q) => q.table === "runtime_policy_revisions")?.filters).toEqual({ tenant_id: TENANT, version: 4 });
-		expect(fake.rpcCalls).toEqual(["tenant_admission_capacity", "consume_tenant_rate_limit"]);
+		expect(fake.rpcCalls).toEqual(["tenant_admission_capacity", "consume_tenant_rate_limit", "ai_governance_policy_overlay"]);
 	});
 
 	it("uses the published tenant policy for an unbound key or an unassigned agent", async () => {
@@ -130,6 +138,34 @@ describe("policy fetch", () => {
 			const response = await createPolicyHandler({ db: fake.db as never })(get());
 			expect(response.status).toBe(status);
 			expect(fake.queries.some((q) => q.table === "runtime_policy_revisions" || q.table === "tenant_runtime_policies")).toBe(false);
+		}
+	});
+
+	it("adds the AI governance overlay for this member and agent next to, never inside, the published policy", async () => {
+		const governance = { mcp_deny_servers: ["shell-runner"], mcp_require_approval_servers: ["github"], browser_guard_blocked_sites: ["deepseek"] };
+		const fake = database({ governance });
+		const response = await createPolicyHandler({ db: fake.db as never })(get());
+		expect(response.status).toBe(200);
+		const overlay = { mcp_deny_servers: ["shell-runner"], mcp_require_approval_servers: ["github"] };
+		expect(await response.json()).toEqual({
+			policy_version: "4", cache_seconds: 30, runtime_policy: STAGED, policy_sha256: await sha256(canonicalPolicy(STAGED)),
+			agent_bound: true, governance: overlay, governance_sha256: await sha256(canonicalPolicy(overlay)),
+		});
+		expect(fake.rpcArgs[fake.rpcCalls.indexOf("ai_governance_policy_overlay")]).toEqual({
+			p_tenant_id: TENANT, p_user_id: USER, p_agent_id: AGENT,
+		});
+	});
+
+	it("fails closed when the governance overlay is unreadable or malformed", async () => {
+		for (const options of [
+			{ governanceError: true },
+			{ governance: { mcp_deny_servers: ["bad id!"], mcp_require_approval_servers: [] } },
+			{ governance: { mcp_deny_servers: "shell-runner", mcp_require_approval_servers: [] } },
+			{ governance: null },
+		]) {
+			const response = await createPolicyHandler({ db: database(options).db as never })(get());
+			expect(response.status).toBe(503);
+			expect(await response.json()).toEqual({ error: "policy_unavailable" });
 		}
 	});
 

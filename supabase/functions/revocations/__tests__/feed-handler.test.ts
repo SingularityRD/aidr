@@ -12,7 +12,7 @@ vi.mock("npm:@supabase/supabase-js@2.116.0", () => ({ createClient: () => runtim
 const tenantId = "11111111-1111-4111-8111-111111111111";
 const userId = "22222222-2222-4222-8222-222222222222";
 
-async function feedWithSigningKey(privateKey: string, options: { previousHashExpiresAt?: string; revoked?: boolean; rateAllowed?: boolean; admission?: number } = {}) {
+async function feedWithSigningKey(privateKey: string, options: { previousHashExpiresAt?: string; revoked?: boolean; rateAllowed?: boolean; admission?: number; scope?: string } = {}) {
 	runtime.feedReads = 0;
 	runtime.client = {
 		rpc: async (name: string) => name === "tenant_admission_capacity"
@@ -29,6 +29,7 @@ async function feedWithSigningKey(privateKey: string, options: { previousHashExp
 			}
 			const row = table === "api_keys"
 				? { user_id: userId, tenant_id: tenantId, revoked: options.revoked === true,
+					scope: options.scope ?? "tenant",
 					previous_hash: createHash("sha256").update("enrolled-key").digest("hex"),
 					previous_hash_expires_at: options.previousHashExpiresAt }
 				: table === "tenant_members"
@@ -85,6 +86,14 @@ describe("revocation feed signing", () => {
 			publicKey,
 			Buffer.from(body.revocations_signed.sig_b64, "base64"),
 		)).toBe(true);
+	});
+
+	it("refuses an ingest-only Browser Guard key without serving the feed", async () => {
+		const { privateKey } = generateKeyPairSync("ed25519");
+		const key = privateKey.export({ format: "der", type: "pkcs8" }).toString("base64");
+		const response = await feedWithSigningKey(key, { scope: "ingest:browser_guard" });
+		expect(response.status).toBe(403);
+		expect(await response.json()).toEqual({ error: "api_key_scope_denied" });
 	});
 
 	it("fails when a configured key cannot sign, without a successful null feed", async () => {

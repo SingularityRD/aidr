@@ -10,7 +10,7 @@
 	],
 	"routes": {
 		"public": ["/", "/pilot", "/pricing", "/verify", "/login", "/auth/callback", "/auth/recover", "/auth/oidc/callback", "/auth/sso-recovery", "/enterprise", "/support", "/status", "/privacy", "/security", "/terms"],
-		"protected": ["/auth/dlp-step-up", "/onboarding", "/dashboard", "/events", "/discovery", "/settings", "/agents", "/autosecops", "/agents/:agentId", "/incidents", "/api-keys", "/billing", "/team", "/scim", "/retention", "/sso", "/siem", "/policies"],
+		"protected": ["/auth/dlp-step-up", "/onboarding", "/downloads", "/dashboard", "/events", "/discovery", "/posture", "/settings", "/agents", "/autosecops", "/agents/:agentId", "/incidents", "/api-keys", "/billing", "/team", "/scim", "/retention", "/sso", "/siem", "/policies", "/privacy-guard", "/approvals", "/compliance", "/governance", "/governance/register", "/governance/requests", "/governance/change-control"],
 		"legacy": ["/demo"]
 	},
 	"scenarios": [
@@ -33,6 +33,10 @@
 		{
 			"id": "device-enrollment",
 			"steps": ["Create a device code", "Open the verification link", "Authorize the code", "Confirm polling reaches authorized or expired", "Confirm enrollment token is masked and can be cleared"]
+		},
+		{
+			"id": "download-center",
+			"steps": ["Open /downloads without a published release manifest and confirm the not-configured notice with no download links", "Publish a release manifest via AIDR_RELEASE_MANIFEST_PATH and reload", "Confirm every link is HTTPS and each card shows its SHA-256 and verify commands", "Download one artifact and confirm its digest matches the card", "Confirm a runtime shows detected only after one of its agents checked in"]
 		},
 		{
 			"id": "billing-and-legal",

@@ -182,6 +182,38 @@ describe("calculateConfidence", () => {
 		const confidence = calculateConfidence("AKIAaB3xY9zW1qR8mK2p", def, 3.5);
 		expect(confidence).toBeGreaterThan(0.8);
 	});
+
+	it("matches the unconditional entropy bonus when it skips values too short to earn it", () => {
+		const def = {
+			type: "api_key" as const,
+			regex: /foo/g,
+			severity: "critical" as const,
+			confidenceBase: 0.7,
+		};
+		const expected = (value: string, threshold: number): number => {
+			const entropy = shannonEntropy(value);
+			const bonus = entropy > threshold ? Math.min(0.15, (entropy - threshold) * 0.04) : 0;
+			return Math.min(1, 0.7 + bonus);
+		};
+		const values = [
+			"a",
+			"ab",
+			"abcd",
+			"abcdefgh",
+			"4111 1111 1111 1111",
+			"0123456789abcdefghijklmn",
+			"AKIAaB3xY9zW1qR8mK2pQ7vL",
+			// Surrogate pairs: the length bound counts code units, entropy counts code points.
+			"🙂🙃😉😊",
+		];
+		for (const value of values) {
+			for (const threshold of [0, 1, 2, 3, 4, 4.5, 4.58, 5, 8]) {
+				expect(calculateConfidence(value, def, threshold), `${value} @ ${threshold}`).toBe(
+					expected(value, threshold),
+				);
+			}
+		}
+	});
 });
 
 // ── PiiDetectorImpl — Core Detection ─────────────────────────────────────────
@@ -276,6 +308,66 @@ describe("PiiDetectorImpl", () => {
 		it("can be disabled via config", () => {
 			const detector = new PiiDetectorImpl({ enableEmail: false });
 			expect(detector.detect("user@example.com")).toHaveLength(0);
+		});
+
+		/**
+		 * Emails are found from each `@` rather than by running the pattern from
+		 * every word boundary; the result must be exactly what the plain global
+		 * pattern reports, spans included.
+		 */
+		describe("finds exactly the matches of the plain email pattern", () => {
+			const EMAIL_PATTERN = /\b[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,253}\.[A-Za-z]{2,63}\b/g;
+			const emailOnly = new PiiDetectorImpl({
+				enableSsn: false,
+				enableCreditCard: false,
+				enablePhone: false,
+				enableIpAddress: false,
+				enableAwsKey: false,
+				enableApiKey: false,
+				enableTcKimlik: false,
+				enableIban: false,
+				enablePrivateKey: false,
+				enablePrivacyRules: false,
+			});
+			const spans = (text: string) =>
+				emailOnly.detect(text).map(({ value, start, end }) => ({ value, start, end }));
+			const reference = (text: string) =>
+				[...text.matchAll(EMAIL_PATTERN)].map((match) => ({
+					value: match[0],
+					start: match.index,
+					end: match.index + match[0].length,
+				}));
+
+			it.each([
+				["two addresses", "mail a.b@c.io or x_y+z@d-e.example.com today"],
+				["a local part longer than 64 characters", `${"a".repeat(80)}@example.com`],
+				["a dotted local part longer than 64 characters", `${"a.".repeat(50)}@example.com`],
+				["a local part cut by a non-word start", `--${"b".repeat(70)}@example.com`],
+				["back-to-back addresses", "a@b.cc@d.ee x@y.zz"],
+				["a domain running into the next local part", "a@b.com.c@d.com"],
+				["repeated at signs", "@@a@@b.co@@"],
+				["an address after a long dotted run", `${"a.".repeat(40_000)}x@y.io`],
+				["a long dotted domain", `x@${"a.".repeat(40_000)}`],
+				["no at sign", "123-".repeat(10_000)],
+			])("%s", (_name, text) => {
+				expect(spans(text)).toEqual(reference(text));
+			});
+
+			it("on random text", () => {
+				// Deterministic LCG so a failure reproduces.
+				let seed = 0x2f6b_9d41;
+				const next = (bound: number): number => {
+					seed = (Math.imul(seed, 1_103_515_245) + 12_345) >>> 0;
+					return seed % bound;
+				};
+				const alphabet = "ab.-_%+@ 1Z\nc@.";
+				for (let round = 0; round < 500; round++) {
+					let text = "";
+					for (let length = next(160); length > 0; length--)
+						text += alphabet[next(alphabet.length)];
+					expect(spans(text), JSON.stringify(text)).toEqual(reference(text));
+				}
+			});
 		});
 	});
 

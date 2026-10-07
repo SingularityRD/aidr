@@ -7,16 +7,22 @@
 
 import {
 	type Logger,
+	recordToolOutcome,
+	recordToolOutputCanaries,
+	recordToolOutputFlow,
 	scanProvisionedOutput,
+	toolResultReportsFailure,
 	verifyArtifactIntegrityAndLog,
 } from "@singularityrd/aidr-core";
 import pino from "pino";
-import { consumePendingApproval, type PendingApproval } from "./approval-tracker.js";
-import { artifactTypeLabel } from "./format.js";
+import { consumePendingApproval } from "./approval-tracker.js";
+import { approvedActionContext } from "./format.js";
 import { MAX_POST_TOOL_INPUT_BYTES, readBoundedJson } from "./hook-input.js";
 import {
-	inspectCachedProvisionedToolResponse,
 	postToolInspectionUnavailable,
+	scanCachedProvisionedToolResponse,
+	type ToolResponseScan,
+	toolResponseInspectionResult,
 } from "./output-inspection.js";
 import {
 	appendPostToolContext,
@@ -25,21 +31,6 @@ import {
 } from "./tool-output-quarantine.js";
 
 const logger: Logger = pino({ level: "warn" }, pino.destination(2));
-
-function approvedActionContext(entry: PendingApproval): string {
-	const artifactList = entry.artifacts
-		.map((artifact) => `${artifactTypeLabel(artifact.type)} '${artifact.value}'`)
-		.join(", ");
-	const typeSet = [...new Set(entry.artifacts.map((artifact) => artifactTypeLabel(artifact.type)))];
-	const typeStr = typeSet.join("/");
-	const noun =
-		typeStr === "URL"
-			? "these URLs"
-			: typeStr === "command"
-				? "these commands"
-				: `these ${typeStr}s`;
-	return `Singularity AIDR: The user approved a flagged action (threat ${entry.threatId}: ${entry.threatTitle}, artifacts: ${artifactList}). To permanently allow ${noun} in the future, an operator can use the CLI allowlist controls.`;
-}
 
 function reportUnavailableCoverage(reason: string): void {
 	process.stdout.write(`${JSON.stringify(postToolInspectionUnavailable(reason))}\n`);
@@ -105,15 +96,66 @@ async function main(): Promise<void> {
 		}
 	}
 	let inspection: Record<string, unknown> | null;
+	let scan: ToolResponseScan | null = null;
 	try {
+		// Warm signed output-policy trust, then inspect and replace the current
+		// payload in the same turn after all async work.
 		await scanProvisionedOutput([], "claude-code");
-		// Inspect and replace the current payload in the same turn after all async work.
+		scan =
+			hookInput.tool_response === undefined || hookInput.tool_response === null
+				? null
+				: scanCachedProvisionedToolResponse(hookInput.tool_response);
 		inspection = quarantineInspectedToolOutput(
-			inspectCachedProvisionedToolResponse(hookInput.tool_response),
+			toolResponseInspectionResult(scan),
 			hookInput.tool_response,
 		);
 	} catch {
 		inspection = quarantineFailedToolInspection(hookInput.tool_response);
+	}
+	// The output scanner already blocks canary content; this adds the audit entry
+	// and, in managed mode, the incident. Never changes the response.
+	await recordToolOutputCanaries({
+		sessionId,
+		toolName: typeof hookInput.tool_name === "string" ? hookInput.tool_name : "unknown",
+		toolOutput: hookInput.tool_response,
+		agentRuntime: "claude-code",
+		logger,
+	});
+	if (scan && scan.findings.length > 0) {
+		// The output is already in Claude's context: record what it carried
+		// (secrets, injection payloads) so the session's next calls are judged
+		// with it. Never changes this hook's response and never throws.
+		const toolInput = hookInput.tool_input;
+		await recordToolOutputFlow(
+			{
+				sessionId,
+				toolName: typeof hookInput.tool_name === "string" ? hookInput.tool_name : "unknown",
+				toolInput:
+					toolInput && typeof toolInput === "object" && !Array.isArray(toolInput)
+						? (toolInput as Record<string, unknown>)
+						: undefined,
+				findings: scan.findings,
+			},
+			{ agentRuntime: "claude-code", logger },
+		);
+	}
+	if (toolResultReportsFailure(hookInput.tool_response)) {
+		// Runaway guard: the same call failing again and again with no file change
+		// in between is a stuck loop; its next retry is paused for review.
+		// Never changes this hook's response and never throws.
+		const toolInput = hookInput.tool_input;
+		await recordToolOutcome(
+			{
+				sessionId,
+				toolName: typeof hookInput.tool_name === "string" ? hookInput.tool_name : "unknown",
+				toolInput:
+					toolInput && typeof toolInput === "object" && !Array.isArray(toolInput)
+						? (toolInput as Record<string, unknown>)
+						: {},
+				failed: true,
+			},
+			{ agentRuntime: "claude-code", logger },
+		);
 	}
 	let response: Record<string, unknown> = inspection ?? {};
 	if (approvalContext) response = appendPostToolContext(response, approvalContext);

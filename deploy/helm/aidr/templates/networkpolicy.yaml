@@ -1,0 +1,338 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- $root := . -}}
+{{- $np := .Values.networkPolicy -}}
+{{- $sel := dict "app.kubernetes.io/name" (include "aidr.name" .) "app.kubernetes.io/instance" .Release.Name -}}
+{{- if and (not .Values.postgresql.enabled) (empty .Values.externalDatabase.networkPolicyCIDRs) -}}
+{{- fail "externalDatabase.networkPolicyCIDRs is required when networkPolicy.enabled and postgresql.enabled=false" -}}
+{{- end -}}
+# Default deny: every AIDR pod starts with no ingress and no egress.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "aidr.fullname" . }}-default-deny
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" "network-policy") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- toYaml $sel | nindent 6 }}
+  policyTypes: ["Ingress", "Egress"]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "aidr.fullname" . }}-allow-dns
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" "network-policy") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- toYaml $sel | nindent 6 }}
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            {{- toYaml $np.dnsNamespaceSelector | nindent 12 }}
+          {{- with $np.dnsPodSelector }}
+          podSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "aidr.component" (dict "root" . "component" "dashboard") }}
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" "network-policy") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "aidr.selectorLabels" (dict "root" . "component" "dashboard") | nindent 6 }}
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - from:
+        {{- include "aidr.np.ingressController" . | nindent 8 }}
+        {{- /* auth fetches the recovery e-mail template */}}
+        {{- include "aidr.np.peer" (dict "root" . "component" "auth") | nindent 8 }}
+      ports:
+        - port: 8080
+          protocol: TCP
+  egress:
+    - to:
+        {{- include "aidr.np.peer" (dict "root" . "component" "api-gw") | nindent 8 }}
+      ports:
+        - port: 8000
+          protocol: TCP
+    {{- include "aidr.np.cidrs" (dict "cidrs" $np.dashboardEgressCIDRs "port" 443) | nindent 4 }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "aidr.component" (dict "root" . "component" "api-gw") }}
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" "network-policy") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "aidr.selectorLabels" (dict "root" . "component" "api-gw") | nindent 6 }}
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - from:
+        {{- include "aidr.np.ingressController" . | nindent 8 }}
+        {{- include "aidr.np.peer" (dict "root" . "component" "dashboard") | nindent 8 }}
+        {{- include "aidr.np.peer" (dict "root" . "component" "functions") | nindent 8 }}
+      ports:
+        - port: 8000
+          protocol: TCP
+  egress:
+    {{- range $peer := list (list "auth" 9999) (list "rest" 3000) (list "storage" 5000) (list "functions" 9000) }}
+    - to:
+        {{- include "aidr.np.peer" (dict "root" $root "component" (index $peer 0)) | nindent 8 }}
+      ports:
+        - port: {{ index $peer 1 }}
+          protocol: TCP
+    {{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "aidr.component" (dict "root" . "component" "auth") }}
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" "network-policy") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "aidr.selectorLabels" (dict "root" . "component" "auth") | nindent 6 }}
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - from:
+        {{- include "aidr.np.peer" (dict "root" . "component" "api-gw") | nindent 8 }}
+      ports:
+        - port: 9999
+          protocol: TCP
+  egress:
+    {{- include "aidr.np.db" . | nindent 4 }}
+    - to:
+        {{- include "aidr.np.peer" (dict "root" . "component" "dashboard") | nindent 8 }}
+      ports:
+        - port: 8080
+          protocol: TCP
+    {{- include "aidr.np.cidrs" (dict "cidrs" $np.smtpEgressCIDRs "port" .Values.auth.smtp.port) | nindent 4 }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "aidr.component" (dict "root" . "component" "rest") }}
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" "network-policy") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "aidr.selectorLabels" (dict "root" . "component" "rest") | nindent 6 }}
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - from:
+        {{- include "aidr.np.peer" (dict "root" . "component" "api-gw") | nindent 8 }}
+        {{- include "aidr.np.peer" (dict "root" . "component" "storage") | nindent 8 }}
+      ports:
+        - port: 3000
+          protocol: TCP
+  egress:
+    {{- include "aidr.np.db" . | nindent 4 }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "aidr.component" (dict "root" . "component" "storage") }}
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" "network-policy") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "aidr.selectorLabels" (dict "root" . "component" "storage") | nindent 6 }}
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - from:
+        {{- include "aidr.np.peer" (dict "root" . "component" "api-gw") | nindent 8 }}
+      ports:
+        - port: 5000
+          protocol: TCP
+  egress:
+    {{- include "aidr.np.db" . | nindent 4 }}
+    - to:
+        {{- include "aidr.np.peer" (dict "root" . "component" "rest") | nindent 8 }}
+      ports:
+        - port: 3000
+          protocol: TCP
+    {{- include "aidr.np.cidrs" (dict "cidrs" $np.storageEgressCIDRs "port" 443) | nindent 4 }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "aidr.component" (dict "root" . "component" "functions") }}
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" "network-policy") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "aidr.selectorLabels" (dict "root" . "component" "functions") | nindent 6 }}
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - from:
+        {{- include "aidr.np.peer" (dict "root" . "component" "api-gw") | nindent 8 }}
+        {{- if .Values.notifications.dispatcher.enabled }}
+        {{- include "aidr.np.peer" (dict "root" . "component" "notification-dispatch") | nindent 8 }}
+        {{- end }}
+      ports:
+        - port: 9000
+          protocol: TCP
+  egress:
+    {{- include "aidr.np.db" . | nindent 4 }}
+    - to:
+        {{- include "aidr.np.peer" (dict "root" . "component" "api-gw") | nindent 8 }}
+      ports:
+        - port: 8000
+          protocol: TCP
+    {{- include "aidr.np.cidrs" (dict "cidrs" $np.functionsEgressCIDRs "port" 443) | nindent 4 }}
+---
+{{- if .Values.notifications.dispatcher.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "aidr.component" (dict "root" . "component" "notification-dispatch") }}
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" "network-policy") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "aidr.selectorLabels" (dict "root" . "component" "notification-dispatch") | nindent 6 }}
+  policyTypes: ["Ingress", "Egress"]
+  egress:
+    - to:
+        {{- include "aidr.np.peer" (dict "root" . "component" "functions") | nindent 8 }}
+      ports:
+        - port: 9000
+          protocol: TCP
+---
+{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "aidr.fullname" . }}-db-clients
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" "network-policy") | nindent 4 }}
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/instance
+        operator: In
+        values: [{{ .Release.Name | quote }}]
+      - key: app.kubernetes.io/component
+        operator: In
+        values: ["migrations", "backup"]
+  policyTypes: ["Egress"]
+  egress:
+    {{- include "aidr.np.db" . | nindent 4 }}
+{{- if .Values.postgresql.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "aidr.component" (dict "root" . "component" "db") }}
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" "network-policy") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "aidr.selectorLabels" (dict "root" . "component" "db") | nindent 6 }}
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - from:
+        {{- range $client := list "auth" "rest" "storage" "functions" "migrations" "backup" }}
+        {{- include "aidr.np.peer" (dict "root" $root "component" $client) | nindent 8 }}
+        {{- end }}
+        {{- if .Values.postureScanner.enabled }}
+        {{- include "aidr.np.peer" (dict "root" . "component" "posture-scanner-bridge") | nindent 8 }}
+        {{- end }}
+      ports:
+        - port: 5432
+          protocol: TCP
+{{- end }}
+{{- if .Values.postureScanner.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "aidr.component" (dict "root" . "component" "posture-scanner-server") }}
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" "network-policy") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "aidr.selectorLabels" (dict "root" . "component" "posture-scanner-server") | nindent 6 }}
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - from:
+        {{- include "aidr.np.peer" (dict "root" . "component" "posture-scanner-bridge") | nindent 8 }}
+        {{- include "aidr.np.peer" (dict "root" . "component" "posture-scanner-agent") | nindent 8 }}
+      ports:
+        - port: 8088
+          protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "aidr.component" (dict "root" . "component" "posture-scanner-agent") }}
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" "network-policy") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "aidr.selectorLabels" (dict "root" . "component" "posture-scanner-agent") | nindent 6 }}
+  policyTypes: ["Ingress", "Egress"]
+  egress:
+    - to:
+        {{- include "aidr.np.peer" (dict "root" . "component" "posture-scanner-server") | nindent 8 }}
+      ports:
+        - port: 8088
+          protocol: TCP
+    {{- include "aidr.np.cidrs" (dict "cidrs" .Values.postureScanner.egressProxy.cidrs "port" .Values.postureScanner.egressProxy.port) | nindent 4 }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "aidr.component" (dict "root" . "component" "posture-scanner-bridge") }}
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" "network-policy") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "aidr.selectorLabels" (dict "root" . "component" "posture-scanner-bridge") | nindent 6 }}
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- toYaml .Values.postureScanner.bridge.clientPodLabel | nindent 14 }}
+          {{- with .Values.postureScanner.bridge.clientNamespaceSelector }}
+          namespaceSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      ports:
+        - port: 8099
+          protocol: TCP
+  egress:
+    - to:
+        {{- include "aidr.np.peer" (dict "root" . "component" "posture-scanner-server") | nindent 8 }}
+      ports:
+        - port: 8088
+          protocol: TCP
+    {{- include "aidr.np.db" . | nindent 4 }}
+    {{- include "aidr.np.cidrs" (dict "cidrs" .Values.postureScanner.egressProxy.cidrs "port" .Values.postureScanner.egressProxy.port) | nindent 4 }}
+{{- end }}
+{{- end }}

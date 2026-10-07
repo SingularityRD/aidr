@@ -7,6 +7,9 @@
     "dist/resources/skills/security-awareness"
   ],
   "contracts": {
+    "agentToolResultMiddleware": [
+      "openclaw"
+    ],
     "tools": [
       "aidr_allowlist_add",
       "aidr_allowlist_remove"

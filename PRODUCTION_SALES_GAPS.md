@@ -2,7 +2,7 @@
 
 Otomatik rapor üretim tarihi: **2026-10-06** (Europe/Istanbul). Rapor bu çalışma ağacının kaynaklarından üretildi; source_commit yalnızca taban commit'i gösterir, çalışma ağacının değişmiş olduğu ayrıca işaretlenir. Bu rapor candidate-bound release evidence değildir. READINESS_BACKLOG.json issue-ledger kaydının tarihsel baseline ve doğrulama tarihleri aşağıdaki makine kaydında yer alır; açık finding ID'leri güncel checkout doğrulaması sayılmaz. **Karar: NO-GO.** Kurulabilir bir aday ve doğrulanmış yerel akışlar var; bütün ürünün üretim ve satış kabulü tamamlanmış değil.
 
-71 alt özellik: **41 bağlı/çalışan, 28 kısmi, 0 eksik, 2 dış kabule bağlı**. Çalışan bir özellikte de saha veya işletim kabulü açık olabilir. Bu raporda **46 teknik/operasyon iş paketi ve 13 ticari/dış kanıt kapısı** ayrıntılandırıldı. Bunlar benzersiz yazılım hatası sayısı veya tamamlanma yüzdesi değildir; örtüşen gereksinimler kimliklerle ilişkilidir. Makine kaydı: [PRODUCTION_SALES_GAPS.json](PRODUCTION_SALES_GAPS.json).
+109 alt özellik: **66 bağlı/çalışan, 41 kısmi, 0 eksik, 2 dış kabule bağlı**. Çalışan bir özellikte de saha veya işletim kabulü açık olabilir. Bu raporda **47 teknik/operasyon iş paketi ve 13 ticari/dış kanıt kapısı** ayrıntılandırıldı. Bunlar benzersiz yazılım hatası sayısı veya tamamlanma yüzdesi değildir; örtüşen gereksinimler kimliklerle ilişkilidir. Makine kaydı: [PRODUCTION_SALES_GAPS.json](PRODUCTION_SALES_GAPS.json).
 
 43 teknik işte yerel uygulama ilerlemiş ve saha kabulü açık; 3 teknik iş uygulama/entegrasyon olarak açık. Başlangıç boşluğu tarihsel karşılaştırma için korunur; satırın güncel durumu ve kalan kabul koşulu esas alınmalıdır. Üretim ve destekli satış profillerinin her birinde **12 açık zorunlu dış kapı** var. Müşteri ortamı henüz bilinmiyor; cloud ve self-hosted kapsamları korunmuştur.
 
@@ -17,7 +17,7 @@ Güncel pre-customer gate [docs/production-readiness/first-customer-ready.md](do
 ## Öncelikli kalan işler
 
 1. Gerçek host/OS ve cloud/self-hosted altyapı kabulü; resmi yayıncı imzası ve özel dağıtım.
-2. MCP doğrudan upstream bypass, binary/server-initiated kapsamı ve her connector için post-tool/pre-side-effect kabulü.
+2. MCP doğrudan upstream bypass (zorunlu routing), her connector için post-tool/pre-side-effect kabulü ve Browser Guard'ın canlı sitelerde kabulü.
 3. Gerçek Entra/Okta, SMTP, MDM, cloud project, TLS public proxy ve iki tenantlı canlı negatif test.
 4. Kimlikli yük, failover/soak, bağımsız offsite kurtarma, SIEM alındısı ve alarm paging teslimi.
 5. Ticari teklif/siparişten entitlement'a, veri işleme, destek kanalları, bağımsız pentest ve isimli müşteri PoV.
@@ -90,7 +90,7 @@ Bu tek liste 59 iş paketini kapsar. Açık backlog kayıtları ve kısmi özell
 
 ### T01 — Gerçek host ve işletim sistemi kapsamı (P0)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** deploy/native/support-matrix.json satilan connector/OS/arch/context/interception matrisini ve bilinen bypass/unobserved listesini tanimliyor; deploy/native/run-support-matrix.mjs kurulu olmayan hostu HOST_UNAVAILABLE olarak NO-GO uretiyor, gercek host ve isimli kabul acik.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** deploy/native/support-matrix.json satilan connector/OS/arch/context/interception matrisini ve bilinen bypass/unobserved listesini tanimliyor; deploy/native/run-support-matrix.mjs kurulu olmayan hostu HOST_UNAVAILABLE olarak NO-GO uretiyor. pnpm test:e2e:real-host gercek Claude Code 2.1.282, Codex CLI 0.141.0, OpenCode 1.18.32 ve OpenClaw 2026.9.6 ikililerini betikli bir mock modelle surup docs/evidence/real-host/ altinda kabul kayitlari uretti; 2026-09-30 urun karariyla support matrisi pre-prompt'u Claude Code, Codex, OpenCode ve OpenClaw icin, OpenClaw'in model oncesi post-tool-output karantinasini da additionalInterceptionPoints ile satilan kapsama ekledi (dogrulayici bu alandaki bir noktayi yalniz gercek-host kaydiyla enforced ise kabul ediyor). Interception matrisi claude-code pre-tool/pre-prompt/post-tool-output, codex pre-tool/pre-prompt, opencode pre-tool/pre-prompt/post-tool-output ve openclaw pre-tool/pre-prompt/post-tool-output (yalniz embedded runner, plugins.entries.aidr-openclaw.enabled: true, Codex harness haric) satirlarini bu kayitlarla enforced olarak isaretliyor (11 enforced, 25 acik nokta), Claude Code icin oldurulen PreToolUse kancasinin fail-open oldugu gozlendi. Kayitlar yalniz linux/x64, gelistirme build'i ve mock model uzerinde; Cursor/VS Code kaydi, Windows/macOS/arm64, imzali artefact, gercek model ve isimli kabul acik, matris karari NO-GO.
 
 **Başlangıç durumu:** Derlenmiş kanca ve SDK testleri var; müşterinin gerçek host/OS/sürüm matrisi yok.
 
@@ -102,11 +102,11 @@ Bu tek liste 59 iş paketini kapsar. Açık backlog kayıtları ve kısmi özell
 
 **Sorumlu:** QA + Endpoint Engineering. **Bağımlılık:** Müşteri test cihazları, runtime erişimi ve sürüm seçimi.
 
-**İlişkili özellikler:** CON-01, CON-02, CON-03, CON-04, CON-05, CON-06, DET-01, DET-02, DET-03, DET-04, DET-05, RSP-01. **Kaynak:** [scripts/run-e2e-release.mjs](scripts/run-e2e-release.mjs), [packages/codex/README.md](packages/codex/README.md).
+**İlişkili özellikler:** CON-01, CON-02, CON-03, CON-04, CON-05, CON-06, DET-01, DET-02, DET-03, DET-04, DET-05, RSP-01, CON-07, RSP-08. **Kaynak:** [scripts/run-e2e-release.mjs](scripts/run-e2e-release.mjs), [packages/codex/README.md](packages/codex/README.md).
 
 ### T02 — Bağlayıcılar arasında araç adı ve girdi normalizasyonu (P0)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Ortak araç/girdi normalizasyonu evaluator öncesinde; Codex ve OpenClaw boş-artifact erken izin yolu kaldırıldı, named MCP çağrıları politikaya ulaşıyor.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Ortak araç/girdi normalizasyonu evaluator öncesinde; Codex ve OpenClaw boş-artifact erken izin yolu kaldırıldı, named MCP çağrıları politikaya ulaşıyor. packages/core/src/__tests__/connector-parity.test.ts altı bağlayıcının derlenmiş giriş noktalarını (Claude Code, Codex, OpenCode, OpenClaw, Cursor, VS Code) tek payload matrisiyle sürüyor ve aynı engelleme sınıfını ve threat id'yi audit logdan doğruluyor; argv dizisi shell komutları normalize ediliyor, bozuk komut deny oluyor; matrisin bulduğu ev dizini silme boşluğu CLT-CMD-031 ile kapatıldı. OpenClaw/OpenCode başlatma hatasında kanca bırakmak yerine tüm çağrıları engelliyor. Extractor sınırlarını aşan araç girdisi artık sessizce kesilmiyor: kalan sınır input_not_fully_inspected işareti koyuyor ve evaluator çağrıyı deny ediyor. 2026-09-24 kaydındaki iki uzlaşmamış beklenti giderildi: DLP redact satırı input rewrite yapan bağlayıcılarda (Claude Code, OpenCode) redakte girdinin çalışmasını, diğerlerinde blok bekliyor; OpenClaw bütünlük hatası testi uyumlu. 2026-09-25'te yeniden derlenmiş bundle'larla parity paketi 27/27, OpenClaw init fail-closed 2/2 ve OpenCode 3/3 geçti. Kurulu native hostlarda parity kabulü açık.
 
 **Başlangıç durumu:** OpenCode ham bash/write/edit adlarını iletiyor; bazı çekirdek denetimleri yalnızca Bash/Write/Edit dallarında çalışıyor. Mevcut sözleşme testi bu paket boşluğunu allow olarak kaydediyor.
 
@@ -118,7 +118,7 @@ Bu tek liste 59 iş paketini kapsar. Açık backlog kayıtları ve kısmi özell
 
 **Sorumlu:** Core + Connector Engineering. **Bağımlılık:** AIDR-060; native host matrisi.
 
-**İlişkili özellikler:** DET-12, DET-11, CON-04. **Kaynak:** [packages/core/src/evaluator.ts](packages/core/src/evaluator.ts), [packages/opencode/src/tool-handler.ts](packages/opencode/src/tool-handler.ts), [packages/opencode/src/__tests__/aidr-contract.test.ts](packages/opencode/src/__tests__/aidr-contract.test.ts).
+**İlişkili özellikler:** DET-12, DET-11, CON-04, CON-07. **Kaynak:** [packages/core/src/evaluator.ts](packages/core/src/evaluator.ts), [packages/opencode/src/tool-handler.ts](packages/opencode/src/tool-handler.ts), [packages/opencode/src/__tests__/aidr-contract.test.ts](packages/opencode/src/__tests__/aidr-contract.test.ts).
 
 ### T03 — Paket denetiminde hatanın sessiz kaybolması (P0)
 
@@ -150,7 +150,7 @@ Bu tek liste 59 iş paketini kapsar. Açık backlog kayıtları ve kısmi özell
 
 **Sorumlu:** Connector + Detection Engineering. **Bağımlılık:** Host API kabiliyeti; MCP gateway.
 
-**İlişkili özellikler:** DET-06, DET-07, MCP-07, CON-01, CON-02, CON-03, CON-04, CON-05, CON-06. **Kaynak:** [packages/claude-code/src/output-inspection.ts](packages/claude-code/src/output-inspection.ts), [packages/claude-code/src/post-tool-use.ts](packages/claude-code/src/post-tool-use.ts), [packages/core/src/output-scanner.ts](packages/core/src/output-scanner.ts).
+**İlişkili özellikler:** DET-06, DET-07, MCP-07, CON-01, CON-02, CON-03, CON-04, CON-05, CON-06, DET-14. **Kaynak:** [packages/claude-code/src/output-inspection.ts](packages/claude-code/src/output-inspection.ts), [packages/claude-code/src/post-tool-use.ts](packages/claude-code/src/post-tool-use.ts), [packages/core/src/output-scanner.ts](packages/core/src/output-scanner.ts).
 
 ### T05 — Davranış, novelty ve ML kararlarının ürün akışına bağlanması (P1)
 
@@ -182,7 +182,7 @@ Bu tek liste 59 iş paketini kapsar. Açık backlog kayıtları ve kısmi özell
 
 **Sorumlu:** Detection + Operations. **Bağımlılık:** Sağlayıcı/feed erişimi, Windows host ve müşteri corpus'u.
 
-**İlişkili özellikler:** DET-10, DET-11, DET-12, INF-01, INF-02. **Kaynak:** [supabase/functions/url-check/index.ts](supabase/functions/url-check/index.ts), [supabase/functions/file-check/index.ts](supabase/functions/file-check/index.ts), [packages/core/src/generated/aig-data-manifest.json](packages/core/src/generated/aig-data-manifest.json), [packages/core/src/aig-policy.ts](packages/core/src/aig-policy.ts).
+**İlişkili özellikler:** DET-10, DET-11, DET-12, INF-01, INF-02, INF-04. **Kaynak:** [supabase/functions/url-check/index.ts](supabase/functions/url-check/index.ts), [supabase/functions/file-check/index.ts](supabase/functions/file-check/index.ts), [packages/core/src/generated/aig-data-manifest.json](packages/core/src/generated/aig-data-manifest.json), [packages/core/src/aig-policy.ts](packages/core/src/aig-policy.ts).
 
 ### T07 — MCP keşfi ve kimlik normalizasyonunun kapsamı (P1)
 
@@ -198,7 +198,7 @@ Bu tek liste 59 iş paketini kapsar. Açık backlog kayıtları ve kısmi özell
 
 **Sorumlu:** Endpoint + MCP Engineering. **Bağımlılık:** Host sürüm ve konfigürasyon matrisi.
 
-**İlişkili özellikler:** MCP-01, MCP-02, MCP-03, MCP-04. **Kaynak:** [packages/core/src/mcp-discovery.ts](packages/core/src/mcp-discovery.ts), [packages/core/src/mcp-inventory.ts](packages/core/src/mcp-inventory.ts), [packages/core/src/policy.ts](packages/core/src/policy.ts).
+**İlişkili özellikler:** MCP-01, MCP-02, MCP-03, MCP-04, INF-04, INF-05, INF-06. **Kaynak:** [packages/core/src/mcp-discovery.ts](packages/core/src/mcp-discovery.ts), [packages/core/src/mcp-inventory.ts](packages/core/src/mcp-inventory.ts), [packages/core/src/policy.ts](packages/core/src/policy.ts).
 
 ### T08 — İmzalı MCP araç tanımı ve değişiklik onayı (P1)
 
@@ -294,7 +294,7 @@ Bu tek liste 59 iş paketini kapsar. Açık backlog kayıtları ve kısmi özell
 
 **Sorumlu:** Response Engineering + Security Operations. **Bağımlılık:** Müşteri dosya sistemi/EDR/SOAR izinleri.
 
-**İlişkili özellikler:** RSP-02, RSP-03, RSP-05, RSP-07. **Kaynak:** [packages/core/src/quarantine.ts](packages/core/src/quarantine.ts), [packages/core/src/rollback.ts](packages/core/src/rollback.ts), [packages/core/src/response-command-worker-v6.ts](packages/core/src/response-command-worker-v6.ts), [packages/core/src/response-audit.ts](packages/core/src/response-audit.ts), [supabase/functions/autosecops-runtime/index.ts](supabase/functions/autosecops-runtime/index.ts), [supabase/functions/response-playbooks/index.ts](supabase/functions/response-playbooks/index.ts), [supabase/migrations/20260923000005_fleet_response_playbooks.sql](supabase/migrations/20260923000005_fleet_response_playbooks.sql), [packages/core/src/response-command-consumer-v6.ts](packages/core/src/response-command-consumer-v6.ts), [supabase/functions/__tests__/response-playbooks-contract.test.ts](supabase/functions/__tests__/response-playbooks-contract.test.ts), [docs/operations/response-playbooks.md](docs/operations/response-playbooks.md).
+**İlişkili özellikler:** RSP-02, RSP-03, RSP-05, RSP-07, RSP-08, RSP-09. **Kaynak:** [packages/core/src/quarantine.ts](packages/core/src/quarantine.ts), [packages/core/src/rollback.ts](packages/core/src/rollback.ts), [packages/core/src/response-command-worker-v6.ts](packages/core/src/response-command-worker-v6.ts), [packages/core/src/response-audit.ts](packages/core/src/response-audit.ts), [supabase/functions/autosecops-runtime/index.ts](supabase/functions/autosecops-runtime/index.ts), [supabase/functions/response-playbooks/index.ts](supabase/functions/response-playbooks/index.ts), [supabase/migrations/20260923000005_fleet_response_playbooks.sql](supabase/migrations/20260923000005_fleet_response_playbooks.sql), [packages/core/src/response-command-consumer-v6.ts](packages/core/src/response-command-consumer-v6.ts), [supabase/functions/__tests__/response-playbooks-contract.test.ts](supabase/functions/__tests__/response-playbooks-contract.test.ts), [docs/operations/response-playbooks.md](docs/operations/response-playbooks.md).
 
 ### T14 — YAML politika yazımı ile gerçek runtime ilişkisi (P1)
 
@@ -310,7 +310,7 @@ Bu tek liste 59 iş paketini kapsar. Açık backlog kayıtları ve kısmi özell
 
 **Sorumlu:** Policy + Dashboard Engineering. **Bağımlılık:** Politika sözleşmesi ve migration planı.
 
-**İlişkili özellikler:** POL-01, POL-02. **Kaynak:** [packages/dashboard/src/enterprise/policy-editor.tsx](packages/dashboard/src/enterprise/policy-editor.tsx), [packages/dashboard/src/ui/pages/PolicyPage.tsx](packages/dashboard/src/ui/pages/PolicyPage.tsx), [packages/core/src/policy.ts](packages/core/src/policy.ts).
+**İlişkili özellikler:** POL-01, POL-02, POL-06. **Kaynak:** [packages/dashboard/src/enterprise/policy-editor.tsx](packages/dashboard/src/enterprise/policy-editor.tsx), [packages/dashboard/src/ui/pages/PolicyPage.tsx](packages/dashboard/src/ui/pages/PolicyPage.tsx), [packages/core/src/policy.ts](packages/core/src/policy.ts).
 
 ### T15 — Politika dağıtımı saha kabulü ve ölçek sınırları (P1)
 
@@ -326,7 +326,7 @@ Bu tek liste 59 iş paketini kapsar. Açık backlog kayıtları ve kısmi özell
 
 **Sorumlu:** Policy + QA + Operations. **Bağımlılık:** Ajan sürümü, müşteri offline toleransı.
 
-**İlişkili özellikler:** POL-03, POL-04, POL-05. **Kaynak:** [supabase/functions/policy-management/index.ts](supabase/functions/policy-management/index.ts), [supabase/functions/policy-ack/index.ts](supabase/functions/policy-ack/index.ts), [packages/core/src/remote-policy.ts](packages/core/src/remote-policy.ts).
+**İlişkili özellikler:** POL-03, POL-04, POL-05, GOV-03. **Kaynak:** [supabase/functions/policy-management/index.ts](supabase/functions/policy-management/index.ts), [supabase/functions/policy-ack/index.ts](supabase/functions/policy-ack/index.ts), [packages/core/src/remote-policy.ts](packages/core/src/remote-policy.ts).
 
 ### T16 — Endpoint sır saklama ve anahtar rotasyonu (P1)
 
@@ -374,7 +374,7 @@ Bu tek liste 59 iş paketini kapsar. Açık backlog kayıtları ve kısmi özell
 
 **Sorumlu:** Identity Engineering + Customer IT. **Bağımlılık:** IdP/SMTP/DNS ve kurum güvenlik politikası.
 
-**İlişkili özellikler:** TEN-01, TEN-04, TEN-07. **Kaynak:** [packages/dashboard/src/ui/pages/LoginPage.tsx](packages/dashboard/src/ui/pages/LoginPage.tsx), [packages/dashboard/src/enterprise/auth.tsx](packages/dashboard/src/enterprise/auth.tsx), [scripts/deployment-bootstrap.mjs](scripts/deployment-bootstrap.mjs).
+**İlişkili özellikler:** TEN-01, TEN-04, TEN-07, TEN-08. **Kaynak:** [packages/dashboard/src/ui/pages/LoginPage.tsx](packages/dashboard/src/ui/pages/LoginPage.tsx), [packages/dashboard/src/enterprise/auth.tsx](packages/dashboard/src/enterprise/auth.tsx), [scripts/deployment-bootstrap.mjs](scripts/deployment-bootstrap.mjs).
 
 ### T19 — SCIM ve güvenilir directory grup eşlemesi (P1)
 
@@ -396,7 +396,7 @@ Bu tek liste 59 iş paketini kapsar. Açık backlog kayıtları ve kısmi özell
 
 ### T20 — Davet ve cihaz kayıt yaşam döngüsü (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Tenant kapsamlı invite list/revoke/resend token rotasyonu ile device-start/exchange temeli var; SMTP, gerçek browser/IdP ve ağ kesintisi kabulü açık.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Tenant kapsamlı invite list/revoke/resend token rotasyonu ile device-start/exchange temeli var. Atomik davet RPC'sinden sonra enjekte edilebilir mailer (Resend) HTML+text davet e-postası gönderiyor; alıcı, gövde, link ve anahtar loglanmıyor; mail yapılandırılmamışsa veya gönderim başarısızsa manuel link paylaşımına düşülüyor. Device-poll cihaz-kodu başına bütçe ve RFC 8628 slow_down uyguluyor, bütçe okunamazsa 503 ile kapanıyor. Canlı mail sağlayıcı hesabı, SPF/DKIM/DMARC, teslim edilebilirlik, gerçek browser/IdP ve ağ kesintisi kabulü açık.
 
 **Başlangıç durumu:** Davet bağlantısı ve açık ekip seçimiyle cihaz kaydı yerel provadan geçti.
 
@@ -428,7 +428,7 @@ Bu tek liste 59 iş paketini kapsar. Açık backlog kayıtları ve kısmi özell
 
 ### T22 — Tenant izolasyonu ve kaynak tüketim sınırları (P0)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Edge byte/rate sınırı bozuk RPC'de 503 ve stalled stream'de 413 fail-closed üretiyor; müşteri yük/izolasyon kabulü açık.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Edge byte/rate sınırı bozuk RPC'de 503 ve stalled stream'de 413 fail-closed üretiyor. packs-manifest/packs-download API anahtarı ve tenant başına bütçe uyguluyor; waitlist Turnstile ve imzalı ingress IP bütçesi kullanıyor; operator-admin allowlist'li, süreli platform operatörü + AAL2 ve işlem içi yeniden denetim gerektiriyor. tenant_id taşıyan her RLS tablosunda kısıtlayıcı tenant identity barrier politikası var (posture_findings ve sonradan eklenen tablolar 20260925000060 ile kapsandı); scripts/lib/tenant-identity-barrier.mjs tüm migrationları statik yeniden oynatıp eksik barrier'ı supabase:check (CI) içinde reddediyor. Browser Guard için yalnız /v1/ingest'in kabul ettiği, anahtar başına hız ve kurulum sınırlı ingest:browser_guard anahtarları eklendi; diğer uçlar bu anahtarı api_key_scope_denied ile reddediyor. Tüm endpoint/rol/tenant negatif matrisi, müşteri yük/izolasyon kabulü ve bağımsız pentest açık.
 
 **Başlangıç durumu:** RLS, rol ve bazı negatif uçtan uca testler var.
 
@@ -440,7 +440,7 @@ Bu tek liste 59 iş paketini kapsar. Açık backlog kayıtları ve kısmi özell
 
 **Sorumlu:** Security + Backend + SRE. **Bağımlılık:** Bağımsız değerlendirme ve tanımlı yük profili.
 
-**İlişkili özellikler:** TEN-01, OBS-01, DEP-07. **Kaynak:** [supabase/functions/_shared/auth.ts](supabase/functions/_shared/auth.ts), [supabase/migrations/20260805000000_hybrid_tenancy.sql](supabase/migrations/20260805000000_hybrid_tenancy.sql).
+**İlişkili özellikler:** TEN-01, OBS-01, DEP-07, TEN-08. **Kaynak:** [supabase/functions/_shared/auth.ts](supabase/functions/_shared/auth.ts), [supabase/migrations/20260805000000_hybrid_tenancy.sql](supabase/migrations/20260805000000_hybrid_tenancy.sql).
 
 ### T23 — Telemetri dayanıklılığı ve görünür veri kaybı (P0)
 
@@ -504,7 +504,7 @@ Bu tek liste 59 iş paketini kapsar. Açık backlog kayıtları ve kısmi özell
 
 **Sorumlu:** Backend + Privacy + Operations. **Bağımlılık:** Onaylı saklama/silme politikası; yedek istisnaları.
 
-**İlişkili özellikler:** OBS-03, OBS-06. **Kaynak:** [scripts/deployment-maintenance.mjs](scripts/deployment-maintenance.mjs), [deploy/maintenance/aidr-export-retention.timer](deploy/maintenance/aidr-export-retention.timer), [supabase/functions/audit-export/index.ts](supabase/functions/audit-export/index.ts), [supabase/migrations/20260924000014_pack_storage_offboarding_guard.sql](supabase/migrations/20260924000014_pack_storage_offboarding_guard.sql).
+**İlişkili özellikler:** OBS-03, OBS-06, TEN-09. **Kaynak:** [scripts/deployment-maintenance.mjs](scripts/deployment-maintenance.mjs), [deploy/maintenance/aidr-export-retention.timer](deploy/maintenance/aidr-export-retention.timer), [supabase/functions/audit-export/index.ts](supabase/functions/audit-export/index.ts), [supabase/migrations/20260924000014_pack_storage_offboarding_guard.sql](supabase/migrations/20260924000014_pack_storage_offboarding_guard.sql).
 
 ### T27 — Offsite yedekleme ve RPO/RTO (P0)
 
@@ -536,11 +536,11 @@ Bu tek liste 59 iş paketini kapsar. Açık backlog kayıtları ve kısmi özell
 
 **Sorumlu:** SRE + Customer IT. **Bağımlılık:** Alan adı, cloud hesabı/bölge ve ağ bilgisi.
 
-**İlişkili özellikler:** DEP-01, DEP-02. **Kaynak:** [scripts/deployment-prepare.mjs](scripts/deployment-prepare.mjs), [deploy/FIRST_CUSTOMER.md](deploy/FIRST_CUSTOMER.md).
+**İlişkili özellikler:** DEP-01, DEP-02, DEP-09, DEP-12. **Kaynak:** [scripts/deployment-prepare.mjs](scripts/deployment-prepare.mjs), [deploy/FIRST_CUSTOMER.md](deploy/FIRST_CUSTOMER.md).
 
 ### T29 — Kimliği doğrulanan dağıtım ve release provenance (P0)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Release verifier receipt hedefini mutation öncesi doğruluyor ve bundle/state/policy çakışmasını reddediyor; resmi key custody/private registry açık.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Release verifier receipt hedefini mutation öncesi doğruluyor ve bundle/state/policy çakışmasını reddediyor. packages/privacy/dist diğer dist'lerle birlikte imzalanıp provenance'a bağlanıyor; release-browser-guard iş akışı tekrarlanabilir zip + SHA256SUMS ve provenance attestation üretiyor. Vendor-imzalı aidr-license-v1 lisansları ve imzalı offline pack importu var, ancak dağıtılan açık anahtar kaydı boş ve fail-closed; deployment-bootstrap özel anahtar kaydını yalnız --allow-custom-license-keys ile kabul edip kayıt yolunu/SHA-256'sını makbuza yazıyor, emekli anahtarlar retired_at ve süre sınırlarına bağlı; lisans denetimi operatör tarafında, veritabanı imzayı yeniden doğrulamıyor. deploy/helm/aidr Helm chart'ı ve build-images.mjs air-gap için images.json çekme listesi üretiyor. İndirme merkezi yalnız doğrulanmış https manifesti gösteriyor ve yayınlanmış manifest yok. Resmi key custody, private registry, air-gap medya transfer tatbikatı ve canlı Kubernetes kurulumu açık.
 
 **Başlangıç durumu:** Taşınabilir aday, SBOM, paket tüketici ve SHA denetimleri var; yayıncı imzası yok.
 
@@ -552,7 +552,7 @@ Bu tek liste 59 iş paketini kapsar. Açık backlog kayıtları ve kısmi özell
 
 **Sorumlu:** Release Engineering + Security. **Bağımlılık:** Signer ve registry yetkisi; lisans onayı.
 
-**İlişkili özellikler:** DEP-05, DEP-08, OBS-05. **Kaynak:** [scripts/customer-kit.mjs](scripts/customer-kit.mjs), [.github/scripts/build-release-bundle.mjs](.github/scripts/build-release-bundle.mjs), [scripts/release-artifact-manifests.mjs](scripts/release-artifact-manifests.mjs).
+**İlişkili özellikler:** DEP-05, DEP-08, OBS-05, DEP-09, DEP-10, DEP-11, DEP-12. **Kaynak:** [scripts/customer-kit.mjs](scripts/customer-kit.mjs), [.github/scripts/build-release-bundle.mjs](.github/scripts/build-release-bundle.mjs), [scripts/release-artifact-manifests.mjs](scripts/release-artifact-manifests.mjs).
 
 ### T30 — HA, failover, kapasite ve SLA ölçümü (P0)
 
@@ -572,7 +572,7 @@ Bu tek liste 59 iş paketini kapsar. Açık backlog kayıtları ve kısmi özell
 
 ### T31 — Migration, upgrade ve geri dönüş tatbikatı (P0)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Kesilen rename resume yalnız kaynak/staged içerik preflight hash'leriyle eşleşirse devam ediyor; gerçek trafik cutover/rollback kabulü açık.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Kesilen rename resume yalnız kaynak/staged içerik preflight hash'leriyle eşleşirse devam ediyor. Upgrade adımları kendi süreç grubunda çalışıyor; SIGINT/SIGTERM'de salt-okur adımlar duruyor, durum değiştiren adımlar tamamlanıyor, şema commit'inden önce kayıtlı yazarlar yeniden başlatılıyor, interrupted_by ve devam edilebilir faz kaydediliyor, çıkış 130/143; pnpm verify:upgrade (43 kontrol, sinyal senaryoları dahil) onprem-deploy CI işinde çalışıyor. Gerçek önceki müşteri sürümünden upgrade, trafik cutover/rollback kabulü açık.
 
 **Başlangıç durumu:** 18 migration checksum/transaction ile uygulanıyor; temiz kurulum smoke var.
 
@@ -600,11 +600,11 @@ Bu tek liste 59 iş paketini kapsar. Açık backlog kayıtları ve kısmi özell
 
 **Sorumlu:** SRE + Support. **Bağımlılık:** Gerçek izleme/paging kanalları ve isimli sorumlular.
 
-**İlişkili özellikler:** DEP-01, DEP-02, OBS-01. **Kaynak:** [docs/runbooks/alerting.md](docs/runbooks/alerting.md), [docs/runbooks/incident-response.md](docs/runbooks/incident-response.md).
+**İlişkili özellikler:** DEP-01, DEP-02, OBS-01, OBS-08. **Kaynak:** [docs/runbooks/alerting.md](docs/runbooks/alerting.md), [docs/runbooks/incident-response.md](docs/runbooks/incident-response.md).
 
 ### T33 — Satılan fatura ve entitlement yaşam döngüsü (P0)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** billing-portal Edge Function provider-of-record durum makinesi, sunucu tarafi tenant/uyelik/rol/MFA cozumlemesi, istemci customer/tenant/subscription id reddi, TTL/idempotency, cancel/refund ve seat reconciliation uyguluyor; finance fixture ile test edildi, canli provider ve muhasebe onayi acik. Eski: Pending Finance sipariş sonucu tenant/request/quantity/quote alanlarına fail-closed bağlı; provider-of-record, ödeme makbuzu ve paid-to-entitlement yok.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** billing-portal Edge Function provider-of-record durum makinesi, sunucu tarafi tenant/uyelik/rol/MFA cozumlemesi, istemci customer/tenant/subscription id reddi, TTL/idempotency, cancel/refund ve seat reconciliation uyguluyor; finance fixture ile test edildi. Plan kataloğu (Free/Team/Business/Enterprise) ve fiyat haritasına bağlı, service-role-only Stripe plan admission'ı tenant admission kilidi altında eski/tekrar olayları reddediyor, başka lisansı veya operatör iptalini ezmiyor ve her kararı denetim kaydına yazıyor; self-service env ile kapalı. Liste fiyatları onaylı SKU değildir (COM-001); canli provider, vergi, mutabakat ve muhasebe onayi acik.
 
 **Başlangıç durumu:** Varsayılan kurum faturası; opsiyonel Stripe checkout/webhook kaynak kodu mevcut.
 
@@ -616,11 +616,11 @@ Bu tek liste 59 iş paketini kapsar. Açık backlog kayıtları ve kısmi özell
 
 **Sorumlu:** Finance + Billing Engineering. **Bağımlılık:** Ticari karar, canlı provider anahtarları ve muhasebe onayı.
 
-**İlişkili özellikler:** BIL-01, BIL-02, BIL-03. **Kaynak:** [packages/dashboard/src/ui/pages/BillingPage.tsx](packages/dashboard/src/ui/pages/BillingPage.tsx), [supabase/functions/billing-checkout/index.ts](supabase/functions/billing-checkout/index.ts), [supabase/functions/stripe-webhook/index.ts](supabase/functions/stripe-webhook/index.ts).
+**İlişkili özellikler:** BIL-01, BIL-02, BIL-03, BIL-04. **Kaynak:** [packages/dashboard/src/ui/pages/BillingPage.tsx](packages/dashboard/src/ui/pages/BillingPage.tsx), [supabase/functions/billing-checkout/index.ts](supabase/functions/billing-checkout/index.ts), [supabase/functions/stripe-webhook/index.ts](supabase/functions/stripe-webhook/index.ts).
 
 ### T34 — Readiness kayıtlarının ve ürün iddialarının tutarlılığı (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** 71 özellik, 59 iş paketi, 10 release rootu ve claim candidate/expiry tutarlılığı otomatik kontrol ediliyor; 13 dış onay kapısı açık.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** 109 özellik, 60 iş paketi, 11 release rootu ve claim candidate/expiry tutarlılığı otomatik kontrol ediliyor; 13 dış onay kapısı açık.
 
 **Başlangıç durumu:** Envanter güncel; eski denetim alanları tarihsel metinler içeriyor.
 
@@ -632,7 +632,7 @@ Bu tek liste 59 iş paketini kapsar. Açık backlog kayıtları ve kısmi özell
 
 **Sorumlu:** Product + Release + Marketing. **Bağımlılık:** Güncel release candidate ve ticari onay sahipleri.
 
-**İlişkili özellikler:** EVAL-02, EVAL-03, DEP-05. **Kaynak:** [docs/production-readiness/commercial-go-evidence-registry.json](docs/production-readiness/commercial-go-evidence-registry.json), [READINESS_BACKLOG.json](READINESS_BACKLOG.json), [README.md](README.md).
+**İlişkili özellikler:** EVAL-02, EVAL-03, DEP-05, GOV-01, GOV-02. **Kaynak:** [docs/production-readiness/commercial-go-evidence-registry.json](docs/production-readiness/commercial-go-evidence-registry.json), [READINESS_BACKLOG.json](READINESS_BACKLOG.json), [README.md](README.md).
 
 ### T35 — Test kapılarının kapsamı ve başarısızlığın saklanmaması (P0)
 
@@ -664,7 +664,7 @@ Bu tek liste 59 iş paketini kapsar. Açık backlog kayıtları ve kısmi özell
 
 **Sorumlu:** Dashboard + Design + Customer Success. **Bağımlılık:** Desteklenen browser ve müşteri kullanıcıları.
 
-**İlişkili özellikler:** CLI-01, TEN-07, TEN-03, POL-02, OBS-03. **Kaynak:** [packages/dashboard/src/main.tsx](packages/dashboard/src/main.tsx), [packages/dashboard/src/ui/pages/OnboardingPage.tsx](packages/dashboard/src/ui/pages/OnboardingPage.tsx), [packages/dashboard/src/ui/pages/EventsPage.tsx](packages/dashboard/src/ui/pages/EventsPage.tsx), [packages/dashboard/src/ui/pages/IncidentsPage.tsx](packages/dashboard/src/ui/pages/IncidentsPage.tsx), [packages/dashboard/src/enterprise/evidence-view.tsx](packages/dashboard/src/enterprise/evidence-view.tsx).
+**İlişkili özellikler:** CLI-01, TEN-07, TEN-03, POL-02, OBS-03, TEN-09, GOV-03. **Kaynak:** [packages/dashboard/src/main.tsx](packages/dashboard/src/main.tsx), [packages/dashboard/src/ui/pages/OnboardingPage.tsx](packages/dashboard/src/ui/pages/OnboardingPage.tsx), [packages/dashboard/src/ui/pages/EventsPage.tsx](packages/dashboard/src/ui/pages/EventsPage.tsx), [packages/dashboard/src/ui/pages/IncidentsPage.tsx](packages/dashboard/src/ui/pages/IncidentsPage.tsx), [packages/dashboard/src/enterprise/evidence-view.tsx](packages/dashboard/src/enterprise/evidence-view.tsx).
 
 ### T37 — Gerçek veri akışı, redaksiyon ve gizlilik kanıtı (P0)
 
@@ -682,7 +682,7 @@ Bu tek liste 59 iş paketini kapsar. Açık backlog kayıtları ve kısmi özell
 
 **Sorumlu:** Privacy + Security + Engineering. **Bağımlılık:** DPA ve müşteri veri sınıflandırması; hukuk incelemesi.
 
-**İlişkili özellikler:** OBS-01, OBS-03, OBS-06, TEN-01. **Kaynak:** [docs/privacy.md](docs/privacy.md), [packages/core/src/telemetry-redaction.ts](packages/core/src/telemetry-redaction.ts), [supabase/functions/ingest/index.ts](supabase/functions/ingest/index.ts).
+**İlişkili özellikler:** OBS-01, OBS-03, OBS-06, TEN-01, PRV-05, OBS-07, GOV-02. **Kaynak:** [docs/privacy.md](docs/privacy.md), [packages/core/src/telemetry-redaction.ts](packages/core/src/telemetry-redaction.ts), [supabase/functions/ingest/index.ts](supabase/functions/ingest/index.ts).
 
 ### T38 — Kuruma özel DLP ve veri etiketleri (P1)
 
@@ -700,7 +700,7 @@ Bu tek liste 59 iş paketini kapsar. Açık backlog kayıtları ve kısmi özell
 
 **Sorumlu:** Detection + Customer Security. **Bağımlılık:** Etiket/kural sözlüğü ve maskelenmiş test verisi.
 
-**İlişkili özellikler:** DET-07. **Kaynak:** [packages/core/src/dlp/index.ts](packages/core/src/dlp/index.ts), [packages/core/src/pii-detector.ts](packages/core/src/pii-detector.ts).
+**İlişkili özellikler:** DET-07, DET-13, DET-14, CLI-05. **Kaynak:** [packages/core/src/dlp/index.ts](packages/core/src/dlp/index.ts), [packages/core/src/pii-detector.ts](packages/core/src/pii-detector.ts).
 
 ### T39 — Bağımsız etkinlik, performans ve rakip kıyaslaması (P1)
 
@@ -716,7 +716,7 @@ Bu tek liste 59 iş paketini kapsar. Açık backlog kayıtları ve kısmi özell
 
 **Sorumlu:** Detection Research + QA + Independent Evaluator. **Bağımlılık:** Müşteri benign corpus'u, rakip değerlendirme erişimi, ölçüm bütçesi.
 
-**İlişkili özellikler:** EVAL-01, EVAL-02, EVAL-03. **Kaynak:** [docs/production-readiness/agent-security-market-and-release-plan.md](docs/production-readiness/agent-security-market-and-release-plan.md), [docs/production-readiness/customer-investor-validation-master-plan.md](docs/production-readiness/customer-investor-validation-master-plan.md).
+**İlişkili özellikler:** EVAL-01, EVAL-02, EVAL-03, DET-15, DET-16, DET-17, DET-18, DET-19, DET-20, CLI-06. **Kaynak:** [docs/production-readiness/agent-security-market-and-release-plan.md](docs/production-readiness/agent-security-market-and-release-plan.md), [docs/production-readiness/customer-investor-validation-master-plan.md](docs/production-readiness/customer-investor-validation-master-plan.md).
 
 ### T40 — Güvenlik güncellemesi ve müşteri destek işletimi (P0)
 
@@ -736,7 +736,7 @@ Bu tek liste 59 iş paketini kapsar. Açık backlog kayıtları ve kısmi özell
 
 ### T41 — İlk müşteri satış ve satın alma değerlendirme paketi (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** İlk müşteri readiness gate'i NO-GO; v8 satış paketi tarihsel iç buyer-review taslağıdır ve kabul/teklif yetkisi vermez. Portable kit üreticisi mevcut olsa da temiz imzalı candidate, onaylı teklif ve satın alma kabulü açık.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** İlk müşteri readiness gate'i NO-GO; v8 satış paketi tarihsel iç buyer-review taslağıdır ve kabul/teklif yetkisi vermez. TR/EN ürün özellik kılavuzu (docs/product/features, HTML/PDF render ve link/taşma kontrollü renderer) ile TR/EN broşür (docs/sales/brochure, sayısal iddiaları kaynaktan yeniden hesaplayan brochure-facts testi) eklendi; bunlar onaylı satış materyali değildir, iddia onayı CLM-001 ve fiyat onayı COM-001 açık. Portable kit üreticisi mevcut olsa da temiz imzalı candidate, onaylı teklif ve satın alma kabulü açık.
 
 **Başlangıç durumu:** Kontrollü demo, değerlendirme planı, ilk kurulum ve sipariş şablonları mevcut.
 
@@ -816,7 +816,7 @@ Bu tek liste 59 iş paketini kapsar. Açık backlog kayıtları ve kısmi özell
 
 ### T46 — Device-poll onaydan kayda atomik geçiş (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Device-poll kayıp yanıt/eşzamanlı poll'da aynı hash-only tokenı geri buluyor, lookup hatasında 503 unknown dönüyor; canlı yarış kabulü açık.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Device-poll kayıp yanıt/eşzamanlı poll'da aynı hash-only tokenı geri buluyor, lookup hatasında 503 unknown dönüyor; cihaz-kodu başına poll bütçesi RFC 8628 slow_down ile uygulanıyor ve bütçe okunamazsa 503 ile kapanıyor. Canlı yarış kabulü açık.
 
 **Başlangıç durumu:** Onaylanan oturum token eklenmeden exchanged olabiliyor, geçici hata kullanıcıyı yeniden kurulum başlatmaya zorluyordu.
 
@@ -829,6 +829,22 @@ Bu tek liste 59 iş paketini kapsar. Açık backlog kayıtları ve kısmi özell
 **Sorumlu:** Identity + QA. **Bağımlılık:** Canlı kurulum ve gerçek cihaz.
 
 **İlişkili özellikler:** TEN-05. **Kaynak:** [supabase/functions/device-poll/index.ts](supabase/functions/device-poll/index.ts), [supabase/migrations/20260912000017_enrollment_exchange_atomic.sql](supabase/migrations/20260912000017_enrollment_exchange_atomic.sql).
+
+### T47 — Tarayıcı gizlilik koruması (Browser Guard) ve AIDR Privacy saha kabulü (P1)
+
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Yerel uygulama: content script gönderim yakalama, geri alınabilir placeholder vault, yanıt unmask, auto/confirm/block/monitor modları, CSV/TSV/JSON/.env dosya temizleme, exact-data HMAC eşleşmesi, yönetilen politika (RE2 uyumlu şema build sırasında denetleniyor), yalnız-sayım privacy_scan telemetrisi, /privacy-guard paneli ve release-browser-guard iş akışı (tekrarlanabilir zip + SHA256SUMS) mevcut. Güvenlik incelemesi düzeltmeleri: geri açılan değerler kapalı shadow root içinde CSS generated content olarak, miras sıfırlanmış, generic font ve sabit genişlikle çiziliyor (sayfa fontu/CSS/window.find/seçim göremiyor) ve bir placeholder yalnız bu sekmeden onu taşıyan gönderimden sonra eklenen içerikte açılıyor; UTF-8 olmayan metin dosyaları windows-1254/1252 olarak çözülüp taranıyor, NUL baytı blokluyor; her yönetilen politika koruma azaltan kullanıcı ayarlarını (allowUserOverrides yoksa) kilitliyor; blocked.html web-accessible değil; telemetri ingest-only browser_guard anahtarıyla gönderilebiliyor. Native host NER taramaya bağlandı (nativeMessaging izni kullanıcı jestiyle isteniyor, host yoksa görünür şekilde yalnız kurallara düşüyor), vault sekme/origin başına storage.session'da yeniden yüklemeden sonra korunuyor, disabledSites izleme (monitor) semantiğinde. Belge desteği OpenDocument (ODT/ODS/ODP/ODG) yerinde maskeleme ve boş küçük resimle genişledi; eski .doc/.xls/.ppt dosyaları bildiriliyor ve blok modunda engelleniyor; görseller yalnız isteğe bağlı native host OCR'ı ile inceleniyor ve hassas metinde engelleniyor, aksi halde 'incelenmedi' olarak raporlanıyor. Kayıtlı hermetik Chromium E2E koşusunda 22 senaryonun 21'i geçti, 1'i kasıtlı olarak atlandı; bu fixture kanıtıdır. Canlı site, mağaza/imzalı dağıtım, MDM rollout, native NER/OCR doğruluğu ve müşteri kabulü açık.
+
+**Başlangıç durumu:** Browser Guard uzantısı, sekiz AI sitesi adaptörü, geri alınabilir maskeleme, dosya/yapıştırma koruması, exact-data eşleşmesi, yönetilen politika ve yalnız-sayım telemetrisiyle eklendi; doğrulama hermetik Chromium fixture'larıyla yapılıyor.
+
+**Başlangıç boşluğu / müşteri etkisi:** Fixture sayfaları canlı sitelerin DOM'unu temsil etmez. Mağaza yayını, imzalı dağıtım, MDM/GPO rollout, tanınmayan editör/gönderim yolları, Office/PDF/görsel dosyalar ve native NER/OCR doğruluğu ölçülmedi; uzantı devre dışı bırakılabilir veya desteklenmeyen tarayıcıda çalışmaz.
+
+**Tamamlanma hedefi:** Desteklenen site/tarayıcı/sürüm matrisini sabitle; canlı sitelerde selector drift izleme ve hızlı güncelleme yolunu kur; mağaza veya self-hosted imzalı dağıtımı ve yönetilen politika rollout'unu gerçek MDM'de uygula; telemetri veri akışını COM-003 kapsamında onaylat.
+
+**Kalan kapanış testi:** Her desteklenen canlı sitede TR/EN kişisel veri ve sırlar gönderimden önce maskelenip yanıtta doğru geri açılsın; tarama hatası veya eksik tarama gönderimi engellesin; yönetilen kilitli ayar kullanıcı tarafından değiştirilemesin; telemetride ham değer bulunmasın; gerçek filoda kurulum/güncelleme/kaldırma kanıtlansın.
+
+**Sorumlu:** Browser Guard + Privacy Engineering + QA. **Bağımlılık:** Müşteri tarayıcı filosu, MDM/GPO erişimi, mağaza/yayıncı hesabı ve COM-003 onayı.
+
+**İlişkili özellikler:** PRV-01, PRV-02, PRV-03, PRV-04, PRV-05, PRV-06, PRV-07, PRV-08, PRV-09. **Kaynak:** [packages/browser-guard/src/content/guard.ts](packages/browser-guard/src/content/guard.ts), [packages/browser-guard/src/engine/detect.ts](packages/browser-guard/src/engine/detect.ts), [packages/browser-guard/e2e/run.mjs](packages/browser-guard/e2e/run.mjs), [deploy/browser-guard/README.md](deploy/browser-guard/README.md), [docs/contracts/privacy-telemetry.md](docs/contracts/privacy-telemetry.md).
 
 ## Ticari, dış değerlendirme ve müşteri kabul kapıları
 
@@ -990,7 +1006,7 @@ Aşağıdakiler mevcut ticari registry'nin açık kayıtlarıdır. Doküman şab
 
 **Sorumlu:** Product/Marketing + Commercial + Legal. **Kontrol:** node docs/scripts/claim-check.mjs --mode=gate.
 
-## 71 alt özelliğin eksik/kabul işleriyle eşlemesi
+## 109 alt özelliğin eksik/kabul işleriyle eşlemesi
 
 Tabloda wired yalnız çağrılabilen akış demektir; üretim kabulü değildir. Her özellik en az bir açık kabul işine bağlandı. Ayrıntılı kaynak ve mevcut davranış [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json) içindedir.
 
@@ -1008,6 +1024,14 @@ Tabloda wired yalnız çağrılabilen akış demektir; üretim kabulü değildir
 | DET-10 | URL reputation | partial | T03, T06, T21, T42 |
 | DET-11 | File reputation and AMSI | partial | T02, T03, T06, T21, T42 |
 | DET-12 | Package and plugin supply chain | partial | T02, T03, T06 |
+| DET-13 | TR/EN privacy detectors in core DLP | wired | T38 |
+| DET-14 | Prompt protection and DLP input redaction | partial | T04, T38 |
+| DET-15 | Session toxic-flow and behavioral chain detection | wired | T39 |
+| DET-16 | Data and context poisoning protection | partial | T39 |
+| DET-17 | Canary credentials (honeytokens) | wired | T39 |
+| DET-18 | Agent-safety guardrails for autonomous agents | wired | T39 |
+| DET-19 | AI model supply-chain and secure-code guardrails | wired | T39 |
+| DET-20 | Prompt jailbreak and content-safety policy | wired | T39 |
 | MCP-01 | Local server discovery | wired | T07 |
 | MCP-02 | Discovery completeness reporting | wired | T07 |
 | MCP-03 | Server and tool policy lists | wired | T07 |
@@ -1018,6 +1042,9 @@ Tabloda wired yalnız çağrılabilen akış demektir; üretim kabulü değildir
 | INF-01 | Native fingerprint and CVE scanning | wired | T06 |
 | INF-02 | Scan report to runtime policy | wired | T06 |
 | INF-03 | Continuous fleet discovery | partial | T11 |
+| INF-04 | AI security posture findings | wired | T06, T07 |
+| INF-05 | AI Bill of Materials (CycloneDX 1.6) | wired | T07 |
+| INF-06 | Agent environment and autonomy posture | partial | T07 |
 | RSP-01 | Pre-execution block and approval | wired | T01 |
 | RSP-02 | Quarantine and restore | wired | T13 |
 | RSP-03 | File snapshot and rollback | wired | T13 |
@@ -1025,21 +1052,27 @@ Tabloda wired yalnız çağrılabilen akış demektir; üretim kabulü değildir
 | RSP-05 | Signed response audit chain | wired | T13, T25 |
 | RSP-06 | Fleet kill switch and credential revoke | partial | T12 |
 | RSP-07 | SOAR playbook orchestration | partial | T13 |
+| RSP-08 | Out-of-band operator approvals and operator CLI | wired | T01, T13 |
+| RSP-09 | Managed-mode dashboard approvals | wired | T13 |
 | POL-01 | Local filesystem/network/tool controls | wired | T14 |
 | POL-02 | Team YAML authoring | wired | T14, T36 |
 | POL-03 | Runtime publication and history | wired | T15 |
 | POL-04 | Native policy retrieval and cache | wired | T15, T44 |
 | POL-05 | Fleet adoption and rollout controls | wired | T15 |
+| POL-06 | Agent permission profiles | wired | T14 |
 | CLI-01 | Setup and measured diagnostics | wired | T17, T36 |
 | CLI-02 | Typed and redacted configuration | wired | T16 |
 | CLI-03 | Claude local installer | wired | T17 |
 | CLI-04 | Enterprise fleet rollout | partial | T17 |
+| CLI-05 | Local TR/EN privacy scan | wired | T38 |
+| CLI-06 | Defensive detection self-test (aidr simulate) | wired | T39 |
 | CON-01 | Claude Code | wired | T01, T04 |
 | CON-02 | Cursor and VS Code | wired | T01, T04 |
 | CON-03 | OpenClaw | wired | T01, T04 |
 | CON-04 | OpenCode | wired | T01, T02, T04 |
 | CON-05 | Codex | partial | T01, T04, T35 |
 | CON-06 | SDK client and generic middleware | wired | T01, T04 |
+| CON-07 | Cross-connector parity and fail-closed initialisation | wired | T01, T02 |
 | TEN-01 | Tenant isolation and RBAC | wired | T18, T21, T22, T37, T42 |
 | TEN-02 | Team creation and member lifecycle | wired | T19 |
 | TEN-03 | Invitation issue and acceptance | wired | T20, T36 |
@@ -1047,26 +1080,47 @@ Tabloda wired yalnız çağrılabilen akış demektir; üretim kabulü değildir
 | TEN-05 | Device pairing and enrollment | partial | T20, T43, T44, T45, T46 |
 | TEN-06 | API keys and revocation | wired | T09, T16, T21, T43 |
 | TEN-07 | First customer provisioning and login | wired | T18, T36 |
+| TEN-08 | Platform operator administration | wired | T18, T22 |
+| TEN-09 | Workspace settings and closure request | wired | T26, T36 |
 | OBS-01 | Telemetry ingest and dashboard | wired | T22, T23, T32, T37 |
 | OBS-02 | Incident correlation and investigation | wired | T09, T25 |
 | OBS-03 | Audit export | wired | T26, T36, T37 |
 | OBS-04 | SIEM delivery and native telemetry | partial | T24 |
 | OBS-05 | Tamper and offline integrity | wired | T29, T40 |
 | OBS-06 | Retention and deletion | partial | T26, T37 |
+| OBS-07 | Signed compliance evidence report | wired | T37 |
+| OBS-08 | Real-time alert integrations | wired | T32 |
+| GOV-01 | Detection framework mapping (OWASP LLM 2025, OWASP Agentic 2026, MITRE ATLAS) | wired | T34 |
+| GOV-02 | AI governance framework mapping, scorecard and scheduled summary | wired | T34, T37 |
+| GOV-03 | AI asset register, intake, exceptions and four-eyes policy change control | wired | T15, T36 |
 | BIL-01 | Invoice-based sales model | partial | T33, T41 |
 | BIL-02 | Stripe checkout and event processing | partial | T33 |
 | BIL-03 | Subscription self-service portal | partial | T33 |
+| BIL-04 | Plan catalog, pricing and Stripe plan admission | partial | T33 |
 | DEP-01 | Self-hosted preparation | wired | T28, T32, T45 |
 | DEP-02 | Cloud preparation | partial | T28, T32, T45 |
-| DEP-03 | Atomic migration runner | wired | T31 |
+| DEP-03 | Atomic migration runner and signal-safe upgrade | wired | T31 |
 | DEP-04 | Installation smoke evidence | wired | T31 |
 | DEP-05 | Authenticated signed release delivery | partial | T29, T34, T40 |
 | DEP-06 | Backup, restore and disaster recovery | partial | T27 |
 | DEP-07 | Availability and scale | partial | T22, T30 |
 | DEP-08 | Portable installation candidate and doctor | wired | T29 |
+| DEP-09 | On-prem bundle, resource profiles, posture scanner sidecar and egress proxy | partial | T28, T29 |
+| DEP-10 | Vendor-signed offline licence and offline pack import | partial | T29 |
+| DEP-11 | Download center and release manifest | partial | T29 |
+| DEP-12 | Kubernetes Helm chart for the self-hosted control plane | partial | T28, T29 |
 | EVAL-01 | Independent attack and benign benchmarks | partial | T35, T39 |
 | EVAL-02 | Legal, privacy, residency and support | external | T34, T39, T41 |
 | EVAL-03 | Customer proof of value | external | T34, T39, T41 |
+| PRV-01 | Browser Guard prompt masking on AI chat sites | partial | T47 |
+| PRV-02 | Paste and file-upload sanitisation | wired | T47 |
+| PRV-03 | Exact-data match on customer datasets | wired | T47 |
+| PRV-04 | Managed browser policy and fleet deployment | partial | T47 |
+| PRV-05 | Counts-only privacy telemetry and Privacy Guard dashboard | wired | T37, T47 |
+| PRV-06 | AIDR Privacy engine and optional native NER host | partial | T47 |
+| PRV-07 | Shadow AI discovery/control and custom internal AI sites | partial | T47 |
+| PRV-08 | Office/OpenDocument document masking, PDF scanning and image OCR gating | partial | T47 |
+| PRV-09 | AI acceptable-use notice | wired | T47 |
 
 ## Uygulama sırası ve kapanış kuralı
 

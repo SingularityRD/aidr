@@ -16,6 +16,10 @@ import { nullLogger } from "./types.js";
 
 const SUSPICIOUS_AGE_DAYS = 7;
 const MAX_CONCURRENT = 10;
+/** Defaults for the slopsquatting (young + low adoption) signal; see PackageCheckConfigSchema. */
+const DEFAULT_NEW_PACKAGE_DAYS = 30;
+const DEFAULT_LOW_ADOPTION_WEEKLY_DOWNLOADS = 1000;
+const DEFAULT_LOW_ADOPTION_MAX_VERSIONS = 3;
 
 export interface PackageCheckInput {
 	name: string;
@@ -38,6 +42,14 @@ export interface PackageCheckerConfig {
 	intelPackageHashDeny?: Set<string>;
 	/** Verified, freshness-bound signed feed. Missing or untrusted configured feed is unavailable, never clean. */
 	reputationFeed?: ReputationFeedLoadOptions;
+	/** Packages first published fewer days ago than this are checked for low adoption (0 = off). */
+	newPackageDays?: number;
+	/** npm weekly downloads below this are low adoption. */
+	lowAdoptionWeeklyDownloads?: number;
+	/** Version counts at or below this are low adoption when downloads are unavailable. */
+	lowAdoptionMaxVersions?: number;
+	/** Query the npm downloads API for young packages. */
+	adoptionLookup?: boolean;
 }
 
 export class PackageChecker {
@@ -47,6 +59,10 @@ export class PackageChecker {
 	private readonly intelPackageNameDeny: Set<string> | null;
 	private readonly intelPackageHashDeny: Set<string> | null;
 	private readonly reputationFeed?: ReputationFeedLoadOptions;
+	private readonly newPackageDays: number;
+	private readonly lowAdoptionWeeklyDownloads: number;
+	private readonly lowAdoptionMaxVersions: number;
+	private readonly adoptionLookup: boolean;
 
 	constructor(config: PackageCheckerConfig = {}, logger: Logger = nullLogger) {
 		this.logger = logger;
@@ -70,6 +86,39 @@ export class PackageChecker {
 		this.intelPackageNameDeny = config.intelPackageNameDeny ?? null;
 		this.intelPackageHashDeny = config.intelPackageHashDeny ?? null;
 		this.reputationFeed = config.reputationFeed;
+		this.newPackageDays = config.newPackageDays ?? DEFAULT_NEW_PACKAGE_DAYS;
+		this.lowAdoptionWeeklyDownloads =
+			config.lowAdoptionWeeklyDownloads ?? DEFAULT_LOW_ADOPTION_WEEKLY_DOWNLOADS;
+		this.lowAdoptionMaxVersions =
+			config.lowAdoptionMaxVersions ?? DEFAULT_LOW_ADOPTION_MAX_VERSIONS;
+		this.adoptionLookup = config.adoptionLookup ?? true;
+	}
+
+	/**
+	 * Slopsquatting signal: a package that exists but was first published inside
+	 * the configured window and has little adoption is typical of a name
+	 * registered after an AI assistant hallucinated it. Adoption is the npm
+	 * weekly download count when available, otherwise the number of published
+	 * versions. Returns the evidence when adoption is low, null otherwise.
+	 */
+	private async lowAdoptionEvidence(
+		pkg: PackageCheckInput,
+		metadata: PackageMetadata,
+		ageDays: number | undefined,
+	): Promise<string | null> {
+		if (ageDays === undefined || ageDays >= this.newPackageDays) return null;
+		const downloads = this.adoptionLookup
+			? await this.registryClient.getWeeklyDownloads(pkg.name, pkg.registry)
+			: null;
+		if (downloads !== null) {
+			return downloads < this.lowAdoptionWeeklyDownloads
+				? `${downloads} downloads last week`
+				: null;
+		}
+		if (metadata.versionCount === undefined) return null;
+		return metadata.versionCount <= this.lowAdoptionMaxVersions
+			? `${metadata.versionCount} published version${metadata.versionCount === 1 ? "" : "s"}`
+			: null;
 	}
 
 	private loadSignedFeed(): Promise<ReputationFeedLoadResult | null> {
@@ -288,6 +337,17 @@ export class PackageChecker {
 				verdict: "suspicious_age",
 				confidence: 0.75,
 				details: `Package '${pkg.name}' first published ${Math.floor(ageDays)} days ago (suspicious age)${fileReputationUnavailable ? "; file reputation check unavailable" : fileReputationUnclassified ? "; file reputation unclassified" : ""}`,
+				ageDays,
+			};
+		}
+		const lowAdoption = await this.lowAdoptionEvidence(pkg, metadata, ageDays);
+		if (lowAdoption !== null && ageDays !== undefined) {
+			return {
+				packageName: pkg.name,
+				registry: pkg.registry,
+				verdict: "suspicious_age",
+				confidence: 0.75,
+				details: `Package '${pkg.name}' was first published ${Math.floor(ageDays)} days ago and has low adoption (${lowAdoption}); a recently registered, little-used name is typical of slopsquatting on a hallucinated package name (verify it is the package you intended)${fileReputationUnavailable ? "; file reputation check unavailable" : fileReputationUnclassified ? "; file reputation unclassified" : ""}`,
 				ageDays,
 			};
 		}

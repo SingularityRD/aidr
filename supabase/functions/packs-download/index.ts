@@ -6,6 +6,7 @@ import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import { authenticateTenantApiKey, authenticateTenantApiKeyHash } from "../_shared/api-key-auth.ts";
 import { getBearerToken } from "../_shared/auth.ts";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
+import { consumeTenantRateLimit, rateLimitHeaders } from "../_shared/request-limits.ts";
 import { retiredSecretActive } from "../_shared/key-rotation.ts";
 import { packSigningTtlSeconds, packUrlTtlSeconds } from "../_shared/pack-delivery.ts";
 import {
@@ -37,10 +38,16 @@ type DownloadDatabase = {
 	};
 };
 
-function json(status: number, body: Record<string, unknown>) {
+// Per-API-key and per-tenant budgets for minting a download grant and for
+// streaming a granted pack (ranged resumes count once per request). Both sit
+// far above a compliant connector and bound storage egress by a leaked key.
+const GRANT_RATE_LIMIT = { endpoint: "packs-download", perSubject: 300, perTenant: 30_000 } as const;
+const STREAM_RATE_LIMIT = { endpoint: "packs-download:stream", perSubject: 300, perTenant: 30_000 } as const;
+
+function json(status: number, body: Record<string, unknown>, headers: Record<string, string> = {}) {
 	return new Response(JSON.stringify(body), {
 		status,
-		headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+		headers: { "Content-Type": "application/json", "Cache-Control": "no-store", ...headers },
 	});
 }
 
@@ -113,6 +120,13 @@ async function streamGrantedPack(
 	if (auth.apiKeyId !== grant.key_id || auth.tenantId !== grant.tenant_id) {
 		return json(401, { error: "invalid_download_grant" });
 	}
+	const rate = await consumeTenantRateLimit(supabase, {
+		tenantId: auth.tenantId,
+		subject: grant.key_id,
+		...STREAM_RATE_LIMIT,
+		now,
+	});
+	if (!rate.ok) return json(rate.status, { error: rate.error }, rateLimitHeaders(rate));
 
 	const { data: entRow, error: entError } = await db
 		.from("entitlements")
@@ -192,6 +206,12 @@ Deno.serve(async (req) => {
 	const auth = await authenticateTenantApiKey(supabase, apiKey);
 	if (!auth.ok) return json(auth.status, { error: auth.error });
 	if (!auth.apiKeyId) return json(503, { error: "authorization_unavailable" });
+	const rate = await consumeTenantRateLimit(supabase, {
+		tenantId: auth.tenantId,
+		subject: auth.apiKeyId,
+		...GRANT_RATE_LIMIT,
+	});
+	if (!rate.ok) return json(rate.status, { error: rate.error }, rateLimitHeaders(rate));
 	const { data: entRow, error: entErr } = await supabase
 		.from("entitlements")
 		.select("premium_intel,premium_pkg_plugin")

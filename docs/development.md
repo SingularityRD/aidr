@@ -20,6 +20,7 @@ Requires Node.js >= 22.12.0 and pnpm >= 9.
 |---------|-------------|
 | `pnpm build` | Build all packages (tsc + esbuild) |
 | `pnpm build:release` | Release build (no sourcemaps in `dist/`) |
+| `pnpm ci:local` | Run every `ci.yml` gate locally with a summary table (see [Running CI locally](#running-ci-locally)); `pnpm ci:local:quick` for the fast subset |
 | `pnpm test` | Run unit + integration tests (builds automatically) |
 | `pnpm test -- --reporter=verbose` | Verbose test output |
 | `pnpm test -- <file>` | Run a single test file |
@@ -33,6 +34,7 @@ Requires Node.js >= 22.12.0 and pnpm >= 9.
 | `pnpm test:e2e:opencode` | OpenCode E2E tests only |
 | `pnpm test:e2e:cursor` | Cursor extension E2E tests only |
 | `pnpm test:e2e:vscode` | VS Code extension E2E tests only |
+| `pnpm test:e2e:real-host` | Real Claude Code / Codex / OpenCode / OpenClaw binaries against a scripted mock model (no API keys) |
 | `pnpm build:sea` | Build standalone SEA binaries |
 | `pnpm lint` | Lint with Biome |
 | `pnpm lint:fix` | Lint + auto-fix |
@@ -52,8 +54,49 @@ Requires Node.js >= 22.12.0 and pnpm >= 9.
 | E2E (OpenCode) | OpenCode CLI smoke test | `packages/opencode/src/__tests__/e2e.test.ts` | OpenCode CLI executable |
 | E2E (Cursor extension) | Singularity AIDR extension in Cursor Extension Host | `packages/extension/src/__tests__/e2e.test.ts` | Installed Cursor executable (`agent` CLI required for headless Cursor-agent sub-suite) |
 | E2E (VS Code extension) | Singularity AIDR extension in VS Code Extension Host | `packages/extension/src/__tests__/e2e.test.ts` | Installed VS Code executable |
+| E2E (real host, mock model) | Real host binaries with AIDR installed in a disposable HOME, tool calls scripted by a loopback mock model | `scripts/real-host-e2e/` | `claude` on PATH; network on first run to install the pinned Codex, OpenCode, OpenClaw and Node 24 |
 
-`pnpm test` runs unit and integration tests. E2E is excluded — run separately with `pnpm test:e2e` (all), `pnpm test:e2e:claude`, `pnpm test:e2e:openclaw`, `pnpm test:e2e:opencode`, `pnpm test:e2e:cursor`, or `pnpm test:e2e:vscode`.
+`pnpm test` runs unit and integration tests. E2E is excluded — run separately with `pnpm test:e2e` (all), `pnpm test:e2e:claude`, `pnpm test:e2e:openclaw`, `pnpm test:e2e:opencode`, `pnpm test:e2e:cursor`, `pnpm test:e2e:vscode`, or `pnpm test:e2e:real-host`.
+
+### Real-host E2E with a scripted mock model
+
+`pnpm test:e2e:real-host` (scripts/real-host-e2e/) runs the **real, unmodified host
+programs** — Claude Code, Codex CLI 0.141.0, OpenCode 1.18.32 and OpenClaw 2026.9.6
+(the last three installed, pinned, into `.ci-local/real-host` on first run, plus a
+sha256-verified Node.js 24 for OpenClaw) — with AIDR installed from this checkout's
+`pnpm build` output in a disposable HOME. Only the model is replaced: a loopback server
+(`mock-llm-server.mjs`) speaks the Anthropic Messages, OpenAI Responses and Chat
+Completions streaming protocols and answers each turn with a predetermined tool call,
+then a final text. No API key, account or outbound model traffic is involved, and the
+host processes get a minimal environment (no proxy, no credentials, no operator HOME).
+
+Each scenario is one non-interactive turn, and the assertions read what the host did,
+not what AIDR returned:
+
+| Scenario | Asserted on the host |
+|---|---|
+| `benign-tool-executes` | the command ran (marker file), its output went back to the model, the connector receipt says `allow` |
+| `malicious-tool-blocked` | `curl … \| sh` to a TEST-NET address never ran, AIDR's denial went back to the model, the audit log has the `CLT-CMD-001` deny |
+| `malicious-tool-runs-without-aidr` | the same call **does** run with AIDR absent (attribution control; also the `disabled-hook` observation) |
+| `credential-canary-read-blocked` | a private-key canary never appears in any model request |
+| `secret-prompt-blocked` | a prompt carrying a token never reaches the model; the audit entry has kinds only |
+| `secret-tool-output-quarantined` | a token in tool output reaches the model only as AIDR's quarantine notice (Claude Code, OpenCode, OpenClaw) |
+| `internal-error-fails-closed` | with AIDR's own integrity check failing (`AIDR_COMMERCIAL=1` against the unsigned build) nothing runs |
+| `tool-hook-deadline-fails-closed` | Claude Code: the connector's inspection deadline at its 100 ms floor denies the call |
+| `crashed-hook-observed` | Claude Code, Codex: a hook process SIGKILLed before its verdict — the host's policy is recorded (both fail open) |
+
+Each host writes one record (default `.release-evidence/real-host/<connector>.json`).
+`--evidence-dir docs/evidence/real-host` refreshes the committed records that
+`deploy/native/interception-matrix.json` cites; the support matrix pins their sha256,
+so update `acceptanceEvidence` there in the same change. Useful flags: `--host
+claude-code,codex`, `--scenario <id>`, `--hosts-dir <dir>` (or `AIDR_REAL_HOST_DIR`),
+`--keep` (keep the sandboxes). A selected host that cannot be found fails the run.
+
+What this tier does **not** prove: real model behaviour or detection breadth (the
+tool call is scripted), a signed commercial artefact (it loads the development
+build), interactive approval dialogs, or any platform other than the one it ran on.
+Cursor and VS Code are not covered (their installers could not be fetched in the
+environment the records were produced in).
 
 The isolated core coverage gate currently prevents regression below 83% lines, 80% statements, 72% branches, and 84% functions. On the current tree the isolated run measures about 83.7% lines, 80.2% statements, 72.6% branches, and 84.7% functions; raise the enforced floors as coverage improves rather than lowering or bypassing the gate.
 
@@ -211,10 +254,136 @@ aidr/
 | zod | ^3.24 | Schema validation |
 | yaml | ^2.7 | YAML parsing |
 
+### Node.js versions in CI
+
+`.github/workflows/ci.yml` pins every Node line it tests in its top-level `env`:
+
+| Line | Where it runs | Why |
+|------|---------------|-----|
+| `NODE_VERSION` 22.12.0 | Quality gate (lint, types, every unit/integration suite, release build), Browser Guard, Helm, workflow lint | Minimum supported engine (`engines.node` in the root `package.json`) |
+| `NODE_24_VERSION` 24.12.0 | Second leg of the core build + test matrix; the on-prem deployment job | On-prem runtime line: the dashboard image is `node:24.12.0`, esbuild targets `node24`, and `deployment-doctor.mjs` refuses hosts older than Node 24 |
+| `PRIVACY_NODE_VERSION` 22.16.0 | `packages/privacy` build/tests and the privacy rule drift gate | `engines.node` floor of `@singularityrd/aidr-privacy` |
+
+The core matrix (`core-node-matrix`) runs the same build and suite on 22.12.0 and
+24.12.0, so a change that only works on one line fails CI. Raise a floor by
+changing the `env` value, the matrix literal and the `engines` field together;
+`scripts/ci-workflows.test.mjs` fails when they disagree.
+
+Every job that runs tests records the agent configuration files an installer can
+write under the runner's real home (`~/.claude/settings.json`, `~/.cursor/hooks.json`,
+`~/.codex/*`, ...) before the tests and fails if any of them changed afterwards
+(`scripts/verify-real-home-untouched.mjs`). Tests must stub `HOME` and
+`USERPROFILE` to a temporary directory, as the hook-installer suites do.
+
+## Running CI locally
+
+GitHub Actions is disabled for this organisation, so `.github/workflows/ci.yml` is
+not the gate: `pnpm ci:local` is. It runs every gate `ci.yml` runs on your
+machine, in one command, and ends with a summary table.
+
+```bash
+pnpm ci:local                      # everything; stops at the first failing required step
+pnpm ci:local --keep-going         # run everything, then summarise (use before pushing)
+pnpm ci:local:quick                # fast subset: lint, tsc, static/contract/readiness/drift gates
+pnpm ci:local --list               # groups, steps, commands, timeouts, prerequisites
+pnpm ci:local --only helm,privacy  # groups or step ids (repeatable); --skip works the same way
+pnpm ci:local --fetch-tools        # provision missing pinned tools into .ci-local/tools first
+```
+
+| Option | Effect |
+|--------|--------|
+| `--only <group\|id>[,...]` | Run only these groups/steps. The only way to select the opt-in `real-host-e2e` group, which CI also runs only on manual dispatch. |
+| `--skip <group\|id>[,...]` | Leave these out (listed under "Not selected" in the summary). |
+| `--quick` | Keep steps marked quick: no builds, full suites, coverage, Docker or network. |
+| `--keep-going` | Do not stop after the first failing required step. |
+| `--fetch-tools` | Download or build missing pinned tools into `.ci-local/tools`, verified exactly as `ci.yml` verifies them: gitleaks, promtool and actionlint from the URL and sha256 pinned in `ci.yml`; Helm through the `ci.yml` install step (GPG signature + checksum), falling back to `go install helm.sh/helm/v3/cmd/helm@<pinned>` (module checksum database) when get.helm.sh is unreachable; Node 24 from nodejs.org checked against `SHASUMS256.txt`. Nothing is committed. |
+| `--allow-dirty` | Report the clean-checkout step as SKIPPED instead of failing it when the tree has uncommitted changes. |
+| `--strict` | Exit non-zero when any selected step is SKIPPED (full-parity machines). |
+| `--json [file]` | Also write the machine-readable report to `file`; it is always written to `.ci-local/report.json`. |
+
+**Groups**, in execution order: `guards` (real-HOME record/verify and a working-tree
+mutation check, wrapped around the whole run), `install`, `hygiene` (clean checkout +
+vendored AIG source, repo hygiene, gitleaks secret scan), `lint` (Biome with 0 errors,
+knip, jscpd), `check` (tsc), `static` (the `quality:static` node gates, AIG freshness,
+Cloudflare Worker contract), `readiness` (validate-backlog, verify-feature-acceptance,
+check-generator-determinism, investor metrics), `commercial` (commercial surface,
+compliance, claim inventory and evidence freshness), `docs-facts` (brochure and
+feature-guide fact tests), `workflows` (ci-workflows contract, actionlint, this runner's
+drift test), `supabase` (migration contract, pinned Deno Edge typecheck, the Postgres
+container suites), `audit`, `build`, `test` (`pnpm test`), `coverage`, `core-matrix`,
+`privacy` (`pnpm test:privacy`, `verify:privacy-rules`), `mcp-gateway`, `browser-guard`
+(pin check, build, unit, real-browser E2E, release zips), `onprem` (deployment/air-gap/
+customer-kit/license/offline-pack/onprem-* suites, bootstrap/upgrade/backup/config
+reference, promtool, compose models, image builds), `helm`, `aig-bridge` (pip-audit +
+pytest in `.ci-local/venv/aig-bridge`), `release` (release build, fleet lifecycles,
+packed-artifact install, dashboard route smoke, evidence boundary) and the opt-in
+`real-host-e2e`.
+
+**How it stays equal to `ci.yml`.** The plan (`scripts/lib/ci-local-plan.mjs`) is an
+explicit step catalog with a drift test rather than a mechanical translation, because
+a third of the CI steps download tools into `$RUNNER_TEMP`, need a Docker daemon or
+assert runner specifics, and would fail or silently no-op on a workstation; an
+explicit catalog can say why a step did not run. Where a CI step is self-contained
+shell, the local step *is* that step: `ci: [job, step]` executes the literal `run:`
+block read from `ci.yml` at run time, with its `env:` and `working-directory:`
+(`$RUNNER_TEMP` points into `.ci-local/runner-temp/`). The remaining steps are explicit
+commands that name the CI steps they cover, and `pnpm quality:gate` is run as its
+individual components so a failure names the gate. `scripts/ci-local.test.mjs` (run by
+`ci:local` itself, step `ci-local-drift`) fails when `ci.yml` gains a job or `run:`
+step with no local step, when a reference goes stale, when an explicitly covered CI
+step starts calling a root script or repo file the local command does not, or when
+`quality:gate`/`quality:static` gain a component. When you add a CI step, add or
+extend a step in the catalog (or list it in `CI_ONLY_STEPS` with a reason).
+
+**Prerequisites and SKIPPED.** A step whose prerequisite is missing is reported as
+`SKIPPED` with the exact prerequisite and the fix, in the table and in a separate
+SKIPPED section - never as PASS and never silently. Only required failures make the
+exit code non-zero (`--strict` also fails on skips).
+
+**Step dependencies (NOT RUN).** `package-install` and `route-smoke` consume what
+`build-release` writes (the release `dist/` trees and the dashboard build). In `ci.yml`
+a failed `pnpm quality:gate` ends the job before they run, so with `--keep-going` they
+are reported `NOT RUN` ("needs build-release") when `build-release` failed in the same
+run, instead of failing a second time on missing or stale development artefacts.
+Selected on their own (`--only route-smoke`), they run against whatever is on disk.
+
+**Unsigned release builds and signed-release evidence.** `pnpm build:release` (and
+therefore `ci.yml`'s quality gate and `ci:local`) writes unsigned `dist/` manifests.
+The package-level `packages/claude-code/aidr-artifact.manifest.json` and every
+`aidr-artifact.manifest.sig` are written only by the signing workflow
+(`release-rc.yml`). `pnpm verify:package-install` therefore checks everything else in
+an unsigned build and reports the absent signed-release evidence as an explicit
+`SKIPPED_WITH_REASON` line (never a pass); shipping only part of that set still fails.
+Signed-release mode (`node scripts/verify-package-install.mjs --require-signed`, also
+on whenever `AIDR_SIGNING_PUBLIC_KEY_PEM_PATH` is set, as in the release-rc
+clean-consumer gate) requires every declared signature and package manifest.
+
+| Prerequisite | Steps | Without it |
+|--------------|-------|------------|
+| Docker CLI + compose v2 | `onprem-compose` | SKIPPED |
+| Docker daemon | `supabase-postgres`, `postgres-gates`, `onprem-dashboard-image`, `onprem-aig-bridge-image` | SKIPPED (the static Supabase checks still run) |
+| Network (registry.npmjs.org) | audits, Deno Edge typecheck, Postgres suites, image builds, aig-bridge | SKIPPED |
+| gitleaks 8.30.1, promtool, actionlint, Helm 3 | `secret-scan`, `onprem-promtool`, `actionlint`, `helm` | SKIPPED; `--fetch-tools` provisions them |
+| Node 24 | `core-node24`; preferred by the `onprem` steps | the Node 24 leg is SKIPPED with a warning; on-prem steps run on the current Node with a WARNING note |
+| Python 3.12 | `aig-bridge-*` | SKIPPED |
+| PowerShell 7 (`pwsh`) | `fleet-windows` (GitHub's Ubuntu runners ship it) | SKIPPED; `fleet-unix` still runs |
+| A non-root user | `fleet-unix` (the installer refuses its test-root mode for uid 0) | SKIPPED |
+| Playwright Chromium for the pinned `playwright-core` | `bg-playwright-pin`, `bg-e2e` | SKIPPED; set `PLAYWRIGHT_BROWSERS_PATH` or populate `/opt/pw-browsers` |
+
+Everything else runs on the current Node (the `core-node22` leg records which version
+it used; CI pins 22.12.0). Differences from hosted CI that remain: steps run
+sequentially in one checkout, `CI` is not set (so artifact manifests do not claim a CI
+build host; `AIDR_CI_LOCAL=1` is set instead), and artifacts are not uploaded. Each
+step's full output is in `.ci-local/logs/`, and `.ci-local/` is gitignored. The runner
+needs bash (Linux, macOS, WSL or Git Bash).
+
 ## Conventions
 
 - **Naming split:** YAML/JSON data uses `snake_case` (`threat_id`, `source_file`). TypeScript uses `camelCase` (`threatId`, `sourceFile`). Conversion functions handle the boundary.
-- **Fail-open:** Every internal error path must return an `allow` verdict. Extension hooks always exit with code `0`.
+- **Failure policy is per layer, not blanket fail-open:**
+  - *Connector entry points* fail **closed**: an internal error in a hook or plugin returns a `deny` (or block), never a silent `allow`. Extension hooks always exit with code `0` and emit the deny verdict.
+  - *Detection internals* (an erroring rule, an optional reputation lookup, a cache, intel or policy load) skip that signal, log it and continue; a skipped signal must never be reported as a clean result.
+  - *Security controls* (auth, tenant isolation, rate limits, webhook signatures, approval) fail **closed**.
 - **Detection patterns are data.** No hardcoded patterns - all rules live in `threats/*.yaml`.
 - **Versioning:** See [Versioning](#versioning) below.
 
@@ -233,6 +402,16 @@ This project uses [Changesets](https://github.com/changesets/changesets) with **
 **Non-standard manifest sync:** Changesets only knows about `package.json` files. The `pnpm run version` script automatically runs `scripts/sync-manifests.mjs` after `changeset version` to propagate versions to `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, and `packages/openclaw/openclaw.plugin.json`.
 
 **Pre-commit hook:** A `changeset-check` pre-commit hook warns when staged files affect shipped artifacts (source code, threat definitions, allowlists, hooks, skills, plugin manifests) without a corresponding changeset. Bypass with `git commit --no-verify`.
+
+**Browser Guard releases** are versioned separately from the connector packages.
+Pushing a protected, PGP-signed annotated tag `browser-guard-vX.Y.Z` (matching
+`packages/browser-guard/package.json`) runs `.github/workflows/release-browser-guard.yml`:
+unit tests, the real-browser E2E, two release builds that must produce identical
+zips, `SHA256SUMS`, a build-provenance attestation and a **draft** GitHub release.
+The workflow reads only the tag-signing secrets (`RELEASE_TAG_PGP_PUBLIC_KEY`,
+`RELEASE_TAG_PGP_FINGERPRINT`) from the `browser-guard-release` environment; store
+submission (Chrome Web Store, Edge Add-ons, AMO) stays a manual step with no store
+credentials in CI.
 
 ## Building the Extension
 

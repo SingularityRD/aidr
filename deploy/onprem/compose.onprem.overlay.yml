@@ -1,0 +1,57 @@
+# AIDR on-prem Compose overlay.
+#
+# scripts/deployment-prepare.mjs merges this file into the generated
+# compose.yml. It is not a standalone Compose file: `x-aidr-onprem.defaults`
+# is applied to every generated service, and each `services.<name>` entry is
+# deep-merged into that service (objects merge, lists and scalars replace).
+# Entries for the posture scanner's aig-* services apply only when preparation
+# runs with --with-posture-scanner.
+# Per-service CPU, memory and PID limits come from resource-profile.json
+# (--profile small|medium|large), not from this file.
+x-aidr-onprem:
+  schema_version: 1
+  defaults:
+    restart: unless-stopped
+    # Bounded, compressed json-file rotation: at most 5 x 20 MiB per container.
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "5"
+        compress: "true"
+  posture_scanner:
+    # Posture scanner services start with the main stack because preparation
+    # writes COMPOSE_PROFILES=posture-scanner to .env. Remove it there to keep
+    # the scanner stopped.
+    profiles:
+      - posture-scanner
+
+services:
+  db:
+    # Give PostgreSQL time to checkpoint instead of being killed after 10 s.
+    stop_grace_period: 120s
+  meta:
+    # The pinned postgres-meta image ships no health check. Probe its TCP
+    # listener with the Node runtime already inside the image.
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "require('net').connect(8080,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+  dashboard:
+    stop_grace_period: 20s
+    healthcheck:
+      retries: 3
+  aig-server:
+    stop_grace_period: 30s
+  aig-agent:
+    stop_grace_period: 30s
+  aig-bridge:
+    stop_grace_period: 20s
+  aig-egress:
+    stop_grace_period: 10s

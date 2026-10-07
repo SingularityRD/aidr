@@ -17,6 +17,9 @@ const STRUCTURAL_KEYS = new Set([
 	"stderr",
 	"interrupted",
 	"isImage",
+	// Claude Code 2.1.x adds this boolean to every Bash result (observed on 2.1.282
+	// by scripts/real-host-e2e); without it no Bash result could be replaced.
+	"noOutputExpected",
 	"exit_code",
 	"bashEditDiff",
 	"changedFiles",

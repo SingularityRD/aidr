@@ -1,0 +1,27 @@
+# Canary credential (honeytoken) management is operator-only.
+# Author: SingularityRD
+# License: DRL-1.1 (see threats/LICENSE)
+#
+# `aidr canary list|status` prints where the decoy credentials are planted and
+# `aidr canary remove|deploy` changes them. An agent that can run either can
+# learn which credential files to avoid, or disarm the tripwire, so any agent
+# invocation is a hard block. The registry itself lives in the AIDR state
+# directory and is already covered by CLT-SELF-008. Detection of an agent that
+# touches a decoy is not a rule here: it compares digests against the local
+# registry in code (packages/core/src/canary), because the token values must
+# never be written into a rule file.
+#
+# Matched on the shell-normalized view (see CLT-SELF-007 for the evasion forms
+# that view resolves: quoting, `$(which aidr)`, package runners, argv lists,
+# pty wrappers).
+- id: "CLT-CANARY-001"
+  category: self_defense
+  severity: critical
+  confidence: 0.99
+  action: block
+  pattern: "\\baidr(?:-cli|-setup)?(?:@[\\w.^~-]{1,40})?(?:/[\\w.@-]{1,100}){0,8}(?:\\.exe|\\.cmd|\\.ps1|\\.js|\\.mjs|\\.cjs)?[\\s,\\[\\]]{1,20}(?:-{1,2}[\\w-]{1,40}(?:=\\S{0,200})?[\\s,\\[\\]]{1,20}){0,6}canary\\b"
+  case_insensitive: true
+  match_on: command_normalized
+  title: "Agent access to Singularity AIDR canary credential management"
+  expires_at: null
+  revoked: false

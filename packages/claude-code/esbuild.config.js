@@ -76,6 +76,7 @@ const outputs = [
 	"dist/session-start.cjs",
 	"dist/health.cjs",
 	"dist/response-worker.cjs",
+	"dist/user-prompt-submit.cjs",
 ];
 
 /**
@@ -118,6 +119,7 @@ await Promise.all([
 	esbuild.build({ ...shared, entryPoints: ["src/session-start.ts"], outfile: outputs[3] }),
 	esbuild.build({ ...shared, entryPoints: ["src/health.ts"], outfile: outputs[4] }),
 	esbuild.build({ ...shared, entryPoints: ["src/response-worker.ts"], outfile: outputs[5] }),
+	esbuild.build({ ...shared, entryPoints: ["src/user-prompt-submit.ts"], outfile: outputs[6] }),
 ]);
 
 stageWindowsKoffi();

@@ -4,6 +4,7 @@ import { parseOidcRuntimeConfig, parseSamlRuntimeConfig } from "../saml-config.m
 
 const API_PREFIXES = ["/auth/v1", "/rest/v1", "/storage/v1", "/realtime/v1", "/functions/v1"];
 const DEVICE_START = "/functions/v1/device-start";
+const WAITLIST_SIGNUP = "/functions/v1/waitlist-signup";
 const MAX_DEVICE_BODY = 4096;
 const MAX_AUTH_BODY = 16384;
 const MAX_DEVICE_RESPONSE = 16384;
@@ -209,12 +210,14 @@ async function readiness(request, env, fetcher) {
 	});
 }
 
-async function signedHeaders(request, config) {
+// The signing context binds a proof to one Edge Function route, so a
+// device-start proof cannot be replayed against waitlist-signup or vice versa.
+async function signedHeaders(request, config, context = "device-start:v1") {
 	const ip = canonicalIp(request.headers.get("cf-connecting-ip"));
 	if (!ip) return null; // Never fall back to client-supplied forwarding headers.
 	const timestamp = String(Math.floor(Date.now() / 1000));
 	const key = await crypto.subtle.importKey("raw", encoder.encode(config.secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-	const signed = await crypto.subtle.sign("HMAC", key, encoder.encode(`device-start:v1\n${timestamp}\n${ip}`));
+	const signed = await crypto.subtle.sign("HMAC", key, encoder.encode(`${context}\n${timestamp}\n${ip}`));
 	return {
 		"x-aidr-client-ip": ip,
 		"x-aidr-client-timestamp": timestamp,
@@ -266,6 +269,13 @@ async function proxy(request, config, fetcher) {
 		headers.set("authorization", `Bearer ${config.anonKey}`);
 		headers.set("content-type", "application/json");
 		body = request.method === "POST" ? bytes : null;
+	}
+	if (incoming.pathname === WAITLIST_SIGNUP && request.method === "POST") {
+		// The waitlist function keys its per-client quota on this proof when
+		// AIDR_WAITLIST_INGRESS_SECRET matches the edge secret; without a
+		// Cloudflare client IP it is forwarded unsigned and the function decides.
+		const signature = await signedHeaders(request, config, "waitlist-signup:v1");
+		if (signature) for (const [name, value] of Object.entries(signature)) headers.set(name, value);
 	}
 	const upstream = `${config.provider}${incoming.pathname}${incoming.search}`;
 	let response;

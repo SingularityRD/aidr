@@ -1,4 +1,11 @@
-import { scanCachedProvisionedOutput, scanProvisionedOutput } from "@singularityrd/aidr-core";
+import {
+	recordToolOutcome,
+	recordToolOutputCanaries,
+	recordToolOutputFlow,
+	type scanModelOutput,
+	scanCachedProvisionedOutput,
+	scanProvisionedOutput,
+} from "@singularityrd/aidr-core";
 
 export const MAX_TOOL_OUTPUT_BYTES = 256 * 1024;
 
@@ -528,8 +535,105 @@ export function reportOpenCodeOutputCoverage(logger: StructuredLogger): void {
 	);
 }
 
+/**
+ * Record what a flagged tool output carried (secrets, injection payloads) in the
+ * session's toxic-flow record, so the session's next calls are judged with it.
+ * The output itself is still quarantined; this never throws.
+ */
+async function feedSessionFlow(
+	input: OpenCodeAfterToolInput,
+	findings: ReturnType<typeof scanModelOutput>,
+	logger: StructuredLogger,
+): Promise<void> {
+	const args = input.args;
+	const result = await recordToolOutputFlow(
+		{
+			sessionId: input.sessionID,
+			toolName: input.tool,
+			toolInput:
+				args && typeof args === "object" && !Array.isArray(args)
+					? (args as Record<string, unknown>)
+					: undefined,
+			findings,
+		},
+		{ agentRuntime: "opencode" },
+	);
+	if (result === "unavailable") {
+		logger.warn(
+			{ event: "aidr.toxic_flow.feed_unavailable", connector: "opencode", tool: input.tool },
+			"Singularity AIDR could not record tool-output taint for session toxic-flow detection",
+		);
+	}
+}
+
+/**
+ * Did the host report this tool call as failed? Only the explicit markers OpenCode
+ * sends count: the bash tool's `metadata.exit` (the process exit code) other than
+ * 0, and a raw MCP result with `isError: true`. A tool that throws never reaches
+ * `tool.execute.after`, so it is not seen here. An unknown shape is not a failure,
+ * so the runaway guard can only under-count, never invent a loop.
+ */
+export function openCodeToolFailed(output: OpenCodeAfterToolOutput): boolean {
+	if (!output || typeof output !== "object") return false;
+	if (isRawMcpResult(output)) return ownDataValue(output, "isError") === true;
+	const metadata = ownDataValue(output, "metadata");
+	if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return false;
+	const exit = ownDataValue(metadata as OpenCodeAfterToolOutput, "exit");
+	return typeof exit === "number" && Number.isFinite(exit) && exit !== 0;
+}
+
+/** The host result fields, read as own data properties only (no getters run). */
+function outputSnapshot(output: OpenCodeAfterToolOutput): Record<string, unknown> {
+	const snapshot: Record<string, unknown> = {};
+	for (const key of ["title", "output", "metadata", "content", "structuredContent"]) {
+		const value = ownDataValue(output, key);
+		if (value !== undefined) snapshot[key] = value;
+	}
+	return snapshot;
+}
+
+/**
+ * Session-level observations of a completed call, taken before output inspection
+ * rewrites a quarantined result: a canary value in the output (audit entry and
+ * managed incident) and a reported failure (runaway guard). Never throws.
+ */
+async function observeCompletedCall(
+	input: OpenCodeAfterToolInput,
+	output: OpenCodeAfterToolOutput,
+	logger: StructuredLogger,
+): Promise<void> {
+	try {
+		const args = input.args;
+		const toolInput =
+			args && typeof args === "object" && !Array.isArray(args)
+				? (args as Record<string, unknown>)
+				: {};
+		const failed = openCodeToolFailed(output);
+		const canaries = await recordToolOutputCanaries({
+			sessionId: input.sessionID,
+			toolName: input.tool,
+			toolOutput: outputSnapshot(output),
+			agentRuntime: "opencode",
+		});
+		if (canaries === "unavailable") {
+			logger.warn(
+				{ event: "aidr.canary.output_check_unavailable", connector: "opencode", tool: input.tool },
+				"Singularity AIDR could not check this tool output for canary credentials",
+			);
+		}
+		if (failed) {
+			await recordToolOutcome(
+				{ sessionId: input.sessionID, toolName: input.tool, toolInput, failed: true },
+				{ agentRuntime: "opencode" },
+			);
+		}
+	} catch {
+		// Observation only: a hostile host shape must not break output inspection.
+	}
+}
+
 export function createOutputHandlers(logger: StructuredLogger) {
-	const afterToolUse = async (
+	const inspectToolOutput = async (
 		input: OpenCodeAfterToolInput,
 		output: OpenCodeAfterToolOutput,
 	): Promise<void> => {
@@ -639,6 +743,7 @@ export function createOutputHandlers(logger: StructuredLogger) {
 				"opencode",
 			);
 			if (findings.length > 0) {
+				await feedSessionFlow(input, findings, logger);
 				const ruleIds = findings.map((finding) => finding.ruleId).sort();
 				quarantineInspectedOutput(
 					output,
@@ -674,6 +779,14 @@ export function createOutputHandlers(logger: StructuredLogger) {
 				{ errorType: error instanceof Error ? error.name : typeof error, rawMcpResult },
 			);
 		}
+	};
+
+	const afterToolUse = async (
+		input: OpenCodeAfterToolInput,
+		output: OpenCodeAfterToolOutput,
+	): Promise<void> => {
+		await observeCompletedCall(input, output, logger);
+		await inspectToolOutput(input, output);
 	};
 
 	return {

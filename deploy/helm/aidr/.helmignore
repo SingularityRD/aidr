@@ -1,0 +1,6 @@
+# Rendering fixtures for helm lint / chart-testing; not part of the package.
+ci/
+.DS_Store
+*.tgz
+*.orig
+*.swp

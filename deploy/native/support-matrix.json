@@ -2,9 +2,9 @@
   "$schema": "./support-matrix.schema.json",
   "schemaVersion": 1,
   "kind": "aidr-native-support-matrix",
-  "reviewedAt": "2026-09-24",
+  "reviewedAt": "2026-09-30",
   "decision": "NO-GO",
-  "decisionMeaning": "This manifest records intended connector/platform scope separately from what has actually been accepted on a real host. Platform and architecture arrays are target scope, not tested support. It is not a claim that any row has passed. Every row carries `acceptanceEvidence`; a row whose evidence is empty is an open sales gate, and deploy/native/run-support-matrix.mjs fails closed on it.",
+  "decisionMeaning": "This manifest records intended connector/platform scope separately from what has actually been accepted on a real host. Platform and architecture arrays are target scope, not tested support. It is not a claim that any row has passed. Every row carries `acceptanceEvidence`; a row whose evidence is empty is an open sales gate, and deploy/native/run-support-matrix.mjs fails closed on it. `additionalInterceptionPoints` lists sold points beyond a row's primary input and output point; Product approved (2026-09-30) selling pre-prompt protection for Claude Code, Codex, OpenCode and OpenClaw and OpenClaw's pre-model post-tool-output quarantine, and deploy/native/verify-interception-matrix.mjs accepts such an entry only where a real-host acceptance record makes that point enforced. Those records cover linux/x64, a development build and a scripted mock model only.",
   "soldConnectorScope": ["claude-code", "cursor", "vscode", "openclaw", "opencode", "codex"],
   "soldPlatformScope": ["windows", "linux", "macos"],
   "soldArchitectureScope": ["x64", "arm64"],
@@ -29,7 +29,8 @@
       "hostBinaryEnvOverride": null,
       "interceptionPoint": "pre-tool-call",
       "outputInterceptionPoint": "post-tool-output",
-      "tamperResistance": "host-mediated hook; in-process errors emit an explicit deny, but a disabled hook is fail-open and host behavior when the hook process crashes before a verdict is unverified",
+      "additionalInterceptionPoints": ["pre-prompt"],
+      "tamperResistance": "host-mediated hook; in-process errors emit an explicit deny, but a disabled hook is fail-open and a hook process killed before it writes a verdict is fail-open (observed on Claude Code 2.1.282)",
       "supportedPlatforms": ["windows", "linux", "macos"],
       "supportedArchitectures": ["x64", "arm64"],
       "supportedContexts": ["user", "service"],
@@ -38,13 +39,19 @@
       "supportOwnerRole": "Endpoint Engineering",
       "knownBypasses": [
         "Running the model against a file or shell channel the harness does not route through PreToolUse",
-        "Direct network access that never constructs a tool call"
+        "Direct network access that never constructs a tool call",
+        "A UserPromptSubmit hook process killed before it answers cannot block the prompt (host behaviour); only the prompt text is inspected"
       ],
       "unobservedActions": [
-        "Same-turn model blocking on a real Claude host",
+        "Same-turn blocking with a real (non-scripted) model; the real-host record uses a scripted mock model",
         "Behaviour when the host vendor ships a new hook schema"
       ],
-      "acceptanceEvidence": []
+      "acceptanceEvidence": [
+        {
+          "path": "docs/evidence/real-host/claude-code.json",
+          "sha256": "55e5674da4b934f1f223d7707596f1955cabf0dd7f7bcebb7525316609ba5ad6"
+        }
+      ]
     },
     {
       "connector": "cursor",
@@ -99,6 +106,7 @@
       "hostBinaryEnvOverride": null,
       "interceptionPoint": "pre-tool-call",
       "outputInterceptionPoint": "pre-delivery-response",
+      "additionalInterceptionPoints": ["pre-prompt", "post-tool-output"],
       "tamperResistance": "in-process plugin callback; a removed plugin means no interception at all",
       "supportedPlatforms": ["windows", "linux", "macos"],
       "supportedArchitectures": ["x64"],
@@ -108,13 +116,19 @@
       "supportOwnerRole": "Endpoint Engineering",
       "knownBypasses": [
         "Plugin removed or the gateway started without it",
-        "after_tool_call cannot prove same-turn model blocking"
+        "Pre-model tool-output quarantine needs plugins.entries.aidr-openclaw.enabled: true and the embedded runner; the Codex harness relay and after_tool_call alone do not keep a tool result from the same-turn model",
+        "The before_agent_run prompt gate runs only in the embedded and CLI runners (not the Codex or Copilot harnesses), and a non-bundled plugin needs plugins.entries.aidr-openclaw.hooks.allowConversationAccess: true"
       ],
       "unobservedActions": [
-        "Same-turn model blocking on a real gateway",
+        "Same-turn model blocking through a running gateway (only the embedded `agent --local` runner is recorded)",
         "Gateway version matrix"
       ],
-      "acceptanceEvidence": []
+      "acceptanceEvidence": [
+        {
+          "path": "docs/evidence/real-host/openclaw.json",
+          "sha256": "73b061bb60d3459c6ba10960e92d60bef55ff910474779988b073ed1d8d00c74"
+        }
+      ]
     },
     {
       "connector": "opencode",
@@ -122,6 +136,7 @@
       "hostBinaryEnvOverride": "OPENCODE_E2E_BIN",
       "interceptionPoint": "pre-tool-call",
       "outputInterceptionPoint": "post-tool-output",
+      "additionalInterceptionPoints": ["pre-prompt"],
       "tamperResistance": "in-process plugin; a removed plugin means no interception at all",
       "supportedPlatforms": ["windows", "linux", "macos"],
       "supportedArchitectures": ["x64", "arm64"],
@@ -131,13 +146,19 @@
       "supportOwnerRole": "Endpoint Engineering",
       "knownBypasses": [
         "Plugin removed or the CLI invoked with the plugin path overridden",
-        "Provider streams that bypass the plugin's tool boundary"
+        "Provider streams that bypass the plugin's tool boundary",
+        "chat.message prompt protection inspects the user's own text parts only; synthetic parts OpenCode generates (such as attached file contents) are not inspected"
       ],
       "unobservedActions": [
-        "Cases that require a live model provider credential",
-        "Same-turn output blocking on a real host"
+        "Cases that require a live model provider credential (the real-host record uses a scripted mock model)",
+        "Interactive TUI presentation of a blocked prompt"
       ],
-      "acceptanceEvidence": []
+      "acceptanceEvidence": [
+        {
+          "path": "docs/evidence/real-host/opencode.json",
+          "sha256": "2117a7459164a15882b3194a0091eaf2ba2bf99265f506b25fb76a4f778119c5"
+        }
+      ]
     },
     {
       "connector": "codex",
@@ -145,24 +166,31 @@
       "hostBinaryEnvOverride": null,
       "interceptionPoint": "pre-tool-call",
       "outputInterceptionPoint": "none",
-      "tamperResistance": "native PreToolUse hook; the host fails open on a crashing or untrusted hook, so the connector maps ask to an explicit deny and denies its own internal errors",
+      "additionalInterceptionPoints": ["pre-prompt"],
+      "tamperResistance": "native PreToolUse and UserPromptSubmit hooks; the host fails open on a crashing or untrusted hook, so the connector maps ask to an explicit deny and answers its own internal errors with a deny or block",
       "supportedPlatforms": ["windows", "linux", "macos"],
       "supportedArchitectures": ["x64", "arm64"],
       "supportedContexts": ["user"],
-      "installPath": ["install the approved @singularityrd/aidr-codex package", "register its PreToolUse command handler in ~/.codex/config.toml or ~/.codex/hooks.json and review trust in Codex /hooks"],
-      "uninstallPath": ["remove only the AIDR PreToolUse handler from ~/.codex/config.toml or ~/.codex/hooks.json", "uninstall the @singularityrd/aidr-codex package"],
+      "installPath": ["install the approved @singularityrd/aidr-codex package", "register its PreToolUse and UserPromptSubmit command handlers in ~/.codex/config.toml or ~/.codex/hooks.json and review trust in Codex /hooks"],
+      "uninstallPath": ["remove only the AIDR PreToolUse and UserPromptSubmit handlers from ~/.codex/config.toml or ~/.codex/hooks.json", "uninstall the @singularityrd/aidr-codex package"],
       "supportOwnerRole": "Endpoint Engineering",
       "knownBypasses": [
         "Host fails open when hook execution is unavailable",
         "No output-side (pre-model) interception exists for this host",
         "The packaged matcher covers Bash and apply_patch only; MCP and other local function tools do not invoke the AIDR hook",
-        "Hosted and specialized tool paths may bypass the host tool-hook path"
+        "Hosted and specialized tool paths may bypass the host tool-hook path",
+        "Prompt protection needs the UserPromptSubmit handler registered and trusted separately; an untrusted, crashed or timed-out prompt hook lets the prompt through, and codex exec shows no reason text for a blocked prompt"
       ],
       "unobservedActions": [
         "Verification against a Codex release newer than 0.141.0",
         "Host-level tamper resistance (for example a patched host binary)"
       ],
-      "acceptanceEvidence": []
+      "acceptanceEvidence": [
+        {
+          "path": "docs/evidence/real-host/codex.json",
+          "sha256": "ba3aedcdb65f3be41cb2fb8987cdd3ab49309f89e3ea16d43baf60e6e4224983"
+        }
+      ]
     }
   ],
   "residual": [

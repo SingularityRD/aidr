@@ -1,0 +1,453 @@
+{
+	"type": "object",
+	"properties": {
+		"mode": {
+			"title": "Guard mode",
+			"description": "auto masks sensitive data automatically; confirm asks before sending; block stops sends containing sensitive data; monitor only records.",
+			"type": "string",
+			"enum": [
+				"auto",
+				"confirm",
+				"block",
+				"monitor"
+			]
+		},
+		"enabledEntities": {
+			"title": "Enabled entity types",
+			"description": "Entity types that are detected and masked.",
+			"type": "array",
+			"items": {
+				"type": "string",
+				"enum": [
+					"PERSON",
+					"EMAIL",
+					"PHONE",
+					"TC_KIMLIK",
+					"IBAN",
+					"CREDIT_CARD",
+					"ADDRESS",
+					"US_SSN",
+					"DATE_OF_BIRTH",
+					"PASSPORT",
+					"NATIONAL_ID",
+					"TAX_ID",
+					"BANK_ACCOUNT",
+					"IP_ADDRESS",
+					"MAC_ADDRESS",
+					"SECRET",
+					"PRIVATE_KEY",
+					"INTERNAL",
+					"CLASSIFIED",
+					"LOCATION",
+					"USERNAME",
+					"HEALTH_ID",
+					"LICENSE_PLATE"
+				]
+			}
+		},
+		"neverRestore": {
+			"title": "Never-restore entity types",
+			"description": "Entity types that are masked but never restored in responses.",
+			"type": "array",
+			"items": {
+				"type": "string",
+				"enum": [
+					"PERSON",
+					"EMAIL",
+					"PHONE",
+					"TC_KIMLIK",
+					"IBAN",
+					"CREDIT_CARD",
+					"ADDRESS",
+					"US_SSN",
+					"DATE_OF_BIRTH",
+					"PASSPORT",
+					"NATIONAL_ID",
+					"TAX_ID",
+					"BANK_ACCOUNT",
+					"IP_ADDRESS",
+					"MAC_ADDRESS",
+					"SECRET",
+					"PRIVATE_KEY",
+					"INTERNAL",
+					"CLASSIFIED",
+					"LOCATION",
+					"USERNAME",
+					"HEALTH_ID",
+					"LICENSE_PLATE"
+				]
+			}
+		},
+		"literals": {
+			"title": "Literal terms",
+			"description": "Organisation-specific terms to mask (at most 1024; each 2..256 characters).",
+			"type": "array",
+			"items": {
+				"type": "object",
+				"properties": {
+					"value": {
+						"type": "string",
+						"pattern": "^[\\s\\S]{2,256}$"
+					},
+					"type": {
+						"type": "string",
+						"enum": [
+							"PERSON",
+							"EMAIL",
+							"PHONE",
+							"TC_KIMLIK",
+							"IBAN",
+							"CREDIT_CARD",
+							"ADDRESS",
+							"US_SSN",
+							"DATE_OF_BIRTH",
+							"PASSPORT",
+							"NATIONAL_ID",
+							"TAX_ID",
+							"BANK_ACCOUNT",
+							"IP_ADDRESS",
+							"MAC_ADDRESS",
+							"SECRET",
+							"PRIVATE_KEY",
+							"INTERNAL",
+							"CLASSIFIED",
+							"LOCATION",
+							"USERNAME",
+							"HEALTH_ID",
+							"LICENSE_PLATE"
+						]
+					}
+				},
+				"required": [
+					"value",
+					"type"
+				]
+			}
+		},
+		"exactData": {
+			"title": "Exact data match datasets",
+			"description": "HMAC-SHA256 fingerprint datasets (at most 16 datasets and 100000 fingerprints in total).",
+			"type": "array",
+			"items": {
+				"type": "object",
+				"properties": {
+					"datasetId": {
+						"type": "string",
+						"pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$"
+					},
+					"keyB64": {
+						"type": "string",
+						"pattern": "^[A-Za-z0-9+/]{14,1000}[A-Za-z0-9+/]{0,22}={0,2}$"
+					},
+					"fingerprints": {
+						"type": "array",
+						"items": {
+							"type": "string",
+							"pattern": "^[0-9a-fA-F]{64}$"
+						}
+					},
+					"type": {
+						"type": "string",
+						"enum": [
+							"PERSON",
+							"EMAIL",
+							"PHONE",
+							"TC_KIMLIK",
+							"IBAN",
+							"CREDIT_CARD",
+							"ADDRESS",
+							"US_SSN",
+							"DATE_OF_BIRTH",
+							"PASSPORT",
+							"NATIONAL_ID",
+							"TAX_ID",
+							"BANK_ACCOUNT",
+							"IP_ADDRESS",
+							"MAC_ADDRESS",
+							"SECRET",
+							"PRIVATE_KEY",
+							"INTERNAL",
+							"CLASSIFIED",
+							"LOCATION",
+							"USERNAME",
+							"HEALTH_ID",
+							"LICENSE_PLATE"
+						]
+					}
+				},
+				"required": [
+					"datasetId",
+					"keyB64",
+					"fingerprints",
+					"type"
+				]
+			}
+		},
+		"detectSignals": {
+			"title": "Detect risk signals",
+			"description": "Detect prompt-injection and source-code signals.",
+			"type": "boolean"
+		},
+		"signalAction": {
+			"title": "Signal action",
+			"description": "off ignores signals, warn shows coaching, block stops the send.",
+			"type": "string",
+			"enum": [
+				"off",
+				"warn",
+				"block"
+			]
+		},
+		"blockedSites": {
+			"title": "Blocked sites",
+			"description": "AI chat sites whose pages are blocked from loading.",
+			"type": "array",
+			"items": {
+				"type": "string",
+				"enum": [
+					"chatgpt",
+					"gemini",
+					"claude",
+					"copilot",
+					"perplexity",
+					"deepseek",
+					"mistral",
+					"grok",
+					"custom",
+					"other"
+				]
+			}
+		},
+		"disabledSites": {
+			"title": "Disabled sites",
+			"description": "Sites where the guard only monitors: prompts, pastes and files are scanned and counted (reported as 'allowed' with entity counts) but nothing is masked, held back for confirmation or blocked by the guard. Organisation blocks (blockedSites, fileHandling 'block') still apply.",
+			"type": "array",
+			"items": {
+				"type": "string",
+				"enum": [
+					"chatgpt",
+					"gemini",
+					"claude",
+					"copilot",
+					"perplexity",
+					"deepseek",
+					"mistral",
+					"grok",
+					"custom",
+					"other"
+				]
+			}
+		},
+		"customSites": {
+			"title": "Custom internal AI sites",
+			"description": "Company-internal AI chat portals where Browser Guard also masks prompts (at most 20). Hosts are exact HTTPS hostnames (no port, path or wildcard). Each user grants the extension access to these hosts once on the options page; the content script is then registered for them. Selectors are CSS selectors for the prompt editor, the send button and the assistant responses; generic fallbacks are always added.",
+			"type": "array",
+			"items": {
+				"type": "object",
+				"properties": {
+					"id": {
+						"type": "string",
+						"pattern": "^[a-z0-9][a-z0-9-]{0,31}$"
+					},
+					"label": {
+						"type": "string",
+						"pattern": "^[^\\x00-\\x1f]{1,64}$"
+					},
+					"hosts": {
+						"type": "array",
+						"items": {
+							"type": "string",
+							"pattern": "^(https://)?[a-z0-9][a-z0-9.-]{0,252}/?$"
+						}
+					},
+					"editorSelectors": {
+						"type": "array",
+						"items": {
+							"type": "string",
+							"pattern": "^[^{};<]{1,256}$"
+						}
+					},
+					"sendButtonSelectors": {
+						"type": "array",
+						"items": {
+							"type": "string",
+							"pattern": "^[^{};<]{1,256}$"
+						}
+					},
+					"responseSelectors": {
+						"type": "array",
+						"items": {
+							"type": "string",
+							"pattern": "^[^{};<]{1,256}$"
+						}
+					}
+				},
+				"required": [
+					"id",
+					"label",
+					"hosts"
+				]
+			}
+		},
+		"shadowAi": {
+			"title": "Shadow AI discovery and control",
+			"description": "mode: off (default), monitor (count visits to catalogued AI services per day; counts only, no URLs) or block-unsanctioned (also block every catalogued service not listed in sanctioned). Service ids in blocked are blocked in every mode. Ids are the Browser Guard catalog ids (for example chatgpt, gemini, poe, midjourney). Visibility and blocking need host access to the catalogued services, which each user grants once on the options page.",
+			"type": "object",
+			"properties": {
+				"mode": {
+					"type": "string",
+					"enum": [
+						"off",
+						"monitor",
+						"block-unsanctioned"
+					]
+				},
+				"sanctioned": {
+					"type": "array",
+					"items": {
+						"type": "string",
+						"pattern": "^[a-z0-9][a-z0-9-]{0,31}$"
+					}
+				},
+				"blocked": {
+					"type": "array",
+					"items": {
+						"type": "string",
+						"pattern": "^[a-z0-9][a-z0-9-]{0,31}$"
+					}
+				}
+			},
+			"required": [
+				"mode"
+			]
+		},
+		"allowUserPause": {
+			"title": "Allow user pause",
+			"description": "Allow users to pause protection for up to 60 minutes.",
+			"type": "boolean"
+		},
+		"allowSendAnyway": {
+			"title": "Allow send anyway",
+			"description": "Allow users to send a prompt unmasked after a warning.",
+			"type": "boolean"
+		},
+		"maskPaste": {
+			"title": "Mask pasted text",
+			"description": "Mask sensitive data as it is pasted.",
+			"type": "boolean"
+		},
+		"fileHandling": {
+			"title": "File handling",
+			"description": "scan sanitises uploaded files, block rejects them, allow passes them through.",
+			"type": "string",
+			"enum": [
+				"scan",
+				"block",
+				"allow"
+			]
+		},
+		"documentHandling": {
+			"title": "Document handling",
+			"description": "Office (DOCX/XLSX/PPTX), OpenDocument (ODT/ODS/ODP/ODG), legacy Office (DOC/XLS/PPT) and PDF uploads when fileHandling is scan. mask (default) masks Office and OpenDocument text in place and scans PDFs, blocking PDFs that contain sensitive data; legacy Office files cannot be parsed and are uploaded with an unscanned warning (blocked in block mode); block rejects every document upload, legacy formats included; allow skips document parsing and treats them like other binary files (uploaded with an unscanned warning, blocked in block mode). Macro-enabled, encrypted or externally linked documents are always blocked under mask.",
+			"type": "string",
+			"enum": [
+				"mask",
+				"block",
+				"allow"
+			]
+		},
+		"maxFileBytes": {
+			"title": "Maximum file size",
+			"description": "Largest file (bytes) that is scanned; at most 52428800 (50 MiB).",
+			"type": "integer",
+			"minimum": 1,
+			"maximum": 52428800
+		},
+		"restoreResponses": {
+			"title": "Restore responses",
+			"description": "Restore original values in responses locally.",
+			"type": "boolean"
+		},
+		"useNativeHost": {
+			"title": "Use native host",
+			"description": "Use the locally installed AIDR Privacy native host for NER (PERSON, ADDRESS, LOCATION in free text) on prompts and pastes, merged with the built-in rules. Also needs the optional 'nativeMessaging' permission, which the user grants on the options page; without it (or without the host) scans run rules-only and the user is told so.",
+			"type": "boolean"
+		},
+		"telemetry": {
+			"title": "Control-plane telemetry",
+			"description": "Privacy telemetry enrollment (counts only). controlPlaneUrl must be https (http only for localhost/127.0.0.1).",
+			"type": "object",
+			"properties": {
+				"controlPlaneUrl": {
+					"type": "string",
+					"pattern": "^(https://[^\\s]+|http://(localhost|127\\.0\\.0\\.1)([:/][^\\s]*)?)$"
+				},
+				"apiKey": {
+					"type": "string",
+					"pattern": "^[\\x21-\\x7e]{8,512}$"
+				}
+			},
+			"required": [
+				"controlPlaneUrl",
+				"apiKey"
+			]
+		},
+		"language": {
+			"title": "Language",
+			"description": "User interface language.",
+			"type": "string",
+			"enum": [
+				"auto",
+				"en",
+				"tr"
+			]
+		},
+		"policyId": {
+			"title": "Policy identifier",
+			"description": "Identifier reported with telemetry events.",
+			"type": "string",
+			"pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+		},
+		"acceptableUse": {
+			"title": "AI acceptable-use notice",
+			"description": "Notice shown once per version on the first visit to a protected AI site, with an 'I understand' acknowledgement. Raise version to show it again. Only the id and version of each acknowledgement are reported (counts only); the text never leaves the browser.",
+			"type": "object",
+			"properties": {
+				"id": {
+					"type": "string",
+					"pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$"
+				},
+				"version": {
+					"type": "integer",
+					"minimum": 1,
+					"maximum": 999999
+				},
+				"title": {
+					"type": "string",
+					"pattern": "^[\\s\\S]{1,120}$"
+				},
+				"text": {
+					"type": "string",
+					"description": "Plain text, 1 to 4000 characters; blank lines separate paragraphs.",
+					"pattern": "\\S"
+				},
+				"url": {
+					"type": "string",
+					"description": "Optional https link to the full policy (at most 2048 characters).",
+					"pattern": "^https://[^\\s]+$"
+				}
+			},
+			"required": [
+				"id",
+				"version",
+				"title",
+				"text"
+			]
+		},
+		"allowUserOverrides": {
+			"title": "Allow user overrides of protection settings",
+			"description": "When any managed policy is present, the user can no longer change mode, enabled entity types, custom literals, paste masking, response restore or per-site disabling (they stay at the managed or built-in value). Set to true to let users keep changing the ones this policy does not set.",
+			"type": "boolean"
+		}
+	}
+}

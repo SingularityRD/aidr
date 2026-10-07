@@ -74,3 +74,27 @@ Claude Code may ignore timed-out hooks and continue the tool call. A
 PreToolUse timeout can therefore leave the action unblocked; PostToolUse runs
 after execution, so a timeout does not prove its output replacement was applied.
 Verify timeout handling on each host version used for acceptance.
+
+## Real-host acceptance
+
+Recorded by `pnpm test:e2e:real-host` (see [development](../development.md#real-host-e2e-with-a-scripted-mock-model)): the real host binary on linux/x64, AIDR installed from the development build in a disposable HOME, and a scripted loopback mock model in place of a real one. It proves what the host does with AIDR's answer at each boundary, not how a real model behaves or how broad detection is. Record: [`docs/evidence/real-host/claude-code.json`](../evidence/real-host/claude-code.json)
+(Claude Code 2.1.282, `claude -p --plugin-dir <repo>`).
+
+| Boundary | Observed on the host |
+| --- | --- |
+| PreToolUse | `curl … \| sh` and a Read of `~/.ssh/id_rsa` were refused with no side effect; a benign Bash call ran; the same malicious call ran with the plugin absent |
+| UserPromptSubmit | A prompt carrying a token never reached the model |
+| PostToolUse | A token in Bash output reached the model only as AIDR's quarantine notice |
+| Connector errors | An integrity failure blocked at the prompt hook; the PreToolUse inspection deadline denied the call |
+| Hook process killed before its verdict | **Fail-open**: the host ran the call |
+
+PreToolUse, UserPromptSubmit (prompt protection, sold since 2026-09-30) and the PostToolUse
+replacement are part of the sold support matrix (`deploy/native/support-matrix.json`) and
+are `enforced` in `deploy/native/interception-matrix.json` on this record only: Claude Code
+2.1.282 on linux/x64, the development build and a scripted mock model. Other host
+versions, Windows, macOS, arm64, a signed release and a real model still need acceptance.
+
+In non-interactive `-p` mode an `ask` verdict is a refusal; the interactive approval
+dialog is not covered. The first run of this tier found that Claude Code 2.1.x adds a
+`noOutputExpected` field to every Bash result, which made PostToolUse quarantine fall back
+to a warning; that is fixed and the record above is from the fixed build.

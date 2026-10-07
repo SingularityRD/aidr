@@ -55,10 +55,34 @@ export const ThreatSchema = z.object({
 	title: z.string(),
 	expires_at: z.string().nullable().optional(),
 	revoked: z.boolean().optional().default(false),
+	/** File-edit view rules only (see `agent-safety/edit-views.ts`). */
+	diff: z.enum(["added", "removed", "value_decreased"]).optional(),
+	/** File-edit view rules only: the net number of matching lines required. */
+	min_matches: z.number().int().min(1).max(1000).optional(),
 });
 
 /** Raw threat from YAML (before compilation). */
 export type ThreatData = z.infer<typeof ThreatSchema>;
+
+/**
+ * Security framework items a rule maps to (see `threats/mappings/frameworks.yaml`).
+ * IDs carry no edition suffix and are sorted: `LLM01`, `ASI02`, `AML.T0051.001`.
+ */
+export interface FrameworkRefs {
+	/** OWASP Top 10 for LLM Applications 2025. */
+	owaspLlm: string[];
+	/** OWASP Top 10 for Agentic Applications 2026. */
+	owaspAgentic: string[];
+	/** MITRE ATLAS techniques and sub-techniques. */
+	mitreAtlas: string[];
+}
+
+/** Serialized (snake_case) form of {@link FrameworkRefs} used in audit/SIEM JSON. */
+export interface FrameworkRefsJson {
+	owasp_llm: string[];
+	owasp_agentic: string[];
+	mitre_atlas: string[];
+}
 
 /** Loaded threat with compiled regex and normalized match_on. */
 export interface Threat {
@@ -73,6 +97,20 @@ export interface Threat {
 	title: string;
 	expiresAt: Date | null;
 	revoked: boolean;
+	/**
+	 * File-edit view rules only (`match_on: test_code | ci_config |
+	 * quality_config | source_code`): compare the lines an edit adds with the
+	 * lines it removes. `added` / `removed` fire on a net change of at least
+	 * `minMatches` matching lines; `value_decreased` fires when the number in the
+	 * pattern's first capture group went down for the same setting.
+	 */
+	diff?: "added" | "removed" | "value_decreased";
+	/** Net matching lines an `added` / `removed` rule needs (default 1). */
+	minMatches?: number;
+	/** Rule file the threat was loaded from (e.g. `commands.yaml`). */
+	sourceFile?: string;
+	/** Framework mapping; absent when the rule directory ships no mapping for it. */
+	frameworks?: FrameworkRefs;
 }
 
 // ── Heuristic match ─────────────────────────────────────────────────
@@ -139,8 +177,57 @@ export interface Verdict {
 	artifacts: string[];
 	matchedThreatId: string | null;
 	reasons: string[];
+	/**
+	 * Framework items of the matched rule (OWASP LLM 2025, OWASP Agentic 2026,
+	 * MITRE ATLAS). Enrichment only: absent when no rule matched or the rule has
+	 * no mapping, and never an input to the decision.
+	 */
+	frameworks?: FrameworkRefs;
 	/** Verified delegation lineage; absent when the call carried no credential. */
 	delegation?: DelegationLineage;
+	/**
+	 * Replacement tool input produced by DLP redaction. Present only on an
+	 * `allow` verdict, and only when the caller declared that it can rewrite the
+	 * tool input (`ToolEvaluationContext.supportsInputRewrite`). A connector that
+	 * receives it MUST execute the tool with this input instead of the original,
+	 * or block the call; running the original input would disclose the redacted
+	 * values.
+	 */
+	transformedInput?: Record<string, unknown>;
+	/**
+	 * The agent permission profile rule that restricted this call. Present only
+	 * when a profile made the decision stricter than threat detection alone.
+	 */
+	agentProfile?: AgentProfileVerdictRef;
+	/**
+	 * Advisory secure-code findings on the code this call writes (see
+	 * `code-guard.ts`). In the default `secure_code.action: "warn"` mode they
+	 * never change the decision: a connector surfaces them through its notice
+	 * channel (or records them in the audit log only, when the host has none).
+	 * Titles and locations only — never the matched source text.
+	 */
+	warnings?: VerdictWarning[];
+}
+
+/** Which profile rule restricted a call (names only, never tool input). */
+export interface AgentProfileVerdictRef {
+	profile: string;
+	source: "managed" | "local";
+	rule: string;
+}
+
+/** One advisory finding attached to a verdict. */
+export interface VerdictWarning {
+	source: "secure_code";
+	ruleId: string;
+	title: string;
+	category: string;
+	severity: "critical" | "high" | "medium" | "low";
+	/** File the tool call writes; empty when the host did not name one. */
+	filePath: string;
+	language: string;
+	/** 1-based line in the written file, when the tool input makes it knowable. */
+	line?: number;
 }
 
 // ── Package check ──────────────────────────────────────────────────
@@ -578,10 +665,129 @@ export const PackageCheckConfigSchema = z.object({
 	/** Explicit opt-in to sending package names to public registries. */
 	enabled: z.boolean().default(false),
 	timeout_seconds: z.number().default(5.0),
+	/**
+	 * Slopsquatting window: a package first published fewer than this many days
+	 * ago is held for review when its adoption is also low. Packages younger than
+	 * seven days are always held. `0` disables the low-adoption signal.
+	 */
+	new_package_days: z.number().int().min(0).max(3650).default(30),
+	/** npm weekly downloads below this count are "low adoption" inside the window. */
+	low_adoption_weekly_downloads: z.number().int().min(0).default(1000),
+	/**
+	 * Published versions at or below this count are "low adoption" when download
+	 * counts are unavailable (PyPI, or the npm downloads API did not answer).
+	 */
+	low_adoption_max_versions: z.number().int().min(0).default(3),
+	/** Ask the npm downloads API about young packages (sends the package name). */
+	adoption_lookup: z.boolean().default(true),
+});
+
+/**
+ * Data and context poisoning protection: integrity of agent instruction, memory
+ * and configuration files, scanning of what is written into them, and memory /
+ * RAG write inspection. Every switch is on by default; see
+ * docs/poisoning-protection.md.
+ */
+export const PoisoningProtectionConfigSchema = z.object({
+	/** Master switch for the runtime context-poisoning detector. */
+	enabled: z.boolean().default(true),
+	/**
+	 * What a write to an agent instruction, memory, configuration, MCP, IDE
+	 * automation, repository hook or shell start-up file needs: `ask`
+	 * (out-of-band approval), `deny`, or `off` (no path signal; the written
+	 * content is still scanned).
+	 */
+	agent_control_files: z.enum(["ask", "deny", "off"]).default("ask"),
+	/** Scan the text written into those files for hidden or injected instructions. */
+	content_scan: z.boolean().default(true),
+	/** Scan the arguments of MCP tools that write to agent memory or a vector store. */
+	memory_write_scan: z.boolean().default(true),
 });
 
 const AmsiCheckConfigSchema = z.object({
 	enabled: z.boolean().default(true),
+});
+
+export const PromptProtectionModeSchema = z.enum(["off", "warn", "block"]);
+
+/**
+ * Inspection of the user's own prompt before it reaches the model (Claude Code
+ * `UserPromptSubmit`). `block` stops the prompt, `warn` lets it through with a
+ * notice to the user and the model, `off` skips that category.
+ */
+/**
+ * Content-safety categories for user prompts. Each is `off | warn | block`,
+ * except `sexual_minors`, which is always `block`: any other value is accepted
+ * for compatibility and has no effect.
+ */
+export const PromptContentSafetySchema = z.object({
+	/** Requests to author malware (ransomware, stealers, keyloggers, AV/EDR evasion). */
+	malware: PromptProtectionModeSchema.default("warn"),
+	/** Requests to build credential-phishing kits or fake login pages. */
+	phishing_kit: PromptProtectionModeSchema.default("warn"),
+	/** Requests to produce weapons or chemical, biological, radiological or nuclear agents. */
+	weapons_cbrn: PromptProtectionModeSchema.default("block"),
+	/** Self-harm intent or method seeking; the notice points to support, not to a violation. */
+	self_harm: PromptProtectionModeSchema.default("warn"),
+	/** Requests to generate hate speech, harassment or threats against people. */
+	hate_harassment: PromptProtectionModeSchema.default("warn"),
+	/** Sexual content involving minors: always blocked. */
+	sexual_minors: PromptProtectionModeSchema.default("block").transform(() => "block" as const),
+});
+
+export const PromptProtectionConfigSchema = z.object({
+	/** Credentials, tokens and private keys. */
+	secrets: PromptProtectionModeSchema.default("block"),
+	/** Personal data: email addresses, phone numbers, SSNs, payment card numbers. */
+	pii: PromptProtectionModeSchema.default("warn"),
+	/** Jailbreak attempts: instruction overrides, persona/role-play overrides, encoded payloads. */
+	jailbreak: PromptProtectionModeSchema.default("warn"),
+	/** Content-safety categories (pattern-based policy aid, not a model-grade classifier). */
+	content_safety: PromptContentSafetySchema.default({}),
+});
+
+/**
+ * Secure-code guardrails for code an agent writes (Write, Edit, MultiEdit,
+ * apply_patch, NotebookEdit and heredoc file writes). Only the lines the call
+ * adds are inspected, gated by file language. `warn` (default) lets the call
+ * through with a notice to the user and the model; `ask` holds it for review.
+ */
+export const SecureCodeConfigSchema = z.object({
+	enabled: z.boolean().default(true),
+	action: z.enum(["warn", "ask"]).default("warn"),
+});
+
+/**
+ * AI model supply chain. The shipped trusted hubs and publisher organisations
+ * live in `allowlists/model-sources/*.yaml`; these lists add to them. A model
+ * download is trusted only when every source it names is on a list.
+ */
+export const AiSupplyChainConfigSchema = z.object({
+	/** Extra Hugging Face organisations/users whose repositories are trusted (case-insensitive). */
+	trusted_model_orgs: z.array(z.string()).default([]),
+	/** Extra HTTPS hosts trusted for direct model-weight downloads (suffix match on a dot boundary). */
+	trusted_model_hosts: z.array(z.string()).default([]),
+});
+
+/**
+ * Session toxic-flow ("lethal trifecta") and behavioral chain detection. See
+ * docs/toxic-flow.md. On by default; `action: "auto"` asks in balanced/relaxed
+ * and denies in paranoid.
+ */
+const ToxicFlowConfigSchema = z.object({
+	enabled: z.boolean().default(true),
+	/** `auto` follows `sensitivity`; `monitor` records and logs without blocking. */
+	action: z.enum(["auto", "ask", "deny", "monitor"]).default("auto"),
+	/** How long a step keeps counting toward a chain. */
+	window_minutes: z.number().int().min(1).max(1440).default(60),
+	/** Distinct sensitive files/credential stores in the window that trigger `bulk_sensitive_access`. */
+	bulk_sensitive_threshold: z.number().int().min(2).max(64).default(5),
+	/** Extra destination domains (suffix match) a plain request to is not external communication. */
+	trusted_domains: z.array(z.string().min(1).max(253)).max(500).default([]),
+	/** MCP server ids whose output is not untrusted content (in addition to `policy.mcp.allow_servers`). */
+	trusted_mcp_servers: z.array(z.string().min(1).max(128)).max(200).default([]),
+	/** Git remote names a push to is not external communication. */
+	trusted_git_remotes: z.array(z.string().min(1).max(128)).max(50).default(["origin"]),
 });
 
 /**
@@ -616,6 +822,62 @@ export const NvdConfigSchema = z.object({
 		]),
 });
 
+/**
+ * The operator approval channel (`aidr pending` / `aidr approve`).
+ *
+ * `key_storage` is where the approval HMAC key and the single-use ledger live:
+ * `os-vault` (default) keeps them in the OS credential vault and DISABLES
+ * approvals when there is none; `file` is an explicit opt-in to an owner-only key
+ * file that every process of the same user can read. The
+ * `AIDR_OPERATOR_APPROVAL_KEY_STORAGE` environment variable overrides it.
+ */
+const OperatorApprovalsConfigSchema = z.object({
+	key_storage: z.enum(["os-vault", "file"]).default("os-vault"),
+	/**
+	 * Managed mode only: an `ask` can be released ONLY by a dashboard approval (an
+	 * authenticated admin in the AIDR dashboard). The local `aidr approve` channel
+	 * is not consulted and hosts with a native confirmation dialog (Claude Code,
+	 * VS Code) block instead of asking. Ignored in local mode.
+	 */
+	dashboard_only: z.boolean().default(false),
+});
+
+/**
+ * Session-level runaway guardrails for autonomous agents (loops, tool-call rate
+ * spikes, optional per-session budgets). Every signal is an `ask`: the session
+ * is paused until a human reviews it. See docs/agent-safety.md.
+ *
+ * `max_*` values are the most the guard allows before pausing; `0` switches that
+ * individual check off. Budgets are off by default.
+ */
+export const RunawayConfigSchema = z.object({
+	enabled: z.boolean().default(true),
+	/** Sliding window for loop and repeated-failure detection. */
+	window_seconds: z.number().int().min(10).max(86_400).default(600),
+	/** The same tool call back-to-back, with nothing else in between. */
+	max_consecutive_identical_calls: z.number().int().min(0).max(1000).default(8),
+	/** The same tool call anywhere in the window. */
+	max_identical_calls: z.number().int().min(0).max(1000).default(25),
+	/** Near-identical calls (numbers, ids and whitespace ignored) in the window. */
+	max_similar_calls: z.number().int().min(0).max(1000).default(50),
+	/** Recorded failures of the same call with no file edit in between. */
+	max_repeated_failures: z.number().int().min(0).max(1000).default(3),
+	/** Tool calls in any rolling 60 seconds. */
+	max_calls_per_minute: z.number().int().min(0).max(1000).default(120),
+	/** Optional session budgets (0 = unlimited). */
+	max_tool_calls: z.number().int().min(0).default(0),
+	max_session_minutes: z.number().int().min(0).default(0),
+	max_files_written: z.number().int().min(0).max(2000).default(0),
+	/** Session state older than this is discarded. */
+	state_ttl_hours: z.number().min(1).max(720).default(24),
+	/** At most this many session state files are kept. */
+	max_sessions: z.number().int().min(1).max(10_000).default(512),
+});
+
+export const AgentSafetyConfigSchema = z.object({
+	runaway: RunawayConfigSchema.default({}),
+});
+
 export const ConfigSchema = z.object({
 	// Default to local enforcement so a fresh install protects on the first tool
 	// call. Managed mode adds the control plane, signed entitlements and premium
@@ -640,7 +902,12 @@ export const ConfigSchema = z.object({
 	file_check: FileCheckConfigSchema.default({}),
 	version_check: VersionCheckConfigSchema.default({}),
 	package_check: PackageCheckConfigSchema.default({}),
+	poisoning_protection: PoisoningProtectionConfigSchema.default({}),
 	amsi_check: AmsiCheckConfigSchema.default({}),
+	prompt_protection: PromptProtectionConfigSchema.default({}),
+	secure_code: SecureCodeConfigSchema.default({}),
+	ai_supply_chain: AiSupplyChainConfigSchema.default({}),
+	toxic_flow: ToxicFlowConfigSchema.default({}),
 	/** @deprecated Accepted for configuration compatibility; not used at runtime. */
 	nvd_check: NvdConfigSchema.default({}),
 	heuristics_enabled: z.boolean().default(true),
@@ -649,6 +916,8 @@ export const ConfigSchema = z.object({
 	logging: LoggingConfigSchema.default({}),
 	sensitivity: SensitivitySchema.default("balanced"),
 	disabled_threats: z.array(z.string()).default([]),
+	operator_approvals: OperatorApprovalsConfigSchema.default({}),
+	agent_safety: AgentSafetyConfigSchema.default({}),
 });
 
 export type AuthConfig = z.infer<typeof AuthConfigSchema>;
@@ -680,7 +949,25 @@ export type ResponseAuditConfig = ResponseConfig["audit"];
 export type UrlCheckConfig = OptionalUrlCheckDefaults<z.infer<typeof UrlCheckConfigSchema>>;
 export type FileCheckConfig = OptionalInsecureLoopback<z.infer<typeof FileCheckConfigSchema>>;
 export type PackageCheckConfig = z.infer<typeof PackageCheckConfigSchema>;
+export type PoisoningProtectionConfig = z.infer<typeof PoisoningProtectionConfigSchema>;
 export type AmsiCheckConfig = z.infer<typeof AmsiCheckConfigSchema>;
+export type PromptProtectionMode = z.infer<typeof PromptProtectionModeSchema>;
+export type PromptContentSafetyConfig = z.infer<typeof PromptContentSafetySchema>;
+export type PromptContentSafetyCategory = keyof PromptContentSafetyConfig;
+/**
+ * Prompt protection policy as scanPrompt consumes it. `jailbreak` and
+ * `content_safety` are optional so a caller that predates them keeps the
+ * documented defaults (see DEFAULT_PROMPT_SAFETY in prompt-safety.ts).
+ */
+export interface PromptProtectionConfig {
+	secrets: PromptProtectionMode;
+	pii: PromptProtectionMode;
+	jailbreak?: PromptProtectionMode;
+	content_safety?: Partial<Record<PromptContentSafetyCategory, PromptProtectionMode>>;
+}
+export type SecureCodeConfig = z.infer<typeof SecureCodeConfigSchema>;
+export type AiSupplyChainConfig = z.infer<typeof AiSupplyChainConfigSchema>;
+export type ToxicFlowConfig = z.infer<typeof ToxicFlowConfigSchema>;
 /**
  * @deprecated NVD lookup is no longer wired into the runtime.
  * @public
@@ -691,6 +978,7 @@ export type CacheConfig = z.infer<typeof CacheConfigSchema>;
 export type AllowlistConfig = z.infer<typeof AllowlistConfigSchema>;
 export type LoggingConfig = z.infer<typeof LoggingConfigSchema>;
 export type Config = z.infer<typeof ConfigSchema>;
+export type RunawayConfig = z.infer<typeof RunawayConfigSchema>;
 
 // ── Allowlist ───────────────────────────────────────────────────────
 

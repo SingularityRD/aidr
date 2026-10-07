@@ -115,7 +115,7 @@
 		{
 			"id": "aig-live-control-plane",
 			"kind": "external",
-			"target": "docker-compose.aig.yml",
+			"target": "docker-compose.posture-scanner.yml",
 			"testFile": "services/aig-bridge/tests/live-control-plane",
 			"expectedTests": 4,
 			"capabilities": ["aig-infra-scan", "aig-mcp-scan", "aig-agent-scan", "aig-jailbreak-evaluation"],

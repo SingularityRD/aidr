@@ -1,8 +1,10 @@
-export const MIGRATION_FILENAME_PATTERN = /^\d{14}_[a-z0-9][a-z0-9_]*\.sql$/;
+import { createHash } from "node:crypto";
+
+export const MIGRATION_FILENAME_PATTERN =/^\d{14}_[a-z0-9][a-z0-9_]*\.sql$/;
 
 const lineNumberAt = (text, offset) => 1 + text.slice(0, offset).split("\n").length - 1;
 
-function maskNonExecutableSql(sql) {
+export function maskNonExecutableSql(sql) {
 	const masked = sql.split("");
 	let state = "normal";
 	let blockDepth = 0;
@@ -150,4 +152,42 @@ export function migrationOrderError(entries) {
 		previousVersion = version;
 	}
 	return null;
+}
+
+/**
+ * Validate a migration plan and build the single psql script that applies it
+ * atomically. `migrations` is the ordered manifest inventory, each entry
+ * `{ name, sha256, sql }`. The script takes an advisory lock inside one
+ * transaction, refuses a ledger row absent from the plan or a changed checksum,
+ * skips files already recorded in public.aidr_schema_migrations and records the
+ * rest. It uses psql meta-commands (\gset, \if), so run it through psql with
+ * ON_ERROR_STOP=1. Shared by scripts/deployment-migrate.mjs (Compose) and the
+ * Kubernetes migrations image (deploy/helm/build-images.mjs).
+ */
+export function buildAtomicMigrationSql(migrations, compatibleHashesFor) {
+	const orderError = migrationOrderError(migrations);
+	if (orderError) throw new Error(`Invalid migration manifest: ${orderError}`);
+	if (migrations.length === 0) throw new Error("Invalid migration manifest: migration inventory must not be empty");
+	for (const entry of migrations) {
+		if (!MIGRATION_FILENAME_PATTERN.test(entry.name) || !/^[a-f0-9]{64}$/.test(entry.sha256)) throw new Error("Invalid migration manifest");
+		if (typeof entry.sql !== "string" || createHash("sha256").update(entry.sql).digest("hex") !== entry.sha256) {
+			throw new Error(`Migration changed since preparation: ${entry.name}`);
+		}
+		const forbidden = forbiddenMigrationControls(entry.sql);
+		if (forbidden.length) throw new Error(`${entry.name}:${forbidden[0].line}: forbidden ${forbidden[0].control}`);
+	}
+	let sql = "BEGIN;\nSELECT pg_advisory_xact_lock(9112026);\nCREATE TABLE IF NOT EXISTS public.aidr_schema_migrations(name text PRIMARY KEY, sha256 text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now());\nREVOKE ALL ON public.aidr_schema_migrations FROM anon, authenticated;\n";
+	const manifestNames = migrations.map(({ name }) => `'${name}'`).join(",");
+	sql += `DO $check$ BEGIN IF EXISTS(SELECT 1 FROM public.aidr_schema_migrations WHERE name NOT IN (${manifestNames})) THEN RAISE EXCEPTION 'database contains a migration absent from the deployment manifest'; END IF; END $check$;\n`;
+	for (const entry of migrations) {
+		const compatibleHashes = compatibleHashesFor(entry.name, entry.sha256, entry.sql);
+		const allowed = compatibleHashes.map((hash) => `'${hash}'`).join(",");
+		sql += `DO $check$ BEGIN IF EXISTS(SELECT 1 FROM public.aidr_schema_migrations WHERE name='${entry.name}' AND sha256 NOT IN (${allowed})) THEN RAISE EXCEPTION 'migration checksum mismatch'; END IF; END $check$;\n`;
+		for (const installedHash of compatibleHashes.slice(1)) {
+			sql += `UPDATE public.aidr_schema_migrations SET sha256='${entry.sha256}' WHERE name='${entry.name}' AND sha256='${installedHash}';\n`;
+		}
+		sql += `SELECT NOT EXISTS(SELECT 1 FROM public.aidr_schema_migrations WHERE name='${entry.name}') AS apply_migration \\gset\n\\if :apply_migration\n${entry.sql}\nINSERT INTO public.aidr_schema_migrations(name,sha256) VALUES('${entry.name}','${entry.sha256}');\n\\endif\n`;
+	}
+	sql += "NOTIFY pgrst, 'reload schema';\nCOMMIT;\n";
+	return sql;
 }

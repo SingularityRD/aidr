@@ -38,6 +38,14 @@
 			}
 		}
 	},
+	"overrides": [
+		{
+			"includes": ["packages/core/src/dlp/privacy-rules/**"],
+			"formatter": { "enabled": false },
+			"linter": { "enabled": false },
+			"assist": { "enabled": false }
+		}
+	],
 	"formatter": {
 		"enabled": true,
 		"indentStyle": "tab",
@@ -48,5 +56,12 @@
 			"quoteStyle": "double",
 			"semicolons": "always"
 		}
-	}
+	},
+	"overrides": [
+		{
+			"includes": ["packages/privacy/src/**"],
+			"formatter": { "enabled": false },
+			"assist": { "enabled": false }
+		}
+	]
 }

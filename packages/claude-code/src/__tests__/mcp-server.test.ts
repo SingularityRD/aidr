@@ -5,7 +5,7 @@
  */
 
 import { execFile } from "node:child_process";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -178,5 +178,77 @@ describe("MCP server integration", () => {
 			content: Array<{ type: string; text: string }>;
 		};
 		expect(result.content[0]?.text).toContain("not found");
+	}, 15_000);
+
+	async function removeWithAllowlistFile(fileName: string) {
+		const home = join(tmpdir(), `aidr-mcp-remove-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+		const aidrDir = join(home, ".singularity-aidr");
+		await mkdir(aidrDir, { recursive: true });
+		const allowlistPath = join(aidrDir, fileName);
+		await writeFile(
+			allowlistPath,
+			JSON.stringify({
+				urls: {
+					"https://allowlisted.example.test/": {
+						added_at: new Date().toISOString(),
+						reason: "test",
+						original_verdict: "ask",
+					},
+				},
+				commands: {},
+				file_paths: {},
+			}),
+		);
+		await writeFile(
+			join(aidrDir, "config.json"),
+			JSON.stringify({ allowlist: { path: allowlistPath } }),
+		);
+		const { stdout, code } = await sendToMcp(
+			[
+				...initSequence(),
+				createJsonRpcMessage(
+					"tools/call",
+					{
+						name: "aidr_allowlist_remove",
+						arguments: { type: "url", value: "https://allowlisted.example.test/" },
+					},
+					2,
+				),
+			],
+			{ HOME: home, USERPROFILE: home },
+		);
+		const response = parseJsonRpcResponses(stdout).find((r) => r.id === 2);
+		const result = response?.result as { isError?: boolean; content: Array<{ text: string }> };
+		const onDisk = await readFile(allowlistPath, "utf8");
+		return { home, code, result, onDisk };
+	}
+
+	it("aidr_allowlist_remove persists a successful removal", async () => {
+		const { home, code, result, onDisk } = await removeWithAllowlistFile("allowlist.json");
+		try {
+			expect(code).toBe(0);
+			expect(result.isError).toBeUndefined();
+			expect(result.content[0]?.text).toContain("Removed URL");
+			expect(onDisk).not.toContain("allowlisted.example.test");
+		} finally {
+			await rm(home, { recursive: true, force: true });
+		}
+	}, 15_000);
+
+	it("aidr_allowlist_remove reports an error when the allowlist cannot be saved", async () => {
+		// The allowlist file name is valid, but the atomic writer's temp file
+		// (`<name>.<hex>.tmp`) exceeds NAME_MAX, so saveAllowlist returns false
+		// regardless of the privileges the test runs with.
+		const { home, code, result, onDisk } = await removeWithAllowlistFile(`${"a".repeat(245)}.json`);
+		try {
+			expect(code).toBe(0);
+			expect(result.isError).toBe(true);
+			expect(result.content[0]?.text).toContain("could not be saved");
+			expect(result.content[0]?.text).not.toContain("Removed");
+			expect(result.content[0]?.text).not.toContain(home);
+			expect(onDisk).toContain("allowlisted.example.test");
+		} finally {
+			await rm(home, { recursive: true, force: true });
+		}
 	}, 15_000);
 });

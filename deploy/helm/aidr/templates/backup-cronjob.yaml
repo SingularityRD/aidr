@@ -1,0 +1,94 @@
+{{- if .Values.backup.enabled }}
+{{- $component := "backup" -}}
+{{- $name := include "aidr.component" (dict "root" . "component" $component) -}}
+{{- $values := .Values.backup -}}
+{{- if not $values.persistence.existingClaim }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" $component) | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes:
+    {{- toYaml $values.persistence.accessModes | nindent 4 }}
+  {{- with .Values.global.storageClass }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ $values.persistence.size }}
+---
+{{- end }}
+# Logical backups only: custom-format pg_dump files plus a SHA-256 sidecar on a
+# PVC. Replicate that volume off-host (snapshot or object-store copy) and run a
+# restore drill; a dump on the same cluster is not a disaster-recovery copy.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" $component) | nindent 4 }}
+spec:
+  schedule: {{ $values.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            {{- include "aidr.labels" (dict "root" . "component" $component) | nindent 12 }}
+        spec:
+          restartPolicy: Never
+          {{- include "aidr.podCommon" (dict "root" . "values" (dict)) | nindent 10 }}
+          {{- include "aidr.podSecurityContext" (dict "root" . "runAsUser" $values.runAsUser "fsGroup" $values.runAsUser) | nindent 10 }}
+          containers:
+            - name: pg-dump
+              image: {{ include "aidr.image" (dict "root" . "image" $values.image "name" "backup.image" "defaultTag" true) }}
+              imagePullPolicy: {{ $values.image.pullPolicy }}
+              command:
+                - /bin/sh
+                - -ec
+                - |
+                  umask 077
+                  stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+                  target="/backups/aidr-${stamp}.dump"
+                  pg_dump --format=custom --no-owner --file="${target}.partial"
+                  (cd /backups && sha256sum "aidr-${stamp}.dump.partial" | sed 's/\.partial$//' > "aidr-${stamp}.dump.sha256")
+                  mv "${target}.partial" "${target}"
+                  find /backups -maxdepth 1 -name 'aidr-*.dump*' -type f -mtime +{{ int $values.retentionDays }} -delete
+                  echo "backup written: aidr-${stamp}.dump"
+              {{- include "aidr.containerSecurityContext" (dict "root" .) | nindent 14 }}
+              env:
+                {{- include "aidr.postgresPasswordEnv" . | nindent 16 }}
+                - name: PGPASSWORD
+                  value: $(POSTGRES_PASSWORD)
+                - name: PGHOST
+                  value: {{ include "aidr.dbHost" . | quote }}
+                - name: PGPORT
+                  value: {{ include "aidr.dbPort" . | quote }}
+                - name: PGDATABASE
+                  value: {{ include "aidr.dbName" . | quote }}
+                - name: PGUSER
+                  value: postgres
+                - name: PGSSLMODE
+                  value: {{ include "aidr.dbSslMode" . | quote }}
+              {{- include "aidr.resources" (dict "root" . "component" "backup" "override" $values.resources) | nindent 14 }}
+              volumeMounts:
+                - name: backups
+                  mountPath: /backups
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: backups
+              persistentVolumeClaim:
+                claimName: {{ default $name $values.persistence.existingClaim }}
+            - name: tmp
+              emptyDir:
+                sizeLimit: 64Mi
+{{- end }}

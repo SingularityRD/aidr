@@ -9,9 +9,9 @@
  * unprovisioned install still gets an empty context here.
  */
 import {
-	type DetectorProvisionedContext,
 	detectorPolicyPath as coreDetectorPolicyPath,
 	loadProvisionedDetectorContext as coreLoadProvisionedDetectorContext,
+	type DetectorProvisionedContext,
 } from "@singularityrd/aidr-core";
 
 /** Fixed, non-tool-selectable location under the local AIDR state directory. */
@@ -19,7 +19,6 @@ export function detectorPolicyPath(): string {
 	return coreDetectorPolicyPath("claude-code");
 }
 
-;
 export type { DetectorProvisionedContext };
 
 export async function loadProvisionedDetectorContext(): Promise<DetectorProvisionedContext> {

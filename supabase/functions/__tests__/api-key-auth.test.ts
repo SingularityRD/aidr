@@ -45,7 +45,7 @@ function database(results: Record<string, StoredResult>, admission: StoredResult
 
 const activeRows: Record<string, StoredResult> = {
 	api_keys: {
-		data: { user_id: "user-1", tenant_id: "tenant-1", revoked: false },
+		data: { user_id: "user-1", tenant_id: "tenant-1", revoked: false, scope: "tenant" },
 		error: null,
 	},
 	tenant_members: { data: { role: "member", expires_at: null }, error: null },
@@ -59,6 +59,8 @@ describe("tenant API key authorization", () => {
 			ok: true,
 			userId: "user-1",
 			tenantId: "tenant-1",
+			scope: "tenant",
+			installLimit: null,
 		});
 
 		const expectedHash = createHash("sha256").update("secret-key").digest("hex");
@@ -94,7 +96,7 @@ describe("tenant API key authorization", () => {
 	});
 
 	it("preserves revoked and unknown keys as invalid credentials", async () => {
-		for (const data of [null, { user_id: "user-1", tenant_id: "tenant-1", revoked: true }]) {
+		for (const data of [null, { user_id: "user-1", tenant_id: "tenant-1", revoked: true, scope: "tenant" }]) {
 			const { client } = database({ ...activeRows, api_keys: { data, error: null } });
 			await expect(authenticateTenantApiKey(client, "key")).resolves.toEqual({
 				ok: false,
@@ -160,7 +162,7 @@ describe("tenant API key authorization", () => {
 	});
 
 	it.each([
-		["revoked key", "api_keys", { user_id: "user-1", tenant_id: "tenant-1", revoked: true }, 401],
+		["revoked key", "api_keys", { user_id: "user-1", tenant_id: "tenant-1", revoked: true, scope: "tenant" }, 401],
 		["removed membership", "tenant_members", null, 403],
 		["expired membership", "tenant_members", { role: "member", expires_at: "2026-01-01T00:00:00.000Z" }, 403],
 		["demoted membership", "tenant_members", { role: "viewer", expires_at: null }, 403],
@@ -228,5 +230,119 @@ describe("reputation endpoint authorization wiring", () => {
 		expect(proxy.indexOf('from("entitlements")')).toBeGreaterThan(proxy.indexOf("authenticateTenantApiKeyHash("));
 		expect(proxy.indexOf('from("pack_versions")')).toBeGreaterThan(proxy.indexOf('from("entitlements")'));
 		expect(proxy.indexOf(".createSignedUrl(")).toBeGreaterThan(proxy.indexOf('from("pack_versions")'));
+	});
+});
+
+describe("ingest-only Browser Guard keys", () => {
+	const browserKey = {
+		id: "44444444-4444-4444-8444-444444444444",
+		user_id: "user-1",
+		tenant_id: "tenant-1",
+		revoked: false,
+		agent_id: null,
+		scope: "ingest:browser_guard",
+		install_limit: 250,
+	};
+	const browserRows = { ...activeRows, api_keys: { data: browserKey, error: null } };
+
+	it("is refused by every endpoint that does not opt in, before tenant state is read", async () => {
+		const { calls, client } = database(browserRows);
+		await expect(authenticateTenantApiKey(client, "browser-key")).resolves.toEqual({
+			ok: false,
+			status: 403,
+			error: "api_key_scope_denied",
+		});
+		expect(calls.map(({ table }) => table)).toEqual(["api_keys"]);
+		await expect(
+			authenticateTenantApiKey(client, "browser-key", Date.now(), { allowedScopes: ["tenant"] }),
+		).resolves.toMatchObject({ ok: false, error: "api_key_scope_denied" });
+	});
+
+	it("authenticates for an endpoint that opts in and reports its scope and limit", async () => {
+		const { client } = database(browserRows);
+		await expect(
+			authenticateTenantApiKey(client, "browser-key", Date.now(), {
+				allowedScopes: ["tenant", "ingest:browser_guard"],
+			}),
+		).resolves.toEqual({
+			ok: true,
+			userId: "user-1",
+			tenantId: "tenant-1",
+			apiKeyId: browserKey.id,
+			agentId: null,
+			scope: "ingest:browser_guard",
+			installLimit: 250,
+		});
+	});
+
+	it("still applies membership, tenant and admission checks to an ingest key", async () => {
+		const options = { allowedScopes: ["ingest:browser_guard"] as const };
+		for (const [table, data] of [
+			["tenant_members", { role: "viewer", expires_at: null }],
+			["tenants", { status: "suspended" }],
+		] as const) {
+			const { client } = database({ ...browserRows, [table]: { data, error: null } });
+			await expect(authenticateTenantApiKey(client, "k", Date.now(), options)).resolves.toMatchObject({
+				ok: false,
+				status: 403,
+				error: "tenant_access_denied",
+			});
+		}
+		const { client } = database(browserRows, { data: 0, error: null });
+		await expect(authenticateTenantApiKey(client, "k", Date.now(), options)).resolves.toMatchObject({
+			ok: false,
+			error: "tenant_access_denied",
+		});
+	});
+
+	it("treats a row without a known type or a coherent limit as no credential", async () => {
+		const options = { allowedScopes: ["tenant", "ingest:browser_guard"] as const };
+		for (const data of [
+			{ ...browserKey, scope: undefined },
+			{ ...browserKey, scope: "admin" },
+			{ ...browserKey, install_limit: null },
+			{ ...browserKey, install_limit: 0 },
+			{ ...browserKey, install_limit: 1.5 },
+			{ ...browserKey, scope: "tenant", install_limit: 10 },
+		]) {
+			const { client } = database({ ...activeRows, api_keys: { data, error: null } });
+			await expect(authenticateTenantApiKey(client, "k", Date.now(), options)).resolves.toEqual({
+				ok: false,
+				status: 401,
+				error: "invalid_api_key",
+			});
+		}
+	});
+
+	it("requires the key row id so the installation cap can be bound to it", async () => {
+		const { id: _id, ...withoutId } = browserKey;
+		const { client } = database({ ...activeRows, api_keys: { data: withoutId, error: null } });
+		await expect(
+			authenticateTenantApiKey(client, "k", Date.now(), { allowedScopes: ["ingest:browser_guard"] }),
+		).resolves.toMatchObject({ ok: false, status: 403, error: "api_key_scope_denied" });
+	});
+
+	it("is honoured only by /v1/ingest; direct key readers refuse non-tenant keys", () => {
+		const functionsDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+		const optingIn: string[] = [];
+		for (const name of [
+			"ingest",
+			"policy",
+			"policy-ack",
+			"url-check",
+			"file-check",
+			"packs-manifest",
+			"packs-download",
+			"revocations",
+		]) {
+			const source = readFileSync(join(functionsDir, name, "index.ts"), "utf8");
+			if (source.includes("allowedScopes")) optingIn.push(name);
+		}
+		expect(optingIn).toEqual(["ingest"]);
+		const revocations = readFileSync(join(functionsDir, "revocations", "index.ts"), "utf8");
+		const directReads = revocations.match(/\.from\("api_keys"\)[\s\S]{0,200}?\.select\("[^"]*"\)/g) ?? [];
+		expect(directReads).toHaveLength(2);
+		for (const read of directReads) expect(read).toMatch(/scope/);
+		expect(revocations.match(/scope !== "tenant"/g)).toHaveLength(2);
 	});
 });

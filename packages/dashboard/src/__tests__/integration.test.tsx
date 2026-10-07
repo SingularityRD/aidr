@@ -38,6 +38,7 @@ import { LoginPage } from "../ui/pages/LoginPage";
 import { OnboardingPage } from "../ui/pages/OnboardingPage";
 import { LandingPage } from "../ui/pages/public/LandingPage";
 import { PricingPage } from "../ui/pages/public/PricingPage";
+import { SHIPPED_THREAT_RULES } from "../ui/pages/public/product-facts";
 import { SettingsPage } from "../ui/pages/SettingsPage";
 import { getSession, signOut } from "../ui/session";
 import { ThemeProvider } from "../ui/ThemeProvider";
@@ -403,7 +404,13 @@ describe("Dashboard integration", () => {
 		mockedSupabase.from.mockImplementation((table: string) =>
 			createQueryBuilder(
 				table === "team_members"
-					? [{ team_id: bootstrapTeamId, role: "admin", teams: { id: bootstrapTeamId, name: "Runtime team" } }]
+					? [
+							{
+								team_id: bootstrapTeamId,
+								role: "admin",
+								teams: { id: bootstrapTeamId, name: "Runtime team" },
+							},
+						]
 					: [],
 			),
 		);
@@ -412,11 +419,13 @@ describe("Dashboard integration", () => {
 				name === "identity-security"
 					? identityFixture(request)
 					: {
-						data: null,
-						error: Object.assign(new Error("Edge Function returned a non-2xx status code"), {
-							context: new Response(JSON.stringify({ error: "integration_not_configured" }), { status: 503 }),
-						}),
-					},
+							data: null,
+							error: Object.assign(new Error("Edge Function returned a non-2xx status code"), {
+								context: new Response(JSON.stringify({ error: "integration_not_configured" }), {
+									status: 503,
+								}),
+							}),
+						},
 		);
 
 		render(
@@ -428,7 +437,9 @@ describe("Dashboard integration", () => {
 		);
 
 		await waitFor(() =>
-			expect(screen.getByRole("alert")).toHaveTextContent("AutoSecOps is not configured for this deployment."),
+			expect(screen.getByRole("alert")).toHaveTextContent(
+				"AutoSecOps is not configured for this deployment.",
+			),
 		);
 		expect(screen.getByRole("alert")).not.toHaveTextContent("Edge Function returned");
 		expect(screen.getByText("Fleet data is unavailable.")).toBeInTheDocument();
@@ -452,8 +463,8 @@ describe("Dashboard integration", () => {
 		);
 	});
 
-	it("renders the public landing and pricing routes", () => {
-		render(
+	it("renders the public landing and editions (/pricing) routes without prices", () => {
+		const { container } = render(
 			<MemoryRouter initialEntries={["/pricing"]}>
 				<Routes>
 					<Route path="/" element={<PublicLayout />}>
@@ -464,11 +475,18 @@ describe("Dashboard integration", () => {
 			</MemoryRouter>,
 		);
 
-		expect(screen.getByRole("heading", { name: "Pricing" })).toBeInTheDocument();
-		expect(screen.getByText("Enterprise")).toBeInTheDocument();
-		expect(
-			screen.getByText(/no public price or self-service checkout is offered/),
-		).toBeInTheDocument();
+		expect(screen.getByRole("heading", { name: "Editions" })).toBeInTheDocument();
+		for (const plan of ["Free", "Team", "Business", "Enterprise"]) {
+			expect(screen.getByRole("heading", { name: plan })).toBeInTheDocument();
+		}
+		expect(screen.getByText("Minimum 25 developers")).toBeInTheDocument();
+		expect(screen.getByRole("note")).toHaveTextContent(/Prices are not published\./);
+		expect(screen.getByRole("link", { name: "Contact sales about Team" })).toHaveAttribute(
+			"href",
+			expect.stringMatching(/^mailto:anil@singularityrd\.com\?/),
+		);
+		expect(container.textContent ?? "").not.toMatch(/[$€₺]|\bUSD\b|list price/i);
+		expect(screen.getByText(/self-service checkout is not offered/)).toBeInTheDocument();
 		expect(screen.getByRole("link", { name: "Request pilot review" })).toHaveAttribute(
 			"href",
 			"/pilot",
@@ -487,8 +505,31 @@ describe("Dashboard integration", () => {
 		);
 
 		expect(
-			screen.getByText(/browser enrollment require a configured control plane/),
+			screen.getByText(/device enrollment require a configured control plane/),
 		).toBeInTheDocument();
+		for (const line of [
+			"AIDR for AI coding agents",
+			"AIDR Browser Guard",
+			"AIDR Privacy engine",
+			"AI Security Posture",
+		]) {
+			expect(screen.getByText(line)).toBeInTheDocument();
+		}
+		expect(
+			screen.getByText(/MCP server risk analysis across 14 risk categories, T01–T09 skill/),
+		).toBeInTheDocument();
+		expect(document.body.textContent).not.toMatch(/infra[- ]?guard|tencent|\baig\b/i);
+		expect(
+			screen.getByRole("heading", { name: "Mask sensitive data before it reaches AI chat." }),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText(/ChatGPT, Gemini, Claude, Copilot, Perplexity, DeepSeek, Mistral, Grok/),
+		).toBeInTheDocument();
+		expect(screen.getAllByText(/Codex CLI/).length).toBeGreaterThan(0);
+		expect(screen.getAllByText(new RegExp(String(SHIPPED_THREAT_RULES))).length).toBeGreaterThan(0);
+		for (const option of ["Local mode (free)", "Cloud", "On-premises"]) {
+			expect(screen.getByText(option)).toBeInTheDocument();
+		}
 		expect(screen.getAllByRole("link", { name: "Request a pilot" })).toHaveLength(2);
 		for (const link of screen.getAllByRole("link", { name: "Get started" })) {
 			expect(link).toHaveAttribute("href", "/login?returnTo=%2Fonboarding");
@@ -807,6 +848,7 @@ describe("Dashboard integration", () => {
 	});
 
 	it("renders settings and signs out through the Supabase client", async () => {
+		mockSelectedTeam();
 		render(
 			<MemoryRouter>
 				<ThemeProvider>

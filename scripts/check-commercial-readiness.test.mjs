@@ -119,8 +119,15 @@ test("COM-010 cannot close ahead of all five native connector acceptances", () =
 	input.registry.hardGates.find((gate) => gate.id === "COM-010").status = "closed";
 	const failures = validateConnectorScope(input).join("\n");
 	assert.match(failures, /COM-010 cannot close while native support matrix is not GO/);
-	for (const connector of ["claude-code", "cursor", "vscode", "openclaw", "opencode"]) {
+	// Cursor and VS Code have no real-host acceptance record at all.
+	for (const connector of ["cursor", "vscode"]) {
 		assert.match(failures, new RegExp(`COM-010 cannot close without native acceptance evidence for ${connector}`));
+	}
+	// Without any named evidence every direct-GA connector is reported.
+	for (const row of input.supportMatrix.rows) row.acceptanceEvidence = [];
+	const withoutEvidence = validateConnectorScope(input).join("\n");
+	for (const connector of ["claude-code", "cursor", "vscode", "openclaw", "opencode"]) {
+		assert.match(withoutEvidence, new RegExp(`COM-010 cannot close without native acceptance evidence for ${connector}`));
 	}
 	input.supportMatrix.rows = null;
 	assert.match(validateConnectorScope(input).join("\n"), /native support matrix must declare connector rows/);

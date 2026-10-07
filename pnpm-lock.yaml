@@ -70,6 +70,21 @@ importers:
         specifier: ^4.1.11
         version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.11)(@vitest/coverage-v8@4.1.11)(jsdom@26.1.0)(vite@7.3.5(@types/node@22.19.11)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.16.9)(yaml@2.9.1))
 
+  packages/browser-guard:
+    devDependencies:
+      esbuild:
+        specifier: 0.28.1
+        version: 0.28.1
+      jsdom:
+        specifier: ^26.1.0
+        version: 26.1.0
+      playwright-core:
+        specifier: 1.56.1
+        version: 1.56.1
+      typescript:
+        specifier: ^5.9.0
+        version: 5.9.3
+
   packages/claude-code:
     dependencies:
       '@modelcontextprotocol/sdk':
@@ -251,6 +266,9 @@ importers:
 
   packages/mcp-gateway:
     devDependencies:
+      '@singularityrd/aidr-core':
+        specifier: workspace:*
+        version: link:../core
       esbuild:
         specifier: 0.28.1
         version: 0.28.1
@@ -2696,6 +2714,11 @@ packages:
   pkce-challenge@5.0.1:
     resolution: {integrity: sha512-wQ0b/W4Fr01qtpHlqSqspcj3EhBvimsdh0KlHhH8HRZnMsEa0ea2fTULOXOS9ccQr3om+GcGRk4e+isrZWV8qQ==}
     engines: {node: '>=16.20.0'}
+
+  playwright-core@1.56.1:
+    resolution: {integrity: sha512-hutraynyn31F+Bifme+Ps9Vq59hKuUCz7H1kDOcBs+2oGguKkWTU50bBWrtz34OUWmIwpBTWDxaRPXrIXkgvmQ==}
+    engines: {node: '>=18'}
+    hasBin: true
 
   postcss@8.5.28:
     resolution: {integrity: sha512-RRuzqDtt5Y9h3quz5hWhK+TPnsmVs6WwSU6LkJMeY4HstUEDuYTG8UJSdawMRzmzAtV+KEoG8N3Qg2qLy5vM/A==}
@@ -5603,6 +5626,8 @@ snapshots:
       thread-stream: 3.1.0
 
   pkce-challenge@5.0.1: {}
+
+  playwright-core@1.56.1: {}
 
   postcss@8.5.28:
     dependencies:

@@ -2,14 +2,31 @@
 
 import { VERSION } from "@singularityrd/aidr-core";
 import { Command } from "commander";
+import aibomCommand from "./commands/aibom.js";
+import {
+	allowlistAddCommand,
+	allowlistListCommand,
+	allowlistRemoveCommand,
+} from "./commands/allowlist.js";
+import { approveCommand, pendingCommand } from "./commands/approvals.js";
+import { auditExportCommand, auditTailCommand } from "./commands/audit.js";
+import {
+	canaryDeployCommand,
+	canaryListCommand,
+	canaryRemoveCommand,
+	canaryStatusCommand,
+} from "./commands/canary.js";
 import collectCommand from "./commands/collect.js";
+import complianceVerifyCommand from "./commands/compliance.js";
 import configCommand from "./commands/config.js";
 import {
 	revokeKeyCommand,
 	rotateKeyCommand,
 	SECRET_STORE_OPTION_DESCRIPTION,
 } from "./commands/config-secret.js";
+import coverageCommand from "./commands/coverage.js";
 import discoverCommand from "./commands/discover.js";
+import doctorCommand from "./commands/doctor.js";
 import {
 	learningApproveCommand,
 	learningExecuteCommand,
@@ -17,8 +34,16 @@ import {
 	learningIngestCommand,
 	learningKeygenCommand,
 } from "./commands/learning.js";
+import privacyScanCommand from "./commands/privacy.js";
+import {
+	profileListCommand,
+	profileShowCommand,
+	profileTestCommand,
+	profileValidateCommand,
+} from "./commands/profile.js";
 import scanCommand from "./commands/scan.js";
 import setupCommand from "./commands/setup.js";
+import simulateCommand from "./commands/simulate.js";
 import statusCommand from "./commands/status.js";
 import uninstallCommand from "./commands/uninstall.js";
 
@@ -70,19 +95,69 @@ program
 program
 	.command("scan")
 	.description(
-		"Scan AI infrastructure targets for known products and CVEs (native, no external service)",
+		"Scan AI infrastructure targets, skill packages or project code (native, no external service)",
 	)
 	.option(
 		"-t, --target <url...>",
 		"Target base URL (repeatable). Loopback/private only unless --allow-public",
 	)
 	.option("-f, --file <path>", "Read targets from a file, one URL per line")
+	.option(
+		"--skill <path...>",
+		"Scan a skill or plugin package directory with the T01-T09 skill rules (repeatable)",
+	)
+	.option(
+		"--code <path...>",
+		"Scan a project directory or file for unsafe model loading and insecure code patterns (file:line, local only)",
+	)
 	.option("--json", "Emit machine-readable JSON")
 	.option("--allow-public", "Permit non-private targets (off by default)")
 	.option("--timeout <ms>", "Per-request timeout in milliseconds", "3000")
 	.option("--concurrency <n>", "Number of targets to scan in parallel", "4")
 	.option("--save-report <path>", "Persist a scan report for the configured infrastructure policy")
+	.option(
+		"--upload",
+		"Send findings (ids, severities, digests; no hosts, paths or secrets) to the managed control plane",
+	)
 	.action(scanCommand);
+
+const privacyProgram = program
+	.command("privacy")
+	.description("Local TR/EN personal-data and secret checks (nothing is uploaded)");
+
+privacyProgram
+	.command("scan [file]")
+	.description(
+		"Scan a file or stdin for TCKN, IBAN, phone, e-mail, card, secret and other personal data; values are never printed",
+	)
+	.option("--json", "Emit findings as JSON (type, offsets, line; never the matched value)")
+	.option("--mask", "Print the text with each finding replaced by its [TYPE] placeholder")
+	.option("--types <list>", "Comma-separated detector names to report (default: all)")
+	.option(
+		"--fail-on <mode>",
+		"Findings that exit 2: none, any (default) or secret; otherwise an incomplete inspection exits 3",
+		"any",
+	)
+	.action(privacyScanCommand);
+
+program
+	.command("simulate")
+	.description(
+		"Defensive self-test: feed defanged detection fixtures to the local evaluator and report what AIDR detects (never executes anything)",
+	)
+	.option(
+		"--suite <names>",
+		"Comma-separated categories to run (injection, exfiltration, destructive, encoding, supply-chain, mcp, self-defense, privacy)",
+	)
+	.option("--sensitivity <level>", "Override sensitivity: paranoid, balanced or relaxed")
+	.option("--format <format>", "Output format: table, json or html", "table")
+	.option("--output <file>", "Write the report to a file instead of stdout")
+	.option("--min-score <n>", "Exit non-zero when the overall detection score is below N (0-100)")
+	.option(
+		"--connector <name>",
+		"Drive a built connector entry point instead of the in-process evaluator (claude-code, codex, cursor, vscode)",
+	)
+	.action(simulateCommand);
 
 program
 	.command("collect")
@@ -117,7 +192,30 @@ program
 	.description("Inventory local MCP servers with risk indicators and configuration fingerprints")
 	.option("--config <paths...>", "Inspect explicit JSON configuration paths")
 	.option("--json", "Emit a redacted machine-readable inventory")
+	.option(
+		"--agents",
+		"Also check agent hosts for unsafe autonomy settings, missing AIDR hooks and environment exposure",
+	)
+	.option(
+		"--upload",
+		"Send server names, risk categories and digests (no paths, endpoints or arguments) to the managed control plane; with --agents also host, check id, severity and count per finding",
+	)
 	.action(discoverCommand);
+
+program
+	.command("aibom")
+	.description(
+		"Export an AI Bill of Materials (CycloneDX 1.6): agents, MCP servers, AI packages, models, plugins and known vulnerabilities; secrets are redacted",
+	)
+	.option("--format <format>", "cyclonedx-json or json (AIDR inventory)", "cyclonedx-json")
+	.option("-o, --output <file>", "Write to a new file (0600) instead of stdout")
+	.option("--path <project>", "Project directory whose manifests and MCP configs are read", ".")
+	.option("--config <paths...>", "Inspect explicit MCP configuration paths instead of the defaults")
+	.option(
+		"--scan-report <path>",
+		"Include a saved `aidr scan --save-report` result (defaults to the configured AI infrastructure report)",
+	)
+	.action(aibomCommand);
 
 program
 	.command("uninstall")
@@ -201,5 +299,164 @@ learningProgram
 	.requiredOption("--receipt <path>", "Signed execution-receipt JSON file")
 	.requiredOption("--approval <path>", "Signed benign-consent approval JSON file")
 	.action(learningIngestCommand);
+
+program
+	.command("doctor")
+	.description(
+		"Check hosts, hook registration, rules, mode, DLP policy, agent profiles, approvals and the last verdict; exits non-zero on problems",
+	)
+	.option("--json", "Emit a machine-readable report")
+	.action((options) => doctorCommand(options));
+
+program
+	.command("coverage")
+	.description(
+		"Show how the installed detection rules map to OWASP LLM Top 10 2025, OWASP Agentic Top 10 2026 and MITRE ATLAS",
+	)
+	.option("--format <format>", "table, json or markdown", "table")
+	.action((options) => coverageCommand(options));
+
+program
+	.command("pending")
+	.description("List blocked agent actions waiting for an out-of-band operator approval")
+	.option("--json", "Emit machine-readable JSON")
+	.action((options) => pendingCommand(options));
+
+program
+	.command("approve <actionId>")
+	.description(
+		"Operator only: approve ONE retry of a blocked call (interactive confirmation; 15-minute default)",
+	)
+	.option("--ttl <minutes>", "Minutes the approval stays usable (1-1440)", "15")
+	.option("--permit-allowlist", "Also let the agent add these artifacts to the allowlist once")
+	.option("-y, --yes", "Skip the prompt; honoured only with AIDR_OPERATOR_NONINTERACTIVE=1")
+	.option("--json", "Emit a machine-readable receipt")
+	.action((actionId, options) => approveCommand(actionId, options));
+
+const allowlistProgram = program
+	.command("allowlist")
+	.description("List, add or remove permanent allowlist entries");
+
+allowlistProgram
+	.command("list")
+	.description("Show allowlist entries (commands are stored as hashes)")
+	.option("--json", "Emit machine-readable JSON")
+	.action((options) => allowlistListCommand(options));
+
+allowlistProgram
+	.command("add <type> <value>")
+	.description(
+		"Operator only: permanently allow a url, command or file_path (interactive confirmation)",
+	)
+	.option("--reason <text>", "Why this artifact is safe")
+	.option("-y, --yes", "Skip the prompt; honoured only with AIDR_OPERATOR_NONINTERACTIVE=1")
+	.action((type, value, options) => allowlistAddCommand(type, value, options));
+
+allowlistProgram
+	.command("remove <type> <value>")
+	.description("Remove a url, command (text or hash) or file_path from the allowlist")
+	.action((type, value) => allowlistRemoveCommand(type, value));
+
+const complianceProgram = program
+	.command("compliance")
+	.description("Work with compliance evidence reports from the control plane");
+
+complianceProgram
+	.command("verify <report>")
+	.description(
+		"Verify a compliance report offline: recompute its SHA-256 and check the Ed25519 signature",
+	)
+	.option("--public-key <file>", "PEM public key the report must be signed with (pins the issuer)")
+	.option("--require-signature", "Fail when the report is not signed")
+	.option("--json", "Emit a machine-readable result")
+	.action((report, options) => complianceVerifyCommand(report, options));
+
+const auditProgram = program.command("audit").description("Read the local verdict audit log");
+
+auditProgram
+	.command("tail")
+	.description("Show the most recent audit entries (redacted)")
+	.option("-n, --lines <count>", "Number of entries", "20")
+	.option("--json", "Emit JSON Lines")
+	.action((options) => auditTailCommand(options));
+
+auditProgram
+	.command("export")
+	.description("Export redacted audit entries, including rotated files")
+	.option("--since <when>", "ISO-8601 date/time or a relative age such as 24h, 7d, 30m")
+	.option("--format <format>", "jsonl or csv", "jsonl")
+	.option("-o, --output <file>", "Write to a new file (0600) instead of stdout")
+	.action((options) => auditExportCommand(options));
+
+const profileProgram = program
+	.command("profile")
+	.description("Inspect, validate and dry-run agent permission profiles (least privilege)");
+
+profileProgram
+	.command("list")
+	.description("List local and managed agent permission profiles and the shipped templates")
+	.option("--json", "Emit machine-readable JSON")
+	.action((options) => profileListCommand(options));
+
+profileProgram
+	.command("show <name>")
+	.description("Print one profile (local or managed), or a shipped template with --template")
+	.option(
+		"--template",
+		"Show a shipped template: read-only-reviewer, standard-developer, ci-agent, locked-down",
+	)
+	.action((name, options) => profileShowCommand(name, options));
+
+profileProgram
+	.command("validate [file]")
+	.description("Validate a profile document (default: ~/.singularity-aidr/agent-profiles.json)")
+	.option("--json", "Emit machine-readable JSON")
+	.action((file, options) => profileValidateCommand(file, options));
+
+profileProgram
+	.command("test <tool-call-json>")
+	.description(
+		'Dry-run a tool call (JSON or @file, e.g. \'{"tool_name":"Bash","tool_input":{"command":"ls"}}\') against the effective profiles',
+	)
+	.option("--connector <name>", "Connector whose profiles apply", "claude-code")
+	.option("--cwd <dir>", "Working directory of the agent session (selects repository profiles)")
+	.option("--file <path>", "Test against this profile document instead of the installed ones")
+	.option("--json", "Emit machine-readable JSON")
+	.action((toolCall, options) => profileTestCommand(toolCall, options));
+
+const canaryProgram = program
+	.command("canary")
+	.description(
+		"Operator only: plant and manage decoy credentials that expose an agent hunting for secrets",
+	);
+
+canaryProgram
+	.command("deploy")
+	.description(
+		"Create new decoy credential files (never overwrites a file); the registry stores only digests",
+	)
+	.option("--path <dir>", "Directory for project decoys (env, db-url); defaults to the current one")
+	.option("--kinds <list>", "Comma-separated kinds: aws, github, openai, env, ssh-config, db-url")
+	.option("--json", "Emit machine-readable JSON")
+	.action((options) => canaryDeployCommand(options));
+
+canaryProgram
+	.command("list")
+	.description("List deployed canary credentials and whether each decoy file is intact")
+	.option("--json", "Emit machine-readable JSON")
+	.action((options) => canaryListCommand(options));
+
+canaryProgram
+	.command("remove [id]")
+	.description("Delete one decoy (by id) or all of them, and drop them from the registry")
+	.option("--all", "Remove every deployed canary credential")
+	.option("--json", "Emit machine-readable JSON")
+	.action((id, options) => canaryRemoveCommand(id, options));
+
+canaryProgram
+	.command("status")
+	.description("Check the registry, the decoy files and triggers recorded in the audit log")
+	.option("--json", "Emit machine-readable JSON")
+	.action((options) => canaryStatusCommand(options));
 
 await program.parseAsync(process.argv);

@@ -60,6 +60,7 @@ async function importHealthWithMocks(options: HealthMocks = {}) {
 			options.config ?? {
 				auth: { api_key: "agent-token-secret" },
 				control_plane: { remote_policy_cache_enabled: true },
+				url_check: { enabled: true },
 			},
 		),
 		resolvePath: (path: string) => path.replace("~", "C:/aidr-test/home"),
@@ -177,6 +178,54 @@ describe("health status reporting", () => {
 		});
 	});
 
+	it("makes no network probe and reports not_configured in default local mode", async () => {
+		const fetchMock = vi.fn().mockResolvedValue({ status: 204 } as Response);
+		const health = await importHealthWithMocks({
+			fetch: fetchMock as unknown as typeof fetch,
+			config: { mode: "local", url_check: { enabled: false } },
+		});
+
+		const status = await health.getExtendedHealthStatus();
+		const endpoint = status.checks.find((check) => check.name === "url_endpoint");
+
+		expect(fetchMock).not.toHaveBeenCalled();
+		expect(endpoint).toMatchObject({
+			status: "not_configured",
+			details: { mode: "local", urlCheckEnabled: false },
+		});
+		expect(JSON.stringify(endpoint)).not.toContain("api.singularityrd.com");
+		// An intentionally inert optional leg does not degrade overall health.
+		expect(status.checks.every((c) => c.status === "healthy" || c.status === "not_configured")).toBe(
+			true,
+		);
+		expect(status.status).toBe("healthy");
+		expect(health.formatHealthStatus(status)).toContain("url_endpoint: not_configured");
+	});
+
+	it("probes the configured url_check endpoint, else the shared resolver", async () => {
+		const configured = vi.fn().mockResolvedValue({ status: 204 } as Response);
+		let health = await importHealthWithMocks({
+			fetch: configured as unknown as typeof fetch,
+			config: { url_check: { enabled: true, endpoint: "https://configured.example.test/u" } },
+		});
+		await health.getExtendedHealthStatus();
+		expect(configured).toHaveBeenCalledWith("https://configured.example.test/u", expect.anything());
+
+		const resolved = vi.fn().mockResolvedValue({ status: 204 } as Response);
+		health = await importHealthWithMocks({
+			fetch: resolved as unknown as typeof fetch,
+			config: { mode: "managed", url_check: { enabled: true } },
+		});
+		delete process.env.AIDR_URL_CHECK_ENDPOINT;
+		const { resolveEndpoint } = await import("../clients/url-check.js");
+		const status = await health.getExtendedHealthStatus();
+		expect(resolved).toHaveBeenCalledWith(resolveEndpoint("/url-check"), expect.anything());
+		expect(status.checks.find((c) => c.name === "url_endpoint")).toMatchObject({
+			status: "healthy",
+			details: { endpoint: resolveEndpoint("/url-check") },
+		});
+	});
+
 	it("uses measured disk space and degrades when it is below the warning threshold", async () => {
 		const health = await importHealthWithMocks({ diskFreeMB: 50 });
 
@@ -218,6 +267,7 @@ describe("health status reporting", () => {
 			"remote_policy",
 			"url_endpoint",
 			"disk_space",
+			"local_dlp_policy",
 		]);
 		expect(byName.remote_policy).toMatchObject({
 			status: "healthy",
@@ -242,6 +292,7 @@ describe("health status reporting", () => {
 			config: {
 				auth: { api_key: "agent-token-secret" },
 				control_plane: { remote_policy_cache_enabled: true },
+				url_check: { enabled: true },
 			},
 			remoteCache: {
 				source: "mismatched",

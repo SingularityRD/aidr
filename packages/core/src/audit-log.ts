@@ -8,6 +8,7 @@ import { chmod, open, rename, stat, unlink } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { resolvePath } from "./config.js";
 import { getFileContent } from "./file-utils.js";
+import { frameworkRefsToJson } from "./framework-mappings.js";
 import { preparePrivateLocalFile } from "./private-local-file.js";
 import type { ResponseActionRecord } from "./response-actions.js";
 import { redactTelemetryData, redactTelemetryString } from "./telemetry-redaction.js";
@@ -62,22 +63,62 @@ export function toolInputSummaryForAudit(
 	toolName: string,
 	toolInput: Record<string, unknown>,
 ): string {
-	let summary: string;
-	if (toolName === "Bash") {
-		summary = String(toolInput.command ?? "");
-	} else if (toolName === "WebFetch") {
-		summary = String(toolInput.url ?? "");
-	} else if (
-		toolName === "Write" ||
-		toolName === "Edit" ||
-		toolName === "Read" ||
-		toolName === "Delete"
-	) {
-		summary = String(toolInput.file_path ?? "");
-	} else {
-		summary = JSON.stringify(toolInput);
+	return redactTelemetryString(toolInputSummaryText(toolName, toolInput), MAX_SUMMARY_LEN);
+}
+
+/**
+ * The unbounded, UNREDACTED text {@link toolInputSummaryForAudit} is built from.
+ * Callers must redact and bound it themselves before it leaves the process.
+ */
+export function toolInputSummaryText(toolName: string, toolInput: Record<string, unknown>): string {
+	if (toolName === "Bash") return String(toolInput.command ?? "");
+	if (toolName === "WebFetch") return String(toolInput.url ?? "");
+	if (toolName === "Write" || toolName === "Edit" || toolName === "Read" || toolName === "Delete") {
+		return String(toolInput.file_path ?? "");
 	}
-	return redactTelemetryString(summary, MAX_SUMMARY_LEN);
+	return JSON.stringify(toolInput) ?? "";
+}
+
+/**
+ * Categories whose audit record names them. An allow in one of these still
+ * describes an enforcement action (a redaction, a prompt warning) or an
+ * uninspected leg, so it is recorded even when clean allows are not.
+ */
+const AUDITED_ALLOW_CATEGORIES: ReadonlySet<string> = new Set([
+	"behavioral_unavailable",
+	"canary_unavailable",
+	"dlp_redacted",
+	"prompt_protection",
+	"prompt_protection_warning",
+	// An allow whose runaway guard could not run is not a clean check.
+	"runaway_guard_unavailable",
+	"secure_code_warning",
+	"toxic_flow_monitor",
+	"toxic_flow_unavailable",
+]);
+
+/**
+ * Categories every audit record names, whatever the decision: a canary trigger
+ * must stay recognisable in the log and in `aidr canary status`.
+ */
+const NAMED_CATEGORIES: ReadonlySet<string> = new Set([
+	...AUDITED_ALLOW_CATEGORIES,
+	"canary_triggered",
+]);
+
+/**
+ * Secure-code findings on a verdict, as counts and rule ids only: the titles
+ * are in the rule catalog, and the matched source text is never recorded.
+ */
+function secureCodeSummary(verdict: Verdict): Record<string, unknown> {
+	const warnings = verdict.warnings ?? [];
+	if (warnings.length === 0) return {};
+	return {
+		secure_code: {
+			findings: warnings.length,
+			rule_ids: [...new Set(warnings.map((warning) => warning.ruleId))].sort(),
+		},
+	};
 }
 
 function toolInputSummary(toolName: string, toolInput: Record<string, unknown>): string {
@@ -100,15 +141,18 @@ export function buildRuntimeVerdictEntry(
 		tool_input_summary: toolInputSummary(toolName, toolInput),
 		artifacts: redactTelemetryData(verdict.artifacts),
 		verdict: verdict.decision,
-		...(verdict.category === "behavioral_unavailable" ? { category: verdict.category } : {}),
+		...(NAMED_CATEGORIES.has(verdict.category) ? { category: verdict.category } : {}),
 		severity: verdict.severity,
 		reasons: redactTelemetryData(verdict.reasons),
 		source: verdict.source,
 		matched_threat_id: verdict.matchedThreatId,
+		// Framework IDs of the matched rule (official identifiers only, no input data).
+		...(verdict.frameworks ? { frameworks: frameworkRefsToJson(verdict.frameworks) } : {}),
 		user_override: userOverride,
 		...(durationMs !== undefined && Number.isFinite(durationMs) && durationMs >= 0
 			? { duration_ms: durationMs }
 			: {}),
+		...secureCodeSummary(verdict),
 		// Verified user -> agent -> tool -> resource lineage, present only when the
 		// call carried a delegated credential that verified. Without it an audited
 		// event cannot be traced back to the resource it touched.
@@ -179,10 +223,14 @@ export function buildIncidentEntry(
 		tool_input_summary: toolInputSummary(params.toolName, params.toolInput),
 		artifacts: redactTelemetryData(params.verdict.artifacts),
 		decision: params.verdict.decision,
+		...(NAMED_CATEGORIES.has(params.verdict.category) ? { category: params.verdict.category } : {}),
 		severity: params.verdict.severity,
 		reasons: redactTelemetryData(params.verdict.reasons),
 		source: params.verdict.source,
 		matched_threat_id: params.verdict.matchedThreatId,
+		...(params.verdict.frameworks
+			? { frameworks: frameworkRefsToJson(params.verdict.frameworks) }
+			: {}),
 		recommended_actions: params.recommendedActions,
 		// Same lineage rule as the plain verdict entry: the incident is traceable to
 		// the resource only when a delegated credential verified for the call.
@@ -283,7 +331,7 @@ export async function logVerdict(
 	// Skip clean verdicts unless log_clean is on or this is a user override
 	if (
 		verdict.decision === "allow" &&
-		verdict.category !== "behavioral_unavailable" &&
+		!AUDITED_ALLOW_CATEGORIES.has(verdict.category) &&
 		!config.log_clean &&
 		!userOverride
 	)
@@ -520,6 +568,44 @@ export async function logPluginScan(
 		await appendEntry(config, entry);
 	} catch (error) {
 		// Fail-open: preserve the scan result while exposing the dropped record.
+		recordAuditWriteFailure(error);
+	}
+}
+
+/**
+ * One step of a managed-mode dashboard approval (request submitted, decision
+ * observed, token rejected or consumed). Carries identifiers and outcome codes
+ * only: never the tool input, the token or the API key.
+ */
+export async function logDashboardApprovalEvent(
+	config: LoggingConfig,
+	event: {
+		event: string;
+		sessionId: string;
+		toolName: string;
+		actionId: string;
+		requestId?: string;
+		reason?: string;
+		approverId?: string;
+	},
+): Promise<void> {
+	if (!config.enabled) return;
+	const entry: Record<string, unknown> = {
+		type: "dashboard_approval",
+		source: "dashboard_approval",
+		timestamp: new Date().toISOString(),
+		event: event.event,
+		session_id: event.sessionId,
+		tool_name: event.toolName,
+		action_id: event.actionId,
+		...(event.requestId ? { request_id: event.requestId } : {}),
+		...(event.reason ? { reason: event.reason } : {}),
+		...(event.approverId ? { approver_id: event.approverId } : {}),
+	};
+	try {
+		await appendEntry(config, redactTelemetryData(entry));
+	} catch (error) {
+		// Fail-open for the audit write only; the approval decision is unaffected.
 		recordAuditWriteFailure(error);
 	}
 }

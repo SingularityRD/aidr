@@ -1,5 +1,137 @@
 // @singularityrd/aidr-core public API
 
+// Agent environment & autonomy posture (aidr doctor / aidr discover --agents)
+export {
+	AGENT_HOSTS,
+	AGENT_POSTURE_CHECKS,
+	type AgentEnvironmentOptions,
+	type AgentEnvironmentReport,
+	type AgentHost,
+	type AgentHostDetection,
+	type AgentPostureCheck,
+	type AgentPostureFinding,
+	type AgentPostureSeverity,
+	inspectAgentEnvironment,
+} from "./agent-environment-posture.js";
+// Agent permission profiles: least-privilege restrictions per connector and
+// repository, evaluated by the shared evaluator on top of threat detection.
+export {
+	AGENT_PROFILE_ACTIONS,
+	AGENT_PROFILE_CONNECTORS,
+	AGENT_PROFILE_TOOL_CLASSES,
+	type AgentProfile,
+	type AgentProfileAction,
+	type AgentProfileCall,
+	type AgentProfileConnector,
+	type AgentProfileContext,
+	type AgentProfileDiagnostic,
+	type AgentProfileDocument,
+	AgentProfileDocumentSchema,
+	type AgentProfileEnvironment,
+	type AgentProfileEvaluation,
+	type AgentProfileLayer,
+	type AgentProfileOutcome,
+	type AgentProfileSource,
+	type AgentProfileValidation,
+	agentProfileVerdict,
+	classifyAgentTool,
+	evaluateAgentProfile,
+	evaluateAgentProfiles,
+	mcpCallIdentity,
+	mergeAgentProfileVerdict,
+	parseAgentProfileSource,
+	selectAgentProfiles,
+	validateAgentProfileDocument,
+	validateAgentProfileSource,
+	WORKSPACE_PLACEHOLDER,
+} from "./agent-profile.js";
+export {
+	buildAgentProfileContext,
+	DEFAULT_LOCAL_AGENT_PROFILES_PATH,
+	evaluateAgentProfilesForToolCall,
+	inspectLocalAgentProfiles,
+	LOCAL_AGENT_PROFILES_ENV,
+	type LocalAgentProfilesState,
+	localAgentProfileLayer,
+	localAgentProfilesPath,
+	managedAgentProfileLayer,
+} from "./agent-profile-loader.js";
+export {
+	AGENT_PROFILE_TEMPLATE_NAMES,
+	AGENT_PROFILE_TEMPLATES,
+	agentProfileTemplateDocument,
+} from "./agent-profile-templates.js";
+// Agent-safety guardrails: diff-aware edit views and session runaway guard
+export {
+	buildEditViews,
+	DELETED_TEST_FILE_VIEW,
+	EDIT_LINE_VIEWS,
+	type EditLineView,
+	type EditViews,
+	isTestFile,
+	lineDiff,
+	patchChanges,
+	viewsForPath,
+} from "./agent-safety/edit-views.js";
+export {
+	applyRunawayOutcome,
+	checkRunaway,
+	evaluateRunawayCall,
+	isRunawayState,
+	RUNAWAY_CATEGORY,
+	RUNAWAY_SIGNAL_IDS,
+	RUNAWAY_UNAVAILABLE_CATEGORY,
+	type RunawayOutcome,
+	type RunawaySignal,
+	type RunawayState,
+	recordToolOutcome,
+	runawayStateDir,
+	runawayVerdict,
+	toolCallFingerprints,
+	writtenPaths,
+} from "./agent-safety/runaway-guard.js";
+export { toolResultReportsFailure } from "./agent-safety/tool-outcome.js";
+// AI model supply chain: trusted model sources (hubs and publisher organisations)
+export {
+	isTrustedModelSourceMatch,
+	loadTrustedModelSources,
+	MODEL_SOURCES_SUBDIR,
+	modelRepoOrgs,
+	NO_TRUSTED_MODEL_SOURCES,
+	type TrustedModelSources,
+} from "./ai-supply-chain.js";
+// AI-BOM (AI Bill of Materials): redacted AI inventory and its CycloneDX 1.6 rendering.
+export {
+	type BuildCycloneDxOptions,
+	buildCycloneDxBom,
+	CYCLONEDX_SPEC_VERSION,
+	type CycloneDxBom,
+	type CycloneDxComponent,
+	type CycloneDxProperty,
+	type CycloneDxService,
+	type CycloneDxVulnerability,
+} from "./aibom/cyclonedx.js";
+export {
+	AI_INVENTORY_SCHEMA,
+	type AiBomAgentInput,
+	type AiInventory,
+	type AiInventoryCoverage,
+	type AiInventoryMcpServer,
+	type AiInventoryPackage,
+	type AiInventoryVulnerability,
+	aiInventoryGaps,
+	type CollectAiInventoryOptions,
+	collectAiInventory,
+	displayPath,
+	packageUrl,
+} from "./aibom/inventory.js";
+export {
+	type AiProjectScan,
+	loadAiComponentCatalog,
+	matchCatalogEntry,
+	normalizePackageName,
+	scanProjectForAiComponents,
+} from "./aibom/project-scan.js";
 export type {
 	AigCveFinding,
 	AigFingerprintMatch,
@@ -27,7 +159,11 @@ export {
 	scanTarget,
 	scanTargets,
 } from "./aig-infra-scan.js";
-export { evaluateInfrastructurePolicy, inspectInfrastructurePolicy } from "./aig-policy.js";
+export {
+	evaluateInfrastructurePolicy,
+	inspectInfrastructurePolicy,
+	parseInfrastructureScanReport,
+} from "./aig-policy.js";
 export type {
 	AigAgentScanOptions,
 	AigFinding,
@@ -80,6 +216,7 @@ export {
 	getAuditLogLossState,
 	getRecentEntries,
 	logAllowedResponseActions,
+	logDashboardApprovalEvent,
 	logPluginScan,
 	logResponseActions,
 	logVerdict,
@@ -125,6 +262,15 @@ export {
 export { isCommercialBuild } from "./build-flavor.js";
 // Cache
 export { VerdictCache } from "./cache.js";
+// Canary credentials (honeytokens): deploy decoys, detect any agent touching them
+export * from "./canary/index.js";
+// Canary triggers in prompts and tool output, shared by every connector
+export {
+	CANARY_PROMPT_BLOCK_MESSAGE,
+	type CanaryCheckStatus,
+	checkPromptForCanaries,
+	recordToolOutputCanaries,
+} from "./canary-triggers.js";
 // Causal agent chain (message -> retrieval -> tool -> authorization -> action ->
 // side effect -> intervention), ordered by position and logical clock, with a
 // missing link reported as `chain_gap` and tamper-evident binding through the
@@ -158,6 +304,38 @@ export { FileCheckClient } from "./clients/file-check.js";
 export type { PackageMetadata } from "./clients/package-registry.js";
 export { RegistryClient, resolveDistDigest } from "./clients/package-registry.js";
 export { UrlCheckClient } from "./clients/url-check.js";
+// Code guard: AI supply-chain and secure-code rules over code an agent writes or runs
+export {
+	applySecureCodeWarnings,
+	CODE_MATCH_PREFIX,
+	type CodeBlock,
+	type CodeFinding,
+	type CodeGuardResult,
+	CodeRuleSet,
+	codeBlocksForToolCall,
+	codeLanguageForPath,
+	describeSecureCodeWarnings,
+	inspectToolCallCode,
+	isReportableFinding,
+	isSecureCodeRule,
+	matchCodeBlock,
+	SECRET_RULE_ID,
+	SECURE_CODE_WARNING_CATEGORY,
+} from "./code-guard.js";
+// Project code scan (`aidr scan --code`)
+export {
+	type CodeScanFinding,
+	type CodeScanOptions,
+	type CodeScanReport,
+	scanCodePath,
+} from "./code-scanner.js";
+// Shell argv normalization (argv arrays -> inspected command text)
+export {
+	type CommandValueResult,
+	commandFromArgv,
+	commandFromValue,
+	shellQuote,
+} from "./command-argv.js";
 export type {
 	CommunityRule,
 	CommunityRuleRegistryConfig,
@@ -196,6 +374,24 @@ export {
 export type { ContainConfig } from "./contain.js";
 // Auto-Contain
 export { AutoContain, createDefaultContainConfig } from "./contain.js";
+// Data and context poisoning protection (instruction/memory files, MCP tool metadata, memory writes)
+export {
+	AGENT_CONTROL_CONTENT,
+	AGENT_CONTROL_PATH,
+	type AgentWriteTarget,
+	agentWriteTargets,
+	CONTEXT_POISONING_SOURCE,
+	evaluateContextPoisoning,
+	isMemoryWriteTool,
+	loadContextPoisoningRules,
+	MCP_TOOL_METADATA,
+	type McpToolMetadataFinding,
+	type McpToolMetadataInput,
+	MEMORY_WRITE_CONTENT,
+	matchAgentControlPath,
+	scanMcpToolMetadata,
+	shellWriteTargets,
+} from "./context-poisoning.js";
 export type {
 	AigDataIntegrityStatus,
 	AigTargetKind,
@@ -216,6 +412,33 @@ export {
 	resetCveIndexCache,
 	setTestIndexPath,
 } from "./cve-checker.js";
+// Managed-mode dashboard approvals (out-of-band admin approval, signed single-use tokens)
+export {
+	type ApprovalRequestBody,
+	type ApprovalRequestStatus,
+	DASHBOARD_APPROVAL_REQUEST_TIMEOUT_MS,
+	DASHBOARD_APPROVAL_REQUEST_TTL_MS,
+	DASHBOARD_APPROVAL_SOURCE,
+	DASHBOARD_APPROVAL_TOKEN_MAX_TTL_MS,
+	DASHBOARD_APPROVAL_TOTAL_BUDGET_MS,
+	type DashboardApprovalBinding,
+	type DashboardApprovalContext,
+	type DashboardApprovalInput,
+	type DashboardApprovalOptions,
+	type DashboardApprovalOutcome,
+	type DashboardApprovalStatus,
+	type DashboardApprovalTokenPayload,
+	type DashboardContextResult,
+	type DashboardTokenRejection,
+	type DashboardTokenVerification,
+	type DashboardUnavailableReason,
+	dashboardApprovalStatePath,
+	dashboardArtifactDigest,
+	dashboardToolName,
+	processDashboardApproval,
+	resolveDashboardApprovalContext,
+	verifyDashboardApprovalToken,
+} from "./dashboard-approvals.js";
 // Scoped, short-lived user -> agent -> tool -> resource credentials.
 export {
 	canonicalDelegatedCredentialJson,
@@ -287,6 +510,7 @@ export {
 export type {
 	ContentClassification,
 	ContentClassifierConfig,
+	DlpDetector,
 	DlpDirection,
 	DlpException,
 	DlpExceptionScope,
@@ -305,12 +529,16 @@ export type {
 	DlpUnavailableReason,
 	DlpUnavailableResult,
 	EntropyMatch,
+	PrivacyDetectorMatch,
+	PrivacyDetectorScan,
 } from "./dlp/index.js";
 export {
 	ContentClassifier,
 	createDlpContentFingerprint,
 	createDlpMatchFingerprint,
+	DLP_DETECTOR_ENTITY_TYPES,
 	DLP_EXPIRED_EXCEPTION_DOMINANCE,
+	DlpDetectorSchema,
 	DlpDirectionSchema,
 	DlpExceptionSchema,
 	DlpExceptionScopeSchema,
@@ -325,10 +553,14 @@ export {
 	DlpUnavailableActionSchema,
 	EntropyDetector,
 	isDlpExceptionActive,
+	PRIVACY_DETECTOR_MAX_CHARS,
+	privacyDetectorPlaceholder,
 	pruneExpiredExceptions,
 	scanDlpContent,
 	scanDlpInput,
 	scanDlpOutput,
+	scanPrivacyDetectors,
+	shellInertRedactionToken,
 } from "./dlp/index.js";
 // Encryption
 export {
@@ -346,6 +578,7 @@ export { CONFIDENCE_THRESHOLD, DecisionEngine } from "./engine.js";
 export {
 	allowVerdict,
 	evaluateToolCall,
+	recordCanaryTrigger,
 	type ToolDelegationContext,
 	type ToolEvaluationContext,
 	type ToolEvaluationRequest,
@@ -407,6 +640,7 @@ export {
 // Extractors
 export {
 	boundArtifact,
+	contentWindows,
 	extractFromBash,
 	extractFromDelete,
 	extractFromEdit,
@@ -416,6 +650,10 @@ export {
 	extractFromWebFetch,
 	extractFromWrite,
 	extractUrls,
+	INPUT_NOT_FULLY_INSPECTED,
+	type InspectionLimit,
+	inspectionLimitsHit,
+	MAX_INSPECTED_CHARS,
 } from "./extractors.js";
 // Versioned, append-only operator false-positive feedback bound to the policy
 // revision and incident it judges: an identical resubmission is idempotent and a
@@ -492,22 +730,70 @@ export {
 	separatorLine,
 	severityEmoji,
 } from "./format.js";
+// Security framework mapping (OWASP LLM 2025, OWASP Agentic 2026, MITRE ATLAS)
+export {
+	type AtlasTechnique,
+	FRAMEWORK_IDS,
+	FRAMEWORKS,
+	type FrameworkDefinition,
+	type FrameworkId,
+	type FrameworkItemDefinition,
+	frameworkItemLabel,
+	frameworkItemTitle,
+	frameworkOfItem,
+	MITRE_ATLAS_TACTICS,
+	MITRE_ATLAS_TECHNIQUES,
+	OWASP_AGENTIC_2026,
+	OWASP_LLM_2025,
+} from "./framework-catalog.js";
+export {
+	buildCoverageMatrix,
+	buildDashboardCoverageArtifact,
+	type CoverageItem,
+	type CoverageMatrix,
+	type CoverageRule,
+	type CoverageStatus,
+	type CoverageTacticSummary,
+	coverageMatrixToJson,
+	FRAMEWORK_MAPPINGS_RELATIVE_PATH,
+	type FrameworkAssessment,
+	type FrameworkCoverage,
+	type FrameworkMappings,
+	type FrameworkMappingsParseResult,
+	type FrameworkRuleRef,
+	frameworkRefLabels,
+	frameworkRefsFromJson,
+	frameworkRefsToJson,
+	loadFrameworkMappings,
+	parseFrameworkMappings,
+	parseFrameworkMappingsYaml,
+	renderCoverageDocument,
+	renderCoverageMarkdown,
+	renderCoverageTable,
+	resolveRuleFrameworks,
+	toCoverageRules,
+	validateFrameworkMappingsAgainstRules,
+} from "./framework-mappings.js";
 // Guard (soft-gated connector orchestrator)
 //
 // `executeWithRollback` is the connector-facing shape of a response: the guard
 // allowed the call and snapshotted the target, the connector runs the call, and
 // this wrapper rolls the target back if the call fails.
 export {
+	type AskApprovalResolution,
 	addToAllowlist,
 	approveAction,
 	executeWithRollback,
 	formatAskMessage,
+	formatDashboardApprovalNotice,
 	formatDenyMessage,
+	type GuardOptions,
 	type GuardResponseSettings,
 	type GuardResult,
 	guardInputSummary,
 	guardToolCall,
 	removeFromAllowlist,
+	resolveAskWithDashboardApproval,
 	resolveGuardResponseSettings,
 	rollbackSnapshotFromGuardResult,
 	summarizeArtifacts,
@@ -527,6 +813,11 @@ export {
 } from "./health.js";
 // Heuristics
 export { HeuristicsEngine } from "./heuristics.js";
+export {
+	type HiddenUnicodeReport,
+	inspectHiddenUnicode,
+	renderInvisibleCharacters,
+} from "./hidden-unicode.js";
 // Native-host acceptance observations (inert outside a gate run)
 export {
 	createHostObservation,
@@ -581,6 +872,8 @@ export {
 	type WriteIncidentAnchorOptions,
 	writeSignedIncidentAnchorReceipt,
 } from "./incidents/index.js";
+// Connector initialisation failure (fail-closed load)
+export { formatInitFailureMessage, initFailureCode } from "./init-failure.js";
 // Installation ID
 export { getInstallationId } from "./installation-id.js";
 // Integrity (signed artifact manifest verification)
@@ -606,15 +899,24 @@ export type { DomainRiskEntry, IntelMerged } from "./intel/types.js";
 // JSONC-tolerant config reader shared by the inventory and policy call sites
 export type { JsoncParseResult, JsoncParseStatus } from "./jsonc.js";
 export { parseJsonc, stripJsonComments } from "./jsonc.js";
+// Local-mode (unsigned, operator-written) DLP policy file.
+export {
+	DEFAULT_LOCAL_DLP_POLICY_PATH,
+	inspectLocalDlpPolicy,
+	LOCAL_DLP_POLICY_ENV,
+	type LocalDlpPolicyState,
+	localDlpPolicyPath,
+} from "./local-dlp-policy.js";
 // Logger
 export { createChildLogger, createLogger, getLogger, setLogger } from "./logger.js";
-export type { ManagedState } from "./managed.js";
+export type { ApprovalPublicKeyEntry, ManagedState } from "./managed.js";
 // Verified managed identity and entitlement state for connector provisioning.
 export {
 	getEffectiveManagedApiKey,
 	isEntitlementActive,
 	loadManagedState,
 	managedStatePath,
+	parseApprovalPublicKeys,
 } from "./managed.js";
 export type {
 	AigMcpCategory,
@@ -674,12 +976,17 @@ export {
 	type McpDiscoveryServer,
 	type McpSignedManifestIndex,
 } from "./mcp-discovery.js";
-export type {
-	McpInventoryCoverage,
-	McpInventoryCoverageStatus,
-	McpInventoryReport,
-	McpInventorySourceStatus,
+export {
+	defaultMcpConfigPaths,
+	type McpInventoryCoverage,
+	type McpInventoryCoverageStatus,
+	type McpInventoryReport,
+	type McpInventorySourceStatus,
 } from "./mcp-inventory.js";
+export { redactLaunchToken, redactMcpLaunch } from "./mcp-launch-redaction.js";
+export type { McpFetchOptions } from "./mcp-transport.js";
+// Pinned-DNS MCP upstream transport used by the inline MCP gateway.
+export { fetchMcpEndpoint, McpTransportError } from "./mcp-transport.js";
 // Metrics
 export { getMetricsCollector, MetricsCollector, metrics } from "./metrics.js";
 export type {
@@ -690,13 +997,68 @@ export type {
 export { LocalEmbeddingModel } from "./ml-model.js";
 export type { AnomalyEvent, BehaviorProfile } from "./novelty-detection.js";
 export { createNoveltyDetector, NoveltyDetector } from "./novelty-detection.js";
+// Operator approval channel (file-backed, out-of-band; `aidr pending` / `aidr approve`)
+export {
+	artifactSetDigest,
+	artifactValueDigest,
+	type ConsumeOperatorApprovalInput,
+	clearOperatorApprovalKeyCache,
+	consumeOperatorApproval,
+	createDefaultOperatorKeyProvider,
+	describeOperatorApprovalKey,
+	type ExternalSpendResult,
+	findOperatorAllowlistGrant,
+	getPendingAsk,
+	type ListedPendingAsk,
+	listOperatorApprovals,
+	listPendingAsks,
+	markOperatorAllowlistGrantUsed,
+	OPERATOR_APPROVAL_DEFAULT_TTL_MS,
+	OPERATOR_APPROVAL_KEY_ID,
+	OPERATOR_APPROVAL_KEY_STORAGE_ENV,
+	OPERATOR_APPROVAL_LEDGER_ID,
+	OPERATOR_APPROVAL_MAX_TTL_MS,
+	OPERATOR_APPROVAL_MIN_TTL_MS,
+	type OperatorApproval,
+	OperatorApprovalError,
+	type OperatorApprovalErrorCode,
+	type OperatorApprovalKeyStatus,
+	type OperatorApprovalStoreOptions,
+	type OperatorConsumeReason,
+	type OperatorConsumeResult,
+	type OperatorConsumptionAnchor,
+	type OperatorKeyMaterial,
+	type OperatorKeyProvider,
+	type OperatorKeyStorage,
+	operatorApprovalStorePath,
+	PENDING_ASK_TTL_MS,
+	type PendingAsk,
+	type PendingAskArtifact,
+	type RecordOperatorApprovalOptions,
+	type RecordPendingAskInput,
+	recordOperatorApproval,
+	recordPendingAsk,
+	resolveOperatorKeyStorage,
+	spendExternalApprovalToken,
+} from "./operator-approvals.js";
 export { type OutputFinding, scanModelOutput } from "./output-scanner.js";
+// High-precision credential / payment-card detection shared by output scanning and the CLI
+export { detectOutputSensitiveData, type OutputSensitiveMatch } from "./output-sensitive-data.js";
 export type { PackageCheckerConfig, PackageCheckInput } from "./package-checker.js";
 // Package checker
 export { PackageChecker } from "./package-checker.js";
 export type { ParsedPackage } from "./package-extractor.js";
 // Package extractor
 export { extractPackagesFromCommand, extractPackagesFromManifest } from "./package-extractor.js";
+// Built-in common-PII baseline governed by tenant DLP policy
+export {
+	COMMON_PII_TYPES,
+	type CommonPiiBaselineFinding,
+	type CommonPiiBaselineResult,
+	type CommonPiiType,
+	commonPiiRuleId,
+	evaluateCommonPiiBaseline,
+} from "./pii-baseline.js";
 // PII Detector (privacy protection)
 export {
 	detectPII,
@@ -717,7 +1079,13 @@ export {
 	storeResult,
 } from "./plugin-scan-cache.js";
 // Plugin scanner
-export { discoverPlugins, scanPlugin } from "./plugin-scanner.js";
+export {
+	discoverPlugins,
+	matchPluginContent,
+	SKILL_RISK_TYPES,
+	scanPlugin,
+	skillRiskTypeForThreatId,
+} from "./plugin-scanner.js";
 // Strict policy-as-code compiler and dry-run evaluator.
 export {
 	type CompiledRuntimePolicy,
@@ -733,6 +1101,65 @@ export {
 	parsePolicyDocument,
 	simulateRuntimePolicy,
 } from "./policy-document.js";
+// AI security posture findings (infra CVEs, MCP inventory, skill/plugin scan)
+export {
+	AGENT_POSTURE_FINDING_EVENT,
+	buildAgentPostureFindingEvents,
+	buildInfraScanFindingEvents,
+	buildMcpInventoryFindingEvents,
+	buildSkillScanFindingEvents,
+	INFRA_SCAN_FINDING_EVENT,
+	MCP_INVENTORY_FINDING_EVENT,
+	newPostureScanId,
+	normalizePostureSeverity,
+	PLUGIN_SCAN_FINDING_EVENT,
+	type PostureSeverity,
+	projectPostureFields,
+} from "./posture-events.js";
+export {
+	describePostureUploadError,
+	POSTURE_UPLOAD_BATCH_SIZE,
+	type PostureUploadOptions,
+	type PostureUploadResult,
+	uploadPostureEvents,
+} from "./posture-upload.js";
+// Connector-side prompt inspection runner (config, tenant DLP, deadline, audit, failure policy)
+export {
+	inspectUserPrompt,
+	MIN_PROMPT_INSPECTION_DEADLINE_MS,
+	PROMPT_INSPECTION_DEADLINE_ENV,
+	type PromptInspectionOutcome,
+	type PromptInspectionReason,
+	type PromptInspectionRequest,
+	resolvePromptInspectionDeadlineMs,
+	uninspectedPromptOutcome,
+} from "./prompt-inspection.js";
+// Prompt protection (UserPromptSubmit-style inspection of the user's prompt)
+export {
+	DEFAULT_PROMPT_PROTECTION,
+	locateSecrets,
+	type PromptFindingCategory,
+	type PromptFindingSummary,
+	type PromptIncompleteInspection,
+	type PromptProtectionDecision,
+	type PromptProtectionResult,
+	PromptScanDeadlineError,
+	type PromptScanOptions,
+	type PromptTenantDlp,
+	type SecretLocation,
+	scanPrompt,
+} from "./prompt-protection.js";
+// Jailbreak & content-safety prompt inspection
+export {
+	applyTenantPromptSafety,
+	DEFAULT_PROMPT_SAFETY,
+	PROMPT_SAFETY_LABELS,
+	type PromptSafetyCategory,
+	type PromptSafetyFinding,
+	type PromptSafetyResult,
+	scanPromptSafety,
+	type TenantPromptSafetyPolicy,
+} from "./prompt-safety.js";
 export { preparePrivateLocalDirectory, preparePrivateLocalFile } from "./private-local-file.js";
 export {
 	scanCachedProvisionedOutput,
@@ -939,6 +1366,16 @@ export {
 	toFindingData,
 } from "./session-start-scan.js";
 export {
+	SessionStateError,
+	type SessionStateErrorCode,
+	type SessionStateRecovery,
+	SessionStateStore,
+	type SessionStateStoreOptions,
+	type SessionStateUpdateResult,
+	sessionStateDigest,
+} from "./session-state-store.js";
+export { normalizeShellText } from "./shell-normalize.js";
+export {
 	createSiemEvent,
 	DurableSiemDelivery,
 	type ElasticSiemConfig,
@@ -1000,8 +1437,29 @@ export {
 	redactTelemetryString,
 	sanitizeTelemetryEndpoint,
 } from "./telemetry-redaction.js";
+export {
+	boundTerminalText,
+	escapeTerminalText,
+	hasUnsafeTerminalCharacters,
+	TRUNCATION_MARKER,
+} from "./terminal-text.js";
 // Threat loader
 export { loadThreats, loadThreatsFromDirs } from "./threat-loader.js";
+// Session toxic-flow ("lethal trifecta") and behavioral chain detection
+export {
+	recordToolOutputFlow,
+	TOXIC_FLOW_THREAT_IDS,
+	type ToolOutputFlowInput,
+	type ToolOutputFlowResult,
+	type ToxicFlowChain,
+} from "./toxic-flow.js";
+// Toxic-flow capability patterns (threats/flow/capabilities.yaml)
+export {
+	FLOW_CAPABILITIES_RELATIVE_PATH,
+	type FlowCapabilityPatterns,
+	loadFlowCapabilities,
+	parseFlowCapabilitiesYaml,
+} from "./toxic-flow-capabilities.js";
 export type {
 	DetectionPhaseAttributes,
 	SecurityDecisionAttributes,
@@ -1034,7 +1492,9 @@ export {
 	loadTrustedDomains,
 } from "./trusted-domains.js";
 export type {
+	AgentProfileVerdictRef,
 	AgentRuntime,
+	AiSupplyChainConfig,
 	Allowlist,
 	AllowlistConfig,
 	AllowlistEntry,
@@ -1052,6 +1512,8 @@ export type {
 	Decision,
 	DelegationLineage,
 	FileCheckConfig,
+	FrameworkRefs,
+	FrameworkRefsJson,
 	HeuristicMatch,
 	IncidentConfig,
 	IntegrityConfig,
@@ -1066,19 +1528,30 @@ export type {
 	PluginInfo,
 	PluginScanCache,
 	PluginScanResult,
+	PoisoningProtectionConfig,
+	PromptContentSafetyCategory,
+	PromptContentSafetyConfig,
+	PromptProtectionConfig,
+	PromptProtectionMode,
+	RunawayConfig,
+	SecureCodeConfig,
 	SignalSources,
 	Threat,
 	ThreatData,
+	ToxicFlowConfig,
 	TrustedDomain,
 	UrlCheckConfig,
 	UrlCheckFinding,
 	UrlCheckResult,
 	Verdict,
 	VerdictSeverity,
+	VerdictWarning,
 } from "./types.js";
 // Types
 export {
 	ActionSchema,
+	AgentSafetyConfigSchema,
+	AiSupplyChainConfigSchema,
 	AllowlistConfigSchema,
 	ArtifactSchema,
 	ArtifactTypeSchema,
@@ -1095,6 +1568,12 @@ export {
 	LoggingConfigSchema,
 	nullLogger,
 	PackageCheckConfigSchema,
+	PoisoningProtectionConfigSchema,
+	PromptContentSafetySchema,
+	PromptProtectionConfigSchema,
+	PromptProtectionModeSchema,
+	RunawayConfigSchema,
+	SecureCodeConfigSchema,
 	SensitivitySchema,
 	SeveritySchema,
 	ThreatSchema,

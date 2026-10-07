@@ -3,6 +3,7 @@ import { getBearerToken } from "../_shared/auth.ts";
 import { checkIdentityBarrier } from "../_shared/identity-barrier.ts";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 import { corsJson, handleCors } from "../_shared/cors.ts";
+import { createMailer, type Mailer } from "../_shared/mailer.ts";
 import { readBoundedJson } from "../_shared/request-limits.ts";
 import { membershipActive, sha256 } from "../_shared/runtime-policy.ts";
 import {
@@ -13,6 +14,7 @@ import {
 	resendPendingInvitation,
 	revokePendingInvitation,
 } from "./lifecycle.ts";
+import { invitationEmail } from "./email.ts";
 
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "AIDR_DASHBOARD_URL"] as const;
 const MAX_BODY_BYTES = 16 * 1024;
@@ -30,7 +32,7 @@ type TeamInviteDatabase = {
 	public: {
 		Tables: {
 			tenant_members: ReadTable<{ tenant_id: string; user_id: string; role: string; expires_at: string | null }>;
-			tenants: ReadTable<{ id: string; status: string }>;
+			tenants: ReadTable<{ id: string; status: string; name: string }>;
 			team_invitations: ReadTable<{ id: string; tenant_id: string; email: string; role: string; expires_at: string; accepted_at: string | null; created_at: string; created_by: string }>;
 			rate_limits: ReadTable<{ key: string; window_start: number; count: number }>;
 		};
@@ -47,6 +49,48 @@ type TeamInviteDatabase = {
 export interface TeamInviteDeps {
 	/** Overrides the service-role client; used by the contract suite. */
 	db?: SupabaseClient<TeamInviteDatabase>;
+	/**
+	 * Overrides the deployment mailer (`createMailer(runtimeEnv)`). The contract
+	 * suite injects a recording mailer or a Resend transport over a mocked fetch.
+	 */
+	mailer?: Mailer;
+}
+
+type DeliveryOutcome = "email" | "manual" | "email_failed";
+
+/**
+ * Try to deliver a freshly minted link by email. Runs only after the atomic
+ * RPC confirmed a live invitation, so a revoked, consumed or expired
+ * invitation never produces mail. Never throws and never logs the link.
+ */
+async function deliverInvitation(
+	mailer: Mailer,
+	input: Parameters<typeof invitationEmail>[0],
+): Promise<DeliveryOutcome> {
+	if (mailer.provider === "none") return "manual";
+	try {
+		const result = await mailer.send(invitationEmail(input));
+		if (result.ok) return "email";
+		if (result.reason === "not_configured") return "manual";
+		console.error("[team-invite] invitation email not delivered", JSON.stringify({ reason: result.reason }));
+		return "email_failed";
+	} catch {
+		console.error("[team-invite] invitation email not delivered", JSON.stringify({ reason: "exception" }));
+		return "email_failed";
+	}
+}
+
+/**
+ * Delivery projection. `delivery: "email"` is reported only after the provider
+ * accepted the message, and then the link is NOT returned: the recipient's
+ * mailbox is the only place it exists. Otherwise the operator gets the link to
+ * share manually, and a failed attempt is reported as such.
+ */
+function deliveryFields(outcome: DeliveryOutcome, inviteUrl: string): Record<string, unknown> {
+	if (outcome === "email") return { delivery: "email" };
+	return outcome === "email_failed"
+		? { delivery: "manual", invite_url: inviteUrl, email_delivery: "failed" }
+		: { delivery: "manual", invite_url: inviteUrl };
 }
 
 // The runtime entry point is declared above the factory on purpose: the
@@ -81,7 +125,7 @@ async function handleTeamInvite(req: Request, deps: TeamInviteDeps): Promise<Res
 		const { data: member, error: memberError } = await db.from("tenant_members").select("role,expires_at").eq("tenant_id", command.teamId).eq("user_id", auth.user.id).maybeSingle();
 		if (memberError) return corsJson(req, 503, { error: "authorization_unavailable" });
 		if (!membershipActive(member) || !["owner", "admin"].includes(member?.role ?? "")) return corsJson(req, 403, { error: "team_forbidden" });
-		const { data: tenant, error: tenantError } = await db.from("tenants").select("status").eq("id", command.teamId).maybeSingle();
+		const { data: tenant, error: tenantError } = await db.from("tenants").select("status,name").eq("id", command.teamId).maybeSingle();
 		if (tenantError) return corsJson(req, 503, { error: "authorization_unavailable" });
 		if (tenant?.status !== "active") return corsJson(req, 403, { error: "tenant_inactive" });
 		if (command.action === "list") {
@@ -120,7 +164,11 @@ async function handleTeamInvite(req: Request, deps: TeamInviteDeps): Promise<Res
 			if (resendError) return corsJson(req, 503, { error: "invitation_resend_failed" });
 			if (!data) return corsJson(req, 404, { error: "invitation_not_pending" });
 			if (data.id !== command.invitationId || typeof data.email !== "string" || typeof data.role !== "string" || typeof data.expires_at !== "string") return corsJson(req, 503, { error: "invitation_resend_failed" });
-			return corsJson(req, 200, { ok: true, delivery: "manual", invitation_id: data.id, email: data.email, role: data.role, expires_at: data.expires_at, invite_url: inviteUrl }, { "Cache-Control": "no-store" });
+			const outcome = await deliverInvitation(deps.mailer ?? createMailer(runtimeEnv), {
+				to: data.email, workspaceName: tenant.name, role: data.role, inviteUrl,
+				expiresAt: data.expires_at, invitationId: data.id, tokenHash,
+			});
+			return corsJson(req, 200, { ok: true, ...deliveryFields(outcome, inviteUrl), invitation_id: data.id, email: data.email, role: data.role, expires_at: data.expires_at }, { "Cache-Control": "no-store" });
 		}
 		if (command.action !== "create") return corsJson(req, 400, { error: "invalid_invitation" });
 		// A repeated create must not rotate a previously returned link. The
@@ -171,6 +219,10 @@ async function handleTeamInvite(req: Request, deps: TeamInviteDeps): Promise<Res
 		}
 		if (insertError?.code === "42501") return corsJson(req, 403, { error: "team_forbidden" });
 		if (insertError || typeof data?.id !== "string" || typeof data.expires_at !== "string") return corsJson(req, 503, { error: "invitation_create_failed" });
-		return corsJson(req, 200, { ok: true, delivery: "manual", invitation_id: data.id, expires_at: data.expires_at, invite_url: inviteUrl }, { "Cache-Control": "no-store" });
+		const outcome = await deliverInvitation(deps.mailer ?? createMailer(runtimeEnv), {
+			to: command.email, workspaceName: tenant.name, role: command.role, inviteUrl,
+			expiresAt: data.expires_at, invitationId: data.id, tokenHash,
+		});
+		return corsJson(req, 200, { ok: true, ...deliveryFields(outcome, inviteUrl), invitation_id: data.id, expires_at: data.expires_at }, { "Cache-Control": "no-store" });
 	} catch { return corsJson(req, 503, { error: "invitation_unavailable" }); }
 }

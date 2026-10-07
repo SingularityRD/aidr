@@ -39,7 +39,12 @@ async function resolvePathPart(current: string, part: string): Promise<string | 
 	}
 }
 
-async function resolvePolicyPath(path: string): Promise<string | null> {
+/**
+ * Resolve a path the way the filesystem will, following existing symlinks. A
+ * symlink whose target is missing, or any unexpected filesystem error, returns
+ * null so callers treat the path as outside every scope.
+ */
+export async function resolvePolicyPath(path: string): Promise<string | null> {
 	const input = process.platform === "win32" ? path.replace(/\//g, "\\") : path;
 	const absolute = isAbsolute(input) ? input : `${process.cwd()}${sep}${input}`;
 	const root = parse(absolute).root;

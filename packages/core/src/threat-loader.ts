@@ -7,6 +7,7 @@ import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { getFileContent } from "./file-utils.js";
+import { loadFrameworkMappings, resolveRuleFrameworks } from "./framework-mappings.js";
 import { THREAT_PARSE_CACHE } from "./generated/threat-parse-cache.js";
 import type { Logger, Threat } from "./types.js";
 import { nullLogger } from "./types.js";
@@ -21,6 +22,8 @@ const REQUIRED_FIELDS = new Set([
 	"match_on",
 	"title",
 ]);
+
+const DIFF_MODES: ReadonlySet<string> = new Set(["added", "removed", "value_decreased"]);
 
 function parseExpiresAt(value: string | null | undefined): Date | null {
 	if (value == null) return null;
@@ -61,9 +64,20 @@ export function parseThreatYaml(content: string): unknown {
 	}
 }
 
+/** Options for loading a subset of the rule files. */
+export interface LoadThreatsOptions {
+	/**
+	 * Parse only the files whose raw text satisfies this predicate. Detectors that
+	 * consume a few dedicated `match_on` values use it to avoid parsing every rule
+	 * file on each call; the default parses all files.
+	 */
+	includeFile?: (content: string) => boolean;
+}
+
 export async function loadThreats(
 	threatDir: string,
 	logger: Logger = nullLogger,
+	options: LoadThreatsOptions = {},
 ): Promise<Threat[]> {
 	const threats: Threat[] = [];
 	const errors: string[] = [];
@@ -77,6 +91,10 @@ export async function loadThreats(
 		throw new Error(errorMsg);
 	}
 
+	// Enrichment only: a missing or invalid mapping file leaves `frameworks` off
+	// the loaded rules and is logged; it never stops a rule from loading.
+	const frameworkMappings = await loadFrameworkMappings(threatDir, logger);
+
 	for (const filename of files) {
 		const filePath = join(threatDir, filename);
 		let content: string;
@@ -88,6 +106,7 @@ export async function loadThreats(
 			logger.error(errorMsg, { file: filename, error: String(e) });
 			continue;
 		}
+		if (options.includeFile && !options.includeFile(content)) continue;
 
 		let data: unknown;
 		try {
@@ -151,6 +170,36 @@ export async function loadThreats(
 				Array.isArray(rawMatchOn) ? rawMatchOn : [rawMatchOn as string],
 			);
 
+			// File-edit view rules (agent-safety/edit-views.ts) may declare how the
+			// added and removed lines of an edit are compared. A malformed value is
+			// a rule error, never a silently widened rule.
+			const diff = record.diff;
+			if (diff !== undefined && !DIFF_MODES.has(diff as string)) {
+				const errorMsg = `Skipping threat ${record.id} in ${filename}: diff must be one of ${[...DIFF_MODES].join(", ")}`;
+				errors.push(errorMsg);
+				logger.error(errorMsg, { file: filename, threatId: record.id });
+				continue;
+			}
+			const minMatches = record.min_matches;
+			if (
+				minMatches !== undefined &&
+				(!Number.isInteger(minMatches) ||
+					(minMatches as number) < 1 ||
+					(minMatches as number) > 1000)
+			) {
+				const errorMsg = `Skipping threat ${record.id} in ${filename}: min_matches must be an integer between 1 and 1000`;
+				errors.push(errorMsg);
+				logger.error(errorMsg, { file: filename, threatId: record.id });
+				continue;
+			}
+			const frameworks = frameworkMappings
+				? resolveRuleFrameworks(frameworkMappings, {
+						id: record.id as string,
+						category: record.category as string,
+						sourceFile: filename,
+					})
+				: null;
+
 			threats.push({
 				id: record.id as string,
 				category: record.category as string,
@@ -163,6 +212,10 @@ export async function loadThreats(
 				title: record.title as string,
 				expiresAt: parseExpiresAt(record.expires_at as string | null | undefined),
 				revoked: false,
+				...(diff === undefined ? {} : { diff: diff as NonNullable<Threat["diff"]> }),
+				...(minMatches === undefined ? {} : { minMatches: minMatches as number }),
+				sourceFile: filename,
+				...(frameworks ? { frameworks } : {}),
 			});
 		}
 	}
@@ -186,6 +239,7 @@ export async function loadThreats(
 export async function loadThreatsFromDirs(
 	threatDirs: string[],
 	logger: Logger = nullLogger,
+	options: LoadThreatsOptions = {},
 ): Promise<Threat[]> {
 	const merged = new Map<string, Threat>();
 	for (const [index, dir] of threatDirs.entries()) {
@@ -198,7 +252,7 @@ export async function loadThreatsFromDirs(
 			continue;
 		}
 		try {
-			const threats = await loadThreats(dir, logger);
+			const threats = await loadThreats(dir, logger, options);
 			for (const threat of threats) {
 				merged.set(threat.id, threat);
 			}

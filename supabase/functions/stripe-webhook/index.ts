@@ -25,6 +25,11 @@
 //      item that matches the configured extra-agent price.
 //   6. The user/tenant is resolved from metadata that our own checkout path
 //      set, never from client-supplied values in the webhook body.
+//   8. A subscription whose price is mapped to a catalog plan
+//      (AIDR_STRIPE_PRICE_MAP) never admits a tenant by itself: it can only
+//      grant or revoke a licensed admission through the audited, idempotent
+//      public.apply_stripe_plan_subscription RPC, bound to the grant reference
+//      `stripe:<subscription id>`. See ./plans.ts.
 //   7. Internal error text is logged, never returned to the caller, and no CORS
 //      allowance is granted (webhooks are server-to-server).
 //
@@ -49,6 +54,11 @@ import {
 	isUuid,
 	type StripeEventEvaluation,
 } from "./events.ts";
+import {
+	evaluatePlanSubscriptionEvent,
+	type PlanSubscriptionEvaluation,
+	parseStripePriceMap,
+} from "./plans.ts";
 import { verifyStripeWebhookSignature } from "./verify.ts";
 
 // Required configuration. Validated per request, before any auth, body or DB
@@ -64,6 +74,11 @@ const STRIPE_SIGNATURE_HEADER = "Stripe-Signature";
 const STRIPE_TOLERANCE_SECONDS = Deno.env.get("AIDR_STRIPE_WEBHOOK_TOLERANCE_SECONDS") ?? "300";
 const EXTRA_AGENT_PRICE_ID = (Deno.env.get("AIDR_STRIPE_EXTRA_AGENT_PRICE_ID") ?? "").trim();
 const MAX_WEBHOOK_BODY_BYTES = 1024 * 1024;
+// Price -> catalog plan map. A malformed map disables plan grants entirely
+// (fail closed) but still lets terminal events revoke the admission a
+// subscription was bound to. An absent map disables the plan path.
+const PRICE_MAP = parseStripePriceMap(Deno.env.get("AIDR_STRIPE_PRICE_MAP"));
+const PLAN_PATH_ENABLED = PRICE_MAP.ok ? PRICE_MAP.map.size > 0 : true;
 
 // Direct-GA is invoice/order based. Self-service billing stays unreachable until
 // a separately approved commercial decision enables it, exactly like the
@@ -219,6 +234,45 @@ async function applySubscriptionEvent(
 	return {
 		applied: result.applied,
 		extraAgents: typeof result.extra_agents === "number" ? result.extra_agents : 0,
+	};
+}
+
+type PlanOutcome = { applied: boolean; state: string; reason: string; admissionChanged: boolean };
+
+async function applyPlanSubscription(
+	supabase: SupabaseClient,
+	eventId: string,
+	eventCreatedAt: string,
+	userId: string | null,
+	tenantId: string,
+	plan: PlanSubscriptionEvaluation,
+): Promise<PlanOutcome> {
+	const { data, error } = await supabase.rpc("apply_stripe_plan_subscription", {
+		p_event_id: eventId,
+		p_event_created_at: eventCreatedAt,
+		p_user_id: userId,
+		p_tenant_id: tenantId,
+		p_subscription_id: plan.subscriptionId,
+		p_plan_id: plan.planId,
+		p_billing_interval: plan.interval,
+		p_seats: plan.seats,
+		p_status: plan.status,
+		p_current_period_end: plan.currentPeriodEnd,
+		p_action: plan.action,
+	});
+	if (error) throw error;
+	const result = data && typeof data === "object" && !Array.isArray(data)
+		? data as Record<string, unknown>
+		: null;
+	if (!result || typeof result.applied !== "boolean" || typeof result.state !== "string" ||
+		typeof result.reason !== "string") {
+		throw new Error("invalid_plan_transition");
+	}
+	return {
+		applied: result.applied,
+		state: result.state,
+		reason: result.reason,
+		admissionChanged: result.admission_changed === true,
 	};
 }
 
@@ -470,6 +524,19 @@ Deno.serve(async (req) => {
 			extraAgentPriceId: EXTRA_AGENT_PRICE_ID,
 			extraAgentYearlyPriceId: Deno.env.get("AIDR_STRIPE_EXTRA_AGENT_YEARLY_PRICE_ID"),
 		});
+		const planResult = PLAN_PATH_ENABLED
+			? evaluatePlanSubscriptionEvent(event, PRICE_MAP.ok ? PRICE_MAP.map : new Map())
+			: { kind: "not_applicable" as const };
+		// A malformed price map may only revoke; it can never grant or hold.
+		const plan = planResult.kind === "plan" && evaluation.eventCreatedAt &&
+				(PRICE_MAP.ok || planResult.evaluation.action === "revoke")
+			? planResult.evaluation
+			: null;
+		const planDetail = planResult.kind === "invalid"
+			? { plan_reason: planResult.reason, price_map_valid: PRICE_MAP.ok }
+			: plan
+				? { plan_action: plan.action, plan_reason: plan.reason, plan_id: plan.planId, price_map_valid: PRICE_MAP.ok }
+				: { price_map_valid: PRICE_MAP.ok };
 		if (event.type === "checkout.session.expired") {
 			const data = event.data && typeof event.data === "object" && !Array.isArray(event.data)
 				? event.data as Record<string, unknown> : {};
@@ -500,13 +567,14 @@ Deno.serve(async (req) => {
 			return json(200, { ok: true, recorded: true }, requestId);
 		}
 
-		if (evaluation.action === "ignore") {
+		if (evaluation.action === "ignore" && !plan) {
 			await audit(supabase, "stripe.webhook.ignored", null, null, {
 				event_type: evaluation.eventType,
 				event_id: eventId,
 				reason: evaluation.reason,
 				subscription_id: evaluation.subscriptionId,
 				price_configured: EXTRA_AGENT_PRICE_ID !== "",
+				...planDetail,
 			});
 			await completeStripeEvent(supabase, eventId);
 			return json(200, { ok: true, ignored: true }, requestId);
@@ -593,10 +661,18 @@ Deno.serve(async (req) => {
 			tenantAllowed = isBoundZeroSeatTransition(evaluation, bound, userId, tenantId);
 		}
 		if (!tenantAllowed) {
+			// A terminal plan event still revokes the admission bound to this exact
+			// subscription id after buyer offboarding; the RPC re-checks that the
+			// stored subscription belongs to this tenant. Nothing is ever granted.
+			const planOutcome = plan?.action === "revoke" && evaluation.eventCreatedAt
+				? await applyPlanSubscription(supabase, eventId, evaluation.eventCreatedAt, userId, tenantId, plan)
+				: null;
 			await audit(supabase, "stripe.webhook.tenant_rejected", userId, null, {
 				event_type: evaluation.eventType,
 				event_id: eventId,
 				tenant_id: tenantId,
+				...planDetail,
+				plan_admission: planOutcome,
 			});
 			await completeStripeEvent(supabase, eventId);
 			return json(200, { ok: true, unlinked: true }, requestId);
@@ -605,6 +681,26 @@ Deno.serve(async (req) => {
 		const customerLinked = evaluation.customerId
 			? await upsertBillingCustomer(supabase, requestId, userId, tenantId, evaluation.customerId)
 			: false;
+
+		// Catalog plan admission: audited and idempotent inside the RPC.
+		const planOutcome = plan && evaluation.eventCreatedAt
+			? await applyPlanSubscription(supabase, eventId, evaluation.eventCreatedAt, userId, tenantId, plan)
+			: null;
+		if (evaluation.action === "ignore") {
+			// Only reachable for a plan event whose extra-agent evaluation had
+			// nothing to apply (for example no extra-agent price configured).
+			await audit(supabase, "stripe.webhook.plan", userId, tenantId, {
+				event_type: evaluation.eventType,
+				event_id: eventId,
+				reason: evaluation.reason,
+				subscription_id: evaluation.subscriptionId,
+				customer_linked: customerLinked,
+				...planDetail,
+				plan_admission: planOutcome,
+			});
+			await completeStripeEvent(supabase, eventId);
+			return json(200, { ok: true }, requestId);
+		}
 
 		if (evaluation.action === "record") {
 			await audit(supabase, "stripe.webhook.recorded", userId, tenantId, {
@@ -666,6 +762,8 @@ Deno.serve(async (req) => {
 			tenant_extra_agents: transition.extraAgents,
 			customer_linked: customerLinked,
 			tenant_id: tenantId,
+			...planDetail,
+			plan_admission: planOutcome,
 		});
 
 		await completeStripeEvent(supabase, eventId);

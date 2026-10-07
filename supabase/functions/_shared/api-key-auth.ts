@@ -17,13 +17,33 @@ type DatabaseClient = {
 	rpc(name: string, args: Record<string, unknown>): PromiseLike<QueryResult>;
 };
 
+/**
+ * Key types. `tenant` is the write-capable tenant credential used by the
+ * endpoint connectors. `ingest:browser_guard` is the Browser Guard telemetry
+ * key (supabase/migrations/20260925000061_browser_guard_ingest_keys.sql): it
+ * is only honoured by /v1/ingest, for counts-only `privacy_scan` and
+ * `shadow_ai_usage` events from the `browser_guard` runtime, up to its
+ * installation limit.
+ */
+const API_KEY_SCOPES = ["tenant", "ingest:browser_guard"] as const;
+export type ApiKeyScope = (typeof API_KEY_SCOPES)[number];
+export const BROWSER_GUARD_INGEST_SCOPE: ApiKeyScope = "ingest:browser_guard";
+
+function isApiKeyScope(value: unknown): value is ApiKeyScope {
+	return typeof value === "string" && (API_KEY_SCOPES as readonly string[]).includes(value);
+}
+
 type ApiKeyRow = {
 	id?: string;
 	user_id: string;
 	tenant_id: string;
 	revoked: boolean;
 	agent_id?: string | null;
+	scope: ApiKeyScope;
+	install_limit: number | null;
 };
+
+const API_KEY_COLUMNS = "id,user_id,tenant_id,revoked,agent_id,scope,install_limit";
 
 type MembershipRow = {
 	role: string;
@@ -33,12 +53,32 @@ type MembershipRow = {
 const API_KEY_MEMBER_ROLES = new Set(["owner", "admin", "member"]);
 
 export type TenantApiKeyAuthResult =
-	| { ok: true; userId: string; tenantId: string; apiKeyId?: string; agentId?: string | null }
+	| {
+		ok: true;
+		userId: string;
+		tenantId: string;
+		apiKeyId?: string;
+		agentId?: string | null;
+		scope: ApiKeyScope;
+		installLimit: number | null;
+	}
 	| {
 		ok: false;
 		status: 401 | 403 | 503;
-		error: "invalid_api_key" | "tenant_access_denied" | "authorization_unavailable";
+		error:
+			| "invalid_api_key"
+			| "tenant_access_denied"
+			| "authorization_unavailable"
+			| "api_key_scope_denied";
 	};
+
+export type TenantApiKeyAuthOptions = {
+	/**
+	 * Key types the calling endpoint honours. Defaults to `tenant` only, so a
+	 * narrower key is refused everywhere that does not opt in explicitly.
+	 */
+	allowedScopes?: readonly ApiKeyScope[];
+};
 
 function apiKeyRow(value: unknown): ApiKeyRow | null {
 	if (!value || typeof value !== "object" || Array.isArray(value)) return null;
@@ -50,14 +90,23 @@ function apiKeyRow(value: unknown): ApiKeyRow | null {
 		typeof row.tenant_id !== "string" ||
 		!row.tenant_id ||
 		typeof row.revoked !== "boolean" ||
-		("agent_id" in row && row.agent_id !== null && typeof row.agent_id !== "string")
+		("agent_id" in row && row.agent_id !== null && typeof row.agent_id !== "string") ||
+		// The type is always selected; a row without a known one is not a credential.
+		!isApiKeyScope(row.scope)
 	) {
+		return null;
+	}
+	const installLimit = row.install_limit ?? null;
+	if (row.scope === "tenant" ? installLimit !== null
+		: !Number.isSafeInteger(installLimit) || (installLimit as number) < 1) {
 		return null;
 	}
 	const parsed: ApiKeyRow = {
 		user_id: row.user_id,
 		tenant_id: row.tenant_id,
 		revoked: row.revoked,
+		scope: row.scope,
+		install_limit: installLimit as number | null,
 	};
 	if (typeof row.id === "string") parsed.id = row.id;
 	if ("agent_id" in row) parsed.agent_id = row.agent_id as string | null;
@@ -101,9 +150,10 @@ export async function authenticateTenantApiKey(
 	database: unknown,
 	plaintextKey: string,
 	now = Date.now(),
+	options: TenantApiKeyAuthOptions = {},
 ): Promise<TenantApiKeyAuthResult> {
 	const presentedHash = await sha256(plaintextKey);
-	return authenticateTenantApiKeyHash(database, presentedHash, now);
+	return authenticateTenantApiKeyHash(database, presentedHash, now, options);
 }
 
 /** Re-authenticate a hash held only in trusted server storage. */
@@ -111,7 +161,9 @@ export async function authenticateTenantApiKeyHash(
 	database: unknown,
 	presentedHash: string,
 	now = Date.now(),
+	options: TenantApiKeyAuthOptions = {},
 ): Promise<TenantApiKeyAuthResult> {
+	const allowedScopes = options.allowedScopes ?? ["tenant"];
 	if (!/^[a-f0-9]{64}$/.test(presentedHash)) {
 		return { ok: false, status: 401, error: "invalid_api_key" };
 	}
@@ -120,7 +172,7 @@ export async function authenticateTenantApiKeyHash(
 	try {
 		keyResult = await db
 			.from("api_keys")
-			.select("id,user_id,tenant_id,revoked,agent_id")
+			.select(API_KEY_COLUMNS)
 			.eq("key_hash", presentedHash)
 			.maybeSingle();
 	} catch {
@@ -140,7 +192,7 @@ export async function authenticateTenantApiKeyHash(
 		try {
 			previousResult = await db
 				.from("api_keys")
-				.select("id,user_id,tenant_id,revoked,agent_id,previous_hash,previous_hash_expires_at")
+				.select(`${API_KEY_COLUMNS},previous_hash,previous_hash_expires_at`)
 				.eq("previous_hash", presentedHash)
 				.maybeSingle();
 		} catch {
@@ -157,6 +209,11 @@ export async function authenticateTenantApiKeyHash(
 
 	if (!key || key.revoked) {
 		return { ok: false, status: 401, error: "invalid_api_key" };
+	}
+	// Refuse a narrower key before any tenant state is read on its behalf. An
+	// ingest key must carry its row id: the installation cap is bound to it.
+	if (!allowedScopes.includes(key.scope) || (key.scope !== "tenant" && !key.id)) {
+		return { ok: false, status: 403, error: "api_key_scope_denied" };
 	}
 
 	let membershipResult: QueryResult;
@@ -207,5 +264,7 @@ export async function authenticateTenantApiKeyHash(
 		tenantId: key.tenant_id,
 		...(key.id ? { apiKeyId: key.id } : {}),
 		...("agent_id" in key ? { agentId: key.agent_id ?? null } : {}),
+		scope: key.scope,
+		installLimit: key.install_limit,
 	};
 }

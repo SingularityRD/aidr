@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ChatGPT (E2E fixture)</title>
+<style>
+	body { font-family: sans-serif; margin: 0; }
+	#thread { min-height: 200px; padding: 16px; }
+	form { display: flex; gap: 8px; padding: 16px; border-top: 1px solid #ccc; }
+	#prompt-textarea { flex: 1; min-height: 40px; border: 1px solid #999; padding: 8px; }
+	#prompt-textarea p { margin: 0; }
+</style>
+</head>
+<body>
+<main>
+	<div id="thread" role="presentation"></div>
+	<form data-type="unified-composer" onsubmit="return false">
+		<div id="prompt-textarea" class="ProseMirror" contenteditable="true" role="textbox"
+			translate="no" aria-label="Message ChatGPT"><p><br class="ProseMirror-trailingBreak"></p></div>
+		<button type="button" data-testid="send-button" id="composer-submit-button" aria-label="Send prompt">Send</button>
+		<input type="file" id="upload" multiple>
+	</form>
+</main>
+<script src="/__fixture__/kit.js"></script>
+<script>
+	let turn = 0;
+	FixtureChat.init({
+		site: "chatgpt",
+		kind: "prosemirror",
+		editor: "#prompt-textarea",
+		send: 'button[data-testid="send-button"]',
+		thread: "#thread",
+		endpoint: "/backend-api/conversation",
+		fileInput: "#upload",
+		renderUser(text) {
+			turn += 1;
+			const article = document.createElement("article");
+			article.setAttribute("data-testid", `conversation-turn-${turn}`);
+			const msg = document.createElement("div");
+			msg.setAttribute("data-message-author-role", "user");
+			const body = document.createElement("div");
+			body.className = "whitespace-pre-wrap";
+			body.textContent = text;
+			msg.appendChild(body);
+			article.appendChild(msg);
+			return article;
+		},
+		renderAssistant() {
+			turn += 1;
+			const article = document.createElement("article");
+			article.setAttribute("data-testid", `conversation-turn-${turn}`);
+			const msg = document.createElement("div");
+			msg.setAttribute("data-message-author-role", "assistant");
+			const body = document.createElement("div");
+			body.className = "markdown prose";
+			msg.appendChild(body);
+			article.appendChild(msg);
+			return { root: article, body };
+		},
+	});
+</script>
+</body>
+</html>

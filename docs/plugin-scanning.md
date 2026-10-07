@@ -38,5 +38,18 @@ Singularity AIDR scans other installed plugins for threats at every session star
 }
 ```
 
+## Skill and plugin package rules (T01–T09)
+
+In addition to the command rules, every readable plugin file is checked against
+the deterministic skill-scan rules in `threats/skill-scan.yaml`, a port of the
+AI-Infra-Guard Skill-Scan (SkillTrustBench T01–T09) taxonomy: hidden or
+concealment instructions, zero-width/bidirectional Unicode smuggling, memory
+poisoning, remote payload execution, Python bytecode shipped without source,
+credential exfiltration, excessive permissions, persistence, tool hijacking,
+insecure dependencies and hard-coded credentials. Findings name the file and
+line; a matched credential is replaced by a short digest. Scan a package on
+demand with `aidr scan --skill <dir>`; see
+[AI security posture](ai-security-posture.md).
+
 > **Note:** Claude Code does not currently provide a hook for plugin installation events. The session-start approach ensures all plugins are scanned before each session begins.
 

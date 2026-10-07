@@ -9,7 +9,7 @@
 `await engine.protectJson(serializedJson)` returns a serialized protected output, or null. Pass raw serialized JSON to preserve duplicate-key detection. Sensitive keys and values are inspected; a sensitive key blocks rather than being renamed. Named sensitive subtrees can be replaced with a string marker. The caller must validate the resulting JSON against the tool's expected schema and deny on mismatch.
 
 ```js
-import { PrivacyEngine } from '@singularity/aidr-privacy';
+import { PrivacyEngine } from '@singularityrd/aidr-privacy';
 import { createToolGuard } from './examples/aidr-tool-guard.mjs';
 
 const engine = new PrivacyEngine({ profile: 'strict' });
@@ -25,7 +25,7 @@ const guarded = createToolGuard(engine, async (toolName, safeArguments) => {
 ## Streaming
 
 ```js
-import { AtomicTextGate } from '@singularity/aidr-privacy';
+import { AtomicTextGate } from '@singularityrd/aidr-privacy';
 const gate = new AtomicTextGate(engine);
 for await (const chunk of boundedIncomingMessage) gate.push(chunk);
 const result = await gate.finish();

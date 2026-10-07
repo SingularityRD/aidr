@@ -128,7 +128,51 @@ const RegexMatcherSchema = z
 		}
 	});
 
-export const DlpMatcherSchema = z.union([KeywordMatcherSchema, RegexMatcherSchema]);
+/**
+ * Built-in TR/EN detectors vendored from AIDR Privacy (packages/privacy/src/rules.ts).
+ * Checksum-validated identifiers (TC Kimlik, IBAN mod-97, Luhn cards) are reported
+ * without a label; contextual types (person, address, labelled fields) require an
+ * explicit label or phrase next to the value.
+ */
+export const DlpDetectorSchema = z.enum([
+	"tc_kimlik",
+	"iban",
+	"phone",
+	"email",
+	"credit_card",
+	"us_ssn",
+	"address",
+	"person",
+	"date_of_birth",
+	"passport",
+	"national_id",
+	"tax_id",
+	"bank_account",
+	"ip_address",
+	"mac_address",
+	"secret",
+	"private_key",
+	"classified",
+]);
+
+const DetectorMatcherSchema = z
+	.object({
+		type: z.literal("detector"),
+		detectors: z
+			.array(DlpDetectorSchema)
+			.min(1)
+			.max(DlpDetectorSchema.options.length)
+			.refine((detectors) => new Set(detectors).size === detectors.length, {
+				message: "detectors must be unique",
+			}),
+	})
+	.strict();
+
+export const DlpMatcherSchema = z.union([
+	KeywordMatcherSchema,
+	RegexMatcherSchema,
+	DetectorMatcherSchema,
+]);
 
 /** A deterministic rule. The referenced label must belong to the same tenant. */
 export const DlpRuleSchema = z
@@ -296,6 +340,7 @@ export type DlpDirection = z.infer<typeof DlpDirectionSchema>;
 export type DlpRuleAction = z.infer<typeof DlpRuleActionSchema>;
 export type DlpUnavailableAction = z.infer<typeof DlpUnavailableActionSchema>;
 export type DlpLabel = z.infer<typeof DlpLabelSchema>;
+export type DlpDetector = z.infer<typeof DlpDetectorSchema>;
 export type DlpMatcher = z.infer<typeof DlpMatcherSchema>;
 export type DlpRule = z.infer<typeof DlpRuleSchema>;
 export type DlpExceptionScope = z.infer<typeof DlpExceptionScopeSchema>;

@@ -45,3 +45,16 @@ for (const name of files) {
 }
 
 console.log(`[core] copied ${files.length} generated data file(s) to dist/generated/`);
+
+// Hand-maintained data files that ship next to the module that reads them.
+const dataFiles = [join("aibom", "ai-component-catalog.json")];
+for (const file of dataFiles) {
+	const from = join(packageRoot, "src", file);
+	if (!existsSync(from)) {
+		console.error(`[core] missing data file ${from}`);
+		process.exit(1);
+	}
+	await mkdir(dirname(join(packageRoot, "dist", file)), { recursive: true });
+	await cp(from, join(packageRoot, "dist", file));
+}
+console.log(`[core] copied ${dataFiles.length} data file(s) to dist/`);

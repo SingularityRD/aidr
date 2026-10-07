@@ -23,7 +23,7 @@ const deviceAttestation = {
 	key_hash: keyHash,
 };
 
-function database(options: { revoked?: boolean; accessTokenValid?: boolean; previousHashExpiresAt?: string; admission?: number; snapshot?: Record<string, unknown> | null } = {}) {
+function database(options: { revoked?: boolean; accessTokenValid?: boolean; previousHashExpiresAt?: string; admission?: number; snapshot?: Record<string, unknown> | null; scope?: string } = {}) {
 	const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
 	const tableReads: string[] = [];
 	const accessTokenChecks: string[] = [];
@@ -41,6 +41,7 @@ function database(options: { revoked?: boolean; accessTokenValid?: boolean; prev
 			tableReads.push(table);
 			const row = table === "api_keys"
 				? { tenant_id: tenantId, user_id: userId, agent_id: agentId, revoked: options.revoked === true,
+					scope: options.scope ?? "tenant",
 					previous_hash: keyHash, previous_hash_expires_at: options.previousHashExpiresAt }
 				: table === "tenant_members"
 					? { role: "owner", expires_at: null }
@@ -244,6 +245,30 @@ describe("fleet response device handler", () => {
 			expect(denied.status).toBe(options.admission === 0 ? 403 : 401);
 			expect(refused.calls.some((call) => call.name === "poll_bound_fleet_response_command")).toBe(false);
 		}
+	});
+
+	it("refuses an ingest-only Browser Guard key before poll or result state can change", async () => {
+		vi.stubGlobal("Deno", {
+			env: { get: (name: string) => ({
+				SUPABASE_URL: "https://project.supabase.co",
+				SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+			} as Record<string, string>)[name] },
+			serve: () => undefined,
+		});
+		const { createFleetCommandHandler } = await import("../index.ts");
+		const { db, calls } = database({ scope: "ingest:browser_guard" });
+		const handle = createFleetCommandHandler({ db: db as never });
+		const common = { tenant_id: tenantId, device_attestation: deviceAttestation };
+
+		for (const body of [
+			{ ...common, action: "poll" },
+			{ ...common, action: "result", command_id: commandId, outcome: "succeeded" },
+		]) {
+			const response = await handle(post(body));
+			expect(response.status).toBe(403);
+			expect(await response.json()).toEqual({ error: "api_key_scope_denied" });
+		}
+		expect(calls).toEqual([]);
 	});
 
 	it.each([

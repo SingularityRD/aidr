@@ -39,14 +39,18 @@ customer pay for" must be answered in one sentence before any price is quoted.
 
 ## Block B — Price, currency, tax, term
 
-`docs/sales/pricing.md` proposes $20/developer/month annual and $45 for Business,
-anchored below Snyk and Semgrep. Those numbers are a proposal with cited
-comparables, not measured willingness-to-pay.
+**Decided (product owner, 2026-09-25): prices are not published.** Every paid
+edition is quote-based; customers request a quote from anil@singularityrd.com, and no
+customer-facing surface shows a price, currency or per-seat figure. The internal
+per-seat quote reference, anchored below Snyk and Semgrep, is kept in
+`docs/sales/pricing.md` §4 (internal) and the server-side plan catalog seed; it remains
+a proposal with cited comparables, not measured willingness-to-pay, and final SKU
+approval is COM-001.
 
 | # | Decision | Options | Recommendation |
 |---|---|---|---|
-| B1 | Accept the proposed price points? | (a) Accept $20 / $45. (b) Raise. (c) Lower to remove friction. | **Decide after three real conversations.** Do not publish a number you have never said out loud to a buyer. |
-| B2 | Currency of record | (a) USD only. (b) TRY for Turkish customers, USD elsewhere. (c) EUR for EU. | **(a) USD at launch.** Multi-currency invoicing adds tax and reconciliation work that a single founder should not take on before the first renewal. |
+| B1 | Accept the internal quote reference? | (a) Accept the §4 reference. (b) Raise. (c) Lower to remove friction. | **Decide after three real conversations.** Publication is already decided: no published price, quote only. |
+| B2 | Quote currency of record | (a) USD only. (b) TRY for Turkish customers, USD elsewhere. (c) EUR for EU. | **(a) USD at launch.** Multi-currency invoicing adds tax and reconciliation work that a single founder should not take on before the first renewal. |
 | B3 | Tax handling | (a) Vendor invoices. (b) A merchant-of-record handles collection and tax. | **No recommendation without qualified tax/legal review.** Record jurisdictions, provider responsibilities and approved terms before quoting. |
 | B4 | Minimum term and renewal | (a) Monthly, cancel anytime. (b) Annual prepay. (c) Annual with auto-renew. | **(b) annual prepay for Team, monthly available.** Annual prepay is what makes a one-person company's cash flow survivable. |
 | B5 | Cancellation and refund policy | (a) Pro-rata refund. (b) No refund, access to period end. (c) 30-day money-back. | **(b) with a stated 30-day remedy window for defects.** Pro-rata refunds create a monthly reconciliation chore; a defect remedy is what buyers actually want. |

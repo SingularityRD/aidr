@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createPublicKey, generateKeyPairSync, sign } from "node:crypto";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { renewCertificate } from "./deployment-tls-renew.mjs";
+import { installStaticCertificate, renewCertificate } from "./deployment-tls-renew.mjs";
 
 // Public test certificates only. The leaf and its issuer were generated for this
 // test file with a local throwaway key that is not stored anywhere; no
@@ -258,4 +259,169 @@ test("does not reload when the ACME client reports no change", (t) => {
 	assert.equal(receipt.reloaded, false);
 	assert.equal(receipt.certificate_fingerprint_sha256, FINGERPRINT);
 	assert.ok(!calls.some((call) => call.command === NGINX), "an unchanged certificate does not require an ingress reload");
+});
+
+// ── Static (BYO certificate) mode ──────────────────────────────────────────
+// Certificates below are minted in memory per run with throwaway Ed25519 keys:
+// no private key is stored in the repository and no CA is contacted.
+const der = {
+	tlv(tag, content) {
+		const length = content.length;
+		const header = length < 0x80 ? Buffer.from([tag, length]) : length < 0x100 ? Buffer.from([tag, 0x81, length]) : Buffer.from([tag, 0x82, length >> 8, length & 0xff]);
+		return Buffer.concat([header, content]);
+	},
+	seq: (...items) => der.tlv(0x30, Buffer.concat(items)),
+	oid(dotted) {
+		const [a, b, ...rest] = dotted.split(".").map(Number);
+		const bytes = [40 * a + b];
+		for (const arc of rest) {
+			const chunk = [arc & 0x7f];
+			for (let value = arc >> 7; value > 0; value >>= 7) chunk.unshift((value & 0x7f) | 0x80);
+			bytes.push(...chunk);
+		}
+		return der.tlv(0x06, Buffer.from(bytes));
+	},
+	name: (cn) => der.seq(der.tlv(0x31, der.seq(der.oid("2.5.4.3"), der.tlv(0x0c, Buffer.from(cn))))),
+	time(ms) {
+		const iso = new Date(ms).toISOString();
+		const digits = iso.slice(0, 19).replace(/[-:T]/g, "");
+		return Number(iso.slice(0, 4)) < 2050 ? der.tlv(0x17, Buffer.from(`${digits.slice(2)}Z`)) : der.tlv(0x18, Buffer.from(`${digits}Z`));
+	},
+};
+
+function mintCertificate({ subject, issuer, subjectKey, issuerKey, notBefore, notAfter, serial, dnsName, ca = false }) {
+	const extensions = [];
+	if (dnsName) extensions.push(der.seq(der.oid("2.5.29.17"), der.tlv(0x04, der.seq(der.tlv(0x82, Buffer.from(dnsName))))));
+	if (ca) extensions.push(der.seq(der.oid("2.5.29.19"), der.tlv(0x01, Buffer.from([0xff])), der.tlv(0x04, der.seq(der.tlv(0x01, Buffer.from([0xff]))))));
+	const algorithm = der.seq(der.oid("1.3.101.112"));
+	const tbs = der.seq(
+		der.tlv(0xa0, der.tlv(0x02, Buffer.from([2]))),
+		der.tlv(0x02, Buffer.from([serial])),
+		algorithm,
+		der.name(issuer),
+		der.seq(der.time(notBefore), der.time(notAfter)),
+		der.name(subject),
+		createPublicKey(subjectKey).export({ type: "spki", format: "der" }),
+		der.tlv(0xa3, der.seq(...extensions)),
+	);
+	const certificate = der.seq(tbs, algorithm, der.tlv(0x03, Buffer.concat([Buffer.from([0]), sign(null, tbs, issuerKey)])));
+	return `-----BEGIN CERTIFICATE-----\n${certificate.toString("base64").match(/.{1,64}/g).join("\n")}\n-----END CERTIFICATE-----\n`;
+}
+
+const STATIC_HOST = "aidr.customer.example";
+const STATIC_NOW = Date.parse("2026-09-24T00:00:00Z");
+
+function staticMaterial(directory, { hostname = STATIC_HOST, notAfter = Date.parse("2027-09-24T00:00:00Z"), keyMode = 0o600, mismatchedKey = false, label = hostname } = {}) {
+	const caKey = generateKeyPairSync("ed25519").privateKey;
+	const leafKey = generateKeyPairSync("ed25519").privateKey;
+	const notBefore = Date.parse("2026-01-01T00:00:00Z");
+	const root = mintCertificate({ subject: "AIDR on-prem test CA", issuer: "AIDR on-prem test CA", subjectKey: caKey, issuerKey: caKey, notBefore, notAfter: Date.parse("2036-01-01T00:00:00Z"), serial: 1, ca: true });
+	const leaf = mintCertificate({ subject: hostname, issuer: "AIDR on-prem test CA", subjectKey: leafKey, issuerKey: caKey, notBefore, notAfter, serial: 2, dnsName: hostname });
+	const certFile = join(directory, `supplied-${label}-fullchain.pem`);
+	const keyFile = join(directory, `supplied-${label}-key.pem`);
+	writeFileSync(certFile, `${leaf}${root}`);
+	const key = mismatchedKey ? generateKeyPairSync("ed25519").privateKey : leafKey;
+	writeFileSync(keyFile, key.export({ type: "pkcs8", format: "pem" }), { mode: keyMode });
+	chmodSync(keyFile, keyMode);
+	return { certFile, keyFile, chain: `${leaf}${root}` };
+}
+
+function staticRequest(directory, material, overrides = {}) {
+	return { hostname: STATIC_HOST, certFile: material.certFile, keyFile: material.keyFile, tlsDir: join(directory, "tls"), receipt: join(directory, "tls", "receipt.json"), nginx: NGINX, ...overrides };
+}
+
+test("static mode validates an operator-supplied chain and key, installs atomically and reloads after nginx -t", (t) => {
+	const directory = workdir(t);
+	const material = staticMaterial(directory);
+	const calls = [];
+	const run = (command, args) => {
+		calls.push({ command, args });
+		return succeeded();
+	};
+	const receipt = installStaticCertificate(staticRequest(directory, material), { run, now: () => STATIC_NOW });
+	assert.equal(receipt.outcome, "installed");
+	assert.equal(receipt.mode, "static");
+	assert.equal(receipt.key_matches_certificate, true);
+	assert.equal(receipt.reloaded, true);
+	assert.equal(receipt.certificate_expires_at, "2027-09-24T00:00:00.000Z");
+	const live = join(directory, "tls", "live", STATIC_HOST);
+	assert.equal(readFileSync(join(live, "fullchain.pem"), "utf8"), material.chain);
+	assert.equal(readFileSync(join(live, "privkey.pem"), "utf8"), readFileSync(material.keyFile, "utf8"));
+	if (process.platform !== "win32") assert.equal(statSync(join(live, "privkey.pem")).mode & 0o777, 0o600);
+	assert.deepEqual(calls.map((call) => call.args.join(" ")), ["-t", "-s reload"]);
+
+	const again = installStaticCertificate(staticRequest(directory, material), { run, now: () => STATIC_NOW });
+	assert.equal(again.outcome, "unchanged");
+	assert.equal(calls.length, 2, "an identical certificate is not reinstalled or reloaded");
+});
+
+test("static mode refuses mismatched keys, wrong hostnames, short validity and readable keys without touching the ingress", (t) => {
+	const directory = workdir(t);
+	const cases = [
+		[staticMaterial(directory, { mismatchedKey: true, label: "mismatch" }), {}, /private key does not belong to the leaf certificate/],
+		[staticMaterial(directory, { hostname: "other.customer.example" }), {}, /does not cover the requested hostname aidr\.customer\.example/],
+		[staticMaterial(directory, { hostname: "short.customer.example", notAfter: Date.parse("2026-10-01T00:00:00Z") }), { hostname: "short.customer.example" }, /within the required 14-day validity margin/],
+		[staticMaterial(directory, { hostname: "expired.customer.example", notAfter: Date.parse("2026-06-01T00:00:00Z") }), { hostname: "expired.customer.example" }, /expired at 2026-06-01/],
+	];
+	if (process.platform !== "win32") cases.push([staticMaterial(directory, { hostname: "loose.customer.example", keyMode: 0o644 }), { hostname: "loose.customer.example" }, /must be owner-only/]);
+	for (const [material, overrides, expected] of cases) {
+		const calls = [];
+		const run = (command, args) => {
+			calls.push({ command, args });
+			return succeeded();
+		};
+		assert.throws(() => installStaticCertificate(staticRequest(directory, material, overrides), { run, now: () => STATIC_NOW }), expected);
+		assert.deepEqual(calls, [], "nginx must not run for a refused certificate");
+		assert.equal(existsSync(join(directory, "tls", "live", overrides.hostname ?? STATIC_HOST, "fullchain.pem")), false, "nothing is installed");
+		const receipt = JSON.parse(readFileSync(join(directory, "tls", "receipt.json"), "utf8"));
+		assert.equal(receipt.outcome, "refused");
+		assert.equal(receipt.reloaded, false);
+	}
+	const single = staticMaterial(directory, { hostname: "single.customer.example" });
+	writeFileSync(single.certFile, single.chain.slice(0, single.chain.indexOf("-----END CERTIFICATE-----") + 26));
+	assert.throws(() => installStaticCertificate(staticRequest(directory, single, { hostname: "single.customer.example" }), { run: () => succeeded(), now: () => STATIC_NOW }), /a leaf certificate and its issuer are required/);
+	assert.throws(() => installStaticCertificate({ tlsDir: join(directory, "tls"), receipt: join(directory, "tls", "receipt.json") }, { run: () => succeeded() }), /--hostname.*--cert-file.*--key-file/);
+});
+
+test("static mode restores the previous certificate when nginx rejects the new one", (t) => {
+	const directory = workdir(t);
+	const first = staticMaterial(directory, { label: "first" });
+	installStaticCertificate(staticRequest(directory, first), { run: () => succeeded(), now: () => STATIC_NOW });
+	const replacement = staticMaterial(directory, { notAfter: Date.parse("2028-01-01T00:00:00Z"), label: "replacement" });
+	const calls = [];
+	const run = (command, args) => {
+		calls.push(args.join(" "));
+		return args[0] === "-t" ? failed("nginx: [emerg] cannot load certificate key") : succeeded();
+	};
+	assert.throws(() => installStaticCertificate(staticRequest(directory, replacement), { run, now: () => STATIC_NOW }), /configuration test failed .*previous files were restored/);
+	assert.deepEqual(calls, ["-t"], "no reload after a failed configuration test");
+	const live = join(directory, "tls", "live", STATIC_HOST);
+	assert.equal(readFileSync(join(live, "fullchain.pem"), "utf8"), first.chain, "the served chain is restored");
+	assert.equal(readFileSync(join(live, "privkey.pem"), "utf8"), readFileSync(first.keyFile, "utf8"));
+	assert.equal(JSON.parse(readFileSync(join(directory, "tls", "receipt.json"), "utf8")).outcome, "failed");
+});
+
+test("on-prem reference ingress serves dashboard and API vhosts with HSTS from the static-mode certificate paths", () => {
+	const nginx = readFileSync(resolve(import.meta.dirname, "../deploy/ingress/nginx.onprem.reference.conf"), "utf8");
+	for (const host of ["aidr.customer.example", "api.aidr.customer.example"]) {
+		const escaped = host.replaceAll(".", "\\.");
+		assert.match(nginx, new RegExp(`server_name ${escaped};\\s*if \\(\\$host != "${escaped}"\\) \\{ return 444; \\}`));
+		assert.match(nginx, new RegExp(`ssl_certificate /etc/aidr/tls/live/${escaped}/fullchain\\.pem;`));
+		assert.match(nginx, new RegExp(`ssl_certificate_key /etc/aidr/tls/live/${escaped}/privkey\\.pem;`));
+	}
+	assert.equal((nginx.match(/add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;/g) ?? []).length, 2, "HSTS on both vhosts");
+	assert.equal((nginx.match(/add_header X-Content-Type-Options "nosniff" always;/g) ?? []).length, 2);
+	assert.equal((nginx.match(/ssl_protocols TLSv1\.2 TLSv1\.3;/g) ?? []).length, 2);
+	assert.match(nginx, /proxy_pass http:\/\/127\.0\.0\.1:8080;/, "dashboard upstream");
+	assert.match(nginx, /proxy_pass http:\/\/127\.0\.0\.1:8000;/, "API gateway upstream");
+	assert.match(nginx, /location \^~ \/functions\/v1\/device-start \{[\s\S]*proxy_pass_request_headers off;[\s\S]*X-AIDR-Proxy-Request-ID \$request_id;[\s\S]*X-AIDR-Proxy-Client-IP \$remote_addr;/);
+	assert.match(nginx, /location = \/metrics \{\s*return 404;/, "metrics never exposed publicly");
+	assert.match(nginx, /listen 443 ssl default_server;[\s\S]*ssl_reject_handshake on;\s*return 444;/, "unknown hosts are dropped");
+	assert.match(nginx, /server_tokens off;/);
+	assert.doesNotMatch(nginx, /^\s*(real_ip_header|set_real_ip_from)\s/m);
+	// add_header inside a location would drop the server-level security headers.
+	const directives = nginx.replace(/#.*$/gm, "");
+	const locations = directives.match(/location [^{]+\{[^}]*\}/g) ?? [];
+	assert.ok(locations.length >= 4);
+	for (const block of locations) assert.doesNotMatch(block, /add_header/);
 });

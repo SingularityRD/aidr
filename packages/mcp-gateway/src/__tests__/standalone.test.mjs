@@ -9,6 +9,7 @@ import { Readable, Writable } from "node:stream";
 import { after, before, test } from "node:test";
 import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
+import { coreSourcePlugin, gatewayBundleOptions, readRuleSets } from "../../scripts/bundle-options.mjs";
 
 const packageRoot = resolve(import.meta.dirname, "../..");
 let root;
@@ -31,14 +32,10 @@ before(async () => {
 		`export * from ${JSON.stringify(join(packageRoot, "src", "stdio.mjs"))};`,
 		`export * from ${JSON.stringify(resolve(packageRoot, "../core/src/mcp-attestation.ts"))};`,
 	].join("\n"));
+	const bundleOptions = gatewayBundleOptions({ ruleSets: await readRuleSets() });
 	for (const name of ["cli.mjs", "stdio-cli.mjs", "runtime.mjs"]) {
-		await build({ entryPoints: [name === "runtime.mjs" ? entry : join(packageRoot, "src", name)],
-			outfile: join(root, name), bundle: true, platform: "node", format: "esm", target: "node22.12",
-			plugins: [{ name: "core-source", setup(builder) {
-				builder.onResolve({ filter: /core\/dist\/.*\.js$/ }, ({ path, resolveDir }) => ({
-					path: resolve(resolveDir, path.replace("/dist/", "/src/").replace(/\.js$/, ".ts")),
-				}));
-			} }], logLevel: "silent" });
+		await build({ ...bundleOptions, entryPoints: [name === "runtime.mjs" ? entry : join(packageRoot, "src", name)],
+			outfile: join(root, name), plugins: [...bundleOptions.plugins, coreSourcePlugin()], logLevel: "silent" });
 	}
 	runtime = await import(pathToFileURL(join(root, "runtime.mjs")));
 	gatewayConfig = join(root, "gateway.json");

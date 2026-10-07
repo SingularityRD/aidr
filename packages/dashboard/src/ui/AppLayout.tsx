@@ -4,6 +4,7 @@ import { TeamProvider, useTeam } from "../enterprise/team-provider";
 import { supabaseEnvError } from "../lib/supabase";
 import { signOut } from "./session";
 import { ThemeToggle } from "./ThemeToggle";
+import { usePendingApprovalCount } from "./use-pending-approvals";
 
 /**
  * Team navigation entries.
@@ -43,7 +44,38 @@ function TeamNavLinks() {
 			{currentRole === "owner" ? <NavLink to="/sso">Single sign-on</NavLink> : null}
 			{!roleResolved || canEditPolicy ? <NavLink to="/policies">Policies</NavLink> : null}
 			{canEditPolicy ? <NavLink to="/siem">SIEM export</NavLink> : null}
+			{currentRole === "owner" || currentRole === "admin" ? (
+				<NavLink to="/compliance">Compliance</NavLink>
+			) : null}
+			{currentRole === "owner" || currentRole === "admin" ? (
+				<NavLink to="/governance">Governance</NavLink>
+			) : null}
+			<NavLink to="/governance/register">AI register</NavLink>
 		</>
+	);
+}
+
+/**
+ * Dashboard approvals link. The pending-count badge is read only for roles
+ * that can decide, once the role is resolved (after the identity gate).
+ */
+function ApprovalsNavLink() {
+	const { currentTeam, currentRole, roleResolved } = useTeam();
+	const canDecide = roleResolved && (currentRole === "owner" || currentRole === "admin");
+	const count = usePendingApprovalCount(canDecide && currentTeam ? currentTeam.id : null);
+	return (
+		<NavLink to="/approvals">
+			Approvals
+			{count ? (
+				<span
+					className="badge badge-warning badge-plain nav-count"
+					data-testid="approvals-pending-count"
+				>
+					<span className="sr-only">, pending: </span>
+					{count > 99 ? "99+" : count}
+				</span>
+			) : null}
+		</NavLink>
 	);
 }
 
@@ -75,13 +107,17 @@ export function AppLayout() {
 				<main className="main">
 					<nav className="navcard" aria-label="Dashboard">
 						<NavLink to="/onboarding">Connect</NavLink>
+						<NavLink to="/downloads">Downloads</NavLink>
 						<NavLink to="/dashboard">Dashboard</NavLink>
 						<NavLink to="/billing">Billing</NavLink>
 						<NavLink to="/api-keys">API Keys</NavLink>
 						<NavLink to="/agents">Agents</NavLink>
 						<NavLink to="/events">Events</NavLink>
 						<NavLink to="/discovery">Discovery</NavLink>
+						<NavLink to="/posture">Posture</NavLink>
 						<NavLink to="/incidents">Incidents</NavLink>
+						<ApprovalsNavLink />
+						<NavLink to="/privacy-guard">Browser Privacy</NavLink>
 						<NavLink to="/autosecops">AutoSecOps</NavLink>
 						<NavLink to="/settings">Settings</NavLink>
 						<TeamNavLinks />

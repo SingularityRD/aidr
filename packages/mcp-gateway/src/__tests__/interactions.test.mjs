@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { createHash, generateKeyPairSync } from "node:crypto";
-import { afterEach, test } from "node:test";
 import { request as httpRequest } from "node:http";
 import { PassThrough, Writable } from "node:stream";
+import { afterEach, test } from "node:test";
 import {
 	MemoryMcpAttestationStore,
 	mcpToolsetHash,
@@ -796,15 +796,21 @@ test("stdio keeps reading correlated server replies while the original request w
 });
 
 test("opaque standard image results stay withheld until a capable approved output guard attests full inspection", async () => {
-	const image = {
-		resultType: "complete",
-		content: [{ type: "image", data: "AA==", mimeType: "image/png" }],
-	};
-	for (const verdict of [
-		undefined,
-		{ allowed: true, coverage: "full" },
-		{ allowed: true, coverage: "full", opaqueInspected: true },
+	// A byte-valid PNG passes the bounded binary checks, so with a guard
+	// configured the guard's opaque attestation alone decides release. Without
+	// a guard, bytes that do not match the declared type are refused.
+	const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]).toString(
+		"base64",
+	);
+	for (const [verdict, data] of [
+		[undefined, "AA=="],
+		[{ allowed: true, coverage: "full" }, png],
+		[{ allowed: true, coverage: "full", opaqueInspected: true }, png],
 	]) {
+		const image = {
+			resultType: "complete",
+			content: [{ type: "image", data, mimeType: "image/png" }],
+		};
 		let guardContext;
 		const f = await fixture({
 			modern: true,
@@ -827,14 +833,14 @@ test("opaque standard image results stay withheld until a capable approved outpu
 			})
 		).json();
 		if (verdict?.opaqueInspected) {
-			assert.equal(response.result.content[0].data, "AA==");
+			assert.equal(response.result.content[0].data, data);
 			assert.equal(guardContext.tenantId, "tenant");
 			assert.equal(guardContext.clientId, "client-0");
 			assert.equal(guardContext.requestId, 1);
 			assert.match(guardContext.payloadSha256, /^[a-f0-9]{64}$/);
 		} else {
 			assert.ok(response.error);
-			assert.ok(!JSON.stringify(response).includes("AA=="));
+			assert.ok(!JSON.stringify(response).includes(data));
 		}
 	}
 });

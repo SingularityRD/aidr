@@ -35,10 +35,11 @@ function database(options: {
 		packs?: unknown;
 		failTable?: string;
 		failSigning?: boolean;
+		rate?: "allowed" | "denied" | "error";
 	} = {}) {
 	const rows: Record<string, unknown> = {
 		api_keys: options.key === undefined
-			? [{ id: "33333333-3333-4333-8333-333333333333", key_hash: KEY_HASH, user_id: "user-1", tenant_id: TENANT, revoked: false }]
+			? [{ id: "33333333-3333-4333-8333-333333333333", key_hash: KEY_HASH, user_id: "user-1", tenant_id: TENANT, revoked: false, scope: "tenant" }]
 			: options.key ? [options.key] : [],
 		tenant_members: options.membership === undefined
 			? [{ user_id: "user-1", tenant_id: TENANT, role: "member", expires_at: null }]
@@ -57,8 +58,14 @@ function database(options: {
 	const createSignedUrl = vi.fn(async (path: string, ttl: number) => options.failSigning
 		? { data: null, error: { message: "private storage failure" } }
 		: { data: { signedUrl: `https://storage.example.test/${path}?token=short-lived` }, error: null });
+	const rateCalls: Row[] = [];
 	const client = {
-		async rpc(name: string) {
+		async rpc(name: string, args: Row = {}) {
+			if (name === "consume_tenant_rate_limit") {
+				rateCalls.push(args);
+				if (options.rate === "error") return { data: null, error: { message: "rate storage unavailable" } };
+				return { data: [{ allowed: options.rate !== "denied", remaining: options.rate === "denied" ? 0 : 10 }], error: null };
+			}
 			if (name !== "tenant_admission_capacity") throw new Error(`Unexpected RPC: ${name}`);
 			return { data: 1, error: null };
 		},
@@ -100,7 +107,7 @@ function database(options: {
 		}) },
 	};
 	createClient.mockReturnValue(client);
-	return { queries, createSignedUrl };
+	return { queries, createSignedUrl, rateCalls };
 }
 
 function request(method = "GET", bearer: string | null = KEY) {
@@ -134,6 +141,31 @@ afterAll(() => {
 });
 
 describe("packs manifest handler", () => {
+	it("consumes a per-API-key and per-tenant budget before reading entitlements", async () => {
+		const db = database();
+		expect((await handle(request())).status).toBe(200);
+		expect(db.rateCalls).toHaveLength(1);
+		expect(db.rateCalls[0]).toMatchObject({
+			p_tenant_id: TENANT,
+			p_subject: "33333333-3333-4333-8333-333333333333",
+			p_endpoint: "packs-manifest",
+			p_subject_limit: 60,
+			p_tenant_limit: 30_000,
+		});
+	});
+
+	it.each([
+		["denied", 429, "rate_limited"],
+		["error", 503, "rate_limit_unavailable"],
+	] as const)("refuses a %s budget without minting grants", async (rate, status, error) => {
+		const db = database({ rate });
+		const response = await handle(request());
+		expect(response.status).toBe(status);
+		expect(await response.json()).toEqual({ error });
+		expect(response.headers.get("Retry-After")).toMatch(/^\d+$/);
+		expect(db.queries.some((query) => query.table === "entitlements" || query.table === "pack_versions")).toBe(false);
+	});
+
 	it("requires configuration, GET and a bearer key before opening a database", async () => {
 		const wrongMethod = await handle(request("POST"));
 		expect(wrongMethod.status).toBe(405);

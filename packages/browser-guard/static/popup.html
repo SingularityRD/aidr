@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="color-scheme" content="light dark" />
+		<title data-i18n="extName">Singularity AIDR Browser Guard</title>
+		<link rel="stylesheet" href="ui.css" />
+		<script src="popup.js" defer></script>
+	</head>
+	<body class="page page--popup">
+		<header class="brand">
+			<span class="brand__logo" aria-hidden="true"></span>
+			<div class="brand__text">
+				<span class="brand__eyebrow">Singularity AIDR</span>
+				<h1 class="brand__title" data-i18n="product_short">Browser Guard</h1>
+			</div>
+		</header>
+		<main id="app" class="app" aria-live="off">
+			<p class="placeholder" data-i18n="status_loading">Checking protection…</p>
+		</main>
+		<div id="live" class="notice" role="status" aria-live="polite"></div>
+	</body>
+</html>

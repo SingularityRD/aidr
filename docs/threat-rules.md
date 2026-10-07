@@ -17,9 +17,12 @@ Rules ship in the `threats/` directory at the repository root:
 | `supply_chain.yaml` | Supply chain risk patterns |
 | `mining.yaml` | Cryptomining / resource hijacking (MITRE ATT&CK T1496): miner binaries, pool connections, miner flags, wallet payout targets, miner package installs |
 | `self-defense.yaml` | Attempts to disable or bypass Singularity AIDR |
+| `context-poisoning.yaml` | Data and context poisoning: writes to agent instruction/memory/config files, hidden or injected instructions in what is written, MCP tool poisoning, memory-store writes. Uses dedicated `match_on` values evaluated with operation context; see [poisoning-protection.md](poisoning-protection.md) |
 | `mitre.yaml` | MITRE ATT&CK technique mappings |
 | `win-*.yaml` | Windows-specific variants of the above |
 | `mac-*.yaml` | macOS-specific variants (osascript, Keychain, LOLBins, defense evasion) |
+
+`threats/mappings/frameworks.yaml` is not a rule file (the loader reads only `threats/*.yaml`). It maps every rule id to OWASP Top 10 for LLM Applications 2025, OWASP Top 10 for Agentic Applications 2026 and MITRE ATLAS; a new rule needs an entry there or the test suite fails. See [Security framework coverage](framework-coverage.md) (regenerate with `pnpm coverage:frameworks -- --write`).
 
 ## Rule Schema
 
@@ -46,7 +49,7 @@ Rules ship in the `threats/` directory at the repository root:
 | `confidence` | float | 0.0-1.0, used with sensitivity threshold |
 | `action` | enum | `block`, `require_approval`, or `log` |
 | `pattern` | string | Regex pattern |
-| `match_on` | string or list | `command`, `url`, `file_path`, `content`, or `domain` |
+| `match_on` | string or list | `command`, `url`, `file_path`, `content`, or `domain`; plugin/skill package scans only: `plugin_content`, `plugin_orphan_bytecode` (see [AI security posture](ai-security-posture.md)) |
 | `title` | string | Human-readable description |
 | `expires_at` | string or null | ISO 8601 expiration date, or `null` for permanent |
 | `revoked` | boolean | Set `true` to disable a rule without removing it |

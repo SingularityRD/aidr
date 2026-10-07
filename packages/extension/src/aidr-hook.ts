@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import {
 	type Artifact,
 	createHostObservation,
+	describeSecureCodeWarnings,
 	evaluateToolCall,
 	extractFromBash,
 	extractFromDelete,
@@ -12,9 +13,17 @@ import {
 	extractFromToolCall,
 	extractFromWebFetch,
 	extractFromWrite,
+	formatDashboardApprovalNotice,
+	inspectUserPrompt,
 	loadProvisionedDetectorContext,
+	type PromptInspectionOutcome,
 	recordHostObservation,
+	recordToolOutcome,
+	recordToolOutputCanaries,
+	resolveAskWithDashboardApproval,
+	resolvePromptInspectionDeadlineMs,
 	scanProvisionedOutput,
+	toolResultReportsFailure,
 	type Verdict,
 	verifyArtifactIntegrityAndLog,
 } from "@singularityrd/aidr-core";
@@ -27,8 +36,25 @@ import {
 
 declare const __dirname: string;
 
+/** Measured from module start: the host's hook timeout runs from process launch. */
+const processStartedAt = Date.now();
 const MAX_HOOK_INPUT_BYTES = 1024 * 1024;
-const HOOK_INPUT_LIMIT_EXCEEDED = Symbol("HOOK_INPUT_LIMIT_EXCEEDED");
+/**
+ * Prompt inspection deadline. Both managed installers register the hook with a
+ * 30 s timeout, so the hook answers itself well before the host kills it
+ * (`AIDR_PROMPT_INSPECTION_DEADLINE_MS` may override it within [100, 28000]).
+ */
+const DEFAULT_PROMPT_DEADLINE_MS = 20_000;
+const MAX_PROMPT_DEADLINE_MS = 28_000;
+/** Bytes kept from each end of an oversized payload to identify a prompt event. */
+const OVERSIZED_EVENT_SNIFF_BYTES = 16 * 1024;
+/** Prompt events: the only ones an oversized payload is answered for specifically. */
+const PROMPT_EVENTS: ReadonlySet<string> = new Set(["beforeSubmitPrompt", "UserPromptSubmit"]);
+
+/** Payload over MAX_HOOK_INPUT_BYTES: discarded, except a prompt event name found at either end. */
+class OversizedHookInput {
+	constructor(readonly promptEvent: string | undefined) {}
+}
 const hostObservation = createHostObservation();
 const EDIT_FILE_PATH_FIELDS = [
 	"file_path",
@@ -52,6 +78,7 @@ const EDIT_FILE_CONTENT_FIELDS = [
 ] as const;
 
 type CursorEventName =
+	| "beforeSubmitPrompt"
 	| "preToolUse"
 	| "postToolUse"
 	| "afterAgentResponse"
@@ -65,6 +92,17 @@ interface NormalizedHookCall {
 	toolName: string;
 	toolInput: Record<string, unknown>;
 	artifacts: Artifact[];
+	/** Host-reported session directory; selects repository-scoped agent profiles. */
+	workingDirectory?: string;
+}
+
+/** The session directory the host reports (`cwd`, else the first workspace root). */
+function hostWorkingDirectory(payload: unknown): string | undefined {
+	if (!payload || typeof payload !== "object" || Array.isArray(payload)) return undefined;
+	const input = payload as Record<string, unknown>;
+	if (typeof input.cwd === "string" && input.cwd) return input.cwd;
+	const roots = input.workspace_roots;
+	return Array.isArray(roots) && typeof roots[0] === "string" ? roots[0] : undefined;
 }
 
 let integrityChecked = false;
@@ -88,11 +126,12 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<vo
 	});
 	await maybeVerifyIntegrity("extension/dist");
 	const payload = await readStdinJson();
-	if (payload === HOOK_INPUT_LIMIT_EXCEEDED) {
-		writeHookInputLimitResponse(mode);
+	if (payload instanceof OversizedHookInput) {
+		const promptHandled = await writeHookInputLimitResponse(mode, payload.promptEvent);
 		// Both hosts block permission hooks on exit 2, even when an oversized
-		// payload prevents selecting the event-specific response schema.
-		process.exitCode = 2;
+		// payload prevents selecting the event-specific response schema. An
+		// identified prompt event already carries its own prompt decision.
+		if (!promptHandled) process.exitCode = 2;
 		return;
 	}
 
@@ -120,6 +159,10 @@ async function handleCursor(payload: unknown): Promise<void> {
 		writeJson(internalCursorResponse("deny", "Singularity AIDR could not identify hook event."));
 		return;
 	}
+	if (eventName === "beforeSubmitPrompt") {
+		await handleCursorPrompt(payload as Record<string, unknown>);
+		return;
+	}
 	if (eventName === "postToolUse") {
 		await handleCursorToolOutput(payload);
 		return;
@@ -136,13 +179,16 @@ async function handleCursor(payload: unknown): Promise<void> {
 	}
 
 	try {
-		const verdict = await evaluateNormalizedCall(normalized, "cursor");
-		writeJson(toCursorResponse(verdict, eventName));
+		const evaluation = await evaluateNormalizedCall(
+			{ ...normalized, workingDirectory: hostWorkingDirectory(payload) },
+			"cursor",
+		);
+		writeJson(toCursorResponse(evaluation, eventName));
 		recordHostObservation(hostObservation, {
 			connector: "cursor",
 			event: eventName,
 			toolName: normalized.toolName,
-			decision: verdict.decision,
+			decision: evaluation.verdict.decision,
 		});
 	} catch {
 		writeJson(
@@ -152,6 +198,10 @@ async function handleCursor(payload: unknown): Promise<void> {
 }
 
 async function handleVsCode(payload: unknown): Promise<void> {
+	if (isVsCodeUserPromptSubmit(payload)) {
+		await handleVsCodePrompt(payload);
+		return;
+	}
 	if (hasExplicitVsCodeEvent(payload) && !isVsCodePreToolUse(payload)) {
 		if (isVsCodePostToolUse(payload)) {
 			await handleVsCodeToolOutput(payload);
@@ -175,17 +225,116 @@ async function handleVsCode(payload: unknown): Promise<void> {
 	}
 
 	try {
-		const verdict = await evaluateNormalizedCall(normalized, "vscode");
-		writeJson(toVsCodeResponse(verdict));
+		const evaluation = await evaluateNormalizedCall(
+			{ ...normalized, workingDirectory: hostWorkingDirectory(payload) },
+			"vscode",
+		);
+		writeJson(toVsCodeResponse(evaluation));
 		recordHostObservation(hostObservation, {
 			connector: "vscode",
 			event: "PreToolUse",
 			toolName: normalized.toolName,
-			decision: verdict.decision,
+			decision: evaluation.verdict.decision,
 		});
 	} catch {
 		writeJson(internalVsCodeResponse("Singularity AIDR internal error; execution was denied."));
 	}
+}
+
+/**
+ * Prompt protection shared by both hosts (secrets block, personal data warns by
+ * default; see `prompt_protection` in docs/configuration.md). The core runner
+ * never throws: an uninspectable or late prompt is blocked when secrets are in
+ * `block` mode and otherwise sent with a visible notice.
+ */
+function inspectPrompt(
+	runtime: HookMode,
+	hookEvent: string,
+	sessionId: string,
+	prompt: unknown,
+): Promise<PromptInspectionOutcome> {
+	const deadlineMs = resolvePromptInspectionDeadlineMs(
+		process.env,
+		DEFAULT_PROMPT_DEADLINE_MS,
+		MAX_PROMPT_DEADLINE_MS,
+	);
+	return inspectUserPrompt({
+		runtime,
+		hookEvent,
+		sessionId,
+		prompt,
+		deadlineAt: processStartedAt + deadlineMs,
+	});
+}
+
+/**
+ * Cursor `beforeSubmitPrompt` runs after the user presses send and before the
+ * request leaves the editor: `continue: false` stops the submission and
+ * `user_message` is shown to the user. The event has no model-context field, so
+ * a `warn` outcome sends the prompt, carries the notice in `user_message` (Cursor
+ * documents it for blocked prompts only) and records the finding in the audit log.
+ */
+async function handleCursorPrompt(input: Record<string, unknown>): Promise<void> {
+	const outcome = await inspectPrompt(
+		"cursor",
+		"beforeSubmitPrompt",
+		cursorSessionId(input),
+		input.prompt,
+	);
+	writeJson(toCursorPromptResponse(outcome));
+	recordPromptObservation("cursor", "beforeSubmitPrompt", outcome);
+}
+
+function toCursorPromptResponse(outcome: PromptInspectionOutcome): Record<string, unknown> {
+	if (outcome.decision === "allow") return { continue: true };
+	return { continue: outcome.decision !== "block", user_message: outcome.userMessage };
+}
+
+/**
+ * VS Code Local `UserPromptSubmit` supports the common hook output only:
+ * `continue: false` with `stopReason` stops the request before the model runs, and
+ * `systemMessage` shows a warning. There is no documented model-context field for
+ * this event, so a `warn` outcome reaches the user but not the model.
+ */
+async function handleVsCodePrompt(input: Record<string, unknown>): Promise<void> {
+	const outcome = await inspectPrompt(
+		"vscode",
+		"UserPromptSubmit",
+		vsCodeSessionId(input),
+		input.prompt,
+	);
+	writeJson(toVsCodePromptResponse(outcome));
+	recordPromptObservation("vscode", "UserPromptSubmit", outcome);
+}
+
+function toVsCodePromptResponse(outcome: PromptInspectionOutcome): Record<string, unknown> {
+	if (outcome.decision === "allow") return {};
+	if (outcome.decision === "warn") return { systemMessage: outcome.userMessage };
+	return { continue: false, stopReason: outcome.userMessage };
+}
+
+function recordPromptObservation(
+	connector: HookMode,
+	event: string,
+	outcome: PromptInspectionOutcome,
+): void {
+	recordHostObservation(hostObservation, {
+		connector,
+		event,
+		decision: outcome.decision === "block" ? "deny" : "allow",
+	});
+}
+
+/** Explicit `UserPromptSubmit`, or (no event name) a prompt payload that names no tool. */
+function isVsCodeUserPromptSubmit(payload: unknown): payload is Record<string, unknown> {
+	if (!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
+	const input = payload as Record<string, unknown>;
+	if ("hook_event_name" in input || "hookEventName" in input) {
+		return (
+			input.hook_event_name === "UserPromptSubmit" || input.hookEventName === "UserPromptSubmit"
+		);
+	}
+	return typeof input.prompt === "string" && input.tool_name === undefined;
 }
 
 async function handleCursorToolOutput(payload: unknown): Promise<void> {
@@ -213,6 +362,8 @@ async function handleCursorToolOutput(payload: unknown): Promise<void> {
 		return;
 	}
 	const input = payload as Record<string, unknown>;
+	await observeCompletedTool("cursor", input, input.tool_output);
+	// Warm signed output-policy trust before the synchronous inspection.
 	await scanProvisionedOutput([], "cursor");
 	const result = inspectCachedProvisionedOutput(input.tool_output, "cursor");
 	if (result.status === "clean") {
@@ -307,6 +458,8 @@ async function handleVsCodeToolOutput(payload: unknown): Promise<void> {
 		return;
 	}
 	const input = payload as Record<string, unknown>;
+	await observeCompletedTool("vscode", input, input.tool_response);
+	// Warm signed output-policy trust before the synchronous inspection.
 	await scanProvisionedOutput([], "vscode");
 	const result = inspectCachedProvisionedOutput(input.tool_response, "vscode");
 	if (result.status === "clean") {
@@ -336,6 +489,66 @@ async function handleVsCodeToolOutput(payload: unknown): Promise<void> {
 			additionalContext: coverageNotice,
 		},
 	});
+}
+
+/**
+ * Session-level observations of a completed tool call, shared by both hosts. They
+ * never change the hook response and never throw:
+ *   - a canary credential value in the output is recorded (audit entry and, in
+ *     managed mode, an incident); output inspection already flags the output;
+ *   - a failure the host reports (`is_error`, or a non-zero exit code in the
+ *     result, including Cursor's JSON-encoded `tool_output`) counts towards the
+ *     runaway guard's repeated-failure signal. The call is normalized the way the
+ *     pre-execution hook normalized it, so the retry is recognised as the same call;
+ *     a result without such a marker is not counted.
+ */
+async function observeCompletedTool(
+	mode: HookMode,
+	input: Record<string, unknown>,
+	toolOutput: unknown,
+): Promise<void> {
+	try {
+		const call =
+			mode === "cursor" ? normalizeCursorPostToolCall(input) : normalizeVsCodeCall(input);
+		const sessionId =
+			call?.sessionId ?? (mode === "cursor" ? cursorSessionId(input) : vsCodeSessionId(input));
+		await recordToolOutputCanaries({
+			sessionId,
+			toolName: call?.toolName ?? asString(input.tool_name) ?? "Unknown",
+			toolOutput,
+			agentRuntime: mode,
+		});
+		if (call && toolResultReportsFailure(toolOutput)) {
+			await recordToolOutcome(
+				{ sessionId, toolName: call.toolName, toolInput: call.toolInput, failed: true },
+				{ agentRuntime: mode },
+			);
+		}
+	} catch {
+		// Observation only: the output-inspection response is written regardless.
+	}
+}
+
+/**
+ * A Cursor `postToolUse` call in the shape its pre-execution hook evaluated:
+ * shell commands are evaluated at `beforeShellExecution` (`{ command, cwd }`),
+ * every other tool at `preToolUse`.
+ */
+function normalizeCursorPostToolCall(
+	input: Record<string, unknown>,
+): NormalizedHookCall | undefined {
+	if (asString(input.tool_name) === "Shell") {
+		const toolInput = parseUnknownObject(input.tool_input);
+		return normalizeCursorCall(
+			{
+				...input,
+				command: asString(toolInput?.command) ?? "",
+				cwd: asString(input.cwd) ?? asString(toolInput?.cwd),
+			},
+			"beforeShellExecution",
+		);
+	}
+	return normalizeCursorCall(input, "postToolUse");
 }
 
 function hasExplicitVsCodeEvent(payload: unknown): payload is Record<string, unknown> {
@@ -395,34 +608,77 @@ function quarantinedMcpOutput(reason: string): Record<string, unknown> {
 	};
 }
 
-function writeHookInputLimitResponse(mode: HookMode | undefined): void {
+async function writeHookInputLimitResponse(
+	mode: HookMode | undefined,
+	promptEvent: string | undefined,
+): Promise<boolean> {
+	// An oversized prompt cannot be inspected, which is never a clean result: the
+	// shared runner blocks it when secrets are in `block` mode (the default) and
+	// otherwise sends it with a "not inspected" notice.
+	if (mode === "cursor" && promptEvent === "beforeSubmitPrompt") {
+		const outcome = await inspectPrompt("cursor", promptEvent, "cursor", undefined);
+		writeJson(toCursorPromptResponse(outcome));
+		return true;
+	}
+	if (mode === "vscode" && promptEvent === "UserPromptSubmit") {
+		const outcome = await inspectPrompt("vscode", promptEvent, "vscode", undefined);
+		writeJson(toVsCodePromptResponse(outcome));
+		return true;
+	}
 	const reason = `Singularity AIDR hook input exceeds the ${MAX_HOOK_INPUT_BYTES}-byte processing limit. The event could not be identified, so no event-specific enforcement result was produced. If this was PostToolUse, the tool may already have completed; AIDR cannot verify or guarantee that its output was replaced, and the original may remain available. Treat it as untrusted; it was not classified as clean.`;
 	if (mode === "vscode") {
 		// The oversized payload is intentionally discarded, so its hook event
 		// cannot be identified safely. Do not forge a PreToolUse denial for a
 		// possible PostToolUse callback whose tool has already completed.
 		writeJson({ decision: "block", reason });
-		return;
+		return false;
 	}
 	writeJson({ additional_context: reason });
+	return false;
 }
 
-async function evaluateNormalizedCall(call: NormalizedHookCall, mode: HookMode): Promise<Verdict> {
+/** A verdict plus the managed-mode dashboard approval details for an `ask`. */
+interface HookEvaluation {
+	verdict: Verdict;
+	/** User-facing dashboard request line, or null when there is nothing to say. */
+	dashboardNotice: string | null;
+	/** `operator_approvals.dashboard_only`: an `ask` must block, not ask. */
+	dashboardOnly: boolean;
+}
+
+async function evaluateNormalizedCall(
+	call: NormalizedHookCall,
+	mode: HookMode,
+): Promise<HookEvaluation> {
 	const { threatsDir, allowlistsDir } = getBundledDataDirs();
 	// Operator-provisioned tenant detector policy for this host runtime. The
 	// policy file is selected by the reported runtime, which is the same closed
 	// union value the evaluator receives; an unprovisioned host gets an empty
 	// context and is evaluated exactly as before.
 	const provisioned = await loadProvisionedDetectorContext(mode);
-	return evaluateToolCall(
-		{
-			sessionId: call.sessionId,
-			toolName: call.toolName,
-			toolInput: call.toolInput,
-			artifacts: call.artifacts,
-		},
-		{ threatsDir, allowlistsDir, agentRuntime: mode, ...provisioned },
-	);
+	const request = {
+		sessionId: call.sessionId,
+		toolName: call.toolName,
+		toolInput: call.toolInput,
+		artifacts: call.artifacts,
+	};
+	const evaluated = await evaluateToolCall(request, {
+		threatsDir,
+		allowlistsDir,
+		agentRuntime: mode,
+		workingDirectory: call.workingDirectory,
+		...provisioned,
+	});
+	// Managed mode: submit the ask to the AIDR dashboard or release it with a
+	// verified single-use approval token (persisted across hook processes by core).
+	const resolution = await resolveAskWithDashboardApproval(request, evaluated, {
+		agentRuntime: mode,
+	});
+	return {
+		verdict: resolution.verdict,
+		dashboardNotice: formatDashboardApprovalNotice(resolution.dashboardApproval),
+		dashboardOnly: resolution.dashboardOnly,
+	};
 }
 
 function detectCursorEvent(payload: unknown): CursorEventName | undefined {
@@ -434,19 +690,20 @@ function detectCursorEvent(payload: unknown): CursorEventName | undefined {
 	if (fromField) {
 		return isCursorEvent(fromField) ? fromField : undefined;
 	}
-	if (typeof input.command === "string" && input.tool_name === undefined) {
-		return "beforeShellExecution";
+	if (input.tool_name === undefined) {
+		return detectCursorNonToolEvent(input);
 	}
-	if (typeof input.file_path === "string" && input.tool_name === undefined) {
-		return "beforeReadFile";
+	if (input.tool_input !== undefined) {
+		return asString(input.tool_name) === "MCP" ? "beforeMCPExecution" : "preToolUse";
 	}
-	if (input.tool_name !== undefined && input.tool_input !== undefined) {
-		const toolName = asString(input.tool_name) ?? "";
-		if (toolName === "MCP") {
-			return "beforeMCPExecution";
-		}
-		return "preToolUse";
-	}
+	return undefined;
+}
+
+/** Events without a `tool_name`, recognised by their single identifying field. */
+function detectCursorNonToolEvent(input: Record<string, unknown>): CursorEventName | undefined {
+	if (typeof input.command === "string") return "beforeShellExecution";
+	if (typeof input.file_path === "string") return "beforeReadFile";
+	if (typeof input.prompt === "string") return "beforeSubmitPrompt";
 	return undefined;
 }
 
@@ -734,14 +991,35 @@ function readFilePath(toolInput: Record<string, unknown>): string | undefined {
 	return firstPopulatedString(...EDIT_FILE_PATH_FIELDS.map((field) => toolInput[field]));
 }
 
-function toCursorResponse(verdict: Verdict, eventName: CursorEventName): Record<string, unknown> {
+function withDashboardNotice(reason: string, evaluation: HookEvaluation): string {
+	return evaluation.dashboardNotice ? `${reason}\n${evaluation.dashboardNotice}` : reason;
+}
+
+function toCursorResponse(
+	evaluation: HookEvaluation,
+	eventName: CursorEventName,
+): Record<string, unknown> {
+	const { verdict } = evaluation;
 	if (verdict.decision === "allow") {
+		// Secure-code findings on an allowed write: notice to the user and the agent.
+		if (verdict.warnings?.length) {
+			const notice = describeSecureCodeWarnings(verdict.warnings);
+			return {
+				decision: "allow",
+				permission: "allow",
+				user_message: notice.userMessage,
+				agent_message: notice.modelContext,
+			};
+		}
 		return { decision: "allow", permission: "allow" };
 	}
 
+	// dashboard_only: a native "ask" would let the local user approve, so block.
 	const decision =
-		verdict.decision === "ask" && eventName === "preToolUse" ? "deny" : verdict.decision;
-	const reason = truncateReason(verdict);
+		verdict.decision === "ask" && (eventName === "preToolUse" || evaluation.dashboardOnly)
+			? "deny"
+			: verdict.decision;
+	const reason = withDashboardNotice(truncateReason(verdict), evaluation);
 	const agentMessage = `Singularity AIDR ${decision === "deny" ? "blocked" : "flagged"} this action (${verdict.severity}).`;
 
 	return {
@@ -756,16 +1034,23 @@ function toCursorResponse(verdict: Verdict, eventName: CursorEventName): Record<
 	};
 }
 
-function toVsCodeResponse(verdict: Verdict): Record<string, unknown> {
+function toVsCodeResponse(evaluation: HookEvaluation): Record<string, unknown> {
+	const { verdict } = evaluation;
 	if (verdict.decision === "allow") {
-		return {};
+		// Secure-code findings on an allowed write: `systemMessage` is the warning
+		// channel these hooks already use; there is no documented model-context field.
+		return verdict.warnings?.length
+			? { systemMessage: describeSecureCodeWarnings(verdict.warnings).userMessage }
+			: {};
 	}
 
 	return {
 		hookSpecificOutput: {
 			hookEventName: "PreToolUse",
-			permissionDecision: verdict.decision,
-			permissionDecisionReason: truncateReason(verdict),
+			// dashboard_only: a native "ask" would let the local user approve, so block.
+			permissionDecision:
+				verdict.decision === "ask" && evaluation.dashboardOnly ? "deny" : verdict.decision,
+			permissionDecisionReason: withDashboardNotice(truncateReason(verdict), evaluation),
 		},
 	};
 }
@@ -812,6 +1097,7 @@ export function getBundledDataDirs(): { threatsDir: string; allowlistsDir: strin
 
 function isCursorEvent(value: string): value is CursorEventName {
 	return (
+		value === "beforeSubmitPrompt" ||
 		value === "preToolUse" ||
 		value === "postToolUse" ||
 		value === "afterAgentResponse" ||
@@ -865,30 +1151,69 @@ function parseUnknownObject(value: unknown): Record<string, unknown> | undefined
 	return undefined;
 }
 
+/**
+ * Top-level-looking `hook_event_name` values at either end of an oversized payload.
+ * Inside a JSON string every quote is escaped, so `"hook_event_name":"…"` can only
+ * match a real object key; a nested key could at worst make a tool event answer
+ * like a blocked prompt, never let a prompt through.
+ */
+function sniffPromptEvent(head: Buffer, tail: Buffer, tailOffset: number): string | undefined {
+	const pattern = /"(?:hook_event_name|hookEventName)"\s*:\s*"([A-Za-z]+)"/g;
+	// UTF-16LE text must be decoded from an even byte offset.
+	const alignedTail = tailOffset % 2 === 0 ? tail : tail.subarray(1);
+	const texts = [
+		head.toString("utf8"),
+		tail.toString("utf8"),
+		head.toString("utf16le"),
+		alignedTail.toString("utf16le"),
+	];
+	const events = new Set(
+		texts.flatMap((text) => [...text.matchAll(pattern)].map((match) => match[1] ?? "")),
+	);
+	const prompt = [...events].filter((event) => PROMPT_EVENTS.has(event));
+	return prompt.length === 1 && events.size === 1 ? prompt[0] : undefined;
+}
+
 async function readStdinJson(): Promise<unknown> {
 	// Cursor hooks on Windows can deliver stdin as UTF-16LE (PowerShell pipeline encoding),
 	// which breaks JSON.parse if we assume UTF-8. Read bytes and attempt both decodings.
-	const raw = await new Promise<Buffer | typeof HOOK_INPUT_LIMIT_EXCEEDED>((resolve, reject) => {
+	const raw = await new Promise<Buffer | OversizedHookInput>((resolve, reject) => {
 		const chunks: Buffer[] = [];
 		let byteLength = 0;
 		let exceeded = false;
+		let head = Buffer.alloc(0);
+		let tail = Buffer.alloc(0);
 		process.stdin.on("data", (chunk) => {
 			// Node normally gives Buffer chunks when no encoding is set, but be defensive.
 			const bytes = typeof chunk === "string" ? Buffer.from(chunk, "utf8") : chunk;
 			byteLength += bytes.length;
-			if (byteLength > MAX_HOOK_INPUT_BYTES) {
+			if (!exceeded && byteLength > MAX_HOOK_INPUT_BYTES) {
 				exceeded = true;
+				const all = Buffer.concat([...chunks, bytes]);
 				chunks.length = 0;
+				head = Buffer.from(all.subarray(0, OVERSIZED_EVENT_SNIFF_BYTES));
+				tail = Buffer.from(all.subarray(Math.max(0, all.length - OVERSIZED_EVENT_SNIFF_BYTES)));
 				return;
 			}
-			if (!exceeded) chunks.push(bytes);
+			if (exceeded) {
+				const joined = Buffer.concat([tail, bytes]);
+				tail = Buffer.from(
+					joined.subarray(Math.max(0, joined.length - OVERSIZED_EVENT_SNIFF_BYTES)),
+				);
+				return;
+			}
+			chunks.push(bytes);
 		});
 		process.stdin.on("end", () =>
-			resolve(exceeded ? HOOK_INPUT_LIMIT_EXCEEDED : Buffer.concat(chunks)),
+			resolve(
+				exceeded
+					? new OversizedHookInput(sniffPromptEvent(head, tail, byteLength - tail.length))
+					: Buffer.concat(chunks),
+			),
 		);
 		process.stdin.on("error", reject);
 	});
-	if (raw === HOOK_INPUT_LIMIT_EXCEEDED) return raw;
+	if (raw instanceof OversizedHookInput) return raw;
 
 	function stripBom(value: string): string {
 		return value.charCodeAt(0) === 0xfeff ? value.slice(1) : value;
@@ -927,11 +1252,15 @@ function writeJson(payload: Record<string, unknown>): void {
 
 if (require.main === module) {
 	runCli().catch(() => {
-		// Protocol safety: emit valid JSON and never fail with non-JSON output.
+		// Protocol safety: emit valid JSON and never fail with non-JSON output. The
+		// failure can precede reading the payload (e.g. integrity verification), so
+		// the event is unknown: the response denies a tool call and, through the
+		// prompt-event stop fields (`continue: false`), also stops a prompt submission.
+		const reason = "Singularity AIDR hook failed; execution was denied.";
 		writeJson(
 			process.argv[2] === "vscode"
-				? internalVsCodeResponse("Singularity AIDR hook failed; execution was denied.")
-				: internalCursorResponse("deny", "Singularity AIDR hook failed; execution was denied."),
+				? { ...internalVsCodeResponse(reason), continue: false, stopReason: reason }
+				: { ...internalCursorResponse("deny", reason), continue: false },
 		);
 	});
 }

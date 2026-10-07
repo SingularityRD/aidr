@@ -118,7 +118,7 @@ type RevocationsDatabase = {
 		Tables: {
 			tenant_members: ReadTable<{ tenant_id: string; user_id: string; role: string; expires_at: string | null }>;
 			tenants: ReadTable<{ id: string; status: string }>;
-			api_keys: ReadTable<{ tenant_id: string; user_id: string; agent_id: string | null; revoked: boolean; key_hash: string }>;
+			api_keys: ReadTable<{ tenant_id: string; user_id: string; agent_id: string | null; revoked: boolean; key_hash: string; scope: string }>;
 			agents: ReadTable<{ id: string; tenant_id: string; iid: string }>;
 			fleet_response_commands: ReadTable<FleetCommandRow>;
 			revocations: ReadTable<{ id: string; kind: string; value: string; tenant_id: string | null }>;
@@ -197,6 +197,8 @@ async function agentContext(db: DatabaseClient, req: Request): Promise<AgentCont
 	const token = getAccessToken(req.headers.get("Authorization"));
 	if (!token) return corsJson(req, 401, { error: "missing_api_key" });
 	const keyHash = await sha256Hex(token);
+	// Fleet commands need a full, agent-bound tenant key: the shared guard admits
+	// only `tenant` scope by default, so an ingest-only key never qualifies.
 	const auth = await authenticateTenantApiKey(db, token);
 	if (!auth.ok) return corsJson(req, auth.status, { error: auth.error });
 	if (!isUuid(auth.tenantId) || !isUuid(auth.agentId)) {
@@ -442,7 +444,8 @@ Deno.serve(async (req) => {
 		auth: { persistSession: false },
 	});
 
-	// Use the same bounded renewal overlap and admission check as the other machine endpoints.
+	// Use the same bounded renewal overlap and admission check as the other
+	// machine endpoints; the guard refuses non-`tenant` (ingest-only) keys.
 	const auth = await authenticateTenantApiKey(supabase, apiKey);
 	if (!auth.ok) return json(auth.status, { error: auth.error });
 	const { tenantId, userId } = auth;

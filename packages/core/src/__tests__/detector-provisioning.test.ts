@@ -151,6 +151,31 @@ describe("shared tenant detector provisioning", () => {
 		});
 	});
 
+	it("provisions a signed tenant prompt-safety floor on its own", async () => {
+		const payload = detectorPolicyPayload(TEST_TENANT_ID, {
+			prompt_safety: { jailbreak: "block", content_safety: { malware: "block" } },
+		});
+		delete payload.dlp;
+		await provisionTenantDetectorPolicy({ homeDir: home, agentRuntime: "opencode", payload });
+		const context = await loadProvisionedDetectorContext("opencode");
+		expect(context.runtimeDetectors?.dlp).toBeUndefined();
+		expect(context.runtimeDetectors?.promptSafety).toEqual({
+			jailbreak: "block",
+			content_safety: { malware: "block" },
+		});
+	});
+
+	it("rejects an unknown prompt-safety category in the signed payload", async () => {
+		await provisionTenantDetectorPolicy({
+			homeDir: home,
+			agentRuntime: "opencode",
+			payload: detectorPolicyPayload(TEST_TENANT_ID, {
+				prompt_safety: { content_safety: { unknown_category: "block" } },
+			}),
+		});
+		await expect(loadProvisionedDetectorContext("opencode")).rejects.toThrow();
+	});
+
 	it("keeps one runtime's provisioned policy away from another runtime", async () => {
 		// Without the `runtime_detectors` premium module the bundle is optional, so
 		// a runtime that was never provisioned stays unprovisioned.

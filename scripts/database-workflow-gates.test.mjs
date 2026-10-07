@@ -43,6 +43,7 @@ test("the workflow contract is itself part of the required migration check", () 
 	assert.match(scripts["supabase:check"], /scripts\/database-workflow-gates\.test\.mjs/);
 	assert.match(scripts["supabase:check:edge-typed-slice"], /supabase\/functions\/response-playbooks\/index\.ts/);
 	assert.match(scripts["supabase:check:edge-typed-slice"], /supabase\/functions\/delegated-credentials\/index\.ts/);
+	assert.match(scripts["supabase:check"], /scripts\/tenant-identity-barrier\.test\.mjs/);
 	assert.match(scripts["verify:offboarding"], /scripts\/billing-offboarding-postgres\.test\.mjs/);
 	assert.match(scripts["verify:offboarding"], /scripts\/pack-offboarding-guard-postgres\.test\.mjs/);
 	assert.match(scripts["verify:offboarding"], /scripts\/oidc-scim-offboarding-postgres\.test\.mjs/);

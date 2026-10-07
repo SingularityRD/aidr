@@ -9,6 +9,8 @@ Bu değerler ilk kurulum bütçesi içindir; kapasite, SLA veya müşteri cihaz�
 | Self-hosted 1.000 cihaz | Yük testine başlanacak tahsis: 8 vCPU, 16 GiB RAM, 250 GiB SSD | Bu satır 1.000 cihaz kapasite vaadi değildir; yük, HA, DB IOPS ve büyüme ölçümüne göre artırın |
 | Yönetilen cloud | Endpoint gereksinimi aynı; Edge Function, yönetilen DB, Storage, dashboard ve güvenilir ingress ayrı faturalanır | Gerçek proje/region/plan seçimi, Edge CPU/bellek/invocation, DB IOPS, egress ve yedek metrikleri olmadan fiyat veya tier hesaplanamaz |
 
+Konteyner başına CPU, bellek ve PID sınırları `deploy/onprem/resource-profile.json` içindeki `small`, `medium` ve `large` profillerinden gelir (`deployment-prepare.mjs --profile`); bunlar da başlangıç bütçesidir. Ayrıntı için [on-prem rehberine](onprem/README.md) bakın.
+
 Trafik modelinde varsayılan 2 KiB olay, 4 KiB politika alışverişi, 90 gün saklama, olay alanının 3 katı DB+indeks/WAL alanı ve günlük ortalamanın 10 katı zirve kullanıldı. Bunlar gerçek müşteri telemetrisiyle değiştirilmelidir.
 
 | Cihaz sayısı | Policy + ingest Edge çağrısı/gün | Tahmini uygulama payload/gün | 90 gün olay DB alanı | Planlama zirvesi |

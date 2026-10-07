@@ -52,6 +52,9 @@ export const CUSTOMER_KIT_REQUIRED_FILES = Object.freeze([
 	"scripts/verify-customer-kit.mjs",
 	"scripts/deployment-prepare.mjs",
 	"scripts/deployment-bootstrap.mjs",
+	"scripts/license-verify.mjs",
+	"scripts/import-offline-pack.mjs",
+	"deploy/onprem/license-public-keys.json",
 	"scripts/deployment-doctor.mjs",
 	"scripts/release-signing-lib.mjs",
 	"scripts/release-verify.mjs",
@@ -73,6 +76,10 @@ export const CUSTOMER_KIT_REQUIRED_FILES = Object.freeze([
 	"deploy/maintenance/AidrMaintenanceTasks.Common.ps1",
 	"deploy/maintenance/Install-AidrMaintenanceTasks.ps1",
 	"deploy/maintenance/Uninstall-AidrMaintenanceTasks.ps1",
+	"deploy/onprem/README.md",
+	"deploy/onprem/compose.onprem.overlay.yml",
+	"deploy/onprem/resource-profile.json",
+	"packages/dashboard/package.json",
 	"RESTORE-DRILL.md",
 	"RETENTION-HOLDS.md",
   "SAML-RECOVERY.md",
@@ -105,6 +112,8 @@ export const CUSTOMER_KIT_REQUIRED_FILES = Object.freeze([
 	"NATIVE-HOST-ACCEPTANCE.md",
 	"SUPPORT-RUNBOOK.md",
 	"SECRETS-RUNBOOK.md",
+	"LICENSING.md",
+	"THREAT-SYNC.md",
 	"FIRST-CUSTOMER-SALES-PACKET.md",
 	"CANDIDATE-STATUS.md",
 	"supabase/config.toml",
@@ -135,6 +144,11 @@ const docRewrites = {
   ],
   "CODEX-CONNECTOR.md": [
     ["[Package Installation](../../docs/package-installation.md)", "[Package Installation](PACKAGE-INSTALLATION.md)"],
+    // The real-host record is source-tree evidence; it does not ship in the kit.
+    ["([`docs/evidence/real-host/codex.json`](../../docs/evidence/real-host/codex.json):", "(`docs/evidence/real-host/codex.json` in the source release, not shipped in this kit:"],
+    // The configuration reference is a source-tree document; name it without a dead link.
+    ["[docs/configuration.md](../../docs/configuration.md#operator-approvals).", "`docs/configuration.md` (Operator approvals) in the source release; it is not shipped in this kit."],
+    ["[dashboard approvals](../../docs/configuration.md#managed-mode-dashboard-approvals).", "the dashboard approvals section of `docs/configuration.md` in the source release (not shipped in this kit)."],
   ],
   "BEHAVIORAL-LEARNING.md": [
     ["[Package installation](../package-installation.md)", "[Package installation](PACKAGE-INSTALLATION.md)"],
@@ -152,9 +166,14 @@ const docRewrites = {
 	"INSTALLATION.md": [
 		["[the issuance and revocation contract](../supabase/README.md#configuration-is-validated-not-assumed)", "[the issuance and revocation contract](CONTROL-PLANE.md#configuration-is-validated-not-assumed)"],
 		["[first-customer guide](FIRST_CUSTOMER.md)", "[first-customer guide](START-HERE.md)"],
+		["[on-prem guide](onprem/README.md)", "[on-prem guide](deploy/onprem/README.md)"],
+		["[on-prem sizing and posture scanner guide](onprem/README.md)", "[on-prem sizing and posture scanner guide](deploy/onprem/README.md)"],
 		["For a limited Cloudflare Free pilot, see [the Cloudflare deployment path](cloudflare/README.md).", "The Cloudflare Free pilot requires a separate reviewed source release; it is not deployable from this extracted customer kit."],
 		["[FEATURE_INVENTORY.md](../FEATURE_INVENTORY.md)", "[FEATURE_INVENTORY.md](FEATURE_INVENTORY.md)"],
 		["[secret management](../docs/runbooks/secrets-management.md)", "[secret management](SECRETS-RUNBOOK.md)"],
+		["[licensing](../docs/operations/licensing.md)", "[licensing](LICENSING.md)"],
+		["[air-gapped updates](../docs/operations/threat-sync.md#air-gapped-updates)", "[air-gapped updates](THREAT-SYNC.md#air-gapped-updates)"],
+		["[licensing](../docs/operations/licensing.md)", "[licensing](LICENSING.md)"],
 		["Commercial/customer approvals remain in the existing\n[evidence registry](../docs/production-readiness/commercial-go-evidence-registry.json).", "Commercial/customer approvals remain open in the [candidate status](CANDIDATE-STATUS.md)."],
 	],
 };

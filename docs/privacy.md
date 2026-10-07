@@ -73,6 +73,33 @@ flowchart LR
 The outbound control-plane client also applies the redaction boundary itself,
 so callers cannot accidentally bypass it by constructing an event directly.
 
+### Browser Guard privacy telemetry
+
+Browser Guard (the browser extension that masks sensitive data before it
+reaches AI chat products) reports to the control plane only after it is enrolled
+with a control-plane URL and tenant API key. It sends one `privacy_scan` event
+per guarded send, as defined in
+[`docs/contracts/privacy-telemetry.md`](contracts/privacy-telemetry.md):
+
+- the AI site as an enum (`chatgpt`, `gemini`, `claude`, `copilot`,
+  `perplexity`, `deepseek`, `mistral`, `grok`, `other`), never a URL;
+- what the guard did (`masked`, `warned`, `blocked`, `allowed`) and the channel
+  (`prompt`, `paste`, `file`);
+- per-entity-type counts (for example `{"EMAIL": 2, "TC_KIMLIK": 1}`), the total
+  findings count and an optional policy identifier;
+- a random per-install ID, the browser family/major version and the extension
+  version.
+
+No prompt text, masked text, placeholder values or matched values are sent.
+The server does not rely on the client for this: the ingest projection keeps
+only the fields above, drops unknown entity types and out-of-range counts, and
+discards any other field. Placeholder originals stay in the browser tab's
+memory-only vault. Privacy scans are stored as tenant telemetry
+(`public.events`), so they follow the tenant's telemetry retention policy, legal
+holds and offboarding deletion. Masking works without enrollment; an
+unreachable control plane only delays reporting (the extension keeps a bounded
+local queue of at most 500 counts-only events and drops the oldest).
+
 ## What stays local
 
 - Source code, file contents and full tool input used by local heuristics stay
@@ -154,6 +181,41 @@ configure AIG remote scans or notification
 webhooks. Commercial builds force managed mode and cannot use this as an
 offline bypass. Verify the effective configuration and outbound network policy
 in the customer environment; this document does not replace that evidence.
+
+## Content privacy engine (AIDR Privacy)
+
+The telemetry boundary above is separate from *content* privacy: detecting and
+masking personal data and secrets inside prompts, tool inputs and outputs. That
+engine is the workspace package `@singularityrd/aidr-privacy`
+([`packages/privacy`](../packages/privacy/README.md)), which provides Turkish and
+English detection with checksum validation (T.C. kimlik, IBAN mod-97, Luhn),
+Turkish phone/address/labelled-field rules and provider-token/private-key
+patterns.
+
+- **Browser Guard** imports its browser-safe rule layer directly; detection runs
+  in the browser and nothing is uploaded for inspection.
+- **Core DLP** uses a generated, drift-checked copy of the same rule files, so
+  every agent connector applies the same TR/EN detectors locally.
+- **CLI privacy scan** (`aidr privacy scan [file]`, `packages/cli`) applies the
+  same core detectors, plus the credential detector used for tool-output
+  quarantine, to one local file or standard input (up to 4 MiB of UTF-8 text).
+  It reports type, offsets and line numbers (never the matched value), can print
+  a `[TYPE]`-masked copy with `--mask`, and exits `3` rather than reporting an
+  incompletely inspected input as clean. It runs on the operator's machine and
+  is not an upload path.
+- The **enterprise gateway / control plane** (`/platform`), enterprise policy
+  (`/enterprise`) and the Chrome native-messaging host are optional building
+  blocks. They are not enabled by installing AIDR and need customer IdP/MDM and
+  provider brokers before they can be accepted. See the
+  [feature status](../packages/privacy/docs/PLATFORM_FEATURE_STATUS.en.md)
+  (English summary of the Turkish original).
+
+Masking is lossy (`[EMAIL]`-style labels or `[REDACTED]`); the optional token
+mode is a one-way HMAC and cannot be reversed. Learned PERSON/ADDRESS NER is
+not bundled, so contextual rules are the only name/address signal unless a
+customer supplies an approved model. Run `pnpm test:privacy` to build the
+package and execute its Node suites; tests needing an unavailable Python,
+libseccomp or OpenSSL prerequisite are reported as named skips.
 
 ## Pilot evidence still required
 

@@ -1,6 +1,14 @@
 const MCP_GATEWAY_COVERAGE_SCHEMA_VERSION = "aidr-mcp-gateway-coverage/v1";
 const MCP_GATEWAY_COVERAGE_EVENT = "aidr.mcp_gateway.coverage";
 const MCP_GATEWAY_REFUSAL_TYPE = "mcp_gateway_refusal";
+/** Fixed categories only: a server-chosen method name never reaches an event verbatim. */
+const SERVER_METHOD_CATEGORIES = new Set([
+	"sampling",
+	"elicitation",
+	"roots",
+	"notifications",
+	"other",
+]);
 
 const REFUSALS = {
 	server_initiated_method: {
@@ -23,6 +31,30 @@ const REFUSALS = {
 		surface: "tool_output",
 		outputType: "binary",
 		coverageStatus: "unsupported",
+		enforcement: "inline_refusal",
+	},
+	binary_output_oversize: {
+		surface: "tool_output",
+		outputType: "binary",
+		coverageStatus: "limited",
+		enforcement: "inline_refusal",
+	},
+	binary_inflation_limit: {
+		surface: "tool_output",
+		outputType: "binary",
+		coverageStatus: "limited",
+		enforcement: "inline_refusal",
+	},
+	invalid_binary_encoding: {
+		surface: "tool_output",
+		outputType: "binary",
+		coverageStatus: "limited",
+		enforcement: "inline_refusal",
+	},
+	binary_content_mismatch: {
+		surface: "tool_output",
+		outputType: "binary",
+		coverageStatus: "limited",
 		enforcement: "inline_refusal",
 	},
 	unsupported_tool_output: {
@@ -91,6 +123,8 @@ export class McpGatewayRefusal extends Error {
 		this.outputType = details.outputType ?? descriptor.outputType;
 		this.coverageStatus = details.coverageStatus ?? descriptor.coverageStatus;
 		this.enforcement = details.enforcement ?? descriptor.enforcement;
+		if (SERVER_METHOD_CATEGORIES.has(details.serverMethod))
+			this.serverMethod = details.serverMethod;
 	}
 }
 
@@ -110,6 +144,7 @@ export function refusalPayload(refusal) {
 		reasonCode: refusal.reasonCode ?? refusal.code,
 		surface: refusal.surface,
 		...(refusal.outputType ? { outputType: refusal.outputType } : {}),
+		...(refusal.serverMethod ? { serverMethod: refusal.serverMethod } : {}),
 		enforcement: refusal.enforcement,
 	};
 }
@@ -138,6 +173,10 @@ export function makeMcpGatewayCoverageEvent(input) {
 		...(input.clientId ? { clientId: input.clientId } : {}),
 		...(input.requestMethod ? { requestMethod: input.requestMethod } : {}),
 		...(input.outputType ? { outputType: input.outputType } : {}),
+		...(SERVER_METHOD_CATEGORIES.has(input.serverMethod)
+			? { serverMethod: input.serverMethod }
+			: {}),
+		...(Number.isSafeInteger(input.itemCount) ? { itemCount: input.itemCount } : {}),
 		...(input.refusal ? { refusal: input.refusal } : {}),
 	};
 }

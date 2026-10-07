@@ -1,0 +1,680 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Singularity AIDR — Ürün Broşürü</title>
+<meta name="description" content="Singularity AIDR: yapay zekâ ajanları ve çalışanlarınız için tespit, müdahale ve veri gizliliği.">
+<style>
+/* Shared brochure stylesheet. brochure.tr.html and brochure.en.html carry an identical copy;
+   scripts/brochure-facts.test.mjs fails if the two drift. */
+@page { size: A4; margin: 0; }
+:root {
+	--accent: #3862e8;
+	--accent-deep: #2448bb;
+	--accent-soft: #8fa9f5;
+	--ink: #0a0a0a;
+	--ink-2: #151923;
+	--text: #1c2130;
+	--muted: #586074;
+	--faint: #8a91a3;
+	--line: #e2e6ef;
+	--tint: #f3f6fe;
+	--tint-2: #e8eefd;
+	--ok: #177a4f;
+	--ok-tint: #e3f4eb;
+	--ask: #9a5b00;
+	--ask-tint: #fff1d6;
+	--deny: #b42318;
+	--deny-tint: #fde8e6;
+	--sans: "Inter", "Segoe UI", "Helvetica Neue", Helvetica, "Liberation Sans", Arial, "DejaVu Sans", sans-serif;
+	--mono: "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, "Liberation Mono", "DejaVu Sans Mono", monospace;
+}
+* { box-sizing: border-box; }
+html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+body {
+	margin: 0;
+	background: #d9dee8;
+	color: var(--text);
+	font-family: var(--sans);
+	font-size: 8.6pt;
+	line-height: 1.45;
+	-webkit-font-smoothing: antialiased;
+	text-rendering: optimizeLegibility;
+	font-kerning: normal;
+}
+.doc { display: flex; flex-direction: column; align-items: center; gap: 10mm; padding: 10mm 0; }
+.page {
+	position: relative;
+	width: 210mm;
+	height: 297mm;
+	overflow: hidden;
+	background: #fff;
+	padding: 15mm 16mm 21mm;
+	display: flex;
+	flex-direction: column;
+	box-shadow: 0 8px 32px rgba(10, 10, 10, 0.18);
+	break-after: page;
+	page-break-after: always;
+}
+.page:last-child { break-after: auto; page-break-after: auto; }
+.page > * { flex-shrink: 0; }
+@media print {
+	body { background: #fff; }
+	.doc { display: block; padding: 0; }
+	.page { box-shadow: none; margin: 0; }
+}
+@media screen {
+	.page { zoom: var(--fit, 1); }
+}
+h1, h2, h3, h4, p, ul { margin: 0; }
+ul { padding: 0; list-style: none; }
+code, .mono { font-family: var(--mono); font-size: 0.92em; }
+svg.i { width: 1em; height: 1em; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+/* Company logo: images/singularity-logo.png (white mark and wordmark on pure black), embedded
+   unchanged. It is only placed on pure black so its own background blends in. */
+.sg-logo { display: block; flex: none; background: #000 url("data:image/png;base64,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") center / contain no-repeat; }
+
+/* ---------- running header / footer on inner pages ---------- */
+.kicker { display: flex; align-items: center; justify-content: space-between; margin-bottom: 5mm; }
+.kicker .sec { display: flex; align-items: center; gap: 2.5mm; font-size: 7.4pt; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent-deep); }
+.kicker .num { display: inline-grid; place-items: center; width: 7mm; height: 7mm; border-radius: 2mm; background: var(--accent); color: #fff; letter-spacing: 0; font-size: 8pt; }
+.kicker .brand { display: flex; align-items: center; gap: 2mm; font-size: 7.6pt; font-weight: 700; color: var(--ink); letter-spacing: 0.01em; }
+.kicker .brand .sg-logo { width: 7mm; height: 7mm; border-radius: 1.8mm; }
+.foot {
+	position: absolute; left: 16mm; right: 16mm; bottom: 9mm;
+	display: flex; justify-content: space-between; align-items: center;
+	padding-top: 3mm; border-top: 0.3mm solid var(--line);
+	font-size: 6.8pt; color: var(--faint);
+}
+.foot b { color: var(--muted); font-weight: 600; }
+h2.title { font-size: 20pt; line-height: 1.14; letter-spacing: -0.02em; font-weight: 800; color: var(--ink); max-width: 165mm; }
+h2.title em { font-style: normal; color: var(--accent); }
+.lead { text-wrap: pretty; margin-top: 3mm; font-size: 9.6pt; line-height: 1.5; color: var(--muted); max-width: 166mm; }
+h3.sub { display: flex; align-items: center; gap: 2mm; font-size: 10.5pt; font-weight: 800; letter-spacing: -0.005em; color: var(--ink); margin: 6mm 0 3mm; }
+.page.compact h3.sub { margin: 4.6mm 0 2.6mm; }
+h3.sub::after { content: ""; flex: 1; height: 0.3mm; background: var(--line); margin-left: 2mm; }
+
+/* ---------- cover ---------- */
+.cover {
+	background: #000;
+	color: #fff;
+	padding: 14mm 16mm 13mm;
+}
+.cover > * { position: relative; }
+.cover-top { display: flex; justify-content: space-between; align-items: center; font-size: 7.6pt; letter-spacing: 0.16em; text-transform: uppercase; color: rgba(255, 255, 255, 0.62); }
+.cover-top .co { display: flex; align-items: center; gap: 2.4mm; color: #fff; font-weight: 700; letter-spacing: 0.12em; }
+.cover-hero { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding-top: 4mm; }
+.cover-mark { position: relative; width: 62mm; height: 62mm; }
+.cover-mark .orbit { position: absolute; left: 50%; top: 50%; width: 170mm; height: 170mm; transform: translate(-50%, -50%); overflow: visible; }
+.cover-logo { position: relative; width: 100%; height: 100%; }
+.cover .eyebrow { margin-top: 16mm; font-size: 8.4pt; font-weight: 700; letter-spacing: 0.3em; text-transform: uppercase; color: var(--accent-soft); }
+.cover h1 { margin-top: 3mm; font-size: 42pt; line-height: 1.02; font-weight: 800; letter-spacing: -0.035em; }
+.cover h1 span { color: var(--accent-soft); }
+.cover .tagline { text-wrap: balance; margin-top: 5mm; max-width: 150mm; font-size: 14.5pt; line-height: 1.35; font-weight: 400; color: rgba(255, 255, 255, 0.86); letter-spacing: -0.005em; }
+.cover .rule { width: 18mm; height: 0.8mm; border-radius: 1mm; background: var(--accent); margin: 7mm auto 0; }
+.reach { display: grid; grid-template-columns: auto auto; justify-content: center; gap: 1.6mm 3mm; margin: 7mm 0 0; font-size: 7.8pt; text-align: left; }
+.reach dt { font-size: 6.8pt; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent-soft); padding-top: 0.3mm; text-align: right; }
+.reach dd { margin: 0; color: rgba(255, 255, 255, 0.78); }
+.pillars { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4mm; margin-top: 8mm; }
+.pillar { padding: 5mm 4.6mm 5mm; border-radius: 3mm; background: rgba(255, 255, 255, 0.045); border: 0.3mm solid rgba(255, 255, 255, 0.12); }
+.pillar .ic { display: inline-grid; place-items: center; width: 9mm; height: 9mm; border-radius: 2.4mm; background: rgba(56, 98, 232, 0.2); border: 0.3mm solid rgba(143, 169, 245, 0.35); color: #b9c9fa; font-size: 12pt; }
+.pillar h4 { text-wrap: balance; margin-top: 3.5mm; font-size: 10pt; line-height: 1.25; font-weight: 700; color: #fff; }
+.pillar p { margin-top: 1.8mm; font-size: 7.9pt; line-height: 1.5; color: rgba(255, 255, 255, 0.7); }
+.cover-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 7mm; padding-top: 4mm; border-top: 0.3mm solid rgba(255, 255, 255, 0.14); font-size: 7.6pt; color: rgba(255, 255, 255, 0.6); }
+.cover-foot b { color: #fff; font-weight: 600; }
+
+/* ---------- page 2: problem & solution ---------- */
+.problems { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; margin-top: 5mm; }
+.problem { display: flex; gap: 3.2mm; padding: 3.6mm 4mm; border-radius: 3mm; background: var(--tint); border: 0.3mm solid var(--tint-2); }
+.problem .ic { flex: none; display: grid; place-items: center; width: 9mm; height: 9mm; border-radius: 2.4mm; background: #fff; color: var(--accent-deep); font-size: 12pt; border: 0.3mm solid var(--tint-2); }
+.problem h4 { font-size: 9.6pt; line-height: 1.25; color: var(--ink); }
+.problem p { margin-top: 1.2mm; font-size: 7.8pt; line-height: 1.42; color: var(--muted); }
+.lines { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; flex: 1; grid-auto-rows: 1fr; }
+.line-card { position: relative; display: flex; flex-direction: column; padding: 4mm 4.4mm 3.6mm; border-radius: 3mm; border: 0.3mm solid var(--line); background: #fff; }
+.line-card::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 1.1mm; border-radius: 3mm 3mm 0 0; background: linear-gradient(90deg, var(--accent), var(--accent-deep)); }
+.line-head { display: flex; align-items: center; gap: 3mm; }
+.line-head .ic { display: grid; place-items: center; width: 9.4mm; height: 9.4mm; border-radius: 2.4mm; background: var(--accent); color: #fff; font-size: 12pt; flex: none; }
+.line-head .n { font-size: 6.8pt; font-weight: 700; letter-spacing: 0.14em; color: var(--accent); text-transform: uppercase; }
+.line-head h4 { font-size: 10.6pt; line-height: 1.2; color: var(--ink); letter-spacing: -0.01em; }
+.line-card .what { margin-top: 2.2mm; font-size: 7.9pt; line-height: 1.42; color: var(--text); }
+.bul { margin-top: 2mm; display: grid; gap: 1.1mm; }
+.bul li { position: relative; padding-left: 3.6mm; font-size: 7.5pt; line-height: 1.4; color: var(--muted); }
+.bul li::before { content: ""; position: absolute; left: 0.3mm; top: 1.2mm; width: 1.5mm; height: 1.5mm; border-radius: 0.4mm; background: var(--accent); transform: rotate(45deg); }
+.bul li b { color: var(--text); font-weight: 600; }
+.chips { display: flex; flex-wrap: wrap; gap: 1mm; margin-top: auto; padding-top: 2.4mm; }
+.chip { display: inline-block; padding: 0.5mm 1.7mm; border-radius: 10mm; background: var(--tint); border: 0.25mm solid var(--tint-2); color: var(--accent-deep); font-size: 6.5pt; font-weight: 600; white-space: nowrap; }
+.chip.dark { background: var(--ink); border-color: var(--ink); color: #fff; }
+.v-allow, .v-ask, .v-deny { display: inline-block; padding: 0 1.4mm; border-radius: 1mm; font-family: var(--mono); font-size: 7.2pt; font-weight: 700; }
+.v-allow { background: var(--ok-tint); color: var(--ok); }
+.v-ask { background: var(--ask-tint); color: var(--ask); }
+.v-deny { background: var(--deny-tint); color: var(--deny); }
+
+/* ---------- page 3: how it works ---------- */
+.diagram { margin-top: 4.5mm; border-radius: 3mm; background: var(--tint); border: 0.3mm solid var(--tint-2); padding: 3.5mm 4mm 3mm; }
+.diagram > svg { display: block; width: 100%; height: auto; font-family: var(--sans); fill: var(--text); }
+.diagram text { font-family: var(--sans); }
+.diagram .dg-b { font-weight: 700; }
+.diagram .dg-s { font-size: 9.3px; fill: var(--muted); }
+.diagram .dg-w { fill: #fff; }
+.diagram .dg-blue { fill: var(--accent-deep); }
+.diagram .dg-m { font-family: var(--mono); font-weight: 700; }
+.diagram .dg-ico { fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.features { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2.6mm; }
+.feat { padding: 3mm 3.2mm 3.2mm; border-radius: 2.6mm; border: 0.3mm solid var(--line); background: #fff; }
+.feat .t { display: flex; align-items: center; gap: 1.8mm; font-size: 8.2pt; font-weight: 700; color: var(--ink); line-height: 1.2; }
+.feat .t .ic { display: grid; place-items: center; width: 6mm; height: 6mm; border-radius: 1.6mm; background: var(--tint-2); color: var(--accent-deep); font-size: 8.6pt; flex: none; }
+.feat p { margin-top: 1.5mm; font-size: 7.2pt; line-height: 1.42; color: var(--muted); }
+.demo { display: grid; grid-template-columns: 1fr 7mm 1fr 7mm 1fr; align-items: stretch; }
+.demo .arrow { display: grid; place-items: center; color: var(--accent); font-size: 12pt; }
+.win { display: flex; flex-direction: column; border-radius: 2.8mm; overflow: hidden; border: 0.3mm solid var(--line); background: #fff; }
+.win .bar { display: flex; align-items: center; gap: 1.2mm; padding: 1.8mm 2.6mm; background: var(--ink-2); color: rgba(255, 255, 255, 0.8); font-size: 6.8pt; font-weight: 600; letter-spacing: 0.02em; }
+.win .bar i { width: 1.6mm; height: 1.6mm; border-radius: 50%; background: rgba(255, 255, 255, 0.28); }
+.win .bar span { margin-left: 1.2mm; }
+.win.provider .bar { background: #3a3f4c; }
+.win.local .bar { background: var(--accent-deep); }
+.win .body { flex: 1; padding: 3mm 3mm 2.6mm; font-size: 7.9pt; line-height: 1.55; color: var(--text); }
+.win .cap { padding: 1.8mm 3mm; border-top: 0.3mm solid var(--line); background: var(--tint); font-size: 6.8pt; color: var(--muted); display: flex; gap: 1.4mm; align-items: center; }
+.win .cap svg { color: var(--accent); font-size: 8pt; }
+.hl { padding: 0.2mm 0.8mm; border-radius: 0.8mm; background: var(--deny-tint); color: var(--deny); font-weight: 600; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+.ph { padding: 0.2mm 0.8mm; border-radius: 0.8mm; background: var(--tint-2); color: var(--accent-deep); font-family: var(--mono); font-size: 7.3pt; font-weight: 700; }
+.rs { padding: 0.2mm 0.8mm; border-radius: 0.8mm; background: var(--ok-tint); color: var(--ok); font-weight: 600; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+
+/* ---------- page 4: deploy, security, editions ---------- */
+.deploy { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2.8mm; }
+.dep { display: flex; flex-direction: column; padding: 3.4mm 3.4mm 3.2mm; border-radius: 2.8mm; border: 0.3mm solid var(--line); background: #fff; }
+.dep .ic { display: grid; place-items: center; width: 8mm; height: 8mm; border-radius: 2.2mm; background: var(--tint-2); color: var(--accent-deep); font-size: 11pt; }
+.dep h4 { margin-top: 2.4mm; font-size: 9pt; line-height: 1.2; color: var(--ink); }
+.dep .tag { margin-top: 0.8mm; font-size: 6.8pt; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+.dep p { margin-top: 1.6mm; font-size: 7.3pt; line-height: 1.45; color: var(--muted); }
+.dep.free { background: var(--ink); border-color: var(--ink); }
+.dep.free h4 { color: #fff; }
+.dep.free p { color: rgba(255, 255, 255, 0.7); }
+.dep.free .ic { background: rgba(56, 98, 232, 0.3); color: #c9d6fb; }
+.dep.free .tag { color: var(--accent-soft); }
+.sec-grid { display: grid; grid-template-columns: 1fr 1fr 58mm; gap: 1.8mm 5mm; }
+.sec-item { display: flex; gap: 2.4mm; }
+.sec-item .ic { flex: none; display: grid; place-items: center; width: 6.4mm; height: 6.4mm; border-radius: 1.8mm; background: var(--tint-2); color: var(--accent-deep); font-size: 9pt; }
+.sec-item h5 { margin: 0; font-size: 8.1pt; color: var(--ink); line-height: 1.25; }
+.sec-item p { margin-top: 0.6mm; font-size: 7.2pt; line-height: 1.42; color: var(--muted); }
+.kvkk { grid-column: 3; grid-row: 1 / span 3; padding: 4mm; border-radius: 3mm; background: linear-gradient(160deg, var(--accent) 0%, var(--accent-deep) 100%); color: #fff; }
+.kvkk .badge { display: inline-block; padding: 0.6mm 2mm; border-radius: 10mm; background: rgba(255, 255, 255, 0.16); font-size: 6.8pt; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
+.kvkk h5 { margin: 2.4mm 0 0; font-size: 10pt; line-height: 1.25; }
+.kvkk p { margin-top: 1.6mm; font-size: 7.2pt; line-height: 1.45; color: rgba(255, 255, 255, 0.86); }
+.editions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2.8mm; }
+.ed { position: relative; display: flex; flex-direction: column; padding: 4mm 3.4mm 3.2mm; border-radius: 2.8mm; border: 0.3mm solid var(--line); background: #fff; }
+.ed::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 1mm; border-radius: 2.8mm 2.8mm 0 0; background: linear-gradient(90deg, var(--accent), var(--accent-deep)); }
+.ed h4 { font-size: 11pt; line-height: 1.15; letter-spacing: -0.01em; color: var(--ink); }
+.ed .who { margin-top: 0.8mm; font-size: 7.2pt; line-height: 1.35; font-weight: 600; color: var(--accent-deep); }
+.ed .bul { margin-top: 2.2mm; }
+.ed .bul li { font-size: 7.2pt; }
+.ed dl { margin: auto 0 0; padding-top: 2.2mm; display: grid; grid-template-columns: 3fr 2fr; gap: 0 3mm; font-size: 7pt; line-height: 1.35; }
+.ed dl::before { content: ""; grid-column: 1 / -1; height: 0.3mm; background: var(--line); margin-bottom: 1.2mm; }
+.ed dt { font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; font-size: 6pt; color: var(--faint); }
+.ed dd { margin: 0.3mm 0 0; color: var(--text); font-weight: 600; }
+.nw { white-space: nowrap; }
+.ed.top { background: var(--ink); border-color: var(--ink); }
+.ed.top h4, .ed.top dd, .ed.top .bul li b { color: #fff; }
+.ed.top .who { color: var(--accent-soft); }
+.ed.top .bul li { color: rgba(255, 255, 255, 0.72); }
+.ed.top .bul li::before { background: var(--accent-soft); }
+.ed.top dl::before { background: rgba(255, 255, 255, 0.16); }
+.ed.top dt { color: rgba(255, 255, 255, 0.5); }
+.quote { display: flex; justify-content: space-between; align-items: center; gap: 4mm; margin: 2.8mm 0 4mm; padding: 2.4mm 4mm; border-radius: 2.6mm; background: var(--tint); border: 0.3mm solid var(--tint-2); }
+.quote .ask { font-size: 9pt; font-weight: 700; color: var(--ink); }
+.quote .ask b { color: var(--accent-deep); }
+.quote .scope { font-size: 6.9pt; color: var(--muted); text-align: right; }
+.cta {
+	margin-top: auto;
+	display: grid; grid-template-columns: 1fr auto; gap: 6mm; align-items: center;
+	padding: 4.2mm 6mm; border-radius: 3.4mm; color: #fff;
+	background: radial-gradient(90mm 60mm at 100% 0%, rgba(56, 98, 232, 0.55), rgba(56, 98, 232, 0) 70%), var(--ink);
+}
+.cta h3 { font-size: 14pt; line-height: 1.15; letter-spacing: -0.015em; }
+.cta p { margin-top: 1.4mm; font-size: 7.6pt; color: rgba(255, 255, 255, 0.72); max-width: 104mm; }
+.cta .opts { display: flex; flex-wrap: wrap; gap: 1.6mm; margin-top: 3mm; }
+.cta .opts > span { display: inline-flex; align-items: center; gap: 1.2mm; padding: 1mm 2.6mm; border-radius: 10mm; background: rgba(255, 255, 255, 0.1); border: 0.3mm solid rgba(255, 255, 255, 0.2); font-size: 7.4pt; font-weight: 600; }
+.cta .opts svg { color: var(--accent-soft); }
+.cta .contact { text-align: right; }
+.cta .contact .mail { display: inline-block; padding: 2.2mm 4mm; border-radius: 2mm; background: var(--accent); font-size: 9.2pt; font-weight: 700; color: #fff; }
+.cta .contact .web { margin-top: 2mm; font-size: 8pt; color: rgba(255, 255, 255, 0.75); }
+</style>
+</head>
+<body>
+<svg class="sprite" aria-hidden="true" focusable="false">
+	<symbol id="i-terminal" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M7 9.5l3 2.5-3 2.5M12.5 15h4.5"/></symbol>
+	<symbol id="i-browser" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M3 9h18M6.5 6.6h.01M9 6.6h.01"/></symbol>
+	<symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7.5 3v5.5c0 4.7-3.3 8.1-7.5 9.5-4.2-1.4-7.5-4.8-7.5-9.5V6z"/><path d="M8.8 12.2l2.2 2.2 4.2-4.4"/></symbol>
+	<symbol id="i-mask" viewBox="0 0 24 24"><rect x="2.5" y="7" width="19" height="10" rx="2.5"/><path d="M7 10.5v3M5.7 11.2l2.6 1.6M5.7 12.8l2.6-1.6M12 10.5v3M10.7 11.2l2.6 1.6M10.7 12.8l2.6-1.6M17 10.5v3M15.7 11.2l2.6 1.6M15.7 12.8l2.6-1.6"/></symbol>
+	<symbol id="i-cpu" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/><path d="M9 3v3M15 3v3M9 18v3M15 18v3M3 9h3M3 15h3M18 9h3M18 15h3"/></symbol>
+	<symbol id="i-plug" viewBox="0 0 24 24"><path d="M9 3v5M15 3v5M7 8h10v3.5a5 5 0 0 1-10 0zM12 16.5V21"/></symbol>
+	<symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4.2"/><path d="M11 12l9-9M16.5 6.5l2.8 2.8M14.2 8.8l2 2"/></symbol>
+	<symbol id="i-finger" viewBox="0 0 24 24"><path d="M6.5 8.5A7 7 0 0 1 19 12.5M5 12.5a7 7 0 0 1 .4-2.3M8.5 20c.9-1.6 1.4-3.5 1.4-5.5a2.1 2.1 0 0 1 4.2 0M12 14.5c0 2.5-.6 4.8-1.8 6.7M16.9 18.5c.3-1.3.4-2.6.4-4a5.3 5.3 0 0 0-9.3-3.5M5.2 16.8c.3-.8.5-1.6.5-2.4"/></symbol>
+	<symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></symbol>
+	<symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 17h3M11 17h9M4 12h5M13 12h7"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/><circle cx="11" cy="12" r="2"/></symbol>
+	<symbol id="i-audit" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M8.5 10h7M8.5 13.5h7M8.5 17h4"/></symbol>
+	<symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 18.5h10.2a4.3 4.3 0 0 0 .6-8.55A6.2 6.2 0 0 0 6 9.3a4.6 4.6 0 0 0 1 9.2z"/></symbol>
+	<symbol id="i-server" viewBox="0 0 24 24"><rect x="3.5" y="4" width="17" height="7" rx="1.8"/><rect x="3.5" y="13" width="17" height="7" rx="1.8"/><path d="M7 7.5h.01M7 16.5h.01M11 7.5h6M11 16.5h6"/></symbol>
+	<symbol id="i-airgap" viewBox="0 0 24 24"><rect x="2.5" y="7" width="7" height="10" rx="1.6"/><rect x="14.5" y="7" width="7" height="10" rx="1.6"/><path d="M10.5 12h.8M12.6 12h.8"/><path d="M5 10.5h2M17 10.5h2"/></symbol>
+	<symbol id="i-laptop" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="10" rx="1.5"/><path d="M3 19h18"/></symbol>
+	<symbol id="i-usercheck" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.8"/><path d="M2.5 20.5a6.5 6.5 0 0 1 13 0M16 11l2 2 4-4.2"/></symbol>
+	<symbol id="i-box" viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/></symbol>
+	<symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 3.5l9 4.8-9 4.8-9-4.8z"/><path d="M3 12.5l9 4.8 9-4.8M3 16.5l9 4.8 9-4.8"/></symbol>
+	<symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8.5 10.5V7.5a3.5 3.5 0 0 1 7 0v3M12 14.5v2.5"/></symbol>
+	<symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4.2 4.2 0 0 0 6 0l3-3a4.2 4.2 0 0 0-6-6l-1 1"/><path d="M14 10a4.2 4.2 0 0 0-6 0l-3 3a4.2 4.2 0 0 0 6 6l1-1"/></symbol>
+	<symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.6"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.6a3.6 3.6 0 0 1 0 6.8M18 14.2a6.5 6.5 0 0 1 3.5 5.8"/></symbol>
+	<symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4 12h15M13 6l6 6-6 6"/></symbol>
+	<symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+	<symbol id="i-chat" viewBox="0 0 24 24"><path d="M4 5h16v11H10l-6 4.5z"/><path d="M8 9.5h8M8 12.5h5"/></symbol>
+	<symbol id="i-radar" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M16 16l5 5M8 11h6M11 8v6"/></symbol>
+	<symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></symbol>
+	<symbol id="i-play" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M10 8.5l5.5 3.5-5.5 3.5z"/></symbol>
+</svg>
+
+<main class="doc">
+
+<!-- ============================== PAGE 1 — COVER ============================== -->
+<section class="page cover" aria-label="Kapak">
+	<div class="cover-top">
+		<span class="co" lang="en">SingularityRD</span>
+		<span>Ürün broşürü · 2026</span>
+	</div>
+	<div class="cover-hero">
+		<div class="cover-mark">
+			<svg class="grid-bg orbit" viewBox="0 0 170 170" aria-hidden="true">
+				<g fill="none" stroke="#8fa9f5" stroke-width="0.25">
+					<circle cx="85" cy="85" r="46" stroke-opacity="0.22"/>
+					<circle cx="85" cy="85" r="62" stroke-opacity="0.14" stroke-dasharray="1 2"/>
+					<circle cx="85" cy="85" r="80" stroke-opacity="0.08"/>
+				</g>
+			</svg>
+			<span class="sg-logo cover-logo" role="img" aria-label="Singularity logosu"></span>
+		</div>
+		<div class="eyebrow" lang="en">AI Agent Detection &amp; Response</div>
+		<h1>Singularity <span>AIDR</span></h1>
+		<p class="tagline">Yapay zekâ ajanları ve çalışanlarınız için tespit, müdahale ve veri gizliliği</p>
+		<div class="rule"></div>
+		<dl class="reach">
+			<dt>Ajan bağlayıcıları</dt><dd>Claude Code · Cursor · VS Code · OpenClaw · OpenCode · Codex CLI</dd>
+			<dt>Browser Guard siteleri</dt><dd>ChatGPT · Gemini · Claude · Copilot · Perplexity · DeepSeek · Mistral · Grok</dd>
+			<dt>Yaşam döngüsü</dt><dd>Keşfet · Değerlendir · Koru · Denetle · İncele · Onayla · Kanıtla; uçtan uca yönetişimle</dd>
+		</dl>
+	</div>
+	<div class="pillars">
+		<div class="pillar">
+			<span class="ic"><svg class="i"><use href="#i-terminal"/></svg></span>
+			<h4>Ajan eylemleri, gerçekleşmeden önce denetlenir</h4>
+			<p>Kodlama ajanlarının kabuk, dosya, web ve MCP çağrıları cihazdaki motorda değerlendirilir: izin ver, onaya gönder ya da engelle.</p>
+		</div>
+		<div class="pillar">
+			<span class="ic"><svg class="i"><use href="#i-mask"/></svg></span>
+			<h4>Hassas veri sohbet kutusundan çıkmadan maskelenir</h4>
+			<p>T.C. kimlik, IBAN, e-posta ve API anahtarları ChatGPT, Gemini ya da Copilot'a gitmeden yer tutucuya dönüşür; yanıtta yalnızca sizin ekranınızda geri gelir.</p>
+		</div>
+		<div class="pillar">
+			<span class="ic"><svg class="i"><use href="#i-shield"/></svg></span>
+			<h4>Önce yerel, ihtiyaç kadar merkezî</h4>
+			<p>Tespit hesap gerektirmeden cihazda çalışır. Merkezî politika ve denetim için bulut, kurum içi ya da hava boşluklu kurulum seçin.</p>
+		</div>
+	</div>
+	<div class="cover-foot">
+		<span><b>singularityrd.com</b></span>
+		<span>anil@singularityrd.com</span>
+	</div>
+</section>
+
+<!-- ============================== PAGE 2 — PROBLEM & SOLUTION ============================== -->
+<section class="page" aria-label="Sorun ve çözüm">
+	<div class="kicker">
+		<span class="sec"><span class="num">01</span>Sorun ve çözüm</span>
+		<span class="brand"><span class="sg-logo" aria-hidden="true"></span>Singularity AIDR</span>
+	</div>
+	<h2 class="title">Yapay zekâ artık yalnızca metin üretmiyor. <em>Komut çalıştırıyor, dosya değiştiriyor, veri gönderiyor.</em></h2>
+	<p class="lead">Kodlama ajanları geliştiricinin yetkileriyle çalışır, çalışanlar yapay zekâ sohbetlerine her gün veri taşır. Singularity AIDR ikisinin arasında durur: eylem gerçekleşmeden ve veri sayfadan çıkmadan önce.</p>
+
+	<div class="problems">
+		<div class="problem">
+			<span class="ic"><svg class="i"><use href="#i-terminal"/></svg></span>
+			<div>
+				<h4>Ajan ele geçirilmedi; sadece talimata uyuyor</h4>
+				<p>Ajanlar komut çalıştırır, dosya yazar, URL çeker, MCP araçlarını çağırır. Okudukları bir README, web sayfası ya da araç çıktısı onları zararlı bir eyleme yönlendirebilir.</p>
+			</div>
+		</div>
+		<div class="problem">
+			<span class="ic"><svg class="i"><use href="#i-chat"/></svg></span>
+			<div>
+				<h4>Müşteri verisi bir yapıştırma uzaklıkta</h4>
+				<p>Müşteri kayıtları, IBAN'lar, T.C. kimlik numaraları ve API anahtarları çoğu zaman fark edilmeden ChatGPT ve Gemini gibi sohbet ürünlerine yapıştırılır.</p>
+			</div>
+		</div>
+	</div>
+
+	<h3 class="sub">Tek tespit çekirdeği, dört ürün hattı</h3>
+	<div class="lines">
+		<article class="line-card">
+			<div class="line-head">
+				<span class="ic"><svg class="i"><use href="#i-terminal"/></svg></span>
+				<div><div class="n">Ürün hattı 1</div><h4>Kodlama ajanları için AIDR</h4></div>
+			</div>
+			<p class="what">Her araç çağrısı, ajan uygulamadan önce yerel karar motoruna gelir ve <span class="v-allow">allow</span> <span class="v-ask">ask</span> <span class="v-deny">deny</span> kararıyla döner.</p>
+			<ul class="bul">
+				<li><b><span data-fact="threat-rules">494</span> YAML tespit kuralı</b> (<span data-fact="threat-files">29</span> dosya): tehlikeli komut, kimlik bilgisi erişimi, kalıcılık, gizleme, tedarik zinciri; Linux, macOS, Windows.</li>
+				<li><b>Hata durumunda kapalı:</b> bağlayıcı giriş noktaları iç hatada çağrıyı reddeder.</li>
+				<li><b>MCP Gateway</b> araç sonuçlarını modele ulaşmadan tarar; <b>SDK</b> ve <b>CLI</b> aynı motoru kullanır.</li>
+				<li><b>Zehirli akış ve ajan güvenliği:</b> saldırı zinciri, kaçak döngü, test sabotajı ve geri alınamaz eylem onaya kalır.</li>
+			</ul>
+			<div class="chips"><span class="chip">Claude Code</span><span class="chip">Cursor</span><span class="chip">VS Code</span><span class="chip">OpenClaw</span><span class="chip">OpenCode</span><span class="chip">Codex CLI</span></div>
+		</article>
+		<article class="line-card">
+			<div class="line-head">
+				<span class="ic"><svg class="i"><use href="#i-browser"/></svg></span>
+				<div><div class="n">Ürün hattı 2</div><h4>AIDR Browser Guard</h4></div>
+			</div>
+			<p class="what">Chrome, Edge ve Firefox eklentisi: istem, yapıştırma ve dosyalardaki hassas değerleri site görmeden maskeler.</p>
+			<ul class="bul">
+				<li><b>TR + EN kişisel veri:</b> T.C. kimlik (sağlama), IBAN (mod-97), telefon, e-posta, ödeme kartı; gizli ve API anahtarları.</li>
+				<li><b>Kuruma özel:</b> şirket kod adları, kayıtlarınızın exact-data-match parmak izleri.</li>
+				<li><b>Geri alınabilir yer tutucu</b> (<code>[EMAIL_1]</code>): özgün değer yanıtta yalnızca yerelde geri gelir.</li>
+				<li><b>Kurumsal yönetim:</b> GPO, Intune, Jamf ile politika; yalnızca sayım telemetrisi.</li>
+			</ul>
+			<div class="chips"><span class="chip">ChatGPT</span><span class="chip">Gemini</span><span class="chip">Claude</span><span class="chip">Copilot</span><span class="chip">Perplexity</span><span class="chip">DeepSeek</span><span class="chip">Mistral</span><span class="chip">Grok</span></div>
+		</article>
+		<article class="line-card">
+			<div class="line-head">
+				<span class="ic"><svg class="i"><use href="#i-finger"/></svg></span>
+				<div><div class="n">Ürün hattı 3</div><h4>AIDR Privacy motoru</h4></div>
+			</div>
+			<p class="what">Türkçe ve İngilizce tespit ve maskeleme motoru. Aynı kural katmanı tarayıcıda, ajan motorunun DLP dedektörlerinde ve kurumsal ağ geçidinde çalışır.</p>
+			<ul class="bul">
+				<li><b>Doğrulanmış tespit:</b> T.C. kimlik ve IBAN sağlaması, kartlarda Luhn; Türkçe telefon ve adres kalıpları.</li>
+				<li><b>Ağ erişimi gerektirmez:</b> kural katmanı sayfanın içinde, cihazda çalışır.</li>
+				<li><b>İsteğe bağlı native host:</b> uç noktada ad ve adres için NER, ekran görüntüsü için OCR.</li>
+				<li><b>İsteğe bağlı kurumsal ağ geçidi:</b> imzalı politika ve araç denetimleriyle sunucu tarafı entegrasyon.</li>
+			</ul>
+			<div class="chips"><span class="chip">Türkçe</span><span class="chip">English</span><span class="chip">NER / OCR (isteğe bağlı)</span></div>
+		</article>
+		<article class="line-card">
+			<div class="line-head">
+				<span class="ic"><svg class="i"><use href="#i-radar"/></svg></span>
+				<div><div class="n">Ürün hattı 4</div><h4>Yapay Zekâ Güvenlik Duruşu</h4></div>
+			</div>
+			<p class="what">Yapay zekâ altyapınızın, MCP sunucularınızın ve ajan eklentilerinizin açıklarını tek bir duruş görünümünde gösterir.</p>
+			<ul class="bul">
+				<li><b>Altyapı taraması:</b> <span data-fact="posture-components">146</span> yapay zekâ bileşeni parmak izi, <span data-fact="posture-cve-floor">2.000+</span> CVE kuralı; bulgular önem derecesi ve CVSS ile.</li>
+				<li><b>MCP risk analizi:</b> aktarım, manifest doğrulaması ve <span data-fact="mcp-risk-categories">14</span> risk kategorisiyle MCP sunucu envanteri.</li>
+				<li><b>Skill ve eklenti taraması:</b> <span data-fact="skill-scan-codes">T01–T09</span> kategorileri; kurulu eklentiler oturum başında taranır.</li>
+				<li><b>Duruş paneli:</b> önem derecesi ve CVSS'e göre bulgular, 30 günlük eğilim; boş görünüm temiz diye sunulmaz.</li>
+				<li><b>AI-BOM:</b> ajan, MCP sunucusu, model, eklenti ve bilinen açıklar CycloneDX 1.6 olarak dışa aktarılır.</li>
+			</ul>
+			<div class="chips"><span class="chip">aidr scan</span><span class="chip">aidr discover</span><span class="chip">MCP</span><span class="chip">Skill · Plugin</span></div>
+		</article>
+	</div>
+
+	<div class="foot"><span><b>Singularity AIDR</b> · Ürün broşürü</span><span>singularityrd.com</span><span>2 / 4</span></div>
+</section>
+
+<!-- ============================== PAGE 3 — HOW IT WORKS ============================== -->
+<section class="page" aria-label="Nasıl çalışır">
+	<div class="kicker">
+		<span class="sec"><span class="num">02</span>Nasıl çalışır</span>
+		<span class="brand"><span class="sg-logo" aria-hidden="true"></span>Singularity AIDR</span>
+	</div>
+	<h2 class="title">Karar cihazda verilir. <em>Merkeze yalnızca ihtiyaç duyduğunuz gider.</em></h2>
+	<p class="lead">Ajan araç çağrıları ve tarayıcıdaki istemler aynı yerel motordan geçer. Kontrol düzlemi isteğe bağlıdır: politika dağıtır, denetim kaydı toplar; uygulama her zaman uç noktada kalır.</p>
+
+	<div class="diagram">
+		<svg viewBox="0 0 720 262" role="img" aria-label="Akış şeması: kodlama ajanı ve tarayıcı cihazdaki yerel motordan geçer; motor karar verir veya maskeler; isteğe bağlı kontrol düzlemine yalnızca sayımlar gider, imzalı politika geri gelir">
+			<defs>
+				<marker id="ah" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#3862e8"/></marker>
+				<marker id="ahg" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#8a91a3"/></marker>
+				<linearGradient id="eng" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3862e8"/><stop offset="1" stop-color="#2448bb"/></linearGradient>
+			</defs>
+			<rect x="3" y="12" width="523" height="247" rx="14" fill="#fff" stroke="#3862e8" stroke-width="1.3" stroke-dasharray="5 4"/>
+			<rect x="18" y="2" width="176" height="20" rx="10" fill="#3862e8"/>
+			<text x="106" y="16" text-anchor="middle" class="dg-b dg-w" font-size="10" letter-spacing="1.1">CİHAZINIZDA · YEREL MOD</text>
+			<g>
+				<rect x="16" y="34" width="150" height="104" rx="10" fill="#f3f6fe" stroke="#dfe6fb"/>
+				<svg x="28" y="46" width="20" height="20" viewBox="0 0 24 24" class="dg-ico" stroke="#2448bb"><use href="#i-terminal"/></svg>
+				<text x="54" y="56" class="dg-b" font-size="11.5">Kodlama ajanı</text>
+				<text x="54" y="69" class="dg-s">araç çağrısı</text>
+				<text x="28" y="90" class="dg-s">Claude Code · Cursor</text>
+				<text x="28" y="103" class="dg-s">VS Code · OpenClaw</text>
+				<text x="28" y="116" class="dg-s">OpenCode · Codex CLI</text>
+				<text x="28" y="129" class="dg-b dg-blue" font-size="9.3">kabuk · dosya · web · MCP</text>
+			</g>
+			<g>
+				<rect x="16" y="148" width="150" height="104" rx="10" fill="#f3f6fe" stroke="#dfe6fb"/>
+				<svg x="28" y="160" width="20" height="20" viewBox="0 0 24 24" class="dg-ico" stroke="#2448bb"><use href="#i-browser"/></svg>
+				<text x="54" y="170" class="dg-b" font-size="11.5">Tarayıcı</text>
+				<text x="54" y="183" class="dg-s">Browser Guard</text>
+				<text x="28" y="204" class="dg-s">ChatGPT · Gemini · Claude</text>
+				<text x="28" y="217" class="dg-s">Copilot · Perplexity · Grok</text>
+				<text x="28" y="230" class="dg-s">DeepSeek · Mistral</text>
+				<text x="28" y="243" class="dg-b dg-blue" font-size="9.3">istem · yapıştırma · dosya</text>
+			</g>
+			<g>
+				<rect x="190" y="34" width="170" height="218" rx="12" fill="url(#eng)"/>
+				<svg x="202" y="46" width="20" height="20" viewBox="0 0 24 24" class="dg-ico" stroke="#fff"><use href="#i-cpu"/></svg>
+				<text x="228" y="56" class="dg-b dg-w" font-size="12">Yerel motor</text>
+				<text x="228" y="69" class="dg-w" font-size="9.3" fill-opacity="0.78">bulut gerektirmez</text>
+				<rect x="202" y="82" width="146" height="36" rx="7" fill="#fff" fill-opacity="0.12" stroke="#fff" stroke-opacity="0.25"/>
+				<text x="212" y="97" class="dg-b dg-w" font-size="10"><tspan data-fact="threat-rules">494</tspan> YAML kuralı</text>
+				<text x="212" y="110" class="dg-w" font-size="8.8" fill-opacity="0.8">komut zinciri · gizleme</text>
+				<rect x="202" y="124" width="146" height="36" rx="7" fill="#fff" fill-opacity="0.12" stroke="#fff" stroke-opacity="0.25"/>
+				<text x="212" y="139" class="dg-b dg-w" font-size="10">DLP + gizlilik</text>
+				<text x="212" y="152" class="dg-w" font-size="8.8" fill-opacity="0.8">TR/EN · anahtar · EDM</text>
+				<rect x="202" y="166" width="146" height="36" rx="7" fill="#fff" fill-opacity="0.12" stroke="#fff" stroke-opacity="0.25"/>
+				<text x="212" y="181" class="dg-b dg-w" font-size="10">Paket ve eklenti</text>
+				<text x="212" y="194" class="dg-w" font-size="8.8" fill-opacity="0.8">npm · PyPI · oturum</text>
+				<rect x="202" y="208" width="146" height="36" rx="7" fill="#fff" fill-opacity="0.12" stroke="#fff" stroke-opacity="0.25"/>
+				<text x="212" y="223" class="dg-b dg-w" font-size="10">İzin listesi, önbellek</text>
+				<text x="212" y="236" class="dg-w" font-size="8.8" fill-opacity="0.8">yerel denetim kaydı</text>
+			</g>
+			<g>
+				<rect x="384" y="34" width="130" height="104" rx="10" fill="#fff" stroke="#e2e6ef"/>
+				<text x="396" y="54" class="dg-b" font-size="11.5">Karar</text>
+				<text x="396" y="67" class="dg-s">ana makine uygular</text>
+				<rect x="396" y="76" width="106" height="16" rx="4" fill="#e3f4eb"/><text x="449" y="87.5" text-anchor="middle" class="dg-m" font-size="9.5" fill="#177a4f">allow</text>
+				<rect x="396" y="96" width="106" height="16" rx="4" fill="#fff1d6"/><text x="449" y="107.5" text-anchor="middle" class="dg-m" font-size="9.5" fill="#9a5b00">ask → operatör</text>
+				<rect x="396" y="116" width="106" height="16" rx="4" fill="#fde8e6"/><text x="449" y="127.5" text-anchor="middle" class="dg-m" font-size="9.5" fill="#b42318">deny</text>
+			</g>
+			<g>
+				<rect x="384" y="148" width="130" height="104" rx="10" fill="#fff" stroke="#e2e6ef"/>
+				<text x="396" y="168" class="dg-b" font-size="11.5">Maskeleme</text>
+				<text x="396" y="181" class="dg-s">sağlayıcıya giden</text>
+				<rect x="396" y="190" width="106" height="16" rx="4" fill="#e8eefd"/><text x="449" y="201.5" text-anchor="middle" class="dg-m" font-size="9.5" fill="#2448bb">[EMAIL_1]</text>
+				<rect x="396" y="210" width="106" height="16" rx="4" fill="#e8eefd"/><text x="449" y="221.5" text-anchor="middle" class="dg-m" font-size="9.5" fill="#2448bb">[IBAN_1]</text>
+				<text x="449" y="241" text-anchor="middle" class="dg-b" font-size="8.8" fill="#177a4f">yanıtta yerelde geri gelir</text>
+			</g>
+			<g stroke="#3862e8" stroke-width="1.8" fill="none">
+				<path d="M167 86H186" marker-end="url(#ah)"/>
+				<path d="M167 200H186" marker-end="url(#ah)"/>
+				<path d="M361 86H380" marker-end="url(#ah)"/>
+				<path d="M361 200H380" marker-end="url(#ah)"/>
+			</g>
+			<g>
+				<rect x="578" y="34" width="140" height="218" rx="12" fill="#0a0a0a"/>
+				<svg x="590" y="46" width="20" height="20" viewBox="0 0 24 24" class="dg-ico" stroke="#8fa9f5"><use href="#i-cloud"/></svg>
+				<text x="616" y="56" class="dg-b dg-w" font-size="11.5">Kontrol düzlemi</text>
+				<text x="616" y="69" font-size="9.3" fill="#8fa9f5">isteğe bağlı</text>
+				<rect x="590" y="82" width="116" height="28" rx="6" fill="#fff" fill-opacity="0.09"/>
+				<text x="600" y="100" class="dg-w" font-size="9.5">Panel, filo görünümü</text>
+				<rect x="590" y="116" width="116" height="28" rx="6" fill="#fff" fill-opacity="0.09"/>
+				<text x="600" y="134" class="dg-w" font-size="9.5">Politikalar (imzalı)</text>
+				<rect x="590" y="150" width="116" height="28" rx="6" fill="#fff" fill-opacity="0.09"/>
+				<text x="600" y="168" class="dg-w" font-size="9.5">Denetim dışa aktarımı</text>
+				<rect x="590" y="184" width="116" height="28" rx="6" fill="#fff" fill-opacity="0.09"/>
+				<text x="600" y="202" class="dg-w" font-size="9.5">SIEM teslimi</text>
+				<text x="648" y="228" text-anchor="middle" font-size="9" fill="#8fa9f5">Bulut · kurum içi</text>
+				<text x="648" y="240" text-anchor="middle" font-size="9" fill="#8fa9f5">hava boşluklu</text>
+			</g>
+			<g fill="none" stroke-width="1.5">
+				<path d="M529 110H574" stroke="#8a91a3" stroke-dasharray="4 3" marker-end="url(#ahg)"/>
+				<path d="M575 196H530" stroke="#3862e8" stroke-dasharray="4 3" marker-end="url(#ah)"/>
+			</g>
+			<g font-size="8.6" text-anchor="middle">
+				<text x="552" y="90" fill="#586074">sayımlar,</text>
+				<text x="552" y="100" fill="#586074">redakte</text>
+				<text x="552" y="126" fill="#586074">içerik</text>
+				<text x="552" y="136" fill="#586074">değil</text>
+				<text x="552" y="214" fill="#2448bb">imzalı</text>
+				<text x="552" y="224" fill="#2448bb">politika</text>
+			</g>
+		</svg>
+	</div>
+
+	<h3 class="sub">Öne çıkan yetenekler</h3>
+	<div class="features">
+		<div class="feat"><div class="t"><span class="ic"><svg class="i"><use href="#i-check"/></svg></span>Satır içi karar</div><p>Her araç çağrısında allow, ask veya deny; eşleşen kural ve bulgu adıyla.</p></div>
+		<div class="feat"><div class="t"><span class="ic"><svg class="i"><use href="#i-file"/></svg></span>Veri olarak kurallar</div><p><span data-fact="threat-rules">494</span> YAML kuralı, gizlenmiş komutlar dahil; kendi kuralınızı ekleyin.</p></div>
+		<div class="feat"><div class="t"><span class="ic"><svg class="i"><use href="#i-link"/></svg></span>Zehirli akış</div><p>Özel veri, güvenilmeyen içerik ve dış kanal aynı oturumda birleşince son adım onaya kalır.</p></div>
+		<div class="feat"><div class="t"><span class="ic"><svg class="i"><use href="#i-box"/></svg></span>Paket ve model</div><p>npm/PyPI kontrolleri, oturum başında eklenti taraması ve güvenli model yükleme.</p></div>
+		<div class="feat"><div class="t"><span class="ic"><svg class="i"><use href="#i-plug"/></svg></span>MCP Gateway</div><p>Araç sonuçları modele ulaşmadan taranır; imzalı sunucu bildirimi.</p></div>
+		<div class="feat"><div class="t"><span class="ic"><svg class="i"><use href="#i-usercheck"/></svg></span>İnsan onayı</div><p><code>ask</code> terminal ya da panelden onaya kadar bekler; ajan kendini onaylayamaz.</p></div>
+		<div class="feat"><div class="t"><span class="ic"><svg class="i"><use href="#i-mask"/></svg></span>Veri ve anahtarlar</div><p>T.C. kimlik, IBAN, telefon ve kart sağlamayla; bulut, Git ve yapay zekâ anahtarları.</p></div>
+		<div class="feat"><div class="t"><span class="ic"><svg class="i"><use href="#i-shield"/></svg></span>Ajan güvenliği</div><p>Döngü, test sabotajı, özerklik yükseltme, geri alınamaz eylem: onay ya da engel.</p></div>
+		<div class="feat"><div class="t"><span class="ic"><svg class="i"><use href="#i-layers"/></svg></span>Yönetişim</div><p>Varlık envanteri, talep akışı, süreli istisna, dört göz politika değişikliği ve skor kartı.</p></div>
+		<div class="feat"><div class="t"><span class="ic"><svg class="i"><use href="#i-play"/></svg></span>Saldırı simülasyonu</div><p><code>aidr simulate</code> zararsız saldırıları ayarlarınıza karşı puanlar; hiçbir şey çalışmaz.</p></div>
+		<div class="feat"><div class="t"><span class="ic"><svg class="i"><use href="#i-sliders"/></svg></span>Yönetilen politika</div><p>GPO, Intune ve Jamf ile tarayıcı politikası; ajanlar için merkezî politika.</p></div>
+		<div class="feat"><div class="t"><span class="ic"><svg class="i"><use href="#i-audit"/></svg></span>Denetim ve SIEM</div><p>JSONL/CSV dışa aktarım; Splunk, Sentinel ve Elastic biçimleri.</p></div>
+	</div>
+
+	<h3 class="sub">Browser Guard iş başında</h3>
+	<div class="demo">
+		<div class="win">
+			<div class="bar"><i></i><i></i><i></i><span>1 · Kullanıcının yazdığı</span></div>
+			<div class="body">Müşteri e-postası <span class="hl">ayse@firma.com.tr</span>, IBAN <span class="hl">TR33 0006 1005 1978 6457 8413 26</span>. Kısa bir iade yazısı hazırla.</div>
+			<div class="cap"><svg class="i"><use href="#i-radar"/></svg>2 bulgu: e-posta, IBAN (mod-97)</div>
+		</div>
+		<div class="arrow"><svg class="i"><use href="#i-arrow"/></svg></div>
+		<div class="win provider">
+			<div class="bar"><i></i><i></i><i></i><span>2 · Sağlayıcının gördüğü</span></div>
+			<div class="body">Müşteri e-postası <span class="ph">[EMAIL_1]</span>, IBAN <span class="ph">[IBAN_1]</span>. Kısa bir iade yazısı hazırla.</div>
+			<div class="cap"><svg class="i"><use href="#i-lock"/></svg>Eşleme yalnızca sayfanın belleğinde</div>
+		</div>
+		<div class="arrow"><svg class="i"><use href="#i-arrow"/></svg></div>
+		<div class="win local">
+			<div class="bar"><i></i><i></i><i></i><span>3 · Ekranınızdaki yanıt</span></div>
+			<div class="body">İade tutarınız <span class="rs">TR33 0006 1005 1978 6457 8413 26</span> hesabına aktarılacak; bilgi <span class="rs">ayse@firma.com.tr</span> adresine gönderilecek.</div>
+			<div class="cap"><svg class="i"><use href="#i-check"/></svg>Değerler yalnızca yerelde geri yüklendi</div>
+		</div>
+	</div>
+
+	<div class="foot"><span><b>Singularity AIDR</b> · Ürün broşürü</span><span>singularityrd.com</span><span>3 / 4</span></div>
+</section>
+
+<!-- ============================== PAGE 4 — DEPLOY, SECURITY, EDITIONS, CTA ============================== -->
+<section class="page compact" aria-label="Kurulum, güvenlik ve paketler">
+	<div class="kicker">
+		<span class="sec"><span class="num">03</span>Kurulum, güvenlik ve paketler</span>
+		<span class="brand"><span class="sg-logo" aria-hidden="true"></span>Singularity AIDR</span>
+	</div>
+	<h2 class="title">Nerede çalışacağına <em>siz karar verin.</em></h2>
+
+	<h3 class="sub">Kurulum seçenekleri</h3>
+	<div class="deploy">
+		<div class="dep free"><span class="ic"><svg class="i"><use href="#i-laptop"/></svg></span><div class="tag">Ücretsiz</div><h4>Yerel mod</h4><p>Bağlayıcılar ve Browser Guard cihazda çalışır. Hesap, kayıt ya da sunucu gerekmez; varsayılan mod budur.</p></div>
+		<div class="dep"><span class="ic"><svg class="i"><use href="#i-cloud"/></svg></span><div class="tag">SaaS</div><h4>Bulut</h4><p>Çok kiracılı barındırılan kontrol düzlemi: panel, cihaz kaydı, merkezî politika, SSO/SCIM. Hizmete ulaşılamazsa uygulama yerelde sürer.</p></div>
+		<div class="dep"><span class="ic"><svg class="i"><use href="#i-server"/></svg></span><div class="tag">Kurum içi</div><h4>Kendi altyapınız</h4><p>Aynı kontrol düzlemi Docker Compose veya Kubernetes (Helm) üzerinde. Telemetri SingularityRD'ye değil, sizin sunucunuza gider.</p></div>
+		<div class="dep"><span class="ic"><svg class="i"><use href="#i-airgap"/></svg></span><div class="tag">Hava boşluklu</div><h4>İnternetsiz ağlar</h4><p>Tedarikçi imzalı çevrimdışı lisans, imzalı çevrimdışı tehdit ve istihbarat paketleri, çevrimdışı imaj paketi.</p></div>
+	</div>
+
+	<h3 class="sub">Güvenlik ve gizlilik</h3>
+	<div class="sec-grid">
+		<div class="sec-item"><span class="ic"><svg class="i"><use href="#i-laptop"/></svg></span><div><h5>Önce yerel</h5><p>Tespit ve maskeleme cihazda yapılır; varsayılan <code>local</code> modda ağ erişimi gerekmez.</p></div></div>
+		<div class="sec-item"><span class="ic"><svg class="i"><use href="#i-lock"/></svg></span><div><h5>İçerik değil, sayım</h5><p>İstem, dosya içeriği ve tespit edilen değerler SingularityRD'ye gönderilmez; telemetri tür başına sayımdır.</p></div></div>
+		<div class="sec-item"><span class="ic"><svg class="i"><use href="#i-layers"/></svg></span><div><h5>Kiracı yalıtımı</h5><p>Çok kiracılı kontrol düzleminde Postgres satır düzeyi güvenliği (RLS).</p></div></div>
+		<div class="sec-item"><span class="ic"><svg class="i"><use href="#i-users"/></svg></span><div><h5>Kimlik</h5><p>Microsoft Entra ID ve SAML 2.0 ile SSO, SCIM ile kullanıcı sağlama, MFA.</p></div></div>
+		<div class="sec-item"><span class="ic"><svg class="i"><use href="#i-audit"/></svg></span><div><h5>Denetim</h5><p>JSONL/CSV dışa aktarım, SIEM teslimi, isteğe bağlı imzalı yerel kayıt.</p></div></div>
+		<div class="sec-item"><span class="ic"><svg class="i"><use href="#i-shield"/></svg></span><div><h5>İmzalı içerik</h5><p>Politikalar, kural ve istihbarat paketleri ile çevrimdışı lisans Ed25519 ile imzalanır.</p></div></div>
+		<div class="kvkk">
+			<span class="badge">KVKK · GDPR</span>
+			<h5>KVKK ve GDPR yükümlülüklerini desteklemek üzere tasarlandı</h5>
+			<p>Veri minimizasyonu, kişisel verinin üçüncü taraf yapay zekâ sağlayıcılarına ulaşmadan maskelenmesi, kiracı bazlı saklama ve yasal bekletme, kurum içi kurulumla veri yerelliği.</p>
+			<p>Uyum, kurumunuzun süreçleriyle birlikte sağlanır; ürün tek başına uyum sağlamaz.</p>
+		</div>
+	</div>
+
+	<h3 class="sub">Paketler</h3>
+	<div class="editions">
+		<div class="ed">
+			<h4>Free</h4>
+			<p class="who">Bireysel geliştiriciler için: <span data-fact="plan-free-agents">1</span> korunan ajan</p>
+			<ul class="bul">
+				<li><b>Yerel tespit motoru</b>, tüm bağlayıcılarda</li>
+				<li><b>Kontrol düzlemi paneli</b></li>
+			</ul>
+			<dl><div><dt>Kurulum</dt><dd>Bulut</dd></div><div><dt>Saklama</dt><dd><span data-fact="plan-free-retention">7</span> gün</dd></div></dl>
+		</div>
+		<div class="ed">
+			<h4>Team</h4>
+			<p class="who">En az <span data-fact="plan-team-min">3</span> geliştiricili ekipler için</p>
+			<ul class="bul">
+				<li>Free'deki her şey</li>
+				<li><b>Browser Guard</b></li>
+				<li><b>Microsoft Entra ID SSO</b></li>
+			</ul>
+			<dl><div><dt>Kurulum</dt><dd>Bulut</dd></div><div><dt>Saklama</dt><dd><span data-fact="plan-team-retention">90</span> gün</dd></div></dl>
+		</div>
+		<div class="ed">
+			<h4>Business</h4>
+			<p class="who">En az <span data-fact="plan-business-min">25</span> geliştiricili kurumlar için</p>
+			<ul class="bul">
+				<li>Team'deki her şey</li>
+				<li><b>SIEM dışa aktarımı</b></li>
+				<li><b>SCIM</b></li>
+				<li><b>Yapay Zekâ Güvenlik Duruşu</b></li>
+			</ul>
+			<dl><div><dt>Kurulum</dt><dd>Bulut, kurum içi</dd></div><div><dt>Saklama</dt><dd><span data-fact="plan-business-retention">365</span> gün</dd></div></dl>
+		</div>
+		<div class="ed top">
+			<h4>Enterprise</h4>
+			<p class="who">Düzenlemeye tabi ve kapalı ağlar için</p>
+			<ul class="bul">
+				<li>Business'taki her şey</li>
+				<li><b>Hava boşluklu kurulum</b></li>
+				<li><b>Özel destek</b></li>
+			</ul>
+			<dl><div><dt>Kurulum</dt><dd>Kurum içi, hava boşluklu</dd></div><div><dt>Saklama</dt><dd>Sözleşmeye göre</dd></div></dl>
+		</div>
+	</div>
+	<div class="quote">
+		<span class="ask">Fiyatlandırma ve teklif için: <b>anil@singularityrd.com</b></span>
+		<span class="scope">Paket kapsamı yazılı teklifinizde netleşir.<br>Yerel mod ücretsiz kalır.</span>
+	</div>
+
+	<div class="cta">
+		<div>
+			<h3>Kendi ortamınızda görün.</h3>
+			<p>Bağlayıcıları, tarayıcıları ve kimlik sağlayıcınızı pilot sürecinde birlikte doğrularız.</p>
+			<div class="opts">
+				<span><svg class="i"><use href="#i-calendar"/></svg><span><span data-fact="trial-days">14</span> günlük bulut denemesi</span></span>
+				<span><svg class="i"><use href="#i-check"/></svg>Pilot başvurusu</span>
+				<span><svg class="i"><use href="#i-play"/></svg>Canlı demo</span>
+			</div>
+		</div>
+		<div class="contact">
+			<span class="mail">anil@singularityrd.com</span>
+			<div class="web">singularityrd.com</div>
+		</div>
+	</div>
+
+	<div class="foot"><span><b>Singularity AIDR</b> · Ürün broşürü</span><span>© 2026 SingularityRD</span><span>4 / 4</span></div>
+</section>
+
+</main>
+<script>
+/* Screen only: shrink the fixed-size A4 pages to fit narrow viewports. Print is unaffected. */
+(function () {
+	var fit = function () {
+		var w = document.documentElement.clientWidth;
+		var page = 210 * 96 / 25.4 + 24;
+		document.documentElement.style.setProperty("--fit", w < page ? String(Math.max(0.3, w / page)) : "1");
+	};
+	fit();
+	window.addEventListener("resize", fit);
+})();
+</script>
+</body>
+</html>

@@ -1,5 +1,41 @@
+import { frameworkRefLabels, frameworkRefsFromJson } from "./framework-mappings.js";
 import type { Incident, IncidentSeverity } from "./incidents/types.js";
+import type { FrameworkRefs, FrameworkRefsJson } from "./types.js";
 import { VERSION } from "./version.js";
+
+/**
+ * Union of the framework IDs carried by an incident's events (OWASP LLM 2025,
+ * OWASP Agentic 2026, MITRE ATLAS), or null when no event carried any.
+ */
+function incidentFrameworks(incident: Incident): FrameworkRefs | null {
+	const merged: FrameworkRefsJson = { owasp_llm: [], owasp_agentic: [], mitre_atlas: [] };
+	for (const event of incident.events) {
+		if (!event.frameworks) continue;
+		merged.owasp_llm.push(...event.frameworks.owasp_llm);
+		merged.owasp_agentic.push(...event.frameworks.owasp_agentic);
+		merged.mitre_atlas.push(...event.frameworks.mitre_atlas);
+	}
+	// Re-validates the IDs, de-duplicates and sorts.
+	return frameworkRefsFromJson(merged);
+}
+
+/** `LLM01:2025,ASI01:2026,AML.T0051`, or undefined when no event carried IDs. */
+function incidentFrameworkLabels(incident: Incident): string | undefined {
+	const refs = incidentFrameworks(incident);
+	return refs ? frameworkRefLabels(refs).join(",") : undefined;
+}
+
+function frameworksRecordField(incident: Incident): { frameworks?: FrameworkRefsJson } {
+	const refs = incidentFrameworks(incident);
+	if (!refs) return {};
+	return {
+		frameworks: {
+			owasp_llm: refs.owaspLlm,
+			owasp_agentic: refs.owaspAgentic,
+			mitre_atlas: refs.mitreAtlas,
+		},
+	};
+}
 
 // ---------------------------------------------------------------------------
 // Public filter
@@ -89,6 +125,8 @@ function buildCefExtension(incident: Incident): string {
 	if (incident.package_name) parts.push(cefKv("package_name", incident.package_name));
 	if (incident.domain) parts.push(cefKv("domain", incident.domain));
 	if (incident.file_path) parts.push(cefKv("file_path", incident.file_path));
+
+	parts.push(cefKv("frameworks", incidentFrameworkLabels(incident)));
 
 	// Include a count of correlated events.
 	parts.push(cefKv("event_count", incident.events.length));
@@ -182,6 +220,8 @@ function buildLeefExtension(incident: Incident): string {
 	if (incident.domain) pairs.push(leefKv("domain", incident.domain));
 	if (incident.file_path) pairs.push(leefKv("file_path", incident.file_path));
 
+	const frameworks = incidentFrameworkLabels(incident);
+	if (frameworks) pairs.push(leefKv("frameworks", frameworks));
 	pairs.push(leefKv("event_count", incident.events.length));
 
 	return pairs.join("\t");
@@ -230,7 +270,9 @@ export function incidentToSiemRecord(incident: Incident): Record<string, unknown
 			signal_type: e.signal_type,
 			severity: e.severity,
 			summary: e.summary,
+			...(e.frameworks ? { frameworks: e.frameworks } : {}),
 		})),
+		...frameworksRecordField(incident),
 	};
 }
 

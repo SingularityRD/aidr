@@ -172,13 +172,21 @@ describe("pii-detector enhancements", () => {
 	});
 
 	describe("maskPII correctness", () => {
-		it("masks short values completely", () => {
-			expect(maskPII("short", "password")).toBe("*****");
+		it("masks short values with a fixed placeholder", () => {
+			expect(maskPII("short", "password")).toBe("[MASKED_PASSWORD]");
 		});
 
-		it("masks long values with visible prefix and suffix", () => {
+		it("never reveals prefix, suffix or length of long values", () => {
 			const masked = maskPII("verylongsecretvalue", "secret");
-			expect(masked).toBe("ve***************ue");
+			expect(masked).toBe("[MASKED_SECRET]");
+			expect(masked).not.toContain("ve");
+			expect(masked).not.toContain("ue");
+			expect(maskPII("a-much-longer-secret-value-here", "secret")).toBe(masked);
+		});
+
+		it("sanitizes the type label", () => {
+			expect(maskPII("value", "api key")).toBe("[MASKED_API_KEY]");
+			expect(maskPII("value", "")).toBe("[MASKED]");
 		});
 	});
 

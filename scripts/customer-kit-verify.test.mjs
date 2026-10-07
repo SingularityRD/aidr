@@ -25,6 +25,8 @@ const aliases = {
 	"NATIVE-HOST-ACCEPTANCE.md": "docs/production-readiness/native-host-matrix-v6.md",
 	"SUPPORT-RUNBOOK.md": "docs/runbooks/support-v7.md",
 	"SECRETS-RUNBOOK.md": "docs/runbooks/secrets-management.md",
+	"LICENSING.md": "docs/operations/licensing.md",
+	"THREAT-SYNC.md": "docs/operations/threat-sync.md",
 	"FIRST-CUSTOMER-SALES-PACKET.md": "docs/production-readiness/first-customer-buyer-handoff-2026-09-23.md",
 	"CANDIDATE-STATUS.md": "docs/production-readiness/first-customer-ready.md",
 	"RELEASE-EVIDENCE.md": "docs/release-evidence.md",

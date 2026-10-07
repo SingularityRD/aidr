@@ -43,6 +43,7 @@ const FUNCTION_ENV: Record<string, readonly string[]> = {
 	"team-invite": ["AIDR_DASHBOARD_URL"],
 	"packs-download": ["AIDR_PACK_DOWNLOAD_GRANT_SECRET"],
 	"packs-manifest": ["AIDR_PACK_DOWNLOAD_GRANT_SECRET"],
+	"approval-requests": ["AIDR_APPROVAL_SIGNING_WRAP_KEY_B64"],
 };
 
 function functionNames(): string[] {
@@ -316,6 +317,63 @@ describe("shared configuration helper", () => {
 
 	it("filters reported identifiers down to environment-variable names", () => {
 		expect(source).toContain("/^[A-Z][A-Z0-9_]{0,63}$/");
+	});
+});
+
+/**
+ * Minimal reader for the flat `[section]` / `key = value` subset used by
+ * supabase/config.toml. Values are returned as their raw TOML text.
+ */
+function tomlSections(source: string): Map<string, Map<string, string>> {
+	const sections = new Map<string, Map<string, string>>();
+	let current = new Map<string, string>();
+	sections.set("", current);
+	for (const raw of source.split(/\r?\n/)) {
+		const line = raw.trim();
+		if (!line || line.startsWith("#")) continue;
+		const header = /^\[([A-Za-z0-9_.-]+)\]$/.exec(line);
+		if (header) {
+			const name = header[1] ?? "";
+			expect(sections.has(name), `duplicate [${name}] section`).toBe(false);
+			current = new Map<string, string>();
+			sections.set(name, current);
+			continue;
+		}
+		const pair = /^([A-Za-z0-9_]+)\s*=\s*(.+)$/.exec(line);
+		if (pair) current.set(pair[1] ?? "", (pair[2] ?? "").trim());
+	}
+	return sections;
+}
+
+describe("supabase/config.toml deployment contract", () => {
+	const sections = tomlSections(readFileSync(join(REPO_ROOT, "supabase", "config.toml"), "utf8"));
+	const value = (section: string, key: string) => sections.get(section)?.get(key);
+
+	it("declares a gateway JWT policy for every function", () => {
+		for (const name of FUNCTIONS) {
+			expect(["true", "false"], `[functions.${name}] must set verify_jwt`).toContain(
+				value(`functions.${name}`, "verify_jwt"),
+			);
+		}
+	});
+
+	it("keeps the platform-operator surface behind gateway JWT verification", () => {
+		expect(value("functions.operator-admin", "verify_jwt")).toBe("true");
+		expect(value("functions.pilot-admin", "verify_jwt")).toBe("true");
+	});
+
+	it("requires email confirmation, with local delivery captured by Inbucket", () => {
+		expect(value("auth.email", "enable_confirmations")).toBe("true");
+		expect(value("auth.email", "double_confirm_changes")).toBe("true");
+		expect(value("inbucket", "enabled")).toBe("true");
+	});
+
+	it("ships Turnstile captcha env-enabled: off locally, secret only from the environment", () => {
+		// Local development must work without a Turnstile account; a deployment
+		// turns it on with SUPABASE_AUTH_CAPTCHA_ENABLED=true.
+		expect(value("auth.captcha", "enabled")).toBe("false");
+		expect(value("auth.captcha", "provider")).toBe('"turnstile"');
+		expect(value("auth.captcha", "secret")).toBe('"env(SUPABASE_AUTH_CAPTCHA_SECRET)"');
 	});
 });
 

@@ -7,7 +7,7 @@ import type {
 } from "@singularityrd/aidr-core";
 import { formatStartupClean, formatThreatBanner, severityEmoji } from "@singularityrd/aidr-core";
 import { describe, expect, it } from "vitest";
-import { formatBlockReason } from "../format.js";
+import { approvedActionContext, formatBlockReason } from "../format.js";
 
 function makePlugin(key = "test-plugin@marketplace"): PluginInfo {
 	return { key, installPath: "/tmp/test", version: "1.0.0", lastUpdated: "" };
@@ -243,5 +243,20 @@ describe("formatBlockReason", () => {
 		);
 		expect(msg).toContain("http://evil.com");
 		expect(msg).toContain("http://also-evil.com");
+	});
+});
+
+describe("approvedActionContext", () => {
+	it("points at the real operator allowlist command and tells the agent not to run it", () => {
+		const text = approvedActionContext({
+			threatId: "CLT-TEST-001",
+			threatTitle: "World-writable permissions",
+			artifacts: [{ type: "command", value: "chmod 777 ./deploy.sh" }],
+			createdAt: "2026-09-24T10:00:00.000Z",
+		} as Parameters<typeof approvedActionContext>[0]);
+		expect(text).toContain("aidr allowlist add command <value>");
+		expect(text).toContain("aidr allowlist list");
+		expect(text).toContain("do not run it on their behalf");
+		expect(text).not.toContain("CLI allowlist controls");
 	});
 });

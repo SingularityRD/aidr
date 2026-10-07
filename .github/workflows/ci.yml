@@ -21,7 +21,13 @@ permissions:
   contents: read
 
 env:
+  # Minimum supported engine (root package.json "engines"); every unit/integration
+  # suite runs here. NODE_24_VERSION is the on-prem operator/runtime line (the
+  # dashboard image and esbuild target node24); PRIVACY_NODE_VERSION is the
+  # packages/privacy engine floor. Keep docs/development.md in sync.
   NODE_VERSION: 22.12.0
+  NODE_24_VERSION: 24.12.0
+  PRIVACY_NODE_VERSION: 22.16.0
   PNPM_VERSION: 10.29.3
 
 jobs:
@@ -178,8 +184,15 @@ jobs:
           pnpm verify:retention
           node --test scripts/tenant-rate-limit-postgres.test.mjs
 
+      - name: Record real-HOME agent configuration before tests
+        run: node scripts/verify-real-home-untouched.mjs --record "${RUNNER_TEMP}/aidr-real-home.json"
+
       - name: Type, lint, audit, tests, coverage and release build
         run: pnpm quality:gate
+
+      - name: Assert tests never wrote the runner's real HOME
+        if: success() || failure()
+        run: node scripts/verify-real-home-untouched.mjs --verify "${RUNNER_TEMP}/aidr-real-home.json"
 
       - name: MCP gateway and dashboard auth callback tests
         env:
@@ -360,6 +373,369 @@ jobs:
         run: |
           .audit-venv/bin/pip-audit --require-hashes -r requirements-runtime.lock
           PYTHONPATH=. pytest -q tests
+
+  workflow-lint:
+    name: Workflow YAML contract and actionlint
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository (pinned)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup pnpm (pinned)
+        uses: pnpm/action-setup@7088e561eb65bb68695d245aa206f005ef30921d # v4.1.0
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js (pinned)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Frozen install without postinstall mutation
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Parse every workflow and enforce the CI contract
+        run: node --test scripts/ci-workflows.test.mjs scripts/ci-evidence-upload.test.mjs scripts/verify-real-home-untouched.test.mjs
+
+      - name: actionlint 1.7.7 (pinned)
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/actionlint_1.7.7_linux_amd64.tar.gz"
+          tool_dir="${RUNNER_TEMP}/actionlint"
+          curl --fail --location --proto '=https' --tlsv1.2 \
+            --output "${archive}" \
+            https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_amd64.tar.gz
+          echo "023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757  ${archive}" | sha256sum --check --strict
+          mkdir -p "${tool_dir}"
+          tar -xzf "${archive}" -C "${tool_dir}" actionlint
+          # Embedded shell is reviewed by the step contracts above; actionlint
+          # checks workflow syntax, expressions, contexts and job graphs.
+          "${tool_dir}/actionlint" -color -shellcheck= -pyflakes=
+
+  core-node-matrix:
+    name: Core build and tests on Node ${{ matrix.node }}
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        # Literal values: the strategy context cannot read env. The workflow
+        # contract test keeps them equal to NODE_VERSION and NODE_24_VERSION.
+        node: ["22.12.0", "24.12.0"]
+    steps:
+      - name: Checkout repository (pinned)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup pnpm (pinned)
+        uses: pnpm/action-setup@7088e561eb65bb68695d245aa206f005ef30921d # v4.1.0
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js (pinned)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+
+      - name: Frozen install without postinstall mutation
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Record real-HOME agent configuration before tests
+        run: node scripts/verify-real-home-untouched.mjs --record "${RUNNER_TEMP}/aidr-real-home.json"
+
+      - name: Build core and run the core suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(node --version)" == "v${{ matrix.node }}" ]]
+          pnpm --filter @singularityrd/aidr-core run build
+          pnpm exec vitest run --config packages/core/vitest.config.ts --reporter=dot
+
+      - name: Assert tests never wrote the runner's real HOME
+        if: success() || failure()
+        run: node scripts/verify-real-home-untouched.mjs --verify "${RUNNER_TEMP}/aidr-real-home.json"
+
+  onprem-deploy:
+    name: On-prem deployment kit gate
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository (pinned)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup pnpm (pinned)
+        uses: pnpm/action-setup@7088e561eb65bb68695d245aa206f005ef30921d # v4.1.0
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      # The operator toolchain targets Node 24: deployment-doctor refuses older
+      # hosts and the dashboard image is node:24.
+      - name: Setup Node.js 24 (pinned)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_24_VERSION }}
+          cache: pnpm
+
+      - name: Frozen install without postinstall mutation
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Deployment, ingress, monitoring, air-gap and customer-kit contracts
+        run: >-
+          node --test
+          scripts/deployment-prepare.test.mjs
+          scripts/deployment-doctor.test.mjs
+          scripts/airgap-images.test.mjs
+          scripts/customer-kit-verify.test.mjs
+          scripts/deployment-tls-renew.test.mjs
+          deploy/dashboard/server.test.mjs
+          deploy/ingress/device-start.test.mjs
+          deploy/monitoring/monitoring.test.mjs
+
+      - name: Bootstrap, upgrade, backup, restore-drill and config-reference gates
+        run: |
+          set -euo pipefail
+          pnpm verify:bootstrap
+          pnpm verify:upgrade
+          pnpm verify:backup-offsite
+          pnpm verify:onprem-config-reference
+
+      - name: Posture scanner compose model fails closed and validates with placeholders
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The shipped example leaves credentials blank on purpose; Compose must
+          # refuse it for that reason and no other.
+          if ! output="$(docker compose -f docker-compose.posture-scanner.yml --env-file .env.posture-scanner.example config --quiet 2>&1)"; then
+            grep -Eq 'required variable [A-Z0-9_]+ is missing a value' <<<"${output}" || {
+              printf '%s\n' "${output}" >&2
+              echo "docker-compose.posture-scanner.yml failed for a reason other than a blank required credential." >&2
+              exit 1
+            }
+            echo "Blank .env.posture-scanner.example fails closed: ${output}"
+          fi
+          env_file="${RUNNER_TEMP}/posture-scanner-ci.env"
+          cp .env.posture-scanner.example "${env_file}"
+          cat >> "${env_file}" <<'ENV'
+          POSTURE_SCANNER_AGENT_SHARED_SECRET=ci-placeholder-not-a-secret
+          POSTURE_SCANNER_SIGNING_PUBLIC_KEY_HOST_PATH=./ci-placeholder-posture-scanner-public.pem
+          POSTURE_SCANNER_TRUSTED_SIGNING_KEY_ID=ci-placeholder
+          POSTURE_SCANNER_TRUSTED_SIGNING_PUBLIC_KEY_SHA256=0000000000000000000000000000000000000000000000000000000000000000
+          POSTURE_SCANNER_EXPECTED_DATA_BUNDLE_ID=ci-placeholder
+          POSTURE_SCANNER_EXPECTED_SOURCE_COMMIT=0000000000000000000000000000000000000000
+          BRIDGE_EGRESS_PROXY_URL=http://egress-proxy.invalid:3128
+          BRIDGE_API_KEY=ci-placeholder-not-a-secret
+          ENV
+          docker compose -f docker-compose.posture-scanner.yml --env-file "${env_file}" config --quiet
+
+      # deploy/dashboard is a template: deployment-prepare stages it with the
+      # built dashboard (public/), auth templates and SAML config. Build the
+      # image from that generated context, exactly as `compose up --build` does.
+      - name: Build the prepared dashboard image
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm -C packages/dashboard build
+          output="${RUNNER_TEMP}/aidr-deploy"
+          node scripts/deployment-prepare.mjs --output "${output}" --development \
+            --dashboard-url http://127.0.0.1:8080 --supabase-url http://127.0.0.1:8000 \
+            --region self-hosted --tenant-region self-hosted
+          docker build --pull --tag aidr-dashboard:ci "${output}/dashboard"
+
+      - name: Build the AIG bridge image
+        run: docker build --pull --tag aidr-aig-bridge:ci services/aig-bridge
+
+  helm:
+    name: Helm chart gate
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository (pinned)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup pnpm (pinned)
+        uses: pnpm/action-setup@7088e561eb65bb68695d245aa206f005ef30921d # v4.1.0
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js (pinned)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Frozen install without postinstall mutation
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      # Helm publishes binaries on get.helm.sh and signs them with maintainer
+      # keys listed in the repository KEYS file. Trust is anchored on the pinned
+      # signer fingerprint, not on the download location: the tarball signature
+      # and the signed checksum must both verify before the binary is used.
+      - name: Install Helm 3.19.0 (pinned, signature and checksum verified)
+        shell: bash
+        env:
+          HELM_VERSION: v3.19.0
+          HELM_SIGNER_FINGERPRINT: 208DD36ED5BB3745A16743A4C7C6FBB5B91C1155
+        run: |
+          set -euo pipefail
+          work="${RUNNER_TEMP}/helm-download"
+          tool_dir="${RUNNER_TEMP}/helm"
+          archive="helm-${HELM_VERSION}-linux-amd64.tar.gz"
+          mkdir -p "${work}" "${tool_dir}"
+          fetch() { curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 --output "$1" "$2"; }
+          fetch "${work}/${archive}" "https://get.helm.sh/${archive}"
+          fetch "${work}/${archive}.sha256sum" "https://get.helm.sh/${archive}.sha256sum"
+          fetch "${work}/${archive}.asc" "https://github.com/helm/helm/releases/download/${HELM_VERSION}/${archive}.asc"
+          fetch "${work}/${archive}.sha256sum.asc" "https://github.com/helm/helm/releases/download/${HELM_VERSION}/${archive}.sha256sum.asc"
+          fetch "${work}/KEYS" "https://raw.githubusercontent.com/helm/helm/${HELM_VERSION}/KEYS"
+          GNUPGHOME="$(mktemp -d)"
+          export GNUPGHOME
+          gpg --batch --quiet --import "${work}/KEYS"
+          verify_signature() {
+            local status
+            status="$(gpg --batch --status-fd 1 --verify "$1" "$2" 2>/dev/null)" || { echo "Bad Helm signature: $1" >&2; exit 1; }
+            local primary
+            primary="$(awk '$1 == "[GNUPG:]" && $2 == "VALIDSIG" {print toupper($12); exit}' <<<"${status}")"
+            [[ "${primary}" == "${HELM_SIGNER_FINGERPRINT}" ]] || { echo "Unexpected Helm signer: ${primary:-none}" >&2; exit 1; }
+          }
+          verify_signature "${work}/${archive}.asc" "${work}/${archive}"
+          verify_signature "${work}/${archive}.sha256sum.asc" "${work}/${archive}.sha256sum"
+          expected="$(awk '{print $1; exit}' "${work}/${archive}.sha256sum")"
+          [[ "${expected}" =~ ^[0-9a-f]{64}$ ]]
+          echo "${expected}  ${work}/${archive}" | sha256sum --check --strict
+          tar -xzf "${work}/${archive}" -C "${tool_dir}" --strip-components=1 linux-amd64/helm
+          [[ "$("${tool_dir}/helm" version --template '{{.Version}}')" == "${HELM_VERSION}" ]]
+          rm -rf "${GNUPGHOME}"
+          echo "${tool_dir}" >> "${GITHUB_PATH}"
+
+      - name: Lint and render the chart
+        run: pnpm verify:helm
+
+  privacy:
+    name: Privacy package build and tests
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository (pinned)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup pnpm (pinned)
+        uses: pnpm/action-setup@7088e561eb65bb68695d245aa206f005ef30921d # v4.1.0
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js at the privacy engine floor (pinned)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.PRIVACY_NODE_VERSION }}
+          cache: pnpm
+
+      - name: Frozen install without postinstall mutation
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Build and test packages/privacy
+        run: pnpm test:privacy
+
+  privacy-rules-drift:
+    name: Privacy rule drift gate
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository (pinned)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup pnpm (pinned)
+        uses: pnpm/action-setup@7088e561eb65bb68695d245aa206f005ef30921d # v4.1.0
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js at the privacy engine floor (pinned)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.PRIVACY_NODE_VERSION }}
+          cache: pnpm
+
+      - name: Frozen install without postinstall mutation
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Verify privacy rules have not drifted
+        run: pnpm verify:privacy-rules
+
+  browser-guard:
+    name: Browser Guard build, unit and real-browser E2E
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository (pinned)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup pnpm (pinned)
+        uses: pnpm/action-setup@7088e561eb65bb68695d245aa206f005ef30921d # v4.1.0
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js (pinned)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Frozen install without postinstall mutation
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Install Chromium pinned to the browser-guard playwright-core version
+        shell: bash
+        run: |
+          set -euo pipefail
+          pinned="$(node -p 'require("./packages/browser-guard/package.json").devDependencies["playwright-core"]')"
+          [[ "${pinned}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "playwright-core must be an exact version pin, found ${pinned}" >&2; exit 1; }
+          installed="$(node -p 'require(require.resolve("playwright-core/package.json", { paths: ["packages/browser-guard"] })).version')"
+          [[ "${installed}" == "${pinned}" ]] || { echo "Installed playwright-core ${installed} != pinned ${pinned}" >&2; exit 1; }
+          echo "PLAYWRIGHT_BROWSERS_PATH=${RUNNER_TEMP}/pw-browsers" >> "${GITHUB_ENV}"
+          PLAYWRIGHT_BROWSERS_PATH="${RUNNER_TEMP}/pw-browsers" \
+            node packages/browser-guard/node_modules/playwright-core/cli.js install --with-deps --no-shell chromium
+
+      - name: Build the extension
+        run: pnpm build:browser-guard
+
+      - name: Unit tests
+        run: pnpm exec vitest run --config vitest.browser-guard.config.ts --reporter=dot
+
+      - name: Real-browser E2E (hermetic fixtures)
+        run: pnpm test:e2e:browser-guard
+
+      - name: Package release zips and checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm package:browser-guard
+          (cd packages/browser-guard/dist && sha256sum --check --strict SHA256SUMS)
+
+      - name: Upload Browser Guard zips (pinned)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: browser-guard-${{ github.run_id }}
+          path: |
+            packages/browser-guard/dist/*.zip
+            packages/browser-guard/dist/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 30
 
   real-host-e2e:
     name: Provisioned real-host connector E2E (manual opt-in)

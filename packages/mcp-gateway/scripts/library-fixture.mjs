@@ -5,14 +5,9 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import { copyPackageLicense } from "../../../scripts/copy-package-license.mjs";
+import { coreSourcePlugin, GATEWAY_ENTRIES, gatewayBundleOptions, readRuleSets } from "./bundle-options.mjs";
 
 const packageRoot = resolve(import.meta.dirname, "..");
-const entries = [
-	["cli.mjs", "aidr-mcp-gateway.mjs"],
-	["approve.mjs", "aidr-mcp-approve.mjs"],
-	["stdio-cli.mjs", "aidr-mcp-stdio.mjs"],
-	["library.mjs", "aidr-mcp-library.mjs"],
-];
 
 /** Isolated installed-package fixture; never modifies shared dist or release signing material. */
 export async function buildGatewayPackageFixture(root) {
@@ -22,14 +17,11 @@ export async function buildGatewayPackageFixture(root) {
 	await mkdir(dist, { recursive: true });
 	await copyFile(join(packageRoot, "package.json"), join(installed, "package.json"));
 	await copyFile(join(packageRoot, "README.md"), join(installed, "README.md"));
-	await Promise.all(entries.map(([entry, output]) => build({
-		entryPoints: [join(packageRoot, "src", entry)], outfile: join(dist, output),
-		bundle: true, platform: "node", format: "esm", target: "node22.12", logLevel: "silent",
-		plugins: [{ name: "core-source", setup(builder) {
-			builder.onResolve({ filter: /core\/dist\/.*\.js$/ }, ({ path, resolveDir }) => ({
-				path: resolve(resolveDir, path.replace("/dist/", "/src/").replace(/\.js$/, ".ts")),
-			}));
-		} }],
+	const bundleOptions = gatewayBundleOptions({ ruleSets: await readRuleSets() });
+	await Promise.all(GATEWAY_ENTRIES.map(([entry, output]) => build({
+		...bundleOptions,
+		entryPoints: [join(packageRoot, "src", entry)], outfile: join(dist, output), logLevel: "silent",
+		plugins: [...bundleOptions.plugins, coreSourcePlugin()],
 	})));
 	await copyPackageLicense({ packageRoot: installed });
 	const keys = generateKeyPairSync("ed25519");

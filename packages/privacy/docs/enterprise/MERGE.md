@@ -1,6 +1,6 @@
 # AIDR 0.4.0-rc.1 — Birleştirme ve çalıştırma rehberi
 
-Bu kaynak, önceki 0.3.0-rc.1 modülünün devamıdır. Ana Singularity AIDR uygulama deposu bu çalışmada bulunmadığı için o depoda gerçek bir merge yapılmadı. Mevcut API'ler korundu; kurumsal kontroller `@singularity/aidr-privacy/enterprise` altında eklendi. Eklentiye de yeni tarama/koçluk kontrolleri bağlandı.
+Bu kaynak, önceki 0.3.0-rc.1 modülünün devamıdır. Ana Singularity AIDR uygulama deposu bu çalışmada bulunmadığı için o depoda gerçek bir merge yapılmadı. Mevcut API'ler korundu; kurumsal kontroller `@singularityrd/aidr-privacy/enterprise` altında eklendi. Eklentiye de yeni tarama/koçluk kontrolleri bağlandı.
 
 ## Mimari sınırlar
 
@@ -57,7 +57,7 @@ Her tenant için ayrı `PolicyRegistry`, `AuditJournal`, `SensitiveDataIndex`, `
 import {
   PolicyRegistry, EnterprisePrivacyGate,
   SensitiveDataIndex, AuditJournal, createFileAuditSink,
-} from '@singularity/aidr-privacy/enterprise';
+} from '@singularityrd/aidr-privacy/enterprise';
 ```
 
 `PolicyRegistry(tenantId, trustedPublicKeys, persistedCheckpoint?)`, sabitlenmiş Ed25519 anahtarlarını alır. `installDurable(envelope, writeCheckpoint)` kullanın. `writeCheckpoint` atomik ve kalıcı yazı tamamlanınca resolve etmelidir. O sırada politika uygulanabilir hale gelmez; gecikme, hata veya süre aşımı aktarımı kapalı bırakır. Aynı süreçte sürüm geriye gidemez. Yeniden başlatmada yüksek sürüm checkpoint'ini güvenilir depodan yüklemek zorunludur.
@@ -121,7 +121,7 @@ await providerSend(result.output);
 ### 5. Görsel motoruna aynı kararı bağlayın
 
 ```ts
-import { VisualPrivacyEngine } from '@singularity/aidr-privacy/visual';
+import { VisualPrivacyEngine } from '@singularityrd/aidr-privacy/visual';
 
 const visual = new VisualPrivacyEngine({
   backend: localImageBackend,

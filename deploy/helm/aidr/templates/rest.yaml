@@ -1,0 +1,89 @@
+{{- $component := "rest" -}}
+{{- $name := include "aidr.component" (dict "root" . "component" $component) -}}
+{{- $values := .Values.rest -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" $component) | nindent 4 }}
+spec:
+  replicas: {{ $values.replicaCount }}
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      {{- include "aidr.selectorLabels" (dict "root" . "component" $component) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "aidr.labels" (dict "root" . "component" $component) | nindent 8 }}
+      {{- with $values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- include "aidr.podCommon" (dict "root" . "values" $values) | nindent 6 }}
+      {{- include "aidr.podSecurityContext" (dict "root" . "runAsUser" $values.runAsUser) | nindent 6 }}
+      containers:
+        - name: rest
+          image: {{ include "aidr.image" (dict "root" . "image" $values.image "name" "rest.image") }}
+          imagePullPolicy: {{ $values.image.pullPolicy }}
+          {{- include "aidr.containerSecurityContext" (dict "root" .) | nindent 10 }}
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+            - name: admin
+              containerPort: 3001
+              protocol: TCP
+          env:
+            {{- include "aidr.postgresPasswordEnv" . | nindent 12 }}
+            {{- include "aidr.secretEnv" (dict "root" . "env" "PGRST_JWT_SECRET" "key" "jwt-secret") | nindent 12 }}
+            {{- include "aidr.secretEnv" (dict "root" . "env" "PGRST_APP_SETTINGS_JWT_SECRET" "key" "jwt-secret") | nindent 12 }}
+            - name: PGRST_DB_URI
+              value: {{ include "aidr.dbUrl" (dict "root" . "user" "authenticator") | quote }}
+            - name: PGRST_DB_SCHEMAS
+              value: {{ $values.dbSchemas | quote }}
+            - name: PGRST_DB_MAX_ROWS
+              value: {{ $values.maxRows | quote }}
+            - name: PGRST_DB_EXTRA_SEARCH_PATH
+              value: public
+            - name: PGRST_DB_ANON_ROLE
+              value: anon
+            - name: PGRST_DB_USE_LEGACY_GUCS
+              value: "false"
+            - name: PGRST_APP_SETTINGS_JWT_EXP
+              value: {{ .Values.auth.jwtExpirySeconds | quote }}
+            # The admin server answers the kubelet's probes; the Service never exposes it.
+            - name: PGRST_ADMIN_SERVER_PORT
+              value: "3001"
+            - name: PGRST_ADMIN_SERVER_HOST
+              value: "0.0.0.0"
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: admin
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /live
+              port: admin
+            periodSeconds: 15
+          {{- include "aidr.resources" (dict "root" . "component" "rest" "override" $values.resources) | nindent 10 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" $component) | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "aidr.selectorLabels" (dict "root" . "component" $component) | nindent 4 }}
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http
+      protocol: TCP
+{{- include "aidr.pdbAndHpa" (dict "root" . "component" $component "values" $values) }}

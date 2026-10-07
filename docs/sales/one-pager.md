@@ -1,187 +1,161 @@
 # Singularity AIDR
 
-### AI Agent Detection & Response — inline enforcement for AI coding agents
+### AI Agent Detection & Response — policy enforcement for AI coding agents and AI chat
 
 ---
 
 ## The problem
 
-AI coding agents execute shell commands, write files, and fetch URLs. That is
-what they are for. Claude Code, Cursor, VS Code, Codex CLI, OpenCode, OpenClaw —
-all of them act on your machine, with your credentials, on instructions the
-model derived from content it read.
+AI coding agents run shell commands, write files and fetch URLs on developer machines,
+with developer credentials, following instructions the model derived from content it
+read. A README, a web page, a dependency's docs or a tool result can steer the agent.
+The agent is not compromised; it is obeying.
 
-That content is attacker-controllable. A README, a web page, a dependency's
-docs, a tool result — any of it can steer the agent. The agent is not
-compromised; it is *obeying*. And the only thing between that instruction and
-your filesystem is whether a human clicked "approve" fast enough.
+At the same time, people across the company paste customer records, IBANs, national ID
+numbers and API keys into ChatGPT, Gemini, Claude and Copilot, often without noticing.
 
-Different security layers observe different parts of this workflow:
+Existing layers see different parts of this:
 
-- **SAST/SCA (Snyk, Semgrep, Dependabot)** analyze code you already wrote.
-  They are not in the execution path.
-- **EDR** observes operating-system behavior; its timing and agent context
-  depend on the product and configuration.
-- **Model guardrails** operate at a different boundary and may not observe an
-  endpoint tool action.
-
-An agent-host hook can ask *"should this observed tool call be allowed?"* before the host acts, if that host invokes and honors the hook.
-
----
+- **SAST/SCA** analyse code you already wrote; they are not in the execution path.
+- **EDR** observes operating-system behaviour; its agent context depends on the product.
+- **Model guardrails** sit at the model boundary and may not see an endpoint action or a
+  paste into a web chat.
 
 ## What Singularity AIDR does
 
-AIDR provides connectors that pass observed tool calls to a shared local
-decision engine, which returns `allow`, `deny`, or `ask`. Enforcement depends
-on the host invoking and honoring the connector at its documented boundary.
+**AIDR for AI coding agents.** Connectors for Claude Code, Cursor, VS Code, OpenClaw,
+OpenCode and Codex CLI pass observed tool calls to one local decision engine before the
+host acts. The engine returns `allow`, `deny` or `ask`, naming the matched rule and
+artifact. The MCP Gateway inspects MCP tool results before the model reads them; the SDK
+applies the same checks inside your own applications.
 
-- A pre-action `deny` requests that the host prevent the observed call. A
-  returned verdict alone is not proof that a side effect was prevented.
-- A matched threat verdict can name the rule and inspected artifact; not every
-  `allow` or unavailable signal has a matched rule.
-- `ask` requests host-managed confirmation where the connector supports it;
-  it is not an independently verified human-approval workflow.
+**AIDR Browser Guard.** A Chrome, Edge and Firefox extension that replaces personal data
+and secrets with placeholders such as `[IBAN_1]` before a prompt, paste or file reaches
+ChatGPT, Gemini, Claude, Copilot, Perplexity, DeepSeek, Mistral or Grok, and shows the
+originals again in the response, on the user's screen only. It covers Turkish and English
+data (T.C. kimlik, IBAN, phones, emails, cards), secrets and API keys, custom terms and
+exact-data-match fingerprints of your own records.
 
----
+**AI Security Posture.** Find the weak spots in the AI stack around your agents.
+`aidr scan --target` fingerprints AI services (146 AI component fingerprints) and matches
+them against 2,000+ CVE rules with severity and CVSS; `aidr discover` maps local MCP
+servers to 14 MCP risk categories; skill and plugin packages are scanned against the
+T01–T09 taxonomy. The dashboard's Posture view collects the results, and uploads carry
+identifiers and digests only, never target URLs, file paths or matched text.
+
+**AI safety and governance.** Session-level toxic-flow detection holds the step that
+would combine private data, untrusted content and an outbound channel. Guardrails pause
+runaway loops and hold test sabotage and irreversible actions (database drops, cloud
+deletions, publishing) for a person. The dashboard adds an AI asset register, an intake and
+exception workflow, four-eyes policy change and a governance scorecard; `aidr simulate`
+tests defanged attacks against your settings without executing anything.
 
 ## How it works
 
 ```
-Agent is about to call a tool
-        │
-        ▼
-  PreToolUse hook  ──▶  extract artifacts (command / path / URL / package)
-        │                        │
-        │                        ▼
-        │              local decision engine
-        │              ├─ 351 YAML threat rules
-        │              ├─ obfuscation & command-chain analysis
-        │              ├─ URL / package indicators (when configured)
-        │              └─ allowlist + verdict cache
-        │                        │
-        ▼                        ▼
-  host enforces  ◀──  allow | deny | ask  (+ matched rule, artifact, severity)
+AI agent tool call                     Prompt / paste / file in an AI chat
+        │                                           │
+        ▼                                           ▼
+  connector hook  ─▶ local engine          Browser Guard (in the browser)
+                    ├─ 494 YAML rules        ├─ TR/EN PII + secrets detection
+                    ├─ command-chain and     ├─ custom terms + exact-data match
+                    │  obfuscation analysis  └─ reversible placeholders
+                    ├─ package/plugin checks          │
+                    └─ allowlist + cache              ▼
+        │                                   masked text is sent; originals
+        ▼                                   restored locally in the reply
+  host enforces allow | deny | ask
 ```
 
-**Local evaluation is available without an account.** The default mode is
-`local`. URL, file, and package reputation checks are disabled by default;
-an operator can enable them with configured endpoints. When enabled, requests
-can include URLs, package names/versions, and metadata. This is not a blanket
-no-egress or no-content promise: verify actual outbound traffic before
-describing a particular installation as offline. See the
-[privacy inventory](../privacy.md).
+- **Local first.** Detection runs on the device in both products. The default mode is
+  `local`; no account is needed.
+- **Counts, not content.** Managed telemetry sends redacted agent verdicts (hashed by
+  default) and Browser Guard per-type counts. Prompts, file contents and masked values
+  are not sent.
+- **Fails closed where it matters.** Connector entry points and Browser Guard's content
+  script block on an internal error. Detection internals skip a failing signal visibly;
+  a skipped check is never a clean result.
+- **No self-approval.** `ask` blocks until a human approves out-of-band. No connector
+  gives the agent an approval tool.
 
-**One core, six implemented connectors.** Claude Code, Cursor, VS Code,
-OpenClaw, OpenCode, and Codex CLI have connector code. Supported host/OS/version
-rows, side-effect prevention and failure behavior remain subject to real-host
-acceptance; these are not six approved production integrations.
+## Deployment
 
-**Failure behavior is per-layer, and we state it precisely rather than calling
-the product simply "fail-open" or "fail-closed":**
+| Local mode (free) | Cloud (SaaS) | On-premises |
+| --- | --- | --- |
+| Connectors and Browser Guard, no account | Hosted dashboard, enrollment, central policy, audit export, SSO/SCIM | Docker Compose or Kubernetes (Helm); air-gapped with a signed offline license and signed packs |
 
-- *Invoked connector entry points* return a deny on internal error. A host that
-  never invokes the connector, or drops a crashed hook, can still proceed.
-- *Detection internals* skip a failing signal, log it, and continue. A skipped
-  signal is **never** reported to the user as a clean result.
-- *Security controls* (auth, tenant isolation, approvals) fail closed.
+## Plans
 
----
+Free (local mode) · **Team** (minimum 3 developers) · **Business** (minimum 25
+developers) · **Enterprise** (on-premises and air-gapped). Pricing and quotes:
+anil@singularityrd.com.
 
 ## Who it's for
 
-Engineering-led software companies with **15–80 developers** where AI coding
-agents are already in daily use, that have a security-minded engineering leader
-but are too small to justify enterprise agent-security tooling.
+Engineering-led companies with **15–80 developers** where AI coding agents are in daily
+use, and organisations (including Turkish companies with KVKK obligations) whose staff
+use public AI chat products with customer data.
 
-- **The user** is a developer who wants to move fast and not be nagged.
-- **The buyer** is their Head of Engineering, who wants to know what every
-  agent on the team is doing — and, critically, **which installed agents are
-  not covered**.
-
-Typical trigger: an agent did something nobody expected, and there was no
-control in place to stop it.
-
----
+- **The user** wants to move fast and not be nagged.
+- **The buyer** (Head of Engineering, CISO, DPO) wants to know what agents are doing,
+  **which installed agents are not covered**, and what personal data is going to AI
+  sites, as counts per type.
 
 ## What makes it different
 
-| | AIDR | SAST/SCA | EDR |
-|---|---|---|---|
-| Can receive an observed agent tool request | **Yes, when the host invokes its connector** | Product-dependent | Product-dependent |
-| Can request a pre-action deny | **Yes, for documented pre-action hooks** | Product-dependent | Product-dependent |
-| Shared local evaluation core | **Yes** (six implemented connectors; host acceptance open) | Product-dependent | Product-dependent |
-
-The proposed differentiator is **position**, not raw detection volume: a
-connector can observe selected tool requests at agent hook boundaries. Actual
-coverage and side-effect prevention depend on host invocation and require the
-per-host acceptance described below.
-
----
-
-## Current status
-
-**Read this before evaluating.** This is a one-person product and these are the
-real limitations:
-
-**Working today**
-
-- Local detection engine with 351 shipped YAML threat rules across 23 files.
-- Connector implementations for Claude Code, Cursor, VS Code, OpenClaw, OpenCode and Codex CLI; no six-host production acceptance claim.
-- The repo's `verify-enforcement.mjs` defines 72 destructive/benign command
-  checks across default, managed-mode and commercial configurations. It needs a
-  release bundle to run; no signed candidate-bound or real-host acceptance
-  record is held yet.
-- `aidr setup` self-tests detection and **refuses to report success** if zero
-  rules load or nothing matches.
-- Local audit log, allowlist management, verdict caching.
-
-**Not ready**
-
-- **No certifications.** No SOC 2, no ISO 27001, no penetration test, no
-  third-party assessment. None in progress.
-- **No customers.** No case studies, no testimonials, no references. AIDR has
-  not been deployed in production at any organization.
-- **No verified efficacy measurement.** We have not measured detection rate,
-  false-positive rate, or evasion resistance on any real workload. We quote
-  rule counts because they are countable; we do not quote block percentages.
-- **Publisher-authenticated release is not available.** The current portable engineering envelope has no approved publisher signature; Windows warnings or policy blocks depend on the customer device.
-- **The team control plane is not production-accepted.** A pilot deployment and
-  disposable-stack tests do not establish a signed cloud GA release or field
-  acceptance for dashboard, remote policy, audit export, DLP, legal hold, or
-  billing. **Local enforcement does not depend on it.**
-- **Real-host acceptance is open.** Correct behavior is verified against built
-  artifacts locally; it has not been independently accepted on every supported
-  host/OS/version combination.
-- **Known coverage edges.** Coverage depends on the host's hook system. If a
-  hook is disabled, unavailable, or its process is killed, the action proceeds —
-  Codex in particular fails open when an untrusted or crashed hook is involved.
-  This is a **strong guardrail, not endpoint isolation.** Reputation checks
-  require reachable configured feeds; unavailable checks must not be described
-  as "clean." Enabled lookups may still attempt outbound requests.
+- **Position.** Agent hooks see a tool request before the host acts, when the host
+  invokes the hook. Browser Guard sees the prompt before it leaves the page.
+- **Reversible masking.** Users keep working with real names and numbers on screen;
+  the AI provider sees placeholders.
+- **Turkish data first.** Checksum-validated T.C. kimlik and IBAN, Turkish phone and
+  address patterns, Turkish and English in-page messages and coaching.
+- **Deployment choice.** Local mode, cloud or on-prem, including air-gapped.
+- **Candour.** We publish rule counts because they are countable, and we list what is
+  not ready (appendix).
 
 ---
 
-## Getting started
+## Appendix — current status and what is not ready yet
 
-**Local evaluation needs no account; a free-forever commercial licence and an
-offline installation are not yet approved promises.** A controlled evaluation
-must use an agreed scope and configuration.
+Singularity AIDR is not yet released for live pilots or production; the release record is
+[first-customer-ready.md](../production-readiness/first-customer-ready.md). Use the
+[controlled demo runbook](../production-readiness/controlled-demo-runbook.md) and the
+[demo script](demo-script.md) for any session.
 
-No approved publisher-signed customer installer is available yet. Do not
-send a source-checkout or unsigned engineering bundle as a supported release.
-On a controlled internal candidate, `aidr status` can report the bundled rule
-count and detection self-test, but registration is not host enforcement proof.
+**Working in this repository today**
 
-Use the [first-customer evaluation gate](../production-readiness/first-customer-ready.md)
-and [controlled demo runbook](../production-readiness/controlled-demo-runbook.md)
-before offering an installation or live trial. The current decision is NO-GO.
+- Local engine with 494 YAML threat rules in 29 files; `aidr setup` refuses to report
+  success if zero rules load or the self-test does not match.
+- Connector code for Claude Code, Cursor, VS Code, OpenClaw, OpenCode and Codex CLI,
+  with cross-connector parity tests.
+- Browser Guard engine, reversible vault, site adapters, file sanitisation, managed
+  policy, counts-only telemetry and a real-browser E2E harness against hermetic site
+  fixtures.
+- AIDR Privacy 0.6.0 engine with its own test suite (`pnpm test:privacy`).
+- Control plane with tenancy/RLS, device enrollment, policy, audit export, SSO/SCIM.
 
-**For a deeper look:** the architecture, threat-rule format, and full
-limitations are documented in the repository. Security reviews are welcome;
-we will tell you plainly what we cannot yet provide.
+**Not ready yet**
 
----
+- **No certifications or independent assessment.** No SOC 2, ISO 27001 or penetration
+  test. None in progress.
+- **No customers.** No case studies, testimonials or references.
+- **No measured efficacy.** Detection rate, false-positive rate and evasion resistance
+  have not been measured on a real workload, for agents or for Browser Guard.
+- **No publisher-signed release.** No approved code-signing identity; Windows warnings or
+  policy blocks depend on the device. Browser Guard is not yet published to the Chrome,
+  Edge or Firefox stores.
+- **Cloud and on-prem are not accepted.** The hosted app hostname does not resolve yet;
+  both deployment paths still need the FCR installation, recovery and scale rehearsals.
+- **Real-host acceptance is open** for each connector, OS and host version, and for each
+  browser and AI site. A returned `deny` is not proof that a side effect was prevented.
+- **Known coverage edges.** If a hook is disabled, untrusted or killed, the host
+  proceeds; Codex fails open in those cases. Browser Guard uploads Word, Excel and
+  PowerPoint files as masked copies but cannot rewrite PDFs (a PDF with findings is
+  blocked; scanned or encrypted PDFs are uploaded with a warning unless the mode is
+  `block`), and a site redesign can require an adapter update. Names and addresses without
+  cue words need the optional NER host, which ships without a model.
+- **Commercial terms open.** Legal terms and DPA, billing, support and regions still await
+  approval.
 
-*Singularity AIDR · AI Agent Detection & Response*
-*This document contains no customer names, certifications, or efficacy claims,
-because none exist. It will be updated when they do.*
+*This document contains no customer names, certifications or efficacy claims, because
+none exist. It will be updated when they do.*

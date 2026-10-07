@@ -22,6 +22,11 @@ alongside the generated, pinned configuration.
 
 ## Self-hosted installation
 
+The [on-prem guide](onprem/README.md) is the short entry point for a customer
+host: sizing profiles (`--profile small|medium|large`), the optional AI
+Security Posture scanner (`--with-posture-scanner`), upgrade, backup, uninstall
+and troubleshooting.
+
 Build from the repository root on the release machine (skip this step when
 using an already built, independently verified customer kit):
 
@@ -77,6 +82,24 @@ its tenant/entitlement, configure the invoice sales destination and perform
 onboarding before inviting customers. Signup is disabled in the generated
 self-hosted baseline. Team invitations create manually shared, expiring links;
 the application does not claim to send invitation emails.
+
+The first account is provisioned with the vendor-signed license:
+`node scripts/deployment-bootstrap.mjs --deployment /srv/aidr --email
+owner@customer.example --license-file /secure-delivery/aidr-license.json`
+(password on stdin). Seats, admission end and contract reference come from the
+signed license, which is verified against `deploy/onprem/license-public-keys.json`
+before any API call; the shipped registry is empty and refuses every license
+until the vendor-published registry is installed. Typed terms are accepted only
+with `--unsigned-license-for-pilot`. After expiry and grace, managed features
+degrade while local detection keeps enforcing. See [licensing](../docs/operations/licensing.md).
+
+### Kubernetes
+
+The Helm chart in `deploy/helm/aidr` installs the same control plane on Kubernetes
+(external HA Postgres recommended, secure defaults, NetworkPolicy, optional AI Security Posture scanner).
+Images are built with `deploy/helm/build-images.mjs` and credentials generated once with
+`deploy/helm/generate-secrets.mjs`. See `docs/operations/kubernetes.md`; validate the
+chart with `pnpm verify:helm`.
 
 ## Isolated installation rehearsal
 
@@ -198,6 +221,15 @@ present. Enable the timer on the TLS host with the private environment file
 described in `deploy/ingress/README.md` so certificate renewal does not depend on
 an operator remembering it.
 
+On-prem and air-gapped hosts that cannot reach an ACME CA use customer-supplied
+certificates. `deploy/ingress/nginx.onprem.reference.conf` is the reference
+ingress with separate dashboard and API vhosts, HSTS and security headers, and
+`node scripts/deployment-tls-renew.mjs --mode static --hostname <host> --cert-file
+<fullchain.pem> --key-file <key.pem>` validates the chain, hostname, validity
+margin and key match, installs the pair under `/etc/aidr/tls/live/<host>/` and
+reloads nginx only after `nginx -t` passes (restoring the previous pair
+otherwise). Run it once per vhost and again before each certificate expires.
+
 ## Endpoint connector installation
 
 For a built or already-extracted Claude package, `--package-dir` must name the
@@ -278,10 +310,18 @@ On the connected staging host (network plus a running Docker daemon):
 ```powershell
 pnpm build
 node scripts/deployment-prepare.mjs --mode self-hosted --output .aidr-deploy --region self-hosted --tenant-region self-hosted --dashboard-url https://aidr.customer.example --supabase-url https://api.aidr.customer.example --artifact-verification-public-key-file C:\secure-delivery\aidr-artifact-signing-public.pem --telemetry-queue-root /var/lib/aidr-telemetry
+docker compose --project-directory .aidr-deploy -f .aidr-deploy/compose.yml build
 node scripts/build-airgap-images.mjs --compose .aidr-deploy/compose.yml --output .aidr-airgap --platform linux/amd64
 ```
 
-`--compose` reads every `image:` reference from the prepared stack; `--plan
+`--compose` reads every `image:` reference from the prepared stack and, for
+each `build:` service, the `FROM` base images of its Dockerfile (stage aliases
+and `scratch` excluded, `ARG` defaults and build args substituted), so the
+disconnected host can rebuild offline. A service with both `build:` and
+`image:` (the `aidr-dashboard:<version>` image, and `aidr-aig-*` with
+`--with-posture-scanner`) is a local build: it is never pulled, must already exist from the
+`docker compose build` step, and is saved into the bundle. See the
+[on-prem sizing and posture scanner guide](onprem/README.md). `--plan
 <json>` (a `{ "images": [{ "ref": "...", "digest": "sha256:..." }] }` document) or
 repeated `--images <ref>` are the alternatives when no compose file is available.
 Pinned digests are enforced when supplied. Every `docker save` output is hashed,
@@ -314,6 +354,14 @@ tarballs together — a digest list without its bytes proves nothing. This
 procedure is delivery media integrity and plan completeness only; notarization,
 MDM distribution, registry publication and publisher key custody remain external
 and are not claimed here.
+
+Threat-intelligence packs reach a disconnected installation on the same approved
+media. `node scripts/import-offline-pack.mjs` verifies the vendor-signed pack
+(manifest signature, file hashes, expiry, rollback) before installing it into an
+endpoint packs directory or the private `aidr-packs` bucket of this deployment;
+see [air-gapped updates](../docs/operations/threat-sync.md#air-gapped-updates).
+The license for a disconnected installation is the same signed file described in
+[licensing](../docs/operations/licensing.md).
 
 ## Release boundary
 

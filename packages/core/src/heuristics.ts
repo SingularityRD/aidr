@@ -34,7 +34,19 @@
  *    happened; a truncated evaluation must never be read as a full clean one.
  */
 
+import {
+	DELETED_TEST_FILE_VIEW,
+	EDIT_VIEW_TYPES,
+	type EditLineViewEntry,
+	type EditViews,
+} from "./agent-safety/edit-views.js";
+import {
+	isTrustedModelSourceMatch,
+	NO_TRUSTED_MODEL_SOURCES,
+	type TrustedModelSources,
+} from "./ai-supply-chain.js";
 import { boundArtifact, extractUrls, MAX_ARTIFACT_SIZE } from "./extractors.js";
+import { normalizeShellText } from "./shell-normalize.js";
 import { extractDomain, isTrustedDomain } from "./trusted-domains.js";
 import type { Artifact, HeuristicMatch, Threat, TrustedDomain } from "./types.js";
 
@@ -46,16 +58,57 @@ import type { Artifact, HeuristicMatch, Threat, TrustedDomain } from "./types.js
  */
 const MAX_MATCH_INPUT = MAX_ARTIFACT_SIZE;
 
+/**
+ * `match_on` suffix for rules evaluated against the shell-normalized view of an
+ * artifact (`command_normalized`, `file_path_normalized`, `content_normalized`).
+ */
+const NORMALIZED_SUFFIX = "_normalized";
+
+function countMatchingLines(
+	pattern: RegExp,
+	lines: readonly string[],
+): { count: number; first: string | undefined } {
+	let count = 0;
+	let first: string | undefined;
+	for (const line of lines) {
+		if (!pattern.test(line)) continue;
+		count++;
+		first ??= line;
+	}
+	return { count, first };
+}
+
+/**
+ * `setting -> number` for every line where the pattern's first capture group is
+ * a number. The key is the matched text with that number blanked, so
+ * `lines: 80` and `lines: 60` compare as the same setting.
+ */
+function numericSettings(pattern: RegExp, lines: readonly string[]): Map<string, number> {
+	const settings = new Map<string, number>();
+	for (const line of lines) {
+		const match = pattern.exec(line);
+		const raw = match?.[1];
+		if (!match || raw === undefined) continue;
+		const value = Number.parseFloat(raw);
+		if (!Number.isFinite(value)) continue;
+		const key = match[0].replace(raw, "#").toLowerCase().replace(/\s+/g, "");
+		settings.set(key, value);
+	}
+	return settings;
+}
+/**
+ * Occurrences of one model-source rule examined per artifact before the match
+ * is kept as-is (fail towards reporting, never towards suppression).
+ */
+const MAX_SOURCE_OCCURRENCES = 50;
+
 /** Threat IDs where trusted installer domains suppress matches. */
-const TRUSTED_DOMAIN_SUPPRESSIBLE = new Set([
-	"CLT-CMD-001",
-	"CLT-CMD-002",
-	"CLT-SUPPLY-001",
-]);
+const TRUSTED_DOMAIN_SUPPRESSIBLE = new Set(["CLT-CMD-001", "CLT-CMD-002", "CLT-SUPPLY-001"]);
 
 export class HeuristicsEngine {
 	private readonly threatMap: Map<string, Threat[]> = new Map();
 	private readonly trustedDomains: TrustedDomain[];
+	private readonly trustedModelSources: TrustedModelSources;
 	/** Regex failures are deliberate signal skips, never a clean evaluation. */
 	private _unavailableThreats: Array<{ threatId: string; reason: string }> = [];
 
@@ -63,8 +116,13 @@ export class HeuristicsEngine {
 		return this._unavailableThreats;
 	}
 
-	constructor(threats: Threat[], trustedDomains?: TrustedDomain[]) {
+	constructor(
+		threats: Threat[],
+		trustedDomains?: TrustedDomain[],
+		trustedModelSources: TrustedModelSources = NO_TRUSTED_MODEL_SOURCES,
+	) {
 		this.trustedDomains = trustedDomains ?? [];
+		this.trustedModelSources = trustedModelSources;
 
 		for (const threat of threats) {
 			for (const matchType of threat.matchOn) {
@@ -98,6 +156,140 @@ export class HeuristicsEngine {
 		return true;
 	}
 
+	/**
+	 * A model-source match (AISC rules) is dropped only when EVERY occurrence of
+	 * the rule in the artifact names trusted sources. `exec` reports the first
+	 * occurrence only, so a trusted download listed first would otherwise hide
+	 * an untrusted one after it. Returns the first untrusted occurrence, the
+	 * match itself for non-source rules, or null when all occurrences are trusted.
+	 */
+	private untrustedModelSourceMatch(match: HeuristicMatch): HeuristicMatch | null {
+		const trusted = (matchValue: string) =>
+			isTrustedModelSourceMatch(
+				match.threat.id,
+				matchValue,
+				this.trustedModelSources,
+				match.artifact,
+			);
+		if (!trusted(match.matchValue)) return match;
+		const { source, flags } = match.threat.compiledPattern;
+		const pattern = new RegExp(source, `${flags.replace(/[gy]/g, "")}g`);
+		let occurrences = 0;
+		for (let m = pattern.exec(match.artifact); m !== null; m = pattern.exec(match.artifact)) {
+			if (m[0] === "") pattern.lastIndex++;
+			if (!trusted(m[0])) {
+				return { ...match, matchValue: m[0] };
+			}
+			if (++occurrences >= MAX_SOURCE_OCCURRENCES) return match;
+		}
+		return null;
+	}
+
+	/** Run one threat against one value; a regex failure is a recorded skip. */
+	private runThreat(threat: Threat, value: string, matches: HeuristicMatch[]): boolean {
+		try {
+			// YAML patterns are compiled without `g`/`y`, so `exec` is stateless and
+			// the compiled instance can be reused. Only a caller-supplied stateful
+			// pattern needs a fresh clone.
+			const pattern =
+				threat.compiledPattern.global || threat.compiledPattern.sticky
+					? new RegExp(threat.compiledPattern.source, threat.compiledPattern.flags)
+					: threat.compiledPattern;
+			const m = pattern.exec(value);
+			if (!m) return false;
+			matches.push({ threat, artifact: value, matchValue: m[0] });
+			return true;
+		} catch (error) {
+			// Preserve the deliberate per-rule skip, but expose it to callers so
+			// verdict/audit layers cannot mistake this for a clean scan.
+			const reason = error instanceof Error ? error.message : String(error);
+			this._unavailableThreats.push({ threatId: threat.id, reason });
+			console.warn(`Regex execution failed for threat ${threat.id}: ${reason}`);
+			return false;
+		}
+	}
+
+	/**
+	 * Rules that declare `match_on: <type>_normalized` see what the shell would
+	 * see: quotes, escapes, variables and state-directory globs peeled off (see
+	 * `shell-normalize.ts`). A rule already matched on the literal value is not
+	 * reported twice.
+	 */
+	private matchNormalized(
+		type: string,
+		value: string,
+		alreadyMatched: ReadonlySet<string>,
+		matches: HeuristicMatch[],
+	): void {
+		const threats = this.threatMap.get(`${type}${NORMALIZED_SUFFIX}`);
+		if (!threats || threats.length === 0) return;
+		const normalized = normalizeShellText(value);
+		for (const threat of threats) {
+			if (!alreadyMatched.has(threat.id)) this.runThreat(threat, normalized, matches);
+		}
+	}
+
+	/** True when any loaded rule inspects the diff-aware file-edit views. */
+	get hasEditViewRules(): boolean {
+		for (const type of EDIT_VIEW_TYPES) {
+			if ((this.threatMap.get(type)?.length ?? 0) > 0) return true;
+		}
+		return false;
+	}
+
+	/**
+	 * Match the diff-aware file-edit views (see `agent-safety/edit-views.ts`).
+	 * Line rules compare how many added and removed lines match (`Threat.diff`);
+	 * the reported artifact is the file path, never the edited content. Call
+	 * after {@link match}: regex failures are appended to the same skip list.
+	 */
+	matchEditViews(views: EditViews): HeuristicMatch[] {
+		const matches: HeuristicMatch[] = [];
+		for (const entry of views.lines) {
+			for (const threat of this.threatMap.get(entry.view) ?? []) {
+				const match = this.runLineRule(threat, entry);
+				if (match) matches.push(match);
+			}
+		}
+		for (const filePath of views.deletedTestFiles) {
+			for (const threat of this.threatMap.get(DELETED_TEST_FILE_VIEW) ?? []) {
+				this.runThreat(threat, filePath, matches);
+			}
+		}
+		return matches;
+	}
+
+	private runLineRule(threat: Threat, entry: EditLineViewEntry): HeuristicMatch | null {
+		try {
+			const pattern =
+				threat.compiledPattern.global || threat.compiledPattern.sticky
+					? new RegExp(threat.compiledPattern.source, threat.compiledPattern.flags)
+					: threat.compiledPattern;
+			if (threat.diff === "value_decreased") {
+				const before = numericSettings(pattern, entry.removed);
+				for (const [key, value] of numericSettings(pattern, entry.added)) {
+					const previous = before.get(key);
+					if (previous !== undefined && value < previous) {
+						return { threat, artifact: entry.filePath, matchValue: key };
+					}
+				}
+				return null;
+			}
+			const added = countMatchingLines(pattern, entry.added);
+			const removed = countMatchingLines(pattern, entry.removed);
+			const wantsRemoval = threat.diff === "removed";
+			const net = wantsRemoval ? removed.count - added.count : added.count - removed.count;
+			if (net < (threat.minMatches ?? 1)) return null;
+			const sample = (wantsRemoval ? removed.first : added.first) ?? "";
+			return { threat, artifact: entry.filePath, matchValue: sample.slice(0, 200) };
+		} catch (error) {
+			const reason = error instanceof Error ? error.message : String(error);
+			this._unavailableThreats.push({ threatId: threat.id, reason });
+			console.warn(`Regex execution failed for threat ${threat.id}: ${reason}`);
+			return null;
+		}
+	}
+
 	match(artifacts: Artifact[]): HeuristicMatch[] {
 		const matches: HeuristicMatch[] = [];
 		this._unavailableThreats = [];
@@ -107,40 +299,19 @@ export class HeuristicsEngine {
 			// when it truncates, so a partial evaluation is never reported as a
 			// full clean result.
 			const value = boundArtifact(`${artifact.type} artifact`, artifact.value, MAX_MATCH_INPUT);
-			const threats = this.threatMap.get(artifact.type) ?? [];
-
-			for (const threat of threats) {
-				try {
-					// YAML patterns are compiled without `g`/`y`, so `exec` is
-					// stateless and the compiled instance can be reused. Only a
-					// caller-supplied stateful pattern needs a fresh clone.
-					const pattern =
-						threat.compiledPattern.global || threat.compiledPattern.sticky
-							? new RegExp(threat.compiledPattern.source, threat.compiledPattern.flags)
-							: threat.compiledPattern;
-					const m = pattern.exec(value);
-					if (m) {
-						matches.push({
-							threat,
-							artifact: value,
-							matchValue: m[0],
-						});
-					}
-				} catch (error) {
-					// Preserve the deliberate per-rule skip, but expose it to callers so
-					// verdict/audit layers cannot mistake this for a clean scan.
-					const reason = error instanceof Error ? error.message : String(error);
-					this._unavailableThreats.push({ threatId: threat.id, reason });
-					console.warn(`Regex execution failed for threat ${threat.id}: ${reason}`);
-				}
+			const matched = new Set<string>();
+			for (const threat of this.threatMap.get(artifact.type) ?? []) {
+				if (this.runThreat(threat, value, matches)) matched.add(threat.id);
 			}
+			this.matchNormalized(artifact.type, value, matched, matches);
 		}
 
-		// Post-filter: suppress matches for trusted installer domains
-		if (this.trustedDomains.length > 0) {
-			return matches.filter((m) => !this.isSuppressedByTrustedDomain(m));
-		}
-
-		return matches;
+		// Post-filter: suppress matches for trusted installer domains, and
+		// model-source rules whose publisher or host is on the trusted list.
+		return matches.flatMap((m) => {
+			if (this.isSuppressedByTrustedDomain(m)) return [];
+			const kept = this.untrustedModelSourceMatch(m);
+			return kept ? [kept] : [];
+		});
 	}
 }

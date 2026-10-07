@@ -1,5 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
-import { resolve } from "node:path";
+import { isAbsolute, resolve } from "node:path";
+import { DlpPolicySchema, validateAgentProfileDocument } from "@singularityrd/aidr-core";
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
 const HEX = /^[0-9a-f]{64}$/;
@@ -58,7 +59,7 @@ function validResourcePattern(pattern) {
 function validateContextAllowlist(client, field, validEntry) {
 	const value = client[field];
 	if (value === undefined) return;
-	if (!record(value)) throw new Error(`invalid ${field}`);
+	if (!record(value)) throw new GatewayConfigError(`invalid ${field}`);
 	for (const [serverId, entries] of Object.entries(value)) {
 		if (
 			!Object.hasOwn(client.allowedTools, serverId) ||
@@ -68,7 +69,56 @@ function validateContextAllowlist(client, field, validEntry) {
 			new Set(entries).size !== entries.length ||
 			!entries.every(validEntry)
 		)
-			throw new Error(`invalid ${field}`);
+			throw new GatewayConfigError(`invalid ${field}`);
+	}
+}
+
+const DEFAULT_MAX_BINARY_BYTES = 256 * 1024;
+
+/**
+ * Binary MIME types whose leading bytes the gateway can verify. Only these may
+ * be allowlisted: a type the gateway cannot sniff would let an upstream label
+ * arbitrary bytes as an accepted format.
+ */
+const SNIFFABLE_BINARY_MIME_TYPES = Object.freeze([
+	"image/png",
+	"image/jpeg",
+	"image/gif",
+	"image/webp",
+	"audio/wav",
+	"audio/mpeg",
+	"audio/ogg",
+	"application/pdf",
+]);
+const DEFAULT_BINARY_MIME_TYPES = Object.freeze([
+	"image/png",
+	"image/jpeg",
+	"image/gif",
+	"image/webp",
+]);
+
+/** Server-initiated message categories an operator can set to "deny" or "ignore". */
+const SERVER_INITIATED_CATEGORIES = Object.freeze([
+	"sampling",
+	"elicitation",
+	"roots",
+	"notifications",
+]);
+const SERVER_INITIATED_ACTIONS = new Set(["deny", "ignore"]);
+
+/**
+ * A configuration failure with a stable, secret-free reason code. Messages are
+ * fixed literals, so the code can be printed by the operator CLIs.
+ */
+export class GatewayConfigError extends Error {
+	constructor(message) {
+		super(message);
+		this.name = "GatewayConfigError";
+		this.code = message
+			.toLowerCase()
+			.replace(/[^a-z0-9]+/g, "_")
+			.replace(/^_|_$/g, "")
+			.slice(0, 64);
 	}
 }
 
@@ -89,7 +139,7 @@ function validId(value) {
 
 function requireKeys(value, allowed, label) {
 	if (!record(value) || Object.keys(value).some((key) => !allowed.includes(key))) {
-		throw new Error(`invalid ${label}`);
+		throw new GatewayConfigError(`invalid ${label}`);
 	}
 }
 
@@ -105,16 +155,19 @@ function validateClient(client, clientKeys, tokenHashes) {
 			"allowedResources",
 			"allowedPrompts",
 			"probeTokenEnv",
+			"profile",
 		],
 		"client",
 	);
 	if (client.probeTokenEnv !== undefined && !ENV.test(client.probeTokenEnv))
-		throw new Error("invalid probe token environment variable");
+		throw new GatewayConfigError("invalid probe token environment variable");
+	if (client.profile !== undefined && !/^[a-z0-9][a-z0-9._-]{0,63}$/.test(client.profile))
+		throw new GatewayConfigError("invalid client profile name");
 	if (!validId(client.id) || !validId(client.tenantId) || !HEX.test(client.tokenSha256)) {
-		throw new Error("invalid client identity or token hash");
+		throw new GatewayConfigError("invalid client identity or token hash");
 	}
 	if (!record(client.allowedTools) || Object.keys(client.allowedTools).length === 0) {
-		throw new Error("client requires explicit allowedTools");
+		throw new GatewayConfigError("client requires explicit allowedTools");
 	}
 	for (const [serverId, names] of Object.entries(client.allowedTools)) {
 		if (
@@ -124,10 +177,11 @@ function validateClient(client, clientKeys, tokenHashes) {
 			names.some((name) => !validId(name)) ||
 			new Set(names).size !== names.length
 		)
-			throw new Error("invalid client tool allowlist");
+			throw new GatewayConfigError("invalid client tool allowlist");
 	}
 	if (client.allowedServerMethods !== undefined) {
-		if (!record(client.allowedServerMethods)) throw new Error("invalid server method allowlist");
+		if (!record(client.allowedServerMethods))
+			throw new GatewayConfigError("invalid server method allowlist");
 		for (const [serverId, methods] of Object.entries(client.allowedServerMethods)) {
 			if (
 				!Object.hasOwn(client.allowedTools, serverId) ||
@@ -136,7 +190,7 @@ function validateClient(client, clientKeys, tokenHashes) {
 				new Set(methods).size !== methods.length ||
 				methods.some((method) => !MCP_SERVER_METHODS.includes(method))
 			)
-				throw new Error("invalid server method allowlist");
+				throw new GatewayConfigError("invalid server method allowlist");
 		}
 	}
 	validateContextAllowlist(client, "allowedResources", validResourcePattern);
@@ -147,7 +201,7 @@ function validateClient(client, clientKeys, tokenHashes) {
 	);
 	const key = `${client.tenantId}\0${client.id}`;
 	if (clientKeys.has(key) || tokenHashes.has(client.tokenSha256))
-		throw new Error("duplicate client or token");
+		throw new GatewayConfigError("duplicate client or token");
 	clientKeys.add(key);
 	tokenHashes.add(client.tokenSha256);
 	return client;
@@ -168,6 +222,7 @@ function validateServer(server, serverKeys) {
 			"upstreamAuthEnv",
 			"protocolVersions",
 			"pinnedAddresses",
+			"dlpPolicy",
 		],
 		"server",
 	);
@@ -185,24 +240,24 @@ function validateServer(server, serverKeys) {
 		(server.revokedKeyIds !== undefined &&
 			(!Array.isArray(server.revokedKeyIds) || server.revokedKeyIds.some((id) => !validId(id))))
 	)
-		throw new Error("invalid server config");
+		throw new GatewayConfigError("invalid server config");
 	let url;
 	try {
 		url = new URL(server.url);
 	} catch {
-		throw new Error("invalid server URL");
+		throw new GatewayConfigError("invalid server URL");
 	}
 	if (url.username || url.password || url.hash || url.search)
-		throw new Error("server URL must not contain credentials, query, or fragment");
+		throw new GatewayConfigError("server URL must not contain credentials, query, or fragment");
 	server.protocolVersions ??= MCP_PROTOCOL_VERSIONS.slice(0, 3);
 	if (
 		!Array.isArray(server.protocolVersions) ||
 		server.protocolVersions.length === 0 ||
 		server.protocolVersions.some((version) => !MCP_PROTOCOL_VERSIONS.includes(version))
 	)
-		throw new Error("invalid protocol versions");
+		throw new GatewayConfigError("invalid protocol versions");
 	if (server.protocolVersions.includes("2026-07-28") && server.sessionMode !== "stateless")
-		throw new Error("modern MCP requires stateless transport");
+		throw new GatewayConfigError("modern MCP requires stateless transport");
 	if (
 		server.pinnedAddresses !== undefined &&
 		(!Array.isArray(server.pinnedAddresses) ||
@@ -210,11 +265,90 @@ function validateServer(server, serverKeys) {
 			server.pinnedAddresses.length > 16 ||
 			server.pinnedAddresses.some((address) => typeof address !== "string" || !address.trim()))
 	)
-		throw new Error("invalid pinned addresses");
+		throw new GatewayConfigError("invalid pinned addresses");
 	const key = `${server.tenantId}\0${server.id}`;
-	if (serverKeys.has(key)) throw new Error("duplicate tenant server");
+	if (serverKeys.has(key)) throw new GatewayConfigError("duplicate tenant server");
 	serverKeys.add(key);
-	return server;
+	if (server.dlpPolicy === undefined) return server;
+	let dlpPolicy;
+	try {
+		dlpPolicy = DlpPolicySchema.parse(server.dlpPolicy);
+	} catch {
+		throw new GatewayConfigError("invalid server dlp policy");
+	}
+	// A DLP policy belongs to exactly one tenant. Binding it to another tenant's
+	// server would evaluate that tenant's traffic against foreign rules.
+	if (dlpPolicy.tenantId !== server.tenantId)
+		throw new GatewayConfigError("server dlp policy tenant mismatch");
+	return { ...server, dlpPolicy };
+}
+
+function validateDetection(input) {
+	if (input === undefined) return {};
+	requireKeys(input, ["threatsDir", "allowlistsDir", "agentConfigPath"], "detection config");
+	const detection = {};
+	for (const key of ["threatsDir", "allowlistsDir", "agentConfigPath"]) {
+		if (input[key] === undefined) continue;
+		if (typeof input[key] !== "string" || !isAbsolute(input[key]))
+			throw new GatewayConfigError("detection paths must be absolute");
+		detection[key] = resolve(input[key]);
+	}
+	return detection;
+}
+
+/**
+ * Optional agent permission profiles for MCP clients. An invalid document or a
+ * client naming a missing profile refuses startup: a profile is a restriction,
+ * so the gateway never runs without one it was configured to enforce.
+ */
+function validateAgentProfiles(input, clients) {
+	if (input === undefined) {
+		if (clients.some((client) => client.profile !== undefined))
+			throw new GatewayConfigError("client profile requires agentProfiles");
+		return undefined;
+	}
+	const result = validateAgentProfileDocument(input);
+	if (!result.ok) throw new GatewayConfigError("invalid agent profiles");
+	const names = new Set(result.document.profiles.map((profile) => profile.name));
+	if (clients.some((client) => client.profile !== undefined && !names.has(client.profile)))
+		throw new GatewayConfigError("client profile is not defined in agentProfiles");
+	return result.document;
+}
+
+function validateBinaryOutput(input, maxBodyBytes) {
+	if (input === undefined)
+		return {
+			maxDecodedBytes: Math.min(DEFAULT_MAX_BINARY_BYTES, maxBodyBytes),
+			allowedMimeTypes: [...DEFAULT_BINARY_MIME_TYPES],
+		};
+	requireKeys(input, ["maxDecodedBytes", "allowedMimeTypes"], "binary output config");
+	const maxDecodedBytes = input.maxDecodedBytes ?? Math.min(DEFAULT_MAX_BINARY_BYTES, maxBodyBytes);
+	if (
+		!Number.isSafeInteger(maxDecodedBytes) ||
+		maxDecodedBytes < 0 ||
+		maxDecodedBytes > maxBodyBytes
+	)
+		throw new GatewayConfigError("invalid binary output size limit");
+	const allowedMimeTypes = input.allowedMimeTypes ?? [...DEFAULT_BINARY_MIME_TYPES];
+	if (
+		!Array.isArray(allowedMimeTypes) ||
+		allowedMimeTypes.some((type) => !SNIFFABLE_BINARY_MIME_TYPES.includes(type)) ||
+		new Set(allowedMimeTypes).size !== allowedMimeTypes.length
+	)
+		throw new GatewayConfigError("invalid binary output mime allowlist");
+	return { maxDecodedBytes, allowedMimeTypes: [...allowedMimeTypes] };
+}
+
+function validateServerInitiated(input) {
+	const policy = Object.fromEntries(SERVER_INITIATED_CATEGORIES.map((key) => [key, "deny"]));
+	if (input === undefined) return policy;
+	requireKeys(input, SERVER_INITIATED_CATEGORIES, "server initiated policy");
+	for (const [key, action] of Object.entries(input)) {
+		if (!SERVER_INITIATED_ACTIONS.has(action))
+			throw new GatewayConfigError("invalid server initiated policy");
+		policy[key] = action;
+	}
+	return policy;
 }
 
 function validateScopes(clients, servers) {
@@ -223,10 +357,13 @@ function validateScopes(clients, servers) {
 			const server = servers.find(
 				(item) => item.tenantId === client.tenantId && item.id === serverId,
 			);
-			if (!server) throw new Error("client allowlist references another tenant or unknown server");
+			if (!server)
+				throw new GatewayConfigError(
+					"client allowlist references another tenant or unknown server",
+				);
 			const signedNames = new Set(server.signedManifest.manifest?.tools?.map((tool) => tool.name));
 			if (client.allowedTools[serverId].some((name) => !signedNames.has(name)))
-				throw new Error("client allowlist references unsigned tool");
+				throw new GatewayConfigError("client allowlist references unsigned tool");
 		}
 	}
 }
@@ -238,22 +375,34 @@ export function validateGatewayConfig(input) {
 	input = structuredClone(input);
 	requireKeys(
 		input,
-		["stateDir", "port", "maxBodyBytes", "clients", "servers", "routingRequired"],
+		[
+			"stateDir",
+			"port",
+			"maxBodyBytes",
+			"clients",
+			"servers",
+			"routingRequired",
+			"detection",
+			"binaryOutput",
+			"serverInitiated",
+			"agentProfiles",
+		],
 		"gateway config",
 	);
 	if (input.routingRequired !== undefined && typeof input.routingRequired !== "boolean")
-		throw new Error("invalid routing requirement");
+		throw new GatewayConfigError("invalid routing requirement");
 	if (typeof input.stateDir !== "string" || !input.stateDir.trim())
-		throw new Error("invalid stateDir");
+		throw new GatewayConfigError("invalid stateDir");
 	const port = input.port ?? 7789;
-	if (!Number.isSafeInteger(port) || port < 0 || port > 65535) throw new Error("invalid port");
+	if (!Number.isSafeInteger(port) || port < 0 || port > 65535)
+		throw new GatewayConfigError("invalid port");
 	const maxBodyBytes = input.maxBodyBytes ?? 256 * 1024;
 	if (!Number.isSafeInteger(maxBodyBytes) || maxBodyBytes < 1024 || maxBodyBytes > HARD_MAX_BODY)
-		throw new Error("invalid maxBodyBytes");
+		throw new GatewayConfigError("invalid maxBodyBytes");
 	if (!Array.isArray(input.clients) || input.clients.length === 0 || input.clients.length > 10000)
-		throw new Error("invalid clients");
+		throw new GatewayConfigError("invalid clients");
 	if (!Array.isArray(input.servers) || input.servers.length === 0 || input.servers.length > 1000)
-		throw new Error("invalid servers");
+		throw new GatewayConfigError("invalid servers");
 	const clientKeys = new Set();
 	const tokenHashes = new Set();
 	const serverKeys = new Set();
@@ -263,11 +412,11 @@ export function validateGatewayConfig(input) {
 		input.routingRequired &&
 		servers.some((server) => !server.upstreamAuthEnv || !server.pinnedAddresses)
 	)
-		throw new Error(
+		throw new GatewayConfigError(
 			"mandatory routing requires isolated upstream credentials and pinned addresses",
 		);
 	if (input.routingRequired && clients.some((client) => !client.probeTokenEnv))
-		throw new Error("mandatory routing requires client credential negative probes");
+		throw new GatewayConfigError("mandatory routing requires client credential negative probes");
 	validateScopes(clients, servers);
 	return freezeTree({
 		stateDir: resolve(input.stateDir),
@@ -276,6 +425,10 @@ export function validateGatewayConfig(input) {
 		clients,
 		servers,
 		routingRequired: input.routingRequired === true,
+		detection: validateDetection(input.detection),
+		binaryOutput: validateBinaryOutput(input.binaryOutput, maxBodyBytes),
+		serverInitiated: validateServerInitiated(input.serverInitiated),
+		agentProfiles: validateAgentProfiles(input.agentProfiles, clients),
 	});
 }
 

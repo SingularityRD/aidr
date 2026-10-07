@@ -1,6 +1,7 @@
 import {
 	loadConfig,
 	logVerdict,
+	recordToolOutputFlow,
 	scanCachedProvisionedOutput,
 	scanModelOutput,
 	type Verdict,
@@ -322,5 +323,17 @@ export async function auditOutputInspection(
 		);
 	} catch {
 		// Output handling must still return a host-enforced result if audit I/O fails.
+	}
+	if (context.surface === "tool_output" && result.findings.length > 0) {
+		// Session toxic-flow: the secrets or injection payloads this output carried
+		// taint the session for its next calls. Never throws.
+		await recordToolOutputFlow(
+			{
+				sessionId: context.sessionId,
+				toolName: context.toolName ?? "Unknown",
+				findings: result.findings,
+			},
+			{ agentRuntime: context.host },
+		);
 	}
 }

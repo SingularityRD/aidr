@@ -173,8 +173,13 @@ test("every workflow artifact upload has an explicit reviewed file selection", (
 			".e2e-artifacts/release/*.xml",
 			".e2e-artifacts/release/*.log",
 		]],
+		["ci.yml::Upload Browser Guard zips (pinned)", [
+			"packages/browser-guard/dist/*.zip",
+			"packages/browser-guard/dist/SHA256SUMS",
+		]],
 		["docs-generation.yml::Upload generated documentation (pinned)", ["docs/api/", "docs/diagrams/"]],
 		["error-to-insight.yml::Upload Insights Report", ["error-insights-report.md"]],
+		["release-browser-guard.yml::Upload Browser Guard release bundle (pinned)", ["release-output-browser-guard/"]],
 		["release-promote.yml::Persist anti-rollback state and verification receipt (pinned)", [
 			"${{ runner.temp }}/aidr-promotion-state/anti-rollback-state.json",
 			"${{ runner.temp }}/aidr-promotion-state/verification-receipt.json",

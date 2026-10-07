@@ -186,6 +186,15 @@ explicit runtime opt-in (see [privacy](../privacy.md#what-can-leave-the-process)
 and a real DSN are both present; a DSN alone is not consent to send runtime
 events. Do not use example or placeholder DSNs for a live diagnostic route.
 
+The download center (`/downloads` and the onboarding "Download & connect"
+step) reads a release manifest. On the Node image, set
+`AIDR_RELEASE_MANIFEST_PATH` to a read-only mounted manifest file (served at
+`/release-manifest.json`), or set `VITE_AIDR_RELEASE_MANIFEST_URL` to an
+external HTTPS manifest. Do not set both. On Vercel, `VITE_AIDR_RELEASE_MANIFEST_URL`
+is a build-time value and must be same-origin unless you extend the CSP
+`connect-src`. Without a manifest the dashboard shows install guidance with no
+download links. See the [release manifest contract](../contracts/release-manifest.md).
+
 The Supabase Edge Functions called by the browser also require
 `AIDR_ALLOWED_ORIGINS` to contain the exact deployed dashboard origin (for
 example `https://demo.example.com`). The device/pilot/credential endpoints
