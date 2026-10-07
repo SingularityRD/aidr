@@ -1,0 +1,62 @@
+{
+ "name": "api-gw-candidate",
+ "service": "api-gw",
+ "role": "candidate",
+ "image": "envoyproxy/envoy:v1.39.3",
+ "ref": "envoyproxy/envoy:v1.39.3@sha256:dd85940439de19a0b6ae8419610363ea0ad351d9a994ea007161c206ec1e1865",
+ "linux_amd64_manifest": "sha256:e877a955cc8fde1d54b6b4141b95240511fe1494a7d98759c71a0cf43573ae33",
+ "started_at": "2026-10-07T13:39:10.398Z",
+ "flags": [
+  "image",
+  "--image-src",
+  "remote",
+  "--platform",
+  "linux/amd64",
+  "--scanners",
+  "vuln",
+  "--severity",
+  "CRITICAL,HIGH",
+  "--skip-db-update",
+  "--format",
+  "json",
+  "--output",
+  "<tmp>\\api-gw-candidate.json",
+  "--timeout",
+  "30m",
+  "--cache-dir",
+  "<cache-dir>",
+  "--quiet",
+  "--no-progress",
+  "--config",
+  "<tmp>\\empty-trivy.yaml",
+  "--ignorefile",
+  "<tmp>\\empty.trivyignore"
+ ],
+ "exit_code": 0,
+ "os": {
+  "Family": "ubuntu",
+  "Name": "22.04"
+ },
+ "scanned_image_id": "sha256:8f34a3f1f8c804af3f975bc19a50104120482535401d5c8e954156c20ffd5316",
+ "repo_digests": [
+  "envoyproxy/envoy@sha256:dd85940439de19a0b6ae8419610363ea0ad351d9a994ea007161c206ec1e1865"
+ ],
+ "findings": [],
+ "counts": {
+  "CRITICAL": {
+   "findings": 0,
+   "unique_ids": 0,
+   "fixed_available": 0,
+   "fixed_available_unique_ids": 0
+  },
+  "HIGH": {
+   "findings": 0,
+   "unique_ids": 0,
+   "fixed_available": 0,
+   "fixed_available_unique_ids": 0
+  },
+  "total_findings": 0
+ },
+ "succeeded": true,
+ "finished_at": "2026-10-07T13:39:14.567Z"
+}

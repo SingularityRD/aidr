@@ -1,0 +1,59 @@
+{
+ "name": "rest-current",
+ "service": "rest",
+ "role": "current",
+ "image": "postgrest/postgrest:v14.17",
+ "ref": "postgrest/postgrest:v14.17@sha256:c9dc201e555f5d8e37e7f39cdd4df0229774996e213bfd7de8d10ac609030f2c",
+ "linux_amd64_manifest": "sha256:aa7e96af2d01219a09bc00c75de28171b1f9fda17ea455a931e4fb6d317089e0",
+ "started_at": "2026-10-07T13:38:21.832Z",
+ "flags": [
+  "image",
+  "--image-src",
+  "remote",
+  "--platform",
+  "linux/amd64",
+  "--scanners",
+  "vuln",
+  "--severity",
+  "CRITICAL,HIGH",
+  "--skip-db-update",
+  "--format",
+  "json",
+  "--output",
+  "<tmp>\\rest-current.json",
+  "--timeout",
+  "30m",
+  "--cache-dir",
+  "<cache-dir>",
+  "--quiet",
+  "--no-progress",
+  "--config",
+  "<tmp>\\empty-trivy.yaml",
+  "--ignorefile",
+  "<tmp>\\empty.trivyignore"
+ ],
+ "exit_code": 0,
+ "os": null,
+ "scanned_image_id": "sha256:fc3d286fec899d5a5bebbb98eac771ced1ccaa44deac8ce2fc23fe5d262eb3d9",
+ "repo_digests": [
+  "postgrest/postgrest@sha256:c9dc201e555f5d8e37e7f39cdd4df0229774996e213bfd7de8d10ac609030f2c"
+ ],
+ "findings": [],
+ "counts": {
+  "CRITICAL": {
+   "findings": 0,
+   "unique_ids": 0,
+   "fixed_available": 0,
+   "fixed_available_unique_ids": 0
+  },
+  "HIGH": {
+   "findings": 0,
+   "unique_ids": 0,
+   "fixed_available": 0,
+   "fixed_available_unique_ids": 0
+  },
+  "total_findings": 0
+ },
+ "succeeded": true,
+ "finished_at": "2026-10-07T13:38:24.674Z"
+}

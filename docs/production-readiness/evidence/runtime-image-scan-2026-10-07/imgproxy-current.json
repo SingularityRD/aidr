@@ -1,0 +1,62 @@
+{
+ "name": "imgproxy-current",
+ "service": "imgproxy",
+ "role": "current",
+ "image": "darthsim/imgproxy:v4.0.17",
+ "ref": "darthsim/imgproxy:v4.0.17@sha256:db0b4b9cd690c8b3590203dea300fb759a18c4ec2af7b37424f0bdef23ce317d",
+ "linux_amd64_manifest": "sha256:be64f14896476c8613ebac98db241d152064256981f8149dd9e2f2f155e22dd1",
+ "started_at": "2026-10-07T13:38:38.277Z",
+ "flags": [
+  "image",
+  "--image-src",
+  "remote",
+  "--platform",
+  "linux/amd64",
+  "--scanners",
+  "vuln",
+  "--severity",
+  "CRITICAL,HIGH",
+  "--skip-db-update",
+  "--format",
+  "json",
+  "--output",
+  "<tmp>\\imgproxy-current.json",
+  "--timeout",
+  "30m",
+  "--cache-dir",
+  "<cache-dir>",
+  "--quiet",
+  "--no-progress",
+  "--config",
+  "<tmp>\\empty-trivy.yaml",
+  "--ignorefile",
+  "<tmp>\\empty.trivyignore"
+ ],
+ "exit_code": 0,
+ "os": {
+  "Family": "ubuntu",
+  "Name": "24.04"
+ },
+ "scanned_image_id": "sha256:50460e2987d55afa3bd92e4f5f5102095f7f4ba6d26270aff42e9f76f1bb7f6b",
+ "repo_digests": [
+  "darthsim/imgproxy@sha256:db0b4b9cd690c8b3590203dea300fb759a18c4ec2af7b37424f0bdef23ce317d"
+ ],
+ "findings": [],
+ "counts": {
+  "CRITICAL": {
+   "findings": 0,
+   "unique_ids": 0,
+   "fixed_available": 0,
+   "fixed_available_unique_ids": 0
+  },
+  "HIGH": {
+   "findings": 0,
+   "unique_ids": 0,
+   "fixed_available": 0,
+   "fixed_available_unique_ids": 0
+  },
+  "total_findings": 0
+ },
+ "succeeded": true,
+ "finished_at": "2026-10-07T13:38:42.184Z"
+}

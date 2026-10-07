@@ -319,6 +319,13 @@ if (values.mode === "self-hosted") {
 	compose.services["api-gw"].image = "envoyproxy/envoy:v1.39.2@sha256:460f8c329f24b2e1c7c5af64cb314a6f351ad1c262ba77b135ac46b35ebd5f85";
 	compose.services.imgproxy.image = "darthsim/imgproxy:v4.0.17@sha256:db0b4b9cd690c8b3590203dea300fb759a18c4ec2af7b37424f0bdef23ce317d";
 	compose.services.imgproxy.environment.IMGPROXY_USE_LAST_MODIFIED = "false";
+	// Scan-gated upstream bumps (docs/production-readiness/runtime-image-security-2026-10-07.md):
+	// each strictly reduces CRITICAL+HIGH with no new CRITICAL; native acceptance still pending.
+	compose.services.studio.image = "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237";
+	compose.services.auth.image = "supabase/gotrue:v2.197.0@sha256:1736a63078f5922b198c4cbe50f80ab9a2d3b54fe8b7b6cfb2e9dc5dbbc12c6b";
+	compose.services.storage.image = "supabase/storage-api:v1.80.0@sha256:15aa712fdda0dab83d6345c79b54230c1466c41161f1f3756651778b22c3b292";
+	compose.services.meta.image = "supabase/postgres-meta:v0.100.0@sha256:145325b7e39f8ef4931d6e8cfd3f6f4d655de09d72a2ccc96d9513542c2202bd";
+	compose.services.functions.image = "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8";
 	compose.services["api-gw"].ports = [`${loopbackBinding(supabaseUrl)}:${developmentHostPort(supabaseUrl, "8000")}:8000`];
 	compose.services.functions.env_file = [".env.functions"];
 	compose.services.auth.environment.GOTRUE_MAILER_TEMPLATES_RECOVERY = "http://dashboard:8080/auth-templates/recovery.html";

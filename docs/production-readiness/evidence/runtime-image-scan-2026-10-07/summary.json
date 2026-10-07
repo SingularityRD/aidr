@@ -1,0 +1,1141 @@
+{
+  "schema_version": 1,
+  "started_at": "2026-10-07T13:38:03.232Z",
+  "finished_at": "2026-10-07T13:39:48.055Z",
+  "completed": true,
+  "scanner": {
+    "engine": "trivy",
+    "version": "0.73.0",
+    "vulnerability_db": {
+      "Version": 2,
+      "NextUpdate": "2026-10-08T07:38:55.515026457Z",
+      "UpdatedAt": "2026-10-07T07:38:55.515026687Z",
+      "DownloadedAt": "2026-10-07T13:38:03.1264798Z"
+    },
+    "java_db": null
+  },
+  "platform": "linux/amd64",
+  "policy": {
+    "severities": [
+      "CRITICAL",
+      "HIGH"
+    ],
+    "ignore_file": "none (empty file)",
+    "config_file": "none (empty file)",
+    "scanners": "vuln",
+    "counting": "findings = every package/target occurrence reported by Trivy; unique_ids = distinct vulnerability ids"
+  },
+  "totals": {
+    "current": {
+      "images": 10,
+      "CRITICAL": 38,
+      "HIGH": 851
+    },
+    "candidate": {
+      "images": 7,
+      "CRITICAL": 33,
+      "HIGH": 664
+    }
+  },
+  "images": [
+    {
+      "name": "studio-current",
+      "service": "studio",
+      "role": "current",
+      "image": "supabase/studio:2026.09.07-sha-7996410",
+      "ref": "supabase/studio:2026.09.07-sha-7996410@sha256:94a2a9d2906e8b4109e55159a62e241c3044709a492913ea8edd34b14973d288",
+      "linux_amd64_manifest": "sha256:0f797270d236090c79fd26a97a1e5d1cf7ec5f36e93b9b4c3c453e1cb1aeadab",
+      "started_at": "2026-10-07T13:38:03.232Z",
+      "flags": [
+        "image",
+        "--image-src",
+        "remote",
+        "--platform",
+        "linux/amd64",
+        "--scanners",
+        "vuln",
+        "--severity",
+        "CRITICAL,HIGH",
+        "--skip-db-update",
+        "--format",
+        "json",
+        "--output",
+        "<tmp>\\studio-current.json",
+        "--timeout",
+        "30m",
+        "--cache-dir",
+        "<cache-dir>",
+        "--quiet",
+        "--no-progress",
+        "--config",
+        "<tmp>\\empty-trivy.yaml",
+        "--ignorefile",
+        "<tmp>\\empty.trivyignore"
+      ],
+      "exit_code": 0,
+      "os": {
+        "Family": "debian",
+        "Name": "12.15"
+      },
+      "scanned_image_id": "sha256:b31d7b34419903abd247d616f4cb6a96328829a1c6c0e48ce22e12e2aefb09de",
+      "repo_digests": [
+        "supabase/studio@sha256:94a2a9d2906e8b4109e55159a62e241c3044709a492913ea8edd34b14973d288"
+      ],
+      "counts": {
+        "CRITICAL": {
+          "findings": 21,
+          "unique_ids": 12,
+          "fixed_available": 18,
+          "fixed_available_unique_ids": 9
+        },
+        "HIGH": {
+          "findings": 415,
+          "unique_ids": 332,
+          "fixed_available": 131,
+          "fixed_available_unique_ids": 115
+        },
+        "total_findings": 436
+      },
+      "succeeded": true,
+      "finished_at": "2026-10-07T13:38:13.603Z"
+    },
+    {
+      "name": "api-gw-current",
+      "service": "api-gw",
+      "role": "current",
+      "image": "envoyproxy/envoy:v1.39.2",
+      "ref": "envoyproxy/envoy:v1.39.2@sha256:460f8c329f24b2e1c7c5af64cb314a6f351ad1c262ba77b135ac46b35ebd5f85",
+      "linux_amd64_manifest": "sha256:43b69cf424922cd5d1086cc019dc89197e58d58deac89d36b3c8b67f1a9e8523",
+      "started_at": "2026-10-07T13:38:13.604Z",
+      "flags": [
+        "image",
+        "--image-src",
+        "remote",
+        "--platform",
+        "linux/amd64",
+        "--scanners",
+        "vuln",
+        "--severity",
+        "CRITICAL,HIGH",
+        "--skip-db-update",
+        "--format",
+        "json",
+        "--output",
+        "<tmp>\\api-gw-current.json",
+        "--timeout",
+        "30m",
+        "--cache-dir",
+        "<cache-dir>",
+        "--quiet",
+        "--no-progress",
+        "--config",
+        "<tmp>\\empty-trivy.yaml",
+        "--ignorefile",
+        "<tmp>\\empty.trivyignore"
+      ],
+      "exit_code": 0,
+      "os": {
+        "Family": "ubuntu",
+        "Name": "22.04"
+      },
+      "scanned_image_id": "sha256:019b78af0d69653bdad7b77712e75d96b0684544146422948a38d53cdf6edbb3",
+      "repo_digests": [
+        "envoyproxy/envoy@sha256:460f8c329f24b2e1c7c5af64cb314a6f351ad1c262ba77b135ac46b35ebd5f85"
+      ],
+      "counts": {
+        "CRITICAL": {
+          "findings": 0,
+          "unique_ids": 0,
+          "fixed_available": 0,
+          "fixed_available_unique_ids": 0
+        },
+        "HIGH": {
+          "findings": 0,
+          "unique_ids": 0,
+          "fixed_available": 0,
+          "fixed_available_unique_ids": 0
+        },
+        "total_findings": 0
+      },
+      "succeeded": true,
+      "finished_at": "2026-10-07T13:38:18.623Z"
+    },
+    {
+      "name": "auth-current",
+      "service": "auth",
+      "role": "current",
+      "image": "supabase/gotrue:v2.196.0",
+      "ref": "supabase/gotrue:v2.196.0@sha256:c0c25187a6b835e65a6f6e6c6b39d090e832d40e6de5186f2c038e0411944232",
+      "linux_amd64_manifest": "sha256:7e813221b93fbf54b515036438550e483bfaf057b9db52fe9bc1ce91c47e817e",
+      "started_at": "2026-10-07T13:38:18.623Z",
+      "flags": [
+        "image",
+        "--image-src",
+        "remote",
+        "--platform",
+        "linux/amd64",
+        "--scanners",
+        "vuln",
+        "--severity",
+        "CRITICAL,HIGH",
+        "--skip-db-update",
+        "--format",
+        "json",
+        "--output",
+        "<tmp>\\auth-current.json",
+        "--timeout",
+        "30m",
+        "--cache-dir",
+        "<cache-dir>",
+        "--quiet",
+        "--no-progress",
+        "--config",
+        "<tmp>\\empty-trivy.yaml",
+        "--ignorefile",
+        "<tmp>\\empty.trivyignore"
+      ],
+      "exit_code": 0,
+      "os": {
+        "Family": "alpine",
+        "Name": "3.24.1"
+      },
+      "scanned_image_id": "sha256:688edbb786f6d736edaa478438f23c7044a22a6a5f19502a7138d38caca6c2f6",
+      "repo_digests": [
+        "supabase/gotrue@sha256:c0c25187a6b835e65a6f6e6c6b39d090e832d40e6de5186f2c038e0411944232"
+      ],
+      "counts": {
+        "CRITICAL": {
+          "findings": 0,
+          "unique_ids": 0,
+          "fixed_available": 0,
+          "fixed_available_unique_ids": 0
+        },
+        "HIGH": {
+          "findings": 26,
+          "unique_ids": 24,
+          "fixed_available": 25,
+          "fixed_available_unique_ids": 23
+        },
+        "total_findings": 26
+      },
+      "succeeded": true,
+      "finished_at": "2026-10-07T13:38:21.823Z"
+    },
+    {
+      "name": "rest-current",
+      "service": "rest",
+      "role": "current",
+      "image": "postgrest/postgrest:v14.17",
+      "ref": "postgrest/postgrest:v14.17@sha256:c9dc201e555f5d8e37e7f39cdd4df0229774996e213bfd7de8d10ac609030f2c",
+      "linux_amd64_manifest": "sha256:aa7e96af2d01219a09bc00c75de28171b1f9fda17ea455a931e4fb6d317089e0",
+      "started_at": "2026-10-07T13:38:21.832Z",
+      "flags": [
+        "image",
+        "--image-src",
+        "remote",
+        "--platform",
+        "linux/amd64",
+        "--scanners",
+        "vuln",
+        "--severity",
+        "CRITICAL,HIGH",
+        "--skip-db-update",
+        "--format",
+        "json",
+        "--output",
+        "<tmp>\\rest-current.json",
+        "--timeout",
+        "30m",
+        "--cache-dir",
+        "<cache-dir>",
+        "--quiet",
+        "--no-progress",
+        "--config",
+        "<tmp>\\empty-trivy.yaml",
+        "--ignorefile",
+        "<tmp>\\empty.trivyignore"
+      ],
+      "exit_code": 0,
+      "os": null,
+      "scanned_image_id": "sha256:fc3d286fec899d5a5bebbb98eac771ced1ccaa44deac8ce2fc23fe5d262eb3d9",
+      "repo_digests": [
+        "postgrest/postgrest@sha256:c9dc201e555f5d8e37e7f39cdd4df0229774996e213bfd7de8d10ac609030f2c"
+      ],
+      "counts": {
+        "CRITICAL": {
+          "findings": 0,
+          "unique_ids": 0,
+          "fixed_available": 0,
+          "fixed_available_unique_ids": 0
+        },
+        "HIGH": {
+          "findings": 0,
+          "unique_ids": 0,
+          "fixed_available": 0,
+          "fixed_available_unique_ids": 0
+        },
+        "total_findings": 0
+      },
+      "succeeded": true,
+      "finished_at": "2026-10-07T13:38:24.674Z"
+    },
+    {
+      "name": "realtime-current",
+      "service": "realtime",
+      "role": "current",
+      "image": "supabase/realtime:v2.134.10",
+      "ref": "supabase/realtime:v2.134.10@sha256:cbcc6a7986fc28b6dcffa798b077d5fb9c69cd25500371ab49147a86d7edbb03",
+      "linux_amd64_manifest": "sha256:c1d078d929608f3eb4d441e30317bbdccc1bfcc1169efa3d1a26d4252417cc76",
+      "started_at": "2026-10-07T13:38:24.674Z",
+      "flags": [
+        "image",
+        "--image-src",
+        "remote",
+        "--platform",
+        "linux/amd64",
+        "--scanners",
+        "vuln",
+        "--severity",
+        "CRITICAL,HIGH",
+        "--skip-db-update",
+        "--format",
+        "json",
+        "--output",
+        "<tmp>\\realtime-current.json",
+        "--timeout",
+        "30m",
+        "--cache-dir",
+        "<cache-dir>",
+        "--quiet",
+        "--no-progress",
+        "--config",
+        "<tmp>\\empty-trivy.yaml",
+        "--ignorefile",
+        "<tmp>\\empty.trivyignore"
+      ],
+      "exit_code": 0,
+      "os": {
+        "Family": "debian",
+        "Name": "13.6"
+      },
+      "scanned_image_id": "sha256:902ac8c3569967c01f4d45ece4c9fac3528b848dbc2504e65dd7131506331ca1",
+      "repo_digests": [
+        "supabase/realtime@sha256:cbcc6a7986fc28b6dcffa798b077d5fb9c69cd25500371ab49147a86d7edbb03"
+      ],
+      "counts": {
+        "CRITICAL": {
+          "findings": 3,
+          "unique_ids": 3,
+          "fixed_available": 3,
+          "fixed_available_unique_ids": 3
+        },
+        "HIGH": {
+          "findings": 141,
+          "unique_ids": 51,
+          "fixed_available": 59,
+          "fixed_available_unique_ids": 25
+        },
+        "total_findings": 144
+      },
+      "succeeded": true,
+      "finished_at": "2026-10-07T13:38:30.505Z"
+    },
+    {
+      "name": "storage-current",
+      "service": "storage",
+      "role": "current",
+      "image": "supabase/storage-api:v1.74.0",
+      "ref": "supabase/storage-api:v1.74.0@sha256:f1546fac6d1c7e345428ac904bfaa7be7cecd50a1f549fe1cf38c628a7b15c85",
+      "linux_amd64_manifest": "sha256:63da55733ce9d7592d860739acb94f0b6189d880b7565d247ee5b195be854db1",
+      "started_at": "2026-10-07T13:38:30.506Z",
+      "flags": [
+        "image",
+        "--image-src",
+        "remote",
+        "--platform",
+        "linux/amd64",
+        "--scanners",
+        "vuln",
+        "--severity",
+        "CRITICAL,HIGH",
+        "--skip-db-update",
+        "--format",
+        "json",
+        "--output",
+        "<tmp>\\storage-current.json",
+        "--timeout",
+        "30m",
+        "--cache-dir",
+        "<cache-dir>",
+        "--quiet",
+        "--no-progress",
+        "--config",
+        "<tmp>\\empty-trivy.yaml",
+        "--ignorefile",
+        "<tmp>\\empty.trivyignore"
+      ],
+      "exit_code": 0,
+      "os": {
+        "Family": "alpine",
+        "Name": "3.23.5"
+      },
+      "scanned_image_id": "sha256:cbd50858d9a1d085d301f10a5f4ab5c3214e44674cfa111f2a1226cc391c1ad9",
+      "repo_digests": [
+        "supabase/storage-api@sha256:f1546fac6d1c7e345428ac904bfaa7be7cecd50a1f549fe1cf38c628a7b15c85"
+      ],
+      "counts": {
+        "CRITICAL": {
+          "findings": 1,
+          "unique_ids": 1,
+          "fixed_available": 1,
+          "fixed_available_unique_ids": 1
+        },
+        "HIGH": {
+          "findings": 72,
+          "unique_ids": 41,
+          "fixed_available": 71,
+          "fixed_available_unique_ids": 40
+        },
+        "total_findings": 73
+      },
+      "succeeded": true,
+      "finished_at": "2026-10-07T13:38:38.276Z"
+    },
+    {
+      "name": "imgproxy-current",
+      "service": "imgproxy",
+      "role": "current",
+      "image": "darthsim/imgproxy:v4.0.17",
+      "ref": "darthsim/imgproxy:v4.0.17@sha256:db0b4b9cd690c8b3590203dea300fb759a18c4ec2af7b37424f0bdef23ce317d",
+      "linux_amd64_manifest": "sha256:be64f14896476c8613ebac98db241d152064256981f8149dd9e2f2f155e22dd1",
+      "started_at": "2026-10-07T13:38:38.277Z",
+      "flags": [
+        "image",
+        "--image-src",
+        "remote",
+        "--platform",
+        "linux/amd64",
+        "--scanners",
+        "vuln",
+        "--severity",
+        "CRITICAL,HIGH",
+        "--skip-db-update",
+        "--format",
+        "json",
+        "--output",
+        "<tmp>\\imgproxy-current.json",
+        "--timeout",
+        "30m",
+        "--cache-dir",
+        "<cache-dir>",
+        "--quiet",
+        "--no-progress",
+        "--config",
+        "<tmp>\\empty-trivy.yaml",
+        "--ignorefile",
+        "<tmp>\\empty.trivyignore"
+      ],
+      "exit_code": 0,
+      "os": {
+        "Family": "ubuntu",
+        "Name": "24.04"
+      },
+      "scanned_image_id": "sha256:50460e2987d55afa3bd92e4f5f5102095f7f4ba6d26270aff42e9f76f1bb7f6b",
+      "repo_digests": [
+        "darthsim/imgproxy@sha256:db0b4b9cd690c8b3590203dea300fb759a18c4ec2af7b37424f0bdef23ce317d"
+      ],
+      "counts": {
+        "CRITICAL": {
+          "findings": 0,
+          "unique_ids": 0,
+          "fixed_available": 0,
+          "fixed_available_unique_ids": 0
+        },
+        "HIGH": {
+          "findings": 0,
+          "unique_ids": 0,
+          "fixed_available": 0,
+          "fixed_available_unique_ids": 0
+        },
+        "total_findings": 0
+      },
+      "succeeded": true,
+      "finished_at": "2026-10-07T13:38:42.184Z"
+    },
+    {
+      "name": "meta-current",
+      "service": "meta",
+      "role": "current",
+      "image": "supabase/postgres-meta:v0.99.0",
+      "ref": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158",
+      "linux_amd64_manifest": "sha256:09b00cdd401f830cc8db5c7da14468e99d04a63900371b1ec06463674ac4877e",
+      "started_at": "2026-10-07T13:38:42.184Z",
+      "flags": [
+        "image",
+        "--image-src",
+        "remote",
+        "--platform",
+        "linux/amd64",
+        "--scanners",
+        "vuln",
+        "--severity",
+        "CRITICAL,HIGH",
+        "--skip-db-update",
+        "--format",
+        "json",
+        "--output",
+        "<tmp>\\meta-current.json",
+        "--timeout",
+        "30m",
+        "--cache-dir",
+        "<cache-dir>",
+        "--quiet",
+        "--no-progress",
+        "--config",
+        "<tmp>\\empty-trivy.yaml",
+        "--ignorefile",
+        "<tmp>\\empty.trivyignore"
+      ],
+      "exit_code": 0,
+      "os": {
+        "Family": "debian",
+        "Name": "12.15"
+      },
+      "scanned_image_id": "sha256:645aad8dfdd7fe43451263cccff8efe01b0b88c684d4d7e309933d76a7a8ea53",
+      "repo_digests": [
+        "supabase/postgres-meta@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158"
+      ],
+      "counts": {
+        "CRITICAL": {
+          "findings": 9,
+          "unique_ids": 9,
+          "fixed_available": 8,
+          "fixed_available_unique_ids": 8
+        },
+        "HIGH": {
+          "findings": 93,
+          "unique_ids": 45,
+          "fixed_available": 42,
+          "fixed_available_unique_ids": 33
+        },
+        "total_findings": 102
+      },
+      "succeeded": true,
+      "finished_at": "2026-10-07T13:38:45.467Z"
+    },
+    {
+      "name": "functions-current",
+      "service": "functions",
+      "role": "current",
+      "image": "supabase/edge-runtime:v1.76.2",
+      "ref": "supabase/edge-runtime:v1.76.2@sha256:edd22bef4477b900d5c300e287ce9b18bff9b81a0291bee14ee0b7c7b71a2899",
+      "linux_amd64_manifest": "sha256:b331c6422f4f4bebd6052357da5f3c87610128c8cb530390ca024eb68cf4bf2e",
+      "started_at": "2026-10-07T13:38:45.468Z",
+      "flags": [
+        "image",
+        "--image-src",
+        "remote",
+        "--platform",
+        "linux/amd64",
+        "--scanners",
+        "vuln",
+        "--severity",
+        "CRITICAL,HIGH",
+        "--skip-db-update",
+        "--format",
+        "json",
+        "--output",
+        "<tmp>\\functions-current.json",
+        "--timeout",
+        "30m",
+        "--cache-dir",
+        "<cache-dir>",
+        "--quiet",
+        "--no-progress",
+        "--config",
+        "<tmp>\\empty-trivy.yaml",
+        "--ignorefile",
+        "<tmp>\\empty.trivyignore"
+      ],
+      "exit_code": 0,
+      "os": {
+        "Family": "debian",
+        "Name": "12.15"
+      },
+      "scanned_image_id": "sha256:4ddc035dcf37b087ff06a38e54036867e4d82ce3c70b6a0567825c878e984e06",
+      "repo_digests": [
+        "supabase/edge-runtime@sha256:edd22bef4477b900d5c300e287ce9b18bff9b81a0291bee14ee0b7c7b71a2899"
+      ],
+      "counts": {
+        "CRITICAL": {
+          "findings": 4,
+          "unique_ids": 4,
+          "fixed_available": 3,
+          "fixed_available_unique_ids": 3
+        },
+        "HIGH": {
+          "findings": 59,
+          "unique_ids": 19,
+          "fixed_available": 8,
+          "fixed_available_unique_ids": 8
+        },
+        "total_findings": 63
+      },
+      "succeeded": true,
+      "finished_at": "2026-10-07T13:38:53.353Z"
+    },
+    {
+      "name": "db-current",
+      "service": "db",
+      "role": "current",
+      "image": "supabase/postgres:17.6.1.136",
+      "ref": "supabase/postgres:17.6.1.136@sha256:f371b5f3f2ac0a05703f33d6e6134515fb2498cab708fb948a0aeb7481467c00",
+      "linux_amd64_manifest": "sha256:5a4314708484bec672de2c09653a5c01fb1c84a998564ac231b0325e2238ed5b",
+      "started_at": "2026-10-07T13:38:53.353Z",
+      "flags": [
+        "image",
+        "--image-src",
+        "remote",
+        "--platform",
+        "linux/amd64",
+        "--scanners",
+        "vuln",
+        "--severity",
+        "CRITICAL,HIGH",
+        "--skip-db-update",
+        "--format",
+        "json",
+        "--output",
+        "<tmp>\\db-current.json",
+        "--timeout",
+        "30m",
+        "--cache-dir",
+        "<cache-dir>",
+        "--quiet",
+        "--no-progress",
+        "--config",
+        "<tmp>\\empty-trivy.yaml",
+        "--ignorefile",
+        "<tmp>\\empty.trivyignore"
+      ],
+      "exit_code": 0,
+      "os": {
+        "Family": "alpine",
+        "Name": "3.23.4"
+      },
+      "scanned_image_id": "sha256:f519727303f0af6862882be2a30f420e28710d4209226e681aaddb2c01d12d9b",
+      "repo_digests": [
+        "supabase/postgres@sha256:f371b5f3f2ac0a05703f33d6e6134515fb2498cab708fb948a0aeb7481467c00"
+      ],
+      "counts": {
+        "CRITICAL": {
+          "findings": 0,
+          "unique_ids": 0,
+          "fixed_available": 0,
+          "fixed_available_unique_ids": 0
+        },
+        "HIGH": {
+          "findings": 45,
+          "unique_ids": 33,
+          "fixed_available": 45,
+          "fixed_available_unique_ids": 33
+        },
+        "total_findings": 45
+      },
+      "succeeded": true,
+      "finished_at": "2026-10-07T13:39:01.325Z"
+    },
+    {
+      "name": "studio-candidate",
+      "service": "studio",
+      "role": "candidate",
+      "image": "supabase/studio:2026.10.05-sha-94b8b06",
+      "ref": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237",
+      "linux_amd64_manifest": "sha256:a3454f6e5eaf34ec9a79958092673dc91ad3bdfa9f09fb17bc405dce9796d7ec",
+      "started_at": "2026-10-07T13:39:01.325Z",
+      "flags": [
+        "image",
+        "--image-src",
+        "remote",
+        "--platform",
+        "linux/amd64",
+        "--scanners",
+        "vuln",
+        "--severity",
+        "CRITICAL,HIGH",
+        "--skip-db-update",
+        "--format",
+        "json",
+        "--output",
+        "<tmp>\\studio-candidate.json",
+        "--timeout",
+        "30m",
+        "--cache-dir",
+        "<cache-dir>",
+        "--quiet",
+        "--no-progress",
+        "--config",
+        "<tmp>\\empty-trivy.yaml",
+        "--ignorefile",
+        "<tmp>\\empty.trivyignore"
+      ],
+      "exit_code": 0,
+      "os": {
+        "Family": "debian",
+        "Name": "12.15"
+      },
+      "scanned_image_id": "sha256:7fe04e8673b6b63741dca914cbbdf95de2c4728e0b61e1076aa8bbb42128fecd",
+      "repo_digests": [
+        "supabase/studio@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237"
+      ],
+      "counts": {
+        "CRITICAL": {
+          "findings": 17,
+          "unique_ids": 8,
+          "fixed_available": 14,
+          "fixed_available_unique_ids": 5
+        },
+        "HIGH": {
+          "findings": 318,
+          "unique_ids": 236,
+          "fixed_available": 34,
+          "fixed_available_unique_ids": 19
+        },
+        "total_findings": 335
+      },
+      "succeeded": true,
+      "finished_at": "2026-10-07T13:39:10.398Z"
+    },
+    {
+      "name": "api-gw-candidate",
+      "service": "api-gw",
+      "role": "candidate",
+      "image": "envoyproxy/envoy:v1.39.3",
+      "ref": "envoyproxy/envoy:v1.39.3@sha256:dd85940439de19a0b6ae8419610363ea0ad351d9a994ea007161c206ec1e1865",
+      "linux_amd64_manifest": "sha256:e877a955cc8fde1d54b6b4141b95240511fe1494a7d98759c71a0cf43573ae33",
+      "started_at": "2026-10-07T13:39:10.398Z",
+      "flags": [
+        "image",
+        "--image-src",
+        "remote",
+        "--platform",
+        "linux/amd64",
+        "--scanners",
+        "vuln",
+        "--severity",
+        "CRITICAL,HIGH",
+        "--skip-db-update",
+        "--format",
+        "json",
+        "--output",
+        "<tmp>\\api-gw-candidate.json",
+        "--timeout",
+        "30m",
+        "--cache-dir",
+        "<cache-dir>",
+        "--quiet",
+        "--no-progress",
+        "--config",
+        "<tmp>\\empty-trivy.yaml",
+        "--ignorefile",
+        "<tmp>\\empty.trivyignore"
+      ],
+      "exit_code": 0,
+      "os": {
+        "Family": "ubuntu",
+        "Name": "22.04"
+      },
+      "scanned_image_id": "sha256:8f34a3f1f8c804af3f975bc19a50104120482535401d5c8e954156c20ffd5316",
+      "repo_digests": [
+        "envoyproxy/envoy@sha256:dd85940439de19a0b6ae8419610363ea0ad351d9a994ea007161c206ec1e1865"
+      ],
+      "counts": {
+        "CRITICAL": {
+          "findings": 0,
+          "unique_ids": 0,
+          "fixed_available": 0,
+          "fixed_available_unique_ids": 0
+        },
+        "HIGH": {
+          "findings": 0,
+          "unique_ids": 0,
+          "fixed_available": 0,
+          "fixed_available_unique_ids": 0
+        },
+        "total_findings": 0
+      },
+      "succeeded": true,
+      "finished_at": "2026-10-07T13:39:14.567Z"
+    },
+    {
+      "name": "auth-candidate",
+      "service": "auth",
+      "role": "candidate",
+      "image": "supabase/gotrue:v2.197.0",
+      "ref": "supabase/gotrue:v2.197.0@sha256:1736a63078f5922b198c4cbe50f80ab9a2d3b54fe8b7b6cfb2e9dc5dbbc12c6b",
+      "linux_amd64_manifest": "sha256:839f529492d116b4e8b7777c953a27c381d34c15a744b1bcefde5eefaa1f9f9f",
+      "started_at": "2026-10-07T13:39:14.568Z",
+      "flags": [
+        "image",
+        "--image-src",
+        "remote",
+        "--platform",
+        "linux/amd64",
+        "--scanners",
+        "vuln",
+        "--severity",
+        "CRITICAL,HIGH",
+        "--skip-db-update",
+        "--format",
+        "json",
+        "--output",
+        "<tmp>\\auth-candidate.json",
+        "--timeout",
+        "30m",
+        "--cache-dir",
+        "<cache-dir>",
+        "--quiet",
+        "--no-progress",
+        "--config",
+        "<tmp>\\empty-trivy.yaml",
+        "--ignorefile",
+        "<tmp>\\empty.trivyignore"
+      ],
+      "exit_code": 0,
+      "os": {
+        "Family": "alpine",
+        "Name": "3.24.1"
+      },
+      "scanned_image_id": "sha256:1181bff5ba4ce440013a63cef9f4cf13024c432d705c9b1fbc9e5b949e852f48",
+      "repo_digests": [
+        "supabase/gotrue@sha256:1736a63078f5922b198c4cbe50f80ab9a2d3b54fe8b7b6cfb2e9dc5dbbc12c6b"
+      ],
+      "counts": {
+        "CRITICAL": {
+          "findings": 0,
+          "unique_ids": 0,
+          "fixed_available": 0,
+          "fixed_available_unique_ids": 0
+        },
+        "HIGH": {
+          "findings": 5,
+          "unique_ids": 4,
+          "fixed_available": 4,
+          "fixed_available_unique_ids": 3
+        },
+        "total_findings": 5
+      },
+      "succeeded": true,
+      "finished_at": "2026-10-07T13:39:17.713Z"
+    },
+    {
+      "name": "realtime-candidate",
+      "service": "realtime",
+      "role": "candidate",
+      "image": "supabase/realtime:v2.142.0",
+      "ref": "supabase/realtime:v2.142.0@sha256:9a6a8d074634a08efffa3a4fce4ee1a9b0ff1fa3b8e23c0e6c0cf0a0fc200f28",
+      "linux_amd64_manifest": "sha256:35df6ffc0fecb252637fc61fed4183effd2395f5f8cebdc71a7229a596c385cd",
+      "started_at": "2026-10-07T13:39:17.713Z",
+      "flags": [
+        "image",
+        "--image-src",
+        "remote",
+        "--platform",
+        "linux/amd64",
+        "--scanners",
+        "vuln",
+        "--severity",
+        "CRITICAL,HIGH",
+        "--skip-db-update",
+        "--format",
+        "json",
+        "--output",
+        "<tmp>\\realtime-candidate.json",
+        "--timeout",
+        "30m",
+        "--cache-dir",
+        "<cache-dir>",
+        "--quiet",
+        "--no-progress",
+        "--config",
+        "<tmp>\\empty-trivy.yaml",
+        "--ignorefile",
+        "<tmp>\\empty.trivyignore"
+      ],
+      "exit_code": 0,
+      "os": {
+        "Family": "debian",
+        "Name": "13.6"
+      },
+      "scanned_image_id": "sha256:9a6ce876510f7f9f29c31d55aa72feb76174f28cff91988234588f846cefd5f3",
+      "repo_digests": [
+        "supabase/realtime@sha256:9a6a8d074634a08efffa3a4fce4ee1a9b0ff1fa3b8e23c0e6c0cf0a0fc200f28"
+      ],
+      "counts": {
+        "CRITICAL": {
+          "findings": 3,
+          "unique_ids": 3,
+          "fixed_available": 3,
+          "fixed_available_unique_ids": 3
+        },
+        "HIGH": {
+          "findings": 141,
+          "unique_ids": 51,
+          "fixed_available": 59,
+          "fixed_available_unique_ids": 25
+        },
+        "total_findings": 144
+      },
+      "succeeded": true,
+      "finished_at": "2026-10-07T13:39:20.576Z"
+    },
+    {
+      "name": "storage-candidate",
+      "service": "storage",
+      "role": "candidate",
+      "image": "supabase/storage-api:v1.80.0",
+      "ref": "supabase/storage-api:v1.80.0@sha256:15aa712fdda0dab83d6345c79b54230c1466c41161f1f3756651778b22c3b292",
+      "linux_amd64_manifest": "sha256:244e99c66a5e251604545a1f7f771740dfdb361cfa3d45e42cc179a4da460ddb",
+      "started_at": "2026-10-07T13:39:20.577Z",
+      "flags": [
+        "image",
+        "--image-src",
+        "remote",
+        "--platform",
+        "linux/amd64",
+        "--scanners",
+        "vuln",
+        "--severity",
+        "CRITICAL,HIGH",
+        "--skip-db-update",
+        "--format",
+        "json",
+        "--output",
+        "<tmp>\\storage-candidate.json",
+        "--timeout",
+        "30m",
+        "--cache-dir",
+        "<cache-dir>",
+        "--quiet",
+        "--no-progress",
+        "--config",
+        "<tmp>\\empty-trivy.yaml",
+        "--ignorefile",
+        "<tmp>\\empty.trivyignore"
+      ],
+      "exit_code": 0,
+      "os": {
+        "Family": "alpine",
+        "Name": "3.23.6"
+      },
+      "scanned_image_id": "sha256:78c2ee940c0a7b7d3125896ea7945a3632aa499ead1897bddd549fac1c4ec1b2",
+      "repo_digests": [
+        "supabase/storage-api@sha256:15aa712fdda0dab83d6345c79b54230c1466c41161f1f3756651778b22c3b292"
+      ],
+      "counts": {
+        "CRITICAL": {
+          "findings": 1,
+          "unique_ids": 1,
+          "fixed_available": 1,
+          "fixed_available_unique_ids": 1
+        },
+        "HIGH": {
+          "findings": 57,
+          "unique_ids": 33,
+          "fixed_available": 56,
+          "fixed_available_unique_ids": 32
+        },
+        "total_findings": 58
+      },
+      "succeeded": true,
+      "finished_at": "2026-10-07T13:39:32.159Z"
+    },
+    {
+      "name": "meta-candidate",
+      "service": "meta",
+      "role": "candidate",
+      "image": "supabase/postgres-meta:v0.100.0",
+      "ref": "supabase/postgres-meta:v0.100.0@sha256:145325b7e39f8ef4931d6e8cfd3f6f4d655de09d72a2ccc96d9513542c2202bd",
+      "linux_amd64_manifest": "sha256:822227a8d12c109b24b8d8f1dae98a9c089a698b4586d35527dadf929e655136",
+      "started_at": "2026-10-07T13:39:32.159Z",
+      "flags": [
+        "image",
+        "--image-src",
+        "remote",
+        "--platform",
+        "linux/amd64",
+        "--scanners",
+        "vuln",
+        "--severity",
+        "CRITICAL,HIGH",
+        "--skip-db-update",
+        "--format",
+        "json",
+        "--output",
+        "<tmp>\\meta-candidate.json",
+        "--timeout",
+        "30m",
+        "--cache-dir",
+        "<cache-dir>",
+        "--quiet",
+        "--no-progress",
+        "--config",
+        "<tmp>\\empty-trivy.yaml",
+        "--ignorefile",
+        "<tmp>\\empty.trivyignore"
+      ],
+      "exit_code": 0,
+      "os": {
+        "Family": "debian",
+        "Name": "12.15"
+      },
+      "scanned_image_id": "sha256:8d72aca55290778ae61a1c5cef261728a04ff8d207bc8b3d5a8255faa2dea0e9",
+      "repo_digests": [
+        "supabase/postgres-meta@sha256:145325b7e39f8ef4931d6e8cfd3f6f4d655de09d72a2ccc96d9513542c2202bd"
+      ],
+      "counts": {
+        "CRITICAL": {
+          "findings": 8,
+          "unique_ids": 8,
+          "fixed_available": 7,
+          "fixed_available_unique_ids": 7
+        },
+        "HIGH": {
+          "findings": 87,
+          "unique_ids": 39,
+          "fixed_available": 36,
+          "fixed_available_unique_ids": 27
+        },
+        "total_findings": 95
+      },
+      "succeeded": true,
+      "finished_at": "2026-10-07T13:39:38.477Z"
+    },
+    {
+      "name": "functions-candidate",
+      "service": "functions",
+      "role": "candidate",
+      "image": "supabase/edge-runtime:v1.77.4",
+      "ref": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8",
+      "linux_amd64_manifest": "sha256:fded42ff725708990b1a0803633c2659453259d075c4bec6b4d01dfb82dc055e",
+      "started_at": "2026-10-07T13:39:38.478Z",
+      "flags": [
+        "image",
+        "--image-src",
+        "remote",
+        "--platform",
+        "linux/amd64",
+        "--scanners",
+        "vuln",
+        "--severity",
+        "CRITICAL,HIGH",
+        "--skip-db-update",
+        "--format",
+        "json",
+        "--output",
+        "<tmp>\\functions-candidate.json",
+        "--timeout",
+        "30m",
+        "--cache-dir",
+        "<cache-dir>",
+        "--quiet",
+        "--no-progress",
+        "--config",
+        "<tmp>\\empty-trivy.yaml",
+        "--ignorefile",
+        "<tmp>\\empty.trivyignore"
+      ],
+      "exit_code": 0,
+      "os": {
+        "Family": "debian",
+        "Name": "12.15"
+      },
+      "scanned_image_id": "sha256:f23bd2ca69d1e46ab681999dba6b4516aa3d3f477098db55fa583e636850c7ed",
+      "repo_digests": [
+        "supabase/edge-runtime@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8"
+      ],
+      "counts": {
+        "CRITICAL": {
+          "findings": 4,
+          "unique_ids": 4,
+          "fixed_available": 3,
+          "fixed_available_unique_ids": 3
+        },
+        "HIGH": {
+          "findings": 56,
+          "unique_ids": 16,
+          "fixed_available": 5,
+          "fixed_available_unique_ids": 5
+        },
+        "total_findings": 60
+      },
+      "succeeded": true,
+      "finished_at": "2026-10-07T13:39:48.054Z"
+    }
+  ],
+  "comparisons": [
+    {
+      "service": "studio",
+      "current": "supabase/studio:2026.09.07-sha-7996410@sha256:94a2a9d2906e8b4109e55159a62e241c3044709a492913ea8edd34b14973d288",
+      "candidate": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237",
+      "eligible": true,
+      "delta_critical_high": -101,
+      "new_critical_ids": [],
+      "reason": "strictly fewer CRITICAL+HIGH findings and no new CRITICAL"
+    },
+    {
+      "service": "api-gw",
+      "current": "envoyproxy/envoy:v1.39.2@sha256:460f8c329f24b2e1c7c5af64cb314a6f351ad1c262ba77b135ac46b35ebd5f85",
+      "candidate": "envoyproxy/envoy:v1.39.3@sha256:dd85940439de19a0b6ae8419610363ea0ad351d9a994ea007161c206ec1e1865",
+      "eligible": false,
+      "delta_critical_high": 0,
+      "new_critical_ids": [],
+      "reason": "CRITICAL+HIGH not reduced (delta +0)"
+    },
+    {
+      "service": "auth",
+      "current": "supabase/gotrue:v2.196.0@sha256:c0c25187a6b835e65a6f6e6c6b39d090e832d40e6de5186f2c038e0411944232",
+      "candidate": "supabase/gotrue:v2.197.0@sha256:1736a63078f5922b198c4cbe50f80ab9a2d3b54fe8b7b6cfb2e9dc5dbbc12c6b",
+      "eligible": true,
+      "delta_critical_high": -21,
+      "new_critical_ids": [],
+      "reason": "strictly fewer CRITICAL+HIGH findings and no new CRITICAL"
+    },
+    {
+      "service": "realtime",
+      "current": "supabase/realtime:v2.134.10@sha256:cbcc6a7986fc28b6dcffa798b077d5fb9c69cd25500371ab49147a86d7edbb03",
+      "candidate": "supabase/realtime:v2.142.0@sha256:9a6a8d074634a08efffa3a4fce4ee1a9b0ff1fa3b8e23c0e6c0cf0a0fc200f28",
+      "eligible": false,
+      "delta_critical_high": 0,
+      "new_critical_ids": [],
+      "reason": "CRITICAL+HIGH not reduced (delta +0)"
+    },
+    {
+      "service": "storage",
+      "current": "supabase/storage-api:v1.74.0@sha256:f1546fac6d1c7e345428ac904bfaa7be7cecd50a1f549fe1cf38c628a7b15c85",
+      "candidate": "supabase/storage-api:v1.80.0@sha256:15aa712fdda0dab83d6345c79b54230c1466c41161f1f3756651778b22c3b292",
+      "eligible": true,
+      "delta_critical_high": -15,
+      "new_critical_ids": [],
+      "reason": "strictly fewer CRITICAL+HIGH findings and no new CRITICAL"
+    },
+    {
+      "service": "meta",
+      "current": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158",
+      "candidate": "supabase/postgres-meta:v0.100.0@sha256:145325b7e39f8ef4931d6e8cfd3f6f4d655de09d72a2ccc96d9513542c2202bd",
+      "eligible": true,
+      "delta_critical_high": -7,
+      "new_critical_ids": [],
+      "reason": "strictly fewer CRITICAL+HIGH findings and no new CRITICAL"
+    },
+    {
+      "service": "functions",
+      "current": "supabase/edge-runtime:v1.76.2@sha256:edd22bef4477b900d5c300e287ce9b18bff9b81a0291bee14ee0b7c7b71a2899",
+      "candidate": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8",
+      "eligible": true,
+      "delta_critical_high": -3,
+      "new_critical_ids": [],
+      "reason": "strictly fewer CRITICAL+HIGH findings and no new CRITICAL"
+    }
+  ]
+}

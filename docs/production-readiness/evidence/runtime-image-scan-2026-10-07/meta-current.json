@@ -1,0 +1,1083 @@
+{
+ "name": "meta-current",
+ "service": "meta",
+ "role": "current",
+ "image": "supabase/postgres-meta:v0.99.0",
+ "ref": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158",
+ "linux_amd64_manifest": "sha256:09b00cdd401f830cc8db5c7da14468e99d04a63900371b1ec06463674ac4877e",
+ "started_at": "2026-10-07T13:38:42.184Z",
+ "flags": [
+  "image",
+  "--image-src",
+  "remote",
+  "--platform",
+  "linux/amd64",
+  "--scanners",
+  "vuln",
+  "--severity",
+  "CRITICAL,HIGH",
+  "--skip-db-update",
+  "--format",
+  "json",
+  "--output",
+  "<tmp>\\meta-current.json",
+  "--timeout",
+  "30m",
+  "--cache-dir",
+  "<cache-dir>",
+  "--quiet",
+  "--no-progress",
+  "--config",
+  "<tmp>\\empty-trivy.yaml",
+  "--ignorefile",
+  "<tmp>\\empty.trivyignore"
+ ],
+ "exit_code": 0,
+ "os": {
+  "Family": "debian",
+  "Name": "12.15"
+ },
+ "scanned_image_id": "sha256:645aad8dfdd7fe43451263cccff8efe01b0b88c684d4d7e309933d76a7a8ea53",
+ "repo_digests": [
+  "supabase/postgres-meta@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158"
+ ],
+ "findings": [
+  {
+   "id": "CVE-2023-45853",
+   "severity": "CRITICAL",
+   "pkg": "zlib1g",
+   "installed": "1:1.2.13.dfsg-1",
+   "fixed": null,
+   "status": "will_not_fix",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-102992",
+   "severity": "CRITICAL",
+   "pkg": "piscina",
+   "installed": "5.3.0",
+   "fixed": "5.3.2, 4.9.4, 6.0.0-rc.5",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg"
+  },
+  {
+   "id": "CVE-2026-104848",
+   "severity": "CRITICAL",
+   "pkg": "tinypool",
+   "installed": "2.1.0",
+   "fixed": "2.1.1",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg"
+  },
+  {
+   "id": "CVE-2026-104849",
+   "severity": "CRITICAL",
+   "pkg": "tinypool",
+   "installed": "2.1.0",
+   "fixed": "2.1.2",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg"
+  },
+  {
+   "id": "CVE-2026-13221",
+   "severity": "CRITICAL",
+   "pkg": "perl-base",
+   "installed": "5.36.0-7+deb12u3",
+   "fixed": "5.36.0-7+deb12u4",
+   "status": "fixed",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-42496",
+   "severity": "CRITICAL",
+   "pkg": "perl-base",
+   "installed": "5.36.0-7+deb12u3",
+   "fixed": "5.36.0-7+deb12u4",
+   "status": "fixed",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-59873",
+   "severity": "CRITICAL",
+   "pkg": "tar",
+   "installed": "7.5.11",
+   "fixed": "7.5.19",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg"
+  },
+  {
+   "id": "CVE-2026-8376",
+   "severity": "CRITICAL",
+   "pkg": "perl-base",
+   "installed": "5.36.0-7+deb12u3",
+   "fixed": "5.36.0-7+deb12u4",
+   "status": "fixed",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-90711",
+   "severity": "CRITICAL",
+   "pkg": "proxy-addr",
+   "installed": "2.0.7",
+   "fixed": "2.0.8",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg"
+  },
+  {
+   "id": "CVE-2025-69720",
+   "severity": "HIGH",
+   "pkg": "libtinfo6",
+   "installed": "6.4-4",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2025-69720",
+   "severity": "HIGH",
+   "pkg": "ncurses-base",
+   "installed": "6.4-4",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2025-69720",
+   "severity": "HIGH",
+   "pkg": "ncurses-bin",
+   "installed": "6.4-4",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-102276",
+   "severity": "HIGH",
+   "pkg": "brace-expansion",
+   "installed": "2.0.2",
+   "fixed": "5.0.10, 3.0.7, 2.1.5, 1.1.19",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg"
+  },
+  {
+   "id": "CVE-2026-102278",
+   "severity": "HIGH",
+   "pkg": "brace-expansion",
+   "installed": "2.0.2",
+   "fixed": "5.0.11, 3.0.8, 2.1.6, 1.1.20",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg"
+  },
+  {
+   "id": "CVE-2026-103111",
+   "severity": "HIGH",
+   "pkg": "libpcre2-8-0",
+   "installed": "10.42-1",
+   "fixed": "10.42-1+deb12u2",
+   "status": "fixed",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-13149",
+   "severity": "HIGH",
+   "pkg": "brace-expansion",
+   "installed": "2.0.2",
+   "fixed": "5.0.7, 1.1.16, 2.1.2",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg"
+  },
+  {
+   "id": "CVE-2026-13676",
+   "severity": "HIGH",
+   "pkg": "fast-uri",
+   "installed": "2.4.0",
+   "fixed": "4.0.1, 3.1.3, 2.4.2",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg"
+  },
+  {
+   "id": "CVE-2026-13676",
+   "severity": "HIGH",
+   "pkg": "fast-uri",
+   "installed": "3.0.6",
+   "fixed": "4.0.1, 3.1.3, 2.4.2",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg"
+  },
+  {
+   "id": "CVE-2026-14257",
+   "severity": "HIGH",
+   "pkg": "brace-expansion",
+   "installed": "2.0.2",
+   "fixed": "5.0.8, 3.0.3, 2.1.3, 1.1.17",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg"
+  },
+  {
+   "id": "CVE-2026-16221",
+   "severity": "HIGH",
+   "pkg": "fast-uri",
+   "installed": "2.4.0",
+   "fixed": "2.4.3, 3.1.4, 4.1.1",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg"
+  },
+  {
+   "id": "CVE-2026-16221",
+   "severity": "HIGH",
+   "pkg": "fast-uri",
+   "installed": "3.0.6",
+   "fixed": "2.4.3, 3.1.4, 4.1.1",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg"
+  },
+  {
+   "id": "CVE-2026-16742",
+   "severity": "HIGH",
+   "pkg": "libsystemd0",
+   "installed": "252.39-1~deb12u2",
+   "fixed": null,
+   "status": "fix_deferred",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-16742",
+   "severity": "HIGH",
+   "pkg": "libudev1",
+   "installed": "252.39-1~deb12u2",
+   "fixed": null,
+   "status": "fix_deferred",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-18446",
+   "severity": "HIGH",
+   "pkg": "fast-uri",
+   "installed": "2.4.0",
+   "fixed": "2.4.4, 3.1.5, 4.1.2",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg"
+  },
+  {
+   "id": "CVE-2026-18446",
+   "severity": "HIGH",
+   "pkg": "fast-uri",
+   "installed": "3.0.6",
+   "fixed": "2.4.4, 3.1.5, 4.1.2",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg"
+  },
+  {
+   "id": "CVE-2026-25223",
+   "severity": "HIGH",
+   "pkg": "fastify",
+   "installed": "4.29.1",
+   "fixed": "5.7.2",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg"
+  },
+  {
+   "id": "CVE-2026-33671",
+   "severity": "HIGH",
+   "pkg": "picomatch",
+   "installed": "4.0.3",
+   "fixed": "4.0.4, 3.0.2, 2.3.2",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg"
+  },
+  {
+   "id": "CVE-2026-41992",
+   "severity": "HIGH",
+   "pkg": "gzip",
+   "installed": "1.12-1",
+   "fixed": null,
+   "status": "fix_deferred",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-42497",
+   "severity": "HIGH",
+   "pkg": "perl-base",
+   "installed": "5.36.0-7+deb12u3",
+   "fixed": "5.36.0-7+deb12u4",
+   "status": "fixed",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-47219",
+   "severity": "HIGH",
+   "pkg": "find-my-way",
+   "installed": "8.2.2",
+   "fixed": "9.7.0",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg"
+  },
+  {
+   "id": "CVE-2026-48815",
+   "severity": "HIGH",
+   "pkg": "sigstore",
+   "installed": "3.1.0",
+   "fixed": "4.1.1",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg"
+  },
+  {
+   "id": "CVE-2026-48962",
+   "severity": "HIGH",
+   "pkg": "perl-base",
+   "installed": "5.36.0-7+deb12u3",
+   "fixed": "5.36.0-7+deb12u4",
+   "status": "fixed",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-53613",
+   "severity": "HIGH",
+   "pkg": "bsdutils",
+   "installed": "1:2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-53613",
+   "severity": "HIGH",
+   "pkg": "libblkid1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-53613",
+   "severity": "HIGH",
+   "pkg": "libmount1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-53613",
+   "severity": "HIGH",
+   "pkg": "libsmartcols1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-53613",
+   "severity": "HIGH",
+   "pkg": "libuuid1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-53613",
+   "severity": "HIGH",
+   "pkg": "mount",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-53613",
+   "severity": "HIGH",
+   "pkg": "util-linux",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-53613",
+   "severity": "HIGH",
+   "pkg": "util-linux-extra",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-54369",
+   "severity": "HIGH",
+   "pkg": "libacl1",
+   "installed": "2.3.1-3",
+   "fixed": null,
+   "status": "fix_deferred",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-57432",
+   "severity": "HIGH",
+   "pkg": "perl-base",
+   "installed": "5.36.0-7+deb12u3",
+   "fixed": "5.36.0-7+deb12u4",
+   "status": "fixed",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-57433",
+   "severity": "HIGH",
+   "pkg": "perl-base",
+   "installed": "5.36.0-7+deb12u3",
+   "fixed": "5.36.0-7+deb12u4",
+   "status": "fixed",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-59874",
+   "severity": "HIGH",
+   "pkg": "tar",
+   "installed": "7.5.11",
+   "fixed": "7.5.18",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg"
+  },
+  {
+   "id": "CVE-2026-6321",
+   "severity": "HIGH",
+   "pkg": "fast-uri",
+   "installed": "2.4.0",
+   "fixed": "3.1.1, 2.4.1",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg"
+  },
+  {
+   "id": "CVE-2026-6321",
+   "severity": "HIGH",
+   "pkg": "fast-uri",
+   "installed": "3.0.6",
+   "fixed": "3.1.1, 2.4.1",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg"
+  },
+  {
+   "id": "CVE-2026-6322",
+   "severity": "HIGH",
+   "pkg": "fast-uri",
+   "installed": "2.4.0",
+   "fixed": "3.1.2, 2.4.1",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg"
+  },
+  {
+   "id": "CVE-2026-6322",
+   "severity": "HIGH",
+   "pkg": "fast-uri",
+   "installed": "3.0.6",
+   "fixed": "3.1.2, 2.4.1",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg"
+  },
+  {
+   "id": "CVE-2026-69152",
+   "severity": "HIGH",
+   "pkg": "brace-expansion",
+   "installed": "2.0.2",
+   "fixed": "1.1.18, 2.1.4, 3.0.6, 5.0.9",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg"
+  },
+  {
+   "id": "CVE-2026-69192",
+   "severity": "HIGH",
+   "pkg": "ip-address",
+   "installed": "10.1.0",
+   "fixed": "10.3.1",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg"
+  },
+  {
+   "id": "CVE-2026-73566",
+   "severity": "HIGH",
+   "pkg": "tar",
+   "installed": "7.5.11",
+   "fixed": "7.5.21",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg"
+  },
+  {
+   "id": "CVE-2026-75975",
+   "severity": "HIGH",
+   "pkg": "fast-uri",
+   "installed": "2.4.0",
+   "fixed": "2.4.5, 3.1.6, 4.1.3",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg"
+  },
+  {
+   "id": "CVE-2026-75975",
+   "severity": "HIGH",
+   "pkg": "fast-uri",
+   "installed": "3.0.6",
+   "fixed": "2.4.5, 3.1.6, 4.1.3",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg"
+  },
+  {
+   "id": "CVE-2026-76169",
+   "severity": "HIGH",
+   "pkg": "fastify",
+   "installed": "4.29.1",
+   "fixed": "5.12.2",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg"
+  },
+  {
+   "id": "CVE-2026-76172",
+   "severity": "HIGH",
+   "pkg": "fast-uri",
+   "installed": "2.4.0",
+   "fixed": "2.4.5, 3.1.6, 4.1.3",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg"
+  },
+  {
+   "id": "CVE-2026-76172",
+   "severity": "HIGH",
+   "pkg": "fast-uri",
+   "installed": "3.0.6",
+   "fixed": "2.4.5, 3.1.6, 4.1.3",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg"
+  },
+  {
+   "id": "CVE-2026-76642",
+   "severity": "HIGH",
+   "pkg": "bsdutils",
+   "installed": "1:2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-76642",
+   "severity": "HIGH",
+   "pkg": "libblkid1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-76642",
+   "severity": "HIGH",
+   "pkg": "libmount1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-76642",
+   "severity": "HIGH",
+   "pkg": "libsmartcols1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-76642",
+   "severity": "HIGH",
+   "pkg": "libuuid1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-76642",
+   "severity": "HIGH",
+   "pkg": "mount",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-76642",
+   "severity": "HIGH",
+   "pkg": "util-linux",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-76642",
+   "severity": "HIGH",
+   "pkg": "util-linux-extra",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78408",
+   "severity": "HIGH",
+   "pkg": "bsdutils",
+   "installed": "1:2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78408",
+   "severity": "HIGH",
+   "pkg": "libblkid1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78408",
+   "severity": "HIGH",
+   "pkg": "libmount1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78408",
+   "severity": "HIGH",
+   "pkg": "libsmartcols1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78408",
+   "severity": "HIGH",
+   "pkg": "libuuid1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78408",
+   "severity": "HIGH",
+   "pkg": "mount",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78408",
+   "severity": "HIGH",
+   "pkg": "util-linux",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78408",
+   "severity": "HIGH",
+   "pkg": "util-linux-extra",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78409",
+   "severity": "HIGH",
+   "pkg": "bsdutils",
+   "installed": "1:2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78409",
+   "severity": "HIGH",
+   "pkg": "libblkid1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78409",
+   "severity": "HIGH",
+   "pkg": "libmount1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78409",
+   "severity": "HIGH",
+   "pkg": "libsmartcols1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78409",
+   "severity": "HIGH",
+   "pkg": "libuuid1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78409",
+   "severity": "HIGH",
+   "pkg": "mount",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78409",
+   "severity": "HIGH",
+   "pkg": "util-linux",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78409",
+   "severity": "HIGH",
+   "pkg": "util-linux-extra",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78410",
+   "severity": "HIGH",
+   "pkg": "bsdutils",
+   "installed": "1:2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78410",
+   "severity": "HIGH",
+   "pkg": "libblkid1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78410",
+   "severity": "HIGH",
+   "pkg": "libmount1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78410",
+   "severity": "HIGH",
+   "pkg": "libsmartcols1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78410",
+   "severity": "HIGH",
+   "pkg": "libuuid1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78410",
+   "severity": "HIGH",
+   "pkg": "mount",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78410",
+   "severity": "HIGH",
+   "pkg": "util-linux",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78410",
+   "severity": "HIGH",
+   "pkg": "util-linux-extra",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-84292",
+   "severity": "HIGH",
+   "pkg": "fast-uri",
+   "installed": "2.4.0",
+   "fixed": "2.4.6, 3.1.7, 4.1.4",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg"
+  },
+  {
+   "id": "CVE-2026-84292",
+   "severity": "HIGH",
+   "pkg": "fast-uri",
+   "installed": "3.0.6",
+   "fixed": "2.4.6, 3.1.7, 4.1.4",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg"
+  },
+  {
+   "id": "CVE-2026-84428",
+   "severity": "HIGH",
+   "pkg": "fastify",
+   "installed": "4.29.1",
+   "fixed": "5.12.2",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg"
+  },
+  {
+   "id": "CVE-2026-84469",
+   "severity": "HIGH",
+   "pkg": "fastify",
+   "installed": "4.29.1",
+   "fixed": "5.12.2",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg"
+  },
+  {
+   "id": "CVE-2026-84504",
+   "severity": "HIGH",
+   "pkg": "fastify",
+   "installed": "4.29.1",
+   "fixed": "5.12.2",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg"
+  },
+  {
+   "id": "CVE-2026-84782",
+   "severity": "HIGH",
+   "pkg": "libssl3",
+   "installed": "3.0.20-1~deb12u2",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-84782",
+   "severity": "HIGH",
+   "pkg": "openssl",
+   "installed": "3.0.20-1~deb12u2",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-86145",
+   "severity": "HIGH",
+   "pkg": "libpcre2-8-0",
+   "installed": "10.42-1",
+   "fixed": "10.42-1+deb12u1",
+   "status": "fixed",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-89157",
+   "severity": "HIGH",
+   "pkg": "libpcre2-8-0",
+   "installed": "10.42-1",
+   "fixed": "10.42-1+deb12u1",
+   "status": "fixed",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-89161",
+   "severity": "HIGH",
+   "pkg": "libpcre2-8-0",
+   "installed": "10.42-1",
+   "fixed": "10.42-1+deb12u1",
+   "status": "fixed",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-93748",
+   "severity": "HIGH",
+   "pkg": "http-cache-semantics",
+   "installed": "4.2.0",
+   "fixed": null,
+   "status": "affected",
+   "target": "Node.js",
+   "type": "node-pkg"
+  },
+  {
+   "id": "CVE-2026-9496",
+   "severity": "HIGH",
+   "pkg": "pacote",
+   "installed": "19.0.2",
+   "fixed": "21.5.1",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg"
+  },
+  {
+   "id": "CVE-2026-9496",
+   "severity": "HIGH",
+   "pkg": "pacote",
+   "installed": "20.0.1",
+   "fixed": "21.5.1",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg"
+  },
+  {
+   "id": "CVE-2026-9538",
+   "severity": "HIGH",
+   "pkg": "perl-base",
+   "installed": "5.36.0-7+deb12u3",
+   "fixed": null,
+   "status": "fix_deferred",
+   "target": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158 (debian 12.15)",
+   "type": "debian"
+  }
+ ],
+ "counts": {
+  "CRITICAL": {
+   "findings": 9,
+   "unique_ids": 9,
+   "fixed_available": 8,
+   "fixed_available_unique_ids": 8
+  },
+  "HIGH": {
+   "findings": 93,
+   "unique_ids": 45,
+   "fixed_available": 42,
+   "fixed_available_unique_ids": 33
+  },
+  "total_findings": 102
+ },
+ "succeeded": true,
+ "finished_at": "2026-10-07T13:38:45.467Z"
+}

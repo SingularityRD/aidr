@@ -1,0 +1,174 @@
+{
+  "images": [
+    {
+      "name": "studio-current",
+      "service": "studio",
+      "role": "current",
+      "image": "supabase/studio:2026.09.07-sha-7996410",
+      "ref": "supabase/studio:2026.09.07-sha-7996410@sha256:94a2a9d2906e8b4109e55159a62e241c3044709a492913ea8edd34b14973d288",
+      "index_media_type": "application/vnd.oci.image.index.v1+json",
+      "linux_amd64_manifest": "sha256:0f797270d236090c79fd26a97a1e5d1cf7ec5f36e93b9b4c3c453e1cb1aeadab",
+      "resolved_at": "2026-10-07T13:37:42.107Z"
+    },
+    {
+      "name": "api-gw-current",
+      "service": "api-gw",
+      "role": "current",
+      "image": "envoyproxy/envoy:v1.39.2",
+      "ref": "envoyproxy/envoy:v1.39.2@sha256:460f8c329f24b2e1c7c5af64cb314a6f351ad1c262ba77b135ac46b35ebd5f85",
+      "index_media_type": "application/vnd.oci.image.index.v1+json",
+      "linux_amd64_manifest": "sha256:43b69cf424922cd5d1086cc019dc89197e58d58deac89d36b3c8b67f1a9e8523",
+      "resolved_at": "2026-10-07T13:37:42.985Z"
+    },
+    {
+      "name": "auth-current",
+      "service": "auth",
+      "role": "current",
+      "image": "supabase/gotrue:v2.196.0",
+      "ref": "supabase/gotrue:v2.196.0@sha256:c0c25187a6b835e65a6f6e6c6b39d090e832d40e6de5186f2c038e0411944232",
+      "index_media_type": "application/vnd.oci.image.index.v1+json",
+      "linux_amd64_manifest": "sha256:7e813221b93fbf54b515036438550e483bfaf057b9db52fe9bc1ce91c47e817e",
+      "resolved_at": "2026-10-07T13:37:43.370Z"
+    },
+    {
+      "name": "rest-current",
+      "service": "rest",
+      "role": "current",
+      "image": "postgrest/postgrest:v14.17",
+      "ref": "postgrest/postgrest:v14.17@sha256:c9dc201e555f5d8e37e7f39cdd4df0229774996e213bfd7de8d10ac609030f2c",
+      "index_media_type": "application/vnd.oci.image.index.v1+json",
+      "linux_amd64_manifest": "sha256:aa7e96af2d01219a09bc00c75de28171b1f9fda17ea455a931e4fb6d317089e0",
+      "resolved_at": "2026-10-07T13:37:43.754Z"
+    },
+    {
+      "name": "realtime-current",
+      "service": "realtime",
+      "role": "current",
+      "image": "supabase/realtime:v2.134.10",
+      "ref": "supabase/realtime:v2.134.10@sha256:cbcc6a7986fc28b6dcffa798b077d5fb9c69cd25500371ab49147a86d7edbb03",
+      "index_media_type": "application/vnd.oci.image.index.v1+json",
+      "linux_amd64_manifest": "sha256:c1d078d929608f3eb4d441e30317bbdccc1bfcc1169efa3d1a26d4252417cc76",
+      "resolved_at": "2026-10-07T13:37:44.727Z"
+    },
+    {
+      "name": "storage-current",
+      "service": "storage",
+      "role": "current",
+      "image": "supabase/storage-api:v1.74.0",
+      "ref": "supabase/storage-api:v1.74.0@sha256:f1546fac6d1c7e345428ac904bfaa7be7cecd50a1f549fe1cf38c628a7b15c85",
+      "index_media_type": "application/vnd.oci.image.index.v1+json",
+      "linux_amd64_manifest": "sha256:63da55733ce9d7592d860739acb94f0b6189d880b7565d247ee5b195be854db1",
+      "resolved_at": "2026-10-07T13:37:45.256Z"
+    },
+    {
+      "name": "imgproxy-current",
+      "service": "imgproxy",
+      "role": "current",
+      "image": "darthsim/imgproxy:v4.0.17",
+      "ref": "darthsim/imgproxy:v4.0.17@sha256:db0b4b9cd690c8b3590203dea300fb759a18c4ec2af7b37424f0bdef23ce317d",
+      "index_media_type": "application/vnd.oci.image.index.v1+json",
+      "linux_amd64_manifest": "sha256:be64f14896476c8613ebac98db241d152064256981f8149dd9e2f2f155e22dd1",
+      "resolved_at": "2026-10-07T13:37:45.690Z"
+    },
+    {
+      "name": "meta-current",
+      "service": "meta",
+      "role": "current",
+      "image": "supabase/postgres-meta:v0.99.0",
+      "ref": "supabase/postgres-meta:v0.99.0@sha256:9a079ac1c94d89629262822a4bd1902d5b1be4adb464e5a0a8fd078aaed72158",
+      "index_media_type": "application/vnd.oci.image.index.v1+json",
+      "linux_amd64_manifest": "sha256:09b00cdd401f830cc8db5c7da14468e99d04a63900371b1ec06463674ac4877e",
+      "resolved_at": "2026-10-07T13:37:46.117Z"
+    },
+    {
+      "name": "functions-current",
+      "service": "functions",
+      "role": "current",
+      "image": "supabase/edge-runtime:v1.76.2",
+      "ref": "supabase/edge-runtime:v1.76.2@sha256:edd22bef4477b900d5c300e287ce9b18bff9b81a0291bee14ee0b7c7b71a2899",
+      "index_media_type": "application/vnd.oci.image.index.v1+json",
+      "linux_amd64_manifest": "sha256:b331c6422f4f4bebd6052357da5f3c87610128c8cb530390ca024eb68cf4bf2e",
+      "resolved_at": "2026-10-07T13:37:46.488Z"
+    },
+    {
+      "name": "db-current",
+      "service": "db",
+      "role": "current",
+      "image": "supabase/postgres:17.6.1.136",
+      "ref": "supabase/postgres:17.6.1.136@sha256:f371b5f3f2ac0a05703f33d6e6134515fb2498cab708fb948a0aeb7481467c00",
+      "index_media_type": "application/vnd.oci.image.index.v1+json",
+      "linux_amd64_manifest": "sha256:5a4314708484bec672de2c09653a5c01fb1c84a998564ac231b0325e2238ed5b",
+      "resolved_at": "2026-10-07T13:37:46.879Z"
+    },
+    {
+      "name": "studio-candidate",
+      "service": "studio",
+      "role": "candidate",
+      "image": "supabase/studio:2026.10.05-sha-94b8b06",
+      "ref": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237",
+      "index_media_type": "application/vnd.oci.image.index.v1+json",
+      "linux_amd64_manifest": "sha256:a3454f6e5eaf34ec9a79958092673dc91ad3bdfa9f09fb17bc405dce9796d7ec",
+      "resolved_at": "2026-10-07T13:37:47.331Z"
+    },
+    {
+      "name": "api-gw-candidate",
+      "service": "api-gw",
+      "role": "candidate",
+      "image": "envoyproxy/envoy:v1.39.3",
+      "ref": "envoyproxy/envoy:v1.39.3@sha256:dd85940439de19a0b6ae8419610363ea0ad351d9a994ea007161c206ec1e1865",
+      "index_media_type": "application/vnd.oci.image.index.v1+json",
+      "linux_amd64_manifest": "sha256:e877a955cc8fde1d54b6b4141b95240511fe1494a7d98759c71a0cf43573ae33",
+      "resolved_at": "2026-10-07T13:37:47.698Z"
+    },
+    {
+      "name": "auth-candidate",
+      "service": "auth",
+      "role": "candidate",
+      "image": "supabase/gotrue:v2.197.0",
+      "ref": "supabase/gotrue:v2.197.0@sha256:1736a63078f5922b198c4cbe50f80ab9a2d3b54fe8b7b6cfb2e9dc5dbbc12c6b",
+      "index_media_type": "application/vnd.oci.image.index.v1+json",
+      "linux_amd64_manifest": "sha256:839f529492d116b4e8b7777c953a27c381d34c15a744b1bcefde5eefaa1f9f9f",
+      "resolved_at": "2026-10-07T13:37:48.073Z"
+    },
+    {
+      "name": "realtime-candidate",
+      "service": "realtime",
+      "role": "candidate",
+      "image": "supabase/realtime:v2.142.0",
+      "ref": "supabase/realtime:v2.142.0@sha256:9a6a8d074634a08efffa3a4fce4ee1a9b0ff1fa3b8e23c0e6c0cf0a0fc200f28",
+      "index_media_type": "application/vnd.oci.image.index.v1+json",
+      "linux_amd64_manifest": "sha256:35df6ffc0fecb252637fc61fed4183effd2395f5f8cebdc71a7229a596c385cd",
+      "resolved_at": "2026-10-07T13:37:48.455Z"
+    },
+    {
+      "name": "storage-candidate",
+      "service": "storage",
+      "role": "candidate",
+      "image": "supabase/storage-api:v1.80.0",
+      "ref": "supabase/storage-api:v1.80.0@sha256:15aa712fdda0dab83d6345c79b54230c1466c41161f1f3756651778b22c3b292",
+      "index_media_type": "application/vnd.oci.image.index.v1+json",
+      "linux_amd64_manifest": "sha256:244e99c66a5e251604545a1f7f771740dfdb361cfa3d45e42cc179a4da460ddb",
+      "resolved_at": "2026-10-07T13:37:48.819Z"
+    },
+    {
+      "name": "meta-candidate",
+      "service": "meta",
+      "role": "candidate",
+      "image": "supabase/postgres-meta:v0.100.0",
+      "ref": "supabase/postgres-meta:v0.100.0@sha256:145325b7e39f8ef4931d6e8cfd3f6f4d655de09d72a2ccc96d9513542c2202bd",
+      "index_media_type": "application/vnd.oci.image.index.v1+json",
+      "linux_amd64_manifest": "sha256:822227a8d12c109b24b8d8f1dae98a9c089a698b4586d35527dadf929e655136",
+      "resolved_at": "2026-10-07T13:37:49.190Z"
+    },
+    {
+      "name": "functions-candidate",
+      "service": "functions",
+      "role": "candidate",
+      "image": "supabase/edge-runtime:v1.77.4",
+      "ref": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8",
+      "index_media_type": "application/vnd.oci.image.index.v1+json",
+      "linux_amd64_manifest": "sha256:fded42ff725708990b1a0803633c2659453259d075c4bec6b4d01dfb82dc055e",
+      "resolved_at": "2026-10-07T13:37:49.571Z"
+    }
+  ]
+}

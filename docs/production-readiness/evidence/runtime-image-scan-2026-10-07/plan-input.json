@@ -1,0 +1,106 @@
+{
+  "images": [
+    {
+      "name": "studio-current",
+      "service": "studio",
+      "role": "current",
+      "image": "supabase/studio:2026.09.07-sha-7996410"
+    },
+    {
+      "name": "api-gw-current",
+      "service": "api-gw",
+      "role": "current",
+      "image": "envoyproxy/envoy:v1.39.2"
+    },
+    {
+      "name": "auth-current",
+      "service": "auth",
+      "role": "current",
+      "image": "supabase/gotrue:v2.196.0"
+    },
+    {
+      "name": "rest-current",
+      "service": "rest",
+      "role": "current",
+      "image": "postgrest/postgrest:v14.17"
+    },
+    {
+      "name": "realtime-current",
+      "service": "realtime",
+      "role": "current",
+      "image": "supabase/realtime:v2.134.10"
+    },
+    {
+      "name": "storage-current",
+      "service": "storage",
+      "role": "current",
+      "image": "supabase/storage-api:v1.74.0"
+    },
+    {
+      "name": "imgproxy-current",
+      "service": "imgproxy",
+      "role": "current",
+      "image": "darthsim/imgproxy:v4.0.17"
+    },
+    {
+      "name": "meta-current",
+      "service": "meta",
+      "role": "current",
+      "image": "supabase/postgres-meta:v0.99.0"
+    },
+    {
+      "name": "functions-current",
+      "service": "functions",
+      "role": "current",
+      "image": "supabase/edge-runtime:v1.76.2"
+    },
+    {
+      "name": "db-current",
+      "service": "db",
+      "role": "current",
+      "image": "supabase/postgres:17.6.1.136"
+    },
+    {
+      "name": "studio-candidate",
+      "service": "studio",
+      "role": "candidate",
+      "image": "supabase/studio:2026.10.05-sha-94b8b06"
+    },
+    {
+      "name": "api-gw-candidate",
+      "service": "api-gw",
+      "role": "candidate",
+      "image": "envoyproxy/envoy:v1.39.3"
+    },
+    {
+      "name": "auth-candidate",
+      "service": "auth",
+      "role": "candidate",
+      "image": "supabase/gotrue:v2.197.0"
+    },
+    {
+      "name": "realtime-candidate",
+      "service": "realtime",
+      "role": "candidate",
+      "image": "supabase/realtime:v2.142.0"
+    },
+    {
+      "name": "storage-candidate",
+      "service": "storage",
+      "role": "candidate",
+      "image": "supabase/storage-api:v1.80.0"
+    },
+    {
+      "name": "meta-candidate",
+      "service": "meta",
+      "role": "candidate",
+      "image": "supabase/postgres-meta:v0.100.0"
+    },
+    {
+      "name": "functions-candidate",
+      "service": "functions",
+      "role": "candidate",
+      "image": "supabase/edge-runtime:v1.77.4"
+    }
+  ]
+}

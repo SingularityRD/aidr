@@ -1,0 +1,113 @@
+{
+ "name": "auth-candidate",
+ "service": "auth",
+ "role": "candidate",
+ "image": "supabase/gotrue:v2.197.0",
+ "ref": "supabase/gotrue:v2.197.0@sha256:1736a63078f5922b198c4cbe50f80ab9a2d3b54fe8b7b6cfb2e9dc5dbbc12c6b",
+ "linux_amd64_manifest": "sha256:839f529492d116b4e8b7777c953a27c381d34c15a744b1bcefde5eefaa1f9f9f",
+ "started_at": "2026-10-07T13:39:14.568Z",
+ "flags": [
+  "image",
+  "--image-src",
+  "remote",
+  "--platform",
+  "linux/amd64",
+  "--scanners",
+  "vuln",
+  "--severity",
+  "CRITICAL,HIGH",
+  "--skip-db-update",
+  "--format",
+  "json",
+  "--output",
+  "<tmp>\\auth-candidate.json",
+  "--timeout",
+  "30m",
+  "--cache-dir",
+  "<cache-dir>",
+  "--quiet",
+  "--no-progress",
+  "--config",
+  "<tmp>\\empty-trivy.yaml",
+  "--ignorefile",
+  "<tmp>\\empty.trivyignore"
+ ],
+ "exit_code": 0,
+ "os": {
+  "Family": "alpine",
+  "Name": "3.24.1"
+ },
+ "scanned_image_id": "sha256:1181bff5ba4ce440013a63cef9f4cf13024c432d705c9b1fbc9e5b949e852f48",
+ "repo_digests": [
+  "supabase/gotrue@sha256:1736a63078f5922b198c4cbe50f80ab9a2d3b54fe8b7b6cfb2e9dc5dbbc12c6b"
+ ],
+ "findings": [
+  {
+   "id": "CVE-2026-14456",
+   "severity": "HIGH",
+   "pkg": "libcrypto3",
+   "installed": "3.5.7-r0",
+   "fixed": "3.5.8-r0",
+   "status": "fixed",
+   "target": "supabase/gotrue:v2.197.0@sha256:1736a63078f5922b198c4cbe50f80ab9a2d3b54fe8b7b6cfb2e9dc5dbbc12c6b (alpine 3.24.1)",
+   "type": "alpine"
+  },
+  {
+   "id": "CVE-2026-14456",
+   "severity": "HIGH",
+   "pkg": "libssl3",
+   "installed": "3.5.7-r0",
+   "fixed": "3.5.8-r0",
+   "status": "fixed",
+   "target": "supabase/gotrue:v2.197.0@sha256:1736a63078f5922b198c4cbe50f80ab9a2d3b54fe8b7b6cfb2e9dc5dbbc12c6b (alpine 3.24.1)",
+   "type": "alpine"
+  },
+  {
+   "id": "CVE-2026-32286",
+   "severity": "HIGH",
+   "pkg": "github.com/jackc/pgproto3/v2",
+   "installed": "v2.3.3",
+   "fixed": null,
+   "status": "affected",
+   "target": "usr/local/bin/auth",
+   "type": "gobinary"
+  },
+  {
+   "id": "CVE-2026-84304",
+   "severity": "HIGH",
+   "pkg": "google.golang.org/grpc",
+   "installed": "v1.82.1",
+   "fixed": "1.83.1",
+   "status": "fixed",
+   "target": "usr/local/bin/auth",
+   "type": "gobinary"
+  },
+  {
+   "id": "CVE-2026-84445",
+   "severity": "HIGH",
+   "pkg": "google.golang.org/grpc",
+   "installed": "v1.82.1",
+   "fixed": "1.82.2, 1.83.2, 1.84.0-dev.0.20260825144003-d5a41119e0e3, 1.85.0-dev.0.20260825072537-93e31b48545e",
+   "status": "fixed",
+   "target": "usr/local/bin/auth",
+   "type": "gobinary"
+  }
+ ],
+ "counts": {
+  "CRITICAL": {
+   "findings": 0,
+   "unique_ids": 0,
+   "fixed_available": 0,
+   "fixed_available_unique_ids": 0
+  },
+  "HIGH": {
+   "findings": 5,
+   "unique_ids": 4,
+   "fixed_available": 4,
+   "fixed_available_unique_ids": 3
+  },
+  "total_findings": 5
+ },
+ "succeeded": true,
+ "finished_at": "2026-10-07T13:39:17.713Z"
+}

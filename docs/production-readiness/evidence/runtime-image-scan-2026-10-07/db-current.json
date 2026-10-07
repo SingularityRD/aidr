@@ -1,0 +1,513 @@
+{
+ "name": "db-current",
+ "service": "db",
+ "role": "current",
+ "image": "supabase/postgres:17.6.1.136",
+ "ref": "supabase/postgres:17.6.1.136@sha256:f371b5f3f2ac0a05703f33d6e6134515fb2498cab708fb948a0aeb7481467c00",
+ "linux_amd64_manifest": "sha256:5a4314708484bec672de2c09653a5c01fb1c84a998564ac231b0325e2238ed5b",
+ "started_at": "2026-10-07T13:38:53.353Z",
+ "flags": [
+  "image",
+  "--image-src",
+  "remote",
+  "--platform",
+  "linux/amd64",
+  "--scanners",
+  "vuln",
+  "--severity",
+  "CRITICAL,HIGH",
+  "--skip-db-update",
+  "--format",
+  "json",
+  "--output",
+  "<tmp>\\db-current.json",
+  "--timeout",
+  "30m",
+  "--cache-dir",
+  "<cache-dir>",
+  "--quiet",
+  "--no-progress",
+  "--config",
+  "<tmp>\\empty-trivy.yaml",
+  "--ignorefile",
+  "<tmp>\\empty.trivyignore"
+ ],
+ "exit_code": 0,
+ "os": {
+  "Family": "alpine",
+  "Name": "3.23.4"
+ },
+ "scanned_image_id": "sha256:f519727303f0af6862882be2a30f420e28710d4209226e681aaddb2c01d12d9b",
+ "repo_digests": [
+  "supabase/postgres@sha256:f371b5f3f2ac0a05703f33d6e6134515fb2498cab708fb948a0aeb7481467c00"
+ ],
+ "findings": [
+  {
+   "id": "CVE-2026-11352",
+   "severity": "HIGH",
+   "pkg": "curl",
+   "installed": "8.19.0-r0",
+   "fixed": "8.22.0-r0",
+   "status": "fixed",
+   "target": "supabase/postgres:17.6.1.136@sha256:f371b5f3f2ac0a05703f33d6e6134515fb2498cab708fb948a0aeb7481467c00 (alpine 3.23.4)",
+   "type": "alpine"
+  },
+  {
+   "id": "CVE-2026-11352",
+   "severity": "HIGH",
+   "pkg": "libcurl",
+   "installed": "8.19.0-r0",
+   "fixed": "8.22.0-r0",
+   "status": "fixed",
+   "target": "supabase/postgres:17.6.1.136@sha256:f371b5f3f2ac0a05703f33d6e6134515fb2498cab708fb948a0aeb7481467c00 (alpine 3.23.4)",
+   "type": "alpine"
+  },
+  {
+   "id": "CVE-2026-11586",
+   "severity": "HIGH",
+   "pkg": "curl",
+   "installed": "8.19.0-r0",
+   "fixed": "8.22.0-r0",
+   "status": "fixed",
+   "target": "supabase/postgres:17.6.1.136@sha256:f371b5f3f2ac0a05703f33d6e6134515fb2498cab708fb948a0aeb7481467c00 (alpine 3.23.4)",
+   "type": "alpine"
+  },
+  {
+   "id": "CVE-2026-11586",
+   "severity": "HIGH",
+   "pkg": "libcurl",
+   "installed": "8.19.0-r0",
+   "fixed": "8.22.0-r0",
+   "status": "fixed",
+   "target": "supabase/postgres:17.6.1.136@sha256:f371b5f3f2ac0a05703f33d6e6134515fb2498cab708fb948a0aeb7481467c00 (alpine 3.23.4)",
+   "type": "alpine"
+  },
+  {
+   "id": "CVE-2026-12064",
+   "severity": "HIGH",
+   "pkg": "curl",
+   "installed": "8.19.0-r0",
+   "fixed": "8.22.0-r0",
+   "status": "fixed",
+   "target": "supabase/postgres:17.6.1.136@sha256:f371b5f3f2ac0a05703f33d6e6134515fb2498cab708fb948a0aeb7481467c00 (alpine 3.23.4)",
+   "type": "alpine"
+  },
+  {
+   "id": "CVE-2026-12064",
+   "severity": "HIGH",
+   "pkg": "libcurl",
+   "installed": "8.19.0-r0",
+   "fixed": "8.22.0-r0",
+   "status": "fixed",
+   "target": "supabase/postgres:17.6.1.136@sha256:f371b5f3f2ac0a05703f33d6e6134515fb2498cab708fb948a0aeb7481467c00 (alpine 3.23.4)",
+   "type": "alpine"
+  },
+  {
+   "id": "CVE-2026-14456",
+   "severity": "HIGH",
+   "pkg": "libcrypto3",
+   "installed": "3.5.6-r0",
+   "fixed": "3.5.8-r0",
+   "status": "fixed",
+   "target": "supabase/postgres:17.6.1.136@sha256:f371b5f3f2ac0a05703f33d6e6134515fb2498cab708fb948a0aeb7481467c00 (alpine 3.23.4)",
+   "type": "alpine"
+  },
+  {
+   "id": "CVE-2026-14456",
+   "severity": "HIGH",
+   "pkg": "libssl3",
+   "installed": "3.5.6-r0",
+   "fixed": "3.5.8-r0",
+   "status": "fixed",
+   "target": "supabase/postgres:17.6.1.136@sha256:f371b5f3f2ac0a05703f33d6e6134515fb2498cab708fb948a0aeb7481467c00 (alpine 3.23.4)",
+   "type": "alpine"
+  },
+  {
+   "id": "CVE-2026-27145",
+   "severity": "HIGH",
+   "pkg": "stdlib",
+   "installed": "v1.26.1",
+   "fixed": "1.25.11, 1.26.4",
+   "status": "fixed",
+   "target": "usr/local/bin/gosu",
+   "type": "gobinary"
+  },
+  {
+   "id": "CVE-2026-32280",
+   "severity": "HIGH",
+   "pkg": "stdlib",
+   "installed": "v1.26.1",
+   "fixed": "1.25.9, 1.26.2",
+   "status": "fixed",
+   "target": "usr/local/bin/gosu",
+   "type": "gobinary"
+  },
+  {
+   "id": "CVE-2026-32281",
+   "severity": "HIGH",
+   "pkg": "stdlib",
+   "installed": "v1.26.1",
+   "fixed": "1.25.9, 1.26.2",
+   "status": "fixed",
+   "target": "usr/local/bin/gosu",
+   "type": "gobinary"
+  },
+  {
+   "id": "CVE-2026-32283",
+   "severity": "HIGH",
+   "pkg": "stdlib",
+   "installed": "v1.26.1",
+   "fixed": "1.25.9, 1.26.2",
+   "status": "fixed",
+   "target": "usr/local/bin/gosu",
+   "type": "gobinary"
+  },
+  {
+   "id": "CVE-2026-33630",
+   "severity": "HIGH",
+   "pkg": "c-ares",
+   "installed": "1.34.6-r0",
+   "fixed": "1.34.8-r0",
+   "status": "fixed",
+   "target": "supabase/postgres:17.6.1.136@sha256:f371b5f3f2ac0a05703f33d6e6134515fb2498cab708fb948a0aeb7481467c00 (alpine 3.23.4)",
+   "type": "alpine"
+  },
+  {
+   "id": "CVE-2026-33810",
+   "severity": "HIGH",
+   "pkg": "stdlib",
+   "installed": "v1.26.1",
+   "fixed": "1.26.2",
+   "status": "fixed",
+   "target": "usr/local/bin/gosu",
+   "type": "gobinary"
+  },
+  {
+   "id": "CVE-2026-33811",
+   "severity": "HIGH",
+   "pkg": "stdlib",
+   "installed": "v1.26.1",
+   "fixed": "1.25.10, 1.26.3",
+   "status": "fixed",
+   "target": "usr/local/bin/gosu",
+   "type": "gobinary"
+  },
+  {
+   "id": "CVE-2026-33814",
+   "severity": "HIGH",
+   "pkg": "stdlib",
+   "installed": "v1.26.1",
+   "fixed": "1.25.10, 1.26.3",
+   "status": "fixed",
+   "target": "usr/local/bin/gosu",
+   "type": "gobinary"
+  },
+  {
+   "id": "CVE-2026-33818",
+   "severity": "HIGH",
+   "pkg": "stdlib",
+   "installed": "v1.26.1",
+   "fixed": "1.25.13, 1.26.6, 1.27.0-rc.3",
+   "status": "fixed",
+   "target": "usr/local/bin/gosu",
+   "type": "gobinary"
+  },
+  {
+   "id": "CVE-2026-39820",
+   "severity": "HIGH",
+   "pkg": "stdlib",
+   "installed": "v1.26.1",
+   "fixed": "1.25.10, 1.26.3",
+   "status": "fixed",
+   "target": "usr/local/bin/gosu",
+   "type": "gobinary"
+  },
+  {
+   "id": "CVE-2026-39821",
+   "severity": "HIGH",
+   "pkg": "stdlib",
+   "installed": "v1.26.1",
+   "fixed": "1.25.13, 1.26.6, 1.27.0-rc.3",
+   "status": "fixed",
+   "target": "usr/local/bin/gosu",
+   "type": "gobinary"
+  },
+  {
+   "id": "CVE-2026-39822",
+   "severity": "HIGH",
+   "pkg": "stdlib",
+   "installed": "v1.26.1",
+   "fixed": "1.25.12, 1.26.5, 1.27.0-rc.2",
+   "status": "fixed",
+   "target": "usr/local/bin/gosu",
+   "type": "gobinary"
+  },
+  {
+   "id": "CVE-2026-39836",
+   "severity": "HIGH",
+   "pkg": "stdlib",
+   "installed": "v1.26.1",
+   "fixed": "1.25.10, 1.26.3",
+   "status": "fixed",
+   "target": "usr/local/bin/gosu",
+   "type": "gobinary"
+  },
+  {
+   "id": "CVE-2026-42499",
+   "severity": "HIGH",
+   "pkg": "stdlib",
+   "installed": "v1.26.1",
+   "fixed": "1.25.10, 1.26.3",
+   "status": "fixed",
+   "target": "usr/local/bin/gosu",
+   "type": "gobinary"
+  },
+  {
+   "id": "CVE-2026-42504",
+   "severity": "HIGH",
+   "pkg": "stdlib",
+   "installed": "v1.26.1",
+   "fixed": "1.25.11, 1.26.4",
+   "status": "fixed",
+   "target": "usr/local/bin/gosu",
+   "type": "gobinary"
+  },
+  {
+   "id": "CVE-2026-45447",
+   "severity": "HIGH",
+   "pkg": "libcrypto3",
+   "installed": "3.5.6-r0",
+   "fixed": "3.5.7-r0",
+   "status": "fixed",
+   "target": "supabase/postgres:17.6.1.136@sha256:f371b5f3f2ac0a05703f33d6e6134515fb2498cab708fb948a0aeb7481467c00 (alpine 3.23.4)",
+   "type": "alpine"
+  },
+  {
+   "id": "CVE-2026-45447",
+   "severity": "HIGH",
+   "pkg": "libssl3",
+   "installed": "3.5.6-r0",
+   "fixed": "3.5.7-r0",
+   "status": "fixed",
+   "target": "supabase/postgres:17.6.1.136@sha256:f371b5f3f2ac0a05703f33d6e6134515fb2498cab708fb948a0aeb7481467c00 (alpine 3.23.4)",
+   "type": "alpine"
+  },
+  {
+   "id": "CVE-2026-46600",
+   "severity": "HIGH",
+   "pkg": "stdlib",
+   "installed": "v1.26.1",
+   "fixed": "1.26.6, 1.27.0-rc.3",
+   "status": "fixed",
+   "target": "usr/local/bin/gosu",
+   "type": "gobinary"
+  },
+  {
+   "id": "CVE-2026-56853",
+   "severity": "HIGH",
+   "pkg": "stdlib",
+   "installed": "v1.26.1",
+   "fixed": "1.25.13, 1.26.6, 1.27.0-rc.3",
+   "status": "fixed",
+   "target": "usr/local/bin/gosu",
+   "type": "gobinary"
+  },
+  {
+   "id": "CVE-2026-56858",
+   "severity": "HIGH",
+   "pkg": "stdlib",
+   "installed": "v1.26.1",
+   "fixed": "1.25.13, 1.26.6, 1.27.0-rc.3",
+   "status": "fixed",
+   "target": "usr/local/bin/gosu",
+   "type": "gobinary"
+  },
+  {
+   "id": "CVE-2026-56859",
+   "severity": "HIGH",
+   "pkg": "stdlib",
+   "installed": "v1.26.1",
+   "fixed": "1.25.13, 1.26.6, 1.27.0-rc.3",
+   "status": "fixed",
+   "target": "usr/local/bin/gosu",
+   "type": "gobinary"
+  },
+  {
+   "id": "CVE-2026-56860",
+   "severity": "HIGH",
+   "pkg": "stdlib",
+   "installed": "v1.26.1",
+   "fixed": "1.25.13, 1.26.6, 1.27.0-rc.3",
+   "status": "fixed",
+   "target": "usr/local/bin/gosu",
+   "type": "gobinary"
+  },
+  {
+   "id": "CVE-2026-56862",
+   "severity": "HIGH",
+   "pkg": "stdlib",
+   "installed": "v1.26.1",
+   "fixed": "1.25.13, 1.26.6, 1.27.0-rc.3",
+   "status": "fixed",
+   "target": "usr/local/bin/gosu",
+   "type": "gobinary"
+  },
+  {
+   "id": "CVE-2026-5773",
+   "severity": "HIGH",
+   "pkg": "curl",
+   "installed": "8.19.0-r0",
+   "fixed": "8.20.0-r0",
+   "status": "fixed",
+   "target": "supabase/postgres:17.6.1.136@sha256:f371b5f3f2ac0a05703f33d6e6134515fb2498cab708fb948a0aeb7481467c00 (alpine 3.23.4)",
+   "type": "alpine"
+  },
+  {
+   "id": "CVE-2026-5773",
+   "severity": "HIGH",
+   "pkg": "libcurl",
+   "installed": "8.19.0-r0",
+   "fixed": "8.20.0-r0",
+   "status": "fixed",
+   "target": "supabase/postgres:17.6.1.136@sha256:f371b5f3f2ac0a05703f33d6e6134515fb2498cab708fb948a0aeb7481467c00 (alpine 3.23.4)",
+   "type": "alpine"
+  },
+  {
+   "id": "CVE-2026-6276",
+   "severity": "HIGH",
+   "pkg": "curl",
+   "installed": "8.19.0-r0",
+   "fixed": "8.20.0-r0",
+   "status": "fixed",
+   "target": "supabase/postgres:17.6.1.136@sha256:f371b5f3f2ac0a05703f33d6e6134515fb2498cab708fb948a0aeb7481467c00 (alpine 3.23.4)",
+   "type": "alpine"
+  },
+  {
+   "id": "CVE-2026-6276",
+   "severity": "HIGH",
+   "pkg": "libcurl",
+   "installed": "8.19.0-r0",
+   "fixed": "8.20.0-r0",
+   "status": "fixed",
+   "target": "supabase/postgres:17.6.1.136@sha256:f371b5f3f2ac0a05703f33d6e6134515fb2498cab708fb948a0aeb7481467c00 (alpine 3.23.4)",
+   "type": "alpine"
+  },
+  {
+   "id": "CVE-2026-8286",
+   "severity": "HIGH",
+   "pkg": "curl",
+   "installed": "8.19.0-r0",
+   "fixed": "8.22.0-r0",
+   "status": "fixed",
+   "target": "supabase/postgres:17.6.1.136@sha256:f371b5f3f2ac0a05703f33d6e6134515fb2498cab708fb948a0aeb7481467c00 (alpine 3.23.4)",
+   "type": "alpine"
+  },
+  {
+   "id": "CVE-2026-8286",
+   "severity": "HIGH",
+   "pkg": "libcurl",
+   "installed": "8.19.0-r0",
+   "fixed": "8.22.0-r0",
+   "status": "fixed",
+   "target": "supabase/postgres:17.6.1.136@sha256:f371b5f3f2ac0a05703f33d6e6134515fb2498cab708fb948a0aeb7481467c00 (alpine 3.23.4)",
+   "type": "alpine"
+  },
+  {
+   "id": "CVE-2026-8458",
+   "severity": "HIGH",
+   "pkg": "curl",
+   "installed": "8.19.0-r0",
+   "fixed": "8.22.0-r0",
+   "status": "fixed",
+   "target": "supabase/postgres:17.6.1.136@sha256:f371b5f3f2ac0a05703f33d6e6134515fb2498cab708fb948a0aeb7481467c00 (alpine 3.23.4)",
+   "type": "alpine"
+  },
+  {
+   "id": "CVE-2026-8458",
+   "severity": "HIGH",
+   "pkg": "libcurl",
+   "installed": "8.19.0-r0",
+   "fixed": "8.22.0-r0",
+   "status": "fixed",
+   "target": "supabase/postgres:17.6.1.136@sha256:f371b5f3f2ac0a05703f33d6e6134515fb2498cab708fb948a0aeb7481467c00 (alpine 3.23.4)",
+   "type": "alpine"
+  },
+  {
+   "id": "CVE-2026-8925",
+   "severity": "HIGH",
+   "pkg": "curl",
+   "installed": "8.19.0-r0",
+   "fixed": "8.22.0-r0",
+   "status": "fixed",
+   "target": "supabase/postgres:17.6.1.136@sha256:f371b5f3f2ac0a05703f33d6e6134515fb2498cab708fb948a0aeb7481467c00 (alpine 3.23.4)",
+   "type": "alpine"
+  },
+  {
+   "id": "CVE-2026-8925",
+   "severity": "HIGH",
+   "pkg": "libcurl",
+   "installed": "8.19.0-r0",
+   "fixed": "8.22.0-r0",
+   "status": "fixed",
+   "target": "supabase/postgres:17.6.1.136@sha256:f371b5f3f2ac0a05703f33d6e6134515fb2498cab708fb948a0aeb7481467c00 (alpine 3.23.4)",
+   "type": "alpine"
+  },
+  {
+   "id": "CVE-2026-8927",
+   "severity": "HIGH",
+   "pkg": "curl",
+   "installed": "8.19.0-r0",
+   "fixed": "8.22.0-r0",
+   "status": "fixed",
+   "target": "supabase/postgres:17.6.1.136@sha256:f371b5f3f2ac0a05703f33d6e6134515fb2498cab708fb948a0aeb7481467c00 (alpine 3.23.4)",
+   "type": "alpine"
+  },
+  {
+   "id": "CVE-2026-8927",
+   "severity": "HIGH",
+   "pkg": "libcurl",
+   "installed": "8.19.0-r0",
+   "fixed": "8.22.0-r0",
+   "status": "fixed",
+   "target": "supabase/postgres:17.6.1.136@sha256:f371b5f3f2ac0a05703f33d6e6134515fb2498cab708fb948a0aeb7481467c00 (alpine 3.23.4)",
+   "type": "alpine"
+  },
+  {
+   "id": "CVE-2026-9547",
+   "severity": "HIGH",
+   "pkg": "curl",
+   "installed": "8.19.0-r0",
+   "fixed": "8.22.0-r0",
+   "status": "fixed",
+   "target": "supabase/postgres:17.6.1.136@sha256:f371b5f3f2ac0a05703f33d6e6134515fb2498cab708fb948a0aeb7481467c00 (alpine 3.23.4)",
+   "type": "alpine"
+  },
+  {
+   "id": "CVE-2026-9547",
+   "severity": "HIGH",
+   "pkg": "libcurl",
+   "installed": "8.19.0-r0",
+   "fixed": "8.22.0-r0",
+   "status": "fixed",
+   "target": "supabase/postgres:17.6.1.136@sha256:f371b5f3f2ac0a05703f33d6e6134515fb2498cab708fb948a0aeb7481467c00 (alpine 3.23.4)",
+   "type": "alpine"
+  }
+ ],
+ "counts": {
+  "CRITICAL": {
+   "findings": 0,
+   "unique_ids": 0,
+   "fixed_available": 0,
+   "fixed_available_unique_ids": 0
+  },
+  "HIGH": {
+   "findings": 45,
+   "unique_ids": 33,
+   "fixed_available": 45,
+   "fixed_available_unique_ids": 33
+  },
+  "total_findings": 45
+ },
+ "succeeded": true,
+ "finished_at": "2026-10-07T13:39:01.325Z"
+}
