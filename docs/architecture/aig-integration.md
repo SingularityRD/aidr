@@ -351,7 +351,13 @@ Returns the latest threat intelligence and scanning rules for AIDR to sync.
 
 ```
 GET /api/v1/health
+Authorization: Bearer <bridge API key or broker token with aig:read>
 ```
+
+`/api/v1/health` requires the same authentication as the scan routes. The
+unauthenticated `/api/v1/readyz` returns only `{"status":"ready"}` (200) or
+`{"status":"not_ready"}` (503) for container probes; `/api/v1/livez` is the
+public process-liveness check.
 
 **Response:**
 ```json

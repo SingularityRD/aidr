@@ -1,13 +1,37 @@
-"""Fail-closed liveness/readiness endpoints for the AIG bridge."""
+"""Fail-closed liveness/readiness endpoints for the AIG bridge.
+
+Exposure model:
+
+* ``/livez`` -- public, constant, never contacts AIG or any store.
+* ``/readyz`` -- public because kubelet and Docker probes cannot send
+  credentials, but it only returns ``{"status": "ready"|"not_ready"}`` with
+  200/503.  No versions, dataset identifiers, gate reasons or internal errors.
+* ``/health`` -- the detailed gate report; requires the same bridge
+  authentication as the scan routes (``aig:read`` scope for broker tokens).
+
+``/readyz`` and ``/health`` share one short-lived probe cache
+(``BRIDGE_HEALTH_CACHE_SECONDS``, default 5s, clamped to 0-30s) and coalesce
+concurrent probes, so unauthenticated callers cannot amplify load onto AIG,
+PostgreSQL or the dataset verifier.
+"""
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import math
 import os
+import time
 
-from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
-from app.auth import auth_is_configured, auth_is_required, replay_store_ready
+from app.auth import (
+    BrokerClaims,
+    auth_is_configured,
+    auth_is_required,
+    replay_store_ready,
+    require_bridge_api_key,
+)
 from app.provenance import DatasetProvenance, verify_dataset_provenance
 from app.task_registry import task_registry
 from app.utils.aig_client import AIGClient, get_aig_client
@@ -68,7 +92,11 @@ def _capability_ready(capability: str, runtime: dict[str, object] | None) -> tup
 
 
 async def _readiness_report(aig: AIGClient, capability: str | None = None) -> dict[str, object]:
-    upstream_ready = await aig.health_check()
+    try:
+        upstream_ready = bool(await aig.health_check())
+    except Exception as exc:
+        logger.warning("AIG upstream health probe failed: %s", type(exc).__name__)
+        upstream_ready = False
     runtime = None
     threats = None
     if upstream_ready:
@@ -126,16 +154,94 @@ async def _readiness_report(aig: AIGClient, capability: str | None = None) -> di
         "threat_intel_ready": dataset_ready,
     }
 
-@router.get("/health")
-async def health_check(response: Response, aig: AIGClient = Depends(get_aig_client)):
-    """Return dependency health without exposing upstream payloads."""
+_DEFAULT_CACHE_SECONDS = 5.0
+_MAX_CACHE_SECONDS = 30.0
+_report_cache: dict[str | None, tuple[float, dict[str, object]]] = {}
+_inflight: dict[str | None, asyncio.Future] = {}
 
-    report = await _readiness_report(aig)
+
+def _cache_seconds() -> float:
+    try:
+        value = float(os.getenv("BRIDGE_HEALTH_CACHE_SECONDS", str(_DEFAULT_CACHE_SECONDS)))
+    except ValueError:
+        return _DEFAULT_CACHE_SECONDS
+    if not math.isfinite(value):
+        return _DEFAULT_CACHE_SECONDS
+    return min(max(value, 0.0), _MAX_CACHE_SECONDS)
+
+
+def reset_readiness_cache() -> None:
+    """Drop cached probe results (tests and operational tooling)."""
+
+    _report_cache.clear()
+    _inflight.clear()
+
+
+async def _cached_readiness_report(aig: AIGClient, capability: str | None) -> dict[str, object]:
+    """Return a recent readiness report, running at most one probe at a time.
+
+    Concurrent callers for the same capability await one shared probe task
+    instead of each contacting AIG, the task registry and the replay store.
+    A probe that raises is not cached.
+    """
+
+    ttl = _cache_seconds()
+    cached = _report_cache.get(capability)
+    if cached is not None and ttl > 0 and time.monotonic() - cached[0] < ttl:
+        return dict(cached[1])
+
+    loop = asyncio.get_running_loop()
+    pending = _inflight.get(capability)
+    if pending is None or pending.done() or pending.get_loop() is not loop:
+        pending = asyncio.ensure_future(_readiness_report(aig, capability))
+        _inflight[capability] = pending
+
+        def _store(task: asyncio.Future, key: str | None = capability) -> None:
+            if _inflight.get(key) is task:
+                del _inflight[key]
+            if not task.cancelled() and task.exception() is None:
+                _report_cache[key] = (time.monotonic(), task.result())
+
+        pending.add_done_callback(_store)
+    # shield: a disconnecting caller must not cancel the probe other callers
+    # are waiting on.
+    return dict(await asyncio.shield(pending))
+
+
+def _validated_capability(capability: str | None) -> str | None:
+    # Unknown values are rejected before probing so arbitrary strings cannot
+    # create cache entries or trigger probes.
+    if capability is not None and capability not in _CAPABILITIES:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="unknown capability")
+    return capability
+
+
+async def _require_health_reader(
+    claims: BrokerClaims | None = Depends(require_bridge_api_key),
+) -> None:
+    """Reuse the scan routes' authentication for the detailed report."""
+
+    if claims is not None and "aig:read" not in claims.scopes:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="aig:read scope is required")
+
+
+@router.get("/health", dependencies=[Depends(_require_health_reader)])
+async def health_check(
+    response: Response,
+    capability: str | None = Query(default=None, max_length=32),
+    aig: AIGClient = Depends(get_aig_client),
+):
+    """Authenticated, detailed dependency report without upstream payloads."""
+
+    report = await _cached_readiness_report(aig, _validated_capability(capability))
     # Health is intentionally 503 when a scan dependency is not ready.  /livez
     # remains the process-only endpoint for orchestrator restart decisions.
     if not report["ready"]:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    response.headers["Cache-Control"] = "no-store"
     report["status"] = "ok" if report["ready"] else "degraded"
+    # ``scan_ready`` is the field the AIDR core client gates scans on.
+    report["scan_ready"] = report["ready"]
     report["version"] = "1.0.0"
     return report
 
@@ -150,15 +256,19 @@ async def liveness():
 @router.get("/readyz")
 async def readiness(
     response: Response,
-    capability: str | None = Query(default=None),
+    capability: str | None = Query(default=None, max_length=32),
     aig: AIGClient = Depends(get_aig_client),
 ):
-    """Readiness with capability, worker, dataset, broker and egress gates."""
+    """Unauthenticated probe: ``ready``/``not_ready`` only, from the shared cache.
 
-    report = await _readiness_report(aig, capability)
+    Orchestrator probes cannot authenticate, so this response carries no gate
+    reasons, versions or dataset identifiers; operators read the
+    authenticated ``/health`` endpoint for the detailed report.
+    """
+
+    report = await _cached_readiness_report(aig, _validated_capability(capability))
+    response.headers["Cache-Control"] = "no-store"
     if not report["ready"]:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
-    return {
-        "status": "ready" if report["ready"] else "not_ready",
-        **report,
-    }
+        return {"status": "not_ready"}
+    return {"status": "ready"}
