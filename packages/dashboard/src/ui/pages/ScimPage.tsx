@@ -2,6 +2,11 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from "react"
 import { useTeam } from "../../enterprise/team-provider";
 import { readErrorMessage } from "../../lib/errors";
 import { supabase } from "../../lib/supabase";
+import {
+	type DirectoryAuthority,
+	DirectoryAuthorityPanel,
+	type DirectoryAuthorityRequest,
+} from "./DirectoryAuthorityPanel";
 import { SamlPolicyPanel } from "./SamlPolicyPanel";
 
 type ScimRole = "admin" | "member" | "viewer";
@@ -13,6 +18,8 @@ type ScimToken = {
 	expires_at: string | null;
 	revoked_at: string | null;
 	last_used_at: string | null;
+	/** NULL only for legacy credentials issued before directory binding. */
+	directory_id: string | null;
 };
 type GroupMapping = {
 	external_group_id: string;
@@ -26,13 +33,49 @@ type ScimSnapshot = {
 	group_role_mappings: GroupMapping[];
 	next_token_cursor: TokenCursor | null;
 	next_mapping_cursor: string | null;
+	directory_authority: DirectoryAuthority;
 };
 type OneTimeSecret = { value: string; label: string; expiresAt: string };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+// Matches the scim_tokens.directory_id database check constraint.
+const DIRECTORY_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const ALLOWED_ROLES = new Set<ScimRole>(["admin", "member", "viewer"]);
+const AUTHORITY_OFF: DirectoryAuthority = {
+	enabled: false,
+	directory_id: null,
+	break_glass_user_ids: [],
+};
 const SAFE_SCIM_ERRORS: Record<string, string> = {
 	owner_required: "Only an active tenant owner can view or manage directory provisioning.",
+	mfa_required: "Complete multi-factor verification, then try again.",
+	scim_admin_directory_required:
+		"Enter the directory identifier this credential provisions for. Legacy credentials must be bound when rotated.",
+	scim_admin_directory_mismatch:
+		"A rotation keeps its credential's directory. Leave the directory identifier empty or use the same one.",
+	scim_admin_directory_not_authoritative:
+		"Directory-authoritative mode is on. Only the configured directory can receive credentials.",
+	directory_authority_already_enabled:
+		"Directory-authoritative mode is already on. Refresh to see its configuration.",
+	directory_authority_directory_token_required:
+		"Create an active credential for this directory before making it authoritative.",
+	directory_authority_foreign_token_active:
+		"Revoke every active credential for other directories (including unbound legacy credentials) first.",
+	directory_authority_adoption_ambiguous:
+		"Credentials for another directory existed, so existing SCIM memberships cannot be attributed to this directory. Leave adoption off and let the directory re-provision them.",
+	directory_authority_break_glass_mismatch:
+		"Every active owner must be listed as a break-glass account (at most two). Remove or demote extra owners first, then refresh.",
+	directory_authority_break_glass_invalid:
+		"A break-glass owner is unavailable or directory-provisioned. Use active, manually managed owner accounts.",
+	directory_authority_would_remove_all_administrators:
+		"Enabling would leave no owner or admin with access. No change was made.",
+	directory_authority_tenant_unsupported:
+		"Directory-authoritative mode is available only for active team workspaces.",
+	directory_authority_membership_required:
+		"That change would give access to someone the configured directory does not provision.",
+	directory_authority_break_glass_owner_required:
+		"At least one break-glass owner must keep owner access while the mode is on.",
+	assurance_unavailable: "Multi-factor status could not be verified. No change was confirmed.",
 	mapping_conflicts_with_manual_membership:
 		"This group would take over a manually assigned team membership. Resolve that membership explicitly, then retry.",
 	token_not_found_or_inactive:
@@ -80,6 +123,36 @@ function parseToken(value: unknown): ScimToken | null {
 		expires_at: expiresAt,
 		revoked_at: revokedAt,
 		last_used_at: lastUsedAt,
+		directory_id:
+			typeof value.directory_id === "string" && DIRECTORY_ID.test(value.directory_id)
+				? value.directory_id
+				: null,
+	};
+}
+
+function parseAuthority(value: unknown): DirectoryAuthority {
+	// Older deployments omit the field; the mode does not exist there (off).
+	if (value === undefined) return AUTHORITY_OFF;
+	if (
+		!isRecord(value) ||
+		typeof value.enabled !== "boolean" ||
+		!(
+			value.directory_id === null ||
+			(typeof value.directory_id === "string" && DIRECTORY_ID.test(value.directory_id))
+		) ||
+		!Array.isArray(value.break_glass_owners) ||
+		(value.enabled && value.directory_id === null)
+	)
+		throw new Error("Directory management returned an invalid membership mode.");
+	const owners = value.break_glass_owners.map((row) =>
+		isRecord(row) && typeof row.user_id === "string" && UUID.test(row.user_id) ? row.user_id : null,
+	);
+	if (owners.some((id) => id === null))
+		throw new Error("Directory management returned an invalid membership mode.");
+	return {
+		enabled: value.enabled,
+		directory_id: value.directory_id as string | null,
+		break_glass_user_ids: owners as string[],
 	};
 }
 
@@ -142,12 +215,23 @@ function parseSnapshot(value: unknown): ScimSnapshot {
 		group_role_mappings: mappings as GroupMapping[],
 		next_token_cursor: nextTokenCursor,
 		next_mapping_cursor: typeof nextMappingCursor === "string" ? nextMappingCursor : null,
+		directory_authority: parseAuthority(value.directory_authority),
 	};
 }
 
 async function responseError(error: unknown, data: unknown, fallback: string): Promise<string> {
-	const getSafeCode = (value: unknown) =>
-		isRecord(value) && typeof value.error === "string" ? SAFE_SCIM_ERRORS[value.error] : undefined;
+	const getSafeCode = (value: unknown) => {
+		if (!isRecord(value) || typeof value.error !== "string") return undefined;
+		if (value.error === "directory_authority_unmanaged_members") {
+			const count = value.unmanaged_member_count;
+			const who =
+				typeof count === "number" && Number.isSafeInteger(count) && count > 0
+					? `${count} active ${count === 1 ? "member is" : "members are"}`
+					: "Some active members are";
+			return `${who} not provisioned by this directory. Adopt existing SCIM memberships, or explicitly choose to remove unprovisioned members, then retry. No change was made.`;
+		}
+		return SAFE_SCIM_ERRORS[value.error];
+	};
 	const direct = getSafeCode(data);
 	if (direct) return direct;
 	if (isRecord(error) && error.context instanceof Response) {
@@ -194,6 +278,56 @@ function formatDate(value: string | null): string {
 	return value ? new Date(value).toLocaleString() : "Never";
 }
 
+const INVALID_DIRECTORY_MESSAGE =
+	"Enter the directory identifier (1–128 letters, digits, dot, underscore, colon or hyphen; starting with a letter or digit).";
+
+/**
+ * The directory_id to send: a new credential always names its directory, a
+ * rotation inherits it, and only an unbound legacy credential is bound by an
+ * entered value. `null` = send none; `undefined` = the entered value is invalid.
+ */
+function tokenDirectory(
+	action: "create_token" | "rotate_token",
+	token: ScimToken | undefined,
+	entered: string,
+): string | null | undefined {
+	const directory = entered.trim();
+	const binds = action === "create_token" || (token?.directory_id === null && directory !== "");
+	if (!binds) return null;
+	return DIRECTORY_ID.test(directory) ? directory : undefined;
+}
+
+function tokenRequestBody(
+	action: "create_token" | "rotate_token",
+	token: ScimToken | undefined,
+	label: string,
+	directory: string | null,
+): Record<string, unknown> {
+	const base =
+		action === "rotate_token" ? { action, token_id: token?.id, label } : { action, label };
+	return directory === null ? base : { ...base, directory_id: directory };
+}
+
+function directoryLabel(token: ScimToken): string {
+	return token.directory_id ?? "Unbound (legacy)";
+}
+
+function enabledNotice(directoryId: string, removedCount: unknown): string {
+	const removed = typeof removedCount === "number" ? removedCount : 0;
+	const removal =
+		removed > 0
+			? `${removed} unprovisioned ${removed === 1 ? "member was" : "members were"} removed. `
+			: "";
+	return `Directory-authoritative mode is on for ${directoryId}. ${removal}Only memberships this directory provisions, and the break-glass owners, grant access.`;
+}
+
+function activeDirectories(tokens: ScimToken[]): string[] {
+	const ids = new Set<string>();
+	for (const token of tokens)
+		if (token.directory_id && isActiveToken(token)) ids.add(token.directory_id);
+	return [...ids].sort();
+}
+
 function validGroupId(value: string): boolean {
 	return (
 		value.length >= 1 &&
@@ -204,9 +338,12 @@ function validGroupId(value: string): boolean {
 }
 
 export function ScimPage() {
-	const { currentTeam, currentRole, currentUserId } = useTeam();
+	const { currentTeam, currentRole, currentUserId, members } = useTeam();
 	if (!currentTeam)
 		return <div className="card">Select a tenant to manage directory provisioning.</div>;
+	const owners = (members ?? [])
+		.filter((member) => member.role === "owner")
+		.map((member) => ({ userId: member.user_id, email: member.email }));
 	return (
 		<TenantScimPage
 			key={currentTeam.tenant_id}
@@ -214,6 +351,7 @@ export function ScimPage() {
 			teamName={currentTeam.name}
 			isOwner={currentRole === "owner"}
 			currentUserId={currentUserId}
+			owners={owners}
 		/>
 	);
 }
@@ -223,14 +361,18 @@ function TenantScimPage({
 	teamName,
 	isOwner,
 	currentUserId,
+	owners,
 }: {
 	tenantId: string;
 	teamName: string;
 	isOwner: boolean;
 	currentUserId: string;
+	owners: { userId: string; email: string }[];
 }) {
 	const [tokens, setTokens] = useState<ScimToken[]>([]);
 	const [mappings, setMappings] = useState<GroupMapping[]>([]);
+	const [authority, setAuthority] = useState<DirectoryAuthority>(AUTHORITY_OFF);
+	const [directoryId, setDirectoryId] = useState("");
 	const [tokenCursor, setTokenCursor] = useState<TokenCursor | null>(null);
 	const [mappingCursor, setMappingCursor] = useState<string | null>(null);
 	const cursors = useRef<{ token: TokenCursor | null; mapping: string | null }>({
@@ -255,6 +397,7 @@ function TenantScimPage({
 		if (isOwner) return;
 		setTokens([]);
 		setMappings([]);
+		setAuthority(AUTHORITY_OFF);
 		setTokenCursor(null);
 		setMappingCursor(null);
 		cursors.current = { token: null, mapping: null };
@@ -290,6 +433,7 @@ function TenantScimPage({
 						? mergeBy(previous, snapshot.group_role_mappings, (item) => item.external_group_id)
 						: snapshot.group_role_mappings,
 				);
+				setAuthority(snapshot.directory_authority);
 				cursors.current = {
 					token: snapshot.next_token_cursor,
 					mapping: snapshot.next_mapping_cursor,
@@ -336,13 +480,19 @@ function TenantScimPage({
 			setError("Enter a descriptive credential label.");
 			return;
 		}
+		const directory = tokenDirectory(action, token, directoryId);
+		if (directory === undefined) {
+			setError(INVALID_DIRECTORY_MESSAGE);
+			return;
+		}
 		setBusy(true);
 		setError(null);
 		setNotice(null);
 		try {
-			const body =
-				action === "rotate_token" ? { action, token_id: token?.id, label } : { action, label };
-			const data = await invokeWrite(body, "Credential creation was not confirmed.");
+			const data = await invokeWrite(
+				tokenRequestBody(action, token, label, directory),
+				"Credential creation was not confirmed.",
+			);
 			if (
 				typeof data.scim_token !== "string" ||
 				!/^aidr_scim_[A-Za-z0-9_-]{43}$/.test(data.scim_token) ||
@@ -388,6 +538,48 @@ function TenantScimPage({
 			await load();
 		} catch (cause) {
 			setError(readErrorMessage(cause, "Credential revocation was not confirmed."));
+		} finally {
+			setBusy(false);
+		}
+	}
+
+	async function changeAuthority(request: DirectoryAuthorityRequest): Promise<boolean> {
+		setBusy(true);
+		setError(null);
+		setNotice(null);
+		try {
+			if (request.action === "enable") {
+				const data = await invokeWrite(
+					{
+						action: "enable_directory_authority",
+						directory_id: request.directoryId,
+						break_glass_user_ids: request.breakGlassUserIds,
+						adopt_existing_memberships: request.adoptExisting,
+						remove_unmanaged_members: request.removeUnmanaged,
+					},
+					"Directory-authoritative mode was not confirmed.",
+				);
+				setNotice(enabledNotice(request.directoryId, data.removed_count));
+			} else {
+				await invokeWrite(
+					{ action: "disable_directory_authority" },
+					"Disabling directory-authoritative mode was not confirmed.",
+				);
+				setNotice(
+					"Directory-authoritative mode is off. Manually added members can be granted access again.",
+				);
+			}
+			await load();
+			return true;
+		} catch (cause) {
+			const message = readErrorMessage(cause, "The membership mode change was not confirmed.");
+			if (mutationMayHaveCommitted(cause)) {
+				await load();
+				setError(
+					`${message} Refresh shows the current mode; it may have changed before the connection failed.`,
+				);
+			} else setError(message);
+			return false;
 		} finally {
 			setBusy(false);
 		}
@@ -498,6 +690,24 @@ function TenantScimPage({
 					placeholder="Entra production"
 					autoComplete="off"
 				/>
+				<label className="label" htmlFor="scim-directory-id" style={{ marginTop: 10 }}>
+					Directory identifier
+				</label>
+				<input
+					id="scim-directory-id"
+					className="input mono"
+					maxLength={128}
+					value={directoryId}
+					onChange={(event) => setDirectoryId(event.target.value)}
+					placeholder="entra-production"
+					autoComplete="off"
+					aria-describedby="scim-directory-id-help"
+				/>
+				<p id="scim-directory-id-help" className="muted small">
+					A stable name for the identity directory this credential provisions from. It is recorded
+					on the credential and cannot be changed. Rotations keep it; enter it only to bind an
+					unbound legacy credential when rotating.
+				</p>
 				<div className="row" style={{ marginTop: 10 }}>
 					<button
 						className="button"
@@ -587,6 +797,7 @@ function TenantScimPage({
 								<tr>
 									<th scope="col">Label</th>
 									<th scope="col">Status</th>
+									<th scope="col">Directory</th>
 									<th scope="col">Expires</th>
 									<th scope="col">Last used</th>
 									<th scope="col">Actions</th>
@@ -599,6 +810,7 @@ function TenantScimPage({
 										<tr key={token.id}>
 											<td>{token.label}</td>
 											<td>{token.revoked_at ? "Revoked" : active ? "Active" : "Expired"}</td>
+											<td className="mono">{directoryLabel(token)}</td>
 											<td>{formatDate(token.expires_at)}</td>
 											<td>{formatDate(token.last_used_at)}</td>
 											<td>
@@ -796,6 +1008,15 @@ function TenantScimPage({
 					</button>
 				</div>
 			) : null}
+
+			<DirectoryAuthorityPanel
+				authority={authority}
+				directories={activeDirectories(tokens)}
+				owners={owners}
+				currentUserId={currentUserId}
+				busy={busy || loading}
+				onChange={changeAuthority}
+			/>
 		</div>
 	);
 }
