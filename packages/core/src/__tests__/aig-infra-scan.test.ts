@@ -558,3 +558,169 @@ describe("end-to-end scan against a local server", () => {
 		expect(Date.now() - started).toBeLessThan(10000);
 	});
 });
+
+describe("compiled node-semver CVE ranges", () => {
+	it("evaluates the range syntax stored in the CVE index", () => {
+		expect(evaluateVersionRule("<0.1.38", "0.1.30")).toEqual({ matched: true, evaluated: true });
+		expect(evaluateVersionRule("<0.1.38", "0.1.38")).toEqual({ matched: false, evaluated: true });
+		expect(evaluateVersionRule(">=1.0 <2.0", "1.5")).toEqual({ matched: true, evaluated: true });
+		expect(evaluateVersionRule(">=1.0 <2.0", "2.0")).toEqual({ matched: false, evaluated: true });
+		expect(evaluateVersionRule(">1.0 <1.2 || >=2.0 <2.1", "2.0.5")).toEqual({
+			matched: true,
+			evaluated: true,
+		});
+		expect(evaluateVersionRule("=1.4.2", "1.4.2")).toEqual({ matched: true, evaluated: true });
+	});
+
+	it("keeps residue that is not a comparator opaque", () => {
+		expect(evaluateVersionRule("is_internal==true", "1.0.0")).toEqual({
+			matched: false,
+			evaluated: false,
+		});
+		expect(evaluateVersionRule("<1.0 foo", "0.5")).toEqual({ matched: false, evaluated: false });
+	});
+
+	it("confirms a CVE index entry for a known vulnerable version", () => {
+		const findings = lookupCvesForProduct("ollama", "0.1.30");
+		const cve = findings.find((finding) => finding.cveId === "CVE-2024-7773");
+		expect(cve).toMatchObject({ evaluated: true, severity: "critical" });
+		expect(
+			lookupCvesForProduct("ollama", "99.0.0").some((f) => f.cveId === "CVE-2024-7773"),
+		).toBe(false);
+	});
+});
+
+describe("version extraction from a dedicated version endpoint", () => {
+	let server: Server;
+	let baseUrl: string;
+	const requested: string[] = [];
+
+	beforeAll(async () => {
+		resetAigScanCache();
+		// Ollama is detected on `/` but its version is only served by `/api/version`.
+		server = createServer((req, res) => {
+			requested.push(`${req.method} ${req.url}`);
+			if (req.url === "/") {
+				res.writeHead(200, { "content-type": "text/plain" });
+				res.end("Ollama is running");
+				return;
+			}
+			if (req.url === "/api/version") {
+				res.writeHead(200, { "content-type": "application/json" });
+				res.end('{"version":"0.1.30"}');
+				return;
+			}
+			res.writeHead(404);
+			res.end("not found");
+		});
+		await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+		const address = server.address();
+		if (!address || typeof address === "string") throw new Error("no server address");
+		baseUrl = `http://127.0.0.1:${address.port}`;
+	});
+
+	afterAll(async () => {
+		await new Promise<void>((resolve) => server.close(() => resolve()));
+	});
+
+	it("reads the version from the extractor path and confirms the CVE", async () => {
+		const result = await scanTarget({ url: baseUrl }, { deadlineMs: 20000 });
+		const ollama = result.matched.find((match) => match.product === "ollama");
+		expect(ollama).toMatchObject({ version: "0.1.30", probePath: "/", versionPath: "/api/version" });
+		expect(requested).toContain("GET /api/version");
+		const cve = result.cves.find((finding) => finding.cveId === "CVE-2024-7773");
+		expect(cve).toMatchObject({ evaluated: true, severity: "critical" });
+	});
+
+	it("feeds a version-confirmed critical CVE into scan-to-policy, which denies", async () => {
+		const { evaluatePolicy } = await import("../policy.js");
+		const { ConfigSchema } = await import("../types.js");
+		const dir = await mkdtemp(join(tmpdir(), "aidr-infra-version-policy-"));
+		try {
+			const summary = await scanTargets([baseUrl], { deadlineMs: 20000 });
+			const reportPath = join(dir, "scan.json");
+			await writeFile(reportPath, JSON.stringify(summary));
+			const config = ConfigSchema.parse({
+				policy: {
+					enabled: true,
+					ai_infrastructure: { enabled: true, targets: [baseUrl], report_path: reportPath },
+				},
+			});
+			const verdict = await evaluatePolicy(
+				"WebFetch",
+				[{ type: "url", value: `${baseUrl}/api/generate` }],
+				config,
+			);
+			expect(verdict?.decision).toBe("deny");
+			expect(verdict?.reasons.join(" ")).toContain("CVE-2024-7773");
+		} finally {
+			await rm(dir, { recursive: true, force: true });
+		}
+	});
+});
+
+describe("version extraction safety", () => {
+	it("never sends a non-GET verb or leaves the target origin, and ignores non-2xx bodies", async () => {
+		const previousDirectory = process.env.AIG_GENERATED_DIR;
+		const directory = await mkdtemp(join(tmpdir(), "aidr-aig-version-safety-"));
+		process.env.AIG_GENERATED_DIR = directory;
+		resetAigScanCache();
+		const requests: string[] = [];
+		try {
+			await writeTestBundle(directory, {
+				fingerprints: [
+					{
+						n: "Test service",
+						a: "test-vendor",
+						sev: "low",
+						desc: "test fingerprint",
+						p: "test-service",
+						v: "test",
+						http: [
+							{
+								method: "GET",
+								path: "/",
+								supported: true,
+								matchers: [{ key: "body", contains: "marker" }],
+							},
+						],
+						ver: [
+							{ method: "POST", path: "/mcp", part: "body", group: 1, regex: "v(\\d+\\.\\d+)" },
+							{
+								method: "GET",
+								path: "http://evil.example/v",
+								part: "body",
+								group: 1,
+								regex: "v(\\d+\\.\\d+)",
+							},
+							{ method: "GET", path: "/missing", part: "body", group: 1, regex: "v(\\d+\\.\\d+)" },
+						],
+					},
+				],
+			});
+			const result = await scanTarget(
+				{ url: "http://127.0.0.1:9001" },
+				{
+					fetchImpl: (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+						const url = new URL(String(input));
+						requests.push(`${init?.method ?? "GET"} ${url.origin}${url.pathname}`);
+						if (url.pathname === "/") return new Response("marker");
+						// A 404 page that happens to contain a version-shaped string.
+						return new Response("v9.9 not found", { status: 404 });
+					}) as typeof fetch,
+				},
+			);
+			expect(requests).toEqual([
+				"GET http://127.0.0.1:9001/",
+				"GET http://127.0.0.1:9001/missing",
+			]);
+			expect(result.matched[0]).toMatchObject({ version: null, versionPath: null });
+			expect(result.requestsMade).toBe(2);
+		} finally {
+			if (previousDirectory === undefined) delete process.env.AIG_GENERATED_DIR;
+			else process.env.AIG_GENERATED_DIR = previousDirectory;
+			resetAigScanCache();
+			await rm(directory, { recursive: true, force: true });
+		}
+	});
+});
