@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import { describe, expect, it, vi } from "vitest";
+import * as trustedIngress from "../_shared/trusted-ingress.ts";
 
 const source = readFileSync(
 	join(dirname(fileURLToPath(import.meta.url)), "..", "device-start", "index.ts"),
@@ -69,6 +70,7 @@ function harness(overrides: Record<string, string> = {}, rpcUnavailable = false)
 			configFailure: (_name: string, error: { missing: string[] }, json: (status: number, body: Record<string, unknown>) => Response) =>
 				json(500, { error: "server_misconfigured", missing: error.missing }),
 		},
+		"../_shared/trusted-ingress.ts": trustedIngress,
 		"../_shared/cors.ts": {
 			corsJson: (_request: Request, status: number, body: Record<string, unknown>) =>
 				new Response(JSON.stringify(body), { status }),

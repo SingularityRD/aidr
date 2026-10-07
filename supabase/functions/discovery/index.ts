@@ -49,6 +49,32 @@ Deno.serve(async (req) => {
 	const token = getBearerToken(req.headers.get("Authorization"));
 	if (!token) return corsJson(req, 401, { error: "missing_access_token" });
 	try {
+		const db = createClient(config.values.SUPABASE_URL, config.values.SUPABASE_SERVICE_ROLE_KEY, {
+			auth: { persistSession: false, autoRefreshToken: false },
+		});
+		// Authenticate before reading (up to 512 KiB of) the body. A collector
+		// credential is pre-checked by its unique digest: live and unrevoked. Its
+		// tenant/collector binding and the issuer's membership are re-verified
+		// under lock by the cursor and ingest RPCs below.
+		const collectorToken = hasCollectorCredentialPrefix(token);
+		let tokenHash = "";
+		let collectorBinding: { tenant_id: unknown; collector_id: unknown } | null = null;
+		let userId = "";
+		if (collectorToken) {
+			if (!validCollectorCredential(token)) return corsJson(req, 401, { error: "invalid_collector_credential" });
+			tokenHash = await collectorCredentialHash(token);
+			const live = await db.from("tenant_discovery_credentials")
+				.select("tenant_id,collector_id,revoked_at,expires_at").eq("token_hash", tokenHash).maybeSingle();
+			if (live.error) return unavailable(req);
+			const row = live.data as Record<string, unknown> | null;
+			if (!row || row.revoked_at !== null || typeof row.expires_at !== "string"
+				|| !(Date.parse(row.expires_at) > Date.now())) return corsJson(req, 401, { error: "invalid_collector_credential" });
+			collectorBinding = { tenant_id: row.tenant_id, collector_id: row.collector_id };
+		} else {
+			const { data: auth, error: authError } = await db.auth.getUser(token);
+			if (authError || !auth.user?.id) return corsJson(req, 401, { error: "invalid_access_token" });
+			userId = auth.user.id;
+		}
 		const parsed = await readBoundedJson(req, 524_288);
 		if (!parsed.ok) return corsJson(req, parsed.status, { error: parsed.error });
 		const body = parsed.value;
@@ -58,17 +84,15 @@ Deno.serve(async (req) => {
 		if (!validUuid(input.tenant_id)) return corsJson(req, 400, { error: "invalid_tenant" });
 		const tenant = input.tenant_id;
 		const action = input.action;
-		const db = createClient(config.values.SUPABASE_URL, config.values.SUPABASE_SERVICE_ROLE_KEY, {
-			auth: { persistSession: false, autoRefreshToken: false },
-		});
-		if (hasCollectorCredentialPrefix(token)) {
-			if (!validCollectorCredential(token)) return corsJson(req, 401, { error: "invalid_collector_credential" });
+		if (collectorBinding) {
 			if (action !== "ingest" && action !== "cursor") return corsJson(req, 403, { error: "collector_scope_forbidden" });
 			if (!validCollectorId(input.collector_id)) return corsJson(req, 400, { error: "invalid_collector" });
+			if (collectorBinding.tenant_id !== tenant || collectorBinding.collector_id !== input.collector_id) {
+				return corsJson(req, 401, { error: "invalid_collector_credential" });
+			}
 			if (action === "cursor" && !exactKeys(input, ["action", "tenant_id", "collector_id"])) return corsJson(req, 400, { error: "invalid_request" });
 			const cycle = action === "ingest" ? parseDiscoveryIngest(input) : null;
 			if (action === "ingest" && !cycle) return corsJson(req, 400, { error: "invalid_discovery_cycle" });
-			const tokenHash = await collectorCredentialHash(token);
 			const cursor = await db.rpc("read_tenant_discovery_collector_cursor", {
 				p_tenant_id: tenant,
 				p_collector_id: input.collector_id,
@@ -116,15 +140,13 @@ Deno.serve(async (req) => {
 			}
 			return corsJson(req, 201, { ok: true, cycle: result.data }, rateLimitHeaders(rate));
 		}
-		const { data: auth, error: authError } = await db.auth.getUser(token);
-		if (authError || !auth.user?.id) return corsJson(req, 401, { error: "invalid_access_token" });
 		const [membership, state] = await Promise.all([
-			db.from("tenant_members").select("role,expires_at").eq("tenant_id", tenant).eq("user_id", auth.user.id).maybeSingle(),
+			db.from("tenant_members").select("role,expires_at").eq("tenant_id", tenant).eq("user_id", userId).maybeSingle(),
 			db.from("tenants").select("status").eq("id", tenant).maybeSingle(),
 		]);
 		if (membership.error || state.error) return corsJson(req, 503, { error: "authorization_unavailable" });
 		if (!membershipActive(membership.data) || state.data?.status !== "active") return corsJson(req, 403, { error: "tenant_access_denied" });
-		const barrier = await checkIdentityBarrier(db, token, auth.user.id, tenant);
+		const barrier = await checkIdentityBarrier(db, token, userId, tenant);
 		if (!barrier.ok) return corsJson(req, barrier.status, { error: barrier.error });
 		if (action !== "ingest" && action !== "read" && action !== "resources" && action !== "list" && action !== "summary"
 			&& action !== "issue_credential" && action !== "revoke_credential") return corsJson(req, 400, { error: "invalid_action" });
@@ -132,7 +154,7 @@ Deno.serve(async (req) => {
 			&& !["owner", "admin"].includes(String(membership.data?.role))) return corsJson(req, 403, { error: "discovery_write_forbidden" });
 		const rate = await consumeTenantRateLimit(db, {
 			tenantId: tenant,
-			subject: auth.user.id,
+			subject: userId,
 			endpoint: "discovery",
 			perSubject: 600,
 			perTenant: 30_000,
@@ -148,7 +170,7 @@ Deno.serve(async (req) => {
 			if (assurance.currentLevel !== "aal2") return corsJson(req, 403, { error: "mfa_required" });
 			if (action === "revoke_credential") {
 				const result = await db.rpc("revoke_tenant_discovery_credential", {
-					p_tenant_id: tenant, p_actor_user_id: auth.user.id, p_collector_id: input.collector_id,
+					p_tenant_id: tenant, p_actor_user_id: userId, p_collector_id: input.collector_id,
 				});
 				if (result.error) return result.error.code === "42501"
 					? corsJson(req, 403, { error: "discovery_write_forbidden" }) : unavailable(req);
@@ -162,7 +184,7 @@ Deno.serve(async (req) => {
 			if (input.allowed_provider_scope !== undefined && !providerScope) return corsJson(req, 400, { error: "invalid_provider_scope" });
 			const result = await db.rpc("issue_tenant_discovery_credential", {
 				p_tenant_id: tenant,
-				p_actor_user_id: auth.user.id,
+				p_actor_user_id: userId,
 				p_collector_id: input.collector_id,
 				p_token_hash: await collectorCredentialHash(credential),
 				p_expires_in_days: expiresInDays,
@@ -183,7 +205,7 @@ Deno.serve(async (req) => {
 			if (!cycle) return corsJson(req, 400, { error: "invalid_discovery_cycle" });
 			const result = await db.rpc("ingest_tenant_discovery_cycle", {
 				p_tenant_id: tenant,
-				p_actor_user_id: auth.user.id,
+				p_actor_user_id: userId,
 				p_collector_id: cycle.collector_id,
 				p_cycle_id: cycle.cycle_id,
 				p_sequence: cycle.sequence,
@@ -204,7 +226,7 @@ Deno.serve(async (req) => {
 
 		if (action === "summary") {
 			if (!exactKeys(input, ["action", "tenant_id"])) return corsJson(req, 400, { error: "invalid_request" });
-			const result = await db.rpc("read_tenant_discovery_summary", { p_tenant_id: tenant, p_actor_user_id: auth.user.id });
+			const result = await db.rpc("read_tenant_discovery_summary", { p_tenant_id: tenant, p_actor_user_id: userId });
 			if (result.error) return unavailable(req);
 			return corsJson(req, 200, { ok: true, summary: result.data }, rateLimitHeaders(rate));
 		}

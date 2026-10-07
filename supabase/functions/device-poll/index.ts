@@ -11,6 +11,7 @@ import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 import { corsJson, handleCors } from "../_shared/cors.ts";
 import { evaluateDevicePollState } from "../_shared/device-auth.ts";
 import { consumeRateLimit, validRateLimit } from "../_shared/rate-limit.ts";
+import { INGRESS_SECRET_ENV, ingressIpBucket, validIngressSecret, verifiedIngressIp } from "../_shared/trusted-ingress.ts";
 
 // Required configuration. Validated per request, before any auth or DB work, so
 // a missing variable answers with an explicit 500 that names it instead of
@@ -19,14 +20,21 @@ const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"] as const;
 
 const DEVICE_POLL_INTERVAL_SECONDS = Number(Deno.env.get("AIDR_DEVICE_POLL_INTERVAL_SECONDS") ?? "3");
 const ENROLLMENT_TOKEN_TTL_HOURS = Number(Deno.env.get("AIDR_DEVICE_ENROLLTOKEN_TTL_HOURS") ?? "24");
-// Poll rate limits (per minute). The device poll has no trusted ingress proof, so
-// caller IP headers are not used as a key (they are caller-controlled and would
-// let an attacker mint unbounded counter rows). Instead: one aggregate bucket
-// bounds all lookups (including invalid codes), and one bucket per existing
-// device session (keyed by the code hash, created only after the lookup finds a
-// real session) bounds each device. Defaults allow the 3s poll interval.
+// Poll rate limits (per minute). Raw caller IP headers are never used as a key
+// (they are caller-controlled and would let an attacker mint unbounded counter
+// rows). When the trusted ingress attests the client IP (HMAC proof, shared
+// with device-start), that client gets its own bucket checked first, so one
+// caller cannot drain the shared budget after reaching its quota; signed callers
+// then share a signed aggregate as a backstop. Unsigned callers (no ingress, or
+// a forged/stale proof) consume only the unsigned aggregate, so a direct caller
+// can no longer exhaust polling for clients that arrive through the ingress.
+// One bucket per existing device session (keyed by the code hash, created only
+// after the lookup finds a real session) bounds each device. Defaults allow the
+// 3s poll interval.
 const POLL_DEVICE_RL_PER_MIN = Number(Deno.env.get("AIDR_DEVICE_POLL_RL_PER_MIN") ?? "60");
+const POLL_CLIENT_RL_PER_MIN = Number(Deno.env.get("AIDR_DEVICE_POLL_CLIENT_RL_PER_MIN") ?? "120");
 const POLL_AGGREGATE_RL_PER_MIN = Number(Deno.env.get("AIDR_DEVICE_POLL_GLOBAL_RL_PER_MIN") ?? "6000");
+const INGRESS_CONTEXT = "device-poll:v1";
 const makeClient = (url: string, key: string) => createClient(url, key, { auth: { persistSession: false } });
 
 type DeviceSessionRow = {
@@ -126,15 +134,28 @@ Deno.serve(async (req) => {
 
 	const supabase = makeClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-	if (!validRateLimit(POLL_DEVICE_RL_PER_MIN, 10_000) || !validRateLimit(POLL_AGGREGATE_RL_PER_MIN, 1_000_000) || POLL_AGGREGATE_RL_PER_MIN < POLL_DEVICE_RL_PER_MIN) {
-		return corsJson(req, 500, { error: "server_misconfigured", invalid: ["AIDR_DEVICE_POLL_RL_PER_MIN", "AIDR_DEVICE_POLL_GLOBAL_RL_PER_MIN"] });
+	if (!validRateLimit(POLL_DEVICE_RL_PER_MIN, 10_000) || !validRateLimit(POLL_CLIENT_RL_PER_MIN, 100_000)
+		|| !validRateLimit(POLL_AGGREGATE_RL_PER_MIN, 1_000_000) || POLL_AGGREGATE_RL_PER_MIN < POLL_DEVICE_RL_PER_MIN) {
+		return corsJson(req, 500, { error: "server_misconfigured", invalid: ["AIDR_DEVICE_POLL_RL_PER_MIN", "AIDR_DEVICE_POLL_CLIENT_RL_PER_MIN", "AIDR_DEVICE_POLL_GLOBAL_RL_PER_MIN"] });
+	}
+	// Optional: without it every caller shares the unsigned aggregate.
+	const ingressSecret = Deno.env.get(INGRESS_SECRET_ENV) ?? "";
+	if (ingressSecret && !validIngressSecret(ingressSecret)) {
+		return corsJson(req, 500, { error: "server_misconfigured", invalid: [INGRESS_SECRET_ENV] });
 	}
 	const limited = (result: { status: "limited" | "unavailable"; retryAfterSeconds: number }) =>
 		result.status === "limited"
 			? corsJson(req, 429, { error: "rate_limited", retry_after_seconds: result.retryAfterSeconds }, { "Retry-After": String(result.retryAfterSeconds) })
 			: corsJson(req, 503, { error: "rate_limit_unavailable", enrollment_outcome: "unknown" }, { "Retry-After": String(result.retryAfterSeconds) });
 
-	const aggregate = await consumeRateLimit(supabase, "device_poll:v1:aggregate", POLL_AGGREGATE_RL_PER_MIN);
+	const clientIp = ingressSecret ? await verifiedIngressIp(req, ingressSecret, INGRESS_CONTEXT) : null;
+	if (clientIp) {
+		const perClient = await consumeRateLimit(supabase, `device_poll:v2:client:${await ingressIpBucket(clientIp)}`, POLL_CLIENT_RL_PER_MIN);
+		if (perClient.status !== "allowed") return limited(perClient);
+	}
+	const aggregate = await consumeRateLimit(
+		supabase, clientIp ? "device_poll:v2:signed-aggregate" : "device_poll:v1:aggregate", POLL_AGGREGATE_RL_PER_MIN,
+	);
 	if (aggregate.status !== "allowed") return limited(aggregate);
 
 	const deviceHash = await sha256Hex(deviceCode);

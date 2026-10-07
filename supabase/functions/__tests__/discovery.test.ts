@@ -151,8 +151,13 @@ describe("managed discovery server boundary", () => {
 		expect(listBranch).toContain('coverage_scope: "reported_collectors_only"');
 		expect(listBranch).toContain("next_collector:");
 		expect(listBranch).not.toMatch(/\.insert\(|\.update\(|\.delete\(|\.rpc\(/);
-		const machineAuth = handler.slice(handler.indexOf("if (hasCollectorCredentialPrefix(token))"), handler.indexOf("const { data: auth"));
+		const machineAuth = handler.slice(handler.indexOf("if (collectorBinding) {"), handler.indexOf("const [membership, state]"));
 		expect(machineAuth).toContain('if (action !== "ingest" && action !== "cursor")');
+		expect(machineAuth).toContain("collectorBinding.tenant_id !== tenant || collectorBinding.collector_id !== input.collector_id");
+		// Both credential kinds are authenticated before the (up to 512 KiB) body is read.
+		const bodyRead = handler.indexOf("readBoundedJson(req,");
+		expect(handler.indexOf("db.auth.getUser(token)")).toBeLessThan(bodyRead);
+		expect(handler.indexOf('.from("tenant_discovery_credentials")')).toBeLessThan(bodyRead);
 	});
 
 	it("keeps cycles atomic, replay-ordered and offboarding-bound", () => {

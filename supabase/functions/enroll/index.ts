@@ -12,6 +12,7 @@ import { capEntitlementTimes, parseActiveAdmission, parseEffectiveSeats } from "
 import { readBoundedJson } from "../_shared/request-limits.ts";
 import { entitlementWindow, validateEnrollmentBody } from "./contract.ts";
 import { buildPremiumModules, tenantRuntimeCapabilities } from "../_shared/runtime-capabilities.ts";
+import { signerHealthy } from "../_shared/signing-health.ts";
 
 // Required configuration. Validated per request, before any auth or DB work, so
 // a missing variable answers with an explicit 500 that names it instead of
@@ -30,6 +31,11 @@ const MAX_ENROLL_BODY_BYTES = 8 * 1024;
 
 // Abuse throttling for enrollment token exchange.
 const ENROLL_RATE_LIMIT_PER_MIN = Number(Deno.env.get("AIDR_ENROLL_RL_PER_MIN") ?? "30");
+// Deployment-wide budget for bearer values that resolve to no enrollment token.
+// It is checked before resolve_enrollment_token, so guessing cannot buy
+// unbounded token lookups; a resolvable token never consumes it.
+const ENROLL_UNRESOLVED_RATE_LIMIT_PER_MIN = Number(Deno.env.get("AIDR_ENROLL_UNRESOLVED_RL_PER_MIN") ?? "300");
+const ENROLL_UNRESOLVED_RATE_KEY = "enroll:v1:unresolved";
 
 function json(status: number, body: Record<string, unknown>) {
 	// Every error before exchange is safe to retry. Branches that may have
@@ -140,11 +146,18 @@ Deno.serve(async (req) => {
 		AIDR_ENTITLEMENT_SIGNING_PRIVATE_KEY_PKCS8_B64: ENTITLEMENT_SIGNING_PRIVATE_KEY_PKCS8_B64,
 	});
 	if (signingProblem) return configFailure("enroll", signingProblem, json);
-	if (ENTITLEMENT_SIGNING_KEY_ID && !(await signEd25519Detached("aidr-signing-healthcheck"))) {
+	if (ENTITLEMENT_SIGNING_KEY_ID && !(await signerHealthy(
+		`${ENTITLEMENT_SIGNING_KEY_ID}\n${ENTITLEMENT_SIGNING_PRIVATE_KEY_PKCS8_B64}`,
+		async () => (await signEd25519Detached("aidr-signing-healthcheck")) !== null,
+	))) {
 		return json(503, { error: "entitlement_signing_unavailable" });
 	}
 	if (!Number.isSafeInteger(ENROLL_RATE_LIMIT_PER_MIN)
 		|| ENROLL_RATE_LIMIT_PER_MIN < 1 || ENROLL_RATE_LIMIT_PER_MIN > 10_000) {
+		return json(503, { error: "enrollment_rate_limit_config_invalid" });
+	}
+	if (!Number.isSafeInteger(ENROLL_UNRESOLVED_RATE_LIMIT_PER_MIN)
+		|| ENROLL_UNRESOLVED_RATE_LIMIT_PER_MIN < 1 || ENROLL_UNRESOLVED_RATE_LIMIT_PER_MIN > 100_000) {
 		return json(503, { error: "enrollment_rate_limit_config_invalid" });
 	}
 	const window = entitlementWindow(new Date(), ENTITLEMENT_TTL_HOURS, ENTITLEMENT_GRACE_HOURS);
@@ -158,6 +171,17 @@ Deno.serve(async (req) => {
 	});
 
 	const tokenHash = await sha256Hex(enrollToken);
+	const nowMin = Math.floor(Date.now() / 60000);
+	// Fail closed: once this window's unresolved-token budget is spent, no
+	// further bearer value is looked up until the window rolls over.
+	const { data: unresolvedRow, error: unresolvedReadError } = await supabase.from("rate_limits").select("count")
+		.eq("key", ENROLL_UNRESOLVED_RATE_KEY).eq("window_start", nowMin).maybeSingle();
+	if (unresolvedReadError) return json(503, { error: "enrollment_rate_limit_unavailable" });
+	const unresolvedCount = unresolvedRow == null ? 0 : Number((unresolvedRow as Record<string, unknown>).count);
+	if (!Number.isSafeInteger(unresolvedCount) || unresolvedCount < 0) {
+		return json(503, { error: "enrollment_rate_limit_unavailable" });
+	}
+	if (unresolvedCount >= ENROLL_UNRESOLVED_RATE_LIMIT_PER_MIN) return json(429, { error: "rate_limited" });
 	// Resolve the token before selecting a rate-limit bucket. Never let an
 	// attacker choose an arbitrary bucket with an unverified bearer value.
 	const { data: resolvedToken, error: resolveError } = await supabase.rpc("resolve_enrollment_token", {
@@ -167,11 +191,14 @@ Deno.serve(async (req) => {
 		? resolvedToken as Record<string, unknown> : null;
 	if (resolveError || !resolved || typeof resolved.tenant_id !== "string" || typeof resolved.user_id !== "string") {
 		if (resolveError) return json(503, { error: "enrollment_authorization_unavailable" });
+		const { error: unresolvedUpdateError } = await supabase.rpc("increment_rate_limit", {
+			p_key: ENROLL_UNRESOLVED_RATE_KEY, p_window_start: nowMin, p_delta: 1,
+		});
+		if (unresolvedUpdateError) return json(503, { error: "enrollment_rate_limit_unavailable" });
 		return json(401, {
 			error: "invalid_or_expired_enrollment_token", enrollment_outcome: "unknown",
 		});
 	}
-	const nowMin = Math.floor(Date.now() / 60000);
 	const rateKey = `enroll:${resolved.tenant_id}:${resolved.user_id}`;
 	const { error: rateUpdateError } = await supabase.rpc("increment_rate_limit", {
 		p_key: rateKey, p_window_start: nowMin, p_delta: 1,
