@@ -10,16 +10,16 @@
 // (device-start:v1, device-poll:v1, identity-security:v1, waitlist-signup:v1, oidc-sso:v1, …)
 // cannot be replayed against another.
 
-export const INGRESS_IP_HEADER = "x-aidr-client-ip";
-export const INGRESS_TIMESTAMP_HEADER = "x-aidr-client-timestamp";
-export const INGRESS_SIGNATURE_HEADER = "x-aidr-client-signature";
+const INGRESS_IP_HEADER = "x-aidr-client-ip";
+const INGRESS_TIMESTAMP_HEADER = "x-aidr-client-timestamp";
+const INGRESS_SIGNATURE_HEADER = "x-aidr-client-signature";
 // Shared with device-start; the proxy uses one signing secret for all contexts.
 export const INGRESS_SECRET_ENV = "AIDR_DEVICE_START_INGRESS_SECRET";
 const MAX_CLOCK_SKEW_SECONDS = 60;
 const MIN_SECRET_BYTES = 32;
 
 /** Canonical dotted IPv4 or lower-case compressed IPv6; anything else is refused. */
-export function canonicalIp(value: string | null): string | null {
+function canonicalIp(value: string | null): string | null {
 	if (!value || value.length > 45 || value !== value.trim()) return null;
 	if (/^(?:\d{1,3}\.){3}\d{1,3}$/.test(value)) {
 		const parts = value.split(".");

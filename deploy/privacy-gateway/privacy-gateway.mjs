@@ -35,7 +35,7 @@ export const PRIVACY_GATEWAY_LAYOUT = Object.freeze({
 });
 const L = PRIVACY_GATEWAY_LAYOUT;
 
-export const PRIVACY_GATEWAY_PROVIDERS = Object.freeze({
+const PRIVACY_GATEWAY_PROVIDERS = Object.freeze({
 	"openai-responses": "https://api.openai.com",
 	"gemini-generate-content": "https://generativelanguage.googleapis.com",
 });

@@ -151,7 +151,7 @@ export function revocationBindingForState(
 }
 
 /** Fails closed: an unknown tenant or any mismatch rejects the list. */
-export function revocationListMatchesBinding(
+function revocationListMatchesBinding(
 	list: RevocationList,
 	binding: RevocationBinding,
 ): boolean {

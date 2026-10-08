@@ -26,10 +26,10 @@
 export const TURNSTILE_ORIGIN = "https://challenges.cloudflare.com";
 
 /** Two years. No `preload`: customer domains must opt into the preload list themselves. */
-export const STRICT_TRANSPORT_SECURITY = "max-age=63072000; includeSubDomains";
+const STRICT_TRANSPORT_SECURITY = "max-age=63072000; includeSubDomains";
 
 /** connect-src for static hosting, where the Supabase project and Sentry DSN are not known at build time. */
-export const STATIC_CONNECT_SOURCES = Object.freeze([
+const STATIC_CONNECT_SOURCES = Object.freeze([
 	"'self'",
 	"https://*.supabase.co",
 	"https://*.sentry.io",
@@ -41,6 +41,7 @@ export const STATIC_CONNECT_SOURCES = Object.freeze([
  * @param {{ connectSources: readonly string[], upgradeInsecureRequests?: boolean }} options
  * @returns {string}
  */
+/** @public Loaded dynamically by the dashboard security-headers drift test. */
 export function contentSecurityPolicy({ connectSources, upgradeInsecureRequests = true }) {
 	if (!Array.isArray(connectSources) || connectSources.length === 0 || connectSources[0] !== "'self'") {
 		throw new Error("connect-src must start with 'self'");
@@ -86,7 +87,7 @@ export function securityHeaders({ connectSources = STATIC_CONNECT_SOURCES, upgra
 }
 
 /** Long-lived caching for content-hashed build assets on static hosting. */
-export const IMMUTABLE_ASSET_CACHE = "public, max-age=31536000, immutable";
+const IMMUTABLE_ASSET_CACHE = "public, max-age=31536000, immutable";
 
 /** Cloudflare `_headers` file content. */
 export function renderCloudflareHeaders() {

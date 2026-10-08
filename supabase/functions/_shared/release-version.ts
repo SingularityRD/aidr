@@ -16,11 +16,11 @@
 // With neither, there is no answer: the endpoint reports the version as
 // unavailable instead of inventing one.
 
-export const RELEASE_MANIFEST_ENV = "AIDR_RELEASE_MANIFEST_B64";
-export const RELEASE_SIGNATURE_ENV = "AIDR_RELEASE_MANIFEST_SIG";
-export const RELEASE_PUBLIC_KEY_ENV = "AIDR_RELEASE_SIGNING_PUBLIC_KEY_B64";
-export const LATEST_VERSION_ENV = "AIDR_LATEST_RELEASE_VERSION";
-export const RELEASE_PRODUCT_ID = "singularity-aidr";
+const RELEASE_MANIFEST_ENV = "AIDR_RELEASE_MANIFEST_B64";
+const RELEASE_SIGNATURE_ENV = "AIDR_RELEASE_MANIFEST_SIG";
+const RELEASE_PUBLIC_KEY_ENV = "AIDR_RELEASE_SIGNING_PUBLIC_KEY_B64";
+const LATEST_VERSION_ENV = "AIDR_LATEST_RELEASE_VERSION";
+const RELEASE_PRODUCT_ID = "singularity-aidr";
 
 const SEMVER = /^v?(\d{1,6})\.(\d{1,6})\.(\d{1,6})(?:-[0-9A-Za-z.-]{1,64})?$/;
 const MAX_MANIFEST_BYTES = 1024 * 1024;
@@ -97,7 +97,7 @@ async function verifyEd25519(spki: Uint8Array, signature: Uint8Array, message: U
  * Verify the signed release manifest and return the release it names, or null
  * when any part of it fails (bad encoding, signature, key id, product, expiry).
  */
-export async function verifySignedReleaseManifest(
+async function verifySignedReleaseManifest(
 	manifestB64: string,
 	signatureJson: string,
 	publicKeyB64: string,

@@ -17,7 +17,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 export const PLAN_ID = /^[a-z][a-z0-9_-]{0,31}$/;
 const CONTROL = /[\u0000-\u001f\u007f]/;
 
-export interface OperatorAdmission {
+interface OperatorAdmission {
 	kind: string;
 	planId: string | null;
 	seats: number | null;
@@ -63,7 +63,7 @@ export type GrantLicenseInput = {
 };
 
 /** Caller-safe text for each documented error code. Unknown codes use a fixed fallback. */
-export const OPERATOR_ERRORS: Record<string, string> = {
+const OPERATOR_ERRORS: Record<string, string> = {
 	invalid_tenant: "That tenant id is not valid.",
 	invalid_plan: "That plan id is not an active plan.",
 	invalid_seats: `Seats must be a whole number from 1 to ${MAX_SEATS.toLocaleString("en-US")}.`,

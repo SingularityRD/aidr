@@ -32,7 +32,7 @@ type DiscoveryReport = Awaited<ReturnType<typeof discoverMcpServers>>;
 type DiscoveredServer = DiscoveryReport["servers"][number];
 
 /** Human-readable lines for one server. Secret findings name locations, never values. */
-export function describeDiscoveredServer(server: DiscoveredServer): string[] {
+function describeDiscoveredServer(server: DiscoveredServer): string[] {
 	const lines = [
 		`  ${server.name}  ${server.transport}  ${server.endpoint ?? "local process"}`,
 		`    ${server.source}${server.project === undefined ? "" : ` (project ${server.project})`}`,

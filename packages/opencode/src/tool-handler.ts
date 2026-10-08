@@ -42,7 +42,7 @@ function applyRedactedArgs(
 }
 
 /** OpenCode MCP configuration: the user config and the project's config files. */
-export function openCodeMcpConfigPaths(directory?: string): string[] {
+function openCodeMcpConfigPaths(directory?: string): string[] {
 	const userDir = join(process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config"), "opencode");
 	return [
 		join(userDir, "opencode.json"),

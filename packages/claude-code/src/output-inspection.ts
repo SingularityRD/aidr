@@ -229,7 +229,7 @@ function dedupedScan(inspected: BoundedText, findings: OutputFinding[]): ToolRes
 }
 
 /** Scan a tool response once; the findings feed both the hook result and session flow. */
-export function scanToolResponse(value: unknown): ToolResponseScan | null {
+function scanToolResponse(value: unknown): ToolResponseScan | null {
 	if (value === undefined || value === null) return null;
 	const inspected = boundedText(value);
 	return dedupedScan(

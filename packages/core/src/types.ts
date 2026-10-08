@@ -770,7 +770,7 @@ export const LoggingConfigSchema = z.object({
  * owner-only file so a hook does not pay a vault round trip per call. A stolen
  * epoch key can forge records only inside its own window (`epoch_hours`).
  */
-export const AuditConfigSchema = z.object({
+const AuditConfigSchema = z.object({
 	signed_chain: z.boolean().optional(),
 	key_storage: z.enum(["os-vault", "file"]).default("os-vault"),
 	epoch_hours: z.number().int().min(1).max(720).default(24),
@@ -1117,7 +1117,9 @@ type EncryptionConfig = z.infer<typeof EncryptionConfigSchema>;
 export type CacheConfig = z.infer<typeof CacheConfigSchema>;
 export type AllowlistConfig = z.infer<typeof AllowlistConfigSchema>;
 export type LoggingConfig = z.infer<typeof LoggingConfigSchema>;
+/** @public Part of the published configuration typings. */
 export type AuditConfig = z.infer<typeof AuditConfigSchema>;
+/** @public Part of the published configuration typings. */
 export type QuarantineSettings = ResponseConfig["quarantine"];
 export type Config = z.infer<typeof ConfigSchema>;
 export type RunawayConfig = z.infer<typeof RunawayConfigSchema>;

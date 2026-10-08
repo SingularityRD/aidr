@@ -22,9 +22,9 @@ export const BROWSER_GUARD_POLICY_VERSION = "browser-guard/v1";
 /** Same pattern as the Browser Guard catalog id (AI_SERVICE_ID_PATTERN). */
 export const SHADOW_AI_SERVICE_ID = /^[a-z0-9][a-z0-9-]{0,31}$/;
 /** Upper bound per list; Browser Guard refuses a larger document as a whole. */
-export const SHADOW_AI_DECISIONS_MAX = 500;
+const SHADOW_AI_DECISIONS_MAX = 500;
 
-export interface BrowserGuardShadowAi {
+interface BrowserGuardShadowAi {
 	blocked: string[];
 	sanctioned: string[];
 }

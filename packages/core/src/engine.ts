@@ -56,7 +56,7 @@ const ADVISORY_CATEGORIES: ReadonlySet<string> = new Set([
 	"none",
 ]);
 
-export function isSecurityRelevantCategory(category: string): boolean {
+function isSecurityRelevantCategory(category: string): boolean {
 	if (ADVISORY_CATEGORIES.has(category)) return false;
 	return !ADVISORY_CATEGORY_PREFIXES.some((prefix) => category.startsWith(prefix));
 }

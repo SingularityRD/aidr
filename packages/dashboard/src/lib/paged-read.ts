@@ -9,7 +9,7 @@
  */
 
 /** Matches `max_rows` in supabase/config.toml. */
-export const API_MAX_ROWS = 1000;
+const API_MAX_ROWS = 1000;
 
 type PageResult = PromiseLike<{
 	data: unknown;

@@ -18,7 +18,7 @@
  */
 import type { EntityType } from "../types.js";
 
-export type LabelledEvidence = "pattern" | "checksum" | "context";
+type LabelledEvidence = "pattern" | "checksum" | "context";
 export type LabelledEmit = (
 	start: number,
 	end: number,

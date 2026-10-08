@@ -24,7 +24,7 @@ import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { pathToFileURL } from "node:url";
 
-export const SEVERITIES = ["CRITICAL", "HIGH"];
+const SEVERITIES = ["CRITICAL", "HIGH"];
 const DIGEST_REF = /^[a-z0-9][a-z0-9._/-]*:[A-Za-z0-9._-]+@sha256:[a-f0-9]{64}$/;
 const NAME = /^[a-z0-9][a-z0-9_-]*$/;
 

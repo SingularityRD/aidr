@@ -505,7 +505,7 @@ function reportUpload(result: PostureUploadResult, json: boolean): void {
  *   0 - every target was scanned and nothing applicable was matched.
  * Unconfirmed findings are never folded into 0: an unknown version is not clean.
  */
-export function scanExitCode(summary: AigInfraScanSummary): 0 | 1 | 2 {
+function scanExitCode(summary: AigInfraScanSummary): 0 | 1 | 2 {
 	if (summary.confirmedCritical > 0 || summary.confirmedHigh > 0) return 2;
 	if (summary.unconfirmedFindings > 0 || summary.targets.some((target) => target.error !== null)) {
 		return 1;

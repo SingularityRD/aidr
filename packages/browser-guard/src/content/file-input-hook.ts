@@ -35,7 +35,7 @@ import {
 type Win = Window & typeof globalThis;
 
 /** How long a selection waits for the guard (sanitising can OCR several images). */
-export const RELAY_TIMEOUT_MS = 10 * 60_000;
+const RELAY_TIMEOUT_MS = 10 * 60_000;
 
 const HOOK_FLAG = "__aidrFileInputHook";
 
