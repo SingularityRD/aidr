@@ -25,7 +25,7 @@
     "@singularityrd/aidr-core": "workspace:*"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
+    "@types/node": "^20.19.43",
     "esbuild": "^0.28.2",
     "typescript": "^5.9.0",
     "vitest": "^4.1.11"

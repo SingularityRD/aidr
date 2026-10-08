@@ -107,7 +107,7 @@
   },
   "devDependencies": {
     "@singularityrd/aidr-core": "workspace:*",
-    "@types/node": "^22.0.0",
+    "@types/node": "^20.19.43",
     "@types/vscode": "1.140.0",
     "@vscode/test-electron": "^3.1.0",
     "esbuild": "^0.28.2",
