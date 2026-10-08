@@ -35,6 +35,12 @@ updates:
       # Ignore major version updates for critical packages (manual review required)
       - dependency-name: "node"
         update-types: ["version-update:semver-major"]
+      # Every other major bump is done by hand, on its own branch, with a
+      # migration and a green `pnpm check && pnpm build && pnpm test`. On
+      # 2026-10-08 unreviewed majors (zod 4, koffi 3, react-dom without react)
+      # broke the build and the dashboard tests.
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   # Enable version updates for GitHub Actions
   - package-ecosystem: "github-actions"
@@ -47,6 +53,12 @@ updates:
     commit-message:
       prefix: "ci"
       include: "scope"
+    groups:
+      # init, autobuild, analyze and upload-sarif must stay on one commit
+      # (scripts/ci-workflows.test.mjs enforces it), so bump them together.
+      codeql-action:
+        patterns:
+          - "github/codeql-action*"
 
   # Python: the AIG bridge and the privacy workers. Hash locks must be
   # regenerated with the command in each lock header when a PR bumps a pin.
@@ -65,6 +77,12 @@ updates:
     commit-message:
       prefix: "deps"
       include: "scope"
+    ignore:
+      # transformers pins tokenizers to a narrow range (5.13.0: <=0.23.0) and
+      # Dependabot cannot see that constraint inside a hash lock. Bump the two
+      # together by hand and run the NER worker tests.
+      - dependency-name: "tokenizers"
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
 
   # Container base images.
   - package-ecosystem: "docker"
@@ -79,3 +97,11 @@ updates:
     commit-message:
       prefix: "deps"
       include: "scope"
+    ignore:
+      # Base-image majors (Python 3.12 to 3.14, Node 24 to 26) invalidate the
+      # image security-scan evidence and the hash-locked musl wheels. They need
+      # a real image build and re-scan, so they are upgraded by hand.
+      - dependency-name: "python"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "node"
+        update-types: ["version-update:semver-major"]

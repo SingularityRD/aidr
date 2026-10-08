@@ -407,8 +407,11 @@ while (nextAt < profile.duration_seconds * 1000) {
 	}
 	nextAt += intervalMs;
 }
-const remainingWindowMs = profile.duration_seconds * 1000 - (performance.now() - clockStart);
-if (remainingWindowMs > 0) await new Promise((done) => setTimeout(done, remainingWindowMs));
+// setTimeout rounds a fractional delay and can fire up to a millisecond early,
+// so wait until the declared window has really elapsed instead of trusting one sleep.
+for (let remainingWindowMs = profile.duration_seconds * 1000 - (performance.now() - clockStart); remainingWindowMs > 0; remainingWindowMs = profile.duration_seconds * 1000 - (performance.now() - clockStart)) {
+	await new Promise((done) => setTimeout(done, Math.ceil(remainingWindowMs)));
+}
 scheduleFinishedAtMs = performance.now() - clockStart;
 await Promise.allSettled([...inFlight]);
 const drainFinishedAtMs = performance.now() - clockStart;
