@@ -99,7 +99,7 @@ const JS_EXTENSIONS = new Set([".js", ".cjs", ".mjs", ".ts", ".mts", ".cts"]);
 // ── Which files did this call write? ───────────────────────────────
 
 /** Split a command line into words, honouring single/double quotes and backslashes. */
-export function shellWords(segment: string): string[] {
+function shellWords(segment: string): string[] {
 	const words: string[] = [];
 	let current = "";
 	let quote: '"' | "'" | null = null;

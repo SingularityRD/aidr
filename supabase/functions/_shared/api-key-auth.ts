@@ -283,7 +283,7 @@ export async function authenticateTenantApiKeyHash(
 // documented availability trade-off, bounded per endpoint). Storage errors are
 // 503, never an implicit allow.
 
-export const UNRESOLVED_API_KEY_LIMIT_ENV = "AIDR_UNRESOLVED_API_KEY_RL_PER_MIN";
+const UNRESOLVED_API_KEY_LIMIT_ENV = "AIDR_UNRESOLVED_API_KEY_RL_PER_MIN";
 export const DEFAULT_UNRESOLVED_API_KEY_LIMIT_PER_MINUTE = 6000;
 const UNRESOLVED_WINDOW_MS = 60_000;
 

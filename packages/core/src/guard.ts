@@ -1179,7 +1179,7 @@ function responseLine(actions?: ResponseActionRecord[]): string | null {
  * verdict. The label is the rule's own severity whenever one is known, so a
  * `high` rule is never shown as `warning` next to its id.
  */
-export function verdictRuleLines(verdict: Verdict): string[] {
+function verdictRuleLines(verdict: Verdict): string[] {
 	const lines = [`Severity: ${verdict.ruleSeverity ?? verdict.severity}`];
 	if (verdict.matchedThreatId) lines.push(`Rule: ${verdict.matchedThreatId}`);
 	return lines;

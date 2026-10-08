@@ -67,7 +67,7 @@ import { resolvePath } from "./config.js";
 import { resolveSecretStore, type SecretStore } from "./secret-store.js";
 import { redactTelemetryString } from "./telemetry-redaction.js";
 
-export const AUDIT_CHAIN_VERSION = 1;
+const AUDIT_CHAIN_VERSION = 1;
 export const AUDIT_CHAIN_GENESIS = "GENESIS";
 /** Overrides `audit.key_storage`: `os-vault` or `file`. */
 export const AUDIT_CHAIN_KEY_STORAGE_ENV = "AIDR_AUDIT_CHAIN_KEY_STORAGE";
@@ -321,7 +321,7 @@ function ensureChainDir(dir: string): void {
  * before a record is hashed; keys and non-string values are untouched, so the
  * record's structure is exactly what an unchained log would hold.
  */
-export function redactAuditRecordStrings(value: unknown, depth = 0): unknown {
+function redactAuditRecordStrings(value: unknown, depth = 0): unknown {
 	if (typeof value === "string") return redactTelemetryString(value, Number.MAX_SAFE_INTEGER);
 	if (value === null || typeof value !== "object" || depth > 16) return value;
 	if (Array.isArray(value)) return value.map((item) => redactAuditRecordStrings(item, depth + 1));
@@ -333,7 +333,7 @@ export function redactAuditRecordStrings(value: unknown, depth = 0): unknown {
 }
 
 /** The hash a record must carry: version, position, link and canonical body. */
-export function auditRecordHash(seq: number, prev: string, body: Record<string, unknown>): string {
+function auditRecordHash(seq: number, prev: string, body: Record<string, unknown>): string {
 	return sha256Hex(
 		`${RECORD_DOMAIN}\n${AUDIT_CHAIN_VERSION}\n${seq}\n${prev}\n${canonicalJson(body)}`,
 	);

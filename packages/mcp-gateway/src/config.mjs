@@ -30,7 +30,7 @@ const MAX_CONTEXT_ENTRIES = 1024;
  * an explicit scheme, and no dot segments, backslashes or percent-encoded
  * separators that a server could normalize into a different location.
  */
-export function safeResourceUri(uri) {
+function safeResourceUri(uri) {
 	if (
 		typeof uri !== "string" ||
 		uri.length === 0 ||

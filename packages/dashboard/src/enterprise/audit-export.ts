@@ -14,7 +14,7 @@ function toHex(bytes: ArrayBuffer): string {
 }
 
 /** CSV header of each export trail; must match the server's column list exactly. */
-export const AUDIT_EXPORT_HEADERS = {
+const AUDIT_EXPORT_HEADERS = {
 	audit: "id,created_at,user_id,action,verdict",
 	admin: "id,created_at,actor_user_id,target_user_id,action,detail",
 } as const;

@@ -19,6 +19,8 @@ export const PENDING_FINDINGS_TTL_MS = 60 * 60 * 1000;
 /** At most this many sessions keep undelivered findings; the oldest is dropped first. */
 export const MAX_PENDING_FINDINGS_SESSIONS = 256;
 
+
+/** @public Imported from the built bundle by the OpenCode integration tests. */
 export function createSessionScanHandler(
 	logger: Logger,
 	projectDir?: string,
@@ -42,7 +44,7 @@ export function createSessionScanHandler(
 }
 
 /** Identity of a plugin set: any install, update, removal or rule-version change alters it. */
-export function pluginSetFingerprint(plugins: readonly PluginInfo[], version: string): string {
+function pluginSetFingerprint(plugins: readonly PluginInfo[], version: string): string {
 	const entries = plugins
 		.map((plugin) => [plugin.key, plugin.version, plugin.lastUpdated, plugin.installPath])
 		.sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));

@@ -138,7 +138,7 @@ export async function readShippedResourceText(
 }
 
 /** SHA-256 of the exact bytes on disk, as the manifest records it. */
-export function sha256Hex(bytes: Uint8Array): string {
+function sha256Hex(bytes: Uint8Array): string {
 	return createHash("sha256").update(bytes).digest("hex");
 }
 

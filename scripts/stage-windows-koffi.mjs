@@ -15,7 +15,7 @@ import { copyFileSync, existsSync, mkdirSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 
-export const KOFFI_SHIPPED_FILES = Object.freeze([
+const KOFFI_SHIPPED_FILES = Object.freeze([
 	"index.js",
 	"package.json",
 	"LICENSE.txt",

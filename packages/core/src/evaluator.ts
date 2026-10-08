@@ -1226,7 +1226,7 @@ function withinLegBudget<T>(work: Promise<T>, deadline: number, leg: DetectionLe
  * `allow` becomes an `ask` (a human decides), a stricter verdict is kept and
  * carries the degradation as an extra reason.
  */
-export function degradedRulesVerdict(
+function degradedRulesVerdict(
 	verdict: Verdict,
 	errors: readonly ThreatLoadError[],
 ): Verdict {
@@ -2552,7 +2552,7 @@ async function runEvaluationPipeline(
  * one wins; on a tie `primary` wins. The reasons of a non-allow loser are kept
  * so a gap or an approval requirement is never silently dropped.
  */
-export function mergeVerdictsByPriority(primary: Verdict | null, other: Verdict): Verdict {
+function mergeVerdictsByPriority(primary: Verdict | null, other: Verdict): Verdict {
 	if (!primary) return other;
 	const otherWins =
 		DETECTOR_DECISION_RANK[other.decision] > DETECTOR_DECISION_RANK[primary.decision];

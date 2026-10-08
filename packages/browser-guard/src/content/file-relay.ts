@@ -26,8 +26,6 @@ export const RELAY_RESULT = "aidr-file-result";
 export const RELAY_ID_FORMAT = "application/x-aidr-request";
 export const RELAY_VERDICT_FORMAT = "application/x-aidr-verdict";
 
-export type RelayVerdict = "ok" | "blocked";
-
 type Win = Window & typeof globalThis;
 
 /** An event of `type` carrying `data` as its `dataTransfer` (a DragEvent where possible). */

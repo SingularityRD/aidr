@@ -72,7 +72,7 @@ export interface VerifiedDashboardPolicy {
 	readonly keyId: string;
 }
 
-export type DashboardPolicyFailure =
+type DashboardPolicyFailure =
 	| "malformed"
 	| "digest_mismatch"
 	| "no_trusted_keys"
@@ -87,7 +87,7 @@ export type DashboardPolicyResult =
 	| { readonly ok: true; readonly policy: VerifiedDashboardPolicy }
 	| { readonly ok: false; readonly reason: DashboardPolicyFailure };
 
-export interface HighWater {
+interface HighWater {
 	readonly sequence: number;
 	readonly policySha256: string;
 }
