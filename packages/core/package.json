@@ -25,7 +25,7 @@
   },
   "dependencies": {
     "@sentry/node": "^10.69.0",
-    "pino": "^9.6.0",
+    "pino": "^10.4.0",
     "semver": "^7.7.4",
     "yaml": "^2.8.3",
     "zod": "^3.24.0"
