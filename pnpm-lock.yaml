@@ -117,8 +117,8 @@ importers:
         version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.11)(@vitest/coverage-v8@4.1.11)(jsdom@30.1.2)(vite@7.3.5(@types/node@22.19.11)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.16.9)(yaml@2.9.1))
     optionalDependencies:
       koffi:
-        specifier: ^2.15.2
-        version: 2.15.2
+        specifier: ^2.16.3
+        version: 2.16.3
 
   packages/cli:
     dependencies:
@@ -159,8 +159,8 @@ importers:
         version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.11)(@vitest/coverage-v8@4.1.11)(jsdom@30.1.2)(vite@7.3.5(@types/node@22.19.11)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.16.9)(yaml@2.9.1))
     optionalDependencies:
       koffi:
-        specifier: ^2.15.2
-        version: 2.15.2
+        specifier: ^2.16.3
+        version: 2.16.3
 
   packages/core:
     dependencies:
@@ -194,8 +194,8 @@ importers:
         version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.11)(@vitest/coverage-v8@4.1.11)(jsdom@30.1.2)(vite@7.3.5(@types/node@22.19.11)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.16.9)(yaml@2.9.1))
     optionalDependencies:
       koffi:
-        specifier: ^2.15.2
-        version: 2.15.2
+        specifier: ^2.16.3
+        version: 2.16.3
 
   packages/dashboard:
     dependencies:
@@ -261,8 +261,8 @@ importers:
         specifier: 0.28.1
         version: 0.28.1
       koffi:
-        specifier: ^2.15.2
-        version: 2.15.2
+        specifier: ^2.16.3
+        version: 2.16.3
       typescript:
         specifier: ^5.9.0
         version: 5.9.3
@@ -298,8 +298,8 @@ importers:
         version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.19.11)(@vitest/coverage-v8@4.1.11)(jsdom@30.1.2)(vite@7.3.5(@types/node@22.19.11)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.16.9)(yaml@2.9.1))
     optionalDependencies:
       koffi:
-        specifier: ^2.15.2
-        version: 2.15.2
+        specifier: ^2.16.3
+        version: 2.16.3
 
   packages/opencode:
     dependencies:
@@ -1835,8 +1835,8 @@ packages:
     resolution: {integrity: sha512-5cvg6CtKwfgdmVqY1WIiXKc3Q1bkRqGLi+2W/6ao+6Y7gu/RCwRuAhGEzh5B4KlszSuTLgZYuqFqo5bImjNKng==}
     engines: {node: '>= 0.6'}
 
-  acorn@8.18.0:
-    resolution: {integrity: sha512-lGq+9yr1/GuAWaVYIHRjvvySG5/4VfKIvC8EWxStPdcDh/Ka7FG3twP6v4d5BkravUilhIAsG4Qj83t02LWUPQ==}
+  acorn@8.19.0:
+    resolution: {integrity: sha512-oJlA3XiRm7Cyk6qFD2Jn8ak9B7jSy0qy00ADO3+8dpT0LSjFihQYv4C02LFCSYJV3Q37xYwwRy5m+IpIiUzqWw==}
     engines: {node: '>=0.4.0'}
     hasBin: true
 
@@ -2514,8 +2514,8 @@ packages:
     engines: {node: ^20.19.0 || >=22.12.0}
     hasBin: true
 
-  koffi@2.15.2:
-    resolution: {integrity: sha512-r9tjJLVRSOhCRWdVyQlF3/Ugzeg13jlzS4czS82MAgLff4W+BcYOW7g8Y62t9O5JYjYOLAjAovAZDNlDfZNu+g==}
+  koffi@2.16.3:
+    resolution: {integrity: sha512-E9y1AsgYGlaxMhcZzHr8y96QF2U5XzA12GGVAfbWqIubTwPNMXQarfBzePNXHe0xtIEtNd6ifAv3GAKYGUeBAQ==}
 
   kubernetes-types@1.30.0:
     resolution: {integrity: sha512-Dew1okvhM/SQcIa2rcgujNndZwU8VnSapDgdxlYoB84ZlpAD43U6KLAFqYo17ykSFGHNPrg0qry0bP+GJd9v7Q==}
@@ -4832,7 +4832,7 @@ snapshots:
       mime-types: 3.0.2
       negotiator: 1.0.0
 
-  acorn@8.18.0:
+  acorn@8.19.0:
     optional: true
 
   agent-base@7.1.4: {}
@@ -5501,7 +5501,7 @@ snapshots:
       yaml: 2.9.1
       zod: 4.6.5
 
-  koffi@2.15.2: {}
+  koffi@2.16.3: {}
 
   kubernetes-types@1.30.0: {}
 
@@ -6116,7 +6116,7 @@ snapshots:
   terser@5.16.9:
     dependencies:
       '@jridgewell/source-map': 0.3.11
-      acorn: 8.18.0
+      acorn: 8.19.0
       commander: 2.20.3
       source-map-support: 0.5.21
     optional: true
