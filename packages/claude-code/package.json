@@ -30,7 +30,7 @@
     "zod": "^3.24.0"
   },
   "optionalDependencies": {
-    "koffi": "^3.3.2"
+    "koffi": "^2.15.2"
   },
   "devDependencies": {
     "@singularityrd/aidr-core": "workspace:*",

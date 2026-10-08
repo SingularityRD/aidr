@@ -19,7 +19,7 @@
     "prepack": "node ../../scripts/check-workspace-refs.mjs"
   },
   "optionalDependencies": {
-    "koffi": "^3.3.2"
+    "koffi": "^2.15.2"
   },
   "dependencies": {
     "@singularityrd/aidr-core": "workspace:*"
