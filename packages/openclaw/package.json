@@ -30,7 +30,7 @@
     "test": "vitest run"
   },
   "optionalDependencies": {
-    "koffi": "^2.15.2"
+    "koffi": "^3.3.2"
   },
   "devDependencies": {
     "@singularityrd/aidr-core": "workspace:*",
