@@ -24,7 +24,7 @@
     "prepack": "node ../../scripts/check-workspace-refs.mjs"
   },
   "dependencies": {
-    "@sentry/node": "^10.69.0",
+    "@sentry/node": "^10.76.0",
     "pino": "^10.4.0",
     "semver": "^7.8.5",
     "yaml": "^2.9.1",
