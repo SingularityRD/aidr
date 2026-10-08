@@ -31,7 +31,7 @@
     "test:aidr-contract": "vitest run src/__tests__/aidr-contract.test.ts"
   },
   "dependencies": {
-    "@opencode-ai/plugin": "^1.2.10",
+    "@opencode-ai/plugin": "^1.18.34",
     "@singularityrd/aidr-core": "workspace:*"
   },
   "devDependencies": {
