@@ -226,6 +226,9 @@ test("d. create_team_tenant enforces a configurable per-user daily quota under t
 	assert.match(sql, /revoke all on function public\.create_team_tenant\(text, uuid, text\) from public, anon;/);
 });
 
+// Membership helpers that 20261007000050 gated on app.directory_membership_grants.
+const DIRECTORY_GATED = ["app.is_tenant_member", "app.is_tenant_member_with_role"];
+
 test("e. tenant helpers resolve pg_catalog first and keep their exact bodies", () => {
 	for (const name of [
 		"app.current_tenant_id",
@@ -241,7 +244,25 @@ test("e. tenant helpers resolve pg_catalog first and keep their exact bodies", (
 		const previous = latestBefore(name, MIGRATION);
 		assert.ok(previous, `${name} has a prior definition`);
 		assert.match(normalize(previous), /set search_path = public, pg_catalog/, `${name} previously resolved public first`);
+		// This migration re-created the two membership helpers from a body that
+		// predates the directory-authoritative gate; 20261008000100 puts it back and
+		// test g pins the final state, so their body is not compared here.
+		if (DIRECTORY_GATED.includes(name)) continue;
 		assert.equal(normalize(body(text)), normalize(body(previous)), `${name} body must be unchanged`);
+	}
+});
+
+test("g. the directory-authoritative membership gate survives the hardening migration", () => {
+	const gate = "and app.directory_membership_grants(tm.tenant_id, tm.user_id, tm.role)";
+	const scim = sources.get("20261007000050_scim_directory_authoritative.sql");
+	assert.ok(scim);
+	const afterEveryMigration = "99999999999999_end.sql";
+	for (const name of DIRECTORY_GATED) {
+		const final = latestBefore(name, afterEveryMigration);
+		assert.ok(final, `${name} must be defined`);
+		assert.match(normalize(final), /set search_path = pg_catalog, public, pg_temp as \$\$/, `${name} must resolve pg_catalog first`);
+		assert.ok(normalize(final).includes(gate), `${name} must still consult app.directory_membership_grants`);
+		assert.equal(normalize(body(final)), normalize(body(definition(scim, name))), `${name} final body must equal the directory-authoritative body`);
 	}
 });
 
