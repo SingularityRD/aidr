@@ -4,7 +4,7 @@
   "generation_timezone": "Europe/Istanbul",
   "generation_note": "Generated from the current worktree. source_commit identifies only the base commit; worktree_has_changes is explicit. This report is not candidate-bound release evidence. READINESS_BACKLOG.json is an older issue-ledger snapshot; its historical open IDs are not current verification results.",
   "decision": "NO-GO",
-  "source_commit": "4de553a41f4cdc296a8c2281a2e5d9d535ae0910",
+  "source_commit": "fb5dd4b5849011fbe352e5ba27282a8518441347",
   "worktree_has_changes": true,
   "historical_issue_ledger": {
     "path": "READINESS_BACKLOG.json",
@@ -3819,7 +3819,9 @@
     "AIDR-051",
     "AIDR-052",
     "AIDR-070",
-    "AIDR-080"
+    "AIDR-079",
+    "AIDR-080",
+    "AIDR-082"
   ],
   "current_readiness_gate": "docs/production-readiness/first-customer-ready.md",
   "sales_packet_reference": "docs/production-readiness/first-customer-sales-packet-v8.md",
