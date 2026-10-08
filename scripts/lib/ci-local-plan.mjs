@@ -161,7 +161,7 @@ export const GROUPS = Object.freeze([
 	["coverage", "Coverage runs (workspace and isolated core floors)"],
 	["core-matrix", "Core build and suite on Node 22 and Node 24"],
 	["privacy", "Privacy package tests and rule drift"],
-	["mcp-gateway", "MCP gateway and dashboard auth callback tests"],
+	["mcp-gateway", "MCP gateway tests"],
 	["browser-guard", "Browser Guard build, unit, real-browser E2E and packaging"],
 	["onprem", "On-prem deployment kit contracts, monitoring and compose models"],
 	["helm", "Helm chart lint and render"],
@@ -453,8 +453,8 @@ export const STEPS = Object.freeze([
 	step({
 		id: "mcp-gateway",
 		group: "mcp-gateway",
-		name: "MCP gateway and dashboard auth callback tests",
-		ci: ["quality-gate", "MCP gateway and dashboard auth callback tests"],
+		name: "MCP gateway tests",
+		ci: ["quality-gate", "MCP gateway tests"],
 		timeoutMs: 15 * MIN,
 	}),
 
