@@ -181,7 +181,7 @@
 		"verify:customer-onboarding": "node scripts/verify-customer-onboarding.mjs"
 	},
 	"devDependencies": {
-		"@biomejs/biome": "^2.5.1",
+		"@biomejs/biome": "^2.5.15",
 		"@changesets/cli": "3.0.3",
 		"@vitest/coverage-v8": "^4.1.11",
 		"@vscode/vsce": "4.0.0",
