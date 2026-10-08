@@ -383,7 +383,7 @@ describe("SCIM tenant-owner management boundary", () => {
 	});
 
 	it.each([
-		{ action: "create_token", tenant_id: TENANT, label: "Entra provisioning" },
+		{ action: "create_token", tenant_id: TENANT, label: "Entra provisioning", directory_id: DIRECTORY },
 		{ action: "rotate_token", tenant_id: TENANT, token_id: TOKEN_ID, label: "Entra rotated" },
 		{ action: "set_group_mapping", tenant_id: TENANT, external_group_id: "entra-group-id", role: "admin" },
 		{ action: "remove_group_mapping", tenant_id: TENANT, external_group_id: "entra-group-immutable-id" },
@@ -399,7 +399,7 @@ describe("SCIM tenant-owner management boundary", () => {
 		const fixture = fakeDb();
 		fixture.db.auth.mfa.getAuthenticatorAssuranceLevel = vi.fn(async () => ({ data: null, error: new Error("auth down") })) as never;
 		const response = await createScimAdminHandler({ db: fixture.db as never })(request("POST", {
-			action: "create_token", tenant_id: TENANT, label: "Entra provisioning",
+			action: "create_token", tenant_id: TENANT, label: "Entra provisioning", directory_id: DIRECTORY,
 		}));
 		expect(response.status).toBe(503);
 		expect(fixture.rpcCalls.some((call) => call.name === "scim_admin_create_token")).toBe(false);
@@ -426,7 +426,7 @@ describe("SCIM tenant-owner management boundary", () => {
 
 	const gatedRequests: Array<[string, () => Request]> = [
 		["GET", () => request("GET", undefined, { "X-AIDR-Tenant-ID": TENANT })],
-		["create_token", () => request("POST", { action: "create_token", tenant_id: TENANT, label: "Entra provisioning" })],
+		["create_token", () => request("POST", { action: "create_token", tenant_id: TENANT, label: "Entra provisioning", directory_id: DIRECTORY })],
 		["revoke_token", () => request("POST", { action: "revoke_token", tenant_id: TENANT, token_id: TOKEN_ID })],
 		["set_group_mapping", () => request("POST", { action: "set_group_mapping", tenant_id: TENANT, external_group_id: "entra-group-id", role: "viewer" })],
 	];
@@ -481,7 +481,7 @@ describe("SCIM tenant-owner management boundary", () => {
 		expect(denied.rpcCalls.some((call) => call.name === "tenant_plan_entitlements")).toBe(false);
 
 		const fixture = fakeDb({ plan: { data: planRow("enterprise", [...ENTITLED_FEATURES, "air_gapped_deployment"]), error: null } });
-		const response = await createScimAdminHandler({ db: fixture.db as never })(request("POST", { action: "create_token", tenant_id: TENANT, label: "Entra provisioning" }));
+		const response = await createScimAdminHandler({ db: fixture.db as never })(request("POST", { action: "create_token", tenant_id: TENANT, label: "Entra provisioning", directory_id: DIRECTORY }));
 		expect(response.status).toBe(201);
 		expect(fixture.rpcCalls.map((call) => call.name)).toEqual(["consume_tenant_rate_limit", "tenant_plan_entitlements", "scim_admin_create_token"]);
 		expect(SOURCE.indexOf('requireFeature(db as unknown as PlanEntitlementDb, tenantId, "scim")')).toBeLessThan(SOURCE.indexOf('db.from("scim_tokens")'));
