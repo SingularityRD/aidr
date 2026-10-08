@@ -6,6 +6,8 @@ Hazırlanma tarihi: 8 Ekim 2026. Kaynak: depodaki hazırlık kayıtları (`READI
 **yeni bir kabul defteri değildir**; karar kaydı `commercial-go-evidence-registry.json` ve
 `commercial-gate-receipts.json` olarak kalır. Bu belgeyle birlikte verilen ajan promptu:
 [SALE_READY_COMPLETION_PROMPT.md](./SALE_READY_COMPLETION_PROMPT.md).
+NO-GO'dan GO'ya geçmek için **kapanması gereken her maddenin eksiksiz listesi**:
+[NO_GO_TO_GO_GAP_LIST.md](./NO_GO_TO_GO_GAP_LIST.md).
 
 ## 1. Dürüst çerçeve: "%100 hazır" ne demek, kim bitirir?
 
