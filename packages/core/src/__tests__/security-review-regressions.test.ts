@@ -436,4 +436,45 @@ describe("AI-BOM launch redaction", () => {
 	it("keeps a following option that is not a value", () => {
 		expect(redactMcpLaunch("npx", ["--token", "--verbose"]).args).toEqual(["--token", "--verbose"]);
 	});
+
+	describe("short flags that carry a secret", () => {
+		// -p is a password for most tools and a port, package or print flag for a few.
+		it.each([
+			["mysql", ["-h", "db", "-u", "app", "-p", opaque]],
+			["/usr/bin/psql", ["-P", opaque]],
+			["C:\\tools\\some-mcp-server.exe", ["-p", opaque]],
+			["/usr/bin/env", ["DB_HOST=db", "mysql", "-p", opaque]],
+			["npx", ["-y", "some-mcp-server", "-p", opaque]],
+			["uvx", ["some-mcp-server", "-p", opaque]],
+			["curl", ["-u", `admin:${opaque}`, "https://example.test/mcp"]],
+			["curl", ["--user", `admin:${opaque}`]],
+			["redis-cli", ["-h", "cache", "-a", opaque]],
+		])("redacts the value after the flag for %s %j", (command, args) => {
+			const redacted = redactMcpLaunch(command, args);
+			expect([redacted.command, ...redacted.args].join(" ")).not.toContain(opaque);
+			expect(redacted.args.join(" ")).toContain("[Redacted]");
+		});
+
+		it("redacts the attached form of mysql's -p", () => {
+			for (const command of ["mysql", "mysqldump", "/usr/bin/mariadb"]) {
+				const redacted = redactMcpLaunch(command, ["-u", "app", `-p${opaque}`, "appdb"]);
+				expect(redacted.args).toEqual(["-u", "app", "-p[Redacted]", "appdb"]);
+			}
+		});
+
+		it.each([
+			["docker", ["run", "-p", "8080:80", "image"]],
+			["podman", ["run", "-p", "5432:5432", "image"]],
+			["node", ["-p", "process.version"]],
+			["kubectl", ["patch", "deploy/app", "-p", "{}"]],
+			["npx", ["-p", "typescript", "tsc", "--version"]],
+			["ssh", ["-p", "2222", "host"]],
+		])("leaves -p alone where it is a port, package or print flag (%s)", (command, args) => {
+			expect(redactMcpLaunch(command, args).args).toEqual(args);
+		});
+
+		it("does not take a following option for the value", () => {
+			expect(redactMcpLaunch("mysql", ["-p", "--verbose"]).args).toEqual(["-p", "--verbose"]);
+		});
+	});
 });

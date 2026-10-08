@@ -17,7 +17,11 @@
  *    removed, because a non-standard query name (`?k=`) can still be a secret;
  * 3. long opaque tokens (32+ characters of a base64/hex alphabet mixing letters
  *    and digits) are replaced, because an API key of unknown format looks
- *    exactly like that.
+ *    exactly like that;
+ * 4. short flags that carry a secret without saying so (`-p <password>`,
+ *    `curl -u user:pass`, `redis-cli -a <password>`, `mysql -p<password>`) are
+ *    recognised per command, because `-p` is a port, package or print flag for
+ *    docker, npx, node and kubectl and a password for nearly everything else.
  */
 
 import { REDACTED_TELEMETRY_VALUE, redactTelemetryString } from "./telemetry-redaction.js";
@@ -56,6 +60,94 @@ function stripUrl(raw: string): string {
 	}
 }
 
+/** Launchers whose own options come first and whose real command is a later argument. */
+const WRAPPER_COMMANDS = new Set([
+	"env",
+	"sudo",
+	"nice",
+	"nohup",
+	"command",
+	"exec",
+	"time",
+	"npx",
+	"pnpx",
+	"bunx",
+	"uvx",
+	"pipx",
+	"dlx",
+]);
+/** Commands for which `-p` / `-P` is a port, package or print flag, never a password. */
+const NON_SECRET_P_COMMANDS = new Set([
+	"docker",
+	"podman",
+	"nerdctl",
+	"node",
+	"nodejs",
+	"deno",
+	"bun",
+	"kubectl",
+	"helm",
+	"pip",
+	"pip3",
+	"python",
+	"python3",
+	"cargo",
+	"go",
+	"dotnet",
+	"uv",
+	"git",
+	"ssh",
+	"scp",
+	"sftp",
+]);
+/** Commands whose `-p<password>` is written with the password attached. */
+const ATTACHED_P_COMMANDS = new Set([
+	"mysql",
+	"mysqldump",
+	"mysqladmin",
+	"mariadb",
+	"mycli",
+	"mysqlsh",
+]);
+/** Short flags that take a secret as the next argument, per command. */
+const SECRET_SHORT_FLAGS: Readonly<Record<string, readonly string[]>> = {
+	curl: ["-u", "-U", "--user", "--proxy-user"],
+	"redis-cli": ["-a"],
+};
+
+function commandBaseName(command: string): string {
+	const base = command.split(/[\\/]/).pop() ?? command;
+	return base.toLowerCase().replace(/\.(?:exe|cmd|bat)$/, "");
+}
+
+/**
+ * The command that owns the arguments after it, and where those arguments
+ * start: `env FOO=1 mysql -p x` and `npx some-server -p x` are both owned by the
+ * last name, not by the launcher. Options before that point belong to the launcher.
+ */
+function resolveOwner(
+	command: string | null,
+	args: readonly string[],
+): { name: string; from: number } {
+	let name = command === null ? "" : commandBaseName(command);
+	let from = 0;
+	while (WRAPPER_COMMANDS.has(name)) {
+		let index = from;
+		while (index < args.length && (args[index]?.startsWith("-") || args[index]?.includes("=")))
+			index++;
+		const next = args[index];
+		if (next === undefined) return { name, from: args.length };
+		name = commandBaseName(next);
+		from = index + 1;
+	}
+	return { name, from };
+}
+
+function isSecretShortFlag(flag: string, owner: string): boolean {
+	if (flag === "-p" || flag === "-P") return !NON_SECRET_P_COMMANDS.has(owner);
+	return SECRET_SHORT_FLAGS[owner]?.includes(flag) ?? false;
+}
+
 /** Redact one launch token: the command, or an argument that is not a flag value. */
 export function redactLaunchToken(value: string): string {
 	const assignment = CREDENTIAL_ASSIGNMENT_RE.exec(value);
@@ -85,15 +177,25 @@ export function redactMcpLaunch(
 	command: string | null,
 	args: readonly string[],
 ): { command: string | null; args: string[] } {
+	const owner = resolveOwner(command, args);
 	const safeArgs: string[] = [];
 	for (let index = 0; index < args.length; index++) {
 		const arg = args[index] as string;
+		const ownedByCommand = index >= owner.from;
+		if (ownedByCommand && ATTACHED_P_COMMANDS.has(owner.name) && /^-p.+/.test(arg)) {
+			safeArgs.push(`-p${REDACTED_LAUNCH_VALUE}`);
+			continue;
+		}
 		safeArgs.push(redactLaunchToken(arg));
 		const next = args[index + 1];
 		// A value may itself start with `-` (random tokens do); only something that
 		// is plainly the next option (`--verbose`, `-v`) is not taken as the value.
 		if (next === undefined || next.startsWith("--") || /^-[A-Za-z]$/.test(next)) continue;
-		if (CREDENTIAL_FLAG_RE.test(arg) || HEADER_FLAG_RE.test(arg)) {
+		const secretFlag =
+			CREDENTIAL_FLAG_RE.test(arg) ||
+			HEADER_FLAG_RE.test(arg) ||
+			(ownedByCommand && isSecretShortFlag(arg, owner.name));
+		if (secretFlag) {
 			safeArgs.push(REDACTED_LAUNCH_VALUE);
 			index++;
 		}
