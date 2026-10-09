@@ -87,12 +87,11 @@ describe("selected tenant dashboard queries", () => {
 			const query = {
 				select: vi.fn(), eq: vi.fn(), order: vi.fn(), limit: vi.fn(),
 				then(resolve: (value: unknown) => unknown) {
-					return Promise.resolve({
-						data: table === "agents" && scope === tenantId ? [{
-							id: "first-agent", iid: "first-installation", display_name: "First agent",
-							agent_runtime: "codex", last_seen: null,
-						}] : [], error: null,
-					}).then(resolve);
+					const data = table === "agents" && scope === tenantId ? [{
+						id: "first-agent", iid: "first-installation", display_name: "First agent",
+						agent_runtime: "codex", last_seen: null,
+					}] : [];
+					return Promise.resolve({ data, error: null, count: data.length }).then(resolve);
 				},
 			};
 			for (const method of ["select", "order", "limit"] as const) query[method].mockReturnValue(query);

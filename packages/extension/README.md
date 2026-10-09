@@ -8,9 +8,9 @@ For a forwarded shell command, file operation, or URL fetch, Singularity AIDR ch
 
 ### Detection layers
 
-- **URL reputation** — cloud-based lookup for malware, phishing, and scam URLs
 - **Local heuristics** — pattern matching against dangerous commands, suspicious URLs, sensitive file paths, credential exposure, and obfuscation techniques
-- **Package supply-chain checks** — registry existence, file reputation, and age analysis for npm/PyPI packages
+- **Package supply-chain checks** — registry existence and age analysis for npm/PyPI packages
+- **Reputation checks** — first-party URL/domain and file/package hash lookups (optional and off by default; they need a configured first-party endpoint and are never reported as "clean" when unavailable)
 
 ### Verdicts
 

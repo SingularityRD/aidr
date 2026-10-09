@@ -59,8 +59,6 @@
   "scanRoots": [
     "packages/dashboard/dist",
     "packages/dashboard/src/ui/pages/public",
-    "packages/dashboard/aidr-landing.html",
-    "packages/dashboard/LANDING-WORKING.html",
     ".claude-plugin",
     "README.md",
     "docs/sales",
@@ -225,7 +223,7 @@
       "id": "COM-010",
       "domain": "ga-connectors",
       "directGaConnectorScope": ["claude-code", "cursor", "vscode", "openclaw", "opencode"],
-      "requirement": "Direct-GA scope includes every advertised connector: Claude Code, Cursor, VS Code, OpenClaw, and OpenCode. Each connector has a supported-host matrix, signed artifact, private-registry install path, real-host E2E, rollback, support owner, and limitations.",
+      "requirement": "Direct-GA scope includes every advertised connector: Claude Code, Cursor, VS Code, OpenClaw, and OpenCode. Codex CLI is a shipped sixth connector (deploy/native/support-matrix.json) but stays preview/engineering coverage outside this direct-GA order scope (CLAIM-010) unless Product expressly adds and accepts it. Each connector has a supported-host matrix, signed artifact, private-registry install path, real-host E2E, rollback, support owner, and limitations.",
       "decisionProfiles": ["evaluation", "assisted-sale", "production-ga", "investor"],
       "class": "hard",
       "receiptPath": "docs/production-readiness/commercial-gate-receipts.json",
@@ -331,7 +329,8 @@
     {
       "id": "CLAIM-001",
       "exactText": "Launch-ready security layer for AI agents.",
-      "surfaces": ["packages/dashboard/aidr-landing.html", "packages/dashboard/LANDING-WORKING.html"],
+      "surfaces": ["landing and marketing copy"],
+      "note": "The tracked static landing mockups that carried this text (packages/dashboard/aidr-landing.html, LANDING-WORKING.html) were removed on 2026-10-09; the claim stays blocked on every landing or marketing surface.",
       "patternIds": ["CLM-BANNED-LAUNCH"],
       "status": "blocked",
       "maturity": "unapproved",
@@ -342,7 +341,8 @@
     {
       "id": "CLAIM-002",
       "exactText": "Go live in minutes.",
-      "surfaces": ["packages/dashboard/aidr-landing.html", "packages/dashboard/LANDING-WORKING.html"],
+      "surfaces": ["landing and marketing copy"],
+      "note": "The tracked static landing mockups that carried this text (packages/dashboard/aidr-landing.html, LANDING-WORKING.html) were removed on 2026-10-09; the claim stays blocked on every landing or marketing surface.",
       "patternIds": ["CLM-BANNED-LAUNCH"],
       "status": "blocked",
       "maturity": "unapproved",

@@ -598,6 +598,49 @@ describe("GovernanceRegisterPage", () => {
 		expect(await screen.findByText("Added to the register.")).toBeInTheDocument();
 	});
 
+	it("offers evidence suggestions when both lookups succeed", async () => {
+		setup("register", {
+			tables: {
+				posture_findings: {
+					data: [{ id: 7, severity: "high", observed_at: iso(-DAY) }],
+					error: null,
+				},
+				events: { data: [{ id: 42, created_at: iso(-DAY) }], error: null },
+			},
+		});
+		const table = await screen.findByTestId("asset-register");
+		const row = within(table).getByText("Shell runner").closest("tr");
+		if (!row) throw new Error("missing row");
+		fireEvent.click(within(row).getByRole("button", { name: "Open" }));
+		expect(await screen.findByRole("button", { name: /Incident #42/ })).toBeInTheDocument();
+		expect(
+			screen.getByRole("button", { name: /MCP inventory finding · high/ }),
+		).toBeInTheDocument();
+		expect(screen.queryByText(/Evidence suggestions are unavailable/)).not.toBeInTheDocument();
+	});
+
+	it.each([
+		["posture finding", "posture_findings"],
+		["incident", "events"],
+	])(
+		"says evidence suggestions are unavailable when the %s lookup fails",
+		async (_label, failing) => {
+			setup("register", {
+				tables: {
+					posture_findings: { data: [], error: null },
+					events: { data: [{ id: 42, created_at: iso(-DAY) }], error: null },
+					[failing]: { data: null, error: { message: "permission denied" } },
+				},
+			});
+			const table = await screen.findByTestId("asset-register");
+			const row = within(table).getByText("Shell runner").closest("tr");
+			if (!row) throw new Error("missing row");
+			fireEvent.click(within(row).getByRole("button", { name: "Open" }));
+			expect(await screen.findByText(/Evidence suggestions are unavailable/)).toBeInTheDocument();
+			expect(screen.queryByRole("button", { name: /Incident #42/ })).not.toBeInTheDocument();
+		},
+	);
+
 	it("hides register changes from members and explains step-up failures", async () => {
 		setup("register", { role: "member" });
 		await screen.findByTestId("asset-register");

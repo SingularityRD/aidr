@@ -4,9 +4,9 @@ Singularity AIDR intercepts tool calls made by AI agents, extracts security-rele
 
 ## Detection Layers
 
-1. **URL reputation** - Cloud-based lookup for malware, phishing, and scam URLs. Works without an API key.
+1. **URL reputation** - Optional lookup for malware, phishing, and scam URLs. Off by default; it needs a configured first-party reputation endpoint, and an unavailable lookup is never reported as "clean".
 2. **Local heuristics** - YAML-based regex patterns matching dangerous commands, suspicious URLs, sensitive file paths, credential exposure, and obfuscation techniques.
-3. **Package supply-chain checks** - Registry existence, file reputation, and age analysis for npm/PyPI packages. See [Package Protection](package-protection.md).
+3. **Package supply-chain checks** - Registry existence and age analysis, plus optional file hash reputation when a first-party endpoint is configured, for npm/PyPI packages. See [Package Protection](package-protection.md).
 4. **Plugin scanning** - Scans other installed plugins for threats at session start. See [Plugin Scanning](plugin-scanning.md).
 
 ## Intercepted Tools

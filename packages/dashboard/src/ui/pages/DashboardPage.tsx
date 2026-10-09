@@ -4,6 +4,7 @@ import { useTeam } from "../../enterprise/team-provider";
 import { readErrorMessage } from "../../lib/errors";
 import { supabase } from "../../lib/supabase";
 import { dashboardAgentFreshness } from "../dashboard-freshness";
+import { pluginScanSummary } from "../plugin-scan";
 import { privacyEventSummary } from "../privacy-guard";
 import { getSession } from "../session";
 import { shadowAiEventSummary } from "../shadow-ai";
@@ -71,6 +72,24 @@ function queryRows<T>(result: unknown, isRow: (value: unknown) => value is T): T
 	return result.data;
 }
 
+/**
+ * PostgREST caps a response at `max_rows` (1000), so the agent list is an
+ * explicit page of the most recent heartbeats and the total comes from an exact
+ * count. A count that is missing or smaller than the page is malformed.
+ */
+export const AGENT_ROW_LIMIT = 1000;
+
+type AgentPage = { rows: AgentRow[]; total: number };
+
+function queryAgentPage(result: unknown): AgentPage {
+	const rows = queryRows(result, isAgentRow);
+	const total = isRecord(result) ? result.count : undefined;
+	if (typeof total !== "number" || !Number.isSafeInteger(total) || total < rows.length) {
+		throw new Error("Malformed dashboard query response.");
+	}
+	return { rows, total };
+}
+
 function eventSummary(event: EventRow): string {
 	if (event.type === "runtime_verdict") {
 		const tool =
@@ -79,12 +98,7 @@ function eventSummary(event: EventRow): string {
 			typeof event.payload?.verdict === "string" ? String(event.payload.verdict) : "unknown";
 		return `${tool}: ${verdict}`;
 	}
-	if (event.type === "plugin_scan") {
-		const key =
-			typeof event.payload?.plugin_key === "string" ? String(event.payload.plugin_key) : "plugin";
-		const count = Number(event.payload?.findings_count ?? 0);
-		return `${key}: ${count} finding(s)`;
-	}
+	if (event.type === "plugin_scan") return pluginScanSummary(event.payload);
 	if (event.type === "privacy_scan") return privacyEventSummary(event.payload);
 	if (event.type === "shadow_ai_usage") return shadowAiEventSummary(event.payload);
 	return "Additional event details are not shown.";
@@ -105,7 +119,7 @@ export function DashboardPage() {
 function TenantDashboardPage({ tenantId }: { tenantId: string }) {
 	const [email, setEmail] = useState<string | null>(null);
 	// null = not loaded / unavailable (fail-closed); [] = a real, empty result.
-	const [agents, setAgents] = useState<AgentRow[] | null>(null);
+	const [agentPage, setAgentPage] = useState<AgentPage | null>(null);
 	const [events, setEvents] = useState<EventRow[] | null>(null);
 	const [pendingTokens, setPendingTokens] = useState<number | null>(null);
 	const [agentError, setAgentError] = useState<string | null>(null);
@@ -160,15 +174,15 @@ function TenantDashboardPage({ tenantId }: { tenantId: string }) {
 
 		poll(
 			async () =>
-				queryRows(
+				queryAgentPage(
 					await supabase
 						.from("agents")
-						.select("id,iid,display_name,agent_runtime,last_seen")
+						.select("id,iid,display_name,agent_runtime,last_seen", { count: "exact" })
 						.eq("tenant_id", tenantId)
-						.order("last_seen", { ascending: false }),
-					isAgentRow,
+						.order("last_seen", { ascending: false, nullsFirst: false })
+						.limit(AGENT_ROW_LIMIT),
 				),
-			setAgents,
+			setAgentPage,
 			setAgentError,
 		);
 		poll(
@@ -237,6 +251,7 @@ function TenantDashboardPage({ tenantId }: { tenantId: string }) {
 		};
 	}, [tenantId]);
 
+	const agents = agentPage?.rows ?? null;
 	// Counters and rows consume exactly the same clock-based classification.
 	const agentSnapshot = useMemo(
 		() =>
@@ -247,6 +262,13 @@ function TenantDashboardPage({ tenantId }: { tenantId: string }) {
 		[agents, nowMs],
 	);
 	const connectedCount = agentSnapshot.filter(({ freshness }) => freshness === "fresh").length;
+	// Rows are ordered newest heartbeat first, so agents beyond the page are older
+	// than its last row. Only when that last row is still fresh can connected
+	// agents exist beyond the page; the count is then a lower bound.
+	const connectedIsLowerBound =
+		agentPage !== null &&
+		agentPage.total > agentPage.rows.length &&
+		agentSnapshot.at(-1)?.freshness === "fresh";
 	const denyCount = useMemo(
 		() => (events ?? []).filter((e) => verdictOf(e) === "deny").length,
 		[events],
@@ -324,11 +346,16 @@ function TenantDashboardPage({ tenantId }: { tenantId: string }) {
 			<section className="grid" aria-label="Fleet counters">
 				<div className="card stat-card">
 					<div className="stat-label">Agents</div>
-					<div className="stat-value">{agents === null ? "—" : agents.length}</div>
+					<div className="stat-value">{agentPage === null ? "—" : agentPage.total}</div>
 				</div>
 				<div className="card stat-card">
 					<div className="stat-label">Connected</div>
-					<div className="stat-value">{agents === null ? "—" : connectedCount}</div>
+					<div className="stat-value">
+						{agentPage === null ? "—" : `${connectedCount}${connectedIsLowerBound ? "+" : ""}`}
+					</div>
+					{connectedIsLowerBound ? (
+						<div className="stat-hint">at least; latest {AGENT_ROW_LIMIT} heartbeats</div>
+					) : null}
 				</div>
 				<div className="card stat-card">
 					<div className="stat-label">Pending</div>

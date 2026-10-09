@@ -700,11 +700,10 @@ describe("Dashboard integration", () => {
 		} as never);
 		mockedSupabase.from.mockImplementation((table: string) => {
 			const query = createQueryBuilder();
-			if (table === "agents") {
-				query.order.mockResolvedValue({ data: null, error: { message: "Agents down" } });
-			} else {
-				query.limit.mockResolvedValue({ data: null, error: { message: "Events down" } });
-			}
+			query.limit.mockResolvedValue({
+				data: null,
+				error: { message: table === "agents" ? "Agents down" : "Events down" },
+			});
 			return query;
 		});
 

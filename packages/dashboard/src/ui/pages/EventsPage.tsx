@@ -4,6 +4,7 @@ import { useTeam } from "../../enterprise/team-provider";
 import { readErrorMessage } from "../../lib/errors";
 import { supabase } from "../../lib/supabase";
 import { FrameworkTags } from "../framework-coverage";
+import { pluginScanSummary } from "../plugin-scan";
 import { privacyEventSummary } from "../privacy-guard";
 import { shadowAiEventSummary } from "../shadow-ai";
 
@@ -37,12 +38,7 @@ function summarize(event: EventRow): string {
 			typeof event.payload?.severity === "string" ? String(event.payload.severity) : "";
 		return `${tool}${severity ? ` (${severity})` : ""}`;
 	}
-	if (event.type === "plugin_scan") {
-		const key =
-			typeof event.payload?.plugin_key === "string" ? String(event.payload.plugin_key) : "plugin";
-		const count = Number(event.payload?.findings_count ?? 0);
-		return `${key}: ${count} finding(s)`;
-	}
+	if (event.type === "plugin_scan") return pluginScanSummary(event.payload);
 	if (event.type === "privacy_scan") return privacyEventSummary(event.payload);
 	if (event.type === "shadow_ai_usage") return shadowAiEventSummary(event.payload);
 	return "Additional event details are not shown.";
