@@ -117,7 +117,7 @@ if (installedPackageIntegrity.signed !== packageIntegrity.signed) throw new Erro
 // hooks; a digest alone cannot prove a native addon matches the host ABI.
 let nativeAmsiProbe = "not_applicable";
 if (process.platform === "win32") {
-	const nativeEntry = join(target, "dist/vendor/koffi/index.js");
+	const nativeEntry = join(target, "dist/vendor/koffi/index.cjs");
 	if (!existsSync(nativeEntry)) throw new Error("Installed Windows connector is missing the native AMSI payload; registration unchanged");
 	const script = `
 const koffi = require(process.argv[1]);

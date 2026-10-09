@@ -26,7 +26,7 @@ Direct runtime dependency baseline
 | Sentry Node/browser clients | `@sentry/node@^10.69.0`, `@sentry/browser@^10.69.0` | MIT | https://github.com/getsentry/sentry-javascript |
 | Semantic versioning | `semver@^7.7.4` | ISC | https://github.com/npm/node-semver |
 | CLI parsing | `commander@^15.0.0` | MIT | https://github.com/tj/commander.js |
-| Windows native AMSI binding | `koffi@^2.15.2` | MIT | Native binary, JavaScript loader and `dist/vendor/koffi/LICENSE.txt` are shipped with the Claude connector |
+| Windows native AMSI binding | `koffi@^3.3.2` with its `@koromix/koffi-win32-{x64,arm64,ia32}` native packages | MIT | Native binaries, JavaScript loader and `dist/vendor/koffi/LICENSE.txt` are shipped with the Claude connector |
 | React runtime/router | `react`, `react-dom`, `react-router-dom` | MIT | https://github.com/facebook/react and https://github.com/remix-run/react-router |
 | Supabase client | `@supabase/supabase-js@^2.108.2` | MIT | https://github.com/supabase/supabase-js |
 | OpenCode plugin API | `@opencode-ai/plugin@^1.2.10` | MIT | Upstream package repository and published package metadata |

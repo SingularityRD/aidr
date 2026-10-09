@@ -39,6 +39,18 @@
 		"onlyBuiltDependencies": [
 			"koffi"
 		],
+		"supportedArchitectures": {
+			"os": [
+				"current",
+				"win32"
+			],
+			"cpu": [
+				"current",
+				"x64",
+				"arm64",
+				"ia32"
+			]
+		},
 		"patchedDependencies": {
 			"magicast@0.5.2": "patches/magicast@0.5.2.patch"
 		}
