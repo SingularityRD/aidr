@@ -1,0 +1,2551 @@
+{
+  "schema": "aidr.branch-consolidation-review/v1",
+  "createdAt": "2026-10-09T15:13:27.764Z",
+  "sourceCommit": "0e72b1681480078de582ba08a0737ce5450f0de9",
+  "remote": "https://github.com/SingularityRD/aidr.git",
+  "remainingLocalBranches": [
+    "master"
+  ],
+  "remainingRemoteBranches": [
+    "master"
+  ],
+  "counts": {
+    "originalRefs": 112,
+    "additionalRefsReviewed": 14,
+    "localBranchesDeleted": 73,
+    "uniqueRemoteBranchesDeleted": 47,
+    "remoteDeletionEvents": 51,
+    "pullRequestsMerged": 28,
+    "worktrees": 53,
+    "detachedWorktreesPreserved": 52,
+    "originalDirtyWorktrees": 11
+  },
+  "originalRefs": [
+    {
+      "ref": "refs/heads/chore/koffi-3-migration",
+      "sha": "0b75229f57ccb0e29470f7ae8a83be71defbd303",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/chore/lint-warning-baseline",
+      "sha": "b61e36ee079ea58e64868521455f0879f8330c51",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/chore/zod-4-migration",
+      "sha": "57892321f9079dbb98262bd37df2f5a79c535c3f",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/codex/go-preparation-2026-10-06",
+      "sha": "88ec5b1e5f8f90c01802bb649d6e6fd9abd63d5c",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/codex/remaining-fixes-2026-10-06",
+      "sha": "db6bf02521b322facbd6ebda1d74ae30fa03c84c",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/docs/readiness-gap-refresh-2026-10-09",
+      "sha": "9ea632ca75c175fa60605cc298bb74ca9f2e3f8a",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/feat/browser-guard-legacy-office",
+      "sha": "f9acb1e79804ff7429225f763b9ee9d1f244a7fb",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/feat/browser-guard-pdf-image-ocr",
+      "sha": "54ddc0944f37b2d60e526e74f3cccd52b4b04c20",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/fix/audit-verify-exit-and-fffd",
+      "sha": "d4f1c373b04f8b0123ccafcbf63060eeff8f60f7",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/fix/ci-local-chromium",
+      "sha": "11cb2110e672bd474458a28936d364b3b0ecc45b",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/fix/cli-status-installer-gaps",
+      "sha": "52a5daff1c24439b4df78c8ed93d51ffcfcc351e",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/fix/dashboard-honesty-and-claims",
+      "sha": "4892f7cf39daf24f0a909dce40448436c59895e3",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/fix/edge-key-budget-and-id-validation",
+      "sha": "eccb03dfa302b5a29c12c6404c7ff694eaed94d7",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/fix/hook-deadline-sync-acl",
+      "sha": "52a5daff1c24439b4df78c8ed93d51ffcfcc351e",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/fix/hook-events-mcp-names-canonical-json",
+      "sha": "11aa342ae0b907a7c3c1b4f61bde9c0e33319197",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/fix/mcp-gateway-tenant-quota",
+      "sha": "234985d0832d16acdb90e690337455ebd13ffda3",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/fix/review-residuals-2026-10-09",
+      "sha": "16d87b4ed1957ef3bcf11ec6126f028431220b76",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/fix/test-harness-drift",
+      "sha": "0e769b29568635e3469040e24ebbb6cbfb9e3085",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/master",
+      "sha": "52a5daff1c24439b4df78c8ed93d51ffcfcc351e",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/readiness/enterprise-hardening",
+      "sha": "ba0ea25f52f46fc4cc43815eae61536d0cd93b98",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/readiness/enterprise-hardening-sec",
+      "sha": "f6481193c256865232f48cac7c8e044b3f24de07",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/readiness/enterprise-hardening-tests",
+      "sha": "5c8ee91f598581451fb9a1876bffe09bfc3dc24a",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/readiness/go-preparation-2026-10-07",
+      "sha": "dc56701c2003b8c2c56906e7a60adead91c2e9e4",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a003745d3c5253e3f",
+      "sha": "490250259261aad0ccf929891ab5893f41ebb678",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a0b50af0f75007f23",
+      "sha": "3b18cf94467a2cf87c357d7a3cdc72066ddd2b39",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a0b651aebf27328a6",
+      "sha": "9de7467981d4b5909c19088174ef812a7c712854",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a0fd5a771e52f2e73",
+      "sha": "1e8bca3215950625748546aa11668c3e040d223c",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a201d6364d11c086f",
+      "sha": "1e8bca3215950625748546aa11668c3e040d223c",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a27f077dd73e98e95",
+      "sha": "80ebb81089ab2d3bc4f1a72e3a4a4d34d8563254",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a319a19e3380f7675",
+      "sha": "0da8559c9107a35348835da6992f22fdc5a82265",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a35dc41761780a321",
+      "sha": "446d88bc538b1c0f2a61cc6bc03286edd95b5ff0",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a38d057bf6b057000",
+      "sha": "52a5daff1c24439b4df78c8ed93d51ffcfcc351e",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a38f440f6a05c0a40",
+      "sha": "52a5daff1c24439b4df78c8ed93d51ffcfcc351e",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a398a5f40c91af2ce",
+      "sha": "e94556565d9892a741fd6ecc4a35ae67418970f4",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a442771daa417dc02",
+      "sha": "1e8bca3215950625748546aa11668c3e040d223c",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a448e087cf9c2830c",
+      "sha": "2f9ddb61005f596d87ec1e2f223de875cb68833e",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a4ac7a9784862805c",
+      "sha": "52a5daff1c24439b4df78c8ed93d51ffcfcc351e",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a4bd74739d1259be8",
+      "sha": "dab699085e1eedd32d0121e2b34d0aea4bf7388f",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a4e47e330c4d03840",
+      "sha": "52a5daff1c24439b4df78c8ed93d51ffcfcc351e",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a5826d9fd4b92a354",
+      "sha": "377b9c100ab8823aef27e787075462dcc7d9b253",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a64fd38f2dcea49b6",
+      "sha": "52a5daff1c24439b4df78c8ed93d51ffcfcc351e",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a67cffefc5887f04b",
+      "sha": "bfaa11037e606989db27aa0a58e2f55c684dff01",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a7a6076073753c389",
+      "sha": "9913c7b43ca1dd3b836192c0fb46ec4dcdf5c74e",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a7e72e26e617b6b4b",
+      "sha": "52a5daff1c24439b4df78c8ed93d51ffcfcc351e",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a856ce2270a76b269",
+      "sha": "52a5daff1c24439b4df78c8ed93d51ffcfcc351e",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a8e76274251c1ffbf",
+      "sha": "4cd6f3406a3c0e21f3816d5a4cf681d92293af62",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a9080eb8f61249aae",
+      "sha": "4aef4280eaf6d2210f32242882f41abeee0151b7",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a97fbd7dec988f87c",
+      "sha": "417d31ca2bb96b5e2f8a0b9fd0a1145babd14f8f",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a99645389d6607391",
+      "sha": "52a5daff1c24439b4df78c8ed93d51ffcfcc351e",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a9b3e3f86d6dda734",
+      "sha": "ef7f969f0a1ce51182c10662dd0d6a86fc02e76f",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a9bb4da23dc0fd503",
+      "sha": "c5a50dfc88d87fa921e113c918ce42429ee1577f",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/worktree-agent-aa06c46b804c1fcdb",
+      "sha": "9220a67298921acd0f518d36091ad99f6a8b1d8d",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/worktree-agent-aa2b665653dfbbd0d",
+      "sha": "7e7193c25bbda992f7d69a7fa6ee3ed8e2bc529a",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/worktree-agent-aabdce8ba68353814",
+      "sha": "7142f8a849df54448da29850b80a41026e7ad695",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/worktree-agent-ab520db76a5661493",
+      "sha": "1bd61201ff0e5217105fb6c26a3e8037fbb82fdb",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/worktree-agent-ad1664c3dad2db3fc",
+      "sha": "52a5daff1c24439b4df78c8ed93d51ffcfcc351e",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/worktree-agent-ad18f9e9df134a45e",
+      "sha": "6f1dc7eb00ea48e7ca312da2dccbd4669beceda5",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/worktree-agent-ad24a7546ee823aef",
+      "sha": "3d6ff8e189f9f2830406a73fe4e5d75eb02e2b7c",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/worktree-agent-ad2b047374c571feb",
+      "sha": "52a5daff1c24439b4df78c8ed93d51ffcfcc351e",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/worktree-agent-ad3e1e453c20027ad",
+      "sha": "d8a62046699932f29eaea1677c5abfd61c41c2d6",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/worktree-agent-ade085435170c479a",
+      "sha": "7f3ec0ad009abf5b032b8116b296d8604fee884e",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/worktree-agent-adfcb547599a9f874",
+      "sha": "78e607c8c8692cfec5bc717fed39f4e394341359",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/worktree-agent-adfd0b68c31ef5137",
+      "sha": "1e8bca3215950625748546aa11668c3e040d223c",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/worktree-agent-ae09631589be4336c",
+      "sha": "7c3883ed35fd6f96254770cbf5d78eb4eb51b658",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/worktree-agent-ae1be244818497932",
+      "sha": "901f1729f4b865d8cedefe339fe688ffb1881e0b",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/worktree-agent-ae2af3d5197eb6440",
+      "sha": "52a5daff1c24439b4df78c8ed93d51ffcfcc351e",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/worktree-agent-ae4be18718e10ffc0",
+      "sha": "ee0f96e35a7096046dba218777878b59a5e6a2cc",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/worktree-agent-ae5bdf265a7df2d06",
+      "sha": "52a5daff1c24439b4df78c8ed93d51ffcfcc351e",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/worktree-agent-af3d9d2c6d8dcfa41",
+      "sha": "01372a9a93ccf57b2d0b37b299dfa98830d249c6",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/worktree-agent-af49b782aff7fcbad",
+      "sha": "b219278c1ff05f9f75aa2db80e30fde689792741",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/worktree-agent-af6eacfa4c00ff668",
+      "sha": "6a82ba8f044ca149a78d0d6217259e2b8f820c43",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/worktree-agent-af76d6337ded1927c",
+      "sha": "6258c1b306197b5195aceb4aed25da6e29556137",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/heads/worktree-agent-afbdc08cbf0d9d522",
+      "sha": "377b9c100ab8823aef27e787075462dcc7d9b253",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/remotes/origin/HEAD",
+      "sha": "03ffe20a0e404870e7cc00c4e9c15b06c85cc46d",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/remotes/origin/chore/ci-local-drift-and-dependabot-policy",
+      "sha": "a1db8096b9f8749bd03c0f87753f103b33b4ca9d",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/remotes/origin/claude/cool-dirac-e44iku",
+      "sha": "87b07d9511a05c8eeb5b0a03a336c5105b76c049",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/github_actions/changesets/action-2.1.2",
+      "sha": "a5151a8d99b04981883d4fd7a9a5fd86efb8a5c3",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/github_actions/codeql-action-596aac6886",
+      "sha": "e0e884ad75f46cf64236038a8225d6539a7dfe6f",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/github_actions/pnpm/action-setup-6.1.0",
+      "sha": "2e36dd4b16706f1b8df57c71b3cf85e483de2b44",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/npm_and_yarn/dev-dependencies-69f4b022df",
+      "sha": "26b2de8ff679cf0b59094e6976cf7309eba5cf6c",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/npm_and_yarn/knip-6.39.0",
+      "sha": "f6cb979352ef8a5aa20742aed184dce58d3f2794",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/npm_and_yarn/koffi-2.16.3",
+      "sha": "33805c3d6521ba509cae063b2603e8249f150036",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/npm_and_yarn/multi-7f19880bf6",
+      "sha": "8fc6442e16017e8355a18e207e946b2f907766e1",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/npm_and_yarn/multi-de36fa8f59",
+      "sha": "5e7d90b2d699e65bf4def547f9d43b513f39b01f",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/npm_and_yarn/patch-dependencies-3939244ffb",
+      "sha": "e00f77f54f2cf122235658910a64e5f31f4355d1",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/npm_and_yarn/playwright-core-1.63.0",
+      "sha": "9a5889fbe4b1ea32d49a4045a339b03378140185",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/npm_and_yarn/sentry/browser-10.76.0",
+      "sha": "e493470956f49706a5fbd864c0ae21fc5620171a",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/npm_and_yarn/sentry/node-10.76.0",
+      "sha": "08b4238c11adc8959aa8487552e683fde9897693",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/npm_and_yarn/supabase/supabase-js-2.117.2",
+      "sha": "2107b8f1511896389348390dd20e1a47b42147d4",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/pip/packages/privacy/ner/fsspec-2026.9.0",
+      "sha": "3205e3d8d1d22e127d89d0e27a04a4f84e7378b9",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/pip/packages/privacy/ner/huggingface-hub-2.1.1",
+      "sha": "3a17dd01f5261e0a7c0cccb7a5251447101fdd9c",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/pip/packages/privacy/ner/numpy-2.5.3",
+      "sha": "835dabe9ef08a6df6e4cfd19df4a9ac6c1aa46f3",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/pip/packages/privacy/ner/pip-26.2.1",
+      "sha": "d432d7c0d5da8b0e6bfab217af6d909cd3cb9df5",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/pip/packages/privacy/ner/transformers-5.18.0",
+      "sha": "7b9cae48a4f149ff26369f5bfa346f9e2b0e690c",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/remotes/origin/docs/readiness-gap-refresh-2026-10-09",
+      "sha": "9ea632ca75c175fa60605cc298bb74ca9f2e3f8a",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/remotes/origin/docs/sale-ready-completion-plan",
+      "sha": "7b6f460cb1f82edb81159cec9e0911b3c3f700ce",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/remotes/origin/feat/browser-guard-legacy-office",
+      "sha": "f9acb1e79804ff7429225f763b9ee9d1f244a7fb",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/remotes/origin/feat/browser-guard-pdf-image-ocr",
+      "sha": "54ddc0944f37b2d60e526e74f3cccd52b4b04c20",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/remotes/origin/feat/dns-hostname-exfiltration",
+      "sha": "f1dcfe40c21443a0331ae5194e004254d73d3cf5",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/remotes/origin/fix/aibom-launch-arg-redaction",
+      "sha": "0fd064ed75b0c68f0f8bb040866e7b68a42aa173",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/remotes/origin/fix/audit-verify-exit-and-fffd",
+      "sha": "d4f1c373b04f8b0123ccafcbf63060eeff8f60f7",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/remotes/origin/fix/ci-local-chromium",
+      "sha": "11cb2110e672bd474458a28936d364b3b0ecc45b",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/remotes/origin/fix/dashboard-honesty-and-claims",
+      "sha": "4892f7cf39daf24f0a909dce40448436c59895e3",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/remotes/origin/fix/edge-key-budget-and-id-validation",
+      "sha": "eccb03dfa302b5a29c12c6404c7ff694eaed94d7",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/remotes/origin/fix/hook-events-mcp-names-canonical-json",
+      "sha": "11aa342ae0b907a7c3c1b4f61bde9c0e33319197",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/remotes/origin/fix/mcp-gateway-tenant-quota",
+      "sha": "234985d0832d16acdb90e690337455ebd13ffda3",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/remotes/origin/fix/readiness-gates",
+      "sha": "60e49ffd000868a4abd6995f75f9dea9f61f1d81",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/remotes/origin/fix/restore-green-master",
+      "sha": "34761803a2b67ea10a7ef3a569d211caf0487fbf",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/remotes/origin/fix/review-residuals-2026-10-09",
+      "sha": "16d87b4ed1957ef3bcf11ec6126f028431220b76",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/remotes/origin/fix/test-harness-drift",
+      "sha": "0e769b29568635e3469040e24ebbb6cbfb9e3085",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/remotes/origin/master",
+      "sha": "03ffe20a0e404870e7cc00c4e9c15b06c85cc46d",
+      "includedInMasterHistory": true
+    },
+    {
+      "ref": "refs/remotes/origin/readiness/go-preparation-2026-10-07",
+      "sha": "dc56701c2003b8c2c56906e7a60adead91c2e9e4",
+      "includedInMasterHistory": true
+    }
+  ],
+  "additionalRefs": [
+    {
+      "ref": "refs/remotes/origin/dependabot/npm_and_yarn/dev-dependencies-69f4b022df",
+      "sha": "178e571c1bc13be7d19be41cfb5428e8edef4390",
+      "includedInMasterHistory": true,
+      "resolution": "CLI Node 20 type patch accepted; other Node 22 contracts retained"
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/npm_and_yarn/patch-dependencies-6ed0299ca2",
+      "sha": "962adf8718c28ce34b3aa34d1cc82e846224731e",
+      "includedInMasterHistory": true,
+      "resolution": "Vite 6.4.4 accepted; newer Sentry resolution retained"
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/pip/packages/privacy/ner/filelock-4.0.12",
+      "sha": "ad07d25ee1aa05578673291a9dc2fb4e7037487d",
+      "includedInMasterHistory": true,
+      "resolution": "History merged; pins retained pending coordinated platform lock, SBOM and runtime qualification"
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/pip/packages/privacy/ner/fsspec-2026.9.0",
+      "sha": "92a5e55f85112018c87c8bc23c315dece20bd956",
+      "includedInMasterHistory": true,
+      "resolution": "History merged; pins retained pending coordinated platform lock, SBOM and runtime qualification"
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/pip/packages/privacy/ner/huggingface-hub-2.1.1",
+      "sha": "194f134e2069564948ef78b4a1d051a420f3984f",
+      "includedInMasterHistory": true,
+      "resolution": "History merged; pins retained pending coordinated platform lock, SBOM and runtime qualification"
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/pip/packages/privacy/ner/mpmath-1.4.1",
+      "sha": "e2048f9652c121bb6b3ef4efef753417d3ba7621",
+      "includedInMasterHistory": true,
+      "resolution": "History merged; pins retained pending coordinated platform lock, SBOM and runtime qualification"
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/pip/packages/privacy/ner/transformers-5.18.0",
+      "sha": "652a6dfa5da03411a96eef9920594ac3f50bb7d9",
+      "includedInMasterHistory": true,
+      "resolution": "History merged; pins retained pending coordinated platform lock, SBOM and runtime qualification"
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/github_actions/codeql-action-435f1796a1",
+      "sha": "012011a940316257474644f6b3c6ea1cfb8c47d3",
+      "includedInMasterHistory": true,
+      "resolution": "CodeQL 4.38.2 immutable pins verified and merged together"
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/npm_and_yarn/dev-dependencies-fa0e04ea13",
+      "sha": "0fcc01153913473a0bedbb9bc73b96ed339992af",
+      "includedInMasterHistory": true,
+      "resolution": "Esbuild 0.28.2 accepted with matching root override and fresh lock; Sentry retained"
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/pip/services/aig-bridge/psycopg-3.3.6",
+      "sha": "d3b45c121d4f4dc9b2593d4ba4e1f35179862fc0",
+      "includedInMasterHistory": true,
+      "resolution": "History merged; pins retained pending coordinated platform lock, SBOM and runtime qualification"
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/pip/services/aig-bridge/pydantic-2.13.5",
+      "sha": "28215e66222f570408dffa8db1004456c2bc0047",
+      "includedInMasterHistory": true,
+      "resolution": "History merged; pins retained pending coordinated platform lock, SBOM and runtime qualification"
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/pip/services/aig-bridge/pytest-9.1.1",
+      "sha": "c1debe7ebb8f77a06e573480df10d5f098a7b177",
+      "includedInMasterHistory": true,
+      "resolution": "History merged; pins retained pending coordinated platform lock, SBOM and runtime qualification"
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/pip/services/aig-bridge/starlette-1.7.0",
+      "sha": "e7c8343bdf9698001c4abd868f5f3ca6fe86bd50",
+      "includedInMasterHistory": true,
+      "resolution": "History merged; pins retained pending coordinated platform lock, SBOM and runtime qualification"
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/pip/services/aig-bridge/uvicorn-0.54.0",
+      "sha": "059c8d663773846e5903385f4b5816ffccd7c6f8",
+      "includedInMasterHistory": true,
+      "resolution": "History merged; pins retained pending coordinated platform lock, SBOM and runtime qualification"
+    }
+  ],
+  "versionUpdatePause": {
+    "reason": "Prevent queue refills during consolidated dependency qualification; security updates remain enabled",
+    "resumeLimitsAfterQualification": {
+      "npm": 10,
+      "githubActions": 5,
+      "otherPython": 5,
+      "docker": 5,
+      "ner": 0
+    },
+    "nerResumeCondition": "Repair coordinated platform hash locks, wheel evidence and native inference gates"
+  },
+  "localDeletions": [
+    {
+      "ref": "refs/heads/chore/koffi-3-migration",
+      "sha": "0b75229f57ccb0e29470f7ae8a83be71defbd303",
+      "at": "2026-10-09T14:32:22.435Z"
+    },
+    {
+      "ref": "refs/heads/chore/lint-warning-baseline",
+      "sha": "b61e36ee079ea58e64868521455f0879f8330c51",
+      "at": "2026-10-09T14:32:22.493Z"
+    },
+    {
+      "ref": "refs/heads/chore/zod-4-migration",
+      "sha": "57892321f9079dbb98262bd37df2f5a79c535c3f",
+      "at": "2026-10-09T14:32:22.553Z"
+    },
+    {
+      "ref": "refs/heads/codex/all-branches-review-2026-10-09",
+      "sha": "41241d029720832d4a9ac4ba7f9e6b9230aa14ea",
+      "at": "2026-10-09T14:32:22.612Z"
+    },
+    {
+      "ref": "refs/heads/codex/go-preparation-2026-10-06",
+      "sha": "88ec5b1e5f8f90c01802bb649d6e6fd9abd63d5c",
+      "at": "2026-10-09T14:32:22.673Z"
+    },
+    {
+      "ref": "refs/heads/codex/remaining-fixes-2026-10-06",
+      "sha": "db6bf02521b322facbd6ebda1d74ae30fa03c84c",
+      "at": "2026-10-09T14:32:22.734Z"
+    },
+    {
+      "ref": "refs/heads/docs/readiness-gap-refresh-2026-10-09",
+      "sha": "9ea632ca75c175fa60605cc298bb74ca9f2e3f8a",
+      "at": "2026-10-09T14:32:22.795Z"
+    },
+    {
+      "ref": "refs/heads/feat/browser-guard-legacy-office",
+      "sha": "f9acb1e79804ff7429225f763b9ee9d1f244a7fb",
+      "at": "2026-10-09T14:32:22.854Z"
+    },
+    {
+      "ref": "refs/heads/feat/browser-guard-pdf-image-ocr",
+      "sha": "54ddc0944f37b2d60e526e74f3cccd52b4b04c20",
+      "at": "2026-10-09T14:32:22.921Z"
+    },
+    {
+      "ref": "refs/heads/fix/audit-verify-exit-and-fffd",
+      "sha": "d4f1c373b04f8b0123ccafcbf63060eeff8f60f7",
+      "at": "2026-10-09T14:32:22.988Z"
+    },
+    {
+      "ref": "refs/heads/fix/ci-local-chromium",
+      "sha": "11cb2110e672bd474458a28936d364b3b0ecc45b",
+      "at": "2026-10-09T14:32:23.051Z"
+    },
+    {
+      "ref": "refs/heads/fix/cli-status-installer-gaps",
+      "sha": "52a5daff1c24439b4df78c8ed93d51ffcfcc351e",
+      "at": "2026-10-09T14:32:23.125Z"
+    },
+    {
+      "ref": "refs/heads/fix/dashboard-honesty-and-claims",
+      "sha": "4892f7cf39daf24f0a909dce40448436c59895e3",
+      "at": "2026-10-09T14:32:23.191Z"
+    },
+    {
+      "ref": "refs/heads/fix/edge-key-budget-and-id-validation",
+      "sha": "eccb03dfa302b5a29c12c6404c7ff694eaed94d7",
+      "at": "2026-10-09T14:32:23.254Z"
+    },
+    {
+      "ref": "refs/heads/fix/hook-deadline-sync-acl",
+      "sha": "52a5daff1c24439b4df78c8ed93d51ffcfcc351e",
+      "at": "2026-10-09T14:32:23.315Z"
+    },
+    {
+      "ref": "refs/heads/fix/hook-events-mcp-names-canonical-json",
+      "sha": "11aa342ae0b907a7c3c1b4f61bde9c0e33319197",
+      "at": "2026-10-09T14:32:23.383Z"
+    },
+    {
+      "ref": "refs/heads/fix/mcp-gateway-tenant-quota",
+      "sha": "234985d0832d16acdb90e690337455ebd13ffda3",
+      "at": "2026-10-09T14:32:23.443Z"
+    },
+    {
+      "ref": "refs/heads/fix/review-residuals-2026-10-09",
+      "sha": "16d87b4ed1957ef3bcf11ec6126f028431220b76",
+      "at": "2026-10-09T14:32:23.499Z"
+    },
+    {
+      "ref": "refs/heads/fix/test-harness-drift",
+      "sha": "0e769b29568635e3469040e24ebbb6cbfb9e3085",
+      "at": "2026-10-09T14:32:23.555Z"
+    },
+    {
+      "ref": "refs/heads/readiness/enterprise-hardening",
+      "sha": "ba0ea25f52f46fc4cc43815eae61536d0cd93b98",
+      "at": "2026-10-09T14:32:23.615Z"
+    },
+    {
+      "ref": "refs/heads/readiness/enterprise-hardening-sec",
+      "sha": "f6481193c256865232f48cac7c8e044b3f24de07",
+      "at": "2026-10-09T14:32:23.670Z"
+    },
+    {
+      "ref": "refs/heads/readiness/enterprise-hardening-tests",
+      "sha": "5c8ee91f598581451fb9a1876bffe09bfc3dc24a",
+      "at": "2026-10-09T14:32:23.725Z"
+    },
+    {
+      "ref": "refs/heads/readiness/go-preparation-2026-10-07",
+      "sha": "dc56701c2003b8c2c56906e7a60adead91c2e9e4",
+      "at": "2026-10-09T14:32:23.789Z"
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a003745d3c5253e3f",
+      "sha": "490250259261aad0ccf929891ab5893f41ebb678",
+      "at": "2026-10-09T14:32:23.845Z"
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a0b50af0f75007f23",
+      "sha": "3b18cf94467a2cf87c357d7a3cdc72066ddd2b39",
+      "at": "2026-10-09T14:32:23.903Z"
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a0b651aebf27328a6",
+      "sha": "9de7467981d4b5909c19088174ef812a7c712854",
+      "at": "2026-10-09T14:32:23.962Z"
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a0fd5a771e52f2e73",
+      "sha": "1e8bca3215950625748546aa11668c3e040d223c",
+      "at": "2026-10-09T14:32:24.022Z"
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a201d6364d11c086f",
+      "sha": "1e8bca3215950625748546aa11668c3e040d223c",
+      "at": "2026-10-09T14:32:24.078Z"
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a27f077dd73e98e95",
+      "sha": "80ebb81089ab2d3bc4f1a72e3a4a4d34d8563254",
+      "at": "2026-10-09T14:32:24.136Z"
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a319a19e3380f7675",
+      "sha": "0da8559c9107a35348835da6992f22fdc5a82265",
+      "at": "2026-10-09T14:32:24.190Z"
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a35dc41761780a321",
+      "sha": "446d88bc538b1c0f2a61cc6bc03286edd95b5ff0",
+      "at": "2026-10-09T14:32:24.245Z"
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a38d057bf6b057000",
+      "sha": "52a5daff1c24439b4df78c8ed93d51ffcfcc351e",
+      "at": "2026-10-09T14:32:24.303Z"
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a38f440f6a05c0a40",
+      "sha": "52a5daff1c24439b4df78c8ed93d51ffcfcc351e",
+      "at": "2026-10-09T14:32:24.358Z"
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a398a5f40c91af2ce",
+      "sha": "e94556565d9892a741fd6ecc4a35ae67418970f4",
+      "at": "2026-10-09T14:32:24.414Z"
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a442771daa417dc02",
+      "sha": "1e8bca3215950625748546aa11668c3e040d223c",
+      "at": "2026-10-09T14:32:24.471Z"
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a448e087cf9c2830c",
+      "sha": "2f9ddb61005f596d87ec1e2f223de875cb68833e",
+      "at": "2026-10-09T14:32:24.527Z"
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a4ac7a9784862805c",
+      "sha": "52a5daff1c24439b4df78c8ed93d51ffcfcc351e",
+      "at": "2026-10-09T14:32:24.581Z"
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a4bd74739d1259be8",
+      "sha": "dab699085e1eedd32d0121e2b34d0aea4bf7388f",
+      "at": "2026-10-09T14:32:24.643Z"
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a4e47e330c4d03840",
+      "sha": "52a5daff1c24439b4df78c8ed93d51ffcfcc351e",
+      "at": "2026-10-09T14:32:24.700Z"
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a5826d9fd4b92a354",
+      "sha": "377b9c100ab8823aef27e787075462dcc7d9b253",
+      "at": "2026-10-09T14:32:24.755Z"
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a64fd38f2dcea49b6",
+      "sha": "52a5daff1c24439b4df78c8ed93d51ffcfcc351e",
+      "at": "2026-10-09T14:32:24.810Z"
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a67cffefc5887f04b",
+      "sha": "bfaa11037e606989db27aa0a58e2f55c684dff01",
+      "at": "2026-10-09T14:32:24.866Z"
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a7a6076073753c389",
+      "sha": "9913c7b43ca1dd3b836192c0fb46ec4dcdf5c74e",
+      "at": "2026-10-09T14:32:24.920Z"
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a7e72e26e617b6b4b",
+      "sha": "52a5daff1c24439b4df78c8ed93d51ffcfcc351e",
+      "at": "2026-10-09T14:32:24.977Z"
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a856ce2270a76b269",
+      "sha": "52a5daff1c24439b4df78c8ed93d51ffcfcc351e",
+      "at": "2026-10-09T14:32:25.032Z"
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a8e76274251c1ffbf",
+      "sha": "4cd6f3406a3c0e21f3816d5a4cf681d92293af62",
+      "at": "2026-10-09T14:32:25.086Z"
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a9080eb8f61249aae",
+      "sha": "4aef4280eaf6d2210f32242882f41abeee0151b7",
+      "at": "2026-10-09T14:32:25.143Z"
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a97fbd7dec988f87c",
+      "sha": "417d31ca2bb96b5e2f8a0b9fd0a1145babd14f8f",
+      "at": "2026-10-09T14:32:25.204Z"
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a99645389d6607391",
+      "sha": "52a5daff1c24439b4df78c8ed93d51ffcfcc351e",
+      "at": "2026-10-09T14:32:25.260Z"
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a9b3e3f86d6dda734",
+      "sha": "ef7f969f0a1ce51182c10662dd0d6a86fc02e76f",
+      "at": "2026-10-09T14:32:25.316Z"
+    },
+    {
+      "ref": "refs/heads/worktree-agent-a9bb4da23dc0fd503",
+      "sha": "c5a50dfc88d87fa921e113c918ce42429ee1577f",
+      "at": "2026-10-09T14:32:25.374Z"
+    },
+    {
+      "ref": "refs/heads/worktree-agent-aa06c46b804c1fcdb",
+      "sha": "9220a67298921acd0f518d36091ad99f6a8b1d8d",
+      "at": "2026-10-09T14:32:25.429Z"
+    },
+    {
+      "ref": "refs/heads/worktree-agent-aa2b665653dfbbd0d",
+      "sha": "7e7193c25bbda992f7d69a7fa6ee3ed8e2bc529a",
+      "at": "2026-10-09T14:32:25.486Z"
+    },
+    {
+      "ref": "refs/heads/worktree-agent-aabdce8ba68353814",
+      "sha": "7142f8a849df54448da29850b80a41026e7ad695",
+      "at": "2026-10-09T14:32:25.544Z"
+    },
+    {
+      "ref": "refs/heads/worktree-agent-ab520db76a5661493",
+      "sha": "1bd61201ff0e5217105fb6c26a3e8037fbb82fdb",
+      "at": "2026-10-09T14:32:25.601Z"
+    },
+    {
+      "ref": "refs/heads/worktree-agent-ad1664c3dad2db3fc",
+      "sha": "52a5daff1c24439b4df78c8ed93d51ffcfcc351e",
+      "at": "2026-10-09T14:32:25.655Z"
+    },
+    {
+      "ref": "refs/heads/worktree-agent-ad18f9e9df134a45e",
+      "sha": "6f1dc7eb00ea48e7ca312da2dccbd4669beceda5",
+      "at": "2026-10-09T14:32:25.712Z"
+    },
+    {
+      "ref": "refs/heads/worktree-agent-ad24a7546ee823aef",
+      "sha": "3d6ff8e189f9f2830406a73fe4e5d75eb02e2b7c",
+      "at": "2026-10-09T14:32:25.769Z"
+    },
+    {
+      "ref": "refs/heads/worktree-agent-ad2b047374c571feb",
+      "sha": "52a5daff1c24439b4df78c8ed93d51ffcfcc351e",
+      "at": "2026-10-09T14:32:25.832Z"
+    },
+    {
+      "ref": "refs/heads/worktree-agent-ad3e1e453c20027ad",
+      "sha": "d8a62046699932f29eaea1677c5abfd61c41c2d6",
+      "at": "2026-10-09T14:32:25.889Z"
+    },
+    {
+      "ref": "refs/heads/worktree-agent-ade085435170c479a",
+      "sha": "7f3ec0ad009abf5b032b8116b296d8604fee884e",
+      "at": "2026-10-09T14:32:25.942Z"
+    },
+    {
+      "ref": "refs/heads/worktree-agent-adfcb547599a9f874",
+      "sha": "78e607c8c8692cfec5bc717fed39f4e394341359",
+      "at": "2026-10-09T14:32:25.996Z"
+    },
+    {
+      "ref": "refs/heads/worktree-agent-adfd0b68c31ef5137",
+      "sha": "1e8bca3215950625748546aa11668c3e040d223c",
+      "at": "2026-10-09T14:32:26.054Z"
+    },
+    {
+      "ref": "refs/heads/worktree-agent-ae09631589be4336c",
+      "sha": "7c3883ed35fd6f96254770cbf5d78eb4eb51b658",
+      "at": "2026-10-09T14:32:26.109Z"
+    },
+    {
+      "ref": "refs/heads/worktree-agent-ae1be244818497932",
+      "sha": "901f1729f4b865d8cedefe339fe688ffb1881e0b",
+      "at": "2026-10-09T14:32:26.166Z"
+    },
+    {
+      "ref": "refs/heads/worktree-agent-ae2af3d5197eb6440",
+      "sha": "52a5daff1c24439b4df78c8ed93d51ffcfcc351e",
+      "at": "2026-10-09T14:32:26.224Z"
+    },
+    {
+      "ref": "refs/heads/worktree-agent-ae4be18718e10ffc0",
+      "sha": "ee0f96e35a7096046dba218777878b59a5e6a2cc",
+      "at": "2026-10-09T14:32:26.279Z"
+    },
+    {
+      "ref": "refs/heads/worktree-agent-ae5bdf265a7df2d06",
+      "sha": "52a5daff1c24439b4df78c8ed93d51ffcfcc351e",
+      "at": "2026-10-09T14:32:26.334Z"
+    },
+    {
+      "ref": "refs/heads/worktree-agent-af3d9d2c6d8dcfa41",
+      "sha": "01372a9a93ccf57b2d0b37b299dfa98830d249c6",
+      "at": "2026-10-09T14:32:26.391Z"
+    },
+    {
+      "ref": "refs/heads/worktree-agent-af49b782aff7fcbad",
+      "sha": "b219278c1ff05f9f75aa2db80e30fde689792741",
+      "at": "2026-10-09T14:32:26.448Z"
+    },
+    {
+      "ref": "refs/heads/worktree-agent-af6eacfa4c00ff668",
+      "sha": "6a82ba8f044ca149a78d0d6217259e2b8f820c43",
+      "at": "2026-10-09T14:32:26.511Z"
+    },
+    {
+      "ref": "refs/heads/worktree-agent-af76d6337ded1927c",
+      "sha": "6258c1b306197b5195aceb4aed25da6e29556137",
+      "at": "2026-10-09T14:32:26.571Z"
+    },
+    {
+      "ref": "refs/heads/worktree-agent-afbdc08cbf0d9d522",
+      "sha": "377b9c100ab8823aef27e787075462dcc7d9b253",
+      "at": "2026-10-09T14:32:26.640Z"
+    }
+  ],
+  "remoteDeletions": [
+    {
+      "ref": "refs/remotes/origin/chore/ci-local-drift-and-dependabot-policy",
+      "sha": "a1db8096b9f8749bd03c0f87753f103b33b4ca9d",
+      "deletedAt": "2026-10-09T14:31:41.791Z"
+    },
+    {
+      "ref": "refs/remotes/origin/claude/cool-dirac-e44iku",
+      "sha": "87b07d9511a05c8eeb5b0a03a336c5105b76c049",
+      "deletedAt": "2026-10-09T14:31:41.791Z"
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/github_actions/changesets/action-2.1.2",
+      "sha": "a5151a8d99b04981883d4fd7a9a5fd86efb8a5c3",
+      "deletedAt": "2026-10-09T14:31:41.791Z"
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/github_actions/codeql-action-596aac6886",
+      "sha": "e0e884ad75f46cf64236038a8225d6539a7dfe6f",
+      "deletedAt": "2026-10-09T14:31:41.791Z"
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/github_actions/pnpm/action-setup-6.1.0",
+      "sha": "2e36dd4b16706f1b8df57c71b3cf85e483de2b44",
+      "deletedAt": "2026-10-09T14:31:41.791Z"
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/npm_and_yarn/dev-dependencies-69f4b022df",
+      "sha": "26b2de8ff679cf0b59094e6976cf7309eba5cf6c",
+      "deletedAt": "2026-10-09T14:31:41.791Z"
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/npm_and_yarn/knip-6.39.0",
+      "sha": "f6cb979352ef8a5aa20742aed184dce58d3f2794",
+      "deletedAt": "2026-10-09T14:31:41.791Z"
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/npm_and_yarn/koffi-2.16.3",
+      "sha": "33805c3d6521ba509cae063b2603e8249f150036",
+      "deletedAt": "2026-10-09T14:31:41.791Z"
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/npm_and_yarn/multi-7f19880bf6",
+      "sha": "8fc6442e16017e8355a18e207e946b2f907766e1",
+      "deletedAt": "2026-10-09T14:31:41.791Z"
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/npm_and_yarn/multi-de36fa8f59",
+      "sha": "5e7d90b2d699e65bf4def547f9d43b513f39b01f",
+      "deletedAt": "2026-10-09T14:31:41.791Z"
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/npm_and_yarn/patch-dependencies-3939244ffb",
+      "sha": "e00f77f54f2cf122235658910a64e5f31f4355d1",
+      "deletedAt": "2026-10-09T14:31:41.791Z"
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/npm_and_yarn/playwright-core-1.63.0",
+      "sha": "9a5889fbe4b1ea32d49a4045a339b03378140185",
+      "deletedAt": "2026-10-09T14:31:41.791Z"
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/npm_and_yarn/sentry/browser-10.76.0",
+      "sha": "e493470956f49706a5fbd864c0ae21fc5620171a",
+      "deletedAt": "2026-10-09T14:31:41.791Z"
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/npm_and_yarn/sentry/node-10.76.0",
+      "sha": "08b4238c11adc8959aa8487552e683fde9897693",
+      "deletedAt": "2026-10-09T14:31:41.791Z"
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/npm_and_yarn/supabase/supabase-js-2.117.2",
+      "sha": "2107b8f1511896389348390dd20e1a47b42147d4",
+      "deletedAt": "2026-10-09T14:31:41.791Z"
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/pip/packages/privacy/ner/fsspec-2026.9.0",
+      "sha": "3205e3d8d1d22e127d89d0e27a04a4f84e7378b9",
+      "deletedAt": "2026-10-09T14:31:41.791Z"
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/pip/packages/privacy/ner/huggingface-hub-2.1.1",
+      "sha": "3a17dd01f5261e0a7c0cccb7a5251447101fdd9c",
+      "deletedAt": "2026-10-09T14:31:41.791Z"
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/pip/packages/privacy/ner/numpy-2.5.3",
+      "sha": "835dabe9ef08a6df6e4cfd19df4a9ac6c1aa46f3",
+      "deletedAt": "2026-10-09T14:31:41.791Z"
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/pip/packages/privacy/ner/pip-26.2.1",
+      "sha": "d432d7c0d5da8b0e6bfab217af6d909cd3cb9df5",
+      "deletedAt": "2026-10-09T14:31:41.791Z"
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/pip/packages/privacy/ner/transformers-5.18.0",
+      "sha": "7b9cae48a4f149ff26369f5bfa346f9e2b0e690c",
+      "deletedAt": "2026-10-09T14:31:41.791Z"
+    },
+    {
+      "ref": "refs/remotes/origin/docs/readiness-gap-refresh-2026-10-09",
+      "sha": "9ea632ca75c175fa60605cc298bb74ca9f2e3f8a",
+      "deletedAt": "2026-10-09T14:31:41.791Z"
+    },
+    {
+      "ref": "refs/remotes/origin/docs/sale-ready-completion-plan",
+      "sha": "7b6f460cb1f82edb81159cec9e0911b3c3f700ce",
+      "deletedAt": "2026-10-09T14:31:41.791Z"
+    },
+    {
+      "ref": "refs/remotes/origin/feat/browser-guard-legacy-office",
+      "sha": "f9acb1e79804ff7429225f763b9ee9d1f244a7fb",
+      "deletedAt": "2026-10-09T14:31:41.791Z"
+    },
+    {
+      "ref": "refs/remotes/origin/feat/browser-guard-pdf-image-ocr",
+      "sha": "54ddc0944f37b2d60e526e74f3cccd52b4b04c20",
+      "deletedAt": "2026-10-09T14:31:41.791Z"
+    },
+    {
+      "ref": "refs/remotes/origin/feat/dns-hostname-exfiltration",
+      "sha": "f1dcfe40c21443a0331ae5194e004254d73d3cf5",
+      "deletedAt": "2026-10-09T14:31:41.791Z"
+    },
+    {
+      "ref": "refs/remotes/origin/fix/aibom-launch-arg-redaction",
+      "sha": "0fd064ed75b0c68f0f8bb040866e7b68a42aa173",
+      "deletedAt": "2026-10-09T14:31:41.791Z"
+    },
+    {
+      "ref": "refs/remotes/origin/fix/audit-verify-exit-and-fffd",
+      "sha": "d4f1c373b04f8b0123ccafcbf63060eeff8f60f7",
+      "deletedAt": "2026-10-09T14:31:41.791Z"
+    },
+    {
+      "ref": "refs/remotes/origin/fix/ci-local-chromium",
+      "sha": "11cb2110e672bd474458a28936d364b3b0ecc45b",
+      "deletedAt": "2026-10-09T14:31:41.791Z"
+    },
+    {
+      "ref": "refs/remotes/origin/fix/dashboard-honesty-and-claims",
+      "sha": "4892f7cf39daf24f0a909dce40448436c59895e3",
+      "deletedAt": "2026-10-09T14:31:41.791Z"
+    },
+    {
+      "ref": "refs/remotes/origin/fix/edge-key-budget-and-id-validation",
+      "sha": "eccb03dfa302b5a29c12c6404c7ff694eaed94d7",
+      "deletedAt": "2026-10-09T14:31:41.791Z"
+    },
+    {
+      "ref": "refs/remotes/origin/fix/hook-events-mcp-names-canonical-json",
+      "sha": "11aa342ae0b907a7c3c1b4f61bde9c0e33319197",
+      "deletedAt": "2026-10-09T14:31:41.791Z"
+    },
+    {
+      "ref": "refs/remotes/origin/fix/mcp-gateway-tenant-quota",
+      "sha": "234985d0832d16acdb90e690337455ebd13ffda3",
+      "deletedAt": "2026-10-09T14:31:41.791Z"
+    },
+    {
+      "ref": "refs/remotes/origin/fix/readiness-gates",
+      "sha": "60e49ffd000868a4abd6995f75f9dea9f61f1d81",
+      "deletedAt": "2026-10-09T14:31:41.791Z"
+    },
+    {
+      "ref": "refs/remotes/origin/fix/restore-green-master",
+      "sha": "34761803a2b67ea10a7ef3a569d211caf0487fbf",
+      "deletedAt": "2026-10-09T14:31:41.791Z"
+    },
+    {
+      "ref": "refs/remotes/origin/fix/review-residuals-2026-10-09",
+      "sha": "16d87b4ed1957ef3bcf11ec6126f028431220b76",
+      "deletedAt": "2026-10-09T14:31:41.791Z"
+    },
+    {
+      "ref": "refs/remotes/origin/fix/test-harness-drift",
+      "sha": "0e769b29568635e3469040e24ebbb6cbfb9e3085",
+      "deletedAt": "2026-10-09T14:31:41.791Z"
+    },
+    {
+      "ref": "refs/remotes/origin/readiness/go-preparation-2026-10-07",
+      "sha": "dc56701c2003b8c2c56906e7a60adead91c2e9e4",
+      "deletedAt": "2026-10-09T14:31:41.791Z"
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/github_actions/codeql-action-435f1796a1",
+      "sha": "012011a940316257474644f6b3c6ea1cfb8c47d3",
+      "deletedAt": "2026-10-09T14:57:16.619Z"
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/npm_and_yarn/dev-dependencies-69f4b022df",
+      "sha": "178e571c1bc13be7d19be41cfb5428e8edef4390",
+      "deletedAt": "2026-10-09T14:57:16.619Z"
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/npm_and_yarn/patch-dependencies-6ed0299ca2",
+      "sha": "962adf8718c28ce34b3aa34d1cc82e846224731e",
+      "deletedAt": "2026-10-09T14:57:16.619Z"
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/pip/packages/privacy/ner/filelock-4.0.12",
+      "sha": "ad07d25ee1aa05578673291a9dc2fb4e7037487d",
+      "deletedAt": "2026-10-09T14:57:16.619Z"
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/pip/packages/privacy/ner/fsspec-2026.9.0",
+      "sha": "92a5e55f85112018c87c8bc23c315dece20bd956",
+      "deletedAt": "2026-10-09T14:57:16.619Z"
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/pip/packages/privacy/ner/huggingface-hub-2.1.1",
+      "sha": "194f134e2069564948ef78b4a1d051a420f3984f",
+      "deletedAt": "2026-10-09T14:57:16.619Z"
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/pip/packages/privacy/ner/mpmath-1.4.1",
+      "sha": "e2048f9652c121bb6b3ef4efef753417d3ba7621",
+      "deletedAt": "2026-10-09T14:57:16.619Z"
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/pip/packages/privacy/ner/transformers-5.18.0",
+      "sha": "652a6dfa5da03411a96eef9920594ac3f50bb7d9",
+      "deletedAt": "2026-10-09T14:57:16.619Z"
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/npm_and_yarn/dev-dependencies-fa0e04ea13",
+      "sha": "0fcc01153913473a0bedbb9bc73b96ed339992af",
+      "deletedAt": "2026-10-09T15:13:25.758Z"
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/pip/services/aig-bridge/psycopg-3.3.6",
+      "sha": "d3b45c121d4f4dc9b2593d4ba4e1f35179862fc0",
+      "deletedAt": "2026-10-09T15:13:25.758Z"
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/pip/services/aig-bridge/pydantic-2.13.5",
+      "sha": "28215e66222f570408dffa8db1004456c2bc0047",
+      "deletedAt": "2026-10-09T15:13:25.758Z"
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/pip/services/aig-bridge/pytest-9.1.1",
+      "sha": "c1debe7ebb8f77a06e573480df10d5f098a7b177",
+      "deletedAt": "2026-10-09T15:13:25.758Z"
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/pip/services/aig-bridge/starlette-1.7.0",
+      "sha": "e7c8343bdf9698001c4abd868f5f3ca6fe86bd50",
+      "deletedAt": "2026-10-09T15:13:25.758Z"
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/pip/services/aig-bridge/uvicorn-0.54.0",
+      "sha": "059c8d663773846e5903385f4b5816ffccd7c6f8",
+      "deletedAt": "2026-10-09T15:13:25.758Z"
+    }
+  ],
+  "pullRequests": [
+    {
+      "number": 144,
+      "state": "CLOSED",
+      "mergedAt": null,
+      "headRefName": "dependabot/npm_and_yarn/dev-dependencies-fa0e04ea13",
+      "url": "https://github.com/SingularityRD/aidr/pull/144"
+    },
+    {
+      "number": 143,
+      "state": "OPEN",
+      "mergedAt": null,
+      "headRefName": "dependabot/pip/services/aig-bridge/starlette-1.7.0",
+      "url": "https://github.com/SingularityRD/aidr/pull/143"
+    },
+    {
+      "number": 142,
+      "state": "OPEN",
+      "mergedAt": null,
+      "headRefName": "dependabot/pip/services/aig-bridge/psycopg-3.3.6",
+      "url": "https://github.com/SingularityRD/aidr/pull/142"
+    },
+    {
+      "number": 141,
+      "state": "OPEN",
+      "mergedAt": null,
+      "headRefName": "dependabot/pip/services/aig-bridge/uvicorn-0.54.0",
+      "url": "https://github.com/SingularityRD/aidr/pull/141"
+    },
+    {
+      "number": 140,
+      "state": "OPEN",
+      "mergedAt": null,
+      "headRefName": "dependabot/pip/services/aig-bridge/pytest-9.1.1",
+      "url": "https://github.com/SingularityRD/aidr/pull/140"
+    },
+    {
+      "number": 139,
+      "state": "OPEN",
+      "mergedAt": null,
+      "headRefName": "dependabot/pip/services/aig-bridge/pydantic-2.13.5",
+      "url": "https://github.com/SingularityRD/aidr/pull/139"
+    },
+    {
+      "number": 138,
+      "state": "MERGED",
+      "mergedAt": "2026-10-09T14:57:17Z",
+      "headRefName": "dependabot/github_actions/codeql-action-435f1796a1",
+      "url": "https://github.com/SingularityRD/aidr/pull/138"
+    },
+    {
+      "number": 137,
+      "state": "MERGED",
+      "mergedAt": "2026-10-09T14:57:17Z",
+      "headRefName": "dependabot/npm_and_yarn/dev-dependencies-69f4b022df",
+      "url": "https://github.com/SingularityRD/aidr/pull/137"
+    },
+    {
+      "number": 136,
+      "state": "MERGED",
+      "mergedAt": "2026-10-09T14:57:17Z",
+      "headRefName": "dependabot/npm_and_yarn/patch-dependencies-6ed0299ca2",
+      "url": "https://github.com/SingularityRD/aidr/pull/136"
+    },
+    {
+      "number": 135,
+      "state": "MERGED",
+      "mergedAt": "2026-10-09T14:57:17Z",
+      "headRefName": "dependabot/pip/packages/privacy/ner/transformers-5.18.0",
+      "url": "https://github.com/SingularityRD/aidr/pull/135"
+    },
+    {
+      "number": 134,
+      "state": "MERGED",
+      "mergedAt": "2026-10-09T14:57:17Z",
+      "headRefName": "dependabot/pip/packages/privacy/ner/filelock-4.0.12",
+      "url": "https://github.com/SingularityRD/aidr/pull/134"
+    },
+    {
+      "number": 133,
+      "state": "MERGED",
+      "mergedAt": "2026-10-09T14:57:17Z",
+      "headRefName": "dependabot/pip/packages/privacy/ner/fsspec-2026.9.0",
+      "url": "https://github.com/SingularityRD/aidr/pull/133"
+    },
+    {
+      "number": 132,
+      "state": "MERGED",
+      "mergedAt": "2026-10-09T14:57:17Z",
+      "headRefName": "dependabot/pip/packages/privacy/ner/huggingface-hub-2.1.1",
+      "url": "https://github.com/SingularityRD/aidr/pull/132"
+    },
+    {
+      "number": 131,
+      "state": "MERGED",
+      "mergedAt": "2026-10-09T14:57:17Z",
+      "headRefName": "dependabot/pip/packages/privacy/ner/mpmath-1.4.1",
+      "url": "https://github.com/SingularityRD/aidr/pull/131"
+    },
+    {
+      "number": 119,
+      "state": "MERGED",
+      "mergedAt": "2026-10-09T14:31:42Z",
+      "headRefName": "feat/dns-hostname-exfiltration",
+      "url": "https://github.com/SingularityRD/aidr/pull/119"
+    },
+    {
+      "number": 118,
+      "state": "MERGED",
+      "mergedAt": "2026-10-09T14:31:42Z",
+      "headRefName": "fix/aibom-launch-arg-redaction",
+      "url": "https://github.com/SingularityRD/aidr/pull/118"
+    },
+    {
+      "number": 117,
+      "state": "MERGED",
+      "mergedAt": "2026-10-09T14:31:42Z",
+      "headRefName": "dependabot/github_actions/changesets/action-2.1.2",
+      "url": "https://github.com/SingularityRD/aidr/pull/117"
+    },
+    {
+      "number": 116,
+      "state": "MERGED",
+      "mergedAt": "2026-10-09T14:31:42Z",
+      "headRefName": "dependabot/github_actions/pnpm/action-setup-6.1.0",
+      "url": "https://github.com/SingularityRD/aidr/pull/116"
+    },
+    {
+      "number": 115,
+      "state": "MERGED",
+      "mergedAt": "2026-10-09T14:31:43Z",
+      "headRefName": "dependabot/github_actions/codeql-action-596aac6886",
+      "url": "https://github.com/SingularityRD/aidr/pull/115"
+    },
+    {
+      "number": 114,
+      "state": "MERGED",
+      "mergedAt": "2026-10-09T14:31:42Z",
+      "headRefName": "dependabot/npm_and_yarn/knip-6.39.0",
+      "url": "https://github.com/SingularityRD/aidr/pull/114"
+    },
+    {
+      "number": 113,
+      "state": "MERGED",
+      "mergedAt": "2026-10-09T14:31:42Z",
+      "headRefName": "dependabot/npm_and_yarn/multi-7f19880bf6",
+      "url": "https://github.com/SingularityRD/aidr/pull/113"
+    },
+    {
+      "number": 112,
+      "state": "MERGED",
+      "mergedAt": "2026-10-09T14:31:42Z",
+      "headRefName": "dependabot/npm_and_yarn/supabase/supabase-js-2.117.2",
+      "url": "https://github.com/SingularityRD/aidr/pull/112"
+    },
+    {
+      "number": 111,
+      "state": "MERGED",
+      "mergedAt": "2026-10-09T14:31:42Z",
+      "headRefName": "dependabot/npm_and_yarn/sentry/browser-10.76.0",
+      "url": "https://github.com/SingularityRD/aidr/pull/111"
+    },
+    {
+      "number": 110,
+      "state": "MERGED",
+      "mergedAt": "2026-10-09T14:31:42Z",
+      "headRefName": "dependabot/npm_and_yarn/sentry/node-10.76.0",
+      "url": "https://github.com/SingularityRD/aidr/pull/110"
+    },
+    {
+      "number": 109,
+      "state": "MERGED",
+      "mergedAt": "2026-10-09T14:31:42Z",
+      "headRefName": "dependabot/npm_and_yarn/playwright-core-1.63.0",
+      "url": "https://github.com/SingularityRD/aidr/pull/109"
+    },
+    {
+      "number": 108,
+      "state": "MERGED",
+      "mergedAt": "2026-10-09T14:31:42Z",
+      "headRefName": "dependabot/npm_and_yarn/multi-de36fa8f59",
+      "url": "https://github.com/SingularityRD/aidr/pull/108"
+    },
+    {
+      "number": 107,
+      "state": "MERGED",
+      "mergedAt": "2026-10-09T14:31:42Z",
+      "headRefName": "dependabot/npm_and_yarn/koffi-2.16.3",
+      "url": "https://github.com/SingularityRD/aidr/pull/107"
+    },
+    {
+      "number": 106,
+      "state": "MERGED",
+      "mergedAt": "2026-10-09T14:31:42Z",
+      "headRefName": "dependabot/npm_and_yarn/dev-dependencies-69f4b022df",
+      "url": "https://github.com/SingularityRD/aidr/pull/106"
+    },
+    {
+      "number": 105,
+      "state": "MERGED",
+      "mergedAt": "2026-10-09T14:31:42Z",
+      "headRefName": "dependabot/npm_and_yarn/patch-dependencies-3939244ffb",
+      "url": "https://github.com/SingularityRD/aidr/pull/105"
+    },
+    {
+      "number": 104,
+      "state": "MERGED",
+      "mergedAt": "2026-10-09T14:31:42Z",
+      "headRefName": "dependabot/pip/packages/privacy/ner/pip-26.2.1",
+      "url": "https://github.com/SingularityRD/aidr/pull/104"
+    },
+    {
+      "number": 103,
+      "state": "MERGED",
+      "mergedAt": "2026-10-09T14:31:42Z",
+      "headRefName": "dependabot/pip/packages/privacy/ner/fsspec-2026.9.0",
+      "url": "https://github.com/SingularityRD/aidr/pull/103"
+    },
+    {
+      "number": 102,
+      "state": "MERGED",
+      "mergedAt": "2026-10-09T14:31:42Z",
+      "headRefName": "dependabot/pip/packages/privacy/ner/transformers-5.18.0",
+      "url": "https://github.com/SingularityRD/aidr/pull/102"
+    },
+    {
+      "number": 101,
+      "state": "MERGED",
+      "mergedAt": "2026-10-09T14:31:42Z",
+      "headRefName": "dependabot/pip/packages/privacy/ner/numpy-2.5.3",
+      "url": "https://github.com/SingularityRD/aidr/pull/101"
+    },
+    {
+      "number": 100,
+      "state": "MERGED",
+      "mergedAt": "2026-10-09T14:31:43Z",
+      "headRefName": "dependabot/pip/packages/privacy/ner/huggingface-hub-2.1.1",
+      "url": "https://github.com/SingularityRD/aidr/pull/100"
+    }
+  ],
+  "worktreeIntegrity": [
+    {
+      "label": "workspace",
+      "originalBranch": "refs/heads/codex/all-branches-review-2026-10-09",
+      "originalHead": "4d314bf942f19911b55853f8c96ce5fc32432b58",
+      "initiallyDirty": false,
+      "detachedAt": null,
+      "originalContentsPreserved": null,
+      "beforeStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterStatusSha256": null,
+      "beforeDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterDiffSha256": null,
+      "beforeUntrackedFiles": 0,
+      "afterUntrackedFiles": null,
+      "note": "Primary workspace updated by authorized integration; other worktrees retain their existing HEAD and bytes"
+    },
+    {
+      "label": "external/go-preparation/aidr",
+      "originalBranch": "refs/heads/codex/remaining-fixes-2026-10-06",
+      "originalHead": "db6bf02521b322facbd6ebda1d74ae30fa03c84c",
+      "initiallyDirty": false,
+      "detachedAt": "2026-10-09T14:32:00.636Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeUntrackedFiles": 0,
+      "afterUntrackedFiles": 0,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": ".claude/worktrees/agent-a003745d3c5253e3f",
+      "originalBranch": "refs/heads/worktree-agent-a003745d3c5253e3f",
+      "originalHead": "490250259261aad0ccf929891ab5893f41ebb678",
+      "initiallyDirty": false,
+      "detachedAt": "2026-10-09T14:32:01.030Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeUntrackedFiles": 0,
+      "afterUntrackedFiles": 0,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": ".claude/worktrees/agent-a0b50af0f75007f23",
+      "originalBranch": "refs/heads/worktree-agent-a0b50af0f75007f23",
+      "originalHead": "3b18cf94467a2cf87c357d7a3cdc72066ddd2b39",
+      "initiallyDirty": false,
+      "detachedAt": "2026-10-09T14:32:01.443Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeUntrackedFiles": 0,
+      "afterUntrackedFiles": 0,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": ".claude/worktrees/agent-a0b651aebf27328a6",
+      "originalBranch": "refs/heads/worktree-agent-a0b651aebf27328a6",
+      "originalHead": "9de7467981d4b5909c19088174ef812a7c712854",
+      "initiallyDirty": true,
+      "detachedAt": "2026-10-09T14:32:01.849Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "c8110b90bf67e813e5e79eb138ed38dca7af7337a7d8f4f2b430fd4bae5d100b",
+      "afterStatusSha256": "c8110b90bf67e813e5e79eb138ed38dca7af7337a7d8f4f2b430fd4bae5d100b",
+      "beforeDiffSha256": "fcddb94ed0efa48acbd48ddeffce5f2cff3557ad14a39890ee6e6e83071cdebb",
+      "afterDiffSha256": "fcddb94ed0efa48acbd48ddeffce5f2cff3557ad14a39890ee6e6e83071cdebb",
+      "beforeUntrackedFiles": 0,
+      "afterUntrackedFiles": 0,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": ".claude/worktrees/agent-a0fd5a771e52f2e73",
+      "originalBranch": "refs/heads/worktree-agent-a0fd5a771e52f2e73",
+      "originalHead": "1e8bca3215950625748546aa11668c3e040d223c",
+      "initiallyDirty": true,
+      "detachedAt": "2026-10-09T14:32:02.253Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "2e69a5813de9f878045477e939343ef6b61d24571cb65b0c6915b6805769c750",
+      "afterStatusSha256": "2e69a5813de9f878045477e939343ef6b61d24571cb65b0c6915b6805769c750",
+      "beforeDiffSha256": "cc70f374a9105e4c65a4670398faae8429c6fb1a9730136f2037ef929bb2d657",
+      "afterDiffSha256": "cc70f374a9105e4c65a4670398faae8429c6fb1a9730136f2037ef929bb2d657",
+      "beforeUntrackedFiles": 1,
+      "afterUntrackedFiles": 1,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": ".claude/worktrees/agent-a201d6364d11c086f",
+      "originalBranch": "refs/heads/worktree-agent-a201d6364d11c086f",
+      "originalHead": "1e8bca3215950625748546aa11668c3e040d223c",
+      "initiallyDirty": false,
+      "detachedAt": "2026-10-09T14:32:02.647Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeUntrackedFiles": 0,
+      "afterUntrackedFiles": 0,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": ".claude/worktrees/agent-a27f077dd73e98e95",
+      "originalBranch": "refs/heads/worktree-agent-a27f077dd73e98e95",
+      "originalHead": "80ebb81089ab2d3bc4f1a72e3a4a4d34d8563254",
+      "initiallyDirty": true,
+      "detachedAt": "2026-10-09T14:32:03.096Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "c8110b90bf67e813e5e79eb138ed38dca7af7337a7d8f4f2b430fd4bae5d100b",
+      "afterStatusSha256": "c8110b90bf67e813e5e79eb138ed38dca7af7337a7d8f4f2b430fd4bae5d100b",
+      "beforeDiffSha256": "fcddb94ed0efa48acbd48ddeffce5f2cff3557ad14a39890ee6e6e83071cdebb",
+      "afterDiffSha256": "fcddb94ed0efa48acbd48ddeffce5f2cff3557ad14a39890ee6e6e83071cdebb",
+      "beforeUntrackedFiles": 0,
+      "afterUntrackedFiles": 0,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": ".claude/worktrees/agent-a319a19e3380f7675",
+      "originalBranch": "refs/heads/worktree-agent-a319a19e3380f7675",
+      "originalHead": "0da8559c9107a35348835da6992f22fdc5a82265",
+      "initiallyDirty": false,
+      "detachedAt": "2026-10-09T14:32:03.531Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeUntrackedFiles": 0,
+      "afterUntrackedFiles": 0,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": ".claude/worktrees/agent-a35dc41761780a321",
+      "originalBranch": "refs/heads/worktree-agent-a35dc41761780a321",
+      "originalHead": "446d88bc538b1c0f2a61cc6bc03286edd95b5ff0",
+      "initiallyDirty": false,
+      "detachedAt": "2026-10-09T14:32:03.921Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeUntrackedFiles": 0,
+      "afterUntrackedFiles": 0,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": ".claude/worktrees/agent-a38d057bf6b057000",
+      "originalBranch": "refs/heads/fix/hook-deadline-sync-acl",
+      "originalHead": "52a5daff1c24439b4df78c8ed93d51ffcfcc351e",
+      "initiallyDirty": true,
+      "detachedAt": "2026-10-09T14:32:04.344Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "9ded08a310308e6a92f7175cc8ef8c8e66f6e6bc0f86336148f5e10c32d37eb3",
+      "afterStatusSha256": "9ded08a310308e6a92f7175cc8ef8c8e66f6e6bc0f86336148f5e10c32d37eb3",
+      "beforeDiffSha256": "b2eae2a5892e993fc2f8998e51486a632e761d33f91ba74d6a5f6d9671e186f7",
+      "afterDiffSha256": "b2eae2a5892e993fc2f8998e51486a632e761d33f91ba74d6a5f6d9671e186f7",
+      "beforeUntrackedFiles": 4,
+      "afterUntrackedFiles": 4,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": ".claude/worktrees/agent-a38f440f6a05c0a40",
+      "originalBranch": "refs/heads/fix/test-harness-drift",
+      "originalHead": "0e769b29568635e3469040e24ebbb6cbfb9e3085",
+      "initiallyDirty": false,
+      "detachedAt": "2026-10-09T14:32:04.730Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeUntrackedFiles": 0,
+      "afterUntrackedFiles": 0,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": ".claude/worktrees/agent-a398a5f40c91af2ce",
+      "originalBranch": "refs/heads/worktree-agent-a398a5f40c91af2ce",
+      "originalHead": "e94556565d9892a741fd6ecc4a35ae67418970f4",
+      "initiallyDirty": false,
+      "detachedAt": "2026-10-09T14:32:05.122Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeUntrackedFiles": 0,
+      "afterUntrackedFiles": 0,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": ".claude/worktrees/agent-a442771daa417dc02",
+      "originalBranch": "refs/heads/worktree-agent-a442771daa417dc02",
+      "originalHead": "1e8bca3215950625748546aa11668c3e040d223c",
+      "initiallyDirty": true,
+      "detachedAt": "2026-10-09T14:32:05.541Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "6ff7702ab676c982bb98e9bbb1b39b91d097c1e5ea6263e97bc7f89ad83999c2",
+      "afterStatusSha256": "6ff7702ab676c982bb98e9bbb1b39b91d097c1e5ea6263e97bc7f89ad83999c2",
+      "beforeDiffSha256": "e10fd1493844fb92e1da1ac651fbb0085db060b58a44ff6dbdc7b5392a56aa8a",
+      "afterDiffSha256": "e10fd1493844fb92e1da1ac651fbb0085db060b58a44ff6dbdc7b5392a56aa8a",
+      "beforeUntrackedFiles": 2,
+      "afterUntrackedFiles": 2,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": ".claude/worktrees/agent-a448e087cf9c2830c",
+      "originalBranch": "refs/heads/worktree-agent-a448e087cf9c2830c",
+      "originalHead": "2f9ddb61005f596d87ec1e2f223de875cb68833e",
+      "initiallyDirty": false,
+      "detachedAt": "2026-10-09T14:32:05.931Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeUntrackedFiles": 0,
+      "afterUntrackedFiles": 0,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": ".claude/worktrees/agent-a4ac7a9784862805c",
+      "originalBranch": "refs/heads/fix/dashboard-honesty-and-claims",
+      "originalHead": "4892f7cf39daf24f0a909dce40448436c59895e3",
+      "initiallyDirty": false,
+      "detachedAt": "2026-10-09T14:32:06.332Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeUntrackedFiles": 0,
+      "afterUntrackedFiles": 0,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": ".claude/worktrees/agent-a4bd74739d1259be8",
+      "originalBranch": "refs/heads/worktree-agent-a4bd74739d1259be8",
+      "originalHead": "dab699085e1eedd32d0121e2b34d0aea4bf7388f",
+      "initiallyDirty": true,
+      "detachedAt": "2026-10-09T14:32:06.703Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "c8110b90bf67e813e5e79eb138ed38dca7af7337a7d8f4f2b430fd4bae5d100b",
+      "afterStatusSha256": "c8110b90bf67e813e5e79eb138ed38dca7af7337a7d8f4f2b430fd4bae5d100b",
+      "beforeDiffSha256": "fcddb94ed0efa48acbd48ddeffce5f2cff3557ad14a39890ee6e6e83071cdebb",
+      "afterDiffSha256": "fcddb94ed0efa48acbd48ddeffce5f2cff3557ad14a39890ee6e6e83071cdebb",
+      "beforeUntrackedFiles": 0,
+      "afterUntrackedFiles": 0,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": ".claude/worktrees/agent-a4e47e330c4d03840",
+      "originalBranch": "refs/heads/fix/mcp-gateway-tenant-quota",
+      "originalHead": "234985d0832d16acdb90e690337455ebd13ffda3",
+      "initiallyDirty": false,
+      "detachedAt": "2026-10-09T14:32:07.071Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeUntrackedFiles": 0,
+      "afterUntrackedFiles": 0,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": ".claude/worktrees/agent-a5826d9fd4b92a354",
+      "originalBranch": "refs/heads/readiness/enterprise-hardening-tests",
+      "originalHead": "5c8ee91f598581451fb9a1876bffe09bfc3dc24a",
+      "initiallyDirty": false,
+      "detachedAt": "2026-10-09T14:32:07.445Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeUntrackedFiles": 0,
+      "afterUntrackedFiles": 0,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": ".claude/worktrees/agent-a64fd38f2dcea49b6",
+      "originalBranch": "refs/heads/chore/zod-4-migration",
+      "originalHead": "57892321f9079dbb98262bd37df2f5a79c535c3f",
+      "initiallyDirty": true,
+      "detachedAt": "2026-10-09T14:32:07.852Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "a0e6b22e708c7cf4f42a5463c4022b74592b23ff1dd451ab053fc71830962541",
+      "afterStatusSha256": "a0e6b22e708c7cf4f42a5463c4022b74592b23ff1dd451ab053fc71830962541",
+      "beforeDiffSha256": "cdbd0db749c3e0c118e8b6bab05884cef71f3095f38b1b7d9f455ad38ed29182",
+      "afterDiffSha256": "cdbd0db749c3e0c118e8b6bab05884cef71f3095f38b1b7d9f455ad38ed29182",
+      "beforeUntrackedFiles": 0,
+      "afterUntrackedFiles": 0,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": ".claude/worktrees/agent-a67cffefc5887f04b",
+      "originalBranch": "refs/heads/worktree-agent-a67cffefc5887f04b",
+      "originalHead": "bfaa11037e606989db27aa0a58e2f55c684dff01",
+      "initiallyDirty": false,
+      "detachedAt": "2026-10-09T14:32:08.226Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeUntrackedFiles": 0,
+      "afterUntrackedFiles": 0,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": ".claude/worktrees/agent-a7a6076073753c389",
+      "originalBranch": "refs/heads/worktree-agent-a7a6076073753c389",
+      "originalHead": "9913c7b43ca1dd3b836192c0fb46ec4dcdf5c74e",
+      "initiallyDirty": false,
+      "detachedAt": "2026-10-09T14:32:08.604Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeUntrackedFiles": 0,
+      "afterUntrackedFiles": 0,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": ".claude/worktrees/agent-a7e72e26e617b6b4b",
+      "originalBranch": "refs/heads/fix/audit-verify-exit-and-fffd",
+      "originalHead": "d4f1c373b04f8b0123ccafcbf63060eeff8f60f7",
+      "initiallyDirty": false,
+      "detachedAt": "2026-10-09T14:32:08.981Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeUntrackedFiles": 0,
+      "afterUntrackedFiles": 0,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": ".claude/worktrees/agent-a856ce2270a76b269",
+      "originalBranch": "refs/heads/feat/browser-guard-legacy-office",
+      "originalHead": "f9acb1e79804ff7429225f763b9ee9d1f244a7fb",
+      "initiallyDirty": false,
+      "detachedAt": "2026-10-09T14:32:09.359Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeUntrackedFiles": 0,
+      "afterUntrackedFiles": 0,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": ".claude/worktrees/agent-a8e76274251c1ffbf",
+      "originalBranch": "refs/heads/worktree-agent-a8e76274251c1ffbf",
+      "originalHead": "4cd6f3406a3c0e21f3816d5a4cf681d92293af62",
+      "initiallyDirty": false,
+      "detachedAt": "2026-10-09T14:32:09.747Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeUntrackedFiles": 0,
+      "afterUntrackedFiles": 0,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": ".claude/worktrees/agent-a9080eb8f61249aae",
+      "originalBranch": "refs/heads/worktree-agent-a9080eb8f61249aae",
+      "originalHead": "4aef4280eaf6d2210f32242882f41abeee0151b7",
+      "initiallyDirty": false,
+      "detachedAt": "2026-10-09T14:32:10.124Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeUntrackedFiles": 0,
+      "afterUntrackedFiles": 0,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": ".claude/worktrees/agent-a97fbd7dec988f87c",
+      "originalBranch": "refs/heads/worktree-agent-a97fbd7dec988f87c",
+      "originalHead": "417d31ca2bb96b5e2f8a0b9fd0a1145babd14f8f",
+      "initiallyDirty": false,
+      "detachedAt": "2026-10-09T14:32:10.515Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeUntrackedFiles": 0,
+      "afterUntrackedFiles": 0,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": ".claude/worktrees/agent-a99645389d6607391",
+      "originalBranch": "refs/heads/chore/lint-warning-baseline",
+      "originalHead": "b61e36ee079ea58e64868521455f0879f8330c51",
+      "initiallyDirty": false,
+      "detachedAt": "2026-10-09T14:32:10.919Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeUntrackedFiles": 0,
+      "afterUntrackedFiles": 0,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": ".claude/worktrees/agent-a9b3e3f86d6dda734",
+      "originalBranch": "refs/heads/worktree-agent-a9b3e3f86d6dda734",
+      "originalHead": "ef7f969f0a1ce51182c10662dd0d6a86fc02e76f",
+      "initiallyDirty": false,
+      "detachedAt": "2026-10-09T14:32:11.314Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeUntrackedFiles": 0,
+      "afterUntrackedFiles": 0,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": ".claude/worktrees/agent-a9bb4da23dc0fd503",
+      "originalBranch": "refs/heads/worktree-agent-a9bb4da23dc0fd503",
+      "originalHead": "c5a50dfc88d87fa921e113c918ce42429ee1577f",
+      "initiallyDirty": true,
+      "detachedAt": "2026-10-09T14:32:11.716Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "c8110b90bf67e813e5e79eb138ed38dca7af7337a7d8f4f2b430fd4bae5d100b",
+      "afterStatusSha256": "c8110b90bf67e813e5e79eb138ed38dca7af7337a7d8f4f2b430fd4bae5d100b",
+      "beforeDiffSha256": "fcddb94ed0efa48acbd48ddeffce5f2cff3557ad14a39890ee6e6e83071cdebb",
+      "afterDiffSha256": "fcddb94ed0efa48acbd48ddeffce5f2cff3557ad14a39890ee6e6e83071cdebb",
+      "beforeUntrackedFiles": 0,
+      "afterUntrackedFiles": 0,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": ".claude/worktrees/agent-aa06c46b804c1fcdb",
+      "originalBranch": "refs/heads/worktree-agent-aa06c46b804c1fcdb",
+      "originalHead": "9220a67298921acd0f518d36091ad99f6a8b1d8d",
+      "initiallyDirty": false,
+      "detachedAt": "2026-10-09T14:32:12.151Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeUntrackedFiles": 0,
+      "afterUntrackedFiles": 0,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": ".claude/worktrees/agent-aa2b665653dfbbd0d",
+      "originalBranch": "refs/heads/worktree-agent-aa2b665653dfbbd0d",
+      "originalHead": "7e7193c25bbda992f7d69a7fa6ee3ed8e2bc529a",
+      "initiallyDirty": false,
+      "detachedAt": "2026-10-09T14:32:12.553Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeUntrackedFiles": 0,
+      "afterUntrackedFiles": 0,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": ".claude/worktrees/agent-aabdce8ba68353814",
+      "originalBranch": "refs/heads/worktree-agent-aabdce8ba68353814",
+      "originalHead": "7142f8a849df54448da29850b80a41026e7ad695",
+      "initiallyDirty": false,
+      "detachedAt": "2026-10-09T14:32:12.958Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeUntrackedFiles": 0,
+      "afterUntrackedFiles": 0,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": ".claude/worktrees/agent-ab520db76a5661493",
+      "originalBranch": "refs/heads/worktree-agent-ab520db76a5661493",
+      "originalHead": "1bd61201ff0e5217105fb6c26a3e8037fbb82fdb",
+      "initiallyDirty": false,
+      "detachedAt": "2026-10-09T14:32:13.390Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeUntrackedFiles": 0,
+      "afterUntrackedFiles": 0,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": ".claude/worktrees/agent-ad1664c3dad2db3fc",
+      "originalBranch": "refs/heads/fix/cli-status-installer-gaps",
+      "originalHead": "52a5daff1c24439b4df78c8ed93d51ffcfcc351e",
+      "initiallyDirty": true,
+      "detachedAt": "2026-10-09T14:32:13.787Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "a81986d719bbdd2659a65425f5cba9883385cc9645a6b938e35ec3ae6c4a431a",
+      "afterStatusSha256": "a81986d719bbdd2659a65425f5cba9883385cc9645a6b938e35ec3ae6c4a431a",
+      "beforeDiffSha256": "e847bbdb1934008257ef70ebeabeec0553982890c910f31156f218fc10f5dc57",
+      "afterDiffSha256": "e847bbdb1934008257ef70ebeabeec0553982890c910f31156f218fc10f5dc57",
+      "beforeUntrackedFiles": 2,
+      "afterUntrackedFiles": 2,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": ".claude/worktrees/agent-ad18f9e9df134a45e",
+      "originalBranch": "refs/heads/worktree-agent-ad18f9e9df134a45e",
+      "originalHead": "6f1dc7eb00ea48e7ca312da2dccbd4669beceda5",
+      "initiallyDirty": false,
+      "detachedAt": "2026-10-09T14:32:14.157Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeUntrackedFiles": 0,
+      "afterUntrackedFiles": 0,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": ".claude/worktrees/agent-ad24a7546ee823aef",
+      "originalBranch": "refs/heads/worktree-agent-ad24a7546ee823aef",
+      "originalHead": "3d6ff8e189f9f2830406a73fe4e5d75eb02e2b7c",
+      "initiallyDirty": false,
+      "detachedAt": "2026-10-09T14:32:14.536Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeUntrackedFiles": 0,
+      "afterUntrackedFiles": 0,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": ".claude/worktrees/agent-ad2b047374c571feb",
+      "originalBranch": "refs/heads/feat/browser-guard-pdf-image-ocr",
+      "originalHead": "54ddc0944f37b2d60e526e74f3cccd52b4b04c20",
+      "initiallyDirty": false,
+      "detachedAt": "2026-10-09T14:32:14.906Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeUntrackedFiles": 0,
+      "afterUntrackedFiles": 0,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": ".claude/worktrees/agent-ad3e1e453c20027ad",
+      "originalBranch": "refs/heads/worktree-agent-ad3e1e453c20027ad",
+      "originalHead": "d8a62046699932f29eaea1677c5abfd61c41c2d6",
+      "initiallyDirty": false,
+      "detachedAt": "2026-10-09T14:32:15.280Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeUntrackedFiles": 0,
+      "afterUntrackedFiles": 0,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": ".claude/worktrees/agent-ade085435170c479a",
+      "originalBranch": "refs/heads/worktree-agent-ade085435170c479a",
+      "originalHead": "7f3ec0ad009abf5b032b8116b296d8604fee884e",
+      "initiallyDirty": false,
+      "detachedAt": "2026-10-09T14:32:15.676Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeUntrackedFiles": 0,
+      "afterUntrackedFiles": 0,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": ".claude/worktrees/agent-adfcb547599a9f874",
+      "originalBranch": "refs/heads/worktree-agent-adfcb547599a9f874",
+      "originalHead": "78e607c8c8692cfec5bc717fed39f4e394341359",
+      "initiallyDirty": false,
+      "detachedAt": "2026-10-09T14:32:16.065Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeUntrackedFiles": 0,
+      "afterUntrackedFiles": 0,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": ".claude/worktrees/agent-adfd0b68c31ef5137",
+      "originalBranch": "refs/heads/worktree-agent-adfd0b68c31ef5137",
+      "originalHead": "1e8bca3215950625748546aa11668c3e040d223c",
+      "initiallyDirty": false,
+      "detachedAt": "2026-10-09T14:32:16.433Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeUntrackedFiles": 0,
+      "afterUntrackedFiles": 0,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": ".claude/worktrees/agent-ae09631589be4336c",
+      "originalBranch": "refs/heads/worktree-agent-ae09631589be4336c",
+      "originalHead": "7c3883ed35fd6f96254770cbf5d78eb4eb51b658",
+      "initiallyDirty": false,
+      "detachedAt": "2026-10-09T14:32:16.804Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeUntrackedFiles": 0,
+      "afterUntrackedFiles": 0,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": ".claude/worktrees/agent-ae1be244818497932",
+      "originalBranch": "refs/heads/worktree-agent-ae1be244818497932",
+      "originalHead": "901f1729f4b865d8cedefe339fe688ffb1881e0b",
+      "initiallyDirty": false,
+      "detachedAt": "2026-10-09T14:32:17.171Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeUntrackedFiles": 0,
+      "afterUntrackedFiles": 0,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": ".claude/worktrees/agent-ae2af3d5197eb6440",
+      "originalBranch": "refs/heads/fix/hook-events-mcp-names-canonical-json",
+      "originalHead": "11aa342ae0b907a7c3c1b4f61bde9c0e33319197",
+      "initiallyDirty": false,
+      "detachedAt": "2026-10-09T14:32:17.543Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeUntrackedFiles": 0,
+      "afterUntrackedFiles": 0,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": ".claude/worktrees/agent-ae4be18718e10ffc0",
+      "originalBranch": "refs/heads/worktree-agent-ae4be18718e10ffc0",
+      "originalHead": "ee0f96e35a7096046dba218777878b59a5e6a2cc",
+      "initiallyDirty": true,
+      "detachedAt": "2026-10-09T14:32:17.967Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "c8110b90bf67e813e5e79eb138ed38dca7af7337a7d8f4f2b430fd4bae5d100b",
+      "afterStatusSha256": "c8110b90bf67e813e5e79eb138ed38dca7af7337a7d8f4f2b430fd4bae5d100b",
+      "beforeDiffSha256": "fcddb94ed0efa48acbd48ddeffce5f2cff3557ad14a39890ee6e6e83071cdebb",
+      "afterDiffSha256": "fcddb94ed0efa48acbd48ddeffce5f2cff3557ad14a39890ee6e6e83071cdebb",
+      "beforeUntrackedFiles": 0,
+      "afterUntrackedFiles": 0,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": ".claude/worktrees/agent-ae5bdf265a7df2d06",
+      "originalBranch": "refs/heads/chore/koffi-3-migration",
+      "originalHead": "0b75229f57ccb0e29470f7ae8a83be71defbd303",
+      "initiallyDirty": false,
+      "detachedAt": "2026-10-09T14:32:18.353Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeUntrackedFiles": 0,
+      "afterUntrackedFiles": 0,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": ".claude/worktrees/agent-af3d9d2c6d8dcfa41",
+      "originalBranch": "refs/heads/worktree-agent-af3d9d2c6d8dcfa41",
+      "originalHead": "01372a9a93ccf57b2d0b37b299dfa98830d249c6",
+      "initiallyDirty": false,
+      "detachedAt": "2026-10-09T14:32:18.730Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeUntrackedFiles": 0,
+      "afterUntrackedFiles": 0,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": ".claude/worktrees/agent-af49b782aff7fcbad",
+      "originalBranch": "refs/heads/worktree-agent-af49b782aff7fcbad",
+      "originalHead": "b219278c1ff05f9f75aa2db80e30fde689792741",
+      "initiallyDirty": false,
+      "detachedAt": "2026-10-09T14:32:19.109Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeUntrackedFiles": 0,
+      "afterUntrackedFiles": 0,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": ".claude/worktrees/agent-af6eacfa4c00ff668",
+      "originalBranch": "refs/heads/worktree-agent-af6eacfa4c00ff668",
+      "originalHead": "6a82ba8f044ca149a78d0d6217259e2b8f820c43",
+      "initiallyDirty": true,
+      "detachedAt": "2026-10-09T14:32:19.492Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "c8110b90bf67e813e5e79eb138ed38dca7af7337a7d8f4f2b430fd4bae5d100b",
+      "afterStatusSha256": "c8110b90bf67e813e5e79eb138ed38dca7af7337a7d8f4f2b430fd4bae5d100b",
+      "beforeDiffSha256": "fcddb94ed0efa48acbd48ddeffce5f2cff3557ad14a39890ee6e6e83071cdebb",
+      "afterDiffSha256": "fcddb94ed0efa48acbd48ddeffce5f2cff3557ad14a39890ee6e6e83071cdebb",
+      "beforeUntrackedFiles": 0,
+      "afterUntrackedFiles": 0,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": ".claude/worktrees/agent-af76d6337ded1927c",
+      "originalBranch": "refs/heads/worktree-agent-af76d6337ded1927c",
+      "originalHead": "6258c1b306197b5195aceb4aed25da6e29556137",
+      "initiallyDirty": false,
+      "detachedAt": "2026-10-09T14:32:19.873Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeUntrackedFiles": 0,
+      "afterUntrackedFiles": 0,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": ".claude/worktrees/agent-afbdc08cbf0d9d522",
+      "originalBranch": "refs/heads/readiness/enterprise-hardening-sec",
+      "originalHead": "f6481193c256865232f48cac7c8e044b3f24de07",
+      "initiallyDirty": false,
+      "detachedAt": "2026-10-09T14:32:20.254Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeUntrackedFiles": 0,
+      "afterUntrackedFiles": 0,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    },
+    {
+      "label": "external/aidr-wt-edge",
+      "originalBranch": "refs/heads/fix/ci-local-chromium",
+      "originalHead": "11cb2110e672bd474458a28936d364b3b0ecc45b",
+      "initiallyDirty": false,
+      "detachedAt": "2026-10-09T14:32:20.626Z",
+      "originalContentsPreserved": true,
+      "beforeStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "beforeUntrackedFiles": 0,
+      "afterUntrackedFiles": 0,
+      "note": "Detached at the same HEAD; tracked, staged and untracked content fingerprints matched"
+    }
+  ],
+  "verification": {
+    "initialFullUnit": {
+      "sourceCommit": "4d314bf942f19911b55853f8c96ce5fc32432b58",
+      "files": 633,
+      "filesFailed": 5,
+      "totalTests": 11244,
+      "passed": 11221,
+      "failed": 12,
+      "skipped": 11
+    },
+    "targetedUnitReruns": {
+      "files": 5,
+      "passed": 52,
+      "failed": 0,
+      "addedBudgetGuardTests": 2,
+      "secondFullUnitRunPerformed": false
+    },
+    "finalBundledHookRerun": {
+      "passed": 4,
+      "failed": 0,
+      "esbuild": "0.28.2",
+      "coldMedianMs": 1498,
+      "warmPersistentMs": 745
+    },
+    "latestSourceChecks": {
+      "sourceCommit": "3c3c0f2ff46697a97b0c709a8a3a990cc1c2a8db",
+      "counts": {
+        "PASS": 13,
+        "FAIL": 1,
+        "SKIPPED": 0,
+        "NOT RUN": 0
+      },
+      "failedSteps": [
+        {
+          "id": "repo-hygiene",
+          "reason": "timed out after 3m00s"
+        }
+      ],
+      "selectedResults": [
+        {
+          "id": "guard-home-record",
+          "status": "PASS"
+        },
+        {
+          "id": "install",
+          "status": "PASS"
+        },
+        {
+          "id": "repo-hygiene",
+          "status": "FAIL"
+        },
+        {
+          "id": "secret-scan",
+          "status": "PASS"
+        },
+        {
+          "id": "lint",
+          "status": "PASS"
+        },
+        {
+          "id": "knip",
+          "status": "PASS"
+        },
+        {
+          "id": "duplicates",
+          "status": "PASS"
+        },
+        {
+          "id": "check",
+          "status": "PASS"
+        },
+        {
+          "id": "ci-workflows",
+          "status": "PASS"
+        },
+        {
+          "id": "ci-local-drift",
+          "status": "PASS"
+        },
+        {
+          "id": "audit-prod",
+          "status": "PASS"
+        },
+        {
+          "id": "audit-build",
+          "status": "PASS"
+        },
+        {
+          "id": "guard-home-verify",
+          "status": "PASS"
+        },
+        {
+          "id": "guard-tree-unchanged",
+          "status": "PASS"
+        }
+      ]
+    },
+    "hygieneRetry": {
+      "sourceCommit": "3c3c0f2ff46697a97b0c709a8a3a990cc1c2a8db",
+      "counts": {
+        "PASS": 4,
+        "FAIL": 0,
+        "SKIPPED": 0,
+        "NOT RUN": 0
+      },
+      "failedSteps": [],
+      "selectedResults": [
+        {
+          "id": "guard-home-record",
+          "status": "PASS"
+        },
+        {
+          "id": "repo-hygiene",
+          "status": "PASS"
+        },
+        {
+          "id": "guard-home-verify",
+          "status": "PASS"
+        },
+        {
+          "id": "guard-tree-unchanged",
+          "status": "PASS"
+        }
+      ]
+    },
+    "workflowChecks": {
+      "sourceCommit": "f0a7721731f0347846aa49a21630c8bb1ef4556b",
+      "counts": {
+        "PASS": 5,
+        "FAIL": 0,
+        "SKIPPED": 0,
+        "NOT RUN": 0
+      },
+      "failedSteps": [],
+      "selectedResults": [
+        {
+          "id": "guard-home-record",
+          "status": "PASS"
+        },
+        {
+          "id": "ci-workflows",
+          "status": "PASS"
+        },
+        {
+          "id": "ci-local-drift",
+          "status": "PASS"
+        },
+        {
+          "id": "guard-home-verify",
+          "status": "PASS"
+        },
+        {
+          "id": "guard-tree-unchanged",
+          "status": "PASS"
+        }
+      ]
+    },
+    "blockingPostgres": {
+      "sourceCommit": "4d314bf942f19911b55853f8c96ce5fc32432b58",
+      "counts": {
+        "PASS": 3,
+        "FAIL": 1,
+        "SKIPPED": 0,
+        "NOT RUN": 0
+      },
+      "failedSteps": [
+        {
+          "id": "guard-tree-unchanged",
+          "reason": "exit 1"
+        }
+      ],
+      "selectedResults": [
+        {
+          "id": "guard-home-record",
+          "status": "PASS"
+        },
+        {
+          "id": "postgres-gates",
+          "status": "PASS"
+        },
+        {
+          "id": "guard-home-verify",
+          "status": "PASS"
+        },
+        {
+          "id": "guard-tree-unchanged",
+          "status": "FAIL"
+        }
+      ]
+    },
+    "canonicalMigrationsApplied": 178,
+    "dashboardBuild": "PASS with Vite 6.4.4",
+    "releaseBuild": {
+      "status": "PASS",
+      "sourceCommit": "b8d7a231f76fc57fb970d9702f186cec4100a2fa",
+      "manifests": 11,
+      "sbomComponents": 281,
+      "consumerSmokes": 10,
+      "scope": "Developer build; customer-signed production acceptance not performed"
+    },
+    "knownRunLimitations": [
+      "Initial full unit run had 12 failures; all affected suites passed targeted reruns, but no second full suite was run",
+      "Blocking PostgreSQL step passed; its enclosing run failed the unchanged-tree guard while authorized test edits and integration were in progress",
+      "Source-check run timed out repository-hygiene tests despite 27 passing assertions; same-deadline hygiene retry and guards passed",
+      "Coverage, complete native/host/browser acceptance and independent production security/operations/commercial gates remain open"
+    ]
+  },
+  "productionDecision": "NO-GO"
+}
