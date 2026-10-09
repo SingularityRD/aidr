@@ -34,6 +34,7 @@ import {
 	authenticateTenantApiKeyBudgeted,
 	BROWSER_GUARD_INGEST_SCOPE,
 } from "../_shared/api-key-auth.ts";
+import { canonicalJson } from "../_shared/canonical-json.ts";
 import { configFailure, loadConfig, partialGroupError, runtimeEnv } from "../_shared/config.ts";
 import {
 	consumeTenantRateLimit,
@@ -128,21 +129,6 @@ type IngestBody = {
 	aidr_version?: string;
 	events?: unknown;
 };
-
-function canonicalizeForSigning(value: unknown): unknown {
-	if (Array.isArray(value)) return value.map((v) => canonicalizeForSigning(v));
-	if (!value || typeof value !== "object") return value;
-	const obj = value as Record<string, unknown>;
-	const out: Record<string, unknown> = {};
-	for (const key of Object.keys(obj).sort()) {
-		out[key] = canonicalizeForSigning(obj[key]);
-	}
-	return out;
-}
-
-function canonicalJson(value: unknown): string {
-	return JSON.stringify(canonicalizeForSigning(value));
-}
 
 function bytesToBase64(bytes: Uint8Array): string {
 	let bin = "";

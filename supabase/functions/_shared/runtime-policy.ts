@@ -1,3 +1,5 @@
+import { canonicalJson } from "./canonical-json.ts";
+
 const POLICY_ACTION_KEYS = [
 	"command_default", "file_default", "url_default", "package_default", "output_default",
 	"mcp_default", "mcp_unknown", "mcp_risky",
@@ -54,7 +56,7 @@ export async function sha256(value: string): Promise<string> {
 	return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+/** Digest input for `policy_sha256` and the other envelope-bound digests (./canonical-json.ts). */
 export function canonicalPolicy(value: unknown): string {
-	const normalized = (item: unknown): unknown => Array.isArray(item) ? item.map(normalized) : item && typeof item === "object" ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, val]) => [key, normalized(val)])) : item;
-	return JSON.stringify(normalized(value));
+	return canonicalJson(value);
 }

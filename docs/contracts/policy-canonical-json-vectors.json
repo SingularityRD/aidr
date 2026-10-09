@@ -1,0 +1,95 @@
+{
+  "description": "Cross-implementation vectors for the control-plane canonical JSON (packages/core/src/policy-canonical-json.ts and supabase/functions/_shared/canonical-json.ts). Each input_json is parsed with JSON.parse, canonicalised, and must equal canonical byte for byte; sha256 is over its UTF-8 bytes. Never edit an expected value to make a test pass: a change here is a signing-contract change.",
+  "vectors": [
+    {
+      "name": "key order is by UTF-16 code unit, case-sensitive",
+      "input_json": "{\"b\":1,\"a\":2,\"B\":3,\"_\":4,\"aa\":5,\"a \":6,\"\":7}",
+      "canonical": "{\"\":7,\"B\":3,\"_\":4,\"a\":2,\"a \":6,\"aa\":5,\"b\":1}",
+      "sha256": "f1086f2fbc41f3fd320ae12128a9723a1abe2d4dd1c3ea187f3c2b0903f87cb1"
+    },
+    {
+      "name": "nested objects are sorted at every depth",
+      "input_json": "{\"z\":{\"y\":{\"b\":1,\"a\":2},\"x\":null},\"a\":{\"d\":{\"f\":1,\"e\":2}}}",
+      "canonical": "{\"a\":{\"d\":{\"e\":2,\"f\":1}},\"z\":{\"x\":null,\"y\":{\"a\":2,\"b\":1}}}",
+      "sha256": "e0b739f7be3a9f75d0ceb75267afda66abe0b74d2b6706cc52eaa4b930204ffe"
+    },
+    {
+      "name": "integer-like keys come first in numeric order; non-index numerals sort as strings",
+      "input_json": "{\"b\":1,\"10\":2,\"9\":3,\"-1\":4,\"01\":5,\"1.5\":6,\"4294967295\":7,\"4294967294\":8,\"0\":9}",
+      "canonical": "{\"0\":9,\"9\":3,\"10\":2,\"4294967294\":8,\"-1\":4,\"01\":5,\"1.5\":6,\"4294967295\":7,\"b\":1}",
+      "sha256": "8a301df5ea08afe94d6a056a488280f24f168bc3288759711ff71db8c07fc1e4"
+    },
+    {
+      "name": "non-ASCII keys sort by UTF-16 code unit (astral before U+FFxx)",
+      "input_json": "{\"\\u00e9\":1,\"e\":2,\"Z\":3,\"\\ud83d\\ude00\":4,\"\\ufb01\":5,\"\\uff21\":6,\"\\uffff\":7,\"\\u00e9\\u0301\":8}",
+      "canonical": "{\"Z\":3,\"e\":2,\"é\":1,\"é́\":8,\"😀\":4,\"ﬁ\":5,\"Ａ\":6,\"￿\":7}",
+      "sha256": "2c631eb8e7f7e310e6bd25dd4431145db42c418808d68f5f0371ddb81120c4f9"
+    },
+    {
+      "name": "string escaping: controls escaped, U+2028/2029 and non-ASCII raw, lone surrogate escaped, slash raw",
+      "input_json": "{\"s\":\"quote\\\" back\\\\ slash/ nl\\n tab\\t nul\\u0000 us\\u001f del\\u007f ls\\u2028 ps\\u2029 na\\u00efve \\ud83d\\ude00 lone\\ud800\"}",
+      "canonical": "{\"s\":\"quote\\\" back\\\\ slash/ nl\\n tab\\t nul\\u0000 us\\u001f del ls  ps  naïve 😀 lone\\ud800\"}",
+      "sha256": "2283ae1ec5a9db55f9612521ecc7258f271d765a77faa28ab92f40c52caa9619"
+    },
+    {
+      "name": "nested arrays keep order and sort objects inside them",
+      "input_json": "[[[]],[{\"b\":[1,{\"d\":0,\"c\":[]}],\"a\":null}],[],{}]",
+      "canonical": "[[[]],[{\"a\":null,\"b\":[1,{\"c\":[],\"d\":0}]}],[],{}]",
+      "sha256": "799812cc3941cadfa635848dfa7fe70e8138c9c55899a20505ceb69301b83c55"
+    },
+    {
+      "name": "numbers use the shortest JS form",
+      "input_json": "{\"n\":[0,-0,1E2,1.0,1e21,1e-7,0.1,-1.5,123456789012345678901,5e-324,1.7976931348623157e308,9007199254740993,1791201600000]}",
+      "canonical": "{\"n\":[0,0,100,1,1e+21,1e-7,0.1,-1.5,123456789012345680000,5e-324,1.7976931348623157e+308,9007199254740992,1791201600000]}",
+      "sha256": "bdb9221cbdcba5943170709c02634b1198efd2db9b39e98060be37d8181b3e08"
+    },
+    {
+      "name": "a __proto__ key is an ordinary key",
+      "input_json": "{\"z\":1,\"__proto__\":{\"b\":1,\"a\":2},\"a\":0}",
+      "canonical": "{\"__proto__\":{\"a\":2,\"b\":1},\"a\":0,\"z\":1}",
+      "sha256": "6f42941bc45536ee179a60c72fe997c79aab87ae607305463eff8d8938d733bf"
+    },
+    {
+      "name": "duplicate keys keep the last value",
+      "input_json": "{\"a\":1,\"b\":2,\"a\":3}",
+      "canonical": "{\"a\":3,\"b\":2}",
+      "sha256": "493df656a590967c84d643bdd55ee956fb53262c51b154115083c9bcc4c992e3"
+    },
+    {
+      "name": "scalars and empty containers",
+      "input_json": "[null,true,false,\"\",{},[],\"scalar\"]",
+      "canonical": "[null,true,false,\"\",{},[],\"scalar\"]",
+      "sha256": "b30b79c93a6e999655eafc64ac114c463a41d59297d085b20c4f1945c123497c"
+    },
+    {
+      "name": "top-level string",
+      "input_json": "\"text \\u00e9\"",
+      "canonical": "\"text é\"",
+      "sha256": "b1f8b03cccffcefed438792a2408ce7917f293e83df6a4d7af65315bc692afbb"
+    },
+    {
+      "name": "top-level null",
+      "input_json": "null",
+      "canonical": "null",
+      "sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b"
+    },
+    {
+      "name": "runtime policy envelope",
+      "input_json": "{\"tenant_id\":\"22222222-2222-4222-8222-222222222222\",\"sequence\":1791201600000,\"schema_version\":1,\"policy_version\":\"4\",\"policy_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"key_id\":\"policy-2026-10\",\"issued_at\":\"2026-10-05T12:00:00.000Z\",\"governance_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"expires_at\":\"2026-10-06T12:00:00.000Z\"}",
+      "canonical": "{\"expires_at\":\"2026-10-06T12:00:00.000Z\",\"governance_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_at\":\"2026-10-05T12:00:00.000Z\",\"key_id\":\"policy-2026-10\",\"policy_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"policy_version\":\"4\",\"schema_version\":1,\"sequence\":1791201600000,\"tenant_id\":\"22222222-2222-4222-8222-222222222222\"}",
+      "sha256": "c2b2a1a99acf368beebc5cec011b3d93bb855a80132580b28757c8aa1904a39d"
+    },
+    {
+      "name": "empty governance overlay",
+      "input_json": "{\"mcp_require_approval_servers\":[],\"mcp_deny_servers\":[]}",
+      "canonical": "{\"mcp_deny_servers\":[],\"mcp_require_approval_servers\":[]}",
+      "sha256": "5b8e9e60f5b22d52bdd9ea93987877f1f925dc52b6bb88d907b784fe2505abd3"
+    },
+    {
+      "name": "runtime policy with MCP lists",
+      "input_json": "{\"mcp_deny_tools\":[\"a__b.tool\",\"[\\\"a.b\\\",\\\"c\\\"]\"],\"command_default\":\"ask\",\"mcp_allow_servers\":[\"github\",\"a__b\"],\"mcp_default\":\"require_approval\"}",
+      "canonical": "{\"command_default\":\"ask\",\"mcp_allow_servers\":[\"github\",\"a__b\"],\"mcp_default\":\"require_approval\",\"mcp_deny_tools\":[\"a__b.tool\",\"[\\\"a.b\\\",\\\"c\\\"]\"]}",
+      "sha256": "67ec9168af5b37c54e1909d6ab0aeee5d978828426b0285f3d7f3cd3683f797d"
+    }
+  ]
+}

@@ -5,16 +5,20 @@
 //
 //   policy_signed: { alg: "ed25519", key_id, sig_b64, envelope }
 //
-// `sig_b64` is an Ed25519 signature over UTF-8 `canonicalJson(envelope)`. Edge Functions are
-// deployed independently of the workspace packages and cannot import packages/core, so the
-// canonicalisation is copied here; supabase/functions/__tests__/policy-signature.test.ts
-// compares it with core over a corpus and runs the real core verifier on this module's output.
+// `sig_b64` is an Ed25519 signature over UTF-8 `canonicalJson(envelope)`, the shared
+// canonical form of ./canonical-json.ts (the server copy of core's `canonicalPolicyJson`);
+// supabase/functions/__tests__/policy-signature.test.ts checks both copies against
+// docs/contracts/policy-canonical-json-vectors.json and runs the real core verifier on this
+// module's output.
 //
 // Key provisioning mirrors the entitlement key: a dedicated policy key is recommended so a leaked
 // policy key cannot mint entitlements. With no policy key the entitlement signing key is reused
 // (matching the connector falling back from control_plane.policy_public_keys_pem to
 // licensing.public_keys_pem). With neither the policy is served unsigned.
+import { canonicalJson } from "./canonical-json.ts";
 import { type EnvReader, isConfiguredValue } from "./config.ts";
+
+export { canonicalJson };
 
 type PolicyEnvelope = {
 	schema_version: 1;
@@ -50,20 +54,6 @@ export type PolicySigningConfig = { keyId: string; pkcs8B64: string; ttlHours: n
 
 /** Stable machine-readable code for a half-configured or unusable signing setup (HTTP 503). */
 export const POLICY_SIGNING_UNAVAILABLE = "policy_signing_unavailable";
-
-/** Same recursive key-sorted form as `canonicalizeForSigning` in packages/core/src/managed.ts. */
-function canonicalizeForSigning(value: unknown): unknown {
-	if (Array.isArray(value)) return value.map((v) => canonicalizeForSigning(v));
-	if (!value || typeof value !== "object") return value;
-	const obj = value as Record<string, unknown>;
-	const out: Record<string, unknown> = {};
-	for (const key of Object.keys(obj).sort()) out[key] = canonicalizeForSigning(obj[key]);
-	return out;
-}
-
-export function canonicalJson(value: unknown): string {
-	return JSON.stringify(canonicalizeForSigning(value));
-}
 
 function parseTtlHours(env: EnvReader): number | null {
 	const raw = (env("AIDR_POLICY_SIGNATURE_TTL_HOURS") ?? "").trim();

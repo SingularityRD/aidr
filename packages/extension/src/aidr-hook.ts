@@ -227,6 +227,31 @@ async function handleCursor(payload: unknown): Promise<void> {
 }
 
 /**
+ * VS Code agent-hook lifecycle events that never carry a tool call: session
+ * start, agent/subagent stop, subagent start and context compaction. AIDR does
+ * not register for them, but a user or organisation hook file may route them to
+ * this command. A deny there protects nothing (no tool runs on these events)
+ * and actively breaks the host: on `Stop`/`SubagentStop` the common
+ * `decision: "block"` means "keep the agent running", and `continue: false`
+ * ends the session. They get the neutral `{}` response instead.
+ *
+ * Everything else stays fail closed: a lifecycle event whose payload still
+ * names a tool or a command is ambiguous and is denied, and an unrecognised
+ * event name is denied because it may be a newer tool-call event (for example
+ * a permission request) that this version cannot inspect.
+ */
+const VSCODE_LIFECYCLE_EVENTS: ReadonlySet<string> = new Set([
+	"SessionStart",
+	"Stop",
+	"SubagentStart",
+	"SubagentStop",
+	"PreCompact",
+]);
+
+/** Payload fields through which a hook event could describe a tool call. */
+const TOOL_CALL_FIELDS = ["tool_name", "toolName", "tool_input", "toolInput", "command"] as const;
+
+/**
  * VS Code routing is by the explicit hook event name only. A payload's keys
  * never select the event: a PreToolUse payload that also carries a
  * `tool_response` key is still evaluated, never treated as completed output.
@@ -235,13 +260,16 @@ async function handleCursor(payload: unknown): Promise<void> {
  */
 function vsCodeEvent(
 	payload: unknown,
-): "UserPromptSubmit" | "PreToolUse" | "PostToolUse" | "unsupported" {
+): "UserPromptSubmit" | "PreToolUse" | "PostToolUse" | "lifecycle" | "unsupported" {
 	if (!payload || typeof payload !== "object" || Array.isArray(payload)) return "PreToolUse";
 	const input = payload as Record<string, unknown>;
 	if ("hook_event_name" in input || "hookEventName" in input) {
 		const name = input.hook_event_name ?? input.hookEventName;
-		return name === "UserPromptSubmit" || name === "PreToolUse" || name === "PostToolUse"
-			? name
+		if (name === "UserPromptSubmit" || name === "PreToolUse" || name === "PostToolUse") return name;
+		return typeof name === "string" &&
+			VSCODE_LIFECYCLE_EVENTS.has(name) &&
+			TOOL_CALL_FIELDS.every((field) => input[field] === undefined)
+			? "lifecycle"
 			: "unsupported";
 	}
 	return typeof input.prompt === "string" && input.tool_name === undefined
@@ -257,6 +285,11 @@ async function handleVsCode(payload: unknown): Promise<void> {
 	}
 	if (event === "PostToolUse") {
 		await handleVsCodeToolOutput(payload);
+		return;
+	}
+	if (event === "lifecycle") {
+		// No tool call to inspect; see VSCODE_LIFECYCLE_EVENTS.
+		writeJson({});
 		return;
 	}
 	if (event === "unsupported") {

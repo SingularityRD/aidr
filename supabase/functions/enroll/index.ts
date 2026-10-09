@@ -7,6 +7,7 @@
 // This makes first-time setup easy while keeping API keys hash-only at rest.
 
 import { createClient } from "npm:@supabase/supabase-js@2.116.0";
+import { canonicalJson } from "../_shared/canonical-json.ts";
 import { configFailure, loadConfig, partialGroupError, runtimeEnv } from "../_shared/config.ts";
 import { capEntitlementTimes, parseActiveAdmission, parseEffectiveSeats } from "../_shared/effective-seats.ts";
 import { readBoundedJson } from "../_shared/request-limits.ts";
@@ -61,19 +62,6 @@ async function sha256Hex(input: string): Promise<string> {
 	return Array.from(bytes)
 		.map((b) => b.toString(16).padStart(2, "0"))
 		.join("");
-}
-
-function canonicalizeForSigning(value: unknown): unknown {
-	if (Array.isArray(value)) return value.map((v) => canonicalizeForSigning(v));
-	if (!value || typeof value !== "object") return value;
-	const obj = value as Record<string, unknown>;
-	const out: Record<string, unknown> = {};
-	for (const key of Object.keys(obj).sort()) out[key] = canonicalizeForSigning(obj[key]);
-	return out;
-}
-
-function canonicalJson(value: unknown): string {
-	return JSON.stringify(canonicalizeForSigning(value));
 }
 
 function bytesToBase64(bytes: Uint8Array): string {
