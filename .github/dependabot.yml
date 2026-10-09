@@ -1,7 +1,7 @@
 # Version PRs are temporarily paused during consolidated dependency qualification.
-# Security updates remain enabled. Restore npm=10 and Actions/other pip/Docker=5
-# after coordinated lock, build and acceptance gates; keep NER paused until its
-# platform hash locks, wheel evidence and native inference gates are repaired.
+# Security updates are not restricted by these limits. Restore npm=10 and
+# Actions/other pip/Docker=5 after lock, build and acceptance gates. Keep NER
+# paused until its hash locks, wheel evidence and inference gates are repaired.
 version: 2
 updates:
   # Enable version updates for npm

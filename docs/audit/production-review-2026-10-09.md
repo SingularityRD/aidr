@@ -27,7 +27,7 @@ Ana dal güncellenince Dependabot toplam 14 ek ref açtı. Beş NER ve beş AIG 
 
 Vite 6.4.4, CLI Node 20 tip patch’i ve esbuild 0.28.2 alındı. Esbuild root override ile birlikte hizalandı ve lock yeniden üretildi; diğer Node 22 sözleşmeleri ve Sentry 10.76.2 korundu. CodeQL 4.38.2 tag nesnesi resmi GitHub commitine açılarak doğrulandı; init/autobuild/analyze/upload-sarif birlikte aynı immutable SHA ile güncellendi.
 
-Version PR’ları merge sonrası sürekli yeni dal açtığı için Dependabot sürüm önerileri koordineli dependency kabulü tamamlanana kadar geçici durduruldu. Güvenlik güncellemeleri bu limite tabi değildir. Kabulden sonra npm limiti 10, Actions/diğer Python/Docker limitleri 5 olarak geri açılmalı; NER kendi resolver/hash-lock/wheel/inference kabulü tamamlanana kadar 0 kalmalı. [GitHub seçenek referansı](https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference#open-pull-requests-limit).
+Version PR’ları merge sonrası sürekli yeni dal açtığı için Dependabot sürüm önerileri koordineli dependency kabulü tamamlanana kadar geçici durduruldu. Güvenlik PR’ları bu limite tabi değildir; ancak GitHub API kontrolünde repository automated security fixes ayarı zaten kapalı bulundu (9 Ekim 15:15:40 UTC). Bu hesap ayarı değiştirilmedi; production kabulünde açılması gerekir. Kabulden sonra npm limiti 10, Actions/diğer Python/Docker limitleri 5 olarak geri açılmalı; NER kendi resolver/hash-lock/wheel/inference kabulü tamamlanana kadar 0 kalmalı. [GitHub seçenek referansı](https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference#open-pull-requests-limit).
 
 Dal envanterindeki SHA değerleri silinen ref'lerin geri bulunmasını sağlar. Birleşmiş geçmişte tüm commit'ler erişilebilir kalır. Çalışma klasörleri silinmez; commit edilmemiş değişiklikler korunarak dallar detached HEAD durumuna alınır. Son sayılar ve doğrulamalar raporun sonunda yer alır.
 
@@ -227,6 +227,7 @@ Kaynak: [mcp-launch-redaction.ts](../../packages/core/src/mcp-launch-redaction.t
 | Python NER stack | Yükseltmelerin geri alınması tek başına eski stack'i sağlıklı yapmaz. Linux Python 3.11 lock'undaki networkx 3.7 de Python 3.12 ister; Repository verifier mevcut iki lock ve wheel kanıtında 8 bağlama sorunu buldu; her iki source_lock_sha256 farklı, filelock/networkx ve bazı Windows paket kanıtları pinlerle eşleşmiyor. | Platform bazında resolver ve hash-verified wheel kurulumu, pip check, NER inference; eşleşen SBOM ve aday kanıtı. |
 | Host ve browser kabulü | Native support matrix NO-GO; müşteri imzalı adaya bağlı tam OS/architecture/host/version ve gerçek browser/site matrisi yok. | Satılacak kapsamın gerçek host E2E testleri, MDM/notarization ve signed artifact kabulü. |
 | Güvenlik | Historical secret triage 132 detection ve iki owner-confirm kaydı açık; doğrulanmış canlı credential iddiası yok. Bağımsız assessment/retest eksik. | Owner triage/rotation kararı, final secret taraması, pentest ve bulgu kapanışı. |
+| Güvenlik otomasyonu | GitHub API kontrolünde repository automated security fixes enabled=false (9 Ekim 15:15:40 UTC). Sürüm PR limitleri security PR’larını sınırlamasa da mevcut hesap ayarı onları kapalı tutuyor. | Otomatik security fix özelliğini açın; final dependency ve image taramalarını aday bağlı kabul edin. |
 | Operasyon | Bağımsız hata alanına restore, kabul edilmiş RPO/RTO, çalışan on-call alarmı ve sekiz saat soak/failover kanıtı eksik. | Authenticated load/noisy-neighbour/failover, restore ve aylık SLI/SLA kanıtları. |
 | Ticari ve hukuki kabul | Finans/entitlement/provider anahtarları, IP/privacy/residency, private registry ve müşteri PoV gate'leri açık. | İlgili sahiplerin aday bağlı kabul receipt'leri. |
 
@@ -240,13 +241,14 @@ Eski belgelerdeki tüm migration'ların hiç PostgreSQL'de çalışmadığı idd
 
 İncelenen kaynak commit: 0e72b1681480078de582ba08a0737ce5450f0de9. Rapor ve envanter bu kaynağın ardından ayrı bir belge commit’i olarak kaydedildi.
 
-- Ana dal fast-forward ile güncellendi; ana dal güncellemesi ve uzak dal silmeleri iki atomic push ile yapıldı. Her silme, son incelenen uzak uç SHA için lease kullandı.
+- Ana dal fast-forward ile güncellendi; ana dal güncellemesi ve uzak dal silmeleri 3 atomic push ile yapıldı. Her silme, son incelenen uzak uç SHA için lease kullandı.
 - Başlangıçtaki 112 ref ve sonradan açılan 14 ref’in commitleri master geçmişinde bulunuyor. 73 yerel dal ve 47 farklı uzak dal silindi; otomasyonun yeniden açtığı dallarla toplam 51 uzak silme işlemi yapıldı. Yerelde ve uzakta yalnız master kaldı.
-- İncelenen 28 PR GitHub’da MERGED durumunda. 53 çalışma klasörü korundu. Diğer 52 klasör aynı HEAD’de detached durumuna alındı; öncesi ve sonrası tracked/staged/untracked içerik parmak izleri birebir eşleşti. Başlangıçta 11 klasördeki commit edilmemiş değişiklikler korundu.
+- İncelenen 34 PR’ın 33 tanesi GitHub’da MERGED; #144 CLOSED durumunda. #144 uç commit’i master geçmişinde bulunuyor ve esbuild 0.28.2 uyumlu override/lock ile kabul edildi. 53 çalışma klasörü korundu. Diğer 52 klasör aynı HEAD’de detached durumuna alındı; öncesi ve sonrası tracked/staged/untracked içerik parmak izleri birebir eşleşti. Başlangıçta 11 klasördeki commit edilmemiş değişiklikler korundu.
 - Tüm ref SHA’ları, merge kararları, PR sonuçları ve içerik koruma parmak izleri branch-consolidation-2026-10-09.json içinde kayıtlı. Ref silinmesi commit geçmişini silmedi.
 
 | Kontrol | Sonuç ve kapsam |
 | --- | --- |
+| Final seçili kaynak kontrolleri | 9649037b üzerinde 14/14 PASS, 0 FAIL, 0 SKIP. Kurulum, hygiene, secret scan, lint, tip/Knip/duplicate kontrolü, dependency audit, workflow/drift ve koruma gate’leri dahil. |
 | Temiz kurulum, tip kontrolü, lint, Knip ve duplicate gate | Son kaynakta PASS. Node 22 sözleşmeleri ve CLI’nin kendi Node 20 tip patch’i doğrulandı. |
 | npm production ve build dependency audit | Son kaynakta PASS, tüm severity düzeylerinde 0 advisory. Docker/Python taraması bu sonuca dahil değil. |
 | Current-worktree secret scan | Resmi checksum doğrulanmış Gitleaks 8.30.1 ile PASS. Historical owner triage ayrıca açık. |
@@ -263,7 +265,7 @@ Eski belgelerdeki tüm migration'ların hiç PostgreSQL'de çalışmadığı idd
 | CI workflow bütünlüğü | Son CodeQL değişikliğinin ardından 5/5 seçili workflow/drift/guard adımı PASS. Resmi tag SHA doğrulandı. |
 | HOME ve dosya koruması | Gerçek HOME’a yazılmadığı ve final temiz ağacın değişmediği bağımsız kontroller PASS. |
 
-Koşu sınırları: PostgreSQL test adımı geçti fakat eşzamanlı yetkili test düzeltmeleri sırasında aynı koşunun unchanged-tree guard’ı başarısız oldu; güncel temiz ağaç sonraki bağımsız guard’larla doğrulandı. Son 14 adımlı kaynak kontrolünde 13 PASS ve hygiene timeout vardı; 27 assertion geçmişti. Aynı deadline ile hygiene tekrarı 4/4 PASS verdi. Windows runner dış Bash’i kapatınca alt süreçler devam edebildiği için bu timeout’ın gerçek duvar süresi 3 dakika yerine 5 dakika 38 saniye oldu; süreç ağacı sonlandırma davranışı ayrıca iyileştirilmeli.
+Koşu sınırları: PostgreSQL test adımı geçti fakat eşzamanlı yetkili test düzeltmeleri sırasında aynı koşunun unchanged-tree guard’ı başarısız oldu; güncel temiz ağaç sonraki bağımsız guard’larla doğrulandı. Önceki 14 adımlı kaynak kontrolünde 13 PASS ve hygiene timeout vardı; 27 assertion geçmişti. Aynı deadline ile hygiene tekrarı 4/4 PASS verdi; final kaynak kontrolü 9649037b üzerinde 14/14 PASS tamamlandı. Windows runner dış Bash’i kapatınca alt süreçler devam edebildiği için önceki timeout’ın gerçek duvar süresi 3 dakika yerine 5 dakika 38 saniye oldu; süreç ağacı sonlandırma davranışı ayrıca iyileştirilmeli.
 
 Yerel koşu JSON ve günlükleri .ci-local/merge-review altında tutuldu. Coverage, tam gerçek host/browser/OS matrisi, Python model kurulumu ve signed production acceptance çalıştırılmadı. Bu kayıtlar release GO receipt’i değildir.
 

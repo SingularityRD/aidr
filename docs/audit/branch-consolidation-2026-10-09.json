@@ -1,6 +1,6 @@
 {
   "schema": "aidr.branch-consolidation-review/v1",
-  "createdAt": "2026-10-09T15:13:27.764Z",
+  "createdAt": "2026-10-09T15:23:59.356Z",
   "sourceCommit": "0e72b1681480078de582ba08a0737ce5450f0de9",
   "remote": "https://github.com/SingularityRD/aidr.git",
   "remainingLocalBranches": [
@@ -15,7 +15,10 @@
     "localBranchesDeleted": 73,
     "uniqueRemoteBranchesDeleted": 47,
     "remoteDeletionEvents": 51,
-    "pullRequestsMerged": 28,
+    "atomicPushes": 3,
+    "pullRequestsReviewed": 34,
+    "pullRequestsMerged": 33,
+    "pullRequestsClosed": 1,
     "worktrees": 53,
     "detachedWorktreesPreserved": 52,
     "originalDirtyWorktrees": 11
@@ -669,7 +672,11 @@
     }
   ],
   "versionUpdatePause": {
-    "reason": "Prevent queue refills during consolidated dependency qualification; security updates remain enabled",
+    "reason": "Prevent queue refills during consolidated dependency qualification; version PR limits do not restrict security PRs",
+    "repositoryAutomatedSecurityFixesEnabled": false,
+    "repositorySettingVerifiedAt": "2026-10-09T15:15:40Z",
+    "securitySettingChangedByThisReview": false,
+    "securityRemediation": "Enable repository automated security fixes; the existing repository setting is disabled",
     "resumeLimitsAfterQualification": {
       "npm": 10,
       "githubActions": 5,
@@ -678,6 +685,12 @@
       "ner": 0
     },
     "nerResumeCondition": "Repair coordinated platform hash locks, wheel evidence and native inference gates"
+  },
+  "closedPullRequestResolution": {
+    "number": 144,
+    "branchTip": "0fcc01153913473a0bedbb9bc73b96ed339992af",
+    "includedInMasterHistory": true,
+    "resolution": "GitHub records CLOSED; tip is an ancestor of master and esbuild 0.28.2 was accepted with matching root override and regenerated lock"
   },
   "localDeletions": [
     {
@@ -1313,36 +1326,36 @@
     },
     {
       "number": 143,
-      "state": "OPEN",
-      "mergedAt": null,
+      "state": "MERGED",
+      "mergedAt": "2026-10-09T15:13:27Z",
       "headRefName": "dependabot/pip/services/aig-bridge/starlette-1.7.0",
       "url": "https://github.com/SingularityRD/aidr/pull/143"
     },
     {
       "number": 142,
-      "state": "OPEN",
-      "mergedAt": null,
+      "state": "MERGED",
+      "mergedAt": "2026-10-09T15:13:26Z",
       "headRefName": "dependabot/pip/services/aig-bridge/psycopg-3.3.6",
       "url": "https://github.com/SingularityRD/aidr/pull/142"
     },
     {
       "number": 141,
-      "state": "OPEN",
-      "mergedAt": null,
+      "state": "MERGED",
+      "mergedAt": "2026-10-09T15:13:26Z",
       "headRefName": "dependabot/pip/services/aig-bridge/uvicorn-0.54.0",
       "url": "https://github.com/SingularityRD/aidr/pull/141"
     },
     {
       "number": 140,
-      "state": "OPEN",
-      "mergedAt": null,
+      "state": "MERGED",
+      "mergedAt": "2026-10-09T15:13:27Z",
       "headRefName": "dependabot/pip/services/aig-bridge/pytest-9.1.1",
       "url": "https://github.com/SingularityRD/aidr/pull/140"
     },
     {
       "number": 139,
-      "state": "OPEN",
-      "mergedAt": null,
+      "state": "MERGED",
+      "mergedAt": "2026-10-09T15:13:27Z",
       "headRefName": "dependabot/pip/services/aig-bridge/pydantic-2.13.5",
       "url": "https://github.com/SingularityRD/aidr/pull/139"
     },
@@ -2365,19 +2378,14 @@
       "warmPersistentMs": 745
     },
     "latestSourceChecks": {
-      "sourceCommit": "3c3c0f2ff46697a97b0c709a8a3a990cc1c2a8db",
+      "sourceCommit": "9649037b95d9b646ac44a50d8cdb9b6181e3f68e",
       "counts": {
-        "PASS": 13,
-        "FAIL": 1,
+        "PASS": 14,
+        "FAIL": 0,
         "SKIPPED": 0,
         "NOT RUN": 0
       },
-      "failedSteps": [
-        {
-          "id": "repo-hygiene",
-          "reason": "timed out after 3m00s"
-        }
-      ],
+      "failedSteps": [],
       "selectedResults": [
         {
           "id": "guard-home-record",
@@ -2389,7 +2397,7 @@
         },
         {
           "id": "repo-hygiene",
-          "status": "FAIL"
+          "status": "PASS"
         },
         {
           "id": "secret-scan",
@@ -2543,7 +2551,7 @@
     "knownRunLimitations": [
       "Initial full unit run had 12 failures; all affected suites passed targeted reruns, but no second full suite was run",
       "Blocking PostgreSQL step passed; its enclosing run failed the unchanged-tree guard while authorized test edits and integration were in progress",
-      "Source-check run timed out repository-hygiene tests despite 27 passing assertions; same-deadline hygiene retry and guards passed",
+      "An earlier source-check attempt timed out repository-hygiene tests despite 27 passing assertions; the final selected source checks passed 14/14 without skips",
       "Coverage, complete native/host/browser acceptance and independent production security/operations/commercial gates remain open"
     ]
   },
