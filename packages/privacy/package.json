@@ -124,7 +124,7 @@
   },
   "devDependencies": {
     "typescript": "^5.9.0",
-    "@types/node": "^22.0.0"
+    "@types/node": "^20.19.43"
   },
   "peerDependencies": {
     "@singularityrd/aidr-mcp-gateway": "workspace:0.6.0"
