@@ -582,10 +582,27 @@ yoktur.
   bağlı bölüm/sayfa/nesneler, eklenti/applet/çerçeveler, OLE nesneleri ve gömülü medya gibi
   diğer ikili parçalar.
 - **Eski `.doc`, `.xls`, `.ppt`** (OLE bileşik dosyaları; içerik ya da MIME türünden de
-  tanınır) ayrıştırılmaz ve hiçbir zaman denetlenmiş sayılmaz: kullanıcıya dosyayı
-  `.docx`/`.xlsx`/`.pptx` olarak kaydetmesini söyleyen bir uyarıyla yüklenir
-  (`LEGACY_OFFICE_FORMAT`), `block` modunda engellenir ve `documentHandling: "block"`
-  altında diğer belgelerle birlikte reddedilir.
+  tanınır) tarayıcıda sınırları belirli, bağımlılıksız bir bileşik dosya okuyucusuyla okunur
+  ve metinleri taranır, ancak hiçbir zaman yeniden yazılmaz (ikili kayıt biçimlerini yerinde
+  değiştirmek güvenli değildir). Okunanlar: Word gövdesi, üst/alt bilgiler, dipnotlar,
+  açıklamalar, metin kutuları ve alan kodları (parça tablosunun 8 bit ve UTF-16 parçaları);
+  Excel paylaşılan dizeleri, metin/sayı/formül hücreleri (XLSX'teki gibi ilk satır sütun
+  başlığıdır), sayfa adları, üst/alt bilgiler, açıklamalar ve yazarları, köprü hedefleri;
+  PowerPoint slayt, not, asıl slayt ve açıklama metinleri ile köprüler; belge özellikleri ve
+  gömülü Word/Excel/PowerPoint nesneleri. Bulgu içeren dosya engellenir
+  (`SENSITIVE_DATA_IN_LEGACY_OFFICE`) ve kullanıcıya dosyayı AIDR'ın maskeleyebildiği
+  `.docx`/`.xlsx`/`.pptx` biçiminde kaydetmesi söylenir; `monitor` modu kaydeder. Tamamen
+  okunmuş, temiz bir dosyaya izin verilir. Tamamen okunamamış olabilecek bir dosya (Word
+  6/95, Excel 5/95, pivot önbellekleri, bozuk kayıtlar ya da hiç bileşik dosya olmaması)
+  hiçbir zaman denetlenmiş sayılmaz: "tam olarak denetlenemedi" uyarısıyla yüklenir
+  (`LEGACY_OFFICE_FORMAT` ile birlikte `LEGACY_OFFICE_UNSUPPORTED`, `LEGACY_OFFICE_PARTIAL`
+  ya da `DOCUMENT_UNPARSEABLE`), `block` modunda engellenir; okunabilen kısımdaki bulgular
+  yine engeller. Parola koruması, VBA ya da Excel 4.0 makroları, diğer gömülü nesneler ve
+  bozuk ya da saldırgan bir kapsayıcı (döngülü sektör zincirleri, dosya dışındaki sektörler,
+  kesilmiş dosya, boyut sınırlarının aşılması) reddedilir (`DOCUMENT_ENCRYPTED`,
+  `DOCUMENT_MACROS`, `DOCUMENT_EMBEDDED_OBJECT`, `DOCUMENT_MALFORMED`,
+  `DOCUMENT_LIMIT_EXCEEDED`). `documentHandling: "block"` altında diğer belgelerle birlikte
+  reddedilir.
 - **Office ve OpenDocument dosyalarındaki resimler**: ilk sayfa küçük resmi maskelemeden
   önceki metni gösterir; bu yüzden yeniden yazılan paketin küçük resmi boş bir görselle
   değiştirilir. Native host OCR'ı varsa PNG/JPEG/WebP resimler incelenir ve hassas metin
@@ -635,7 +652,8 @@ duraklatma süresince) dosyalar değiştirilmeden geçer ve yalnızca sayılır.
 |---|---|
 | Temizlendi | "1 dosya yüklenmeden önce temizlendi: 2 EMAIL" / "1 file sanitized before upload: 2 EMAIL" |
 | İkili, engellenmedi | `"report.pdf" taranamadı (ikili dosya). Göndermeden önce kontrol edin.` |
-| Eski Office, engellenmedi | `"eski.doc" eski bir Office dosyası (.doc/.xls/.ppt); AIDR bu biçimi denetleyemez. Maskelenmesi için .docx/.xlsx/.pptx olarak kaydedin ya da göndermeden önce kontrol edin.` |
+| Eski Office tam okunamadı, engellenmedi | `"eski.doc" eski bir Office dosyası (.doc/.xls/.ppt); AIDR bu dosyayı tam olarak denetleyemedi. Maskelenmesi için .docx/.xlsx/.pptx olarak kaydedin ya da göndermeden önce kontrol edin.` |
+| Hassas veri içeren eski Office dosyası | `"sozlesme.doc" yüklenmedi (SENSITIVE_DATA_IN_LEGACY_OFFICE, 1 EMAIL). Eski Office dosyaları (.doc/.xls/.ppt) maskelenemez. Dosyayı .docx/.xlsx/.pptx olarak kaydedip onu yükleyin: AIDR bu biçimleri maskeler.` |
 | Görsel incelenmedi | `"ekran.png" bir görsel ve içeriği denetlenmedi (yerel OCR yardımcısı yok ya da görseli okuyamadı). Göndermeden önce kontrol edin.` |
 | Belgedeki resimler incelenmedi | `"rapor.docx" içindeki görseller denetlenmedi. Göndermeden önce kontrol edin.` |
 | Hassas veri içeren görsel | `"ekran.png" yüklenmedi (SENSITIVE_DATA_IN_IMAGE, 1 EMAIL). Görselde hassas veri görünüyor ve görseller maskelenemez. Yüklemeden önce kırpın ya da karartın.` |
@@ -679,7 +697,9 @@ yüklenen baytları yeniden açarak `word/document.xml` içeriğini denetler;
 baloncuğun metni yapıştırmayı önerdiğini doğrular. `file-upload-odt` aynısını değerleri
 span'lere bölünmüş bir ODT için yapar, `file-upload-pptx-thumbnail` maskelenen sununun küçük
 resminin Chromium'un çözebildiği boş bir görselle değiştirildiğini, `file-upload-legacy-doc`
-ise eski biçim uyarısını doğrular.
+bir Word 95 `.doc` dosyası için "tam olarak denetlenemedi" uyarısını,
+`file-upload-legacy-doc-blocked` ise e-posta adresi içeren bir `.doc` dosyasının sayfaya hiç
+ulaşmadığını ve baloncuğun dosyayı `.docx` olarak kaydetmeyi önerdiğini doğrular.
 
 **Kapsam**
 
@@ -705,8 +725,11 @@ ise eski biçim uyarısını doğrular.
 - Office maskelemesi metni kapsar. Sayfa adları, tanımlı adlar, tablo sütun adları ve pivot
   önbelleğindeki sayısal değerler yeniden yazılmaz (maskelenen bir başlık hücresi Excel'in
   bir tablonun sütun adını onarmasına yol açabilir); OpenDocument sayfa ve tablo adları için
-  de aynısı geçerlidir. Eski `.doc`/`.xls`/`.ppt` dosyaları ayrıştırılmaz: yalnız uyarıyla
-  geçer ya da engellenir.
+  de aynısı geçerlidir. Eski `.doc`/`.xls`/`.ppt` dosyaları taranır ama maskelenmez: bulgu
+  içeren dosya engellenir ve maskelenmiş olarak yüklenmesi için `.docx`/`.xlsx`/`.pptx`
+  olarak kaydedilmesi gerekir. Bu dosyalardaki resimlere OCR uygulanmaz, Word düzeltme/
+  açıklama yazar tabloları ile Excel tanımlı adları ve veri doğrulama listeleri okunmaz,
+  pivot önbellekleri ayrıştırılmaz (dosya kısmen okunmuş olarak bildirilir).
 - UTF-8 olmayan metin dosyaları Windows-1254 (Türkçe) olarak, daha uygun düştüğünde
   Windows-1252 olarak çözülür, taranır ve maskelenmiş kopya UTF-8 olarak yüklenir (CSV/TSV
   için BOM ile). Başka tek baytlık kodlamalardaki dosyalar (örneğin Kiril Windows-1251) bu

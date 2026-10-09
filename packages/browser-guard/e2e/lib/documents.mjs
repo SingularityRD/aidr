@@ -125,11 +125,75 @@ export function thumbnailPptx(email) {
 	});
 }
 
-/** A legacy binary Office file (OLE compound file signature). */
-export function legacyDoc() {
-	const bytes = Buffer.alloc(1024);
-	Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]).copy(bytes);
-	return bytes;
+/**
+ * A minimal Word 97-2003 .doc (OLE compound file, version 3) whose single UTF-16 piece holds
+ * `text`. Both streams are padded to 4096 bytes so they live in regular sectors (no mini
+ * stream). `nFib` below 193 makes it a Word 6/95 file, which AIDR reports as unsupported.
+ */
+export function legacyDoc(text = "Toplanti notlari", { nFib = 0x00c1 } = {}) {
+	const STREAM = 4096;
+	const doc = Buffer.alloc(STREAM);
+	doc.writeUInt16LE(0xa5ec, 0);
+	doc.writeUInt16LE(nFib, 2);
+	doc.writeUInt16LE(0x0200, 0x0a); // fWhichTblStm: the 1Table stream
+	doc.writeUInt16LE(14, 32); // csw
+	doc.writeUInt16LE(22, 62); // cslw
+	doc.writeUInt32LE(text.length, 64 + 12); // ccpText
+	doc.writeUInt16LE(93, 152); // cbRgFcLcb
+	const TEXT_AT = 1024;
+	doc.write(text, TEXT_AT, "utf16le");
+	const table = Buffer.alloc(STREAM);
+	// Clx: Pcdt with one piece [0, text.length) -> UTF-16 at TEXT_AT.
+	table.writeUInt8(0x02, 0);
+	table.writeUInt32LE(4 * 2 + 8, 1);
+	table.writeUInt32LE(0, 5);
+	table.writeUInt32LE(text.length, 9);
+	table.writeUInt32LE(TEXT_AT, 13 + 2);
+	doc.writeUInt32LE(0, 154 + 33 * 8); // fcClx
+	doc.writeUInt32LE(5 + 16, 154 + 33 * 8 + 4); // lcbClx
+
+	const SECTOR = 512;
+	const END = 0xfffffffe;
+	const per = STREAM / SECTOR; // 8 sectors per stream
+	// Sector 0: FAT, 1: directory, 2..9: WordDocument, 10..17: 1Table.
+	const fat = Buffer.alloc(SECTOR, 0xff);
+	fat.writeUInt32LE(0xfffffffd, 0);
+	fat.writeUInt32LE(END, 4);
+	for (const start of [2, 2 + per])
+		for (let i = 0; i < per; i++) fat.writeUInt32LE(i === per - 1 ? END : start + i + 1, (start + i) * 4);
+	const dir = Buffer.alloc(SECTOR);
+	const entry = (index, name, type, child, right, start, size) => {
+		const at = index * 128;
+		dir.write(name, at, "utf16le");
+		dir.writeUInt16LE((name.length + 1) * 2, at + 0x40);
+		dir.writeUInt8(type, at + 0x42);
+		dir.writeUInt8(1, at + 0x43);
+		dir.writeUInt32LE(0xffffffff, at + 0x44);
+		dir.writeUInt32LE(right, at + 0x48);
+		dir.writeUInt32LE(child, at + 0x4c);
+		dir.writeUInt32LE(start, at + 0x74);
+		dir.writeUInt32LE(size, at + 0x78);
+	};
+	entry(0, "Root Entry", 5, 1, 0xffffffff, END, 0);
+	entry(1, "WordDocument", 2, 0xffffffff, 2, 2, STREAM);
+	entry(2, "1Table", 2, 0xffffffff, 0xffffffff, 2 + per, STREAM);
+	const header = Buffer.alloc(SECTOR, 0xff);
+	header.fill(0, 0, 0x4c);
+	Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]).copy(header);
+	header.writeUInt16LE(0x3e, 0x18);
+	header.writeUInt16LE(3, 0x1a);
+	header.writeUInt16LE(0xfffe, 0x1c);
+	header.writeUInt16LE(9, 0x1e);
+	header.writeUInt16LE(6, 0x20);
+	header.writeUInt32LE(1, 0x2c); // one FAT sector
+	header.writeUInt32LE(1, 0x30); // directory at sector 1
+	header.writeUInt32LE(4096, 0x38);
+	header.writeUInt32LE(END, 0x3c); // no mini FAT
+	header.writeUInt32LE(0, 0x40);
+	header.writeUInt32LE(END, 0x44); // no DIFAT sectors
+	header.writeUInt32LE(0, 0x48);
+	header.writeUInt32LE(0, 0x4c); // DIFAT[0]: the FAT is sector 0
+	return Buffer.concat([header, fat, dir, doc, table]);
 }
 
 /** A one-page text PDF (Helvetica, Flate-compressed content) showing `lines`. */

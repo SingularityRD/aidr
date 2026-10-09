@@ -312,24 +312,30 @@ describe("OpenDocument and legacy Office policy and classification", () => {
 	});
 
 	it("never passes a legacy Office file off as checked", async () => {
+		// A bare OLE signature with no valid header: a corrupt container is refused.
 		for (const name of ["eski.doc", "eski.xls", "eski.ppt"]) {
 			expect(await sanitize(name, cfb())).toEqual({
-				action: "allow",
-				counts: {},
-				reasons: ["BINARY_FILE_UNSCANNED", "LEGACY_OFFICE_FORMAT"],
-			});
-			expect(await sanitize(name, cfb(), { policy: { mode: "block" } })).toEqual({
 				action: "block",
 				counts: {},
-				reasons: ["BINARY_FILE_UNSCANNABLE", "LEGACY_OFFICE_FORMAT"],
+				reasons: ["DOCUMENT_MALFORMED"],
 			});
 		}
-		// Without an extension, by MIME type or by the OLE signature.
-		expect((await sanitize("upload", cfb())).reasons).toContain("LEGACY_OFFICE_FORMAT");
+		// Without an extension, by MIME type or by the OLE signature (see
+		// files-legacy-office.test.ts for parsed files).
+		expect((await sanitize("upload", cfb())).reasons).toEqual(["DOCUMENT_MALFORMED"]);
 		const text = new TextEncoder().encode("x");
-		expect((await sanitize("upload", text, { type: "application/msword" })).reasons).toContain(
-			"LEGACY_OFFICE_FORMAT",
-		);
+		expect(await sanitize("upload", text, { type: "application/msword" })).toEqual({
+			action: "allow",
+			counts: {},
+			reasons: ["BINARY_FILE_UNSCANNED", "LEGACY_OFFICE_FORMAT", "DOCUMENT_UNPARSEABLE"],
+		});
+		expect(
+			await sanitize("upload", text, { type: "application/msword", policy: { mode: "block" } }),
+		).toEqual({
+			action: "block",
+			counts: {},
+			reasons: ["BINARY_FILE_UNSCANNABLE", "LEGACY_OFFICE_FORMAT", "DOCUMENT_UNPARSEABLE"],
+		});
 	});
 
 	it("treats a non-ZIP file named .odt as an unscanned binary", async () => {

@@ -552,9 +552,25 @@ and a PDF text extractor. There is no remote code, no WebAssembly and no new dep
   event listeners, DDE and linked sections, sheets or objects, plugins/applets/frames, OLE
   objects and other binary parts such as embedded media.
 - **Legacy `.doc`, `.xls`, `.ppt`** (OLE compound files, also recognised by content or MIME
-  type) are not parsed and never reported as checked: they are uploaded with a warning that
-  tells the user to save them as `.docx`/`.xlsx`/`.pptx` (`LEGACY_OFFICE_FORMAT`), blocked in
-  `block` mode, and refused with the other documents under `documentHandling: "block"`.
+  type) are read by a bounded, dependency-free compound-file reader in the browser and their
+  text is scanned, but never rewritten (patching binary record formats in place is not safe).
+  Read: Word body, headers/footers, footnotes, comments, text boxes and field codes (8-bit and
+  UTF-16 pieces of the piece table); Excel shared strings, text/number/formula cells (the first
+  row as column headers, as for XLSX), sheet names, headers/footers, comments and their
+  authors, hyperlink targets; PowerPoint slide, notes, master and comment text and hyperlinks;
+  document properties; and embedded Word/Excel/PowerPoint objects. A file with findings is
+  blocked (`SENSITIVE_DATA_IN_LEGACY_OFFICE`) and the user is told to save it as
+  `.docx`/`.xlsx`/`.pptx`, which AIDR masks; `monitor` records it. A completely read, clean
+  file is allowed. A file that may not have been read completely (Word 6/95, Excel 5/95,
+  pivot caches, damaged records, or not a compound file at all) is never reported as checked:
+  it is uploaded with a "could not be fully checked" warning (`LEGACY_OFFICE_FORMAT` plus
+  `LEGACY_OFFICE_UNSUPPORTED`, `LEGACY_OFFICE_PARTIAL` or `DOCUMENT_UNPARSEABLE`), blocked in
+  `block` mode; findings in the readable part still block. Password protection, VBA or
+  Excel 4.0 macros, other embedded objects, and a corrupt or adversarial container (cyclic
+  sector chains, sectors outside the file, truncation, over the size limits) are refused
+  (`DOCUMENT_ENCRYPTED`, `DOCUMENT_MACROS`, `DOCUMENT_EMBEDDED_OBJECT`, `DOCUMENT_MALFORMED`,
+  `DOCUMENT_LIMIT_EXCEEDED`). `documentHandling: "block"` refuses them with the other
+  documents.
 - **Pictures inside Office and OpenDocument files**: the first-page thumbnail shows the text
   before masking, so a rewritten package gets a blank thumbnail. With the native host's OCR,
   PNG/JPEG/WebP pictures are inspected and a picture with sensitive text blocks the document
@@ -600,7 +616,8 @@ while paused) files pass unchanged and are only counted. Blocked sites and
 |---|---|
 | Sanitised | "1 file sanitized before upload: 2 EMAIL" / "1 dosya yüklenmeden önce temizlendi: 2 EMAIL" |
 | Binary, not blocked | `"report.pdf" could not be scanned (binary file). Check it before sending.` / `"report.pdf" taranamadı (ikili dosya). Göndermeden önce kontrol edin.` |
-| Legacy Office, not blocked | `"old.doc" is a legacy Office file (.doc/.xls/.ppt) that AIDR cannot check. Save it as .docx/.xlsx/.pptx to have it masked, or check it before sending.` / `"old.doc" eski bir Office dosyası (.doc/.xls/.ppt); AIDR bu biçimi denetleyemez. Maskelenmesi için .docx/.xlsx/.pptx olarak kaydedin ya da göndermeden önce kontrol edin.` |
+| Legacy Office not fully read, not blocked | `"old.doc" is a legacy Office file (.doc/.xls/.ppt) that AIDR could not fully check. Save it as .docx/.xlsx/.pptx to have it masked, or check it before sending.` / `"old.doc" eski bir Office dosyası (.doc/.xls/.ppt); AIDR bu dosyayı tam olarak denetleyemedi. Maskelenmesi için .docx/.xlsx/.pptx olarak kaydedin ya da göndermeden önce kontrol edin.` |
+| Legacy Office with sensitive data | `"contract.doc" was not uploaded (SENSITIVE_DATA_IN_LEGACY_OFFICE, 1 EMAIL). Legacy Office files (.doc/.xls/.ppt) cannot be masked. Save the file as .docx/.xlsx/.pptx and upload that instead: AIDR masks those.` / `"sozlesme.doc" yüklenmedi (SENSITIVE_DATA_IN_LEGACY_OFFICE, 1 EMAIL). Eski Office dosyaları (.doc/.xls/.ppt) maskelenemez. Dosyayı .docx/.xlsx/.pptx olarak kaydedip onu yükleyin: AIDR bu biçimleri maskeler.` |
 | Image not inspected | `"screen.png" is an image and its content was not inspected (the local OCR helper is not available or could not read it). Check it before sending.` / `"screen.png" bir görsel ve içeriği denetlenmedi (yerel OCR yardımcısı yok ya da görseli okuyamadı). Göndermeden önce kontrol edin.` |
 | Pictures in a document not inspected | `Pictures inside "report.docx" were not inspected. Check them before sending.` / `"report.docx" içindeki görseller denetlenmedi. Göndermeden önce kontrol edin.` |
 | Image with sensitive data | `"screen.png" was not uploaded (SENSITIVE_DATA_IN_IMAGE, 1 EMAIL). The image shows sensitive data and images cannot be masked. Crop or redact it before uploading.` / `"screen.png" yüklenmedi (SENSITIVE_DATA_IN_IMAGE, 1 EMAIL). Görselde hassas veri görünüyor ve görseller maskelenemez. Yüklemeden önce kırpın ya da karartın.` |
@@ -644,7 +661,9 @@ the ChatGPT fixture and re-opens the uploaded bytes to check `word/document.xml`
 that the bubble suggests pasting the text instead. `file-upload-odt` does the same for an ODT
 whose values are split across spans, `file-upload-pptx-thumbnail` checks that a masked
 presentation's thumbnail is replaced by a blank image Chromium decodes, and
-`file-upload-legacy-doc` checks the legacy-format warning.
+`file-upload-legacy-doc` checks the "could not be fully checked" warning for a Word 95 `.doc`,
+and `file-upload-legacy-doc-blocked` that a `.doc` with an email address never reaches the
+page and that the bubble suggests saving it as `.docx`.
 
 **Availability**
 
@@ -669,7 +688,10 @@ presentation's thumbnail is replaced by a blank image Chromium decodes, and
 - Office masking covers text. Sheet names, defined names, table column names and numeric
   pivot-cache values are not rewritten (a masked header cell can make Excel repair a table's
   column name); the same applies to OpenDocument sheet and table names. Legacy
-  `.doc`/`.xls`/`.ppt` files are not parsed: they pass only with a warning or are blocked.
+  `.doc`/`.xls`/`.ppt` files are scanned but never masked: one with findings is blocked and
+  has to be saved as `.docx`/`.xlsx`/`.pptx` to be uploaded masked. Their pictures are not
+  OCR'd, Word revision/comment author tables and Excel defined names and data-validation
+  lists are not read, and pivot caches are not parsed (the file is reported as partly read).
 - Text files that are not UTF-8 are decoded as Windows-1254 (Turkish), or Windows-1252 when
   that fits better, then scanned, and a masked copy is uploaded as UTF-8 (CSV/TSV with a
   BOM). Files in other single-byte encodings (for example Cyrillic Windows-1251) are decoded
