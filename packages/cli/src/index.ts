@@ -441,7 +441,7 @@ auditProgram
 auditProgram
 	.command("verify")
 	.description(
-		"Verify the signed verdict log and the signed response-action chain; exits non-zero on the first broken, missing or reordered record",
+		"Verify the signed verdict log and the signed response-action chain; exit 0 verified, 1 broken, 2 unverifiable",
 	)
 	.option("--expect-root <fingerprint>", "Pin the first root key (SHA256:<hex>)")
 	.option(

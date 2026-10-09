@@ -84,7 +84,7 @@ describe("OpenCode tool handler failure policy", () => {
 		expect(guardToolCall).not.toHaveBeenCalled();
 	});
 
-	it.each(["rm -rf /tmp/x\u0000", "echo \ud800", "echo �"])(
+	it.each(["rm -rf /tmp/x\u0000", "echo \ud800"])(
 		"denies a bash command with malformed text %j",
 		async (command) => {
 			vi.mocked(guardToolCall).mockClear();
@@ -94,6 +94,16 @@ describe("OpenCode tool handler failure policy", () => {
 			expect(guardToolCall).not.toHaveBeenCalled();
 		},
 	);
+
+	it("evaluates a bash command containing a valid U+FFFD instead of denying it", async () => {
+		vi.mocked(guardToolCall).mockClear();
+		vi.mocked(guardToolCall).mockResolvedValueOnce(allowVerdict as never);
+		await handlers()(
+			{ tool: "bash", sessionID: "s", callID: "c" },
+			{ args: { command: "echo �" } },
+		);
+		expect(guardToolCall).toHaveBeenCalledTimes(1);
+	});
 
 	it("evaluates a known server's MCP tool under the canonical mcp__ name", async () => {
 		vi.mocked(loadKnownMcpServers).mockResolvedValueOnce({

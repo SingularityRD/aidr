@@ -298,6 +298,35 @@ export async function auditExportCommand(
 
 // ── aidr audit verify / rotate-key ─────────────────────────────────
 
+/**
+ * Exit-code contract shared by both `aidr audit verify` modes (the default
+ * both-chains check and `--response-chain <path>`):
+ *
+ *   0 — every enabled chain verified;
+ *   1 ({@link AUDIT_VERIFY_BROKEN}) — a chain is broken: an edited, missing,
+ *       reordered or truncated record, a forged or missing signature;
+ *   2 ({@link AUDIT_VERIFY_UNVERIFIABLE}) — nothing could be verified: the
+ *       configuration or log could not be read, the log or signing key is
+ *       missing, or no signed chain is enabled at all.
+ *
+ * A broken chain outranks an unverifiable one, so tampering is never reported
+ * as a mere configuration problem.
+ */
+export const AUDIT_VERIFY_BROKEN = 1;
+export const AUDIT_VERIFY_UNVERIFIABLE = 2;
+
+/** Response-chain verification reasons that mean "could not verify", not "tampered". */
+const UNVERIFIABLE_REASONS = new Set([
+	"audit_log_missing",
+	"audit_log_unreadable",
+	"signing_key_missing",
+]);
+
+function failVerify(message: string, code: number): void {
+	console.error(message);
+	process.exitCode = code;
+}
+
 export interface AuditKeyDeps extends AuditCommandDeps {
 	env?: NodeJS.ProcessEnv;
 	streams?: ConfirmationStreams;
@@ -306,7 +335,7 @@ export interface AuditKeyDeps extends AuditCommandDeps {
 interface ChainReport {
 	chain: "verdict_log" | "response_actions";
 	enabled: boolean;
-	status: "verified" | "failed" | "not_enabled";
+	status: "verified" | "failed" | "unverifiable" | "not_enabled";
 	verified?: number;
 	legacy_unchained?: number;
 	first_seq?: number | null;
@@ -349,7 +378,7 @@ async function verifyResponseChain(
 		return {
 			chain: "response_actions",
 			enabled: true,
-			status: "failed",
+			status: "unverifiable",
 			problems: 1,
 			first_problem: {
 				detail: `the response chain is unavailable (${unavailableReason ?? "unknown"})`,
@@ -370,7 +399,7 @@ async function verifyResponseChain(
 	return {
 		chain: "response_actions",
 		enabled: true,
-		status: "failed",
+		status: UNVERIFIABLE_REASONS.has(result.reason ?? "") ? "unverifiable" : "failed",
 		problems: Math.max(1, result.tamperedEntries.length),
 		first_problem: {
 			detail: result.firstBrokenLink
@@ -388,6 +417,19 @@ function problemLocation(problem: ChainReport["first_problem"]): string {
 	return problem.seq !== undefined ? ` at seq ${problem.seq}` : "";
 }
 
+/** The one-line status of a chain that was checked (verified, failed or unverifiable). */
+function chainHeadline(name: string, report: ChainReport): string {
+	if (report.status === "unverifiable") return `${name}: NOT VERIFIED (could not be checked).`;
+	if (report.status !== "verified") return `${name}: FAILED, ${report.problems ?? 1} problem(s).`;
+	const range =
+		report.first_seq != null && report.last_seq != null
+			? ` (seq ${report.first_seq}..${report.last_seq})`
+			: "";
+	const count =
+		report.verified !== undefined ? `, ${report.verified} signed record(s)${range}` : "";
+	return `${name}: VERIFIED${count}.`;
+}
+
 function printChainReport(report: ChainReport): void {
 	const name =
 		report.chain === "verdict_log" ? "Verdict log (audit.jsonl)" : "Response-action chain";
@@ -395,16 +437,8 @@ function printChainReport(report: ChainReport): void {
 		console.log(`${name}: signing is not enabled; nothing to verify.`);
 		return;
 	}
-	if (report.status === "verified") {
-		const range =
-			report.first_seq != null && report.last_seq != null
-				? ` (seq ${report.first_seq}..${report.last_seq})`
-				: "";
-		const count =
-			report.verified !== undefined ? `, ${report.verified} signed record(s)${range}` : "";
-		console.log(`${name}: VERIFIED${count}.`);
-	} else {
-		console.log(`${name}: FAILED, ${report.problems ?? 1} problem(s).`);
+	console.log(chainHeadline(name, report));
+	if (report.status !== "verified") {
 		const problem = report.first_problem;
 		if (problem) {
 			const kind = "kind" in problem ? `${problem.kind}: ` : "";
@@ -423,8 +457,10 @@ function printChainReport(report: ChainReport): void {
  * `aidr audit verify [--json] [--expect-root <fingerprint>]`
  *
  * Verifies the signed verdict log and, when enabled, the signed response-action
- * chain. Exits non-zero when any enabled chain fails, or when no chain is
- * enabled at all (nothing was verified, which is not a pass).
+ * chain. Exit codes follow {@link AUDIT_VERIFY_BROKEN} /
+ * {@link AUDIT_VERIFY_UNVERIFIABLE}: 1 when any enabled chain is broken, 2 when
+ * a chain could not be checked or no chain is enabled at all (nothing was
+ * verified, which is not a pass).
  */
 export async function auditVerifyCommand(
 	options: { json?: boolean; expectRoot?: string } = {},
@@ -438,13 +474,16 @@ export async function auditVerifyCommand(
 			await verifyResponseChain(config),
 		];
 	} catch (error) {
-		fail(`Could not verify the audit chains: ${errorText(error)}`);
+		failVerify(`Could not verify the audit chains: ${errorText(error)}`, AUDIT_VERIFY_UNVERIFIABLE);
 		return;
 	}
 	const failed = reports.some((report) => report.status === "failed");
+	const unverifiable = reports.some((report) => report.status === "unverifiable");
 	const nothing = reports.every((report) => report.status === "not_enabled");
 	if (options.json) {
-		console.log(JSON.stringify({ ok: !failed && !nothing, chains: reports }, null, 2));
+		console.log(
+			JSON.stringify({ ok: !failed && !unverifiable && !nothing, chains: reports }, null, 2),
+		);
 	} else {
 		for (const report of reports) printChainReport(report);
 		if (nothing) {
@@ -453,7 +492,8 @@ export async function auditVerifyCommand(
 			);
 		}
 	}
-	if (failed || nothing) process.exitCode = 1;
+	if (failed) process.exitCode = AUDIT_VERIFY_BROKEN;
+	else if (unverifiable || nothing) process.exitCode = AUDIT_VERIFY_UNVERIFIABLE;
 }
 
 /** `aidr audit rotate-key` — operator only: replace the verdict-log root signing key. */
@@ -507,16 +547,6 @@ export async function auditRotateKeyCommand(
 	}
 }
 
-/** Exit codes for `aidr audit verify`: 1 = the chain is broken, 2 = nothing could be verified. */
-export const AUDIT_VERIFY_BROKEN = 1;
-export const AUDIT_VERIFY_UNVERIFIABLE = 2;
-
-const UNVERIFIABLE_REASONS = new Set([
-	"audit_log_missing",
-	"audit_log_unreadable",
-	"signing_key_missing",
-]);
-
 function describeBrokenLink(link: ResponseChainBrokenLink): string {
 	const where = link.line > 0 ? `line ${link.line}` : "chain metadata";
 	const entry = link.entryId ? ` (${link.entryId})` : "";
@@ -537,9 +567,10 @@ async function responseChainPath(
  * `aidr audit verify --response-chain <path> [--json]`
  *
  * Verifies the Ed25519-signed SHA-256 response-action chain offline, reports the
- * first broken link and exits non-zero on any failure. Verification never
- * creates a signing key: a chain without its key is reported as unverifiable,
- * never as valid.
+ * first broken link and exits with the same codes as the default mode
+ * ({@link AUDIT_VERIFY_BROKEN} / {@link AUDIT_VERIFY_UNVERIFIABLE}).
+ * Verification never creates a signing key: a chain without its key is
+ * reported as unverifiable, never as valid.
  */
 export async function auditVerifyResponseChainCommand(
 	path: string | undefined,
@@ -547,16 +578,19 @@ export async function auditVerifyResponseChainCommand(
 	deps: AuditCommandDeps = {},
 ): Promise<ResponseChainVerification | null> {
 	let chainPath: string;
+	let result: ResponseChainVerification;
 	try {
 		chainPath = await responseChainPath(path, deps);
+		result = await new ResponseAuditor(chainPath, { signEntries: true }).verifyChain({
+			requireExistingKey: true,
+		});
 	} catch (error) {
-		fail(`Could not resolve the response audit chain path: ${errorText(error)}`);
-		process.exitCode = AUDIT_VERIFY_UNVERIFIABLE;
+		failVerify(
+			`Could not verify the response audit chain: ${errorText(error)}`,
+			AUDIT_VERIFY_UNVERIFIABLE,
+		);
 		return null;
 	}
-	const result = await new ResponseAuditor(chainPath, { signEntries: true }).verifyChain({
-		requireExistingKey: true,
-	});
 	const unverifiable = !result.valid && UNVERIFIABLE_REASONS.has(result.reason ?? "");
 	if (!result.valid) {
 		process.exitCode = unverifiable ? AUDIT_VERIFY_UNVERIFIABLE : AUDIT_VERIFY_BROKEN;

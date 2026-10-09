@@ -46,3 +46,28 @@ describe("bounded PostToolUse input", () => {
 		expect(parse).not.toHaveBeenCalled();
 	});
 });
+
+describe("strict UTF-8 hook input", () => {
+	function readBytes(bytes: Buffer): string | null {
+		writeFileSync(INPUT_PATH, bytes);
+		const fd = openSync(INPUT_PATH, "r");
+		try {
+			return readBoundedStdin(fd, 1024);
+		} finally {
+			closeSync(fd);
+		}
+	}
+
+	it("accepts a validly encoded U+FFFD", () => {
+		expect(readBytes(Buffer.from('{"command":"echo �"}', "utf8"))).toBe('{"command":"echo �"}');
+	});
+
+	it("throws on undecodable bytes instead of substituting U+FFFD", () => {
+		const invalid = Buffer.concat([
+			Buffer.from('{"command":"echo '),
+			Buffer.from([0xff, 0xfe]),
+			Buffer.from('"}'),
+		]);
+		expect(() => readBytes(invalid)).toThrow(TypeError);
+	});
+});

@@ -304,8 +304,9 @@ async function main(): Promise<void> {
 
 	const toolName = toolCall.tool_name as string;
 	const toolInput = toolCall.tool_input as Record<string, unknown>;
-	// NUL, unpaired surrogates or U+FFFD in a shell command mean the text we
-	// inspect may not be what the shell runs: deny, never downgrade to ask.
+	// NUL or unpaired surrogates in a shell command mean the text we inspect may
+	// not be what the shell runs: deny, never downgrade to ask. (Undecodable
+	// stdin bytes were already refused by the strict UTF-8 read above.)
 	if (malformedShellCommandReason(toolName, toolInput)) {
 		respond(
 			denyResponse(

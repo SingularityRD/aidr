@@ -262,18 +262,26 @@ export const IN_PROCESS_TOOL_CALL_DEADLINE: HookDeadlineSpec = {
 	defaultMs: 20_000,
 };
 
-/** Lone UTF-16 surrogate: what invalid UTF-8 / truncated escapes decode to. */
+/** Lone UTF-16 surrogate: what a truncated or unpaired `\uD8xx` JSON escape decodes to. */
 const LONE_SURROGATE_RE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 
 /**
  * True when a command string cannot be what a shell would execute verbatim:
  * a NUL byte (C-string truncation means the host and our parser disagree on
- * where the command ends), a lone surrogate, or U+FFFD (the decoder's mark for
- * bytes that were not valid UTF-8). Such a command is malformed and denied,
- * never downgraded to a review prompt.
+ * where the command ends) or a lone surrogate (not encodable as UTF-8, so the
+ * host must alter it before the shell sees it). Such a command is malformed
+ * and denied, never downgraded to a review prompt.
+ *
+ * U+FFFD is deliberately NOT treated as malformed: it is an ordinary, validly
+ * encoded code point (output of a lossy decode upstream, pasted text, test
+ * fixtures) and reaches the shell unchanged. Undecodable input is refused one
+ * layer down instead: every entry point that reads raw hook bytes decodes them
+ * strictly ({@link isValidUtf8} or a fatal `TextDecoder`) and fails closed
+ * before any string reaches this check, so a U+FFFD seen here is one the host
+ * itself sent.
  */
 export function hasMalformedCommandText(command: string): boolean {
-	return command.includes("\u0000") || command.includes("�") || LONE_SURROGATE_RE.test(command);
+	return command.includes("\u0000") || LONE_SURROGATE_RE.test(command);
 }
 
 /** Strict UTF-8 validity of raw hook input bytes. */
@@ -332,7 +340,7 @@ export function malformedShellCommandReason(
 					: null;
 		if (!parts) return `shell ${field} is neither a string nor a string argv`;
 		if (parts.some(hasMalformedCommandText)) {
-			return `shell ${field} contains NUL, unpaired surrogate or invalid UTF-8 text`;
+			return `shell ${field} contains NUL or an unpaired surrogate (not encodable as UTF-8)`;
 		}
 	}
 	return null;

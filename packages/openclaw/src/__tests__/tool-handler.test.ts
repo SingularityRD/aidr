@@ -320,7 +320,7 @@ describe("createToolCallHandler input shape, malformed commands and MCP identity
 		expect(guardToolCall).not.toHaveBeenCalled();
 	});
 
-	it.each(["rm -rf /tmp/x\u0000", "echo \ud800", "echo �"])(
+	it.each(["rm -rf /tmp/x\u0000", "echo \ud800"])(
 		"blocks an exec command with malformed text %j",
 		async (command) => {
 			const handle = handler();
@@ -330,6 +330,15 @@ describe("createToolCallHandler input shape, malformed commands and MCP identity
 			expect(guardToolCall).not.toHaveBeenCalled();
 		},
 	);
+
+	it("evaluates an exec command containing a valid U+FFFD instead of blocking it", async () => {
+		const handle = handler();
+		const { guardToolCall } = await import("@singularityrd/aidr-core");
+		(guardToolCall as ReturnType<typeof vi.fn>).mockClear();
+		const result = await handle({ toolName: "exec", params: { command: "echo �" } });
+		expect(JSON.stringify(result ?? {})).not.toContain("malformed");
+		expect(guardToolCall).toHaveBeenCalledTimes(1);
+	});
 
 	it("extracts an argv exec command instead of dropping it", async () => {
 		const handle = handler();
