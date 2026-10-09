@@ -1,5 +1,4 @@
 import { generateKeyPairSync, verify } from "node:crypto";
-import { readFileSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer, request as httpsRequest, type Server } from "node:https";
 import { tmpdir } from "node:os";
@@ -12,6 +11,7 @@ import { DiscoveryHttpClient } from "../discovery-cloud-http.js";
 import { cloudDiscoveryScopeHash } from "../discovery-cloud-provider.js";
 import { createDiscoveryProvider } from "../discovery-provider.js";
 import { loadFleetInventory, saveFleetInventory } from "../fleet-inventory.js";
+import { selfSignedLoopbackTls } from "./self-signed-tls.js";
 
 const TENANT = "tenant-a";
 const DIRECTORY = "123e4567-e89b-42d3-a456-426614174000";
@@ -78,6 +78,9 @@ afterEach(async () => {
 	vi.restoreAllMocks();
 });
 
+/** Minted once per run in memory; the test never reads a key from disk. */
+const LOOPBACK_TLS = selfSignedLoopbackTls();
+
 /** Real loopback TLS only; the injected test fetch never changes production host validation. */
 async function tlsFixture(
 	handler: (
@@ -86,31 +89,24 @@ async function tlsFixture(
 		headers: Record<string, string | string[] | undefined>,
 	) => { status?: number; body?: unknown; headers?: Record<string, string>; stall?: boolean },
 ) {
-	const certDir = join(import.meta.dirname, "../../../../deploy/upstream/packages/pg-meta/test/db");
 	const calls: Array<{ url: URL; body: string }> = [];
-	const server = createServer(
-		{
-			key: readFileSync(join(certDir, "server.key")),
-			cert: readFileSync(join(certDir, "server.crt")),
-		},
-		(req, res) => {
-			let body = "";
-			req.on("data", (chunk: Buffer) => {
-				body += chunk.toString("utf8");
+	const server = createServer(LOOPBACK_TLS, (req, res) => {
+		let body = "";
+		req.on("data", (chunk: Buffer) => {
+			body += chunk.toString("utf8");
+		});
+		req.on("end", () => {
+			const url = new URL(String(req.headers["x-fixture-url"]));
+			calls.push({ url, body });
+			const result = handler(url, body, req.headers);
+			if (result.stall) return;
+			res.writeHead(result.status ?? 200, {
+				"content-type": "application/json",
+				...result.headers,
 			});
-			req.on("end", () => {
-				const url = new URL(String(req.headers["x-fixture-url"]));
-				calls.push({ url, body });
-				const result = handler(url, body, req.headers);
-				if (result.stall) return;
-				res.writeHead(result.status ?? 200, {
-					"content-type": "application/json",
-					...result.headers,
-				});
-				res.end(typeof result.body === "string" ? result.body : JSON.stringify(result.body ?? {}));
-			});
-		},
-	);
+			res.end(typeof result.body === "string" ? result.body : JSON.stringify(result.body ?? {}));
+		});
+	});
 	servers.push(server);
 	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
 	const address = server.address();
@@ -126,7 +122,7 @@ async function tlsFixture(
 					path: url.pathname + url.search,
 					method: init?.method ?? "GET",
 					headers: { ...headers, "x-fixture-url": url.toString() },
-					// The committed localhost fixture certificate is trusted only by this test transport.
+					// The per-run self-signed certificate is trusted only by this test transport.
 					rejectUnauthorized: false,
 					signal: init?.signal ?? undefined,
 				},

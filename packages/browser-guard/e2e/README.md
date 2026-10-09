@@ -39,9 +39,15 @@ build. With `PLAYWRIGHT_BROWSERS_PATH` unset, `/opt/pw-browsers` is used when pr
    The `chromium` channel runs the full Chromium build in new-headless mode, which
    loads unpacked extensions (the old headless shell cannot). Verified with
    Chromium 141.0.7390.37 (`chromium-1194`).
-2. **Fallback:** `executablePath: /opt/pw-browsers/chromium-1194/chrome-linux/chrome`
-   (override with `BG_E2E_CHROMIUM`), `headless: false` plus `--headless=new`.
-   Used only when the primary does not produce a service worker in time.
+2. **Fallback:** an explicit `executablePath`, `headless: false` plus `--headless=new`.
+   Used only when the primary does not produce a service worker in time (or its
+   pinned Chromium revision is not installed). The executable is `BG_E2E_CHROMIUM`
+   when set; otherwise the pinned `chromium-<revision>` from the Playwright browser
+   directories (`PLAYWRIGHT_BROWSERS_PATH`, `/opt/pw-browsers`,
+   `%LOCALAPPDATA%\ms-playwright`, `~/.cache/ms-playwright`,
+   `~/Library/Caches/ms-playwright`); if that revision is missing, the newest
+   installed `chromium-*` is used and a `chromium: ... is not installed; using
+   chromium-<n>` line is logged.
 
 The extension id is taken from the service worker URL
 (`chrome-extension://<id>/...`). The worker is found by listening for the

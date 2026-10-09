@@ -5,6 +5,7 @@
 // DOCX; the first-page thumbnail of a masked ODT/PPTX is replaced by a blank image that the
 // browser can still decode; a legacy .doc passes only with a "cannot be checked" warning.
 
+import { placeholderPattern } from "../lib/data.mjs";
 import {
 	FAKE_JPEG,
 	FAKE_PNG,
@@ -89,7 +90,7 @@ export default [
 			for (const item of data.csvItems) {
 				checks.excludes(`uploaded CSV does not contain ${item.value}`, content, item.value);
 			}
-			checks.contains("uploaded CSV contains email placeholders", content, /\[EMAIL_\d+\]/);
+			checks.contains("uploaded CSV contains email placeholders", content, placeholderPattern("EMAIL"));
 			checks.contains("CSV structure (header row) is preserved", content, /^name,email/);
 			checks.check(
 				"uploaded file keeps a .csv name",
@@ -139,8 +140,8 @@ export default [
 			}
 			const xml = parts.get("word/document.xml") ?? "";
 			checks.check("uploaded DOCX has word/document.xml", xml.length > 0, [...parts.keys()]);
-			checks.contains("document.xml contains an e-mail placeholder", xml, /\[EMAIL_\d+\]/);
-			checks.contains("document.xml contains a TCKN placeholder", xml, /\[TCKN_\d+\]/);
+			checks.contains("document.xml contains an e-mail placeholder", xml, placeholderPattern("EMAIL"));
+			checks.contains("document.xml contains a TCKN placeholder", xml, placeholderPattern("TCKN"));
 			const at = email.indexOf("@");
 			for (const fragment of [email, tckn, email.slice(0, at + 1), email.slice(at + 1), tckn.slice(0, 5)]) {
 				checks.excludes(`document.xml does not contain "${fragment}"`, xml, fragment);
@@ -177,8 +178,8 @@ export default [
 			const names = [...parts.keys()];
 			checks.equal("mimetype is still the first entry", names[0], "mimetype");
 			const content = parts.get("content.xml")?.toString("utf8") ?? "";
-			checks.contains("content.xml contains an e-mail placeholder", content, /\[EMAIL_\d+\]/);
-			checks.contains("content.xml contains a TCKN placeholder", content, /\[TCKN_\d+\]/);
+			checks.contains("content.xml contains an e-mail placeholder", content, placeholderPattern("EMAIL"));
+			checks.contains("content.xml contains a TCKN placeholder", content, placeholderPattern("TCKN"));
 			checks.contains("span formatting is preserved", content, 'text:style-name="T1"');
 			checks.contains("clean Turkish text is preserved", content, "Bu satır temiz: çalışma planı.");
 			const all = [...parts.values()].map((b) => b.toString("latin1")).join("\n");
@@ -209,7 +210,7 @@ export default [
 			});
 			const parts = unzipBytes(bytes);
 			const slide = parts.get("ppt/slides/slide1.xml")?.toString("utf8") ?? "";
-			checks.contains("the slide holds an e-mail placeholder", slide, /\[EMAIL_\d+\]/);
+			checks.contains("the slide holds an e-mail placeholder", slide, placeholderPattern("EMAIL"));
 			const thumbnail = parts.get("docProps/thumbnail.jpeg") ?? Buffer.alloc(0);
 			checks.check("the thumbnail was replaced", !thumbnail.equals(FAKE_JPEG), thumbnail.length);
 			checks.equal(

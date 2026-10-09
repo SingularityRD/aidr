@@ -44,7 +44,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
 
 const CONTENT = `
 const SECRET = "secret@example.com";
-const PH = "[EMAIL_1]";
+const PH = "[EMAIL_1_e2e0]";
 let policy = { mode: "auto" };
 chrome.runtime.sendMessage({ type: "GET_POLICY" }).then((p) => { if (p) policy = p; });
 const EDITOR = 'textarea, [contenteditable="true"]';

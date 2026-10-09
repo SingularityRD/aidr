@@ -17,7 +17,7 @@
 // per-character fetches, page-owned spans with the same values have different widths,
 // and `window.find()` finds page text.
 
-import { EMAIL_2 } from "../lib/data.mjs";
+import { ANY_PLACEHOLDER, EMAIL_2, placeholderPattern } from "../lib/data.mjs";
 import { waitFor } from "../lib/expect.mjs";
 import {
 	lastResponseText,
@@ -101,11 +101,11 @@ export default [
 
 			// A masked paste the user then deletes: its placeholder is in the vault but never sent.
 			await pasteText(page, SITE, `old contact ${EMAIL_2} x`);
-			await waitFor(async () => /\[EMAIL_\d+\]/.test(await readEditor(page, SITE)), {
+			await waitFor(async () => placeholderPattern("EMAIL").test(await readEditor(page, SITE)), {
 				timeout: 5000,
 				message: "the pasted text to be masked into the editor",
 			});
-			const unsent = (await readEditor(page, SITE)).match(/\[EMAIL_\d+\]/)?.[0];
+			const unsent = (await readEditor(page, SITE)).match(placeholderPattern("EMAIL"))?.[0];
 			await page.locator(SITES[SITE].editor).click();
 			await page.keyboard.press("Control+A");
 			await page.keyboard.press("Backspace");
@@ -220,7 +220,7 @@ export default [
 			for (const v of values) checks.excludes("page innerText never has the value", probe.pageText, v);
 
 			// Oracle attempts after the send.
-			const placeholders = [...new Set(body.match(/\[[A-Z_]+_\d+(?:_[a-z0-9]{4,8})?\]/g) ?? [])];
+			const placeholders = [...new Set(body.match(ANY_PLACEHOLDER) ?? [])];
 			await page.evaluate(
 				({ sentPh, unsentPh }) => {
 					document.getElementById("stale-answer").textContent = `stale ${sentPh}`;
