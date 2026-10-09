@@ -2,6 +2,7 @@
 !Dockerfile
 !server.mjs
 !monitoring.mjs
+!release-manifest.mjs
 !security-headers.mjs
 !saml-config.mjs
 !public/
