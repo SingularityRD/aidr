@@ -281,8 +281,17 @@ function readOriginRemote(dotGit: string): string | undefined {
 			gitDir = resolve(dirname(dotGit), pointer[1].trim());
 		}
 		const config = readFileSync(join(gitDir, "config"), "utf8").slice(0, 64 * 1024);
-		const section = /\[remote "origin"\]([^[]*)/.exec(config);
-		return section?.[1] ? /^\s*url\s*=\s*(.+)$/m.exec(section[1])?.[1]?.trim() : undefined;
+		// Section bodies end at the next line that opens a section header; a `[`
+		// inside a value (an IPv6 host such as ssh://git@[::1]/repo) is not a header.
+		const lines = config.split(/\r?\n/);
+		const start = lines.findIndex((line) => /^\s*\[remote "origin"\]\s*$/.test(line));
+		if (start === -1) return undefined;
+		for (const line of lines.slice(start + 1)) {
+			if (/^\s*\[/.test(line)) break;
+			const url = /^\s*url\s*=\s*(.+)$/.exec(line)?.[1]?.trim();
+			if (url) return url;
+		}
+		return undefined;
 	} catch {
 		return undefined;
 	}

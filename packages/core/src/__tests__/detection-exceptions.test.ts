@@ -20,6 +20,7 @@ import {
 	DetectionExceptionError,
 	type DetectionExceptionStoreOptions,
 	detectionExceptionArtifactDigest,
+	findGitRepository,
 	isProtectedRule,
 	listDetectionExceptions,
 	loadUsableLocalExceptions,
@@ -572,5 +573,30 @@ describe("evaluator applies local exceptions", () => {
 	it("applies nothing when the audit log is disabled", async () => {
 		await addDetectionException({ ...ADD, ttlMs: DAY }, { approvals: { keyStorage: "file" } });
 		expect((await evaluate("claude-code", false)).matchedThreatId).toBe("CLT-CMD-011");
+	});
+});
+
+describe("findGitRepository", () => {
+	it("reads an origin URL that contains brackets (IPv6 host)", () => {
+		const root = mkdtempSync(join(tmpdir(), "aidr-git-ipv6-"));
+		try {
+			mkdirSync(join(root, ".git"));
+			writeFileSync(
+				join(root, ".git", "config"),
+				[
+					"[core]",
+					"\tbare = false",
+					'[remote "origin"]',
+					"\turl = ssh://git@[2001:db8::1]/org/repo.git",
+					"\tfetch = +refs/heads/*:refs/remotes/origin/*",
+					'[branch "main"]',
+					"\tremote = origin",
+					"",
+				].join("\n"),
+			);
+			expect(findGitRepository(root)?.remote).toBe("ssh://git@[2001:db8::1]/org/repo.git");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
 	});
 });
