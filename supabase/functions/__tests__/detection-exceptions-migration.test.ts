@@ -29,12 +29,13 @@ function functionBody(name: string): string {
 }
 
 describe("detection exceptions migration", () => {
-	it("is the only migration for this feature", () => {
+	it("defines the feature once and only adds its offboarding phases later", () => {
 		const migrations = readdirSync(join(ROOT, "supabase", "migrations"))
 			.filter((name) => name.endsWith(".sql"))
 			.sort();
 		expect(migrations.filter((name) => name.includes("detection_exception"))).toEqual([
 			"20261007000200_detection_exceptions.sql",
+			"20261009000100_detection_exception_offboarding.sql",
 		]);
 	});
 
