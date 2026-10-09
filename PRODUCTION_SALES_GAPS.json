@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "generated_on": "2026-10-08",
+  "generated_on": "2026-10-09",
   "generation_timezone": "Europe/Istanbul",
   "generation_note": "Generated from the current worktree. source_commit identifies only the base commit; worktree_has_changes is explicit. This report is not candidate-bound release evidence. READINESS_BACKLOG.json is an older issue-ledger snapshot; its historical open IDs are not current verification results.",
   "decision": "NO-GO",
-  "source_commit": "fb5dd4b5849011fbe352e5ba27282a8518441347",
+  "source_commit": "52a5daff1c24439b4df78c8ed93d51ffcfcc351e",
   "worktree_has_changes": true,
   "historical_issue_ledger": {
     "path": "READINESS_BACKLOG.json",
@@ -724,7 +724,7 @@
       "priority": "P0",
       "title": "Gerçek cloud ve self-hosted üretim kurulumu",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Historical v6 self-hosted install evidence recorded execution of 33 migrations; it is not proof for the current source tree or candidate. The current source tree contains 176 canonical migration files, and no current candidate-bound install/upgrade acceptance exists. Prepare inputs are validated without creating secrets, and cloud preparation rejects public proxy/provider upstream loops. A Kubernetes Helm chart (deploy/helm/aidr) now exists beside the Compose bundle; pnpm verify:helm lints and renders it where Helm is installed (CI installs Helm, not kubeconform), but it has not been installed on a live cluster. Live provider/TLS acceptance remains open.",
+      "implementation_update": "Historical v6 self-hosted install evidence recorded execution of 33 migrations; it is not proof for the current source tree or candidate. The current source tree contains 178 canonical migration files, and no current candidate-bound install/upgrade acceptance exists. Prepare inputs are validated without creating secrets, and cloud preparation rejects public proxy/provider upstream loops. A Kubernetes Helm chart (deploy/helm/aidr) now exists beside the Compose bundle; pnpm verify:helm lints and renders it where Helm is installed (CI installs Helm, not kubeconform), but it has not been installed on a live cluster. Live provider/TLS acceptance remains open.",
       "remaining_implementation": [],
       "feature_ids": [
         "DEP-01",
@@ -3779,11 +3779,13 @@
         "packages/browser-guard/src/engine/files.ts",
         "packages/browser-guard/src/content/file-guard.ts",
         "packages/browser-guard/src/engine/office/odf.ts",
-        "packages/browser-guard/src/engine/office/images.ts"
+        "packages/browser-guard/src/engine/office/images.ts",
+        "packages/browser-guard/src/engine/legacy/extract.ts",
+        "packages/browser-guard/src/engine/legacy/cfb.ts"
       ],
       "consumer": "Browser Guard file uploads, documentHandling policy",
-      "delivered": "DOCX, XLSX, PPTX and OpenDocument (ODT, ODS, ODP, ODG) text is masked in place and re-zipped, and a rewritten package gets a blank thumbnail; PDF text is extracted (fonts, CMaps, filters) and scanned; a PDF with findings is blocked; scanned or image-only PDFs are reported as unscanned, never as clean; legacy .doc/.xls/.ppt files are recognised and reported (LEGACY_OFFICE_FORMAT) and blocked under documentHandling block or block mode; with the optional native host's OCR, uploaded images and PNG/JPEG/WebP pictures inside Office/OpenDocument files are OCR'd and blocked on sensitive text, otherwise reported as not inspected (IMAGE_NOT_INSPECTED, DOCUMENT_IMAGES_NOT_INSPECTED)",
-      "remaining": "Without the native host and its OCR no image is inspected, and OCR accuracy is unmeasured; images are blocked, never masked; scanned PDFs are not OCR'd; PDFs are never rewritten; encrypted PDFs and some CJK font encodings are not extracted; sheet and table names, defined names, named ranges and chart/pivot-cache values are not rewritten; legacy binary Office content is not parsed",
+      "delivered": "DOCX, XLSX, PPTX and OpenDocument (ODT, ODS, ODP, ODG) text is masked in place and re-zipped, and a rewritten package gets a blank thumbnail; PDF text is extracted (fonts, CMaps, filters) and scanned; a PDF with findings is blocked; scanned or image-only PDFs are reported as unscanned, never as clean; legacy .doc/.xls/.ppt text (Word piece table, Excel BIFF8 strings and cells, PowerPoint text atoms, properties, embedded Office objects) is extracted by a bounded compound-file reader and scanned, never rewritten; a legacy file with findings is blocked (SENSITIVE_DATA_IN_LEGACY_OFFICE), a partly read or unsupported one is reported as unscanned (LEGACY_OFFICE_FORMAT), a malformed, encrypted or macro one is refused; with the optional native host's OCR, uploaded images and PNG/JPEG/WebP pictures inside Office/OpenDocument files are OCR'd and blocked on sensitive text, otherwise reported as not inspected (IMAGE_NOT_INSPECTED, DOCUMENT_IMAGES_NOT_INSPECTED)",
+      "remaining": "Without the native host and its OCR no image is inspected, and OCR accuracy is unmeasured; images are blocked, never masked; scanned PDFs are not OCR'd; PDFs are never rewritten; encrypted PDFs and some CJK font encodings are not extracted; sheet and table names, defined names, named ranges and chart/pivot-cache values are not rewritten; legacy binary Office files are scanned but never masked (blocked on findings), their pictures are not OCR'd and Word 6/95 / Excel 5/95 are not parsed",
       "production_accepted": false,
       "gap_ids": [
         "T47"

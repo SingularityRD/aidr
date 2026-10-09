@@ -3,7 +3,9 @@
 // document.xml holds placeholders; a PDF with sensitive data is blocked (PDFs are scanned,
 // never rewritten) and the user is told to paste the text instead. An ODT is masked like a
 // DOCX; the first-page thumbnail of a masked ODT/PPTX is replaced by a blank image that the
-// browser can still decode; a legacy .doc passes only with a "cannot be checked" warning.
+// browser can still decode; a legacy .doc with sensitive data is blocked (scanned, never
+// rewritten) with a "save as .docx" hint, and one AIDR cannot fully read (Word 6/95) passes
+// only with a "could not be fully checked" warning.
 
 import {
 	FAKE_JPEG,
@@ -222,7 +224,7 @@ export default [
 	},
 	{
 		id: "file-upload-legacy-doc",
-		title: "file upload: a legacy .doc is not passed off as checked",
+		title: "file upload: a legacy .doc AIDR cannot fully read is not passed off as checked",
 		settings: { mode: "auto" },
 		skip: productOnly,
 		async run({ h, checks, open }) {
@@ -231,7 +233,7 @@ export default [
 			const { upload } = await uploadOne(h, page, {
 				name: "eski-rapor.doc",
 				mimeType: "application/msword",
-				buffer: legacyDoc(),
+				buffer: legacyDoc("Word 95 belgesi", { nFib: 0x0065 }),
 			});
 			checks.equal("the page received the file", upload.json?.name, "eski-rapor.doc");
 			const warning = await waitFor(
@@ -241,7 +243,43 @@ export default [
 					),
 				{ timeout: 10000, message: "a legacy-format warning" },
 			).catch(() => null);
-			checks.check("a warning says the legacy file cannot be checked", warning, await h.overlays(page, SITE));
+			checks.check("a warning says the legacy file could not be fully checked", warning, await h.overlays(page, SITE));
+		},
+	},
+	{
+		id: "file-upload-legacy-doc-blocked",
+		title: "file upload: a legacy .doc with sensitive data is blocked with a save-as hint",
+		settings: { mode: "auto" },
+		skip: productOnly,
+		async run({ h, checks, data, open }) {
+			const email = itemValue(data, "EMAIL");
+			const page = await open(SITE);
+			const baseline = await h.overlays(page, SITE);
+			const mark = h.recorder.mark();
+			await page.locator(SITES[SITE].fileInput).setInputFiles({
+				name: "sozlesme.doc",
+				mimeType: "application/msword",
+				buffer: legacyDoc(`Sozlesme taraflari\rE-posta: ${email}\r`),
+			});
+			const bubble = await waitFor(
+				async () =>
+					(await h.overlays(page, SITE)).find(
+						(o) => !baseline.includes(o) && o.includes("SENSITIVE_DATA_IN_LEGACY_OFFICE"),
+					),
+				{ timeout: 10000, message: "a bubble explaining the blocked .doc" },
+			).catch(() => null);
+			checks.check("a bubble names SENSITIVE_DATA_IN_LEGACY_OFFICE", bubble, await h.overlays(page, SITE));
+			// Overlay text is truncated by the harness; the save-as hint follows this sentence.
+			checks.contains("the bubble says legacy files cannot be masked", bubble ?? "", /cannot be masked/);
+			let quiet = true;
+			await staysFalse(() => h.recorder.apiSince(mark, { kind: "upload" }).length > 0, {
+				window: 1500,
+				message: "a .doc upload",
+			}).catch(() => {
+				quiet = false;
+			});
+			checks.check("the .doc never reached the page's upload handler", quiet, h.recorder.apiSince(mark));
+			assertNoLeaks(checks, h, mark, [email]);
 		},
 	},
 	{

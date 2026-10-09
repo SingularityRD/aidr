@@ -92,4 +92,23 @@ describe("content guard: document uploads", () => {
 		await expect.poll(() => g.bubble()?.textContent ?? "").toContain("SENSITIVE_DATA_IN_PDF");
 		expect(g.bubble()?.textContent).toContain("paste it instead");
 	});
+
+	it("tells the user to save as .docx when a legacy file is blocked for sensitive data", async () => {
+		const g = start({
+			sanitizeFile: async () => ({
+				action: "block",
+				counts: { EMAIL: 1 },
+				reasons: ["SENSITIVE_DATA_IN_LEGACY_OFFICE"],
+			}),
+		});
+		const input = document.getElementById("file") as HTMLInputElement;
+		makeFilesWritable(input, [new File([new Uint8Array([0xd0, 0xcf])], "sozlesme.doc")]);
+		input.dispatchEvent(new Event("change", { bubbles: true, cancelable: true }));
+		await expect
+			.poll(() => g.bubble()?.textContent ?? "")
+			.toContain("SENSITIVE_DATA_IN_LEGACY_OFFICE");
+		expect(g.bubble()?.textContent).toContain("cannot be masked");
+		expect(g.bubble()?.textContent).toContain("Save the file as .docx/.xlsx/.pptx");
+		expect(g.bubble()?.textContent).not.toContain("could not be fully checked");
+	});
 });
