@@ -45,7 +45,11 @@ console.log(JSON.stringify([await call({ query: "weather" }), await call({ comma
 		// No checkout path leaks into the bundle (rule text itself may name paths
 		// such as /home/<user>, so check the actual repository location).
 		const repoRoot = resolve(packageRoot, "../..");
-		for (const form of [repoRoot, repoRoot.replaceAll("\\", "/"), JSON.stringify(repoRoot).slice(1, -1)]) {
+		for (const form of [
+			repoRoot,
+			repoRoot.replaceAll("\\", "/"),
+			JSON.stringify(repoRoot).slice(1, -1),
+		]) {
 			assert.ok(!bundled.includes(form), "the repository checkout path is not embedded");
 		}
 		const home = join(root, "home");
@@ -62,7 +66,7 @@ console.log(JSON.stringify([await call({ query: "weather" }), await call({ comma
 	}
 });
 
-test("commercial gateway binaries start only with a complete signed artifact and verifier key", async () => {
+test("commercial gateway binaries start only with a complete signed artifact and the matching verifier key", async () => {
 	const root = await mkdtemp(join(tmpdir(), "aidr-mcp-integrity-"));
 	try {
 		const dist = join(root, "dist");
@@ -179,14 +183,22 @@ test("commercial gateway binaries start only with a complete signed artifact and
 			join(dist, "aidr-artifact.manifest.sig"),
 			sign(null, Buffer.from(manifestRaw), artifactKeys.privateKey).toString("base64"),
 		);
-		await writeIntegrityConfig([]);
-		const withoutKey = spawnSync(process.execPath, [executable, gatewayConfig], {
+		// A signature that only an untrusted key verifies must refuse to start. (With no
+		// verifier key provisioned at all, an un-enrolled commercial install deliberately
+		// starts on verified file digests instead -- see core integrity/runtime.ts.)
+		await writeIntegrityConfig([
+			generateKeyPairSync("ed25519").publicKey.export({ type: "spki", format: "pem" }).toString(),
+		]);
+		const untrustedKey = spawnSync(process.execPath, [executable, gatewayConfig], {
 			env,
 			encoding: "utf8",
 			timeout: 10_000,
 		});
-		assert.equal(withoutKey.status, 1);
-		assert.match(withoutKey.stderr, /^AIDR MCP gateway failed: integrity_verification_failed/);
+		assert.equal(untrustedKey.status, 1);
+		assert.match(
+			untrustedKey.stderr,
+			/^AIDR MCP gateway failed: integrity_verification_failed:bad_signature\n$/,
+		);
 
 		await writeIntegrityConfig([
 			artifactKeys.publicKey.export({ type: "spki", format: "pem" }).toString(),
