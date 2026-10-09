@@ -122,7 +122,7 @@ test("device enrollment issue serializes with membership removal without holding
 	try {
 	let ready = false;
 		for (let attempt = 0; attempt < 100; attempt += 1) {
-			if (docker(["exec", container, "psql", "-X", "-qAt", "-U", "postgres", "-c", "select 1"]).status === 0) { ready = true; break; }
+			if (docker(["exec", container, "pg_isready", "-h", "127.0.0.1", "-U", "postgres"]).status === 0) { ready = true; break; }
 			await delay(100);
 		}
 		assert.ok(ready, "isolated PostgreSQL did not start");
