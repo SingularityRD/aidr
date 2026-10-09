@@ -246,9 +246,9 @@
   severity: high
   confidence: 0.80
   action: block
-  pattern: "\\b(nslookup|dig|host)\\b[^|;]{0,300}`[^`]{1,300}`\\.[a-zA-Z]"
+  pattern: "(?:\\b(nslookup|dig|host)\\b[^|;]{0,300}`[^`]{1,300}`\\.[a-zA-Z])|(?:\\b(?:base64|base32|basenc|xxd|od|hexdump)\\b[^;&]{0,300}\\|[^&|]{0,300}?(?<![\\w./-])(?:nslookup|dig|host|drill)\\b[^;&]{0,200}(?:\\{\\}|%s|\\$\\{?[A-Za-z_][A-Za-z0-9_]{0,60}\\}?)[A-Za-z0-9._-]{0,40}\\.[A-Za-z])"
   match_on: command
-  title: "DNS exfiltration via backtick substitution as subdomain label"
+  title: "DNS exfiltration via backtick substitution or encoded data piped into a lookup as a subdomain label"
   expires_at: null
   revoked: false
 
