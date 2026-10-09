@@ -14,6 +14,8 @@
  *   PDF_PARTIAL   a page that only draws images, a content stream that could not be decoded
  *                 (unsupported filter, corrupt data), glyphs that could not be mapped to
  *                 Unicode (more than 5%), or a size/count budget that was reached.
+ * Embedded raster images are collected for the caller's OCR (./images.ts); `reasonsWithImages`
+ * is the completeness verdict that applies once every image has been read.
  * `PdfUnreadable` is thrown for files that are not PDFs or cannot be parsed at all
  * (PDF_UNPARSEABLE) and for encrypted files (PDF_ENCRYPTED).
  */
@@ -27,6 +29,7 @@ import {
 } from "./document.js";
 import { decodeTextString } from "./encodings.js";
 import type { Font } from "./fonts.js";
+import { type PdfImage, PdfImageCollector } from "./images.js";
 import {
 	binaryString,
 	type PdfDict,
@@ -52,6 +55,15 @@ export interface PdfExtraction {
 	readonly complete: boolean;
 	/** Why the extraction is incomplete (empty when complete). */
 	readonly reasons: readonly string[];
+	/**
+	 * Why the text would still be incomplete if every image were OCR'd: `reasons` without the
+	 * image-only causes (`PDF_NO_TEXT` when the document draws images, image-only pages).
+	 */
+	readonly reasonsWithImages: readonly string[];
+	/** Distinct embedded raster images (drawn ones first), for OCR. See ./images.ts. */
+	readonly images: readonly PdfImage[];
+	/** Images beyond the tracking limit (never inspected). */
+	readonly imageOverflow: number;
 }
 
 const UNMAPPED_TOLERANCE = 0.05;
@@ -168,12 +180,21 @@ interface Tally {
 	glyphs: number;
 	unmapped: number;
 	imageOnlyPages: number;
+	images: number;
 }
 
-function completeness(doc: PdfDocument, segments: readonly string[], tally: Tally): string[] {
-	if (!segments.some((s) => s.trim())) return ["PDF_NO_TEXT"];
+/** Completeness reasons; `withImages`: as if every image had been read (OCR). */
+function completeness(
+	doc: PdfDocument,
+	segments: readonly string[],
+	tally: Tally,
+	withImages: boolean,
+): string[] {
+	const imagesCover = withImages && tally.images > 0;
+	if (!segments.some((s) => s.trim()) && !imagesCover) return ["PDF_NO_TEXT"];
 	const unreliable = tally.glyphs > 0 && tally.unmapped / tally.glyphs > UNMAPPED_TOLERANCE;
-	return doc.partial || tally.imageOnlyPages > 0 || unreliable ? ["PDF_PARTIAL"] : [];
+	const imageOnly = tally.imageOnlyPages > 0 && !imagesCover;
+	return doc.partial || imageOnly || unreliable ? ["PDF_PARTIAL"] : [];
 }
 
 /**
@@ -196,13 +217,22 @@ export async function extractPdfText(
 	const fonts = new Map<PdfDict, Font>();
 	const segments: string[] = [];
 	const extras: string[] = [];
-	const tally: Tally = { textChars: 0, glyphs: 0, unmapped: 0, imageOnlyPages: 0 };
+	const tally: Tally = { textChars: 0, glyphs: 0, unmapped: 0, imageOnlyPages: 0, images: 0 };
+	const images = new PdfImageCollector(doc);
 	for (const page of pages) {
 		checkDeadline();
-		const ctx: ContentContext = { doc, fonts, page: new PageText(), checkDeadline, forms: 0 };
+		const ctx: ContentContext = {
+			doc,
+			fonts,
+			page: new PageText(),
+			checkDeadline,
+			forms: 0,
+			images,
+		};
 		await interpretContent(ctx, await pageContent(doc, page), page.resources);
-		const { text, glyphs, unmapped, images } = ctx.page;
-		if (!text.trim() && images > 0) tally.imageOnlyPages++;
+		const { text, glyphs, unmapped, images: pageImages } = ctx.page;
+		if (!text.trim() && pageImages > 0) tally.imageOnlyPages++;
+		tally.images += pageImages;
 		tally.textChars += text.length;
 		tally.glyphs += glyphs;
 		tally.unmapped += unmapped;
@@ -214,11 +244,15 @@ export async function extractPdfText(
 		}
 	}
 	extras.push(...formTexts(doc, doc.dict(doc.trailer("Root")?.get("Root"))), ...infoTexts(doc));
-	const reasons = completeness(doc, segments, tally);
+	images.addUndrawn();
+	const reasons = completeness(doc, segments, tally, false);
 	return {
 		segments: [...segments, ...extras.filter((s) => s.trim())],
 		pages: pages.length,
 		complete: reasons.length === 0,
 		reasons,
+		reasonsWithImages: completeness(doc, segments, tally, true),
+		images: images.images(),
+		imageOverflow: images.overflow,
 	};
 }

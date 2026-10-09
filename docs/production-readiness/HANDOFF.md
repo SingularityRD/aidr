@@ -71,7 +71,8 @@ Ids refer to `PRODUCTION_SALES_GAPS.json` / `READINESS_BACKLOG.json`.
 4. **Known detection gaps:** DNS exfiltration with data in the hostname; reversed or split
    canary tokens; `-p <password>` is not redacted in AI-BOM launch arguments; the MCP gateway
    does not join a chain that spans two MCP servers.
-5. **Browser Guard:** images inside PDFs are not OCR'd; legacy `.doc/.xls/.ppt` content is
+5. **Browser Guard:** images inside PDFs are now OCR'd through the native host (fail closed
+   without it), but OCR accuracy is unmeasured; legacy `.doc/.xls/.ppt` content is
    not scanned (they warn, or block in block mode); real OCR accuracy and opening masked ODF
    files in LibreOffice were never verified.
 6. **Real-host coverage:** Cursor and VS Code never run; only linux/x64, a development build

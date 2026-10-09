@@ -85,8 +85,17 @@ export async function inflateBounded(
 }
 
 /** Raw DEFLATE (RFC 1951) compression, as stored in ZIP entries with method 8. */
-export async function deflateRaw(data: Uint8Array): Promise<Uint8Array> {
-	const stream = new CompressionStream("deflate-raw");
+export function deflateRaw(data: Uint8Array): Promise<Uint8Array> {
+	return compress(data, "deflate-raw");
+}
+
+/** zlib (RFC 1950) compression, as stored in PNG `IDAT` chunks. */
+export function deflateZlib(data: Uint8Array): Promise<Uint8Array> {
+	return compress(data, "deflate");
+}
+
+async function compress(data: Uint8Array, format: InflateFormat): Promise<Uint8Array> {
+	const stream = new CompressionStream(format);
 	const writer = stream.writable.getWriter();
 	const reader = stream.readable.getReader();
 	const feeding = (async () => {

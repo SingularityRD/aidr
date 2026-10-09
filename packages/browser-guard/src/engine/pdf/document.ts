@@ -66,7 +66,7 @@ const FILTERS: Readonly<Record<string, Filter>> = {
 };
 
 /** Abbreviated filter names (inline images and some producers). */
-const FILTER_ALIASES: Readonly<Record<string, string>> = {
+export const FILTER_ALIASES: Readonly<Record<string, string>> = {
 	Fl: "FlateDecode",
 	LZW: "LZWDecode",
 	AHx: "ASCIIHexDecode",
@@ -144,7 +144,13 @@ export class PdfDocument {
 		return Math.min(this.limits.maxStreamBytes, this.limits.maxInflatedTotal - this.inflated);
 	}
 
-	private async applyFilter(name: string | undefined, data: Uint8Array): Promise<Decoded | null> {
+	/** True for the filters {@link applyFilter} decodes (full or abbreviated name). */
+	static knownFilter(name: string): boolean {
+		return FILTERS[FILTER_ALIASES[name] ?? name] !== undefined;
+	}
+
+	/** One filter, counted against the inflate budget; null when unsupported or over budget. */
+	async applyFilter(name: string | undefined, data: Uint8Array): Promise<Decoded | null> {
 		const filter = name ? FILTERS[FILTER_ALIASES[name] ?? name] : undefined;
 		const out = filter ? await filter(this, data) : null;
 		if (!out) return null;

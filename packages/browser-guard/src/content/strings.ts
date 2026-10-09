@@ -26,6 +26,8 @@ export interface Strings {
 	imageUnscannedToast(name: string): string;
 	/** A document was checked, but pictures inside it were not inspected. */
 	documentImagesToast(name: string): string;
+	/** A PDF passed through although its embedded images were not inspected (no/failed OCR). */
+	pdfImagesUnscannedToast(name: string): string;
 	readonly confirmTitle: string;
 	confirmBody(total: number, summary: string): string;
 	readonly warnTitle: string;
@@ -88,6 +90,8 @@ const EN: Strings = {
 		`"${name}" is an image and its content was not inspected (the local OCR helper is not available or could not read it). Check it before sending.`,
 	documentImagesToast: (name) =>
 		`Pictures inside "${name}" were not inspected. Check them before sending.`,
+	pdfImagesUnscannedToast: (name) =>
+		`"${name}" contains images whose content was not inspected (the local OCR helper is not available or could not read them). Check the PDF before sending.`,
 	confirmTitle: "Sensitive data in your prompt",
 	confirmBody: (total, summary) =>
 		`${total} sensitive ${total === 1 ? "item was" : "items were"} found: ${summary}. ` +
@@ -154,6 +158,8 @@ const TR: Strings = {
 		`"${name}" bir görsel ve içeriği denetlenmedi (yerel OCR yardımcısı yok ya da görseli okuyamadı). Göndermeden önce kontrol edin.`,
 	documentImagesToast: (name) =>
 		`"${name}" içindeki görseller denetlenmedi. Göndermeden önce kontrol edin.`,
+	pdfImagesUnscannedToast: (name) =>
+		`"${name}" içeriği denetlenmemiş görseller içeriyor (yerel OCR yardımcısı yok ya da görselleri okuyamadı). Göndermeden önce PDF'i kontrol edin.`,
 	confirmTitle: "İsteminizde hassas veri var",
 	confirmBody: (total, summary) =>
 		`${total} hassas öğe bulundu: ${summary}. ` +

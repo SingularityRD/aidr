@@ -148,6 +148,21 @@ administrator and end-user guide is [`docs/platform-guides/browser-guard.md`](..
      unparseable (`PDF_UNPARSEABLE`) is treated like other binaries: uploaded with
      an "unscanned" warning, blocked in `block` mode. Findings in the readable
      part still block.
+   - **Images inside PDFs** (`src/engine/pdf/images.ts`): images drawn by a page or
+     Form XObject, inline images and image XObjects referenced elsewhere (soft masks
+     excluded) are OCR'd through the same native-host path as screenshots. JPEG
+     (`DCTDecode`) is sent as is; Flate/LZW/RunLength/ASCII images in Gray, RGB, CMYK,
+     ICCBased, Indexed or Separation colour spaces (1-16 bit, PNG predictors) are
+     re-encoded as PNG in the browser (no canvas). Sensitive text blocks the PDF
+     (`SENSITIVE_DATA_IN_IMAGE`). Any image of 8x8 px or more that is not read to a
+     verdict makes the PDF an uninspected image: `PDF_IMAGES_NOT_INSPECTED` plus
+     `PDF_IMAGE_OCR_UNAVAILABLE`, `PDF_IMAGE_UNSUPPORTED` (JPEG 2000, JBIG2, CCITT,
+     DeviceN, Lab, TIFF predictor), `PDF_IMAGE_UNDECODABLE`, `PDF_IMAGE_LIMIT` (more
+     than 16 images, 12 Mpx, 8192 px per side, 8 MiB, 90 s OCR budget) or
+     `PDF_IMAGE_OCR_INCOMPLETE` + the host's code (a picture without text comes back
+     as `IMAGE_NO_TEXT`); uploaded with a warning, blocked in `block` mode, never
+     clean. A PDF whose text and images are clean is allowed (`PDF_IMAGES_OCR_CLEAN`),
+     scanned PDFs included.
    - **Screenshots and photos** (PNG/JPEG/WebP): with `useNativeHost` and a host
      configured with OCR, the image is sent to the local host (`image-scan`, counts
      only; the host never returns pixels or text) and blocked when its text holds
@@ -445,8 +460,10 @@ to regenerate the dataset with stable fingerprints.
 - Images are not OCR'd in the browser itself. Uploaded images and pictures inside
   Office/OpenDocument files are OCR'd only through the optional native host with OCR
   configured, and blocked (never masked) when they show sensitive data; without it
-  they are reported as not inspected, not as clean. Scanned PDFs and image-only PDF
-  pages are not OCR'd (reported as unscanned). Set `fileHandling: block` or
+  they are reported as not inspected, not as clean. Images inside PDFs (scanned pages
+  included) are extracted in the browser and OCR'd the same way; without the host a PDF
+  with images is reported as not inspected. OCR accuracy is unmeasured (no evaluation
+  on real documents or images). Set `fileHandling: block` or
   `documentHandling: block` if such uploads must not reach AI sites at all.
 - PDFs are scanned but never rewritten, so a PDF with findings is blocked rather
   than masked. PDF text extraction does not decrypt encrypted files, does not
