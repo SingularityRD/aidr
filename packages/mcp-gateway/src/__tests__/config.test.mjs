@@ -4,7 +4,13 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { authenticateBearer, GatewayConfigError, validateGatewayConfig } from "../config.mjs";
+import {
+	authenticateBearer,
+	GATEWAY_CAPACITY,
+	GatewayConfigError,
+	validateGatewayConfig,
+} from "../config.mjs";
+import { tenantAdmissionRefusal } from "../gateway.mjs";
 
 const packageRoot = resolve(fileURLToPath(new URL("../../", import.meta.url)));
 
@@ -92,6 +98,96 @@ describe("MCP gateway configuration and bearer authentication", () => {
 		assert.throws(() => {
 			validated.servers[0].url = "https://attacker.example.test/mcp";
 		});
+	});
+});
+
+describe("MCP gateway tenant fair-share capacity", () => {
+	const pools = Object.keys(GATEWAY_CAPACITY);
+
+	it("defaults every pool and bounds configured quotas to a share that leaves the reserve free", () => {
+		const defaults = validateGatewayConfig(config()).tenantQuotas;
+		assert.deepEqual(defaults, GATEWAY_CAPACITY);
+		for (const pool of pools) {
+			const { global, reserved, guaranteed } = GATEWAY_CAPACITY[pool];
+			assert.ok(reserved >= guaranteed && reserved < global);
+			for (const perTenant of [guaranteed, global - reserved])
+				assert.equal(
+					validateGatewayConfig({ ...config(), tenantQuotas: { [pool]: perTenant } }).tenantQuotas[
+						pool
+					].perTenant,
+					perTenant,
+				);
+			for (const perTenant of [guaranteed - 1, global - reserved + 1, global, 1.5, "8", null])
+				assert.throws(
+					() => validateGatewayConfig({ ...config(), tenantQuotas: { [pool]: perTenant } }),
+					GatewayConfigError,
+				);
+		}
+		assert.throws(
+			() => validateGatewayConfig({ ...config(), tenantQuotas: { sessions: 8 } }),
+			/invalid tenant quotas/,
+		);
+		assert.throws(
+			() => validateGatewayConfig({ ...config(), tenantQuotas: [] }),
+			/invalid tenant quotas/,
+		);
+	});
+
+	/** Simulated pool: `acquire(tenant)` returns the refusal code or null when admitted. */
+	function simulatedPool(quotas) {
+		const held = new Map();
+		const state = { total: 0, held };
+		state.acquire = (tenant) => {
+			const refusal = tenantAdmissionRefusal(quotas, state.total, held.get(tenant) ?? 0);
+			if (refusal) return refusal;
+			held.set(tenant, (held.get(tenant) ?? 0) + 1);
+			state.total++;
+			return null;
+		};
+		return state;
+	}
+
+	function assertQuietTenantsServed(limits, quotas) {
+		const pool = simulatedPool(quotas);
+		// Four noisy tenants (enough to exhaust the former 4 x quota = global design)
+		// each try to take the whole pool.
+		const noisy = Array.from({ length: 4 }, (_, index) => `noisy-${index}`);
+		for (const tenant of noisy) for (let k = 0; k < limits.global; k++) pool.acquire(tenant);
+		for (const count of pool.held.values()) assert.ok(count <= quotas.perTenant);
+		// Beyond the shared pool, a noisy tenant can take at most its guaranteed floor.
+		assert.ok(pool.total <= limits.global - limits.reserved + noisy.length * limits.guaranteed);
+		// Every noisy tenant stays refused while capacity is still free for others.
+		assert.ok(pool.total < limits.global);
+		for (const tenant of noisy) assert.equal(pool.acquire(tenant), "tenant_busy");
+		// Quiet tenants each still receive their guaranteed floor until the pool is full.
+		let quiet = 0;
+		while (pool.total < limits.global) {
+			for (let k = 0; k < limits.guaranteed; k++)
+				assert.equal(pool.acquire(`quiet-${quiet}`), null);
+			quiet++;
+		}
+		assert.ok(quiet >= limits.reserved / limits.guaranteed - noisy.length);
+		for (let tenant = 0; tenant < quiet; tenant++)
+			assert.equal(pool.held.get(`quiet-${tenant}`), limits.guaranteed);
+		assert.equal(pool.acquire("late"), "gateway_busy");
+	}
+
+	it("keeps the reserve for quiet tenants however many tenants run at their maximum quota", () => {
+		for (const pool of pools) {
+			const limits = GATEWAY_CAPACITY[pool];
+			assertQuietTenantsServed(limits, limits);
+			assertQuietTenantsServed(limits, { ...limits, perTenant: limits.global - limits.reserved });
+		}
+	});
+
+	it("refuses a quiet tenant beyond its guaranteed floor while only the reserve is left", () => {
+		const limits = GATEWAY_CAPACITY.pendingReplies;
+		const shared = limits.global - limits.reserved;
+		assert.equal(tenantAdmissionRefusal(limits, shared - 1, limits.perTenant - 1), null);
+		assert.equal(tenantAdmissionRefusal(limits, shared, limits.guaranteed - 1), null);
+		assert.equal(tenantAdmissionRefusal(limits, shared, limits.guaranteed), "tenant_busy");
+		assert.equal(tenantAdmissionRefusal(limits, 0, limits.perTenant), "tenant_busy");
+		assert.equal(tenantAdmissionRefusal(limits, limits.global, 0), "gateway_busy");
 	});
 });
 

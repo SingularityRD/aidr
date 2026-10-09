@@ -315,6 +315,41 @@ function validateAgentProfiles(input, clients) {
 	return result.document;
 }
 
+/**
+ * Shared admission pools: in-flight parent requests, server-initiated requests
+ * awaiting a client reply, and MRTR continuations awaiting a retry.
+ *
+ * - `global`: hard cap across all tenants (`gateway_busy` once reached).
+ * - `perTenant`: default per-tenant quota (`tenant_busy`); configurable through
+ *   `tenantQuotas` but never above `global - reserved` or below `guaranteed`.
+ * - `reserved`: the last slots of the global cap, admitted only to a tenant that
+ *   holds fewer than `guaranteed` entries. However many tenants run at quota,
+ *   they can fill at most `global - reserved`, so a quiet tenant is still served.
+ */
+export const GATEWAY_CAPACITY = freezeTree({
+	activeRequests: { global: 64, reserved: 16, guaranteed: 2, perTenant: 16 },
+	pendingReplies: { global: 256, reserved: 64, guaranteed: 8, perTenant: 64 },
+	continuations: { global: 256, reserved: 64, guaranteed: 8, perTenant: 64 },
+});
+
+function validateTenantQuotas(input) {
+	const pools = Object.keys(GATEWAY_CAPACITY);
+	if (input !== undefined) requireKeys(input, pools, "tenant quotas");
+	return Object.fromEntries(
+		pools.map((pool) => {
+			const limits = GATEWAY_CAPACITY[pool];
+			const perTenant = input?.[pool] === undefined ? limits.perTenant : input[pool];
+			if (
+				!Number.isSafeInteger(perTenant) ||
+				perTenant < limits.guaranteed ||
+				perTenant > limits.global - limits.reserved
+			)
+				throw new GatewayConfigError(`invalid tenant quota for ${pool}`);
+			return [pool, { ...limits, perTenant }];
+		}),
+	);
+}
+
 function validateBinaryOutput(input, maxBodyBytes) {
 	if (input === undefined)
 		return {
@@ -386,6 +421,7 @@ export function validateGatewayConfig(input) {
 			"binaryOutput",
 			"serverInitiated",
 			"agentProfiles",
+			"tenantQuotas",
 		],
 		"gateway config",
 	);
@@ -429,6 +465,7 @@ export function validateGatewayConfig(input) {
 		binaryOutput: validateBinaryOutput(input.binaryOutput, maxBodyBytes),
 		serverInitiated: validateServerInitiated(input.serverInitiated),
 		agentProfiles: validateAgentProfiles(input.agentProfiles, clients),
+		tenantQuotas: validateTenantQuotas(input.tenantQuotas),
 	});
 }
 

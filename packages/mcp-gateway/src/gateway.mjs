@@ -33,17 +33,8 @@ import { inspectToolResult } from "./output-inspection.mjs";
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
 const SESSION = /^[\x21-\x7e]{8,256}$/;
 const PROTOCOL_VERSION = /^\d{4}-\d{2}-\d{2}$/;
-const MAX_ACTIVE_PER_TENANT = 16;
-const MAX_ACTIVE_REQUESTS = 64;
 const MAX_SESSIONS = 10_000;
 const MAX_SESSIONS_PER_TENANT = 256;
-// Server-initiated requests awaiting a client reply, and MRTR continuations
-// awaiting a retry: a global cap plus a per-tenant quota, so one tenant cannot
-// exhaust the shared capacity (mirrors sessionCapacityAvailable).
-const MAX_PENDING_REPLIES = 256;
-const MAX_PENDING_REPLIES_PER_TENANT = 64;
-const MAX_CONTINUATIONS = 256;
-const MAX_CONTINUATIONS_PER_TENANT = 64;
 const SESSION_TTL_MS = 30 * 60 * 1000;
 const UPSTREAM_TIMEOUT_MS = 15_000;
 const textDecoder = new TextDecoder("utf-8", { fatal: true });
@@ -74,6 +65,19 @@ const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
 // UUIDs), which made the gateway block its own toolset re-verification. Encode
 // 128 random bits with letters only so the gateway never trips its own scanner.
 const NONCE_ALPHABET = "abcdefghjkmnpqrs";
+
+/**
+ * Fair-share admission for one shared pool (see GATEWAY_CAPACITY): returns the
+ * refusal code, or null when a tenant holding `tenantHeld` of `total` entries may
+ * take one more. The last `reserved` slots go only to tenants below their
+ * guaranteed floor, so tenants at quota can never starve a quiet tenant.
+ */
+export function tenantAdmissionRefusal(pool, total, tenantHeld) {
+	if (total >= pool.global) return "gateway_busy";
+	if (tenantHeld >= pool.perTenant) return "tenant_busy";
+	if (total >= pool.global - pool.reserved && tenantHeld >= pool.guaranteed) return "tenant_busy";
+	return null;
+}
 
 export function gatewayNonce(prefix) {
 	let suffix = "";
@@ -1404,17 +1408,7 @@ export function createMcpGateway(input, dependencies = {}) {
 		let delivered = message;
 		if (Object.hasOwn(message, "id")) {
 			if (server.replyIds.size >= 16) throw new Error("gateway_unavailable");
-			if (
-				!tenantCapacityAvailable(
-					pendingReplies,
-					server.tenantId,
-					MAX_PENDING_REPLIES,
-					MAX_PENDING_REPLIES_PER_TENANT,
-				)
-			)
-				throw new Error(
-					pendingReplies.size >= MAX_PENDING_REPLIES ? "gateway_busy" : "tenant_busy",
-				);
+			admitTenantEntry(pendingReplies, server.tenantId, config.tenantQuotas.pendingReplies);
 			if (
 				[...pendingReplies.values()].some(
 					(pending) =>
@@ -1504,15 +1498,7 @@ export function createMcpGateway(input, dependencies = {}) {
 		await guardPayload(result, server, sessionId, "to_client", "input_required");
 		for (const [id, saved] of continuations)
 			if (saved.expiresAt <= now().getTime()) continuations.delete(id);
-		if (
-			!tenantCapacityAvailable(
-				continuations,
-				server.tenantId,
-				MAX_CONTINUATIONS,
-				MAX_CONTINUATIONS_PER_TENANT,
-			)
-		)
-			throw new Error(continuations.size >= MAX_CONTINUATIONS ? "gateway_busy" : "tenant_busy");
+		admitTenantEntry(continuations, server.tenantId, config.tenantQuotas.continuations);
 		const state = gatewayNonce("aidr-mrtr");
 		continuations.set(state, {
 			tenantId: server.tenantId,
@@ -1878,14 +1864,14 @@ export function createMcpGateway(input, dependencies = {}) {
 		}
 	}
 
-	/** Global cap and per-tenant quota for a map of entries carrying `tenantId`. */
-	function tenantCapacityAvailable(entries, tenantId, globalCap, tenantCap) {
-		if (entries.size >= globalCap) return false;
+	/** Fail closed unless a map of entries carrying `tenantId` admits one more for this tenant. */
+	function admitTenantEntry(entries, tenantId, pool) {
 		let tenantEntries = 0;
 		for (const entry of entries.values()) {
 			if (entry.tenantId === tenantId) tenantEntries += 1;
 		}
-		return tenantEntries < tenantCap;
+		const refusal = tenantAdmissionRefusal(pool, entries.size, tenantEntries);
+		if (refusal) throw new Error(refusal);
 	}
 
 	function sessionCapacityAvailable(tenantId) {
@@ -2213,8 +2199,12 @@ export function createMcpGateway(input, dependencies = {}) {
 				);
 			if (rpc.method) {
 				const current = inflight.get(client.tenantId) ?? 0;
-				if (current >= MAX_ACTIVE_PER_TENANT) throw new Error("tenant_busy");
-				if (activeRequests >= MAX_ACTIVE_REQUESTS) throw new Error("gateway_busy");
+				const refusal = tenantAdmissionRefusal(
+					config.tenantQuotas.activeRequests,
+					activeRequests,
+					current,
+				);
+				if (refusal) throw new Error(refusal);
 				inflight.set(client.tenantId, current + 1);
 				activeRequests++;
 				counted = true;
