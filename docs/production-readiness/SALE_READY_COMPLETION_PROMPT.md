@@ -3,7 +3,7 @@
 Bu dosyanın "PROMPT" bölümünün tamamını, repo kökünde çalışan otonom bir kodlama ajanına tek
 prompt olarak ver. Plan: [SALE_READY_COMPLETION_PLAN.md](./SALE_READY_COMPLETION_PLAN.md).
 Önceki ajan promptu (`next-agent-execution-prompt-v8.md`) bir jeneratör çıktısı olabilir; bu
-dosya onun yerine geçmez, ondan sonraki durumu (8 Ekim 2026) esas alır.
+dosya onun yerine geçmez, ondan sonraki durumu (9 Ekim 2026 itibarıyla güncellendi) esas alır.
 
 ---
 
@@ -53,30 +53,28 @@ parçayla başla.
 - URL/dosya/paket itibar bacakları dağıtılmış bir birinci taraf uç nokta olmadan **etkisizdir** ve "temiz" sunulmaz.
 - Adlandırma: YAML/JSON `snake_case`, TypeScript `camelCase`.
 
-### Başlangıç durumu (8 Ekim 2026, `master` @ `847bee80`) — önce bunu yeniden ölç
+### Başlangıç durumu (9 Ekim 2026, `master` @ `c2a0f5f0`) — önce bunu yeniden ölç
 
-- Kayıt: 109 yetenek (66 bağlı / 41 kısmi / 2 dış), 47 teknik iş (3 OPEN: **T19, T37, T38**), 13 dış kapı.
-- **`master` kırık**, bugünkü toplu Dependabot birleşiminden (üç ayrı PR):
-  - `pnpm check` → `packages/core` içinde 42 TS hatası: **zod 3→4** (#75). `.default({})` iç içe şema
-    çağrıları, kaldırılan `invalid_enum_value` kodu, `z.record` argüman sayısı vb.
-  - `pnpm build` → **koffi 2→3** (#95): `koffi/build/koffi/<plat>/koffi.node` yok;
-    `scripts/stage-windows-koffi.mjs` ve `scripts/verify-package-install.mjs` bu yola bağlı.
-  - `pnpm test` → **react-dom 19.3.0 / react 19.2.4** uyuşmazlığı (#80): 66 dashboard test dosyası düşüyor.
-  - zod ve koffi geri alınınca `check` ve `build` geçti; tam test 10.291 geçti / 30 başarısız /
-    13 atlama (69 dosya). Bu 30'un: react uyuşmazlığı (dosya düzeyi), `deploy/upstream` submodule'ü
-    başlatılmamış olduğu için `discovery-cloud` testleri (ortamsal), ve **merge öncesi `dc56701c`'de de
-    kırmızı olan** 9 SCIM admin contract + 1 browser-guard windows-1252 testi (önceden var) olduğunu
-    ayırt et; hepsini yeniden ölç. jsdom 30, pino 10, @vscode/test-electron 3, @opencode-ai/plugin,
-    Node 26 ve Python 3.14 Docker imajlarının etkisi **doğrulanmadı** (dashboard testleri koşmadığı için görünmüyor).
-  - Yerel (push edilmemiş) `local/revert-zod4-koffi3-candidate` dalı iki geri almayı taşıyabilir;
-    ajan oturumunda bulunmayabilir — yeniden üretmek için `git revert 80d7e76c 3dff546d`.
-- `pnpm ci:local --list` kendi başına hata veriyor (`ci.yml` ile `scripts/lib/ci-local-plan.mjs`
-  arasında "MCP gateway and dashboard auth callback tests" adım kayması). GitHub Actions bu
-  depoda kapalı; **`ci:local` tek CI'dır**.
-- `pnpm lint` çıkış 0 ama ~746 uyarı.
+- Kayıt: 109 yetenek (66 bağlı / 41 kısmi / 2 dış), 47 teknik iş (3 OPEN: **T19, T37, T38**),
+  13 dış kapı (hepsi `open`), backlog'da 8 `BLOCKED_EXTERNAL` + 1 `IN_PROGRESS` + 2 `IMPLEMENTED_UNVERIFIED`.
+  Karar **NO-GO**.
+- 8 Ekim'deki kırıklar #97–#99 ile kapandı (zod 4, koffi 3, react-dom 19.3, tokenizers, Node 26 /
+  Python 3.14 imajları ve codeql bump'ları geri alındı; `ci:local` kayması ve SCIM fixture'ları
+  düzeltildi). 9 Ekim: `pnpm install --frozen-lockfile`, `pnpm check`, `pnpm build`,
+  `pnpm ci:local --list` → 0; tam test 628 dosya / 11.041 geçti / 0 başarısız; `pnpm lint` → 0 hata /
+  746 uyarı; 494 kural / 29 dosya; 176 migration.
+  zod 4 ve koffi 3 göçleri **ayrı iş olarak açık**.
+- 7–9 Ekim'de büyük bir dalga `master`'a girdi: Browser Guard dalı, hook deadline, MCP politika
+  eşitliği (6 connector), PII maskeleme, karantina + imzalı karar günlüğü, operatör onayı + süreli
+  istisnalar, sunucu tarafı plan kapısı, Shadow AI panel kontrolü, operatör konsolu, gizlilik geçidi
+  Compose/Helm paketleme ve kod incelemesi düzeltmeleri. Ayrıntı ve kalanlar:
+  `NO_GO_TO_GO_GAP_LIST.md` **bölüm I**.
+- **22 migration (`20261005220000`…`20261008000100`) Postgres'te hiç çalışmadı** (Docker yoktu);
+  yalnız statik testler geçti. Bölüm I.1'deki riskli olanlar önce.
+- Kod incelemesinden düzeltilmemiş 2 orta bulgu: repo-remote istisnasının `.git/config` ile
+  taşınabilmesi; `operator` onay modunun config okunamazsa host diyaloğuna düşmesi (bölüm I.4).
 - Gerçek host kanıtı: yalnızca linux/x64, geliştirme build'i, betikli sahte model; Cursor/VS Code hiç
-  çalışmadı; Windows/macOS yok.
-- Kayıtlı son tam test (6 Eki): 6.857 geçti, 6 POSIX atlama.
+  çalışmadı; Windows/macOS yok. GitHub Actions kapalı; **`ci:local` tek CI'dır**.
 
 ### Önce şunları oku ve uzlaştır
 
@@ -113,28 +111,30 @@ doğrula** → kayıt/jeneratör → commit.
 
 ### Fazlar
 
-**Faz 0 — `master`'ı yeşile döndür (ilk iş, diğerleri bunu bekler).**
-1. `master`'dan dal aç. zod 4 (#75) ve koffi 3 (#95) birleşimlerini `git revert` ile geri al
-   (öneri) **veya** tam göç yap; hangisini seçtiğini gerekçeyle raporla. Geri almada lockfile'ın
-   tutarlı kaldığını doğrula. react-dom (#80) için `react`'i aynı sürüme hizala (veya geri al) ve
-   dashboard testlerini yeniden koştur; jsdom 30 etkisi ancak bundan sonra görünür.
-   Merge öncesi de kırmızı olan testleri (SCIM admin contract, windows-1252) ayrıca sınıflandır;
-   `deploy/upstream` submodule'ünü başlatmadan `discovery-cloud` testleri koşamaz.
-2. Doğrulama: `pnpm install --frozen-lockfile && pnpm check && pnpm build && pnpm test`, sonra
-   `pnpm ci:local --keep-going --fetch-tools`. Atlamaları (Docker, `pwsh`, kök olmayan kullanıcı,
-   aday envanteri) nedenleriyle listele.
-3. Kalan major bump'ları tek tek doğrula; Docker taban imajlarını (Node 26, Python 3.14) gerçekten
-   derle, imaj güvenlik taramasını yeniden çalıştır; sorunluysa geri al ve ayrı iş aç.
-4. `ci:local` ↔ `ci.yml` kaymasını onar; `scripts/ci-local.test.mjs` yakalasın.
-5. Dependabot: major sürümler ayrı grup / otomatik merge dışı; PR şablonuna doğrulama komutları.
-6. Lint uyarı tabanı (baseline) koy; yeni uyarı eklenemesin.
+**Faz 0 — Temeli doğrula (ilk iş, diğerleri bunu bekler).**
+1. `pnpm install --frozen-lockfile && pnpm check && pnpm build && pnpm test`, sonra
+   `pnpm ci:local --keep-going --fetch-tools`. Her başarısızlığı sınıflandır (ürün hatası /
+   zamanlama-yük hassasiyeti / ortam: Docker, `pwsh`, kök olmayan kullanıcı, `deploy/upstream`
+   submodule'ü). Ortamsal olanı gerekçesiyle kaydet; ürün hatasını düzelt.
+2. **Docker'lı ortamda** 41 `scripts/*-postgres*` paketini ve 22 yeni migration'ı hem temiz DB'ye
+   hem önceki sürüm verisine uygula (`NO_GO_TO_GO_GAP_LIST.md` I.1). Kırılan fonksiyon izni
+   (global PUBLIC execute iptali), SCIM directory modu, keşif pseudonimi, plan saklaması için
+   ayrı regresyon testleri yaz. Docker yoksa bunu "çalıştırılmadı" olarak raporun en üstüne yaz.
+3. Bölüm I.4'teki iki orta bulguyu düzelt (repo-remote istisnasını depo köküne bağla;
+   `operator` modunda config hatasını deny yap), ardından düşükleri.
+4. zod 4 ve koffi 3 göçleri: her biri ayrı PR + göç notu; ancak `check/build/test` yeşilse birleşir.
+   Merge edilmiş major bump'ları (jsdom 30, pino 10, @vscode/test-electron 3, @opencode-ai/plugin)
+   ilgili paket + E2E ile tek tek doğrula.
+5. Lint uyarı tabanı (baseline) koy; yeni uyarı eklenemesin. `CLAUDE.md`'deki silinmiş
+   `packages/dashboard/supabase/functions/` referansını düzelt.
 
-*Çıkış:* temiz `master`'da `check`, `build`, `test`, `ci:local --keep-going` yeşil.
+*Çıkış:* `master`'da `check`, `build`, `test`, `ci:local --keep-going` yeşil; Postgres paketleri
+koşmuş (ya da açıkça "çalıştırılmadı").
 
 **Faz 1 — Yerel kod boşlukları** (öncelik sırasıyla; her biri döngüyle kapanır):
 1. **T19** SCIM / Azure AD grup eşlemesi, **T37** gerçek veri akışı + redaksiyon + gizlilik kanıtı,
    **T38** kuruma özel DLP ve etiketler.
-2. Tespit: hostname'de DNS sızdırma; ters/bölünmüş canary; AI-BOM'da `-p <parola>` maskeleme;
+2. Tespit (Tespit Mühendisliği ekibiyle): `NO_GO_TO_GO_GAP_LIST.md` I.3 — kırmızı takım vakalarını ekipçe yeniden üret, kalıcı regresyon testine çevir, iki yanlış pozitifi gider; ayrıca hostname'de DNS sızdırma; ters/bölünmüş canary; AI-BOM'da `-p <parola>` maskeleme;
    iki MCP sunucusuna yayılan zincirler; MCP doğrudan upstream bypass (zorunlu yönlendirme).
 3. Browser Guard: PDF içi görsel OCR; eski `.doc/.xls/.ppt` taraması; OCR doğruluğu ve ODF/LibreOffice doğrulaması.
 4. Sınama kapsamı: Docker gerektiren 15 Postgres paketi ve `ci:local` Docker adımları (Docker varsa);
@@ -178,6 +178,10 @@ seviyesi → eksik girdi → sahip), açık risk listesi, sahibinden beklenen ka
 Satış kademesi (kontrollü değerlendirme → destekli satış → GA); connector kapsamı (registry beş,
 native matrix altı — hizala); bölge vaadi (EU/US/APAC vs tek bölge); SLA zamanlaması; T18 SAML
 semantiği; faturalama sağlayıcısı ve SKU; mağaza/imza yayıncı kimliği; zod 4 / koffi 3 göçü.
+Ayrıca (`NO_GO_TO_GO_GAP_LIST.md` I.5): kayıtsız ticari build'de yerel tespit mi, başlamayı reddetme mi;
+plan kuralları (deneme = Team, lisanssız ücretli etiket = Free, ayarsız kiracının saklamasının plan
+süresine geçmesi, düşürülen planda OIDC/SCIM yönetim kilidi); yönetilen tespit istisnalarında dört
+göz; gizlilik paketi Python bağımlılık lisansları; satış kataloğu madde 30 ve AI-Infra-Guard atfı.
 
 ### Rapor biçimi (her çalışma sonunda)
 

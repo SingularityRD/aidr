@@ -1,6 +1,6 @@
 # NO-GO → GO: eksiksiz eksik listesi
 
-Üretim tarihi: 2026-10-08 (kayıtlardan türetilmiş anlık görüntü). Kaynaklar: `PRODUCTION_SALES_GAPS.json`, `FEATURE_INVENTORY.json`, `commercial-go-evidence-registry.json`, `commercial-gate-receipts.json`, `READINESS_BACKLOG.json`, `deploy/native/support-matrix.json`, `first-customer-ready.md`, `HANDOFF.md` ve 8 Ekim 2026 yerel ölçümleri. Bu belge **kabul defteri değildir**; karar kaydı registry + receipt'lerdir. Plan: [SALE_READY_COMPLETION_PLAN.md](./SALE_READY_COMPLETION_PLAN.md). Eski/bayat üretilmiş kayıtlar değişirse bu liste yeniden türetilmelidir.
+Üretim tarihi: 2026-10-08, bölüm A ve I 2026-10-09 güncellendi (kayıtlardan ve yerel ölçümlerden türetilmiş anlık görüntü). Kaynaklar: `PRODUCTION_SALES_GAPS.json`, `FEATURE_INVENTORY.json`, `commercial-go-evidence-registry.json`, `commercial-gate-receipts.json`, `READINESS_BACKLOG.json`, `deploy/native/support-matrix.json`, `first-customer-ready.md`, `HANDOFF.md` ve 8 Ekim 2026 yerel ölçümleri. Bu belge **kabul defteri değildir**; karar kaydı registry + receipt'lerdir. Plan: [SALE_READY_COMPLETION_PLAN.md](./SALE_READY_COMPLETION_PLAN.md). Eski/bayat üretilmiş kayıtlar değişirse bu liste yeniden türetilmelidir.
 
 **Karar kuralı:** Bir seviye için listelenen her madde kapanmadan karar **NO-GO** kalır. Kapanış = aynı aday için gerçek kanıt + isimli sahip + (gerekiyorsa) bağımsız gözden geçiren. Yerel test geçişi dış kanıt yerine geçmez.
 
@@ -15,18 +15,26 @@
 | Kısmi / dış yetenek | 41 kısmi + 2 dış = 43 / 109 |
 | Backlog `BLOCKED_EXTERNAL` | 9 |
 
-## A. Anlık engeller — hiçbir şeyden önce (ölçüldü, 8 Ekim 2026)
+## A. Anlık engeller — hiçbir şeyden önce (yeniden ölçüldü, 9 Ekim 2026, `master` @ `c2a0f5f0`)
 
-| # | Engel | Kanıt | Kapanış ölçütü | Kim |
+8 Ekim'deki kırıkların çoğu #97–#99 ile kapandı (zod 4, koffi 3, react-dom 19.3, tokenizers,
+Python 3.14 / Node 26 imajları ve codeql bump'ları geri alındı; `ci:local` kayması ve SCIM
+fixture'ları düzeltildi). 9 Ekim ölçümü: `pnpm install --frozen-lockfile`, `pnpm check`,
+`pnpm build`, `pnpm ci:local --list` → çıkış 0; `pnpm lint` → 0 hata, 746 uyarı; 494 kural / 29
+dosya; 176 migration. Docker çalışmıyor.
+
+| # | Engel | Durum (9 Eki) | Kapanış ölçütü | Kim |
 |---|---|---|---|---|
-| A1 | `pnpm check` kırık: zod 3→4 (#75) | `packages/core` 42 TS hatası | `pnpm check` yeşil | Mühendislik |
-| A2 | `pnpm build` kırık: koffi 2→3 (#95) | `koffi/build/koffi/<plat>/koffi.node` yok; AMSI hazırlama ve paket doğrulama betikleri bu yola bağlı | `pnpm build` yeşil, Windows AMSI paketi doğrulandı | Mühendislik |
-| A3 | react-dom 19.3.0 / react 19.2.4 (#80) | 66 dashboard test dosyası düşüyor | dashboard testleri yeşil; sonra jsdom 30 etkisi ölçüldü | Mühendislik |
-| A4 | Merge öncesi de kırmızı testler | 9 SCIM admin contract + 1 browser-guard windows-1252 testi `dc56701c`'de de başarısız | düzeltildi veya gerekçeli/dar kapsamlı sınıflandırıldı; `deploy/upstream` submodule'ü başlatılıp `discovery-cloud` testleri koşuldu | Mühendislik |
-| A5 | `pnpm ci:local --list` hata veriyor (`ci.yml` ↔ `ci-local-plan.mjs` adım kayması) | "MCP gateway and dashboard auth callback tests" adımı `ci.yml`'de yok. CI kapalı olduğundan `ci:local` tek kapı | `ci:local --list` ve `--keep-going` temiz; kayma testi var | Mühendislik |
-| A6 | ~746 `biome` uyarısı | `pnpm lint` çıkış 0, kalıcı borç | baseline + yeni uyarı yok | Mühendislik |
-| A7 | Diğer major bump'lar doğrulanmadı | jsdom 30, pino 10, @vscode/test-electron 3, @opencode-ai/plugin, Node 26 ve Python 3.14 Docker imajları | tek tek test; imajlar gerçekten derlendi ve yeniden tarandı | Mühendislik |
-| A8 | Yayındaki landing ve pilot depoyla uyuşmuyor (24 Eyl bulgusu) | "launch-ready / go live in minutes" (claim kaydı yasaklıyor); `app.aidr…` DNS yok; `/readyz` 503; destek/durum/gizlilik/şartlar yapılandırılmamış | landing kaynağı depoda ve taranmış; claim-check temiz; hostname çözülüyor | Ürün/Pazarlama + Operasyon |
+| A1 | `pnpm check` (zod 3→4, #75) | **Kapandı** — geri alındı, `check` yeşil. zod 4 göçü ayrı iş olarak açık | zod 4 göçü ayrı PR'da `check/build/test` yeşil | Mühendislik |
+| A2 | `pnpm build` (koffi 2→3, #95) | **Kapandı** — geri alındı, `build` yeşil. koffi 3 göçü açık (`stage-windows-koffi.mjs` yol değişikliği) | koffi 3 ile Windows AMSI paketi doğrulandı | Mühendislik |
+| A3 | react-dom 19.3 / react 19.2 (#80) | **Kapandı** — geri alındı; dashboard dahil tam test yeşil (A9) | react-dom 19.3 göçü ayrı PR | Mühendislik |
+| A4 | SCIM admin contract kırmızıları | **Kapandı** (#97: `directory_id` fixture'ları) | — | Mühendislik |
+| A5 | `ci:local --list` kayması | **Kapandı** (#98) | `ci:local --keep-going` temiz (Docker adımları hariç, gerekçeli) | Mühendislik |
+| A6 | 746 `biome` uyarısı | Açık | baseline + yeni uyarı yok | Mühendislik |
+| A7 | Merge edilmiş major bump'lar | Açık: jsdom 30, pino 10, @vscode/test-electron 3, @opencode-ai/plugin 1.18 tam test dışında tek tek doğrulanmadı | her biri için ilgili paket + E2E | Mühendislik |
+| A8 | Yayındaki landing ve pilot depoyla uyuşmuyor (24 Eyl bulgusu) | Açık | landing kaynağı depoda ve taranmış; claim-check temiz; hostname çözülüyor | Ürün/Pazarlama + Operasyon |
+| A9 | Tam `pnpm test` (9 Eki) | **Kapandı** — 628 dosya / 11.041 test geçti, 0 başarısız (I.0) | — | Mühendislik |
+| A10 | **Postgres'te hiç çalışmamış 22 migration** (bölüm I.1) | Açık — yalnız statik testlerden geçti | Docker'lı ortamda 41 `*-postgres` paketi + yeni migration'lar temiz DB'ye ve mevcut veriye uygulandı | Mühendislik + DB |
 
 ## B. Zorunlu dış kapılar (registry `hardGates`)
 
@@ -199,6 +207,96 @@ Native matrix artıkları (`deploy/native/support-matrix.json` → `residual`):
 
 - **T01-NATIVE-SCENARIOS**: Per-host native scenario manifests that drive a real host binary through denied-side-effect, benign-twin, disabled-hook, crash, timeout, offline and restart cases. Girdi: A licensed and installed copy of each sold host on a disposable Windows, Linux and macOS machine Sahip: QA + Endpoint Engineering
 - **T01-OS-VERSION-MATRIX**: Pinned operating-system build numbers for each sold platform row. Girdi: First-release supported OS build list approved by Endpoint Engineering Sahip: Endpoint Engineering
+
+## I. 7–9 Ekim çalışmasından kalanlar (kod yazıldı, kabul eksik)
+
+7–9 Ekim'de katalog doğrulaması, 5 alanlı kod incelemesi ve düzeltmeler `master`'a girdi
+(Browser Guard dalı birleşti; 494 kural; hook deadline; MCP politika eşitliği; PII maskeleme;
+karantina + imzalı karar günlüğü; operatör onayı ve süreli istisnalar; plan kapısı; Shadow AI
+panel kontrolü; operatör konsolu; gizlilik geçidi paketleme; çok sayıda güvenlik düzeltmesi).
+Aşağıdakiler hâlâ açık.
+
+### I.0 Tam test (9 Ekim, `c2a0f5f0`)
+
+`AIDR_TEST_NO_BUILD=1 pnpm exec vitest run` (Windows 11, Node 24.18.1, `pnpm build` sonrası):
+**628/628 dosya, 11.041 test geçti, 10 atlandı, 0 başarısız.** `pnpm test:privacy`, E2E katmanları
+ve Docker gerektiren Postgres paketleri bu koşuya dahil değildir.
+
+### I.1 Postgres'te hiç çalıştırılmamış migration'lar (Docker yoktu)
+
+`20261005220000` … `20261008000100` arası 22 migration yalnız statik testlerden geçti. Özellikle
+şunlar davranış değiştirir ve canlı veride doğrulanmalıdır:
+
+| Migration | Risk |
+|---|---|
+| `20261007000050_scim_directory_authoritative` | SCIM dışı üyeliği commit anında reddeder; yanlış veri kiracıyı kilitleyebilir (break-glass var) |
+| `20261007000000_discovery_target_pseudonyms` | Eski collector'lar `target_address_not_accepted` alır; yükseltme sırası önemli |
+| `20261007000200_detection_exceptions` | Yeni tablo/RPC; 30 gün ve self-defense kısıtları DB'de |
+| `20261007120000_security_review_hardening` | Global `alter default privileges ... revoke execute ... from public`: örtük PUBLIC execute'a dayanan bir fonksiyon kırılır |
+| `20261007130000_plan_retention_and_feature_gating` | Plan çözücü; hiç ayar yapmamış kiracıların saklama süresi plan süresine geçer (ör. 30→365 gün) |
+| `20261007140000_shadow_ai_site_decisions` | Overlay'e yeni alan; Browser Guard politikası buna bağlı (yoksa 503) |
+| `20261007000100_tenant_identity_barrier_after_merge`, `20261008000100_restore_directory_membership_grants` | Kimlik bariyeri / üyelik izinleri |
+
+Kapanış: Docker'lı makinede `scripts/*-postgres*.mjs` (41 dosya; yeni:
+`scim-directory-authority-postgres.test.mjs`, `discovery-cloud-postgres.test.mjs`) +
+`pnpm verify:retention`, `pnpm verify:offboarding`; hem temiz DB'ye hem önceki sürüm verisine uygula.
+
+### I.2 Dağıtımda operatörün yapması gerekenler (kodda hazır, ortamda yok)
+
+- Barındırılan Supabase "Invite user" e-posta şablonunu `supabase/templates/invite.html` ile değiştir
+  (`token_hash` akışı; eski davetler reddedilir, yeniden gönder).
+- `response-playbooks` fonksiyonunu `verify_jwt=false` ile dağıt (yoksa otomasyon tetikleyicisi geçitte kalır).
+- Cloudflare worker'ı yeniden dağıt (`device-poll`, `identity-security`, `oidc-sso`, `version-check`, `waitlist-signup` imzalı IP bağlamları).
+- İmza anahtarları: revocation (`AIDR_REVOCATION_SIGNING_KEY_ID` + özel anahtar; yoksa GET 503), runtime policy, compliance report, release manifest (`version-check` için `AIDR_RELEASE_MANIFEST_B64/_SIG/_SIGNING_PUBLIC_KEY_B64` veya `AIDR_LATEST_RELEASE_VERSION`).
+- Kontrol düzlemini ajanlardan **önce** yükselt (revocation şema 2, keşif pseudonim).
+- SSO zorunlu olmayan kiracılarda SCIM e-posta sağlaması için alan adı doğrulaması.
+- Browser Guard yönetilen politikasında `dashboardPolicy` (imza açık anahtarı) + telemetri.
+- `packages/privacy/parsers/worker.py` değişti → dağıtılmış `workerSha256` pin'ini güncelle.
+- Helm: backup kapalı mevcut sürümler `helm upgrade`'de reddedilir (`migrations.allowWithoutBackup` veya backup aç); migrations imajına GNU tar (busybox xattr düşürüyor); `docs/operations/kubernetes.md` yedek bölümü kontrol.
+- Windows bakım görevleri: `deployment-prepare.mjs` Windows'ta sahibi Administrators yapmalı; aksi halde yeni ACL kontrolü kaydı reddeder.
+
+### I.3 Tespit kuralı düzeltmeleri (kırmızı takım bulguları; ajan otomasyonu güvenlik filtresine takıldı)
+
+Kırmızı takım koşusu 114 kötü amaçlı vakadan 22'sinin `allow` aldığını ölçtü (merge sonrası kod).
+Vakalar ve harness **depoda değil** (geliştirici makinesinin geçici klasöründe kaldı). Bu iş
+Tespit Mühendisliği ekibine aittir: vakaları ekipçe yeniden üretin, kalıcı regresyon testine
+çevirin, kural/normalizasyon düzeltmelerini `threats/` ve çıkarıcılarda yapın, ardından
+`compile-threat-cache.mjs` ve `regex-performance.test.ts` ile doğrulayın. Aynı koşuda iki
+zararsız komutta yanlış pozitif (paket kurulumu ve örnek `.env` kopyası) ölçüldü.
+
+### I.4 Kod incelemesinden kalan bulgular (doğrulanmış, düzeltilmedi)
+
+| Önem | Yer | Bulgu |
+|---|---|---|
+| Orta | `packages/core/src/detection-exceptions.ts` (`subjectMatches`) | Repo-remote kapsamlı istisna, ajanın yazabildiği `.git/config` origin'iyle eşleşiyor; başka depoya taşınabilir. Kök yolu da bağlanmalı. |
+| Orta | `packages/core/src/guard.ts` (`resolveHostAsk`) | `operator` modunda config okunamazsa sessizce host diyaloğuna dönüyor; kapalı (deny) olmalı. |
+| Düşük | `packages/mcp-gateway/src/gateway.mjs` | Kiracı kotası 64 × 4 kiracı = global 256; dört kiracı herkesi tüketebilir. |
+| Düşük | `detection-exceptions.ts` (`readOriginRemote`) | `[` içeren (IPv6) origin URL'si ayrıştırılmıyor. |
+| Düşük | `packages/cli/src/commands/audit.ts` | İki `audit verify` modu farklı çıkış kodları kullanıyor. |
+| Düşük | `packages/core/src/hook-deadline.ts` | U+FFFD içeren her komut reddediliyor (yanlış pozitif). |
+| Düşük | `packages/extension/src/aidr-hook.ts` | Bilinmeyen VS Code hook olayları deny alıyor. |
+| Düşük | `packages/core/src/policy.ts` | MCP allow/envanter yalnız ilk kimlik okumasını kullanıyor (`a__b` sunucu adları). |
+| Düşük | `packages/core/src/policy-signature.ts` | Kanonik JSON iki yerde ayrı uygulanmış; sapma imza reddine yol açar. |
+| Bilgi | `packages/mcp-gateway` `package.test.mjs` | 2 test (ticari ikili, temiz paket fabrikası) başarısız; değişikliklerden bağımsız olduğu ölçüldü, kök neden açık. |
+| Bilgi | Windows ilk karantina | Taze kurulumda ~2,8 s (4 s watchdog'a yakın). |
+| Bilgi | Browser Guard dosya girişi rölesi | Yalnız jsdom'da test edildi; Chrome/Edge/Firefox'ta (özellikle Firefox DataTransfer) doğrulanmadı. |
+| Bilgi | SEA | Windows ikilisi imzasız; macOS/Linux SEA hiç derlenmedi. |
+| Bilgi | Release doğrulama | POSIX `O_NOFOLLOW`/0700 yolları yalnız Windows'ta koşuldu. |
+| Bilgi | `CLAUDE.md` | Silinmiş `packages/dashboard/supabase/functions/` dizininden hâlâ söz ediyor. |
+
+### I.5 Sahibinden karar bekleyenler (bu çalışmada ortaya çıktı)
+
+- Kayıtsız ticari build: dijestler doğruysa yerel tespit çalışıyor (CLAUDE.md'ye uygun); eski
+  sabitlenmiş politika "başlamayı reddet" idi ve Codex release testleri hâlâ onu bekliyor. Hangisi?
+- Plan: deneme = Team; aktif lisanssız ücretli etiket = Free; ayar yapmamış kiracı saklaması plan
+  süresine geçer (Business 30→365 gün); düşürülen planda OIDC/SCIM yönetimi kilitlenir.
+- Yönetilen tespit istisnaları tek sahip/admin ile oluşturuluyor (dört göz yok).
+- MCP politikası açıkken sunucusu tanımlanamayan çağrı artık `ask` (önceden politika atlanıyordu).
+- Gizlilik paketi ~20 Python bağımlılığının (torch, transformers, numpy, Pillow, pypdfium2…)
+  lisansı otomatik çözülemedi → Hukuk onayı.
+- Satış kataloğu (`docs/sales/catalog/src/content.mjs`): madde 30 "ağ çıkışında trafiği denetler"
+  diyor; geçit yalnız kendisine gönderileni görür. 146 bileşen / 2.000+ CVE / 14 MCP kategorisi
+  vendored AI-Infra-Guard verisine atfedilmeli.
 
 ## H. GO için asgari set (kademeli)
 
