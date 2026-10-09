@@ -383,7 +383,6 @@ describe("PreToolUse input shape and malformed commands", () => {
 	it.each([
 		["NUL", "rm -rf /tmp/x\u0000 && echo ok"],
 		["unpaired surrogate", "echo \ud800"],
-		["replacement character (invalid UTF-8)", "echo �"],
 	])("denies a Bash command containing %s instead of asking", async (_label, command) => {
 		// The evaluator would have returned `ask`; the malformed text must deny first.
 		const { response, evaluate } = await runHook(
@@ -395,6 +394,15 @@ describe("PreToolUse input shape and malformed commands", () => {
 			permissionDecisionReason: "Singularity AIDR malformed command",
 		});
 		expect(evaluate).not.toHaveBeenCalled();
+	});
+
+	it("evaluates a Bash command containing a validly encoded U+FFFD", async () => {
+		const { response, evaluate } = await runHook(
+			JSON.stringify({ tool_name: "Bash", tool_input: { command: "echo �" } }),
+			"allow",
+		);
+		expect(evaluate).toHaveBeenCalledTimes(1);
+		expect(JSON.stringify(response)).not.toContain("malformed");
 	});
 
 	it("denies a non-string Bash command", async () => {

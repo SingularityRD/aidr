@@ -712,14 +712,15 @@ held too long) the record is written chained but with `unsigned: "<reason>"`,
 and `aidr audit verify` reports it as a failure — never as verified.
 
 ```bash
-aidr audit verify [--json] [--expect-root SHA256:<hex>]   # exit 1 on the first broken/missing/reordered record
+aidr audit verify [--json] [--expect-root SHA256:<hex>]   # exit 1 broken record, 2 nothing verifiable
 aidr audit rotate-key                                      # operator only; new root endorsed by the old one
 ```
 
 `aidr audit verify` also verifies the response-action chain when
-`response.audit.signed_chain` is on, and exits non-zero when neither chain is
-enabled (nothing verified is not a pass). Pin the root fingerprint it prints
-with `--expect-root` (for example in an external archive or SIEM) so a wholesale
+`response.audit.signed_chain` is on. It exits `1` when a chain is broken and `2`
+when nothing could be verified, including when neither chain is enabled
+(nothing verified is not a pass); `--response-chain <path>` uses the same codes.
+Pin the root fingerprint it prints with `--expect-root` (for example in an external archive or SIEM) so a wholesale
 replacement of the chain state is detected too.
 
 Measured cost (Windows 11, Node 22, file system with fsync): `logVerdict` p50
@@ -988,7 +989,7 @@ sent to the AIDR dashboard for an administrator to approve — see
 | `aidr allowlist list\|add\|remove` | Manage permanent exceptions (`add` is operator only) |
 | `aidr audit tail [-n N] [--json]` | Show recent audit entries, re-redacted |
 | `aidr audit export [--since 24h\|ISO] [--format jsonl\|csv] [-o file]` | Export redacted entries, including rotated files; the session id is replaced by a digest and CSV cells are neutralised against spreadsheet formulas |
-| `aidr audit verify [path] [--json]` | Verify the Ed25519-signed response-action chain (`response.audit.path` by default) offline and print the first broken link. Exit `0` intact, `1` broken (edited, reordered, deleted or truncated entry, forged signature, tampered retention manifest), `2` unverifiable (log or signing key missing). Never creates a signing key |
+| `aidr audit verify [--json] [--expect-root <fp>] [--response-chain <path>]` | Verify the signed verdict log and, when enabled, the Ed25519-signed response-action chain offline (`--response-chain <path>` checks only that file) and print the first broken link. Both modes share one exit-code contract: `0` verified, `1` broken (edited, reordered, deleted or truncated entry, forged or missing signature, tampered retention manifest), `2` unverifiable (configuration or log unreadable, log or signing key missing, or no signed chain enabled). A broken chain outranks an unverifiable one. Never creates a signing key |
 | `aidr doctor [--json]` | Check hosts, hook registration, rule count, core version, mode, DLP policy, agent permission profiles, the approval store and key custody, and the last verdict; exits non-zero on problems |
 | `aidr profile list\|show\|validate\|test` | Inspect, validate and dry-run agent permission profiles (see [Agent permission profiles](agent-profiles.md)) |
 
