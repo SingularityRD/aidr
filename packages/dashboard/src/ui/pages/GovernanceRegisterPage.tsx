@@ -421,6 +421,8 @@ function EvidencePanel({
 	onLink: (kind: string, ref: string, link: boolean) => void;
 }) {
 	const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+	// A failed lookup must not look like "nothing to suggest".
+	const [suggestionsUnavailable, setSuggestionsUnavailable] = useState(false);
 	useEffect(() => {
 		if (!canManage) return;
 		let cancelled = false;
@@ -444,23 +446,37 @@ function EvidencePanel({
 						.order("created_at", { ascending: false })
 						.limit(10),
 				]);
-				if (cancelled || findings.error || incidents.error) return;
+				if (cancelled) return;
+				if (
+					findings.error ||
+					incidents.error ||
+					!Array.isArray(findings.data) ||
+					!Array.isArray(incidents.data)
+				) {
+					setSuggestions([]);
+					setSuggestionsUnavailable(true);
+					return;
+				}
+				setSuggestionsUnavailable(false);
 				setSuggestions([
-					...(
-						(findings.data ?? []) as Array<{ id: number; severity: string; observed_at: string }>
-					).map((row) => ({
-						kind: "posture_finding" as const,
-						ref: String(row.id),
-						label: `MCP inventory finding · ${row.severity} · ${formatDate(row.observed_at)}`,
-					})),
-					...((incidents.data ?? []) as Array<{ id: number; created_at: string }>).map((row) => ({
+					...(findings.data as Array<{ id: number; severity: string; observed_at: string }>).map(
+						(row) => ({
+							kind: "posture_finding" as const,
+							ref: String(row.id),
+							label: `MCP inventory finding · ${row.severity} · ${formatDate(row.observed_at)}`,
+						}),
+					),
+					...(incidents.data as Array<{ id: number; created_at: string }>).map((row) => ({
 						kind: "incident" as const,
 						ref: String(row.id),
 						label: `Incident #${row.id} · ${formatDate(row.created_at)}`,
 					})),
 				]);
 			} catch {
-				if (!cancelled) setSuggestions([]);
+				if (!cancelled) {
+					setSuggestions([]);
+					setSuggestionsUnavailable(true);
+				}
 			}
 		})();
 		return () => {
@@ -495,6 +511,12 @@ function EvidencePanel({
 					))}
 				</ul>
 			)}
+			{canManage && suggestionsUnavailable ? (
+				<p className="muted small" role="status" style={{ margin: 0 }}>
+					Evidence suggestions are unavailable right now; this does not mean there are no related
+					findings or incidents.
+				</p>
+			) : null}
 			{canManage && unlinked.length > 0 ? (
 				<div className="stack" style={{ gap: 4 }}>
 					<p className="muted small" style={{ margin: 0 }}>

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated_on": "2026-10-08",
+  "generated_on": "2026-10-09",
   "generation_timezone": "Europe/Istanbul",
   "generation_note": "Generated from the current worktree. source_commit identifies only the base commit; worktree_has_changes is explicit. This report is not candidate-bound release evidence. READINESS_BACKLOG.json is an older issue-ledger snapshot; its historical open IDs are not current verification results.",
   "decision": "NO-GO",
@@ -724,7 +724,7 @@
       "priority": "P0",
       "title": "Gerçek cloud ve self-hosted üretim kurulumu",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Historical v6 self-hosted install evidence recorded execution of 33 migrations; it is not proof for the current source tree or candidate. The current source tree contains 176 canonical migration files, and no current candidate-bound install/upgrade acceptance exists. Prepare inputs are validated without creating secrets, and cloud preparation rejects public proxy/provider upstream loops. A Kubernetes Helm chart (deploy/helm/aidr) now exists beside the Compose bundle; pnpm verify:helm lints and renders it where Helm is installed (CI installs Helm, not kubeconform), but it has not been installed on a live cluster. Live provider/TLS acceptance remains open.",
+      "implementation_update": "Historical v6 self-hosted install evidence recorded execution of 33 migrations; it is not proof for the current source tree or candidate. The current source tree contains 178 canonical migration files, and no current candidate-bound install/upgrade acceptance exists. Prepare inputs are validated without creating secrets, and cloud preparation rejects public proxy/provider upstream loops. A Kubernetes Helm chart (deploy/helm/aidr) now exists beside the Compose bundle; pnpm verify:helm lints and renders it where Helm is installed (CI installs Helm, not kubeconform), but it has not been installed on a live cluster. Live provider/TLS acceptance remains open.",
       "remaining_implementation": [],
       "feature_ids": [
         "DEP-01",
@@ -1423,7 +1423,7 @@
         "Rollback/disable tatbikatı",
         "İsimli sahip ve sınırlar"
       ],
-      "source_requirement": "Direct-GA scope includes every advertised connector: Claude Code, Cursor, VS Code, OpenClaw, and OpenCode. Each connector has a supported-host matrix, signed artifact, private-registry install path, real-host E2E, rollback, support owner, and limitations.",
+      "source_requirement": "Direct-GA scope includes every advertised connector: Claude Code, Cursor, VS Code, OpenClaw, and OpenCode. Codex CLI is a shipped sixth connector (deploy/native/support-matrix.json) but stays preview/engineering coverage outside this direct-GA order scope (CLAIM-010) unless Product expressly adds and accepts it. Each connector has a supported-host matrix, signed artifact, private-registry install path, real-host E2E, rollback, support owner, and limitations.",
       "source_evidence_required": [
         "all-connector support matrix",
         "real-host reports",
