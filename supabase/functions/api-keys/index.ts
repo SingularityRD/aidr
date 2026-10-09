@@ -18,6 +18,9 @@ import { boundedOverlapHours } from "../_shared/key-rotation.ts";
 import { readBoundedJson } from "../_shared/request-limits.ts";
 import { membershipActive } from "../_shared/runtime-policy.ts";
 
+// Credential row ids are UUIDs; anything else is a client error, not a storage or audit outage.
+const RECORD_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const BROWSER_GUARD_INGEST_SCOPE = "ingest:browser_guard";
 // Same bounds as the api_keys_scope_check constraint.
 const MAX_INSTALL_LIMIT = 100_000;
@@ -180,6 +183,7 @@ Deno.serve(async (req) => {
 		if (action === "revoke") {
 			const id = typeof body.id === "string" ? body.id.trim() : "";
 			if (!id) return corsJson(req, 400, { error: "missing_id" });
+			if (!RECORD_ID.test(id)) return corsJson(req, 400, { error: "invalid_id" });
 			let mutation: { data: unknown; error: unknown | null } | null = null;
 			for (let attempt = 0; attempt < 2; attempt++) {
 				mutation = await supabase.rpc("revoke_api_key_with_audit", {
@@ -201,6 +205,7 @@ Deno.serve(async (req) => {
 		if (action === "renew") {
 			const id = typeof body.id === "string" ? body.id.trim() : "";
 			if (!id) return corsJson(req, 400, { error: "missing_id" });
+			if (!RECORD_ID.test(id)) return corsJson(req, 400, { error: "invalid_id" });
 			const ok = await rateLimitCreate(supabase, `${tenant.id}:${userId}`);
 			if (!ok) return corsJson(req, 429, { error: "rate_limited" });
 

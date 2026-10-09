@@ -14,7 +14,7 @@
 // containment requires a separately verified native consumer and field test.
 
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.116.0";
-import { authenticateTenantApiKey, authenticateTenantApiKeyBudgeted } from "../_shared/api-key-auth.ts";
+import { authenticateTenantApiKeyBudgeted } from "../_shared/api-key-auth.ts";
 import { getBearerToken as getAccessToken } from "../_shared/auth.ts";
 import { configFailure, loadConfig, partialGroupError, runtimeEnv } from "../_shared/config.ts";
 import { corsJson, handleCors } from "../_shared/cors.ts";
@@ -199,7 +199,7 @@ async function agentContext(db: DatabaseClient, req: Request): Promise<AgentCont
 	const keyHash = await sha256Hex(token);
 	// Fleet commands need a full, agent-bound tenant key: the shared guard admits
 	// only `tenant` scope by default, so an ingest-only key never qualifies.
-	const auth = await authenticateTenantApiKey(db, token);
+	const auth = await authenticateTenantApiKeyBudgeted(db, token, "fleet-response");
 	if (!auth.ok) return corsJson(req, auth.status, { error: auth.error });
 	if (!isUuid(auth.tenantId) || !isUuid(auth.agentId)) {
 		return corsJson(req, 403, { error: "agent_bound_key_required" });
