@@ -196,9 +196,31 @@ function findChromium() {
 	} catch {
 		return { detail: "playwright-core is not installed for packages/browser-guard (run pnpm install)" };
 	}
-	const roots = [process.env.PLAYWRIGHT_BROWSERS_PATH, "/opt/pw-browsers", path.join(homedir(), ".cache", "ms-playwright")].filter(Boolean);
+	const roots = [
+		process.env.PLAYWRIGHT_BROWSERS_PATH,
+		"/opt/pw-browsers",
+		process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, "ms-playwright"),
+		path.join(homedir(), ".cache", "ms-playwright"),
+		path.join(homedir(), "Library", "Caches", "ms-playwright"),
+	].filter(Boolean);
 	for (const dir of roots) {
 		if (existsSync(path.join(dir, `chromium-${revision}`))) return { path: dir, revision };
+	}
+	// Same fallback as packages/browser-guard/e2e/lib/harness.mjs: a newer installed
+	// revision runs the suite (the harness logs which one it picked).
+	for (const dir of roots) {
+		let newest;
+		try {
+			newest = readdirSync(dir)
+				.map((name) => /^chromium-(\d+)$/.exec(name)?.[1])
+				.filter(Boolean)
+				.map(Number)
+				.filter((installed) => installed > Number(revision))
+				.sort((a, b) => b - a)[0];
+		} catch {
+			continue;
+		}
+		if (newest) return { path: dir, revision: `${newest} (pinned ${revision} not installed)` };
 	}
 	return { detail: `chromium-${revision} not found in ${roots.join(", ")}` };
 }
