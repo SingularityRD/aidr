@@ -73,6 +73,12 @@ export const ALLOWLIST = [
 			"The gate's test suite writes synthetic `C:\\Users\\someone` and `/home/someone` fixture paths and asserts they are reported; removing those canaries would make the security gate untested.",
 	},
 	{
+		path: "scripts/check-no-leaky-paths.test.mjs",
+		owner: "AIDR-012",
+		reason:
+			"Release-path scanner regression fixtures contain anonymous POSIX identities and bounded username regex classes; they assert synthetic concrete home paths are rejected and never embed a contributor path.",
+	},
+	{
 		path: "docs/**",
 		owner: "AIDR-012",
 		reason:

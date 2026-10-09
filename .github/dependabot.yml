@@ -66,7 +66,6 @@ updates:
   - package-ecosystem: "pip"
     directories:
       - "/services/aig-bridge"
-      - "/packages/privacy/ner"
       - "/packages/privacy/vision"
       - "/packages/privacy/parsers"
       - "/.github/requirements"
@@ -84,6 +83,20 @@ updates:
       # together by hand and run the NER worker tests.
       - dependency-name: "tokenizers"
         update-types: ["version-update:semver-minor", "version-update:semver-major"]
+
+  # NER upgrades need coordinated platform hash locks, wheel evidence and
+  # real inference gates. Pause version PRs while that qualification is open;
+  # Dependabot security updates are not subject to this limit.
+  - package-ecosystem: "pip"
+    directory: "/packages/privacy/ner"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 0
+    reviewers:
+      - "SingularityRD"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
 
   # Container base images.
   - package-ecosystem: "docker"
