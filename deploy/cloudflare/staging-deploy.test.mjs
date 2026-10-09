@@ -54,8 +54,9 @@ test("staging rejects dashboard bytes that differ from the signed archive", asyn
 	await writeFile(path.join(dist, "aidr-artifact.manifest.sig"), "signature");
 	const archiveName = `aidr-dashboard-dist-${manifest.release_version}.tar.gz`;
 	const archivePath = path.join(bundle, archiveName);
-	const result = spawnSync("tar", ["-czf", archivePath, "-C", temporary, "packages/dashboard/dist"]);
-	assert.equal(result.status, 0);
+	// GNU tar treats Windows drive letters as remote archive hosts, so use relative paths.
+	const result = spawnSync("tar", ["-czf", `bundle/${archiveName}`, "packages/dashboard/dist"], { cwd: temporary });
+	assert.equal(result.status, 0, result.stderr?.toString());
 	const archiveHash = createHash("sha256").update(await readFile(archivePath)).digest("hex");
 	await writeFile(path.join(bundle, "release-metadata.json"), JSON.stringify({ artifacts: [{ path: archiveName, sha256: archiveHash }] }));
 	await verifyDashboardAssets(bundle, manifest.release_version, signedManifest, rawManifest, dist);

@@ -27,6 +27,29 @@ test("release scan accepts generic threat regex data without a concrete username
 	assert.equal(result.status, 0, result.stderr);
 });
 
+test("bounded home classes accept either class order and regex alternation in shipped threats", (t) => {
+	const patterns = [
+		String.raw`/Users/[^\s/]{1,64}/\.ssh/`,
+		String.raw`(?:/home/[^/\s]{1,64}|/Users/[^/\s]{1,64}|/root)[/\\]\.ssh`,
+	];
+	const result = scan(t, {
+		"cache.js": `export const rules = ${JSON.stringify(patterns)};\n`,
+		"rules.md": patterns.join("\n"),
+	});
+	assert.equal(result.status, 0, result.stderr);
+});
+
+test("generic macOS home classes cannot hide concrete usernames or suffixes", (t) => {
+	const generic = String.raw`/Users/[^/\s]{1,64}|/root`;
+	for (const path of ["/Users/user/private/project", `${String.raw`/Users/[^/\s]{1,64}`}user/private`]) {
+		const result = scan(t, {
+			"cache.js": `export const rules = ${JSON.stringify([{ pattern: generic, path }])};\n`,
+		});
+		assert.equal(result.status, 1);
+		assert.match(result.stderr, /cache\.js \(mac_users\)/u);
+	}
+});
+
 test("an allowed threat regex cannot hide a concrete host path in the same artifact", (t) => {
 	const result = scan(t, {
 		"cache.js": `export const rules = ${JSON.stringify([{ pattern: genericHomeRule, path: "/home/user/private/project" }])};\n`,

@@ -27,16 +27,16 @@ import { FILTER_ALIASES, PdfDocument } from "./document.js";
 import { PdfDict, PdfName, PdfStream, PdfString, type PdfValue } from "./lexer.js";
 
 /** Host OCR limits (vision worker: 12 Mpx, 8192 px per side). */
-export const MAX_OCR_IMAGE_PIXELS = 12_000_000;
-export const MAX_OCR_IMAGE_DIMENSION = 8192;
+const MAX_OCR_IMAGE_PIXELS = 12_000_000;
+const MAX_OCR_IMAGE_DIMENSION = 8192;
 /** Below this many pixels in width or height an image cannot carry legible text. */
-export const MIN_TEXT_IMAGE_DIMENSION = 8;
+const MIN_TEXT_IMAGE_DIMENSION = 8;
 /** Distinct images tracked per PDF; any beyond count as not inspected. */
-export const MAX_PDF_IMAGES = 1024;
+const MAX_PDF_IMAGES = 1024;
 
-export type RasterFailure = "PDF_IMAGE_UNSUPPORTED" | "PDF_IMAGE_UNDECODABLE" | "PDF_IMAGE_LIMIT";
+type RasterFailure = "PDF_IMAGE_UNSUPPORTED" | "PDF_IMAGE_UNDECODABLE" | "PDF_IMAGE_LIMIT";
 
-export type OcrRaster =
+type OcrRaster =
 	/** PNG or JPEG bytes the native host can OCR. */
 	| { readonly kind: "image"; readonly bytes: Uint8Array }
 	/** Too small to hold legible text: nothing to OCR. */
@@ -468,7 +468,7 @@ function chunk(type: string, data: Uint8Array): Uint8Array[] {
 const PNG_SIGNATURE = Uint8Array.of(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a);
 
 /** An 8-bit greyscale (1 channel) or RGB (3 channels) PNG from filtered scanlines. */
-export async function encodePng(
+async function encodePng(
 	width: number,
 	height: number,
 	channels: 1 | 3,
@@ -564,7 +564,7 @@ async function rasterize(
  * The image as PNG/JPEG bytes for OCR (at most `maxBytes`), `no-text` for images too small to
  * hold text, or why it could not be prepared. Never throws.
  */
-export async function rasterForOcr(
+async function rasterForOcr(
 	doc: PdfDocument,
 	source: ImageSource,
 	maxBytes: number,
