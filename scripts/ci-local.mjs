@@ -77,8 +77,14 @@ function isExecutable(file) {
 }
 
 function onPath(name) {
+	// Windows executables carry an extension (bash.exe from Git Bash); POSIX ones do not.
+	const extensions = process.platform === "win32" ? ["", ".exe", ".cmd", ".bat"] : [""];
 	for (const dir of (process.env.PATH ?? "").split(path.delimiter)) {
-		if (dir && isExecutable(path.join(dir, name))) return path.join(dir, name);
+		if (!dir) continue;
+		for (const extension of extensions) {
+			const candidate = path.join(dir, `${name}${extension}`);
+			if (isExecutable(candidate)) return candidate;
+		}
 	}
 	return null;
 }
