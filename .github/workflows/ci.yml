@@ -492,6 +492,7 @@ jobs:
           node --test
           scripts/deployment-prepare.test.mjs
           scripts/dockerfile-context.test.mjs
+          scripts/rate-limit-scope-contract.test.mjs
           scripts/deployment-doctor.test.mjs
           scripts/airgap-images.test.mjs
           scripts/customer-kit-verify.test.mjs

@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, relative, resolve, join } from "node:path";
-import { createHash, randomBytes, randomUUID, verify as verifySignature } from "node:crypto";
+import { createHash, createHmac, randomBytes, randomUUID, verify as verifySignature } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { assertReleaseSourceClean } from "./lib/release-source-clean.mjs";
@@ -128,7 +128,11 @@ try {
 	expect(await request("/rest/v1/rpc/issue_tenant_discovery_credential", { method: "POST", body: { p_tenant_id: tenant, p_actor_user_id: alice.id, p_collector_id: collector, p_token_hash: createHash("sha256").update(machineToken).digest("hex"), p_expires_in_days: 1 } }), 200, "isolated collector credential fixture issued");
 	const cursorRequest = { action: "cursor", tenant_id: tenant, collector_id: collector };
 	assert.equal(expect(await edge("discovery", machineToken, cursorRequest), 200, "machine collector cursor").next_sequence, 1);
-	const cycle = { action: "ingest", tenant_id: tenant, collector_id: collector, cycle_id: randomUUID(), sequence: 1, stale_after_ms: 60_000, complete: true, expected_targets: 1, items: [{ target: "https://example.test/", reachable: true, attempts: 1, error_code: null }] };
+	// Collectors submit only a keyed pseudonym of each origin (supabase/functions/discovery/README.md).
+	const targetKey = randomBytes(32);
+	const targetId = `tid1_${createHmac("sha256", targetKey).update(`aidr-discovery-target-v1\0${tenant}\0https://example.test`).digest("hex")}`;
+	const cycle = { action: "ingest", tenant_id: tenant, collector_id: collector, cycle_id: randomUUID(), sequence: 1, stale_after_ms: 60_000, complete: true, expected_targets: 1, items: [{ target: targetId, reachable: true, attempts: 1, error_code: null }] };
+	expect(await edge("discovery", machineToken, { ...cycle, items: [{ ...cycle.items[0], target: "https://example.test/" }] }), 400, "raw collector target address rejected");
 	expect(await edge("discovery", machineToken, cycle), 201, "machine collector ingest");
 	expect(await edge("discovery", machineToken, cycle), 409, "machine collector replay rejected");
 	assert.equal(expect(await edge("discovery", machineToken, cursorRequest), 200, "machine cursor advances").next_sequence, 2);
