@@ -4,6 +4,7 @@
 
 import crypto from "node:crypto";
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,8 +14,6 @@ import { KIT_PATH, SITES, siteForUrl, UPLOAD_PATH } from "./sites.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURES = path.resolve(here, "../fixtures");
-const FALLBACK_EXECUTABLE =
-	process.env.BG_E2E_CHROMIUM || "/opt/pw-browsers/chromium-1194/chrome-linux/chrome";
 /** The first start of a fresh profile can be slow on a loaded CI machine. */
 const WORKER_START_TIMEOUT_MS = Number(process.env.BG_E2E_WORKER_TIMEOUT_MS) || 30000;
 
@@ -24,6 +23,71 @@ async function loadPlaywright() {
 		process.env.PLAYWRIGHT_BROWSERS_PATH = "/opt/pw-browsers";
 	}
 	return import("playwright-core");
+}
+
+/** Where Playwright installs browsers, per platform, plus the CI image location. */
+function browserRoots() {
+	const home = os.homedir();
+	return [
+		process.env.PLAYWRIGHT_BROWSERS_PATH,
+		"/opt/pw-browsers",
+		process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, "ms-playwright"),
+		path.join(home, ".cache", "ms-playwright"),
+		path.join(home, "Library", "Caches", "ms-playwright"),
+	].filter((dir) => dir && fs.existsSync(dir));
+}
+
+/** The Chromium executable inside a `chromium-<revision>` directory (per-platform layouts). */
+function chromiumExecutable(dir) {
+	const mac = path.join("Chromium.app", "Contents", "MacOS", "Chromium");
+	const layouts = [
+		path.join("chrome-linux", "chrome"),
+		path.join("chrome-linux64", "chrome"),
+		path.join("chrome-win", "chrome.exe"),
+		path.join("chrome-win64", "chrome.exe"),
+		path.join("chrome-mac", mac),
+		path.join("chrome-mac-arm64", mac),
+		path.join("chrome-mac-x64", mac),
+	];
+	return layouts.map((layout) => path.join(dir, layout)).find((file) => fs.existsSync(file));
+}
+
+/**
+ * The executable for the explicit-path launch strategy: `BG_E2E_CHROMIUM` when set;
+ * otherwise the Chromium revision the pinned playwright-core expects, or, when that
+ * revision is not installed, the newest installed Playwright Chromium (logged, since
+ * the suite was verified against the pinned revision).
+ */
+function fallbackExecutable(log) {
+	if (process.env.BG_E2E_CHROMIUM) {
+		log(`chromium: BG_E2E_CHROMIUM=${process.env.BG_E2E_CHROMIUM}`);
+		return process.env.BG_E2E_CHROMIUM;
+	}
+	let expected;
+	try {
+		const pkg = createRequire(import.meta.url).resolve("playwright-core/package.json");
+		const browsers = JSON.parse(fs.readFileSync(path.join(path.dirname(pkg), "browsers.json"), "utf8"));
+		expected = Number(browsers.browsers.find((b) => b.name === "chromium")?.revision);
+	} catch {
+		// Unknown expected revision: fall through to the newest installed one.
+	}
+	const installed = [];
+	for (const root of browserRoots()) {
+		for (const entry of fs.readdirSync(root)) {
+			const revision = Number(/^chromium-(\d+)$/.exec(entry)?.[1]);
+			const executable = revision ? chromiumExecutable(path.join(root, entry)) : undefined;
+			if (executable) installed.push({ revision, executable });
+		}
+	}
+	const exact = installed.find((c) => c.revision === expected);
+	if (exact) return exact.executable;
+	const newest = installed.sort((a, b) => b.revision - a.revision)[0];
+	if (!newest) return undefined;
+	log(
+		`chromium: chromium-${expected || "?"} (pinned by playwright-core) is not installed; ` +
+			`using chromium-${newest.revision} at ${newest.executable} (set BG_E2E_CHROMIUM to choose another build)`,
+	);
+	return newest.executable;
 }
 
 // ---------------------------------------------------------------------------
@@ -180,7 +244,7 @@ function unpackedExtensionId(extDir) {
  * full Chromium build in new-headless mode, which supports extensions; the
  * explicit-executable variant is kept as a fallback for older Playwright builds.
  */
-function strategies({ extDir, headed }) {
+function strategies({ extDir, headed, log }) {
 	const args = [
 		`--disable-extensions-except=${extDir}`,
 		`--load-extension=${extDir}`,
@@ -194,11 +258,12 @@ function strategies({ extDir, headed }) {
 			options: { channel: "chromium", headless: !headed, args },
 		},
 	];
-	if (!headed && fs.existsSync(FALLBACK_EXECUTABLE)) {
+	const executablePath = headed ? undefined : fallbackExecutable(log);
+	if (executablePath && fs.existsSync(executablePath)) {
 		list.push({
 			name: "executablePath + --headless=new",
 			options: {
-				executablePath: FALLBACK_EXECUTABLE,
+				executablePath,
 				headless: false,
 				args: [...args, "--headless=new"],
 			},
@@ -222,7 +287,7 @@ export async function launch({ extDir, headed = false, log = () => {} }) {
 	let profileDir;
 	let used;
 	const errors = [];
-	for (const strategy of strategies({ extDir, headed })) {
+	for (const strategy of strategies({ extDir, headed, log })) {
 		profileDir = fs.mkdtempSync(path.join(os.tmpdir(), "bg-e2e-profile-"));
 		try {
 			context = await chromium.launchPersistentContext(profileDir, {

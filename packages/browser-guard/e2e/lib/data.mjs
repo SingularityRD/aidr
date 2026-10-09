@@ -39,14 +39,30 @@ if (!validTckn(TCKN)) throw new Error(`test data: ${TCKN} is not a valid TCKN`);
 if (!validIban(IBAN)) throw new Error(`test data: ${IBAN} is not a valid IBAN`);
 
 /**
+ * The per-page-life vault tag (src/engine/vault.ts `newVaultTag`, minted by
+ * src/content/boot.ts): exactly four lower-case letters or digits.
+ */
+const VAULT_TAG = "[a-z0-9]{4}";
+
+/**
+ * Matches a placeholder the extension mints in a page, e.g. `[EMAIL_1_k3f9]`:
+ * `[<PREFIX>_<n>_<tag>]` with n >= 1 and no leading zero (src/engine/vault.ts).
+ * Every placeholder minted in a page carries the tag, so an untagged `[EMAIL_1]`
+ * does not match.
+ */
+export function placeholderPattern(prefix) {
+	return new RegExp(`\\[${prefix}_[1-9][0-9]{0,8}_${VAULT_TAG}\\]`);
+}
+
+/**
  * A sensitive item the suite types into a page: `value` must never reach the
  * network in a masking mode, `placeholder` matches the vault's replacement.
  */
 const ITEMS = {
-	email: { type: "EMAIL", value: EMAIL, placeholder: /\[EMAIL_\d+\]/ },
-	tckn: { type: "TC_KIMLIK", value: TCKN, placeholder: /\[TCKN_\d+\]/ },
-	iban: { type: "IBAN", value: IBAN, placeholder: /\[IBAN_\d+\]/ },
-	apiKey: { type: "SECRET", value: API_KEY, placeholder: /\[SECRET_\d+\]/ },
+	email: { type: "EMAIL", value: EMAIL, placeholder: placeholderPattern("EMAIL") },
+	tckn: { type: "TC_KIMLIK", value: TCKN, placeholder: placeholderPattern("TCKN") },
+	iban: { type: "IBAN", value: IBAN, placeholder: placeholderPattern("IBAN") },
+	apiKey: { type: "SECRET", value: API_KEY, placeholder: placeholderPattern("SECRET") },
 };
 
 /** Data profiles: the real extension gets every entity; the self-test extension only masks one email. */
@@ -57,15 +73,15 @@ export const PROFILES = {
 		pasteText: `Customer record: ${EMAIL}, TC ${TCKN}`,
 		pasteItems: [ITEMS.email, ITEMS.tckn],
 		csv: `name,email,note\nAyse Yilmaz,${EMAIL},vip\nJohn Doe,${EMAIL_2},standard\n`,
-		csvItems: [ITEMS.email, { type: "EMAIL", value: EMAIL_2, placeholder: /\[EMAIL_\d+\]/ }],
+		csvItems: [ITEMS.email, { type: "EMAIL", value: EMAIL_2, placeholder: placeholderPattern("EMAIL") }],
 	},
 	selfTest: {
-		items: [{ type: "EMAIL", value: "secret@example.com", placeholder: /\[EMAIL_\d+\]/ }],
+		items: [{ type: "EMAIL", value: "secret@example.com", placeholder: placeholderPattern("EMAIL") }],
 		prompt: "Please write to secret@example.com about the refund",
 		pasteText: "Customer record: secret@example.com",
-		pasteItems: [{ type: "EMAIL", value: "secret@example.com", placeholder: /\[EMAIL_\d+\]/ }],
+		pasteItems: [{ type: "EMAIL", value: "secret@example.com", placeholder: placeholderPattern("EMAIL") }],
 		csv: "name,email\nAyse,secret@example.com\n",
-		csvItems: [{ type: "EMAIL", value: "secret@example.com", placeholder: /\[EMAIL_\d+\]/ }],
+		csvItems: [{ type: "EMAIL", value: "secret@example.com", placeholder: placeholderPattern("EMAIL") }],
 	},
 };
 
