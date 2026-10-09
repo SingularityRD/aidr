@@ -120,6 +120,9 @@ class World {
 		this.audit.push({ tenant_id: tenant, actor, action, detail });
 	}
 
+	// Unresolved-key budget counters (_shared/api-key-auth.ts, increment_rate_limit).
+	private readonly rateLimits: Row[] = [];
+
 	private table(name: string): Row[] {
 		switch (name) {
 			case "api_keys": return this.apiKeys;
@@ -128,6 +131,7 @@ class World {
 			case "approval_requests": return this.requests;
 			case "tenant_approval_signing_keys": return this.keys;
 			case "identity_user_session_state": return [];
+			case "rate_limits": return this.rateLimits;
 			case "tenant_identity_policies":
 				return this.options.identityPolicy ? [{ tenant_id: TENANT_A, ...this.options.identityPolicy }] : [];
 			default: throw new Error(`unexpected table ${name}`);
@@ -186,6 +190,12 @@ class World {
 		const now = new Date(this.clock).toISOString();
 		switch (name) {
 			case "tenant_admission_capacity": return 10;
+			case "increment_rate_limit": {
+				const row = this.rateLimits.find((r) => r.key === a.p_key && r.window_start === a.p_window_start);
+				if (row) row.count = Number(row.count) + Number(a.p_delta);
+				else this.rateLimits.push({ key: a.p_key, window_start: a.p_window_start, count: a.p_delta });
+				return null;
+			}
 			case "consume_tenant_rate_limit":
 				return this.options.rateDenied ? { allowed: false, remaining: 0 } : { allowed: true, remaining: 10 };
 			case "create_approval_request": {
@@ -792,7 +802,7 @@ describe("approval-requests deployment and schema contract", () => {
 			"supabase/functions/__tests__/approval-requests-contract.test.ts",
 		);
 		const source = read("supabase", "functions", "approval-requests", "index.ts");
-		expect(source).toContain("authenticateTenantApiKey(db, token, nowMs)");
+		expect(source).toContain("authenticateTenantApiKeyBudgeted(db, token, \"approval-requests\", nowMs)");
 		expect(source).not.toContain("allowedScopes");
 		expect(source).toContain("checkIdentityBarrier(db, token, userId, tenantId)");
 		expect(source).toContain('assurance.currentLevel !== "aal2"');

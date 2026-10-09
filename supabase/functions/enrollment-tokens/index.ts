@@ -12,6 +12,9 @@ import { boundedOverlapHours } from "../_shared/key-rotation.ts";
 import { readBoundedJson } from "../_shared/request-limits.ts";
 import { membershipActive } from "../_shared/runtime-policy.ts";
 
+// Credential row ids are UUIDs; anything else is a client error, not a storage or audit outage.
+const RECORD_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 // Required configuration. Validated per request, before any auth or DB work, so
 // a missing variable answers with an explicit 500 that names it instead of
 // failing later with an empty credential (AIDR-011).
@@ -158,6 +161,7 @@ Deno.serve(async (req) => {
 		if (action === "delete") {
 			const id = typeof body.id === "string" ? body.id.trim() : "";
 			if (!id) return corsJson(req, 400, { error: "missing_id" });
+			if (!RECORD_ID.test(id)) return corsJson(req, 400, { error: "invalid_id" });
 			let mutation: { data: unknown; error: unknown | null } | null = null;
 			for (let attempt = 0; attempt < 2; attempt++) {
 				mutation = await supabase.rpc("delete_enrollment_token_with_audit", {
@@ -179,6 +183,7 @@ Deno.serve(async (req) => {
 		if (action === "renew") {
 			const id = typeof body.id === "string" ? body.id.trim() : "";
 			if (!id) return corsJson(req, 400, { error: "missing_id" });
+			if (!RECORD_ID.test(id)) return corsJson(req, 400, { error: "invalid_id" });
 			const ok = await rateLimitCreate(supabase, `${tenantId}:${userId}`);
 			if (!ok) return corsJson(req, 429, { error: "rate_limited" });
 
