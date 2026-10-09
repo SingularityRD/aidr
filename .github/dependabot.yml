@@ -1,3 +1,7 @@
+# Version PRs are temporarily paused during consolidated dependency qualification.
+# Security updates remain enabled. Restore npm=10 and Actions/other pip/Docker=5
+# after coordinated lock, build and acceptance gates; keep NER paused until its
+# platform hash locks, wheel evidence and native inference gates are repaired.
 version: 2
 updates:
   # Enable version updates for npm
@@ -5,7 +9,7 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 0
     reviewers:
       - "SingularityRD"
     assignees:
@@ -48,7 +52,7 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 0
     reviewers:
       - "SingularityRD"
     commit-message:
@@ -71,7 +75,7 @@ updates:
       - "/.github/requirements"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 0
     reviewers:
       - "SingularityRD"
     commit-message:
@@ -105,7 +109,7 @@ updates:
       - "/deploy/dashboard"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 0
     reviewers:
       - "SingularityRD"
     commit-message:
