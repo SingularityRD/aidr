@@ -1,5 +1,5 @@
 import type { TLSSocket } from 'node:tls';
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { parseJsonStrict } from '../json.js';
 import { deny, object, id } from '../enterprise/util.js';
 import type { EnforcedEgress } from './egress.js';

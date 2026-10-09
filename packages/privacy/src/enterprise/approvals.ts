@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { id, integer, mac, secret, frozen, object, oneOf, deny } from './util.js';
+import { id, integer, mac, secret, frozen, object, deny } from './util.js';
 export interface Principal {readonly tenantId:string;readonly subjectId:string;readonly roles:readonly string[];}
 export interface ApprovalBinding {readonly tenantId:string;readonly subjectId:string;readonly sessionId:string;readonly policyRevision:number;readonly actionDigest:string;}
 interface Grant {binding:ApprovalBinding;expiresAt:number;approverRef:string;}
