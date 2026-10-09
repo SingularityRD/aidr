@@ -4,7 +4,7 @@
 //
 // Runs against AIDR_POSTGRES_TEST_URL=postgres://user@host:port/db (a disposable
 // database is created next to it and dropped afterwards) or an isolated
-// `supabase/postgres` container (docker, no network), and is skipped, visibly,
+// plain `postgres:17` container (docker, no network; the fixture builds its own auth schema and roles), and is skipped, visibly,
 // when neither is available.
 //
 // It proves: owner/admin-only access behind the tenant identity barrier, tenant
@@ -45,7 +45,7 @@ async function startDatabase() {
 	if (run("docker", ["info"]).code !== 0) return null;
 	const container = `aidr-governance-${randomUUID().slice(0, 8)}`;
 	const started = run("docker", ["run", "--detach", "--rm", "--pull", "never", "--network", "none", "--name", container,
-		"-e", "POSTGRES_PASSWORD=governance-fixture-only", "supabase/postgres:17.6.1.136"]);
+		"-e", "POSTGRES_PASSWORD=governance-fixture-only", "postgres:17-bookworm"]);
 	if (started.code !== 0) return null;
 	for (let i = 0; i < 100; i++) {
 		if (run("docker", ["exec", container, "pg_isready", "-h", "127.0.0.1", "-U", "postgres"]).code === 0) break;

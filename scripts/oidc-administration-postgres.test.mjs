@@ -8,6 +8,7 @@ import { dirname, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { authIdentityFixtureSql } from "./lib/postgres-auth-fixture.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const container = `aidr-oidc-admin-${randomUUID().slice(0, 8)}`;
@@ -114,6 +115,7 @@ test("OIDC administration, recovery and retention guards on full-chain PostgreSQ
 		assert.ok(ready, "isolated PostgreSQL must start");
 		const storage = await command(["exec", "-i", container, "psql", "-X", "-v", "ON_ERROR_STOP=1", "-U", "supabase_admin", "-d", "postgres"],
 			`grant create on schema storage to postgres;
+			 ${authIdentityFixtureSql}
 			 create function auth.jwt() returns jsonb language sql stable as $$
 			   select coalesce(nullif(current_setting('request.jwt.claims',true),''),'{}')::jsonb $$;`);
 		assert.equal(storage.code, 0, storage.stderr);

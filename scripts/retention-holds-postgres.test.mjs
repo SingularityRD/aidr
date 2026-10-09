@@ -186,7 +186,9 @@ test("retention migration and tenant-serialized hold protocol on real PostgreSQL
     await t.test("active telemetry uses tenant policy and bounded batches; holds and inactive/missing-policy tenants are preserved", async () => {
       const active = await tenant(), held = await tenant(), suspended = await tenant(), noPolicy = await tenant();
       for (const id of [active, held, suspended, noPolicy]) {
-        await sql(`update public.tenant_data_retention_policies set retention_days=2 where tenant_id='${id}' and data_class='telemetry';`);
+        // An operator-set period (updated_by recorded): the reaper uses the
+        // lower of it and the plan term (20261007130000).
+        await sql(`update public.tenant_data_retention_policies set retention_days=2, updated_by='${owner}' where tenant_id='${id}' and data_class='telemetry';`);
       }
       await sql(`delete from public.tenant_data_retention_policies where tenant_id='${noPolicy}' and data_class='telemetry';`);
       await telemetry(active, "now()-interval '3 days'", "active_old");

@@ -9,6 +9,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { authIdentityFixtureSql } from "./lib/postgres-auth-fixture.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const container = `aidr-hold-admin-${randomUUID().slice(0, 8)}`;
@@ -52,6 +53,7 @@ test("legal-hold management and tenant retention RPCs on real PostgreSQL", { tim
 		assert.ok(ready, "isolated PostgreSQL must start");
 		const fixture = await docker(["exec", "-i", container, "psql", "-X", "-v", "ON_ERROR_STOP=1", "-U", "supabase_admin", "-d", "postgres"],
 			`grant create on schema storage to postgres;
+			 ${authIdentityFixtureSql}
 			 create function auth.jwt() returns jsonb language sql stable as $$
 			   select coalesce(nullif(current_setting('request.jwt.claims',true),''),'{}')::jsonb $$;`);
 		assert.equal(fixture.code, 0, fixture.stderr);
@@ -73,7 +75,14 @@ test("legal-hold management and tenant retention RPCs on real PostgreSQL", { tim
 			const id = randomUUID();
 			await sql(`insert into public.tenants(id,name,kind,created_by) values ('${id}','Hold fixture','enterprise','${owner}');
 				insert into public.tenant_members(tenant_id,user_id,role) values ('${id}','${owner}','owner'), ('${id}','${admin}','admin')
-				on conflict (tenant_id,user_id) do update set role = excluded.role;`);
+				on conflict (tenant_id,user_id) do update set role = excluded.role;
+				-- Retention is bounded by the plan (Free: 7 days). The fixture tenant is an
+				-- actively licensed Enterprise tenant so the RPC bounds, not the plan, decide.
+				insert into public.teams(id,tenant_id,name,plan) values ('${id}','${id}','Hold fixture','enterprise')
+				on conflict (id) do update set plan = 'enterprise';
+				insert into public.tenant_admissions(tenant_id,owner_user_id,kind,seats,starts_at,expires_at,grant_reference)
+				values ('${id}','${owner}','licensed',25,now() - interval '1 day',now() + interval '365 days','test:licensed-fixture')
+				on conflict (tenant_id) do nothing;`);
 			return id;
 		}
 		const place = (id, actor = owner, caseId = "CASE-2026-001", who = "Counsel A. Example", reason = "Preserve evidence for litigation", ref = "null") =>

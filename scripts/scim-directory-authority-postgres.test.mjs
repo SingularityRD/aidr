@@ -92,8 +92,11 @@ test("directory-authoritative membership is enforced by the live database", { ti
               ${uuidArray(breakGlass)},${adopt},${remove});`;
 		const member = async (id, who) => sql(`select coalesce((select role from public.tenant_members
           where tenant_id=${literal(id)} and user_id=${literal(who)}),'none');`);
+		// The bare image's auth.uid() reads request.jwt.claim.sub; GoTrue's own
+		// migrations later make it read request.jwt.claims too. Set both.
 		const isMember = async (id, who) => sql(`begin;
           set local request.jwt.claims = ${literal(JSON.stringify({ sub: who, role: "authenticated" }))};
+          set local request.jwt.claim.sub = ${literal(who)};
           select app.is_tenant_member(${literal(id)}); commit;`);
 
 		const owner = await user("owner"), owner2 = await user("owner2");
