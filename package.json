@@ -198,7 +198,7 @@
 		"@vitest/coverage-v8": "^4.1.11",
 		"@vscode/vsce": "4.0.0",
 		"jscpd": "5.4.0",
-		"knip": "^6.23.0",
+		"knip": "^6.39.0",
 		"typescript": "^5.9.0",
 		"vitest": "^4.1.11"
 	}
