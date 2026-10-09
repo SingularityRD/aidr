@@ -596,6 +596,25 @@ and a PDF text extractor. There is no remote code, no WebAssembly and no new dep
   (`PDF_NO_TEXT`, `PDF_PARTIAL`), encrypted (`PDF_ENCRYPTED`) or unparseable
   (`PDF_UNPARSEABLE`) follows the binary rule: uploaded with a warning, blocked in `block`
   mode. Findings in the readable part still block it.
+- **Images inside PDFs** (photos, screenshots, scanned pages): every image a page draws
+  (directly or through Form XObjects), inline images and image XObjects referenced elsewhere
+  (annotation appearances, for example; soft masks excluded) go through the same native-host
+  OCR as uploaded images. JPEG (`DCTDecode`) data is sent as is; Flate, LZW, RunLength and
+  ASCII-encoded images in DeviceGray, DeviceRGB, DeviceCMYK, ICCBased, Indexed or Separation
+  colour spaces (1 to 16 bits, PNG predictors) are re-encoded as PNG in the browser. An image
+  with sensitive text blocks the PDF (`SENSITIVE_DATA_IN_IMAGE`; `monitor` records it). If any
+  image that can hold text (8x8 pixels or larger) is not read to a verdict, the PDF is handled
+  like an uninspected image: `PDF_IMAGES_NOT_INSPECTED`, uploaded with a warning, blocked in
+  `block` mode, never reported as clean. The detail code says why: no host or no OCR
+  (`PDF_IMAGE_OCR_UNAVAILABLE`), JPEG 2000, JBIG2, CCITT, DeviceN/Lab or a TIFF predictor
+  (`PDF_IMAGE_UNSUPPORTED`), corrupt or truncated data (`PDF_IMAGE_UNDECODABLE`), more than 16
+  images, over 12 megapixels, 8,192 pixels per side or 8 MiB, or past the 90-second OCR budget
+  (`PDF_IMAGE_LIMIT`), or an OCR result the host marks incomplete
+  (`PDF_IMAGE_OCR_INCOMPLETE` plus the host's code). The host reports a picture without any
+  text (a logo or a photo) as incomplete (`IMAGE_NO_TEXT`), so a PDF containing one is also
+  reported as not inspected. A PDF whose text and images are all clean is allowed
+  (`PDF_IMAGES_OCR_CLEAN`); this includes a scanned PDF whose every page image was OCR'd
+  clean.
 - **Images** (screenshots, photos): with `useNativeHost` and a native host configured with
   OCR, the image is OCR'd on the endpoint (counts only; the host returns no pixels or text).
   Sensitive text blocks the upload (`SENSITIVE_DATA_IN_IMAGE`; pixels are never masked); a
@@ -677,8 +696,10 @@ page and that the bubble suggests saving it as `.docx`.
 - There is no OCR in the browser itself. Images and pictures inside Office/OpenDocument
   files are OCR'd only through the optional native host with OCR configured, and are blocked
   (never masked) when they show sensitive data; OCR can miss small, handwritten or low-contrast
-  text. Without the host they are reported as not inspected, not as clean. Scanned PDFs and
-  image-only PDF pages are not OCR'd (reported as unscanned). Set `fileHandling: "block"` or
+  text. Without the host they are reported as not inspected, not as clean. Images inside
+  PDFs, scanned pages included, are extracted in the browser and OCR'd the same way; without
+  the host a PDF that contains images is reported as not inspected. OCR accuracy has not been
+  measured on real documents or images. Set `fileHandling: "block"` or
   `documentHandling: "block"` if such uploads must never reach AI sites.
 - PDFs are scanned but never rewritten, so a PDF with findings is blocked rather than
   masked. Encrypted PDFs are not decrypted; Type0 fonts without a ToUnicode map and
@@ -1365,7 +1386,8 @@ check was rules-only.
 - `packages/privacy` ships the host protocol but **no NER model weights and no accuracy
   evidence**. Measure precision and recall on your own data.
 - OCR comes from the privacy package's visual layer (feature 20), used decision-only: an
-  image with sensitive text is blocked, never masked. Scanned PDFs are not OCR'd. OCR needs
+  image with sensitive text is blocked, never masked. Images inside PDFs (scanned pages
+  included) are extracted by Browser Guard and sent through the same path. OCR needs
   the host's optional Python/Tesseract stack; the protocol is tested with fake OCR workers,
   and real OCR accuracy must be measured on your own images.
 - A heavy model plus a large prompt can exceed the 2-second budget, and the bridge then

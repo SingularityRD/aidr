@@ -631,6 +631,25 @@ yoktur.
   veya ayrıştırılamayan (`PDF_UNPARSEABLE`) PDF'ler ikili dosya kuralına uyar: uyarıyla
   yüklenir, `block` modunda engellenir. Okunabilen bölümdeki bulgular yine engellemeye yol
   açar.
+- **PDF içindeki görseller** (fotoğraflar, ekran görüntüleri, taranmış sayfalar): bir
+  sayfanın doğrudan ya da Form XObject üzerinden çizdiği her görsel, satır içi görseller ve
+  başka yerden başvurulan görsel XObject'ler (örneğin açıklama görünümleri; yumuşak maskeler
+  hariç) yüklenen görsellerle aynı native host OCR yolundan geçer. JPEG (`DCTDecode`) verisi
+  olduğu gibi gönderilir; DeviceGray, DeviceRGB, DeviceCMYK, ICCBased, Indexed veya Separation
+  renk uzaylarındaki Flate, LZW, RunLength ve ASCII kodlu görseller (1-16 bit, PNG
+  öngörücüleri) tarayıcıda PNG olarak yeniden kodlanır. Hassas metin içeren görsel PDF'i
+  engeller (`SENSITIVE_DATA_IN_IMAGE`; `monitor` yalnızca kaydeder). Yazı taşıyabilecek
+  (8x8 piksel ya da daha büyük) herhangi bir görsel sonuca kadar okunamazsa PDF incelenmemiş
+  bir görsel gibi ele alınır: `PDF_IMAGES_NOT_INSPECTED`, uyarıyla yüklenir, `block` modunda
+  engellenir, hiçbir zaman temiz bildirilmez. Ayrıntı kodu nedenini söyler: host ya da OCR yok
+  (`PDF_IMAGE_OCR_UNAVAILABLE`), JPEG 2000, JBIG2, CCITT, DeviceN/Lab veya TIFF öngörücüsü
+  (`PDF_IMAGE_UNSUPPORTED`), bozuk ya da kesik veri (`PDF_IMAGE_UNDECODABLE`), 16'dan fazla
+  görsel, 12 megapiksel, kenar başına 8.192 piksel ya da 8 MiB üstü veya 90 saniyelik OCR
+  bütçesinin aşılması (`PDF_IMAGE_LIMIT`), ya da host'un eksik saydığı OCR sonucu
+  (`PDF_IMAGE_OCR_INCOMPLETE` ve host'un kodu). Host, hiç yazı içermeyen bir resmi (logo,
+  fotoğraf) eksik (`IMAGE_NO_TEXT`) olarak bildirir; böyle bir resim içeren PDF de incelenmemiş
+  sayılır. Metni ve tüm görselleri temiz olan PDF'e izin verilir (`PDF_IMAGES_OCR_CLEAN`);
+  her sayfa görseli temiz çıkan taranmış PDF'ler de buna dâhildir.
 - **Görseller** (ekran görüntüleri, fotoğraflar): `useNativeHost` açık ve native host OCR
   ile yapılandırılmışsa görsel uç noktada OCR'dan geçirilir (yalnız sayılar döner; host piksel
   ya da metin döndürmez). Hassas metin yüklemeyi engeller (`SENSITIVE_DATA_IN_IMAGE`;
@@ -714,8 +733,9 @@ ulaşmadığını ve baloncuğun dosyayı `.docx` olarak kaydetmeyi önerdiğini
   resimler yalnız OCR ile yapılandırılmış isteğe bağlı native host üzerinden OCR'dan geçer ve
   hassas veri gösterirse engellenir (hiçbir zaman maskelenmez); OCR küçük, el yazısı ya da
   düşük kontrastlı yazıyı kaçırabilir. Host yoksa temiz değil, incelenmemiş olarak
-  bildirilir. Taranmış PDF'lere ve yalnızca görsel içeren PDF sayfalarına OCR uygulanmaz
-  (taranmamış olarak bildirilir). Bu tür yüklemelerin hiç ulaşmaması gerekiyorsa
+  bildirilir. Taranmış sayfalar dâhil PDF içindeki görseller tarayıcıda çıkarılır ve aynı
+  yoldan OCR'dan geçer; host yoksa görsel içeren PDF incelenmemiş olarak bildirilir. OCR
+  doğruluğu gerçek belge ve görsellerde ölçülmemiştir. Bu tür yüklemelerin hiç ulaşmaması gerekiyorsa
   `fileHandling: "block"` ya da `documentHandling: "block"` kullanın.
 - PDF'ler taranır ama yeniden yazılmaz; bulgu içeren bir PDF maskelenmez, engellenir.
   Şifreli PDF'lerin şifresi çözülmez; ToUnicode eşlemesi olmayan Type0 yazı tipleri ve
@@ -1436,8 +1456,8 @@ devam eder ve sayfa içi mesaj denetimin yalnızca kurallarla yapıldığını b
 - `packages/privacy` host protokolünü içerir, ancak **NER model ağırlıklarını ve doğruluk
   kanıtını içermez**. Kesinlik ve duyarlılığı kendi verinizle ölçün.
 - OCR, privacy paketinin görsel katmanından (özellik 20) yalnız karar amacıyla kullanılır:
-  hassas metin içeren görsel engellenir, hiçbir zaman maskelenmez. Taranmış PDF'lere OCR
-  uygulanmaz. OCR host'un isteğe bağlı Python/Tesseract yığınını gerektirir; protokol sahte
+  hassas metin içeren görsel engellenir, hiçbir zaman maskelenmez. Taranmış sayfalar dâhil
+  PDF içindeki görseller Browser Guard tarafından çıkarılıp aynı yoldan gönderilir. OCR host'un isteğe bağlı Python/Tesseract yığınını gerektirir; protokol sahte
   OCR çalışanlarıyla test edilmiştir, gerçek OCR doğruluğu kendi görsellerinizde ölçülmelidir.
 - Ağır bir model ile büyük bir istem 2 saniyelik bütçeyi aşabilir. Bu durumda köprü geri çekilir
   ve yalnızca kurallar çalışır.

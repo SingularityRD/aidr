@@ -38,9 +38,16 @@
  *                   `DOCUMENT_LIMIT_EXCEEDED`).
  *                   PDF: text is extracted (./pdf/extract.ts) and scanned, never rewritten:
  *                   findings block `SENSITIVE_DATA_IN_PDF` (the user is told to paste the text
- *                   instead); a clean, fully readable PDF is allowed; scanned/partly unreadable
- *                   or encrypted/unparseable PDFs follow step 4 with `PDF_NO_TEXT`,
- *                   `PDF_PARTIAL`, `PDF_ENCRYPTED` or `PDF_UNPARSEABLE`.
+ *                   instead). Embedded raster images (./pdf/images.ts) go to the native host's
+ *                   OCR (`deps.inspectImage`, the standalone-image path): sensitive text blocks
+ *                   `SENSITIVE_DATA_IN_IMAGE`; an image that may hold text but was not read to a
+ *                   verdict (no OCR, undecodable/unsupported image, limits, incomplete OCR)
+ *                   sends the whole PDF to step 4 with `PDF_IMAGES_NOT_INSPECTED` + detail
+ *                   codes, exactly like an uninspected image (never clean). A clean, fully
+ *                   readable PDF is allowed (`PDF_IMAGES_OCR_CLEAN` when images were OCR'd; a
+ *                   scanned PDF whose every image was OCR'd clean counts as fully read);
+ *                   partly unreadable or encrypted/unparseable PDFs follow step 4 with
+ *                   `PDF_NO_TEXT`, `PDF_PARTIAL`, `PDF_ENCRYPTED` or `PDF_UNPARSEABLE`.
  *      Document refusals and PDF / legacy Office findings are recorded instead of enforced in
  *      monitor mode.
  *   3. Classification. A file is scanned as text when its content decodes as strict UTF-8
@@ -115,7 +122,7 @@ import type {
 } from "../types.js";
 import { type Counts, countFindings, mergeCounts } from "./counts.js";
 import { extractLegacyOffice, type LegacyExtraction } from "./legacy/extract.js";
-import { MAX_OCR_IMAGE_BYTES, ocrFormat } from "./office/images.js";
+import { MAX_OCR_IMAGE_BYTES, MAX_OCR_IMAGES, OCR_BUDGET_MS, ocrFormat } from "./office/images.js";
 import { ODF_EXTENSIONS, ODF_MIME, sanitizeOdf, sniffOdf } from "./office/odf.js";
 import {
 	type DocumentOutcome,
@@ -128,7 +135,8 @@ import {
 } from "./office/ooxml.js";
 import type { DocScanner } from "./office/scanner.js";
 import { looksLikeZip } from "./office/zip.js";
-import { extractPdfText, PdfUnreadable } from "./pdf/extract.js";
+import { extractPdfText, type PdfExtraction, PdfUnreadable } from "./pdf/extract.js";
+import type { PdfImage } from "./pdf/images.js";
 
 export interface GuardFile {
 	readonly name: string;
@@ -1264,8 +1272,113 @@ async function handlePdf(
 	if (signals.length && policy.signalAction === "block") return block(signals, findingCounts);
 	if (Object.keys(findingCounts).length > 0)
 		return refuse(policy, ["SENSITIVE_DATA_IN_PDF", ...signals], findingCounts);
-	if (!extraction.complete) return unscanned(policy, [...extraction.reasons, ...signals]);
-	return { action: "allow", counts: {}, reasons: signals };
+	const images = await inspectPdfImages(extraction, scanner);
+	if (images.sensitive > 0)
+		return refuse(policy, ["SENSITIVE_DATA_IN_IMAGE", ...signals], images.counts);
+	// Image-only pages / no text layer stop counting against the PDF once every image was read.
+	const textReasons =
+		images.notInspected === 0 && images.inspected > 0
+			? extraction.reasonsWithImages
+			: extraction.reasons;
+	if (images.notInspected > 0) {
+		// Embedded pictures that were not (fully) read: handled exactly like an uninspected image.
+		const detail = ["PDF_IMAGES_NOT_INSPECTED", ...images.details, ...textReasons];
+		return unscanned(policy, [...new Set(detail), ...signals]);
+	}
+	if (textReasons.length) return unscanned(policy, [...textReasons, ...signals]);
+	const ocr = images.inspected > 0 ? ["PDF_IMAGES_OCR_CLEAN"] : [];
+	return { action: "allow", counts: {}, reasons: [...ocr, ...signals] };
+}
+
+interface PdfImageSummary {
+	/** Images OCR'd without sensitive text. */
+	inspected: number;
+	/** Images that may hold text but were not (fully) inspected. */
+	notInspected: number;
+	sensitive: number;
+	readonly counts: Counts;
+	/** Why images were not inspected: `PDF_IMAGE_*` codes and the host's `IMAGE_*`/`NATIVE_*` codes. */
+	readonly details: Set<string>;
+}
+
+/**
+ * OCRs the PDF's embedded images through the native host (same path and limits as pictures in
+ * Office documents: at most `MAX_OCR_IMAGES` OCR calls within `OCR_BUDGET_MS`). Images too small
+ * to hold text are skipped; every other image that is not read to a clean or sensitive verdict
+ * counts as not inspected. Stops at the first sensitive image (the PDF is refused anyway).
+ */
+async function inspectPdfImages(
+	extraction: PdfExtraction,
+	scanner: DocScanner,
+): Promise<PdfImageSummary> {
+	const summary: PdfImageSummary = {
+		inspected: 0,
+		notInspected: extraction.imageOverflow,
+		sensitive: 0,
+		counts: {},
+		details: new Set(extraction.imageOverflow > 0 ? ["PDF_IMAGE_LIMIT"] : []),
+	};
+	const run: OcrRun = {
+		summary,
+		scanner,
+		available: scanner.inspectImage !== undefined,
+		calls: 0,
+		deadline: Date.now() + OCR_BUDGET_MS,
+	};
+	for (const image of extraction.images) {
+		if (summary.sensitive > 0) break;
+		if (image.mayHoldText) await inspectPdfImage(image, run);
+	}
+	return summary;
+}
+
+interface OcrRun {
+	readonly summary: PdfImageSummary;
+	readonly scanner: DocScanner;
+	/** False once OCR turned out to be unavailable: the remaining images are not read either. */
+	available: boolean;
+	calls: number;
+	readonly deadline: number;
+}
+
+async function inspectPdfImage(image: PdfImage, run: OcrRun): Promise<void> {
+	const { summary, scanner } = run;
+	const inspect = run.available ? scanner.inspectImage : undefined;
+	if (!inspect) return notInspectedImage(summary, "PDF_IMAGE_OCR_UNAVAILABLE");
+	if (run.calls >= MAX_OCR_IMAGES || Date.now() >= run.deadline)
+		return notInspectedImage(summary, "PDF_IMAGE_LIMIT");
+	const raster = await image.raster(MAX_OCR_IMAGE_BYTES);
+	if (raster.kind === "failed") return notInspectedImage(summary, raster.reason);
+	if (raster.kind === "no-text") return;
+	run.calls++;
+	const inspection = await inspect.call(scanner, raster.bytes).catch(() => null);
+	run.available = recordPdfInspection(summary, inspection);
+}
+
+function notInspectedImage(summary: PdfImageSummary, reason: string): void {
+	summary.notInspected++;
+	summary.details.add(reason);
+}
+
+/** Adds one OCR verdict to `summary`; false when OCR was unavailable (null). */
+function recordPdfInspection(
+	summary: PdfImageSummary,
+	inspection: ImageInspection | null,
+): boolean {
+	if (!inspection) {
+		notInspectedImage(summary, "PDF_IMAGE_OCR_UNAVAILABLE");
+		return false;
+	}
+	if (inspection.result === "sensitive") {
+		summary.sensitive++;
+		mergeCounts(summary.counts, inspection.counts);
+	} else if (inspection.result === "clean") summary.inspected++;
+	else {
+		notInspectedImage(summary, "PDF_IMAGE_OCR_INCOMPLETE");
+		for (const r of inspection.reasons.filter((r) => HOST_REASON.test(r)).slice(0, 4))
+			summary.details.add(r);
+	}
+	return true;
 }
 
 /**

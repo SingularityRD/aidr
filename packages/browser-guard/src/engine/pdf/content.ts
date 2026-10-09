@@ -3,12 +3,14 @@
  *
  * Handles the text operators (`BT/ET`, `Tf`, `Td/TD/Tm/T*`, `Tj`, `TJ`, `'`, `"`,
  * `Tc/Tw/Tz/TL`), the graphics state needed to place text (`q/Q/cm`), Form XObjects (`Do`,
- * nested up to `maxFormDepth`, cycles refused) and skips inline image data (`BI ... EI`).
+ * nested up to `maxFormDepth`, cycles refused) and steps over inline image data (`BI ... EI`).
+ * Drawn images (image XObjects and inline images) are handed to `ContentContext.images`.
  * Glyph advances come from the fonts' widths, so line breaks and word gaps are inserted the
  * way the page lays them out rather than wherever the producer split its strings.
  */
 import type { PdfDocument } from "./document.js";
 import { DEFAULT_FONT, type Font, loadFont } from "./fonts.js";
+import { inlineImageDict, type PdfImageCollector } from "./images.js";
 import {
 	binaryString,
 	Lexer,
@@ -104,6 +106,8 @@ export interface ContentContext {
 	readonly page: PageText;
 	readonly checkDeadline: () => void;
 	forms: number;
+	/** Receives every image the page draws (image XObjects and inline images). */
+	readonly images?: PdfImageCollector;
 }
 
 interface TextState {
@@ -115,17 +119,34 @@ interface TextState {
 	leading: number;
 }
 
-/** Skips an inline image (`BI ... ID <data> EI`); returns the position after `EI`. */
-function skipInlineImage(lexer: Lexer): number {
+interface InlineImage {
+	/** Position after `EI`. */
+	readonly end: number;
+	/** `BI` operands as key/value pairs (abbreviated keys), and the raw data between ID and EI. */
+	readonly entries: Array<readonly [string, PdfValue]>;
+	readonly data: string;
+}
+
+/** Reads an inline image (`BI <dict> ID <data> EI`) whose `BI` was just read. */
+function readInlineImage(lexer: Lexer): InlineImage {
+	const entries: Array<readonly [string, PdfValue]> = [];
+	let key: string | null = null;
 	for (let guard = 0; guard < 4096; guard++) {
 		const v = lexer.readObject();
-		if (v === undefined) return lexer.end;
+		if (v === undefined) return { end: lexer.end, entries, data: "" };
 		if (v instanceof PdfCmd && v.op === "ID") break;
+		if (key === null && v instanceof PdfName) key = v.name;
+		else if (key !== null) {
+			entries.push([key, v]);
+			key = null;
+		}
 	}
+	const start = lexer.pos + 1; // one white-space byte follows ID
 	const re = /[\0\t\n\f\r ]EI(?=[\0\t\n\f\r ]|$)/g;
-	re.lastIndex = lexer.pos + 1;
+	re.lastIndex = start;
 	const m = re.exec(lexer.src);
-	return m && m.index < lexer.end ? m.index + 3 : lexer.end;
+	const end = m && m.index < lexer.end ? m.index : lexer.end;
+	return { end: Math.min(lexer.end, end + 3), entries, data: lexer.src.slice(start, end) };
 }
 
 type SyncOperator = (i: Interpreter) => void;
@@ -215,8 +236,14 @@ class Interpreter {
 		else if (op === "Tf") await this.setFont();
 		else if (op === "Do") await this.xobject();
 		else if (op === "BI") {
-			lexer.pos = skipInlineImage(lexer);
+			const inline = readInlineImage(lexer);
+			lexer.pos = inline.end;
 			this.ctx.page.images++;
+			this.ctx.images?.addInline(
+				inlineImageDict(inline.entries),
+				Uint8Array.from(inline.data, (c) => c.charCodeAt(0)),
+				this.resources,
+			);
 		}
 	}
 
@@ -333,8 +360,10 @@ class Interpreter {
 		const xobject = doc.resolve(doc.dict(this.resources?.get("XObject"))?.get(name.name));
 		if (!(xobject instanceof PdfStream)) return;
 		const subtype = doc.name(xobject.dict.get("Subtype"));
-		if (subtype === "Image") this.ctx.page.images++;
-		else if (subtype === "Form" && !this.active.has(xobject)) await this.form(xobject);
+		if (subtype === "Image") {
+			this.ctx.page.images++;
+			this.ctx.images?.addStream(xobject);
+		} else if (subtype === "Form" && !this.active.has(xobject)) await this.form(xobject);
 	}
 
 	private async form(xobject: PdfStream): Promise<void> {

@@ -53,6 +53,11 @@ describe("content guard: uploads that are not fully checked", () => {
 			"its content was not inspected",
 		],
 		["rapor.docx", ["DOCUMENT_IMAGES_NOT_INSPECTED"], 'Pictures inside "rapor.docx"'],
+		[
+			"tarama.pdf",
+			["BINARY_FILE_UNSCANNED", "PDF_IMAGES_NOT_INSPECTED", "PDF_IMAGE_OCR_UNAVAILABLE"],
+			'"tarama.pdf" contains images whose content was not inspected',
+		],
 	])("warns for %s", async (name, reasons, text) => {
 		const g = start({ sanitizeFile: async () => allow(...reasons) });
 		const { pageSaw } = upload(name);

@@ -158,8 +158,10 @@ parallel; when the host is not reachable the check is rules-only and the user se
   you are warned that the picture was not checked.
 - PDF files are checked but cannot be cleaned. If a PDF contains sensitive data
   it is not uploaded; copy the text you need and paste it into the prompt
-  instead (pasted text is masked). Scanned PDFs (pictures of pages) cannot be
-  read and are uploaded with a warning unless your organisation blocks them.
+  instead (pasted text is masked). Pictures inside a PDF, including scanned
+  pages, are checked by the same text recognition helper when your organisation
+  runs it; without it, a PDF with pictures is uploaded with a warning that its
+  pictures were not checked, unless your organisation blocks it.
 
 ### Modes
 

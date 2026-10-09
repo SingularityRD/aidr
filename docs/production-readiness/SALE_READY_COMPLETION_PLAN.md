@@ -105,7 +105,7 @@ Bu faz her şeyin ön koşuludur; bitmeden başka iş yapılmaz.
 
 1. **Üç OPEN iş:** T19 (SCIM/Azure AD grup eşlemesi), T37 (gerçek veri akışı/redaksiyon/gizlilik kanıtı), T38 (kuruma özel DLP/etiketler).
 2. **Bilinen tespit boşlukları:** hostname'de DNS sızdırma; ters/bölünmüş canary token; AI-BOM başlatma argümanında `-p <parola>` maskeleme; iki MCP sunucusuna yayılan zincirler için gateway birleştirmesi; MCP doğrudan upstream bypass (zorunlu yönlendirme).
-3. **Browser Guard:** PDF içi görseller için OCR; eski `.doc/.xls/.ppt` içerik taraması; OCR doğruluğu ve ODF dosyalarının LibreOffice'te açılması doğrulaması.
+3. **Browser Guard:** PDF içi görseller için OCR yolu eklendi (doğruluk ölçülmedi); eski `.doc/.xls/.ppt` içerik taraması; OCR doğruluğu ve ODF dosyalarının LibreOffice'te açılması doğrulaması.
 4. **Sınama kapsamı:** Docker gerektiren 15 Postgres paketi ve `ci:local` Docker imaj adımları (Docker'lı ortamda); Windows `pwsh` adımı; kök olmayan kullanıcı adımı.
 5. **Zod 4 ve koffi 3 göçleri** (isteğe bağlı, satışı geciktirmez): ayrı dal, ayrı PR, tam kapı.
 6. **Ürün kararı gerektirenler — ajan karar vermez:** T18 kurumsal SAML zorlama semantiği (kim onaylar, geri dönüş, oturum iptali, süre/tekrar kuralları). Bkz. bölüm 7.

@@ -124,6 +124,7 @@ function blockedMessage(
 function passWarning(s: Strings, name: string, reasons: readonly string[]): string | null {
 	if (reasons.includes("LEGACY_OFFICE_FORMAT")) return s.legacyOfficeToast(name);
 	if (reasons.includes("IMAGE_NOT_INSPECTED")) return s.imageUnscannedToast(name);
+	if (reasons.includes("PDF_IMAGES_NOT_INSPECTED")) return s.pdfImagesUnscannedToast(name);
 	if (reasons.some((r) => r.startsWith("BINARY_FILE"))) return s.fileUnscannedToast(name);
 	if (reasons.includes("DOCUMENT_IMAGES_NOT_INSPECTED")) return s.documentImagesToast(name);
 	return null;

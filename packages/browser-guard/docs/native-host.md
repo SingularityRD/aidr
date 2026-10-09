@@ -54,6 +54,11 @@ block in the host config, i.e. local Tesseract with the Turkish and English data
   permission is missing, is reported as not inspected (`IMAGE_NOT_INSPECTED`, or
   `DOCUMENT_IMAGES_NOT_INSPECTED` for pictures in a document): uploaded with a
   warning, blocked in `block` mode, never treated as clean.
+- Images inside PDFs are extracted in the browser (JPEG as is, other raster images
+  re-encoded as PNG) and sent the same way, one `image-scan` session per image. A PDF
+  with an image that was not read to a verdict, or that could not be extracted, is
+  reported as `PDF_IMAGES_NOT_INSPECTED` with a `PDF_IMAGE_*` detail code and handled
+  like an uninspected image.
 
 ## What it adds
 
