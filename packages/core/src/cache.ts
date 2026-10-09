@@ -277,9 +277,10 @@ export class VerdictCache {
 
 		const key = normalizeUrl(url);
 		const now = new Date();
+		const sourceFreshUntil = Number.isFinite(cacheValidUntil) ? cacheValidUntil : undefined;
 		if (
 			verdict.verdict === "allow" &&
-			(!Number.isFinite(cacheValidUntil) || cacheValidUntil! <= now.getTime())
+			(sourceFreshUntil === undefined || sourceFreshUntil <= now.getTime())
 		)
 			return;
 		const ttl = isMalicious ? this.config.ttl_malicious_seconds : this.config.ttl_clean_seconds;
@@ -293,8 +294,8 @@ export class VerdictCache {
 			...verdict,
 			checkedAt: now.toISOString(),
 			expiresAt: expiresAt.toISOString(),
-			...(Number.isFinite(cacheValidUntil)
-				? { sourceFreshUntil: new Date(cacheValidUntil!).toISOString() }
+			...(sourceFreshUntil !== undefined
+				? { sourceFreshUntil: new Date(sourceFreshUntil).toISOString() }
 				: {}),
 			aidrVersion: this.version,
 		};
