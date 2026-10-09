@@ -76,9 +76,9 @@ export function VerifyPage() {
 						role: string;
 						teams: { id: string; name: string } | null;
 					}[]
-				)
-					.filter((row) => row.teams && ["owner", "admin", "member"].includes(row.role))
-					.map((row) => row.teams!);
+				).flatMap((row) =>
+					row.teams && ["owner", "admin", "member"].includes(row.role) ? [row.teams] : [],
+				);
 				setTeams(available);
 				setTeamId(
 					available.some((team) => team.id === preferredTeam)

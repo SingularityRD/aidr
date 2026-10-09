@@ -1,4 +1,4 @@
-import { frozen, id, integer, httpsOrigin, object, deny } from './util.js';
+import { frozen, id, integer, httpsOrigin, deny } from './util.js';
 /** Inventory from explicitly submitted trusted observations, not autonomous endpoint discovery.
  * URL paths, query strings, prompt text and employee identities are never retained. */
 export class ApplicationInventory {

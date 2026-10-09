@@ -2,7 +2,7 @@ import { request as httpsRequest } from 'node:https';
 import { lookup as dnsLookup } from 'node:dns/promises';
 import { BlockList, isIP } from 'node:net';
 import type { LookupFunction } from 'node:net';
-import { frozen, integer, deny } from '../enterprise/util.js';
+import { integer, deny } from '../enterprise/util.js';
 const excluded=new BlockList();for(const [ip,prefix]of [['0.0.0.0',8],['10.0.0.0',8],['100.64.0.0',10],['127.0.0.0',8],['169.254.0.0',16],['172.16.0.0',12],['192.0.0.0',24],['192.0.2.0',24],['192.168.0.0',16],['192.88.99.0',24],['198.18.0.0',15],['198.51.100.0',24],['203.0.113.0',24],['224.0.0.0',4],['240.0.0.0',4]] as const)excluded.addSubnet(ip,prefix,'ipv4');
 for(const [ip,prefix]of [['2001::',32],['2001:db8::',32],['2002::',16],['3fff::',20]] as const)excluded.addSubnet(ip,prefix,'ipv6');
 /** Conservative global-address allowlist. IPv4-mapped, link-local, ULA and translation forms fail. */

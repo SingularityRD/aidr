@@ -26,13 +26,6 @@ export function domainFromUrlOrHost(input: string): string | null {
 	return normalizeDomain(trimmed);
 }
 
-function isSubdomainOrExact(host: string, domain: string): boolean {
-	const h = normalizeDomain(host);
-	const d = normalizeDomain(domain);
-	if (!h || !d) return false;
-	return h === d || h.endsWith(`.${d}`);
-}
-
 export function lookupDomainRisk(merged: IntelMerged, host: string): DomainRiskEntry | null {
 	const h = normalizeDomain(host);
 	if (!h) return null;
@@ -48,37 +41,6 @@ export function lookupDomainRisk(merged: IntelMerged, host: string): DomainRiskE
 		const hit = merged.domainRisk.get(candidate);
 		if (hit) return hit;
 	}
-	return null;
-}
-
-function matchUrlIntel(
-	merged: IntelMerged,
-	urlOrHost: string,
-): { verdict: "allow" | "ask" | "deny"; reason: string; confidence: number } | null {
-	const host = domainFromUrlOrHost(urlOrHost);
-	if (!host) return null;
-
-	// Allowlist wins at intel layer.
-	if (merged.urlAllowHosts.has(host)) {
-		return { verdict: "allow", reason: "Intel URL allowlist match", confidence: 1.0 };
-	}
-	if (merged.urlDenyHosts.has(host)) {
-		return { verdict: "deny", reason: "Intel URL denylist match", confidence: 1.0 };
-	}
-
-	const risk = lookupDomainRisk(merged, host);
-	if (risk) {
-		const v = risk.action;
-		if (v === "allow") {
-			return { verdict: "allow", reason: risk.reason ?? "Intel domain allow", confidence: 0.9 };
-		}
-		return {
-			verdict: v,
-			reason: risk.reason ?? "Intel domain risk match",
-			confidence: typeof risk.confidence === "number" ? risk.confidence : 0.9,
-		};
-	}
-
 	return null;
 }
 

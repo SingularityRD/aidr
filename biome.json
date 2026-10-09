@@ -14,38 +14,30 @@
 	},
 	"linter": {
 		"rules": {
-			"recommended": false,
+			"preset": "none",
 			"correctness": {
-				"noUnusedVariables": "warn",
-				"noUnusedImports": "warn"
+				"noUnusedVariables": "error",
+				"noUnusedImports": "error"
 			},
 			"complexity": {
 				"noExcessiveCognitiveComplexity": "warn",
 				"noForEach": "off",
-				"noStaticOnlyClass": "warn"
+				"noStaticOnlyClass": "error"
 			},
 			"style": {
 				"noNonNullAssertion": "warn"
 			},
 			"suspicious": {
-				"noExplicitAny": "warn",
-				"noNonNullAssertedOptionalChain": "warn",
-				"useIterableCallbackReturn": "warn",
-				"noDuplicateTestHooks": "warn"
+				"noExplicitAny": "error",
+				"noNonNullAssertedOptionalChain": "error",
+				"useIterableCallbackReturn": "error",
+				"noDuplicateTestHooks": "error"
 			},
 			"performance": {
-				"noAccumulatingSpread": "warn"
+				"noAccumulatingSpread": "error"
 			}
 		}
 	},
-	"overrides": [
-		{
-			"includes": ["packages/core/src/dlp/privacy-rules/**"],
-			"formatter": { "enabled": false },
-			"linter": { "enabled": false },
-			"assist": { "enabled": false }
-		}
-	],
 	"formatter": {
 		"enabled": true,
 		"indentStyle": "tab",
@@ -58,6 +50,12 @@
 		}
 	},
 	"overrides": [
+		{
+			"includes": ["packages/core/src/dlp/privacy-rules/**"],
+			"formatter": { "enabled": false },
+			"linter": { "enabled": false },
+			"assist": { "enabled": false }
+		},
 		{
 			"includes": ["packages/privacy/src/**"],
 			"formatter": { "enabled": false },

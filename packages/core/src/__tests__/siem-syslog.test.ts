@@ -1,7 +1,6 @@
 import { X509Certificate, createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { createSocket, type Socket as UdpSocket } from "node:dgram";
-import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, type AddressInfo, type Server } from "node:net";
 import { tmpdir } from "node:os";

@@ -249,11 +249,3 @@ export class BehavioralAnalyzer {
 		};
 	}
 }
-
-function createBehavioralAnalyzer(
-	windowSize?: number,
-	anomalyThreshold?: number,
-	logger?: Logger,
-): BehavioralAnalyzer {
-	return new BehavioralAnalyzer(windowSize, anomalyThreshold, logger);
-}

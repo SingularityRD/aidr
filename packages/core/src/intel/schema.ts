@@ -42,8 +42,6 @@ export const IntelPackManifestSchema = z.object({
 	files: z.array(IntelPackFileSchema).default([]),
 });
 
-type IntelPackManifest = z.infer<typeof IntelPackManifestSchema>;
-
 export const PackActivePointerSchema = z.object({
 	version: z.string().min(1),
 });

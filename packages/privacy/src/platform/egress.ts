@@ -1,6 +1,5 @@
 import type { TLSSocket } from 'node:tls';
-import { randomUUID } from 'node:crypto';
-import { canonical, hash, id, integer, deny, frozen, textBound } from '../enterprise/util.js';
+import { hash, id, deny, textBound } from '../enterprise/util.js';
 import { ContextResolver, type RequestCredentials, type AuthenticatedContext } from './identity.js';
 import { DurableDispatchLedger, DurableBudget } from './durable.js';
 import type { TenantState } from './state.js';

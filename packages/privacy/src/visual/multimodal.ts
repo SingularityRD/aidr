@@ -1,6 +1,6 @@
 import type { TextResult } from '../types.js';
 import type { VisualResult } from './types.js';
-import { imageFail, integer } from './errors.js';
+import { integer } from './errors.js';
 export interface GuardedMessage {
   readonly decision:'allow'|'redact'|'review'|'block';
   readonly output:{readonly text:string;readonly images:readonly {readonly bytes:Buffer;readonly contentType:'image/png';readonly filename:'aidr-sanitized.png'}[]}|null;

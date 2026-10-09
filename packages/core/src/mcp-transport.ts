@@ -25,12 +25,6 @@ export interface JsonRpcMessage {
 	[key: string]: unknown;
 }
 
-interface JsonRpcRequest extends JsonRpcMessage {
-	method: string;
-	params?: unknown;
-	id?: JsonRpcId;
-}
-
 export interface StdioFramerOptions {
 	maxFrameBytes?: number;
 	maxHeaderBytes?: number;
@@ -1441,43 +1435,5 @@ async function evaluateMcpPolicy(
 	} finally {
 		if (timer) clearTimeout(timer);
 		controller.abort();
-	}
-}
-
-class McpTransportProxy {
-	private readonly framer: JsonRpcStdioFramer;
-	private readonly options: McpInterceptionOptions;
-	private readonly policyClient: McpPolicyClient;
-
-	constructor(
-		policyClient: McpPolicyClient,
-		options: McpInterceptionOptions & StdioFramerOptions = {},
-	) {
-		this.policyClient = policyClient;
-		this.options = {
-			...options,
-			schemaRegistry: options.schemaRegistry ?? new McpSchemaRegistry(),
-		};
-		this.framer = new JsonRpcStdioFramer(options);
-	}
-
-	feedStdio(chunk: string | Uint8Array): JsonRpcMessage[] {
-		return this.framer.push(chunk);
-	}
-
-	encodeStdio(message: JsonRpcMessage, contentLength = false): Uint8Array {
-		return encodeMcpStdioFrame(message, contentLength);
-	}
-
-	interceptToolCall(call: McpToolCall): Promise<McpInterceptionResult> {
-		return interceptMcpToolCall(call, this.policyClient, this.options);
-	}
-
-	async requestUpstream(
-		url: string | URL,
-		init: RequestInit = {},
-		options: McpFetchOptions = {},
-	): Promise<Response> {
-		return fetchMcpEndpoint(url, init, options);
 	}
 }

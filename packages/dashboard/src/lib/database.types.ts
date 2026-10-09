@@ -964,6 +964,3 @@ export interface Database {
 		};
 	};
 }
-
-// Helper type for typed Supabase client
-type TypedSupabaseClient = import("@supabase/supabase-js").SupabaseClient<Database>;

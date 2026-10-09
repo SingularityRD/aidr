@@ -28,6 +28,6 @@ export class EnforcedMcpCall {
    if(result.content.length)await this.o.guard.protectOutput(text); // Adjacent text blocks can form PII or instructions across JSON scalars.
    const output=await this.o.guard.protectOutput(snapshot); // Includes structured content, property keys and metadata.
    this.o.identity.assertContext(c);if(epoch!==this.o.policyEpoch())deny('POLICY_CHANGED');return output; // untrusted tool output: never interpreted as new policy/instructions
-  },req.approvalToken);}catch(e){if(completed)throw new Error('MCP_RESPONSE_WITHHELD');try{this.#ledger.transition(req.requestId,dispatched?'dispatched':'reserved',dispatched?'unknown':'failed',now());}catch{}throw new Error(dispatched?'MCP_OUTCOME_UNKNOWN':'MCP_DISPATCH_DENIED');}
+  },req.approvalToken);}catch{if(completed)throw new Error('MCP_RESPONSE_WITHHELD');try{this.#ledger.transition(req.requestId,dispatched?'dispatched':'reserved',dispatched?'unknown':'failed',now());}catch{}throw new Error(dispatched?'MCP_OUTCOME_UNKNOWN':'MCP_DISPATCH_DENIED');}
  }
 }

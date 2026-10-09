@@ -57,5 +57,3 @@ export const BehavioralCorpusSchema = z
 			),
 	})
 	.strict();
-
-type BehavioralCorpus = z.infer<typeof BehavioralCorpusSchema>;
