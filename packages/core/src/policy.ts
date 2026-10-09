@@ -228,7 +228,8 @@ function makeVerdict(params: {
 /**
  * Server/tool readings of an MCP call. `mcp__<server>__<tool>` is split at
  * every `__` (first split first, the historical reading); the generic `MCP`
- * tool reads `tool_input.server` / `tool_input.name`.
+ * tool reads `tool_input.server` / `tool_input.name`. Deny and approval rules
+ * match any reading; allow and inventory rules use `resolveMcpReadings`.
  */
 function mcpPolicyIdentities(
 	toolName: string,
@@ -251,6 +252,22 @@ function mcpPolicyIdentities(
 		}
 	}
 	return [];
+}
+
+/**
+ * The readings of an MCP call that allow and inventory rules are applied to.
+ * Readings whose server is a configured (inventory) server win, longest server
+ * name first; when none is configured, the historical first split is used, which
+ * then has no inventory evidence. Never empty for a non-empty `identities`.
+ */
+function resolveMcpReadings(
+	identities: readonly { server: string; tool: string }[],
+	configuredServers: ReadonlyMap<string, unknown>,
+): { server: string; tool: string }[] {
+	const configured = identities
+		.filter((identity) => configuredServers.has(identity.server))
+		.sort((a, b) => b.server.length - a.server.length);
+	return configured.length > 0 ? configured : identities.slice(0, 1);
 }
 
 /** `verdict` with `other`'s reasons appended (deduplicated). */
@@ -887,15 +904,11 @@ export async function evaluatePolicy(
 				return outcome();
 			}
 
-			const explicitlyAllowed =
-				matchesMcpToolSelector(config.policy.mcp.allow_tools, mcpServerId, mcpToolName) ||
-				includesExactId(config.policy.mcp.allow_servers, mcpServerId);
-			let isInInventory = false;
-			const riskHints = new Set<string>();
+			// Inventory evidence is gathered once for every reading of the name, so
+			// the server a `mcp__a__b__c` call resolves to is chosen from the
+			// configured servers rather than from the first `__` split.
 			const unreadableInventoryPaths: string[] = [];
-			let conflictingInventory = false;
-			let configurationSha256: string | undefined;
-
+			const inventory = new Map<string, { sha256: Set<string>; riskHints: Set<string> }>();
 			const inventoryPaths = config.policy.mcp.inventory_paths ?? [];
 			for (const invPath of inventoryPaths) {
 				const resolved = resolvePath(invPath);
@@ -909,15 +922,39 @@ export async function evaluatePolicy(
 
 				if (report.coverage.status !== "read") unreadableInventoryPaths.push(resolved);
 				for (const serverCfg of report.items) {
-					if (serverCfg.name !== mcpServerId) continue;
-					isInInventory = true;
-					if (configurationSha256 && configurationSha256 !== serverCfg.configurationSha256) {
-						conflictingInventory = true;
-					}
-					configurationSha256 = serverCfg.configurationSha256;
-					for (const hint of serverCfg.riskHints) riskHints.add(hint);
+					if (!identities.some((identity) => identity.server === serverCfg.name)) continue;
+					const entry = inventory.get(serverCfg.name) ?? {
+						sha256: new Set<string>(),
+						riskHints: new Set<string>(),
+					};
+					entry.sha256.add(serverCfg.configurationSha256);
+					for (const hint of serverCfg.riskHints) entry.riskHints.add(hint);
+					inventory.set(serverCfg.name, entry);
 				}
 			}
+
+			// Readings whose server is a configured server. When several configured
+			// servers fit (server `a` exposing tool `b__c` and server `a__b` exposing
+			// tool `c` both produce `mcp__a__b__c`), every one of them must satisfy
+			// the allow rule and contributes its risk hints: a server cannot borrow
+			// another server's allow by choosing a tool name with `__` in it.
+			const readings = resolveMcpReadings(identities, inventory);
+			const primary = readings[0] ?? { server: mcpServerId, tool: mcpToolName };
+			const resolvedToolId =
+				legacyMcpToolSelector(primary.server, primary.tool) ??
+				mcpToolSelector(primary.server, primary.tool);
+			const isInInventory = readings.some((reading) => inventory.has(reading.server));
+			const conflictingInventory = readings.some(
+				(reading) => (inventory.get(reading.server)?.sha256.size ?? 0) > 1,
+			);
+			const riskHints = new Set<string>(
+				readings.flatMap((reading) => [...(inventory.get(reading.server)?.riskHints ?? [])]),
+			);
+			const explicitlyAllowed = readings.every(
+				(reading) =>
+					matchesMcpToolSelector(config.policy.mcp.allow_tools, reading.server, reading.tool) ||
+					includesExactId(config.policy.mcp.allow_servers, reading.server),
+			);
 
 			// An allow rule may skip policy risk checks, never missing or contradictory
 			// source evidence. Tool-manifest attestation is outside this policy function.
@@ -939,7 +976,7 @@ export async function evaluatePolicy(
 						category: "mcp_tool_call",
 						severity: blocked ? "critical" : "warning",
 						source: "policy",
-						artifact: fullToolId,
+						artifact: resolvedToolId,
 						threatId: "POL-MCP-008",
 						reasons: [reason],
 						confidence: 0.9,
@@ -960,7 +997,7 @@ export async function evaluatePolicy(
 							category: "mcp_tool_call",
 							severity: "critical",
 							source: "policy",
-							artifact: fullToolId,
+							artifact: resolvedToolId,
 							threatId: "POL-MCP-001",
 							reasons: [`MCP server risk indicators: ${[...riskHints].join(", ")}`],
 							confidence: 0.95,
@@ -974,7 +1011,7 @@ export async function evaluatePolicy(
 							category: "mcp_tool_call",
 							severity: "warning",
 							source: "policy",
-							artifact: fullToolId,
+							artifact: resolvedToolId,
 							threatId: "POL-MCP-001",
 							reasons: [`MCP server risk indicators: ${[...riskHints].join(", ")}`],
 							confidence: 0.9,
@@ -995,7 +1032,7 @@ export async function evaluatePolicy(
 							category: "mcp_tool_call",
 							severity: "critical",
 							source: "policy",
-							artifact: fullToolId,
+							artifact: resolvedToolId,
 							threatId: "POL-MCP-001",
 							reasons: ["MCP server not in inventory"],
 							confidence: 0.9,
@@ -1009,7 +1046,7 @@ export async function evaluatePolicy(
 							category: "mcp_tool_call",
 							severity: "warning",
 							source: "policy",
-							artifact: fullToolId,
+							artifact: resolvedToolId,
 							threatId: "POL-MCP-001",
 							reasons: ["MCP server not in inventory"],
 							confidence: 0.9,
@@ -1029,7 +1066,7 @@ export async function evaluatePolicy(
 						category: "mcp_tool_call",
 						severity: "critical",
 						source: "policy",
-						artifact: fullToolId,
+						artifact: resolvedToolId,
 						threatId: "POL-MCP-005",
 						reasons: ["MCP tool blocked by default policy"],
 						confidence: 0.9,
@@ -1043,7 +1080,7 @@ export async function evaluatePolicy(
 						category: "mcp_tool_call",
 						severity: "warning",
 						source: "policy",
-						artifact: fullToolId,
+						artifact: resolvedToolId,
 						threatId: "POL-MCP-005",
 						reasons: ["MCP tool requires approval by default"],
 						confidence: 0.9,

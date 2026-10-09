@@ -270,6 +270,127 @@ describe("MCP policy enforcement", () => {
 		expect(verdict?.reasons.join(" ")).toContain(hint);
 	});
 
+	describe("server names containing the `__` separator", () => {
+		function mcpConfig(inventory: string, mcp: Record<string, unknown>) {
+			return ConfigSchema.parse({
+				policy: {
+					enabled: true,
+					mcp: { enabled: true, inventory_paths: [inventory], default_action: "block", ...mcp },
+				},
+			});
+		}
+
+		it("resolves an allowed `a__b` server from the inventory, not the first split", async () => {
+			const cfg = await writeMcpConfig({ a__b: { command: "node" } });
+			for (const allow of [{ allow_servers: ["a__b"] }, { allow_tools: ["a__b.tool"] }]) {
+				const verdict = await evaluatePolicy("mcp__a__b__tool", [], mcpConfig(cfg, allow), {});
+				expect(verdict).toBeNull();
+			}
+		});
+
+		it("reads risk hints from the inventory entry of the `a__b` server", async () => {
+			const cfg = await writeMcpConfig({ a__b: { command: "bash", args: ["--allow-all", "/"] } });
+			const verdict = await evaluatePolicy("mcp__a__b__tool", [], mcpConfig(cfg, {}), {});
+			expect(verdict?.decision).toBe("deny");
+			expect(verdict?.matchedThreatId).toBe("POL-MCP-001");
+			expect(verdict?.reasons.join(" ")).toContain("shell_wrapper_command");
+			expect(verdict?.artifacts).toEqual(["a__b.tool"]);
+		});
+
+		it("prefers the longest configured server name when it is the only one declared", async () => {
+			const cfg = await writeMcpConfig({ a__b__c: { command: "node" } });
+			const verdict = await evaluatePolicy(
+				"mcp__a__b__c__tool",
+				[],
+				mcpConfig(cfg, { allow_servers: ["a__b__c"] }),
+				{},
+			);
+			expect(verdict).toBeNull();
+		});
+
+		it("does not let server `a` borrow the allow of `a__b` with a `b__tool` tool name", async () => {
+			// Both `a` (tool `b__tool`) and `a__b` (tool `tool`) produce the same name.
+			const cfg = await writeMcpConfig({
+				a: { command: "node", args: ["untrusted.js"] },
+				a__b: { command: "node", args: ["trusted.js"] },
+			});
+			const verdict = await evaluatePolicy(
+				"mcp__a__b__tool",
+				[],
+				mcpConfig(cfg, { allow_servers: ["a__b"] }),
+				{},
+			);
+			expect(verdict?.decision).toBe("deny");
+			expect(verdict?.matchedThreatId).toBe("POL-MCP-005");
+		});
+
+		it("allows an ambiguous name only when every configured reading is allowed", async () => {
+			const cfg = await writeMcpConfig({
+				a: { command: "node", args: ["one.js"] },
+				a__b: { command: "node", args: ["two.js"] },
+			});
+			const verdict = await evaluatePolicy(
+				"mcp__a__b__tool",
+				[],
+				mcpConfig(cfg, { allow_servers: ["a", "a__b"] }),
+				{},
+			);
+			expect(verdict).toBeNull();
+		});
+
+		it("applies the risk hints of every configured reading of an ambiguous name", async () => {
+			const cfg = await writeMcpConfig({
+				a: { command: "bash", args: ["--allow-all", "/"] },
+				a__b: { command: "node" },
+			});
+			const verdict = await evaluatePolicy("mcp__a__b__tool", [], mcpConfig(cfg, {}), {});
+			expect(verdict?.decision).toBe("deny");
+			expect(verdict?.reasons.join(" ")).toContain("shell_wrapper_command");
+		});
+
+		it.each([
+			["deny_servers", { deny_servers: ["a"] }, "POL-MCP-006"],
+			["deny_servers (separator server)", { deny_servers: ["a__b"] }, "POL-MCP-006"],
+			["deny_tools", { deny_tools: ["a.b__tool"] }, "POL-MCP-002"],
+		] as const)("keeps %s ahead of an allow on another reading", async (_label, rule, threat) => {
+			const cfg = await writeMcpConfig({
+				a: { command: "node" },
+				a__b: { command: "node" },
+			});
+			const verdict = await evaluatePolicy(
+				"mcp__a__b__tool",
+				[],
+				mcpConfig(cfg, { allow_servers: ["a", "a__b"], ...rule }),
+				{},
+			);
+			expect(verdict?.decision).toBe("deny");
+			expect(verdict?.matchedThreatId).toBe(threat);
+		});
+
+		it("does not resolve to an allowed server name that is absent from the inventory", async () => {
+			const cfg = await writeMcpConfig({ other: { command: "node" } });
+			const verdict = await evaluatePolicy(
+				"mcp__a__b__tool",
+				[],
+				mcpConfig(cfg, { allow_servers: ["a__b"], unknown_server_action: "block" }),
+				{},
+			);
+			expect(verdict?.decision).toBe("deny");
+			expect(verdict?.matchedThreatId).toBe("POL-MCP-001");
+			expect(verdict?.reasons).toEqual(["MCP server not in inventory"]);
+		});
+
+		it("does not match a configured `__` server by prefix or case variant", async () => {
+			const cfg = await writeMcpConfig({ a__b: { command: "node" } });
+			const config = mcpConfig(cfg, { allow_servers: ["a__b"], unknown_server_action: "block" });
+			for (const name of ["mcp__a__bx__tool", "mcp__A__b__tool", "mcp__a__b"]) {
+				const verdict = await evaluatePolicy(name, [], config, {});
+				expect(verdict?.decision).toBe("deny");
+				expect(verdict?.matchedThreatId).toBe("POL-MCP-001");
+			}
+		});
+	});
+
 	it("blocks an explicitly denied MCP tool even when the server is allowed", async () => {
 		const config = ConfigSchema.parse({
 			policy: {

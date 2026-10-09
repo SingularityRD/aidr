@@ -3,6 +3,7 @@ import { isCommercialBuild } from "./build-flavor.js";
 import type { ControlPlaneIngestResult } from "./clients/control-plane.js";
 import { resolvePath } from "./config.js";
 import { atomicWriteJson, getFileContent } from "./file-utils.js";
+import { canonicalPolicyJson } from "./policy-canonical-json.js";
 import {
 	AGENT_POSTURE_FINDING_EVENT,
 	INFRA_SCAN_FINDING_EVENT,
@@ -151,10 +152,7 @@ export function revocationBindingForState(
 }
 
 /** Fails closed: an unknown tenant or any mismatch rejects the list. */
-function revocationListMatchesBinding(
-	list: RevocationList,
-	binding: RevocationBinding,
-): boolean {
+function revocationListMatchesBinding(list: RevocationList, binding: RevocationBinding): boolean {
 	const tenantId =
 		typeof binding.tenantId === "string" ? binding.tenantId.trim().toLowerCase() : "";
 	if (!REVOCATION_IDENTIFIER.test(tenantId) || list.tenant_id.toLowerCase() !== tenantId)
@@ -364,25 +362,10 @@ function sha256Hex(input: string): string {
 	return createHash("sha256").update(input).digest("hex");
 }
 
-function canonicalizeForSigning(value: unknown): unknown {
-	if (Array.isArray(value)) return value.map((v) => canonicalizeForSigning(v));
-	if (!value || typeof value !== "object") return value;
-	const obj = value as Record<string, unknown>;
-	const out: Record<string, unknown> = {};
-	for (const key of Object.keys(obj).sort()) {
-		out[key] = canonicalizeForSigning(obj[key]);
-	}
-	return out;
-}
-
-function canonicalJson(value: unknown): string {
-	return JSON.stringify(canonicalizeForSigning(value));
-}
-
 function signEntitlementSnapshot(snapshot: EntitlementSnapshotV1, authToken: string): string {
 	// v1: local HMAC signature to make cached entitlements tamper-evident offline.
 	// Future: accept/verify control-plane signatures using embedded/public keys.
-	return createHmac("sha256", authToken).update(canonicalJson(snapshot)).digest("hex");
+	return createHmac("sha256", authToken).update(canonicalPolicyJson(snapshot)).digest("hex");
 }
 
 export function verifyEntitlementSnapshotSignature(
@@ -442,12 +425,12 @@ export function verifyEd25519SignedEntitlementSnapshot(params: {
 }): boolean {
 	const sig = parseSignatureBase64(params.sig_b64);
 	if (!sig) return false;
-	const msg = Buffer.from(canonicalJson(params.snapshot), "utf8");
+	const msg = Buffer.from(canonicalPolicyJson(params.snapshot), "utf8");
 	return verifyEd25519(msg, sig, params.public_keys_pem);
 }
 
 /**
- * Generic detached Ed25519 verification over `canonicalJson(value)`, trying every configured
+ * Generic detached Ed25519 verification over `canonicalPolicyJson(value)`, trying every configured
  * key. Shared by signed policy envelopes so they use the entitlement signing wire format.
  */
 export function verifyEd25519CanonicalJson(params: {
@@ -458,7 +441,7 @@ export function verifyEd25519CanonicalJson(params: {
 	const sig = parseSignatureBase64(params.sig_b64);
 	if (!sig) return false;
 	return verifyEd25519(
-		Buffer.from(canonicalJson(params.value), "utf8"),
+		Buffer.from(canonicalPolicyJson(params.value), "utf8"),
 		sig,
 		params.public_keys_pem,
 	);
@@ -471,7 +454,7 @@ export function verifyEd25519SignedRevocationList(params: {
 }): boolean {
 	const sig = parseSignatureBase64(params.sig_b64);
 	if (!sig) return false;
-	const msg = Buffer.from(canonicalJson(params.list), "utf8");
+	const msg = Buffer.from(canonicalPolicyJson(params.list), "utf8");
 	return verifyEd25519(msg, sig, params.public_keys_pem);
 }
 

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { verifyEd25519CanonicalJson } from "./managed.js";
+import { canonicalPolicyJson } from "./policy-canonical-json.js";
 
 /**
  * Signed runtime policy envelope.
@@ -8,8 +9,9 @@ import { verifyEd25519CanonicalJson } from "./managed.js";
  *
  *   policy_signed: { alg: "ed25519", key_id, sig_b64, envelope }
  *
- * `sig_b64` is an Ed25519 signature over UTF-8 `canonicalJson(envelope)` (the same
- * recursive key-sorted JSON used for signed entitlements). The envelope binds the
+ * `sig_b64` is an Ed25519 signature over UTF-8 `canonicalPolicyJson(envelope)` (the
+ * key-sorted JSON of policy-canonical-json.ts, also used for signed entitlements and
+ * for every digest the envelope binds). The envelope binds the
  * policy digest, its version, a monotonic sequence and a validity window, and repeats
  * `key_id` inside the signed bytes so a key id cannot be relabelled to dodge revocation.
  *
@@ -98,18 +100,6 @@ function parseEnvelope(raw: unknown): PolicyEnvelope | null {
 	return raw as PolicyEnvelope;
 }
 
-/** Recursive key-sorted JSON, identical to the Edge `canonicalPolicy`. */
-function canonicalJsonValue(value: unknown): string {
-	if (Array.isArray(value)) return `[${value.map(canonicalJsonValue).join(",")}]`;
-	if (isRecord(value)) {
-		return `{${Object.entries(value)
-			.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-			.map(([key, item]) => `${JSON.stringify(key)}:${canonicalJsonValue(item)}`)
-			.join(",")}}`;
-	}
-	return JSON.stringify(value) ?? "null";
-}
-
 const EMPTY_GOVERNANCE_OVERLAY = { mcp_deny_servers: [], mcp_require_approval_servers: [] };
 
 /**
@@ -118,7 +108,7 @@ const EMPTY_GOVERNANCE_OVERLAY = { mcp_deny_servers: [], mcp_require_approval_se
  */
 export function governanceOverlaySha256(body: Record<string, unknown> | undefined): string {
 	const overlay = body?.governance === undefined ? EMPTY_GOVERNANCE_OVERLAY : body.governance;
-	return createHash("sha256").update(canonicalJsonValue(overlay)).digest("hex");
+	return createHash("sha256").update(canonicalPolicyJson(overlay)).digest("hex");
 }
 
 /** True when a body carries an overlay that its signed envelope does not bind (legacy signer). */

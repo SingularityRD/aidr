@@ -5,6 +5,7 @@ import { ControlPlaneClient } from "./clients/control-plane.js";
 import { resolvePath } from "./config.js";
 import { type DetectionException, parseSignedDetectionExceptions } from "./detection-exceptions.js";
 import { loadRevocationBinding, loadRevocationsCache } from "./managed.js";
+import { canonicalPolicyJson } from "./policy-canonical-json.js";
 import {
 	governanceUnboundBySignature,
 	type PolicyHighWater,
@@ -122,7 +123,7 @@ function getGovernanceOverlay(
 	const deny = governanceServerList(raw.mcp_deny_servers);
 	const approval = governanceServerList(raw.mcp_require_approval_servers);
 	if (!deny || !approval) return { ok: false };
-	if (createHash("sha256").update(canonicalPolicy(raw)).digest("hex") !== digest)
+	if (createHash("sha256").update(canonicalPolicyJson(raw)).digest("hex") !== digest)
 		return { ok: false };
 	return { ok: true, overlay: { mcp_deny_servers: deny, mcp_require_approval_servers: approval } };
 }
@@ -220,22 +221,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
-function canonicalPolicy(value: unknown): string {
-	if (Array.isArray(value)) return `[${value.map(canonicalPolicy).join(",")}]`;
-	if (isRecord(value)) {
-		return `{${Object.entries(value)
-			.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-			.map(([key, item]) => `${JSON.stringify(key)}:${canonicalPolicy(item)}`)
-			.join(",")}}`;
-	}
-	return JSON.stringify(value) ?? "null";
-}
-
 function verifiedPolicySha256(body: Record<string, unknown> | undefined): string | null {
 	const policy = getRuntimePolicy(body);
 	const digest = body?.policy_sha256;
 	if (!policy || typeof digest !== "string" || !/^[a-f0-9]{64}$/.test(digest)) return null;
-	return createHash("sha256").update(canonicalPolicy(policy)).digest("hex") === digest
+	return createHash("sha256").update(canonicalPolicyJson(policy)).digest("hex") === digest
 		? digest
 		: null;
 }
@@ -384,7 +374,8 @@ export function signedDetectionExceptions(
 	const digest = body.detection_exceptions_sha256;
 	if (typeof digest !== "string" || !/^[a-f0-9]{64}$/.test(digest) || bound !== digest) return [];
 	if (
-		createHash("sha256").update(canonicalPolicy(body.detection_exceptions)).digest("hex") !== digest
+		createHash("sha256").update(canonicalPolicyJson(body.detection_exceptions)).digest("hex") !==
+		digest
 	) {
 		return [];
 	}

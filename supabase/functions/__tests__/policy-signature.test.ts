@@ -1,8 +1,12 @@
-import { generateKeyPairSync } from "node:crypto";
+import { createHash, generateKeyPairSync } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { verifyEd25519CanonicalJson } from "../../../packages/core/src/managed.ts";
 import { governanceOverlaySha256, type PolicyHighWater, policyBodySequence, verifySignedPolicy } from "../../../packages/core/src/policy-signature.ts";
+import { canonicalPolicyJson } from "../../../packages/core/src/policy-canonical-json.ts";
 import { signedDetectionExceptions } from "../../../packages/core/src/remote-policy.ts";
 
 vi.mock("npm:@supabase/supabase-js@2.116.0", () => ({
@@ -16,6 +20,7 @@ vi.mock("npm:@supabase/supabase-js@2.116.0", () => ({
 
 const { createPolicyHandler } = await import("../policy/index.ts");
 const { canonicalJson, policySequence, resolvePolicySigning, signRuntimePolicyEnvelope } = await import("../_shared/policy-signature.ts");
+const { canonicalPolicy } = await import("../_shared/runtime-policy.ts");
 
 const URL = "https://project.supabase.co/functions/v1/policy";
 const TENANT = "22222222-2222-4222-8222-222222222222";
@@ -115,6 +120,29 @@ beforeEach(() => {
 	for (const name of ["AIDR_POLICY_SIGNING_KEY_ID", "AIDR_POLICY_SIGNING_PRIVATE_KEY_PKCS8_B64", "AIDR_POLICY_SIGNATURE_TTL_HOURS", "AIDR_ENTITLEMENT_SIGNING_KEY_ID", "AIDR_ENTITLEMENT_SIGNING_PRIVATE_KEY_PKCS8_B64"]) vi.stubEnv(name, "");
 });
 afterEach(() => vi.unstubAllEnvs());
+
+describe("canonical JSON cross-implementation vectors", () => {
+	// The same file is checked by packages/core/src/__tests__/policy-canonical-json.test.ts
+	// against the connector verifier; the Edge copy cannot import packages/core.
+	const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+	const { vectors } = JSON.parse(readFileSync(join(ROOT, "docs", "contracts", "policy-canonical-json-vectors.json"), "utf8")) as {
+		vectors: { name: string; input_json: string; canonical: string; sha256: string }[];
+	};
+
+	it.each(vectors.map((vector) => [vector.name, vector] as const))("%s", (_name, vector) => {
+		const value = JSON.parse(vector.input_json);
+		for (const canonical of [canonicalJson(value), canonicalPolicy(value), canonicalPolicyJson(value)]) {
+			expect(canonical).toBe(vector.canonical);
+			expect(createHash("sha256").update(canonical, "utf8").digest("hex")).toBe(vector.sha256);
+		}
+	});
+
+	it("signer and verifier agree on values JSON cannot carry", () => {
+		const value = { b: undefined, a: [undefined, Number.NaN, -0], c: () => 1, "10": 1, "9": 2 };
+		expect(canonicalJson(value)).toBe(canonicalPolicyJson(value));
+		expect(canonicalJson(value)).toBe('{"9":2,"10":1,"a":[null,null,0]}');
+	});
+});
 
 describe("canonicalisation parity with packages/core", () => {
 	const corpus: unknown[] = [
