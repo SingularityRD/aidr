@@ -42,8 +42,9 @@ select f.user_id,f.tenant_id,'73000000-0000-4000-8000-000000000001',
 from offboarding_fixture f cross join generate_series(1,3) n;
 insert into public.api_keys(user_id,tenant_id,label,key_hash)
 select user_id,tenant_id,'offboarding-key',repeat('a',64) from offboarding_fixture;
-insert into public.scim_tokens(tenant_id,token_hash,label)
-select tenant_id,repeat('b',64),'offboarding-scim' from offboarding_fixture;
+-- New SCIM credentials must name their source directory (20261007000050).
+insert into public.scim_tokens(tenant_id,token_hash,label,directory_id)
+select tenant_id,repeat('b',64),'offboarding-scim','offboarding-idp' from offboarding_fixture;
 insert into public.audit_logs(team_id,tenant_id,user_id,action,verdict)
 select tenant_id,tenant_id,user_id,'offboarding.fixture','{"decision":"deny"}'::jsonb from offboarding_fixture;
 insert into public.audit_export_objects(path,tenant_id,created_by)
@@ -110,7 +111,32 @@ begin
           ('tenant_discovery_collectors','agents'),
           ('tenant_discovery_credentials','agents'),
 		  ('tenant_discovery_provider_resources','agents'),
-          ('tenant_discovery_items','agents')
+          ('tenant_discovery_items','agents'),
+          -- Purged by a phase-completion hook on the named phase.
+          ('agent_profile_revisions','tenant_dlp_policies'),
+          ('tenant_agent_profiles','tenant_dlp_policies'),
+          ('ai_assets','tenant_runtime_policies'),
+          ('ai_asset_evidence','tenant_runtime_policies'),
+          ('ai_governance_exceptions','tenant_runtime_policies'),
+          ('ai_governance_reviewers','tenant_runtime_policies'),
+          ('ai_intake_requests','tenant_runtime_policies'),
+          ('policy_change_requests','tenant_runtime_policies'),
+          ('tenant_ai_governance_settings','tenant_runtime_policies'),
+          ('approval_requests','events'),
+          ('tenant_approval_signing_keys','events'),
+          ('governance_digest_deliveries','events'),
+          ('tenant_governance_settings','events'),
+          -- Deleted by foreign-key cascade from the named phase's table.
+          ('posture_findings','events'),
+          ('api_key_ingest_installations','api_keys'),
+          ('tenant_directory_break_glass_owners','tenant_directory_authority'),
+          -- Notification channels are deleted when offboarding starts (trigger on
+          -- tenants.status, with credentials); deliveries and outages cascade.
+          ('notification_channels','api_keys'),
+          ('notification_deliveries','api_keys'),
+          ('notification_agent_outages','api_keys'),
+          -- Commercial evidence retained with the entitlement ledger.
+          ('billing_plan_subscriptions','entitlements')
         ) covered(table_name,parent_phase)
         join public.tenant_offboarding_phase_receipts r
           on r.run_id=initial_run and r.phase=covered.parent_phase
@@ -176,8 +202,11 @@ begin
   if (select attempts from public.tenant_offboarding_phase_receipts where run_id=initial_run and phase='events') <> 2 then
     raise exception 'event batch was not bounded';
   end if;
-  if (select count(*) from public.tenant_offboarding_phase_receipts where run_id=initial_run and status='completed') <> 59 then
-    raise exception 'phase receipt set incomplete';
+  if (select count(*) from public.tenant_offboarding_phase_receipts where run_id=initial_run and status='completed') <> 62 then
+    raise exception 'phase receipt set incomplete: % completed, missing %',
+      (select count(*) from public.tenant_offboarding_phase_receipts where run_id=initial_run and status='completed'),
+      (select string_agg(phase || '=' || status, ', ' order by phase_order) from public.tenant_offboarding_phase_receipts
+        where run_id=initial_run and status <> 'completed');
   end if;
   if exists(
     select 1 from (values

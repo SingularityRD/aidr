@@ -10,6 +10,7 @@ import { afterEach, test } from "node:test";
 import { gzipSync } from "node:zlib";
 import { copyReviewedRuntime, createTarBoundaryValidator, inspectAuthenticatedInstallation, inspectReviewedRuntime } from "./archive-boundary.mjs";
 import { hardenRecoveryKeyFile } from "./deployment-restore-drill.mjs";
+import { systemTar, tarDirectory } from "./lib/tar-path.mjs";
 
 const workspaces = [];
 afterEach(() => {
@@ -159,6 +160,24 @@ test("copies only a clean reviewed runtime bound to the backup commit", () => {
 	assert.equal(readFileSync(join(output, ".env.functions"), "utf8"), "AIDR_FIXTURE=true\n");
 });
 
+test("smoke receipts in the installation root neither block nor enter a recovery", () => {
+	const source = runtimeFixture();
+	const before = inspectReviewedRuntime(source, { sourceCommit: "a".repeat(40) }).runtime_tree_sha256;
+	writeFileSync(join(source, "smoke-evidence.json"), "{}\n");
+	writeFileSync(join(source, `smoke-evidence-${"c".repeat(64)}.json`), "{}\n");
+	assert.equal(inspectReviewedRuntime(source, { sourceCommit: "a".repeat(40) }).runtime_tree_sha256, before);
+	const output = join(mkdtempSync(join(tmpdir(), "aidr-recovery-output-")), "runtime");
+	workspaces.push(dirname(output));
+	copyReviewedRuntime(source, output, { sourceCommit: "a".repeat(40) });
+	assert.equal(existsSync(join(output, "smoke-evidence.json")), false);
+	writeFileSync(join(source, "smoke-evidence-not-a-digest.json"), "{}\n");
+	assert.throws(() => inspectReviewedRuntime(source, { sourceCommit: "a".repeat(40) }), /unexpected root entries: smoke-evidence-not-a-digest\.json/);
+	rmSync(join(source, "smoke-evidence-not-a-digest.json"));
+	rmSync(join(source, "smoke-evidence.json"));
+	mkdirSync(join(source, "smoke-evidence.json"));
+	assert.throws(() => inspectReviewedRuntime(source, { sourceCommit: "a".repeat(40) }), /smoke-evidence\.json is not a regular file/);
+});
+
 test("reviewed runtime fails closed on commit drift, extra roots and hardlinks", () => {
 	const source = runtimeFixture();
 	assert.throws(() => copyReviewedRuntime(source, join(source, "nested"), { sourceCommit: "a".repeat(40) }), /separate directories/);
@@ -234,7 +253,7 @@ test("failed recovery removes only its own output and Docker project", async () 
 	await hardenRecoveryKeyFile(key);
 	const encKey = Buffer.from(hkdfSync("sha256", rawKey, "aidr-backup-v1", "encryption", 32));
 	const macKey = Buffer.from(hkdfSync("sha256", rawKey, "aidr-backup-v1", "manifest", 32));
-	const tar = spawnSync("tar", ["--format=ustar", "-C", runtime, "-czf", "-", "."], { encoding: null });
+	const tar = spawnSync(systemTar(), ["--format=ustar", "-C", tarDirectory(runtime), "-czf", "-", "."], { encoding: null });
 	assert.equal(tar.status, 0, tar.stderr?.toString());
 	const entries = [];
 	for (const [index, name] of ["database.tar.gz.enc", "storage.tar.gz.enc", "installation.tar.gz.enc"].entries()) {
@@ -253,6 +272,7 @@ import { appendFileSync } from "node:fs";
 const args = process.argv.slice(2);
 appendFileSync(process.env.FAKE_DOCKER_LOG, args.join(" ") + "\\n");
 if (args[0] === "info") { process.stdout.write("test-arch\\n"); process.exit(0); }
+if (args[0] === "build") { process.stdout.write("sha256:" + "f".repeat(64) + "\\n"); process.exit(0); }
 if (args.includes("--filter") && process.env.FAKE_COLLISION === "1") { process.stdout.write("preexisting\\n"); process.exit(0); }
 if (args[0] === "volume" && args[1] === "inspect") process.exit(1);
 if (args.includes("create") || args.includes("down")) process.exit(0);
@@ -269,6 +289,7 @@ if (basename(process.execPath).toLowerCase() !== "docker.exe") return;
 const args = process.argv.slice(1); args[0] = basename(args[0]);
 appendFileSync(process.env.FAKE_DOCKER_LOG, args.join(" ") + "\\n");
 if (args[0] === "info") { process.stdout.write("test-arch\\n"); process.exit(0); }
+if (args[0] === "build") { process.stdout.write("sha256:" + "f".repeat(64) + "\\n"); process.exit(0); }
 if (args.includes("--filter") && process.env.FAKE_COLLISION === "1") { process.stdout.write("preexisting\\n"); process.exit(0); }
 if (args[0] === "volume" && args[1] === "inspect") process.exit(1);
 if (args.includes("create") || args.includes("down")) process.exit(0);

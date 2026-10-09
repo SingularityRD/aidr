@@ -13,6 +13,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { authIdentityFixtureSql } from "./lib/postgres-auth-fixture.mjs";
 import { SEARCH_PATH_HARDENING_VERSION } from "./lib/security-definer-scan.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -63,6 +64,7 @@ test("every SECURITY DEFINER function pins search_path with pg_temp after the fu
 		assert.ok(ready, "isolated PostgreSQL must start");
 		const fixture = await docker(["exec", "-i", container, "psql", "-X", "-v", "ON_ERROR_STOP=1", "-U", "supabase_admin", "-d", "postgres"],
 			`grant create on schema storage to postgres;
+			 ${authIdentityFixtureSql}
 			 create function auth.jwt() returns jsonb language sql stable as $$
 			   select coalesce(nullif(current_setting('request.jwt.claims',true),''),'{}')::jsonb $$;`);
 		assert.equal(fixture.code, 0, fixture.stderr);

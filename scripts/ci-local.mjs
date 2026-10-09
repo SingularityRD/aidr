@@ -22,7 +22,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { accessSync, chmodSync, constants, copyFileSync, createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { homedir } from "node:os";
+import { devNull, homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -77,8 +77,14 @@ function isExecutable(file) {
 }
 
 function onPath(name) {
+	// Windows executables carry an extension (bash.exe from Git Bash); POSIX ones do not.
+	const extensions = process.platform === "win32" ? ["", ".exe", ".cmd", ".bat"] : [""];
 	for (const dir of (process.env.PATH ?? "").split(path.delimiter)) {
-		if (dir && isExecutable(path.join(dir, name))) return path.join(dir, name);
+		if (!dir) continue;
+		for (const extension of extensions) {
+			const candidate = path.join(dir, `${name}${extension}`);
+			if (isExecutable(candidate)) return candidate;
+		}
 	}
 	return null;
 }
@@ -219,7 +225,7 @@ function probeFacts(selected, workflow) {
 		detail["docker-daemon"] = !cli ? "docker not on PATH" : info.ok ? `server ${info.stdout}` : (info.stderr.split("\n").find(Boolean) ?? "`docker info` failed").slice(0, 200);
 	}
 	if (needed.has("network")) {
-		const probe = onPath("curl") ? sh("curl", ["-sS", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "10", "https://registry.npmjs.org/"], { timeout: 20_000 }) : null;
+		const probe = onPath("curl") ? sh("curl", ["-sS", "-o", devNull, "-w", "%{http_code}", "--max-time", "10", "https://registry.npmjs.org/"], { timeout: 20_000 }) : null;
 		available.network = Boolean(probe?.ok && probe.stdout !== "000");
 		detail.network = !probe ? "curl not on PATH" : available.network ? `HTTP ${probe.stdout}` : (probe.stderr || "no response").slice(0, 200);
 	}

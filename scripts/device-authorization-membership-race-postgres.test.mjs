@@ -67,7 +67,7 @@ test("device authorization and membership removal serialize in both orders", { t
 	try {
 		let ready = false;
 		for (let i = 0; i < 100; i += 1) {
-			if (docker(["exec", container, "pg_isready", "-U", "postgres"]).status === 0) { ready = true; break; }
+			if (docker(["exec", container, "pg_isready", "-h", "127.0.0.1", "-U", "postgres"]).status === 0) { ready = true; break; }
 			await delay(100);
 		}
 		assert.ok(ready, "isolated PostgreSQL did not start");

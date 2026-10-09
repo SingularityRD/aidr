@@ -3,7 +3,7 @@
 // Runs against either
 //   AIDR_POSTGRES_TEST_URL=postgres://user@host:port/db  (a disposable database
 //     is created next to it and dropped afterwards), or
-//   an isolated `supabase/postgres` container (docker, no network),
+//   an isolated plain `postgres:17` container (the fixture builds its own minimal auth schema and roles; full-chain coverage on the Supabase image is in the *-postgres suites that apply every migration) (docker, no network),
 // and is skipped, visibly, when neither is available.
 //
 // It proves that the evidence function aggregates one tenant only, refuses
@@ -47,7 +47,7 @@ async function startDatabase() {
 	if (run("docker", ["info"]).code !== 0) return null;
 	const container = `aidr-compliance-${randomUUID().slice(0, 8)}`;
 	const started = run("docker", ["run", "--detach", "--rm", "--pull", "never", "--network", "none", "--name", container,
-		"-e", "POSTGRES_PASSWORD=compliance-fixture-only", "supabase/postgres:17.6.1.136"]);
+		"-e", "POSTGRES_PASSWORD=compliance-fixture-only", "postgres:17-bookworm"]);
 	if (started.code !== 0) return null;
 	for (let i = 0; i < 100; i++) {
 		if (run("docker", ["exec", container, "pg_isready", "-h", "127.0.0.1", "-U", "postgres"]).code === 0) break;

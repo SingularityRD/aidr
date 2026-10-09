@@ -63,6 +63,7 @@ begin
   end;
   raise exception 'expected % / %, statement succeeded', expected_state, expected_message;
 end $$;
+grant execute on function pg_temp.expect_error(text,text,text) to anon, authenticated, service_role;
 
 create function pg_temp.fail_pilot_audit()
 returns trigger language plpgsql as $$

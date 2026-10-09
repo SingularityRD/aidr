@@ -979,6 +979,14 @@ const OperatorApprovalsConfigSchema = z.object({
 	 *   operator store, and released for one retry only after `aidr approve`.
 	 */
 	mode: z.enum(["host_dialog", "operator"]).default("host_dialog"),
+	/**
+	 * Directories under which a repository-REMOTE scoped detection exception may
+	 * apply. The origin URL is read from `.git/config`, which the agent itself can
+	 * rewrite, so a remote match alone would let an exception follow the agent into
+	 * any checkout. Path-scoped exceptions are unaffected. Empty (default): remote
+	 * scoped exceptions never apply.
+	 */
+	exception_trusted_repo_roots: z.array(z.string().min(1)).max(64).default([]),
 });
 
 /**

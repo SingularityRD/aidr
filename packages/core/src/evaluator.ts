@@ -1226,10 +1226,7 @@ function withinLegBudget<T>(work: Promise<T>, deadline: number, leg: DetectionLe
  * `allow` becomes an `ask` (a human decides), a stricter verdict is kept and
  * carries the degradation as an extra reason.
  */
-function degradedRulesVerdict(
-	verdict: Verdict,
-	errors: readonly ThreatLoadError[],
-): Verdict {
+function degradedRulesVerdict(verdict: Verdict, errors: readonly ThreatLoadError[]): Verdict {
 	const files = [...new Set(errors.map((error) => basename(error.file)))];
 	const shown =
 		files.slice(0, 5).join(", ") + (files.length > 5 ? `, +${files.length - 5} more` : "");
@@ -1425,6 +1422,7 @@ async function applyDetectionExceptionLeg(
 		const subject = resolveDetectionExceptionSubjectContext(
 			context.agentRuntime,
 			context.workingDirectory,
+			config.operator_approvals?.exception_trusted_repo_roots ?? [],
 		);
 		const { kept, applied } = applyDetectionExceptions(matches, candidates, subject, Date.now());
 		for (const use of applied) {

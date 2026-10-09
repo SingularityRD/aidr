@@ -20,6 +20,7 @@ import {
 	DetectionExceptionError,
 	type DetectionExceptionStoreOptions,
 	detectionExceptionArtifactDigest,
+	findGitRepository,
 	isProtectedRule,
 	listDetectionExceptions,
 	loadUsableLocalExceptions,
@@ -132,13 +133,50 @@ describe("applyDetectionExceptions", () => {
 			applyDetectionExceptions(m, [repo], { ...ctx, repo: { root: tmpdir() } }, NOW).kept,
 		).toHaveLength(1);
 		const remote = exception({ subject: { kind: "repo", value: "github.com/acme/app" } });
+		const trustedRoot = join(tmpdir(), "aidr-trusted-repos");
 		expect(
 			applyDetectionExceptions(
 				m,
 				[remote],
-				{ ...ctx, repo: { remote: "git@github.com:Acme/app.git" } },
+				{
+					...ctx,
+					repo: { root: join(trustedRoot, "app"), remote: "git@github.com:Acme/app.git" },
+					trustedRepoRoots: [trustedRoot],
+				},
 				NOW,
 			).applied,
+		).toHaveLength(1);
+	});
+
+	it("never trusts a repository remote outside an operator-configured root", () => {
+		// The origin URL lives in .git/config, which the agent can rewrite: a
+		// remote match alone must not carry an exception into another checkout.
+		const m = [match("CLT-CMD-011")];
+		const remote = exception({ subject: { kind: "repo", value: "github.com/acme/app" } });
+		const forged = { root: join(tmpdir(), "elsewhere"), remote: "https://github.com/acme/app" };
+		expect(applyDetectionExceptions(m, [remote], { ...ctx, repo: forged }, NOW).kept).toHaveLength(
+			1,
+		);
+		expect(
+			applyDetectionExceptions(
+				m,
+				[remote],
+				{ ...ctx, repo: forged, trustedRepoRoots: [join(tmpdir(), "aidr-trusted-repos")] },
+				NOW,
+			).kept,
+		).toHaveLength(1);
+		// A sibling whose name only starts with the trusted root is not inside it.
+		expect(
+			applyDetectionExceptions(
+				m,
+				[remote],
+				{
+					...ctx,
+					repo: { ...forged, root: join(tmpdir(), "aidr-trusted-repos-evil") },
+					trustedRepoRoots: [join(tmpdir(), "aidr-trusted-repos")],
+				},
+				NOW,
+			).kept,
 		).toHaveLength(1);
 	});
 
@@ -535,5 +573,30 @@ describe("evaluator applies local exceptions", () => {
 	it("applies nothing when the audit log is disabled", async () => {
 		await addDetectionException({ ...ADD, ttlMs: DAY }, { approvals: { keyStorage: "file" } });
 		expect((await evaluate("claude-code", false)).matchedThreatId).toBe("CLT-CMD-011");
+	});
+});
+
+describe("findGitRepository", () => {
+	it("reads an origin URL that contains brackets (IPv6 host)", () => {
+		const root = mkdtempSync(join(tmpdir(), "aidr-git-ipv6-"));
+		try {
+			mkdirSync(join(root, ".git"));
+			writeFileSync(
+				join(root, ".git", "config"),
+				[
+					"[core]",
+					"\tbare = false",
+					'[remote "origin"]',
+					"\turl = ssh://git@[2001:db8::1]/org/repo.git",
+					"\tfetch = +refs/heads/*:refs/remotes/origin/*",
+					'[branch "main"]',
+					"\tremote = origin",
+					"",
+				].join("\n"),
+			);
+			expect(findGitRepository(root)?.remote).toBe("ssh://git@[2001:db8::1]/org/repo.git");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
 	});
 });

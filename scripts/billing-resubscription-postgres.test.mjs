@@ -46,7 +46,7 @@ test("only provider-proven terminal checkout intents permit a new billing channe
 	try {
 		let ready = false;
 		for (let attempt = 0; attempt < 100; attempt += 1) {
-			if (docker(["exec", container, "pg_isready", "-U", "postgres"]).status === 0) {
+			if (docker(["exec", container, "pg_isready", "-h", "127.0.0.1", "-U", "postgres"]).status === 0) {
 				ready = true;
 				break;
 			}

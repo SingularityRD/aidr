@@ -479,7 +479,22 @@ export async function resolveHostAsk(
 	const unchanged: HostAskResolution = { verdict, dashboardOnly: false, mode: "host_dialog" };
 	if (verdict.decision !== "ask") return unchanged;
 	const config = await loadConfig(context.configPath, logger).catch(() => null);
-	if (!config || isInvalidConfig(config)) return unchanged;
+	if (!config || isInvalidConfig(config)) {
+		// The approval mode cannot be known: handing the ask to the host's own
+		// dialog could bypass a configured operator channel, so the ask is blocked.
+		return {
+			verdict: {
+				...verdict,
+				decision: "deny",
+				reasons: [
+					...verdict.reasons,
+					"Singularity AIDR could not read its configuration, so this action was blocked instead of being offered for approval.",
+				],
+			},
+			dashboardOnly: false,
+			mode: "host_dialog",
+		};
+	}
 	const dashboardOnly = isDashboardOnly(config);
 	const mode = hostAskMode(config);
 	if (mode === "operator" && config.sensitivity === "paranoid") {
