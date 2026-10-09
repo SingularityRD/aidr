@@ -26,7 +26,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { lstat } from "node:fs/promises";
 import { userInfo } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { z } from "zod";
 import { AIDR_DIR, resolvePath } from "./config.js";
 import { atomicWriteJson, getFileContent } from "./file-utils.js";
@@ -193,6 +193,12 @@ export interface DetectionExceptionSubjectContext {
 	agent?: string;
 	/** Git repository of the working directory. */
 	repo?: { root?: string; remote?: string };
+	/**
+	 * Operator-configured roots a remote-scoped exception may apply under
+	 * (`operator_approvals.exception_trusted_repo_roots`). The origin remote is
+	 * agent-writable, so without a trusted root a remote match is never trusted.
+	 */
+	trustedRepoRoots?: readonly string[];
 }
 
 function samePath(a: string, b: string): boolean {
@@ -211,6 +217,17 @@ export function normalizeRepoRemote(value: string): string {
 	return v.replace(/\.git$/, "").replace(/\/+$/, "");
 }
 
+/** True when `child` is `base` or inside it (case-insensitive on Windows). */
+function isWithinPath(base: string, child: string): boolean {
+	const norm = (value: string) => {
+		const resolved = resolve(value).replace(/[\\/]+$/, "");
+		return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+	};
+	const b = norm(base);
+	const c = norm(child);
+	return c === b || c.startsWith(`${b}${sep}`);
+}
+
 function looksLikePath(value: string): boolean {
 	return /^([a-zA-Z]:[\\/]|[\\/]|~)/.test(value);
 }
@@ -224,7 +241,14 @@ export function subjectMatches(
 	if (kind === "repo") {
 		if (!ctx.repo) return false;
 		if (looksLikePath(value)) return !!ctx.repo.root && samePath(resolvePath(value), ctx.repo.root);
-		return !!ctx.repo.remote && normalizeRepoRemote(value) === normalizeRepoRemote(ctx.repo.remote);
+		const root = ctx.repo.root;
+		const trusted =
+			!!root && (ctx.trustedRepoRoots ?? []).some((base) => isWithinPath(resolvePath(base), root));
+		return (
+			trusted &&
+			!!ctx.repo.remote &&
+			normalizeRepoRemote(value) === normalizeRepoRemote(ctx.repo.remote)
+		);
 	}
 	if (exception.source === "managed") return true;
 	if (kind === "user") {
@@ -268,6 +292,7 @@ function readOriginRemote(dotGit: string): string | undefined {
 export function resolveDetectionExceptionSubjectContext(
 	agentRuntime: AgentRuntime | undefined,
 	workingDirectory: string | undefined,
+	trustedRepoRoots: readonly string[] = [],
 ): DetectionExceptionSubjectContext {
 	let user: string | undefined;
 	try {
@@ -281,7 +306,7 @@ export function resolveDetectionExceptionSubjectContext(
 	} catch {
 		repo = undefined;
 	}
-	return { user, agent: agentRuntime, repo };
+	return { user, agent: agentRuntime, repo, trustedRepoRoots };
 }
 
 /** Whether `exception` is in force at `now` (unexpired, not issued in the future). */

@@ -287,3 +287,14 @@ describe("parity with the soft-gated guard", () => {
 		expect(second.verdict.decision).toBe("ask");
 	});
 });
+
+describe("resolveHostAsk with an unreadable configuration", () => {
+	it("blocks the ask instead of handing it to the host's own dialog", async () => {
+		// The approval mode cannot be known: falling back to the native dialog
+		// could bypass a configured operator channel.
+		vi.mocked(loadConfig).mockRejectedValueOnce(new Error("config unreadable"));
+		const resolution = await resolveHostAsk(request, ASK, { agentRuntime: "claude-code" });
+		expect(resolution.verdict.decision).toBe("deny");
+		expect(resolution.verdict.reasons.join(" ")).toMatch(/could not read its configuration/);
+	});
+});
