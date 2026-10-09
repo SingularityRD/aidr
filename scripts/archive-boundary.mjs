@@ -34,6 +34,11 @@ export const REVIEWED_RUNTIME_ARCHIVE_ENTRIES = Object.freeze([
 ]);
 const ALLOWED_RUNTIME_ENTRIES = new Set([...REVIEWED_RUNTIME_ARCHIVE_ENTRIES, "health"]);
 const REQUIRED_RUNTIME_ENTRIES = [...REVIEWED_RUNTIME_ARCHIVE_ENTRIES, "health"];
+// Acceptance receipts written by scripts/deployment-smoke.mjs. Like health/,
+// they may sit in an installation root but are not runtime configuration: they
+// stay outside the runtime digest and are not copied into a recovery.
+const SMOKE_EVIDENCE_ENTRY = /^smoke-evidence(?:-[a-f0-9]{64})?\.json$/;
+const isRuntimeOutput = (name) => name === "health" || SMOKE_EVIDENCE_ENTRY.test(name);
 const textDecoder = new TextDecoder("utf-8", { fatal: true });
 
 function fail(message) {
@@ -323,7 +328,7 @@ function runtimeInventory(root) {
 	const rows = [];
 	function visit(directory, relativePrefix) {
 		for (const name of readdirSync(directory).sort()) {
-			if (relativePrefix === "" && name === "health") continue;
+			if (relativePrefix === "" && isRuntimeOutput(name)) continue;
 			const absolute = join(directory, name);
 			const relativePath = relativePrefix ? `${relativePrefix}/${name}` : name;
 			const info = lstatSync(absolute);
@@ -384,10 +389,13 @@ export function inspectReviewedRuntime(sourcePath, { sourceCommit }) {
 	for (const name of REQUIRED_RUNTIME_ENTRIES) {
 		if (!names.includes(name)) throw new Error(`Reviewed recovery runtime is missing ${name}`);
 	}
-	const unexpected = names.filter((name) => !ALLOWED_RUNTIME_ENTRIES.has(name));
+	const unexpected = names.filter((name) => !ALLOWED_RUNTIME_ENTRIES.has(name) && !SMOKE_EVIDENCE_ENTRY.test(name));
 	if (unexpected.length > 0) throw new Error(`Reviewed recovery runtime contains unexpected root entries: ${unexpected.join(", ")}`);
 	for (const name of names) {
-		if (name !== "health") validateRegularTree(join(source, name), source);
+		if (SMOKE_EVIDENCE_ENTRY.test(name)) {
+			const evidence = lstatSync(join(source, name));
+			if (!evidence.isFile() || evidence.isSymbolicLink()) throw new Error(`Reviewed recovery runtime ${name} is not a regular file`);
+		} else if (name !== "health") validateRegularTree(join(source, name), source);
 	}
 	let deployment;
 	const deploymentBytes = readFileSync(join(source, "deployment.json"));
@@ -437,6 +445,7 @@ export function copyReviewedRuntime(sourcePath, destinationPath, { sourceCommit 
 	const expectedFiles = new Map(inspected.files.map((entry) => [entry.path, entry]));
 	const names = readdirSync(source).sort();
 	for (const name of names) {
+		if (SMOKE_EVIDENCE_ENTRY.test(name)) continue;
 		if (name === "health") {
 			const health = lstatSync(join(source, name));
 			if (!health.isDirectory() || health.isSymbolicLink()) throw new Error("Reviewed recovery runtime health path is not a real directory");

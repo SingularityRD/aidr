@@ -8,6 +8,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { pipeline } from "node:stream/promises";
 import { parseArgs } from "node:util";
 import { createGunzip } from "node:zlib";
+import { systemTar, tarDirectory } from "./lib/tar-path.mjs";
 import { REVIEWED_RUNTIME_ARCHIVE_ENTRIES, copyReviewedRuntime, createTarBoundaryValidator, inspectAuthenticatedInstallation, inspectReviewedRuntime } from "./archive-boundary.mjs";
 import { assertRecoveryKeyFileAcl, hardenRecoveryKeyFile, hardenWorkDirectory } from "./deployment-restore-drill.mjs";
 import { buildNodeHelperImage } from "./lib/node-helper-image.mjs";
@@ -250,7 +251,7 @@ if (action === "backup") {
 	if (!validComposeProject(deployment.project_name)) throw new Error("Backup deployment has no valid Compose project name");
 	const installationBinding = inspectReviewedRuntime(dir, { sourceCommit: deployment.source_commit });
   helperImage = buildNodeHelperImage();
-  command("tar", ["--version"]);
+  command(systemTar(), ["--version"]);
 	const project = deployment.project_name;
 	const dbVolume = inspectMount(dir, "db", "/var/lib/postgresql/data", project);
 	const storageVolume = inspectMount(dir, "storage", "/var/lib/storage", project);
@@ -303,7 +304,7 @@ if (action === "backup") {
 			entries.push(await encrypt("docker", ["run", "--rm", "--network", "none", "--mount", `type=volume,src=${volume},dst=/data,readonly`, helperImage, "tar", "-C", "/data", "-czf", "-", "."], name, abort.signal));
 		}
 		checkInterrupted();
-		entries.push(await encrypt("tar", ["-C", dir, "-czf", "-", ...REVIEWED_RUNTIME_ARCHIVE_ENTRIES], "installation.tar.gz.enc", abort.signal));
+		entries.push(await encrypt(systemTar(), ["-C", tarDirectory(dir), "-czf", "-", ...REVIEWED_RUNTIME_ARCHIVE_ENTRIES], "installation.tar.gz.enc", abort.signal));
 		checkInterrupted();
 		const payload = JSON.stringify({ schema_version: 1, type: "aidr-cold-volumes", started_at: started, completed_at: new Date().toISOString(), source_project: deployment.project_name ?? "legacy", source_commit: deployment.source_commit, installation_runtime_sha256: installationBinding.runtime_tree_sha256, architecture: command("docker", ["info", "--format", "{{.Architecture}}"]), helper_image: helperImage, entries });
 		assertOwnedBackupOutput();
@@ -389,7 +390,7 @@ try {
   let installationBinding;
   try {
 	await hardenWorkDirectory(installationStaging);
-	await decryptTo(manifest.entries.find((entry) => entry.name === "installation.tar.gz.enc"), backup, "tar", ["-C", installationStaging, "-xzf", "-"]);
+	await decryptTo(manifest.entries.find((entry) => entry.name === "installation.tar.gz.enc"), backup, systemTar(), ["-C", tarDirectory(installationStaging), "-xzf", "-"]);
 	mkdirSync(join(installationStaging, "health"), { recursive: true, mode: 0o755 });
 	installationBinding = inspectAuthenticatedInstallation(installationStaging, {
 		sourceCommit: manifest.source_commit,

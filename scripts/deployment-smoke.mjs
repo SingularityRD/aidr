@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Run only against an isolated development installation. Never prints tokens.
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, relative, resolve, join } from "node:path";
 import { createHash, createHmac, randomBytes, randomUUID, verify as verifySignature } from "node:crypto";
 import { spawnSync } from "node:child_process";
@@ -157,7 +158,10 @@ try {
 	issuedKeyHash = createHash("sha256").update(keys.api_key).digest("hex");
 	const policy = expect(await request("/functions/v1/policy", { token: keys.api_key }), 200, "native policy fetch");
 	assert.deepEqual(policy.runtime_policy, { mcp_deny_tools: ["smoke.exfiltrate"] });
-	const endpointHome = join(dir, `policy-smoke-${suffix}`);
+	// The endpoint home holds a live API key: keep it out of the installation
+	// (whose root the backup tooling allowlists) and remove it on every exit.
+	const endpointHome = mkdtempSync(join(tmpdir(), "aidr-policy-smoke-"));
+	process.on("exit", () => rmSync(endpointHome, { recursive: true, force: true }));
 	mkdirSync(join(endpointHome, ".singularity-aidr"), { recursive: true, mode: 0o700 });
 	const mcpInventoryPath = join(endpointHome, "mcp.json");
 	writeFileSync(mcpInventoryPath, JSON.stringify({ mcpServers: { smoke: { command: "node", args: ["synthetic-no-exec-server.js"] } } }), { mode: 0o600 });
@@ -194,6 +198,7 @@ try {
 	assert.deepEqual(expect(await request("/functions/v1/policy", { token: keys.api_key }), 200, "endpoint fetches restored policy").runtime_policy, { mcp_deny_tools: ["smoke.exfiltrate"] });
 	assert.deepEqual(hookDecision(), { decision: "deny", policyDenial: true }, "restored policy blocks the same tool through the built hook");
 	checks.push("restored policy enforced by built Claude hook");
+	rmSync(endpointHome, { recursive: true, force: true });
 	expect(await edge("device-start", env.ANON_KEY, {}), 403, "unsigned direct device bootstrap rejected");
 	const device = expect(await signedDeviceStart(), 200, "signed ingress device bootstrap");
 	const pending = expect(await edge("device-poll", alice.token, { device_code: device.device_code }), 200, "browser JWT does not replace device code");
