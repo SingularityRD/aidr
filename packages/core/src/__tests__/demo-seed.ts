@@ -228,9 +228,3 @@ export function generateDemoData(agentCount = 3, eventCount = 20): DemoData {
 
 	return { agents, events };
 }
-
-function generateDemoDataForConsole(): void {
-	const data = generateDemoData(3, 20);
-	// eslint-disable-next-line no-console
-	console.log(JSON.stringify(data, null, 2));
-}

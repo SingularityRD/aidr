@@ -298,34 +298,6 @@ export async function cancelSettlement(
 	if (data.status !== "cancelled") throw new Error("Unexpected cancellation status");
 }
 
-async function refundSettlement(
-	tenantId: string,
-	requestId: string,
-	settlementId: string,
-	amountMinor: number,
-): Promise<{ refundedAmountMinor: number }> {
-	assertTenant(tenantId);
-	if (!REQUEST_ID.test(requestId)) throw new Error("Invalid billing request ID");
-	if (!UUID.test(settlementId)) throw new Error("Invalid settlement ID");
-	if (!Number.isSafeInteger(amountMinor) || amountMinor < 1) {
-		throw new Error("Refund amount must be a positive integer in minor units");
-	}
-	const { data, error } = await supabase.functions.invoke("billing-portal", {
-		body: {
-			action: "refund",
-			tenant_id: tenantId,
-			request_id: requestId,
-			settlement_id: settlementId,
-			amount_minor: amountMinor,
-		},
-	});
-	await throwRecovery(error, data);
-	if (error || data?.ok !== true || !Number.isSafeInteger(data.refunded_amount_minor)) {
-		throw new Error("The refund was not accepted");
-	}
-	return { refundedAmountMinor: data.refunded_amount_minor };
-}
-
 /** Total settled seats across the projected SKUs, or `null` when unknown. */
 export function projectedSeats(snapshot: PortalSnapshot, sku = "aidr.agent.seat"): number | null {
 	return snapshot.projection.find((row) => row.sku === sku)?.seats ?? null;

@@ -33,12 +33,6 @@ export interface PaymentProvider {
 	getInvoices(userId: string): Promise<Invoice[]>;
 }
 
-interface UserLocation {
-	country: string;
-	region?: string;
-	currency?: string;
-}
-
 interface ProviderConfig {
 	primary: ProviderType;
 	supportedCurrencies: string[];
@@ -121,43 +115,4 @@ export async function convertCurrency(amount: number, from: string, to: string):
 	// Cross-currency terms belong to the Finance-approved order. The browser
 	// cannot quote a converted price or silently invent a fallback exchange rate.
 	throw new Error("Cross-currency amount requires an approved enterprise quote");
-}
-
-/**
- * Detect user location from various signals
- */
-function detectUserLocation(
-	_ip?: string,
-	browserLocale?: string,
-	explicitCountry?: string,
-): UserLocation {
-	// Explicit override takes precedence
-	if (explicitCountry) {
-		return { country: explicitCountry };
-	}
-
-	// Try browser locale
-	if (browserLocale) {
-		const country = browserLocale.split("-")[1];
-		if (country) {
-			return { country, currency: getCurrencyForCountry(country) };
-		}
-	}
-
-	// Default to US if nothing else available
-	return { country: "US", currency: "USD" };
-}
-
-function getCurrencyForCountry(country: string): string {
-	const map: Record<string, string> = {
-		TR: "TRY",
-		US: "USD",
-		GB: "GBP",
-		DE: "EUR",
-		FR: "EUR",
-		JP: "JPY",
-		CA: "CAD",
-		AU: "AUD",
-	};
-	return map[country] || "USD";
 }

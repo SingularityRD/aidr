@@ -22,11 +22,6 @@ export const nullLogger: Logger = {
 	error() {},
 };
 
-/** Get a logger instance (currently returns nullLogger). */
-function getLogger(): Logger {
-	return nullLogger;
-}
-
 // ── Artifact ────────────────────────────────────────────────────────
 
 export const ArtifactTypeSchema = z.enum(["url", "command", "file_path", "content"]);
@@ -1084,15 +1079,11 @@ type OptionalUrlCheckDefaults<
 };
 
 export type ControlPlaneConfig = OptionalInsecureLoopback<z.infer<typeof ControlPlaneConfigSchema>>;
-type PolicyConfig = z.infer<typeof PolicyConfigSchema>;
-type PolicyMcpConfig = z.infer<typeof PolicyMcpSchema>;
 export type IntelConfig = z.infer<typeof IntelConfigSchema>;
 export type IntelPacksConfig = z.infer<typeof IntelPacksConfigSchema>;
 export type IntegrityConfig = z.infer<typeof IntegrityConfigSchema>;
-type LicensingConfig = z.infer<typeof LicensingConfigSchema>;
 export type IncidentConfig = z.infer<typeof IncidentConfigSchema>;
 type ResponseConfig = z.infer<typeof ResponseConfigSchema>;
-type ResponseActionsConfig = ResponseConfig["actions"];
 export type ResponseAuditConfig = ResponseConfig["audit"];
 export type UrlCheckConfig = OptionalUrlCheckDefaults<z.infer<typeof UrlCheckConfigSchema>>;
 export type FileCheckConfig = OptionalInsecureLoopback<z.infer<typeof FileCheckConfigSchema>>;
@@ -1121,7 +1112,6 @@ export type ToxicFlowConfig = z.infer<typeof ToxicFlowConfigSchema>;
  * @public
  */
 export type NvdConfig = z.infer<typeof NvdConfigSchema>;
-type EncryptionConfig = z.infer<typeof EncryptionConfigSchema>;
 export type CacheConfig = z.infer<typeof CacheConfigSchema>;
 export type AllowlistConfig = z.infer<typeof AllowlistConfigSchema>;
 export type LoggingConfig = z.infer<typeof LoggingConfigSchema>;
