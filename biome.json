@@ -38,14 +38,6 @@
 			}
 		}
 	},
-	"overrides": [
-		{
-			"includes": ["packages/core/src/dlp/privacy-rules/**"],
-			"formatter": { "enabled": false },
-			"linter": { "enabled": false },
-			"assist": { "enabled": false }
-		}
-	],
 	"formatter": {
 		"enabled": true,
 		"indentStyle": "tab",
@@ -58,6 +50,12 @@
 		}
 	},
 	"overrides": [
+		{
+			"includes": ["packages/core/src/dlp/privacy-rules/**"],
+			"formatter": { "enabled": false },
+			"linter": { "enabled": false },
+			"assist": { "enabled": false }
+		},
 		{
 			"includes": ["packages/privacy/src/**"],
 			"formatter": { "enabled": false },
