@@ -23,7 +23,7 @@ const deviceAttestation = {
 	key_hash: keyHash,
 };
 
-function database(options: { revoked?: boolean; accessTokenValid?: boolean; previousHashExpiresAt?: string; admission?: number; snapshot?: Record<string, unknown> | null; scope?: string } = {}) {
+function database(options: { revoked?: boolean; accessTokenValid?: boolean; previousHashExpiresAt?: string; admission?: number; snapshot?: Record<string, unknown> | null; scope?: string; unresolvedCount?: number; budgetUnavailable?: boolean } = {}) {
 	const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
 	const tableReads: string[] = [];
 	const accessTokenChecks: string[] = [];
@@ -39,7 +39,9 @@ function database(options: { revoked?: boolean; accessTokenValid?: boolean; prev
 		},
 		from(table: string) {
 			tableReads.push(table);
-			const row = table === "api_keys"
+			const row = table === "rate_limits"
+				? { count: options.unresolvedCount ?? 0 }
+				: table === "api_keys"
 				? { tenant_id: tenantId, user_id: userId, agent_id: agentId, revoked: options.revoked === true,
 					id: "key-1",
 					scope: options.scope ?? "tenant",
@@ -53,12 +55,16 @@ function database(options: { revoked?: boolean; accessTokenValid?: boolean; prev
 			let lookupColumn = "";
 			const query = {
 				eq: (column: string) => { lookupColumn = column; return query; },
-				maybeSingle: async () => ({ data: table === "api_keys" && options.previousHashExpiresAt && lookupColumn === "key_hash" ? null : row, error: null }),
+				maybeSingle: async () => ({
+					data: table === "api_keys" && options.previousHashExpiresAt && lookupColumn === "key_hash" ? null : row,
+					error: table === "rate_limits" && options.budgetUnavailable ? { message: "budget storage unavailable" } : null,
+				}),
 			};
 			return { select: () => query };
 		},
 		async rpc(name: string, args: Record<string, unknown>) {
 			calls.push({ name, args });
+			if (name === "increment_rate_limit") return { data: 1, error: null };
 			if (name === "tenant_admission_capacity") return { data: options.admission ?? 1, error: null };
 			if (name === "consume_tenant_rate_limit") {
 				return { data: { allowed: true, remaining: 10 }, error: null };
@@ -149,6 +155,30 @@ describe("fleet response device handler", () => {
 		const mismatched = await handle(post({ ...common, action: "poll", tenant_id: userId }));
 		expect(mismatched.status).toBe(403);
 		expect(calls.filter((call) => call.name === "poll_bound_fleet_response_command")).toHaveLength(1);
+		expect(calls.some((call) => call.name === "increment_rate_limit")).toBe(false);
+	});
+
+	it.each([
+		{ unresolvedCount: 6000, status: 429, error: "rate_limited" },
+		{ budgetUnavailable: true, status: 503, error: "rate_limit_unavailable" },
+	])("refuses device requests before credential lookup when the unresolved budget returns $error", async (options) => {
+		vi.stubGlobal("Deno", {
+			env: { get: (name: string) => ({ ...signingEnv,
+				AIDR_UNRESOLVED_API_KEY_RL_PER_MIN: "6000",
+				SUPABASE_URL: "https://project.supabase.co", SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+			} as Record<string, string>)[name] }, serve: () => undefined,
+		});
+		const { createFleetCommandHandler } = await import("../index.ts");
+		const { db, calls, tableReads } = database(options);
+		const handle = createFleetCommandHandler({ db: db as never });
+		for (const action of ["poll", "ack", "result"]) {
+			const response = await handle(post({ action, device_attestation: deviceAttestation,
+				command_id: commandId, outcome: action === "ack" ? "accepted" : "succeeded" }));
+			expect(response.status).toBe(options.status);
+			expect(await response.json()).toEqual({ error: options.error });
+		}
+		expect(tableReads).toEqual(["rate_limits", "rate_limits", "rate_limits"]);
+		expect(calls).toEqual([]);
 	});
 
 	it.each(["missing", "half", "invalid"])("fails %s signing setup before leasing a command", async (mode) => {
@@ -221,7 +251,10 @@ describe("fleet response device handler", () => {
 			expect(response.status).toBe(401);
 			expect(await response.json()).toEqual({ error: "invalid_api_key" });
 		}
-		expect(calls).toEqual([]);
+		expect(calls).toEqual(Array.from({ length: 2 }, () => ({
+			name: "increment_rate_limit",
+			args: { p_key: "api-key:v1:unresolved:fleet-response", p_window_start: expect.any(Number), p_delta: 1 },
+		})));
 	});
 
 	it("preserves the presented retired hash for attestation and atomic RPC expiry rechecks", async () => {

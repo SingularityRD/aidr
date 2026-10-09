@@ -16,7 +16,7 @@
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const PRE_TOOL_USE = resolve(__dirname, "..", "..", "dist", "pre-tool-use.cjs");
@@ -95,10 +95,13 @@ describe("PreToolUse hook cold start on a fresh HOME", () => {
  * process per tool call) on EVERY blocked call because the in-process
  * memoisation never survives a hook exit. After the first call the state is
  * verified with native tools instead, so a persistent HOME must not start it.
+ * The cache authentication key also needs one cold ACL repair before its secret
+ * bytes are written. Allow one initial repair per output, without relaxing the
+ * zero-PowerShell budget for subsequent hook processes.
  */
 // AIDR-SKIP: AIDR-063 qa-owner - persistent HOME PowerShell-spawn checks require Windows NTFS ACL tooling; Unix permissions have separate coverage
 describe.skipIf(process.platform !== "win32")("blocked call on a persistent HOME (Windows)", () => {
-	it("starts PowerShell at most once, and not at all once the audit paths are private", () => {
+	it("repairs each private output once, and starts no PowerShell on the next call", () => {
 		const scratch = mkdtempSync(join(tmpdir(), "aidr-latency-ps-"));
 		const home = join(scratch, "home");
 		const countFile = join(scratch, "spawns.log");
@@ -110,8 +113,8 @@ describe.skipIf(process.platform !== "win32")("blocked call on a persistent HOME
 				[
 					'const cp = require("node:child_process");',
 					"const original = cp.spawnSync;",
-					"cp.spawnSync = function (command) {",
-					'  require("node:fs").appendFileSync(process.env.AIDR_TEST_SPAWN_LOG, `${String(command)}\\n`);',
+					"cp.spawnSync = function (command, args, options) {",
+					'  require("node:fs").appendFileSync(process.env.AIDR_TEST_SPAWN_LOG, JSON.stringify({ command: String(command), targets: options?.env?.AIDR_PRIVATE_ACL_TARGETS }) + "\\n");',
 					"  return original.apply(this, arguments);",
 					"};",
 				].join("\n"),
@@ -138,15 +141,29 @@ describe.skipIf(process.platform !== "win32")("blocked call on a persistent HOME
 					encoding: "utf8",
 					timeout: 60_000,
 				});
-				const powershell = readFileSync(countFile, "utf8")
+				const powershellSpawns = readFileSync(countFile, "utf8")
 					.split("\n")
-					.filter((command) => /powershell/i.test(command)).length;
-				return { ms: performance.now() - started, powershell, result };
+					.filter(Boolean)
+					.map((line) => JSON.parse(line) as { command: string; targets?: string })
+					.filter(({ command }) => /powershell/i.test(command));
+				return { ms: performance.now() - started, powershellSpawns, result };
 			};
 
 			const first = run();
 			expect(first.result.status).toBe(0);
-			expect(first.powershell).toBeLessThanOrEqual(1);
+			expect(first.powershellSpawns.length).toBeLessThanOrEqual(2);
+			const privateDirectory = join(home, ".singularity-aidr");
+			const repairedOutputs = first.powershellSpawns.map(({ targets }) => {
+				const [directoryTarget, fileTarget, ...extraTargets] = targets?.split("\n") ?? [];
+				expect(directoryTarget).toBe(`D|${privateDirectory}`);
+				expect(extraTargets).toEqual([]);
+				expect(fileTarget?.startsWith("F|")).toBe(true);
+				const file = fileTarget?.slice(2) ?? "";
+				expect(dirname(file)).toBe(privateDirectory);
+				expect(basename(file)).toMatch(/^(?:audit\.jsonl|cache\.key\.[a-f0-9]{12}\.tmp)$/);
+				return basename(file).startsWith("cache.key.") ? "cache" : "audit";
+			});
+			expect(new Set(repairedOutputs).size).toBe(repairedOutputs.length);
 			const second = run();
 			expect(second.result.status).toBe(0);
 			expect(["deny", "ask"]).toContain(
@@ -156,7 +173,7 @@ describe.skipIf(process.platform !== "win32")("blocked call on a persistent HOME
 					}
 				).hookSpecificOutput?.permissionDecision,
 			);
-			expect(second.powershell).toBe(0);
+			expect(second.powershellSpawns).toEqual([]);
 			console.info(
 				`[latency] blocked call on persistent HOME: first ${Math.round(first.ms)} ms, second ${Math.round(second.ms)} ms`,
 			);
