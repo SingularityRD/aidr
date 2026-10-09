@@ -142,7 +142,7 @@ async function main() {
 		mkdirSync(extracted);
 		run(systemTar(), ["-xzf", archiveFile, "-C", extracted]);
 		const root = join(extracted, "packages", "claude-code");
-		const native = join(root, "dist", "vendor", "koffi", "index.js");
+		const native = join(root, "dist", "vendor", "koffi", "index.cjs");
 		const hook = join(root, "dist", "pre-tool-use.cjs");
 		if (!existsSync(native) || !existsSync(hook)) fail("Claude plugin archive lacks the hook or vendored native addon");
 		try { createRequire(hook).resolve("koffi"); fail("Claude candidate probe is not isolated from ancestor node_modules"); }

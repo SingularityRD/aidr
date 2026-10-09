@@ -5,6 +5,7 @@ import { closeSync, copyFileSync, existsSync, ftruncateSync, mkdirSync, mkdtempS
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
+import { KOFFI_RUNTIME_FILES, hostKoffiWindowsArch, koffiNativeBinary } from "./stage-windows-koffi.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const required = [
@@ -128,13 +129,7 @@ try {
 	// pretending the requirement does not exist.
 	if (process.platform === "win32") {
 		const realKoffi = join(root, "packages", "claude-code", "dist", "vendor", "koffi");
-		const archFolder = process.arch === "arm64" ? "win32_arm64" : "win32_x64";
-		for (const relative of [
-			"index.js",
-			"package.json",
-			"LICENSE.txt",
-			join("build", "koffi", archFolder, "koffi.node"),
-		]) {
+		for (const relative of [...KOFFI_RUNTIME_FILES, koffiNativeBinary(hostKoffiWindowsArch())]) {
 			const from = join(realKoffi, relative);
 			if (!existsSync(from)) {
 				throw new Error(

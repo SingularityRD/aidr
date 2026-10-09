@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, parse, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { systemTar } from "./lib/tar-path.mjs";
+import { KOFFI_RUNTIME_FILES, hostKoffiWindowsArch, koffiNativeBinary } from "./stage-windows-koffi.mjs";
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const sourceRoot = repo;
@@ -409,13 +410,7 @@ function makePackage(version, marker) {
 	// command-line installer into something it is not.
 	const stagedKoffi = join(root, "dist", "vendor", "koffi");
 	const realKoffi = join(sourceRoot, "packages", "claude-code", "dist", "vendor", "koffi");
-	const archFolder = process.arch === "arm64" ? "win32_arm64" : "win32_x64";
-	for (const relative of [
-		"index.js",
-		"package.json",
-		"LICENSE.txt",
-		join("build", "koffi", archFolder, "koffi.node"),
-	]) {
+	for (const relative of [...KOFFI_RUNTIME_FILES, koffiNativeBinary(hostKoffiWindowsArch())]) {
 		const from = join(realKoffi, relative);
 		if (!existsSync(from)) {
 			throw new Error(

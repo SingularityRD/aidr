@@ -8,6 +8,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { renameWithRetry } from "./lib/atomic-write.mjs";
+import { stageWindowsKoffi } from "./stage-windows-koffi.mjs";
 
 const repository = fileURLToPath(new URL("..", import.meta.url));
 const installer = join(repository, "scripts", "endpoint-install.mjs");
@@ -64,20 +65,7 @@ async function buildEndpointPackageFixture(version) {
 			});
 
 			if (process.platform === "win32") {
-				const koffiRoot = dirname(requireFromClaudePackage.resolve("koffi"));
-				const vendorRoot = join(dist, "vendor", "koffi");
-				for (const relative of [
-					"index.js",
-					"package.json",
-					"LICENSE.txt",
-					"build/koffi/win32_x64/koffi.node",
-					"build/koffi/win32_arm64/koffi.node",
-					"build/koffi/win32_ia32/koffi.node",
-				]) {
-					const destination = join(vendorRoot, relative);
-					mkdirSync(dirname(destination), { recursive: true });
-					copyFileSync(join(koffiRoot, relative), destination);
-				}
+				stageWindowsKoffi(packageDir, { isRelease: true, vendorDir: join(dist, "vendor", "koffi") });
 			}
 			return fixturePackage;
 		})();

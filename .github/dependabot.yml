@@ -38,7 +38,8 @@ updates:
       # Every other major bump is done by hand, on its own branch, with a
       # migration and a green `pnpm check && pnpm build && pnpm test`. On
       # 2026-10-08 unreviewed majors (zod 4, koffi 3, react-dom without react)
-      # broke the build and the dashboard tests.
+      # broke the build and the dashboard tests. koffi 3 was later migrated by
+      # hand (split native packages, see scripts/stage-windows-koffi.mjs).
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
 
