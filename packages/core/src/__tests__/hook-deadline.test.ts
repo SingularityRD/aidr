@@ -170,7 +170,9 @@ describe("input hygiene", () => {
 		["rm -rf /\u0000", true],
 		["echo \ud800", true],
 		["echo \udc00x", true],
-		["echo �", true],
+		// A validly encoded U+FFFD is ordinary text, not a decoding failure.
+		["echo �", false],
+		["grep -F '��' build.log", false],
 		["echo 😀", false],
 		["git status", false],
 	])("hasMalformedCommandText(%j) is %s", (command, expected) => {
@@ -180,6 +182,26 @@ describe("input hygiene", () => {
 	it("validates UTF-8 strictly", () => {
 		expect(isValidUtf8(Buffer.from("héllo"))).toBe(true);
 		expect(isValidUtf8(Buffer.from([0x7b, 0xff, 0x7d]))).toBe(false);
+	});
+
+	it("tells a legitimate U+FFFD apart from undecodable bytes", () => {
+		// U+FFFD encoded as UTF-8 (EF BF BD) is valid input and a valid command.
+		const legit = Buffer.from('{"command":"echo �"}', "utf8");
+		expect(isValidUtf8(legit)).toBe(true);
+		const command = (JSON.parse(legit.toString("utf8")) as { command: string }).command;
+		expect(malformedShellCommandReason("Bash", { command })).toBeNull();
+
+		// Invalid bytes also *decode* to U+FFFD under a lenient decoder, but the
+		// byte-level check rejects them before any string is inspected.
+		const invalid = Buffer.concat([
+			Buffer.from('{"command":"echo '),
+			Buffer.from([0xff, 0xfe]),
+			Buffer.from('"}'),
+		]);
+		expect(invalid.toString("utf8")).toContain("�");
+		expect(isValidUtf8(invalid)).toBe(false);
+		// Truncated multi-byte sequence (first two bytes of a 3-byte char).
+		expect(isValidUtf8(Buffer.from([0x65, 0xe2, 0x82]))).toBe(false);
 	});
 
 	it.each([
@@ -202,5 +224,7 @@ describe("input hygiene", () => {
 		expect(malformedShellCommandReason("Shell", { command: "ls\u0000" })).toMatch(/NUL/);
 		expect(malformedShellCommandReason("bash", { cmd: "ls \ud800" })).toMatch(/NUL/);
 		expect(malformedShellCommandReason("Read", { command: "\u0000" })).toBeNull();
+		expect(malformedShellCommandReason("Bash", { command: "echo �" })).toBeNull();
+		expect(malformedShellCommandReason("shell", { command: ["echo", "�"] })).toBeNull();
 	});
 });

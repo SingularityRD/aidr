@@ -2,7 +2,7 @@
 
 **Singularity AIDR** - AI Agent Detection & Response plugin for [OpenClaw](https://openclaw.dev).
 
-Singularity AIDR intercepts tool calls (shell commands, URL fetches, file writes) and checks them against URL reputation services, local heuristic threat rules, and package supply-chain checks before they execute.
+Singularity AIDR intercepts tool calls (shell commands, URL fetches, file writes) and checks them against local heuristic threat rules and package supply-chain checks before they execute. URL and file reputation lookups are optional and off by default: they need a configured first-party reputation endpoint, and an unavailable lookup is never reported as "clean".
 
 ## Installation
 
@@ -19,7 +19,7 @@ Replace `VERSION` with the version in the approved release record.
 ## What It Does
 
 - Intercepts `exec`, `web_fetch`, `write`, `edit`, `read`, and `apply_patch` tool calls
-- Checks URLs against cloud-based malware/phishing detection
+- Optionally checks URLs against a configured first-party reputation endpoint (off by default; an unavailable lookup is never reported as clean)
 - Matches commands and file paths against YAML-based threat definitions
 - Validates npm/PyPI packages against supply-chain risks
 - Scans installed plugins for threats at session start

@@ -42,7 +42,7 @@ Start from the managed values in
 | Company-internal AI portals | `customSites` | one entry per portal with its exact HTTPS hosts and the CSS selectors of its prompt box, send button and answers |
 | Whether users can switch it off | `allowUserPause` | `false` for enforcement, `true` during a pilot |
 | Files | `fileHandling`, `maxFileBytes` | `scan` (text files are sanitised); `block` if no uploads to AI sites are allowed |
-| Office, OpenDocument and PDF documents | `documentHandling` | `mask` (default: Word/Excel/PowerPoint and ODT/ODS/ODP text is masked in place; PDFs with sensitive data are blocked; legacy .doc/.xls/.ppt cannot be checked and pass only with a warning, blocked in `block` mode); `block` if documents must not be uploaded at all |
+| Office, OpenDocument and PDF documents | `documentHandling` | `mask` (default: Word/Excel/PowerPoint and ODT/ODS/ODP text is masked in place; PDFs with sensitive data are blocked; legacy .doc/.xls/.ppt are scanned but cannot be masked: blocked when they hold sensitive data, passed with a warning (blocked in `block` mode) when they could not be fully read); `block` if documents must not be uploaded at all |
 | Images (screenshots, photos, pictures in documents) | `useNativeHost` + a native host with OCR | with the OCR host, an image showing sensitive data is blocked (it cannot be masked); without it images are uploaded with a "not inspected" warning (blocked in `block` mode). See [`packages/browser-guard/docs/native-host.md`](../../packages/browser-guard/docs/native-host.md) |
 | Reporting | `telemetry`, `policyId` | connect your AIDR control plane to see counts per site and entity type |
 
@@ -148,9 +148,10 @@ parallel; when the host is not reachable the check is rules-only and the user se
   .ods, .odp), are checked the same way: the AI site receives a copy of the same
   file in which the sensitive values are replaced by placeholders; formatting and
   everything else stay as they were. Files with macros, a password, or links to
-  other files are not uploaded. Old-format .doc, .xls and .ppt files cannot be
-  checked: you are warned (save them as .docx/.xlsx/.pptx to have them cleaned),
-  and your organisation may block them.
+  other files are not uploaded. Old-format .doc, .xls and .ppt files are checked
+  but cannot be cleaned: one that contains sensitive data is not uploaded (save it
+  as .docx/.xlsx/.pptx to upload a cleaned copy). If AIDR cannot read one fully
+  (for example a Word 95 file), you are warned, and your organisation may block it.
 - Pictures are not cleaned. If your organisation runs the AIDR Privacy helper with
   text recognition (OCR), a screenshot or a picture inside a document that shows
   sensitive data is not uploaded; crop or black it out first. Without the helper

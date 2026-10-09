@@ -13,7 +13,9 @@ Singularity AIDR scans other installed plugins for threats at every session star
 
 1. At session start, Singularity AIDR reads the list of installed plugins
 2. Each plugin's source files are scanned against threat definitions
-3. URLs found in plugin code are checked against URL reputation
+3. URLs found in plugin code are checked against URL reputation when that optional
+   lookup is enabled and a first-party endpoint is configured (otherwise the leg is
+   inactive and the URL is not reported as clean)
 4. Results are cached locally and only re-checked when a plugin changes
 5. Findings are logged to the audit log with `type: "plugin_scan"`
 

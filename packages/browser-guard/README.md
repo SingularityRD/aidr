@@ -114,11 +114,37 @@ administrator and end-user guide is [`docs/platform-guides/browser-guard.md`](..
      Refused as for OOXML: encryption, Basic/script libraries and script event
      listeners, DDE and linked sections/sheets/objects, plugins/applets/frames, OLE
      objects and other binary entries such as embedded media.
-   - **Legacy `.doc` / `.xls` / `.ppt`** (OLE compound files, also recognised by
-     content or MIME type) are never parsed and never reported as checked: they
-     pass with a "legacy Office file, save as .docx/.xlsx/.pptx" warning
-     (`LEGACY_OFFICE_FORMAT`), are blocked in `block` mode, and `documentHandling:
-     block` rejects them with the other documents.
+   - **Legacy `.doc` / `.xls` / `.ppt`** (and `.dot`/`.xlt`/`.xla`/`.pps`/`.pot`/`.ppa`;
+     OLE compound files, also recognised by content or MIME type) are read by a
+     bounded, dependency-free compound-file reader (`src/engine/legacy/`) and their
+     text is scanned, but never rewritten: Word text from the piece table
+     (8-bit and UTF-16 pieces: body, headers/footers, footnotes, comments, text
+     boxes, field codes); Excel BIFF8 shared strings, string/number/formula cells
+     (first row as column headers, as for XLSX), sheet names, headers/footers,
+     comments and their authors, hyperlink targets and external-workbook paths;
+     PowerPoint text atoms and strings (slides, notes, masters, comments,
+     hyperlinks); document properties; and embedded Word/Excel/PowerPoint objects
+     (Word `ObjectPool`, Excel `MBD...` storages, PowerPoint `ExOleObjStg`, zlib
+     included), up to 3 levels. A file with findings is blocked
+     (`SENSITIVE_DATA_IN_LEGACY_OFFICE`) and the user is told to save it as
+     .docx/.xlsx/.pptx, which AIDR masks; `monitor` records it. A completely read,
+     clean file is allowed (pictures add `DOCUMENT_IMAGES_NOT_INSPECTED`). A file
+     that may not have been read completely - Word 6/95 or Excel 5/95
+     (`LEGACY_OFFICE_UNSUPPORTED`), a record or piece table that does not fit,
+     pivot caches, the 8M-character budget (`LEGACY_OFFICE_PARTIAL`), or one that
+     is not a compound file at all (`DOCUMENT_UNPARSEABLE`, e.g. RTF saved as
+     `.doc`) - is treated like other binaries with `LEGACY_OFFICE_FORMAT`:
+     uploaded with a "could not be fully checked, save as .docx/.xlsx/.pptx"
+     warning, blocked in `block` mode; findings in the readable part still block.
+     Refused like OOXML (recorded only in `monitor` mode): password protection
+     (`DOCUMENT_ENCRYPTED`), VBA projects and Excel 4.0 macro sheets
+     (`DOCUMENT_MACROS`), embedded objects that are not Word/Excel/PowerPoint
+     (`DOCUMENT_EMBEDDED_OBJECT`), a corrupt or adversarial container (cyclic
+     FAT/DIFAT/directory, sectors outside the file, truncation:
+     `DOCUMENT_MALFORMED`) and one over the reader's limits (64 MiB file, 48 MiB
+     stream, 16,384 directory entries: `DOCUMENT_LIMIT_EXCEEDED`). An OOXML
+     package saved under a legacy name is masked as OOXML. `documentHandling:
+     block` rejects legacy files with the other documents.
    - **Pictures inside Office/OpenDocument files.** A document's first-page
      thumbnail (`docProps/thumbnail.*`, `Thumbnails/thumbnail.png`) shows the text
      before masking, so a rewritten package gets a blank PNG/JPEG thumbnail. With
@@ -475,7 +501,11 @@ to regenerate the dataset with stable fingerprints.
   Excel repair a table's column name).
   OpenDocument masking has the same scope (sheet and table names, named ranges
   and chart caches are not rewritten). Legacy binary formats (`.doc`, `.xls`,
-  `.ppt`) are not parsed: they pass only with a warning, or are blocked (see above).
+  `.ppt`) are scanned but never masked: a file with findings is blocked, and the
+  user has to save it as .docx/.xlsx/.pptx to upload a masked copy. Pictures in
+  legacy files are not OCR'd; Word revision/comment author tables and Excel
+  defined names and data-validation lists are not read; pivot caches are not
+  parsed (they mark the file as partly read).
 - File inputs: inputs in the page's document are intercepted by the content script.
   Inputs created without being attached (`createElement("input")` + `click()`) and
   inputs inside shadow roots are covered by a small page-world script
@@ -510,13 +540,16 @@ reproducibility, and every fail-closed path. `build-tools.test.ts` covers the
 fingerprint tool (against WebCrypto), the zip writer, the icons, and checks that
 all deployment examples carry the same valid policy.
 `files-office.test.ts`, `files-office-zip.test.ts`, `files-odf.test.ts`,
-`files-images.test.ts` and `files-pdf.test.ts` build DOCX/XLSX/PPTX, ODT/ODS/ODP
-packages, images and PDFs in memory (no binary fixtures), sanitise them with
+`files-images.test.ts`, `files-pdf.test.ts` and `files-legacy-office.test.ts` build
+DOCX/XLSX/PPTX, ODT/ODS/ODP packages, images, PDFs and synthetic .doc/.xls/.ppt
+compound files (including cyclic-FAT, truncated and oversized ones) in memory (no
+binary fixtures), sanitise them with
 the real detection engine and vault, and re-open the output to check that
 placeholders are present and originals are gone; they also cover macro, encryption
 and external-link refusals, zip-bomb, ZIP64 and path-traversal refusals, PDF font
 encodings and filters, legacy-format and OCR decisions, and time bounds. The
 `file-upload-docx`, `file-upload-odt`, `file-upload-pptx-thumbnail`,
-`file-upload-legacy-doc` and `file-upload-pdf-blocked` E2E scenarios upload those
+`file-upload-legacy-doc`, `file-upload-legacy-doc-blocked` and
+`file-upload-pdf-blocked` E2E scenarios upload those
 files on the ChatGPT fixture in a real browser (the blank thumbnails are decoded by
 Chromium itself).

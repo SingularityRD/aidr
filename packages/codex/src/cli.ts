@@ -255,8 +255,10 @@ async function main(): Promise<void> {
 		);
 		return;
 	}
-	// NUL, unpaired surrogates or U+FFFD in a shell command: the inspected text
-	// may differ from what runs, so it is denied rather than reviewed.
+	// NUL or unpaired surrogates in a shell command: the inspected text may
+	// differ from what runs, so it is denied rather than reviewed. (Invalid
+	// UTF-8 bytes were already refused above; a U+FFFD that survives the strict
+	// decode was sent by Codex itself and is inspected as ordinary text.)
 	if (malformedShellCommandReason(input.tool_name as string, input.tool_input)) {
 		blockUnconditionally(
 			`${DENY_HEADLINE}\nSingularity AIDR blocked this command: it is malformed (not a string or argv, or it contains NUL or invalid UTF-8 text) and cannot be inspected reliably.`,

@@ -20,7 +20,7 @@ export interface Strings {
 	pasteMaskedToast(total: number, summary: string): string;
 	fileMaskedToast(files: number, summary: string): string;
 	fileUnscannedToast(name: string): string;
-	/** A legacy .doc/.xls/.ppt upload passed through unchecked (it cannot be parsed). */
+	/** A legacy .doc/.xls/.ppt upload passed through without a complete check. */
 	legacyOfficeToast(name: string): string;
 	/** An image passed through without OCR (no native host, or it could not read it fully). */
 	imageUnscannedToast(name: string): string;
@@ -53,8 +53,10 @@ export interface Strings {
 	readonly pdfPasteHint: string;
 	/** Appended when an image (or a picture in a document) was blocked for sensitive text. */
 	readonly imageBlockedHint: string;
-	/** Appended when a legacy Office file was blocked because it cannot be checked. */
+	/** Appended when a legacy Office file was blocked because it could not be fully checked. */
 	readonly legacyOfficeHint: string;
+	/** Appended when a legacy Office file was blocked for sensitive data (it cannot be masked). */
+	readonly legacyOfficeSensitiveHint: string;
 	readonly fileScanFailed: string;
 	readonly fileReplaceUnsupported: string;
 	readonly fileInputUnguarded: string;
@@ -85,7 +87,7 @@ const EN: Strings = {
 	fileUnscannedToast: (name) =>
 		`"${name}" could not be scanned (binary file). Check it before sending.`,
 	legacyOfficeToast: (name) =>
-		`"${name}" is a legacy Office file (.doc/.xls/.ppt) that AIDR cannot check. Save it as .docx/.xlsx/.pptx to have it masked, or check it before sending.`,
+		`"${name}" is a legacy Office file (.doc/.xls/.ppt) that AIDR could not fully check. Save it as .docx/.xlsx/.pptx to have it masked, or check it before sending.`,
 	imageUnscannedToast: (name) =>
 		`"${name}" is an image and its content was not inspected (the local OCR helper is not available or could not read it). Check it before sending.`,
 	documentImagesToast: (name) =>
@@ -123,7 +125,9 @@ const EN: Strings = {
 	imageBlockedHint:
 		"The image shows sensitive data and images cannot be masked. Crop or redact it before uploading.",
 	legacyOfficeHint:
-		"Legacy Office formats cannot be checked. Save the file as .docx/.xlsx/.pptx and upload that instead.",
+		"This legacy Office file could not be fully checked. Save the file as .docx/.xlsx/.pptx and upload that instead.",
+	legacyOfficeSensitiveHint:
+		"Legacy Office files (.doc/.xls/.ppt) cannot be masked. Save the file as .docx/.xlsx/.pptx and upload that instead: AIDR masks those.",
 	fileScanFailed: "AIDR could not check the file, so it was not uploaded.",
 	fileReplaceUnsupported:
 		"This browser cannot replace the file with a sanitized copy, so it was not uploaded.",
@@ -153,7 +157,7 @@ const TR: Strings = {
 	fileUnscannedToast: (name) =>
 		`"${name}" taranamadı (ikili dosya). Göndermeden önce kontrol edin.`,
 	legacyOfficeToast: (name) =>
-		`"${name}" eski bir Office dosyası (.doc/.xls/.ppt); AIDR bu biçimi denetleyemez. Maskelenmesi için .docx/.xlsx/.pptx olarak kaydedin ya da göndermeden önce kontrol edin.`,
+		`"${name}" eski bir Office dosyası (.doc/.xls/.ppt); AIDR bu dosyayı tam olarak denetleyemedi. Maskelenmesi için .docx/.xlsx/.pptx olarak kaydedin ya da göndermeden önce kontrol edin.`,
 	imageUnscannedToast: (name) =>
 		`"${name}" bir görsel ve içeriği denetlenmedi (yerel OCR yardımcısı yok ya da görseli okuyamadı). Göndermeden önce kontrol edin.`,
 	documentImagesToast: (name) =>
@@ -191,7 +195,9 @@ const TR: Strings = {
 	imageBlockedHint:
 		"Görselde hassas veri görünüyor ve görseller maskelenemez. Yüklemeden önce kırpın ya da karartın.",
 	legacyOfficeHint:
-		"Eski Office biçimleri denetlenemez. Dosyayı .docx/.xlsx/.pptx olarak kaydedip onu yükleyin.",
+		"Bu eski Office dosyası tam olarak denetlenemedi. Dosyayı .docx/.xlsx/.pptx olarak kaydedip onu yükleyin.",
+	legacyOfficeSensitiveHint:
+		"Eski Office dosyaları (.doc/.xls/.ppt) maskelenemez. Dosyayı .docx/.xlsx/.pptx olarak kaydedip onu yükleyin: AIDR bu biçimleri maskeler.",
 	fileScanFailed: "AIDR dosyayı kontrol edemedi; dosya yüklenmedi.",
 	fileReplaceUnsupported:
 		"Bu tarayıcı dosyayı temizlenmiş kopyasıyla değiştiremiyor; dosya yüklenmedi.",

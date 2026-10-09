@@ -31,7 +31,9 @@ const event = {
 	agent_id: "agent-1",
 	payload: { tool_name: "bash", verdict: "deny" },
 };
-const success = (data: unknown[]) => ({ data, error: null });
+// The agent list is read with an exact count; a plain list needs count = its length.
+const success = (data: unknown[], count = data.length) => ({ data, error: null, count });
+const chains: Array<{ table: string; select: ReturnType<typeof vi.fn>; order: ReturnType<typeof vi.fn>; limit: ReturnType<typeof vi.fn> }> = [];
 
 function counter(label: string) {
 	const counters = screen.getByRole("region", { name: "Fleet counters" });
@@ -60,14 +62,17 @@ describe("Dashboard freshness and availability", () => {
 		vi.mocked(supabase.functions.invoke).mockReset().mockResolvedValue({
 			data: { ok: true, tokens: [] }, error: null,
 		});
+		chains.length = 0;
 		vi.mocked(supabase.from).mockReset().mockImplementation((table: string) => {
 			const chain = {
+				table,
 				select: vi.fn(), eq: vi.fn(), order: vi.fn(), limit: vi.fn(),
 				then(resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) {
 					return Promise.resolve().then(() => responses(table)).then(resolve, reject);
 				},
 			};
 			for (const method of ["select", "eq", "order", "limit"] as const) chain[method].mockReturnValue(chain);
+			chains.push(chain);
 			return chain as unknown as ReturnType<typeof supabase.from>;
 		});
 	});
@@ -263,6 +268,58 @@ describe("Dashboard freshness and availability", () => {
 		expect(counter("Connected")).toHaveTextContent("—");
 		expect(screen.getByRole("alert")).toHaveTextContent("Agents offline");
 		expect(counter("Events")).toHaveTextContent(/^1$/);
+	});
+
+	it("plugin scans without a finding count do not read as clean", async () => {
+		responses.mockImplementation((table) => success(table === "events" ? [
+			{ ...event, id: 2, type: "plugin_scan", payload: { plugin_key: "acme-plugin" } },
+			{ ...event, id: 3, type: "plugin_scan", payload: { plugin_key: "clean-plugin", findings_count: 0 } },
+		] : []));
+		await showDashboard();
+		expect(screen.getByText("acme-plugin: finding count unavailable")).toBeInTheDocument();
+		expect(screen.getByText("clean-plugin: 0 finding(s)")).toBeInTheDocument();
+		expect(screen.queryByText("acme-plugin: 0 finding(s)")).not.toBeInTheDocument();
+	});
+
+	it("reads agents as an explicit, exactly counted page newest heartbeat first", async () => {
+		await showDashboard();
+		const agentChain = chains.find((chain) => chain.table === "agents");
+		expect(agentChain?.select).toHaveBeenCalledWith(expect.any(String), { count: "exact" });
+		expect(agentChain?.order).toHaveBeenCalledWith("last_seen", { ascending: false, nullsFirst: false });
+		expect(agentChain?.limit).toHaveBeenCalledWith(1000);
+	});
+
+	it("shows the exact agent total beyond the 1000-row page", async () => {
+		const staleTail = agent(new Date(now - DASHBOARD_CONNECTED_WINDOW_MS - 1).toISOString());
+		responses.mockImplementation((table) => table === "agents"
+			? success([agent(), { ...staleTail, id: "agent-2" }], 1500) : success([]));
+		await showDashboard();
+		expect(counter("Agents")).toHaveTextContent(/^1500$/);
+		// The page ends with a stale heartbeat, so no connected agent lies beyond it.
+		expect(counter("Connected")).toHaveTextContent(/^1$/);
+		expect(screen.queryByText(/at least; latest 1000 heartbeats/)).not.toBeInTheDocument();
+	});
+
+	it("marks the connected count as a lower bound when the page may cut off connected agents", async () => {
+		responses.mockImplementation((table) => table === "agents"
+			? success([agent(), { ...agent(), id: "agent-2" }], 1500) : success([]));
+		await showDashboard();
+		expect(counter("Agents")).toHaveTextContent(/^1500$/);
+		expect(counter("Connected")).toHaveTextContent(/^2\+$/);
+		expect(screen.getByText("at least; latest 1000 heartbeats")).toBeInTheDocument();
+	});
+
+	it.each([
+		["a missing count", { data: [], error: null }],
+		["a count below the returned rows", { data: [agent()], error: null, count: 0 }],
+		["a non-numeric count", { data: [], error: null, count: "12" }],
+	])("treats an agent page with %s as unavailable", async (_label, result) => {
+		responses.mockImplementation((table) => table === "agents" ? result : success([]));
+		await showDashboard();
+		expect(counter("Agents")).toHaveTextContent("—");
+		expect(counter("Connected")).toHaveTextContent("—");
+		expect(screen.getByRole("alert")).toHaveTextContent("Malformed dashboard query response.");
+		expect(counter("Events")).toHaveTextContent(/^0$/);
 	});
 
 	it.each([

@@ -21,7 +21,8 @@
 Python 3.14 / Node 26 imajları ve codeql bump'ları geri alındı; `ci:local` kayması ve SCIM
 fixture'ları düzeltildi). 9 Ekim ölçümü: `pnpm install --frozen-lockfile`, `pnpm check`,
 `pnpm build`, `pnpm ci:local --list` → çıkış 0; `pnpm lint` → 0 hata, 746 uyarı; 494 kural / 29
-dosya; 176 migration. Docker çalışmıyor.
+dosya; 178 `supabase/migrations/*.sql` (`c2a0f5f0` ölçümünde 176; sonradan `20261009000100` ve
+`20261009000200` eklendi). Docker çalışmıyor.
 
 | # | Engel | Durum (9 Eki) | Kapanış ölçütü | Kim |
 |---|---|---|---|---|
@@ -50,7 +51,7 @@ dosya; 176 migration. Docker çalışmıyor.
 | COM-003 | Actual telemetry, browser tracing, managed events, AIG payloads, retention, deletion, region, subprocessors, and transfer mechanisms match customer-facing notices and DPA/TOM/SCC terms. | field-level data-flow matrix; payload assertion report; DPA/TOM/SCC approval; subprocessor/region list; deletion/export receipt | Privacy/DPO + Legal + Security | open |
 | COM-004 | Price and entitlements are enforced by one provider-of-record and survive order, seat change, invoice/reconciliation, cancellation, revocation, export, and deletion. | provider decision; SKU/entitlement tests; invoice/reconciliation evidence; revocation and deletion receipt | Finance/Billing + Product | open |
 | COM-005 | Customer-visible support, status, security contact, privacy/terms, escalation, severity SLA, diagnostic-consent, and reachable ticket paths operate for the sold scope. | published support schedule/SLA; ticket drill with timestamps; status/security/privacy links; on-call escalation record | Support/Customer Success + Operations | open |
-| COM-010 | Direct-GA scope includes every advertised connector: Claude Code, Cursor, VS Code, OpenClaw, and OpenCode. Each connector has a supported-host matrix, signed artifact, private-registry install path, real-host E2E, rollback, support owner, and limitations. | all-connector support matrix; real-host reports; private-registry install logs; rollback/disable drill; owner and limitations | Product + QA + Engineering + Support | open |
+| COM-010 | Direct-GA scope includes every advertised connector: Claude Code, Cursor, VS Code, OpenClaw, and OpenCode. Codex CLI is a shipped sixth connector (deploy/native/support-matrix.json) but stays preview/engineering coverage outside this direct-GA order scope (CLAIM-010) unless Product expressly adds and accepts it. Each connector has a supported-host matrix, signed artifact, private-registry install path, real-host E2E, rollback, support owner, and limitations. | all-connector support matrix; real-host reports; private-registry install logs; rollback/disable drill; owner and limitations | Product + QA + Engineering + Support | open |
 | COM-011 | Hybrid deployment supports EU, US, and APAC tenant placement with an approved routing, residency, retention, subprocessors, transfer, backup, and deletion model. | region/provider matrix; tenant placement test; cross-region negative test; DPA/SCC/TOM approval; backup/deletion receipts | Operations + Privacy/DPO + Legal | open |
 | COM-012 | Enterprise customers receive invoice-based orders and signed artifacts/connectors through an authenticated private registry; entitlement, revocation, download, audit, and offline/air-gapped procedures are defined. | provider and registry decision; invoice-to-entitlement test; signed package install; revocation/offboarding test; air-gapped procedure | Finance/Billing + Release Engineering + Support | open |
 | COM-013 | The managed control plane and dashboard API target a 99.9% monthly availability SLA with a measured SLI, exclusions, maintenance policy, service-credit terms, support escalation, and incident evidence. | approved SLA/support schedule; SLI definition and denominator; observation window; maintenance/exclusions; service-credit and incident drill | Operations + Legal + Support + Finance | open |
@@ -283,6 +284,14 @@ zararsız komutta yanlış pozitif (paket kurulumu ve örnek `.env` kopyası) ö
 | Bilgi | SEA | Windows ikilisi imzasız; macOS/Linux SEA hiç derlenmedi. |
 | Bilgi | Release doğrulama | POSIX `O_NOFOLLOW`/0700 yolları yalnız Windows'ta koşuldu. |
 | Bilgi | `CLAUDE.md` | Silinmiş `packages/dashboard/supabase/functions/` dizininden hâlâ söz ediyor. |
+
+### I.4a 9 Ekim sonrası kapananlar (#121)
+
+| Madde | Durum | Kalan |
+|---|---|---|
+| Tespit istisnalarının kiracı çıkışında (offboarding) silinmesi — `20261009000100` | **Kapandı** (`d4c82337`, `16d87b4e`) | Canlı veride `pnpm verify:offboarding` |
+| `increment_rate_limit` için api-key ve version-check kapsamları — `20261009000200` | **Kapandı** (`7cc1f5d1`) | — |
+| On-prem self-hosted prova: smoke **93/93**, soğuk yedek, doğrulama ve yeni projeye kurtarma (satır/nesne sayıları eşit, servisler sağlıklı) | **Doğrulandı** 2026-10-09 (`6dafe898`; Windows/Docker geliştirme modu) | Linux hostta `readyz` ve `apply` kabulü açık; müşteri hostu, offsite yedek ve RPO/RTO (FCR-06, T27, DEP-06) açık |
 
 ### I.5 Sahibinden karar bekleyenler (bu çalışmada ortaya çıktı)
 

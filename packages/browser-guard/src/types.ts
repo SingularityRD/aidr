@@ -268,8 +268,9 @@ export interface GuardPolicy {
 	/**
 	 * Office (DOCX/XLSX/PPTX), OpenDocument (ODT/ODS/ODP/ODG), legacy Office (DOC/XLS/PPT) and
 	 * PDF uploads when `fileHandling` is "scan" (managed-only): "mask" masks OOXML/OpenDocument
-	 * text in place and scans PDFs (blocking PDFs with findings); legacy Office files cannot be
-	 * parsed and pass only as unscanned (warning; blocked in block mode); "block" rejects every
+	 * text in place and scans PDFs and legacy Office files (blocking those with findings, as they
+	 * cannot be rewritten; a legacy file that could not be fully read passes only as unscanned:
+	 * warning, blocked in block mode); "block" rejects every
 	 * such document; "allow" skips parsing and treats them like other binary files (unscanned
 	 * warning; blocked in block mode). Absent means "mask".
 	 */
@@ -545,7 +546,8 @@ export interface FileDecision {
 	readonly counts: Readonly<Partial<Record<EntityType, number>>>;
 	/**
 	 * Stable reason codes, e.g. BINARY_FILE_UNSCANNED, FILE_TOO_LARGE, FORMULA_CELL, SENSITIVE_DATA,
-	 * SENSITIVE_DATA_IN_PDF, SENSITIVE_DATA_IN_IMAGE, IMAGE_NOT_INSPECTED, LEGACY_OFFICE_FORMAT,
+	 * SENSITIVE_DATA_IN_PDF, SENSITIVE_DATA_IN_LEGACY_OFFICE, SENSITIVE_DATA_IN_IMAGE,
+	 * IMAGE_NOT_INSPECTED, LEGACY_OFFICE_FORMAT, LEGACY_OFFICE_PARTIAL,
 	 * DOCUMENT_IMAGES_NOT_INSPECTED.
 	 */
 	readonly reasons: readonly string[];

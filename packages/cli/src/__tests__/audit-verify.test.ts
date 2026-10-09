@@ -144,6 +144,17 @@ describe("aidr audit verify", () => {
 		expect(existsSync(keyPath)).toBe(false);
 	});
 
+	it("is unverifiable (exit 2), not broken, when verification itself throws", async () => {
+		await writeChain(1);
+		vi.spyOn(ResponseAuditor.prototype, "verifyChain").mockRejectedValueOnce(
+			new Error("EACCES: permission denied"),
+		);
+		const result = await auditVerifyCommand(chainPath);
+		expect(result).toBeNull();
+		expect(process.exitCode).toBe(AUDIT_VERIFY_UNVERIFIABLE);
+		expect(err.join("\n")).toContain("EACCES");
+	});
+
 	it("is unverifiable (exit 2) when the log does not exist", async () => {
 		await writeChain(1);
 		rmSync(chainPath);

@@ -97,6 +97,7 @@ const CREDENTIAL_CASES = [
 function credentialMutationHarness(
 	credential: (typeof CREDENTIAL_CASES)[number],
 	responses: Array<{ data: unknown; error: unknown | null }>,
+	credentialId = "33333333-3333-4333-8333-333333333333",
 ) {
 	const compiled = ts.transpileModule(credential.source.replace(/^import .*;\r?\n/gm, ""), {
 		compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
@@ -106,9 +107,9 @@ function credentialMutationHarness(
 	let directCredentialWrites = 0;
 	const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
 	const currentCredential = credential.kind === "api"
-		? { id: "credential-1", user_id: TEST_USER_ID, key_hash: "a".repeat(64), revoked: false }
+		? { id: "33333333-3333-4333-8333-333333333333", user_id: TEST_USER_ID, key_hash: "a".repeat(64), revoked: false }
 		: {
-			id: "credential-1",
+			id: "33333333-3333-4333-8333-333333333333",
 			user_id: TEST_USER_ID,
 			token_hash: "a".repeat(64),
 			expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
@@ -179,7 +180,7 @@ function credentialMutationHarness(
 	if (!handler) throw new Error("credential handler was not registered");
 	const body = credential.action === "create"
 		? { action: credential.action, label: "failure-test" }
-		: { action: credential.action, id: "credential-1" };
+		: { action: credential.action, id: credentialId };
 	return {
 		calls,
 		get directCredentialWrites() { return directCredentialWrites; },
@@ -196,6 +197,19 @@ function credentialMutationHarness(
 		},
 	};
 }
+
+describe("credential id validation", () => {
+	it.each(CREDENTIAL_CASES.filter((credential) => credential.action !== "create"))(
+		"rejects a non-UUID id for $kind $action as a client error before any RPC",
+		async (credential) => {
+			const app = credentialMutationHarness(credential, [], "not-a-uuid");
+			const response = await app.request();
+			expect(response.status).toBe(400);
+			expect(response.body.error).toBe("invalid_id");
+			expect(app.calls).toHaveLength(0);
+		},
+	);
+});
 
 describe("atomic credential audit failure injection", () => {
 	it.each(CREDENTIAL_CASES)("fails closed on persistent audit failure for $kind $action", async (credential) => {
@@ -215,7 +229,7 @@ describe("atomic credential audit failure injection", () => {
 				.toBe(secretHash);
 		} else {
 			expect(app.calls[1]!.args).toEqual(app.calls[0]!.args);
-			expect(app.calls[0]!.args.p_id).toBe("credential-1");
+			expect(app.calls[0]!.args.p_id).toBe("33333333-3333-4333-8333-333333333333");
 		}
 		expect(app.directCredentialWrites).toBe(0);
 	});

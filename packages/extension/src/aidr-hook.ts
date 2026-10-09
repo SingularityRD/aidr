@@ -910,8 +910,10 @@ const MALFORMED_COMMAND_REASON =
 	"Singularity AIDR blocked this command: it is malformed (not a string or argv, or it contains NUL or invalid UTF-8 text) and cannot be inspected reliably.";
 
 /**
- * A shell command that is not a string/argv, or whose text holds NUL, an
- * unpaired surrogate or U+FFFD, cannot be inspected as the shell will run it.
+ * A shell command that is not a string/argv, or whose text holds NUL or an
+ * unpaired surrogate, cannot be inspected as the shell will run it. (Invalid
+ * UTF-8 stdin is refused before parsing; a validly encoded U+FFFD is ordinary
+ * text.)
  * Such a call is denied outright, never downgraded to a review prompt. The text
  * check also covers a `command` field of non-shell tools.
  */

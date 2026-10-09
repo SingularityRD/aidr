@@ -115,6 +115,7 @@ function blockedMessage(
 		...(has("SENSITIVE_DATA_IN_PDF") ? [s.pdfPasteHint] : []),
 		...(has("SENSITIVE_DATA_IN_IMAGE") ? [s.imageBlockedHint] : []),
 		...(has("LEGACY_OFFICE_FORMAT") ? [s.legacyOfficeHint] : []),
+		...(has("SENSITIVE_DATA_IN_LEGACY_OFFICE") ? [s.legacyOfficeSensitiveHint] : []),
 	];
 	return [s.fileBlockedBody(outcome.name, reasons), ...hints].join(" ");
 }

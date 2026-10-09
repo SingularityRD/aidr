@@ -13,7 +13,12 @@ import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { AutoQuarantine, AutoRollback, logVerdict, type Verdict } from "@singularityrd/aidr-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { auditRotateKeyCommand, auditVerifyCommand } from "../commands/audit.js";
+import {
+	AUDIT_VERIFY_BROKEN,
+	AUDIT_VERIFY_UNVERIFIABLE,
+	auditRotateKeyCommand,
+	auditVerifyCommand,
+} from "../commands/audit.js";
 import {
 	quarantineDeleteCommand,
 	quarantineListCommand,
@@ -206,11 +211,27 @@ describe("aidr audit verify / rotate-key", () => {
 		chain_key_storage: "file" as const,
 	});
 
-	it("exits non-zero when no chain is enabled: nothing verified is not a pass", async () => {
+	it("exits unverifiable (2) when no chain is enabled: nothing verified is not a pass", async () => {
 		writeConfig({});
 		await auditVerifyCommand({});
-		expect(process.exitCode).toBe(1);
+		expect(process.exitCode).toBe(AUDIT_VERIFY_UNVERIFIABLE);
 		expect(out.join("\n")).toContain("nothing was verified");
+	});
+
+	it("exits unverifiable (2) when the enabled response chain's log is missing", async () => {
+		writeConfig({
+			response: {
+				audit: { signed_chain: true, path: join(aidrDir(), "missing-response-audit.jsonl") },
+			},
+		});
+		await auditVerifyCommand({ json: true });
+		const report = JSON.parse(out.join("\n"));
+		expect(report.ok).toBe(false);
+		expect(report.chains[1]).toMatchObject({
+			chain: "response_actions",
+			status: "unverifiable",
+		});
+		expect(process.exitCode).toBe(AUDIT_VERIFY_UNVERIFIABLE);
 	});
 
 	it("verifies a clean chain and names the first tampered record", async () => {
@@ -237,7 +258,7 @@ describe("aidr audit verify / rotate-key", () => {
 
 		out = [];
 		await auditVerifyCommand({});
-		expect(process.exitCode).toBe(1);
+		expect(process.exitCode).toBe(AUDIT_VERIFY_BROKEN);
 		const text = out.join("\n");
 		expect(text).toContain("FAILED");
 		expect(text).toContain("hash_mismatch");

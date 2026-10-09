@@ -25,8 +25,17 @@
  *                   `SENSITIVE_DATA_IN_IMAGE`; pictures that were not (fully) inspected add
  *                   `DOCUMENT_IMAGES_NOT_INSPECTED` (never reported as clean); the thumbnail of
  *                   a rewritten package is replaced by a blank image.
- *                   Legacy binary Office (.doc/.xls/.ppt, OLE compound files) cannot be parsed:
- *                   step 4 with `LEGACY_OFFICE_FORMAT` (blocked in block mode).
+ *                   Legacy binary Office (.doc/.xls/.ppt, OLE compound files): text is
+ *                   extracted (./legacy/extract.ts) and scanned, never rewritten: findings
+ *                   block `SENSITIVE_DATA_IN_LEGACY_OFFICE` (the user is told to save the file
+ *                   as .docx/.xlsx/.pptx); a complete, clean extraction is allowed (pictures
+ *                   add `DOCUMENT_IMAGES_NOT_INSPECTED`); an extraction that may miss text
+ *                   follows step 4 with `LEGACY_OFFICE_FORMAT` + `LEGACY_OFFICE_PARTIAL` /
+ *                   `LEGACY_OFFICE_UNSUPPORTED` (or `DOCUMENT_UNPARSEABLE`: not a compound
+ *                   file); encryption, macros, uninspectable embedded objects and a corrupt
+ *                   or over-limit container are refused (`DOCUMENT_ENCRYPTED`,
+ *                   `DOCUMENT_MACROS`, `DOCUMENT_EMBEDDED_OBJECT`, `DOCUMENT_MALFORMED`,
+ *                   `DOCUMENT_LIMIT_EXCEEDED`).
  *                   PDF: text is extracted (./pdf/extract.ts) and scanned, never rewritten:
  *                   findings block `SENSITIVE_DATA_IN_PDF` (the user is told to paste the text
  *                   instead). Embedded raster images (./pdf/images.ts) go to the native host's
@@ -39,7 +48,8 @@
  *                   scanned PDF whose every image was OCR'd clean counts as fully read);
  *                   partly unreadable or encrypted/unparseable PDFs follow step 4 with
  *                   `PDF_NO_TEXT`, `PDF_PARTIAL`, `PDF_ENCRYPTED` or `PDF_UNPARSEABLE`.
- *      Document refusals and PDF findings are recorded instead of enforced in monitor mode.
+ *      Document refusals and PDF / legacy Office findings are recorded instead of enforced in
+ *      monitor mode.
  *   3. Classification. A file is scanned as text when its content decodes as strict UTF-8
  *      (UTF-8 BOM stripped; UTF-16 with a BOM is also accepted) and contains no NUL, AND
  *      either its extension is a known text/source extension, or its extension is unknown
@@ -111,6 +121,7 @@ import type {
 	SignalCode,
 } from "../types.js";
 import { type Counts, countFindings, mergeCounts } from "./counts.js";
+import { extractLegacyOffice, type LegacyExtraction } from "./legacy/extract.js";
 import { MAX_OCR_IMAGE_BYTES, MAX_OCR_IMAGES, OCR_BUDGET_MS, ocrFormat } from "./office/images.js";
 import { ODF_EXTENSIONS, ODF_MIME, sanitizeOdf, sniffOdf } from "./office/odf.js";
 import {
@@ -1095,7 +1106,7 @@ type DocumentKind = "ooxml" | "odf" | "legacy" | "pdf";
 
 const OOXML_MIME =
 	/^application\/vnd\.(?:openxmlformats-officedocument\.(?:wordprocessingml|spreadsheetml|presentationml)\.|ms-(?:word|excel|powerpoint)\.[\w.]*macroenabled)/i;
-/** Legacy binary Office formats (OLE compound files): recognised, never parsed. */
+/** Legacy binary Office formats (OLE compound files): text extracted and scanned, never rewritten. */
 const LEGACY_EXTENSIONS: ReadonlySet<string> = new Set([
 	"doc",
 	"dot",
@@ -1119,6 +1130,8 @@ const DOCUMENT_SCAN_BUDGET_MS = 30_000;
 function documentKind(file: GuardFile): DocumentKind | null {
 	const ext = extensionOf(baseName(file.name));
 	const known = documentKindByExtension(ext);
+	// Word and Excel open an OOXML package saved under a legacy name: mask it as one.
+	if (known === "legacy" && looksLikeZip(file.bytes) && sniffOoxml(file.bytes)) return "ooxml";
 	if (known !== undefined) return known;
 	return documentKindByContent(file);
 }
@@ -1368,6 +1381,52 @@ function recordPdfInspection(
 	return true;
 }
 
+/**
+ * Legacy binary Office (.doc/.xls/.ppt): text is extracted (./legacy/extract.ts) and scanned,
+ * never rewritten - findings block (`SENSITIVE_DATA_IN_LEGACY_OFFICE`; the user is told to save
+ * the file as .docx/.xlsx/.pptx, which AIDR masks); monitor mode records it. Only a complete
+ * extraction without findings is allowed; anything less is reported as not fully checked
+ * (`LEGACY_OFFICE_FORMAT` + the gap reason), never as clean.
+ */
+async function handleLegacy(
+	file: GuardFile,
+	scanner: DocScanner,
+	policy: GuardPolicy,
+): Promise<FileDecision> {
+	let extraction: LegacyExtraction;
+	try {
+		extraction = await extractLegacyOffice(file.bytes, () => scanner.checkDeadline());
+	} catch (error) {
+		if (error instanceof DocumentRefused) return refuse(policy, error.reasons);
+		if (error instanceof DocumentUnreadable)
+			return unscanned(policy, ["LEGACY_OFFICE_FORMAT", error.reason]);
+		throw error;
+	}
+	const findingCounts: Counts = {};
+	let signals: string[] = [];
+	if (extraction.segments.length > 0) {
+		const scan = await scanner.scan(
+			extraction.segments.map(({ context, value }) => {
+				const forced = context ? scanner.headerType(context) : undefined;
+				return { context, value, ...(forced ? { forced } : {}) };
+			}),
+		);
+		for (const findings of scan.perSegment) mergeCounts(findingCounts, countFindings(findings));
+		signals = signalReasons(policy, scan.signals);
+	}
+	if (signals.length && policy.signalAction === "block") return block(signals, findingCounts);
+	if (Object.keys(findingCounts).length > 0)
+		return refuse(policy, ["SENSITIVE_DATA_IN_LEGACY_OFFICE", ...signals], findingCounts);
+	if (!extraction.complete)
+		return unscanned(policy, ["LEGACY_OFFICE_FORMAT", ...extraction.reasons, ...signals]);
+	const reasons = [
+		// Pictures are not inspected: reported, never passed off as clean.
+		...(extraction.images ? ["DOCUMENT_IMAGES_NOT_INSPECTED"] : []),
+		...signals,
+	];
+	return { action: "allow", counts: {}, reasons };
+}
+
 async function handleDocument(
 	file: GuardFile,
 	kind: DocumentKind,
@@ -1377,8 +1436,6 @@ async function handleDocument(
 	const handling = policy.documentHandling ?? "mask";
 	if (handling === "allow") return unscanned(policy);
 	if (handling !== "mask") return block(["DOCUMENT_BLOCKED_BY_POLICY"]);
-	// .doc/.xls/.ppt are OLE compound files: not parsed, so never passed off as checked.
-	if (kind === "legacy") return unscanned(policy, ["LEGACY_OFFICE_FORMAT"]);
 	const counts: Counts = {};
 	const ctx: Ctx = {
 		engine: deps.engine,
@@ -1387,9 +1444,9 @@ async function handleDocument(
 	};
 	const deadline = Date.now() + DOCUMENT_SCAN_BUDGET_MS;
 	const scanner = documentScanner(ctx, counts, deadline, deps.inspectImage);
-	return kind === "pdf"
-		? handlePdf(file, scanner, policy)
-		: handlePackage(file, kind, scanner, counts, policy);
+	if (kind === "pdf") return handlePdf(file, scanner, policy);
+	if (kind === "legacy") return handleLegacy(file, scanner, policy);
+	return handlePackage(file, kind, scanner, counts, policy);
 }
 
 /** True for uploads handled as documents (Office, OpenDocument, PDF): the content script's policy gate. */

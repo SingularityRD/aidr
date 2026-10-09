@@ -9,6 +9,7 @@ import {
 	signMcpToolManifest,
 } from "../../../core/dist/mcp-attestation.js";
 import { fetchMcpEndpoint, readMcpSseMessages } from "../../../core/dist/mcp-transport.js";
+import { GATEWAY_CAPACITY } from "../config.mjs";
 import { createMcpGateway } from "../gateway.mjs";
 import { runStdioBridge } from "../stdio.mjs";
 
@@ -72,6 +73,7 @@ async function fixture({
 	dependencies = {},
 	routing = false,
 	tenantCount = 1,
+	tenantQuotas,
 } = {}) {
 	const keys = generateKeyPairSync("ed25519");
 	const manifest = signMcpToolManifest({
@@ -110,6 +112,7 @@ async function fixture({
 			stateDir: ".unused-memory-state",
 			port: 0,
 			routingRequired: routing,
+			...(tenantQuotas ? { tenantQuotas } : {}),
 			clients,
 			servers: [...new Set(clients.map((client) => client.tenantId))].map((tenantId) => ({
 				tenantId,
@@ -491,10 +494,26 @@ test("modern roots and elicitation form/URL MRTR use native result shapes with e
 	assert.equal(executions, 2);
 });
 
-test("global parent admission closes capacity rejections while 64 parents across tenants can still answer callbacks", async () => {
+test("global parent admission closes capacity rejections while a full pool of parents across tenants can still answer callbacks", async () => {
+	const pool = GATEWAY_CAPACITY.activeRequests;
+	// Noisy tenants at quota fill the shared part of the pool; quiet tenants then
+	// fill the reserve with their guaranteed floor; one more tenant overflows.
+	const noisy = (pool.global - pool.reserved) / pool.perTenant;
+	const quiet = pool.reserved / pool.guaranteed;
+	const owners = [
+		...Array.from({ length: noisy * pool.perTenant }, (_, index) =>
+			Math.floor(index / pool.perTenant),
+		),
+		...Array.from(
+			{ length: quiet * pool.guaranteed },
+			(_, index) => noisy + Math.floor(index / pool.guaranteed),
+		),
+	];
+	assert.equal(owners.length, pool.global);
+	const overflowTenant = noisy + quiet;
 	const streams = new Map();
 	const f = await fixture({
-		tenantCount: 5,
+		tenantCount: overflowTenant + 1,
 		dependencies: { evaluateToolCall: allowArguments },
 		peer: (_request, rpc) => {
 			if (rpc.method === "tools/call")
@@ -536,26 +555,32 @@ test("global parent admission closes capacity rejections while 64 parents across
 		sessions.push(initialized.headers.get("mcp-session-id"));
 		await initialized.json();
 	}
-	const parents = await Promise.all(
-		Array.from({ length: 64 }, async (_, index) => {
-			const client = Math.floor(index / 16);
-			const options = { credential: f.credentials[client], session: sessions[client] };
-			const response = await f.post(
-				{
-					jsonrpc: "2.0",
-					id: index + 1,
-					method: "tools/call",
-					params: { name: "search", arguments: {} },
-				},
-				options,
-			);
-			const events = readMcpSseMessages(response, 4096)[Symbol.asyncIterator]();
-			return { events, request: (await events.next()).value, options };
-		}),
+	const open = async (client, index) => {
+		const options = { credential: f.credentials[client], session: sessions[client] };
+		const response = await f.post(
+			{
+				jsonrpc: "2.0",
+				id: index + 1,
+				method: "tools/call",
+				params: { name: "search", arguments: {} },
+			},
+			options,
+		);
+		const events = readMcpSseMessages(response, 4096)[Symbol.asyncIterator]();
+		return { events, request: (await events.next()).value, options };
+	};
+	// Admit the noisy tenants first so the reserve is still untouched when they finish.
+	const shared = pool.global - pool.reserved;
+	const parents = await Promise.all(owners.slice(0, shared).map(open));
+	parents.push(
+		...(await Promise.all(
+			owners.slice(shared).map((client, index) => open(client, shared + index)),
+		)),
 	);
+	for (const parent of parents) assert.match(parent.request.id, /^aidr-reply-/);
 	const overflow = await f.post(
 		{ jsonrpc: "2.0", id: 999, method: "ping" },
-		{ credential: f.credentials[4], session: sessions[4] },
+		{ credential: f.credentials[overflowTenant], session: sessions[overflowTenant] },
 	);
 	assert.equal(overflow.status, 429);
 	assert.equal(overflow.headers.get("connection"), "close");
@@ -568,7 +593,7 @@ test("global parent admission closes capacity rejections while 64 parents across
 	}
 	const recovered = await f.post(
 		{ jsonrpc: "2.0", id: 1000, method: "ping" },
-		{ credential: f.credentials[4], session: sessions[4] },
+		{ credential: f.credentials[overflowTenant], session: sessions[overflowTenant] },
 	);
 	assert.equal(recovered.status, 200);
 	assert.deepEqual((await recovered.json()).result, {});
@@ -1081,12 +1106,15 @@ test("pending server-initiated replies have a per-tenant quota alongside the glo
 		for (let k = 0; k < expected; k++) received.push((await events.next()).value);
 		return { events, received };
 	}
-	// 12 calls x 5 pending replies = 60; the 13th call reaches the tenant quota (64).
-	for (let id = 1; id <= 12; id++) {
+	// Full calls of PER_CALL pending replies each; the next call reaches the tenant quota.
+	const quota = GATEWAY_CAPACITY.pendingReplies.perTenant;
+	const fullCalls = Math.floor(quota / PER_CALL);
+	assert.ok(quota % PER_CALL > 0);
+	for (let id = 1; id <= fullCalls; id++) {
 		const { received } = await call(0, id, PER_CALL);
 		for (const message of received) assert.match(message.id, /^aidr-reply-/);
 	}
-	const capped = await call(0, 13, 4);
+	const capped = await call(0, fullCalls + 1, quota % PER_CALL);
 	for (const message of capped.received) assert.match(message.id, /^aidr-reply-/);
 	const refusal = (await capped.events.next()).value;
 	assert.match(JSON.stringify(refusal ?? {}), /tenant_busy/);
@@ -1118,14 +1146,65 @@ test("MRTR continuations have a per-tenant quota so one tenant cannot exhaust th
 		method: "tools/call",
 		params: { name: "search", arguments: { query: `q${id}` }, _meta: metadata },
 	});
-	for (let id = 1; id <= 64; id++) {
+	const quota = GATEWAY_CAPACITY.continuations.perTenant;
+	for (let id = 1; id <= quota; id++) {
 		const body = await (await f.post(call(id))).json();
 		assert.match(body.result.requestState, /^aidr-mrtr-/);
 	}
-	const overflow = await f.post(call(65));
+	const overflow = await f.post(call(quota + 1));
 	assert.equal(overflow.status, 429);
 	assert.match((await overflow.json()).error.message, /tenant_busy/);
 	// Another tenant still gets a continuation.
-	const other = await (await f.post(call(66), { credential: f.credentials[1] })).json();
+	const other = await (await f.post(call(quota + 2), { credential: f.credentials[1] })).json();
 	assert.match(other.result.requestState, /^aidr-mrtr-/);
+});
+
+test("a noisy tenant at its largest configurable quota cannot take the capacity reserved for other tenants", {
+	timeout: 120_000,
+}, async () => {
+	const pool = GATEWAY_CAPACITY.continuations;
+	const largest = pool.global - pool.reserved;
+	const f = await fixture({
+		modern: true,
+		tenantCount: 3,
+		tenantQuotas: { continuations: largest },
+		dependencies: { evaluateToolCall: allowArguments },
+		peer: (_request, rpc) => {
+			if (rpc.method === "tools/call")
+				return json(rpc.id, {
+					resultType: "input_required",
+					inputRequests: { summary: sample },
+					requestState: "opaque-upstream-state",
+				});
+		},
+	});
+	let id = 0;
+	const call = (credential) =>
+		f.post(
+			{
+				jsonrpc: "2.0",
+				id: ++id,
+				method: "tools/call",
+				params: { name: "search", arguments: { query: `q${id}` }, _meta: metadata },
+			},
+			{ credential },
+		);
+	const [noisy, quietA, quietB] = f.credentials;
+	for (let k = 0; k < largest; k++)
+		assert.match((await (await call(noisy)).json()).result.requestState, /^aidr-mrtr-/);
+	// The shared pool is full but the reserve is not: the noisy tenant is refused
+	// with a tenant-scoped error, never by exhausting the gateway for everyone.
+	const refused = await call(noisy);
+	assert.equal(refused.status, 429);
+	assert.equal(refused.headers.get("connection"), "close");
+	assert.match((await refused.json()).error.message, /tenant_busy/);
+	// Quiet tenants are still admitted from the reserve up to their guaranteed floor.
+	for (const quiet of [quietA, quietB]) {
+		for (let k = 0; k < pool.guaranteed; k++)
+			assert.match((await (await call(quiet)).json()).result.requestState, /^aidr-mrtr-/);
+		const beyondFloor = await call(quiet);
+		assert.equal(beyondFloor.status, 429);
+		assert.match((await beyondFloor.json()).error.message, /tenant_busy/);
+	}
+	assert.match((await (await call(noisy)).json()).error.message, /tenant_busy/);
 });

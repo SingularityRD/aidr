@@ -511,7 +511,19 @@ describe("Codex hook deadline and input hygiene (built bundle)", () => {
 		expect(run.status).toBe(2);
 	});
 
-	it.each(["rm -rf /tmp/x\u0000", "echo \ud800", "echo �"])(
+	it.each([
+		["UTF-8 encoded", '"echo � done"'],
+		["JSON-escaped", '"echo \\ufffd done"'],
+	])("does not treat a valid %s U+FFFD in a command as malformed", (_label, commandJson) => {
+		if (releaseBundle) return;
+		const run = runHook(
+			`{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":${commandJson}}}`,
+		);
+		expect(run.status).toBe(0);
+		expect(run.stdout.trim()).toBe("");
+	});
+
+	it.each(["rm -rf /tmp/x\u0000", "echo \ud800"])(
 		"denies a shell command with malformed text %j",
 		(command) => {
 			for (const toolName of ["Bash", "shell"]) {

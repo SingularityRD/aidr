@@ -186,7 +186,7 @@ describe("VS Code routing by explicit event name", () => {
 });
 
 describe("malformed shell commands", () => {
-	it.each(["rm -rf /tmp/x\u0000", "echo \ud800", "echo �"])(
+	it.each(["rm -rf /tmp/x\u0000", "echo \ud800"])(
 		"denies %j on Cursor and VS Code",
 		async (command) => {
 			const cursor = await runHook("cursor", {

@@ -5,6 +5,7 @@ import { useTeam } from "../../enterprise/team-provider";
 import { readErrorMessage } from "../../lib/errors";
 import { supabase } from "../../lib/supabase";
 import { FrameworkTags } from "../framework-coverage";
+import { pluginScanFindingsCount, pluginScanSummary } from "../plugin-scan";
 
 type AgentRow = {
 	id: string;
@@ -31,8 +32,9 @@ function isMissingTableError(error: { code?: string; message?: string }, table: 
 
 function isIncidentLikeEvent(e: EventRow): boolean {
 	if (e.type === "plugin_scan") {
-		const count = Number(e.payload?.findings_count ?? 0);
-		return count > 0;
+		// An unknown finding count is not evidence of a clean scan: surface it for review.
+		const count = pluginScanFindingsCount(e.payload);
+		return count === null || count > 0;
 	}
 
 	if (e.type === "runtime_verdict") {
@@ -59,11 +61,7 @@ export function isCanaryTrigger(e: Pick<EventRow, "payload">): boolean {
 }
 
 function summarize(e: EventRow): string {
-	if (e.type === "plugin_scan") {
-		const key = typeof e.payload?.plugin_key === "string" ? String(e.payload.plugin_key) : "plugin";
-		const count = Number(e.payload?.findings_count ?? 0);
-		return `${key}: ${count} finding(s)`;
-	}
+	if (e.type === "plugin_scan") return pluginScanSummary(e.payload);
 	if (e.type === "runtime_verdict") {
 		const tool = typeof e.payload?.tool_name === "string" ? String(e.payload.tool_name) : "tool";
 		const verdict = typeof e.payload?.verdict === "string" ? String(e.payload.verdict) : "unknown";
