@@ -25,7 +25,8 @@
  * the staged binaries (the same paths koffi 2 used). Koffi's other lookup,
  * `loadStatic`, would `require("@koromix/koffi-…")` from whatever `node_modules`
  * sits above the installed connector, i.e. load bytes the manifest does not
- * cover, so the staged loader replaces it with a function that returns null.
+ * cover. The staged loader disables it and removes loadDynamic's adjacent
+ * package and Electron resourcesPath lookups, leaving only staged binaries.
  * Every rewrite asserts a single exact match: a koffi update that changes the
  * loader fails the build instead of shipping an unpatched copy.
  *
@@ -49,19 +50,32 @@ const KOFFI_ENTRY_FILES = Object.freeze({
 	"index.cjs": `${HEADER}module.exports = require("./lib/koffi/index.cjs");\n`,
 });
 
-/** Loader files: staged path -> [koffi source path, exact text to replace, replacement]. */
+/** Loader files: staged path -> [source path, static lookup, replacement, adjacent lookup]. */
 const KOFFI_LOADER_FILES = Object.freeze({
 	"lib/koffi/index.js": [
 		"src/koffi/index.js",
 		'import { loadStatic } from "./src/static.js";',
 		"const loadStatic = () => null; // AIDR: only load the staged build/koffi binaries",
+		'    `${import.meta.dirname}/../../../@koromix/koffi-${pkg2}`,\n',
 	],
 	"lib/koffi/index.cjs": [
 		"src/koffi/index.cjs",
 		'var { loadStatic } = require("./src/static.cjs");',
 		"var loadStatic = () => null; // AIDR: only load the staged build/koffi binaries",
+		'    `${__dirname}/../../../@koromix/koffi-${pkg2}`,\n',
 	],
 });
+
+const KOFFI_RESOURCE_LOOKUP = `  if (process["resourcesPath"] != null) {
+    let suffixes = [
+      "/koffi",
+      "/koffi/build",
+      "/node_modules/koffi/build"
+    ];
+    for (let suffix2 of suffixes)
+      roots.push(process["resourcesPath"] + suffix2);
+  }
+`;
 
 /** Every non-binary file of the staged payload, POSIX-relative to `dist/vendor/koffi`. */
 export const KOFFI_RUNTIME_FILES = Object.freeze([
@@ -140,12 +154,15 @@ export function stageWindowsKoffi(packageDir, { isRelease, vendorDir }) {
 		}
 		copies.push([requireFile(join(nativeRoot, arch, "koffi.node"), `${nativePackage}/${arch}/koffi.node`), koffiNativeBinary(arch)]);
 	}
-	const loaders = Object.entries(KOFFI_LOADER_FILES).map(([relative, [from, search, replacement]]) => {
-		const text = readFileSync(requireFile(join(source, ...from.split("/")), `koffi/${from}`), "utf8");
-		if (text.split(search).length !== 2) {
-			throw new Error(`koffi@${version} loader koffi/${from} changed: cannot disable loadStatic; review the staging script`);
+	const loaders = Object.entries(KOFFI_LOADER_FILES).map(([relative, [from, search, replacement, adjacentLookup]]) => {
+		let text = readFileSync(requireFile(join(source, ...from.split("/")), `koffi/${from}`), "utf8");
+		for (const [lookup, stagedOnly] of [[search, replacement], [adjacentLookup, ""], [KOFFI_RESOURCE_LOOKUP, ""]]) {
+			if (text.split(lookup).length !== 2) {
+				throw new Error(`koffi@${version} loader koffi/${from} changed: cannot restrict native lookup to staged binaries; review the staging script`);
+			}
+			text = text.replace(lookup, stagedOnly);
 		}
-		return [relative, text.replace(search, replacement)];
+		return [relative, text];
 	});
 
 	const vendor = vendorDir ?? join(packageDir, "dist", "vendor", "koffi");

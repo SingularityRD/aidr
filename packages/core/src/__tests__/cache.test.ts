@@ -1,10 +1,12 @@
+import { spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { VerdictCache } from "../cache.js";
+import { CACHE_KEY_FILE, loadOrCreateCacheKey, VerdictCache } from "../cache.js";
 import type { CacheConfig, CachedVerdict } from "../types.js";
 import { hashCommand, normalizeUrl } from "../url-utils.js";
-import { makeTmpDir, writeSignedCacheFixture } from "./test-utils.js";
+import { windowsTargetsAreAlreadyPrivate } from "../windows-private-acl-probe.js";
+import { makeTmpDir, removeTmpDir, writeSignedCacheFixture } from "./test-utils.js";
 
 /** Cache fixtures are written as the cache writes them: authenticated. */
 async function writeCacheFile(path: string, json: string, _encoding?: string): Promise<void> {
@@ -52,6 +54,34 @@ describe("VerdictCache", () => {
 	beforeEach(async () => {
 		dir = await makeTmpDir();
 	});
+
+	// AIDR-SKIP: AIDR-063 qa-owner - NTFS cache key ACL verification requires Windows
+	it.skipIf(process.platform !== "win32")(
+		"protects new cache keys and repairs widened NTFS ACLs without rotating the key",
+		async () => {
+			const path = join(dir, CACHE_KEY_FILE);
+			const targets = [
+				{ path: dir, directory: true },
+				{ path, directory: false },
+			];
+			try {
+				const original = await loadOrCreateCacheKey(dir);
+				expect(windowsTargetsAreAlreadyPrivate(targets)).toBe(true);
+				const widened = spawnSync(
+					join(process.env.SystemRoot ?? "C:\\Windows", "System32", "icacls.exe"),
+					[path, "/grant", "*S-1-1-0:(R)"],
+					{ encoding: "utf8", timeout: 10_000, windowsHide: true },
+				);
+				expect(widened.error).toBeUndefined();
+				expect(widened.status, widened.stderr).toBe(0);
+				expect(windowsTargetsAreAlreadyPrivate(targets)).toBe(false);
+				expect(await loadOrCreateCacheKey(dir)).toEqual(original);
+				expect(windowsTargetsAreAlreadyPrivate(targets)).toBe(true);
+			} finally {
+				await removeTmpDir(dir);
+			}
+		},
+	);
 
 	it("returns null for missing URL", async () => {
 		const cache = new VerdictCache(makeConfig({ path: join(dir, "cache.json") }));

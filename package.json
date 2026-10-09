@@ -114,7 +114,7 @@
 		"license:report": "node scripts/generate-license-report.mjs",
 		"package:consumers": "node scripts/check-package-consumers.mjs",
 		"verify:package-install": "node scripts/verify-package-install.mjs",
-		"test:package-install-gate": "node --test scripts/verify-package-install.test.mjs scripts/copy-package-license.test.mjs scripts/ensure-claude-code-dist.test.mjs scripts/claude-plugin-package.test.mjs scripts/release-archive-inspection.test.mjs scripts/endpoint-install.test.mjs",
+		"test:package-install-gate": "node --test scripts/verify-package-install.test.mjs scripts/copy-package-license.test.mjs scripts/ensure-claude-code-dist.test.mjs scripts/claude-plugin-package.test.mjs scripts/release-archive-inspection.test.mjs scripts/endpoint-install.test.mjs scripts/stage-windows-koffi.test.mjs",
 		"verify:package-bins": "node scripts/check-publishable-bins.mjs",
 		"quality:static": "pnpm lint && pnpm test:package-install-gate && pnpm benchmark:test && pnpm knip && pnpm duplicates && node scripts/check-mandatory-skips.mjs && node scripts/verify-feature-acceptance.mjs && pnpm verify:investor-metrics && node scripts/check-commercial-surface.mjs && node scripts/verify-commercial-compliance.mjs && node scripts/check-supabase-edge-contracts.mjs && node scripts/demo-preflight.mjs --static && pnpm test:monthly-sli && pnpm verify:monthly-sli && node --test scripts/load-test.test.mjs && pnpm verify:load",
 		"demo:preflight": "node scripts/demo-preflight.mjs",

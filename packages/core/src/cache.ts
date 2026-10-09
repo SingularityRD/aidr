@@ -26,6 +26,7 @@ import { dirname, join } from "node:path";
 import { resolvePath } from "./config.js";
 import { decryptFile, deriveKey, encryptedFileContent } from "./encryption.js";
 import { atomicWriteJson, atomicWriteText, getFileContent } from "./file-utils.js";
+import { preparePrivateLocalFile } from "./private-local-file.js";
 import type { CacheConfig, CachedEntry, CachedVerdict, CacheStore, Logger } from "./types.js";
 import { nullLogger } from "./types.js";
 import { normalizeUrl } from "./url-utils.js";
@@ -100,8 +101,7 @@ function assertPrivateKeyFile(info: Stats): void {
 	if (info.isSymbolicLink() || !info.isFile()) {
 		throw new Error("Cache key is not a regular file.");
 	}
-	// On Windows the file inherits the user-profile ACL; POSIX mode bits are
-	// not meaningful there.
+	// POSIX mode bits are not meaningful on Windows; the caller hardens its ACL.
 	if (process.platform === "win32") return;
 	if (typeof process.getuid === "function" && info.uid !== process.getuid()) {
 		throw new Error("Cache key is owned by another user.");
@@ -135,6 +135,7 @@ export async function loadOrCreateCacheKey(directory: string): Promise<Buffer> {
 	for (let attempt = 0; attempt < 3; attempt++) {
 		try {
 			assertPrivateKeyFile(await lstat(path));
+			if (process.platform === "win32") preparePrivateLocalFile(path);
 			return await readKeyFile(path);
 		} catch (error) {
 			if (errorCode(error) !== "ENOENT") throw error;
@@ -146,6 +147,7 @@ export async function loadOrCreateCacheKey(directory: string): Promise<Buffer> {
 		try {
 			const handle = await open(tmp, "wx", 0o600);
 			try {
+				if (process.platform === "win32") preparePrivateLocalFile(tmp);
 				await handle.writeFile(randomBytes(CACHE_KEY_BYTES));
 			} finally {
 				await handle.close();
