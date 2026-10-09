@@ -42,6 +42,7 @@ returns void language plpgsql as $$ begin
     raise exception 'expected %, got %', expected, actual;
   end if;
 end $$;
+grant execute on function pg_temp.expect_status(jsonb,text) to anon, authenticated, service_role;
 create function pg_temp.expect_old_soft_delete_denied()
 returns void language plpgsql as $$ begin
   begin
@@ -52,6 +53,7 @@ returns void language plpgsql as $$ begin
     if sqlerrm <> 'trial_claim_immutable' then raise; end if;
   end;
 end $$;
+grant execute on function pg_temp.expect_old_soft_delete_denied() to anon, authenticated, service_role;
 select public.configure_tenant_admission_mode('cloud');
 select public.configure_ga_legal_documents('test','${"a".repeat(64)}',
   'https://example.invalid/terms','test','${"b".repeat(64)}',

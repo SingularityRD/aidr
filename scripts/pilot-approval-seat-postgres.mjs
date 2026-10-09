@@ -46,6 +46,7 @@ begin
   end;
   raise exception 'authenticated caller forged pilot approval';
 end $$;
+grant execute on function pg_temp.expect_forbidden(text) to anon, authenticated, service_role;
 
 set role authenticated;
 select set_config('request.jwt.claim.sub', '${owner}', true);

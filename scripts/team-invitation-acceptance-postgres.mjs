@@ -55,6 +55,7 @@ begin
   end;
   raise exception '% unexpectedly accepted', p_label;
 end $fn$;
+grant execute on function pg_temp.expect_denied(text,uuid,text) to anon, authenticated, service_role;
 
 set role service_role;
 do $$
