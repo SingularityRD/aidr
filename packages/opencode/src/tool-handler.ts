@@ -1,5 +1,3 @@
-import { homedir } from "node:os";
-import { join } from "node:path";
 import {
 	type ApprovalStore,
 	canonicalMcpToolName,
@@ -18,6 +16,7 @@ import {
 	resolveHookDeadlineMs,
 	withHookDeadline,
 } from "@singularityrd/aidr-core";
+import { openCodeMcpConfigPaths } from "./config-paths.js";
 import { AidrVerdictBlockError, AidrVerdictError } from "./error.js";
 import { extractFromOpenCodeTool } from "./extractors.js";
 
@@ -39,17 +38,6 @@ function applyRedactedArgs(
 	if (JSON.stringify(args) !== JSON.stringify(transformedInput)) {
 		throw new Error("OpenCode tool args could not be rewritten");
 	}
-}
-
-/** OpenCode MCP configuration: the user config and the project's config files. */
-function openCodeMcpConfigPaths(directory?: string): string[] {
-	const userDir = join(process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config"), "opencode");
-	return [
-		join(userDir, "opencode.json"),
-		...(directory
-			? [join(directory, "opencode.json"), join(directory, ".opencode", "opencode.json")]
-			: []),
-	];
 }
 
 /**
