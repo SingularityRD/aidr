@@ -31,8 +31,43 @@ When the effective policy has `useNativeHost: true`, the content guard
   unavailable: checked with built-in rules only.", and a clean prompt shows that
   notice once per page until the host works again. The `NATIVE_SCAN` reply also
   carries the bridge `status`.
-- Uploaded text files and documents are not sent to the host for NER; they are
-  scanned by the rules only. Images are, for OCR (next section).
+- Uploaded text files and documents are not sent to the host for NER (rules only)
+  unless `requireNativeNer` is set (next section). Images are, for OCR (section after).
+
+## Required NER (`requireNativeNer`, managed only)
+
+An administrator can make native NER mandatory with the managed key
+`requireNativeNer: true` (default `false`: everything above stays as it is). It forces
+and locks `useNativeHost` on. While `PERSON`, `ADDRESS` or `LOCATION` is enabled:
+
+- A prompt send or text paste whose native scan is anything but a NER answer is
+  **blocked** with "Your organisation requires advanced name and address detection
+  ... Nothing was sent." That covers: host not installed or `nativeMessaging` not
+  granted, a crashed or backed-off host, the 2.5 s timeout, text over 200,000
+  characters (not sent to the host), a malformed or `ok: false` reply, a host policy
+  block or unmappable output, and a **rules-only host**: with the requirement the
+  worker asks the bridge for NER coverage (`scanText(text, { requireNer: true })`), and
+  a commit whose `coverage` is not `rules-and-ner` counts as no answer (without
+  counting towards the backoff). A clean prompt is blocked too: no findings without
+  NER is not a clean check. Such a result is never cached, so the next send asks the
+  host again.
+- Uploads: every text scan of the file sanitiser (plain text, CSV/JSON cells, Office,
+  OpenDocument, PDF and legacy Office text) also goes through native NER, and its
+  `PERSON`/`ADDRESS`/`LOCATION` findings are masked (or, for PDFs and legacy Office,
+  block) like rule findings. Text over the host limit is retried in the sanitiser's
+  smaller windows, each NER-checked. If the host gives no NER answer for any part of
+  the file (or cannot OCR one of its images, or OCRs it without NER coverage: such a
+  clean verdict is reported `incomplete` / `NATIVE_NER_UNAVAILABLE`), the upload is
+  blocked with `NATIVE_NER_UNAVAILABLE` and a hint. After one failure the rest of
+  that upload is refused at once instead of waiting for the timeout again. Text
+  pasted together with files is held to the same rule.
+- `monitor` mode (and sites the user disabled) never block: the check is recorded
+  instead.
+- Every `RECORD` (and so every `privacy_scan` telemetry event) carries the outcome as a
+  status only: `native_ner: "used"` or `"unavailable"` (absent when NER was off), so a
+  check that ran without the required NER is never counted as a clean one
+  ([`docs/contracts/privacy-telemetry.md`](../../../docs/contracts/privacy-telemetry.md)).
+- The options page shows that the requirement is in force.
 
 ## How uploads use it (OCR)
 

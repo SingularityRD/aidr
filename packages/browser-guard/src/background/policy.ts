@@ -93,6 +93,7 @@ export const DEFAULT_POLICY: GuardPolicy = deepFreeze({
 	maxFileBytes: 5 * MIB,
 	restoreResponses: true,
 	useNativeHost: false,
+	requireNativeNer: false,
 	telemetry: null,
 	language: "auto",
 	managedKeys: [],
@@ -496,6 +497,7 @@ const MANAGED_VALIDATORS: Readonly<Record<ManagedKey, Validator>> = {
 	maxFileBytes,
 	restoreResponses: bool,
 	useNativeHost: bool,
+	requireNativeNer: bool,
 	telemetry: telemetryValidator(false),
 	language: oneOf(["auto", "en", "tr"]),
 	policyId,
@@ -615,6 +617,8 @@ export function evaluatePolicy(managed: unknown, user: unknown): PolicyEvaluatio
 	if (admin.present && !admin.allowUserOverrides)
 		lockProtectionKeys(merged, managedKeys, userResult.settings, warnings);
 
+	if (merged.requireNativeNer === true) requireNativeHost(merged, managedKeys, warnings);
+
 	merged.version = 1;
 	merged.managedKeys = managedKeys;
 	return { policy: deepFreeze(merged as unknown as GuardPolicy), warnings };
@@ -661,6 +665,22 @@ function mergeManaged(
 		managedKeys.push(key);
 	}
 	return { present: Object.keys(managed).length > 0, allowUserOverrides };
+}
+
+/**
+ * `requireNativeNer` (managed only) needs the native host: `useNativeHost` is forced on and
+ * locked, whatever the managed or user value was, so neither side can switch the required
+ * check off by disabling the bridge.
+ */
+function requireNativeHost(
+	merged: Record<string, unknown>,
+	managedKeys: string[],
+	warnings: string[],
+): void {
+	if (merged.useNativeHost !== true)
+		warnings.push('"useNativeHost" forced on because managed "requireNativeNer" is true');
+	merged.useNativeHost = true;
+	if (!managedKeys.includes("useNativeHost")) managedKeys.push("useNativeHost");
 }
 
 /** Locks every protection key the managed policy did not set at its built-in default. */

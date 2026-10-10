@@ -423,6 +423,42 @@ describe("createNativeBridge: scanning over the privacy host protocol", () => {
 		expect(bridge.status()).toBe("connected");
 	});
 
+	it("with requireNer, accepts a host answer that reports NER coverage", async () => {
+		const bridge = createNativeBridge(true, { chrome: fakeChrome() });
+		const text = "Toplantıya Jane Doe katılacak.";
+		const findings = await withFrozenClock(() => bridge.scanText(text, { requireNer: true }));
+		expect(findings?.map((f) => [f.type, slice(text, f)])).toEqual([["PERSON", "Jane Doe"]]);
+		expect(await withFrozenClock(() => bridge.scanText("Yarın.", { requireNer: true }))).toEqual(
+			[],
+		);
+	});
+
+	it("with requireNer, a rules-only host is no usable answer (null, no backoff)", async () => {
+		const rulesOnly = (response: Msg, request: Msg) =>
+			request.op === "commit" ? { ...response, coverage: "rules-only" } : response;
+		const chrome = fakeChrome({ tamper: rulesOnly });
+		const bridge = createNativeBridge(true, { chrome });
+		const text = "Mail ayse@example.com";
+		// Without the requirement the rules-only answer is still used.
+		expect(await withFrozenClock(() => bridge.scanText(text))).toHaveLength(1);
+		for (let i = 0; i < NATIVE_MAX_FAILURES + 1; i++) {
+			expect(await withFrozenClock(() => bridge.scanText(text, { requireNer: true }))).toBeNull();
+			expect(
+				await withFrozenClock(() => bridge.scanText("Yarın.", { requireNer: true })),
+			).toBeNull();
+		}
+		expect(bridge.status()).toBe("connected");
+		const missing = fakeChrome({
+			tamper: (response, request) => {
+				if (request.op !== "commit") return response;
+				const { coverage: _dropped, ...rest } = response;
+				return rest;
+			},
+		});
+		const silent = createNativeBridge(true, { chrome: missing });
+		expect(await withFrozenClock(() => silent.scanText(text, { requireNer: true }))).toBeNull();
+	});
+
 	it("counts a host NER engine failure towards backoff", async () => {
 		const chrome = fakeChrome({ nerFails: true });
 		const bridge = createNativeBridge(true, { chrome });
@@ -583,6 +619,30 @@ describe("createNativeBridge: image OCR (image-scan)", () => {
 			() => bridge.scanImage?.(IMAGE) ?? Promise.resolve(null),
 		);
 		expect(inspection).toEqual({ result: "clean", counts: {}, reasons: [] });
+	});
+
+	it("with requireNer, reports a clean verdict without NER coverage as incomplete", async () => {
+		const withCoverage = (coverage: string) =>
+			fakeChrome({
+				ocrLines: ["Release ready"],
+				tamper: (response, request) =>
+					request.op === "commit" ? { ...response, coverage } : response,
+			});
+		const rulesOnly = createNativeBridge(true, { chrome: withCoverage("rules-only") });
+		const inspection = await withFrozenClock(
+			() => rulesOnly.scanImage?.(IMAGE, { requireNer: true }) ?? Promise.resolve(null),
+		);
+		expect(inspection).toEqual({
+			result: "incomplete",
+			counts: {},
+			reasons: ["NATIVE_NER_UNAVAILABLE"],
+		});
+		const ner = createNativeBridge(true, { chrome: withCoverage("rules-and-ner") });
+		expect(
+			await withFrozenClock(
+				() => ner.scanImage?.(IMAGE, { requireNer: true }) ?? Promise.resolve(null),
+			),
+		).toEqual({ result: "clean", counts: {}, reasons: [] });
 	});
 
 	it("reports an image without readable text as incomplete, never clean", async () => {

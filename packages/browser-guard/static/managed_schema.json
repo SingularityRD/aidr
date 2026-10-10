@@ -373,6 +373,11 @@
 			"description": "Use the locally installed AIDR Privacy native host for NER (PERSON, ADDRESS, LOCATION in free text) on prompts and pastes, merged with the built-in rules. Also needs the optional 'nativeMessaging' permission, which the user grants on the options page; without it (or without the host) scans run rules-only and the user is told so.",
 			"type": "boolean"
 		},
+		"requireNativeNer": {
+			"title": "Require native NER",
+			"description": "Make native NER mandatory (default false). When true and PERSON, ADDRESS or LOCATION is enabled, a prompt, paste or file upload whose text the native host could not check with NER (host not installed or not permitted, crashed, timed out, rules-only host without an approved NER model, malformed reply, text over the host limit) is blocked with an explanation instead of continuing rules-only; images the host could not OCR are blocked too. Monitor mode never blocks but records such checks as not NER-checked (telemetry native_ner: unavailable). Forces and locks useNativeHost on.",
+			"type": "boolean"
+		},
 		"telemetry": {
 			"title": "Control-plane telemetry",
 			"description": "Privacy telemetry enrollment (counts only). controlPlaneUrl must be https (http only for localhost/127.0.0.1).",

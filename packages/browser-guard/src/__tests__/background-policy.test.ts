@@ -321,6 +321,40 @@ describe("validateUserSettings", () => {
 	});
 });
 
+describe("requireNativeNer (managed only)", () => {
+	it("defaults to false and leaves useNativeHost alone", () => {
+		expect(DEFAULT_POLICY.requireNativeNer).toBe(false);
+		expect(evaluatePolicy(undefined, undefined).policy.requireNativeNer).toBe(false);
+		expect(evaluatePolicy({ requireNativeNer: false }, undefined).policy.useNativeHost).toBe(false);
+	});
+
+	it("forces and locks useNativeHost on, whatever the managed or user value", () => {
+		for (const managed of [
+			{ requireNativeNer: true },
+			{ requireNativeNer: true, useNativeHost: false },
+			open({ requireNativeNer: true }),
+		]) {
+			const { policy, warnings } = evaluatePolicy(managed, { useNativeHost: false });
+			expect(policy.requireNativeNer).toBe(true);
+			expect(policy.useNativeHost).toBe(true);
+			expect(policy.managedKeys).toContain("requireNativeNer");
+			expect(policy.managedKeys).toContain("useNativeHost");
+			expect(policy.managedKeys.filter((k) => k === "useNativeHost")).toHaveLength(1);
+			expect(warnings.some((w) => w.includes("requireNativeNer"))).toBe(true);
+		}
+	});
+
+	it("rejects a non-boolean value (stays false) and is not a user setting", () => {
+		const { policy, warnings } = evaluatePolicy({ requireNativeNer: "yes" }, undefined);
+		expect(policy.requireNativeNer).toBe(false);
+		expect(warnings).toContain('managed: invalid value for "requireNativeNer" ignored');
+		expect(USER_SETTING_KEYS).not.toContain("requireNativeNer");
+		const user = evaluatePolicy(undefined, { requireNativeNer: true });
+		expect(user.policy.requireNativeNer).toBe(false);
+		expect(user.warnings).toContain('user: unknown key "requireNativeNer" ignored');
+	});
+});
+
 describe("managed policy locks protection-reducing user settings (L2)", () => {
 	const weakening = {
 		mode: "monitor",
@@ -420,6 +454,7 @@ describe("static/managed_schema.json", () => {
 			"maskPaste",
 			"restoreResponses",
 			"useNativeHost",
+			"requireNativeNer",
 		])
 			expect(props[key]?.type).toBe("boolean");
 	});

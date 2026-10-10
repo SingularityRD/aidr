@@ -4,6 +4,7 @@ import { type SanitizeDeps, sanitizeFile } from "../engine/files.js";
 import {
 	EMAIL,
 	FakeDataTransfer,
+	fileList,
 	type Harness,
 	makeFilesWritable,
 	setupGuard,
@@ -71,11 +72,67 @@ describe("content guard: document uploads", () => {
 		expect(g.sanitizeFile).not.toHaveBeenCalled();
 		expect(g.records().at(-1)).toMatchObject({ action: "blocked", channel: "file" });
 
+		// Monitor mode: a plain file is held only until its content was sniffed, then the
+		// original (never a sanitised copy) is handed back to the page and recorded.
 		const text = document.getElementById("file") as HTMLInputElement;
-		makeFilesWritable(text, [new File(["x"], "notes.txt", { type: "text/plain" })]);
+		const notes = new File(["x"], "notes.txt", { type: "text/plain" });
+		makeFilesWritable(text, [notes]);
+		const replayed: Event[] = [];
+		text.addEventListener("change", (event) => replayed.push(event));
 		const other = new Event("change", { bubbles: true, cancelable: true });
 		text.dispatchEvent(other);
-		expect(other.defaultPrevented).toBe(false); // monitor mode: left to the page
+		expect(other.defaultPrevented).toBe(true);
+		await expect.poll(() => replayed.length).toBe(1); // the replay (the original was stopped)
+		expect(text.files?.[0]).toBe(notes);
+		expect(g.records().at(-1)).toMatchObject({ action: "allowed", channel: "file" });
+		expect(g.sanitizeFile).toHaveBeenCalledTimes(1); // the monitor recording, not a rewrite
+	});
+
+	it("documentHandling=block in monitor mode also refuses a PDF renamed to .txt (content sniff)", async () => {
+		const g = start({ policy: { documentHandling: "block", mode: "monitor" } });
+		const input = document.getElementById("file") as HTMLInputElement;
+		const pdf = new File(["%PDF-1.7\n1 0 obj\n<<>>\nendobj\n%%EOF"], "notes.txt", {
+			type: "text/plain",
+		});
+		makeFilesWritable(input, [pdf]);
+		const replayed: Event[] = [];
+		input.addEventListener("change", (event) => replayed.push(event));
+		const change = new Event("change", { bubbles: true, cancelable: true });
+		input.dispatchEvent(change);
+		expect(change.defaultPrevented).toBe(true);
+		await expect
+			.poll(() => g.bubble()?.textContent ?? "")
+			.toContain("does not allow Office or PDF documents");
+		expect(g.bubble()?.textContent).toContain("DOCUMENT_BLOCKED_BY_POLICY");
+		expect(g.records().at(-1)).toMatchObject({ action: "blocked", channel: "file" });
+		expect(replayed).toHaveLength(0); // never handed to the page
+	});
+
+	it("documentHandling=block on a disabled site refuses a renamed PDF dropped on the page", async () => {
+		const g = start({ policy: { documentHandling: "block", disabledSites: ["chatgpt"] } });
+		const zone = document.getElementById("drop-zone") as HTMLElement;
+		const received: Event[] = [];
+		zone.addEventListener("drop", (event) => received.push(event));
+		const drop = new Event("drop", { bubbles: true, cancelable: true });
+		const pdf = new File(["%PDF-1.4 renamed"], "readme.md", { type: "text/markdown" });
+		Object.defineProperty(drop, "dataTransfer", { value: { files: fileList([pdf]), items: [] } });
+		zone.dispatchEvent(drop);
+		expect(drop.defaultPrevented).toBe(true);
+		await expect.poll(() => g.records().at(-1)?.action).toBe("blocked");
+		expect(g.bubble()?.textContent).toContain("does not allow Office or PDF documents");
+		expect(received).toHaveLength(0);
+	});
+
+	it("documentHandling=block in auto mode blocks a renamed PDF through the real sanitiser", async () => {
+		const g = start({
+			policy: { documentHandling: "block" },
+			sanitizeFile: (file, deps) => sanitizeFile(file, deps as SanitizeDeps),
+		});
+		const input = document.getElementById("file") as HTMLInputElement;
+		makeFilesWritable(input, [new File(["%PDF-1.7 renamed"], "notes.txt", { type: "text/plain" })]);
+		input.dispatchEvent(new Event("change", { bubbles: true, cancelable: true }));
+		await expect.poll(() => g.records().at(-1)?.action).toBe("blocked");
+		expect(g.bubble()?.textContent).toContain("DOCUMENT_BLOCKED_BY_POLICY");
 	});
 
 	it("tells the user to paste the text when a PDF is blocked for sensitive data", async () => {

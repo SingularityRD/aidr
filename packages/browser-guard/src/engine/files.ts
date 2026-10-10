@@ -1492,6 +1492,16 @@ async function handleDocument(
 	return handlePackage(file, kind, scanner, counts, policy);
 }
 
+/**
+ * True when the file is handled as a document (Office, OpenDocument, legacy Office, PDF) by its
+ * content signature first, then name / MIME type - the same decision `sanitizeFile` makes, so a
+ * PDF renamed to .txt is a document here too. `bytes` may be only the head of a large file
+ * (PDF / OLE signatures are recognised from it; a ZIP package needs the whole file).
+ */
+export function isDocumentContent(file: GuardFile): boolean {
+	return documentKind(file) !== null;
+}
+
 /** True for uploads handled as documents (Office, OpenDocument, PDF): the content script's policy gate. */
 export function isDocumentFile(file: Pick<GuardFile, "name" | "type">): boolean {
 	const ext = extensionOf(baseName(file.name));

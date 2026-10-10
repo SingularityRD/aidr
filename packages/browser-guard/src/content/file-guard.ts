@@ -11,15 +11,25 @@
  * (`createElement` + `click()`) and inputs in shadow roots are handled by the page-world
  * hook (./file-input-hook.ts), which hands their selections to `onRelayScan`; a
  * shadow-DOM selection seen here while that hook is missing is blocked.
+ *
+ * `documentHandling: "block"` is an organisation rule enforced in every mode. The synchronous
+ * pre-check only sees names and MIME types, so in monitor mode (and on sites the user
+ * disabled), where files otherwise pass untouched, the upload is held until each file's
+ * content was sniffed (`isDocumentContent`): a PDF/Office file renamed to .txt is refused too.
+ *
+ * Under policy.requireNativeNer the guard hands over a `NativeFileGate` per upload: every
+ * text scan goes through native NER as well, and an upload whose text (or images) the host
+ * did not check is blocked with `NATIVE_NER_UNAVAILABLE` (recorded, not blocked, in monitor).
  */
 
 import { type Counts, mergeCounts } from "../engine/counts.js";
-import { isDocumentFile } from "../engine/files.js";
+import { isDocumentContent, isDocumentFile } from "../engine/files.js";
 import type {
 	DetectionEngine,
 	FileDecision,
 	GuardPolicy,
 	ImageInspection,
+	NativeNerUse,
 	PlaceholderVault,
 	PrivacyScanEvent,
 	SiteAdapter,
@@ -37,6 +47,22 @@ import { formatCounts, type Strings } from "./strings.js";
 import type { GuardUi } from "./ui.js";
 
 type InspectImageFn = (bytes: Uint8Array) => Promise<ImageInspection | null>;
+
+/** `maskText` result when policy.requireNativeNer and native NER did not check the text. */
+export const NATIVE_UNAVAILABLE = "native-unavailable";
+/** Reason code of an upload blocked because the required native NER did not check it. */
+const NATIVE_REASON = "NATIVE_NER_UNAVAILABLE";
+
+/**
+ * policy.requireNativeNer for one upload (built by ./guard.ts): an engine whose scans include
+ * native NER (incomplete when the host gave no NER answer) and OCR, and whether the host
+ * failed to answer any of them.
+ */
+export interface NativeFileGate {
+	readonly engine: DetectionEngine;
+	inspectImage(bytes: Uint8Array): Promise<ImageInspection | null>;
+	readonly failed: boolean;
+}
 
 export type SanitizeFileFn = (
 	file: { name: string; type: string; bytes: Uint8Array },
@@ -61,11 +87,19 @@ export interface FileGuardDeps {
 		action: PrivacyScanEvent["action"],
 		channel: PrivacyScanEvent["channel"],
 		counts: Counts,
+		native?: NativeNerUse,
 	): void;
-	/** Masks clipboard text that accompanies pasted files; null means it could not be checked. */
-	maskText(text: string): Promise<{ text: string; counts: Counts } | null>;
+	/**
+	 * Masks clipboard text that accompanies pasted files; null means it could not be checked,
+	 * NATIVE_UNAVAILABLE that the required native NER did not check it.
+	 */
+	maskText(
+		text: string,
+	): Promise<{ text: string; counts: Counts } | typeof NATIVE_UNAVAILABLE | null>;
 	/** OCR through the native host (policy.useNativeHost); absent or null: not inspected. */
 	inspectImage?: InspectImageFn;
+	/** policy.requireNativeNer: the per-upload native gate, or null when NER is not required. */
+	nativeGate?(policy: GuardPolicy): NativeFileGate | null;
 }
 
 export interface FileGuard {
@@ -91,6 +125,10 @@ interface OkOutcome {
 	/** Warnings for files that pass without a complete check (binary, legacy, images...). */
 	readonly warnings: string[];
 	readonly counts: Counts;
+	/** Native NER outcome under policy.requireNativeNer (absent: not required). */
+	native?: NativeNerUse;
+	/** Monitor pass-through: the files are the originals and `monitor` already records them. */
+	readonly monitored?: boolean;
 }
 
 type Outcome =
@@ -100,6 +138,7 @@ type Outcome =
 			readonly name: string;
 			readonly reasons: readonly string[];
 			readonly counts: Counts;
+			readonly native?: NativeNerUse | undefined;
 	  }
 	| { readonly kind: "error" };
 
@@ -112,6 +151,8 @@ function blockedMessage(
 	const reasons = [...outcome.reasons, ...(summary ? [summary] : [])].join(", ");
 	const has = (code: string) => outcome.reasons.includes(code);
 	const hints = [
+		...(has("DOCUMENT_BLOCKED_BY_POLICY") ? [s.documentBlockedByPolicy] : []),
+		...(has(NATIVE_REASON) ? [s.nativeRequiredFileHint] : []),
 		...(has("SENSITIVE_DATA_IN_PDF") ? [s.pdfPasteHint] : []),
 		...(has("SENSITIVE_DATA_IN_IMAGE") ? [s.imageBlockedHint] : []),
 		...(has("LEGACY_OFFICE_FORMAT") ? [s.legacyOfficeHint] : []),
@@ -225,6 +266,37 @@ export function createFileGuard(deps: FileGuardDeps): FileGuard {
 		});
 	};
 
+	/**
+	 * `sanitizeFile` for one file; under policy.requireNativeNer through the upload's native
+	 * gate, recording its outcome in `batch.native` (one unchecked file marks the whole upload).
+	 */
+	const decideFile = async (
+		batch: OkOutcome,
+		file: File,
+		policy: GuardPolicy,
+	): Promise<FileDecision> => {
+		const bytes = await readFileBytes(file, win);
+		const gate = deps.nativeGate?.(policy) ?? null;
+		const inspectImage = gate ? gate.inspectImage : deps.inspectImage;
+		const decision = await deps.sanitizeFile(
+			{ name: file.name, type: file.type, bytes },
+			{
+				engine: gate?.engine ?? deps.engine,
+				vault: deps.vault,
+				policy,
+				...(inspectImage ? { inspectImage } : {}),
+			},
+		);
+		if (!gate) return decision;
+		if (!gate.failed) {
+			batch.native ??= "used";
+			return decision;
+		}
+		batch.native = "unavailable";
+		// The required NER did not check this file: never let it through as checked.
+		return { action: "block", counts: decision.counts, reasons: [NATIVE_REASON] };
+	};
+
 	/** Sanitises one file into `batch`; returns an outcome only when the whole upload must stop. */
 	const sanitizeInto = async (
 		batch: OkOutcome,
@@ -235,19 +307,11 @@ export function createFileGuard(deps: FileGuardDeps): FileGuard {
 		if (file.size > policy.maxFileBytes) {
 			return { kind: "blocked", name: file.name, reasons: ["FILE_TOO_LARGE"], counts };
 		}
-		const bytes = await readFileBytes(file, win);
-		const decision = await deps.sanitizeFile(
-			{ name: file.name, type: file.type, bytes },
-			{
-				engine: deps.engine,
-				vault: deps.vault,
-				policy,
-				...(deps.inspectImage ? { inspectImage: deps.inspectImage } : {}),
-			},
-		);
+		const decision = await decideFile(batch, file, policy);
 		mergeCounts(counts, decision.counts);
 		if (decision.action === "block") {
-			return { kind: "blocked", name: file.name, reasons: decision.reasons, counts };
+			const { native } = batch;
+			return { kind: "blocked", name: file.name, reasons: decision.reasons, counts, native };
 		}
 		const warning = passWarning(deps.strings(), file.name, decision.reasons);
 		if (warning) batch.warnings.push(warning);
@@ -287,24 +351,69 @@ export function createFileGuard(deps: FileGuardDeps): FileGuard {
 		}
 		if (outcome.kind === "blocked") {
 			showBlocked(blockedMessage(s, outcome));
-			deps.record("blocked", "file", outcome.counts);
+			deps.record("blocked", "file", outcome.counts, outcome.native);
 			return null;
 		}
+		if (outcome.monitored) return outcome.files;
 		const masked =
 			outcome.masked > 0 ? [s.fileMaskedToast(outcome.masked, formatCounts(outcome.counts))] : [];
 		// Anything that passed without a complete check is a warning, never a silent pass.
 		if (outcome.warnings.length > 0)
 			deps.ui.toast([...masked, ...outcome.warnings].join(" "), "warn");
 		else if (masked.length > 0) deps.ui.toast(masked[0] as string, "info");
-		deps.record(outcome.masked > 0 ? "masked" : "allowed", "file", outcome.counts);
+		deps.record(outcome.masked > 0 ? "masked" : "allowed", "file", outcome.counts, outcome.native);
 		return outcome.files;
 	};
 
 	const monitor = (files: readonly File[], policy: GuardPolicy): void => {
 		void sanitizeAll(files, policy).then((outcome) => {
-			deps.record("allowed", "file", outcome.kind === "error" ? {} : outcome.counts);
+			if (outcome.kind === "error") deps.record("allowed", "file", {});
+			else deps.record("allowed", "file", outcome.counts, outcome.native);
 		});
 	};
+
+	/** Monitor semantics (nothing masked or blocked) for this upload: monitor mode or a disabled site. */
+	const monitoring = (policy: GuardPolicy): boolean =>
+		policy.mode === "monitor" || siteDisabled(policy);
+
+	/**
+	 * documentHandling "block" under monitor semantics: the name/MIME pre-check (blockedBy)
+	 * cannot see a renamed document, so the content of every file is sniffed before it passes.
+	 */
+	const needsDocumentSniff = (policy: GuardPolicy): boolean =>
+		policy.fileHandling === "scan" && policy.documentHandling === "block" && monitoring(policy);
+
+	/** First bytes only for a file over the scan limit: enough for the PDF / OLE signatures. */
+	const SNIFF_HEAD_BYTES = 4096;
+
+	/**
+	 * Monitor pass-through with documentHandling "block": a file whose content is a document
+	 * (whatever its name says) is refused; otherwise the originals pass and are recorded.
+	 */
+	const sniffDocuments = async (files: readonly File[], policy: GuardPolicy): Promise<Outcome> => {
+		try {
+			for (const file of files) {
+				const blob = file.size > policy.maxFileBytes ? file.slice(0, SNIFF_HEAD_BYTES) : file;
+				const bytes = await readFileBytes(blob, win);
+				if (isDocumentContent({ name: file.name, type: file.type, bytes })) {
+					return {
+						kind: "blocked",
+						name: file.name,
+						reasons: ["DOCUMENT_BLOCKED_BY_POLICY"],
+						counts: {},
+					};
+				}
+			}
+		} catch {
+			return { kind: "error" };
+		}
+		monitor(files, policy);
+		return { kind: "ok", files: [...files], masked: 0, warnings: [], counts: {}, monitored: true };
+	};
+
+	/** What an upload the guard took over becomes: sniffed (monitor) or sanitised. */
+	const inspectUpload = (files: readonly File[], policy: GuardPolicy): Promise<Outcome> =>
+		needsDocumentSniff(policy) ? sniffDocuments(files, policy) : sanitizeAll(files, policy);
 
 	const buildTransfer = (files: readonly File[]): DataTransfer => {
 		const data = new win.DataTransfer();
@@ -346,7 +455,7 @@ export function createFileGuard(deps: FileGuardDeps): FileGuard {
 	 */
 	const passesThrough = (event: Event, files: readonly File[], policy: GuardPolicy): boolean => {
 		if (policy.fileHandling === "allow") return true;
-		if (policy.mode !== "monitor" && !siteDisabled(policy)) return false;
+		if (!monitoring(policy) || needsDocumentSniff(policy)) return false;
 		// input and change both fire for one selection: record it once.
 		if (event.type !== "input") monitor(files, policy);
 		return true;
@@ -425,7 +534,7 @@ export function createFileGuard(deps: FileGuardDeps): FileGuard {
 	): void => {
 		inFlight.add(input);
 		clearInput(input);
-		void sanitizeAll(files, policy).then((outcome) => {
+		void inspectUpload(files, policy).then((outcome) => {
 			try {
 				const replacement = settle(outcome);
 				if (!replacement) return;
@@ -450,10 +559,23 @@ export function createFileGuard(deps: FileGuardDeps): FileGuard {
 		policy: GuardPolicy,
 		text: string,
 	): Promise<{ outcome: Outcome; text: string }> => {
-		const outcome = await sanitizeAll(files, policy);
+		const outcome = await inspectUpload(files, policy);
 		if (outcome.kind !== "ok" || !text) return { outcome, text: "" };
+		// Monitor semantics: pasted text is left as it is (the files were only sniffed).
+		if (outcome.monitored) return { outcome, text };
 		const maskedText = await deps.maskText(text);
 		if (!maskedText) return { outcome: { kind: "error" }, text: "" };
+		if (maskedText === NATIVE_UNAVAILABLE) {
+			const name = files[0]?.name ?? "";
+			const blocked: Outcome = {
+				kind: "blocked",
+				name,
+				reasons: [NATIVE_REASON],
+				counts: outcome.counts,
+				native: "unavailable",
+			};
+			return { outcome: blocked, text: "" };
+		}
 		const counts = mergeCounts({ ...outcome.counts }, maskedText.counts);
 		return { outcome: { ...outcome, counts }, text: maskedText.text };
 	};
@@ -530,7 +652,7 @@ export function createFileGuard(deps: FileGuardDeps): FileGuard {
 			answerRelay(id, files);
 			return;
 		}
-		void sanitizeAll(files, policy).then((outcome) => {
+		void inspectUpload(files, policy).then((outcome) => {
 			answerRelay(id, settle(outcome));
 		});
 	};

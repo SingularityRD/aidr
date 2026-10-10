@@ -191,6 +191,9 @@ function renderNative(
 				trailing: locked ? managedBadge(doc, t) : null,
 			}),
 		]),
+		policy.requireNativeNer === true
+			? h(doc, "p", { className: "field__hint", id: "native-required" }, [t("native_required")])
+			: null,
 		h(doc, "p", { className: "field__hint", id: "native-permission" }, [
 			t(NATIVE_PERMISSION_KEYS[native.permission]),
 		]),

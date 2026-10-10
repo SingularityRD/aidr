@@ -15,9 +15,15 @@
  * NER (NATIVE_SCAN, bounded to NATIVE_MAX_CHARS and NATIVE_REPLY_TIMEOUT_MS) in parallel
  * with the rule engine and merges its PERSON/ADDRESS/LOCATION findings before masking.
  * When the host gives no usable answer the scan proceeds rules-only and the user is told
- * so (never a silent "NER checked" claim). Uploaded images (and pictures inside documents)
- * are OCR'd through the same host (NATIVE_IMAGE_SCAN, NATIVE_IMAGE_REPLY_TIMEOUT_MS); without
- * a usable answer they are reported as not inspected, never as clean.
+ * so (never a silent "NER checked" claim) - unless the managed policy sets
+ * `requireNativeNer` (with a NER type enabled): then any outcome other than "used" (host
+ * missing, crash, timeout, rules-only coverage, malformed reply, text over NATIVE_MAX_CHARS)
+ * blocks the send, paste or upload with that reason, and the RECORD says `native:
+ * "unavailable"` (monitor mode records it that way instead of blocking). Uploaded text is
+ * then checked through the same NER (`nativeFileGate`).
+ * Uploaded images (and pictures inside documents) are OCR'd through the same host
+ * (NATIVE_IMAGE_SCAN, NATIVE_IMAGE_REPLY_TIMEOUT_MS); without a usable answer they are
+ * reported as not inspected, never as clean.
  *
  * Sites in `policy.disabledSites` get monitor semantics: nothing is masked or blocked by
  * the guard, but prompts/pastes/files are still scanned and counted (RECORD "allowed").
@@ -41,13 +47,19 @@ import {
 	type GuardMessage,
 	type GuardPolicy,
 	type ImageInspection,
+	type NativeNerUse,
 	type PlaceholderVault,
 	type PrivacyScanEvent,
 	type ScanResult,
 	type SignalCode,
 	type SiteAdapter,
 } from "../types.js";
-import { createFileGuard, type SanitizeFileFn } from "./file-guard.js";
+import {
+	createFileGuard,
+	NATIVE_UNAVAILABLE,
+	type NativeFileGate,
+	type SanitizeFileFn,
+} from "./file-guard.js";
 import { RELAY_SCAN } from "./file-relay.js";
 import {
 	formatCounts,
@@ -170,6 +182,30 @@ export const NATIVE_MAX_CHARS = 200_000;
  * (enabled by policy but no usable answer: rules only, and the user is told so) or "off".
  */
 export type NativeUse = "used" | "unavailable" | "off";
+
+/**
+ * policy.requireNativeNer with at least one NER type enabled: native NER must take part in
+ * every text check (anything short of "used" blocks).
+ */
+export function nativeNerRequired(policy: GuardPolicy | null): boolean {
+	return (
+		policy?.requireNativeNer === true &&
+		NATIVE_NER_TYPES.some((t) => policy.enabledEntities.includes(t))
+	);
+}
+
+/** A file scan the required native NER did not check: incomplete, so the upload fails closed. */
+const NOT_NER_CHECKED: ScanResult = Object.freeze({
+	findings: [],
+	signals: [],
+	counts: {},
+	incomplete: true,
+	elapsedMs: 0,
+});
+
+/** The native outcome a RECORD carries (`undefined` when native NER was off). */
+const recordedNative = (use: NativeUse | undefined): NativeNerUse | undefined =>
+	use === "used" || use === "unavailable" ? use : undefined;
 
 /** A rule scan with the native host's findings merged in. */
 export interface GuardScan extends ScanResult {
@@ -316,14 +352,23 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 		action: PrivacyScanEvent["action"],
 		channel: PrivacyScanEvent["channel"],
 		counts: Readonly<Counts>,
+		native?: NativeUse,
 	): void => {
 		const safe: Partial<Record<EntityType, number>> = {};
 		for (const [type, n] of Object.entries(counts) as [EntityType, number | undefined][]) {
 			if (typeof n === "number" && n > 0) safe[type] = n;
 		}
+		const use = recordedNative(native);
 		try {
 			void Promise.resolve(
-				deps.send({ type: "RECORD", site: adapter.id, action, channel, counts: safe }),
+				deps.send({
+					type: "RECORD",
+					site: adapter.id,
+					action,
+					channel,
+					counts: safe,
+					...(use ? { native: use } : {}),
+				}),
 			).catch(() => undefined);
 		} catch {
 			// Telemetry is best-effort; the decision itself has already been enforced.
@@ -399,14 +444,16 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 
 	/**
 	 * Native NER for `text` through the worker's bridge (NATIVE_SCAN), bounded in size and
-	 * time. Never rejects: any failure is "unavailable" and the scan continues rules-only.
+	 * time. Never rejects: any failure is "unavailable" and the scan continues rules-only
+	 * (or is refused by the caller under policy.requireNativeNer).
 	 */
 	const nativeScan = async (
 		text: string,
 		policy: GuardPolicy | null,
 	): Promise<{ findings: readonly Finding[]; use: NativeUse }> => {
 		const types = NATIVE_NER_TYPES.filter((t) => policy?.enabledEntities.includes(t));
-		if (!policy?.useNativeHost || types.length === 0) return { findings: [], use: "off" };
+		const enabled = policy?.useNativeHost === true || policy?.requireNativeNer === true;
+		if (!enabled || types.length === 0) return { findings: [], use: "off" };
 		const unavailable = { findings: [], use: "unavailable" as const };
 		if (text.length > NATIVE_MAX_CHARS) return unavailable;
 		try {
@@ -435,12 +482,18 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 			if (!result || result.incomplete) return null;
 			const merged = mergeNativeFindings(result, native.findings, native.use);
 			if (native.use === "used") nativeNoticeShown = false;
-			if (policy) remember(text, policy, merged);
+			// A required NER check that did not happen is not reused: the send asks again.
+			if (policy && !nativeMissing(policy, merged)) remember(text, policy, merged);
 			return merged;
 		} catch {
 			return null;
 		}
 	};
+
+	/** policy.requireNativeNer and this scan was not NER-checked: it must not pass as clean. */
+	function nativeMissing(policy: GuardPolicy, result: GuardScan): boolean {
+		return nativeNerRequired(policy) && result.native !== "used";
+	}
 
 	/** The "rules only" note for messages about a scan native NER should have been part of. */
 	const nativeLines = (result: GuardScan | null): string[] =>
@@ -590,7 +643,7 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 			[s.maskedToast(totalCount(counts), formatCounts(counts)), ...nativeLines(scanned)].join(" "),
 			"info",
 		);
-		record("masked", "prompt", counts);
+		record("masked", "prompt", counts, scanned.native);
 		await replay(origin, editor, masked);
 	};
 
@@ -613,9 +666,14 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 		}
 		const findings = relevantFindings(text, result);
 		const counts = countFindings(findings);
+		if (nativeMissing(policy, result)) {
+			showBlocked([s.nativeRequired]);
+			record("blocked", "prompt", counts, result.native);
+			return;
+		}
 		const signals = activeSignals(policy, result);
 		if (findings.length === 0 && signals.length === 0) {
-			record("allowed", "prompt", {});
+			record("allowed", "prompt", {}, result.native);
 			noticeNativeOnce(result);
 			await replay(origin, editor, text);
 			return;
@@ -627,7 +685,7 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 		const blocked = blockedLines(policy, findings.length > 0, signals.length > 0, counts, coaching);
 		if (blocked) {
 			showBlocked(blocked);
-			record("blocked", "prompt", counts);
+			record("blocked", "prompt", counts, result.native);
 			return;
 		}
 		if (policy.mode === "auto" && signals.length === 0) {
@@ -714,12 +772,12 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 				ui.toast(s.textChanged, "warn");
 				return;
 			}
-			record(findings.length > 0 ? "allowed" : "warned", "prompt", counts);
+			record(findings.length > 0 ? "allowed" : "warned", "prompt", counts, scanned.native);
 			await replay(origin, editor, text);
 			return;
 		}
 		// Edit / Escape: nothing was sent.
-		record("warned", "prompt", counts);
+		record("warned", "prompt", counts, scanned.native);
 		try {
 			editor.element.focus();
 		} catch {
@@ -734,8 +792,10 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 	): Promise<void> => {
 		const result = await scan(text, policy);
 		const counts = result ? countFindings(relevantFindings(text, result)) : {};
-		if (channel === "paste" && totalCount(counts) === 0) return;
-		record("allowed", channel, counts);
+		// Monitor never blocks, but a required NER check that did not happen is recorded as such.
+		const missing = !!result && nativeMissing(policy, result);
+		if (channel === "paste" && totalCount(counts) === 0 && !missing) return;
+		record("allowed", channel, counts, result?.native);
 	};
 
 	// ---- send interception ----------------------------------------------------------
@@ -759,8 +819,10 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 		record("blocked", "prompt", {});
 	};
 
-	const isClean = (text: string, policy: GuardPolicy, result: ScanResult): boolean =>
-		relevantFindings(text, result).length === 0 && activeSignals(policy, result).length === 0;
+	const isClean = (text: string, policy: GuardPolicy, result: GuardScan): boolean =>
+		!nativeMissing(policy, result) &&
+		relevantFindings(text, result).length === 0 &&
+		activeSignals(policy, result).length === 0;
 
 	/** Holds the send while the prompt is scanned (or reuses a pre-scan), then decides. */
 	const scanAndDecide = (
@@ -837,7 +899,7 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 		if (ui.bubbleOpen) ui.closeBubble();
 		const hit = cached(text, policy);
 		if (hit && isClean(text, policy, hit)) {
-			record("allowed", "prompt", {});
+			record("allowed", "prompt", {}, hit.native);
 			noticeNativeOnce(hit);
 			noteSent(text);
 			return; // pre-scanned clean: the original, trusted event goes through untouched
@@ -976,9 +1038,13 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 		await editor.write(editor.read() + text);
 	};
 
-	const maskText = async (text: string): Promise<{ text: string; counts: Counts } | null> => {
-		const result = await scan(text, deps.getPolicy());
+	const maskText = async (
+		text: string,
+	): Promise<{ text: string; counts: Counts } | typeof NATIVE_UNAVAILABLE | null> => {
+		const policy = deps.getPolicy();
+		const result = await scan(text, policy);
 		if (!result) return null;
+		if (policy && nativeMissing(policy, result)) return NATIVE_UNAVAILABLE;
 		const findings = relevantFindings(text, result);
 		if (findings.length === 0) return { text, counts: {} };
 		const masked = vault.mask(text, findings);
@@ -999,6 +1065,11 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 			return;
 		}
 		const findings = relevantFindings(text, result);
+		if (nativeMissing(policy, result)) {
+			showBlocked([s.nativeRequired]);
+			record("blocked", "paste", countFindings(findings), result.native);
+			return;
+		}
 		if (findings.length === 0) {
 			noticeNativeOnce(result);
 			await insertText(editor, text);
@@ -1006,7 +1077,7 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 		}
 		if (policy.mode === "block") {
 			showBlocked([s.pasteBlocked, s.blockedCoaching, ...nativeLines(result)]);
-			record("blocked", "paste", countFindings(findings));
+			record("blocked", "paste", countFindings(findings), result.native);
 			return;
 		}
 		const masked = vault.mask(text, findings);
@@ -1018,7 +1089,7 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 			].join(" "),
 			"info",
 		);
-		record("masked", "paste", masked.counts);
+		record("masked", "paste", masked.counts, result.native);
 	};
 
 	/**
@@ -1079,13 +1150,48 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 
 	/** OCR of an uploaded image through the worker's native bridge; null: not inspected. */
 	const inspectImage = async (bytes: Uint8Array): Promise<ImageInspection | null> => {
-		if (!deps.getPolicy()?.useNativeHost || bytes.length > MAX_OCR_IMAGE_BYTES) return null;
+		const policy = deps.getPolicy();
+		const enabled = policy?.useNativeHost === true || policy?.requireNativeNer === true;
+		if (!enabled || bytes.length > MAX_OCR_IMAGE_BYTES) return null;
 		try {
 			const message: GuardMessage = { type: "NATIVE_IMAGE_SCAN", data: toBase64(bytes) };
 			return parseImageInspection(await sendWithin(message, nativeImageTimeout));
 		} catch {
 			return null;
 		}
+	};
+
+	/**
+	 * policy.requireNativeNer for one upload: the rule engine with native NER merged into every
+	 * text scan, and OCR, both remembering whether the host ever failed to answer. A scan the
+	 * host did not NER-check reports `incomplete` (the file scan then fails closed); text over
+	 * NATIVE_MAX_CHARS does too, without marking the host failed, so the file sanitiser's
+	 * smaller retry windows can still be NER-checked. After the host failed once, later scans
+	 * of the same upload are refused at once instead of waiting for the timeout again.
+	 */
+	const nativeFileGate = (policy: GuardPolicy): NativeFileGate | null => {
+		if (!nativeNerRequired(policy)) return null;
+		let failed = false;
+		const gate: NativeFileGate = {
+			get failed() {
+				return failed;
+			},
+			engine: {
+				async scan(text: string): Promise<ScanResult> {
+					if (failed) return NOT_NER_CHECKED;
+					const [result, native] = await Promise.all([engine.scan(text), nativeScan(text, policy)]);
+					if (native.use === "used") return mergeNativeFindings(result, native.findings, "used");
+					if (text.length <= NATIVE_MAX_CHARS) failed = true;
+					return { ...result, incomplete: true };
+				},
+			},
+			async inspectImage(bytes: Uint8Array): Promise<ImageInspection | null> {
+				const inspection = await inspectImage(bytes);
+				if (inspection === null || inspection.result === "incomplete") failed = true;
+				return inspection;
+			},
+		};
+		return gate;
 	};
 
 	const fileGuard = createFileGuard({
@@ -1100,6 +1206,7 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 		record,
 		maskText,
 		inspectImage,
+		nativeGate: nativeFileGate,
 	});
 
 	const unmasker = createUnmasker({

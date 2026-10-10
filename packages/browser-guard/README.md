@@ -32,7 +32,8 @@ administrator and end-user guide is [`docs/platform-guides/browser-guard.md`](..
    optional native host is enabled (`useNativeHost`) and reachable, its NER
    findings for names, addresses and places, requested in parallel and merged
    before masking. If the host does not answer, the scan is rules-only and the
-   in-page message says so ([`docs/native-host.md`](docs/native-host.md)). Risk
+   in-page message says so ([`docs/native-host.md`](docs/native-host.md)); with the
+   managed `requireNativeNer` the send, paste or upload is blocked instead. Risk
    signals such as prompt-injection phrasing are reported by code.
 3. **Acts according to the mode.**
 
@@ -212,7 +213,9 @@ administrator and end-user guide is [`docs/platform-guides/browser-guard.md`](..
      not read the image fully (no text, uncertain words, barcodes, limits), the
      image is reported as not inspected (`IMAGE_NOT_INSPECTED`): uploaded with a
      warning, blocked in `block` mode, never treated as clean.
-   - `documentHandling: block` rejects every Office/OpenDocument/PDF upload in every mode;
+   - `documentHandling: block` rejects every Office/OpenDocument/PDF upload in every mode,
+     recognised by content as well as name (in `monitor` mode an upload is held until
+     its first bytes were sniffed, so a PDF renamed to `.txt` is refused too);
      `allow` skips document parsing (the previous behaviour: unscanned warning,
      blocked in `block` mode). A document whose scan exceeds 30 s is blocked
      (`SCAN_INCOMPLETE`).
@@ -338,6 +341,7 @@ the policy sets `allowUserOverrides: true` (see `deploy/browser-guard/README.md`
 | `documentHandling` | `mask` \| `block` \| `allow` (managed only; Office/OpenDocument/legacy Office/PDF when `fileHandling` is `scan`) | `mask` |
 | `restoreResponses` | boolean | `true` |
 | `useNativeHost` | boolean | `false` (also a user setting unless managed) |
+| `requireNativeNer` | boolean (managed only): native NER is mandatory; a prompt, paste or upload the host could not NER-check (missing, crashed, timed out, rules-only, over the limit) is blocked, recorded as `native_ner: unavailable` in monitor mode; forces `useNativeHost` on | `false` |
 | `telemetry` | `{ controlPlaneUrl, apiKey }` | none (no telemetry) |
 | `language` | `auto` \| `en` \| `tr` | `auto` |
 | `policyId` | string reported with telemetry | `aidr-browser-guard-default` |
