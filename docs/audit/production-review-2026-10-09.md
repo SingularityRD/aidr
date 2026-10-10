@@ -1,5 +1,8 @@
 # AIDR kod incelemesi ve production hazırlığı
 
+10 Ekim açık iş kaydı: [40 madde ve 13 kabul kapısının ayrıntıları](production-gaps-2026-10-10.md).
+Bu 9 Ekim incelemesi tarihli kanıtları korur; aşağıdaki bulgular yeni bir düzeltme veya kabul olmadan açık kalır.
+
 9 Ekim 2026. Karar: **NO-GO**. AIDR; AI agent araç çağrılarını yerel politikalarla denetleyen, tarayıcıdaki AI gönderimlerinden hassas veriyi maskeleyen ve merkezi yönetim sağlayan bir güvenlik ürünüdür. Birleşmiş kodda doğrulanmış koruma atlamaları, tenant yetki sorunları ve yayın kapısı eksikleri bulunuyor. Dalların birleştirilmesi ürünün production onayı anlamına gelmez.
 
 İnceleme, sürekli çalışan çok kullanıcılı kurum kurulumunu ve merkezi politikayla yönetilen birden fazla agent oturumunu varsayar. Core, CLI, altı connector, MCP Gateway, Browser Guard, Privacy, dashboard, Supabase Edge/SQL, CI, yayın ve operasyon akışları incelendi. Bulgular gerçek handler/hook denemeleri, tarama motoru örnekleri veya izole PostgreSQL üzerinde doğrulandı. Gerçek müşteri host kabulü ayrıca gerekir.

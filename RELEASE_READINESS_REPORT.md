@@ -1,5 +1,18 @@
 # Singularity AIDR — Release Readiness Report
 
+## Güncel açık eksikler ve karar 10 Ekim 2026
+
+**Production kararı NO-GO.** Birleşmiş kaynakta 20 doğrulanmış açık kod bulgusu
+(14 P1, 6 P2), ek uygulama ve saha kabul eksikleri bulunuyor. Kurumsal kayıtlardaki
+13 kapı açık; production profili 12 kapıyı, yatırımcı profili ayrıca INV-001'i kullanıyor.
+[Tam açık eksik kaydı](docs/audit/production-gaps-2026-10-10.md), 40 numaralı maddeyi,
+kanıtları, düzeltme önerilerini ve kapanış koşullarını içerir.
+
+Bu kayıt tabanı `e5250905c29908556b48df570707f4a6b1e2c0af` ve 9 Ekim kaynak incelemesidir.
+10 Ekim belge güncellemesi kod bulgularını veya kabul kapılarını kapatmaz.
+Aşağıdaki 6 Ekim ve önceki tur sonuçları kendi tarihli kaynak ve ortamları için
+tarihsel kayıtlardır; birleşmiş final adayın kabulü olarak kullanılmamalıdır.
+
 ## Son inceleme — 6 Ekim 2026, kalan eksikler turu
 
 **Temel ürün çalışıyor.c.** Bu turda tespit edilen yerel uygulama kusurları giderildi; aşağıdaki üç kapsam bağlantısı ile gerçek ortam, model, yayıncı ve müşteri kabulü açık bırakıldı. Ana depo tabanı `7f3ec0ad009abf5b032b8116b296d8604fee884e`, landing tabanı `e039be0b01d6a9baf04e2d83cbeeb9874c6f8a93`; sonuçlar henüz commit edilmemiş çalışma ağaçlarına aittir. Canlı yayın ve kabul edilmiş release candidate yoktur.

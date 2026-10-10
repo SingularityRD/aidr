@@ -84,6 +84,13 @@ Private registry credentials and versioned setup are in
 
 ## Release status
 
+**Production decision on 10 October 2026: NO-GO.** The consolidated source has
+20 verified open code findings (14 P1 and 6 P2), additional implementation and
+field-acceptance gaps, and 13 open acceptance gates (12 for production; INV-001
+also applies to investor claims). The [complete open-gap record](docs/audit/production-gaps-2026-10-10.md)
+lists all 40 numbered items, their evidence, proposed fixes and closure criteria.
+These findings have not been resolved by merging branches or publishing this record.
+
 Singularity AIDR is **not yet released for customer or production use**. Connectors,
 Browser Guard and the control plane are implemented and tested in this repository, but
 signed-candidate evidence, real-host acceptance, an independent security review and
