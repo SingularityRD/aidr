@@ -410,6 +410,11 @@ test("generated self-hosted deployment wires protected monitoring without invent
 			assert.ok(deployment.artifacts.some((entry) => entry.path === `backup/lib/${file}`));
 		}
 		assert.match(readFileSync(join(output, "backup", "deployment-backup.mjs"), "utf8"), /from ["']\.\/lib\/node-helper-image\.mjs["']/);
+		// The bundle inlines the restore-drill and offsite modules; their CLIs must not run
+		// inside it (they would print failures and leave exit code 1 after a successful recover).
+		const bundledKeygen = spawnSync(process.execPath, [join(output, "backup", "deployment-backup.mjs"), "keygen", "--key-file", join(output, "..", "bundle-check", "recovery.key")], { encoding: "utf8" });
+		assert.equal(bundledKeygen.status, 0, bundledKeygen.stderr);
+		assert.doesNotMatch(bundledKeygen.stderr, /AIDR (restore drill|offsite backup) failed/);
 		assert.equal(existsSync(join(output, "backup", "deployment-backup-health-failed.mjs")), true);
 		assert.equal(existsSync(join(output, "backup", "aidr-backup-health-failed.service")), true);
 		assert.ok(deployment.artifacts.some((entry) => entry.path === "backup/aidr-backup-offsite.service"));

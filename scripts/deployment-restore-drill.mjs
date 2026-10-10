@@ -564,7 +564,10 @@ async function main() {
 	console.log(JSON.stringify({ passed: true, evidence_file: evidencePath, backup_id: evidence.backup_id, technical_restore_seconds: evidence.technical_restore_seconds }));
 }
 
-const invoked = process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
+// The shipped deployment-backup.mjs bundle inlines this module, where import.meta.url
+// is the bundle's own URL; also require this file's name so the drill never runs there.
+const invoked = process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href
+	&& basename(fileURLToPath(import.meta.url)) === "deployment-restore-drill.mjs";
 if (invoked) main().catch((error) => {
 	console.error(`AIDR restore drill failed: ${error.message}`);
 	process.exitCode = 1;

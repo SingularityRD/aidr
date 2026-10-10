@@ -1196,7 +1196,10 @@ async function main() {
 	await runOffsite(process.argv.slice(2), process.env);
 }
 
-const invoked = process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
+// The shipped deployment-backup.mjs bundle inlines this module, where import.meta.url
+// is the bundle's own URL; also require this file's name so offsite never runs there.
+const invoked = process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href
+	&& basename(fileURLToPath(import.meta.url)) === "deployment-backup-offsite.mjs";
 if (invoked) main().catch((error) => {
 	console.error(`AIDR offsite backup failed: ${error.message}`);
 	process.exitCode = 1;
