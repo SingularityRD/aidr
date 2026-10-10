@@ -114,7 +114,8 @@ tıkanırsa diğerlerini bitir ve raporuna tıkanan işle başla.
 - `pnpm check`: PASS
 - `pnpm build`: PASS
 - `pnpm lint`: 0 hata, 628 uyarı
-- Tam unit koşusu (`AIDR_TEST_NO_BUILD=1 pnpm exec vitest run`): sonuç bu dosyanın sonraki commit'inde eklenecek
+- Tam unit koşusu (`AIDR_TEST_NO_BUILD=1 pnpm exec vitest run`): 633 dosya: 631 PASS / 1 FAIL / 1 SKIP. 11.246 test: 11.231 PASS / 1 FAIL / 14 SKIP; süre ~5 dk.
+  Tek kırmızı test: `packages/browser-guard/src/__tests__/files.test.ts` › "picks windows-1252 when windows-1254 would leave undefined bytes (Ž, ž)". Hata, testin kendi `encodeSingleByte` yardımcısından geliyor (`Ž is not in windows-1252`); Node 22.22 / ICU 77.1 ortamında oluşuyor. Faz 0'da kök nedenini bul: test yardımcısının `TextDecoder` tablosuna bağımlılığı mı, gerçek bir legacy code page kararı mı? Testi atlama.
 
 **Yayındaki ortam (9 Ekim)**
 
