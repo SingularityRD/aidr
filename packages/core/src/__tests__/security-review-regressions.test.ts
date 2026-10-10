@@ -476,5 +476,42 @@ describe("AI-BOM launch redaction", () => {
 		it("does not take a following option for the value", () => {
 			expect(redactMcpLaunch("mysql", ["-p", "--verbose"]).args).toEqual(["-p", "--verbose"]);
 		});
+
+		// Direct, wrapper, separate and attached forms: none may leak the secret.
+		it.each([
+			["curl", ["-u", `admin:${opaque}`]],
+			["curl", [`-uadmin:${opaque}`]],
+			["curl", [`-Uproxy:${opaque}`]],
+			["curl", [`--user=admin:${opaque}`]],
+			["curl", [`--proxy-user=proxy:${opaque}`]],
+			["curl", ["-su", `admin:${opaque}`]],
+			["redis-cli", ["-a", opaque]],
+			["redis-cli", [`-a${opaque}`]],
+			["sudo", ["-u", "root", "curl", "-u", `admin:${opaque}`]],
+			["sudo", ["-u", "root", "curl", `-uadmin:${opaque}`]],
+			["sudo", ["--user", "root", "-g", "wheel", "curl", "-u", `admin:${opaque}`]],
+			["sudo", ["--user=root", "curl", "-u", `admin:${opaque}`]],
+			["sudo", ["-u", "root", "--", "curl", "-u", `admin:${opaque}`]],
+			["/usr/bin/env", ["-u", "NAME", "redis-cli", "-a", opaque]],
+			["/usr/bin/env", ["-u", "NAME", "redis-cli", `-a${opaque}`]],
+			["env", ["-C", "/srv", "FOO=1", "redis-cli", "-a", opaque]],
+			["env", ["-S", `redis-cli -a ${opaque}`]],
+			["sudo", ["-u", "root", "env", "-u", "NAME", "curl", "-u", `admin:${opaque}`]],
+			["nice", ["-n", "10", "redis-cli", "-a", opaque]],
+		])("does not leak through %s %j", (command, args) => {
+			const redacted = redactMcpLaunch(command, args);
+			expect([redacted.command, ...redacted.args].join(" ")).not.toContain(opaque);
+			expect(redacted.args.join(" ")).toContain("[Redacted]");
+		});
+
+		it("keeps the wrapper's own option values and the owner's other flags", () => {
+			expect(
+				redactMcpLaunch("sudo", ["-u", "root", "curl", "-sSL", "https://example.test/mcp"]).args,
+			).toEqual(["-u", "root", "curl", "-sSL", "https://example.test/mcp"]);
+			expect(redactMcpLaunch("curl", ["-uadmin:pw", "-XPOST"]).args).toEqual([
+				"-u[Redacted]",
+				"-XPOST",
+			]);
+		});
 	});
 });

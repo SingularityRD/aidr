@@ -48,10 +48,18 @@ async function resolvePathPart(current: string, part: string): Promise<string | 
  * Resolve a path the way the filesystem will, following existing symlinks. A
  * symlink whose target is missing, or any unexpected filesystem error, returns
  * null so callers treat the path as outside every scope.
+ *
+ * A relative path is resolved against `workingDirectory`: the directory the
+ * tool call runs in as reported by the host, which is not necessarily the
+ * hook process's own cwd. It defaults to `process.cwd()` only for callers that
+ * have no host context.
  */
-export async function resolvePolicyPath(path: string): Promise<string | null> {
+export async function resolvePolicyPath(
+	path: string,
+	workingDirectory: string = process.cwd(),
+): Promise<string | null> {
 	const input = process.platform === "win32" ? path.replace(/\//g, "\\") : path;
-	const absolute = isAbsolute(input) ? input : `${process.cwd()}${sep}${input}`;
+	const absolute = isAbsolute(input) ? input : `${workingDirectory}${sep}${input}`;
 	const root = parse(absolute).root;
 	if (!root) return null;
 
@@ -70,10 +78,14 @@ export async function resolvePolicyPath(path: string): Promise<string | null> {
 	return current;
 }
 
-async function isUnderRoot(candidatePath: string, root: string): Promise<boolean> {
+async function isUnderRoot(
+	candidatePath: string,
+	root: string,
+	workingDirectory: string,
+): Promise<boolean> {
 	const [candidate, resolvedRoot] = await Promise.all([
-		resolvePolicyPath(candidatePath),
-		resolvePolicyPath(root),
+		resolvePolicyPath(candidatePath, workingDirectory),
+		resolvePolicyPath(root, workingDirectory),
 	]);
 	if (!candidate || !resolvedRoot) return false;
 	const fromRoot = relative(resolvedRoot, candidate);
@@ -288,8 +300,15 @@ export async function evaluatePolicy(
 	toolInput?: Record<string, unknown>,
 	/** Current state after the caller verifies its signature and applies revocations. */
 	managedState: ManagedState = {},
+	/**
+	 * The trusted working directory of the tool call (the host-reported one).
+	 * Relative file targets resolve against it, never against the hook
+	 * process's cwd, which can differ from where the tool actually writes.
+	 */
+	options: { workingDirectory?: string } = {},
 ): Promise<Verdict | null> {
 	if (!config.policy.enabled) return null;
+	const workingDirectory = options.workingDirectory ?? process.cwd();
 	const infrastructureVerdict = await evaluateInfrastructurePolicy(artifacts, config);
 	if (infrastructureVerdict?.decision === "deny") return infrastructureVerdict;
 
@@ -553,7 +572,7 @@ export async function evaluatePolicy(
 			for (const filePath of filePaths) {
 				let withinAllowedRoot = false;
 				for (const root of allowedRoots) {
-					if (await isUnderRoot(filePath, root)) {
+					if (await isUnderRoot(filePath, root, workingDirectory)) {
 						withinAllowedRoot = true;
 						break;
 					}
@@ -578,7 +597,7 @@ export async function evaluatePolicy(
 
 				// Every deny pattern is evaluated. An invalid one is a recorded gap
 				// that never hides a later valid pattern.
-				const resolvedFilePath = await resolvePolicyPath(filePath);
+				const resolvedFilePath = await resolvePolicyPath(filePath, workingDirectory);
 				for (const pattern of config.policy.filesystem.deny_write_patterns ?? []) {
 					try {
 						const re = new RegExp(pattern, "i");

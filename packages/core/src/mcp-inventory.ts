@@ -403,8 +403,14 @@ const DEFAULT_MCP_CONFIG_PATHS = [
 	".cursor/mcp.json",
 	".cursor/config.json",
 	".vscode/mcp.json",
+	// OpenCode reads opencode.json or opencode.jsonc, globally and per project
+	// (project root and .opencode/).
 	"~/.config/opencode/opencode.json",
+	"~/.config/opencode/opencode.jsonc",
+	"opencode.json",
+	"opencode.jsonc",
 	".opencode/opencode.json",
+	".opencode/opencode.jsonc",
 	"~/.openclaw/openclaw.json",
 	".openclaw/openclaw.json",
 ] as const;

@@ -110,6 +110,13 @@ async function writeLocalConfig(overrides: Record<string, unknown> = {}): Promis
 	);
 }
 
+/** Merge fields into the config a provisioning fixture wrote, keeping its keys. */
+async function patchConfig(overrides: Record<string, unknown>): Promise<void> {
+	const path = join(home, ".singularity-aidr", "config.json");
+	const current = JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>;
+	await writeFile(path, JSON.stringify({ ...current, ...overrides }));
+}
+
 async function auditLog(): Promise<string> {
 	const path = join(home, ".singularity-aidr", "audit.jsonl");
 	return existsSync(path) ? readFile(path, "utf8") : "";
@@ -237,6 +244,62 @@ describe("UserPromptSubmit bundle", () => {
 		expect(passedResponse.systemMessage).toContain("could not inspect");
 	}, 60_000);
 
+	describe("oversized prompt (over the 2 MiB hook input limit)", () => {
+		const OVERSIZED = `${"lorem ipsum 7 ".repeat(160_000)} email jane.doe@example.com`;
+
+		it("is sent with a notice only when no rule would have blocked", async () => {
+			expect(OVERSIZED.length).toBeGreaterThan(2 * 1024 * 1024);
+			await writeLocalConfig({ prompt_protection: { secrets: "warn", pii: "warn" } });
+			const { response, stdout } = await submitPrompt(OVERSIZED);
+			expect(response.decision).toBeUndefined();
+			expect(response.systemMessage).toContain("could not inspect");
+			expect(stdout).not.toContain("jane.doe@example.com");
+		}, 30_000);
+
+		it("blocks when personal data is in block mode, even with secrets warn", async () => {
+			await writeLocalConfig({ prompt_protection: { secrets: "warn", pii: "block" } });
+			// The same personal data in a normal-size prompt is blocked by the scan…
+			expect((await submitPrompt("email jane.doe@example.com")).response).toMatchObject({
+				decision: "block",
+			});
+			// …and an oversized one cannot slip past it as a warning.
+			const { response, stdout } = await submitPrompt(OVERSIZED);
+			expect(response).toMatchObject({ decision: "block" });
+			expect(stdout).not.toContain("jane.doe@example.com");
+		}, 60_000);
+
+		it("blocks when a tenant DLP policy is provisioned, even with local protection relaxed", async () => {
+			await provisionTenantDetectorPolicy({ homeDir: home, agentRuntime: "claude-code" });
+			await patchConfig({ prompt_protection: { secrets: "warn", pii: "warn" } });
+			// Benign twin: the tenant policy verifies and an ordinary prompt passes.
+			expect((await submitPrompt("refactor the parser")).response).toBeNull();
+			const { response } = await submitPrompt(OVERSIZED);
+			expect(response).toMatchObject({ decision: "block" });
+			expect(response.reason).not.toContain("could not verify");
+		}, 30_000);
+
+		it("blocks as unverified when the provisioned tenant policy cannot be verified", async () => {
+			await provisionTenantDetectorPolicy({
+				homeDir: home,
+				agentRuntime: "claude-code",
+				tamperPolicy: "signature",
+			});
+			await patchConfig({ prompt_protection: { secrets: "warn", pii: "warn" } });
+			const { response } = await submitPrompt(OVERSIZED);
+			expect(response).toMatchObject({ decision: "block" });
+			expect(response.reason).toContain("could not verify");
+		}, 30_000);
+	});
+
+	it("blocks unreadable input when jailbreak is in block mode, even with secrets warn", async () => {
+		await writeLocalConfig({
+			prompt_protection: { secrets: "warn", pii: "warn", jailbreak: "block" },
+		});
+		const result = await runBundle(USER_PROMPT_SUBMIT, JSON.stringify({ prompt: 42 }));
+		expect(result.code).toBe(0);
+		expect(JSON.parse(result.stdout.trim())).toMatchObject({ decision: "block" });
+	}, 30_000);
+
 	it("applies a provisioned tenant DLP policy to the prompt", async () => {
 		await provisionTenantDetectorPolicy({ homeDir: home, agentRuntime: "claude-code" });
 		const { response } = await submitPrompt(`summarize ${TEST_DLP_MARKER} for me`);
@@ -275,6 +338,15 @@ describe("UserPromptSubmit bundle deadline", () => {
 
 	it("blocks a prompt it could not finish inspecting when secrets policy is block", async () => {
 		await writeLocalConfig();
+		const { response, stdout } = await submitPrompt(EMAILS, FORCED_DEADLINE);
+		expect(stdout.trim().split("\n")).toHaveLength(1);
+		expect(response).toMatchObject({ decision: "block" });
+		expect(response.reason).toContain("could not finish inspecting this prompt in time");
+		expect(stdout).not.toContain("u1@c1.io");
+	}, 30_000);
+
+	it("blocks an unfinished prompt when personal data is in block mode, even with secrets warn", async () => {
+		await writeLocalConfig({ prompt_protection: { secrets: "warn", pii: "block" } });
 		const { response, stdout } = await submitPrompt(EMAILS, FORCED_DEADLINE);
 		expect(stdout.trim().split("\n")).toHaveLength(1);
 		expect(response).toMatchObject({ decision: "block" });

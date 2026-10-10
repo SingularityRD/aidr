@@ -567,6 +567,11 @@ export {
 	LocalDiscoveryProvider,
 	UnconfiguredDiscoveryProvider,
 } from "./discovery-provider.js";
+export {
+	DISCOVERY_TARGET_ID_PATTERN,
+	discoveryTargetPseudonym,
+	getDiscoveryTargetKey,
+} from "./discovery-target-pseudonym.js";
 // DLP (Data Loss Prevention)
 export type {
 	ContentClassification,
@@ -980,11 +985,6 @@ export {
 export { formatInitFailureMessage, initFailureCode } from "./init-failure.js";
 // Installation ID
 export { getInstallationId } from "./installation-id.js";
-export {
-	DISCOVERY_TARGET_ID_PATTERN,
-	discoveryTargetPseudonym,
-	getDiscoveryTargetKey,
-} from "./discovery-target-pseudonym.js";
 // Integrity (signed artifact manifest verification)
 export {
 	ArtifactIntegrityError,
@@ -1273,12 +1273,17 @@ export {
 export { preparePrivateLocalDirectory, preparePrivateLocalFile } from "./private-local-file.js";
 // Connector-side prompt inspection runner (config, tenant DLP, deadline, audit, failure policy)
 export {
+	initialPromptFailureState,
 	inspectUserPrompt,
+	isPromptTenantPolicyConfigured,
 	MIN_PROMPT_INSPECTION_DEADLINE_MS,
 	PROMPT_INSPECTION_DEADLINE_ENV,
+	type PromptFailureState,
 	type PromptInspectionOutcome,
 	type PromptInspectionReason,
 	type PromptInspectionRequest,
+	promptFailureBlocks,
+	promptFailureMode,
 	resolvePromptInspectionDeadlineMs,
 	uninspectedPromptOutcome,
 } from "./prompt-inspection.js";

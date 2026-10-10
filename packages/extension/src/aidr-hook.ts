@@ -331,8 +331,10 @@ async function handleVsCode(payload: unknown): Promise<void> {
 /**
  * Prompt protection shared by both hosts (secrets block, personal data warns by
  * default; see `prompt_protection` in docs/configuration.md). The core runner
- * never throws: an uninspectable or late prompt is blocked when secrets are in
- * `block` mode and otherwise sent with a visible notice.
+ * never throws: an uninspectable or late prompt is blocked when any rule that
+ * would have applied blocks (any `block` prompt mode, a tenant DLP policy or
+ * prompt-safety floor, or a configured tenant policy not yet known) and
+ * otherwise sent with a visible notice.
  */
 function inspectPrompt(
 	runtime: HookMode,
@@ -743,8 +745,8 @@ async function writeHookInputLimitResponse(
 	event: string | undefined,
 ): Promise<void> {
 	// An oversized prompt cannot be inspected, which is never a clean result: the
-	// shared runner blocks it when secrets are in `block` mode (the default) and
-	// otherwise sends it with a "not inspected" notice.
+	// shared runner loads the tenant policy first and blocks it when any rule that
+	// would have applied blocks, otherwise sends it with a "not inspected" notice.
 	if (mode === "cursor" && event === "beforeSubmitPrompt") {
 		const outcome = await inspectPrompt("cursor", event, "cursor", undefined);
 		writeJson(toCursorPromptResponse(outcome));
@@ -1078,10 +1080,20 @@ function normalizeVsCodeCall(payload: unknown): NormalizedHookCall | undefined {
 
 	const rawToolInput = parseUnknownObject(input.tool_input);
 	if (!rawToolInput) return undefined;
-	const toolName = hostToolName === "editFiles" ? "Edit" : hostToolName;
-	const editFiles =
-		hostToolName === "editFiles" ? normalizeVsCodeEditFiles(rawToolInput) : undefined;
-	const toolInput = editFiles?.toolInput ?? normalizeFileToolInput(toolName, rawToolInput);
+	const native = VSCODE_NATIVE_TOOLS.get(hostToolName.trim().toLowerCase());
+	const toolName = native?.canonical ?? hostToolName;
+	const multiFile =
+		native?.shape === "files"
+			? rawToolInput
+			: native?.shape === "replacements"
+				? { ...rawToolInput, files: rawToolInput.replacements }
+				: undefined;
+	const editFiles = multiFile ? normalizeVsCodeEditFiles(multiFile) : undefined;
+	const toolInput =
+		editFiles?.toolInput ??
+		(native
+			? normalizeVsCodeNativeInput(native, rawToolInput)
+			: normalizeFileToolInput(toolName, rawToolInput));
 	const sessionId =
 		asString(input.session_id) ??
 		asString(input.sessionId) ??
@@ -1095,6 +1107,82 @@ function normalizeVsCodeCall(payload: unknown): NormalizedHookCall | undefined {
 		toolInput,
 		artifacts: editFiles?.artifacts ?? extractFromVsCodeTool(toolName, toolInput),
 	};
+}
+
+/**
+ * VS Code agent-mode built-in tools that run a shell command or write a file,
+ * mapped onto the canonical operation the core inspects. Hosts report either
+ * the tools-reference name (`runInTerminal`, `createFile`, `editFiles`) or the
+ * underlying tool id (`run_in_terminal`, `create_file`,
+ * `replace_string_in_file`, …); both are keyed here, lower-cased. An unmapped
+ * native shell or file tool would reach the core as an unknown tool and skip
+ * shell and filesystem policy.
+ */
+interface VsCodeNativeTool {
+	canonical: "Bash" | "Write" | "Edit";
+	/** `files`: editFiles' file list; `replacements`: multi-replace entries; `single`: one target. */
+	shape: "single" | "files" | "replacements";
+}
+const VSCODE_NATIVE_TOOLS: ReadonlyMap<string, VsCodeNativeTool> = new Map<
+	string,
+	VsCodeNativeTool
+>([
+	["runinterminal", { canonical: "Bash", shape: "single" }],
+	["run_in_terminal", { canonical: "Bash", shape: "single" }],
+	["createfile", { canonical: "Write", shape: "single" }],
+	["create_file", { canonical: "Write", shape: "single" }],
+	["editfiles", { canonical: "Edit", shape: "files" }],
+	["replacestring", { canonical: "Edit", shape: "single" }],
+	["replace_string_in_file", { canonical: "Edit", shape: "single" }],
+	["insertedit", { canonical: "Edit", shape: "single" }],
+	["insert_edit_into_file", { canonical: "Edit", shape: "single" }],
+	["multireplacestring", { canonical: "Edit", shape: "replacements" }],
+	["multi_replace_string_in_file", { canonical: "Edit", shape: "replacements" }],
+]);
+
+/** Field names of a VS Code native tool mapped onto the canonical input shape. */
+function normalizeVsCodeNativeInput(
+	native: VsCodeNativeTool,
+	toolInput: Record<string, unknown>,
+): Record<string, unknown> {
+	switch (native.canonical) {
+		case "Bash": {
+			const command = firstPopulatedString(toolInput.command, toolInput.commandLine, toolInput.cmd);
+			const normalized: Record<string, unknown> = { ...toolInput, command: command ?? "" };
+			// A shell call without a readable command cannot be inspected.
+			if (command === undefined) normalized.__aidr_input_normalization_failed = true;
+			return normalized;
+		}
+		case "Write": {
+			const normalized = normalizeWriteLikeInput(toolInput);
+			if (
+				!readFilePath(toolInput) ||
+				hasConflictingPopulatedStrings(toolInput, EDIT_FILE_PATH_FIELDS)
+			) {
+				normalized.__aidr_input_normalization_failed = true;
+			}
+			return normalized;
+		}
+		case "Edit": {
+			// insert_edit_into_file carries the new text in `code`.
+			const withCode =
+				asString(toolInput.code) !== undefined &&
+				!firstPopulatedString(...EDIT_FILE_CONTENT_FIELDS.map((field) => toolInput[field]))
+					? { ...toolInput, new_string: toolInput.code }
+					: toolInput;
+			const normalized = normalizeEditLikeInput(withCode);
+			const oldString = firstPopulatedString(toolInput.old_string, toolInput.oldString);
+			if (oldString !== undefined) normalized.old_string = oldString;
+			if (
+				!readFilePath(toolInput) ||
+				hasConflictingPopulatedStrings(toolInput, EDIT_FILE_PATH_FIELDS) ||
+				hasConflictingPopulatedStrings(toolInput, EDIT_FILE_CONTENT_FIELDS)
+			) {
+				normalized.__aidr_input_normalization_failed = true;
+			}
+			return normalized;
+		}
+	}
 }
 
 function normalizeVsCodeEditFiles(toolInput: Record<string, unknown>): {

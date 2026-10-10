@@ -24,18 +24,22 @@
  *   - allow: no output.
  *
  * Failure policy: an internal error (unreadable or oversized input, a detector
- * exception) blocks the prompt only when `prompt_protection.secrets` is `block`
- * (the default). With secrets set to `warn` or `off` the prompt proceeds with a
- * visible "not inspected" notice rather than a silent clean result. A tenant DLP
- * policy that is provisioned but cannot be verified always blocks: that is a
- * configured security control. The hook always exits 0.
+ * exception) blocks the prompt when any rule that would have applied blocks
+ * (core `promptFailureBlocks`): a `block` mode for secrets (the default),
+ * personal data, jailbreak or an operator-chosen content-safety category, a
+ * blocking tenant prompt-safety floor, an applicable tenant DLP policy, or a
+ * configured tenant policy that has not loaded yet. The tenant policy is loaded
+ * before an oversized or unreadable prompt is answered. Otherwise the prompt
+ * proceeds with a visible "not inspected" notice rather than a silent clean
+ * result. A tenant DLP policy that is provisioned but cannot be verified always
+ * blocks: that is a configured security control. The hook always exits 0.
  *
  * Deadline: Claude Code kills this hook after 10 s and then sends the prompt,
  * so the hook answers itself first (default 7 s, `AIDR_USER_PROMPT_SUBMIT_DEADLINE_MS`).
- * A prompt not fully inspected by then is blocked when secrets are `block` or a
- * tenant DLP policy applies, and otherwise sent with a "not fully inspected"
- * notice. The scan checks the same deadline between detector passes, so a
- * slow synchronous scan cannot hold the answer past it.
+ * A prompt not fully inspected by then follows the same failure policy and is
+ * otherwise sent with a "not fully inspected" notice. The scan checks the same
+ * deadline between detector passes, so a slow synchronous scan cannot hold the
+ * answer past it.
  */
 
 import {
@@ -43,14 +47,17 @@ import {
 	checkPromptForCanaries,
 	DEFAULT_PROMPT_PROTECTION,
 	exitAfterStdoutFlush,
+	initialPromptFailureState,
 	initSentry,
+	isPromptTenantPolicyConfigured,
 	type Logger,
 	loadConfig,
 	logVerdict,
-	type PromptProtectionConfig,
+	type PromptFailureState,
 	type PromptProtectionResult,
 	PromptScanDeadlineError,
 	type PromptTenantDlp,
+	promptFailureBlocks,
 	scanPrompt,
 	type TenantPromptSafetyPolicy,
 	type Verdict,
@@ -73,13 +80,10 @@ const MAX_PROMPT_HOOK_INPUT_BYTES = 2 * 1024 * 1024;
 const HOOK_EVENT = "UserPromptSubmit";
 
 /**
- * What an unfinished inspection falls back to. Starts fail-closed (the default
- * secrets mode) and is updated as the config and tenant policy load.
+ * What an unfinished inspection falls back to. Starts fail-closed (nothing
+ * loaded) and is updated as the config and tenant policy load.
  */
-const fallback: {
-	secretsMode: PromptProtectionConfig["secrets"];
-	tenantPolicy: boolean;
-} = { secretsMode: DEFAULT_PROMPT_PROTECTION.secrets, tenantPolicy: false };
+const fallback: PromptFailureState = initialPromptFailureState();
 
 /**
  * The hook answers exactly once: after the deadline response has been
@@ -98,7 +102,7 @@ function write(output: Record<string, unknown>, onWritten?: () => void): boolean
 
 /** Fixed response for an uninspected prompt; never echoes input or error text. */
 function writeInspectionFailure(): void {
-	if (fallback.secretsMode === "block") {
+	if (promptFailureBlocks(fallback)) {
 		write({
 			decision: "block",
 			reason:
@@ -114,7 +118,7 @@ function writeInspectionFailure(): void {
 
 /** Fixed response for a prompt whose inspection did not finish before the deadline. */
 function writeDeadlineResponse(onWritten?: () => void): boolean {
-	if (fallback.secretsMode === "block" || fallback.tenantPolicy) {
+	if (promptFailureBlocks(fallback)) {
 		return write(
 			{
 				decision: "block",
@@ -217,26 +221,27 @@ async function main(): Promise<void> {
 		});
 		const config = await loadConfig(undefined, logger);
 		const policy = config.prompt_protection ?? DEFAULT_PROMPT_PROTECTION;
-		fallback.secretsMode = policy.secrets;
+		fallback.tenantPolicyConfigured = isPromptTenantPolicyConfigured("claude-code", config);
+		fallback.policy = policy;
 
+		// Null for unreadable, non-text or oversized input: it is answered only
+		// after the tenant policy loads, because that policy decides the failure.
 		const input = await readPrompt();
-		if (!input) {
-			writeInspectionFailure();
-			return;
-		}
-		// Canary values first (shared with every connector's prompt path): a hit is
-		// recorded as a canary incident and the prompt is blocked.
-		const canary = await checkPromptForCanaries({
-			sessionId: input.sessionId,
-			hookEvent: HOOK_EVENT,
-			prompt: input.prompt,
-			agentRuntime: "claude-code",
-			config,
-			logger,
-		});
-		if (canary === "triggered") {
-			write({ decision: "block", reason: CANARY_PROMPT_BLOCK_MESSAGE });
-			return;
+		if (input) {
+			// Canary values first (shared with every connector's prompt path): a hit
+			// is recorded as a canary incident and the prompt is blocked.
+			const canary = await checkPromptForCanaries({
+				sessionId: input.sessionId,
+				hookEvent: HOOK_EVENT,
+				prompt: input.prompt,
+				agentRuntime: "claude-code",
+				config,
+				logger,
+			});
+			if (canary === "triggered") {
+				write({ decision: "block", reason: CANARY_PROMPT_BLOCK_MESSAGE });
+				return;
+			}
 		}
 
 		let tenant: PromptTenantDlp | undefined;
@@ -247,9 +252,15 @@ async function main(): Promise<void> {
 			writeTenantPolicyFailure();
 			return;
 		}
-		if (tenant) fallback.tenantPolicy = true;
+		fallback.tenantDlp = tenant !== undefined;
+		fallback.tenantPromptSafety = tenantPromptSafety;
+		fallback.tenantPolicyLoaded = true;
 		// The deadline may have answered while the policy loaded.
 		if (responded) return;
+		if (!input) {
+			writeInspectionFailure();
+			return;
+		}
 
 		let result: PromptProtectionResult;
 		try {
