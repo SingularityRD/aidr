@@ -161,8 +161,10 @@ test('text service startup: required trust inputs, authenticated principal, canc
     await t.test('launcher logs fixed startup code without the missing configuration path', () => {
       const result = spawnSync(process.execPath, ['dist/platform/serve.js', '--config', join(root, 'secret-config-name.mjs')], {encoding: 'utf8'});
       assert.equal(result.status, 1); assert.equal(result.stdout, '');
-      // Node 22.16 also emits its own static SQLite experimental warning when importing the runtime.
-      assert.match(result.stderr, /SERVICE_START_FAILED\r?\n$/);
+      // Node emits its own static SQLite experimental warning when importing the runtime; its position
+      // relative to our line varies by Node version, so drop Node's own warning lines before asserting.
+      const ours = result.stderr.split(/\r?\n/).filter(line => line && !/^\(node:\d+\) |^\(Use `node --trace-warnings/.test(line));
+      assert.deepEqual(ours, ['SERVICE_START_FAILED']);
       assert(!result.stderr.includes('secret-config-name')); assert(!result.stderr.includes(root));
     });
   } finally {mock.restoreAll(); model?.close(); rmSync(root, {recursive: true, force: true});}

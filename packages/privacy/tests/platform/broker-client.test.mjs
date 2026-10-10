@@ -14,7 +14,7 @@ import {EnforcedEgress} from '../../dist/platform/egress.js';
 import {issueJwt} from '../../dist/platform/identity.js';
 import {signPolicy} from '../../dist/enterprise/policy.js';
 import {hash} from '../../dist/enterprise/util.js';
-import {privateDirectory} from './helpers.mjs';
+import {privateDirectory,pythonExecutable} from './helpers.mjs';
 import {policy} from '../enterprise/helpers.mjs';
 import {createProtectHandler} from '../../dist/platform/protect-http.js';
 import {createDataHandler} from '../../dist/platform/data-http.js';
@@ -82,7 +82,7 @@ test('configured OIDC/MDM broker and final client use real mTLS, JWKS, PKCE and 
   brokerHandle=await adapter.initialize(runtime,new AbortController().signal);runtime.identity.assertPrincipal(brokerHandle.principal);
   const egress=new EnforcedEgress({state:runtime.state,identity:runtime.identity,gate:()=>runtime.gate,policyEpoch:runtime.policyEpoch,destinations:[{id:'provider',kind:'openai-responses',model:'approved-model',origin:'https://api.example.com',transport:{async send(bytes,_signal,before){before?.();seen.push(Buffer.from(bytes));return {status:200,contentType:'application/json',body:Buffer.from(JSON.stringify({output:[{type:'message',role:'assistant',content:[{type:'output_text',text:'Reply to alice@example.com'}]}]}))};}}}]});
   const handler=createEgressHandler(egress,{allowImages:false,maxBodyBytes:524288}),protectHandler=createProtectHandler(runtime,{id:'provider',origin:'https://api.example.com'});
-  const dataHandler=createDataHandler(runtime,{origin:'https://api.example.com'},{python:process.env.AIDR_PYTHON??'/opt/venv/bin/python3',workerSha256:createHash('sha256').update(readFileSync('parsers/worker.py')).digest('hex')},'silence-all');
+  const dataHandler=createDataHandler(runtime,{origin:'https://api.example.com'},{python:pythonExecutable(),workerSha256:createHash('sha256').update(readFileSync('parsers/worker.py')).digest('hex')},'silence-all');
   runtime.handler=async(req,res)=>{if(!await brokerHandle.handle(req,res)&&!await protectHandler(req,res)&&!await dataHandler(req,res))await handler(req,res);};
   // listenPlatform disallows port zero, so reserve a concrete ephemeral port without changing production API.
   const reservation=(await import('node:net')).createServer();await new Promise(r=>reservation.listen(0,'127.0.0.1',r));const port=reservation.address().port;await new Promise(r=>reservation.close(r));
