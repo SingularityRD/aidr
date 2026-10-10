@@ -16,7 +16,10 @@ import { ReviewWorkflow } from './review.js';
 import {DurableDataPolicy} from './data-policy.js';
 import {DspmRepository} from './dspm.js';
 export interface RuntimeOptions {
- tenantId:string;databasePath:string;encryption:Keyring;audit:{keyId:string;key:Uint8Array};
+ tenantId:string;databasePath:string;encryption:Keyring;
+ /** Startup refuses (AUDIT_KEY_MISMATCH) a key that does not verify the stored chain. To rotate, keep the old key
+  * in `rotateFrom` for the restart: the old segment is closed with a signed checkpoint and a new segment starts. */
+ audit:{keyId:string;key:Uint8Array;rotateFrom?:{keyId:string;key:Uint8Array}};
  identity:{user:JwtTrust;device:JwtTrust;provider:JwtTrust;roleGroups:Readonly<Record<string,readonly string[]>>;scopes:readonly string[]};
  policy:{signed:SignedPolicy;keys:ReadonlyMap<string,KeyObject>};
  destinations:readonly {id:string;kind:ProviderKind;model:string;apiKey:string}[];
@@ -34,14 +37,14 @@ export async function createPlatformRuntime(o:RuntimeOptions){
   const state=store.tenant(o.tenantId),checkpoint=new DurablePolicyCheckpoint(state),old=checkpoint.read();const registry=new PolicyRegistry(o.tenantId,o.policy.keys,old);
   await registry.installDurable(o.policy.signed,c=>checkpoint.write(c),clock);
   const identity=new ContextResolver({tenantId:o.tenantId,state,user:new PinnedJwtVerifier({...o.identity.user,purpose:'user'}),device:new PinnedJwtVerifier({...o.identity.device,purpose:'device'}),provider:new PinnedJwtVerifier({...o.identity.provider,purpose:'provider'}),roleGroups:o.identity.roleGroups,allowedScopes:o.identity.scopes,requireTransportBinding:true,clock});
-  const audit=new PersistentAuditJournal(state,'decisions',o.audit.keyId,o.audit.key),text=new PrivacyEngine({profile:o.profile??'defense',...(o.ner?{ner:o.ner}:{})});
+  const audit=PersistentAuditJournal.open(state,'decisions',o.audit.keyId,o.audit.key,o.audit.rotateFrom?{rotateFrom:o.audit.rotateFrom,at:clock()}:{}),text=new PrivacyEngine({profile:o.profile??'defense',...(o.ner?{ner:o.ner}:{})});
   if(o.dataPolicy){dataPolicy=new DurableDataPolicy(state,o.dataPolicy.keyId,Buffer.from(o.dataPolicy.key));dataPolicy.scan('');}
   const gate=new EnterprisePrivacyGate({registry,audit,textEngine:text,clock,...(dataPolicy?{indexes:[dataPolicy]}:{})});
   const sources=new DspmRepository(state,identity,clock);
   const destinations=o.destinations.map(d=>({id:d.id,kind:d.kind,model:d.model,...providerTransport(d.kind,d.model,d.apiKey)}));
   const policyEpoch=()=>hash({policy:registry.active(clock()),dataRevision:dataPolicy?state.get<number>('dspm-policy','revision')?.value??0:null});
   const reviews=new ReviewWorkflow(state,identity,clock),egress=new EnforcedEgress({state,identity,destinations,gate:()=>gate,policyEpoch,clock,budget:new DurableBudget(state),reviews});
-  return {store,state,identity,registry,gate,reviews,egress,sources,dataPolicy,policyEpoch,handler:createEgressHandler(egress),close(){dataPolicy?.dispose();text.dispose();audit.dispose();store.close();}};
+  return {store,state,identity,registry,audit,gate,reviews,egress,sources,dataPolicy,policyEpoch,handler:createEgressHandler(egress),close(){dataPolicy?.dispose();text.dispose();audit.dispose();store.close();}};
  }catch(e){dataPolicy?.dispose();store.close();throw e;}
 }
 /** Direct mTLS listener. Client CA must represent enrolled devices; JWT device cnf binds exact key.

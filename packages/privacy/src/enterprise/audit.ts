@@ -42,23 +42,79 @@ export class AuditJournal {
   checkpoint():AuditCheckpoint {const body={tenantId:this.tenantId,logId:this.logId,sequence:this.#sequence,head:this.#head};return frozen({...body,auth:mac(this.#key,'aidr-audit-checkpoint-v1',body)});}
   async dispose():Promise<void>{this.#closing=true;await this.#queue;this.#halted=true;this.#key.fill(0);}
 }
+const ZERO='0'.repeat(64);
+/** Incremental verifier for a paged export of ONE chain segment. Pages must be supplied in sequence
+ * order: a gap, duplicate, reorder, foreign segment, mixed keyId, clock rollback or bad MAC fails the
+ * whole verification permanently. finish() checks the final trusted checkpoint and wipes the key. */
+export class AuditChainVerifier {
+  readonly tenantId:string;readonly logId:string;
+  #key:Buffer;#sequence=0;#previous=ZERO;#at=0;#keyId:string|undefined;#failed=false;#done=false;
+  constructor(key:Uint8Array,tenantId:string,logId:string){this.tenantId=id(tenantId);this.logId=id(logId);this.#key=secret(key);}
+  /** Number of records verified so far and the hash the next page must continue from. */
+  get sequence():number{return this.#sequence;}
+  get head():string{return this.#previous;}
+  accept(records:readonly AuditRecord[]):boolean {
+    if(this.#failed||this.#done)return false;
+    try{
+      if(!Array.isArray(records))deny('AUDIT_INVALID');
+      for(const record of records){
+        const r=object(frozen(record),['format','tenantId','logId','keyId','sequence','previousHash','event','entryHash','auth']);
+        if(r.format!=='aidr-audit-v1'||r.tenantId!==this.tenantId||r.logId!==this.logId||r.sequence!==this.#sequence+1||r.previousHash!==this.#previous)deny('AUDIT_INVALID');
+        id(r.keyId);this.#keyId??=r.keyId as string;if(r.keyId!==this.#keyId)deny('AUDIT_INVALID');
+        const event=validateAuditEvent(r.event as DecisionEvent);if(event.at<this.#at)deny('AUDIT_INVALID');
+        const body={format:r.format,tenantId:r.tenantId,logId:r.logId,keyId:r.keyId,sequence:r.sequence,previousHash:r.previousHash,event};
+        if(!equalHex(r.entryHash,hash(body))||!equalHex(r.auth,mac(this.#key,'aidr-audit-auth-v1',r.entryHash)))deny('AUDIT_INVALID');
+        this.#sequence++;this.#previous=r.entryHash as string;this.#at=event.at;
+      }
+      return true;
+    }catch{this.#failed=true;return false;}
+  }
+  finish(checkpoint:AuditCheckpoint):boolean {
+    if(this.#done)return false;this.#done=true;
+    try{
+      const c=object(frozen(checkpoint),['tenantId','logId','sequence','head','auth']);id(c.tenantId);id(c.logId);integer(c.sequence);
+      const cp={tenantId:c.tenantId,logId:c.logId,sequence:c.sequence,head:c.head};
+      return !this.#failed&&equalHex(c.auth,mac(this.#key,'aidr-audit-checkpoint-v1',cp))&&c.tenantId===this.tenantId&&c.logId===this.logId&&c.sequence===this.#sequence&&c.head===this.#previous;
+    }catch{return false;}finally{this.#key.fill(0);}
+  }
+}
 export function verifyAudit(records:readonly AuditRecord[],checkpoint:AuditCheckpoint,key:Uint8Array):boolean {
   try{
-    const k=secret(key);try{
-      const c=object(frozen(checkpoint),['tenantId','logId','sequence','head','auth']);id(c.tenantId);id(c.logId);integer(c.sequence);
-      const cp={tenantId:c.tenantId,logId:c.logId,sequence:c.sequence,head:c.head};if(!equalHex(c.auth,mac(k,'aidr-audit-checkpoint-v1',cp)))return false;
-      if(!Array.isArray(records)||records.length>100000||records.length!==c.sequence)return false;
-      let previous='0'.repeat(64),at=0,keyId:string|undefined;
-      for(let i=0;i<records.length;i++){
-        const r=object(frozen(records[i]),['format','tenantId','logId','keyId','sequence','previousHash','event','entryHash','auth']);
-        if(r.format!=='aidr-audit-v1'||r.tenantId!==c.tenantId||r.logId!==c.logId||r.sequence!==i+1||r.previousHash!==previous)return false;
-        id(r.keyId);keyId??=r.keyId as string;if(r.keyId!==keyId)return false;
-        const event=validateAuditEvent(r.event as DecisionEvent);if(event.at<at)return false;at=event.at;
-        const body={format:r.format,tenantId:r.tenantId,logId:r.logId,keyId:r.keyId,sequence:r.sequence,previousHash:r.previousHash,event};
-        if(!equalHex(r.entryHash,hash(body))||!equalHex(r.auth,mac(k,'aidr-audit-auth-v1',r.entryHash)))return false;previous=r.entryHash as string;
-      }
-      return c.head===previous;
-    }finally{k.fill(0);}
+    const c=object(frozen(checkpoint),['tenantId','logId','sequence','head','auth']);
+    if(!Array.isArray(records)||records.length>100000)return false;
+    const v=new AuditChainVerifier(key,c.tenantId as string,c.logId as string),ok=v.accept(records);return v.finish(checkpoint)&&ok;
+  }catch{return false;}
+}
+/** Explicit audit key rotation: the old segment is closed by a checkpoint signed with the OLD key and
+ * a new segment (new logId) is opened for the NEW key. The record is endorsed by both keys and chains
+ * to the previous rotation, so each segment verifies independently with verifyAudit() and its own key. */
+export interface AuditRotation {
+  readonly format:'aidr-audit-rotation-v1';readonly tenantId:string;readonly logId:string;readonly segment:number;
+  readonly previous:string;readonly closing:AuditCheckpoint;readonly fromKeyId:string;readonly toLogId:string;readonly toKeyId:string;readonly at:number;
+  readonly oldAuth:string;readonly newAuth:string;
+}
+export type AuditRotationBody=Omit<AuditRotation,'oldAuth'|'newAuth'>;
+export function auditRotationBody(r:AuditRotation|AuditRotationBody):AuditRotationBody {
+  return {format:r.format,tenantId:r.tenantId,logId:r.logId,segment:r.segment,previous:r.previous,closing:r.closing,fromKeyId:r.fromKeyId,toLogId:r.toLogId,toKeyId:r.toKeyId,at:r.at};
+}
+export function signAuditRotation(body:AuditRotationBody,oldKey:Uint8Array,newKey:Uint8Array):AuditRotation {
+  const o=secret(oldKey),n=secret(newKey);try{const b=auditRotationBody(body);return frozen({...b,oldAuth:mac(o,'aidr-audit-rotation-v1',b),newAuth:mac(n,'aidr-audit-rotation-v1',b)});}finally{o.fill(0);n.fill(0);}
+}
+/** Verifies both endorsements, the old segment's closing checkpoint, and (optionally) the link to the
+ * previous rotation record. The old segment's records verify separately: verifyAudit(old, r.closing, oldKey). */
+export function verifyAuditRotation(rotation:AuditRotation,oldKey:Uint8Array,newKey:Uint8Array,previous?:AuditRotation):boolean {
+  try{
+    const r=object(frozen(rotation),['format','tenantId','logId','segment','previous','closing','fromKeyId','toLogId','toKeyId','at','oldAuth','newAuth']) as unknown as AuditRotation;
+    if(r.format!=='aidr-audit-rotation-v1')return false;id(r.tenantId);id(r.logId);integer(r.segment,1);integer(r.at);id(r.fromKeyId);id(r.toKeyId);id(r.toLogId);
+    if(r.fromKeyId===r.toKeyId||r.toLogId===r.closing.logId||r.closing.tenantId!==r.tenantId)return false;
+    const expected=previous?hash(auditRotationBody(previous)):ZERO;if(r.previous!==expected)return false;
+    if(previous&&(previous.segment!==r.segment-1||previous.toLogId!==r.closing.logId||previous.toKeyId!==r.fromKeyId||previous.tenantId!==r.tenantId||previous.logId!==r.logId))return false;
+    const o=secret(oldKey),n=secret(newKey);
+    try{
+      const b=auditRotationBody(r),c=object(r.closing,['tenantId','logId','sequence','head','auth']);integer(c.sequence);
+      const cp={tenantId:c.tenantId,logId:c.logId,sequence:c.sequence,head:c.head};
+      return equalHex(c.auth,mac(o,'aidr-audit-checkpoint-v1',cp))&&equalHex(r.oldAuth,mac(o,'aidr-audit-rotation-v1',b))&&equalHex(r.newAuth,mac(n,'aidr-audit-rotation-v1',b));
+    }finally{o.fill(0);n.fill(0);}
   }catch{return false;}
 }
 export interface WebhookEnvelope {readonly format:'aidr-webhook-v1';readonly deliveryId:string;readonly at:number;readonly body:string;readonly signature:string;}

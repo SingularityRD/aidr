@@ -17,6 +17,11 @@ interface KeySet {active:string;keys:Map<string,Buffer>;}
 function digest(b:Uint8Array):string{return createHash('sha256').update(b).digest('hex');}
 function checkKey(k:TenantKey):Buffer{id(k.id);if(!(k.key instanceof Uint8Array)||k.key.length!==32)deny('STATE_KEY_INVALID');return Buffer.from(k.key);}
 const MAX_VALUE=1048576;
+/** Namespaces whose expired cells may be physically deleted. Random-key login state, and quota windows whose
+ * key embeds the window index (an expired window is never addressed again under the monotonic clock).
+ * Replay (approvals, dispatch, jti), clock/policy (internal) and audit namespaces must NEVER be listed here. */
+const TRANSIENT_NAMESPACES=['oidc-pending','portal-sessions','quotas'] as const;
+export type TransientNamespace=typeof TRANSIENT_NAMESPACES[number];
 /** POSIX mode bits do not represent Windows ACLs. Check the native discretionary ACL. */
 function assertPrivateAccess(path:string):void{
   if(process.platform!=='win32'){if((lstatSync(path).mode&0o077)!==0)deny('STATE_DIRECTORY_PERMISSIONS');return;}
@@ -85,8 +90,8 @@ export class SqliteControlStore {
     if(!this.#inTransaction)deny('STATE_TRANSACTION_REQUIRED');id(namespace);id(key);integer(expected,1);
     const r=this.#db.prepare("UPDATE cells SET deleted=1,payload='' WHERE tenant=? AND namespace=? AND key=? AND version=? AND deleted=0").run(tenant,namespace,key,expected);if(r.changes!==1)deny('STATE_CONFLICT');
   }
-  _purgeExpiredTransient(tenant:string,namespace:'oidc-pending'|'portal-sessions',now:number,limit:number):number{
-    if(!this.#inTransaction)deny('STATE_TRANSACTION_REQUIRED');this._keyset(tenant);if(!['oidc-pending','portal-sessions'].includes(namespace))deny('STATE_TRANSIENT_NAMESPACE');integer(now);integer(limit,1,10000);
+  _purgeExpiredTransient(tenant:string,namespace:TransientNamespace,now:number,limit:number):number{
+    if(!this.#inTransaction)deny('STATE_TRANSACTION_REQUIRED');this._keyset(tenant);if(!TRANSIENT_NAMESPACES.includes(namespace))deny('STATE_TRANSIENT_NAMESPACE');integer(now);integer(limit,1,10000);
     return Number(this.#db.prepare('DELETE FROM cells WHERE tenant=? AND namespace=? AND key IN (SELECT key FROM cells WHERE tenant=? AND namespace=? AND expires IS NOT NULL AND expires<=? ORDER BY key LIMIT ?)').run(tenant,namespace,tenant,namespace,now,limit).changes);
   }
   _count(tenant:string,namespace:string,includeDeleted=false):number{this._keyset(tenant);id(namespace);if(typeof includeDeleted!=='boolean')deny('STATE_COUNT');return Number(this.#db.prepare('SELECT COUNT(*) AS n FROM cells WHERE tenant=? AND namespace=? AND (?=1 OR deleted=0)').get(tenant,namespace,includeDeleted?1:0)?.n??0);}
@@ -134,8 +139,8 @@ export class StateTransaction {
   get<T=unknown>(namespace:string,key:string):Cell<T>|null{this.#check();return this.store._read<T>(this.tenantId,namespace,key);}
   put(namespace:string,key:string,value:unknown,expected:number|null,expiresAt:number|null=null):number{this.#check();return this.store._write(this.tenantId,namespace,key,value,expected,expiresAt);}
   remove(namespace:string,key:string,expected:number):void{this.#check();this.store._remove(this.tenantId,namespace,key,expected);}
-  /** Only random-key transient login state may be physically purged; durable CAS tombstones remain. */
-  purgeExpiredTransient(namespace:'oidc-pending'|'portal-sessions',now:number,limit=1000):number{this.#check();return this.store._purgeExpiredTransient(this.tenantId,namespace,now,limit);}
+  /** Only transient login state and expired quota windows may be physically purged; durable CAS tombstones remain. */
+  purgeExpiredTransient(namespace:TransientNamespace,now:number,limit=1000):number{this.#check();return this.store._purgeExpiredTransient(this.tenantId,namespace,now,limit);}
   count(namespace:string,includeDeleted=false):number{this.#check();return this.store._count(this.tenantId,namespace,includeDeleted);}
   list(namespace:string,limit=1000,after=''):{key:string;cell:Cell}[]{this.#check();return this.store._list(this.tenantId,namespace,limit,after);}
   event(kind:string,actor:string,resource:string,at=Date.now()):StateEvent{this.#check();return this.store._append(this.tenantId,kind,actor,resource,at);}

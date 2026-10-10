@@ -7,7 +7,7 @@ import {generateKeyPairSync} from 'node:crypto';
 import {createPlatformRuntime} from '../../dist/platform/runtime.js';
 import {signPolicy} from '../../dist/enterprise/policy.js';
 import {PersistentAuditJournal} from '../../dist/platform/persistent-audit.js';
-import {verifyAudit} from '../../dist/enterprise/audit.js';
+import {verifyAudit,verifyAuditRotation} from '../../dist/enterprise/audit.js';
 import {policy, context, NOW} from '../enterprise/helpers.mjs';
 import {privateDirectory} from './helpers.mjs';
 function setup(){
@@ -20,3 +20,25 @@ function setup(){
 test('runtime: default defense profile rejects text without real NER; audit persisted',async()=>{const f=setup();let r;try{r=await createPlatformRuntime(f.options);const result=await r.gate.protect('Public text',context());assert.equal(result.output,null);const audit=new PersistentAuditJournal(r.state,'decisions','audit1',f.options.audit.key);assert(audit.records().length>0);assert(verifyAudit(audit.records(),audit.checkpoint(),f.options.audit.key));audit.dispose();}finally{r?.close();f.clean();}});
 test('runtime: explicitly strict pilot masks PII and reopens durable audit/checkpoint',async()=>{const f=setup();let r;try{r=await createPlatformRuntime({...f.options,profile:'strict'});const first=await r.gate.protect('Email: jane@example.com',context());assert.equal(first.output,'Email: [EMAIL]');r.close();r=undefined;r=await createPlatformRuntime({...f.options,profile:'strict'});assert.equal(r.registry.checkpoint().revision,1);const audit=new PersistentAuditJournal(r.state,'decisions','audit1',f.options.audit.key);const before=audit.records().length;await r.gate.protect('Public status update',context());assert(audit.records().length>before);assert(verifyAudit(audit.records(),audit.checkpoint(),f.options.audit.key));audit.dispose();}finally{r?.close();f.clean();}});
 test('runtime: same revision with changed signed policy is denied after restart',async()=>{const f=setup();try{const r=await createPlatformRuntime(f.options);r.close();const changed=signPolicy(policy({piiAction:'block'}),'k1',f.keys.privateKey);await assert.rejects(createPlatformRuntime({...f.options,policy:{...f.options.policy,signed:changed}}),/ROLLOUT/);}finally{f.clean();}});
+test('runtime: restart with a different audit key is refused instead of producing an unverifiable chain',async()=>{const f=setup();let r;try{
+ r=await createPlatformRuntime({...f.options,profile:'strict'});await r.gate.protect('Public status update',context());r.close();r=undefined;
+ const rotated={...f.options,profile:'strict',audit:{keyId:'audit2',key:Buffer.alloc(32,23)}};
+ await assert.rejects(createPlatformRuntime(rotated),/AUDIT_KEY_MISMATCH/);
+ await assert.rejects(createPlatformRuntime({...rotated,audit:{keyId:'audit1',key:Buffer.alloc(32,23)}}),/AUDIT_KEY_MISMATCH/);
+ // Wrong previous key: still refused, nothing rotated.
+ await assert.rejects(createPlatformRuntime({...rotated,audit:{...rotated.audit,rotateFrom:{keyId:'audit1',key:Buffer.alloc(32,99)}}}),/AUDIT_KEY_MISMATCH/);
+ r=await createPlatformRuntime({...f.options,profile:'strict'});assert.equal(r.audit.rotations().length,0);assert(verifyAudit(r.audit.records(),r.audit.checkpoint(),f.options.audit.key));
+}finally{r?.close();f.clean();}});
+test('runtime: explicit audit key rotation at startup closes the old segment and later restarts use the new key',async()=>{const f=setup();let r;try{
+ const oldKey=f.options.audit.key,newKey=Buffer.alloc(32,24);
+ r=await createPlatformRuntime({...f.options,profile:'strict'});await r.gate.protect('Public status update',context());await r.gate.protect('Email: jane@example.com',context());const closed=r.audit.checkpoint();r.close();r=undefined;
+ const next={...f.options,profile:'strict',audit:{keyId:'audit2',key:newKey,rotateFrom:{keyId:'audit1',key:oldKey}}};
+ r=await createPlatformRuntime(next);await r.gate.protect('Public status update',context());
+ const [rotation]=r.audit.rotations();assert.deepEqual(rotation.closing,closed);assert(verifyAuditRotation(rotation,oldKey,newKey));
+ assert(verifyAudit(r.audit.page(1,1000,{logId:rotation.closing.logId}).records,rotation.closing,oldKey));
+ assert(verifyAudit(r.audit.records(),r.audit.checkpoint(),newKey));assert.equal(r.audit.checkpoint().logId,rotation.toLogId);r.close();r=undefined;
+ // Restart keeping rotateFrom in config is idempotent; dropping it also works; the old key alone is refused.
+ r=await createPlatformRuntime(next);assert.equal(r.audit.rotations().length,1);r.close();r=undefined;
+ r=await createPlatformRuntime({...next,audit:{keyId:'audit2',key:newKey}});assert.equal(r.audit.rotations().length,1);r.close();r=undefined;
+ await assert.rejects(createPlatformRuntime({...f.options,profile:'strict'}),/AUDIT_KEY_MISMATCH/);
+}finally{r?.close();f.clean();}});
