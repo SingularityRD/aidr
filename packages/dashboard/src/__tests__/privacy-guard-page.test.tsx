@@ -34,6 +34,7 @@ import {
 	BROWSER_GUARD_DEFAULT_ENTITIES,
 	managedPolicySnippet,
 	PRIVACY_ENTITY_TYPES,
+	parseBrowserGuardSettings,
 	parsePrivacyEventRow,
 	parsePrivacySummary,
 	privacyEventSummary,
@@ -311,8 +312,25 @@ describe("Browser Privacy Guard read model", () => {
 				["TC_KIMLIK", 1],
 			],
 			findingsCount: 3,
+			nativeNer: null,
 		});
 		expect(parsePrivacyEventRow(RECENT_ROWS[2])).toBeNull();
+		// native_ner is carried as its status enum only; anything else reads as NER off.
+		const withNer = (native_ner: unknown) =>
+			parsePrivacyEventRow({
+				...RECENT_ROWS[0],
+				payload: { ...(RECENT_ROWS[0]?.payload as Record<string, unknown>), native_ner },
+			})?.nativeNer;
+		expect(withNer("used")).toBe("used");
+		expect(withNer("unavailable")).toBe("unavailable");
+		for (const bad of ["USED", "skipped", true, null]) expect(withNer(bad)).toBeNull();
+		expect(parseBrowserGuardSettings(null)).toEqual({ requireNativeNer: false });
+		expect(parseBrowserGuardSettings({ browser_guard_require_native_ner: true })).toEqual({
+			requireNativeNer: true,
+		});
+		for (const bad of [{}, [], "true", { browser_guard_require_native_ner: 1 }]) {
+			expect(() => parseBrowserGuardSettings(bad)).toThrow("Malformed Browser Guard settings.");
+		}
 		expect(privacyEventSummary(RECENT_ROWS[0]?.payload)).toBe("ChatGPT prompt: masked, 3 item(s)");
 		expect(managedPolicySnippet({ controlPlaneUrl: null, mode: "monitor" })).toContain(
 			"https://<your-project>.supabase.co",

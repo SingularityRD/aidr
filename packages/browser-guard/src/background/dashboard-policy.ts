@@ -7,8 +7,14 @@
  * every refresh (startup, managed-policy change, and the DASHBOARD_POLICY_ALARM period):
  *
  *   { policy_version: "browser-guard/v1", policy_sha256,
- *     browser_guard: { shadow_ai: { blocked: [ids], sanctioned: [ids] } },
+ *     browser_guard: { shadow_ai: { blocked: [ids], sanctioned: [ids] },
+ *                      require_native_ner?: boolean },
  *     policy_signed: { alg: "ed25519", key_id, sig_b64, envelope }, cache_seconds }
+ *
+ * `require_native_ner` (optional; the control plane sends it only when true) is the
+ * tenant's "require native NER" setting. It has the meaning of the managed
+ * `requireNativeNer` key and is merged with it the same way: true wins, so the dashboard
+ * can switch the requirement on but never off where the enterprise policy set it.
  *
  * The envelope is the connectors' signed runtime-policy envelope
  * (supabase/functions/_shared/policy-signature.ts): an Ed25519 signature over the
@@ -17,7 +23,10 @@
  *   - the signature verifies against a key in the managed `dashboardPolicy.publicKeysPem`
  *     (an administrator-only setting: a user cannot add a key),
  *   - `policy_sha256` is the SHA-256 of the canonical `browser_guard` object and both it and
- *     `policy_version` match the signed envelope (a tampered list is refused),
+ *     `policy_version` match the signed envelope (a tampered list or flag is refused). The
+ *     canonical form is the control plane's one canonical JSON
+ *     (packages/core/src/policy-canonical-json.ts, pinned by
+ *     docs/contracts/policy-canonical-json-vectors.json),
  *   - the tenant matches `dashboardPolicy.tenantId` when one is pinned,
  *   - the validity window holds and the sequence is not lower than the highest one already
  *     accepted (a replayed older document is refused).
@@ -29,8 +38,10 @@
  * sanctioned when the enterprise policy does not block it (an MDM `blocked` id, or an
  * unsanctioned service under an MDM `block-unsanctioned` mode, stays blocked). Once the
  * signed document expires without a successful refresh its blocks stay in force and its
- * sanctions are dropped.
+ * sanctions are dropped. `require_native_ner: true` tightens like a block: it applies in every
+ * mode, forces the native bridge on (`useNativeHost`) and stays in force after expiry.
  */
+import { canonicalPolicyJson } from "../../../core/src/policy-canonical-json.js";
 import type { DashboardPolicyTrust, GuardPolicy, ShadowAiPolicy } from "../types.js";
 import { ed25519SpkiFromPem } from "./policy.js";
 import { blockedServices } from "./shadow-ai.js";
@@ -65,6 +76,8 @@ export interface DashboardShadowAi {
 
 export interface VerifiedDashboardPolicy {
 	readonly shadowAi: DashboardShadowAi;
+	/** `browser_guard.require_native_ner`; absent in the document means false. */
+	readonly requireNativeNer: boolean;
 	readonly sequence: number;
 	readonly policySha256: string;
 	readonly expiresAt: number;
@@ -99,18 +112,21 @@ function isRecord(raw: unknown): raw is Record<string, unknown> {
 const exactKeys = (raw: Record<string, unknown>, keys: readonly string[]) =>
 	Object.keys(raw).length === keys.length && keys.every((k) => Object.hasOwn(raw, k));
 
-/** Key-sorted JSON, identical to the control plane's canonicalJson / canonicalPolicy. */
-export function canonicalJson(value: unknown): string {
-	const sorted = (item: unknown): unknown => {
-		if (Array.isArray(item)) return item.map(sorted);
-		if (!item || typeof item !== "object") return item;
-		const obj = item as Record<string, unknown>;
-		const out: Record<string, unknown> = {};
-		for (const key of Object.keys(obj).sort()) out[key] = sorted(obj[key]);
-		return out;
-	};
-	return JSON.stringify(sorted(value));
-}
+/** `raw` has every `required` key and nothing outside `required` + `optional`. */
+const allowedKeys = (
+	raw: Record<string, unknown>,
+	required: readonly string[],
+	optional: readonly string[],
+) =>
+	required.every((k) => Object.hasOwn(raw, k)) &&
+	Object.keys(raw).every((k) => required.includes(k) || optional.includes(k));
+
+/**
+ * The control plane's one canonical JSON (signer: supabase/functions/_shared/canonical-json.ts;
+ * this is the connectors' verifier copy, checked against
+ * docs/contracts/policy-canonical-json-vectors.json).
+ */
+export const canonicalJson: (value: unknown) => string = canonicalPolicyJson;
 
 async function sha256Hex(text: string): Promise<string> {
 	const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
@@ -123,16 +139,31 @@ function idList(raw: unknown): string[] | null {
 	return [...new Set(raw as string[])];
 }
 
-/** The `browser_guard` object: exactly `{ shadow_ai: { blocked, sanctioned } }`. */
-function documentShadowAi(raw: unknown): DashboardShadowAi | null {
-	if (!isRecord(raw) || !exactKeys(raw, ["shadow_ai"])) return null;
+interface DashboardDocument {
+	readonly shadowAi: DashboardShadowAi;
+	readonly requireNativeNer: boolean;
+}
+
+/**
+ * The `browser_guard` object: `{ shadow_ai: { blocked, sanctioned }, require_native_ner? }`.
+ * Any other key, or a `require_native_ner` that is not a boolean, refuses the document.
+ */
+function documentOf(raw: unknown): DashboardDocument | null {
+	if (!isRecord(raw) || !allowedKeys(raw, ["shadow_ai"], ["require_native_ner"])) return null;
+	const requireNativeNer = Object.hasOwn(raw, "require_native_ner")
+		? raw.require_native_ner
+		: false;
+	if (typeof requireNativeNer !== "boolean") return null;
 	const shadow = raw.shadow_ai;
 	if (!isRecord(shadow) || !exactKeys(shadow, ["blocked", "sanctioned"])) return null;
 	const blocked = idList(shadow.blocked);
 	const sanctioned = idList(shadow.sanctioned);
 	if (!blocked || !sanctioned) return null;
 	// Deny wins inside the document too.
-	return { blocked, sanctioned: sanctioned.filter((id) => !blocked.includes(id)) };
+	return {
+		shadowAi: { blocked, sanctioned: sanctioned.filter((id) => !blocked.includes(id)) },
+		requireNativeNer,
+	};
 }
 
 interface Envelope {
@@ -203,7 +234,7 @@ async function signatureValid(
 }
 
 interface ParsedBody {
-	readonly shadowAi: DashboardShadowAi;
+	readonly parsed: DashboardDocument;
 	readonly document: unknown;
 	readonly policySha256: string;
 	readonly envelope: Envelope;
@@ -213,15 +244,15 @@ interface ParsedBody {
 /** Shape checks only (nothing here is trusted yet). */
 function parseBody(body: unknown): ParsedBody | null {
 	if (!isRecord(body) || body.policy_version !== DASHBOARD_POLICY_VERSION) return null;
-	const shadowAi = documentShadowAi(body.browser_guard);
+	const parsed = documentOf(body.browser_guard);
 	const signed = body.policy_signed;
-	if (!shadowAi || typeof body.policy_sha256 !== "string" || !isRecord(signed)) return null;
+	if (!parsed || typeof body.policy_sha256 !== "string" || !isRecord(signed)) return null;
 	if (signed.alg !== "ed25519" || typeof signed.sig_b64 !== "string") return null;
 	const envelope = envelopeOf(signed.envelope);
 	const signature = base64Bytes(signed.sig_b64);
 	if (!envelope || !signature || signed.key_id !== envelope.key_id) return null;
 	return {
-		shadowAi,
+		parsed,
 		document: body.browser_guard,
 		policySha256: body.policy_sha256,
 		envelope,
@@ -288,7 +319,8 @@ export async function verifyDashboardPolicy(
 	return {
 		ok: true,
 		policy: {
-			shadowAi: parsed.shadowAi,
+			shadowAi: parsed.parsed.shadowAi,
+			requireNativeNer: parsed.parsed.requireNativeNer,
 			sequence: envelope.sequence,
 			policySha256: envelope.policy_sha256,
 			expiresAt: Date.parse(envelope.expires_at),
@@ -426,14 +458,30 @@ export class DashboardPolicyClient {
 	}
 }
 
-/** Applies the verified dashboard decisions to an evaluated policy (frozen copy). */
-export function withDashboardShadowAi(
+/**
+ * Applies the verified dashboard document to an evaluated policy (frozen copy): its Shadow
+ * AI decisions (see mergeDashboardShadowAi) and `require_native_ner`. The stricter
+ * `requireNativeNer` wins (true from either side), even after the document expired; like
+ * the managed key, it forces `useNativeHost` on and both keys are reported as locked.
+ */
+export function withDashboardPolicy(
 	policy: GuardPolicy,
 	dashboard: { policy: VerifiedDashboardPolicy; expired: boolean } | null,
 ): GuardPolicy {
 	if (!dashboard) return policy;
+	const requireNativeNer = dashboard.policy.requireNativeNer && policy.requireNativeNer !== true;
+	const lockedKeys = requireNativeNer
+		? ["requireNativeNer", "useNativeHost"].filter((key) => !policy.managedKeys.includes(key))
+		: [];
 	return Object.freeze({
 		...policy,
 		shadowAi: mergeDashboardShadowAi(policy.shadowAi, dashboard.policy.shadowAi, dashboard.expired),
+		...(requireNativeNer
+			? {
+					requireNativeNer: true,
+					useNativeHost: true,
+					managedKeys: Object.freeze([...policy.managedKeys, ...lockedKeys]),
+				}
+			: {}),
 	});
 }

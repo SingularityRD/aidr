@@ -341,11 +341,11 @@ the policy sets `allowUserOverrides: true` (see `deploy/browser-guard/README.md`
 | `documentHandling` | `mask` \| `block` \| `allow` (managed only; Office/OpenDocument/legacy Office/PDF when `fileHandling` is `scan`) | `mask` |
 | `restoreResponses` | boolean | `true` |
 | `useNativeHost` | boolean | `false` (also a user setting unless managed) |
-| `requireNativeNer` | boolean (managed only): native NER is mandatory; a prompt, paste or upload the host could not NER-check (missing, crashed, timed out, rules-only, over the limit) is blocked, recorded as `native_ner: unavailable` in monitor mode; forces `useNativeHost` on | `false` |
+| `requireNativeNer` | boolean (managed only; the signed dashboard policy can also switch it on, `true` wins): native NER is mandatory; a prompt, paste or upload the host could not NER-check (missing, crashed, timed out, rules-only, over the limit) is blocked, recorded as `native_ner: unavailable` in monitor mode; forces `useNativeHost` on | `false` |
 | `telemetry` | `{ controlPlaneUrl, apiKey }` | none (no telemetry) |
 | `language` | `auto` \| `en` \| `tr` | `auto` |
 | `policyId` | string reported with telemetry | `aidr-browser-guard-default` |
-| `dashboardPolicy` | `{ publicKeysPem: [1-4 Ed25519 SPKI PEM], tenantId? }` (managed only) | none: dashboard Shadow AI decisions are not applied |
+| `dashboardPolicy` | `{ publicKeysPem: [1-4 Ed25519 SPKI PEM], tenantId? }` (managed only) | none: dashboard Shadow AI decisions and the dashboard's "Require native NER" are not applied |
 | `allowUserOverrides` | boolean (managed only) | `false`: a managed policy locks the protection settings above |
 
 The authoritative schema is [`static/managed_schema.json`](static/managed_schema.json);
@@ -421,6 +421,18 @@ must match a pinned `tenantId`, and the sequence must not be lower than the last
 accepted one. An unsigned, tampered, foreign-key or replayed document is ignored and
 the last verified one stays in force. Refresh: startup, every managed-policy change and
 every 15 minutes (`aidr-dashboard-policy` alarm).
+
+The same signed document carries the tenant's **Require native NER** setting
+(Browser Privacy Guard → Require native NER; owners/admins, AAL2, audited; switching
+it off is refused while four-eyes change control is on) as
+`browser_guard.require_native_ner: true`; the key is omitted when the setting is off,
+so documents of tenants that do not use it stay acceptable to extension versions that
+predate it (those versions refuse a document carrying the key and keep their last
+verified one). The flag is covered by `policy_sha256` like the lists. It has the
+meaning of the managed `requireNativeNer` key and is merged with it the same way as
+blocks: `true` from either side wins (the dashboard can switch the requirement on, never
+off), it forces and locks `useNativeHost`, and it stays in force after the document
+expires.
 
 Precedence is **most restrictive wins**: a dashboard block applies in every mode; a
 dashboard allow only marks a service sanctioned when the managed `shadowAi` does not

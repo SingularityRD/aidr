@@ -1,5 +1,6 @@
-// AI governance: asset register, intake, exceptions, periodic review and
-// four-eyes policy change control (docs/ai-governance.md).
+// AI governance: asset register, intake, exceptions, periodic review,
+// four-eyes policy change control and the tenant's Browser Guard settings
+// delivered in the signed browser-guard-policy document (docs/ai-governance.md).
 //
 // POST /ai-governance { action, tenant_id, ... }   Supabase session only.
 //
@@ -210,6 +211,10 @@ function rpcFor(command: GovernanceCommand, tenantId: string, userId: string): {
 			return { name: "update_ai_governance_settings", args: {
 				p_tenant_id: tenantId, p_actor_user_id: userId, p_policy_four_eyes: command.policyFourEyes,
 				p_default_review_days: command.defaultReviewDays,
+			} };
+		case "update_browser_guard_settings":
+			return { name: "update_browser_guard_settings", args: {
+				p_tenant_id: tenantId, p_actor_user_id: userId, p_require_native_ner: command.requireNativeNer,
 			} };
 		case "decide_policy_change":
 			return { name: "decide_policy_change_request", args: {

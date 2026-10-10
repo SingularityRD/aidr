@@ -178,6 +178,7 @@ jobs:
           docker pull supabase/postgres:17.6.1.136
           node --test scripts/oidc-administration-postgres.test.mjs
           node --test scripts/workspace-retention-oidc-save-postgres.test.mjs
+          node --test scripts/browser-guard-settings-postgres.test.mjs
           node --test scripts/saml-administration-postgres.test.mjs
           node --test scripts/saml-outage-recovery.test.mjs scripts/saml-outage-recovery-postgres.test.mjs
           node --test scripts/discovery-cloud-postgres.test.mjs

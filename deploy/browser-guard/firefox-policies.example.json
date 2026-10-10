@@ -102,6 +102,7 @@
           "maxFileBytes": 5242880,
           "restoreResponses": true,
           "useNativeHost": false,
+          "requireNativeNer": false,
           "telemetry": {
             "controlPlaneUrl": "https://aidr.example.com",
             "apiKey": "REPLACE_WITH_TENANT_API_KEY"

@@ -38,7 +38,7 @@ import {
 	DASHBOARD_POLICY_ALARM,
 	DASHBOARD_POLICY_LIMITS,
 	DashboardPolicyClient,
-	withDashboardShadowAi,
+	withDashboardPolicy,
 } from "./dashboard-policy.js";
 import { applyBlockedSites, redirectBlockedTab, siteForUrl, updatedTabUrl } from "./dnr.js";
 import { createNativeBridge, NATIVE_MAX_IMAGE_BYTES } from "./native.js";
@@ -242,7 +242,8 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 
 	/**
 	 * Signed dashboard decisions, only with an administrator-pinned trust anchor; they can
-	 * tighten the enterprise Shadow AI policy, never relax it (./dashboard-policy.ts).
+	 * tighten the enterprise Shadow AI policy and switch on `requireNativeNer`, never relax
+	 * either (./dashboard-policy.ts).
 	 */
 	async function applyDashboardDecisions(
 		policy: GuardPolicy,
@@ -252,7 +253,10 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 		const decisions = trust ? await dashboard.stored(trust) : null;
 		if (decisions?.expired)
 			warnings.push("dashboard: Shadow AI decisions expired; blocks kept, sanctions dropped");
-		return withDashboardShadowAi(policy, decisions);
+		const applied = withDashboardPolicy(policy, decisions);
+		if (applied.requireNativeNer === true && policy.requireNativeNer !== true)
+			warnings.push('dashboard: "requireNativeNer" on; "useNativeHost" forced on');
+		return applied;
 	}
 
 	async function loadPolicy(broadcast: boolean): Promise<GuardPolicy> {

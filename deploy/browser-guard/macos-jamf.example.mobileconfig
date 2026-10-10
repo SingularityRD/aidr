@@ -192,6 +192,8 @@
 			<true/>
 			<key>useNativeHost</key>
 			<false/>
+			<key>requireNativeNer</key>
+			<false/>
 			<key>telemetry</key>
 			<dict>
 				<key>controlPlaneUrl</key>
@@ -363,6 +365,8 @@
 			<key>restoreResponses</key>
 			<true/>
 			<key>useNativeHost</key>
+			<false/>
+			<key>requireNativeNer</key>
 			<false/>
 			<key>telemetry</key>
 			<dict>

@@ -34,6 +34,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const read = (...parts: string[]) => readFileSync(join(ROOT, ...parts), "utf8");
 const REGISTER_SQL = read("supabase", "migrations", "20260927000040_ai_governance_register.sql");
 const CHANGE_SQL = read("supabase", "migrations", "20260927000041_policy_change_control.sql");
+const BROWSER_GUARD_SETTINGS_SQL = read("supabase", "migrations", "20261010000200_browser_guard_native_ner_setting.sql");
 const HANDLER_SOURCE = read("supabase", "functions", "ai-governance", "index.ts");
 
 const TENANT_A = "22222222-2222-4222-8222-222222222222";
@@ -299,6 +300,22 @@ class World {
 				}
 				return { policy_four_eyes: settings.policy_four_eyes, default_review_days: settings.default_review_days, pending_disable_request_id: null };
 			}
+			case "update_browser_guard_settings": {
+				// Mirrors 20261010000200_browser_guard_native_ner_setting.sql.
+				if (!ownerAdmin) fail("42501", "ai_governance_forbidden");
+				let settings = this.settings.find((s) => s.tenant_id === a.p_tenant_id);
+				if (!settings) {
+					settings = { tenant_id: a.p_tenant_id, policy_four_eyes: false, default_review_days: 180,
+						browser_guard_require_native_ner: false };
+					this.settings.push(settings);
+				}
+				const from = settings.browser_guard_require_native_ner === true;
+				if (from === a.p_require_native_ner) return { require_native_ner: from, changed: false };
+				if (a.p_require_native_ner === false && settings.policy_four_eyes) fail("42501", "browser_guard_four_eyes_required");
+				settings.browser_guard_require_native_ner = a.p_require_native_ner;
+				this.audit.push({ tenant: String(a.p_tenant_id), actor: String(a.p_actor_user_id), action: "browser_guard.settings_updated" });
+				return { require_native_ner: a.p_require_native_ner, changed: true };
+			}
 			case "decide_policy_change_request": {
 				if (!ownerAdmin) fail("42501", "policy_forbidden");
 				const row = this.changes.find((r) => r.id === a.p_request_id && r.tenant_id === a.p_tenant_id) ?? fail("P0002", "policy_change_request_not_found");
@@ -409,7 +426,8 @@ describe("ai-governance: request gating", () => {
 		// Every owner/admin-only action in the matrix is refused to members.
 		for (const [action, rule] of Object.entries(GOVERNANCE_ACTIONS)) {
 			if (!rule.roles.includes("member")) expect(rule.roles, action).toEqual(["owner", "admin"]);
-			if (action.startsWith("decide_") || action === "upsert_asset" || action === "update_settings") expect(rule.aal2, action).toBe(true);
+			if (action.startsWith("decide_") || action === "upsert_asset" || action === "update_settings" ||
+				action === "update_browser_guard_settings") expect(rule.aal2, action).toBe(true);
 		}
 	});
 
@@ -518,6 +536,53 @@ describe("ai-governance: register, intake and four-eyes", () => {
 		expect(world.changes[0].status).toBe("approved");
 	});
 
+	it("lets owners and admins require native NER for Browser Guard, at AAL2, as the session user", async () => {
+		const { world, call } = setup();
+		const body = (require_native_ner: unknown) => ({ action: "update_browser_guard_settings", tenant_id: TENANT_A, require_native_ner });
+		expect(await call(body(true), `session-${MEMBER_A}`)).toEqual({ status: 403, body: { error: "governance_role_insufficient" } });
+		expect(await call(body(true), `session-${VIEWER_A}`)).toEqual({ status: 403, body: { error: "governance_role_insufficient" } });
+		expect(await call(body(true), `aal1-${ADMIN_A}`)).toEqual({ status: 403, body: { error: "mfa_required" } });
+		expect(await call(body(true), `session-${OWNER_B}`)).toEqual({ status: 403, body: { error: "workspace_forbidden" } });
+		expect(world.rpcCalls.some((c) => c.name === "update_browser_guard_settings")).toBe(false);
+
+		expect(await call(body(true), `session-${ADMIN_A}`)).toEqual({ status: 200, body: { ok: true, require_native_ner: true, changed: true } });
+		expect(world.rpcCalls.find((c) => c.name === "update_browser_guard_settings")?.args).toEqual({
+			p_tenant_id: TENANT_A, p_actor_user_id: ADMIN_A, p_require_native_ner: true,
+		});
+		expect(world.audit.filter((e) => e.action === "browser_guard.settings_updated"))
+			.toEqual([{ tenant: TENANT_A, actor: ADMIN_A, action: "browser_guard.settings_updated" }]);
+		expect((await call(body(false), `session-${OWNER_A}`)).body).toEqual({ ok: true, require_native_ner: false, changed: true });
+
+		for (const bad of [{ ...body("true") }, { ...body(null) }, { action: "update_browser_guard_settings", tenant_id: TENANT_A },
+			{ ...body(true), actor_user_id: OWNER_A }]) {
+			expect(await call(bad)).toEqual({ status: 400, body: { error: "invalid_request" } });
+		}
+	});
+
+	it("refuses to switch the native NER requirement off while four-eyes is on", async () => {
+		const { call } = setup();
+		const body = (require_native_ner: boolean) => ({ action: "update_browser_guard_settings", tenant_id: TENANT_A, require_native_ner });
+		expect((await call(body(true))).status).toBe(200);
+		await call({ action: "update_settings", tenant_id: TENANT_A, policy_four_eyes: true });
+		expect(await call(body(false))).toEqual({ status: 403, body: { error: "browser_guard_four_eyes_required" } });
+		// Tightening (or confirming) stays immediate.
+		expect((await call(body(true))).body).toEqual({ ok: true, require_native_ner: true, changed: false });
+	});
+
+	it("keeps the Browser Guard setting's authorization, four-eyes rule and audit in the database", () => {
+		const sql = BROWSER_GUARD_SETTINGS_SQL;
+		expect(sql).toContain("add column if not exists browser_guard_require_native_ner boolean not null default false");
+		expect(sql).toMatch(/security definer\s+set search_path = pg_catalog, public, app, pg_temp/);
+		expect(sql).toContain("v_role := app.ai_governance_actor_role(p_tenant_id, p_actor_user_id);");
+		expect(sql).toContain("if v_role is null or v_role not in ('owner', 'admin') then");
+		expect(sql).toContain("if not p_require_native_ner and v_old.policy_four_eyes then");
+		expect(sql).toContain("'browser_guard.settings_updated'");
+		expect(sql).toContain("revoke all on function public.update_browser_guard_settings(uuid, uuid, boolean) from public, anon, authenticated;");
+		expect(sql).toContain("grant execute on function public.update_browser_guard_settings(uuid, uuid, boolean) to service_role;");
+		expect(sql).not.toMatch(/grant [^;]* to (anon|authenticated|public)/i);
+		expect(sql).not.toMatch(/create policy|drop policy|disable row level security/i);
+	});
+
 	it("reports a superseded policy change instead of applying a stale diff", async () => {
 		const { world, call } = setup();
 		world.changes.push({ id: "bbbbbbbb-0000-4000-8000-000000000001", tenant_id: TENANT_A, change_kind: "runtime_publish",
@@ -602,6 +667,9 @@ describe("ai-governance: request schema and SQL invariants", () => {
 		expect(ok({ action: "link_evidence", asset_id: AGENT_A, kind: "incident", ref: "0", link: true })).toBe(false);
 		expect(ok({ action: "update_settings", default_review_days: 7 })).toBe(false);
 		expect(ok({ action: "update_settings" })).toBe(false);
+		expect(ok({ action: "update_browser_guard_settings", require_native_ner: true })).toBe(true);
+		expect(ok({ action: "update_browser_guard_settings", require_native_ner: 1 })).toBe(false);
+		expect(ok({ action: "update_browser_guard_settings", require_native_ner: false, policy_four_eyes: true })).toBe(false);
 	});
 
 	it("keeps four-eyes and tenant isolation in the database, not only in this handler", () => {

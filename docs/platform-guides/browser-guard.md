@@ -102,6 +102,38 @@ parallel; when the host is not reachable the check is rules-only and the user se
 "checked with built-in rules only" note in the page. See
 [`packages/browser-guard/docs/native-host.md`](../../packages/browser-guard/docs/native-host.md).
 
+**Making NER mandatory (`requireNativeNer`).** By default a missing or slow host
+only downgrades the check to the built-in rules. Set the managed key
+`requireNativeNer: true` (default `false`) when that is not acceptable:
+
+- *What it blocks:* while `PERSON`, `ADDRESS` or `LOCATION` is enabled, a prompt
+  send, paste or file upload that the host did not check with NER is blocked ("Your
+  organisation requires advanced name and address detection ... Nothing was sent.").
+  That includes a host that is not installed, not granted `nativeMessaging`,
+  crashed, backed off or slower than the 2.5 s page timeout, a rules-only host (no
+  approved `ner` block), and text over the host's 200,000-character limit. A prompt
+  with no findings is blocked as well, because no findings without NER is not a clean
+  check. In `monitor` mode nothing is blocked; the check is recorded and the
+  `privacy_scan` event carries `native_ner: "unavailable"` (or `"used"`).
+- *It needs the native host:* it forces and locks `useNativeHost` on, so install
+  the host with an approved NER model on every machine and have every user grant
+  `nativeMessaging` before you enable it; otherwise every send on that machine is
+  blocked. Pilot it in `monitor` mode and check that events report
+  `native_ner: "used"`.
+- *Large uploads take longer:* every text part of an upload is sent to the host and
+  waited on (up to 2.5 s per scan, a new host process each time), and large
+  documents are scanned in several windows, so big uploads can be noticeably slower
+  than rules-only scanning; one window without an NER answer blocks the whole
+  upload. Measure with your largest typical files on your target hardware.
+
+Owners and administrators can also switch the requirement on for every enrolled
+browser from the dashboard (**Browser Privacy Guard** → **Require native NER**;
+multi-factor verification, audited). It is delivered in the signed dashboard policy
+(managed `telemetry` and `dashboardPolicy` must be set) and merged with the managed
+key: `true` from either side wins, so the dashboard cannot switch off a managed
+requirement. With four-eyes change control on, switching it off in the dashboard is
+refused until four-eyes is turned off by a second approver.
+
 ### 7. Verify
 
 - `chrome://policy`, `edge://policy` or `about:policies` lists the policy
@@ -123,6 +155,7 @@ parallel; when the host is not reachable the check is rules-only and the user se
 | Settings not locked | The policy is under the right extension ID; values have the right type (`REG_DWORD` for booleans/integers, JSON text for arrays/objects on Windows). Any managed policy also locks `mode`, `enabledEntities`, `literals`, `maskPaste`, `restoreResponses` and `disabledSites` unless it sets `allowUserOverrides: true` |
 | Nothing masked on a site | The site is in the supported list and not in `disabledSites` (a disabled site is only monitored: sends are counted, nothing is masked); `mode` is not `monitor`; the entity type is in `enabledEntities` |
 | Names in running text not masked | `useNativeHost` is on, the user granted `nativeMessaging`, the popup says "Advanced detection is connected", and the host config has an approved `ner` block (without one it runs rules-only) |
+| Every send blocked with "requires advanced name and address detection" | `requireNativeNer` is on (managed key or the dashboard's **Require native NER**) and the host gave no NER answer: install the host with an approved `ner` block, grant `nativeMessaging` on the options page, and check host start-up time against the 2.5 s timeout |
 | No telemetry | `controlPlaneUrl` is `https://`; the API key is valid; the machine can reach the control plane |
 | Internal AI portal not masked | The host is listed exactly in `customSites` (no port or path), the options page shows the site as **Protected** (not **Needs access**), and the tab was reloaded after access was granted; check the selectors against the portal's markup |
 | Shadow AI shows no usage or does not block | `shadowAi.mode` is `monitor` or `block-unsanctioned`; the options page says "Access granted" (otherwise click **Allow access**); the service is in the catalog (`packages/browser-guard/src/sites/catalog.ts`) |

@@ -4,7 +4,10 @@
 import { webcrypto } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AI_SERVICES as BROWSER_GUARD_AI_SERVICES } from "../../../packages/browser-guard/src/sites/catalog.ts";
-import { ENTITY_TYPES as BROWSER_GUARD_ENTITY_TYPES } from "../../../packages/browser-guard/src/types.ts";
+import {
+	ENTITY_TYPES as BROWSER_GUARD_ENTITY_TYPES,
+	type NativeNerUse,
+} from "../../../packages/browser-guard/src/types.ts";
 import { ENTITY_TYPES as PRIVACY_ENTITY_TYPES_SOURCE } from "../../../packages/privacy/src/types.ts";
 import {
 	MAX_INGEST_EVENTS,
@@ -13,6 +16,7 @@ import {
 	normalizeIngestEvents,
 	PRIVACY_ACTION_DECISIONS,
 	PRIVACY_ENTITY_TYPES,
+	PRIVACY_NATIVE_NER_STATES,
 	PRIVACY_SITES,
 	SHADOW_AI_ACTION_DECISIONS,
 	SHADOW_AI_SERVICE_CATEGORIES,
@@ -166,6 +170,53 @@ describe("privacy_scan ingest projection", () => {
 		for (const policy_id of ["has spaces", "sk_live_abcdefghijklmnop", "x".repeat(129), 7]) {
 			expect(projectOne(scan({ policy_id }))).not.toHaveProperty("policy_id");
 		}
+	});
+
+	it("keeps the native_ner status enum and drops any other value", () => {
+		for (const native_ner of PRIVACY_NATIVE_NER_STATES) {
+			expect(projectOne(scan({ native_ner }))).toEqual({
+				event_id: "bg:0b0c6c1e-7c7e-4b39-9d55-7a1d9d1f8e21",
+				type: "privacy_scan",
+				timestamp: "2026-09-24T10:15:00.000Z",
+				site: "chatgpt",
+				action: "masked",
+				channel: "prompt",
+				decision: "allow",
+				entity_counts: { EMAIL: 2, TC_KIMLIK: 1 },
+				findings_count: 3,
+				policy_id: "managed.default:v4",
+				native_ner,
+			});
+		}
+		// Monitor mode under requireNativeNer: allowed but explicitly not NER-checked.
+		expect(projectOne(scan({ action: "allowed", native_ner: "unavailable" }))).toMatchObject({
+			action: "allowed",
+			decision: "allow",
+			native_ner: "unavailable",
+		});
+		for (const native_ner of [
+			"USED",
+			"skipped",
+			"",
+			true,
+			1,
+			null,
+			["used"],
+			{ status: "used" },
+			"used ayse.yilmaz@example.test",
+		]) {
+			const stored = projectOne(scan({ native_ner }));
+			expect(stored).not.toHaveProperty("native_ner");
+			expect(JSON.stringify(stored)).not.toContain("ayse.yilmaz");
+		}
+		expect(projectOne(scan())).not.toHaveProperty("native_ner");
+	});
+
+	it("pins the native_ner vocabulary to Browser Guard", () => {
+		// Type-level pin both ways: no server value outside NativeNerUse, no NativeNerUse missing.
+		const states: readonly NativeNerUse[] = PRIVACY_NATIVE_NER_STATES;
+		const every: Record<NativeNerUse, true> = { used: true, unavailable: true };
+		expect([...states].sort()).toEqual(Object.keys(every).sort());
 	});
 
 	it("treats event_type as an alias of type and refuses a conflicting pair", () => {

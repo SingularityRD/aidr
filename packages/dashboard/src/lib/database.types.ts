@@ -720,6 +720,8 @@ export interface Database {
 					tenant_id: string;
 					policy_four_eyes: boolean;
 					default_review_days: number;
+					/** Browser Guard: native NER required (signed browser-guard-policy document). */
+					browser_guard_require_native_ner: boolean;
 					updated_by: string | null;
 					updated_at: string;
 				};

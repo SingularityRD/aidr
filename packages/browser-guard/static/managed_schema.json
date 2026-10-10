@@ -375,7 +375,7 @@
 		},
 		"requireNativeNer": {
 			"title": "Require native NER",
-			"description": "Make native NER mandatory (default false). When true and PERSON, ADDRESS or LOCATION is enabled, a prompt, paste or file upload whose text the native host could not check with NER (host not installed or not permitted, crashed, timed out, rules-only host without an approved NER model, malformed reply, text over the host limit) is blocked with an explanation instead of continuing rules-only; images the host could not OCR are blocked too. Monitor mode never blocks but records such checks as not NER-checked (telemetry native_ner: unavailable). Forces and locks useNativeHost on.",
+			"description": "Make native NER mandatory (default false). When true and PERSON, ADDRESS or LOCATION is enabled, a prompt, paste or file upload whose text the native host could not check with NER (host not installed or not permitted, crashed, timed out, rules-only host without an approved NER model, malformed reply, text over the host limit) is blocked with an explanation instead of continuing rules-only; images the host could not OCR are blocked too. Monitor mode never blocks but records such checks as not NER-checked (telemetry native_ner: unavailable). Forces and locks useNativeHost on. The signed dashboard policy (dashboardPolicy) can also switch it on; true from either side wins.",
 			"type": "boolean"
 		},
 		"telemetry": {

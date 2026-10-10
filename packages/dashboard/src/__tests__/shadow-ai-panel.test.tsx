@@ -188,6 +188,7 @@ function installDecisions(options: {
 	role: "owner" | "admin" | "member" | "viewer";
 	assets?: { data: unknown; error: { message: string } | null };
 	reply?: { data: unknown; error: unknown };
+	settings?: { data: unknown; error: { message: string } | null };
 }) {
 	const mocks = installDashboardMocks({
 		rpcResults: {
@@ -197,6 +198,7 @@ function installDecisions(options: {
 		tableResults: {
 			events: { data: [], error: null },
 			agents: { data: [], error: null },
+			tenant_ai_governance_settings: options.settings ?? { data: null, error: null },
 			ai_assets: options.assets ?? {
 				data: [
 					{ id: POE_ASSET, identifier: "poe", status: "approved", version: 3 },
@@ -368,6 +370,98 @@ describe("Shadow AI allow / block decisions", () => {
 		await screen.findByText("Allow/block decisions are unavailable.");
 		const table = screen.getByRole("table", { name: "Top AI services" });
 		expect(within(table).queryByRole("button", { name: /^(Allow|Block) / })).toBeNull();
+		expect(governanceCalls()).toEqual([]);
+	});
+});
+
+describe("Require native NER (signed Browser Guard policy)", () => {
+	const panel = async () => {
+		const heading = await screen.findByRole("heading", { name: "Require native NER" });
+		return heading.closest("section") as HTMLElement;
+	};
+
+	it("lets an administrator require native NER through the audited governance action", async () => {
+		installDecisions({
+			role: "admin",
+			reply: { data: { ok: true, require_native_ner: true, changed: true }, error: null },
+		});
+		renderPage();
+		const section = await panel();
+		await waitFor(() => expect(within(section).getByText("not required")).toBeInTheDocument());
+		expect(
+			within(section).getByText(/large uploads wait for the host's answer/),
+		).toBeInTheDocument();
+		const toggle = within(section).getByRole("checkbox", {
+			name: "Require native NER for every enrolled browser",
+		});
+		expect(toggle).not.toBeChecked();
+		await waitFor(() => expect(toggle).toBeEnabled());
+		fireEvent.click(toggle);
+		await within(section).findByText(/Native NER is now required/);
+		expect(governanceCalls()).toEqual([
+			{ action: "update_browser_guard_settings", tenant_id: TEAM_ID, require_native_ner: true },
+		]);
+		const reads = mockedSupabase().from.mock.calls.filter(
+			([table]) => table === "tenant_ai_governance_settings",
+		);
+		expect(reads.length).toBeGreaterThanOrEqual(2);
+	});
+
+	it("shows the stored requirement and explains a four-eyes refusal to switch it off", async () => {
+		installDecisions({
+			role: "owner",
+			settings: { data: [{ browser_guard_require_native_ner: true }], error: null },
+			reply: {
+				data: null,
+				error: {
+					context: new Response(JSON.stringify({ error: "browser_guard_four_eyes_required" }), {
+						status: 403,
+					}),
+				},
+			},
+		});
+		renderPage();
+		const section = await panel();
+		await waitFor(() => expect(within(section).getByText("required")).toBeInTheDocument());
+		const toggle = within(section).getByRole("checkbox");
+		expect(toggle).toBeChecked();
+		fireEvent.click(toggle);
+		const alert = await within(section).findByText(
+			/switching off required native NER needs four-eyes/,
+		);
+		expect(alert).toHaveAttribute("role", "alert");
+		expect(governanceCalls()).toEqual([
+			{ action: "update_browser_guard_settings", tenant_id: TEAM_ID, require_native_ner: false },
+		]);
+	});
+
+	it("is read-only for members and viewers", async () => {
+		for (const role of ["member", "viewer"] as const) {
+			installDecisions({
+				role,
+				settings: { data: [{ browser_guard_require_native_ner: true }], error: null },
+			});
+			renderPage();
+			const section = await panel();
+			await waitFor(() => expect(within(section).getByText("required")).toBeInTheDocument());
+			expect(within(section).queryByRole("checkbox")).toBeNull();
+			cleanup();
+		}
+	});
+
+	it("shows an unreadable or malformed setting as unavailable, never as not required", async () => {
+		for (const settings of [
+			{ data: null, error: { message: "permission denied" } },
+			{ data: [{ browser_guard_require_native_ner: "yes" }], error: null },
+		]) {
+			installDecisions({ role: "admin", settings });
+			renderPage();
+			const section = await panel();
+			await within(section).findByText("The native NER setting is unavailable.");
+			expect(within(section).queryByText("not required")).toBeNull();
+			expect(within(section).getByRole("checkbox")).toBeDisabled();
+			cleanup();
+		}
 		expect(governanceCalls()).toEqual([]);
 	});
 });

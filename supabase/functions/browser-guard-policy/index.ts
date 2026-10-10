@@ -2,12 +2,14 @@
 //
 // Browser Guard installs call this with their telemetry key (an `ingest:browser_guard`
 // key, or a tenant key) on every policy refresh. The response carries the tenant's
-// Shadow AI allow/block decisions from the AI governance register inside an Ed25519
+// Shadow AI allow/block decisions from the AI governance register, and the tenant's
+// "require native NER" setting (`require_native_ner`, only when on), inside an Ed25519
 // envelope signed with the runtime-policy key (_shared/policy-signature.ts); the
 // extension applies it only after verifying the signature against the public keys an
 // administrator pinned in its managed policy.
 //
-// Fail closed throughout: no signing key, an unreadable or malformed overlay, or any
+// Fail closed throughout: no signing key, an unreadable or malformed overlay or
+// settings row, or any
 // unexpected error is a 503 and never an unsigned or partial document. The browser
 // keeps its last verified document (blocks only once it expires) in that case.
 //
@@ -19,7 +21,11 @@
 import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import { authenticateTenantApiKeyBudgeted, BROWSER_GUARD_INGEST_SCOPE } from "../_shared/api-key-auth.ts";
 import { getBearerToken } from "../_shared/auth.ts";
-import { BROWSER_GUARD_POLICY_VERSION, browserGuardPolicyFromOverlay } from "../_shared/browser-guard-policy.ts";
+import {
+	BROWSER_GUARD_POLICY_VERSION,
+	browserGuardPolicyFromOverlay,
+	browserGuardSettingsFromRow,
+} from "../_shared/browser-guard-policy.ts";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 import { type PlanEntitlementDb, requireFeature } from "../_shared/plan-entitlements.ts";
 import { POLICY_SIGNING_UNAVAILABLE, resolvePolicySigning, signRuntimePolicyEnvelope } from "../_shared/policy-signature.ts";
@@ -35,7 +41,13 @@ const json = (status: number, body: Record<string, unknown>, headers: Record<str
 	status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store", ...headers },
 });
 
-type Rpc = { rpc(name: string, args: Record<string, unknown>): PromiseLike<{ data: unknown; error: unknown }> };
+type Result = PromiseLike<{ data: unknown; error: unknown }>;
+type Rpc = { rpc(name: string, args: Record<string, unknown>): Result };
+type Settings = {
+	from(table: "tenant_ai_governance_settings"): {
+		select(columns: string): { eq(column: string, value: string): { maybeSingle(): Result } };
+	};
+};
 
 export function createBrowserGuardPolicyHandler(deps: { db?: ReturnType<typeof createClient>; now?: () => Date } = {}) {
 	const now = deps.now ?? (() => new Date());
@@ -76,11 +88,15 @@ export function createBrowserGuardPolicyHandler(deps: { db?: ReturnType<typeof c
 			if (!rate.ok) return json(rate.status, { error: rate.error }, rateLimitHeaders(rate));
 
 			const agentId = !browserKey && typeof auth.agentId === "string" ? auth.agentId : null;
-			const overlay = await (db as unknown as Rpc).rpc("ai_governance_policy_overlay", {
-				p_tenant_id: auth.tenantId, p_user_id: null, p_agent_id: agentId,
-			});
-			if (overlay.error) return json(503, { error: "policy_unavailable" }, rateLimitHeaders(rate));
-			const document = browserGuardPolicyFromOverlay(overlay.data);
+			const [overlay, settings] = await Promise.all([
+				(db as unknown as Rpc).rpc("ai_governance_policy_overlay", {
+					p_tenant_id: auth.tenantId, p_user_id: null, p_agent_id: agentId,
+				}),
+				(db as unknown as Settings).from("tenant_ai_governance_settings")
+					.select("browser_guard_require_native_ner").eq("tenant_id", auth.tenantId).maybeSingle(),
+			]);
+			if (overlay.error || settings.error) return json(503, { error: "policy_unavailable" }, rateLimitHeaders(rate));
+			const document = browserGuardPolicyFromOverlay(overlay.data, browserGuardSettingsFromRow(settings.data));
 			const policySha256 = await sha256(canonicalPolicy(document));
 			// Issue time in ms: every fresh answer outranks any earlier one, so a replayed
 			// older document is refused by the browser's high-water check.

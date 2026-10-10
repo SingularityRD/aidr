@@ -108,6 +108,10 @@
         "type": "REG_DWORD",
         "value": 0
       },
+      "requireNativeNer": {
+        "type": "REG_DWORD",
+        "value": 0
+      },
       "telemetry": {
         "type": "REG_SZ",
         "value": "{\"controlPlaneUrl\":\"https://aidr.example.com\",\"apiKey\":\"REPLACE_WITH_TENANT_API_KEY\"}"

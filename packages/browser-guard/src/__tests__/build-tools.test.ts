@@ -257,6 +257,7 @@ const MANAGED_KEYS = [
 	"maxFileBytes",
 	"restoreResponses",
 	"useNativeHost",
+	"requireNativeNer",
 	"telemetry",
 	"language",
 	"policyId",
@@ -300,6 +301,9 @@ function assertValidPolicy(policy: Record<string, Json>): void {
 	expect(["auto", "en", "tr"]).toContain(policy.language);
 	expect(policy.maxFileBytes).toBeLessThanOrEqual(50 * 1024 * 1024);
 	expect(policy.policyId).toMatch(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/);
+	// Documented, but off: requiring native NER blocks every send where no host is installed.
+	expect(policy.requireNativeNer).toBe(false);
+	expect(policy.useNativeHost).toBe(false);
 	const telemetry = policy.telemetry as { controlPlaneUrl: string; apiKey: string };
 	expect(Object.keys(telemetry).sort()).toEqual(["apiKey", "controlPlaneUrl"]);
 	expect(telemetry.controlPlaneUrl).toMatch(/^https:\/\//);
