@@ -183,6 +183,7 @@ test("every workflow artifact upload has an explicit reviewed file selection", (
 		["release-promote.yml::Persist anti-rollback state and verification receipt (pinned)", [
 			"${{ runner.temp }}/aidr-promotion-state/anti-rollback-state.json",
 			"${{ runner.temp }}/aidr-promotion-state/verification-receipt.json",
+			"${{ runner.temp }}/aidr-promotion-state/production-go-ledger.json",
 		]],
 		["release-promote.yml::Archive promotion evidence (pinned)", ["release-output/"]],
 		["release-rc.yml::Upload unsigned release inputs (pinned)", ["${{ runner.temp }}/prepared-release.tgz"]],

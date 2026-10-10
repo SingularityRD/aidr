@@ -1,12 +1,19 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { validateCommercialGateReceipts, validateReceiptRecord } from "./verify-commercial-gate-receipts.mjs";
+import { CANDIDATE_DIGEST_SOURCE } from "./generate-v8-evidence-index.mjs";
+import {
+	RELEASE_INVENTORY_ENV,
+	RELEASE_INVENTORY_FILE,
+	resolveReleaseInventoryPath,
+	validateCommercialGateReceipts,
+	validateReceiptRecord,
+} from "./verify-commercial-gate-receipts.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const RECEIPTS_FILE = "docs/production-readiness/commercial-gate-receipts.json";
@@ -273,4 +280,44 @@ test("SEC-EXT-001 rejects report tampering and missing retest evidence", async (
 		const { input } = closedAssessment(sub, { signed_report: { path: join(ROOT, EVIDENCE_PATH), sha256: sha256OfFile(EVIDENCE_PATH) } });
 		assert.match(failuresOf(input), /signed report must stay inside the evidence root/);
 	});
+});
+
+// ─── single candidate source (audit item 18) ─────────────────────────────
+
+test("the receipt verifier binds to the generator's candidate, not a hand-copied one", async () => {
+	assert.equal(RELEASE_INVENTORY_FILE, CANDIDATE_DIGEST_SOURCE);
+	const source = await readFile(join(ROOT, "scripts/verify-commercial-gate-receipts.mjs"), "utf8");
+	assert.match(source, /export const RELEASE_INVENTORY_FILE = CANDIDATE_DIGEST_SOURCE;/u);
+	// Every consumer that names the candidate release directory must derive it from
+	// the generator instead of repeating a literal that can drift (20260913 vs 20260916-r9).
+	for (const file of ["scripts/verify-commercial-gate-receipts.mjs", "scripts/check-claim-evidence-freshness.mjs", "scripts/run-evidence-gates.mjs", "scripts/lib/evidence-output-guard.mjs", "scripts/lib/ci-local-plan.mjs", "scripts/verify-production-go.mjs"]) {
+		const text = await readFile(join(ROOT, file), "utf8");
+		assert.doesNotMatch(text, /customer-release-v8-local-\d/u, `${file} hardcodes a candidate release directory`);
+	}
+});
+
+test("receipts evaluated against a different candidate than the one under review fail", () => {
+	const input = fixture();
+	assert.deepEqual(validateCommercialGateReceipts({ ...input, expectedCandidateDigest: candidateDigest }).failures, []);
+	const other = validateCommercialGateReceipts({ ...input, expectedCandidateDigest: "f".repeat(64) });
+	assert.ok(other.failures.some((failure) => /receipts for a different candidate are rejected/u.test(failure)), other.failures.join("\n"));
+	const malformed = validateCommercialGateReceipts({ ...input, expectedCandidateDigest: "not-a-digest" });
+	assert.ok(malformed.failures.some((failure) => /is not a SHA-256 hex digest/u.test(failure)));
+	const absent = validateCommercialGateReceipts({ ...input, releaseInventoryPath: join(inventoryDir, "absent.json"), expectedCandidateDigest: candidateDigest });
+	assert.ok(absent.failures.some((failure) => /is candidate unknown/u.test(failure)), "a missing inventory cannot match any candidate");
+});
+
+test("an inventory override may relocate the canonical candidate but never select a different one", (t) => {
+	const root = mkdtempSync(join(tmpdir(), "aidr-gate-receipts-root-"));
+	t.after(() => rmSync(root, { recursive: true, force: true }));
+	assert.equal(resolveReleaseInventoryPath({ root, env: {} }), RELEASE_INVENTORY_FILE);
+	// No canonical candidate on disk: the override is taken, and closed receipts still have to match its digest.
+	assert.equal(resolveReleaseInventoryPath({ root, env: { [RELEASE_INVENTORY_ENV]: inventoryPath } }), inventoryPath);
+	mkdirSync(dirname(join(root, CANDIDATE_DIGEST_SOURCE)), { recursive: true });
+	writeFileSync(join(root, CANDIDATE_DIGEST_SOURCE), inventoryBytes);
+	assert.equal(resolveReleaseInventoryPath({ root, env: { [RELEASE_INVENTORY_ENV]: inventoryPath } }), inventoryPath, "same bytes elsewhere is the same candidate");
+	const different = join(inventoryDir, "other-release-inventory.json");
+	writeFileSync(different, `${JSON.stringify({ schema_version: 1, artifacts: [{ name: "x" }] })}\n`);
+	assert.throws(() => resolveReleaseInventoryPath({ root, env: { [RELEASE_INVENTORY_ENV]: different } }), /is a different release candidate/u);
+	assert.throws(() => resolveReleaseInventoryPath({ root, env: { [RELEASE_INVENTORY_ENV]: join(inventoryDir, "missing.json") } }), /different release candidate \(unknown\)/u);
 });

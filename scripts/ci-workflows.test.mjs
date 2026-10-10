@@ -254,3 +254,87 @@ test("Browser Guard release: protected signed tag, least privilege, attested zip
 	assert.deepEqual([...secrets].sort(), ["GITHUB_TOKEN", "RELEASE_TAG_PGP_FINGERPRINT", "RELEASE_TAG_PGP_PUBLIC_KEY"]);
 	assert.doesNotMatch(raw("release-browser-guard.yml"), /chrome-webstore|webstore|AMO_|addons\.mozilla|EDGE_/iu);
 });
+
+// ─── production GO gate (audit item 14) ──────────────────────────────────
+
+const GO_SCRIPT = "node .trusted-release-verifier/scripts/verify-production-go.mjs";
+
+/** A step that publishes, deploys, retags or persists promotion state for production. */
+function isProductionMutation(step) {
+	const run = step.run ?? "";
+	if (/softprops\/action-gh-release@/u.test(step.uses ?? "")) return step.with?.draft !== true;
+	if (/actions\/upload-artifact@/u.test(step.uses ?? "")) return /anti-rollback-state|aidr-promotion-/u.test(String(step.with?.name ?? ""));
+	// Deploy/rollback/yank hooks are POSTed with curl; npm mutations are named.
+	return /\bnpm publish\b(?![^\n]*--dry-run)|\bnpm dist-tag\b|\bnpm deprecate\b|\bcurl\b[^\n]*-X POST/u.test(run);
+}
+
+function goStepIndex(job, mode) {
+	const indices = (job.steps ?? []).flatMap((step, index) => ((step.run ?? "").includes(GO_SCRIPT) && (mode === "rollback") === /--rollback\b/u.test(step.run) ? [index] : []));
+	assert.equal(indices.length, 1, `exactly one ${mode} production GO step is required`);
+	return indices[0];
+}
+
+test("release-promote: the candidate-bound production GO gate precedes every production publish, deploy and state persist", () => {
+	const promote = workflow("release-promote.yml").jobs.promote;
+	const go = goStepIndex(promote, "promote");
+	const gate = promote.steps[go];
+	assert.equal(gate.if, undefined, "the GO gate must not be conditional");
+	assert.equal(gate["continue-on-error"], undefined, "the GO gate must block");
+	for (const flag of ["--root .trusted-release-verifier", "--bundle release-output", '--candidate-digest "${VERIFIED_CANDIDATE_DIGEST}"', "--profile production-ga", "--record"]) {
+		assert.ok(gate.run.includes(flag), `GO gate must pass ${flag}`);
+	}
+	assert.equal(gate.env.VERIFIED_CANDIDATE_DIGEST, "${{ steps.verify.outputs.candidate_digest }}");
+	const verify = promote.steps.findIndex((step) => step.id === "verify");
+	assert.ok(verify >= 0 && verify < go, "the GO gate consumes the signature-verified candidate digest");
+	assert.match(promote.steps[verify].run, /candidate_digest=\$\(sha256sum release-output\/release-inventory\.json/u);
+	const staged = promote.steps.findIndex((step) => step.name === "Stage candidate build output for the claim gate");
+	assert.ok(staged > verify && staged < go, "claim-check needs the candidate artifact roots staged before the gate");
+
+	const mutations = promote.steps.flatMap((step, index) => (isProductionMutation(step) ? [{ index, name: step.name }] : []));
+	const names = mutations.map((step) => step.name);
+	for (const expected of [
+		"Persist anti-rollback state and verification receipt (pinned)",
+		"Publish verified npm packages under rc dist-tag",
+		"Promote the exact dashboard commit and run remote smoke",
+		"Move npm dist-tags to latest only after deployed smoke",
+		"Publish final GitHub release from the same bundle (pinned)",
+	]) {
+		assert.ok(names.includes(expected), `${expected} must be recognised as a production mutation`);
+	}
+	for (const mutation of mutations) assert.ok(mutation.index > go, `${mutation.name} runs before the production GO gate`);
+	const persisted = promote.steps.find((step) => step.name === "Persist anti-rollback state and verification receipt (pinned)");
+	assert.match(persisted.with.path, /production-go-ledger\.json/u, "the GO ledger must persist with the protected promotion state");
+});
+
+test("release-promote: rollback requires a recorded production GO for the exact candidate before retagging", () => {
+	const rollback = workflow("release-promote.yml").jobs.rollback;
+	const go = goStepIndex(rollback, "rollback");
+	const gate = rollback.steps[go];
+	assert.equal(gate.if, undefined);
+	assert.equal(gate["continue-on-error"], undefined);
+	for (const flag of ["--bundle release-output", "--ledger", '--expected-version "${VERSION}"', '--expected-sha "${VERIFIED_SHA}"']) assert.ok(gate.run.includes(flag), `rollback GO must pass ${flag}`);
+	const names = rollback.steps.map((step) => step.name);
+	assert.ok(names.indexOf("Restore protected promotion state (pinned)") < go, "the ledger must be restored before the rollback gate");
+	assert.ok(names.indexOf("Verify rollback RC signature and identity") < go);
+	const mutations = rollback.steps.flatMap((step, index) => (isProductionMutation(step) ? [index] : []));
+	assert.ok(mutations.length > 0);
+	for (const index of mutations) assert.ok(index > go, `${rollback.steps[index].name} runs before the rollback GO gate`);
+});
+
+test("no other release workflow mutates production without a production GO gate", () => {
+	for (const name of workflowFiles) {
+		for (const [jobId, job] of Object.entries(workflow(name).jobs)) {
+			if (name === "release-promote.yml" && ["promote", "rollback", "yank"].includes(jobId)) continue;
+			const mutations = (job.steps ?? []).filter(isProductionMutation).map((step) => step.name);
+			assert.deepEqual(mutations, [], `${name}:${jobId} publishes to production without the candidate-bound GO gate`);
+		}
+	}
+	// The RC and Browser Guard workflows only ever create draft GitHub releases:
+	// the GO record names a candidate digest that does not exist until the RC is
+	// built, and Browser Guard store submission is a separate manual step.
+	for (const [name, jobId] of [["release-rc.yml", "final-sign-publish"], ["release-browser-guard.yml", "attest-publish"]]) {
+		const releases = workflow(name).jobs[jobId].steps.filter((step) => /softprops\/action-gh-release@/u.test(step.uses ?? ""));
+		assert.ok(releases.length > 0, `${name} must still publish its draft release`);
+		for (const step of releases) assert.equal(step.with.draft, true, `${name}: ${step.name} must stay a draft (non-production) release`);
+	}
+});

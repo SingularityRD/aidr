@@ -195,6 +195,7 @@ jobs:
         run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Verify RC identity, manifest, SBOM and signatures
+        id: verify
         shell: bash
         env:
           RELEASE_TAG: ${{ inputs.tag }}
@@ -237,6 +238,54 @@ jobs:
               exit 1
             }
           done
+          # The candidate digest is the SHA-256 of the signature-verified
+          # release-inventory.json (CANDIDATE_DIGEST_SOURCE). The GO gate below
+          # recomputes it from the bundle and must get the same value.
+          echo "candidate_digest=$(sha256sum release-output/release-inventory.json | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
+
+      - name: Stage candidate build output for the claim gate
+        shell: bash
+        env:
+          AIDR_BUILD_FLAVOR: commercial
+        run: |
+          set -euo pipefail
+          # claim-check --mode=gate hashes and scans registry.artifactRoots. Build
+          # them from the exact RC tag and stage them into the trusted verifier
+          # checkout, whose registry and claim gate code are the ones that decide.
+          pnpm --filter @singularityrd/aidr-privacy build:release
+          pnpm build:release
+          mapfile -t roots < <(node -e 'const registry = JSON.parse(require("node:fs").readFileSync(".trusted-release-verifier/docs/production-readiness/commercial-go-evidence-registry.json", "utf8")); for (const root of registry.artifactRoots ?? []) console.log(root);')
+          ((${#roots[@]} > 0)) || { echo "Trusted registry names no artifact roots." >&2; exit 1; }
+          for root in "${roots[@]}"; do
+            [[ "${root}" =~ ^packages/[a-z0-9-]+/dist$ ]] || { echo "Unexpected artifact root ${root}." >&2; exit 1; }
+            [[ -d "${root}" ]] || { echo "Candidate build produced no ${root}." >&2; exit 1; }
+            rm -rf ".trusted-release-verifier/${root}"
+            mkdir -p ".trusted-release-verifier/${root%/dist}"
+            cp -a "${root}" ".trusted-release-verifier/${root}"
+          done
+
+      - name: Require candidate-bound production GO (trusted verifier)
+        shell: bash
+        env:
+          VERIFIED_CANDIDATE_DIGEST: ${{ steps.verify.outputs.candidate_digest }}
+        run: |
+          set -euo pipefail
+          # Blocking production GO gate. It runs from the immutable trusted
+          # verifier checkout (protected default branch at github.workflow_sha):
+          # the RC tag cannot contain a GO record for its own digest. It fails
+          # unless the registry decision is GO, registry.releaseCandidate is this
+          # bundle's inventory digest, every production-ga gate and receipt is
+          # closed, bound to that digest and fresh, the receipt verifier passes
+          # for that digest, and claim-check --mode=gate passes. The production
+          # environment's reviewers are not relied on (they could not be verified).
+          [[ "${VERIFIED_CANDIDATE_DIGEST}" =~ ^[0-9a-f]{64}$ ]] || { echo "Verified candidate digest is missing." >&2; exit 1; }
+          node .trusted-release-verifier/scripts/verify-production-go.mjs \
+            --root .trusted-release-verifier \
+            --bundle release-output \
+            --candidate-digest "${VERIFIED_CANDIDATE_DIGEST}" \
+            --profile production-ga \
+            --ledger "${RUNNER_TEMP}/aidr-promotion-state/production-go-ledger.json" \
+            --record
 
       - name: Persist anti-rollback state and verification receipt (pinned)
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -245,6 +294,7 @@ jobs:
           path: |
             ${{ runner.temp }}/aidr-promotion-state/anti-rollback-state.json
             ${{ runner.temp }}/aidr-promotion-state/verification-receipt.json
+            ${{ runner.temp }}/aidr-promotion-state/production-go-ledger.json
           if-no-files-found: error
           retention-days: 365
           overwrite: true
@@ -574,6 +624,31 @@ jobs:
           }
           echo "${gh_dir}" >> "${GITHUB_PATH}"
 
+      - name: Resolve latest protected promotion state
+        id: prior_state
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          run_id="$(node .trusted-release-verifier/scripts/find-release-state-run.mjs \
+            --artifact-name aidr-promotion-anti-rollback-state \
+            --repository "${GITHUB_REPOSITORY}" \
+            --api-url "${GITHUB_API_URL}" \
+            --workflow-path .github/workflows/release-promote.yml \
+            --default-branch "${DEFAULT_BRANCH}")"
+          echo "run_id=${run_id}" >> "${GITHUB_OUTPUT}"
+
+      - name: Restore protected promotion state (pinned)
+        if: steps.prior_state.outputs.run_id != ''
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aidr-promotion-anti-rollback-state
+          path: ${{ runner.temp }}/aidr-promotion-state
+          run-id: ${{ steps.prior_state.outputs.run_id }}
+          github-token: ${{ github.token }}
+
       - name: Download the signed rollback RC bundle (pinned)
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -640,6 +715,25 @@ jobs:
             --expected-sha "${expected_sha}" \
             --run-id "${RC_RUN_ID}"
           echo "verified_sha=${expected_sha}" >> "${GITHUB_OUTPUT}"
+
+      - name: Require a recorded production GO for the rollback candidate (trusted verifier)
+        shell: bash
+        env:
+          VERSION: ${{ inputs.rollback_version }}
+          VERIFIED_SHA: ${{ steps.rollback_verify.outputs.verified_sha }}
+        run: |
+          set -euo pipefail
+          # Rollback restores an earlier candidate, usually because the current
+          # one is bad, so the current registry decision is not the right test.
+          # Instead the exact candidate (inventory digest, version and commit)
+          # must appear in the protected promotion ledger written by the GO gate
+          # when it was promoted. No ledger or no entry: refuse; roll forward.
+          node .trusted-release-verifier/scripts/verify-production-go.mjs \
+            --rollback \
+            --bundle release-output \
+            --ledger "${RUNNER_TEMP}/aidr-promotion-state/production-go-ledger.json" \
+            --expected-version "${VERSION}" \
+            --expected-sha "${VERIFIED_SHA}"
 
       - name: Retag verified npm versions and dashboard deployment
         shell: bash

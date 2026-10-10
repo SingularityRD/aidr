@@ -35,6 +35,8 @@
  * is skipped instead.
  */
 
+import { CANDIDATE_DIGEST_SOURCE } from "../generate-v8-evidence-index.mjs";
+
 export const CI_WORKFLOW_PATH = ".github/workflows/ci.yml";
 export const LOCAL_DIR = ".ci-local";
 export const REPORT_PATH = `${LOCAL_DIR}/report.json`;
@@ -289,8 +291,8 @@ export const STEPS = Object.freeze([
 	step({
 		id: "commercial-readiness",
 		group: "commercial",
-		name: "Commercial readiness and gate-receipt checks",
-		run: "node scripts/check-commercial-readiness.mjs && node --test scripts/check-commercial-readiness.test.mjs scripts/verify-commercial-gate-receipts.test.mjs",
+		name: "Commercial readiness, gate-receipt and candidate-bound production GO checks",
+		run: "node scripts/check-commercial-readiness.mjs && node --test scripts/check-commercial-readiness.test.mjs scripts/verify-commercial-gate-receipts.test.mjs scripts/verify-production-go.test.mjs docs/scripts/claim-check.test.mjs",
 		quick: true,
 		timeoutMs: 3 * MIN,
 	}),
@@ -308,7 +310,7 @@ export const STEPS = Object.freeze([
 		name: "Claim-evidence refresh helper against a local release candidate",
 		run: "node --test scripts/refresh-claim-evidence.test.mjs",
 		requires: ["release-candidate"],
-		requiresFile: ".release-evidence/customer-release-v8-local-20260916-r9/release-inventory.json",
+		requiresFile: CANDIDATE_DIGEST_SOURCE,
 		timeoutMs: 3 * MIN,
 	}),
 

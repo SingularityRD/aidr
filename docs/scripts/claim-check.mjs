@@ -18,13 +18,18 @@
  *   node docs/scripts/claim-check.mjs --mode=gate --root extra/release-copy
  *   --root adds a surface; it never replaces the required registry surfaces.
  *   node docs/scripts/claim-check.mjs --mode=gate --json > claim-check.json
+ *   node docs/scripts/claim-check.mjs --mode=gate --json --candidate-inventory release-output/release-inventory.json
+ *   --candidate-inventory binds the recorded candidate_digest to a downloaded
+ *   release bundle instead of the local CANDIDATE_DIGEST_SOURCE (used by
+ *   scripts/verify-production-go.mjs, which runs from a trusted checkout that
+ *   has no .release-evidence/ tree).
  */
 
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { CANDIDATE_DIGEST_SOURCE, candidateDigest, gitCommitSha } from "../../scripts/generate-v8-evidence-index.mjs";
+import { candidateDigest, gitCommitSha } from "../../scripts/generate-v8-evidence-index.mjs";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(scriptDir, "../..");
@@ -49,7 +54,7 @@ const allowedExtensions = new Set([
 const ignoredDirectoryNames = new Set([".git", ".next", ".turbo", "coverage", "dist", "node_modules"]);
 
 function parseArgs(argv) {
-	const args = { mode: "inventory", json: false, registry: defaultRegistry, roots: [] };
+	const args = { mode: "inventory", json: false, registry: defaultRegistry, roots: [], candidateInventory: null };
 	for (let index = 0; index < argv.length; index += 1) {
 		const arg = argv[index];
 		if (arg === "--json") {
@@ -80,16 +85,34 @@ function parseArgs(argv) {
 			args.roots.push(arg.slice("--root=".length));
 			continue;
 		}
+		if (arg === "--candidate-inventory") {
+			args.candidateInventory = argv[++index];
+			continue;
+		}
+		if (arg.startsWith("--candidate-inventory=")) {
+			args.candidateInventory = arg.slice("--candidate-inventory=".length);
+			continue;
+		}
 		if (arg === "--help" || arg === "-h") {
-			console.log("Usage: node docs/scripts/claim-check.mjs [--mode inventory|gate] [--root PATH]... [--json]");
+			console.log("Usage: node docs/scripts/claim-check.mjs [--mode inventory|gate] [--root PATH]... [--candidate-inventory FILE] [--json]");
 			process.exit(0);
 		}
 		throw new Error(`Unknown argument: ${arg}`);
+	}
+	if (args.candidateInventory !== null && (typeof args.candidateInventory !== "string" || args.candidateInventory === "")) {
+		throw new Error("--candidate-inventory needs a file path");
 	}
 	if (!new Set(["inventory", "gate"]).has(args.mode)) {
 		throw new Error(`Unsupported mode ${args.mode}; use inventory or gate`);
 	}
 	return args;
+}
+
+function explicitCandidateDigest(value) {
+	const path = resolve(value);
+	const present = existsSync(path) && statSync(path).isFile();
+	// A missing explicit inventory never falls back to the local candidate.
+	return { source: value.replaceAll("\\", "/"), digest_source_exists: present, digest: present ? sha256(readFileSync(path)) : "unknown" };
 }
 
 function resolvePath(value) {
@@ -415,13 +438,13 @@ function main() {
 	const openHardGates = (registry.hardGates ?? []).filter((gate) => gate.class === "hard" && gate.status !== "closed");
 	const gateFailure = registryErrors.length > 0 || missingRoots.length > 0 || missingArtifactRoots.length > 0 || emptyArtifactRoots.length > 0 || unapprovedHits.length > 0 || openHardGates.length > 0 || licenseCheck.errors.length > 0;
 	const sourceCommit = gitCommitSha(repositoryRoot);
-	const candidate = candidateDigest(repositoryRoot);
+	const candidate = args.candidateInventory === null ? candidateDigest(repositoryRoot) : explicitCandidateDigest(args.candidateInventory);
 	const result = {
 		registry: relative(repositoryRoot, registryPath).replaceAll("\\", "/"),
 		registrySha256: sha256(readFileSync(registryPath)),
 		source_commit: sourceCommit,
 		candidate_digest: candidate.digest,
-		candidate_digest_source: CANDIDATE_DIGEST_SOURCE,
+		candidate_digest_source: candidate.source,
 		mode: args.mode,
 		decision: registry.decision,
 		roots: roots.map((root) => relative(repositoryRoot, root).replaceAll("\\", "/")),

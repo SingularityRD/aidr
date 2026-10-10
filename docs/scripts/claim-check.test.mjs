@@ -146,3 +146,40 @@ test("gate root arguments cannot replace the registry's required surfaces", () =
   assert.ok(report.roots.includes("docs/sales"));
   assert.ok(report.openHardGates.length > 0);
 });
+
+test("--candidate-inventory binds the recorded candidate to that exact file and never falls back", () => {
+  const dir = mkdtempSync(join(tmpdir(), "aidr-claim-candidate-"));
+  try {
+    const inventory = join(dir, "release-inventory.json");
+    const bytes = '{"schema_version":1,"artifacts":[]}\n';
+    writeFileSync(inventory, bytes);
+    const runWith = (path) => {
+      const result = spawnSync(process.execPath, [fileURLToPath(script), "--mode=inventory", "--json", "--candidate-inventory", path], { cwd: fileURLToPath(root), encoding: "utf8", maxBuffer: 10 * 1024 * 1024 });
+      assert.equal(result.status, 0, result.stderr);
+      return JSON.parse(result.stdout);
+    };
+    const bound = runWith(inventory);
+    assert.equal(bound.candidate_digest, digest(bytes));
+    assert.equal(bound.candidate_digest_source, inventory.replaceAll("\\", "/"));
+    const missing = runWith(join(dir, "absent.json"));
+    assert.equal(missing.candidate_digest, "unknown", "a missing bundle inventory must not borrow the local candidate");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("gate mode fails on the current NO-GO registry even when bound to a candidate inventory", () => {
+  const dir = mkdtempSync(join(tmpdir(), "aidr-claim-candidate-"));
+  try {
+    const inventory = join(dir, "release-inventory.json");
+    writeFileSync(inventory, '{"schema_version":1,"artifacts":[]}\n');
+    const result = spawnSync(process.execPath, [fileURLToPath(script), "--mode=gate", "--json", "--candidate-inventory", inventory], { cwd: fileURLToPath(root), encoding: "utf8", maxBuffer: 10 * 1024 * 1024 });
+    assert.equal(result.status, 1, result.stderr);
+    const parsed = JSON.parse(result.stdout);
+    assert.equal(parsed.result, "FAIL");
+    assert.equal(parsed.decision, "NO-GO");
+    assert.ok(parsed.openHardGates.length > 0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
