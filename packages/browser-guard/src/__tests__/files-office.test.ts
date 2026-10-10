@@ -209,6 +209,97 @@ describe("XLSX masking", () => {
 	});
 });
 
+describe("XLSX formulas", () => {
+	const SS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+	const header = (...names: string[]) =>
+		`<row r="1">${names.map((n, i) => `<c r="${String.fromCharCode(65 + i)}1" t="inlineStr"><is><t>${n}</t></is></c>`).join("")}</row>`;
+	const sheetXml = async (d: FileDecision) =>
+		(await unzipText(maskedBytes(d))).get("xl/worksheets/sheet1.xml") ?? "";
+	const cellXml = (xml: string, ref: string) =>
+		new RegExp(`<c r="${ref}"(?:\\s[^>]*)?(?:/>|>.*?</c>)`).exec(xml)?.[0] ?? "";
+
+	it("drops a formula that holds sensitive data and keeps a masked constant (cached value too)", async () => {
+		const sheet =
+			header("Ad", "İletişim", "Toplam") +
+			`<row r="2"><c r="A2" t="inlineStr"><is><t>Ali</t></is></c><c r="B2" t="str" s="3"><f>LOWER("${EMAIL}")</f><v>${EMAIL}</v></c><c r="C2"><f>SUM(1,2)</f><v>3</v></c></row>`;
+		const d = await sanitize("f.xlsx", await xlsx(sheet, null));
+		expect(d.counts).toMatchObject({ EMAIL: 2 });
+		const xml = await sheetXml(d);
+		expect(isWellFormed(xml)).toBe(true);
+		expect(xml).not.toContain(EMAIL);
+		expect(xml).not.toContain("ornek.com.tr");
+		expect(cellXml(xml, "B2")).toMatch(
+			/^<c r="B2" s="3" t="inlineStr"><is><t xml:space="preserve">\[EMAIL_\d+\]<\/t><\/is><\/c>$/,
+		);
+		// A clean formula survives untouched.
+		expect(cellXml(xml, "C2")).toBe('<c r="C2"><f>SUM(1,2)</f><v>3</v></c>');
+	});
+
+	it("does not allow a formula-only cell (no cached value) that spells out sensitive data", async () => {
+		const sheet = `${header("Not")}<row r="2"><c r="A2" t="str"><f>"Kimlik: ${TCKN} / "&amp;"${EMAIL}"</f></c></row>`;
+		const d = await sanitize("f.xlsx", await xlsx(sheet, null));
+		expect(d.action).toBe("mask");
+		expect(d.reasons).toContain("SENSITIVE_DATA");
+		expect(d.counts).toMatchObject({ EMAIL: 1, TC_KIMLIK: 1 });
+		const xml = await sheetXml(d);
+		expect(isWellFormed(xml)).toBe(true);
+		for (const secret of [EMAIL, TCKN]) expect(xml).not.toContain(secret);
+		expect(xml).not.toMatch(/<f[\s>]/);
+		expect(cellXml(xml, "A2")).toMatch(
+			/^<c r="A2" t="inlineStr"><is><t xml:space="preserve">="Kimlik: \[TCKN_\d+\] \/ "&amp;"\[EMAIL_\d+\]"<\/t><\/is><\/c>$/,
+		);
+	});
+
+	it("turns every dependent of a sensitive shared formula into a constant as well", async () => {
+		const sheet =
+			header("Eşleşme", "Toplam") +
+			`<row r="2"><c r="A2"><f t="shared" ref="A2:A4" si="0">IF(C2="${EMAIL}",1,0)</f><v>1</v></c><c r="B2"><f t="shared" ref="B2:B3" si="1">A2*2</f><v>2</v></c></row>` +
+			'<row r="3"><c r="A3"><f t="shared" si="0"/><v>0</v></c><c r="B3"><f t="shared" si="1"/><v>0</v></c></row>' +
+			'<row r="4"><c r="A4" s="2"><f t="shared" si="0"/></c></row>';
+		const d = await sanitize("s.xlsx", await xlsx(sheet, null));
+		const xml = await sheetXml(d);
+		expect(isWellFormed(xml)).toBe(true);
+		expect(xml).not.toContain(EMAIL);
+		expect(cellXml(xml, "A2")).toBe('<c r="A2"><v>1</v></c>');
+		expect(cellXml(xml, "A3")).toBe('<c r="A3"><v>0</v></c>');
+		expect(cellXml(xml, "A4")).toBe('<c r="A4" s="2"/>');
+		// The clean shared formula (si=1), master and dependent, is kept.
+		expect(cellXml(xml, "B2")).toBe(
+			'<c r="B2"><f t="shared" ref="B2:B3" si="1">A2*2</f><v>2</v></c>',
+		);
+		expect(cellXml(xml, "B3")).toBe('<c r="B3"><f t="shared" si="1"/><v>0</v></c>');
+	});
+
+	it("drops a literal formula in a column whose header names a sensitive field", async () => {
+		const sheet = `${header("Kullanıcı", "Şifre")}<row r="2"><c r="A2" t="inlineStr"><is><t>ali</t></is></c><c r="B2" t="str"><f>"Gizli123!"</f><v>Gizli123!</v></c></row>`;
+		const xml = await sheetXml(await sanitize("p.xlsx", await xlsx(sheet, null)));
+		expect(xml).not.toContain("Gizli123!");
+		expect(cellXml(xml, "B2")).toMatch(/t="inlineStr"><is><t xml:space="preserve">\[SECRET_\d+\]</);
+	});
+
+	it("masks formulas outside cells (data validation, conditional formats) and defined names", async () => {
+		const worksheet = `<?xml version="1.0"?><worksheet xmlns="${SS}"><sheetData>${header("E-posta")}</sheetData><conditionalFormatting sqref="A2:A9"><cfRule type="expression" priority="1"><formula>A2="${EMAIL}"</formula></cfRule></conditionalFormatting><dataValidations count="1"><dataValidation type="list" sqref="B2"><formula1>"${TCKN},x"</formula1></dataValidation></dataValidations></worksheet>`;
+		const workbook = `<?xml version="1.0"?><workbook xmlns="${SS}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets><definedNames><definedName name="iletisim">"${EMAIL}"</definedName></definedNames></workbook>`;
+		const d = await sanitize(
+			"v.xlsx",
+			await xlsx("", null, {
+				"xl/worksheets/sheet1.xml": worksheet,
+				"xl/workbook.xml": workbook,
+			}),
+		);
+		const parts = await unzipText(maskedBytes(d));
+		for (const name of ["xl/worksheets/sheet1.xml", "xl/workbook.xml"]) {
+			const xml = parts.get(name) ?? "";
+			expect(isWellFormed(xml)).toBe(true);
+			expect(xml).not.toContain(EMAIL);
+			expect(xml).not.toContain(TCKN);
+		}
+		expect(parts.get("xl/workbook.xml")).toMatch(
+			/<definedName name="iletisim">"\[EMAIL_\d+\]"<\/definedName>/,
+		);
+	});
+});
+
 describe("PPTX masking", () => {
 	it("masks slide and notes text split across a:r runs", async () => {
 		const s1 = slide(
@@ -392,6 +483,29 @@ describe("OOXML policy and classification", () => {
 		expect(d.action).toBe("mask");
 	});
 
+	it("masks an OOXML package behind a text, PDF or archive name exactly like a .docx", async () => {
+		const input = await docx(para(run(`İletişim: ${EMAIL}`)));
+		const reference = await sanitize("r.docx", input);
+		expect(reference.action).toBe("mask");
+		for (const [name, type] of [
+			["r.txt", "text/plain"],
+			["r.pdf", "application/pdf"],
+			["r.zip", "application/zip"],
+			["r.csv", "text/csv"],
+		] as const) {
+			const d = await sanitize(name, input, { type });
+			expect(d.action).toBe("mask");
+			expect(d.reasons).toEqual(reference.reasons);
+			expect(d.counts).toEqual(reference.counts);
+			expect((await unzipText(maskedBytes(d))).get("word/document.xml")).not.toContain(EMAIL);
+			expect(await sanitize(name, input, { type, policy: { documentHandling: "block" } })).toEqual({
+				action: "block",
+				counts: {},
+				reasons: ["DOCUMENT_BLOCKED_BY_POLICY"],
+			});
+		}
+	});
+
 	it("treats a non-ZIP file named .docx as an unscanned binary", async () => {
 		const bytes = new TextEncoder().encode(`plain ${EMAIL}`);
 		expect((await sanitize("fake.docx", bytes)).reasons).toEqual([
@@ -486,4 +600,115 @@ describe("OOXML performance bounds", () => {
 		expect(Date.now() - started).toBeLessThan(20_000);
 		expect(d.counts.TC_KIMLIK).toBe(1);
 	}, 30_000);
+});
+
+describe("OOXML namespace-aware matching (prefixes are not trusted)", () => {
+	const W_URI = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+	const A_URI = "http://schemas.openxmlformats.org/drawingml/2006/main";
+	const P_URI = "http://schemas.openxmlformats.org/presentationml/2006/main";
+	const EMAIL2 = "ayse.kaya@ornek.com.tr";
+	const EMAIL3 = "mehmet.oz@ornek.com.tr";
+
+	/** Element / attribute naming of one variant of the same WordprocessingML document. */
+	interface Naming {
+		readonly decl: string;
+		el(local: string): string;
+		at(local: string): string;
+	}
+	const VARIANTS: ReadonlyArray<readonly [string, Naming]> = [
+		["w: prefix", { decl: `xmlns:w="${W_URI}"`, el: (n) => `w:${n}`, at: (n) => `w:${n}` }],
+		["x: prefix", { decl: `xmlns:x="${W_URI}"`, el: (n) => `x:${n}`, at: (n) => `x:${n}` }],
+		[
+			"default namespace (w bound to a decoy URI)",
+			{
+				decl: `xmlns="${W_URI}" xmlns:w="urn:decoy" xmlns:q="${W_URI}"`,
+				el: (n) => n,
+				at: (n) => `q:${n}`,
+			},
+		],
+	];
+
+	function wordDocument({ decl, el, at }: Naming): string {
+		const r = (text: string) => `<${el("r")}><${el("t")}>${text}</${el("t")}></${el("r")}>`;
+		const p = (inner: string) => `<${el("p")}>${inner}</${el("p")}>`;
+		return (
+			`<?xml version="1.0" encoding="UTF-8"?><${el("document")} ${decl}><${el("body")}>` +
+			p(`<${el("r")}><${el("tab")}/></${el("r")}>${r("Mail: ali.veli@")}${r("ornek.com.tr")}`) +
+			p(
+				`<${el("fldSimple")} ${at("instr")}="HYPERLINK &quot;mailto:${EMAIL2}&quot;">${r("bağlantı")}</${el("fldSimple")}>`,
+			) +
+			p(
+				`<${el("ins")} ${at("id")}="1" ${at("author")}="${EMAIL3}">${r(`Kimlik ${TCKN}`)}</${el("ins")}>`,
+			) +
+			`<${el("sectPr")}/></${el("body")}></${el("document")}>`
+		);
+	}
+
+	it("masks the same text, fields and authors whatever prefix binds WordprocessingML", async () => {
+		const results: FileDecision[] = [];
+		for (const [, naming] of VARIANTS) {
+			const d = await sanitize(
+				"r.docx",
+				await docx("", { "word/document.xml": wordDocument(naming) }),
+			);
+			const xml = (await unzipText(maskedBytes(d))).get("word/document.xml") ?? "";
+			expect(isWellFormed(xml)).toBe(true);
+			for (const secret of ["ali.veli@", "ornek.com.tr", EMAIL2, EMAIL3, TCKN])
+				expect(xml).not.toContain(secret);
+			expect(xml).toMatch(/Mail: \[EMAIL_\d+\]/);
+			results.push(d);
+		}
+		const [reference] = results;
+		expect(reference?.counts).toMatchObject({ EMAIL: 3, TC_KIMLIK: 1 });
+		for (const d of results) {
+			expect(d.reasons).toEqual(reference?.reasons);
+			expect(d.counts).toEqual(reference?.counts);
+		}
+	});
+
+	it("masks DrawingML slide text bound to another prefix or a default namespace", async () => {
+		const sld = (body: string, decl: string) =>
+			`<?xml version="1.0"?><s:sld xmlns:s="${P_URI}" ${decl}><s:cSld><s:spTree><s:sp><s:txBody>${body}</s:txBody></s:sp></s:spTree></s:cSld></s:sld>`;
+		const variants = [
+			sld(`<d:p><d:r><d:t>Sunum: ${EMAIL}</d:t></d:r></d:p>`, `xmlns:d="${A_URI}"`),
+			sld(`<p xmlns="${A_URI}"><r><t>Sunum: ${EMAIL}</t></r></p>`, ""),
+		];
+		for (const xml of variants) {
+			const d = await sanitize("s.pptx", await pptx([xml]));
+			expect(d.counts).toMatchObject({ EMAIL: 1 });
+			const out = (await unzipText(maskedBytes(d))).get("ppt/slides/slide1.xml") ?? "";
+			expect(out).not.toContain(EMAIL);
+			expect(out).toMatch(/Sunum: \[EMAIL_\d+\]/);
+			expect(isWellFormed(out)).toBe(true);
+		}
+	});
+
+	it("masks SpreadsheetML parts written with an explicit prefix", async () => {
+		const SS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+		const d = await sanitize(
+			"p.xlsx",
+			await xlsx("", null, {
+				"xl/sharedStrings.xml": `<?xml version="1.0"?><s:sst xmlns:s="${SS}"><s:si><s:t>iletişim ${EMAIL}</s:t></s:si></s:sst>`,
+				"xl/worksheets/sheet1.xml": `<?xml version="1.0"?><s:worksheet xmlns:s="${SS}"><s:sheetData><s:row s:r="1"><s:c r="A1" t="s"><s:v>0</s:v></s:c><s:c r="B1" t="inlineStr"><s:is><s:t>${TCKN}</s:t></s:is></s:c></s:row></s:sheetData></s:worksheet>`,
+			}),
+		);
+		const parts = await unzipText(maskedBytes(d));
+		expect(parts.get("xl/sharedStrings.xml")).toMatch(/iletişim \[EMAIL_\d+\]/);
+		expect(parts.get("xl/worksheets/sheet1.xml")).not.toContain(TCKN);
+	});
+
+	it("refuses a part that uses an undeclared prefix (not namespace-well-formed)", async () => {
+		const xml = `<?xml version="1.0"?><w:document xmlns:w="${W_URI}"><w:body><x:p><x:r><x:t>${EMAIL}</x:t></x:r></x:p></w:body></w:document>`;
+		const d = await sanitize("u.docx", await docx("", { "word/document.xml": xml }));
+		expect(d).toEqual({ action: "block", counts: {}, reasons: ["DOCUMENT_MALFORMED"] });
+	});
+
+	it("refuses an attribute duplicated through two prefixes bound to one namespace", async () => {
+		const comments = `<w:comments xmlns:w="${W_URI}" xmlns:x="${W_URI}"><w:comment w:id="0" w:author="Ekip" x:author="${EMAIL}">${para(run("not"))}</w:comment></w:comments>`;
+		const d = await sanitize(
+			"c.docx",
+			await docx(para(run("metin")), { "word/comments.xml": comments }),
+		);
+		expect(d).toEqual({ action: "block", counts: {}, reasons: ["DOCUMENT_MALFORMED"] });
+	});
 });

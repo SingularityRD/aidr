@@ -98,12 +98,20 @@ administrator and end-user guide is [`docs/platform-guides/browser-guard.md`](..
      headers, footers, footnotes/endnotes, comments and their authors, tracked
      changes, field codes, text boxes, tables; Excel shared strings (rich text),
      inline strings, formula string results and numeric/date cells (a masked
-     number becomes a text cell; a formula keeps its formula), comments, pivot
-     cache strings, header/footer text, with sensitive column headers masking the
-     whole column as for CSV; PowerPoint slides, notes, layouts, masters and
+     number becomes a text cell; a clean formula keeps its formula), formulas
+     themselves (a cell whose formula holds sensitive data - and every dependent of
+     such a shared formula - loses the formula and becomes a masked constant, so a
+     recalculation cannot bring the value back), conditional-format and
+     data-validation formulas, defined names, comments, pivot cache strings,
+     header/footer text, with sensitive column headers masking the whole column as
+     for CSV; PowerPoint slides, notes, layouts, masters and
      comments; charts/diagrams/drawings, document properties and `mailto:` and
      other external hyperlink targets in every format. Other parts (styles, media,
-     fonts...) are copied byte for byte.
+     fonts...) are copied byte for byte. XML names are matched by namespace URI and
+     local name, never by the prefix a file happens to use (`x:p` bound to the
+     WordprocessingML namespace, or a default namespace, is still a paragraph); a
+     part that uses an undeclared prefix is refused (`DOCUMENT_MALFORMED`). The
+     same applies to OpenDocument text and its macro / OLE / external-link checks.
    - **ODT / ODS / ODP / ODG** (and templates) go through the same ZIP reader/writer,
      XML scanner and limits and are masked in place the same way: paragraphs are
      scanned over their spans, links and fields; notes, annotations and text boxes;
@@ -166,7 +174,14 @@ administrator and end-user guide is [`docs/platform-guides/browser-guard.md`](..
    - **PDF** text is extracted (object and cross-reference streams, Flate/LZW/
      ASCIIHex/ASCII85/RunLength, WinAnsi/MacRoman/Standard encodings with
      `/Differences`, ToUnicode CMaps for Identity-H fonts, Form XObjects,
-     annotations, form fields, document info) and scanned. PDFs are not rewritten:
+     annotations, form fields, document info, XMP metadata, and embedded files /
+     file attachments whose content is plain UTF-8/UTF-16 text) and scanned. An
+     embedded file that is not plain text (nested PDF, Office document, image,
+     archive...), cannot be decoded or is missing adds
+     `PDF_EMBEDDED_FILES_NOT_INSPECTED`, so such a PDF is never reported as clean.
+     A PDF (or OOXML/ODF/OLE document) is recognised by its content first, so
+     renaming it `report.txt` or sending it as `text/plain` changes neither the scan
+     nor `documentHandling`. PDFs are not rewritten:
      one with findings is blocked (`SENSITIVE_DATA_IN_PDF`) and the user is told to
      paste the text instead, where it is masked; `monitor` records it. A PDF
      without extractable text (scanned), with image-only pages or undecodable

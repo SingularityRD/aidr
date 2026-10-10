@@ -355,3 +355,90 @@ describe("OpenDocument and legacy Office policy and classification", () => {
 		expect(vault.unmask(placeholder)).toBe(EMAIL);
 	});
 });
+
+describe("OpenDocument namespace-aware matching (prefixes are not trusted)", () => {
+	const NS = {
+		office: "urn:oasis:names:tc:opendocument:xmlns:office:1.0",
+		script: "urn:oasis:names:tc:opendocument:xmlns:script:1.0",
+		draw: "urn:oasis:names:tc:opendocument:xmlns:drawing:1.0",
+		text: "urn:oasis:names:tc:opendocument:xmlns:text:1.0",
+		table: "urn:oasis:names:tc:opendocument:xmlns:table:1.0",
+		xlink: "http://www.w3.org/1999/xlink",
+	};
+	const listener = (el: string, at: string, decl: string) =>
+		`<text:p><draw:frame><office:event-listeners><${el} ${decl} ${at}language="ooo:script" ${at}event-name="dom:click" xlink:href="vnd.sun.star.script:Standard.Module1.Main"/></office:event-listeners></draw:frame></text:p>`;
+
+	it.each([
+		["script:event-listener", listener("script:event-listener", "script:", ""), "DOCUMENT_MACROS"],
+		[
+			"s:event-listener",
+			listener("s:event-listener", "s:", `xmlns:s="${NS.script}"`),
+			"DOCUMENT_MACROS",
+		],
+		[
+			"default-namespace event-listener",
+			listener("event-listener", "script:", `xmlns="${NS.script}"`),
+			"DOCUMENT_MACROS",
+		],
+		[
+			"o:object-ole",
+			`<text:p><draw:frame><o:object-ole xmlns:o="${NS.draw}" xlink:href="./Object 1"/></draw:frame></text:p>`,
+			"DOCUMENT_EMBEDDED_OBJECT",
+		],
+		[
+			"default-namespace object-ole",
+			`<text:p><frame xmlns="${NS.draw}"><object-ole xlink:href="./Object 1"/></frame></text:p>`,
+			"DOCUMENT_EMBEDDED_OBJECT",
+		],
+		[
+			"a linked section with a re-bound xlink prefix",
+			`<text:section text:name="S"><text:section-source xmlns:l="${NS.xlink}" l:href="file:///srv/gizli.odt"/></text:section>`,
+			"DOCUMENT_EXTERNAL_LINKS",
+		],
+		[
+			"an outside object in a default namespace",
+			`<text:p><frame xmlns="${NS.draw}"><object xmlns:l="${NS.xlink}" l:href="../other.ods"/></frame></text:p>`,
+			"DOCUMENT_EXTERNAL_LINKS",
+		],
+		[
+			"a DDE link under another prefix",
+			`<text:p><z:dde-connection-decls xmlns:z="${NS.text}"><z:dde-connection-decl office:name="d"/></z:dde-connection-decls></text:p>`,
+			"DOCUMENT_EXTERNAL_LINKS",
+		],
+	])("refuses %s the same way", async (_name, body, reason) => {
+		expect(await sanitize("r.odt", await odf("text", body))).toEqual({
+			action: "block",
+			counts: {},
+			reasons: [reason],
+		});
+	});
+
+	it("masks a hyperlink target whose xlink prefix is re-bound", async () => {
+		const body = `<text:p>Yazın: <text:a xmlns:l="${NS.xlink}" l:href="mailto:${EMAIL}">bize</text:a></text:p>`;
+		const content =
+			(await unzipText(maskedBytes(await sanitize("h.odt", await odf("text", body))))).get(
+				"content.xml",
+			) ?? "";
+		expect(content).not.toContain(EMAIL);
+		expect(content).toMatch(/l:href="mailto:\[EMAIL_\d+\]"/);
+		expect(isWellFormed(content)).toBe(true);
+	});
+
+	it("retypes a masked numeric cell using the document's own office prefix", async () => {
+		const cell = (inner: string, attrs: string) =>
+			`<t:table-cell ${attrs}><text:p>${inner}</text:p></t:table-cell>`;
+		const body =
+			`<t:table xmlns:t="${NS.table}" xmlns:o="${NS.office}" t:name="S">` +
+			`<t:table-row>${cell("Ad", 'o:value-type="string"')}${cell("Kimlik No", 'o:value-type="string"')}</t:table-row>` +
+			`<t:table-row>${cell("Ayşe", 'o:value-type="string"')}${cell(TCKN, `o:value-type="float" o:value="${TCKN}"`)}</t:table-row>` +
+			"</t:table>";
+		const content =
+			(await unzipText(maskedBytes(await sanitize("n.ods", await odf("spreadsheet", body))))).get(
+				"content.xml",
+			) ?? "";
+		expect(isWellFormed(content)).toBe(true);
+		expect(content).not.toContain(TCKN);
+		expect(content).not.toMatch(/o:value="/);
+		expect(content).toMatch(/o:value-type="string" o:string-value="\[(?:NATIONAL_ID|TCKN)_\d+\]"/);
+	});
+});

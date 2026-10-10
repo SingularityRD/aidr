@@ -27,9 +27,12 @@
  *         alt text (`descr`/`title`); `people.xml` identities.
  *   XLSX  shared strings (rich text runs), inline strings, formula string results and
  *         numeric/date cell values (a masked number becomes an inline string; a formula
- *         cell keeps its formula and gets a string result), header/footer text, comments,
- *         threaded comments, persons, pivot cache strings. A column whose header names a
- *         sensitive field (same dictionary as CSV) is masked wholesale.
+ *         cell with a clean formula keeps it and gets a string result), formulas (a cell
+ *         whose formula holds sensitive data - and every dependent of such a shared formula -
+ *         loses the formula and becomes a masked constant), header/footer text, other text
+ *         outside cells (conditional-format / data-validation formulas), comments, threaded
+ *         comments, persons, pivot cache strings, defined names. A column whose header names
+ *         a sensitive field (same dictionary as CSV) is masked wholesale.
  *   PPTX  slides, notes, layouts, masters, comments, comment authors.
  *   All   DrawingML text in charts/diagrams/drawings, document properties, external
  *         relationship targets (e.g. `mailto:` hyperlinks), and every other XML part
@@ -50,6 +53,7 @@ import type { DocScanner } from "./scanner.js";
 import {
 	applyReplacements,
 	assertWellFormed,
+	decodeXmlText,
 	type Edit,
 	escapeXmlText,
 	extractText,
@@ -59,9 +63,11 @@ import {
 	type Piece,
 	piecesSegment,
 	type RawReplacement,
+	STRICT_NAMESPACES,
 	spliceEdits,
 	type TextSegment,
 	type TextSpec,
+	textNodeSegment,
 	walkXml,
 	XmlError,
 	type XmlTag,
@@ -184,6 +190,7 @@ type PartKind =
 	| "pivot"
 	| "drawing"
 	| "pptAuthors"
+	| "workbook"
 	| "rels"
 	| "generic";
 
@@ -191,6 +198,8 @@ function partKind(name: string): PartKind | null {
 	const n = name.toLowerCase();
 	if (n.endsWith(".rels")) return "rels";
 	if (!n.endsWith(".xml")) return null;
+	// The workbook is structural except for defined names (formulas that can hold literals).
+	if (n === "xl/workbook.xml") return "workbook";
 	if (STRUCTURAL.test(n)) return null;
 	if (
 		/^word\/(?:glossary\/)?(?:document|header\d*|footer\d*|footnotes|endnotes|comments)\.xml$/.test(
@@ -219,7 +228,7 @@ function partKind(name: string): PartKind | null {
 const ALT_TEXT_ATTRS = ["descr", "title"] as const;
 
 function altText(tag: XmlTag): readonly string[] {
-	const local = localName(tag.name);
+	const local = localName(tag.cname);
 	return local === "cNvPr" || local === "docPr" ? ALT_TEXT_ATTRS : [];
 }
 
@@ -234,8 +243,8 @@ const WORD_SPEC: TextSpec = {
 	]),
 	preserveSpace: new Set(["w:t", "w:delText", "w:instrText", "w:delInstrText"]),
 	attributes(tag) {
-		if (tag.name === "w:fldSimple") return ["w:instr"];
-		if (tag.attrs.some((a) => a.name === "w:author")) return ["w:author", "w:initials"];
+		if (tag.cname === "w:fldSimple") return ["w:instr"];
+		if (tag.attrs.some((a) => a.cname === "w:author")) return ["w:author", "w:initials"];
 		return altText(tag);
 	},
 };
@@ -254,7 +263,7 @@ const SPECS: Readonly<Record<Exclude<PartKind, "sst" | "sheet">, TextSpec>> = {
 		paragraphs: new Set(),
 		leaves: new Set(),
 		attributes: (tag) =>
-			localName(tag.name) === "person" || localName(tag.name) === "presenceInfo"
+			localName(tag.cname) === "person" || localName(tag.cname) === "presenceInfo"
 				? ["w15:author", "w15:userId"]
 				: [],
 	},
@@ -268,18 +277,19 @@ const SPECS: Readonly<Record<Exclude<PartKind, "sst" | "sheet">, TextSpec>> = {
 	persons: {
 		paragraphs: new Set(),
 		leaves: new Set(),
-		attributes: (tag) => (localName(tag.name) === "person" ? ["displayName", "userId"] : []),
+		attributes: (tag) => (localName(tag.cname) === "person" ? ["displayName", "userId"] : []),
 	},
 	pivot: {
 		paragraphs: new Set(),
 		leaves: new Set(),
-		attributes: (tag) => (localName(tag.name) === "s" ? ["v"] : []),
+		attributes: (tag) => (localName(tag.cname) === "s" ? ["v"] : []),
 	},
+	workbook: { paragraphs: new Set(), leaves: new Set(["definedName"]), localNames: true },
 	pptAuthors: {
 		paragraphs: new Set(),
 		leaves: new Set(),
 		attributes: (tag) =>
-			localName(tag.name) === "cmAuthor" || localName(tag.name) === "author"
+			localName(tag.cname) === "cmAuthor" || localName(tag.cname) === "author"
 				? ["name", "initials", "userId"]
 				: [],
 	},
@@ -287,8 +297,8 @@ const SPECS: Readonly<Record<Exclude<PartKind, "sst" | "sheet">, TextSpec>> = {
 		paragraphs: new Set(),
 		leaves: new Set(),
 		attributes: (tag) =>
-			localName(tag.name) === "Relationship" &&
-			tag.attrs.some((a) => a.name === "TargetMode" && a.value === "External")
+			localName(tag.cname) === "Relationship" &&
+			tag.attrs.some((a) => a.cname === "TargetMode" && a.value === "External")
 				? ["Target"]
 				: [],
 	},
@@ -349,31 +359,35 @@ function sharedStrings(xml: string): Array<TextSegment | null> {
 	const items: Array<TextSegment | null> = [];
 	const leaves = new LeafTracker(xml);
 	let pieces: Piece[] | null = null;
-	walkXml(xml, {
-		start(tag) {
-			if (leaves.open) return leaves.child();
-			const local = localName(tag.name);
-			if (local === "si") {
-				pieces = [];
-				if (tag.selfClosing) {
-					items.push(null);
+	walkXml(
+		xml,
+		{
+			start(tag) {
+				if (leaves.open) return leaves.child();
+				const local = localName(tag.cname);
+				if (local === "si") {
+					pieces = [];
+					if (tag.selfClosing) {
+						items.push(null);
+						pieces = null;
+					}
+				} else if (local === "t" && pieces && !tag.selfClosing) leaves.begin(tag);
+			},
+			text: (start, end, cdata) => leaves.text(start, end, cdata),
+			end(name, start) {
+				const leaf = leaves.open ? leaves.end(start) : null;
+				if (leaf) {
+					pieces?.push({ leaf, text: leaf.text });
+					return;
+				}
+				if (localName(name) === "si" && pieces) {
+					items.push(pieces.some((p) => p.text) ? piecesSegment(pieces, SST_PRESERVE) : null);
 					pieces = null;
 				}
-			} else if (local === "t" && pieces && !tag.selfClosing) leaves.begin(tag);
+			},
 		},
-		text: (start, end, cdata) => leaves.text(start, end, cdata),
-		end(name, start) {
-			const leaf = leaves.open ? leaves.end(start) : null;
-			if (leaf) {
-				pieces?.push({ leaf, text: leaf.text });
-				return;
-			}
-			if (localName(name) === "si" && pieces) {
-				items.push(pieces.some((p) => p.text) ? piecesSegment(pieces, SST_PRESERVE) : null);
-				pieces = null;
-			}
-		},
-	});
+		STRICT_NAMESPACES,
+	);
 	return items;
 }
 
@@ -391,7 +405,10 @@ interface Cell {
 	readonly type: string;
 	readonly row: number;
 	readonly col: number;
-	hasFormula: boolean;
+	/** The `<f>` start tag (`t="shared"`, `si`...), when the cell has a formula. */
+	formulaTag: XmlTag | null;
+	/** Formula text (a shared-formula dependent has none). */
+	formula: Leaf | null;
 	value: Leaf | null;
 	inline: Piece[] | null;
 	endEnd: number;
@@ -406,17 +423,31 @@ const HEADER_FOOTER: ReadonlySet<string> = new Set([
 	"firstFooter",
 ]);
 
+/** Value of the attribute whose canonical name is `name`. */
 function attr(tag: XmlTag, name: string): string | undefined {
-	return tag.attrs.find((a) => a.name === name)?.value;
+	return tag.attrs.find((a) => a.cname === name)?.value;
 }
 
 /** The start tag of `tag` with its `t` attribute set to `type` (other attributes kept raw). */
-function retypedStartTag(xml: string, tag: XmlTag, type: string): string {
+function retypedStartTag(xml: string, tag: XmlTag, type: string | null, close = ">"): string {
 	const kept = tag.attrs
-		.filter((a) => a.name !== "t")
+		.filter((a) => a.cname !== "t")
 		.map((a) => ` ${a.name}=${a.quote}${xml.slice(a.valueStart, a.valueEnd)}${a.quote}`)
 		.join("");
-	return `<${tag.name}${kept} t="${type}">`;
+	return `<${tag.name}${kept}${type === null ? "" : ` t="${type}"`}${close}`;
+}
+
+/** Prefix (with its colon) of a raw element name: `x:c` -> `x:`, `c` -> "". */
+function rawPrefix(tag: XmlTag): string {
+	const colon = tag.name.indexOf(":");
+	return colon < 0 ? "" : tag.name.slice(0, colon + 1);
+}
+
+/** A whole cell rewritten as an inline-string cell holding `text`. */
+function inlineStringCell(xml: string, cell: Cell, text: string): RawReplacement {
+	const p = rawPrefix(cell.tag);
+	const raw = `${retypedStartTag(xml, cell.tag, "inlineStr")}<${p}is><${p}t xml:space="preserve">${escapeXmlText(text)}</${p}t></${p}is></${cell.tag.name}>`;
+	return { start: cell.tag.start, end: cell.endEnd, raw };
 }
 
 /** Segment over a numeric/date cell value: a masked value turns the cell into a string. */
@@ -427,16 +458,51 @@ function numericCellSegment(xml: string, cell: Cell, value: Leaf): TextSegment {
 		apply(edits: readonly Edit[]): RawReplacement[] {
 			if (!edits.length) return [];
 			const text = spliceEdits(value.text, edits);
-			if (cell.hasFormula) {
+			if (cell.formulaTag) {
 				return [
 					{ start: cell.tag.start, end: cell.tag.end, raw: retypedStartTag(xml, cell.tag, "str") },
 					{ start: value.tag.end, end: value.contentEnd, raw: escapeXmlText(text) },
 				];
 			}
-			const colon = cell.tag.name.indexOf(":");
-			const p = colon < 0 ? "" : cell.tag.name.slice(0, colon + 1);
-			const raw = `${retypedStartTag(xml, cell.tag, "inlineStr")}<${p}is><${p}t xml:space="preserve">${escapeXmlText(text)}</${p}t></${p}is></${cell.tag.name}>`;
-			return [{ start: cell.tag.start, end: cell.endEnd, raw }];
+			return [inlineStringCell(xml, cell, text)];
+		},
+	};
+}
+
+/** Cell types whose cached `<v>` is a constant on its own (number, date, boolean, error, shared string). */
+const CONSTANT_VALUE_TYPES: ReadonlySet<string> = new Set(["n", "d", "b", "e", "s"]);
+
+/**
+ * A formula cell whose formula holds sensitive data (or depends on such a shared formula): the
+ * whole cell is rewritten as a constant, so neither `<f>` nor a recalculation can bring the raw
+ * value back. The segment's text is the cached value (scanned and masked like any other value);
+ * a clean cached number/boolean/error/shared-string index is kept as is, anything else becomes
+ * an inline string. Without a cached value the cell holds the masked formula text (`=...`), or
+ * nothing for a shared-formula dependent. Always rewritten, findings or not (`rewrite`).
+ */
+function constantCellSegment(xml: string, cell: Cell, maskedFormula: string | null): TextSegment {
+	const valueText = cell.inline
+		? cell.inline.map((p) => p.text).join("")
+		: (cell.value?.text ?? null);
+	return {
+		text: valueText ?? "",
+		context: "",
+		rewrite: true,
+		apply(edits: readonly Edit[]): RawReplacement[] {
+			const value = cell.value;
+			if (valueText === null || (!valueText && !cell.inline)) {
+				if (maskedFormula === null) {
+					const raw = retypedStartTag(xml, cell.tag, null, "/>");
+					return [{ start: cell.tag.start, end: cell.endEnd, raw }];
+				}
+				return [inlineStringCell(xml, cell, `=${maskedFormula}`)];
+			}
+			if (!edits.length && value && !cell.inline && CONSTANT_VALUE_TYPES.has(cell.type)) {
+				const v = xml.slice(value.tag.start, value.contentEnd);
+				const raw = `${xml.slice(cell.tag.start, cell.tag.end)}${v}</${value.tag.name}></${cell.tag.name}>`;
+				return [{ start: cell.tag.start, end: cell.endEnd, raw }];
+			}
+			return [inlineStringCell(xml, cell, spliceEdits(valueText, edits))];
 		},
 	};
 }
@@ -445,11 +511,17 @@ function numericCellSegment(xml: string, cell: Cell, value: Leaf): TextSegment {
  * Worksheet cells. The first row supplies column headers: data cells get the header as
  * detection context, and a sensitive header forces whole-value masking (shared strings used
  * in such a column are recorded in `sstForced`).
+ *
+ * Formulas (`<f>`) are scanned too (see {@link WorksheetReader.resolveFormulas}): a cell whose
+ * formula holds sensitive data - and every dependent of such a shared formula - is turned into
+ * a constant cell. Any other character data outside cells (conditional-format and
+ * data-validation formulas, extension lists) is scanned as standalone text.
  */
 class WorksheetReader {
 	readonly segments: TextSegment[] = [];
 	private readonly headers = new Map<number, string>();
 	private readonly leaves: LeafTracker;
+	private readonly formulaCells: Cell[] = [];
 	private firstRow: number | undefined;
 	private row = 0;
 	private nextCol = 0;
@@ -467,7 +539,7 @@ class WorksheetReader {
 
 	start(tag: XmlTag): void {
 		if (this.leaves.open) return this.leaves.child();
-		const local = localName(tag.name);
+		const local = localName(tag.cname);
 		if (local === "row") this.startRow(tag);
 		else if (local === "c") this.startCell(tag);
 		else if (this.cell) this.startCellChild(this.cell, local, tag);
@@ -478,7 +550,12 @@ class WorksheetReader {
 	}
 
 	text(start: number, end: number, cdata: boolean): void {
-		this.leaves.text(start, end, cdata);
+		if (this.leaves.open) return this.leaves.text(start, end, cdata);
+		if (this.cell) return;
+		// Text outside cells: formulas of conditional formats / data validations, extensions.
+		const raw = this.xml.slice(start, end);
+		const text = cdata ? raw : decodeXmlText(raw);
+		if (text.trim()) this.segments.push(textNodeSegment(start, end, text, cdata));
 	}
 
 	end(name: string, start: number, end: number): void {
@@ -489,6 +566,69 @@ class WorksheetReader {
 		cell.endEnd = end;
 		this.cell = null;
 		this.finish(cell);
+	}
+
+	/**
+	 * Scans the formulas collected while walking, then adds every formula cell: a cell whose
+	 * formula has findings (counted into `totals`), or that depends on such a shared formula,
+	 * becomes a {@link constantCellSegment}; any other keeps its formula and is handled like a
+	 * plain value cell.
+	 */
+	async resolveFormulas(totals: Totals): Promise<void> {
+		const withText = this.formulaCells.filter((c) => c.formula?.text.trim());
+		const sensitive = new Map<Cell, string>();
+		const sharedSensitive = new Set<string>();
+		if (withText.length) {
+			this.scanner.checkDeadline();
+			// No header context: the formula is not the column's value (`=C2+0` under a
+			// "TC Kimlik No" header is not an identity number).
+			const scan = await this.scanner.scan(
+				withText.map((c) => ({ context: "", value: c.formula?.text ?? "" })),
+			);
+			for (const signal of scan.signals) totals.signals.add(signal);
+			withText.forEach((cell, i) => {
+				const text = cell.formula?.text ?? "";
+				const findings = scan.perSegment[i]?.length
+					? scan.perSegment[i]
+					: this.forcedLiteralFinding(cell, text);
+				if (!findings?.length) return;
+				totals.findings += findings.length;
+				mergeCounts(totals.findingCounts, countFindings(findings));
+				const edits = findings.map((f) => ({
+					start: f.start,
+					end: f.end,
+					text: this.scanner.replace(text.slice(f.start, f.end), f),
+				}));
+				sensitive.set(cell, spliceEdits(text, edits));
+				const si = sharedIndex(cell);
+				if (si !== undefined) sharedSensitive.add(si);
+			});
+		}
+		for (const cell of this.formulaCells) {
+			const si = sharedIndex(cell);
+			const masked = sensitive.get(cell);
+			if (masked !== undefined || (si !== undefined && sharedSensitive.has(si)))
+				this.add(cell, constantCellSegment(this.xml, cell, masked ?? null));
+			else this.finishValue(cell);
+		}
+	}
+
+	/**
+	 * In a column whose header names a sensitive field, a formula that carries a literal (a
+	 * string, a long number, or the cell's own cached value) may spell out the masked value:
+	 * the whole formula is treated as one finding of the header's type. Formulas made only of
+	 * references and operators (`=C2+0`) are kept.
+	 */
+	private forcedLiteralFinding(cell: Cell, text: string): Finding[] {
+		const header = this.headerOf(cell);
+		const forced = header ? this.scanner.headerType(header) : undefined;
+		if (!forced) return [];
+		const cached = (cell.value?.text ?? "").trim();
+		const literal =
+			/"(?:[^"]|"")*[\p{L}\p{N}](?:[^"]|"")*"/u.test(text) ||
+			/\d{5,}/.test(text) ||
+			(cached.length >= 3 && text.includes(cached));
+		return literal ? [{ type: forced, start: 0, end: text.length, score: 1, source: "rule" }] : [];
 	}
 
 	private startRow(tag: XmlTag): void {
@@ -506,7 +646,8 @@ class WorksheetReader {
 			type: attr(tag, "t") ?? "n",
 			row: this.row,
 			col: col >= 0 ? col : this.nextCol,
-			hasFormula: false,
+			formulaTag: null,
+			formula: null,
 			value: null,
 			inline: null,
 			endEnd: tag.end,
@@ -516,17 +657,21 @@ class WorksheetReader {
 	}
 
 	private startCellChild(cell: Cell, local: string, tag: XmlTag): void {
-		if (local === "f") cell.hasFormula = true;
-		else if (local === "is") cell.inline = [];
+		if (local === "f") {
+			cell.formulaTag = tag;
+			if (!tag.selfClosing) this.leaves.begin(tag);
+		} else if (local === "is") cell.inline = [];
 		else if ((local === "v" || (local === "t" && cell.inline)) && !tag.selfClosing)
 			this.leaves.begin(tag);
 	}
 
 	private endLeaf(name: string, leaf: Leaf): void {
+		const local = localName(name);
 		if (this.inHeaderFooter) {
 			this.inHeaderFooter = false;
 			if (leaf.text.trim()) this.segments.push(piecesSegment([{ leaf, text: leaf.text }]));
-		} else if (this.cell && localName(name) === "v") this.cell.value = leaf;
+		} else if (this.cell && local === "v") this.cell.value = leaf;
+		else if (this.cell && local === "f") this.cell.formula = leaf;
 		else this.cell?.inline?.push({ leaf, text: leaf.text });
 	}
 
@@ -534,15 +679,26 @@ class WorksheetReader {
 		if (cell.row === this.firstRow) this.headers.set(cell.col, text);
 	}
 
+	private headerOf(cell: Cell): string | undefined {
+		return cell.row === this.firstRow ? undefined : this.headers.get(cell.col);
+	}
+
 	private add(cell: Cell, segment: TextSegment): void {
-		const header = cell.row === this.firstRow ? undefined : this.headers.get(cell.col);
+		const header = this.headerOf(cell);
 		segment.context = header ?? "";
 		const forced = header ? this.scanner.headerType(header) : undefined;
 		if (forced) segment.forced = forced;
-		if (segment.text.trim()) this.segments.push(segment);
+		if (segment.text.trim() || segment.rewrite) this.segments.push(segment);
 	}
 
 	private finish(cell: Cell): void {
+		if (!cell.formulaTag) return this.finishValue(cell);
+		// Formula cells are added once their formulas are scanned; headers are known now.
+		if (cell.type === "str" && cell.value) this.header(cell, cell.value.text);
+		this.formulaCells.push(cell);
+	}
+
+	private finishValue(cell: Cell): void {
 		const value = cell.value;
 		if (cell.type === "s") this.sharedStringCell(cell, value?.text ?? "");
 		else if (cell.type === "inlineStr" && cell.inline?.length) {
@@ -571,18 +727,31 @@ class WorksheetReader {
 	}
 }
 
-function worksheet(
+/** The `si` of a shared formula (`<f t="shared" si="..">`), master or dependent. */
+function sharedIndex(cell: Cell): string | undefined {
+	const f = cell.formulaTag;
+	if (!f || attr(f, "t") !== "shared") return undefined;
+	return attr(f, "si")?.trim();
+}
+
+async function worksheet(
 	xml: string,
 	sst: ReadonlyArray<TextSegment | null>,
 	scanner: DocScanner,
 	sstForced: Map<number, EntityType>,
-): TextSegment[] {
+	totals: Totals,
+): Promise<TextSegment[]> {
 	const reader = new WorksheetReader(xml, sst, scanner, sstForced);
-	walkXml(xml, {
-		start: (tag) => reader.start(tag),
-		text: (start, end, cdata) => reader.text(start, end, cdata),
-		end: (name, start, end) => reader.end(name, start, end),
-	});
+	walkXml(
+		xml,
+		{
+			start: (tag) => reader.start(tag),
+			text: (start, end, cdata) => reader.text(start, end, cdata),
+			end: (name, start, end) => reader.end(name, start, end),
+		},
+		STRICT_NAMESPACES,
+	);
+	await reader.resolveFormulas(totals);
 	return reader.segments;
 }
 
@@ -597,16 +766,20 @@ interface Relationship {
 
 function relationships(xml: string): Relationship[] {
 	const out: Relationship[] = [];
-	walkXml(xml, {
-		start(tag) {
-			if (localName(tag.name) !== "Relationship") return;
-			const type = attr(tag, "Type") ?? "";
-			out.push({
-				type: type.slice(type.lastIndexOf("/") + 1).toLowerCase(),
-				external: attr(tag, "TargetMode") === "External",
-			});
+	walkXml(
+		xml,
+		{
+			start(tag) {
+				if (localName(tag.cname) !== "Relationship") return;
+				const type = attr(tag, "Type") ?? "";
+				out.push({
+					type: type.slice(type.lastIndexOf("/") + 1).toLowerCase(),
+					external: attr(tag, "TargetMode") === "External",
+				});
+			},
 		},
-	});
+		STRICT_NAMESPACES,
+	);
 	return out;
 }
 
@@ -724,7 +897,7 @@ export function rewritePart(
 	const replacements: RawReplacement[] = [];
 	segments.forEach((segment, i) => {
 		const findings = perSegment[i] ?? [];
-		if (!findings.length) return;
+		if (!findings.length && !segment.rewrite) return;
 		totals.findings += findings.length;
 		mergeCounts(totals.findingCounts, countFindings(findings));
 		replacements.push(...segment.apply(editsFor(segment, findings, scanner)));
@@ -732,7 +905,7 @@ export function rewritePart(
 	if (!replacements.length) return null;
 	const xml = applyReplacements(part.xml, replacements);
 	if (xml === part.xml) return null;
-	assertWellFormed(xml);
+	assertWellFormed(xml, STRICT_NAMESPACES);
 	return encodePart(xml, part.encoding);
 }
 
@@ -758,7 +931,11 @@ export function asDocumentRefusal(error: unknown): unknown {
 	return error;
 }
 
-async function buildModels(archive: ZipArchive, scanner: DocScanner): Promise<PartModel[]> {
+async function buildModels(
+	archive: ZipArchive,
+	scanner: DocScanner,
+	totals: Totals,
+): Promise<PartModel[]> {
 	const models: PartModel[] = [];
 	const sstEntry = findEntry(archive, "xl/sharedStrings.xml");
 	const sst = sstEntry ? await readText(archive, sstEntry) : null;
@@ -771,8 +948,8 @@ async function buildModels(archive: ZipArchive, scanner: DocScanner): Promise<Pa
 		const { xml, encoding } = await readText(archive, entry);
 		const segments =
 			kind === "sheet"
-				? worksheet(xml, sstItems, scanner, sstForced)
-				: extractText(xml, SPECS[kind]);
+				? await worksheet(xml, sstItems, scanner, sstForced, totals)
+				: extractText(xml, SPECS[kind], STRICT_NAMESPACES);
 		models.push({ entry, xml, encoding, segments });
 	}
 	if (sst && sstEntry) {
@@ -795,7 +972,7 @@ async function sanitizeArchive(
 	const refusals = await packageRefusals(archive, depth);
 	if (refusals.length) throw new DocumentRefused(refusals);
 	const replacements = new Map<string, Uint8Array>();
-	for (const part of await buildModels(archive, scanner)) {
+	for (const part of await buildModels(archive, scanner, totals)) {
 		const masked = await maskPart(part, scanner, totals);
 		if (masked) replacements.set(part.entry.name, masked);
 	}

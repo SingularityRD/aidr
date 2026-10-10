@@ -6,6 +6,7 @@
  * forms and `.suffix` / `_ligature` names. That is what Latin-script text needs; glyph names
  * outside it are reported as unmapped so the extractor can flag the page as unreliable.
  */
+import { codePageChar } from "../codepages.js";
 
 const ASCII_NAMES =
 	"space exclam quotedbl numbersign dollar percent ampersand quotesingle parenleft parenright asterisk plus comma hyphen period slash zero one two three four five six seven eight nine colon semicolon less equal greater question at A B C D E F G H I J K L M N O P Q R S T U V W X Y Z bracketleft backslash bracketright asciicircum underscore grave a b c d e f g h i j k l m n o p q r s t u v w x y z braceleft bar braceright asciitilde";
@@ -240,9 +241,22 @@ function singleByteTable(label: string): Array<string | undefined> {
 	for (let code = 0x20; code < 256; code++) {
 		if (code === 0x7f) continue;
 		const ch = decoder ? decoder.decode(new Uint8Array([code])) : String.fromCharCode(code);
-		// WHATWG maps undefined windows-1252 bytes to C1 controls: leave those unmapped.
+		// WHATWG maps undefined bytes to C1 controls: leave those unmapped.
 		if (ch.length === 1 && ch.charCodeAt(0) >= 0x80 && ch.charCodeAt(0) <= 0x9f) continue;
 		table[code] = ch;
+	}
+	return table;
+}
+
+/** WinAnsiEncoding from a fixed windows-1252 table (TextDecoder may decode it as Latin-1). */
+function winAnsiTable(): Array<string | undefined> {
+	const table: Array<string | undefined> = new Array(256).fill(undefined);
+	for (let code = 0x20; code < 256; code++) {
+		if (code === 0x7f) continue;
+		const cp = codePageChar("windows-1252", code);
+		// Bytes windows-1252 leaves undefined decode to C1 controls: leave those unmapped.
+		if (cp >= 0x80 && cp <= 0x9f) continue;
+		table[code] = String.fromCharCode(cp);
 	}
 	return table;
 }
@@ -272,7 +286,7 @@ const TABLES = new Map<BaseEncoding, Array<string | undefined>>();
 export function baseEncoding(name: BaseEncoding): ReadonlyArray<string | undefined> {
 	let table = TABLES.get(name);
 	if (!table) {
-		if (name === "WinAnsiEncoding") table = singleByteTable("windows-1252");
+		if (name === "WinAnsiEncoding") table = winAnsiTable();
 		else if (name === "MacRomanEncoding") table = singleByteTable("macintosh");
 		else if (name === "PDFDocEncoding") table = pdfDocTable();
 		else table = standardTable();
