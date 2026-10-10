@@ -8,7 +8,7 @@
   severity: critical
   confidence: 0.95
   action: block
-  pattern: "base64\\s+(-d|--decode)\\s*\\|\\s*(bash|sh|zsh|ksh|dash)"
+  pattern: "base64\\s+(-d|--decode|-D)\\b[^|]{0,300}\\|\\s*(bash|sh|zsh|ksh|dash)\\b"
   match_on: command
   title: "Base64 decode piped to shell execution"
   expires_at: null
@@ -44,7 +44,7 @@
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "\\beval\\s+.{0,300}\\$\\(\\s*base64|python[3]?\\s+-c\\s+[\"'].{0,300}exec\\(.{0,300}decode"
+  pattern: "\\beval\\s+[^\\n]{0,300}\\bbase64\\s+(?:-d|--decode|-D)\\b|\\beval\\s+.{0,300}\\$\\(\\s*base64|python[3]?\\s+-c\\s+[\"'].{0,300}exec\\(.{0,300}decode"
   match_on: [command, content]
   title: "Eval with decode (obfuscated code execution)"
   expires_at: null
@@ -97,3 +97,44 @@
   expires_at: null
   revoked: false
 
+
+# --- Node.js eval of a decoded buffer (red-team regression) ---
+- id: "CLT-OBFUS-009"
+  category: tool
+  severity: high
+  confidence: 0.85
+  action: block
+  pattern: "node\\b[^\\n]{0,40}\\s-e\\s[\"'][^\"']{0,300}\\beval\\b[^\"']{0,300}\\b(?:Buffer\\.from|atob|base64)\\b"
+  match_on: command
+  title: "Node.js eval of a base64-decoded buffer (obfuscated code execution)"
+  expires_at: null
+  revoked: false
+
+# --- Hex (xxd -r) decode piped to a shell (red-team regression) ---
+- id: "CLT-OBFUS-010"
+  category: tool
+  severity: high
+  confidence: 0.85
+  action: block
+  pattern: "\\bxxd\\s+-r\\b[^|]{0,300}\\|\\s*(bash|sh|zsh|ksh|dash)\\b"
+  match_on: command
+  title: "Hex-decoded payload piped to shell execution"
+  expires_at: null
+  revoked: false
+
+# --- Download piped to a shell, seen through the shell-normalized view ---
+# Variable indirection (`a=cu;b=rl;$a$b … | sh`) and `$IFS` word-splitting hide
+# the literal `curl`/`wget` from the raw-command rules; the shell-normalized view
+# (packages/core/src/shell-normalize.ts, which substitutes same-command variables
+# and rewrites `$IFS` to a space) restores it. See CLT-CMD-001/002 for the literal
+# forms.
+- id: "CLT-OBFUS-011"
+  category: tool
+  severity: critical
+  confidence: 0.90
+  action: block
+  pattern: "\\b(curl|wget|fetch)\\b[^|]{0,300}\\|\\s*(?:(?:sudo|timeout|xargs|env|command|nohup|stdbuf|nice|setsid|doas)\\b[^|]{0,60}\\s+){0,3}(?:/[^\\s|]{1,80}/)?(bash|sh|zsh|ksh|dash)\\b"
+  match_on: command_normalized
+  title: "Remote code execution via download piped to shell (obfuscated/normalized)"
+  expires_at: null
+  revoked: false

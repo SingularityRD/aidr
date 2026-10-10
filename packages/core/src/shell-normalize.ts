@@ -389,8 +389,16 @@ export function normalizeShellText(text: string): string {
 	return traversesStateDir(view) ? `${view}\n;\n~/${AIDR_STATE_DIR_NAME}` : view;
 }
 
+/**
+ * `$IFS` / `${IFS}` is the shell's field separator (whitespace by default). An
+ * agent writes `curl$IFS-s$IFS"url"|sh` to split words without a literal space,
+ * hiding the command from space-anchored rules. The view rewrites it to a single
+ * space so the normalized rules see the real words.
+ */
+const IFS_REFERENCE = /\$\{IFS\}|\$IFS\b/g;
+
 function peel(unquoted: string): string {
-	let out = unquoted.replace(
+	let out = unquoted.replace(IFS_REFERENCE, " ").replace(
 		EXECUTABLE_LOOKUP,
 		(_whole, dollar: string | undefined, tick: string | undefined) => dollar ?? tick ?? "",
 	);

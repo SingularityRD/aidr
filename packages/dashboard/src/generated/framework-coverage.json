@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "matrix": {
-    "rule_count": 494,
+    "rule_count": 507,
     "rule_files": 29,
     "frameworks": [
       {
@@ -36,7 +36,7 @@
             "title": "Sensitive Information Disclosure",
             "status": "covered",
             "rationale": "For an agent's tool calls the rules cover the main disclosure paths: reading credential, key, cloud, keychain and browser stores, known API-key formats in commands or content, and exfiltration over HTTP, DNS, archives and cloud or code repositories. Personal data inside model responses is out of scope for these rules and is handled by the separate DLP/privacy engine.",
-            "rule_count": 85,
+            "rule_count": 88,
             "example_rules": [
               "CLT-CMD-013",
               "CLT-CMD-020",
@@ -49,7 +49,7 @@
             "title": "Supply Chain",
             "status": "partial",
             "rationale": "Rules flag install-script piping, unpinned or unsigned package installs, miner packages, insecure dependency sources and malicious skill/plugin content. For models, downloads from Hugging Face organisations or hosts outside the trusted model sources, weight downloads over plain HTTP, trust_remote_code and unsafe model deserialization are held or denied. Model files are not verified by hash or signature, dataset provenance is not checked, and package reputation needs the separately deployed package-check endpoint (inert when none is configured).",
-            "rule_count": 50,
+            "rule_count": 51,
             "example_rules": [
               "AISC-001",
               "AISC-002",
@@ -75,7 +75,7 @@
             "title": "Improper Output Handling",
             "status": "covered",
             "rationale": "Model-generated commands and code are validated before they execute: pipe-to-shell, reverse shells, eval of decoded payloads, LOLBin and script-host execution and obfuscated command lines are denied or held for approval at the tool boundary. Code the agent writes is also checked by the secure-code guardrails (eval or shell commands built from input, SQL built by string formatting, TLS verification off, permissive CORS, exposed debuggers, CSRF off, weak crypto); those are language-gated patterns over added lines and warn by default rather than block. Output rendered in a UI (XSS, markdown links) is not covered by these rules.",
-            "rule_count": 95,
+            "rule_count": 103,
             "example_rules": [
               "CLT-CMD-001",
               "CLT-CMD-002",
@@ -88,7 +88,7 @@
             "title": "Excessive Agency",
             "status": "covered",
             "rationale": "The rule set is primarily an excessive-agency control: destructive deletion, persistence, privilege changes, security-control tampering, credential access and discovery performed through the agent's tools are denied or require out-of-band human approval.",
-            "rule_count": 353,
+            "rule_count": 365,
             "example_rules": [
               "CLT-AGENT-AUTO-001",
               "CLT-AGENT-AUTO-002",
@@ -173,7 +173,7 @@
             "title": "Tool Misuse and Exploitation",
             "status": "covered",
             "rationale": "This is the enforcement point of the product: every rule evaluates a tool call (shell command, file path, URL or tool input) before it runs, and dangerous uses of legitimate tools are denied or held for out-of-band approval.",
-            "rule_count": 325,
+            "rule_count": 337,
             "example_rules": [
               "CLT-AGENT-IRR-001",
               "CLT-AGENT-IRR-002",
@@ -186,7 +186,7 @@
             "title": "Identity and Privilege Abuse",
             "status": "covered",
             "rationale": "Credential dumping, credential-store and key access, alternate-credential execution, sudo/UAC abuse, account creation and group changes, and access to AIDR's own approval key are detected. Delegated agent identity (tokens issued to the agent) is verified by the delegated-credential feature, not by these rules.",
-            "rule_count": 111,
+            "rule_count": 114,
             "example_rules": [
               "CLT-AGENT-AUTO-001",
               "CLT-AGENT-AUTO-002",
@@ -199,7 +199,7 @@
             "title": "Agentic Supply Chain Vulnerabilities",
             "status": "partial",
             "rationale": "Skill and plugin packages are scanned for injected instructions, remote payloads, embedded code, credential exfiltration and insecure dependencies, and risky install commands are flagged. Models from untrusted Hugging Face organisations or hosts, plain-HTTP weight downloads, trust_remote_code and unsafe model loading are held or denied. MCP server identity and signed manifests are enforced by the MCP gateway rather than these rules; model integrity (hash or signature) and dataset provenance are not covered.",
-            "rule_count": 53,
+            "rule_count": 54,
             "example_rules": [
               "AISC-001",
               "AISC-002",
@@ -212,7 +212,7 @@
             "title": "Unexpected Code Execution (RCE)",
             "status": "covered",
             "rationale": "Download-and-execute chains, pipe-to-shell, reverse shells, encoded or obfuscated execution, script hosts and LOLBins on Linux, macOS and Windows are denied before the command runs. Loading model files through code-executing deserializers and trust_remote_code are held or denied, and eval, shell commands built from input and network-exposed debuggers in code the agent writes are flagged by the (advisory) secure-code guardrails.",
-            "rule_count": 122,
+            "rule_count": 131,
             "example_rules": [
               "AISC-001",
               "AISC-002",
@@ -269,7 +269,7 @@
             "title": "Rogue Agents",
             "status": "partial",
             "rationale": "Behaviour typical of a compromised or rogue agent is detected: tampering with or disabling AIDR itself, reading or changing AIDR's canary credentials, disabling OS security controls, clearing logs and hiding artifacts. Slow behavioural drift within allowed actions is not something a per-call rule can see (the behavioural analyzer is a separate, optional detector).",
-            "rule_count": 89,
+            "rule_count": 90,
             "example_rules": [
               "CLT-AGENT-AUTO-001",
               "CLT-AGENT-AUTO-002",
@@ -425,7 +425,7 @@
             "title": "Command and Scripting Interpreter",
             "status": "covered",
             "rationale": "Shell, PowerShell, AppleScript/JXA, Python and script-host execution patterns used for remote payloads, obfuscation and proxy execution are detected across all three OSes.",
-            "rule_count": 86,
+            "rule_count": 94,
             "example_rules": [
               "CLT-CMD-001",
               "CLT-CMD-002",
@@ -473,7 +473,7 @@
             "title": "AI Agent Tool Invocation",
             "status": "covered",
             "rationale": "Every tool call the agent makes is evaluated against the rules before it executes; a hijacked agent's tool invocations are the input AIDR inspects.",
-            "rule_count": 367,
+            "rule_count": 380,
             "example_rules": [
               "CLT-AGENT-AUTO-001",
               "CLT-AGENT-AUTO-002",
@@ -507,7 +507,7 @@
             "title": "Unsecured Credentials",
             "status": "covered",
             "rationale": "Reads, copies and archives of credential files, SSH and cloud keys, keychains, browser stores, registry credentials, cloud metadata credentials and plaintext secrets are detected.",
-            "rule_count": 57,
+            "rule_count": 60,
             "example_rules": [
               "CLT-CRED-001",
               "CLT-CRED-002",
@@ -570,7 +570,7 @@
             "title": "Cyber Communication Channel",
             "status": "covered",
             "rationale": "Reverse shells over /dev/tcp, netcat, Python, Ruby, zsh and .NET sockets and C2-style paste-site or raw-IP URLs are detected.",
-            "rule_count": 14,
+            "rule_count": 17,
             "example_rules": [
               "CLT-CMD-003",
               "CLT-CMD-004",
@@ -807,7 +807,7 @@
             "title": "Obfuscated Files or Information",
             "status": "covered",
             "rationale": "Base64/hex/char-code/XOR payloads, caret and backtick obfuscation, encoded PowerShell, steganography tooling and unreviewable bytecode are detected.",
-            "rule_count": 29,
+            "rule_count": 32,
             "example_rules": [
               "CLT-MAC-OBFUS-001",
               "CLT-MAC-OBFUS-002",
@@ -2014,6 +2014,77 @@
         "AML.T0101"
       ]
     },
+    "CLT-CMD-032": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053",
+        "AML.T0072"
+      ]
+    },
+    "CLT-CMD-033": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053",
+        "AML.T0072"
+      ]
+    },
+    "CLT-CMD-034": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053",
+        "AML.T0072"
+      ]
+    },
+    "CLT-CMD-035": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-CMD-036": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI10"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
     "CLT-CRED-001": {
       "owasp_llm": [
         "LLM02"
@@ -2115,6 +2186,48 @@
         "AML.T0053",
         "AML.T0055",
         "AML.T0127"
+      ]
+    },
+    "CLT-CRED-009": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055"
+      ]
+    },
+    "CLT-CRED-010": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055"
+      ]
+    },
+    "CLT-CRED-011": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0053",
+        "AML.T0055"
       ]
     },
     "CLT-FILE-001": {
@@ -4284,6 +4397,51 @@
         "AML.T0123"
       ]
     },
+    "CLT-OBFUS-009": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053",
+        "AML.T0123"
+      ]
+    },
+    "CLT-OBFUS-010": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053",
+        "AML.T0123"
+      ]
+    },
+    "CLT-OBFUS-011": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053",
+        "AML.T0123"
+      ]
+    },
     "CLT-PERSIST-001": {
       "owasp_llm": [
         "LLM06"
@@ -4358,6 +4516,18 @@
       ],
       "owasp_agentic": [
         "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0053"
+      ]
+    },
+    "CLT-PERSIST-009": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
       ],
       "mitre_atlas": [
         "AML.T0053"
@@ -4472,6 +4642,20 @@
       ]
     },
     "CLT-SUPPLY-001": {
+      "owasp_llm": [
+        "LLM03",
+        "LLM05"
+      ],
+      "owasp_agentic": [
+        "ASI04",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-SUPPLY-002": {
       "owasp_llm": [
         "LLM03",
         "LLM05"
