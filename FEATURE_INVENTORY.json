@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "generated_on": "2026-10-09",
+  "generated_on": "2026-10-11",
   "generation_timezone": "Europe/Istanbul",
-  "source_commit": "c65611732023690f6e73c5dd088d98d9c6a45562",
+  "source_commit": "4e4a9013ef2ccb865e2108bc22bb81c462def341",
   "worktree_has_changes": true,
   "decision": "NO-GO",
   "methodology": "Generated capability/consumer mapping; statuses do not imply production effectiveness. Wired means a callable implementation; partial means scope or delivery gaps; missing means no end-to-end consumer; external requires independent evidence. Includes proposed market capabilities and deployment/assurance requirements. Historical module-reachability counts are not feature counts.",

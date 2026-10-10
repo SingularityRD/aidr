@@ -203,6 +203,20 @@ describe("applyDetectionExceptions", () => {
 		expect(normalizeRepoRemote("git@github.com:acme/app.git")).toBe("github.com/acme/app");
 		expect(normalizeRepoRemote("ssh://git@github.com:22/acme/app")).toBe("github.com/acme/app");
 	});
+
+	it("keeps a bracketed IPv6 host intact and drops only its port", () => {
+		for (const remote of [
+			"ssh://git@[2001:DB8::1]/acme/app.git",
+			"ssh://git@[2001:db8::1]:22/acme/app",
+			"git@[2001:db8::1]:acme/app.git",
+			"https://[2001:db8::1]:8443/acme/app/",
+		]) {
+			expect(normalizeRepoRemote(remote), remote).toBe("[2001:db8::1]/acme/app");
+		}
+		expect(normalizeRepoRemote("ssh://git@[2001:db8::2]/acme/app")).not.toBe(
+			normalizeRepoRemote("ssh://git@[2001:db8::1]/acme/app"),
+		);
+	});
 });
 
 // ── Local store ───────────────────────────────────────────────────────

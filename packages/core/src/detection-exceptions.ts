@@ -212,8 +212,16 @@ export function normalizeRepoRemote(value: string): string {
 	let v = value.trim().toLowerCase();
 	v = v.replace(/^[a-z+]+:\/\//, "");
 	v = v.replace(/^[^@/]+@/, "");
-	v = v.replace(/^([^/:]+):(?!\d+\/)/, "$1/");
-	v = v.replace(/^([^/:]+):\d+\//, "$1/");
+	// A bracketed IPv6 host (`ssh://git@[2001:db8::1]:22/org/repo`,
+	// `git@[::1]:org/repo`) keeps its colons; only an optional port and the
+	// scp-style `:` separator after the closing bracket are dropped.
+	const ipv6 = /^(\[[0-9a-f:.]+\])(?::\d+)?[/:](.*)$/.exec(v);
+	if (ipv6) {
+		v = `${ipv6[1]}/${ipv6[2]}`;
+	} else {
+		v = v.replace(/^([^/:]+):(?!\d+\/)/, "$1/");
+		v = v.replace(/^([^/:]+):\d+\//, "$1/");
+	}
 	return v.replace(/\.git$/, "").replace(/\/+$/, "");
 }
 

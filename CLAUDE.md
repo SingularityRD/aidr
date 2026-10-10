@@ -55,7 +55,7 @@ TypeScript monorepo. Connector packages and their shared core:
 - `packages/extension/` — `aidr-cursor`: Cursor and VS Code extensions
 - `packages/cli/` — `@singularityrd/aidr-cli`: local setup/status/config CLI. Ships its own copy of the rules via `scripts/sync-assets.mjs` (core publishes only `dist/`).
 - `packages/sdk/` — `@singularityrd/aidr-sdk`: security client and framework-neutral generic middleware
-- `packages/dashboard/` — Next.js control-plane dashboard (Vite/React app plus its own `supabase/functions`)
+- `packages/dashboard/` — control-plane dashboard (Vite/React app; its Edge Functions live in the root `supabase/functions`)
 - `packages/codex/` — `@singularityrd/aidr-codex`: Codex CLI connector, implemented as a native
   `PreToolUse` hook (verified against `codex-cli 0.141.0`). Codex fails **open** on a crashing
   or untrusted hook, so this connector translates `ask` into an explicit `deny` and turns

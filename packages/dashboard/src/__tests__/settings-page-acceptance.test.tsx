@@ -30,6 +30,8 @@ interface Fixture {
 	loadError?: boolean;
 	updateError?: string;
 	closeError?: string;
+	/** Simulate an older service that does not send `can_edit_retention`. */
+	omitRetentionPermission?: boolean;
 }
 
 function httpError(status: number, error: string) {
@@ -89,10 +91,14 @@ function getSettingsResponse(fixture: Fixture, tenant: FakeTenant, options: Invo
 			role: tenant.role,
 			permissions: {
 				can_edit: active && (tenant.role === "owner" || tenant.role === "admin"),
+				...(fixture.omitRetentionPermission
+					? {}
+					: { can_edit_retention: active && tenant.role === "owner" }),
 				can_close: active && tenant.role === "owner",
 				requires_aal2: true,
 			},
-			retention_bounds: { min: 1, max: 3650 },
+			// Mirrors WORKSPACE_RETENTION_BOUNDS in supabase/functions/tenant-settings.
+			retention_bounds: { min: 7, max: 3650 },
 		},
 		error: null,
 	};
@@ -266,7 +272,10 @@ describe("workspace section", () => {
 		renderSettings();
 		const retention = await screen.findByLabelText("Telemetry retention (days)");
 		const save = screen.getByRole("button", { name: "Save workspace settings" });
-		for (const invalid of ["0", "3651", "12.5"]) {
+		expect(retention).toHaveAttribute("min", "7");
+		expect(retention).toHaveAttribute("max", "3650");
+		expect(screen.getByText(/Allowed range: 7–3650 days/)).toBeInTheDocument();
+		for (const invalid of ["0", "6", "3651", "12.5"]) {
 			fireEvent.change(retention, { target: { value: invalid } });
 			expect(save, invalid).toBeDisabled();
 		}
@@ -313,6 +322,41 @@ describe("workspace section", () => {
 		renderSettings();
 		expect(await screen.findByLabelText("Workspace name")).toBeInTheDocument();
 		expect(screen.queryByRole("button", { name: "Close workspace" })).not.toBeInTheDocument();
+	});
+
+	it("shows retention read-only to administrators and renames without touching it", async () => {
+		install({ role: "admin" });
+		renderSettings();
+		const input = await screen.findByLabelText("Workspace name");
+		expect(screen.queryByLabelText("Telemetry retention (days)")).not.toBeInTheDocument();
+		expect(screen.getByTestId("retention-owner-only")).toHaveTextContent(
+			"Telemetry retention (90 days) can only be changed by a workspace owner",
+		);
+		fireEvent.change(input, { target: { value: "Acme Platform" } });
+		fireEvent.click(screen.getByRole("button", { name: "Save workspace settings" }));
+		expect(await screen.findByText("Workspace settings saved.")).toBeInTheDocument();
+		expect(patches()).toEqual([{ tenant_id: TENANT, action: "update", name: "Acme Platform" }]);
+	});
+
+	it("hides the retention control when the service does not grant retention rights", async () => {
+		install({ omitRetentionPermission: true });
+		renderSettings();
+		expect(await screen.findByLabelText("Workspace name")).toBeInTheDocument();
+		expect(screen.queryByLabelText("Telemetry retention (days)")).not.toBeInTheDocument();
+		expect(screen.getByTestId("retention-owner-only")).toBeInTheDocument();
+	});
+
+	it("reports a refused retention change without applying it", async () => {
+		install({ updateError: "workspace_role_insufficient" });
+		renderSettings();
+		fireEvent.change(await screen.findByLabelText("Telemetry retention (days)"), {
+			target: { value: "365" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "Save workspace settings" }));
+		expect(await screen.findByRole("alert")).toHaveTextContent(
+			"Your role cannot make this workspace change.",
+		);
+		expect(screen.getByText("90 days")).toBeInTheDocument();
 	});
 
 	it("closes the workspace only after the owner types its exact name", async () => {

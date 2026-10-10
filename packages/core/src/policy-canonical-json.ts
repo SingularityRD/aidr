@@ -6,9 +6,10 @@
  *
  * Every object is rebuilt with its keys sorted by UTF-16 code unit and the
  * result is passed to `JSON.stringify`. That is byte for byte what the signer
- * produces (`canonicalJson` in supabase/functions/_shared/policy-signature.ts
- * and `canonicalPolicy` in supabase/functions/_shared/runtime-policy.ts, which
- * cannot import this package), so it inherits two `JSON.stringify` rules that a
+ * produces (`canonicalJson` in supabase/functions/_shared/canonical-json.ts,
+ * the single signer-side copy that _shared/policy-signature.ts and
+ * _shared/runtime-policy.ts import; Edge Functions cannot import this
+ * package), so it inherits two `JSON.stringify` rules that a
  * hand-rolled serializer easily gets wrong:
  *
  *   - integer-like keys (`"9"`, `"10"`) are emitted first in ascending numeric
