@@ -40,6 +40,7 @@ import type {
 	OidcDeps,
 	OidcProviderRow,
 	ProviderKind,
+	SaveProviderResult,
 	TokenAuthMethod,
 } from "./types.ts";
 
@@ -216,6 +217,21 @@ export function createOidcHandler(deps: OidcDeps): (req: Request) => Promise<Res
 
 	// -- callback ---------------------------------------------------------------
 
+	/**
+	 * The provider's client secret, bound to its own tenant and issuer: the
+	 * owner-typed reference selects a secret only when the operator bound it to
+	 * this tenant (see client-secrets.ts). Unbound looks exactly like unset.
+	 */
+	function clientSecretFor(provider: OidcProviderRow): string | null {
+		if (!provider.client_secret_ref || !provider.tenant_id) return null;
+		return deps.getClientSecret({
+			tenantId: provider.tenant_id,
+			issuer: provider.issuer,
+			clientId: provider.client_id,
+			ref: provider.client_secret_ref,
+		});
+	}
+
 	async function exchangeCode(
 		provider: OidcProviderRow,
 		code: string,
@@ -236,7 +252,7 @@ export function createOidcHandler(deps: OidcDeps): (req: Request) => Promise<Res
 		if (provider.token_auth_method === "none") {
 			form.set("client_id", provider.client_id);
 		} else {
-			const secret = provider.client_secret_ref ? deps.getClientSecret(provider.client_secret_ref) : null;
+			const secret = clientSecretFor(provider);
 			if (!secret) return { ok: false, reason: "client_secret_not_configured" };
 			if (provider.token_auth_method === "client_secret_post") {
 				form.set("client_id", provider.client_id);
@@ -554,9 +570,7 @@ export function createOidcHandler(deps: OidcDeps): (req: Request) => Promise<Res
 				issuer: provider.issuer,
 				client_id: provider.client_id,
 				token_auth_method: provider.token_auth_method,
-				client_secret_configured: provider.client_secret_ref
-					? deps.getClientSecret(provider.client_secret_ref) !== null
-					: null,
+				client_secret_configured: provider.client_secret_ref ? clientSecretFor(provider) !== null : null,
 				allowed_algs: provider.allowed_algs,
 				subject_claim: provider.subject_claim,
 				groups_claim: provider.groups_claim,
@@ -641,6 +655,12 @@ export function createOidcHandler(deps: OidcDeps): (req: Request) => Promise<Res
 		};
 	}
 
+	function saveFailure(req: Request, result: Exclude<SaveProviderResult, "saved">): Response {
+		if (result === "owner_required") return deps.json(req, 403, { error: "owner_required" });
+		if (result === "error") return deps.json(req, 503, { error: "sso_unavailable" });
+		return deps.json(req, 409, { error: result });
+	}
+
 	async function putProvider(req: Request, body: Body): Promise<Response> {
 		const context = await ownerContext(req, body, { requireAal2: true });
 		if (context instanceof Response) return context;
@@ -661,20 +681,17 @@ export function createOidcHandler(deps: OidcDeps): (req: Request) => Promise<Res
 		if (wantsEnabled) {
 			const secretOk =
 				provider.token_auth_method === "none" ||
-				(provider.client_secret_ref !== null && deps.getClientSecret(provider.client_secret_ref) !== null);
+				clientSecretFor(provider) !== null;
 			if (!secretOk) return deps.json(req, 422, { error: "client_secret_not_configured" });
 			provider = { ...provider, enabled: true };
 		}
-		if (!(await store.saveProvider(provider, context.caller.userId))) return deps.json(req, 503, { error: "sso_unavailable" });
-		deps.invalidateJwks(provider.discovery?.jwks_uri ?? "");
-		const logged = await store.audit({
-			actor_user_id: context.caller.userId,
-			tenant_id: context.tenantId,
-			target_user_id: null,
+		// Owner re-check, upsert and audit commit together (or not at all).
+		const saved = await store.saveProvider(provider, context.caller.userId, {
 			action: "identity.oidc.provider_updated",
 			detail: { provider_id: provider.id, kind: provider.kind, issuer: provider.issuer, enabled: provider.enabled, request_id: deps.requestId(req) },
 		});
-		if (!logged) return deps.json(req, 503, { error: "sso_unavailable" });
+		if (saved !== "saved") return saveFailure(req, saved);
+		deps.invalidateJwks(provider.discovery?.jwks_uri ?? "");
 		return deps.json(req, 200, { ok: true, provider_id: provider.id, enabled: provider.enabled, redirect_uri: redirectUri });
 	}
 
@@ -685,16 +702,12 @@ export function createOidcHandler(deps: OidcDeps): (req: Request) => Promise<Res
 		if (!provider) return deps.json(req, 404, { error: "provider_not_found" });
 		const discovered = await fetchDiscovery(provider);
 		if (typeof discovered === "string") return deps.json(req, 422, { error: "discovery_failed", reason: discovered });
-		if (provider.discovery) deps.invalidateJwks(provider.discovery.jwks_uri);
-		if (!(await store.saveProvider(discovered, context.caller.userId))) return deps.json(req, 503, { error: "sso_unavailable" });
-		const logged = await store.audit({
-			actor_user_id: context.caller.userId,
-			tenant_id: context.tenantId,
-			target_user_id: null,
+		const saved = await store.saveProvider(discovered, context.caller.userId, {
 			action: "identity.oidc.discovery_refreshed",
 			detail: { provider_id: provider.id, jwks_changed: provider.discovery?.jwks_uri !== discovered.discovery?.jwks_uri },
 		});
-		if (!logged) return deps.json(req, 503, { error: "sso_unavailable" });
+		if (saved !== "saved") return saveFailure(req, saved);
+		if (provider.discovery) deps.invalidateJwks(provider.discovery.jwks_uri);
 		return deps.json(req, 200, { ok: true });
 	}
 

@@ -3,8 +3,11 @@
 // GET   Header X-AIDR-Tenant-ID. Any active member reads the workspace name,
 //       status, retention and what their role may change.
 // PATCH { tenant_id, action: "update", name?, retention_days?, confirm_retention_reduction? }
-//       owner/admin at AAL2. Shortening retention needs an explicit
-//       confirmation because it makes older telemetry eligible for deletion.
+//       owner/admin at AAL2 for a rename; a retention CHANGE is owner-only and
+//       goes through the bounded, plan-checked retention setter inside the RPC
+//       (class floors, plan maximum, offboarding refusal, tenant lock).
+//       Shortening retention needs an explicit confirmation because it makes
+//       older telemetry eligible for deletion.
 // PATCH { tenant_id, action: "close", confirm_name }
 //       owner at AAL2, with the exact current workspace name typed back.
 //       Delegates to the audited offboarding lifecycle.
@@ -28,8 +31,14 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Control characters are rejected outright (same rule as cloud signup naming).
 const CONTROL = /\p{Cc}/u;
 
-/** Mirrors the `tenants.retention_days` check constraint. */
+/** Mirrors the `tenants.retention_days` check constraint (shape of stored values). */
 export const RETENTION_BOUNDS = Object.freeze({ min: 1, max: 3650 });
+/**
+ * What a workspace retention change may request: the telemetry row of
+ * `public.retention_policy_bounds`. The RPC enforces it (and the plan maximum)
+ * again under the tenant lock; this is the advertised range.
+ */
+export const WORKSPACE_RETENTION_BOUNDS = Object.freeze({ min: 7, max: 3650 });
 export const WORKSPACE_NAME_MAX = 200;
 
 const readRuntimeEnv: EnvReader = (name) => {
@@ -92,6 +101,10 @@ export function validRetentionDays(value: unknown): value is number {
 	);
 }
 
+export function validRequestedRetentionDays(value: unknown): value is number {
+	return validRetentionDays(value) && value >= WORKSPACE_RETENTION_BOUNDS.min && value <= WORKSPACE_RETENTION_BOUNDS.max;
+}
+
 export function parseSettingsCommand(value: unknown): { ok: true; command: SettingsCommand } | { ok: false; error: string } {
 	if (!isRecord(value) || typeof value.tenant_id !== "string" || !UUID.test(value.tenant_id)) {
 		return { ok: false, error: "invalid_request" };
@@ -110,7 +123,7 @@ export function parseSettingsCommand(value: unknown): { ok: true; command: Setti
 			if (normalized === null) return { ok: false, error: "invalid_workspace_name" };
 			name = normalized;
 		}
-		if (value.retention_days !== undefined && !validRetentionDays(value.retention_days)) {
+		if (value.retention_days !== undefined && !validRequestedRetentionDays(value.retention_days)) {
 			return { ok: false, error: "invalid_retention_days" };
 		}
 		if (value.confirm_retention_reduction !== undefined && typeof value.confirm_retention_reduction !== "boolean") {
@@ -152,6 +165,22 @@ function validTenantRow(value: unknown, tenantId: string): value is TenantRow {
 	return isRecord(value) && value.id === tenantId && typeof value.name === "string" &&
 		typeof value.kind === "string" && typeof value.status === "string" &&
 		Number.isSafeInteger(value.retention_days) && typeof value.created_at === "string";
+}
+
+/** Retention refusals raised by the bounded setter, surfaced with a stable code. */
+function retentionFailure(req: Request, error: { code?: string; message?: string }): Response | null {
+	const message = error.message ?? "";
+	if (error.code === "42501" && message.includes("retention_admin_owner_required")) {
+		return corsJson(req, 403, { error: "workspace_role_insufficient" });
+	}
+	if (error.code === "22023") {
+		const reason = /retention_days_out_of_bounds|retention_days_exceeds_plan|retention_class_not_configurable/.exec(message)?.[0];
+		if (reason) return corsJson(req, 400, { error: "invalid_retention_days", reason });
+	}
+	if (error.code === "55000" && message.includes("retention_change_refused_offboarding")) {
+		return corsJson(req, 409, { error: "retention_change_refused_offboarding" });
+	}
+	return null;
 }
 
 function rpcFailure(req: Request, error: { code?: string } | null, fallback: string): Response {
@@ -223,14 +252,21 @@ export function createTenantSettingsHandler(deps: TenantSettingsDeps = {}) {
 					role,
 					permissions: {
 						can_edit: active && (role === "owner" || role === "admin"),
+						can_edit_retention: active && role === "owner",
 						can_close: active && role === "owner",
 						requires_aal2: true,
 					},
-					retention_bounds: RETENTION_BOUNDS,
+					retention_bounds: WORKSPACE_RETENTION_BOUNDS,
 				});
 			}
 
-			const allowed = command.action === "close" ? role === "owner" : role === "owner" || role === "admin";
+			// Admins may rename; changing retention (like closure) is an owner
+			// decision. The RPC re-checks both under the tenant lock.
+			const changesRetention = command.action === "update" && command.retentionDays !== undefined &&
+				command.retentionDays !== tenant.retention_days;
+			const allowed = command.action === "close" || changesRetention
+				? role === "owner"
+				: role === "owner" || role === "admin";
 			if (!allowed) return corsJson(req, 403, { error: "workspace_role_insufficient" });
 			if (!active) return corsJson(req, 409, { error: "workspace_not_active" });
 			// Workspace changes are privileged: require step-up even when the
@@ -262,6 +298,8 @@ export function createTenantSettingsHandler(deps: TenantSettingsDeps = {}) {
 					p_name: command.name ?? null,
 					p_retention_days: command.retentionDays ?? null,
 				});
+				const retentionRefusal = error ? retentionFailure(req, error) : null;
+				if (retentionRefusal) return retentionRefusal;
 				if (error?.code === "22023") return corsJson(req, 400, { error: "invalid_workspace_settings" });
 				if (error) return rpcFailure(req, error, "workspace_update_failed");
 				if (!isRecord(data) || data.id !== tenantId || typeof data.name !== "string" ||

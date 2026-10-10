@@ -18,6 +18,7 @@ import { getRequestId } from "../_shared/response.ts";
 import { safeFetchJson } from "../_shared/safe-fetch.ts";
 import { INGRESS_SECRET_ENV, validIngressSecret, verifiedIngressIp } from "../_shared/trusted-ingress.ts";
 import { jwtIssuedAtMs, jwtSessionId } from "../identity-security/logic.ts";
+import { resolveClientSecret } from "./client-secrets.ts";
 import { createOidcHandler } from "./handler.ts";
 import { JwksCache, parseJwks } from "./jwks.ts";
 import { SupabaseOidcStore } from "./store.ts";
@@ -98,10 +99,8 @@ Deno.serve(async (req) => {
 		now: () => Date.now(),
 		randomBytes: (length) => crypto.getRandomValues(new Uint8Array(length)),
 		requestId: getRequestId,
-		getClientSecret: (ref) => {
-			const value = Deno.env.get(`AIDR_OIDC_CLIENT_SECRET_${ref}`);
-			return value && value.trim() !== "" ? value : null;
-		},
+		// Released only for an operator binding of (ref -> tenant, issuer[, client]).
+		getClientSecret: (request) => resolveClientSecret((name) => Deno.env.get(name), request),
 		fetchJson: async (url, init) => {
 			const response = await safeFetchJson(url, init);
 			return response.ok ? { ok: true, json: response.json } : { ok: false, error: response.error, status: response.status };

@@ -156,6 +156,8 @@ jobs:
           docker exec -i "${AIDR_RLS_TEST_DB_CONTAINER}" psql -X -qAt -v ON_ERROR_STOP=1 -w -U postgres -d postgres < supabase/functions/__tests__/seat-usage-effective-view.rollback.sql
           docker exec -i "${AIDR_RLS_TEST_DB_CONTAINER}" psql -X -qAt -v ON_ERROR_STOP=1 -w -U postgres -d postgres < supabase/functions/__tests__/enrollment-rotation-resolution.rollback.sql
           docker exec -i "${AIDR_RLS_TEST_DB_CONTAINER}" psql -X -qAt -v ON_ERROR_STOP=1 -w -U postgres -d postgres < supabase/functions/__tests__/device-membership-token.rollback.sql
+          docker exec -i "${AIDR_RLS_TEST_DB_CONTAINER}" psql -X -qAt -v ON_ERROR_STOP=1 -w -U postgres -d postgres < supabase/functions/__tests__/workspace-settings-retention.rollback.sql
+          docker exec -i "${AIDR_RLS_TEST_DB_CONTAINER}" psql -X -qAt -v ON_ERROR_STOP=1 -w -U postgres -d postgres < supabase/functions/__tests__/oidc-provider-save.rollback.sql
           pnpm verify:supabase-pilot-audit-live
           pnpm verify:supabase-device-revocation-live
 
@@ -175,6 +177,7 @@ jobs:
           node --test scripts/device-poll-membership-revocation-postgres.test.mjs
           docker pull supabase/postgres:17.6.1.136
           node --test scripts/oidc-administration-postgres.test.mjs
+          node --test scripts/workspace-retention-oidc-save-postgres.test.mjs
           node --test scripts/saml-administration-postgres.test.mjs
           node --test scripts/saml-outage-recovery.test.mjs scripts/saml-outage-recovery-postgres.test.mjs
           node --test scripts/discovery-cloud-postgres.test.mjs
