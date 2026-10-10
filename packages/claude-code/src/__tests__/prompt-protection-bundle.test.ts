@@ -73,6 +73,11 @@ function runBundle(
 				});
 			},
 		);
+		// The hook stops reading at its input cap and exits, so writing an oversized
+		// prompt can hit a closed pipe; only that EPIPE is expected here.
+		child.stdin?.on("error", (error: NodeJS.ErrnoException) => {
+			if (error.code !== "EPIPE") throw error;
+		});
 		child.stdin?.end(stdin);
 	});
 }
