@@ -2,7 +2,7 @@
   "schema_version": 1,
   "generated_on": "2026-10-11",
   "generation_timezone": "Europe/Istanbul",
-  "source_commit": "b43839aa415abb950914015bae1fd244b25776d5",
+  "source_commit": "3952a41dd2badeee30f3044354dd6edad51ccc92",
   "worktree_has_changes": true,
   "decision": "NO-GO",
   "methodology": "Generated capability/consumer mapping; statuses do not imply production effectiveness. Wired means a callable implementation; partial means scope or delivery gaps; missing means no end-to-end consumer; external requires independent evidence. Includes proposed market capabilities and deployment/assurance requirements. Historical module-reachability counts are not feature counts.",
@@ -948,8 +948,8 @@
         "docs/evidence/real-host/codex.json"
       ],
       "consumer": "PreToolUse and UserPromptSubmit connector",
-      "delivered": "Built connector and policy decisions; argv shell/local_shell/exec commands are extracted instead of yielding an uninspected allow; ask and DLP redact are converted to an explicit deny; operator approvals release an identical retry. A real-host acceptance record (Codex CLI 0.141.0 driven by a scripted mock model) proves pre-tool and pre-prompt enforcement; both are in the sold support matrix (pre-prompt since 2026-09-30)",
-      "remaining": "Host can fail open when hook execution is unavailable (an untrusted, crashed or timed-out hook); the UserPromptSubmit handler must be registered and trusted separately and codex exec shows no reason text for a blocked prompt; no tool output is inspected; not tamper-resistant isolation; the real-host record is recorded on linux/x64 only, with a development build and a scripted mock model (no Windows/macOS/arm64, signed artefact or real model)",
+      "delivered": "Built connector and policy decisions; argv shell/local_shell/exec commands are extracted instead of yielding an uninspected allow; ask and DLP redact are converted to an explicit deny; operator approvals release an identical retry. A real-host acceptance record (Codex CLI 0.141.0 driven by a scripted mock model) proves pre-tool and pre-prompt enforcement; both are in the sold support matrix (pre-prompt since 2026-09-30), and Codex is in the six-connector direct-GA order scope (COM-010, Product decision 2026-10-11) as a target, not an acceptance",
+      "remaining": "Host can fail open when hook execution is unavailable (an untrusted, crashed or timed-out hook); the UserPromptSubmit handler must be registered and trusted separately and codex exec shows no reason text for a blocked prompt; the packaged matcher covers Bash and apply_patch only, so MCP and other local function tools never reach the hook; no tool output is inspected before the model; not tamper-resistant isolation; the real-host record is recorded on linux/x64 only, with a development build and a scripted mock model (no Windows/macOS/arm64, signed artefact or real model)",
       "production_accepted": false
     },
     {

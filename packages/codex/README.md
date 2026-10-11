@@ -13,6 +13,18 @@ platforms have not been accepted.
 
 Verified against `codex-cli 0.141.0`.
 
+**Release scope.** Codex CLI is one of the six connectors in the intended direct-GA
+order scope (Product decision of 2026-10-11, `COM-010` in
+[`commercial-go-evidence-registry.json`](../../docs/production-readiness/commercial-go-evidence-registry.json)).
+That is a target, not acceptance: the release decision stays NO-GO until a signed
+artefact, a private-registry install and real-host receipts exist for each supported
+platform and Codex version. Selling Codex as GA always carries these limits: Codex
+fails open on a crashing, timed-out or untrusted hook (this connector maps `ask` and
+its own internal errors to an explicit deny); there is no output-side interception
+before the model (see [Tool-output inspection](#tool-output-inspection-posttooluse)
+and [Scope](#scope)); and the packaged hook matcher covers `Bash` and `apply_patch`
+only.
+
 ## What it does
 
 For calls reaching the registered matcher, the shared AIDR detection core

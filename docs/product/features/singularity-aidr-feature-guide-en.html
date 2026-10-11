@@ -421,7 +421,11 @@ scope. Real-host acceptance is recorded for Claude Code, Codex, OpenCode and Ope
 only, on one host version each on linux/x64 with the development build and a scripted
 mock model; Cursor and VS Code have none, and no record covers Windows, macOS, arm64, a
 signed release or a real model. Treat the capabilities below as the designed and tested
-behaviour of the software, not as accepted host-side guarantees beyond those records.</p></blockquote>
+behaviour of the software, not as accepted host-side guarantees beyond those records.
+The intended direct-GA connector scope is all six connectors, Codex CLI included; that
+is a target, not acceptance. Codex keeps its host limits: it fails open on a crashing or
+untrusted hook, has no output-side interception before the model, and its packaged
+matcher covers <code>Bash</code> and <code>apply_patch</code> only.</p></blockquote>
 <h2 id="p1-1-connectors">1. Connectors</h2>
 <h3 id="p1-connector-overview">Connector overview</h3>
 <div class="table"><table class="wide"><thead><tr><th>Connector</th><th>Package</th><th>Where it hooks in</th><th>Tool calls inspected before they run</th><th>Tool output</th><th>Host approval UI for <code>ask</code></th></tr></thead><tbody><tr><td>Claude Code</td><td><code>@singularityrd/<wbr>aidr-claude-code</code> (plugin)</td><td><code>PreToolUse</code>, <code>PostToolUse</code>, <code>UserPromptSubmit</code>, <code>SessionStart</code> hooks</td><td>Every tool (<code>matcher: &quot;*&quot;</code>)</td><td><code>PostToolUse</code> replacement (after execution)</td><td>Yes (native dialog)</td></tr>

@@ -25,7 +25,10 @@ doğrudan kod deposundan alınmıştır. Ürünün kullanıcıya gösterdiği me
 > yoktur ve hiçbir kayıt Windows, macOS, arm64, imzalı bir sürüm ya da gerçek bir modeli
 > kapsamaz. Aşağıdaki yetenekleri, yazılımın tasarlanmış ve test edilmiş davranışı olarak
 > değerlendirin; bu kayıtların ötesinde host tarafında kabul edilmiş bir garanti olarak
-> değil.
+> değil. Hedeflenen doğrudan GA connector kapsamı, Codex CLI dahil altı connector'ın
+> tamamıdır; bu bir hedeftir, kabul değildir. Codex host sınırlarını korur: çöken ya da
+> güvenilmeyen bir hook'ta çağrıyı geçirir (fail-open), modelden önce çıktı tarafında
+> denetim yoktur ve paketlenen matcher yalnızca `Bash` ile `apply_patch`'i kapsar.
 
 ## İçindekiler
 

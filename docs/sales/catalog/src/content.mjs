@@ -577,6 +577,7 @@ function inspectRespond(h) {
 			</ul>
 		</div>
 	</div>
+	<p class="tiny mt1" data-limits="codex">${t("Codex CLI sınırları: yalnızca Bash ve apply_patch çağrıları denetlenir; araç çıktısı modelden önce incelenmez; kanca çöker ya da güvenilmezse Codex çağrıyı geçirir (bağlayıcı kendi hatalarını ve ask kararını deny'a çevirir).", "Codex CLI limits: only Bash and apply_patch calls are checked; tool output is not inspected before the model; Codex lets a call through if its hook crashes or is not trusted (the connector turns its own errors and ask into deny).")}</p>
 	${gain("inspect")}
 	</div>
 	<div class="stage-block">

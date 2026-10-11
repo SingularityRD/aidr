@@ -59,8 +59,11 @@ TypeScript monorepo. Connector packages and their shared core:
 - `packages/codex/` — `@singularityrd/aidr-codex`: Codex CLI connector, implemented as a native
   `PreToolUse` hook (verified against `codex-cli 0.141.0`). Codex fails **open** on a crashing
   or untrusted hook, so this connector translates `ask` into an explicit `deny` and turns
-  internal errors into a deny as well — see `packages/codex/README.md`. Ships its own copy of
-  the rules via `scripts/sync-assets.mjs`.
+  internal errors into a deny as well — see `packages/codex/README.md`. In the direct-GA
+  connector scope (COM-010, six connectors, Product decision 2026-10-11) with its limits kept
+  on every surface: host fail-open on a crashing/untrusted hook, no output-side interception,
+  matcher limited to `Bash`/`apply_patch`. GA scope is a target; acceptance still needs host
+  receipts. Ships its own copy of the rules via `scripts/sync-assets.mjs`.
 - `packages/mcp-gateway/` — `@singularityrd/aidr-mcp-gateway`: loopback MCP gateway (HTTP + stdio
   bridge) that inspects MCP tool results before they reach the model; signed manifests and
   operator-only approval (`aidr-mcp-approve`), never an MCP tool.
