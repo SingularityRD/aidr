@@ -5,7 +5,11 @@ import { loadRevocationBinding, loadRevocationsCache } from "../managed.js";
 import type { Logger } from "../types.js";
 import { nullLogger } from "../types.js";
 import { enterDegradedSafeMode } from "./degraded-safe-mode.js";
-import { type IntegrityCheckResult, verifyArtifactIntegrity } from "./verify.js";
+import {
+	hasWellFormedSignature,
+	type IntegrityCheckResult,
+	verifyArtifactIntegrity,
+} from "./verify.js";
 
 export class ArtifactIntegrityError extends Error {
 	constructor(
@@ -91,7 +95,19 @@ export async function verifyArtifactIntegrityAndLog(params: {
 	// default. The shipped bytes are still checked against the manifest digests
 	// (including the closed resource directories); any mismatch is a genuine
 	// local integrity failure and still fails closed below.
-	if (commercial && result.status === "no_public_keys") {
+	//
+	// That allowance covers a *signed* release only. An artifact that ships no
+	// signature at all (a development or unsigned release-candidate build) has
+	// no release provenance to fall back on, so it fails closed exactly as a
+	// missing manifest does: digests computed by whoever built the bytes prove
+	// nothing about where they came from.
+	if (
+		commercial &&
+		result.status === "no_public_keys" &&
+		!(await hasWellFormedSignature(params.artifactDir))
+	) {
+		result = { ...result, reason: "artifact_unsigned" };
+	} else if (commercial && result.status === "no_public_keys") {
 		const unsigned = await verifyArtifactIntegrity({
 			artifactDir: params.artifactDir,
 			publicKeysPem: [],

@@ -486,6 +486,17 @@ async function main(argv) {
 			summary.push({ host: id, status: "AIDR_ARTIFACT_MISSING" });
 			continue;
 		}
+		// The scenarios are written for the development build. A release build
+		// (`pnpm build:release`) is commercial-flavoured and unsigned, so its own
+		// integrity check refuses every call and the results would say nothing
+		// about the host boundaries this tier records.
+		const flavor = artifactFlavor(id);
+		if (flavor !== "development") {
+			console.error(`[real-host] ${id}: AIDR build flavour is ${flavor ?? "unknown"}, not development; run pnpm build first`);
+			failures += 1;
+			summary.push({ host: id, status: "AIDR_ARTIFACT_NOT_DEVELOPMENT", buildFlavor: flavor });
+			continue;
+		}
 		const host = await adapter.resolve({ hostsDir, install: values.install });
 		if (!host) {
 			const pin = HOST_PINS[id];

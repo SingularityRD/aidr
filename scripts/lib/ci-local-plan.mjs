@@ -657,11 +657,13 @@ export const STEPS = Object.freeze([
 	// Local-only (no ci.yml counterpart): real Claude Code / Codex / OpenCode /
 	// OpenClaw binaries against a scripted loopback mock model. Needs no secrets,
 	// but installs the pinned hosts (and Node.js 24 for OpenClaw) on first run.
+	// It rebuilds first: the tier loads the development build, and the earlier
+	// build-release step leaves commercial-flavoured, unsigned dist/ output.
 	step({
 		id: "real-host-mock-model",
 		group: "real-host-e2e",
 		name: "Real host binaries with a scripted mock model (local-only)",
-		run: "pnpm test:e2e:real-host",
+		run: "pnpm build && pnpm test:e2e:real-host",
 		optIn: true,
 		requires: ["network"],
 		timeoutMs: 45 * MIN,
