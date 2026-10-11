@@ -122,6 +122,8 @@ try {
 	writeFileSync(join(packageRoot, "resources", "allowlists", "fixture.yaml"), "domains: []\n");
 	writeFileSync(join(packageRoot, "dist", "pre-tool-use.cjs"), `let x="";process.stdin.on("data",d=>x+=d);process.stdin.on("end",()=>console.log(JSON.stringify({hookSpecificOutput:{permissionDecision:"deny",permissionDecisionReason:"🛡️ Singularity AIDR: Threat Blocked"},systemMessage:"Remote code execution via curl pipe to shell"})));\n`);
 	for (const name of ["post-tool-use.cjs", "session-start.cjs"]) writeFileSync(join(packageRoot, "dist", name), "process.exit(0);\n");
+	// Shipped hooks are a bootstrap plus the real bundle; the fleet scripts require both.
+	for (const name of ["pre-tool-use.bundle.cjs", "post-tool-use.bundle.cjs", "session-start.bundle.cjs"]) writeFileSync(join(packageRoot, "dist", name), "module.exports = {};\n");
 	// `endpoint-install.mjs` runs under the host Node even when the fleet script
 	// is executed through Git bash on Windows, so it applies the Windows rule and
 	// refuses a package without the native AMSI payload. That refusal is correct;

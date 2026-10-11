@@ -237,7 +237,7 @@ run_for_user() {
 activate_release() {
 	release_id=$1
 	package_path="$INSTALL_ROOT/releases/$release_id/package"
-	require_file "$package_path/package.json"; require_file "$package_path/dist/pre-tool-use.cjs"; require_file "$ENDPOINT_INSTALLER"
+	require_file "$package_path/package.json"; require_file "$package_path/dist/pre-tool-use.cjs"; require_file "$package_path/dist/pre-tool-use.bundle.cjs"; require_file "$ENDPOINT_INSTALLER"
 	set -- "$NODE_BIN" "$ENDPOINT_INSTALLER" --package-dir "$package_path" --home "$TARGET_HOME"
 	if [ -n "$AGENT_CONFIG" ] && [ ! -f "$TARGET_HOME/.singularity-aidr/config.json" ]; then require_file "$AGENT_CONFIG"; set -- "$@" --config "$AGENT_CONFIG"; fi
 	run_for_user "$@"
@@ -278,7 +278,7 @@ stage_release() {
 		if [ -f "$temporary/extracted/package/package.json" ]; then package_dir="$temporary/extracted/package"
 		elif [ -f "$temporary/extracted/package.json" ]; then package_dir="$temporary/extracted"
 		else fail "artifact does not contain package.json"; fi
-		require_file "$package_dir/dist/pre-tool-use.cjs"; [ -d "$package_dir/resources" ] || fail "artifact does not contain resources"
+		require_file "$package_dir/dist/pre-tool-use.cjs"; require_file "$package_dir/dist/pre-tool-use.bundle.cjs"; [ -d "$package_dir/resources" ] || fail "artifact does not contain resources"
 		mv "$package_dir" "$temporary/package"
 		rm -rf "$temporary/extracted"
 		find "$temporary" -type d -exec chmod 755 {} \;
