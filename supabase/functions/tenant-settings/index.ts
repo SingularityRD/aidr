@@ -7,7 +7,9 @@
 //       goes through the bounded, plan-checked retention setter inside the RPC
 //       (class floors, plan maximum, offboarding refusal, tenant lock).
 //       Shortening retention needs an explicit confirmation because it makes
-//       older telemetry eligible for deletion.
+//       older telemetry eligible for deletion. The RPC repeats that check
+//       against the stored telemetry policy, and never lowers any other
+//       retention class (owners shorten those per class).
 // PATCH { tenant_id, action: "close", confirm_name }
 //       owner at AAL2, with the exact current workspace name typed back.
 //       Delegates to the audited offboarding lifecycle.
@@ -180,6 +182,11 @@ function retentionFailure(req: Request, error: { code?: string; message?: string
 	if (error.code === "55000" && message.includes("retention_change_refused_offboarding")) {
 		return corsJson(req, 409, { error: "retention_change_refused_offboarding" });
 	}
+	// The RPC compares the request with the stored telemetry policy under the
+	// tenant lock; the pre-check above only sees tenants.retention_days.
+	if (error.code === "55000" && message.includes("retention_reduction_unconfirmed")) {
+		return corsJson(req, 409, { error: "retention_reduction_unconfirmed" });
+	}
 	return null;
 }
 
@@ -297,6 +304,7 @@ export function createTenantSettingsHandler(deps: TenantSettingsDeps = {}) {
 					p_actor_user_id: userId,
 					p_name: command.name ?? null,
 					p_retention_days: command.retentionDays ?? null,
+					p_confirm_retention_reduction: command.confirmRetentionReduction,
 				});
 				const retentionRefusal = error ? retentionFailure(req, error) : null;
 				if (retentionRefusal) return retentionRefusal;

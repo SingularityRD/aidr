@@ -40,6 +40,7 @@ import type {
 	OidcDeps,
 	OidcProviderRow,
 	ProviderKind,
+	RefreshDiscoveryResult,
 	SaveProviderResult,
 	TokenAuthMethod,
 } from "./types.ts";
@@ -655,7 +656,7 @@ export function createOidcHandler(deps: OidcDeps): (req: Request) => Promise<Res
 		};
 	}
 
-	function saveFailure(req: Request, result: Exclude<SaveProviderResult, "saved">): Response {
+	function saveFailure(req: Request, result: Exclude<SaveProviderResult | RefreshDiscoveryResult, "saved">): Response {
 		if (result === "owner_required") return deps.json(req, 403, { error: "owner_required" });
 		if (result === "error") return deps.json(req, 503, { error: "sso_unavailable" });
 		return deps.json(req, 409, { error: result });
@@ -702,9 +703,14 @@ export function createOidcHandler(deps: OidcDeps): (req: Request) => Promise<Res
 		if (!provider) return deps.json(req, 404, { error: "provider_not_found" });
 		const discovered = await fetchDiscovery(provider);
 		if (typeof discovered === "string") return deps.json(req, 422, { error: "discovery_failed", reason: discovered });
-		const saved = await store.saveProvider(discovered, context.caller.userId, {
-			action: "identity.oidc.discovery_refreshed",
-			detail: { provider_id: provider.id, jwks_changed: provider.discovery?.jwks_uri !== discovered.discovery?.jwks_uri },
+		if (!discovered.discovery) return deps.json(req, 503, { error: "sso_unavailable" });
+		// Only the discovery columns are written, and only if the issuer and
+		// algorithms it was validated against are still the stored ones. The
+		// row read above may be stale by now (the fetch is a network round
+		// trip); writing it back would undo a concurrent disable or edit.
+		const saved = await store.refreshProviderDiscovery(provider, discovered.discovery, context.caller.userId, {
+			provider_id: provider.id,
+			jwks_changed: provider.discovery?.jwks_uri !== discovered.discovery.jwks_uri,
 		});
 		if (saved !== "saved") return saveFailure(req, saved);
 		if (provider.discovery) deps.invalidateJwks(provider.discovery.jwks_uri);

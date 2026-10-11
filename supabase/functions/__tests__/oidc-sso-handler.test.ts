@@ -963,6 +963,54 @@ describe("provider writes are one transaction with the owner re-check and audit"
 		expect(ctx.world.store.auditActions()).not.toContain("identity.oidc.discovery_refreshed");
 	});
 
+	it("a refresh racing a disable writes only discovery: the provider stays disabled", async () => {
+		const before = providerRow({ discovery: { ...discoveryFor(ctx.idpA), jwks_uri: "https://login.microsoftonline.com/old/keys" } });
+		ctx.world.store.providers.set(PROVIDER_A, before);
+		expect(before.enabled).toBe(true);
+		const save = vi.spyOn(ctx.world.store, "saveProvider");
+		const fetchJson = ctx.world.deps.fetchJson;
+		ctx.world.deps.fetchJson = async (url, init) => {
+			// Another owner disables the provider (and renames it) while discovery is in flight.
+			const current = ctx.world.store.providers.get(PROVIDER_A);
+			if (current) ctx.world.store.providers.set(PROVIDER_A, { ...current, enabled: false, display_name: "Disabled meanwhile" });
+			return fetchJson(url, init);
+		};
+		const handler = createOidcHandler(ctx.world.deps);
+		const response = await handler(post({ action: "refresh_discovery", tenant_id: TENANT_A }, "owner-a"));
+		expect(response.status).toBe(200);
+		const after = ctx.world.store.providers.get(PROVIDER_A);
+		expect(after).toMatchObject({ enabled: false, display_name: "Disabled meanwhile", discovery: discoveryFor(ctx.idpA) });
+		expect(save).not.toHaveBeenCalled();
+		expect(ctx.world.store.audits.at(-1)).toMatchObject({
+			actor_user_id: OWNER_A,
+			tenant_id: TENANT_A,
+			action: "identity.oidc.discovery_refreshed",
+			detail: { provider_id: PROVIDER_A, jwks_changed: true },
+		});
+		expect(ctx.world.jwksInvalidated).toContain("https://login.microsoftonline.com/old/keys");
+	});
+
+	it("refuses a refresh whose issuer or algorithms changed while discovery was in flight", async () => {
+		const before = providerRow({ discovery: discoveryFor(ctx.idpA) });
+		for (const change of [{ issuer: "https://login.microsoftonline.com/replacement/v2.0" }, { allowed_algs: ["ES256" as const] }]) {
+			ctx.world.store.providers.set(PROVIDER_A, before);
+			const audits = ctx.world.store.audits.length;
+			const fetchJson = ctx.world.deps.fetchJson;
+			ctx.world.deps.fetchJson = async (url, init) => {
+				ctx.world.store.providers.set(PROVIDER_A, { ...before, ...change, discovery: null, enabled: false });
+				return fetchJson(url, init);
+			};
+			const handler = createOidcHandler(ctx.world.deps);
+			const response = await handler(post({ action: "refresh_discovery", tenant_id: TENANT_A }, "owner-a"));
+			ctx.world.deps.fetchJson = fetchJson;
+			expect(response.status, JSON.stringify(change)).toBe(409);
+			expect(await response.json()).toEqual({ error: "provider_changed" });
+			expect(ctx.world.store.providers.get(PROVIDER_A)).toEqual({ ...before, ...change, discovery: null, enabled: false });
+			expect(ctx.world.store.audits).toHaveLength(audits);
+			expect(ctx.world.jwksInvalidated).toEqual([]);
+		}
+	});
+
 	it("maps the database guards to stable conflicts", async () => {
 		for (const result of ["provider_locked_by_enforcement", "provider_identity_namespace_locked"] as const) {
 			vi.spyOn(ctx.world.store, "saveProvider").mockResolvedValueOnce(result);
@@ -1081,7 +1129,7 @@ describe("plan gating (entra_sso)", () => {
 	function spyOnConfig() {
 		const store = ctx.world.store;
 		const methods = [
-			"findProviderByTenant", "listDomains", "verifiedDomains", "policy", "saveProvider", "addDomain",
+			"findProviderByTenant", "listDomains", "verifiedDomains", "policy", "saveProvider", "refreshProviderDiscovery", "addDomain",
 			"markDomainVerified", "removeDomain", "setEnforcement", "audit",
 		] as const;
 		const spies = methods.map((method) => vi.spyOn(store, method));
@@ -1202,6 +1250,96 @@ describe("SupabaseOidcStore.saveProvider", () => {
 		const { SupabaseOidcStore } = await import("../oidc-sso/store.ts");
 		const store = new SupabaseOidcStore(fakeDb({ message }).db as never);
 		expect(await store.saveProvider(providerRow(), OWNER_A, { action: "identity.oidc.discovery_refreshed", detail: {} })).toBe(expected);
+	});
+});
+
+describe("SupabaseOidcStore.refreshProviderDiscovery", () => {
+	function fakeDb(error: { message: string } | null) {
+		const rpc = vi.fn(async (_name: string, _args: Record<string, unknown>) => ({ data: error ? null : { provider_id: PROVIDER_A }, error }));
+		const from = vi.fn(() => {
+			throw new Error("provider writes must not use table access");
+		});
+		return { db: { rpc, from }, rpc, from };
+	}
+
+	it("sends only the discovery plus the read issuer/algorithms, never the full row", async () => {
+		const { SupabaseOidcStore } = await import("../oidc-sso/store.ts");
+		const fake = fakeDb(null);
+		const store = new SupabaseOidcStore(fake.db as never);
+		const row = providerRow();
+		const discovery = { issuer: ISSUER_A, authorization_endpoint: "https://a/authorize", token_endpoint: "https://a/token", jwks_uri: "https://a/keys" };
+		expect(await store.refreshProviderDiscovery(row, discovery, OWNER_A, { jwks_changed: false })).toBe("saved");
+		expect(fake.from).not.toHaveBeenCalled();
+		const [name, args] = fake.rpc.mock.calls[0];
+		expect(name).toBe("oidc_update_provider_discovery");
+		expect(args).toEqual({
+			p_actor_user_id: OWNER_A,
+			p_tenant_id: TENANT_A,
+			p_provider_id: PROVIDER_A,
+			p_expected_issuer: row.issuer,
+			p_expected_allowed_algs: row.allowed_algs,
+			p_discovery: discovery,
+			p_audit_detail: { jwks_changed: false },
+		});
+		expect(JSON.stringify(args)).not.toMatch(/"enabled"|client_secret_ref|client_id/);
+	});
+
+	it.each([
+		["oidc_provider_forbidden", "owner_required"],
+		["oidc_tenant_inactive", "owner_required"],
+		["oidc_provider_changed", "provider_changed"],
+		["insert into admin_audit_logs failed", "error"],
+	])("maps %s to %s", async (message, expected) => {
+		const { SupabaseOidcStore } = await import("../oidc-sso/store.ts");
+		const store = new SupabaseOidcStore(fakeDb({ message }).db as never);
+		const discovery = { issuer: ISSUER_A, authorization_endpoint: "https://a/authorize", token_endpoint: "https://a/token", jwks_uri: "https://a/keys" };
+		expect(await store.refreshProviderDiscovery(providerRow(), discovery, OWNER_A, {})).toBe(expected);
+	});
+});
+
+describe("oidc_update_provider_discovery SQL contract (20261011000300)", () => {
+	const sql = readFileSync(
+		join(dirname(fileURLToPath(import.meta.url)), "..", "..", "migrations", "20261011000300_oidc_provider_discovery_refresh.sql"),
+		"utf8",
+	);
+	const body = sql.split("create or replace function public.oidc_update_provider_discovery(")[1]?.split("$$;")[0] ?? "";
+	const signature = "public.oidc_update_provider_discovery(uuid, uuid, uuid, text, text[], jsonb, jsonb)";
+
+	it("is a pinned-search-path security definer granted to service_role only", () => {
+		expect(body).toContain("security definer");
+		expect(body).toContain("set search_path = pg_catalog, public, pg_temp");
+		expect(sql).toContain(`revoke all on function ${signature}\n  from public, anon, authenticated;`);
+		expect(sql).toContain(`grant execute on function ${signature}\n  to service_role;`);
+		expect(sql).not.toMatch(/grant execute on function public\.oidc_update_provider_discovery[^;]*\b(anon|authenticated)\b/);
+	});
+
+	it("locks, re-checks the owner, locks the row and refuses a changed provider before writing", () => {
+		const lock = body.indexOf("pg_advisory_xact_lock(hashtextextended(p_tenant_id::text, 2606))");
+		const share = body.indexOf("for share of m, t");
+		const row = body.indexOf("from public.oidc_providers where id = p_provider_id for update");
+		const changed = body.indexOf("v_row.issuer is distinct from p_expected_issuer");
+		const update = body.indexOf("update public.oidc_providers");
+		const audit = body.indexOf("insert into public.admin_audit_logs");
+		expect(lock).toBeGreaterThan(-1);
+		expect(lock).toBeLessThan(share);
+		expect(share).toBeLessThan(row);
+		expect(row).toBeLessThan(changed);
+		expect(changed).toBeLessThan(update);
+		expect(update).toBeLessThan(audit);
+		expect(body).toContain("m.role = 'owner'");
+		expect(body).toContain("(m.expires_at is null or m.expires_at > clock_timestamp())");
+		expect(body).toContain("v_row.allowed_algs is distinct from p_expected_allowed_algs");
+		expect(body).toContain("raise exception 'oidc_provider_changed' using errcode = '55000'");
+		expect(body).toContain("'identity.oidc.discovery_refreshed'");
+	});
+
+	it("writes only the discovery columns", () => {
+		const update = body.split("update public.oidc_providers")[1]?.split(";")[0] ?? "";
+		expect(update).toContain("set discovery = p_discovery,");
+		expect(update).toContain("discovery_fetched_at = now()");
+		expect(update).not.toMatch(/\b(enabled|issuer|client_id|client_secret_ref|token_auth_method|allowed_algs|display_name)\s*=/);
+		expect(body).not.toContain("insert into public.oidc_providers");
+		expect(sql).not.toMatch(/disable trigger|session_replication_role/i);
 	});
 });
 

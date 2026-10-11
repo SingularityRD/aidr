@@ -1,6 +1,9 @@
 // Real PostgreSQL regression: full canonical migration chain, then the rollback
 // SQL checks and two-session races for owner-only bounded workspace retention
-// and the atomic OIDC provider save (production gaps 2 and 15).
+// and the atomic OIDC provider save (production gaps 2 and 15), plus the
+// follow-ups: a workspace change never silently shortens a retention class
+// (20261011000200) and a discovery refresh never writes back a stale provider
+// row (20261011000300).
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -122,7 +125,7 @@ test("workspace retention + OIDC provider save on full-chain PostgreSQL", { time
 		await t.test("workspace retention: concurrent admin rename and owner retention change both commit without deadlock", async () => {
 			const f = await tenantFixture("team");
 			const owner = session("ws-owner");
-			owner.child.stdin.write(`set local role service_role; select public.update_tenant_workspace_settings('${f.tenant}','${f.owner}',null,7); select 'OWNER_DONE';\n`);
+			owner.child.stdin.write(`set local role service_role; select public.update_tenant_workspace_settings('${f.tenant}','${f.owner}',null,7,true); select 'OWNER_DONE';\n`);
 			await marker(owner, "OWNER_DONE");
 			const admin = session("ws-admin");
 			admin.child.stdin.end(`set local role service_role; select public.update_tenant_workspace_settings('${f.tenant}','${f.admin}','Renamed',null); commit;\n`);
@@ -132,6 +135,110 @@ test("workspace retention + OIDC provider save on full-chain PostgreSQL", { time
 			assert.equal(a.code, 0, a.stderr);
 			assert.equal(b.code, 0, b.stderr);
 			assert.equal(await sql(`select name||'/'||retention_days from public.tenants where id='${f.tenant}';`), "Renamed/7");
+		});
+
+		const classes = (tenant) => sql(`select string_agg(data_class||'='||retention_days, ',' order by data_class) from public.tenant_data_retention_policies where tenant_id='${tenant}';`);
+
+		await t.test("workspace retention: raising the workspace value never shortens a longer per-class value", async () => {
+			const f = await tenantFixture("team");
+			// The free plan caps telemetry at 7 days; lift it in this disposable database.
+			await sql("update public.plans set retention_days = 3650 where id = 'free';");
+			await sql(`set role service_role;
+				select public.admin_set_tenant_retention('${f.tenant}','${f.owner}',d,3650,'Long-term evidence')
+				  from unnest(array['security_audit','commercial_records','identity_membership']) d;`);
+			const before = await classes(f.tenant);
+			assert.match(before, /commercial_records=3650/);
+			assert.match(before, /identity_membership=3650/);
+			assert.match(before, /security_audit=3650/);
+			// The reported repro: 30 -> 31, no confirmation (it is an increase).
+			const result = JSON.parse(await sql(`set role service_role; select public.update_tenant_workspace_settings('${f.tenant}','${f.owner}',null,31);`));
+			assert.equal(result.retention_days, 31);
+			const after = await classes(f.tenant);
+			for (const pair of before.split(",")) {
+				const [cls, days] = pair.split("=");
+				if (cls === "operational_ephemera") continue;
+				const now = Number(new RegExp(`${cls}=(\\d+)`).exec(after)?.[1]);
+				assert.ok(now >= Number(days), `${cls} shortened ${days} -> ${now} (${after})`);
+			}
+			assert.match(after, /commercial_records=3650/);
+			assert.match(after, /identity_membership=3650/);
+			assert.match(after, /security_audit=3650/);
+			assert.match(after, /telemetry=31/);
+
+			// Telemetry raised per class above the workspace value: a workspace
+			// "increase" (31 -> 40) that lowers stored telemetry (90) is refused.
+			await sql(`set role service_role; select public.admin_set_tenant_retention('${f.tenant}','${f.owner}','telemetry',90,'Longer telemetry');`);
+			const refused = await command(psql, `set role service_role; select public.update_tenant_workspace_settings('${f.tenant}','${f.owner}',null,40);`);
+			assert.notEqual(refused.code, 0, "unconfirmed telemetry reduction was applied");
+			assert.match(refused.stderr, /retention_reduction_unconfirmed/);
+			assert.match(await classes(f.tenant), /telemetry=90/);
+			assert.equal(await sql(`select retention_days from public.tenants where id='${f.tenant}';`), "31");
+			// Confirmed, telemetry follows; nothing else goes down.
+			await sql(`set role service_role; select public.update_tenant_workspace_settings('${f.tenant}','${f.owner}',null,40,true);`);
+			const confirmed = await classes(f.tenant);
+			assert.match(confirmed, /telemetry=40/);
+			assert.match(confirmed, /security_audit=3650/);
+			assert.match(confirmed, /identity_membership=3650/);
+			assert.equal(await sql(`select detail->>'retention_reduction_confirmed' from public.admin_audit_logs where tenant_id='${f.tenant}' and action='tenant.settings_updated' order by created_at desc limit 1;`), "true");
+			await sql("update public.plans set retention_days = 7 where id = 'free';");
+		});
+
+		const enabledProvider = (f, id) => JSON.stringify({ id, tenant_id: f.tenant, kind: "generic", display_name: "Race IdP",
+			issuer: "https://idp.example.invalid", client_id: "race-client", client_secret_ref: null, token_auth_method: "none",
+			allowed_algs: ["RS256"], subject_claim: "sub", groups_claim: null, groups_mode: "ignore",
+			session_max_seconds: 43200, clock_skew_seconds: 60,
+			discovery: { issuer: "https://idp.example.invalid", jwks_uri: "https://idp.example.invalid/old-keys" }, enabled: true });
+		const freshDiscovery = JSON.stringify({ issuer: "https://idp.example.invalid", authorization_endpoint: "https://idp.example.invalid/authorize",
+			token_endpoint: "https://idp.example.invalid/token", jwks_uri: "https://idp.example.invalid/new-keys" });
+		const refreshSql = (f, id, issuer = "https://idp.example.invalid") =>
+			`set local role service_role; select public.oidc_update_provider_discovery('${f.owner}','${f.tenant}','${id}','${issuer}',array['RS256'],'${freshDiscovery}'::jsonb,'{"jwks_changed":true}'::jsonb);`;
+		const providerState = (id) => sql(`select enabled||'/'||display_name||'/'||(discovery->>'jwks_uri') from public.oidc_providers where id='${id}';`);
+
+		await t.test("oidc discovery refresh: a disable committed during the refresh stays disabled", async () => {
+			const f = await tenantFixture("enterprise");
+			const provider = randomUUID();
+			const doc = enabledProvider(f, provider);
+			await sql(`set role service_role; select public.oidc_save_provider('${f.owner}','${doc}'::jsonb,'identity.oidc.provider_updated','{}');`);
+			// Edge function reads the (enabled) row, then starts the slow discovery fetch.
+			// Meanwhile another owner disables the provider; their transaction is still open.
+			const disabler = session("oidc-disabler");
+			const disabled = JSON.stringify({ ...JSON.parse(doc), enabled: false, display_name: "Disabled" });
+			disabler.child.stdin.write(`set local role service_role; select public.oidc_save_provider('${f.owner}','${disabled}'::jsonb,'identity.oidc.provider_updated','{}'); select 'DISABLED';\n`);
+			await marker(disabler, "DISABLED");
+			// The refresh lands while the disable is in flight: it waits on the tenant lock.
+			const refresher = session("oidc-refresher");
+			refresher.child.stdin.end(`${refreshSql(f, provider)} commit;\n`);
+			await lockWait("oidc-refresher");
+			disabler.child.stdin.end("commit;\n");
+			const [a, b] = await Promise.all([disabler.closed, refresher.closed]);
+			assert.equal(a.code, 0, a.stderr);
+			assert.equal(b.code, 0, b.stderr);
+			assert.equal(await providerState(provider), "false/Disabled/https://idp.example.invalid/new-keys");
+			assert.equal(await sql(`select count(*) from public.admin_audit_logs where tenant_id='${f.tenant}' and action='identity.oidc.discovery_refreshed' and detail->>'provider_id'='${provider}';`), "1");
+
+			// A refresh committed after the disable, sequentially, likewise keeps it disabled.
+			await sql(`begin; ${refreshSql(f, provider)} commit;`);
+			assert.equal(await providerState(provider), "false/Disabled/https://idp.example.invalid/new-keys");
+		});
+
+		await t.test("oidc discovery refresh: refused when the issuer changed since the read, or for a non-owner", async () => {
+			const f = await tenantFixture("enterprise");
+			const provider = randomUUID();
+			await sql(`set role service_role; select public.oidc_save_provider('${f.owner}','${enabledProvider(f, provider)}'::jsonb,'identity.oidc.provider_updated','{}');`);
+			const before = await providerState(provider);
+			const stale = await command(psql, `begin; ${refreshSql(f, provider, "https://old-idp.example.invalid")} commit;`);
+			assert.notEqual(stale.code, 0, "stale-issuer refresh committed");
+			assert.match(stale.stderr, /oidc_provider_changed/);
+			const admin = await command(psql, `begin; ${refreshSql({ ...f, owner: f.admin }, provider)} commit;`);
+			assert.notEqual(admin.code, 0, "admin refreshed discovery");
+			assert.match(admin.stderr, /oidc_provider_forbidden/);
+			assert.equal(await providerState(provider), before);
+			assert.equal(await sql(`select count(*) from public.admin_audit_logs where tenant_id='${f.tenant}' and action='identity.oidc.discovery_refreshed';`), "0");
+			// Grants: service_role only.
+			assert.equal(await sql(`select has_function_privilege('anon','public.oidc_update_provider_discovery(uuid,uuid,uuid,text,text[],jsonb,jsonb)','execute')
+				or has_function_privilege('authenticated','public.oidc_update_provider_discovery(uuid,uuid,uuid,text,text[],jsonb,jsonb)','execute')
+				or has_function_privilege('anon','public.update_tenant_workspace_settings(uuid,uuid,text,integer,boolean)','execute')
+				or has_function_privilege('authenticated','public.update_tenant_workspace_settings(uuid,uuid,text,integer,boolean)','execute');`), "f");
 		});
 
 		await t.test("oidc_save_provider: owner demoted while waiting is refused and nothing is written", async () => {

@@ -68,6 +68,9 @@ export type SaveProviderResult =
 	| "provider_identity_namespace_locked"
 	| "error";
 
+/** Outcome of the discovery-only refresh (RPC oidc_update_provider_discovery). */
+export type RefreshDiscoveryResult = "saved" | "owner_required" | "provider_changed" | "error";
+
 export interface DomainRow {
 	tenant_id: string;
 	domain: string;
@@ -88,6 +91,19 @@ export interface OidcStore {
 	 * committed unless all three succeed.
 	 */
 	saveProvider(row: OidcProviderRow, actorUserId: string, audit: ProviderAudit): Promise<SaveProviderResult>;
+	/**
+	 * One transaction (RPC oidc_update_provider_discovery): re-checks that the
+	 * actor is still a live owner, refuses ("provider_changed") when the issuer
+	 * or algorithms the document was validated against changed since `read`,
+	 * then writes ONLY discovery/discovery_fetched_at and the audit row. Every
+	 * other column (enabled, client settings) keeps its committed value.
+	 */
+	refreshProviderDiscovery(
+		read: Pick<OidcProviderRow, "id" | "tenant_id" | "issuer" | "allowed_algs">,
+		discovery: OidcDiscovery,
+		actorUserId: string,
+		auditDetail: Record<string, unknown>,
+	): Promise<RefreshDiscoveryResult>;
 
 	createAuthRequest(row: OidcAuthRequestRow): Promise<boolean>;
 	/** Single atomic UPDATE ... WHERE consumed_at IS NULL AND expires_at > now(); null when replayed/expired/unknown. */

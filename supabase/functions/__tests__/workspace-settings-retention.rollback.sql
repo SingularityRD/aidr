@@ -1,7 +1,9 @@
 -- Run against an isolated fully migrated database. Every fixture is rolled back.
--- public.update_tenant_workspace_settings (20261010000110): an admin may rename
--- but never change retention; an owner's retention change goes through the
--- bounded setter (class floors, plan maximum, offboarding refusal) atomically.
+-- public.update_tenant_workspace_settings (20261010000110, 20261011000200): an
+-- admin may rename but never change retention; an owner's retention change goes
+-- through the bounded setter (class floors, plan maximum, offboarding refusal)
+-- atomically, a telemetry reduction needs explicit confirmation judged inside
+-- the RPC, and no other class is ever lowered by the workspace value.
 begin;
 do $checks$
 declare
@@ -77,9 +79,24 @@ begin
     end;
   end loop;
 
-  -- 4. Owner at the telemetry floor: telemetry follows, every class keeps its floor.
+  -- 4. Owner at the telemetry floor: an unconfirmed reduction is refused and
+  -- writes nothing; confirmed, telemetry follows and every class keeps its floor.
   v_plan_max := (app.tenant_plan_entitlements(v_tenant) ->> 'retention_days_max')::integer;
-  v_result := public.update_tenant_workspace_settings(v_tenant, v_owner, null, 7);
+  select jsonb_object_agg(data_class, retention_days) into v_before
+    from public.tenant_data_retention_policies where tenant_id = v_tenant;
+  begin
+    perform public.update_tenant_workspace_settings(v_tenant, v_owner, 'Should not stick', 7);
+    raise exception 'FAIL: unconfirmed workspace retention reduction was applied';
+  exception when object_not_in_prerequisite_state then
+    if sqlerrm <> 'retention_reduction_unconfirmed' then raise; end if;
+  end;
+  select jsonb_object_agg(data_class, retention_days) into v_after
+    from public.tenant_data_retention_policies where tenant_id = v_tenant;
+  if v_after is distinct from v_before
+     or (select name from public.tenants where id = v_tenant) <> 'Renamed again' then
+    raise exception 'FAIL: refused unconfirmed reduction was partially committed';
+  end if;
+  v_result := public.update_tenant_workspace_settings(v_tenant, v_owner, null, 7, true);
   if (v_result ->> 'retention_days')::integer <> 7 then
     raise exception 'FAIL: owner floor change result %', v_result;
   end if;
@@ -131,10 +148,70 @@ begin
     end if;
   end if;
 
-  -- 6. A demoted owner is refused like an admin.
+  -- 6. Repro of the silent shortening: an owner sets long per-class values
+  -- through the dedicated setter, then RAISES the workspace value by one day
+  -- without confirmation. No class may go down. The fixture's plan maximum is
+  -- lifted (rolled back with everything else) so telemetry can move freely.
+  update public.plans set retention_days = 365
+   where id = app.tenant_plan_entitlements(v_tenant) ->> 'plan_id';
+  perform public.admin_set_tenant_retention(v_tenant, v_owner, d, 3650, 'Long-term evidence')
+     from unnest(array['security_audit', 'commercial_records', 'identity_membership']) d;
+  select jsonb_object_agg(data_class, retention_days) into v_before
+    from public.tenant_data_retention_policies where tenant_id = v_tenant;
+  v_result := public.update_tenant_workspace_settings(v_tenant, v_owner, null, 7 + 1);
+  if (v_result ->> 'retention_days')::integer <> 8 then
+    raise exception 'FAIL: workspace increase result %', v_result;
+  end if;
+  select count(*) into v_floor_violations
+    from public.tenant_data_retention_policies p
+   where p.tenant_id = v_tenant
+     and p.data_class <> 'operational_ephemera'
+     and p.retention_days < (v_before ->> p.data_class)::integer;
+  if v_floor_violations <> 0 then
+    raise exception 'FAIL: workspace increase shortened % classes: % -> %', v_floor_violations, v_before,
+      (select jsonb_object_agg(data_class, retention_days)
+         from public.tenant_data_retention_policies where tenant_id = v_tenant);
+  end if;
+  if (select retention_days from public.tenant_data_retention_policies
+       where tenant_id = v_tenant and data_class = 'security_audit') <> 3650
+     or (select retention_days from public.tenant_data_retention_policies
+          where tenant_id = v_tenant and data_class = 'commercial_records') <> 3650
+     or (select retention_days from public.tenant_data_retention_policies
+          where tenant_id = v_tenant and data_class = 'identity_membership') <> 3650
+     or (select retention_days from public.tenant_data_retention_policies
+          where tenant_id = v_tenant and data_class = 'telemetry') <> 8 then
+    raise exception 'FAIL: per-class values after a workspace increase';
+  end if;
+
+  -- 7. Telemetry raised per class above the workspace value: a workspace
+  -- "increase" that would lower stored telemetry is a reduction and needs
+  -- confirmation; even confirmed, it never lowers the other classes.
+  perform public.admin_set_tenant_retention(v_tenant, v_owner, 'telemetry', 30, 'Longer telemetry');
+  begin
+    -- 9 > tenants.retention_days (8) but < stored telemetry (30).
+    perform public.update_tenant_workspace_settings(v_tenant, v_owner, null, 9);
+    raise exception 'FAIL: workspace change lowered stored telemetry without confirmation';
+  exception when object_not_in_prerequisite_state then
+    if sqlerrm <> 'retention_reduction_unconfirmed' then raise; end if;
+  end;
+  if (select retention_days from public.tenant_data_retention_policies
+       where tenant_id = v_tenant and data_class = 'telemetry') <> 30 then
+    raise exception 'FAIL: refused reduction changed telemetry';
+  end if;
+  v_result := public.update_tenant_workspace_settings(v_tenant, v_owner, null, 9, true);
+  if (select retention_days from public.tenant_data_retention_policies
+       where tenant_id = v_tenant and data_class = 'telemetry') <> 9
+     or (select retention_days from public.tenant_data_retention_policies
+          where tenant_id = v_tenant and data_class = 'security_audit') <> 3650
+     or (select retention_days from public.tenant_data_retention_policies
+          where tenant_id = v_tenant and data_class = 'identity_membership') <> 3650 then
+    raise exception 'FAIL: confirmed telemetry reduction result';
+  end if;
+
+  -- 8. A demoted owner is refused like an admin.
   update public.tenant_members set role = 'admin' where tenant_id = v_tenant and user_id = v_owner;
   begin
-    perform public.update_tenant_workspace_settings(v_tenant, v_owner, null, 7 + 1);
+    perform public.update_tenant_workspace_settings(v_tenant, v_owner, null, 30, true);
     raise exception 'FAIL: demoted owner changed retention';
   exception when insufficient_privilege then null;
   end;

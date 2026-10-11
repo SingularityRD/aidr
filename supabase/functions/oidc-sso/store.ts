@@ -14,6 +14,7 @@ import type {
 	OidcStore,
 	ProviderAudit,
 	RateLimitDecision,
+	RefreshDiscoveryResult,
 	SaveProviderResult,
 } from "./types.ts";
 
@@ -143,6 +144,28 @@ export class SupabaseOidcStore implements OidcStore {
 		if (message.includes("oidc_provider_forbidden") || message.includes("oidc_tenant_inactive")) return "owner_required";
 		if (message.includes("oidc_provider_locked_by_enforcement")) return "provider_locked_by_enforcement";
 		if (message.includes("oidc_provider_identity_namespace_locked")) return "provider_identity_namespace_locked";
+		return "error";
+	}
+
+	async refreshProviderDiscovery(
+		read: Pick<OidcProviderRow, "id" | "tenant_id" | "issuer" | "allowed_algs">,
+		discovery: OidcDiscovery,
+		actorUserId: string,
+		auditDetail: Record<string, unknown>,
+	): Promise<RefreshDiscoveryResult> {
+		const { error } = await this.db.rpc("oidc_update_provider_discovery", {
+			p_actor_user_id: actorUserId,
+			p_tenant_id: read.tenant_id,
+			p_provider_id: read.id,
+			p_expected_issuer: read.issuer,
+			p_expected_allowed_algs: read.allowed_algs,
+			p_discovery: discovery,
+			p_audit_detail: auditDetail,
+		});
+		if (!error) return "saved";
+		const message = (error as { message?: string }).message ?? "";
+		if (message.includes("oidc_provider_forbidden") || message.includes("oidc_tenant_inactive")) return "owner_required";
+		if (message.includes("oidc_provider_changed")) return "provider_changed";
 		return "error";
 	}
 

@@ -4,7 +4,7 @@
 
 import { requireFeature } from "../_shared/plan-entitlements.ts";
 import { CLIENT_SECRET_BINDINGS_ENV, CLIENT_SECRET_ENV_PREFIX, resolveClientSecret } from "../oidc-sso/client-secrets.ts";
-import { base64UrlEncode, type Jwk, type MappedRole, type OidcAlgorithm } from "../oidc-sso/oidc.ts";
+import { base64UrlEncode, type Jwk, type MappedRole, type OidcAlgorithm, type OidcDiscovery } from "../oidc-sso/oidc.ts";
 import type {
 	AuditValues,
 	AuthenticatedCaller,
@@ -17,6 +17,7 @@ import type {
 	OidcStore,
 	ProviderAudit,
 	RateLimitDecision,
+	RefreshDiscoveryResult,
 	SaveProviderResult,
 } from "../oidc-sso/types.ts";
 
@@ -270,6 +271,33 @@ class MemoryStore implements OidcStore {
 			target_user_id: null,
 			action: audit.action,
 			detail: { ...audit.detail, provider_id: row.id },
+		});
+		return "saved";
+	}
+	/**
+	 * Models RPC oidc_update_provider_discovery: owner re-check at write time,
+	 * refusal when the issuer/algorithms changed since the read, then ONLY the
+	 * discovery column of the CURRENT row changes, plus the audit row.
+	 */
+	async refreshProviderDiscovery(
+		read: Pick<OidcProviderRow, "id" | "tenant_id" | "issuer" | "allowed_algs">,
+		discovery: OidcDiscovery,
+		actorUserId: string,
+		auditDetail: Record<string, unknown>,
+	): Promise<RefreshDiscoveryResult> {
+		if (this.members.get(`${read.tenant_id}:${actorUserId}`) !== "owner") return "owner_required";
+		const current = this.providers.get(read.id);
+		if (!current) return "provider_changed";
+		if (current.tenant_id !== read.tenant_id) return "owner_required";
+		if (current.issuer !== read.issuer || current.allowed_algs.join(",") !== read.allowed_algs.join(",")) return "provider_changed";
+		if (this.failAudit) return "error";
+		this.providers.set(read.id, { ...current, discovery });
+		this.audits.push({
+			actor_user_id: actorUserId,
+			tenant_id: read.tenant_id,
+			target_user_id: null,
+			action: "identity.oidc.discovery_refreshed",
+			detail: { ...auditDetail, provider_id: read.id },
 		});
 		return "saved";
 	}
