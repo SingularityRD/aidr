@@ -40,7 +40,7 @@ export async function createPlatformRuntime(o:RuntimeOptions){
   const audit=PersistentAuditJournal.open(state,'decisions',o.audit.keyId,o.audit.key,o.audit.rotateFrom?{rotateFrom:o.audit.rotateFrom,at:clock()}:{}),text=new PrivacyEngine({profile:o.profile??'defense',...(o.ner?{ner:o.ner}:{})});
   if(o.dataPolicy){dataPolicy=new DurableDataPolicy(state,o.dataPolicy.keyId,Buffer.from(o.dataPolicy.key));dataPolicy.scan('');}
   const gate=new EnterprisePrivacyGate({registry,audit,textEngine:text,clock,...(dataPolicy?{indexes:[dataPolicy]}:{})});
-  const sources=new DspmRepository(state,identity,clock);
+  const sources=new DspmRepository(state,identity,clock,dataPolicy?records=>dataPolicy!.admit(records):undefined);
   const destinations=o.destinations.map(d=>({id:d.id,kind:d.kind,model:d.model,...providerTransport(d.kind,d.model,d.apiKey)}));
   const policyEpoch=()=>hash({policy:registry.active(clock()),dataRevision:dataPolicy?state.get<number>('dspm-policy','revision')?.value??0:null});
   const reviews=new ReviewWorkflow(state,identity,clock),egress=new EnforcedEgress({state,identity,destinations,gate:()=>gate,policyEpoch,clock,budget:new DurableBudget(state),reviews});

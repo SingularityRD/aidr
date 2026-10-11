@@ -115,7 +115,9 @@ Everything in Business, plus:
 - Kubernetes (Helm) and air-gapped installation with a signed offline license and
   signed offline rule/intel packs.
 - Contractual event retention and dedicated support.
-- Optional AIDR Privacy native host (NER/OCR) and enterprise gateway integration.
+- Optional AIDR Privacy enterprise gateway integration. The native host for NER/OCR ships
+  without a model and is not part of the first-release scope; it is not sold until model
+  acceptance closes.
 - Custom terms, data-processing agreement and support schedule.
 
 **Cloud trial:** 14 days, one agent. Paid cloud plans have no trial cap.

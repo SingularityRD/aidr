@@ -145,8 +145,9 @@ values again.
 
 Point out that the name in this example is **not** masked by the default rules (on the
 24 September 2026 build: `TCKN [TCKN_1], IBAN [IBAN_1], e-posta [EMAIL_1]`, name
-unchanged). Names without a cue word need an administrator term list or the optional NER
-host. Say this before the audience notices it.
+unchanged). Names without a cue word need an administrator term list; the native NER host
+ships without a model and is not part of the first-release scope. Say this before the
+audience notices it.
 
 ### B2. Secrets are never restored (60 seconds)
 

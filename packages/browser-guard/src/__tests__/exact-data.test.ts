@@ -79,6 +79,25 @@ describe("exact-data fingerprints", () => {
 		await expect(fingerprintValue(KEY, long)).rejects.toThrow(RangeError);
 	});
 
+	it("refuses a managed dataset over the 250,000-fingerprint capacity instead of truncating it", async () => {
+		const good = await dataset(["Ahmet Yılmaz"]);
+		const atLimit = Array.from({ length: 250_000 }, (_, i) => i.toString(16).padStart(64, "0"));
+		expect(() => createExactDataMatcher([{ ...good, fingerprints: atLimit }])).not.toThrow();
+		const over = [...atLimit, "f".repeat(64)];
+		expect(() => createExactDataMatcher([{ ...good, fingerprints: over }])).toThrow(
+			"EXACT_DATA_CAPACITY",
+		);
+		// Split across datasets the total still counts; the engine refuses to build (the guard then fails closed).
+		expect(() =>
+			createDetectionEngine(
+				engineOptions([
+					{ ...good, fingerprints: atLimit },
+					{ ...good, datasetId: "second", fingerprints: ["e".repeat(64)] },
+				]),
+			),
+		).toThrow("EXACT_DATA_CAPACITY");
+	});
+
 	it("rejects malformed keys, fingerprints and entity types", async () => {
 		const good = await dataset(["Ahmet Yılmaz"]);
 		expect(() => createExactDataMatcher([{ ...good, keyB64: "c2hvcnQ=" }])).toThrow(

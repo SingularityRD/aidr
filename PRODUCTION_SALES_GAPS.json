@@ -4,7 +4,7 @@
   "generation_timezone": "Europe/Istanbul",
   "generation_note": "Generated from the current worktree. source_commit identifies only the base commit; worktree_has_changes is explicit. This report is not candidate-bound release evidence. READINESS_BACKLOG.json is an older issue-ledger snapshot; its historical open IDs are not current verification results.",
   "decision": "NO-GO",
-  "source_commit": "4e4a9013ef2ccb865e2108bc22bb81c462def341",
+  "source_commit": "b43839aa415abb950914015bae1fd244b25776d5",
   "worktree_has_changes": true,
   "historical_issue_ledger": {
     "path": "READINESS_BACKLOG.json",

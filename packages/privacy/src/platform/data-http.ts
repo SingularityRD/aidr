@@ -2,11 +2,16 @@ import type {IncomingMessage,ServerResponse} from 'node:http';
 import type {TLSSocket} from 'node:tls';
 import {fileURLToPath} from 'node:url';
 import {parseJsonStrict} from '../json.js';
-import {deny,id,integer,object} from '../enterprise/util.js';
+import {ControlError,deny,id,integer,object} from '../enterprise/util.js';
 import {DocumentCdr} from './documents.js';
 import type {SourceDocument} from './dspm.js';
 import type {createPlatformRuntime} from './runtime.js';
 import {AudioPrivacy} from './modalities.js';
+/** Out-of-scope or over-limit refusals whose stable code is returned with the 403 so an operator can tell an
+ * unsupported input/size from an authorization failure. Identity, ACL and policy codes stay undisclosed. */
+const SCOPE_REFUSALS=new Set(['DATA_POLICY_NOT_CONFIGURED','DOCUMENT_PARSER_NOT_CONFIGURED','ASR_NOT_CONFIGURED','DATA_LIMIT','DOCUMENT_INPUT',
+ 'AUDIO_LIMIT','AUDIO_FORMAT','AUDIO_CHUNK','AUDIO_DUPLICATE','AUDIO_PCM16_REQUIRED','DSPM_INCOMPLETE','DSPM_LIMIT','DSPM_POLICY_CAPACITY',
+ 'INDEX_CAPACITY','INDEX_CONTENT_LIMIT','INDEX_DOCUMENT_TOO_SHORT','INDEX_FIELD_TOO_SHORT','INDEX_SCAN_LIMIT','CONTENT_LIMIT']);
 export function createDataHandler(runtime:Awaited<ReturnType<typeof createPlatformRuntime>>,destination:{origin:string},documents?:{python:string;workerSha256:string},audioMode?:'silence-all'){
  let active=0;const paths=['/v1/admin/data-source','/v1/source/read','/v1/document/protect','/v1/audio/protect'];
  return async(req:IncomingMessage,res:ServerResponse):Promise<boolean>=>{
@@ -47,7 +52,7 @@ export function createDataHandler(runtime:Awaited<ReturnType<typeof createPlatfo
     const result=await cdr.protect(input,v.kind);runtime.identity.assertContext(context);if(runtime.policyEpoch()!==epoch)deny('POLICY_CHANGED');
     reply(200,{decision:result.decision,output:result.output?.toString('utf8')??null,mime:result.mime,filename:result.filename,reason:result.reason});
    }
-  }catch{if(!res.headersSent)reply(403,{decision:'block',output:null});else res.destroy();}finally{active--;}
+  }catch(e){const reason=e instanceof ControlError&&SCOPE_REFUSALS.has(e.code)?e.code:undefined;if(!res.headersSent)reply(403,{decision:'block',output:null,...(reason?{reason}:{})});else res.destroy();}finally{active--;}
   return true;
  };
 }
