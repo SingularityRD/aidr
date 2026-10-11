@@ -291,10 +291,12 @@ export const STEPS = Object.freeze([
 	step({
 		id: "commercial-readiness",
 		group: "commercial",
-		name: "Commercial readiness, gate-receipt and candidate-bound production GO checks",
-		run: "node scripts/check-commercial-readiness.mjs && node --test scripts/check-commercial-readiness.test.mjs scripts/verify-commercial-gate-receipts.test.mjs scripts/verify-production-go.test.mjs scripts/stage-verified-artifact-roots.test.mjs docs/scripts/claim-check.test.mjs",
+		name: "Commercial readiness, gate-receipt, candidate-bound production GO and GO-chain simulation checks",
+		// release-go-chain-simulation.test.mjs is a LOCAL SIMULATION of release-promote.yml
+		// (dry-run -> promote -> rollback against a fake GO record in a temp copy), not an Actions run.
+		run: "node scripts/check-commercial-readiness.mjs && node --test scripts/check-commercial-readiness.test.mjs scripts/verify-commercial-gate-receipts.test.mjs scripts/verify-production-go.test.mjs scripts/stage-verified-artifact-roots.test.mjs docs/scripts/claim-check.test.mjs scripts/release-go-chain-simulation.test.mjs",
 		quick: true,
-		timeoutMs: 3 * MIN,
+		timeoutMs: 5 * MIN,
 	}),
 	step({
 		id: "claim-inventory",
