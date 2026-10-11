@@ -186,6 +186,12 @@ operator step is to save the key into recovery-key custody with every backup. Th
 `deploy/backup/README.md`. Changing the backup format so it also captures the key is a follow-up and was not done
 in this drill.
 
+**Follow-up, same day.** The backup tool now captures the key. It is sealed under the recovery key in the
+authenticated manifest. `recover` restores it before the database first starts, and a recovered Vault secret
+decrypts. Backups made before this change report `VAULT_KEY_MISSING` and still need the manually custodied key. See
+the 2026-10-11 addendum in `backup-restore-v6.md` and
+`evidence/backup-vault-root-key-2026-10-11.json`. The drill results above are unchanged.
+
 ## In-place path and rollback (on the source volume)
 
 - **In-place 17.6 → 17.11.** This needs no dump and no `pg_upgrade`. The steps: stop the project, swap only the

@@ -1,0 +1,45 @@
+{
+  "scope": "Local same-host engineering drill of scripts/deployment-backup.mjs with a disposable recovery key, Compose project and volumes, all deleted afterwards. Not production or offsite acceptance.",
+  "command": "AIDR_BACKUP_DOCKER_DRILL=1 node --test scripts/deployment-backup-vault-key-docker.test.mjs",
+  "image": "supabase/postgres:17.11.0.004",
+  "image_id": "sha256:06ddc7962e11ab0f4f0334fd05671e97c30ea202f6e6a7113800bd3d6e416108",
+  "started_at": "2026-10-11T03:53:10.725Z",
+  "source_key": {
+    "owner_mode": "100:101:640",
+    "sha256": "7b96168619939813c5fdb949ca0d622bcca0e7e11b9cce7b8a5bc2a8179d4caa",
+    "config_entries": [
+      "conf.d",
+      "extension-custom-scripts",
+      "pgsodium_root.key",
+      "read-replica.conf",
+      "supautils.conf",
+      "wal-g.conf"
+    ]
+  },
+  "manifest_key_record": {
+    "status": "captured",
+    "sha256": "7b96168619939813c5fdb949ca0d622bcca0e7e11b9cce7b8a5bc2a8179d4caa",
+    "bytes": 64
+  },
+  "recovered": {
+    "vault_root_key": "restored",
+    "key_file": {
+      "owner_mode": "100:101:600",
+      "sha256": "7b96168619939813c5fdb949ca0d622bcca0e7e11b9cce7b8a5bc2a8179d4caa",
+      "config_entries": [
+        "conf.d",
+        "extension-custom-scripts",
+        "pgsodium_root.key",
+        "read-replica.conf",
+        "supautils.conf",
+        "wal-g.conf"
+      ]
+    },
+    "decrypted_secret_matches": true
+  },
+  "legacy": {
+    "vault_root_key": "VAULT_KEY_MISSING",
+    "decrypt_error": "invalid ciphertext"
+  },
+  "finished_at": "2026-10-11T03:53:32.157Z"
+}

@@ -120,6 +120,17 @@ if (action !== "recover-services") {
 }
 const encKey = rawKey && Buffer.from(hkdfSync("sha256", rawKey, "aidr-backup-v1", "encryption", 32));
 const macKey = rawKey && Buffer.from(hkdfSync("sha256", rawKey, "aidr-backup-v1", "manifest", 32));
+// The Supabase image's pgsodium_getkey.sh reads (and, when absent, silently
+// generates) this file on the db-config volume. Every Vault secret and
+// pgsodium-encrypted value in the database is useless without it, so the cold
+// backup seals it under a dedicated subkey of the same recovery key and records
+// it in the HMAC-authenticated manifest. It is never written to host disk.
+const PGSODIUM_CONFIG_DIR = "/etc/postgresql-custom";
+const PGSODIUM_KEY_NAME = "pgsodium_root.key";
+const PGSODIUM_KEY_AAD = Buffer.from(`aidr-backup-v1/${PGSODIUM_KEY_NAME}`);
+const PGSODIUM_KEY_FORMAT = /^[0-9a-fA-F]{64}\n?$/;
+const VAULT_KEY_MISSING = "VAULT_KEY_MISSING";
+const vaultKey = rawKey && Buffer.from(hkdfSync("sha256", rawKey, "aidr-backup-v1", "pgsodium-root-key", 32));
 let helperImage;
 const output = values.output ? canonicalNew(values.output, "Output") : null;
 let ownedBackupOutput;
@@ -180,7 +191,7 @@ function assertUnusedRecoveryProject(project) {
     const args = resource === "ps" ? ["ps", "--all", "--quiet"] : [resource, "ls", "--quiet"];
     if (command("docker", [...args, "--filter", `label=com.docker.compose.project=${project}`])) throw new Error(`Recovery project ${project} already owns Docker resources`);
   }
-  for (const name of ["aidr-db", "aidr-storage"]) {
+  for (const name of ["aidr-db", "aidr-storage", "db-config"]) {
     const result = spawnSync("docker", ["volume", "inspect", `${project}_${name}`], { encoding: "utf8", timeout: 180000, maxBuffer: 1024 * 1024 });
     if (result.status === 0) throw new Error(`Recovery volume ${project}_${name} already exists`);
     if (result.status !== 1) throw new Error("Could not verify that recovery volume names are unused");
@@ -230,6 +241,64 @@ async function decryptTo(entry, backup, exe, args) {
   try { await Promise.all([pipeline(createReadStream(join(backup, entry.name)), decipher, proc.stdin), finished]); }
   catch (error) { proc.kill(); throw error; }
 }
+function sha256Hex(bytes) {
+	return createHash("sha256").update(bytes).digest("hex");
+}
+function validPgsodiumRootKey(bytes) {
+	return Buffer.isBuffer(bytes) && bytes.length <= 65 && PGSODIUM_KEY_FORMAT.test(bytes.toString("latin1"));
+}
+// Reads the key from the stopped source's db-config volume through the
+// network-isolated helper. Exit 66 means the file was never generated.
+function readPgsodiumRootKey(volume) {
+	const key = `/config/${PGSODIUM_KEY_NAME}`;
+	const run = spawnSync("docker", ["run", "--rm", "--network", "none", "--mount", `type=volume,src=${volume},dst=/config,readonly`, helperImage, "sh", "-c", `if [ -L ${key} ]; then exit 65; fi; if [ ! -e ${key} ]; then exit 66; fi; [ -f ${key} ] || exit 65; head -c 4096 ${key}`], { timeout: 180000, maxBuffer: 8192 });
+	if (run.status === 66) return null;
+	if (run.status !== 0) throw new Error(`Could not read ${PGSODIUM_KEY_NAME} from the db-config volume; snapshot rejected`);
+	if (!validPgsodiumRootKey(run.stdout)) throw new Error(`${PGSODIUM_KEY_NAME} on the db-config volume is not a 32-byte hex key; snapshot rejected`);
+	return run.stdout;
+}
+function sealPgsodiumRootKey(bytes) {
+	const path = `${PGSODIUM_CONFIG_DIR}/${PGSODIUM_KEY_NAME}`;
+	if (!bytes) return { status: "absent_at_source", path };
+	const iv = randomBytes(12);
+	const cipher = createCipheriv("aes-256-gcm", vaultKey, iv); cipher.setAAD(PGSODIUM_KEY_AAD);
+	const ciphertext = Buffer.concat([cipher.update(bytes), cipher.final()]);
+	return { status: "captured", path, bytes: bytes.length, sha256: sha256Hex(bytes), iv: iv.toString("hex"), tag: cipher.getAuthTag().toString("hex"), ciphertext: ciphertext.toString("hex") };
+}
+// Returns the authenticated key bytes, null when the source never had a key,
+// or VAULT_KEY_MISSING for a backup made before the key was captured.
+function openPgsodiumRootKey(record) {
+	if (record === undefined) return VAULT_KEY_MISSING;
+	const path = `${PGSODIUM_CONFIG_DIR}/${PGSODIUM_KEY_NAME}`;
+	const keys = Object.keys(record ?? {}).sort().join(",");
+	if (record?.status === "absent_at_source" && keys === "path,status" && record.path === path) return null;
+	if (record?.status !== "captured" || keys !== "bytes,ciphertext,iv,path,sha256,status,tag" || record.path !== path
+		|| !/^[a-f0-9]{24}$/.test(record.iv) || !/^[a-f0-9]{32}$/.test(record.tag) || !/^[a-f0-9]{64}$/.test(record.sha256)
+		|| !/^(?:[a-f0-9]{2}){64,65}$/.test(record.ciphertext) || record.ciphertext.length !== record.bytes * 2) {
+		throw new Error("Unsupported pgsodium/Vault root key record in the backup manifest");
+	}
+	let bytes;
+	try {
+		const decipher = createDecipheriv("aes-256-gcm", vaultKey, Buffer.from(record.iv, "hex"));
+		decipher.setAAD(PGSODIUM_KEY_AAD); decipher.setAuthTag(Buffer.from(record.tag, "hex"));
+		bytes = Buffer.concat([decipher.update(Buffer.from(record.ciphertext, "hex")), decipher.final()]);
+	} catch {
+		throw new Error("pgsodium/Vault root key authentication failed: wrong key or modified backup");
+	}
+	if (!validPgsodiumRootKey(bytes) || sha256Hex(bytes) !== record.sha256) throw new Error("pgsodium/Vault root key integrity check failed");
+	return bytes;
+}
+// Writes the key into the recovered project's db-config volume after Compose
+// created it (Docker has already copied the image's default configuration in),
+// owned by the restored PGDATA owner with mode 0600, and never over an existing file.
+function restorePgsodiumRootKey(configVolume, dataVolume, bytes) {
+	const key = `/config/${PGSODIUM_KEY_NAME}`;
+	const temporary = `/config/.${PGSODIUM_KEY_NAME}.aidr-restore`;
+	const shell = `set -euC; for p in ${key} ${temporary}; do if [ -e "$p" ] || [ -L "$p" ]; then exit 74; fi; done; owner=$(stat -c %u:%g /pgdata/PG_VERSION); case "$owner" in 0:*|*:0) exit 75;; esac; umask 077; cat > ${temporary}; chown "$owner" ${temporary}; chmod 0600 ${temporary}; mv ${temporary} ${key}; [ "$(stat -c %u:%g:%a ${key})" = "$owner:600" ] || exit 76; sha256sum ${key}`;
+	const run = spawnSync("docker", ["run", "--rm", "-i", "--network", "none", "--mount", `type=volume,src=${configVolume},dst=/config`, "--mount", `type=volume,src=${dataVolume},dst=/pgdata,readonly`, helperImage, "sh", "-c", shell], { input: bytes, encoding: "utf8", timeout: 180000, maxBuffer: 8192 });
+	if (run.status !== 0) throw new Error(`Could not restore ${PGSODIUM_KEY_NAME} into the recovered db-config volume (exit ${run.status})`);
+	if (run.stdout.trim().split(/\s+/)[0] !== sha256Hex(bytes)) throw new Error(`Restored ${PGSODIUM_KEY_NAME} does not match the authenticated backup`);
+}
 async function validateEncryptedTar(entry, backup) {
   const decipher = createDecipheriv("aes-256-gcm", encKey, Buffer.from(entry.iv, "hex"));
   decipher.setAAD(Buffer.from(entry.name)); decipher.setAuthTag(Buffer.from(entry.tag, "hex"));
@@ -255,6 +324,7 @@ if (action === "backup") {
 	const project = deployment.project_name;
 	const dbVolume = inspectMount(dir, "db", "/var/lib/postgresql/data", project);
 	const storageVolume = inspectMount(dir, "storage", "/var/lib/storage", project);
+	const configVolume = inspectMount(dir, "db", PGSODIUM_CONFIG_DIR, project);
 	const running = command("docker", [...composeArgs(dir, project), "ps", "--services", "--status", "running"]).split(/\r?\n/).filter(Boolean);
 	if (!running.includes("db")) throw new Error("The source database must be running and healthy before backup");
 	if (!validComposeServices(running)) throw new Error("Compose returned an invalid running-service list");
@@ -299,6 +369,8 @@ if (action === "backup") {
     // accepted as a successful cold snapshot.
 		const control = command("docker", ["run", "--rm", "--network", "none", "--user", "root", "--mount", `type=volume,src=${dbVolume},dst=/data,readonly`, "--entrypoint", "pg_controldata", JSON.parse(command("docker", ["inspect", command("docker", [...composeArgs(dir, project), "ps", "--all", "--quiet", "db"]) ]))[0].Config.Image, "/data"]);
 		if (!/Database cluster state:\s+shut down\s*$/m.test(control)) throw new Error("Database did not shut down cleanly; snapshot rejected");
+		checkInterrupted();
+		const pgsodiumRootKey = sealPgsodiumRootKey(readPgsodiumRootKey(configVolume));
 		for (const [name, volume] of [["database.tar.gz.enc", dbVolume], ["storage.tar.gz.enc", storageVolume]]) {
 			checkInterrupted();
 			entries.push(await encrypt("docker", ["run", "--rm", "--network", "none", "--mount", `type=volume,src=${volume},dst=/data,readonly`, helperImage, "tar", "-C", "/data", "-czf", "-", "."], name, abort.signal));
@@ -306,7 +378,7 @@ if (action === "backup") {
 		checkInterrupted();
 		entries.push(await encrypt(systemTar(), ["-C", tarDirectory(dir), "-czf", "-", ...REVIEWED_RUNTIME_ARCHIVE_ENTRIES], "installation.tar.gz.enc", abort.signal));
 		checkInterrupted();
-		const payload = JSON.stringify({ schema_version: 1, type: "aidr-cold-volumes", started_at: started, completed_at: new Date().toISOString(), source_project: deployment.project_name ?? "legacy", source_commit: deployment.source_commit, installation_runtime_sha256: installationBinding.runtime_tree_sha256, architecture: command("docker", ["info", "--format", "{{.Architecture}}"]), helper_image: helperImage, entries });
+		const payload = JSON.stringify({ schema_version: 1, type: "aidr-cold-volumes", started_at: started, completed_at: new Date().toISOString(), source_project: deployment.project_name ?? "legacy", source_commit: deployment.source_commit, installation_runtime_sha256: installationBinding.runtime_tree_sha256, architecture: command("docker", ["info", "--format", "{{.Architecture}}"]), helper_image: helperImage, entries, pgsodium_root_key: pgsodiumRootKey });
 		assertOwnedBackupOutput();
 		writeFileSync(join(output, "backup.json"), JSON.stringify({ payload, hmac_sha256: createHmac("sha256", macKey).update(payload).digest("hex") }, null, 2), { mode: 0o600, flag: "wx" });
 		completed = true;
@@ -350,7 +422,7 @@ if (action === "backup") {
 		process.exit(interrupted === "SIGINT" ? 130 : 143);
 	}
 	if (failure) throw failure;
-	console.log("Encrypted backup completed. Database, object storage and configuration are authenticated; no plaintext archive written.");
+	console.log("Encrypted backup completed. Database, object storage, configuration and the pgsodium/Vault root key are authenticated; no plaintext archive written.");
 	process.exit(0);
 }
 
@@ -370,7 +442,16 @@ for (const entry of manifest.entries) {
   // recovery containers, volumes or plaintext files.
   await validateEncryptedTar(entry, backup);
 }
-if (action === "verify") { console.log("Backup manifest, ciphertext hashes, encryption tags and archive boundaries verified."); process.exit(0); }
+const pgsodiumRootKey = openPgsodiumRootKey(manifest.pgsodium_root_key);
+const vaultRootKeyStatus = pgsodiumRootKey === VAULT_KEY_MISSING ? VAULT_KEY_MISSING : pgsodiumRootKey ? "captured" : "absent_at_source";
+function warnVaultKeyMissing(consequence) {
+	console.error(`${VAULT_KEY_MISSING}: this backup predates pgsodium/Vault root key capture. ${consequence} Supabase Vault secrets and pgsodium-encrypted values cannot be decrypted unless the source ${PGSODIUM_KEY_NAME} held in separate custody is written to the recovered db-config volume (deploy/backup/README.md). AIDR's own schema does not use Vault.`);
+}
+if (action === "verify") {
+	if (pgsodiumRootKey === VAULT_KEY_MISSING) warnVaultKeyMissing("Its data archives verified.");
+	console.log(`Backup manifest, ciphertext hashes, encryption tags and archive boundaries verified. pgsodium/Vault root key: ${vaultRootKeyStatus === "captured" ? `captured and authenticated (sha256 ${manifest.pgsodium_root_key.sha256})` : vaultRootKeyStatus}.`);
+	process.exit(0);
+}
 if (!output || existsSync(output) || within(keyPath, output) || within(output, backup)) throw new Error("Recovery requires a new separate --output directory; existing installations and backups cannot be overwritten");
 if (!values.runtime) throw new Error("Recovery requires --runtime with a reviewed clean deployment bound to the backup source commit");
 const runtime = canonicalExisting(values.runtime, "Reviewed runtime");
@@ -406,15 +487,23 @@ try {
   writeFileSync(join(output, ".env"), readFileSync(join(output, ".env"), "utf8").replace(/^COMPOSE_PROJECT_NAME=.*\r?\n/gm, "") + `\nCOMPOSE_PROJECT_NAME=${project}\n`, { mode: 0o600 });
   dockerCreateStarted = true;
   command("docker", [...composeArgs(output, project), "create", "--build", "db", "storage"]);
+  const restoredVolumes = {};
   for (const [name, service, destination] of [["database.tar.gz.enc", "db", "/var/lib/postgresql/data"], ["storage.tar.gz.enc", "storage", "/var/lib/storage"]]) {
 	const volume = inspectMount(output, service, destination, project);
+	restoredVolumes[service] = volume;
 	await decryptTo(manifest.entries.find((entry) => entry.name === name), backup, "docker", ["run", "--rm", "-i", "--network", "none", "--mount", `type=volume,src=${volume},dst=/data`, helperImage, "sh", "-c", 'test -z "$(ls -A /data)" || exit 74; tar -C /data -xzf -']);
   }
+  // Before the database first starts: otherwise pgsodium_getkey.sh would
+  // generate a fresh random key and every restored Vault secret would fail
+  // with "invalid ciphertext".
+  if (Buffer.isBuffer(pgsodiumRootKey)) restorePgsodiumRootKey(inspectMount(output, "db", PGSODIUM_CONFIG_DIR, project), restoredVolumes.db, pgsodiumRootKey);
+  const vaultRootKey = vaultRootKeyStatus === "captured" ? "restored" : vaultRootKeyStatus;
   const restoredManifest = JSON.parse(readFileSync(join(output, "deployment.json"), "utf8"));
   restoredManifest.project_name = project;
   writeFileSync(join(output, "deployment.json"), JSON.stringify(restoredManifest, null, 2), { mode: 0o600 });
-  writeFileSync(join(output, "recovery-receipt.json"), JSON.stringify({ completed_at: new Date().toISOString(), project_name: project, backup_completed_at: manifest.completed_at, backup_manifest_sha256: await digest(join(backup, "backup.json")), reviewed_runtime_deployment_sha256: reviewedBinding.runtime_deployment_sha256, reviewed_runtime_tree_sha256: reviewedBinding.runtime_tree_sha256, installation_runtime_deployment_sha256: installationBinding.runtime_deployment_sha256, installation_runtime_tree_sha256: installationBinding.runtime_tree_sha256, source_commit: reviewedBinding.source_commit, services_started: false, scope: "New volumes and their exact authenticated installation configuration recovered against reviewed code inventories. Start and validate in an isolated environment before traffic cutover." }, null, 2), { mode: 0o600 });
-  console.log("Recovered exact authenticated installation configuration into an independent project with new volumes. Services remain stopped; perform health, login, policy and storage acceptance before traffic cutover.");
+  writeFileSync(join(output, "recovery-receipt.json"), JSON.stringify({ completed_at: new Date().toISOString(), project_name: project, backup_completed_at: manifest.completed_at, backup_manifest_sha256: await digest(join(backup, "backup.json")), reviewed_runtime_deployment_sha256: reviewedBinding.runtime_deployment_sha256, reviewed_runtime_tree_sha256: reviewedBinding.runtime_tree_sha256, installation_runtime_deployment_sha256: installationBinding.runtime_deployment_sha256, installation_runtime_tree_sha256: installationBinding.runtime_tree_sha256, source_commit: reviewedBinding.source_commit, vault_root_key: vaultRootKey, ...(vaultRootKey === "restored" ? { vault_root_key_sha256: manifest.pgsodium_root_key.sha256 } : {}), services_started: false, scope: "New volumes and their exact authenticated installation configuration recovered against reviewed code inventories. Start and validate in an isolated environment before traffic cutover." }, null, 2), { mode: 0o600 });
+  if (vaultRootKey === VAULT_KEY_MISSING) warnVaultKeyMissing(`Recovery completed without it; the recovery receipt records vault_root_key: ${VAULT_KEY_MISSING}.`);
+  console.log(`Recovered exact authenticated installation configuration into an independent project with new volumes. pgsodium/Vault root key: ${vaultRootKey}. Services remain stopped; perform health, login, policy and storage acceptance before traffic cutover.`);
 } catch (error) {
   const failures = [];
   const current = ownedOutput && existsSync(output) ? lstatSync(output) : null;

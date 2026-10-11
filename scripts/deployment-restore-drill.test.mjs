@@ -61,6 +61,16 @@ test("restore drill writes the ownership marker at run creation and never remove
 	assert.match(sanitize, /await rm\(marker, \{ force: true \}\);/u);
 });
 
+test("restore drill records the recovered Vault key status and fails when restored Vault secrets do not decrypt", async () => {
+	const source = await readFile(new URL("./deployment-restore-drill.mjs", import.meta.url), "utf8");
+	assert.match(source, /evidence\.vault = \{ root_key: receipt\.vault_root_key \?\? "VAULT_KEY_MISSING", \.\.\.\(await readVault\(db\.containerId\)\) \};/u);
+	const probe = source.slice(source.indexOf("async function readVault"), source.indexOf("async function readStorage"));
+	assert.match(probe, /SELECT count\(\*\) FROM vault\.decrypted_secrets WHERE decrypted_secret IS NOT NULL/u);
+	assert.match(probe, /catch \{ throw new Error\("Recovered Vault secrets cannot be decrypted/u);
+	assert.match(probe, /if \(decrypted !== secrets\) throw/u);
+	assert.ok(source.indexOf("evidence.vault = ") < source.indexOf("evidence.passed = true"));
+});
+
 test("restore retention preserves an active recovery, sanitizes an interrupted one, and leaves foreign folders alone", async (t) => {
 	const root = await mkdtemp(join(tmpdir(), "aidr-restore-retention-"));
 	t.after(() => rm(root, { recursive: true, force: true }));

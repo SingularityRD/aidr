@@ -194,6 +194,21 @@ async function readDatabase(containerId) {
 	return result;
 }
 
+// Vault secrets only decrypt with the source pgsodium root key, which the backup
+// now carries. A Vault-using deployment whose secrets no longer decrypt fails the
+// drill instead of being reported as recovered.
+async function readVault(containerId) {
+	const psql = (sql) => command("docker", ["exec", containerId, "psql", "-U", "postgres", "-d", "postgres", "-v", "ON_ERROR_STOP=1", "-tA", "-c", sql], 60000);
+	const secrets = Number(await psql("SELECT CASE WHEN to_regclass('vault.secrets') IS NULL THEN -1 ELSE (SELECT count(*) FROM vault.secrets) END"));
+	if (!Number.isSafeInteger(secrets) || secrets < -1) throw new Error("Recovered database returned invalid Vault evidence");
+	if (secrets <= 0) return { schema_present: secrets === 0, secrets: Math.max(secrets, 0), decrypted: 0 };
+	let decrypted;
+	try { decrypted = Number(await psql("SELECT count(*) FROM vault.decrypted_secrets WHERE decrypted_secret IS NOT NULL")); }
+	catch { throw new Error("Recovered Vault secrets cannot be decrypted: the recovered pgsodium root key differs from the source (VAULT_KEY_MISSING for a backup made before key capture)"); }
+	if (decrypted !== secrets) throw new Error("Recovered Vault secrets cannot all be decrypted");
+	return { schema_present: true, secrets, decrypted };
+}
+
 async function readStorage(volumeName) {
 	const helperImage = buildNodeHelperImage();
 	const shell = "set -eu; cd /data; test -z \"$(find . -type l -print -quit)\"; find . -type f -exec sha256sum {} + | sort | sha256sum; find . -type f | wc -l";
@@ -515,6 +530,7 @@ async function main() {
 		await command("docker", [...composeArgs(recovered, project), "start", "db"], 180000);
 		await waitForDatabase(db.containerId);
 		const database = await readDatabase(db.containerId);
+		evidence.vault = { root_key: receipt.vault_root_key ?? "VAULT_KEY_MISSING", ...(await readVault(db.containerId)) };
 		const objects = await readStorage(storage.volumeName);
 		if (database.storage_objects > 0 && objects.files === 0) throw new Error("Database references storage objects but restored object volume is empty");
 		evidence.database = database;

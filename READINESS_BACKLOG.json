@@ -1213,7 +1213,8 @@
         "scripts/deployment-backup.mjs",
         "scripts/verify-deployment-recovery.mjs",
         "docs/production-readiness/evidence/2026-09-11-customer-recovery.json",
-        "docs/production-readiness/postgres-upgrade-restore-drill-2026-10-11.md"
+        "docs/production-readiness/postgres-upgrade-restore-drill-2026-10-11.md",
+        "docs/production-readiness/evidence/backup-vault-root-key-2026-10-11.json"
       ],
       "localEvidence": [
         {
@@ -1233,6 +1234,12 @@
           "evidencePath": "docs/production-readiness/postgres-upgrade-restore-drill-2026-10-11.md",
           "command": "node <kit>/backup/deployment-backup.mjs backup|verify|recover ...; restore-run.sh 17.11.0.004|17.6.1.136; node scripts/verify-deployment-recovery.mjs --source <17.6 restore> --recovered <17.11 restore>; node scripts/ci-local.mjs --allow-dirty --only postgres-gates",
           "verifiedBy": "this session, 2026-10-11 (evidence: docs/production-readiness/evidence/postgres-upgrade-restore-drill-2026-10-11/summary.json)"
+        },
+        {
+          "claim": "Fix for the drill's finding that backups omitted the pgsodium/Vault root key. scripts/deployment-backup.mjs now reads /etc/postgresql-custom/pgsodium_root.key from the stopped source's db-config volume through the network-isolated helper. It seals the key with AES-256-GCM under a dedicated HKDF subkey of the recovery key and stores it, with the key file's SHA-256, in the HMAC-authenticated backup.json manifest; no new backup file is added and no plaintext key is written to host disk. verify authenticates the key record. recover writes the key into the new db-config volume after compose create and before the first database start, owned by the PGDATA owner with mode 0600, and records vault_root_key in the receipt. The restore drill fails when recovered Vault secrets do not decrypt. Backups made before the fix verify and recover but report VAULT_KEY_MISSING. Real Docker drill on supabase/postgres:17.11.0.004: a Vault secret created before the backup decrypted to its original value after recovery into new volumes. The key matched the source by SHA-256 and the image's default db-config files were kept. The same backup with the key record removed reported VAULT_KEY_MISSING and failed with invalid ciphertext. This is same-host engineering evidence only; the external gates are unchanged.",
+          "evidencePath": "docs/production-readiness/evidence/backup-vault-root-key-2026-10-11.json",
+          "command": "node --test scripts/deployment-backup-vault-key-docker.test.mjs scripts/deployment-backup-lifecycle.test.mjs scripts/deployment-restore-drill.test.mjs (set AIDR_BACKUP_DOCKER_DRILL=1 to run the Docker drill; it is also part of pnpm verify:backup-offsite)",
+          "verifiedBy": "this session, 2026-10-11 (addendum: docs/production-readiness/backup-restore-v6.md; design: deploy/backup/README.md section pgsodium/Vault root key)"
         }
       ],
       "remainingExternal": "BLOCKED_EXTERNAL: a real off-host/offsite storage target, independent recovery-key custody, activated and monitored schedules that survive host loss, a restore performed on a second failure-domain machine, and customer-approved RPO/RTO targets plus acceptance. Repository templates and same-host evidence explicitly do not satisfy these conditions.",

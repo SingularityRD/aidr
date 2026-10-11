@@ -34,3 +34,44 @@ The self-hosted volume tool does not back up the Cloudflare/Supabase deployment.
 Before declaring managed cloud recovery ready, execute a synthetic-data drill in a separately administered recovery project. Record the provider backup/PITR point, an independently retained Storage-object inventory and byte checks, signed release digest, configuration and secret re-provisioning record, operator identities, and the actual restore timeline. Verify login, tenant isolation, policy enforcement, audit events, object reads and a synthetic end-to-end agent decision on the recovered endpoint. Measure data loss from the last recoverable transaction/object state and recovery time through DNS/TLS traffic cutover against approved targets. Retain a failure alert receipt and a deletion/retention receipt for both database and object backups. Until this drill is completed, provider backup availability and local tests are only preparation, not a cloud RPO/RTO claim.
 
 Local execution on 2026-09-13 used an older 2026-09-12 archived snapshot copied to a separate filesystem target. The ACL-protected drill passed in 35 seconds: PostgreSQL opened and returned 18 migration records, 65 tenant rows, 13 policy rows, 4,037 audit rows and 25 storage metadata rows; the recovered object volume contained 25 readable files and produced a SHA-256 inventory fingerprint. That legacy receipt carried no source commit, candidate digest or approved recovery objectives and ran on the same host. It is historical mechanics evidence only and cannot pass the current schema-v2 verifier or satisfy independent-host acceptance. Raw local receipt: `.release-evidence/restore-drill-v6-acl/restore-drill-evidence.json`.
+
+## Addendum 2026-10-11: the pgsodium/Vault root key was not preserved
+
+The statement above that recovery preserves the "Vault … identities" was wrong
+for every backup made before this date. The installation archive restores the
+environment and Compose configuration, but Supabase Vault secrets are encrypted
+with `/etc/postgresql-custom/pgsodium_root.key`, which lives on the Compose
+`db-config` volume. `deployment-backup.mjs` archived only `aidr-db`,
+`aidr-storage` and the installation tree. A recovered project therefore started
+with an empty `db-config` volume, the image generated a new key, and every
+restored Vault secret failed with `invalid ciphertext`. The PostgreSQL upgrade
+drill found this
+(`docs/production-readiness/postgres-upgrade-restore-drill-2026-10-11.md`).
+AIDR's canonical schema does not use Vault, so no AIDR table was affected.
+
+**Fix.** Backups now seal the key under a dedicated HKDF subkey of the recovery
+key and store it, with the SHA-256 of the key file, in the HMAC-authenticated
+`backup.json` manifest. No new backup file is added, so the offsite inventory is
+unchanged. `verify` authenticates the key record. `recover` writes the key into
+the new `db-config` volume before the database first starts and records
+`vault_root_key: "restored"` in the receipt. The restore drill now fails when
+recovered Vault secrets do not decrypt. Backups made before the fix still verify
+and recover, but report `VAULT_KEY_MISSING`. For those backups the manually
+custodied key is still needed. Design, rationale and operator steps:
+`deploy/backup/README.md`, section "pgsodium/Vault root key".
+
+**Evidence.** This is a local same-host Docker drill on
+`supabase/postgres:17.11.0.004`, run with
+`AIDR_BACKUP_DOCKER_DRILL=1 node --test scripts/deployment-backup-vault-key-docker.test.mjs`
+against the shipped tool:
+
+- A Vault secret was created.
+- The deployment was backed up, verified and recovered into a new project with new volumes.
+- `vault.decrypted_secrets` returned the original value.
+- The key file matched the source by SHA-256 and was `100:101` mode `0600`.
+- The image's default `db-config` files were present.
+- The same backup with the key record removed reported `VAULT_KEY_MISSING`
+  and failed with `invalid ciphertext`.
+
+Summary: `docs/production-readiness/evidence/backup-vault-root-key-2026-10-11.json`.
+The external gates of AIDR-044 are unchanged.

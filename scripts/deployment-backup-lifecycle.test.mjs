@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, createHmac, hkdfSync } from "node:crypto";
 import { delimiter, join, resolve } from "node:path";
 import { chmod, copyFile, link, mkdtemp, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { platform, tmpdir } from "node:os";
@@ -18,6 +18,24 @@ const BACKUP_ENV = resolve("deploy/backup/aidr-backup-offsite.env.example");
 const BACKUP_README = resolve("deploy/backup/README.md");
 const FIRST_CUSTOMER_GUIDE = resolve("deploy/FIRST_CUSTOMER.md");
 const UPGRADE_GUIDE = resolve("deploy/UPGRADE.md");
+const FAKE_PGSODIUM_KEY = "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0";
+const VALID_ARCHIVE = gzipSync(Buffer.alloc(1024)).toString("base64");
+const RECOVERY_KEY = Buffer.from("ab".repeat(32), "hex");
+
+function verifyBackup(run) {
+	return spawnSync(process.execPath, [SCRIPT, "verify", "--backup", run.output, "--key-file", run.key], { encoding: "utf8", windowsHide: true });
+}
+
+// Re-authenticates an edited manifest with the fixture recovery key, as an
+// older tool version (or anyone holding that key) could.
+async function rewriteManifest(run, edit) {
+	const path = join(run.output, "backup.json");
+	const manifest = JSON.parse(JSON.parse(await readFile(path, "utf8")).payload);
+	edit(manifest);
+	const payload = JSON.stringify(manifest);
+	const macKey = Buffer.from(hkdfSync("sha256", RECOVERY_KEY, "aidr-backup-v1", "manifest", 32));
+	await writeFile(path, JSON.stringify({ payload, hmac_sha256: createHmac("sha256", macKey).update(payload).digest("hex") }));
+}
 
 async function command(root, env = {}, existingJournal) {
 	const deployment = join(root, "deployment");
@@ -102,7 +120,7 @@ if (has("ps") && has("--all") && has("--quiet")) {
 }
 if (args[0] === "inspect") {
   const db = args[1] === "db-id";
-  process.stdout.write(JSON.stringify([{ Mounts: [{ Destination: db ? "/var/lib/postgresql/data" : "/var/lib/storage", Type: "volume", Name: db ? "db-volume" : "storage-volume" }], Config: { Image: "postgres:test" } }]));
+  process.stdout.write(JSON.stringify([{ Mounts: [{ Destination: db ? "/var/lib/postgresql/data" : "/var/lib/storage", Type: "volume", Name: db ? "db-volume" : "storage-volume" }, ...(db ? [{ Destination: "/etc/postgresql-custom", Type: "volume", Name: "db-config-volume" }] : [])], Config: { Image: "postgres:test" } }]));
   process.exit(0);
 }
 if (has("config") && has("--services")) { process.stdout.write("db\\nstorage\\napi\\n"); process.exit(0); }
@@ -129,6 +147,10 @@ if (args[0] === "run" && has("pg_controldata")) {
   if (preArchiveDelay) await new Promise((done) => setTimeout(done, preArchiveDelay));
   process.stdout.write("Database cluster state: shut down\\n"); process.exit(0);
 }
+if (args[0] === "run" && args.some((arg) => arg.includes("pgsodium_root.key"))) {
+  if (process.env.FAKE_PGSODIUM_KEY === "absent") process.exit(66);
+  process.stdout.write(process.env.FAKE_PGSODIUM_KEY ?? "${FAKE_PGSODIUM_KEY}"); process.exit(0);
+}
 if (args[0] === "run") {
   if (process.env.FAKE_ARCHIVE_MARKER) await writeFile(process.env.FAKE_ARCHIVE_MARKER, "started");
   const delay = Number(process.env.FAKE_ARCHIVE_DELAY_MS || 0);
@@ -154,7 +176,7 @@ const has = (value) => args.includes(value);
 if (args[0] === "image" || args[0] === "info" || has("pg_isready")) { if (args[0] === "info") process.stdout.write("x86_64\\n"); process.exit(0); }
 if (args[0] === "build") { if (process.env.FAKE_HELPER_BUILD_FAIL === "1") process.exit(72); if (JSON.stringify(readdirSync(args.at(-1))) !== '["Dockerfile"]' || !readFileSync(args.at(-2), "utf8").startsWith("FROM node:24.21.0-alpine3.24@sha256:")) process.exit(73); process.stdout.write("sha256:" + "1".repeat(64) + "\\n"); process.exit(0); }
 if (has("ps") && has("--all") && has("--quiet")) { process.stdout.write(args.at(-1) === "db" ? "db-id\\n" : "storage-id\\n"); process.exit(0); }
-if (args[0] === "inspect") { const db = args[1] === "db-id"; process.stdout.write(JSON.stringify([{ Mounts: [{ Destination: db ? "/var/lib/postgresql/data" : "/var/lib/storage", Type: "volume", Name: db ? "db-volume" : "storage-volume" }], Config: { Image: "postgres:test" } }])); process.exit(0); }
+if (args[0] === "inspect") { const db = args[1] === "db-id"; process.stdout.write(JSON.stringify([{ Mounts: [{ Destination: db ? "/var/lib/postgresql/data" : "/var/lib/storage", Type: "volume", Name: db ? "db-volume" : "storage-volume" }, ...(db ? [{ Destination: "/etc/postgresql-custom", Type: "volume", Name: "db-config-volume" }] : [])], Config: { Image: "postgres:test" } }])); process.exit(0); }
 if (has("config") && has("--services")) { process.stdout.write("db\\nstorage\\napi\\n"); process.exit(0); }
 if (has("ps") && has("--services") && has("running")) { const services = state(); if (services.size) process.stdout.write([...services].sort().join("\\n") + "\\n"); process.exit(0); }
 if (has("stop")) {
@@ -171,6 +193,7 @@ if (args[0] === "run" && has("pg_controldata")) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number(process.env.FAKE_PRE_ARCHIVE_DELAY_MS || 0));
   process.stdout.write("Database cluster state: shut down\\n"); process.exit(0);
 }
+if (args[0] === "run" && args.some((arg) => arg.includes("pgsodium_root.key"))) { if (process.env.FAKE_PGSODIUM_KEY === "absent") process.exit(66); process.stdout.write(process.env.FAKE_PGSODIUM_KEY ?? "${FAKE_PGSODIUM_KEY}"); process.exit(0); }
 if (args[0] === "run") { if (process.env.FAKE_ARCHIVE_MARKER) writeFileSync(process.env.FAKE_ARCHIVE_MARKER, "started"); Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number(process.env.FAKE_ARCHIVE_DELAY_MS || 0)); process.stdout.write(process.env.FAKE_ARCHIVE_GZIP_BASE64 ? Buffer.from(process.env.FAKE_ARCHIVE_GZIP_BASE64, "base64") : "archive"); process.exit(0); }
 process.exit(71);
 `);
@@ -265,6 +288,87 @@ test("cold backup validates and encrypts the same archive stream", async (t) => 
 	}
 	await assert.rejects(stat(run.journal), /ENOENT/);
 	assert.equal(await readFile(run.state, "utf8"), "api,db,storage");
+});
+
+test("cold backup seals the pgsodium/Vault root key in the authenticated manifest", async (t) => {
+	const root = await mkdtemp(join(tmpdir(), "aidr-backup-vault-key-"));
+	t.after(() => rm(root, { recursive: true, force: true }));
+	const run = await command(root, { FAKE_ARCHIVE_GZIP_BASE64: VALID_ARCHIVE });
+	assert.equal((await exit(run.child)).code, 0, run.stderr());
+	const log = await readFile(run.log, "utf8");
+	const keyRead = log.split(/\r?\n/).find((line) => line.includes("pgsodium_root.key"));
+	assert.ok(keyRead, "the key must be read from the db-config volume");
+	assert.match(keyRead, /^run --rm --network none --mount type=volume,src=db-config-volume,dst=\/config,readonly sha256:1{64} sh -c /);
+	assert.ok(log.indexOf("pg_controldata") < log.indexOf("pgsodium_root.key"), "the key is captured only after the clean-shutdown check");
+	const backupJson = await readFile(join(run.output, "backup.json"), "utf8");
+	assert.doesNotMatch(backupJson, new RegExp(FAKE_PGSODIUM_KEY, "i"), "the manifest must never carry the plaintext key");
+	const record = JSON.parse(JSON.parse(backupJson).payload).pgsodium_root_key;
+	assert.deepEqual(Object.keys(record).sort(), ["bytes", "ciphertext", "iv", "path", "sha256", "status", "tag"]);
+	assert.equal(record.status, "captured");
+	assert.equal(record.path, "/etc/postgresql-custom/pgsodium_root.key");
+	assert.equal(record.bytes, 64);
+	assert.equal(record.sha256, createHash("sha256").update(FAKE_PGSODIUM_KEY).digest("hex"));
+	const verified = verifyBackup(run);
+	assert.equal(verified.status, 0, verified.stderr);
+	assert.match(verified.stdout, new RegExp(`pgsodium/Vault root key: captured and authenticated \\(sha256 ${record.sha256}\\)`));
+	assert.doesNotMatch(verified.stdout + verified.stderr, new RegExp(FAKE_PGSODIUM_KEY, "i"));
+
+	await rewriteManifest(run, (manifest) => { manifest.pgsodium_root_key.ciphertext = `${manifest.pgsodium_root_key.ciphertext.slice(0, -2)}${manifest.pgsodium_root_key.ciphertext.endsWith("00") ? "01" : "00"}`; });
+	const tampered = verifyBackup(run);
+	assert.notEqual(tampered.status, 0);
+	assert.match(tampered.stderr, /pgsodium\/Vault root key authentication failed/);
+
+	await rewriteManifest(run, (manifest) => { manifest.pgsodium_root_key = { status: "captured", path: "/etc/postgresql-custom/pgsodium_root.key" }; });
+	const malformed = verifyBackup(run);
+	assert.notEqual(malformed.status, 0);
+	assert.match(malformed.stderr, /Unsupported pgsodium\/Vault root key record/);
+});
+
+test("a backup made before key capture still verifies but reports VAULT_KEY_MISSING", async (t) => {
+	const root = await mkdtemp(join(tmpdir(), "aidr-backup-vault-legacy-"));
+	t.after(() => rm(root, { recursive: true, force: true }));
+	const run = await command(root, { FAKE_ARCHIVE_GZIP_BASE64: VALID_ARCHIVE });
+	assert.equal((await exit(run.child)).code, 0, run.stderr());
+	await rewriteManifest(run, (manifest) => { delete manifest.pgsodium_root_key; });
+	const verified = verifyBackup(run);
+	assert.equal(verified.status, 0, verified.stderr);
+	assert.match(verified.stderr, /^VAULT_KEY_MISSING: this backup predates pgsodium\/Vault root key capture/m);
+	assert.match(verified.stdout, /pgsodium\/Vault root key: VAULT_KEY_MISSING\./);
+});
+
+test("a source without a generated pgsodium key is recorded as absent, not as captured", async (t) => {
+	const root = await mkdtemp(join(tmpdir(), "aidr-backup-vault-absent-"));
+	t.after(() => rm(root, { recursive: true, force: true }));
+	const run = await command(root, { FAKE_ARCHIVE_GZIP_BASE64: VALID_ARCHIVE, FAKE_PGSODIUM_KEY: "absent" });
+	assert.equal((await exit(run.child)).code, 0, run.stderr());
+	const manifest = JSON.parse(JSON.parse(await readFile(join(run.output, "backup.json"), "utf8")).payload);
+	assert.deepEqual(manifest.pgsodium_root_key, { status: "absent_at_source", path: "/etc/postgresql-custom/pgsodium_root.key" });
+	const verified = verifyBackup(run);
+	assert.equal(verified.status, 0, verified.stderr);
+	assert.match(verified.stdout, /pgsodium\/Vault root key: absent_at_source\./);
+});
+
+test("a malformed pgsodium key rejects the snapshot and restarts the source", async (t) => {
+	const root = await mkdtemp(join(tmpdir(), "aidr-backup-vault-malformed-"));
+	t.after(() => rm(root, { recursive: true, force: true }));
+	const run = await command(root, { FAKE_ARCHIVE_GZIP_BASE64: VALID_ARCHIVE, FAKE_PGSODIUM_KEY: "not-a-key" });
+	assert.notEqual((await exit(run.child)).code, 0);
+	assert.match(run.stderr(), /pgsodium_root\.key on the db-config volume is not a 32-byte hex key; snapshot rejected/);
+	await assert.rejects(stat(run.output), /ENOENT/);
+	await assert.rejects(stat(run.journal), /ENOENT/);
+	assert.equal(await readFile(run.state, "utf8"), "api,db,storage");
+});
+
+test("recovery writes the pgsodium key into the new db-config volume before any service starts", async () => {
+	const source = await readFile(SCRIPT, "utf8");
+	const restoreVolumes = source.indexOf("restoredVolumes[service] = volume;");
+	const restoreKey = source.indexOf("if (Buffer.isBuffer(pgsodiumRootKey)) restorePgsodiumRootKey(");
+	const receipt = source.indexOf('writeFileSync(join(output, "recovery-receipt.json")');
+	assert.ok(restoreVolumes >= 0 && restoreVolumes < restoreKey && restoreKey < receipt);
+	assert.match(source, /services_started: false/);
+	assert.match(source, /for \(const name of \["aidr-db", "aidr-storage", "db-config"\]\)/, "a stale db-config volume must block recovery");
+	assert.match(source, /chown "\$owner" \$\{temporary\}; chmod 0600 \$\{temporary\}/);
+	assert.match(source, /hkdfSync\("sha256", rawKey, "aidr-backup-v1", "pgsodium-root-key", 32\)/, "the key is sealed under a domain-separated subkey");
 });
 
 test("an unavailable pinned helper base fails before stopping source services", async (t) => {
