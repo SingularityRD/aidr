@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createWriteStream, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 
@@ -21,6 +21,8 @@ function parseArgs(argv) {
 		else if (token === "--allow-host") args.allowedHosts.push(argv[++i]);
 		else if (token === "--overwrite") args.overwrite = true;
 		else if (token === "--dry-run") args.dryRun = true;
+		else if (token === "--timeseries-interval-seconds") args.timeseriesIntervalSeconds = Number(argv[++i]);
+		else if (token === "--request-ledger") args.requestLedger = argv[++i];
 		else if (token === "--help" || token === "-h") args.help = true;
 		else fail(`Unknown argument: ${token}`);
 	}
@@ -31,6 +33,13 @@ function usage() {
 	console.log(`Usage:
   node scripts/load-test.mjs --profile FILE --output FILE [--allow-host HOST] [--overwrite]
   node scripts/load-test.mjs --profile FILE --output FILE --dry-run
+
+Optional observability for soak and failover drills:
+  --timeseries-interval-seconds N  add per-cohort buckets (by completion time) to the result
+  --request-ledger FILE            write one JSONL line per finished request with its
+                                   generated $request_id values and outcome, so ingested
+                                   rows can be reconciled (loss/duplication) afterwards.
+                                   Header and $env values are never written.
 
 Only loopback targets are allowed by default. Repeat --allow-host for an explicitly
 authorized non-loopback target. The runner never executes infrastructure fault
@@ -108,8 +117,8 @@ function validateProfile(profile) {
 	return profile;
 }
 
-function resolveTemplate(value, sequence) {
-	if (Array.isArray(value)) return value.map((item) => resolveTemplate(item, sequence));
+function resolveTemplate(value, sequence, requestIds = []) {
+	if (Array.isArray(value)) return value.map((item) => resolveTemplate(item, sequence, requestIds));
 	if (!value || typeof value !== "object") return value;
 	const keys = Object.keys(value);
 	if (keys.length === 1 && keys[0] === "$env") {
@@ -118,9 +127,13 @@ function resolveTemplate(value, sequence) {
 		return process.env[envName];
 	}
 	if (keys.length === 1 && keys[0] === "$sequence") return sequence;
-	if (keys.length === 1 && keys[0] === "$request_id") return randomUUID();
+	if (keys.length === 1 && keys[0] === "$request_id") {
+		const id = randomUUID();
+		requestIds.push(id);
+		return id;
+	}
 	if (keys.length === 1 && keys[0] === "$timestamp") return new Date().toISOString();
-	return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, resolveTemplate(item, sequence)]));
+	return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, resolveTemplate(item, sequence, requestIds)]));
 }
 
 function resolveRequest(scenario, sequence) {
@@ -131,11 +144,12 @@ function resolveRequest(scenario, sequence) {
 		headers[header] = value;
 	}
 	let body;
+	const requestIds = [];
 	if (scenario.body_json !== undefined) {
 		headers["content-type"] ??= "application/json";
-		body = JSON.stringify(resolveTemplate(scenario.body_json, sequence));
+		body = JSON.stringify(resolveTemplate(scenario.body_json, sequence, requestIds));
 	}
-	return { headers, body };
+	return { headers, body, requestIds };
 }
 
 class Aggregate {
@@ -237,6 +251,58 @@ class SampleSeries {
 	}
 }
 
+/** Per-interval, per-cohort outcome buckets keyed by request completion time. */
+class TimeSeries {
+	constructor(intervalSeconds) {
+		this.intervalMs = intervalSeconds * 1000;
+		this.buckets = new Map();
+	}
+
+	cell(atMs, cohort) {
+		const index = Math.max(0, Math.floor(atMs / this.intervalMs));
+		let bucket = this.buckets.get(index);
+		if (!bucket) this.buckets.set(index, (bucket = new Map()));
+		let cell = bucket.get(cohort);
+		if (!cell) bucket.set(cohort, (cell = { completed: 0, expected: 0, unexpected: 0, transport_errors: 0, dropped: 0, latencies: [], statuses: new Map() }));
+		return cell;
+	}
+
+	complete(atMs, cohort, durationMs, expected, status, failureClass) {
+		const cell = this.cell(atMs, cohort);
+		cell.completed += 1;
+		if (expected) cell.expected += 1;
+		else if (status === null || (failureClass && failureClass !== "unexpected_status")) cell.transport_errors += 1;
+		else cell.unexpected += 1;
+		cell.latencies.push(durationMs);
+		const key = status === null ? "transport_error" : String(status);
+		cell.statuses.set(key, (cell.statuses.get(key) ?? 0) + 1);
+	}
+
+	drop(atMs, cohort) { this.cell(atMs, cohort).dropped += 1; }
+
+	snapshot() {
+		const round = (value) => value === null ? null : Math.round(value * 10) / 10;
+		return {
+			interval_seconds: this.intervalMs / 1000,
+			clock: "request completion (dropped: scheduled) time since generator start",
+			buckets: [...this.buckets].sort(([a], [b]) => a - b).map(([index, cohorts]) => ({
+				t_start_s: (index * this.intervalMs) / 1000,
+				cohorts: Object.fromEntries([...cohorts].sort(([a], [b]) => a.localeCompare(b)).map(([cohort, cell]) => {
+					const sorted = cell.latencies.sort((a, b) => a - b);
+					const percentile = (fraction) => sorted.length ? round(sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * fraction) - 1)]) : null;
+					return [cohort, {
+						completed: cell.completed, expected: cell.expected, unexpected: cell.unexpected,
+						transport_errors: cell.transport_errors, dropped: cell.dropped,
+						p50_ms: percentile(0.5), p95_ms: percentile(0.95), p99_ms: percentile(0.99),
+						max_ms: sorted.length ? round(sorted[sorted.length - 1]) : null,
+						status_counts: Object.fromEntries([...cell.statuses].sort(([a], [b]) => a.localeCompare(b))),
+					}];
+				})),
+			})),
+		};
+	}
+}
+
 function classifyError(error) {
 	if (error?.message === "response_body_limit_exceeded") return "response_body_limit";
 	if (error?.name === "TimeoutError" || error?.name === "AbortError") return "timeout";
@@ -291,9 +357,13 @@ function faultObservations(profile, events, truncated) {
 		const failedScenarios = [...new Set(windowEvents.filter((event) => !event.expected).map((event) => event.scenario))];
 		const recoveryTimes = failedScenarios.map((name) => {
 			const scenarioEvents = scopedEvents.filter((event) => event.scenario === name && event.completed_at_ms >= firstFailure.completed_at_ms);
-			const lastFailureAt = scenarioEvents.findLastIndex((event) => !event.expected);
+			// This fault's last failure is the last one inside its window. A failure after the
+			// window belongs to a later, separate fault and must not stretch this RTO; the
+			// confirming successes may still complete after the window ends.
+			const lastFailureAt = scenarioEvents.findLastIndex((event) => !event.expected && event.completed_at_ms <= endMs);
 			let run = 0;
 			for (const event of scenarioEvents.slice(lastFailureAt + 1)) {
+				if (!event.expected) return null;
 				if (++run >= confirmation) return event.completed_at_ms;
 			}
 			return null;
@@ -325,6 +395,9 @@ if (!args.profile || !args.output) {
 const profilePath = resolve(args.profile);
 const outputPath = resolve(args.output);
 if (existsSync(outputPath) && !args.overwrite) fail(`Output already exists: ${outputPath}`);
+if (args.timeseriesIntervalSeconds !== undefined) boundedInteger(args.timeseriesIntervalSeconds, "--timeseries-interval-seconds", 1, 3600);
+const ledgerPath = args.requestLedger ? resolve(args.requestLedger) : null;
+if (ledgerPath && (ledgerPath === outputPath || (existsSync(ledgerPath) && !args.overwrite))) fail(`Request ledger must be a new file distinct from the output: ${ledgerPath}`);
 const profileBytes = readFileSync(profilePath);
 const profile = validateProfile(JSON.parse(profileBytes.toString("utf8")));
 const baseUrlValue = process.env[profile.base_url_env];
@@ -353,6 +426,12 @@ const overall = new Aggregate(maxSamples);
 const scenarios = new Map(profile.scenarios.map((scenario) => [scenario.name, new Aggregate(maxSamples)]));
 const cohorts = new Map([...new Set(profile.scenarios.map((scenario) => scenario.cohort))].map((cohort) => [cohort, new Aggregate(maxSamples)]));
 const scheduleLag = new SampleSeries(maxSamples);
+const timeseries = args.timeseriesIntervalSeconds === undefined ? null : new TimeSeries(args.timeseriesIntervalSeconds);
+let ledger = null;
+if (ledgerPath) {
+	mkdirSync(dirname(ledgerPath), { recursive: true });
+	ledger = createWriteStream(ledgerPath, { flags: args.overwrite ? "w" : "wx", encoding: "utf8" });
+}
 const eventLimit = profile.max_fault_event_samples ?? 250000;
 const events = [];
 let eventsTruncated = false;
@@ -370,8 +449,10 @@ async function dispatch(scenario, number) {
 	let status = null;
 	let expected = false;
 	let failureClass = null;
+	let requestIds = [];
 	try {
 		const request = resolveRequest(scenario, number);
+		requestIds = request.requestIds;
 		const response = await fetch(new URL(scenario.path, baseUrl), { method: scenario.method, headers: request.headers, body: request.body, signal: AbortSignal.timeout(profile.request_timeout_ms ?? 10000), redirect: "manual" });
 		status = response.status;
 		await consumeResponse(response, profile.max_response_bytes ?? 1048576);
@@ -383,6 +464,9 @@ async function dispatch(scenario, number) {
 	}
 	const durationMs = performance.now() - requestStart;
 	for (const aggregate of aggregateFor(scenario)) aggregate.complete(durationMs, expected, status, failureClass);
+	const completedAtMs = performance.now() - clockStart;
+	timeseries?.complete(completedAtMs, scenario.cohort, durationMs, expected, status, failureClass);
+	ledger?.write(`${JSON.stringify({ sequence: number, scenario: scenario.name, cohort: scenario.cohort, started_at_ms: Math.round((requestStart - clockStart) * 10) / 10, completed_at_ms: Math.round(completedAtMs * 10) / 10, status, expected, failure_class: failureClass, request_ids: requestIds })}\n`);
 	if (profile.fault_windows?.length) {
 		if (events.length < eventLimit) events.push({ completed_at_ms: performance.now() - clockStart, expected, scenario: scenario.name });
 		else eventsTruncated = true;
@@ -400,6 +484,8 @@ while (nextAt < profile.duration_seconds * 1000) {
 	for (const aggregate of aggregateFor(scenario)) aggregate.schedule();
 	if (inFlight.size >= profile.max_in_flight) {
 		for (const aggregate of aggregateFor(scenario)) aggregate.drop();
+		timeseries?.drop(nextAt, scenario.cohort);
+		ledger?.write(`${JSON.stringify({ sequence, scenario: scenario.name, cohort: scenario.cohort, started_at_ms: null, completed_at_ms: null, status: null, expected: false, failure_class: "dropped", request_ids: [] })}\n`);
 	} else {
 		const promise = dispatch(scenario, sequence).finally(() => inFlight.delete(promise));
 		inFlight.add(promise);
@@ -415,6 +501,7 @@ for (let remainingWindowMs = profile.duration_seconds * 1000 - (performance.now(
 scheduleFinishedAtMs = performance.now() - clockStart;
 await Promise.allSettled([...inFlight]);
 const drainFinishedAtMs = performance.now() - clockStart;
+if (ledger) await new Promise((done, reject) => ledger.end((error) => (error ? reject(error) : done())));
 
 const overallMetrics = overall.snapshot();
 const scenarioMetrics = Object.fromEntries([...scenarios].map(([name, aggregate]) => [name, aggregate.snapshot()]));
@@ -473,6 +560,7 @@ const result = {
 	},
 	metrics: { overall: overallMetrics, scenarios: scenarioMetrics, cohorts: cohortMetrics },
 	diagnostics,
+	...(timeseries ? { timeseries: timeseries.snapshot() } : {}),
 	fault_observations: faultResults,
 	threshold_checks: thresholdChecks,
 	limitations: [

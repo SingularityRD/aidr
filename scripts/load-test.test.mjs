@@ -32,6 +32,58 @@ test("telemetry workload can generate distinct string request identities", async
 
 const harness = fileURLToPath(new URL("./load-test.mjs", import.meta.url));
 
+test("request ledger and timeseries let a drill reconcile acknowledged request identities", async () => {
+	const received = [];
+	await withFixture((request, response) => {
+		let text = "";
+		request.on("data", chunk => { text += chunk; });
+		request.on("end", () => {
+			const body = JSON.parse(text);
+			received.push(...body.events.map((event) => event.event_id));
+			// Every third request fails after the server saw it: the ledger must say so.
+			response.writeHead(received.length % 3 === 0 ? 503 : 200); response.end();
+		});
+	}, async (run, directory) => {
+		const ledger = join(directory, "ledger.jsonl");
+		const { status, stderr, result } = await run(profile({
+			workload_class: "soak", duration_seconds: 1.2, rate_per_second: 10, fault_windows: [],
+			thresholds: { min_requests: 1, max_loss_ratio: 1 },
+			scenarios: [{ name: "ingest", cohort: "tenant-a", method: "POST", path: "/ingest", weight: 1, expected_statuses: [200], headers_env: { Authorization: "AIDR_LOAD_TEST_SECRET" }, body_json: { events: [{ event_id: { $request_id: true } }, { event_id: { $request_id: true } }], secret: { $env: "AIDR_LOAD_TEST_SECRET" } } }],
+		}), false, ["--timeseries-interval-seconds", "1", "--request-ledger", ledger], { AIDR_LOAD_TEST_SECRET: "ledger-must-not-contain-this" });
+		assert.equal(status, 0, stderr);
+		const text = readFileSync(ledger, "utf8");
+		assert.doesNotMatch(text, /ledger-must-not-contain-this/);
+		const lines = text.trim().split("\n").map((line) => JSON.parse(line));
+		assert.equal(lines.length, result.metrics.overall.scheduled);
+		const ledgerIds = lines.flatMap((line) => line.request_ids);
+		assert.deepEqual([...ledgerIds].sort(), [...received].sort(), "every generated id that reached the server is in the ledger");
+		assert.equal(lines.filter((line) => line.expected).length, result.metrics.overall.expected_responses);
+		assert.ok(lines.some((line) => line.status === 503 && line.request_ids.length === 2));
+		const buckets = result.timeseries.buckets;
+		assert.equal(result.timeseries.interval_seconds, 1);
+		assert.ok(buckets.length >= 2);
+		const sum = (field) => buckets.reduce((total, bucket) => total + (bucket.cohorts["tenant-a"]?.[field] ?? 0), 0);
+		assert.equal(sum("completed"), result.metrics.overall.completed);
+		assert.equal(sum("unexpected"), result.metrics.overall.unexpected_responses);
+	});
+});
+
+test("observability options are validated before any request is sent", async () => {
+	let requests = 0;
+	await withFixture((_request, response) => { requests += 1; response.end(); }, async (run, directory) => {
+		const base = profile({ workload_class: "soak", fault_windows: [], duration_seconds: 0.3, rate_per_second: 5 });
+		const zero = await run(base, false, ["--timeseries-interval-seconds", "0"]);
+		assert.equal(zero.status, 1);
+		assert.match(zero.stderr, /--timeseries-interval-seconds must be between 1 and 3600/);
+		const existing = join(directory, "existing.jsonl");
+		writeFileSync(existing, "");
+		const clash = await run(base, false, ["--request-ledger", existing]);
+		assert.equal(clash.status, 1);
+		assert.match(clash.stderr, /Request ledger must be a new file/);
+		assert.equal(requests, 0);
+	});
+});
+
 test("a fast request still observes the full declared workload window", async () => {
 	await withFixture((_request, response) => response.end(), async run => {
 		const { status, result } = await run(profile({
@@ -52,16 +104,17 @@ async function withFixture(handler, check) {
 		const address = server.address();
 		assert.ok(address && typeof address === "object");
 		let sequence = 0;
-		const run = async (profile, dryRun = false) => {
+		const run = async (profile, dryRun = false, extraArgs = [], extraEnv = {}) => {
 			const number = ++sequence;
 			const profilePath = join(directory, `profile-${number}.json`);
 			const resultPath = join(directory, `result-${number}.json`);
 			writeFileSync(profilePath, JSON.stringify(profile));
 			const args = [harness, "--profile", profilePath, "--output", resultPath];
 			if (dryRun) args.push("--dry-run");
+			args.push(...extraArgs);
 			const processResult = await new Promise((resolve, reject) => {
 				const child = spawn(process.execPath, args, {
-					env: { ...process.env, AIDR_LOAD_TEST_ORIGIN: `http://127.0.0.1:${address.port}` },
+					env: { ...process.env, AIDR_LOAD_TEST_ORIGIN: `http://127.0.0.1:${address.port}`, ...extraEnv },
 					stdio: ["ignore", "pipe", "pipe"],
 				});
 				let stderr = "";
@@ -71,7 +124,7 @@ async function withFixture(handler, check) {
 			});
 			return { ...processResult, result: dryRun || processResult.status === 1 ? null : JSON.parse(readFileSync(resultPath, "utf8")) };
 		};
-		await check(run);
+		await check(run, directory);
 	} finally {
 		await new Promise((resolve) => server.close(resolve));
 		rmSync(directory, { recursive: true, force: true });
@@ -108,6 +161,31 @@ test("healthy scenario cannot establish recovery for a failing scenario", async 
 		assert.equal(result.fault_observations[0].fault_observed, true);
 		assert.equal(result.fault_observations[0].estimated_rto_ms, null);
 		assert.ok(result.threshold_checks.some((check) => check.metric === "observation_complete" && !check.passed));
+	});
+});
+
+test("a later fault does not stretch the recovery time of an earlier fault window", async () => {
+	let firstRequestAt = null;
+	await withFixture((_request, response) => {
+		firstRequestAt ??= Date.now();
+		const elapsed = Date.now() - firstRequestAt;
+		// Two separate outages: [0, 300) ms and [1300, 1500) ms after the first request.
+		response.writeHead(elapsed < 300 || (elapsed >= 1300 && elapsed < 1500) ? 503 : 200);
+		response.end();
+	}, async (run) => {
+		const { stderr, result } = await run(profile({
+			workload_class: "soak", duration_seconds: 2.4, rate_per_second: 20, max_in_flight: 20,
+			scenarios: [{ name: "flaky", cohort: "one", method: "GET", path: "/", weight: 1, expected_statuses: [200] }],
+			fault_windows: [
+				{ name: "first-outage", target: "isolated-fixture", scenario_names: ["flaky"], start_seconds: 0, end_seconds: 1.1, recovery_confirmation_successes: 3, require_fault_observed: true },
+				{ name: "second-outage", target: "isolated-fixture", scenario_names: ["flaky"], start_seconds: 1.2, end_seconds: 2.3, recovery_confirmation_successes: 3, require_fault_observed: true },
+			],
+		}));
+		const [first, second] = result.fault_observations;
+		assert.equal(first.status, "recovered", stderr);
+		assert.ok(first.estimated_rto_ms < 1100, `first window RTO ${first.estimated_rto_ms} ms absorbed the second outage`);
+		assert.equal(second.status, "recovered");
+		assert.ok(second.recovered_at_ms >= 1300, "second window recovers after its own outage");
 	});
 });
 

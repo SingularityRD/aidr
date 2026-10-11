@@ -1,0 +1,1194 @@
+{
+  "$schema": "../../../../deploy/ha/workload-profile.schema.json",
+  "schema_version": 1,
+  "workload_id": "drill-soak",
+  "workload_class": "soak",
+  "description": "LOCAL single-host engineering drill (not HA, not an SLA): quiet tenant 1 key vs noisy tenant 5 member keys at 10x the quiet tenant's request rate (2x per key); ingest batches of 10 runtime_verdict events (3:1 with policy polls).",
+  "environment_label": "local-single-host-engineering-drill",
+  "base_url_env": "AIDR_LOAD_BASE_URL",
+  "duration_seconds": 10800,
+  "rate_per_second": 20,
+  "max_in_flight": 400,
+  "request_timeout_ms": 10000,
+  "max_response_bytes": 1048576,
+  "max_fault_event_samples": 1000000,
+  "scenarios": [
+    {
+      "name": "quiet-ingest",
+      "cohort": "quiet_tenant",
+      "method": "POST",
+      "path": "/functions/v1/ingest",
+      "weight": 3,
+      "expected_statuses": [
+        200
+      ],
+      "headers_env": {
+        "Authorization": "DRILL_AUTH_QUIET"
+      },
+      "body_json": {
+        "iid": "soak-quiet-1",
+        "agent_runtime": "claude_code",
+        "agent_runtime_version": "drill",
+        "aidr_version": "0.0.0-drill",
+        "events": [
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          }
+        ]
+      }
+    },
+    {
+      "name": "quiet-policy",
+      "cohort": "quiet_tenant",
+      "method": "GET",
+      "path": "/functions/v1/policy",
+      "weight": 1,
+      "expected_statuses": [
+        200
+      ],
+      "headers_env": {
+        "Authorization": "DRILL_AUTH_QUIET"
+      }
+    },
+    {
+      "name": "noisy-k0-ingest",
+      "cohort": "noisy_tenant",
+      "method": "POST",
+      "path": "/functions/v1/ingest",
+      "weight": 6,
+      "expected_statuses": [
+        200,
+        429
+      ],
+      "headers_env": {
+        "Authorization": "DRILL_AUTH_NOISY"
+      },
+      "body_json": {
+        "iid": "soak-noisy-0",
+        "agent_runtime": "claude_code",
+        "agent_runtime_version": "drill",
+        "aidr_version": "0.0.0-drill",
+        "events": [
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          }
+        ]
+      }
+    },
+    {
+      "name": "noisy-k0-policy",
+      "cohort": "noisy_tenant",
+      "method": "GET",
+      "path": "/functions/v1/policy",
+      "weight": 2,
+      "expected_statuses": [
+        200,
+        429
+      ],
+      "headers_env": {
+        "Authorization": "DRILL_AUTH_NOISY"
+      }
+    },
+    {
+      "name": "noisy-k1-ingest",
+      "cohort": "noisy_tenant",
+      "method": "POST",
+      "path": "/functions/v1/ingest",
+      "weight": 6,
+      "expected_statuses": [
+        200,
+        429
+      ],
+      "headers_env": {
+        "Authorization": "DRILL_AUTH_NOISY_1"
+      },
+      "body_json": {
+        "iid": "soak-noisy-1",
+        "agent_runtime": "claude_code",
+        "agent_runtime_version": "drill",
+        "aidr_version": "0.0.0-drill",
+        "events": [
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          }
+        ]
+      }
+    },
+    {
+      "name": "noisy-k1-policy",
+      "cohort": "noisy_tenant",
+      "method": "GET",
+      "path": "/functions/v1/policy",
+      "weight": 2,
+      "expected_statuses": [
+        200,
+        429
+      ],
+      "headers_env": {
+        "Authorization": "DRILL_AUTH_NOISY_1"
+      }
+    },
+    {
+      "name": "noisy-k2-ingest",
+      "cohort": "noisy_tenant",
+      "method": "POST",
+      "path": "/functions/v1/ingest",
+      "weight": 6,
+      "expected_statuses": [
+        200,
+        429
+      ],
+      "headers_env": {
+        "Authorization": "DRILL_AUTH_NOISY_2"
+      },
+      "body_json": {
+        "iid": "soak-noisy-2",
+        "agent_runtime": "claude_code",
+        "agent_runtime_version": "drill",
+        "aidr_version": "0.0.0-drill",
+        "events": [
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          }
+        ]
+      }
+    },
+    {
+      "name": "noisy-k2-policy",
+      "cohort": "noisy_tenant",
+      "method": "GET",
+      "path": "/functions/v1/policy",
+      "weight": 2,
+      "expected_statuses": [
+        200,
+        429
+      ],
+      "headers_env": {
+        "Authorization": "DRILL_AUTH_NOISY_2"
+      }
+    },
+    {
+      "name": "noisy-k3-ingest",
+      "cohort": "noisy_tenant",
+      "method": "POST",
+      "path": "/functions/v1/ingest",
+      "weight": 6,
+      "expected_statuses": [
+        200,
+        429
+      ],
+      "headers_env": {
+        "Authorization": "DRILL_AUTH_NOISY_3"
+      },
+      "body_json": {
+        "iid": "soak-noisy-3",
+        "agent_runtime": "claude_code",
+        "agent_runtime_version": "drill",
+        "aidr_version": "0.0.0-drill",
+        "events": [
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          }
+        ]
+      }
+    },
+    {
+      "name": "noisy-k3-policy",
+      "cohort": "noisy_tenant",
+      "method": "GET",
+      "path": "/functions/v1/policy",
+      "weight": 2,
+      "expected_statuses": [
+        200,
+        429
+      ],
+      "headers_env": {
+        "Authorization": "DRILL_AUTH_NOISY_3"
+      }
+    },
+    {
+      "name": "noisy-k4-ingest",
+      "cohort": "noisy_tenant",
+      "method": "POST",
+      "path": "/functions/v1/ingest",
+      "weight": 6,
+      "expected_statuses": [
+        200,
+        429
+      ],
+      "headers_env": {
+        "Authorization": "DRILL_AUTH_NOISY_4"
+      },
+      "body_json": {
+        "iid": "soak-noisy-4",
+        "agent_runtime": "claude_code",
+        "agent_runtime_version": "drill",
+        "aidr_version": "0.0.0-drill",
+        "events": [
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          },
+          {
+            "event_id": {
+              "$request_id": true
+            },
+            "type": "runtime_verdict",
+            "ts": {
+              "$timestamp": true
+            },
+            "decision": "deny",
+            "severity": "high",
+            "tool_name": "Bash",
+            "threat_id": "cmd-curl-pipe-shell",
+            "confidence": 0.93,
+            "connector": "claude_code"
+          }
+        ]
+      }
+    },
+    {
+      "name": "noisy-k4-policy",
+      "cohort": "noisy_tenant",
+      "method": "GET",
+      "path": "/functions/v1/policy",
+      "weight": 2,
+      "expected_statuses": [
+        200,
+        429
+      ],
+      "headers_env": {
+        "Authorization": "DRILL_AUTH_NOISY_4"
+      }
+    }
+  ],
+  "thresholds": {
+    "min_requests": 1,
+    "max_loss_ratio": 0.01,
+    "max_error_ratio": 0.05
+  },
+  "fault_windows": [
+    {
+      "name": "db-restart",
+      "target": "aidrsoak local compose: db-restart",
+      "scenario_names": [
+        "quiet-ingest",
+        "quiet-policy",
+        "noisy-k0-ingest",
+        "noisy-k0-policy"
+      ],
+      "start_seconds": 2400,
+      "end_seconds": 2700,
+      "recovery_confirmation_successes": 10,
+      "require_fault_observed": true
+    },
+    {
+      "name": "edge-restart",
+      "target": "aidrsoak local compose: edge-restart",
+      "scenario_names": [
+        "quiet-ingest",
+        "quiet-policy",
+        "noisy-k0-ingest",
+        "noisy-k0-policy"
+      ],
+      "start_seconds": 4500,
+      "end_seconds": 4800,
+      "recovery_confirmation_successes": 10,
+      "require_fault_observed": true
+    },
+    {
+      "name": "rest-restart",
+      "target": "aidrsoak local compose: rest-restart",
+      "scenario_names": [
+        "quiet-ingest",
+        "quiet-policy",
+        "noisy-k0-ingest",
+        "noisy-k0-policy"
+      ],
+      "start_seconds": 6600,
+      "end_seconds": 6900,
+      "recovery_confirmation_successes": 10,
+      "require_fault_observed": true
+    },
+    {
+      "name": "db-partition",
+      "target": "aidrsoak local compose: db-partition",
+      "scenario_names": [
+        "quiet-ingest",
+        "quiet-policy",
+        "noisy-k0-ingest",
+        "noisy-k0-policy"
+      ],
+      "start_seconds": 8700,
+      "end_seconds": 9000,
+      "recovery_confirmation_successes": 10,
+      "require_fault_observed": true
+    }
+  ]
+}
