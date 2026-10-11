@@ -407,3 +407,71 @@ Keepalive figures are idle / interval / count in seconds.
 - PostgREST's reconnect backoff can add up to about 16 s after a long partition.
 - n = 3 per arm on a shared host is indicative, not conclusive. The soak stack (edge runtime, gateway, 11-key mix)
   was not re-run with the change.
+
+## Addendum, 2026-10-11: PostgREST reconnect backoff (finding O2, remaining tail)
+
+**Label: SOURCE RESEARCH, NO RUN.** No kit change and no new measurement. This addendum records why the reconnect
+backoff tail measured above (recovery 11.3–24.4 s with the kit default) cannot be shortened by configuration.
+
+### Finding: the backoff is hard-coded in every released PostgREST
+
+The reconnect loop is `retryingSchemaCacheLoad`. It flushes the pool, queries the server version and reloads the
+schema cache, and retries with a fixed policy:
+
+```haskell
+retryPolicy =
+  let delayMicroseconds = 32 * oneSecondInUs {-32 seconds-}
+  in  capDelay delayMicroseconds $ exponentialBackoff oneSecondInUs
+```
+
+That is 1, 2, 4, 8, 16, 32, 32, … seconds. The policy is a constant: no configuration key, environment variable
+or in-database setting reaches it. The same code is in every source checked:
+
+| Source (fetched 2026-10-11) | File | Policy |
+| --- | --- | --- |
+| `v14.18` (kit pin `v14.17`; 14.18 only fixes JWT time and log time) | `src/PostgREST/AppState.hs` | 1 s doubling, cap 32 s |
+| `v16.4` (latest release, 2026-09-24) | `src/library/PostgREST/AppState/Reload.hs` | same |
+| `main` (unreleased) | `src/library/PostgREST/AppState/Reload.hs` | same |
+
+The `CHANGELOG.md` for 14.0 through 16.4 and the Unreleased section has no entry that changes reconnect timing.
+Moving to v16 would bring the same backoff plus the v16 migration items (`jwt-role-claim-key` syntax, PostgreSQL 13
+dropped), so it is not a fix for O2.
+
+### Options checked and rejected
+
+- **`db-pool-automatic-recovery = false` (`PGRST_DB_POOL_AUTOMATIC_RECOVERY`).** This does not shorten the
+  backoff. It makes PostgREST exit on the first failed version query, so recovery moves to the container
+  restart policy:
+  - Docker's restart delay also doubles, from 100 ms.
+  - Kubernetes `CrashLoopBackOff` starts at 10 s and grows to 5 min.
+  - In-flight requests are dropped at every exit, and during a partition each restarted process fails its
+    startup connection and exits again.
+  - The expected tail is equal or worse, so this is unsafe as a default. It was not measured.
+- **`SIGUSR1` or `NOTIFY pgrst, 'reload schema'` as a nudge.** Both go through the same debounced loader. While
+  the retry loop sleeps, the loader is still running, so a new trigger queues behind the sleep instead of
+  cutting it short.
+- **Admin `/ready` as a fast signal.** `/ready` reports the state honestly (503 while pending, 200 once the
+  schema cache reloads). It is a probe, not a trigger, and cannot speed up reconnection.
+- **`db-pool-*` timeouts.** `db-pool-acquisition-timeout`, `db-pool-max-idletime` and `db-pool-max-lifetime`
+  govern pooled connections, not the reconnect schedule. The kit keeps them at their defaults, as recorded
+  above.
+- **Shorter request or client timeouts.** These are deliberately not used to make the drill pass, per the
+  readiness brief.
+
+### Upstream
+
+- No upstream issue asks for a configurable reconnect delay or cap. Related history:
+  - [#742](https://github.com/PostgREST/postgrest/issues/742): the original recovery design, which discusses
+    capped and cyclic backoff.
+  - [#1878](https://github.com/PostgREST/postgrest/issues/1878): adds `Retry-After` during recovery.
+  - [#1932](https://github.com/PostgREST/postgrest/issues/1932): "Connection worker delay is not being
+    respected", still open.
+- The upstream change would be a `db-pool-retry-max-delay`-style key read by `retryPolicy`. Opening that
+  request is an owner action. This environment has no write access to the PostgREST repository.
+
+### What stays open in O2 (unchanged)
+
+- The reconnect tail of up to about 16 s after a 30 s partition is accepted as an upstream limit. The kit's
+  dead-peer detection, from the previous addendum, still removes the TCP-retransmission part.
+- Bounding the hang during the partition still needs a request deadline or fail-fast admission. That is
+  O1's product decision.
