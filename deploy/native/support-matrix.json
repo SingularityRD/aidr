@@ -49,7 +49,7 @@
       "acceptanceEvidence": [
         {
           "path": "docs/evidence/real-host/claude-code.json",
-          "sha256": "2db9232e02edfe832ae66847faaa16404e7ff1f9fb72f3f8015170e0ce38289a"
+          "sha256": "366df0cbf908c82eb0c0bfb1b74b030854f31e3168fb5e99982c15895aaeb31b"
         }
       ]
     },
@@ -126,7 +126,7 @@
       "acceptanceEvidence": [
         {
           "path": "docs/evidence/real-host/openclaw.json",
-          "sha256": "b2f2a5e3bbc7ca1e6602dd23a08798c9243b71718290cc062269959f6b32898e"
+          "sha256": "e808b544a72be59f950895e82d76174dedc8bb45d65c883225d626ef22c0306b"
         }
       ]
     },
@@ -156,7 +156,7 @@
       "acceptanceEvidence": [
         {
           "path": "docs/evidence/real-host/opencode.json",
-          "sha256": "96d9900f2b04678b01ddbac7c6b145421e8d3d2916c6a9f082167b9706824d6f"
+          "sha256": "a450f183d5dc78ca9e480d38a4d3709d12c489c555d9aceae9c3f6ccd6487ab7"
         }
       ]
     },
@@ -188,7 +188,7 @@
       "acceptanceEvidence": [
         {
           "path": "docs/evidence/real-host/codex.json",
-          "sha256": "838f4e344449704bc09bb5d295e03d10c5857e02c77976fc7739b71cd48a7207"
+          "sha256": "69bb97b4a3ce734eab0b92a931463b73c2eec1df2d27ecb600cfd4eceb8f96be"
         }
       ]
     }

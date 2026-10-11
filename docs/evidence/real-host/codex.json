@@ -12,14 +12,15 @@
 	"platform": "linux",
 	"architecture": "x64",
 	"runnerNode": "v22.22.0",
-	"recordedAtUtc": "2026-10-11T01:08:19.502Z",
+	"recordedAtUtc": "2026-10-11T07:39:56.804Z",
 	"source": {
-		"commit": "aaf4f0be648da3a50ccfbb8cc1f94a63d79ffcc4",
+		"commit": "7bb86b16ae39ae991425d07bf7441713df0f7ea8",
 		"trackedChanges": true
 	},
 	"aidrArtifact": {
 		"paths": [
-			"packages/codex/dist/pre-tool-use.cjs"
+			"packages/codex/dist/pre-tool-use.cjs",
+			"packages/codex/dist/pre-tool-use.bundle.cjs"
 		],
 		"buildFlavor": "development",
 		"configuration": "no ~/.singularity-aidr/config.json: default local enforcement mode, no account, no network lookups"
@@ -57,7 +58,7 @@
 				"status": 0,
 				"signal": null
 			},
-			"durationMs": 1023,
+			"durationMs": 1139,
 			"modelRequests": 2,
 			"checks": [
 				{
@@ -75,7 +76,7 @@
 				{
 					"name": "host returned the command output to the model",
 					"ok": true,
-					"detail": "Chunk ID: c68d73\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 4\nOutput:\naidr-benign-ok\n"
+					"detail": "Chunk ID: 406ca4\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 4\nOutput:\naidr-benign-ok\n"
 				},
 				{
 					"name": "connector receipt for this case shows decision allow",
@@ -97,7 +98,7 @@
 				"status": 0,
 				"signal": null
 			},
-			"durationMs": 930,
+			"durationMs": 983,
 			"modelRequests": 2,
 			"checks": [
 				{
@@ -144,7 +145,7 @@
 				"status": 0,
 				"signal": null
 			},
-			"durationMs": 406,
+			"durationMs": 417,
 			"modelRequests": 2,
 			"checks": [
 				{
@@ -178,7 +179,7 @@
 				"status": 0,
 				"signal": null
 			},
-			"durationMs": 1022,
+			"durationMs": 957,
 			"modelRequests": 2,
 			"checks": [
 				{
@@ -218,7 +219,7 @@
 				"status": 0,
 				"signal": null
 			},
-			"durationMs": 509,
+			"durationMs": 472,
 			"modelRequests": 0,
 			"checks": [
 				{
@@ -260,7 +261,7 @@
 				"status": 0,
 				"signal": null
 			},
-			"durationMs": 435,
+			"durationMs": 456,
 			"modelRequests": 0,
 			"checks": [
 				{
@@ -296,7 +297,7 @@
 				"status": 0,
 				"signal": null
 			},
-			"durationMs": 461,
+			"durationMs": 417,
 			"modelRequests": 2,
 			"checks": [
 				{

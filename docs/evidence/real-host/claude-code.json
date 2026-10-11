@@ -12,16 +12,19 @@
 	"platform": "linux",
 	"architecture": "x64",
 	"runnerNode": "v22.22.0",
-	"recordedAtUtc": "2026-10-11T01:08:14.440Z",
+	"recordedAtUtc": "2026-10-11T07:39:51.659Z",
 	"source": {
-		"commit": "aaf4f0be648da3a50ccfbb8cc1f94a63d79ffcc4",
+		"commit": "7bb86b16ae39ae991425d07bf7441713df0f7ea8",
 		"trackedChanges": false
 	},
 	"aidrArtifact": {
 		"paths": [
 			"packages/claude-code/dist/pre-tool-use.cjs",
+			"packages/claude-code/dist/pre-tool-use.bundle.cjs",
 			"packages/claude-code/dist/post-tool-use.cjs",
+			"packages/claude-code/dist/post-tool-use.bundle.cjs",
 			"packages/claude-code/dist/user-prompt-submit.cjs",
+			"packages/claude-code/dist/user-prompt-submit.bundle.cjs",
 			"hooks/hooks.json"
 		],
 		"buildFlavor": "development",
@@ -62,7 +65,7 @@
 				"status": 0,
 				"signal": null
 			},
-			"durationMs": 2011,
+			"durationMs": 2303,
 			"modelRequests": 2,
 			"checks": [
 				{
@@ -102,7 +105,7 @@
 				"status": 0,
 				"signal": null
 			},
-			"durationMs": 1729,
+			"durationMs": 2064,
 			"modelRequests": 2,
 			"checks": [
 				{
@@ -149,7 +152,7 @@
 				"status": 0,
 				"signal": null
 			},
-			"durationMs": 625,
+			"durationMs": 619,
 			"modelRequests": 2,
 			"checks": [
 				{
@@ -183,7 +186,7 @@
 				"status": 0,
 				"signal": null
 			},
-			"durationMs": 1580,
+			"durationMs": 1729,
 			"modelRequests": 2,
 			"checks": [
 				{
@@ -223,7 +226,7 @@
 				"status": 0,
 				"signal": null
 			},
-			"durationMs": 1013,
+			"durationMs": 1161,
 			"modelRequests": 0,
 			"checks": [
 				{
@@ -262,7 +265,7 @@
 				"status": 0,
 				"signal": null
 			},
-			"durationMs": 2185,
+			"durationMs": 2229,
 			"modelRequests": 2,
 			"checks": [
 				{
@@ -299,7 +302,7 @@
 				"status": 0,
 				"signal": null
 			},
-			"durationMs": 1186,
+			"durationMs": 1209,
 			"modelRequests": 0,
 			"checks": [
 				{
@@ -337,7 +340,7 @@
 				"status": 0,
 				"signal": null
 			},
-			"durationMs": 1564,
+			"durationMs": 1617,
 			"modelRequests": 2,
 			"checks": [
 				{
@@ -373,7 +376,7 @@
 				"status": 0,
 				"signal": null
 			},
-			"durationMs": 622,
+			"durationMs": 707,
 			"modelRequests": 2,
 			"checks": [
 				{
