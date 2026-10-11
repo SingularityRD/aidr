@@ -59,7 +59,7 @@ function fixture() {
 test("the packaged marketplace resolves every hook, MCP and signed-evidence path", () => {
 	const workspace = fixture();
 	try {
-		assert.deepEqual(assertClaudePluginPackage(workspace.root), { plugin: "aidr", referencedFiles: 19 });
+		assert.deepEqual(assertClaudePluginPackage(workspace.root), { plugin: "aidr", referencedFiles: 23 });
 		assert.doesNotThrow(() => assertClaudePluginResourcesCanonical(workspace.root));
 	} finally {
 		workspace.dispose();
@@ -71,6 +71,16 @@ test("the marketplace package fails closed when a generated runtime is absent", 
 	try {
 		rmSync(path.join(workspace.root, "packages/claude-code/dist/pre-tool-use.cjs"));
 		assert.throws(() => assertClaudePluginPackage(workspace.root), /missing packages\/claude-code\/dist\/pre-tool-use\.cjs/);
+	} finally {
+		workspace.dispose();
+	}
+});
+
+test("the marketplace package fails closed when a hook bundle behind its bootstrap is absent", () => {
+	const workspace = fixture();
+	try {
+		rmSync(path.join(workspace.root, "packages/claude-code/dist/pre-tool-use.bundle.cjs"));
+		assert.throws(() => assertClaudePluginPackage(workspace.root), /missing packages\/claude-code\/dist\/pre-tool-use\.bundle\.cjs/);
 	} finally {
 		workspace.dispose();
 	}
@@ -91,7 +101,7 @@ test("the release archive extracts to a complete, hygienic marketplace root", ()
 		assert.equal(inspection.entries.has("packages/claude-code/dist/mcp-server.cjs"), true);
 		const unpacked = spawnSync("tar", ["-xzf", path.basename(archive), "-C", tarDirectory(extracted)], { cwd: output, encoding: "utf8" });
 		assert.equal(unpacked.status, 0, unpacked.stderr);
-		assert.deepEqual(assertClaudePluginPackage(extracted), { plugin: "aidr", referencedFiles: 19 });
+		assert.deepEqual(assertClaudePluginPackage(extracted), { plugin: "aidr", referencedFiles: 23 });
 	} finally {
 		workspace.dispose();
 	}

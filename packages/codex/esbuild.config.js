@@ -1,5 +1,6 @@
 import * as esbuild from "esbuild";
 import { readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { buildHookBootstraps, hookBundleName } from "../../scripts/hook-bootstrap.mjs";
 
 const pkg = JSON.parse(readFileSync("../core/package.json", "utf-8"));
 const isRelease =
@@ -59,13 +60,16 @@ const shared = {
 	define: { __AIDR_VERSION__: JSON.stringify(pkg.version), "import.meta.url": "undefined" },
 };
 
-const outputs = ["dist/pre-tool-use.cjs"];
-
+// Codex spawns `node dist/pre-tool-use.cjs` for every tool call. That stable
+// file is a small bootstrap that enables the V8 compile cache and then
+// requires the real hook bundle (scripts/hook-bootstrap.mjs).
+const bundle = `dist/${hookBundleName("pre-tool-use.cjs")}`;
 await esbuild.build({
 	...shared,
 	entryPoints: ["src/cli.ts"],
-	outfile: outputs[0],
+	outfile: bundle,
 });
+const outputs = [bundle, ...(await buildHookBootstraps(esbuild, shared, [{ outfile: "dist/pre-tool-use.cjs" }]))];
 
 for (const out of outputs) {
 	stripSourceMappingUrl(out);

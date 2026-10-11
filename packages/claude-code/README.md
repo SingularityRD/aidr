@@ -102,6 +102,15 @@ features are an opt-in layer on top of local enforcement.
 | `dist/mcp-server.cjs` | Bundled MCP server |
 | `dist/health.cjs` | `aidr-claude-code --json` health probe (declared `bin`) |
 
+The per-call hooks (`pre-tool-use`, `post-tool-use`, `user-prompt-submit` and
+`session-start`) are small bootstraps. Each one enables Node's on-disk compile
+cache in the private `~/.singularity-aidr/compile-cache` directory and then
+requires the matching `dist/<hook>.bundle.cjs`. Ship and copy them together.
+
+- The cache is off by default on Windows.
+- `AIDR_DISABLE_COMPILE_CACHE=1` turns it off everywhere.
+- A missing or unloadable bundle blocks with exit 2.
+
 ## Licence
 
 Proprietary. See `LICENSE` in this package.

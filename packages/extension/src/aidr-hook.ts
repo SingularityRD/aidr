@@ -1675,7 +1675,13 @@ function unansweredBlock(reason: string): Record<string, unknown> {
 		: { ...internalCursorResponse("deny", reason), continue: false };
 }
 
-if (require.main === module) {
+/**
+ * Run as the hook process: arm the watchdog, answer once, exit 0. Called when
+ * this file is the entry point, or by the `dist/aidr-hook.cjs` bootstrap that
+ * enables the compile cache before requiring this bundle
+ * (scripts/hook-bootstrap.mjs).
+ */
+export function runHookProcess(): void {
 	const watchdog = setTimeout(
 		() => {
 			writeJson(
@@ -1704,3 +1710,5 @@ if (require.main === module) {
 			exitAfterStdoutFlush(0);
 		});
 }
+
+if (require.main === module) runHookProcess();

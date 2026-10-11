@@ -133,3 +133,99 @@ The test budget should not be raised to make the test pass, per the item 30 clos
 - Tenant DLP and NER enabled.
 - The final signed, installed artifact.
 - Concurrent agents on representative customer hardware, with an IO/CPU background load.
+
+## Addendum (2026-10-11, later): compile cache applied (optimisation #1)
+
+Optimisation #1 is now implemented. The raw samples are in [`evidence/hook-latency-2026-10-11-compile-cache.json`](evidence/hook-latency-2026-10-11-compile-cache.json). The caveats at the top of this record still apply. This addendum does not close item 30.
+
+### What changed
+
+`module.enableCompileCache()` only affects modules loaded after it is called, so it cannot sit inside the bundle it speeds up. Each per-call hook is now two files:
+
+- `dist/<hook>.cjs` keeps its name, so `hooks/hooks.json`, installers and host configs are unchanged. It is a ~13 KB bootstrap that enables the cache and then requires the bundle.
+- `dist/<hook>.bundle.cjs` is the unchanged hook bundle.
+
+This applies to these hooks:
+
+- Claude Code `pre-tool-use`, `post-tool-use`, `user-prompt-submit` and `session-start`.
+- Codex `pre-tool-use` (the `aidr-codex-hook` bin).
+- The Cursor/VS Code `aidr-hook`. Both hosts spawn it per event. The runner is now started through its exported `runHookProcess()`.
+
+`health`, `mcp-server` and `response-worker` start once per process and stay single files. SEA binaries embed the bundle directly.
+
+The build is `scripts/hook-bootstrap.mjs`, and the logic is `packages/core/src/hook-compile-cache.ts`.
+
+Behaviour:
+
+- **Cache directory.** The cache lives in `~/.singularity-aidr/compile-cache`. Before Node is pointed at it, the directory is created or repaired by core's `preparePrivateLocalDirectory`. On POSIX that means mode 0700, an owner check and symlink rejection. On Windows it means a protected ACL.
+  - Node writes only inside that directory: one `<node-version>-<arch>-<flags>` subdirectory with 0600 entries.
+  - The state directory is also agent-inaccessible under CLT-SELF-008.
+- **Best-effort.** The enable step never throws and never prints. Any failure leaves the verdict path unchanged: no directory, a file in its place, a symlink, an unsupported runtime such as Node < 22.1 or older Electron, or a Node API failure. Tests cover each case.
+- **Load failures block.** The bootstrap does not wrap the bundle's own verdict or error handling. If the bundle itself cannot be loaded (missing, unreadable, or throwing during init), the bootstrap exits 2 with a stderr reason. That is the host's blocking-error answer. A plain Node crash exits 1, which Claude Code and Codex treat as non-blocking.
+- **Off switch.** `AIDR_DISABLE_COMPILE_CACHE=1` (or `true`) turns the cache off, as does Node's `NODE_DISABLE_COMPILE_CACHE`.
+- **Off by default on Windows.** Hardening the directory there runs native ACL probes, and PowerShell on first use, before the hook's deadline watchdog is armed. That cost is unmeasured and may exceed the saving. `AIDR_ENABLE_COMPILE_CACHE=1` opts in so the Windows item-30 run can measure it.
+
+### Integrity
+
+Node stores the source length and a source checksum in each cache entry and checks both on load. This was observed with `NODE_DEBUG_NATIVE=COMPILE_CACHE`:
+
+- Appending bytes to the bundle was rejected with `code size mismatch`.
+- A same-length byte change was rejected with `code hash mismatch`.
+
+In both cases Node recompiled from the file on disk and rewrote the entry. A modified bundle therefore never runs stale cached code.
+
+The checksum is not cryptographic. The cache is trusted as much as the directory that holds it: anyone who can write `~/.singularity-aidr` could plant V8 code. That is the same trust boundary as the config, allowlist and approval state in that directory. This is why the cache must be in the private, agent-blocked directory and not in a shared temp directory.
+
+### Results
+
+The method follows the original record:
+
+- A new `node` process per call, with the Claude Code hook JSON on stdin.
+- `AIDR_*` and `NODE_COMPILE_CACHE*` are cleared.
+- The timer runs from spawn to exit, and one untimed priming call is made per arm.
+- Cold calls use a fresh `HOME` per call (n = 30 per arm).
+- Warm calls use one persistent `HOME` per arm (n = 100 per arm) and rotate 7 benign commands. The first warm call is reported separately.
+
+The three arms are interleaved call by call, so host contention affects each arm equally:
+
+| Arm | What runs |
+|---|---|
+| **A** | `node pre-tool-use.bundle.cjs`, i.e. the pre-change single-file hook |
+| **B** | The bootstrap with `AIDR_DISABLE_COMPILE_CACHE=1` |
+| **C** | The bootstrap with the default settings (cache on) |
+
+The bundle sha256 is `c310aae9…` and the bootstrap sha256 is `6bd844c8…`, a development build of `315ab50f` plus the working tree.
+
+No fully quiet window was available; other agents were running Postgres/Supabase suites.
+
+**Moderate load** (load average 2.97 at start). All values are in ms.
+
+| Scenario | Arm | n | p50 | p95 | p99 | max | mean | errors |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| Cold, fresh HOME | A | 30 | 492 | 550 | 563 | 563 | 501 | 0 |
+| Cold, fresh HOME | B | 30 | 514 | 595 | 599 | 599 | 517 | 0 |
+| Cold, fresh HOME | C | 30 | 521 | 603 | 618 | 618 | 529 | 0 |
+| Warm, benign rotation | A | 100 | 493 | 552 | 580 | 692 | 497 | 0 |
+| Warm, benign rotation | B | 100 | 493 | 550 | 566 | 605 | 498 | 0 |
+| Warm, benign rotation | C | 100 | **438** | **478** | **500** | 513 | **438** | 0 |
+
+**Contended run** (load average 16.4 at start):
+
+| Scenario | p50 A / B / C | p95 A / B / C | errors |
+|---|---|---|---:|
+| Cold, fresh HOME (n = 30) | 537 / 551 / 571 | 645 / 699 / 822 | 0 |
+| Warm, benign rotation (n = 100) | 602 / 612 / 558 | 793 / 858 / 724 | 0 |
+
+### Reading
+
+- **Warm calls are about 55 ms faster at p50 (-11%) and about 73 ms faster at p95 (-13%)** than the pre-change hook in the moderate run. Every call after a user's first call is a warm call. This matches the earlier `NODE_COMPILE_CACHE` experiment (-60 ms). In the contended run the p50 gain was about 44 ms (-7%).
+- **A fresh HOME pays a one-off cost of about +20–30 ms at p50.** That call creates the private directory and writes the ~1.5 MB cache entry. It happens once per user, per Node version and per installed bundle. The `pre-tool-use-latency.test.ts` budget test uses a fresh HOME per spawn, so it measures this cold path and gains nothing from the cache.
+- **The bootstrap itself costs nothing measurable.** Warm A and B are equal. The B-vs-A cold difference (+21 ms moderate, +14 ms contended) is within the run-to-run spread of 30 samples.
+- **No errors were observed.** No call had a decision change, stderr output or a non-zero exit across 780 timed calls.
+- The about-0.45 s floor is unchanged. Optimisations #2–#4 remain as proposed.
+
+### Still open
+
+- **Windows measurement.** The cache is off by default on Windows. Item 30's Windows run should measure `AIDR_ENABLE_COMPILE_CACHE=1` against the default, including the ACL probe cost.
+- **macOS measurement.**
+- **Exit-2 load-failure block on Cursor and VS Code.** It is unit-tested against the Claude Code bundle and the documented exit-2 semantics. It has not been observed in real Cursor or VS Code hosts.

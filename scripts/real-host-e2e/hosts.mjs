@@ -449,16 +449,26 @@ export const ADAPTERS = Object.freeze({ "claude-code": claudeCode, codex, openco
 
 /** Which connector build artefacts an adapter loads; a missing one is a setup failure, never a skip. */
 export const CONNECTOR_ARTIFACTS = Object.freeze({
-	"claude-code": ["packages/claude-code/dist/pre-tool-use.cjs", "packages/claude-code/dist/post-tool-use.cjs", "packages/claude-code/dist/user-prompt-submit.cjs", "hooks/hooks.json"],
-	codex: ["packages/codex/dist/pre-tool-use.cjs"],
+	// Each per-call hook is a compile-cache bootstrap (`<hook>.cjs`) plus the bundle it requires.
+	"claude-code": [
+		"packages/claude-code/dist/pre-tool-use.cjs",
+		"packages/claude-code/dist/pre-tool-use.bundle.cjs",
+		"packages/claude-code/dist/post-tool-use.cjs",
+		"packages/claude-code/dist/post-tool-use.bundle.cjs",
+		"packages/claude-code/dist/user-prompt-submit.cjs",
+		"packages/claude-code/dist/user-prompt-submit.bundle.cjs",
+		"hooks/hooks.json",
+	],
+	codex: ["packages/codex/dist/pre-tool-use.cjs", "packages/codex/dist/pre-tool-use.bundle.cjs"],
 	opencode: ["packages/opencode/dist/index.js"],
 	openclaw: ["packages/openclaw/dist/index.cjs", "packages/openclaw/openclaw.plugin.json"],
 });
 
 /** Build flavour baked into a connector artefact (release builds embed "commercial"). */
 const FLAVOR_FILES = Object.freeze({
-	"claude-code": "packages/claude-code/dist/pre-tool-use.cjs",
-	codex: "packages/codex/dist/pre-tool-use.cjs",
+	// The hook bundle, not its compile-cache bootstrap, embeds core's build flavour.
+	"claude-code": "packages/claude-code/dist/pre-tool-use.bundle.cjs",
+	codex: "packages/codex/dist/pre-tool-use.bundle.cjs",
 	// The OpenCode plugin imports the core package rather than bundling it.
 	opencode: "packages/core/dist/build-flavor.js",
 	openclaw: "packages/openclaw/dist/index.cjs",

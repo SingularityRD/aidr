@@ -164,6 +164,11 @@ export const RELEASE_PACKAGES = [
 		},
 		runs: [
 			{ id: "aidr-claude-code health --json", kind: "bin", bin: "aidr-claude-code", args: ["health", "--json"], expect: "claude-health-json" },
+			// Each per-call hook ships as a compile-cache bootstrap plus the bundle it requires.
+			...["pre-tool-use", "post-tool-use", "session-start", "user-prompt-submit"].flatMap((hook) => [
+				{ id: `${hook} hook bootstrap syntax`, kind: "syntax", entry: { files: `dist/${hook}.cjs` } },
+				{ id: `${hook} hook bundle syntax`, kind: "syntax", entry: { files: `dist/${hook}.bundle.cjs` } },
+			]),
 		],
 	},
 	{
@@ -175,6 +180,8 @@ export const RELEASE_PACKAGES = [
 		},
 		runs: [
 			{ id: "hook runner syntax", kind: "syntax", entry: { files: "dist/aidr-hook.cjs" } },
+			// aidr-hook.cjs is the compile-cache bootstrap; this is the runner it requires.
+			{ id: "hook runner bundle syntax", kind: "syntax", entry: { files: "dist/aidr-hook.bundle.cjs" } },
 			{ id: "extension entry syntax", kind: "syntax", entry: { main: true } },
 		],
 	},
@@ -228,6 +235,8 @@ export const RELEASE_PACKAGES = [
 		runs: [
 			{ id: "codex ESM import", kind: "import", entry: { exports: "." }, format: "esm", expected: { enforceCodexPreToolUse: "function" } },
 			{ id: "signed Codex hook and tamper boundary", kind: "codex-signed-bin", bin: "aidr-codex-hook" },
+			// aidr-codex-hook is the compile-cache bootstrap; this is the hook bundle it requires.
+			{ id: "codex hook bundle syntax", kind: "syntax", entry: { files: "dist/pre-tool-use.bundle.cjs" } },
 		],
 	},
 	{

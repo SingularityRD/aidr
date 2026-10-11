@@ -28,6 +28,7 @@
     "dist/cursor_extension.js",
     "dist/vscode_extension.js",
     "dist/aidr-hook.cjs",
+    "dist/aidr-hook.bundle.cjs",
     "dist/aidr-artifact.manifest.json",
     "dist/aidr-artifact.manifest.sig",
     "dist/aidr-sbom.cdx.json",

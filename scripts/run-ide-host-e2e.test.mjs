@@ -74,6 +74,7 @@ if (installIndex !== -1) {
   fs.writeFileSync(path.join(installed, "package.json"), JSON.stringify({ publisher: "SingularityRD", name: "aidr-cursor", main: "./dist/cursor_extension.js" }));
   const payloads = {
     "aidr-hook.cjs": "hook\n",
+    "aidr-hook.bundle.cjs": "hook bundle\n",
     "cursor_extension.js": "cursor\n",
     "vscode_extension.js": "vscode\n",
     "aidr-sbom.cdx.json": "{}\n",

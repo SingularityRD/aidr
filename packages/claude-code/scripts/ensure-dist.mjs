@@ -13,9 +13,13 @@ export const REQUIRED_RUNTIME_FILES = Object.freeze([
 	"health.cjs",
 	"mcp-server.cjs",
 	"post-tool-use.cjs",
+	"post-tool-use.bundle.cjs",
 	"pre-tool-use.cjs",
+	"pre-tool-use.bundle.cjs",
 	"session-start.cjs",
+	"session-start.bundle.cjs",
 	"user-prompt-submit.cjs",
+	"user-prompt-submit.bundle.cjs",
 ]);
 
 export const SIGNED_EVIDENCE_FILES = Object.freeze([

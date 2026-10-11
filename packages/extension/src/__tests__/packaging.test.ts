@@ -34,6 +34,7 @@ describe("VSIX packaging evidence", () => {
 			expect.arrayContaining([
 				...REQUIRED_ENTRY_BUNDLES,
 				"dist/aidr-hook.cjs",
+				"dist/aidr-hook.bundle.cjs",
 				...VSIX_INTEGRITY_EVIDENCE_FILES,
 			]),
 		);
