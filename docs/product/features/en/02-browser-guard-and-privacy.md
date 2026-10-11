@@ -44,14 +44,14 @@ Related documents: [product overview](../../overview.md) ·
     - [13c. AI acceptable-use notice](#13c-ai-acceptable-use-notice)
 14. [Enterprise managed policy and deployment](#14-enterprise-managed-policy-and-deployment)
 15. [Counts-only telemetry and the Browser Privacy dashboard](#15-counts-only-telemetry-and-the-browser-privacy-dashboard)
-16. [Optional native host for NER and OCR](#16-optional-native-host-for-ner-and-ocr)
+16. [Native host for NER and OCR (not sold in the first release)](#16-native-host-for-ner-and-ocr-not-sold-in-the-first-release)
 17. [What data leaves the device](#17-what-data-leaves-the-device)
 
 **Part B: AIDR Privacy engine**
 
 18. [Shared Turkish/English rule layer](#18-shared-turkishenglish-rule-layer)
 19. [Command-line text scanner (`aidr-privacy`)](#19-command-line-text-scanner-aidr-privacy)
-20. [Screenshot OCR redaction (`aidr-visual`)](#20-screenshot-ocr-redaction-aidr-visual)
+20. [Screenshot OCR redaction (`aidr-visual`, not sold in the first release)](#20-screenshot-ocr-redaction-aidr-visual-not-sold-in-the-first-release)
 21. [Document content disarm and reconstruction (CDR)](#21-document-content-disarm-and-reconstruction-cdr)
 22. [Enterprise gateway and platform layer](#22-enterprise-gateway-and-platform-layer)
 
@@ -1323,15 +1323,32 @@ two items.
 - The plan catalog describes editions; the code does not enforce plan features for
   ingest.
 
-### 16. Optional native host for NER and OCR
+### 16. Native host for NER and OCR (not sold in the first release)
+
+**First-release scope** — Not sold. Learned NER (`FRS-11`) and image OCR (`FRS-12` in
+`FEATURE_INVENTORY.json#first_release_scope`) are outside the first-release scope. The bridge
+code is in the extension, but the product ships without a NER or OCR model: no NER model has
+passed the quality policy (Wilson lower bounds of 0.95 for recall and 0.90 for precision, clean
+disruption at most 0.05), and OCR accuracy has not been measured. The detection that is sold
+is the built-in rule layer (features 3 and 18). Without a qualified model the parts that would
+depend on it refuse or report instead of passing data through:
+
+| Where | What happens without a qualified model | Reason code |
+|---|---|---|
+| Browser Guard, image uploads | No OCR-capable host: the image is reported as not inspected, never as clean (feature 7) | `IMAGE_NOT_INSPECTED` |
+| Browser Guard, prompts and pastes | No NER model block: the host reports `coverage: "rules-only"` and the prompt is checked with the rules only | — |
+| Privacy platform service (feature 22) | Refuses to start without an approved, qualified model manifest | `SERVICE_MODEL_APPROVAL_REQUIRED` |
+| Privacy platform, `defense` mode (the default) | Blocks text when learned NER coverage is missing | `NER_REQUIRED` |
 
 **What it does** — Connects the extension to the AIDR Privacy native messaging host
 (`com.singularity.aidr_privacy`) on the same machine. The host is intended to add learned
 named-entity recognition (NER) for names, addresses and locations that have no fixed shape,
-and, when configured with local OCR, to read the text in uploaded images.
+and, when configured with local OCR, to read the text in uploaded images. Both are opt-in
+augmentations that are not sold in the first release.
 
-**Why it matters** — Rules cannot recognise "Ahmet Kaya" in a sentence. A local NER model can,
-without sending text off the machine.
+**Why it matters** — Rules cannot recognise "Ahmet Kaya" in a sentence. A qualified local NER
+model could, without sending text off the machine; no model has qualified yet, so this is
+not offered.
 
 **How it works** — When `useNativeHost` is on, every prompt and paste scan asks the
 background worker for NER (`NATIVE_SCAN`) in parallel with the built-in rules. The worker's
@@ -1353,8 +1370,8 @@ most 65 seconds per image.
 
 **How to use** (see [native-host.md](../../../../packages/browser-guard/docs/native-host.md)):
 1. Install and register the host from `packages/privacy` (`docs/BROWSER.md` §4,
-   `deployment/README.md`), with an approved NER model block. Without one the host reports
-   `coverage: "rules-only"`.
+   `deployment/README.md`), with an approved NER model block. No model ships with the
+   product; without one the host reports `coverage: "rules-only"`.
 2. Admit Browser Guard's extension ID:
    `node native/prepare-host.mjs --config <abs> --out <abs> --extension-id <browser-guard-id>`.
 3. Turn it on: managed key `useNativeHost: true`, or Options → **Protection** → **Use the
@@ -1363,9 +1380,9 @@ most 65 seconds per image.
    when the administrator enabled the host the options page shows **Grant permission**.
    Browsers do not let policy grant this optional permission, so each user confirms it once.
 
-**Example** — With the host installed and enabled, the popup and the options page show
-"Advanced detection is connected", and "Write to Ahmet Kaya" is sent as "Write to
-`[PERSON_1]`". Otherwise they show "Advanced detection is unavailable; built-in rules are
+**Example** — With the host installed, enabled and given a model the customer supplies and
+approves, the popup and the options page show "Advanced detection is connected", and "Write
+to Ahmet Kaya" is sent as "Write to `[PERSON_1]`". Otherwise they show "Advanced detection is unavailable; built-in rules are
 active", protection continues with the built-in rules, and the in-page message says the
 check was rules-only.
 
@@ -1373,6 +1390,7 @@ check was rules-only.
 
 | | |
 |---|---|
+| First-release scope | Not sold (`FRS-11` NER, `FRS-12` image OCR); ships without a model |
 | Plan | Not listed as a separate plan feature |
 | Deployment | Local (endpoint process); managed endpoints |
 | Platforms | Chrome and Edge only (the host accepts only `chrome-extension://` callers; Firefox reports unavailable) |
@@ -1385,12 +1403,15 @@ check was rules-only.
   counts as "no NER result" for that prompt.
 - A prompt that is still being scanned by the host takes up to 2.5 seconds longer to send.
 - `packages/privacy` ships the host protocol but **no NER model weights and no accuracy
-  evidence**. Measure precision and recall on your own data.
+  evidence**; no model has passed the quality policy, which is why NER is not sold in the
+  first release.
 - OCR comes from the privacy package's visual layer (feature 20), used decision-only: an
   image with sensitive text is blocked, never masked. Images inside PDFs (scanned pages
   included) are extracted by Browser Guard and sent through the same path. OCR needs
-  the host's optional Python/Tesseract stack; the protocol is tested with fake OCR workers,
-  and real OCR accuracy must be measured on your own images.
+  the host's Python/Tesseract stack, which is not bundled; the protocol is tested with fake
+  OCR workers and OCR accuracy has not been measured, which is why image OCR is not sold in
+  the first release. Without it, images are reported as not inspected
+  (`IMAGE_NOT_INSPECTED`), never as clean.
 - A heavy model plus a large prompt can exceed the 2-second budget, and the bridge then
   backs off to rules only.
 
@@ -1454,10 +1475,10 @@ mean customer acceptance):
 | TR/EN text detection and masking | Tested (`pnpm test:privacy`) |
 | Browser-safe rule layer | Tested; used by Browser Guard |
 | Core DLP TR/EN detectors (agent connectors) | Integrated through a generated, drift-checked copy |
-| Screenshot OCR redaction | Tested with fake workers; real OCR needs the optional Python/native stack |
+| Screenshot OCR redaction | Not sold in the first release; ships without an OCR model. Tested with fake workers; real OCR needs the Python/native stack |
 | Server gateway, review portal, durable state | Tested locally; not wired into AIDR connectors |
 | Document CDR parser | Linux only; tests skip without Python parser packages or libseccomp |
-| Learned PERSON/ADDRESS NER | Not bundled |
+| Learned PERSON/ADDRESS NER | Not sold in the first release; no model has passed the quality policy and none ships |
 | Legacy Chrome extension and native host | Superseded by Browser Guard for browsers |
 
 ### 18. Shared Turkish/English rule layer
@@ -1540,7 +1561,14 @@ node packages/privacy/dist/cli.js --redact < notes.txt       # [REDACTED] instea
   unlike Browser Guard.
 - Rules only (`coverage: "rules-only"`) unless a NER provider is configured through the SDK.
 
-### 20. Screenshot OCR redaction (`aidr-visual`)
+### 20. Screenshot OCR redaction (`aidr-visual`, not sold in the first release)
+
+**First-release scope** — Not sold (`FRS-12` in `FEATURE_INVENTORY.json#first_release_scope`).
+The engine is in `packages/privacy`, but no OCR model ships with the product (Tesseract and its
+language data are not bundled) and OCR accuracy has not been measured. It is described here
+for evaluation; it is not offered or claimed until named acceptance closes. Any failure fails
+closed (below), and without an OCR-capable host Browser Guard reports images as not inspected
+(`IMAGE_NOT_INSPECTED`), never as clean.
 
 **What it does** — Finds personal data in screenshots and image attachments with local OCR,
 paints solid black boxes over it and rebuilds a clean PNG.
@@ -1573,13 +1601,15 @@ lines blacked out (whole-line masking by default; `granularity: 'word'` masks le
 
 | | |
 |---|---|
+| First-release scope | Not sold (`FRS-12`); ships without an OCR model |
 | Plan | Not listed as a separate plan feature |
 | Deployment | Local / On-prem / Air-gapped (local OCR; no cloud service) |
 | Platforms | Node.js 22.16+ with Python, Tesseract 5 and libzbar; Windows file-system behaviour not tested |
 
 **Limitations**
 - Tested in this repository with fake OCR workers. Real OCR accuracy depends on the installed
-  stack and has not been independently validated.
+  stack and has not been measured or independently validated; this is why it is not sold in
+  the first release.
 - No PDF, SVG, TIFF, GIF, HEIC or video. Text that OCR misses cannot be masked.
 - Browser Guard uses this engine decision-only through the native host (`inspect`, feature 16):
   an uploaded image with sensitive text is blocked; the redacted PNG is not used there.

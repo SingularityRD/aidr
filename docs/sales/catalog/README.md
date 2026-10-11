@@ -40,8 +40,15 @@ editions, 10 next steps and contact.
   and that every referenced feature exists and is not pending.
 - The logo is `images/singularity-logo.png`, embedded unchanged. Edition membership,
   deployment options and retention come from `packages/dashboard/src/billing/plans.ts`.
-- Fonts come from the system stack (Inter, Segoe UI, Helvetica Neue, then Liberation
-  Sans/Arial). Re-render after any copy change and look at every preview.
+- Fonts: the pages are fitted to Liberation Sans / Liberation Mono, which is what the CSS
+  stack (Inter, Segoe UI, Helvetica Neue, then Liberation Sans/Arial) resolves to on Linux
+  without Inter. On Linux the renderer runs Chromium with
+  `FONTCONFIG_FILE=scripts/lib/render-fonts.conf`, which hides every font except
+  Liberation, DejaVu and Noto Color Emoji, so an installed Inter (or a fontconfig rule
+  preferring it) does not change the layout. It refuses to run without the Liberation fonts
+  (`fonts-liberation` / `liberation-fonts`). If the pinned Playwright Chromium is not
+  installed, the newest installed one is used and logged (`AIDR_CHROMIUM_PATH` overrides).
+  Re-render after any copy change and look at every preview.
 
 ## Rendering
 
