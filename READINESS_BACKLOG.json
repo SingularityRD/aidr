@@ -2035,16 +2035,24 @@
       "id": "AIDR-079",
       "priority": "P0",
       "feature": "First-party dashboard and landing container runtime vulnerabilities",
-      "status": "IMPLEMENTED_UNVERIFIED",
+      "status": "VERIFIED_CLOSED",
       "component": "deploy/dashboard/Dockerfile; aidr-landing/Dockerfile",
       "impact": "Actual full-image scans found 49 HIGH and three CRITICAL dashboard findings, and 60 HIGH and four CRITICAL landing findings. Clean npm production audits did not cover their operating-system bases or bundled unused build tools.",
       "acceptanceCriteria": "Use an official supported pinned Node base, remove unused build tooling only from the production runner, preserve required native libraries and startup behavior, and repeat full OS/language scans without ignores plus hardened nonroot runtime checks.",
       "evidence": [
         "Exact replacements built with the supported pinned Node24.21/Alpine3.24 base physically omit unused npm/Corepack/Yarn; native nonroot read-only startup/readiness checks and full OS/language scans pass.",
-        "docs/production-readiness/runtime-image-security-2026-10-11.md: dashboard half verified (0 CRITICAL/0 HIGH without ignores, Trivy 0.73.0 DB 2026-10-10; nonroot, read-only, cap-drop ALL, no-new-privileges startup with /livez and /readyz checks). Landing NOT verified: public SingularityRD/aidr-landing main e039be0b (sole branch) still uses unpinned node:20-slim with corepack and full node_modules in the runner; that stock base alone is 7 CRITICAL/84 HIGH."
+        "docs/production-readiness/runtime-image-security-2026-10-11.md: dashboard half verified (0 CRITICAL/0 HIGH without ignores, Trivy 0.73.0 DB 2026-10-10; nonroot, read-only, cap-drop ALL, no-new-privileges startup with /livez and /readyz checks). Landing NOT verified: public SingularityRD/aidr-landing main e039be0b (sole branch) still uses unpinned node:20-slim with corepack and full node_modules in the runner; that stock base alone is 7 CRITICAL/84 HIGH.",
+        "docs/production-readiness/runtime-image-security-2026-10-11-landing.md: landing rebuilt from merged aidr-landing main 12750cab (PR #1) and dashboard rebuilt by ci-local onprem-dashboard-image at aidr b8b36459; both 0 CRITICAL/0 HIGH without ignores (Trivy 0.73.0, DB 2026-10-11T07:05Z; residual MEDIUM only: zlib, landing protobufjs 8.5.0) vs stock base 8 HIGH. Landing --read-only with tmpfs /tmp and /app/.next/cache, cap-drop ALL, no-new-privileges, uid 1000: /api/health 200 JSON no-store; /api/ready JSON no-store, 503 unconfigured and 200 in demo mode. The landing build used an uncommitted scratch Dockerfile adding the sandbox proxy CA as a BuildKit secret on the two network RUN steps only; runner stage unchanged."
       ],
-      "localEvidence": [],
-      "remainingExternal": "Landing remediation is not present in any reachable source (aidr-landing main e039be0b is unchanged); it must be committed, rebuilt, scanned without ignores and runtime-checked before closure. Fresh compiled customer-kit dashboard bytes will be rebuilt and checked separately; independent Security/native provider/customer acceptance remains open. Raw old first-party image REDs are preserved."
+      "localEvidence": [
+        {
+          "claim": "Landing (aidr-landing main 12750cab, merged PR #1) and dashboard (deploy/dashboard/Dockerfile via deployment-prepare) images on the pinned Node24.21/Alpine3.24 base with package managers removed from the runner scan 0 CRITICAL/0 HIGH without ignores and start nonroot under --read-only, cap-drop ALL and no-new-privileges; landing /api/health and /api/ready return JSON with Cache-Control no-store, readiness fails closed (503) when unconfigured; dashboard /livez 200 and /readyz 503 with upstreams unreachable.",
+          "evidencePath": "docs/production-readiness/runtime-image-security-2026-10-11-landing.md",
+          "command": "node --test deploy/dashboard/server.test.mjs scripts/dockerfile-context.test.mjs",
+          "verifiedBy": "2026-10-11 (Europe/Istanbul): Trivy 0.73.0 DB 2026-10-11T07:05:14Z, compact results in docs/production-readiness/evidence/runtime-image-scan-2026-10-11-landing/summary.json; landing image config sha256:22f21f50, dashboard config sha256:ff5a6e7b; Firestore emulator 1.22.0 client/admin smoke on grpc-js 1.14.6 passed on Node 24.21.0; server/dockerfile-context tests 7/7. Linux x86_64 local build only; landing build needed an uncommitted proxy-CA BuildKit secret in this sandbox; not a registry/CI build, independent Security review or customer acceptance."
+        }
+      ],
+      "remainingExternal": "Local verification only. Independent Security review and customer acceptance of both images, a landing CI/registry build outside this sandbox (no proxy-CA workaround), fresh compiled customer-kit dashboard bytes, and the residual MEDIUM findings (Alpine zlib CVE-2026-85091 needs a new base; landing protobufjs 8.5.0 has fixes in 8.6.x) remain open. Raw old first-party image REDs are preserved."
     },
     {
       "id": "AIDR-080",

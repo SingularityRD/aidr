@@ -3821,7 +3821,6 @@
     "AIDR-051",
     "AIDR-052",
     "AIDR-070",
-    "AIDR-079",
     "AIDR-080"
   ],
   "current_readiness_gate": "docs/production-readiness/first-customer-ready.md",

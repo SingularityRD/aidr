@@ -87,7 +87,7 @@ Güncel pre-customer gate [docs/production-readiness/first-customer-ready.md](do
 | INV-001 | Yatırımcı metriklerinin kanıt ve onay sözlüğü | Yatırımcı profili onayı |
 | CLM-001 | Müşteri ve satış iddialarının kanıt onayı | Ortam/ölçüm/isimli onay |
 
-Bu tek liste 59 iş paketini kapsar. Açık backlog kayıtları ve kısmi özellikler bu kimliklere eşlenir; ayrıca yeni iş gibi toplanmaz. Kod bulunması kalan ürün bağlantısını, model onayını veya saha kabulünü kapatmaz. Ayrıntılarda **kalan ürün bağlantısı** varsa ayrıca belirtilmiştir.
+Bu tek liste 60 iş paketini kapsar. Açık backlog kayıtları ve kısmi özellikler bu kimliklere eşlenir; ayrıca yeni iş gibi toplanmaz. Kod bulunması kalan ürün bağlantısını, model onayını veya saha kabulünü kapatmaz. Ayrıntılarda **kalan ürün bağlantısı** varsa ayrıca belirtilmiştir.
 
 ### T01 — Gerçek host ve işletim sistemi kapsamı (P0)
 
