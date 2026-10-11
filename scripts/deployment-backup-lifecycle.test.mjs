@@ -18,7 +18,8 @@ const BACKUP_ENV = resolve("deploy/backup/aidr-backup-offsite.env.example");
 const BACKUP_README = resolve("deploy/backup/README.md");
 const FIRST_CUSTOMER_GUIDE = resolve("deploy/FIRST_CUSTOMER.md");
 const UPGRADE_GUIDE = resolve("deploy/UPGRADE.md");
-const FAKE_PGSODIUM_KEY = "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0";
+// Built at runtime: a deterministic, obviously synthetic 64-hex key (no secret-shaped literal).
+const FAKE_PGSODIUM_KEY = Buffer.alloc(32, 0x5a).toString("hex");
 const VALID_ARCHIVE = gzipSync(Buffer.alloc(1024)).toString("base64");
 const RECOVERY_KEY = Buffer.from("ab".repeat(32), "hex");
 
