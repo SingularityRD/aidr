@@ -1,0 +1,71 @@
+{
+ "name": "helm-api-gw-current-v1-39-1",
+ "service": "helm-api-gw",
+ "role": "current",
+ "image": "envoyproxy/envoy:v1.39.1",
+ "ref": "mirror.gcr.io/envoyproxy/envoy:v1.39.1@sha256:57e14a549d7bd43c8d3f6d03e8cfa653e037d4b38e133acd9b54f38c524401b4",
+ "index_digest": "sha256:57e14a549d7bd43c8d3f6d03e8cfa653e037d4b38e133acd9b54f38c524401b4",
+ "docker_hub_tag_digest_match": true,
+ "started_at": "2026-10-11T02:42:31.458Z",
+ "finished_at": "2026-10-11T02:42:31.461Z",
+ "succeeded": true,
+ "os": {
+  "Family": "ubuntu",
+  "Name": "22.04"
+ },
+ "scanned_image_id": "sha256:ef41fe510c94b2a96c03e5f19a0bdce3ec92819c430401229e94faf768af792f",
+ "repo_digests": [
+  "mirror.gcr.io/envoyproxy/envoy@sha256:57e14a549d7bd43c8d3f6d03e8cfa653e037d4b38e133acd9b54f38c524401b4"
+ ],
+ "all_severity_findings": {
+  "MEDIUM": 53,
+  "LOW": 34,
+  "HIGH": 2
+ },
+ "coverage": [
+  {
+   "target": "mirror.gcr.io/envoyproxy/envoy:v1.39.1@sha256:57e14a549d7bd43c8d3f6d03e8cfa653e037d4b38e133acd9b54f38c524401b4 (ubuntu 22.04)",
+   "class": "os-pkgs",
+   "type": "ubuntu",
+   "vulnerabilities": 89
+  }
+ ],
+ "counts": {
+  "CRITICAL": {
+   "findings": 0,
+   "unique_ids": 0,
+   "fixed_available": 0,
+   "fixed_available_unique_ids": 0
+  },
+  "HIGH": {
+   "findings": 2,
+   "unique_ids": 1,
+   "fixed_available": 2,
+   "fixed_available_unique_ids": 1
+  },
+  "total_findings": 2
+ },
+ "findings": [
+  {
+   "id": "CVE-2026-84782",
+   "severity": "HIGH",
+   "pkg": "libssl3",
+   "installed": "3.0.2-0ubuntu1.29",
+   "fixed": "3.0.2-0ubuntu1.30",
+   "status": "fixed",
+   "target": "envoyproxy/envoy:v1.39.1@sha256:57e14a549d7bd43c8d3f6d03e8cfa653e037d4b38e133acd9b54f38c524401b4 (ubuntu 22.04)",
+   "type": "ubuntu"
+  },
+  {
+   "id": "CVE-2026-84782",
+   "severity": "HIGH",
+   "pkg": "openssl",
+   "installed": "3.0.2-0ubuntu1.29",
+   "fixed": "3.0.2-0ubuntu1.30",
+   "status": "fixed",
+   "target": "envoyproxy/envoy:v1.39.1@sha256:57e14a549d7bd43c8d3f6d03e8cfa653e037d4b38e133acd9b54f38c524401b4 (ubuntu 22.04)",
+   "type": "ubuntu"
+  }
+ ],
+ "trivy_report_created_at": "2026-10-11T02:32:31.278151582Z"
+}

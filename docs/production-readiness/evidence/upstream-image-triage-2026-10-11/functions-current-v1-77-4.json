@@ -1,0 +1,673 @@
+{
+ "name": "functions-current-v1-77-4",
+ "service": "functions",
+ "role": "current",
+ "image": "supabase/edge-runtime:v1.77.4",
+ "ref": "mirror.gcr.io/supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8",
+ "index_digest": "sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8",
+ "docker_hub_tag_digest_match": true,
+ "started_at": "2026-10-11T02:42:31.383Z",
+ "finished_at": "2026-10-11T02:42:31.389Z",
+ "succeeded": true,
+ "os": {
+  "Family": "debian",
+  "Name": "12.15"
+ },
+ "scanned_image_id": "sha256:f23bd2ca69d1e46ab681999dba6b4516aa3d3f477098db55fa583e636850c7ed",
+ "repo_digests": [
+  "mirror.gcr.io/supabase/edge-runtime@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8"
+ ],
+ "all_severity_findings": {
+  "LOW": 97,
+  "HIGH": 58,
+  "MEDIUM": 124,
+  "UNKNOWN": 5,
+  "CRITICAL": 4
+ },
+ "coverage": [
+  {
+   "target": "mirror.gcr.io/supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "class": "os-pkgs",
+   "type": "debian",
+   "vulnerabilities": 288
+  }
+ ],
+ "counts": {
+  "CRITICAL": {
+   "findings": 4,
+   "unique_ids": 4,
+   "fixed_available": 3,
+   "fixed_available_unique_ids": 3
+  },
+  "HIGH": {
+   "findings": 58,
+   "unique_ids": 18,
+   "fixed_available": 5,
+   "fixed_available_unique_ids": 5
+  },
+  "total_findings": 62
+ },
+ "findings": [
+  {
+   "id": "CVE-2023-45853",
+   "severity": "CRITICAL",
+   "pkg": "zlib1g",
+   "installed": "1:1.2.13.dfsg-1",
+   "fixed": null,
+   "status": "will_not_fix",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-13221",
+   "severity": "CRITICAL",
+   "pkg": "perl-base",
+   "installed": "5.36.0-7+deb12u3",
+   "fixed": "5.36.0-7+deb12u4",
+   "status": "fixed",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-42496",
+   "severity": "CRITICAL",
+   "pkg": "perl-base",
+   "installed": "5.36.0-7+deb12u3",
+   "fixed": "5.36.0-7+deb12u4",
+   "status": "fixed",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-8376",
+   "severity": "CRITICAL",
+   "pkg": "perl-base",
+   "installed": "5.36.0-7+deb12u3",
+   "fixed": "5.36.0-7+deb12u4",
+   "status": "fixed",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2025-69720",
+   "severity": "HIGH",
+   "pkg": "libtinfo6",
+   "installed": "6.4-4",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2025-69720",
+   "severity": "HIGH",
+   "pkg": "ncurses-base",
+   "installed": "6.4-4",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2025-69720",
+   "severity": "HIGH",
+   "pkg": "ncurses-bin",
+   "installed": "6.4-4",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-103111",
+   "severity": "HIGH",
+   "pkg": "libpcre2-8-0",
+   "installed": "10.42-1+deb12u1",
+   "fixed": "10.42-1+deb12u2",
+   "status": "fixed",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-16742",
+   "severity": "HIGH",
+   "pkg": "libsystemd0",
+   "installed": "252.39-1~deb12u2",
+   "fixed": null,
+   "status": "fix_deferred",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-16742",
+   "severity": "HIGH",
+   "pkg": "libudev1",
+   "installed": "252.39-1~deb12u2",
+   "fixed": null,
+   "status": "fix_deferred",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-41992",
+   "severity": "HIGH",
+   "pkg": "gzip",
+   "installed": "1.12-1",
+   "fixed": null,
+   "status": "fix_deferred",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-42497",
+   "severity": "HIGH",
+   "pkg": "perl-base",
+   "installed": "5.36.0-7+deb12u3",
+   "fixed": "5.36.0-7+deb12u4",
+   "status": "fixed",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-48962",
+   "severity": "HIGH",
+   "pkg": "perl-base",
+   "installed": "5.36.0-7+deb12u3",
+   "fixed": "5.36.0-7+deb12u4",
+   "status": "fixed",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-53613",
+   "severity": "HIGH",
+   "pkg": "bsdutils",
+   "installed": "1:2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-53613",
+   "severity": "HIGH",
+   "pkg": "libblkid1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-53613",
+   "severity": "HIGH",
+   "pkg": "libmount1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-53613",
+   "severity": "HIGH",
+   "pkg": "libsmartcols1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-53613",
+   "severity": "HIGH",
+   "pkg": "libuuid1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-53613",
+   "severity": "HIGH",
+   "pkg": "mount",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-53613",
+   "severity": "HIGH",
+   "pkg": "util-linux",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-53613",
+   "severity": "HIGH",
+   "pkg": "util-linux-extra",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-54369",
+   "severity": "HIGH",
+   "pkg": "libacl1",
+   "installed": "2.3.1-3",
+   "fixed": null,
+   "status": "fix_deferred",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-57432",
+   "severity": "HIGH",
+   "pkg": "perl-base",
+   "installed": "5.36.0-7+deb12u3",
+   "fixed": "5.36.0-7+deb12u4",
+   "status": "fixed",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-57433",
+   "severity": "HIGH",
+   "pkg": "perl-base",
+   "installed": "5.36.0-7+deb12u3",
+   "fixed": "5.36.0-7+deb12u4",
+   "status": "fixed",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-76642",
+   "severity": "HIGH",
+   "pkg": "bsdutils",
+   "installed": "1:2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-76642",
+   "severity": "HIGH",
+   "pkg": "libblkid1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-76642",
+   "severity": "HIGH",
+   "pkg": "libmount1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-76642",
+   "severity": "HIGH",
+   "pkg": "libsmartcols1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-76642",
+   "severity": "HIGH",
+   "pkg": "libuuid1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-76642",
+   "severity": "HIGH",
+   "pkg": "mount",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-76642",
+   "severity": "HIGH",
+   "pkg": "util-linux",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-76642",
+   "severity": "HIGH",
+   "pkg": "util-linux-extra",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78408",
+   "severity": "HIGH",
+   "pkg": "bsdutils",
+   "installed": "1:2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78408",
+   "severity": "HIGH",
+   "pkg": "libblkid1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78408",
+   "severity": "HIGH",
+   "pkg": "libmount1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78408",
+   "severity": "HIGH",
+   "pkg": "libsmartcols1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78408",
+   "severity": "HIGH",
+   "pkg": "libuuid1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78408",
+   "severity": "HIGH",
+   "pkg": "mount",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78408",
+   "severity": "HIGH",
+   "pkg": "util-linux",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78408",
+   "severity": "HIGH",
+   "pkg": "util-linux-extra",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78409",
+   "severity": "HIGH",
+   "pkg": "bsdutils",
+   "installed": "1:2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78409",
+   "severity": "HIGH",
+   "pkg": "libblkid1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78409",
+   "severity": "HIGH",
+   "pkg": "libmount1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78409",
+   "severity": "HIGH",
+   "pkg": "libsmartcols1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78409",
+   "severity": "HIGH",
+   "pkg": "libuuid1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78409",
+   "severity": "HIGH",
+   "pkg": "mount",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78409",
+   "severity": "HIGH",
+   "pkg": "util-linux",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78409",
+   "severity": "HIGH",
+   "pkg": "util-linux-extra",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78410",
+   "severity": "HIGH",
+   "pkg": "bsdutils",
+   "installed": "1:2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78410",
+   "severity": "HIGH",
+   "pkg": "libblkid1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78410",
+   "severity": "HIGH",
+   "pkg": "libmount1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78410",
+   "severity": "HIGH",
+   "pkg": "libsmartcols1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78410",
+   "severity": "HIGH",
+   "pkg": "libuuid1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78410",
+   "severity": "HIGH",
+   "pkg": "mount",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78410",
+   "severity": "HIGH",
+   "pkg": "util-linux",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78410",
+   "severity": "HIGH",
+   "pkg": "util-linux-extra",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-84782",
+   "severity": "HIGH",
+   "pkg": "libssl-dev",
+   "installed": "3.0.20-1~deb12u2",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-84782",
+   "severity": "HIGH",
+   "pkg": "libssl3",
+   "installed": "3.0.20-1~deb12u2",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-84782",
+   "severity": "HIGH",
+   "pkg": "openssl",
+   "installed": "3.0.20-1~deb12u2",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-88647",
+   "severity": "HIGH",
+   "pkg": "libgnutls30",
+   "installed": "3.7.9-2+deb12u7",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-88648",
+   "severity": "HIGH",
+   "pkg": "libgnutls30",
+   "installed": "3.7.9-2+deb12u7",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-9538",
+   "severity": "HIGH",
+   "pkg": "perl-base",
+   "installed": "5.36.0-7+deb12u3",
+   "fixed": null,
+   "status": "fix_deferred",
+   "target": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+   "type": "debian"
+  }
+ ],
+ "trivy_report_created_at": "2026-10-11T02:31:14.171845954Z"
+}

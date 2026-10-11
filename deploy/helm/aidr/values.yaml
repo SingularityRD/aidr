@@ -112,7 +112,7 @@ apiGateway:
   image:
     registry: docker.io
     repository: envoyproxy/envoy
-    tag: v1.39.1
+    tag: v1.39.2
     digest: ""
     pullPolicy: IfNotPresent
   replicaCount: 2
@@ -140,7 +140,7 @@ auth:
   image:
     registry: docker.io
     repository: supabase/gotrue
-    tag: v2.196.0
+    tag: v2.197.0
     digest: ""
     pullPolicy: IfNotPresent
   replicaCount: 2
@@ -196,7 +196,7 @@ storage:
   image:
     registry: docker.io
     repository: supabase/storage-api
-    tag: v1.74.0
+    tag: v1.80.2
     digest: ""
     pullPolicy: IfNotPresent
   resources: {}

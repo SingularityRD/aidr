@@ -46,7 +46,7 @@ Upstream images are used unchanged. Three AIDR images are built from this reposi
 | Image | Built from |
 |---|---|
 | `aidr/dashboard` | `deploy/dashboard/Dockerfile` + `packages/dashboard/dist` + `supabase/templates` |
-| `aidr/edge-functions` | `deploy/helm/images/edge-functions.Dockerfile`: `supabase/edge-runtime:v1.76.2`, the reviewed upstream router `docker/volumes/functions/main` (from `deploy/upstream` at the pinned commit; the `hello` sample is dropped) and `supabase/functions` |
+| `aidr/edge-functions` | `deploy/helm/images/edge-functions.Dockerfile`: `supabase/edge-runtime:v1.77.4` (digest-pinned), the reviewed upstream router `docker/volumes/functions/main` (from `deploy/upstream` at the pinned commit; the `hello` sample is dropped) and `supabase/functions` |
 | `aidr/migrations` | `deploy/helm/images/migrations.Dockerfile`: `postgres:17.6-alpine3.22` client, `migrate.sql` and `aidr-migrate.sh` |
 
 ```bash

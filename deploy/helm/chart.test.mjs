@@ -449,7 +449,7 @@ test("rendered images give the complete air-gap pull list", { skip: helmSkip }, 
 	for (const name of CI_VALUES) {
 		for (const { spec } of podSpecs(renderDocs(name))) for (const container of spec.containers) images.add(container.image);
 	}
-	for (const expected of ["supabase/gotrue:v2.196.0", "postgrest/postgrest:v14.17", "supabase/storage-api:v1.74.0", "envoyproxy/envoy:v1.39.1", "supabase/postgres:17.6.1.136", "aidr/dashboard:0.6.0", "aidr/edge-functions:0.6.0", "aidr/migrations:0.6.0"]) {
+	for (const expected of ["supabase/gotrue:v2.197.0", "postgrest/postgrest:v14.17", "supabase/storage-api:v1.80.2", "envoyproxy/envoy:v1.39.2", "supabase/postgres:17.6.1.136", "aidr/dashboard:0.6.0", "aidr/edge-functions:0.6.0", "aidr/migrations:0.6.0"]) {
 		assert.ok([...images].some((image) => image === `registry.example.internal/${expected}`), expected);
 	}
 });

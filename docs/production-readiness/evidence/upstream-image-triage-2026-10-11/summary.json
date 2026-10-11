@@ -1,0 +1,1194 @@
+{
+  "schema_version": 1,
+  "record": "docs/production-readiness/upstream-image-triage-2026-10-11.md",
+  "scanner": {
+    "engine": "trivy",
+    "version": "0.73.0",
+    "vulnerability_db": {
+      "Version": 2,
+      "NextUpdate": "2026-10-12T01:13:45.784565067Z",
+      "UpdatedAt": "2026-10-11T01:13:45.784565337Z",
+      "DownloadedAt": "2026-10-11T02:30:40.717629379Z"
+    },
+    "binary": "trivy_0.73.0_Linux-64bit.tar.gz sha256 2edd39da482bb4e9831962487b68f68e3928ec3137794757f54d00383d79547b (matches trivy_0.73.0_checksums.txt)"
+  },
+  "platform": "linux/amd64",
+  "started_at": "2026-10-11T02:29:40.738900987Z",
+  "finished_at": "2026-10-11T02:42:31.332789125Z",
+  "policy": {
+    "flags": "image --image-src remote --platform linux/amd64 --scanners vuln --pkg-types os,library --skip-db-update --config <empty {}> --ignorefile <empty> --format json",
+    "severities_recorded": [
+      "CRITICAL",
+      "HIGH"
+    ],
+    "ignore_file": "none (empty file)",
+    "vex": "none",
+    "transport": "mirror.gcr.io; every index digest equals the docker.io tag digest from hub.docker.com at resolve time",
+    "counting": "findings = every package/target occurrence reported by Trivy"
+  },
+  "images": [
+    {
+      "name": "studio-current-2026-10-05-sha-94b8b06",
+      "service": "studio",
+      "role": "current",
+      "image": "supabase/studio:2026.10.05-sha-94b8b06",
+      "ref": "mirror.gcr.io/supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237",
+      "index_digest": "sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237",
+      "docker_hub_tag_digest_match": true,
+      "started_at": "2026-10-11T02:42:20.652Z",
+      "finished_at": "2026-10-11T02:42:20.782Z",
+      "succeeded": true,
+      "os": {
+        "Family": "debian",
+        "Name": "12.15"
+      },
+      "scanned_image_id": "sha256:7fe04e8673b6b63741dca914cbbdf95de2c4728e0b61e1076aa8bbb42128fecd",
+      "repo_digests": [
+        "mirror.gcr.io/supabase/studio@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237"
+      ],
+      "all_severity_findings": {
+        "LOW": 1033,
+        "HIGH": 321,
+        "MEDIUM": 2251,
+        "UNKNOWN": 16,
+        "CRITICAL": 17
+      },
+      "coverage": [
+        {
+          "target": "mirror.gcr.io/supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+          "class": "os-pkgs",
+          "type": "debian",
+          "vulnerabilities": 3588
+        },
+        {
+          "target": "Node.js",
+          "class": "lang-pkgs",
+          "type": "node-pkg",
+          "vulnerabilities": 50
+        }
+      ],
+      "counts": {
+        "CRITICAL": {
+          "findings": 17,
+          "unique_ids": 8,
+          "fixed_available": 14,
+          "fixed_available_unique_ids": 5
+        },
+        "HIGH": {
+          "findings": 321,
+          "unique_ids": 242,
+          "fixed_available": 55,
+          "fixed_available_unique_ids": 25
+        },
+        "total_findings": 338
+      },
+      "trivy_report_created_at": "2026-10-11T02:30:02.208436141Z"
+    },
+    {
+      "name": "auth-current-v2-197-0",
+      "service": "auth",
+      "role": "current",
+      "image": "supabase/gotrue:v2.197.0",
+      "ref": "mirror.gcr.io/supabase/gotrue:v2.197.0@sha256:1736a63078f5922b198c4cbe50f80ab9a2d3b54fe8b7b6cfb2e9dc5dbbc12c6b",
+      "index_digest": "sha256:1736a63078f5922b198c4cbe50f80ab9a2d3b54fe8b7b6cfb2e9dc5dbbc12c6b",
+      "docker_hub_tag_digest_match": true,
+      "started_at": "2026-10-11T02:42:20.785Z",
+      "finished_at": "2026-10-11T02:42:20.787Z",
+      "succeeded": true,
+      "os": {
+        "Family": "alpine",
+        "Name": "3.24.1"
+      },
+      "scanned_image_id": "sha256:1181bff5ba4ce440013a63cef9f4cf13024c432d705c9b1fbc9e5b949e852f48",
+      "repo_digests": [
+        "mirror.gcr.io/supabase/gotrue@sha256:1736a63078f5922b198c4cbe50f80ab9a2d3b54fe8b7b6cfb2e9dc5dbbc12c6b"
+      ],
+      "all_severity_findings": {
+        "HIGH": 9,
+        "MEDIUM": 17,
+        "LOW": 18,
+        "UNKNOWN": 7
+      },
+      "coverage": [
+        {
+          "target": "mirror.gcr.io/supabase/gotrue:v2.197.0@sha256:1736a63078f5922b198c4cbe50f80ab9a2d3b54fe8b7b6cfb2e9dc5dbbc12c6b (alpine 3.24.1)",
+          "class": "os-pkgs",
+          "type": "alpine",
+          "vulnerabilities": 21
+        },
+        {
+          "target": "usr/local/bin/auth",
+          "class": "lang-pkgs",
+          "type": "gobinary",
+          "vulnerabilities": 30
+        }
+      ],
+      "counts": {
+        "CRITICAL": {
+          "findings": 0,
+          "unique_ids": 0,
+          "fixed_available": 0,
+          "fixed_available_unique_ids": 0
+        },
+        "HIGH": {
+          "findings": 9,
+          "unique_ids": 7,
+          "fixed_available": 8,
+          "fixed_available_unique_ids": 6
+        },
+        "total_findings": 9
+      },
+      "trivy_report_created_at": "2026-10-11T02:30:06.444926435Z"
+    },
+    {
+      "name": "storage-current-v1-80-0",
+      "service": "storage",
+      "role": "current",
+      "image": "supabase/storage-api:v1.80.0",
+      "ref": "mirror.gcr.io/supabase/storage-api:v1.80.0@sha256:15aa712fdda0dab83d6345c79b54230c1466c41161f1f3756651778b22c3b292",
+      "index_digest": "sha256:15aa712fdda0dab83d6345c79b54230c1466c41161f1f3756651778b22c3b292",
+      "docker_hub_tag_digest_match": true,
+      "started_at": "2026-10-11T02:42:20.787Z",
+      "finished_at": "2026-10-11T02:42:20.797Z",
+      "succeeded": true,
+      "os": {
+        "Family": "alpine",
+        "Name": "3.23.6"
+      },
+      "scanned_image_id": "sha256:78c2ee940c0a7b7d3125896ea7945a3632aa499ead1897bddd549fac1c4ec1b2",
+      "repo_digests": [
+        "mirror.gcr.io/supabase/storage-api@sha256:15aa712fdda0dab83d6345c79b54230c1466c41161f1f3756651778b22c3b292"
+      ],
+      "all_severity_findings": {
+        "HIGH": 57,
+        "MEDIUM": 64,
+        "LOW": 9,
+        "CRITICAL": 1
+      },
+      "coverage": [
+        {
+          "target": "mirror.gcr.io/supabase/storage-api:v1.80.0@sha256:15aa712fdda0dab83d6345c79b54230c1466c41161f1f3756651778b22c3b292 (alpine 3.23.6)",
+          "class": "os-pkgs",
+          "type": "alpine",
+          "vulnerabilities": 34
+        },
+        {
+          "target": "Node.js",
+          "class": "lang-pkgs",
+          "type": "node-pkg",
+          "vulnerabilities": 97
+        }
+      ],
+      "counts": {
+        "CRITICAL": {
+          "findings": 1,
+          "unique_ids": 1,
+          "fixed_available": 1,
+          "fixed_available_unique_ids": 1
+        },
+        "HIGH": {
+          "findings": 57,
+          "unique_ids": 33,
+          "fixed_available": 56,
+          "fixed_available_unique_ids": 32
+        },
+        "total_findings": 58
+      },
+      "trivy_report_created_at": "2026-10-11T02:30:17.776489772Z"
+    },
+    {
+      "name": "storage-candidate-v1-80-2",
+      "service": "storage",
+      "role": "candidate",
+      "image": "supabase/storage-api:v1.80.2",
+      "ref": "mirror.gcr.io/supabase/storage-api:v1.80.2@sha256:95b217a9c59e0ac06c6dcb539df3189a1668a2445fb43dbf29660d6968ffd7d2",
+      "index_digest": "sha256:95b217a9c59e0ac06c6dcb539df3189a1668a2445fb43dbf29660d6968ffd7d2",
+      "docker_hub_tag_digest_match": true,
+      "started_at": "2026-10-11T02:42:20.798Z",
+      "finished_at": "2026-10-11T02:42:25.977Z",
+      "succeeded": true,
+      "os": {
+        "Family": "alpine",
+        "Name": "3.23.6"
+      },
+      "scanned_image_id": "sha256:06da123ca3664542b8110df1d16596a1125971a1dc40f3aa67c2269ca9ad07f3",
+      "repo_digests": [
+        "mirror.gcr.io/supabase/storage-api@sha256:95b217a9c59e0ac06c6dcb539df3189a1668a2445fb43dbf29660d6968ffd7d2"
+      ],
+      "all_severity_findings": {
+        "HIGH": 57,
+        "MEDIUM": 64,
+        "LOW": 9,
+        "CRITICAL": 1
+      },
+      "coverage": [
+        {
+          "target": "mirror.gcr.io/supabase/storage-api:v1.80.2@sha256:95b217a9c59e0ac06c6dcb539df3189a1668a2445fb43dbf29660d6968ffd7d2 (alpine 3.23.6)",
+          "class": "os-pkgs",
+          "type": "alpine",
+          "vulnerabilities": 34
+        },
+        {
+          "target": "Node.js",
+          "class": "lang-pkgs",
+          "type": "node-pkg",
+          "vulnerabilities": 97
+        }
+      ],
+      "counts": {
+        "CRITICAL": {
+          "findings": 1,
+          "unique_ids": 1,
+          "fixed_available": 1,
+          "fixed_available_unique_ids": 1
+        },
+        "HIGH": {
+          "findings": 57,
+          "unique_ids": 33,
+          "fixed_available": 56,
+          "fixed_available_unique_ids": 32
+        },
+        "total_findings": 58
+      },
+      "trivy_report_created_at": "2026-10-11T02:42:25.939385787Z"
+    },
+    {
+      "name": "storage-candidate-v1-81-0",
+      "service": "storage",
+      "role": "candidate",
+      "image": "supabase/storage-api:v1.81.0",
+      "ref": "mirror.gcr.io/supabase/storage-api:v1.81.0@sha256:98ffec5d0678803783c30e404c27f4ec65e97efbe014088f2a86b4b8b54b9f54",
+      "index_digest": "sha256:98ffec5d0678803783c30e404c27f4ec65e97efbe014088f2a86b4b8b54b9f54",
+      "docker_hub_tag_digest_match": true,
+      "started_at": "2026-10-11T02:42:25.977Z",
+      "finished_at": "2026-10-11T02:42:31.372Z",
+      "succeeded": true,
+      "os": {
+        "Family": "alpine",
+        "Name": "3.23.6"
+      },
+      "scanned_image_id": "sha256:03a737a1b3dd5f4fc97af8a3b07bb1fc8c98c6d589377474fae3b20c9699527e",
+      "repo_digests": [
+        "mirror.gcr.io/supabase/storage-api@sha256:98ffec5d0678803783c30e404c27f4ec65e97efbe014088f2a86b4b8b54b9f54"
+      ],
+      "all_severity_findings": {
+        "HIGH": 57,
+        "MEDIUM": 64,
+        "LOW": 9,
+        "CRITICAL": 1
+      },
+      "coverage": [
+        {
+          "target": "mirror.gcr.io/supabase/storage-api:v1.81.0@sha256:98ffec5d0678803783c30e404c27f4ec65e97efbe014088f2a86b4b8b54b9f54 (alpine 3.23.6)",
+          "class": "os-pkgs",
+          "type": "alpine",
+          "vulnerabilities": 34
+        },
+        {
+          "target": "Node.js",
+          "class": "lang-pkgs",
+          "type": "node-pkg",
+          "vulnerabilities": 97
+        }
+      ],
+      "counts": {
+        "CRITICAL": {
+          "findings": 1,
+          "unique_ids": 1,
+          "fixed_available": 1,
+          "fixed_available_unique_ids": 1
+        },
+        "HIGH": {
+          "findings": 57,
+          "unique_ids": 33,
+          "fixed_available": 56,
+          "fixed_available_unique_ids": 32
+        },
+        "total_findings": 58
+      },
+      "trivy_report_created_at": "2026-10-11T02:42:31.332789125Z"
+    },
+    {
+      "name": "meta-current-v0-100-0",
+      "service": "meta",
+      "role": "current",
+      "image": "supabase/postgres-meta:v0.100.0",
+      "ref": "mirror.gcr.io/supabase/postgres-meta:v0.100.0@sha256:145325b7e39f8ef4931d6e8cfd3f6f4d655de09d72a2ccc96d9513542c2202bd",
+      "index_digest": "sha256:145325b7e39f8ef4931d6e8cfd3f6f4d655de09d72a2ccc96d9513542c2202bd",
+      "docker_hub_tag_digest_match": true,
+      "started_at": "2026-10-11T02:42:31.373Z",
+      "finished_at": "2026-10-11T02:42:31.382Z",
+      "succeeded": true,
+      "os": {
+        "Family": "debian",
+        "Name": "12.15"
+      },
+      "scanned_image_id": "sha256:8d72aca55290778ae61a1c5cef261728a04ff8d207bc8b3d5a8255faa2dea0e9",
+      "repo_digests": [
+        "mirror.gcr.io/supabase/postgres-meta@sha256:145325b7e39f8ef4931d6e8cfd3f6f4d655de09d72a2ccc96d9513542c2202bd"
+      ],
+      "all_severity_findings": {
+        "LOW": 83,
+        "HIGH": 89,
+        "MEDIUM": 133,
+        "UNKNOWN": 4,
+        "CRITICAL": 8
+      },
+      "coverage": [
+        {
+          "target": "mirror.gcr.io/supabase/postgres-meta:v0.100.0@sha256:145325b7e39f8ef4931d6e8cfd3f6f4d655de09d72a2ccc96d9513542c2202bd (debian 12.15)",
+          "class": "os-pkgs",
+          "type": "debian",
+          "vulnerabilities": 255
+        },
+        {
+          "target": "Node.js",
+          "class": "lang-pkgs",
+          "type": "node-pkg",
+          "vulnerabilities": 62
+        }
+      ],
+      "counts": {
+        "CRITICAL": {
+          "findings": 8,
+          "unique_ids": 8,
+          "fixed_available": 7,
+          "fixed_available_unique_ids": 7
+        },
+        "HIGH": {
+          "findings": 89,
+          "unique_ids": 41,
+          "fixed_available": 36,
+          "fixed_available_unique_ids": 27
+        },
+        "total_findings": 97
+      },
+      "trivy_report_created_at": "2026-10-11T02:31:07.670950361Z"
+    },
+    {
+      "name": "functions-current-v1-77-4",
+      "service": "functions",
+      "role": "current",
+      "image": "supabase/edge-runtime:v1.77.4",
+      "ref": "mirror.gcr.io/supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8",
+      "index_digest": "sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8",
+      "docker_hub_tag_digest_match": true,
+      "started_at": "2026-10-11T02:42:31.383Z",
+      "finished_at": "2026-10-11T02:42:31.389Z",
+      "succeeded": true,
+      "os": {
+        "Family": "debian",
+        "Name": "12.15"
+      },
+      "scanned_image_id": "sha256:f23bd2ca69d1e46ab681999dba6b4516aa3d3f477098db55fa583e636850c7ed",
+      "repo_digests": [
+        "mirror.gcr.io/supabase/edge-runtime@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8"
+      ],
+      "all_severity_findings": {
+        "LOW": 97,
+        "HIGH": 58,
+        "MEDIUM": 124,
+        "UNKNOWN": 5,
+        "CRITICAL": 4
+      },
+      "coverage": [
+        {
+          "target": "mirror.gcr.io/supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (debian 12.15)",
+          "class": "os-pkgs",
+          "type": "debian",
+          "vulnerabilities": 288
+        }
+      ],
+      "counts": {
+        "CRITICAL": {
+          "findings": 4,
+          "unique_ids": 4,
+          "fixed_available": 3,
+          "fixed_available_unique_ids": 3
+        },
+        "HIGH": {
+          "findings": 58,
+          "unique_ids": 18,
+          "fixed_available": 5,
+          "fixed_available_unique_ids": 5
+        },
+        "total_findings": 62
+      },
+      "trivy_report_created_at": "2026-10-11T02:31:14.171845954Z"
+    },
+    {
+      "name": "realtime-current-v2-134-10",
+      "service": "realtime",
+      "role": "current",
+      "image": "supabase/realtime:v2.134.10",
+      "ref": "mirror.gcr.io/supabase/realtime:v2.134.10@sha256:cbcc6a7986fc28b6dcffa798b077d5fb9c69cd25500371ab49147a86d7edbb03",
+      "index_digest": "sha256:cbcc6a7986fc28b6dcffa798b077d5fb9c69cd25500371ab49147a86d7edbb03",
+      "docker_hub_tag_digest_match": true,
+      "started_at": "2026-10-11T02:42:31.390Z",
+      "finished_at": "2026-10-11T02:42:31.409Z",
+      "succeeded": true,
+      "os": {
+        "Family": "debian",
+        "Name": "13.6"
+      },
+      "scanned_image_id": "sha256:902ac8c3569967c01f4d45ece4c9fac3528b848dbc2504e65dd7131506331ca1",
+      "repo_digests": [
+        "mirror.gcr.io/supabase/realtime@sha256:cbcc6a7986fc28b6dcffa798b077d5fb9c69cd25500371ab49147a86d7edbb03"
+      ],
+      "all_severity_findings": {
+        "LOW": 187,
+        "HIGH": 141,
+        "MEDIUM": 296,
+        "UNKNOWN": 11,
+        "CRITICAL": 3
+      },
+      "coverage": [
+        {
+          "target": "mirror.gcr.io/supabase/realtime:v2.134.10@sha256:cbcc6a7986fc28b6dcffa798b077d5fb9c69cd25500371ab49147a86d7edbb03 (debian 13.6)",
+          "class": "os-pkgs",
+          "type": "debian",
+          "vulnerabilities": 638
+        }
+      ],
+      "counts": {
+        "CRITICAL": {
+          "findings": 3,
+          "unique_ids": 3,
+          "fixed_available": 3,
+          "fixed_available_unique_ids": 3
+        },
+        "HIGH": {
+          "findings": 141,
+          "unique_ids": 53,
+          "fixed_available": 56,
+          "fixed_available_unique_ids": 24
+        },
+        "total_findings": 144
+      },
+      "trivy_report_created_at": "2026-10-11T02:31:21.892089285Z"
+    },
+    {
+      "name": "realtime-candidate-v2-143-3",
+      "service": "realtime",
+      "role": "candidate",
+      "image": "supabase/realtime:v2.143.3",
+      "ref": "mirror.gcr.io/supabase/realtime:v2.143.3@sha256:768b559241dd234c4e8852c5c0f504e598b80f1df2ad4dd78d5486fbed2f17a2",
+      "index_digest": "sha256:768b559241dd234c4e8852c5c0f504e598b80f1df2ad4dd78d5486fbed2f17a2",
+      "docker_hub_tag_digest_match": true,
+      "started_at": "2026-10-11T02:42:31.411Z",
+      "finished_at": "2026-10-11T02:42:31.425Z",
+      "succeeded": true,
+      "os": {
+        "Family": "debian",
+        "Name": "13.6"
+      },
+      "scanned_image_id": "sha256:e01aa9d85dc543a64c427e15002c544bbe03467d14741de7b69787aaf2e40177",
+      "repo_digests": [
+        "mirror.gcr.io/supabase/realtime@sha256:768b559241dd234c4e8852c5c0f504e598b80f1df2ad4dd78d5486fbed2f17a2"
+      ],
+      "all_severity_findings": {
+        "LOW": 187,
+        "HIGH": 141,
+        "MEDIUM": 296,
+        "UNKNOWN": 11,
+        "CRITICAL": 3
+      },
+      "coverage": [
+        {
+          "target": "mirror.gcr.io/supabase/realtime:v2.143.3@sha256:768b559241dd234c4e8852c5c0f504e598b80f1df2ad4dd78d5486fbed2f17a2 (debian 13.6)",
+          "class": "os-pkgs",
+          "type": "debian",
+          "vulnerabilities": 638
+        }
+      ],
+      "counts": {
+        "CRITICAL": {
+          "findings": 3,
+          "unique_ids": 3,
+          "fixed_available": 3,
+          "fixed_available_unique_ids": 3
+        },
+        "HIGH": {
+          "findings": 141,
+          "unique_ids": 53,
+          "fixed_available": 56,
+          "fixed_available_unique_ids": 24
+        },
+        "total_findings": 144
+      },
+      "trivy_report_created_at": "2026-10-11T02:31:25.092778296Z"
+    },
+    {
+      "name": "api-gw-current-v1-39-2",
+      "service": "api-gw",
+      "role": "current",
+      "image": "envoyproxy/envoy:v1.39.2",
+      "ref": "mirror.gcr.io/envoyproxy/envoy:v1.39.2@sha256:460f8c329f24b2e1c7c5af64cb314a6f351ad1c262ba77b135ac46b35ebd5f85",
+      "index_digest": "sha256:460f8c329f24b2e1c7c5af64cb314a6f351ad1c262ba77b135ac46b35ebd5f85",
+      "docker_hub_tag_digest_match": true,
+      "started_at": "2026-10-11T02:42:31.427Z",
+      "finished_at": "2026-10-11T02:42:31.429Z",
+      "succeeded": true,
+      "os": {
+        "Family": "ubuntu",
+        "Name": "22.04"
+      },
+      "scanned_image_id": "sha256:019b78af0d69653bdad7b77712e75d96b0684544146422948a38d53cdf6edbb3",
+      "repo_digests": [
+        "mirror.gcr.io/envoyproxy/envoy@sha256:460f8c329f24b2e1c7c5af64cb314a6f351ad1c262ba77b135ac46b35ebd5f85"
+      ],
+      "all_severity_findings": {
+        "LOW": 16,
+        "MEDIUM": 9
+      },
+      "coverage": [
+        {
+          "target": "mirror.gcr.io/envoyproxy/envoy:v1.39.2@sha256:460f8c329f24b2e1c7c5af64cb314a6f351ad1c262ba77b135ac46b35ebd5f85 (ubuntu 22.04)",
+          "class": "os-pkgs",
+          "type": "ubuntu",
+          "vulnerabilities": 25
+        }
+      ],
+      "counts": {
+        "CRITICAL": {
+          "findings": 0,
+          "unique_ids": 0,
+          "fixed_available": 0,
+          "fixed_available_unique_ids": 0
+        },
+        "HIGH": {
+          "findings": 0,
+          "unique_ids": 0,
+          "fixed_available": 0,
+          "fixed_available_unique_ids": 0
+        },
+        "total_findings": 0
+      },
+      "trivy_report_created_at": "2026-10-11T02:31:30.514806353Z"
+    },
+    {
+      "name": "api-gw-candidate-v1-39-3",
+      "service": "api-gw",
+      "role": "candidate",
+      "image": "envoyproxy/envoy:v1.39.3",
+      "ref": "mirror.gcr.io/envoyproxy/envoy:v1.39.3@sha256:dd85940439de19a0b6ae8419610363ea0ad351d9a994ea007161c206ec1e1865",
+      "index_digest": "sha256:dd85940439de19a0b6ae8419610363ea0ad351d9a994ea007161c206ec1e1865",
+      "docker_hub_tag_digest_match": true,
+      "started_at": "2026-10-11T02:42:31.430Z",
+      "finished_at": "2026-10-11T02:42:31.432Z",
+      "succeeded": true,
+      "os": {
+        "Family": "ubuntu",
+        "Name": "22.04"
+      },
+      "scanned_image_id": "sha256:8f34a3f1f8c804af3f975bc19a50104120482535401d5c8e954156c20ffd5316",
+      "repo_digests": [
+        "mirror.gcr.io/envoyproxy/envoy@sha256:dd85940439de19a0b6ae8419610363ea0ad351d9a994ea007161c206ec1e1865"
+      ],
+      "all_severity_findings": {
+        "LOW": 16,
+        "MEDIUM": 9
+      },
+      "coverage": [
+        {
+          "target": "mirror.gcr.io/envoyproxy/envoy:v1.39.3@sha256:dd85940439de19a0b6ae8419610363ea0ad351d9a994ea007161c206ec1e1865 (ubuntu 22.04)",
+          "class": "os-pkgs",
+          "type": "ubuntu",
+          "vulnerabilities": 25
+        }
+      ],
+      "counts": {
+        "CRITICAL": {
+          "findings": 0,
+          "unique_ids": 0,
+          "fixed_available": 0,
+          "fixed_available_unique_ids": 0
+        },
+        "HIGH": {
+          "findings": 0,
+          "unique_ids": 0,
+          "fixed_available": 0,
+          "fixed_available_unique_ids": 0
+        },
+        "total_findings": 0
+      },
+      "trivy_report_created_at": "2026-10-11T02:31:34.545973279Z"
+    },
+    {
+      "name": "imgproxy-current-v4-0-17",
+      "service": "imgproxy",
+      "role": "current",
+      "image": "darthsim/imgproxy:v4.0.17",
+      "ref": "mirror.gcr.io/darthsim/imgproxy:v4.0.17@sha256:db0b4b9cd690c8b3590203dea300fb759a18c4ec2af7b37424f0bdef23ce317d",
+      "index_digest": "sha256:db0b4b9cd690c8b3590203dea300fb759a18c4ec2af7b37424f0bdef23ce317d",
+      "docker_hub_tag_digest_match": true,
+      "started_at": "2026-10-11T02:42:31.433Z",
+      "finished_at": "2026-10-11T02:42:31.438Z",
+      "succeeded": true,
+      "os": {
+        "Family": "ubuntu",
+        "Name": "24.04"
+      },
+      "scanned_image_id": "sha256:50460e2987d55afa3bd92e4f5f5102095f7f4ba6d26270aff42e9f76f1bb7f6b",
+      "repo_digests": [
+        "mirror.gcr.io/darthsim/imgproxy@sha256:db0b4b9cd690c8b3590203dea300fb759a18c4ec2af7b37424f0bdef23ce317d"
+      ],
+      "all_severity_findings": {
+        "MEDIUM": 16,
+        "LOW": 5,
+        "UNKNOWN": 7,
+        "HIGH": 4
+      },
+      "coverage": [
+        {
+          "target": "mirror.gcr.io/darthsim/imgproxy:v4.0.17@sha256:db0b4b9cd690c8b3590203dea300fb759a18c4ec2af7b37424f0bdef23ce317d (ubuntu 24.04)",
+          "class": "os-pkgs",
+          "type": "ubuntu",
+          "vulnerabilities": 13
+        },
+        {
+          "target": "opt/imgproxy/bin/imgproxy",
+          "class": "lang-pkgs",
+          "type": "gobinary",
+          "vulnerabilities": 19
+        }
+      ],
+      "counts": {
+        "CRITICAL": {
+          "findings": 0,
+          "unique_ids": 0,
+          "fixed_available": 0,
+          "fixed_available_unique_ids": 0
+        },
+        "HIGH": {
+          "findings": 4,
+          "unique_ids": 3,
+          "fixed_available": 4,
+          "fixed_available_unique_ids": 3
+        },
+        "total_findings": 4
+      },
+      "trivy_report_created_at": "2026-10-11T02:31:39.006619398Z"
+    },
+    {
+      "name": "rest-current-v14-17",
+      "service": "rest",
+      "role": "current",
+      "image": "postgrest/postgrest:v14.17",
+      "ref": "mirror.gcr.io/postgrest/postgrest:v14.17@sha256:c9dc201e555f5d8e37e7f39cdd4df0229774996e213bfd7de8d10ac609030f2c",
+      "index_digest": "sha256:c9dc201e555f5d8e37e7f39cdd4df0229774996e213bfd7de8d10ac609030f2c",
+      "docker_hub_tag_digest_match": true,
+      "started_at": "2026-10-11T02:42:31.438Z",
+      "finished_at": "2026-10-11T02:42:31.438Z",
+      "succeeded": true,
+      "os": null,
+      "scanned_image_id": "sha256:fc3d286fec899d5a5bebbb98eac771ced1ccaa44deac8ce2fc23fe5d262eb3d9",
+      "repo_digests": [
+        "mirror.gcr.io/postgrest/postgrest@sha256:c9dc201e555f5d8e37e7f39cdd4df0229774996e213bfd7de8d10ac609030f2c"
+      ],
+      "all_severity_findings": {},
+      "coverage": [],
+      "counts": {
+        "CRITICAL": {
+          "findings": 0,
+          "unique_ids": 0,
+          "fixed_available": 0,
+          "fixed_available_unique_ids": 0
+        },
+        "HIGH": {
+          "findings": 0,
+          "unique_ids": 0,
+          "fixed_available": 0,
+          "fixed_available_unique_ids": 0
+        },
+        "total_findings": 0
+      },
+      "trivy_report_created_at": "2026-10-11T02:29:40.738900987Z"
+    },
+    {
+      "name": "rest-candidate-v14-18",
+      "service": "rest",
+      "role": "candidate",
+      "image": "postgrest/postgrest:v14.18",
+      "ref": "mirror.gcr.io/postgrest/postgrest:v14.18@sha256:c7cd7e265a85b05248abf53f4473fcec7e327c282d0bd0cf60f1551996d09fcf",
+      "index_digest": "sha256:c7cd7e265a85b05248abf53f4473fcec7e327c282d0bd0cf60f1551996d09fcf",
+      "docker_hub_tag_digest_match": true,
+      "started_at": "2026-10-11T02:42:31.439Z",
+      "finished_at": "2026-10-11T02:42:31.439Z",
+      "succeeded": true,
+      "os": null,
+      "scanned_image_id": "sha256:455fe971661e8c8c2722aece9f1e40e15871fb350724ca5433d54e40f5ade3c8",
+      "repo_digests": [
+        "mirror.gcr.io/postgrest/postgrest@sha256:c7cd7e265a85b05248abf53f4473fcec7e327c282d0bd0cf60f1551996d09fcf"
+      ],
+      "all_severity_findings": {},
+      "coverage": [],
+      "counts": {
+        "CRITICAL": {
+          "findings": 0,
+          "unique_ids": 0,
+          "fixed_available": 0,
+          "fixed_available_unique_ids": 0
+        },
+        "HIGH": {
+          "findings": 0,
+          "unique_ids": 0,
+          "fixed_available": 0,
+          "fixed_available_unique_ids": 0
+        },
+        "total_findings": 0
+      },
+      "trivy_report_created_at": "2026-10-11T02:29:42.412328519Z"
+    },
+    {
+      "name": "db-current-17-6-1-136",
+      "service": "db",
+      "role": "current",
+      "image": "supabase/postgres:17.6.1.136",
+      "ref": "mirror.gcr.io/supabase/postgres:17.6.1.136@sha256:f371b5f3f2ac0a05703f33d6e6134515fb2498cab708fb948a0aeb7481467c00",
+      "index_digest": "sha256:f371b5f3f2ac0a05703f33d6e6134515fb2498cab708fb948a0aeb7481467c00",
+      "docker_hub_tag_digest_match": true,
+      "started_at": "2026-10-11T02:42:31.439Z",
+      "finished_at": "2026-10-11T02:42:31.444Z",
+      "succeeded": true,
+      "os": {
+        "Family": "alpine",
+        "Name": "3.23.4"
+      },
+      "scanned_image_id": "sha256:f519727303f0af6862882be2a30f420e28710d4209226e681aaddb2c01d12d9b",
+      "repo_digests": [
+        "mirror.gcr.io/supabase/postgres@sha256:f371b5f3f2ac0a05703f33d6e6134515fb2498cab708fb948a0aeb7481467c00"
+      ],
+      "all_severity_findings": {
+        "HIGH": 48,
+        "MEDIUM": 73,
+        "LOW": 46,
+        "UNKNOWN": 7
+      },
+      "coverage": [
+        {
+          "target": "mirror.gcr.io/supabase/postgres:17.6.1.136@sha256:f371b5f3f2ac0a05703f33d6e6134515fb2498cab708fb948a0aeb7481467c00 (alpine 3.23.4)",
+          "class": "os-pkgs",
+          "type": "alpine",
+          "vulnerabilities": 124
+        },
+        {
+          "target": "Node.js",
+          "class": "lang-pkgs",
+          "type": "node-pkg",
+          "vulnerabilities": 4
+        },
+        {
+          "target": "nix/store/ah8dsz4x71czpqiwnkysqfbb0x3xqvrm-source/Cargo.lock",
+          "class": "lang-pkgs",
+          "type": "cargo",
+          "vulnerabilities": 3
+        },
+        {
+          "target": "usr/local/bin/gosu",
+          "class": "lang-pkgs",
+          "type": "gobinary",
+          "vulnerabilities": 43
+        }
+      ],
+      "counts": {
+        "CRITICAL": {
+          "findings": 0,
+          "unique_ids": 0,
+          "fixed_available": 0,
+          "fixed_available_unique_ids": 0
+        },
+        "HIGH": {
+          "findings": 48,
+          "unique_ids": 36,
+          "fixed_available": 48,
+          "fixed_available_unique_ids": 36
+        },
+        "total_findings": 48
+      },
+      "trivy_report_created_at": "2026-10-11T02:31:54.284347095Z"
+    },
+    {
+      "name": "db-reference-17-11-0-004",
+      "service": "db",
+      "role": "candidate",
+      "image": "supabase/postgres:17.11.0.004",
+      "ref": "mirror.gcr.io/supabase/postgres:17.11.0.004@sha256:06ddc7962e11ab0f4f0334fd05671e97c30ea202f6e6a7113800bd3d6e416108",
+      "index_digest": "sha256:06ddc7962e11ab0f4f0334fd05671e97c30ea202f6e6a7113800bd3d6e416108",
+      "docker_hub_tag_digest_match": true,
+      "started_at": "2026-10-11T02:42:31.445Z",
+      "finished_at": "2026-10-11T02:42:31.447Z",
+      "succeeded": true,
+      "os": {
+        "Family": "alpine",
+        "Name": "3.23.6"
+      },
+      "scanned_image_id": "sha256:4d5fe06292c269ef2729c2629efeaa9ce780bd33c0910e807aef19989ca07527",
+      "repo_digests": [
+        "mirror.gcr.io/supabase/postgres@sha256:06ddc7962e11ab0f4f0334fd05671e97c30ea202f6e6a7113800bd3d6e416108"
+      ],
+      "all_severity_findings": {
+        "MEDIUM": 21,
+        "LOW": 2,
+        "UNKNOWN": 5,
+        "HIGH": 23
+      },
+      "coverage": [
+        {
+          "target": "mirror.gcr.io/supabase/postgres:17.11.0.004@sha256:06ddc7962e11ab0f4f0334fd05671e97c30ea202f6e6a7113800bd3d6e416108 (alpine 3.23.6)",
+          "class": "os-pkgs",
+          "type": "alpine",
+          "vulnerabilities": 1
+        },
+        {
+          "target": "Node.js",
+          "class": "lang-pkgs",
+          "type": "node-pkg",
+          "vulnerabilities": 4
+        },
+        {
+          "target": "nix/store/ah8dsz4x71czpqiwnkysqfbb0x3xqvrm-source/Cargo.lock",
+          "class": "lang-pkgs",
+          "type": "cargo",
+          "vulnerabilities": 3
+        },
+        {
+          "target": "usr/local/bin/gosu",
+          "class": "lang-pkgs",
+          "type": "gobinary",
+          "vulnerabilities": 43
+        }
+      ],
+      "counts": {
+        "CRITICAL": {
+          "findings": 0,
+          "unique_ids": 0,
+          "fixed_available": 0,
+          "fixed_available_unique_ids": 0
+        },
+        "HIGH": {
+          "findings": 23,
+          "unique_ids": 23,
+          "fixed_available": 23,
+          "fixed_available_unique_ids": 23
+        },
+        "total_findings": 23
+      },
+      "trivy_report_created_at": "2026-10-11T02:32:10.316588526Z"
+    },
+    {
+      "name": "helm-auth-current-v2-196-0",
+      "service": "helm-auth",
+      "role": "current",
+      "image": "supabase/gotrue:v2.196.0",
+      "ref": "mirror.gcr.io/supabase/gotrue:v2.196.0@sha256:c0c25187a6b835e65a6f6e6c6b39d090e832d40e6de5186f2c038e0411944232",
+      "index_digest": "sha256:c0c25187a6b835e65a6f6e6c6b39d090e832d40e6de5186f2c038e0411944232",
+      "docker_hub_tag_digest_match": true,
+      "started_at": "2026-10-11T02:42:31.447Z",
+      "finished_at": "2026-10-11T02:42:31.449Z",
+      "succeeded": true,
+      "os": {
+        "Family": "alpine",
+        "Name": "3.24.1"
+      },
+      "scanned_image_id": "sha256:688edbb786f6d736edaa478438f23c7044a22a6a5f19502a7138d38caca6c2f6",
+      "repo_digests": [
+        "mirror.gcr.io/supabase/gotrue@sha256:c0c25187a6b835e65a6f6e6c6b39d090e832d40e6de5186f2c038e0411944232"
+      ],
+      "all_severity_findings": {
+        "HIGH": 30,
+        "MEDIUM": 21,
+        "LOW": 18,
+        "UNKNOWN": 8
+      },
+      "coverage": [
+        {
+          "target": "mirror.gcr.io/supabase/gotrue:v2.196.0@sha256:c0c25187a6b835e65a6f6e6c6b39d090e832d40e6de5186f2c038e0411944232 (alpine 3.24.1)",
+          "class": "os-pkgs",
+          "type": "alpine",
+          "vulnerabilities": 21
+        },
+        {
+          "target": "usr/local/bin/auth",
+          "class": "lang-pkgs",
+          "type": "gobinary",
+          "vulnerabilities": 56
+        }
+      ],
+      "counts": {
+        "CRITICAL": {
+          "findings": 0,
+          "unique_ids": 0,
+          "fixed_available": 0,
+          "fixed_available_unique_ids": 0
+        },
+        "HIGH": {
+          "findings": 30,
+          "unique_ids": 27,
+          "fixed_available": 29,
+          "fixed_available_unique_ids": 26
+        },
+        "total_findings": 30
+      },
+      "trivy_report_created_at": "2026-10-11T02:32:13.75006567Z"
+    },
+    {
+      "name": "helm-storage-current-v1-74-0",
+      "service": "helm-storage",
+      "role": "current",
+      "image": "supabase/storage-api:v1.74.0",
+      "ref": "mirror.gcr.io/supabase/storage-api:v1.74.0@sha256:f1546fac6d1c7e345428ac904bfaa7be7cecd50a1f549fe1cf38c628a7b15c85",
+      "index_digest": "sha256:f1546fac6d1c7e345428ac904bfaa7be7cecd50a1f549fe1cf38c628a7b15c85",
+      "docker_hub_tag_digest_match": true,
+      "started_at": "2026-10-11T02:42:31.450Z",
+      "finished_at": "2026-10-11T02:42:31.457Z",
+      "succeeded": true,
+      "os": {
+        "Family": "alpine",
+        "Name": "3.23.5"
+      },
+      "scanned_image_id": "sha256:cbd50858d9a1d085d301f10a5f4ab5c3214e44674cfa111f2a1226cc391c1ad9",
+      "repo_digests": [
+        "mirror.gcr.io/supabase/storage-api@sha256:f1546fac6d1c7e345428ac904bfaa7be7cecd50a1f549fe1cf38c628a7b15c85"
+      ],
+      "all_severity_findings": {
+        "HIGH": 72,
+        "MEDIUM": 74,
+        "LOW": 21,
+        "CRITICAL": 1
+      },
+      "coverage": [
+        {
+          "target": "mirror.gcr.io/supabase/storage-api:v1.74.0@sha256:f1546fac6d1c7e345428ac904bfaa7be7cecd50a1f549fe1cf38c628a7b15c85 (alpine 3.23.5)",
+          "class": "os-pkgs",
+          "type": "alpine",
+          "vulnerabilities": 58
+        },
+        {
+          "target": "Node.js",
+          "class": "lang-pkgs",
+          "type": "node-pkg",
+          "vulnerabilities": 110
+        }
+      ],
+      "counts": {
+        "CRITICAL": {
+          "findings": 1,
+          "unique_ids": 1,
+          "fixed_available": 1,
+          "fixed_available_unique_ids": 1
+        },
+        "HIGH": {
+          "findings": 72,
+          "unique_ids": 41,
+          "fixed_available": 71,
+          "fixed_available_unique_ids": 40
+        },
+        "total_findings": 73
+      },
+      "trivy_report_created_at": "2026-10-11T02:32:25.748991836Z"
+    },
+    {
+      "name": "helm-api-gw-current-v1-39-1",
+      "service": "helm-api-gw",
+      "role": "current",
+      "image": "envoyproxy/envoy:v1.39.1",
+      "ref": "mirror.gcr.io/envoyproxy/envoy:v1.39.1@sha256:57e14a549d7bd43c8d3f6d03e8cfa653e037d4b38e133acd9b54f38c524401b4",
+      "index_digest": "sha256:57e14a549d7bd43c8d3f6d03e8cfa653e037d4b38e133acd9b54f38c524401b4",
+      "docker_hub_tag_digest_match": true,
+      "started_at": "2026-10-11T02:42:31.458Z",
+      "finished_at": "2026-10-11T02:42:31.461Z",
+      "succeeded": true,
+      "os": {
+        "Family": "ubuntu",
+        "Name": "22.04"
+      },
+      "scanned_image_id": "sha256:ef41fe510c94b2a96c03e5f19a0bdce3ec92819c430401229e94faf768af792f",
+      "repo_digests": [
+        "mirror.gcr.io/envoyproxy/envoy@sha256:57e14a549d7bd43c8d3f6d03e8cfa653e037d4b38e133acd9b54f38c524401b4"
+      ],
+      "all_severity_findings": {
+        "MEDIUM": 53,
+        "LOW": 34,
+        "HIGH": 2
+      },
+      "coverage": [
+        {
+          "target": "mirror.gcr.io/envoyproxy/envoy:v1.39.1@sha256:57e14a549d7bd43c8d3f6d03e8cfa653e037d4b38e133acd9b54f38c524401b4 (ubuntu 22.04)",
+          "class": "os-pkgs",
+          "type": "ubuntu",
+          "vulnerabilities": 89
+        }
+      ],
+      "counts": {
+        "CRITICAL": {
+          "findings": 0,
+          "unique_ids": 0,
+          "fixed_available": 0,
+          "fixed_available_unique_ids": 0
+        },
+        "HIGH": {
+          "findings": 2,
+          "unique_ids": 1,
+          "fixed_available": 2,
+          "fixed_available_unique_ids": 1
+        },
+        "total_findings": 2
+      },
+      "trivy_report_created_at": "2026-10-11T02:32:31.278151582Z"
+    },
+    {
+      "name": "helm-functions-base-current-v1-76-2",
+      "service": "helm-functions-base",
+      "role": "current",
+      "image": "supabase/edge-runtime:v1.76.2",
+      "ref": "mirror.gcr.io/supabase/edge-runtime:v1.76.2@sha256:edd22bef4477b900d5c300e287ce9b18bff9b81a0291bee14ee0b7c7b71a2899",
+      "index_digest": "sha256:edd22bef4477b900d5c300e287ce9b18bff9b81a0291bee14ee0b7c7b71a2899",
+      "docker_hub_tag_digest_match": true,
+      "started_at": "2026-10-11T02:42:31.462Z",
+      "finished_at": "2026-10-11T02:42:31.468Z",
+      "succeeded": true,
+      "os": {
+        "Family": "debian",
+        "Name": "12.15"
+      },
+      "scanned_image_id": "sha256:4ddc035dcf37b087ff06a38e54036867e4d82ce3c70b6a0567825c878e984e06",
+      "repo_digests": [
+        "mirror.gcr.io/supabase/edge-runtime@sha256:edd22bef4477b900d5c300e287ce9b18bff9b81a0291bee14ee0b7c7b71a2899"
+      ],
+      "all_severity_findings": {
+        "LOW": 97,
+        "HIGH": 61,
+        "MEDIUM": 127,
+        "UNKNOWN": 7,
+        "CRITICAL": 4
+      },
+      "coverage": [
+        {
+          "target": "mirror.gcr.io/supabase/edge-runtime:v1.76.2@sha256:edd22bef4477b900d5c300e287ce9b18bff9b81a0291bee14ee0b7c7b71a2899 (debian 12.15)",
+          "class": "os-pkgs",
+          "type": "debian",
+          "vulnerabilities": 296
+        }
+      ],
+      "counts": {
+        "CRITICAL": {
+          "findings": 4,
+          "unique_ids": 4,
+          "fixed_available": 3,
+          "fixed_available_unique_ids": 3
+        },
+        "HIGH": {
+          "findings": 61,
+          "unique_ids": 21,
+          "fixed_available": 8,
+          "fixed_available_unique_ids": 8
+        },
+        "total_findings": 65
+      },
+      "trivy_report_created_at": "2026-10-11T02:32:49.887254969Z"
+    }
+  ],
+  "comparisons": [
+    {
+      "current": "mirror.gcr.io/supabase/storage-api:v1.80.0@sha256:15aa712fdda0dab83d6345c79b54230c1466c41161f1f3756651778b22c3b292",
+      "candidate": "mirror.gcr.io/supabase/storage-api:v1.80.2@sha256:95b217a9c59e0ac06c6dcb539df3189a1668a2445fb43dbf29660d6968ffd7d2",
+      "eligible": false,
+      "delta_critical_high": 0,
+      "new_critical_ids": [],
+      "reason": "CRITICAL+HIGH not reduced (delta +0)",
+      "removed_ids": 0,
+      "added_ids": []
+    },
+    {
+      "current": "mirror.gcr.io/supabase/storage-api:v1.80.0@sha256:15aa712fdda0dab83d6345c79b54230c1466c41161f1f3756651778b22c3b292",
+      "candidate": "mirror.gcr.io/supabase/storage-api:v1.81.0@sha256:98ffec5d0678803783c30e404c27f4ec65e97efbe014088f2a86b4b8b54b9f54",
+      "eligible": false,
+      "delta_critical_high": 0,
+      "new_critical_ids": [],
+      "reason": "CRITICAL+HIGH not reduced (delta +0)",
+      "removed_ids": 0,
+      "added_ids": []
+    },
+    {
+      "current": "mirror.gcr.io/supabase/realtime:v2.134.10@sha256:cbcc6a7986fc28b6dcffa798b077d5fb9c69cd25500371ab49147a86d7edbb03",
+      "candidate": "mirror.gcr.io/supabase/realtime:v2.143.3@sha256:768b559241dd234c4e8852c5c0f504e598b80f1df2ad4dd78d5486fbed2f17a2",
+      "eligible": false,
+      "delta_critical_high": 0,
+      "new_critical_ids": [],
+      "reason": "CRITICAL+HIGH not reduced (delta +0)",
+      "removed_ids": 0,
+      "added_ids": []
+    },
+    {
+      "current": "mirror.gcr.io/envoyproxy/envoy:v1.39.2@sha256:460f8c329f24b2e1c7c5af64cb314a6f351ad1c262ba77b135ac46b35ebd5f85",
+      "candidate": "mirror.gcr.io/envoyproxy/envoy:v1.39.3@sha256:dd85940439de19a0b6ae8419610363ea0ad351d9a994ea007161c206ec1e1865",
+      "eligible": false,
+      "delta_critical_high": 0,
+      "new_critical_ids": [],
+      "reason": "CRITICAL+HIGH not reduced (delta +0)",
+      "removed_ids": 0,
+      "added_ids": []
+    },
+    {
+      "current": "mirror.gcr.io/postgrest/postgrest:v14.17@sha256:c9dc201e555f5d8e37e7f39cdd4df0229774996e213bfd7de8d10ac609030f2c",
+      "candidate": "mirror.gcr.io/postgrest/postgrest:v14.18@sha256:c7cd7e265a85b05248abf53f4473fcec7e327c282d0bd0cf60f1551996d09fcf",
+      "eligible": false,
+      "delta_critical_high": 0,
+      "new_critical_ids": [],
+      "reason": "CRITICAL+HIGH not reduced (delta +0)",
+      "removed_ids": 0,
+      "added_ids": []
+    },
+    {
+      "current": "mirror.gcr.io/supabase/postgres:17.6.1.136@sha256:f371b5f3f2ac0a05703f33d6e6134515fb2498cab708fb948a0aeb7481467c00",
+      "candidate": "mirror.gcr.io/supabase/postgres:17.11.0.004@sha256:06ddc7962e11ab0f4f0334fd05671e97c30ea202f6e6a7113800bd3d6e416108",
+      "eligible": true,
+      "delta_critical_high": -25,
+      "new_critical_ids": [],
+      "reason": "strictly fewer CRITICAL+HIGH findings and no new CRITICAL",
+      "removed_ids": 13,
+      "added_ids": []
+    },
+    {
+      "current": "mirror.gcr.io/supabase/gotrue:v2.196.0@sha256:c0c25187a6b835e65a6f6e6c6b39d090e832d40e6de5186f2c038e0411944232",
+      "candidate": "mirror.gcr.io/supabase/gotrue:v2.197.0@sha256:1736a63078f5922b198c4cbe50f80ab9a2d3b54fe8b7b6cfb2e9dc5dbbc12c6b",
+      "eligible": true,
+      "delta_critical_high": -21,
+      "new_critical_ids": [],
+      "reason": "strictly fewer CRITICAL+HIGH findings and no new CRITICAL",
+      "removed_ids": 20,
+      "added_ids": []
+    },
+    {
+      "current": "mirror.gcr.io/supabase/storage-api:v1.74.0@sha256:f1546fac6d1c7e345428ac904bfaa7be7cecd50a1f549fe1cf38c628a7b15c85",
+      "candidate": "mirror.gcr.io/supabase/storage-api:v1.80.2@sha256:95b217a9c59e0ac06c6dcb539df3189a1668a2445fb43dbf29660d6968ffd7d2",
+      "eligible": true,
+      "delta_critical_high": -15,
+      "new_critical_ids": [],
+      "reason": "strictly fewer CRITICAL+HIGH findings and no new CRITICAL",
+      "removed_ids": 8,
+      "added_ids": []
+    },
+    {
+      "current": "mirror.gcr.io/envoyproxy/envoy:v1.39.1@sha256:57e14a549d7bd43c8d3f6d03e8cfa653e037d4b38e133acd9b54f38c524401b4",
+      "candidate": "mirror.gcr.io/envoyproxy/envoy:v1.39.2@sha256:460f8c329f24b2e1c7c5af64cb314a6f351ad1c262ba77b135ac46b35ebd5f85",
+      "eligible": true,
+      "delta_critical_high": -2,
+      "new_critical_ids": [],
+      "reason": "strictly fewer CRITICAL+HIGH findings and no new CRITICAL",
+      "removed_ids": 1,
+      "added_ids": []
+    },
+    {
+      "current": "mirror.gcr.io/supabase/edge-runtime:v1.76.2@sha256:edd22bef4477b900d5c300e287ce9b18bff9b81a0291bee14ee0b7c7b71a2899",
+      "candidate": "mirror.gcr.io/supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8",
+      "eligible": true,
+      "delta_critical_high": -3,
+      "new_critical_ids": [],
+      "reason": "strictly fewer CRITICAL+HIGH findings and no new CRITICAL",
+      "removed_ids": 3,
+      "added_ids": []
+    }
+  ]
+}

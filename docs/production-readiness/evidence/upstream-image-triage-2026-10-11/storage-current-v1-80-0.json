@@ -1,0 +1,773 @@
+{
+ "name": "storage-current-v1-80-0",
+ "service": "storage",
+ "role": "current",
+ "image": "supabase/storage-api:v1.80.0",
+ "ref": "mirror.gcr.io/supabase/storage-api:v1.80.0@sha256:15aa712fdda0dab83d6345c79b54230c1466c41161f1f3756651778b22c3b292",
+ "index_digest": "sha256:15aa712fdda0dab83d6345c79b54230c1466c41161f1f3756651778b22c3b292",
+ "docker_hub_tag_digest_match": true,
+ "started_at": "2026-10-11T02:42:20.787Z",
+ "finished_at": "2026-10-11T02:42:20.797Z",
+ "succeeded": true,
+ "os": {
+  "Family": "alpine",
+  "Name": "3.23.6"
+ },
+ "scanned_image_id": "sha256:78c2ee940c0a7b7d3125896ea7945a3632aa499ead1897bddd549fac1c4ec1b2",
+ "repo_digests": [
+  "mirror.gcr.io/supabase/storage-api@sha256:15aa712fdda0dab83d6345c79b54230c1466c41161f1f3756651778b22c3b292"
+ ],
+ "all_severity_findings": {
+  "HIGH": 57,
+  "MEDIUM": 64,
+  "LOW": 9,
+  "CRITICAL": 1
+ },
+ "coverage": [
+  {
+   "target": "mirror.gcr.io/supabase/storage-api:v1.80.0@sha256:15aa712fdda0dab83d6345c79b54230c1466c41161f1f3756651778b22c3b292 (alpine 3.23.6)",
+   "class": "os-pkgs",
+   "type": "alpine",
+   "vulnerabilities": 34
+  },
+  {
+   "target": "Node.js",
+   "class": "lang-pkgs",
+   "type": "node-pkg",
+   "vulnerabilities": 97
+  }
+ ],
+ "counts": {
+  "CRITICAL": {
+   "findings": 1,
+   "unique_ids": 1,
+   "fixed_available": 1,
+   "fixed_available_unique_ids": 1
+  },
+  "HIGH": {
+   "findings": 57,
+   "unique_ids": 33,
+   "fixed_available": 56,
+   "fixed_available_unique_ids": 32
+  },
+  "total_findings": 58
+ },
+ "findings": [
+  {
+   "id": "CVE-2026-59873",
+   "severity": "CRITICAL",
+   "pkg": "tar",
+   "installed": "7.5.11",
+   "fixed": "7.5.19",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "usr/local/lib/node_modules/npm/node_modules/tar/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-101916",
+   "severity": "HIGH",
+   "pkg": "@grpc/grpc-js",
+   "installed": "1.14.4",
+   "fixed": "1.13.6, 1.14.5",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "app/node_modules/@grpc/grpc-js/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-102276",
+   "severity": "HIGH",
+   "pkg": "brace-expansion",
+   "installed": "2.1.2",
+   "fixed": "5.0.10, 3.0.7, 2.1.5, 1.1.19",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "app/node_modules/brace-expansion/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-102276",
+   "severity": "HIGH",
+   "pkg": "brace-expansion",
+   "installed": "5.0.4",
+   "fixed": "5.0.10, 3.0.7, 2.1.5, 1.1.19",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "usr/local/lib/node_modules/npm/node_modules/brace-expansion/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-102276",
+   "severity": "HIGH",
+   "pkg": "brace-expansion",
+   "installed": "5.0.8",
+   "fixed": "5.0.10, 3.0.7, 2.1.5, 1.1.19",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "app/node_modules/@fastify/otel/node_modules/brace-expansion/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-102276",
+   "severity": "HIGH",
+   "pkg": "brace-expansion",
+   "installed": "5.0.9",
+   "fixed": "5.0.10, 3.0.7, 2.1.5, 1.1.19",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "app/node_modules/glob/node_modules/brace-expansion/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-102278",
+   "severity": "HIGH",
+   "pkg": "brace-expansion",
+   "installed": "2.1.2",
+   "fixed": "5.0.11, 3.0.8, 2.1.6, 1.1.20",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "app/node_modules/brace-expansion/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-102278",
+   "severity": "HIGH",
+   "pkg": "brace-expansion",
+   "installed": "5.0.4",
+   "fixed": "5.0.11, 3.0.8, 2.1.6, 1.1.20",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "usr/local/lib/node_modules/npm/node_modules/brace-expansion/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-102278",
+   "severity": "HIGH",
+   "pkg": "brace-expansion",
+   "installed": "5.0.8",
+   "fixed": "5.0.11, 3.0.8, 2.1.6, 1.1.20",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "app/node_modules/@fastify/otel/node_modules/brace-expansion/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-102278",
+   "severity": "HIGH",
+   "pkg": "brace-expansion",
+   "installed": "5.0.9",
+   "fixed": "5.0.11, 3.0.8, 2.1.6, 1.1.20",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "app/node_modules/glob/node_modules/brace-expansion/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-13149",
+   "severity": "HIGH",
+   "pkg": "brace-expansion",
+   "installed": "5.0.4",
+   "fixed": "5.0.7, 1.1.16, 2.1.2",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "usr/local/lib/node_modules/npm/node_modules/brace-expansion/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-13697",
+   "severity": "HIGH",
+   "pkg": "undici",
+   "installed": "7.28.0",
+   "fixed": "7.29.0, 8.9.0",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "app/node_modules/undici/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-14257",
+   "severity": "HIGH",
+   "pkg": "brace-expansion",
+   "installed": "2.1.2",
+   "fixed": "5.0.8, 3.0.3, 2.1.3, 1.1.17",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "app/node_modules/brace-expansion/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-14257",
+   "severity": "HIGH",
+   "pkg": "brace-expansion",
+   "installed": "5.0.4",
+   "fixed": "5.0.8, 3.0.3, 2.1.3, 1.1.17",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "usr/local/lib/node_modules/npm/node_modules/brace-expansion/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-18446",
+   "severity": "HIGH",
+   "pkg": "fast-uri",
+   "installed": "3.1.4",
+   "fixed": "2.4.4, 3.1.5, 4.1.2",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "app/node_modules/fast-uri/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-19445",
+   "severity": "HIGH",
+   "pkg": "pyc",
+   "installed": "3.12.14-r0",
+   "fixed": "3.12.15-r0",
+   "status": "fixed",
+   "target": "supabase/storage-api:v1.80.0@sha256:15aa712fdda0dab83d6345c79b54230c1466c41161f1f3756651778b22c3b292 (alpine 3.23.6)",
+   "type": "alpine"
+  },
+  {
+   "id": "CVE-2026-19445",
+   "severity": "HIGH",
+   "pkg": "python3",
+   "installed": "3.12.14-r0",
+   "fixed": "3.12.15-r0",
+   "status": "fixed",
+   "target": "supabase/storage-api:v1.80.0@sha256:15aa712fdda0dab83d6345c79b54230c1466c41161f1f3756651778b22c3b292 (alpine 3.23.6)",
+   "type": "alpine"
+  },
+  {
+   "id": "CVE-2026-19445",
+   "severity": "HIGH",
+   "pkg": "python3-pyc",
+   "installed": "3.12.14-r0",
+   "fixed": "3.12.15-r0",
+   "status": "fixed",
+   "target": "supabase/storage-api:v1.80.0@sha256:15aa712fdda0dab83d6345c79b54230c1466c41161f1f3756651778b22c3b292 (alpine 3.23.6)",
+   "type": "alpine"
+  },
+  {
+   "id": "CVE-2026-19445",
+   "severity": "HIGH",
+   "pkg": "python3-pycache-pyc0",
+   "installed": "3.12.14-r0",
+   "fixed": "3.12.15-r0",
+   "status": "fixed",
+   "target": "supabase/storage-api:v1.80.0@sha256:15aa712fdda0dab83d6345c79b54230c1466c41161f1f3756651778b22c3b292 (alpine 3.23.6)",
+   "type": "alpine"
+  },
+  {
+   "id": "CVE-2026-19481",
+   "severity": "HIGH",
+   "pkg": "@fastify/busboy",
+   "installed": "3.1.1",
+   "fixed": "3.2.1",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "app/node_modules/@fastify/busboy/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-19484",
+   "severity": "HIGH",
+   "pkg": "@fastify/busboy",
+   "installed": "3.1.1",
+   "fixed": "3.2.1",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "app/node_modules/@fastify/busboy/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-19534",
+   "severity": "HIGH",
+   "pkg": "undici",
+   "installed": "7.28.0",
+   "fixed": "6.28.1, 7.29.1, 8.10.2",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "app/node_modules/undici/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-19553",
+   "severity": "HIGH",
+   "pkg": "pyc",
+   "installed": "3.12.14-r0",
+   "fixed": "3.12.15-r0",
+   "status": "fixed",
+   "target": "supabase/storage-api:v1.80.0@sha256:15aa712fdda0dab83d6345c79b54230c1466c41161f1f3756651778b22c3b292 (alpine 3.23.6)",
+   "type": "alpine"
+  },
+  {
+   "id": "CVE-2026-19553",
+   "severity": "HIGH",
+   "pkg": "python3",
+   "installed": "3.12.14-r0",
+   "fixed": "3.12.15-r0",
+   "status": "fixed",
+   "target": "supabase/storage-api:v1.80.0@sha256:15aa712fdda0dab83d6345c79b54230c1466c41161f1f3756651778b22c3b292 (alpine 3.23.6)",
+   "type": "alpine"
+  },
+  {
+   "id": "CVE-2026-19553",
+   "severity": "HIGH",
+   "pkg": "python3-pyc",
+   "installed": "3.12.14-r0",
+   "fixed": "3.12.15-r0",
+   "status": "fixed",
+   "target": "supabase/storage-api:v1.80.0@sha256:15aa712fdda0dab83d6345c79b54230c1466c41161f1f3756651778b22c3b292 (alpine 3.23.6)",
+   "type": "alpine"
+  },
+  {
+   "id": "CVE-2026-19553",
+   "severity": "HIGH",
+   "pkg": "python3-pycache-pyc0",
+   "installed": "3.12.14-r0",
+   "fixed": "3.12.15-r0",
+   "status": "fixed",
+   "target": "supabase/storage-api:v1.80.0@sha256:15aa712fdda0dab83d6345c79b54230c1466c41161f1f3756651778b22c3b292 (alpine 3.23.6)",
+   "type": "alpine"
+  },
+  {
+   "id": "CVE-2026-33671",
+   "severity": "HIGH",
+   "pkg": "picomatch",
+   "installed": "4.0.3",
+   "fixed": "4.0.4, 3.0.2, 2.3.2",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "usr/local/lib/node_modules/npm/node_modules/tinyglobby/node_modules/picomatch/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-48815",
+   "severity": "HIGH",
+   "pkg": "sigstore",
+   "installed": "4.1.0",
+   "fixed": "4.1.1",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "usr/local/lib/node_modules/npm/node_modules/sigstore/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-59874",
+   "severity": "HIGH",
+   "pkg": "tar",
+   "installed": "7.5.11",
+   "fixed": "7.5.18",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "usr/local/lib/node_modules/npm/node_modules/tar/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-59892",
+   "severity": "HIGH",
+   "pkg": "@opentelemetry/propagator-jaeger",
+   "installed": "2.8.0",
+   "fixed": "2.9.0",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "app/node_modules/@platformatic/telemetry/node_modules/@opentelemetry/propagator-jaeger/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-69152",
+   "severity": "HIGH",
+   "pkg": "brace-expansion",
+   "installed": "2.1.2",
+   "fixed": "1.1.18, 2.1.4, 3.0.6, 5.0.9",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "app/node_modules/brace-expansion/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-69152",
+   "severity": "HIGH",
+   "pkg": "brace-expansion",
+   "installed": "5.0.4",
+   "fixed": "1.1.18, 2.1.4, 3.0.6, 5.0.9",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "usr/local/lib/node_modules/npm/node_modules/brace-expansion/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-69152",
+   "severity": "HIGH",
+   "pkg": "brace-expansion",
+   "installed": "5.0.8",
+   "fixed": "1.1.18, 2.1.4, 3.0.6, 5.0.9",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "app/node_modules/@fastify/otel/node_modules/brace-expansion/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-69192",
+   "severity": "HIGH",
+   "pkg": "ip-address",
+   "installed": "10.1.0",
+   "fixed": "10.3.1",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "usr/local/lib/node_modules/npm/node_modules/ip-address/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-69192",
+   "severity": "HIGH",
+   "pkg": "ip-address",
+   "installed": "10.2.0",
+   "fixed": "10.3.1",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "app/node_modules/ip-address/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-73566",
+   "severity": "HIGH",
+   "pkg": "tar",
+   "installed": "7.5.11",
+   "fixed": "7.5.21",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "usr/local/lib/node_modules/npm/node_modules/tar/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-75899",
+   "severity": "HIGH",
+   "pkg": "fast-uri",
+   "installed": "3.1.4",
+   "fixed": "2.4.5, 3.1.6, 4.1.3",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "app/node_modules/fast-uri/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-75899",
+   "severity": "HIGH",
+   "pkg": "fast-uri",
+   "installed": "4.1.2",
+   "fixed": "2.4.5, 3.1.6, 4.1.3",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "app/node_modules/fastify/node_modules/fast-uri/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-75931",
+   "severity": "HIGH",
+   "pkg": "fast-uri",
+   "installed": "3.1.4",
+   "fixed": "2.4.5, 3.1.6, 4.1.3",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "app/node_modules/fast-uri/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-75931",
+   "severity": "HIGH",
+   "pkg": "fast-uri",
+   "installed": "4.1.2",
+   "fixed": "2.4.5, 3.1.6, 4.1.3",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "app/node_modules/fastify/node_modules/fast-uri/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-75975",
+   "severity": "HIGH",
+   "pkg": "fast-uri",
+   "installed": "3.1.4",
+   "fixed": "2.4.5, 3.1.6, 4.1.3",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "app/node_modules/fast-uri/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-75975",
+   "severity": "HIGH",
+   "pkg": "fast-uri",
+   "installed": "4.1.2",
+   "fixed": "2.4.5, 3.1.6, 4.1.3",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "app/node_modules/fastify/node_modules/fast-uri/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-76169",
+   "severity": "HIGH",
+   "pkg": "fastify",
+   "installed": "5.11.2",
+   "fixed": "5.12.2",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "app/node_modules/fastify/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-76172",
+   "severity": "HIGH",
+   "pkg": "fast-uri",
+   "installed": "3.1.4",
+   "fixed": "2.4.5, 3.1.6, 4.1.3",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "app/node_modules/fast-uri/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-76172",
+   "severity": "HIGH",
+   "pkg": "fast-uri",
+   "installed": "4.1.2",
+   "fixed": "2.4.5, 3.1.6, 4.1.3",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "app/node_modules/fastify/node_modules/fast-uri/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-82049",
+   "severity": "HIGH",
+   "pkg": "pyc",
+   "installed": "3.12.14-r0",
+   "fixed": "3.12.15-r0",
+   "status": "fixed",
+   "target": "supabase/storage-api:v1.80.0@sha256:15aa712fdda0dab83d6345c79b54230c1466c41161f1f3756651778b22c3b292 (alpine 3.23.6)",
+   "type": "alpine"
+  },
+  {
+   "id": "CVE-2026-82049",
+   "severity": "HIGH",
+   "pkg": "python3",
+   "installed": "3.12.14-r0",
+   "fixed": "3.12.15-r0",
+   "status": "fixed",
+   "target": "supabase/storage-api:v1.80.0@sha256:15aa712fdda0dab83d6345c79b54230c1466c41161f1f3756651778b22c3b292 (alpine 3.23.6)",
+   "type": "alpine"
+  },
+  {
+   "id": "CVE-2026-82049",
+   "severity": "HIGH",
+   "pkg": "python3-pyc",
+   "installed": "3.12.14-r0",
+   "fixed": "3.12.15-r0",
+   "status": "fixed",
+   "target": "supabase/storage-api:v1.80.0@sha256:15aa712fdda0dab83d6345c79b54230c1466c41161f1f3756651778b22c3b292 (alpine 3.23.6)",
+   "type": "alpine"
+  },
+  {
+   "id": "CVE-2026-82049",
+   "severity": "HIGH",
+   "pkg": "python3-pycache-pyc0",
+   "installed": "3.12.14-r0",
+   "fixed": "3.12.15-r0",
+   "status": "fixed",
+   "target": "supabase/storage-api:v1.80.0@sha256:15aa712fdda0dab83d6345c79b54230c1466c41161f1f3756651778b22c3b292 (alpine 3.23.6)",
+   "type": "alpine"
+  },
+  {
+   "id": "CVE-2026-84292",
+   "severity": "HIGH",
+   "pkg": "fast-uri",
+   "installed": "3.1.4",
+   "fixed": "2.4.6, 3.1.7, 4.1.4",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "app/node_modules/fast-uri/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-84292",
+   "severity": "HIGH",
+   "pkg": "fast-uri",
+   "installed": "4.1.2",
+   "fixed": "2.4.6, 3.1.7, 4.1.4",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "app/node_modules/fastify/node_modules/fast-uri/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-84428",
+   "severity": "HIGH",
+   "pkg": "fastify",
+   "installed": "5.11.2",
+   "fixed": "5.12.2",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "app/node_modules/fastify/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-84469",
+   "severity": "HIGH",
+   "pkg": "fastify",
+   "installed": "5.11.2",
+   "fixed": "5.12.2",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "app/node_modules/fastify/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-84504",
+   "severity": "HIGH",
+   "pkg": "fastify",
+   "installed": "5.11.2",
+   "fixed": "5.12.2",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "app/node_modules/fastify/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-84961",
+   "severity": "HIGH",
+   "pkg": "undici",
+   "installed": "7.28.0",
+   "fixed": "7.29.1, 8.10.2",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "app/node_modules/undici/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-93748",
+   "severity": "HIGH",
+   "pkg": "http-cache-semantics",
+   "installed": "4.2.0",
+   "fixed": null,
+   "status": "affected",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "usr/local/lib/node_modules/npm/node_modules/http-cache-semantics/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-93990",
+   "severity": "HIGH",
+   "pkg": "libexpat",
+   "installed": "2.8.4-r0",
+   "fixed": "2.8.5-r0",
+   "status": "fixed",
+   "target": "supabase/storage-api:v1.80.0@sha256:15aa712fdda0dab83d6345c79b54230c1466c41161f1f3756651778b22c3b292 (alpine 3.23.6)",
+   "type": "alpine"
+  },
+  {
+   "id": "CVE-2026-9496",
+   "severity": "HIGH",
+   "pkg": "pacote",
+   "installed": "21.5.0",
+   "fixed": "21.5.1",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "usr/local/lib/node_modules/npm/node_modules/pacote/package.json"
+   ]
+  }
+ ],
+ "trivy_report_created_at": "2026-10-11T02:30:17.776489772Z"
+}

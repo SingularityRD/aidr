@@ -7,11 +7,11 @@ services AIDR uses:
 | Component | Image | Notes |
 |---|---|---|
 | `dashboard` | `aidr/dashboard` (built here) | Web console, `/livez`, `/readyz`, `/metrics` |
-| `api-gw` | `envoyproxy/envoy:v1.39.1` | Routes `/auth/v1`, `/rest/v1`, `/storage/v1`, `/functions/v1`; everything else is 404 |
-| `auth` | `supabase/gotrue:v2.196.0` | Invite-only (sign-up disabled) |
+| `api-gw` | `envoyproxy/envoy:v1.39.2` | Routes `/auth/v1`, `/rest/v1`, `/storage/v1`, `/functions/v1`; everything else is 404 |
+| `auth` | `supabase/gotrue:v2.197.0` | Invite-only (sign-up disabled) |
 | `rest` | `postgrest/postgrest:v14.17` | |
-| `storage` | `supabase/storage-api:v1.74.0` | PVC (`file`) or S3-compatible backend |
-| `functions` | `aidr/edge-functions` (built here) | `supabase/edge-runtime:v1.76.2` + AIDR functions |
+| `storage` | `supabase/storage-api:v1.80.2` | PVC (`file`) or S3-compatible backend |
+| `functions` | `aidr/edge-functions` (built here) | `supabase/edge-runtime:v1.77.4` (digest-pinned) + AIDR functions |
 | `db` | `supabase/postgres:17.6.1.136` | Optional single instance; use `externalDatabase` in production |
 | `migrations` | `aidr/migrations` (built here) | Helm hook Job |
 | `backup` | `aidr/migrations` | Optional `pg_dump` CronJob |
