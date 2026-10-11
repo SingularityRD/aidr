@@ -81,6 +81,7 @@ const protectedRoutes = [
 	"/governance/register",
 	"/governance/requests",
 	"/governance/change-control",
+	"/governance/detection-exceptions",
 ];
 const routes = [...publicRoutes, ...protectedRoutes, ...legacyRoutes];
 

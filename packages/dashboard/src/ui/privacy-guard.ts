@@ -118,8 +118,8 @@ export interface PrivacyEventRow {
 	nativeNer: NativeNerUse | null;
 }
 
-export const NATIVE_NER_USES = ["used", "unavailable"] as const;
-export type NativeNerUse = (typeof NATIVE_NER_USES)[number];
+const NATIVE_NER_USES = ["used", "unavailable"] as const;
+type NativeNerUse = (typeof NATIVE_NER_USES)[number];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
