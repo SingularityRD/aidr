@@ -33,8 +33,10 @@ apart or use a key the extension does not accept.
      signed by Mozilla (listed on addons.mozilla.org, or signed as unlisted and
      self-hosted); replace the example `install_url`.
 2. **Replace the example values.** `policyId`, `literals`, the example
-   `exactData` set (its key is published in this repository, so it must never be
-   deployed), `telemetry.controlPlaneUrl` and `telemetry.apiKey`. Remove
+   `exactData` set (its `keyB64` and `fingerprints` are `REPLACE_WITH_...`
+   placeholders: build the real dataset with `fingerprint-dataset.mjs`, see
+   [Exact data sets](#exact-data-sets). The extension refuses a policy that still
+   carries the placeholder and reports it in its policy warnings), `telemetry.controlPlaneUrl` and `telemetry.apiKey`. Remove
    `telemetry` entirely if you do not want counts sent to your control plane.
 3. **Pilot first.** Roll out to a test group in `monitor` mode, check the
    popup statistics and control-plane counts, then switch to `auto` or
@@ -77,6 +79,7 @@ apart or use a key the extension does not accept.
 | `maxFileBytes` | integer | at most 52428800 (50 MiB) |
 | `restoreResponses` | boolean | restore original values in responses locally |
 | `useNativeHost` | boolean | use the AIDR Privacy native host for NER (install it separately) |
+| `requireNativeNer` | boolean | default `false` (as in the examples). `true` makes native NER mandatory: a send, paste or upload the native host could not check for names, addresses and places is **blocked**; forces and locks `useNativeHost`. Needs the native host on every machine. See [Requiring native NER](#requiring-native-ner) |
 | `telemetry` | `{ "controlPlaneUrl", "apiKey" }` | counts-only telemetry; `https://` required (plain `http://` only for `localhost`/`127.0.0.1`) |
 | `language` | string | `auto`, `en`, `tr` |
 | `policyId` | string | reported with telemetry; `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$` |
@@ -95,6 +98,43 @@ read-only). A managed policy that fails validation still locks them. Set
 `allowUserOverrides: true` to let users keep changing the protection keys you
 do not set (a managed `mode` then still locks `disabledSites`). `language` and a
 user's own `telemetry` target are never locked unless you set them.
+
+## Requiring native NER
+
+`requireNativeNer: true` turns the optional native host
+([`packages/browser-guard/docs/native-host.md`](../../packages/browser-guard/docs/native-host.md))
+into a requirement. While `PERSON`, `ADDRESS` or `LOCATION` is in `enabledEntities`:
+
+- **What it blocks.** A prompt send, text paste or file upload whose text the host did
+  not check with NER is blocked instead of going out after the built-in rules only:
+  host not installed or `nativeMessaging` not granted, host crashed, backed off or
+  slower than the 2.5 s page timeout, a rules-only host (no approved `ner` block in its
+  config), a malformed reply, or text over the host's 200,000-character limit. A
+  prompt with no findings is blocked too: "nothing found without NER" is not a clean
+  check. `monitor` mode (and sites in `disabledSites`) never block; the check is
+  recorded instead, and every `privacy_scan` event carries `native_ner: "used"` or
+  `"unavailable"`.
+- **It needs the native host.** It forces and locks `useNativeHost` on. Install the
+  host (with an approved NER model) on every machine and make sure each user has
+  granted the optional `nativeMessaging` permission *before* you set it, or every send
+  on those machines is blocked. Roll it out in `monitor` mode first and check that the
+  control plane shows `native_ner: "used"`, not `"unavailable"`.
+- **Large uploads are slower.** Every text part of an uploaded file is NER-checked: a
+  large document is scanned in several windows, each waiting for its own host answer
+  (the host starts a process per scan, up to 2.5 s each), so big uploads can take
+  noticeably longer than with rules only, and one failed window blocks the whole
+  upload. Measure on your target hardware with your largest typical files.
+
+The same requirement can be switched on from the dashboard (Browser Privacy Guard →
+**Require native NER**, owners and administrators, multi-factor verification,
+audited). It reaches browsers in the signed dashboard policy, so they also need
+`telemetry` and the managed `dashboardPolicy` trust anchor (see "Allow / block from
+the dashboard" in [`packages/browser-guard/README.md`](../../packages/browser-guard/README.md)).
+Browser Guard takes the stricter value: the
+dashboard can switch the requirement on, but never off where this managed key is
+`true`. While four-eyes change control is on, switching it off in the dashboard is
+refused until four-eyes is turned off (which a second owner or administrator must
+approve).
 
 ## Chrome and Edge on Windows (Group Policy)
 
@@ -199,7 +239,14 @@ node packages/browser-guard/scripts/fingerprint-dataset.mjs \
   --key-file crm.key.b64 --out crm-customers.json
 ```
 
-Put the JSON object into the `exactData` array. Keep `crm.key.b64` (or let the
+Put the JSON object into the `exactData` array, replacing the example entry
+whose `keyB64` is `REPLACE_WITH_DATASET_KEY_FROM_FINGERPRINT_DATASET`. While any
+dataset still carries a `REPLACE_WITH_` placeholder, the extension ignores the
+whole managed `exactData` value and warns
+(`managed: "exactData" still holds the example placeholder key`). Earlier
+versions of these examples shipped a real 32-byte example key; it was retired as
+compromised (see `docs/production-readiness/secret-history-triage-2026-10-11.md`).
+Never reuse a key from an example or from this repository's history. Keep `crm.key.b64` (or let the
 tool generate a key on first run and save `keyB64` from the output) so later
 regenerations keep the same fingerprints. The dataset contains the HMAC key, so
 anyone with the dataset can test guessed values against it: deliver it only

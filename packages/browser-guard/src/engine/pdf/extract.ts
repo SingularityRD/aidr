@@ -6,34 +6,54 @@
  *   ./content.ts   text operators, graphics state, Form XObjects, inline images.
  *
  * Pages come from the trailer's `/Root` page tree (falling back to every `/Type /Page`
- * object). Also extracted: annotation contents, link URIs, form field values and document
- * info (title, author, subject, keywords).
+ * object). Also extracted: annotation contents, link URIs, form field values, document
+ * info (title, author, subject, keywords), XMP metadata streams (`/Type /Metadata`, the
+ * catalog's and any other: text nodes and attribute values) and embedded files - the
+ * `/EmbeddedFiles` name tree, `FileAttachment` annotations, associated files, i.e. every file
+ * specification's `/EF` stream (from every definition of the objects involved, shadowed ones
+ * included) and every embedded-file stream, typed or not - whose content is plain
+ * text (strict UTF-8 / BOM-marked UTF-16, no NUL or binary control bytes, no document or archive
+ * signature). None of that is drawn on a page, but all of it travels with the file.
  *
  * Completeness (`complete: false` plus a reason) is reported when text may be missing:
  *   PDF_NO_TEXT   no text at all (scanned / image-only document);
  *   PDF_PARTIAL   a page that only draws images, a content stream that could not be decoded
  *                 (unsupported filter, corrupt data), glyphs that could not be mapped to
- *                 Unicode (more than 5%), or a size/count budget that was reached.
+ *                 Unicode (more than 5%), an XMP stream that could not be decoded, or a
+ *                 size/count budget that was reached;
+ *   PDF_EMBEDDED_FILES_NOT_INSPECTED
+ *                 an embedded file that is not plain text (a nested PDF, an Office document,
+ *                 an image, an archive...), could not be decoded, is missing, is over the
+ *                 limits, or is defined ambiguously (an embedded-file object whose definition in
+ *                 effect is not the one the cross-reference points to): its content was not
+ *                 scanned, so the PDF is never reported as clean (OCR of the page images does
+ *                 not lift this reason).
  * Embedded raster images are collected for the caller's OCR (./images.ts); `reasonsWithImages`
  * is the completeness verdict that applies once every image has been read.
  * `PdfUnreadable` is thrown for files that are not PDFs or cannot be parsed at all
  * (PDF_UNPARSEABLE) and for encrypted files (PDF_ENCRYPTED).
  */
+
+import { decodeXmlText, walkXml } from "../office/xml.js";
 import { type ContentContext, interpretContent, PageText } from "./content.js";
 import {
+	crossReference,
 	DEFAULT_PDF_LIMITS,
 	expandObjectStreams,
 	PdfDocument,
 	type PdfLimits,
 	parseObjects,
+	type XrefEntry,
+	xrefConflict,
 } from "./document.js";
 import { decodeTextString } from "./encodings.js";
 import type { Font } from "./fonts.js";
 import { type PdfImage, PdfImageCollector } from "./images.js";
 import {
 	binaryString,
-	type PdfDict,
+	PdfDict,
 	PdfName,
+	PdfRef,
 	PdfStream,
 	PdfString,
 	type PdfValue,
@@ -154,6 +174,213 @@ function infoTexts(doc: PdfDocument): string[] {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Embedded files and XMP metadata
+// ---------------------------------------------------------------------------------------------
+
+/** Embedded files read per document; any beyond are reported as not inspected. */
+const MAX_EMBEDDED_FILES = 64;
+/** Nesting walked inside one object while looking for file specifications. */
+const MAX_VALUE_DEPTH = 32;
+
+interface HiddenStreams {
+	readonly embedded: Set<PdfStream>;
+	readonly metadata: Set<PdfStream>;
+	/** Object numbers an `/EF` entry refers to (whichever definition of the referrer). */
+	readonly efTargets: Set<number>;
+	/**
+	 * A file specification's `/EF` entry that does not resolve to a stream, or an embedded-file
+	 * object whose definition in effect is not the one the cross-reference points to.
+	 */
+	missing: boolean;
+}
+
+/** Every definition of `v` when it is a reference (shadowed ones included), else `v` itself. */
+function definitionsOf(doc: PdfDocument, v: PdfValue): PdfValue[] {
+	if (!(v instanceof PdfRef)) return [v];
+	return (doc.definitions.get(v.num) ?? []).map((d) => doc.resolve(d.value)) as PdfValue[];
+}
+
+/** Records the streams of a file specification's `/EF` dictionary (every definition of them). */
+function addEmbeddedStreams(doc: PdfDocument, ef: PdfValue, out: HiddenStreams): void {
+	const dicts = definitionsOf(doc, ef).filter((d): d is PdfDict => d instanceof PdfDict);
+	if (ef instanceof PdfRef) out.efTargets.add(ef.num);
+	if (!dicts.length) {
+		out.missing = true;
+		return;
+	}
+	for (const dict of dicts)
+		for (const entry of dict.map.values()) {
+			if (entry instanceof PdfRef) out.efTargets.add(entry.num);
+			const streams = definitionsOf(doc, entry).filter((s) => s instanceof PdfStream);
+			if (!streams.length) out.missing = true;
+			for (const stream of streams) out.embedded.add(stream as PdfStream);
+		}
+}
+
+/**
+ * Records the `/EF` streams of every file specification nested in `value` (refs not followed);
+ * true when `value` holds a file specification (an `/EF` entry or a `/Type /Filespec`).
+ */
+function findFileSpecs(
+	doc: PdfDocument,
+	value: PdfValue,
+	out: HiddenStreams,
+	depth: number,
+): boolean {
+	if (depth > MAX_VALUE_DEPTH) {
+		out.missing = true; // cannot prove there is no file specification deeper down
+		return true;
+	}
+	if (Array.isArray(value))
+		return value.reduce<boolean>(
+			(found, item) => findFileSpecs(doc, item, out, depth + 1) || found,
+			false,
+		);
+	const dict = value instanceof PdfStream ? value.dict : value instanceof PdfDict ? value : null;
+	let found = dict !== null && doc.name(dict.get("Type")) === "Filespec";
+	for (const [key, item] of dict?.map ?? []) {
+		if (key === "EF") addEmbeddedStreams(doc, item, out);
+		found = key === "EF" || findFileSpecs(doc, item, out, depth + 1) || found;
+	}
+	return found;
+}
+
+/** `/Params` keys only an embedded file stream carries (ISO 32000-1 table 45). */
+const EMBEDDED_PARAMS = ["Size", "CheckSum", "CreationDate", "ModDate", "Mac"];
+
+/**
+ * An embedded file stream, even without its (optional) `/Type /EmbeddedFile`: a MIME-type
+ * `/Subtype` (`text/plain`, never `/Image` or `/Form`) or embedded-file `/Params`.
+ */
+function isEmbeddedFile(doc: PdfDocument, stream: PdfStream): boolean {
+	const type = doc.name(stream.dict.get("Type"));
+	if (type === "EmbeddedFile") return true;
+	if (type !== undefined) return false;
+	if (doc.name(stream.dict.get("Subtype"))?.includes("/")) return true;
+	const params = doc.dict(stream.dict.get("Params"));
+	return EMBEDDED_PARAMS.some((k) => params?.get(k) !== undefined);
+}
+
+/** Records the hidden streams of one object definition; true when it is about embedded files. */
+function collectHidden(doc: PdfDocument, value: PdfValue, out: HiddenStreams): boolean {
+	let embedded = false;
+	if (value instanceof PdfStream && isEmbeddedFile(doc, value)) {
+		out.embedded.add(value);
+		embedded = true;
+	} else if (value instanceof PdfStream && doc.name(value.dict.get("Type")) === "Metadata")
+		out.metadata.add(value);
+	return findFileSpecs(doc, value, out, 0) || embedded;
+}
+
+/**
+ * Embedded-file and metadata streams anywhere in the document. Every definition of every object
+ * is searched, not only the one in effect: a reader that follows the cross-reference may use a
+ * definition this parser considers shadowed (e.g. a file specification "redefined" without its
+ * `/EF` after the last xref section). Such a disagreement on an embedded-file object is itself
+ * reported (`missing`), as the file is then ambiguous.
+ */
+function hiddenStreams(doc: PdfDocument, xref: Map<number, XrefEntry>): HiddenStreams {
+	const out: HiddenStreams = {
+		embedded: new Set(),
+		metadata: new Set(),
+		efTargets: new Set(),
+		missing: false,
+	};
+	const relevant = new Set<number>();
+	for (const [num, defs] of doc.definitions)
+		for (const { value } of defs) if (collectHidden(doc, value, out)) relevant.add(num);
+	for (const num of out.efTargets) relevant.add(num);
+	for (const num of relevant) if (xrefConflict(doc, num, xref)) out.missing = true;
+	// A name tree of embedded files that resolves to nothing readable is not "no files".
+	const names = doc.dict(doc.dict(doc.trailer("Root")?.get("Root"))?.get("Names"));
+	if (names?.get("EmbeddedFiles") !== undefined && out.embedded.size === 0) out.missing = true;
+	return out;
+}
+
+const NOT_TEXT_SIGNATURES: readonly (readonly number[])[] = [
+	[0x25, 0x50, 0x44, 0x46, 0x2d], // %PDF-
+	[0x50, 0x4b, 0x03, 0x04], // ZIP (OOXML, ODF, archives)
+	[0x50, 0x4b, 0x05, 0x06],
+	[0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1], // OLE compound file (legacy Office)
+	[0x7b, 0x5c, 0x72, 0x74, 0x66], // {\rtf (control words, not plain text)
+];
+
+/** Strict text decode of an embedded file, or null when it is not plain text. */
+function plainText(bytes: Uint8Array): string | null {
+	const head = bytes.subarray(0, 1024);
+	for (const sig of NOT_TEXT_SIGNATURES) {
+		for (let i = 0; i + sig.length <= head.length; i++)
+			if (sig.every((b, j) => head[i + j] === b)) return null;
+	}
+	let encoding = "utf-8";
+	if (bytes[0] === 0xff && bytes[1] === 0xfe) encoding = "utf-16le";
+	else if (bytes[0] === 0xfe && bytes[1] === 0xff) encoding = "utf-16be";
+	let text: string;
+	try {
+		text = new TextDecoder(encoding, { fatal: true }).decode(bytes);
+	} catch {
+		return null;
+	}
+	// NUL and other C0 controls (besides tab/newlines/form feed) mean binary data.
+	return /[\u0000-\u0008\u000e-\u001a\u001c-\u001f]/.test(text) ? null : text;
+}
+
+/** Text nodes and attribute values (namespace declarations excepted) of an XMP packet. */
+function xmpText(xml: string): string {
+	const out: string[] = [];
+	try {
+		walkXml(xml, {
+			start(tag) {
+				for (const a of tag.attrs)
+					if (a.name !== "xmlns" && !a.name.startsWith("xmlns:") && a.value.trim())
+						out.push(a.value);
+			},
+			text(start, end, cdata) {
+				const raw = xml.slice(start, end);
+				const text = cdata ? raw : decodeXmlText(raw);
+				if (text.trim()) out.push(text.trim());
+			},
+		});
+	} catch {
+		return xml; // not well-formed: scan the packet as it is
+	}
+	return out.join("\n");
+}
+
+interface Hidden {
+	readonly texts: string[];
+	/** An embedded file whose content was not scanned. */
+	readonly uninspected: boolean;
+}
+
+/** Text of XMP metadata and plain-text embedded files; see the module comment. */
+async function hiddenTexts(doc: PdfDocument, checkDeadline: () => void): Promise<Hidden> {
+	const streams = hiddenStreams(doc, await crossReference(doc));
+	const texts: string[] = [];
+	let uninspected = streams.missing || streams.embedded.size > MAX_EMBEDDED_FILES;
+	let chars = 0;
+	const keep = (text: string): boolean => {
+		chars += text.length;
+		if (chars > doc.limits.maxTextChars) return false;
+		texts.push(text);
+		return true;
+	};
+	for (const stream of streams.metadata) {
+		checkDeadline();
+		const decoded = await doc.stream(stream);
+		const text = decoded?.complete ? plainText(decoded.data) : null;
+		if (text === null || !keep(xmpText(text))) doc.partial = true;
+	}
+	for (const stream of [...streams.embedded].slice(0, MAX_EMBEDDED_FILES)) {
+		checkDeadline();
+		const decoded = await doc.stream(stream);
+		const text = decoded?.complete ? plainText(decoded.data) : null;
+		if (text === null || !keep(text)) uninspected = true;
+	}
+	return { texts, uninspected };
+}
+
+// ---------------------------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------------------------
 
@@ -244,14 +471,17 @@ export async function extractPdfText(
 		}
 	}
 	extras.push(...formTexts(doc, doc.dict(doc.trailer("Root")?.get("Root"))), ...infoTexts(doc));
+	const hidden = await hiddenTexts(doc, checkDeadline);
+	extras.push(...hidden.texts);
 	images.addUndrawn();
-	const reasons = completeness(doc, segments, tally, false);
+	const attachments = hidden.uninspected ? ["PDF_EMBEDDED_FILES_NOT_INSPECTED"] : [];
+	const reasons = [...completeness(doc, segments, tally, false), ...attachments];
 	return {
 		segments: [...segments, ...extras.filter((s) => s.trim())],
 		pages: pages.length,
 		complete: reasons.length === 0,
 		reasons,
-		reasonsWithImages: completeness(doc, segments, tally, true),
+		reasonsWithImages: [...completeness(doc, segments, tally, true), ...attachments],
 		images: images.images(),
 		imageOverflow: images.overflow,
 	};

@@ -127,7 +127,7 @@
   severity: high
   confidence: 0.80
   action: require_approval
-  pattern: "\\bchmod\\s+777\\b"
+  pattern: "\\bchmod\\s+(?:-{1,2}[\\w-]+\\s+){0,6}(?:a=rwx|=?0?777)\\b"
   match_on: command
   title: "Overly permissive file permissions"
   expires_at: null
@@ -235,7 +235,7 @@
   severity: high
   confidence: 0.80
   action: block
-  pattern: "\\b(nslookup|dig|host)\\b[^|;]{0,300}\\$\\([^)]{1,300}\\)\\.[a-zA-Z]"
+  pattern: "\\b(nslookup|dig|host|drill|ping|ping6|getent)\\b[^|;]{0,300}\\$\\([^)]{1,300}\\)\\.[a-zA-Z]"
   match_on: command
   title: "DNS exfiltration via command substitution as subdomain label"
   expires_at: null
@@ -384,5 +384,66 @@
   case_insensitive: true
   match_on: command
   title: "Outbound socket attached to an interactive shell"
+  expires_at: null
+  revoked: false
+
+# --- Additional reverse shells (red-team regression: Ruby IO.popen, Perl, FIFO back-pipe) ---
+- id: "CLT-CMD-032"
+  category: tool
+  severity: critical
+  confidence: 0.90
+  action: block
+  pattern: "ruby\\b.{0,300}TCPSocket.{0,300}(exec|system|spawn|IO\\.popen|%x|`)"
+  match_on: command
+  title: "Ruby reverse shell via TCPSocket and command execution"
+  expires_at: null
+  revoked: false
+
+- id: "CLT-CMD-033"
+  category: tool
+  severity: critical
+  confidence: 0.90
+  action: block
+  pattern: "perl\\b.{0,300}(Socket|IO::Socket).{0,300}(exec|system)\\s*\\(?[\"']?/bin/(sh|bash|zsh)"
+  match_on: command
+  title: "Perl reverse shell via socket and exec"
+  expires_at: null
+  revoked: false
+
+- id: "CLT-CMD-034"
+  category: tool
+  severity: critical
+  confidence: 0.90
+  action: block
+  pattern: "\\bmkfifo\\b[^\\n]{0,300}\\|\\s*(?:/[^\\s|]{1,80}/)?(?:sh|bash|zsh|ksh|dash)\\b[^\\n]{0,200}\\|\\s*(?:nc|ncat|netcat)\\b"
+  match_on: command
+  title: "Named-pipe (FIFO) back-pipe reverse shell via netcat"
+  expires_at: null
+  revoked: false
+
+# --- Download piped to a shell through a wrapper (red-team regression) ---
+# CLT-CMD-001/002 require the shell to be the direct pipe target. A wrapper
+# (timeout/xargs/env/sudo/nohup/stdbuf/nice/setsid) between the pipe and the
+# shell evaded them: `curl ... | timeout 5 bash`, `sudo curl ... | sudo bash`.
+- id: "CLT-CMD-035"
+  category: tool
+  severity: critical
+  confidence: 0.90
+  action: block
+  pattern: "\\b(curl|wget|fetch)\\b[^|]{0,300}\\|\\s*(?:(?:sudo|timeout|xargs|env|command|nohup|stdbuf|nice|setsid|doas)\\b[^|]{0,60}\\s+){1,3}(?:/[^\\s|]{1,80}/)?(bash|sh|zsh|ksh|dash)\\b"
+  match_on: command
+  title: "Remote code execution via download piped to a wrapped shell"
+  expires_at: null
+  revoked: false
+
+# --- Host firewall / packet-filter disable (red-team regression) ---
+- id: "CLT-CMD-036"
+  category: defense_evasion
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "\\b(?:ufw\\s+disable|iptables\\s+-F\\b|ip6tables\\s+-F\\b|nft\\s+flush\\s+ruleset|systemctl\\s+(?:stop|disable|mask)\\s+(?:--now\\s+)?(?:firewalld|ufw|nftables)\\b|service\\s+(?:firewalld|ufw|iptables)\\s+stop|setenforce\\s+0)\\b"
+  match_on: command
+  title: "Host firewall or packet filter disabled"
   expires_at: null
   revoked: false

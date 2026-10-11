@@ -1,0 +1,36 @@
+{
+ "name": "rest-candidate-v14-18",
+ "service": "rest",
+ "role": "candidate",
+ "image": "postgrest/postgrest:v14.18",
+ "ref": "mirror.gcr.io/postgrest/postgrest:v14.18@sha256:c7cd7e265a85b05248abf53f4473fcec7e327c282d0bd0cf60f1551996d09fcf",
+ "index_digest": "sha256:c7cd7e265a85b05248abf53f4473fcec7e327c282d0bd0cf60f1551996d09fcf",
+ "docker_hub_tag_digest_match": true,
+ "started_at": "2026-10-11T02:42:31.439Z",
+ "finished_at": "2026-10-11T02:42:31.439Z",
+ "succeeded": true,
+ "os": null,
+ "scanned_image_id": "sha256:455fe971661e8c8c2722aece9f1e40e15871fb350724ca5433d54e40f5ade3c8",
+ "repo_digests": [
+  "mirror.gcr.io/postgrest/postgrest@sha256:c7cd7e265a85b05248abf53f4473fcec7e327c282d0bd0cf60f1551996d09fcf"
+ ],
+ "all_severity_findings": {},
+ "coverage": [],
+ "counts": {
+  "CRITICAL": {
+   "findings": 0,
+   "unique_ids": 0,
+   "fixed_available": 0,
+   "fixed_available_unique_ids": 0
+  },
+  "HIGH": {
+   "findings": 0,
+   "unique_ids": 0,
+   "fixed_available": 0,
+   "fixed_available_unique_ids": 0
+  },
+  "total_findings": 0
+ },
+ "findings": [],
+ "trivy_report_created_at": "2026-10-11T02:29:42.412328519Z"
+}

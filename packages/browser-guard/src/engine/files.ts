@@ -10,7 +10,10 @@
  *   2. `bytes.length > policy.maxFileBytes` -> block `FILE_TOO_LARGE`.
  *   2b. Documents: Office Open XML (docx/xlsx/pptx and their macro/template variants),
  *      OpenDocument (odt/ods/odp/odg and templates), legacy binary Office (doc/xls/ppt...) and
- *      PDF, by extension, or - for an unknown/missing extension - by MIME type or content.
+ *      PDF, recognised first by strong content signatures (PDF header, ZIP with an OOXML/ODF
+ *      package, OLE compound file), whatever the name or MIME type claims (a renamed
+ *      document is scanned and subject to `documentHandling` as what it really is), then by
+ *      extension, then - for an unknown/missing extension - by MIME type.
  *      `policy.documentHandling` (default "mask"):
  *        "block" -> block `DOCUMENT_BLOCKED_BY_POLICY` (legacy formats included);
  *        "allow" -> not parsed; handled like any other binary (step 4);
@@ -36,7 +39,10 @@
  *                   or over-limit container are refused (`DOCUMENT_ENCRYPTED`,
  *                   `DOCUMENT_MACROS`, `DOCUMENT_EMBEDDED_OBJECT`, `DOCUMENT_MALFORMED`,
  *                   `DOCUMENT_LIMIT_EXCEEDED`).
- *                   PDF: text is extracted (./pdf/extract.ts) and scanned, never rewritten:
+ *                   PDF: text is extracted (./pdf/extract.ts: pages, annotations, forms,
+ *                   document info, XMP metadata, plain-text embedded files) and scanned, never
+ *                   rewritten (an embedded file that is not plain text adds
+ *                   `PDF_EMBEDDED_FILES_NOT_INSPECTED`, so the PDF is never clean):
  *                   findings block `SENSITIVE_DATA_IN_PDF` (the user is told to paste the text
  *                   instead). Embedded raster images (./pdf/images.ts) go to the native host's
  *                   OCR (`deps.inspectImage`, the standalone-image path): sensitive text blocks
@@ -120,21 +126,23 @@ import type {
 	PlaceholderVault,
 	SignalCode,
 } from "../types.js";
+import { decodeSingleByte } from "./codepages.js";
 import { type Counts, countFindings, mergeCounts } from "./counts.js";
 import { extractLegacyOffice, type LegacyExtraction } from "./legacy/extract.js";
 import { MAX_OCR_IMAGE_BYTES, MAX_OCR_IMAGES, OCR_BUDGET_MS, ocrFormat } from "./office/images.js";
-import { ODF_EXTENSIONS, ODF_MIME, sanitizeOdf, sniffOdf } from "./office/odf.js";
+import { isOdfListing, ODF_EXTENSIONS, ODF_MIME, sanitizeOdf, sniffOdf } from "./office/odf.js";
 import {
 	type DocumentOutcome,
 	DocumentRefused,
 	DocumentUnreadable,
 	isCompoundFile,
+	isOoxmlListing,
 	OOXML_EXTENSIONS,
 	sanitizeOoxml,
 	sniffOoxml,
 } from "./office/ooxml.js";
 import type { DocScanner } from "./office/scanner.js";
-import { looksLikeZip } from "./office/zip.js";
+import { centralDirectoryNames, looksLikeZip, zipDirectory } from "./office/zip.js";
 import { extractPdfText, type PdfExtraction, PdfUnreadable } from "./pdf/extract.js";
 import type { PdfImage } from "./pdf/images.js";
 
@@ -428,19 +436,15 @@ const C1_CONTROL = /[\u0080-\u009f]/g;
 /**
  * Single-byte fallback for text files that are not UTF-8: windows-1254, or windows-1252
  * when it leaves fewer undefined bytes (decoded as C1 controls). Null when the bytes hold
- * a NUL (not a single-byte text file) or no legacy decoder is available.
+ * a NUL (not a single-byte text file).
  */
 export function decodeLegacyTextFile(bytes: Uint8Array): DecodedText | null {
 	if (bytes.includes(0)) return null;
 	let best: DecodedText | null = null;
 	let bestControls = Number.POSITIVE_INFINITY;
 	for (const encoding of LEGACY_ENCODINGS) {
-		let text: string;
-		try {
-			text = new TextDecoder(encoding, { fatal: true }).decode(bytes);
-		} catch {
-			continue; // decoder unavailable in this runtime (or it rejected the bytes)
-		}
+		// Fixed tables, not TextDecoder: some runtimes decode windows-1252 as Latin-1.
+		const text = decodeSingleByte(bytes, encoding);
 		const controls = text.match(C1_CONTROL)?.length ?? 0;
 		if (controls < bestControls) {
 			best = { text, bom: false, legacy: encoding };
@@ -1123,17 +1127,24 @@ const LEGACY_MIME = /^application\/(?:msword|vnd\.ms-(?:excel|powerpoint))\s*(?:
 const DOCUMENT_SCAN_BUDGET_MS = 30_000;
 
 /**
- * Office Open XML, OpenDocument, legacy Office and PDF uploads, by extension; files with an
- * unknown or missing extension are recognised by MIME type or content (so a renamed document is
- * not waved through).
+ * Office Open XML, OpenDocument, legacy Office and PDF uploads. Strong content signatures come
+ * first, whatever the name or MIME type claims, so renaming a document (`report.pdf` ->
+ * `report.txt`, `text/plain`) neither skips its scan nor the document policy:
+ *   - a PDF header (`%PDF-` at the start, or in the first KiB of a file that ends in `%%EOF`);
+ *   - a ZIP that holds an OOXML or OpenDocument package;
+ *   - an OLE compound file (legacy Office) - except behind a known non-document binary
+ *     extension (`.msg`, `.msi`...), and behind an OOXML name, where the OOXML handler refuses
+ *     an encrypted package or reports the file as unreadable.
+ * Otherwise the extension decides; files with an unknown or missing extension are recognised
+ * by MIME type.
  */
 function documentKind(file: GuardFile): DocumentKind | null {
 	const ext = extensionOf(baseName(file.name));
 	const known = documentKindByExtension(ext);
-	// Word and Excel open an OOXML package saved under a legacy name: mask it as one.
-	if (known === "legacy" && looksLikeZip(file.bytes) && sniffOoxml(file.bytes)) return "ooxml";
+	const signature = documentKindBySignature(file.bytes, ext, known);
+	if (signature) return signature;
 	if (known !== undefined) return known;
-	return documentKindByContent(file);
+	return documentKindByMime(file);
 }
 
 /** The kind an extension implies: a document kind, null for other known files, else undefined. */
@@ -1146,23 +1157,56 @@ function documentKindByExtension(ext: string): DocumentKind | null | undefined {
 	return undefined;
 }
 
-function documentKindByContent(file: GuardFile): DocumentKind | null {
-	if (/^application\/pdf\s*(?:;|$)/i.test(file.type) || startsWithPdf(file.bytes)) return "pdf";
-	const zip = looksLikeZip(file.bytes);
-	if (OOXML_MIME.test(file.type) || (zip && sniffOoxml(file.bytes))) return "ooxml";
-	if (ODF_MIME.test(file.type) || (zip && sniffOdf(file.bytes))) return "odf";
-	if (LEGACY_MIME.test(file.type) || isCompoundFile(file.bytes)) return "legacy";
+/** The kind the bytes prove, whatever the name says; null when they prove nothing. */
+function documentKindBySignature(
+	bytes: Uint8Array,
+	ext: string,
+	known: DocumentKind | null | undefined,
+): DocumentKind | null {
+	if (hasPdfSignature(bytes)) return "pdf";
+	if (looksLikeZip(bytes)) {
+		if (sniffOoxml(bytes)) return "ooxml";
+		if (sniffOdf(bytes)) return "odf";
+		return null;
+	}
+	if (!isCompoundFile(bytes)) return null;
+	if (known === "ooxml") return "ooxml";
+	return known === null && BINARY_EXTENSIONS.has(ext) ? null : "legacy";
+}
+
+function documentKindByMime(file: GuardFile): DocumentKind | null {
+	if (/^application\/pdf\s*(?:;|$)/i.test(file.type)) return "pdf";
+	if (OOXML_MIME.test(file.type)) return "ooxml";
+	if (ODF_MIME.test(file.type)) return "odf";
+	if (LEGACY_MIME.test(file.type)) return "legacy";
 	return null;
 }
 
-function startsWithPdf(bytes: Uint8Array): boolean {
-	return (
-		bytes[0] === 0x25 &&
-		bytes[1] === 0x50 &&
-		bytes[2] === 0x44 &&
-		bytes[3] === 0x46 &&
-		bytes[4] === 0x2d
-	);
+const PDF_HEADER = [0x25, 0x50, 0x44, 0x46, 0x2d]; // %PDF-
+const PDF_EOF = [0x25, 0x25, 0x45, 0x4f, 0x46]; // %%EOF
+
+function indexOfBytes(
+	bytes: Uint8Array,
+	needle: readonly number[],
+	from: number,
+	to: number,
+): number {
+	const last = Math.min(to, bytes.length) - needle.length;
+	outer: for (let i = Math.max(0, from); i <= last; i++) {
+		for (let j = 0; j < needle.length; j++) if (bytes[i + j] !== needle[j]) continue outer;
+		return i;
+	}
+	return -1;
+}
+
+/**
+ * `%PDF-` at offset 0, or within the first KiB (PDF readers accept leading junk) of a file
+ * that also carries an end-of-file marker in its last 2 KiB.
+ */
+function hasPdfSignature(bytes: Uint8Array): boolean {
+	const at = indexOfBytes(bytes, PDF_HEADER, 0, 1024 + PDF_HEADER.length);
+	if (at === 0) return true;
+	return at > 0 && indexOfBytes(bytes, PDF_EOF, bytes.length - 2048, bytes.length) >= 0;
 }
 
 /** The document handlers' view of detection + vault (see ./office/scanner.ts). */
@@ -1447,6 +1491,51 @@ async function handleDocument(
 	if (kind === "pdf") return handlePdf(file, scanner, policy);
 	if (kind === "legacy") return handleLegacy(file, scanner, policy);
 	return handlePackage(file, kind, scanner, counts, policy);
+}
+
+/**
+ * True when the file is handled as a document (Office, OpenDocument, legacy Office, PDF) by its
+ * content signature first, then name / MIME type - the same decision `sanitizeFile` makes, so a
+ * PDF renamed to .txt is a document here too. `bytes` may be only the head of a large file
+ * (PDF / OLE signatures are recognised from it; a ZIP package needs the whole file).
+ */
+export function isDocumentContent(file: GuardFile): boolean {
+	return documentKind(file) !== null;
+}
+
+/** Bytes read from the start of a file too large to read whole (PDF / OLE / ZIP signatures). */
+export const SNIFF_HEAD_BYTES = 4096;
+/** Bytes read from its end: the ZIP end-of-central-directory record plus the longest comment. */
+const SNIFF_TAIL_BYTES = 0xffff + 22;
+/** Largest central directory read to list a large ZIP's entries (bigger: fail closed). */
+const MAX_SNIFF_DIRECTORY_BYTES = 16 * 1024 * 1024;
+
+/**
+ * {@link isDocumentContent} for a file too large to read whole, from its head, its tail and
+ * (for a ZIP) its central directory, read through `read(start, end)`. Fails closed: a head that
+ * starts like a PDF (`%PDF-` within the first KiB), an OLE compound file or a ZIP whose entry
+ * list cannot be read is a document; a ZIP is one when its entry list is an OOXML/ODF package's.
+ */
+export async function isLargeDocumentContent(
+	file: Pick<GuardFile, "name" | "type"> & { readonly size: number },
+	read: (start: number, end: number) => Promise<Uint8Array>,
+): Promise<boolean> {
+	const head = await read(0, Math.min(file.size, SNIFF_HEAD_BYTES));
+	if (isDocumentContent({ name: file.name, type: file.type, bytes: head })) return true;
+	if (indexOfBytes(head, PDF_HEADER, 0, 1024 + PDF_HEADER.length) >= 0) return true;
+	if (isCompoundFile(head)) return true;
+	if (!looksLikeZip(head)) return false;
+	const tailStart = Math.max(0, file.size - SNIFF_TAIL_BYTES);
+	const tail = await read(tailStart, file.size);
+	const dir = zipDirectory(tail);
+	if (!dir || dir.size > MAX_SNIFF_DIRECTORY_BYTES || dir.offset + dir.size > file.size)
+		return true;
+	const directory =
+		dir.offset >= tailStart
+			? tail.subarray(dir.offset - tailStart, dir.offset - tailStart + dir.size)
+			: await read(dir.offset, dir.offset + dir.size);
+	const names = centralDirectoryNames(directory, dir.count);
+	return names === null || isOoxmlListing(names) || isOdfListing(names);
 }
 
 /** True for uploads handled as documents (Office, OpenDocument, PDF): the content script's policy gate. */

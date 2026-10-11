@@ -2,7 +2,11 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { inspectMcpServerInventory, loadMcpServerInventory } from "../mcp-inventory.js";
+import {
+	defaultMcpConfigPaths,
+	inspectMcpServerInventory,
+	loadMcpServerInventory,
+} from "../mcp-inventory.js";
 
 describe("mcp-inventory", () => {
 	it("parses mcpServers entries from config", async () => {
@@ -64,6 +68,46 @@ describe("mcp-inventory", () => {
 			expect(byName.get(name)?.riskHints).toContain("remote_mcp_url");
 			expect(byName.get(name)?.status).toBe("unknown");
 		}
+	});
+
+	it("scans every OpenCode config location by default, including JSONC and the project root", async () => {
+		const project = await mkdtemp(join(tmpdir(), "aidr-mcp-opencode-"));
+		const defaults = defaultMcpConfigPaths(project);
+		for (const path of [
+			"~/.config/opencode/opencode.json",
+			"~/.config/opencode/opencode.jsonc",
+			join(project, "opencode.json"),
+			join(project, "opencode.jsonc"),
+			join(project, ".opencode", "opencode.json"),
+			join(project, ".opencode", "opencode.jsonc"),
+		]) {
+			expect(defaults).toContain(path);
+		}
+		const files: Array<[string, string]> = [
+			[
+				join(project, "opencode.jsonc"),
+				'{\n  // project\n  "mcp": { "rootJsonc": { "command": "node", "args": ["a.js"] } },\n}',
+			],
+			[
+				join(project, "opencode.json"),
+				'{"mcp": {"rootJson": {"command": "node", "args": ["b.js"]}}}',
+			],
+			[
+				join(project, ".opencode", "opencode.jsonc"),
+				'{\n  /* nested */ "mcp": { "nestedJsonc": { "url": "https://mcp.example.com/x" } }\n}',
+			],
+		];
+		for (const [path, content] of files) {
+			await mkdir(dirname(path), { recursive: true });
+			await writeFile(path, content);
+		}
+		const report = await inspectMcpServerInventory(defaults);
+		for (const [path] of files) {
+			expect(report.sources.find((source) => source.path === path)?.status).toBe("read");
+		}
+		expect(report.items.map((item) => item.name).sort()).toEqual(
+			expect.arrayContaining(["nestedJsonc", "rootJson", "rootJsonc"]),
+		);
 	});
 
 	it("parses Cursor/OpenCode/OpenClaw-style nested mcp config shapes", async () => {

@@ -234,7 +234,7 @@ test("promotion workflow keeps verifier trust, run attestation, durable state an
 	assert.match(dashboardPromotion, /state\.git_sha !== process\.env\.EXPECTED_SHA/);
 	assert.match(dashboardPromotion, /dashboard_archive_sha256/);
 	assert.match(dashboardPromotion, /verify-deployed-dashboard\.mjs/);
-	assert.ok(dashboardPromotion.indexOf("verify-deployed-dashboard.mjs") < dashboardPromotion.indexOf("test:route-smoke"));
+	assert.ok(dashboardPromotion.indexOf("verify-deployed-dashboard.mjs") < dashboardPromotion.indexOf("dashboard-route-smoke.mjs"));
 	assert.doesNotMatch(dashboardPromotion, /grep -F/);
 	const rollback = workflow.slice(workflow.indexOf("  rollback:"), workflow.indexOf("  yank:"));
 	assert.match(rollback, /id: rollback_verify/);

@@ -2152,6 +2152,7 @@ async function runEvaluationPipeline(
 		config,
 		request.toolInput,
 		managedState,
+		{ workingDirectory: reportedWorkingDirectory(context) },
 	);
 	// An allowlist entry suppresses only the signals of the artifacts it names.
 	// The call takes the allowlisted fast path only when every artifact is
@@ -2236,6 +2237,9 @@ async function runEvaluationPipeline(
 	// Rules that threw while matching this call: their signal is skipped, so
 	// the inspection is degraded, never clean.
 	let failedRules: ReadonlyArray<{ threatId: string; reason: string }> = [];
+	// True when the diff-aware edit inspection covered only part of the edit (a
+	// size bound cut it) or did not run: never a clean allow.
+	let editViewsIncomplete = false;
 	if (config.heuristics_enabled) {
 		const loaded = await loadHeuristics(context, config, logger);
 		threatsLoaded = loaded.threatsLoaded;
@@ -2244,7 +2248,9 @@ async function runEvaluationPipeline(
 		// Diff-aware agent-safety rules: what an edit adds to or removes from
 		// tests, CI and lint/coverage configuration (agent-safety/edit-views.ts).
 		if (loaded.engine.hasEditViewRules) {
-			heuristicMatches.push(...loaded.engine.matchEditViews(await buildEditViews(request, logger)));
+			const views = await buildEditViews(request, logger, reportedWorkingDirectory(context));
+			editViewsIncomplete = views.truncated;
+			heuristicMatches.push(...loaded.engine.matchEditViews(views));
 		}
 		failedRules = [...loaded.engine.unavailableThreats];
 		// Model-loading rules decide like any heuristic; secure-code findings
@@ -2514,6 +2520,14 @@ async function runEvaluationPipeline(
 		logger.warn("Local detection degraded: threat rules failed while matching", {
 			threatIds: [...new Set(failedRules.map((failure) => failure.threatId))],
 		});
+	}
+	if (editViewsIncomplete && verdict.decision === "allow") {
+		verdict = detectorVerdict(
+			"ask",
+			"detection_degraded",
+			"detection_degraded",
+			"Agent-safety edit inspection covered only part of this edit (a size bound was reached), so the change to tests, CI or quality configuration was NOT fully inspected. This is not a clean result.",
+		);
 	}
 
 	// A URL leg that did not run or covered only part of the requested URLs is a

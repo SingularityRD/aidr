@@ -541,6 +541,24 @@ describe("options page", () => {
 		});
 	});
 
+	it("shows when an administrator made native NER mandatory", async () => {
+		const optional = fakeEnv({ policy: { useNativeHost: true, managedKeys: ["useNativeHost"] } });
+		await openOptions(optional);
+		expect(document.getElementById("native-required")).toBeNull();
+		const env = fakeEnv({
+			policy: {
+				useNativeHost: true,
+				requireNativeNer: true,
+				managedKeys: ["requireNativeNer", "useNativeHost"],
+			},
+			stats: { nativeHost: "unavailable" },
+		});
+		await openOptions(env);
+		expect(input("#native-host-toggle").disabled).toBe(true);
+		expect(text("#native-required")).toContain("Required by your organisation");
+		expect(text("#native-required")).toContain("it is blocked");
+	});
+
 	it("offers a grant button when an administrator enabled the native host", async () => {
 		const env = fakeEnv({
 			policy: { useNativeHost: true, managedKeys: ["useNativeHost"] },

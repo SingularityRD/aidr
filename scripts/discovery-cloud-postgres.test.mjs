@@ -22,7 +22,7 @@ async function sql(text) { const r = await docker(args, text); assert.equal(r.co
 async function denied(text, pattern) { const r = await docker(args, text); assert.notEqual(r.code, 0); assert.match(r.stderr, pattern); }
 
 test("typed provider discovery preserves authorization, reconciliation and offboarding", { timeout: 600000 }, async t => {
-	const started = await docker(["run", "--detach", "--rm", "--pull", "never", "--network", "none", "--name", container, "-e", "POSTGRES_PASSWORD=discovery-fixture-only", "supabase/postgres:17.6.1.136"]);
+	const started = await docker(["run", "--detach", "--rm", "--pull", "never", "--network", "none", "--name", container, "-e", "POSTGRES_PASSWORD=discovery-fixture-only", "supabase/postgres:17.11.0.004"]);
 	assert.equal(started.code, 0, started.stderr);
 	try {
 		let ready = false;

@@ -29,11 +29,11 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { GATES, INDEX_FILE } from "./generate-v8-evidence-index.mjs";
+import { CANDIDATE_RELEASE_DIR, GATES, INDEX_FILE } from "./generate-v8-evidence-index.mjs";
 import { evidenceRunnerOutputs, existingOutputPaths } from "./lib/evidence-output-guard.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const CANDIDATE_DIR = path.join(ROOT, ".release-evidence", "customer-release-v8-local-20260916-r9");
+const CANDIDATE_DIR = path.join(ROOT, CANDIDATE_RELEASE_DIR);
 const KIT_DIRS = ["aidr-customer-kit-v8-local-20260916-r9", "aidr-envelope-v8-local-20260916-r9"];
 // These require a host/deployment or named commercial approvals, not just this
 // checkout. They remain declared as NOT_RUN in the local evaluation profile.

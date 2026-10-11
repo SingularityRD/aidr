@@ -49,8 +49,10 @@ export const CODEX_POST_TOOL_USE = "PostToolUse" as const;
 const MAX_COLLECTED_CHARS = 2 * 1024 * 1024 + 1;
 const MAX_NODES = 50_000;
 const MAX_DEPTH = 32;
-/** MCP content blocks whose `data` is binary (base64), not text the model reads. */
-const BINARY_BLOCK_TYPES = new Set(["image", "audio", "blob"]);
+/** MCP `CallToolResult.content[]` block types whose `data` is binary (base64). */
+const BINARY_BLOCK_TYPES = new Set(["image", "audio"]);
+/** Strict RFC 4648 base64 (padding optional, no whitespace). */
+const BASE64_PATTERN = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}(?:==)?|[A-Za-z0-9+/]{3}=?)?$/;
 
 /** PostToolUse output (`post-tool-use.command.output.schema.json`). */
 interface CodexPostToolWireOutput {
@@ -73,13 +75,33 @@ class CollectLimitError extends Error {}
 
 /**
  * The text the model reads from a tool result: the string itself, or every
- * string in a structured result joined by newlines (binary content blocks
- * skipped). Throws `CollectLimitError` past the node or depth bound.
+ * string in a structured result joined by newlines. The only payloads left out
+ * are the base64 bodies of genuine MCP binary content blocks (see
+ * `binaryPayloadKey`); everything else, `structuredContent` included, is
+ * collected whatever `type` label it carries. Throws `CollectLimitError` past
+ * the node or depth bound.
  */
 function outputText(value: unknown): string {
 	if (typeof value === "string") return value;
 	const collector: StringCollector = { parts: [], chars: 0, nodes: 0 };
-	collectStrings(value, 0, collector);
+	if (isRecord(value) && Array.isArray(value.content)) {
+		// An MCP `CallToolResult`: only its own top-level `content[]` blocks may be binary.
+		collector.nodes += 1;
+		for (const [key, child] of Object.entries(value)) {
+			if (collector.chars > MAX_COLLECTED_CHARS) break;
+			pushText(key, collector);
+			if (key !== "content") {
+				collectStrings(child, 1, collector);
+				continue;
+			}
+			collector.nodes += 1;
+			for (const block of child as unknown[]) {
+				collectContentBlock(block, 2, collector);
+			}
+		}
+	} else {
+		collectStrings(value, 0, collector);
+	}
 	return collector.parts.join("\n");
 }
 
@@ -89,16 +111,83 @@ interface StringCollector {
 	nodes: number;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
 function pushText(text: string, out: StringCollector): void {
 	out.parts.push(text);
 	out.chars += text.length + 1;
+}
+
+function isBase64(value: unknown): value is string {
+	return typeof value === "string" && value.length % 4 !== 1 && BASE64_PATTERN.test(value);
+}
+
+/**
+ * The key of a genuine MCP binary payload in a top-level `content[]` block, or
+ * `null`. Only an `image`/`audio` block with a `mimeType` and valid base64
+ * `data` qualifies; anything else that merely claims a binary `type` (a forged
+ * label, a non-base64 body, a missing `mimeType`) is scanned as text.
+ */
+function binaryPayloadKey(block: Record<string, unknown>): "data" | null {
+	if (typeof block.type !== "string" || !BINARY_BLOCK_TYPES.has(block.type)) return null;
+	if (typeof block.mimeType !== "string" || block.mimeType.trim() === "") return null;
+	return isBase64(block.data) ? "data" : null;
+}
+
+/**
+ * One top-level MCP content block. A binary block's base64 body is skipped; an
+ * embedded resource's base64 `blob` (MCP `BlobResourceContents`, with a
+ * `mimeType`) is skipped the same way. Every other field is collected.
+ */
+function collectContentBlock(block: unknown, depth: number, out: StringCollector): void {
+	if (!isRecord(block)) {
+		collectStrings(block, depth, out);
+		return;
+	}
+	out.nodes += 1;
+	if (out.nodes > MAX_NODES || depth > MAX_DEPTH) throw new CollectLimitError();
+	const skip = binaryPayloadKey(block);
+	for (const [key, child] of Object.entries(block)) {
+		if (out.chars > MAX_COLLECTED_CHARS) return;
+		pushText(key, out);
+		if (key === skip) continue;
+		if (key === "resource" && block.type === "resource" && isRecord(child)) {
+			collectEmbeddedResource(child, depth + 1, out);
+			continue;
+		}
+		collectStrings(child, depth + 1, out);
+	}
+}
+
+function collectEmbeddedResource(
+	resource: Record<string, unknown>,
+	depth: number,
+	out: StringCollector,
+): void {
+	out.nodes += 1;
+	if (out.nodes > MAX_NODES || depth > MAX_DEPTH) throw new CollectLimitError();
+	const binaryBlob =
+		typeof resource.mimeType === "string" &&
+		resource.mimeType.trim() !== "" &&
+		!("text" in resource) &&
+		isBase64(resource.blob);
+	for (const [key, child] of Object.entries(resource)) {
+		if (out.chars > MAX_COLLECTED_CHARS) return;
+		pushText(key, out);
+		if (key === "blob" && binaryBlob) continue;
+		collectStrings(child, depth + 1, out);
+	}
 }
 
 /**
  * Collect every string the model can read: string values, numbers and
  * booleans, and object keys (a structured result such as MCP
  * `structuredContent` can carry a payload in a key just as well as in a
- * value), mirroring the Claude Code connector's bounded collector.
+ * value), mirroring the Claude Code connector's bounded collector. No `type`
+ * label exempts anything here: an arbitrary record that calls itself an image
+ * is still text the model can read.
  */
 function collectStrings(current: unknown, depth: number, out: StringCollector): void {
 	out.nodes += 1;
@@ -117,17 +206,11 @@ function collectStrings(current: unknown, depth: number, out: StringCollector): 
 		for (const child of current) collectStrings(child, depth + 1, out);
 		return;
 	}
-	for (const [key, child] of childEntries(current as Record<string, unknown>)) {
+	for (const [key, child] of Object.entries(current as Record<string, unknown>)) {
 		if (out.chars > MAX_COLLECTED_CHARS) return;
 		pushText(key, out);
 		collectStrings(child, depth + 1, out);
 	}
-}
-
-/** A record's entries, minus the payload of a binary content block. */
-function childEntries(record: Record<string, unknown>): Array<[string, unknown]> {
-	const binary = typeof record.type === "string" && BINARY_BLOCK_TYPES.has(record.type);
-	return Object.entries(record).filter(([key]) => !(binary && (key === "data" || key === "blob")));
 }
 
 function blockedReason(ruleIds: string[]): string {

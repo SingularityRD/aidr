@@ -242,7 +242,7 @@
   severity: high
   confidence: 0.85
   action: require_approval
-  pattern: "\\.(env|credentials|secrets|tokens|keys|htpasswd|pem|p12|pfx|jks|keystore)\\b"
+  pattern: "(\\.(env(?!\\.(example|sample|template|dist)\\b)|credentials|secrets|tokens|keys|htpasswd|pem|p12|pfx|jks|keystore)|\\bgit-credentials)\\b"
   match_on: file_path
   title: "Access to credential/secret files"
   expires_at: null

@@ -194,6 +194,21 @@ async function readDatabase(containerId) {
 	return result;
 }
 
+// Vault secrets only decrypt with the source pgsodium root key, which the backup
+// now carries. A Vault-using deployment whose secrets no longer decrypt fails the
+// drill instead of being reported as recovered.
+async function readVault(containerId) {
+	const psql = (sql) => command("docker", ["exec", containerId, "psql", "-U", "postgres", "-d", "postgres", "-v", "ON_ERROR_STOP=1", "-tA", "-c", sql], 60000);
+	const secrets = Number(await psql("SELECT CASE WHEN to_regclass('vault.secrets') IS NULL THEN -1 ELSE (SELECT count(*) FROM vault.secrets) END"));
+	if (!Number.isSafeInteger(secrets) || secrets < -1) throw new Error("Recovered database returned invalid Vault evidence");
+	if (secrets <= 0) return { schema_present: secrets === 0, secrets: Math.max(secrets, 0), decrypted: 0 };
+	let decrypted;
+	try { decrypted = Number(await psql("SELECT count(*) FROM vault.decrypted_secrets WHERE decrypted_secret IS NOT NULL")); }
+	catch { throw new Error("Recovered Vault secrets cannot be decrypted: the recovered pgsodium root key differs from the source (VAULT_KEY_MISSING for a backup made before key capture)"); }
+	if (decrypted !== secrets) throw new Error("Recovered Vault secrets cannot all be decrypted");
+	return { schema_present: true, secrets, decrypted };
+}
+
 async function readStorage(volumeName) {
 	const helperImage = buildNodeHelperImage();
 	const shell = "set -eu; cd /data; test -z \"$(find . -type l -print -quit)\"; find . -type f -exec sha256sum {} + | sort | sha256sum; find . -type f | wc -l";
@@ -288,9 +303,58 @@ export function conservativeBackupAgeMinutes(manifest, now = Date.now()) {
 }
 
 const RESTORE_RUN = /^restore-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z-[a-f0-9]{10}$/;
+// Two markers with different lifetimes:
+// - RUN_OWNER_MARKER is written when the drill creates the run directory and is
+//   never removed. It is the only proof that retention may expire the run, so a
+//   completed, sanitized run (evidence only) still ages out; operator folders
+//   that merely look like run names never carry it and are never touched.
+// - RECOVERY_MARKER names the recovery compose project while plaintext material
+//   may exist; it is removed once that material is gone. A run that still has it
+//   is either in progress (owner process alive on this host: left alone) or was
+//   interrupted (sanitized by the next retention pass).
+export const RUN_OWNER_MARKER = ".aidr-restore-run";
+export const RECOVERY_MARKER = ".recovery-project";
+const RUN_OWNER_SCHEMA = "aidr-restore-run/v1";
+const hostIdentity = () => createHash("sha256").update(hostname()).digest("hex");
+
+export function runOwnerRecord(now = new Date()) {
+	return { schema: RUN_OWNER_SCHEMA, created_at: now.toISOString(), host_identity_sha256: hostIdentity(), pid: process.pid };
+}
+
+async function readRegularFile(file) {
+	let info;
+	try {
+		info = await lstat(file);
+	} catch (error) {
+		if (error.code === "ENOENT") return null;
+		throw error;
+	}
+	if (!info.isFile() || info.isSymbolicLink() || info.size > 4096) return null;
+	return readFile(file, "utf8");
+}
+
+async function readRunOwner(runDirectory) {
+	const text = await readRegularFile(join(runDirectory, RUN_OWNER_MARKER));
+	if (text === null) return null;
+	try {
+		const owner = JSON.parse(text);
+		return owner?.schema === RUN_OWNER_SCHEMA ? owner : null;
+	} catch {
+		return null;
+	}
+}
+
+function defaultProcessAlive(pid) {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch (error) {
+		return error.code === "EPERM";
+	}
+}
 
 async function cleanupRecoveredRun(runDirectory) {
-	const marker = join(runDirectory, ".recovery-project");
+	const marker = join(runDirectory, RECOVERY_MARKER);
 	let project;
 	try {
 		const markerInfo = await lstat(marker);
@@ -319,27 +383,42 @@ async function cleanupRecoveredRun(runDirectory) {
 	await rm(marker, { force: true });
 }
 
-export async function cleanupRestoreWorkRoot(workRoot, retentionDays, now = Date.now()) {
+export async function cleanupRestoreWorkRoot(workRoot, retentionDays, now = Date.now(), { isProcessAlive = defaultProcessAlive } = {}) {
 	const days = positiveInteger(retentionDays, "--evidence-retention-days");
 	const root = await realpath(workRoot);
 	if (!samePath(root, resolve(workRoot))) throw new Error("Restore work root path contains a symbolic link");
 	const cutoff = now - days * 86400 * 1000;
 	let sanitized = 0;
 	let expired = 0;
+	let active = 0;
 	for (const entry of await readdir(root, { withFileTypes: true })) {
 		if (!RESTORE_RUN.test(entry.name)) continue;
 		const runDirectory = join(root, entry.name);
 		const info = await lstat(runDirectory);
 		if (!info.isDirectory() || info.isSymbolicLink()) throw new Error(`Restore run path is not a real directory: ${entry.name}`);
-		if (!existsSync(join(runDirectory, ".recovery-project"))) continue;
-		await cleanupRecoveredRun(runDirectory);
-		sanitized += 1;
+		let owner = await readRunOwner(runDirectory);
+		const recovering = existsSync(join(runDirectory, RECOVERY_MARKER));
+		if (!owner && !recovering) continue; // not created by the drill (or unreadable marker): operator data, never touched
+		if (recovering) {
+			if (owner && owner.host_identity_sha256 === hostIdentity() && Number.isInteger(owner.pid) && owner.pid !== process.pid && isProcessAlive(owner.pid)) {
+				active += 1; // a drill on this host is still restoring into it
+				continue;
+			}
+			await cleanupRecoveredRun(runDirectory);
+			sanitized += 1;
+			if (!owner) {
+				// Interrupted run from before the ownership marker existed: its recovery
+				// marker proved drill ownership, so record it to keep it expirable.
+				owner = { ...runOwnerRecord(new Date(info.mtimeMs)), pid: null, adopted: true };
+				await writeFile(join(runDirectory, RUN_OWNER_MARKER), `${JSON.stringify(owner)}\n`, { mode: 0o600, flag: "wx" });
+			}
+		}
 		if (info.mtimeMs <= cutoff) {
 			await rm(runDirectory, { recursive: true });
 			expired += 1;
 		}
 	}
-	return { sanitized, expired, retention_days: days };
+	return { sanitized, expired, active, retention_days: days };
 }
 
 async function main() {
@@ -378,10 +457,11 @@ async function main() {
 	const workDir = await validateLocation(requestedWorkDir, keyFile, target, binding.runtime);
 	await mkdir(workDir, { mode: 0o700 });
 	const workDirectoryProtection = await hardenWorkDirectory(workDir);
+	await writeFile(join(workDir, RUN_OWNER_MARKER), `${JSON.stringify(runOwnerRecord())}\n`, { mode: 0o600, flag: "wx" });
 	const evidencePath = join(workDir, "restore-drill-evidence.json");
 	const evidence = {
 		schema_version: 2, passed: false, started_at: new Date(started).toISOString(), target_kind: target.kind,
-		backup_id: values["backup-id"] ?? null, host_identity_sha256: createHash("sha256").update(hostname()).digest("hex"),
+		backup_id: values["backup-id"] ?? null, host_identity_sha256: hostIdentity(),
 		host_platform: platform(), host_architecture: arch(), work_directory_protection: workDirectoryProtection,
 		source_commit: binding.source_commit, candidate_digest: binding.candidate_digest,
 		candidate_inventory: binding.candidate_inventory, candidate_metadata_sha256: binding.candidate_metadata_sha256,
@@ -396,7 +476,7 @@ async function main() {
 	};
 	let recovered;
 	const project = `aidr-recovery-${randomBytes(8).toString("hex")}`;
-	await writeFile(join(workDir, ".recovery-project"), `${project}\n`, { mode: 0o600, flag: "wx" });
+	await writeFile(join(workDir, RECOVERY_MARKER), `${project}\n`, { mode: 0o600, flag: "wx" });
 	let failure = null;
 	let cleaningUp = false;
 	const interrupt = (signal) => {
@@ -450,6 +530,7 @@ async function main() {
 		await command("docker", [...composeArgs(recovered, project), "start", "db"], 180000);
 		await waitForDatabase(db.containerId);
 		const database = await readDatabase(db.containerId);
+		evidence.vault = { root_key: receipt.vault_root_key ?? "VAULT_KEY_MISSING", ...(await readVault(db.containerId)) };
 		const objects = await readStorage(storage.volumeName);
 		if (database.storage_objects > 0 && objects.files === 0) throw new Error("Database references storage objects but restored object volume is empty");
 		evidence.database = database;
@@ -499,7 +580,10 @@ async function main() {
 	console.log(JSON.stringify({ passed: true, evidence_file: evidencePath, backup_id: evidence.backup_id, technical_restore_seconds: evidence.technical_restore_seconds }));
 }
 
-const invoked = process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
+// The shipped deployment-backup.mjs bundle inlines this module, where import.meta.url
+// is the bundle's own URL; also require this file's name so the drill never runs there.
+const invoked = process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href
+	&& basename(fileURLToPath(import.meta.url)) === "deployment-restore-drill.mjs";
 if (invoked) main().catch((error) => {
 	console.error(`AIDR restore drill failed: ${error.message}`);
 	process.exitCode = 1;

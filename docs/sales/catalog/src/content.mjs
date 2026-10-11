@@ -14,7 +14,7 @@
 
 /** Countable claims. Formatting (digit grouping) is applied per language at build time. */
 export const FACTS = {
-	"threat-rules": 494,
+	"threat-rules": 507,
 	"ai-components": 146,
 	"cve-rules": { n: 2000, plus: true },
 	"mcp-categories": 14,
@@ -187,7 +187,7 @@ export const FEATURES = [
 	{ key: "custom-terms", stage: "protect", group: "browser", evidence: ["packages/browser-guard/src/engine/detect.ts"], tr: ["Kuruma özel terimler", "proje kod adları, iç sunucu adları gibi sözcükler maskelenir."], en: ["Company terms", "project code names, internal hostnames and similar words are masked."] },
 	{ key: "exact-data-match", stage: "protect", group: "browser", evidence: ["packages/browser-guard/src/engine/exact-data.ts", "packages/browser-guard/scripts/fingerprint-dataset.mjs"], tr: ["Tam veri eşleştirme", "kendi müşteri kayıtlarınız yalnızca parmak iziyle tanınır."], en: ["Exact data match", "your own customer records are recognised by fingerprint only."] },
 	{ key: "injection-coaching", stage: "protect", group: "browser", evidence: ["packages/browser-guard/src/engine/coaching.ts"], tr: ["Prompt injection uyarısı", "riskli metin gönderilmeden kullanıcıya Türkçe ya da İngilizce açıklanır."], en: ["Prompt-injection coaching", "risky text is explained to the user, in Turkish or English, before sending."] },
-	{ key: "native-ner", stage: "protect", group: "browser", evidence: ["packages/browser-guard/src/background/native.ts"], tr: ["İsteğe bağlı yerel NER", "akan metindeki ad ve adresler cihazdan çıkmadan tanınır."], en: ["Optional local NER", "names and addresses in running text are found without leaving the device."] },
+	{ key: "native-ner", stage: "protect", group: "browser", evidence: ["packages/browser-guard/src/background/native.ts"], tr: ["Yerel NER bağlantısı", "ilk sürüm kapsamı dışında; model içermez, satılmaz."], en: ["Local NER bridge", "not in the first-release scope; ships without a model, not sold."] },
 	{ key: "managed-policy", stage: "protect", group: "browser", evidence: ["packages/browser-guard/static/managed_schema.json", "deploy/browser-guard"], tr: ["Kurumsal politika", "GPO, Intune, Jamf ve Firefox ile dağıtım; zayıflatan ayarlar kilitli."], en: ["Managed policy", "deploy with GPO, Intune, Jamf or Firefox; weakening settings are locked."] },
 	{ key: "site-blocking", stage: "protect", group: "browser", evidence: ["packages/browser-guard/src/background/dnr.ts"], tr: ["Site engelleme ve duraklatma", "onaylanmayan siteler açılmaz; duraklatma süreli ve sayılır."], en: ["Site blocking and pause", "unapproved sites do not load; pauses are timed and still counted."] },
 	{ key: "custom-ai-sites", stage: "protect", group: "browser", evidence: ["packages/browser-guard/src/background/custom-sites.ts"], tr: ["Kurum içi yapay zekâ siteleri", "kendi iç yapay zekâ portallarınız da aynı maskelemeyle korunur."], en: ["Internal AI sites", "your own internal AI portals get the same masking."] },
@@ -197,7 +197,7 @@ export const FEATURES = [
 	{ key: "dlp-policies", stage: "protect", group: "agents", evidence: ["packages/core/src/dlp", "packages/core/src/local-dlp-policy.ts"], tr: ["DLP politikaları", "{dlp-detectors} TR/EN dedektör, anahtar sözcük, düzenli ifade; imzalı politika."], en: ["DLP policies", "{dlp-detectors} TR/EN detectors, keywords, regular expressions; signed policy."] },
 	{ key: "dlp-redaction", stage: "protect", group: "agents", evidence: ["packages/claude-code/src/pre-tool-use.ts", "packages/opencode/src/tool-handler.ts"], tr: ["DLP girdi maskeleme", "Claude Code ve OpenCode'da değer maskelenir, araç yine çalışır."], en: ["DLP input redaction", "on Claude Code and OpenCode the value is masked and the tool still runs."] },
 	{ key: "privacy-scan-cli", stage: "protect", group: "agents", evidence: ["packages/cli/src/commands/privacy.ts"], tr: ["<code>aidr privacy scan</code>", "dosya paylaşılmadan önce yerelde taranır; değer yazdırılmaz."], en: ["<code>aidr privacy scan</code>", "check a file locally before sharing it; values are never printed."] },
-	{ key: "screenshot-ocr", stage: "protect", group: "agents", evidence: ["packages/privacy/src/visual"], tr: ["Ekran görüntüsü maskeleme", "yerel OCR ile görüntüdeki kişisel veri kapatılır (isteğe bağlı)."], en: ["Screenshot redaction", "local OCR paints over personal data in images (optional)."] },
+	{ key: "screenshot-ocr", stage: "protect", group: "agents", evidence: ["packages/privacy/src/visual"], tr: ["Ekran görüntüsü maskeleme", "yerel OCR ilk sürüm kapsamı dışında; model içermez, satılmaz."], en: ["Screenshot redaction", "local OCR is not in the first-release scope; ships without a model."] },
 	{ key: "privacy-gateway", stage: "protect", group: "agents", evidence: ["packages/privacy/src/platform"], tr: ["Kurumsal gizlilik ağ geçidi", "yapay zekâ trafiğini ağ çıkışında denetleyen sunucu bileşeni."], en: ["Enterprise privacy gateway", "a server component that inspects AI traffic at your network exit."] },
 	// 4 Control actions
 	{ key: "connectors", stage: "control", evidence: ["packages/claude-code", "packages/extension", "packages/openclaw", "packages/opencode", "packages/codex"], tr: ["Altı bağlayıcı", "Claude Code, Cursor, VS Code, OpenClaw, OpenCode, Codex CLI; tek karar motoru."], en: ["Six connectors", "Claude Code, Cursor, VS Code, OpenClaw, OpenCode, Codex CLI; one engine."] },

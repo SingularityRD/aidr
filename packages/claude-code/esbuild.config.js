@@ -2,6 +2,7 @@ import * as esbuild from "esbuild";
 import { copyFileSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { buildHookBootstraps, hookBundleName } from "../../scripts/hook-bootstrap.mjs";
 import { stageWindowsKoffi } from "../../scripts/stage-windows-koffi.mjs";
 
 const pkg = JSON.parse(readFileSync("../core/package.json", "utf-8"));
@@ -70,26 +71,35 @@ const shared = {
 	define: { __AIDR_VERSION__: JSON.stringify(pkg.version) },
 };
 
-const outputs = [
-	"dist/pre-tool-use.cjs",
-	"dist/post-tool-use.cjs",
-	"dist/mcp-server.cjs",
-	"dist/session-start.cjs",
-	"dist/health.cjs",
-	"dist/response-worker.cjs",
-	"dist/user-prompt-submit.cjs",
+// Per-call hooks: Claude Code spawns a new `node dist/<name>.cjs` for every
+// event. That stable file is a small bootstrap that enables the V8 compile
+// cache and then requires `dist/<name>.bundle.cjs` (scripts/hook-bootstrap.mjs).
+const perCallHooks = [
+	{ entry: "src/pre-tool-use.ts", outfile: "dist/pre-tool-use.cjs" },
+	{ entry: "src/post-tool-use.ts", outfile: "dist/post-tool-use.cjs" },
+	{ entry: "src/session-start.ts", outfile: "dist/session-start.cjs" },
+	{ entry: "src/user-prompt-submit.ts", outfile: "dist/user-prompt-submit.cjs" },
+];
+// Long-lived or bin entry points load once per process; they stay single files.
+const directEntries = [
+	{ entry: "src/mcp-server.ts", outfile: "dist/mcp-server.cjs" },
+	{ entry: "src/health.ts", outfile: "dist/health.cjs" },
+	{ entry: "src/response-worker.ts", outfile: "dist/response-worker.cjs" },
 ];
 
-
-await Promise.all([
-	esbuild.build({ ...shared, entryPoints: ["src/pre-tool-use.ts"], outfile: outputs[0] }),
-	esbuild.build({ ...shared, entryPoints: ["src/post-tool-use.ts"], outfile: outputs[1] }),
-	esbuild.build({ ...shared, entryPoints: ["src/mcp-server.ts"], outfile: outputs[2] }),
-	esbuild.build({ ...shared, entryPoints: ["src/session-start.ts"], outfile: outputs[3] }),
-	esbuild.build({ ...shared, entryPoints: ["src/health.ts"], outfile: outputs[4] }),
-	esbuild.build({ ...shared, entryPoints: ["src/response-worker.ts"], outfile: outputs[5] }),
-	esbuild.build({ ...shared, entryPoints: ["src/user-prompt-submit.ts"], outfile: outputs[6] }),
-]);
+const bundles = [
+	...perCallHooks.map(({ entry, outfile }) => ({ entry, outfile: `dist/${hookBundleName(outfile.slice("dist/".length))}` })),
+	...directEntries,
+];
+await Promise.all(
+	bundles.map(({ entry, outfile }) => esbuild.build({ ...shared, entryPoints: [entry], outfile })),
+);
+const bootstraps = await buildHookBootstraps(
+	esbuild,
+	shared,
+	perCallHooks.map(({ outfile }) => ({ outfile })),
+);
+const outputs = [...bundles.map(({ outfile }) => outfile), ...bootstraps];
 
 // The customer kit and endpoint installer intentionally omit node_modules:
 // keep the native AMSI addon inside the manifest-covered dist.

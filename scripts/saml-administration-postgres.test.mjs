@@ -122,7 +122,7 @@ const getSql = (f, id, actor = f.owner) =>
 
 test("SAML policy cutover uses current verified owners and atomic dual approval", { timeout: 900_000 }, async t => {
 	const started = await command(["run", "--detach", "--rm", "--pull", "never", "--network", "none", "--name", container,
-		"-e", "POSTGRES_PASSWORD=saml-admin-fixture-only", "supabase/postgres:17.6.1.136"]);
+		"-e", "POSTGRES_PASSWORD=saml-admin-fixture-only", "supabase/postgres:17.11.0.004"]);
 	assert.equal(started.code, 0, started.stderr);
 	try {
 		let ready = false;

@@ -1,0 +1,439 @@
+{
+  "schema_version": 1,
+  "label": "LOCAL ENGINEERING DRILL",
+  "date": "2026-10-11",
+  "purpose": "Load-soak drill finding O2: PostgREST recovery after a 30 s database network partition, before and after libpq TCP keepalives / tcp_user_timeout on PGRST_DB_URI",
+  "environment": {
+    "host": "same 4-vCPU Docker host as the soak (Docker Engine 29.8.2, kernel 6.18.44)",
+    "db": "postgres:17-alpine (PostgreSQL 17.11), one table and one SQL function",
+    "rest": "postgrest/postgrest:v14.17, default pool (10), default db-pool-acquisition-timeout (10 s) and db-pool-max-idletime (30 s)",
+    "network": "one user-defined bridge network; db reachable as `db`",
+    "load": "Node fetch at a fixed rate from the host through a loopback-published port, 10 s client timeout, 150 s per run",
+    "workloads": {
+      "slow": "GET /rpc/slow (pg_sleep(0.4)) at 20 rps, about 8 statements in flight, so pooled connections are mid-query when the partition starts",
+      "light": "GET /items?id=eq.7 at 10 rps, connections mostly idle"
+    },
+    "fault": "docker network disconnect of db 30 s after load start, reconnect (same IP) 30 s later",
+    "recovery_metric": "start of the first run of 20 consecutive HTTP 200 after the last failure, measured from the reconnect"
+  },
+  "runs": [
+    {
+      "label": "baseline",
+      "ip_before": "172.18.0.2",
+      "ip_after": "172.18.0.2",
+      "partition_s": 30.16,
+      "requests": 1500,
+      "failed": 313,
+      "classes": {
+        "503": 312,
+        "timeout": 1
+      },
+      "first_fail_t": 0.13,
+      "last_fail_start_t": 31.33,
+      "recovered_t": 31.43,
+      "recovery_after_heal_s": 1.27,
+      "first_ok_start_after_heal_s": 1.27,
+      "failed_started_after_heal": 12,
+      "partition_latency_ms_p50_p95": [
+        2,
+        3
+      ],
+      "max_latency_ms_from_fault": 10002,
+      "workload": "light",
+      "db_uri_params": "",
+      "postgrest_reconnect_backoff_s": [
+        1,
+        2,
+        4,
+        8,
+        16
+      ]
+    },
+    {
+      "label": "baseline-slow",
+      "ip_before": "172.18.0.2",
+      "ip_after": "172.18.0.2",
+      "partition_s": 30.18,
+      "requests": 3000,
+      "failed": 970,
+      "classes": {
+        "503": 624,
+        "timeout": 346
+      },
+      "first_fail_t": -0.37,
+      "last_fail_start_t": 56.68,
+      "recovered_t": 56.73,
+      "recovery_after_heal_s": 26.54,
+      "first_ok_start_after_heal_s": 1.1,
+      "failed_started_after_heal": 358,
+      "partition_latency_ms_p50_p95": [
+        2,
+        3
+      ],
+      "max_latency_ms_from_fault": 10011,
+      "workload": "slow",
+      "db_uri_params": "",
+      "postgrest_reconnect_backoff_s": [
+        1,
+        2,
+        4,
+        8,
+        16
+      ]
+    },
+    {
+      "label": "baseline-slow-2",
+      "ip_before": "172.18.0.2",
+      "ip_after": "172.18.0.2",
+      "partition_s": 30.21,
+      "requests": 3000,
+      "failed": 1053,
+      "classes": {
+        "timeout": 1053
+      },
+      "first_fail_t": -0.32,
+      "last_fail_start_t": 60.89,
+      "recovered_t": 60.93,
+      "recovery_after_heal_s": 30.73,
+      "first_ok_start_after_heal_s": 17.68,
+      "failed_started_after_heal": 442,
+      "partition_latency_ms_p50_p95": [
+        10001,
+        10002
+      ],
+      "max_latency_ms_from_fault": 10020,
+      "workload": "slow",
+      "db_uri_params": "",
+      "postgrest_reconnect_backoff_s": []
+    },
+    {
+      "label": "baseline-slow-3",
+      "ip_before": "172.18.0.2",
+      "ip_after": "172.18.0.2",
+      "partition_s": 30.19,
+      "requests": 3000,
+      "failed": 982,
+      "classes": {
+        "503": 624,
+        "timeout": 358
+      },
+      "first_fail_t": -0.32,
+      "last_fail_start_t": 61.78,
+      "recovered_t": 61.83,
+      "recovery_after_heal_s": 31.64,
+      "first_ok_start_after_heal_s": 1.14,
+      "failed_started_after_heal": 371,
+      "partition_latency_ms_p50_p95": [
+        2,
+        3
+      ],
+      "max_latency_ms_from_fault": 10004,
+      "workload": "slow",
+      "db_uri_params": "",
+      "postgrest_reconnect_backoff_s": [
+        1,
+        2,
+        4,
+        8,
+        16
+      ]
+    },
+    {
+      "label": "ka-slow",
+      "ip_before": "172.18.0.2",
+      "ip_after": "172.18.0.2",
+      "partition_s": 30.19,
+      "requests": 3000,
+      "failed": 628,
+      "classes": {
+        "503": 155,
+        "timeout": 473
+      },
+      "first_fail_t": -0.36,
+      "last_fail_start_t": 54.35,
+      "recovered_t": 54.4,
+      "recovery_after_heal_s": 24.2,
+      "first_ok_start_after_heal_s": 0.05,
+      "failed_started_after_heal": 72,
+      "partition_latency_ms_p50_p95": [
+        10000,
+        10002
+      ],
+      "max_latency_ms_from_fault": 10103,
+      "workload": "slow",
+      "db_uri_params": "keepalives=1&keepalives_idle=10&keepalives_interval=5&keepalives_count=3",
+      "postgrest_reconnect_backoff_s": [
+        1
+      ]
+    },
+    {
+      "label": "ka-uto-slow",
+      "ip_before": "172.18.0.2",
+      "ip_after": "172.18.0.2",
+      "partition_s": 30.17,
+      "requests": 3000,
+      "failed": 545,
+      "classes": {
+        "503": 155,
+        "timeout": 390
+      },
+      "first_fail_t": -0.36,
+      "last_fail_start_t": 30.43,
+      "recovered_t": 30.49,
+      "recovery_after_heal_s": 0.32,
+      "first_ok_start_after_heal_s": 0.01,
+      "failed_started_after_heal": 1,
+      "partition_latency_ms_p50_p95": [
+        10000,
+        10002
+      ],
+      "max_latency_ms_from_fault": 10003,
+      "workload": "slow",
+      "db_uri_params": "keepalives=1&keepalives_idle=10&keepalives_interval=5&keepalives_count=3&tcp_user_timeout=25000",
+      "postgrest_reconnect_backoff_s": [
+        1
+      ]
+    },
+    {
+      "label": "ka-uto-slow-2",
+      "ip_before": "172.18.0.2",
+      "ip_after": "172.18.0.2",
+      "partition_s": 30.2,
+      "requests": 3000,
+      "failed": 544,
+      "classes": {
+        "503": 169,
+        "timeout": 375
+      },
+      "first_fail_t": -0.36,
+      "last_fail_start_t": 29.29,
+      "recovered_t": 29.34,
+      "recovery_after_heal_s": -0.86,
+      "first_ok_start_after_heal_s": 0.04,
+      "failed_started_after_heal": 0,
+      "partition_latency_ms_p50_p95": [
+        10000,
+        10002
+      ],
+      "max_latency_ms_from_fault": 10038,
+      "workload": "slow",
+      "db_uri_params": "keepalives=1&keepalives_idle=10&keepalives_interval=5&keepalives_count=3&tcp_user_timeout=25000",
+      "postgrest_reconnect_backoff_s": []
+    },
+    {
+      "label": "ka-uto10-slow",
+      "ip_before": "172.18.0.2",
+      "ip_after": "172.18.0.2",
+      "partition_s": 30.19,
+      "requests": 3000,
+      "failed": 522,
+      "classes": {
+        "503": 376,
+        "504": 1,
+        "timeout": 145
+      },
+      "first_fail_t": -0.36,
+      "last_fail_start_t": 30.75,
+      "recovered_t": 30.79,
+      "recovery_after_heal_s": 0.6,
+      "first_ok_start_after_heal_s": 0.01,
+      "failed_started_after_heal": 1,
+      "partition_latency_ms_p50_p95": [
+        5801,
+        10002
+      ],
+      "max_latency_ms_from_fault": 10047,
+      "workload": "slow",
+      "db_uri_params": "keepalives=1&keepalives_idle=10&keepalives_interval=5&keepalives_count=3&tcp_user_timeout=10000",
+      "postgrest_reconnect_backoff_s": [
+        1
+      ]
+    },
+    {
+      "label": "final-slow",
+      "ip_before": "172.18.0.2",
+      "ip_after": "172.18.0.2",
+      "partition_s": 30.19,
+      "requests": 3000,
+      "failed": 651,
+      "classes": {
+        "503": 151,
+        "504": 1,
+        "timeout": 499
+      },
+      "first_fail_t": -0.35,
+      "last_fail_start_t": 41.95,
+      "recovered_t": 42,
+      "recovery_after_heal_s": 11.81,
+      "first_ok_start_after_heal_s": 0.06,
+      "failed_started_after_heal": 63,
+      "partition_latency_ms_p50_p95": [
+        10001,
+        10002
+      ],
+      "max_latency_ms_from_fault": 10038,
+      "workload": "slow",
+      "db_uri_params": "keepalives=1&keepalives_idle=30&keepalives_interval=10&keepalives_count=3&tcp_user_timeout=25000",
+      "postgrest_reconnect_backoff_s": [
+        1
+      ]
+    },
+    {
+      "label": "final-slow-2",
+      "ip_before": "172.18.0.2",
+      "ip_after": "172.18.0.2",
+      "partition_s": 30.18,
+      "requests": 3000,
+      "failed": 974,
+      "classes": {
+        "503": 245,
+        "504": 1,
+        "timeout": 728
+      },
+      "first_fail_t": -0.37,
+      "last_fail_start_t": 61.64,
+      "recovered_t": 61.68,
+      "recovery_after_heal_s": 31.51,
+      "first_ok_start_after_heal_s": 0.11,
+      "failed_started_after_heal": 377,
+      "partition_latency_ms_p50_p95": [
+        10001,
+        10002
+      ],
+      "max_latency_ms_from_fault": 10046,
+      "workload": "slow",
+      "db_uri_params": "keepalives=1&keepalives_idle=30&keepalives_interval=10&keepalives_count=3&tcp_user_timeout=25000",
+      "postgrest_reconnect_backoff_s": [
+        1
+      ]
+    },
+    {
+      "label": "final-light",
+      "ip_before": "172.18.0.2",
+      "ip_after": "172.18.0.2",
+      "partition_s": 30.17,
+      "requests": 1500,
+      "failed": 313,
+      "classes": {
+        "503": 312,
+        "timeout": 1
+      },
+      "first_fail_t": 0.03,
+      "last_fail_start_t": 31.23,
+      "recovered_t": 31.34,
+      "recovery_after_heal_s": 1.16,
+      "first_ok_start_after_heal_s": 1.16,
+      "failed_started_after_heal": 11,
+      "partition_latency_ms_p50_p95": [
+        2,
+        3
+      ],
+      "max_latency_ms_from_fault": 10004,
+      "workload": "light",
+      "db_uri_params": "keepalives=1&keepalives_idle=30&keepalives_interval=10&keepalives_count=3&tcp_user_timeout=25000",
+      "postgrest_reconnect_backoff_s": [
+        1,
+        2,
+        4,
+        8,
+        16
+      ]
+    },
+    {
+      "label": "chosen-slow-1",
+      "ip_before": "172.18.0.2",
+      "ip_after": "172.18.0.2",
+      "partition_s": 30.18,
+      "requests": 3000,
+      "failed": 670,
+      "classes": {
+        "503": 623,
+        "timeout": 47
+      },
+      "first_fail_t": -0.36,
+      "last_fail_start_t": 41.39,
+      "recovered_t": 41.44,
+      "recovery_after_heal_s": 11.27,
+      "first_ok_start_after_heal_s": 1.07,
+      "failed_started_after_heal": 59,
+      "partition_latency_ms_p50_p95": [
+        2,
+        3
+      ],
+      "max_latency_ms_from_fault": 10005,
+      "workload": "slow",
+      "db_uri_params": "keepalives=1&keepalives_idle=30&keepalives_interval=10&keepalives_count=3&tcp_user_timeout=20000",
+      "postgrest_reconnect_backoff_s": [
+        1,
+        2,
+        4,
+        8,
+        16
+      ]
+    },
+    {
+      "label": "chosen-slow-2",
+      "ip_before": "172.18.0.2",
+      "ip_after": "172.18.0.2",
+      "partition_s": 30.19,
+      "requests": 3000,
+      "failed": 843,
+      "classes": {
+        "503": 396,
+        "504": 1,
+        "timeout": 446
+      },
+      "first_fail_t": -0.34,
+      "last_fail_start_t": 54.51,
+      "recovered_t": 54.56,
+      "recovery_after_heal_s": 24.36,
+      "first_ok_start_after_heal_s": 6.71,
+      "failed_started_after_heal": 281,
+      "partition_latency_ms_p50_p95": [
+        9701,
+        10002
+      ],
+      "max_latency_ms_from_fault": 10006,
+      "workload": "slow",
+      "db_uri_params": "keepalives=1&keepalives_idle=30&keepalives_interval=10&keepalives_count=3&tcp_user_timeout=20000",
+      "postgrest_reconnect_backoff_s": [
+        1
+      ]
+    },
+    {
+      "label": "chosen-slow-3",
+      "ip_before": "172.18.0.2",
+      "ip_after": "172.18.0.2",
+      "partition_s": 30.17,
+      "requests": 3000,
+      "failed": 882,
+      "classes": {
+        "503": 803,
+        "timeout": 79
+      },
+      "first_fail_t": -0.36,
+      "last_fail_start_t": 53.29,
+      "recovered_t": 53.35,
+      "recovery_after_heal_s": 23.18,
+      "first_ok_start_after_heal_s": 1.17,
+      "failed_started_after_heal": 271,
+      "partition_latency_ms_p50_p95": [
+        2,
+        3
+      ],
+      "max_latency_ms_from_fault": 10003,
+      "workload": "slow",
+      "db_uri_params": "keepalives=1&keepalives_idle=30&keepalives_interval=10&keepalives_count=3&tcp_user_timeout=20000",
+      "postgrest_reconnect_backoff_s": [
+        1,
+        2,
+        4,
+        8,
+        16,
+        1
+      ]
+    }
+  ],
+  "raw_data_kept": false,
+  "note": "Per-request ledgers and container logs were not kept; this file holds the per-run analysis. The drill containers and network were removed."
+}

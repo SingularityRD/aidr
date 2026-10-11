@@ -86,6 +86,8 @@ release-output/
 
 # Local CI runner (pnpm ci:local): logs, report, cached pinned tools, venvs
 .ci-local/
+# Isolated pip-audit venv created by the aig-bridge CI step (ci.yml / ci:local)
+services/aig-bridge/.audit-venv/
 
 # Runtime lock written by scripts/build-workspace.mjs while a workspace build runs
 packages/core/.aidr-build.lock

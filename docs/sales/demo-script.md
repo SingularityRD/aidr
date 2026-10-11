@@ -95,7 +95,7 @@ echo '{"session_id":"demo","tool_name":"Bash","tool_input":{"command":"ls -la"}}
 
 An empty `{}` means allow.
 
-> "The verdict names the rule and the artifact. The rules are YAML — 494 of them —
+> "The verdict names the rule and the artifact. The rules are YAML — 507 of them —
 > your team can read and extend them."
 
 Open `threats/commands.yaml` and show one rule.
@@ -145,8 +145,9 @@ values again.
 
 Point out that the name in this example is **not** masked by the default rules (on the
 24 September 2026 build: `TCKN [TCKN_1], IBAN [IBAN_1], e-posta [EMAIL_1]`, name
-unchanged). Names without a cue word need an administrator term list or the optional NER
-host. Say this before the audience notices it.
+unchanged). Names without a cue word need an administrator term list; the native NER host
+ships without a model and is not part of the first-release scope. Say this before the
+audience notices it.
 
 ### B2. Secrets are never restored (60 seconds)
 

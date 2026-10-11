@@ -153,6 +153,46 @@ function findEocd(bytes: Uint8Array): number {
 	return -1;
 }
 
+/** Where a ZIP's central directory lies, as its end-of-central-directory record says. */
+export interface ZipDirectory {
+	readonly offset: number;
+	readonly size: number;
+	readonly count: number;
+}
+
+/**
+ * The central directory location from the EOCD record in `tail`, the last bytes of a file
+ * (at least the last 64 KiB + 22 for an archive comment of any length); null when there is
+ * no EOCD there or the archive is ZIP64 / multi-disk.
+ */
+export function zipDirectory(tail: Uint8Array): ZipDirectory | null {
+	const eocd = tail.length >= 22 ? findEocd(tail) : -1;
+	if (eocd < 0 || (eocd >= 20 && u32(tail, eocd - 20) === SIG_ZIP64_LOCATOR)) return null;
+	const count = u16(tail, eocd + 10);
+	const size = u32(tail, eocd + 12);
+	const offset = u32(tail, eocd + 16);
+	const multiDisk = u16(tail, eocd + 4) !== 0 || u16(tail, eocd + 6) !== 0;
+	if (multiDisk || count !== u16(tail, eocd + 8)) return null;
+	if (count === 0xffff || size === 0xffffffff || offset === 0xffffffff) return null;
+	return { offset, size, count };
+}
+
+/** Entry names of the `count` records of a central directory; null when it is malformed. */
+export function centralDirectoryNames(directory: Uint8Array, count: number): string[] | null {
+	const names: string[] = [];
+	const decoder = new TextDecoder("utf-8");
+	let offset = 0;
+	for (let i = 0; i < count; i++) {
+		if (offset + 46 > directory.length || u32(directory, offset) !== SIG_CENTRAL) return null;
+		const nameLen = u16(directory, offset + 28);
+		const next = offset + 46 + nameLen + u16(directory, offset + 30) + u16(directory, offset + 32);
+		if (next > directory.length) return null;
+		names.push(decoder.decode(directory.subarray(offset + 46, offset + 46 + nameLen)));
+		offset = next;
+	}
+	return names;
+}
+
 const DECODER_UTF8 = new TextDecoder("utf-8", { fatal: true });
 
 function decodeName(raw: Uint8Array, utf8: boolean): string {

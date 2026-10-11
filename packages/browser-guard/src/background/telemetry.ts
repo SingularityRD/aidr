@@ -15,6 +15,7 @@ import {
 	type AupAcknowledgementEvent,
 	ENTITY_TYPES,
 	type EntityType,
+	type NativeNerUse,
 	type PrivacyScanEvent,
 	type ShadowAiUsageEvent,
 	type SiteId,
@@ -53,7 +54,9 @@ const EVENT_KEYS = new Set([
 	"entity_counts",
 	"findings_count",
 	"policy_id",
+	"native_ner",
 ]);
+const NATIVE_NER_USES: readonly NativeNerUse[] = ["used", "unavailable"];
 
 /** Known entity types only, integers 1..100000, at most 32 keys. Everything else is dropped. */
 export function sanitizeCounts(raw: unknown): Partial<Record<EntityType, number>> {
@@ -110,6 +113,8 @@ export function sanitizeEvent(raw: unknown): PrivacyScanEvent | null {
 	if (!hasValidHeader(e)) return null;
 	const findings = e.findings_count;
 	if (!isFindingsCount(findings) || !isOptionalPolicyId(e.policy_id)) return null;
+	if (e.native_ner !== undefined && !NATIVE_NER_USES.includes(e.native_ner as NativeNerUse))
+		return null;
 	const event: PrivacyScanEvent = {
 		event_id: e.event_id as string,
 		event_type: "privacy_scan",
@@ -120,6 +125,7 @@ export function sanitizeEvent(raw: unknown): PrivacyScanEvent | null {
 		entity_counts: sanitizeCounts(e.entity_counts),
 		findings_count: findings,
 		...(typeof e.policy_id === "string" ? { policy_id: e.policy_id } : {}),
+		...(e.native_ner !== undefined ? { native_ner: e.native_ner as NativeNerUse } : {}),
 	};
 	return event;
 }
@@ -184,6 +190,8 @@ export interface RecordInput {
 	readonly channel: PrivacyScanEvent["channel"];
 	readonly counts: unknown;
 	readonly policyId?: string;
+	/** Native NER outcome of the check (absent: NER was off). Status only, never content. */
+	readonly nativeNer?: NativeNerUse;
 }
 
 const SHADOW_ACTIONS: readonly ShadowAiUsageEvent["action"][] = ["visited", "blocked"];
@@ -272,6 +280,7 @@ export function buildEvent(input: RecordInput, now: number): PrivacyScanEvent | 
 		...(input.policyId && POLICY_ID_PATTERN.test(input.policyId)
 			? { policy_id: input.policyId }
 			: {}),
+		...(input.nativeNer ? { native_ner: input.nativeNer } : {}),
 	});
 }
 

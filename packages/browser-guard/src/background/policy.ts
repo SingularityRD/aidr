@@ -26,6 +26,7 @@ import {
 	type UserSettings,
 } from "../types.js";
 import { SITE_HOSTS } from "./dnr.js";
+import { sha256Hex } from "./sha256.js";
 
 const MIB = 1024 * 1024;
 
@@ -93,6 +94,7 @@ export const DEFAULT_POLICY: GuardPolicy = deepFreeze({
 	maxFileBytes: 5 * MIB,
 	restoreResponses: true,
 	useNativeHost: false,
+	requireNativeNer: false,
 	telemetry: null,
 	language: "auto",
 	managedKeys: [],
@@ -164,8 +166,49 @@ const literals: Validator = (raw) => {
 	return valid(out);
 };
 
+/**
+ * The value the deployment examples (`deploy/browser-guard/*.example.*`) carry in
+ * `exactData[].keyB64`. It is deliberately not base64, so it can never act as an HMAC
+ * key; a managed policy that still holds it (or any other `REPLACE_WITH_` value) has its
+ * `exactData` refused with a warning naming the cause. The examples once shipped a real
+ * 32-byte key; it was retired as compromised and is refused too (see below).
+ */
+export const EXACT_DATA_PLACEHOLDER_KEY = "REPLACE_WITH_DATASET_KEY_FROM_FINGERPRINT_DATASET";
+const PLACEHOLDER_PATTERN = /^\s*REPLACE_WITH_/i;
+const isPlaceholderDataset = (item: unknown): boolean =>
+	isPlainObject(item) &&
+	(PLACEHOLDER_PATTERN.test(String(item.keyB64)) ||
+		(Array.isArray(item.fingerprints) &&
+			item.fingerprints.some((fp) => PLACEHOLDER_PATTERN.test(String(fp)))));
+
+/**
+ * The retired example dataset: the deployment examples once shipped a real 32-byte HMAC key
+ * (dataset `crm-customers-example`). It is public, so it is treated as compromised: a managed
+ * policy that still uses it has its `exactData` refused with a warning naming it. Only the
+ * SHA-256 of the base64 value is kept here (the value itself must not reappear in the
+ * repository), together with the example's fingerprints (HMAC digests, not secrets).
+ */
+const RETIRED_EXAMPLE_DIGESTS: ReadonlySet<string> = new Set([
+	"6ebab6aa4ce1a68f67f8812933df26731a3696b9b23e2948e7165e8c3a5dc541",
+]);
+const RETIRED_EXAMPLE_FINGERPRINTS: ReadonlySet<string> = new Set([
+	"7284cb51429e3ff4e4d9b0cc1cee1276631d01aacc98cd83b3f39847a747fa36",
+	"dace37df0e61d972ce461b5887cc8ef241df0749dd737adc7de1b118305d89b2",
+	"fd5d74d29c57fd1c18a6d23aa82f83ea8211081ed570ae9ac60b90f7e4b71180",
+]);
+const isRetiredExampleDataset = (item: unknown): boolean =>
+	isPlainObject(item) &&
+	((typeof item.keyB64 === "string" &&
+		item.keyB64.length <= 1024 &&
+		RETIRED_EXAMPLE_DIGESTS.has(sha256Hex(item.keyB64.trim()))) ||
+		(Array.isArray(item.fingerprints) &&
+			item.fingerprints.some((fp) =>
+				RETIRED_EXAMPLE_FINGERPRINTS.has(String(fp).trim().toLowerCase()),
+			)));
+
 const isDatasetKey = (raw: unknown): raw is string =>
 	typeof raw === "string" &&
+	!PLACEHOLDER_PATTERN.test(raw) &&
 	raw.length >= 16 &&
 	raw.length <= 1024 &&
 	raw.length % 4 === 0 &&
@@ -496,6 +539,7 @@ const MANAGED_VALIDATORS: Readonly<Record<ManagedKey, Validator>> = {
 	maxFileBytes,
 	restoreResponses: bool,
 	useNativeHost: bool,
+	requireNativeNer: bool,
 	telemetry: telemetryValidator(false),
 	language: oneOf(["auto", "en", "tr"]),
 	policyId,
@@ -615,9 +659,21 @@ export function evaluatePolicy(managed: unknown, user: unknown): PolicyEvaluatio
 	if (admin.present && !admin.allowUserOverrides)
 		lockProtectionKeys(merged, managedKeys, userResult.settings, warnings);
 
+	if (merged.requireNativeNer === true) requireNativeHost(merged, managedKeys, warnings);
+
 	merged.version = 1;
 	merged.managedKeys = managedKeys;
 	return { policy: deepFreeze(merged as unknown as GuardPolicy), warnings };
+}
+
+/** Why a managed `exactData` value is refused outright (example placeholder or retired key). */
+function exampleDataRefusal(value: unknown): string | null {
+	if (!Array.isArray(value)) return null;
+	if (value.some(isRetiredExampleDataset))
+		return 'managed: "exactData" uses the retired example dataset key (crm-customers-example), which was published in the deployment examples and is compromised; ignored. Build each dataset with fingerprint-dataset.mjs and a fresh key';
+	if (value.some(isPlaceholderDataset))
+		return 'managed: "exactData" still holds the example placeholder key; ignored. Build each dataset with fingerprint-dataset.mjs';
+	return null;
 }
 
 /**
@@ -652,6 +708,11 @@ function mergeManaged(
 			warnings.push(`managed: unknown key "${key}" ignored`);
 			continue;
 		}
+		const refusal = key === "exactData" ? exampleDataRefusal(value) : null;
+		if (refusal) {
+			warnings.push(refusal);
+			continue;
+		}
 		const result = validator(value);
 		if (!result.ok) {
 			warnings.push(`managed: invalid value for "${key}" ignored`);
@@ -661,6 +722,22 @@ function mergeManaged(
 		managedKeys.push(key);
 	}
 	return { present: Object.keys(managed).length > 0, allowUserOverrides };
+}
+
+/**
+ * `requireNativeNer` (managed only) needs the native host: `useNativeHost` is forced on and
+ * locked, whatever the managed or user value was, so neither side can switch the required
+ * check off by disabling the bridge.
+ */
+function requireNativeHost(
+	merged: Record<string, unknown>,
+	managedKeys: string[],
+	warnings: string[],
+): void {
+	if (merged.useNativeHost !== true)
+		warnings.push('"useNativeHost" forced on because managed "requireNativeNer" is true');
+	merged.useNativeHost = true;
+	if (!managedKeys.includes("useNativeHost")) managedKeys.push("useNativeHost");
 }
 
 /** Locks every protection key the managed policy did not set at its built-in default. */

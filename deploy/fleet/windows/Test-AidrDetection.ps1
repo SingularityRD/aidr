@@ -28,7 +28,7 @@ try {
     if ([string]$receipt.connector -ne 'claude-code' -or [string]$receipt.local_canary -ne 'deny' -or -not (Test-AidrFixedStringEqual ([string]$receipt.artifact_sha256) ([string]$state.active.connector_digest))) { throw "Endpoint receipt does not match active fleet state" }
     $connectorPath = [IO.Path]::GetFullPath([string]$receipt.path)
     if (-not $connectorPath.Equals([IO.Path]::GetFullPath([string]$state.active.connector_path), [StringComparison]::OrdinalIgnoreCase)) { throw "Endpoint receipt path does not match active fleet state" }
-    foreach ($bundle in @('pre-tool-use.cjs', 'post-tool-use.cjs', 'session-start.cjs')) {
+    foreach ($bundle in @('pre-tool-use.cjs', 'pre-tool-use.bundle.cjs', 'post-tool-use.cjs', 'post-tool-use.bundle.cjs', 'session-start.cjs', 'session-start.bundle.cjs')) {
         if (-not (Test-Path -LiteralPath (Join-Path $connectorPath "dist/$bundle") -PathType Leaf)) { throw "Managed connector bundle is missing" }
     }
     $stage = 'installed_files'

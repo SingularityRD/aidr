@@ -29,7 +29,7 @@ const productLines = [
 	},
 	{
 		title: "AIDR Privacy engine",
-		desc: "Turkish and English detection with checksum validation. Optional endpoint NER/OCR host and enterprise gateway.",
+		desc: "Turkish and English detection with checksum validation and an optional enterprise gateway. NER/OCR ships without a model and is not part of the first-release scope.",
 	},
 	{
 		title: "AI Security Posture",

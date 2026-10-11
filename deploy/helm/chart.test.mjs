@@ -203,6 +203,10 @@ test("rendered production values use the external database and backups", { skip:
 	const auth = docs.find((doc) => doc.kind === "Deployment" && doc.metadata.name.endsWith("-auth"));
 	const dbUrl = auth.spec.template.spec.containers[0].env.find((entry) => entry.name === "GOTRUE_DB_DATABASE_URL").value;
 	assert.equal(dbUrl, "postgres://supabase_auth_admin:$(POSTGRES_PASSWORD)@aidr-db.internal.example.com:5432/postgres?sslmode=verify-full");
+	// PostgREST detects pooled connections on a dead network path (load-soak drill O2).
+	const rest = docs.find((doc) => doc.kind === "Deployment" && doc.metadata.name.endsWith("-rest"));
+	const restDbUri = rest.spec.template.spec.containers[0].env.find((entry) => entry.name === "PGRST_DB_URI").value;
+	assert.equal(restDbUri, "postgres://authenticator:$(POSTGRES_PASSWORD)@aidr-db.internal.example.com:5432/postgres?sslmode=verify-full&keepalives=1&keepalives_idle=30&keepalives_interval=10&keepalives_count=3&tcp_user_timeout=20000");
 	const ingress = docs.find((doc) => doc.kind === "Ingress");
 	assert.equal(ingress.metadata.annotations["cert-manager.io/cluster-issuer"], "letsencrypt-prod");
 });
@@ -424,6 +428,33 @@ test("a shared dashboard/API host routes only the API prefixes to the gateway", 
 	for (const prefix of ["/auth/v1/", "/rest/v1/", "/storage/v1/", "/functions/v1/"]) assert.equal(routes[prefix], "aidr-api-gw");
 });
 
+test("Supabase Studio is never deployed or routed by the chart", { skip: helmSkip }, () => {
+	for (const name of CI_VALUES) {
+		const docs = renderDocs(name);
+		for (const doc of docs) assert.doesNotMatch(String(doc.metadata?.name), /studio/i, `${name}: ${doc.kind} ${doc.metadata?.name}`);
+		for (const { spec } of podSpecs(docs)) {
+			for (const container of [...(spec.initContainers ?? []), ...spec.containers]) assert.doesNotMatch(container.image, /supabase\/studio/, `${name}: ${container.image}`);
+		}
+		const gateway = docs.find((doc) => doc.kind === "ConfigMap" && doc.metadata.name === "aidr-api-gw");
+		const clusters = parse(gateway.data["cds.yaml"]).resources.map((cluster) => cluster.name);
+		assert.ok(!clusters.includes("studio"), `${name}: gateway has a studio cluster`);
+		const listeners = parse(gateway.data["lds.template.yaml"]).resources;
+		assert.equal(listeners.length, 1, `${name}: the gateway has a single public listener`);
+		const routes = listeners[0].filter_chains[0].filters[0].typed_config.route_config.virtual_hosts.flatMap((host) => host.routes);
+		assert.deepEqual(routes.at(-1).match, { prefix: "/" });
+		assert.deepEqual(routes.at(-1).direct_response, { status: 404 }, `${name}: the gateway catch-all must be a 404`);
+		const services = new Set(docs.filter((doc) => doc.kind === "Service").map((doc) => doc.metadata.name));
+		for (const ingress of docs.filter((doc) => doc.kind === "Ingress")) {
+			for (const rule of ingress.spec.rules) {
+				for (const path of rule.http.paths) {
+					assert.ok(["aidr-dashboard", "aidr-api-gw"].includes(path.backend.service.name), `${name}: ingress routes ${path.path} to ${path.backend.service.name}`);
+					assert.ok(services.has(path.backend.service.name));
+				}
+			}
+		}
+	}
+});
+
 // Optional: validate against the Kubernetes OpenAPI schemas when kubeconform is
 // available (KUBECONFORM_BIN or PATH). It downloads schemas unless cached.
 function findKubeconform() {
@@ -449,7 +480,7 @@ test("rendered images give the complete air-gap pull list", { skip: helmSkip }, 
 	for (const name of CI_VALUES) {
 		for (const { spec } of podSpecs(renderDocs(name))) for (const container of spec.containers) images.add(container.image);
 	}
-	for (const expected of ["supabase/gotrue:v2.196.0", "postgrest/postgrest:v14.17", "supabase/storage-api:v1.74.0", "envoyproxy/envoy:v1.39.1", "supabase/postgres:17.6.1.136", "aidr/dashboard:0.6.0", "aidr/edge-functions:0.6.0", "aidr/migrations:0.6.0"]) {
+	for (const expected of ["supabase/gotrue:v2.197.0", "postgrest/postgrest:v14.17", "supabase/storage-api:v1.80.2", "envoyproxy/envoy:v1.39.2", "supabase/postgres:17.11.0.004", "aidr/dashboard:0.6.0", "aidr/edge-functions:0.6.0", "aidr/migrations:0.6.0"]) {
 		assert.ok([...images].some((image) => image === `registry.example.internal/${expected}`), expected);
 	}
 });

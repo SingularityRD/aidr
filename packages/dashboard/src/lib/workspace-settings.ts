@@ -13,6 +13,12 @@ export interface WorkspaceSettings {
 	};
 	role: string;
 	canEdit: boolean;
+	/**
+	 * Retention is an owner-only decision (the service answers an admin's change
+	 * with 403 `workspace_role_insufficient`). An older service that omits the
+	 * flag is read as `false`: the control is hidden, never offered and refused.
+	 */
+	canEditRetention: boolean;
 	canClose: boolean;
 	retentionBounds: { min: number; max: number };
 }
@@ -86,9 +92,13 @@ export async function loadWorkspaceSettings(
 			!isRecord(permissions) ||
 			typeof permissions.can_edit !== "boolean" ||
 			typeof permissions.can_close !== "boolean" ||
+			(permissions.can_edit_retention !== undefined &&
+				typeof permissions.can_edit_retention !== "boolean") ||
 			!isRecord(bounds) ||
 			!Number.isSafeInteger(bounds.min) ||
-			!Number.isSafeInteger(bounds.max)
+			!Number.isSafeInteger(bounds.max) ||
+			(bounds.min as number) < 1 ||
+			(bounds.min as number) > (bounds.max as number)
 		)
 			return { ok: false, error: "workspace_unavailable" };
 		return {
@@ -97,6 +107,7 @@ export async function loadWorkspaceSettings(
 				workspace,
 				role: data.role,
 				canEdit: permissions.can_edit,
+				canEditRetention: permissions.can_edit === true && permissions.can_edit_retention === true,
 				canClose: permissions.can_close,
 				retentionBounds: { min: bounds.min as number, max: bounds.max as number },
 			},

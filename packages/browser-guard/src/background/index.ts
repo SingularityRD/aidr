@@ -26,6 +26,8 @@ import type {
 	GuardResponses,
 	GuardStats,
 	NativeBridge,
+	NativeNerUse,
+	NativeScanOptions,
 	PrivacyScanEvent,
 	SiteAccessStatus,
 	SiteId,
@@ -36,7 +38,7 @@ import {
 	DASHBOARD_POLICY_ALARM,
 	DASHBOARD_POLICY_LIMITS,
 	DashboardPolicyClient,
-	withDashboardShadowAi,
+	withDashboardPolicy,
 } from "./dashboard-policy.js";
 import { applyBlockedSites, redirectBlockedTab, siteForUrl, updatedTabUrl } from "./dnr.js";
 import { createNativeBridge, NATIVE_MAX_IMAGE_BYTES } from "./native.js";
@@ -79,6 +81,9 @@ const NATIVE_SCAN_MAX_CHARS = 1_000_000;
 
 const ACTIONS: readonly PrivacyScanEvent["action"][] = ["masked", "blocked", "warned", "allowed"];
 const CHANNELS: readonly PrivacyScanEvent["channel"][] = ["prompt", "paste", "file"];
+const NATIVE_NER_USES: readonly NativeNerUse[] = ["used", "unavailable"];
+/** policy.requireNativeNer: only a host answer with NER coverage counts (see native.ts). */
+const REQUIRE_NER: NativeScanOptions = Object.freeze({ requireNer: true });
 
 export interface BackgroundOptions {
 	readonly chrome: ChromeApi;
@@ -237,7 +242,8 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 
 	/**
 	 * Signed dashboard decisions, only with an administrator-pinned trust anchor; they can
-	 * tighten the enterprise Shadow AI policy, never relax it (./dashboard-policy.ts).
+	 * tighten the enterprise Shadow AI policy and switch on `requireNativeNer`, never relax
+	 * either (./dashboard-policy.ts).
 	 */
 	async function applyDashboardDecisions(
 		policy: GuardPolicy,
@@ -247,7 +253,10 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 		const decisions = trust ? await dashboard.stored(trust) : null;
 		if (decisions?.expired)
 			warnings.push("dashboard: Shadow AI decisions expired; blocks kept, sanctions dropped");
-		return withDashboardShadowAi(policy, decisions);
+		const applied = withDashboardPolicy(policy, decisions);
+		if (applied.requireNativeNer === true && policy.requireNativeNer !== true)
+			warnings.push('dashboard: "requireNativeNer" on; "useNativeHost" forced on');
+		return applied;
 	}
 
 	async function loadPolicy(broadcast: boolean): Promise<GuardPolicy> {
@@ -424,7 +433,9 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 		const used = bridge;
 		let findings: GuardResponses["NATIVE_SCAN"]["findings"] = null;
 		try {
-			findings = await used.scanText(text);
+			findings = current.requireNativeNer
+				? await used.scanText(text, REQUIRE_NER)
+				: await used.scanText(text);
 		} catch {
 			findings = null;
 		}
@@ -445,7 +456,8 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 			const used = bridge;
 			let inspection: GuardResponses["NATIVE_IMAGE_SCAN"]["inspection"] = null;
 			try {
-				inspection = (await used.scanImage?.(bytes)) ?? null;
+				const options = current.requireNativeNer ? [REQUIRE_NER] : [];
+				inspection = (await used.scanImage?.(bytes, ...options)) ?? null;
 			} catch {
 				inspection = null;
 			}
@@ -486,9 +498,11 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 
 	async function record(message: Record<string, unknown>, who: Sender): Promise<GuardResponse> {
 		if (who.kind !== "content") return fail("NOT_ALLOWED");
-		const { action, channel, counts } = message;
+		const { action, channel, counts, native } = message;
 		if (!ACTIONS.includes(action as PrivacyScanEvent["action"])) return fail("BAD_MESSAGE");
 		if (!CHANNELS.includes(channel as PrivacyScanEvent["channel"])) return fail("BAD_MESSAGE");
+		if (native !== undefined && !NATIVE_NER_USES.includes(native as NativeNerUse))
+			return fail("BAD_MESSAGE");
 		// The site is derived from the sender, never taken from the message.
 		const tab = await stats.record(
 			who.tabId,
@@ -504,6 +518,7 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 				channel: channel as PrivacyScanEvent["channel"],
 				counts,
 				policyId: current.policyId,
+				...(native !== undefined ? { nativeNer: native as NativeNerUse } : {}),
 			})
 			.catch(() => log("telemetry: failed to queue event"));
 		return { ok: true };

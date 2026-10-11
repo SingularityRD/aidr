@@ -82,6 +82,8 @@ end $race$;
 
 const holder = session();
 let contender;
+let reader;
+let second;
 try {
 	holder.child.stdin.write(`begin;
 select pg_advisory_xact_lock(hashtextextended('${tenant}'::text,0));
@@ -127,9 +129,33 @@ rollback;
 `);
 	await until(contender, "AFTER_RELEASE_OK");
 	await finish(contender);
-	console.log(`GA admission concurrency passed (${legal ? "with legal consent" : "pre-legal"}): eight tenant-lock probes and trial after release; both sessions rolled back.`);
+
+	// Read-only capacity checks take the SHARED tenant lock: a concurrent reader
+	// (every ingest request's admission check) must not wait for another reader,
+	// while every allocating writer still waits for the reader to commit.
+	const readerTenant = randomUUID();
+	reader = session();
+	reader.child.stdin.write(`begin;
+select public.tenant_admission_capacity('${readerTenant}');
+\\echo READER_READY
+`);
+	await until(reader, "READER_READY");
+	second = session();
+	second.child.stdin.write(`begin;
+set local lock_timeout='200ms';
+select public.tenant_admission_capacity('${readerTenant}');
+${expectsTenantLock("register_after_reader", `perform public.register_agent_for_ingest('${owner}','reader-agent','test','1','${readerTenant}');`)}
+${expectsTenantLock("exclusive_after_reader", `perform pg_advisory_xact_lock(hashtextextended('${readerTenant}'::text,0));`)}
+rollback;
+\\echo SHARED_READERS_OK
+`);
+	await until(second, "SHARED_READERS_OK");
+	reader.child.stdin.write("rollback;\n");
+	await finish(reader);
+	await finish(second);
+	console.log(`GA admission concurrency passed (${legal ? "with legal consent" : "pre-legal"}): eight tenant-lock probes, trial after release, and concurrent shared capacity readers that still exclude writers; all sessions rolled back.`);
 } finally {
-	for (const state of [holder, contender]) {
+	for (const state of [holder, contender, reader, second]) {
 		if (state && !state.closed) {
 			state.child.stdin.end("rollback;\n");
 			state.child.kill();

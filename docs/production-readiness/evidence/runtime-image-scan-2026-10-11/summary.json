@@ -1,0 +1,185 @@
+{
+  "schema_version": 1,
+  "scanner": {
+    "tool": "trivy",
+    "version": "0.73.0",
+    "install": "github.com/aquasecurity/trivy release trivy_0.73.0_Linux-64bit.tar.gz, sha256 verified against trivy_0.73.0_checksums.txt",
+    "vulnerability_db": {
+      "version": 2,
+      "updated_at": "2026-10-10T18:59:50Z",
+      "downloaded_at": "2026-10-10T22:46:22Z",
+      "repository": "mirror.gcr.io/aquasec/trivy-db:2"
+    }
+  },
+  "policy": {
+    "command": "trivy image --input <docker-save.tar> --scanners vuln --pkg-types os,library --skip-db-update --ignorefile <empty> --config <empty {}> --format json",
+    "severities": "all reported; CRITICAL/HIGH listed",
+    "ignore_file": "none (empty file, empty working directory)",
+    "counting": "every package/target occurrence"
+  },
+  "images": {
+    "node-base-stock": {
+      "reference": "node:24.21.0-alpine3.24@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1",
+      "image_id": "sha256:c10884952bb8c37122fcc3fe6f97af3ab0a80e5eb02ee5df707406b4e11a7e3e",
+      "os": {
+        "Family": "alpine",
+        "Name": "3.24.2"
+      },
+      "counts": {
+        "HIGH": 8,
+        "LOW": 1,
+        "MEDIUM": 13
+      },
+      "targets": [
+        {
+          "target": "base.tar (alpine 3.24.2)",
+          "class": "os-pkgs",
+          "type": "alpine",
+          "findings": 1
+        },
+        {
+          "target": "Node.js",
+          "class": "lang-pkgs",
+          "type": "node-pkg",
+          "findings": 21
+        }
+      ],
+      "critical_high": [
+        {
+          "id": "CVE-2026-102276",
+          "pkg": "brace-expansion",
+          "installed": "5.0.7",
+          "fixed": "5.0.10, 3.0.7, 2.1.5, 1.1.19",
+          "severity": "HIGH",
+          "class": "lang-pkgs"
+        },
+        {
+          "id": "CVE-2026-102278",
+          "pkg": "brace-expansion",
+          "installed": "5.0.7",
+          "fixed": "5.0.11, 3.0.8, 2.1.6, 1.1.20",
+          "severity": "HIGH",
+          "class": "lang-pkgs"
+        },
+        {
+          "id": "CVE-2026-14257",
+          "pkg": "brace-expansion",
+          "installed": "5.0.7",
+          "fixed": "5.0.8, 3.0.3, 2.1.3, 1.1.17",
+          "severity": "HIGH",
+          "class": "lang-pkgs"
+        },
+        {
+          "id": "CVE-2026-69152",
+          "pkg": "brace-expansion",
+          "installed": "5.0.7",
+          "fixed": "1.1.18, 2.1.4, 3.0.6, 5.0.9",
+          "severity": "HIGH",
+          "class": "lang-pkgs"
+        },
+        {
+          "id": "CVE-2026-93748",
+          "pkg": "http-cache-semantics",
+          "installed": "4.2.0",
+          "fixed": null,
+          "severity": "HIGH",
+          "class": "lang-pkgs"
+        },
+        {
+          "id": "CVE-2026-69192",
+          "pkg": "ip-address",
+          "installed": "10.2.0",
+          "fixed": "10.3.1",
+          "severity": "HIGH",
+          "class": "lang-pkgs"
+        },
+        {
+          "id": "CVE-2026-73566",
+          "pkg": "tar",
+          "installed": "7.5.19",
+          "fixed": "7.5.21",
+          "severity": "HIGH",
+          "class": "lang-pkgs"
+        },
+        {
+          "id": "CVE-2026-19534",
+          "pkg": "undici",
+          "installed": "6.27.0",
+          "fixed": "6.28.1, 7.29.1, 8.10.2",
+          "severity": "HIGH",
+          "class": "lang-pkgs"
+        }
+      ]
+    },
+    "dashboard": {
+      "reference": "aidr-dashboard:ci (deploy/dashboard/Dockerfile, prepared context, source a6aea1bb)",
+      "image_id": "sha256:9060947615492557d8c33e2dcf8427b61caa9deb23df82bb574922f7aaf74554",
+      "os": {
+        "Family": "alpine",
+        "Name": "3.24.2"
+      },
+      "counts": {
+        "MEDIUM": 1
+      },
+      "targets": [
+        {
+          "target": "dashboard.tar (alpine 3.24.2)",
+          "class": "os-pkgs",
+          "type": "alpine",
+          "findings": 1
+        }
+      ],
+      "critical_high": []
+    },
+    "backup-node-helper": {
+      "reference": "scripts/lib/node-helper.Dockerfile via buildNodeHelperImage()",
+      "image_id": "sha256:744c473f135d6b427366d50ae2e839fca4a0563bea4cf5164c6ad5aee19a5820",
+      "os": {
+        "Family": "alpine",
+        "Name": "3.24.2"
+      },
+      "counts": {
+        "MEDIUM": 1
+      },
+      "targets": [
+        {
+          "target": "helper.tar (alpine 3.24.2)",
+          "class": "os-pkgs",
+          "type": "alpine",
+          "findings": 1
+        }
+      ],
+      "critical_high": []
+    },
+    "landing-runner-base-stock": {
+      "reference": "node:20-slim (aidr-landing e039be0b runner base, unpinned)",
+      "image_id": "sha256:9da6b4e352d0d5c94963eba1832408f5b7b08839cd8be9b6610c05de5118c704",
+      "os": {
+        "Family": "debian",
+        "Name": "12.13"
+      },
+      "counts": {
+        "CRITICAL": 7,
+        "HIGH": 84,
+        "LOW": 88,
+        "MEDIUM": 141,
+        "UNKNOWN": 7
+      },
+      "targets": [
+        {
+          "target": "landing-base.tar (debian 12.13)",
+          "class": "os-pkgs",
+          "type": "debian",
+          "findings": 289
+        },
+        {
+          "target": "Node.js",
+          "class": "lang-pkgs",
+          "type": "node-pkg",
+          "findings": 38
+        }
+      ],
+      "critical_high": []
+    }
+  }
+}

@@ -368,6 +368,298 @@ describe("PDF sanitizeFile decisions", () => {
 	}, 30_000);
 });
 
+describe("PDF recognised by content, whatever the name or MIME type", () => {
+	/** Uncompressed PDF whose page draws `line` as a hex string (no NUL byte anywhere). */
+	function hexPdf(line: string): Promise<Uint8Array> {
+		const hex = [...latin1(line)].map((b) => b.toString(16).padStart(2, "0")).join("");
+		return pdfFile([
+			"<< /Type /Catalog /Pages 2 0 R >>",
+			"<< /Type /Pages /Kids [4 0 R] /Count 1 >>",
+			"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
+			"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 5 0 R >>",
+			{ dict: "", data: `BT /F1 12 Tf 72 720 Td <${hex}> Tj ET`, compress: false },
+		]);
+	}
+	const NAMES: ReadonlyArray<readonly [string, string]> = [
+		["report.pdf", "application/pdf"],
+		["report.txt", "text/plain"],
+		["report.txt", "application/pdf"],
+		["report.csv", "text/csv"],
+		["report.json", "application/json"],
+		["report.md", ""],
+		["report", ""],
+		["report.png", "image/png"],
+		["report.zip", "application/zip"],
+		["report.docx", ""],
+	];
+
+	it("reaches the same decision for the same PDF bytes under every name / MIME type", async () => {
+		const pdf = await hexPdf(`E-posta: ${EMAIL}`);
+		expect(pdf.includes(0)).toBe(false);
+		for (const [name, type] of NAMES) {
+			const d = await sanitize(name, pdf, { type });
+			expect({ name, type, d }).toEqual({
+				name,
+				type,
+				d: { action: "block", counts: { EMAIL: 1 }, reasons: ["SENSITIVE_DATA_IN_PDF"] },
+			});
+		}
+	});
+
+	it("applies documentHandling to the real type of a renamed PDF", async () => {
+		const pdf = await hexPdf("Toplantı gündemi");
+		for (const [name, type] of NAMES) {
+			expect(await sanitize(name, pdf, { type, policy: { documentHandling: "block" } })).toEqual({
+				action: "block",
+				counts: {},
+				reasons: ["DOCUMENT_BLOCKED_BY_POLICY"],
+			});
+			expect(await sanitize(name, pdf, { type })).toEqual({
+				action: "allow",
+				counts: {},
+				reasons: [],
+			});
+		}
+	});
+
+	it("recognises a PDF header after leading junk when the file ends like a PDF", async () => {
+		const pdf = await hexPdf(`E-posta: ${EMAIL}`);
+		const junk = new Uint8Array([...latin1("garbage line\n"), ...pdf]);
+		expect((await sanitize("notes.txt", junk, { type: "text/plain" })).reasons).toEqual([
+			"SENSITIVE_DATA_IN_PDF",
+		]);
+	});
+
+	it("does not mistake a text file that mentions %PDF- for a PDF", async () => {
+		const note = latin1(`Notes: a PDF starts with %PDF-1.7. Contact ${EMAIL}\n`);
+		const d = await sanitize("notes.txt", note, { type: "text/plain" });
+		expect(d.action).toBe("mask");
+		expect(d.reasons).toEqual(["SENSITIVE_DATA"]);
+	});
+});
+
+describe("PDF embedded files, attachments and XMP metadata", () => {
+	const CLEAN_PAGE = textPage(["Toplantı gündemi", "Bütçe ve planlama"]);
+	const filespec = (ef: string) =>
+		`<< /Type /Filespec /F (secret.txt) /UF (secret.txt) /EF << /F ${ef} >> >>`;
+	const embedded = (data: string | Uint8Array, compress = true): PdfObject => ({
+		dict: "/Type /EmbeddedFile /Subtype /text#2Fplain",
+		data,
+		compress,
+	});
+	/** Clean visible page; `secret.txt` in the catalog's /EmbeddedFiles name tree (objects 7-9). */
+	const withEmbeddedFile = (data: string | Uint8Array, compress = true) =>
+		simplePdf([CLEAN_PAGE], {
+			catalogExtra: "/Names << /EmbeddedFiles 7 0 R >>",
+			extraObjects: [
+				"<< /Names [(secret.txt) 8 0 R] >>",
+				filespec("9 0 R"),
+				embedded(data, compress),
+			],
+		});
+
+	it("scans a plain-text file in the /EmbeddedFiles name tree behind a clean page", async () => {
+		const pdf = await withEmbeddedFile(`kullanici: ali\ne-posta: ${EMAIL}\n`);
+		const extraction = await extractPdfText(pdf);
+		expect(extraction.segments.join("\n")).toContain(EMAIL);
+		expect(extraction.complete).toBe(true);
+		for (const mode of ["auto", "block", "confirm"] as const)
+			expect(await sanitize("temiz.pdf", pdf, { policy: { mode } })).toEqual({
+				action: "block",
+				counts: { EMAIL: 1 },
+				reasons: ["SENSITIVE_DATA_IN_PDF"],
+			});
+	});
+
+	it("scans a FileAttachment annotation's embedded file (no /Type on the stream)", async () => {
+		const pdf = await simplePdf([CLEAN_PAGE], {
+			pageExtra: "/Annots [7 0 R]",
+			extraObjects: [
+				"<< /Type /Annot /Subtype /FileAttachment /Rect [0 0 10 10] /FS 8 0 R /Contents (ek) >>",
+				filespec("9 0 R"),
+				{ dict: "", data: `TCKN ${TCKN}` },
+			],
+		});
+		const d = await sanitize("ek.pdf", pdf);
+		expect(d.action).toBe("block");
+		expect(d.reasons).toEqual(["SENSITIVE_DATA_IN_PDF"]);
+		expect(d.counts).toMatchObject({ TC_KIMLIK: 1 });
+	});
+
+	it("allows a clean page with a clean plain-text attachment (fully read)", async () => {
+		const pdf = await withEmbeddedFile(
+			new TextEncoder().encode("Toplantı notları: bütçe onaylandı.\n"),
+		);
+		expect(await sanitize("temiz.pdf", pdf)).toEqual({ action: "allow", counts: {}, reasons: [] });
+	});
+
+	it.each([
+		["a nested PDF", latin1(`%PDF-1.4\n1 0 obj << >> endobj\n(${EMAIL})\n%%EOF\n`)],
+		["a ZIP / Office package", new Uint8Array([0x50, 0x4b, 0x03, 0x04, 20, 0, 0, 0, 8, 0])],
+		["binary data", new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0])],
+		["non-UTF-8 text", latin1(`e-posta: ${EMAIL} \u00fc\u00e7`)],
+	])("never reports a clean page with %s attached as clean", async (_name, data) => {
+		const pdf = await withEmbeddedFile(data);
+		const extraction = await extractPdfText(pdf);
+		expect(extraction.complete).toBe(false);
+		expect(extraction.reasons).toEqual(["PDF_EMBEDDED_FILES_NOT_INSPECTED"]);
+		expect(extraction.reasonsWithImages).toEqual(["PDF_EMBEDDED_FILES_NOT_INSPECTED"]);
+		expect(await sanitize("ekli.pdf", pdf)).toEqual({
+			action: "allow",
+			counts: {},
+			reasons: ["BINARY_FILE_UNSCANNED", "PDF_EMBEDDED_FILES_NOT_INSPECTED"],
+		});
+		expect(await sanitize("ekli.pdf", pdf, { policy: { mode: "block" } })).toEqual({
+			action: "block",
+			counts: {},
+			reasons: ["BINARY_FILE_UNSCANNABLE", "PDF_EMBEDDED_FILES_NOT_INSPECTED"],
+		});
+	});
+
+	it("does not treat a missing or undecodable embedded file as clean", async () => {
+		const missing = await simplePdf([CLEAN_PAGE], {
+			catalogExtra: "/Names << /EmbeddedFiles 7 0 R >>",
+			extraObjects: ["<< /Names [(secret.txt) 8 0 R] >>", filespec("99 0 R")],
+		});
+		const undecodable = await simplePdf([CLEAN_PAGE], {
+			catalogExtra: "/Names << /EmbeddedFiles 7 0 R >>",
+			extraObjects: [
+				"<< /Names [(secret.txt) 8 0 R] >>",
+				filespec("9 0 R"),
+				{ dict: "/Type /EmbeddedFile /Filter /JBIG2Decode", data: "xx", compress: false },
+			],
+		});
+		for (const pdf of [missing, undecodable])
+			expect((await extractPdfText(pdf)).reasons).toEqual(["PDF_EMBEDDED_FILES_NOT_INSPECTED"]);
+	});
+
+	describe("object redefinitions (last definition in the file vs the cross-reference)", () => {
+		const IBAN = "TR330006100519786457841326";
+		/** Clean page with a FileAttachment annotation (7) -> filespec 8 -> untyped stream 9. */
+		const attachment = (trailerExtra: string | null = "") =>
+			simplePdf([CLEAN_PAGE], {
+				pageExtra: "/Annots [7 0 R]",
+				trailerExtra: trailerExtra ?? undefined,
+				extraObjects: [
+					"<< /Type /Annot /Subtype /FileAttachment /Rect [0 0 10 10] /FS 8 0 R >>",
+					filespec("9 0 R"),
+					{ dict: "", data: `Customer TCKN ${TCKN} IBAN ${IBAN}\n`, compress: false },
+				],
+			});
+		const append = (pdf: Uint8Array, tail: string): Uint8Array => {
+			const out = new Uint8Array(pdf.length + tail.length);
+			out.set(pdf);
+			out.set(latin1(tail), pdf.length);
+			return out;
+		};
+		const DEAD_FILESPEC = "8 0 obj\n<< /Type /Filespec /F (x.txt) >>\nendobj\n";
+		const offsetOf = (pdf: Uint8Array, num: number): number =>
+			new TextDecoder("latin1").decode(pdf).indexOf(`\n${num} 0 obj`) + 1;
+		/** `pdf` plus object 10: an xref stream (W [1 4 1], PNG "Up" predictor) of `offsets`. */
+		const xrefStream = async (pdf: Uint8Array, offsets: number[]): Promise<Uint8Array> => {
+			const rows: number[] = [];
+			let prev = [0, 0, 0, 0, 0, 0];
+			offsets.forEach((pos, n) => {
+				const row = [
+					n === 0 ? 0 : 1,
+					pos >>> 24,
+					(pos >>> 16) & 255,
+					(pos >>> 8) & 255,
+					pos & 255,
+					0,
+				];
+				rows.push(2, ...row.map((b, i) => (b - (prev[i] as number)) & 255));
+				prev = row;
+			});
+			const deflated = new Uint8Array(
+				await new Response(
+					new Blob([new Uint8Array(rows)]).stream().pipeThrough(new CompressionStream("deflate")),
+				).arrayBuffer(),
+			);
+			const head = append(
+				pdf,
+				`10 0 obj\n<< /Type /XRef /Size ${offsets.length} /Root 1 0 R /W [1 4 1] /Filter /FlateDecode /DecodeParms << /Predictor 12 /Columns 6 >> /Length ${deflated.length} >>\nstream\n`,
+			);
+			const out = new Uint8Array(head.length + deflated.length);
+			out.set(head);
+			out.set(deflated, head.length);
+			return append(out, "\nendstream\nendobj\n");
+		};
+
+		it("still scans a file specification shadowed by a dead redefinition after %%EOF", async () => {
+			const pdf = append(await attachment(), DEAD_FILESPEC);
+			const extraction = await extractPdfText(pdf);
+			expect(extraction.segments.join("\n")).toContain(TCKN);
+			expect(extraction.complete).toBe(false);
+			expect(extraction.reasons).toEqual(["PDF_EMBEDDED_FILES_NOT_INSPECTED"]);
+			const d = await sanitize("ek.pdf", pdf);
+			expect(d.action).toBe("block");
+			expect(d.counts).toMatchObject({ TC_KIMLIK: 1, IBAN: 1 });
+		});
+
+		it("flags the same disagreement when the xref is a predicted cross-reference stream", async () => {
+			const base = await attachment(null); // no classic xref table: one xref stream instead
+			const size = 11;
+			const xrefAt = base.length;
+			const offsets = Array.from({ length: size }, (_, n) =>
+				n === 10 ? xrefAt : n === 0 ? 0 : offsetOf(base, n),
+			);
+			const consistent = append(await xrefStream(base, offsets), `startxref\n${xrefAt}\n%%EOF\n`);
+			expect((await extractPdfText(consistent)).complete).toBe(true);
+			const extraction = await extractPdfText(append(consistent, DEAD_FILESPEC));
+			expect(extraction.segments.join("\n")).toContain(IBAN);
+			expect(extraction.reasons).toEqual(["PDF_EMBEDDED_FILES_NOT_INSPECTED"]);
+		});
+
+		it("accepts an incremental update the xref records, and scans the superseded file too", async () => {
+			const base = await attachment();
+			const prevXref = new TextDecoder("latin1").decode(base).lastIndexOf("xref\n0 ");
+			const update = base.length;
+			const xrefAt = update + DEAD_FILESPEC.length;
+			const pdf = append(
+				base,
+				`${DEAD_FILESPEC}xref\n8 1\n${String(update).padStart(10, "0")} 00000 n \ntrailer\n<< /Size 10 /Root 1 0 R /Prev ${prevXref} >>\nstartxref\n${xrefAt}\n%%EOF\n`,
+			);
+			const extraction = await extractPdfText(pdf);
+			// The superseded attachment still travels with the file: it is scanned, not hidden.
+			expect(extraction.segments.join("\n")).toContain(TCKN);
+			expect(extraction.complete).toBe(true);
+			expect((await sanitize("ek.pdf", pdf)).action).toBe("block");
+		});
+
+		it("scans an untyped stream carrying embedded-file /Params or a MIME /Subtype", async () => {
+			for (const dict of [
+				"/Params << /Size 40 /ModDate (D:20260101) >>",
+				"/Subtype /text#2Fplain",
+			]) {
+				const pdf = await simplePdf([CLEAN_PAGE], {
+					extraObjects: [{ dict, data: `e-posta: ${EMAIL}`, compress: false }],
+				});
+				expect(await text(pdf)).toContain(EMAIL);
+			}
+		});
+	});
+
+	it("scans XMP metadata (text nodes and attributes) and flags an unreadable packet", async () => {
+		const xmp = `<?xpacket begin="\ufeff" id="W5M0MpCehiHzreSzNTczkc9d"?><x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:pdf="http://ns.adobe.com/pdf/1.3/" pdf:Keywords="iletişim ${EMAIL}"><dc:creator><rdf:Seq><rdf:li>TCKN ${TCKN}</rdf:li></rdf:Seq></dc:creator></rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end="w"?>`;
+		const meta = (data: string | Uint8Array, dict = "/Type /Metadata /Subtype /XML") =>
+			simplePdf([CLEAN_PAGE], {
+				catalogExtra: "/Metadata 7 0 R",
+				extraObjects: [{ dict, data, compress: false }],
+			});
+		const d = await sanitize("meta.pdf", await meta(new TextEncoder().encode(xmp)));
+		expect(d.action).toBe("block");
+		expect(d.reasons).toEqual(["SENSITIVE_DATA_IN_PDF"]);
+		expect(d.counts).toMatchObject({ EMAIL: 1, TC_KIMLIK: 1 });
+		const unreadable = await meta("xx", "/Type /Metadata /Subtype /XML /Filter /JBIG2Decode");
+		expect((await extractPdfText(unreadable)).reasons).toEqual(["PDF_PARTIAL"]);
+		expect((await sanitize("meta.pdf", unreadable)).reasons).toEqual([
+			"BINARY_FILE_UNSCANNED",
+			"PDF_PARTIAL",
+		]);
+	});
+});
+
 describe("PDF stream filters", () => {
 	it("decodes the ISO 32000 LZW example (EarlyChange 1)", () => {
 		const encoded = Uint8Array.from([0x80, 0x0b, 0x60, 0x50, 0x22, 0x0c, 0x0c, 0x85, 0x01]);

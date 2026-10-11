@@ -909,6 +909,10 @@
 		"message": "Yerel uygulamalarla iletişim izni gerekir; bu seçeneği açtığınızda izin istenir.",
 		"description": "Options: native host switch help."
 	},
+	"native_required": {
+		"message": "Kurumunuz tarafından zorunlu tutuluyor: yardımcı uygulama bir istemi, yapıştırmayı veya yüklemeyi ad ve adres açısından denetleyemezse (kurulu değil, yanıt vermiyor, ad algılaması yok, metin çok uzun) yalnızca yerleşik kurallarla denetlenmek yerine engellenir.",
+		"description": "Options: managed requireNativeNer is on (native NER is mandatory)."
+	},
 	"native_permission_granted": {
 		"message": "Yardımcı uygulamayla iletişim izni verildi.",
 		"description": "Options: nativeMessaging permission granted."

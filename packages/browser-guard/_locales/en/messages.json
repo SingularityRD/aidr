@@ -909,6 +909,10 @@
 		"message": "Needs the permission to communicate with cooperating native applications; you are asked for it when you turn this on.",
 		"description": "Options: native host switch help."
 	},
+	"native_required": {
+		"message": "Required by your organisation: when the helper app cannot check a prompt, paste or upload for names and addresses (not installed, not responding, no name detection, text too long), it is blocked instead of being checked with the built-in rules only.",
+		"description": "Options: managed requireNativeNer is on (native NER is mandatory)."
+	},
 	"native_permission_granted": {
 		"message": "Permission to talk to the helper app is granted.",
 		"description": "Options: nativeMessaging permission granted."

@@ -165,7 +165,7 @@ async function withAutomationAuditFailure(f, action, work) {
 
 test("signed fleet delivery keeps live bindings, immutable command bytes and atomic trigger provenance", { timeout: 900_000 }, async t => {
 	const started = await command(["run", "--detach", "--rm", "--pull", "never", "--network", "none", "--name", container,
-		"-e", "POSTGRES_PASSWORD=fleet-signed-fixture-only", "supabase/postgres:17.6.1.136"]);
+		"-e", "POSTGRES_PASSWORD=fleet-signed-fixture-only", "supabase/postgres:17.11.0.004"]);
 	assert.equal(started.code, 0, started.stderr);
 	try {
 		let ready = false;

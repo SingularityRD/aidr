@@ -86,3 +86,15 @@
   expires_at: null
   revoked: false
 
+
+# --- Global dynamic-linker preload persistence (red-team regression) ---
+- id: "CLT-PERSIST-009"
+  category: persistence
+  severity: high
+  confidence: 0.85
+  action: require_approval
+  pattern: "(>>|>|tee)\\s*[^\\n]{0,80}/etc/ld\\.so\\.preload\\b|\\bLD_PRELOAD=\\S{1,200}\\s+[^\\n]{0,200}(nohup|setsid|disown|&\\s*$)"
+  match_on: command
+  title: "Dynamic linker preload persistence (/etc/ld.so.preload or LD_PRELOAD)"
+  expires_at: null
+  revoked: false

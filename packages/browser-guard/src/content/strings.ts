@@ -62,6 +62,10 @@ export interface Strings {
 	readonly fileInputUnguarded: string;
 	/** Native NER was enabled but gave no usable answer: this check was rules-only. */
 	readonly nativeUnavailable: string;
+	/** policy.requireNativeNer: native NER gave no usable answer, so the send/paste was blocked. */
+	readonly nativeRequired: string;
+	/** Appended to a blocked upload whose text (or images) the required native NER did not check. */
+	readonly nativeRequiredFileHint: string;
 	/** Acceptable-use notice (administrator text is shown verbatim; these are the controls). */
 	readonly aupAcknowledge: string;
 	readonly aupLater: string;
@@ -135,6 +139,10 @@ const EN: Strings = {
 		"AIDR cannot check files chosen through this upload control on this page, so the selection was blocked.",
 	nativeUnavailable:
 		"Advanced name and address detection (native host) is unavailable: checked with built-in rules only.",
+	nativeRequired:
+		"Your organisation requires advanced name and address detection (AIDR Privacy helper app), but it did not complete: the helper is not installed or not responding, has no name detection, or the text is too long. Nothing was sent. Try again in a moment, shorten the text, or contact your IT team.",
+	nativeRequiredFileHint:
+		"Your organisation requires advanced name and address detection (AIDR Privacy helper app) for uploads, and it could not check this file. Try again in a moment or contact your IT team.",
 	aupAcknowledge: "I understand",
 	aupLater: "Remind me later",
 	aupPolicyLink: "Read the full policy",
@@ -205,6 +213,10 @@ const TR: Strings = {
 		"AIDR bu sayfadaki bu yükleme alanından seçilen dosyaları denetleyemiyor; seçim engellendi.",
 	nativeUnavailable:
 		"Gelişmiş ad ve adres algılama (yerel yardımcı uygulama) kullanılamıyor: yalnızca yerleşik kurallarla kontrol edildi.",
+	nativeRequired:
+		"Kurumunuz gelişmiş ad ve adres algılamayı (AIDR Privacy yardımcı uygulaması) zorunlu tutuyor, ancak denetim tamamlanamadı: yardımcı uygulama kurulu değil ya da yanıt vermiyor, ad algılaması yok veya metin çok uzun. Hiçbir şey gönderilmedi. Biraz sonra yeniden deneyin, metni kısaltın ya da BT ekibinize başvurun.",
+	nativeRequiredFileHint:
+		"Kurumunuz yüklemeler için gelişmiş ad ve adres algılamayı (AIDR Privacy yardımcı uygulaması) zorunlu tutuyor ve bu dosya denetlenemedi. Biraz sonra yeniden deneyin ya da BT ekibinize başvurun.",
 	aupAcknowledge: "Anladım",
 	aupLater: "Daha sonra hatırlat",
 	aupPolicyLink: "Politikanın tamamını okuyun",

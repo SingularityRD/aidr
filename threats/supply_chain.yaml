@@ -18,3 +18,18 @@
   expires_at: null
   revoked: false
 
+
+# --- Package manifest install-hook that fetches and runs remote code ---
+# A package.json / pyproject / setup script whose (pre|post)install hook pipes a
+# download into a shell. Matched on written file CONTENT (CLT-CMD-001 only sees a
+# live shell command, not a manifest an agent writes).
+- id: "CLT-SUPPLY-002"
+  category: supply_chain
+  severity: critical
+  confidence: 0.90
+  action: block
+  pattern: "\"(?:pre|post)?install\"\\s*:\\s*\"[^\"]{0,300}\\b(curl|wget|fetch)\\b[^\"]{0,300}\\|\\s*(bash|sh|zsh|ksh|dash)\\b"
+  match_on: content
+  title: "Package manifest install hook fetches and executes remote code"
+  expires_at: null
+  revoked: false

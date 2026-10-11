@@ -6,7 +6,7 @@
       "compression": "gzip"
     },
     {
-      "path": "packages/claude-code/dist/pre-tool-use.cjs",
+      "path": "packages/claude-code/dist/pre-tool-use.bundle.cjs",
       "maxSize": "150kB",
       "compression": "gzip"
     },

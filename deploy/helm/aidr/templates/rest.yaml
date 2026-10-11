@@ -41,7 +41,7 @@ spec:
             {{- include "aidr.secretEnv" (dict "root" . "env" "PGRST_JWT_SECRET" "key" "jwt-secret") | nindent 12 }}
             {{- include "aidr.secretEnv" (dict "root" . "env" "PGRST_APP_SETTINGS_JWT_SECRET" "key" "jwt-secret") | nindent 12 }}
             - name: PGRST_DB_URI
-              value: {{ include "aidr.dbUrl" (dict "root" . "user" "authenticator") | quote }}
+              value: {{ printf "%s%s" (include "aidr.dbUrl" (dict "root" . "user" "authenticator")) (ternary (printf "&%s" $values.dbConnectionParams) "" (not (empty $values.dbConnectionParams))) | quote }}
             - name: PGRST_DB_SCHEMAS
               value: {{ $values.dbSchemas | quote }}
             - name: PGRST_DB_MAX_ROWS

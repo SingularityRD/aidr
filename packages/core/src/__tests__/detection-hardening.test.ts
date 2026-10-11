@@ -502,7 +502,7 @@ describe("commercial build, un-enrolled", () => {
 		expect(destructive.source).toBe("heuristic");
 	});
 
-	it("starts without integrity keys when the shipped digests verify, and fails closed on tampering", async () => {
+	it("fails closed on an unsigned artifact, starts a signed one without integrity keys on verified digests, and fails closed on tampering", async () => {
 		const artifact = join(home, "dist");
 		await writeRules(join(artifact, "resources", "threats"), { "block.yaml": BLOCK_RULES });
 		await writeFile(join(artifact, "hook.cjs"), "module.exports = 1;\n");
@@ -521,6 +521,26 @@ describe("commercial build, un-enrolled", () => {
 		);
 		const configPath = join(home, "no-config.json");
 
+		// An artifact that was never signed (a development or unsigned release
+		// build) has no release provenance: it fails closed and is recorded.
+		await expect(
+			verifyArtifactIntegrityAndLog({
+				artifactDir: artifact,
+				artifactId: "codex/dist",
+				configPath,
+			}),
+		).rejects.toThrow("codex/dist: no_public_keys");
+		const audit = await readFile(join(home, ".singularity-aidr", "audit.jsonl"), "utf8");
+		expect(audit).toContain('"matched_threat_id":"INTEGRITY-001"');
+		expect(audit).toContain("artifact_unsigned");
+
+		// A signed release on an install with no trust keys starts on verified digests.
+		const { privateKey } = generateKeyPairSync("ed25519");
+		const manifestRaw = await readFile(join(artifact, "aidr-artifact.manifest.json"), "utf8");
+		await writeFile(
+			join(artifact, "aidr-artifact.manifest.sig"),
+			sign(null, Buffer.from(manifestRaw, "utf8"), privateKey).toString("base64"),
+		);
 		const result = await verifyArtifactIntegrityAndLog({
 			artifactDir: artifact,
 			artifactId: "codex/dist",

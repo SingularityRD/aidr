@@ -19,11 +19,13 @@ Body envelope (same envelope other connectors use):
       "channel": "prompt|paste|file",
       "entity_counts": { "EMAIL": 2, "TC_KIMLIK": 1 },     // keys = privacy ENTITY_TYPES; integers 1..100000; max 32 keys
       "findings_count": 3,                                   // integer 0..1000000
-      "policy_id": "<optional identifier matching ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$>"
+      "policy_id": "<optional identifier matching ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$>",
+      "native_ner": "used|unavailable"                       // optional (additive): native NER outcome of the check; absent = NER off
     }
   ]
 }
 Rules: NO raw text, NO masked text, NO values, NO URLs beyond the site enum. Max 200 events per batch. Server maps action->decision for generic views: masked=>allow (redacted), warned=>ask, blocked=>deny, allowed=>allow.
+`native_ner` (additive, status enum only): "used" = the native host's NER took part in the check; "unavailable" = NER was enabled or required (managed `requireNativeNer`) but gave no NER answer (host missing/crashed/timed out, rules-only host, malformed reply, text over the host limit). Under `requireNativeNer` such a check is `blocked` in enforcing modes and `allowed` + `native_ner: "unavailable"` in monitor mode; consumers must not count an "unavailable" check as clean. The extension rejects any other value. Server: the ingest projection (supabase/functions/ingest/events.ts `projectPrivacyEvent`) stores it in the event payload (`events.payload.native_ner`) when it is exactly "used" or "unavailable" and drops any other value (the event is still accepted, as if NER were off); no content is kept. The dashboard's recent privacy events mark an "unavailable" check as "not NER-checked". The requirement itself can come from the managed `requireNativeNer` key or from the tenant's dashboard setting, delivered as `browser_guard.require_native_ner` in the signed browser-guard-policy document (true wins).
 
 Shadow AI usage (only when the managed policy sets `shadowAi.mode` to `monitor` or `block-unsanctioned`), in the same envelope and batch:
     {

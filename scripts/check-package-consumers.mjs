@@ -115,6 +115,8 @@ async function checkClaude() {
 		for (const required of [
 			"package.json",
 			"dist/health.cjs",
+			"dist/pre-tool-use.cjs",
+			"dist/pre-tool-use.bundle.cjs",
 			"resources/threats",
 			"resources/allowlists",
 		]) {
@@ -164,6 +166,7 @@ async function checkExtension() {
 		"packages/extension/dist/cursor_extension.js",
 		"packages/extension/dist/vscode_extension.js",
 		"packages/extension/dist/aidr-hook.cjs",
+		"packages/extension/dist/aidr-hook.bundle.cjs",
 	]) {
 		const entry = artifact(rel);
 		const result = runNode(["--check", entry]);
@@ -222,6 +225,7 @@ async function checkCodex() {
 		"const mod = await import(process.argv[1]); if (typeof mod.enforceCodexPreToolUse !== 'function') throw new Error('Codex enforcement export is missing');");
 	assertSuccess(result, "Codex ESM consumer import");
 	assertSuccess(runNode(["--check", artifact("packages/codex/dist/pre-tool-use.cjs")]), "Codex hook syntax");
+	assertSuccess(runNode(["--check", artifact("packages/codex/dist/pre-tool-use.bundle.cjs")]), "Codex hook bundle syntax");
 }
 
 async function checkMcpGateway() {

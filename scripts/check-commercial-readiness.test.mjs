@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { checkClaimEvidenceFreshness, sha256File } from "./check-claim-evidence-freshness.mjs";
 import { CANDIDATE_DIGEST_SOURCE, gitCommitSha } from "./generate-v8-evidence-index.mjs";
-import { validateClaimSurfaces, validateCommercialReadiness, validateConnectorScope } from "./check-commercial-readiness.mjs";
+import { validateClaimSurfaces, validateCommercialReadiness, validateConnectorScope, validateFirstReleaseScope } from "./check-commercial-readiness.mjs";
 
 const [inventory, gaps, registry, releaseSource, supportMatrix, readme] = await Promise.all([
 	readFile("FEATURE_INVENTORY.json", "utf8").then(JSON.parse),
@@ -159,4 +159,29 @@ test("the CLI labels its PASS as consistency-only and keeps the launch decision 
 	assert.match(result.stdout, /registry decision=/);
 	assert.match(result.stdout, /open hard gates=/);
 	assert.match(result.stdout, /recorded claim scans=/);
+});
+
+test("first-release scope: an unqualified claim for a not-sold or unsupported capability fails", () => {
+	const check = (rel, text) => validateFirstReleaseScope({ inventory, registry, files: [{ rel, text }] });
+	assert.deepEqual(check("README.md", "Optional native host for NER and OCR.\n\nRules only."), [
+		'README.md:1: FRS-11 (not-sold) "NER" is named without a first-release scope qualifier',
+		'README.md:1: FRS-12 (not-sold) "OCR" is named without a first-release scope qualifier',
+	]);
+	assert.deepEqual(check("README.md", "The native host for NER/OCR ships without a model and is not part of the first-release scope."), []);
+	assert.match(check("docs/sales/x.html", "<li>Scanned PDF pages are OCR'd and masked.</li>").join("\n"), /FRS-03/);
+	assert.match(check("docs/sales/x.md", "Syncs SharePoint libraries.").join("\n"), /FRS-08/);
+	assert.match(check("docs/sales/x.md", "Exact data fingerprints catch paraphrased copies.").join("\n"), /FRS-09 \(supported\)/);
+	assert.deepEqual(check("docs/sales/x.md", "The native-ner key and the word winner are not claims."), []);
+});
+
+test("first-release scope: the declaration is required and its counts must match", () => {
+	assert.match(validateFirstReleaseScope({ inventory: { ...inventory, first_release_scope: [] }, registry, files: [] }).join("\n"), /non-empty first_release_scope/);
+	const tampered = structuredClone(inventory);
+	tampered.first_release_scope.find((entry) => entry.id === "FRS-11").status = "supported";
+	assert.match(validateFirstReleaseScope({ inventory: tampered, registry, files: [] }).join("\n"), /first_release_scope_counts/);
+	for (const entry of inventory.first_release_scope) {
+		assert.ok(entry.reason_codes.length > 0, entry.id);
+		if (entry.status !== "supported") assert.ok(entry.runtime_behavior, entry.id);
+	}
+	assert.equal(inventory.first_release_scope.find((entry) => entry.id === "FRS-11").status, "not-sold");
 });

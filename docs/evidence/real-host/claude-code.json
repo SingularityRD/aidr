@@ -5,23 +5,26 @@
 	"connector": "claude-code",
 	"host": {
 		"name": "Claude Code",
-		"version": "2.1.282 (Claude Code)",
+		"version": "2.1.296 (Claude Code)",
 		"pinnedVersion": "2.1.282",
-		"binary": "<hosts-dir>/claude-code/node_modules/.bin/claude"
+		"binary": "/opt/node22/bin/claude"
 	},
 	"platform": "linux",
 	"architecture": "x64",
-	"runnerNode": "v22.22.2",
-	"recordedAtUtc": "2026-09-30T18:36:49.890Z",
+	"runnerNode": "v22.22.0",
+	"recordedAtUtc": "2026-10-11T07:39:51.659Z",
 	"source": {
-		"commit": "3e3002a44dda3d65c7e68364b93c31c140540406",
+		"commit": "7bb86b16ae39ae991425d07bf7441713df0f7ea8",
 		"trackedChanges": false
 	},
 	"aidrArtifact": {
 		"paths": [
 			"packages/claude-code/dist/pre-tool-use.cjs",
+			"packages/claude-code/dist/pre-tool-use.bundle.cjs",
 			"packages/claude-code/dist/post-tool-use.cjs",
+			"packages/claude-code/dist/post-tool-use.bundle.cjs",
 			"packages/claude-code/dist/user-prompt-submit.cjs",
+			"packages/claude-code/dist/user-prompt-submit.bundle.cjs",
 			"hooks/hooks.json"
 		],
 		"buildFlavor": "development",
@@ -62,7 +65,7 @@
 				"status": 0,
 				"signal": null
 			},
-			"durationMs": 3121,
+			"durationMs": 2303,
 			"modelRequests": 2,
 			"checks": [
 				{
@@ -102,7 +105,7 @@
 				"status": 0,
 				"signal": null
 			},
-			"durationMs": 2768,
+			"durationMs": 2064,
 			"modelRequests": 2,
 			"checks": [
 				{
@@ -149,7 +152,7 @@
 				"status": 0,
 				"signal": null
 			},
-			"durationMs": 877,
+			"durationMs": 619,
 			"modelRequests": 2,
 			"checks": [
 				{
@@ -183,7 +186,7 @@
 				"status": 0,
 				"signal": null
 			},
-			"durationMs": 2454,
+			"durationMs": 1729,
 			"modelRequests": 2,
 			"checks": [
 				{
@@ -201,7 +204,7 @@
 				{
 					"name": "host returned AIDR's block to the model",
 					"ok": true,
-					"detail": "🛡️ Singularity AIDR: Suspicious Activity Detected\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚠️ Threat      Access SSH key or config file\n   Severity    "
+					"detail": "🛡️ Singularity AIDR: Suspicious Activity Detected\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🚨 Threat      Access SSH key or config file\n   Severity    "
 				},
 				{
 					"name": "audit log records an ask/deny verdict for the key file",
@@ -223,7 +226,7 @@
 				"status": 0,
 				"signal": null
 			},
-			"durationMs": 1514,
+			"durationMs": 1161,
 			"modelRequests": 0,
 			"checks": [
 				{
@@ -262,7 +265,7 @@
 				"status": 0,
 				"signal": null
 			},
-			"durationMs": 2961,
+			"durationMs": 2229,
 			"modelRequests": 2,
 			"checks": [
 				{
@@ -299,7 +302,7 @@
 				"status": 0,
 				"signal": null
 			},
-			"durationMs": 1183,
+			"durationMs": 1209,
 			"modelRequests": 0,
 			"checks": [
 				{
@@ -337,7 +340,7 @@
 				"status": 0,
 				"signal": null
 			},
-			"durationMs": 2173,
+			"durationMs": 1617,
 			"modelRequests": 2,
 			"checks": [
 				{
@@ -373,7 +376,7 @@
 				"status": 0,
 				"signal": null
 			},
-			"durationMs": 972,
+			"durationMs": 707,
 			"modelRequests": 2,
 			"checks": [
 				{

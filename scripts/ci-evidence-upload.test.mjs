@@ -146,7 +146,7 @@ test("CI and RC block on full-migration OIDC administration and offboarding regr
 		["release-rc.yml", "Blocking offboarding and retention PostgreSQL gates"],
 	]) {
 		const gate = step(readWorkflow(file), name);
-		const image = gate.indexOf("docker pull supabase/postgres:17.6.1.136");
+		const image = gate.indexOf("docker pull supabase/postgres:17.11.0.004");
 		const administration = gate.indexOf("node --test scripts/oidc-administration-postgres.test.mjs");
 		const offboarding = gate.indexOf("pnpm verify:offboarding");
 		assert.ok(image >= 0 && image < administration && administration < offboarding, `${file} must provision and require both OIDC suites`);
@@ -183,6 +183,7 @@ test("every workflow artifact upload has an explicit reviewed file selection", (
 		["release-promote.yml::Persist anti-rollback state and verification receipt (pinned)", [
 			"${{ runner.temp }}/aidr-promotion-state/anti-rollback-state.json",
 			"${{ runner.temp }}/aidr-promotion-state/verification-receipt.json",
+			"${{ runner.temp }}/aidr-promotion-state/production-go-ledger.json",
 		]],
 		["release-promote.yml::Archive promotion evidence (pinned)", ["release-output/"]],
 		["release-rc.yml::Upload unsigned release inputs (pinned)", ["${{ runner.temp }}/prepared-release.tgz"]],

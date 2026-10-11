@@ -14,13 +14,27 @@
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { createServer } from "node:net";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join, resolve, relative } from "node:path";
+import { lstat, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
+import { dirname, isAbsolute, join, resolve, relative, sep } from "node:path";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(scriptDir, "..");
 const dashboardRoot = join(repoRoot, "packages", "dashboard");
-const distRoot = join(dashboardRoot, "dist");
+
+// Release promotion runs this script from the trusted verifier checkout and
+// points it at release-candidate files as DATA: --source-root is the RC tag
+// checkout whose dashboard sources the structural checks read (never executed,
+// links refused), --dist is the dashboard dist extracted from the signed
+// bundle. Both default to this checkout.
+function optionValue(flag) {
+	const index = process.argv.indexOf(flag);
+	if (index === -1) return null;
+	const value = process.argv[index + 1];
+	if (!value || value.startsWith("--")) throw new Error(`[dashboard-route-smoke] ${flag} needs a directory`);
+	return resolve(value);
+}
+const sourceRoot = optionValue("--source-root") ?? repoRoot;
+const distRoot = optionValue("--dist") ?? join(dashboardRoot, "dist");
 const staticOnly = process.argv.includes("--static");
 const configuredBaseUrl = process.env.DASHBOARD_SMOKE_BASE_URL?.trim();
 const timeoutMs = Number(process.env.DASHBOARD_SMOKE_TIMEOUT_MS ?? 10_000);
@@ -81,6 +95,7 @@ const protectedRoutes = [
 	"/governance/register",
 	"/governance/requests",
 	"/governance/change-control",
+	"/governance/detection-exceptions",
 ];
 const routes = [...publicRoutes, ...protectedRoutes, ...legacyRoutes];
 
@@ -90,7 +105,12 @@ function fail(message) {
 
 async function read(relativePath) {
 	try {
-		return await readFile(join(repoRoot, relativePath), "utf8");
+		const path = join(sourceRoot, relativePath);
+		const info = await lstat(path);
+		if (!info.isFile()) throw new Error("not a regular file");
+		const within = relative(await realpath(sourceRoot), await realpath(path));
+		if (within === "" || within === ".." || within.startsWith(`..${sep}`) || isAbsolute(within)) throw new Error("resolves outside the source root");
+		return await readFile(path, "utf8");
 	} catch (error) {
 		fail(`missing or unreadable ${relativePath}: ${error instanceof Error ? error.message : String(error)}`);
 	}
@@ -418,6 +438,9 @@ async function main() {
 		fail(
 			`setup incomplete: ${missing.join(", ")} missing. Provide dashboard credentials or DASHBOARD_SMOKE_BASE_URL; use --static only for non-production structural evidence.`,
 		);
+	}
+	if (process.argv.includes("--dist") && !configuredBaseUrl) {
+		fail("--dist is only valid with DASHBOARD_SMOKE_BASE_URL; the local preview serves packages/dashboard/dist");
 	}
 	const structural = await structuralChecks();
 	const dist = await checkDist();

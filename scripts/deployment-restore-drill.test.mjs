@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, readFile, rm, stat, utimes, writeFile } from "node:fs/p
 import { platform, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { assertRecoveryKeyFileAcl, cleanupRestoreWorkRoot, conservativeBackupAgeMinutes, hardenRecoveryKeyFile, hardenWorkDirectory, loadCandidateBinding, parseRecoveryTargets, validateLocation } from "./deployment-restore-drill.mjs";
+import { RECOVERY_MARKER, RUN_OWNER_MARKER, assertRecoveryKeyFileAcl, cleanupRestoreWorkRoot, conservativeBackupAgeMinutes, hardenRecoveryKeyFile, hardenWorkDirectory, loadCandidateBinding, parseRecoveryTargets, runOwnerRecord, validateLocation } from "./deployment-restore-drill.mjs";
 
 test("RPO age starts before source shutdown, not after a lengthy archive", () => {
 	const now = Date.parse("2026-09-12T10:00:00Z");
@@ -19,8 +19,96 @@ test("restore retention leaves unmarked operator directories untouched", async (
 	await mkdir(unowned);
 	await writeFile(join(unowned, "keep.txt"), "operator data");
 	await utimes(unowned, new Date("2020-01-01"), new Date("2020-01-01"));
-	assert.deepEqual(await cleanupRestoreWorkRoot(root, "1"), { sanitized: 0, expired: 0, retention_days: 1 });
+	assert.deepEqual(await cleanupRestoreWorkRoot(root, "1"), { sanitized: 0, expired: 0, active: 0, retention_days: 1 });
 	assert.equal((await stat(join(unowned, "keep.txt"))).isFile(), true);
+});
+
+async function ownedRun(root, name, { owner = runOwnerRecord(), recovering = false, mtime = new Date("2020-01-01") } = {}) {
+	const run = join(root, name);
+	await mkdir(run);
+	await writeFile(join(run, RUN_OWNER_MARKER), `${JSON.stringify(owner)}\n`);
+	await writeFile(join(run, "restore-drill-evidence.json"), "{\"passed\":true}\n");
+	if (recovering) {
+		await writeFile(join(run, RECOVERY_MARKER), "aidr-recovery-0123456789abcdef\n");
+		await mkdir(join(run, "downloaded"));
+		await writeFile(join(run, "downloaded", "backup.tar"), "plaintext");
+	}
+	await utimes(run, mtime, mtime);
+	return run;
+}
+
+const exists = (file) => stat(file).then(() => true, () => false);
+
+test("restore retention expires completed AIDR drill evidence whose recovery marker was already removed", async (t) => {
+	const root = await mkdtemp(join(tmpdir(), "aidr-restore-retention-"));
+	t.after(() => rm(root, { recursive: true, force: true }));
+	const expiredRun = await ownedRun(root, "restore-2020-01-01T00-00-00-000Z-aaaaaaaaaa");
+	const freshRun = await ownedRun(root, "restore-2026-10-10T00-00-00-000Z-bbbbbbbbbb", { mtime: new Date() });
+	assert.deepEqual(await cleanupRestoreWorkRoot(root, "1"), { sanitized: 0, expired: 1, active: 0, retention_days: 1 });
+	assert.equal(await exists(expiredRun), false, "sanitized evidence past retention must be deleted");
+	assert.equal(await exists(join(freshRun, "restore-drill-evidence.json")), true, "evidence within retention is kept");
+	assert.equal(await exists(join(freshRun, RUN_OWNER_MARKER)), true);
+});
+
+test("restore drill writes the ownership marker at run creation and never removes it during sanitization", async () => {
+	const source = await readFile(new URL("./deployment-restore-drill.mjs", import.meta.url), "utf8");
+	const created = source.indexOf("await mkdir(workDir, { mode: 0o700 });");
+	const owner = source.indexOf("await writeFile(join(workDir, RUN_OWNER_MARKER)");
+	const recovery = source.indexOf("await writeFile(join(workDir, RECOVERY_MARKER)");
+	assert.ok(created >= 0 && owner > created && recovery > owner, "ownership must be recorded before any recovery material exists");
+	const sanitize = source.slice(source.indexOf("async function cleanupRecoveredRun"), source.indexOf("export async function cleanupRestoreWorkRoot"));
+	assert.doesNotMatch(sanitize, /RUN_OWNER_MARKER/u, "sanitizing a run must not drop its ownership marker");
+	assert.match(sanitize, /await rm\(marker, \{ force: true \}\);/u);
+});
+
+test("restore drill records the recovered Vault key status and fails when restored Vault secrets do not decrypt", async () => {
+	const source = await readFile(new URL("./deployment-restore-drill.mjs", import.meta.url), "utf8");
+	assert.match(source, /evidence\.vault = \{ root_key: receipt\.vault_root_key \?\? "VAULT_KEY_MISSING", \.\.\.\(await readVault\(db\.containerId\)\) \};/u);
+	const probe = source.slice(source.indexOf("async function readVault"), source.indexOf("async function readStorage"));
+	assert.match(probe, /SELECT count\(\*\) FROM vault\.decrypted_secrets WHERE decrypted_secret IS NOT NULL/u);
+	assert.match(probe, /catch \{ throw new Error\("Recovered Vault secrets cannot be decrypted/u);
+	assert.match(probe, /if \(decrypted !== secrets\) throw/u);
+	assert.ok(source.indexOf("evidence.vault = ") < source.indexOf("evidence.passed = true"));
+});
+
+test("restore retention preserves an active recovery, sanitizes an interrupted one, and leaves foreign folders alone", async (t) => {
+	const root = await mkdtemp(join(tmpdir(), "aidr-restore-retention-"));
+	t.after(() => rm(root, { recursive: true, force: true }));
+	const activeRun = await ownedRun(root, "restore-2020-01-01T00-00-00-000Z-cccccccccc", { owner: { ...runOwnerRecord(), pid: 424242 }, recovering: true });
+	const crashedRun = await ownedRun(root, "restore-2026-10-10T00-00-00-000Z-dddddddddd", { owner: { ...runOwnerRecord(), pid: 535353 }, recovering: true, mtime: new Date() });
+	const foreign = join(root, "restore-2020-01-01T00-00-00-000Z-eeeeeeeeee");
+	await mkdir(foreign);
+	await writeFile(join(foreign, RUN_OWNER_MARKER), "operator note, not a drill record\n");
+	await writeFile(join(foreign, "keep.txt"), "operator data");
+	await utimes(foreign, new Date("2020-01-01"), new Date("2020-01-01"));
+	const other = join(root, "operator-backups");
+	await mkdir(other);
+	await writeFile(join(other, RUN_OWNER_MARKER), `${JSON.stringify(runOwnerRecord())}\n`);
+	await utimes(other, new Date("2020-01-01"), new Date("2020-01-01"));
+	const result = await cleanupRestoreWorkRoot(root, "1", Date.now(), { isProcessAlive: (pid) => pid === 424242 });
+	assert.deepEqual(result, { sanitized: 1, expired: 0, active: 1, retention_days: 1 });
+	assert.equal(await exists(join(activeRun, "downloaded", "backup.tar")), true, "an in-progress recovery must not be torn down");
+	assert.equal(await exists(join(activeRun, RECOVERY_MARKER)), true);
+	assert.equal(await exists(join(crashedRun, "downloaded")), false, "interrupted recovery material is removed");
+	assert.equal(await exists(join(crashedRun, RECOVERY_MARKER)), false);
+	assert.equal(await exists(join(crashedRun, RUN_OWNER_MARKER)), true, "the interrupted run stays expirable");
+	assert.equal(await exists(join(foreign, "keep.txt")), true, "an invalid ownership marker does not make a folder AIDR-owned");
+	assert.equal(await exists(join(other, RUN_OWNER_MARKER)), true, "names outside the run pattern are never considered");
+});
+
+test("restore retention adopts an interrupted pre-marker run so it is sanitized now and expires later", async (t) => {
+	const root = await mkdtemp(join(tmpdir(), "aidr-restore-retention-"));
+	t.after(() => rm(root, { recursive: true, force: true }));
+	const legacy = join(root, "restore-2026-10-09T00-00-00-000Z-ffffffffff");
+	await mkdir(join(legacy, "downloaded"), { recursive: true });
+	await writeFile(join(legacy, RECOVERY_MARKER), "aidr-recovery-0123456789abcdef\n");
+	await writeFile(join(legacy, "downloaded", "backup.tar"), "plaintext");
+	assert.deepEqual(await cleanupRestoreWorkRoot(root, "30"), { sanitized: 1, expired: 0, active: 0, retention_days: 30 });
+	assert.equal(await exists(join(legacy, "downloaded")), false);
+	const owner = JSON.parse(await readFile(join(legacy, RUN_OWNER_MARKER), "utf8"));
+	assert.equal(owner.adopted, true);
+	assert.deepEqual(await cleanupRestoreWorkRoot(root, "1", Date.now() + 3 * 86400 * 1000), { sanitized: 0, expired: 1, active: 0, retention_days: 1 });
+	assert.equal(await exists(legacy), false);
 });
 
 test("restore workspace stays outside key custody and filesystem backup target", async (t) => {

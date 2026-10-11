@@ -15,6 +15,7 @@ import {
 	type PrivacyEventRow,
 	type PrivacySummary,
 	type PrivacyWindow,
+	parseBrowserGuardSettings,
 	parsePrivacyEventRow,
 	parsePrivacySummary,
 	siteLabel,
@@ -263,6 +264,8 @@ function TenantPrivacyGuardPage({ tenantId, canDecide }: { tenantId: string; can
 				canDecide={canDecide}
 			/>
 
+			<NativeNerPanel tenantId={tenantId} refreshTick={refreshTick} canDecide={canDecide} />
+
 			<section className="card" aria-labelledby="privacy-recent-heading">
 				<div className="panel-head">
 					<h2 id="privacy-recent-heading">Recent privacy events</h2>
@@ -307,6 +310,12 @@ function TenantPrivacyGuardPage({ tenantId, canDecide }: { tenantId: string; can
 												: event.findingsCount !== null
 													? `${event.findingsCount} item(s)`
 													: "—"}
+											{event.nativeNer === "unavailable" ? (
+												<>
+													{" "}
+													<span className="badge badge-ask">not NER-checked</span>
+												</>
+											) : null}
 										</td>
 									</tr>
 								);
@@ -577,6 +586,122 @@ function useShadowAiDecisions(tenantId: string, refreshTick: number) {
 	);
 
 	return { decisions, busy, notice, decide };
+}
+
+const NATIVE_NER_UNAVAILABLE = "The native NER setting is unavailable.";
+
+async function readBrowserGuardSettings(
+	tenantId: string,
+): Promise<Read<{ requireNativeNer: boolean }>> {
+	try {
+		const { data, error } = await supabase
+			.from("tenant_ai_governance_settings")
+			.select("browser_guard_require_native_ner")
+			.eq("tenant_id", tenantId)
+			.maybeSingle();
+		if (error) throw new Error(NATIVE_NER_UNAVAILABLE);
+		return { ok: true, value: parseBrowserGuardSettings(data) };
+	} catch {
+		return { ok: false, error: NATIVE_NER_UNAVAILABLE };
+	}
+}
+
+/**
+ * "Require native NER" for every enrolled browser: an owner/admin setting delivered in the
+ * signed Browser Guard policy (`require_native_ner`). Browser Guard merges it with the
+ * managed `requireNativeNer` key, and true wins.
+ */
+function NativeNerPanel({
+	tenantId,
+	refreshTick,
+	canDecide,
+}: {
+	tenantId: string;
+	refreshTick: number;
+	canDecide: boolean;
+}) {
+	const [read, setRead] = useState<Read<{ requireNativeNer: boolean }> | null>(null);
+	const [busy, setBusy] = useState(false);
+	const [notice, setNotice] = useState<DecisionNotice | null>(null);
+	const [tick, setTick] = useState(0);
+
+	useEffect(() => {
+		let cancelled = false;
+		void readBrowserGuardSettings(tenantId).then((next) => {
+			if (!cancelled) setRead(next);
+		});
+		return () => {
+			cancelled = true;
+		};
+		// refreshTick / tick re-run the read on demand.
+	}, [tenantId, refreshTick, tick]);
+
+	const current = read?.ok ? read.value.requireNativeNer : null;
+
+	async function change(next: boolean) {
+		setBusy(true);
+		setNotice(null);
+		const result = await governanceAction(tenantId, "update_browser_guard_settings", {
+			require_native_ner: next,
+		});
+		setBusy(false);
+		setTick((value) => value + 1);
+		setNotice(
+			result.ok
+				? {
+						tone: "ok",
+						text: next
+							? "Native NER is now required. Enrolled browsers apply it at their next policy refresh (within about 15 minutes)."
+							: "Native NER is no longer required by the dashboard. Browsers whose management (MDM/GPO) policy sets requireNativeNer keep requiring it.",
+					}
+				: {
+						tone: "error",
+						text: governanceErrorMessage(result.error),
+						stepUp: result.error === "mfa_required",
+					},
+		);
+	}
+
+	return (
+		<section className="card" aria-labelledby="native-ner-heading">
+			<div className="panel-head">
+				<h2 id="native-ner-heading">Require native NER</h2>
+				{current === null ? null : (
+					<span className={current ? "badge badge-deny" : "badge badge-allow"}>
+						{current ? "required" : "not required"}
+					</span>
+				)}
+			</div>
+			<p className="muted small">
+				When required, a prompt, paste or file upload that the Browser Guard native host could not
+				check for names, addresses and locations (host not installed, crashed or timed out,
+				rules-only host, text over the host limit) is blocked instead of being sent after the
+				built-in rules only; in monitor mode it is reported as not NER-checked. It needs the native
+				messaging host on every browser, and large uploads wait for the host's answer. Your browser
+				management (MDM/GPO) <code>requireNativeNer</code> policy still wins where it is stricter:
+				the dashboard can switch the requirement on, never off for those browsers.
+			</p>
+			{read && !read.ok ? (
+				<p className="muted" role="status">
+					{read.error}
+				</p>
+			) : null}
+			{notice ? <DecisionNoticeLine notice={notice} tenantId={tenantId} /> : null}
+			{canDecide ? (
+				<label className="row" style={{ alignItems: "center" }}>
+					<input
+						type="checkbox"
+						checked={current === true}
+						disabled={current === null || busy}
+						onChange={(event) => void change(event.target.checked)}
+					/>
+					Require native NER for every enrolled browser
+				</label>
+			) : (
+				<p className="muted small">Owners and administrators can change this setting.</p>
+			)}
+		</section>
+	);
 }
 
 /**

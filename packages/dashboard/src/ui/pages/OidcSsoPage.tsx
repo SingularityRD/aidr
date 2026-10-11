@@ -36,6 +36,8 @@ const SAFE_ERRORS: Record<string, string> = {
 	client_secret_not_configured:
 		"The client secret is not configured in the Edge function secrets yet.",
 	provider_locked_by_enforcement: "Disable enforcement before changing the provider.",
+	provider_changed:
+		"The provider was changed by someone else while discovery was refreshing. Reload and try again.",
 	invalid_domain: "Enter a valid domain such as example.com.",
 	dns_lookup_failed:
 		"The verification record could not be looked up yet. DNS changes can take time.",

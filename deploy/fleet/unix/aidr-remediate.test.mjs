@@ -79,6 +79,7 @@ function createFixture(context, bundleSource = FAKE_BUNDLE) {
 	mkdirSync(join(connectorPath, "dist"), { recursive: true });
 	writeFileSync(join(connectorPath, "package.json"), '{"name":"remediation-fixture","private":true}\n');
 	for (const bundle of BUNDLES) writeFileSync(join(connectorPath, "dist", bundle), bundleSource);
+	for (const bundle of BUNDLES) writeFileSync(join(connectorPath, "dist", bundle.replace(/\.cjs$/, ".bundle.cjs")), "module.exports = {};\n");
 	mkdirSync(join(connectorPath, "resources", "threats"), { recursive: true });
 	const digest = connectorDigest(connectorPath);
 	const installedPath = join(dirname(connectorPath), digest);

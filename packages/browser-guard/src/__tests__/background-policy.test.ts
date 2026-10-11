@@ -1,7 +1,9 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
 	DEFAULT_POLICY,
+	EXACT_DATA_PLACEHOLDER_KEY,
 	evaluatePolicy,
 	GUARD_MODES,
 	MANAGED_POLICY_KEYS,
@@ -12,6 +14,7 @@ import {
 	USER_SETTING_KEYS,
 	validateUserSettings,
 } from "../background/policy.js";
+import { sha256Hex } from "../background/sha256.js";
 import { ENTITY_TYPES } from "../types.js";
 
 const HEX = "a".repeat(64);
@@ -212,6 +215,76 @@ describe("mergePolicy", () => {
 		);
 	});
 
+	it("refuses the example placeholder exact-data key by name, never as a usable key", () => {
+		const real = { datasetId: "real", keyB64: KEY, fingerprints: [HEX], type: "PERSON" };
+		const placeholder = {
+			datasetId: "crm-customers-example",
+			keyB64: EXACT_DATA_PLACEHOLDER_KEY,
+			fingerprints: ["REPLACE_WITH_FINGERPRINTS_FROM_FINGERPRINT_DATASET"],
+			type: "PERSON",
+		};
+		const warning =
+			'managed: "exactData" still holds the example placeholder key; ignored. Build each dataset with fingerprint-dataset.mjs';
+		expect(EXACT_DATA_PLACEHOLDER_KEY).toMatch(/^REPLACE_WITH_/);
+		// Copied unchanged: the whole managed value is ignored, other managed keys still apply.
+		const copied = evaluatePolicy({ mode: "block", exactData: [placeholder] }, undefined);
+		expect(copied.warnings).toEqual([warning]);
+		expect(copied.policy.exactData).toEqual([]);
+		expect(copied.policy.mode).toBe("block");
+		expect(copied.policy.managedKeys).toContain("mode");
+		expect(copied.policy.managedKeys).not.toContain("exactData");
+		// A real dataset next to a leftover placeholder does not switch the placeholder on.
+		const mixed = evaluatePolicy({ exactData: [real, placeholder] }, undefined);
+		expect(mixed.warnings).toEqual([warning]);
+		expect(mixed.policy.exactData).toEqual([]);
+		// A real key with placeholder fingerprints, or any REPLACE_WITH_ key variant, is refused too.
+		for (const bad of [
+			{ ...real, fingerprints: ["REPLACE_WITH_FINGERPRINTS_FROM_FINGERPRINT_DATASET"] },
+			{ ...real, keyB64: "replace_with_my_key" },
+			{ ...real, keyB64: ` ${EXACT_DATA_PLACEHOLDER_KEY}` },
+		]) {
+			expect(evaluatePolicy({ exactData: [bad] }, undefined).warnings).toEqual([warning]);
+		}
+		// Once replaced, the dataset is accepted without warnings.
+		const replaced = evaluatePolicy({ exactData: [real] }, undefined);
+		expect(replaced.warnings).toEqual([]);
+		expect(replaced.policy.exactData).toEqual([real]);
+	});
+
+	it("refuses the retired example dataset (published key or its fingerprints) by name", () => {
+		const warning =
+			'managed: "exactData" uses the retired example dataset key (crm-customers-example), which was published in the deployment examples and is compromised; ignored. Build each dataset with fingerprint-dataset.mjs and a fresh key';
+		const real = { datasetId: "real", keyB64: KEY, fingerprints: [HEX], type: "PERSON" };
+		// The retired key itself is never kept in the repository (only its SHA-256), so the
+		// example's fingerprints, which shipped with it, stand in for it here.
+		const retired = {
+			datasetId: "crm-customers-example",
+			keyB64: KEY,
+			fingerprints: ["DACE37DF0E61D972CE461B5887CC8EF241DF0749DD737ADC7DE1B118305D89B2"],
+			type: "PERSON",
+		};
+		for (const exactData of [[retired], [real, retired]]) {
+			const evaluation = evaluatePolicy({ mode: "block", exactData }, undefined);
+			expect(evaluation.warnings).toEqual([warning]);
+			expect(evaluation.policy.exactData).toEqual([]);
+			expect(evaluation.policy.managedKeys).not.toContain("exactData");
+			expect(evaluation.policy.mode).toBe("block");
+		}
+		expect(evaluatePolicy({ exactData: [real] }, undefined).warnings).toEqual([]);
+	});
+
+	it("hashes like SHA-256 (the retired-key check compares digests)", () => {
+		for (const text of [
+			"",
+			"abc",
+			"a".repeat(55),
+			"a".repeat(56),
+			"b".repeat(64),
+			"ğüşİ".repeat(99),
+		])
+			expect(sha256Hex(text)).toBe(createHash("sha256").update(text).digest("hex"));
+	});
+
 	it("accepts https telemetry and http only for localhost/127.0.0.1", () => {
 		const t = (controlPlaneUrl: string) =>
 			mergePolicy({ telemetry: { controlPlaneUrl, apiKey: "aidr_live_0123456789" } }, undefined)
@@ -321,6 +394,40 @@ describe("validateUserSettings", () => {
 	});
 });
 
+describe("requireNativeNer (managed only)", () => {
+	it("defaults to false and leaves useNativeHost alone", () => {
+		expect(DEFAULT_POLICY.requireNativeNer).toBe(false);
+		expect(evaluatePolicy(undefined, undefined).policy.requireNativeNer).toBe(false);
+		expect(evaluatePolicy({ requireNativeNer: false }, undefined).policy.useNativeHost).toBe(false);
+	});
+
+	it("forces and locks useNativeHost on, whatever the managed or user value", () => {
+		for (const managed of [
+			{ requireNativeNer: true },
+			{ requireNativeNer: true, useNativeHost: false },
+			open({ requireNativeNer: true }),
+		]) {
+			const { policy, warnings } = evaluatePolicy(managed, { useNativeHost: false });
+			expect(policy.requireNativeNer).toBe(true);
+			expect(policy.useNativeHost).toBe(true);
+			expect(policy.managedKeys).toContain("requireNativeNer");
+			expect(policy.managedKeys).toContain("useNativeHost");
+			expect(policy.managedKeys.filter((k) => k === "useNativeHost")).toHaveLength(1);
+			expect(warnings.some((w) => w.includes("requireNativeNer"))).toBe(true);
+		}
+	});
+
+	it("rejects a non-boolean value (stays false) and is not a user setting", () => {
+		const { policy, warnings } = evaluatePolicy({ requireNativeNer: "yes" }, undefined);
+		expect(policy.requireNativeNer).toBe(false);
+		expect(warnings).toContain('managed: invalid value for "requireNativeNer" ignored');
+		expect(USER_SETTING_KEYS).not.toContain("requireNativeNer");
+		const user = evaluatePolicy(undefined, { requireNativeNer: true });
+		expect(user.policy.requireNativeNer).toBe(false);
+		expect(user.warnings).toContain('user: unknown key "requireNativeNer" ignored');
+	});
+});
+
 describe("managed policy locks protection-reducing user settings (L2)", () => {
 	const weakening = {
 		mode: "monitor",
@@ -420,6 +527,7 @@ describe("static/managed_schema.json", () => {
 			"maskPaste",
 			"restoreResponses",
 			"useNativeHost",
+			"requireNativeNer",
 		])
 			expect(props[key]?.type).toBe("boolean");
 	});

@@ -197,7 +197,7 @@ const MCP_SOURCE_AGENTS: ReadonlyArray<readonly [RegExp, string]> = [
 	[/(?:^|[\\/])\.claude\.json$|(?:^|[\\/])\.mcp\.json$/, "claude-code"],
 	[/(?:^|[\\/])\.cursor[\\/]/, "cursor"],
 	[/(?:^|[\\/])\.vscode[\\/]/, "vscode"],
-	[/(?:^|[\\/])(?:\.config[\\/])?\.?opencode[\\/]/, "opencode"],
+	[/(?:^|[\\/])(?:\.config[\\/])?\.?opencode[\\/]|(?:^|[\\/])opencode\.jsonc?$/, "opencode"],
 	[/(?:^|[\\/])\.openclaw[\\/]/, "openclaw"],
 ];
 

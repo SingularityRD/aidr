@@ -2,6 +2,7 @@
  * Shared plumbing for the legacy Office extractors: byte readers, the 8-bit/UTF-16 decoders
  * the binary formats use, and the collector that accumulates text segments under a budget.
  */
+import { decodeSingleByte } from "../codepages.js";
 
 /** A text segment for detection; `context` is a spreadsheet column header ("" otherwise). */
 export interface LegacySegment {
@@ -95,23 +96,9 @@ function cleanText(text: string): string {
 		.replace(/[\u0000-\u0008\u000e-\u001f\u007f]/g, (c) => (c === "\u0007" ? "\t" : " "));
 }
 
-/** windows-1252 code points for 0x80..0x9F (undefined positions stay as C1 controls). */
-const CP1252_HIGH = [
-	0x20ac, 0x81, 0x201a, 0x192, 0x201e, 0x2026, 0x2020, 0x2021, 0x2c6, 0x2030, 0x160, 0x2039, 0x152,
-	0x8d, 0x17d, 0x8f, 0x90, 0x2018, 0x2019, 0x201c, 0x201d, 0x2022, 0x2013, 0x2014, 0x2dc, 0x2122,
-	0x161, 0x203a, 0x153, 0x9d, 0x17e, 0x178,
-];
-
 /** Single-byte text as windows-1252 (Word's "compressed" pieces). */
 export function decodeCp1252(bytes: Uint8Array): string {
-	let out = "";
-	for (let i = 0; i < bytes.length; i += 8192) {
-		const chunk = bytes.subarray(i, i + 8192);
-		out += String.fromCharCode(
-			...Array.from(chunk, (b) => (b >= 0x80 && b <= 0x9f ? (CP1252_HIGH[b - 0x80] ?? b) : b)),
-		);
-	}
-	return out;
+	return decodeSingleByte(bytes, "windows-1252");
 }
 
 /** Single-byte text whose high byte was dropped (BIFF8 / PowerPoint "8-bit" strings). */
@@ -137,6 +124,9 @@ export function decodeUtf16le(bytes: Uint8Array): string {
 /** Text in a Windows code page (property sets); unknown code pages fall back to windows-1252. */
 export function decodeCodePage(bytes: Uint8Array, codePage: number): string {
 	if (codePage === 1200) return decodeUtf16le(bytes);
+	// Fixed tables for the Western/Turkish code pages (TextDecoder may decode 1252 as Latin-1).
+	if (codePage === 1252) return decodeSingleByte(bytes, "windows-1252");
+	if (codePage === 1254) return decodeSingleByte(bytes, "windows-1254");
 	const label = codePage === 65001 ? "utf-8" : `windows-${codePage}`;
 	try {
 		return new TextDecoder(label).decode(bytes);

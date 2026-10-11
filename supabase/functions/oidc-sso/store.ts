@@ -12,7 +12,10 @@ import type {
 	OidcPolicyRow,
 	OidcProviderRow,
 	OidcStore,
+	ProviderAudit,
 	RateLimitDecision,
+	RefreshDiscoveryResult,
+	SaveProviderResult,
 } from "./types.ts";
 
 // deno-lint-ignore no-explicit-any
@@ -112,9 +115,10 @@ export class SupabaseOidcStore implements OidcStore {
 		return this.findProviderByTenant(String((data as Row).tenant_id));
 	}
 
-	async saveProvider(row: OidcProviderRow, actorUserId: string): Promise<boolean> {
-		const { error } = await this.db.from("oidc_providers").upsert(
-			{
+	async saveProvider(row: OidcProviderRow, actorUserId: string, audit: ProviderAudit): Promise<SaveProviderResult> {
+		const { error } = await this.db.rpc("oidc_save_provider", {
+			p_actor_user_id: actorUserId,
+			p_provider: {
 				id: row.id,
 				tenant_id: row.tenant_id,
 				kind: row.kind,
@@ -130,13 +134,39 @@ export class SupabaseOidcStore implements OidcStore {
 				session_max_seconds: row.session_max_seconds,
 				clock_skew_seconds: row.clock_skew_seconds,
 				discovery: row.discovery,
-				discovery_fetched_at: row.discovery ? new Date().toISOString() : null,
 				enabled: row.enabled,
-				created_by: actorUserId,
 			},
-			{ onConflict: "id" },
-		);
-		return !error;
+			p_audit_action: audit.action,
+			p_audit_detail: audit.detail,
+		});
+		if (!error) return "saved";
+		const message = (error as { message?: string }).message ?? "";
+		if (message.includes("oidc_provider_forbidden") || message.includes("oidc_tenant_inactive")) return "owner_required";
+		if (message.includes("oidc_provider_locked_by_enforcement")) return "provider_locked_by_enforcement";
+		if (message.includes("oidc_provider_identity_namespace_locked")) return "provider_identity_namespace_locked";
+		return "error";
+	}
+
+	async refreshProviderDiscovery(
+		read: Pick<OidcProviderRow, "id" | "tenant_id" | "issuer" | "allowed_algs">,
+		discovery: OidcDiscovery,
+		actorUserId: string,
+		auditDetail: Record<string, unknown>,
+	): Promise<RefreshDiscoveryResult> {
+		const { error } = await this.db.rpc("oidc_update_provider_discovery", {
+			p_actor_user_id: actorUserId,
+			p_tenant_id: read.tenant_id,
+			p_provider_id: read.id,
+			p_expected_issuer: read.issuer,
+			p_expected_allowed_algs: read.allowed_algs,
+			p_discovery: discovery,
+			p_audit_detail: auditDetail,
+		});
+		if (!error) return "saved";
+		const message = (error as { message?: string }).message ?? "";
+		if (message.includes("oidc_provider_forbidden") || message.includes("oidc_tenant_inactive")) return "owner_required";
+		if (message.includes("oidc_provider_changed")) return "provider_changed";
+		return "error";
 	}
 
 	async createAuthRequest(row: OidcAuthRequestRow): Promise<boolean> {

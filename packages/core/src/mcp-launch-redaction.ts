@@ -22,6 +22,9 @@
  *    `curl -u user:pass`, `redis-cli -a <password>`, `mysql -p<password>`) are
  *    recognised per command, because `-p` is a port, package or print flag for
  *    docker, npx, node and kubectl and a password for nearly everything else.
+ *    The attached forms (`curl -uuser:pass`, `redis-cli -apass`,
+ *    `curl --user=user:pass`) are covered too, and the owning command is found
+ *    past wrapper launchers and their option values (`sudo -u root curl -u …`).
  */
 
 import { REDACTED_TELEMETRY_VALUE, redactTelemetryString } from "./telemetry-redaction.js";
@@ -115,6 +118,49 @@ const SECRET_SHORT_FLAGS: Readonly<Record<string, readonly string[]>> = {
 	"redis-cli": ["-a"],
 };
 
+/**
+ * Wrapper options that take the next argument as their value, per wrapper. The
+ * value is part of the wrapper, never the wrapped command: `sudo -u root curl`
+ * is owned by `curl`, and `env -u NAME redis-cli` by `redis-cli`. Long options
+ * written `--name=value` are a single token and need no entry here.
+ */
+const WRAPPER_VALUE_OPTIONS: Readonly<Record<string, ReadonlySet<string>>> = {
+	sudo: new Set([
+		"-u",
+		"-g",
+		"-C",
+		"-h",
+		"-p",
+		"-r",
+		"-t",
+		"-U",
+		"-D",
+		"-T",
+		"--user",
+		"--group",
+		"--close-from",
+		"--host",
+		"--prompt",
+		"--role",
+		"--type",
+		"--other-user",
+		"--chdir",
+		"--command-timeout",
+	]),
+	env: new Set(["-u", "-C", "-S", "--unset", "--chdir", "--split-string"]),
+	nice: new Set(["-n", "--adjustment"]),
+	time: new Set(["-f", "-o", "--format", "--output"]),
+	npx: new Set(["-p", "--package", "-c", "--call"]),
+	pnpx: new Set(["-p", "--package", "-c"]),
+	bunx: new Set(["-p", "--package"]),
+	uvx: new Set(["--from", "--with", "--python", "-p", "--index-url", "--extra-index-url"]),
+	pipx: new Set(["--spec", "--python", "--index-url", "--pip-args"]),
+};
+/** Wrapper options whose value is itself a command line (`env -S "cmd args"`). */
+const WRAPPER_COMMAND_STRING_OPTIONS: Readonly<Record<string, ReadonlySet<string>>> = {
+	env: new Set(["-S", "--split-string"]),
+};
+
 function commandBaseName(command: string): string {
 	const base = command.split(/[\\/]/).pop() ?? command;
 	return base.toLowerCase().replace(/\.(?:exe|cmd|bat)$/, "");
@@ -123,29 +169,83 @@ function commandBaseName(command: string): string {
 /**
  * The command that owns the arguments after it, and where those arguments
  * start: `env FOO=1 mysql -p x` and `npx some-server -p x` are both owned by the
- * last name, not by the launcher. Options before that point belong to the launcher.
+ * last name, not by the launcher. Options before that point belong to the launcher,
+ * including the values of the launcher's own value-taking options
+ * (`sudo -u root curl …`, `env -u NAME redis-cli …`). `commandStrings` lists the
+ * indexes of wrapper option values that are themselves a command line.
  */
 function resolveOwner(
 	command: string | null,
 	args: readonly string[],
-): { name: string; from: number } {
+): { name: string; from: number; commandStrings: number[] } {
 	let name = command === null ? "" : commandBaseName(command);
 	let from = 0;
+	const commandStrings: number[] = [];
 	while (WRAPPER_COMMANDS.has(name)) {
-		let index = from;
-		while (index < args.length && (args[index]?.startsWith("-") || args[index]?.includes("=")))
-			index++;
+		const index = skipWrapperOptions(name, args, from, commandStrings);
 		const next = args[index];
-		if (next === undefined) return { name, from: args.length };
+		if (next === undefined) return { name, from: args.length, commandStrings };
 		name = commandBaseName(next);
 		from = index + 1;
 	}
-	return { name, from };
+	return { name, from, commandStrings };
+}
+
+/**
+ * Index of the first argument after `wrapper`'s own options (starting at
+ * `from`), skipping the values of its value-taking options and a `--`
+ * terminator. Values that are a command line are recorded in `commandStrings`.
+ */
+function skipWrapperOptions(
+	wrapper: string,
+	args: readonly string[],
+	from: number,
+	commandStrings: number[],
+): number {
+	const valueOptions = WRAPPER_VALUE_OPTIONS[wrapper];
+	const commandStringOptions = WRAPPER_COMMAND_STRING_OPTIONS[wrapper];
+	let index = from;
+	while (index < args.length) {
+		const arg = args[index] as string;
+		if (arg === "--") return index + 1;
+		if (!arg.startsWith("-") && !arg.includes("=")) return index;
+		if (!valueOptions?.has(arg)) {
+			index++;
+			continue;
+		}
+		if (commandStringOptions?.has(arg)) commandStrings.push(index + 1);
+		index += 2;
+	}
+	return index;
 }
 
 function isSecretShortFlag(flag: string, owner: string): boolean {
 	if (flag === "-p" || flag === "-P") return !NON_SECRET_P_COMMANDS.has(owner);
-	return SECRET_SHORT_FLAGS[owner]?.includes(flag) ?? false;
+	const flags = SECRET_SHORT_FLAGS[owner];
+	if (!flags) return false;
+	if (flags.includes(flag)) return true;
+	// A cluster of short flags whose last one takes the secret (`curl -su user:pass`).
+	return (
+		/^-[A-Za-z]{2,}$/.test(flag) &&
+		flags.some((f) => /^-[A-Za-z]$/.test(f) && flag.endsWith(f[1] as string))
+	);
+}
+
+/**
+ * The redacted form of a secret flag written with its value attached
+ * (`curl -uuser:pass`, `redis-cli -apass`, `curl --user=user:pass`), or null.
+ */
+function redactAttachedSecretFlag(arg: string, owner: string): string | null {
+	const flags = SECRET_SHORT_FLAGS[owner];
+	if (!flags) return null;
+	for (const flag of flags) {
+		if (flag.startsWith("--")) {
+			if (arg.startsWith(`${flag}=`)) return `${flag}=${REDACTED_LAUNCH_VALUE}`;
+		} else if (arg.length > flag.length && arg.startsWith(flag)) {
+			return `${flag}${REDACTED_LAUNCH_VALUE}`;
+		}
+	}
+	return null;
 }
 
 /** Redact one launch token: the command, or an argument that is not a flag value. */
@@ -169,6 +269,28 @@ export function redactLaunchToken(value: string): string {
 }
 
 /**
+ * The redacted form of an argument that carries its secret inside itself (a
+ * nested command line, `mysql -p<password>`, `curl -uuser:pass`), or null.
+ */
+function redactWholeArg(
+	arg: string,
+	index: number,
+	owner: { name: string; from: number; commandStrings: number[] },
+): string | null {
+	if (owner.commandStrings.includes(index)) {
+		// `env -S "redis-cli -a pass"`: the value is a command line of its own.
+		const [nested = "", ...nestedArgs] = arg.trim().split(/\s+/);
+		const inner = redactMcpLaunch(nested, nestedArgs);
+		return [inner.command ?? "", ...inner.args].join(" ");
+	}
+	if (index < owner.from) return null;
+	if (ATTACHED_P_COMMANDS.has(owner.name) && /^-p.+/.test(arg)) {
+		return `-p${REDACTED_LAUNCH_VALUE}`;
+	}
+	return redactAttachedSecretFlag(arg, owner.name);
+}
+
+/**
  * Redact an MCP server command line. The value after a credential-named flag
  * and every header value are replaced whole; everything else goes through
  * {@link redactLaunchToken}.
@@ -182,8 +304,9 @@ export function redactMcpLaunch(
 	for (let index = 0; index < args.length; index++) {
 		const arg = args[index] as string;
 		const ownedByCommand = index >= owner.from;
-		if (ownedByCommand && ATTACHED_P_COMMANDS.has(owner.name) && /^-p.+/.test(arg)) {
-			safeArgs.push(`-p${REDACTED_LAUNCH_VALUE}`);
+		const whole = redactWholeArg(arg, index, owner);
+		if (whole !== null) {
+			safeArgs.push(whole);
 			continue;
 		}
 		safeArgs.push(redactLaunchToken(arg));

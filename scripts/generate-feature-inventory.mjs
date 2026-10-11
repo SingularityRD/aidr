@@ -117,12 +117,198 @@ PRV-08|Browser privacy|Office/OpenDocument document masking, PDF scanning and im
 PRV-09|Browser privacy|AI acceptable-use notice|wired|packages/browser-guard/src/content/acceptable-use.ts;packages/browser-guard/src/background/policy.ts;packages/browser-guard/src/background/telemetry.ts;packages/dashboard/src/ui/privacy-guard.ts;docs/ai-governance-frameworks.md|Browser Guard managed policy (acceptableUse) and the governance scorecard|A versioned, plain-text notice shown once per version in an accessible closed-shadow-root dialog on protected AI sites; acknowledgements are reported once per install and version as counts-only aup_acknowledgement events and summarised on the scorecard|Informs and never blocks sending; coding-agent connectors do not show it; an acknowledgement made while telemetry is off is never reported
 `.trim().split("\n");
 
+// First-release support scope for production gaps 21 (NER), 25 (fingerprint capacity) and 26
+// (document/media/remote sources). Product has not chosen the sold scope, so the conservative,
+// reversible default applies: a capability without accepted evidence is outside the first release.
+//   supported            offered only within `bounds`; field acceptance stays open (production_accepted false)
+//   unsupported-refused  not offered; the runtime refuses the input with one of `reason_codes`
+//   not-sold             code may exist but is not offered or claimed until named acceptance closes
+// `reason_codes` are the stable codes returned at the scope boundary; each must appear in a cited test. `claim_guard.mention` names the capability on a
+// claim surface (matched with `flags`); scripts/check-commercial-readiness.mjs requires each such paragraph to carry a
+// scope qualifier (FIRST_RELEASE_SCOPE_QUALIFIER) so no surface sells it unqualified.
+const FIRST_RELEASE_SCOPE = [
+	{
+		id: "FRS-01",
+		capability: "Private service document text reconstruction (digital-text PDF, narrow OOXML DOCX/XLSX/PPTX, EML, ZIP, text/source files)",
+		surface: "privacy-service",
+		status: "supported",
+		gap_items: [26],
+		feature_ids: [],
+		bounds: "Linux seccomp parser profile only (Windows/macOS hosts refuse document requests); 8 MiB input, 512 KiB extracted text or the signed policy's smaller limit; output is newly reconstructed UTF-8 text/plain (aidr-sanitized.txt), never the original container, and not format-preserving",
+		runtime_behavior: "Unconfigured parser, oversized or unsafe input returns decision block with output null and a parser reason",
+		reason_codes: ["PARSER_INPUT", "TEXT_ONLY_RECONSTRUCTION"],
+		evidence: ["packages/privacy/tests/platform/first-release-scope.test.mjs", "packages/privacy/tests/platform/broker-client.test.mjs", "packages/privacy/tests/platform/pdf-redaction.test.mjs", "packages/privacy/parsers/test_worker.py"],
+		claim_guard: null,
+	},
+	{
+		id: "FRS-02",
+		capability: "Format-preserving PDF/Office redaction (original layout returned)",
+		surface: "privacy-service",
+		status: "not-sold",
+		gap_items: [26],
+		feature_ids: [],
+		bounds: "Not exposed by the service route (/v1/document/protect returns reconstructed text only); the library option has no accepted fidelity evidence",
+		runtime_behavior: "The service never returns a redacted original container; a format-preserving request for any other kind is refused",
+		reason_codes: ["FORMAT_PRESERVING_UNSUPPORTED"],
+		evidence: ["packages/privacy/tests/platform/first-release-scope.test.mjs"],
+		claim_guard: { mention: String.raw`format[- ]preserving`, flags: "iu" },
+	},
+	{
+		id: "FRS-03",
+		capability: "Scanned/image-only PDF and page OCR in the private document service",
+		surface: "privacy-service",
+		status: "unsupported-refused",
+		gap_items: [26],
+		feature_ids: [],
+		bounds: "Needs an approved bounded rasterizer and all-page OCR/visual acceptance",
+		runtime_behavior: "Pages without a text layer and PDFs with image objects are refused; no fallback to uninspected images",
+		reason_codes: ["PDF_OCR_REQUIRED"],
+		evidence: ["packages/privacy/tests/platform/first-release-scope.test.mjs", "packages/privacy/parsers/test_pdf_redaction.py"],
+		claim_guard: { mention: String.raw`\bscanned (?:PDF|document|page)s?\b|taranmış (?:PDF|belge)`, flags: "iu" },
+	},
+	{
+		id: "FRS-04",
+		capability: "Legacy binary Office (.doc/.xls/.ppt) and Office files with embedded media, OLE or macros in the private document service",
+		surface: "privacy-service",
+		status: "unsupported-refused",
+		gap_items: [26],
+		feature_ids: [],
+		bounds: "Browser Guard's separate legacy-Office scanner (PRV-08) is a different surface and scans without rewriting",
+		runtime_behavior: "Refused by the sandboxed parser; the original is never sent",
+		reason_codes: ["UNSUPPORTED_DOCUMENT", "OFFICE_EMBEDDED_CONTENT"],
+		evidence: ["packages/privacy/tests/platform/first-release-scope.test.mjs"],
+		claim_guard: null,
+	},
+	{
+		id: "FRS-05",
+		capability: "Whole-clip audio silencing (PCM16 WAV)",
+		surface: "privacy-service",
+		status: "supported",
+		gap_items: [26],
+		feature_ids: [],
+		bounds: "Opt-in audioMode silence-all; PCM16 mono/stereo WAV, at most 1 MiB, 8-48 kHz, 120 s; every sample is zeroed (ALL_AUDIO_REMOVED); no ASR, transcript or provider dispatch",
+		runtime_behavior: "Other WAV encodings, rates or durations are refused",
+		reason_codes: ["ALL_AUDIO_REMOVED", "AUDIO_PCM16_REQUIRED", "AUDIO_LIMIT"],
+		evidence: ["packages/privacy/tests/platform/first-release-scope.test.mjs", "packages/privacy/tests/platform/broker-client.test.mjs"],
+		claim_guard: null,
+	},
+	{
+		id: "FRS-06",
+		capability: "Compressed audio (MP3, M4A, Opus) and selective ASR-based audio masking",
+		surface: "privacy-service",
+		status: "unsupported-refused",
+		gap_items: [26],
+		feature_ids: [],
+		bounds: "Selective audio needs an approved TR/EN ASR model, word timestamps bound to the original hash and voice-identity review",
+		runtime_behavior: "Compressed audio is refused; interval masking without a verified recognizer is refused and otherwise review-only with output null",
+		reason_codes: ["AUDIO_FORMAT", "ASR_REQUIRED"],
+		evidence: ["packages/privacy/tests/platform/first-release-scope.test.mjs", "packages/privacy/tests/platform/broker-client.test.mjs"],
+		claim_guard: { mention: String.raw`\b(?:audio|voice|speech)\s+(?:masking|redaction|scanning|protection|transcription)\b|\b(?:mask|redact|transcrib)\w*\s+(?:audio|voice|speech)\b`, flags: "iu" },
+	},
+	{
+		id: "FRS-07",
+		capability: "Video, CAD, steganography, face, handwriting and signature inspection",
+		surface: "privacy-service",
+		status: "unsupported-refused",
+		gap_items: [26],
+		feature_ids: [],
+		bounds: "Needs a bounded decoder/transcoder and independently accepted all-frame specialist detectors",
+		runtime_behavior: "The modality policy blocks; sampled video coverage is rejected; media kinds are refused by the document parser",
+		reason_codes: ["SPECIALIST_DETECTOR_REQUIRED", "UNSUPPORTED_MODALITY", "VIDEO_INCOMPLETE"],
+		evidence: ["packages/privacy/tests/platform/first-release-scope.test.mjs", "packages/privacy/tests/platform/supply-modal.test.mjs"],
+		claim_guard: { mention: String.raw`\b(?:video|CAD|steganograph\w*|handwriting|signature)\s+(?:masking|redaction|scanning|inspection|protection|detection)\b`, flags: "iu" },
+	},
+	{
+		id: "FRS-08",
+		capability: "Remote SharePoint, Google Drive and S3 content fetch, ACL synchronization and remote deletion",
+		surface: "privacy-service",
+		status: "unsupported-refused",
+		gap_items: [26],
+		feature_ids: [],
+		bounds: "No connector exists; sources are complete administrator snapshots or an explicit local directory",
+		runtime_behavior: "The local directory reader refuses any root that is not an existing absolute local directory",
+		reason_codes: ["SOURCE_ROOT"],
+		evidence: ["packages/privacy/tests/platform/first-release-scope.test.mjs"],
+		claim_guard: { mention: String.raw`\bSharePoint\b|\bOneDrive\b|\bGoogle Drive\b|\bAmazon S3\b|\bS3 buckets?\b`, flags: "iu" },
+	},
+	{
+		id: "FRS-09",
+		capability: "Private service institution data labels and fingerprint index",
+		surface: "privacy-service",
+		status: "supported",
+		gap_items: [25],
+		feature_ids: [],
+		bounds: "At most 1000 indexed source documents in total, 100,000 fingerprints, 8192 normalized tokens and 64 KiB of text per source, 65,536 window operations per scan; long sources match on at least 4 and 20% of their unique five-token fragments. Bounded fingerprint matching only: no paraphrase, OCR or complete-lineage recognition, and no measured recall for short quotations",
+		runtime_behavior: "An over-capacity or unsupported snapshot is refused before commit and the previous generation stays in force; a scan over the operation budget blocks the send; an already over-capacity store blocks every send until a source is removed",
+		reason_codes: ["DSPM_POLICY_CAPACITY", "INDEX_CAPACITY", "INDEX_CONTENT_LIMIT", "CONTENT_LIMIT", "INDEX_SCAN_LIMIT"],
+		evidence: ["packages/privacy/tests/platform/first-release-scope.test.mjs", "packages/privacy/tests/platform/broker-client.test.mjs", "packages/privacy/tests/enterprise/index-provenance.test.mjs"],
+		claim_guard: { mention: String.raw`\b(?:fingerprint|exact[- ]data)\w*[^.\n]{0,80}\b(?:paraphras\w*|lineage)\b`, flags: "iu" },
+	},
+	{
+		id: "FRS-10",
+		capability: "Browser Guard exact-data match",
+		surface: "browser-guard",
+		status: "supported",
+		gap_items: [25],
+		feature_ids: ["PRV-03"],
+		bounds: "At most 250,000 fingerprints across all managed datasets, values of at most 16 tokens, 65,536 HMACs per scan; exact normalized values only",
+		runtime_behavior: "An over-capacity managed policy is refused and the guard fails closed; a scan over its budget is marked incomplete, never clean",
+		reason_codes: ["EXACT_DATA_CAPACITY"],
+		evidence: ["packages/browser-guard/src/__tests__/exact-data.test.ts"],
+		claim_guard: null,
+	},
+	{
+		id: "FRS-11",
+		capability: "NER-based PERSON/ADDRESS detection (private service defense profile and Browser Guard native NER host)",
+		surface: "privacy-service, browser-guard",
+		status: "not-sold",
+		gap_items: [21, 24],
+		feature_ids: ["PRV-06"],
+		bounds: "No model has passed the quality policy (Wilson recall lower bound 0.95, precision lower bound 0.90, clean disruption at most 0.05); no model ships",
+		runtime_behavior: "The private service refuses to start without an approved, qualified model manifest; the defense profile blocks without NER. The Browser Guard native host is an unsold opt-in augmentation; the sold detection is the rule layer",
+		reason_codes: ["SERVICE_MODEL_APPROVAL_REQUIRED", "NER_REQUIRED"],
+		evidence: ["packages/privacy/tests/platform/service-startup.test.mjs", "packages/privacy/tests/policy.test.mjs"],
+		claim_guard: { mention: String.raw`\bNER\b|[Nn]amed[- ]entity`, flags: "u" },
+	},
+	{
+		id: "FRS-12",
+		capability: "OCR of screenshots and images (visual engine and native host image session)",
+		surface: "privacy-service, browser-guard",
+		status: "not-sold",
+		gap_items: [21, 26],
+		feature_ids: ["PRV-06", "PRV-08"],
+		bounds: "OCR accuracy is unmeasured and no OCR model ships",
+		runtime_behavior: "Without an OCR-capable native host, images are reported as not inspected and never as clean",
+		reason_codes: ["IMAGE_NOT_INSPECTED"],
+		evidence: ["packages/browser-guard/src/__tests__/files-images.test.ts"],
+		claim_guard: { mention: String.raw`\bOCR\b`, flags: "u" },
+	},
+];
+// A claim paragraph naming a not-sold or unsupported capability must say that it is outside the
+// sold scope, unavailable, refused or shipped without a model. Generated into the inventory.
+const FIRST_RELEASE_SCOPE_QUALIFIER = String.raw`\bnot (?:an? )?(?:complete|full|arbitrary)\b|\bno (?:paraphrase|lineage|OCR|NER)\b|not (?:part of|in|included in) the first[- ]release|outside the first[- ]release|not sold|not offered|not supported|unsupported|not inspected|without (?:a |any )?(?:qualified )?(?:model|weights)|ships without|no (?:qualified )?model|not qualified|unqualified|refused|blocked|ilk sürüm kapsamı dışında|satış kapsamı dışında|desteklenmez|reddedilir|engellenir|incelenmedi|model(?:siz| olmadan| içermez)`;
+const SCOPE_STATUSES = ["supported", "unsupported-refused", "not-sold"];
+
 const features = rows.map((line) => {
 	const [id, area, name, status, paths, consumer, delivered, remaining] = line.split("|");
 	const source_paths = paths.split(";");
 	for (const path of source_paths) if (!existsSync(path)) throw new Error(`${id}: missing evidence source ${path}`);
 	return { id, area, name, status, source_paths, consumer, delivered, remaining, production_accepted: false };
 });
+const featureIds = new Set(features.map((f) => f.id));
+const first_release_scope = FIRST_RELEASE_SCOPE.map((entry) => {
+	if (!SCOPE_STATUSES.includes(entry.status)) throw new Error(`${entry.id}: unknown scope status ${entry.status}`);
+	for (const id of entry.feature_ids) if (!featureIds.has(id)) throw new Error(`${entry.id}: unknown feature ${id}`);
+	if (!entry.reason_codes.length || !entry.evidence.length) throw new Error(`${entry.id}: reason codes and evidence are required`);
+	const evidence = entry.evidence.map((path) => {
+		if (!existsSync(path)) throw new Error(`${entry.id}: missing evidence ${path}`);
+		return readFileSync(path, "utf8");
+	});
+	for (const code of entry.reason_codes) if (!evidence.some((text) => text.includes(code))) throw new Error(`${entry.id}: no cited test contains ${code}`);
+	if (entry.claim_guard) new RegExp(entry.claim_guard.mention, entry.claim_guard.flags);
+	return entry;
+});
+const scope_counts = Object.fromEntries(SCOPE_STATUSES.map((s) => [s, first_release_scope.filter((e) => e.status === s).length]));
 const status_counts = Object.fromEntries(["wired", "partial", "missing", "external"].map((s) => [s, features.filter((f) => f.status === s).length]));
 const worktree_has_changes = execFileSync("git", ["status", "--porcelain", "--untracked-files=normal"], { encoding: "utf8" }).trim().length > 0;
 const generatedOn = new Intl.DateTimeFormat("en-CA", {
@@ -131,10 +317,11 @@ const generatedOn = new Intl.DateTimeFormat("en-CA", {
 	month: "2-digit",
 	day: "2-digit",
 }).format(new Date());
-const inventory = { schema_version: 1, generated_on: generatedOn, generation_timezone: "Europe/Istanbul", source_commit: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(), worktree_has_changes, decision: "NO-GO", methodology: "Generated capability/consumer mapping; statuses do not imply production effectiveness. Wired means a callable implementation; partial means scope or delivery gaps; missing means no end-to-end consumer; external requires independent evidence. Includes proposed market capabilities and deployment/assurance requirements. Historical module-reachability counts are not feature counts.", status_counts, features };
+const inventory = { schema_version: 1, generated_on: generatedOn, generation_timezone: "Europe/Istanbul", source_commit: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(), worktree_has_changes, decision: "NO-GO", methodology: "Generated capability/consumer mapping; statuses do not imply production effectiveness. Wired means a callable implementation; partial means scope or delivery gaps; missing means no end-to-end consumer; external requires independent evidence. Includes proposed market capabilities and deployment/assurance requirements. Historical module-reachability counts are not feature counts.", status_counts, features, first_release_scope_policy: { default: "A capability without accepted evidence is outside the first-release support scope and is refused or not offered; reversible by Product decision.", statuses: { supported: "Offered only within bounds; field acceptance remains open (production_accepted false).", "unsupported-refused": "Not offered; the runtime refuses the input with a stable reason code.", "not-sold": "Code may exist but is not offered or claimed until named acceptance closes." }, claim_qualifier: FIRST_RELEASE_SCOPE_QUALIFIER }, first_release_scope_counts: scope_counts, first_release_scope };
 const outputDir = process.env.AIDR_GENERATOR_OUTPUT_DIR ?? ".";
 writeFileSync(join(outputDir, "FEATURE_INVENTORY.json"), JSON.stringify(inventory, null, 2) + "\n");
 const summary = `# AIDR alt özellik envanteri\n\nOtomatik üretim tarihi: **${generatedOn}**. ${features.length} alt özellik ve teslimat gereksinimi eşlendi: ${status_counts.wired} çalışan kod akışına bağlı, ${status_counts.partial} kısmi, ${status_counts.missing} eksik, ${status_counts.external} dış kanıta bağlı. Bu sayılar üretim kabulü veya tespit başarım oranı değildir. Satış/GA kararı **NO-GO** olarak korunur.\n\nMakine kaydı: [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json). Kaynaklar, tüketen bileşenler ve her satırın kalan işi bu dosyada bulunur. Önceki PRODUCT_SCOPE_AND_FEATURES.md dosyasındaki modül erişilebilirlik sayıları tarihsel bir ara denetime aittir.\n\n## Durum tanımları\n\n- **wired:** Çağrılabilen kod akışı var; kapsam ve test sınırı geçerlidir.\n- **partial:** Uygulama var, ancak teslimat veya kapsamın bir bölümü eksik.\n- **missing:** Uçtan uca özellik bulunmuyor; mevcut temel modül tamamlanmış özellik sayılmaz.\n- **external:** Müşteri/operasyon/hukuk gibi dış tarafların kanıtı gerekiyor.\n\n`;
 const sections = [...new Set(features.map((f) => f.area))].map((area) => `## ${area}\n\n| Kimlik | Alt özellik | Durum | Kalan sınır / kabul işi |\n|---|---|---|---|\n${features.filter((f) => f.area === area).map((f) => `| ${f.id} | [${f.name}](${f.source_paths[0]}) | ${f.status} | ${f.remaining} |`).join("\n")}\n`).join("\n");
-writeFileSync(join(outputDir, "FEATURE_INVENTORY.md"), summary + sections);
+const scopeSection = `\n## İlk sürüm destek kapsamı (gap 21, 25, 26)\n\nÜrün kararı verilene kadar muhafazakâr varsayılan: kabul edilmiş kanıtı olmayan yetenek ilk sürüm kapsamı dışındadır. **supported** yalnız belirtilen sınırlar içinde sunulur (saha kabulü açık); **unsupported-refused** sunulmaz ve runtime sabit reason koduyla reddeder; **not-sold** kod olsa da kabul kapanana kadar satılmaz ve iddia edilmez. Makine kaydı: \`FEATURE_INVENTORY.json#first_release_scope\`.\n\n| Kimlik | Yetenek | Durum | Sınır | Reason kodları |\n|---|---|---|---|---|\n${first_release_scope.map((e) => `| ${e.id} | ${e.capability} | ${e.status} | ${e.bounds} | ${e.reason_codes.join(", ")} |`).join("\n")}\n`;
+writeFileSync(join(outputDir, "FEATURE_INVENTORY.md"), summary + sections + scopeSection);
 console.log(`Validated ${features.length} capability records: ${JSON.stringify(status_counts)}`);

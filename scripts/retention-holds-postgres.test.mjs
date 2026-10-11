@@ -75,7 +75,7 @@ async function waitForAdvisoryWait(application) {
 
 test("retention migration and tenant-serialized hold protocol on real PostgreSQL", async t => {
   const started = await command(["run", "--detach", "--rm", "--pull", "never", "--network", "none", "--name", container,
-    "-e", "POSTGRES_PASSWORD=retention-fixture-only", "supabase/postgres:17.6.1.136"]);
+    "-e", "POSTGRES_PASSWORD=retention-fixture-only", "supabase/postgres:17.11.0.004"]);
   assert.equal(started.code, 0, started.stderr);
   try {
     let ready = false;

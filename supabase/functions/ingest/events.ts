@@ -54,6 +54,12 @@ export const PRIVACY_SITES = [
 	"other",
 ] as const;
 const PRIVACY_CHANNELS = ["prompt", "paste", "file"] as const;
+/**
+ * Native NER outcome of a scan (optional, additive): "used" = the native host's NER took
+ * part; "unavailable" = NER was enabled or required (managed `requireNativeNer`) but gave
+ * no answer. A status enum only; any other value is dropped (absent = NER off).
+ */
+export const PRIVACY_NATIVE_NER_STATES = ["used", "unavailable"] as const;
 /** Generic decision for each guard action: a masked send left redacted, so it was allowed. */
 export const PRIVACY_ACTION_DECISIONS = {
 	masked: "allow",
@@ -66,6 +72,7 @@ const MAX_PRIVACY_ENTITY_COUNT = 100_000;
 const PRIVACY_ENTITY_TYPE_SET = new Set<string>(PRIVACY_ENTITY_TYPES);
 const PRIVACY_SITE_SET = new Set<string>(PRIVACY_SITES);
 const PRIVACY_CHANNEL_SET = new Set<string>(PRIVACY_CHANNELS);
+const PRIVACY_NATIVE_NER_SET = new Set<string>(PRIVACY_NATIVE_NER_STATES);
 
 /**
  * Browser Guard Shadow AI usage (docs/contracts/privacy-telemetry.md): aggregated
@@ -214,9 +221,10 @@ function privacyEventProblem(event: Record<string, unknown>): string | undefined
 }
 
 /**
- * Counts-only projection of a Browser Guard scan. Nothing but enums, bounded
- * integers and an optional policy identifier survives: raw prompt text, masked
- * text, matched values and page URLs are dropped even when a client sends them.
+ * Counts-only projection of a Browser Guard scan. Nothing but enums (including the
+ * optional `native_ner` status), bounded integers and an optional policy identifier
+ * survives: raw prompt text, masked text, matched values and page URLs are dropped even
+ * when a client sends them.
  */
 function projectPrivacyEvent(event: Record<string, unknown> & { event_id: string }) {
 	const action = privacyAction(event.action) ?? "allowed";
@@ -245,6 +253,8 @@ function projectPrivacyEvent(event: Record<string, unknown> & { event_id: string
 	if (findingsCount !== undefined) projected.findings_count = findingsCount;
 	const policyId = safeIdentifier(event.policy_id);
 	if (policyId) projected.policy_id = policyId;
+	const nativeNer = safeEnum(event.native_ner, PRIVACY_NATIVE_NER_SET);
+	if (nativeNer) projected.native_ner = nativeNer;
 	return projected;
 }
 

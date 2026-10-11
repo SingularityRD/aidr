@@ -350,6 +350,22 @@ if (postureScannerEnabled) {
 if (manifest.mode === "self-hosted") {
   const config = spawnSync("docker", ["compose", "--project-directory", dir, "-f", join(dir, "compose.yml"), "config", "--quiet"], { encoding: "utf8", timeout: 15000 });
   check(config.status === 0, "Docker Compose configuration resolves");
+  // Supabase Studio must not be routed from the gateway listener the ingress
+  // proxies; deployment-prepare moves it to a loopback-only admin listener.
+  let studioOperatorOnly = false;
+  try {
+    const requireCore = createRequire(join(root, "packages/core/package.json"));
+    const { parse } = existsSync(join(root, "deploy/vendor/yaml.cjs")) ? requireCore(join(root, "deploy/vendor/yaml.cjs")) : requireCore("yaml");
+    const listeners = parse(readFileSync(join(dir, "volumes/api/envoy/lds.template.yaml"), "utf8")).resources ?? [];
+    const routes = (listener) => listener.filter_chains.flatMap((chain) => chain.filters).flatMap((filter) => filter.typed_config?.route_config?.virtual_hosts ?? []).flatMap((host) => host.routes ?? []);
+    const studioListeners = listeners.filter((listener) => routes(listener).some((route) => route.route?.cluster === "studio"));
+    const gatewayPorts = (parse(readFileSync(join(dir, "compose.yml"), "utf8")).services?.["api-gw"]?.ports ?? []).map((entry) => typeof entry === "object" && entry !== null ? `${entry.host_ip ?? "0.0.0.0"}:${entry.published ?? ""}:${entry.target}` : String(entry));
+    studioOperatorOnly = studioListeners.length > 0 && studioListeners.every((listener) => {
+      const port = listener.address?.socket_address?.port_value;
+      return port !== 8000 && gatewayPorts.filter((entry) => entry.endsWith(`:${port}`)).every((entry) => /^(127\.0\.0\.1|\[::1\]):/.test(entry));
+    });
+  } catch { /* recorded below */ }
+  check(studioOperatorOnly, "Supabase Studio is served only on a loopback-published admin listener, not on the public API gateway listener");
   if (values.online) {
     const state = spawnSync("docker", ["compose", "--project-directory", dir, "-f", join(dir, "compose.yml"), "ps", "--all", "--format", "json"], { encoding: "utf8", timeout: 15000 });
     let services = [];

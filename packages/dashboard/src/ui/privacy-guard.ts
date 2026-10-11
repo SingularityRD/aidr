@@ -110,7 +110,16 @@ export interface PrivacyEventRow {
 	channel: string;
 	entityCounts: Array<[string, number]>;
 	findingsCount: number | null;
+	/**
+	 * Native NER outcome (docs/contracts/privacy-telemetry.md `native_ner`): "used", or
+	 * "unavailable" = NER was enabled or required but did not check this send (never
+	 * "clean"); null = NER off.
+	 */
+	nativeNer: NativeNerUse | null;
 }
+
+const NATIVE_NER_USES = ["used", "unavailable"] as const;
+type NativeNerUse = (typeof NATIVE_NER_USES)[number];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -222,7 +231,23 @@ export function parsePrivacyEventRow(value: unknown): PrivacyEventRow | null {
 		channel: payload.channel as string,
 		entityCounts,
 		findingsCount: typeof findings === "number" && Number.isSafeInteger(findings) ? findings : null,
+		nativeNer: NATIVE_NER_USES.includes(payload.native_ner as NativeNerUse)
+			? (payload.native_ner as NativeNerUse)
+			: null,
 	};
+}
+
+/**
+ * The tenant's Browser Guard settings row (`tenant_ai_governance_settings`), or null when
+ * the tenant has none yet (defaults). Throws on anything else: an unreadable setting must
+ * be shown as unavailable, never as "not required".
+ */
+export function parseBrowserGuardSettings(value: unknown): { requireNativeNer: boolean } {
+	if (value === null) return { requireNativeNer: false };
+	if (!isRecord(value) || typeof value.browser_guard_require_native_ner !== "boolean") {
+		throw new Error("Malformed Browser Guard settings.");
+	}
+	return { requireNativeNer: value.browser_guard_require_native_ner };
 }
 
 export function entityLabel(type: string): string {

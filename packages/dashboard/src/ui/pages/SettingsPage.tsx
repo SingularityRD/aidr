@@ -157,16 +157,22 @@ function ProfileSection({
 
 type Workspace = WorkspaceSettings["workspace"];
 
-/** Client-side mirror of the service's validation; the service stays authoritative. */
+/**
+ * Client-side mirror of the service's validation; the service stays authoritative.
+ * Without retention rights the stored value is never part of a change.
+ */
 function draftChanges(
 	workspace: Workspace,
 	bounds: WorkspaceSettings["retentionBounds"],
 	name: string,
 	retention: string,
+	canEditRetention: boolean,
 ) {
 	const trimmedName = name.trim();
-	const days = Number(retention);
-	const retentionValid = /^\d+$/.test(retention.trim()) && days >= bounds.min && days <= bounds.max;
+	const days = canEditRetention ? Number(retention) : workspace.retentionDays;
+	const retentionValid =
+		!canEditRetention ||
+		(/^\d+$/.test(retention.trim()) && days >= bounds.min && days <= bounds.max);
 	const nameValid = trimmedName.length > 0 && trimmedName.length <= 200;
 	const nameChanged = trimmedName !== workspace.name;
 	const retentionChanged = retentionValid && days !== workspace.retentionDays;
@@ -184,12 +190,14 @@ function WorkspaceEditForm({
 	tenantId,
 	workspace,
 	bounds,
+	canEditRetention,
 	onSaved,
 	onError,
 }: {
 	tenantId: string;
 	workspace: Workspace;
 	bounds: WorkspaceSettings["retentionBounds"];
+	canEditRetention: boolean;
 	onSaved: (workspace: Workspace) => void;
 	onError: (code: string) => void;
 }) {
@@ -197,7 +205,7 @@ function WorkspaceEditForm({
 	const [retention, setRetention] = useState(String(workspace.retentionDays));
 	const [confirmReduction, setConfirmReduction] = useState(false);
 	const [busy, setBusy] = useState(false);
-	const draft = draftChanges(workspace, bounds, name, retention);
+	const draft = draftChanges(workspace, bounds, name, retention, canEditRetention);
 	const canSave =
 		!busy &&
 		draft.valid &&
@@ -236,27 +244,36 @@ function WorkspaceEditForm({
 					required
 				/>
 			</label>
-			<label className="label">
-				Telemetry retention (days)
-				<input
-					className="input"
-					type="number"
-					inputMode="numeric"
-					min={bounds.min}
-					max={bounds.max}
-					step={1}
-					value={retention}
-					onChange={(event) => {
-						setRetention(event.target.value);
-						setConfirmReduction(false);
-					}}
-					required
-				/>
-			</label>
-			<p className="muted small">
-				Allowed range: {bounds.min}–{bounds.max} days. Commercial and security audit records keep
-				their own minimum retention.
-			</p>
+			{canEditRetention ? (
+				<>
+					<label className="label">
+						Telemetry retention (days)
+						<input
+							className="input"
+							type="number"
+							inputMode="numeric"
+							min={bounds.min}
+							max={bounds.max}
+							step={1}
+							value={retention}
+							onChange={(event) => {
+								setRetention(event.target.value);
+								setConfirmReduction(false);
+							}}
+							required
+						/>
+					</label>
+					<p className="muted small">
+						Allowed range: {bounds.min}–{bounds.max} days. Commercial and security audit records
+						keep their own minimum retention.
+					</p>
+				</>
+			) : (
+				<p className="muted small" data-testid="retention-owner-only">
+					Telemetry retention ({workspace.retentionDays} days) can only be changed by a workspace
+					owner, because shortening it permanently deletes older telemetry.
+				</p>
+			)}
 			{draft.reducing ? (
 				<label className="row" style={{ gap: 8, alignItems: "flex-start" }}>
 					<input
@@ -421,6 +438,7 @@ function WorkspaceSection({ tenantId }: { tenantId: string }) {
 						...prev,
 						workspace: { ...prev.workspace, status: "closing" },
 						canEdit: false,
+						canEditRetention: false,
 						canClose: false,
 					}
 				: prev,
@@ -461,6 +479,7 @@ function WorkspaceSection({ tenantId }: { tenantId: string }) {
 					tenantId={tenantId}
 					workspace={workspace}
 					bounds={settings.retentionBounds}
+					canEditRetention={settings.canEditRetention}
 					onSaved={saved}
 					onError={showError}
 				/>

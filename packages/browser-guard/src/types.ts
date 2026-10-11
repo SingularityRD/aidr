@@ -278,6 +278,15 @@ export interface GuardPolicy {
 	readonly maxFileBytes: number;
 	readonly restoreResponses: boolean;
 	readonly useNativeHost: boolean;
+	/**
+	 * Managed-only: native NER (PERSON/ADDRESS/LOCATION) is mandatory. When true and one of
+	 * those types is enabled, a prompt, paste or upload whose text the native host did not
+	 * check with NER (host missing, crashed, timed out, rules-only coverage, malformed reply,
+	 * text over the host limit) is blocked instead of continuing rules-only; monitor mode
+	 * records it as not NER-checked instead. Forces `useNativeHost` on. Absent means false
+	 * (optional so policies built before the key existed stay valid; the worker always sets it).
+	 */
+	readonly requireNativeNer?: boolean;
 	readonly telemetry: TelemetryConfig | null;
 	readonly language: "auto" | "en" | "tr";
 	/** Keys locked by managed policy (UI renders them read-only). */
@@ -352,7 +361,15 @@ export interface PrivacyScanEvent {
 	readonly entity_counts: Readonly<Partial<Record<EntityType, number>>>;
 	readonly findings_count: number;
 	readonly policy_id?: string;
+	/**
+	 * Whether native NER took part in the check: "used", or "unavailable" (enabled or required
+	 * by policy but no NER answer: never a clean check). Absent: native NER was off.
+	 */
+	readonly native_ner?: NativeNerUse;
 }
+
+/** Native NER outcome a RECORD / privacy_scan event may carry (absent: NER was off). */
+export type NativeNerUse = "used" | "unavailable";
 
 /**
  * Shadow AI usage telemetry (see docs/contracts/privacy-telemetry.md). Aggregated counts
@@ -424,6 +441,7 @@ export type GuardMessage =
 			readonly action: PrivacyScanEvent["action"];
 			readonly channel: PrivacyScanEvent["channel"];
 			readonly counts: Readonly<Partial<Record<EntityType, number>>>;
+			readonly native?: NativeNerUse;
 	  }
 	| { readonly type: "GET_STATS"; readonly tabId?: number }
 	| { readonly type: "SET_USER_SETTINGS"; readonly settings: Partial<UserSettings> }
@@ -569,12 +587,23 @@ export interface ImageInspection {
 }
 
 /** Optional native messaging bridge to the AIDR Privacy native host (NER + OCR). */
+export interface NativeScanOptions {
+	/** policy.requireNativeNer: a host answer without NER coverage is not a usable answer. */
+	readonly requireNer?: boolean;
+}
+
 export interface NativeBridge {
 	status(): NativeHostStatus;
-	/** NER findings for PERSON/ADDRESS etc.; null when the host is unavailable. */
-	scanText(text: string): Promise<readonly Finding[] | null>;
-	/** OCR inspection of an image; null when the host, or OCR on the host, is unavailable. */
-	scanImage?(bytes: Uint8Array): Promise<ImageInspection | null>;
+	/**
+	 * NER findings for PERSON/ADDRESS etc.; null when the host is unavailable. With
+	 * `requireNer`, also null when the host reports anything but `rules-and-ner` coverage.
+	 */
+	scanText(text: string, options?: NativeScanOptions): Promise<readonly Finding[] | null>;
+	/**
+	 * OCR inspection of an image; null when the host, or OCR on the host, is unavailable. With
+	 * `requireNer`, a "clean" verdict without `rules-and-ner` coverage becomes "incomplete".
+	 */
+	scanImage?(bytes: Uint8Array, options?: NativeScanOptions): Promise<ImageInspection | null>;
 }
 
 /*

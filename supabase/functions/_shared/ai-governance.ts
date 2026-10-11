@@ -27,6 +27,7 @@ export type GovernanceAction =
 	| "revoke_exception"
 	| "cancel_request"
 	| "update_settings"
+	| "update_browser_guard_settings"
 	| "decide_policy_change";
 
 interface ActionRule {
@@ -61,6 +62,7 @@ export const GOVERNANCE_ACTIONS: Readonly<Record<GovernanceAction, ActionRule>> 
 	revoke_exception: { roles: OWNER_ADMIN, aal2: true, bucket: "write" },
 	cancel_request: { roles: CONTRIBUTORS, aal2: false, bucket: "write" },
 	update_settings: { roles: OWNER_ADMIN, aal2: true, bucket: "write" },
+	update_browser_guard_settings: { roles: OWNER_ADMIN, aal2: true, bucket: "write" },
 	decide_policy_change: { roles: OWNER_ADMIN, aal2: true, bucket: "write" },
 });
 
@@ -85,6 +87,7 @@ export type GovernanceCommand =
 	| { action: "revoke_exception"; exceptionId: string; reason: string }
 	| { action: "cancel_request"; kind: "intake" | "exception" | "policy_change"; requestId: string }
 	| { action: "update_settings"; policyFourEyes: boolean | null; defaultReviewDays: number | null }
+	| { action: "update_browser_guard_settings"; requireNativeNer: boolean }
 	| { action: "decide_policy_change"; requestId: string; decision: "approve" | "reject"; reason: string };
 
 export type ParsedGovernanceRequest =
@@ -316,6 +319,10 @@ export function parseGovernanceRequest(value: unknown): ParsedGovernanceRequest 
 				(fourEyes === null && days === null)) return invalid;
 			return done({ action, policyFourEyes: fourEyes as boolean | null, defaultReviewDays: days as number | null });
 		}
+		case "update_browser_guard_settings":
+			return exactKeys(value, [...base, "require_native_ner"]) && typeof value.require_native_ner === "boolean"
+				? done({ action, requireNativeNer: value.require_native_ner })
+				: invalid;
 	}
 	return invalid;
 }
@@ -332,7 +339,7 @@ const KNOWN_RPC_ERRORS = new Set([
 	"ai_governance_exception_quota", "ai_governance_exception_scope_member", "ai_governance_exception_scope_agent",
 	"ai_governance_reviewer_not_member", "ai_governance_reviewer_quota", "ai_governance_request_not_found",
 	"four_eyes_requires_two_approvers", "policy_change_request_not_found", "policy_change_request_pending",
-	"policy_change_request_quota", "invalid_ai_governance_field",
+	"policy_change_request_quota", "invalid_ai_governance_field", "browser_guard_four_eyes_required",
 ]);
 
 /** First snake_case token of a Postgres error message, when it is a known code. */

@@ -112,7 +112,7 @@ apiGateway:
   image:
     registry: docker.io
     repository: envoyproxy/envoy
-    tag: v1.39.1
+    tag: v1.39.2
     digest: ""
     pullPolicy: IfNotPresent
   replicaCount: 2
@@ -140,7 +140,7 @@ auth:
   image:
     registry: docker.io
     repository: supabase/gotrue
-    tag: v2.196.0
+    tag: v2.197.0
     digest: ""
     pullPolicy: IfNotPresent
   replicaCount: 2
@@ -181,6 +181,14 @@ rest:
   runAsUser: 1000      # image USER of postgrest/postgrest
   dbSchemas: public,graphql_public
   maxRows: 1000
+  # libpq parameters appended to PGRST_DB_URI so pooled connections on a dead
+  # network path are detected instead of waiting out TCP retransmission backoff
+  # (docs/production-readiness/load-soak-drill-2026-10-11.md, O2 addendum).
+  # Keepalives probe idle connections (first probe after 30 s idle, then every
+  # 10 s, dropped after 3 misses); tcp_user_timeout drops a connection whose sent
+  # data stays unacknowledged for 20 s. Neither limits query or request
+  # duration. Set to "" to use libpq/kernel defaults.
+  dbConnectionParams: keepalives=1&keepalives_idle=30&keepalives_interval=10&keepalives_count=3&tcp_user_timeout=20000
   pdb:
     enabled: true
     minAvailable: 1
@@ -196,7 +204,7 @@ storage:
   image:
     registry: docker.io
     repository: supabase/storage-api
-    tag: v1.74.0
+    tag: v1.80.2
     digest: ""
     pullPolicy: IfNotPresent
   resources: {}
@@ -264,11 +272,11 @@ postgresql:
   image:
     registry: docker.io
     repository: supabase/postgres
-    tag: 17.6.1.136
+    tag: 17.11.0.004
     digest: ""
     pullPolicy: IfNotPresent
   resources: {}
-  runAsUser: 100       # "postgres" user of supabase/postgres 17.6.1.136
+  runAsUser: 100       # "postgres" user of supabase/postgres 17.11.0.004
   fsGroup: 101
   persistence:
     size: 20Gi

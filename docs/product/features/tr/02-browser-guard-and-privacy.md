@@ -849,7 +849,8 @@ bulunur. Kaynak değerler hiçbir zaman yazılmaz ya da loglanmaz. Parmak izleri
 değil, anahtarlı özetlerdir. Anahtarı da içeren veri kümesine sahip olan biri, tahmin ettiği
 değerlerin listede olup olmadığını deneyebilir. Veri kümesini gizli kabul edin, yalnızca
 yönetilen politikayla dağıtın ve hiçbir kod deposuna koymayın. `deploy/browser-guard/`
-içindeki örnek veri kümesinin anahtarı herkese açıktır; bu küme asla dağıtılmamalıdır.
+içindeki örnek veri kümesi anahtar ve parmak izleri yerine `REPLACE_WITH_...` yer tutucuları
+içerir; gerçek `fingerprint-dataset.mjs` çıktısıyla değiştirilene kadar eklenti onu reddeder.
 
 **Örnek** — `crm-customers` kümesi (`PERSON` türü) "Ahmet Kaya" değerinin parmak izini
 içerir. `Ahmet Kaya siparişi için aradı` istemindeki ad, hiçbir kural tanımadığı hâlde

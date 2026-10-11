@@ -21,11 +21,14 @@ const POSTURE_EVENT_TYPE_SET: ReadonlySet<string> = new Set(POSTURE_EVENT_TYPES)
  * plugin_scan_finding is produced by the connectors' own plugin scan and,
  * like every verdict/runtime event, is never gated.
  */
-export function partitionPostureEvents<T extends { type?: unknown }>(events: T[]): { posture: T[]; other: T[] } {
+// `object` rather than `{ type?: unknown }`: a weak (all-optional) constraint
+// rejects ingest's `Record<string, unknown> & { event_id }` rows under TS 5.9.
+export function partitionPostureEvents<T extends object>(events: T[]): { posture: T[]; other: T[] } {
 	const posture: T[] = [];
 	const other: T[] = [];
 	for (const event of events) {
-		(typeof event.type === "string" && POSTURE_EVENT_TYPE_SET.has(event.type) ? posture : other).push(event);
+		const type = (event as { type?: unknown }).type;
+		(typeof type === "string" && POSTURE_EVENT_TYPE_SET.has(type) ? posture : other).push(event);
 	}
 	return { posture, other };
 }

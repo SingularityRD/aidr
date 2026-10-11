@@ -38,6 +38,7 @@
       }
     },
     "diagnostics": { "$ref": "#/$defs/diagnostics" },
+    "timeseries": { "$ref": "#/$defs/timeseries" },
     "fault_observations": { "type": "array", "items": { "$ref": "#/$defs/faultObservation" } },
     "threshold_checks": { "type": "array", "items": { "$ref": "#/$defs/thresholdCheck" } },
     "limitations": { "type": "array", "minItems": 3, "items": { "type": "string" } },
@@ -53,6 +54,44 @@
     }
   },
   "$defs": {
+    "timeseries": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["interval_seconds", "clock", "buckets"],
+      "properties": {
+        "interval_seconds": { "type": "integer", "minimum": 1, "maximum": 3600 },
+        "clock": { "type": "string" },
+        "buckets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["t_start_s", "cohorts"],
+            "properties": {
+              "t_start_s": { "type": "number", "minimum": 0 },
+              "cohorts": { "type": "object", "additionalProperties": { "$ref": "#/$defs/timeseriesCell" } }
+            }
+          }
+        }
+      }
+    },
+    "timeseriesCell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["completed", "expected", "unexpected", "transport_errors", "dropped", "p50_ms", "p95_ms", "p99_ms", "max_ms", "status_counts"],
+      "properties": {
+        "completed": { "type": "integer", "minimum": 0 },
+        "expected": { "type": "integer", "minimum": 0 },
+        "unexpected": { "type": "integer", "minimum": 0 },
+        "transport_errors": { "type": "integer", "minimum": 0 },
+        "dropped": { "type": "integer", "minimum": 0 },
+        "p50_ms": { "type": ["number", "null"] },
+        "p95_ms": { "type": ["number", "null"] },
+        "p99_ms": { "type": ["number", "null"] },
+        "max_ms": { "type": ["number", "null"] },
+        "status_counts": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 0 } }
+      }
+    },
     "diagnostics": {
       "type": "object",
       "additionalProperties": false,

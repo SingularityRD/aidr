@@ -118,7 +118,9 @@ async function main() {
 	mkdirSync(binDir, { recursive: true });
 
 	for (const { entry, binary } of ENTRY_POINTS) {
-		const main = join(distDir, `${entry}.cjs`);
+		// The SEA main must be self-contained: use the hook bundle itself, not the
+		// dist/<entry>.cjs compile-cache bootstrap that requires it from disk.
+		const main = join(distDir, `${entry}.bundle.cjs`);
 		statSync(main); // throws a clear ENOENT if the bundle is missing
 		const blob = join(distDir, `sea-prep-${entry}.blob`);
 		const seaConfig = join(distDir, `sea-config-${entry}.json`);

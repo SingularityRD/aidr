@@ -3,7 +3,7 @@
 // service-role client double and asserts the authorization, AAL2, typed-name
 // confirmation and failure mapping, plus the SQL contract of the RPCs.
 
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -19,6 +19,12 @@ const migration = readFileSync(
 	join(ROOT, "supabase", "migrations", "20260925000040_tenant_workspace_settings.sql"),
 	"utf8",
 );
+const ownerBoundsMigration = readFileSync(
+	join(ROOT, "supabase", "migrations", "20261010000110_workspace_settings_retention_owner_bounds.sql"),
+	"utf8",
+);
+const NEVER_SHORTENS = "20261011000200_workspace_retention_never_silently_shortens.sql";
+const neverShortensMigration = readFileSync(join(ROOT, "supabase", "migrations", NEVER_SHORTENS), "utf8");
 const config = readFileSync(join(ROOT, "supabase", "config.toml"), "utf8");
 const manifest = JSON.parse(
 	readFileSync(join(ROOT, "docs", "production-readiness", "edge-function-contract-manifest.json"), "utf8"),
@@ -49,7 +55,7 @@ interface Options {
 	requireMfa?: boolean;
 	rateAllowed?: boolean;
 	rateError?: boolean;
-	updateError?: { code: string } | null;
+	updateError?: { code: string; message?: string } | null;
 	closeError?: { code: string } | null;
 	closeResult?: Record<string, unknown> | null;
 }
@@ -186,6 +192,8 @@ describe("tenant-settings reads", () => {
 		for (const [role, canEdit, canClose] of [
 			["owner", true, true], ["admin", true, false], ["member", false, false], ["viewer", false, false],
 		] as const) {
+			// Retention is owner-only, like closure.
+			const canEditRetention = canClose;
 			const { handle, rpcCalls, assurance } = await handlerWith({ role, assurance: "aal1" });
 			const response = await handle(get());
 			expect(response.status, role).toBe(200);
@@ -196,8 +204,9 @@ describe("tenant-settings reads", () => {
 					retention_days: 90, created_at: "2026-01-01T00:00:00.000Z",
 				},
 				role,
-				permissions: { can_edit: canEdit, can_close: canClose, requires_aal2: true },
-				retention_bounds: { min: 1, max: 3650 },
+				permissions: { can_edit: canEdit, can_edit_retention: canEditRetention, can_close: canClose, requires_aal2: true },
+				// The telemetry row of retention_policy_bounds, not the 1-day column constraint.
+				retention_bounds: { min: 7, max: 3650 },
 			});
 			// Reads do not require step-up and never mutate or consume quota.
 			expect(assurance).not.toHaveBeenCalled();
@@ -209,7 +218,7 @@ describe("tenant-settings reads", () => {
 		const { handle } = await handlerWith({ tenant: { status: "closing" } });
 		const body = await (await handle(get())).json();
 		expect(body.workspace.status).toBe("closing");
-		expect(body.permissions).toMatchObject({ can_edit: false, can_close: false });
+		expect(body.permissions).toMatchObject({ can_edit: false, can_edit_retention: false, can_close: false });
 	});
 
 	it("refuses non-members, expired or JIT members and closed or missing workspaces", async () => {
@@ -276,6 +285,7 @@ describe("tenant-settings updates", () => {
 			expect(body).toMatchObject({ ok: true, changed: ["name"], workspace: { name: "Acme Platform", retention_days: 90 } });
 			expect(rpcCalls.find((call) => call.name === "update_tenant_workspace_settings")?.args).toEqual({
 				p_tenant_id: TENANT, p_actor_user_id: USER, p_name: "Acme Platform", p_retention_days: null,
+				p_confirm_retention_reduction: false,
 			});
 			expect(rpcCalls.find((call) => call.name === "consume_tenant_rate_limit")?.args).toMatchObject({
 				p_tenant_id: TENANT, p_subject: USER, p_endpoint: "tenant-settings",
@@ -300,6 +310,58 @@ describe("tenant-settings updates", () => {
 		}));
 		expect(confirmed.status).toBe(200);
 		expect(mutations(shorten.rpcCalls)).toEqual(["update_tenant_workspace_settings"]);
+		// The confirmation is passed through: the RPC re-judges it against the
+		// stored class policies under the tenant lock.
+		expect(shorten.rpcCalls.find((call) => call.name === "update_tenant_workspace_settings")?.args)
+			.toMatchObject({ p_retention_days: 30, p_confirm_retention_reduction: true });
+		expect(extend.rpcCalls.find((call) => call.name === "update_tenant_workspace_settings")?.args)
+			.toMatchObject({ p_retention_days: 365, p_confirm_retention_reduction: false });
+	});
+
+	it("maps the RPC's own reduction refusal (an increase over tenants.retention_days that lowers stored telemetry)", async () => {
+		const { handle } = await handlerWith({ updateError: { code: "55000", message: "retention_reduction_unconfirmed" } });
+		const response = await handle(patch({ tenant_id: TENANT, action: "update", retention_days: 91 }));
+		expect(response.status).toBe(409);
+		// No stored class values are echoed back.
+		expect(await response.json()).toEqual({ error: "retention_reduction_unconfirmed" });
+	});
+
+	it("lets an admin rename but never change retention, and needs no owner for an unchanged value", async () => {
+		const admin = await handlerWith({ role: "admin" });
+		for (const body of [
+			{ tenant_id: TENANT, action: "update", retention_days: 7, confirm_retention_reduction: true },
+			{ tenant_id: TENANT, action: "update", retention_days: 365 },
+			{ tenant_id: TENANT, action: "update", name: "Acme Platform", retention_days: 30, confirm_retention_reduction: true },
+		]) {
+			const response = await admin.handle(patch(body));
+			expect(response.status, JSON.stringify(body)).toBe(403);
+			expect(await response.json()).toEqual({ error: "workspace_role_insufficient" });
+		}
+		expect(admin.rpcCalls).toEqual([]);
+		expect(admin.assurance).not.toHaveBeenCalled();
+
+		const rename = await handlerWith({ role: "admin" });
+		const renamed = await rename.handle(patch({ tenant_id: TENANT, action: "update", name: "Acme Platform", retention_days: 90 }));
+		expect(renamed.status).toBe(200);
+		expect(await renamed.json()).toMatchObject({ changed: ["name"], workspace: { name: "Acme Platform", retention_days: 90 } });
+		expect(mutations(rename.rpcCalls)).toEqual(["update_tenant_workspace_settings"]);
+	});
+
+	it("surfaces the bounded retention setter's refusals with stable codes", async () => {
+		for (const [updateError, status, body] of [
+			[{ code: "42501", message: "retention_admin_owner_required" }, 403, { error: "workspace_role_insufficient" }],
+			[{ code: "22023", message: "retention_days_out_of_bounds" }, 400, { error: "invalid_retention_days", reason: "retention_days_out_of_bounds" }],
+			[{ code: "22023", message: "retention_days_exceeds_plan" }, 400, { error: "invalid_retention_days", reason: "retention_days_exceeds_plan" }],
+			[{ code: "55000", message: "retention_change_refused_offboarding" }, 409, { error: "retention_change_refused_offboarding" }],
+			[{ code: "55000", message: "retention_reduction_unconfirmed" }, 409, { error: "retention_reduction_unconfirmed" }],
+			[{ code: "55000", message: "tenant_not_active" }, 409, { error: "workspace_not_active" }],
+			[{ code: "42501", message: "workspace_settings_forbidden" }, 403, { error: "workspace_forbidden" }],
+		] as const) {
+			const { handle } = await handlerWith({ updateError });
+			const response = await handle(patch({ tenant_id: TENANT, action: "update", retention_days: 365 }));
+			expect(response.status, updateError.message).toBe(status);
+			expect(await response.json()).toEqual(body);
+		}
 	});
 
 	it("validates names and retention bounds before any identity work", async () => {
@@ -311,6 +373,8 @@ describe("tenant-settings updates", () => {
 			[{ tenant_id: TENANT, action: "update", name: "Bad\u0007Name" }, "invalid_workspace_name"],
 			[{ tenant_id: TENANT, action: "update", name: 42 }, "invalid_workspace_name"],
 			[{ tenant_id: TENANT, action: "update", retention_days: 0 }, "invalid_retention_days"],
+			[{ tenant_id: TENANT, action: "update", retention_days: 1 }, "invalid_retention_days"],
+			[{ tenant_id: TENANT, action: "update", retention_days: 6 }, "invalid_retention_days"],
 			[{ tenant_id: TENANT, action: "update", retention_days: 3651 }, "invalid_retention_days"],
 			[{ tenant_id: TENANT, action: "update", retention_days: 30.5 }, "invalid_retention_days"],
 			[{ tenant_id: TENANT, action: "update", retention_days: "30" }, "invalid_retention_days"],
@@ -483,6 +547,116 @@ describe("tenant-settings SQL and deployment contract", () => {
 			expect(migration).toContain(`revoke all on function ${signature}\n  from public, anon, authenticated;`);
 			expect(migration).toContain(`grant execute on function ${signature}\n  to service_role;`);
 		}
+	});
+
+	describe("owner-only, bounded retention (20261010000110)", () => {
+		const fixed = ownerBoundsMigration
+			.split("create or replace function public.update_tenant_workspace_settings(")[1]?.split("$$;")[0] ?? "";
+
+		it("redefines the RPC in a forward-only migration ordered after the bounded setter", () => {
+			expect(fixed).toContain("security definer");
+			expect(fixed).toContain("set search_path = pg_catalog, public, pg_temp");
+			// The last migration (in apply order) that defines the RPC is this one.
+			const definers = readdirSync(join(ROOT, "supabase", "migrations"))
+				.filter((name) => name.endsWith(".sql"))
+				.sort()
+				.filter((name) => readFileSync(join(ROOT, "supabase", "migrations", name), "utf8")
+					.includes("create or replace function public.update_tenant_workspace_settings("));
+			expect(definers).toContain("20261010000110_workspace_settings_retention_owner_bounds.sql");
+			expect(definers.at(-1)).toBe(NEVER_SHORTENS);
+			expect(ownerBoundsMigration).toContain(
+				"revoke all on function public.update_tenant_workspace_settings(uuid, uuid, text, integer)\n  from public, anon, authenticated;",
+			);
+			expect(ownerBoundsMigration).toContain(
+				"grant execute on function public.update_tenant_workspace_settings(uuid, uuid, text, integer)\n  to service_role;",
+			);
+		});
+
+		it("keeps the admin rename path and its row locks", () => {
+			expect(fixed).toContain("m.role in ('owner', 'admin')");
+			expect(fixed).toContain("for share of m, team");
+			expect(fixed).toContain("from public.tenants where id = p_tenant_id for update");
+			expect(fixed).toContain("update public.teams set name = v_name where tenant_id = p_tenant_id");
+			// Membership before tenant row, as in every other workspace RPC.
+			expect(fixed.indexOf("for share of m, team")).toBeLessThan(fixed.indexOf("for update;"));
+		});
+
+		it("routes every retention change through the owner check and the bounded setter", () => {
+			const retention = fixed.split("if 'retention_days' = any(v_changed) then")[1]?.split("if cardinality(v_changed) > 0 then")[0] ?? "";
+			expect(retention).toContain("perform app.retention_assert_tenant_owner(p_tenant_id, p_actor_user_id);");
+			expect(retention).toContain("perform public.admin_set_tenant_retention(");
+			expect(retention).toContain("from public.retention_policy_bounds where data_class = 'telemetry'");
+			expect(retention).toContain("raise exception 'retention_days_out_of_bounds'");
+			expect(retention).toContain("v_target := least(greatest(v_target, v_class.min_days), v_class.max_days);");
+			expect(retention).toContain("b.tenant_configurable");
+			// The owner check precedes every write.
+			expect(retention.indexOf("retention_assert_tenant_owner")).toBeLessThan(retention.indexOf("admin_set_tenant_retention"));
+			// No direct, unbounded write of the requested value into class policies.
+			expect(fixed).not.toMatch(/else v_days end,\s*updated_by/);
+			expect(fixed).not.toContain("when 'operational_ephemera' then least(v_days, 7)");
+			// The shared tenant lock is taken before any row lock on the retention path.
+			expect(fixed.indexOf("pg_advisory_xact_lock(hashtextextended(p_tenant_id::text, 2606))"))
+				.toBeLessThan(fixed.indexOf("for share of m, team"));
+		});
+
+		it("still audits both streams without the workspace name", () => {
+			expect(fixed).toContain("'tenant.settings_updated'");
+			expect(fixed).toContain("insert into public.admin_audit_logs");
+			expect(fixed).toContain("insert into public.audit_logs");
+			expect(fixed).not.toMatch(/'name',\s*v_name\s*\)/);
+		});
+	});
+
+	describe("a workspace change never silently shortens a class (20261011000200)", () => {
+		const fixed = neverShortensMigration
+			.split("create or replace function public.update_tenant_workspace_settings(")[1]?.split("$$;")[0] ?? "";
+		const retention = fixed.split("if 'retention_days' = any(v_changed) then")[1]?.split("if cardinality(v_changed) > 0 then")[0] ?? "";
+
+		it("replaces the 4-argument RPC with one taking an explicit confirmation flag, service_role only", () => {
+			expect(neverShortensMigration).toContain(
+				"drop function if exists public.update_tenant_workspace_settings(uuid, uuid, text, integer);",
+			);
+			expect(fixed).toContain("p_confirm_retention_reduction boolean default false");
+			expect(fixed).toContain("security definer");
+			expect(fixed).toContain("set search_path = pg_catalog, public, pg_temp");
+			const signature = "public.update_tenant_workspace_settings(uuid, uuid, text, integer, boolean)";
+			expect(neverShortensMigration).toContain(`revoke all on function ${signature}\n  from public, anon, authenticated;`);
+			expect(neverShortensMigration).toContain(`grant execute on function ${signature}\n  to service_role;`);
+			expect(neverShortensMigration).not.toMatch(/grant execute on function public\.update_tenant_workspace_settings[^;]*\b(anon|authenticated)\b/);
+		});
+
+		it("judges a telemetry reduction inside the RPC against the stored policy, after the owner check", () => {
+			expect(retention).toContain("from public.tenant_data_retention_policies\n     where tenant_id = p_tenant_id and data_class = 'telemetry';");
+			expect(retention).toContain("(v_days < v_tenant.retention_days or v_days < v_telemetry_current)");
+			expect(retention).toContain("and not coalesce(p_confirm_retention_reduction, false) then");
+			expect(retention).toContain("raise exception 'retention_reduction_unconfirmed' using errcode = '55000';");
+			expect(retention.indexOf("retention_assert_tenant_owner")).toBeLessThan(retention.indexOf("retention_reduction_unconfirmed"));
+			expect(retention.indexOf("retention_reduction_unconfirmed")).toBeLessThan(retention.indexOf("admin_set_tenant_retention"));
+			expect(fixed.indexOf("pg_advisory_xact_lock(hashtextextended(p_tenant_id::text, 2606))"))
+				.toBeLessThan(fixed.indexOf("for share of m, team"));
+		});
+
+		it("only ever raises non-telemetry classes and still uses the bounded setter", () => {
+			expect(retention).toContain("p.retention_days as current_days");
+			expect(retention).toContain("when 'telemetry' then v_days");
+			expect(retention).toContain("when 'commercial_records' then greatest(v_days, 2555, v_class.current_days)");
+			expect(retention).toContain("when 'security_audit' then greatest(v_days, 365, v_class.current_days)");
+			expect(retention).toContain("else greatest(v_days, v_class.current_days) end;");
+			expect(retention).toContain("v_target := least(greatest(v_target, v_class.min_days), v_class.max_days);");
+			expect(retention).toContain("perform public.admin_set_tenant_retention(");
+			// The old derivation that overwrote longer per-class values is gone.
+			expect(retention).not.toMatch(/else v_days end;/);
+			expect(retention).not.toContain("greatest(v_days, 2555)\n");
+		});
+
+		it("keeps the admin rename path and audits both streams without the workspace name", () => {
+			expect(fixed).toContain("m.role in ('owner', 'admin')");
+			expect(fixed).toContain("update public.teams set name = v_name where tenant_id = p_tenant_id");
+			expect(fixed).toContain("'retention_reduction_confirmed', coalesce(p_confirm_retention_reduction, false)");
+			expect(fixed).toContain("insert into public.admin_audit_logs");
+			expect(fixed).toContain("insert into public.audit_logs");
+			expect(fixed).not.toMatch(/'name',\s*v_name\s*\)/);
+		});
 	});
 
 	it("is registered for deployment and in the browser contract manifest", () => {

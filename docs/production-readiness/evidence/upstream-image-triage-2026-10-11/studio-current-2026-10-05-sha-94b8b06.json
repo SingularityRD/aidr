@@ -1,0 +1,3506 @@
+{
+ "name": "studio-current-2026-10-05-sha-94b8b06",
+ "service": "studio",
+ "role": "current",
+ "image": "supabase/studio:2026.10.05-sha-94b8b06",
+ "ref": "mirror.gcr.io/supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237",
+ "index_digest": "sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237",
+ "docker_hub_tag_digest_match": true,
+ "started_at": "2026-10-11T02:42:20.652Z",
+ "finished_at": "2026-10-11T02:42:20.782Z",
+ "succeeded": true,
+ "os": {
+  "Family": "debian",
+  "Name": "12.15"
+ },
+ "scanned_image_id": "sha256:7fe04e8673b6b63741dca914cbbdf95de2c4728e0b61e1076aa8bbb42128fecd",
+ "repo_digests": [
+  "mirror.gcr.io/supabase/studio@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237"
+ ],
+ "all_severity_findings": {
+  "LOW": 1033,
+  "HIGH": 321,
+  "MEDIUM": 2251,
+  "UNKNOWN": 16,
+  "CRITICAL": 17
+ },
+ "coverage": [
+  {
+   "target": "mirror.gcr.io/supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "class": "os-pkgs",
+   "type": "debian",
+   "vulnerabilities": 3588
+  },
+  {
+   "target": "Node.js",
+   "class": "lang-pkgs",
+   "type": "node-pkg",
+   "vulnerabilities": 50
+  }
+ ],
+ "counts": {
+  "CRITICAL": {
+   "findings": 17,
+   "unique_ids": 8,
+   "fixed_available": 14,
+   "fixed_available_unique_ids": 5
+  },
+  "HIGH": {
+   "findings": 321,
+   "unique_ids": 242,
+   "fixed_available": 55,
+   "fixed_available_unique_ids": 25
+  },
+  "total_findings": 338
+ },
+ "findings": [
+  {
+   "id": "CVE-2023-45853",
+   "severity": "CRITICAL",
+   "pkg": "zlib1g",
+   "installed": "1:1.2.13.dfsg-1",
+   "fixed": null,
+   "status": "will_not_fix",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2025-7458",
+   "severity": "CRITICAL",
+   "pkg": "libsqlite3-0",
+   "installed": "3.40.1-2+deb12u2",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-102828",
+   "severity": "CRITICAL",
+   "pkg": "simple-git",
+   "installed": "3.36.0",
+   "fixed": "4.0.1",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "app/node_modules/.pnpm/simple-git@3.36.0_supports-color@8.1.1/node_modules/simple-git/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-102829",
+   "severity": "CRITICAL",
+   "pkg": "@simple-git/argv-parser",
+   "installed": "1.1.1",
+   "fixed": "2.0.1",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "app/node_modules/.pnpm/@simple-git+argv-parser@1.1.1/node_modules/@simple-git/argv-parser/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-13221",
+   "severity": "CRITICAL",
+   "pkg": "libperl5.36",
+   "installed": "5.36.0-7+deb12u3",
+   "fixed": "5.36.0-7+deb12u4",
+   "status": "fixed",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-13221",
+   "severity": "CRITICAL",
+   "pkg": "perl",
+   "installed": "5.36.0-7+deb12u3",
+   "fixed": "5.36.0-7+deb12u4",
+   "status": "fixed",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-13221",
+   "severity": "CRITICAL",
+   "pkg": "perl-base",
+   "installed": "5.36.0-7+deb12u3",
+   "fixed": "5.36.0-7+deb12u4",
+   "status": "fixed",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-13221",
+   "severity": "CRITICAL",
+   "pkg": "perl-modules-5.36",
+   "installed": "5.36.0-7+deb12u3",
+   "fixed": "5.36.0-7+deb12u4",
+   "status": "fixed",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-42496",
+   "severity": "CRITICAL",
+   "pkg": "libperl5.36",
+   "installed": "5.36.0-7+deb12u3",
+   "fixed": "5.36.0-7+deb12u4",
+   "status": "fixed",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-42496",
+   "severity": "CRITICAL",
+   "pkg": "perl",
+   "installed": "5.36.0-7+deb12u3",
+   "fixed": "5.36.0-7+deb12u4",
+   "status": "fixed",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-42496",
+   "severity": "CRITICAL",
+   "pkg": "perl-base",
+   "installed": "5.36.0-7+deb12u3",
+   "fixed": "5.36.0-7+deb12u4",
+   "status": "fixed",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-42496",
+   "severity": "CRITICAL",
+   "pkg": "perl-modules-5.36",
+   "installed": "5.36.0-7+deb12u3",
+   "fixed": "5.36.0-7+deb12u4",
+   "status": "fixed",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-43185",
+   "severity": "CRITICAL",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-8376",
+   "severity": "CRITICAL",
+   "pkg": "libperl5.36",
+   "installed": "5.36.0-7+deb12u3",
+   "fixed": "5.36.0-7+deb12u4",
+   "status": "fixed",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-8376",
+   "severity": "CRITICAL",
+   "pkg": "perl",
+   "installed": "5.36.0-7+deb12u3",
+   "fixed": "5.36.0-7+deb12u4",
+   "status": "fixed",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-8376",
+   "severity": "CRITICAL",
+   "pkg": "perl-base",
+   "installed": "5.36.0-7+deb12u3",
+   "fixed": "5.36.0-7+deb12u4",
+   "status": "fixed",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-8376",
+   "severity": "CRITICAL",
+   "pkg": "perl-modules-5.36",
+   "installed": "5.36.0-7+deb12u3",
+   "fixed": "5.36.0-7+deb12u4",
+   "status": "fixed",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2013-7445",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "will_not_fix",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2019-19449",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "fix_deferred",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2019-19814",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2021-3847",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2021-3864",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2023-2953",
+   "severity": "HIGH",
+   "pkg": "libldap-2.5-0",
+   "installed": "2.5.13+dfsg-5",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2023-52452",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2023-52586",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2023-52624",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2023-52751",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2023-53218",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2024-21803",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2024-26669",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2024-26836",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2024-26913",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2024-26914",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2024-26944",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2024-35887",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2024-38570",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2024-38630",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2024-41045",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2024-41935",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2024-42118",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2024-42162",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2024-44941",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2024-44942",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2024-44951",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2024-46729",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2024-46811",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2024-46813",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2024-47691",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2024-50029",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2024-50217",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2024-50226",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2024-50282",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2024-53068",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2024-53147",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2024-53168",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2024-53179",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2024-53218",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2024-56538",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2024-56775",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2024-57900",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2024-57982",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2025-21927",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2025-21967",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2025-21969",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2025-21985",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2025-22039",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2025-23133",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2025-37750",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2025-37776",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2025-37777",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2025-37861",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2025-37952",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2025-37957",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2025-38069",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2025-38081",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2025-38182",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2025-38204",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2025-38248",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2025-38369",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2025-38582",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2025-38585",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2025-38595",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2025-38636",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2025-38722",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2025-38734",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2025-39744",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2025-39797",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2025-39810",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2025-39859",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2025-39952",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2025-40025",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2025-40354",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2025-68809",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2025-69534",
+   "severity": "HIGH",
+   "pkg": "libpython3.11-minimal",
+   "installed": "3.11.2-6+deb12u8",
+   "fixed": "3.11.2-6+deb12u9",
+   "status": "fixed",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2025-69534",
+   "severity": "HIGH",
+   "pkg": "libpython3.11-stdlib",
+   "installed": "3.11.2-6+deb12u8",
+   "fixed": "3.11.2-6+deb12u9",
+   "status": "fixed",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2025-69534",
+   "severity": "HIGH",
+   "pkg": "python3.11",
+   "installed": "3.11.2-6+deb12u8",
+   "fixed": "3.11.2-6+deb12u9",
+   "status": "fixed",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2025-69534",
+   "severity": "HIGH",
+   "pkg": "python3.11-minimal",
+   "installed": "3.11.2-6+deb12u8",
+   "fixed": "3.11.2-6+deb12u9",
+   "status": "fixed",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2025-69720",
+   "severity": "HIGH",
+   "pkg": "libncursesw6",
+   "installed": "6.4-4",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2025-69720",
+   "severity": "HIGH",
+   "pkg": "libtinfo6",
+   "installed": "6.4-4",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2025-69720",
+   "severity": "HIGH",
+   "pkg": "ncurses-base",
+   "installed": "6.4-4",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2025-69720",
+   "severity": "HIGH",
+   "pkg": "ncurses-bin",
+   "installed": "6.4-4",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2025-71068",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2025-71073",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2025-71152",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-102276",
+   "severity": "HIGH",
+   "pkg": "brace-expansion",
+   "installed": "2.0.2",
+   "fixed": "5.0.10, 3.0.7, 2.1.5, 1.1.19",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "usr/local/lib/node_modules/npm/node_modules/brace-expansion/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-102278",
+   "severity": "HIGH",
+   "pkg": "brace-expansion",
+   "installed": "2.0.2",
+   "fixed": "5.0.11, 3.0.8, 2.1.6, 1.1.20",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "usr/local/lib/node_modules/npm/node_modules/brace-expansion/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-102826",
+   "severity": "HIGH",
+   "pkg": "simple-git",
+   "installed": "3.36.0",
+   "fixed": "4.0.0",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "app/node_modules/.pnpm/simple-git@3.36.0_supports-color@8.1.1/node_modules/simple-git/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-102827",
+   "severity": "HIGH",
+   "pkg": "simple-git",
+   "installed": "3.36.0",
+   "fixed": "4.0.0",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "app/node_modules/.pnpm/simple-git@3.36.0_supports-color@8.1.1/node_modules/simple-git/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-103111",
+   "severity": "HIGH",
+   "pkg": "libpcre2-8-0",
+   "installed": "10.42-1+deb12u1",
+   "fixed": "10.42-1+deb12u2",
+   "status": "fixed",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-104850",
+   "severity": "HIGH",
+   "pkg": "@modelcontextprotocol/sdk",
+   "installed": "1.29.0",
+   "fixed": "1.31.0",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "app/node_modules/.pnpm/@modelcontextprotocol+sdk@1.29.0_supports-color@8.1.1_zod@3.25.76/node_modules/@modelcontextprotocol/sdk/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-11822",
+   "severity": "HIGH",
+   "pkg": "libsqlite3-0",
+   "installed": "3.40.1-2+deb12u2",
+   "fixed": null,
+   "status": "fix_deferred",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-11824",
+   "severity": "HIGH",
+   "pkg": "libsqlite3-0",
+   "installed": "3.40.1-2+deb12u2",
+   "fixed": null,
+   "status": "fix_deferred",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-11940",
+   "severity": "HIGH",
+   "pkg": "libpython3.11-minimal",
+   "installed": "3.11.2-6+deb12u8",
+   "fixed": null,
+   "status": "fix_deferred",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-11940",
+   "severity": "HIGH",
+   "pkg": "libpython3.11-stdlib",
+   "installed": "3.11.2-6+deb12u8",
+   "fixed": null,
+   "status": "fix_deferred",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-11940",
+   "severity": "HIGH",
+   "pkg": "python3.11",
+   "installed": "3.11.2-6+deb12u8",
+   "fixed": null,
+   "status": "fix_deferred",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-11940",
+   "severity": "HIGH",
+   "pkg": "python3.11-minimal",
+   "installed": "3.11.2-6+deb12u8",
+   "fixed": null,
+   "status": "fix_deferred",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-12064",
+   "severity": "HIGH",
+   "pkg": "libcurl3-gnutls",
+   "installed": "7.88.1-10+deb12u15",
+   "fixed": null,
+   "status": "fix_deferred",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-13149",
+   "severity": "HIGH",
+   "pkg": "brace-expansion",
+   "installed": "2.0.2",
+   "fixed": "5.0.7, 1.1.16, 2.1.2",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "usr/local/lib/node_modules/npm/node_modules/brace-expansion/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-14257",
+   "severity": "HIGH",
+   "pkg": "brace-expansion",
+   "installed": "2.0.2",
+   "fixed": "5.0.8, 3.0.3, 2.1.3, 1.1.17",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "usr/local/lib/node_modules/npm/node_modules/brace-expansion/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-15308",
+   "severity": "HIGH",
+   "pkg": "libpython3.11-minimal",
+   "installed": "3.11.2-6+deb12u8",
+   "fixed": "3.11.2-6+deb12u9",
+   "status": "fixed",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-15308",
+   "severity": "HIGH",
+   "pkg": "libpython3.11-stdlib",
+   "installed": "3.11.2-6+deb12u8",
+   "fixed": "3.11.2-6+deb12u9",
+   "status": "fixed",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-15308",
+   "severity": "HIGH",
+   "pkg": "python3.11",
+   "installed": "3.11.2-6+deb12u8",
+   "fixed": "3.11.2-6+deb12u9",
+   "status": "fixed",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-15308",
+   "severity": "HIGH",
+   "pkg": "python3.11-minimal",
+   "installed": "3.11.2-6+deb12u8",
+   "fixed": "3.11.2-6+deb12u9",
+   "status": "fixed",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-16742",
+   "severity": "HIGH",
+   "pkg": "libsystemd0",
+   "installed": "252.39-1~deb12u2",
+   "fixed": null,
+   "status": "fix_deferred",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-16742",
+   "severity": "HIGH",
+   "pkg": "libudev1",
+   "installed": "252.39-1~deb12u2",
+   "fixed": null,
+   "status": "fix_deferred",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-19445",
+   "severity": "HIGH",
+   "pkg": "libpython3.11-minimal",
+   "installed": "3.11.2-6+deb12u8",
+   "fixed": "3.11.2-6+deb12u9",
+   "status": "fixed",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-19445",
+   "severity": "HIGH",
+   "pkg": "libpython3.11-stdlib",
+   "installed": "3.11.2-6+deb12u8",
+   "fixed": "3.11.2-6+deb12u9",
+   "status": "fixed",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-19445",
+   "severity": "HIGH",
+   "pkg": "python3.11",
+   "installed": "3.11.2-6+deb12u8",
+   "fixed": "3.11.2-6+deb12u9",
+   "status": "fixed",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-19445",
+   "severity": "HIGH",
+   "pkg": "python3.11-minimal",
+   "installed": "3.11.2-6+deb12u8",
+   "fixed": "3.11.2-6+deb12u9",
+   "status": "fixed",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-19534",
+   "severity": "HIGH",
+   "pkg": "undici",
+   "installed": "6.27.0",
+   "fixed": "6.28.1, 7.29.1, 8.10.2",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "usr/local/lib/node_modules/pnpm/artifacts/exe/dist/node_modules/undici/package.json",
+    "usr/local/lib/node_modules/pnpm/dist/node_modules/undici/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-19534",
+   "severity": "HIGH",
+   "pkg": "undici",
+   "installed": "6.27.0",
+   "fixed": "6.28.1, 7.29.1, 8.10.2",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "usr/local/lib/node_modules/pnpm/artifacts/exe/dist/node_modules/undici/package.json",
+    "usr/local/lib/node_modules/pnpm/dist/node_modules/undici/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-19553",
+   "severity": "HIGH",
+   "pkg": "libpython3.11-minimal",
+   "installed": "3.11.2-6+deb12u8",
+   "fixed": "3.11.2-6+deb12u9",
+   "status": "fixed",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-19553",
+   "severity": "HIGH",
+   "pkg": "libpython3.11-stdlib",
+   "installed": "3.11.2-6+deb12u8",
+   "fixed": "3.11.2-6+deb12u9",
+   "status": "fixed",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-19553",
+   "severity": "HIGH",
+   "pkg": "python3.11",
+   "installed": "3.11.2-6+deb12u8",
+   "fixed": "3.11.2-6+deb12u9",
+   "status": "fixed",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-19553",
+   "severity": "HIGH",
+   "pkg": "python3.11-minimal",
+   "installed": "3.11.2-6+deb12u8",
+   "fixed": "3.11.2-6+deb12u9",
+   "status": "fixed",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-23171",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-23191",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-23208",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-23226",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-23327",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-23361",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-23447",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-23448",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-31432",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-31493",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-31527",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-31536",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-31568",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-31706",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-31729",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-33671",
+   "severity": "HIGH",
+   "pkg": "picomatch",
+   "installed": "4.0.3",
+   "fixed": "4.0.4, 3.0.2, 2.3.2",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "usr/local/lib/node_modules/npm/node_modules/picomatch/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-41992",
+   "severity": "HIGH",
+   "pkg": "gzip",
+   "installed": "1.12-1",
+   "fixed": null,
+   "status": "fix_deferred",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-42497",
+   "severity": "HIGH",
+   "pkg": "libperl5.36",
+   "installed": "5.36.0-7+deb12u3",
+   "fixed": "5.36.0-7+deb12u4",
+   "status": "fixed",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-42497",
+   "severity": "HIGH",
+   "pkg": "perl",
+   "installed": "5.36.0-7+deb12u3",
+   "fixed": "5.36.0-7+deb12u4",
+   "status": "fixed",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-42497",
+   "severity": "HIGH",
+   "pkg": "perl-base",
+   "installed": "5.36.0-7+deb12u3",
+   "fixed": "5.36.0-7+deb12u4",
+   "status": "fixed",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-42497",
+   "severity": "HIGH",
+   "pkg": "perl-modules-5.36",
+   "installed": "5.36.0-7+deb12u3",
+   "fixed": "5.36.0-7+deb12u4",
+   "status": "fixed",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-43049",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-43125",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-43198",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-43250",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-43490",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-45893",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-45943",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-45957",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-46054",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-46068",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-46130",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-46181",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-46219",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "will_not_fix",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-46241",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-46293",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "will_not_fix",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-48815",
+   "severity": "HIGH",
+   "pkg": "sigstore",
+   "installed": "3.1.0",
+   "fixed": "4.1.1",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "usr/local/lib/node_modules/npm/node_modules/sigstore/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-48962",
+   "severity": "HIGH",
+   "pkg": "libperl5.36",
+   "installed": "5.36.0-7+deb12u3",
+   "fixed": "5.36.0-7+deb12u4",
+   "status": "fixed",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-48962",
+   "severity": "HIGH",
+   "pkg": "perl",
+   "installed": "5.36.0-7+deb12u3",
+   "fixed": "5.36.0-7+deb12u4",
+   "status": "fixed",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-48962",
+   "severity": "HIGH",
+   "pkg": "perl-base",
+   "installed": "5.36.0-7+deb12u3",
+   "fixed": "5.36.0-7+deb12u4",
+   "status": "fixed",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-48962",
+   "severity": "HIGH",
+   "pkg": "perl-modules-5.36",
+   "installed": "5.36.0-7+deb12u3",
+   "fixed": "5.36.0-7+deb12u4",
+   "status": "fixed",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-52991",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-53000",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-53091",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-53115",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-53117",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-53118",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-53120",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-53129",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-53143",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-53156",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-53179",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-53262",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-53272",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-53330",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-53613",
+   "severity": "HIGH",
+   "pkg": "bsdutils",
+   "installed": "1:2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-53613",
+   "severity": "HIGH",
+   "pkg": "libblkid1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-53613",
+   "severity": "HIGH",
+   "pkg": "libmount1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-53613",
+   "severity": "HIGH",
+   "pkg": "libsmartcols1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-53613",
+   "severity": "HIGH",
+   "pkg": "libuuid1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-53613",
+   "severity": "HIGH",
+   "pkg": "mount",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-53613",
+   "severity": "HIGH",
+   "pkg": "util-linux",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-53613",
+   "severity": "HIGH",
+   "pkg": "util-linux-extra",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-54369",
+   "severity": "HIGH",
+   "pkg": "libacl1",
+   "installed": "2.3.1-3",
+   "fixed": null,
+   "status": "fix_deferred",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-57432",
+   "severity": "HIGH",
+   "pkg": "libperl5.36",
+   "installed": "5.36.0-7+deb12u3",
+   "fixed": "5.36.0-7+deb12u4",
+   "status": "fixed",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-57432",
+   "severity": "HIGH",
+   "pkg": "perl",
+   "installed": "5.36.0-7+deb12u3",
+   "fixed": "5.36.0-7+deb12u4",
+   "status": "fixed",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-57432",
+   "severity": "HIGH",
+   "pkg": "perl-base",
+   "installed": "5.36.0-7+deb12u3",
+   "fixed": "5.36.0-7+deb12u4",
+   "status": "fixed",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-57432",
+   "severity": "HIGH",
+   "pkg": "perl-modules-5.36",
+   "installed": "5.36.0-7+deb12u3",
+   "fixed": "5.36.0-7+deb12u4",
+   "status": "fixed",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-57433",
+   "severity": "HIGH",
+   "pkg": "libperl5.36",
+   "installed": "5.36.0-7+deb12u3",
+   "fixed": "5.36.0-7+deb12u4",
+   "status": "fixed",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-57433",
+   "severity": "HIGH",
+   "pkg": "perl",
+   "installed": "5.36.0-7+deb12u3",
+   "fixed": "5.36.0-7+deb12u4",
+   "status": "fixed",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-57433",
+   "severity": "HIGH",
+   "pkg": "perl-base",
+   "installed": "5.36.0-7+deb12u3",
+   "fixed": "5.36.0-7+deb12u4",
+   "status": "fixed",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-57433",
+   "severity": "HIGH",
+   "pkg": "perl-modules-5.36",
+   "installed": "5.36.0-7+deb12u3",
+   "fixed": "5.36.0-7+deb12u4",
+   "status": "fixed",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-6276",
+   "severity": "HIGH",
+   "pkg": "libcurl3-gnutls",
+   "installed": "7.88.1-10+deb12u15",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-63962",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-64001",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-64017",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-64026",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-64305",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-64341",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-64348",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-64424",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-64556",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-68236",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-68409",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-68426",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-68470",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-69152",
+   "severity": "HIGH",
+   "pkg": "brace-expansion",
+   "installed": "2.0.2",
+   "fixed": "1.1.18, 2.1.4, 3.0.6, 5.0.9",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "usr/local/lib/node_modules/npm/node_modules/brace-expansion/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-69192",
+   "severity": "HIGH",
+   "pkg": "ip-address",
+   "installed": "10.1.0",
+   "fixed": "10.3.1",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "usr/local/lib/node_modules/npm/node_modules/ip-address/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-72042",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-72098",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-7210",
+   "severity": "HIGH",
+   "pkg": "libpython3.11-minimal",
+   "installed": "3.11.2-6+deb12u8",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-7210",
+   "severity": "HIGH",
+   "pkg": "libpython3.11-stdlib",
+   "installed": "3.11.2-6+deb12u8",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-7210",
+   "severity": "HIGH",
+   "pkg": "python3.11",
+   "installed": "3.11.2-6+deb12u8",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-7210",
+   "severity": "HIGH",
+   "pkg": "python3.11-minimal",
+   "installed": "3.11.2-6+deb12u8",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-72130",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-73566",
+   "severity": "HIGH",
+   "pkg": "tar",
+   "installed": "7.5.20",
+   "fixed": "7.5.21",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "usr/local/lib/node_modules/pnpm/artifacts/exe/dist/node_modules/tar/package.json",
+    "usr/local/lib/node_modules/pnpm/dist/node_modules/tar/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-73566",
+   "severity": "HIGH",
+   "pkg": "tar",
+   "installed": "7.5.20",
+   "fixed": "7.5.21",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "usr/local/lib/node_modules/pnpm/artifacts/exe/dist/node_modules/tar/package.json",
+    "usr/local/lib/node_modules/pnpm/dist/node_modules/tar/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-74269",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-74345",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-74752",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-76642",
+   "severity": "HIGH",
+   "pkg": "bsdutils",
+   "installed": "1:2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-76642",
+   "severity": "HIGH",
+   "pkg": "libblkid1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-76642",
+   "severity": "HIGH",
+   "pkg": "libmount1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-76642",
+   "severity": "HIGH",
+   "pkg": "libsmartcols1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-76642",
+   "severity": "HIGH",
+   "pkg": "libuuid1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-76642",
+   "severity": "HIGH",
+   "pkg": "mount",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-76642",
+   "severity": "HIGH",
+   "pkg": "util-linux",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-76642",
+   "severity": "HIGH",
+   "pkg": "util-linux-extra",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-77214",
+   "severity": "HIGH",
+   "pkg": "libexpat1",
+   "installed": "2.5.0-1+deb12u4",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78408",
+   "severity": "HIGH",
+   "pkg": "bsdutils",
+   "installed": "1:2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78408",
+   "severity": "HIGH",
+   "pkg": "libblkid1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78408",
+   "severity": "HIGH",
+   "pkg": "libmount1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78408",
+   "severity": "HIGH",
+   "pkg": "libsmartcols1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78408",
+   "severity": "HIGH",
+   "pkg": "libuuid1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78408",
+   "severity": "HIGH",
+   "pkg": "mount",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78408",
+   "severity": "HIGH",
+   "pkg": "util-linux",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78408",
+   "severity": "HIGH",
+   "pkg": "util-linux-extra",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78409",
+   "severity": "HIGH",
+   "pkg": "bsdutils",
+   "installed": "1:2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78409",
+   "severity": "HIGH",
+   "pkg": "libblkid1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78409",
+   "severity": "HIGH",
+   "pkg": "libmount1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78409",
+   "severity": "HIGH",
+   "pkg": "libsmartcols1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78409",
+   "severity": "HIGH",
+   "pkg": "libuuid1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78409",
+   "severity": "HIGH",
+   "pkg": "mount",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78409",
+   "severity": "HIGH",
+   "pkg": "util-linux",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78409",
+   "severity": "HIGH",
+   "pkg": "util-linux-extra",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78410",
+   "severity": "HIGH",
+   "pkg": "bsdutils",
+   "installed": "1:2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78410",
+   "severity": "HIGH",
+   "pkg": "libblkid1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78410",
+   "severity": "HIGH",
+   "pkg": "libmount1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78410",
+   "severity": "HIGH",
+   "pkg": "libsmartcols1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78410",
+   "severity": "HIGH",
+   "pkg": "libuuid1",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78410",
+   "severity": "HIGH",
+   "pkg": "mount",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78410",
+   "severity": "HIGH",
+   "pkg": "util-linux",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-78410",
+   "severity": "HIGH",
+   "pkg": "util-linux-extra",
+   "installed": "2.38.1-5+deb12u3",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-80521",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-80837",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-80841",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-80951",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-81000",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-81003",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-8286",
+   "severity": "HIGH",
+   "pkg": "libcurl3-gnutls",
+   "installed": "7.88.1-10+deb12u15",
+   "fixed": null,
+   "status": "fix_deferred",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-8328",
+   "severity": "HIGH",
+   "pkg": "libpython3.11-minimal",
+   "installed": "3.11.2-6+deb12u8",
+   "fixed": "3.11.2-6+deb12u9",
+   "status": "fixed",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-8328",
+   "severity": "HIGH",
+   "pkg": "libpython3.11-stdlib",
+   "installed": "3.11.2-6+deb12u8",
+   "fixed": "3.11.2-6+deb12u9",
+   "status": "fixed",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-8328",
+   "severity": "HIGH",
+   "pkg": "python3.11",
+   "installed": "3.11.2-6+deb12u8",
+   "fixed": "3.11.2-6+deb12u9",
+   "status": "fixed",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-8328",
+   "severity": "HIGH",
+   "pkg": "python3.11-minimal",
+   "installed": "3.11.2-6+deb12u8",
+   "fixed": "3.11.2-6+deb12u9",
+   "status": "fixed",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-8458",
+   "severity": "HIGH",
+   "pkg": "libcurl3-gnutls",
+   "installed": "7.88.1-10+deb12u15",
+   "fixed": null,
+   "status": "fix_deferred",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-84782",
+   "severity": "HIGH",
+   "pkg": "libssl3",
+   "installed": "3.0.22-1~deb12u1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-84782",
+   "severity": "HIGH",
+   "pkg": "openssl",
+   "installed": "3.0.22-1~deb12u1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-88647",
+   "severity": "HIGH",
+   "pkg": "libgnutls30",
+   "installed": "3.7.9-2+deb12u7",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-88648",
+   "severity": "HIGH",
+   "pkg": "libgnutls30",
+   "installed": "3.7.9-2+deb12u7",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-8927",
+   "severity": "HIGH",
+   "pkg": "libcurl3-gnutls",
+   "installed": "7.88.1-10+deb12u15",
+   "fixed": null,
+   "status": "fix_deferred",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-89479",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-89481",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-89487",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-89488",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-89526",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-89530",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-89545",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-89563",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-89564",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-89569",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-89603",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-89607",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-89631",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-89633",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-89638",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-89652",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-89653",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-89656",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-89659",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-89663",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-89669",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-89675",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-89676",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-89708",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-89713",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-89777",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-89811",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-89846",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-89894",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-89932",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-89970",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-89972",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-89980",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-90036",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-90049",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-90111",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-90227",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-90315",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-93288",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-93748",
+   "severity": "HIGH",
+   "pkg": "http-cache-semantics",
+   "installed": "4.2.0",
+   "fixed": null,
+   "status": "affected",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "usr/local/lib/node_modules/npm/node_modules/http-cache-semantics/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-93787",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-93817",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-94483",
+   "severity": "HIGH",
+   "pkg": "next",
+   "installed": "16.3.6",
+   "fixed": "16.3.8",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "app/node_modules/.pnpm/next@16.3.6_@babel+core@7.29.7_supports-color@8.1.1__@opentelemetry+api@1.9.1_@playwrig_0b72cb4dcefdd683ad80cac37079581f/node_modules/next/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-9496",
+   "severity": "HIGH",
+   "pkg": "pacote",
+   "installed": "19.0.2",
+   "fixed": "21.5.1",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "usr/local/lib/node_modules/npm/node_modules/pacote/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-9496",
+   "severity": "HIGH",
+   "pkg": "pacote",
+   "installed": "20.0.1",
+   "fixed": "21.5.1",
+   "status": "fixed",
+   "target": "Node.js",
+   "type": "node-pkg",
+   "paths": [
+    "usr/local/lib/node_modules/npm/node_modules/@npmcli/metavuln-calculator/node_modules/pacote/package.json"
+   ]
+  },
+  {
+   "id": "CVE-2026-9538",
+   "severity": "HIGH",
+   "pkg": "libperl5.36",
+   "installed": "5.36.0-7+deb12u3",
+   "fixed": null,
+   "status": "fix_deferred",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-9538",
+   "severity": "HIGH",
+   "pkg": "perl",
+   "installed": "5.36.0-7+deb12u3",
+   "fixed": null,
+   "status": "fix_deferred",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-9538",
+   "severity": "HIGH",
+   "pkg": "perl-base",
+   "installed": "5.36.0-7+deb12u3",
+   "fixed": null,
+   "status": "fix_deferred",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-9538",
+   "severity": "HIGH",
+   "pkg": "perl-modules-5.36",
+   "installed": "5.36.0-7+deb12u3",
+   "fixed": null,
+   "status": "fix_deferred",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-97417",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-98116",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-98222",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  },
+  {
+   "id": "CVE-2026-98364",
+   "severity": "HIGH",
+   "pkg": "linux-libc-dev",
+   "installed": "6.1.187-1",
+   "fixed": null,
+   "status": "affected",
+   "target": "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237 (debian 12.15)",
+   "type": "debian"
+  }
+ ],
+ "trivy_report_created_at": "2026-10-11T02:30:02.208436141Z"
+}

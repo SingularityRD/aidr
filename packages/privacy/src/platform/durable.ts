@@ -32,11 +32,13 @@ export class DurableApprovalLedger {
   }
   revokeAll():void{this.state.transaction(tx=>{const c=tx.get<number>('internal','approval-epoch');tx.put('internal','approval-epoch',(c?.value??0)+1,c?.version??null);});}
 }
+const QUOTA_PURGE_BATCH=64;
 export class DurableBudget {
   constructor(readonly state:TenantState,readonly windowMs=60000,readonly maxCalls=60,readonly maxBytes=1048576){integer(windowMs,1000,86400000);integer(maxCalls,1);integer(maxBytes,1);}
   consume(tenant:string,subject:string,bytes:number,now=Date.now()):boolean{
     if(tenant!==this.state.tenantId)deny('TENANT_MISMATCH');id(subject);integer(bytes,0,104857600);
-    return this.state.transaction(tx=>{monotonic(tx,now);const key=hash(['quota',subject,Math.floor(now/this.windowMs)]),r=tx.get<{calls:number;bytes:number}>('quotas',key),calls=(r?.value.calls??0)+1,total=(r?.value.bytes??0)+bytes;
+    // Bounded physical purge of expired windows (expires<=now never includes the current window) keeps rows bounded.
+    return this.state.transaction(tx=>{monotonic(tx,now);tx.purgeExpiredTransient('quotas',now,QUOTA_PURGE_BATCH);const key=hash(['quota',subject,Math.floor(now/this.windowMs)]),r=tx.get<{calls:number;bytes:number}>('quotas',key),calls=(r?.value.calls??0)+1,total=(r?.value.bytes??0)+bytes;
       if(calls>this.maxCalls||total>this.maxBytes)return false;tx.put('quotas',key,{calls,bytes:total},r?.version??null,(Math.floor(now/this.windowMs)+1)*this.windowMs);return true;
     });
   }

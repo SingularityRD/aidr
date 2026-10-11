@@ -123,6 +123,21 @@ no member identity, so only tenant-wide exceptions waive a ban for browsers.
 The `shadowAi` managed-policy snippet remains the alternative for browsers
 without a control plane.
 
+Require native NER from the dashboard: owners and administrators can make
+Browser Guard's native NER mandatory for every enrolled browser (Browser Privacy
+Guard → Require native NER). The `update_browser_guard_settings` action (AAL2,
+rate-limited) calls the `update_browser_guard_settings` RPC, which re-checks
+owner/admin on an active tenant under row locks, stores
+`tenant_ai_governance_settings.browser_guard_require_native_ner` and writes a
+`browser_guard.settings_updated` audit row (from/to) for each change. Switching it
+**off** while four-eyes is on is refused (`browser_guard_four_eyes_required`):
+four-eyes must be turned off first, which a second approver decides. The setting
+reaches browsers as `browser_guard.require_native_ner: true` in the same signed
+document (omitted when off; covered by the document digest). The extension merges
+it with its managed `requireNativeNer` key, `true` wins, and keeps it in force
+after the document expires. An unreadable settings row makes the endpoint answer
+503 rather than serve a document without the requirement.
+
 At most 500 MCP servers can be banned or restricted per workspace.
 
 ## Intake: "may we use this AI tool?"

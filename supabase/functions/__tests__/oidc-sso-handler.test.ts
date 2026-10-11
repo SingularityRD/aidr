@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createOidcHandler } from "../oidc-sso/handler.ts";
@@ -538,6 +541,106 @@ describe("token endpoint client authentication", () => {
 	});
 });
 
+describe("client secret tenant binding (a reference alone never releases a secret)", () => {
+	const ATTACKER_ISSUER = "https://idp.attacker.example/oauth2/default";
+
+	function attackerIdp(): IdpFixture {
+		const idp = makeIdp(ATTACKER_ISSUER, [ctx.keyA]);
+		ctx.world.idps.push(idp);
+		return idp;
+	}
+
+	/** Every outbound request the fake network saw, with Basic credentials decoded. */
+	function outbound(): string {
+		return ctx.world.idps
+			.flatMap((idp) => idp.requests)
+			.map((request) => {
+				const basic = request.authorization?.replace(/^Basic /, "");
+				return `${request.url} ${request.body ?? ""} ${request.authorization ?? ""} ${basic ? decodeURIComponent(atob(basic)) : ""}`;
+			})
+			.join("\n");
+	}
+
+	async function attemptLogin(row: Partial<Parameters<typeof providerRow>[0]>, idp: IdpFixture) {
+		ctx.world.store.providers.set(PROVIDER_A, providerRow({ discovery: discoveryFor(idp), ...row }));
+		const started = await begin(ctx);
+		const result = await finish(ctx, started, { idToken: await tokenFor(ctx, started), idp });
+		return { result, tokenRequests: idp.requests.filter((request) => request.url === idp.tokenEndpoint) };
+	}
+
+	it("never sends another tenant's secret to an attacker token endpoint", async () => {
+		const evil = attackerIdp();
+		for (const method of ["client_secret_basic", "client_secret_post"] as const) {
+			const { result, tokenRequests } = await attemptLogin(
+				{ kind: "generic", issuer: ATTACKER_ISSUER, client_secret_ref: "TENANT_B", token_auth_method: method },
+				evil,
+			);
+			expect(result.json.reason).toBe("token_exchange_failed");
+			expect(ctx.world.store.audits.at(-1)?.detail.reason).toBe("client_secret_not_configured");
+			expect(tokenRequests).toHaveLength(0);
+		}
+		expect(outbound()).not.toContain("s3cr3t-B");
+		expect(ctx.world.secretEnvReads).not.toContain("AIDR_OIDC_CLIENT_SECRET_TENANT_B");
+	});
+
+	it("does not release the tenant's own secret to a different issuer", async () => {
+		const evil = attackerIdp();
+		const { result, tokenRequests } = await attemptLogin({ kind: "generic", issuer: ATTACKER_ISSUER, client_secret_ref: "TENANT_A" }, evil);
+		expect(result.json.reason).toBe("token_exchange_failed");
+		expect(tokenRequests).toHaveLength(0);
+		expect(outbound()).not.toContain("s3cr3t");
+	});
+
+	it("does not release another tenant's secret even on that tenant's real issuer", async () => {
+		const { result } = await attemptLogin(
+			{ kind: "okta", issuer: ISSUER_B, client_id: "client-b", client_secret_ref: "TENANT_B" },
+			ctx.idpB,
+		);
+		expect(result.json.reason).toBe("token_exchange_failed");
+		expect(ctx.idpB.requests.filter((request) => request.url === ctx.idpB.tokenEndpoint)).toHaveLength(0);
+		expect(outbound()).not.toContain("s3cr3t-B");
+	});
+
+	it("honours a client_id pin in the binding", async () => {
+		ctx.world.secretBindings = { TENANT_A: { tenant_id: TENANT_A, issuer: ISSUER_A, client_id: "client-a" } };
+		const pinned = await attemptLogin({ client_id: "client-other" }, ctx.idpA);
+		expect(pinned.tokenRequests).toHaveLength(0);
+		expect(outbound()).not.toContain("s3cr3t-A");
+	});
+
+	it("binds nothing when the bindings document is missing or malformed", async () => {
+		for (const bindings of [{}, { TENANT_A: { tenant_id: "not-a-uuid", issuer: ISSUER_A } }, { TENANT_A: { tenant_id: TENANT_A, issuer: "http://x" } }]) {
+			ctx.world.secretBindings = bindings;
+			const { result, tokenRequests } = await attemptLogin({}, ctx.idpA);
+			expect(result.json.reason).toBe("token_exchange_failed");
+			expect(tokenRequests).toHaveLength(0);
+		}
+		expect(outbound()).not.toContain("s3cr3t");
+	});
+
+	it("sends the bound secret for the legitimate tenant, issuer and client", async () => {
+		const { tokenRequests } = await attemptLogin({}, ctx.idpA);
+		expect(tokenRequests).toHaveLength(1);
+		const basic = String(tokenRequests[0].authorization).replace(/^Basic /, "");
+		expect(atob(basic)).toBe("client-a:s3cr3t-A");
+	});
+
+	it("gives an owner no oracle for other tenants' references", async () => {
+		ctx.world.store.policies.delete(TENANT_A);
+		attackerIdp();
+		const body = { action: "put_provider", tenant_id: TENANT_A, kind: "generic", display_name: "Mine", issuer: ATTACKER_ISSUER, client_id: "mine" };
+		const otherTenant = await call(ctx, { ...body, client_secret_ref: "TENANT_B", enabled: true }, "owner-a");
+		const unknown = await call(ctx, { ...body, client_secret_ref: "NO_SUCH_REF", enabled: true }, "owner-a");
+		expect(otherTenant).toEqual({ status: 422, json: { error: "client_secret_not_configured" } });
+		expect(unknown).toEqual(otherTenant);
+
+		expect((await call(ctx, { ...body, client_secret_ref: "TENANT_B" }, "owner-a")).status).toBe(200);
+		const config = await call(ctx, { action: "get_config", tenant_id: TENANT_A }, "owner-a");
+		expect(config.json).toMatchObject({ provider: { client_secret_configured: false, enabled: false } });
+		expect(outbound()).not.toContain("s3cr3t");
+	});
+});
+
 describe("start", () => {
 	it("answers unknown domains and providers without minting any counter or request", async () => {
 		const binding_challenge = await sha256Text("b");
@@ -794,6 +897,128 @@ describe("owner administration", () => {
 	});
 });
 
+describe("provider writes are one transaction with the owner re-check and audit", () => {
+	const provider = { kind: "entra", display_name: "Contoso", issuer: ISSUER_A, client_id: "client-a", client_secret_ref: "TENANT_A" };
+
+	beforeEach(() => {
+		ctx.world.store.providers.delete(PROVIDER_A);
+		ctx.world.store.policies.delete(TENANT_A);
+	});
+
+	it("leaves no provider row when the audit write fails", async () => {
+		const audit = vi.spyOn(ctx.world.store, "audit");
+		ctx.world.store.failAudit = true;
+		const result = await call(ctx, { action: "put_provider", tenant_id: TENANT_A, ...provider, enabled: true }, "owner-a");
+		expect(result).toEqual({ status: 503, json: { error: "sso_unavailable" } });
+		expect(await ctx.world.store.findProviderByTenant(TENANT_A)).toBeNull();
+		expect(ctx.world.jwksInvalidated).toEqual([]);
+		// The handler no longer writes a separate, non-transactional audit row.
+		expect(audit).not.toHaveBeenCalled();
+	});
+
+	it("rejects an owner demoted while discovery was in flight and writes nothing", async () => {
+		const fetchJson = ctx.world.deps.fetchJson;
+		ctx.world.deps.fetchJson = async (url, init) => {
+			ctx.world.store.members.set(`${TENANT_A}:${OWNER_A}`, "admin");
+			return fetchJson(url, init);
+		};
+		const handler = createOidcHandler(ctx.world.deps);
+		const response = await handler(post({ action: "put_provider", tenant_id: TENANT_A, ...provider, enabled: true }, "owner-a"));
+		expect(response.status).toBe(403);
+		expect(await response.json()).toEqual({ error: "owner_required" });
+		expect(await ctx.world.store.findProviderByTenant(TENANT_A)).toBeNull();
+		expect(ctx.world.store.auditActions()).not.toContain("identity.oidc.provider_updated");
+	});
+
+	it("audits a saved provider inside the same write", async () => {
+		const saved = await call(ctx, { action: "put_provider", tenant_id: TENANT_A, ...provider }, "owner-a");
+		expect(saved.status).toBe(200);
+		const row = await ctx.world.store.findProviderByTenant(TENANT_A);
+		expect(ctx.world.store.audits.at(-1)).toMatchObject({
+			actor_user_id: OWNER_A,
+			tenant_id: TENANT_A,
+			action: "identity.oidc.provider_updated",
+			detail: { provider_id: row?.id, issuer: ISSUER_A, enabled: false, request_id: "req-test" },
+		});
+	});
+
+	it("keeps discovery unchanged when the refresh cannot be audited or the actor lost ownership", async () => {
+		const before = providerRow({ discovery: { ...discoveryFor(ctx.idpA), jwks_uri: "https://login.microsoftonline.com/old/keys" } });
+		ctx.world.store.providers.set(PROVIDER_A, before);
+		ctx.world.store.failAudit = true;
+		expect(await call(ctx, { action: "refresh_discovery", tenant_id: TENANT_A }, "owner-a")).toEqual({ status: 503, json: { error: "sso_unavailable" } });
+		expect(ctx.world.store.providers.get(PROVIDER_A)).toEqual(before);
+		expect(ctx.world.jwksInvalidated).toEqual([]);
+
+		ctx.world.store.failAudit = false;
+		const fetchJson = ctx.world.deps.fetchJson;
+		ctx.world.deps.fetchJson = async (url, init) => {
+			ctx.world.store.members.delete(`${TENANT_A}:${OWNER_A}`);
+			return fetchJson(url, init);
+		};
+		const handler = createOidcHandler(ctx.world.deps);
+		const response = await handler(post({ action: "refresh_discovery", tenant_id: TENANT_A }, "owner-a"));
+		expect(response.status).toBe(403);
+		expect(ctx.world.store.providers.get(PROVIDER_A)).toEqual(before);
+		expect(ctx.world.store.auditActions()).not.toContain("identity.oidc.discovery_refreshed");
+	});
+
+	it("a refresh racing a disable writes only discovery: the provider stays disabled", async () => {
+		const before = providerRow({ discovery: { ...discoveryFor(ctx.idpA), jwks_uri: "https://login.microsoftonline.com/old/keys" } });
+		ctx.world.store.providers.set(PROVIDER_A, before);
+		expect(before.enabled).toBe(true);
+		const save = vi.spyOn(ctx.world.store, "saveProvider");
+		const fetchJson = ctx.world.deps.fetchJson;
+		ctx.world.deps.fetchJson = async (url, init) => {
+			// Another owner disables the provider (and renames it) while discovery is in flight.
+			const current = ctx.world.store.providers.get(PROVIDER_A);
+			if (current) ctx.world.store.providers.set(PROVIDER_A, { ...current, enabled: false, display_name: "Disabled meanwhile" });
+			return fetchJson(url, init);
+		};
+		const handler = createOidcHandler(ctx.world.deps);
+		const response = await handler(post({ action: "refresh_discovery", tenant_id: TENANT_A }, "owner-a"));
+		expect(response.status).toBe(200);
+		const after = ctx.world.store.providers.get(PROVIDER_A);
+		expect(after).toMatchObject({ enabled: false, display_name: "Disabled meanwhile", discovery: discoveryFor(ctx.idpA) });
+		expect(save).not.toHaveBeenCalled();
+		expect(ctx.world.store.audits.at(-1)).toMatchObject({
+			actor_user_id: OWNER_A,
+			tenant_id: TENANT_A,
+			action: "identity.oidc.discovery_refreshed",
+			detail: { provider_id: PROVIDER_A, jwks_changed: true },
+		});
+		expect(ctx.world.jwksInvalidated).toContain("https://login.microsoftonline.com/old/keys");
+	});
+
+	it("refuses a refresh whose issuer or algorithms changed while discovery was in flight", async () => {
+		const before = providerRow({ discovery: discoveryFor(ctx.idpA) });
+		for (const change of [{ issuer: "https://login.microsoftonline.com/replacement/v2.0" }, { allowed_algs: ["ES256" as const] }]) {
+			ctx.world.store.providers.set(PROVIDER_A, before);
+			const audits = ctx.world.store.audits.length;
+			const fetchJson = ctx.world.deps.fetchJson;
+			ctx.world.deps.fetchJson = async (url, init) => {
+				ctx.world.store.providers.set(PROVIDER_A, { ...before, ...change, discovery: null, enabled: false });
+				return fetchJson(url, init);
+			};
+			const handler = createOidcHandler(ctx.world.deps);
+			const response = await handler(post({ action: "refresh_discovery", tenant_id: TENANT_A }, "owner-a"));
+			ctx.world.deps.fetchJson = fetchJson;
+			expect(response.status, JSON.stringify(change)).toBe(409);
+			expect(await response.json()).toEqual({ error: "provider_changed" });
+			expect(ctx.world.store.providers.get(PROVIDER_A)).toEqual({ ...before, ...change, discovery: null, enabled: false });
+			expect(ctx.world.store.audits).toHaveLength(audits);
+			expect(ctx.world.jwksInvalidated).toEqual([]);
+		}
+	});
+
+	it("maps the database guards to stable conflicts", async () => {
+		for (const result of ["provider_locked_by_enforcement", "provider_identity_namespace_locked"] as const) {
+			vi.spyOn(ctx.world.store, "saveProvider").mockResolvedValueOnce(result);
+			expect(await call(ctx, { action: "put_provider", tenant_id: TENANT_A, ...provider }, "owner-a")).toEqual({ status: 409, json: { error: result } });
+		}
+	});
+});
+
 describe("enforce-SSO and break-glass", () => {
 	const request = { action: "set_enforcement", tenant_id: TENANT_A, provider_id: PROVIDER_A, reason: "Cut over to Entra SSO", change_ref: "CHG-1042" };
 
@@ -904,7 +1129,7 @@ describe("plan gating (entra_sso)", () => {
 	function spyOnConfig() {
 		const store = ctx.world.store;
 		const methods = [
-			"findProviderByTenant", "listDomains", "verifiedDomains", "policy", "saveProvider", "addDomain",
+			"findProviderByTenant", "listDomains", "verifiedDomains", "policy", "saveProvider", "refreshProviderDiscovery", "addDomain",
 			"markDomainVerified", "removeDomain", "setEnforcement", "audit",
 		] as const;
 		const spies = methods.map((method) => vi.spyOn(store, method));
@@ -984,5 +1209,175 @@ describe("dispatch", () => {
 		};
 		const result = await call(ctx, { action: "start", provider_id: PROVIDER_A, binding_challenge: await sha256Text("b") });
 		expect(result).toEqual({ status: 503, json: { error: "sso_unavailable" } });
+	});
+});
+
+describe("SupabaseOidcStore.saveProvider", () => {
+	function fakeDb(error: { message: string } | null) {
+		const rpc = vi.fn(async (_name: string, _args: Record<string, unknown>) => ({ data: error ? null : { provider_id: PROVIDER_A }, error }));
+		const from = vi.fn(() => {
+			throw new Error("provider writes must not use table access");
+		});
+		return { db: { rpc, from }, rpc, from };
+	}
+
+	it("writes provider and audit through the single transactional RPC", async () => {
+		const { SupabaseOidcStore } = await import("../oidc-sso/store.ts");
+		const fake = fakeDb(null);
+		const store = new SupabaseOidcStore(fake.db as never);
+		const row = providerRow({ discovery: null, enabled: false });
+		const result = await store.saveProvider(row, OWNER_A, { action: "identity.oidc.provider_updated", detail: { request_id: "r" } });
+		expect(result).toBe("saved");
+		expect(fake.from).not.toHaveBeenCalled();
+		expect(fake.rpc).toHaveBeenCalledTimes(1);
+		const [name, args] = fake.rpc.mock.calls[0];
+		expect(name).toBe("oidc_save_provider");
+		expect(args).toMatchObject({
+			p_actor_user_id: OWNER_A,
+			p_provider: { id: PROVIDER_A, tenant_id: TENANT_A, issuer: ISSUER_A, client_secret_ref: "TENANT_A", enabled: false },
+			p_audit_action: "identity.oidc.provider_updated",
+			p_audit_detail: { request_id: "r" },
+		});
+	});
+
+	it.each([
+		["oidc_provider_forbidden", "owner_required"],
+		["oidc_tenant_inactive", "owner_required"],
+		["oidc_provider_locked_by_enforcement", "provider_locked_by_enforcement"],
+		["oidc_provider_identity_namespace_locked", "provider_identity_namespace_locked"],
+		["insert into admin_audit_logs failed", "error"],
+	])("maps %s to %s", async (message, expected) => {
+		const { SupabaseOidcStore } = await import("../oidc-sso/store.ts");
+		const store = new SupabaseOidcStore(fakeDb({ message }).db as never);
+		expect(await store.saveProvider(providerRow(), OWNER_A, { action: "identity.oidc.discovery_refreshed", detail: {} })).toBe(expected);
+	});
+});
+
+describe("SupabaseOidcStore.refreshProviderDiscovery", () => {
+	function fakeDb(error: { message: string } | null) {
+		const rpc = vi.fn(async (_name: string, _args: Record<string, unknown>) => ({ data: error ? null : { provider_id: PROVIDER_A }, error }));
+		const from = vi.fn(() => {
+			throw new Error("provider writes must not use table access");
+		});
+		return { db: { rpc, from }, rpc, from };
+	}
+
+	it("sends only the discovery plus the read issuer/algorithms, never the full row", async () => {
+		const { SupabaseOidcStore } = await import("../oidc-sso/store.ts");
+		const fake = fakeDb(null);
+		const store = new SupabaseOidcStore(fake.db as never);
+		const row = providerRow();
+		const discovery = { issuer: ISSUER_A, authorization_endpoint: "https://a/authorize", token_endpoint: "https://a/token", jwks_uri: "https://a/keys" };
+		expect(await store.refreshProviderDiscovery(row, discovery, OWNER_A, { jwks_changed: false })).toBe("saved");
+		expect(fake.from).not.toHaveBeenCalled();
+		const [name, args] = fake.rpc.mock.calls[0];
+		expect(name).toBe("oidc_update_provider_discovery");
+		expect(args).toEqual({
+			p_actor_user_id: OWNER_A,
+			p_tenant_id: TENANT_A,
+			p_provider_id: PROVIDER_A,
+			p_expected_issuer: row.issuer,
+			p_expected_allowed_algs: row.allowed_algs,
+			p_discovery: discovery,
+			p_audit_detail: { jwks_changed: false },
+		});
+		expect(JSON.stringify(args)).not.toMatch(/"enabled"|client_secret_ref|client_id/);
+	});
+
+	it.each([
+		["oidc_provider_forbidden", "owner_required"],
+		["oidc_tenant_inactive", "owner_required"],
+		["oidc_provider_changed", "provider_changed"],
+		["insert into admin_audit_logs failed", "error"],
+	])("maps %s to %s", async (message, expected) => {
+		const { SupabaseOidcStore } = await import("../oidc-sso/store.ts");
+		const store = new SupabaseOidcStore(fakeDb({ message }).db as never);
+		const discovery = { issuer: ISSUER_A, authorization_endpoint: "https://a/authorize", token_endpoint: "https://a/token", jwks_uri: "https://a/keys" };
+		expect(await store.refreshProviderDiscovery(providerRow(), discovery, OWNER_A, {})).toBe(expected);
+	});
+});
+
+describe("oidc_update_provider_discovery SQL contract (20261011000300)", () => {
+	const sql = readFileSync(
+		join(dirname(fileURLToPath(import.meta.url)), "..", "..", "migrations", "20261011000300_oidc_provider_discovery_refresh.sql"),
+		"utf8",
+	);
+	const body = sql.split("create or replace function public.oidc_update_provider_discovery(")[1]?.split("$$;")[0] ?? "";
+	const signature = "public.oidc_update_provider_discovery(uuid, uuid, uuid, text, text[], jsonb, jsonb)";
+
+	it("is a pinned-search-path security definer granted to service_role only", () => {
+		expect(body).toContain("security definer");
+		expect(body).toContain("set search_path = pg_catalog, public, pg_temp");
+		expect(sql).toContain(`revoke all on function ${signature}\n  from public, anon, authenticated;`);
+		expect(sql).toContain(`grant execute on function ${signature}\n  to service_role;`);
+		expect(sql).not.toMatch(/grant execute on function public\.oidc_update_provider_discovery[^;]*\b(anon|authenticated)\b/);
+	});
+
+	it("locks, re-checks the owner, locks the row and refuses a changed provider before writing", () => {
+		const lock = body.indexOf("pg_advisory_xact_lock(hashtextextended(p_tenant_id::text, 2606))");
+		const share = body.indexOf("for share of m, t");
+		const row = body.indexOf("from public.oidc_providers where id = p_provider_id for update");
+		const changed = body.indexOf("v_row.issuer is distinct from p_expected_issuer");
+		const update = body.indexOf("update public.oidc_providers");
+		const audit = body.indexOf("insert into public.admin_audit_logs");
+		expect(lock).toBeGreaterThan(-1);
+		expect(lock).toBeLessThan(share);
+		expect(share).toBeLessThan(row);
+		expect(row).toBeLessThan(changed);
+		expect(changed).toBeLessThan(update);
+		expect(update).toBeLessThan(audit);
+		expect(body).toContain("m.role = 'owner'");
+		expect(body).toContain("(m.expires_at is null or m.expires_at > clock_timestamp())");
+		expect(body).toContain("v_row.allowed_algs is distinct from p_expected_allowed_algs");
+		expect(body).toContain("raise exception 'oidc_provider_changed' using errcode = '55000'");
+		expect(body).toContain("'identity.oidc.discovery_refreshed'");
+	});
+
+	it("writes only the discovery columns", () => {
+		const update = body.split("update public.oidc_providers")[1]?.split(";")[0] ?? "";
+		expect(update).toContain("set discovery = p_discovery,");
+		expect(update).toContain("discovery_fetched_at = now()");
+		expect(update).not.toMatch(/\b(enabled|issuer|client_id|client_secret_ref|token_auth_method|allowed_algs|display_name)\s*=/);
+		expect(body).not.toContain("insert into public.oidc_providers");
+		expect(sql).not.toMatch(/disable trigger|session_replication_role/i);
+	});
+});
+
+describe("oidc_save_provider SQL contract (20261010000120)", () => {
+	const sql = readFileSync(
+		join(dirname(fileURLToPath(import.meta.url)), "..", "..", "migrations", "20261010000120_oidc_provider_atomic_save.sql"),
+		"utf8",
+	);
+	const body = sql.split("create or replace function public.oidc_save_provider(")[1]?.split("$$;")[0] ?? "";
+
+	it("is a pinned-search-path security definer granted to service_role only", () => {
+		expect(body).toContain("security definer");
+		expect(body).toContain("set search_path = pg_catalog, public, pg_temp");
+		expect(sql).toContain("revoke all on function public.oidc_save_provider(uuid, jsonb, text, jsonb)\n  from public, anon, authenticated;");
+		expect(sql).toContain("grant execute on function public.oidc_save_provider(uuid, jsonb, text, jsonb) to service_role;");
+		expect(sql).not.toMatch(/grant execute on function public\.oidc_save_provider[^;]*\b(anon|authenticated)\b/);
+	});
+
+	it("takes the tenant lock, then re-checks a live owner under row locks, before writing", () => {
+		const lock = body.indexOf("pg_advisory_xact_lock(hashtextextended(v_row.tenant_id::text, 2606))");
+		const owner = body.indexOf("m.role = 'owner'");
+		const share = body.indexOf("for share of m, t");
+		const upsert = body.indexOf("insert into public.oidc_providers");
+		const audit = body.indexOf("insert into public.admin_audit_logs");
+		expect(lock).toBeGreaterThan(-1);
+		expect(lock).toBeLessThan(owner);
+		expect(owner).toBeLessThan(share);
+		expect(share).toBeLessThan(upsert);
+		expect(upsert).toBeLessThan(audit);
+		expect(body).toContain("(m.expires_at is null or m.expires_at > clock_timestamp())");
+		expect(body).toContain("t.status = 'active'");
+		expect(body).toContain("raise exception 'oidc_provider_forbidden' using errcode = '42501'");
+	});
+
+	it("never moves a provider between tenants and allows only the two provider audit actions", () => {
+		expect(body).toContain("where p.tenant_id = excluded.tenant_id");
+		expect(body).toContain("p_audit_action not in ('identity.oidc.provider_updated', 'identity.oidc.discovery_refreshed')");
+		// Update path keeps the existing guard trigger in force (no trigger disabling).
+		expect(sql).not.toMatch(/disable trigger|session_replication_role/i);
 	});
 });

@@ -81,7 +81,7 @@ async function waitForAdvisoryWait(application) {
 
 test("immutable settlement retention completes offboarding honestly on real PostgreSQL", async t => {
   const started = await command(["run", "--detach", "--rm", "--pull", "never", "--network", "none", "--name", container,
-    "-e", "POSTGRES_PASSWORD=billing-offboarding-fixture", "supabase/postgres:17.6.1.136"]);
+    "-e", "POSTGRES_PASSWORD=billing-offboarding-fixture", "supabase/postgres:17.11.0.004"]);
   assert.equal(started.code, 0, started.stderr);
   try {
     let ready = false;

@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "record": "docs/production-readiness/postgres-upgrade-restore-drill-2026-10-11.md",
+  "label": "local engineering drill; same host; not production, offsite or customer RPO/RTO acceptance",
+  "source_commit": "315ab50fadb45139cfa98e57d197b96091886836",
+  "images": {
+    "source": { "ref": "supabase/postgres:17.6.1.136", "index_digest": "sha256:f371b5f3f2ac0a05703f33d6e6134515fb2498cab708fb948a0aeb7481467c00", "server_version": "17.6" },
+    "candidate": { "ref": "supabase/postgres:17.11.0.004", "index_digest": "sha256:06ddc7962e11ab0f4f0334fd05671e97c30ea202f6e6a7113800bd3d6e416108", "linux_amd64_manifest": "sha256:4b438c22395a9a2bd19ee0522742cc9a1ff91db4732ff0c1b08fc07e9c767c22", "server_version": "17.11", "hub_tag_api_digest_match": true },
+    "catalog_version": "202406281",
+    "pg_control_version": 1700,
+    "image_init_migration_delta": ["20260730000000_revoke_trigger_on_cron_tables_from_postgres.sql"]
+  },
+  "dataset": {
+    "canonical_migrations": 181,
+    "tables_compared": 157,
+    "rows_at_backup_point": 107139,
+    "pg_database_size_bytes_all_databases": 109471272,
+    "pgdata_bytes_on_disk": 264863047,
+    "storage_objects": 60,
+    "storage_bytes": 7464532,
+    "backup_ciphertext_bytes": { "database": 46058851, "storage": 7187158, "installation": 1527344 }
+  },
+  "backup": {
+    "tool": "deployment-backup.mjs backup --maintenance (as shipped in the prepared kit)",
+    "command_wall_seconds": 22.857,
+    "manifest_started_at": "2026-10-11T03:05:04.875Z",
+    "manifest_completed_at": "2026-10-11T03:05:15.053Z",
+    "backup_json_sha256": "8583c9f17a98f3e23c81bd2fdfb653b45a221bf3451d3436f6316cd0a333e4fd"
+  },
+  "rpo": {
+    "last_captured_write_at": "2026-10-11T03:04:57.143Z",
+    "last_source_write_at": "2026-10-11T03:05:48.265Z",
+    "lost_rows_after_backup": 10,
+    "data_loss_window_seconds": 51.1,
+    "captured_rows_exact_match": "drill_sentinel id<=5001: 5001 rows md5 55a2d33063cb12c757ac7a0715ee27cd on source and restore"
+  },
+  "rto_seconds": { "run-1711": 57.212, "run-1711b": 50.657, "run-1706-control": 70.357, "run-1706b": 51.565, "in_place_swap_17_6_to_17_11_without_verification": 25.6 },
+  "results": {
+    "table_hashes_identical_to_source": true,
+    "deployment_migrate_reapplied": 0,
+    "verify_deployment_recovery_17_6_vs_17_11": "18/18 passed",
+    "existing_db_suites": { "17.11_restored": "18/18 pass", "17.6_source": "18/18 pass" },
+    "storage_inventory_identical": true,
+    "storage_api_reads": "60/60, identical aggregate digest",
+    "extensions_updated": { "pg_net": "0.20.3 -> 0.20.4" },
+    "vault_secret_after_restore": "fails on 17.6 and 17.11 restores: db-config volume (pgsodium_root.key) is not in the cold backup; decrypts after restoring the key",
+    "rollback_image_swap_after_extension_update": "starts, but pg_net catalog 0.20.4 is ahead of the 0.20.3 library; unsupported, restore the pre-upgrade backup instead",
+    "postgres_gates_with_17_11_pin": "all PostgreSQL suites pass on 17.11.0.004; verify:offboarding 64/65 (only failure: IPv6 listen EAFNOSUPPORT ::1, host has no IPv6, non-database); verify:retention 53/53 and tenant-rate-limit 1/1 run separately after the set -e stop"
+  }
+}

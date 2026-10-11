@@ -55,7 +55,7 @@ TypeScript monorepo. Connector packages and their shared core:
 - `packages/extension/` — `aidr-cursor`: Cursor and VS Code extensions
 - `packages/cli/` — `@singularityrd/aidr-cli`: local setup/status/config CLI. Ships its own copy of the rules via `scripts/sync-assets.mjs` (core publishes only `dist/`).
 - `packages/sdk/` — `@singularityrd/aidr-sdk`: security client and framework-neutral generic middleware
-- `packages/dashboard/` — Next.js control-plane dashboard (Vite/React app plus its own `supabase/functions`)
+- `packages/dashboard/` — control-plane dashboard (Vite/React app; its Edge Functions live in the root `supabase/functions`)
 - `packages/codex/` — `@singularityrd/aidr-codex`: Codex CLI connector, implemented as a native
   `PreToolUse` hook (verified against `codex-cli 0.141.0`). Codex fails **open** on a crashing
   or untrusted hook, so this connector translates `ask` into an explicit `deny` and turns
@@ -76,7 +76,7 @@ TypeScript monorepo. Connector packages and their shared core:
   gateway (`/platform`). Tests run with `node --test` via `pnpm test:privacy`, not vitest.
 - `services/aig-bridge/` — Python/FastAPI bridge for the SingularityRD-owned AI Infra Guard source, tracked directly under `vendor/ai-infra-guard/` (not a submodule)
 - `supabase/` — canonical migrations + Edge Functions (all Edge Functions, including the dashboard's, live here)
-- `threats/` — YAML threat definitions (data, not code); 494 rules across 29 files (`grep -h '^- id:' threats/*.yaml | wc -l`)
+- `threats/` — YAML threat definitions (data, not code); 507 rules across 29 files (`grep -h '^- id:' threats/*.yaml | wc -l`)
 - `allowlists/` — Trusted domain allowlists
 - `hooks/` — `hooks.json` registering hooks with Claude Code
 - `skills/` — `security-awareness/SKILL.md`, synced into connector `resources/`

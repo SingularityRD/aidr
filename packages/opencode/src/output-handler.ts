@@ -113,25 +113,33 @@ function quarantine(output: OpenCodeAfterToolOutput, reason: string): void {
 		throw new TypeError("Unsupported OpenCode output wrapper");
 	}
 	const extensible = Object.isExtensible(output);
-	for (const key of ["title", "output", "metadata"]) {
+	// A mixed envelope (wrapper fields plus raw MCP `content`) keeps a `content`
+	// carrying the notice, so a host that builds model input from MCP `content`
+	// gets the notice too, never the original blocks or a missing result.
+	const mixed = descriptors.content !== undefined;
+	const kept = mixed
+		? ["title", "output", "metadata", "content", "isError"]
+		: ["title", "output", "metadata"];
+	for (const key of kept) {
 		if (!canReplaceProperty(key, descriptors[key], extensible)) {
 			throw new TypeError("OpenCode output wrapper cannot be safely replaced");
 		}
 	}
 	for (const [key, descriptor] of Object.entries(descriptors)) {
-		if (!["title", "output", "metadata"].includes(key) && !descriptor.configurable) {
+		if (!kept.includes(key) && !descriptor.configurable) {
 			throw new TypeError("OpenCode output wrapper cannot be safely replaced");
 		}
 	}
+	const notice = `[Singularity AIDR] ${reason} The tool already completed. AIDR replaced the hook output object; whether the host honors that mutation has not been verified. Treat the original as potentially visible.`;
 	replaceProperty(output, "title", QUARANTINE_TITLE);
-	replaceProperty(
-		output,
-		"output",
-		`[Singularity AIDR] ${reason} The tool already completed. AIDR replaced the hook output object; whether the host honors that mutation has not been verified. Treat the original as potentially visible.`,
-	);
+	replaceProperty(output, "output", notice);
 	replaceProperty(output, "metadata", {});
+	if (mixed) {
+		replaceProperty(output, "content", [{ type: "text", text: notice }]);
+		replaceProperty(output, "isError", true);
+	}
 	for (const key of Object.keys(descriptors)) {
-		if (!["title", "output", "metadata"].includes(key) && !Reflect.deleteProperty(output, key)) {
+		if (!kept.includes(key) && !Reflect.deleteProperty(output, key)) {
 			throw new TypeError("OpenCode output wrapper cannot be safely replaced");
 		}
 	}
@@ -154,9 +162,20 @@ function hasOwnProperty(output: OpenCodeAfterToolOutput, key: string): boolean {
 	}
 }
 
+/**
+ * Every own field of a wrapper result other than `output`: `title`, `metadata`
+ * and anything else the host put next to them. A mixed envelope (a wrapper
+ * `output` plus raw MCP `content` / `structuredContent` / `_meta`) is possible,
+ * and OpenCode may build model input from either side, so every field is
+ * inspected, never only the declared wrapper fields.
+ */
+function wrapperSidecarKeys(output: OpenCodeAfterToolOutput): string[] {
+	return Object.getOwnPropertyNames(output).filter((key) => key !== "output");
+}
+
 function hasUninspectableSidecar(output: OpenCodeAfterToolOutput): boolean {
 	try {
-		return ["title", "metadata"].some((key) => {
+		return wrapperSidecarKeys(output).some((key) => {
 			const descriptor = Object.getOwnPropertyDescriptor(output, key);
 			return descriptor !== undefined && !("value" in descriptor);
 		});
@@ -721,7 +740,7 @@ export function createOutputHandlers(logger: StructuredLogger) {
 			const sidecarValue = rawMcpResult
 				? undefined
 				: Object.fromEntries(
-						(["title", "metadata"] as const)
+						wrapperSidecarKeys(output)
 							.map((key) => [key, ownDataValue(output, key)] as const)
 							.filter((entry) => entry[1] !== undefined),
 					);

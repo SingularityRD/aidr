@@ -15,7 +15,7 @@ Windows Registry Editor Version 5.00
 "enabledEntities"="[\"PERSON\",\"EMAIL\",\"PHONE\",\"TC_KIMLIK\",\"IBAN\",\"CREDIT_CARD\",\"ADDRESS\",\"US_SSN\",\"DATE_OF_BIRTH\",\"PASSPORT\",\"NATIONAL_ID\",\"TAX_ID\",\"BANK_ACCOUNT\",\"IP_ADDRESS\",\"MAC_ADDRESS\",\"SECRET\",\"PRIVATE_KEY\",\"INTERNAL\",\"CLASSIFIED\",\"HEALTH_ID\",\"LICENSE_PLATE\"]"
 "neverRestore"="[\"SECRET\",\"PRIVATE_KEY\"]"
 "literals"="[{\"value\":\"Project Nightingale\",\"type\":\"INTERNAL\"},{\"value\":\"ACME-CONFIDENTIAL\",\"type\":\"CLASSIFIED\"}]"
-"exactData"="[{\"datasetId\":\"crm-customers-example\",\"keyB64\":\"o6J5dv/ZMVjrraODjOrMuCsIQzqswQczrGPSl/aB6bU=\",\"fingerprints\":[\"7284cb51429e3ff4e4d9b0cc1cee1276631d01aacc98cd83b3f39847a747fa36\",\"dace37df0e61d972ce461b5887cc8ef241df0749dd737adc7de1b118305d89b2\",\"fd5d74d29c57fd1c18a6d23aa82f83ea8211081ed570ae9ac60b90f7e4b71180\"],\"type\":\"PERSON\"}]"
+"exactData"="[{\"datasetId\":\"crm-customers-example\",\"keyB64\":\"REPLACE_WITH_DATASET_KEY_FROM_FINGERPRINT_DATASET\",\"fingerprints\":[\"REPLACE_WITH_FINGERPRINTS_FROM_FINGERPRINT_DATASET\"],\"type\":\"PERSON\"}]"
 "detectSignals"=dword:00000001
 "signalAction"="warn"
 "blockedSites"="[\"deepseek\"]"
@@ -29,6 +29,7 @@ Windows Registry Editor Version 5.00
 "maxFileBytes"=dword:00500000
 "restoreResponses"=dword:00000001
 "useNativeHost"=dword:00000000
+"requireNativeNer"=dword:00000000
 "telemetry"="{\"controlPlaneUrl\":\"https://aidr.example.com\",\"apiKey\":\"REPLACE_WITH_TENANT_API_KEY\"}"
 "language"="auto"
 "allowUserOverrides"=dword:00000000
@@ -43,7 +44,7 @@ Windows Registry Editor Version 5.00
 "enabledEntities"="[\"PERSON\",\"EMAIL\",\"PHONE\",\"TC_KIMLIK\",\"IBAN\",\"CREDIT_CARD\",\"ADDRESS\",\"US_SSN\",\"DATE_OF_BIRTH\",\"PASSPORT\",\"NATIONAL_ID\",\"TAX_ID\",\"BANK_ACCOUNT\",\"IP_ADDRESS\",\"MAC_ADDRESS\",\"SECRET\",\"PRIVATE_KEY\",\"INTERNAL\",\"CLASSIFIED\",\"HEALTH_ID\",\"LICENSE_PLATE\"]"
 "neverRestore"="[\"SECRET\",\"PRIVATE_KEY\"]"
 "literals"="[{\"value\":\"Project Nightingale\",\"type\":\"INTERNAL\"},{\"value\":\"ACME-CONFIDENTIAL\",\"type\":\"CLASSIFIED\"}]"
-"exactData"="[{\"datasetId\":\"crm-customers-example\",\"keyB64\":\"o6J5dv/ZMVjrraODjOrMuCsIQzqswQczrGPSl/aB6bU=\",\"fingerprints\":[\"7284cb51429e3ff4e4d9b0cc1cee1276631d01aacc98cd83b3f39847a747fa36\",\"dace37df0e61d972ce461b5887cc8ef241df0749dd737adc7de1b118305d89b2\",\"fd5d74d29c57fd1c18a6d23aa82f83ea8211081ed570ae9ac60b90f7e4b71180\"],\"type\":\"PERSON\"}]"
+"exactData"="[{\"datasetId\":\"crm-customers-example\",\"keyB64\":\"REPLACE_WITH_DATASET_KEY_FROM_FINGERPRINT_DATASET\",\"fingerprints\":[\"REPLACE_WITH_FINGERPRINTS_FROM_FINGERPRINT_DATASET\"],\"type\":\"PERSON\"}]"
 "detectSignals"=dword:00000001
 "signalAction"="warn"
 "blockedSites"="[\"deepseek\"]"
@@ -57,6 +58,7 @@ Windows Registry Editor Version 5.00
 "maxFileBytes"=dword:00500000
 "restoreResponses"=dword:00000001
 "useNativeHost"=dword:00000000
+"requireNativeNer"=dword:00000000
 "telemetry"="{\"controlPlaneUrl\":\"https://aidr.example.com\",\"apiKey\":\"REPLACE_WITH_TENANT_API_KEY\"}"
 "language"="auto"
 "allowUserOverrides"=dword:00000000

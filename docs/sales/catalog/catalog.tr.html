@@ -320,7 +320,7 @@ h2.title.mt4 { margin-top: 7mm; }
 	</div>
 	<h3 class="mt3">Ürün hatları</h3>
 	<div class="g4 mt1">
-		<div class="block"><div class="head"><svg class="i"><use href="#i-terminal"/></svg><h4>Kodlama ajanları için AIDR</h4></div><p class="small mb0"><span data-fact="connectors">6</span> bağlayıcı, <span data-fact="threat-rules">494</span> kural, MCP Gateway, SDK</p></div>
+		<div class="block"><div class="head"><svg class="i"><use href="#i-terminal"/></svg><h4>Kodlama ajanları için AIDR</h4></div><p class="small mb0"><span data-fact="connectors">6</span> bağlayıcı, <span data-fact="threat-rules">507</span> kural, MCP Gateway, SDK</p></div>
 		<div class="block"><div class="head"><svg class="i"><use href="#i-browser"/></svg><h4>AIDR Browser Guard</h4></div><p class="small mb0"><span data-fact="bg-sites">8</span> yapay zekâ sitesi, <span data-fact="bg-entities">23</span> veri türü, geri alınabilir maskeleme</p></div>
 		<div class="block"><div class="head"><svg class="i"><use href="#i-finger"/></svg><h4>AIDR Privacy motoru</h4></div><p class="small mb0">Türkçe/İngilizce tespit; tarayıcıda, ajanlarda ve komut satırında aynı kurallar</p></div>
 		<div class="block"><div class="head"><svg class="i"><use href="#i-radar"/></svg><h4>Yapay Zekâ Güvenlik Duruşu</h4></div><p class="small mb0"><span data-fact="ai-components">146</span> bileşen, <span data-fact="cve-rules">2.000+</span> CVE kuralı, <span data-fact="mcp-categories">14</span> MCP risk kategorisi</p></div>
@@ -433,7 +433,7 @@ h2.title.mt4 { margin-top: 7mm; }
 		<li id="f-custom-terms" data-feature="custom-terms"><span class="no">17</span><span><b>Kuruma özel terimler</b><span class="d"> — proje kod adları, iç sunucu adları gibi sözcükler maskelenir.</span></span></li>
 		<li id="f-exact-data-match" data-feature="exact-data-match"><span class="no">18</span><span><b>Tam veri eşleştirme</b><span class="d"> — kendi müşteri kayıtlarınız yalnızca parmak iziyle tanınır.</span></span></li>
 		<li id="f-injection-coaching" data-feature="injection-coaching"><span class="no">19</span><span><b>Prompt injection uyarısı</b><span class="d"> — riskli metin gönderilmeden kullanıcıya Türkçe ya da İngilizce açıklanır.</span></span></li>
-		<li id="f-native-ner" data-feature="native-ner"><span class="no">20</span><span><b>İsteğe bağlı yerel NER</b><span class="d"> — akan metindeki ad ve adresler cihazdan çıkmadan tanınır.</span></span></li>
+		<li id="f-native-ner" data-feature="native-ner"><span class="no">20</span><span><b>Yerel NER bağlantısı</b><span class="d"> — ilk sürüm kapsamı dışında; model içermez, satılmaz.</span></span></li>
 		<li id="f-managed-policy" data-feature="managed-policy"><span class="no">21</span><span><b>Kurumsal politika</b><span class="d"> — GPO, Intune, Jamf ve Firefox ile dağıtım; zayıflatan ayarlar kilitli.</span></span></li>
 		<li id="f-site-blocking" data-feature="site-blocking"><span class="no">22</span><span><b>Site engelleme ve duraklatma</b><span class="d"> — onaylanmayan siteler açılmaz; duraklatma süreli ve sayılır.</span></span></li>
 		<li id="f-custom-ai-sites" data-feature="custom-ai-sites"><span class="no">23</span><span><b>Kurum içi yapay zekâ siteleri</b><span class="d"> — kendi iç yapay zekâ portallarınız da aynı maskelemeyle korunur.</span></span></li>
@@ -445,7 +445,7 @@ h2.title.mt4 { margin-top: 7mm; }
 		<li id="f-dlp-policies" data-feature="dlp-policies"><span class="no">26</span><span><b>DLP politikaları</b><span class="d"> — <span data-fact="dlp-detectors">18</span> TR/EN dedektör, anahtar sözcük, düzenli ifade; imzalı politika.</span></span></li>
 		<li id="f-dlp-redaction" data-feature="dlp-redaction"><span class="no">27</span><span><b>DLP girdi maskeleme</b><span class="d"> — Claude Code ve OpenCode'da değer maskelenir, araç yine çalışır.</span></span></li>
 		<li id="f-privacy-scan-cli" data-feature="privacy-scan-cli"><span class="no">28</span><span><b><code>aidr privacy scan</code></b><span class="d"> — dosya paylaşılmadan önce yerelde taranır; değer yazdırılmaz.</span></span></li>
-		<li id="f-screenshot-ocr" data-feature="screenshot-ocr"><span class="no">29</span><span><b>Ekran görüntüsü maskeleme</b><span class="d"> — yerel OCR ile görüntüdeki kişisel veri kapatılır (isteğe bağlı).</span></span></li>
+		<li id="f-screenshot-ocr" data-feature="screenshot-ocr"><span class="no">29</span><span><b>Ekran görüntüsü maskeleme</b><span class="d"> — yerel OCR ilk sürüm kapsamı dışında; model içermez, satılmaz.</span></span></li>
 		<li id="f-privacy-gateway" data-feature="privacy-gateway"><span class="no">30</span><span><b>Kurumsal gizlilik ağ geçidi</b><span class="d"> — yapay zekâ trafiğini ağ çıkışında denetleyen sunucu bileşeni.</span></span></li>
 	</ol>
 	<p class="gain inline"><span class="k">Bu aşamada ne kazanırsınız</span><span>Kişisel veri ve anahtarlar içeride kalır; ekipler yapay zekâyı kullanmaya devam eder.</span></p>
@@ -459,7 +459,7 @@ h2.title.mt4 { margin-top: 7mm; }
 		<li id="f-connectors" data-feature="connectors"><span class="no">31</span><span><b>Altı bağlayıcı</b><span class="d"> — Claude Code, Cursor, VS Code, OpenClaw, OpenCode, Codex CLI; tek karar motoru.</span></span></li>
 		<li id="f-tool-call-inspection" data-feature="tool-call-inspection"><span class="no">32</span><span><b>Araç çağrısı denetimi</b><span class="d"> — kabuk, dosya, web ve MCP çağrıları çalışmadan önce değerlendirilir.</span></span></li>
 		<li id="f-verdicts" data-feature="verdicts"><span class="no">33</span><span><b>allow / ask / deny</b><span class="d"> — her kararın kuralı ve gerekçesi görünür; sıkı olan kazanır.</span></span></li>
-		<li id="f-threat-rules" data-feature="threat-rules"><span class="no">34</span><span><b><span data-fact="threat-rules">494</span> tespit kuralı</b><span class="d"> — Linux, macOS ve Windows için okunabilir YAML; kendi kurallarınız da.</span></span></li>
+		<li id="f-threat-rules" data-feature="threat-rules"><span class="no">34</span><span><b><span data-fact="threat-rules">507</span> tespit kuralı</b><span class="d"> — Linux, macOS ve Windows için okunabilir YAML; kendi kurallarınız da.</span></span></li>
 		<li id="f-sensitivity" data-feature="sensitivity"><span class="no">35</span><span><b>Duyarlılık ön ayarları</b><span class="d"> — paranoid, balanced, relaxed; ekibe uygun eşik.</span></span></li>
 		<li id="f-encoded-commands" data-feature="encoded-commands"><span class="no">36</span><span><b>Kodlanmış ve zincirli komutlar</b><span class="d"> — base64 ya da değişkenlerle gizlenmiş komutlar çözümlenir.</span></span></li>
 		<li id="f-package-checks" data-feature="package-checks"><span class="no">37</span><span><b>Paket tedarik zinciri</b><span class="d"> — açıldığında var olmayan npm/PyPI paketi durur, çok yeni ve az kullanılan onaya kalır.</span></span></li>

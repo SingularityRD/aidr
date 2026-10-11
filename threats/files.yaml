@@ -85,7 +85,7 @@
   severity: high
   confidence: 0.85
   action: require_approval
-  pattern: "((^|[\\/\\\\])\\.env(\\.local|\\.production|\\.prod|\\.staging|\\.stage|\\.development|\\.dev|\\.test)?|\\.aws/credentials|\\.netrc|\\.pgpass)$"
+  pattern: "((^|[\\/\\\\])\\.env(\\.local|\\.production|\\.prod|\\.staging|\\.stage|\\.development|\\.dev|\\.test)?|\\.aws/credentials|\\.netrc|\\.pgpass|(^|[\\/\\\\])\\.git-credentials|/etc/shadow|/etc/gshadow)$"
   match_on: file_path
   title: "Access credential or environment file"
   expires_at: null

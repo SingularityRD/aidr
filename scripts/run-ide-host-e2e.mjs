@@ -242,6 +242,7 @@ function verifyInstalledCandidate(extensionDir) {
 	}
 	for (const required of [
 		"aidr-hook.cjs",
+		"aidr-hook.bundle.cjs",
 		"cursor_extension.js",
 		"vscode_extension.js",
 		"aidr-sbom.cdx.json",

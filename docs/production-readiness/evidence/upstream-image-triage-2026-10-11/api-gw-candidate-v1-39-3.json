@@ -1,0 +1,49 @@
+{
+ "name": "api-gw-candidate-v1-39-3",
+ "service": "api-gw",
+ "role": "candidate",
+ "image": "envoyproxy/envoy:v1.39.3",
+ "ref": "mirror.gcr.io/envoyproxy/envoy:v1.39.3@sha256:dd85940439de19a0b6ae8419610363ea0ad351d9a994ea007161c206ec1e1865",
+ "index_digest": "sha256:dd85940439de19a0b6ae8419610363ea0ad351d9a994ea007161c206ec1e1865",
+ "docker_hub_tag_digest_match": true,
+ "started_at": "2026-10-11T02:42:31.430Z",
+ "finished_at": "2026-10-11T02:42:31.432Z",
+ "succeeded": true,
+ "os": {
+  "Family": "ubuntu",
+  "Name": "22.04"
+ },
+ "scanned_image_id": "sha256:8f34a3f1f8c804af3f975bc19a50104120482535401d5c8e954156c20ffd5316",
+ "repo_digests": [
+  "mirror.gcr.io/envoyproxy/envoy@sha256:dd85940439de19a0b6ae8419610363ea0ad351d9a994ea007161c206ec1e1865"
+ ],
+ "all_severity_findings": {
+  "LOW": 16,
+  "MEDIUM": 9
+ },
+ "coverage": [
+  {
+   "target": "mirror.gcr.io/envoyproxy/envoy:v1.39.3@sha256:dd85940439de19a0b6ae8419610363ea0ad351d9a994ea007161c206ec1e1865 (ubuntu 22.04)",
+   "class": "os-pkgs",
+   "type": "ubuntu",
+   "vulnerabilities": 25
+  }
+ ],
+ "counts": {
+  "CRITICAL": {
+   "findings": 0,
+   "unique_ids": 0,
+   "fixed_available": 0,
+   "fixed_available_unique_ids": 0
+  },
+  "HIGH": {
+   "findings": 0,
+   "unique_ids": 0,
+   "fixed_available": 0,
+   "fixed_available_unique_ids": 0
+  },
+  "total_findings": 0
+ },
+ "findings": [],
+ "trivy_report_created_at": "2026-10-11T02:31:34.545973279Z"
+}

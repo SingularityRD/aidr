@@ -1,0 +1,2838 @@
+{
+ "schema": "aidr-local-load-soak-drill/v1",
+ "label": "LOCAL ENGINEERING DRILL - one shared host, single replica of every service, not HA, not a monthly SLA, not candidate-bound acceptance",
+ "claims": {
+  "production_accepted": false,
+  "production_sla_proven": false,
+  "ha_proven": false,
+  "candidate_bound": false
+ },
+ "date": "2026-10-11",
+ "source_commit_at_drill_start": "a327c4dc5dbd0e8a160262fb990a2a6625e04560",
+ "worktree": "dirty (this drill's tooling changes; other sessions committed to the same branch during the run)",
+ "environment": {
+  "host": {
+   "cpus": 4,
+   "cpu_model": "Intel Xeon @ 2.10GHz (virtualised)",
+   "memory_gib": 15.7,
+   "kernel": "6.18.44",
+   "docker_engine": "29.8.2",
+   "load_generator": "node v22.22.0 on the same host (not a separate calibrated generator)"
+  },
+  "co_tenancy": "Another agent ran PostgreSQL/Supabase drill containers on the same Docker host during the knee series A/B and the first part of the soak; it had stopped by the post-soak knee series C and lock A/B. Host CPU was not reserved for this drill.",
+  "images": {
+   "db": "supabase/postgres:17.6.1.136@sha256:f371b5f3f2ac0a05703f33d6e6134515fb2498cab708fb948a0aeb7481467c00 (NOT the kit's current 17.11.0.004 pin)",
+   "rest": "postgrest/postgrest:v14.17@sha256:c9dc201e555f5d8e37e7f39cdd4df0229774996e213bfd7de8d10ac609030f2c (kit default pool of 10 connections)",
+   "functions": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (kit pin), upstream self-hosted main router (150 MB / 60 s per worker)",
+   "gateway": "node:24.21.0-alpine3.24 minimal reverse proxy standing in for the kit's Envoy route table (/functions/v1, /rest/v1)"
+  }
+ },
+ "stack": {
+  "kind": "minimal subset of the self-hosted Compose kit, one replica each, one Docker bridge network",
+  "services": [
+   "db",
+   "rest (PostgREST)",
+   "functions (edge runtime with supabase/functions copied in, as deployment-prepare does)",
+   "gw (stand-in gateway)"
+  ],
+  "not_included": [
+   "GoTrue (auth schema stubbed as the repository's PostgreSQL fixture tests do)",
+   "Storage",
+   "Realtime",
+   "Studio",
+   "dashboard",
+   "Envoy",
+   "backups/maintenance",
+   "TLS"
+  ],
+  "migrations": "181 canonical migrations at drill start applied in order to a fresh database",
+  "signing": "Ed25519 entitlement/policy signing configured (signed policy envelopes and entitlement snapshots on every 200)",
+  "tenants": "two pilot-admitted tenants (quiet: 1 member key; noisy: owner + 9 member keys), published runtime policy, 50 seats each"
+ },
+ "workload": {
+  "endpoints": [
+   "POST /functions/v1/ingest (runtime_verdict events, unique $request_id per event)",
+   "GET /functions/v1/policy (signed)"
+  ],
+  "ingest_to_policy_ratio": "3:1 per key",
+  "soak": "20 rps offered for 10 800 s; quiet tenant 1.818 rps (1 key); noisy tenant 18.18 rps = 10x (5 keys at 2x the quiet key's rate, which exceeds the 1 200 events/min per-subject ingest quota); 10 events per ingest batch",
+  "knee": "2 events per ingest batch, quiet 1 key + noisy 10 keys at equal per-key rate, 60-90 s steps",
+  "request_timeout_ms": 10000,
+  "max_in_flight": 400,
+  "retries": "none during the run; ambiguous ingest batches were re-sent once afterwards with the same event ids (durable-queue semantics)"
+ },
+ "knee": {
+  "workload": "11 keys (quiet 1 + noisy 10), 2-event ingest batches : policy polls = 3 : 1, 60-90 s per step, request timeout 10 s, max_in_flight 400",
+  "series_a_10s_cooldown": [
+   {
+    "offered_rps": 11,
+    "duration_s": 60,
+    "completed_rps": 11.01,
+    "peak_in_flight": 7,
+    "schedule_lag_p95_ms": 0.7,
+    "load_test_passed": true,
+    "quiet_tenant": {
+     "completed": 61,
+     "expected": 61,
+     "error_ratio": 0,
+     "dropped": 0,
+     "p50_ms": 57.7,
+     "p95_ms": 501.5,
+     "p99_ms": 602.2,
+     "status_counts": {
+      "200": 61
+     }
+    },
+    "noisy_tenant": {
+     "completed": 600,
+     "expected": 600,
+     "error_ratio": 0,
+     "dropped": 0,
+     "p50_ms": 57,
+     "p95_ms": 76.1,
+     "p99_ms": 326.1,
+     "status_counts": {
+      "200": 600
+     }
+    },
+    "profile_sha256": "a92e996ea880c632a285344e514d334600e7cd70eda980dc3a54f4a82458e8f6",
+    "started_at": "2026-10-11T03:06:55.518Z"
+   },
+   {
+    "offered_rps": 22,
+    "duration_s": 60,
+    "completed_rps": 21.97,
+    "peak_in_flight": 22,
+    "schedule_lag_p95_ms": 7.5,
+    "load_test_passed": true,
+    "quiet_tenant": {
+     "completed": 121,
+     "expected": 121,
+     "error_ratio": 0,
+     "dropped": 0,
+     "p50_ms": 74.8,
+     "p95_ms": 400,
+     "p99_ms": 834.2,
+     "status_counts": {
+      "200": 121
+     }
+    },
+    "noisy_tenant": {
+     "completed": 1200,
+     "expected": 1200,
+     "error_ratio": 0,
+     "dropped": 0,
+     "p50_ms": 76.9,
+     "p95_ms": 485.1,
+     "p99_ms": 1085.8,
+     "status_counts": {
+      "200": 1200
+     }
+    },
+    "profile_sha256": "7fa49bb2c22373a2c8929fff138453942b69d21e3fbf94796c75cf322fe40c76",
+    "started_at": "2026-10-11T03:08:05.715Z"
+   },
+   {
+    "offered_rps": 44,
+    "duration_s": 60,
+    "completed_rps": 34.53,
+    "peak_in_flight": 400,
+    "schedule_lag_p95_ms": 30.3,
+    "load_test_passed": false,
+    "quiet_tenant": {
+     "completed": 214,
+     "expected": 12,
+     "error_ratio": 0.943925,
+     "dropped": 27,
+     "p50_ms": 10001.9,
+     "p95_ms": 10040.3,
+     "p99_ms": 10070.8,
+     "status_counts": {
+      "200": 12,
+      "transport_error": 202
+     }
+    },
+    "noisy_tenant": {
+     "completed": 2204,
+     "expected": 70,
+     "error_ratio": 0.96824,
+     "dropped": 196,
+     "p50_ms": 10001.8,
+     "p95_ms": 10032.8,
+     "p99_ms": 10069.9,
+     "status_counts": {
+      "200": 70,
+      "transport_error": 2134
+     }
+    },
+    "profile_sha256": "6529125f777ceaf0a263dbbfc669695f21b92c9e607b1066e29b2d89f2feb238",
+    "started_at": "2026-10-11T03:09:16.057Z"
+   },
+   {
+    "offered_rps": 66,
+    "duration_s": 60,
+    "completed_rps": 36.2,
+    "peak_in_flight": 400,
+    "schedule_lag_p95_ms": 6.3,
+    "load_test_passed": false,
+    "quiet_tenant": {
+     "completed": 222,
+     "expected": 0,
+     "error_ratio": 1,
+     "dropped": 139,
+     "p50_ms": 10001.4,
+     "p95_ms": 10012,
+     "p99_ms": 10032.8,
+     "status_counts": {
+      "transport_error": 222
+     }
+    },
+    "noisy_tenant": {
+     "completed": 2178,
+     "expected": 0,
+     "error_ratio": 1,
+     "dropped": 1422,
+     "p50_ms": 10001.3,
+     "p95_ms": 10010.2,
+     "p99_ms": 10032.4,
+     "status_counts": {
+      "transport_error": 2178
+     }
+    },
+    "profile_sha256": "22f4c7dacb9591bf44845be3393373fc9c57a5dbcf7861aa18a865b178d799a5",
+    "started_at": "2026-10-11T03:10:36.253Z"
+   },
+   {
+    "offered_rps": 88,
+    "duration_s": 60,
+    "completed_rps": 36.81,
+    "peak_in_flight": 400,
+    "schedule_lag_p95_ms": 31.2,
+    "load_test_passed": false,
+    "quiet_tenant": {
+     "completed": 221,
+     "expected": 0,
+     "error_ratio": 1,
+     "dropped": 259,
+     "p50_ms": 10002.7,
+     "p95_ms": 10047.1,
+     "p99_ms": 10112,
+     "status_counts": {
+      "transport_error": 221
+     }
+    },
+    "noisy_tenant": {
+     "completed": 2179,
+     "expected": 0,
+     "error_ratio": 1,
+     "dropped": 2621,
+     "p50_ms": 10001.9,
+     "p95_ms": 10047.8,
+     "p99_ms": 10126.1,
+     "status_counts": {
+      "transport_error": 2179
+     }
+    },
+    "profile_sha256": "5560dcedc8b972760cb06b4758336ef870a70429e60f8afb97373ade9789c48c",
+    "started_at": "2026-10-11T03:11:52.961Z"
+   },
+   {
+    "offered_rps": 110,
+    "duration_s": 60,
+    "completed_rps": 37.42,
+    "peak_in_flight": 400,
+    "schedule_lag_p95_ms": 26.4,
+    "load_test_passed": false,
+    "quiet_tenant": {
+     "completed": 226,
+     "expected": 0,
+     "error_ratio": 1,
+     "dropped": 374,
+     "p50_ms": 10002.1,
+     "p95_ms": 10042.3,
+     "p99_ms": 10077.3,
+     "status_counts": {
+      "transport_error": 226
+     }
+    },
+    "noisy_tenant": {
+     "completed": 2174,
+     "expected": 0,
+     "error_ratio": 1,
+     "dropped": 3826,
+     "p50_ms": 10002.8,
+     "p95_ms": 10043.1,
+     "p99_ms": 10079.1,
+     "status_counts": {
+      "transport_error": 2174
+     }
+    },
+    "profile_sha256": "76a945731d2aadf96c570d956f76a357b2c0d4800e5a5ebff29ca3d99926ab9c",
+    "started_at": "2026-10-11T03:13:08.511Z"
+   }
+  ],
+  "series_b_45s_cooldown": [
+   {
+    "offered_rps": 15,
+    "duration_s": 90,
+    "completed_rps": 15,
+    "peak_in_flight": 19,
+    "schedule_lag_p95_ms": 2.7,
+    "load_test_passed": true,
+    "quiet_tenant": {
+     "completed": 124,
+     "expected": 124,
+     "error_ratio": 0,
+     "dropped": 0,
+     "p50_ms": 85.9,
+     "p95_ms": 227,
+     "p99_ms": 1360.2,
+     "status_counts": {
+      "200": 124
+     }
+    },
+    "noisy_tenant": {
+     "completed": 1226,
+     "expected": 1226,
+     "error_ratio": 0,
+     "dropped": 0,
+     "p50_ms": 84.9,
+     "p95_ms": 254.3,
+     "p99_ms": 847,
+     "status_counts": {
+      "200": 1226
+     }
+    },
+    "profile_sha256": "cbcfc00c1f0df74a8b23c868c600c2022f56449c9eefa0ce7bff921a167cd94f",
+    "started_at": "2026-10-11T03:18:53.706Z"
+   },
+   {
+    "offered_rps": 22,
+    "duration_s": 90,
+    "completed_rps": 22,
+    "peak_in_flight": 29,
+    "schedule_lag_p95_ms": 0.9,
+    "load_test_passed": true,
+    "quiet_tenant": {
+     "completed": 181,
+     "expected": 181,
+     "error_ratio": 0,
+     "dropped": 0,
+     "p50_ms": 65,
+     "p95_ms": 363.5,
+     "p99_ms": 1386.8,
+     "status_counts": {
+      "200": 181
+     }
+    },
+    "noisy_tenant": {
+     "completed": 1800,
+     "expected": 1800,
+     "error_ratio": 0,
+     "dropped": 0,
+     "p50_ms": 65.4,
+     "p95_ms": 255.6,
+     "p99_ms": 1009.4,
+     "status_counts": {
+      "200": 1800
+     }
+    },
+    "profile_sha256": "8bcf4cb57a83ec681e2f0c5505fe25fa735c78c5c5ee41ef7bee4beb8ee8f1e0",
+    "started_at": "2026-10-11T03:21:08.882Z"
+   },
+   {
+    "offered_rps": 28,
+    "duration_s": 90,
+    "completed_rps": 28,
+    "peak_in_flight": 43,
+    "schedule_lag_p95_ms": 0.8,
+    "load_test_passed": true,
+    "quiet_tenant": {
+     "completed": 232,
+     "expected": 232,
+     "error_ratio": 0,
+     "dropped": 0,
+     "p50_ms": 65,
+     "p95_ms": 672.6,
+     "p99_ms": 1482.6,
+     "status_counts": {
+      "200": 232
+     }
+    },
+    "noisy_tenant": {
+     "completed": 2288,
+     "expected": 2287,
+     "error_ratio": 0.000437,
+     "dropped": 0,
+     "p50_ms": 64.4,
+     "p95_ms": 445,
+     "p99_ms": 1313.4,
+     "status_counts": {
+      "200": 2287,
+      "503": 1
+     }
+    },
+    "profile_sha256": "66d8ea34b33bda3ea784cd21b1386142c3aa9ef7f7edff0eeb0e016b08415363",
+    "started_at": "2026-10-11T03:23:24.075Z"
+   },
+   {
+    "offered_rps": 34,
+    "duration_s": 90,
+    "completed_rps": 30.61,
+    "peak_in_flight": 343,
+    "schedule_lag_p95_ms": 6.8,
+    "load_test_passed": false,
+    "quiet_tenant": {
+     "completed": 280,
+     "expected": 188,
+     "error_ratio": 0.328571,
+     "dropped": 0,
+     "p50_ms": 2418.1,
+     "p95_ms": 10005,
+     "p99_ms": 10017.2,
+     "status_counts": {
+      "200": 188,
+      "transport_error": 92
+     }
+    },
+    "noisy_tenant": {
+     "completed": 2780,
+     "expected": 1824,
+     "error_ratio": 0.343885,
+     "dropped": 0,
+     "p50_ms": 2533.4,
+     "p95_ms": 10006.3,
+     "p99_ms": 10026.5,
+     "status_counts": {
+      "200": 1824,
+      "503": 1,
+      "transport_error": 955
+     }
+    },
+    "profile_sha256": "8fad31380187cb2e5c2b834cba46d9afd92469d9edab4ec97cfb004bf212b91e",
+    "started_at": "2026-10-11T03:25:39.278Z"
+   },
+   {
+    "offered_rps": 40,
+    "duration_s": 90,
+    "completed_rps": 35.88,
+    "peak_in_flight": 400,
+    "schedule_lag_p95_ms": 4.3,
+    "load_test_passed": false,
+    "quiet_tenant": {
+     "completed": 328,
+     "expected": 25,
+     "error_ratio": 0.92378,
+     "dropped": 0,
+     "p50_ms": 10001.6,
+     "p95_ms": 10007.8,
+     "p99_ms": 10025.5,
+     "status_counts": {
+      "200": 25,
+      "transport_error": 303
+     }
+    },
+    "noisy_tenant": {
+     "completed": 3259,
+     "expected": 217,
+     "error_ratio": 0.933415,
+     "dropped": 13,
+     "p50_ms": 10001.6,
+     "p95_ms": 10008.4,
+     "p99_ms": 10019.3,
+     "status_counts": {
+      "200": 217,
+      "transport_error": 3042
+     }
+    },
+    "profile_sha256": "488c946babea2d51ff27aa691cbb113d5efb6b1cf5acc98aca4890ac4ad06930",
+    "started_at": "2026-10-11T03:28:04.475Z"
+   }
+  ],
+  "series_c_quiet_host_45_60s_cooldown": [
+   {
+    "offered_rps": 40,
+    "goodput_http200_per_s": 40,
+    "error_ratio": 0,
+    "p50_ms": 58,
+    "p95_ms": 289,
+    "p99_ms": 776,
+    "quiet_p95_ms": 248,
+    "quiet_error_ratio": 0,
+    "peak_in_flight": 26,
+    "started_at": "2026-10-11T07:05:42.530Z"
+   },
+   {
+    "offered_rps": 48,
+    "goodput_http200_per_s": 48,
+    "error_ratio": 0,
+    "p50_ms": 287,
+    "p95_ms": 1838,
+    "p99_ms": 2654,
+    "quiet_p95_ms": 1717,
+    "quiet_error_ratio": 0,
+    "peak_in_flight": 111,
+    "started_at": "2026-10-11T07:08:12.692Z"
+   },
+   {
+    "offered_rps": 56,
+    "goodput_http200_per_s": 41.3,
+    "error_ratio": 0.134,
+    "p50_ms": 7614,
+    "p95_ms": 10001,
+    "p99_ms": 10003,
+    "quiet_p95_ms": 10002,
+    "quiet_error_ratio": 0.1319,
+    "peak_in_flight": 400,
+    "started_at": "2026-10-11T07:10:42.895Z"
+   }
+  ],
+  "interpretation": "With the co-tenant active (series B) goodput tracked offered load up to 28 rps and collapsed at 34 rps; on the quiet host (series C) it tracked to 48 rps with p95 rising to 1.8 s and collapsed at 56 rps. Above the knee there is no load shedding: queued work waits on per-tenant locks inside the shared PostgREST pool (PGRST003 pool timeouts), clients time out at 10 s, and with only 10 s between steps (series A) goodput reached 0 and did not recover until the load stopped."
+ },
+ "quiet_control": {
+  "offered_rps": 1.818,
+  "duration_s": 600,
+  "completed_rps": 1.82,
+  "peak_in_flight": 1,
+  "schedule_lag_p95_ms": 0.8,
+  "load_test_passed": true,
+  "quiet_tenant": {
+   "completed": 1091,
+   "expected": 1091,
+   "error_ratio": 0,
+   "dropped": 0,
+   "p50_ms": 67.1,
+   "p95_ms": 118.9,
+   "p99_ms": 295.1,
+   "status_counts": {
+    "200": 1091
+   }
+  },
+  "noisy_tenant": null,
+  "profile_sha256": "ff0c9b37a9749705b5635ea86c54b05c7f597abf5625dda8170ec2a8247a2708",
+  "started_at": "2026-10-11T03:41:29.162Z",
+  "note": "quiet tenant alone at its soak rate (1.818 rps, 10-event batches), 600 s, immediately before the soak"
+ },
+ "isolation_bound": {
+  "declared_at": "2026-10-11T03:51:38Z",
+  "declared_before_soak_results": true,
+  "control": {
+   "quiet_p50_ms": 67,
+   "quiet_p95_ms": 119,
+   "quiet_p99_ms": 295,
+   "requests": 1091,
+   "errors": 0
+  },
+  "bound": {
+   "quiet_steady_state_p95_ms_max": 269,
+   "derivation": "max(2 x control p95 119 ms, control p95 + 150 ms)",
+   "quiet_steady_state_error_ratio_max": 0.001,
+   "quiet_http429_max": 0,
+   "steady_state": "soak time excluding [inject_start - 5 s, inject_end + 300 s] around each injected fault"
+  }
+ },
+ "soak": {
+  "tag": "soak",
+  "profile_sha256": "634e9422c09ac12cf6a97b963ad132a466fea1e4c74180eecd86d4a87b29d7f6",
+  "started_at": "2026-10-11T03:51:59.431Z",
+  "completed_at": "2026-10-11T06:51:59.884Z",
+  "duration_seconds": 10800,
+  "rate_per_second": 20,
+  "load_test_passed": false,
+  "generator": {
+   "schedule_lag_ms": {
+    "p50": 0,
+    "p95": 0.43977699987590313,
+    "p99": 1.4171010000864044,
+    "max": 189.49720899993554,
+    "samples": 216000,
+    "observations": 216000,
+    "sampling": "complete"
+   },
+   "peak_in_flight": 201,
+   "schedule_finished_at_ms": 10800000.309448,
+   "drain_finished_at_ms": 10800000.348967,
+   "completed_rate_per_second": 19.99999935376483
+  },
+  "overall_by_cohort": {
+   "noisy_tenant": {
+    "requests": 196360,
+    "failed": 1188,
+    "error_ratio": 0.00605,
+    "p50_ms": 56.4,
+    "p95_ms": 97.8,
+    "p99_ms": 629.1,
+    "max_ms": 10018.9,
+    "status_counts": {
+     "200": 156329,
+     "429": 38843,
+     "500": 2,
+     "502": 12,
+     "503": 287,
+     "timeout": 887
+    }
+   },
+   "quiet_tenant": {
+    "requests": 19640,
+    "failed": 122,
+    "error_ratio": 0.006212,
+    "p50_ms": 60.6,
+    "p95_ms": 102.7,
+    "p99_ms": 583.8,
+    "max_ms": 10006.6,
+    "status_counts": {
+     "200": 19518,
+     "503": 33,
+     "timeout": 89
+    }
+   }
+  },
+  "steady_state_by_cohort": {
+   "noisy_tenant": {
+    "requests": 173601,
+    "failed": 7,
+    "error_ratio": 4e-05,
+    "p50_ms": 56.3,
+    "p95_ms": 93.7,
+    "p99_ms": 441.9,
+    "max_ms": 7550.8,
+    "status_counts": {
+     "200": 138990,
+     "429": 34604,
+     "500": 2,
+     "503": 5
+    }
+   },
+   "quiet_tenant": {
+    "requests": 17366,
+    "failed": 1,
+    "error_ratio": 5.8e-05,
+    "p50_ms": 60.7,
+    "p95_ms": 98.3,
+    "p99_ms": 401.1,
+    "max_ms": 5725.6,
+    "status_counts": {
+     "200": 17365,
+     "503": 1
+    }
+   }
+  },
+  "fault_exclusion_windows_s": [
+   {
+    "fault": "db-restart",
+    "from_s": 2395,
+    "to_s": 2700.5
+   },
+   {
+    "fault": "edge-restart",
+    "from_s": 4495,
+    "to_s": 4800.5
+   },
+   {
+    "fault": "rest-restart",
+    "from_s": 6595,
+    "to_s": 6900.4
+   },
+   {
+    "fault": "db-partition",
+    "from_s": 8695,
+    "to_s": 9030.3
+   }
+  ],
+  "fault_observations_runner": [
+   {
+    "name": "db-restart",
+    "target": "aidrsoak local compose: db-restart",
+    "scenario_names": [
+     "quiet-ingest",
+     "quiet-policy",
+     "noisy-k0-ingest",
+     "noisy-k0-policy"
+    ],
+    "status": "recovered",
+    "fault_observed": true,
+    "first_failure_at_ms": 2400218.362387,
+    "recovered_at_ms": 9075479.587948,
+    "estimated_rto_ms": 6675479.587948,
+    "recovery_confirmation_successes": 10
+   },
+   {
+    "name": "edge-restart",
+    "target": "aidrsoak local compose: edge-restart",
+    "scenario_names": [
+     "quiet-ingest",
+     "quiet-policy",
+     "noisy-k0-ingest",
+     "noisy-k0-policy"
+    ],
+    "status": "fault_not_observed",
+    "fault_observed": false,
+    "estimated_rto_ms": null
+   },
+   {
+    "name": "rest-restart",
+    "target": "aidrsoak local compose: rest-restart",
+    "scenario_names": [
+     "quiet-ingest",
+     "quiet-policy",
+     "noisy-k0-ingest",
+     "noisy-k0-policy"
+    ],
+    "status": "recovered",
+    "fault_observed": true,
+    "first_failure_at_ms": 6600025.005074,
+    "recovered_at_ms": 9075479.587948,
+    "estimated_rto_ms": 2475479.587948,
+    "recovery_confirmation_successes": 10
+   },
+   {
+    "name": "db-partition",
+    "target": "aidrsoak local compose: db-partition",
+    "scenario_names": [
+     "quiet-ingest",
+     "quiet-policy",
+     "noisy-k0-ingest",
+     "noisy-k0-policy"
+    ],
+    "status": "recovered",
+    "fault_observed": true,
+    "first_failure_at_ms": 8711001.873781,
+    "recovered_at_ms": 9075479.587948,
+    "estimated_rto_ms": 375479.58794800006,
+    "recovery_confirmation_successes": 10
+   }
+  ],
+  "faults_timeline": [
+   {
+    "event": "load_start",
+    "epoch": 1791690719.3801923,
+    "t_s": 0,
+    "at": "2026-10-11T03:51:59.380Z"
+   },
+   {
+    "event": "inject_start",
+    "fault": "db-restart",
+    "epoch": 1791693119.3930743,
+    "t_s": 2400,
+    "at": "2026-10-11T04:31:59.393Z"
+   },
+   {
+    "event": "inject_end",
+    "fault": "db-restart",
+    "epoch": 1791693119.9273505,
+    "t_s": 2400.5,
+    "at": "2026-10-11T04:31:59.927Z"
+   },
+   {
+    "event": "inject_start",
+    "fault": "edge-restart",
+    "epoch": 1791695219.3899975,
+    "t_s": 4500,
+    "at": "2026-10-11T05:06:59.389Z"
+   },
+   {
+    "event": "inject_end",
+    "fault": "edge-restart",
+    "epoch": 1791695219.9068294,
+    "t_s": 4500.5,
+    "at": "2026-10-11T05:06:59.906Z"
+   },
+   {
+    "event": "inject_start",
+    "fault": "rest-restart",
+    "epoch": 1791697319.3896403,
+    "t_s": 6600,
+    "at": "2026-10-11T05:41:59.389Z"
+   },
+   {
+    "event": "inject_end",
+    "fault": "rest-restart",
+    "epoch": 1791697319.7521248,
+    "t_s": 6600.4,
+    "at": "2026-10-11T05:41:59.752Z"
+   },
+   {
+    "event": "inject_start",
+    "fault": "db-partition",
+    "epoch": 1791699419.3897808,
+    "t_s": 8700,
+    "at": "2026-10-11T06:16:59.389Z"
+   },
+   {
+    "event": "partition_applied",
+    "fault": "db-partition",
+    "epoch": 1791699419.5675242,
+    "t_s": 8700.2,
+    "at": "2026-10-11T06:16:59.567Z"
+   },
+   {
+    "event": "inject_end",
+    "fault": "db-partition",
+    "epoch": 1791699449.6614728,
+    "t_s": 8730.3,
+    "at": "2026-10-11T06:17:29.661Z"
+   },
+   {
+    "event": "load_end",
+    "fault": "none",
+    "epoch": 1791701519.9613006,
+    "t_s": 10800.6,
+    "at": "2026-10-11T06:51:59.961Z"
+   }
+  ],
+  "series_bucket_s": 600,
+  "series": [
+   {
+    "t_start_s": 0,
+    "fault_window": [],
+    "noisy_tenant": {
+     "requests": 10906,
+     "failed": 0,
+     "error_ratio": 0,
+     "p50_ms": 57.1,
+     "p95_ms": 106,
+     "p99_ms": 386.6,
+     "status_counts": {
+      "200": 8726,
+      "429": 2180
+     }
+    },
+    "quiet_tenant": {
+     "requests": 1092,
+     "failed": 0,
+     "error_ratio": 0,
+     "p50_ms": 62.1,
+     "p95_ms": 103.1,
+     "p99_ms": 252.5,
+     "status_counts": {
+      "200": 1092
+     }
+    }
+   },
+   {
+    "t_start_s": 600,
+    "fault_window": [],
+    "noisy_tenant": {
+     "requests": 10910,
+     "failed": 0,
+     "error_ratio": 0,
+     "p50_ms": 67.4,
+     "p95_ms": 524.5,
+     "p99_ms": 4018,
+     "status_counts": {
+      "200": 8728,
+      "429": 2182
+     }
+    },
+    "quiet_tenant": {
+     "requests": 1092,
+     "failed": 1,
+     "error_ratio": 0.000916,
+     "p50_ms": 74.5,
+     "p95_ms": 714.8,
+     "p99_ms": 4045.5,
+     "status_counts": {
+      "200": 1091,
+      "503": 1
+     }
+    }
+   },
+   {
+    "t_start_s": 1200,
+    "fault_window": [],
+    "noisy_tenant": {
+     "requests": 10908,
+     "failed": 0,
+     "error_ratio": 0,
+     "p50_ms": 56.4,
+     "p95_ms": 110.1,
+     "p99_ms": 382.2,
+     "status_counts": {
+      "200": 8726,
+      "429": 2182
+     }
+    },
+    "quiet_tenant": {
+     "requests": 1092,
+     "failed": 0,
+     "error_ratio": 0,
+     "p50_ms": 61.2,
+     "p95_ms": 110.2,
+     "p99_ms": 454,
+     "status_counts": {
+      "200": 1092
+     }
+    }
+   },
+   {
+    "t_start_s": 1800,
+    "fault_window": [
+     "db-restart"
+    ],
+    "noisy_tenant": {
+     "requests": 10912,
+     "failed": 1,
+     "error_ratio": 9.2e-05,
+     "p50_ms": 54.6,
+     "p95_ms": 76.2,
+     "p99_ms": 322.7,
+     "status_counts": {
+      "200": 8728,
+      "429": 2183,
+      "503": 1
+     }
+    },
+    "quiet_tenant": {
+     "requests": 1088,
+     "failed": 0,
+     "error_ratio": 0,
+     "p50_ms": 58.6,
+     "p95_ms": 80.2,
+     "p99_ms": 304.6,
+     "status_counts": {
+      "200": 1088
+     }
+    }
+   },
+   {
+    "t_start_s": 2400,
+    "fault_window": [
+     "db-restart"
+    ],
+    "noisy_tenant": {
+     "requests": 10908,
+     "failed": 276,
+     "error_ratio": 0.025303,
+     "p50_ms": 54.3,
+     "p95_ms": 76.4,
+     "p99_ms": 335.2,
+     "status_counts": {
+      "200": 8658,
+      "429": 1974,
+      "503": 276
+     }
+    },
+    "quiet_tenant": {
+     "requests": 1092,
+     "failed": 28,
+     "error_ratio": 0.025641,
+     "p50_ms": 58.2,
+     "p95_ms": 75.1,
+     "p99_ms": 125.8,
+     "status_counts": {
+      "200": 1064,
+      "503": 28
+     }
+    }
+   },
+   {
+    "t_start_s": 3000,
+    "fault_window": [],
+    "noisy_tenant": {
+     "requests": 10908,
+     "failed": 2,
+     "error_ratio": 0.000183,
+     "p50_ms": 55.4,
+     "p95_ms": 77.9,
+     "p99_ms": 351.7,
+     "status_counts": {
+      "200": 8724,
+      "429": 2182,
+      "503": 2
+     }
+    },
+    "quiet_tenant": {
+     "requests": 1092,
+     "failed": 0,
+     "error_ratio": 0,
+     "p50_ms": 59,
+     "p95_ms": 80.6,
+     "p99_ms": 253.5,
+     "status_counts": {
+      "200": 1092
+     }
+    }
+   },
+   {
+    "t_start_s": 3600,
+    "fault_window": [],
+    "noisy_tenant": {
+     "requests": 10908,
+     "failed": 0,
+     "error_ratio": 0,
+     "p50_ms": 55.3,
+     "p95_ms": 75.9,
+     "p99_ms": 354.7,
+     "status_counts": {
+      "200": 8728,
+      "429": 2180
+     }
+    },
+    "quiet_tenant": {
+     "requests": 1092,
+     "failed": 0,
+     "error_ratio": 0,
+     "p50_ms": 59,
+     "p95_ms": 84.2,
+     "p99_ms": 450.9,
+     "status_counts": {
+      "200": 1092
+     }
+    }
+   },
+   {
+    "t_start_s": 4200,
+    "fault_window": [
+     "edge-restart"
+    ],
+    "noisy_tenant": {
+     "requests": 10912,
+     "failed": 12,
+     "error_ratio": 0.0011,
+     "p50_ms": 55.9,
+     "p95_ms": 79.1,
+     "p99_ms": 368.3,
+     "status_counts": {
+      "200": 8726,
+      "429": 2174,
+      "502": 12
+     }
+    },
+    "quiet_tenant": {
+     "requests": 1088,
+     "failed": 0,
+     "error_ratio": 0,
+     "p50_ms": 59.5,
+     "p95_ms": 79,
+     "p99_ms": 314.5,
+     "status_counts": {
+      "200": 1088
+     }
+    }
+   },
+   {
+    "t_start_s": 4800,
+    "fault_window": [
+     "edge-restart"
+    ],
+    "noisy_tenant": {
+     "requests": 10908,
+     "failed": 0,
+     "error_ratio": 0,
+     "p50_ms": 56.4,
+     "p95_ms": 77.6,
+     "p99_ms": 323.4,
+     "status_counts": {
+      "200": 8726,
+      "429": 2182
+     }
+    },
+    "quiet_tenant": {
+     "requests": 1092,
+     "failed": 0,
+     "error_ratio": 0,
+     "p50_ms": 60.5,
+     "p95_ms": 86.1,
+     "p99_ms": 307.2,
+     "status_counts": {
+      "200": 1092
+     }
+    }
+   },
+   {
+    "t_start_s": 5400,
+    "fault_window": [],
+    "noisy_tenant": {
+     "requests": 10908,
+     "failed": 2,
+     "error_ratio": 0.000183,
+     "p50_ms": 54.9,
+     "p95_ms": 73.7,
+     "p99_ms": 272.1,
+     "status_counts": {
+      "200": 8727,
+      "429": 2179,
+      "500": 1,
+      "503": 1
+     }
+    },
+    "quiet_tenant": {
+     "requests": 1092,
+     "failed": 0,
+     "error_ratio": 0,
+     "p50_ms": 58.7,
+     "p95_ms": 78.3,
+     "p99_ms": 254.5,
+     "status_counts": {
+      "200": 1092
+     }
+    }
+   },
+   {
+    "t_start_s": 6000,
+    "fault_window": [
+     "rest-restart"
+    ],
+    "noisy_tenant": {
+     "requests": 10912,
+     "failed": 0,
+     "error_ratio": 0,
+     "p50_ms": 56.5,
+     "p95_ms": 77.6,
+     "p99_ms": 309.2,
+     "status_counts": {
+      "200": 8728,
+      "429": 2184
+     }
+    },
+    "quiet_tenant": {
+     "requests": 1088,
+     "failed": 0,
+     "error_ratio": 0,
+     "p50_ms": 61,
+     "p95_ms": 82.9,
+     "p99_ms": 360.6,
+     "status_counts": {
+      "200": 1088
+     }
+    }
+   },
+   {
+    "t_start_s": 6600,
+    "fault_window": [
+     "rest-restart"
+    ],
+    "noisy_tenant": {
+     "requests": 10908,
+     "failed": 7,
+     "error_ratio": 0.000642,
+     "p50_ms": 56.4,
+     "p95_ms": 77.5,
+     "p99_ms": 334.6,
+     "status_counts": {
+      "200": 8725,
+      "429": 2176,
+      "503": 7
+     }
+    },
+    "quiet_tenant": {
+     "requests": 1092,
+     "failed": 4,
+     "error_ratio": 0.003663,
+     "p50_ms": 60.2,
+     "p95_ms": 81.7,
+     "p99_ms": 230.5,
+     "status_counts": {
+      "200": 1088,
+      "503": 4
+     }
+    }
+   },
+   {
+    "t_start_s": 7200,
+    "fault_window": [],
+    "noisy_tenant": {
+     "requests": 10908,
+     "failed": 0,
+     "error_ratio": 0,
+     "p50_ms": 57.3,
+     "p95_ms": 82.9,
+     "p99_ms": 377.6,
+     "status_counts": {
+      "200": 8728,
+      "429": 2180
+     }
+    },
+    "quiet_tenant": {
+     "requests": 1092,
+     "failed": 0,
+     "error_ratio": 0,
+     "p50_ms": 61.5,
+     "p95_ms": 82.9,
+     "p99_ms": 286.2,
+     "status_counts": {
+      "200": 1092
+     }
+    }
+   },
+   {
+    "t_start_s": 7800,
+    "fault_window": [],
+    "noisy_tenant": {
+     "requests": 10908,
+     "failed": 0,
+     "error_ratio": 0,
+     "p50_ms": 56.7,
+     "p95_ms": 81.5,
+     "p99_ms": 331.5,
+     "status_counts": {
+      "200": 8726,
+      "429": 2182
+     }
+    },
+    "quiet_tenant": {
+     "requests": 1092,
+     "failed": 0,
+     "error_ratio": 0,
+     "p50_ms": 61,
+     "p95_ms": 90.6,
+     "p99_ms": 322.6,
+     "status_counts": {
+      "200": 1092
+     }
+    }
+   },
+   {
+    "t_start_s": 8400,
+    "fault_window": [
+     "db-partition"
+    ],
+    "noisy_tenant": {
+     "requests": 10912,
+     "failed": 887,
+     "error_ratio": 0.081287,
+     "p50_ms": 59.2,
+     "p95_ms": 10001.2,
+     "p99_ms": 10002.3,
+     "status_counts": {
+      "200": 8043,
+      "429": 1982,
+      "timeout": 887
+     }
+    },
+    "quiet_tenant": {
+     "requests": 1088,
+     "failed": 89,
+     "error_ratio": 0.081801,
+     "p50_ms": 63.1,
+     "p95_ms": 10001.1,
+     "p99_ms": 10002.3,
+     "status_counts": {
+      "200": 999,
+      "timeout": 89
+     }
+    }
+   },
+   {
+    "t_start_s": 9000,
+    "fault_window": [
+     "db-partition"
+    ],
+    "noisy_tenant": {
+     "requests": 10908,
+     "failed": 1,
+     "error_ratio": 9.2e-05,
+     "p50_ms": 55.9,
+     "p95_ms": 79,
+     "p99_ms": 391.8,
+     "status_counts": {
+      "200": 8728,
+      "429": 2179,
+      "500": 1
+     }
+    },
+    "quiet_tenant": {
+     "requests": 1092,
+     "failed": 0,
+     "error_ratio": 0,
+     "p50_ms": 60,
+     "p95_ms": 89.9,
+     "p99_ms": 272.5,
+     "status_counts": {
+      "200": 1092
+     }
+    }
+   },
+   {
+    "t_start_s": 9600,
+    "fault_window": [],
+    "noisy_tenant": {
+     "requests": 10908,
+     "failed": 0,
+     "error_ratio": 0,
+     "p50_ms": 57.4,
+     "p95_ms": 92.5,
+     "p99_ms": 409.6,
+     "status_counts": {
+      "200": 8726,
+      "429": 2182
+     }
+    },
+    "quiet_tenant": {
+     "requests": 1092,
+     "failed": 0,
+     "error_ratio": 0,
+     "p50_ms": 61.2,
+     "p95_ms": 101.9,
+     "p99_ms": 290.9,
+     "status_counts": {
+      "200": 1092
+     }
+    }
+   },
+   {
+    "t_start_s": 10200,
+    "fault_window": [],
+    "noisy_tenant": {
+     "requests": 10908,
+     "failed": 0,
+     "error_ratio": 0,
+     "p50_ms": 57.3,
+     "p95_ms": 83.7,
+     "p99_ms": 380.8,
+     "status_counts": {
+      "200": 8728,
+      "429": 2180
+     }
+    },
+    "quiet_tenant": {
+     "requests": 1092,
+     "failed": 0,
+     "error_ratio": 0,
+     "p50_ms": 62.3,
+     "p95_ms": 83.6,
+     "p99_ms": 365.7,
+     "status_counts": {
+      "200": 1092
+     }
+    }
+   }
+  ],
+  "resources_bucket_s": 300,
+  "resources": [
+   {
+    "t_start_s": 0,
+    "samples": 58,
+    "containers": {
+     "db": {
+      "cpu_pct_avg": 30.6,
+      "cpu_pct_max": 68.3,
+      "mem_mib_max": 213.5
+     },
+     "rest": {
+      "cpu_pct_avg": 18.8,
+      "cpu_pct_max": 39.5,
+      "mem_mib_max": 66.2
+     },
+     "functions": {
+      "cpu_pct_avg": 37.5,
+      "cpu_pct_max": 109.8,
+      "mem_mib_max": 650.9
+     },
+     "gw": {
+      "cpu_pct_avg": 13.2,
+      "cpu_pct_max": 16.9,
+      "mem_mib_max": 198.7
+     }
+    },
+    "db_client_connections": {
+     "max": 12,
+     "avg": 12,
+     "postgrest_busy_max": 3
+    },
+    "db_unreachable_samples": 0
+   },
+   {
+    "t_start_s": 300,
+    "samples": 58,
+    "containers": {
+     "db": {
+      "cpu_pct_avg": 30.4,
+      "cpu_pct_max": 49.2,
+      "mem_mib_max": 236.3
+     },
+     "rest": {
+      "cpu_pct_avg": 18.8,
+      "cpu_pct_max": 24.7,
+      "mem_mib_max": 57.2
+     },
+     "functions": {
+      "cpu_pct_avg": 38.5,
+      "cpu_pct_max": 99.5,
+      "mem_mib_max": 691.1
+     },
+     "gw": {
+      "cpu_pct_avg": 13.5,
+      "cpu_pct_max": 18.1,
+      "mem_mib_max": 198.9
+     }
+    },
+    "db_client_connections": {
+     "max": 12,
+     "avg": 12,
+     "postgrest_busy_max": 3
+    },
+    "db_unreachable_samples": 0
+   },
+   {
+    "t_start_s": 600,
+    "samples": 57,
+    "containers": {
+     "db": {
+      "cpu_pct_avg": 30.1,
+      "cpu_pct_max": 50.7,
+      "mem_mib_max": 244.1
+     },
+     "rest": {
+      "cpu_pct_avg": 21.7,
+      "cpu_pct_max": 78.4,
+      "mem_mib_max": 57
+     },
+     "functions": {
+      "cpu_pct_avg": 41,
+      "cpu_pct_max": 126.7,
+      "mem_mib_max": 772.4
+     },
+     "gw": {
+      "cpu_pct_avg": 13,
+      "cpu_pct_max": 17,
+      "mem_mib_max": 199.5
+     }
+    },
+    "db_client_connections": {
+     "max": 12,
+     "avg": 12,
+     "postgrest_busy_max": 10
+    },
+    "db_unreachable_samples": 0
+   },
+   {
+    "t_start_s": 900,
+    "samples": 58,
+    "containers": {
+     "db": {
+      "cpu_pct_avg": 28.8,
+      "cpu_pct_max": 38.9,
+      "mem_mib_max": 260.4
+     },
+     "rest": {
+      "cpu_pct_avg": 18.4,
+      "cpu_pct_max": 32.3,
+      "mem_mib_max": 55.1
+     },
+     "functions": {
+      "cpu_pct_avg": 37.2,
+      "cpu_pct_max": 111.6,
+      "mem_mib_max": 932.4
+     },
+     "gw": {
+      "cpu_pct_avg": 13.2,
+      "cpu_pct_max": 16.3,
+      "mem_mib_max": 199.2
+     }
+    },
+    "db_client_connections": {
+     "max": 12,
+     "avg": 12,
+     "postgrest_busy_max": 8
+    },
+    "db_unreachable_samples": 0
+   },
+   {
+    "t_start_s": 1200,
+    "samples": 57,
+    "containers": {
+     "db": {
+      "cpu_pct_avg": 30.4,
+      "cpu_pct_max": 50.4,
+      "mem_mib_max": 284
+     },
+     "rest": {
+      "cpu_pct_avg": 19,
+      "cpu_pct_max": 35.9,
+      "mem_mib_max": 55.6
+     },
+     "functions": {
+      "cpu_pct_avg": 37.8,
+      "cpu_pct_max": 89.6,
+      "mem_mib_max": 953.2
+     },
+     "gw": {
+      "cpu_pct_avg": 13.5,
+      "cpu_pct_max": 17.1,
+      "mem_mib_max": 199.3
+     }
+    },
+    "db_client_connections": {
+     "max": 12,
+     "avg": 12,
+     "postgrest_busy_max": 9
+    },
+    "db_unreachable_samples": 0
+   },
+   {
+    "t_start_s": 1500,
+    "samples": 58,
+    "containers": {
+     "db": {
+      "cpu_pct_avg": 30.6,
+      "cpu_pct_max": 49.5,
+      "mem_mib_max": 281.6
+     },
+     "rest": {
+      "cpu_pct_avg": 18.8,
+      "cpu_pct_max": 28,
+      "mem_mib_max": 54.2
+     },
+     "functions": {
+      "cpu_pct_avg": 35.3,
+      "cpu_pct_max": 72.6,
+      "mem_mib_max": 983.2
+     },
+     "gw": {
+      "cpu_pct_avg": 13.1,
+      "cpu_pct_max": 18.9,
+      "mem_mib_max": 199.2
+     }
+    },
+    "db_client_connections": {
+     "max": 12,
+     "avg": 12,
+     "postgrest_busy_max": 2
+    },
+    "db_unreachable_samples": 0
+   },
+   {
+    "t_start_s": 1800,
+    "samples": 59,
+    "containers": {
+     "db": {
+      "cpu_pct_avg": 30.1,
+      "cpu_pct_max": 40.4,
+      "mem_mib_max": 282.6
+     },
+     "rest": {
+      "cpu_pct_avg": 19,
+      "cpu_pct_max": 23.3,
+      "mem_mib_max": 53.2
+     },
+     "functions": {
+      "cpu_pct_avg": 41.1,
+      "cpu_pct_max": 155.5,
+      "mem_mib_max": 1013
+     },
+     "gw": {
+      "cpu_pct_avg": 13,
+      "cpu_pct_max": 15.7,
+      "mem_mib_max": 199.1
+     }
+    },
+    "db_client_connections": {
+     "max": 12,
+     "avg": 11.9,
+     "postgrest_busy_max": 5
+    },
+    "db_unreachable_samples": 0
+   },
+   {
+    "t_start_s": 2100,
+    "samples": 58,
+    "containers": {
+     "db": {
+      "cpu_pct_avg": 29.4,
+      "cpu_pct_max": 42.6,
+      "mem_mib_max": 282.9
+     },
+     "rest": {
+      "cpu_pct_avg": 18.5,
+      "cpu_pct_max": 23.8,
+      "mem_mib_max": 51.1
+     },
+     "functions": {
+      "cpu_pct_avg": 43.6,
+      "cpu_pct_max": 155.3,
+      "mem_mib_max": 1045.5
+     },
+     "gw": {
+      "cpu_pct_avg": 13,
+      "cpu_pct_max": 16.4,
+      "mem_mib_max": 199.3
+     }
+    },
+    "db_client_connections": {
+     "max": 12,
+     "avg": 11.8,
+     "postgrest_busy_max": 2
+    },
+    "db_unreachable_samples": 0
+   },
+   {
+    "t_start_s": 2400,
+    "samples": 58,
+    "containers": {
+     "db": {
+      "cpu_pct_avg": 30.2,
+      "cpu_pct_max": 58.5,
+      "mem_mib_max": 195.2
+     },
+     "rest": {
+      "cpu_pct_avg": 18.4,
+      "cpu_pct_max": 29.8,
+      "mem_mib_max": 50.4
+     },
+     "functions": {
+      "cpu_pct_avg": 41,
+      "cpu_pct_max": 147.8,
+      "mem_mib_max": 1029.1
+     },
+     "gw": {
+      "cpu_pct_avg": 13,
+      "cpu_pct_max": 18.7,
+      "mem_mib_max": 199.2
+     }
+    },
+    "db_client_connections": {
+     "max": 12,
+     "avg": 11.1,
+     "postgrest_busy_max": 10
+    },
+    "db_unreachable_samples": 0
+   },
+   {
+    "t_start_s": 2700,
+    "samples": 58,
+    "containers": {
+     "db": {
+      "cpu_pct_avg": 30,
+      "cpu_pct_max": 51.4,
+      "mem_mib_max": 204.7
+     },
+     "rest": {
+      "cpu_pct_avg": 18.5,
+      "cpu_pct_max": 23.5,
+      "mem_mib_max": 48.9
+     },
+     "functions": {
+      "cpu_pct_avg": 39.1,
+      "cpu_pct_max": 162.8,
+      "mem_mib_max": 1066
+     },
+     "gw": {
+      "cpu_pct_avg": 12.9,
+      "cpu_pct_max": 16.8,
+      "mem_mib_max": 199.3
+     }
+    },
+    "db_client_connections": {
+     "max": 12,
+     "avg": 12,
+     "postgrest_busy_max": 6
+    },
+    "db_unreachable_samples": 0
+   },
+   {
+    "t_start_s": 3000,
+    "samples": 58,
+    "containers": {
+     "db": {
+      "cpu_pct_avg": 29.7,
+      "cpu_pct_max": 43.9,
+      "mem_mib_max": 221.5
+     },
+     "rest": {
+      "cpu_pct_avg": 18.8,
+      "cpu_pct_max": 24.6,
+      "mem_mib_max": 49
+     },
+     "functions": {
+      "cpu_pct_avg": 38.9,
+      "cpu_pct_max": 158.5,
+      "mem_mib_max": 1066
+     },
+     "gw": {
+      "cpu_pct_avg": 13.1,
+      "cpu_pct_max": 16.9,
+      "mem_mib_max": 199.2
+     }
+    },
+    "db_client_connections": {
+     "max": 12,
+     "avg": 12,
+     "postgrest_busy_max": 2
+    },
+    "db_unreachable_samples": 0
+   },
+   {
+    "t_start_s": 3300,
+    "samples": 59,
+    "containers": {
+     "db": {
+      "cpu_pct_avg": 30.8,
+      "cpu_pct_max": 54.3,
+      "mem_mib_max": 240.4
+     },
+     "rest": {
+      "cpu_pct_avg": 18.9,
+      "cpu_pct_max": 26.7,
+      "mem_mib_max": 49.4
+     },
+     "functions": {
+      "cpu_pct_avg": 42,
+      "cpu_pct_max": 138.4,
+      "mem_mib_max": 1071.1
+     },
+     "gw": {
+      "cpu_pct_avg": 13.3,
+      "cpu_pct_max": 19.1,
+      "mem_mib_max": 199.8
+     }
+    },
+    "db_client_connections": {
+     "max": 13,
+     "avg": 12,
+     "postgrest_busy_max": 3
+    },
+    "db_unreachable_samples": 0
+   },
+   {
+    "t_start_s": 3600,
+    "samples": 58,
+    "containers": {
+     "db": {
+      "cpu_pct_avg": 29.8,
+      "cpu_pct_max": 41.5,
+      "mem_mib_max": 257.7
+     },
+     "rest": {
+      "cpu_pct_avg": 18.9,
+      "cpu_pct_max": 23.8,
+      "mem_mib_max": 49.2
+     },
+     "functions": {
+      "cpu_pct_avg": 43.2,
+      "cpu_pct_max": 160.9,
+      "mem_mib_max": 1076.2
+     },
+     "gw": {
+      "cpu_pct_avg": 13.2,
+      "cpu_pct_max": 16.2,
+      "mem_mib_max": 199.7
+     }
+    },
+    "db_client_connections": {
+     "max": 12,
+     "avg": 12,
+     "postgrest_busy_max": 2
+    },
+    "db_unreachable_samples": 0
+   },
+   {
+    "t_start_s": 3900,
+    "samples": 58,
+    "containers": {
+     "db": {
+      "cpu_pct_avg": 29,
+      "cpu_pct_max": 45.6,
+      "mem_mib_max": 258.2
+     },
+     "rest": {
+      "cpu_pct_avg": 18.3,
+      "cpu_pct_max": 23.4,
+      "mem_mib_max": 49.4
+     },
+     "functions": {
+      "cpu_pct_avg": 44.1,
+      "cpu_pct_max": 163.3,
+      "mem_mib_max": 1108
+     },
+     "gw": {
+      "cpu_pct_avg": 13,
+      "cpu_pct_max": 17.4,
+      "mem_mib_max": 199.7
+     }
+    },
+    "db_client_connections": {
+     "max": 12,
+     "avg": 12,
+     "postgrest_busy_max": 3
+    },
+    "db_unreachable_samples": 0
+   },
+   {
+    "t_start_s": 4200,
+    "samples": 58,
+    "containers": {
+     "db": {
+      "cpu_pct_avg": 30.1,
+      "cpu_pct_max": 51.8,
+      "mem_mib_max": 261.6
+     },
+     "rest": {
+      "cpu_pct_avg": 19,
+      "cpu_pct_max": 27.6,
+      "mem_mib_max": 49.2
+     },
+     "functions": {
+      "cpu_pct_avg": 38.4,
+      "cpu_pct_max": 152.3,
+      "mem_mib_max": 1118.2
+     },
+     "gw": {
+      "cpu_pct_avg": 13,
+      "cpu_pct_max": 17.3,
+      "mem_mib_max": 199.8
+     }
+    },
+    "db_client_connections": {
+     "max": 12,
+     "avg": 12,
+     "postgrest_busy_max": 7
+    },
+    "db_unreachable_samples": 0
+   },
+   {
+    "t_start_s": 4500,
+    "samples": 58,
+    "containers": {
+     "db": {
+      "cpu_pct_avg": 31.2,
+      "cpu_pct_max": 46,
+      "mem_mib_max": 266.7
+     },
+     "rest": {
+      "cpu_pct_avg": 19.6,
+      "cpu_pct_max": 26.9,
+      "mem_mib_max": 48
+     },
+     "functions": {
+      "cpu_pct_avg": 40.5,
+      "cpu_pct_max": 149.1,
+      "mem_mib_max": 624.7
+     },
+     "gw": {
+      "cpu_pct_avg": 13.3,
+      "cpu_pct_max": 15.9,
+      "mem_mib_max": 198.7
+     }
+    },
+    "db_client_connections": {
+     "max": 12,
+     "avg": 12,
+     "postgrest_busy_max": 2
+    },
+    "db_unreachable_samples": 0
+   },
+   {
+    "t_start_s": 4800,
+    "samples": 58,
+    "containers": {
+     "db": {
+      "cpu_pct_avg": 30.9,
+      "cpu_pct_max": 58,
+      "mem_mib_max": 265.7
+     },
+     "rest": {
+      "cpu_pct_avg": 19,
+      "cpu_pct_max": 23.5,
+      "mem_mib_max": 46.2
+     },
+     "functions": {
+      "cpu_pct_avg": 37.1,
+      "cpu_pct_max": 90.8,
+      "mem_mib_max": 736.4
+     },
+     "gw": {
+      "cpu_pct_avg": 13.4,
+      "cpu_pct_max": 15.8,
+      "mem_mib_max": 198.8
+     }
+    },
+    "db_client_connections": {
+     "max": 12,
+     "avg": 12,
+     "postgrest_busy_max": 2
+    },
+    "db_unreachable_samples": 0
+   },
+   {
+    "t_start_s": 5100,
+    "samples": 58,
+    "containers": {
+     "db": {
+      "cpu_pct_avg": 29.9,
+      "cpu_pct_max": 47.2,
+      "mem_mib_max": 281.8
+     },
+     "rest": {
+      "cpu_pct_avg": 19.3,
+      "cpu_pct_max": 28.2,
+      "mem_mib_max": 46.4
+     },
+     "functions": {
+      "cpu_pct_avg": 41.7,
+      "cpu_pct_max": 136.8,
+      "mem_mib_max": 805.4
+     },
+     "gw": {
+      "cpu_pct_avg": 13.3,
+      "cpu_pct_max": 17.9,
+      "mem_mib_max": 198.9
+     }
+    },
+    "db_client_connections": {
+     "max": 12,
+     "avg": 12,
+     "postgrest_busy_max": 4
+    },
+    "db_unreachable_samples": 0
+   },
+   {
+    "t_start_s": 5400,
+    "samples": 59,
+    "containers": {
+     "db": {
+      "cpu_pct_avg": 29.5,
+      "cpu_pct_max": 45.8,
+      "mem_mib_max": 281.9
+     },
+     "rest": {
+      "cpu_pct_avg": 18.9,
+      "cpu_pct_max": 27.8,
+      "mem_mib_max": 46.2
+     },
+     "functions": {
+      "cpu_pct_avg": 39,
+      "cpu_pct_max": 157.5,
+      "mem_mib_max": 853.7
+     },
+     "gw": {
+      "cpu_pct_avg": 13.1,
+      "cpu_pct_max": 16,
+      "mem_mib_max": 199
+     }
+    },
+    "db_client_connections": {
+     "max": 12,
+     "avg": 12,
+     "postgrest_busy_max": 2
+    },
+    "db_unreachable_samples": 0
+   },
+   {
+    "t_start_s": 5700,
+    "samples": 58,
+    "containers": {
+     "db": {
+      "cpu_pct_avg": 29.5,
+      "cpu_pct_max": 40.5,
+      "mem_mib_max": 311.7
+     },
+     "rest": {
+      "cpu_pct_avg": 18.6,
+      "cpu_pct_max": 24.6,
+      "mem_mib_max": 45.5
+     },
+     "functions": {
+      "cpu_pct_avg": 42.7,
+      "cpu_pct_max": 140.1,
+      "mem_mib_max": 848
+     },
+     "gw": {
+      "cpu_pct_avg": 13.1,
+      "cpu_pct_max": 17,
+      "mem_mib_max": 198.9
+     }
+    },
+    "db_client_connections": {
+     "max": 12,
+     "avg": 12,
+     "postgrest_busy_max": 2
+    },
+    "db_unreachable_samples": 0
+   },
+   {
+    "t_start_s": 6000,
+    "samples": 58,
+    "containers": {
+     "db": {
+      "cpu_pct_avg": 30.9,
+      "cpu_pct_max": 44.2,
+      "mem_mib_max": 312
+     },
+     "rest": {
+      "cpu_pct_avg": 18.9,
+      "cpu_pct_max": 22.4,
+      "mem_mib_max": 46.3
+     },
+     "functions": {
+      "cpu_pct_avg": 41.6,
+      "cpu_pct_max": 154.4,
+      "mem_mib_max": 899.8
+     },
+     "gw": {
+      "cpu_pct_avg": 13.1,
+      "cpu_pct_max": 16.1,
+      "mem_mib_max": 198.9
+     }
+    },
+    "db_client_connections": {
+     "max": 12,
+     "avg": 12,
+     "postgrest_busy_max": 3
+    },
+    "db_unreachable_samples": 0
+   },
+   {
+    "t_start_s": 6300,
+    "samples": 58,
+    "containers": {
+     "db": {
+      "cpu_pct_avg": 31.4,
+      "cpu_pct_max": 49.8,
+      "mem_mib_max": 329.8
+     },
+     "rest": {
+      "cpu_pct_avg": 19.5,
+      "cpu_pct_max": 23.6,
+      "mem_mib_max": 46.5
+     },
+     "functions": {
+      "cpu_pct_avg": 41,
+      "cpu_pct_max": 137.3,
+      "mem_mib_max": 899
+     },
+     "gw": {
+      "cpu_pct_avg": 13.4,
+      "cpu_pct_max": 17.3,
+      "mem_mib_max": 198.8
+     }
+    },
+    "db_client_connections": {
+     "max": 12,
+     "avg": 11.9,
+     "postgrest_busy_max": 2
+    },
+    "db_unreachable_samples": 0
+   },
+   {
+    "t_start_s": 6600,
+    "samples": 58,
+    "containers": {
+     "db": {
+      "cpu_pct_avg": 29.6,
+      "cpu_pct_max": 41,
+      "mem_mib_max": 331.4
+     },
+     "rest": {
+      "cpu_pct_avg": 19.1,
+      "cpu_pct_max": 23.4,
+      "mem_mib_max": 36.6
+     },
+     "functions": {
+      "cpu_pct_avg": 43,
+      "cpu_pct_max": 133.6,
+      "mem_mib_max": 951.4
+     },
+     "gw": {
+      "cpu_pct_avg": 13.2,
+      "cpu_pct_max": 15.8,
+      "mem_mib_max": 198.7
+     }
+    },
+    "db_client_connections": {
+     "max": 12,
+     "avg": 11.5,
+     "postgrest_busy_max": 4
+    },
+    "db_unreachable_samples": 0
+   },
+   {
+    "t_start_s": 6900,
+    "samples": 58,
+    "containers": {
+     "db": {
+      "cpu_pct_avg": 30.8,
+      "cpu_pct_max": 46.3,
+      "mem_mib_max": 333.9
+     },
+     "rest": {
+      "cpu_pct_avg": 19.4,
+      "cpu_pct_max": 26.2,
+      "mem_mib_max": 38
+     },
+     "functions": {
+      "cpu_pct_avg": 46.1,
+      "cpu_pct_max": 168.3,
+      "mem_mib_max": 955.7
+     },
+     "gw": {
+      "cpu_pct_avg": 13.5,
+      "cpu_pct_max": 18,
+      "mem_mib_max": 198.9
+     }
+    },
+    "db_client_connections": {
+     "max": 12,
+     "avg": 12,
+     "postgrest_busy_max": 2
+    },
+    "db_unreachable_samples": 0
+   },
+   {
+    "t_start_s": 7200,
+    "samples": 58,
+    "containers": {
+     "db": {
+      "cpu_pct_avg": 32.1,
+      "cpu_pct_max": 49,
+      "mem_mib_max": 364.1
+     },
+     "rest": {
+      "cpu_pct_avg": 19.9,
+      "cpu_pct_max": 27.1,
+      "mem_mib_max": 37.5
+     },
+     "functions": {
+      "cpu_pct_avg": 44,
+      "cpu_pct_max": 154.7,
+      "mem_mib_max": 977.3
+     },
+     "gw": {
+      "cpu_pct_avg": 13.5,
+      "cpu_pct_max": 17.3,
+      "mem_mib_max": 198.9
+     }
+    },
+    "db_client_connections": {
+     "max": 12,
+     "avg": 12,
+     "postgrest_busy_max": 5
+    },
+    "db_unreachable_samples": 0
+   },
+   {
+    "t_start_s": 7500,
+    "samples": 58,
+    "containers": {
+     "db": {
+      "cpu_pct_avg": 31.1,
+      "cpu_pct_max": 50.3,
+      "mem_mib_max": 373.9
+     },
+     "rest": {
+      "cpu_pct_avg": 19.9,
+      "cpu_pct_max": 27.4,
+      "mem_mib_max": 37.8
+     },
+     "functions": {
+      "cpu_pct_avg": 39.1,
+      "cpu_pct_max": 86,
+      "mem_mib_max": 965.8
+     },
+     "gw": {
+      "cpu_pct_avg": 13.7,
+      "cpu_pct_max": 18.9,
+      "mem_mib_max": 198.9
+     }
+    },
+    "db_client_connections": {
+     "max": 12,
+     "avg": 12,
+     "postgrest_busy_max": 2
+    },
+    "db_unreachable_samples": 0
+   },
+   {
+    "t_start_s": 7800,
+    "samples": 58,
+    "containers": {
+     "db": {
+      "cpu_pct_avg": 31.7,
+      "cpu_pct_max": 63.4,
+      "mem_mib_max": 420.7
+     },
+     "rest": {
+      "cpu_pct_avg": 19.9,
+      "cpu_pct_max": 28.4,
+      "mem_mib_max": 38.2
+     },
+     "functions": {
+      "cpu_pct_avg": 38,
+      "cpu_pct_max": 67.4,
+      "mem_mib_max": 995.1
+     },
+     "gw": {
+      "cpu_pct_avg": 13.8,
+      "cpu_pct_max": 20.9,
+      "mem_mib_max": 198.8
+     }
+    },
+    "db_client_connections": {
+     "max": 12,
+     "avg": 12,
+     "postgrest_busy_max": 3
+    },
+    "db_unreachable_samples": 0
+   },
+   {
+    "t_start_s": 8100,
+    "samples": 58,
+    "containers": {
+     "db": {
+      "cpu_pct_avg": 30.6,
+      "cpu_pct_max": 54.4,
+      "mem_mib_max": 403.2
+     },
+     "rest": {
+      "cpu_pct_avg": 19.3,
+      "cpu_pct_max": 24.1,
+      "mem_mib_max": 37.8
+     },
+     "functions": {
+      "cpu_pct_avg": 42.4,
+      "cpu_pct_max": 150.8,
+      "mem_mib_max": 1051.6
+     },
+     "gw": {
+      "cpu_pct_avg": 13.4,
+      "cpu_pct_max": 17.1,
+      "mem_mib_max": 198.9
+     }
+    },
+    "db_client_connections": {
+     "max": 12,
+     "avg": 12,
+     "postgrest_busy_max": 4
+    },
+    "db_unreachable_samples": 0
+   },
+   {
+    "t_start_s": 8400,
+    "samples": 58,
+    "containers": {
+     "db": {
+      "cpu_pct_avg": 31,
+      "cpu_pct_max": 55.8,
+      "mem_mib_max": 403.8
+     },
+     "rest": {
+      "cpu_pct_avg": 19.4,
+      "cpu_pct_max": 31.6,
+      "mem_mib_max": 38.3
+     },
+     "functions": {
+      "cpu_pct_avg": 45.8,
+      "cpu_pct_max": 189.3,
+      "mem_mib_max": 1040.4
+     },
+     "gw": {
+      "cpu_pct_avg": 13.5,
+      "cpu_pct_max": 16.4,
+      "mem_mib_max": 198.8
+     }
+    },
+    "db_client_connections": {
+     "max": 12,
+     "avg": 12,
+     "postgrest_busy_max": 5
+    },
+    "db_unreachable_samples": 0
+   },
+   {
+    "t_start_s": 8700,
+    "samples": 58,
+    "containers": {
+     "db": {
+      "cpu_pct_avg": 26.2,
+      "cpu_pct_max": 75,
+      "mem_mib_max": 425.4
+     },
+     "rest": {
+      "cpu_pct_avg": 21.4,
+      "cpu_pct_max": 156.8,
+      "mem_mib_max": 69.9
+     },
+     "functions": {
+      "cpu_pct_avg": 42.7,
+      "cpu_pct_max": 146.9,
+      "mem_mib_max": 1150
+     },
+     "gw": {
+      "cpu_pct_avg": 12.5,
+      "cpu_pct_max": 24.1,
+      "mem_mib_max": 201.6
+     }
+    },
+    "db_client_connections": {
+     "max": 13,
+     "avg": 12,
+     "postgrest_busy_max": 8
+    },
+    "db_unreachable_samples": 0
+   },
+   {
+    "t_start_s": 9000,
+    "samples": 58,
+    "containers": {
+     "db": {
+      "cpu_pct_avg": 29.2,
+      "cpu_pct_max": 51.2,
+      "mem_mib_max": 426.7
+     },
+     "rest": {
+      "cpu_pct_avg": 19.9,
+      "cpu_pct_max": 32.2,
+      "mem_mib_max": 74.3
+     },
+     "functions": {
+      "cpu_pct_avg": 42,
+      "cpu_pct_max": 145.3,
+      "mem_mib_max": 1109
+     },
+     "gw": {
+      "cpu_pct_avg": 13.5,
+      "cpu_pct_max": 17.1,
+      "mem_mib_max": 200.1
+     }
+    },
+    "db_client_connections": {
+     "max": 12,
+     "avg": 12,
+     "postgrest_busy_max": 4
+    },
+    "db_unreachable_samples": 0
+   },
+   {
+    "t_start_s": 9300,
+    "samples": 58,
+    "containers": {
+     "db": {
+      "cpu_pct_avg": 29.5,
+      "cpu_pct_max": 41.3,
+      "mem_mib_max": 450.8
+     },
+     "rest": {
+      "cpu_pct_avg": 19.5,
+      "cpu_pct_max": 25.1,
+      "mem_mib_max": 54
+     },
+     "functions": {
+      "cpu_pct_avg": 38.6,
+      "cpu_pct_max": 78.7,
+      "mem_mib_max": 1102.8
+     },
+     "gw": {
+      "cpu_pct_avg": 13.8,
+      "cpu_pct_max": 18.8,
+      "mem_mib_max": 200
+     }
+    },
+    "db_client_connections": {
+     "max": 12,
+     "avg": 12,
+     "postgrest_busy_max": 2
+    },
+    "db_unreachable_samples": 0
+   },
+   {
+    "t_start_s": 9600,
+    "samples": 58,
+    "containers": {
+     "db": {
+      "cpu_pct_avg": 31.3,
+      "cpu_pct_max": 59.1,
+      "mem_mib_max": 454.1
+     },
+     "rest": {
+      "cpu_pct_avg": 20.6,
+      "cpu_pct_max": 30.7,
+      "mem_mib_max": 53.1
+     },
+     "functions": {
+      "cpu_pct_avg": 42.6,
+      "cpu_pct_max": 92.1,
+      "mem_mib_max": 1109
+     },
+     "gw": {
+      "cpu_pct_avg": 14.6,
+      "cpu_pct_max": 22.4,
+      "mem_mib_max": 200
+     }
+    },
+    "db_client_connections": {
+     "max": 12,
+     "avg": 12,
+     "postgrest_busy_max": 2
+    },
+    "db_unreachable_samples": 0
+   },
+   {
+    "t_start_s": 9900,
+    "samples": 58,
+    "containers": {
+     "db": {
+      "cpu_pct_avg": 31,
+      "cpu_pct_max": 65.2,
+      "mem_mib_max": 501.1
+     },
+     "rest": {
+      "cpu_pct_avg": 20.2,
+      "cpu_pct_max": 31.2,
+      "mem_mib_max": 52.6
+     },
+     "functions": {
+      "cpu_pct_avg": 44.7,
+      "cpu_pct_max": 157.4,
+      "mem_mib_max": 1113.1
+     },
+     "gw": {
+      "cpu_pct_avg": 13.8,
+      "cpu_pct_max": 19.6,
+      "mem_mib_max": 199.8
+     }
+    },
+    "db_client_connections": {
+     "max": 12,
+     "avg": 12,
+     "postgrest_busy_max": 2
+    },
+    "db_unreachable_samples": 0
+   },
+   {
+    "t_start_s": 10200,
+    "samples": 58,
+    "containers": {
+     "db": {
+      "cpu_pct_avg": 30.9,
+      "cpu_pct_max": 48.5,
+      "mem_mib_max": 494.6
+     },
+     "rest": {
+      "cpu_pct_avg": 20.1,
+      "cpu_pct_max": 26.2,
+      "mem_mib_max": 52.7
+     },
+     "functions": {
+      "cpu_pct_avg": 44.7,
+      "cpu_pct_max": 171.1,
+      "mem_mib_max": 1126.4
+     },
+     "gw": {
+      "cpu_pct_avg": 13.9,
+      "cpu_pct_max": 19,
+      "mem_mib_max": 200.1
+     }
+    },
+    "db_client_connections": {
+     "max": 12,
+     "avg": 12,
+     "postgrest_busy_max": 2
+    },
+    "db_unreachable_samples": 0
+   },
+   {
+    "t_start_s": 10500,
+    "samples": 58,
+    "containers": {
+     "db": {
+      "cpu_pct_avg": 31.7,
+      "cpu_pct_max": 53.1,
+      "mem_mib_max": 500.6
+     },
+     "rest": {
+      "cpu_pct_avg": 20.1,
+      "cpu_pct_max": 27.5,
+      "mem_mib_max": 52.7
+     },
+     "functions": {
+      "cpu_pct_avg": 41.7,
+      "cpu_pct_max": 159.5,
+      "mem_mib_max": 1124.4
+     },
+     "gw": {
+      "cpu_pct_avg": 13.8,
+      "cpu_pct_max": 16.2,
+      "mem_mib_max": 200.1
+     }
+    },
+    "db_client_connections": {
+     "max": 12,
+     "avg": 12,
+     "postgrest_busy_max": 2
+    },
+    "db_unreachable_samples": 0
+   }
+  ],
+  "fault_observations_runner_note": "Computed by the runner before fix D1; the earlier windows absorbed later faults. fault_recovery (ledger-derived, 20 consecutive successes) is authoritative."
+ },
+ "fault_recovery": {
+  "confirmation_successes": 20,
+  "horizon_s": 300,
+  "faults": [
+   {
+    "fault": "db-restart",
+    "inject_start_s": 2400,
+    "inject_duration_s": 0.5,
+    "cohorts": {
+     "quiet_tenant": {
+      "requests_in_horizon": 548,
+      "failed": 28,
+      "failure_classes": {
+       "503": 28
+      },
+      "first_failure_after_inject_s": 0.2,
+      "last_failure_after_inject_s": 13.6,
+      "recovered_after_inject_s": 15.7,
+      "recovered_after_fault_cleared_s": 15.1,
+      "status": "recovered"
+     },
+     "noisy_tenant": {
+      "requests_in_horizon": 5452,
+      "failed": 276,
+      "failure_classes": {
+       "503": 276
+      },
+      "first_failure_after_inject_s": 0,
+      "last_failure_after_inject_s": 15.2,
+      "recovered_after_inject_s": 15.3,
+      "recovered_after_fault_cleared_s": 14.8,
+      "status": "recovered"
+     }
+    }
+   },
+   {
+    "fault": "edge-restart",
+    "inject_start_s": 4500,
+    "inject_duration_s": 0.5,
+    "cohorts": {
+     "quiet_tenant": {
+      "requests_in_horizon": 544,
+      "failed": 0,
+      "failure_classes": {},
+      "first_failure_after_inject_s": null,
+      "last_failure_after_inject_s": null,
+      "recovered_after_inject_s": null,
+      "recovered_after_fault_cleared_s": null,
+      "status": "no_failure_observed"
+     },
+     "noisy_tenant": {
+      "requests_in_horizon": 5456,
+      "failed": 12,
+      "failure_classes": {
+       "502": 12
+      },
+      "first_failure_after_inject_s": 0.1,
+      "last_failure_after_inject_s": 0.6,
+      "recovered_after_inject_s": 1.3,
+      "recovered_after_fault_cleared_s": 0.7,
+      "status": "recovered"
+     }
+    }
+   },
+   {
+    "fault": "rest-restart",
+    "inject_start_s": 6600,
+    "inject_duration_s": 0.4,
+    "cohorts": {
+     "quiet_tenant": {
+      "requests_in_horizon": 548,
+      "failed": 4,
+      "failure_classes": {
+       "503": 4
+      },
+      "first_failure_after_inject_s": 0,
+      "last_failure_after_inject_s": 0.1,
+      "recovered_after_inject_s": 2.4,
+      "recovered_after_fault_cleared_s": 2.1,
+      "status": "recovered"
+     },
+     "noisy_tenant": {
+      "requests_in_horizon": 5452,
+      "failed": 6,
+      "failure_classes": {
+       "503": 6
+      },
+      "first_failure_after_inject_s": 0.2,
+      "last_failure_after_inject_s": 0.5,
+      "recovered_after_inject_s": 0.6,
+      "recovered_after_fault_cleared_s": 0.2,
+      "status": "recovered"
+     }
+    }
+   },
+   {
+    "fault": "db-partition",
+    "inject_start_s": 8700,
+    "inject_duration_s": 30.3,
+    "cohorts": {
+     "quiet_tenant": {
+      "requests_in_horizon": 544,
+      "failed": 89,
+      "failure_classes": {
+       "timeout": 89
+      },
+      "first_failure_after_inject_s": 11,
+      "last_failure_after_inject_s": 59.4,
+      "recovered_after_inject_s": 60,
+      "recovered_after_fault_cleared_s": 29.7,
+      "status": "recovered"
+     },
+     "noisy_tenant": {
+      "requests_in_horizon": 5456,
+      "failed": 887,
+      "failure_classes": {
+       "timeout": 887
+      },
+      "first_failure_after_inject_s": 10,
+      "last_failure_after_inject_s": 60.5,
+      "recovered_after_inject_s": 60.6,
+      "recovered_after_fault_cleared_s": 30.3,
+      "status": "recovered"
+     }
+    }
+   }
+  ]
+ },
+ "reconciliation": {
+  "ledger_ingest_ids_sent": 1620000,
+  "generator_duplicate_ids": 0,
+  "by_cohort": {
+   "quiet_tenant": {
+    "requests": {
+     "acked": 14638,
+     "rejected": 0,
+     "ambiguous": 92
+    },
+    "ids": {
+     "acked": 146380,
+     "rejected": 0,
+     "ambiguous": 920
+    }
+   },
+   "noisy_tenant": {
+    "requests": {
+     "acked": 107530,
+     "rejected": 38843,
+     "ambiguous": 897
+    },
+    "ids": {
+     "acked": 1075300,
+     "rejected": 388430,
+     "ambiguous": 8970
+    }
+   }
+  },
+  "db_rows": 1231570,
+  "db_distinct_event_ids": 1231570,
+  "db_duplicate_event_ids": 0,
+  "acked_ids_missing_in_db": 0,
+  "rejected_ids_present_in_db": 0,
+  "ambiguous_ids_present_in_db": 9890,
+  "ambiguous_ids_absent_in_db": 0,
+  "replay": {
+   "requests": 989,
+   "acked": 989,
+   "other": 0
+  },
+  "replay_acked_ids_missing_in_db": 0,
+  "db_ids_not_generated_by_this_run": 0,
+  "acked_ids_sha256": "5c7e8b4891acfb96bc9c1bcae82abb34a7ef83454fcea4500c0714c17cc56842",
+  "db_rows_matching_acked_ids_sha256": "5c7e8b4891acfb96bc9c1bcae82abb34a7ef83454fcea4500c0714c17cc56842",
+  "acked_hash_match": true,
+  "passed": true,
+  "pre_replay_db_rows": 1222450,
+  "ambiguous_ids_committed_before_replay": 770,
+  "ambiguous_batches_committed_before_replay": 77
+ },
+ "lock_fix_ab": {
+  "change": "supabase/migrations/20261011000400_tenant_admission_capacity_shared_read_lock.sql: tenant_admission_capacity() takes the tenant advisory lock in SHARED mode; every allocating writer still takes it EXCLUSIVE first",
+  "test": "scripts/tenant-ga-admission-concurrency-postgres.test.mjs: failed before the change (lock timeout on a concurrent reader), passed after; writers are still excluded",
+  "method": "same 11-key overload profile, function toggled between the two definitions in place, 60 s cool-down, order old/new/old/new",
+  "at_34_rps": [
+   {
+    "run": "ab-old-1",
+    "lock_mode": "exclusive",
+    "offered_rps": 34,
+    "duration_s": 90,
+    "goodput_http200_per_s": 33.9,
+    "error_ratio": 0,
+    "p50_ms": 54,
+    "p95_ms": 452,
+    "p99_ms": 1534,
+    "quiet_error_ratio": 0,
+    "quiet_p95_ms": 291,
+    "noisy_error_ratio": 0,
+    "peak_in_flight": 61,
+    "started_at": "2026-10-11T06:56:26.033Z"
+   },
+   {
+    "run": "ab-new-1",
+    "lock_mode": "shared",
+    "offered_rps": 34,
+    "duration_s": 90,
+    "goodput_http200_per_s": 34,
+    "error_ratio": 0,
+    "p50_ms": 52,
+    "p95_ms": 591,
+    "p99_ms": 1589,
+    "quiet_error_ratio": 0,
+    "quiet_p95_ms": 512,
+    "noisy_error_ratio": 0,
+    "peak_in_flight": 57,
+    "started_at": "2026-10-11T06:58:56.721Z"
+   },
+   {
+    "run": "ab-old-2",
+    "lock_mode": "exclusive",
+    "offered_rps": 34,
+    "duration_s": 90,
+    "goodput_http200_per_s": 34,
+    "error_ratio": 0,
+    "p50_ms": 55,
+    "p95_ms": 344,
+    "p99_ms": 926,
+    "quiet_error_ratio": 0,
+    "quiet_p95_ms": 170,
+    "noisy_error_ratio": 0,
+    "peak_in_flight": 47,
+    "started_at": "2026-10-11T07:01:27.052Z"
+   },
+   {
+    "run": "ab-new-2",
+    "lock_mode": "shared",
+    "offered_rps": 34,
+    "duration_s": 90,
+    "goodput_http200_per_s": 34,
+    "error_ratio": 0,
+    "p50_ms": 57,
+    "p95_ms": 383,
+    "p99_ms": 914,
+    "quiet_error_ratio": 0,
+    "quiet_p95_ms": 603,
+    "noisy_error_ratio": 0,
+    "peak_in_flight": 46,
+    "started_at": "2026-10-11T07:03:57.395Z"
+   }
+  ],
+  "at_52_rps": [
+   {
+    "run": "ab52-old-1",
+    "lock_mode": "exclusive",
+    "offered_rps": 52,
+    "duration_s": 90,
+    "goodput_http200_per_s": 33,
+    "error_ratio": 0.2441,
+    "p50_ms": 8305,
+    "p95_ms": 10002,
+    "p99_ms": 10004,
+    "quiet_error_ratio": 0.2383,
+    "quiet_p95_ms": 10002,
+    "noisy_error_ratio": 0.2447,
+    "peak_in_flight": 400,
+    "started_at": "2026-10-11T07:14:26.567Z"
+   },
+   {
+    "run": "ab52-new-1",
+    "lock_mode": "shared",
+    "offered_rps": 52,
+    "duration_s": 90,
+    "goodput_http200_per_s": 42.5,
+    "error_ratio": 0.0928,
+    "p50_ms": 6644,
+    "p95_ms": 10001,
+    "p99_ms": 10003,
+    "quiet_error_ratio": 0.0751,
+    "quiet_p95_ms": 10001,
+    "noisy_error_ratio": 0.0946,
+    "peak_in_flight": 400,
+    "started_at": "2026-10-11T07:17:03.742Z"
+   },
+   {
+    "run": "ab52-old-2",
+    "lock_mode": "exclusive",
+    "offered_rps": 52,
+    "duration_s": 90,
+    "goodput_http200_per_s": 31.3,
+    "error_ratio": 0.2777,
+    "p50_ms": 8465,
+    "p95_ms": 10002,
+    "p99_ms": 10005,
+    "quiet_error_ratio": 0.25,
+    "quiet_p95_ms": 10003,
+    "noisy_error_ratio": 0.2804,
+    "peak_in_flight": 400,
+    "started_at": "2026-10-11T07:19:40.593Z"
+   },
+   {
+    "run": "ab52-new-2",
+    "lock_mode": "shared",
+    "offered_rps": 52,
+    "duration_s": 90,
+    "goodput_http200_per_s": 37.8,
+    "error_ratio": 0.1629,
+    "p50_ms": 7026,
+    "p95_ms": 10002,
+    "p99_ms": 10003,
+    "quiet_error_ratio": 0.1587,
+    "quiet_p95_ms": 10002,
+    "noisy_error_ratio": 0.1633,
+    "peak_in_flight": 400,
+    "started_at": "2026-10-11T07:22:18.369Z"
+   }
+  ],
+  "interpretation": "Below the knee (34 rps on the quiet host) no difference. In overload (52 rps) goodput rose from 33.0/31.3 to 42.5/37.8 HTTP 200/s and the error ratio fell from 24-28% to 9-16% (two runs per arm, same host, same data). The quiet tenant still failed 7.5-15.9% in overload: the change reduces but does not remove cross-tenant interference above the knee."
+ },
+ "findings": [
+  {
+   "id": "D1",
+   "status": "fixed",
+   "title": "Load runner stretched an earlier fault window's recovery across later faults",
+   "detail": "faultObservations() took the last failure over the whole remaining run, so in a multi-fault soak the first window's estimated_rto_ms included every later fault (6 675 s for a 15 s DB restart). The last failure is now taken inside the window; the confirming successes may complete after the window, and a later failure before confirmation leaves the window not_recovered.",
+   "test": "scripts/load-test.test.mjs 'a later fault does not stretch the recovery time of an earlier fault window' (failed before: 1 703 ms, passes after)"
+  },
+  {
+   "id": "D2",
+   "status": "partially_fixed",
+   "title": "Per-tenant exclusive lock in the read-only admission check held shared PostgREST pool slots",
+   "detail": "Every ingest took the tenant's exclusive advisory lock three times (registration, admission read, event seat trigger). Waiters hold PostgREST connections, so one tenant's backlog exhausts the 10-connection pool and the other tenant times out. The admission read now takes the shared lock; registration and the event seat trigger remain exclusive by design (seat allocation, event-id ownership).",
+   "test": "scripts/tenant-ga-admission-concurrency-postgres.test.mjs"
+  },
+  {
+   "id": "O1",
+   "status": "open",
+   "title": "Congestion collapse above the knee, no admission control",
+   "detail": "Abandoned requests keep consuming the edge worker and pool after the client's 10 s timeout; goodput falls towards zero instead of plateauing. Needs a per-tenant in-flight cap or lock_timeout-based shedding at the edge/DB boundary and a pool/gateway timeout budget. Not changed here: it is a product decision about which tenant's requests to shed."
+  },
+  {
+   "id": "O2",
+   "status": "open",
+   "title": "DB network partition produces 10 s client hangs and ~30 s recovery after heal",
+   "detail": "During a 30 s partition PostgREST requests block on dead pooled connections (no fast 503); after the network returned, success resumed 29.7-30.3 s later. No loss or duplication. Dead-peer detection (libpq keepalives / tcp_user_timeout on PGRST_DB_URI) and a request deadline would bound it; not changed (no target was agreed)."
+  },
+  {
+   "id": "O3",
+   "status": "observed",
+   "title": "Edge runtime memory grows then plateaus",
+   "detail": "functions container RSS 651 MiB at start, ~1.0-1.1 GiB after 30-60 min, 1.12 GiB at 3 h (dropped to 0.85 GiB after the edge restart). No OOM. A plateau over 3 h is not proof of no leak over days."
+  },
+  {
+   "id": "O4",
+   "status": "observed",
+   "title": "Fixed-window per-subject quota produces 429 bursts at each minute boundary",
+   "detail": "Noisy keys exhaust 1 200 events/min within the first ~40 s of each window; the quiet tenant saw zero 429s and no latency change from the bursts."
+  },
+  {
+   "id": "O5",
+   "status": "observed",
+   "title": "Unexplained 60 s slowdown at soak t=600-660 s",
+   "detail": "Both tenants' p95 rose to ~5 s with 7/10 pool connections active, no injected fault, offered load constant, co-tenant containers active on the host. Not attributed."
+  }
+ ],
+ "artefact_hashes": {
+  "soak.json": "0531c24cffcdba1488ee31d555ef5f01207c42e9fe65d2a84e91487f185b2f2b",
+  "soak-ledger.jsonl": "d23c78fbf6a13fd5d974ddb04bfa24bf1bf1b860e02e923eb17105982ad3dcd3",
+  "soak-stats.jsonl": "d24c7b8a96050160e0fcc8d98310637ef1728bf5743cf417cf6a41454ca23758",
+  "soak-faults.jsonl": "1af9cb930a9c30f7350818c89f89f027d5bb08d8bfb0ef10bad5720dc2399cac",
+  "control.json": "4b4817d5f1bad0dad600ce0f6190bbdb01e6314cd6e8ecdec53dac85d8155425",
+  "soak.profile.json": "634e9422c09ac12cf6a97b963ad132a466fea1e4c74180eecd86d4a87b29d7f6"
+ },
+ "isolation_result": {
+  "quiet_steady_state_p95_ms": 98.3,
+  "quiet_steady_state_p99_ms": 401.1,
+  "quiet_steady_state_error_ratio": 5.8e-05,
+  "quiet_http429": 0,
+  "passed": true,
+  "scope": "At 20 rps offered (about 40% of the quiet-host knee) the quiet tenant stayed within the pre-declared bound while the noisy tenant ran at 10x and was quota-limited (19.8% HTTP 429). It does NOT hold above the knee: see knee and lock_fix_ab."
+ },
+ "artefact_hashes_note": "Raw ledger/stats/result files were not retained in the repository (about 210 MB); hashes identify the local copies this summary was derived from."
+}

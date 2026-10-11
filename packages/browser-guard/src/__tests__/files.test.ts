@@ -344,14 +344,41 @@ describe("sanitizeFile binary handling", () => {
 // --- legacy code pages (Excel ANSI CSV) and undecodable text files ----------------------------
 
 /** Encodes `text` in a single-byte code page (reverse of the WHATWG TextDecoder table). */
+/**
+ * Independent reference encoder for the fixtures (deliberately not TextDecoder: some runtimes
+ * decode windows-1252 as Latin-1, which is exactly what the product must not depend on).
+ * Latin-1 positions plus the WHATWG windows-125x specials used by these tests.
+ */
+const CP_SPECIALS: Record<"windows-1254" | "windows-1252", Record<string, number>> = {
+	"windows-1252": { "€": 0x80, Š: 0x8a, Œ: 0x8c, Ž: 0x8e, š: 0x9a, œ: 0x9c, ž: 0x9e, Ÿ: 0x9f },
+	"windows-1254": {
+		"€": 0x80,
+		Š: 0x8a,
+		Œ: 0x8c,
+		š: 0x9a,
+		œ: 0x9c,
+		Ÿ: 0x9f,
+		Ğ: 0xd0,
+		İ: 0xdd,
+		Ş: 0xde,
+		ğ: 0xf0,
+		ı: 0xfd,
+		ş: 0xfe,
+	},
+};
+const CP1254_REPLACED = new Set([0xd0, 0xdd, 0xde, 0xf0, 0xfd, 0xfe]);
+
 function encodeSingleByte(text: string, encoding: "windows-1254" | "windows-1252"): Uint8Array {
-	const decoder = new TextDecoder(encoding);
-	const table = new Map<string, number>();
-	for (let b = 0; b < 256; b++) table.set(decoder.decode(Uint8Array.of(b)), b);
 	return Uint8Array.from([...text], (ch) => {
-		const byte = table.get(ch);
-		if (byte === undefined) throw new Error(`${ch} is not in ${encoding}`);
-		return byte;
+		const special = CP_SPECIALS[encoding][ch];
+		if (special !== undefined) return special;
+		const code = ch.codePointAt(0) ?? 0;
+		const latin1 =
+			code <= 0xff &&
+			!(code >= 0x80 && code <= 0x9f) &&
+			!(encoding === "windows-1254" && CP1254_REPLACED.has(code));
+		if (!latin1) throw new Error(`${ch} is not in ${encoding}`);
+		return code;
 	});
 }
 
@@ -406,6 +433,18 @@ describe("sanitizeFile legacy code pages", () => {
 		const out = output(d);
 		expect(out).toBe("comment,email\nJosé Müller wrote,[EMAIL_1]\nŽofie Žák wrote,[EMAIL_2]\n");
 		expect(d.masked?.type).toBe("text/csv");
+	});
+
+	it("decodes windows-1252 / windows-1254 from fixed WHATWG tables, whatever the runtime", () => {
+		// 0x80..0x9F are letters and punctuation in windows-1252, not C1 controls.
+		const high = Uint8Array.of(0x80, 0x8a, 0x8e, 0x91, 0x92, 0x96, 0x9e, 0x9f, 0xff, 0xe9, 0xd0);
+		const cp1252 = decodeLegacyTextFile(Uint8Array.of(0x8e, 0x9e, ...high));
+		expect(cp1252?.legacy).toBe("windows-1252");
+		expect(cp1252?.text).toBe("Žž€ŠŽ‘’–žŸÿéÐ");
+		const cp1254 = decodeLegacyTextFile(Uint8Array.of(0x80, 0xd0, 0xdd, 0xde, 0xf0, 0xfd, 0xfe));
+		expect(cp1254).toEqual({ text: "€ĞİŞğış", bom: false, legacy: "windows-1254" });
+		// Undefined positions stay C1 controls (and count against that code page).
+		expect(decodeLegacyTextFile(Uint8Array.of(0x81, 0x41))?.text).toBe("\u0081A");
 	});
 
 	it("scans a text-MIME file without a known extension", async () => {

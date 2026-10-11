@@ -17,22 +17,26 @@
  * documented failure policy. Each connector only maps the returned outcome onto
  * its host's wire format.
  *
- * Failure policy (identical to the Claude Code hook):
- *   - a prompt that cannot be inspected (missing or non-text input, an internal
- *     error) blocks when `prompt_protection.secrets` is `block` (the default) and is
- *     otherwise sent with a visible "not inspected" notice;
- *   - a prompt not fully inspected before the deadline blocks when secrets are
- *     `block` or a tenant DLP policy applies, and is otherwise sent with a notice;
- *   - a provisioned tenant DLP policy that cannot be verified always blocks.
+ * Failure policy (identical to the Claude Code hook): a prompt that cannot be
+ * inspected (missing, non-text or oversized input, a detector exception) or is
+ * not fully inspected before the deadline blocks when ANY rule that would have
+ * applied blocks — see {@link promptFailureBlocks}: a `block` mode for secrets,
+ * personal data, jailbreak or an operator-chosen content-safety category, a
+ * tenant prompt-safety floor that blocks, an applicable tenant DLP policy, or a
+ * configured tenant policy whose content is not known yet. Otherwise it is sent
+ * with a visible "not inspected" notice. A provisioned tenant DLP policy that
+ * cannot be verified always blocks.
  *
  * Messages are fixed text or come from {@link scanPrompt}; neither ever echoes
  * the prompt, an error message or a matched value.
  */
 
+import { existsSync } from "node:fs";
 import { logVerdict } from "./audit-log.js";
 import { CANARY_PROMPT_BLOCK_MESSAGE, checkPromptForCanaries } from "./canary-triggers.js";
 import { loadConfig } from "./config.js";
-import { loadProvisionedDetectorContext } from "./detector-provisioning.js";
+import { detectorPolicyPath, loadProvisionedDetectorContext } from "./detector-provisioning.js";
+import { localDlpPolicyPath } from "./local-dlp-policy.js";
 import {
 	DEFAULT_PROMPT_PROTECTION,
 	type PromptProtectionResult,
@@ -40,13 +44,15 @@ import {
 	type PromptTenantDlp,
 	scanPrompt,
 } from "./prompt-protection.js";
-import type { TenantPromptSafetyPolicy } from "./prompt-safety.js";
+import { DEFAULT_PROMPT_SAFETY, type TenantPromptSafetyPolicy } from "./prompt-safety.js";
 import {
 	type AgentRuntime,
 	type Config,
 	type Logger,
 	nullLogger,
+	type PromptContentSafetyCategory,
 	type PromptProtectionConfig,
+	type PromptProtectionMode,
 	type Verdict,
 } from "./types.js";
 
@@ -130,11 +136,94 @@ const TENANT_POLICY_BLOCK =
 const UNINSPECTED_MODEL_CONTEXT =
 	"Singularity AIDR prompt protection notice: the user's prompt was not fully inspected for secrets or personal data. Do not repeat credentials or personal data from it, and do not copy them into files, commands, commit messages, web requests or other tools unless the user explicitly asks for that.";
 
-/** Outcome for a prompt that was not inspected at all (unreadable input, internal error). */
-export function uninspectedPromptOutcome(
-	secretsMode: PromptProtectionConfig["secrets"],
-): PromptInspectionOutcome {
-	return secretsMode === "block"
+/**
+ * What is known, at the moment an inspection fails or runs out of time, about
+ * the rules that would have applied to the prompt.
+ */
+export interface PromptFailureState {
+	/** The local `prompt_protection` config; undefined until it has loaded. */
+	policy?: PromptProtectionConfig;
+	/** True once the tenant policy (DLP and prompt-safety floor) has loaded. */
+	tenantPolicyLoaded: boolean;
+	/**
+	 * True when a tenant (or local DLP) policy is configured for this runtime, so
+	 * a tenant policy that has not loaded yet is unknown rather than absent.
+	 */
+	tenantPolicyConfigured: boolean;
+	/** A tenant DLP policy applies to the prompt. */
+	tenantDlp: boolean;
+	/** The tenant prompt-safety floor, when one loaded. */
+	tenantPromptSafety?: TenantPromptSafetyPolicy;
+}
+
+/** The fail-closed starting state: nothing has loaded yet. */
+export function initialPromptFailureState(): PromptFailureState {
+	return { tenantPolicyLoaded: false, tenantPolicyConfigured: true, tenantDlp: false };
+}
+
+/**
+ * Whether a tenant (or local unsigned DLP) prompt policy is configured for this
+ * runtime: a managed install, an installed detector policy, or a local
+ * `dlp-policy.json`. A filesystem error counts as configured (fail closed).
+ */
+export function isPromptTenantPolicyConfigured(runtime: AgentRuntime, config: Config): boolean {
+	if (config.mode === "managed") return true;
+	try {
+		return existsSync(detectorPolicyPath(runtime)) || existsSync(localDlpPolicyPath());
+	} catch {
+		return true;
+	}
+}
+
+/**
+ * Whether an uninspected or partially inspected prompt must be blocked: true
+ * when any rule that would have applied blocks, or when that cannot be known.
+ *
+ * Content-safety categories count when the operator (local config or tenant
+ * floor) set them to `block`. The categories that already block by default
+ * (`weapons_cbrn`, the non-configurable `sexual_minors`) do not count from the
+ * shipped default alone: they would make every failure a block and remove the
+ * documented `warn` failure mode for installs that relaxed `secrets`.
+ */
+export function promptFailureBlocks(state: PromptFailureState): boolean {
+	try {
+		return failureRulesBlock(state);
+	} catch {
+		// A malformed policy object cannot prove that nothing would have blocked.
+		return true;
+	}
+}
+
+function failureRulesBlock(state: PromptFailureState): boolean {
+	const policy = state.policy;
+	if (!policy) return true;
+	if (state.tenantDlp) return true;
+	if (!state.tenantPolicyLoaded && state.tenantPolicyConfigured) return true;
+	if (policy.secrets === "block" || policy.pii === "block" || policy.jailbreak === "block") {
+		return true;
+	}
+	const shipped = DEFAULT_PROMPT_SAFETY.content_safety;
+	for (const [category, mode] of Object.entries(policy.content_safety ?? {})) {
+		if (mode === "block" && shipped[category as PromptContentSafetyCategory] !== "block") {
+			return true;
+		}
+	}
+	const floor = state.tenantPromptSafety;
+	if (floor?.jailbreak === "block") return true;
+	return Object.values(floor?.content_safety ?? {}).some((mode) => mode === "block");
+}
+
+/** The failure mode for {@link uninspectedPromptOutcome} from a {@link PromptFailureState}. */
+export function promptFailureMode(state: PromptFailureState): PromptProtectionMode {
+	return promptFailureBlocks(state) ? "block" : "warn";
+}
+
+/**
+ * Outcome for a prompt that was not inspected at all (unreadable or oversized
+ * input, internal error). `mode` is {@link promptFailureMode} of what is known.
+ */
+export function uninspectedPromptOutcome(mode: PromptProtectionMode): PromptInspectionOutcome {
+	return mode === "block"
 		? { decision: "block", reason: "not_inspected", userMessage: NOT_INSPECTED_BLOCK }
 		: {
 				decision: "warn",
@@ -144,11 +233,8 @@ export function uninspectedPromptOutcome(
 			};
 }
 
-function deadlineOutcome(
-	secretsMode: PromptProtectionConfig["secrets"],
-	tenantPolicy: boolean,
-): PromptInspectionOutcome {
-	return secretsMode === "block" || tenantPolicy
+function deadlineOutcome(state: PromptFailureState): PromptInspectionOutcome {
+	return promptFailureBlocks(state)
 		? { decision: "block", reason: "deadline", userMessage: DEADLINE_BLOCK }
 		: {
 				decision: "warn",
@@ -257,39 +343,39 @@ export async function inspectUserPrompt(
 	request: PromptInspectionRequest,
 ): Promise<PromptInspectionOutcome> {
 	const logger = request.logger ?? nullLogger;
-	// What an unfinished inspection falls back to. Starts fail-closed (the default
-	// secrets mode) and is updated as the config and tenant policy load.
-	const fallback = {
-		secretsMode: DEFAULT_PROMPT_PROTECTION.secrets as PromptProtectionConfig["secrets"],
-		tenantPolicy: false,
-		// A detected canary blocks whatever happens afterwards (deadline, error).
-		canary: false,
-	};
-	const unfinished = (outcome: PromptInspectionOutcome) =>
-		fallback.canary ? CANARY_OUTCOME : outcome;
+	// What an unfinished inspection falls back to. Starts fail-closed (nothing
+	// loaded) and is updated as the config and tenant policy load.
+	const fallback = initialPromptFailureState();
+	// A detected canary blocks whatever happens afterwards (deadline, error).
+	let canaryHit = false;
+	const unfinished = (outcome: PromptInspectionOutcome) => (canaryHit ? CANARY_OUTCOME : outcome);
 	let config: Config | undefined = request.config;
 	let result: PromptProtectionResult | undefined;
 
 	const work = async (): Promise<PromptInspectionOutcome> => {
 		config ??= await loadConfig(undefined, logger);
 		const policy = config.prompt_protection ?? DEFAULT_PROMPT_PROTECTION;
-		fallback.secretsMode = policy.secrets;
-		if (typeof request.prompt !== "string") return uninspectedPromptOutcome(policy.secrets);
+		fallback.tenantPolicyConfigured = isPromptTenantPolicyConfigured(request.runtime, config);
+		fallback.policy = policy;
 
 		// Canary values first: no tenant policy or scan result can release a decoy.
-		const canary = await checkPromptForCanaries({
-			sessionId: request.sessionId,
-			hookEvent: request.hookEvent,
-			prompt: request.prompt,
-			agentRuntime: request.runtime,
-			config,
-			logger,
-		});
-		if (canary === "triggered") {
-			fallback.canary = true;
-			return CANARY_OUTCOME;
+		if (typeof request.prompt === "string") {
+			const canary = await checkPromptForCanaries({
+				sessionId: request.sessionId,
+				hookEvent: request.hookEvent,
+				prompt: request.prompt,
+				agentRuntime: request.runtime,
+				config,
+				logger,
+			});
+			if (canary === "triggered") {
+				canaryHit = true;
+				return CANARY_OUTCOME;
+			}
 		}
 
+		// The tenant policy is part of the failure decision, so it is loaded before
+		// even an uninspectable prompt is answered.
 		let tenant: PromptTenantDlp | undefined;
 		let tenantPromptSafety: TenantPromptSafetyPolicy | undefined;
 		try {
@@ -297,7 +383,12 @@ export async function inspectUserPrompt(
 		} catch {
 			return tenantPolicyOutcome();
 		}
-		if (tenant) fallback.tenantPolicy = true;
+		fallback.tenantDlp = tenant !== undefined;
+		fallback.tenantPromptSafety = tenantPromptSafety;
+		fallback.tenantPolicyLoaded = true;
+		if (typeof request.prompt !== "string") {
+			return uninspectedPromptOutcome(promptFailureMode(fallback));
+		}
 
 		try {
 			result = scanPrompt(request.prompt, policy, tenant, {
@@ -306,7 +397,7 @@ export async function inspectUserPrompt(
 			});
 		} catch (error) {
 			if (error instanceof PromptScanDeadlineError) {
-				return deadlineOutcome(fallback.secretsMode, fallback.tenantPolicy);
+				return deadlineOutcome(fallback);
 			}
 			throw error;
 		}
@@ -316,7 +407,7 @@ export async function inspectUserPrompt(
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	const deadline = new Promise<PromptInspectionOutcome>((resolve) => {
 		timer = setTimeout(
-			() => resolve(unfinished(deadlineOutcome(fallback.secretsMode, fallback.tenantPolicy))),
+			() => resolve(unfinished(deadlineOutcome(fallback))),
 			Math.max(0, request.deadlineAt - Date.now()),
 		);
 		timer.unref?.();
@@ -325,7 +416,7 @@ export async function inspectUserPrompt(
 	let outcome: PromptInspectionOutcome;
 	try {
 		outcome = await Promise.race([
-			work().catch(() => unfinished(uninspectedPromptOutcome(fallback.secretsMode))),
+			work().catch(() => unfinished(uninspectedPromptOutcome(promptFailureMode(fallback)))),
 			deadline,
 		]);
 	} finally {

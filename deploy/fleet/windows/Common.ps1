@@ -628,7 +628,7 @@ function Invoke-AidrEndpointInstaller {
         if ([string]$packageJson.name -ne '@singularityrd/aidr-claude-code' -or [string]$packageJson.version -ne [string]$ManifestRecord.Value.package_version) {
             throw "Artifact package identity does not match the fleet manifest"
         }
-        foreach ($required in @('dist/pre-tool-use.cjs', 'dist/post-tool-use.cjs', 'dist/session-start.cjs', 'resources/threats', 'resources/allowlists')) {
+        foreach ($required in @('dist/pre-tool-use.cjs', 'dist/pre-tool-use.bundle.cjs', 'dist/post-tool-use.cjs', 'dist/post-tool-use.bundle.cjs', 'dist/session-start.cjs', 'dist/session-start.bundle.cjs', 'resources/threats', 'resources/allowlists')) {
             $null = Get-AidrSafeChildPath -Root $packageRoot -RelativePath $required -MustExist -Directory:($required -notmatch '\.cjs$')
         }
         if ($RequireResponseWorker -or (Test-AidrResponseWorkerRequired -TargetHome $TargetHome)) {

@@ -49,6 +49,8 @@ type Options = {
 	overlayError?: boolean;
 	/** tenant_plan_entitlements row; null = RPC error. Defaults to Team (browser_privacy_guard). */
 	plan?: Record<string, unknown> | null;
+	/** tenant_ai_governance_settings row (default: none); "error" = unreadable. */
+	settings?: unknown;
 };
 
 const teamPlan = (overrides: Record<string, unknown> = {}) => ({
@@ -66,12 +68,18 @@ const OVERLAY = {
 function database(options: Options = {}) {
 	const rpcCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
 	const rateSubjects: unknown[] = [];
+	const settingsReads: Array<{ columns: string; filters: Array<[string, unknown]> }> = [];
 	function from(table: string) {
+		const read = { columns: "", filters: [] as Array<[string, unknown]> };
 		const query = {
-			select: (_columns: string) => query,
-			eq: (_column: string, _value: unknown) => query,
+			select: (columns: string) => { read.columns = columns; return query; },
+			eq: (column: string, value: unknown) => { read.filters.push([column, value]); return query; },
 			maybeSingle: async () => {
 				switch (table) {
+					case "tenant_ai_governance_settings":
+						settingsReads.push(read);
+						return options.settings === "error" ? { data: null, error: new Error("db_down") }
+							: { data: options.settings ?? null, error: null };
 					case "api_keys": {
 						const scope = options.scope ?? "ingest:browser_guard";
 						return { data: {
@@ -109,7 +117,7 @@ function database(options: Options = {}) {
 			throw new Error(`unexpected RPC ${name}`);
 		},
 	};
-	return { db, rpcCalls, rateSubjects };
+	return { db, rpcCalls, rateSubjects, settingsReads };
 }
 
 const get = (token = "aidr_bg_contract_key") => new Request(URL, { headers: { Authorization: `Bearer ${token}` } });
@@ -159,6 +167,41 @@ describe("browser-guard-policy", () => {
 			.toEqual({ ok: false, reason: "digest_mismatch" });
 	});
 
+	it("signs the tenant's require-native-NER setting into the document only when it is on", async () => {
+		const on = database({ settings: { browser_guard_require_native_ner: true } });
+		const body = await (await handler(on)(get())).json();
+		expect(body.browser_guard).toEqual({
+			shadow_ai: { blocked: ["deepseek", "poe"], sanctioned: ["chatgpt", "claude"] },
+			require_native_ner: true,
+		});
+		expect(on.settingsReads).toEqual([
+			{ columns: "browser_guard_require_native_ner", filters: [["tenant_id", TENANT]] },
+		]);
+		const verified = await verifyDashboardPolicy(body, { trust: trust(), now: NOW.getTime() + 1000 });
+		expect(verified).toMatchObject({ ok: true, policy: { requireNativeNer: true } });
+		// The flag is covered by the signed digest: switching it off in transit is refused.
+		const relaxed = structuredClone(body);
+		delete relaxed.browser_guard.require_native_ner;
+		expect(await verifyDashboardPolicy(relaxed, { trust: trust(), now: NOW.getTime() }))
+			.toEqual({ ok: false, reason: "digest_mismatch" });
+
+		// Off (or no settings row yet): the key is absent, so older extensions keep accepting it.
+		for (const settings of [{ browser_guard_require_native_ner: false }, null]) {
+			const off = await (await handler(database({ settings }))(get())).json();
+			expect(Object.keys(off.browser_guard)).toEqual(["shadow_ai"]);
+			expect(await verifyDashboardPolicy(off, { trust: trust(), now: NOW.getTime() + 1000 }))
+				.toMatchObject({ ok: true, policy: { requireNativeNer: false } });
+		}
+	});
+
+	it("fails closed on an unreadable or malformed settings row instead of dropping the requirement", async () => {
+		for (const settings of ["error", {}, { browser_guard_require_native_ner: "true" }, { browser_guard_require_native_ner: null }, []]) {
+			const response = await handler(database({ settings }))(get());
+			expect(response.status).toBe(503);
+			expect(await response.json()).toEqual({ error: "policy_unavailable" });
+		}
+	});
+
 	it("applies only tenant-wide exceptions for a shared Browser Guard key", async () => {
 		const fake = database({ scope: "ingest:browser_guard", agentId: null });
 		expect((await handler(fake)(get())).status).toBe(200);
@@ -197,6 +240,7 @@ describe("browser-guard-policy", () => {
 			const denied = database(options);
 			expect((await handler(denied)(get())).status).toBe(status);
 			expect(denied.rpcCalls.some((c) => c.name === "ai_governance_policy_overlay")).toBe(false);
+			expect(denied.settingsReads).toEqual([]);
 		}
 	});
 
@@ -235,5 +279,7 @@ describe("browser-guard-policy", () => {
 	it("keeps deny over allow when a service is listed twice", () => {
 		expect(browserGuardPolicyFromOverlay({ browser_guard_shadow_ai: { blocked: ["poe"], sanctioned: ["poe", "claude"] } }))
 			.toEqual({ shadow_ai: { blocked: ["poe"], sanctioned: ["claude"] } });
+		expect(browserGuardPolicyFromOverlay({ browser_guard_shadow_ai: { blocked: [], sanctioned: [] } }, { requireNativeNer: true }))
+			.toEqual({ shadow_ai: { blocked: [], sanctioned: [] }, require_native_ner: true });
 	});
 });

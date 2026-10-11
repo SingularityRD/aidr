@@ -52,6 +52,7 @@ import {
 	blockingDependency,
 	versionAtLeast,
 } from "./lib/ci-local-plan.mjs";
+import { terminateProcessTree } from "./lib/process-tree.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const localDir = path.join(root, LOCAL_DIR);
@@ -449,29 +450,38 @@ function runBash(script, { cwd, env, timeoutMs, logStream, runnerTemp, tail }) {
 		};
 		child.stdout.on("data", onData(process.stdout));
 		child.stderr.on("data", onData(process.stderr));
-		const kill = (signal) => {
-			try {
-				process.kill(-child.pid, signal);
-			} catch {
-				child.kill(signal);
-			}
+		let settled = false;
+		const settle = (value) => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timer);
+			activeChild = null;
+			resolvePromise(value);
 		};
+		// Kill the whole tree (POSIX process group / Windows taskkill /T /F), see scripts/lib/process-tree.mjs.
+		const kill = (signal) => terminateProcessTree(child, signal);
 		const timer = setTimeout(() => {
 			timedOut = true;
 			kill("SIGTERM");
-			setTimeout(() => kill("SIGKILL"), 15_000).unref();
+			setTimeout(() => {
+				kill("SIGKILL");
+				// Bounded return: if a surviving descendant still holds the pipes, stop
+				// waiting for 'close' and report the timeout anyway.
+				setTimeout(() => {
+					child.stdout.destroy();
+					child.stderr.destroy();
+					tail.push("ci:local: step output pipes still open 10s after SIGKILL; detached");
+					settle({ exitCode: 124, timedOut: true });
+				}, 10_000).unref();
+			}, 15_000).unref();
 		}, timeoutMs);
 		child.on("close", (code, signal) => {
-			clearTimeout(timer);
-			activeChild = null;
 			if (partial) tail.push(partial);
-			resolvePromise({ exitCode: code ?? (signal ? 128 : 1), timedOut });
+			settle({ exitCode: code ?? (signal ? 128 : 1), timedOut });
 		});
 		child.on("error", (error) => {
-			clearTimeout(timer);
-			activeChild = null;
 			tail.push(String(error.message));
-			resolvePromise({ exitCode: 127, timedOut: false });
+			settle({ exitCode: 127, timedOut: false });
 		});
 	});
 }
@@ -667,13 +677,7 @@ async function main() {
 
 	const onSignal = () => {
 		interrupted = true;
-		if (activeChild) {
-			try {
-				process.kill(-activeChild.pid, "SIGTERM");
-			} catch {
-				activeChild.kill("SIGTERM");
-			}
-		}
+		if (activeChild) terminateProcessTree(activeChild, "SIGTERM");
 	};
 	process.on("SIGINT", onSignal);
 	process.on("SIGTERM", onSignal);

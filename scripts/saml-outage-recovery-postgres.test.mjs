@@ -45,7 +45,7 @@ const call = (text, proofs) => `public.recover_tenant_saml_outage(${literal(text
 
 test("full SAML outage recovery requires two native operator approvals and immutable atomic evidence", { timeout: 600_000 }, async t => {
   const started = await docker(["run", "--detach", "--rm", "--pull", "never", "--network", "none", "--name", container,
-    "-e", "POSTGRES_PASSWORD=saml-outage-fixture-only", "supabase/postgres:17.6.1.136"]);
+    "-e", "POSTGRES_PASSWORD=saml-outage-fixture-only", "supabase/postgres:17.11.0.004"]);
   assert.equal(started.code, 0, started.stderr);
   try {
     let ready = false;

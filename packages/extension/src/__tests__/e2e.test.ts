@@ -981,6 +981,7 @@ function buildVsCodeManifest(baseManifest: Record<string, unknown>): Record<stri
 		files: [
 			"dist/vscode_extension.js",
 			"dist/aidr-hook.cjs",
+			"dist/aidr-hook.bundle.cjs",
 			"dist/resources/**",
 			"package.json",
 			"README.md",

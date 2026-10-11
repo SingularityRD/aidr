@@ -417,9 +417,43 @@ describe("background: RECORD and GET_STATS", () => {
 				t.content(),
 			),
 		).toEqual({ ok: false, error: "BAD_MESSAGE" });
+		expect(
+			await t.send(
+				{
+					type: "RECORD",
+					site: "chatgpt",
+					action: "blocked",
+					channel: "prompt",
+					counts: {},
+					native: "Ada Lovelace",
+				},
+				t.content(),
+			),
+		).toEqual({ ok: false, error: "BAD_MESSAGE" });
 		expect(await t.send({ type: "GET_STATS", tabId: -4 })).toEqual({
 			ok: false,
 			error: "BAD_MESSAGE",
+		});
+	});
+
+	it("queues the native NER outcome of a RECORD as native_ner (status only)", async () => {
+		const t = await setup({ managed: { telemetry: TELEMETRY } });
+		await t.send(
+			{
+				type: "RECORD",
+				site: "chatgpt",
+				action: "blocked",
+				channel: "prompt",
+				counts: {},
+				native: "unavailable",
+			},
+			t.content(),
+		);
+		await vi.waitFor(async () => expect(await t.bg.telemetry.pending()).toHaveLength(1));
+		expect((await t.bg.telemetry.pending())[0]).toMatchObject({
+			action: "blocked",
+			native_ner: "unavailable",
+			findings_count: 0,
 		});
 	});
 
@@ -532,6 +566,25 @@ describe("background: NATIVE_SCAN and SET_RESTORE_VISIBLE", () => {
 			findings: null,
 			status: "connected",
 		});
+	});
+
+	it("asks the bridge for NER coverage when managed policy requires native NER", async () => {
+		const scanText = vi.fn(async () => null);
+		const scanImage = vi.fn(async () => null);
+		const t = await setup({
+			managed: { requireNativeNer: true },
+			bridge: { status: () => "connected", scanText, scanImage },
+		});
+		const policy = (await t.send({ type: "GET_POLICY" }, t.content())).policy as GuardPolicy;
+		expect(policy).toMatchObject({ requireNativeNer: true, useNativeHost: true });
+		expect(await t.send({ type: "NATIVE_SCAN", text: "Ada Lovelace" }, t.content())).toEqual({
+			ok: true,
+			findings: null,
+			status: "connected",
+		});
+		expect(scanText).toHaveBeenCalledWith("Ada Lovelace", { requireNer: true });
+		await t.send({ type: "NATIVE_IMAGE_SCAN", data: "iVBORw0KGgo=" }, t.content());
+		expect(scanImage).toHaveBeenCalledWith(expect.any(Uint8Array), { requireNer: true });
 	});
 
 	it("proxies NATIVE_IMAGE_SCAN to the bridge's OCR and zeroes the decoded image", async () => {

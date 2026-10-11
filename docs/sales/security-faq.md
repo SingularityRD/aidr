@@ -47,7 +47,8 @@ browser: `block` mode stops them, other modes let them through with a warning.
 
 If an administrator enables it, Browser Guard sends prompt text to the AIDR Privacy
 native host, a process on the same endpoint, for NER. It does not leave the device
-through this path. See [native-host.md](../../packages/browser-guard/docs/native-host.md).
+through this path. The native host ships without a model and NER is not part of the
+first-release scope. See [native-host.md](../../packages/browser-guard/docs/native-host.md).
 
 ---
 

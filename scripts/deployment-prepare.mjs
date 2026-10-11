@@ -16,7 +16,55 @@ import {
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const requireCore = createRequire(join(root, "packages/core/package.json"));
-const { parse, stringify } = existsSync(join(root, "deploy/vendor/yaml.cjs")) ? requireCore(join(root, "deploy/vendor/yaml.cjs")) : requireCore("yaml");
+const { parse, parseDocument, stringify } = existsSync(join(root, "deploy/vendor/yaml.cjs")) ? requireCore(join(root, "deploy/vendor/yaml.cjs")) : requireCore("yaml");
+// Supabase Studio is an operator tool, never part of the public API surface.
+// The reviewed upstream Envoy listener (port 8000, the one the ingress proxies)
+// ends in `/` -> studio behind HTTP basic auth only. Move the Studio routes to a
+// separate listener that Compose publishes on loopback only, and end the public
+// listener in a plain 404. Operators reach Studio through an SSH tunnel.
+const STUDIO_ADMIN_LISTENER_PORT = 8001;
+// libpq dead-peer detection for PostgREST's pooled connections
+// (docs/production-readiness/load-soak-drill-2026-10-11.md, O2 addendum). Without
+// it, a connection that was mid-query when the database's network path died sat
+// in TCP retransmission backoff and kept its pool slot well after the network
+// returned. Keepalives probe idle connections (first after 30 s idle, every 10 s,
+// dropped after 3 misses); tcp_user_timeout drops a connection whose sent data
+// stays unacknowledged for 20 s. Neither bounds query or request duration, and
+// the PostgREST pool timeouts keep their defaults. Operators override the whole
+// parameter string with AIDR_POSTGREST_DB_URI_PARAMS in `.env`.
+const POSTGREST_DB_URI_PARAMS = "keepalives=1&keepalives_idle=30&keepalives_interval=10&keepalives_count=3&tcp_user_timeout=20000";
+const ENVOY_ROUTES = ["filter_chains", 0, "filters", 0, "typed_config", "route_config", "virtual_hosts", 0, "routes"];
+function isolateStudioListener(path) {
+	const doc = parseDocument(readFileSync(path, "utf8"));
+	const resources = doc.get("resources");
+	const listener = resources?.items?.length === 1 ? resources.items[0] : null;
+	const routes = listener?.getIn(ENVOY_ROUTES);
+	const isStudio = (route) => route?.getIn?.(["route", "cluster"]) === "studio";
+	const studioRoutes = routes?.items?.filter(isStudio) ?? [];
+	if (!listener || listener.get("name") !== "supabase" || listener.getIn(["address", "socket_address", "port_value"]) !== 8000
+		|| studioRoutes.map((route) => route.getIn(["match", "prefix"])).join(",") !== "/api/mcp,/mcp,/" || routes.items.at(-1) !== studioRoutes.at(-1)) {
+		throw new Error("The reviewed upstream Envoy listener layout changed; refusing to prepare a gateway that could expose Studio");
+	}
+	const admin = listener.clone();
+	admin.set("name", "studio_admin");
+	admin.setIn(["address", "socket_address", "port_value"], STUDIO_ADMIN_LISTENER_PORT);
+	admin.setIn(["filter_chains", 0, "filters", 0, "typed_config", "stat_prefix"], "studio_admin_http");
+	admin.setIn(["filter_chains", 0, "filters", 0, "typed_config", "route_config", "name"], "studio_admin_route");
+	admin.setIn(["filter_chains", 0, "filters", 0, "typed_config", "route_config", "virtual_hosts", 0, "name"], "studio_admin_host");
+	admin.getIn(ENVOY_ROUTES).items = studioRoutes.map((route) => route.clone());
+	routes.items = routes.items.filter((route) => !isStudio(route));
+	routes.items.push(doc.createNode({
+		name: "studio-not-public",
+		match: { prefix: "/" },
+		direct_response: { status: 404 },
+		typed_per_filter_config: {
+			"envoy.filters.http.basic_auth": { "@type": "type.googleapis.com/envoy.config.route.v3.FilterConfig", disabled: true },
+			"envoy.filters.http.rbac": { "@type": "type.googleapis.com/envoy.extensions.filters.http.rbac.v3.RBACPerRoute", rbac: { rules: { action: "ALLOW", policies: { allow_all: { permissions: [{ any: true }], principals: [{ any: true }] } } } } },
+		},
+	}));
+	resources.items.push(admin);
+	writeFileSync(path, doc.toString({ lineWidth: 0 }));
+}
 async function stageMaintenanceRuntime(output) {
 	const readinessSource = join(root, "scripts/readiness-evidence-worker.mjs");
 	const backupSource = join(root, "scripts/deployment-backup.mjs");
@@ -323,6 +371,10 @@ const developmentHostPort = (url, fallback) => {
 	const parsed = new URL(url);
 	return parsed.port || (parsed.protocol === "https:" ? "443" : "80");
 };
+// Development installs derive the Studio port from the API port so isolated
+// installations on one host do not collide.
+const studioAdminHostPort = values.development ? String(Number(developmentHostPort(supabaseUrl, "8000")) + 1) : String(STUDIO_ADMIN_LISTENER_PORT);
+if (Number(studioAdminHostPort) > 65535) throw new Error("--development needs a Supabase URL port below 65535; the next port is Studio's loopback admin listener");
 const loopbackBinding = (url) => values.development && new URL(url).hostname === "[::1]" ? "[::1]" : "127.0.0.1";
 const projectName = values["project-name"] || `aidr-${randomBytes(6).toString("hex")}`;
 if (!/^[a-z][a-z0-9_-]{0,62}$/.test(projectName)) throw new Error("Invalid Compose project name");
@@ -424,7 +476,10 @@ mkdirSync(healthStateDirectory, { mode: 0o755 });
 if (process.platform !== "win32") chmodSync(healthStateDirectory, 0o755);
 const compose = values.mode === "self-hosted" ? parse(readFileSync(join(upstream, "docker/docker-compose.yml"), "utf8")) : { services: {}, volumes: {} };
 compose.name = projectName;
-if (values.mode === "self-hosted") cpSync(join(upstream, "docker/volumes"), join(output, "volumes"), { recursive: true });
+if (values.mode === "self-hosted") {
+	cpSync(join(upstream, "docker/volumes"), join(output, "volumes"), { recursive: true });
+	isolateStudioListener(join(output, "volumes/api/envoy/lds.template.yaml"));
+}
 const secret = (bytes = 32) => randomBytes(bytes).toString("hex");
 const deviceIngressSecret = secret(32);
 const deviceProxyToken = secret(32);
@@ -507,13 +562,27 @@ if (values.mode === "self-hosted") {
 	compose.services.imgproxy.environment.IMGPROXY_USE_LAST_MODIFIED = "false";
 	// Scan-gated upstream bumps (docs/production-readiness/runtime-image-security-2026-10-07.md):
 	// each strictly reduces CRITICAL+HIGH with no new CRITICAL; native acceptance still pending.
+	// storage v1.80.2 (docs/production-readiness/upstream-image-triage-2026-10-11.md): same
+	// scan findings as v1.80.0, adds the vendor's signed-TUS/Iceberg authorization hardening.
 	compose.services.studio.image = "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237";
 	compose.services.auth.image = "supabase/gotrue:v2.197.0@sha256:1736a63078f5922b198c4cbe50f80ab9a2d3b54fe8b7b6cfb2e9dc5dbbc12c6b";
-	compose.services.storage.image = "supabase/storage-api:v1.80.0@sha256:15aa712fdda0dab83d6345c79b54230c1466c41161f1f3756651778b22c3b292";
+	compose.services.storage.image = "supabase/storage-api:v1.80.2@sha256:95b217a9c59e0ac06c6dcb539df3189a1668a2445fb43dbf29660d6968ffd7d2";
 	compose.services.meta.image = "supabase/postgres-meta:v0.100.0@sha256:145325b7e39f8ef4931d6e8cfd3f6f4d655de09d72a2ccc96d9513542c2202bd";
 	compose.services.functions.image = "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8";
-	compose.services["api-gw"].ports = [`${loopbackBinding(supabaseUrl)}:${developmentHostPort(supabaseUrl, "8000")}:8000`];
+	// Stateful in-major bump 17.6 -> 17.11, gated by docs/production-readiness/postgres-upgrade-restore-drill-2026-10-11.md;
+	// existing installs follow the operator procedure in deploy/backup/README.md.
+	compose.services.db.image = "supabase/postgres:17.11.0.004@sha256:06ddc7962e11ab0f4f0334fd05671e97c30ea202f6e6a7113800bd3d6e416108";
+	// Studio's admin listener is published on loopback only; the ingress never proxies it.
+	compose.services["api-gw"].ports = [
+		`${loopbackBinding(supabaseUrl)}:${developmentHostPort(supabaseUrl, "8000")}:8000`,
+		`${loopbackBinding(supabaseUrl)}:${studioAdminHostPort}:${STUDIO_ADMIN_LISTENER_PORT}`,
+	];
 	compose.services.functions.env_file = [".env.functions"];
+	const restDbUri = compose.services.rest.environment.PGRST_DB_URI;
+	if (typeof restDbUri !== "string" || !restDbUri.startsWith("postgres://authenticator:") || restDbUri.includes("?")) {
+		throw new Error("The reviewed upstream PostgREST database URI changed; refusing to prepare it without connection keepalives");
+	}
+	compose.services.rest.environment.PGRST_DB_URI = `${restDbUri}?\${AIDR_POSTGREST_DB_URI_PARAMS:-${POSTGREST_DB_URI_PARAMS}}`;
 	compose.services.auth.environment.GOTRUE_MAILER_TEMPLATES_RECOVERY = "http://dashboard:8080/auth-templates/recovery.html";
 	compose.services.auth.environment.GOTRUE_MAILER_SUBJECTS_RECOVERY = "Reset your AIDR password";
 	// Invites must link to /auth/callback?token_hash=...&type=invite; the default

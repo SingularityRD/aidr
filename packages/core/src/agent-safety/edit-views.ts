@@ -138,10 +138,17 @@ interface BoundedLines {
 function splitLines(text: string): BoundedLines {
 	if (text === "") return { lines: [], truncated: false };
 	const raw = text.split(/\r?\n/);
-	const truncated = raw.length > MAX_LINES_PER_SIDE;
-	const lines = (truncated ? raw.slice(0, MAX_LINES_PER_SIDE) : raw).map((line) =>
-		line.length > MAX_LINE_LENGTH ? line.slice(0, MAX_LINE_LENGTH) : line,
-	);
+	let truncated = raw.length > MAX_LINES_PER_SIDE;
+	const lines = (truncated ? raw.slice(0, MAX_LINES_PER_SIDE) : raw).map((line) => {
+		if (line.length <= MAX_LINE_LENGTH) return line;
+		// Indentation padding carries no meaning for the rules; dropping it keeps a
+		// padded line (`<4097 spaces>it.skip(`) whole instead of cutting its code off.
+		const trimmed = line.trim();
+		if (trimmed.length <= MAX_LINE_LENGTH) return trimmed;
+		// A real cut: the rest of the line is not inspected, which must be reported.
+		truncated = true;
+		return trimmed.slice(0, MAX_LINE_LENGTH);
+	});
 	return { lines, truncated };
 }
 
@@ -333,7 +340,11 @@ async function fileChangesFor(
 				const body = patchBody(input);
 				return { changes: body ? patchChanges(body) : [], truncated: false };
 			}
-			if (!filePath) return { changes: [], truncated: false };
+			// A file no line view covers yields no views, so a size bound on its
+			// snippets is not an inspection gap either.
+			if (!filePath || viewsForPath(filePath).length === 0) {
+				return { changes: [], truncated: false };
+			}
 			const edits = editsFrom(input) ?? [
 				{
 					old: stringField(input, OLD_TEXT_KEYS) ?? "",

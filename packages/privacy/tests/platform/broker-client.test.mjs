@@ -14,7 +14,7 @@ import {EnforcedEgress} from '../../dist/platform/egress.js';
 import {issueJwt} from '../../dist/platform/identity.js';
 import {signPolicy} from '../../dist/enterprise/policy.js';
 import {hash} from '../../dist/enterprise/util.js';
-import {privateDirectory} from './helpers.mjs';
+import {privateDirectory,pythonExecutable} from './helpers.mjs';
 import {policy} from '../enterprise/helpers.mjs';
 import {createProtectHandler} from '../../dist/platform/protect-http.js';
 import {createDataHandler} from '../../dist/platform/data-http.js';
@@ -82,7 +82,7 @@ test('configured OIDC/MDM broker and final client use real mTLS, JWKS, PKCE and 
   brokerHandle=await adapter.initialize(runtime,new AbortController().signal);runtime.identity.assertPrincipal(brokerHandle.principal);
   const egress=new EnforcedEgress({state:runtime.state,identity:runtime.identity,gate:()=>runtime.gate,policyEpoch:runtime.policyEpoch,destinations:[{id:'provider',kind:'openai-responses',model:'approved-model',origin:'https://api.example.com',transport:{async send(bytes,_signal,before){before?.();seen.push(Buffer.from(bytes));return {status:200,contentType:'application/json',body:Buffer.from(JSON.stringify({output:[{type:'message',role:'assistant',content:[{type:'output_text',text:'Reply to alice@example.com'}]}]}))};}}}]});
   const handler=createEgressHandler(egress,{allowImages:false,maxBodyBytes:524288}),protectHandler=createProtectHandler(runtime,{id:'provider',origin:'https://api.example.com'});
-  const dataHandler=createDataHandler(runtime,{origin:'https://api.example.com'},{python:process.env.AIDR_PYTHON??'/opt/venv/bin/python3',workerSha256:createHash('sha256').update(readFileSync('parsers/worker.py')).digest('hex')},'silence-all');
+  const dataHandler=createDataHandler(runtime,{origin:'https://api.example.com'},{python:pythonExecutable(),workerSha256:createHash('sha256').update(readFileSync('parsers/worker.py')).digest('hex')},'silence-all');
   runtime.handler=async(req,res)=>{if(!await brokerHandle.handle(req,res)&&!await protectHandler(req,res)&&!await dataHandler(req,res))await handler(req,res);};
   // listenPlatform disallows port zero, so reserve a concrete ephemeral port without changing production API.
   const reservation=(await import('node:net')).createServer();await new Promise(r=>reservation.listen(0,'127.0.0.1',r));const port=reservation.address().port;await new Promise(r=>reservation.close(r));
@@ -141,6 +141,8 @@ test('configured OIDC/MDM broker and final client use real mTLS, JWKS, PKCE and 
    assert.equal((await client.readSource('approved-source','private-acl')).output,null);
    assert.equal((await client.readSource('approved-source','drawing')).output,null);
    assert.equal((await client.synchronizeSource('approved-source',1,snapshot)).synchronized,undefined);
+   const revision=runtime.state.get('dspm-policy','revision').value,oversized=await client.synchronizeSource('oversized-source',1,[{...snapshot[1],id:'large',text:'calibration '.repeat(6000)}]);
+   assert.deepEqual([oversized.synchronized,oversized.decision,oversized.reason],[undefined,'block','CONTENT_LIMIT']);assert.equal(runtime.state.get('dspm-sources','oversized-source'),null);assert.equal(runtime.state.get('dspm-policy','revision').value,revision);
    const userClaims=JSON.parse(Buffer.from(currentGrant.userToken.split('.')[1],'base64url')),nonAdmin={...currentGrant,userToken:issueJwt({...userClaims,groups:['engineering'],jti:randomBytes(16).toString('hex')},'signer',signing.privateKey)};
    const ordinary=new TextGatewayClient({origin:'https://127.0.0.1:'+port,destinationId:'provider',tls:{ca:tls.cert,...tls},credentials:()=>nonAdmin});
    assert.equal((await ordinary.synchronizeSource('unapproved-source',1,snapshot)).synchronized,undefined);assert.equal(runtime.state.get('dspm-sources','unapproved-source'),null);
@@ -161,7 +163,7 @@ test('configured OIDC/MDM broker and final client use real mTLS, JWKS, PKCE and 
   await t.test('PCM audio route actually removes every sample and rejects unsupported compressed audio',async()=>{
    const wav=Buffer.alloc(46);wav.write('RIFF');wav.writeUInt32LE(38,4);wav.write('WAVEfmt ',8);wav.writeUInt32LE(16,16);wav.writeUInt16LE(1,20);wav.writeUInt16LE(1,22);wav.writeUInt32LE(8000,24);wav.writeUInt32LE(16000,28);wav.writeUInt16LE(2,32);wav.writeUInt16LE(16,34);wav.write('data',36);wav.writeUInt32LE(2,40);wav.writeInt16LE(22000,44);
    const result=await client.silenceAudio(wav);assert.equal(result.reason,'ALL_AUDIO_REMOVED');assert.equal(Buffer.from(result.output,'base64').readInt16LE(44),0);assert.equal(result.mime,'audio/wav');assert.equal(seen.length,1);
-   assert.equal((await client.silenceAudio(Buffer.from('ID3 unsupported compressed audio'))).output,null);assert.equal(seen.length,1);
+   const compressed=await client.silenceAudio(Buffer.from('ID3 unsupported compressed audio'));assert.equal(compressed.output,null);assert.equal(compressed.decision,'block');assert.equal(compressed.reason,'AUDIO_FORMAT');assert.equal(seen.length,1);
   });
   await t.test('refresh advances durable session and invalidates original credentials',async()=>{
    const old=currentGrant;currentGrant=await client.session('refresh');assert.equal(runtime.state.get('sessions','session-a').value.version,2);

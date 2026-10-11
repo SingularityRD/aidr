@@ -24,6 +24,7 @@
 import { deflateZlib } from "../office/deflate.js";
 import { crc32 } from "../office/zip.js";
 import { FILTER_ALIASES, PdfDocument } from "./document.js";
+import { unpredictPngRows } from "./filters.js";
 import { PdfDict, PdfName, PdfStream, PdfString, type PdfValue } from "./lexer.js";
 
 /** Host OCR limits (vision worker: 12 Mpx, 8192 px per side). */
@@ -222,14 +223,6 @@ async function applyImageFilter(
 	return decoded.data;
 }
 
-function paeth(a: number, b: number, c: number): number {
-	const p = a + b - c;
-	const pa = Math.abs(p - a);
-	const pb = Math.abs(p - b);
-	const pc = Math.abs(p - c);
-	return pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
-}
-
 /** Reverses PNG row predictors (ISO 32000-1 §7.4.4.4); each row carries its own filter type. */
 function unpredictPng(doc: PdfDocument, data: Uint8Array, parm: PdfDict): Uint8Array {
 	const colors = doc.num(parm.get("Colors")) ?? 1;
@@ -239,41 +232,8 @@ function unpredictPng(doc: PdfDocument, data: Uint8Array, parm: PdfDict): Uint8A
 		fail("PDF_IMAGE_UNSUPPORTED");
 	const bpp = Math.max(1, Math.ceil((colors * bpc) / 8));
 	const rowBytes = Math.ceil((colors * bpc * columns) / 8);
-	const rows = Math.floor(data.length / (rowBytes + 1));
-	const out = new Uint8Array(rows * rowBytes);
-	for (let r = 0; r < rows; r++) unfilterRow(data, out, r, rowBytes, bpp);
-	return out;
+	return unpredictPngRows(data, rowBytes, bpp) ?? fail("PDF_IMAGE_UNDECODABLE");
 }
-
-/** Restores row `r` of `out` from its filtered form (filter type byte + bytes) in `data`. */
-function unfilterRow(
-	data: Uint8Array,
-	out: Uint8Array,
-	r: number,
-	rowBytes: number,
-	bpp: number,
-): void {
-	const predict =
-		PNG_PREDICTORS[data[r * (rowBytes + 1)] as number] ?? fail("PDF_IMAGE_UNDECODABLE");
-	const src = r * (rowBytes + 1) + 1;
-	const dst = r * rowBytes;
-	const prev = dst - rowBytes;
-	for (let i = 0; i < rowBytes; i++) {
-		const left = i >= bpp ? (out[dst + i - bpp] as number) : 0;
-		const up = r > 0 ? (out[prev + i] as number) : 0;
-		const upLeft = r > 0 && i >= bpp ? (out[prev + i - bpp] as number) : 0;
-		out[dst + i] = ((data[src + i] as number) + predict(left, up, upLeft)) & 0xff;
-	}
-}
-
-/** PNG filter types 0-4: the prediction added back to each byte. */
-const PNG_PREDICTORS: ReadonlyArray<(left: number, up: number, upLeft: number) => number> = [
-	() => 0,
-	(left) => left,
-	(_left, up) => up,
-	(left, up) => (left + up) >> 1,
-	paeth,
-];
 
 // ---------------------------------------------------------------------------------------------
 // Colour spaces

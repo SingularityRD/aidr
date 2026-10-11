@@ -9,6 +9,7 @@ import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import type { Logger, PluginInfo } from "@singularityrd/aidr-core";
 import { getFileContent, parseJsonc } from "@singularityrd/aidr-core";
+import { openCodeConfigFiles, openCodeUserConfigDir } from "./config-paths.js";
 
 /** Resolve XDG base directories with fallbacks to homedir defaults */
 function getConfigHome(): string {
@@ -18,8 +19,6 @@ function getConfigHome(): string {
 function getCacheHome(): string {
 	return process.env.XDG_CACHE_HOME ?? join(homedir(), ".cache");
 }
-
-const CONFIG_NAMES = ["opencode.json", "opencode.jsonc"];
 
 /**
  * Discover OpenCode plugins from the supported local sources:
@@ -62,8 +61,8 @@ export async function discoverOpenCodePlugins(
 async function discoverNpmPlugins(logger: Logger, projectDir?: string): Promise<PluginInfo[]> {
 	const plugins: PluginInfo[] = [];
 
-	const configDirs = [join(getConfigHome(), "opencode"), ...(projectDir ? [projectDir] : [])];
-	const configPaths = configDirs.flatMap((dir) => CONFIG_NAMES.map((name) => join(dir, name)));
+	const configDirs = [openCodeUserConfigDir(), ...(projectDir ? [projectDir] : [])];
+	const configPaths = openCodeConfigFiles(configDirs);
 	const pluginNames = new Set(
 		(await Promise.all(configPaths.map((path) => readPluginNames(path, logger)))).flat(),
 	);

@@ -170,7 +170,7 @@ async function withAuditFailure(f, action, work) {
 
 test("delegated sessions obey current identity policy and irreversible membership removal", { timeout: 900_000 }, async t => {
 	const started = await command(["run", "--detach", "--rm", "--pull", "never", "--network", "none", "--name", container,
-		"-e", `POSTGRES_PASSWORD=${randomUUID()}`, "supabase/postgres:17.6.1.136"]);
+		"-e", `POSTGRES_PASSWORD=${randomUUID()}`, "supabase/postgres:17.11.0.004"]);
 	assert.equal(started.code, 0, started.stderr);
 	try {
 		let ready = false;

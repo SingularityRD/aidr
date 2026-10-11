@@ -29,7 +29,7 @@ if (entryInfo(usersDir)) {
 		const releasePresent = validId && regularDirectory(join(installRoot, "releases", release)) && regularDirectory(packagePath);
 		const ok = !pending && releasePresent && regularFile(join(packagePath, "package.json")) &&
 			regularDirectory(join(packagePath, "dist")) &&
-			["pre-tool-use.cjs", "post-tool-use.cjs", "session-start.cjs"].every((bundle) => regularFile(join(packagePath, "dist", bundle))) &&
+			["pre-tool-use.cjs", "pre-tool-use.bundle.cjs", "post-tool-use.cjs", "post-tool-use.bundle.cjs", "session-start.cjs", "session-start.bundle.cjs"].every((bundle) => regularFile(join(packagePath, "dist", bundle))) &&
 			regularDirectory(join(packagePath, "resources"));
 		healthy &&= ok;
 		users.push({ user_id: encoded, release_sha256: validId ? release : null, release_present: releasePresent, lifecycle_pending: pending });

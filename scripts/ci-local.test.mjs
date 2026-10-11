@@ -423,3 +423,143 @@ test("the CLI lists every step and rejects unknown selections with exit 2", () =
 	assert.equal(bad.status, 2);
 	assert.match(bad.stderr, /unknown group or step id: no-such-group/u);
 });
+
+// ─── process-tree termination (audit item 31) ────────────────────────────
+
+function fakeChild(overrides = {}) {
+	const calls = [];
+	return { pid: 4242, exitCode: null, signalCode: null, kill: (signal) => calls.push(signal) > 0, calls, ...overrides };
+}
+
+test("win32: the step's whole process tree is ended with taskkill /T /F by PID, never child.kill alone", async () => {
+	const { terminateProcessTree } = await import("./lib/process-tree.mjs");
+	for (const signal of ["SIGTERM", "SIGKILL"]) {
+		const child = fakeChild();
+		const spawned = [];
+		const groupKills = [];
+		const result = terminateProcessTree(child, signal, {
+			platform: "win32",
+			spawnSync: (command, args, options) => {
+				spawned.push({ command, args, options });
+				return { status: 0 };
+			},
+			processKill: (pid, sig) => groupKills.push([pid, sig]),
+		});
+		assert.deepEqual(result, { method: "taskkill", ok: true });
+		assert.equal(spawned.length, 1);
+		assert.equal(spawned[0].command, "taskkill");
+		assert.deepEqual(spawned[0].args, ["/pid", "4242", "/T", "/F"]);
+		assert.equal(spawned[0].options.shell, false, "taskkill must run without a shell");
+		assert.ok(spawned[0].options.timeout > 0, "taskkill must be bounded");
+		assert.deepEqual(child.calls, [], "a tree kill must not fall back to child.kill when taskkill succeeded");
+		assert.deepEqual(groupKills, [], "there are no process groups on Windows");
+	}
+});
+
+test("win32: a failing taskkill still ends the direct child and reports the failure", async () => {
+	const { terminateProcessTree } = await import("./lib/process-tree.mjs");
+	const child = fakeChild();
+	const result = terminateProcessTree(child, "SIGKILL", { platform: "win32", spawnSync: () => ({ status: 128 }) });
+	assert.equal(result.method, "child");
+	assert.match(result.detail, /taskkill failed \(exit 128\)/u);
+	assert.deepEqual(child.calls, ["SIGKILL"]);
+	const missing = fakeChild();
+	const noTaskkill = terminateProcessTree(missing, "SIGTERM", { platform: "win32", spawnSync: () => ({ status: null, error: new Error("ENOENT") }) });
+	assert.match(noTaskkill.detail, /ENOENT/u);
+	assert.deepEqual(missing.calls, ["SIGTERM"]);
+});
+
+test("POSIX: the process group (negative PID) is signalled; child.kill is only the fallback", async () => {
+	const { terminateProcessTree } = await import("./lib/process-tree.mjs");
+	for (const platform of ["linux", "darwin"]) {
+		const child = fakeChild();
+		const groupKills = [];
+		const spawned = [];
+		const result = terminateProcessTree(child, "SIGTERM", {
+			platform,
+			spawnSync: (...args) => spawned.push(args),
+			processKill: (pid, sig) => groupKills.push([pid, sig]),
+		});
+		assert.deepEqual(result, { method: "process-group", ok: true });
+		assert.deepEqual(groupKills, [[-4242, "SIGTERM"]]);
+		assert.deepEqual(spawned, [], "taskkill is never used off Windows");
+		assert.deepEqual(child.calls, []);
+	}
+	const child = fakeChild();
+	const fallback = terminateProcessTree(child, "SIGKILL", {
+		platform: "linux",
+		processKill: () => {
+			throw new Error("ESRCH");
+		},
+	});
+	assert.equal(fallback.method, "child");
+	assert.deepEqual(child.calls, ["SIGKILL"]);
+});
+
+test("an exited child is never signalled (its PID may already belong to an unrelated process)", async () => {
+	const { terminateProcessTree } = await import("./lib/process-tree.mjs");
+	for (const exited of [{ exitCode: 0 }, { signalCode: "SIGTERM" }, { pid: undefined }]) {
+		for (const platform of ["win32", "linux"]) {
+			const child = fakeChild(exited);
+			let touched = false;
+			const result = terminateProcessTree(child, "SIGKILL", {
+				platform,
+				spawnSync: () => {
+					touched = true;
+					return { status: 0 };
+				},
+				processKill: () => {
+					touched = true;
+				},
+			});
+			assert.deepEqual(result, { method: "none", ok: true });
+			assert.equal(touched, false);
+			assert.deepEqual(child.calls, []);
+		}
+	}
+});
+
+test("POSIX: a real timed-out tree is gone (grandchild included) while an unrelated process survives", { skip: process.platform === "win32" }, async () => {
+	const { spawn } = await import("node:child_process");
+	const { terminateProcessTree } = await import("./lib/process-tree.mjs");
+	const bystander = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+	const child = spawn("bash", ["-c", `${JSON.stringify(process.execPath)} -e "setInterval(() => {}, 1000)" & echo $!; wait`], { stdio: ["ignore", "pipe", "ignore"], detached: true });
+	const grandchildPid = await new Promise((resolve) => child.stdout.once("data", (chunk) => resolve(Number.parseInt(chunk.toString(), 10))));
+	const alive = (pid) => {
+		try {
+			process.kill(pid, 0);
+		} catch {
+			return false;
+		}
+		// A killed grandchild reparented to a non-reaping PID 1 (containers) stays a
+		// zombie: it holds no CPU, pipes or files, so it counts as gone.
+		try {
+			return !/^\d+ \(.*\) Z /u.test(readFileSync(`/proc/${pid}/stat`, "utf8"));
+		} catch {
+			return true;
+		}
+	};
+	try {
+		assert.ok(alive(grandchildPid));
+		const closed = new Promise((resolve) => child.on("close", resolve));
+		assert.equal(terminateProcessTree(child, "SIGKILL").method, "process-group");
+		await closed;
+		for (let i = 0; i < 50 && alive(grandchildPid); i++) await new Promise((r) => setTimeout(r, 20));
+		assert.equal(alive(grandchildPid), false, "the grandchild must not outlive the timeout kill");
+		assert.equal(alive(bystander.pid), true, "an unrelated process must keep running");
+	} finally {
+		bystander.kill("SIGKILL");
+		try {
+			process.kill(grandchildPid, "SIGKILL");
+		} catch {}
+	}
+});
+
+test("ci-local.mjs routes every step termination through terminateProcessTree and bounds the wait", () => {
+	const source = readFileSync(path.join(root, "scripts/ci-local.mjs"), "utf8");
+	assert.match(source, /import \{ terminateProcessTree \} from "\.\/lib\/process-tree\.mjs";/u);
+	assert.doesNotMatch(source, /process\.kill\(-/u, "direct process-group kills bypass the Windows tree kill");
+	assert.doesNotMatch(source, /\.kill\("SIG/u, "child.kill() leaves Windows grandchildren alive");
+	assert.match(source, /if \(activeChild\) terminateProcessTree\(activeChild, "SIGTERM"\);/u);
+	assert.match(source, /child\.stdout\.destroy\(\);/u, "the runner must stop waiting on pipes a survivor holds open");
+});

@@ -17,6 +17,10 @@
  *     ARCHIVE_* / DOCUMENT_MALFORMED as for OOXML.
  *   Unreadable (`DocumentUnreadable`): not a ZIP, or no `content.xml`.
  *
+ * Element and attribute names are matched namespace-aware (./xml.ts canonical names), so a
+ * document that binds the ODF namespaces to other prefixes (or a default namespace) is read
+ * and refused exactly like one that uses the conventional prefixes.
+ *
  * Text handled: every XML part except the manifest, `settings.xml` and UI configuration, in
  * the package and in embedded objects (`Object 1/content.xml`...):
  *   - paragraphs (`text:p`, `text:h`) as one segment over their mixed content (spans, links,
@@ -60,6 +64,7 @@ import {
 	type Piece,
 	piecesSegment,
 	type RawReplacement,
+	STRICT_NAMESPACES,
 	spliceEdits,
 	type TextSegment,
 	walkXml,
@@ -151,8 +156,9 @@ function isExternalHref(href: string): boolean {
 	return /^[a-z][a-z0-9+.-]*:/i.test(h) || /^[\\/]/.test(h) || /^\.\.(?:[\\/]|$)/.test(h);
 }
 
+/** The attribute whose canonical (namespace-resolved) name is `name`. */
 function attr(tag: XmlTag, name: string): XmlAttr | undefined {
-	return tag.attrs.find((a) => a.name === name);
+	return tag.attrs.find((a) => a.cname === name);
 }
 
 function repeat(tag: XmlTag, name: string): number {
@@ -176,7 +182,7 @@ function attributeNameStart(xml: string, a: XmlAttr): number {
 function textLeaf(start: number, end: number, text: string, cdata: boolean): Leaf {
 	const from = cdata ? start - 9 : start;
 	return {
-		tag: { name: "#text", start: from, end: from, selfClosing: false, attrs: [] },
+		tag: { name: "#text", cname: "#text", start: from, end: from, selfClosing: false, attrs: [] },
 		open: "",
 		contentEnd: cdata ? end + 3 : end,
 		text,
@@ -226,7 +232,7 @@ class OdfReader {
 
 	start(tag: XmlTag): void {
 		this.checkRefusals(tag);
-		const name = tag.name;
+		const name = tag.cname;
 		if (name === "table:table") {
 			this.tables.push({ headerRow: false, seenRow: false, col: 0, headers: new Map() });
 		} else if (name === "table:table-row") this.startRow();
@@ -281,10 +287,11 @@ class OdfReader {
 
 	private checkRefusals(tag: XmlTag): void {
 		const href = attr(tag, "xlink:href")?.value;
-		if (tag.name === "script:event-listener") this.refusals.add("DOCUMENT_MACROS");
-		else if (tag.name === "draw:object-ole") this.refusals.add("DOCUMENT_EMBEDDED_OBJECT");
-		else if (ALWAYS_EXTERNAL.has(tag.name)) this.refusals.add("DOCUMENT_EXTERNAL_LINKS");
-		else if (LINKABLE.has(tag.name) && href !== undefined && isExternalHref(href))
+		const name = tag.cname;
+		if (name === "script:event-listener") this.refusals.add("DOCUMENT_MACROS");
+		else if (name === "draw:object-ole") this.refusals.add("DOCUMENT_EMBEDDED_OBJECT");
+		else if (ALWAYS_EXTERNAL.has(name)) this.refusals.add("DOCUMENT_EXTERNAL_LINKS");
+		else if (LINKABLE.has(name) && href !== undefined && isExternalHref(href))
 			this.refusals.add("DOCUMENT_EXTERNAL_LINKS");
 	}
 
@@ -311,8 +318,8 @@ class OdfReader {
 	}
 
 	private addAttributes(tag: XmlTag): void {
-		const cell = tag.name === "table:table-cell" ? this.cells[this.cells.length - 1] : undefined;
-		if (HYPERLINKS.has(tag.name)) {
+		const cell = tag.cname === "table:table-cell" ? this.cells[this.cells.length - 1] : undefined;
+		if (HYPERLINKS.has(tag.cname)) {
 			const href = attr(tag, "xlink:href");
 			if (href) this.push(attributeSegment(href));
 		}
@@ -346,11 +353,13 @@ class OdfReader {
 					// The cell already has a string value: keep its name, mask this one in place.
 					out.push({ start: value.valueStart, end: value.valueEnd, raw: masked });
 				} else {
+					// Same prefix as the value attribute: bound to the office namespace on this tag.
 					const nameStart = attributeNameStart(xml, value);
+					const prefix = value.name.slice(0, value.name.indexOf(":") + 1);
 					out.push({
 						start: nameStart,
 						end: value.valueEnd,
-						raw: `office:string-value=${value.quote}${masked}`,
+						raw: `${prefix}string-value=${value.quote}${masked}`,
 					});
 				}
 				return out;
@@ -450,15 +459,21 @@ async function buildModels(
 ): Promise<PartModel[]> {
 	const models: PartModel[] = [];
 	for (const entry of archive.entries) {
-		if (!XML_PART.test(entry.name) || SKIPPED_PART.test(entry.name)) continue;
+		// Macro libraries are refused by entryRefusals whatever they contain: not parsed.
+		if (!XML_PART.test(entry.name) || SKIPPED_PART.test(entry.name) || MACRO_ENTRY.test(entry.name))
+			continue;
 		scanner.checkDeadline();
 		const { xml, encoding } = decodePart(await readEntry(archive, entry));
 		const reader = new OdfReader(xml, scanner);
-		walkXml(xml, {
-			start: (tag) => reader.start(tag),
-			text: (start, end, cdata) => reader.text(start, end, cdata),
-			end: (name) => reader.end(name),
-		});
+		walkXml(
+			xml,
+			{
+				start: (tag) => reader.start(tag),
+				text: (start, end, cdata) => reader.text(start, end, cdata),
+				end: (name) => reader.end(name),
+			},
+			STRICT_NAMESPACES,
+		);
 		for (const reason of reader.refusals) refusals.add(reason);
 		models.push({ entry, xml, encoding, segments: reader.segments });
 	}
@@ -480,10 +495,15 @@ async function openOdf(bytes: Uint8Array, limits: ZipLimits): Promise<ZipArchive
 }
 
 /** True when `bytes` look like an OpenDocument package (used to sniff mislabelled uploads). */
+/** True when ZIP entry names (any case) are those of an OpenDocument package. */
+export function isOdfListing(names: readonly string[]): boolean {
+	const lower = new Set(names.map((n) => n.toLowerCase()));
+	return lower.has("mimetype") && lower.has("content.xml");
+}
+
 export function sniffOdf(bytes: Uint8Array): boolean {
 	try {
-		const archive = readZip(bytes);
-		return !!findEntry(archive, "mimetype") && !!findEntry(archive, "content.xml");
+		return isOdfListing(readZip(bytes).entries.map((e) => e.name));
 	} catch {
 		return false;
 	}

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { isPrivateIpAddress as coreIsPrivateIpAddress } from "../../../packages/core/src/mcp-transport.ts";
 import { ipVersion, isBlockedHostname, isPrivateIpAddress, isPublicIpAddress } from "../_shared/egress-guard.ts";
 import { assertSafeUrl, safeFetchJson } from "../_shared/safe-fetch.ts";
+import { resolveClientSecret } from "../oidc-sso/client-secrets.ts";
 import { JwksCache, parseJwks } from "../oidc-sso/jwks.ts";
 import {
 	base64UrlEncode,
@@ -19,7 +20,7 @@ import {
 	validateDiscovery,
 	verifyIdToken,
 } from "../oidc-sso/oidc.ts";
-import { baseClaims, ISSUER_A, makeKey, mintJwt, NOW_MS, NOW_S, sha256Text, type TestKey } from "./oidc-test-kit.ts";
+import { baseClaims, ISSUER_A, ISSUER_B, makeKey, mintJwt, NOW_MS, NOW_S, sha256Text, TENANT_A, TENANT_B, type TestKey } from "./oidc-test-kit.ts";
 
 const NONCE = "nonce-value-1";
 
@@ -557,3 +558,58 @@ describe("SSRF-safe fetch", () => {
 	});
 });
 
+
+describe("resolveClientSecret (tenant-bound OIDC client secrets)", () => {
+	const env = (bindings: unknown, secrets: Record<string, string> = { CONTOSO: "secret-contoso", FABRIKAM: "secret-fabrikam" }) => {
+		const reads: string[] = [];
+		const readEnv = (name: string) => {
+			reads.push(name);
+			if (name === "AIDR_OIDC_CLIENT_SECRET_BINDINGS") return typeof bindings === "string" ? bindings : JSON.stringify(bindings);
+			const prefix = "AIDR_OIDC_CLIENT_SECRET_";
+			return name.startsWith(prefix) ? secrets[name.slice(prefix.length)] : undefined;
+		};
+		return { readEnv, reads };
+	};
+	const bindings = {
+		CONTOSO: { tenant_id: TENANT_A, issuer: ISSUER_A },
+		FABRIKAM: { tenant_id: TENANT_B, issuer: ISSUER_B, client_id: "client-b" },
+	};
+	const contoso = { tenantId: TENANT_A, issuer: ISSUER_A, clientId: "client-a", ref: "CONTOSO" };
+
+	it("releases a secret only for the bound tenant, issuer and pinned client", () => {
+		expect(resolveClientSecret(env(bindings).readEnv, contoso)).toBe("secret-contoso");
+		expect(resolveClientSecret(env(bindings).readEnv, { ...contoso, tenantId: TENANT_A.toUpperCase() })).toBe("secret-contoso");
+		expect(resolveClientSecret(env(bindings).readEnv, { tenantId: TENANT_B, issuer: ISSUER_B, clientId: "client-b", ref: "FABRIKAM" })).toBe("secret-fabrikam");
+	});
+
+	it.each([
+		["another tenant's reference", { ...contoso, ref: "FABRIKAM" }],
+		["the right reference from another tenant", { ...contoso, tenantId: TENANT_B }],
+		["a different issuer", { ...contoso, issuer: "https://idp.attacker.example" }],
+		["an issuer differing only by a trailing slash", { ...contoso, issuer: `${ISSUER_A}/` }],
+		["an unpinned client on a pinned binding", { tenantId: TENANT_B, issuer: ISSUER_B, clientId: "other", ref: "FABRIKAM" }],
+		["an unbound reference", { ...contoso, ref: "UNBOUND" }],
+		["the bindings document itself", { ...contoso, ref: "BINDINGS" }],
+		["a malformed reference", { ...contoso, ref: "contoso" }],
+	])("returns null for %s without reading the secret", (_label, request) => {
+		const { readEnv, reads } = env({ ...bindings, BINDINGS: { tenant_id: TENANT_A, issuer: ISSUER_A } });
+		expect(resolveClientSecret(readEnv, request)).toBeNull();
+		expect(reads.filter((name) => name !== "AIDR_OIDC_CLIENT_SECRET_BINDINGS")).toEqual([]);
+	});
+
+	it.each([
+		["no bindings", undefined],
+		["invalid JSON", "{not json"],
+		["an array", [bindings.CONTOSO]],
+		["a non-UUID tenant", { CONTOSO: { tenant_id: "tenant-a", issuer: ISSUER_A } }],
+		["a non-HTTPS issuer", { CONTOSO: { tenant_id: TENANT_A, issuer: "http://login.example" } }],
+		["an empty client pin", { CONTOSO: { tenant_id: TENANT_A, issuer: ISSUER_A, client_id: "" } }],
+	])("fails closed on %s", (_label, document) => {
+		const { readEnv } = env(document === undefined ? "" : document);
+		expect(resolveClientSecret(readEnv, contoso)).toBeNull();
+	});
+
+	it("treats a bound but empty secret as not configured", () => {
+		expect(resolveClientSecret(env(bindings, { CONTOSO: "   " }).readEnv, contoso)).toBeNull();
+	});
+});

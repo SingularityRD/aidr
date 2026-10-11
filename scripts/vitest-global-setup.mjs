@@ -11,6 +11,7 @@ import { resolve } from "node:path";
 const REQUIRED_ARTIFACTS = [
 	"packages/core/dist/index.js",
 	"packages/claude-code/dist/pre-tool-use.cjs",
+	"packages/claude-code/dist/pre-tool-use.bundle.cjs",
 	"packages/claude-code/dist/health.cjs",
 	"packages/openclaw/dist/index.cjs",
 	"packages/opencode/dist/index.js",

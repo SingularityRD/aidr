@@ -7,7 +7,10 @@ import {
 	applyReplacements,
 	decodeXmlText,
 	extractText,
+	localName,
+	STRICT_NAMESPACES,
 	type TextSpec,
+	type WalkOptions,
 	walkXml,
 	XmlError,
 } from "../engine/office/xml.js";
@@ -346,5 +349,74 @@ describe("XML scanner and text model", () => {
 	it("masks a document end to end with the real engine (sanity)", async () => {
 		const d = await sanitize("a.docx", await docx(para(run("mail: a.b@c.com.tr"))));
 		expect(d.action).toBe("mask");
+	});
+});
+
+describe("XML namespace resolution", () => {
+	const W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+
+	function names(xml: string, options?: WalkOptions): string[] {
+		const out: string[] = [];
+		walkXml(
+			xml,
+			{
+				start: (tag, parent) =>
+					out.push(`${parent ?? "-"}>${tag.cname}[${tag.attrs.map((a) => a.cname).join(",")}]`),
+				end: (name) => out.push(`/${name}`),
+			},
+			options,
+		);
+		return out;
+	}
+
+	it("resolves prefixes and default namespaces with scoping", () => {
+		const xml = `<x:a xmlns:x="${W}" xmlns:o="urn:other" x:k="1" k="2" xml:space="preserve"><b xmlns="${W}"><x:c xmlns:x="urn:other"/><d xmlns=""/></b><o:e/></x:a>`;
+		expect(names(xml)).toEqual([
+			"->w:a[xmlns:x,xmlns:o,w:k,k,xml:space]",
+			"w:a>w:b[xmlns]",
+			"w:b>{urn:other}c[xmlns:x]",
+			"/{urn:other}c",
+			"w:b>d[xmlns]",
+			"/d",
+			"/w:b",
+			"w:a>{urn:other}e[]",
+			"/{urn:other}e",
+			"/w:a",
+		]);
+		expect(localName("{urn:other}c")).toBe("c");
+		expect(localName("w:t")).toBe("t");
+	});
+
+	it("matches text-model specs on canonical names, not on the prefix written", () => {
+		const WORD_SPEC: TextSpec = { paragraphs: new Set(["w:p"]), leaves: new Set(["w:t"]) };
+		const variants = [
+			`<w:p xmlns:w="${W}"><w:r><w:t>a@b.co</w:t></w:r></w:p>`,
+			`<k:p xmlns:k="${W}"><k:r><k:t>a@b.co</k:t></k:r></k:p>`,
+			`<p xmlns="${W}"><r><t>a@b.co</t></r></p>`,
+		];
+		for (const xml of variants)
+			expect(extractText(xml, WORD_SPEC, STRICT_NAMESPACES).map((s) => s.text)).toEqual(["a@b.co"]);
+		// Right prefix, wrong namespace: not WordprocessingML.
+		expect(extractText(`<w:p xmlns:w="urn:decoy"><w:t>x</w:t></w:p>`, WORD_SPEC)).toEqual([]);
+	});
+
+	it.each([
+		['<a xmlns:p=""/>', "BAD_NAMESPACE"],
+		['<a xmlns:xml="urn:x"/>', "BAD_NAMESPACE"],
+		['<a xmlns:xmlns="urn:x"/>', "BAD_NAMESPACE"],
+		['<a xmlns:p="http://www.w3.org/XML/1998/namespace"/>', "BAD_NAMESPACE"],
+		['<a xmlns:p="urn:x" xmlns:q="urn:x" p:v="1" q:v="2"/>', "DUPLICATE_ATTRIBUTE"],
+		["<a:b:c/>", "BAD_NAME"],
+		["<:a/>", "BAD_NAME"],
+	])("rejects namespace-malformed XML %j (%s)", (xml, code) => {
+		expect(() => walkXml(xml, {})).toThrow(new XmlError(code));
+	});
+
+	it("refuses undeclared prefixes in strict mode and keeps them literally otherwise", () => {
+		expect(names("<w:p><w:t/></w:p>")).toEqual(["->w:p[]", "w:p>w:t[]", "/w:t", "/w:p"]);
+		expect(() => walkXml("<w:p/>", {}, STRICT_NAMESPACES)).toThrow(new XmlError("UNBOUND_PREFIX"));
+		expect(() => walkXml(`<a xmlns="${W}" u:x="1"/>`, {}, STRICT_NAMESPACES)).toThrow(
+			new XmlError("UNBOUND_PREFIX"),
+		);
 	});
 });

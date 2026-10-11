@@ -92,6 +92,23 @@ function toPublicKey(key: string) {
 	}
 }
 
+/**
+ * Whether the artifact ships a well-formed (64-byte base64 Ed25519) manifest
+ * signature. This does not verify it: it distinguishes a signed release on an
+ * install that has no trust keys yet from an artifact that was never signed.
+ */
+export async function hasWellFormedSignature(
+	artifactDir: string,
+	signatureName: string = DEFAULT_SIGNATURE_NAME,
+): Promise<boolean> {
+	try {
+		const raw = await readFile(path.join(path.resolve(artifactDir), signatureName), "utf8");
+		return parseSignatureBase64(raw) !== null;
+	} catch {
+		return false;
+	}
+}
+
 /** Verify a base64 Ed25519 signature file's content over `message` against any of `publicKeys`. */
 export function verifyEd25519Signature(
 	message: Buffer,

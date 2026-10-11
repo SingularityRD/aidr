@@ -609,6 +609,8 @@ export function governanceErrorMessage(code: string): string {
 			return "You filed this request, so someone else must decide it (four-eyes).";
 		case "governance_four_eyes_required":
 			return "Four-eyes change control is on: relaxing a ban or restriction needs an intake request decided by another person.";
+		case "browser_guard_four_eyes_required":
+			return "Four-eyes change control is on: switching off required native NER needs four-eyes to be turned off first, which another owner or administrator must approve.";
 		case "governance_reviewer_scope":
 			return "Designated reviewers cannot lift a ban or restriction; an owner or administrator must decide this request.";
 		case "governance_role_insufficient":

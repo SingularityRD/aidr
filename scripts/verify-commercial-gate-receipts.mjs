@@ -33,16 +33,23 @@ import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { HELD, readInvestorMetricDictionary, validateMetricDictionary } from "./validate-investor-metric-dictionary.mjs";
+import { CANDIDATE_DIGEST_SOURCE } from "./generate-v8-evidence-index.mjs";
 
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const REGISTRY_FILE = "docs/production-readiness/commercial-go-evidence-registry.json";
 export const RECEIPTS_FILE = "docs/production-readiness/commercial-gate-receipts.json";
 export const SCHEMA_FILE = "docs/production-readiness/commercial-gate-receipts.schema.json";
-// Mirrors CANDIDATE_DIGEST_SOURCE in scripts/generate-v8-evidence-index.mjs so a
-// closed receipt binds to the same release inventory the v8 index hashes. The
+// The single candidate source: CANDIDATE_DIGEST_SOURCE in
+// scripts/generate-v8-evidence-index.mjs, imported (not copied) so a closed
+// receipt binds to the same release inventory the v8 index, the claim-evidence
+// freshness check and scripts/verify-production-go.mjs hash. A hand-maintained
+// mirror once pointed at a different candidate (20260913 vs 20260916-r9). The
 // path lives under gitignored .release-evidence/, so a fresh checkout has no
 // candidate and no gate may close.
-export const RELEASE_INVENTORY_FILE = ".release-evidence/customer-release-v8-local-20260913/release-inventory.json";
+export const RELEASE_INVENTORY_FILE = CANDIDATE_DIGEST_SOURCE;
+// An override may relocate the inventory (e.g. a downloaded release bundle) but
+// may not select a different candidate: its bytes must hash to the canonical
+// candidate when that exists, and --candidate-digest, when given, must match.
 export const RELEASE_INVENTORY_ENV = "AIDR_COMMERCIAL_RELEASE_INVENTORY";
 
 // Registry policy.acceptedStatuses values that assert closure. Mirroring
@@ -508,6 +515,7 @@ export function validateCommercialGateReceipts({
 	receiptsPath = RECEIPTS_FILE,
 	schemaPath = SCHEMA_FILE,
 	releaseInventoryPath = RELEASE_INVENTORY_FILE,
+	expectedCandidateDigest = null,
 	now = new Date(),
 } = {}) {
 	const failures = [];
@@ -524,6 +532,15 @@ export function validateCommercialGateReceipts({
 
 	const inventoryFullPath = isAbsolute(releaseInventoryPath) ? releaseInventoryPath : resolve(root, releaseInventoryPath);
 	const digest = existsSync(inventoryFullPath) && statSync(inventoryFullPath).isFile() ? sha256File(inventoryFullPath) : UNKNOWN;
+	if (expectedCandidateDigest !== null && expectedCandidateDigest !== undefined) {
+		if (!SHA256.test(String(expectedCandidateDigest))) {
+			failures.push(`expected candidate digest ${JSON.stringify(expectedCandidateDigest)} is not a SHA-256 hex digest`);
+		} else if (digest !== expectedCandidateDigest) {
+			failures.push(
+				`release inventory ${toRepoPath(releaseInventoryPath)} is candidate ${digest}, not the candidate under review ${expectedCandidateDigest}; receipts for a different candidate are rejected`,
+			);
+		}
+	}
 
 	const declaredReceipts = registry?.hardGateReceipts?.receiptsPath;
 	const declaredSchema = registry?.hardGateReceipts?.schemaPath;
@@ -630,8 +647,32 @@ export function readRegistryAndReceipts({ root = ROOT, registryPath = REGISTRY_F
 		schemaPath: toRepoPath(schemaPath),
 		receipts: JSON.parse(readFileSync(resolve(root, receiptsPath), "utf8")),
 		receiptsPath: toRepoPath(receiptsPath),
-		releaseInventoryPath: env?.[RELEASE_INVENTORY_ENV] ?? RELEASE_INVENTORY_FILE,
+		releaseInventoryPath: resolveReleaseInventoryPath({ root, env }),
 	};
+}
+
+/**
+ * The inventory the receipts are checked against. Without an override it is
+ * the canonical candidate. An override must be a different location for the
+ * SAME candidate: when the canonical inventory exists, the override's bytes
+ * must hash identically, otherwise this throws instead of silently evaluating
+ * another candidate's receipts.
+ */
+export function resolveReleaseInventoryPath({ root = ROOT, env = process.env } = {}) {
+	const override = env?.[RELEASE_INVENTORY_ENV];
+	if (override === undefined || override === "") return RELEASE_INVENTORY_FILE;
+	const overridePath = isAbsolute(override) ? override : resolve(root, override);
+	const canonicalPath = resolve(root, RELEASE_INVENTORY_FILE);
+	if (resolve(overridePath) === canonicalPath) return RELEASE_INVENTORY_FILE;
+	if (existsSync(canonicalPath) && statSync(canonicalPath).isFile()) {
+		const overrideDigest = existsSync(overridePath) && statSync(overridePath).isFile() ? sha256File(overridePath) : UNKNOWN;
+		if (overrideDigest !== sha256File(canonicalPath)) {
+			throw new Error(
+				`${RELEASE_INVENTORY_ENV}=${override} is a different release candidate (${overrideDigest}) than ${RELEASE_INVENTORY_FILE}; generator, verifier and publisher must use the same candidate`,
+			);
+		}
+	}
+	return override;
 }
 
 function report(result) {
@@ -658,16 +699,22 @@ function report(result) {
 
 export function main(argv = process.argv.slice(2)) {
 	if (argv.includes("--help") || argv.includes("-h")) {
-		console.log("Usage: node scripts/verify-commercial-gate-receipts.mjs");
+		console.log("Usage: node scripts/verify-commercial-gate-receipts.mjs [--candidate-digest <sha256>]");
 		return 0;
 	}
-	const unknown = argv.filter((arg) => arg !== "--");
-	if (unknown.length > 0) {
-		console.error(`Unknown argument: ${unknown[0]}`);
-		return 2;
+	let expectedCandidateDigest = null;
+	const rest = argv.filter((arg) => arg !== "--");
+	for (let index = 0; index < rest.length; index++) {
+		const arg = rest[index];
+		if (arg === "--candidate-digest" && index + 1 < rest.length) expectedCandidateDigest = rest[++index];
+		else if (arg.startsWith("--candidate-digest=")) expectedCandidateDigest = arg.slice("--candidate-digest=".length);
+		else {
+			console.error(`Unknown argument: ${arg}`);
+			return 2;
+		}
 	}
 	const loaded = readRegistryAndReceipts();
-	const result = validateCommercialGateReceipts(loaded);
+	const result = validateCommercialGateReceipts({ ...loaded, expectedCandidateDigest });
 	report(result);
 	return result.failures.length === 0 ? 0 : 1;
 }

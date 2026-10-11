@@ -313,6 +313,34 @@ test("online doctor requires every named Compose service to be running and healt
 	assert.match(stubbedComposeDoctor(directory, unhealthyService).stdout, /^FAIL all required deployment services running and healthy$/m);
 });
 
+test("self-hosted doctor fails while Supabase Studio is routed from the public gateway listener", (t) => {
+	const label = "Supabase Studio is served only on a loopback-published admin listener, not on the public API gateway listener";
+	const listener = (name, port, routes) => ({ name, address: { socket_address: { address: "0.0.0.0", port_value: port } }, filter_chains: [{ filters: [{ name: "envoy.filters.network.http_connection_manager", typed_config: { route_config: { virtual_hosts: [{ name: "host", routes }] } } }] }] });
+	const studio = { match: { prefix: "/" }, route: { cluster: "studio" } };
+	const api = { match: { prefix: "/rest/v1/" }, route: { cluster: "rest" } };
+	const notFound = { match: { prefix: "/" }, direct_response: { status: 404 } };
+	const fixture = (resources, ports) => {
+		const directory = deploymentDirectory(t, { mode: "self-hosted" });
+		mkdirSync(join(directory, "volumes/api/envoy"), { recursive: true });
+		writeFileSync(join(directory, "volumes/api/envoy/lds.template.yaml"), JSON.stringify({ resources }));
+		writeFileSync(join(directory, "compose.yml"), JSON.stringify({ services: { "api-gw": { ports } } }));
+		return doctor(directory).stdout;
+	};
+	// The reviewed upstream layout: `/` -> studio on the listener the ingress proxies.
+	const upstream = resolve(import.meta.dirname, "../deploy/upstream/docker/volumes/api/envoy/lds.template.yaml");
+	if (existsSync(upstream)) {
+		const directory = deploymentDirectory(t, { mode: "self-hosted" });
+		mkdirSync(join(directory, "volumes/api/envoy"), { recursive: true });
+		copyFileSync(upstream, join(directory, "volumes/api/envoy/lds.template.yaml"));
+		writeFileSync(join(directory, "compose.yml"), JSON.stringify({ services: { "api-gw": { ports: ["127.0.0.1:8000:8000"] } } }));
+		assert.match(doctor(directory).stdout, new RegExp(`^FAIL ${label}$`, "m"));
+	}
+	assert.match(fixture([listener("supabase", 8000, [api, notFound]), listener("studio_admin", 8001, [studio])], ["127.0.0.1:8000:8000", "127.0.0.1:8001:8001"]), new RegExp(`^PASS ${label}$`, "m"));
+	assert.match(fixture([listener("supabase", 8000, [api, studio])], ["127.0.0.1:8000:8000"]), new RegExp(`^FAIL ${label}$`, "m"));
+	assert.match(fixture([listener("supabase", 8000, [api, notFound]), listener("studio_admin", 8001, [studio])], ["127.0.0.1:8000:8000", "0.0.0.0:8001:8001"]), new RegExp(`^FAIL ${label}$`, "m"), "a non-loopback admin port is public");
+	assert.match(fixture([listener("supabase", 8000, [api, notFound]), listener("studio_admin", 8001, [studio])], ["127.0.0.1:8000:8000", "8001:8001"]), new RegExp(`^FAIL ${label}$`, "m"), "an unbound host port publishes on every interface");
+});
+
 test("cloud doctor requires a configured device-start ingress API key", (t) => {
 	const label = "cloud device-start ingress uses the selected project's configured anonymous API key";
 	const configured = deploymentDirectory(t);

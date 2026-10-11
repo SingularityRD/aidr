@@ -149,6 +149,33 @@ describe("buildEvent / sanitizeEvent", () => {
 		expect(sanitizeEvent({ ...good, event_id: "x" })).toBeNull();
 		expect(sanitizeEvent({ ...good, findings_count: -1 })).toBeNull();
 	});
+
+	it("carries the native NER outcome as a status enum only", () => {
+		const event = buildEvent(
+			{
+				site: "chatgpt",
+				action: "blocked",
+				channel: "prompt",
+				counts: {},
+				nativeNer: "unavailable",
+			},
+			0,
+		);
+		expect(event).toMatchObject({
+			action: "blocked",
+			native_ner: "unavailable",
+			findings_count: 0,
+		});
+		expect(sanitizeEvent(event)).toEqual(event);
+		expect(sanitizeEvent({ ...event, native_ner: "used" })).toMatchObject({ native_ner: "used" });
+		expect(sanitizeEvent({ ...event, native_ner: "Ada Lovelace" })).toBeNull();
+		expect(sanitizeEvent({ ...event, native_ner: true })).toBeNull();
+		const off = buildEvent(
+			{ site: "chatgpt", action: "allowed", channel: "prompt", counts: {} },
+			0,
+		);
+		expect(off).not.toHaveProperty("native_ner");
+	});
 });
 
 describe("browserRuntimeVersion", () => {

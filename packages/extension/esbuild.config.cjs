@@ -65,13 +65,20 @@ async function build() {
 	});
 	outputs.push("dist/vscode_extension.js");
 
-	await esbuild.build({
-		...shared,
-		entryPoints: ["src/aidr-hook.ts"],
-		outfile: "dist/aidr-hook.cjs",
-		external: ["koffi"],
-	});
-	outputs.push("dist/aidr-hook.cjs");
+	// Cursor and VS Code spawn `node dist/aidr-hook.cjs <host>` for every hook
+	// event. That stable file is a small bootstrap that enables the V8 compile
+	// cache and then requires the real runner, `dist/aidr-hook.bundle.cjs`
+	// (scripts/hook-bootstrap.mjs).
+	const { buildHookBootstraps, hookBundleName } = await import("../../scripts/hook-bootstrap.mjs");
+	const hookShared = { ...shared, external: ["koffi"] };
+	const hookBundle = `dist/${hookBundleName("aidr-hook.cjs")}`;
+	await esbuild.build({ ...hookShared, entryPoints: ["src/aidr-hook.ts"], outfile: hookBundle });
+	outputs.push(hookBundle);
+	outputs.push(
+		...(await buildHookBootstraps(esbuild, hookShared, [
+			{ outfile: "dist/aidr-hook.cjs", runExport: "runHookProcess" },
+		])),
+	);
 
 	for (const out of outputs) stripSourceMappingUrl(out);
 	removeReleaseSourceMaps("dist");

@@ -94,14 +94,6 @@ regexes = ['''sk-proj-Q7vX2mN9pL4kR8tW1yB6cD3fG5hJ0sAaZe''']
 paths = ['''^packages/browser-guard/e2e/lib/data\.mjs$''']
 
 [[allowlists]]
-description = "Browser Guard managed-policy examples: documented exact-data HMAC key for the example dataset"
-targetRules = ["generic-api-key"]
-condition = "AND"
-regexTarget = "match"
-regexes = ['''o6J5dv/ZMVjrraODjOrMuCsIQzqswQczrGPSl/aB6bU=''']
-paths = ['''^deploy/browser-guard/(chrome-managed-policy|firefox-policies)\.example\.json$''']
-
-[[allowlists]]
 description = "Documented AWS example-shaped access key IDs in scanner tests"
 targetRules = ["aws-access-token"]
 condition = "AND"

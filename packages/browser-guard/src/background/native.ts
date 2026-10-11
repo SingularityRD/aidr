@@ -37,6 +37,7 @@ import {
 	type Finding,
 	type ImageInspection,
 	type NativeBridge,
+	type NativeScanOptions,
 } from "../types.js";
 
 export const NATIVE_HOST_NAME = "com.singularity.aidr_privacy";
@@ -112,6 +113,8 @@ interface Commit {
 	readonly counts: Readonly<Partial<Record<EntityType, number>>>;
 	readonly outputBytes: number;
 	readonly sha256: string | undefined;
+	/** The host reported `coverage: "rules-and-ner"` (learned NER actually ran). */
+	readonly nerCovered: boolean;
 }
 
 /** `failure` counts towards backoff; `unmapped` is a healthy host that produced no spans. */
@@ -230,6 +233,7 @@ function parseCommit(m: Json, hello: Hello): Commit {
 		reasons: parseReasons(m.reasons),
 		counts: parseCounts(m.counts),
 		...parseOutput(m, decision),
+		nerCovered: m.coverage === "rules-and-ner",
 	};
 }
 
@@ -239,8 +243,12 @@ const IMAGE_RESULTS: Readonly<Record<string, ImageInspection["result"]>> = {
 	review: "incomplete",
 };
 
-/** An `image-scan` commit: a decision and counts, never output bytes. */
-function parseImageCommit(m: Json, hello: Hello): ImageInspection {
+/**
+ * An `image-scan` commit: a decision and counts, never output bytes. With `requireNer`, a
+ * clean verdict the host reached without NER (`coverage` other than `rules-and-ner`) is
+ * reported as incomplete (`NATIVE_NER_UNAVAILABLE`): rules-only OCR text is not a clean check.
+ */
+function parseImageCommit(m: Json, hello: Hello, requireNer = false): ImageInspection {
 	onlyKeys(m, [
 		"decision",
 		"reasons",
@@ -261,7 +269,10 @@ function parseImageCommit(m: Json, hello: Hello): ImageInspection {
 		invalid();
 	const counts = parseCounts(m.counts);
 	if (result === "clean" && Object.values(counts).some((n) => (n ?? 0) > 0)) invalid();
-	return { result, counts, reasons: parseReasons(m.reasons) };
+	const reasons = parseReasons(m.reasons);
+	if (requireNer && result === "clean" && m.coverage !== "rules-and-ner")
+		return { result: "incomplete", counts, reasons: [...reasons, "NATIVE_NER_UNAVAILABLE"] };
+	return { result, counts, reasons };
 }
 
 interface Marker {
@@ -473,6 +484,7 @@ async function runScan(
 	text: string,
 	offset: number,
 	isOpen: () => boolean,
+	requireNer = false,
 ): Promise<Outcome> {
 	const bytes = new TextEncoder().encode(text);
 	let output: Uint8Array | undefined;
@@ -493,6 +505,9 @@ async function runScan(
 				? FAILURE
 				: { kind: "unmapped" };
 		}
+		// A healthy host whose NER did not run (rules-only build, no approved `ner` block)
+		// cannot satisfy policy.requireNativeNer: no usable answer, without counting as a failure.
+		if (requireNer && !meta.nerCovered) return { kind: "unmapped" };
 		if (meta.decision === "allow") {
 			// The host returns the input unchanged; its hash proves it without reading it back.
 			if (meta.sha256 !== inputHash || meta.outputBytes !== bytes.length) invalid();
@@ -521,6 +536,7 @@ async function runImageScan(
 	session: Session,
 	bytes: Uint8Array,
 	isOpen: () => boolean,
+	requireNer = false,
 ): Promise<ImageOutcome> {
 	try {
 		const hello = parseHello(await session.rpc("hello"));
@@ -533,7 +549,7 @@ async function runImageScan(
 		});
 		onlyKeys(begun, []);
 		await upload(session, bytes);
-		const inspection = parseImageCommit(await session.rpc("commit"), hello);
+		const inspection = parseImageCommit(await session.rpc("commit"), hello, requireNer);
 		return isOpen() ? { kind: "inspection", inspection } : FAILURE;
 	} catch {
 		return FAILURE;
@@ -734,7 +750,10 @@ export function createNativeBridge(
 			return state;
 		},
 
-		async scanText(text: string): Promise<readonly Finding[] | null> {
+		async scanText(
+			text: string,
+			options: NativeScanOptions = {},
+		): Promise<readonly Finding[] | null> {
 			if (!enabled || inBackoff()) return null;
 			const input = prepareInput(text);
 			if (!input) return null;
@@ -743,7 +762,7 @@ export function createNativeBridge(
 			try {
 				const outcome = settle<Outcome>(
 					await guarded(timeoutMs, (session, isOpen) =>
-						runScan(session, input.body, input.offset, isOpen),
+						runScan(session, input.body, input.offset, isOpen, options.requireNer === true),
 					),
 				);
 				return outcome?.kind === "findings" ? outcome.findings : null;
@@ -753,14 +772,19 @@ export function createNativeBridge(
 			}
 		},
 
-		async scanImage(bytes: Uint8Array): Promise<ImageInspection | null> {
+		async scanImage(
+			bytes: Uint8Array,
+			options: NativeScanOptions = {},
+		): Promise<ImageInspection | null> {
 			if (!enabled || inBackoff()) return null;
 			if (!(bytes instanceof Uint8Array) || !bytes.length || bytes.length > NATIVE_MAX_IMAGE_BYTES)
 				return null;
 			if (inFlight >= MAX_IN_FLIGHT) return null;
 			try {
 				const outcome = settle<ImageOutcome>(
-					await guarded(imageTimeoutMs, (session, isOpen) => runImageScan(session, bytes, isOpen)),
+					await guarded(imageTimeoutMs, (session, isOpen) =>
+						runImageScan(session, bytes, isOpen, options.requireNer === true),
+					),
 				);
 				return outcome?.kind === "inspection" ? outcome.inspection : null;
 			} catch {

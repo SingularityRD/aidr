@@ -142,6 +142,7 @@ jobs:
           node scripts/billing-channel-intent-postgres.mjs
           node scripts/events-seat-admission-postgres.mjs
           node scripts/pilot-approval-seat-postgres.mjs
+          node scripts/enrollment-admission-postgres.test.mjs
           node scripts/tenant-ga-admission-postgres.test.mjs --installed
           node scripts/tenant-ga-admission-concurrency-postgres.test.mjs
           node scripts/ga-trial-legal-consent-postgres.test.mjs --installed
@@ -156,6 +157,8 @@ jobs:
           docker exec -i "${AIDR_RLS_TEST_DB_CONTAINER}" psql -X -qAt -v ON_ERROR_STOP=1 -w -U postgres -d postgres < supabase/functions/__tests__/seat-usage-effective-view.rollback.sql
           docker exec -i "${AIDR_RLS_TEST_DB_CONTAINER}" psql -X -qAt -v ON_ERROR_STOP=1 -w -U postgres -d postgres < supabase/functions/__tests__/enrollment-rotation-resolution.rollback.sql
           docker exec -i "${AIDR_RLS_TEST_DB_CONTAINER}" psql -X -qAt -v ON_ERROR_STOP=1 -w -U postgres -d postgres < supabase/functions/__tests__/device-membership-token.rollback.sql
+          docker exec -i "${AIDR_RLS_TEST_DB_CONTAINER}" psql -X -qAt -v ON_ERROR_STOP=1 -w -U postgres -d postgres < supabase/functions/__tests__/workspace-settings-retention.rollback.sql
+          docker exec -i "${AIDR_RLS_TEST_DB_CONTAINER}" psql -X -qAt -v ON_ERROR_STOP=1 -w -U postgres -d postgres < supabase/functions/__tests__/oidc-provider-save.rollback.sql
           pnpm verify:supabase-pilot-audit-live
           pnpm verify:supabase-device-revocation-live
 
@@ -173,8 +176,10 @@ jobs:
           node --test scripts/identity-recovery-cross-tenant-postgres.test.mjs
           node --test scripts/billing-resubscription-postgres.test.mjs
           node --test scripts/device-poll-membership-revocation-postgres.test.mjs
-          docker pull supabase/postgres:17.6.1.136
+          docker pull supabase/postgres:17.11.0.004
           node --test scripts/oidc-administration-postgres.test.mjs
+          node --test scripts/workspace-retention-oidc-save-postgres.test.mjs
+          node --test scripts/browser-guard-settings-postgres.test.mjs
           node --test scripts/saml-administration-postgres.test.mjs
           node --test scripts/saml-outage-recovery.test.mjs scripts/saml-outage-recovery-postgres.test.mjs
           node --test scripts/discovery-cloud-postgres.test.mjs

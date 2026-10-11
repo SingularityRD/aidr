@@ -3,6 +3,7 @@
 // the Edge runtime, and the tests bind them to in-memory fakes.
 
 import type { FeatureDecision } from "../_shared/plan-entitlements.ts";
+import type { ClientSecretRequest } from "./client-secrets.ts";
 import type { MappedRole, OidcAlgorithm, OidcDiscovery } from "./oidc.ts";
 
 export type ProviderKind = "entra" | "okta" | "generic";
@@ -55,6 +56,21 @@ export interface AuditValues {
 	detail: Record<string, unknown>;
 }
 
+export interface ProviderAudit {
+	action: "identity.oidc.provider_updated" | "identity.oidc.discovery_refreshed";
+	detail: Record<string, unknown>;
+}
+
+export type SaveProviderResult =
+	| "saved"
+	| "owner_required"
+	| "provider_locked_by_enforcement"
+	| "provider_identity_namespace_locked"
+	| "error";
+
+/** Outcome of the discovery-only refresh (RPC oidc_update_provider_discovery). */
+export type RefreshDiscoveryResult = "saved" | "owner_required" | "provider_changed" | "error";
+
 export interface DomainRow {
 	tenant_id: string;
 	domain: string;
@@ -69,7 +85,25 @@ export interface OidcStore {
 	findProviderByTenant(tenantId: string): Promise<OidcProviderRow | null>;
 	/** Provider of the tenant that has VERIFIED this domain. */
 	findProviderByVerifiedDomain(domain: string): Promise<OidcProviderRow | null>;
-	saveProvider(row: OidcProviderRow, actorUserId: string): Promise<boolean>;
+	/**
+	 * One transaction (RPC oidc_save_provider): re-checks that the actor is still
+	 * a live owner, upserts the provider and writes the audit row. Nothing is
+	 * committed unless all three succeed.
+	 */
+	saveProvider(row: OidcProviderRow, actorUserId: string, audit: ProviderAudit): Promise<SaveProviderResult>;
+	/**
+	 * One transaction (RPC oidc_update_provider_discovery): re-checks that the
+	 * actor is still a live owner, refuses ("provider_changed") when the issuer
+	 * or algorithms the document was validated against changed since `read`,
+	 * then writes ONLY discovery/discovery_fetched_at and the audit row. Every
+	 * other column (enabled, client settings) keeps its committed value.
+	 */
+	refreshProviderDiscovery(
+		read: Pick<OidcProviderRow, "id" | "tenant_id" | "issuer" | "allowed_algs">,
+		discovery: OidcDiscovery,
+		actorUserId: string,
+		auditDetail: Record<string, unknown>,
+	): Promise<RefreshDiscoveryResult>;
 
 	createAuthRequest(row: OidcAuthRequestRow): Promise<boolean>;
 	/** Single atomic UPDATE ... WHERE consumed_at IS NULL AND expires_at > now(); null when replayed/expired/unknown. */
@@ -164,7 +198,11 @@ export interface OidcDeps {
 	now(): number;
 	randomBytes(length: number): Uint8Array;
 	requestId(req: Request): string;
-	getClientSecret(ref: string): string | null;
+	/**
+	 * Tenant-bound secret lookup (client-secrets.ts). Every field comes from the
+	 * stored provider row; a reference alone never releases a secret.
+	 */
+	getClientSecret(request: ClientSecretRequest): string | null;
 	/** SSRF-guarded JSON fetch (supabase/functions/_shared/safe-fetch.ts). */
 	fetchJson(
 		url: string,

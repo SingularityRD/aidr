@@ -3,7 +3,8 @@
 // test: signatures are genuinely produced and genuinely verified.
 
 import { requireFeature } from "../_shared/plan-entitlements.ts";
-import { base64UrlEncode, type Jwk, type MappedRole, type OidcAlgorithm } from "../oidc-sso/oidc.ts";
+import { CLIENT_SECRET_BINDINGS_ENV, CLIENT_SECRET_ENV_PREFIX, resolveClientSecret } from "../oidc-sso/client-secrets.ts";
+import { base64UrlEncode, type Jwk, type MappedRole, type OidcAlgorithm, type OidcDiscovery } from "../oidc-sso/oidc.ts";
 import type {
 	AuditValues,
 	AuthenticatedCaller,
@@ -14,7 +15,10 @@ import type {
 	OidcPolicyRow,
 	OidcProviderRow,
 	OidcStore,
+	ProviderAudit,
 	RateLimitDecision,
+	RefreshDiscoveryResult,
+	SaveProviderResult,
 } from "../oidc-sso/types.ts";
 
 const encoder = new TextEncoder();
@@ -250,9 +254,52 @@ class MemoryStore implements OidcStore {
 		const row = this.domains.find((candidate) => candidate.domain === domain && candidate.verified_at);
 		return row ? this.findProviderByTenant(row.tenant_id) : null;
 	}
-	async saveProvider(row: OidcProviderRow) {
+	/**
+	 * Models RPC oidc_save_provider: one transaction that re-checks the actor's
+	 * live owner role at write time, upserts and audits. A failed audit insert
+	 * rolls the provider write back; a non-owner writes nothing.
+	 */
+	async saveProvider(row: OidcProviderRow, actorUserId: string, audit: ProviderAudit): Promise<SaveProviderResult> {
+		if (this.members.get(`${row.tenant_id}:${actorUserId}`) !== "owner") return "owner_required";
+		const existing = this.providers.get(row.id);
+		if (existing && existing.tenant_id !== row.tenant_id) return "owner_required";
+		if (this.failAudit) return "error";
 		this.providers.set(row.id, row);
-		return true;
+		this.audits.push({
+			actor_user_id: actorUserId,
+			tenant_id: row.tenant_id,
+			target_user_id: null,
+			action: audit.action,
+			detail: { ...audit.detail, provider_id: row.id },
+		});
+		return "saved";
+	}
+	/**
+	 * Models RPC oidc_update_provider_discovery: owner re-check at write time,
+	 * refusal when the issuer/algorithms changed since the read, then ONLY the
+	 * discovery column of the CURRENT row changes, plus the audit row.
+	 */
+	async refreshProviderDiscovery(
+		read: Pick<OidcProviderRow, "id" | "tenant_id" | "issuer" | "allowed_algs">,
+		discovery: OidcDiscovery,
+		actorUserId: string,
+		auditDetail: Record<string, unknown>,
+	): Promise<RefreshDiscoveryResult> {
+		if (this.members.get(`${read.tenant_id}:${actorUserId}`) !== "owner") return "owner_required";
+		const current = this.providers.get(read.id);
+		if (!current) return "provider_changed";
+		if (current.tenant_id !== read.tenant_id) return "owner_required";
+		if (current.issuer !== read.issuer || current.allowed_algs.join(",") !== read.allowed_algs.join(",")) return "provider_changed";
+		if (this.failAudit) return "error";
+		this.providers.set(read.id, { ...current, discovery });
+		this.audits.push({
+			actor_user_id: actorUserId,
+			tenant_id: read.tenant_id,
+			target_user_id: null,
+			action: "identity.oidc.discovery_refreshed",
+			detail: { ...auditDetail, provider_id: read.id },
+		});
+		return "saved";
 	}
 	async createAuthRequest(row: OidcAuthRequestRow) {
 		this.requests.set(row.state_hash, { ...row });
@@ -401,7 +448,12 @@ export interface World {
 	idps: IdpFixture[];
 	callers: Map<string, AuthenticatedCaller | AuthenticationFailure>;
 	clock: { now: number };
+	/** `ref -> secret value`, i.e. the AIDR_OIDC_CLIENT_SECRET_<ref> Edge secrets. */
 	secrets: Map<string, string>;
+	/** The operator's AIDR_OIDC_CLIENT_SECRET_BINDINGS document (resolved by the real resolver). */
+	secretBindings: Record<string, unknown>;
+	/** Every env name the secret resolver read, in order. */
+	secretEnvReads: string[];
 	txt: Map<string, string[]>;
 	jwksInvalidated: string[];
 	deps: OidcDeps;
@@ -413,6 +465,18 @@ export function makeWorld(options: { idps: IdpFixture[]; jwks?: OidcDeps["jwksGe
 	const clock = { now: NOW_MS };
 	store.clock = () => clock.now;
 	const secrets = new Map<string, string>([["TENANT_A", "s3cr3t-A"], ["TENANT_B", "s3cr3t-B"]]);
+	const world = {
+		secretBindings: {
+			TENANT_A: { tenant_id: TENANT_A, issuer: ISSUER_A },
+			TENANT_B: { tenant_id: TENANT_B, issuer: ISSUER_B, client_id: "client-b" },
+		} as Record<string, unknown>,
+		secretEnvReads: [] as string[],
+	};
+	const readEnv = (name: string): string | undefined => {
+		world.secretEnvReads.push(name);
+		if (name === CLIENT_SECRET_BINDINGS_ENV) return JSON.stringify(world.secretBindings);
+		return name.startsWith(CLIENT_SECRET_ENV_PREFIX) ? secrets.get(name.slice(CLIENT_SECRET_ENV_PREFIX.length)) : undefined;
+	};
 	const txt = new Map<string, string[]>();
 	const jwksInvalidated: string[] = [];
 	let counter = 0;
@@ -433,7 +497,7 @@ export function makeWorld(options: { idps: IdpFixture[]; jwks?: OidcDeps["jwksGe
 			return bytes;
 		},
 		requestId: () => "req-test",
-		getClientSecret: (ref) => secrets.get(ref) ?? null,
+		getClientSecret: (request) => resolveClientSecret(readEnv, request),
 		fetchJson: idpFetch(options.idps),
 		resolveTxt: async (name) => {
 			const records = txt.get(name);
@@ -445,7 +509,7 @@ export function makeWorld(options: { idps: IdpFixture[]; jwks?: OidcDeps["jwksGe
 			jwksInvalidated.push(uri);
 		},
 	};
-	return { store, idps: options.idps, callers, clock, secrets, txt, jwksInvalidated, deps };
+	return Object.assign(world, { store, idps: options.idps, callers, clock, secrets, txt, jwksInvalidated, deps });
 }
 
 export function post(body: Record<string, unknown>, token?: string): Request {

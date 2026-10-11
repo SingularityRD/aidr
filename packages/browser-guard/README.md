@@ -32,7 +32,8 @@ administrator and end-user guide is [`docs/platform-guides/browser-guard.md`](..
    optional native host is enabled (`useNativeHost`) and reachable, its NER
    findings for names, addresses and places, requested in parallel and merged
    before masking. If the host does not answer, the scan is rules-only and the
-   in-page message says so ([`docs/native-host.md`](docs/native-host.md)). Risk
+   in-page message says so ([`docs/native-host.md`](docs/native-host.md)); with the
+   managed `requireNativeNer` the send, paste or upload is blocked instead. Risk
    signals such as prompt-injection phrasing are reported by code.
 3. **Acts according to the mode.**
 
@@ -98,12 +99,20 @@ administrator and end-user guide is [`docs/platform-guides/browser-guard.md`](..
      headers, footers, footnotes/endnotes, comments and their authors, tracked
      changes, field codes, text boxes, tables; Excel shared strings (rich text),
      inline strings, formula string results and numeric/date cells (a masked
-     number becomes a text cell; a formula keeps its formula), comments, pivot
-     cache strings, header/footer text, with sensitive column headers masking the
-     whole column as for CSV; PowerPoint slides, notes, layouts, masters and
+     number becomes a text cell; a clean formula keeps its formula), formulas
+     themselves (a cell whose formula holds sensitive data - and every dependent of
+     such a shared formula - loses the formula and becomes a masked constant, so a
+     recalculation cannot bring the value back), conditional-format and
+     data-validation formulas, defined names, comments, pivot cache strings,
+     header/footer text, with sensitive column headers masking the whole column as
+     for CSV; PowerPoint slides, notes, layouts, masters and
      comments; charts/diagrams/drawings, document properties and `mailto:` and
      other external hyperlink targets in every format. Other parts (styles, media,
-     fonts...) are copied byte for byte.
+     fonts...) are copied byte for byte. XML names are matched by namespace URI and
+     local name, never by the prefix a file happens to use (`x:p` bound to the
+     WordprocessingML namespace, or a default namespace, is still a paragraph); a
+     part that uses an undeclared prefix is refused (`DOCUMENT_MALFORMED`). The
+     same applies to OpenDocument text and its macro / OLE / external-link checks.
    - **ODT / ODS / ODP / ODG** (and templates) go through the same ZIP reader/writer,
      XML scanner and limits and are masked in place the same way: paragraphs are
      scanned over their spans, links and fields; notes, annotations and text boxes;
@@ -166,7 +175,14 @@ administrator and end-user guide is [`docs/platform-guides/browser-guard.md`](..
    - **PDF** text is extracted (object and cross-reference streams, Flate/LZW/
      ASCIIHex/ASCII85/RunLength, WinAnsi/MacRoman/Standard encodings with
      `/Differences`, ToUnicode CMaps for Identity-H fonts, Form XObjects,
-     annotations, form fields, document info) and scanned. PDFs are not rewritten:
+     annotations, form fields, document info, XMP metadata, and embedded files /
+     file attachments whose content is plain UTF-8/UTF-16 text) and scanned. An
+     embedded file that is not plain text (nested PDF, Office document, image,
+     archive...), cannot be decoded or is missing adds
+     `PDF_EMBEDDED_FILES_NOT_INSPECTED`, so such a PDF is never reported as clean.
+     A PDF (or OOXML/ODF/OLE document) is recognised by its content first, so
+     renaming it `report.txt` or sending it as `text/plain` changes neither the scan
+     nor `documentHandling`. PDFs are not rewritten:
      one with findings is blocked (`SENSITIVE_DATA_IN_PDF`) and the user is told to
      paste the text instead, where it is masked; `monitor` records it. A PDF
      without extractable text (scanned), with image-only pages or undecodable
@@ -197,7 +213,9 @@ administrator and end-user guide is [`docs/platform-guides/browser-guard.md`](..
      not read the image fully (no text, uncertain words, barcodes, limits), the
      image is reported as not inspected (`IMAGE_NOT_INSPECTED`): uploaded with a
      warning, blocked in `block` mode, never treated as clean.
-   - `documentHandling: block` rejects every Office/OpenDocument/PDF upload in every mode;
+   - `documentHandling: block` rejects every Office/OpenDocument/PDF upload in every mode,
+     recognised by content as well as name (in `monitor` mode an upload is held until
+     its first bytes were sniffed, so a PDF renamed to `.txt` is refused too);
      `allow` skips document parsing (the previous behaviour: unscanned warning,
      blocked in `block` mode). A document whose scan exceeds 30 s is blocked
      (`SCAN_INCOMPLETE`).
@@ -323,10 +341,11 @@ the policy sets `allowUserOverrides: true` (see `deploy/browser-guard/README.md`
 | `documentHandling` | `mask` \| `block` \| `allow` (managed only; Office/OpenDocument/legacy Office/PDF when `fileHandling` is `scan`) | `mask` |
 | `restoreResponses` | boolean | `true` |
 | `useNativeHost` | boolean | `false` (also a user setting unless managed) |
+| `requireNativeNer` | boolean (managed only; the signed dashboard policy can also switch it on, `true` wins): native NER is mandatory; a prompt, paste or upload the host could not NER-check (missing, crashed, timed out, rules-only, over the limit) is blocked, recorded as `native_ner: unavailable` in monitor mode; forces `useNativeHost` on | `false` |
 | `telemetry` | `{ controlPlaneUrl, apiKey }` | none (no telemetry) |
 | `language` | `auto` \| `en` \| `tr` | `auto` |
 | `policyId` | string reported with telemetry | `aidr-browser-guard-default` |
-| `dashboardPolicy` | `{ publicKeysPem: [1-4 Ed25519 SPKI PEM], tenantId? }` (managed only) | none: dashboard Shadow AI decisions are not applied |
+| `dashboardPolicy` | `{ publicKeysPem: [1-4 Ed25519 SPKI PEM], tenantId? }` (managed only) | none: dashboard Shadow AI decisions and the dashboard's "Require native NER" are not applied |
 | `allowUserOverrides` | boolean (managed only) | `false`: a managed policy locks the protection settings above |
 
 The authoritative schema is [`static/managed_schema.json`](static/managed_schema.json);
@@ -402,6 +421,18 @@ must match a pinned `tenantId`, and the sequence must not be lower than the last
 accepted one. An unsigned, tampered, foreign-key or replayed document is ignored and
 the last verified one stays in force. Refresh: startup, every managed-policy change and
 every 15 minutes (`aidr-dashboard-policy` alarm).
+
+The same signed document carries the tenant's **Require native NER** setting
+(Browser Privacy Guard → Require native NER; owners/admins, AAL2, audited; switching
+it off is refused while four-eyes change control is on) as
+`browser_guard.require_native_ner: true`; the key is omitted when the setting is off,
+so documents of tenants that do not use it stay acceptable to extension versions that
+predate it (those versions refuse a document carrying the key and keep their last
+verified one). The flag is covered by `policy_sha256` like the lists. It has the
+meaning of the managed `requireNativeNer` key and is merged with it the same way as
+blocks: `true` from either side wins (the dashboard can switch the requirement on, never
+off), it forces and locks `useNativeHost`, and it stays in force after the document
+expires.
 
 Precedence is **most restrictive wins**: a dashboard block applies in every mode; a
 dashboard allow only marks a service sanctioned when the managed `shadowAi` does not
