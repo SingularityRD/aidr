@@ -4,16 +4,18 @@
 // Policy (product decision): when the hot path is saturated, the heaviest
 // tenant's excess requests are rejected and quiet tenants keep being served.
 //
-// Every admitted request holds one slot from before authentication until its
+// Every admitted request holds one lease from before authentication until its
 // handler settles, so the API-key lookup's own database reads are bounded too.
-// For a request charged to tenant t, with n = t's slots, total = all slots and
-// active = tenants holding a slot (counting t):
+// For a request charged to tenant t, with n = t's leases, total = all leases and
+// active = tenants holding a lease (counting t):
 //
-//   1. total >= capacity                      -> 503 service_overloaded
-//   2. n >= perTenantMax                      -> 429 tenant_overloaded
+//   0. t is "unresolved", the same key already holds a lease
+//      and total >= perTenantMax                 -> 429 tenant_overloaded
+//   1. total >= capacity                         -> 503 service_overloaded
+//   2. n >= perTenantMax                         -> 429 tenant_overloaded
 //   3. total >= perTenantMax (under pressure)
 //      and n >= max(floor, floor(capacity / active))
-//                                             -> 429 tenant_overloaded
+//                                                -> 429 tenant_overloaded
 //   4. otherwise admit.
 //
 // perTenantMax < capacity keeps capacity - perTenantMax slots that one tenant
@@ -21,54 +23,54 @@
 // a noisy tenant holds everything it may. Once the newcomer is active the noisy
 // tenant's fair share shrinks and it is shed until it drops below that share.
 //
-// The tenant is known only after the API key is authenticated. Admission uses
-// the tenant that the same key (by SHA-256) authenticated as before in this
-// isolate; a key not seen yet is charged to one shared "unresolved" pseudo
-// tenant, so a flood of unknown or invalid keys is capped at one fair share;
-// under pressure each such key has at most one request in flight.
-// After authentication the slot is moved to the real tenant, and refused there
-// (429) if that tenant is already at its cap or share. The hint only
-// decides whose share a request counts against; authorization never reads it,
-// and a failed authentication forgets it.
+// Shared state. The leases live in the database
+// (supabase/migrations/20261011000500_tenant_inflight_shared_leases.sql), in one
+// scope shared by ingest and policy, every edge worker and every replica. One
+// RPC acquires: it resolves the tenant from the presented key's SHA-256 (the
+// lookup authentication makes), applies the rules above and writes a lease that
+// expires after LEASE_SECONDS. One RPC releases it when the handler settles. A
+// worker the runtime kills before it releases cannot hold the slot past the
+// expiry. The first, per-worker version of this limiter lost its counts and its
+// key-to-tenant hints every time the runtime replaced a worker, which under
+// overload was every few seconds (docs/production-readiness/
+// load-soak-drill-2026-10-11.md, fair-share addenda).
 //
-// Scope: the state lives in this isolate, so the bound is per function isolate.
-// It is not shared across functions or replicas, nor between a retiring
-// isolate and its replacement. The edge runtime retires an isolate at its
-// wall-clock or CPU-time limit; under overload the 2026-10-11 drill saw that
-// every few seconds, and each fresh isolate starts with no counts and no
-// key-to-tenant hints (docs/production-readiness/load-soak-drill-2026-10-11.md,
-// fair-share addendum).
+// The resolved tenant only decides whose share a request counts against.
+// Authorization never reads it: the handler still authenticates the key in full.
+// A key that resolves to no tenant is charged to one shared "unresolved" party,
+// so a flood of unknown or invalid keys is capped at one fair share.
 //
 // Failure policy: rate limits are a security control, so a request is never
-// admitted on a limiter fault. A malformed configuration or an internal error
-// answers 503 tenant_limiter_unavailable and is always logged.
+// admitted on a limiter fault. A malformed configuration, a failed acquire RPC
+// or an unreadable answer is 503 tenant_limiter_unavailable and is logged. A
+// failed release is logged; the lease then frees itself at its expiry.
 
 import type { EnvReader } from "./config.ts";
+import { sha256 } from "./runtime-policy.ts";
 
 export const TENANT_OVERLOADED = "tenant_overloaded";
 export const SERVICE_OVERLOADED = "service_overloaded";
 export const TENANT_LIMITER_UNAVAILABLE = "tenant_limiter_unavailable";
 export const UNRESOLVED_TENANT = "unresolved";
 
+/** The admission scope ingest and policy share. */
+export const ADMISSION_SCOPE = "machine-api";
 // The kit's PostgREST pool holds 10 connections and a request uses at most one
-// at a time, so one function never queues more requests than the pool serves.
+// at a time, so the deployment never queues more requests than the pool serves.
 export const DEFAULT_CAPACITY = 10;
 export const DEFAULT_FAIR_SHARE_FLOOR = 2;
 export const DEFAULT_RETRY_AFTER_SECONDS = 1;
-// A slot whose handler has not settled after this long is reclaimed and logged.
-// Longer than any edge worker wall clock, so it only catches a hung promise.
-export const DEFAULT_LEASE_MS = 150_000;
+// The main router gives each edge worker a 60 s wall clock, so no live request
+// outlives its lease; a lease left by a killed worker frees itself after this.
+export const LEASE_SECONDS = 60;
 const MAX_CAPACITY = 10_000;
-const SHED_LOG_INTERVAL_MS = 10_000;
-const HINT_TTL_MS = 300_000;
-const MAX_HINTS = 10_000;
+const LOG_INTERVAL_MS = 10_000;
 
 export interface TenantConcurrencyConfig {
 	capacity: number;
 	perTenantMax: number;
 	fairShareFloor: number;
 	retryAfterSeconds: number;
-	leaseMs: number;
 }
 
 export type TenantSlotRejection = {
@@ -78,32 +80,24 @@ export type TenantSlotRejection = {
 	retryAfterSeconds: number;
 };
 
-export type TenantSlot = {
-	ok: true;
-	/**
-	 * Moves the slot to another tenant if that tenant could be admitted now
-	 * (capacity aside: the slot is already counted). Returns the rejection, and
-	 * leaves the slot where it was, when that tenant is at its cap or share.
-	 */
-	rebind: (tenantId: string) => TenantSlotRejection | null;
-	release: () => void;
-};
-
-/** A slot admitted for a credential, before the credential is authenticated. */
+/** A lease admitted for a credential, before the credential is authenticated. */
 export type CredentialSlot = {
 	ok: true;
-	/**
-	 * Records the authenticated tenant and moves the slot to it. Returns a
-	 * rejection when that tenant is already at its cap or fair share: the caller
-	 * answers it instead of continuing (the slot is still released by its owner).
-	 */
-	authenticated: (tenantId: string) => TenantSlotRejection | null;
-	/** Authentication failed: later requests with this credential are unresolved again. */
-	unauthenticated: () => void;
-	release: () => void;
+	/** The tenant the lease is charged to, or "unresolved". Never used for authorization. */
+	chargedTo: string;
+	/** Frees the lease; idempotent, and never throws. */
+	release: () => Promise<void>;
 };
 
 export type ConfigParse = { ok: true; config: TenantConcurrencyConfig } | { ok: false; problem: string };
+
+/** The part of the service-role client admission needs. */
+export type LeaseDatabase = {
+	rpc(name: string, args: Record<string, unknown>): PromiseLike<{ data: unknown; error: unknown }>;
+};
+
+/** `db` is the service-role client; typed loosely like api-key-auth.ts, since the SDK's rpc() is generic. */
+export type AdmitCredential = (db: unknown, credential: string) => Promise<CredentialSlot | TenantSlotRejection>;
 
 type Logger = Pick<Console, "warn" | "error">;
 
@@ -134,206 +128,116 @@ export function parseTenantConcurrencyConfig(env: EnvReader): ConfigParse {
 		DEFAULT_RETRY_AFTER_SECONDS, 1, 60,
 	);
 	if (typeof retryAfterSeconds === "string") return { ok: false, problem: retryAfterSeconds };
-	return { ok: true, config: { capacity, perTenantMax, fairShareFloor, retryAfterSeconds, leaseMs: DEFAULT_LEASE_MS } };
+	return { ok: true, config: { capacity, perTenantMax, fairShareFloor, retryAfterSeconds } };
 }
 
-export class TenantConcurrencyLimiter {
-	readonly config: TenantConcurrencyConfig;
-	#inFlight = new Map<string, number>();
-	#total = 0;
-	#lastShedLog = new Map<string, number>();
-	#log: Logger;
-	#now: () => number;
-	#setTimer: (fn: () => void, ms: number) => unknown;
-	#clearTimer: (handle: unknown) => void;
+type AcquireAnswer =
+	| { admitted: true; slot: number; leaseId: string; chargedTo: string; reclaimed: boolean; held: number; total: number; active: number }
+	| { admitted: false; reason: string; chargedTo: string; held: number; total: number; active: number };
 
-	constructor(
-		config: TenantConcurrencyConfig,
-		options: {
-			logger?: Logger;
-			now?: () => number;
-			setTimer?: (fn: () => void, ms: number) => unknown;
-			clearTimer?: (handle: unknown) => void;
-		} = {},
-	) {
-		this.config = config;
-		this.#log = options.logger ?? console;
-		this.#now = options.now ?? Date.now;
-		this.#setTimer = options.setTimer ?? ((fn, ms) => setTimeout(fn, ms));
-		this.#clearTimer = options.clearTimer ?? ((handle) => clearTimeout(handle as number));
-	}
+const REJECTION_REASONS = new Set(["unresolved_key_busy", "capacity", "tenant_max", "fair_share"]);
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-	/** Current slots: total and per tenant (tenants with no slot are absent). */
-	snapshot(): { total: number; tenants: Record<string, number> } {
-		return { total: this.#total, tenants: Object.fromEntries(this.#inFlight) };
-	}
-
-	/** The share a tenant may hold under pressure when `active` tenants hold slots. */
-	fairShare(active: number): number {
-		return Math.max(this.config.fairShareFloor, Math.floor(this.config.capacity / Math.max(1, active)));
-	}
-
-	tryAcquire(tenantId: string): TenantSlot | TenantSlotRejection {
-		try {
-			if (typeof tenantId !== "string" || tenantId === "") throw new Error("tenant id is required");
-			const held = this.#inFlight.get(tenantId) ?? 0;
-			const { capacity } = this.config;
-			if (this.#total >= capacity) return this.#shed(tenantId, 503, SERVICE_OVERLOADED, "capacity", held);
-			const overShare = this.#overShare(tenantId, held, this.#total, this.#inFlight.size);
-			if (overShare) return overShare;
-			this.#add(tenantId, 1);
-			this.#total += 1;
-			let owner = tenantId;
-			let released = false;
-			const release = () => {
-				if (released) return;
-				released = true;
-				this.#clearTimer(lease);
-				this.#add(owner, -1);
-				this.#total = Math.max(0, this.#total - 1);
-			};
-			const lease = this.#setTimer(() => {
-				if (released) return;
-				this.#log.error(JSON.stringify({ event: "tenant_inflight_lease_expired", tenant_id: owner, lease_ms: this.config.leaseMs }));
-				release();
-			}, this.config.leaseMs);
-			const rebind = (next: string): TenantSlotRejection | null => {
-				if (released || next === owner || typeof next !== "string" || next === "") return null;
-				// Judge `next` as if this slot were a new request from it.
-				const ownerHeld = this.#inFlight.get(owner) ?? 0;
-				const activeWithout = this.#inFlight.size - (ownerHeld === 1 ? 1 : 0);
-				const overShare = this.#overShare(next, this.#inFlight.get(next) ?? 0, this.#total - 1, activeWithout);
-				if (overShare) return overShare;
-				this.#add(owner, -1);
-				this.#add(next, 1);
-				owner = next;
-				return null;
-			};
-			return { ok: true, rebind, release };
-		} catch (error) {
-			this.#log.error(JSON.stringify({
-				event: "tenant_inflight_limiter_error", tenant_id: typeof tenantId === "string" ? tenantId : null,
-				message: error instanceof Error ? error.message : String(error),
-			}));
-			return { ok: false, status: 503, error: TENANT_LIMITER_UNAVAILABLE, retryAfterSeconds: this.config.retryAfterSeconds };
-		}
-	}
-
-	/** Total in-flight has reached the per-tenant cap: fair shares apply. */
-	underPressure(): boolean {
-		return this.#total >= this.config.perTenantMax;
-	}
-
-	/** A 429 tenant_overloaded for `tenantId`, logged like any other shed. */
-	shed(tenantId: string, reason: string): TenantSlotRejection {
-		return this.#shed(tenantId, 429, TENANT_OVERLOADED, reason, this.#inFlight.get(tenantId) ?? 0);
-	}
-
-	/** Rules 2 and 3: the tenant's own cap, then its fair share under pressure. */
-	#overShare(tenantId: string, held: number, total: number, active: number): TenantSlotRejection | null {
-		const { perTenantMax } = this.config;
-		if (held >= perTenantMax) return this.#shed(tenantId, 429, TENANT_OVERLOADED, "tenant_max", held);
-		if (total >= perTenantMax && held >= this.fairShare(active + (held === 0 ? 1 : 0))) {
-			return this.#shed(tenantId, 429, TENANT_OVERLOADED, "fair_share", held);
-		}
-		return null;
-	}
-
-	#add(tenantId: string, delta: number) {
-		const next = (this.#inFlight.get(tenantId) ?? 0) + delta;
-		if (next > 0) this.#inFlight.set(tenantId, next);
-		else this.#inFlight.delete(tenantId);
-	}
-
-	#shed(tenantId: string, status: 429 | 503, error: TenantSlotRejection["error"], reason: string, held: number): TenantSlotRejection {
-		const key = `${tenantId}:${reason}`;
-		const now = this.#now();
-		const last = this.#lastShedLog.get(key);
-		if (last === undefined || now - last >= SHED_LOG_INTERVAL_MS) {
-			if (this.#lastShedLog.size >= 1_000) this.#lastShedLog.clear();
-			this.#lastShedLog.set(key, now);
-			this.#log.warn(JSON.stringify({
-				event: "tenant_inflight_shed", tenant_id: tenantId, reason,
-				tenant_in_flight: held, total_in_flight: this.#total, active_tenants: this.#inFlight.size,
-				capacity: this.config.capacity,
-			}));
-		}
-		return { ok: false, status, error, retryAfterSeconds: this.config.retryAfterSeconds };
-	}
+function count(value: unknown): number | null {
+	return Number.isSafeInteger(value) && (value as number) >= 0 ? value as number : null;
 }
 
-async function credentialDigest(credential: string): Promise<string> {
-	const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(credential));
-	return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+/** The acquire RPC's answer, or null when it is not one the migration produces. */
+function acquireAnswer(data: unknown): AcquireAnswer | null {
+	if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+	const row = data as Record<string, unknown>;
+	const held = count(row.held), total = count(row.total), active = count(row.active);
+	if (held === null || total === null || active === null) return null;
+	if (typeof row.charged_to !== "string" || row.charged_to === "") return null;
+	const base = { chargedTo: row.charged_to, held, total, active };
+	if (row.admitted === true) {
+		const slot = count(row.slot);
+		if (slot === null || slot < 1 || typeof row.lease_id !== "string" || !UUID.test(row.lease_id) || typeof row.reclaimed !== "boolean") return null;
+		return { admitted: true, slot, leaseId: row.lease_id, reclaimed: row.reclaimed, ...base };
+	}
+	if (row.admitted === false && typeof row.reason === "string" && REJECTION_REASONS.has(row.reason)) {
+		return { admitted: false, reason: row.reason, ...base };
+	}
+	return null;
+}
+
+/** Writes a log line at most once per key every LOG_INTERVAL_MS in this worker. */
+function throttledLog(now: () => number) {
+	const last = new Map<string, number>();
+	return (key: string, write: () => void) => {
+		const at = now();
+		const previous = last.get(key);
+		if (previous !== undefined && at - previous < LOG_INTERVAL_MS) return;
+		if (last.size >= 1_000) last.clear();
+		last.set(key, at);
+		write();
+	};
 }
 
 /**
- * Admits a request by its bearer credential before authentication, charging it
- * to the tenant that credential last authenticated as (or to the unresolved
- * pseudo tenant), and moves the slot to the authenticated tenant afterwards.
+ * Admission against the shared database leases. One acquire RPC per request,
+ * and one release RPC when the handler settles.
  */
-export class CredentialAdmission {
-	readonly limiter: TenantConcurrencyLimiter;
-	#hints = new Map<string, { tenantId: string; expiresAt: number }>();
-	// Unresolved requests in flight per credential digest.
-	#pending = new Map<string, number>();
-	#now: () => number;
-
-	constructor(limiter: TenantConcurrencyLimiter, options: { now?: () => number } = {}) {
-		this.limiter = limiter;
-		this.#now = options.now ?? Date.now;
-	}
-
-	async admit(credential: string): Promise<CredentialSlot | TenantSlotRejection> {
-		let digest: string;
+export function sharedLeaseAdmission(
+	config: TenantConcurrencyConfig,
+	options: { logger?: Logger; now?: () => number; scope?: string } = {},
+): AdmitCredential {
+	const log = options.logger ?? console;
+	const scope = options.scope ?? ADMISSION_SCOPE;
+	const throttle = throttledLog(options.now ?? Date.now);
+	const unavailable = (message: string): TenantSlotRejection => {
+		throttle(`error:${message}`, () => log.error(JSON.stringify({ event: "tenant_inflight_limiter_error", message })));
+		return { ok: false, status: 503, error: TENANT_LIMITER_UNAVAILABLE, retryAfterSeconds: config.retryAfterSeconds };
+	};
+	return async (database, credential) => {
+		const db = database as LeaseDatabase;
+		let answer: AcquireAnswer | null;
 		try {
-			digest = await credentialDigest(credential);
-		} catch (error) {
-			// Unreachable with a string credential; still never an unbounded admission.
-			console.error(JSON.stringify({ event: "tenant_inflight_limiter_error", message: error instanceof Error ? error.message : String(error) }));
-			return { ok: false, status: 503, error: TENANT_LIMITER_UNAVAILABLE, retryAfterSeconds: this.limiter.config.retryAfterSeconds };
+			const result = await db.rpc("acquire_tenant_inflight_lease", {
+				p_scope: scope,
+				p_key_hash: await sha256(credential),
+				p_capacity: config.capacity,
+				p_per_tenant_max: config.perTenantMax,
+				p_fair_share_floor: config.fairShareFloor,
+				p_lease_seconds: LEASE_SECONDS,
+			});
+			if (result.error) return unavailable("acquire_failed");
+			answer = acquireAnswer(result.data);
+		} catch {
+			return unavailable("acquire_failed");
 		}
-		const hint = this.#hints.get(digest);
-		const now = this.#now();
-		if (hint && hint.expiresAt <= now) this.#hints.delete(digest);
-		const charged = hint && hint.expiresAt > now ? hint.tenantId : UNRESOLVED_TENANT;
-		// Under pressure a credential not yet resolved in this isolate gets one
-		// request at a time, so one tenant's many keys cannot fill the shared
-		// unresolved bucket ahead of another tenant's first request (this
-		// happens every time the runtime starts a fresh worker).
-		const unresolved = charged === UNRESOLVED_TENANT;
-		if (unresolved && (this.#pending.get(digest) ?? 0) > 0 && this.limiter.underPressure()) {
-			return this.limiter.shed(UNRESOLVED_TENANT, "unresolved_key_busy");
+		if (!answer) return unavailable("acquire_answer_invalid");
+		if (!answer.admitted) {
+			const { reason, chargedTo, held, total, active } = answer;
+			throttle(`shed:${chargedTo}:${reason}`, () => log.warn(JSON.stringify({
+				event: "tenant_inflight_shed", tenant_id: chargedTo, reason,
+				tenant_in_flight: held, total_in_flight: total, active_tenants: active, capacity: config.capacity,
+			})));
+			return reason === "capacity"
+				? { ok: false, status: 503, error: SERVICE_OVERLOADED, retryAfterSeconds: config.retryAfterSeconds }
+				: { ok: false, status: 429, error: TENANT_OVERLOADED, retryAfterSeconds: config.retryAfterSeconds };
 		}
-		const slot = this.limiter.tryAcquire(charged);
-		if (!slot.ok) return slot;
-		let pending = unresolved;
-		if (pending) this.#pending.set(digest, (this.#pending.get(digest) ?? 0) + 1);
-		const settle = () => {
-			if (!pending) return;
-			pending = false;
-			const left = (this.#pending.get(digest) ?? 1) - 1;
-			if (left > 0) this.#pending.set(digest, left);
-			else this.#pending.delete(digest);
-		};
+		if (answer.reclaimed) {
+			// The slot's previous lease expired without a release: its worker died.
+			throttle("lease_expired", () => log.error(JSON.stringify({ event: "tenant_inflight_lease_expired", lease_seconds: LEASE_SECONDS })));
+		}
+		const { slot, leaseId, chargedTo } = answer;
+		let released = false;
 		return {
 			ok: true,
-			release: () => {
-				settle();
-				slot.release();
-			},
-			authenticated: (tenantId: string) => {
-				settle();
-				if (this.#hints.size >= MAX_HINTS && !this.#hints.has(digest)) this.#hints.clear();
-				this.#hints.set(digest, { tenantId, expiresAt: this.#now() + HINT_TTL_MS });
-				return slot.rebind(tenantId);
-			},
-			unauthenticated: () => {
-				settle();
-				this.#hints.delete(digest);
+			chargedTo,
+			release: async () => {
+				if (released) return;
+				released = true;
+				try {
+					const result = await db.rpc("release_tenant_inflight_lease", { p_scope: scope, p_slot: slot, p_lease_id: leaseId });
+					if (result.error) throw new Error("release_failed");
+				} catch {
+					throttle("release_failed", () => log.error(JSON.stringify({ event: "tenant_inflight_release_failed", lease_seconds: LEASE_SECONDS })));
+				}
 			},
 		};
-	}
+	};
 }
 
 /** The rejection's response body and headers: a stable code, retryable, with Retry-After. */
@@ -345,18 +249,16 @@ export function tenantSlotResponse(rejection: TenantSlotRejection): { status: 42
 	};
 }
 
-export type AdmitCredential = (credential: string) => Promise<CredentialSlot | TenantSlotRejection>;
-
 /**
- * Isolate-wide admission for one function, built on first use from the
- * environment. A malformed configuration refuses admission (fail closed) and is
- * logged once per isolate, so it is never silent.
+ * Admission for one function, built on first use from the environment. A
+ * malformed configuration refuses admission (fail closed) and is logged once per
+ * worker, so it is never silent.
  */
 export function tenantSlotGate(env: EnvReader, logger: Logger = console): AdmitCredential {
-	let admission: CredentialAdmission | null = null;
+	let admit: AdmitCredential | null = null;
 	let configProblemLogged = false;
-	return (credential) => {
-		if (!admission) {
+	return (db, credential) => {
+		if (!admit) {
 			const parsed = parseTenantConcurrencyConfig(env);
 			if (!parsed.ok) {
 				if (!configProblemLogged) {
@@ -365,24 +267,25 @@ export function tenantSlotGate(env: EnvReader, logger: Logger = console): AdmitC
 				}
 				return Promise.resolve({ ok: false, status: 503, error: TENANT_LIMITER_UNAVAILABLE, retryAfterSeconds: 30 });
 			}
-			admission = new CredentialAdmission(new TenantConcurrencyLimiter(parsed.config, { logger }));
+			admit = sharedLeaseAdmission(parsed.config, { logger });
 		}
-		return admission.admit(credential);
+		return admit(db, credential);
 	};
 }
 
-/** Holds a slot for `credential` while `work` runs; the slot is released however `work` settles. */
+/** Holds a lease for `credential` while `work` runs; the lease is released however `work` settles. */
 export async function withTenantSlot(
 	admit: AdmitCredential,
+	db: unknown,
 	credential: string,
 	work: (slot: CredentialSlot) => Promise<Response>,
 	reject: (rejection: TenantSlotRejection) => Response,
 ): Promise<Response> {
-	const slot = await admit(credential);
+	const slot = await admit(db, credential);
 	if (!slot.ok) return reject(slot);
 	try {
 		return await work(slot);
 	} finally {
-		slot.release();
+		await slot.release();
 	}
 }

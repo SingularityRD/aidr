@@ -25,7 +25,7 @@ export function createPolicyHandler(deps: {
 	now?: () => Date;
 	admitTenantRequest?: AdmitCredential;
 } = {}) {
-	// Per-tenant in-flight slots for this isolate (AIDR_TENANT_INFLIGHT_*).
+	// Fair-share admission against the leases shared with ingest (AIDR_TENANT_INFLIGHT_*).
 	const admitTenantRequest = deps.admitTenantRequest ?? tenantSlotGate(runtimeEnv);
 	return async (req: Request): Promise<Response> => {
 		if (req.method !== "GET") return json(405, { error: "method_not_allowed" });
@@ -40,16 +40,11 @@ export function createPolicyHandler(deps: {
 			const db = deps.db ?? createClient(config.values.SUPABASE_URL, config.values.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 			// Fair-share admission (../_shared/tenant-concurrency.ts) for the key
 			// lookup and every database read after it.
-			return await withTenantSlot(admitTenantRequest, token, async (slot) => {
+			return await withTenantSlot(admitTenantRequest, db, token, async () => {
 				// The shared hash-only API-key guard rejects revoked keys, expired
 				// memberships and non-active tenants before any tenant data is read.
 				const auth = await authenticateTenantApiKeyBudgeted(db, token, "policy");
-				if (!auth.ok) {
-					if (auth.status === 401 || auth.status === 403) slot.unauthenticated();
-					return json(auth.status, { error: auth.error });
-				}
-				const overShare = slot.authenticated(auth.tenantId);
-				if (overShare) return overloaded(overShare);
+				if (!auth.ok) return json(auth.status, { error: auth.error });
 				const tenant = auth.tenantId;
 				// The shared guard returns the binding from the row that authenticated the
 				// presented hash, including a bounded retired-hash overlap.

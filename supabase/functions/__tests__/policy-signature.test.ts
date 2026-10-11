@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { leaseAware } from "./lease-rpc-fake.ts";
 
 import { verifyEd25519CanonicalJson } from "../../../packages/core/src/managed.ts";
 import { governanceOverlaySha256, type PolicyHighWater, policyBodySequence, verifySignedPolicy } from "../../../packages/core/src/policy-signature.ts";
@@ -89,7 +90,7 @@ function database(
 		if (name === "ai_governance_policy_overlay") return { data: options.governance ?? EMPTY_OVERLAY, error: null };
 		return { data: { allowed: true, remaining: 299 }, error: null };
 	};
-	return { from, rpc };
+	return { from, rpc: leaseAware(rpc) };
 }
 
 async function fetchPolicy(options: Parameters<typeof database>[0] = {}, now: Date = NOW) {

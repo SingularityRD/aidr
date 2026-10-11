@@ -14,6 +14,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { admittedLeaseRpc } from "./lease-rpc-fake.ts";
 import {
 	loadApprovalPublicKeys,
 	parseWrapSecret,
@@ -732,6 +733,8 @@ describe("approval public keys in the signed entitlement", () => {
 			};
 			const db = {
 				rpc: async (name: string) => {
+					const lease = admittedLeaseRpc(name);
+					if (lease) return lease;
 					if (name === "tenant_admission_capacity") return { data: 1, error: null };
 					if (name === "get_tenant_admission") {
 						return { data: { mode: "cloud", status: "active", access_kind: "licensed", allowed_agents: 1,

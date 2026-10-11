@@ -145,6 +145,7 @@ jobs:
           node scripts/enrollment-admission-postgres.test.mjs
           node scripts/tenant-ga-admission-postgres.test.mjs --installed
           node scripts/tenant-ga-admission-concurrency-postgres.test.mjs
+          node scripts/tenant-inflight-lease-postgres.test.mjs
           node scripts/ga-trial-legal-consent-postgres.test.mjs --installed
           node scripts/ga-trial-auth-delete-postgres.test.mjs --installed
           node scripts/team-invitation-acceptance-postgres.mjs --installed

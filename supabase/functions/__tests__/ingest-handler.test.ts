@@ -1,5 +1,6 @@
 import { createHash, generateKeyPairSync, randomUUID, verify, webcrypto } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { leaseAware } from "./lease-rpc-fake.ts";
 
 const sdk = vi.hoisted(() => ({ createClient: vi.fn() }));
 vi.mock("npm:@supabase/supabase-js@2.116.0", () => ({ createClient: sdk.createClient }));
@@ -79,7 +80,7 @@ async function ingest(
 		throw new Error(`Unexpected RPC: ${name}`);
 	});
 	const db = {
-		rpc,
+		rpc: leaseAware(rpc),
 		from(table: string) {
 			if (!(table in rows) && table !== "events" && table !== "entitlement_snapshots" && table !== "rate_limits") {
 				throw new Error(`Unexpected table: ${table}`);

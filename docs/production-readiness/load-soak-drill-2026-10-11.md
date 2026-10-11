@@ -243,8 +243,9 @@ the ledger-derived `fault_recovery` as authoritative.
 - **O1. Congestion collapse above the knee.** There is no per-tenant in-flight cap and no `lock_timeout`-based
   shedding. Abandoned requests keep holding edge workers and pool connections after the client's 10 s timeout. A
   fix means choosing which tenant's work gets shed and with what retry contract. That is a product decision.
-  **Partly addressed:** the product owner chose fair share per tenant; see the fair-share addendum below. Collapse
-  is gone in the re-run, but the pre-declared quiet-tenant bound was missed.
+  **Partly addressed:** the product owner chose fair share per tenant; see the two fair-share addenda below.
+  Collapse is gone in both re-runs, but the pre-declared quiet-tenant bound was missed in both, including after
+  the admission state moved into the database.
 - **O2. Partition behaviour.** Requests hang for 10 s and success resumes about 30 s after the network heals,
   because the PostgREST pool is stuck on dead connections. Dead-peer detection (libpq keepalives or
   `tcp_user_timeout` on the PostgREST DB URI) and a request deadline would bound this. No target was agreed, and
@@ -652,6 +653,150 @@ the generator dropped at `max_in_flight`. Noisy 500s (0–6 per run) occurred in
   would not be tuned to this host.
 - **Sizing guidance is per isolate.** Operators should size `AIDR_TENANT_INFLIGHT_CAPACITY` × functions ×
   replicas against the PostgREST pool. With the defaults, one instance can admit about 20 requests (more during
-  isolate overlap) onto a 10-connection pool.
+  isolate overlap) onto a 10-connection pool. *(Superseded by the shared-lease addendum below: the capacity is
+  now deployment-wide.)*
 - **No HA, no 8 h soak, not candidate-bound.** AIDR-052 stays **BLOCKED_EXTERNAL**.
 
+## Addendum, 2026-10-11: shared-lease fair-share admission (finding O1, second iteration)
+
+**Label: LOCAL ENGINEERING DRILL.** The same overload A/B as the previous addendum, re-run after moving the
+admission state out of the edge worker. It changes no acceptance flag, and AIDR-052 stays **BLOCKED_EXTERNAL**.
+
+**Evidence:**
+
+- `docs/production-readiness/evidence/load-soak-2026-10-11/fair-share-shared-lease-bound-declaration.json`: the
+  bound, written at 17:31:21 UTC before any shared-lease data existed.
+- `docs/production-readiness/evidence/load-soak-2026-10-11/fair-share-shared-lease-ab-2026-10-11.json`: every run,
+  the control, the lease-cost measurement, edge-runtime and limiter log counts, and the SHA-256 of each raw
+  load-test output. The raw outputs and container logs were not kept in the repository.
+
+### Bound
+
+The bound is unchanged from the previous addendum: quiet error ratio ≤ 0.1%, zero quiet 429 or 503, quiet p95 over
+the whole 90 s run. The p95 limit is min(241.2 ms, the old formula applied to a fresh control). The control was
+re-measured on the new stack, with the lease RPCs included, but the bound could only get stricter, never looser.
+The fresh control gave p50 / p95 / p99 of 67.5 / 91.8 / 338 ms, with 459 of 459 requests succeeding. The formula
+gives 241.8 ms, so the bound stayed at **241.2 ms**.
+
+### Design chosen
+
+The design combines option (a), a database lease counter, with option (b), resolving key to tenant in the same
+call. Option (b) on its own would only have fixed the charging problem, not the per-worker counts, so it was not
+measured separately.
+
+`supabase/migrations/20261011000500_tenant_inflight_shared_leases.sql` adds two `SECURITY DEFINER` RPCs. Only
+`service_role` may execute them.
+
+- **`acquire_tenant_inflight_lease(scope, key_hash, capacity, per_tenant_max, floor, lease_seconds)`.** One call per
+  request.
+  - It resolves the tenant from the presented key's SHA-256 with the same lookup as authentication: the active
+    hash, then a retired hash inside its overlap window. A revoked key resolves to no tenant.
+  - It applies the existing fair-share rules to the live leases in the scope.
+  - If the request is admitted, it writes a lease that expires after 60 s.
+  - The resolved tenant only decides whose share a request counts against. The handler still authenticates the
+    key in full.
+- **`release_tenant_inflight_lease(scope, slot, lease_id)`.** One call when the handler settles. It frees exactly
+  that lease. A late release, after the lease expired and its slot was reused, changes nothing.
+- **No leaked slots.** An expired lease stops counting, and the next acquire reuses its slot row and logs
+  `tenant_inflight_lease_expired`. A worker the runtime kills before it releases therefore holds its slot for at
+  most 60 s. That is the main router's per-worker wall clock, so no live request outlives its lease.
+- **Serialisation.** Decisions in a scope are serialised by a row lock that the acquire's own short transaction
+  takes on the scope row. There is no advisory lock and nothing is held across requests.
+- **Storage.**
+  - Slot rows are updated in place, and no indexed column changes, so the churn stays in HOT updates on a table no
+    larger than the peak number of leases.
+  - The tables are `UNLOGGED` in schema `app`. A crash or failover loses only leases that would have expired
+    anyway.
+  - `service_role` cannot read the tables directly.
+- **Edge side.** `supabase/functions/_shared/tenant-concurrency.ts` now only parses the configuration, calls the two
+  RPCs and maps the answers.
+  - The per-worker counts and key hints are removed.
+  - `ingest` and `policy` share one scope (`machine-api`).
+- **Unchanged.** The stable codes and fail-closed behaviour stay the same:
+  - 429 `tenant_overloaded` and 503 `service_overloaded`, both with `Retry-After`;
+  - a malformed `AIDR_TENANT_INFLIGHT_*` value answers 503 `tenant_limiter_unavailable` before any database call;
+  - a failed or unreadable acquire answers the same 503, and is logged;
+  - a failed release is logged, and the lease then frees itself at expiry.
+- **Configuration.** No new variables. The capacity changes meaning: it is now **deployment-wide** (both functions,
+  every worker and replica) instead of per isolate. Size it to the total PostgREST pool. The config reference and
+  the Helm values comment are updated.
+
+### Latency cost
+
+Measured through the stand-in gateway and PostgREST while the functions were idle, 2,000 acquire+release pairs per
+row:
+
+| Concurrency | Acquire p50 / p95 (ms) | Release p50 / p95 (ms) | Pair p50 / p95 / p99 (ms) |
+| --- | --- | --- | --- |
+| 1 | 3.4 / 5.0 | 3.0 / 4.5 | 6.4 / 9.4 / 12.6 |
+| 8 | 6.5 / 13.9 | 4.3 / 9.7 | 11.2 / 20.9 / 31.1 |
+
+Both round trips use the same 10-connection pool that the admission protects. The release is awaited before the
+response is returned.
+
+### Method
+
+The method was identical to the previous addendum:
+
+- **Stack:** `supabase/postgres:17.11.0.004` with 185 canonical migrations, `postgrest/postgrest:v14.17` (pool 10,
+  kit libpq parameters), `supabase/edge-runtime:v1.77.4` (kit digest) with the upstream main router, and the
+  stand-in gateway.
+- **Workload:** the 11-key knee profile, 90 s runs at 56 and 52 rps.
+- **Arms:** off then on, twice per rate, with 60 s of cool-down. The off arm sets capacity and max to 10,000. It
+  still makes both lease RPCs, but the limit never binds.
+
+There was one design iteration. It was not changed after the data, and it was not re-run.
+
+### Results
+
+| Rate | Arm | Goodput (200/s) | Quiet error ratio | Quiet non-200 | Quiet p50 / p95 (ms) | Noisy 429 / 503 | Bound |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 56 | off | 17.9 / 15.5 | 66.5% / 74.8% | timeouts and drops | 10,001 / 10,003; 10,001 / 10,003 | 0 / 0 | n/a |
+| 56 | on | 52.4 / 50.6 | 1.09% / 1.74% | 5 × 503; 8 × 503 | 79 / 328; 109 / 460 | 294 / 21; 381 / 101 | **missed / missed** |
+| 52 | off | 11.2 / 8.2 | 78.5% / 83.9% | timeouts and drops | 10,001 / 10,003; 10,001 / 10,003 | 0 / 0 | n/a |
+| 52 | on | 47.0 / 46.3 | 1.64% / 1.40% | 7 × 503; 2 × 429 + 4 × 503 | 99 / 504; 117 / 496 | 325 / 116; 433 / 76 | **missed / missed** |
+
+Two figures per cell are the two runs of that arm, in order. Every on-arm run missed all three conditions. There
+were no on-arm timeouts or drops.
+
+### Reading
+
+- **The isolate problem is fixed.**
+  - In all four on-arm runs the quiet tenant was never charged to the `unresolved` bucket. No `unresolved` shed was
+    logged, and the quiet key was charged to its own tenant from the first request of every new worker.
+  - The cap held across workers and both functions. Two seconds after each on-arm run no live lease was left.
+- **Quiet latency improved but still missed.** Quiet p95 fell from 0.63–1.00 s (v3, per isolate) to 0.33–0.50 s,
+  against a bound of 241 ms.
+- **Quiet errors did not improve.** Quiet error ratios were 1.09–1.74%, against 0.65–0.93% in v3. The
+  deployment-wide capacity of 10 is half of what two per-isolate limiters admitted.
+- **Why the bound was still missed.** Every quiet refusal came while the deployment was at capacity 10 and the
+  quiet tenant already held **3 to 5 leases of its own**. Its fair share is 5.
+  - Two refusals were `fair_share` at exactly 5. The rest were `capacity`.
+  - At about 5 quiet requests per second, holding 3–5 leases means individual quiet requests took roughly
+    0.6–1 s. They were stalled while holding a lease, not refused admission because of other tenants' leases.
+  - The edge runtime still retired workers 43–49 times per on-arm run on its CPU-time soft limit.
+  - Concurrency admission bounds requests in flight, not CPU time or worker restarts on a saturated 4-vCPU host.
+    The noisy tenant was still served at about 42–47 HTTP 200/s on the same CPUs.
+- **The off arm changed too.** It collapsed in all four runs, with goodput of 8.2–17.9 HTTP 200/s. At 52 rps that
+  is lower than the previous off arm's 52.0 / 51.9, so host capacity moved again between windows. The off arm now
+  also pays the two lease RPCs.
+  - Under collapse the lease RPCs themselves failed. `tenant_limiter_error` and `tenant_inflight_release_failed`
+    were logged, and expired leases were reclaimed. A collapsed deployment fails closed with 503
+    `tenant_limiter_unavailable` rather than admitting unbounded work.
+- **Measurement noise.** Two runs per arm on a shared host whose capacity moved during the day. The result is
+  indicative, not conclusive.
+
+### What stays open in O1
+
+- **The quiet-tenant isolation bound above the knee is still not met.** The remaining cause is that the quiet
+  tenant's own admitted requests stall under CPU saturation and worker retirement. Admission state is no longer
+  the cause.
+- **Options not tried.** Each of these would set the result on this host rather than in the design, so none was
+  tried:
+  - a lower capacity;
+  - lower CPU limits;
+  - preempting leases granted before a tenant became active;
+  - a CPU-aware or rate-based limit for the noisy tenant.
+- **Sizing guidance is now deployment-wide.** Set `AIDR_TENANT_INFLIGHT_CAPACITY` (Helm
+  `functions.tenantInflight.capacity`) to the total PostgREST pool that `ingest` and `policy` share.
+- **No HA, no 8 h soak, not candidate-bound.** AIDR-052 stays **BLOCKED_EXTERNAL**.

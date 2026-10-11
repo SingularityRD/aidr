@@ -249,8 +249,9 @@ functions:
   billingProvider: ""
   # Fair-share admission on the ingest and policy functions
   # (docs/production-readiness/load-soak-drill-2026-10-11.md, fair-share
-  # addendum). Limits are per isolate: one function in one pod. A tenant above
-  # its fair share gets 429 tenant_overloaded, a full isolate 503
+  # addenda). Limits are deployment-wide: database leases shared by both
+  # functions and every pod, so size capacity to the total PostgREST pool. A
+  # tenant above its fair share gets 429 tenant_overloaded, a full deployment 503
   # service_overloaded, both with Retry-After. perTenantMax 0 = 75% of capacity.
   tenantInflight:
     capacity: 10
