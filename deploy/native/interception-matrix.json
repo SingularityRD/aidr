@@ -291,7 +291,7 @@
         {
           "kind": "hook-registration",
           "path": "packages/extension/src/vscode_hook_installer.ts",
-          "contains": ["hooks.PreToolUse", "hooks.PostToolUse", "editFiles"]
+          "contains": ["hooks.PreToolUse", "hooks.PostToolUse", "matcher: \"*\""]
         },
         {
           "kind": "hook-registration",
@@ -300,7 +300,7 @@
         }
       ],
       "limitations": [
-        "PreToolUse is registered with the matcher Bash|WebFetch|Write|Edit|Read|Delete|editFiles; unmatched tools do not reach the hook.",
+        "PreToolUse is registered with the matcher \"*\", so every tool call reaches the hook; native VS Code tool names (runInTerminal, createFile, editFiles and the edit tools) are mapped onto canonical Bash/Write/Edit, and a call without a readable command or path is denied.",
         "VS Code Local requires chat.useClaudeHooks to be enabled in User Settings; AIDR checks the setting but does not change it. Native activation and editFiles enforcement still require host acceptance.",
         "No named real-host acceptance record exists, and enforcement coverage across the currently shipped VS Code minor versions is an open unobserved action.",
         "A tool executed outside the extension host is a documented bypass."
@@ -316,7 +316,7 @@
         {
           "kind": "output-inspection",
           "path": "packages/extension/src/aidr-hook.ts",
-          "contains": ["handleVsCodeToolOutput", "isVsCodePostToolUse"]
+          "contains": ["handleVsCodeToolOutput", "event === \"PostToolUse\""]
         },
         {
           "kind": "output-inspection",
