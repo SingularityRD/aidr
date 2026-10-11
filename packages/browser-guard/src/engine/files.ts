@@ -130,18 +130,19 @@ import { decodeSingleByte } from "./codepages.js";
 import { type Counts, countFindings, mergeCounts } from "./counts.js";
 import { extractLegacyOffice, type LegacyExtraction } from "./legacy/extract.js";
 import { MAX_OCR_IMAGE_BYTES, MAX_OCR_IMAGES, OCR_BUDGET_MS, ocrFormat } from "./office/images.js";
-import { ODF_EXTENSIONS, ODF_MIME, sanitizeOdf, sniffOdf } from "./office/odf.js";
+import { isOdfListing, ODF_EXTENSIONS, ODF_MIME, sanitizeOdf, sniffOdf } from "./office/odf.js";
 import {
 	type DocumentOutcome,
 	DocumentRefused,
 	DocumentUnreadable,
 	isCompoundFile,
+	isOoxmlListing,
 	OOXML_EXTENSIONS,
 	sanitizeOoxml,
 	sniffOoxml,
 } from "./office/ooxml.js";
 import type { DocScanner } from "./office/scanner.js";
-import { looksLikeZip } from "./office/zip.js";
+import { centralDirectoryNames, looksLikeZip, zipDirectory } from "./office/zip.js";
 import { extractPdfText, type PdfExtraction, PdfUnreadable } from "./pdf/extract.js";
 import type { PdfImage } from "./pdf/images.js";
 
@@ -1500,6 +1501,41 @@ async function handleDocument(
  */
 export function isDocumentContent(file: GuardFile): boolean {
 	return documentKind(file) !== null;
+}
+
+/** Bytes read from the start of a file too large to read whole (PDF / OLE / ZIP signatures). */
+export const SNIFF_HEAD_BYTES = 4096;
+/** Bytes read from its end: the ZIP end-of-central-directory record plus the longest comment. */
+const SNIFF_TAIL_BYTES = 0xffff + 22;
+/** Largest central directory read to list a large ZIP's entries (bigger: fail closed). */
+const MAX_SNIFF_DIRECTORY_BYTES = 16 * 1024 * 1024;
+
+/**
+ * {@link isDocumentContent} for a file too large to read whole, from its head, its tail and
+ * (for a ZIP) its central directory, read through `read(start, end)`. Fails closed: a head that
+ * starts like a PDF (`%PDF-` within the first KiB), an OLE compound file or a ZIP whose entry
+ * list cannot be read is a document; a ZIP is one when its entry list is an OOXML/ODF package's.
+ */
+export async function isLargeDocumentContent(
+	file: Pick<GuardFile, "name" | "type"> & { readonly size: number },
+	read: (start: number, end: number) => Promise<Uint8Array>,
+): Promise<boolean> {
+	const head = await read(0, Math.min(file.size, SNIFF_HEAD_BYTES));
+	if (isDocumentContent({ name: file.name, type: file.type, bytes: head })) return true;
+	if (indexOfBytes(head, PDF_HEADER, 0, 1024 + PDF_HEADER.length) >= 0) return true;
+	if (isCompoundFile(head)) return true;
+	if (!looksLikeZip(head)) return false;
+	const tailStart = Math.max(0, file.size - SNIFF_TAIL_BYTES);
+	const tail = await read(tailStart, file.size);
+	const dir = zipDirectory(tail);
+	if (!dir || dir.size > MAX_SNIFF_DIRECTORY_BYTES || dir.offset + dir.size > file.size)
+		return true;
+	const directory =
+		dir.offset >= tailStart
+			? tail.subarray(dir.offset - tailStart, dir.offset - tailStart + dir.size)
+			: await read(dir.offset, dir.offset + dir.size);
+	const names = centralDirectoryNames(directory, dir.count);
+	return names === null || isOoxmlListing(names) || isOdfListing(names);
 }
 
 /** True for uploads handled as documents (Office, OpenDocument, PDF): the content script's policy gate. */

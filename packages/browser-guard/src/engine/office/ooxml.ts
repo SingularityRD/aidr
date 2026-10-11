@@ -1018,12 +1018,15 @@ async function openEmbedded(bytes: Uint8Array, limits: ZipLimits): Promise<ZipAr
 }
 
 /** True when `bytes` look like an OOXML package (used to sniff mislabelled uploads). */
+/** True when ZIP entry names (any case) are those of an OOXML package. */
+export function isOoxmlListing(names: readonly string[]): boolean {
+	const lower = new Set(names.map((n) => n.toLowerCase()));
+	return lower.has("[content_types].xml") && MAIN_PARTS.some((p) => lower.has(p));
+}
+
 export function sniffOoxml(bytes: Uint8Array): boolean {
 	try {
-		const archive = readZip(bytes);
-		return (
-			!!findEntry(archive, "[Content_Types].xml") && MAIN_PARTS.some((p) => findEntry(archive, p))
-		);
+		return isOoxmlListing(readZip(bytes).entries.map((e) => e.name));
 	} catch {
 		return false;
 	}

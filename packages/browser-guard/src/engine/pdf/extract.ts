@@ -10,7 +10,8 @@
  * info (title, author, subject, keywords), XMP metadata streams (`/Type /Metadata`, the
  * catalog's and any other: text nodes and attribute values) and embedded files - the
  * `/EmbeddedFiles` name tree, `FileAttachment` annotations, associated files, i.e. every file
- * specification's `/EF` stream and every `/Type /EmbeddedFile` stream - whose content is plain
+ * specification's `/EF` stream (from every definition of the objects involved, shadowed ones
+ * included) and every embedded-file stream, typed or not - whose content is plain
  * text (strict UTF-8 / BOM-marked UTF-16, no NUL or binary control bytes, no document or archive
  * signature). None of that is drawn on a page, but all of it travels with the file.
  *
@@ -22,9 +23,11 @@
  *                 size/count budget that was reached;
  *   PDF_EMBEDDED_FILES_NOT_INSPECTED
  *                 an embedded file that is not plain text (a nested PDF, an Office document,
- *                 an image, an archive...), could not be decoded, is missing, or is over the
- *                 limits: its content was not scanned, so the PDF is never reported as clean
- *                 (OCR of the page images does not lift this reason).
+ *                 an image, an archive...), could not be decoded, is missing, is over the
+ *                 limits, or is defined ambiguously (an embedded-file object whose definition in
+ *                 effect is not the one the cross-reference points to): its content was not
+ *                 scanned, so the PDF is never reported as clean (OCR of the page images does
+ *                 not lift this reason).
  * Embedded raster images are collected for the caller's OCR (./images.ts); `reasonsWithImages`
  * is the completeness verdict that applies once every image has been read.
  * `PdfUnreadable` is thrown for files that are not PDFs or cannot be parsed at all
@@ -34,16 +37,27 @@
 import { decodeXmlText, walkXml } from "../office/xml.js";
 import { type ContentContext, interpretContent, PageText } from "./content.js";
 import {
+	crossReference,
 	DEFAULT_PDF_LIMITS,
 	expandObjectStreams,
 	PdfDocument,
 	type PdfLimits,
 	parseObjects,
+	type XrefEntry,
+	xrefConflict,
 } from "./document.js";
 import { decodeTextString } from "./encodings.js";
 import type { Font } from "./fonts.js";
 import { type PdfImage, PdfImageCollector } from "./images.js";
-import { binaryString, PdfDict, PdfName, PdfStream, PdfString, type PdfValue } from "./lexer.js";
+import {
+	binaryString,
+	PdfDict,
+	PdfName,
+	PdfRef,
+	PdfStream,
+	PdfString,
+	type PdfValue,
+} from "./lexer.js";
 
 export { DEFAULT_PDF_LIMITS, type PdfLimits } from "./document.js";
 
@@ -171,53 +185,112 @@ const MAX_VALUE_DEPTH = 32;
 interface HiddenStreams {
 	readonly embedded: Set<PdfStream>;
 	readonly metadata: Set<PdfStream>;
-	/** A file specification's `/EF` entry that does not resolve to a stream. */
+	/** Object numbers an `/EF` entry refers to (whichever definition of the referrer). */
+	readonly efTargets: Set<number>;
+	/**
+	 * A file specification's `/EF` entry that does not resolve to a stream, or an embedded-file
+	 * object whose definition in effect is not the one the cross-reference points to.
+	 */
 	missing: boolean;
 }
 
-/** Records the streams of a file specification's `/EF` dictionary. */
+/** Every definition of `v` when it is a reference (shadowed ones included), else `v` itself. */
+function definitionsOf(doc: PdfDocument, v: PdfValue): PdfValue[] {
+	if (!(v instanceof PdfRef)) return [v];
+	return (doc.definitions.get(v.num) ?? []).map((d) => doc.resolve(d.value)) as PdfValue[];
+}
+
+/** Records the streams of a file specification's `/EF` dictionary (every definition of them). */
 function addEmbeddedStreams(doc: PdfDocument, ef: PdfValue, out: HiddenStreams): void {
-	const dict = doc.dict(ef);
-	if (!dict) {
+	const dicts = definitionsOf(doc, ef).filter((d): d is PdfDict => d instanceof PdfDict);
+	if (ef instanceof PdfRef) out.efTargets.add(ef.num);
+	if (!dicts.length) {
 		out.missing = true;
 		return;
 	}
-	for (const entry of dict.map.values()) {
-		const stream = doc.resolve(entry);
-		if (stream instanceof PdfStream) out.embedded.add(stream);
-		else out.missing = true;
-	}
+	for (const dict of dicts)
+		for (const entry of dict.map.values()) {
+			if (entry instanceof PdfRef) out.efTargets.add(entry.num);
+			const streams = definitionsOf(doc, entry).filter((s) => s instanceof PdfStream);
+			if (!streams.length) out.missing = true;
+			for (const stream of streams) out.embedded.add(stream as PdfStream);
+		}
 }
 
-/** Records the `/EF` streams of every file specification nested in `value` (refs not followed). */
-function findFileSpecs(doc: PdfDocument, value: PdfValue, out: HiddenStreams, depth: number): void {
+/**
+ * Records the `/EF` streams of every file specification nested in `value` (refs not followed);
+ * true when `value` holds a file specification (an `/EF` entry or a `/Type /Filespec`).
+ */
+function findFileSpecs(
+	doc: PdfDocument,
+	value: PdfValue,
+	out: HiddenStreams,
+	depth: number,
+): boolean {
 	if (depth > MAX_VALUE_DEPTH) {
 		out.missing = true; // cannot prove there is no file specification deeper down
-		return;
+		return true;
 	}
-	if (Array.isArray(value)) {
-		for (const item of value) findFileSpecs(doc, item, out, depth + 1);
-		return;
-	}
+	if (Array.isArray(value))
+		return value.reduce<boolean>(
+			(found, item) => findFileSpecs(doc, item, out, depth + 1) || found,
+			false,
+		);
 	const dict = value instanceof PdfStream ? value.dict : value instanceof PdfDict ? value : null;
+	let found = dict !== null && doc.name(dict.get("Type")) === "Filespec";
 	for (const [key, item] of dict?.map ?? []) {
 		if (key === "EF") addEmbeddedStreams(doc, item, out);
-		else findFileSpecs(doc, item, out, depth + 1);
+		found = key === "EF" || findFileSpecs(doc, item, out, depth + 1) || found;
 	}
+	return found;
 }
 
-/** Embedded-file and metadata streams anywhere in the document. */
-function hiddenStreams(doc: PdfDocument): HiddenStreams {
-	const out: HiddenStreams = { embedded: new Set(), metadata: new Set(), missing: false };
-	for (const entry of doc.objects.values()) {
-		const value = entry.value;
-		if (value instanceof PdfStream) {
-			const type = doc.name(value.dict.get("Type"));
-			if (type === "EmbeddedFile") out.embedded.add(value);
-			else if (type === "Metadata") out.metadata.add(value);
-		}
-		findFileSpecs(doc, value, out, 0);
-	}
+/** `/Params` keys only an embedded file stream carries (ISO 32000-1 table 45). */
+const EMBEDDED_PARAMS = ["Size", "CheckSum", "CreationDate", "ModDate", "Mac"];
+
+/**
+ * An embedded file stream, even without its (optional) `/Type /EmbeddedFile`: a MIME-type
+ * `/Subtype` (`text/plain`, never `/Image` or `/Form`) or embedded-file `/Params`.
+ */
+function isEmbeddedFile(doc: PdfDocument, stream: PdfStream): boolean {
+	const type = doc.name(stream.dict.get("Type"));
+	if (type === "EmbeddedFile") return true;
+	if (type !== undefined) return false;
+	if (doc.name(stream.dict.get("Subtype"))?.includes("/")) return true;
+	const params = doc.dict(stream.dict.get("Params"));
+	return EMBEDDED_PARAMS.some((k) => params?.get(k) !== undefined);
+}
+
+/** Records the hidden streams of one object definition; true when it is about embedded files. */
+function collectHidden(doc: PdfDocument, value: PdfValue, out: HiddenStreams): boolean {
+	let embedded = false;
+	if (value instanceof PdfStream && isEmbeddedFile(doc, value)) {
+		out.embedded.add(value);
+		embedded = true;
+	} else if (value instanceof PdfStream && doc.name(value.dict.get("Type")) === "Metadata")
+		out.metadata.add(value);
+	return findFileSpecs(doc, value, out, 0) || embedded;
+}
+
+/**
+ * Embedded-file and metadata streams anywhere in the document. Every definition of every object
+ * is searched, not only the one in effect: a reader that follows the cross-reference may use a
+ * definition this parser considers shadowed (e.g. a file specification "redefined" without its
+ * `/EF` after the last xref section). Such a disagreement on an embedded-file object is itself
+ * reported (`missing`), as the file is then ambiguous.
+ */
+function hiddenStreams(doc: PdfDocument, xref: Map<number, XrefEntry>): HiddenStreams {
+	const out: HiddenStreams = {
+		embedded: new Set(),
+		metadata: new Set(),
+		efTargets: new Set(),
+		missing: false,
+	};
+	const relevant = new Set<number>();
+	for (const [num, defs] of doc.definitions)
+		for (const { value } of defs) if (collectHidden(doc, value, out)) relevant.add(num);
+	for (const num of out.efTargets) relevant.add(num);
+	for (const num of relevant) if (xrefConflict(doc, num, xref)) out.missing = true;
 	// A name tree of embedded files that resolves to nothing readable is not "no files".
 	const names = doc.dict(doc.dict(doc.trailer("Root")?.get("Root"))?.get("Names"));
 	if (names?.get("EmbeddedFiles") !== undefined && out.embedded.size === 0) out.missing = true;
@@ -282,7 +355,7 @@ interface Hidden {
 
 /** Text of XMP metadata and plain-text embedded files; see the module comment. */
 async function hiddenTexts(doc: PdfDocument, checkDeadline: () => void): Promise<Hidden> {
-	const streams = hiddenStreams(doc);
+	const streams = hiddenStreams(doc, await crossReference(doc));
 	const texts: string[] = [];
 	let uninspected = streams.missing || streams.embedded.size > MAX_EMBEDDED_FILES;
 	let chars = 0;

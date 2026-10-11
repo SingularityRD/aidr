@@ -533,6 +533,113 @@ describe("PDF embedded files, attachments and XMP metadata", () => {
 			expect((await extractPdfText(pdf)).reasons).toEqual(["PDF_EMBEDDED_FILES_NOT_INSPECTED"]);
 	});
 
+	describe("object redefinitions (last definition in the file vs the cross-reference)", () => {
+		const IBAN = "TR330006100519786457841326";
+		/** Clean page with a FileAttachment annotation (7) -> filespec 8 -> untyped stream 9. */
+		const attachment = (trailerExtra: string | null = "") =>
+			simplePdf([CLEAN_PAGE], {
+				pageExtra: "/Annots [7 0 R]",
+				trailerExtra: trailerExtra ?? undefined,
+				extraObjects: [
+					"<< /Type /Annot /Subtype /FileAttachment /Rect [0 0 10 10] /FS 8 0 R >>",
+					filespec("9 0 R"),
+					{ dict: "", data: `Customer TCKN ${TCKN} IBAN ${IBAN}\n`, compress: false },
+				],
+			});
+		const append = (pdf: Uint8Array, tail: string): Uint8Array => {
+			const out = new Uint8Array(pdf.length + tail.length);
+			out.set(pdf);
+			out.set(latin1(tail), pdf.length);
+			return out;
+		};
+		const DEAD_FILESPEC = "8 0 obj\n<< /Type /Filespec /F (x.txt) >>\nendobj\n";
+		const offsetOf = (pdf: Uint8Array, num: number): number =>
+			new TextDecoder("latin1").decode(pdf).indexOf(`\n${num} 0 obj`) + 1;
+		/** `pdf` plus object 10: an xref stream (W [1 4 1], PNG "Up" predictor) of `offsets`. */
+		const xrefStream = async (pdf: Uint8Array, offsets: number[]): Promise<Uint8Array> => {
+			const rows: number[] = [];
+			let prev = [0, 0, 0, 0, 0, 0];
+			offsets.forEach((pos, n) => {
+				const row = [
+					n === 0 ? 0 : 1,
+					pos >>> 24,
+					(pos >>> 16) & 255,
+					(pos >>> 8) & 255,
+					pos & 255,
+					0,
+				];
+				rows.push(2, ...row.map((b, i) => (b - (prev[i] as number)) & 255));
+				prev = row;
+			});
+			const deflated = new Uint8Array(
+				await new Response(
+					new Blob([new Uint8Array(rows)]).stream().pipeThrough(new CompressionStream("deflate")),
+				).arrayBuffer(),
+			);
+			const head = append(
+				pdf,
+				`10 0 obj\n<< /Type /XRef /Size ${offsets.length} /Root 1 0 R /W [1 4 1] /Filter /FlateDecode /DecodeParms << /Predictor 12 /Columns 6 >> /Length ${deflated.length} >>\nstream\n`,
+			);
+			const out = new Uint8Array(head.length + deflated.length);
+			out.set(head);
+			out.set(deflated, head.length);
+			return append(out, "\nendstream\nendobj\n");
+		};
+
+		it("still scans a file specification shadowed by a dead redefinition after %%EOF", async () => {
+			const pdf = append(await attachment(), DEAD_FILESPEC);
+			const extraction = await extractPdfText(pdf);
+			expect(extraction.segments.join("\n")).toContain(TCKN);
+			expect(extraction.complete).toBe(false);
+			expect(extraction.reasons).toEqual(["PDF_EMBEDDED_FILES_NOT_INSPECTED"]);
+			const d = await sanitize("ek.pdf", pdf);
+			expect(d.action).toBe("block");
+			expect(d.counts).toMatchObject({ TC_KIMLIK: 1, IBAN: 1 });
+		});
+
+		it("flags the same disagreement when the xref is a predicted cross-reference stream", async () => {
+			const base = await attachment(null); // no classic xref table: one xref stream instead
+			const size = 11;
+			const xrefAt = base.length;
+			const offsets = Array.from({ length: size }, (_, n) =>
+				n === 10 ? xrefAt : n === 0 ? 0 : offsetOf(base, n),
+			);
+			const consistent = append(await xrefStream(base, offsets), `startxref\n${xrefAt}\n%%EOF\n`);
+			expect((await extractPdfText(consistent)).complete).toBe(true);
+			const extraction = await extractPdfText(append(consistent, DEAD_FILESPEC));
+			expect(extraction.segments.join("\n")).toContain(IBAN);
+			expect(extraction.reasons).toEqual(["PDF_EMBEDDED_FILES_NOT_INSPECTED"]);
+		});
+
+		it("accepts an incremental update the xref records, and scans the superseded file too", async () => {
+			const base = await attachment();
+			const prevXref = new TextDecoder("latin1").decode(base).lastIndexOf("xref\n0 ");
+			const update = base.length;
+			const xrefAt = update + DEAD_FILESPEC.length;
+			const pdf = append(
+				base,
+				`${DEAD_FILESPEC}xref\n8 1\n${String(update).padStart(10, "0")} 00000 n \ntrailer\n<< /Size 10 /Root 1 0 R /Prev ${prevXref} >>\nstartxref\n${xrefAt}\n%%EOF\n`,
+			);
+			const extraction = await extractPdfText(pdf);
+			// The superseded attachment still travels with the file: it is scanned, not hidden.
+			expect(extraction.segments.join("\n")).toContain(TCKN);
+			expect(extraction.complete).toBe(true);
+			expect((await sanitize("ek.pdf", pdf)).action).toBe("block");
+		});
+
+		it("scans an untyped stream carrying embedded-file /Params or a MIME /Subtype", async () => {
+			for (const dict of [
+				"/Params << /Size 40 /ModDate (D:20260101) >>",
+				"/Subtype /text#2Fplain",
+			]) {
+				const pdf = await simplePdf([CLEAN_PAGE], {
+					extraObjects: [{ dict, data: `e-posta: ${EMAIL}`, compress: false }],
+				});
+				expect(await text(pdf)).toContain(EMAIL);
+			}
+		});
+	});
+
 	it("scans XMP metadata (text nodes and attributes) and flags an unreadable packet", async () => {
 		const xmp = `<?xpacket begin="\ufeff" id="W5M0MpCehiHzreSzNTczkc9d"?><x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:pdf="http://ns.adobe.com/pdf/1.3/" pdf:Keywords="iletişim ${EMAIL}"><dc:creator><rdf:Seq><rdf:li>TCKN ${TCKN}</rdf:li></rdf:Seq></dc:creator></rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end="w"?>`;
 		const meta = (data: string | Uint8Array, dict = "/Type /Metadata /Subtype /XML") =>

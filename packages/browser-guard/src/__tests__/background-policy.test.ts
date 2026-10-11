@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
@@ -13,6 +14,7 @@ import {
 	USER_SETTING_KEYS,
 	validateUserSettings,
 } from "../background/policy.js";
+import { sha256Hex } from "../background/sha256.js";
 import { ENTITY_TYPES } from "../types.js";
 
 const HEX = "a".repeat(64);
@@ -247,6 +249,40 @@ describe("mergePolicy", () => {
 		const replaced = evaluatePolicy({ exactData: [real] }, undefined);
 		expect(replaced.warnings).toEqual([]);
 		expect(replaced.policy.exactData).toEqual([real]);
+	});
+
+	it("refuses the retired example dataset (published key or its fingerprints) by name", () => {
+		const warning =
+			'managed: "exactData" uses the retired example dataset key (crm-customers-example), which was published in the deployment examples and is compromised; ignored. Build each dataset with fingerprint-dataset.mjs and a fresh key';
+		const real = { datasetId: "real", keyB64: KEY, fingerprints: [HEX], type: "PERSON" };
+		// The retired key itself is never kept in the repository (only its SHA-256), so the
+		// example's fingerprints, which shipped with it, stand in for it here.
+		const retired = {
+			datasetId: "crm-customers-example",
+			keyB64: KEY,
+			fingerprints: ["DACE37DF0E61D972CE461B5887CC8EF241DF0749DD737ADC7DE1B118305D89B2"],
+			type: "PERSON",
+		};
+		for (const exactData of [[retired], [real, retired]]) {
+			const evaluation = evaluatePolicy({ mode: "block", exactData }, undefined);
+			expect(evaluation.warnings).toEqual([warning]);
+			expect(evaluation.policy.exactData).toEqual([]);
+			expect(evaluation.policy.managedKeys).not.toContain("exactData");
+			expect(evaluation.policy.mode).toBe("block");
+		}
+		expect(evaluatePolicy({ exactData: [real] }, undefined).warnings).toEqual([]);
+	});
+
+	it("hashes like SHA-256 (the retired-key check compares digests)", () => {
+		for (const text of [
+			"",
+			"abc",
+			"a".repeat(55),
+			"a".repeat(56),
+			"b".repeat(64),
+			"ğüşİ".repeat(99),
+		])
+			expect(sha256Hex(text)).toBe(createHash("sha256").update(text).digest("hex"));
 	});
 
 	it("accepts https telemetry and http only for localhost/127.0.0.1", () => {

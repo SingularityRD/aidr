@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type SanitizeDeps, sanitizeFile } from "../engine/files.js";
+import { createZip } from "../engine/office/zip.js";
 import {
 	EMAIL,
 	FakeDataTransfer,
@@ -9,7 +10,7 @@ import {
 	makeFilesWritable,
 	setupGuard,
 } from "./content-helpers";
-import { docx, para, run, unzipText } from "./helpers/documents.js";
+import { docx, odf, para, run, unzipText, xlsx } from "./helpers/documents.js";
 
 let h: Harness | undefined;
 const scope = window as unknown as Record<string, unknown>;
@@ -167,5 +168,71 @@ describe("content guard: document uploads", () => {
 		expect(g.bubble()?.textContent).toContain("cannot be masked");
 		expect(g.bubble()?.textContent).toContain("Save the file as .docx/.xlsx/.pptx");
 		expect(g.bubble()?.textContent).not.toContain("could not be fully checked");
+	});
+});
+
+describe("content guard: documentHandling=block sniff of files over the scan limit", () => {
+	const MIB = 1024 * 1024;
+	const LIMIT = 5 * MIB;
+	/** Incompressible filler (xorshift32), so a stored/deflated package really is that large. */
+	const noise = (length: number, seed = 0x2545f491): Uint8Array => {
+		const out = new Uint8Array(length);
+		let x = seed;
+		for (let i = 0; i < length; i++) {
+			x ^= x << 13;
+			x ^= x >>> 17;
+			x ^= x << 5;
+			out[i] = x & 0xff;
+		}
+		return out;
+	};
+	const media = (): Record<string, Uint8Array> => ({ "media/blob.bin": noise(LIMIT + MIB) });
+
+	/** Uploads `bytes` as `name` (monitor mode, block documents); resolves to the recorded action. */
+	const upload = async (bytes: Uint8Array, name: string, type = "text/plain") => {
+		const g = start({
+			policy: { documentHandling: "block", mode: "monitor", maxFileBytes: LIMIT },
+		});
+		const input = document.getElementById("file") as HTMLInputElement;
+		const file = new File([bytes], name, { type });
+		expect(file.size).toBeGreaterThan(LIMIT);
+		makeFilesWritable(input, [file]);
+		input.dispatchEvent(new Event("change", { bubbles: true, cancelable: true }));
+		await expect.poll(() => g.records().at(-1)?.action, { timeout: 10_000 }).toBeDefined();
+		return { action: g.records().at(-1)?.action, bubble: g.bubble()?.textContent ?? "" };
+	};
+
+	it.each([
+		["DOCX", () => docx(para(run("Rapor")), media())],
+		["XLSX", () => xlsx('<row r="1"><c r="A1"><v>1</v></c></row>', null, media())],
+		["ODT", () => odf("text", "<text:p>Rapor</text:p>", { extra: media() })],
+	])(
+		"refuses a %s over the limit renamed to .txt (central directory at the end)",
+		async (_k, make) => {
+			const result = await upload(await make(), "notes.txt");
+			expect(result.action).toBe("blocked");
+			expect(result.bubble).toContain("DOCUMENT_BLOCKED_BY_POLICY");
+		},
+	);
+
+	it("refuses a junk-prefixed PDF over the limit whose %%EOF is not in the tail", async () => {
+		const pdf = new TextEncoder().encode("JUNK HEADER\n%PDF-1.7\n1 0 obj\n<<>>\nendobj\n");
+		const bytes = new Uint8Array(pdf.length + LIMIT + MIB);
+		bytes.set(pdf);
+		bytes.set(noise(LIMIT + MIB), pdf.length);
+		expect((await upload(bytes, "notes.txt")).action).toBe("blocked");
+	});
+
+	it("fails closed on a ZIP over the limit whose entry list cannot be read (truncated)", async () => {
+		const zip = await docx(para(run("Rapor")), media());
+		expect((await upload(zip.subarray(0, zip.length - 1024), "notes.txt")).action).toBe("blocked");
+	});
+
+	it("lets a plain ZIP archive over the limit through (no OOXML/ODF parts)", async () => {
+		const zip = await createZip([
+			{ name: "backup/blob.bin", data: noise(LIMIT + MIB) },
+			{ name: "backup/readme.txt", data: "yedek" },
+		]);
+		expect((await upload(zip, "backup.zip", "application/zip")).action).toBe("allowed");
 	});
 });

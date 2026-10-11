@@ -495,10 +495,15 @@ async function openOdf(bytes: Uint8Array, limits: ZipLimits): Promise<ZipArchive
 }
 
 /** True when `bytes` look like an OpenDocument package (used to sniff mislabelled uploads). */
+/** True when ZIP entry names (any case) are those of an OpenDocument package. */
+export function isOdfListing(names: readonly string[]): boolean {
+	const lower = new Set(names.map((n) => n.toLowerCase()));
+	return lower.has("mimetype") && lower.has("content.xml");
+}
+
 export function sniffOdf(bytes: Uint8Array): boolean {
 	try {
-		const archive = readZip(bytes);
-		return !!findEntry(archive, "mimetype") && !!findEntry(archive, "content.xml");
+		return isOdfListing(readZip(bytes).entries.map((e) => e.name));
 	} catch {
 		return false;
 	}

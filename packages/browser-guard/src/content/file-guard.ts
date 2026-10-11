@@ -23,7 +23,7 @@
  */
 
 import { type Counts, mergeCounts } from "../engine/counts.js";
-import { isDocumentContent, isDocumentFile } from "../engine/files.js";
+import { isDocumentContent, isDocumentFile, isLargeDocumentContent } from "../engine/files.js";
 import type {
 	DetectionEngine,
 	FileDecision,
@@ -383,9 +383,6 @@ export function createFileGuard(deps: FileGuardDeps): FileGuard {
 	const needsDocumentSniff = (policy: GuardPolicy): boolean =>
 		policy.fileHandling === "scan" && policy.documentHandling === "block" && monitoring(policy);
 
-	/** First bytes only for a file over the scan limit: enough for the PDF / OLE signatures. */
-	const SNIFF_HEAD_BYTES = 4096;
-
 	/**
 	 * Monitor pass-through with documentHandling "block": a file whose content is a document
 	 * (whatever its name says) is refused; otherwise the originals pass and are recorded.
@@ -393,9 +390,18 @@ export function createFileGuard(deps: FileGuardDeps): FileGuard {
 	const sniffDocuments = async (files: readonly File[], policy: GuardPolicy): Promise<Outcome> => {
 		try {
 			for (const file of files) {
-				const blob = file.size > policy.maxFileBytes ? file.slice(0, SNIFF_HEAD_BYTES) : file;
-				const bytes = await readFileBytes(blob, win);
-				if (isDocumentContent({ name: file.name, type: file.type, bytes })) {
+				// Over the scan limit only the head, the tail and a ZIP's central directory are read.
+				const isDocument =
+					file.size > policy.maxFileBytes
+						? await isLargeDocumentContent(file, (start, end) =>
+								readFileBytes(file.slice(start, end), win),
+							)
+						: isDocumentContent({
+								name: file.name,
+								type: file.type,
+								bytes: await readFileBytes(file, win),
+							});
+				if (isDocument) {
 					return {
 						kind: "blocked",
 						name: file.name,

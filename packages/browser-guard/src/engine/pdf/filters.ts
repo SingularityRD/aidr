@@ -154,3 +154,51 @@ export function lzwDecode(data: Uint8Array, limit: number): Decoded | null {
 	}
 	return { data: Uint8Array.from(decoder.out), complete: false };
 }
+
+// ---------------------------------------------------------------------------------------------
+// PNG predictors (ISO 32000-1 §7.4.4.4)
+// ---------------------------------------------------------------------------------------------
+
+function paeth(a: number, b: number, c: number): number {
+	const p = a + b - c;
+	const pa = Math.abs(p - a);
+	const pb = Math.abs(p - b);
+	const pc = Math.abs(p - c);
+	return pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
+}
+
+/** PNG filter types 0-4: the prediction added back to each byte. */
+const PNG_PREDICTORS: ReadonlyArray<(left: number, up: number, upLeft: number) => number> = [
+	() => 0,
+	(left) => left,
+	(_left, up) => up,
+	(left, up) => (left + up) >> 1,
+	paeth,
+];
+
+/**
+ * Reverses PNG row predictors: each row is a filter-type byte plus `rowBytes` bytes, `bpp`
+ * bytes per pixel. A trailing partial row is dropped; null on an unknown filter type.
+ */
+export function unpredictPngRows(
+	data: Uint8Array,
+	rowBytes: number,
+	bpp: number,
+): Uint8Array | null {
+	const rows = Math.floor(data.length / (rowBytes + 1));
+	const out = new Uint8Array(rows * rowBytes);
+	for (let r = 0; r < rows; r++) {
+		const predict = PNG_PREDICTORS[data[r * (rowBytes + 1)] as number];
+		if (!predict) return null;
+		const src = r * (rowBytes + 1) + 1;
+		const dst = r * rowBytes;
+		const prev = dst - rowBytes;
+		for (let i = 0; i < rowBytes; i++) {
+			const left = i >= bpp ? (out[dst + i - bpp] as number) : 0;
+			const up = r > 0 ? (out[prev + i] as number) : 0;
+			const upLeft = r > 0 && i >= bpp ? (out[prev + i - bpp] as number) : 0;
+			out[dst + i] = ((data[src + i] as number) + predict(left, up, upLeft)) & 0xff;
+		}
+	}
+	return out;
+}
