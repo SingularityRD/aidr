@@ -1485,7 +1485,8 @@
         "FEATURE_INVENTORY.json",
         "docs/production-readiness/agent-security-market-and-release-plan.md",
         "docs/production-readiness/load-capacity-v6.md: historical 10 RPS single-host failure summary; the raw derived artefact is no longer retained and is not candidate evidence.",
-        "docs/production-readiness/load-soak-drill-2026-10-11.md: LOCAL single-host engineering drill (not HA, not an SLA, not candidate-bound, 3 h not 8 h); knee, two-tenant 10x noisy-neighbour soak, four injected faults and event reconciliation."
+        "docs/production-readiness/load-soak-drill-2026-10-11.md: LOCAL single-host engineering drill (not HA, not an SLA, not candidate-bound, 3 h not 8 h); knee, two-tenant 10x noisy-neighbour soak, four injected faults and event reconciliation.",
+        "docs/production-readiness/load-soak-drill-2026-10-11.md#addendum-2026-10-11-fair-share-admission-finding-o1: LOCAL overload A/B of fair-share per-tenant admission; collapse removed, pre-declared quiet-tenant bound missed (per-isolate state under CPU-limit isolate churn); status stays BLOCKED_EXTERNAL."
       ],
       "localEvidence": [
         {
@@ -1529,6 +1530,12 @@
           "evidencePath": "supabase/migrations/20261011000400_tenant_admission_capacity_shared_read_lock.sql",
           "command": "node scripts/tenant-ga-admission-concurrency-postgres.test.mjs",
           "verifiedBy": "2026-10-11 drill session against the drill database (AIDR_POSTGRES_DOCKER_CONTAINER): the new concurrent-reader phase failed with a lock timeout before the migration and passed after it"
+        },
+        {
+          "claim": "Fair-share per-tenant in-flight admission (product decision 2026-10-11) on ingest and policy: a slot is taken before the API-key lookup and released however the handler settles; a tenant above its cap or fair share gets 429 tenant_overloaded, a full isolate 503 service_overloaded, both retryable with Retry-After; a malformed limit fails closed with a logged 503 tenant_limiter_unavailable. LOCAL single-host overload A/B (11-key knee profile, noisy 10x, 56 and 52 rps, two runs per arm, three design iterations): congestion collapse removed (on-arm goodput 48-54 HTTP 200/s against 11-26 off-arm at 56 rps; no timeouts or drops on-arm; quiet errors 0.65-1.30% retryable 429/503 against 54-81% timeouts off-arm), but the bound declared before the data (quiet error ratio <= 0.1%, zero 429/503, p95 <= 241 ms) was MISSED in every on-arm run (quiet p95 0.48-1.0 s in v2/v3). Cause: state is per isolate and the edge runtime retired each function's isolate every few seconds on its CPU-time soft limit under overload. Isolation above the knee remains open.",
+          "evidencePath": "docs/production-readiness/evidence/load-soak-2026-10-11/fair-share-ab-2026-10-11.json",
+          "command": "pnpm test -- supabase/functions/__tests__/tenant-concurrency.test.ts",
+          "verifiedBy": "2026-10-11 drill session: 23/23 limiter and handler tests pass; bound declared at 16:07:10Z before the A/B (fair-share-bound-declaration.json); 24 A/B runs (node scripts/load-test.mjs per run against a minimal db/rest/edge-runtime/gateway stack, method in the fair-share addendum) plus a quiet-only control; raw load-test outputs and container logs not retained"
         }
       ],
       "remainingExternal": "The repo-side candidate/provenance and cleanup harness is implemented and locally tested, but no fresh candidate-bound live run has replaced the failing historical signal. Closure still requires sized host allocation and a controlled environment for a defined workload, an observation window of at least 8 hours, HA/failover infrastructure, multi-tenant noisy-neighbour tests on independent hosts, and a customer-agreed availability SLI/SLA. The historical run measured roughly 170x p95 degradation for the baseline tenant; the two tenants shared one database and one edge-function process, so the result does not extend to cross-host isolation. Status is BLOCKED_EXTERNAL until real infrastructure and accepted candidate-bound evidence exist."

@@ -14,8 +14,7 @@ platforms have not been accepted.
 Verified against `codex-cli 0.141.0`.
 
 **Release scope.** Codex CLI is one of the six connectors in the intended direct-GA
-order scope (Product decision of 2026-10-11, `COM-010` in
-[`commercial-go-evidence-registry.json`](../../docs/production-readiness/commercial-go-evidence-registry.json)).
+order scope (Product decision of 2026-10-11, commercial gate `COM-010`).
 That is a target, not acceptance: the release decision stays NO-GO until a signed
 artefact, a private-registry install and real-host receipts exist for each supported
 platform and Codex version. Selling Codex as GA always carries these limits: Codex

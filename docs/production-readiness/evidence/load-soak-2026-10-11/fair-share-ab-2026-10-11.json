@@ -1,0 +1,633 @@
+{
+ "label": "LOCAL ENGINEERING DRILL - fair-share admission A/B for finding O1. Not HA, not an SLA, not candidate-bound; shared 4-vCPU host, load generator on the same host.",
+ "date": "2026-10-11",
+ "bound_declaration": "fair-share-bound-declaration.json (declared 2026-10-11T16:07:10Z, before any A/B data)",
+ "stack": {
+  "db": "supabase/postgres:17.11.0.004 (kit pin), 184 canonical migrations applied to a fresh database; auth/storage stubbed as the repository's PostgreSQL fixture tests do (plus auth.users.email_confirmed_at)",
+  "rest": "postgrest/postgrest:v14.17, default pool 10, kit libpq keepalive/tcp_user_timeout parameters",
+  "functions": "supabase/edge-runtime:v1.77.4@sha256:ad45164b... (kit pin), upstream self-hosted main router, supabase/functions copied in, Ed25519 entitlement and policy signing configured",
+  "gateway": "node:24.21.0-alpine3.24 stand-in reverse proxy (/functions/v1, /rest/v1), as in the soak",
+  "tenants": "two pilot-admitted tenants, 50 seats each: quiet 1 key, noisy owner + 9 member keys; published runtime policy each"
+ },
+ "workload": "11-key knee profile: per key ingest (2-event batch) : policy = 3 : 1, equal per-key rate, noisy = 10x quiet; 90 s per run; timeout 10 s; max_in_flight 400; per rate the order off, on, off, on with 60 s cool-down; arms switched by restarting the edge runtime",
+ "arms": {
+  "off": "AIDR_TENANT_INFLIGHT_CAPACITY=10000, AIDR_TENANT_INFLIGHT_MAX=10000",
+  "on": "defaults of the iteration under test"
+ },
+ "control": {
+  "p50_ms": 61.199758999999176,
+  "p95_ms": 91.21490300000005,
+  "p99_ms": 431.4091750000007,
+  "requests": 459,
+  "status_counts": {
+   "200": 459
+  }
+ },
+ "quiet_p95_bound_ms": 241.21490300000005,
+ "iterations": {
+  "v1": {
+   "design": "slot acquired after API-key authentication, keyed by tenant; capacity 16, per-tenant max 12, floor 2",
+   "runs": [
+    {
+     "run": "ab52-off-1",
+     "goodput": 40.5,
+     "peak": 400,
+     "quiet_err": 0.2126,
+     "quiet_p50": 4108.0,
+     "quiet_p95": 10001.8,
+     "quiet_p99": 10004.9,
+     "quiet_status": {
+      "200": 337,
+      "transport_error": 65
+     },
+     "quiet_dropped": 26,
+     "noisy_status": {
+      "200": 3308,
+      "503": 8,
+      "transport_error": 749
+     },
+     "noisy_dropped": 188,
+     "noisy_p95": 10001.9,
+     "overall_p95": 10001.9,
+     "within_bound": null
+    },
+    {
+     "run": "ab52-off-2",
+     "goodput": 18.7,
+     "peak": 400,
+     "quiet_err": 0.6192,
+     "quiet_p50": 10000.5,
+     "quiet_p95": 10003.4,
+     "quiet_p99": 10008.4,
+     "quiet_status": {
+      "200": 163,
+      "transport_error": 200
+     },
+     "quiet_dropped": 65,
+     "noisy_status": {
+      "200": 1521,
+      "500": 2,
+      "transport_error": 2116
+     },
+     "noisy_dropped": 614,
+     "noisy_p95": 10003.2,
+     "overall_p95": 10003.3,
+     "within_bound": null
+    },
+    {
+     "run": "ab52-on-1",
+     "goodput": 47.0,
+     "peak": 124,
+     "quiet_err": 0.0,
+     "quiet_p50": 1470.1,
+     "quiet_p95": 2920.0,
+     "quiet_p99": 3788.9,
+     "quiet_status": {
+      "200": 428
+     },
+     "quiet_dropped": 0,
+     "noisy_status": {
+      "200": 3799,
+      "429": 453,
+      "503": 1
+     },
+     "noisy_dropped": 0,
+     "noisy_p95": 2830.9,
+     "overall_p95": 2838.8,
+     "within_bound": false
+    },
+    {
+     "run": "ab52-on-2",
+     "goodput": 51.6,
+     "peak": 96,
+     "quiet_err": 0.0,
+     "quiet_p50": 530.2,
+     "quiet_p95": 1681.3,
+     "quiet_p99": 2264.9,
+     "quiet_status": {
+      "200": 428
+     },
+     "quiet_dropped": 0,
+     "noisy_status": {
+      "200": 4219,
+      "429": 33,
+      "500": 1
+     },
+     "noisy_dropped": 0,
+     "noisy_p95": 1665.5,
+     "overall_p95": 1669.3,
+     "within_bound": false
+    },
+    {
+     "run": "ab56-off-1",
+     "goodput": 11.0,
+     "peak": 400,
+     "quiet_err": 0.813,
+     "quiet_p50": 10001.2,
+     "quiet_p95": 10003.7,
+     "quiet_p99": 10012.8,
+     "quiet_status": {
+      "200": 86,
+      "transport_error": 254
+     },
+     "quiet_dropped": 120,
+     "noisy_status": {
+      "200": 908,
+      "500": 1,
+      "transport_error": 2614
+     },
+     "noisy_dropped": 1057,
+     "noisy_p95": 10003.3,
+     "overall_p95": 10003.4,
+     "within_bound": null
+    },
+    {
+     "run": "ab56-off-2",
+     "goodput": 25.6,
+     "peak": 400,
+     "quiet_err": 0.5739,
+     "quiet_p50": 9864.4,
+     "quiet_p95": 10002.7,
+     "quiet_p99": 10004.4,
+     "quiet_status": {
+      "200": 196,
+      "transport_error": 190
+     },
+     "quiet_dropped": 74,
+     "noisy_status": {
+      "200": 2110,
+      "500": 1,
+      "transport_error": 1730
+     },
+     "noisy_dropped": 739,
+     "noisy_p95": 10002.6,
+     "overall_p95": 10002.6,
+     "within_bound": null
+    },
+    {
+     "run": "ab56-on-1",
+     "goodput": 50.2,
+     "peak": 123,
+     "quiet_err": 0.0,
+     "quiet_p50": 1438.8,
+     "quiet_p95": 2451.9,
+     "quiet_p99": 3540.4,
+     "quiet_status": {
+      "200": 460
+     },
+     "quiet_dropped": 0,
+     "noisy_status": {
+      "200": 4057,
+      "429": 520,
+      "500": 1,
+      "503": 2
+     },
+     "noisy_dropped": 0,
+     "noisy_p95": 2588.8,
+     "overall_p95": 2586.9,
+     "within_bound": false
+    },
+    {
+     "run": "ab56-on-2",
+     "goodput": 48.1,
+     "peak": 125,
+     "quiet_err": 0.0087,
+     "quiet_p50": 1578.3,
+     "quiet_p95": 2773.9,
+     "quiet_p99": 3867.7,
+     "quiet_status": {
+      "200": 456,
+      "503": 4
+     },
+     "quiet_dropped": 0,
+     "noisy_status": {
+      "200": 3870,
+      "429": 695,
+      "500": 1,
+      "503": 14
+     },
+     "noisy_dropped": 0,
+     "noisy_p95": 2807.9,
+     "overall_p95": 2807.9,
+     "within_bound": false
+    }
+   ]
+  },
+  "v2": {
+   "design": "slot acquired before authentication, charged to the tenant the same key (SHA-256) last authenticated as in this isolate, else to one shared 'unresolved' bucket; rebound to the tenant after authentication; capacity 10 (= PostgREST pool), per-tenant max 7, floor 2",
+   "runs": [
+    {
+     "run": "ab52-off-1",
+     "goodput": 26.3,
+     "peak": 400,
+     "quiet_err": 0.4603,
+     "quiet_p50": 8389.7,
+     "quiet_p95": 10002.4,
+     "quiet_p99": 10004.0,
+     "quiet_status": {
+      "200": 231,
+      "transport_error": 154
+     },
+     "quiet_dropped": 43,
+     "noisy_status": {
+      "200": 2135,
+      "transport_error": 1650
+     },
+     "noisy_dropped": 468,
+     "noisy_p95": 10002.6,
+     "overall_p95": 10002.6,
+     "within_bound": null
+    },
+    {
+     "run": "ab52-off-2",
+     "goodput": 35.4,
+     "peak": 400,
+     "quiet_err": 0.3271,
+     "quiet_p50": 6978.9,
+     "quiet_p95": 10001.9,
+     "quiet_p99": 10005.1,
+     "quiet_status": {
+      "200": 288,
+      "transport_error": 108
+     },
+     "quiet_dropped": 32,
+     "noisy_status": {
+      "200": 2900,
+      "transport_error": 1060
+     },
+     "noisy_dropped": 293,
+     "noisy_p95": 10002.2,
+     "overall_p95": 10002.2,
+     "within_bound": null
+    },
+    {
+     "run": "ab52-on-1",
+     "goodput": 49.9,
+     "peak": 62,
+     "quiet_err": 0.0117,
+     "quiet_p50": 61.9,
+     "quiet_p95": 852.6,
+     "quiet_p99": 1664.6,
+     "quiet_status": {
+      "200": 423,
+      "429": 3,
+      "503": 2
+     },
+     "quiet_dropped": 0,
+     "noisy_status": {
+      "200": 4068,
+      "429": 158,
+      "500": 2,
+      "503": 25
+     },
+     "noisy_dropped": 0,
+     "noisy_p95": 992.8,
+     "overall_p95": 984.8,
+     "within_bound": false
+    },
+    {
+     "run": "ab52-on-2",
+     "goodput": 51.3,
+     "peak": 49,
+     "quiet_err": 0.0093,
+     "quiet_p50": 56.8,
+     "quiet_p95": 475.8,
+     "quiet_p99": 855.0,
+     "quiet_status": {
+      "200": 424,
+      "429": 3,
+      "503": 1
+     },
+     "quiet_dropped": 0,
+     "noisy_status": {
+      "200": 4189,
+      "429": 58,
+      "503": 6
+     },
+     "noisy_dropped": 0,
+     "noisy_p95": 553.1,
+     "overall_p95": 546.6,
+     "within_bound": false
+    },
+    {
+     "run": "ab56-off-1",
+     "goodput": 25.8,
+     "peak": 400,
+     "quiet_err": 0.537,
+     "quiet_p50": 9366.0,
+     "quiet_p95": 10002.8,
+     "quiet_p99": 10004.9,
+     "quiet_status": {
+      "200": 213,
+      "transport_error": 175
+     },
+     "quiet_dropped": 72,
+     "noisy_status": {
+      "200": 2112,
+      "500": 6,
+      "transport_error": 1735
+     },
+     "noisy_dropped": 727,
+     "noisy_p95": 10002.6,
+     "overall_p95": 10002.6,
+     "within_bound": null
+    },
+    {
+     "run": "ab56-off-2",
+     "goodput": 20.5,
+     "peak": 400,
+     "quiet_err": 0.6283,
+     "quiet_p50": 10000.7,
+     "quiet_p95": 10003.1,
+     "quiet_p99": 10005.3,
+     "quiet_status": {
+      "200": 171,
+      "transport_error": 212
+     },
+     "quiet_dropped": 77,
+     "noisy_status": {
+      "200": 1677,
+      "500": 1,
+      "transport_error": 2102
+     },
+     "noisy_dropped": 800,
+     "noisy_p95": 10003.1,
+     "overall_p95": 10003.1,
+     "within_bound": null
+    },
+    {
+     "run": "ab56-on-1",
+     "goodput": 53.4,
+     "peak": 69,
+     "quiet_err": 0.013,
+     "quiet_p50": 78.8,
+     "quiet_p95": 899.1,
+     "quiet_p99": 1627.7,
+     "quiet_status": {
+      "200": 454,
+      "429": 1,
+      "503": 5
+     },
+     "quiet_dropped": 0,
+     "noisy_status": {
+      "200": 4354,
+      "429": 190,
+      "500": 1,
+      "503": 35
+     },
+     "noisy_dropped": 0,
+     "noisy_p95": 933.9,
+     "overall_p95": 925.8,
+     "within_bound": false
+    },
+    {
+     "run": "ab56-on-2",
+     "goodput": 52.1,
+     "peak": 59,
+     "quiet_err": 0.0109,
+     "quiet_p50": 367.4,
+     "quiet_p95": 997.6,
+     "quiet_p99": 1675.4,
+     "quiet_status": {
+      "200": 455,
+      "429": 2,
+      "503": 3
+     },
+     "quiet_dropped": 0,
+     "noisy_status": {
+      "200": 4236,
+      "429": 300,
+      "503": 44
+     },
+     "noisy_dropped": 0,
+     "noisy_p95": 985.9,
+     "overall_p95": 988.2,
+     "within_bound": false
+    }
+   ]
+  },
+  "v3": {
+   "design": "v2 plus: the rebind after authentication is refused (429) when that tenant is already at its cap or share; under pressure an unresolved key may have one request in flight. This is the committed code.",
+   "runs": [
+    {
+     "run": "ab52-off-1",
+     "goodput": 52.0,
+     "peak": 74,
+     "quiet_err": 0.0,
+     "quiet_p50": 69.3,
+     "quiet_p95": 1081.8,
+     "quiet_p99": 1496.2,
+     "quiet_status": {
+      "200": 428
+     },
+     "quiet_dropped": 0,
+     "noisy_status": {
+      "200": 4252,
+      "500": 1
+     },
+     "noisy_dropped": 0,
+     "noisy_p95": 1065.4,
+     "overall_p95": 1065.4,
+     "within_bound": null
+    },
+    {
+     "run": "ab52-off-2",
+     "goodput": 51.9,
+     "peak": 83,
+     "quiet_err": 0.0023,
+     "quiet_p50": 506.1,
+     "quiet_p95": 1590.2,
+     "quiet_p99": 2050.0,
+     "quiet_status": {
+      "200": 427,
+      "503": 1
+     },
+     "quiet_dropped": 0,
+     "noisy_status": {
+      "200": 4246,
+      "503": 7
+     },
+     "noisy_dropped": 0,
+     "noisy_p95": 1596.2,
+     "overall_p95": 1593.2,
+     "within_bound": null
+    },
+    {
+     "run": "ab52-on-1",
+     "goodput": 50.5,
+     "peak": 67,
+     "quiet_err": 0.0093,
+     "quiet_p50": 61.3,
+     "quiet_p95": 927.9,
+     "quiet_p99": 1541.0,
+     "quiet_status": {
+      "200": 424,
+      "429": 4
+     },
+     "quiet_dropped": 0,
+     "noisy_status": {
+      "200": 4117,
+      "429": 124,
+      "500": 3,
+      "503": 9
+     },
+     "noisy_dropped": 0,
+     "noisy_p95": 772.4,
+     "overall_p95": 776.4,
+     "within_bound": false
+    },
+    {
+     "run": "ab52-on-2",
+     "goodput": 50.2,
+     "peak": 64,
+     "quiet_err": 0.0093,
+     "quiet_p50": 79.4,
+     "quiet_p95": 999.2,
+     "quiet_p99": 1522.0,
+     "quiet_status": {
+      "200": 424,
+      "429": 3,
+      "500": 1
+     },
+     "quiet_dropped": 0,
+     "noisy_status": {
+      "200": 4096,
+      "429": 154,
+      "500": 2,
+      "503": 1
+     },
+     "noisy_dropped": 0,
+     "noisy_p95": 859.8,
+     "overall_p95": 862.6,
+     "within_bound": false
+    },
+    {
+     "run": "ab56-off-1",
+     "goodput": 24.8,
+     "peak": 400,
+     "quiet_err": 0.5391,
+     "quiet_p50": 9290.7,
+     "quiet_p95": 10002.7,
+     "quiet_p99": 10004.4,
+     "quiet_status": {
+      "200": 212,
+      "transport_error": 185
+     },
+     "quiet_dropped": 63,
+     "noisy_status": {
+      "200": 2021,
+      "transport_error": 1804
+     },
+     "noisy_dropped": 755,
+     "noisy_p95": 10002.6,
+     "overall_p95": 10002.6,
+     "within_bound": null
+    },
+    {
+     "run": "ab56-off-2",
+     "goodput": 19.8,
+     "peak": 400,
+     "quiet_err": 0.6348,
+     "quiet_p50": 10000.5,
+     "quiet_p95": 10003.1,
+     "quiet_p99": 10004.1,
+     "quiet_status": {
+      "200": 168,
+      "transport_error": 195
+     },
+     "quiet_dropped": 97,
+     "noisy_status": {
+      "200": 1613,
+      "500": 3,
+      "transport_error": 2109
+     },
+     "noisy_dropped": 855,
+     "noisy_p95": 10002.9,
+     "overall_p95": 10002.9,
+     "within_bound": null
+    },
+    {
+     "run": "ab56-on-1",
+     "goodput": 51.7,
+     "peak": 49,
+     "quiet_err": 0.0065,
+     "quiet_p50": 318.5,
+     "quiet_p95": 867.8,
+     "quiet_p99": 1599.1,
+     "quiet_status": {
+      "200": 457,
+      "429": 2,
+      "503": 1
+     },
+     "quiet_dropped": 0,
+     "noisy_status": {
+      "200": 4195,
+      "429": 367,
+      "500": 2,
+      "503": 16
+     },
+     "noisy_dropped": 0,
+     "noisy_p95": 922.3,
+     "overall_p95": 920.9,
+     "within_bound": false
+    },
+    {
+     "run": "ab56-on-2",
+     "goodput": 53.8,
+     "peak": 44,
+     "quiet_err": 0.0087,
+     "quiet_p50": 94.8,
+     "quiet_p95": 630.4,
+     "quiet_p99": 1190.8,
+     "quiet_status": {
+      "200": 456,
+      "429": 4
+     },
+     "quiet_dropped": 0,
+     "noisy_status": {
+      "200": 4390,
+      "429": 187,
+      "503": 3
+     },
+     "noisy_dropped": 0,
+     "noisy_p95": 745.3,
+     "overall_p95": 735.1,
+     "within_bound": false
+    }
+   ]
+  }
+ },
+ "smoke_runs_not_counted": [
+  "one 90 s on-arm run at 56 rps with v3 before its A/B, used only to confirm the deployment; its result was not analysed"
+ ],
+ "edge_runtime_isolate_churn": "In the last v3 on-arm run (52 rps, ~95 s of container life) the edge runtime logged 33 'CPU time soft limit reached' and 49 'early termination has been triggered' (retire) events, plus 16 wall-clock warnings: under overload a function's isolate is replaced every few seconds, so in-isolate limiter state (counts and key-to-tenant hints) restarts at zero while the retiring isolate still drains its own admitted requests.",
+ "db_lease_cost": {
+  "what": "one extra service-role PostgREST RPC round trip (POST /rest/v1/rpc/increment_rate_limit through the stand-in gateway), the unit a DB-backed lease would add twice per request (acquire + release)",
+  "results": [
+   {
+    "concurrency": 1,
+    "calls": 2000,
+    "p50_ms": 3.54,
+    "p95_ms": 5.75,
+    "p99_ms": 8.62
+   },
+   {
+    "concurrency": 8,
+    "calls": 2000,
+    "p50_ms": 6.54,
+    "p95_ms": 12.94,
+    "p99_ms": 16.97
+   }
+  ],
+  "context": "an ingest request already makes about 12 PostgREST calls (4 inside API-key authentication); a lease adds 2 more, each holding a pool connection, on the same 10-connection pool it is meant to protect, and leaks on a killed isolate unless it carries a TTL"
+ },
+ "result": {
+  "collapse_56_rps": "every off-arm run collapsed (goodput 11.0-25.8 HTTP 200/s, quiet error ratio 54-81%, client timeouts and drops); every on-arm run held 48.1-53.8 HTTP 200/s with no timeouts or drops",
+  "collapse_52_rps": "the off arm collapsed in the v1 and v2 windows (goodput 18.7-40.5, quiet errors 21-62%) but not in the v3 window (52.0 / 51.9, quiet errors 0 / 0.23%): host capacity moved between windows, so 52 rps was not above the knee then. In that window the on arm cost the quiet tenant 0.93% retryable 429s with similar p95 (0.93 / 1.00 s against 1.08 / 1.59 s)",
+  "quiet_errors_on_arm": "v1 0-0.87% (503 service_overloaded), v2 0.93-1.30% (429 and 503), v3 0.65-0.93% (429 tenant_overloaded charged to the shared unresolved bucket, plus one 500); never a timeout",
+  "quiet_p95_on_arm": "v1 1.68-2.92 s, v2 0.48-1.00 s, v3 0.63-1.00 s; collapsed off arms 10.0 s",
+  "noisy_on_arm": "429 tenant_overloaded 33-695 per run plus a few 503 service_overloaded, all with Retry-After: 1",
+  "bound": "MISSED in every on-arm run of every iteration (error ratio <= 0.1%, zero quiet 429/503, p95 <= 241 ms)",
+  "why": "per-isolate state: under overload the runtime retires each function's isolate every few seconds on its CPU-time soft limit, so counts and key-to-tenant hints restart at zero while the retiring isolate drains its own admitted requests. The bound is per isolate, not per runtime instance; the quiet key's first request in each fresh isolate competes in the shared unresolved bucket; and admitted work from several overlapping isolates still queues on one 10-connection pool and one host CPU, which fair-share admission does not schedule"
+ }
+}

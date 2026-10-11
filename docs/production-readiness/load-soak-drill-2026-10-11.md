@@ -243,6 +243,8 @@ the ledger-derived `fault_recovery` as authoritative.
 - **O1. Congestion collapse above the knee.** There is no per-tenant in-flight cap and no `lock_timeout`-based
   shedding. Abandoned requests keep holding edge workers and pool connections after the client's 10 s timeout. A
   fix means choosing which tenant's work gets shed and with what retry contract. That is a product decision.
+  **Partly addressed:** the product owner chose fair share per tenant; see the fair-share addendum below. Collapse
+  is gone in the re-run, but the pre-declared quiet-tenant bound was missed.
 - **O2. Partition behaviour.** Requests hang for 10 s and success resumes about 30 s after the network heals,
   because the PostgREST pool is stuck on dead connections. Dead-peer detection (libpq keepalives or
   `tcp_user_timeout` on the PostgREST DB URI) and a request deadline would bound this. No target was agreed, and
@@ -475,3 +477,181 @@ dropped), so it is not a fix for O2.
   dead-peer detection, from the previous addendum, still removes the TCP-retransmission part.
 - Bounding the hang during the partition still needs a request deadline or fail-fast admission. That is
   O1's product decision.
+
+## Addendum, 2026-10-11: fair-share admission (finding O1)
+
+**Label: LOCAL ENGINEERING DRILL.** Overload A/B on a minimal stack on the same shared 4-vCPU host, with the load
+generator on that host. It changes no acceptance flag, and AIDR-052 stays **BLOCKED_EXTERNAL**.
+
+**Evidence:**
+
+- `docs/production-readiness/evidence/load-soak-2026-10-11/fair-share-bound-declaration.json`: the bound, written
+  at 16:07:10 UTC before any A/B data existed.
+- `docs/production-readiness/evidence/load-soak-2026-10-11/fair-share-ab-2026-10-11.json`: every run, the control,
+  the isolate-churn observation and the lease-cost measurement.
+
+Raw load-test outputs and container logs were not kept.
+
+### Decision and change
+
+The product owner chose **fair share per tenant**. Under overload the heaviest tenant's excess requests are
+rejected with a retryable answer, and quiet tenants keep being served.
+
+`supabase/functions/_shared/tenant-concurrency.ts` adds per-tenant in-flight admission to `ingest` and `policy`.
+
+- **What a slot covers.** A slot is taken **before** the API-key lookup and released when the handler settles,
+  whether it returns, throws or rejects. A lease timer reclaims and logs a slot whose work never settles. The slot
+  therefore covers every PostgREST call the request makes, including the four inside authentication.
+- **Admission rules.** Let *n* be the tenant's slots, *total* all slots, and *active* the tenants holding a slot.
+  1. If *total* ≥ capacity, the request gets 503 `service_overloaded`.
+  2. If *n* ≥ the per-tenant max, it gets 429 `tenant_overloaded`.
+  3. Under pressure (*total* ≥ the per-tenant max), if *n* ≥ max(floor, ⌊capacity ÷ active⌋), it gets 429
+     `tenant_overloaded`.
+  4. Otherwise it is admitted.
+- **Why the per-tenant max sits below capacity.** One tenant alone can never take the last slots, so a quiet
+  tenant's request is admitted while a noisy tenant holds everything it may. The noisy tenant is then shed until
+  it falls below its fair share.
+- **Admission before authentication.** The tenant is known only after authentication. A request is therefore
+  charged to the tenant its key (by SHA-256) last authenticated as in this isolate.
+  - A key not yet seen is charged to one shared `unresolved` bucket, so a flood of unknown or invalid keys is
+    capped at one share. Under pressure, each unresolved key may have one request in flight.
+  - After authentication the slot moves to the real tenant. The move is refused (429) if that tenant is already
+    at its cap or share.
+  - The key-to-tenant hint never reaches authorization, and a 401 or 403 forgets it.
+- **Answers.** Rejections carry `{"error": "tenant_overloaded" | "service_overloaded", "retryable": true}` and
+  `Retry-After`. Connectors already treat 429 and 5xx as retryable: the telemetry queue keeps the batch, and policy
+  is served from cache.
+- **Failure policy.** A rate limit is a security control, so the limiter fails closed.
+  - A malformed `AIDR_TENANT_INFLIGHT_*` value refuses every request with 503 `tenant_limiter_unavailable` and is
+    logged once per isolate.
+  - An internal limiter error refuses only that request and is logged.
+  - Sheds are logged as `tenant_inflight_shed`, at most once per tenant and reason every 10 s.
+- **Configuration.** The defaults are capacity 10 (the kit's PostgREST pool), per-tenant max 75% of capacity
+  (7), floor 2 and `Retry-After` 1 s.
+  - Compose: set them in `.env.functions`; see `docs/operations/onprem-config-reference.md`.
+  - Helm: `functions.tenantInflight`.
+- **Tests.** `supabase/functions/__tests__/tenant-concurrency.test.ts` covers:
+  - fairness, the cap, the floor and capacity;
+  - release on success, throw and rejection, and lease expiry;
+  - no leaks under a concurrent burst;
+  - unresolved-key flooding;
+  - fail-closed configuration;
+  - ingest and policy handler shedding.
+
+### Why this layer
+
+- **Envoy cannot do it.** The gateway sees only the bearer value. The tenant comes from a hashed-key lookup in the
+  database. Envoy's local rate limit bounds rate, not concurrency, and its circuit breakers are per cluster, not
+  per tenant.
+- **The function is where pool use starts.** Every PostgREST call the request makes, including authentication,
+  runs inside the slot.
+- **A database-backed lease was measured and not chosen.**
+  - One extra service-role RPC round trip through PostgREST cost 3.5 / 5.8 ms (p50 / p95) sequentially, and
+    6.5 / 12.9 ms at concurrency 8.
+  - A lease adds two such round trips to the roughly 12 an ingest request already makes, on the same 10-connection
+    pool it is meant to protect.
+  - It also needs a TTL so that a killed isolate cannot leak its lease.
+
+### Multi-instance and isolate behaviour
+
+- **The bound is per isolate.** It is not per runtime instance, not shared by `ingest` and `policy`, and not
+  shared across replicas.
+- **Isolates churn under overload.** In one 95 s on-arm run the edge runtime logged 33 "CPU time soft limit
+  reached", 49 "early termination" and 16 wall-clock events. A function's isolate was replaced every few seconds.
+  - Each fresh isolate starts with zero counts and no key-to-tenant hints.
+  - The retiring isolate keeps draining the requests it admitted.
+  - Effective concurrency per instance can therefore exceed capacity.
+- **Replicas multiply the bound.** With *R* replicas and two functions, the pool can face up to 2 × *R* ×
+  capacity admitted requests, plus the overlap from retiring isolates.
+- **What would make the bound per instance.** Admission in the runtime's long-lived main router, with the worker
+  reporting the tenant back. The main router is the reviewed upstream file, and changing it was not part of this
+  change.
+
+### Method
+
+- **Stack.** The same minimal subset as the soak:
+  - `supabase/postgres:17.11.0.004` (the kit pin), with all 184 canonical migrations;
+  - `postgrest/postgrest:v14.17` with pool 10 and the kit's libpq parameters;
+  - `supabase/edge-runtime:v1.77.4` (the kit pin) with the upstream main router and signing configured;
+  - the stand-in Node gateway.
+- **Tenants.** Two pilot-admitted tenants with 50 seats each: quiet with 1 key, noisy with 10 keys.
+- **Workload.** The 11-key knee profile: 2-event ingest batches, ingest : policy = 3 : 1, equal per-key rate,
+  so noisy = 10×. Each run lasted 90 s at 56 and at 52 rps, with a 10 s timeout and `max_in_flight` 400.
+- **Arms and order.**
+  - The **off** arm set capacity and per-tenant max to 10,000, so the limiter is present but never binds. The
+    **on** arm used the defaults.
+  - Per rate, the order was off, on, off, on, with 60 s of cool-down. The arms were switched by restarting the
+    edge runtime.
+- **Pre-declared bound** (quiet tenant, every on-arm run, the whole 90 s):
+  - error ratio ≤ 0.1%;
+  - zero 429 or 503;
+  - p95 ≤ max(2 × control p95, control p95 + 150 ms).
+  The control was the quiet tenant alone at 5.09 rps for 90 s: p50 / p95 / p99 of 61.2 / 91.2 / 431 ms, 459 of 459
+  succeeded. That gives a p95 bound of **241 ms**.
+- **Iterations.** The first iteration missed the bound. The design was changed twice, and each version ran the
+  full A/B against the same bound. All three are reported.
+  - **v1:** slot after authentication; capacity 16, max 12.
+  - **v2:** slot before authentication with key hints; capacity 10, max 7.
+  - **v3:** v2 plus the refused move after authentication and one unresolved request per key under pressure.
+    v3 is the committed code.
+  - One unanalysed 90 s smoke run confirmed the v3 deployment before its A/B.
+
+### Results
+
+Quiet columns cover the quiet tenant only. Goodput is HTTP 200 per second across both tenants.
+
+| Iteration, rate | Arm | Goodput (200/s) | Quiet error ratio | Quiet non-200 | Quiet p50 / p95 (ms) | Noisy 429 / 503 |
+| --- | --- | --- | --- | --- | --- | --- |
+| v1, 56 | off | 11.0 / 25.6 | 81.3% / 57.4% | timeouts | 10,001 / 10,004; 9,864 / 10,003 | 0 / 0 |
+| v1, 56 | on | 50.2 / 48.1 | 0 / 0.87% | 4 × 503 | 1,439 / 2,452; 1,578 / 2,774 | 520 / 2; 695 / 14 |
+| v1, 52 | off | 40.5 / 18.7 | 21.3% / 61.9% | timeouts | 4,108 / 10,002; 10,001 / 10,003 | 0 / 8; 0 / 0 |
+| v1, 52 | on | 47.0 / 51.6 | 0 / 0 | none | 1,470 / 2,920; 530 / 1,681 | 453 / 1; 33 / 0 |
+| v2, 56 | off | 25.8 / 20.5 | 53.7% / 62.8% | timeouts | 9,366 / 10,003; 10,001 / 10,003 | 0 / 0 |
+| v2, 56 | on | 53.4 / 52.1 | 1.30% / 1.09% | 1 × 429 + 5 × 503; 2 × 429 + 3 × 503 | 79 / 899; 367 / 998 | 190 / 35; 300 / 44 |
+| v2, 52 | off | 26.3 / 35.4 | 46.0% / 32.7% | timeouts | 8,390 / 10,002; 6,979 / 10,002 | 0 / 0 |
+| v2, 52 | on | 49.9 / 51.3 | 1.17% / 0.93% | 3 × 429 + 2 × 503; 3 × 429 + 1 × 503 | 62 / 853; 57 / 476 | 158 / 25; 58 / 6 |
+| v3, 56 | off | 24.8 / 19.8 | 53.9% / 63.5% | timeouts | 9,291 / 10,003; 10,001 / 10,003 | 0 / 0 |
+| v3, 56 | on | 51.7 / 53.8 | 0.65% / 0.87% | 2 × 429 + 1 × 503; 4 × 429 | 319 / 868; 95 / 630 | 367 / 16; 187 / 3 |
+| v3, 52 | off | 52.0 / 51.9 | 0 / 0.23% | 1 × 503 | 69 / 1,082; 506 / 1,590 | 0 / 7 |
+| v3, 52 | on | 50.5 / 50.2 | 0.93% / 0.93% | 4 × 429; 3 × 429 + 1 × 500 | 61 / 928; 79 / 999 | 124 / 9; 154 / 1 |
+
+Two figures per cell are the two runs of that arm, in order. "Timeouts" means 10 s client timeouts plus requests
+the generator dropped at `max_in_flight`. Noisy 500s (0–6 per run) occurred in both arms.
+
+### Reading
+
+- **Collapse is gone.** At 56 rps every off-arm run collapsed: goodput 11.0–25.8 HTTP 200/s, quiet errors
+  54–81%, timeouts and drops. Every on-arm run in every iteration held 48–54 HTTP 200/s, with no timeouts or
+  drops. The noisy tenant received 33–695 `tenant_overloaded` answers per run, all with `Retry-After: 1`.
+- **The pre-declared bound was missed in every on-arm run of every iteration.**
+  - Quiet error ratios were 0.65–1.30% in v2 and v3, against ≤ 0.1%.
+  - All quiet failures were retryable 429 or 503 answers (plus one 500), never timeouts. That is better than the
+    21–81% timeouts off-arm, but it breaks the zero-429/503 condition.
+  - Quiet p95 was 0.48–1.0 s against 241 ms.
+- **Why the bound was missed.**
+  - In v3, quiet sheds were charged to the shared `unresolved` bucket. The quiet key's first request in each
+    fresh isolate competes there with the noisy tenant's ten keys, and under overload isolates are replaced every
+    few seconds.
+  - The latency comes from admitted work from several overlapping isolates and both functions. That work queues on
+    one 10-connection pool and one host CPU, which fair-share admission does not schedule.
+- **52 rps in the v3 window was not overload.** The off arm did not collapse there: 52.0 / 51.9 HTTP 200/s, with
+  quiet errors of 0 and 0.23%. Host capacity had moved between windows. In that window the limiter cost the quiet
+  tenant 0.93% retryable 429s, while its p95 stayed similar to the off arm (0.93 and 1.0 s, against 1.08 and
+  1.59 s).
+- **Measurement noise.** Two runs per arm on a shared host whose capacity moved during the session. The result is
+  indicative, not conclusive.
+
+### What stays open in O1
+
+- **The isolation bound above the knee is not met.** Meeting it needs admission state that outlives an isolate:
+  - instance-wide admission in the main router; or
+  - a database-backed lease, measured above at 2 extra pool round trips per request; or
+  - fewer isolate retirements under load.
+
+  These are not set by the defaults here. Lower capacity or lower CPU limits were not tried, so that the bound
+  would not be tuned to this host.
+- **Sizing guidance is per isolate.** Operators should size `AIDR_TENANT_INFLIGHT_CAPACITY` × functions ×
+  replicas against the PostgREST pool. With the defaults, one instance can admit about 20 requests (more during
+  isolate overlap) onto a 10-connection pool.
+- **No HA, no 8 h soak, not candidate-bound.** AIDR-052 stays **BLOCKED_EXTERNAL**.
+

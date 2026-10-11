@@ -1,0 +1,22 @@
+{
+  "label": "LOCAL ENGINEERING DRILL - pre-declared bound, written before any fair-share A/B data existed",
+  "declared_at": "2026-10-11T16:07:10Z",
+  "finding": "O1 (congestion collapse above the knee)",
+  "change_under_test": "supabase/functions/_shared/tenant-concurrency.ts fair-share admission on ingest and policy, defaults capacity 16, per-tenant max 12, fair-share floor 2, Retry-After 1 s",
+  "workload": "the drill's 11-key knee profile: quiet tenant 1 key, noisy tenant 10 keys at the same per-key rate (noisy = 10x quiet), 2-event ingest batches, ingest:policy = 3:1, request timeout 10 s, max_in_flight 400, 90 s per run",
+  "rates_rps": [52, 56],
+  "arms": {
+    "off": "AIDR_TENANT_INFLIGHT_CAPACITY=10000 and AIDR_TENANT_INFLIGHT_MAX=10000 (limiter present but never binding)",
+    "on": "kit defaults (no AIDR_TENANT_INFLIGHT_* set)"
+  },
+  "order": "per rate: off, on, off, on; 60 s cool-down between runs; edge runtime restarted to switch arms",
+  "control": "quiet tenant alone at its share of 56 rps (56/11 = 5.09 rps) for 90 s with the limiter on, same stack",
+  "bound_on_arm_quiet_tenant": {
+    "error_ratio_max": 0.001,
+    "http_429_or_503_max": 0,
+    "p95_ms_max": "max(2 x control p95, control p95 + 150 ms) - the same formula as the soak isolation bound",
+    "window": "whole 90 s run, no warm-up exclusion"
+  },
+  "expected_on_arm_noisy_tenant": "receives HTTP 429 tenant_overloaded with Retry-After (count > 0); informational only",
+  "pass_rule": "every on-arm run at both rates meets every quiet-tenant bound; any miss is reported as a miss, not re-run away"
+}

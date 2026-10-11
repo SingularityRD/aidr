@@ -210,6 +210,16 @@
         "runAsUser": { "$ref": "#/definitions/uid" },
         "npmRegistry": { "type": "string", "pattern": "^(|https?://.+)$" },
         "billingProvider": { "type": "string", "enum": ["", "stripe", "paddle"] },
+        "tenantInflight": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "capacity": { "type": "integer", "minimum": 1, "maximum": 10000 },
+            "perTenantMax": { "type": "integer", "minimum": 0, "maximum": 10000 },
+            "fairShareFloor": { "type": "integer", "minimum": 1, "maximum": 10000 },
+            "retryAfterSeconds": { "type": "integer", "minimum": 1, "maximum": 60 }
+          }
+        },
         "pdb": { "$ref": "#/definitions/pdb" },
         "autoscaling": { "$ref": "#/definitions/autoscaling" }
       }

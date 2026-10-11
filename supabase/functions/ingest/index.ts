@@ -46,6 +46,13 @@ import { partitionPostureEvents } from "./posture.ts";
 import { requireFeature } from "../_shared/plan-entitlements.ts";
 import { signerHealthy } from "../_shared/signing-health.ts";
 import { buildPremiumModules, tenantRuntimeCapabilities } from "../_shared/runtime-capabilities.ts";
+import {
+	type CredentialSlot,
+	type TenantSlotRejection,
+	tenantSlotGate,
+	tenantSlotResponse,
+	withTenantSlot,
+} from "../_shared/tenant-concurrency.ts";
 
 // Required configuration. Validated per request, before any auth or DB work, so
 // a missing variable answers with an explicit 500 that names it instead of
@@ -54,6 +61,8 @@ const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"] as const;
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
 
 const BROWSER_GUARD_RUNTIME = "browser_guard";
+// Per-tenant in-flight slots for this isolate (AIDR_TENANT_INFLIGHT_*).
+const admitTenantRequest = tenantSlotGate(runtimeEnv);
 // Counts-only Browser Guard events (docs/contracts/privacy-telemetry.md).
 const BROWSER_GUARD_EVENT_TYPES: ReadonlySet<string> = new Set([
 	"privacy_scan",
@@ -259,13 +268,39 @@ Deno.serve(async (req) => {
 	if (!apiKey) {
 		return json(401, { error: "missing_api_key" });
 	}
-	const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-		auth: { persistSession: false },
-	});
+	const supabase = serviceClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+	// Fair-share admission (../_shared/tenant-concurrency.ts): the key lookup and
+	// everything after it, including the registration and seat locks that pin
+	// pooled database connections, run inside one of the tenant's in-flight slots.
+	return withTenantSlot(admitTenantRequest, apiKey,
+		(slot) => ingestForTenant(req, supabase, apiKey, timing, slot), overloaded);
+});
+
+function serviceClient(url: string, serviceRoleKey: string) {
+	return createClient(url, serviceRoleKey, { auth: { persistSession: false } });
+}
+
+function overloaded(rejection: TenantSlotRejection): Response {
+	const answer = tenantSlotResponse(rejection);
+	return json(answer.status, answer.body, answer.headers);
+}
+
+async function ingestForTenant(
+	req: Request,
+	supabase: ReturnType<typeof serviceClient>,
+	apiKey: string,
+	timing: { ttlHours: number; graceHours: number },
+	slot: CredentialSlot,
+): Promise<Response> {
 	const tenantAuth = await authenticateTenantApiKeyBudgeted(supabase, apiKey, "ingest", Date.now(), {
 		allowedScopes: ["tenant", BROWSER_GUARD_INGEST_SCOPE],
 	});
-	if (!tenantAuth.ok) return json(tenantAuth.status, { error: tenantAuth.error });
+	if (!tenantAuth.ok) {
+		if (tenantAuth.status === 401 || tenantAuth.status === 403) slot.unauthenticated();
+		return json(tenantAuth.status, { error: tenantAuth.error });
+	}
+	const overShare = slot.authenticated(tenantAuth.tenantId);
+	if (overShare) return overloaded(overShare);
 	const browserKey = tenantAuth.scope === BROWSER_GUARD_INGEST_SCOPE;
 	const browserKeyId = browserKey ? tenantAuth.apiKeyId ?? "" : "";
 	if (browserKey && !browserKeyId) return json(403, { error: "api_key_scope_denied" });
@@ -571,4 +606,4 @@ Deno.serve(async (req) => {
 		entitlement_key_id: sig ? ENTITLEMENT_SIGNING_KEY_ID : null,
 		entitlement_sig: sig,
 	}, rateLimitHeaders(rate));
-});
+}
