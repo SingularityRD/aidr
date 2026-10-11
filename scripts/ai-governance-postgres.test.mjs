@@ -54,7 +54,7 @@ async function startDatabase() {
 	if (run("docker", ["info"]).code !== 0) return null;
 	const container = `aidr-governance-${randomUUID().slice(0, 8)}`;
 	const started = run("docker", ["run", "--detach", "--rm", "--pull", "never", "--network", "none", "--name", container,
-		"-e", "POSTGRES_PASSWORD=governance-fixture-only", "supabase/postgres:17.6.1.136"]);
+		"-e", "POSTGRES_PASSWORD=governance-fixture-only", "supabase/postgres:17.11.0.004"]);
 	if (started.code !== 0) return null;
 	for (let i = 0; i < 100; i++) {
 		if (run("docker", ["exec", container, "pg_isready", "-h", "127.0.0.1", "-U", "postgres"]).code === 0) break;

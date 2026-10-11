@@ -2870,7 +2870,8 @@ bulunur. Kaynak değerler hiçbir zaman yazılmaz ya da loglanmaz. Parmak izleri
 değil, anahtarlı özetlerdir. Anahtarı da içeren veri kümesine sahip olan biri, tahmin ettiği
 değerlerin listede olup olmadığını deneyebilir. Veri kümesini gizli kabul edin, yalnızca
 yönetilen politikayla dağıtın ve hiçbir kod deposuna koymayın. <code>deploy/<wbr>browser-guard/</code>
-içindeki örnek veri kümesinin anahtarı herkese açıktır; bu küme asla dağıtılmamalıdır.</p>
+içindeki örnek veri kümesi anahtar ve parmak izleri yerine <code>REPLACE_WITH_...</code> yer tutucuları
+içerir; gerçek <code>fingerprint-dataset.<wbr>mjs</code> çıktısıyla değiştirilene kadar eklenti onu reddeder.</p>
 <p><strong>Örnek</strong> — <code>crm-customers</code> kümesi (<code>PERSON</code> türü) &quot;Ahmet Kaya&quot; değerinin parmak izini
 içerir. <code>Ahmet Kaya siparişi için aradı</code> istemindeki ad, hiçbir kural tanımadığı hâlde
 bulunur. Varsayılan ayarlarla (<code>detectSignals:<wbr> true</code>, <code>signalAction:<wbr> &quot;warn&quot;</code>) kullanıcı,

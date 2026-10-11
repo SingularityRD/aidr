@@ -33,8 +33,10 @@ apart or use a key the extension does not accept.
      signed by Mozilla (listed on addons.mozilla.org, or signed as unlisted and
      self-hosted); replace the example `install_url`.
 2. **Replace the example values.** `policyId`, `literals`, the example
-   `exactData` set (its key is published in this repository, so it must never be
-   deployed), `telemetry.controlPlaneUrl` and `telemetry.apiKey`. Remove
+   `exactData` set (its `keyB64` and `fingerprints` are `REPLACE_WITH_...`
+   placeholders: build the real dataset with `fingerprint-dataset.mjs`, see
+   [Exact data sets](#exact-data-sets). The extension refuses a policy that still
+   carries the placeholder and reports it in its policy warnings), `telemetry.controlPlaneUrl` and `telemetry.apiKey`. Remove
    `telemetry` entirely if you do not want counts sent to your control plane.
 3. **Pilot first.** Roll out to a test group in `monitor` mode, check the
    popup statistics and control-plane counts, then switch to `auto` or
@@ -237,7 +239,14 @@ node packages/browser-guard/scripts/fingerprint-dataset.mjs \
   --key-file crm.key.b64 --out crm-customers.json
 ```
 
-Put the JSON object into the `exactData` array. Keep `crm.key.b64` (or let the
+Put the JSON object into the `exactData` array, replacing the example entry
+whose `keyB64` is `REPLACE_WITH_DATASET_KEY_FROM_FINGERPRINT_DATASET`. While any
+dataset still carries a `REPLACE_WITH_` placeholder, the extension ignores the
+whole managed `exactData` value and warns
+(`managed: "exactData" still holds the example placeholder key`). Earlier
+versions of these examples shipped a real 32-byte example key; it was retired as
+compromised (see `docs/production-readiness/secret-history-triage-2026-10-11.md`).
+Never reuse a key from an example or from this repository's history. Keep `crm.key.b64` (or let the
 tool generate a key on first run and save `keyB64` from the output) so later
 regenerations keep the same fingerprints. The dataset contains the HMAC key, so
 anyone with the dataset can test guessed values against it: deliver it only

@@ -39,7 +39,7 @@ async function deniedBurst(tenant) {
 
 test("full tenant quota cannot allocate unbounded subject rows", { timeout: 180_000 }, async () => {
   const started = await docker(["run", "--detach", "--rm", "--pull", "never", "--network", "none", "--name", container,
-    "-e", "POSTGRES_PASSWORD=quota-fixture-only", "supabase/postgres:17.6.1.136"]);
+    "-e", "POSTGRES_PASSWORD=quota-fixture-only", "supabase/postgres:17.11.0.004"]);
   assert.equal(started.code, 0, started.stderr);
   try {
     let ready = false;

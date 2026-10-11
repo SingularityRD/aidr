@@ -47,7 +47,7 @@ const prune = (limit = 100, apply = false) =>
 
 test("rate-limit pruning is bounded, global/tenant scoped, dry-run first, and service-only", { timeout: 120_000 }, async () => {
   const started = await docker(["run", "--detach", "--rm", "--pull", "never", "--network", "none", "--name", container,
-    "-e", "POSTGRES_PASSWORD=rate-prune-fixture-only", "supabase/postgres:17.6.1.136"]);
+    "-e", "POSTGRES_PASSWORD=rate-prune-fixture-only", "supabase/postgres:17.11.0.004"]);
   assert.equal(started.code, 0, started.stderr);
   try {
     let ready = false;

@@ -11,7 +11,8 @@ import * as fingerprint from "../../scripts/fingerprint-dataset.mjs";
 import { decodePng, ICON_SIZES, MASTER_ICON, renderIcons } from "../../scripts/icons.mjs";
 // @ts-expect-error -- plain ESM build script without type declarations
 import { crc32, createZip, readZip } from "../../scripts/zip.mjs";
-import { evaluatePolicy } from "../background/policy";
+import { EXACT_DATA_PLACEHOLDER_KEY, evaluatePolicy } from "../background/policy";
+import { createExactDataMatcher, ExactDataConfigError } from "../engine/exact-data";
 import { ENTITY_TYPES, type ExactDataSet } from "../types";
 
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -275,6 +276,8 @@ const SITE_IDS = [
 	"custom",
 	"other",
 ];
+const EXACT_DATA_PLACEHOLDER_WARNING =
+	'managed: "exactData" still holds the example placeholder key; ignored. Build each dataset with fingerprint-dataset.mjs';
 const CHROME_ID = "REPLACE_WITH_CHROME_EXTENSION_ID";
 const EDGE_ID = "REPLACE_WITH_EDGE_EXTENSION_ID";
 
@@ -307,9 +310,11 @@ function assertValidPolicy(policy: Record<string, Json>): void {
 	const telemetry = policy.telemetry as { controlPlaneUrl: string; apiKey: string };
 	expect(Object.keys(telemetry).sort()).toEqual(["apiKey", "controlPlaneUrl"]);
 	expect(telemetry.controlPlaneUrl).toMatch(/^https:\/\//);
-	// The worker's own validator accepts every key (nothing silently ignored).
+	// The worker's own validator accepts every key (nothing silently ignored) except the
+	// example exact-data set, which is a placeholder the worker refuses by name.
 	const evaluation = evaluatePolicy(policy, undefined);
-	expect(evaluation.warnings).toEqual([]);
+	expect(evaluation.warnings).toEqual([EXACT_DATA_PLACEHOLDER_WARNING]);
+	expect(evaluation.policy.exactData).toEqual([]);
 	expect(evaluation.policy.customSites.map((site) => site.hosts)).toEqual([["gpt.acme.example"]]);
 	expect(evaluation.policy.shadowAi.mode).toBe("block-unsanctioned");
 }
@@ -399,19 +404,69 @@ describe("deployment examples", () => {
 		assertValidPolicy(canonical);
 	});
 
-	it("the example exact-data set is reproducible with fingerprint-dataset", async () => {
+	it("the example exact-data set is a placeholder, never a usable key", () => {
 		const [dataset] = canonical.exactData as unknown as ExactDataSet[];
-		const key = Buffer.from(dataset.keyB64, "base64");
-		const { dataset: rebuilt } = fingerprint.buildDataset({
+		expect(dataset.keyB64).toBe(EXACT_DATA_PLACEHOLDER_KEY);
+		expect(dataset.fingerprints).toEqual(["REPLACE_WITH_FINGERPRINTS_FROM_FINGERPRINT_DATASET"]);
+		// Not base64: it cannot be decoded into HMAC key bytes by the tool or the extension.
+		const csv = join(tempDir(), "rows.csv");
+		writeFileSync(csv, "Jane Q. Doe\n");
+		const refused = spawnSync(
+			process.execPath,
+			[
+				FINGERPRINT_SCRIPT,
+				"--in",
+				csv,
+				"--dataset-id",
+				"x",
+				"--type",
+				"PERSON",
+				"--key-b64",
+				dataset.keyB64,
+			],
+			{ encoding: "utf8" },
+		);
+		expect(refused.status).not.toBe(0);
+		expect(refused.stderr).toContain("KEY_NOT_BASE64");
+		expect(() => createExactDataMatcher([dataset])).toThrow(ExactDataConfigError);
+		// The managed schema rejects it too, so a browser flags the copied example.
+		const schema = JSON.parse(
+			readFileSync(join(PACKAGE_ROOT, "static", "managed_schema.json"), "utf8"),
+		);
+		const keyPattern = new RegExp(schema.properties.exactData.items.properties.keyB64.pattern);
+		expect(keyPattern.test(dataset.keyB64)).toBe(false);
+		// The retired example key is gone from every example file.
+		for (const file of [
+			"chrome-managed-policy.example.json",
+			"firefox-policies.example.json",
+			"edge-intune.example.json",
+			"macos-jamf.example.mobileconfig",
+			"windows-registry.example.reg",
+		]) {
+			const text = readDeploy(file);
+			expect(text).toContain(EXACT_DATA_PLACEHOLDER_KEY);
+			expect(text).not.toMatch(
+				/"keyB64"\s*:\s*"[A-Za-z0-9+/]{16,}={0,2}"|keyB64\\":\\"[A-Za-z0-9+/]{16,}/,
+			);
+		}
+	});
+
+	it("a dataset built with fingerprint-dataset replaces the placeholder and is accepted", async () => {
+		const [example] = canonical.exactData as unknown as ExactDataSet[];
+		const key = Buffer.alloc(32, 7);
+		const { dataset } = fingerprint.buildDataset({
 			rows: [["Ayşe Yılmaz"], ["İsmail Işık"], ["Jane Q. Doe"]],
-			datasetId: dataset.datasetId,
-			type: dataset.type,
+			datasetId: example.datasetId,
+			type: example.type,
 			key,
 		});
-		expect(rebuilt).toEqual(dataset);
+		expect(dataset.fingerprints).toHaveLength(3);
 		expect(await webCryptoFingerprint(dataset.keyB64, ["jane", "q", "doe"])).toBe(
 			fingerprint.fingerprintTokens(key, ["jane", "q", "doe"]),
 		);
+		const evaluation = evaluatePolicy({ ...canonical, exactData: [dataset] }, undefined);
+		expect(evaluation.warnings).toEqual([]);
+		expect(evaluation.policy.exactData).toEqual([dataset]);
 	});
 
 	it("Firefox policies.json carries the same policy for the gecko id", () => {

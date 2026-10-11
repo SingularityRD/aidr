@@ -425,3 +425,23 @@ test("on-prem reference ingress serves dashboard and API vhosts with HSTS from t
 	assert.ok(locations.length >= 4);
 	for (const block of locations) assert.doesNotMatch(block, /add_header/);
 });
+
+test("on-prem reference ingress never proxies Supabase Studio from the API host", () => {
+	const ingress = resolve(import.meta.dirname, "../deploy/ingress");
+	for (const file of ["nginx.onprem.reference.conf", "nginx.device-start.reference.conf"]) {
+		const directives = readFileSync(join(ingress, file), "utf8").replace(/#.*$/gm, "");
+		const gatewayLocations = [...directives.matchAll(/location ([^{]+)\{[^}]*proxy_pass http:\/\/127\.0\.0\.1:8000;[^}]*\}/g)].map((match) => match[1].trim());
+		assert.equal(gatewayLocations.length, 1, `${file}: exactly one gateway location`);
+		const [, pattern] = /^~ (\S+)$/.exec(gatewayLocations[0]) ?? [];
+		assert.ok(pattern, `${file}: the gateway location must be an explicit API allowlist, not a catch-all`);
+		const allowed = new RegExp(pattern);
+		for (const path of ["/auth/v1/token", "/rest/v1/tenants", "/storage/v1/object/x", "/functions/v1/packs-manifest", "/realtime/v1/websocket", "/graphql/v1", "/pg/query", "/.well-known/oauth-authorization-server"]) {
+			assert.match(path, allowed, `${file}: ${path} must reach the gateway`);
+		}
+		for (const path of ["/", "/project/default", "/api/platform/profile", "/api/mcp", "/mcp", "/_next/static/x.js", "/authx/v1/", "/rest/v10/"]) {
+			assert.doesNotMatch(path, allowed, `${file}: ${path} must not reach the gateway (Studio)`);
+		}
+		assert.match(directives, /location \/ \{\s*return 404;\s*\}/, `${file}: everything else is a 404`);
+		assert.doesNotMatch(directives, /127\.0\.0\.1:8001/, `${file}: the Studio admin listener is never proxied`);
+	}
+});

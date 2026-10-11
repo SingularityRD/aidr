@@ -114,7 +114,10 @@ node scripts/deployment-migrate.mjs .aidr-deploy
 node scripts/deployment-smoke.mjs .aidr-deploy
 ```
 
-Dashboard: `http://localhost:8080`; API: `http://localhost:8000`. `--development`
+Dashboard: `http://localhost:8080`; API: `http://localhost:8000`; Supabase Studio
+(operator-only, loopback, basic auth): `http://localhost:8001`. Studio is never
+routed from the API port or the public API host; see
+"Supabase Studio (operator-only)" in `deploy/onprem/README.md`. `--development`
 is restricted to loopback dashboard and Supabase URLs; public HTTPS endpoints
 cannot use this mode to bypass production signing and telemetry requirements.
 The smoke runner

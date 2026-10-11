@@ -228,3 +228,75 @@ both measured values against *internally approved* first-customer targets,
 along with host identities, candidate digest, alert receipt, key-custodian
 sign-off and any failed steps. A passing same-host test or an unmeasured drill
 must not be called disaster-recovery acceptance.
+
+## PostgreSQL image upgrade (supabase/postgres 17.6.1.136 → 17.11.0.004)
+
+New kits from `deployment-prepare.mjs` pin
+`supabase/postgres:17.11.0.004@sha256:06ddc7962e11ab0f4f0334fd05671e97c30ea202f6e6a7113800bd3d6e416108`.
+An existing installation on `17.6.1.136` keeps its image until an operator
+changes it. Both images are PostgreSQL 17 (catalog version `202406281`, same
+`postgres` uid 100:101), so the data directory is used as it is. `pg_upgrade`
+and a dump/restore are not needed. The change is still a stateful platform
+change and is not an application upgrade, so do it in a maintenance window, in
+this order. The local engineering drill behind these steps is recorded in
+`docs/production-readiness/postgres-upgrade-restore-drill-2026-10-11.md`.
+
+1. **Back up first.** Take a cold encrypted backup with `deployment-backup.mjs
+   backup --maintenance`, publish it with `deployment-backup-offsite.mjs`, and
+   check it with `verify`. **The backup does not contain the `db-config` volume**,
+   and that volume holds the pgsodium/Vault root key
+   (`/etc/postgresql-custom/pgsodium_root.key`). AIDR's own schema does not use
+   Supabase Vault. A Vault secret or pgsodium-encrypted value that an operator
+   created, for example through Studio, cannot be decrypted after a restore
+   unless this key is restored too. Copy the key into recovery-key custody
+   (`umask 077`). Keep it outside the deployment and outside the backup target:
+
+   ```sh
+   docker run --rm --network none --entrypoint cat \
+     --mount type=volume,src=<project>_db-config,dst=/c,readonly \
+     supabase/postgres:17.6.1.136 /c/pgsodium_root.key > /protected/aidr-pgsodium-root.key
+   ```
+
+2. **Run a restore drill on the candidate before production.** On a separate
+   recovery host, or at least in a new project, run `deployment-backup.mjs recover`
+   with a reviewed runtime. In the recovered `compose.yml`, change only the `db`
+   image to the candidate. Start `db`, run the post-change SQL from step 4, start
+   `auth` and `storage`, and run `deployment-migrate.mjs` on the recovered
+   directory. It must report the full migration set as already applied. Then
+   compare the recovered data with a same-image recovery of the same backup by
+   running `scripts/verify-deployment-recovery.mjs --source <17.6 recovery>
+   --recovered <17.11 recovery>`. Record the timeline (RTO) and the backup point
+   (RPO). Remove the recovered projects with `docker compose ... down --volumes`.
+
+3. **Change the image in place.** Stop the project with `docker compose
+   --project-directory /srv/aidr -f /srv/aidr/compose.yml stop --timeout 60`. In
+   `compose.yml`, set the `db` image to the pinned candidate reference above.
+   Change no other line. Then run `docker compose ... up -d --wait db`.
+
+4. **Apply the in-major post-change steps.** These follow the pattern of
+   upstream `docker/utils/upgrade-pg17.sh` step 9, run as `supabase_admin`:
+   - the one image migration added after 17.6.1.136:
+     `psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -f /docker-entrypoint-initdb.d/migrations/20260730000000_revoke_trigger_on_cron_tables_from_postgres.sql`
+     (it revokes `TRIGGER` on `cron.job_run_details`, if `pg_cron` is installed)
+   - `ALTER EXTENSION … UPDATE` for every installed extension. In the drill
+     only `pg_net` moved (0.20.3 → 0.20.4).
+   - `ALTER DATABASE <db> REFRESH COLLATION VERSION` for `postgres`, `template1`
+     and `_supabase`. In the drill there was no collation mismatch.
+
+   Then run `docker compose ... up -d --wait` and `node scripts/deployment-migrate.mjs
+   /srv/aidr`. The migrate step must skip every migration and apply none. Finish
+   with the readiness and smoke checks before you end the maintenance window.
+
+5. **Rollback.** Until step 4 runs, you can roll back by setting the `db` image
+   back to `17.6.1.136` and starting the project again. After `ALTER EXTENSION …
+   UPDATE`, an image swap back still starts, but it leaves extension catalog
+   versions ahead of the older libraries. The drill saw `pg_net` 0.20.4 registered
+   against the 0.20.3 library. That state is unsupported, so do not use the image
+   swap after step 4. Instead, recover the step 1 backup into a new project with
+   `deployment-backup.mjs recover` on `17.6.1.136`. Stop its `db` once after the
+   first start, write the saved `pgsodium_root.key` into that project's
+   `db-config` volume (owner `100:101`, mode `0640`), start it again, and cut
+   over. The old deployment's volumes are not modified by recovery.
+
+The drill was a same-host engineering rehearsal. It is not a separate failure
+domain, an offsite restore or customer RPO/RTO acceptance (see AIDR-044).

@@ -175,7 +175,7 @@ jobs:
           node --test scripts/identity-recovery-cross-tenant-postgres.test.mjs
           node --test scripts/billing-resubscription-postgres.test.mjs
           node --test scripts/device-poll-membership-revocation-postgres.test.mjs
-          docker pull supabase/postgres:17.6.1.136
+          docker pull supabase/postgres:17.11.0.004
           node --test scripts/oidc-administration-postgres.test.mjs
           node --test scripts/workspace-retention-oidc-save-postgres.test.mjs
           node --test scripts/browser-guard-settings-postgres.test.mjs

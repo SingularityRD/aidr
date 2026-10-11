@@ -29,7 +29,7 @@ function denied(statement, reason) {
 }
 
 test("tenant pack bytes cannot outlive a completed offboarding or bypass legal hold", { timeout: 120_000 }, async () => {
-	const started = docker(["run", "--detach", "--rm", "--pull", "never", "--network", "none", "--name", container, "-e", "POSTGRES_PASSWORD=fixture-only", "supabase/postgres:17.6.1.136"]);
+	const started = docker(["run", "--detach", "--rm", "--pull", "never", "--network", "none", "--name", container, "-e", "POSTGRES_PASSWORD=fixture-only", "supabase/postgres:17.11.0.004"]);
 	assert.equal(started.status, 0, started.stderr);
 	try {
 		let ready = false;

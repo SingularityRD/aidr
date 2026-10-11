@@ -1,0 +1,8 @@
+2026-10-11T03:08:20.830Z T0 restore start (incident declared)
+2026-10-11T03:08:23.280Z backup verified (HMAC, ciphertext sha256, GCM tags, tar boundaries)
+2026-10-11T03:08:36.667Z recovered into new project aidr-recovery-92fe237b95b72a8a (new aidr-db/aidr-storage volumes; services stopped)
+2026-10-11T03:08:43.798Z db healthy on supabase/postgres:17.11.0.004
+2026-10-11T03:08:45.293Z post-image-change steps applied
+2026-10-11T03:08:57.589Z auth, rest, imgproxy, storage healthy
+2026-10-11T03:08:58.599Z deployment-migrate: 181 canonical migrations verified (hash match, none re-applied)
+2026-10-11T03:09:18.042Z T1 verification queries + storage inventory + storage API reads complete

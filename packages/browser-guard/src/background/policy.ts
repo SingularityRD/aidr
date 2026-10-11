@@ -165,8 +165,24 @@ const literals: Validator = (raw) => {
 	return valid(out);
 };
 
+/**
+ * The value the deployment examples (`deploy/browser-guard/*.example.*`) carry in
+ * `exactData[].keyB64`. It is deliberately not base64, so it can never act as an HMAC
+ * key; a managed policy that still holds it (or any other `REPLACE_WITH_` value) has its
+ * `exactData` refused with a warning naming the cause. The examples once shipped a real
+ * 32-byte key; it was retired as compromised and must never be deployed.
+ */
+export const EXACT_DATA_PLACEHOLDER_KEY = "REPLACE_WITH_DATASET_KEY_FROM_FINGERPRINT_DATASET";
+const PLACEHOLDER_PATTERN = /^\s*REPLACE_WITH_/i;
+const isPlaceholderDataset = (item: unknown): boolean =>
+	isPlainObject(item) &&
+	(PLACEHOLDER_PATTERN.test(String(item.keyB64)) ||
+		(Array.isArray(item.fingerprints) &&
+			item.fingerprints.some((fp) => PLACEHOLDER_PATTERN.test(String(fp)))));
+
 const isDatasetKey = (raw: unknown): raw is string =>
 	typeof raw === "string" &&
+	!PLACEHOLDER_PATTERN.test(raw) &&
 	raw.length >= 16 &&
 	raw.length <= 1024 &&
 	raw.length % 4 === 0 &&
@@ -654,6 +670,12 @@ function mergeManaged(
 			: undefined;
 		if (!validator) {
 			warnings.push(`managed: unknown key "${key}" ignored`);
+			continue;
+		}
+		if (key === "exactData" && Array.isArray(value) && value.some(isPlaceholderDataset)) {
+			warnings.push(
+				'managed: "exactData" still holds the example placeholder key; ignored. Build each dataset with fingerprint-dataset.mjs',
+			);
 			continue;
 		}
 		const result = validator(value);

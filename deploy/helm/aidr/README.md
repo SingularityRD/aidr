@@ -12,7 +12,7 @@ services AIDR uses:
 | `rest` | `postgrest/postgrest:v14.17` | |
 | `storage` | `supabase/storage-api:v1.80.2` | PVC (`file`) or S3-compatible backend |
 | `functions` | `aidr/edge-functions` (built here) | `supabase/edge-runtime:v1.77.4` (digest-pinned) + AIDR functions |
-| `db` | `supabase/postgres:17.6.1.136` | Optional single instance; use `externalDatabase` in production |
+| `db` | `supabase/postgres:17.11.0.004` | Optional single instance; use `externalDatabase` in production |
 | `migrations` | `aidr/migrations` (built here) | Helm hook Job |
 | `backup` | `aidr/migrations` | Optional `pg_dump` CronJob |
 | `posture-scanner-*` | `aidr/posture-scanner-server`, `aidr/posture-scanner-agent`, `aidr/posture-scanner-bridge` (built here) | Optional AI Security Posture scanner (`postureScanner.enabled`) |

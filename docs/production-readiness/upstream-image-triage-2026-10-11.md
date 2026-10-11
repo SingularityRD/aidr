@@ -215,3 +215,11 @@ docker run --rm --network <project>_default -e SERVICE -e ANON -e SECRET -e RUN 
 ```
 
 Rerunning with a newer DB will produce different counts. Compare only within a single run.
+
+## Addendum 2026-10-11 — Studio removed from the public API host
+
+Decision 1 above was implemented as recommended. Studio is now **operator-only**, and its vendor findings remain open.
+
+- `scripts/deployment-prepare.mjs` rewrites the copied upstream Envoy LDS template. The listener the ingress proxies (`supabase`, port 8000) keeps every API route. Its `/api/mcp`, `/mcp` and `/` → `studio` routes are replaced by a catch-all `direct_response: 404` with basic auth disabled. The Studio routes move unchanged to a second listener `studio_admin` on port 8001, which keeps the basic-auth prompt and the MCP RBAC deny. Compose publishes it on `127.0.0.1:8001` only (with `--development`, the API port plus one, on the matching loopback address). Preparation refuses to run if the reviewed upstream listener layout changes. The reviewed upstream checkout is not edited.
+- `deploy/ingress/nginx.onprem.reference.conf` and `nginx.device-start.reference.conf` proxy only the API prefixes (`/auth|rest|storage|functions|realtime|graphql/v1`, `/pg/`, `/.well-known/oauth-authorization-server`) and return 404 for everything else. `deployment-doctor` fails when a prepared installation routes Studio from port 8000 or publishes the admin listener beyond loopback. Operators reach Studio over an SSH tunnel, as described in `deploy/onprem/README.md` under "Supabase Studio (operator-only)". The Helm chart still does not deploy Studio, and a chart test now asserts that.
+- **Verified:** the prepared LDS was run in `envoyproxy/envoy:v1.39.2` (the pinned digest). On `:8000`, `/`, `/project/default`, `/mcp`, `/api/mcp` and `/api/platform/profile` returned 404 with no auth challenge, and `/rest/v1/` and `/auth/v1/health` without a key returned 401, as before. On `:8001`, `/` returned a basic-auth 401, `/mcp` returned 403, and an authenticated `/` reached the (absent) Studio upstream with a 503. Both nginx references pass `nginx -t` (`nginx:1.27.5-alpine`). Not verified: a full stack with a live Studio session through the tunnel.

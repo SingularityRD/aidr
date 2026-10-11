@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
 	DEFAULT_POLICY,
+	EXACT_DATA_PLACEHOLDER_KEY,
 	evaluatePolicy,
 	GUARD_MODES,
 	MANAGED_POLICY_KEYS,
@@ -210,6 +211,42 @@ describe("mergePolicy", () => {
 		expect(mergePolicy({ exactData: [ds("dup", 1), ds("dup", 1)] }, undefined).exactData).toEqual(
 			[],
 		);
+	});
+
+	it("refuses the example placeholder exact-data key by name, never as a usable key", () => {
+		const real = { datasetId: "real", keyB64: KEY, fingerprints: [HEX], type: "PERSON" };
+		const placeholder = {
+			datasetId: "crm-customers-example",
+			keyB64: EXACT_DATA_PLACEHOLDER_KEY,
+			fingerprints: ["REPLACE_WITH_FINGERPRINTS_FROM_FINGERPRINT_DATASET"],
+			type: "PERSON",
+		};
+		const warning =
+			'managed: "exactData" still holds the example placeholder key; ignored. Build each dataset with fingerprint-dataset.mjs';
+		expect(EXACT_DATA_PLACEHOLDER_KEY).toMatch(/^REPLACE_WITH_/);
+		// Copied unchanged: the whole managed value is ignored, other managed keys still apply.
+		const copied = evaluatePolicy({ mode: "block", exactData: [placeholder] }, undefined);
+		expect(copied.warnings).toEqual([warning]);
+		expect(copied.policy.exactData).toEqual([]);
+		expect(copied.policy.mode).toBe("block");
+		expect(copied.policy.managedKeys).toContain("mode");
+		expect(copied.policy.managedKeys).not.toContain("exactData");
+		// A real dataset next to a leftover placeholder does not switch the placeholder on.
+		const mixed = evaluatePolicy({ exactData: [real, placeholder] }, undefined);
+		expect(mixed.warnings).toEqual([warning]);
+		expect(mixed.policy.exactData).toEqual([]);
+		// A real key with placeholder fingerprints, or any REPLACE_WITH_ key variant, is refused too.
+		for (const bad of [
+			{ ...real, fingerprints: ["REPLACE_WITH_FINGERPRINTS_FROM_FINGERPRINT_DATASET"] },
+			{ ...real, keyB64: "replace_with_my_key" },
+			{ ...real, keyB64: ` ${EXACT_DATA_PLACEHOLDER_KEY}` },
+		]) {
+			expect(evaluatePolicy({ exactData: [bad] }, undefined).warnings).toEqual([warning]);
+		}
+		// Once replaced, the dataset is accepted without warnings.
+		const replaced = evaluatePolicy({ exactData: [real] }, undefined);
+		expect(replaced.warnings).toEqual([]);
+		expect(replaced.policy.exactData).toEqual([real]);
 	});
 
 	it("accepts https telemetry and http only for localhost/127.0.0.1", () => {

@@ -47,7 +47,7 @@ export const CATALOG = [
 	v(".env", "JWT_SECRET", "always", "generated-secret", "", "HS256 secret that signs the anon and service-role JWTs."),
 	v(".env", "ANON_KEY", "always", "generated-secret", "", "Public anon JWT (self-hosted); cloud mode writes a REPLACE_ placeholder for the project key."),
 	v(".env", "SERVICE_ROLE_KEY", "always", "generated-secret", "", "Service-role JWT (self-hosted); cloud mode writes a REPLACE_ placeholder. Never expose to browsers."),
-	v(".env", "DASHBOARD_PASSWORD", "always", "generated-secret", "", "Upstream Studio basic-auth password."),
+	v(".env", "DASHBOARD_PASSWORD", "always", "generated-secret", "", "Upstream Studio basic-auth password (Studio is served only on the loopback admin listener 127.0.0.1:8001)."),
 	v(".env", "SECRET_KEY_BASE", "always", "generated-secret", "", "Realtime and Supavisor cookie/session secret."),
 	v(".env", "VAULT_ENC_KEY", "always", "generated-secret", "", "Supabase Vault encryption key."),
 	v(".env", "REALTIME_DB_ENC_KEY", "always", "generated-secret", "", "Realtime database encryption key."),

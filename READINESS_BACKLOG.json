@@ -1212,7 +1212,8 @@
         "docs/production-readiness/agent-security-market-and-release-plan.md",
         "scripts/deployment-backup.mjs",
         "scripts/verify-deployment-recovery.mjs",
-        "docs/production-readiness/evidence/2026-09-11-customer-recovery.json"
+        "docs/production-readiness/evidence/2026-09-11-customer-recovery.json",
+        "docs/production-readiness/postgres-upgrade-restore-drill-2026-10-11.md"
       ],
       "localEvidence": [
         {
@@ -1226,6 +1227,12 @@
           "evidencePath": "scripts/deployment-restore-drill.test.mjs",
           "command": "node --test scripts/deployment-restore-drill.test.mjs scripts/deployment-backup-offsite.test.mjs",
           "verifiedBy": "this session, exit 0"
+        },
+        {
+          "claim": "2026-10-11 local engineering drill, PostgreSQL image upgrade (same host; not offsite, not a separate failure domain, not customer RPO/RTO acceptance). A clean clone of 315ab50f was prepared as a self-hosted development kit on supabase/postgres:17.6.1.136 (index sha256:f371b5f3...7c00). All 181 canonical migrations were applied. Synthetic seed: 40 users, 80 tenants, 119 tenant members, 40 team policies, 100,040 audit rows, 440 admin audit rows, 60 Storage API objects (7.46 MB), one Vault secret; 157 tables, 107,139 rows, about 104 MiB of databases. The shipped deployment-backup.mjs took a cold encrypted backup (54.8 MB ciphertext) and recovered it into new projects and volumes. Restored on the candidate supabase/postgres:17.11.0.004 (index sha256:06ddc796...6108; same catalog version 202406281) with the in-major post-change SQL (one image migration, ALTER EXTENSION UPDATE: pg_net 0.20.3 to 0.20.4). Results: all 157 table counts and content hashes identical to the source (the only difference is the final pre-backup write, which matched exactly); deployment-migrate re-applied none of the 181 migrations; policy, function and grant hashes, RLS and tenant-scoped JWT reads identical; storage inventory and 60/60 API reads identical; scripts/verify-deployment-recovery.mjs 18/18 between the 17.6 and 17.11 restores; 18 existing-database PostgreSQL suites passed on both images; the blocking postgres-gates suites passed with the 17.11 pin (verify:offboarding 64/65; the only failure is an IPv6-only listener test, EAFNOSUPPORT on a host without IPv6; verify:retention 53/53 and tenant-rate-limit 1/1 were run separately). Measured: RTO from incident to verified healthy 50.7-57.2 s on 17.11 (51.6-70.4 s for the same-image control); RPO data-loss window 51.1 s (10 post-backup rows); in-place image swap 25.6 s. Finding: the cold backup omits the db-config volume, which holds pgsodium_root.key, so restored Vault secrets cannot be decrypted on either image (AIDR's own schema does not use Vault). An interim key-custody step is documented. After ALTER EXTENSION UPDATE, rollback requires restoring the pre-upgrade backup, not swapping the image back. The pin moved to 17.11.0.004 in the Compose kit, Helm, CI and the tests.",
+          "evidencePath": "docs/production-readiness/postgres-upgrade-restore-drill-2026-10-11.md",
+          "command": "node <kit>/backup/deployment-backup.mjs backup|verify|recover ...; restore-run.sh 17.11.0.004|17.6.1.136; node scripts/verify-deployment-recovery.mjs --source <17.6 restore> --recovered <17.11 restore>; node scripts/ci-local.mjs --allow-dirty --only postgres-gates",
+          "verifiedBy": "this session, 2026-10-11 (evidence: docs/production-readiness/evidence/postgres-upgrade-restore-drill-2026-10-11/summary.json)"
         }
       ],
       "remainingExternal": "BLOCKED_EXTERNAL: a real off-host/offsite storage target, independent recovery-key custody, activated and monitored schedules that survive host loss, a restore performed on a second failure-domain machine, and customer-approved RPO/RTO targets plus acceptance. Repository templates and same-host evidence explicitly do not satisfy these conditions.",
@@ -1829,6 +1836,12 @@
           "evidencePath": "docs/production-readiness/secret-history-triage-2026-10-11.md",
           "command": "node scripts/scan-history-secrets.mjs",
           "verifiedBy": "2026-10-11 official gitleaks 8.30.1 linux x64 (archive sha256 checked against ci.yml): history exit 1, 83 findings / 36 commits / 42 paths with the current config; redacted report SHA-256 71591898f6825c3b9ae3dbff2096a6107b15601c060aa837ebc86310d6014ce5; machine-readable docs/production-readiness/evidence/secret-history-scan-2026-10-11.json."
+        },
+        {
+          "claim": "2026-10-11 owner direction: the Browser Guard example dataset HMAC key (fingerprint 6ebab6aa) is treated as compromised and retired from every deploy/browser-guard example (replaced by a non-base64 REPLACE_WITH_ placeholder, derived fingerprints removed; history not rewritten). The value-exact .gitleaks.toml allowlist for it is removed and the current-tree scan passes without it. The extension ignores managed exactData that still carries a REPLACE_WITH_ placeholder and warns by name.",
+          "evidencePath": "docs/production-readiness/secret-history-triage-2026-10-11.md",
+          "command": "node scripts/ci-local.mjs --allow-dirty --only secret-scan,repo-hygiene --fetch-tools; AIDR_TEST_NO_BUILD=1 pnpm exec vitest run --config vitest.browser-guard.config.ts",
+          "verifiedBy": "2026-10-11 this session: secret-scan (pinned gitleaks) and repo-hygiene PASS; Browser Guard 40 files / 1236 tests passed. Not verified: Security-owner confirmation that no real dataset used the retired key; no digest deny-list of the retired key in the extension."
         }
       ],
       "remainingExternal": "A named Security owner must review the pinned 132-finding refresh and both dataset-key owner-confirm rows, determine whether any value was ever live, rotate any live credential and bind the final full-clone scan to the exact clean candidate. The older 296 and unpinned 184 snapshots remain historical; engineering fixture classification is not Security sign-off. No published history rewrite or allowlist bypass was performed."
@@ -2026,7 +2039,14 @@
         ".tmp-test/upstream-remediation-2026-10-06/upstream-remediation-matrix.json: dated primary-source vendor feasibility review; original raw findings and exact source/image identity receipts preserved.",
         "2026-10-11 docs/production-readiness/upstream-image-triage-2026-10-11.md (+ evidence/upstream-image-triage-2026-10-11/): Trivy 0.73.0 (release checksum verified), DB 2026-10-11T01:13:45Z, no ignore/VEX, 20 digest-verified scans. Compose set unchanged at 33 CRITICAL/727 HIGH: no newer non-RC tag of studio/auth/meta/functions/imgproxy exists; storage v1.80.2/v1.81.0, realtime v2.143.3, envoy v1.39.3 and postgrest v14.18 scan identical to their pins. Storage pin moved v1.80.0->v1.80.2 for vendor signed-TUS/Iceberg authorization hardening (no migration or dependency change); native storage probe 19/19 on upgrade-in-place and fresh install against real postgres 17.6.1.136 + imgproxy. Helm chart aligned to the Compose pins (envoy v1.39.2, gotrue v2.197.0, storage v1.80.2, edge-runtime v1.77.4 digest base): chart upstream set 5/213 -> 5/172 with no new ids; render-verified only. Residuals classified (npm/pnpm-bundled not loaded by service Cmd, linux-libc-dev headers, MiniZip absent from libz.so.1, Go stdlib linked = runtime); PostgREST has zero recognised packages; Studio found reachable on the public API host behind Envoy basic auth only. PostgreSQL 17.6 not changed (17.11.0.004 reference 0/23). Original findings preserved; no gitlink edit or repack. Status stays BLOCKED_EXTERNAL pending vendor fixes, a named Security decision and the remaining native acceptance."
       ],
-      "localEvidence": [],
+      "localEvidence": [
+        {
+          "claim": "Supabase Studio is no longer routed from the public API host: deployment-prepare moves the Envoy Studio routes to a separate studio_admin listener published on loopback only (127.0.0.1:8001, basic auth and MCP deny kept) and ends the public listener in a 404; the reference nginx configs proxy only API prefixes; deployment-doctor fails on a public Studio route. Studio's vendor CVEs remain open but are no longer reachable from the API host.",
+          "evidencePath": "docs/production-readiness/upstream-image-triage-2026-10-11.md",
+          "command": "node scripts/ci-local.mjs --allow-dirty --keep-going --only onprem-contracts,onprem-compose,onprem-extra,helm --fetch-tools",
+          "verifiedBy": "2026-10-11 this session: onprem-contracts 155/155, onprem-compose PASS, helm 39 pass / 1 skip (kubeconform absent); onprem-extra 82/83 with the one failure the known host IPv6 EAFNOSUPPORT case. Prepared LDS exercised in envoyproxy/envoy:v1.39.2 (public :8000 404 for Studio paths, API 401 unchanged; :8001 basic-auth 401, /mcp 403). No live Studio session through a tunnel."
+        }
+      ],
       "remainingExternal": "Supported patched compatible vendor artifacts and affected native/customer acceptance are required for the remaining stack. Actual PostgreSQL17.6 is below advisory fixed floors; Trivy recognition gaps and embedded Node OpenSSL3.5.8 remain explicit. Seven actual helper API probes prove DTLS unavailable through the tested Node API, while compiled DTLS code is still present. A public API reachability result is not a vendor patch or full native closure.",
       "owner": "infrastructure + Security + vendor support",
       "class": "external-dependency",

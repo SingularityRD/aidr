@@ -51,11 +51,9 @@
           "exactData": [
             {
               "datasetId": "crm-customers-example",
-              "keyB64": "o6J5dv/ZMVjrraODjOrMuCsIQzqswQczrGPSl/aB6bU=",
+              "keyB64": "REPLACE_WITH_DATASET_KEY_FROM_FINGERPRINT_DATASET",
               "fingerprints": [
-                "7284cb51429e3ff4e4d9b0cc1cee1276631d01aacc98cd83b3f39847a747fa36",
-                "dace37df0e61d972ce461b5887cc8ef241df0749dd737adc7de1b118305d89b2",
-                "fd5d74d29c57fd1c18a6d23aa82f83ea8211081ed570ae9ac60b90f7e4b71180"
+                "REPLACE_WITH_FINGERPRINTS_FROM_FINGERPRINT_DATASET"
               ],
               "type": "PERSON"
             }

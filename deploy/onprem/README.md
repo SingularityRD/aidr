@@ -76,6 +76,29 @@ Preparation writes, into a private `0700` directory:
 - `deployment.json`: the prepared manifest, including `resource_profile`,
   `dashboard_image` and the `posture_scanner` block.
 
+### Supabase Studio (operator-only)
+
+Supabase Studio is a database administration tool, not part of the API, so it is
+not reachable from the public API host. Preparation moves the Studio routes off
+the gateway listener that the ingress proxies (`127.0.0.1:8000`, which now ends
+in a `404`) onto a separate gateway listener published on loopback only:
+`127.0.0.1:8001` (with `--development`, the API port plus one). Studio keeps its
+HTTP basic-auth prompt there (`DASHBOARD_USERNAME` / `DASHBOARD_PASSWORD` in
+`.env`) and its MCP endpoints stay denied. The reference ingress configs proxy
+only the API prefixes and never port `8001`; do not add an ingress or firewall
+rule for it.
+
+Reach Studio from an administrator workstation through an SSH tunnel to the
+host, then open `http://127.0.0.1:8001` locally:
+
+```sh
+ssh -N -L 8001:127.0.0.1:8001 admin@aidr-host.customer.example
+```
+
+Close the tunnel when finished. Studio holds the database superuser
+credentials, so treat a tunnel to it like database console access. The Helm
+chart does not deploy Studio at all.
+
 ### Optional AI Security Posture scanner
 
 Add these options to the preparation command:

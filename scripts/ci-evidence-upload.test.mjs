@@ -146,7 +146,7 @@ test("CI and RC block on full-migration OIDC administration and offboarding regr
 		["release-rc.yml", "Blocking offboarding and retention PostgreSQL gates"],
 	]) {
 		const gate = step(readWorkflow(file), name);
-		const image = gate.indexOf("docker pull supabase/postgres:17.6.1.136");
+		const image = gate.indexOf("docker pull supabase/postgres:17.11.0.004");
 		const administration = gate.indexOf("node --test scripts/oidc-administration-postgres.test.mjs");
 		const offboarding = gate.indexOf("pnpm verify:offboarding");
 		assert.ok(image >= 0 && image < administration && administration < offboarding, `${file} must provision and require both OIDC suites`);

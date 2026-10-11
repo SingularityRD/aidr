@@ -36,7 +36,7 @@ Compose interpolation for the whole stack (Supabase, dashboard and, with --with-
 | `JWT_SECRET` | always | generated secret | *(secret)* | HS256 secret that signs the anon and service-role JWTs. |
 | `ANON_KEY` | always | generated secret | *(secret)* | Public anon JWT (self-hosted); cloud mode writes a REPLACE_ placeholder for the project key. |
 | `SERVICE_ROLE_KEY` | always | generated secret | *(secret)* | Service-role JWT (self-hosted); cloud mode writes a REPLACE_ placeholder. Never expose to browsers. |
-| `DASHBOARD_PASSWORD` | always | generated secret | *(secret)* | Upstream Studio basic-auth password. |
+| `DASHBOARD_PASSWORD` | always | generated secret | *(secret)* | Upstream Studio basic-auth password (Studio is served only on the loopback admin listener 127.0.0.1:8001). |
 | `SECRET_KEY_BASE` | always | generated secret | *(secret)* | Realtime and Supavisor cookie/session secret. |
 | `VAULT_ENC_KEY` | always | generated secret | *(secret)* | Supabase Vault encryption key. |
 | `REALTIME_DB_ENC_KEY` | always | generated secret | *(secret)* | Realtime database encryption key. |

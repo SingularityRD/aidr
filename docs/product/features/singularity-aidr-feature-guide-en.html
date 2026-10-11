@@ -2761,8 +2761,9 @@ the limit is rejected.</p>
 values are never written or logged. Fingerprints are keyed hashes, not encryption: anyone
 holding the dataset (which includes the key) can test guesses against it. Treat the
 dataset as confidential, distribute it only through managed policy, and never commit it to
-a repository. The example dataset in <code>deploy/<wbr>browser-guard/</code> uses a published key and must
-never be deployed.</p>
+a repository. The example dataset in <code>deploy/<wbr>browser-guard/</code> holds <code>REPLACE_WITH_...</code>
+placeholders instead of a key and fingerprints; the extension refuses it until it is
+replaced with real <code>fingerprint-dataset.<wbr>mjs</code> output.</p>
 <p><strong>Example</strong> — Dataset <code>crm-customers</code> (type <code>PERSON</code>) contains the fingerprint of &quot;Ahmet
 Kaya&quot;. The prompt <code>Ahmet Kaya called about his order</code> is found even though no rule
 recognises the name. With default settings (<code>detectSignals:<wbr> true</code>, <code>signalAction:<wbr> &quot;warn&quot;</code>),

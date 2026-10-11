@@ -99,7 +99,7 @@ database must provide what `supabase/postgres` provides: the roles `authenticato
 `supabase_storage_admin` and `postgres`, all using the `postgres-password` from the
 platform Secret, and the database settings `app.settings.jwt_secret` /
 `app.settings.jwt_exp`. The simplest compliant option is an operator-managed cluster
-running the `supabase/postgres:17.6.1.136` image (for example with a CloudNativePG or
+running the `supabase/postgres:17.11.0.004` image (for example with a CloudNativePG or
 Patroni-based operator) with synchronous standbys, as `deploy/ha/topology.self-hosted.reference.yaml`
 describes. Set `externalDatabase.networkPolicyCIDRs` to the database addresses.
 

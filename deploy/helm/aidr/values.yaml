@@ -264,11 +264,11 @@ postgresql:
   image:
     registry: docker.io
     repository: supabase/postgres
-    tag: 17.6.1.136
+    tag: 17.11.0.004
     digest: ""
     pullPolicy: IfNotPresent
   resources: {}
-  runAsUser: 100       # "postgres" user of supabase/postgres 17.6.1.136
+  runAsUser: 100       # "postgres" user of supabase/postgres 17.11.0.004
   fsGroup: 101
   persistence:
     size: 20Gi

@@ -53,7 +53,7 @@ order by 1;`;
 
 test("every SECURITY DEFINER function pins search_path with pg_temp after the full chain", { timeout: 600_000 }, async () => {
 	const started = await docker(["run", "--detach", "--rm", "--pull", "never", "--network", "none", "--name", container,
-		"-e", "POSTGRES_PASSWORD=secdef-fixture-only", "supabase/postgres:17.6.1.136"]);
+		"-e", "POSTGRES_PASSWORD=secdef-fixture-only", "supabase/postgres:17.11.0.004"]);
 	assert.equal(started.code, 0, started.stderr);
 	try {
 		let ready = false;

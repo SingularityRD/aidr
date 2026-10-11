@@ -168,7 +168,13 @@ was exercised in this repository.
 one vhost for the dashboard (`127.0.0.1:8080`) and one for the API gateway
 (`127.0.0.1:8000`, including the device-start signer route above), HSTS,
 `nosniff`, `Referrer-Policy` and related headers on both, TLS 1.2/1.3 only, no
-public `/metrics`, and a default server that drops unknown hostnames
+public `/metrics`, an API vhost that proxies only the Supabase API prefixes
+(`/auth/v1/`, `/rest/v1/`, `/storage/v1/`, `/functions/v1/`, `/realtime/v1/`,
+`/graphql/v1`, `/pg/`, `/.well-known/oauth-authorization-server`) and answers
+everything else with `404`, so Supabase Studio is never served from the API host
+(operators reach it on the loopback-only `127.0.0.1:8001` listener over an SSH
+tunnel; see "Supabase Studio (operator-only)" in [the on-prem guide](../onprem/README.md)),
+and a default server that drops unknown hostnames
 (`ssl_reject_handshake`, nginx 1.19.4 or newer). Certificates come from the
 customer's CA and are read from `/etc/aidr/tls/live/<host>/{fullchain,privkey}.pem`.
 

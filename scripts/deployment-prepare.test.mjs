@@ -46,6 +46,34 @@ function prepare(output, ...options) {
 	});
 }
 
+// Studio is reachable only on the gateway's loopback-published admin listener; the
+// listener the ingress proxies (8000) ends in a 404 and has no Studio route.
+function assertStudioNotPublic(output, compose) {
+	for (const [name, service] of Object.entries(compose.services)) {
+		for (const port of service.ports ?? []) assert.match(String(port), /^(127\.0\.0\.1|\[::1\]):/, `${name} publishes ${port} beyond loopback`);
+	}
+	assert.equal(compose.services.studio.ports, undefined, "Studio must not publish its own port");
+	const lds = parse(readFileSync(join(output, "volumes/api/envoy/lds.template.yaml"), "utf8"));
+	const listeners = Object.fromEntries(lds.resources.map((listener) => [listener.name, listener]));
+	assert.deepEqual(Object.keys(listeners), ["supabase", "studio_admin"]);
+	const routesOf = (listener) => listener.filter_chains[0].filters[0].typed_config.route_config.virtual_hosts[0].routes;
+	assert.equal(listeners.supabase.address.socket_address.port_value, 8000);
+	const publicRoutes = routesOf(listeners.supabase);
+	assert.deepEqual(publicRoutes.filter((route) => route.route?.cluster === "studio"), [], "public listener routes to Studio");
+	assert.deepEqual(publicRoutes.at(-1).match, { prefix: "/" });
+	assert.deepEqual(publicRoutes.at(-1).direct_response, { status: 404 });
+	assert.equal(publicRoutes.at(-1).typed_per_filter_config["envoy.filters.http.basic_auth"].disabled, true, "the public catch-all must not prompt for Studio credentials");
+	assert.ok(publicRoutes.some((route) => route.match.prefix === "/rest/v1/" && route.route?.cluster === "rest"), "API routes stay on the public listener");
+	assert.equal(listeners.studio_admin.address.socket_address.port_value, 8001);
+	const adminRoutes = routesOf(listeners.studio_admin);
+	assert.deepEqual(adminRoutes.map((route) => [route.match.prefix, route.route.cluster]), [["/api/mcp", "studio"], ["/mcp", "studio"], ["/", "studio"]]);
+	assert.equal(adminRoutes.at(-1).typed_per_filter_config["envoy.filters.http.basic_auth"], undefined, "Studio keeps its basic-auth prompt on the admin listener");
+	const mcpDeny = (route) => route.typed_per_filter_config["envoy.filters.http.rbac"].rbac.rules.action;
+	assert.deepEqual(adminRoutes.slice(0, 2).map(mcpDeny), ["DENY", "DENY"], "Studio MCP stays denied");
+	const published = compose.services["api-gw"].ports.map((port) => String(port).split(":").at(-1));
+	assert.deepEqual(published, ["8000", "8001"]);
+}
+
 test("production first boot does not wait on readiness evidence that is installed later", () => {
 	const installation = readFileSync(join(root, "deploy/README.md"), "utf8").split("## Isolated installation rehearsal")[0];
 	assert.match(installation, /--output \/srv\/aidr/);
@@ -93,7 +121,7 @@ test("IPv6 development origins bind matching loopback ports and device ingress u
 		assert.equal(result.status, 0, result.stderr);
 		const compose = parse(readFileSync(join(output, "compose.yml"), "utf8"));
 		assert.deepEqual(compose.services.dashboard.ports, ["[::1]:18080:8080"]);
-		assert.deepEqual(compose.services["api-gw"].ports, ["[::1]:18000:8000"]);
+		assert.deepEqual(compose.services["api-gw"].ports, ["[::1]:18000:8000", "[::1]:18001:8001"]);
 		assert.match(readFileSync(join(output, ".env.ingress"), "utf8"), /^AIDR_DEVICE_START_UPSTREAM_URL=http:\/\/\[::1\]:18000\/functions\/v1\/device-start$/m);
 		const config = spawnSync("docker", ["compose", "--project-directory", output, "-f", join(output, "compose.yml"), "config", "--quiet"], { encoding: "utf8", timeout: 15_000 });
 		assert.equal(config.status, 0, config.stderr);
@@ -274,19 +302,20 @@ test("development loopback origins publish matching isolated Compose ports", () 
 			storage: "supabase/storage-api:v1.80.2@sha256:95b217a9c59e0ac06c6dcb539df3189a1668a2445fb43dbf29660d6968ffd7d2",
 			meta: "supabase/postgres-meta:v0.100.0@sha256:145325b7e39f8ef4931d6e8cfd3f6f4d655de09d72a2ccc96d9513542c2202bd",
 			functions: "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8",
+			// Stateful bump, gated by docs/production-readiness/postgres-upgrade-restore-drill-2026-10-11.md.
+			db: "supabase/postgres:17.11.0.004@sha256:06ddc7962e11ab0f4f0334fd05671e97c30ea202f6e6a7113800bd3d6e416108",
 		};
 		for (const [name, image] of Object.entries(scanGated)) assert.equal(services[name].image, image, name);
 		const reviewed = parse(readFileSync(join(root, "deploy/upstream/docker/docker-compose.yml"), "utf8")).services;
 		for (const [name, service] of Object.entries(reviewed)) {
 			if (name !== "api-gw" && name !== "imgproxy" && name !== "supavisor" && !Object.hasOwn(scanGated, name)) assert.equal(services[name].image, service.image, name);
 		}
-		// The stateful database image is deliberately not bumped without a migration drill.
-		assert.equal(services.db.image, reviewed.db.image);
+		assert.equal(reviewed.db.image, "supabase/postgres:17.6.1.136", "upstream db pin moved; re-run the restore drill before following it");
 		assert.deepEqual(services.imgproxy.environment, { ...reviewed.imgproxy.environment, IMGPROXY_USE_LAST_MODIFIED: "false" });
 		for (const setting of ["restart", "networks", "healthcheck", "depends_on", "volumes", "environment", "entrypoint"]) {
 			assert.deepEqual(services["api-gw"][setting], reviewed["api-gw"][setting], setting);
 		}
-		assert.deepEqual(services["api-gw"].ports, ["127.0.0.1:38000:8000"]);
+		assert.deepEqual(services["api-gw"].ports, ["127.0.0.1:38000:8000", "127.0.0.1:38001:8001"]);
 		assert.deepEqual(services.dashboard.ports, ["127.0.0.1:38080:8080"]);
 		assert.match(readFileSync(join(output, ".env.ingress"), "utf8"), /^AIDR_DEVICE_START_UPSTREAM_URL=http:\/\/127\.0\.0\.1:38000\/functions\/v1\/device-start$/m);
 	});
@@ -350,8 +379,9 @@ test("generated self-hosted deployment wires protected monitoring without invent
 		assert.deepEqual(dashboard.volumes, [{ type: "bind", source: "./health", target: "/run/aidr-health", read_only: true }]);
 		assert.equal(composeText.includes("http://dashboard:8080/auth-templates/recovery.html"), true);
 		const compose = parse(composeText);
-		assert.deepEqual(compose.services["api-gw"].ports, ["127.0.0.1:8000:8000"]);
+		assert.deepEqual(compose.services["api-gw"].ports, ["127.0.0.1:8000:8000", "127.0.0.1:8001:8001"]);
 		assert.deepEqual(compose.services.dashboard.ports, ["127.0.0.1:8080:8080"]);
+		assertStudioNotPublic(output, compose);
 		assert.equal(compose.services.auth.environment.GOTRUE_MAILER_TEMPLATES_RECOVERY, "http://dashboard:8080/auth-templates/recovery.html");
 		assert.equal(compose.services.auth.environment.GOTRUE_MAILER_SUBJECTS_RECOVERY, "Reset your AIDR password");
 		assert.equal(readFileSync(join(output, "dashboard", "auth-templates", "recovery.html"), "utf8"), readFileSync(join(root, "supabase", "templates", "recovery.html"), "utf8"));
@@ -528,6 +558,7 @@ test("on-prem profile applies resource budgets, runtime policy and a versioned d
 			assert.equal(Object.hasOwn(service, "profiles"), false);
 		}
 		assert.equal(compose.services.db.stop_grace_period, "120s");
+		assertStudioNotPublic(output, compose);
 		assert.match(compose.services.meta.healthcheck.test.at(-1), /connect\(8080/);
 		assert.equal(compose.services.dashboard.image, `aidr-dashboard:${dashboardVersion}`);
 		assert.equal(compose.services.dashboard.build, "./dashboard");

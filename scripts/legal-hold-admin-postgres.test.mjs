@@ -42,7 +42,7 @@ const service = (text) => sql(`set role service_role; ${text}`);
 
 test("legal-hold management and tenant retention RPCs on real PostgreSQL", { timeout: 900_000 }, async (t) => {
 	const started = await docker(["run", "--detach", "--rm", "--pull", "never", "--network", "none", "--name", container,
-		"-e", "POSTGRES_PASSWORD=hold-admin-fixture-only", "supabase/postgres:17.6.1.136"]);
+		"-e", "POSTGRES_PASSWORD=hold-admin-fixture-only", "supabase/postgres:17.11.0.004"]);
 	assert.equal(started.code, 0, started.stderr);
 	try {
 		let ready = false;

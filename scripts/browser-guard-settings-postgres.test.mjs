@@ -64,9 +64,9 @@ const rpc = (tenant, actor, value) =>
 const asService = (body) => `begin; ${body} commit;`;
 
 test("Browser Guard require-native-NER setting on full-chain PostgreSQL", { timeout: 900_000 }, async (t) => {
-	// No silent skip: this is a CI gate (docker + supabase/postgres:17.6.1.136 required).
+	// No silent skip: this is a CI gate (docker + supabase/postgres:17.11.0.004 required).
 	const started = await command(["run", "--detach", "--rm", "--pull", "never", "--network", "none", "--name", container,
-		"-e", "POSTGRES_PASSWORD=test-only", "supabase/postgres:17.6.1.136"]);
+		"-e", "POSTGRES_PASSWORD=test-only", "supabase/postgres:17.11.0.004"]);
 	assert.equal(started.code, 0, started.stderr);
 	try {
 		let ready = false;
