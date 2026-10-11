@@ -292,7 +292,7 @@ export const STEPS = Object.freeze([
 		id: "commercial-readiness",
 		group: "commercial",
 		name: "Commercial readiness, gate-receipt and candidate-bound production GO checks",
-		run: "node scripts/check-commercial-readiness.mjs && node --test scripts/check-commercial-readiness.test.mjs scripts/verify-commercial-gate-receipts.test.mjs scripts/verify-production-go.test.mjs docs/scripts/claim-check.test.mjs",
+		run: "node scripts/check-commercial-readiness.mjs && node --test scripts/check-commercial-readiness.test.mjs scripts/verify-commercial-gate-receipts.test.mjs scripts/verify-production-go.test.mjs scripts/stage-verified-artifact-roots.test.mjs docs/scripts/claim-check.test.mjs",
 		quick: true,
 		timeoutMs: 3 * MIN,
 	}),

@@ -258,6 +258,7 @@ test("Browser Guard release: protected signed tag, least privilege, attested zip
 // ─── production GO gate (audit item 14) ──────────────────────────────────
 
 const GO_SCRIPT = "node .trusted-release-verifier/scripts/verify-production-go.mjs";
+const STAGE_STEP = "Stage signature-verified artifact roots for the claim gate";
 
 /** A step that publishes, deploys, retags or persists promotion state for production. */
 function isProductionMutation(step) {
@@ -287,7 +288,7 @@ test("release-promote: the candidate-bound production GO gate precedes every pro
 	const verify = promote.steps.findIndex((step) => step.id === "verify");
 	assert.ok(verify >= 0 && verify < go, "the GO gate consumes the signature-verified candidate digest");
 	assert.match(promote.steps[verify].run, /candidate_digest=\$\(sha256sum release-output\/release-inventory\.json/u);
-	const staged = promote.steps.findIndex((step) => step.name === "Stage candidate build output for the claim gate");
+	const staged = promote.steps.findIndex((step) => step.name === STAGE_STEP);
 	assert.ok(staged > verify && staged < go, "claim-check needs the candidate artifact roots staged before the gate");
 
 	const mutations = promote.steps.flatMap((step, index) => (isProductionMutation(step) ? [{ index, name: step.name }] : []));
@@ -336,5 +337,130 @@ test("no other release workflow mutates production without a production GO gate"
 		const releases = workflow(name).jobs[jobId].steps.filter((step) => /softprops\/action-gh-release@/u.test(step.uses ?? ""));
 		assert.ok(releases.length > 0, `${name} must still publish its draft release`);
 		for (const step of releases) assert.equal(step.with.draft, true, `${name}: ${step.name} must stay a draft (non-production) release`);
+	}
+});
+
+// ─── no release-candidate code next to production credentials ────────────
+
+/** Commands that would build, install or execute code from the RC tag checkout. */
+const TAG_CODE = [
+	[/(?:^|[\s;&|(`])pnpm\s/mu, "pnpm"],
+	[/\bnpm\s+(?:run|run-script|exec|install|i|ci|test|rebuild|start)\b/u, "npm run/exec/install"],
+	[/(?:^|[\s;&|(`])(?:npx|yarn|corepack|make)\s/mu, "npx/yarn/corepack/make"],
+	[/\b(?:build:release|build-workspace)\b/u, "a release build"],
+	[/(?:^|[\s;&|(`])(?:bash|sh|source|\.)\s+(?:\.\/)?(?:scripts|packages|\.github)\//mu, "a checked-out shell script"],
+	[/(?:^|[\s;&|(`])\.\/[\w./-]+/mu, "a checked-out executable"],
+];
+
+function nodeScriptTargets(run) {
+	return [...run.matchAll(/(?:^|[\s;&|(`])node\s+(?!-)("?[^\s"]+"?)/gmu)].map((match) => match[1].replaceAll('"', ""));
+}
+
+const isTrustedScript = (target) => /^(?:\$\{GITHUB_WORKSPACE\}\/)?\.trusted-release-verifier\/(?:scripts|docs\/scripts)\/[\w.-]+\.mjs$/u.test(target);
+
+test("release-promote: no job holding publish/deploy credentials builds or runs release-candidate code", () => {
+	const promote = workflow("release-promote.yml");
+	for (const [jobId, job] of Object.entries(promote.jobs)) {
+		for (const step of job.steps ?? []) {
+			const label = `release-promote.yml:${jobId}:${step.name}`;
+			assert.doesNotMatch(step.uses ?? "", /^pnpm\/action-setup@/u, `${label}: pnpm is not needed when nothing is built`);
+			if (/^actions\/setup-node@/u.test(step.uses ?? "")) assert.equal(step.with?.cache, undefined, `${label}: no dependency cache restore/save in a production job`);
+			if (/^actions\/checkout@/u.test(step.uses ?? "")) {
+				assert.equal(step.with?.submodules, undefined, `${label}: no submodules from the RC tag`);
+				assert.equal(step.with?.["persist-credentials"], false, `${label}: checkout must not persist credentials`);
+			}
+			const run = step.run ?? "";
+			for (const [pattern, what] of TAG_CODE) assert.doesNotMatch(run, pattern, `${label} runs ${what} from the RC checkout`);
+			for (const target of nodeScriptTargets(run)) assert.ok(isTrustedScript(target), `${label}: node ${target} is not a trusted verifier script`);
+			// npm reads a project .npmrc (with \${ENV} expansion) from its working
+			// directory; inside the RC checkout that file is tag-controlled.
+			const firstNpm = run.search(/\bnpm\s+(?:config|publish|dist-tag|pack|deprecate|view)\b|plan-npm-release-publication/u);
+			if (firstNpm >= 0) {
+				const isolate = run.indexOf('npm_cwd="$(mktemp -d "${RUNNER_TEMP}/aidr-npm-cwd.XXXXXX")"');
+				const enter = run.indexOf('cd "${npm_cwd}"');
+				assert.ok(isolate >= 0 && isolate < enter && enter < firstNpm, `${label}: npm must run from an isolated empty directory, not the RC checkout`);
+				assert.doesNotMatch(run.slice(enter), /(?:^|[\s"=])release-output\//mu, `${label}: after leaving the checkout, bundle paths must be absolute`);
+			}
+		}
+	}
+});
+
+test("release-promote: the GO gate precedes everything except checkout, verification and verified staging", () => {
+	const promote = workflow("release-promote.yml").jobs.promote;
+	const go = goStepIndex(promote, "promote");
+	const allowedBeforeGo = [
+		"Validate promotion inputs",
+		"Checkout the exact RC tag (pinned)",
+		"Checkout immutable trusted verifier (pinned)",
+		"Setup Node.js (pinned)",
+		"Install pinned GitHub CLI for attestation verification",
+		"Resolve latest protected anti-rollback state",
+		"Restore protected anti-rollback state (pinned)",
+		"Download the signed RC bundle (pinned)",
+		"Verify GitHub build attestations for every release file",
+		"Prepare trusted release-signer policy",
+		"Verify RC identity, manifest, SBOM and signatures",
+		STAGE_STEP,
+	];
+	assert.deepEqual(promote.steps.slice(0, go).map((step) => step.name), allowedBeforeGo);
+	for (const step of promote.steps.slice(0, go)) {
+		if (step.uses) assert.match(step.uses, /^actions\/(?:checkout|setup-node|download-artifact)@/u, `${step.name} is not a checkout/setup/download step`);
+	}
+
+	// The claim-gate roots come from the verified tarballs, never from a build.
+	const stage = promote.steps[go - 1];
+	assert.equal(stage.name, STAGE_STEP);
+	assert.equal(stage.env.VERIFIED_CANDIDATE_DIGEST, "${{ steps.verify.outputs.candidate_digest }}");
+	for (const flag of ["node .trusted-release-verifier/scripts/stage-verified-artifact-roots.mjs", "--root .trusted-release-verifier", "--bundle release-output", '--candidate-digest "${VERIFIED_CANDIDATE_DIGEST}"']) {
+		assert.ok(stage.run.includes(flag), `artifact-root staging must pass ${flag}`);
+	}
+	assert.doesNotMatch(stage.run, /\bcp\b|\btar\s+-x|build/u, "staging extracts verified archives in the trusted script only");
+	const names = promote.steps.map((step) => step.name);
+	assert.ok(names.indexOf("Verify GitHub build attestations for every release file") < go - 1);
+	const stager = readFileSync(path.join(root, "scripts/stage-verified-artifact-roots.mjs"), "utf8");
+	for (const guard of ["createTarBoundaryValidator", "inspectReleaseArchive", "does not match its signed inventory digest", "is not the verified candidate", 'flag: "wx"']) {
+		assert.ok(stager.includes(guard), `stage-verified-artifact-roots.mjs must keep ${guard}`);
+	}
+
+	// Route smoke after deployment: trusted script, RC sources as data, verified dist.
+	const smoke = stepNamed(promote, "Promote the exact dashboard commit and run remote smoke").run;
+	assert.match(smoke, /node \.trusted-release-verifier\/scripts\/dashboard-route-smoke\.mjs/u);
+	assert.match(smoke, /--source-root "\$\{GITHUB_WORKSPACE\}"/u);
+	assert.match(smoke, /--dist \.trusted-release-verifier\/packages\/dashboard\/dist/u);
+	assert.doesNotMatch(smoke, /test:route-smoke/u);
+});
+
+test("release-rc: tag code runs only after the signed-tag identity check and never holds production credentials", () => {
+	const rc = workflow("release-rc.yml");
+	const text = raw("release-rc.yml");
+	// The RC workflow is defined by the tag itself, so its protection is the
+	// environment boundary: it must never see production publish/deploy access.
+	assert.doesNotMatch(text, /environment:\s*production\b/u);
+	assert.doesNotMatch(text, /secrets\.(?:DASHBOARD_|MARKETPLACE_|NPM_TOKEN|NODE_AUTH_TOKEN)/u);
+	assert.doesNotMatch(text, /packages:\s*write/u);
+	assert.doesNotMatch(text, /NODE_AUTH_TOKEN/u);
+
+	const build = rc.jobs["build-rc"];
+	const identity = build.steps.findIndex((step) => step.name === "Resolve and verify immutable RC identity");
+	assert.ok(identity >= 0);
+	assert.match(build.steps[identity].run, /git verify-tag --raw/u);
+	const firstTagCode = build.steps.findIndex((step) => /(?:^|[\s;&|(])(?:pnpm|npm|npx)\s|(?:^|[\s;&|(])node\s+(?:scripts|packages|\.github)\//mu.test(step.run ?? ""));
+	assert.ok(firstTagCode > identity, "no RC code may run before the signed, protected tag is verified");
+
+	const needsBuild = (jobId, seen = new Set()) => {
+		if (jobId === "build-rc") return true;
+		if (seen.has(jobId)) return false;
+		seen.add(jobId);
+		const needs = [rc.jobs[jobId].needs ?? []].flat();
+		return needs.some((need) => needsBuild(need, seen));
+	};
+	for (const [jobId, job] of Object.entries(rc.jobs)) {
+		if (jobId === "build-rc") continue;
+		assert.ok(needsBuild(jobId), `${jobId} must depend on the verified build-rc identity`);
+		for (const step of job.steps ?? []) {
+			if (/^actions\/checkout@/u.test(step.uses ?? "")) {
+				assert.equal(step.with?.ref, "${{ needs.build-rc.outputs.sha }}", `${jobId}: ${step.name} must check out the verified commit`);
+			}
+		}
 	}
 });

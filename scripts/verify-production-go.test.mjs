@@ -17,8 +17,22 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { CANDIDATE_DIGEST_SOURCE } from "./generate-v8-evidence-index.mjs";
 import { REGISTRY_FILE } from "./verify-commercial-gate-receipts.mjs";
-import { DEFAULT_PROFILE, LEDGER_SCHEMA, bundleCandidate, evaluateProductionGo, evaluateRollback, main, parseArgs, readLedger } from "./verify-production-go.mjs";
+import {
+	DEFAULT_PROFILE,
+	LEDGER_GENESIS,
+	LEDGER_SCHEMA,
+	appendLedger,
+	bundleCandidate,
+	evaluateProductionGo,
+	evaluateRollback,
+	ledgerEntryDigest,
+	main,
+	parseArgs,
+	readLedger,
+	verifyLedgerChain,
+} from "./verify-production-go.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SCRIPT = join(ROOT, "scripts/verify-production-go.mjs");
@@ -292,21 +306,123 @@ test("a GO promotion is recorded in the ledger, and rollback accepts only a reco
 	assert.equal(readLedger(ledger).entries.length, 1);
 });
 
-test("rollback refuses a candidate whose ledger entry is for another digest, version or commit", () => {
-	const candidate = { digest: "1".repeat(64), version: "1.2.3", gitSha: "b".repeat(40) };
-	const entry = { decision: "GO", candidate_digest: candidate.digest, release_version: "1.2.3", git_sha: "b".repeat(40) };
-	assert.equal(evaluateRollback({ ledger: { entries: [entry] }, candidate }).go, true);
-	assert.equal(evaluateRollback({ ledger: { entries: [{ ...entry, candidate_digest: "2".repeat(64) }] }, candidate }).go, false);
-	assert.equal(evaluateRollback({ ledger: { entries: [{ ...entry, release_version: "1.2.4" }] }, candidate }).go, false);
-	assert.equal(evaluateRollback({ ledger: { entries: [{ ...entry, git_sha: "c".repeat(40) }] }, candidate }).go, false);
-	assert.equal(evaluateRollback({ ledger: { entries: [{ ...entry, decision: "NO-GO" }] }, candidate }).go, false);
-	assert.throws(() => {
-		const dir = mkdtempSync(join(tmpdir(), "aidr-ledger-"));
-		try {
-			writeFileSync(join(dir, "ledger.json"), '{"entries":[]}');
-			readLedger(join(dir, "ledger.json"));
-		} finally {
-			rmSync(dir, { recursive: true, force: true });
-		}
-	}, /is not an aidr-production-go-ledger\/v1 document/u);
+/** A verified ledger built through appendLedger, one GO record per row. */
+function chainedLedger(t, rows) {
+	const dir = mkdtempSync(join(tmpdir(), "aidr-ledger-"));
+	t.after(() => rmSync(dir, { recursive: true, force: true }));
+	const path = join(dir, "production-go-ledger.json");
+	for (const row of rows) appendLedger(path, row);
+	return { path, ledger: readLedger(path) };
+}
+
+function goRecord(overrides = {}) {
+	return {
+		decision: "GO",
+		profile: DEFAULT_PROFILE,
+		candidate_digest: "1".repeat(64),
+		candidate_digest_source: CANDIDATE_DIGEST_SOURCE,
+		release_version: "1.2.3",
+		release_tag: "v1.2.3-rc.0",
+		git_sha: "b".repeat(40),
+		registry_sha256: "3".repeat(64),
+		receipts_sha256: "4".repeat(64),
+		trusted_verifier_commit: "c".repeat(40),
+		verified_at_utc: "2026-10-01T00:00:00.000Z",
+		...overrides,
+	};
+}
+
+test("rollback refuses a candidate whose ledger entry is for another digest, version, tag or commit", (t) => {
+	const candidate = { digest: "1".repeat(64), version: "1.2.3", gitSha: "b".repeat(40), tag: "v1.2.3-rc.0" };
+	const ledgerWith = (overrides) => chainedLedger(t, [goRecord(overrides)]).ledger;
+	assert.equal(evaluateRollback({ ledger: ledgerWith({}), candidate }).go, true);
+	assert.equal(evaluateRollback({ ledger: ledgerWith({ candidate_digest: "2".repeat(64) }), candidate }).go, false);
+	assert.equal(evaluateRollback({ ledger: ledgerWith({ release_version: "1.2.4", release_tag: "v1.2.4-rc.0" }), candidate }).go, false);
+	assert.equal(evaluateRollback({ ledger: ledgerWith({ git_sha: "c".repeat(40) }), candidate }).go, false);
+	assert.equal(evaluateRollback({ ledger: ledgerWith({}), candidate: { ...candidate, tag: "v1.2.3-rc.1" } }).go, false);
+	assert.throws(() => ledgerWith({ decision: "NO-GO" }), /records decision "NO-GO"/u, "a NO-GO record cannot even be written");
+	// An unchained in-memory ledger (the v1 shape) is never trusted.
+	const loose = { decision: "GO", candidate_digest: candidate.digest, release_version: "1.2.3", git_sha: "b".repeat(40) };
+	const unchained = evaluateRollback({ ledger: { schema: LEDGER_SCHEMA, entries: [loose], head_sha256: LEDGER_GENESIS }, candidate });
+	assert.equal(unchained.go, false);
+	assert.ok(unchained.failures.some((failure) => /promotion ledger does not verify/u.test(failure)));
+	const dir = mkdtempSync(join(tmpdir(), "aidr-ledger-"));
+	t.after(() => rmSync(dir, { recursive: true, force: true }));
+	for (const document of ['{"entries":[]}', JSON.stringify({ schema: "aidr-production-go-ledger/v1", entries: [loose] })]) {
+		writeFileSync(join(dir, "ledger.json"), document);
+		assert.throws(() => readLedger(join(dir, "ledger.json")), /does not verify; refusing to use it: ledger is not an aidr-production-go-ledger\/v2 document/u);
+	}
+});
+
+// ─── ledger hash chain: tampering is refused on read, record and rollback ──
+
+const REHASH = Symbol("recompute this entry's own digest after the edit");
+
+/** Apply `edit` to a copy of a good three-entry ledger and write it back. */
+function tamperedLedger(t, edit) {
+	const { path, ledger } = chainedLedger(t, [
+		goRecord({ candidate_digest: "5".repeat(64), release_version: "1.0.0", release_tag: "v1.0.0-rc.0", verified_at_utc: "2026-08-01T00:00:00.000Z" }),
+		goRecord({ verified_at_utc: "2026-09-01T00:00:00.000Z" }),
+		goRecord({ candidate_digest: "6".repeat(64), release_version: "1.3.0", release_tag: "v1.3.0-rc.0", verified_at_utc: "2026-10-01T00:00:00.000Z" }),
+	]);
+	assert.deepEqual(verifyLedgerChain(ledger), []);
+	const copy = structuredClone(ledger);
+	const rehash = edit(copy);
+	if (rehash === REHASH) for (const entry of copy.entries) entry.entry_sha256 = ledgerEntryDigest(entry);
+	writeFileSync(path, `${JSON.stringify(copy, null, 2)}\n`);
+	return { path, ledger: copy };
+}
+
+const TAMPERING = [
+	["an entry field is edited", (ledger) => { ledger.entries[1].git_sha = "d".repeat(40); }, /entry 1 entry_sha256 does not match/u],
+	["an entry is edited and its own digest recomputed", (ledger) => { ledger.entries[1].git_sha = "d".repeat(40); return REHASH; }, /entry 2 does not chain to entry 1/u],
+	["a forged entry is inserted", (ledger) => { ledger.entries.splice(1, 0, structuredClone(ledger.entries[1])); }, /entry 1 does not chain|entry 1 has sequence|entry 2 has sequence/u],
+	["an entry is removed", (ledger) => { ledger.entries.splice(1, 1); }, /entry 1 has sequence|entry 1 does not chain/u],
+	["entries are reordered", (ledger) => { ledger.entries.reverse(); }, /entry 0 has sequence/u],
+	["the last entry is truncated without fixing the head", (ledger) => { ledger.entries.pop(); }, /head_sha256 is not the digest of its last entry/u],
+	["an entry gains an unknown field", (ledger) => { ledger.entries[0].approved_by = "attacker"; return REHASH; }, /entry 0 must have exactly the fields/u],
+	["an entry loses its receipt binding", (ledger) => { delete ledger.entries[0].receipts_sha256; return REHASH; }, /entry 0 must have exactly the fields/u],
+	["an entry records a malformed digest", (ledger) => { ledger.entries[2].registry_sha256 = "not-a-digest"; return REHASH; }, /entry 2 has an invalid registry_sha256/u],
+	["an entry's tag does not match its version", (ledger) => { ledger.entries[0].release_tag = "v9.9.9-rc.0"; return REHASH; }, /release_tag .* does not match its version/u],
+	["an entry is back-dated", (ledger) => { ledger.entries[2].verified_at_utc = "2026-07-01T00:00:00.000Z"; return REHASH; }, /entry 2 is dated before entry 1/u],
+	["a non-GO decision is slipped in", (ledger) => { ledger.entries[1].decision = "NO-GO"; return REHASH; }, /entry 1 records decision "NO-GO"/u],
+	["the ledger gains a top-level field", (ledger) => { ledger.trusted = true; }, /ledger must have exactly the fields/u],
+];
+
+for (const [label, edit, pattern] of TAMPERING) {
+	test(`a ledger whose chain does not verify is refused: ${label}`, (t) => {
+		const { path, ledger } = tamperedLedger(t, edit);
+		assert.ok(verifyLedgerChain(ledger).some((problem) => pattern.test(problem)), `expected ${pattern} in:\n${verifyLedgerChain(ledger).join("\n")}`);
+		assert.throws(() => readLedger(path), /does not verify; refusing to use it/u);
+		assert.throws(() => appendLedger(path, goRecord({ verified_at_utc: "2026-10-05T00:00:00.000Z" })), /does not verify/u, "--record must not append to a tampered ledger");
+		const candidate = { digest: "1".repeat(64), version: "1.2.3", gitSha: "b".repeat(40), tag: "v1.2.3-rc.0" };
+		const rollback = evaluateRollback({ ledger, candidate });
+		assert.equal(rollback.go, false, "--rollback must not trust a tampered ledger");
+		assert.equal(rollback.entry, null);
+	});
+}
+
+test("the CLI refuses rollback and record against a tampered ledger", (t) => {
+	const { root, input, claimReport } = goFixture(t);
+	const registrySha256 = writeTrustedRoot(root, input);
+	const ledger = join(root, "state", "production-go-ledger.json");
+	mkdirSync(dirname(ledger), { recursive: true });
+	const quiet = { log: () => {}, error: () => {} };
+	const claimCheck = () => ({ exitCode: 0, report: { ...claimReport, registrySha256 } });
+	const bundle = join(root, "release-output");
+	assert.equal(main(["--bundle", bundle, "--root", root, "--ledger", ledger, "--record"], { now: NOW, claimCheck, ...quiet }), 0);
+	const recorded = readLedger(ledger);
+	assert.equal(recorded.entries[0].receipts_sha256, hash(readFileSync(join(root, receiptsPath))), "the entry is bound to the receipt bytes the gate read");
+	assert.equal(recorded.head_sha256, recorded.entries[0].entry_sha256);
+	assert.equal(recorded.entries[0].previous_entry_sha256, LEDGER_GENESIS);
+
+	// Forge a second GO entry for a never-promoted candidate without the chain.
+	const forged = structuredClone(recorded);
+	forged.entries.push({ ...structuredClone(recorded.entries[0]), sequence: 1, candidate_digest: "f".repeat(64) });
+	writeFileSync(ledger, JSON.stringify(forged));
+	const errors = [];
+	assert.equal(main(["--rollback", "--bundle", bundle, "--ledger", ledger], { now: NOW, log: () => {}, error: (line) => errors.push(line) }), 1, "a genuine entry in a tampered ledger is not enough");
+	assert.ok(errors.some((line) => /does not verify/u.test(line)));
+	assert.equal(main(["--bundle", bundle, "--root", root, "--ledger", ledger, "--record"], { now: NOW, claimCheck, ...quiet }), 1, "--record refuses to extend a tampered ledger");
+	assert.deepEqual(JSON.parse(readFileSync(ledger, "utf8")), forged, "a refused record leaves the ledger untouched");
 });

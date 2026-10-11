@@ -29,8 +29,10 @@
  * future-dated evidence, an unreadable input - exits 1 (usage errors exit 2).
  *
  * Promotion ledger: with --ledger FILE --record, a passing check appends the
- * candidate (digest, version, git SHA, registry digest) to a ledger that the
- * promote job persists in its protected state artifact. Rollback runs with
+ * candidate (digest, version, tag, git SHA, registry and receipt digests) to a
+ * hash-chained ledger that the promote job persists in its protected state
+ * artifact. Every read verifies every entry and the chain; a ledger that does
+ * not verify is refused, both for --record and for --rollback. Rollback runs with
  * --rollback --ledger FILE: it does NOT need the current registry to be GO
  * (the registry has usually moved on, or been set to NO-GO because of the bad
  * release) but it only accepts a bundle whose exact candidate passed this gate
@@ -57,7 +59,9 @@ export const DEFAULT_PROFILE = "production-ga";
 export const DEFAULT_MAX_EVIDENCE_AGE_DAYS = 90;
 export const BUNDLE_INVENTORY = "release-inventory.json";
 export const BUNDLE_METADATA = "release-metadata.json";
-export const LEDGER_SCHEMA = "aidr-production-go-ledger/v1";
+// v2: hash-chained, fully validated entries bound to registry and receipt
+// digests. A v1 ledger is refused: roll forward instead of trusting it.
+export const LEDGER_SCHEMA = "aidr-production-go-ledger/v2";
 export const CLAIM_CHECK_SCRIPT = "docs/scripts/claim-check.mjs";
 const SHA256 = /^[0-9a-f]{64}$/;
 const DAY_MS = 86_400_000;
@@ -207,32 +211,139 @@ export function evaluateProductionGo({
 }
 
 // ─── promotion ledger ─────────────────────────────────────────────────────
+//
+// The ledger is a hash chain. Each entry carries its position (`sequence`), the
+// digest of the entry before it (`previous_entry_sha256`, GENESIS for the
+// first) and its own digest (`entry_sha256`, SHA-256 of the canonical JSON of
+// every other field). `head_sha256` is the digest of the last entry. Every
+// field of every entry is validated on every read: --record refuses to append
+// to a ledger that does not verify, and --rollback refuses to trust one. Each
+// entry is bound to the GO record that admitted it through the registry and
+// commercial-gate receipt digests the gate read.
+//
+// The chain detects any edit, reorder, insertion or removal that is not
+// followed by recomputing every later digest. It is not a signature: the
+// ledger's authenticity still rests on it being restored only from the
+// protected default-branch promotion run, written by a job that executes no
+// release-candidate code.
 
+export const LEDGER_GENESIS = "0".repeat(64);
+const GIT_SHA = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u;
+const LEDGER_KEYS = ["schema", "entries", "head_sha256"];
+const ENTRY_KEYS = [
+	"sequence",
+	"previous_entry_sha256",
+	"decision",
+	"profile",
+	"candidate_digest",
+	"candidate_digest_source",
+	"release_version",
+	"release_tag",
+	"git_sha",
+	"registry_sha256",
+	"receipts_sha256",
+	"trusted_verifier_commit",
+	"verified_at_utc",
+	"entry_sha256",
+];
+
+const isPlainObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value) && Object.getPrototypeOf(value) === Object.prototype;
+const sameKeys = (value, keys) => {
+	const actual = Object.keys(value).sort();
+	const expected = [...keys].sort();
+	return actual.length === expected.length && actual.every((key, index) => key === expected[index]);
+};
+
+/** SHA-256 over the canonical (sorted-key) JSON of every entry field except entry_sha256. */
+export function ledgerEntryDigest(entry) {
+	const body = Object.fromEntries(
+		Object.keys(entry)
+			.filter((key) => key !== "entry_sha256")
+			.sort()
+			.map((key) => [key, entry[key]]),
+	);
+	return sha256(JSON.stringify(body));
+}
+
+function entryProblems(entry, index, previous) {
+	const at = `ledger entry ${index}`;
+	if (!isPlainObject(entry)) return [`${at} is not an object`];
+	if (!sameKeys(entry, ENTRY_KEYS)) return [`${at} must have exactly the fields ${ENTRY_KEYS.join(", ")}`];
+	const problems = [];
+	if (entry.sequence !== index) problems.push(`${at} has sequence ${JSON.stringify(entry.sequence)}`);
+	const expectedPrevious = previous ? previous.entry_sha256 : LEDGER_GENESIS;
+	if (entry.previous_entry_sha256 !== expectedPrevious) problems.push(`${at} does not chain to ${index === 0 ? "the genesis digest" : `entry ${index - 1}`}`);
+	if (entry.decision !== "GO") problems.push(`${at} records decision ${JSON.stringify(entry.decision)}, not "GO"`);
+	if (typeof entry.profile !== "string" || !/^[a-z0-9-]+$/u.test(entry.profile)) problems.push(`${at} has an invalid profile`);
+	for (const key of ["candidate_digest", "registry_sha256", "receipts_sha256"]) {
+		if (typeof entry[key] !== "string" || !SHA256.test(entry[key])) problems.push(`${at} has an invalid ${key}`);
+	}
+	if (entry.candidate_digest_source !== CANDIDATE_DIGEST_SOURCE) problems.push(`${at} has candidate_digest_source ${JSON.stringify(entry.candidate_digest_source)}`);
+	if (typeof entry.release_version !== "string" || !/^\d+\.\d+\.\d+$/u.test(entry.release_version)) problems.push(`${at} has an invalid release_version`);
+	else if (entry.release_tag !== `v${entry.release_version}-rc.0`) problems.push(`${at} release_tag ${JSON.stringify(entry.release_tag)} does not match its version`);
+	if (typeof entry.git_sha !== "string" || !GIT_SHA.test(entry.git_sha)) problems.push(`${at} has an invalid git_sha`);
+	if (typeof entry.trusted_verifier_commit !== "string" || !(GIT_SHA.test(entry.trusted_verifier_commit) || entry.trusted_verifier_commit === "unknown")) problems.push(`${at} has an invalid trusted_verifier_commit`);
+	const verifiedAt = typeof entry.verified_at_utc === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/u.test(entry.verified_at_utc) ? Date.parse(entry.verified_at_utc) : Number.NaN;
+	if (!Number.isFinite(verifiedAt)) problems.push(`${at} has an invalid verified_at_utc`);
+	else if (previous && Date.parse(previous.verified_at_utc) > verifiedAt) problems.push(`${at} is dated before entry ${index - 1}`);
+	if (typeof entry.entry_sha256 !== "string" || entry.entry_sha256 !== ledgerEntryDigest(entry)) problems.push(`${at} entry_sha256 does not match its contents`);
+	return problems;
+}
+
+/** Every structural and chain problem of a parsed ledger document; [] when it verifies. */
+export function verifyLedgerChain(ledger) {
+	if (!isPlainObject(ledger) || ledger.schema !== LEDGER_SCHEMA || !Array.isArray(ledger.entries)) return [`ledger is not an ${LEDGER_SCHEMA} document`];
+	if (!sameKeys(ledger, LEDGER_KEYS)) return [`ledger must have exactly the fields ${LEDGER_KEYS.join(", ")}`];
+	const problems = ledger.entries.flatMap((entry, index) => entryProblems(entry, index, index > 0 ? ledger.entries[index - 1] : null));
+	const head = ledger.entries.length > 0 ? ledger.entries.at(-1)?.entry_sha256 : LEDGER_GENESIS;
+	if (ledger.head_sha256 !== head) problems.push("ledger head_sha256 is not the digest of its last entry");
+	return problems;
+}
+
+/** Read and fully verify a ledger. A missing file is an empty ledger; anything unverifiable throws. */
 export function readLedger(path) {
-	if (!existsSync(path)) return { schema: LEDGER_SCHEMA, entries: [] };
+	if (!existsSync(path)) return { schema: LEDGER_SCHEMA, entries: [], head_sha256: LEDGER_GENESIS };
 	if (!lstatSync(path).isFile()) throw new Error(`ledger ${path} is not a regular file`);
-	const ledger = JSON.parse(readFileSync(path, "utf8"));
-	if (ledger?.schema !== LEDGER_SCHEMA || !Array.isArray(ledger.entries)) throw new Error(`ledger ${path} is not an ${LEDGER_SCHEMA} document`);
+	let ledger;
+	try {
+		ledger = JSON.parse(readFileSync(path, "utf8"));
+	} catch {
+		throw new Error(`ledger ${path} is not valid JSON`);
+	}
+	const problems = verifyLedgerChain(ledger);
+	if (problems.length > 0) throw new Error(`ledger ${path} does not verify; refusing to use it: ${problems.join("; ")}`);
 	return ledger;
 }
 
-export function appendLedger(path, entry) {
+/** Append one GO record to a verified ledger, chaining it to the current head. */
+export function appendLedger(path, record) {
 	const ledger = readLedger(path);
-	ledger.entries.push(entry);
+	const entry = { sequence: ledger.entries.length, previous_entry_sha256: ledger.head_sha256, ...record };
+	entry.entry_sha256 = ledgerEntryDigest(entry);
+	const next = { schema: LEDGER_SCHEMA, entries: [...ledger.entries, entry], head_sha256: entry.entry_sha256 };
+	const problems = verifyLedgerChain(next);
+	if (problems.length > 0) throw new Error(`refusing to record an invalid GO entry: ${problems.join("; ")}`);
 	const temporary = `${path}.${process.pid}.tmp`;
-	writeFileSync(temporary, `${JSON.stringify(ledger, null, 2)}\n`, { mode: 0o600 });
+	writeFileSync(temporary, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600, flag: "wx" });
 	renameSync(temporary, path);
-	return ledger;
+	return next;
 }
 
 /** Rollback: the bundle's exact candidate must have passed the GO gate when it was promoted. */
 export function evaluateRollback({ ledger, candidate, expectedVersion = null, expectedSha = null }) {
 	const failures = [];
+	const chain = verifyLedgerChain(ledger);
+	if (chain.length > 0) failures.push(`the promotion ledger does not verify: ${chain.join("; ")}`);
 	if (!SHA256.test(candidate?.digest ?? "")) failures.push("the rollback bundle candidate digest is missing or invalid");
 	if (expectedVersion !== null && candidate?.version !== expectedVersion) failures.push(`rollback bundle is version ${candidate?.version}, expected ${expectedVersion}`);
 	if (expectedSha !== null && candidate?.gitSha !== expectedSha) failures.push(`rollback bundle is commit ${candidate?.gitSha}, expected ${expectedSha}`);
-	const match = (ledger?.entries ?? []).find(
-		(entry) => entry?.decision === "GO" && entry.candidate_digest === candidate?.digest && entry.release_version === candidate?.version && entry.git_sha === candidate?.gitSha,
+	const match = chain.length > 0 ? undefined : (ledger?.entries ?? []).find(
+		(entry) =>
+			entry.decision === "GO" &&
+			entry.candidate_digest === candidate?.digest &&
+			entry.release_version === candidate?.version &&
+			entry.git_sha === candidate?.gitSha &&
+			(candidate?.tag == null || entry.release_tag === candidate.tag),
 	);
 	if (!match) failures.push(`candidate ${candidate?.digest} (${candidate?.version}) has no production GO record in the promotion ledger; only a previously GO-promoted candidate may be restored`);
 	return { go: failures.length === 0, failures, entry: match ?? null };
@@ -327,10 +438,12 @@ export function main(argv = process.argv.slice(2), { now = new Date(), claimChec
 		const receiptsPath = registry?.hardGateReceipts?.receiptsPath;
 		const schemaPath = registry?.hardGateReceipts?.schemaPath;
 		if (typeof receiptsPath !== "string" || typeof schemaPath !== "string") throw new Error("registry hardGateReceipts must name receiptsPath and schemaPath");
+		const receiptsBytes = readFileSync(resolve(options.root, receiptsPath));
 		loaded = {
 			registry,
 			registrySha256: sha256(registryBytes),
-			receipts: JSON.parse(readFileSync(resolve(options.root, receiptsPath), "utf8")),
+			receiptsSha256: sha256(receiptsBytes),
+			receipts: JSON.parse(receiptsBytes.toString("utf8")),
 			schema: JSON.parse(readFileSync(resolve(options.root, schemaPath), "utf8")),
 			receiptsPath,
 			schemaPath,
@@ -338,8 +451,9 @@ export function main(argv = process.argv.slice(2), { now = new Date(), claimChec
 	} catch (problem) {
 		return report({ go: false, failures: [`cannot read the trusted registry/receipts: ${problem.message}`] }, { mode: "promote", candidate_digest: candidate.digest });
 	}
+	const { receiptsSha256, ...inputs } = loaded;
 	const result = evaluateProductionGo({
-		...loaded,
+		...inputs,
 		root: options.root,
 		bundleInventoryPath: candidate.inventoryPath,
 		candidateDigest: candidate.digest,
@@ -360,6 +474,7 @@ export function main(argv = process.argv.slice(2), { now = new Date(), claimChec
 				release_tag: candidate.tag,
 				git_sha: candidate.gitSha,
 				registry_sha256: loaded.registrySha256,
+				receipts_sha256: receiptsSha256,
 				trusted_verifier_commit: gitCommitSha(options.root),
 				verified_at_utc: now.toISOString(),
 			});
