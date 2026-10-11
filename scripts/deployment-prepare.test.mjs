@@ -530,9 +530,10 @@ const dashboardVersion = JSON.parse(readFileSync(join(root, "packages/dashboard/
 const dockerCompose = spawnSync("docker", ["compose", "version"], { encoding: "utf8", timeout: 30_000 });
 const dockerComposeAvailable = !dockerCompose.error && dockerCompose.status === 0;
 
-function assertComposeConfigResolves(output) {
-	const config = spawnSync("docker", ["compose", "--project-directory", output, "-f", join(output, "compose.yml"), "config", "--quiet"], { encoding: "utf8", timeout: 60_000 });
+function assertComposeConfigResolves(output, check) {
+	const config = spawnSync("docker", ["compose", "--project-directory", output, "-f", join(output, "compose.yml"), "config", ...(check ? ["--format", "json"] : ["--quiet"])], { encoding: "utf8", timeout: 60_000 });
 	assert.equal(config.status, 0, `docker compose config rejected the prepared stack: ${config.stderr}`);
+	if (check) check(JSON.parse(config.stdout));
 }
 
 function assertBudget(service, budget, label) {
@@ -558,6 +559,16 @@ test("on-prem profile applies resource budgets, runtime policy and a versioned d
 			assert.equal(Object.hasOwn(service, "profiles"), false);
 		}
 		assert.equal(compose.services.db.stop_grace_period, "120s");
+		// PostgREST detects pooled connections on a dead network path (load-soak drill O2);
+		// operators can replace the libpq parameter string through .env.
+		const keepalives = "keepalives=1&keepalives_idle=30&keepalives_interval=10&keepalives_count=3&tcp_user_timeout=20000";
+		assert.equal(
+			compose.services.rest.environment.PGRST_DB_URI,
+			`postgres://authenticator:\${POSTGRES_PASSWORD}@\${POSTGRES_HOST}:\${POSTGRES_PORT}/\${POSTGRES_DB}?\${AIDR_POSTGREST_DB_URI_PARAMS:-${keepalives}}`,
+		);
+		for (const name of ["PGRST_DB_POOL_ACQUISITION_TIMEOUT", "PGRST_DB_POOL_MAX_IDLETIME", "PGRST_DB_POOL_MAX_LIFETIME"]) {
+			assert.equal(Object.hasOwn(compose.services.rest.environment, name), false, `${name} keeps the PostgREST default`);
+		}
 		assertStudioNotPublic(output, compose);
 		assert.match(compose.services.meta.healthcheck.test.at(-1), /connect\(8080/);
 		assert.equal(compose.services.dashboard.image, `aidr-dashboard:${dashboardVersion}`);
@@ -576,7 +587,11 @@ test("on-prem profile applies resource budgets, runtime policy and a versioned d
 		for (const entry of CATALOG.filter((item) => ["always", "self-hosted"].includes(item.written))) {
 			assert.match(readFileSync(join(output, entry.file), "utf8"), new RegExp(`^${entry.name}=`, "m"), `${entry.file} lacks documented ${entry.name}`);
 		}
-		if (dockerComposeAvailable) assertComposeConfigResolves(output);
+		if (dockerComposeAvailable) {
+			assertComposeConfigResolves(output, (resolved) => {
+				assert.match(resolved.services.rest.environment.PGRST_DB_URI, new RegExp(`^postgres://authenticator:[^@]+@db:5432/postgres\\?${keepalives}$`));
+			});
+		}
 	});
 });
 

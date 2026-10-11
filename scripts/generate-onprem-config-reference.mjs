@@ -70,6 +70,7 @@ export const CATALOG = [
 	v(".env", "SENTRY_ENVIRONMENT", "override", "operator", "production", "Sentry environment label (development installations default to `development`)."),
 	v(".env", "SENTRY_TRACES_SAMPLE_RATE", "override", "operator", "0", "Sentry trace sampling rate."),
 	v(".env", "AIDR_AUTH_METHODS", "override", "operator", "password", "Dashboard sign-in methods offered to users."),
+	v(".env", "AIDR_POSTGREST_DB_URI_PARAMS", "override", "operator", "keepalives=1&keepalives_idle=30&keepalives_interval=10&keepalives_count=3&tcp_user_timeout=20000", "Self-hosted only: libpq parameters appended to PostgREST's database URI. The default detects pooled connections on a dead network path (TCP keepalives for idle connections; `tcp_user_timeout` in ms for unacknowledged sends) without limiting query or request duration; see the 2026-10-11 load-soak drill addendum."),
 	v(".env", "COMPOSE_PROFILES", "with-posture-scanner", "fixed", "posture-scanner", "Starts the posture scanner services with the stack; remove `posture-scanner` to keep them stopped."),
 	v(".env", "POSTURE_SCANNER_SOURCE_VERSION", "with-posture-scanner", "derived", "v4.6.1-aidr.1", "Pinned scanner source tag; also the scanner server and worker image tag."),
 	v(".env", "POSTURE_SCANNER_TZ", "with-posture-scanner", "fixed", "UTC", "Time zone inside the posture scanner containers."),

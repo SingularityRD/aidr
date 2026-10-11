@@ -203,6 +203,10 @@ test("rendered production values use the external database and backups", { skip:
 	const auth = docs.find((doc) => doc.kind === "Deployment" && doc.metadata.name.endsWith("-auth"));
 	const dbUrl = auth.spec.template.spec.containers[0].env.find((entry) => entry.name === "GOTRUE_DB_DATABASE_URL").value;
 	assert.equal(dbUrl, "postgres://supabase_auth_admin:$(POSTGRES_PASSWORD)@aidr-db.internal.example.com:5432/postgres?sslmode=verify-full");
+	// PostgREST detects pooled connections on a dead network path (load-soak drill O2).
+	const rest = docs.find((doc) => doc.kind === "Deployment" && doc.metadata.name.endsWith("-rest"));
+	const restDbUri = rest.spec.template.spec.containers[0].env.find((entry) => entry.name === "PGRST_DB_URI").value;
+	assert.equal(restDbUri, "postgres://authenticator:$(POSTGRES_PASSWORD)@aidr-db.internal.example.com:5432/postgres?sslmode=verify-full&keepalives=1&keepalives_idle=30&keepalives_interval=10&keepalives_count=3&tcp_user_timeout=20000");
 	const ingress = docs.find((doc) => doc.kind === "Ingress");
 	assert.equal(ingress.metadata.annotations["cert-manager.io/cluster-issuer"], "letsencrypt-prod");
 });

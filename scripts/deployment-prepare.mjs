@@ -23,6 +23,16 @@ const { parse, parseDocument, stringify } = existsSync(join(root, "deploy/vendor
 // separate listener that Compose publishes on loopback only, and end the public
 // listener in a plain 404. Operators reach Studio through an SSH tunnel.
 const STUDIO_ADMIN_LISTENER_PORT = 8001;
+// libpq dead-peer detection for PostgREST's pooled connections
+// (docs/production-readiness/load-soak-drill-2026-10-11.md, O2 addendum). Without
+// it, a connection that was mid-query when the database's network path died sat
+// in TCP retransmission backoff and kept its pool slot well after the network
+// returned. Keepalives probe idle connections (first after 30 s idle, every 10 s,
+// dropped after 3 misses); tcp_user_timeout drops a connection whose sent data
+// stays unacknowledged for 20 s. Neither bounds query or request duration, and
+// the PostgREST pool timeouts keep their defaults. Operators override the whole
+// parameter string with AIDR_POSTGREST_DB_URI_PARAMS in `.env`.
+const POSTGREST_DB_URI_PARAMS = "keepalives=1&keepalives_idle=30&keepalives_interval=10&keepalives_count=3&tcp_user_timeout=20000";
 const ENVOY_ROUTES = ["filter_chains", 0, "filters", 0, "typed_config", "route_config", "virtual_hosts", 0, "routes"];
 function isolateStudioListener(path) {
 	const doc = parseDocument(readFileSync(path, "utf8"));
@@ -568,6 +578,11 @@ if (values.mode === "self-hosted") {
 		`${loopbackBinding(supabaseUrl)}:${studioAdminHostPort}:${STUDIO_ADMIN_LISTENER_PORT}`,
 	];
 	compose.services.functions.env_file = [".env.functions"];
+	const restDbUri = compose.services.rest.environment.PGRST_DB_URI;
+	if (typeof restDbUri !== "string" || !restDbUri.startsWith("postgres://authenticator:") || restDbUri.includes("?")) {
+		throw new Error("The reviewed upstream PostgREST database URI changed; refusing to prepare it without connection keepalives");
+	}
+	compose.services.rest.environment.PGRST_DB_URI = `${restDbUri}?\${AIDR_POSTGREST_DB_URI_PARAMS:-${POSTGREST_DB_URI_PARAMS}}`;
 	compose.services.auth.environment.GOTRUE_MAILER_TEMPLATES_RECOVERY = "http://dashboard:8080/auth-templates/recovery.html";
 	compose.services.auth.environment.GOTRUE_MAILER_SUBJECTS_RECOVERY = "Reset your AIDR password";
 	// Invites must link to /auth/callback?token_hash=...&type=invite; the default

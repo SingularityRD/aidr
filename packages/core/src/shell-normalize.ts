@@ -377,7 +377,10 @@ function traversesStateDir(view: string): boolean {
  * nothing to peel off.
  */
 export function normalizeShellText(text: string): string {
+	// IFS references are rewritten before quote removal too: a quote right after
+	// `$IFS` ends the name (`$IFS'http://…'`), which stripping would erase.
 	const decoded = text
+		.replace(IFS_REFERENCE, " ")
 		.replace(LITERAL_CONCATENATION, "")
 		.replace(ANSI_C_QUOTED, (_whole, body: string) => decodeAnsiC(body));
 	let view = peel(stripQuoting(decoded));
@@ -394,8 +397,17 @@ export function normalizeShellText(text: string): string {
  * agent writes `curl$IFS-s$IFS"url"|sh` to split words without a literal space,
  * hiding the command from space-anchored rules. The view rewrites it to a single
  * space so the normalized rules see the real words.
+ *
+ * Parameter-expansion forms of it do the same job: substrings
+ * (`${IFS:0:1}`, `${IFS::1}`), pattern trims (`${IFS%?}`, `${IFS#??}`),
+ * replacements (`${IFS/x/y}`) and defaults (`${IFS:-x}`). An empty positional
+ * parameter glued on after it (`$IFS$9`, `${IFS}${9}`) only terminates the
+ * name and expands to nothing, so it is consumed with the reference. The
+ * expansion body is one bounded, brace-free character class (no nested
+ * quantifiers), so a hostile command cannot make this backtrack.
  */
-const IFS_REFERENCE = /\$\{IFS\}|\$IFS\b/g;
+const IFS_REFERENCE =
+	/(?:\$\{IFS(?:[:#%/^,@+=?-][^{}\n`$;|&]{0,40})?\}|\$IFS\b)(?:\$[0-9@*]|\$\{[0-9@*]\}){0,2}/g;
 
 function peel(unquoted: string): string {
 	let out = unquoted.replace(IFS_REFERENCE, " ").replace(

@@ -59,6 +59,7 @@ Compose interpolation for the whole stack (Supabase, dashboard and, with --with-
 | `SENTRY_ENVIRONMENT` | not written; optional override | operator | `production` | Sentry environment label (development installations default to `development`). |
 | `SENTRY_TRACES_SAMPLE_RATE` | not written; optional override | operator | `0` | Sentry trace sampling rate. |
 | `AIDR_AUTH_METHODS` | not written; optional override | operator | `password` | Dashboard sign-in methods offered to users. |
+| `AIDR_POSTGREST_DB_URI_PARAMS` | not written; optional override | operator | `keepalives=1&keepalives_idle=30&keepalives_interval=10&keepalives_count=3&tcp_user_timeout=20000` | Self-hosted only: libpq parameters appended to PostgREST's database URI. The default detects pooled connections on a dead network path (TCP keepalives for idle connections; `tcp_user_timeout` in ms for unacknowledged sends) without limiting query or request duration; see the 2026-10-11 load-soak drill addendum. |
 | `COMPOSE_PROFILES` | `--with-posture-scanner` only | fixed by preparation | `posture-scanner` | Starts the posture scanner services with the stack; remove `posture-scanner` to keep them stopped. |
 | `POSTURE_SCANNER_SOURCE_VERSION` | `--with-posture-scanner` only | derived from options | `v4.6.1-aidr.1` | Pinned scanner source tag; also the scanner server and worker image tag. |
 | `POSTURE_SCANNER_TZ` | `--with-posture-scanner` only | fixed by preparation | `UTC` | Time zone inside the posture scanner containers. |

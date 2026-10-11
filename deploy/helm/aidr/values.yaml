@@ -181,6 +181,14 @@ rest:
   runAsUser: 1000      # image USER of postgrest/postgrest
   dbSchemas: public,graphql_public
   maxRows: 1000
+  # libpq parameters appended to PGRST_DB_URI so pooled connections on a dead
+  # network path are detected instead of waiting out TCP retransmission backoff
+  # (docs/production-readiness/load-soak-drill-2026-10-11.md, O2 addendum).
+  # Keepalives probe idle connections (first probe after 30 s idle, then every
+  # 10 s, dropped after 3 misses); tcp_user_timeout drops a connection whose sent
+  # data stays unacknowledged for 20 s. Neither limits query or request
+  # duration. Set to "" to use libpq/kernel defaults.
+  dbConnectionParams: keepalives=1&keepalives_idle=30&keepalives_interval=10&keepalives_count=3&tcp_user_timeout=20000
   pdb:
     enabled: true
     minAvailable: 1

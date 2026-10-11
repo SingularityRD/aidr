@@ -168,6 +168,7 @@
         "runAsUser": { "$ref": "#/definitions/uid" },
         "dbSchemas": { "type": "string", "minLength": 1 },
         "maxRows": { "type": "integer", "minimum": 1 },
+        "dbConnectionParams": { "type": "string", "pattern": "^$|^[a-z_]+=[A-Za-z0-9_.-]+(&[a-z_]+=[A-Za-z0-9_.-]+)*$" },
         "pdb": { "$ref": "#/definitions/pdb" }
       }
     },

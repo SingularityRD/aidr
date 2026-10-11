@@ -246,7 +246,9 @@ the ledger-derived `fault_recovery` as authoritative.
 - **O2. Partition behaviour.** Requests hang for 10 s and success resumes about 30 s after the network heals,
   because the PostgREST pool is stuck on dead connections. Dead-peer detection (libpq keepalives or
   `tcp_user_timeout` on the PostgREST DB URI) and a request deadline would bound this. No target was agreed, and
-  the instruction was not to tune timeouts just to pass.
+  the instruction was not to tune timeouts just to pass. **Partly addressed:** see the addendum below. The kit now
+  sets libpq dead-peer detection on PostgREST's URI, and a re-run on a minimal db+rest pair shortened recovery but
+  did not remove the tail.
 - **O3. Edge-runtime memory.** RSS grew from 0.65 to about 1.1 GiB and then plateaued over 3 h. That says nothing
   about multi-day behaviour.
 - **O4. Fixed-window quota bursts.** Noisy keys exhaust their per-minute ingest quota about 40 s into each
@@ -308,3 +310,100 @@ the ledger-derived `fault_recovery` as authoritative.
    start, and compare.
 
 The drill stack, its volumes and the pulled edge-runtime image were removed after the run.
+
+## Addendum, 2026-10-11: PostgREST dead-peer detection (finding O2)
+
+**Label: LOCAL ENGINEERING DRILL.** This was a minimal two-container re-run on the same host, not a re-run of the soak.
+It changes no acceptance flag.
+
+**Evidence:** `docs/production-readiness/evidence/load-soak-2026-10-11/partition-keepalive-2026-10-11.json` holds
+the per-run analysis. The per-request ledgers and container logs were not kept.
+
+### Change
+
+The kit now appends libpq parameters to PostgREST's `PGRST_DB_URI`:
+
+```text
+keepalives=1&keepalives_idle=30&keepalives_interval=10&keepalives_count=3&tcp_user_timeout=20000
+```
+
+- **Compose:** `scripts/deployment-prepare.mjs` appends it. Operators can replace the whole string with
+  `AIDR_POSTGREST_DB_URI_PARAMS` in `.env` (`docs/operations/onprem-config-reference.md`).
+- **Helm:** `rest.dbConnectionParams` is appended after `sslmode`. Set it to `""` to drop the parameters.
+- **Keepalives:** probe idle connections. The first probe goes out after 30 s idle, then one every 10 s, and the
+  connection is dropped after 3 misses.
+- **`tcp_user_timeout` (20 s):** drops a connection whose sent data stays unacknowledged for 20 s. This is the
+  setting that matters for a connection that was mid-query when the path died, because keepalives never probe a
+  connection that has data in flight.
+- **What it does not limit:** neither setting bounds query or request duration. A long query whose packets are
+  acknowledged is unaffected.
+- **Pool settings unchanged:** `db-pool-acquisition-timeout` stays at 10 s, `db-pool-max-idletime` at 30 s and
+  `db-pool-max-lifetime` at the PostgREST default. A test asserts the kit does not set them.
+
+PostgREST v14 passes the URI's query parameters to libpq. The measurement below confirms that the parameters take
+effect: connections were dropped with `no connection to the server` partway through the partition.
+
+### Method
+
+- **Stack:** `postgres:17-alpine` (PostgreSQL 17.11) and `postgrest/postgrest:v14.17` on one user-defined bridge
+  network, with PostgREST's default pool of 10.
+- **Load:** Node `fetch` from the host at a fixed rate, with a 10 s client timeout, for 150 s per run.
+  - **Slow:** `GET /rpc/slow`, which runs `pg_sleep(0.4)`, at 20 rps. That keeps about 8 statements in flight, so
+    pooled connections are mid-query when the partition starts. This is the soak's situation.
+  - **Light:** `GET /items?id=eq.7` at 10 rps, where connections are mostly idle.
+- **Fault:** `docker network disconnect` of `db` 30 s into the run, then `docker network connect` 30 s later.
+  `db` kept the same IP.
+- **Recovery:** the start of the first run of 20 consecutive HTTP 200 responses after the last failure, measured
+  from the reconnect. This is the soak's rule.
+- **Cleanup:** the containers and network were removed after every run.
+
+### Results
+
+| `PGRST_DB_URI` parameters | Workload | Runs | Recovery after reconnect (s) | Failed requests started after reconnect |
+| --- | --- | --- | --- | --- |
+| none (before) | light | 1 | 1.3 | 12 |
+| **none (before)** | slow | 3 | **26.5 / 30.7 / 31.6** | 358 / 442 / 371 |
+| keepalives 10/5/3 only | slow | 1 | 24.2 | 72 |
+| keepalives 10/5/3, `tcp_user_timeout` 25 s | slow | 2 | 0.3 / 0 | 1 / 0 |
+| keepalives 10/5/3, `tcp_user_timeout` 10 s | slow | 1 | 0.6 | 1 |
+| keepalives 30/10/3, `tcp_user_timeout` 25 s | slow | 2 | 11.8 / 31.5 | 63 / 377 |
+| keepalives 30/10/3, `tcp_user_timeout` 25 s | light | 1 | 1.2 | 11 |
+| **kit default: keepalives 30/10/3, `tcp_user_timeout` 20 s (after)** | slow | 3 | **11.3 / 24.4 / 23.2** | 59 / 281 / 271 |
+
+Keepalive figures are idle / interval / count in seconds.
+
+### Reading
+
+- **The light workload does not reproduce O2.** With idle connections, PostgREST fails fast with 503 during the
+  partition and recovers about 1 s after the reconnect, with or without the parameters.
+- **The slow workload reproduces O2.** Without the parameters, recovery came 26.5–31.6 s after the reconnect,
+  which matches the soak's ~30 s.
+  - In one baseline run every request in the window hung until the 10 s client timeout, and PostgREST never
+    entered its reconnect loop.
+  - The cause was connections stuck in kernel TCP retransmission backoff, which resumed only on a late
+    retransmit.
+- **Keepalives alone do not help (24.2 s).** The stuck connections have data in flight, and keepalives do not probe
+  them.
+- **`tcp_user_timeout` removes the retransmission component.** With the kit default, recovery was 11.3–24.4 s
+  (mean 19.6 s, against 29.6 s), and requests that failed after the reconnect fell from about 390 to about 200 per
+  run.
+- **The rest of the tail is PostgREST's own reconnect backoff.** PostgREST logs "Attempting to reconnect to the
+  database in 1, 2, 4, 8, 16 seconds". If its reconnect loop starts early in a 30 s partition, the next attempt
+  lands well after the network returns.
+  - The two near-zero results with `tcp_user_timeout` 25 s are partly a coincidence of timing: connections died
+    about 5 s before the reconnect, so the backoff was still short when the network returned. They are not a
+    reason to tune the value to the partition length.
+  - We found no PostgREST v14 setting for this backoff.
+- **Why these values.** The kit keeps conservative values (30/10/3 and 20 s) rather than the faster ones measured
+  here.
+  - 20 s of unacknowledged data on a LAN path is a dead peer, not congestion.
+  - The value is twice the 10 s pool-acquisition timeout, so it never preempts a request that is still waiting
+    normally.
+
+### What stays open in O2
+
+- Requests still hang until the 10 s client timeout while connections are pinned. Bounding that needs a request
+  deadline or fail-fast admission, which is O1's product decision.
+- PostgREST's reconnect backoff can add up to about 16 s after a long partition.
+- n = 3 per arm on a shared host is indicative, not conclusive. The soak stack (edge runtime, gateway, 11-key mix)
+  was not re-run with the change.
