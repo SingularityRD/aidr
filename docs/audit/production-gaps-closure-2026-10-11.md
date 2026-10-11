@@ -86,3 +86,43 @@ Also in this round:
 
 - **LOCAL_ENGINEERING_READY:** not yet. Items 21, 25 and 26 need product scope decisions. The Windows setuptools re-lock and the Windows/macOS/Cursor/VS Code host runs are not possible in this environment.
 - **RELEASE_CANDIDATE_READY** and **PRODUCTION_SALES_GO:** not met. A signed candidate, the 12 enterprise gates (legal, finance, independent pentest, customer PoV, SLA) and live deployment acceptance can only be closed by named owners.
+
+## Addendum — second local round (11 October 2026)
+
+Done on the same machine at the owner's request. Every item below is local engineering evidence (one Linux host, Docker), not production acceptance. The decision stays **NO-GO**.
+
+| Item | Result | Commit | Record |
+| --- | --- | --- | --- |
+| Studio on the public API host (AIDR-080 triage) | Public gateway returns 404 for Studio paths; Studio only on an operator listener bound to 127.0.0.1 (SSH tunnel); nginx forwards API paths only; doctor check flags old kits | a94c7e25 | deploy/onprem/README.md |
+| Example dataset key (AIDR-070 owner-confirm rows) | Retired and replaced with refused `REPLACE_WITH_` placeholders; allowlist entry removed; the old key and fingerprints are refused by hash at runtime | a94c7e25, 8b261a85 | secret-history-triage-2026-10-11.md addendum |
+| PostgreSQL 17.6 → 17.11 | Encrypted backup restored into 17.11: identical row hashes for 157 tables, RLS/grants/storage parity, RTO about 51–57 s; pin moved, upgrade/rollback procedure written | a94c7e25 | postgres-upgrade-restore-drill-2026-10-11.md |
+| Vault (pgsodium) root key missing from backups (new finding) | Key carried encrypted in the authenticated manifest and restored before first start; Docker drill shows a Vault secret decrypting after recovery | 15477717 | backup-restore-v6.md addendum |
+| Load/soak/failover (AIDR-052, items 36–37) | 3 h soak with a noisy tenant and four injected faults: all recovered unattended; 1.22 M events reconciled exactly once. Fixed: tenant starvation on the admission check (new migration), load-tool recovery measurement | e2224ad9 | load-soak-drill-2026-10-11.md |
+| Hook latency (item 30) | Node compile cache in per-call hooks: warm p50 493 → 438 ms; a bundle that fails to load now blocks (exit 2) | a327c4dc, 365da872 | hook-latency-2026-10-11.md addendum |
+| Internal adversarial review (not independent) | **HIGH:** the promote job ran RC tag code before the GO gate; fixed (no tag code, verified-tarball staging, hash-chained GO ledger). **Medium:** PDF attachment hidden by object redefinition, and large renamed documents in monitor mode; both fixed. **Low:** retention increase lowering other classes, and a stale OIDC discovery write; both fixed. No exploitable connector bypass found. | 708a0502, 8b261a85, 610c0800 | this record |
+| Stale enrollment-admission Postgres suite | Rewritten for the current schema and gated in CI | 7bb86b16 | — |
+
+State after this round:
+
+| Check | Result |
+| --- | --- |
+| `check`, `build`, `lint` (0 errors) | PASS |
+| Unit suite | 11,699 PASS, 0 failures |
+| Privacy suite | 1,535 PASS |
+| Real-host tier | 4/4 hosts, every scenario PASS |
+| Interception matrix | 0 failures |
+
+Still open — these cannot be closed from this machine:
+
+**Needs other environments or access**
+- Windows, macOS, Cursor and VS Code host runs (VS Code downloads are blocked here).
+- The Windows setuptools re-lock (needs a host that can download the torch wheel).
+- Live DNS/deployment.
+- Real Entra/Okta.
+- HA across failure domains, offsite backup and an 8-hour soak.
+
+**Needs people or a decision**
+- Legal, finance, billing, an independent pentest, a customer PoV and a monthly SLA window.
+- Overload shedding policy: which tenant's requests are dropped.
+- Upstream Supabase vendor fixes and the Security risk acceptance for them.
+- Turning on GitHub automated security fixes (repository setting).
