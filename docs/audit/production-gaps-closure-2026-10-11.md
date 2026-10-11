@@ -54,7 +54,7 @@ Work branch: `claude/focused-gates-0u1is2` (base `f90adfb6`). Landing repo: `Sin
 | 27 Host OS/version acceptance | Partial | linux/x64 real host is PASS (mock model). Windows, macOS, Cursor and VS Code are not run. |
 | 28 Corporate directory | **Open** | Needs real Entra/Okta/Clerk |
 | 29 Org-wide egress | **Open** | Needs MDM/network deployment |
-| 30 Hook latency | Measured | [hook-latency-2026-10-11.md](../production-readiness/hook-latency-2026-10-11.md): Linux cold p50 468 ms, p95 521 ms. Customer hardware, AV and DLP/NER not measured. |
+| 30 Hook latency | Measured | [hook-latency-2026-10-11.md](../production-readiness/hook-latency-2026-10-11.md): Linux 4 vCPU cold p50 506 ms / p95 566 ms (n=40), warm p50 510 ms (n=120), 8x20 concurrent p95 1.55 s, 0 errors in 700 calls (and 700 more under load). Customer hardware, AV, Windows ACL path and DLP/NER not measured. |
 | 31 Windows CI process tree | Fixed | ff99b9d7 |
 | 32 Live deployment | **Open** | DNS/Worker/deployed revision need operator access. On the landing side, health JSON + `no-store` is verified in the image. |
 | 33 Runtime images | Partial | 332f2286: dashboard and backup helper images 0 CRITICAL / 0 HIGH; AIDR-082 VERIFIED_CLOSED. Landing image (aidr-landing PR #1) 13/168 → 0/1; the remaining HIGH is grpc-js, which Firebase pins. Upstream Supabase images are open (AIDR-080). |
@@ -63,7 +63,7 @@ Work branch: `claude/focused-gates-0u1is2` (base `f90adfb6`). Landing repo: `Sin
 | 36 Field acceptance | **Open** | Needs real consumers |
 | 37 Capacity/HA | **Open** | 8-hour soak and failover need real infrastructure |
 | 38 Records | Partial | Generated records regenerated deterministically; this closure record added |
-| 39 Secret history | Partial | 3a729178: full history scanned, current tree 0 findings, new detections classified as false positives. The two owner-confirm rows await an owner/Security decision. |
+| 39 Secret history | Partial | 3a729178: full history scanned, current tree 0 findings, new detections classified as false positives. The two owner-confirm rows await an owner/Security decision and are currently hidden by a value-exact `.gitleaks.toml` allowlist ([2026-10-11 triage](../production-readiness/secret-history-triage-2026-10-11.md)). |
 | 40 Security update operations | **Open** | Turning on the repo's automated security fixes setting needs the account owner; Dependabot limits stay 0 until qualification |
 
 Also in this round:
