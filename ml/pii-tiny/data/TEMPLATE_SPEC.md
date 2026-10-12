@@ -31,7 +31,7 @@ One JSON object per line (`.jsonl`), UTF-8:
 |---|---|---|
 | `PERSON` | `full` (default: first + last), `first`, `last`, `upper` (AHMET YILMAZ), `lower` (ahmet yılmaz), `initial` (A. Yılmaz), `firstlast2` (two given names: Ayşe Nur Demir) | Titles/honorifics stay OUTSIDE the slot: `Sayın {PERSON1}`, `{PERSON1.first} Hanım`, `{PERSON1.first} Bey`, `Dr. {PERSON1.last}`, `Mr. {PERSON1.last}`. |
 | `ADDRESS` | `tr` (full TR address: mahalle, cadde/sokak, no, daire, ilçe/il), `tr_street` (street + number only), `en` (US/UK street address), `en_street` | Street-level, one span. |
-| `LOCATION` | `city`, `district` (TR ilçe), `neighborhood` (TR mahalle), `country` | Use only where the place identifies/locates the person (where they live, were born, are travelling). |
+| `LOCATION` | `city`, `district` (TR ilçe), `neighborhood` (TR mahalle), `country` | Use only where the place identifies/locates the person (where they live, work, were born, or are right now). A trip destination or a place as a topic is not a LOCATION. |
 
 Turkish suffix after the slot (Turkish texts only): `+GEN` ('ın / 'nin), `+DAT` ('a / 'ye),
 `+ACC` ('ı / 'yi), `+LOC` ('da / 'te), `+ABL` ('dan / 'ten), `+INS` ('la / 'yle), `+PLU`
