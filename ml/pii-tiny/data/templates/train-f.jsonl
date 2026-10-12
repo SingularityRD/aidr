@@ -161,7 +161,7 @@
 {"lang": "mix", "domain": "travel", "text": "Schengen vizesi için cover letter: \"I am {PERSON1}, employed as an engineer, living at {ADDRESS1.tr}. I plan to visit {LOCATION1.country} for tourism.\" Bunu daha profesyonel yap."}
 {"lang": "tr", "domain": "hotel", "text": "Resepsiyon notu: {PERSON1.first} Hanım kahvaltıyı odada istiyor, glütensiz. Mutfak ekibine ileteceğim kısa notu yaz."}
 {"lang": "en", "domain": "travel", "text": "My colleague {PERSON1.first} lost her passport in {LOCATION1.city}. What steps should she take at the Turkish consulate, and what documents does she need?"}
-{"lang": "tr", "domain": "hotel", "text": "Grup rezervasyonu düğün için: gelin tarafı {PERSON1.last} ailesi, damat tarafı {PERSON2.last} ailesi, toplam 24 oda. Oda dağılım tablosu hazırla."}
+{"lang": "tr", "domain": "hotel", "text": "Grup rezervasyonu düğün için: gelin tarafı {PERSON1.last+PLU}, damat tarafı {PERSON2.last+PLU}, toplam 24 oda. Oda dağılım tablosu hazırla."}
 {"lang": "tr", "domain": "travel", "text": "bayramda deniz kenarında sakin bir yer arıyoruz, bütçe kişi başı 15 bin, ege'de nereler önerirsin"}
 {"lang": "tr", "domain": "travel", "text": "Biletimde isim yanlış yazılmış: {PERSON1.upper} olması gerekirken bir harf eksik. Havayoluna düzeltme talebi yaz, PNR: X7K2QP."}
 {"lang": "en", "domain": "hotel", "text": "Rewrite this booking confirmation so it sounds warmer:\nDear {PERSON1},\nYour reservation #48213 is confirmed for 2 adults, 3 nights. Check-in from 14:00.\nRegards, Front Desk"}
@@ -244,6 +244,57 @@
 {"lang": "mix", "domain": "cargo", "text": "{PERSON1.first}, paketini PTT Kargo ile gönderdim, tracking number mesajda. Bunu daha kısa ve friendly yaz, Türkçe kalsın."}
 {"lang": "tr", "domain": "logistics", "text": "Bahar taşınma sezonunda nakliye fiyatları neden artıyor? Müşterilere açıklayan bir blog yazısı giriş paragrafı yaz."}
 {"lang": "tr", "domain": "cargo", "text": "Depodaki adres etiketi okunmuyor: \"{PERSON1}, ... Mah. ... Sok.\" Sistemde aynı isimle iki kayıt var: {ADDRESS1.tr} ve {ADDRESS2.tr}. Doğru olanı bulmak için müşteriye ne sorayım?"}
-{"lang": "en", "domain": "cargo", "text": "Translate this to Turkish for the courier: \"Please deliver to {PERSON1.first}'s office on the second floor, not the reception.\""}
-{"lang": "tr", "domain": "logistics", "text": "{PERSON1} ailesinin {LOCATION1.country+DAT} göç edeceği için konteyner taşımacılığı fiyat teklifi isteyen e-posta yaz, 20 feet konteyner, kapıdan kapıya."}
+{"lang": "en", "domain": "cargo", "text": "Translate this to Turkish for the courier: \"Please deliver to the office of {PERSON1.first} on the second floor, not the reception.\""}
+{"lang": "tr", "domain": "logistics", "text": "{PERSON1.last+PLU} {LOCATION1.country+DAT} göç edecekleri için konteyner taşımacılığı fiyat teklifi isteyen e-posta yaz, 20 feet konteyner, kapıdan kapıya."}
 {"lang": "tr", "domain": "logistics", "text": "Kaya taşımacılığı yapan kamyonlar için yük güvenliği eğitim notu hazırla, şoförlere yönelik basit bir dil kullan."}
+{"lang": "mix", "domain": "hotel", "text": "Reservation detayları: guest {PERSON1}, 2 adults + 1 child, arrival 18:00, airport transfer from İstanbul Havalimanı. Bunu housekeeping ve concierge için iki ayrı not haline getir."}
+{"lang": "mix", "domain": "hotel", "text": "Lütfen bu review reply'ı düzelt: \"Dear {PERSON1.first}, we're sorry that the pool was closed during your stay. Umarız tekrar görüşürüz.\" Tamamen English olsun."}
+{"lang": "mix", "domain": "hotel", "text": "Night audit sırasında fark ettim: {PERSON1.last} soyadlı misafir iki kere charge edilmiş. Accounting'e Türkçe bir e-posta yaz, refund talep et."}
+{"lang": "mix", "domain": "hotel", "text": "Misafir {PERSON1} early check-in istiyor, saat 08:00'de {LOCATION1.city+ABL} geliyor. Room availability yoksa luggage storage öner, cevabı English yaz."}
+{"lang": "mix", "domain": "school-admin", "text": "Enrollment form'daki adres alanı eksik: student {PERSON1}, parent {PERSON2}. Veliye eksik bilgiyi tamamlamasını isteyen kısa bir mesaj yaz, Türkçe ama form alan isimleri English kalsın."}
+{"lang": "mix", "domain": "school-admin", "text": "Okulun annual report'una eklenecek: bu yıl {PERSON1} ve {PERSON2} TÜBİTAK proje yarışmasında birinci oldu. Newsletter için bir paragraf yaz, başlık English olsun."}
+{"lang": "mix", "domain": "school-admin", "text": "Substitute teacher listesi:\n- Mon: {PERSON1.initial}\n- Tue: {PERSON2.initial}\n- Wed: {PERSON1.initial}\nBunu haftalık takvim formatına çevir, öğretmenler odasına asılacak."}
+{"lang": "mix", "domain": "municipality", "text": "Kent konseyi meeting minutes: {PERSON1} bisiklet yolu önerdi, {PERSON2} itiraz etti çünkü {ADDRESS1.tr_street} çok dar. Summarize in English, 3 bullets."}
+{"lang": "mix", "domain": "municipality", "text": "Zabıta'ya noise complaint: üst kattaki komşum her gece müzik açıyor, adres {ADDRESS1.tr}. Bunu Türkçe resmi şikayete çevir ama bana English özetini de ver."}
+{"lang": "mix", "domain": "municipality", "text": "Belediye'nin yeni recycling programı hakkında vatandaşlara bir FAQ hazırla. Sorular Türkçe, teknik terimler English kalabilir."}
+{"lang": "mix", "domain": "government", "text": "Apostil işlemi nasıl yapılır? Diploma {LOCATION1.country} için gerekiyor, ben {LOCATION2.city+LOC} oturuyorum. Explain step by step, Turkish please."}
+{"lang": "mix", "domain": "government", "text": "My father {PERSON1} needs a power of attorney (vekaletname) for selling the house at {ADDRESS1.tr}. Notere götüreceğimiz metni Türkçe hazırla."}
+{"lang": "mix", "domain": "government", "text": "Residence permit renewal için appointment aldım ama {PERSON1+GEN} documents eksik: health insurance ve kira kontratı. Bunu checklist yap."}
+{"lang": "mix", "domain": "travel", "text": "Flight booking özeti: passenger {PERSON1.upper}, IST → {LOCATION1.city}, seat 14C, PNR ABC123. Bunu WhatsApp'tan aileme atacağım kısa bir mesaja çevir."}
+{"lang": "mix", "domain": "travel", "text": "Tour guide {PERSON1.first} sabah 7'de otelden alacak. Group members'a reminder yaz: pasaport, su, rahat ayakkabı. Türkçe ve English iki versiyon."}
+{"lang": "mix", "domain": "travel", "text": "Kızım {PERSON1.first} exchange student olarak {LOCATION1.country+DAT} gidiyor, host family {PERSON2.last} ailesi. Onlara teşekkür eden bir English e-posta yaz."}
+{"lang": "mix", "domain": "travel", "text": "Visa refusal letter geldi, reason: insufficient ties to home country. {PERSON1} olarak itiraz mektubu yaz, {ADDRESS1.tr} adresinde ev sahibi olduğumu belirt."}
+{"lang": "mix", "domain": "logistics", "text": "Moving day plan: sabah 8'de truck gelecek {ADDRESS1.tr}, akşam {ADDRESS2.tr+DAT} ulaşacak. Bunu saatlik timeline'a dök."}
+{"lang": "mix", "domain": "logistics", "text": "Supplier {PERSON1.last} Bey'e: PO #4471 delivery {LOCATION1.city} depomuza değil, Gebze'ye yapılsın. Write it in English, kısa olsun."}
+{"lang": "mix", "domain": "logistics", "text": "Fleet manager olarak driver {PERSON1.first+GEN} hız ihlali raporlarını aldım. Uyarı yazısı yaz, Türkçe, ama policy reference English kalsın."}
+{"lang": "mix", "domain": "cargo", "text": "Customer {PERSON1} dedi ki paket {ADDRESS1.tr_street} adresine değil ofisine teslim edilsin. Courier app note'u olarak 1 satır yaz."}
+{"lang": "mix", "domain": "cargo", "text": "Cargo claim form: shipper {PERSON1}, consignee {PERSON2}, damage: kırık cam. Bunu English claim letter'a dönüştür."}
+{"lang": "mix", "domain": "cargo", "text": "Aras Kargo'nun API dokümantasyonunda shipment create endpoint'i ne parametre istiyor? Kod örneği ver, Python ile."}
+{"lang": "mix", "domain": "university", "text": "Visiting scholar {PERSON1} {LOCATION1.country+ABL} geliyor, kampüste guest house rezervasyonu yapmamız lazım. Facilities'e Türkçe talep yaz."}
+{"lang": "mix", "domain": "university", "text": "Course syllabus'ta instructor kısmını güncelle: Dr. {PERSON1}, office hours Tuesday 14:00–16:00, e-mail hoca@ornek.com.tr. Format aynı kalsın."}
+{"lang": "mix", "domain": "education", "text": "Bu sınav sonuçlarını analyze et:\nstudent,score\n{PERSON1},72\n{PERSON2},88\n{PERSON3},55\nTürkçe yorum yaz, kimin desteğe ihtiyacı var?"}
+{"lang": "mix", "domain": "education", "text": "Kreş öğretmeni olarak daily report: {PERSON1.first} bugün öğle uykusunda ağladı ama sonra iyiydi. Bunu velisi {PERSON2.first} Hanım'a sweet bir mesaj olarak yaz."}
+{"lang": "mix", "domain": "hotel", "text": "Spa appointment confirm et: {PERSON1.first} {PERSON1.last}, massage 60 min, 16:30. Mesajı English ve Türkçe yaz."}
+{"lang": "en", "domain": "hotel", "text": "Our guest {PERSON1} left a passport at reception. Write an email asking for a forwarding address and confirming we will use a tracked courier."}
+{"lang": "en", "domain": "hotel", "text": "Make this front-desk handover note clearer: room 220 {PERSON1.last} late checkout ok, room 118 waiting for invoice details, room 305 noise complaint resolved."}
+{"lang": "en", "domain": "school-admin", "text": "Write a letter to parents of {PERSON1} confirming the transfer to our school starting next term, and asking for proof of address at {ADDRESS1.en}."}
+{"lang": "en", "domain": "school-admin", "text": "Generate a school bus roster grouped by stop:\n{PERSON1} – {ADDRESS1.en_street}\n{PERSON2} – {ADDRESS2.en_street}\n{PERSON3} – {ADDRESS1.en_street}"}
+{"lang": "en", "domain": "municipality", "text": "Help me write a petition to the city council about the closure of the library on {ADDRESS1.en_street}. Organisers: {PERSON1} and {PERSON2}."}
+{"lang": "en", "domain": "municipality", "text": "Reply to a resident, Mrs. {PERSON1.last}, who reported a pothole outside her house, and tell her the repair is scheduled within ten working days."}
+{"lang": "en", "domain": "government", "text": "Rewrite this affidavit in plain English: I, {PERSON1}, of {ADDRESS1.en}, being duly sworn, state that I was born in {LOCATION1.city} and have lived continuously at this address since 2010."}
+{"lang": "en", "domain": "logistics", "text": "Draft an email to the removal company: our new address in {LOCATION1.city} is {ADDRESS1.en}, and {PERSON1.first} will meet the crew there with the keys."}
+{"lang": "en", "domain": "travel", "text": "Our group lead {PERSON1} needs a letter for the embassy confirming the delegation's hotel booking and conference attendance in {LOCATION1.city}."}
+{"lang": "en", "domain": "travel", "text": "I'm flying from Sabiha Gökçen to London with Pegasus next week. What's the hand-luggage size limit and can I bring a power bank?"}
+{"lang": "en", "domain": "cargo", "text": "Create a JSON payload for the courier API:\n{\"recipient_name\": \"{PERSON1}\", \"street\": \"{ADDRESS1.en}\", \"country\": \"{LOCATION1.country}\"}\nAdd fields for weight and declared value."}
+{"lang": "en", "domain": "university", "text": "Draft the funding acknowledgement for my paper and thank {PERSON1.first} {PERSON1.last} for help with the field sampling near {LOCATION1.city}."}
+{"lang": "en", "domain": "education", "text": "I tutor {PERSON1.first} twice a week. Write a monthly progress update for her dad, {PERSON2.first}, mentioning improved spelling and weak times tables."}
+{"lang": "tr", "domain": "hotel", "text": "Kat hizmetleri şefi {PERSON1.first+DAT} not: 3. kattaki tüm odaların halıları yarın yıkanacak, misafirler {PERSON2.first} Bey'in ekibiyle 2. kata alınacak. Bu planı netleştir."}
+{"lang": "tr", "domain": "hotel", "text": "{PERSON1+ABL} gelen e-posta: \"Odamızdan ay ışığı manzarası görünecek mi?\" Butik otelimiz adına şiirsel ama abartısız bir cevap yaz."}
+{"lang": "tr", "domain": "school-admin", "text": "Ders programı çakışması: {PERSON1.last} Hoca Salı 3. saatte hem 9-A hem 10-C'de görünüyor. Müdür yardımcısına bildirim yaz."}
+{"lang": "tr", "domain": "school-admin", "text": "Okul kütüphanesi için bağış yapan {PERSON1.firstlast2} ve eşi {PERSON2.first+DAT} teşekkür mektubu yaz. Adresleri {ADDRESS1.tr}, mektup postayla gidecek."}
+{"lang": "tr", "domain": "municipality", "text": "Kentsel dönüşüm kapsamında {ADDRESS1.tr} adresindeki binamızın riskli yapı tespiti yapıldı. Kat malikleri {PERSON1}, {PERSON2} ve {PERSON3} adına belediyeye ortak başvuru yaz."}
+{"lang": "tr", "domain": "municipality", "text": "Belediyenin evde bakım hizmetinden yararlanmak için {PERSON1.first} amca adına başvuru yazısı yaz, kendisi 82 yaşında ve {LOCATION1.neighborhood} Mahallesi'nde tek başına yaşıyor."}
+{"lang": "tr", "domain": "logistics", "text": "Taşınma firması {PERSON1+ACC} sabah aradım, eşyalarımızın {LOCATION1.city+LOC} depoda bekleyeceğini söyledi. Depolama ücretini sorduğum mesajı yaz."}
+{"lang": "tr", "domain": "government", "text": "Nüfus müdürlüğünde {PERSON1+INS} birlikte işlem yaptık; evlilik sonrası soyadı değişikliği için başka hangi kurumlara bildirim yapmalıyım? Liste halinde yaz."}
+{"lang": "tr", "domain": "travel", "text": "Yaz tatilinde Karadeniz'de yayla turu planlıyoruz: Trabzon'a uçup Uzungöl ve Ayder'e geçeceğiz. 5 günlük rota öner."}
+{"lang": "tr", "domain": "cargo", "text": "{PERSON1.upper} adına gelen iade kolisini depoda bulamıyoruz, barkod 99887766. Depo sorumlusu {PERSON2.first} Bey'e acil arama talebi yaz."}

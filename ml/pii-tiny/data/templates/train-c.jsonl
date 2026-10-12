@@ -228,3 +228,33 @@
 {"lang": "en", "domain": "payroll", "text": "A contractor, {PERSON1}, invoiced 168 hours at $85/hour but the timesheet shows 152. Draft a polite email asking her to reconcile the difference."}
 {"lang": "en", "domain": "hr", "text": "We received a harassment complaint against {PERSON1} from {PERSON2}. Outline the investigation steps HR should follow in the first 72 hours."}
 {"lang": "en", "domain": "interview-notes", "text": "Give me 6 behavioural interview questions to assess resilience and adaptability for a customer support role. Include what a good answer looks like."}
+{"lang": "mix", "domain": "recruiting", "text": "Bu candidate'ın profilini kısaca özetle, Slack'te paylaşacağım:\nName: {PERSON1}\nLocation: {LOCATION1.district}, {LOCATION2.city}\nCurrent: Senior QA @ Getir\nNotice period: 1 ay"}
+{"lang": "mix", "domain": "interview-notes", "text": "{PERSON1.first} Hanım'ın case study sunumu çok iyiydi ama Q&A kısmında defensive davrandı. Hiring committee için 'hire / no hire' önerisiyle bir paragraf yaz."}
+{"lang": "mix", "domain": "payroll", "text": "Payroll cut-off tarihi değişti: artık her ayın 20'si. Bunu tüm employee'lere duyuran bilingual bir mail yaz, subject line da öner."}
+{"lang": "mix", "domain": "onboarding", "text": "Onboarding doc'unda şu satır var: 'Your manager {PERSON1} will set up your accounts.' Bunu Türkçe çalışanlar için de anlaşılır olacak şekilde iki dilli yaz."}
+{"lang": "mix", "domain": "performance-review", "text": "Mid-year review'da {PERSON1.first+DAT} şunu söylemek istiyorum: 'Ownership'in çok iyi ama stakeholder'lara update vermiyorsun.' Daha diplomatik bir versiyon önerir misin?"}
+{"lang": "mix", "domain": "termination", "text": "Exit interview form'unu Türkçeye çevir: reason for leaving, would you recommend us, feedback for your manager. Anonim olacak."}
+{"lang": "mix", "domain": "org-chart", "text": "Bu chart'ta {PERSON1.first} hem Product hem Design'a bakıyor gibi görünüyor, aslında sadece Product. Doğrusu:\nProduct: {PERSON1}\nDesign: {PERSON2}\nGüncel tabloyu çıkar."}
+{"lang": "mix", "domain": "hr", "text": "{PERSON1.first} WFH request gönderdi, Perşembe ve Cuma evden çalışmak istiyor çünkü {LOCATION1.city+DAT} taşındı. Manager approval mail'ini yaz."}
+{"lang": "mix", "domain": "recruiting", "text": "Headhunter'a brief: Head of People arıyoruz, 10+ yıl deneyim, scale-up tecrübesi, İstanbul ofis. Fee %20. İngilizce bir brief doc yaz."}
+{"lang": "mix", "domain": "interview-notes", "text": "[11:15] {PERSON1.first}: candidate no-show yaptı\n[11:16] {PERSON2.first}: reschedule edelim mi?\n[11:18] {PERSON1.first}: {PERSON3.first+INS} konuşayım önce\nBu thread'i recruiting tracker'a not olarak gir."}
+{"lang": "mix", "domain": "payroll", "text": "{PERSON1+GEN} expense claim'i reddedildi çünkü receipt eksik. Ona gönderilecek, hangi belgeleri upload etmesi gerektiğini anlatan kısa bir mail yaz."}
+{"lang": "mix", "domain": "performance-review", "text": "Promotion packet hazırlıyorum: {PERSON1}, Senior'dan Staff'a. Impact örnekleri: payment latency %40 azaldı, on-call rotation'ı yeniden tasarladı. Narrative kısmını yaz."}
+{"lang": "mix", "domain": "onboarding", "text": "IT checklist for {PERSON1.first}: MacBook, Okta, GitHub, Slack, VPN. Hepsi Pazartesi hazır olmalı. Bunu Jira ticket description formatına çevir."}
+{"lang": "mix", "domain": "termination", "text": "Severance agreement'ın Türkçe özetini çıkar, {PERSON1.first} Bey imzalamadan önce okumak istiyor: 3 ay ücret, non-compete 6 ay, confidentiality süresiz."}
+{"lang": "mix", "domain": "hr", "text": "Company offsite: Kapadokya, 14–16 Mayıs. Agenda, travel info ve dress code içeren bir announcement draft'ı yaz. Balon turu optional."}
+{"lang": "mix", "domain": "org-chart", "text": "Team topology'yi açıkla: stream-aligned team'lerin lead'leri {PERSON1.first}, {PERSON2.first}; platform team lead'i {PERSON3.first}. Bunu bir diagram açıklaması olarak yaz."}
+{"lang": "mix", "domain": "recruiting", "text": "Aday {PERSON1} remote çalışmak istiyor, şu an {ADDRESS1.tr} adresinde yaşıyor. Contract'ta 'work location' maddesini nasıl yazmalıyız? İngilizce öneri ver."}
+{"lang": "mix", "domain": "hr", "text": "Hey {PERSON1.first}, quick reminder: KVKK eğitimini bu hafta tamamlaman gerekiyor, link LMS'te. Bunu daha friendly yaz ama urgency kalsın."}
+{"lang": "mix", "domain": "payroll", "text": "Bonus payout tablosu:\nName | Rating | Bonus %\n{PERSON1} | Exceeds | 15\n{PERSON2} | Meets | 10\n{PERSON3} | Below | 0\nBunu leadership'e sunacağım, kısa bir yorum ekle."}
+{"lang": "mix", "domain": "interview-notes", "text": "Take-home assignment review: {PERSON1.lower} kodda test yazmamış ama architecture temiz. Feedback'i adaya İngilizce gönderilecek şekilde yaz."}
+{"lang": "mix", "domain": "performance-review", "text": "Engineering ladder'ındaki 'L4' ve 'L5' beklentilerini karşılaştıran bir tablo yap. Kolonlar: scope, autonomy, influence. TR açıklamalarla."}
+{"lang": "mix", "domain": "onboarding", "text": "{PERSON1.first+DAT} welcome pack'te kupa, defter ve hoodie göndereceğiz. Hoodie bedeni L. Kargo adresi {ADDRESS1.tr_street}. Procurement'a İngilizce request yaz."}
+{"lang": "mix", "domain": "termination", "text": "Garden leave sürecinde {PERSON1} hâlâ Slack'te aktif görünüyor. Access'leri kapatmak için IT'ye ve manager'ı {PERSON2.first+DAT} gidecek iki ayrı mesaj yaz."}
+{"lang": "mix", "domain": "org-chart", "text": "{PERSON1.upper} (CEO)\n├── {PERSON2.upper} (CFO)\n├── {PERSON3.upper} (CTO)\n│   └── {PERSON4.upper} (VP Eng)\nBu ASCII tree'yi HTML nested list'e çevir."}
+{"lang": "mix", "domain": "hr", "text": "Ramazan boyunca flexible working hours uygulayacağız. Policy update'ini TR/EN iki dilde yaz, iftar saatine göre erken çıkış mümkün olsun."}
+{"lang": "mix", "domain": "recruiting", "text": "{PERSON1.first} offer'ı kabul etti 🎉 Hiring manager {PERSON2.first} için kısa bir congrats Slack mesajı ve {PERSON1.first+DAT} gidecek pre-boarding mail'i yaz."}
+{"lang": "mix", "domain": "payroll", "text": "Expat çalışan {PERSON1.firstlast2}, {LOCATION1.country} vatandaşı, Türkiye'de çalışma izniyle çalışıyor. Payroll'da dikkat edilmesi gereken vergi konularını İngilizce özetle."}
+{"lang": "mix", "domain": "performance-review", "text": "Skip-level 1:1'de {PERSON1.first}, manager'ı {PERSON2.first} hakkında micromanagement şikâyetinde bulundu. Bu notu confidential olarak nasıl kaydetmeliyim?"}
+{"lang": "mix", "domain": "hr", "text": "{PERSON1.first+GEN} baby shower'ı için ofiste küçük bir kutlama yapacağız. Ekibe gizli bir davet mesajı yaz, kendisine söylemeyin diye de ekle."}
+{"lang": "mix", "domain": "onboarding", "text": "New joiner survey sonuçları: %85 'ilk hafta faydalıydı' demiş, en çok şikâyet laptop gecikmesi. Bunu 3 action item'a çevir."}

@@ -247,3 +247,54 @@
 {"lang": "tr", "domain": "bankacilik", "text": "Müşteri {PERSON1.firstlast2} için hazırlanan yatırım danışmanlığı uygunluk testi sonucu 'orta risk'. Ona önerilecek portföy dağılımını açıklayan bir mektup yaz."}
 {"lang": "tr", "domain": "hukuk", "text": "Kişisel Verilerin Korunması Kanunu ile GDPR arasındaki temel farkları tablo halinde göster."}
 {"lang": "tr", "domain": "insan-kaynaklari", "text": "Esnek çalışma talebi: {PERSON1.first} Hanım haftada 2 gün evden çalışmak istiyor, yöneticisi {PERSON2} olumlu. İK onay yazısını hazırla."}
+{"lang": "tr", "domain": "musteri-hizmetleri", "text": "{PERSON1.upper}!!! 2 HAFTADIR CEVAP VERMİYORSUNUZ\nBu e-postayı gönderen müşteriye sakinleştirici bir yanıt yaz, adıyla hitap et."}
+{"lang": "tr", "domain": "bankacilik", "text": "{PERSON1.first} Bey ile {PERSON2.first} Hanım ortak hesap açmak istiyor ama {PERSON2.first} Hanım şu an {LOCATION1.country+LOC} yaşıyor. Uzaktan hesap açılışı mümkün mü, müşterilere anlatan mesaj yaz."}
+{"lang": "tr", "domain": "hukuk", "text": "Bilirkişi {PERSON1.firstlast2}, raporunda davalı {PERSON2+GEN} kusur oranını %70 olarak belirlemiş. Rapora karşı beyan dilekçemizi yaz, Av. {PERSON3.last} imzalı olacak."}
+{"lang": "tr", "domain": "emlak", "text": "Yönetim planına aykırı olarak {PERSON1.last} ailesi bahçeye kamelya kurmuş. Site yönetimi adına kibar ama net bir uyarı yazısı yaz. Daire: {ADDRESS1.tr}"}
+{"lang": "tr", "domain": "sigorta", "text": "Sigortalımız {PERSON1+INS} yapılan görüşmede aracın {LOCATION1.city+LOC} çalındığı öğrenildi. Hırsızlık hasarı için istenecek evrak listesini ona gönderilecek mesaj olarak yaz."}
+{"lang": "tr", "domain": "insan-kaynaklari", "text": "Mobbing şikayeti: {PERSON1} yöneticisi {PERSON2+ABL} şikayetçi. Etik kurulu için tarafsız bir ön inceleme raporu taslağı yaz."}
+{"lang": "tr", "domain": "muhasebe", "text": "{PERSON1.lower} - fatura - 14.500 TL - vade 15 gün\n{PERSON2.lower} - fatura - 9.800 TL - vade 30 gün\nBu listeyi vade tarihine göre sırala ve nakit akış tablosuna dönüştür."}
+{"lang": "tr", "domain": "satin-alma", "text": "Sayın {PERSON1.first} {PERSON1.last},\nTeklifiniz için teşekkür ederiz, ancak bütçe kısıtları nedeniyle...\nBu red mektubunu tamamla, ilişkiyi koruyacak şekilde."}
+{"lang": "tr", "domain": "lojistik", "text": "Araç takip sistemine göre şoför {PERSON1} dün {LOCATION1.district} ile {LOCATION2.district} arasında 3 saat durmuş. Kendisinden açıklama isteyen bir yazı hazırla, suçlayıcı olmasın."}
+{"lang": "tr", "domain": "satis", "text": "Bayi ziyaret raporu: {LOCATION1.city} bayisi sahibi {PERSON1.first} Bey, Güneş Enerji serisinde stok sorunu yaşıyor. Bölge müdürüne rapor yaz."}
+{"lang": "tr", "domain": "musteri-hizmetleri", "text": "{PERSON2.lower} bey degil {PERSON1.first} bey diye hitap etmeliydik, ozur mesaji yaz lutfen kisa olsun"}
+{"lang": "tr", "domain": "hukuk", "text": "Şirket ortağı {PERSON1}, payını {PERSON2+DAT} devretmek istiyor. Limited şirket pay devri için noter ve ticaret sicili süreçlerini anlat."}
+{"lang": "tr", "domain": "bankacilik", "text": "Kredi yapılandırma talebi: borçlu {PERSON1.upper}, işyeri adresi {ADDRESS1.tr}. Borçluya gönderilecek yeni ödeme planı teklif mektubunu yaz."}
+{"lang": "tr", "domain": "insan-kaynaklari", "text": "Kıdem tazminatı tavanı ve hesaplama yöntemini çalışanlara anlatan bir bilgilendirme yazısı hazırla. Örnek hesaplama 7 yıllık çalışan için olsun."}
+{"lang": "tr", "domain": "emlak", "text": "Gayrimenkul değerleme uzmanlarına yönelik bir eğitim için 'emsal karşılaştırma yöntemi' sunum taslağı hazırla."}
+{"lang": "tr", "domain": "muhasebe", "text": "E-fatura ile e-arşiv fatura arasındaki farkı küçük işletme sahiplerine anlat. Örnek: bir kuaför salonu."}
+{"lang": "tr", "domain": "lojistik", "text": "Kış lastiği zorunluluğu hakkında tüm şoförlere gidecek kısa bir hatırlatma mesajı yaz. Kar ve buzlanma uyarısı ekle."}
+{"lang": "tr", "domain": "sigorta", "text": "{PERSON1.initial} imzalı hasar ihbar formunda tarih eksik. Sigortalıya formu yeniden imzalatmak için {PERSON2.first} Hanım adına bir mesaj yaz."}
+{"lang": "tr", "domain": "satin-alma", "text": "Satın alma uzmanı {PERSON1.first+GEN} hazırladığı karşılaştırmaya göre Arçelik ve Vestel teklifleri arasında %3 fark var. Yönetim kuruluna karar notu yaz."}
+{"lang": "tr", "domain": "musteri-hizmetleri", "text": "Müşteri: {PERSON1.firstlast2}\nAbone no: 7741002\nTalep: {ADDRESS1.tr} adresine nakil\nBu talep için teknik ekibe iş emri metni oluştur."}
+{"lang": "tr", "domain": "insan-kaynaklari", "text": "Doğum izni dönüşü {PERSON1.first} Hanım için yarı zamanlı çalışma planı hazırla; ekip lideri {PERSON2.first} Bey ile mutabık kalındı."}
+{"lang": "tr", "domain": "hukuk", "text": "Noterden gelen tebligatta {PERSON1.upper} yazıyor ama müvekkilimizin adı {PERSON2.upper}. Usulsüz tebligat itirazı için dilekçe yaz."}
+{"lang": "tr", "domain": "bankacilik", "text": "Şube personeli {PERSON1.first}, müşterinin {LOCATION1.district} şubesinden {LOCATION2.district} şubesine hesabını taşımak istediğini iletti. Müşteriye işlem onay SMS'i yaz."}
+{"lang": "tr", "domain": "emlak", "text": "{PERSON1}: 'Kombi bozuldu, 3 gündür sıcak su yok.' Ev sahibi olarak kiracıma yazacağım cevabı yaz, tamirciyi yarın göndereceğimi belirt."}
+{"lang": "tr", "domain": "satis", "text": "Fuar sonrası takip: standımıza uğrayan {PERSON1}, {PERSON2} ve {PERSON3} ile toplantı ayarlamak istiyorum. Her birine kişiselleştirilmiş kısa mail yaz."}
+{"lang": "tr", "domain": "muhasebe", "text": "{PERSON1.upper} ŞAHIS ŞİRKETİ — 2026 GEÇİCİ VERGİ\nKâr: 340.000 TL. Geçici vergi tutarını hesapla, adımları göster."}
+{"lang": "tr", "domain": "lojistik", "text": "Teslimat yapılamadı, alıcı {PERSON1.first+ACC} 3 kez aradık ulaşamadık. Paket {LOCATION1.district} şubesinde 5 gün bekleyecek. SMS metni yaz."}
+{"lang": "tr", "domain": "sigorta", "text": "Sigorta acentesi olarak yeni müşterilere gönderilecek hoş geldin e-postası yaz. Kasko, konut ve sağlık ürünlerimizi tanıt."}
+{"lang": "en", "domain": "hr", "text": "{PERSON1.first} — quick favour: can you rewrite my self-review so it sounds less modest? I'm sending it to {PERSON2.first} by Friday."}
+{"lang": "en", "domain": "legal", "text": "Draft a settlement agreement summary between our client {PERSON1} and Ford Motor Credit regarding a repossessed vehicle."}
+{"lang": "en", "domain": "banking", "text": "Customer {PERSON1.firstlast2} is relocating to {LOCATION1.country} and wants to keep her US checking account. What should our letter say about address change and tax forms?"}
+{"lang": "en", "domain": "insurance", "text": "Write a coverage explanation letter to {PERSON1}: her renters policy covers stolen laptop but not the $500 deductible."}
+{"lang": "en", "domain": "real-estate", "text": "Seller disclosure notes for {ADDRESS1.en}: basement flooded in 2019, repaired. Owner: {PERSON1.upper}. Rewrite as a clear disclosure statement."}
+{"lang": "en", "domain": "accounting", "text": "Draft a memo explaining why we're writing off the receivable from {PERSON1} (sole proprietor, closed business in March)."}
+{"lang": "en", "domain": "procurement", "text": "Create a vendor due-diligence questionnaire covering data security, insurance, and financial stability. Template only."}
+{"lang": "en", "domain": "logistics", "text": "{PERSON1.upper} / DRIVER ID 4471 / HOS VIOLATION 10/09\nWrite a coaching memo to the driver, firm but supportive."}
+{"lang": "en", "domain": "sales", "text": "Write a QBR agenda for our account with Johnson & Johnson. Attendees: {PERSON1} (our AE), {PERSON2} (their procurement), Dr. {PERSON3.last} (their clinical lead)."}
+{"lang": "en", "domain": "customer-service", "text": "Translate this complaint to Turkish for our Istanbul team: \"I spoke with {PERSON1.first} twice and nobody called me back.\""}
+{"lang": "en", "domain": "hr", "text": "Draft a policy paragraph on bereavement leave: 5 days for immediate family, 2 days for extended family."}
+{"lang": "en", "domain": "legal", "text": "Client {PERSON1} (\"the Guarantor\") signed a personal guarantee for her company's lease. Explain her exposure if the company defaults."}
+{"lang": "en", "domain": "banking", "text": "Please proofread: \"Dear Mr. {PERSON1.last}, Following our meeting at the {LOCATION1.city} branch, we're pleased to confirm your credit line.\""}
+{"lang": "mix", "domain": "bankacilik", "text": "Collections script'i yaz: müşteri {PERSON1.first} Bey 2 taksit gecikmiş, tone empathetic ama firm olsun. English version da ekle."}
+{"lang": "mix", "domain": "insan-kaynaklari", "text": "Org chart update: {PERSON1} artık Finance Director, {PERSON2} ona report edecek, {PERSON3.initial} ise {LOCATION2.city+ABL} değil {LOCATION1.city} ofisinden çalışacak. Announcement mail yaz."}
+{"lang": "mix", "domain": "hukuk", "text": "Settlement offer'ı müvekkile Türkçe açıkla: defendant {PERSON1} $25K teklif etti, mediation {LOCATION1.city+LOC} yapılacak."}
+{"lang": "mix", "domain": "emlak", "text": "Tenant screening report: {PERSON1.lower}, credit score 720, employer Sabancı Holding. Landlord'a recommendation yaz, Türkçe."}
+{"lang": "mix", "domain": "sigorta", "text": "Fraud indicator check: claimant {PERSON1} aynı ay içinde 2 claim açmış, address {ADDRESS1.tr_street} her ikisinde aynı. SIU referral memo yaz in English."}
+{"lang": "mix", "domain": "lojistik", "text": "3PL performance review: on-time %89, damage %1,2. Account manager {PERSON1.first+DAT} gönderilecek feedback mail'i yaz, Türkçe ama KPI isimleri İngilizce kalsın."}
+{"lang": "mix", "domain": "musteri-hizmetleri", "text": "CSAT düşük çıktı bu ay. Root cause analysis template'i hazırla, fishbone diagram başlıklarıyla."}
+{"lang": "mix", "domain": "satis", "text": "Deal desk approval: discount %25 isteniyor, AE {PERSON1.first}, customer Mercedes-Benz Türk. Justification paragrafı yaz English."}
+{"lang": "mix", "domain": "muhasebe", "text": "Expense report reject edildi: {PERSON1.first+GEN} {LOCATION1.city} trip'indeki taxi fişleri eksik. Ona kısa bir Teams mesajı yaz."}
+{"lang": "en", "domain": "procurement", "text": "Meeting recap: {PERSON1} (Dell), {PERSON2} (Tesla Energy) and our CPO, {PERSON3.initial}, agreed on net-60 terms. Turn this into a formal minutes document with action items."}

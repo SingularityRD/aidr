@@ -20,7 +20,7 @@
 {"lang": "tr", "domain": "kvkk-requests", "text": "VERİ SAHİBİ BAŞVURU FORMU\nAd Soyad: {PERSON1}\nT.C. Kimlik No: 10000000146\nTebligat Adresi: {ADDRESS1.tr}\nTelefon: 0555 000 11 22\nTalep: Pazarlama izinlerimin geri alınması.\nBu formu inceleyip eksik alan var mı söyle."}
 {"lang": "tr", "domain": "legal", "text": "Şu hukuki mütalaayı 5 maddede özetle:\n\"{PERSON1} ile {PERSON2.initial} arasındaki ortaklık ilişkisi adi ortaklık niteliğinde olup, ortaklardan {PERSON1.last+GEN} tek başına yaptığı tasarruflar diğer ortağı bağlamaz...\""}
 {"lang": "tr", "domain": "notary", "text": "Yurt dışında yaşayan {PERSON1.first} ({LOCATION1.country}) Türkiye'deki evini satmak istiyor. Konsoloslukta vekaletname çıkarabilir mi, apostil gerekir mi? {PERSON1.first+DAT} kısa bir bilgi notu hazırla."}
-{"lang": "tr", "domain": "real-estate", "text": "Gayrimenkul danışmanı {PERSON1} ile yer gösterme sözleşmesi imzaladım, hizmet bedeli %2+KDV. Ev {LOCATION1.district+LOC}. Satıştan vazgeçersem komisyon ödemem gerekir mi?"}
+{"lang": "tr", "domain": "real-estate", "text": "Gayrimenkul danışmanı {PERSON1+ACC} yetkilendirdim, yer gösterme sözleşmesi imzaladık, hizmet bedeli %2+KDV. Ev {LOCATION1.district+LOC}. Satıştan vazgeçersem komisyon ödemem gerekir mi?"}
 {"lang": "tr", "domain": "court", "text": "Tanık listesi:\n1. {PERSON1} - {ADDRESS1.tr}\n2. {PERSON2} - {ADDRESS2.tr}\n3. {PERSON3.firstlast2} - {ADDRESS3.tr_street}\nTanıkların dinlenmesi talepli dilekçe paragrafı yaz."}
 {"lang": "tr", "domain": "rental", "text": "Ev sahibim {PERSON1.first} Bey depozitoyu iade etmiyor, 2 kira bedeli. Daireyi temiz teslim ettim, fotoğraflarım var. Tüketici hakem heyeti mi sulh hukuk mu? {PERSON1.first} Beye son bir mesaj taslağı da yaz."}
 {"lang": "tr", "domain": "enforcement", "text": "Kambiyo senedine dayalı takip başlatacağız. Keşideci {PERSON1}, ciranta {PERSON2}. Bono vadesi geçti. Hangi ödeme emri örneği kullanılır (Örnek 10 mu)? Kısaca açıkla."}
@@ -43,7 +43,7 @@
 {"lang": "tr", "domain": "court", "text": "Ön inceleme duruşmasında hakim, davalı {PERSON1.first} {PERSON1.last+DAT} delillerini sunması için 2 haftalık kesin süre verdi. Kesin sürenin sonuçlarını müvekkile açıklayan kısa bir not yaz."}
 {"lang": "tr", "domain": "legal", "text": "Avukatlık Kanunu'na göre bir avukatın aynı uyuşmazlıkta karşı tarafın vekilliğini üstlenmesi yasak mı? Örnek senaryo ile açıkla."}
 {"lang": "tr", "domain": "contracts", "text": "Satış sözleşmesinde alıcının unvanı: {PERSON1} (şahıs şirketi), adres: {ADDRESS1.tr}. Satıcı: Yıldız Teknik Malzeme Ltd. Şti. Teslim yeri Gebze. Ayıplı mal bildirimi için süre maddesi ekle."}
-{"lang": "tr", "domain": "kvkk-requests", "text": "Eski çalışanımız {PERSON1} özlük dosyasının tamamını istiyor. KVKK kapsamında vermek zorunda mıyız, hangi bilgileri çıkarabiliriz? Ayrıca ona gönderilecek resmi yanıtı hazırla."}
+{"lang": "tr", "domain": "kvkk-requests", "text": "Eski çalışanımız {PERSON1+ABL} özlük dosyasının tamamını isteyen bir dilekçe geldi. KVKK kapsamında vermek zorunda mıyız, hangi bilgileri çıkarabiliriz? Ayrıca ona gönderilecek resmi yanıtı hazırla."}
 {"lang": "tr", "domain": "real-estate", "text": "Kiracılı satış: Dairede {PERSON1} 4 yıldır kiracı. Yeni malik olarak ihtiyaç nedeniyle tahliye davası açabilir miyim? Edinmeden itibaren 1 ay içinde bildirim şartını açıkla."}
 {"lang": "tr", "domain": "court", "text": "Duruşma zaptından: \"Davacı asil {PERSON1} ve vekili Av. {PERSON2.last} hazır, davalı {PERSON3} tebligata rağmen gelmedi.\" Bir sonraki adımda ne olur?"}
 {"lang": "tr", "domain": "rental", "text": "yazlık kiralamada sorun var, {LOCATION1.district+LOC} deniz kenarında ev tuttuk, ev sahibi {PERSON1.first} son anda iptal etti, kapora 15.000 tl iade etmiyor. ne yapabiliriz"}
@@ -131,10 +131,10 @@
 {"lang": "tr", "domain": "notary", "text": "Kira sözleşmesini noterde onaylatmak zorunlu mu? Kiracı {PERSON1} istiyor, ben ({PERSON2}) gereksiz masraf olarak görüyorum. Avantaj ve dezavantajları yaz."}
 {"lang": "tr", "domain": "court", "text": "Davalı tarafın vekili Av. {PERSON1} duruşmada mazeret dilekçesi verdi, üçüncü kez. Mazeretin reddi ve yargılamanın uzatılmaması talebiyle kısa beyan dilekçesi yaz."}
 {"lang": "tr", "domain": "legal", "text": "Kişisel Verileri Koruma Kanunu ile GDPR arasındaki temel farkları 8 madde halinde karşılaştır. Özellikle yurt dışına aktarım ve VERBİS kaydı."}
-{"lang": "tr", "domain": "enforcement", "text": "borçlu {PERSON1} ile görüştük, borcu 6 taksitte ödemeyi teklif etti. taksit protokolü taslağı yaz, ödenmezse kalan tutar muaccel olsun, takip kaldığı yerden devam etsin"}
+{"lang": "tr", "domain": "enforcement", "text": "borçlu {PERSON1+ACC} aradık, borcu 6 taksitte ödemeyi teklif etti. taksit protokolü taslağı yaz, ödenmezse kalan tutar muaccel olsun, takip kaldığı yerden devam etsin"}
 {"lang": "tr", "domain": "rental", "text": "{LOCATION1.city} {LOCATION2.neighborhood} Mahallesi'ndeki apartmanda yönetici {PERSON1}, kiracıların aidatı ödemediğini söylüyor. Aidattan kiracı mı malik mi sorumlu?"}
 {"lang": "tr", "domain": "contracts", "text": "Hisse devir sözleşmesi: Devreden {PERSON1.upper}, devralan {PERSON2.upper}. Limited şirkette pay devri için noter onayı ve genel kurul kararı şart mı? Sözleşmeye eklenecek maddeleri yaz."}
-{"lang": "tr", "domain": "court", "text": "Dosyada davacı {PERSON1}'in değil, aslında annesi {PERSON2+GEN} hak sahibi olduğu anlaşıldı. Taraf değişikliği HMK 124'e göre mümkün mü?"}
+{"lang": "tr", "domain": "court", "text": "Dosyada davacı {PERSON1+GEN} değil, aslında annesi {PERSON2+GEN} hak sahibi olduğu anlaşıldı. Taraf değişikliği HMK 124'e göre mümkün mü?"}
 {"lang": "tr", "domain": "kvkk-requests", "text": "Veri envanterimizi gözden geçiriyoruz. Müşteri sözleşmeleri, kamera kayıtları, ziyaretçi defteri ve işe alım CV'leri için saklama sürelerini öneren bir tablo hazırla."}
 {"lang": "tr", "domain": "real-estate", "text": "Yer gösterme belgesi:\nGösterilen taşınmaz: {ADDRESS1.tr}\nAlıcı adayı: {PERSON1}\nDanışman: {PERSON2.initial}\nTarih: 04.10.2025\nBu belgeyi Ticari Reklam ve Haksız Ticari Uygulamalar Yönetmeliği'ne göre kontrol et."}
 {"lang": "tr", "domain": "notary", "text": "Eşim {PERSON1.first} ile mal ayrılığı rejimi seçmek istiyoruz. Mal rejimi sözleşmesi noterde mi yapılır, evlenmeden önce mi sonra mı?"}
@@ -144,7 +144,7 @@
 {"lang": "tr", "domain": "court", "text": "Tüketici mahkemesinde açılan ayıplı araç davası. Davacı {PERSON1}, davalı bayi. Araç 3 kez aynı arızadan servise girdi. Bedel iadesi mi, misliyle değişim mi talep edelim?"}
 {"lang": "tr", "domain": "contracts", "text": "Sözleşmenin İngilizce ve Türkçe nüshaları arasında çelişki çıkarsa hangisi esas alınır maddesini yaz. Taraflar: {PERSON1} ve Mercedes-Benz Türk bayisi."}
 {"lang": "tr", "domain": "kvkk-requests", "text": "İnsan kaynakları olarak {PERSON1}, {PERSON2} ve {PERSON3} isimli adayların CV'lerini 2 yıldır saklıyoruz. Bunları imha etmemiz gerekiyor mu? İmha tutanağı örneği ver."}
-{"lang": "tr", "domain": "real-estate", "text": "Köydeki tarlamızı {PERSON1} 10 yıldır izinsiz ekiyor. Ecrimisil talep edebilir miyiz, kaç yıllık geriye dönük?"}
+{"lang": "tr", "domain": "real-estate", "text": "Köydeki tarlamızı {PERSON1.last+PLU} 10 yıldır izinsiz ekiyor. Ecrimisil talep edebilir miyiz, kaç yıllık geriye dönük?"}
 {"lang": "tr", "domain": "notary", "text": "Noterlikten çekilen ihtarname örneği: \"Muhatap {PERSON1}, {ADDRESS1.tr}. Keşideci {PERSON2}. Konu: Kira borcunun ödenmesi.\" Bu ihtarnameyi 30 günlük süre verecek şekilde tamamla."}
 {"lang": "tr", "domain": "court", "text": "Mahkemeye sunulacak bilirkişi raporuna beyan dilekçesi yaz. Rapor, kusurun %70 oranında müvekkil {PERSON1+DAT} ait olduğunu belirtiyor, biz %30 diyoruz."}
 {"lang": "tr", "domain": "legal", "text": "Ay sonunda biten dava sürelerini hatırlatan bir avukat ajandası şablonu (Markdown tablo) oluştur: dosya no, mahkeme, süre türü, son gün."}
@@ -158,7 +158,7 @@
 {"lang": "tr", "domain": "contracts", "text": "Taraflar:\n1) {PERSON1} — adres: {ADDRESS1.tr}\n2) {PERSON2} — adres: {ADDRESS2.tr}\nTebligat adresleri madde 12'de belirtilmiştir. Adres değişikliğinin bildirilmemesi halinde eski adrese yapılan tebligatın geçerli olacağı maddesini ekle."}
 {"lang": "tr", "domain": "court", "text": "Uzlaşma raporu: Müşteki {PERSON1} ile şüpheli {PERSON2} 15.000 TL ödeme karşılığında uzlaştı. Edim yerine getirilmezse ne olur? CMK 253 açısından açıkla."}
 {"lang": "tr", "domain": "enforcement", "text": "Alacaklı vekili olarak borçlu {PERSON1+GEN} {LOCATION1.city} dışındaki adreslerine talimat yoluyla haciz yapılmasını istiyoruz. Talimat talebi nasıl yazılır?"}
-{"lang": "tr", "domain": "rental", "text": "Kiracı olarak evden çıkacağım, 3 ay önce bildirim yaptım. Ev sahibi {PERSON1} yeni kiracı bulana kadar kira ödememi istiyor. Haklı mı?"}
+{"lang": "tr", "domain": "rental", "text": "Kiracı olarak evden çıkacağım, 3 ay önce bildirim yaptım. Ev sahibi {PERSON1.first+ABL} gelen mesajda yeni kiracı bulana kadar kira ödemem isteniyor. Haklı mı?"}
 {"lang": "tr", "domain": "kvkk-requests", "text": "Şirket içi duyuru taslağı: Tüm çalışanlar müşteri verilerini kişisel WhatsApp grupları üzerinden paylaşmamalıdır. KVKK ihlali disiplin sebebidir. Bu duyuruyu daha anlaşılır yaz."}
 {"lang": "tr", "domain": "notary", "text": "{PERSON1.firstlast2} adına düzenlenen genel vekaletnamede {PERSON2+GEN} banka işlemleri yetkisi var mı kontrol et. Metin: \"...her türlü banka işlemlerini yapmaya, hesap açmaya, para çekmeye...\""}
 {"lang": "tr", "domain": "real-estate", "text": "Rapor: {LOCATION1.city} ili {LOCATION2.district} ilçesi {LOCATION3.neighborhood} Mahallesi'nde bulunan taşınmazın malik {PERSON1} tarafından {PERSON2+DAT} satışı. Değerleme raporu özetini çıkar."}
@@ -177,7 +177,7 @@
 {"lang": "tr", "domain": "rental", "text": "Merhaba,\nBen {PERSON1}, {ADDRESS1.tr_street} numaralı dairede kiracıyım. Kalorifer 2 haftadır çalışmıyor.\n{PERSON1.first}\n\nBu şikayet mesajını site yönetimine gönderilecek resmi dilekçeye çevir."}
 {"lang": "tr", "domain": "court", "text": "Danıştay'a temyiz başvurusunda harç ve posta gideri ne kadar? Ayrıca temyiz dilekçesinde bulunması gereken unsurları yaz."}
 {"lang": "tr", "domain": "kvkk-requests", "text": "{PERSON1} isimli müşteri, adı ve şikayeti Şikayetvar'da yayınlandıktan sonra bizim yanıtımızda adresinin yazıldığını söylüyor. Adres yanlışlıkla eklenmiş. Ne yapmalıyız, Kurul'a bildirim gerekir mi?"}
-{"lang": "tr", "domain": "notary", "text": "{PERSON1.last} ailesi adına aile konutu şerhi koydurmak istiyoruz. Eş {PERSON2.first} tek başına tapuya başvurabilir mi?"}
+{"lang": "tr", "domain": "notary", "text": "{PERSON1.last+PLU} adına aile konutu şerhi koydurmak istiyoruz. Eş {PERSON2.first} tek başına tapuya başvurabilir mi?"}
 {"lang": "tr", "domain": "real-estate", "text": "Hobi bahçesi olarak satılan hisseli tarla alacağım, satıcı {PERSON1}. Kooperatif adı Umut Yapı Kooperatifi. Bu tarz alımlarda nelere dikkat edilmeli?"}
 {"lang": "tr", "domain": "legal", "text": "Dün müvekkilim {PERSON1} ile yaptığım görüşmenin notlarını düzenle:\n- olay tarihi 2023 yazı\n- {LOCATION1.city+LOC} tatildeyken kaza\n- karşı sürücü {PERSON2}\n- sigorta ödemeyi reddetti"}
 {"lang": "tr", "domain": "court", "text": "Gaiplik kararı için başvuru: {PERSON1} 2015'ten beri kayıp, son görüldüğü yer {LOCATION1.city}. Başvuran kardeşi {PERSON2}. Dilekçe taslağı yaz."}
@@ -253,3 +253,48 @@
 {"lang": "en", "domain": "real-estate", "text": "Agent notes: showing at {ADDRESS1.en} with buyers {PERSON1} and {PERSON2} on Saturday. They liked the yard, worried about the HOA fees. Write a follow-up email."}
 {"lang": "en", "domain": "contracts", "text": "Simplify this clause: \"In the event that {PERSON1} fails to make any payment when due, {PERSON2} shall be entitled, without prejudice to any other rights, to suspend performance.\""}
 {"lang": "en", "domain": "legal", "text": "Can a will be valid if it was signed in Istanbul by a UK citizen without a witness? Explain the conflict-of-laws issues."}
+{"lang": "mix", "domain": "contracts", "text": "Bu NDA'yı İngilizce'ye çevir please, karşı taraf yabancı: \"İşbu sözleşme {PERSON1} ile {PERSON2} arasında, {ADDRESS1.tr} adresinde imzalanmıştır.\""}
+{"lang": "mix", "domain": "court", "text": "Davacı {PERSON1}, davalı {PERSON2}. Can you summarize this dava dilekçesi in English for our London office? Kısa olsun, max 10 satır."}
+{"lang": "mix", "domain": "rental", "text": "Expat müşterimiz {PERSON1} ({LOCATION1.country}) {LOCATION2.district+LOC} daire kiralıyor. Kira sözleşmesinin English summary'sini hazırla, özellikle depozito ve fesih maddeleri."}
+{"lang": "mix", "domain": "kvkk-requests", "text": "KVKK başvurusu geldi, requester {PERSON1}, ama İngilizce yazmış: \"Please delete all my data.\" Cevabı hem Türkçe hem İngilizce hazırlar mısın?"}
+{"lang": "mix", "domain": "legal", "text": "Partner {PERSON1.last} Bey istedi: bu legal opinion'ı Türkçe'ye çevir ama terimleri koru (e.g. 'governing law', 'indemnity'). Müvekkil {PERSON2.first} Hanım okuyacak."}
+{"lang": "mix", "domain": "real-estate", "text": "Listing için İngilizce açıklama lazım: {LOCATION1.city}, sea view, 2+1, site içinde, havuzlu. Owner {PERSON1.first} Bey prefers long-term tenants."}
+{"lang": "mix", "domain": "enforcement", "text": "Client asks: borçlu {PERSON1} Almanya'ya taşınmış, icra takibi orada enforceable mı? Explain in English, Türk ilamının tenfizi sürecini de ekle."}
+{"lang": "mix", "domain": "notary", "text": "{PERSON1.first} Hanım Londra'da yaşıyor, Türkiye'deki evini satmak için POA vermek istiyor. Consulate vs. UK notary + apostille, hangisi daha hızlı? Answer in Turkish."}
+{"lang": "mix", "domain": "contracts", "text": "SPA draft'ında seller {PERSON1.upper}, buyer {PERSON2.upper}. Closing conditions kısmını Türk hukukuna göre adapte et, özellikle rekabet kurulu izni."}
+{"lang": "mix", "domain": "court", "text": "Hearing notes from today:\n- Hakim: {PERSON1.last}\n- Davacı vekili: Av. {PERSON2}\n- Next hearing: 14 Kasım\nBunları müvekkile İngilizce kısa bir update e-postası olarak yaz."}
+{"lang": "mix", "domain": "rental", "text": "Landlord {PERSON1} ile tenant {PERSON2} arasında dispute var, kira artışı %25 mi TÜFE mi? Give me both sides' arguments, Türkçe."}
+{"lang": "mix", "domain": "kvkk-requests", "text": "Our parent company in Germany wants the employee list incl. ikamet adresleri. Örnek satır: {PERSON1}, {ADDRESS1.tr}. Yurt dışına aktarım için KVKK m.9 şartlarını açıkla."}
+{"lang": "mix", "domain": "legal", "text": "Can you draft a client update? Konu: Yargıtay kararı geldi, müvekkil {PERSON1} lehine bozma. Tone: optimistic but cautious."}
+{"lang": "mix", "domain": "real-estate", "text": "Due diligence checklist hazırla for a commercial property in {LOCATION1.district}, {LOCATION2.city}. Seller: {PERSON1}. Include tapu kaydı, imar durumu, iskan, şerhler."}
+{"lang": "mix", "domain": "enforcement", "text": "Hey, icra dosyası 2025/4412'de borçlu {PERSON1.first} {PERSON1.last} payment plan öneriyor. Draft a short taksit protokolü in Turkish, but explain the key terms to me in English."}
+{"lang": "mix", "domain": "contracts", "text": "Shareholders' agreement'ta drag-along ve tag-along maddeleri var, Türk Ticaret Kanunu ile uyumlu mu? Taraflar sonra eklenecek, şimdilik genel değerlendir."}
+{"lang": "mix", "domain": "notary", "text": "{PERSON1+INS} {PERSON2} arasında prenup (mal rejimi sözleşmesi) yapılacak. One spouse is American. Choice of law clause nasıl yazılır?"}
+{"lang": "mix", "domain": "court", "text": "Expert report'a itiraz yazacağız. The expert {PERSON1} ignored the invoices. İtiraz dilekçesini Türkçe yaz, ana noktaları English bullet olarak da ver."}
+{"lang": "mix", "domain": "rental", "text": "tenant {PERSON1.lower} keeps paying late, 3 kere oldu bu yıl. iki haklı ihtar sebebiyle tahliye davası açabilir miyim? explain briefly"}
+{"lang": "mix", "domain": "kvkk-requests", "text": "Ticket #8812 – Data subject: {PERSON1} – Request: access – Received: 02.09.2025 – SLA: 30 gün. Bu ticket için standard response template yaz, Türkçe."}
+{"lang": "mix", "domain": "legal", "text": "Merhaba, I'm drafting an internal memo on Kişisel Verilerin Korunması Kanunu vs GDPR fines. Tablo halinde kıyasla: max fine, authority, breach notification süresi."}
+{"lang": "mix", "domain": "real-estate", "text": "Buyer {PERSON1} ({LOCATION1.country} citizen) wants to get Turkish citizenship by investment. Minimum 400k USD gayrimenkul, 3 yıl satmama şerhi. Süreci anlat."}
+{"lang": "mix", "domain": "enforcement", "text": "{PERSON1.upper} hakkında foreign judgment var (New York court). Türkiye'de tanıma ve tenfiz davası için gerekli belgeler? Answer in a checklist."}
+{"lang": "mix", "domain": "contracts", "text": "Lütfen bu clause'u Türkçe'ye çevir: \"The Tenant, {PERSON1}, shall indemnify the Landlord against all claims arising from the use of the premises at {ADDRESS1.en}.\""}
+{"lang": "mix", "domain": "court", "text": "Müvekkil {PERSON1.first} asks why the case is taking so long. Explain in simple English: bilirkişi süreci, ara kararlar, istinaf aşaması."}
+{"lang": "mix", "domain": "rental", "text": "Short-term rental (Airbnb) yapıyoruz {LOCATION1.district} ilçesinde, komşu {PERSON1} yönetime şikayet etmiş. Kat Mülkiyeti Kanunu'na göre bu legal mi?"}
+{"lang": "mix", "domain": "notary", "text": "Translate the notary acknowledgment: \"Huzurumda imzalayan {PERSON1}, kimliğini T.C. kimlik kartı ile ispat etmiştir.\" to English, formal style."}
+{"lang": "mix", "domain": "kvkk-requests", "text": "Breach update for the board: 3 müşterinin adresi yanlış kişiye gitti, including {PERSON1} ({ADDRESS1.tr_street}). Kurul'a bildirildi. Write a 5-line executive summary."}
+{"lang": "mix", "domain": "legal", "text": "Our Turkish counsel {PERSON1} said 'zamanaşımı dolmuş'. Can you explain what this means and which Türk Borçlar Kanunu articles apply?"}
+{"lang": "mix", "domain": "real-estate", "text": "Property manager {PERSON1.first}: \"Daire {ADDRESS1.tr} boşaldı, new tenant ilanı çıkalım mı?\" Ona cevap yaz, İngilizce ilan metni de ekle."}
+{"lang": "mix", "domain": "court", "text": "Draft a power of attorney scope in Turkish for Av. {PERSON1}: dava açma, sulh, feragat, kabul, haciz. Also give me an English gloss for each yetki."}
+{"lang": "mix", "domain": "enforcement", "text": "Kiracı {PERSON1} evden çıktı, forwarding address bırakmadı. Last known: {ADDRESS1.tr}. Icra takibi için adres araştırması nasıl yapılır? Short answer."}
+{"lang": "mix", "domain": "contracts", "text": "Employment contract'ta non-compete 3 yıl, {LOCATION1.city} dahil tüm Türkiye. Employee {PERSON1}. Bu Türk hukukunda enforceable mı? TBK 444-447."}
+{"lang": "mix", "domain": "rental", "text": "Lease agreement English, kiracı {PERSON1.firstlast2} Türk, ev sahibi {PERSON2} British. Hangi dil esas alınmalı? Draft a language clause."}
+{"lang": "mix", "domain": "kvkk-requests", "text": "Can a former customer, {PERSON1}, ask us to delete call recordings? Kayıtlar 6502 sayılı Tüketici Kanunu gereği tutuluyor. Kısa analiz please."}
+{"lang": "mix", "domain": "legal", "text": "Summarize in English: \"Müvekkil {PERSON1}, {LOCATION1.city} {LOCATION2.district} ilçesinde bulunan dükkanını {PERSON2+DAT} kiraya vermiştir. Kiracı 6 aydır ödeme yapmamaktadır.\""}
+{"lang": "mix", "domain": "notary", "text": "Is a Turkish noter the same as a US notary public? Kısaca farkları anlat, özellikle düzenleme şeklinde işlemler."}
+{"lang": "mix", "domain": "court", "text": "Case file for {PERSON1}: {LOCATION1.city} Asliye Ticaret, alacak davası. Önümüzdeki duruşma için prep checklist yaz, mix Turkish-English ok."}
+{"lang": "mix", "domain": "real-estate", "text": "Seller {PERSON1.first} wants payment in EUR ama tapuda TL bedel gösterilecek. Bu legal mi? Tapu harcı ve vergi riskleri nedir?"}
+{"lang": "mix", "domain": "enforcement", "text": "Weekly icra update tablosu:\n| Dosya | Borçlu | Stage |\n|---|---|---|\n| 2025/101 | {PERSON1} | haciz |\n| 2025/117 | {PERSON2} | ödeme emri |\nConvert to an English status email for the client."}
+{"lang": "mix", "domain": "contracts", "text": "Please check the parties section: \"{PERSON1.upper}, residing at {ADDRESS1.tr}, hereinafter 'Lessor'\". Adres formatı İngilizce sözleşmede böyle mi yazılır?"}
+{"lang": "mix", "domain": "rental", "text": "Ev sahibi {PERSON1.first} Bey asked me to sign a 'tahliye taahhütnamesi' together with the lease, aynı gün. Is this valid? Explain simply."}
+{"lang": "mix", "domain": "kvkk-requests", "text": "VERBİS registration için data inventory hazırlıyoruz. Categories: kimlik, iletişim, lokasyon, finans. Give an English+Turkish table of examples, no real names."}
+{"lang": "mix", "domain": "legal", "text": "Yarın meeting var with {PERSON1} from the client side. Agenda: dava riski, settlement range, next steps. Bullet points, Türkçe."}
+{"lang": "mix", "domain": "court", "text": "Divorce case update: {PERSON1.first} ve {PERSON2.first} anlaşmalı boşanmaya döndü. Draft the protokol summary in English for {PERSON1.first+GEN} US-based lawyer."}

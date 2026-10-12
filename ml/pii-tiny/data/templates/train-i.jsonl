@@ -248,3 +248,53 @@
 {"lang": "en", "domain": "project-management", "text": "Can you convert this YAML into a readable table?\n\nproject: atlas\nlead: {PERSON1.full}\nmembers:\n  - {PERSON2.full}\n  - {PERSON3.initial}\nstatus: on_track"}
 {"lang": "tr", "domain": "project-management", "text": "Proje dokümantasyonu için klasör yapısı öner: sözleşmeler, toplantı tutanakları, teknik dokümanlar, faturalar."}
 {"lang": "en", "domain": "project-management", "text": "Help me say no to scope creep. {PERSON1.first} from Sales wants a new dashboard two weeks before launch. Write a diplomatic reply."}
+{"lang": "en", "domain": "translation", "text": "Translate into Turkish, keep it formal:\n\nDear {PERSON1.first},\nThank you for hosting us in {LOCATION1.city} last week. {PERSON2.full} and I look forward to working together.\nSincerely,\n{PERSON3}"}
+{"lang": "en", "domain": "translation", "text": "Translate this reference letter into Turkish: \"I have known {PERSON1.full} for five years. {PERSON1.first} was a dedicated analyst on my team and I recommend her without hesitation.\""}
+{"lang": "en", "domain": "translation", "text": "How do you say \"Mark the invoice as paid\" in Turkish? Here mark is a verb, not a name."}
+{"lang": "en", "domain": "translation", "text": "Translate to English and keep the address format as is:\n\nAlıcı: {PERSON1.upper}\nAdres: {ADDRESS1.tr}\nTel: 0555 000 00 00"}
+{"lang": "mix", "domain": "translation", "text": "Please translate my CV summary into English: \"{LOCATION1.city} doğumluyum, {LOCATION2.city+DAT} taşındım, 8 yıllık yazılım deneyimim var.\""}
+{"lang": "en", "domain": "translation", "text": "Translate these product labels to Turkish: Summer Collection, Rose Gold, Grace Period, Hope Chest."}
+{"lang": "en", "domain": "translation", "text": "What's the natural Turkish equivalent of \"I'll circle back on Monday\"? Give two options."}
+{"lang": "en", "domain": "translation", "text": "Translate this wedding invitation into English: \"{PERSON1.first} ile {PERSON2.first}, {LOCATION1.city} {ADDRESS1.tr_street} adresindeki düğünlerine sizleri davet eder.\""}
+{"lang": "en", "domain": "translation", "text": "I need this condolence note in English, gentle tone: \"{PERSON1.first} Bey'in vefatını büyük üzüntüyle öğrendik. Ailesine başsağlığı dileriz.\""}
+{"lang": "en", "domain": "translation", "text": "Translate the following meeting invite into German and Turkish: \"Quarterly review with {PERSON1.full}, Room Bill Gates (3rd floor), Thursday 10:00.\""}
+{"lang": "en", "domain": "translation", "text": "Is this translation correct? EN: \"May I speak with Mr. {PERSON1.last}?\" TR: \"Bay {PERSON1.last} ile görüşebilir miyim?\""}
+{"lang": "en", "domain": "translation", "text": "Translate these UI strings to Turkish: \"Welcome back\", \"Your trial ends in June\", \"Invite teammates\", \"Will you save changes?\""}
+{"lang": "en", "domain": "translation", "text": "Translate this tenancy notice to English, I need to show my landlord {PERSON1.full}: \"{ADDRESS1.tr} adresindeki daireyi 1 Eylül itibarıyla boşaltacağımı bildiririm.\""}
+{"lang": "en", "domain": "translation", "text": "Translate the Turkish idiom \"Ayağını yorganına göre uzat\" and explain it."}
+{"lang": "tr", "domain": "translation", "text": "Bunu İngilizce'ye çevir: \"Sayın {PERSON1}, {PERSON2.first} Hanım'ın talebi üzerine size bu yazıyı gönderiyoruz. Belgeler ektedir.\""}
+{"lang": "tr", "domain": "translation", "text": "Şu cümleyi Türkçeye çevir ama isimleri değiştirme: \"{PERSON1.full} will present the results in {LOCATION1.city} next Tuesday.\""}
+{"lang": "tr", "domain": "translation", "text": "\"Hope you're doing well\" ifadesini Türkçe e-postada nasıl kullanırım? Umut kelimesini kullanmadan söyle."}
+{"lang": "tr", "domain": "translation", "text": "Kira sözleşmesinin bu maddesini İngilizce'ye çevir: \"Kiracı {PERSON1.firstlast2}, {ADDRESS1.tr} adresindeki taşınmazı konut olarak kullanacaktır.\""}
+{"lang": "tr", "domain": "translation", "text": "Bu tebrik mesajını Almanca ve İngilizce'ye çevir: \"Sevgili {PERSON1.first}, yeni görevinde başarılar! {PERSON2.first} ve ekip\""}
+{"lang": "tr", "domain": "translation", "text": "Diploma tercümesi için şu satırı çevir: \"{PERSON1.upper}, {LOCATION1.city} doğumlu, Bilgisayar Mühendisliği bölümünden mezun olmuştur.\""}
+{"lang": "tr", "domain": "translation", "text": "İngilizce bir müşteri yorumunu Türkçeye çevir: \"Great service! {PERSON1.first} at the front desk was so helpful.\""}
+{"lang": "tr", "domain": "translation", "text": "\"Bahar şenliği\" ve \"yıldız öğrenci\" ifadelerini İngilizce'ye çevir, bunlar isim değil."}
+{"lang": "tr", "domain": "translation", "text": "Vize başvurusu için davet mektubunu İngilizce'ye çevir: \"{PERSON1.full}, {LOCATION1.country} vatandaşı olup {PERSON2.full+GEN} misafiri olarak {ADDRESS1.tr} adresinde kalacaktır.\""}
+{"lang": "tr", "domain": "translation", "text": "Bu iş ilanını İngilizce'ye çevir: \"Ankara ofisimiz için deneyimli muhasebe uzmanı arıyoruz. Başvurular ik@ornek.com.tr adresine.\""}
+{"lang": "tr", "domain": "translation", "text": "Babaannemin mektubunu bugünkü Türkçeye uyarlar mısın? \"Sevgili {PERSON1.first}, {LOCATION1.district} köyünde hasat bitti, ekimde gelirsen pekmez kaynatırız.\""}
+{"lang": "mix", "domain": "translation", "text": "Bu paragrafı English'e translate et, tone casual kalsın: \"{PERSON1.first} ile dün kahve içtik, {LOCATION1.city+ABL} yeni dönmüş, çok yorgundu.\""}
+{"lang": "mix", "domain": "translation", "text": "Translate et: \"Please send the signed copy to {PERSON1.full} by Friday.\" Türkçesi resmi olsun, şirket içi yazışma."}
+{"lang": "mix", "domain": "translation", "text": "Bu email'i Türkçe'ye çevir ama technical terms English kalsın: \"Hi {PERSON1.first}, the deployment pipeline failed on staging. {PERSON2.first} is investigating the root cause.\""}
+{"lang": "mix", "domain": "translation", "text": "Şu subtitle'ları çevir (EN→TR):\n1\n00:00:01 --> 00:00:03\n{PERSON1.first}, wait!\n2\n00:00:04 --> 00:00:06\nI'll meet you in {LOCATION1.city}."}
+{"lang": "mix", "domain": "translation", "text": "Website copy'yi Türkçe'ye çevir: \"Our story began in a small garage. Today, our team of 200 serves customers worldwide.\" İsim yok."}
+{"lang": "mix", "domain": "translation", "text": "Contract clause'u translate et, legal Türkçe olsun: \"The Consultant, {PERSON1.full}, residing at {ADDRESS1.tr}, agrees to the following terms.\""}
+{"lang": "mix", "domain": "translation", "text": "\"Will\" kelimesi bu cümlede isim mi fiil mi? \"Will will review it tomorrow.\" Türkçe'ye çevirirken nasıl ayırırım?"}
+{"lang": "mix", "domain": "translation", "text": "Bu LinkedIn recommendation'ı Türkçe'ye çevir: \"{PERSON1.first} is one of the most reliable engineers I've worked with at our {LOCATION1.city} office.\""}
+{"lang": "mix", "domain": "translation", "text": "Doktor raporunu English'e çevirmem lazım, sigorta için: \"Hasta {PERSON1.full}, {LOCATION1.city} Devlet Hastanesi'nde tedavi gördü, 5 gün istirahat verildi.\""}
+{"lang": "mix", "domain": "translation", "text": "App'teki push notification'ları Türkçe'ye çevir: \"Your order is on the way\", \"Rate your driver\", \"Summer deals are here\"."}
+{"lang": "mix", "domain": "translation", "text": "Bu thank-you note'u Türkçe yaz, {PERSON1.first} Hanım'a gidecek: \"Thank you so much for the warm welcome in {LOCATION1.country}.\""}
+{"lang": "en", "domain": "translation", "text": "Translate this short bio into Turkish for the conference booklet:\n\n{PERSON1.firstlast2} is a data scientist from {LOCATION1.city}. She leads the NLP team at a fintech and enjoys sailing."}
+{"lang": "en", "domain": "translation", "text": "Translate this Turkish sentence and tell me whether 'Deniz' is a name or the sea: \"Yarın deniz çok dalgalı olacak.\""}
+{"lang": "tr", "domain": "translation", "text": "Bu cümleleri İngilizceye çevir, ikincisinde Can bir isim: \"Bunu yapabilir misin, can sıkıcı.\" / \"{PERSON1.first} toplantıya gelemeyecek.\""}
+{"lang": "en", "domain": "translation", "text": "Back-translate this Turkish customer letter so I can check the agent's English version:\n\n\"Merhaba, ben {PERSON1}. Siparişim hâlâ {ADDRESS1.tr_street} adresine ulaşmadı.\""}
+{"lang": "tr", "domain": "translation", "text": "Kurumsal sunumdaki şu başlıkları İngilizce'ye çevir: Vizyonumuz, Değerlerimiz, Yol Haritası, Ekim Hedefleri."}
+{"lang": "en", "domain": "translation", "text": "Translate into Spanish and Turkish: \"Happy birthday, {PERSON1.first}! Wishing you a wonderful year ahead.\""}
+{"lang": "mix", "domain": "translation", "text": "Translation memory'deki bu segment'ler tutarlı mı?\nEN: Contact {PERSON1.full} for details. → TR: Ayrıntılar için {PERSON1.full} ile iletişime geçin.\nEN: Contact support. → TR: Destek ile görüşün."}
+{"lang": "tr", "domain": "translation", "text": "Bu resmi dilekçeyi İngilizce'ye çevir: \"{LOCATION1.city} Valiliği'ne, {ADDRESS1.tr} adresinde ikamet eden {PERSON1.full} olarak ikamet belgemin verilmesini arz ederim.\""}
+{"lang": "en", "domain": "translation", "text": "Give me the Turkish for these job titles: Head of People, Customer Success Manager, Staff Engineer."}
+{"lang": "mix", "domain": "translation", "text": "Çevir: \"Grace period ends on 1 May.\" Burada grace bir isim değil, finans terimi. Türkçe karşılığı ne?"}
+{"lang": "en", "domain": "translation", "text": "Translate this postcard message into English: \"Sevgili {PERSON1.lower}, {LOCATION1.city} harika, her gün denize giriyoruz. Sevgiler, {PERSON2.lower}\""}
+{"lang": "tr", "domain": "translation", "text": "Bu ürün açıklamasını Arapça ve İngilizce'ye çevir: \"El yapımı Kütahya çinisi, 20 cm çap, kahve fincanı takımı.\""}
+{"lang": "en", "domain": "translation", "text": "Translate the Turkish email below into English and keep the signature block:\n\n\"Merhaba, dosyaları ekte bulabilirsiniz.\nSaygılarımla,\n{PERSON1.full}\nSatın Alma Uzmanı\""}
+{"lang": "mix", "domain": "translation", "text": "Bu tweet'i Türkçe'ye çevir: \"Huge congrats to {PERSON1.full} and the team on the launch in {LOCATION1.country}!\""}

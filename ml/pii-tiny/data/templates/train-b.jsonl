@@ -248,3 +248,53 @@
 {"lang": "en", "domain": "insurance-claims", "text": "[14:02] {PERSON1.first}: hey did the Henderson... sorry, did the insured on CLM-4471 send photos?\n[14:03] {PERSON2.first}: yes, 12 photos, roof and gutter\n[14:05] {PERSON1.first}: great, approve the $6.2k estimate\nTurn this chat into a file note."}
 {"lang": "en", "domain": "accounting", "text": "Payroll correction: {PERSON1} was underpaid $312.50 in the Sept 30 run due to a missed overtime entry. Write a short note to the employee."}
 {"lang": "en", "domain": "e-commerce-orders", "text": "A buyer named {PERSON1} left a 1-star review saying the McDonald's-themed toy set was missing parts. Draft a public reply."}
+{"lang": "mix", "domain": "credit", "text": "Loan application review: {PERSON1}, {LOCATION1.district} ilçesinde market işletiyor, revenue yıllık 6,5M TL. Underwriting summary'yi 5 bullet halinde yaz."}
+{"lang": "mix", "domain": "collections", "text": "Agent notes'u temizle: \"cust {PERSON1.lower} said maaş 15'inde yatıyor, PTP 16.10, no answer on 0533 222 11 00 after 6pm\""}
+{"lang": "mix", "domain": "insurance-claims", "text": "FNOL kaydı: insured {PERSON1}, loss location {ADDRESS1.tr}, cause of loss: yangın. Bunu claim system'e girecek formatta düzenle."}
+{"lang": "mix", "domain": "banking", "text": "Bu customer complaint'i özetle ve root cause öner: \"{PERSON1.first} Hanım'ın kartı yurtdışında declined olmuş, {LOCATION1.country+LOC} 2 gün nakitsiz kalmış.\""}
+{"lang": "mix", "domain": "accounting", "text": "Accrual entry açıklaması: Ekim ayı danışmanlık hizmeti, fatura henüz gelmedi, vendor {PERSON1.last} Danışmanlık, tutar 45.000 TL. Short description yaz."}
+{"lang": "mix", "domain": "invoices", "text": "E-fatura reject oldu, error: \"Alıcı VKN hatalı\". Customer {PERSON1} adına yeniden kesmek için steps neler?"}
+{"lang": "mix", "domain": "e-commerce-orders", "text": "Refund email'i Türkçe yaz ama tone friendly olsun: Merhaba {PERSON1.first}, refund'ınız 499 TL olarak processed..."}
+{"lang": "mix", "domain": "insurance", "text": "Renewal campaign için SMS copy yaz, Aksigorta brand guideline'ına benzer kısa bir dil kullan. Kişi adı yerine {PERSON1.first} kullan, poliçe no POL-2026-7781."}
+{"lang": "mix", "domain": "credit", "text": "Committee deck'e eklenecek slide: \"Borrower: {PERSON1.upper} – Sector: tekstil – Exposure: 4,2M TL – Rating: BB\". Bunu speaker note'a çevir."}
+{"lang": "mix", "domain": "collections", "text": "Skip tracing sonucu: {PERSON1} yeni adresi {ADDRESS1.tr}, yeni employer Koç Holding iştiraki. Field team'e brief yaz."}
+{"lang": "mix", "domain": "banking", "text": "Account statement summary'yi Türkçe'ye çevir: \"Opening balance 18,420 TRY, salary credit from employer, rent transfer to {PERSON1}, closing 9,880 TRY.\""}
+{"lang": "mix", "domain": "insurance-claims", "text": "Adjuster {PERSON1.first} reported: sigortalı {PERSON2+GEN} aracı total loss, salvage value 180k TL. Customer'a gönderilecek mesajı yaz."}
+{"lang": "mix", "domain": "accounting", "text": "Bu Excel formülü neden hata veriyor: =DÜŞEYARA(A2;'Cari Liste'!A:D;4;0) ? Sheet'te müşteri adları var ama sonuç #YOK dönüyor."}
+{"lang": "mix", "domain": "invoices", "text": "Invoice reminder:\nTo: {PERSON1}\nCC: finance@ornek.com.tr\nKonu: Overdue fatura #F-2026-311\nBunu düzgün bir Türkçe mail'e çevir."}
+{"lang": "mix", "domain": "e-commerce-orders", "text": "Customer service macro'su lazım: kargo {LOCATION1.city} hub'ında stuck kaldığında gönderilecek. Placeholder olarak sadece {PERSON1.first} olsun."}
+{"lang": "mix", "domain": "banking", "text": "Garanti BBVA ile Yapı Kredi'nin business account fee'lerini karşılaştıran bir tablo yap, sadece public info."}
+{"lang": "mix", "domain": "credit", "text": "{PERSON1.first} Bey'in loan restructuring talebi: current installment 18k, requested 11k, vade +24 ay. Pros/cons çıkar."}
+{"lang": "mix", "domain": "collections", "text": "Daily collection report:\n- Contacted: 312\n- PTP: 118\n- Refused: 22\n- Escalated: {PERSON1}, {PERSON2} (legal)\nYönetime Türkçe bir özet yaz."}
+{"lang": "mix", "domain": "insurance", "text": "Health insurance claim için {PERSON1.first} Hanım'a pre-authorization sürecini anlat, hastane {LOCATION1.city+LOC} anlaşmalı olmalı."}
+{"lang": "mix", "domain": "insurance-claims", "text": "Claim notes (TR+EN) → tek paragraf İngilizce:\n- sigortalı {PERSON1} aradı\n- tow truck {LOCATION1.district+DAN} değil, {LOCATION2.district+ABL} aldı\n- rental car 7 gün"}
+{"lang": "mix", "domain": "accounting", "text": "Audit finding'i yumuşat: \"Petty cash custodian {PERSON1} did not reconcile for 3 months.\" Türkçe ve yapıcı olsun."}
+{"lang": "mix", "domain": "invoices", "text": "Supplier invoice'larında duplicate kontrolü için bir checklist yaz. Vendor name, invoice no, amount, date alanları. Örnek isim kullanma."}
+{"lang": "mix", "domain": "e-commerce-orders", "text": "Sipariş #88120 için chargeback geldi, customer {PERSON1} 'item not received' diyor ama courier {ADDRESS1.tr_street} adresine teslim etmiş, imza var. Dispute response yaz."}
+{"lang": "mix", "domain": "banking", "text": "Onboarding call notes: {PERSON1}, freelance developer, gelirleri USD olarak Payoneer'dan geliyor. Source of wealth için hangi docs istenmeli?"}
+{"lang": "mix", "domain": "credit", "text": "Rate the risk: borrower {PERSON1}, {LOCATION1.city} doğumlu, 3 yıldır aynı işte, DTI %38, kredi geçmişinde 1 gecikme. Low/Medium/High de ve gerekçe yaz."}
+{"lang": "mix", "domain": "collections", "text": "Pazartesi standup için not: {PERSON1.first} ve {PERSON2.first} bugün legal queue'yu alıyor, {PERSON3.first} soft collections'ta. Slack mesajı formatında yaz."}
+{"lang": "mix", "domain": "insurance", "text": "Bu poliçe wording'ini sadeleştir: \"The Insurer shall indemnify the Insured against...\" Türk müşteri için Türkçe açıklama ekle."}
+{"lang": "mix", "domain": "insurance-claims", "text": "Sigortalı {PERSON1.upper} – CLAIM REOPENED – reason: additional damage found by body shop in {LOCATION1.district}. Supervisor'a kısa update yaz."}
+{"lang": "mix", "domain": "accounting", "text": "Expense report'u kontrol et:\nEmployee: {PERSON1}\nHotel {LOCATION1.city} 3 gece 9.600 TL\nUçak 4.200 TL\nYemek 2.150 TL\nPolicy'ye göre limit aşımı var mı?"}
+{"lang": "mix", "domain": "invoices", "text": "Proforma'yı commercial invoice'a çevirirken nelere dikkat etmeliyim? Ürün: Mercedes-Benz yedek parça, export to Germany."}
+{"lang": "mix", "domain": "e-commerce-orders", "text": "Bu review'a reply yaz: \"Ürün güzel ama kutu ezik geldi\" — reviewer {PERSON1.initial}, 4 yıldız."}
+{"lang": "mix", "domain": "banking", "text": "Hey, şu wire instruction'ı kontrol eder misin: beneficiary {PERSON1}, IBAN TR10 0001 2009 4520 0058 0000 01, reference \"invoice 2026/88\". Herhangi bir red flag var mı?"}
+{"lang": "mix", "domain": "credit", "text": "Write a credit memo intro paragraph: {PERSON1+GEN} şirketi {LOCATION1.city+LOC} kurulu, 22 çalışan, main customers kamu kurumları."}
+{"lang": "mix", "domain": "collections", "text": "Customer'ın mesajı: \"{PERSON1} ben, deprem sonrası {LOCATION1.city+DAN}\" — sorry, düzelt: deprem sonrası {LOCATION1.city+ABL} taşındım, ödeyemiyorum. Bunu hardship case olarak İngilizce özetle."}
+{"lang": "mix", "domain": "insurance", "text": "Kasko vs. trafik sigortası farkını expat müşteriye İngilizce anlat, Türkçe terimleri parantez içinde ver."}
+{"lang": "mix", "domain": "insurance-claims", "text": "Email to {PERSON1.first}: \"Your claim CLM-55102 has been approved, ödeme 5 iş günü içinde hesabınıza geçecek.\" Bunu tamamen Türkçe yap."}
+{"lang": "mix", "domain": "accounting", "text": "Intercompany reconciliation'da 12.400 EUR fark var, Türkiye entity vs. Germany entity. Olası nedenleri ve next step'leri listele."}
+{"lang": "mix", "domain": "invoices", "text": "Client {PERSON1.firstlast2} invoice'ı TL değil USD istiyor. Kur farkı faturası nasıl kesilir, kısaca açıkla."}
+{"lang": "mix", "domain": "e-commerce-orders", "text": "Weekly orders özetini Slack'e yaz: 3.410 order, AOV 612 TL, top city {LOCATION1.city} — wait, şehir kişiyle ilgili değil, sadece genel istatistik; city kısmını kaldır."}
+{"lang": "mix", "domain": "banking", "text": "{PERSON1.lower} adlı kullanıcı mobile app'te 'şifremi unuttum' flow'unda takılıyor, OTP gelmiyor. Bug ticket yaz, phone 0505 000 00 01."}
+{"lang": "mix", "domain": "credit", "text": "Sabancı Holding ve Koç Holding'in public bond ratings'ini kıyaslayan kısa bir not yaz, yatırım tavsiyesi olmasın."}
+{"lang": "mix", "domain": "collections", "text": "Recovery letter draft: Sayın {PERSON1}, outstanding balance'ınız 23.400 TL... şeklinde başlayan metni full Türkçe ve resmi yap."}
+{"lang": "mix", "domain": "insurance", "text": "{PERSON1} asks: \"DASK'ım var, ek olarak konut sigortası lazım mı?\" Cevabı İngilizce ve Türkçe iki versiyon yaz."}
+{"lang": "mix", "domain": "insurance-claims", "text": "Ekip chat'i:\n[11:20] {PERSON1.first}: CLM-6610 sigortalı {PERSON2} aradı mı?\n[11:21] {PERSON3.first}: yes, {LOCATION1.district} eksperini bekliyor\nBunu file note'a çevir."}
+{"lang": "mix", "domain": "accounting", "text": "VAT reclaim için hangi docs lazım, Türkiye'deki KDV iadesi ile karşılaştırarak anlat. Örnek firma adı kullanma."}
+{"lang": "mix", "domain": "invoices", "text": "Fatura açıklamasını English'e çevir: \"{PERSON1} talebiyle {ADDRESS1.tr} adresine yapılan kurulum ve devreye alma hizmeti\""}
+{"lang": "mix", "domain": "e-commerce-orders", "text": "Return policy page'ini Türkçe yaz, 14 gün cayma hakkı, hijyenik ürünler hariç. Brand: Şeker Butik."}
+{"lang": "mix", "domain": "banking", "text": "Private banking client {PERSON1.first} {PERSON1.last}, {LOCATION1.neighborhood} semtinde yeni villa almış, mortgage refinancing istiyor. RM için meeting prep note yaz."}
+{"lang": "mix", "domain": "credit", "text": "Applicant {PERSON1+GEN} başvuru formunda employer \"Yıldız Teknik Üniversitesi\" yazıyor, maaş bordrosu ile uyumlu. Verification note'u yaz."}
+{"lang": "mix", "domain": "collections", "text": "Collections dashboard için KPI tanımları yaz: roll rate, cure rate, PTP kept rate. Türkçe açıklama + English term."}

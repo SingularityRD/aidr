@@ -167,3 +167,69 @@
 {"lang": "tr", "domain": "personal", "text": "Ev arkadaşı ilanı yaz: Kadıköy'de, 2+1, deniz manzaralı değil ama Moda'ya 10 dk. Sigara içmeyen, kedisi olmayan biri arıyoruz."}
 {"lang": "en", "domain": "personal", "text": "Draft a message to the school: our son {PERSON1.first} {PERSON1.last} will be absent next week for his uncle's wedding in {LOCATION1.country}."}
 {"lang": "mix", "domain": "personal", "text": "Dating app bio yaz: adım {PERSON1.first}, 29, Ankara, software engineer, hafta sonları hiking ve board game. Klişe olmasın, 'can' ile kelime oyunu yapabilirsin."}
+{"lang": "tr", "domain": "healthcare", "text": "HASTA BİLGİ FORMU\nADI SOYADI: {PERSON1.upper}\nDOĞUM YERİ: {LOCATION1.city}\nYAKINI: {PERSON2.upper} (EŞİ)\nTANI: MULTİPL SKLEROZ\nBu formu normal yazıma çevir, büyük harfleri düzelt."}
+{"lang": "tr", "domain": "healthcare", "text": "Fizyoterapist {PERSON1.first} Hanım'ın önerdiği egzersizleri haftalık plana dök: köprü, kedi-deve, duvar şınavı. Hasta {PERSON2.first} Bey 72 yaşında."}
+{"lang": "tr", "domain": "healthcare", "text": "Behçet hastalığı ile Ailevi Akdeniz Ateşi arasındaki farkı hasta broşürü için anlat."}
+{"lang": "tr", "domain": "healthcare", "text": "Psikolog seans notu (anonimleştir): Danışan {PERSON1.first}, annesi {PERSON2.first} ile ilişkisi gergin, kardeşi {PERSON3.first+INS} konuşmuyor. {LOCATION1.city+ABL} taşındıktan sonra uykusuzluk başlamış."}
+{"lang": "tr", "domain": "healthcare", "text": "Eşim {PERSON1.first+GEN} MR raporu: 'L4-L5 seviyesinde diffüz bulging'. Bu ne anlama geliyor? Ameliyat gerekir mi?"}
+{"lang": "tr", "domain": "education", "text": "Öğretmenler odası duyurusu: Nöbet çizelgesi değişti. Pazartesi {PERSON1.last} Hoca, Salı {PERSON2.first} Hanım, Çarşamba {PERSON3.initial}. Ekim ayı boyunca geçerli. Duyuruyu daha düzgün yaz."}
+{"lang": "tr", "domain": "education", "text": "Sabancı Üniversitesi'nde yüksek lisans için referans mektubu lazım, hocam {PERSON1+DAT} nasıl rica ederim? Kısa bir mail yaz."}
+{"lang": "tr", "domain": "education", "text": "ogrencim {PERSON1.lower} odevini chatgptye yazdirmis gibi, nasil anlarim? kanit olmadan suclamak istemiyorum"}
+{"lang": "tr", "domain": "education", "text": "Lise biyoloji dersi için kalıtımı ve bezelye deneylerini anlatan 10 soruluk test hazırla."}
+{"lang": "tr", "domain": "education", "text": "Karne yorumu yaz: {PERSON1.first} sınıfta sessiz ama yazılı sınavlarda başarılı, resim dersinde yeteneği var. Velisi {PERSON2.first} Bey görüşme istedi."}
+{"lang": "tr", "domain": "government", "text": "Muhtarlıktan ikametgah belgesi almak için {PERSON1.firstlast2} adına dilekçe yaz. Adres: {ADDRESS1.tr}."}
+{"lang": "tr", "domain": "government", "text": "Belediye meclisi kararı: \"{LOCATION1.neighborhood} Mahallesi, Kartal Sokak'taki park alanının adı Barış Parkı olarak değiştirilmiştir.\" Bu kararı halka duyuru metnine çevir."}
+{"lang": "tr", "domain": "government", "text": "Trafik cezası itiraz dilekçesi: plaka 34 ABC 123, araç sahibi {PERSON1}, ceza tarihi 3 Mart, yer {LOCATION1.district}. O saatte araç {PERSON2.first+GEN} kullanımındaydı, ben {LOCATION2.city+LOC} idim."}
+{"lang": "tr", "domain": "government", "text": "Pasaport başvurusunda harç ücreti ne kadar, 10 yıllık için? Online ödeme yapılabiliyor mu?"}
+{"lang": "tr", "domain": "travel", "text": "Otobüs biletim {PERSON1.upper} adına kesilmiş ama ben {PERSON1.firstlast2} olarak kayıtlıyım, kontrol sorun çıkarır mı? Metro Turizm, Ankara-İzmir."}
+{"lang": "tr", "domain": "travel", "text": "Kamp listesi hazırla: Ekim sonu, Kaz Dağları, 3 gece. Yıldız gözlemi yapacağız, çok soğuk olur mu?"}
+{"lang": "tr", "domain": "travel", "text": "Airbnb ev sahibine mesaj: Merhaba {PERSON1.first} Bey, {ADDRESS1.tr_street} adresindeki daireye gece 23:00 gibi varacağız, anahtarı nasıl alabiliriz? Bizim ekipte {PERSON2.first} ve ben varız."}
+{"lang": "tr", "domain": "software", "text": "SQL Server'da ad soyad kolonunu ayırmak istiyorum. Örnek veri: '{PERSON1}', '{PERSON2.firstlast2}', '{PERSON3.upper}'. İki isimli olanlarda soyadı son kelime olsun."}
+{"lang": "tr", "domain": "software", "text": "Bu Go kodunda race condition var mı?\nvar sayac int\nfunc artir() { sayac++ }\nGoroutine'ler WaitGroup ile bekleniyor."}
+{"lang": "tr", "domain": "software", "text": "Kullanıcı tablosundaki 'ad' kolonunda 'Deniz', 'Umut', 'Can' gibi değerler var; arama yaparken 'deniz' kelimesi ürün açıklamalarında da geçiyor, full-text search karışıyor. Nasıl ayırırım?"}
+{"lang": "tr", "domain": "it-ticket", "text": "ACİL: {PERSON1.upper} şifresini 5 kez yanlış girdi, hesap kilitlendi. Kullanıcı {LOCATION1.city} şubesinde, saat 17:00'ye kadar müşteri işlemi yapması lazım. Açma prosedürünü yaz."}
+{"lang": "tr", "domain": "it-ticket", "text": "Kartal'daki depo (Kartal Lojistik Merkezi) ile Gebze arasında VPN kopuyor. Fortigate loglarına göre IPsec phase 2 hatası. Ne kontrol etmeliyim?"}
+{"lang": "tr", "domain": "email", "text": "Bu maili daha resmi hale getir:\n\"{PERSON1.first} hocam selam, {PERSON2.first} beyle konuştuk, proje teslimini Aralık'a çekiyoruz. Siz de uygunsanız toplantı ayarlayalım. {PERSON3.first}\""}
+{"lang": "tr", "domain": "email", "text": "Müdürüme gönderilecek izin talebi: 20-24 Ekim, sebep kardeşim {PERSON1+GEN} düğünü {LOCATION1.city+LOC}. Yerime {PERSON2.first} bakacak."}
+{"lang": "tr", "domain": "chat", "text": "Bu Telegram mesajını analiz et, dolandırıcılık mı? 'Merhaba ben Ziraat Bankası'ndan {PERSON1}, hesabınızda şüpheli işlem var, kartınızın son 4 hanesini ve SMS kodunu iletir misiniz?'"}
+{"lang": "tr", "domain": "chat", "text": "Komşu grubunda yazışma:\n{PERSON1.first} (D:5): asansör yine bozuk\n{PERSON2.first} (D:12): yönetici {PERSON3.first} beye söyledim\n{PERSON1.first} (D:5): geçen ay da söylemiştik\nApartman yönetimine gidecek dilekçe yaz."}
+{"lang": "tr", "domain": "meeting", "text": "Proje kick-off notu:\nMüşteri: Demir Yapı A.Ş. (Kaya Grubu iştiraki)\nMüşteri tarafı: {PERSON1}, {PERSON2.initial}\nBizim taraf: {PERSON3.first}, {PERSON4.first}\nTeslim: Mart sonu\nBu notu proje charter formatına çevir."}
+{"lang": "tr", "domain": "news", "text": "Bu biyografiyi kısalt: \"{PERSON1}, 1958'de {LOCATION1.city+LOC} doğdu. İlkokulu Atatürk İlkokulu'nda, liseyi Kabataş Erkek Lisesi'nde bitirdi. Ressam {PERSON2+INS} evlendi.\""}
+{"lang": "tr", "domain": "social-media", "text": "Kayıp ilanı: 'Kedimiz Şeker {LOCATION1.neighborhood} mahallesinde kayboldu. Bulan olursa {PERSON1.first} ile iletişime geçsin: 0555 000 00 00'. Daha dikkat çekici yaz."}
+{"lang": "tr", "domain": "personal", "text": "yarin kayinvalidem {PERSON1.first} hanim yemege geliyo, ne pisireyim? seker hastasi, glutensiz olsun, esim {PERSON2.first} de mantar sevmiyo"}
+{"lang": "tr", "domain": "personal", "text": "Emlakçı {PERSON1.first} Bey'in gönderdiği ilan: 'Bahçelievler'de, demir doğramalı, güneş alan 3+1, Ay Yıldız Apartmanı'. Kira için pazarlık mesajı yaz."}
+{"lang": "tr", "domain": "personal", "text": "Ekim ayında Rize'de yayla turu için nereleri önerirsin? Ayder dışında daha sakin bir yer olsun."}
+{"lang": "en", "domain": "healthcare", "text": "Rewrite for a 10-year-old: 'Your grandpa {PERSON1.first} has early-onset Alzheimer's, which means he might forget names sometimes, even yours, {PERSON2.first}.'"}
+{"lang": "en", "domain": "healthcare", "text": "Insurance appeal letter for {PERSON1}, DOB 01/01/1980, policy #TEST-000-111, denied coverage for an MRI ordered by Dr. {PERSON2.last} at Johns Hopkins."}
+{"lang": "en", "domain": "education", "text": "PTA newsletter blurb: thank volunteers {PERSON1}, {PERSON2.firstlast2} and Mr. {PERSON3.last} for the book fair. Also remind parents that school closes early on May 2."}
+{"lang": "en", "domain": "education", "text": "Explain Dijkstra's algorithm step by step with a small graph. Then compare with A*."}
+{"lang": "en", "domain": "government", "text": "Jury duty excuse letter: I'm {PERSON1}, primary caregiver for my mother at {ADDRESS1.en}. Make it respectful and concise."}
+{"lang": "en", "domain": "travel", "text": "My flight from Denver to Sabiha Gökçen got cancelled. Draft an EU261 compensation claim; passengers: {PERSON1.upper}, {PERSON2.upper}."}
+{"lang": "en", "domain": "software", "text": "What's wrong with this Ruby code? user = User.find_by(name: \"{PERSON1}\") ; user.update!(city: \"{LOCATION1.city}\") — it raises RecordInvalid."}
+{"lang": "en", "domain": "software", "text": "Write a SQL query that returns employees whose manager is in a different city. Tables: employees(id, name, manager_id, city)."}
+{"lang": "en", "domain": "software", "text": "My .env accidentally committed. It contains DB_USER=app and API_KEY=sk-test-000000. Also the README says 'maintained by {PERSON1} ({PERSON1.lower})'. What should I rotate and how do I purge history?"}
+{"lang": "en", "domain": "it-ticket", "text": "Hi team, {PERSON1.first} here from the {LOCATION1.city} office. The badge reader at the side entrance rejects my card since Monday. Facilities said to ask IT. Ticket please?"}
+{"lang": "en", "domain": "email", "text": "Polish this:\n\nhey {PERSON1.lower},\nquick one — will you be at the Parkinson's fundraiser on the 14th? {PERSON2.first} said you might bring your wife. lmk\n- {PERSON3.first}"}
+{"lang": "en", "domain": "chat", "text": "iMessage thread, help me reply:\n{PERSON1.first}: are we still on for May 3?\nMe: yes!! where?\n{PERSON1.first}: that place on {ADDRESS1.en_street}, the one {PERSON2.first} recommended"}
+{"lang": "en", "domain": "meeting", "text": "Action items from the vendor call: {PERSON1.initial} sends NDA, {PERSON2.first} schedules Tesla demo, I follow up on pricing. Write the follow-up email."}
+{"lang": "en", "domain": "news", "text": "Write a neutral 100-word summary of the debate between Mayor {PERSON1.last} and challenger {PERSON2} on housing in {LOCATION1.city}."}
+{"lang": "en", "domain": "social-media", "text": "Draft a tweet announcing our open-source release of a Kafka connector. Thank contributors @{PERSON1.lower} and @{PERSON2.lower}."}
+{"lang": "en", "domain": "personal", "text": "Help me write a toast for my best friend {PERSON1.first}'s wedding to {PERSON2.first}. They met at a {PERSON3} movie premiere, which is a running joke."}
+{"lang": "en", "domain": "personal", "text": "What should I pack for a week in Iceland in March? I hike a lot and get cold easily."}
+{"lang": "en", "domain": "personal", "text": "My roommate {PERSON1} moved out without paying the last month's rent. The lease is at {ADDRESS1.en}. Small claims court: what do I need?"}
+{"lang": "en", "domain": "software", "text": "Explain what Apache Spark, Airflow and dbt each do in a modern data stack, in one paragraph each."}
+{"lang": "mix", "domain": "healthcare", "text": "Hasta {PERSON1.upper} için consent form'u Türkçe hazırla; procedure: laparoscopic cholecystectomy, surgeon: Op. Dr. {PERSON2.last}."}
+{"lang": "mix", "domain": "education", "text": "Bootcamp öğrencilerinin final project listesi:\n| Öğrenci | Proje | Mentor |\n| {PERSON1} | React dashboard | {PERSON2.first} |\n| {PERSON3.lower} | Flask API | {PERSON2.first} |\nBunu sunum için bir slide outline'a çevir."}
+{"lang": "mix", "domain": "government", "text": "Ankara'daki Almanya Büyükelçiliği'ne Schengen için hangi documents lazım? Sponsor letter'ı annem {PERSON1} yazacak, nasıl yazmalı?"}
+{"lang": "mix", "domain": "travel", "text": "Hotel check-in listesi export:\nGuest: {PERSON1.upper} | Room 1204 | Nationality: TR\nGuest: {PERSON2.upper} | Room 1205 | Nationality: {LOCATION1.country}\nSadece room ve nationality kalsın, isimleri sil."}
+{"lang": "mix", "domain": "software", "text": "Unit test fixture'ında customer name olarak '{PERSON1}' kullanmışız, GDPR audit'te flag yedi. Faker ile replace eden bir migration script yaz (Python)."}
+{"lang": "mix", "domain": "software", "text": "Java'da `record Person(String firstName, String lastName)` tanımladım, Jackson deserialize ederken 'Cannot construct instance' hatası alıyorum. Neden?"}
+{"lang": "mix", "domain": "it-ticket", "text": "Helpdesk'e gelen ticket: \"Merhaba, ben {PERSON1}, laptop'umda Docker Desktop açılmıyor, WSL2 error veriyor. Şu an {LOCATION1.city+LOC}, müşteri ofisindeyim.\" Bunu L2 ekibine escalation notu olarak İngilizce yaz."}
+{"lang": "mix", "domain": "email", "text": "Subject: Kickoff w/ {PERSON1.last} team\nHi all, {PERSON2.first} ve ben Salı günü {LOCATION1.city+DAT} gidiyoruz, client tarafında {PERSON1} ve CFO'su olacak. Pls prepare the deck. Bu maili tamamen English yap."}
+{"lang": "mix", "domain": "chat", "text": "WhatsApp:\n{PERSON1.first}: abi deploy ettin mi\n{PERSON2.first}: yok jenkins patladı again\n{PERSON1.first}: kafka mı yine\n{PERSON2.first}: evet, {PERSON3.first} bakıyor\nBunu yöneticiye update olarak yaz."}
+{"lang": "mix", "domain": "meeting", "text": "Daily notes - Mayıs 12\n- {PERSON1.first}: design review done\n- Hope'un (yeni intern değil, Hope projesi) sprint'i delayed\n- {PERSON2.first}: Salesforce integration blocked\nTemizle ve özetle."}
+{"lang": "mix", "domain": "news", "text": "Bu article'ın key points'ini Türkçe çıkar: \"{PERSON1}, founder of a {LOCATION1.city}-based startup, told reporters that their AI model outperforms Gemini on Turkish benchmarks.\""}
+{"lang": "mix", "domain": "social-media", "text": "Instagram story için caption: 'Pazar brunch with {PERSON1.first} & {PERSON2.first} 🥂 Moda sahili best vibes' — daha yaratıcı 3 alternatif öner."}
+{"lang": "mix", "domain": "personal", "text": "Eşim {PERSON1.first} için anniversary sürprizi planlıyorum, Bodrum'da bir boutique hotel. Budget 20k TL, öneri ver."}
+{"lang": "mix", "domain": "personal", "text": "Rose gold mu silver mı? Nişan yüzüğü alıcam, girlfriend'im minimalist tarzı seviyor. Brand önerisi?"}
+{"lang": "mix", "domain": "software", "text": "Code review: `const sahip = \"{PERSON1.lower}\"; // TODO remove before merge` bu satır prod'a gitmiş. Git history'den nasıl temizlerim?"}
