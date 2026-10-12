@@ -119,8 +119,12 @@ export const REQUIREMENTS = Object.freeze({
 		label: "a non-root user (GitHub runners run as the unprivileged runner user)",
 		fix: "Run ci:local as an ordinary user; the Unix fleet installer refuses its test-root mode for uid 0 on purpose.",
 	},
+	windows: {
+		label: "a Windows host (ci.yml runs the fleet-windows job on windows-2022)",
+		fix: "Run these steps on Windows: the fixtures use the inbox System32 tar.exe, %ProgramData% and Windows ACLs, so a Linux or macOS pwsh cannot stand in for the runner.",
+	},
 	pwsh: {
-		label: "PowerShell 7 (pwsh), preinstalled on GitHub's Ubuntu runners",
+		label: "PowerShell 7 (pwsh)",
 		fix: "Install PowerShell 7 so `pwsh` is on PATH (https://learn.microsoft.com/powershell/scripting/install/installing-powershell-on-linux).",
 	},
 	python312: {
@@ -592,13 +596,13 @@ export const STEPS = Object.freeze([
 
 	// ── release ─────────────────────────────────────────────────────────────
 	step({ id: "build-release", group: "release", name: "Release build", run: "pnpm build:release", timeoutMs: 30 * MIN }),
-	// Split so a host without PowerShell still runs the Unix leg (GitHub's Ubuntu runners ship pwsh).
+	// Windows-only (ci.yml fleet-windows runs on windows-2022); split so other hosts still run the Unix leg.
 	step({
 		id: "fleet-windows",
 		group: "release",
 		name: "Windows fleet lifecycle (PowerShell fixtures)",
 		ci: ["fleet-windows", "Verify Windows fleet lifecycle"],
-		requires: ["pwsh"],
+		requires: ["windows", "pwsh"],
 		timeoutMs: 10 * MIN,
 	}),
 	step({
@@ -606,7 +610,7 @@ export const STEPS = Object.freeze([
 		group: "release",
 		name: "Windows response actions and worker lifecycle",
 		ci: ["fleet-windows", "Verify Windows response actions and worker lifecycle"],
-		requires: ["pwsh"],
+		requires: ["windows", "pwsh"],
 		timeoutMs: 10 * MIN,
 	}),
 	step({
