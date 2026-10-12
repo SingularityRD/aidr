@@ -181,7 +181,8 @@ def load(path):
         return [json.loads(line) for line in fh if line.strip()]
 
 
-def predict(model, vocab, records, bs=64):
+def predict(model, vocab, records, bs=64, min_conf=0.0):
+    """Tags each token; a non-O tag needs total entity probability >= min_conf (0 = argmax)."""
     model.eval()
     out = []
     with torch.no_grad():
@@ -189,7 +190,14 @@ def predict(model, vocab, records, bs=64):
             chunk = records[i : i + bs]
             enc = [encode(r, vocab) for r in chunk]
             w, c, s, _ = batchify(enc)
-            pred = model(w, c, s).argmax(-1).tolist()
+            probs = model(w, c, s).softmax(-1)
+            ent = probs[..., 1:]
+            best = ent.argmax(-1) + 1
+            keep = ent.sum(-1) >= max(min_conf, 1e-9)
+            if min_conf <= 0:
+                pred = probs.argmax(-1).tolist()
+            else:
+                pred = torch.where(keep, best, torch.zeros_like(best)).tolist()
             for r, e, p in zip(chunk, enc, pred):
                 out.append({"text": r["text"], "spans": decode(e["toks"], p[: len(e["toks"])])})
     return out
@@ -253,6 +261,7 @@ def main(argv=None):
     ap.add_argument("--predict")
     ap.add_argument("--model")
     ap.add_argument("--pred")
+    ap.add_argument("--min-conf", type=float, default=0.0)
     args = ap.parse_args(argv)
     if args.predict:
         ck = torch.load(Path(args.model) / "model.pt")
@@ -260,7 +269,7 @@ def main(argv=None):
         model = Tagger(len(vocab.words), len(vocab.chars))
         model.load_state_dict(ck["state"])
         with open(args.pred, "w", encoding="utf-8") as fh:
-            for r in predict(model, vocab, load(args.predict)):
+            for r in predict(model, vocab, load(args.predict), min_conf=args.min_conf):
                 fh.write(json.dumps(r, ensure_ascii=False) + "\n")
         return 0
     train(args)
