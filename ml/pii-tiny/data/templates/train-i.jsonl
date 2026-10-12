@@ -13,10 +13,10 @@
 {"lang": "en", "domain": "email", "text": "Can you rephrase this so it doesn't sound like I'm blaming anyone? \"The delay is not on our side. {PERSON1.first} confirmed the specs on Friday and {PERSON2.full} approved them the same day.\""}
 {"lang": "en", "domain": "email", "text": "Draft a short thank-you note to Dr. {PERSON1.last} for the reference letter she wrote for my application to the master's program."}
 {"lang": "en", "domain": "email", "text": "Classify these emails by urgency:\n1. \"Server down?\" from {PERSON1.initial}\n2. \"Lunch Friday\" from {PERSON2.first}\n3. \"Contract expiring 30 June\" from {PERSON3.full}\n4. \"Newsletter: Spring edition\" from news@example.com"}
-{"lang": "en", "domain": "email", "text": "Write an auto-reply for the support inbox: thanks for your message, we answer within two business days, Monday to Friday, 9am-6pm. No names please."}
+{"lang": "mix", "domain": "email", "text": "Auto-reply'ı düzenle: \"{LOCATION1.city+LOC} bir konferanstayım, Monday'e kadar mail'lere bakamıyorum. Acil durumda {PERSON1.full} size yardımcı olur.\""}
 {"lang": "en", "domain": "email", "text": "Rewrite this email subject line so it's clearer: \"re: re: fwd: that thing from may (will check)\""}
-{"lang": "en", "domain": "email", "text": "How should I start an email to someone senior I've never met? Give me three openings, formal to casual."}
-{"lang": "en", "domain": "email", "text": "Suggest a better structure for our team's email template for incident reports: summary, impact, timeline, root cause, next steps."}
+{"lang": "mix", "domain": "email", "text": "{PERSON1.last+PLU} için yılbaşı tebrik mail'i yaz, family business olduğu için samimi ama professional olsun. Hitap: Değerli {PERSON1.last} ailesi."}
+{"lang": "en", "domain": "email", "text": "Rewrite this email so it doesn't sound like a complaint:\n\nHi {PERSON1.first},\nYour team keeps missing the Monday cut-off. {PERSON2.initial} and I spent the whole weekend fixing the June numbers.\nThanks,\n{PERSON3.first}"}
 {"lang": "en", "domain": "email", "text": "My manager {PERSON1.full} moved to {LOCATION1.country} and asked me to keep her updated weekly. Draft the first update email covering hiring, budget and the March release."}
 {"lang": "tr", "domain": "email", "text": "Bu maili daha resmi hale getirir misin?\n\nKimden: {PERSON1} <muhasebe@ornek.com.tr>\nKime: {PERSON2}\nBilgi: {PERSON3.initial}\nKonu: Fatura gecikmesi\n\nSelam {PERSON2.first}, faturalar hâlâ gelmedi, bakabilir misin?\n{PERSON1.first}"}
 {"lang": "tr", "domain": "email", "text": "Şu cevabı kibarlaştır: \"Sayın {PERSON1}, talebiniz {PERSON2.first} Hanım tarafından incelenmiştir ve maalesef onaylanmamıştır.\""}
@@ -29,7 +29,7 @@
 {"lang": "tr", "domain": "email", "text": "Bu maili kısalt ama tarihleri koru: \"Merhaba arkadaşlar, bahar dönemi bütçe toplantısı 5 Mayıs Pazartesi yapılacak. Katılamayacak olanlar lütfen {PERSON1.first+DAT} haber versin. Sunumları {PERSON2.initial} toplayacak.\""}
 {"lang": "tr", "domain": "email", "text": "Yeni başlayan arkadaşımız {PERSON1.full} için hoş geldin maili yaz. {LOCATION1.city} ofisinde çalışacak, yöneticisi {PERSON2.first} Hanım."}
 {"lang": "tr", "domain": "email", "text": "Resmi bir istifa e-postası örneği yazar mısın? İsim koyma, boşluk bırak."}
-{"lang": "tr", "domain": "email", "text": "Kurumsal maillerde \"Saygılarımla\" mı yoksa \"İyi çalışmalar\" mı daha uygun? Kısa açıkla."}
+{"lang": "mix", "domain": "email", "text": "Bu mail'de {PERSON1.first+GEN} adı yanlış yazılmış, düzelt ve resend için kısa bir özür ekle:\n\nSubject: Meeting recap\nHi all, thanks {PERSON2.first} and {PERSON1.lower} for joining."}
 {"lang": "tr", "domain": "email", "text": "Yöneticim {PERSON1.first} Hanım'a izin talebi maili yaz: 12-16 Haziran arası yıllık izin, işlerimi {PERSON2.first+INS} paylaştım."}
 {"lang": "tr", "domain": "email", "text": "Bu maildeki kişileri tabloya dök (ad, unvan, şehir):\nKime: {PERSON1} (Genel Müdür, {LOCATION1.city}); {PERSON2.initial} (İK, {LOCATION2.city}); {PERSON3.lower} (Stajyer)"}
 {"lang": "tr", "domain": "email", "text": "Tedarikçiye ödeme hatırlatması yaz, kibar ama net olsun. Fatura no: FTR-2024-118, vade 30 gün geçti. İsim yok, sadece firma adı: Kartal Lojistik A.Ş."}
@@ -103,22 +103,22 @@
 {"lang": "en", "domain": "meeting-notes", "text": "Write minutes from this rough transcript. Keep decisions separate from discussion.\n\n{PERSON1.first}: we can't ship without security sign-off.\n{PERSON2.first}: agreed, I'll ping {PERSON3.full} today.\n{PERSON1.first}: then we freeze on Wednesday."}
 {"lang": "en", "domain": "meeting-notes", "text": "Make a table with columns Owner | Task | Due from:\nAI {PERSON1.first}: draft the RFP (Fri)\nAI {PERSON2.initial}: book the room in the {LOCATION1.city} office (Mon)\nAI {PERSON3.firstlast2}: legal review (end of March)"}
 {"lang": "en", "domain": "meeting-notes", "text": "Our retro notes are messy. Group them into Went well / To improve / Actions:\n- Project Summer Breeze demo landed great\n- too many meetings on Mondays\n- {PERSON1.first} covered on-call twice, thank her\n- grace period for code freeze was too short"}
-{"lang": "en", "domain": "meeting-notes", "text": "Draft an agenda for a 45-minute quarterly planning meeting with Engineering, Sales and Support leads. No names."}
-{"lang": "en", "domain": "meeting-notes", "text": "What's a good format for one-on-one meeting notes? Give me a template with headings."}
+{"lang": "mix", "domain": "meeting-notes", "text": "Meeting notes'ta yazıyor: \"Sözleşme kopyası {PERSON1.first+LOC}, original'i {PERSON2.first} Bey'de.\" Bunu action item formatına çevir."}
+{"lang": "mix", "domain": "meeting-notes", "text": "Toplantıya katılanlar: {PERSON1.upper}, {PERSON2.upper}, {PERSON3.initial}. Topic: {LOCATION1.district} şubesinin kapanması. Bunu formal minutes'a çevir, Türkçe."}
 {"lang": "en", "domain": "meeting-notes", "text": "Summarize the 1:1 I had with {PERSON1.full}. She wants to move to the Berlin team next year, is worried about workload, and asked for a mentor. I suggested {PERSON2.first}."}
 {"lang": "en", "domain": "meeting-notes", "text": "Rewrite these interview debrief notes neutrally:\nCandidate: {PERSON1.upper}\nPanel: {PERSON2.initial}, {PERSON3.initial}\nStrong on system design, weak on testing. Lives in {LOCATION1.city}, can relocate."}
 {"lang": "en", "domain": "meeting-notes", "text": "Fix the formatting of these notes:\n\nSTEERING COMMITTEE - 7 APRIL\nchair: {PERSON1}\nminutes: {PERSON2}\napologies: {PERSON3}, {PERSON4.first}\n1. budget approved\n2. Project Falcon renamed to Project Hope"}
 {"lang": "en", "domain": "meeting-notes", "text": "From the following notes, who owes what to whom?\n\n{PERSON1.first} promised {PERSON2.first} the user research deck by Thursday. {PERSON2.first} owes {PERSON3.last} the pricing model. Will from Rose Analytics (vendor) owes everyone a demo."}
 {"lang": "en", "domain": "meeting-notes", "text": "Convert this meeting summary into Jira-ready tickets: login bug on Safari, slow dashboard after May release, missing audit export. No assignees yet."}
 {"lang": "en", "domain": "meeting-notes", "text": "Summarize this client meeting for the CRM:\n\nClient: {PERSON1.full} (COO), visited our site at {ADDRESS1.en}\nTopics: renewal, SSO, pricing\nNext: {PERSON2.first} sends proposal; {PERSON1.first} decides by the 30th."}
-{"lang": "en", "domain": "meeting-notes", "text": "Write a two-line summary of the all-hands: revenue up 12%, new parental leave policy, office closes for the August holiday week."}
+{"lang": "en", "domain": "meeting-notes", "text": "Write up the minutes:\n\nDate: 12 May\nChair: {PERSON1.full}\nGuest: {PERSON2.full} (auditor, flew in from {LOCATION1.country})\nOutcome: audit fieldwork starts after the summer break."}
 {"lang": "tr", "domain": "meeting-notes", "text": "Toplantı notlarını düzenle ve aksiyonları çıkar:\n\nKatılımcılar: {PERSON1}, {PERSON2.first} Hanım, {PERSON3.first} Bey\n- Bütçe onayı bekleniyor\n- AI: {PERSON2.first} → bütçe\n- AI: {PERSON3.first} → tedarikçi görüşmesi"}
 {"lang": "tr", "domain": "meeting-notes", "text": "Şu notlardan bir toplantı tutanağı oluştur:\nTarih: 3 Mart Salı\nYer: {LOCATION1.city} bölge müdürlüğü\nKatılanlar: {PERSON1.upper}, {PERSON2.upper}\nKonu: deniz taşımacılığı ihalesi\nKarar: teklif {PERSON1.first+ACC} beklemeden gönderilecek."}
 {"lang": "tr", "domain": "meeting-notes", "text": "Bu notları özetle, en fazla 5 madde:\n- {PERSON1.first} kaya gibi sağlam bir plan istiyor\n- {PERSON2.first+GEN} ekibi barış görüşmesi gibi uzlaşma arıyor\n- savaş açmayalım, ekim sonuna kadar zaman var\n- {PERSON3.first+DAT} sunum hazırlatılacak"}
 {"lang": "tr", "domain": "meeting-notes", "text": "Yönetim kurulu toplantısının tutanağını resmi dile çevir. Başkan {PERSON1.full}, raportör {PERSON2.initial}. Gündem: yeni şube ({LOCATION1.district}), personel alımı, yıl sonu."}
 {"lang": "tr", "domain": "meeting-notes", "text": "{PERSON1.first+INS} yaptığım birebir görüşmenin notlarını düzenle: kariyer hedefi takım liderliği, {LOCATION1.city+DAT} taşınmayı düşünüyor, eğitim bütçesi istiyor."}
 {"lang": "tr", "domain": "meeting-notes", "text": "Aşağıdaki aksiyon listesini sorumlu kişiye göre grupla:\n1. Teklif dosyası – {PERSON1.first}\n2. Saha ziyareti – {PERSON2.first}\n3. Sözleşme – {PERSON1.first}\n4. Fuar standı – {PERSON3.initial}"}
-{"lang": "tr", "domain": "meeting-notes", "text": "Proje açılış toplantısı için gündem taslağı hazırla: tanışma, kapsam, takvim, riskler, soru-cevap. İsim ekleme."}
+{"lang": "mix", "domain": "meeting-notes", "text": "Notları temizle: \"{PERSON1.first+PLU} (yani {PERSON1.first} ve ekibi) timeline'a itiraz etti, {PERSON2.first} Hanım escalation yapacak, next sync Çarşamba.\""}
 {"lang": "tr", "domain": "meeting-notes", "text": "Toplantıda {PERSON1.first} Hanım'ın söylediklerini daha profesyonel bir dille yaz: \"bu iş böyle olmaz, güneş doğmadan bitirmemiz lazım, yoksa {PERSON2.first+ABL} ses çıkacak.\""}
 {"lang": "tr", "domain": "meeting-notes", "text": "Mülakat değerlendirme notunu tarafsız yaz: aday {PERSON1.firstlast2}, {LOCATION1.city} doğumlu, iletişimi güçlü, teknik soruda zorlandı. Değerlendiren: {PERSON2.full}."}
 {"lang": "tr", "domain": "meeting-notes", "text": "Çeyrek değerlendirme toplantısının özetini yaz: satış hedefin yüzde 92'si, müşteri memnuniyeti arttı, Kasım'da yeni ürün lansmanı."}
@@ -138,7 +138,7 @@
 {"lang": "en", "domain": "meeting-notes", "text": "Pull out decisions only:\n[Notes] We'll keep the Monday release train. Bill the client for overtime starting May. {PERSON1.first} disagreed but accepted. {PERSON2.initial} to document."}
 {"lang": "en", "domain": "meeting-notes", "text": "Write minutes for a parent-teacher meeting: teacher {PERSON1.full}, parent {PERSON2.full}, student {PERSON2.first}'s son {PERSON3.first}. Discussed reading level and summer school."}
 {"lang": "en", "domain": "meeting-notes", "text": "These are my notes from a call with our landlord about the office at {ADDRESS1.en_street}: rent increase in January, repairs pending, contact {PERSON1.initial}. Write it up for the facilities team."}
-{"lang": "en", "domain": "meeting-notes", "text": "Give me a checklist for taking good meeting minutes in a regulated industry."}
+{"lang": "mix", "domain": "meeting-notes", "text": "Bu online meeting'in transcript'inden action item'ları çıkar:\n{PERSON1.full}: ben pricing'i update ederim\n{PERSON2.full}: {LOCATION1.city+LOC} müşteri ziyareti ayarlarım\n{PERSON3.full}: legal'a soracağım"}
 {"lang": "en", "domain": "meeting-notes", "text": "Reformat:\nATTENDEES: {PERSON1.upper}; {PERSON2.upper}; {PERSON3.upper}\nNOTE-TAKER: {PERSON4.first}\nTOPIC: Q4 hiring freeze - may be lifted in December"}
 {"lang": "tr", "domain": "meeting-notes", "text": "Kurul toplantısında {PERSON1.full} şu önerge verdi: {LOCATION1.neighborhood} mahallesindeki depo satılsın. Oylama: 5 evet, 2 hayır. Bunu tutanağa uygun yaz."}
 {"lang": "mix", "domain": "meeting-notes", "text": "Notlarımı bullet'lara çevir: client {LOCATION1.country} pazarına girmek istiyor, {PERSON1.first} Bey market research'ü üstlendi, follow-up call Perşembe."}
@@ -157,7 +157,7 @@
 {"lang": "en", "domain": "chat-transcript", "text": "Extract the dates mentioned in this chat:\n\n[Mon 08:55] {PERSON1.initial}: kickoff is May 2\n[Mon 09:01] {PERSON2.initial}: and code freeze?\n[Mon 09:02] {PERSON1.initial}: June 20, launch July 1"}
 {"lang": "en", "domain": "chat-transcript", "text": "Write a reply in this Slack thread that politely says the bug is a duplicate. Context: {PERSON1.first} reported that exports fail for files over 2 GB; it's tracked in BUG-4410."}
 {"lang": "en", "domain": "chat-transcript", "text": "Rewrite my message so it's clearer before I post it in #general: \"hey ppl the wifi on 3rd floor is busted again, IT says monday, use the guest one meanwhile\""}
-{"lang": "en", "domain": "chat-transcript", "text": "What's a good Slack etiquette guide for a remote team across 4 time zones? Keep it under 10 points."}
+{"lang": "mix", "domain": "chat-transcript", "text": "Bu Teams mesajlarını özetle:\n[08:30] {PERSON1.first}: bugün {LOCATION1.city+LOC} kar var, remote çalışıyorum\n[08:32] {PERSON2.first}: ok, standup'ı online yapalım\n[08:33] {PERSON3.lower}: 👍"}
 {"lang": "en", "domain": "chat-transcript", "text": "Summarize this Discord chat from our open-source project:\n\n<{PERSON1.lower}> PR #212 is ready\n<{PERSON2.lower}> lgtm but needs tests\n<{PERSON1.lower}> ok will add tonight\n<maintainer-bot> CI passed"}
 {"lang": "en", "domain": "chat-transcript", "text": "Here's a chat with a candidate. Draft my next message offering two interview slots, Tuesday 3pm or Thursday 11am.\n\n{PERSON1.full}: Thanks for reaching out! I'm based in {LOCATION1.city} so mornings work best.\nMe: Great, let me check with the panel."}
 {"lang": "en", "domain": "chat-transcript", "text": "Translate the gist of this chat for the US team:\n\n[11:03] {PERSON1.first}: Ankara'daki toplantı iptal\n[11:04] {PERSON2.first}: tamam, haber veriyorum"}
@@ -187,7 +187,7 @@
 {"lang": "en", "domain": "chat-transcript", "text": "Format this Zoom chat export as a clean list of questions asked:\n\n00:12:33 From {PERSON1.full} to Everyone: will the slides be shared?\n00:15:01 From {PERSON2.full} to Everyone: is the June deadline firm?\n00:15:40 From Host to Everyone: yes, Mark your calendars"}
 {"lang": "en", "domain": "chat-transcript", "text": "Help me reply to this message from my neighbour without sounding rude: \"Hi it's {PERSON1.first} from number 12, your delivery got left at {ADDRESS1.en_street} again\""}
 {"lang": "en", "domain": "chat-transcript", "text": "Read this group chat and tell me who still hasn't confirmed for Saturday:\n{PERSON1.first}: in\n{PERSON2.first}: in, bringing summer rolls\n{PERSON3.first}: maybe\n{PERSON4.first}: ?"}
-{"lang": "en", "domain": "chat-transcript", "text": "Write a short Slack announcement: the kitchen on floor 4 is closed Wednesday for cleaning. Sign it as Facilities."}
+{"lang": "mix", "domain": "chat-transcript", "text": "Ekip chat'inden: \"{PERSON1.full+INS} call bitti, {PERSON2.first+GEN} laptop'ı hâlâ {PERSON3.first+LOC}.\" Bunu manager'a gidecek bir update'e çevir."}
 {"lang": "tr", "domain": "chat-transcript", "text": "Bu mesajı kibar bir dille yeniden yaz, şikâyet gibi olmasın: \"{PERSON1.first+DAT} söyleyin, toplantı linkini yine göndermemiş, herkes {PERSON1.first+ACC} bekliyor\""}
 {"lang": "en", "domain": "chat-transcript", "text": "Turn this text exchange into a short incident note:\n\n{PERSON1.upper} 02:14: alarm at the warehouse\n{PERSON2.upper} 02:20: security on site\n{PERSON1.upper} 02:41: false alarm, a cat"}
 {"lang": "tr", "domain": "chat-transcript", "text": "Bu iki kişinin yazışmasını bir arabulucu gibi özetle, kimseyi suçlama:\n{PERSON1.first}: Vardiyamı yine değiştirdin.\n{PERSON2.first}: Çünkü sen izin istemiştin.\n{PERSON1.first}: Pazartesi için değil, Salı için."}
@@ -204,12 +204,12 @@
 {"lang": "en", "domain": "project-management", "text": "Write a risk register entry: key person risk, only {PERSON1.full} knows the billing system, mitigation is pairing with {PERSON2.first} by end of June."}
 {"lang": "en", "domain": "project-management", "text": "Draft a project charter intro for Project Summer. Sponsor is {PERSON1.full}, PM is {PERSON2.full}, team sits in our {LOCATION1.city} hub."}
 {"lang": "en", "domain": "project-management", "text": "Summarize this Jira export for leadership:\n\nKEY | SUMMARY | ASSIGNEE | STATUS\nPAY-101 | Refund flow | {PERSON1} | In Progress\nPAY-102 | Fraud rules | {PERSON2.initial} | Blocked\nPAY-103 | Grace period logic | {PERSON3} | Done"}
-{"lang": "en", "domain": "project-management", "text": "Explain the difference between a milestone and a deliverable with one example each. Keep it short."}
+{"lang": "mix", "domain": "project-management", "text": "Project status'ta şöyle bir risk var: {PERSON1.last+PLU} firmasıyla contract henüz imzalanmadı. Mitigation önerisiyle risk register'a ekle."}
 {"lang": "en", "domain": "project-management", "text": "Our team names are Falcon, Rose and Maple. Suggest a fun naming scheme for the next three squads that won't be confused with people's names."}
 {"lang": "en", "domain": "project-management", "text": "Rewrite this blocker so it's actionable: \"Waiting on {PERSON1.first} forever. Will escalate to {PERSON2.last} if nothing by Monday.\""}
 {"lang": "en", "domain": "project-management", "text": "Draft the 'Team' section of our project one-pager:\n- {PERSON1.firstlast2}, tech lead\n- {PERSON2.full}, design\n- {PERSON3.full}, QA (remote, {LOCATION1.country})"}
 {"lang": "en", "domain": "project-management", "text": "Turn this into a burndown commentary for the sprint review: 40 points planned, 31 done, two stories carried over because {PERSON1.first} was on leave and the May holiday shortened the sprint."}
-{"lang": "en", "domain": "project-management", "text": "Give me 5 good questions to ask in a project post-mortem. Generic, no names."}
+{"lang": "mix", "domain": "project-management", "text": "Ekip kapasitesini hesapla: {PERSON1.first} %50, {PERSON2.first} %100, {PERSON3.initial} izinde (Ağustos). Sprint 14 için kaç story point alabiliriz?"}
 {"lang": "en", "domain": "project-management", "text": "I'm handing the project over to {PERSON1.full} while I'm on parental leave. Write a handover doc outline including contacts ({PERSON2.first} for infra, {PERSON3.initial} for budget)."}
 {"lang": "en", "domain": "project-management", "text": "Estimate effort from this backlog and flag anything vague:\n- SSO with Okta\n- Export to PDF\n- \"make it faster\" (requested by {PERSON1.upper})\n- Holiday calendar for December"}
 {"lang": "tr", "domain": "project-management", "text": "Haftalık proje durum raporu yaz:\nProje: Yıldız ERP geçişi\nProje yöneticisi: {PERSON1}\nTamamlanan: veri aktarımı\nRisk: {PERSON2.first} Bey izinde, test gecikebilir\nSonraki adım: Mart sonu canlıya geçiş"}
@@ -223,7 +223,7 @@
 {"lang": "tr", "domain": "project-management", "text": "Paydaş listesine göre iletişim planı hazırla: {PERSON1.upper} (Genel Müdür, aylık), {PERSON2.upper} (Finans, haftalık), saha ekibi ({LOCATION1.district}, günlük)."}
 {"lang": "tr", "domain": "project-management", "text": "Müteahhit {PERSON1.full} ile şantiye ({ADDRESS1.tr}) için yapılan iş programını özetle: kaba inşaat Nisan, ince işler Temmuz, teslim Ekim."}
 {"lang": "tr", "domain": "project-management", "text": "Yeni proje yöneticimiz {PERSON1.firstlast2}. Ekibe onu tanıtan, görev dağılımını anlatan kısa bir duyuru yaz."}
-{"lang": "tr", "domain": "project-management", "text": "Bir projede kapsam kayması nasıl önlenir? Beş maddede anlat."}
+{"lang": "mix", "domain": "project-management", "text": "{PERSON1.first} Bey projeyi {LOCATION1.city+LOC} yönetiyor, ekip {LOCATION2.city+LOC}. Distributed team için weekly ritual'lar öner."}
 {"lang": "mix", "domain": "project-management", "text": "Sprint planning için backlog'u grooming yapalım:\n- Login page redesign → {PERSON1.first}\n- API rate limit → {PERSON2.first}\n- Bug: tarih formatı → {PERSON3.lower}\nStory point tahmini öner."}
 {"lang": "mix", "domain": "project-management", "text": "Status report'u Türkçe yaz ama başlıklar English kalsın: Scope, Timeline, Risks. Project owner {PERSON1.full}, deadline Haziran sonu, {PERSON2.first+GEN} ekibi blocked."}
 {"lang": "mix", "domain": "project-management", "text": "Steering committee'ye gidecek slide için 3 bullet: budget %80 kullanıldı, go-live Kasım, {PERSON1.first} Bey'in onayı bekleniyor."}
@@ -246,7 +246,7 @@
 {"lang": "tr", "domain": "project-management", "text": "Proje kapanış toplantısında teşekkür konuşması yaz: {PERSON1.first} Hanım, {PERSON2.first} Bey ve saha ekibimiz {LOCATION1.city} bölgesinde harika iş çıkardı."}
 {"lang": "mix", "domain": "project-management", "text": "OKR'ları yaz: Objective: müşteri onboarding'i hızlandır. KR1: süre 10 günden 5'e; KR2: NPS 40+. Owner {PERSON1.full}."}
 {"lang": "en", "domain": "project-management", "text": "Can you convert this YAML into a readable table?\n\nproject: atlas\nlead: {PERSON1.full}\nmembers:\n  - {PERSON2.full}\n  - {PERSON3.initial}\nstatus: on_track"}
-{"lang": "tr", "domain": "project-management", "text": "Proje dokümantasyonu için klasör yapısı öner: sözleşmeler, toplantı tutanakları, teknik dokümanlar, faturalar."}
+{"lang": "en", "domain": "project-management", "text": "Write a brief update for the client {PERSON1.full}: phase one is complete, phase two starts on Monday, and {PERSON2.first} will be the new point of contact."}
 {"lang": "en", "domain": "project-management", "text": "Help me say no to scope creep. {PERSON1.first} from Sales wants a new dashboard two weeks before launch. Write a diplomatic reply."}
 {"lang": "en", "domain": "translation", "text": "Translate into Turkish, keep it formal:\n\nDear {PERSON1.first},\nThank you for hosting us in {LOCATION1.city} last week. {PERSON2.full} and I look forward to working together.\nSincerely,\n{PERSON3}"}
 {"lang": "en", "domain": "translation", "text": "Translate this reference letter into Turkish: \"I have known {PERSON1.full} for five years. {PERSON1.first} was a dedicated analyst on my team and I recommend her without hesitation.\""}
@@ -254,7 +254,7 @@
 {"lang": "en", "domain": "translation", "text": "Translate to English and keep the address format as is:\n\nAlıcı: {PERSON1.upper}\nAdres: {ADDRESS1.tr}\nTel: 0555 000 00 00"}
 {"lang": "mix", "domain": "translation", "text": "Please translate my CV summary into English: \"{LOCATION1.city} doğumluyum, {LOCATION2.city+DAT} taşındım, 8 yıllık yazılım deneyimim var.\""}
 {"lang": "en", "domain": "translation", "text": "Translate these product labels to Turkish: Summer Collection, Rose Gold, Grace Period, Hope Chest."}
-{"lang": "en", "domain": "translation", "text": "What's the natural Turkish equivalent of \"I'll circle back on Monday\"? Give two options."}
+{"lang": "mix", "domain": "translation", "text": "Bu cümleyi English'e çevir: \"{PERSON1.first} Hanım şu an {ADDRESS1.tr+LOC} oturuyor, kargo oraya gitmeli.\""}
 {"lang": "en", "domain": "translation", "text": "Translate this wedding invitation into English: \"{PERSON1.first} ile {PERSON2.first}, {LOCATION1.city} {ADDRESS1.tr_street} adresindeki düğünlerine sizleri davet eder.\""}
 {"lang": "en", "domain": "translation", "text": "I need this condolence note in English, gentle tone: \"{PERSON1.first} Bey'in vefatını büyük üzüntüyle öğrendik. Ailesine başsağlığı dileriz.\""}
 {"lang": "en", "domain": "translation", "text": "Translate the following meeting invite into German and Turkish: \"Quarterly review with {PERSON1.full}, Room {PERSON2.full} (3rd floor), Thursday 10:00.\""}
@@ -292,7 +292,7 @@
 {"lang": "en", "domain": "translation", "text": "Translate into Spanish and Turkish: \"Happy birthday, {PERSON1.first}! Wishing you a wonderful year ahead.\""}
 {"lang": "mix", "domain": "translation", "text": "Translation memory'deki bu segment'ler tutarlı mı?\nEN: Contact {PERSON1.full} for details. → TR: Ayrıntılar için {PERSON1.full} ile iletişime geçin.\nEN: Contact support. → TR: Destek ile görüşün."}
 {"lang": "tr", "domain": "translation", "text": "Bu resmi dilekçeyi İngilizce'ye çevir: \"{LOCATION1.city} Valiliği'ne, {ADDRESS1.tr} adresinde ikamet eden {PERSON1.full} olarak ikamet belgemin verilmesini arz ederim.\""}
-{"lang": "en", "domain": "translation", "text": "Give me the Turkish for these job titles: Head of People, Customer Success Manager, Staff Engineer."}
+{"lang": "mix", "domain": "translation", "text": "\"{PERSON1.last+PLU} bu akşam bize geliyor\" cümlesini English'e nasıl çeviririm? The Smiths gibi mi?"}
 {"lang": "mix", "domain": "translation", "text": "Çevir: \"Grace period ends on 1 May.\" Burada grace bir isim değil, finans terimi. Türkçe karşılığı ne?"}
 {"lang": "en", "domain": "translation", "text": "Translate this postcard message into English: \"Sevgili {PERSON1.lower}, {LOCATION1.city} harika, her gün denize giriyoruz. Sevgiler, {PERSON2.lower}\""}
 {"lang": "tr", "domain": "translation", "text": "Bu ürün açıklamasını Arapça ve İngilizce'ye çevir: \"El yapımı Kütahya çinisi, 20 cm çap, kahve fincanı takımı.\""}
@@ -302,19 +302,19 @@
 {"lang": "en", "domain": "internal-comms", "text": "Draft an intranet post introducing three new hires:\n- {PERSON1.full}, Product Designer\n- {PERSON2.firstlast2}, Account Executive ({LOCATION1.city})\n- {PERSON3.full}, Data Engineer"}
 {"lang": "en", "domain": "internal-comms", "text": "Write a short note announcing that {PERSON1.first} {PERSON1.last} is retiring after 30 years. Farewell drinks are Friday at 5 in the Rose Room."}
 {"lang": "en", "domain": "internal-comms", "text": "Rewrite this memo so it's less corporate: \"Effective Monday, all expense claims must be approved by {PERSON1.initial} prior to submission to Finance.\""}
-{"lang": "en", "domain": "internal-comms", "text": "Draft an announcement about the new hybrid work policy: three office days per week, core hours 10-4, starts in September."}
-{"lang": "en", "domain": "internal-comms", "text": "Write a reminder that open enrollment for health benefits closes on November 15. Friendly tone, no names."}
+{"lang": "mix", "domain": "internal-comms", "text": "Hybrid work policy duyurusu yaz: haftada 3 gün ofis, core hours 10-16. Sorular için People team'den {PERSON1.full}. Ofis adresi: {ADDRESS1.tr}."}
+{"lang": "en", "domain": "internal-comms", "text": "Write a short note for the newsletter congratulating {PERSON1.full} and {PERSON2.full} on running the {LOCATION1.city} marathon for charity."}
 {"lang": "en", "domain": "internal-comms", "text": "Create a company newsletter section called 'Spotlight' featuring {PERSON1.full} from Customer Success, who volunteers at the Hope Shelter on weekends."}
 {"lang": "en", "domain": "internal-comms", "text": "Write a sensitive announcement that our colleague {PERSON1.full} passed away last weekend. The funeral will be held in {LOCATION1.city}; donations to a charity of the family's choosing."}
 {"lang": "en", "domain": "internal-comms", "text": "Make this office move notice clearer: \"From May 3 the London team moves to {ADDRESS1.en}. Badges collect from {PERSON1.first} at reception.\""}
 {"lang": "en", "domain": "internal-comms", "text": "Draft a welcome-back message for {PERSON1.first}, returning from maternity leave next Monday. Mention that {PERSON2.first} will catch her up on the Maple project."}
-{"lang": "en", "domain": "internal-comms", "text": "Write a polite reminder to the whole company to stop booking the big meeting room for one-person calls."}
+{"lang": "mix", "domain": "internal-comms", "text": "Şirket geneline duyuru: {PERSON1.firstlast2} artık Finance Director. Önceki görevi {PERSON2.first+DAT} devretti. Welcome message ekle."}
 {"lang": "en", "domain": "internal-comms", "text": "Rewrite this org change memo:\n\nORG UPDATE\nEffective June 1:\n- {PERSON1.upper} leads Platform\n- {PERSON2.upper} leads Growth\n- the Summer team merges into Growth"}
-{"lang": "en", "domain": "internal-comms", "text": "Draft a short announcement that the office will be closed on Monday for a public holiday and IT maintenance will run over the weekend."}
+{"lang": "mix", "domain": "internal-comms", "text": "Bu duyuruyu kısalt: \"Değerli çalışma arkadaşlarımız, {PERSON1.first+GEN} ekibi bu cuma {LOCATION1.neighborhood} tarafında bir volunteering event düzenliyor, everyone is welcome.\""}
 {"lang": "en", "domain": "internal-comms", "text": "Write a thank-you post for the internal blog: the Will to Win hackathon raised $12k for charity. Thank the organisers {PERSON1.first} and {PERSON2.first}."}
 {"lang": "en", "domain": "internal-comms", "text": "Write an employee-of-the-month blurb for {PERSON1.full} from the {LOCATION1.city} warehouse; she cut picking errors by half."}
 {"lang": "en", "domain": "internal-comms", "text": "Summarize the CEO's town hall transcript in 5 bullets. Topics: growth, layoff rumours (denied), new office, benefits, Q&A."}
-{"lang": "en", "domain": "internal-comms", "text": "Give me three subject lines for an internal email about the new expense tool. Keep them under 8 words."}
+{"lang": "en", "domain": "internal-comms", "text": "Draft a note to the team: {PERSON1.first} is relocating to {LOCATION1.city} next month but staying on the team remotely. Mention the leaving lunch on Thursday."}
 {"lang": "tr", "domain": "internal-comms", "text": "Tüm çalışanlara duyuru yaz: {PERSON1.full} İnsan Kaynakları Direktörü olarak aramıza katıldı. Daha önce {LOCATION1.city} bölge ofisinde çalışıyordu."}
 {"lang": "tr", "domain": "internal-comms", "text": "Kurum içi duyuru: 29 Ekim Cumhuriyet Bayramı nedeniyle ofis kapalı olacak. Acil durumlar için nöbetçi {PERSON1.first} Bey, tel 0532 111 22 33."}
 {"lang": "tr", "domain": "internal-comms", "text": "Emekli olan çalışanımız {PERSON1.firstlast2} için veda mesajı yaz. 25 yıl boyunca {LOCATION1.district} şubesinde çalıştı."}
@@ -322,7 +322,7 @@
 {"lang": "tr", "domain": "internal-comms", "text": "Bu duyuruyu daha sıcak bir dille yeniden yaz: \"Personelin dikkatine: {PERSON1.first} Hanım'ın doğum izni 1 Mart'ta başlamaktadır. İşleri {PERSON2.full} yürütecektir.\""}
 {"lang": "tr", "domain": "internal-comms", "text": "Yeni ofis adresimizi duyuran bir e-posta yaz: {ADDRESS1.tr}. Taşınma 1 Haziran'da, kolileri {PERSON1.first+DAT} teslim edin."}
 {"lang": "tr", "domain": "internal-comms", "text": "Başsağlığı duyurusu: çalışma arkadaşımız {PERSON1.first+GEN} babası vefat etmiştir. Cenaze {LOCATION1.city} {LOCATION2.neighborhood} Camii'nden kaldırılacaktır."}
-{"lang": "tr", "domain": "internal-comms", "text": "İç iletişim için kısa bir hatırlatma: güvenlik eğitimini tamamlamayanlar cuma gününe kadar tamamlasın."}
+{"lang": "mix", "domain": "internal-comms", "text": "Security reminder yaz: geçen hafta {PERSON1.lower} adına fake bir mail gönderildi, gift card istiyor. Kimse cevap vermesin, IT'ye forward etsin."}
 {"lang": "tr", "domain": "internal-comms", "text": "Ayın çalışanı duyurusu: {PERSON1.full}, müşteri memnuniyetini artırdı. Ödül töreni Pazartesi, yemekhane."}
 {"lang": "tr", "domain": "internal-comms", "text": "Organizasyon değişikliği duyurusu yaz: Satış ekibi {PERSON1.full+INS} birlikte {PERSON2.full+GEN} yönetimine geçiyor."}
 {"lang": "tr", "domain": "internal-comms", "text": "Kan bağışı kampanyası için bir duyuru metni yaz: Kızılay ekibi 20 Kasım'da otoparkta olacak. Çalışan ismi yok."}
@@ -340,11 +340,11 @@
 {"lang": "mix", "domain": "internal-comms", "text": "Yılbaşı party duyurusu yaz: 27 Aralık, ofis terası, dress code smart casual. Organizasyon ekibi: {PERSON1.first}, {PERSON2.first}, {PERSON3.first}."}
 {"lang": "en", "domain": "internal-comms", "text": "Draft an internal FAQ answer: \"Who do I contact about payroll?\" Answer: the payroll inbox payroll@example.com, or {PERSON1.full} for escalations."}
 {"lang": "en", "domain": "internal-comms", "text": "Proofread this intranet bio: \"{PERSON1.full} grew up in {LOCATION1.city}, studied in {LOCATION2.country} and joined us in May. In her free time she paints summer landscapes.\""}
-{"lang": "en", "domain": "internal-comms", "text": "Write a brief note asking employees to update their emergency contacts in the HR portal by the end of the month."}
+{"lang": "en", "domain": "internal-comms", "text": "Rewrite this memo in plain English: \"Pursuant to the directive of {PERSON1.initial}, personnel shall henceforth refrain from utilising the {LOCATION1.city} car park on Fridays.\""}
 {"lang": "en", "domain": "internal-comms", "text": "Turn these bullet points into a friendly Friday wrap-up email: sales record, new coffee machine, June offsite confirmed, kudos to {PERSON1.first}."}
 {"lang": "tr", "domain": "internal-comms", "text": "Bu duyurudaki yazım hatalarını düzelt: \"degerli calisanlarimiz, {PERSON1.lower} hanim ile {PERSON2.lower} beyin evlilik torenine davetlisiniz, nur yuzlu ciftimize mutluluklar\""}
 {"lang": "mix", "domain": "internal-comms", "text": "Internal podcast'in intro script'ini yaz: bu bölümde konuk {PERSON1.full}, {LOCATION1.country} pazarını anlatacak."}
-{"lang": "en", "domain": "internal-comms", "text": "Write a two-paragraph message from HR about respecting quiet hours after 7pm. No names."}
+{"lang": "mix", "domain": "internal-comms", "text": "Doğum günü duyurusu: bugün {PERSON1.first+GEN} doğum günü, 3'te kitchen'da pasta var. {PERSON2.first+DAT} kart için imza atın."}
 {"lang": "tr", "domain": "internal-comms", "text": "Departman yöneticilerine gidecek kısa bir not: bütçe taleplerini 10 Ocak'a kadar {PERSON1.full+DAT} iletin."}
 {"lang": "en", "domain": "internal-comms", "text": "Write a light-hearted post for the #random channel about the office plant, nicknamed 'Mark', finally getting watered."}
 {"lang": "mix", "domain": "internal-comms", "text": "Duyuru: Barış salonu bu hafta tadilatta, meeting'leri Yıldız odasına taşıyın. Bunu daha net yaz."}
