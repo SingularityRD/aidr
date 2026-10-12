@@ -64,3 +64,27 @@ suffix yourself after a slot. Example: `{PERSON1.first+DAT} ilet` → `Mehmet'e 
   (`example.com`, `example.org`, `ornek.com.tr`) and obviously synthetic numbers.
 
 Output **only** valid JSONL lines (one object per line, no comments, no trailing commas).
+
+## Distractor slots (negatives) — `{NEG:<kind>}`
+
+A distractor slot is filled with a capitalised name that is **not** personal data and is
+labelled `O`. It teaches the model that a capitalised word is not automatically a person.
+Kinds (pools in `data/pools/distractors.json`):
+
+| kind | examples |
+|---|---|
+| `tech` | Django, Kafka, Jenkins, Jackson, Airflow, Kubernetes, Hibernate, Spring Boot, NetSuite, SAP, Logo Tiger |
+| `ai` | Claude, Gemini, ChatGPT, Copilot, Siri, Alexa, Llama, Mistral |
+| `org` | Koç Holding, Aselsan, Arçelik, Turkcell, Garanti BBVA, Siemens, Johnson & Johnson, Ford Otosan |
+| `brand` | Canon, Tesla, Nike, Mavi, LC Waikiki, Ülker, Pınar, McDonald's |
+| `institution` | Mehmet Akif Ersoy Üniversitesi, Bilkent, Hacettepe, Acıbadem, Atatürk Anadolu Lisesi, Sabiha Gökçen Havalimanı |
+| `law` | KVKK, Türk Borçlar Kanunu, GDPR, Sarbanes-Oxley Act, Dodd-Frank Act, Basel III, ISO 27001 |
+| `eponym` | Dijkstra algoritması, Alzheimer, Parkinson, Behçet hastalığı, Asperger, Fibonacci, Gauss, Newton yasaları, Doppler |
+| `place` | cities/regions/landmarks as a topic or destination, not a person's residence: Kapadokya, Kaz Dağları, Amalfi Coast, Lisbon, Rize, Mersin Limanı |
+| `media` | Ekşi Sözlük, Netflix, Muhteşem Yüzyıl, Game of Thrones, Hürriyet |
+| `club` | Fenerbahçe, Galatasaray, Beşiktaş, Real Madrid |
+| `word` | Turkish/English words that are also given names, in lower or sentence case as ordinary words: deniz, umut, kaya, demir, barış, güneş, can, hope, will, may, grace |
+
+`{NEG:<kind>}` takes `+SUFFIX` like any slot (`{NEG:org+DAT}` → "Arçelik'e"). Templates may (and
+should) mix distractor slots with real `PERSON` slots, so the model learns to tell them apart in
+the same sentence.

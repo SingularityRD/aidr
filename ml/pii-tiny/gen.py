@@ -23,6 +23,11 @@ HERE = Path(__file__).resolve().parent
 POOLS = HERE / "data" / "pools"
 LABELS = ("PERSON", "ADDRESS", "LOCATION")
 SLOT = re.compile(r"\{(PERSON|ADDRESS|LOCATION)([0-9]+)(?:\.([a-z_0-9]+))?(?:\+(GEN|DAT|ACC|LOC|ABL|INS|PLU))?\}")
+# Distractor slot: a capitalised non-personal name, filled from pools/distractors.json, labelled O.
+NEG_KINDS = ("tech", "ai", "org", "brand", "institution", "law", "eponym", "place", "media", "club", "word")
+ANY_SLOT = re.compile(
+    r"\{(?:(PERSON|ADDRESS|LOCATION)([0-9]+)(?:\.([a-z_0-9]+))?|NEG:(" + "|".join(NEG_KINDS) + r"))(?:\+(GEN|DAT|ACC|LOC|ABL|INS|PLU))?\}"
+)
 
 # ---------------------------------------------------------------- Turkish orthography
 
@@ -110,6 +115,8 @@ class Pools:
         self.en_streets = pick(world["en_streets"])
         self.en_street_types = world["en_street_types"]
         self.us_states = world["us_states"]
+        neg_path = POOLS / "distractors.json"
+        self.neg = {k: v for k, v in json.loads(neg_path.read_text(encoding="utf-8")).items()} if neg_path.exists() else {}
         self.uk_areas = world["uk_postcode_areas"]
 
 
@@ -238,11 +245,23 @@ def fill(template: dict, pools: Pools, rng: random.Random) -> dict:
     text, spans, pos = [], [], 0
     out_len = 0
     src = template["text"]
-    for m in SLOT.finditer(src):
+    for m in ANY_SLOT.finditer(src):
         literal = src[pos : m.start()]
         text.append(literal)
         out_len += len(literal)
-        kind, n, form, case = m.group(1), m.group(2), m.group(3) or "", m.group(4)
+        kind, n, form, neg, case = m.group(1), m.group(2), m.group(3) or "", m.group(4), m.group(5)
+        if neg:
+            value = rng.choice(pools.neg.get(neg) or ["Kafka"])
+            if neg == "word" and rng.random() < 0.3:
+                value = value[:1].upper() + value[1:]  # sentence-case ordinary word
+            text.append(value)
+            out_len += len(value)
+            if case:
+                sfx = suffix(value.split()[-1], case)
+                text.append(sfx)
+                out_len += len(sfx)
+            pos = m.end()
+            continue
         if kind == "PERSON":
             value = f.person_form(n, form)
             # `@{PERSON1.lower}`, `user={PERSON1.lower}`: a handle, not two words.
@@ -333,7 +352,7 @@ def main(argv=None) -> int:
     with open(args.out, "w", encoding="utf-8") as fh:
         for t in templates:
             # Slot-free templates carry no variation: one copy is enough.
-            copies = args.per_template if SLOT.search(t["text"]) else max(1, args.per_template // 10)
+            copies = args.per_template if ANY_SLOT.search(t["text"]) else max(1, args.per_template // 10)
             for _ in range(copies):
                 rec = fill(t, pools, rng)
                 rec["template"] = t["_id"]

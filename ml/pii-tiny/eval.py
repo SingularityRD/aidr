@@ -10,7 +10,8 @@ Both files are JSONL in the same order; each record has `text` and `spans`
   span of any label. This is what the product needs (a masked name is safe even if the label
   is wrong or the span is wider);
 - FP prompts: records without any gold span that receive a prediction (benign prompts the
-  guard would rewrite).
+  guard would rewrite), overall and for PERSON + ADDRESS only (the release gate; LOCATION is
+  off by default in the product).
 """
 from __future__ import annotations
 
@@ -38,7 +39,7 @@ def covered(gold, preds) -> bool:
 def score(gold_recs, pred_recs) -> dict:
     assert len(gold_recs) == len(pred_recs), "gold/pred length mismatch"
     tp, fp, fn, cov, tot = Counter(), Counter(), Counter(), Counter(), Counter()
-    benign = benign_fp = 0
+    benign = benign_fp = benign_fp_core = 0
     for g, p in zip(gold_recs, pred_recs):
         assert g["text"] == p["text"], "gold/pred text mismatch"
         gs = {(s["start"], s["end"], s["label"]) for s in g["spans"]}
@@ -57,6 +58,7 @@ def score(gold_recs, pred_recs) -> dict:
         if not g["spans"]:
             benign += 1
             benign_fp += bool(p["spans"])
+            benign_fp_core += any(x["label"] != "LOCATION" for x in p["spans"])
     out = {}
     for label in LABELS + ("ALL",):
         keys = LABELS if label == "ALL" else (label,)
@@ -73,6 +75,8 @@ def score(gold_recs, pred_recs) -> dict:
         }
     out["benign_prompts"] = benign
     out["benign_fp_rate"] = round(benign_fp / benign, 4) if benign else None
+    # LOCATION is off by default in Browser Guard; the release gate uses PERSON + ADDRESS.
+    out["benign_fp_rate_core"] = round(benign_fp_core / benign, 4) if benign else None
     return out
 
 
@@ -87,7 +91,7 @@ def main(argv=None) -> int:
         r = res[label]
         mr = "-" if r["masked_recall"] is None else f"{r['masked_recall']:.3f}"
         print(f"{label:<9} {r['gold']:>6} {r['exact_p']:>7.3f} {r['exact_r']:>7.3f} {r['exact_f1']:>7.3f} {mr:>9}")
-    print(f"benign prompts: {res['benign_prompts']}, FP rate: {res['benign_fp_rate']}")
+    print(f"benign prompts: {res['benign_prompts']}, FP rate: {res['benign_fp_rate']} (PERSON+ADDRESS only: {res['benign_fp_rate_core']})")
     print(json.dumps(res))
     return 0
 
