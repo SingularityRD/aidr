@@ -1,0 +1,149 @@
+{"lang": "en", "domain": "software-dev", "text": "{NEG:tech} or {NEG:tech} for a small internal admin panel? We have two devs and no ops person."}
+{"lang": "en", "domain": "software-dev", "text": "I'm getting this when I start the app:\nERROR o.s.boot.SpringApplication - Application run failed\nCaused by: java.lang.ClassNotFoundException: com.fasterxml.jackson.databind.ObjectMapper\nWe recently switched from {NEG:tech} to {NEG:tech}. What dependency am I missing?"}
+{"lang": "en", "domain": "ai-tools", "text": "Is {NEG:ai} better than {NEG:ai} at refactoring legacy PHP? Give me an honest comparison, no marketing."}
+{"lang": "en", "domain": "software-dev", "text": "{PERSON1.first} said that {NEG:tech} and {NEG:tech} can't share the same connection pool. Is that true or is he confusing it with something else?"}
+{"lang": "en", "domain": "software-dev", "text": "Review this commit message and tell me if it follows conventional commits:\n\nfeat(auth): migrate session store from {NEG:tech} to {NEG:tech}\n\nAuthor: {PERSON1} <dev1@example.com>"}
+{"lang": "en", "domain": "data-eng", "text": "Our nightly {NEG:tech} DAG fails at the load step into {NEG:tech}. Log: `psycopg2.OperationalError: server closed the connection unexpectedly`. Where should I start?"}
+{"lang": "en", "domain": "it-support", "text": "Ticket #4821, reported by {PERSON1}: \"After the {NEG:brand} laptop update, {NEG:tech} VPN client won't connect.\" Draft a first-response reply."}
+{"lang": "en", "domain": "architecture", "text": "Explain the trade-offs of using {NEG:tech} as an event bus versus {NEG:tech} for a team of 8. We already run everything on {NEG:tech}."}
+{"lang": "en", "domain": "ai-tools", "text": "Write a prompt for {NEG:ai} that summarizes {NEG:tech} release notes into three bullet points for non-technical managers."}
+{"lang": "en", "domain": "software-dev", "text": "// TODO({PERSON1.first}): replace this with {NEG:eponym} once the graph gets bigger\nfunction shortestPath(nodes, edges) {\n  return bfs(nodes, edges);\n}\nIs the TODO right? When does it actually matter for a {NEG:tech} service?"}
+{"lang": "en", "domain": "security", "text": "We need to map our controls to {NEG:law} and {NEG:law}. Make a table: control, evidence, owner team."}
+{"lang": "en", "domain": "software-dev", "text": "`{NEG:tech}` keeps throwing a timeout when I run migrations in CI but not locally. CI uses {NEG:tech} containers. Ideas?"}
+{"lang": "en", "domain": "data-eng", "text": "Can you explain how {NEG:eponym} works and why our {NEG:tech} job uses it for deduplication?"}
+{"lang": "en", "domain": "software-dev", "text": "Here is a test fixture, make it more realistic:\nconst user = { id: 42, name: \"{PERSON1}\", email: \"user42@example.com\", role: \"admin\" };\nIt's used in our {NEG:tech} + {NEG:tech} integration tests."}
+{"lang": "en", "domain": "it-support", "text": "{NEG:org} asked us to move from {NEG:tech} to {NEG:tech} for SSO by Q3. Write a migration checklist for the helpdesk team."}
+{"lang": "en", "domain": "ai-tools", "text": "I pasted the same stack trace into {NEG:ai} and {NEG:ai} and got opposite answers. Which one is right?\n\nTypeError: Cannot read properties of undefined (reading 'map')\n    at ProductList (ProductList.jsx:14:22)"}
+{"lang": "en", "domain": "software-dev", "text": "Rewrite this PR description so it's clearer:\n\"switched the cache to {NEG:tech}, removed {NEG:tech}, {PERSON1.first} pls review the config part, {PERSON2.first} already checked the tests\""}
+{"lang": "en", "domain": "architecture", "text": "Should a fintech startup start with {NEG:tech} or go straight to {NEG:tech}? We have to pass a {NEG:law} audit next year."}
+{"lang": "en", "domain": "data-eng", "text": "{NEG:tech} vs {NEG:tech} vs {NEG:tech} for a 2 TB analytics warehouse — give me a decision matrix."}
+{"lang": "en", "domain": "software-dev", "text": "git blame says {PERSON1} wrote this line in 2019:\nif (retries > 3) throw new Error(\"giving up\");\nWhy would someone hard-code 3 here instead of reading it from {NEG:tech} config? We now use {NEG:tech} for retries."}
+{"lang": "en", "domain": "ai-tools", "text": "Our legal team wants to know whether {NEG:ai} or {NEG:ai} keeps prompt data for training. Summarize the policies in plain English."}
+{"lang": "en", "domain": "it-support", "text": "The {NEG:brand} printer on floor 3 won't show up in {NEG:tech}. Driver version 5.2. Steps to debug?"}
+{"lang": "en", "domain": "software-dev", "text": "what's the difference between {NEG:tech} and {NEG:tech} in terms of hot reload? i keep losing state"}
+{"lang": "en", "domain": "software-dev", "text": "Explain this error from {NEG:tech}:\nWARN  [main] HHH000342: Could not obtain connection to query metadata\nWe use {NEG:tech} for the pool."}
+{"lang": "en", "domain": "security", "text": "Pentest report item from {PERSON1}: \"Reflected XSS in /search, see {NEG:law} A03.\" Our frontend is {NEG:tech}. How do we fix it properly?"}
+{"lang": "en", "domain": "data-eng", "text": "Translate this {NEG:tech} query to {NEG:tech} syntax:\nSELECT customer_id, COUNT(*) FROM orders WHERE created_at > now() - interval '7 days' GROUP BY 1;"}
+{"lang": "en", "domain": "architecture", "text": "Draw an ASCII diagram: browser -> {NEG:tech} -> API pods on {NEG:tech} -> {NEG:tech}. Then list single points of failure."}
+{"lang": "en", "domain": "ai-tools", "text": "Can {NEG:ai} read files from our {NEG:tech} workspace directly or do we need an integration?"}
+{"lang": "en", "domain": "software-dev", "text": "Standup notes, turn into a short summary:\n- {PERSON1.first}: finished the {NEG:tech} upgrade, blocked on {NEG:tech} license\n- {PERSON2.first}: flaky tests again\n- {PERSON3.first}: on call"}
+{"lang": "en", "domain": "software-dev", "text": "Why does {NEG:eponym} give a different result than my naive loop for n = 40? Code is in {NEG:tech}."}
+{"lang": "en", "domain": "it-support", "text": "{NEG:org} sent new laptops with {NEG:tech} preinstalled. How do we enroll them in {NEG:tech} without wiping?"}
+{"lang": "en", "domain": "software-dev", "text": "Fix this Python test, the assertion fails:\ndef test_display_name():\n    u = User(first=\"{PERSON1.first}\", last=\"{PERSON1.last}\")\n    assert u.display_name() == \"{PERSON1.last}, {PERSON1.first}\"\nWe recently moved from {NEG:tech} to {NEG:tech} for the ORM."}
+{"lang": "en", "domain": "data-eng", "text": "Our {NEG:tech} consumer lag jumps to 2M every night at 02:00. The producer is a {NEG:tech} batch job. What's the likely cause?"}
+{"lang": "en", "domain": "ai-tools", "text": "Compare {NEG:ai}, {NEG:ai} and {NEG:ai} for writing SQL from a schema description. Table format please."}
+{"lang": "en", "domain": "security", "text": "Write a short policy paragraph: employees may use {NEG:ai} only through the company tenant, and never paste {NEG:law}-covered data."}
+{"lang": "en", "domain": "software-dev", "text": "Code review comment from {PERSON1.first}: \"don't call {NEG:tech} directly here, wrap it like we did with {NEG:tech}\". What does she mean by wrap it?"}
+{"lang": "en", "domain": "architecture", "text": "Is {NEG:tech} still a good choice in 2026 or has {NEG:tech} replaced it for most teams?"}
+{"lang": "en", "domain": "software-dev", "text": "{NEG:tech} build fails with: Could not resolve dependencies for project com.acme:billing:jar:1.4.0. We mirror through {NEG:tech}. How do I check the mirror?"}
+{"lang": "en", "domain": "it-support", "text": "Write an email to all staff: {NEG:tech} will be down Saturday 22:00-02:00 for the {NEG:tech} upgrade. Keep it under 80 words."}
+{"lang": "en", "domain": "data-eng", "text": "How do I explain {NEG:eponym} to a junior analyst using an example with our {NEG:tech} sales tables?"}
+{"lang": "en", "domain": "software-dev", "text": "Jira ticket PAY-311\nReporter: {PERSON1}\nAssignee: {PERSON2}\nSummary: {NEG:tech} webhook retries create duplicate invoices in {NEG:tech}\nWrite acceptance criteria for this."}
+{"lang": "en", "domain": "ai-tools", "text": "{NEG:ai} keeps hallucinating method names from {NEG:tech}. How do I make it check the actual docs?"}
+{"lang": "en", "domain": "security", "text": "Our auditor asked how we meet {NEG:law} access-review requirements using {NEG:tech}. Draft an answer."}
+{"lang": "en", "domain": "software-dev", "text": "Explain the regex in this {NEG:tech} validator and make it stricter, it should match what {NEG:tech} accepts:\nconst re = /^[a-z0-9._-]+@[a-z0-9.-]+[.][a-z]{2,}$/;"}
+{"lang": "en", "domain": "software-dev", "text": "Can you turn this {NEG:tech} config into the {NEG:tech} equivalent?\nserver:\n  port: 8080\n  compression:\n    enabled: true"}
+{"lang": "en", "domain": "it-support", "text": "Message from {PERSON1.first} in the helpdesk channel: \"{NEG:tech} says my license expired but {NEG:org} renewed it last week\". What should I check?"}
+{"lang": "en", "domain": "architecture", "text": "We run {NEG:tech} on {NEG:tech}. Should we move to managed {NEG:tech} or keep self-hosting? Costs matter more than latency."}
+{"lang": "en", "domain": "data-eng", "text": "Explain why {NEG:tech} partitions by date are slow when we filter by customer in {NEG:tech}."}
+{"lang": "en", "domain": "software-dev", "text": "Here's a log line, which component produced it?\n2026-03-04T09:12:44Z INFO  [{NEG:tech}] consumer group billing-v2 rebalanced, assigned 12 partitions\nWe also run {NEG:tech} on the same host."}
+{"lang": "en", "domain": "ai-tools", "text": "Write a system prompt that makes {NEG:ai} answer like a senior {NEG:tech} engineer reviewing pull requests."}
+{"lang": "en", "domain": "software-dev", "text": "In this {NEG:tech} test the mock author is \"{PERSON1}\" and the repo name is \"{NEG:tech}-plugins\". Rename both to something neutral and keep the test passing."}
+{"lang": "en", "domain": "security", "text": "Summarize the difference between {NEG:law} and {NEG:law} for a CTO who has 5 minutes."}
+{"lang": "en", "domain": "software-dev", "text": "Does {NEG:eponym} still apply if our hash table in {NEG:tech} uses open addressing?"}
+{"lang": "en", "domain": "data-eng", "text": "{PERSON1.first} from finance wants a {NEG:tech} dashboard on top of {NEG:tech}. What's the least painful connector?"}
+{"lang": "en", "domain": "software-dev", "text": "Explain this {NEG:tech} warning like I'm new:\nReact Hook useEffect has a missing dependency: 'fetchOrders'. Either include it or remove the dependency array.\nWe migrated from {NEG:tech} last month."}
+{"lang": "en", "domain": "it-support", "text": "Create a knowledge-base article: how to reset MFA in {NEG:tech} when the user lost their {NEG:brand} phone."}
+{"lang": "en", "domain": "architecture", "text": "Our CTO likes {NEG:tech}, the team prefers {NEG:tech}. Give me neutral arguments for both."}
+{"lang": "en", "domain": "software-dev", "text": "Merge conflict in package.json between {PERSON1.first}'s branch (adds {NEG:tech}) and mine (adds {NEG:tech}). Can both coexist?"}
+{"lang": "en", "domain": "ai-tools", "text": "How do I connect {NEG:ai} to our {NEG:tech} knowledge base without exposing customer tickets?"}
+{"lang": "en", "domain": "software-dev", "text": "Write a unit test for this function, use {NEG:tech} and {NEG:tech} for mocking:\nexport function slugify(s) { return s.toLowerCase().replace(/ +/g, '-'); }"}
+{"lang": "en", "domain": "data-eng", "text": "CSV header from the vendor: id,full_name,city,created_at\nRow sample: 17,\"{PERSON1}\",{LOCATION1.city},2025-11-02\nWrite a {NEG:tech} schema for it and load into {NEG:tech}."}
+{"lang": "en", "domain": "security", "text": "{NEG:org} wants proof that our {NEG:tech} logs are retained for 12 months under {NEG:law}. Which settings prove it?"}
+{"lang": "en", "domain": "software-dev", "text": "{NEG:tech} or {NEG:tech} for mobile, if the team only knows TypeScript?"}
+{"lang": "en", "domain": "it-support", "text": "Slack from {PERSON1.first}: \"is {NEG:tech} down or just me?\" Status page for {NEG:org} shows green. How do I check our side?"}
+{"lang": "en", "domain": "software-dev", "text": "explain big O of {NEG:eponym} vs a binary heap version, the {NEG:tech} implementation we have is too slow"}
+{"lang": "en", "domain": "ai-tools", "text": "Write release notes for our internal {NEG:ai} plugin: added {NEG:tech} support, fixed {NEG:tech} auth bug."}
+{"lang": "en", "domain": "architecture", "text": "Retro notes from {PERSON1} and {PERSON2}: \"we picked {NEG:tech} too early, should have stayed on {NEG:tech}\". Turn this into lessons learned."}
+{"lang": "en", "domain": "software-dev", "text": "Why does `{NEG:tech}` reorder my imports differently than `{NEG:tech}`? Config below:\n[tool.isort]\nprofile = \"black\""}
+{"lang": "en", "domain": "data-eng", "text": "What's the {NEG:tech} equivalent of a {NEG:tech} materialized view?"}
+{"lang": "en", "domain": "security", "text": "Classify these findings by {NEG:law} category: open S3 bucket, hard-coded {NEG:tech} token, missing rate limit."}
+{"lang": "en", "domain": "software-dev", "text": "Email signature in our test data looks like:\n--\n{PERSON1}\nPlatform Team, {NEG:org}\nWrite a regex that strips signatures like this before we index mails in {NEG:tech}."}
+{"lang": "en", "domain": "it-support", "text": "Users report {NEG:tech} freezes after the {NEG:brand} docking station firmware update. Write a triage questionnaire."}
+{"lang": "en", "domain": "ai-tools", "text": "Which is cheaper per million tokens right now, {NEG:ai} or {NEG:ai}? Assume heavy coding use."}
+{"lang": "en", "domain": "software-dev", "text": "{NEG:tech} migration guide says to replace `{NEG:tech}` calls with the new client. Show me a before/after example."}
+{"lang": "en", "domain": "architecture", "text": "Design a rate limiter on {NEG:tech} using {NEG:eponym}. Explain the token bucket alternative too."}
+{"lang": "en", "domain": "software-dev", "text": "Our feature flag is literally called \"{NEG:word}\" and nobody remembers why. It toggles the {NEG:tech} cache. Suggest a better name."}
+{"lang": "en", "domain": "software-dev", "text": "Branch `feature/{NEG:word}-search` breaks the {NEG:tech} build. Diff is mostly in the {NEG:tech} adapter. Where do I look first?"}
+{"lang": "en", "domain": "ai-tools", "text": "{PERSON1.first} uses {NEG:ai} for code review and I use {NEG:ai}. Write a fair one-paragraph comparison for our team wiki."}
+{"lang": "en", "domain": "data-eng", "text": "We sell to {NEG:org} and {NEG:org}; both send order files over SFTP into {NEG:tech}. How do I validate the schema before load?"}
+{"lang": "en", "domain": "security", "text": "Map these {NEG:tech} settings to {NEG:law} clauses: password policy, session timeout, audit logging."}
+{"lang": "en", "domain": "software-dev", "text": "Debug this, it prints undefined:\nconst greeting = `Hello, ${user.firstName}`;\nconsole.log(greeting);\nuser comes from a {NEG:tech} response and we parse it with {NEG:tech}."}
+{"lang": "en", "domain": "it-support", "text": "{PERSON1}, our new hire, can't log into {NEG:tech}. Her account was created in {NEG:tech} yesterday. Write the steps I should send her."}
+{"lang": "en", "domain": "architecture", "text": "Explain the {NEG:eponym} in the context of a {NEG:tech} cluster with 3 data centers."}
+{"lang": "en", "domain": "software-dev", "text": "Make this commit history readable for the changelog:\na1f3 {PERSON1.first}: bump {NEG:tech} to 3.2\nc77e {PERSON2.first}: fix {NEG:tech} null check\n09bd {PERSON1.first}: docs"}
+{"lang": "en", "domain": "ai-tools", "text": "Can I fine-tune {NEG:ai} on our {NEG:tech} codebase, or is retrieval enough?"}
+{"lang": "en", "domain": "data-eng", "text": "The {NEG:brand} e-commerce export has a column \"{NEG:word}\" with values 0/1. Any idea what it could mean? We load it with {NEG:tech}."}
+{"lang": "en", "domain": "software-dev", "text": "{NEG:tech} vs {NEG:tech} for state management in a dashboard with ~40 screens?"}
+{"lang": "en", "domain": "security", "text": "{NEG:org} security questionnaire asks: \"Do you follow {NEG:law}?\" We follow parts of it. Help me answer honestly."}
+{"lang": "en", "domain": "software-dev", "text": "Python snippet from {PERSON1.first}'s notebook:\ndf = pd.read_csv(\"leads.csv\")\ndf[df.owner == \"{PERSON1.lower}\"].head()\nRewrite it so it works on {NEG:tech} instead of pandas, and push the result to {NEG:tech}."}
+{"lang": "en", "domain": "it-support", "text": "Asset list cleanup: \"{NEG:brand} ThinkPad\", \"{NEG:brand} monitor\", \"{NEG:tech} license x40\". Group these into hardware and software."}
+{"lang": "en", "domain": "architecture", "text": "Is {NEG:tech} overkill for a monolith with 3 services? We currently deploy with {NEG:tech}."}
+{"lang": "en", "domain": "software-dev", "text": "what does `{NEG:tech}` mean by \"peer dependency conflict\"? npm says {NEG:tech}@5 needs react@18"}
+{"lang": "en", "domain": "ai-tools", "text": "Translate this {NEG:ai} answer into a Jira comment that {PERSON1.first} can understand without the jargon about {NEG:tech}."}
+{"lang": "en", "domain": "data-eng", "text": "How would {NEG:eponym} help detect anomalies in our {NEG:tech} metrics? Give a minimal Python example."}
+{"lang": "en", "domain": "software-dev", "text": "Rename these test users to fake names that look realistic:\n[\"{PERSON1}\", \"{PERSON2}\", \"{PERSON3}\"]\nThey're seeded into {NEG:tech} by a {NEG:tech} migration."}
+{"lang": "en", "domain": "security", "text": "We found a {NEG:tech} API key committed to the repo. Write the incident steps per {NEG:law}."}
+{"lang": "en", "domain": "it-support", "text": "Compare {NEG:tech} and {NEG:tech} for remote support on 300 Windows machines."}
+{"lang": "en", "domain": "software-dev", "text": "Explain why {NEG:eponym} works here and whether {NEG:tech} has a built-in for it:\nwhile lo < hi:\n    mid = (lo + hi) // 2"}
+{"lang": "en", "domain": "architecture", "text": "{PERSON1}'s design doc proposes {NEG:tech} for search. I think {NEG:tech} is simpler. Help me write a respectful counter-proposal."}
+{"lang": "en", "domain": "software-dev", "text": "Docker compose file uses image {NEG:tech}:latest and {NEG:tech}:7. Why is pinning to latest a bad idea?"}
+{"lang": "en", "domain": "ai-tools", "text": "Our devs paste stack traces into {NEG:ai}. What should we strip first: hostnames, {NEG:tech} tokens, customer names?"}
+{"lang": "en", "domain": "data-eng", "text": "{NEG:org} wants a daily extract from {NEG:tech}. Write the SQL and a cron line."}
+{"lang": "en", "domain": "software-dev", "text": "Reviewer {PERSON1.first} left: \"nit: use {NEG:tech} logger instead of print\". Apply it to this code, it runs inside a {NEG:tech} task:\nprint(\"sync done\", count)"}
+{"lang": "en", "domain": "security", "text": "Explain {NEG:eponym} to a product manager and why our {NEG:tech} login uses it."}
+{"lang": "en", "domain": "it-support", "text": "The {NEG:brand} headset isn't detected in {NEG:tech} meetings but works in {NEG:tech}. Fix?"}
+{"lang": "en", "domain": "software-dev", "text": "{NEG:tech} says: \"Hydration failed because the initial UI does not match what was rendered on the server.\" We fetch data from {NEG:tech}. What's wrong?"}
+{"lang": "en", "domain": "architecture", "text": "Make a comparison table: {NEG:tech}, {NEG:tech}, {NEG:tech} — license, hosting, learning curve."}
+{"lang": "en", "domain": "software-dev", "text": "In our seed file the admin is \"{PERSON1}\" and the company is \"{NEG:org}\". Generate 5 more seed rows in the same style for {NEG:tech}."}
+{"lang": "en", "domain": "ai-tools", "text": "Write a policy FAQ: can we paste {NEG:org} contract text into {NEG:ai}? Answer: only the enterprise workspace."}
+{"lang": "en", "domain": "data-eng", "text": "Why does {NEG:tech} report 0 rows when {NEG:tech} shows 12k for the same filter?"}
+{"lang": "en", "domain": "software-dev", "text": "Summarize this thread for the PR:\n{PERSON1.first}: {NEG:tech} upgrade broke date parsing\n{PERSON2.first}: use {NEG:tech} for dates then?\n{PERSON1.first}: fine, but not in this PR"}
+{"lang": "en", "domain": "security", "text": "Our SOC uses {NEG:tech}. Write a detection rule idea for {NEG:tech} admin logins from new countries."}
+{"lang": "en", "domain": "it-support", "text": "Policy says personal {NEG:brand} phones can access {NEG:tech} only with an MDM profile. Write the onboarding text."}
+{"lang": "en", "domain": "software-dev", "text": "why is {NEG:tech} so slow on first request? cold start? we're on {NEG:tech} serverless"}
+{"lang": "en", "domain": "architecture", "text": "Explain {NEG:eponym} and whether our {NEG:tech} setup needs it."}
+{"lang": "en", "domain": "software-dev", "text": "Error from {NEG:tech}:\nE11000 duplicate key error collection: shop.users index: email_1 dup key\nThe insert comes from a {NEG:tech} worker. How do I make it idempotent?"}
+{"lang": "en", "domain": "ai-tools", "text": "{PERSON1.first} wants to replace our {NEG:tech} chatbot with {NEG:ai}. List risks in 5 bullets."}
+{"lang": "en", "domain": "data-eng", "text": "dbt model fails: Compilation Error in model stg_orders, 'source' is undefined. We moved from {NEG:tech} to {NEG:tech} last sprint."}
+{"lang": "en", "domain": "software-dev", "text": "Write a docstring for this {NEG:tech} function, author tag should be {PERSON1}:\ndef retry(fn, times=3): ...\nIt wraps calls to {NEG:tech}."}
+{"lang": "en", "domain": "security", "text": "Is {NEG:tech} enough for {NEG:law} encryption-at-rest, or do we need {NEG:tech} too?"}
+{"lang": "en", "domain": "it-support", "text": "Make a one-page cheat sheet: {NEG:tech} shortcuts for people coming from {NEG:tech}."}
+{"lang": "en", "domain": "software-dev", "text": "{NEG:tech} + {NEG:tech} + {NEG:tech}: is this stack too much for a weekend prototype?"}
+{"lang": "en", "domain": "architecture", "text": "Customer {NEG:org} needs on-prem; customer {NEG:org} wants SaaS. Can one {NEG:tech} codebase serve both?"}
+{"lang": "en", "domain": "software-dev", "text": "Convert this {NEG:tech} test to {NEG:tech}:\ndescribe('cart', () => { it('adds item', () => { expect(add(1)).toBe(1); }); });"}
+{"lang": "en", "domain": "ai-tools", "text": "Can {NEG:ai} run in our own VPC like {NEG:ai} can? We're under {NEG:law}."}
+{"lang": "en", "domain": "data-eng", "text": "{PERSON1} left the company; her {NEG:tech} notebooks reference a {NEG:tech} service account. How do we hand them over safely?"}
+{"lang": "en", "domain": "software-dev", "text": "Explain this stack trace:\nException in thread \"main\" java.lang.NullPointerException\n    at com.acme.report.PdfExporter.render(PdfExporter.java:88)\nWe generate PDFs with {NEG:tech} and templates with {NEG:tech}."}
+{"lang": "en", "domain": "security", "text": "Write a tabletop exercise: {NEG:tech} credentials leaked on a public paste site, attacker targets {NEG:tech}."}
+{"lang": "en", "domain": "it-support", "text": "Hi, {PERSON1.first} here from accounting. {NEG:tech} asks me to update {NEG:tech} every morning. Can IT disable that?"}
+{"lang": "en", "domain": "software-dev", "text": "Does `{NEG:tech}` support ESM yet or do I still need the {NEG:tech} wrapper?"}
+{"lang": "en", "domain": "architecture", "text": "Explain {NEG:eponym} for leader election and how {NEG:tech} implements it."}
+{"lang": "en", "domain": "ai-tools", "text": "Write a comparison of {NEG:ai} vs {NEG:ai} for summarizing {NEG:tech} incident timelines."}
+{"lang": "en", "domain": "data-eng", "text": "Explain the difference between {NEG:eponym} and k-means for clustering our {NEG:tech} events."}
+{"lang": "en", "domain": "software-dev", "text": "Rewrite this code comment professionally:\n# {PERSON1.first} broke this, {NEG:tech} returns null on weekends, ask {PERSON2.first} before touching {NEG:tech} again"}
+{"lang": "en", "domain": "security", "text": "{NEG:org} requires {NEG:law} certification from vendors. What's a realistic 9-month plan for a 20-person SaaS?"}
+{"lang": "en", "domain": "it-support", "text": "{NEG:tech} sync conflict files keep appearing on the shared drive. Users are on {NEG:brand} and Windows laptops."}
+{"lang": "en", "domain": "software-dev", "text": "Is {NEG:tech} or {NEG:tech} better for a CLI tool that needs to ship a single binary?"}
+{"lang": "en", "domain": "ai-tools", "text": "I asked {NEG:ai} to explain {NEG:eponym} and it got the complexity wrong. What's the correct one?"}
+{"lang": "en", "domain": "software-dev", "text": "CODEOWNERS file:\n/billing/ @{PERSON1.lower}\n/search/ @{PERSON2.lower}\nWe use {NEG:tech} for billing and {NEG:tech} for search. Add a rule for /infra/."}
+{"lang": "en", "domain": "data-eng", "text": "Explain watermarking in {NEG:tech} streaming and how it compares to {NEG:tech}."}
+{"lang": "en", "domain": "architecture", "text": "{NEG:org} uses {NEG:tech} in production at huge scale. Does that mean it fits a 5-person startup?"}
+{"lang": "en", "domain": "software-dev", "text": "Fix the typo-ridden error message our {NEG:tech} plugin shows: \"Conection to {NEG:tech} faild, retry latter\"."}
+{"lang": "en", "domain": "security", "text": "Draft a vendor risk note: {NEG:org} processes our logs in {NEG:tech}, data residency EU, {NEG:law} applies."}
+{"lang": "en", "domain": "it-support", "text": "Write a polite reply to {PERSON1}: we can't install {NEG:tech} on company laptops, but {NEG:tech} is approved."}
+{"lang": "en", "domain": "software-dev", "text": "{NEG:tech} linter complains `no-unused-vars` on a type import. We use {NEG:tech}. Config fix?"}
+{"lang": "en", "domain": "ai-tools", "text": "How do {NEG:ai} and {NEG:ai} handle a 200k-token {NEG:tech} repo dump? Which one degrades less?"}
+{"lang": "en", "domain": "data-eng", "text": "Sample JSON from the CRM:\n{\"owner\": \"{PERSON1}\", \"account\": \"{NEG:org}\", \"stage\": \"won\"}\nWrite a {NEG:tech} model that flattens this."}
+{"lang": "en", "domain": "architecture", "text": "Explain the {NEG:eponym} and how it affects our {NEG:tech} queue design."}
+{"lang": "en", "domain": "software-dev", "text": "{NEG:tech} crashes with exit code 137 on {NEG:tech}. Is that OOM?"}
