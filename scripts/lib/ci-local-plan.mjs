@@ -61,7 +61,7 @@ export const CI_ONLY_STEPS = Object.freeze([
 		job: "privacy-platform",
 		step: "Provision isolated real parser dependencies",
 		reason:
-			"Runner provisioning: installs apt packages with sudo and a hash-locked parser venv into RUNNER_TEMP; a developer host supplies its own AIDR_PYTHON instead of ci:local mutating the system.",
+			"Runner provisioning: installs apt packages with sudo and a hash-locked parser venv into RUNNER_TEMP; a developer host supplies its own AIDR_PYTHON/AIDR_TEST_PYTHON and AIDR_VISION_CONFIG (Tesseract eng+tur, vision venv, manifest) instead of ci:local mutating the system.",
 	},
 	{
 		job: "fleet-windows",
