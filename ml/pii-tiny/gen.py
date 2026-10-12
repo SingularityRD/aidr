@@ -252,6 +252,9 @@ def fill(template: dict, pools: Pools, rng: random.Random) -> dict:
             value = f.address(n, form)
         else:
             value = f.location(n, form)
+            # The template already says "Mahallesi" after the slot: do not double it.
+            if re.match(r"\s*(?:mah\.|mahalle)", src[m.end() :], re.I) and value.endswith(" Mahallesi"):
+                value = value[: -len(" Mahallesi")]
         spans.append({"start": out_len, "end": out_len + len(value), "label": kind})
         text.append(value)
         out_len += len(value)
@@ -263,11 +266,15 @@ def fill(template: dict, pools: Pools, rng: random.Random) -> dict:
     text.append(src[pos:])
     out = "".join(text)
     # Whole-text typing variants: no Turkish characters / all lower-case (offsets preserved).
+    # str.lower() turns "İ" into two code units; tr_lower folds it first, so offsets hold.
     roll = rng.random()
+    variant = out
     if lang != "en" and roll < 0.06:
-        out = out.translate(ASCII)
+        variant = out.translate(ASCII)
     elif roll < 0.09:
-        out = tr_lower(out) if lang != "en" else out.lower()
+        variant = tr_lower(out)
+    if len(variant) == len(out):
+        out = variant
     return {"text": out, "spans": spans, "lang": lang, "domain": template.get("domain", "")}
 
 
