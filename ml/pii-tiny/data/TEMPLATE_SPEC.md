@@ -96,7 +96,7 @@ Free-form prompts written as a real person would type them, with the personal da
 possessives, typos, mixed case, Turkish suffixes attached directly):
 
 ```json
-{"lang":"tr","domain":"hr","text":"[[P:Gülşen Hanım]]'ın izin talebini [[P:Okan]]'a ilettim, kendisi [[L:Eskişehir]]'de."}
+{"lang":"tr","domain":"hr","text":"[[P:Gülşen]] Hanım'ın izin talebini [[P:Okan]]'a ilettim, kendisi [[L:Eskişehir]]'de."}
 ```
 
 - `[[P:...]]` PERSON, `[[A:...]]` ADDRESS, `[[L:...]]` LOCATION (a place tied to a specific person:
