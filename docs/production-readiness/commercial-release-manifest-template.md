@@ -5,7 +5,7 @@ Source inventory updated: **2026-10-06**. No accepted release candidate, price
 book, production provider contract or signed order is supplied. Source facts
 and proposals below are review inputs, not approved sale terms.
 Registry: `commercial-go-evidence-registry.json`
-Decision: direct GA, five direct-GA connectors plus Codex in the engineering acceptance scope, hybrid deployment, EU/US/APAC, online cloud sales plus enterprise invoice, private registry, 99.9% monthly managed control-plane/dashboard API target. All launch evidence remains open.
+Decision: direct GA, six direct-GA connectors including Codex CLI (Product decision 2026-10-11; Codex with its documented host limits: fail-open on a crashing or untrusted hook, no output-side interception, Bash and apply_patch matcher only), hybrid deployment, EU/US/APAC, online cloud sales plus enterprise invoice, private registry, 99.9% monthly managed control-plane/dashboard API target. All launch evidence remains open.
 
 Complete this document for one immutable Release Candidate. Empty values are blockers, not defaults.
 
@@ -14,7 +14,7 @@ Complete this document for one immutable Release Candidate. Empty values are blo
 | Release Candidate commit/digest | **Not held**; source base `7f3ec0ad009abf5b032b8116b296d8604fee884e` plus uncommitted changes | Engineering + Release must freeze clean reviewed source and SHA-256 of `release-inventory.json` |
 | Package/plugin/container digests | **Not held for a candidate** | Release Engineering must supply the signed customer-delivery envelope and inventory |
 | Launch model | `direct-ga` | Product/Engineering/QA/Security |
-| Connectors | Claude Code, Cursor, VS Code, OpenClaw, OpenCode | Real-host support matrix and E2E reports |
+| Connectors | Claude Code, Cursor, VS Code, OpenClaw, OpenCode, Codex CLI (with its documented host limits) | Real-host support matrix and E2E reports |
 | Deployment | Hybrid edge/local enforcement + managed control plane + private AIG bridge where enabled | Architecture and outage evidence |
 | Tenant regions | EU / US / APAC | Residency and transfer matrix |
 | Billing | Online cloud payment plus enterprise/on-prem invoice; both disabled until provider settlement, finite entitlement, tax/legal, and Finance acceptance. Cloud trial: 14 days / 1 agent; paid cloud has no trial cap. | Finance provider-of-record and settlement/revocation receipts |

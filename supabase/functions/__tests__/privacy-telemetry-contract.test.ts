@@ -3,6 +3,7 @@
 // counts, enums and the optional policy identifier only.
 import { webcrypto } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { leaseAware } from "./lease-rpc-fake.ts";
 import { AI_SERVICES as BROWSER_GUARD_AI_SERVICES } from "../../../packages/browser-guard/src/sites/catalog.ts";
 import {
 	ENTITY_TYPES as BROWSER_GUARD_ENTITY_TYPES,
@@ -386,7 +387,7 @@ async function ingestHandler(registration: Record<string, unknown>) {
 		throw new Error(`Unexpected RPC: ${name}`);
 	});
 	sdk.createClient.mockReturnValue({
-		rpc,
+		rpc: leaseAware(rpc),
 		from(table: string) {
 			return {
 				select() {

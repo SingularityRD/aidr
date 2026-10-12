@@ -145,6 +145,7 @@ jobs:
           node scripts/enrollment-admission-postgres.test.mjs
           node scripts/tenant-ga-admission-postgres.test.mjs --installed
           node scripts/tenant-ga-admission-concurrency-postgres.test.mjs
+          node scripts/tenant-inflight-lease-postgres.test.mjs
           node scripts/ga-trial-legal-consent-postgres.test.mjs --installed
           node scripts/ga-trial-auth-delete-postgres.test.mjs --installed
           node scripts/team-invitation-acceptance-postgres.mjs --installed
@@ -275,12 +276,21 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends openssl libseccomp2
+          sudo apt-get install -y --no-install-recommends openssl libseccomp2 tesseract-ocr tesseract-ocr-eng tesseract-ocr-tur libzbar0
           python -m venv --copies "${RUNNER_TEMP}/privacy-python"
           "${RUNNER_TEMP}/privacy-python/bin/python" -m pip install --disable-pip-version-check --require-hashes --only-binary=:all: --no-deps -r packages/privacy/parsers/requirements.lock.txt
           "${RUNNER_TEMP}/privacy-python/bin/python" -m pip check
           echo "AIDR_PYTHON=${RUNNER_TEMP}/privacy-python/bin/python" >> "${GITHUB_ENV}"
           echo "AIDR_TEST_PYTHON=${RUNNER_TEMP}/privacy-python/bin/python" >> "${GITHUB_ENV}"
+          # Real OCR worker, so the OCR inspection test runs instead of skipping (the gate requires zero skips).
+          python -m venv --copies "${RUNNER_TEMP}/vision-python"
+          "${RUNNER_TEMP}/vision-python/bin/python" -m pip install --disable-pip-version-check --require-hashes --only-binary=:all: --no-deps -r packages/privacy/vision/requirements.lock.txt
+          "${RUNNER_TEMP}/vision-python/bin/python" -m pip check
+          tessdata="$(dirname "$(find /usr/share/tesseract-ocr -name tur.traineddata -print -quit)")"
+          "${RUNNER_TEMP}/vision-python/bin/python" packages/privacy/vision/build_manifest.py --tesseract /usr/bin/tesseract --tessdata "${tessdata}" --output "${RUNNER_TEMP}/ocr-manifest.json"
+          VISION_PYTHON="${RUNNER_TEMP}/vision-python/bin/python3" TESSDATA="${tessdata}" MANIFEST="${RUNNER_TEMP}/ocr-manifest.json" \
+            node -e 'const c=JSON.parse(require("fs").readFileSync("packages/privacy/vision/config.example.json","utf8"));Object.assign(c.backend,{python:process.env.VISION_PYTHON,tessdata:process.env.TESSDATA,manifest:process.env.MANIFEST});require("fs").writeFileSync(process.argv[1],JSON.stringify(c,null,2))' "${RUNNER_TEMP}/vision-config.json"
+          echo "AIDR_VISION_CONFIG=${RUNNER_TEMP}/vision-config.json" >> "${GITHUB_ENV}"
 
       - name: Map-free private build, complete Node suite and installed signed MCP
         run: pnpm --filter @singularityrd/aidr-privacy test:ci:platform

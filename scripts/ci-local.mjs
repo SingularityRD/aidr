@@ -263,6 +263,10 @@ function probeFacts(selected, workflow) {
 		available["non-root"] = uid !== 0;
 		detail["non-root"] = uid === undefined ? "no POSIX uid" : `uid ${uid}`;
 	}
+	if (needed.has("windows")) {
+		available.windows = process.platform === "win32";
+		detail.windows = `platform ${process.platform}`;
+	}
 	if (needed.has("pwsh")) {
 		const pwsh = onPath("pwsh");
 		record("pwsh", pwsh ? { path: pwsh } : { detail: "pwsh not on PATH" });

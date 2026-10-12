@@ -16,7 +16,7 @@ const directory = fileURLToPath(new URL(".", import.meta.url));
 const root = fileURLToPath(new URL("../..", import.meta.url));
 const json = (path) => JSON.parse(readFileSync(path, "utf8"));
 
-test("benchmark denominator is engineering/evaluation scope, distinct from direct-GA order scope", () => {
+test("benchmark denominator is engineering/evaluation scope and matches the direct-GA order scope", () => {
 	const scope = json(join(directory, "sold-scope.json"));
 	const scaffold = json(join(directory, "corpus.template.json"));
 	const supportMatrix = json(join(root, "deploy", "native", "support-matrix.json"));
@@ -28,11 +28,11 @@ test("benchmark denominator is engineering/evaluation scope, distinct from direc
 	assert.deepEqual(benchmarkConnectors, supportMatrix.soldConnectorScope);
 	assert.deepEqual(scaffold.scope.required_connectors, benchmarkConnectors);
 	assert.equal(benchmarkConnectors.length, 6);
-	assert.equal(directGa.length, 5);
-	assert.deepEqual(benchmarkConnectors.filter((connector) => !directGa.includes(connector)), ["codex"]);
+	assert.equal(directGa.length, 6);
+	assert.deepEqual(benchmarkConnectors.filter((connector) => !directGa.includes(connector)), []);
 	assert.match(scope.$comment, /engineering\/evaluation.*six-connector/i);
 	assert.match(readme, /six connectors.*engineering\/evaluation/i);
-	assert.match(readme, /direct-GA order scope is five connectors.*Codex/i);
+	assert.match(readme, /direct-GA order scope is the same six connectors.*Codex/i);
 	assert.match(scaffold.scope._comment, /engineering\/evaluation/i);
 	assert.doesNotMatch(readme, /denominator of what the product actually sells/i);
 });

@@ -31,6 +31,13 @@ Each connector hands observed tool calls to one shared local decision engine
 | OpenCode | `tool.execute.before` plugin | [opencode.md](../platform-guides/opencode.md) |
 | Codex CLI | Native `PreToolUse` command hook for `Bash` and `apply_patch` | [codex.md](../platform-guides/codex.md) |
 
+All six connectors are in the intended direct-GA scope (COM-010). That scope is a
+target; each connector still needs signed-artefact, private-registry and real-host
+receipts before it is accepted. Codex is in that scope with its host limits: Codex fails
+open on a crashing or untrusted hook (the connector answers `ask` and its own errors
+with an explicit deny), there is no output-side interception before the model, and the
+packaged matcher covers `Bash` and `apply_patch` only.
+
 **Detection.** 494 YAML threat rules in 29 files under [`threats/`](../../threats/)
 cover dangerous commands, credential access, persistence, obfuscation, crypto-mining,
 supply-chain and LLM-specific patterns for Linux, macOS and Windows. The rules are data,

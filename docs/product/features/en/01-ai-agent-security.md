@@ -22,6 +22,10 @@ command, configuration key and file path below was taken from the repository.
 > mock model; Cursor and VS Code have none, and no record covers Windows, macOS, arm64, a
 > signed release or a real model. Treat the capabilities below as the designed and tested
 > behaviour of the software, not as accepted host-side guarantees beyond those records.
+> The intended direct-GA connector scope is all six connectors, Codex CLI included; that
+> is a target, not acceptance. Codex keeps its host limits: it fails open on a crashing or
+> untrusted hook, has no output-side interception before the model, and its packaged
+> matcher covers `Bash` and `apply_patch` only.
 
 ## Contents
 

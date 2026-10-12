@@ -190,7 +190,9 @@ export function LandingPage() {
 						Local detection, incident correlation, and package and plugin checks are available for
 						supported runtimes: {AGENT_CONNECTORS.join(", ")}. The engine ships{" "}
 						{SHIPPED_THREAT_RULES} YAML threat rules in {THREAT_RULE_FILES} files. Device enrollment
-						and central visibility depend on the pilot deployment.
+						and central visibility depend on the pilot deployment. Codex CLI coverage is limited to
+						Bash and apply_patch calls, with no output-side interception, and Codex lets a call
+						through when its hook crashes or is not trusted.
 					</p>
 					<div className="bullet-list">
 						{[

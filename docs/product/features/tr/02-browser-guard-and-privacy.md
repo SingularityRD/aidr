@@ -46,14 +46,14 @@ belirtilmiştir.
     - [13c. Yapay zekâ kabul edilebilir kullanım bildirimi](#13c-yapay-zekâ-kabul-edilebilir-kullanım-bildirimi)
 14. [Kurumsal yönetilen politika ve dağıtım](#14-kurumsal-yönetilen-politika-ve-dağıtım)
 15. [Yalnızca sayım içeren telemetri ve Browser Privacy paneli](#15-yalnızca-sayım-içeren-telemetri-ve-browser-privacy-paneli)
-16. [NER ve OCR için isteğe bağlı native host](#16-ner-ve-ocr-için-isteğe-bağlı-native-host)
+16. [NER ve OCR için native host (ilk sürümde satılmaz)](#16-ner-ve-ocr-için-native-host-ilk-sürümde-satılmaz)
 17. [Cihazdan hangi veriler çıkar](#17-cihazdan-hangi-veriler-çıkar)
 
 **Bölüm B: AIDR Privacy motoru**
 
 18. [Ortak TR/EN kural katmanı](#18-ortak-tren-kural-katmanı)
 19. [Komut satırı metin tarayıcısı (`aidr-privacy`)](#19-komut-satırı-metin-tarayıcısı-aidr-privacy)
-20. [Ekran görüntüsü OCR maskeleme (`aidr-visual`)](#20-ekran-görüntüsü-ocr-maskeleme-aidr-visual)
+20. [Ekran görüntüsü OCR maskeleme (`aidr-visual`, ilk sürümde satılmaz)](#20-ekran-görüntüsü-ocr-maskeleme-aidr-visual-ilk-sürümde-satılmaz)
 21. [Belge içerik arındırma ve yeniden oluşturma (CDR)](#21-belge-içerik-arındırma-ve-yeniden-oluşturma-cdr)
 22. [Kurumsal ağ geçidi ve platform katmanı](#22-kurumsal-ağ-geçidi-ve-platform-katmanı)
 
@@ -1394,15 +1394,32 @@ satırı bir tarama ve iki öğe artar.
   saklanır.
 - Plan kataloğu paketleri tanımlar; kod, olay alımında plan özelliklerini zorunlu kılmaz.
 
-### 16. NER ve OCR için isteğe bağlı native host
+### 16. NER ve OCR için native host (ilk sürümde satılmaz)
+
+**İlk sürüm kapsamı** — Satılmaz. Öğrenilmiş NER (`FRS-11`) ve görsel OCR (`FRS-12`,
+`FEATURE_INVENTORY.json#first_release_scope`) ilk sürüm kapsamı dışındadır. Köprü kodu eklentide
+bulunur, ancak ürün NER veya OCR modeli içermez: kalite politikasını (duyarlılık için 0,95,
+kesinlik için 0,90 Wilson alt sınırı; temiz metinde bozulma en fazla 0,05) geçen bir NER modeli
+yoktur ve OCR doğruluğu ölçülmemiştir. Satılan algılama yerleşik kural katmanıdır (özellik 3 ve
+18). Nitelikli bir model olmadan, ona bağlı olacak bölümler veriyi geçirmek yerine reddeder ya
+da durumu bildirir:
+
+| Nerede | Nitelikli model olmadan ne olur | Gerekçe kodu |
+|---|---|---|
+| Browser Guard, görsel yükleme | OCR yapabilen host yoksa görsel incelenmedi olarak bildirilir, hiçbir zaman temiz sayılmaz (özellik 7) | `IMAGE_NOT_INSPECTED` |
+| Browser Guard, istem ve yapıştırma | NER model bloğu yoksa host `coverage: "rules-only"` bildirir ve istem yalnızca kurallarla denetlenir | — |
+| Privacy platform hizmeti (özellik 22) | Onaylı ve nitelikli bir model manifesti olmadan başlamayı reddeder | `SERVICE_MODEL_APPROVAL_REQUIRED` |
+| Privacy platform, `defense` modu (varsayılan) | Öğrenilmiş NER kapsamı yoksa metni engeller | `NER_REQUIRED` |
 
 **Ne yapar** — Eklentiyi aynı makinedeki AIDR Privacy native messaging host'una
 (`com.singularity.aidr_privacy`) bağlar. Host'un amacı, sabit biçimi olmayan ad, adres ve konum
 bilgileri için öğrenilmiş varlık adı tanıma (NER) ve yerel OCR ile yapılandırıldığında
-yüklenen görsellerdeki yazıyı okumaktır.
+yüklenen görsellerdeki yazıyı okumaktır. İkisi de ilk sürümde satılmayan, isteğe bağlı
+eklemelerdir.
 
-**Neden önemli** — Kurallar bir cümlenin içindeki "Ahmet Kaya" adını tanıyamaz. Yerel bir NER
-modeli, metni makineden çıkarmadan bunu yapabilir.
+**Neden önemli** — Kurallar bir cümlenin içindeki "Ahmet Kaya" adını tanıyamaz. Nitelikli bir
+yerel NER modeli bunu metni makineden çıkarmadan yapabilirdi; henüz nitelikli bir model
+olmadığı için bu yetenek sunulmaz.
 
 **Nasıl çalışır** — `useNativeHost` açıkken her istem ve yapıştırma taraması, yerleşik
 kurallarla paralel olarak arka plan çalışanından NER ister (`NATIVE_SCAN`). Çalışanın köprüsü
@@ -1425,7 +1442,8 @@ başına en fazla 65 saniye bekler.
 **Nasıl kullanılır** (ayrıntılar
 [native-host.md](../../../../packages/browser-guard/docs/native-host.md) belgesinde):
 1. Host'u `packages/privacy` içinden (`docs/BROWSER.md` §4, `deployment/README.md`) onaylı bir
-   NER model bloğuyla kurup kaydedin. Model bloğu yoksa host `coverage: "rules-only"` bildirir.
+   NER model bloğuyla kurup kaydedin. Ürünle birlikte model gelmez; model bloğu yoksa host
+   `coverage: "rules-only"` bildirir.
 2. Browser Guard'ın eklenti kimliğini tanımlayın:
    `node native/prepare-host.mjs --config <mutlak-yol> --out <mutlak-yol> --extension-id <browser-guard-kimliği>`.
 3. Açın: yönetilen anahtar `useNativeHost: true` ya da Ayarlar → **Koruma** → **AIDR Privacy
@@ -1434,7 +1452,8 @@ başına en fazla 65 saniye bekler.
    açtıysa ayarlar sayfası **İzin ver** düğmesini gösterir. Tarayıcılar bu isteğe bağlı izni
    politikayla verdirmez; her kullanıcı bir kez onaylar.
 
-**Örnek** — Host kurulu ve etkinken açılır pencere ve ayarlar sayfası "Gelişmiş algılama
+**Örnek** — Host kurulu, etkin ve müşterinin sağlayıp onayladığı bir modelle
+yapılandırılmışken açılır pencere ve ayarlar sayfası "Gelişmiş algılama
 bağlı" gösterir ve "Ahmet Kaya'ya yaz" metni "`[PERSON_1]`'ya yaz" olarak gider. Değilse
 "Gelişmiş algılama kullanılamıyor; yerleşik kurallar etkin" yazar, koruma yerleşik kurallarla
 devam eder ve sayfa içi mesaj denetimin yalnızca kurallarla yapıldığını belirtir.
@@ -1443,6 +1462,7 @@ devam eder ve sayfa içi mesaj denetimin yalnızca kurallarla yapıldığını b
 
 | | |
 |---|---|
+| İlk sürüm kapsamı | Satılmaz (`FRS-11` NER, `FRS-12` görsel OCR); model içermez |
 | Plan | Ayrı bir plan özelliği olarak listelenmez |
 | Dağıtım | Yerel (uç nokta süreci); yönetilen uç noktalar |
 | Platformlar | Yalnızca Chrome ve Edge (host yalnızca `chrome-extension://` çağıranları kabul eder; Firefox "kullanılamıyor" bildirir) |
@@ -1455,11 +1475,15 @@ devam eder ve sayfa içi mesaj denetimin yalnızca kurallarla yapıldığını b
   "NER sonucu yok" sayılır.
 - Host'un hâlâ taradığı bir istemin gönderilmesi en fazla 2,5 saniye gecikebilir.
 - `packages/privacy` host protokolünü içerir, ancak **NER model ağırlıklarını ve doğruluk
-  kanıtını içermez**. Kesinlik ve duyarlılığı kendi verinizle ölçün.
+  kanıtını içermez**; kalite politikasını geçen bir model olmadığı için NER ilk sürümde
+  satılmaz.
 - OCR, privacy paketinin görsel katmanından (özellik 20) yalnız karar amacıyla kullanılır:
   hassas metin içeren görsel engellenir, hiçbir zaman maskelenmez. Taranmış sayfalar dâhil
-  PDF içindeki görseller Browser Guard tarafından çıkarılıp aynı yoldan gönderilir. OCR host'un isteğe bağlı Python/Tesseract yığınını gerektirir; protokol sahte
-  OCR çalışanlarıyla test edilmiştir, gerçek OCR doğruluğu kendi görsellerinizde ölçülmelidir.
+  PDF içindeki görseller Browser Guard tarafından çıkarılıp aynı yoldan gönderilir. OCR,
+  host'un pakete dahil olmayan Python/Tesseract yığınını gerektirir; protokol sahte OCR
+  çalışanlarıyla test edilmiştir ve OCR doğruluğu ölçülmemiştir; bu nedenle görsel OCR ilk
+  sürümde satılmaz. OCR yoksa görseller incelenmedi olarak bildirilir
+  (`IMAGE_NOT_INSPECTED`), hiçbir zaman temiz sayılmaz.
 - Ağır bir model ile büyük bir istem 2 saniyelik bütçeyi aşabilir. Bu durumda köprü geri çekilir
   ve yalnızca kurallar çalışır.
 
@@ -1522,10 +1546,10 @@ alanı paketidir. `dist/` klasörü AIDR sürüm yapıtlarına dahildir. Paket R
 | TR/EN metin algılama ve maskeleme | Test edildi (`pnpm test:privacy`) |
 | Tarayıcıda çalışabilen kural katmanı | Test edildi; Browser Guard tarafından kullanılıyor |
 | Core DLP TR/EN algılayıcıları (ajan bağlayıcıları) | Üretilen ve sapma denetimli bir kopya ile entegre |
-| Ekran görüntüsü OCR maskeleme | Sahte çalışanlarla test edildi; gerçek OCR isteğe bağlı Python/native yığın gerektirir |
+| Ekran görüntüsü OCR maskeleme | İlk sürümde satılmaz; OCR modeli içermez. Sahte çalışanlarla test edildi; gerçek OCR Python/native yığın gerektirir |
 | Sunucu ağ geçidi, inceleme portalı, kalıcı durum | Yerelde test edildi; AIDR bağlayıcılarına bağlı değil |
 | Belge CDR ayrıştırıcısı | Yalnızca Linux; Python ayrıştırıcı paketleri ya da libseccomp yoksa testler atlanır |
-| Öğrenilmiş PERSON/ADDRESS NER | Pakete dahil değil |
+| Öğrenilmiş PERSON/ADDRESS NER | İlk sürümde satılmaz; kalite politikasını geçen bir model yoktur ve pakette model bulunmaz |
 | Eski Chrome eklentisi ve native host | Tarayıcılar için yerini Browser Guard aldı |
 
 ### 18. Ortak TR/EN kural katmanı
@@ -1609,7 +1633,14 @@ node packages/privacy/dist/cli.js --redact < notlar.txt    # etiket yerine [REDA
 - SDK üzerinden bir NER sağlayıcısı yapılandırılmadıkça yalnızca kurallar çalışır
   (`coverage: "rules-only"`).
 
-### 20. Ekran görüntüsü OCR maskeleme (`aidr-visual`)
+### 20. Ekran görüntüsü OCR maskeleme (`aidr-visual`, ilk sürümde satılmaz)
+
+**İlk sürüm kapsamı** — Satılmaz (`FRS-12`, `FEATURE_INVENTORY.json#first_release_scope`).
+Motor `packages/privacy` içindedir, ancak ürünle birlikte OCR modeli gelmez (Tesseract ve dil
+verileri pakete dahil değildir) ve OCR doğruluğu ölçülmemiştir. Burada değerlendirme için
+anlatılır; adı konmuş kabul tamamlanana kadar sunulmaz ve vaat edilmez. Her hata durumunda
+işlem kapalı kalır (aşağıda); OCR yapabilen host yoksa Browser Guard görselleri incelenmedi
+olarak bildirir (`IMAGE_NOT_INSPECTED`), hiçbir zaman temiz saymaz.
 
 **Ne yapar** — Ekran görüntülerindeki ve görsel eklerdeki kişisel verileri yerel OCR ile bulur,
 üzerlerini opak siyah kutularla kapatır ve temiz bir PNG'yi yeniden oluşturur.
@@ -1645,13 +1676,14 @@ siyahla kapatılmış bir PNG'ye dönüşür (varsayılan satır bazında maskel
 
 | | |
 |---|---|
+| İlk sürüm kapsamı | Satılmaz (`FRS-12`); OCR modeli içermez |
 | Plan | Ayrı bir plan özelliği olarak listelenmez |
 | Dağıtım | Yerel / Kurum içi / Air-gapped (yerel OCR; bulut hizmeti yok) |
 | Platformlar | Python, Tesseract 5 ve libzbar ile Node.js 22.16+; Windows dosya sistemi davranışı test edilmedi |
 
 **Sınırlamalar**
-- Bu depoda sahte OCR çalışanlarıyla test edilmiştir. Gerçek OCR doğruluğu kurulu yığına bağlıdır
-  ve bağımsız olarak doğrulanmamıştır.
+- Bu depoda sahte OCR çalışanlarıyla test edilmiştir. Gerçek OCR doğruluğu kurulu yığına bağlıdır;
+  ölçülmemiş ve bağımsız olarak doğrulanmamıştır. Bu nedenle ilk sürümde satılmaz.
 - PDF, SVG, TIFF, GIF, HEIC ve video desteklenmez. OCR'ın kaçırdığı yazı maskelenemez.
 - Browser Guard bu motoru native host üzerinden yalnız karar için kullanır (`inspect`,
   özellik 16): hassas metin içeren yüklenen görsel engellenir; maskelenmiş PNG orada

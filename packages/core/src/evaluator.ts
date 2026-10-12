@@ -226,6 +226,13 @@ export interface ToolEvaluationRequest {
 	toolName: string;
 	toolInput: Record<string, unknown>;
 	artifacts: Artifact[];
+	/**
+	 * Tool name the host reported when a connector evaluates the call as a
+	 * different canonical operation (a VS Code `run_in_terminal` evaluated as
+	 * `Bash`). Recorded as `host_tool_name` in the local audit entry; it plays no
+	 * part in the decision.
+	 */
+	hostToolName?: string;
 }
 
 /**
@@ -1090,6 +1097,7 @@ async function recordEarlyVerdict(
 				incidentId: `inc_${request.sessionId}_${Date.now()}`,
 				sessionId: request.sessionId,
 				toolName: request.toolName,
+				hostToolName: request.hostToolName,
 				toolInput: auditInput,
 				verdict,
 				recommendedActions: verdict.decision === "deny" ? ["review", "block"] : ["review"],
@@ -1108,6 +1116,7 @@ async function recordEarlyVerdict(
 			verdict,
 			allowlisted,
 			durationMs,
+			request.hostToolName,
 		);
 	} catch {
 		// An audit failure cannot erase the detector decision.
@@ -2601,6 +2610,7 @@ async function recordPipelineVerdict(
 			verdict,
 			false,
 			durationMs,
+			request.hostToolName,
 		);
 	} catch {
 		// Fail open.
@@ -2615,6 +2625,7 @@ async function recordPipelineVerdict(
 				incidentId: `inc_${request.sessionId}_${Date.now()}`,
 				sessionId: request.sessionId,
 				toolName: request.toolName,
+				hostToolName: request.hostToolName,
 				toolInput: auditInput,
 				verdict,
 				recommendedActions: verdict.decision === "deny" ? ["review", "block"] : ["review"],

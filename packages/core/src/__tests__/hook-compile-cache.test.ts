@@ -45,6 +45,7 @@ describe("enableHookCompileCache", () => {
 		);
 	});
 
+	// AIDR-SKIP: AIDR-063 qa-owner - POSIX 0700 mode bits need a Unix host; Windows uses ACLs, not mode bits
 	it.skipIf(process.platform === "win32")(
 		"prepares a private 0700 directory before enabling the cache",
 		() => {
@@ -58,6 +59,7 @@ describe("enableHookCompileCache", () => {
 		},
 	);
 
+	// AIDR-SKIP: AIDR-063 qa-owner - POSIX chmod repair needs a Unix host; Windows uses ACLs, not mode bits
 	it.skipIf(process.platform === "win32")(
 		"repairs a group/world-accessible existing cache directory",
 		() => {
@@ -73,6 +75,7 @@ describe("enableHookCompileCache", () => {
 		},
 	);
 
+	// AIDR-SKIP: AIDR-063 qa-owner - POSIX directory symlinks need a Unix host; Windows symlink creation needs extra privileges
 	it.skipIf(process.platform === "win32")(
 		"refuses a symlinked cache directory without enabling the cache",
 		() => {

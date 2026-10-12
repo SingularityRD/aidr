@@ -1,0 +1,402 @@
+{
+  "schema_version": 1,
+  "record": "docs/production-readiness/runtime-image-security-2026-10-11-landing.md",
+  "finding": "AIDR-079",
+  "run_window_utc": "2026-10-11T10:55Z/2026-10-11T11:05Z",
+  "host": {
+    "os": "linux",
+    "arch": "x86_64",
+    "docker_engine": "29.8.2",
+    "registry_mirror": "https://mirror.gcr.io"
+  },
+  "scanner": {
+    "tool": "trivy",
+    "version": "0.73.0",
+    "install": "container image mirror.gcr.io/aquasec/trivy:0.73.0@sha256:7cced7cae583819fc7806d4cbc0dbbc7cad18b99f7d3e235192e6da8c091045c",
+    "vulnerability_db": {
+      "version": 2,
+      "updated_at": "2026-10-11T07:05:14Z",
+      "downloaded_at": "2026-10-11T10:57:58Z",
+      "repository": "mirror.gcr.io/aquasec/trivy-db:2"
+    }
+  },
+  "policy": {
+    "command": "trivy image --input <docker-save.tar> --scanners vuln --pkg-types os,library --skip-db-update --ignorefile <empty> --config <empty {}> --format json (scanner container run with --network none, empty read-only working directory)",
+    "severities": "all reported; CRITICAL/HIGH listed",
+    "ignore_file": "none (empty file, empty working directory)",
+    "vex": "none",
+    "counting": "every package/target occurrence"
+  },
+  "sources": {
+    "landing": {
+      "repository": "SingularityRD/aidr-landing",
+      "ref": "origin/main",
+      "commit": "12750cab55c3e72ff61b886c081aece6f9f414f6",
+      "merged_pr": "https://github.com/SingularityRD/aidr-landing/pull/1",
+      "dockerfile_sha256": "c138eb48aad84964e054b96e7e6ca6b09c2ae37012b184b355d1532c9370657a"
+    },
+    "dashboard": {
+      "repository": "SingularityRD/aidr",
+      "commit": "b8b36459a8b0c502c5a06f8d721c9d008b7ba18f",
+      "note": "working tree had other agents' uncommitted edits outside packages/dashboard and deploy/dashboard; both were clean at build time"
+    }
+  },
+  "landing_build": {
+    "command": "docker build --pull=false --secret id=proxyca,src=/root/.ccr/ca-bundle.crt -f <scratch copy of Dockerfile> -t aidr-landing:verify .",
+    "unmodified_dockerfile_result": "failed at deps 'pnpm install --frozen-lockfile' with SELF_SIGNED_CERT_IN_CHAIN: the sandbox egress proxy re-terminates TLS and its CA is not trusted inside build containers",
+    "scratch_dockerfile_change": "only the two network RUN lines (deps 'pnpm install --frozen-lockfile', builder 'pnpm build' which re-downloads pnpm through corepack) gained '--mount=type=secret,id=proxyca NODE_EXTRA_CA_CERTS=/run/secrets/proxyca'; runner stage byte-identical; not committed anywhere",
+    "scratch_dockerfile_sha256": "065c22a5432f7c579dccf71f7b5e4547ab3dc415b601fcb0f09b60447cced544",
+    "secret_in_final_image": "no: BuildKit secret mounts are not persisted; 'docker history --no-trunc' of the runner shows no proxyca reference",
+    "base": "node:24.21.0-alpine3.24@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 (pulled through the mirror.gcr.io registry mirror; same content-addressed digest)",
+    "image_manifest_list": "sha256:5c5bab3216572365fbcbc6556cf26b6475dbc316e007491bab5a3f41d3fd3b2a",
+    "image_size_bytes": 331883902
+  },
+  "dashboard_build": {
+    "command": "node scripts/ci-local.mjs --allow-dirty --only onprem-dashboard-image",
+    "step_result": "PASS (Node v24.21.0) in 10.0s; 'docker build --pull' resolved the pinned base through the registry mirror",
+    "guard_result": "guard-tree-unchanged FAIL: other agents edited already-modified files (docs/product/features, packages/extension, packages/core) concurrently during the run; the step itself writes only to RUNNER_TEMP",
+    "image_manifest_list": "sha256:ef82c4e69585a050e9d33f1d8cdc616a894f5fe9b2a47e08682d91cefcc6de90"
+  },
+  "images": {
+    "node-base-stock": {
+      "reference": "node:24.21.0-alpine3.24@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1",
+      "image_config_id": "sha256:c10884952bb8c37122fcc3fe6f97af3ab0a80e5eb02ee5df707406b4e11a7e3e",
+      "os": {
+        "Family": "alpine",
+        "Name": "3.24.2"
+      },
+      "counts": {
+        "MEDIUM": 13,
+        "HIGH": 8,
+        "LOW": 1
+      },
+      "critical": 0,
+      "high": 8,
+      "targets": [
+        {
+          "target": "base.tar (alpine 3.24.2)",
+          "class": "os-pkgs",
+          "type": "alpine",
+          "packages": 18,
+          "findings": 1
+        },
+        {
+          "target": "Node.js",
+          "class": "lang-pkgs",
+          "type": "node-pkg",
+          "packages": 146,
+          "findings": 21
+        }
+      ],
+      "critical_high": [
+        {
+          "id": "CVE-2026-102276",
+          "pkg": "brace-expansion",
+          "installed": "5.0.7",
+          "fixed": "5.0.10, 3.0.7, 2.1.5, 1.1.19",
+          "severity": "HIGH",
+          "class": "lang-pkgs"
+        },
+        {
+          "id": "CVE-2026-102278",
+          "pkg": "brace-expansion",
+          "installed": "5.0.7",
+          "fixed": "5.0.11, 3.0.8, 2.1.6, 1.1.20",
+          "severity": "HIGH",
+          "class": "lang-pkgs"
+        },
+        {
+          "id": "CVE-2026-14257",
+          "pkg": "brace-expansion",
+          "installed": "5.0.7",
+          "fixed": "5.0.8, 3.0.3, 2.1.3, 1.1.17",
+          "severity": "HIGH",
+          "class": "lang-pkgs"
+        },
+        {
+          "id": "CVE-2026-69152",
+          "pkg": "brace-expansion",
+          "installed": "5.0.7",
+          "fixed": "1.1.18, 2.1.4, 3.0.6, 5.0.9",
+          "severity": "HIGH",
+          "class": "lang-pkgs"
+        },
+        {
+          "id": "CVE-2026-93748",
+          "pkg": "http-cache-semantics",
+          "installed": "4.2.0",
+          "fixed": null,
+          "severity": "HIGH",
+          "class": "lang-pkgs"
+        },
+        {
+          "id": "CVE-2026-69192",
+          "pkg": "ip-address",
+          "installed": "10.2.0",
+          "fixed": "10.3.1",
+          "severity": "HIGH",
+          "class": "lang-pkgs"
+        },
+        {
+          "id": "CVE-2026-73566",
+          "pkg": "tar",
+          "installed": "7.5.19",
+          "fixed": "7.5.21",
+          "severity": "HIGH",
+          "class": "lang-pkgs"
+        },
+        {
+          "id": "CVE-2026-19534",
+          "pkg": "undici",
+          "installed": "6.27.0",
+          "fixed": "6.28.1, 7.29.1, 8.10.2",
+          "severity": "HIGH",
+          "class": "lang-pkgs"
+        }
+      ],
+      "raw_trivy_json_sha256": "d2b73f626535696bd67a77ed76030020f225ac55cfd3b9e817c0fd82406e85c0"
+    },
+    "landing": {
+      "reference": "aidr-landing:verify (aidr-landing Dockerfile @ 12750cab, standalone runner)",
+      "image_config_id": "sha256:22f21f50a5a1f0499caf8b97050f7c0e411a98433bfd462d5f3855b711c076a9",
+      "os": {
+        "Family": "alpine",
+        "Name": "3.24.2"
+      },
+      "counts": {
+        "MEDIUM": 4
+      },
+      "critical": 0,
+      "high": 0,
+      "targets": [
+        {
+          "target": "landing.tar (alpine 3.24.2)",
+          "class": "os-pkgs",
+          "type": "alpine",
+          "packages": 18,
+          "findings": 1
+        },
+        {
+          "target": "Node.js",
+          "class": "lang-pkgs",
+          "type": "node-pkg",
+          "packages": 116,
+          "findings": 3
+        }
+      ],
+      "critical_high": [],
+      "below_high": [
+        {
+          "id": "CVE-2026-85091",
+          "pkg": "zlib",
+          "installed": "1.3.2-r0",
+          "fixed": "1.3.2-r1",
+          "severity": "MEDIUM",
+          "class": "os-pkgs"
+        },
+        {
+          "id": "CVE-2026-54269",
+          "pkg": "protobufjs",
+          "installed": "8.5.0",
+          "fixed": "7.6.3, 8.6.0",
+          "severity": "MEDIUM",
+          "class": "lang-pkgs"
+        },
+        {
+          "id": "CVE-2026-59876",
+          "pkg": "protobufjs",
+          "installed": "8.5.0",
+          "fixed": "8.6.5",
+          "severity": "MEDIUM",
+          "class": "lang-pkgs"
+        },
+        {
+          "id": "CVE-2026-59877",
+          "pkg": "protobufjs",
+          "installed": "8.5.0",
+          "fixed": "7.6.5, 8.6.6",
+          "severity": "MEDIUM",
+          "class": "lang-pkgs"
+        }
+      ],
+      "raw_trivy_json_sha256": "bd5191c03b3421a9b020092dc8d0fbd60c1608f9f673f7bbb0b540a90e7f2175",
+      "node_packages_of_note": [
+        "@grpc/grpc-js@1.14.6",
+        "next@16.3.8",
+        "protobufjs@8.5.0"
+      ],
+      "package_managers_present": false
+    },
+    "dashboard": {
+      "reference": "aidr-dashboard:ci (deploy/dashboard/Dockerfile, prepared context, source b8b36459)",
+      "image_config_id": "sha256:ff5a6e7b0adaa979d07385d392f76ee4cd98358c96bd9c1bfa7c106895ab4fda",
+      "os": {
+        "Family": "alpine",
+        "Name": "3.24.2"
+      },
+      "counts": {
+        "MEDIUM": 1
+      },
+      "critical": 0,
+      "high": 0,
+      "targets": [
+        {
+          "target": "dashboard.tar (alpine 3.24.2)",
+          "class": "os-pkgs",
+          "type": "alpine",
+          "packages": 18,
+          "findings": 1
+        }
+      ],
+      "critical_high": [],
+      "below_high": [
+        {
+          "id": "CVE-2026-85091",
+          "pkg": "zlib",
+          "installed": "1.3.2-r0",
+          "fixed": "1.3.2-r1",
+          "severity": "MEDIUM",
+          "class": "os-pkgs"
+        }
+      ],
+      "raw_trivy_json_sha256": "462e181ffcd306420423c3afb32a22a3722696b19b4b6d3d982a6a91acbde663"
+    }
+  },
+  "runtime_checks": {
+    "landing": {
+      "flags": "--read-only --tmpfs /tmp --tmpfs /app/.next/cache:uid=1000,gid=1000 --cap-drop ALL --security-opt no-new-privileges:true --memory 512m --pids-limit 128",
+      "cases": [
+        {
+          "name": "production defaults, no dependencies configured",
+          "health": {
+            "status": 200,
+            "content_type": "application/json",
+            "cache_control": "no-store, max-age=0",
+            "body_status": "ok"
+          },
+          "ready": {
+            "status": 503,
+            "content_type": "application/json",
+            "cache_control": "no-store, max-age=0",
+            "body_status": "not_ready",
+            "failing_required_checks": [
+              "database:not_configured",
+              "auth_config:not_configured",
+              "auth_provider:not_configured",
+              "agent_token_secret:not_configured"
+            ]
+          },
+          "root_page": 200,
+          "image_healthcheck": "healthy"
+        },
+        {
+          "name": "AIDR_DEMO_MODE=1 with a random 48-character AIDR_AGENT_TOKEN_SECRET (generated in-shell, not recorded)",
+          "health": {
+            "status": 200,
+            "content_type": "application/json",
+            "cache_control": "no-store, max-age=0",
+            "body_status": "ok"
+          },
+          "ready": {
+            "status": 200,
+            "content_type": "application/json",
+            "cache_control": "no-store, max-age=0",
+            "body_status": "ready"
+          },
+          "root_page": 200,
+          "image_healthcheck": "healthy"
+        }
+      ],
+      "process": {
+        "uid": 1000,
+        "user": "node",
+        "CapEff": "0000000000000000",
+        "CapPrm": "0000000000000000",
+        "CapBnd": "0000000000000000",
+        "NoNewPrivs": 1,
+        "write_app": "Read-only file system",
+        "write_root": "Read-only file system",
+        "write_tmp": "ok (tmpfs)",
+        "write_next_cache": "ok (tmpfs)",
+        "usr_local_lib_node_modules": "empty",
+        "package_managers_on_path": [],
+        "node_version": "v24.21.0",
+        "restarts": 0
+      }
+    },
+    "dashboard": {
+      "flags": "--read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges:true --memory 256m --pids-limit 128",
+      "cases": [
+        {
+          "name": "production defaults, upstreams unreachable",
+          "livez": {
+            "status": 200,
+            "content_type": "application/json"
+          },
+          "readyz": {
+            "status": 503,
+            "content_type": "application/json",
+            "body_status": "not_ready"
+          },
+          "root_page": 200
+        }
+      ],
+      "process": {
+        "uid": 1000,
+        "CapEff": "0000000000000000",
+        "NoNewPrivs": 1,
+        "write_app": "Read-only file system",
+        "usr_local_lib_node_modules": "empty",
+        "package_managers_on_path": [],
+        "restarts": 0
+      }
+    }
+  },
+  "firestore_grpc_override_smoke": {
+    "purpose": "re-run of the Firestore emulator smoke for the landing override '@grpc/grpc-js@<1.14.5' -> '^1.14.5'",
+    "emulator": "cloud-firestore-emulator-v1.22.0.jar (sha256 9b6498b7f62714d67f48f59b3818883cd682dbcd46b9f59511de81c97bb5166c), fetched by firebase-tools 15.31.0 setup:emulators:firestore",
+    "dependencies": "aidr-landing @ 12750cab, pnpm install --frozen-lockfile (pnpm 10.29.3)",
+    "resolved": {
+      "client_firestore_grpc_js": "1.14.6",
+      "admin_google_gax_grpc_js": "1.14.6"
+    },
+    "runs": [
+      {
+        "node": "v22.22.0",
+        "exit": 0
+      },
+      {
+        "node": "v24.21.0",
+        "exit": 0
+      }
+    ],
+    "operations": {
+      "client": [
+        "setDoc",
+        "getDoc",
+        "getDocs(query where)",
+        "onSnapshot"
+      ],
+      "admin": [
+        "set",
+        "get",
+        "runTransaction(update)"
+      ]
+    },
+    "observed": {
+      "client_get": {
+        "n": 1,
+        "tag": "x"
+      },
+      "client_query_size": 1,
+      "client_snapshot_n": 1,
+      "admin_get": {
+        "n": 2
+      },
+      "admin_transaction_result": 3,
+      "admin_after_transaction": 3
+    },
+    "limits": "host-side smoke against a local emulator with the same lockfile, not inside the runner image and not against production Firestore"
+  },
+  "cleanup": "aidr-landing:verify, aidr-dashboard:ci, the Trivy scanner image, the BuildKit cache, saved tarballs, the Trivy DB cache and the emulator jar were removed after the run"
+}

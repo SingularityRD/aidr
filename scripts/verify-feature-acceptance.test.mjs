@@ -11,7 +11,7 @@ const matrix = JSON.parse(readFileSync(new URL("../FEATURE_ACCEPTANCE.json", imp
 test("every inventory capability remains NO-GO even when a local test source exists", () => {
 	assert.deepEqual(verifyFeatureAcceptance(inventory, matrix), {
 		capabilities: 109,
-		localTestPointers: 227,
+		localTestPointers: 248,
 		productionAccepted: 0,
 		decision: "NO-GO",
 	});

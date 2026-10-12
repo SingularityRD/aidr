@@ -29,9 +29,15 @@ contact.
   back.
 - The Turkish copy is written, not translated; keep both versions saying the same
   things.
-- Fonts come from the system stack (Inter, Segoe UI, Helvetica Neue, then Liberation
-  Sans/Arial). Rendering on a machine with different fonts can change line breaks; run
-  the renderer after any copy change.
+- Fonts: the pages are fitted to Liberation Sans / Liberation Mono, which is what the CSS
+  stack (Inter, Segoe UI, Helvetica Neue, then Liberation Sans/Arial) resolves to on Linux
+  without Inter. On Linux the renderer runs Chromium with
+  `FONTCONFIG_FILE=scripts/lib/render-fonts.conf`, which hides every font except
+  Liberation, DejaVu and Noto Color Emoji, so an installed Inter (or a fontconfig rule
+  preferring it) does not change the layout. It refuses to run without the Liberation fonts
+  (`fonts-liberation` / `liberation-fonts`). If the pinned Playwright Chromium is not
+  installed, the newest installed one is used and logged (`AIDR_CHROMIUM_PATH` overrides).
+  Run the renderer after any copy change.
 
 ## Rendering
 

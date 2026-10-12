@@ -101,6 +101,14 @@ before offering an installation. Capability status is in
 [production and sales gap audit](PRODUCTION_SALES_GAPS.md). Local test passes do not
 replace signed-candidate or live-host acceptance.
 
+The intended direct-GA connector scope (COM-010) is all six connectors: Claude Code,
+Cursor, VS Code, OpenClaw, OpenCode and Codex CLI. That is a target, not acceptance;
+each connector still needs its own signed-artefact, private-registry and real-host
+receipts. Codex is in that scope with its host limits: Codex fails open on a crashing
+or untrusted hook (the connector turns `ask` and its own errors into an explicit
+deny), there is no output-side interception before the model, and the packaged hook
+matcher covers `Bash` and `apply_patch` only.
+
 ## Documentation
 
 | Document | Description |

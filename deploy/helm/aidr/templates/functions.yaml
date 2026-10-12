@@ -72,6 +72,18 @@ spec:
               value: "false"
             - name: AIDR_BILLING_PROVIDER
               value: {{ $values.billingProvider | quote }}
+            {{- with $values.tenantInflight }}
+            - name: AIDR_TENANT_INFLIGHT_CAPACITY
+              value: {{ .capacity | quote }}
+            {{- if gt (int .perTenantMax) 0 }}
+            - name: AIDR_TENANT_INFLIGHT_MAX
+              value: {{ .perTenantMax | quote }}
+            {{- end }}
+            - name: AIDR_TENANT_INFLIGHT_FAIR_SHARE_FLOOR
+              value: {{ .fairShareFloor | quote }}
+            - name: AIDR_TENANT_INFLIGHT_RETRY_AFTER_SECONDS
+              value: {{ .retryAfterSeconds | quote }}
+            {{- end }}
             - name: HOME
               value: /tmp
             - name: DENO_DIR

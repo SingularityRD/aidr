@@ -102,10 +102,10 @@ test("implemented and direct-GA connector scopes stay distinct and consistent", 
 		/README connector scope sentence names an unknown connector: Zed/,
 	);
 	assert.equal(matrix.soldConnectorScope.length, 6);
-	assert.equal(claimRegistry.hardGates.find((gate) => gate.id === "COM-010").directGaConnectorScope.length, 5);
+	assert.equal(claimRegistry.hardGates.find((gate) => gate.id === "COM-010").directGaConnectorScope.length, 6);
 	const widenedClaim = fixture();
-	widenedClaim.registry.claims.find((claim) => claim.id === "CLAIM-010").exactText = "All six connectors are directly GA-supported.";
-	assert.match(validateConnectorScope(widenedClaim).join("\n"), /CLAIM-010: declares 6 direct-GA connectors but COM-010 declares 5/);
+	widenedClaim.registry.claims.find((claim) => claim.id === "CLAIM-010").exactText = "All seven connectors are directly GA-supported.";
+	assert.match(validateConnectorScope(widenedClaim).join("\n"), /CLAIM-010: declares 7 direct-GA connectors but COM-010 declares 6/);
 	const unlistedDirectGa = fixture();
 	unlistedDirectGa.registry.hardGates.find((gate) => gate.id === "COM-010").directGaConnectorScope.push("zed");
 	assert.match(validateConnectorScope(unlistedDirectGa).join("\n"), /COM-010 direct-GA connector zed is absent from soldConnectorScope/);
@@ -114,7 +114,7 @@ test("implemented and direct-GA connector scopes stay distinct and consistent", 
 	assert.match(validateConnectorScope(narrowedMatrix).join("\n"), /README advertises connector codex outside the sold support matrix/);
 });
 
-test("COM-010 cannot close ahead of all five native connector acceptances", () => {
+test("COM-010 cannot close ahead of all six native connector acceptances", () => {
 	const input = fixture();
 	input.registry.hardGates.find((gate) => gate.id === "COM-010").status = "closed";
 	const failures = validateConnectorScope(input).join("\n");
@@ -126,7 +126,7 @@ test("COM-010 cannot close ahead of all five native connector acceptances", () =
 	// Without any named evidence every direct-GA connector is reported.
 	for (const row of input.supportMatrix.rows) row.acceptanceEvidence = [];
 	const withoutEvidence = validateConnectorScope(input).join("\n");
-	for (const connector of ["claude-code", "cursor", "vscode", "openclaw", "opencode"]) {
+	for (const connector of ["claude-code", "cursor", "vscode", "openclaw", "opencode", "codex"]) {
 		assert.match(withoutEvidence, new RegExp(`COM-010 cannot close without native acceptance evidence for ${connector}`));
 	}
 	input.supportMatrix.rows = null;

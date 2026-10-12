@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { admittedLeaseRpc } from "./lease-rpc-fake.ts";
 
 vi.mock("npm:@supabase/supabase-js@2.116.0", () => ({
 	createClient: () => { throw new Error("policy test requires an injected database"); },
@@ -63,6 +64,8 @@ function database(options: Options = {}) {
 	const db = {
 		from,
 		rpc: async (name: string, args: Record<string, unknown> = {}) => {
+			const lease = admittedLeaseRpc(name);
+			if (lease) return lease;
 			rpcCalls.push(name);
 			rpcArgs.push(args);
 			if (name === "tenant_admission_capacity") return { data: 1, error: null };

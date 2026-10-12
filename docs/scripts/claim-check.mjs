@@ -237,7 +237,7 @@ function validateRegistry(registry) {
 function validateCommercialDecision(registry) {
 	const expected = {
 		launchModel: "direct-ga",
-		connectorScope: "five-direct-ga-connectors",
+		connectorScope: "six-direct-ga-connectors",
 		deploymentModel: "hybrid",
 		billingModel: "cloud-online-and-enterprise-invoice",
 		distribution: "private-registry",

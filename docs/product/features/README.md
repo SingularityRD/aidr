@@ -54,5 +54,9 @@ contents keep working. The chapters' own "Contents" / "İçindekiler" sections a
 of the printed edition, because it has one combined table of contents.
 
 Fonts come from the system font stack (Inter, Segoe UI or Helvetica Neue, falling back to
-Liberation Sans or Arial). Rendering on a machine with different fonts can change line
-and page breaks. The table of contents is always renumbered to match.
+Liberation Sans or Arial). On Linux the renderer runs Chromium with
+`FONTCONFIG_FILE=scripts/lib/render-fonts.conf`, which leaves only Liberation, DejaVu and Noto
+Color Emoji visible, so the guide renders with Liberation Sans whatever else is installed
+(shared with the brochure and catalog renderers, `scripts/lib/render-browser.mjs`). Rendering
+on Windows or macOS uses that system's fonts and can change line and page breaks. The table
+of contents is always renumbered to match.

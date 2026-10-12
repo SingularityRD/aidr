@@ -23,13 +23,15 @@
  * again with those numbers (repeated until the numbers are stable).
  *
  * playwright-core is a devDependency of packages/browser-guard and is resolved from there;
- * the Chromium build comes from PLAYWRIGHT_BROWSERS_PATH (or AIDR_CHROMIUM_PATH).
+ * the Chromium build comes from PLAYWRIGHT_BROWSERS_PATH (or AIDR_CHROMIUM_PATH). On Linux only
+ * the fonts in scripts/lib/render-fonts.conf are visible (scripts/lib/render-browser.mjs).
  */
 import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { launchRenderBrowser, loadChromium } from "./lib/render-browser.mjs";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const featuresDir = path.join(repositoryRoot, "docs", "product", "features");
@@ -971,15 +973,6 @@ export function pdfDestinationPages(buffer) {
 // Rendering
 // ---------------------------------------------------------------------------------------
 
-function loadChromium() {
-	const require = createRequire(path.join(repositoryRoot, "packages", "browser-guard", "package.json"));
-	try {
-		return require("playwright-core").chromium;
-	} catch (error) {
-		throw new Error(`playwright-core is not installed for packages/browser-guard (run pnpm install): ${error.message}`);
-	}
-}
-
 /** Runs in the page (print media, viewport = A4 content width): returns layout problems. */
 export function inspectLayout(limit) {
 	const problems = [];
@@ -1021,9 +1014,7 @@ export function inspectLayout(limit) {
 }
 
 export async function renderGuide(lang, { chromium, check = false, force = false } = {}) {
-	const browser = await chromium.launch(
-		process.env.AIDR_CHROMIUM_PATH ? { executablePath: process.env.AIDR_CHROMIUM_PATH } : {},
-	);
+	const browser = await launchRenderBrowser(chromium);
 	try {
 		const context = await browser.newContext({ viewport: { width: CONTENT_WIDTH_PX, height: 1000 } });
 		const page = await context.newPage();
