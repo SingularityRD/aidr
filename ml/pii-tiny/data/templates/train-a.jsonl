@@ -248,3 +248,53 @@
 {"lang": "mix", "domain": "call-center", "text": "Aşağıdaki call script'ini localize et, Türkiye market'ine uygun olsun: 'Hi, this is [Agent] calling from SunnyTel about your recent order.'"}
 {"lang": "mix", "domain": "complaints", "text": "Complaint handling SLA'mız 72 saat ama {PERSON1.last} vakası 9 gündür açık. Management'a breach report yaz."}
 {"lang": "mix", "domain": "sales-crm", "text": "{PERSON1.first} Bey CFO, {PERSON2.first} Hanım IT Director. Stakeholder map çıkar, kim influencer kim decision maker."}
+{"lang": "tr", "domain": "customer-support", "text": "Şu cümleyi daha profesyonel yaz: \"{PERSON1.first} abi kusura bakma, iade biraz gecikti, yarın kesin hesabında olur\""}
+{"lang": "tr", "domain": "call-center", "text": "INSERT INTO cagri_kayit (musteri_adi, ilce, temsilci) VALUES ('{PERSON1}', '{LOCATION1.district}', '{PERSON2.lower}');\nBu sorguda SQL injection riski var mı, parametreli hale getir."}
+{"lang": "tr", "domain": "complaints", "text": "Kartal kanadı logolu ürünümüzle ilgili şikayet: baskı soluyor. Tedarikçiye gönderilecek kalite uyarı yazısı hazırla, ton kararlı olsun."}
+{"lang": "tr", "domain": "sales-crm", "text": "Müşteri adayları (sıcaklık skoruna göre):\n• {PERSON1} — 92\n• {PERSON2.initial} — 78\n• {PERSON3.firstlast2} — 55\nİlk iki kişi için farklı açılış cümleleri yaz."}
+{"lang": "tr", "domain": "retail-store", "text": "{LOCATION1.city} AVM şubemizde çalışan {PERSON1.first} istifa etti. Veda mesajı ve yerine gelecek {PERSON2.first+GEN} karşılama notunu tek duyuruda birleştir."}
+{"lang": "tr", "domain": "after-sales-service", "text": "Müşteri soruyor: 'Garantim bitti, Nur Teknik gibi özel servislere götürsem sorun olur mu?' Yetkili servis avantajlarını anlatan tarafsız bir cevap yaz."}
+{"lang": "tr", "domain": "customer-support", "text": "Merhaba,\n{PERSON1.firstlast2} adına kayıtlı 3 ayrı hesap görünüyor, hepsi aynı adres: {ADDRESS1.tr}. Birleştirme talebi için müşteriden ne istemeliyiz?"}
+{"lang": "tr", "domain": "call-center", "text": "Müşteri temsilcisi adayları için mülakat sorusu listesi hazırla: stres yönetimi, empati, çoklu görev. 10 soru, her biri kısa."}
+{"lang": "tr", "domain": "complaints", "text": "{PERSON1.first} Bey ikinci kez yazmış: 'İlk şikayetime 10 gündür dönüş yok.' Gecikmeyi kabul eden, somut tarih veren bir cevap yaz."}
+{"lang": "tr", "domain": "sales-crm", "text": "Bölge müdürü {PERSON1} için aylık satış sunumu girişi yaz. {LOCATION1.city}, {LOCATION2.city} ve {LOCATION3.city} bayilerinin performansına değin."}
+{"lang": "tr", "domain": "retail-store", "text": "Müşteri: 'Bu ceketi geçen hafta {PERSON1.first} Hanım'dan aldım, indirim yapmıştı.' Kasiyer sistemde indirim kaydı göremiyor. Nasıl ilerlemeli?"}
+{"lang": "tr", "domain": "after-sales-service", "text": "Klima montajı sonrası müşteri {PERSON1.upper} su damlattığını bildirdi. Adres: {ADDRESS1.tr_street}. Ücretsiz kontrol ziyareti planlayan mesaj yaz."}
+{"lang": "tr", "domain": "customer-support", "text": "müşteri hizmetleri olarak ekim ayı raporunu yazıyorum, toplam 4.210 talep geldi, çözüm oranı yüzde 91. bunu yönetim için kısa ve resmi hale getir"}
+{"lang": "tr", "domain": "call-center", "text": "Arayan müşterinin ismi {PERSON1.first}, soyadını hecelettim: {PERSON1.upper}. Sistemde bulunamadı. Muhtemel yazım varyasyonlarını nasıl ararım?"}
+{"lang": "tr", "domain": "complaints", "text": "Şikayet özeti tablosu oluştur:\nŞikayetçi: {PERSON1}\nİlgili personel: {PERSON2}\nŞube: {LOCATION1.district}\nKonu: kaba davranış\nDurum: inceleniyor"}
+{"lang": "tr", "domain": "sales-crm", "text": "Teklifin ekine şu notu koy: \"Sayın {PERSON1.last}, görüşmemizde bahsettiğiniz Barış Mahallesi projesi için ek indirim sağlayabiliriz.\" Daha resmi bir dille."}
+{"lang": "tr", "domain": "retail-store", "text": "Hediye paketi kartına yazılacak not: \"Sevgili {PERSON1.first}, doğum günün kutlu olsun! — {PERSON2.first}\" Müşteri bunu daha şiirsel istiyor."}
+{"lang": "tr", "domain": "after-sales-service", "text": "{LOCATION1.city} bölgesinde son 3 ayda en çok arıza bildirilen ürünleri listelemek için hangi verileri toplamalıyım? Rapor şablonu öner."}
+{"lang": "tr", "domain": "customer-support", "text": "Bu yanıtı İngilizceye çevir: \"Sayın {PERSON1}, {LOCATION1.country} dışından yapılan siparişlerde gümrük vergisi alıcıya aittir.\""}
+{"lang": "tr", "domain": "call-center", "text": "Takım lideri {PERSON1.first+ABL} gelen mail: 'Mola sürelerine dikkat edelim.' Bunu ekibe kırıcı olmayan bir dille iletecek mesaj yaz."}
+{"lang": "tr", "domain": "complaints", "text": "Aynı müşteri ({PERSON1.lower}) farklı kanallardan 4 şikayet açmış: e-posta, telefon, Twitter, mağaza. Tek kayıtta birleştirme prosedürü yaz."}
+{"lang": "tr", "domain": "sales-crm", "text": "{PERSON1.first} Hanım'ın firması Tesla şarj istasyonu kurmak istiyor, biz kurulum hizmeti veriyoruz. İhtiyaç analizi soru listesi hazırla."}
+{"lang": "tr", "domain": "retail-store", "text": "Mağaza açılışı davetiyesi: {LOCATION1.district} şubemiz 1 Kasım'da açılıyor, açılışa {PERSON1} katılacak. Davet metni yaz."}
+{"lang": "tr", "domain": "after-sales-service", "text": "Garanti kartı kayıp diyen müşteri {PERSON1.first} {PERSON1.last} için fatura üzerinden garanti sorgulama adımlarını anlatan mesaj yaz."}
+{"lang": "en", "domain": "customer-support", "text": "Make this auto-reply friendlier: \"Your ticket has been received. Do not reply to this email. Ref: #T-10023.\""}
+{"lang": "en", "domain": "call-center", "text": "Agent {PERSON1.first} asked me how to handle a caller who refuses to give their date of birth. Write a short guidance note."}
+{"lang": "en", "domain": "complaints", "text": "Complaint from {PERSON1.firstlast2}, {ADDRESS1.en}: delivery left in the rain, box soaked. Draft an apology with a replacement offer."}
+{"lang": "en", "domain": "sales-crm", "text": "Write a LinkedIn InMail to {PERSON1.first}, Head of Retail at a Sabancı group company, introducing our inventory analytics tool."}
+{"lang": "en", "domain": "retail-store", "text": "Customer {PERSON1} asked if we price-match Amazon. Write a short policy explanation for the sales floor team."}
+{"lang": "en", "domain": "after-sales-service", "text": "Draft a warranty denial letter to {PERSON1.upper}: damage caused by power surge is not covered. Suggest contacting the home insurer."}
+{"lang": "en", "domain": "customer-support", "text": "Write a JSON schema for a support ticket with fields: id, customer_name, email, priority, created_at."}
+{"lang": "en", "domain": "sales-crm", "text": "Our top rep, {PERSON1.last}, is moving to {LOCATION1.country}. Write an internal note reassigning accounts to {PERSON2.first} and {PERSON3.first}."}
+{"lang": "mix", "domain": "customer-support", "text": "Bu FAQ cevabını English'e çevir ama 'Kargo Takip' terimini olduğu gibi bırak: 'Kargonuzun durumunu Hesabım > Siparişlerim'den görebilirsiniz.'"}
+{"lang": "mix", "domain": "call-center", "text": "Supervisor olarak {PERSON1.first+DAT} feedback vereceğim: script'ten çok sapıyor ama CSAT'ı yüksek. Balanced bir mesaj yaz."}
+{"lang": "mix", "domain": "complaints", "text": "{PERSON1.lower} adlı user app store review'da 1 yıldız verdi: 'order cancel olmuyor'. Store review response yaz, Türkçe."}
+{"lang": "mix", "domain": "sales-crm", "text": "Renewal call prep: müşteri {PERSON1}, contract value 85K, son 6 ayda 3 support ticket. Talking points çıkar."}
+{"lang": "mix", "domain": "retail-store", "text": "Store visit report: {LOCATION1.city} mağazasında visual merchandising zayıf, staff {PERSON1.first} motivated ama eğitim lazım. Format'la."}
+{"lang": "mix", "domain": "after-sales-service", "text": "Service ticket'ta customer address eksik, sadece '{LOCATION1.district}, {LOCATION1.city}' yazıyor. Müşteri {PERSON1.first} Bey'den full address istemek için message yaz."}
+{"lang": "mix", "domain": "customer-support", "text": "Customer journey map'imize 'post-purchase support' adımını ekle, touchpoint'ler: email, chat, call. Türkçe açıklamalar olsun."}
+{"lang": "mix", "domain": "complaints", "text": "Legal'a forward: {PERSON1} lawyer'ı aracılığıyla ihtarname göndermiş, konu defective ürün. Internal summary yaz."}
+{"lang": "mix", "domain": "sales-crm", "text": "Bu meeting summary'yi Türkçeye çevir: 'Met with {PERSON1.first} and Mr. {PERSON2.last}, they want a pilot in {LOCATION1.city} first.'"}
+{"lang": "mix", "domain": "call-center", "text": "Call recording consent mesajımız çok uzun: 'Bu görüşme hizmet kalitesi amacıyla kayıt altına alınmaktadır...' Kısalt, EN versiyonunu da yaz."}
+{"lang": "tr", "domain": "customer-support", "text": "Destek ekibi için kural: müşterinin adını yanlış yazmak memnuniyeti düşürüyor. Örneğin {PERSON1.first} yerine farklı yazım kullanılmış. Ekibe nazik bir hatırlatma yaz."}
+{"lang": "tr", "domain": "call-center", "text": "Haziran ayı çağrı hacmi tahmini için geçmiş 3 yılın verisi elimde. Mevsimsellik nasıl hesaba katılır, basitçe anlat."}
+{"lang": "tr", "domain": "complaints", "text": "Şikayet: \"{PERSON1.first} Hanım'la görüştüm, {ADDRESS1.tr} adresime yeni ürün gönderileceğini söyledi ama gelen yine kusurlu.\" İkinci hata için özel bir çözüm öner."}
+{"lang": "tr", "domain": "sales-crm", "text": "aday müşteri {PERSON1.lower} bizi rakibe kıyasladı, bizim fiyat %12 yüksek. ona değer odaklı bi cevap yaz, indirim teklif etme"}
+{"lang": "tr", "domain": "retail-store", "text": "Tabelada 'Yıldız Kampanya' yazıyor, müşteriler bunu bir çalışan adı sanıyormuş. Daha net bir kampanya adı öner, 5 alternatif."}
+{"lang": "tr", "domain": "after-sales-service", "text": "Teknisyen raporlarını standartlaştırmak istiyorum. Alanlar: müşteri adı, adres, cihaz, arıza, yapılan işlem, süre. Örnek doldurulmuş form: müşteri {PERSON1}, adres {ADDRESS1.tr}."}
+{"lang": "tr", "domain": "sales-crm", "text": "{PERSON1.first} ile {PERSON2.first} aynı müşteriye ({PERSON3}) teklif göndermiş, çakışma var. Komisyon paylaşımı için adil bir kural öner."}
+{"lang": "tr", "domain": "retail-store", "text": "Bugün mağazada {PERSON1.first} Bey ile eşi geldi, {LOCATION1.city+ABL} tatil için gelmişler, ürünü otellerine göndermemizi istediler. Bunu teslimat ekibine not olarak yaz."}

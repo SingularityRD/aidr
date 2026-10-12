@@ -245,6 +245,9 @@ def fill(template: dict, pools: Pools, rng: random.Random) -> dict:
         kind, n, form, case = m.group(1), m.group(2), m.group(3) or "", m.group(4)
         if kind == "PERSON":
             value = f.person_form(n, form)
+            # `@{PERSON1.lower}`, `user={PERSON1.lower}`: a handle, not two words.
+            if m.start() and src[m.start() - 1] in "@=" and " " in value:
+                value = value.replace(". ", ".").replace(" ", rng.choice([".", "_", ""]))
         elif kind == "ADDRESS":
             value = f.address(n, form)
         else:
@@ -278,6 +281,36 @@ def check(rec: dict) -> None:
         prev = s["end"]
 
 
+def _key(text: str) -> str:
+    return re.sub(r"\s+", " ", text.strip().lower())
+
+
+def _read(folder: Path) -> list[dict]:
+    out = []
+    for path in sorted(folder.glob("*.jsonl")):
+        for i, line in enumerate(path.read_text(encoding="utf-8").splitlines()):
+            if line.strip():
+                t = json.loads(line)
+                t["_id"] = f"{path.stem}:{i}"
+                out.append(t)
+    return out
+
+
+def load_templates(split: str) -> list[dict]:
+    """Templates of one split, each text once; training never includes an eval text."""
+    evals = _read(HERE / "data" / "eval")
+    chosen = evals if split == "eval" else _read(HERE / "data" / "templates")
+    banned = {_key(t["text"]) for t in evals} if split == "train" else set()
+    seen, out = set(), []
+    for t in chosen:
+        k = _key(t["text"])
+        if k in seen or k in banned:
+            continue
+        seen.add(k)
+        out.append(t)
+    return out
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--split", choices=["train", "eval"], required=True)
@@ -285,14 +318,7 @@ def main(argv=None) -> int:
     ap.add_argument("--seed", type=int, default=1729)
     ap.add_argument("--out", required=True)
     args = ap.parse_args(argv)
-    folder = HERE / "data" / ("templates" if args.split == "train" else "eval")
-    templates = []
-    for path in sorted(folder.glob("*.jsonl")):
-        for i, line in enumerate(path.read_text(encoding="utf-8").splitlines()):
-            if line.strip():
-                t = json.loads(line)
-                t["_id"] = f"{path.stem}:{i}"
-                templates.append(t)
+    templates = load_templates(args.split)
     pools = Pools(args.split)
     rng = random.Random(args.seed)
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)

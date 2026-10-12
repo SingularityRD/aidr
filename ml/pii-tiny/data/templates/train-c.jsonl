@@ -21,7 +21,7 @@
 {"lang": "tr", "domain": "payroll", "text": "SGK prim gün sayısı eksik olan çalışanlar: {PERSON1} (TCKN 10000000146), {PERSON2} (TCKN 10000000078). Bu ikisi için mali müşavire açıklama yaz."}
 {"lang": "tr", "domain": "interview-notes", "text": "Aday {PERSON1.firstlast2}, Ankara Üniversitesi mezunu, 6 yıl deneyim. Teknik mülakatı {PERSON2.first} ve ben yaptık. Güçlü ve zayıf yönleri tablo halinde çıkar."}
 {"lang": "tr", "domain": "performance-review", "text": "Yıl sonu değerlendirmesi için {PERSON1.first+DAT} geri bildirim yazmam lazım: liderlik becerisi çok gelişti, ama dokümantasyonu aksatıyor. 'Sandviç' yöntemini kullan."}
-{"lang": "tr", "domain": "recruiting", "text": "Kariyer sayfası için Muhasebe Uzmanı ilanı yaz. Gereksinimler: SMMM ruhsatı tercih sebebi, Logo ve SAP deneyimi, İngilizce orta seviye. Lokasyon belirtme."}
+{"lang": "tr", "domain": "recruiting", "text": "Finans Direktörü {PERSON1} için Muhasebe Uzmanı ilanı yaz. Gereksinimler: SMMM ruhsatı tercih sebebi, Logo ve SAP deneyimi, İngilizce orta seviye. Lokasyon belirtme."}
 {"lang": "tr", "domain": "hr", "text": "{PERSON1.first} Hanım doğum iznine çıkıyor, {PERSON1.first+GEN} yerine geçici olarak {PERSON2.first} Bey bakacak. Departmana duyuru metni hazırla."}
 {"lang": "tr", "domain": "onboarding", "text": "Yeni stajyerimiz {PERSON1.first} {LOCATION1.city+ABL} geliyor ve şirket lojmanında kalacak. Lojman adresi {ADDRESS1.tr}. Ona yol tarifi içeren bir karşılama mesajı yaz."}
 {"lang": "tr", "domain": "termination", "text": "Çıkış mülakatı notları: {PERSON1} ücret ve kariyer gelişimi nedeniyle ayrılıyor, rakip firmadan teklif almış. Bunu yönetim için 3 cümlelik özete dönüştür."}
@@ -43,7 +43,7 @@
 {"lang": "tr", "domain": "hr", "text": "Etik kurula şikâyet geldi: {PERSON1}, ekip arkadaşı {PERSON2+ABL} sözlü taciz nedeniyle şikâyetçi oldu. Soruşturma süreci için tarafsız bir bilgilendirme yazısı yaz."}
 {"lang": "tr", "domain": "performance-review", "text": "Kalibrasyon toplantısı için şu dağılımı yorumla: 'Beklentinin üstünde' %18, 'Beklentiyi karşılıyor' %64, 'Gelişim gerekli' %18. Çan eğrisine uygun mu?"}
 {"lang": "tr", "domain": "onboarding", "text": "{PERSON1.first+INS} {PERSON2.first} aynı gün başlıyor, ikisine ortak bir hoş geldin mesajı yaz. İkisi de {LOCATION1.district} tarafında oturuyor, servis güzergahını da ekle."}
-{"lang": "tr", "domain": "hr", "text": "Bahar şenliği için şirket içi duyuru hazırla: Cuma 16:00, bahçede, ekim yapılacak fide dağıtımı da var. Neşeli bir dil kullan."}
+{"lang": "tr", "domain": "hr", "text": "Bahar şenliği için {PERSON1.first} Hanım adına şirket içi duyuru hazırla: Cuma 16:00, bahçede, ekim yapılacak fide dağıtımı da var. Neşeli bir dil kullan."}
 {"lang": "tr", "domain": "termination", "text": "Deneme süresi içinde fesih: {PERSON1}, işe giriş 10.03.2026. Bildirim yazısını hazırla, tebligat {ADDRESS1.tr} adresine yapılacak."}
 {"lang": "tr", "domain": "org-chart", "text": "Bu tabloyu organizasyon şemasına çevir:\n| Çalışan | Yönetici |\n|---|---|\n| {PERSON1} | {PERSON2} |\n| {PERSON3} | {PERSON2} |\n| {PERSON2} | {PERSON4} |"}
 {"lang": "tr", "domain": "recruiting", "text": "Aday {PERSON1} şu an {LOCATION1.city+LOC} yaşıyor, İstanbul'a taşınmaya açık olduğunu söyledi. Relokasyon paketi önerisi hazırla: kira yardımı, taşınma masrafı, 1 ay otel."}
@@ -63,7 +63,7 @@
 {"lang": "en", "domain": "performance-review", "text": "Give me a rubric for evaluating senior engineers on impact, technical depth, collaboration and mentorship. Use a 1–5 scale with examples for each level."}
 {"lang": "en", "domain": "hr", "text": "Draft a formal written warning to {PERSON1} for repeated violations of the remote work policy. Reference the two previous verbal warnings given by {PERSON2.first} in June and July."}
 {"lang": "en", "domain": "recruiting", "text": "I'm writing a reference for my former intern {PERSON1.firstlast2}. She worked under me at Johnson & Johnson for six months. Make it enthusiastic but credible."}
-{"lang": "en", "domain": "onboarding", "text": "Create a 30-60-90 day plan for a new Customer Success Manager. No names, just goals and milestones."}
+{"lang": "en", "domain": "onboarding", "text": "Create a 30-60-90 day plan for {PERSON1.first}, our new Customer Success Manager. Focus on goals and milestones."}
 {"lang": "en", "domain": "termination", "text": "exit interview notes, pls tidy: {PERSON1.lower} leaving bc of manager conflict w/ {PERSON2.lower}, said the team is great but promotions are unclear. wants to stay in touch"}
 {"lang": "en", "domain": "org-chart", "text": "Who should {PERSON1.first} report to after the reorg? Currently: Design reports to {PERSON2}, Research reports to {PERSON3}. Suggest a cleaner structure."}
 {"lang": "en", "domain": "hr", "text": "Write a birthday shout-out for #general: it's {PERSON1.first}'s birthday today! Cake in the kitchen at 3pm. Keep it short with one emoji."}
@@ -98,7 +98,7 @@
 {"lang": "mix", "domain": "org-chart", "text": "Bu Mermaid kodu render olmuyor, fix'ler misin?\ngraph TD\n  A[{PERSON1}] --> B[{PERSON2}]\n  A --> C[{PERSON3}\n  C --> D[{PERSON4}]"}
 {"lang": "mix", "domain": "interview-notes", "text": "Bugün 3 candidate gördüm, hepsi junior. Interview scorecard template'i oluştur: problem solving, communication, coding, curiosity. Her biri 1–4 arası."}
 {"lang": "mix", "domain": "onboarding", "text": "{PERSON1.first} Hanım'ın laptop'u {ADDRESS1.tr} adresine kargolanacak. IT'ye gidecek ticket açıklamasını İngilizce yaz."}
-{"lang": "mix", "domain": "hr", "text": "Ekim ayı town hall agenda: Q3 results, new benefits (özel sağlık sigortası), office move, Q&A. Bunu bir Google Calendar description'ına çevir."}
+{"lang": "mix", "domain": "hr", "text": "{PERSON1.first+GEN} hazırladığı Ekim ayı town hall agenda: Q3 results, new benefits (özel sağlık sigortası), office move, Q&A. Bunu bir Google Calendar description'ına çevir."}
 {"lang": "mix", "domain": "payroll", "text": "Hey, {PERSON1.first+GEN} payslip'inde overtime görünmüyor, {PERSON2.first} da aynı sorunu yaşamış. Payroll ekibine Slack'ten atacağım, kısa ve net yaz."}
 {"lang": "mix", "domain": "performance-review", "text": "Calibration meeting notes: {PERSON1} 'exceeds' olarak önerildi ama {PERSON2.last} Bey 'meets' dedi. İki görüşü dengeli anlatan bir paragraf yaz."}
 {"lang": "mix", "domain": "termination", "text": "Layoff communication plan hazırla: manager script, FAQ, timeline. Etkilenen ekip Customer Support, 12 kişi. İsim kullanma."}
@@ -167,7 +167,7 @@
 {"lang": "tr", "domain": "termination", "text": "Çalışanımız {PERSON1} 3 gün üst üste habersiz işe gelmedi. Devamsızlık tutanağı ve ihtarname taslağı hazırla, ihtarname {ADDRESS1.tr} adresine noter kanalıyla gönderilecek."}
 {"lang": "tr", "domain": "org-chart", "text": "log çıktısındaki onay zincirini oku ve kim kime raporluyor çıkar:\n2026-03-04 10:12 approve req=8812 by={PERSON1.lower} next={PERSON2.lower}\n2026-03-04 11:40 approve req=8812 by={PERSON2.lower} next={PERSON3.lower}"}
 {"lang": "tr", "domain": "recruiting", "text": "Kampüs işe alım günleri için ODTÜ, Boğaziçi ve Hacettepe'ye gönderilecek resmi davet yazısı hazırla. Tarih: Mart ayının ikinci haftası."}
-{"lang": "tr", "domain": "hr", "text": "Gül kurusu renginde yeni kurumsal kıyafetler geldi. Personele beden tablosu doldurmaları için duyuru yaz, son gün Cuma."}
+{"lang": "tr", "domain": "hr", "text": "Gül kurusu renginde yeni kurumsal kıyafetler geldi, dağıtımı {PERSON1.initial} yapacak. Personele beden tablosu doldurmaları için duyuru yaz, son gün Cuma."}
 {"lang": "tr", "domain": "recruiting", "text": "{PERSON1.first} Hanım, mülakatta mevcut işvereninin {PERSON2} olduğunu ve {LOCATION1.district} ilçesinde oturduğunu söyledi. Yol süresi göz önüne alındığında hibrit model önerelim mi? Artı/eksi yaz."}
 {"lang": "tr", "domain": "hr", "text": "İK'ya gelen e-posta: 'Merhaba, ben {PERSON1}, kızım {PERSON2.first} hastanede yatıyor, 3 gün mazeret izni kullanabilir miyim?' Buna empatik bir yanıt yaz."}
 {"lang": "tr", "domain": "payroll", "text": "Bordroda isimler büyük harfle gelmiş: {PERSON1.upper}, {PERSON2.upper}, {PERSON3.upper}. Excel'de bunları 'İlk harf büyük' yapan Türkçe karakter uyumlu formül yaz."}
@@ -196,7 +196,7 @@
 {"lang": "tr", "domain": "org-chart", "text": "Şirkette 4 seviye var: Direktör, Müdür, Takım Lideri, Uzman. Her seviyenin onay yetkilerini ve harcama limitlerini gösteren bir tablo öner."}
 {"lang": "tr", "domain": "recruiting", "text": "Aday, {LOCATION1.neighborhood} mahallesinde oturduğunu ve ofise yürüme mesafesinde olduğunu söyledi. Bu bilgiyi aday notuna ekleyip özetle: {PERSON1}, Satın Alma Uzmanı adayı."}
 {"lang": "tr", "domain": "payroll", "text": "{PERSON1.lower} - eksik ödeme 3.200 tl\n{PERSON2.lower} - fazla ödeme 1.150 tl\nbu farkları düzeltmek için ek bordro gerekli mi, yoksa sonraki aya mı yansıtalım?"}
-{"lang": "tr", "domain": "hr", "text": "Can sıkıcı bir durum: kantinde yemek kalitesi düştü ve çalışanlar şikâyetçi. Yemek firmasına gönderilecek resmi bir uyarı yazısı hazırla."}
+{"lang": "tr", "domain": "hr", "text": "Can sıkıcı bir durum, {PERSON1.first} Bey de fark etti: kantinde yemek kalitesi düştü ve çalışanlar şikâyetçi. Yemek firmasına gönderilecek resmi bir uyarı yazısı hazırla."}
 {"lang": "tr", "domain": "hr", "text": "{PERSON1.last+PLU} ve {PERSON2.last+PLU} aynı hafta düğün yapıyor, ikisine de şirket adına hediye çeki gönderiyoruz. Ortak bir tebrik notu yaz."}
 {"lang": "en", "domain": "recruiting", "text": "Extract these fields as JSON from the résumé below: name, city, years_experience, current_employer.\n\n\"{PERSON1} is a backend engineer based in {LOCATION1.city} with seven years at McDonald's Global Technology.\""}
 {"lang": "en", "domain": "interview-notes", "text": "Transcript snippet, please summarise:\n[09:31] {PERSON1.first}: Tell me about a conflict you resolved.\n[09:32] {PERSON2.first}: At my last job my lead, {PERSON3.first}, and I disagreed on the release plan...\nFocus on the candidate's answer quality."}
@@ -206,7 +206,7 @@
 {"lang": "en", "domain": "performance-review", "text": "My direct report {PERSON1.first} asked for feedback on her presentation skills. She talks too fast and skips the summary slide. Write two encouraging paragraphs I can send her."}
 {"lang": "en", "domain": "org-chart", "text": "In this PlantUML org chart, {PERSON1} should sit above both {PERSON2} and {PERSON3}, but the arrows are reversed. Fix it:\n@startuml\n[{PERSON2}] --> [{PERSON1}]\n[{PERSON3}] --> [{PERSON1}]\n@enduml"}
 {"lang": "en", "domain": "hr", "text": "An employee, {PERSON1}, has requested a reasonable accommodation for a standing desk. Draft the approval email and loop in Facilities."}
-{"lang": "en", "domain": "hr", "text": "Write a policy paragraph explaining that employees may not use Slack status messages to share political opinions. Keep it neutral and short."}
+{"lang": "en", "domain": "hr", "text": "Our General Counsel, {PERSON1}, asked me to write a policy paragraph explaining that employees may not use Slack status messages to share political opinions. Keep it neutral and short."}
 {"lang": "en", "domain": "recruiting", "text": "LinkedIn note to a passive candidate: \"Hi {PERSON1.first}, loved your talk at the Mercedes-Benz developer conference.\" Continue it into a 4-sentence outreach message for a Staff SRE role."}
 {"lang": "en", "domain": "interview-notes", "text": "Write a structured scorecard for {PERSON1}, interviewed by {PERSON2} on 9 Oct for Data Scientist. Scores: SQL 4, stats 3, product sense 2, communication 4."}
 {"lang": "en", "domain": "payroll", "text": "{PERSON1.first} relocated from {ADDRESS1.en} to our London office in July. Which month should the payroll jurisdiction switch, and what should I tell her about split-year tax treatment?"}
@@ -230,25 +230,25 @@
 {"lang": "en", "domain": "interview-notes", "text": "Give me 6 behavioural interview questions to assess resilience and adaptability for a customer support role. Include what a good answer looks like."}
 {"lang": "mix", "domain": "recruiting", "text": "Bu candidate'ın profilini kısaca özetle, Slack'te paylaşacağım:\nName: {PERSON1}\nLocation: {LOCATION1.district}, {LOCATION2.city}\nCurrent: Senior QA @ Getir\nNotice period: 1 ay"}
 {"lang": "mix", "domain": "interview-notes", "text": "{PERSON1.first} Hanım'ın case study sunumu çok iyiydi ama Q&A kısmında defensive davrandı. Hiring committee için 'hire / no hire' önerisiyle bir paragraf yaz."}
-{"lang": "mix", "domain": "payroll", "text": "Payroll cut-off tarihi değişti: artık her ayın 20'si. Bunu tüm employee'lere duyuran bilingual bir mail yaz, subject line da öner."}
+{"lang": "mix", "domain": "payroll", "text": "Payroll cut-off tarihi değişti: artık her ayın 20'si. Bunu tüm employee'lere {PERSON1} adına duyuran bilingual bir mail yaz, subject line da öner."}
 {"lang": "mix", "domain": "onboarding", "text": "Onboarding doc'unda şu satır var: 'Your manager {PERSON1} will set up your accounts.' Bunu Türkçe çalışanlar için de anlaşılır olacak şekilde iki dilli yaz."}
 {"lang": "mix", "domain": "performance-review", "text": "Mid-year review'da {PERSON1.first+DAT} şunu söylemek istiyorum: 'Ownership'in çok iyi ama stakeholder'lara update vermiyorsun.' Daha diplomatik bir versiyon önerir misin?"}
 {"lang": "mix", "domain": "termination", "text": "Exit interview form'unu Türkçeye çevir: reason for leaving, would you recommend us, feedback for your manager. Anonim olacak."}
 {"lang": "mix", "domain": "org-chart", "text": "Bu chart'ta {PERSON1.first} hem Product hem Design'a bakıyor gibi görünüyor, aslında sadece Product. Doğrusu:\nProduct: {PERSON1}\nDesign: {PERSON2}\nGüncel tabloyu çıkar."}
 {"lang": "mix", "domain": "hr", "text": "{PERSON1.first} WFH request gönderdi, Perşembe ve Cuma evden çalışmak istiyor çünkü {LOCATION1.city+DAT} taşındı. Manager approval mail'ini yaz."}
-{"lang": "mix", "domain": "recruiting", "text": "Headhunter'a brief: Head of People arıyoruz, 10+ yıl deneyim, scale-up tecrübesi, İstanbul ofis. Fee %20. İngilizce bir brief doc yaz."}
+{"lang": "mix", "domain": "recruiting", "text": "{PERSON1.first} Hanım için headhunter'a brief: Head of People arıyoruz, 10+ yıl deneyim, scale-up tecrübesi, İstanbul ofis. Fee %20. İngilizce bir brief doc yaz."}
 {"lang": "mix", "domain": "interview-notes", "text": "[11:15] {PERSON1.first}: candidate no-show yaptı\n[11:16] {PERSON2.first}: reschedule edelim mi?\n[11:18] {PERSON1.first}: {PERSON3.first+INS} konuşayım önce\nBu thread'i recruiting tracker'a not olarak gir."}
 {"lang": "mix", "domain": "payroll", "text": "{PERSON1+GEN} expense claim'i reddedildi çünkü receipt eksik. Ona gönderilecek, hangi belgeleri upload etmesi gerektiğini anlatan kısa bir mail yaz."}
 {"lang": "mix", "domain": "performance-review", "text": "Promotion packet hazırlıyorum: {PERSON1}, Senior'dan Staff'a. Impact örnekleri: payment latency %40 azaldı, on-call rotation'ı yeniden tasarladı. Narrative kısmını yaz."}
 {"lang": "mix", "domain": "onboarding", "text": "IT checklist for {PERSON1.first}: MacBook, Okta, GitHub, Slack, VPN. Hepsi Pazartesi hazır olmalı. Bunu Jira ticket description formatına çevir."}
 {"lang": "mix", "domain": "termination", "text": "Severance agreement'ın Türkçe özetini çıkar, {PERSON1.first} Bey imzalamadan önce okumak istiyor: 3 ay ücret, non-compete 6 ay, confidentiality süresiz."}
-{"lang": "mix", "domain": "hr", "text": "Company offsite: Kapadokya, 14–16 Mayıs. Agenda, travel info ve dress code içeren bir announcement draft'ı yaz. Balon turu optional."}
+{"lang": "mix", "domain": "hr", "text": "Company offsite organizatörü {PERSON1.first}: Kapadokya, 14–16 Mayıs. Agenda, travel info ve dress code içeren bir announcement draft'ı yaz. Balon turu optional."}
 {"lang": "mix", "domain": "org-chart", "text": "Team topology'yi açıkla: stream-aligned team'lerin lead'leri {PERSON1.first}, {PERSON2.first}; platform team lead'i {PERSON3.first}. Bunu bir diagram açıklaması olarak yaz."}
 {"lang": "mix", "domain": "recruiting", "text": "Aday {PERSON1} remote çalışmak istiyor, şu an {ADDRESS1.tr} adresinde yaşıyor. Contract'ta 'work location' maddesini nasıl yazmalıyız? İngilizce öneri ver."}
 {"lang": "mix", "domain": "hr", "text": "Hey {PERSON1.first}, quick reminder: KVKK eğitimini bu hafta tamamlaman gerekiyor, link LMS'te. Bunu daha friendly yaz ama urgency kalsın."}
 {"lang": "mix", "domain": "payroll", "text": "Bonus payout tablosu:\nName | Rating | Bonus %\n{PERSON1} | Exceeds | 15\n{PERSON2} | Meets | 10\n{PERSON3} | Below | 0\nBunu leadership'e sunacağım, kısa bir yorum ekle."}
 {"lang": "mix", "domain": "interview-notes", "text": "Take-home assignment review: {PERSON1.lower} kodda test yazmamış ama architecture temiz. Feedback'i adaya İngilizce gönderilecek şekilde yaz."}
-{"lang": "mix", "domain": "performance-review", "text": "Engineering ladder'ındaki 'L4' ve 'L5' beklentilerini karşılaştıran bir tablo yap. Kolonlar: scope, autonomy, influence. TR açıklamalarla."}
+{"lang": "mix", "domain": "performance-review", "text": "{PERSON1.first+GEN} istediği gibi engineering ladder'ındaki 'L4' ve 'L5' beklentilerini karşılaştıran bir tablo yap. Kolonlar: scope, autonomy, influence. TR açıklamalarla."}
 {"lang": "mix", "domain": "onboarding", "text": "{PERSON1.first+DAT} welcome pack'te kupa, defter ve hoodie göndereceğiz. Hoodie bedeni L. Kargo adresi {ADDRESS1.tr_street}. Procurement'a İngilizce request yaz."}
 {"lang": "mix", "domain": "termination", "text": "Garden leave sürecinde {PERSON1} hâlâ Slack'te aktif görünüyor. Access'leri kapatmak için IT'ye ve manager'ı {PERSON2.first+DAT} gidecek iki ayrı mesaj yaz."}
 {"lang": "mix", "domain": "org-chart", "text": "{PERSON1.upper} (CEO)\n├── {PERSON2.upper} (CFO)\n├── {PERSON3.upper} (CTO)\n│   └── {PERSON4.upper} (VP Eng)\nBu ASCII tree'yi HTML nested list'e çevir."}
@@ -257,7 +257,7 @@
 {"lang": "mix", "domain": "payroll", "text": "Expat çalışan {PERSON1.firstlast2}, {LOCATION1.country} vatandaşı, Türkiye'de çalışma izniyle çalışıyor. Payroll'da dikkat edilmesi gereken vergi konularını İngilizce özetle."}
 {"lang": "mix", "domain": "performance-review", "text": "Skip-level 1:1'de {PERSON1.first}, manager'ı {PERSON2.first} hakkında micromanagement şikâyetinde bulundu. Bu notu confidential olarak nasıl kaydetmeliyim?"}
 {"lang": "mix", "domain": "hr", "text": "{PERSON1.first+GEN} baby shower'ı için ofiste küçük bir kutlama yapacağız. Ekibe gizli bir davet mesajı yaz, kendisine söylemeyin diye de ekle."}
-{"lang": "mix", "domain": "onboarding", "text": "New joiner survey sonuçları: %85 'ilk hafta faydalıydı' demiş, en çok şikâyet laptop gecikmesi. Bunu 3 action item'a çevir."}
+{"lang": "mix", "domain": "onboarding", "text": "{PERSON1.first+GEN} paylaştığı new joiner survey sonuçları: %85 'ilk hafta faydalıydı' demiş, en çok şikâyet laptop gecikmesi. Bunu 3 action item'a çevir."}
 {"lang": "tr", "domain": "recruiting", "text": "Başvuru formundan gelen veriyi temizle:\nad: {PERSON1.lower}\nikamet: {LOCATION1.neighborhood} mah., {LOCATION2.district}\nmezuniyet: Dokuz Eylül Üniversitesi\npozisyon: Satış Temsilcisi\nBaş harfleri büyüt ve tabloya koy."}
 {"lang": "tr", "domain": "interview-notes", "text": "{PERSON1.first}, mülakatın sonunda {PERSON2.first+ABL} referans aldığını söyledi. {PERSON2.first} Bey'i arayıp teyit etmeden önce soracağım 5 soruyu yaz."}
 {"lang": "tr", "domain": "payroll", "text": "\"{PERSON1}\";\"Bilgi İşlem\";\"72.000\"\n\"{PERSON2}\";\"Hukuk\";\"91.500\"\nBu CSV'de tırnak işaretleri yüzünden içe aktarma bozuluyor. Düzgün bir CSV ver."}
@@ -294,7 +294,7 @@
 {"lang": "tr", "domain": "org-chart", "text": "{PERSON1.last+PLU} aile şirketinde yönetim kurulu: başkan {PERSON1}, üyeler {PERSON2}, {PERSON3}. Profesyonel yöneticilerle ilişkiyi gösteren bir yönetişim şeması öner."}
 {"lang": "tr", "domain": "hr", "text": "Aslan payı satış ekibinde olsa da bu yılki ikramiye tüm çalışanlara dağıtılacak. {PERSON1.first} Bey adına bu kararı açıklayan bir iç duyuru yaz."}
 {"lang": "tr", "domain": "recruiting", "text": "Sayın {PERSON1.last}, {LOCATION1.city} bölge müdürlüğü için yaptığımız görüşmeler olumlu sonuçlanmıştır.\nBu ön teklif yazısına maaş aralığı ve yan hakları eklemem lazım, şablon öner."}
-{"lang": "tr", "domain": "interview-notes", "text": "Mülakat kaydı: aday {PERSON1}, {LOCATION1.neighborhood} mahallesinde büyümüş, şu an {LOCATION2.city} yaşıyor. Mesleki motivasyonuyla ilgili söylediklerini 3 cümleyle özetle."}
+{"lang": "tr", "domain": "interview-notes", "text": "Mülakat kaydı: aday {PERSON1}, {LOCATION1.neighborhood} mahallesinde büyümüş, şu an {LOCATION2.city+LOC} yaşıyor. Mesleki motivasyonuyla ilgili söylediklerini 3 cümleyle özetle."}
 {"lang": "tr", "domain": "payroll", "text": "{PERSON1} için bordro itiraz dilekçesi: Ağustos'ta 12 saat fazla mesai yapılmış ama ödenmemiş. Muhatap: Bordro Birimi Müdürü {PERSON2.first} {PERSON2.last}."}
 {"lang": "tr", "domain": "hr", "text": "Yeni yönetmeliğe göre çalışanların adresleri yıllık güncellenmeli. Örnek: {PERSON1}, eski adres {ADDRESS1.tr}, yeni adres {ADDRESS2.tr}. Güncelleme formunu buna göre tasarla."}
 {"lang": "tr", "domain": "performance-review", "text": "Tebrikler {PERSON1.first}! Bu yılın 'Yılın Takım Oyuncusu' ödülünü kazandın. Plaket üzerine yazılacak kısa bir metin ve sahne konuşması öner."}

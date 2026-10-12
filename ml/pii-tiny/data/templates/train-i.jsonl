@@ -257,7 +257,7 @@
 {"lang": "en", "domain": "translation", "text": "What's the natural Turkish equivalent of \"I'll circle back on Monday\"? Give two options."}
 {"lang": "en", "domain": "translation", "text": "Translate this wedding invitation into English: \"{PERSON1.first} ile {PERSON2.first}, {LOCATION1.city} {ADDRESS1.tr_street} adresindeki düğünlerine sizleri davet eder.\""}
 {"lang": "en", "domain": "translation", "text": "I need this condolence note in English, gentle tone: \"{PERSON1.first} Bey'in vefatını büyük üzüntüyle öğrendik. Ailesine başsağlığı dileriz.\""}
-{"lang": "en", "domain": "translation", "text": "Translate the following meeting invite into German and Turkish: \"Quarterly review with {PERSON1.full}, Room Bill Gates (3rd floor), Thursday 10:00.\""}
+{"lang": "en", "domain": "translation", "text": "Translate the following meeting invite into German and Turkish: \"Quarterly review with {PERSON1.full}, Room {PERSON2.full} (3rd floor), Thursday 10:00.\""}
 {"lang": "en", "domain": "translation", "text": "Is this translation correct? EN: \"May I speak with Mr. {PERSON1.last}?\" TR: \"Bay {PERSON1.last} ile görüşebilir miyim?\""}
 {"lang": "en", "domain": "translation", "text": "Translate these UI strings to Turkish: \"Welcome back\", \"Your trial ends in June\", \"Invite teammates\", \"Will you save changes?\""}
 {"lang": "en", "domain": "translation", "text": "Translate this tenancy notice to English, I need to show my landlord {PERSON1.full}: \"{ADDRESS1.tr} adresindeki daireyi 1 Eylül itibarıyla boşaltacağımı bildiririm.\""}
@@ -298,3 +298,53 @@
 {"lang": "tr", "domain": "translation", "text": "Bu ürün açıklamasını Arapça ve İngilizce'ye çevir: \"El yapımı Kütahya çinisi, 20 cm çap, kahve fincanı takımı.\""}
 {"lang": "en", "domain": "translation", "text": "Translate the Turkish email below into English and keep the signature block:\n\n\"Merhaba, dosyaları ekte bulabilirsiniz.\nSaygılarımla,\n{PERSON1.full}\nSatın Alma Uzmanı\""}
 {"lang": "mix", "domain": "translation", "text": "Bu tweet'i Türkçe'ye çevir: \"Huge congrats to {PERSON1.full} and the team on the launch in {LOCATION1.country}!\""}
+{"lang": "en", "domain": "internal-comms", "text": "Write an all-staff announcement: {PERSON1.full} has been promoted to VP Engineering. She started as an intern in our {LOCATION1.city} office nine years ago."}
+{"lang": "en", "domain": "internal-comms", "text": "Draft an intranet post introducing three new hires:\n- {PERSON1.full}, Product Designer\n- {PERSON2.firstlast2}, Account Executive ({LOCATION1.city})\n- {PERSON3.full}, Data Engineer"}
+{"lang": "en", "domain": "internal-comms", "text": "Write a short note announcing that {PERSON1.first} {PERSON1.last} is retiring after 30 years. Farewell drinks are Friday at 5 in the Rose Room."}
+{"lang": "en", "domain": "internal-comms", "text": "Rewrite this memo so it's less corporate: \"Effective Monday, all expense claims must be approved by {PERSON1.initial} prior to submission to Finance.\""}
+{"lang": "en", "domain": "internal-comms", "text": "Draft an announcement about the new hybrid work policy: three office days per week, core hours 10-4, starts in September."}
+{"lang": "en", "domain": "internal-comms", "text": "Write a reminder that open enrollment for health benefits closes on November 15. Friendly tone, no names."}
+{"lang": "en", "domain": "internal-comms", "text": "Create a company newsletter section called 'Spotlight' featuring {PERSON1.full} from Customer Success, who volunteers at the Hope Shelter on weekends."}
+{"lang": "en", "domain": "internal-comms", "text": "Write a sensitive announcement that our colleague {PERSON1.full} passed away last weekend. The funeral will be held in {LOCATION1.city}; donations to a charity of the family's choosing."}
+{"lang": "en", "domain": "internal-comms", "text": "Make this office move notice clearer: \"From May 3 the London team moves to {ADDRESS1.en}. Badges collect from {PERSON1.first} at reception.\""}
+{"lang": "en", "domain": "internal-comms", "text": "Draft a welcome-back message for {PERSON1.first}, returning from maternity leave next Monday. Mention that {PERSON2.first} will catch her up on the Maple project."}
+{"lang": "en", "domain": "internal-comms", "text": "Write a polite reminder to the whole company to stop booking the big meeting room for one-person calls."}
+{"lang": "en", "domain": "internal-comms", "text": "Rewrite this org change memo:\n\nORG UPDATE\nEffective June 1:\n- {PERSON1.upper} leads Platform\n- {PERSON2.upper} leads Growth\n- the Summer team merges into Growth"}
+{"lang": "en", "domain": "internal-comms", "text": "Draft a short announcement that the office will be closed on Monday for a public holiday and IT maintenance will run over the weekend."}
+{"lang": "en", "domain": "internal-comms", "text": "Write a thank-you post for the internal blog: the Will to Win hackathon raised $12k for charity. Thank the organisers {PERSON1.first} and {PERSON2.first}."}
+{"lang": "en", "domain": "internal-comms", "text": "Write an employee-of-the-month blurb for {PERSON1.full} from the {LOCATION1.city} warehouse; she cut picking errors by half."}
+{"lang": "en", "domain": "internal-comms", "text": "Summarize the CEO's town hall transcript in 5 bullets. Topics: growth, layoff rumours (denied), new office, benefits, Q&A."}
+{"lang": "en", "domain": "internal-comms", "text": "Give me three subject lines for an internal email about the new expense tool. Keep them under 8 words."}
+{"lang": "tr", "domain": "internal-comms", "text": "Tüm çalışanlara duyuru yaz: {PERSON1.full} İnsan Kaynakları Direktörü olarak aramıza katıldı. Daha önce {LOCATION1.city} bölge ofisinde çalışıyordu."}
+{"lang": "tr", "domain": "internal-comms", "text": "Kurum içi duyuru: 29 Ekim Cumhuriyet Bayramı nedeniyle ofis kapalı olacak. Acil durumlar için nöbetçi {PERSON1.first} Bey, tel 0532 111 22 33."}
+{"lang": "tr", "domain": "internal-comms", "text": "Emekli olan çalışanımız {PERSON1.firstlast2} için veda mesajı yaz. 25 yıl boyunca {LOCATION1.district} şubesinde çalıştı."}
+{"lang": "tr", "domain": "internal-comms", "text": "Şirket bülteni için kısa bir yazı: bahar şenliği bu yıl 15 Mayıs'ta, kartal parkındaki piknik alanında. İsim kullanma."}
+{"lang": "tr", "domain": "internal-comms", "text": "Bu duyuruyu daha sıcak bir dille yeniden yaz: \"Personelin dikkatine: {PERSON1.first} Hanım'ın doğum izni 1 Mart'ta başlamaktadır. İşleri {PERSON2.full} yürütecektir.\""}
+{"lang": "tr", "domain": "internal-comms", "text": "Yeni ofis adresimizi duyuran bir e-posta yaz: {ADDRESS1.tr}. Taşınma 1 Haziran'da, kolileri {PERSON1.first+DAT} teslim edin."}
+{"lang": "tr", "domain": "internal-comms", "text": "Başsağlığı duyurusu: çalışma arkadaşımız {PERSON1.first+GEN} babası vefat etmiştir. Cenaze {LOCATION1.city} {LOCATION2.neighborhood} Camii'nden kaldırılacaktır."}
+{"lang": "tr", "domain": "internal-comms", "text": "İç iletişim için kısa bir hatırlatma: güvenlik eğitimini tamamlamayanlar cuma gününe kadar tamamlasın."}
+{"lang": "tr", "domain": "internal-comms", "text": "Ayın çalışanı duyurusu: {PERSON1.full}, müşteri memnuniyetini artırdı. Ödül töreni Pazartesi, yemekhane."}
+{"lang": "tr", "domain": "internal-comms", "text": "Organizasyon değişikliği duyurusu yaz: Satış ekibi {PERSON1.full+INS} birlikte {PERSON2.full+GEN} yönetimine geçiyor."}
+{"lang": "tr", "domain": "internal-comms", "text": "Kan bağışı kampanyası için bir duyuru metni yaz: Kızılay ekibi 20 Kasım'da otoparkta olacak. Çalışan ismi yok."}
+{"lang": "tr", "domain": "internal-comms", "text": "Bu iç yazıyı sadeleştir: \"İlgi: {PERSON1.initial} imzalı yazı. Söz konusu talep {PERSON2.first} Bey tarafından değerlendirilmiş olup uygun görülmemiştir.\""}
+{"lang": "tr", "domain": "internal-comms", "text": "Yemekhanede bu hafta \"Güneş Menüsü\" var, ızgara köfte ve sevgi pastası. Bunu eğlenceli bir duyuruya çevir."}
+{"lang": "mix", "domain": "internal-comms", "text": "All-hands duyurusu yaz, Türkçe olsun ama başlık English: \"New Leadership Update\" – {PERSON1.full} yeni CTO, {PERSON2.full} ise advisor olarak devam ediyor."}
+{"lang": "mix", "domain": "internal-comms", "text": "Company newsletter için \"Meet the team\" section'ı yaz: {PERSON1.first} ({LOCATION1.city} ofisi, Marketing), {PERSON2.first} (Remote, Engineering). Kısa ve samimi."}
+{"lang": "mix", "domain": "internal-comms", "text": "Internal memo: Q4'te travel freeze var, exception'lar için {PERSON1.first} Hanım'dan approval alınmalı. Bunu kibar ama net yaz."}
+{"lang": "mix", "domain": "internal-comms", "text": "Slack #announcements için post yaz: ofis Wi-Fi şifresi değişti, yeni şifreyi IT portal'dan alın. Emoji kullanma."}
+{"lang": "mix", "domain": "internal-comms", "text": "Farewell message'ı düzelt: \"Arkadaşlar, bugün son günüm. {PERSON1.lower}, {PERSON2.lower} and everyone, thanks for everything! Keep in touch.\""}
+{"lang": "mix", "domain": "internal-comms", "text": "Townhall Q&A'dan çıkan soruları kategorize et: maaş zammı, remote work, yeni {LOCATION1.city} ofisi, {PERSON1.first} Bey'in ayrılığı."}
+{"lang": "mix", "domain": "internal-comms", "text": "Onboarding welcome mail'i yaz: \"Hoş geldin {PERSON1.first}! İlk gün buddy'n {PERSON2.full} olacak, laptop'ını IT'den alabilirsin.\""}
+{"lang": "mix", "domain": "internal-comms", "text": "Policy update duyurusu: password'ler 90 günde bir değişecek, MFA zorunlu. Kısa, Türkçe, IT team imzalı."}
+{"lang": "mix", "domain": "internal-comms", "text": "Bu announcement'ı daha inclusive yap: \"Dear gentlemen, {PERSON1.full} will host the Friday tech talk.\""}
+{"lang": "mix", "domain": "internal-comms", "text": "Yılbaşı party duyurusu yaz: 27 Aralık, ofis terası, dress code smart casual. Organizasyon ekibi: {PERSON1.first}, {PERSON2.first}, {PERSON3.first}."}
+{"lang": "en", "domain": "internal-comms", "text": "Draft an internal FAQ answer: \"Who do I contact about payroll?\" Answer: the payroll inbox payroll@example.com, or {PERSON1.full} for escalations."}
+{"lang": "en", "domain": "internal-comms", "text": "Proofread this intranet bio: \"{PERSON1.full} grew up in {LOCATION1.city}, studied in {LOCATION2.country} and joined us in May. In her free time she paints summer landscapes.\""}
+{"lang": "en", "domain": "internal-comms", "text": "Write a brief note asking employees to update their emergency contacts in the HR portal by the end of the month."}
+{"lang": "en", "domain": "internal-comms", "text": "Turn these bullet points into a friendly Friday wrap-up email: sales record, new coffee machine, June offsite confirmed, kudos to {PERSON1.first}."}
+{"lang": "tr", "domain": "internal-comms", "text": "Bu duyurudaki yazım hatalarını düzelt: \"degerli calisanlarimiz, {PERSON1.lower} hanim ile {PERSON2.lower} beyin evlilik torenine davetlisiniz, nur yuzlu ciftimize mutluluklar\""}
+{"lang": "mix", "domain": "internal-comms", "text": "Internal podcast'in intro script'ini yaz: bu bölümde konuk {PERSON1.full}, {LOCATION1.country} pazarını anlatacak."}
+{"lang": "en", "domain": "internal-comms", "text": "Write a two-paragraph message from HR about respecting quiet hours after 7pm. No names."}
+{"lang": "tr", "domain": "internal-comms", "text": "Departman yöneticilerine gidecek kısa bir not: bütçe taleplerini 10 Ocak'a kadar {PERSON1.full+DAT} iletin."}
+{"lang": "en", "domain": "internal-comms", "text": "Write a light-hearted post for the #random channel about the office plant, nicknamed 'Mark', finally getting watered."}
+{"lang": "mix", "domain": "internal-comms", "text": "Duyuru: Barış salonu bu hafta tadilatta, meeting'leri Yıldız odasına taşıyın. Bunu daha net yaz."}

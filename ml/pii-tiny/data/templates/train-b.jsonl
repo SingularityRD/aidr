@@ -15,7 +15,7 @@
 {"lang":"tr","domain":"e-commerce-orders","text":"sipariş_no,alici,il,ilce,tutar\n100231,{PERSON1},{LOCATION1.city},{LOCATION2.district},1.249,90\n100232,{PERSON2},{LOCATION3.city},{LOCATION4.district},389,00\nbu csv'yi il bazında toplam tutara göre grupla"}
 {"lang":"tr","domain":"banking","text":"Garanti BBVA şubesinden gelen talimat: hesap sahibi {PERSON1.initial} adına düzenli ödeme talimatı iptal edilecek. Müşteriye SMS metni hazırla, 160 karakteri geçmesin."}
 {"lang":"tr","domain":"insurance","text":"Ekim ayında yenilenecek poliçeler listesini e-posta şablonuna çevir. Allianz, Aksigorta ve Anadolu Sigorta ürünlerini ayrı başlıklar altında topla. Kişi adı içermesin, sadece ürün bazında olsun."}
-{"lang":"tr","domain":"credit","text":"Kredi kartı limit artış talebini değerlendir: mevcut limit 25.000 TL, talep 60.000 TL, son 12 ayda 2 kez asgari ödeme yapılmış. Gelir 38.000 TL. Ziraat Bankası iç politikasına benzer bir gerekçe yaz."}
+{"lang":"tr","domain":"credit","text":"Kredi kartı limit artış talebini değerlendir: mevcut limit 25.000 TL, talep 60.000 TL, son 12 ayda 2 kez asgari ödeme yapılmış. Gelir 38.000 TL. Ziraat Bankası iç politikasına benzer bir gerekçe yaz. Başvuru sahibi {PERSON1.first} Bey, şube müdürü onayı bekliyor."}
 {"lang":"tr","domain":"collections","text":"[09:12] {PERSON1.first}: abi bu ay maaş yatmadı, umut ediyorum gelecek hafta öderim\n[09:13] Temsilci: anlıyorum, yapılandırma ister misiniz?\n[09:15] {PERSON1.first}: evet olur\nBu yazışmayı tahsilat sistemine girilecek bir özete çevir."}
 {"lang":"tr","domain":"invoices","text":"Fatura itirazı: {PERSON1} adına kesilen GIB2026000044512 numaralı e-arşiv faturada adres yanlış yazılmış, doğrusu {ADDRESS1.tr}. Tedarikçiye düzeltme talebi yaz."}
 {"lang":"tr","domain":"banking","text":"Hesap özeti açıklaması: müşterinin Ekim ayında kartından Migros, Shell ve Trendyol harcamaları toplam 14.320 TL. Bunu müşteriye anlaşılır bir dille açıkla, isim koyma."}
@@ -27,7 +27,7 @@
 {"lang":"tr","domain":"collections","text":"İcra öncesi ihtarname taslağı hazırla. Borçlu: {PERSON1}, adres: {ADDRESS1.tr}. Alacak tutarı 42.780 TL, faiz %4,25 aylık. Kibar ama net olsun."}
 {"lang":"tr","domain":"insurance","text":"Sağlık sigortası poliçesine eş ve çocuk ekleme talebi: sigortalı {PERSON1}, eşi {PERSON2.first}, kızı {PERSON3.first}. Prim farkı 6.420 TL. Müşteriye onay e-postası yaz."}
 {"lang":"tr","domain":"invoices","text":"Şu faturalar için tahsilat hatırlatması yaz, isimleri koru:\n| Fatura | Müşteri | Vade | Tutar |\n|---|---|---|---|\n| A-1021 | {PERSON1} | 30.09.2026 | 4.800 TL |\n| A-1034 | {PERSON2} | 05.10.2026 | 12.150 TL |"}
-{"lang":"tr","domain":"banking","text":"Kur farkı neden oluştu açıklar mısın? 1.000 EUR'yu Yapı Kredi mobilden bozdurdum, banka satış kuru ile serbest piyasa arasında fark var. Sade bir dille anlat."}
+{"lang":"tr","domain":"banking","text":"Kur farkı neden oluştu açıklar mısın? 1.000 EUR'yu Yapı Kredi mobilden bozdurdum, banka satış kuru ile serbest piyasa arasında fark var. Sade bir dille anlat. (Hesap sahibi: {PERSON1.lower})"}
 {"lang":"tr","domain":"credit","text":"{PERSON1.first+GEN} kefil olduğu kredi temerrüde düştü. Kefile gönderilecek bildirim yazısını hazırla; asıl borçlu {PERSON2+DAT} da bilgi verildiğini belirt."}
 {"lang":"tr","domain":"insurance-claims","text":"Ekspertiz raporundan alıntı: \"Araç {LOCATION1.city} - {LOCATION2.city} karayolunda kar nedeniyle kaymış, sürücü {PERSON1} yaralanmamış.\" Bunu hasar karar notuna çevir, kusur oranını belirtme."}
 {"lang":"tr","domain":"accounting","text":"Kasa sayımı farkı: 1.250 TL eksik. Sorumlu personel {PERSON1.initial}. İç denetime gidecek tutanağı yaz, suçlayıcı olmasın."}
@@ -53,7 +53,7 @@
 {"lang":"tr","domain":"collections","text":"Tahsilat SMS şablonları yaz: 1) vade günü hatırlatma 2) 7 gün gecikme 3) 30 gün gecikme. İsim yerine [AD] etiketi kullan, kişi adı yazma."}
 {"lang":"tr","domain":"insurance-claims","text":"Değer kaybı talebi: {PERSON1}, aracının {LOCATION1.city+GEN} merkezinde park halindeyken çarpıldığını beyan ediyor. Karşı taraf sigortası Aksigorta. Talep dilekçesini düzenle."}
 {"lang":"tr","domain":"accounting","text":"Bordro farkı: {PERSON1.first} Hanım'ın Eylül maaşında 2.180 TL fazla ödeme yapılmış. Kendisine durumu açıklayan, bir sonraki maaştan mahsup edileceğini bildiren nazik bir e-posta yaz."}
-{"lang":"tr","domain":"invoices","text":"Bu e-faturanın açıklama satırlarını tabloya çevir: 1 adet Lenovo ThinkPad 42.000 TL, 2 adet Logitech mouse 1.300 TL, kurulum hizmeti 2.500 TL. KDV %20 ekle."}
+{"lang":"tr","domain":"invoices","text":"Bu e-faturanın açıklama satırlarını tabloya çevir: 1 adet Lenovo ThinkPad 42.000 TL, 2 adet Logitech mouse 1.300 TL, kurulum hizmeti 2.500 TL. KDV %20 ekle. Faturayı kesen personel {PERSON1.initial}, imza bloğuna adını ekle."}
 {"lang":"tr","domain":"e-commerce-orders","text":"Müşteri yorumu: \"{PERSON1.first} adında kurye paketi kapıya bırakıp gitti, zil bile çalmadı\". Kargo firmasına iletilecek şikayet metnini yaz, kuryenin adını da belirt."}
 {"lang":"tr","domain":"banking","text":"Çağrı merkezi kaydı:\nMüşteri: {PERSON1}\nKonu: Kredi kartı aidatı iadesi\nSonuç: 650 TL aidat iade edildi\nTemsilci: {PERSON2.initial}\nBunu CRM'e girilecek tek satırlık özete çevir."}
 {"lang":"tr","domain":"insurance","text":"{PERSON1.last} ailesinin üç aracı için filo kasko teklifini kıyasla: Allianz 38.400 TL, Anadolu Sigorta 41.100 TL, Aksigorta 36.950 TL. Teminat farklarını da tabloya ekle."}
@@ -70,14 +70,14 @@
 {"lang":"tr","domain":"insurance","text":"Ferdi kaza poliçesinde lehtar değişikliği: eski lehtar {PERSON1}, yeni lehtar {PERSON2}. Sigortalı {PERSON3}. Değişiklik onay yazısını hazırla."}
 {"lang":"tr","domain":"insurance-claims","text":"Sel hasarı toplu ihbar: {LOCATION1.district} ilçesinde 14 konut, toplam tahmini hasar 3,8 milyon TL. Bölge müdürlüğüne gidecek durum raporu yaz. Kişi isimlerine gerek yok."}
 {"lang":"tr","domain":"accounting","text":"Gider pusulası açıklaması: {PERSON1} adlı serbest çalışan çevirmene ödenen 6.000 TL, stopaj %20. Muhasebe fişi açıklamasını yaz."}
-{"lang":"tr","domain":"e-commerce-orders","text":"Hepsiburada'dan gelen sipariş verisini özetle: Ekim'de 1.240 sipariş, iade oranı %4,2, en çok iade edilen ürün Xiaomi kulaklık. Yönetim sunumu için 3 madde yaz."}
+{"lang":"tr","domain":"e-commerce-orders","text":"Hepsiburada'dan gelen sipariş verisini özetle: Ekim'de 1.240 sipariş, iade oranı %4,2, en çok iade edilen ürün Xiaomi kulaklık. Yönetim sunumu için 3 madde yaz. Sunumu yapacak kişi {PERSON1}, onun ağzından yaz."}
 {"lang":"tr","domain":"banking","text":"Para transferi açıklaması: \"{PERSON1.upper} kira ödemesi Ekim\". Alıcı IBAN TR33 0006 1005 1978 6457 8413 26. Müşteri bu açıklamanın vergi açısından sorun yaratıp yaratmayacağını soruyor, açıkla."}
 {"lang":"tr","domain":"credit","text":"Kredi komitesi toplantı tutanağı taslağı:\nKatılanlar: {PERSON1}, {PERSON2}, {PERSON3}\nGündem: {PERSON4.last} İnşaat'ın 15 milyon TL'lik proje finansmanı\nKarar: ek teminat şartıyla onay\nTutanağı resmi formata getir."}
 {"lang":"tr","domain":"collections","text":"{PERSON1+ACC} üç gündür arıyoruz, telefonu kapalı. Kayıtlı ikinci numara 0544 000 99 88 de cevap vermiyor. Bir sonraki adım için ne önerirsin, KVKK'ya uygun olsun."}
 {"lang":"tr","domain":"insurance","text":"Kasko poliçesi yenileme hatırlatması yaz. Sigortalı: {PERSON1}, araç plakası 34 ABC 123, mevcut prim 22.400 TL, yeni teklif 26.900 TL."}
 {"lang":"tr","domain":"invoices","text":"Fatura kesim talimatı: alıcı {PERSON1}, VKN yok (TCKN ile kesilecek), adres {ADDRESS1.tr}. Ürün: 12 ay yazılım lisansı. Muhasebe ekibine gidecek talimat e-postasını yaz."}
 {"lang":"tr","domain":"insurance-claims","text":"Hırsızlık ihbarı özetle: sigortalı {PERSON1.first} Hanım'ın {LOCATION1.neighborhood} mahallesindeki dükkanından gece kasası çalınmış, karakol tutanağı alınmış, çalınan nakit 27.000 TL."}
-{"lang":"tr","domain":"accounting","text":"Şu banka mutabakatı farkını açıkla: Ziraat Bankası ekstresi 184.320 TL, defter bakiyesi 181.120 TL. Fark 3.200 TL, muhtemel nedenleri sırala."}
+{"lang":"tr","domain":"accounting","text":"Şu banka mutabakatı farkını açıkla: Ziraat Bankası ekstresi 184.320 TL, defter bakiyesi 181.120 TL. Fark 3.200 TL, muhtemel nedenleri sırala. Mutabakatı hazırlayan {PERSON1.first} Hanım'a sorular da ekle."}
 {"lang":"tr","domain":"e-commerce-orders","text":"{PERSON1.first+DAT} cevap yaz: siparişi {LOCATION1.city+DAT} değil yanlışlıkla {LOCATION2.city+DAT} gönderilmiş, yeniden gönderim yapılacak ve kargo ücretsiz."}
 {"lang":"tr","domain":"banking","text":"Özel bankacılık müşterimiz {PERSON1.first} {PERSON1.last} Bey için portföy özeti: %40 mevduat, %35 eurobond, %25 hisse fonu. Toplam 12,4 milyon TL. Aylık rapor giriş paragrafını yaz."}
 {"lang":"tr","domain":"credit","text":"Bu kredi başvurusunda tutarsızlık var mı bak: Beyan edilen işyeri {LOCATION1.city}, SGK kaydı {LOCATION2.city}, ikamet {ADDRESS1.tr}. Başvuran {PERSON1}."}
@@ -97,7 +97,7 @@
 {"lang":"tr","domain":"invoices","text":"Abonelik faturası itirazı: {PERSON1} Haziran ve Temmuz için çift tahsilat yapıldığını söylüyor, toplam 1.198 TL. İade onay e-postası yaz."}
 {"lang":"tr","domain":"banking","text":"Yurt dışından gelen SWIFT: gönderen {PERSON1}, {LOCATION1.country}, tutar 4.500 USD, açıklama 'family support'. Uyum ekibi için kısa değerlendirme notu yaz."}
 {"lang":"tr","domain":"credit","text":"Çiftçi kredisi başvurusu: {PERSON1}, {LOCATION1.district} ilçesinde 40 dönüm fındık bahçesi. Ziraat Bankası tarım kredisi şartlarına benzer bir ön değerlendirme yap."}
-{"lang":"tr","domain":"collections","text":"Ekip toplantısı için tahsilat performans özeti: Eylül'de 1.840 dosya, tahsilat oranı %62, söz verme oranı %71. Motivasyon verici bir giriş paragrafı yaz."}
+{"lang":"tr","domain":"collections","text":"Ekip toplantısı için tahsilat performans özeti: Eylül'de 1.840 dosya, tahsilat oranı %62, söz verme oranı %71. Motivasyon verici bir giriş paragrafı yaz. Ayın temsilcisi {PERSON1+DAT} özel teşekkür cümlesi koy."}
 {"lang":"tr","domain":"insurance-claims","text":"Trafik kazası tespit tutanağını özetle: A aracı sürücüsü {PERSON1}, B aracı sürücüsü {PERSON2}. Kaza {LOCATION1.neighborhood} mahallesinde kavşakta, B aracı kırmızı ışıkta geçmiş. Sigortalımız A aracı."}
 {"lang":"tr","domain":"banking","text":"Müşteri {PERSON1.first+ABL} gelen şikayet: mobil uygulamada Ekim ekstresi görünmüyor. Teknik ekibe iletilecek bug raporu yaz, cihaz iPhone 15, iOS 19."}
 {"lang":"tr","domain":"credit","text":"Kefil formu kontrolü: kefil {PERSON1.firstlast2}, adres {ADDRESS1.tr}, asıl borçlu {PERSON2}. Eksik bilgi var mı, ve kefilin müteselsil olduğunu açıklayan bir paragraf ekle."}
@@ -118,7 +118,7 @@
 {"lang":"tr","domain":"credit","text":"Konut kredisi erken kapama: müşteri {PERSON1}, kalan anapara 812.400 TL, erken ödeme tazminatı %2. Hesaplamayı göster ve müşteriye bilgi notu yaz."}
 {"lang":"tr","domain":"insurance-claims","text":"Cam kırılması hasarı için hızlı tazminat SMS'i yaz: \"Sayın {PERSON1}, ...\" şeklinde başlasın, dosya no CK-55410, ödeme 3 iş günü içinde."}
 {"lang":"tr","domain":"collections","text":"Şu notu KVKK açısından değerlendir: \"Borçlu {PERSON1} ulaşılamıyor, komşusu {PERSON2.first} Hanım'a borç durumu anlatıldı.\" Bu doğru bir uygulama mı?"}
-{"lang":"tr","domain":"accounting","text":"E-defter berat yükleme süreleri hakkında kısa bir hatırlatma e-postası yaz, tüm muhasebe ekibine gidecek."}
+{"lang":"tr","domain":"accounting","text":"E-defter berat yükleme süreleri hakkında kısa bir hatırlatma e-postası yaz, tüm muhasebe ekibine gidecek. Altına {PERSON1}, Muhasebe Müdürü imzasını ekle."}
 {"lang":"tr","domain":"e-commerce-orders","text":"Kullanıcı {PERSON1.lower} hesabından 3 dakika içinde 5 farklı kartla sipariş denemesi yapılmış, hepsi {LOCATION1.city} teslimat adresli. Fraud ekibine gidecek uyarıyı yaz."}
 {"lang":"tr","domain":"banking","text":"Şubeye gelen yaşlı müşteri {PERSON1.first} Teyze, telefonda 'polis' olduğunu söyleyen birine 80.000 TL gönderecekmiş. Bu tür dolandırıcılığı anlatan müşteri bilgilendirme broşürü metni yaz."}
 {"lang":"tr","domain":"credit","text":"Kredi teklif mektubu: Sayın {PERSON1}, {LOCATION1.district} şubemizden yapmış olduğunuz başvurunuz değerlendirilmiş olup 240.000 TL tutarında... şeklinde devam etsin, faiz %3,49."}
@@ -129,7 +129,7 @@
 {"lang":"tr","domain":"invoices","text":"İngilizce yazmadan, sade Türkçe ile: tedarikçi {PERSON1.last} Mühendislik'e ait 3 fatura vadesi geçti, ödeme planı istiyoruz. E-posta taslağı."}
 {"lang":"tr","domain":"e-commerce-orders","text":"Sipariş iptal talebi:\nMüşteri: {PERSON1}\nTelefon: 0555 123 00 00\nE-posta: musteri.ornek@example.com\nSebep: yanlış beden\nİptal onayı mesajı yaz."}
 {"lang":"tr","domain":"banking","text":"Müşteri temsilcisi notu: {PERSON1} yeni evine taşındı, yeni ikamet adresi {ADDRESS1.tr}, ekstreler buraya gidecek. Not ekranına girilecek kısa metni yaz."}
-{"lang":"tr","domain":"credit","text":"Skorlama modeli çıktısını yorumla: PD %3,8, LGD %45, EAD 1,1 milyon TL. Beklenen kaybı hesapla ve komite için bir cümle yorum ekle."}
+{"lang":"tr","domain":"credit","text":"Skorlama modeli çıktısını yorumla: PD %3,8, LGD %45, EAD 1,1 milyon TL. Beklenen kaybı hesapla ve komite için bir cümle yorum ekle. Müşteri {PERSON1.upper}, {LOCATION1.city+LOC} faaliyet gösteriyor."}
 {"lang":"tr","domain":"insurance","text":"{PERSON1+GEN} yurt dışı öğrenim için {LOCATION1.country+DAT} gidiyor; annesi {PERSON2} hem seyahat sigortası hem ferdi kaza teklifi istiyor. Paket teklif metni yaz."}
 {"lang":"tr","domain":"insurance-claims","text":"Hasar dosyası notu çok dağınık, düzenle: \"sigortali {PERSON1.lower} 2 kere aradi, ekspere ulasamamis, eksper {PERSON2.lower} izinde, dosya {LOCATION1.city} bolgeye aktarilsin\""}
 {"lang":"tr","domain":"collections","text":"Ödeme sözü kırılan müşterilere gönderilecek e-posta için 3 farklı konu satırı öner. Ton: kararlı ama saygılı."}
@@ -155,7 +155,7 @@
 {"lang":"tr","domain":"accounting","text":"Kira stopajı hesapla: brüt kira 30.000 TL, stopaj %20. Ev sahibi {PERSON1}, kiracı şirketimiz. Muhtasar beyanname için açıklama yaz."}
 {"lang":"tr","domain":"invoices","text":"Müşteri {PERSON1.firstlast2} faturasını kağıt olarak istiyor, e-arşiv olduğunu açıklayan ve PDF linkini ileten bir mesaj yaz."}
 {"lang":"tr","domain":"e-commerce-orders","text":"Kargo takip sorgusu cevapları için şablon: 'Merhaba {PERSON1.first}, 7841220019 takip numaralı gönderiniz {LOCATION1.city} dağıtım şubesinde.' Bunu 3 farklı durum için çoğalt."}
-{"lang":"tr","domain":"banking","text":"Kredi kartı ekstre itirazı: müşteri 12.10 tarihli 3.499 TL'lik Hepsiburada işlemini tanımadığını söylüyor. Chargeback süreci için müşteriye bilgilendirme yaz, ad kullanma."}
+{"lang":"tr","domain":"banking","text":"Kredi kartı ekstre itirazı: müşteri 12.10 tarihli 3.499 TL'lik Hepsiburada işlemini tanımadığını söylüyor. Chargeback süreci için müşteriye bilgilendirme yaz, ad kullanma. Kart hamili {PERSON1}."}
 {"lang":"tr","domain":"insurance","text":"Poliçe özet tablosu hazırla:\nSigortalı | Ürün | Prim\n{PERSON1} | Kasko | 24.300\n{PERSON2} | Konut | 3.900\n{PERSON3} | TSS | 11.200\nToplam primi ve ortalamayı hesapla."}
 {"lang":"tr","domain":"credit","text":"Esnaf kredisi için {PERSON1+GEN} sunduğu bilanço özetini yorumla: aktif 3,4 milyon, borç 2,1 milyon, net kar 410 bin TL. Kaldıraç oranı ne durumda?"}
 {"lang":"tr","domain":"insurance-claims","text":"Sigortalının beyanı: \"Ay ışığı yoktu, yol karanlıktı, demir korkuluğa çarptım.\" Bu beyanı hasar dosyasına resmi dille ekle, sürücü adı {PERSON1}."}
@@ -169,7 +169,7 @@
 {"lang":"tr","domain":"collections","text":"Tahsilat kampanyası adı öner: borcunu tek seferde kapatana %15 indirim. 'Umut', 'yeni başlangıç' gibi temalar kullanabilirsin."}
 {"lang":"tr","domain":"accounting","text":"Şu yevmiye kaydını kontrol et:\n120 Alıcılar ({PERSON1}) B 24.000\n600 Yurt İçi Satışlar A 20.000\n391 Hesaplanan KDV A 4.000\nBorç-alacak doğru mu?"}
 {"lang":"tr","domain":"invoices","text":"{PERSON1.first} selam, fatura adresini {ADDRESS1.tr} diye güncelledim, kontrol eder misin? -- bunu daha resmi yaz, muhasebe müdürüne gidecek."}
-{"lang":"tr","domain":"e-commerce-orders","text":"Teslimat anketi sorusu yaz: kurye nazik miydi, paket sağlam mıydı, zamanında mı geldi. Cevap seçenekleri 1-5."}
+{"lang":"tr","domain":"e-commerce-orders","text":"Teslimat anketi sorusu yaz: kurye nazik miydi, paket sağlam mıydı, zamanında mı geldi. Cevap seçenekleri 1-5. Anketi {PERSON1.first+GEN} imzasıyla gönderelim."}
 {"lang":"tr","domain":"banking","text":"Aşağıdaki müşteri notunu sadeleştir: \"{PERSON1} ({LOCATION1.city}) doğumlu, {LOCATION2.city+LOC} ikamet, maaşı Akbank'a yatıyor, bizden konut kredisi istiyor, kredi kartı borcu yok.\""}
 {"lang":"tr","domain":"credit","text":"{PERSON1.first+ACC} kredi komitesine sunmadan önce eksik belgeleri listele: vergi levhası, son 2 yıl bilanço, SGK borcu yoktur yazısı, tapu fotokopisi."}
 {"lang":"tr","domain":"insurance","text":"Dask yenileme hatırlatması: sigortalı {PERSON1}, adres {ADDRESS1.tr}, poliçe bitişi 30.10.2026. Kısa ve net SMS yaz."}
@@ -183,7 +183,7 @@
 {"lang":"en","domain":"collections","text":"Rewrite this collection call note so it reads professionally: \"spoke w/ {PERSON1.first}, says check is in the mail, wife {PERSON2.first} picked up first, promised by 10/25\""}
 {"lang":"en","domain":"insurance-claims","text":"Claim #CLM-2026-88213. Insured {PERSON1} reports water damage at {ADDRESS1.en} after a pipe burst. Draft the acknowledgement letter and list the documents we need."}
 {"lang":"en","domain":"insurance","text":"Explain the difference between actual cash value and replacement cost to a homeowner. Keep it under 120 words, no names."}
-{"lang":"en","domain":"accounting","text":"Write the journal entry description for a prepaid annual software license of $18,000 paid on Oct 1, amortized monthly. Vendor is Microsoft."}
+{"lang":"en","domain":"accounting","text":"Write the journal entry description for a prepaid annual software license of $18,000 paid on Oct 1, amortized monthly. Vendor is Microsoft. Prepared by {PERSON1.initial}."}
 {"lang":"en","domain":"invoices","text":"Invoice INV-30412 to {PERSON1} at {ADDRESS1.en_street} shows the wrong quantity (12 instead of 10). Write a short credit note explanation."}
 {"lang":"en","domain":"e-commerce-orders","text":"Customer {PERSON1.first} says the blender arrived cracked. Order #A-772031. Write a reply offering a replacement or a full refund, her choice."}
 {"lang":"en","domain":"banking","text":"KYC review note: {PERSON1.firstlast2}, born in {LOCATION1.city}, resident of {LOCATION2.country}, occupation real estate agent. Source of funds: commission income. Flag anything a reviewer should double-check."}
@@ -191,7 +191,7 @@
 {"lang":"en","domain":"collections","text":"Hi {PERSON1.first},\n\nOur records show invoice #4410 for $2,340 is now 45 days past due.\n\nMake this reminder friendlier but keep the due date firm."}
 {"lang":"en","domain":"insurance-claims","text":"Adjuster notes, clean up: \"visited insd {PERSON1.upper} at loss location, roof shingles missing on north side, neighbor {PERSON2.last} says hail started ~4pm, est $14k\""}
 {"lang":"en","domain":"insurance","text":"Compare Allianz and AXA travel insurance for a family of four going to Japan for two weeks. Focus on medical coverage limits."}
-{"lang":"en","domain":"accounting","text":"Prepare a short variance commentary: Q3 travel expenses were $42k vs. $30k budget, mainly due to the sales offsite in Denver. No names needed."}
+{"lang":"en","domain":"accounting","text":"Prepare a short variance commentary: Q3 travel expenses were $42k vs. $30k budget, mainly due to the sales offsite in Denver. No names needed. It goes to {PERSON1} on the finance team."}
 {"lang":"en","domain":"invoices","text":"| Invoice | Client | Amount | Status |\n|---|---|---|---|\n| 1001 | {PERSON1} | $4,200 | Paid |\n| 1002 | {PERSON2} | $980 | Overdue |\n| 1003 | {PERSON3} | $12,750 | Draft |\nWrite a follow-up email for the overdue one only."}
 {"lang":"en","domain":"e-commerce-orders","text":"order_id,customer,city,total\n55120,{PERSON1},{LOCATION1.city},89.99\n55121,{PERSON2},{LOCATION2.city},214.00\n55122,{PERSON3},{LOCATION3.city},39.50\nConvert this CSV to a Markdown table sorted by total."}
 {"lang":"en","domain":"banking","text":"Account statement summary for {PERSON1.initial}: opening balance $8,420, deposits $6,100, withdrawals $7,880, closing balance $6,640. Write a two-sentence plain-English summary."}
@@ -223,7 +223,7 @@
 {"lang":"en","domain":"collections","text":"The debtor emailed: \"This is {PERSON1}. I already paid this in July, check your records.\" Write a reply asking for proof of payment without sounding accusatory."}
 {"lang":"en","domain":"insurance-claims","text":"Bodily injury claim: claimant {PERSON1.firstlast2}, treated at a clinic in {LOCATION1.city}, medical bills $3,420. Draft the reservation of rights paragraph."}
 {"lang":"en","domain":"accounting","text":"Write the description for a 1099-NEC payment to contractor {PERSON1}, $7,200 for web design in 2025."}
-{"lang":"en","domain":"invoices","text":"Translate this invoice line into plain English for a client: \"Disbursements – courier & filing fees re: matter 2026-014\"."}
+{"lang":"en","domain":"invoices","text":"Translate this invoice line into plain English for a client: \"Disbursements – courier & filing fees re: matter 2026-014\". The client is {PERSON1.first}, keep it friendly."}
 {"lang":"en","domain":"e-commerce-orders","text":"Write an apology to {PERSON1.first} whose order was delivered to the wrong house on {ADDRESS1.en_street}. Offer a reshipment today."}
 {"lang":"en","domain":"banking","text":"Draft a letter of reference confirming that {PERSON1} has held an account with us since 2014 in good standing. Do not mention balances."}
 {"lang":"en","domain":"credit","text":"Mortgage pre-approval memo: borrowers {PERSON1} and {PERSON2}, combined income $148k, target purchase in {LOCATION1.city}, max price $520k. Summarize for the loan officer."}
@@ -233,14 +233,14 @@
 {"lang":"mix","domain":"collections","text":"Collection call notunu toparla, mix kalsın: \"{PERSON1.first} Bey PTP verdi 20.10, amount 8.500 TL, follow-up call 21.10\""}
 {"lang":"mix","domain":"insurance-claims","text":"Claim file summary'si lazım: Sigortalı {PERSON1}, kaza {LOCATION1.district+LOC}, damage estimate 72.000 TL, adjuster {PERSON2.initial}. Bunu İngilizce yönetim raporuna çevir."}
 {"lang":"mix","domain":"insurance","text":"Allianz ve Anadolu Sigorta'nın kasko quote'larını karşılaştır, deductible ve coverage limitlerini table olarak göster. İsim yok."}
-{"lang":"mix","domain":"accounting","text":"Month-end close checklist'ini Türkçe yap ama teknik terimler İngilizce kalsın: accruals, prepaid, FX revaluation, intercompany."}
+{"lang":"mix","domain":"accounting","text":"Month-end close checklist'ini Türkçe yap ama teknik terimler İngilizce kalsın: accruals, prepaid, FX revaluation, intercompany. Checklist owner: {PERSON1}."}
 {"lang":"mix","domain":"invoices","text":"{PERSON1.first} Hanım invoice'u yanlış entity'ye kesmiş, doğrusu Singular Teknoloji A.Ş. olacak. Kendisine nazik bir correction request maili yaz."}
 {"lang":"mix","domain":"e-commerce-orders","text":"Order export'u Markdown table'a çevir:\nOrderID | Customer | Şehir\n4410 | {PERSON1} | {LOCATION1.city}\n4411 | {PERSON2} | {LOCATION2.city}"}
 {"lang":"mix","domain":"banking","text":"KYC onboarding notu: {PERSON1.firstlast2}, PEP değil, source of funds maaş, {LOCATION1.city+LOC} ikamet ediyor. EDD gerekir mi?"}
 {"lang":"mix","domain":"collections","text":"Bu debt collection email'ini Türkçe'ye çevir: \"Dear {PERSON1}, your account is 60 days past due. Please contact us at 0850 111 22 33.\""}
 {"lang":"en","domain":"accounting","text":"Draft the expense policy section on meal per diems ($75/day domestic, $110/day international). No names."}
 {"lang":"en","domain":"invoices","text":"Recurring invoice failed for client {PERSON1.upper}: card declined three times. Write the dunning email with a link placeholder [UPDATE_CARD]."}
-{"lang":"en","domain":"e-commerce-orders","text":"Summarize this week's returns: 142 orders returned, top reason \"wrong size\", top product Nike running shoes, refund total $9,812. Two sentences."}
+{"lang":"en","domain":"e-commerce-orders","text":"Summarize this week's returns: 142 orders returned, top reason \"wrong size\", top product Nike running shoes, refund total $9,812. Two sentences. Address it to our ops lead, {PERSON1.first}."}
 {"lang":"en","domain":"insurance","text":"Life insurance beneficiary change request from {PERSON1}: remove {PERSON2}, add {PERSON3} at 100%. Draft the confirmation letter."}
 {"lang":"en","domain":"collections","text":"Our vendor sent the list of accounts they couldn't contact. Draft a polite email back asking for the attempt logs. Vendor contact: {PERSON1}, ops@example.com."}
 {"lang":"en","domain":"credit","text":"Explain debt-to-income ratio using a simple example. Use fictional round numbers, not a real person."}
@@ -284,9 +284,9 @@
 {"lang":"mix","domain":"collections","text":"Customer'ın mesajı: \"{PERSON1} ben, deprem sonrası {LOCATION1.city+ABL} taşındım, ödeyemiyorum.\" Bunu hardship case olarak İngilizce özetle."}
 {"lang":"mix","domain":"insurance","text":"Kasko vs. trafik sigortası farkını expat müşteriye İngilizce anlat, Türkçe terimleri parantez içinde ver."}
 {"lang":"mix","domain":"insurance-claims","text":"Email to {PERSON1.first}: \"Your claim CLM-55102 has been approved, ödeme 5 iş günü içinde hesabınıza geçecek.\" Bunu tamamen Türkçe yap."}
-{"lang":"mix","domain":"accounting","text":"Intercompany reconciliation'da 12.400 EUR fark var, Türkiye entity vs. Germany entity. Olası nedenleri ve next step'leri listele."}
+{"lang":"mix","domain":"accounting","text":"Intercompany reconciliation'da 12.400 EUR fark var, Türkiye entity vs. Germany entity. Olası nedenleri ve next step'leri listele. Germany tarafındaki contact {PERSON1} ile call ayarlayacağım, agenda da öner."}
 {"lang":"mix","domain":"invoices","text":"Client {PERSON1.firstlast2} invoice'ı TL değil USD istiyor. Kur farkı faturası nasıl kesilir, kısaca açıkla."}
-{"lang":"mix","domain":"e-commerce-orders","text":"Weekly orders özetini Slack'e yaz: 3.410 order, AOV 612 TL, return rate %3,1. Kısa ve emoji'siz olsun."}
+{"lang":"mix","domain":"e-commerce-orders","text":"Weekly orders özetini Slack'e yaz: 3.410 order, AOV 612 TL, return rate %3,1. Kısa ve emoji'siz olsun. Mesajı {PERSON1.first} adına at."}
 {"lang":"mix","domain":"banking","text":"{PERSON1.lower} adlı kullanıcı mobile app'te 'şifremi unuttum' flow'unda takılıyor, OTP gelmiyor. Bug ticket yaz, phone 0505 000 00 01."}
 {"lang":"mix","domain":"credit","text":"Sabancı Holding ve Koç Holding'in public bond ratings'ini kıyaslayan kısa bir not yaz, yatırım tavsiyesi olmasın."}
 {"lang":"mix","domain":"collections","text":"Recovery letter draft: Sayın {PERSON1}, outstanding balance'ınız 23.400 TL... şeklinde başlayan metni full Türkçe ve resmi yap."}
