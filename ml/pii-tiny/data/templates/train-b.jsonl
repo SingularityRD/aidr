@@ -198,3 +198,53 @@
 {"lang": "en", "domain": "credit", "text": "Mr. {PERSON1.last} is asking why his credit limit was reduced from $15,000 to $9,000. Draft a response citing increased utilization across other accounts."}
 {"lang": "en", "domain": "collections", "text": "Write three SMS templates for early-stage collections (1, 7 and 14 days past due). Use [Name] as a placeholder, no real names."}
 {"lang": "en", "domain": "insurance-claims", "text": "Recorded statement transcript, summarize:\nAdjuster: Can you state your name?\nInsured: {PERSON1}.\nAdjuster: Where did the accident happen?\nInsured: On the corner by {ADDRESS1.en_street}, I was turning left.\nAdjuster: Who was the other driver?\nInsured: I think her name was {PERSON2}."}
+{"lang": "en", "domain": "insurance", "text": "Policy endorsement: add {PERSON1} as a named driver to auto policy AP-5521098, effective Nov 1. Write the confirmation email to the policyholder {PERSON2}."}
+{"lang": "en", "domain": "accounting", "text": "Our bookkeeper {PERSON1.first} wants to know whether a $2,400 laptop should be expensed or capitalized. Our threshold is $2,500. Answer in two sentences."}
+{"lang": "en", "domain": "invoices", "text": "Rewrite this invoice description so it's clearer: \"consulting svc per SOW#7 - Sept - lead: {PERSON1.lower} - 62.5h @ 150\""}
+{"lang": "en", "domain": "e-commerce-orders", "text": "Refund email draft:\n\nDear {PERSON1},\nWe have processed your refund of $64.20 to the card ending 4242. Please allow 5-10 business days.\n\nBest,\n{PERSON2.first}\nCustomer Care\n\nShorten it and make it warmer."}
+{"lang": "en", "domain": "banking", "text": "Explain what an ACH return code R01 means and how a small business should handle it. No customer names."}
+{"lang": "en", "domain": "credit", "text": "Loan application free-text field: \"I'm {PERSON1}, I run a food truck in {LOCATION1.city} and need $40k for a second truck.\" Turn this into an underwriter summary with risks."}
+{"lang": "en", "domain": "collections", "text": "Our agent {PERSON1.first} logged: debtor {PERSON2} moved to {LOCATION1.city}, new address {ADDRESS1.en}. Draft the skip-trace update note for the file."}
+{"lang": "en", "domain": "insurance-claims", "text": "Draft a subrogation demand letter to the other driver's insurer. Our insured: {PERSON1}. At-fault driver: {PERSON2}. Paid amount: $9,860. Date of loss: Aug 14, 2026."}
+{"lang": "en", "domain": "insurance", "text": "Which questions should we ask a small bakery owner when quoting a business owner's policy? Give me a checklist."}
+{"lang": "en", "domain": "accounting", "text": "Reconcile: bank shows $52,310.44, ledger shows $51,890.44. Outstanding check #2214 to {PERSON1} for $420. Does that explain the difference? Show the math."}
+{"lang": "en", "domain": "invoices", "text": "Send a polite nudge to {PERSON1.first} in accounts payable at Johnson & Johnson about invoice INV-7781 ($18,400), due Sept 30, still unpaid."}
+{"lang": "en", "domain": "e-commerce-orders", "text": "{\"order\": 99231, \"name\": \"{PERSON1}\", \"address\": \"{ADDRESS1.en}\", \"items\": [\"Dell monitor\", \"HDMI cable\"], \"status\": \"returned\"}\nWrite a one-line status update for the support ticket."}
+{"lang": "en", "domain": "banking", "text": "Fraud alert follow-up: customer {PERSON1} confirmed the $1,299 Apple Store charge was not theirs. Write the case note and next steps."}
+{"lang": "en", "domain": "credit", "text": "Prepare talking points for the credit committee about {PERSON1.last} Holdings' request to extend its term loan by 18 months. DSCR fell to 1.1x."}
+{"lang": "en", "domain": "collections", "text": "Draft a hardship plan agreement summary for {PERSON1}: balance $6,750, payments of $150/month for 12 months, then re-evaluate. Plain language."}
+{"lang": "en", "domain": "insurance-claims", "text": "Summarize the claim timeline:\n- 09/02 FNOL by {PERSON1}\n- 09/05 inspection by adjuster {PERSON2.initial}\n- 09/19 estimate approved\n- 10/03 payment issued\nWhat took the longest?"}
+{"lang": "en", "domain": "insurance", "text": "Write a short FAQ answer: does homeowners insurance cover damage from a fallen tree? Keep it general, no carrier names."}
+{"lang": "en", "domain": "accounting", "text": "Our CFO, Ms. {PERSON1.last}, wants a one-paragraph summary of why the September close slipped by 4 days. Reasons: ERP upgrade, two staff out sick, late vendor invoices."}
+{"lang": "en", "domain": "invoices", "text": "Can you check if this invoice text is compliant? \"Bill to: {PERSON1}, {ADDRESS1.en}. Services: tax prep 2025. Total: $650. Terms: Net 15.\""}
+{"lang": "en", "domain": "e-commerce-orders", "text": "Write a product Q&A answer: a buyer asks whether the Tesla wall connector we sell works with Ford EVs. Be accurate and neutral."}
+{"lang": "en", "domain": "banking", "text": "Branch visit summary: {PERSON1} and {PERSON2} opened a joint savings account, initial deposit $5,000, beneficiary is their son {PERSON3.first}. Write the CRM note."}
+{"lang": "en", "domain": "credit", "text": "Is it fair lending compliant to ask a loan applicant about their marital status? Answer briefly for a US bank."}
+{"lang": "en", "domain": "collections", "text": "The debtor emailed: \"This is {PERSON1}. I already paid this in July, check your records.\" Write a reply asking for proof of payment without sounding accusatory."}
+{"lang": "en", "domain": "insurance-claims", "text": "Bodily injury claim: claimant {PERSON1.firstlast2}, treated at a clinic in {LOCATION1.city}, medical bills $3,420. Draft the reservation of rights paragraph."}
+{"lang": "en", "domain": "accounting", "text": "Write the description for a 1099-NEC payment to contractor {PERSON1}, $7,200 for web design in 2025."}
+{"lang": "en", "domain": "invoices", "text": "Translate this invoice line into plain English for a client: \"Disbursements – courier & filing fees re: matter 2026-014\"."}
+{"lang": "en", "domain": "e-commerce-orders", "text": "Write an apology to {PERSON1.first} whose order was delivered to the wrong house on {ADDRESS1.en_street}. Offer a reshipment today."}
+{"lang": "en", "domain": "banking", "text": "Draft a letter of reference confirming that {PERSON1} has held an account with us since 2014 in good standing. Do not mention balances."}
+{"lang": "en", "domain": "credit", "text": "Mortgage pre-approval memo: borrowers {PERSON1} and {PERSON2}, combined income $148k, target purchase in {LOCATION1.city}, max price $520k. Summarize for the loan officer."}
+{"lang": "en", "domain": "insurance-claims", "text": "Write a denial letter for a claim excluded under the flood exclusion. Insured: {PERSON1}. Property: {ADDRESS1.en}. Be clear and include appeal rights."}
+{"lang": "mix", "domain": "banking", "text": "{PERSON1} hesabına gelen 3.000 EUR SWIFT transfer için compliance check yapmamız lazım, sender {LOCATION1.country} kaynaklı. Kısa bir risk note yazar mısın, İngilizce olsun."}
+{"lang": "mix", "domain": "credit", "text": "Credit committee'ye gidecek notu Türkçe'ye çevir: \"{PERSON1} requests TRY 3M working capital, collateral: mortgage on property in {LOCATION1.city}. Recommend approval.\""}
+{"lang": "mix", "domain": "collections", "text": "Collection call notunu toparla, mix kalsın: \"{PERSON1.first} Bey PTP verdi 20.10, amount 8.500 TL, follow-up call 21.10\""}
+{"lang": "mix", "domain": "insurance-claims", "text": "Claim file summary'si lazım: Sigortalı {PERSON1}, kaza {LOCATION1.district+LOC}, damage estimate 72.000 TL, adjuster {PERSON2.initial}. Bunu İngilizce yönetim raporuna çevir."}
+{"lang": "mix", "domain": "insurance", "text": "Allianz ve Anadolu Sigorta'nın kasko quote'larını karşılaştır, deductible ve coverage limitlerini table olarak göster. İsim yok."}
+{"lang": "mix", "domain": "accounting", "text": "Month-end close checklist'ini Türkçe yap ama teknik terimler İngilizce kalsın: accruals, prepaid, FX revaluation, intercompany."}
+{"lang": "mix", "domain": "invoices", "text": "{PERSON1.first} Hanım invoice'u yanlış entity'ye kesmiş, doğrusu Singular Teknoloji A.Ş. olacak. Kendisine nazik bir correction request maili yaz."}
+{"lang": "mix", "domain": "e-commerce-orders", "text": "Order export'u Markdown table'a çevir:\nOrderID | Customer | Şehir\n4410 | {PERSON1} | {LOCATION1.city}\n4411 | {PERSON2} | {LOCATION2.city}"}
+{"lang": "mix", "domain": "banking", "text": "KYC onboarding notu: {PERSON1.firstlast2}, PEP değil, source of funds maaş, {LOCATION1.city+LOC} ikamet ediyor. EDD gerekir mi?"}
+{"lang": "mix", "domain": "collections", "text": "Bu debt collection email'ini Türkçe'ye çevir: \"Dear {PERSON1}, your account is 60 days past due. Please contact us at 0850 111 22 33.\""}
+{"lang": "en", "domain": "accounting", "text": "Draft the expense policy section on meal per diems ($75/day domestic, $110/day international). No names."}
+{"lang": "en", "domain": "invoices", "text": "Recurring invoice failed for client {PERSON1.upper}: card declined three times. Write the dunning email with a link placeholder [UPDATE_CARD]."}
+{"lang": "en", "domain": "e-commerce-orders", "text": "Summarize this week's returns: 142 orders returned, top reason \"wrong size\", top product Nike running shoes, refund total $9,812. Two sentences."}
+{"lang": "en", "domain": "insurance", "text": "Life insurance beneficiary change request from {PERSON1}: remove {PERSON2}, add {PERSON3} at 100%. Draft the confirmation letter."}
+{"lang": "en", "domain": "collections", "text": "Our vendor sent the list of accounts they couldn't contact. Draft a polite email back asking for the attempt logs. Vendor contact: {PERSON1}, ops@example.com."}
+{"lang": "en", "domain": "credit", "text": "Explain debt-to-income ratio using a simple example. Use fictional round numbers, not a real person."}
+{"lang": "en", "domain": "banking", "text": "Escalation summary: {PERSON1} called 3 times about a frozen debit card while traveling in {LOCATION1.country}. Agent {PERSON2.first} unblocked it on the 3rd call. Write the complaint resolution note."}
+{"lang": "en", "domain": "insurance-claims", "text": "[14:02] {PERSON1.first}: hey did the Henderson... sorry, did the insured on CLM-4471 send photos?\n[14:03] {PERSON2.first}: yes, 12 photos, roof and gutter\n[14:05] {PERSON1.first}: great, approve the $6.2k estimate\nTurn this chat into a file note."}
+{"lang": "en", "domain": "accounting", "text": "Payroll correction: {PERSON1} was underpaid $312.50 in the Sept 30 run due to a missed overtime entry. Write a short note to the employee."}
+{"lang": "en", "domain": "e-commerce-orders", "text": "A buyer named {PERSON1} left a 1-star review saying the McDonald's-themed toy set was missing parts. Draft a public reply."}
