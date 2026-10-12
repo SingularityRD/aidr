@@ -147,3 +147,154 @@
 {"lang": "en", "domain": "data-eng", "text": "Sample JSON from the CRM:\n{\"owner\": \"{PERSON1}\", \"account\": \"{NEG:org}\", \"stage\": \"won\"}\nWrite a {NEG:tech} model that flattens this."}
 {"lang": "en", "domain": "architecture", "text": "Explain the {NEG:eponym} and how it affects our {NEG:tech} queue design."}
 {"lang": "en", "domain": "software-dev", "text": "{NEG:tech} crashes with exit code 137 on {NEG:tech}. Is that OOM?"}
+{"lang": "tr", "domain": "yazilim", "text": "{NEG:tech} mi {NEG:tech} mi? Küçük bir iç yönetim paneli için hangisini önerirsin, ekipte iki geliştirici var."}
+{"lang": "tr", "domain": "yazilim", "text": "{PERSON1.first} dedi ki {NEG:tech} ile {NEG:tech} arasında bağlantı havuzu paylaşılamaz. Bu doğru mu?"}
+{"lang": "tr", "domain": "yapay-zeka", "text": "{NEG:ai} mı daha iyi kod yazıyor yoksa {NEG:ai} mı? Tarafsız bir karşılaştırma yap."}
+{"lang": "tr", "domain": "yazilim", "text": "Uygulamayı başlatınca şu hatayı alıyorum:\nCaused by: java.lang.IllegalStateException: Failed to load ApplicationContext\n{NEG:tech+ABL} {NEG:tech+DAT} geçtik, ne eksik olabilir?"}
+{"lang": "tr", "domain": "bt-destek", "text": "Talep #2231, açan: {PERSON1}. \"{NEG:brand} bilgisayarda güncellemeden sonra {NEG:tech} açılmıyor.\" Kibar bir ilk yanıt yaz."}
+{"lang": "tr", "domain": "veri", "text": "Gece çalışan {NEG:tech} işi {NEG:tech+DAT} yükleme adımında patlıyor. Log: `connection reset by peer`. Nereden başlayayım?"}
+{"lang": "tr", "domain": "mimari", "text": "Olay yolu olarak {NEG:tech+ACC} mı yoksa {NEG:tech+ACC} mı kullanmalıyız? 8 kişilik bir ekibiz, her şey {NEG:tech} üzerinde."}
+{"lang": "tr", "domain": "yapay-zeka", "text": "{NEG:ai} için bir prompt yaz: {NEG:tech} sürüm notlarını yöneticiler için üç maddeye indirsin."}
+{"lang": "tr", "domain": "yazilim", "text": "// TODO({PERSON1.first}): graf büyüyünce {NEG:eponym} ile değiştir\nBu yorum mantıklı mı? Bizim {NEG:tech} servisinde ne zaman fark eder?"}
+{"lang": "tr", "domain": "guvenlik", "text": "Kontrollerimizi {NEG:law} ve {NEG:law} maddeleriyle eşleştir. Tablo: kontrol, kanıt, sorumlu ekip."}
+{"lang": "tr", "domain": "yazilim", "text": "`{NEG:tech}` lokalde sorunsuz ama CI'da migration sırasında timeout veriyor. CI {NEG:tech} konteynerleri kullanıyor. Fikrin var mı?"}
+{"lang": "tr", "domain": "veri", "text": "{NEG:eponym} nasıl çalışıyor, bizim {NEG:tech} işi tekrar eden kayıtları bulmak için neden bunu kullanıyor?"}
+{"lang": "tr", "domain": "yazilim", "text": "Şu test verisini daha gerçekçi yap:\nconst user = { id: 7, ad: \"{PERSON1}\", eposta: \"test7@ornek.com.tr\" };\n{NEG:tech} + {NEG:tech} entegrasyon testlerinde kullanılıyor."}
+{"lang": "tr", "domain": "bt-destek", "text": "{NEG:org} bizden SSO için {NEG:tech+ABL} {NEG:tech+DAT} geçmemizi istedi. Yardım masası için geçiş kontrol listesi hazırla."}
+{"lang": "tr", "domain": "yapay-zeka", "text": "Aynı hatayı {NEG:ai+DAT} ve {NEG:ai+DAT} sordum, birbirine zıt cevaplar verdiler. Hangisi doğru?\nTypeError: undefined is not a function"}
+{"lang": "tr", "domain": "yazilim", "text": "Bu PR açıklamasını toparla:\n\"cache'i {NEG:tech+DAT} aldım, {NEG:tech+ACC} kaldırdım, {PERSON1.first} config kısmına bakarsan sevinirim, testleri {PERSON2.first} kontrol etti\""}
+{"lang": "tr", "domain": "mimari", "text": "Bir fintek girişimi {NEG:tech} ile mi başlamalı yoksa direkt {NEG:tech+DAT} mi geçmeli? Seneye {NEG:law} denetimi var."}
+{"lang": "tr", "domain": "veri", "text": "2 TB'lık analitik ambar için {NEG:tech}, {NEG:tech} ve {NEG:tech+ACC} karşılaştıran bir karar matrisi çıkar."}
+{"lang": "tr", "domain": "yazilim", "text": "git blame bu satırı 2020'de {PERSON1+GEN} yazdığını söylüyor:\nif (deneme > 3) throw new Error(\"vazgeçtim\");\nNeden 3 sabit yazılmış olabilir? Artık retry için {NEG:tech} kullanıyoruz, {NEG:tech} ayarından okumak daha mı doğru?"}
+{"lang": "tr", "domain": "yapay-zeka", "text": "Hukuk ekibi {NEG:ai} ve {NEG:ai+GEN} girilen verileri eğitimde kullanıp kullanmadığını soruyor. {NEG:law} açısından sade bir özet yaz."}
+{"lang": "tr", "domain": "bt-destek", "text": "3. kattaki {NEG:brand} yazıcı {NEG:tech} içinde görünmüyor. Sürücü 5.2. Hangi adımları deneyeyim?"}
+{"lang": "tr", "domain": "yazilim", "text": "{NEG:tech} ile {NEG:tech} arasında hot reload farkı ne? sürekli state kaybediyorum"}
+{"lang": "tr", "domain": "guvenlik", "text": "{PERSON1+GEN} pentest raporundaki bulgu: \"/arama sayfasında yansıyan XSS, bkz. {NEG:law}.\" Önyüz {NEG:tech}. Kalıcı çözüm ne?"}
+{"lang": "tr", "domain": "veri", "text": "Şu {NEG:tech} sorgusunu {NEG:tech} söz dizimine çevir:\nSELECT musteri_id, COUNT(*) FROM siparis GROUP BY 1;"}
+{"lang": "tr", "domain": "mimari", "text": "ASCII diyagram çiz: tarayıcı -> {NEG:tech} -> {NEG:tech} üzerindeki API podları -> {NEG:tech}. Sonra tek hata noktalarını listele."}
+{"lang": "tr", "domain": "yazilim", "text": "Daily notlarını kısa bir özete çevir:\n- {PERSON1.first}: {NEG:tech} güncellemesi bitti, {NEG:tech} lisansı bekleniyor\n- {PERSON2.first}: testler yine kararsız\n- {PERSON3.first}: nöbette"}
+{"lang": "tr", "domain": "yazilim", "text": "n = 40 için {NEG:eponym} neden benim döngümden farklı sonuç veriyor? Kod {NEG:tech} ile yazıldı."}
+{"lang": "tr", "domain": "bt-destek", "text": "{NEG:org} yeni laptopları {NEG:tech} kurulu gönderdi. Silmeden {NEG:tech+DAT} nasıl kaydederiz?"}
+{"lang": "tr", "domain": "yazilim", "text": "Şu Python testi neden kırılıyor?\ndef test_tam_ad():\n    k = Kullanici(ad=\"{PERSON1.first}\", soyad=\"{PERSON1.last}\")\n    assert k.tam_ad() == \"{PERSON1.upper}\"\nORM olarak {NEG:tech+ABL} {NEG:tech+DAT} geçtik."}
+{"lang": "tr", "domain": "veri", "text": "{NEG:tech} consumer lag her gece 02:00'de 2 milyona çıkıyor. Üretici bir {NEG:tech} batch işi. Muhtemel sebep?"}
+{"lang": "tr", "domain": "yapay-zeka", "text": "Şemadan SQL yazma konusunda {NEG:ai}, {NEG:ai} ve {NEG:ai+ACC} tablo halinde karşılaştır."}
+{"lang": "tr", "domain": "guvenlik", "text": "Kısa bir politika paragrafı yaz: çalışanlar {NEG:ai+ACC} yalnızca şirket hesabıyla kullanabilir, {NEG:law} kapsamındaki veriyi asla yapıştıramaz."}
+{"lang": "tr", "domain": "yazilim", "text": "{PERSON1.first+GEN} kod inceleme yorumu: \"{NEG:tech+ACC} burada doğrudan çağırma, {NEG:tech} için yaptığımız gibi sarmala\". Sarmala derken ne kastediyor?"}
+{"lang": "tr", "domain": "mimari", "text": "{NEG:tech} 2026'da hâlâ mantıklı mı, yoksa çoğu ekip {NEG:tech+DAT} mi geçti?"}
+{"lang": "tr", "domain": "bt-destek", "text": "Tüm personele duyuru yaz: {NEG:tech} cumartesi 22:00-02:00 arası {NEG:tech} yükseltmesi nedeniyle kapalı olacak. 60 kelimeyi geçmesin."}
+{"lang": "tr", "domain": "veri", "text": "Yeni başlayan bir analiste {NEG:eponym+ACC} bizim {NEG:tech} satış tablolarıyla örnek vererek anlat."}
+{"lang": "tr", "domain": "yazilim", "text": "Jira kaydı ODE-118\nAçan: {PERSON1}\nAtanan: {PERSON2}\nÖzet: {NEG:tech} webhook tekrarları {NEG:tech} içinde mükerrer fatura oluşturuyor\nKabul kriterlerini yaz."}
+{"lang": "tr", "domain": "yapay-zeka", "text": "{NEG:ai} sürekli {NEG:tech} içinde olmayan metot isimleri uyduruyor. Gerçek dokümana bakmasını nasıl sağlarım?"}
+{"lang": "tr", "domain": "guvenlik", "text": "Denetçi {NEG:law} erişim gözden geçirme şartını {NEG:tech} ile nasıl karşıladığımızı sordu. Cevap taslağı hazırla."}
+{"lang": "tr", "domain": "bt-destek", "text": "Yardım masası kanalında {PERSON1.first} yazmış: \"{NEG:tech} lisansım bitmiş diyor ama {NEG:org} geçen hafta yeniledi\". Neyi kontrol etmeliyim?"}
+{"lang": "tr", "domain": "mimari", "text": "{NEG:tech+ACC} {NEG:tech} üzerinde kendimiz çalıştırıyoruz. Yönetilen servise mi geçelim? Maliyet gecikmeden daha önemli."}
+{"lang": "tr", "domain": "yazilim", "text": "Bu log satırını hangi bileşen üretmiş?\n2026-03-04T09:12:44Z INFO [{NEG:tech}] consumer group fatura-v2 yeniden dengelendi\nAynı makinede {NEG:tech} de çalışıyor."}
+{"lang": "tr", "domain": "yapay-zeka", "text": "{NEG:ai} kıdemli bir {NEG:tech} geliştiricisi gibi PR incelesin diye sistem promptu yaz."}
+{"lang": "tr", "domain": "yazilim", "text": "Bu {NEG:tech} testinde sahte yazar \"{PERSON1}\", repo adı \"{NEG:tech}-eklentiler\". İkisini de nötr bir isimle değiştir, test geçmeye devam etsin."}
+{"lang": "tr", "domain": "guvenlik", "text": "{NEG:law} ile {NEG:law} arasındaki farkı 5 dakikası olan bir CTO için özetle."}
+{"lang": "tr", "domain": "veri", "text": "Finanstan {PERSON1.first} Hanım {NEG:tech} üzerinde bir {NEG:tech} panosu istiyor. En az zahmetli bağlayıcı hangisi?"}
+{"lang": "tr", "domain": "bt-destek", "text": "Bilgi bankası makalesi yaz: kullanıcı {NEG:brand} telefonunu kaybettiyse {NEG:tech} üzerinde MFA nasıl sıfırlanır?"}
+{"lang": "tr", "domain": "mimari", "text": "CTO {NEG:tech} seviyor, ekip {NEG:tech} istiyor. İkisi için de tarafsız argümanlar ver."}
+{"lang": "tr", "domain": "yazilim", "text": "package.json'da çakışma var: {PERSON1.first+GEN} dalı {NEG:tech} ekliyor, benimki {NEG:tech}. İkisi birlikte çalışır mı?"}
+{"lang": "tr", "domain": "yapay-zeka", "text": "{NEG:ai+ACC} müşteri taleplerini açığa çıkarmadan {NEG:tech} bilgi tabanımıza nasıl bağlarız?"}
+{"lang": "tr", "domain": "veri", "text": "Tedarikçiden gelen CSV başlığı: id,ad_soyad,sehir\nÖrnek satır: 17,\"{PERSON1}\",{LOCATION1.city}\n{NEG:tech} için şema yaz, sonra {NEG:tech+DAT} yükle."}
+{"lang": "tr", "domain": "guvenlik", "text": "{NEG:org}, {NEG:tech} loglarımızın {NEG:law} gereği 12 ay saklandığına dair kanıt istiyor. Hangi ayarlar bunu gösterir?"}
+{"lang": "tr", "domain": "bt-destek", "text": "Slack'te {PERSON1.first} sordu: \"{NEG:tech} çöktü mü yoksa sadece bende mi?\" {NEG:org} durum sayfası yeşil. Bizim tarafı nasıl kontrol ederim?"}
+{"lang": "tr", "domain": "yazilim", "text": "{NEG:eponym} ile ikili yığın versiyonunun karmaşıklığını karşılaştır, bizdeki {NEG:tech} implementasyonu çok yavaş"}
+{"lang": "tr", "domain": "mimari", "text": "{PERSON1} ve {PERSON2+GEN} retro notu: \"{NEG:tech+ACC} çok erken seçtik, {NEG:tech} ile devam etmeliydik\". Bunu çıkarılan derslere dönüştür."}
+{"lang": "tr", "domain": "veri", "text": "{NEG:tech+GEN} materialized view karşılığı {NEG:tech} tarafında ne?"}
+{"lang": "tr", "domain": "guvenlik", "text": "Bulguları {NEG:law} kategorisine göre sınıflandır: açık S3 kovası, koda gömülü {NEG:tech} anahtarı, eksik rate limit."}
+{"lang": "tr", "domain": "bt-destek", "text": "{NEG:brand} dock firmware güncellemesinden sonra {NEG:tech} donuyor diyorlar. Bir ön inceleme anketi yaz."}
+{"lang": "tr", "domain": "yapay-zeka", "text": "Milyon token başına hangisi daha ucuz, {NEG:ai} mı {NEG:ai} mı? Yoğun kodlama kullanımı varsay."}
+{"lang": "tr", "domain": "mimari", "text": "{NEG:tech} üzerinde {NEG:eponym} kullanarak bir hız sınırlayıcı tasarla. Token bucket alternatifini de anlat."}
+{"lang": "tr", "domain": "yazilim", "text": "Özellik bayrağımızın adı \"{NEG:word}\" ve kimse nedenini hatırlamıyor. {NEG:tech} önbelleğini açıp kapatıyor. Daha iyi bir isim öner."}
+{"lang": "tr", "domain": "yazilim", "text": "`feature/{NEG:word}-arama` dalı {NEG:tech} derlemesini bozuyor. Değişiklikler çoğunlukla {NEG:tech} adaptöründe."}
+{"lang": "tr", "domain": "yapay-zeka", "text": "{PERSON1.first} kod incelemede {NEG:ai} kullanıyor, ben {NEG:ai}. Takım wikisi için tek paragraflık adil bir karşılaştırma yaz."}
+{"lang": "tr", "domain": "veri", "text": "{NEG:org} ve {NEG:org} sipariş dosyalarını SFTP ile {NEG:tech+DAT} gönderiyor. Yüklemeden önce şemayı nasıl doğrularım?"}
+{"lang": "tr", "domain": "bt-destek", "text": "Yeni çalışanımız {PERSON1} {NEG:tech+DAT} giriş yapamıyor. Hesabı dün {NEG:tech} üzerinde açıldı. Ona göndereceğim adımları yaz."}
+{"lang": "tr", "domain": "yazilim", "text": "Şu commit geçmişini changelog için okunur hale getir:\na1f3 {PERSON1.first}: {NEG:tech} 3.2'ye yükseltildi\nc77e {PERSON2.first}: {NEG:tech} null kontrolü düzeltildi"}
+{"lang": "tr", "domain": "yapay-zeka", "text": "{NEG:ai+ACC} kendi {NEG:tech} kod tabanımızla ince ayar yapabilir miyiz, yoksa RAG yeterli mi?"}
+{"lang": "tr", "domain": "guvenlik", "text": "{NEG:org} güvenlik anketinde \"{NEG:law} uyumlu musunuz?\" diye soruyor. Kısmen uyumluyuz, dürüst bir cevap yaz."}
+{"lang": "tr", "domain": "yazilim", "text": "{PERSON1.first+GEN} notebook'undan bir parça:\ndf[df.sorumlu == \"{PERSON1.lower}\"].head()\nBunu pandas yerine {NEG:tech} ile çalışacak şekilde yaz, sonucu {NEG:tech+DAT} gönder."}
+{"lang": "tr", "domain": "mimari", "text": "3 servisli bir monolit için {NEG:tech} fazla mı? Şu an {NEG:tech} ile deploy ediyoruz."}
+{"lang": "tr", "domain": "yapay-zeka", "text": "{NEG:ai+GEN} verdiği cevabı {PERSON1.first+GEN} anlayacağı şekilde, {NEG:tech} jargonu olmadan Jira yorumuna çevir."}
+{"lang": "tr", "domain": "veri", "text": "{NEG:eponym} bizim {NEG:tech} metriklerinde anomali bulmaya nasıl yardımcı olur? Kısa bir Python örneği ver."}
+{"lang": "tr", "domain": "guvenlik", "text": "Repoya bir {NEG:tech} API anahtarı commitlenmiş. {NEG:law} kapsamında olay müdahale adımlarını yaz."}
+{"lang": "tr", "domain": "bt-destek", "text": "300 Windows makinede uzaktan destek için {NEG:tech} ile {NEG:tech+ACC} karşılaştır."}
+{"lang": "tr", "domain": "mimari", "text": "{PERSON1+GEN} tasarım dokümanı arama için {NEG:tech} öneriyor. Bence {NEG:tech} daha basit. Saygılı bir karşı öneri yazmama yardım et."}
+{"lang": "tr", "domain": "yapay-zeka", "text": "Geliştiriciler stack trace'leri {NEG:ai+DAT} yapıştırıyor. Önce neyi temizlemeliyiz: sunucu adları, {NEG:tech} tokenları, müşteri adları?"}
+{"lang": "tr", "domain": "yazilim", "text": "{PERSON1.first} Bey şöyle bir yorum bırakmış: \"print yerine {NEG:tech} logger kullan\". Bunu {NEG:tech} görevindeki koda uygula."}
+{"lang": "tr", "domain": "guvenlik", "text": "{NEG:eponym+ACC} bir ürün yöneticisine anlat ve {NEG:tech} girişimizde neden kullandığımızı açıkla."}
+{"lang": "tr", "domain": "bt-destek", "text": "{NEG:brand} kulaklık {NEG:tech} toplantılarında algılanmıyor ama {NEG:tech} içinde çalışıyor. Çözüm?"}
+{"lang": "tr", "domain": "yazilim", "text": "Seed dosyamızda yönetici \"{PERSON1}\", şirket \"{NEG:org}\". {NEG:tech} için aynı tarzda 5 satır daha üret."}
+{"lang": "tr", "domain": "veri", "text": "Aynı filtre için {NEG:tech} 0 satır, {NEG:tech} 12 bin satır gösteriyor. Neden?"}
+{"lang": "tr", "domain": "yazilim", "text": "Bu konuşmayı PR için özetle:\n{PERSON1.first}: {NEG:tech} yükseltmesi tarih ayrıştırmayı bozdu\n{PERSON2.first}: tarihler için {NEG:tech} mi kullansak?\n{PERSON1.first}: olur ama bu PR'da değil"}
+{"lang": "tr", "domain": "guvenlik", "text": "SOC ekibimiz {NEG:tech} kullanıyor. Yeni ülkelerden gelen {NEG:tech} yönetici girişleri için bir tespit kuralı fikri yaz."}
+{"lang": "tr", "domain": "yazilim", "text": "{NEG:tech} neden ilk istekte bu kadar yavaş? soğuk başlangıç mı? {NEG:tech} serverless üzerindeyiz"}
+{"lang": "tr", "domain": "yapay-zeka", "text": "{PERSON1.first} {NEG:tech} chatbotumuzu {NEG:ai} ile değiştirmek istiyor. 5 maddede riskleri yaz."}
+{"lang": "tr", "domain": "yazilim", "text": "{NEG:tech} şunu diyor:\nE11000 duplicate key error collection: magaza.kullanicilar\nKayıt bir {NEG:tech} worker'ından geliyor. Nasıl idempotent yaparım?"}
+{"lang": "tr", "domain": "mimari", "text": "{NEG:org} on-prem istiyor, {NEG:org} SaaS. Tek bir {NEG:tech} kod tabanı ikisine de hizmet edebilir mi?"}
+{"lang": "tr", "domain": "yapay-zeka", "text": "{NEG:ai+ACC} {NEG:ai} gibi kendi VPC'mizde çalıştırabilir miyiz? {NEG:law} kapsamındayız."}
+{"lang": "tr", "domain": "veri", "text": "{PERSON1} işten ayrıldı; {NEG:tech} notebook'ları bir {NEG:tech} servis hesabına bağlı. Bunları güvenli şekilde nasıl devralırız?"}
+{"lang": "mix", "domain": "yazilim", "text": "Bu stack trace'i açıklar mısın? {NEG:tech} upgrade'den sonra başladı:\norg.hibernate.LazyInitializationException: could not initialize proxy - no Session\nBackend {NEG:tech}, deploy {NEG:tech} üzerinde."}
+{"lang": "mix", "domain": "yazilim", "text": "{PERSON1.first} dedi ki {NEG:tech} ile {NEG:tech} arasında race condition var, ama ben reproduce edemiyorum. Nasıl debug ederim?"}
+{"lang": "mix", "domain": "yapay-zeka", "text": "{NEG:ai} mi {NEG:ai} mi, code review için hangisi daha az false positive veriyor? Kısa yaz."}
+{"lang": "mix", "domain": "bt-destek", "text": "Ticket'ı {PERSON1} açmış: \"{NEG:tech} login ekranında loop'a giriyor\". {NEG:brand} laptop, Windows 11. Root cause ne olabilir?"}
+{"lang": "mix", "domain": "mimari", "text": "Microservice'leri {NEG:tech} üzerine taşıyalım mı, yoksa {NEG:tech} ile monolith'te mi kalalım? Takım 6 kişi."}
+{"lang": "mix", "domain": "veri", "text": "{NEG:tech} pipeline'ı {NEG:tech+DAT} yazarken schema drift oluyor. Best practice ne?"}
+{"lang": "mix", "domain": "yazilim", "text": "Şu unit test'i düzelt:\nexpect(formatName(\"{PERSON1.first}\", \"{PERSON1.last}\")).toBe(\"{PERSON1.initial}\");\n{NEG:tech} + {NEG:tech} kullanıyoruz."}
+{"lang": "mix", "domain": "guvenlik", "text": "{NEG:law} ve {NEG:law} için gap analysis lazım, özellikle logging ve access control kısmı. Tablo yap."}
+{"lang": "mix", "domain": "yapay-zeka", "text": "{NEG:ai+DAT} şu prompt'u verdim ama {NEG:tech} kodunu yarım bırakıyor. Prompt'u nasıl iyileştiririm?"}
+{"lang": "mix", "domain": "yazilim", "text": "Code review'da {PERSON1.first} yazmış: \"{NEG:tech} yerine {NEG:tech} kullan, bundle size yarıya iner\". Gerçekten öyle mi?"}
+{"lang": "mix", "domain": "bt-destek", "text": "{NEG:org} ile yaptığımız {NEG:tech} lisans anlaşması bitiyor. Renewal mi yapalım, {NEG:tech+DAT} mi geçelim? Pros/cons."}
+{"lang": "mix", "domain": "yazilim", "text": "`{NEG:tech}` config dosyasında `retries: 3` var ama {NEG:tech} bunu ignore ediyor gibi. Neden?"}
+{"lang": "mix", "domain": "veri", "text": "{NEG:eponym} ile dedup yapıyoruz ama {NEG:tech} job'u çok yavaş. Alternatif öner."}
+{"lang": "mix", "domain": "mimari", "text": "Bu sabah standup'ta {PERSON1.first} ile {PERSON2.first} {NEG:tech} vs {NEG:tech} tartıştı. Tartışmayı objektif şekilde özetle."}
+{"lang": "mix", "domain": "yapay-zeka", "text": "Şirkette {NEG:ai} kullanımı için guideline yaz: {NEG:law} kapsamındaki veri asla paste edilmeyecek."}
+{"lang": "mix", "domain": "yazilim", "text": "Bu commit message'ı conventional commits formatına çevir:\n\"{NEG:tech} fix + {NEG:tech} bump, {PERSON1.first} onayladı\""}
+{"lang": "mix", "domain": "guvenlik", "text": "Pentest'te {NEG:tech} admin paneli internete açık çıktı. {NEG:law} referansıyla remediation planı yaz."}
+{"lang": "mix", "domain": "bt-destek", "text": "Kullanıcılar {NEG:tech} üzerinden {NEG:tech} dosyalarını açamıyor, 'permission denied' diyor. Troubleshooting adımları?"}
+{"lang": "mix", "domain": "yazilim", "text": "Bu fonksiyon için docstring yaz, {NEG:tech} style olsun:\ndef hesapla(tutar, kdv=0.20): return tutar * (1 + kdv)\nTest'leri {NEG:tech} ile yazacağız."}
+{"lang": "mix", "domain": "veri", "text": "{PERSON1} Hanım'ın istediği rapor için {NEG:tech} query'si yaz, sonuç {NEG:tech} dashboard'una gidecek."}
+{"lang": "mix", "domain": "mimari", "text": "{NEG:eponym} ne demek, bizim {NEG:tech} cluster'ında partition olunca ne oluyor?"}
+{"lang": "mix", "domain": "yapay-zeka", "text": "{NEG:ai} ile {NEG:ai+ACC} {NEG:tech} migration script'i yazmada karşılaştır, örnek output ver."}
+{"lang": "mix", "domain": "yazilim", "text": "Log'da şunu görüyorum:\n[WARN] {NEG:tech}: slow query (2300ms) SELECT * FROM orders\nIndex mi eksik, yoksa {NEG:tech} connection pool mu dolu?"}
+{"lang": "mix", "domain": "bt-destek", "text": "Yeni başlayan {PERSON1.first} için onboarding checklist: {NEG:tech} hesabı, {NEG:tech} erişimi, {NEG:brand} laptop teslimi."}
+{"lang": "mix", "domain": "guvenlik", "text": "{NEG:org} vendor assessment'ında {NEG:law} sertifikası soruyor. Bizde yok ama {NEG:law} uyumluyuz. Nasıl cevaplarız?"}
+{"lang": "mix", "domain": "yazilim", "text": "React component'inde şu hata:\nWarning: Each child in a list should have a unique \"key\" prop.\nData {NEG:tech+ABL} geliyor, state {NEG:tech} ile yönetiliyor."}
+{"lang": "mix", "domain": "veri", "text": "{NEG:tech} mi {NEG:tech} mi, real-time analytics için? Event volume günde 50M."}
+{"lang": "mix", "domain": "yazilim", "text": "Bu YAML'ı {NEG:tech} formatından {NEG:tech} formatına çevir:\nservices:\n  api:\n    image: api:1.4\n    ports: [\"8080:8080\"]"}
+{"lang": "mix", "domain": "yapay-zeka", "text": "{PERSON1.first} Bey {NEG:ai} çıktısını direkt production'a koymuş, {NEG:tech} testleri patladı. Postmortem taslağı yaz, kimseyi suçlamadan."}
+{"lang": "mix", "domain": "mimari", "text": "{NEG:tech} cache'i invalidation sorunlu. {NEG:eponym} kullanmak mantıklı mı?"}
+{"lang": "mix", "domain": "guvenlik", "text": "{NEG:tech} token'ları rotate etmek için runbook yaz, {NEG:law} audit trail gereksinimine uygun olsun."}
+{"lang": "mix", "domain": "bt-destek", "text": "{NEG:brand} monitörler {NEG:tech} dock'a takılınca titriyor. Firmware mi, kablo mu?"}
+{"lang": "mix", "domain": "yazilim", "text": "Git log:\n7c1a {PERSON1.lower} - {NEG:tech} entegrasyonu\n91be {PERSON2.lower} - {NEG:tech} hotfix\nRelease notes'u Türkçe yaz."}
+{"lang": "mix", "domain": "veri", "text": "{NEG:org} müşterisi için churn modeli kuracağız. {NEG:tech} mi yoksa {NEG:tech} mi daha hızlı prototip çıkarır?"}
+{"lang": "mix", "domain": "yazilim", "text": "{NEG:tech} test'leri local'de geçiyor, {NEG:tech} pipeline'ında fail. Timezone olabilir mi?"}
+{"lang": "mix", "domain": "yapay-zeka", "text": "{NEG:ai+GEN} context window'u bizim {NEG:tech} monorepo için yeter mi?"}
+{"lang": "mix", "domain": "mimari", "text": "Design doc review: {PERSON1} {NEG:tech} öneriyor, {PERSON2} {NEG:tech}. Karar matrisini doldur."}
+{"lang": "mix", "domain": "guvenlik", "text": "{NEG:eponym} hesaplaması password strength için doğru mu? {NEG:tech} kütüphanesi farklı skor veriyor."}
+{"lang": "mix", "domain": "bt-destek", "text": "{NEG:tech} şifre sıfırlama mail'i gelmiyor, spam'de de yok. {NEG:tech} mail log'larına nasıl bakarım?"}
+{"lang": "mix", "domain": "yazilim", "text": "Bu SQL'i optimize et, {NEG:tech} explain plan'ı aşağıda:\nSeq Scan on invoices (cost=0.00..43122.10 rows=1200000)\nORM olarak {NEG:tech} kullanıyoruz."}
+{"lang": "mix", "domain": "veri", "text": "Fixture dosyasında customer adı \"{PERSON1}\" ve şehir \"{LOCATION1.city}\". Bunları {NEG:tech} faker ile rastgele yapmak istiyorum, {NEG:tech} seed script'i nasıl olmalı?"}
+{"lang": "mix", "domain": "yapay-zeka", "text": "{NEG:ai} plugin'imizin release notes'unu yaz: {NEG:tech} desteği eklendi, {NEG:tech} auth bug fix."}
+{"lang": "mix", "domain": "mimari", "text": "{NEG:org} bizim API'yi saniyede 5k request ile çağıracak. {NEG:tech} gateway yeterli mi, {NEG:tech} eklemeli miyiz?"}
+{"lang": "mix", "domain": "yazilim", "text": "{PERSON1.first+GEN} PR'ında {NEG:tech} versiyonu pinlenmemiş, {NEG:tech} lock dosyası da yok. Neden önemli olduğunu nazikçe anlatan bir comment yaz."}
+{"lang": "mix", "domain": "guvenlik", "text": "Phishing simülasyonu için {NEG:brand} temalı değil, generic bir senaryo yaz; {NEG:tech} üzerinden gönderilecek."}
+{"lang": "mix", "domain": "bt-destek", "text": "{NEG:tech} upgrade'i hafta sonu yapılacak, {NEG:tech} entegrasyonu 2 saat down olacak. Duyuru metni yaz."}
+{"lang": "mix", "domain": "yazilim", "text": "Bu regex'i açıkla, {NEG:tech} validator'da kullanılıyor:\n/^TR[0-9]{24}$/\n{NEG:tech} tarafında da aynısı lazım."}
+{"lang": "mix", "domain": "veri", "text": "{NEG:eponym} nedir, A/B test sonuçlarımız {NEG:tech} raporunda neden ters çıkıyor?"}
+{"lang": "mix", "domain": "yapay-zeka", "text": "Ekipte {PERSON1.first} {NEG:ai}, {PERSON2.first} {NEG:ai} kullanıyor. Tek bir tool'a standardize olalım mı?"}
+{"lang": "mix", "domain": "mimari", "text": "{NEG:tech} vs {NEG:tech}: background job'lar için hangisi, retry ve scheduling önemli."}
+{"lang": "mix", "domain": "yazilim", "text": "{NEG:tech} build output'unda şu var:\nModule not found: Error: Can't resolve 'fs'\nBrowser bundle'da {NEG:tech} kullanıyoruz. Fix?"}
+{"lang": "mix", "domain": "guvenlik", "text": "{PERSON1} security review'da \"{NEG:law} A01 Broken Access Control\" bulgusu açmış, endpoint {NEG:tech} ile yazılmış. Fix örneği ver."}
+{"lang": "mix", "domain": "bt-destek", "text": "{NEG:org} ofisindeki {NEG:brand} access point'ler {NEG:tech} controller'a bağlanmıyor. Checklist?"}
+{"lang": "mix", "domain": "yazilim", "text": "Variable adı `{NEG:word}Count` ne anlama geliyor olabilir? {NEG:tech} servisinde 2018'den kalma kod."}
+{"lang": "mix", "domain": "veri", "text": "{NEG:tech} ile {NEG:tech} arasında CDC kurmak istiyoruz. Debezium mantıklı mı?"}
+{"lang": "mix", "domain": "yapay-zeka", "text": "Müşteri {NEG:org} {NEG:ai} entegrasyonu istiyor ama data residency şartı var. Mimari öner."}
+{"lang": "mix", "domain": "yazilim", "text": "Test fixture'da reporter alanı:\n  reporter: \"{PERSON1}\"\n  component: \"{NEG:tech}\"\n  depends_on: \"{NEG:tech}\"\nBunu {NEG:tech} issue formatına çevir."}
+{"lang": "mix", "domain": "mimari", "text": "{NEG:eponym} ile {NEG:eponym} arasındaki fark ne, consensus için hangisini okumalıyım?"}
+{"lang": "mix", "domain": "bt-destek", "text": "Mesaj {PERSON1.first+ABL} geldi: \"{NEG:tech} her açılışta {NEG:tech} update istiyor\". GPO ile kapatılabilir mi?"}
+{"lang": "mix", "domain": "guvenlik", "text": "{NEG:tech} secrets'larını {NEG:tech+DAT} taşırken downtime olmadan nasıl yaparız?"}
+{"lang": "en", "domain": "software-dev", "text": "{NEG:tech} upgrade notes mention {NEG:eponym} for the new scheduler. What changed compared to round robin?"}
+{"lang": "tr", "domain": "yazilim", "text": "{NEG:tech} ve {NEG:tech} için ortak bir hata formatı tasarla; örnek JSON ver, alan adları İngilizce olsun."}
